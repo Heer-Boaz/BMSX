@@ -46,11 +46,13 @@ export const computeMaxRegister = (instructions: Instruction[]): number => {
 			case OpCode.NEWT:
 			case OpCode.CLOSURE:
 			case OpCode.GETUP:
+			case OpCode.MFC0:
 				updateMax(instruction.a);
 				break;
 			case OpCode.SETSYS:
 			case OpCode.SETGL:
 			case OpCode.SETUP:
+			case OpCode.MTC0:
 			case OpCode.JMPIF:
 			case OpCode.JMPIFNOT:
 			case OpCode.LOAD_MEM:

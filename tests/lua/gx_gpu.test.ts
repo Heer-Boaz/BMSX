@@ -492,9 +492,9 @@ function gxGpuVramDigest(bytes: Uint8Array): number {
 
 function createGpu(): { memory: Memory; cpu: CPU; scheduler: DeviceScheduler; dma: DmaController; gpu: GxGpu } {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
-	const cpu = new CPU(memory);
-	const scheduler = new DeviceScheduler(cpu);
 	const irq = new IrqController(memory);
+	const cpu = new CPU(memory, irq);
+	const scheduler = new DeviceScheduler(cpu);
 	const dma = new DmaController(memory, cpu, irq, scheduler);
 	const gpu = new GxGpu(memory, irq, scheduler, dma);
 	dma.reset();

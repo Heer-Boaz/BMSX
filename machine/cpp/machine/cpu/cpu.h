@@ -23,6 +23,7 @@
 #include "common/scratchbuffer.h"
 #include "common/primitives.h"
 #include "machine/cpu/instruction_format.h"
+#include "machine/cpu/cop0.h"
 #include "machine/cpu/opcode_info.h"
 #include "machine/memory/access_kind.h"
 #include "machine/cpu/string_pool.h"
@@ -671,8 +672,7 @@ struct CallFrame {
 	int top = 0;
 	bool captureReturns = false;
 	int callSitePc = 0;
-	bool isInterruptFrame = false;
-	bool savedMaskableEnabled = true;
+	bool isExceptionFrame = false;
 };
 
 struct TableHashNodeState {
@@ -746,8 +746,7 @@ struct CpuFrameState {
 	int top = 0;
 	bool captureReturns = false;
 	int callSitePc = 0;
-	bool isInterruptFrame = false;
-	bool savedMaskableEnabled = true;
+	bool isExceptionFrame = false;
 };
 
 struct CpuRootValueState {
@@ -768,8 +767,10 @@ struct CpuRuntimeState {
 	bool haltedUntilIrq = false;
 	bool memoryWriteBlocked = false;
 	uint32_t memoryWriteBlockedAddress = 0;
-	bool maskableInterruptsEnabled = true;
-	bool maskableInterruptsRestoreEnabled = true;
+	u32 statusWord = CPU_STATUS_CART_ENTRY;
+	u32 causeWord = 0;
+	u32 epcWord = 0;
+	u32 badAddressWord = 0;
 	bool nonMaskableInterruptPending = false;
 	bool yieldRequested = false;
 };
@@ -917,9 +918,9 @@ private:
 
 class CPU {
 public:
-	explicit CPU(Memory& memory);
+	CPU(Memory& memory, IrqController& irqController);
 
-	void setProgram(Program* program, const ProgramRuntimeSymbols& runtimeSymbols, ProgramMetadata* metadata);
+	void setProgram(Program* program, const ProgramRuntimeSymbols& runtimeSymbols, ProgramMetadata* metadata, int systemIrqProtoIndex, int cartIrqProtoIndex, int systemExceptionProtoIndex);
 	Program* getProgram() const { return m_program; }
 	StringPool& stringPool() { return m_stringPool; }
 	const StringPool& stringPool() const { return m_stringPool; }
@@ -945,7 +946,7 @@ public:
 	Table* createTable(int arraySize = 0, int hashSize = 0);
 	Closure& rootClosure(int protoIndex) { return m_staticClosures[static_cast<size_t>(protoIndex)]; }
 
-	void start(int entryProtoIndex, NativeArgsView args = {});
+	void start(int entryProtoIndex, NativeArgsView args = {}, u32 statusWord = CPU_STATUS_CART_ENTRY);
 	void call(Closure& closure, NativeArgsView args = {}, int returnCount = 0);
 	void callExternal(Closure& closure, NativeArgsView args = {});
 	NativeResults* swapExternalReturnSink(NativeResults* sink);
@@ -958,18 +959,16 @@ public:
 	bool isHaltedUntilIrq() const { return m_haltedUntilIrq; }
 	bool isMemoryWriteBlocked() const { return m_memoryWriteBlocked; }
 	void resumeMemoryWrite(uint32_t address);
-	void enableMaskableInterrupts();
-	void disableMaskableInterrupts();
+	bool isUserMode() const { return (m_statusWord & CPU_STATUS_USER_MODE_CURRENT) != 0u; }
 	void requestNonMaskableInterrupt();
-	void restoreMaskableInterruptsAfterNonMaskableInterrupt();
-	bool canAcceptMaskableInterruptLine(const IrqController& irqController) const;
-	AcceptedInterruptKind peekPendingInterrupt(const IrqController& irqController) const;
-	bool enterPendingInterrupt(const IrqController& irqController, int irqProtoIndex);
+	bool canAcceptMaskableInterruptLine() const;
+	AcceptedInterruptKind peekPendingInterrupt() const;
+	bool enterPendingInterrupt();
 	void enterHostExternalCall();
 	void leaveHostExternalCall();
 	bool isHostExternalCallActive() const { return m_hostExternalCallDepth != 0; }
-	RunResult run(int instructionBudget, const IrqController* irqController = nullptr, int irqProtoIndex = 0);
-	RunResult runUntilDepth(int targetDepth, int instructionBudget, const IrqController* irqController = nullptr, int irqProtoIndex = 0);
+	RunResult run(int instructionBudget);
+	RunResult runUntilDepth(int targetDepth, int instructionBudget);
 	void unwindToDepth(int targetDepth);
 	void step();
 	void collectHeap();
@@ -1072,6 +1071,9 @@ private:
 	const DecodedInstruction& decodedAtWordIndex(int wordIndex) const;
 	void skipNextInstruction(CallFrame& frame);
 	void clearHaltAfterAcceptedInterrupt();
+	void enterAsynchronousException(int protoIndex, u32 causeWord);
+	void enterSynchronousException(CallFrame& interruptedFrame, u32 causeWord);
+	void enterException(int protoIndex, u32 causeWord, u32 epcWord);
 	void hardHalt();
 	void blockMappedWrite(CallFrame& frame, uint32_t address);
 	void markRoots(GcHeap& heap);
@@ -1085,12 +1087,18 @@ private:
 	uint32_t m_memoryWriteBlockedAddress = 0;
 	int m_currentInstructionPc = 0;
 	bool m_hardHalted = false;
-	bool m_maskableInterruptsEnabled = true;
-	bool m_maskableInterruptsRestoreEnabled = true;
+	u32 m_statusWord = CPU_STATUS_CART_ENTRY;
+	u32 m_causeWord = 0;
+	u32 m_epcWord = 0;
+	u32 m_badAddressWord = 0;
 	bool m_nonMaskableInterruptPending = false;
+	int m_systemIrqProtoIndex;
+	int m_cartIrqProtoIndex;
+	int m_systemExceptionProtoIndex;
 	bool m_yieldRequested = false;
 	int m_hostExternalCallDepth = 0;
 	Memory& m_memory;
+	IrqController& m_irqController;
 	StringPool m_stringPool;
 	GcHeap m_heap;
 	std::array<BuiltinFunction, BUILTIN_FUNCTION_COUNT> m_builtinFunctions;

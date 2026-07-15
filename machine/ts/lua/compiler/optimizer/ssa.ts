@@ -604,6 +604,7 @@ const runSccp = (
 
 			switch (last.op) {
 				case OpCode.RET:
+				case OpCode.RFE:
 					break;
 				case OpCode.JMP:
 					markReachable(jumpBlock);
@@ -613,28 +614,6 @@ const runSccp = (
 					const slot = lastUses.find(entry => entry.field === 'a');
 					if (!slot) {
 						throw new Error('[ProgramOptimizer] Missing JMPIF operand.');
-					}
-					const kind = valueKind[slot.valueId];
-					if (kind === SCCP_CONST) {
-						const constVal = requireSccpConstValue(valueConst, slot);
-						const truthy = isTruthy(constVal.value);
-						const takeJump = last.op === OpCode.JMPIF ? truthy : !truthy;
-						if (takeJump) {
-							markReachable(jumpBlock);
-						} else {
-							markReachable(nextBlock);
-						}
-					} else {
-						markReachable(nextBlock);
-						markReachable(jumpBlock);
-					}
-					break;
-				}
-				case OpCode.JMPIF:
-				case OpCode.JMPIFNOT: {
-					const slot = lastUses.find(entry => entry.field === 'a');
-					if (!slot) {
-						throw new Error('[ProgramOptimizer] Missing BR operand.');
 					}
 					const kind = valueKind[slot.valueId];
 					if (kind === SCCP_CONST) {
@@ -754,6 +733,7 @@ const collectUsesForSsa = (instruction: Instruction): UseOperand[] => {
 		case OpCode.SETSYS:
 		case OpCode.SETGL:
 		case OpCode.SETUP:
+		case OpCode.MTC0:
 			add('a', instruction.a, null, false);
 			break;
 		case OpCode.LOAD_MEM:
@@ -803,6 +783,7 @@ const collectUsesForLiveness = (instruction: Instruction, maxRegister: number): 
 		case OpCode.SETUP:
 		case OpCode.JMPIF:
 		case OpCode.JMPIFNOT:
+		case OpCode.MTC0:
 			pushRegister(uses, instruction.a);
 			break;
 		case OpCode.LOAD_MEM_D:
@@ -936,6 +917,7 @@ const collectDefs = (instruction: Instruction, maxRegister: number): number[] =>
 		case OpCode.GETUP:
 		case OpCode.LOAD_MEM:
 		case OpCode.LOAD_MEM_D:
+		case OpCode.MFC0:
 			pushRegister(defs, instruction.a);
 			break;
 		case OpCode.SELF:
@@ -1306,7 +1288,7 @@ const simplifyAlgebraic = (instructions: Instruction[], context: OptimizationCon
 };
 
 const isControlFlowInstruction = (instruction: Instruction): boolean => {
-	if (instruction.op === OpCode.RET) {
+	if (instruction.op === OpCode.RET || instruction.op === OpCode.RFE) {
 		return true;
 	}
 	return instruction.op === OpCode.JMP

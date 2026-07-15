@@ -1041,8 +1041,7 @@ function encodeCpuFrameState(state: CpuFrameState): CpuFrameState {
 		top: state.top,
 		captureReturns: state.captureReturns,
 		callSitePc: state.callSitePc,
-		isInterruptFrame: state.isInterruptFrame,
-		savedMaskableEnabled: state.savedMaskableEnabled,
+		isExceptionFrame: state.isExceptionFrame,
 	};
 }
 
@@ -1067,8 +1066,7 @@ function decodeCpuFrameState(value: unknown, label: string): CpuFrameState {
 		top: requireObjectKey(object, 'top', label, 'cpuFrameState.top') as number,
 		captureReturns: requireObjectKey(object, 'captureReturns', label, 'cpuFrameState.captureReturns') as boolean,
 		callSitePc: requireObjectKey(object, 'callSitePc', label, 'cpuFrameState.callSitePc') as number,
-		isInterruptFrame: requireObjectKey(object, 'isInterruptFrame', label, 'cpuFrameState.isInterruptFrame') as boolean,
-		savedMaskableEnabled: requireObjectKey(object, 'savedMaskableEnabled', label, 'cpuFrameState.savedMaskableEnabled') as boolean,
+		isExceptionFrame: requireObjectKey(object, 'isExceptionFrame', label, 'cpuFrameState.isExceptionFrame') as boolean,
 	};
 }
 
@@ -1101,8 +1099,10 @@ function encodeCpuRuntimeState(state: CpuRuntimeState): CpuRuntimeState {
 		haltedUntilIrq: state.haltedUntilIrq,
 		memoryWriteBlocked: state.memoryWriteBlocked,
 		memoryWriteBlockedAddress: state.memoryWriteBlockedAddress,
-		maskableInterruptsEnabled: state.maskableInterruptsEnabled,
-		maskableInterruptsRestoreEnabled: state.maskableInterruptsRestoreEnabled,
+		statusWord: state.statusWord,
+		causeWord: state.causeWord,
+		epcWord: state.epcWord,
+		badAddressWord: state.badAddressWord,
 		nonMaskableInterruptPending: state.nonMaskableInterruptPending,
 		yieldRequested: state.yieldRequested,
 	};
@@ -1147,8 +1147,10 @@ function decodeCpuRuntimeState(value: unknown, label: string): CpuRuntimeState {
 		haltedUntilIrq: requireObjectKey(object, 'haltedUntilIrq', label, 'cpuState.haltedUntilIrq') as boolean,
 		memoryWriteBlocked: requireObjectKey(object, 'memoryWriteBlocked', label, 'cpuState.memoryWriteBlocked') as boolean,
 		memoryWriteBlockedAddress: requireObjectKey(object, 'memoryWriteBlockedAddress', label, 'cpuState.memoryWriteBlockedAddress') as number,
-		maskableInterruptsEnabled: requireObjectKey(object, 'maskableInterruptsEnabled', label, 'cpuState.maskableInterruptsEnabled') as boolean,
-		maskableInterruptsRestoreEnabled: requireObjectKey(object, 'maskableInterruptsRestoreEnabled', label, 'cpuState.maskableInterruptsRestoreEnabled') as boolean,
+		statusWord: requireObjectKey(object, 'statusWord', label, 'cpuState.statusWord') as number,
+		causeWord: requireObjectKey(object, 'causeWord', label, 'cpuState.causeWord') as number,
+		epcWord: requireObjectKey(object, 'epcWord', label, 'cpuState.epcWord') as number,
+		badAddressWord: requireObjectKey(object, 'badAddressWord', label, 'cpuState.badAddressWord') as number,
 		nonMaskableInterruptPending: requireObjectKey(object, 'nonMaskableInterruptPending', label, 'cpuState.nonMaskableInterruptPending') as boolean,
 		yieldRequested: requireObjectKey(object, 'yieldRequested', label, 'cpuState.yieldRequested') as boolean,
 	};

@@ -480,6 +480,12 @@ const buildInstructionOperands = (
 		case OpCode.LT:
 		case OpCode.LE:
 			return [plainOperand('a', 'expect', formatBool(a)), rkOperand('b', 'left', program, b, decoded.rkBitsB, options), rkOperand('c', 'right', program, c, decoded.rkBitsC, options)];
+		case OpCode.MFC0:
+			return [registerOperand('a', 'dst', a), plainOperand('b', 'cp0', `c${b}`)];
+		case OpCode.MTC0:
+			return [registerOperand('a', 'src', a), plainOperand('b', 'cp0', `c${b}`)];
+		case OpCode.RFE:
+			return [];
 		case OpCode.JMP:
 			return [plainOperand('sbx', 'jump', formatJump(pc, sbx, pcWidth, options))];
 		case OpCode.JMPIF:
@@ -666,6 +672,12 @@ const formatInstruction = (
 			return `CALL r${a}, ${formatCallArgCount(b)}, ${formatCount(c)}`;
 		case OpCode.RET:
 			return `RET r${a}, ${formatCount(b)}`;
+		case OpCode.MFC0:
+			return `MFC0 r${a}, c${b}`;
+		case OpCode.MTC0:
+			return `MTC0 r${a}, c${b}`;
+		case OpCode.RFE:
+			return 'RFE';
 		case OpCode.LOAD_MEM_D:
 			return `LOAD_MEM_D r${a}, r${b}, ${c}, ${decoded.disp << 2}`;
 		case OpCode.STORE_MEM_D:

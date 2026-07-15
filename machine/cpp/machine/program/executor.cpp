@@ -11,7 +11,7 @@ int runHaltedClosureUntilInterrupt(Runtime& runtime) {
 	int consumed = 0;
 	bool advancedDeadline = false;
 	while (cpu.isHaltedUntilIrq()) {
-		if (cpu.peekPendingInterrupt(runtime.machine.irqController) != AcceptedInterruptKind::None) {
+		if (cpu.peekPendingInterrupt() != AcceptedInterruptKind::None) {
 			cpu.clearHaltUntilIrq();
 			return consumed;
 		}

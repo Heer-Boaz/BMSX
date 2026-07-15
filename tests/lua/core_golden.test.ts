@@ -29,6 +29,7 @@ import {
 } from '../../machine/ts/machine/bus/io';
 import { transformFixed16 } from '../../machine/ts/machine/common/numeric';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
+import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { GEO_SCRATCH_BASE, PROGRAM_ROM_BASE, PROGRAM_ROM_SIZE, RAM_BASE, RAM_END, SYSTEM_ROM_BASE } from '../../machine/ts/machine/memory/map';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
@@ -128,7 +129,7 @@ test('core golden: budget and fixed16 datapaths match native integer semantics',
 
 test('core golden: runtime VBlank end publishes scanout at the new frame origin', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(), cartRom: new Uint8Array(0) });
-	const scheduler = new DeviceScheduler(new CPU(memory));
+	const scheduler = new DeviceScheduler(new CPU(memory, new IrqController(memory)));
 	const gxScanoutCalls: Array<{ active: boolean; cyclesIntoFrame: number; cyclesPerFrame: number; totalScanlines: number }> = [];
 	const inputSampleEdges: Array<{ currentTimeMs: number; nowCycles: number }> = [];
 	let raisedIrq = 0;

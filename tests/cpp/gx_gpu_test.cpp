@@ -26,17 +26,17 @@ namespace {
 struct GpuHarness {
 	std::array<uint8_t, 1> emptyRom{{0}};
 	bmsx::Memory memory;
+	bmsx::IrqController irq;
 	bmsx::CPU cpu;
 	bmsx::DeviceScheduler scheduler;
-	bmsx::IrqController irq;
 	bmsx::DmaController dma;
 	bmsx::GxGpu gpu;
 
 	GpuHarness()
 		: memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, { emptyRom.data(), 0u } })
-		, cpu(memory)
-		, scheduler(cpu)
 		, irq(memory)
+		, cpu(memory, irq)
+		, scheduler(cpu)
 		, dma(memory, cpu, irq, scheduler)
 		, gpu(memory, irq, scheduler, dma) {
 		dma.reset();
@@ -48,16 +48,16 @@ struct GpuHarness {
 struct CommandBufferDmaHarness {
 	std::array<uint8_t, 1> emptyRom{{0}};
 	bmsx::Memory memory;
+	bmsx::IrqController irq;
 	bmsx::CPU cpu;
 	bmsx::DeviceScheduler scheduler;
-	bmsx::IrqController irq;
 	bmsx::DmaController dma;
 
 	CommandBufferDmaHarness()
 		: memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, { emptyRom.data(), 0u } })
-		, cpu(memory)
-		, scheduler(cpu)
 		, irq(memory)
+		, cpu(memory, irq)
+		, scheduler(cpu)
 		, dma(memory, cpu, irq, scheduler) {
 		dma.reset();
 		irq.reset();

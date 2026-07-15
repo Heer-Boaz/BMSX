@@ -170,6 +170,7 @@ const removeUnreachable = (set: InstructionSet): InstructionSet => {
 		const instruction = instructions[index];
 		switch (instruction.op) {
 			case OpCode.RET:
+			case OpCode.RFE:
 				break;
 			case OpCode.JMP: {
 				pushWorklistCandidate(worklist, getJumpTarget(instruction), count);
@@ -456,6 +457,7 @@ const computeBlockConstantIn = (
 					case OpCode.GETUP:
 					case OpCode.LOAD_MEM:
 					case OpCode.LOAD_MEM_D:
+					case OpCode.MFC0:
 						constants.delete(instruction.a);
 						break;
 					case OpCode.SELF:
@@ -626,6 +628,7 @@ const foldConstants = (set: InstructionSet, context: OptimizationContext): Instr
 				case OpCode.GETUP:
 				case OpCode.LOAD_MEM:
 				case OpCode.LOAD_MEM_D:
+				case OpCode.MFC0:
 				case OpCode.UNM:
 				case OpCode.NOT:
 				case OpCode.LEN:
@@ -865,7 +868,8 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 					}
 				case OpCode.SETSYS:
 				case OpCode.SETGL:
-					case OpCode.SETUP:
+				case OpCode.SETUP:
+				case OpCode.MTC0:
 					case OpCode.STORE_MEM: {
 						rewriteCopyInstructionOperand(instruction, 'a', copies);
 						if (instruction.op === OpCode.STORE_MEM) {
@@ -972,6 +976,7 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 				case OpCode.GETUP:
 				case OpCode.LOAD_MEM:
 				case OpCode.LOAD_MEM_D:
+				case OpCode.MFC0:
 					killRegister(constants, copies, instruction.a);
 					break;
 				case OpCode.SELF:
@@ -1054,6 +1059,7 @@ const eliminateDeadStores = (set: InstructionSet, context: OptimizationContext):
 			case OpCode.SETSYS:
 			case OpCode.SETGL:
 			case OpCode.SETUP:
+			case OpCode.MTC0:
 			case OpCode.JMPIF:
 			case OpCode.JMPIFNOT:
 					pushRegister(uses, instruction.a);
@@ -1195,6 +1201,7 @@ const eliminateDeadStores = (set: InstructionSet, context: OptimizationContext):
 			case OpCode.GETUP:
 			case OpCode.LOAD_MEM:
 			case OpCode.LOAD_MEM_D:
+			case OpCode.MFC0:
 					pushRegister(defs, instruction.a);
 					break;
 				case OpCode.SELF:
@@ -1374,7 +1381,7 @@ const reorderSegments = (set: InstructionSet): InstructionSet => {
 		const block = blocks[i];
 		const lastIndex = block.end - 1;
 		const last = instructions[lastIndex];
-		const terminates = last.op === OpCode.JMP || last.op === OpCode.RET;
+		const terminates = last.op === OpCode.JMP || last.op === OpCode.RET || last.op === OpCode.RFE;
 		if (terminates) {
 			segments.push(current);
 			current = null;
@@ -1618,6 +1625,7 @@ const applyClosureTransferForInlining = (
 		case OpCode.GETUP:
 		case OpCode.LOAD_MEM:
 		case OpCode.LOAD_MEM_D:
+		case OpCode.MFC0:
 			closures.delete(instruction.a);
 			return;
 		case OpCode.SELF:
@@ -1781,6 +1789,7 @@ const buildInlineExpansion = (
 			case OpCode.GETI:
 			case OpCode.GETFIELD:
 			case OpCode.NEWT:
+			case OpCode.MFC0:
 				mapped.a = mapRegister(mapped.a);
 				if (mapped.op === OpCode.GETI || mapped.op === OpCode.GETFIELD) {
 					mapped.b = mapRegister(mapped.b);
@@ -1845,6 +1854,7 @@ const buildInlineExpansion = (
 				break;
 			case OpCode.SETSYS:
 			case OpCode.SETGL:
+			case OpCode.MTC0:
 				mapped.a = mapRegister(mapped.a);
 				break;
 			case OpCode.STORE_MEM_D:
@@ -1903,6 +1913,7 @@ const buildInlineExpansion = (
 			case OpCode.VARARG:
 			case OpCode.CLOSURE:
 			case OpCode.RET:
+			case OpCode.RFE:
 				return null;
 			case OpCode.CALL:
 				mapped.a = mapRegister(mapped.a);
@@ -2040,7 +2051,7 @@ const inlineFunctionCalls = (
 				hasReturn = true;
 				continue;
 			}
-			if (instruction.op === OpCode.CLOSURE || instruction.op === OpCode.VARARG) {
+			if (instruction.op === OpCode.CLOSURE || instruction.op === OpCode.VARARG || instruction.op === OpCode.RFE) {
 				calleeCache.set(protoIndex, null);
 				return null;
 			}

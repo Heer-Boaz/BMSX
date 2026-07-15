@@ -36,9 +36,8 @@ bool CpuExecutionState::runHaltedUntilIrq(Runtime& runtime, FrameState& frameSta
 		return tickCompleted;
 	}
 	auto& scheduler = runtime.machine.scheduler;
-	const ProgramVectorTable& vectors = *runtime.programVectors;
 	while (true) {
-		if (cpu.enterPendingInterrupt(runtime.machine.irqController, vectors.irqProtoIndex)) {
+		if (cpu.enterPendingInterrupt()) {
 			return tickCompleted;
 		}
 		if (tickCompleted) {
@@ -118,7 +117,7 @@ RunResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState& frameSt
 		}
 		scheduler.beginCpuSlice(sliceBudget);
 		try {
-			result = cpu.run(sliceBudget, &runtime.machine.irqController, runtime.programVectors->irqProtoIndex);
+			result = cpu.run(sliceBudget);
 		} catch (...) {
 			scheduler.endCpuSlice();
 			throw;

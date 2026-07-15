@@ -203,8 +203,6 @@ private:
 	bool loadSystemRomInternal(const u8* data, size_t size);
 	bool loadRomInternal(const u8* data, size_t size);
 	bool bootSystemStartupProgram(const MachineManifest& runtimeMachine);
-	Runtime& prepareRuntimeForActiveCart(const ResolvedRuntimeTiming& timing);
-	void bootRuntimeFromProgram();
 	void flushRuntimeLuaOutput(Runtime& runtime);
 
 	MachineManagerState m_state = MachineManagerState::Uninitialized;

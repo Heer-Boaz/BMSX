@@ -8,6 +8,20 @@ import {
 } from '../memory/lua_heap_usage';
 import { formatNumber } from '../common/number_format';
 import { BASE_CYCLES, OPCODE_USES_BX, OPCODE_USES_DISP, OpCode } from './opcode_info';
+import {
+	COP0_BAD_ADDRESS,
+	COP0_CAUSE,
+	COP0_EPC,
+	COP0_STATUS,
+	CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE,
+	CPU_CAUSE_IRQ,
+	CPU_CAUSE_NMI,
+	CPU_STATUS_CART_ENTRY,
+	CPU_STATUS_INTERRUPT_ENABLE_CURRENT,
+	CPU_STATUS_MODE_STACK_MASK,
+	CPU_STATUS_RFE_RESTORE_MASK,
+	CPU_STATUS_USER_MODE_CURRENT,
+} from './cop0';
 import { CpuExecutionProfiler, formatCpuProfilerReport, type CpuProfilerReportOptions } from './profiler';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord, signExtend } from './instruction_format';
 import { MemoryAccessKind } from '../memory/access_kind';
@@ -312,8 +326,7 @@ export type CpuFrameState = {
 	top: number;
 	captureReturns: boolean;
 	callSitePc: number;
-	isInterruptFrame: boolean;
-	savedMaskableEnabled: boolean;
+	isExceptionFrame: boolean;
 };
 
 export type CpuRootValueState = {
@@ -334,8 +347,10 @@ export type CpuRuntimeState = {
 	haltedUntilIrq: boolean;
 	memoryWriteBlocked: boolean;
 	memoryWriteBlockedAddress: number;
-	maskableInterruptsEnabled: boolean;
-	maskableInterruptsRestoreEnabled: boolean;
+	statusWord: number;
+	causeWord: number;
+	epcWord: number;
+	badAddressWord: number;
 	nonMaskableInterruptPending: boolean;
 	yieldRequested: boolean;
 };
@@ -475,8 +490,7 @@ type CallFrame = {
 	top: number;
 	captureReturns: boolean;
 	callSitePc: number;
-	isInterruptFrame: boolean;
-	savedMaskableEnabled: boolean;
+	isExceptionFrame: boolean;
 };
 
 type HashNode = {
@@ -1463,7 +1477,7 @@ function createDecodedInstructionPage(): DecodedInstructionPage {
 		tableCacheIndexes: new Uint32Array(DECODED_PAGE_WORDS),
 	};
 	page.widths.fill(1);
-	page.ops.fill(OpCode.RESERVED0);
+	page.ops.fill(OpCode.RESERVED3);
 	return page;
 }
 
@@ -1486,9 +1500,14 @@ export class CPU {
 	private memoryWriteBlockedAddress = 0;
 	private currentInstructionPc = 0;
 	private hardHalted = false;
-	private maskableInterruptsEnabled = true;
-	private maskableInterruptsRestoreEnabled = true;
+	private statusWord = CPU_STATUS_CART_ENTRY;
+	private causeWord = 0;
+	private epcWord = 0;
+	private badAddressWord = 0;
 	private nonMaskableInterruptPending = false;
+	private systemIrqProtoIndex!: number;
+	private cartIrqProtoIndex!: number;
+	private systemExceptionProtoIndex!: number;
 	private hostExternalCallDepth = 0;
 	private yieldRequested = false;
 	private readonly frames: CallFrame[] = [];
@@ -1520,7 +1539,7 @@ export class CPU {
 	private stackTop = 0;
 	private nextObjectHashId = 1;
 
-	constructor(memory: Memory) {
+	constructor(memory: Memory, private readonly irqController: IrqController) {
 		this.memory = memory;
 		this.stringPool = new StringPool(true);
 		this.globals = this.createTable(0, 0);
@@ -1817,8 +1836,7 @@ export class CPU {
 			top: 0,
 			captureReturns: false,
 			callSitePc: 0,
-			isInterruptFrame: false,
-			savedMaskableEnabled: true,
+			isExceptionFrame: false,
 		};
 	}
 
@@ -1828,8 +1846,7 @@ export class CPU {
 		frame.stackBase = 0;
 		frame.stackCapacity = 0;
 		frame.registers.rebind(this.stackRegisters, 0, 0);
-		frame.isInterruptFrame = false;
-		frame.savedMaskableEnabled = true;
+		frame.isExceptionFrame = false;
 		if (this.framePool.length < MAX_POOLED_FRAMES) {
 			this.framePool.push(frame);
 		}
@@ -1845,12 +1862,22 @@ export class CPU {
 		this.stackTop = 0;
 	}
 
-	public setProgram(program: Program, runtimeSymbols: ProgramRuntimeSymbols, metadata: ProgramMetadata | null): void {
+	public setProgram(
+		program: Program,
+		runtimeSymbols: ProgramRuntimeSymbols,
+		metadata: ProgramMetadata | null,
+		systemIrqProtoIndex: number,
+		cartIrqProtoIndex: number,
+		systemExceptionProtoIndex: number,
+	): void {
 		// Keep slot-backed globals materialized in the globals table before swapping programs.
 		// SETGL/SETSYS mutate the slot arrays directly, and append/reload paths rebuild the next
 		// slot layout from `globals`, so without this sync flattened module exports can fall back to nil.
 		this.syncGlobalSlotsToTable();
 		this.program = program;
+		this.systemIrqProtoIndex = systemIrqProtoIndex;
+		this.cartIrqProtoIndex = cartIrqProtoIndex;
+		this.systemExceptionProtoIndex = systemExceptionProtoIndex;
 		this.hardHalted = false;
 		this.memory.setProgramRom(program.programRom, program.programRomTextByteLength);
 		this.metadata = metadata;
@@ -2007,15 +2034,17 @@ export class CPU {
 		return opcodeByWord;
 	}
 
-	public start(entryProtoIndex: number, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS): void {
+	public start(entryProtoIndex: number, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS, statusWord = CPU_STATUS_CART_ENTRY): void {
 		this.lastReturnValues.length = 0;
 		this.clearCallStack();
 		this.haltedUntilIrq = false;
 		this.memoryWriteBlocked = false;
 		this.memoryWriteBlockedAddress = 0;
 		this.hardHalted = false;
-		this.maskableInterruptsEnabled = true;
-		this.maskableInterruptsRestoreEnabled = true;
+		this.statusWord = statusWord >>> 0;
+		this.causeWord = 0;
+		this.epcWord = 0;
+		this.badAddressWord = 0;
 		this.nonMaskableInterruptPending = false;
 		this.hostExternalCallDepth = 0;
 		this.yieldRequested = false;
@@ -2095,49 +2124,62 @@ export class CPU {
 	}
 
 
-	public enableMaskableInterrupts(): void {
-		this.maskableInterruptsEnabled = true;
-		this.maskableInterruptsRestoreEnabled = true;
-	}
-
-	public disableMaskableInterrupts(): void {
-		this.maskableInterruptsEnabled = false;
-		this.maskableInterruptsRestoreEnabled = false;
+	public isUserMode(): boolean {
+		return (this.statusWord & CPU_STATUS_USER_MODE_CURRENT) !== 0;
 	}
 
 	public requestNonMaskableInterrupt(): void {
-		this.nonMaskableInterruptPending = true;
+		if (this.isUserMode()) {
+			this.nonMaskableInterruptPending = true;
+		}
 	}
 
-	public restoreMaskableInterruptsAfterNonMaskableInterrupt(): void {
-		this.maskableInterruptsEnabled = this.maskableInterruptsRestoreEnabled;
+	public canAcceptMaskableInterruptLine(): boolean {
+		return (this.statusWord & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) !== 0
+			&& this.irqController.hasAssertedMaskableInterruptLine();
 	}
 
-	public canAcceptMaskableInterruptLine(irqController: IrqController): boolean {
-		return this.maskableInterruptsEnabled
-			&& irqController.hasAssertedMaskableInterruptLine();
-	}
-
-	public peekPendingInterrupt(irqController: IrqController): AcceptedInterruptKind {
-		if (this.nonMaskableInterruptPending) {
+	public peekPendingInterrupt(): AcceptedInterruptKind {
+		if (this.nonMaskableInterruptPending && this.isUserMode()) {
 			return AcceptedInterruptKind.NonMaskable;
 		}
-		if (this.canAcceptMaskableInterruptLine(irqController)) {
+		if (this.canAcceptMaskableInterruptLine()) {
 			return AcceptedInterruptKind.Maskable;
 		}
 		return AcceptedInterruptKind.None;
 	}
 
-	public enterPendingInterrupt(irqController: IrqController, irqProtoIndex: number): boolean {
-		if (!this.canAcceptMaskableInterruptLine(irqController)) {
-			return false;
+	public enterPendingInterrupt(): boolean {
+		if (this.nonMaskableInterruptPending && this.isUserMode()) {
+			this.nonMaskableInterruptPending = false;
+			this.enterAsynchronousException(this.systemExceptionProtoIndex, CPU_CAUSE_NMI);
+			return true;
 		}
-		this.maskableInterruptsEnabled = false;
+		if (this.canAcceptMaskableInterruptLine()) {
+			const irqProtoIndex = this.isUserMode() ? this.cartIrqProtoIndex : this.systemIrqProtoIndex;
+			this.enterAsynchronousException(irqProtoIndex, CPU_CAUSE_IRQ);
+			return true;
+		}
+		return false;
+	}
+
+	private enterAsynchronousException(protoIndex: number, causeWord: number): void {
+		this.enterException(protoIndex, causeWord, this.frames[this.frames.length - 1].pc);
+	}
+
+	private enterSynchronousException(interruptedFrame: CallFrame, causeWord: number): void {
+		interruptedFrame.pc = this.currentInstructionPc;
+		this.enterException(this.systemExceptionProtoIndex, causeWord, this.currentInstructionPc);
+	}
+
+	private enterException(protoIndex: number, causeWord: number, epcWord: number): void {
+		this.epcWord = epcWord >>> 0;
+		this.causeWord = causeWord >>> 0;
+		this.statusWord = ((this.statusWord & ~CPU_STATUS_MODE_STACK_MASK)
+			| ((this.statusWord << 2) & CPU_STATUS_MODE_STACK_MASK)) >>> 0;
 		this.clearHaltAfterAcceptedInterrupt();
-		const frame = this.pushFrame(this.rootClosure(irqProtoIndex), EMPTY_CALL_ARGS, 0, 0, false, this.program.protos[irqProtoIndex].entryPC);
-		frame.isInterruptFrame = true;
-		frame.savedMaskableEnabled = true;
-		return true;
+		const frame = this.pushFrame(this.rootClosure(protoIndex), EMPTY_CALL_ARGS, 0, 0, false, this.program.protos[protoIndex].entryPC);
+		frame.isExceptionFrame = true;
 	}
 
 	private clearHaltAfterAcceptedInterrupt(): void {
@@ -2155,7 +2197,7 @@ export class CPU {
 		return this.frames.length;
 	}
 
-	public runUntilDepth(targetDepth: number, instructionBudget: number, irqController: IrqController | null = null, irqProtoIndex = 0): RunResult {
+	public runUntilDepth(targetDepth: number, instructionBudget: number): RunResult {
 		this.instructionBudgetRemaining = instructionBudget;
 		const frames = this.frames;
 		const profiler = this.profilerEnabled ? this.profiler : null;
@@ -2172,12 +2214,12 @@ export class CPU {
 			if (this.instructionBudgetRemaining <= 0) {
 				return RunResult.Yielded;
 			}
-			if (irqController !== null
-				&& this.hostExternalCallDepth === 0
-				&& this.maskableInterruptsEnabled
-				&& irqController.hasAssertedMaskableInterruptLine()
+			if (this.hostExternalCallDepth === 0
+				&& ((this.nonMaskableInterruptPending && (this.statusWord & CPU_STATUS_USER_MODE_CURRENT) !== 0)
+					|| ((this.statusWord & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) !== 0
+						&& this.irqController.hasAssertedMaskableInterruptLine()))
 			) {
-				this.enterPendingInterrupt(irqController, irqProtoIndex);
+				this.enterPendingInterrupt();
 				continue;
 			}
 			const frame = frames[frames.length - 1];
@@ -2645,9 +2687,56 @@ export class CPU {
 					}
 					return;
 				}
-				case OpCode.RESERVED0:
-				case OpCode.RESERVED1:
-				case OpCode.RESERVED2:
+				case OpCode.MFC0: {
+					if ((this.statusWord & CPU_STATUS_USER_MODE_CURRENT) !== 0) {
+						this.enterSynchronousException(frame, CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
+						return;
+					}
+					let value: number;
+					switch (b) {
+						case COP0_BAD_ADDRESS: value = this.badAddressWord; break;
+						case COP0_STATUS: value = this.statusWord; break;
+						case COP0_CAUSE: value = this.causeWord; break;
+						case COP0_EPC: value = this.epcWord; break;
+						default: this.hardHalt(); return;
+					}
+					this.setRegisterNumberFast(frame, registers, a, value);
+					return;
+				}
+				case OpCode.MTC0: {
+					if ((this.statusWord & CPU_STATUS_USER_MODE_CURRENT) !== 0) {
+						this.enterSynchronousException(frame, CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
+						return;
+					}
+					const value = (registers.get(a) as number) >>> 0;
+					switch (b) {
+						case COP0_STATUS: this.statusWord = value; return;
+						case COP0_EPC: this.epcWord = value; return;
+						case COP0_BAD_ADDRESS:
+						case COP0_CAUSE:
+							return;
+						default: this.hardHalt(); return;
+					}
+				}
+				case OpCode.RFE:
+					if ((this.statusWord & CPU_STATUS_USER_MODE_CURRENT) !== 0) {
+						this.enterSynchronousException(frame, CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
+						return;
+					}
+					if (!frame.isExceptionFrame) {
+						this.hardHalt();
+						return;
+					}
+					this.closeUpvalues(frame);
+					this.frames.pop();
+					this.stackTop = frame.varargBase;
+					this.releaseFrame(frame);
+					this.statusWord = ((this.statusWord & ~CPU_STATUS_RFE_RESTORE_MASK)
+						| ((this.statusWord >> 2) & CPU_STATUS_RFE_RESTORE_MASK)) >>> 0;
+					if (this.frames.length > 0) {
+						this.frames[this.frames.length - 1].pc = this.epcWord;
+					}
+					return;
 				case OpCode.RESERVED3:
 					this.hardHalt();
 					return;
@@ -2736,13 +2825,6 @@ export class CPU {
 					const total = b === 0 ? Math.max(frame.top - a, 0) : b;
 					this.closeUpvalues(frame);
 					const frameIndex = this.frames.length - 1;
-					if (frame.isInterruptFrame) {
-						this.maskableInterruptsEnabled = frame.savedMaskableEnabled;
-						this.frames.pop();
-						this.stackTop = frame.varargBase;
-						this.releaseFrame(frame);
-						return;
-					}
 					if (frame.captureReturns) {
 						if (this.externalReturnSink !== null) {
 							this.captureValuesIntoArrayFromRegisters(this.externalReturnSink, registers, a, total);
@@ -3625,8 +3707,7 @@ export class CPU {
 				top: frame.top,
 				captureReturns: frame.captureReturns,
 				callSitePc: frame.callSitePc,
-				isInterruptFrame: frame.isInterruptFrame,
-				savedMaskableEnabled: frame.savedMaskableEnabled,
+				isExceptionFrame: frame.isExceptionFrame,
 			};
 		}
 
@@ -3653,8 +3734,10 @@ export class CPU {
 			haltedUntilIrq: this.haltedUntilIrq,
 			memoryWriteBlocked: this.memoryWriteBlocked,
 			memoryWriteBlockedAddress: this.memoryWriteBlockedAddress,
-			maskableInterruptsEnabled: this.maskableInterruptsEnabled,
-			maskableInterruptsRestoreEnabled: this.maskableInterruptsRestoreEnabled,
+			statusWord: this.statusWord,
+			causeWord: this.causeWord,
+			epcWord: this.epcWord,
+			badAddressWord: this.badAddressWord,
 			nonMaskableInterruptPending: this.nonMaskableInterruptPending,
 			yieldRequested: this.yieldRequested,
 		};
@@ -3780,8 +3863,7 @@ export class CPU {
 			frame.returnCount = frameState.returnCount;
 			frame.captureReturns = frameState.captureReturns;
 			frame.callSitePc = frameState.callSitePc;
-			frame.isInterruptFrame = frameState.isInterruptFrame;
-			frame.savedMaskableEnabled = frameState.savedMaskableEnabled;
+			frame.isExceptionFrame = frameState.isExceptionFrame;
 			frame.varargBase = this.stackTop;
 			frame.varargCount = frameState.varargs.length;
 			const registers = this.prepareFrameRegisters(frame, proto.maxStack);
@@ -3824,8 +3906,10 @@ export class CPU {
 		this.haltedUntilIrq = state.haltedUntilIrq;
 		this.memoryWriteBlocked = state.memoryWriteBlocked;
 		this.memoryWriteBlockedAddress = state.memoryWriteBlockedAddress;
-		this.maskableInterruptsEnabled = state.maskableInterruptsEnabled;
-		this.maskableInterruptsRestoreEnabled = state.maskableInterruptsRestoreEnabled;
+		this.statusWord = state.statusWord;
+		this.causeWord = state.causeWord;
+		this.epcWord = state.epcWord;
+		this.badAddressWord = state.badAddressWord;
 		this.nonMaskableInterruptPending = state.nonMaskableInterruptPending;
 		this.yieldRequested = state.yieldRequested;
 		refreshTrackedLuaHeapBytes();

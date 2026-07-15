@@ -18,6 +18,7 @@ import {
 import { buildLuaSources } from '../../machine/ts/lua/source_registry';
 import { compileLuaChunkToProgram } from '../../machine/ts/lua/compiler';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { PROGRAM_IMAGE_ID, toLuaModulePath } from '../../machine/ts/machine/program/loader';
 import { parseCartridgeIndex } from '../../machine/ts/rompack/loader';
@@ -199,8 +200,9 @@ test('debug package source boot resolves the persisted GX texture layout module'
 			optLevel: 3,
 		},
 	);
-	const cpu = new CPU(new Memory({ systemRom: new Uint8Array(0), cartRom: payload }));
-	cpu.setProgram(compiled.program, compiled.metadata, compiled.metadata);
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: payload });
+	const cpu = new CPU(memory, new IrqController(memory));
+	cpu.setProgram(compiled.program, compiled.metadata, compiled.metadata, 0, 0, 0);
 	cpu.start(compiled.entryProtoIndex);
 
 	assert.equal(registry.module2lua[GX_TEXTURE_LAYOUT_MODULE_PATH].src, layoutSource);

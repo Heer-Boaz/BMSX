@@ -1145,8 +1145,7 @@ BinValue encodeCpuFrameState(const CpuFrameState& state) {
 	object["top"] = static_cast<i64>(state.top);
 	object["captureReturns"] = state.captureReturns;
 	object["callSitePc"] = static_cast<i64>(state.callSitePc);
-	object["isInterruptFrame"] = state.isInterruptFrame;
-	object["savedMaskableEnabled"] = state.savedMaskableEnabled;
+	object["isExceptionFrame"] = state.isExceptionFrame;
 	return BinValue(std::move(object));
 }
 
@@ -1169,8 +1168,7 @@ CpuFrameState decodeCpuFrameState(const BinValue& value, const char* label) {
 	state.top = requireI32(requireField(object, "top", label), "cpuFrameState.top");
 	state.captureReturns = requireBool(requireField(object, "captureReturns", label), "cpuFrameState.captureReturns");
 	state.callSitePc = requireI32(requireField(object, "callSitePc", label), "cpuFrameState.callSitePc");
-	state.isInterruptFrame = requireBool(requireField(object, "isInterruptFrame", label), "cpuFrameState.isInterruptFrame");
-	state.savedMaskableEnabled = requireBool(requireField(object, "savedMaskableEnabled", label), "cpuFrameState.savedMaskableEnabled");
+	state.isExceptionFrame = requireBool(requireField(object, "isExceptionFrame", label), "cpuFrameState.isExceptionFrame");
 	return state;
 }
 
@@ -1215,8 +1213,10 @@ BinValue encodeCpuRuntimeState(const CpuRuntimeState& state) {
 	object["haltedUntilIrq"] = state.haltedUntilIrq;
 	object["memoryWriteBlocked"] = state.memoryWriteBlocked;
 	object["memoryWriteBlockedAddress"] = static_cast<i64>(state.memoryWriteBlockedAddress);
-	object["maskableInterruptsEnabled"] = state.maskableInterruptsEnabled;
-	object["maskableInterruptsRestoreEnabled"] = state.maskableInterruptsRestoreEnabled;
+	object["statusWord"] = static_cast<i64>(state.statusWord);
+	object["causeWord"] = static_cast<i64>(state.causeWord);
+	object["epcWord"] = static_cast<i64>(state.epcWord);
+	object["badAddressWord"] = static_cast<i64>(state.badAddressWord);
 	object["nonMaskableInterruptPending"] = state.nonMaskableInterruptPending;
 	object["yieldRequested"] = state.yieldRequested;
 	return BinValue(std::move(object));
@@ -1255,8 +1255,10 @@ CpuRuntimeState decodeCpuRuntimeState(const BinValue& value, const char* label) 
 	state.haltedUntilIrq = requireBool(requireField(object, "haltedUntilIrq", label), "cpuState.haltedUntilIrq");
 	state.memoryWriteBlocked = requireBool(requireField(object, "memoryWriteBlocked", label), "cpuState.memoryWriteBlocked");
 	state.memoryWriteBlockedAddress = requireU32(requireField(object, "memoryWriteBlockedAddress", label), "cpuState.memoryWriteBlockedAddress");
-	state.maskableInterruptsEnabled = requireBool(requireField(object, "maskableInterruptsEnabled", label), "cpuState.maskableInterruptsEnabled");
-	state.maskableInterruptsRestoreEnabled = requireBool(requireField(object, "maskableInterruptsRestoreEnabled", label), "cpuState.maskableInterruptsRestoreEnabled");
+	state.statusWord = requireU32(requireField(object, "statusWord", label), "cpuState.statusWord");
+	state.causeWord = requireU32(requireField(object, "causeWord", label), "cpuState.causeWord");
+	state.epcWord = requireU32(requireField(object, "epcWord", label), "cpuState.epcWord");
+	state.badAddressWord = requireU32(requireField(object, "badAddressWord", label), "cpuState.badAddressWord");
 	state.nonMaskableInterruptPending = requireBool(requireField(object, "nonMaskableInterruptPending", label), "cpuState.nonMaskableInterruptPending");
 	state.yieldRequested = requireBool(requireField(object, "yieldRequested", label), "cpuState.yieldRequested");
 	return state;

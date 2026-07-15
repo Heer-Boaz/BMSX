@@ -57,9 +57,9 @@ const GP0_READ_CONTROL = DMA_CONTROL_WRITE_INCREMENT | DMA_CONTROL_REQUEST_GX_RE
 
 function createDmaGpuFixture(): DmaGpuFixture {
 	const memory = new Memory({ systemRom: new Uint8Array(), cartRom: new Uint8Array() });
-	const cpu = new CPU(memory);
-	const scheduler = new DeviceScheduler(cpu);
 	const irq = new IrqController(memory);
+	const cpu = new CPU(memory, irq);
+	const scheduler = new DeviceScheduler(cpu);
 	const dma = new DmaController(memory, cpu, irq, scheduler);
 	const gpu = new GxGpu(memory, irq, scheduler, dma);
 	dma.reset();

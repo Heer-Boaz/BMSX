@@ -15,7 +15,7 @@
 #include "machine/runtime/save_state/codec.h"
 #include "machine/runtime/timing/index.h"
 #include "platform.h"
-#include "support/program_cart_fixture.h"
+#include "support/program_rom_fixture.h"
 
 #include <algorithm>
 #include <array>
@@ -59,8 +59,9 @@ void testLibretroSaveStateRoundTrip() {
 	bmsx::LibretroPlatform platform(bmsx::BackendType::Software, avInfo);
 	platform.setLogCallback(discardRetroLog);
 	require(platform.getStateSize() == 0u, "libretro state size should be zero before a ROM is loaded");
+	require(platform.machineManager()->loadSystemRomOwned(bmsx::test::makeMinimalProgramRom()), "libretro should load the system program ROM");
 
-	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalProgramCartRom();
+	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalProgramRom();
 	require(platform.loadRom(rom.data(), rom.size()), "libretro should load and boot a program cart ROM");
 	require(platform.machineManager()->romLoaded(), "MachineManager should mark the cart ROM loaded");
 	require(platform.machineManager()->hasRuntime(), "MachineManager should own a runtime after cart boot");
@@ -184,7 +185,8 @@ void testGpureadCodecStoresReadyBytesAndRejectsBackendPhase() {
 	retro_system_av_info avInfo{};
 	bmsx::LibretroPlatform platform(bmsx::BackendType::Software, avInfo);
 	platform.setLogCallback(discardRetroLog);
-	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalProgramCartRom();
+	require(platform.machineManager()->loadSystemRomOwned(bmsx::test::makeMinimalProgramRom()), "libretro should load the system program ROM for GPUREAD codec validation");
+	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalProgramRom();
 	require(platform.loadRom(rom.data(), rom.size()), "libretro should load a program cart ROM for GPUREAD codec validation");
 	bmsx::RuntimeSaveState ready = bmsx::captureRuntimeSaveState(platform.machineManager()->runtime());
 	bmsx::GxGpuCommandBufferState& readyReadback = ready.machineState.machine.gxGpu.commandBuffer;
@@ -242,7 +244,8 @@ void testLibretroStateEnvelopeSupportsMaximumGpuread() {
 	retro_system_av_info avInfo{};
 	bmsx::LibretroPlatform platform(bmsx::BackendType::Software, avInfo);
 	platform.setLogCallback(discardRetroLog);
-	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalProgramCartRom();
+	require(platform.machineManager()->loadSystemRomOwned(bmsx::test::makeMinimalProgramRom()), "libretro should load the system program ROM for GPUREAD envelope validation");
+	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalProgramRom();
 	require(platform.loadRom(rom.data(), rom.size()), "libretro should load a program cart ROM for GPUREAD envelope validation");
 	const size_t stateSize = platform.getStateSize();
 	bmsx::GxGpu& gpu = platform.machineManager()->runtime().machine.gxGpu;
@@ -288,7 +291,8 @@ void testLibretroTracksPublishedNativeOutputGeometry() {
 	platform.setLogCallback(discardRetroLog);
 	platform.setInputPollCallback(discardInputPoll);
 	platform.setInputStateCallback(discardInputState);
-	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalProgramCartRom();
+	require(platform.machineManager()->loadSystemRomOwned(bmsx::test::makeMinimalProgramRom()), "libretro should load the system program ROM for native geometry validation");
+	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalProgramRom();
 	require(platform.loadRom(rom.data(), rom.size()), "libretro should load a program cart ROM for native geometry validation");
 	platform.machineManager()->start();
 	platform.setPlatformPaused(true);
@@ -355,7 +359,8 @@ void testPublishedDisplayTimingAppliesAtFrameEnd() {
 	retro_system_av_info avInfo{};
 	bmsx::LibretroPlatform platform(bmsx::BackendType::Software, avInfo);
 	platform.setLogCallback(discardRetroLog);
-	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalProgramCartRom();
+	require(platform.machineManager()->loadSystemRomOwned(bmsx::test::makeMinimalProgramRom()), "libretro should load the system program ROM for published timing validation");
+	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalProgramRom();
 	require(platform.loadRom(rom.data(), rom.size()), "libretro should load a program cart ROM for published timing validation");
 	bmsx::Runtime& runtime = platform.machineManager()->runtime();
 	bmsx::applyRuntimeTiming(runtime, pal240);

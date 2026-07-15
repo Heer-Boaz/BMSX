@@ -26,6 +26,7 @@ import { RUNTIME_SAVE_STATE_WIRE_CAPACITY, decodeRuntimeSaveState, encodeRuntime
 import { decodeBinaryWithPropTable } from '../../machine/ts/common/serializer/binencoder';
 import { RUNTIME_SAVE_STATE_PROP_NAMES } from '../../machine/ts/machine/runtime/save_state/schema';
 import { BuiltinFunctionId } from '../../machine/ts/machine/cpu/cpu';
+import { CPU_STATUS_CART_ENTRY } from '../../machine/ts/machine/cpu/cop0';
 import { DMA_STATUS_BUSY } from '../../machine/ts/machine/bus/io';
 import { RAM_BASE, RAM_END } from '../../machine/ts/machine/memory/map';
 
@@ -301,8 +302,10 @@ function createRuntimeSaveState(): RuntimeSaveState {
 			haltedUntilIrq: false,
 			memoryWriteBlocked: false,
 			memoryWriteBlockedAddress: 0,
-			maskableInterruptsEnabled: true,
-			maskableInterruptsRestoreEnabled: true,
+			statusWord: CPU_STATUS_CART_ENTRY,
+			causeWord: 0,
+			epcWord: 0,
+			badAddressWord: 0,
 			nonMaskableInterruptPending: false,
 			yieldRequested: false,
 		},
@@ -368,7 +371,7 @@ test('runtime save-state codec stores READY GPUREAD bytes and rejects backend-on
 	);
 });
 
-test('runtime save-state codec preserves interrupt frame metadata', () => {
+test('runtime save-state codec preserves exception frame metadata', () => {
 	const state = createRuntimeSaveState();
 	state.cpuState.frames = [{
 		protoIndex: 3,
@@ -381,8 +384,7 @@ test('runtime save-state codec preserves interrupt frame metadata', () => {
 		top: 1,
 		captureReturns: false,
 		callSitePc: 41,
-		isInterruptFrame: true,
-		savedMaskableEnabled: false,
+		isExceptionFrame: true,
 	}];
 
 	const decoded = decodeRuntimeSaveState(encodeRuntimeSaveState(state));

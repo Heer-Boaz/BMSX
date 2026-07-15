@@ -8,6 +8,7 @@ import { CPU, OpCode, RunResult, type Program, type ProgramMetadata } from '../.
 import { disassembleProgram } from '../../machine/ts/machine/cpu/disassembler';
 import { writeInstruction, INSTRUCTION_BYTES } from '../../machine/ts/machine/cpu/instruction_format';
 import { MemoryAccessKind } from '../../machine/ts/machine/memory/access_kind';
+import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { RAM_BASE } from '../../machine/ts/machine/memory/map';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { compileLuaChunkToProgram } from '../../machine/ts/lua/compiler';
@@ -72,9 +73,9 @@ function makeDisplacedMemoryProgram(cpu: CPU): Program {
 
 test('CPU executes displaced memory load/store opcodes', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
-	const cpu = new CPU(memory);
+	const cpu = new CPU(memory, new IrqController(memory));
 	const metadata = makeMetadata(10);
-	cpu.setProgram(makeDisplacedMemoryProgram(cpu), metadata, metadata);
+	cpu.setProgram(makeDisplacedMemoryProgram(cpu), metadata, metadata, 0, 0, 0);
 	cpu.start(0);
 
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);

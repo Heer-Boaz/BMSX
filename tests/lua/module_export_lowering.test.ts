@@ -8,6 +8,7 @@ import { LuaParser } from '../../machine/ts/lua/syntax/parser';
 import type { OptimizationLevel } from '../../machine/ts/lua/compiler/optimizer';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { disassembleProgram } from '../../machine/ts/machine/cpu/disassembler';
+import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import type { ProgramConstReloc } from '../../machine/ts/machine/program/loader';
 import { appendLuaChunkToProgram, compileLuaChunkToProgram, encodeCompiledProgramImage, type CompiledProgram } from '../../machine/ts/lua/compiler';
@@ -112,8 +113,9 @@ test('module export functions call sibling exports through link symbols', () => 
 	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'foo__twice'), true);
 	assert.match(compiled.disasm, /\bNEWT\b/, 'module table remains available for normal module-root consumers');
 	const image = encodeCompiledProgramImage(compiled.compiled);
-	const cpu = new CPU(new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) }));
-	cpu.setProgram(inflateExecutableProgramImage(image), image.link.symbols, compiled.compiled.metadata);
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+	const cpu = new CPU(memory, new IrqController(memory));
+	cpu.setProgram(inflateExecutableProgramImage(image), image.link.symbols, compiled.compiled.metadata, 0, 0, 0);
 	cpu.start(image.vectors.sectionInitProtoIndex);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	cpu.start(image.vectors.resetProtoIndex);
@@ -170,8 +172,9 @@ test('dynamic module function value reads use module slots, not export-proto rel
 	}
 	assert.equal(hasModuleFunctionReloc, true, 'function value read must target the runtime export slot');
 	const image = encodeCompiledProgramImage(compiled.compiled);
-	const cpu = new CPU(new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) }));
-	cpu.setProgram(inflateExecutableProgramImage(image), image.link.symbols, compiled.compiled.metadata);
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+	const cpu = new CPU(memory, new IrqController(memory));
+	cpu.setProgram(inflateExecutableProgramImage(image), image.link.symbols, compiled.compiled.metadata, 0, 0, 0);
 	cpu.start(image.vectors.sectionInitProtoIndex);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	runStaticModuleInitializers(cpu, compiled.compiled);
@@ -194,8 +197,9 @@ test('optimizer preserves a sibling closure upvalue environment', () => {
 	].join('\n');
 	const { compiled } = compileWithModule('local api<const> = require("foo")\nreturn api.apply(41)', 'foo', moduleSource, [], 3);
 	const image = encodeCompiledProgramImage(compiled);
-	const cpu = new CPU(new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) }));
-	cpu.setProgram(inflateExecutableProgramImage(image), image.link.symbols, compiled.metadata);
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+	const cpu = new CPU(memory, new IrqController(memory));
+	cpu.setProgram(inflateExecutableProgramImage(image), image.link.symbols, compiled.metadata, 0, 0, 0);
 	cpu.start(image.vectors.sectionInitProtoIndex);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	runStaticModuleInitializers(cpu, compiled);
@@ -244,8 +248,9 @@ test('dynamic root-function modules remain runtime values', () => {
 	}
 	assert.equal(hasRootModuleReloc, true, 'const local require must read the root function value from the export slot');
 	const image = encodeCompiledProgramImage(compiled);
-	const cpu = new CPU(new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) }));
-	cpu.setProgram(inflateExecutableProgramImage(image), image.link.symbols, compiled.metadata);
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+	const cpu = new CPU(memory, new IrqController(memory));
+	cpu.setProgram(inflateExecutableProgramImage(image), image.link.symbols, compiled.metadata, 0, 0, 0);
 	cpu.start(image.vectors.sectionInitProtoIndex);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	runStaticModuleInitializers(cpu, compiled);
@@ -265,8 +270,9 @@ test('host-eval append resolves installed module roots from the program image', 
 	const source = 'local inc<const> = require("foo")\nreturn inc(9)';
 	const appended = appendLuaChunkToProgram(baseProgram, compiled.metadata, parseSource(source, 'host_eval.lua'), { entrySource: source });
 	resolveRuntimeProgramRelocations(appended.program, appended.metadata, appended.constRelocs);
-	const cpu = new CPU(new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) }));
-	cpu.setProgram(appended.program, appended.metadata, appended.metadata);
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+	const cpu = new CPU(memory, new IrqController(memory));
+	cpu.setProgram(appended.program, appended.metadata, appended.metadata, 0, 0, 0);
 	cpu.start(image.vectors.sectionInitProtoIndex);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	runStaticModuleInitializers(cpu, compiled);

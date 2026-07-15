@@ -326,65 +326,6 @@ bool MachineManager::loadSystemRomInternal(const u8* data, size_t size) {
 	return true;
 }
 
-Runtime& MachineManager::prepareRuntimeForActiveCart(const ResolvedRuntimeTiming& timing) {
-	Runtime& runtime = ensureRuntime(RuntimeOptions{
-		{ m_system_rom_data, m_system_rom_size },
-		{ m_cart_rom_data, m_cart_rom_size },
-		timing.gpuDisplayModeWord,
-		timing.ufpsScaled,
-		timing.cpuHz,
-		timing.cycleBudgetPerFrame,
-		timing.vblankCycles,
-		timing.dmaWordsPerSec,
-		timing.geoWorkUnitsPerSec,
-	});
-	applyRuntimeTiming(runtime, timing);
-	syncAudioTiming();
-	return runtime;
-}
-
-void MachineManager::bootRuntimeFromProgram() {
-	if (!activeRom().hasProgram()) {
-		return;
-	}
-	RuntimeRomPackage& romPackage = activeRom();
-	const ResolvedRuntimeTiming timing = resolveRuntimeTiming(PSX_MACHINE_SPEC.cpuFreqHz, GX_GPU_RESET_DISPLAY_MODE_WORD);
-	Runtime& rt = ensureRuntime(RuntimeOptions{
-		{ m_system_rom_data, m_system_rom_size },
-		{ m_cart_rom_data, m_cart_rom_size },
-		timing.gpuDisplayModeWord,
-		timing.ufpsScaled,
-		timing.cpuHz,
-		timing.cycleBudgetPerFrame,
-		timing.vblankCycles,
-		timing.dmaWordsPerSec,
-		timing.geoWorkUnitsPerSec,
-	});
-	applyRuntimeTiming(rt, timing);
-	syncAudioTiming();
-	rt.resetRuntimeForProgramReload();
-	m_screen.reset();
-	refreshRenderSurfaces();
-	LoadedProgramImages cartImages = loadProgramImagesFromRom(romPackage, m_cart_rom_data);
-	if (m_system_rom_loaded && m_system_rom.hasProgram()) {
-		LoadedProgramImages systemImages = loadProgramImagesFromRom(m_system_rom, m_system_rom_data);
-		auto linked = linkBootProgramImages(
-			*systemImages.image,
-			systemImages.metadata.get(),
-			*cartImages.image,
-			cartImages.metadata.get(),
-			ProgramBootTarget::Cart
-		);
-		rt.enterCartProgram();
-		rt.bootLinkedProgramImage(std::move(linked));
-		flushRuntimeLuaOutput(rt);
-		return;
-	}
-	rt.enterCartProgram();
-	rt.boot(*cartImages.image, std::move(cartImages.metadata), cartImages.image->vectors, PROGRAM_STATIC_RAM_BASE, PROGRAM_STATIC_RAM_BASE + static_cast<uint32_t>(cartImages.image->sections.data.bytes.size()), std::span<const std::string>{}, cartImages.image->sections.rodata.staticModulePaths);
-	flushRuntimeLuaOutput(rt);
-}
-
 bool MachineManager::bootSystemStartupProgram(const MachineManifest& runtimeMachine) {
 	if (!m_system_rom_loaded) return false;
 	if (!m_system_rom.hasProgram()) return false;
@@ -424,7 +365,7 @@ bool MachineManager::bootSystemStartupProgram(const MachineManifest& runtimeMach
 		);
 		rt.bootLinkedProgramImage(std::move(linked));
 	} else {
-		rt.boot(*systemImages.image, std::move(systemImages.metadata), systemImages.image->vectors, PROGRAM_STATIC_RAM_BASE, PROGRAM_STATIC_RAM_BASE + static_cast<uint32_t>(systemImages.image->sections.data.bytes.size()), systemImages.image->sections.rodata.staticModulePaths, std::span<const std::string>{});
+		rt.boot(*systemImages.image, std::move(systemImages.metadata), systemImages.image->vectors, systemImages.image->vectors, systemImages.image->vectors, PROGRAM_STATIC_RAM_BASE, PROGRAM_STATIC_RAM_BASE + static_cast<uint32_t>(systemImages.image->sections.data.bytes.size()), systemImages.image->sections.rodata.staticModulePaths, std::span<const std::string>{});
 	}
 	flushRuntimeLuaOutput(rt);
 	return true;
@@ -443,21 +384,11 @@ bool MachineManager::loadRomInternal(const u8* data, size_t size) {
 	const MachineManifest& cartMachine = m_cart_rom.machine;
 	configureViewForGpuReset();
 
-	const bool hasSystemProgram = m_system_rom_loaded
-		&& m_system_rom.hasProgram();
-	if (hasSystemProgram) {
-		if (!bootSystemStartupProgram(cartMachine)) {
-			return false;
-		}
-	} else {
-		activateCartRom();
-		setMachineManifest(cartMachine);
-		configureRuntimeMemoryMap();
-		const ResolvedRuntimeTiming timing = resolveRuntimeTiming(PSX_MACHINE_SPEC.cpuFreqHz, GX_GPU_RESET_DISPLAY_MODE_WORD);
-		prepareRuntimeForActiveCart(timing);
-		if (activeRom().hasProgram()) {
-			bootRuntimeFromProgram();
-		}
+	if (!m_system_rom_loaded || !m_system_rom.hasProgram()) {
+		return false;
+	}
+	if (!bootSystemStartupProgram(cartMachine)) {
+		return false;
 	}
 
 	m_rom_loaded = true;

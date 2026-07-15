@@ -101,6 +101,7 @@ export const buildBasicBlocks = (instructions: Instruction[]): Block[] => {
 				}
 				break;
 			case OpCode.RET:
+			case OpCode.RFE:
 				if (next < count) {
 					leaders.add(next);
 				}
@@ -178,6 +179,7 @@ export const buildBlockGraph = (instructions: Instruction[], blocks: Block[]): {
 		const nextNextIndex = lastIndex + 2;
 		switch (instruction.op) {
 			case OpCode.RET:
+			case OpCode.RFE:
 				break;
 			case OpCode.JMP:
 				addIndexSuccessor(blockIndex, getJumpTarget(instruction));

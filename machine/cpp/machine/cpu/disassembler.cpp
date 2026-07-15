@@ -310,6 +310,12 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 			return "CALL r" + std::to_string(decoded.a) + ", " + formatCallArgCountLiteral(decoded.b) + ", " + formatCountLiteral(decoded.c);
 		case OpCode::RET:
 			return "RET r" + std::to_string(decoded.a) + ", " + formatCountLiteral(decoded.b);
+		case OpCode::MFC0:
+			return "MFC0 r" + std::to_string(decoded.a) + ", c" + std::to_string(decoded.b);
+		case OpCode::MTC0:
+			return "MTC0 r" + std::to_string(decoded.a) + ", c" + std::to_string(decoded.b);
+		case OpCode::RFE:
+			return "RFE";
 		case OpCode::LOAD_MEM_D:
 			return "LOAD_MEM_D r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.b) + ", " + std::to_string(decoded.c) + ", " + std::to_string(decoded.disp << 2);
 		case OpCode::STORE_MEM_D:
@@ -322,9 +328,6 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 			return "STORE_MEM r" + std::to_string(decoded.a) + ", " + formatRKOperand(program, static_cast<uint32_t>(decoded.b), decoded.rkBitsB);
 		case OpCode::STORE_MEM_WORDS:
 			return "STORE_MEM_WORDS r" + std::to_string(decoded.a) + ", " + formatRKOperand(program, static_cast<uint32_t>(decoded.b), decoded.rkBitsB) + ", " + std::to_string(decoded.c);
-		case OpCode::RESERVED0:
-		case OpCode::RESERVED1:
-		case OpCode::RESERVED2:
 		case OpCode::RESERVED3:
 			return std::string(getOpcodeName(decoded.op));
 		case OpCode::HALT:
@@ -435,9 +438,11 @@ std::vector<InstructionOperandDebugInfo> buildInstructionOperands(const DecodedD
 			return {registerOperand("src", decoded.a), rkOperand("addr", program, static_cast<uint32_t>(decoded.b), decoded.rkBitsB)};
 		case OpCode::STORE_MEM_WORDS:
 			return {registerOperand("src_base", decoded.a), rkOperand("addr", program, static_cast<uint32_t>(decoded.b), decoded.rkBitsB), plainOperand("count", std::to_string(decoded.c))};
-		case OpCode::RESERVED0:
-		case OpCode::RESERVED1:
-		case OpCode::RESERVED2:
+		case OpCode::MFC0:
+			return {registerOperand("dst", decoded.a), plainOperand("cp0", "c" + std::to_string(decoded.b))};
+		case OpCode::MTC0:
+			return {registerOperand("src", decoded.a), plainOperand("cp0", "c" + std::to_string(decoded.b))};
+		case OpCode::RFE:
 		case OpCode::RESERVED3:
 			return {};
 		case OpCode::HALT:

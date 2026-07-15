@@ -76,7 +76,14 @@ export function runHostEvalChunk(runtime: Runtime, source: string): Value[] {
 		compiled.rodataBytes.byteLength,
 	);
 	resolveRuntimeProgramRelocations(compiled.program, compiled.metadata, compiled.constRelocs);
-	runtime.machine.cpu.setProgram(compiled.program, compiled.metadata, compiled.metadata);
+	runtime.machine.cpu.setProgram(
+		compiled.program,
+		compiled.metadata,
+		compiled.metadata,
+		runtime.systemVectors.irqProtoIndex,
+		runtime.cartVectors.irqProtoIndex,
+		runtime.systemVectors.exceptionProtoIndex,
+	);
 	runtime.programRuntimeSymbols = compiled.metadata;
 	if (runtime.programMetadata) {
 		runtime.programMetadata = compiled.metadata;

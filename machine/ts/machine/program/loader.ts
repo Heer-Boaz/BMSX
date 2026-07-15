@@ -49,6 +49,7 @@ export type ProgramVectorTable = {
 	resetProtoIndex: number;
 	sectionInitProtoIndex: number;
 	irqProtoIndex: number;
+	exceptionProtoIndex: number;
 };
 
 export type ProgramObjectSections = {
@@ -166,6 +167,7 @@ function decodeProgramVectorTable(value: unknown): ProgramVectorTable {
 		resetProtoIndex: requireObjectKey(vectors, 'resetProtoIndex', 'ProgramImage.vectors', 'ProgramImage.vectors.resetProtoIndex') as number,
 		sectionInitProtoIndex: requireObjectKey(vectors, 'sectionInitProtoIndex', 'ProgramImage.vectors', 'ProgramImage.vectors.sectionInitProtoIndex') as number,
 		irqProtoIndex: requireObjectKey(vectors, 'irqProtoIndex', 'ProgramImage.vectors', 'ProgramImage.vectors.irqProtoIndex') as number,
+		exceptionProtoIndex: requireObjectKey(vectors, 'exceptionProtoIndex', 'ProgramImage.vectors', 'ProgramImage.vectors.exceptionProtoIndex') as number,
 	};
 }
 

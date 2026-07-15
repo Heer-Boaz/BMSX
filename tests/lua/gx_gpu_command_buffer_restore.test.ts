@@ -16,9 +16,9 @@ import { gxGpuSoftwareVram, gxGpuSoftwareVramIndex } from '../../machine/ts/rend
 
 const GX_GPU_SOFTWARE_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD = 1023 | (511 << 10);
 const commandBufferMemory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
-const commandBufferCpu = new CPU(commandBufferMemory);
-const commandBufferScheduler = new DeviceScheduler(commandBufferCpu);
 const commandBufferIrq = new IrqController(commandBufferMemory);
+const commandBufferCpu = new CPU(commandBufferMemory, commandBufferIrq);
+const commandBufferScheduler = new DeviceScheduler(commandBufferCpu);
 const commandBufferDma = new DmaController(commandBufferMemory, commandBufferCpu, commandBufferIrq, commandBufferScheduler);
 
 function pushFillCommand(commandBuffer: GxGpuCommandBuffer): void {

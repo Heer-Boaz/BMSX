@@ -7,7 +7,8 @@ import { splitText } from '../../machine/ts/common/text_lines';
 import { LuaLexer } from '../../machine/ts/lua/syntax/lexer';
 import { LuaParser } from '../../machine/ts/lua/syntax/parser';
 import { CPU, RunResult, type ProgramMetadata } from '../../machine/ts/machine/cpu/cpu';
-import { disassembleProgram } from '../../machine/ts/machine/cpu/disassembler';
+import { disassembleProto } from '../../machine/ts/machine/cpu/disassembler';
+import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { appendLuaChunkToProgram, compileLuaChunkToProgram, encodeCompiledProgramImage, type CompiledProgram } from '../../machine/ts/lua/compiler';
 import type { ProgramImage } from '../../machine/ts/machine/program/loader';
@@ -46,8 +47,9 @@ function compileWithModule(entrySource: string, modulePath: string, moduleSource
 }
 
 function runColdImage(image: ProgramImage, metadata: ProgramMetadata | null) {
-	const cpu = new CPU(new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) }));
-	cpu.setProgram(inflateExecutableProgramImage(image), image.link.symbols, metadata);
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+	const cpu = new CPU(memory, new IrqController(memory));
+	cpu.setProgram(inflateExecutableProgramImage(image), image.link.symbols, metadata, 0, 0, 0);
 	cpu.start(image.vectors.sectionInitProtoIndex);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	cpu.start(image.vectors.resetProtoIndex);
@@ -60,11 +62,11 @@ function runColdCompiled(compiled: CompiledProgram) {
 	return runColdImage(image, compiled.metadata);
 }
 
-function disassembleWithoutBootVectors(compiled: CompiledProgram): string {
-	return disassembleProgram(compiled.program, compiled.metadata, { showProtoHeaders: true })
-		.split('\n\n')
-		.filter(block => !block.includes('/irq entry=') && !block.includes('/section_init entry='))
-		.join('\n\n');
+function disassembleConstExport(compiled: CompiledProgram, slotName: string): string {
+	const protoId = compiled.metadata.exportProtoIdBySlot[slotName];
+	const protoIndex = compiled.metadata.protoIds.indexOf(protoId);
+	assert.notEqual(protoIndex, -1);
+	return disassembleProto(compiled.program, protoIndex, compiled.metadata, { showProtoHeaders: true });
 }
 
 test('rect_overlaps compiles as a const function module and calls through export-proto', () => {
@@ -77,7 +79,7 @@ return rect_overlaps(0, 0, 10, 10, 5, 5, 1, 1), rect_overlaps(0, 0, 2, 2, 3, 3, 
 	assert.equal(compiled.moduleProtoMap.has(RECT_OVERLAPS_PATH), false);
 	assert.equal(compiled.metadata.exportProtoIdBySlot.bios__util__rect_overlaps?.includes('/static:'), true);
 	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'bios__util__rect_overlaps'), true);
-	const disasm = disassembleWithoutBootVectors(compiled);
+	const disasm = disassembleConstExport(compiled, 'bios__util__rect_overlaps');
 	assert.doesNotMatch(disasm, STATIC_FORBIDDEN_OPCODE_PATTERN);
 	assert.deepEqual(runColdCompiled(compiled), [true, false]);
 });
@@ -92,7 +94,7 @@ return clamp(-2, 0, 10), clamp(7, 0, 10), clamp(12, 0, 10)
 	assert.equal(compiled.moduleProtoMap.has(CLAMP_PATH), false);
 	assert.equal(compiled.metadata.exportProtoIdBySlot.bios__util__clamp?.includes('/static:'), true);
 	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'bios__util__clamp'), true);
-	const disasm = disassembleWithoutBootVectors(compiled);
+	const disasm = disassembleConstExport(compiled, 'bios__util__clamp');
 	assert.doesNotMatch(disasm, STATIC_FORBIDDEN_OPCODE_PATTERN);
 	assert.deepEqual(runColdCompiled(compiled), [0, 7, 10]);
 });
@@ -148,7 +150,7 @@ return round_to_nearest(1.4), round_to_nearest(1.6), round_to_nearest(-1.4), rou
 		assert.equal(compiled.moduleProtoMap.has(testCase.path), false);
 		assert.equal(compiled.metadata.exportProtoIdBySlot[slotName]?.includes('/static:'), true);
 		assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === slotName), true);
-		const disasm = disassembleWithoutBootVectors(compiled);
+		const disasm = disassembleConstExport(compiled, slotName);
 		assert.doesNotMatch(disasm, STATIC_FORBIDDEN_OPCODE_PATTERN);
 		assert.deepEqual(runColdCompiled(compiled), testCase.expected);
 	}
@@ -183,7 +185,7 @@ return s0, c0, s90, c90, s180, c180, s270, c270, s360, c360, s45, c45, sn45, cn4
 	for (let index = 0; index < expectedQuarter.length; index += 1) {
 		assert.equal(readLE32(image.sections.rodata.bytes, index * 4), expectedQuarter[index] >>> 0);
 	}
-	const disasm = disassembleWithoutBootVectors(compiled);
+	const disasm = disassembleConstExport(compiled, slotName);
 	assert.doesNotMatch(disasm, STATIC_FORBIDDEN_OPCODE_PATTERN);
 	assert.deepEqual(runColdImage(image, compiled.metadata), [
 		0, 65536,
@@ -214,7 +216,7 @@ return sincos_turn32(0)
 	const compiled = compileWithModule(entrySource, SINCOS_TURN32_PATH, moduleSource, 3);
 	const slotName = 'bios__util__sincos_turn32';
 	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === slotName), true);
-	const disasm = disassembleWithoutBootVectors(compiled);
+	const disasm = disassembleConstExport(compiled, slotName);
 	assert.doesNotMatch(disasm, /\bGETGL\b|\bGETFIELD\b/);
 	assert.deepEqual(runColdCompiled(compiled), [0, 65536]);
 });
@@ -292,8 +294,9 @@ return clamp(12, 0, 10)
 `;
 	const appended = appendLuaChunkToProgram(baseProgram, systemCompiled.metadata, parseSource(source, 'cart.lua'), { entrySource: source });
 	resolveRuntimeProgramRelocations(appended.program, appended.metadata, appended.constRelocs);
-	const cpu = new CPU(new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) }));
-	cpu.setProgram(appended.program, appended.metadata, appended.metadata);
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+	const cpu = new CPU(memory, new IrqController(memory));
+	cpu.setProgram(appended.program, appended.metadata, appended.metadata, 0, 0, 0);
 	cpu.start(appended.entryProtoIndex);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	assert.deepEqual(Array.from(cpu.lastReturnValues), [10]);
@@ -331,8 +334,9 @@ return api.math.clamp(12, 0, 10)
 `;
 	const appended = appendLuaChunkToProgram(baseProgram, systemCompiled.metadata, parseSource(callSource, 'cart.lua'), { entrySource: callSource });
 	resolveRuntimeProgramRelocations(appended.program, appended.metadata, appended.constRelocs);
-	const cpu = new CPU(new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) }));
-	cpu.setProgram(appended.program, appended.metadata, appended.metadata);
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+	const cpu = new CPU(memory, new IrqController(memory));
+	cpu.setProgram(appended.program, appended.metadata, appended.metadata, 0, 0, 0);
 	cpu.start(appended.entryProtoIndex);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	assert.deepEqual(Array.from(cpu.lastReturnValues), [10]);

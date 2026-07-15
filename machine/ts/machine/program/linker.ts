@@ -57,6 +57,7 @@ export type LinkedBootProgramImage = {
 	dataBaseAddress: number;
 	bssBaseAddress: number;
 	systemStaticModulePaths: ReadonlyArray<string>;
+	systemVectors: ProgramVectorTable;
 	cartVectors: ProgramVectorTable;
 	cartDataBaseAddress: number;
 	cartBssBaseAddress: number;
@@ -962,6 +963,7 @@ export const linkProgramImages = (
 		resetProtoIndex: cartImage.vectors.resetProtoIndex + baseProtoCount,
 		sectionInitProtoIndex: cartImage.vectors.sectionInitProtoIndex + baseProtoCount,
 		irqProtoIndex: cartImage.vectors.irqProtoIndex + baseProtoCount,
+		exceptionProtoIndex: cartImage.vectors.exceptionProtoIndex + baseProtoCount,
 	};
 	const metadata = mergeMetadata(
 		systemSymbols,
@@ -1038,6 +1040,7 @@ export const linkBootProgramImages = (
 		dataBaseAddress,
 		bssBaseAddress,
 		systemStaticModulePaths: linked.systemStaticModulePaths,
+		systemVectors: linked.systemVectors,
 		cartVectors: linked.cartVectors,
 		cartDataBaseAddress: linked.cartDataBaseAddress,
 		cartBssBaseAddress: linked.cartBssBaseAddress,

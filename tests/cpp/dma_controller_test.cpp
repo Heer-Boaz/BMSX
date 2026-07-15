@@ -25,17 +25,17 @@ constexpr uint32_t GP0_READ_CONTROL = bmsx::DMA_CONTROL_WRITE_INCREMENT | bmsx::
 struct DmaGpuHarness {
 	std::array<uint8_t, 1> emptyRom{{0}};
 	bmsx::Memory memory;
+	bmsx::IrqController irq;
 	bmsx::CPU cpu;
 	bmsx::DeviceScheduler scheduler;
-	bmsx::IrqController irq;
 	bmsx::DmaController dma;
 	bmsx::GxGpu gpu;
 
 	DmaGpuHarness()
 		: memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, { emptyRom.data(), 0u } })
-		, cpu(memory)
-		, scheduler(cpu)
 		, irq(memory)
+		, cpu(memory, irq)
+		, scheduler(cpu)
 		, dma(memory, cpu, irq, scheduler)
 		, gpu(memory, irq, scheduler, dma) {
 		dma.reset();

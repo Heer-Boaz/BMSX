@@ -68,7 +68,7 @@ public:
 	/**
 	 * Boot the runtime with a compiled program.
 	 */
-	void boot(const ProgramImage& image, std::unique_ptr<ProgramMetadata> metadata, ProgramVectorTable vectors, uint32_t dataBaseAddress, uint32_t bssBaseAddress, std::span<const std::string> systemStaticModulePaths, std::span<const std::string> cartStaticModulePaths);
+	void boot(const ProgramImage& image, std::unique_ptr<ProgramMetadata> metadata, ProgramVectorTable vectors, ProgramVectorTable systemVectors, ProgramVectorTable cartVectors, uint32_t dataBaseAddress, uint32_t bssBaseAddress, std::span<const std::string> systemStaticModulePaths, std::span<const std::string> cartStaticModulePaths);
 	void bootLinkedProgramImage(LinkedBootProgramImage&& linked);
 	void handleLuaError(const std::string& message);
 
@@ -142,6 +142,7 @@ private:
 	void clearLuaBootPrimitives();
 	void setLinkedCartProgram(ProgramVectorTable vectors, uint32_t programDataBaseAddress, uint32_t programBssBaseAddress, uint32_t cartDataBaseAddress, uint32_t cartBssBaseAddress, std::vector<std::string> staticModulePaths);
 	void runStaticModuleInitializers(std::span<const std::string> paths);
+	void runSectionInitializer(int protoIndex, u32 statusWord);
 	void runStaticModuleInitializer(const std::string& path);
 	auto valueToString(const Value& value) const -> std::string;
 	void logDebugState() const;
@@ -166,6 +167,7 @@ private:
 	std::unique_ptr<ProgramMetadata> m_programMetadataStorage;
 	ProgramMetadata* m_programMetadata = nullptr;
 
+	ProgramVectorTable m_systemVectors;
 	ProgramVectorTable m_cartVectors;
 	uint32_t m_programDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
 	uint32_t m_programBssBaseAddress = PROGRAM_STATIC_RAM_BASE;

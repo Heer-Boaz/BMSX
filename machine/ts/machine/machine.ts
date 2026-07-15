@@ -44,9 +44,9 @@ export class Machine {
 		public readonly memory: Memory,
 		input: InputControllerInputSource,
 	) {
-		this.cpu = new CPU(this.memory);
-		this.scheduler = new DeviceScheduler(this.cpu);
 		this.irqController = new IrqController(this.memory);
+		this.cpu = new CPU(this.memory, this.irqController);
+		this.scheduler = new DeviceScheduler(this.cpu);
 		this.audioOutput = new ApuOutputMixer();
 		this.audioController = new AudioController(this.memory, this.audioOutput, this.irqController, this.scheduler);
 		this.dmaController = new DmaController(this.memory, this.cpu, this.irqController, this.scheduler);

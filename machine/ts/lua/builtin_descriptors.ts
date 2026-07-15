@@ -87,6 +87,10 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> 
 	{ name: 'mem32le', params: ['addr'], signature: 'mem32le[addr]', description: 'Reserved memory-mapped little-endian 32-bit space for direct `mem32le[addr]` reads/writes. Not a first-class Lua value.' },
 	{ name: 'memf32le', params: ['addr'], signature: 'memf32le[addr]', description: 'Reserved memory-mapped little-endian 32-bit float space for direct `memf32le[addr]` reads/writes. Not a first-class Lua value. Invalid or read-only writes raise a fault.' },
 	{ name: 'memf64le', params: ['addr'], signature: 'memf64le[addr]', description: 'Reserved memory-mapped little-endian 64-bit float space for direct `memf64le[addr]` reads/writes. Not a first-class Lua value. Invalid or read-only writes raise a fault.' },
+	{ name: 'cop0.status', params: [], signature: 'cop0.status', description: 'Raw CPU STATUS control register. Supervisor code may read and write it.' },
+	{ name: 'cop0.cause', params: [], signature: 'cop0.cause', description: 'Raw read-only CPU CAUSE control register.' },
+	{ name: 'cop0.epc', params: [], signature: 'cop0.epc', description: 'Raw CPU exception program counter. Supervisor code may read and write it.' },
+	{ name: 'cop0.bad_address', params: [], signature: 'cop0.bad_address', description: 'Raw read-only CPU bad-address latch.' },
 ];
 
 const DEFAULT_LUA_BUILTIN_IDENTIFIER_EXTRAS = [

@@ -19,11 +19,9 @@ export class CpuExecutionState {
 		if (!cpu.isHaltedUntilIrq()) {
 			return tickCompleted;
 		}
-		const irqController = runtime.machine.irqController;
 		const scheduler = runtime.machine.scheduler;
-		const vectors = runtime.programVectors!;
 		while (true) {
-			if (cpu.enterPendingInterrupt(irqController, vectors.irqProtoIndex)) {
+			if (cpu.enterPendingInterrupt()) {
 				return tickCompleted;
 			}
 			if (tickCompleted) {
@@ -59,7 +57,6 @@ export class CpuExecutionState {
 		let result = RunResult.Yielded;
 		const scheduler = runtime.machine.scheduler;
 		const cpu = runtime.machine.cpu;
-		const vectors = runtime.programVectors!;
 		let tickCompleted = runDueRuntimeTimers(runtime);
 		if (tickCompleted) {
 			state.cycleBudgetRemaining = remaining;
@@ -105,7 +102,7 @@ export class CpuExecutionState {
 			}
 			scheduler.beginCpuSlice(sliceBudget);
 			try {
-				result = cpu.runUntilDepth(0, sliceBudget, runtime.machine.irqController, vectors.irqProtoIndex);
+				result = cpu.runUntilDepth(0, sliceBudget);
 			} finally {
 				scheduler.endCpuSlice();
 			}

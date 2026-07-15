@@ -138,9 +138,9 @@ function createFakeOutputVoiceState(voice: FakeVoiceInfo): ApuOutputVoiceState {
 
 function createAudioControllerHarness(audioOutput: object): { memory: Memory; audio: AudioController } {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
-	const cpu = new CPU(memory);
-	const scheduler = new DeviceScheduler(cpu);
 	const irq = new IrqController(memory);
+	const cpu = new CPU(memory, irq);
+	const scheduler = new DeviceScheduler(cpu);
 	const audio = new AudioController(memory, audioOutput as ApuOutputMixer, irq, scheduler);
 	audio.reset();
 	audio.setTiming(APU_SAMPLE_RATE_HZ, 0);

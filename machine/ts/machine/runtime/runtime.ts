@@ -1,4 +1,5 @@
 import { AcceptedInterruptKind, EMPTY_CALL_ARGS, RunResult, StringValue, type Closure, type Value, type Program, type ProgramMetadata, type ProgramRuntimeSymbols } from '../cpu/cpu';
+import { CPU_STATUS_CART_ENTRY, CPU_STATUS_SYSTEM_ENTRY } from '../cpu/cop0';
 import { clearLuaBootPrimitives, seedLuaGlobals } from '../firmware/globals';
 import type { RuntimeOptions } from './options';
 import { addTrackedLuaHeapBytes, configureLuaHeapUsage, getTrackedLuaHeapBytes, resetTrackedLuaHeapBytes } from '../memory/lua_heap_usage';
@@ -33,7 +34,7 @@ function runHaltedClosureUntilInterrupt(runtime: Runtime): number {
 	let consumed = 0;
 	let advancedDeadline = false;
 	while (cpu.isHaltedUntilIrq()) {
-		if (cpu.peekPendingInterrupt(runtime.machine.irqController) !== AcceptedInterruptKind.None) {
+		if (cpu.peekPendingInterrupt() !== AcceptedInterruptKind.None) {
 			cpu.clearHaltUntilIrq();
 			return consumed;
 		}
@@ -92,6 +93,7 @@ export class Runtime {
 	public readonly frameLoop: FrameLoopState;
 	public cartProgramStarted = false;
 	public programVectors: ProgramVectorTable | null = null;
+	public systemVectors!: ProgramVectorTable;
 	public cartVectors!: ProgramVectorTable;
 	public programDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
 	public programBssBaseAddress = PROGRAM_STATIC_RAM_BASE;
@@ -156,6 +158,8 @@ export class Runtime {
 		image: ProgramImage,
 		metadata: ProgramMetadata | null,
 		vectors: ProgramVectorTable,
+		systemVectors: ProgramVectorTable,
+		cartVectors: ProgramVectorTable,
 		dataBaseAddress: number,
 		bssBaseAddress: number,
 		systemStaticModulePaths: ReadonlyArray<string>,
@@ -165,7 +169,16 @@ export class Runtime {
 		this.programBssBaseAddress = bssBaseAddress;
 		const program = inflateExecutableProgramImage(image, dataBaseAddress, bssBaseAddress);
 		seedLuaGlobals(this);
-		this.machine.cpu.setProgram(program, image.link.symbols, metadata);
+		this.systemVectors = systemVectors;
+		this.cartVectors = cartVectors;
+		this.machine.cpu.setProgram(
+			program,
+			image.link.symbols,
+			metadata,
+			systemVectors.irqProtoIndex,
+			cartVectors.irqProtoIndex,
+			systemVectors.exceptionProtoIndex,
+		);
 		this.programRuntimeSymbols = image.link.symbols;
 		this.programMetadata = metadata;
 		this.startLoadedProgram(vectors, systemStaticModulePaths, cartStaticModulePaths);
@@ -177,6 +190,8 @@ export class Runtime {
 			linked.programImage,
 			linked.metadata,
 			linked.vectors,
+			linked.systemVectors,
+			linked.cartVectors,
 			linked.dataBaseAddress,
 			linked.bssBaseAddress,
 			linked.systemStaticModulePaths,
@@ -201,12 +216,13 @@ export class Runtime {
 
 	public startLoadedProgram(vectors: ProgramVectorTable, systemStaticModulePaths: ReadonlyArray<string>, cartStaticModulePaths: ReadonlyArray<string>): void {
 		this.programVectors = vectors;
-		this.runSectionInitializer(vectors.sectionInitProtoIndex);
+		const statusWord = this.cartProgramStarted ? CPU_STATUS_CART_ENTRY : CPU_STATUS_SYSTEM_ENTRY;
+		this.runSectionInitializer(vectors.sectionInitProtoIndex, statusWord);
 		this.runStaticModuleInitializers(systemStaticModulePaths);
 		clearLuaBootPrimitives(this);
 		this.runStaticModuleInitializers(cartStaticModulePaths);
 		this.machine.cpu.syncGlobalSlotsToTable();
-		this.machine.cpu.start(vectors.resetProtoIndex);
+		this.machine.cpu.start(vectors.resetProtoIndex, EMPTY_CALL_ARGS, statusWord);
 		this.pendingCall = 'entry';
 		this.luaInitialized = true;
 	}
@@ -251,12 +267,12 @@ export class Runtime {
 	}
 	// end repeated-sequence-acceptable
 
-	private runSectionInitializer(protoIndex: number): void {
-		const results = this.luaScratch.values.acquire();
-		try {
-			this.callClosureInto(this.machine.cpu.rootClosure(protoIndex), EMPTY_CALL_ARGS, results);
-		} finally {
-			this.luaScratch.values.release(results);
+	private runSectionInitializer(protoIndex: number, statusWord: number): void {
+		const cpu = this.machine.cpu;
+		cpu.start(protoIndex, EMPTY_CALL_ARGS, statusWord);
+		cpu.runUntilDepth(0, Number.MAX_SAFE_INTEGER);
+		if (cpu.getFrameDepth() !== 0) {
+			throw new Error('section initializer did not return.');
 		}
 	}
 

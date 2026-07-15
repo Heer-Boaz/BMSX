@@ -4,6 +4,11 @@ import { test } from 'node:test';
 import { BuiltinFunctionId, CPU, EMPTY_CALL_ARGS, Table, createBuiltinFunction, OpCode, RunResult, StringValue, type Closure, type Program, type ProgramMetadata, type Proto, type Value } from '../../machine/ts/machine/cpu/cpu';
 import { writeInstruction, INSTRUCTION_BYTES } from '../../machine/ts/machine/cpu/instruction_format';
 import { BASE_CYCLES, encodeFixedCallArgCount } from '../../machine/ts/machine/cpu/opcode_info';
+import {
+	CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE,
+	CPU_CAUSE_NMI,
+	CPU_STATUS_CART_ENTRY,
+} from '../../machine/ts/machine/cpu/cop0';
 import { IO_IRQ_MASK, IO_IRQ_FLAGS, IRQ_VBLANK } from '../../machine/ts/machine/bus/io';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Machine } from '../../machine/ts/machine/machine';
@@ -31,12 +36,12 @@ function makeProto(codeLen: number): Proto {
 	};
 }
 
-function makeMetadata(): ProgramMetadata {
+function makeMetadata(protoCount = 2): ProgramMetadata {
 	return {
-		debugRanges: [null, null],
-		protoIds: ['main', 'external'],
-		localSlotsByProto: [[], []],
-		upvalueNamesByProto: [[], []],
+		debugRanges: new Array(protoCount).fill(null),
+		protoIds: new Array(protoCount).fill(null).map((_, index) => `proto_${index}`),
+		localSlotsByProto: new Array(protoCount).fill(null).map(() => []),
+		upvalueNamesByProto: new Array(protoCount).fill(null).map(() => []),
 		globalNames: [],
 		systemGlobalNames: [],
 		exportProtoIdBySlot: {},
@@ -44,16 +49,21 @@ function makeMetadata(): ProgramMetadata {
 }
 
 function makeProgram(cpu: CPU): Program {
-	const code = new Uint8Array(2 * INSTRUCTION_BYTES);
+	const code = new Uint8Array(3 * INSTRUCTION_BYTES);
 	writeInstruction(code, 0, OpCode.HALT, 0, 0, 0, 0);
 	writeInstruction(code, 1, OpCode.RET, 0, 0, 0, 0);
+	writeInstruction(code, 2, OpCode.RFE, 0, 0, 0, 0);
 	const pool = cpu.stringPool;
 	return {
 		code,
 		programRom: code,
 		programRomTextByteLength: code.byteLength,
 		constPool: [],
-		protos: [makeProto(INSTRUCTION_BYTES), { ...makeProto(INSTRUCTION_BYTES), entryPC: INSTRUCTION_BYTES }],
+		protos: [
+			makeProto(INSTRUCTION_BYTES),
+			{ ...makeProto(INSTRUCTION_BYTES), entryPC: INSTRUCTION_BYTES },
+			{ ...makeProto(INSTRUCTION_BYTES), entryPC: 2 * INSTRUCTION_BYTES },
+		],
 		stringPool: pool,
 		constPoolStringPool: pool,
 	};
@@ -83,12 +93,14 @@ function makeSingleOpcodeProgram(cpu: CPU, op: OpCode): Program {
 	return makeInstructionProgram(cpu, [[op, 0, 0, 0, 0]]);
 }
 
-function makeCpuWithProgram(programForCpu: (cpu: CPU) => Program): { memory: Memory; cpu: CPU } {
+function makeCpuWithProgram(programForCpu: (cpu: CPU) => Program): { memory: Memory; cpu: CPU; irqController: IrqController } {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
-	const cpu = new CPU(memory);
-	const metadata = makeMetadata();
-	cpu.setProgram(programForCpu(cpu), metadata, metadata);
-	return { memory, cpu };
+	const irqController = new IrqController(memory);
+	const cpu = new CPU(memory, irqController);
+	const program = programForCpu(cpu);
+	const metadata = makeMetadata(program.protos.length);
+	cpu.setProgram(program, metadata, metadata, 0, 0, 0);
+	return { memory, cpu, irqController };
 }
 
 function makeThrowingNativeProgram(cpu: CPU, nativeFunction: Value): Program {
@@ -109,13 +121,12 @@ function makeThrowingNativeProgram(cpu: CPU, nativeFunction: Value): Program {
 	};
 }
 
-function makeRuntime(cpu: CPU, sliceStats?: { begin: number; end: number }): Runtime {
-	const irqMemory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+function makeRuntime(cpu: CPU, irqController: IrqController, sliceStats?: { begin: number; end: number }): Runtime {
 	return {
 		machine: {
 			cpu,
-			memory: irqMemory,
-			irqController: new IrqController(irqMemory),
+			memory: cpu.memory,
+			irqController,
 			scheduler: {
 				nowCycles: 0,
 				hasDueTimer: () => false,
@@ -136,7 +147,7 @@ function makeRuntime(cpu: CPU, sliceStats?: { begin: number; end: number }): Run
 		vblank: {
 			tickCompleted: false,
 		},
-		programVectors: { resetProtoIndex: 0, sectionInitProtoIndex: 0, irqProtoIndex: 0 },
+		programVectors: { resetProtoIndex: 0, sectionInitProtoIndex: 0, irqProtoIndex: 0, exceptionProtoIndex: 0 },
 		callClosureInto: Runtime.prototype.callClosureInto,
 	} as unknown as Runtime;
 }
@@ -181,9 +192,11 @@ function makeMachine(): Machine {
 
 function makeHaltFrameRuntime(): Runtime {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
-	const cpu = new CPU(memory);
-	const metadata = makeMetadata();
-	cpu.setProgram(makeProgram(cpu), metadata, metadata);
+	const irqController = new IrqController(memory);
+	const cpu = new CPU(memory, irqController);
+	const program = makeProgram(cpu);
+	const metadata = makeMetadata(program.protos.length);
+	cpu.setProgram(program, metadata, metadata, 2, 2, 2);
 	cpu.start(0);
 	const scheduler = {
 		nowCycles: 0,
@@ -196,7 +209,7 @@ function makeHaltFrameRuntime(): Runtime {
 		machine: {
 			cpu,
 			memory,
-			irqController: new IrqController(memory),
+			irqController,
 			scheduler,
 			advanceDevices: (cycles: number) => {
 				scheduler.nowCycles += cycles;
@@ -223,7 +236,8 @@ function makeHaltFrameRuntime(): Runtime {
 		programVectors: {
 			resetProtoIndex: 0,
 			sectionInitProtoIndex: 0,
-			irqProtoIndex: 1,
+			irqProtoIndex: 2,
+			exceptionProtoIndex: 2,
 		},
 		luaGate: { ready: true },
 	} as unknown as Runtime;
@@ -244,10 +258,17 @@ function makeCompiledIrqRuntime(source: string): { cpu: CPU; irqController: IrqC
 	const compiled = compileLuaChunkToProgram(parseLuaChunk(source, 'irq_vector.lua'), [], { entrySource: source });
 	const image = encodeCompiledProgramImage(compiled);
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
-	const cpu = new CPU(memory);
-	cpu.setProgram(inflateExecutableProgramImage(image), image.link.symbols, compiled.metadata);
-	cpu.start(image.vectors.resetProtoIndex);
 	const irqController = new IrqController(memory);
+	const cpu = new CPU(memory, irqController);
+	cpu.setProgram(
+		inflateExecutableProgramImage(image),
+		image.link.symbols,
+		compiled.metadata,
+		image.vectors.irqProtoIndex,
+		image.vectors.irqProtoIndex,
+		image.vectors.exceptionProtoIndex,
+	);
+	cpu.start(image.vectors.resetProtoIndex);
 	const scheduler = {
 		nowCycles: 0,
 		hasDueTimer: () => false,
@@ -264,7 +285,7 @@ function makeCompiledIrqRuntime(source: string): { cpu: CPU; irqController: IrqC
 			advanceDevices: (cycles: number) => { scheduler.nowCycles += cycles; },
 		},
 		vblank: { tickCompleted: false, beginTick: () => {}, abandonTick: () => {}, handleBeginTimer: () => {}, handleEndTimer: () => {} },
-		programVectors: { resetProtoIndex: image.vectors.resetProtoIndex, sectionInitProtoIndex: image.vectors.sectionInitProtoIndex, irqProtoIndex: image.vectors.irqProtoIndex },
+		programVectors: image.vectors,
 	} as unknown as Runtime;
 	return {
 		cpu,
@@ -272,6 +293,24 @@ function makeCompiledIrqRuntime(source: string): { cpu: CPU; irqController: IrqC
 		cpuExecution: new CpuExecutionState(runtime),
 		state: makeFrameState(),
 	};
+}
+
+function makeCompiledCpu(source: string, optLevel: 0 | 3 = 0): { cpu: CPU; irqController: IrqController; image: ReturnType<typeof encodeCompiledProgramImage> } {
+	const compiled = compileLuaChunkToProgram(parseLuaChunk(source, 'supervisor_vector.lua'), [], { entrySource: source, optLevel });
+	const image = encodeCompiledProgramImage(compiled);
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+	const irqController = new IrqController(memory);
+	const cpu = new CPU(memory, irqController);
+	cpu.setProgram(
+		inflateExecutableProgramImage(image),
+		image.link.symbols,
+		compiled.metadata,
+		image.vectors.irqProtoIndex,
+		image.vectors.irqProtoIndex,
+		image.vectors.exceptionProtoIndex,
+	);
+	cpu.start(image.vectors.resetProtoIndex);
+	return { cpu, irqController, image };
 }
 
 function runCompiledVblankIrq(source: string): { cpu: CPU; irqController: IrqController } {
@@ -296,8 +335,8 @@ function assertVblankIrqAsserted(memory: Memory, irqController: IrqController): 
 }
 
 function assertInterruptFrameActive(cpu: CPU, irqController: IrqController): void {
-	assert.deepEqual(cpu.getCallStack().map(frame => frame.protoIndex), [0, 1]);
-	assert.equal(cpu.canAcceptMaskableInterruptLine(irqController), false);
+	assert.deepEqual(cpu.getCallStack().map(frame => frame.protoIndex), [0, 2]);
+	assert.equal(cpu.canAcceptMaskableInterruptLine(), false);
 }
 
 function returnFromInterruptFrame(runtime: Runtime, state: FrameState, cpu: CPU, irqController: IrqController): void {
@@ -328,10 +367,10 @@ function callClosureInto(runtime: Runtime, fn: Closure, args: ReadonlyArray<Valu
 
 test('CPU closure calls that execute HALT without a scheduled interrupt park without host exception', () => {
 	for (const run of [callClosureInto, callClosureIntoWithScheduler]) {
-		const { cpu } = makeCpuWithProgram(makeProgram);
+		const { cpu, irqController } = makeCpuWithProgram(makeProgram);
 		const closure = cpu.rootClosure(0);
 		cpu.start(1);
-		const runtime = makeRuntime(cpu);
+		const runtime = makeRuntime(cpu, irqController);
 		const out: Value[] = [];
 		cpu.instructionBudgetRemaining = 73;
 
@@ -344,10 +383,10 @@ test('CPU closure calls that execute HALT without a scheduled interrupt park wit
 });
 
 test('host external closure calls wake from pending IRQ without vectoring', () => {
-	const { cpu } = makeCpuWithProgram(makeProgram);
+	const { cpu, irqController } = makeCpuWithProgram(makeProgram);
 	const closure = cpu.rootClosure(0);
 	cpu.start(1);
-	const runtime = makeRuntime(cpu);
+	const runtime = makeRuntime(cpu, irqController);
 	runtime.machine.irqController.raise(IRQ_VBLANK);
 	runtime.machine.memory.writeValue(IO_IRQ_MASK, IRQ_VBLANK);
 
@@ -363,37 +402,38 @@ test('host external closure calls wake from pending IRQ without vectoring', () =
 test('IRQ mask starts closed and gates pending maskable IRQs', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
 	const irq = new IrqController(memory);
-	const cpu = new CPU(memory);
+	const cpu = new CPU(memory, irq);
 	const metadata = makeMetadata();
-	cpu.setProgram(makeProgram(cpu), metadata, metadata);
+	cpu.setProgram(makeProgram(cpu), metadata, metadata, 0, 0, 0);
 	cpu.start(0);
 
 	irq.raise(IRQ_VBLANK);
 	assert.equal(memory.readIoU32(IO_IRQ_MASK), 0);
-	assert.equal(cpu.canAcceptMaskableInterruptLine(irq), false);
+	assert.equal(cpu.canAcceptMaskableInterruptLine(), false);
 
 	memory.writeValue(IO_IRQ_MASK, IRQ_VBLANK);
 	assert.equal(memory.readIoU32(IO_IRQ_MASK), IRQ_VBLANK);
-	assert.equal(cpu.canAcceptMaskableInterruptLine(irq), true);
+	assert.equal(cpu.canAcceptMaskableInterruptLine(), true);
 
 	memory.writeValue(IO_IRQ_MASK, 0);
 	assert.equal(memory.readIoU32(IO_IRQ_MASK), 0);
-	assert.equal(cpu.canAcceptMaskableInterruptLine(irq), false);
+	assert.equal(cpu.canAcceptMaskableInterruptLine(), false);
 });
 
 test('CPU closure calls continue after scheduler yield requests', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
-	const cpu = new CPU(memory);
+	const irqController = new IrqController(memory);
+	const cpu = new CPU(memory, irqController);
 	const nativeCost = 7;
 	const yieldingNative = cpu.createNativeFunction('yielding_native', () => {
 		cpu.requestYield();
 	}, { base: nativeCost, perArg: 0, perRet: 0 });
 	const metadata = makeMetadata();
-	cpu.setProgram(makeThrowingNativeProgram(cpu, yieldingNative), metadata, metadata);
+	cpu.setProgram(makeThrowingNativeProgram(cpu, yieldingNative), metadata, metadata, 0, 0, 0);
 	const closure = cpu.rootClosure(0);
 	cpu.start(1);
 	const spent = BASE_CYCLES[OpCode.LOADK] + BASE_CYCLES[OpCode.CALL] + nativeCost + BASE_CYCLES[OpCode.RET];
-	const runtime = makeRuntime(cpu);
+	const runtime = makeRuntime(cpu, irqController);
 	const out: Value[] = [];
 
 	cpu.instructionBudgetRemaining = 100;
@@ -406,17 +446,18 @@ test('CPU closure calls continue after scheduler yield requests', () => {
 
 test('CPU external closure calls that throw after executing preserve spent budget', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
-	const cpu = new CPU(memory);
+	const irqController = new IrqController(memory);
+	const cpu = new CPU(memory, irqController);
 	const nativeCost = 7;
 	const throwingNative = cpu.createNativeFunction('throwing_native', () => {
 		throw new Error('native boom');
 	}, { base: nativeCost, perArg: 0, perRet: 0 });
 	const metadata = makeMetadata();
-	cpu.setProgram(makeThrowingNativeProgram(cpu, throwingNative), metadata, metadata);
+	cpu.setProgram(makeThrowingNativeProgram(cpu, throwingNative), metadata, metadata, 0, 0, 0);
 	const closure = cpu.rootClosure(0);
 	cpu.start(1);
 	const spent = BASE_CYCLES[OpCode.LOADK] + BASE_CYCLES[OpCode.CALL] + nativeCost;
-	const directRuntime = makeRuntime(cpu);
+	const directRuntime = makeRuntime(cpu, irqController);
 	const out: Value[] = [];
 
 	cpu.instructionBudgetRemaining = 100;
@@ -428,7 +469,7 @@ test('CPU external closure calls that throw after executing preserve spent budge
 	assert.equal(cpu.getFrameDepth(), 1);
 
 	const sliceStats = { begin: 0, end: 0 };
-	const schedulerRuntime = makeRuntime(cpu, sliceStats);
+	const schedulerRuntime = makeRuntime(cpu, irqController, sliceStats);
 	cpu.instructionBudgetRemaining = 100;
 	assert.throws(
 		() => callClosureIntoWithScheduler(schedulerRuntime, closure, EMPTY_CALL_ARGS, out),
@@ -441,16 +482,17 @@ test('CPU external closure calls that throw after executing preserve spent budge
 
 test('CPU frame executor closes scheduler slice when execution throws', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
-	const cpu = new CPU(memory);
+	const irqController = new IrqController(memory);
+	const cpu = new CPU(memory, irqController);
 	const throwingNative = cpu.createNativeFunction('throwing_native', () => {
 		throw new Error('native boom');
 	}, { base: 7, perArg: 0, perRet: 0 });
 	const metadata = makeMetadata();
-	cpu.setProgram(makeThrowingNativeProgram(cpu, throwingNative), metadata, metadata);
+	cpu.setProgram(makeThrowingNativeProgram(cpu, throwingNative), metadata, metadata, 0, 0, 0);
 	cpu.start(0);
 
 	const sliceStats = { begin: 0, end: 0 };
-	const runtime = makeRuntime(cpu, sliceStats);
+	const runtime = makeRuntime(cpu, irqController, sliceStats);
 	const executor = new CpuExecutionState(runtime);
 	assert.throws(
 		() => executor.runWithBudget({
@@ -499,7 +541,7 @@ test('frame loop vectors a pending IRQ above a halted cart frame', () => {
 	assert.equal(cpu.isHaltedUntilIrq(), false);
 	assert.equal((irqController.captureState().pendingFlags & IRQ_VBLANK) === 0, true);
 	irqController.raise(IRQ_VBLANK);
-	assert.equal(cpu.canAcceptMaskableInterruptLine(irqController), true);
+	assert.equal(cpu.canAcceptMaskableInterruptLine(), true);
 });
 
 test('compiled IRQ vector dispatches through cart irq and acknowledges the device line', () => {
@@ -584,7 +626,62 @@ test('CPU save-state captured inside an interrupt frame restores and returns to 
 
 	returnFromInterruptFrame(runtime, state, cpu, irqController);
 	irqController.raise(IRQ_VBLANK);
-	assert.equal(cpu.canAcceptMaskableInterruptLine(irqController), true);
+	assert.equal(cpu.canAcceptMaskableInterruptLine(), true);
+});
+
+test('manual NMI enters the exception root above a halted cart and RFE resumes at EPC', () => {
+	const source = `
+exception_cause = 0
+exception_epc = 0
+exception_status = 0
+resumed = 0
+function exception()
+	exception_cause = cop0.cause
+	exception_epc = cop0.epc
+	exception_status = cop0.status
+end
+halt_until_irq
+resumed = 1
+`;
+	const { cpu, irqController, image } = makeCompiledCpu(source);
+	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	assert.equal(cpu.isHaltedUntilIrq(), true);
+
+	cpu.requestNonMaskableInterrupt();
+	assert.equal(cpu.enterPendingInterrupt(), true);
+	const activeState = cpu.captureRuntimeState(new Map());
+	assert.equal(activeState.causeWord, CPU_CAUSE_NMI);
+	assert.equal(activeState.statusWord, CPU_STATUS_CART_ENTRY << 2);
+	assert.equal(activeState.frames[1].protoIndex, image.vectors.exceptionProtoIndex);
+	assert.equal(activeState.frames[1].isExceptionFrame, true);
+	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+
+	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('exception_cause'))), CPU_CAUSE_NMI);
+	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('exception_epc'))), activeState.epcWord);
+	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('exception_status'))), CPU_STATUS_CART_ENTRY << 2);
+	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('resumed'))), 1);
+	assert.equal(cpu.captureRuntimeState(new Map()).statusWord, CPU_STATUS_CART_ENTRY);
+});
+
+test('user CP0 access vectors synchronously and a supervisor EPC write selects the resume instruction', () => {
+	const source = `
+fault_cause = 0
+continued = 0
+function exception()
+	fault_cause = cop0.cause
+	cop0.epc = cop0.epc + 4
+end
+fault_value = cop0.status
+continued = 1
+`;
+	for (const optLevel of [0, 3] as const) {
+		const { cpu } = makeCompiledCpu(source, optLevel);
+		assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+
+		assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('fault_cause'))), CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
+		assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('continued'))), 1);
+		assert.equal(cpu.captureRuntimeState(new Map()).statusWord, CPU_STATUS_CART_ENTRY);
+	}
 });
 
 test('CPU runtime snapshot preserves nested table object identities', () => {

@@ -8,6 +8,7 @@ import type { ProjectReferenceEnvironment } from '../../machine/ts/ide/editor/co
 import { LuaLexer } from '../../machine/ts/lua/syntax/lexer';
 import { LuaParser } from '../../machine/ts/lua/syntax/parser';
 import { CPU, RunResult, StringValue } from '../../machine/ts/machine/cpu/cpu';
+import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { compileLuaChunkToProgram } from '../../machine/ts/lua/compiler';
 import { registerLuaSourceRecord } from '../../machine/ts/lua/source_registry';
@@ -119,8 +120,9 @@ function runtimeWithPausedCpuLocal(source: string) {
 		entrySource: source,
 		optLevel: 0,
 	});
-	const cpu = new CPU(new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) }));
-	cpu.setProgram(compiled.program, compiled.metadata, compiled.metadata);
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+	const cpu = new CPU(memory, new IrqController(memory));
+	cpu.setProgram(compiled.program, compiled.metadata, compiled.metadata, 0, 0, 0);
 	cpu.start(compiled.entryProtoIndex);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
 	const record = {

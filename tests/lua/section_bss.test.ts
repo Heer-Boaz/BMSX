@@ -6,6 +6,7 @@ import { LuaLexer } from '../../machine/ts/lua/syntax/lexer';
 import { LuaParser } from '../../machine/ts/lua/syntax/parser';
 import { CPU, RunResult, type Value } from '../../machine/ts/machine/cpu/cpu';
 import { disassembleProgram } from '../../machine/ts/machine/cpu/disassembler';
+import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { PROGRAM_STATIC_RAM_BASE, PROGRAM_ROM_BASE } from '../../machine/ts/machine/memory/map';
 import { compileLuaChunkToProgram, encodeCompiledProgramImage, type CompiledProgram } from '../../machine/ts/lua/compiler';
@@ -39,8 +40,8 @@ function disassembleProgramWithoutIrqVector(compiled: CompiledProgram): string {
 
 function runColdCompiled(compiled: CompiledProgram, memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) })): { memory: Memory; values: Value[] } {
 	const image = encodeCompiledProgramImage(compiled);
-	const cpu = new CPU(memory);
-	cpu.setProgram(inflateExecutableProgramImage(image), image.link.symbols, compiled.metadata);
+	const cpu = new CPU(memory, new IrqController(memory));
+	cpu.setProgram(inflateExecutableProgramImage(image), image.link.symbols, compiled.metadata, 0, 0, 0);
 	cpu.start(image.vectors.sectionInitProtoIndex);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	cpu.start(image.vectors.resetProtoIndex);

@@ -34,6 +34,7 @@ struct LinkedBootProgramImage {
 	uint32_t dataBaseAddress = 0;
 	uint32_t bssBaseAddress = 0;
 	std::vector<std::string> systemStaticModulePaths;
+	ProgramVectorTable systemVectors;
 	ProgramVectorTable cartVectors;
 	uint32_t cartDataBaseAddress = 0;
 	uint32_t cartBssBaseAddress = 0;

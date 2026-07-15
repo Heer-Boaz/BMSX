@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import { CPU, OpCode, RunResult, type Program, type ProgramMetadata, type Proto } from '../../machine/ts/machine/cpu/cpu';
 import { collectCpuProfilerHotPcs } from '../../machine/ts/machine/cpu/profiler';
 import { writeInstruction, INSTRUCTION_BYTES } from '../../machine/ts/machine/cpu/instruction_format';
+import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 
 function makeProto(codeLen: number): Proto {
@@ -55,9 +56,9 @@ function makeMetadata(): ProgramMetadata {
 
 test('CPU profiler records opcode and PC execution counts', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
-	const cpu = new CPU(memory);
+	const cpu = new CPU(memory, new IrqController(memory));
 	const metadata = makeMetadata();
-	cpu.setProgram(makeProgram(cpu), metadata, metadata);
+	cpu.setProgram(makeProgram(cpu), metadata, metadata, 0, 0, 0);
 	cpu.setProfilerEnabled(true);
 	cpu.start(0);
 
@@ -77,9 +78,9 @@ test('CPU profiler records opcode and PC execution counts', () => {
 
 test('CPU profiler report resolves hot PCs back to opcode and source location', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
-	const cpu = new CPU(memory);
+	const cpu = new CPU(memory, new IrqController(memory));
 	const metadata = makeMetadata();
-	cpu.setProgram(makeProgram(cpu), metadata, metadata);
+	cpu.setProgram(makeProgram(cpu), metadata, metadata, 0, 0, 0);
 	cpu.setProfilerEnabled(true);
 	cpu.start(0);
 

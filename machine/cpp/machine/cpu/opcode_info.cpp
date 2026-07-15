@@ -41,8 +41,8 @@ const std::array<const char*, OPCODE_COUNT> OPCODE_NAMES{
 	"EQ",
 	"LT",
 	"LE",
-	"RESERVED0",
-	"RESERVED1",
+	"MFC0",
+	"MTC0",
 	"JMP",
 	"JMPIF",
 	"JMPIFNOT",
@@ -55,7 +55,7 @@ const std::array<const char*, OPCODE_COUNT> OPCODE_NAMES{
 	"LOAD_MEM",
 	"STORE_MEM",
 	"STORE_MEM_WORDS",
-	"RESERVED2",
+	"RFE",
 	"RESERVED3",
 	"GETSYS",
 	"SETSYS",
@@ -108,8 +108,8 @@ const std::array<u8, OPCODE_COUNT> BASE_CYCLES{
 	1u, // EQ
 	1u, // LT
 	1u, // LE
-	1u, // RESERVED0
-	1u, // RESERVED1
+	1u, // MFC0
+	1u, // MTC0
 	1u, // JMP
 	1u, // JMPIF
 	1u, // JMPIFNOT
@@ -122,7 +122,7 @@ const std::array<u8, OPCODE_COUNT> BASE_CYCLES{
 	2u, // LOAD_MEM
 	2u, // STORE_MEM
 	2u, // STORE_MEM_WORDS
-	1u, // RESERVED2
+	1u, // RFE
 	1u, // RESERVED3
 	1u, // GETSYS
 	2u, // SETSYS
@@ -175,8 +175,8 @@ const std::array<u8, OPCODE_COUNT> OPCODE_USES_BX{
 	0u, // EQ
 	0u, // LT
 	0u, // LE
-	0u, // RESERVED0
-	0u, // RESERVED1
+	0u, // MFC0
+	0u, // MTC0
 	1u, // JMP
 	1u, // JMPIF
 	1u, // JMPIFNOT
@@ -189,7 +189,7 @@ const std::array<u8, OPCODE_COUNT> OPCODE_USES_BX{
 	0u, // LOAD_MEM
 	0u, // STORE_MEM
 	0u, // STORE_MEM_WORDS
-	0u, // RESERVED2
+	0u, // RFE
 	0u, // RESERVED3
 	1u, // GETSYS
 	1u, // SETSYS
@@ -242,8 +242,8 @@ const std::array<u8, OPCODE_COUNT> OPCODE_USES_DISP{
 	0u, // EQ
 	0u, // LT
 	0u, // LE
-	0u, // RESERVED0
-	0u, // RESERVED1
+	0u, // MFC0
+	0u, // MTC0
 	0u, // JMP
 	0u, // JMPIF
 	0u, // JMPIFNOT
@@ -256,7 +256,7 @@ const std::array<u8, OPCODE_COUNT> OPCODE_USES_DISP{
 	0u, // LOAD_MEM
 	0u, // STORE_MEM
 	0u, // STORE_MEM_WORDS
-	0u, // RESERVED2
+	0u, // RFE
 	0u, // RESERVED3
 	0u, // GETSYS
 	0u, // SETSYS
@@ -309,8 +309,8 @@ const std::array<const char*, OPCODE_COUNT> OPCODE_CATEGORY{
 	"comparison",
 	"comparison",
 	"comparison",
-	"reserved",
-	"reserved",
+	"system control",
+	"system control",
 	"branch/jump",
 	"branch/jump",
 	"branch/jump",
@@ -323,7 +323,7 @@ const std::array<const char*, OPCODE_COUNT> OPCODE_CATEGORY{
 	"memory I/O",
 	"memory I/O",
 	"memory I/O",
-	"reserved",
+	"system control",
 	"reserved",
 	"global/sys access",
 	"global/sys access",

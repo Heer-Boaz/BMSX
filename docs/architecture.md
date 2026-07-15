@@ -658,26 +658,26 @@ ABI values; they are documented constants, not runtime-injected Lua globals.
 Cart and firmware code that tests or acknowledges them defines the constants it
 uses.
 
-Program images also carry an `irqProtoIndex` vector. On a guest-domain
-`HALT` or guest instruction boundary, an asserted unmasked maskable IRQ line
-makes the CPU push that handler proto as an interrupt frame above the
-interrupted cart frame. The handler runs as normal CPU bytecode and returns
-with `RET`; interrupt-frame return restores the previous maskable-enabled state
-and resumes the interrupted frame without copying return values. Host/debugger
-closure calls may wake from a pending IRQ, but they do not consume or vector it.
-NMI has no producer today and is not part of the vector table.
+Program images carry `irqProtoIndex` and `exceptionProtoIndex` vectors. On a
+guest-domain `HALT` or guest instruction boundary, an asserted unmasked
+maskable IRQ line makes the CPU push the selected generated IRQ root above the
+interrupted frame. That root calls the program's `irq(flags)` handler and ends
+in `RFE`; an ordinary Lua return only returns to the root. Host/debugger closure
+calls may wake from a pending IRQ, but they do not consume or vector it. The NMI
+line and system exception vector exist at the CPU boundary; a physical input
+producer remains part of `BIOS-TERM-01`.
 
 The cart-facing IRQ gate is `IRQ_MASK`, a per-source bitmask with the same bit
 layout as `IRQ_FLAGS`. It resets to `0`, so cold boot starts with no source
 vectoring. Firmware and carts unmask only the sources they handle asynchronously.
 The boot ROM masks all sources again immediately before handing control to a
 cart, so firmware-owned mask bits never leak into the cart reset vector.
-The CPU's global maskable-enable state is internal handler serialization: it
-starts enabled, is disabled atomically when a maskable interrupt frame is pushed,
-and is restored from that frame on `RET`. A line vectors when both layers allow it:
-the internal enable is set and `(IRQ_FLAGS & IRQ_MASK) != 0`. A pending source
-is accepted at the first guest instruction boundary after its mask bit is
-written, with no delayed-EI extra instruction.
+The CPU-wide maskable gate is raw `STATUS.IEc`. Exception entry pushes the
+`STATUS` mode stack and clears current interrupt enable; `RFE` restores the
+previous pair. A line vectors when both layers allow it: `STATUS.IEc` is set and
+`(IRQ_FLAGS & IRQ_MASK) != 0`. A pending source is accepted at the first guest
+instruction boundary after its mask bit is written, with no delayed-EI extra
+instruction.
 
 The compiler-generated IRQ vector reads `IRQ_FLAGS` and calls the program's
 global `irq(flags)` handler when bits are pending. The shipped handler belongs
@@ -707,32 +707,90 @@ hardware interrupt-storm semantics rather than being discarded by the emulator.
 | `IRQ_APU` | `0x0020` | APU voice event. |
 | `IRQ_GPU` | `0x0040` | Rising edge of the GX-GPU GP0 interrupt-request source. |
 
-### Planned supervisor exceptions and BIOS terminal
+### Supervisor exceptions and planned BIOS terminal
 
-The planned BIOS terminal is machine firmware, not a permanent host overlay.
-This boundary is not implemented yet; `CPU-SUP-01` and `BIOS-TERM-01` in the
-open-slice matrix track it. The first version deliberately uses a compact
-R3000-style exception model without an MMU, MPU, protected heap, or
-supervisor-only RAM.
+The CPU supervisor exception foundation is implemented. The BIOS terminal is
+still planned machine firmware, not a permanent host overlay; `BIOS-TERM-01`
+in the open-slice matrix tracks that remaining boundary. The first version
+deliberately uses a compact R3000-style exception model without an MMU, MPU,
+protected heap, or supervisor-only RAM.
 
-The CPU will own current and previous privilege/interrupt state, `CAUSE`,
-`EPC`, and `BAD_ADDRESS`, a fixed system exception vector, and a privileged
-return-from-exception operation. Exception entry occurs at a guest instruction
-boundary, switches to supervisor mode, disables maskable cart IRQ entry, and
-pushes the BIOS handler above the stopped cart frames. It does not serialize,
-copy, unwind, or reconstruct the cart call stack. Manual terminal entry uses a
-physical system/NMI line; synchronous guest faults use the same supervisor
-entry with a different raw cause word. Only faults defined by the machine
-contract enter this path. Emulator invariant failures remain host failures.
+The CPU owns a compact coprocessor-0 registerfile. Guest code addresses the
+registers with CPU instructions rather than MMIO or host builtins:
 
-System and cart program vectors remain distinct after linking. User execution
-vectors maskable IRQs through the cart IRQ vector; supervisor execution uses
-the BIOS IRQ and exception vectors. The existing NMI request latch is not a
-terminal implementation by itself: the CPU must consume it into the system
-vector and preserve that state in the mirrored TS/C++ save-state contract.
-Privilege gates system vectors, exception return, and other explicitly
-privileged CPU/system-control operations; it does not make ordinary RAM
-inaccessible to carts.
+| Register | CP0 index | Meaning |
+| --- | ---: | --- |
+| `BAD_ADDRESS` | 8 | Faulting guest address; asynchronous entry leaves the previous latch value unchanged. |
+| `STATUS` | 12 | Raw privilege/interrupt stack described below. |
+| `CAUSE` | 13 | Raw exception code and asserted CPU-line bits. |
+| `EPC` | 14 | Guest byte-PC at which exception return resumes. |
+
+`MFC0` reads all four words. Supervisor code may write `STATUS` and `EPC` with
+`MTC0`; `CAUSE` and `BAD_ADDRESS` are CPU-written latches. A user-mode CP0
+access is a defined privileged-instruction guest fault. It is never a native
+callback, seeded Lua global, or parallel firmware shadow.
+
+`STATUS[5:0]` follows the R3000 current/previous/old two-bit stack:
+
+| Bit | Name | Meaning |
+| ---: | --- | --- |
+| 0 | `IEc` | Maskable interrupt enable for the current mode. |
+| 1 | `KUc` | Current privilege: `0` supervisor, `1` user. |
+| 2 | `IEp` | Previous interrupt enable. |
+| 3 | `KUp` | Previous privilege. |
+| 4 | `IEo` | Old interrupt enable. |
+| 5 | `KUo` | Old privilege. |
+
+Exception entry performs
+`STATUS = (STATUS & ~0x3f) | ((STATUS << 2) & 0x3c)`, making the current mode
+supervisor with maskable entry disabled. `RFE` performs
+`STATUS = (STATUS & ~0x0f) | ((STATUS >> 2) & 0x0f)`, then removes
+the active exception-root frame and resumes the retained frame at the current
+`EPC`. The raw `STATUS` word is the only CPU interrupt/privilege truth; no
+parallel enable/restore booleans or ordinary-`RET` restoration remain. System
+firmware starts with `IEc=1, KUc=0`; a cart starts with `IEc=1, KUc=1`.
+
+Asynchronous entry happens before the next guest instruction. It writes that
+next byte-PC to `EPC`, so an accepted interrupt after `HALT` resumes after the
+`HALT`. NMI has priority over a maskable IRQ at the same boundary. Both clear
+the CPU's halted-until-interrupt latch. Maskable IRQ entry writes exception code
+zero plus `CAUSE.IRQ=bit 10`; manual system entry writes exception code zero
+plus `CAUSE.NMI=bit 16`. The device-source bits remain in `IRQ_FLAGS`. A manual
+NMI edge is accepted only from user mode; supervisor execution inhibits and
+drops further manual edges, so opening the monitor or handling a cart IRQ cannot
+recursively open another monitor. The first synchronous cause is deliberately
+narrow:
+
+| Cause | `CAUSE.ExcCode` | `EPC` | `BAD_ADDRESS` | Resume rule |
+| --- | ---: | --- | --- | --- |
+| User execution of `MFC0`, `MTC0`, or `RFE` | 11 (`CAUSE[6:2] = 11`) | Faulting instruction | Unchanged | The handler must replace `EPC` with another instruction address before `RFE`; unchanged `EPC` retries the fault. |
+
+No other host/runtime failure is converted into this cause. Address faults and
+supervisor double-fault behavior require their own explicit table rows before
+implementation.
+
+Exception entry pushes a generated exception-root closure above the stopped
+frames. That root calls the program-owned handler and ends in `RFE`; a normal
+Lua `return` only returns from the handler to the root. `RFE` is legal only in a
+CPU-marked exception root and uses `EPC` as the authoritative resume PC. Entry
+does not serialize, copy, unwind, or reconstruct the cart call stack. Only
+faults defined by the machine contract enter this path. Emulator invariant
+failures remain host failures.
+
+System and cart program vectors remain distinct after linking. A maskable IRQ
+selects its vector from the pre-entry `KUc`: user execution uses the cart IRQ
+vector, supervisor execution uses the BIOS IRQ vector. NMI and synchronous
+faults always use the BIOS exception vector. Pending device bits are neither
+acknowledged nor reassigned by CPU entry; while the monitor runs, BIOS owns an
+explicit IRQ-mask/context switch and system handlers acknowledge only their
+sources. Machine schedulers and devices continue advancing normally. The
+existing NMI request latch is not a terminal implementation by itself: the CPU
+consumes it into the system vector and preserves the latch, raw CP0 words, and
+exception-frame state in the mirrored TS/C++ save-state contract. The physical
+F2 producer and BIOS exception handler remain part of `BIOS-TERM-01`.
+Privilege gates system vectors, CP0 writes, exception return, and other
+explicitly privileged CPU/system-control operations; it does not make ordinary
+RAM inaccessible to carts.
 
 The BIOS monitor code lives in system program ROM. Its line buffer, fixed-size
 output/history rings, and other mutable state use reserved ordinary `.bss`/RAM.

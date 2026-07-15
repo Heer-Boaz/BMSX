@@ -104,7 +104,14 @@ export function hotResumeProgramEntry(runtime: Runtime, params: { path: string; 
 	// place, so already-loaded modules run the new code without being re-required.
 	// Re-requiring would build a redundant second module generation (the heap
 	// doubling that pushed resume over the RAM budget) and discard live state.
-	runtime.machine.cpu.setProgram(program, programImage.link.symbols, compiled.metadata);
+	runtime.machine.cpu.setProgram(
+		program,
+		programImage.link.symbols,
+		compiled.metadata,
+		runtime.systemVectors.irqProtoIndex,
+		runtime.cartVectors.irqProtoIndex,
+		runtime.systemVectors.exceptionProtoIndex,
+	);
 	runtime.luaRuntimeFailed = preserveRuntimeFailure;
 	machineManager.sourceState.currentPath = binding;
 	runtime.programRuntimeSymbols = programImage.link.symbols;

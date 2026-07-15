@@ -1,4 +1,4 @@
-#include "program_cart_fixture.h"
+#include "program_rom_fixture.h"
 
 #include "machine/cpu/instruction_format.h"
 #include "machine/cpu/opcode_info.h"
@@ -15,6 +15,7 @@ ProgramImage makeMinimalProgramImage() {
 	image.vectors.resetProtoIndex = 0;
 	image.vectors.sectionInitProtoIndex = 0;
 	image.vectors.irqProtoIndex = 0;
+	image.vectors.exceptionProtoIndex = 0;
 	image.sections.text.code.resize(INSTRUCTION_BYTES);
 	writeInstruction(std::span<u8>(image.sections.text.code), 0, static_cast<u8>(OpCode::RET), 0, 0, 0);
 
@@ -41,7 +42,7 @@ MachineManifest makeMinimalMachineManifest() {
 
 } // namespace
 
-std::vector<u8> makeMinimalProgramCartRom() {
+std::vector<u8> makeMinimalProgramRom() {
 	return encodeProgramCartRom(makeMinimalCartManifest(), makeMinimalMachineManifest(), makeMinimalProgramImage());
 }
 

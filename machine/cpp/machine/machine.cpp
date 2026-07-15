@@ -7,9 +7,9 @@
 namespace bmsx {
 Machine::Machine(Memory& memoryRef, InputControllerInputSource& input)
 	: memory(memoryRef)
-	, cpu(memory)
-	, scheduler(cpu)
 	, irqController(memory)
+	, cpu(memory, irqController)
+	, scheduler(cpu)
 	, audioOutput()
 	, audioController(memory, audioOutput, irqController, scheduler)
 	, dmaController(memory, cpu, irqController, scheduler)

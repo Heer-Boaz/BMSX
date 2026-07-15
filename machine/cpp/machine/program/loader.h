@@ -123,6 +123,7 @@ struct ProgramVectorTable {
 	int resetProtoIndex = 0;
 	int sectionInitProtoIndex = 0;
 	int irqProtoIndex = 0;
+	int exceptionProtoIndex = 0;
 };
 
 struct ProgramImage {

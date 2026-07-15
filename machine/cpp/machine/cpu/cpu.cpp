@@ -926,8 +926,9 @@ CPU::NativeLocalRootsScope::~NativeLocalRootsScope() {
 	}
 }
 
-CPU::CPU(Memory& memory)
+CPU::CPU(Memory& memory, IrqController& irqController)
 	: m_memory(memory)
+	, m_irqController(irqController)
 	, m_stringPool(true)
 	, m_heap(m_stringPool) {
 	for (size_t index = 0; index < m_builtinFunctions.size(); ++index) {
@@ -1019,12 +1020,15 @@ Closure* CPU::createTrackedClosure(int protoIndex, size_t upvalueCount) {
 	return closure;
 }
 
-void CPU::setProgram(Program* program, const ProgramRuntimeSymbols& runtimeSymbols, ProgramMetadata* metadata) {
+void CPU::setProgram(Program* program, const ProgramRuntimeSymbols& runtimeSymbols, ProgramMetadata* metadata, int systemIrqProtoIndex, int cartIrqProtoIndex, int systemExceptionProtoIndex) {
 	// Keep slot-backed globals materialized in the globals table before swapping programs.
 	// SETGL/SETSYS write into the slot arrays directly, and append/reload paths rebuild the next
 	// slot layout from `globals`, so without this sync flattened module exports can fall back to nil.
 	syncGlobalSlotsToTable();
 	m_program = program;
+	m_systemIrqProtoIndex = systemIrqProtoIndex;
+	m_cartIrqProtoIndex = cartIrqProtoIndex;
+	m_systemExceptionProtoIndex = systemExceptionProtoIndex;
 	m_hardHalted = false;
 	if (m_program) {
 		m_memory.setProgramRom(m_program->programRom.data(), m_program->programRom.size(), m_program->programRomTextByteLength);
@@ -1139,7 +1143,7 @@ void CPU::decodeProgram() {
 	m_decodedPages.resize(pageCount);
 	for (DecodedInstructionPage& page : m_decodedPages) {
 		for (DecodedInstruction& decoded : page.words) {
-			decoded.op = static_cast<uint8_t>(OpCode::RESERVED0);
+			decoded.op = static_cast<uint8_t>(OpCode::RESERVED3);
 			decoded.width = 1;
 		}
 	}
@@ -1221,15 +1225,17 @@ void CPU::skipNextInstruction(CallFrame& frame) {
 	frame.pc += static_cast<int>(decoded.width) * INSTRUCTION_BYTES;
 }
 
-void CPU::start(int entryProtoIndex, NativeArgsView args) {
+void CPU::start(int entryProtoIndex, NativeArgsView args, u32 statusWord) {
 	lastReturnValues.clear();
 	clearCallStack();
 	m_haltedUntilIrq = false;
 	m_memoryWriteBlocked = false;
 	m_memoryWriteBlockedAddress = 0;
 	m_hardHalted = false;
-	m_maskableInterruptsEnabled = true;
-	m_maskableInterruptsRestoreEnabled = true;
+	m_statusWord = statusWord;
+	m_causeWord = 0u;
+	m_epcWord = 0u;
+	m_badAddressWord = 0u;
 	m_nonMaskableInterruptPending = false;
 	m_yieldRequested = false;
 	m_hostExternalCallDepth = 0;
@@ -1409,8 +1415,7 @@ CpuRuntimeState CPU::captureRuntimeState(const std::unordered_map<std::string, V
 		frameState.top = frame.top;
 		frameState.captureReturns = frame.captureReturns;
 		frameState.callSitePc = frame.callSitePc;
-		frameState.isInterruptFrame = frame.isInterruptFrame;
-		frameState.savedMaskableEnabled = frame.savedMaskableEnabled;
+		frameState.isExceptionFrame = frame.isExceptionFrame;
 		frameState.registers.reserve(static_cast<size_t>(frame.top));
 		for (int index = 0; index < frame.top; ++index) {
 			frameState.registers.push_back(captureValueState(frame.registers[static_cast<size_t>(index)]));
@@ -1436,8 +1441,10 @@ CpuRuntimeState CPU::captureRuntimeState(const std::unordered_map<std::string, V
 	state.haltedUntilIrq = m_haltedUntilIrq;
 	state.memoryWriteBlocked = m_memoryWriteBlocked;
 	state.memoryWriteBlockedAddress = m_memoryWriteBlockedAddress;
-	state.maskableInterruptsEnabled = m_maskableInterruptsEnabled;
-	state.maskableInterruptsRestoreEnabled = m_maskableInterruptsRestoreEnabled;
+	state.statusWord = m_statusWord;
+	state.causeWord = m_causeWord;
+	state.epcWord = m_epcWord;
+	state.badAddressWord = m_badAddressWord;
 	state.nonMaskableInterruptPending = m_nonMaskableInterruptPending;
 	state.yieldRequested = m_yieldRequested;
 	return state;
@@ -1581,8 +1588,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state, std::unordered_map<s
 		frame->returnCount = frameState.returnCount;
 		frame->captureReturns = frameState.captureReturns;
 		frame->callSitePc = frameState.callSitePc;
-		frame->isInterruptFrame = frameState.isInterruptFrame;
-		frame->savedMaskableEnabled = frameState.savedMaskableEnabled;
+		frame->isExceptionFrame = frameState.isExceptionFrame;
 		frame->varargBase = m_stackTop;
 		frame->varargCount = static_cast<int>(frameState.varargs.size());
 		frame->stackBase = frame->varargBase + frame->varargCount;
@@ -1634,8 +1640,10 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state, std::unordered_map<s
 	m_haltedUntilIrq = state.haltedUntilIrq;
 	m_memoryWriteBlocked = state.memoryWriteBlocked;
 	m_memoryWriteBlockedAddress = state.memoryWriteBlockedAddress;
-	m_maskableInterruptsEnabled = state.maskableInterruptsEnabled;
-	m_maskableInterruptsRestoreEnabled = state.maskableInterruptsRestoreEnabled;
+	m_statusWord = state.statusWord;
+	m_causeWord = state.causeWord;
+	m_epcWord = state.epcWord;
+	m_badAddressWord = state.badAddressWord;
 	m_nonMaskableInterruptPending = state.nonMaskableInterruptPending;
 	m_yieldRequested = state.yieldRequested;
 	collectHeap();
@@ -1928,49 +1936,58 @@ void CPU::clearHaltUntilIrq() {
 	m_yieldRequested = false;
 }
 
-void CPU::enableMaskableInterrupts() {
-	m_maskableInterruptsEnabled = true;
-	m_maskableInterruptsRestoreEnabled = true;
-}
-
-void CPU::disableMaskableInterrupts() {
-	m_maskableInterruptsEnabled = false;
-	m_maskableInterruptsRestoreEnabled = false;
-}
-
 void CPU::requestNonMaskableInterrupt() {
-	m_nonMaskableInterruptPending = true;
+	if (isUserMode()) {
+		m_nonMaskableInterruptPending = true;
+	}
 }
 
-void CPU::restoreMaskableInterruptsAfterNonMaskableInterrupt() {
-	m_maskableInterruptsEnabled = m_maskableInterruptsRestoreEnabled;
+bool CPU::canAcceptMaskableInterruptLine() const {
+	return (m_statusWord & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
+		&& m_irqController.hasAssertedMaskableInterruptLine();
 }
 
-bool CPU::canAcceptMaskableInterruptLine(const IrqController& irqController) const {
-	return m_maskableInterruptsEnabled
-		&& irqController.hasAssertedMaskableInterruptLine();
-}
-
-AcceptedInterruptKind CPU::peekPendingInterrupt(const IrqController& irqController) const {
-	if (m_nonMaskableInterruptPending) {
+AcceptedInterruptKind CPU::peekPendingInterrupt() const {
+	if (m_nonMaskableInterruptPending && isUserMode()) {
 		return AcceptedInterruptKind::NonMaskable;
 	}
-	if (canAcceptMaskableInterruptLine(irqController)) {
+	if (canAcceptMaskableInterruptLine()) {
 		return AcceptedInterruptKind::Maskable;
 	}
 	return AcceptedInterruptKind::None;
 }
 
-bool CPU::enterPendingInterrupt(const IrqController& irqController, int irqProtoIndex) {
-	if (!canAcceptMaskableInterruptLine(irqController)) {
-		return false;
+bool CPU::enterPendingInterrupt() {
+	if (m_nonMaskableInterruptPending && isUserMode()) {
+		m_nonMaskableInterruptPending = false;
+		enterAsynchronousException(m_systemExceptionProtoIndex, CPU_CAUSE_NMI);
+		return true;
 	}
-	m_maskableInterruptsEnabled = false;
+	if (canAcceptMaskableInterruptLine()) {
+		const int irqProtoIndex = isUserMode() ? m_cartIrqProtoIndex : m_systemIrqProtoIndex;
+		enterAsynchronousException(irqProtoIndex, CPU_CAUSE_IRQ);
+		return true;
+	}
+	return false;
+}
+
+void CPU::enterAsynchronousException(int protoIndex, u32 causeWord) {
+	enterException(protoIndex, causeWord, static_cast<u32>(m_frames.back()->pc));
+}
+
+void CPU::enterSynchronousException(CallFrame& interruptedFrame, u32 causeWord) {
+	interruptedFrame.pc = m_currentInstructionPc;
+	enterException(m_systemExceptionProtoIndex, causeWord, static_cast<u32>(m_currentInstructionPc));
+}
+
+void CPU::enterException(int protoIndex, u32 causeWord, u32 epcWord) {
+	m_epcWord = epcWord;
+	m_causeWord = causeWord;
+	m_statusWord = (m_statusWord & ~CPU_STATUS_MODE_STACK_MASK)
+		| ((m_statusWord << 2u) & CPU_STATUS_MODE_STACK_MASK);
 	clearHaltAfterAcceptedInterrupt();
-	CallFrame* frame = pushFrame(&rootClosure(irqProtoIndex), nullptr, 0, 0, 0, false, m_program->protos[irqProtoIndex].entryPC);
-	frame->isInterruptFrame = true;
-	frame->savedMaskableEnabled = true;
-	return true;
+	CallFrame* frame = pushFrame(&rootClosure(protoIndex), nullptr, 0, 0, 0, false, m_program->protos[protoIndex].entryPC);
+	frame->isExceptionFrame = true;
 }
 
 void CPU::enterHostExternalCall() {
@@ -1999,7 +2016,7 @@ void CPU::resumeMemoryWrite(uint32_t address) {
 	}
 }
 
-RunResult CPU::run(int instructionBudget, const IrqController* irqController, int irqProtoIndex) {
+RunResult CPU::run(int instructionBudget) {
 	instructionBudgetRemaining = instructionBudget;
 	auto& frames = m_frames;
 	CallFrame* frame = nullptr;
@@ -2040,12 +2057,12 @@ dispatch_loop_check:
 	if (instructionBudgetRemaining <= 0) {
 		return RunResult::Yielded;
 	}
-	if (irqController != nullptr
-		&& m_hostExternalCallDepth == 0
-		&& m_maskableInterruptsEnabled
-		&& irqController->hasAssertedMaskableInterruptLine()
+	if (m_hostExternalCallDepth == 0
+		&& ((m_nonMaskableInterruptPending && isUserMode())
+			|| ((m_statusWord & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
+				&& m_irqController.hasAssertedMaskableInterruptLine()))
 	) {
-		enterPendingInterrupt(*irqController, irqProtoIndex);
+		enterPendingInterrupt();
 		goto dispatch_loop_check;
 	}
 	frame = frames.back().get();
@@ -2144,7 +2161,7 @@ dispatch_continue:
 #endif
 }
 
-RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, const IrqController* irqController, int irqProtoIndex) {
+RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget) {
 	instructionBudgetRemaining = instructionBudget;
 	auto& frames = m_frames;
 	CallFrame* frame = nullptr;
@@ -2185,12 +2202,12 @@ dispatch_loop_check:
 	if (instructionBudgetRemaining <= 0) {
 		return RunResult::Yielded;
 	}
-	if (irqController != nullptr
-		&& m_hostExternalCallDepth == 0
-		&& m_maskableInterruptsEnabled
-		&& irqController->hasAssertedMaskableInterruptLine()
+	if (m_hostExternalCallDepth == 0
+		&& ((m_nonMaskableInterruptPending && isUserMode())
+			|| ((m_statusWord & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
+				&& m_irqController.hasAssertedMaskableInterruptLine()))
 	) {
-		enterPendingInterrupt(*irqController, irqProtoIndex);
+		enterPendingInterrupt();
 		goto dispatch_loop_check;
 	}
 	frame = frames.back().get();
@@ -2926,8 +2943,7 @@ void CPU::releaseFrame(std::unique_ptr<CallFrame> frame) {
 	frame->registers = nullptr;
 	frame->stackBase = 0;
 	frame->stackCapacity = 0;
-	frame->isInterruptFrame = false;
-	frame->savedMaskableEnabled = true;
+	frame->isExceptionFrame = false;
 	if (m_framePool.size() < static_cast<size_t>(MAX_POOLED_FRAMES)) {
 		m_framePool.push_back(std::move(frame));
 	}

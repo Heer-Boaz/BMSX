@@ -5,6 +5,6 @@
 
 namespace bmsx::test {
 
-std::vector<u8> makeMinimalProgramCartRom();
+std::vector<u8> makeMinimalProgramRom();
 
 } // namespace bmsx::test

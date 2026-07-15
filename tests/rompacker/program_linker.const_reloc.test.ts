@@ -14,6 +14,7 @@ import { replaceWithJump, replaceWithMov } from '../../machine/ts/lua/compiler/o
 import type { Instruction } from '../../machine/ts/lua/compiler/optimizer';
 import { SYSTEM_BASE_PC } from '../../machine/ts/machine/program/layout';
 import { Memory } from '../../machine/ts/machine/memory/memory';
+import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { PROGRAM_ROM_BASE, PROGRAM_STATIC_RAM_BASE, RAM_END } from '../../machine/ts/machine/memory/map';
 
 type EncodedWord = {
@@ -79,6 +80,7 @@ function makeProgramImage(
 			resetProtoIndex: 0,
 			sectionInitProtoIndex: 0,
 			irqProtoIndex: 0,
+			exceptionProtoIndex: 0,
 		},
 		sections: {
 			text: {
@@ -128,7 +130,7 @@ test('ProgramImage exposes text and rodata as ROM sections', () => {
 
 	const program = inflateProgram(image.sections, image.sections.rodata.constPool);
 
-	assert.deepEqual(image.vectors, { resetProtoIndex: 0, sectionInitProtoIndex: 0, irqProtoIndex: 0 });
+	assert.deepEqual(image.vectors, { resetProtoIndex: 0, sectionInitProtoIndex: 0, irqProtoIndex: 0, exceptionProtoIndex: 0 });
 	assert.equal(image.sections.text.code.length, INSTRUCTION_BYTES);
 	assert.equal(image.sections.rodata.constPool.length, 2);
 	assert.equal(image.sections.text.protos.length, 1);
@@ -154,7 +156,7 @@ test('ProgramCompiler emits a dedicated IRQ vector proto', () => {
 	}
 
 	assert.notEqual(image.vectors.irqProtoIndex, image.vectors.sectionInitProtoIndex);
-	assert.deepEqual(irqOps, [OpCode.WIDE, OpCode.LOADK, OpCode.LOAD_MEM, OpCode.K0, OpCode.EQ, OpCode.JMP, OpCode.GETGL, OpCode.MOV, OpCode.CALL, OpCode.KNIL, OpCode.RET]);
+	assert.deepEqual(irqOps, [OpCode.WIDE, OpCode.LOADK, OpCode.LOAD_MEM, OpCode.K0, OpCode.EQ, OpCode.JMP, OpCode.GETGL, OpCode.MOV, OpCode.CALL, OpCode.RFE]);
 });
 
 function makeProgramSymbols(protoId: string, instructionCount: number): ProgramSymbolsImage {
@@ -621,9 +623,9 @@ test('flattened module export slots stay in sync with compile-time require impor
 		{ entrySource },
 	);
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
-	const cpu = new CPU(memory);
+	const cpu = new CPU(memory, new IrqController(memory));
 	resolveRuntimeProgramRelocations(compiled.program, compiled.metadata, compiled.constRelocs);
-	cpu.setProgram(compiled.program, compiled.metadata, compiled.metadata);
+	cpu.setProgram(compiled.program, compiled.metadata, compiled.metadata, 0, 0, 0);
 	runStaticModuleInitializers(cpu, compiled);
 	cpu.start(compiled.entryProtoIndex);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
@@ -650,9 +652,9 @@ test('flattened module export slots survive program append swaps', () => {
 		{ entrySource },
 	);
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
-	const cpu = new CPU(memory);
+	const cpu = new CPU(memory, new IrqController(memory));
 	resolveRuntimeProgramRelocations(compiled.program, compiled.metadata, compiled.constRelocs);
-	cpu.setProgram(compiled.program, compiled.metadata, compiled.metadata);
+	cpu.setProgram(compiled.program, compiled.metadata, compiled.metadata, 0, 0, 0);
 	runStaticModuleInitializers(cpu, compiled);
 	cpu.start(compiled.entryProtoIndex);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
@@ -666,7 +668,7 @@ test('flattened module export slots survive program append swaps', () => {
 		parseChunk(hostEvalSource, 'host_eval'),
 		{ entrySource: hostEvalSource },
 	);
-	cpu.setProgram(appended.program, appended.metadata, appended.metadata);
+	cpu.setProgram(appended.program, appended.metadata, appended.metadata, 0, 0, 0);
 	assert.equal(cpu.getGlobalByKey(slotKey), 8);
 });
 
@@ -770,14 +772,14 @@ test('ProgramLinker owns linked boot vector selection', () => {
 	assert.deepEqual(systemBoot.vectors, systemImage.vectors);
 	assert.equal(systemBoot.bssBaseAddress, PROGRAM_STATIC_RAM_BASE);
 	assert.deepEqual(systemBoot.systemStaticModulePaths, ['system/init']);
-	assert.deepEqual(systemBoot.cartVectors, { resetProtoIndex: 1, sectionInitProtoIndex: 1, irqProtoIndex: 1 });
+	assert.deepEqual(systemBoot.cartVectors, { resetProtoIndex: 1, sectionInitProtoIndex: 1, irqProtoIndex: 1, exceptionProtoIndex: 1 });
 	assert.deepEqual(systemBoot.cartStaticModulePaths, ['cart/init']);
 
 	const cartLink = linkBootProgramImages(systemImage, null, cartImage, null, 'cart');
-	assert.deepEqual(cartLink.vectors, { resetProtoIndex: 1, sectionInitProtoIndex: 1, irqProtoIndex: 1 });
+	assert.deepEqual(cartLink.vectors, { resetProtoIndex: 1, sectionInitProtoIndex: 1, irqProtoIndex: 1, exceptionProtoIndex: 1 });
 	assert.equal(cartLink.bssBaseAddress, PROGRAM_STATIC_RAM_BASE);
 	assert.deepEqual(cartLink.systemStaticModulePaths, ['system/init']);
-	assert.deepEqual(cartLink.cartVectors, { resetProtoIndex: 1, sectionInitProtoIndex: 1, irqProtoIndex: 1 });
+	assert.deepEqual(cartLink.cartVectors, { resetProtoIndex: 1, sectionInitProtoIndex: 1, irqProtoIndex: 1, exceptionProtoIndex: 1 });
 	assert.deepEqual(cartLink.cartStaticModulePaths, ['cart/init']);
 });
 
@@ -856,14 +858,14 @@ test('ProgramLinker resolves .bss address constants and boot vectors', () => {
 	assert.deepEqual(linked.programImage.link.constValueRelocs, []);
 	assert.equal(linked.systemBssBaseAddress, PROGRAM_STATIC_RAM_BASE);
 	assert.equal(linked.cartBssBaseAddress, PROGRAM_STATIC_RAM_BASE + 4);
-	assert.deepEqual(linked.systemVectors, { resetProtoIndex: 0, sectionInitProtoIndex: 0, irqProtoIndex: 0 });
-	assert.deepEqual(linked.cartVectors, { resetProtoIndex: 1, sectionInitProtoIndex: 1, irqProtoIndex: 1 });
+	assert.deepEqual(linked.systemVectors, { resetProtoIndex: 0, sectionInitProtoIndex: 0, irqProtoIndex: 0, exceptionProtoIndex: 0 });
+	assert.deepEqual(linked.cartVectors, { resetProtoIndex: 1, sectionInitProtoIndex: 1, irqProtoIndex: 1, exceptionProtoIndex: 1 });
 
 	const systemBoot = linkBootProgramImages(systemImage, null, cartImage, null, 'system');
-	assert.deepEqual(systemBoot.vectors, { resetProtoIndex: 0, sectionInitProtoIndex: 0, irqProtoIndex: 0 });
+	assert.deepEqual(systemBoot.vectors, { resetProtoIndex: 0, sectionInitProtoIndex: 0, irqProtoIndex: 0, exceptionProtoIndex: 0 });
 	assert.equal(systemBoot.bssBaseAddress, PROGRAM_STATIC_RAM_BASE);
 	const cartLink = linkBootProgramImages(systemImage, null, cartImage, null, 'cart');
-	assert.deepEqual(cartLink.vectors, { resetProtoIndex: 1, sectionInitProtoIndex: 1, irqProtoIndex: 1 });
+	assert.deepEqual(cartLink.vectors, { resetProtoIndex: 1, sectionInitProtoIndex: 1, irqProtoIndex: 1, exceptionProtoIndex: 1 });
 	assert.equal(cartLink.bssBaseAddress, PROGRAM_STATIC_RAM_BASE + 4);
 });
 
@@ -1122,8 +1124,8 @@ test('appended host-eval code preserves the installed program ROM mapping', () =
 	);
 	resolveRuntimeProgramRelocations(appended.program, appended.metadata, appended.constRelocs);
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
-	const cpu = new CPU(memory);
-	cpu.setProgram(appended.program, appended.metadata, appended.metadata);
+	const cpu = new CPU(memory, new IrqController(memory));
+	cpu.setProgram(appended.program, appended.metadata, appended.metadata, 0, 0, 0);
 	cpu.start(appended.entryProtoIndex);
 
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);

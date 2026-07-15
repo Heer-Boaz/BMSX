@@ -9,6 +9,7 @@
 #include "machine/runtime/input.h"
 #include "machine/runtime/timing/config.h"
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 #include <utility>
 
@@ -216,7 +217,7 @@ void Runtime::startCartProgram() {
 	startLoadedProgram(m_cartVectors, std::span<const std::string>{}, m_cartStaticModulePaths);
 }
 
-void Runtime::boot(const ProgramImage& image, std::unique_ptr<ProgramMetadata> metadata, ProgramVectorTable vectors, uint32_t dataBaseAddress, uint32_t bssBaseAddress, std::span<const std::string> systemStaticModulePaths, std::span<const std::string> cartStaticModulePaths) {
+void Runtime::boot(const ProgramImage& image, std::unique_ptr<ProgramMetadata> metadata, ProgramVectorTable vectors, ProgramVectorTable systemVectors, ProgramVectorTable cartVectors, uint32_t dataBaseAddress, uint32_t bssBaseAddress, std::span<const std::string> systemStaticModulePaths, std::span<const std::string> cartStaticModulePaths) {
 	m_moduleCache.clear();
 	m_programDataBaseAddress = dataBaseAddress;
 	m_programBssBaseAddress = bssBaseAddress;
@@ -228,7 +229,16 @@ void Runtime::boot(const ProgramImage& image, std::unique_ptr<ProgramMetadata> m
 		m_programRuntimeSymbols = image.link.symbols;
 		m_programMetadataStorage = std::move(metadata);
 		m_programMetadata = m_programMetadataStorage.get();
-		machine.cpu.setProgram(m_program, m_programRuntimeSymbols, m_programMetadata);
+		m_systemVectors = systemVectors;
+		m_cartVectors = cartVectors;
+		machine.cpu.setProgram(
+			m_program,
+			m_programRuntimeSymbols,
+			m_programMetadata,
+			m_systemVectors.irqProtoIndex,
+			m_cartVectors.irqProtoIndex,
+			m_systemVectors.exceptionProtoIndex
+		);
 		startLoadedProgram(vectors, systemStaticModulePaths, cartStaticModulePaths);
 	} catch (const std::exception& e) {
 		handleLuaError(e.what());
@@ -244,6 +254,8 @@ void Runtime::bootLinkedProgramImage(LinkedBootProgramImage&& linked) {
 		*linked.programImage,
 		std::move(linked.metadata),
 		linked.vectors,
+		linked.systemVectors,
+		linked.cartVectors,
 		linked.dataBaseAddress,
 		linked.bssBaseAddress,
 		linked.systemStaticModulePaths,
@@ -254,17 +266,25 @@ void Runtime::bootLinkedProgramImage(LinkedBootProgramImage&& linked) {
 void Runtime::startLoadedProgram(ProgramVectorTable vectors, std::span<const std::string> systemStaticModulePaths, std::span<const std::string> cartStaticModulePaths) {
 	m_programVectorsStorage = vectors;
 	programVectors = &m_programVectorsStorage;
-	NativeResults sectionResults;
-	callClosureInto(machine.cpu.rootClosure(vectors.sectionInitProtoIndex), NativeArgsView(), sectionResults);
+	const u32 statusWord = cartProgramStarted ? CPU_STATUS_CART_ENTRY : CPU_STATUS_SYSTEM_ENTRY;
+	runSectionInitializer(vectors.sectionInitProtoIndex, statusWord);
 	runStaticModuleInitializers(systemStaticModulePaths);
 	clearLuaBootPrimitives();
 	runStaticModuleInitializers(cartStaticModulePaths);
 	machine.cpu.syncGlobalSlotsToTable();
 	enforceLuaHeapBudget();
-	machine.cpu.start(vectors.resetProtoIndex);
+	machine.cpu.start(vectors.resetProtoIndex, NativeArgsView(), statusWord);
 	enforceLuaHeapBudget();
 	m_pendingCall = PendingCall::Entry;
 	m_luaInitialized = true;
+}
+
+void Runtime::runSectionInitializer(int protoIndex, u32 statusWord) {
+	machine.cpu.start(protoIndex, NativeArgsView(), statusWord);
+	machine.cpu.runUntilDepth(0, std::numeric_limits<int>::max());
+	if (machine.cpu.hasFrames()) {
+		throw BMSX_RUNTIME_ERROR("section initializer did not return.");
+	}
 }
 
 void Runtime::runStaticModuleInitializer(const std::string& path) {

@@ -27,9 +27,9 @@ public:
 	Machine(Memory& memoryRef, InputControllerInputSource& input);
 
 	Memory& memory;
+	IrqController irqController;
 	CPU cpu;
 	DeviceScheduler scheduler;
-	IrqController irqController;
 	ApuOutputMixer audioOutput;
 	AudioController audioController;
 	DmaController dmaController;

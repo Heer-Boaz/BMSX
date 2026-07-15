@@ -870,6 +870,7 @@ LinkedProgramImage linkProgramImages(
 	cartVectors.resetProtoIndex = cartImage.vectors.resetProtoIndex + systemProtoCount;
 	cartVectors.sectionInitProtoIndex = cartImage.vectors.sectionInitProtoIndex + systemProtoCount;
 	cartVectors.irqProtoIndex = cartImage.vectors.irqProtoIndex + systemProtoCount;
+	cartVectors.exceptionProtoIndex = cartImage.vectors.exceptionProtoIndex + systemProtoCount;
 	auto linkedImage = std::make_unique<ProgramImage>();
 	linkedImage->vectors = cartVectors;
 	linkedSections.rodata.moduleProtos.reserve(cartRodata.moduleProtos.size() + systemRodata.moduleProtos.size());
@@ -948,6 +949,7 @@ LinkedBootProgramImage linkBootProgramImages(
 	LinkedProgramImage linked = linkProgramImages(systemImage, systemSymbols, cartImage, cartSymbols, systemBasePc, cartBasePc);
 	LinkedBootProgramImage output;
 	output.cartVectors = linked.cartVectors;
+	output.systemVectors = linked.systemVectors;
 	output.cartDataBaseAddress = linked.cartDataBaseAddress;
 	output.cartBssBaseAddress = linked.cartBssBaseAddress;
 	output.cartStaticModulePaths = std::move(linked.cartStaticModulePaths);

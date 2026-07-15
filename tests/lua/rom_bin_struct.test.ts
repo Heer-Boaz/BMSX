@@ -5,6 +5,7 @@ import { splitText } from '../../machine/ts/common/text_lines';
 import { LuaLexer } from '../../machine/ts/lua/syntax/lexer';
 import { LuaParser } from '../../machine/ts/lua/syntax/parser';
 import { CPU, RunResult, type Value } from '../../machine/ts/machine/cpu/cpu';
+import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { RAM_BASE } from '../../machine/ts/machine/memory/map';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { compileLuaChunkToProgram } from '../../machine/ts/lua/compiler';
@@ -21,8 +22,8 @@ function runStructRead(packedWords: number[], snippet: string): Value[] {
 	for (let index = 0; index < packedWords.length; index += 1) {
 		memory.writeMappedU32LE(BIN_ADDR + index * 4, packedWords[index] >>> 0);
 	}
-	const cpu = new CPU(memory);
-	cpu.setProgram(compiled.program, compiled.metadata, compiled.metadata);
+	const cpu = new CPU(memory, new IrqController(memory));
+	cpu.setProgram(compiled.program, compiled.metadata, compiled.metadata, 0, 0, 0);
 	cpu.start(compiled.entryProtoIndex);
 	assert.equal(cpu.runUntilDepth(0, 1000000), RunResult.Halted);
 	return Array.from(cpu.lastReturnValues);

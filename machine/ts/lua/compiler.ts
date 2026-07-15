@@ -90,6 +90,7 @@ import { luaFloorDivide, luaModulo } from './numeric';
 import { writeLE16, writeLE32 } from '../common/endian';
 import { isReservedIntrinsicName } from './semantic/common';
 import { IO_IRQ_FLAGS } from '../machine/bus/io';
+import { COP0_BAD_ADDRESS, COP0_CAUSE, COP0_EPC, COP0_STATUS } from '../machine/cpu/cop0';
 
 export type CompiledProgram = {
 	program: Program;
@@ -97,6 +98,7 @@ export type CompiledProgram = {
 	entryProtoIndex: number;
 	sectionInitProtoIndex: number;
 	irqProtoIndex: number;
+	exceptionProtoIndex: number;
 	moduleProtoMap: Map<string, number>;
 	staticModulePaths: string[];
 	constRelocs: ProgramConstReloc[];
@@ -126,6 +128,7 @@ export function encodeCompiledProgramImage(compiled: CompiledProgram): ProgramIm
 			resetProtoIndex: compiled.entryProtoIndex,
 			sectionInitProtoIndex: compiled.sectionInitProtoIndex,
 			irqProtoIndex: compiled.irqProtoIndex,
+			exceptionProtoIndex: compiled.exceptionProtoIndex,
 		},
 		sections: encodeProgramObjectSections(
 			compiled.program,
@@ -308,6 +311,7 @@ type AssignmentTarget =
 	| { kind: 'upvalue'; upvalue: number }
 	| { kind: 'global'; slot: number; system: boolean }
 	| { kind: 'table'; tableReg: number; keyConst?: number; keyReg?: number }
+	| { kind: 'cop0'; register: number }
 	| { kind: 'memory'; accessKind: MemoryAccessKind; addrConst?: number; addrReg?: number; addrOffsetBytes?: number; validateAddress?: LuaExpression };
 
 const RK_B = 1;
@@ -1089,6 +1093,7 @@ const buildModuleProtoId = (moduleId: string): string => `${buildModuleRootId(mo
 
 const buildSectionInitProtoId = (moduleId: string): string => `${buildModuleRootId(moduleId)}/section_init`;
 const buildInterruptProtoId = (moduleId: string): string => `${buildModuleRootId(moduleId)}/irq`;
+const buildExceptionProtoId = (moduleId: string): string => `${buildModuleRootId(moduleId)}/exception`;
 
 const buildAnonymousHint = (range: LuaSourceRange): string =>
 	`anon:${range.start.line}:${range.start.column}:${range.end.line}:${range.end.column}`;
@@ -1375,7 +1380,18 @@ class FunctionBuilder {
 			this.emitABC(OpCode.MOV, callBase + 1, flagsReg, 0);
 			this.emitABC(OpCode.CALL, callBase, encodeFixedCallArgCount(1), 0);
 			this.patchJump(jumpOut, this.code.length);
-			this.emitDefaultReturn();
+			this.emitABC(OpCode.RFE, 0, 0, 0);
+		});
+		this.finalizeLabels();
+	}
+
+	public compileExceptionEntry(range: LuaSourceRange): void {
+		this.withRange(range, () => {
+			const callBase = this.allocTemp();
+			const access = this.program.resolveGlobalAccess('exception');
+			this.emitABx(access.system ? OpCode.GETSYS : OpCode.GETGL, callBase, access.slot);
+			this.emitABC(OpCode.CALL, callBase, encodeFixedCallArgCount(0), 0);
+			this.emitABC(OpCode.RFE, 0, 0, 0);
 		});
 		this.finalizeLabels();
 	}
@@ -3585,6 +3601,16 @@ class FunctionBuilder {
 		const targets: AssignmentTarget[] = [];
 		for (let i = 0; i < expressions.length; i += 1) {
 			const expr = expressions[i] as LuaAssignableExpression;
+			if (expr.kind === LuaSyntaxKind.MemberExpression) {
+				const cop0Register = this.resolveCop0Register(expr as LuaMemberExpression);
+				if (cop0Register) {
+					if (cop0Register !== COP0_STATUS && cop0Register !== COP0_EPC) {
+						throw new Error(`[Compiler] cop0.${(expr as LuaMemberExpression).identifier} is read-only.`);
+					}
+					targets.push({ kind: 'cop0', register: cop0Register });
+					continue;
+				}
+			}
 			if (
 				expr.kind === LuaSyntaxKind.MemberExpression ||
 				expr.kind === LuaSyntaxKind.IndexExpression ||
@@ -3730,6 +3756,9 @@ class FunctionBuilder {
 				this.emitABC(OpCode.SETT, target.tableReg, target.keyReg, valueReg, RK_B | RK_C);
 				return;
 			}
+			case 'cop0':
+				this.emitABC(OpCode.MTC0, valueReg, target.register, 0);
+				return;
 			case 'memory':
 				this.emitMemoryStore(target.accessKind, target.addrConst, target.addrReg, target.addrOffsetBytes, valueReg);
 				return;
@@ -3775,6 +3804,11 @@ class FunctionBuilder {
 				this.emitABC(OpCode.SETT, target.tableReg, target.keyReg, temp, RK_B | RK_C);
 				return;
 			}
+			case 'cop0':
+				this.emitABC(OpCode.MFC0, temp, target.register, 0);
+				this.emitABC(op, temp, temp, valueReg, RK_B | RK_C);
+				this.emitABC(OpCode.MTC0, temp, target.register, 0);
+				return;
 			case 'memory':
 				this.emitMemoryLoad(temp, target.accessKind, target.addrConst, target.addrReg, target.addrOffsetBytes);
 				this.emitABC(op, temp, temp, valueReg, RK_B | RK_C);
@@ -4203,6 +4237,11 @@ class FunctionBuilder {
 	}
 
 	private compileMemberExpression(expression: any, target: number): void {
+		const cop0Register = this.resolveCop0Register(expression as LuaMemberExpression);
+		if (cop0Register) {
+			this.emitABC(OpCode.MFC0, target, cop0Register, 0);
+			return;
+		}
 		const constExport = this.resolveModuleExportConstValue(expression as LuaMemberExpression);
 		if (constExport) {
 			this.emitLoadConstExportValue(target, constExport.value);
@@ -4229,6 +4268,23 @@ class FunctionBuilder {
 		this.compileExpressionInto(expression.base, baseReg, 1);
 		const key = this.program.constIndexString(expression.identifier);
 		this.emitTableGetConst(target, baseReg, key);
+	}
+
+	private resolveCop0Register(expression: LuaMemberExpression): number | undefined {
+		if (expression.base.kind !== LuaSyntaxKind.IdentifierExpression) {
+			return undefined;
+		}
+		const reference = getResolvedIdentifierReference(this.semantics, expression.base as LuaIdentifierExpression);
+		if (reference.kind !== 'reserved_intrinsic' || reference.ref.name !== 'cop0') {
+			return undefined;
+		}
+		switch (expression.identifier) {
+			case 'bad_address': return COP0_BAD_ADDRESS;
+			case 'status': return COP0_STATUS;
+			case 'cause': return COP0_CAUSE;
+			case 'epc': return COP0_EPC;
+			default: throw new Error(`[Compiler] Unknown cop0 register '${expression.identifier}'.`);
+		}
 	}
 
 	private compileIndexExpression(expression: any, target: number): void {
@@ -5280,6 +5336,33 @@ function compileInterruptProto(
 	return protoIndex;
 }
 
+function compileExceptionProto(
+	program: ProgramBuilder,
+	moduleId: string,
+	range: LuaSourceRange,
+	semantics: LuaSemanticFrontendFile,
+	frontend: LuaSemanticFrontend,
+): number {
+	const protoId = buildExceptionProtoId(moduleId);
+	const builder = new FunctionBuilder(program, null, { moduleId, protoId, semantics, frontend });
+	builder.compileExceptionEntry(range);
+	const code = builder.getCode();
+	const ranges = builder.getRanges();
+	const constRelocs = builder.getConstRelocs();
+	const instructionSet = builder.getInstructionSet();
+	const protoIndex = program.addProto({
+		entryPC: 0,
+		codeLen: ranges.length * INSTRUCTION_BYTES,
+		numParams: 0,
+		isVararg: false,
+		maxStack: builder.getMaxStack(),
+		upvalueDescs: [],
+		staticClosure: true,
+	}, code, ranges, constRelocs, [], [], protoId, instructionSet);
+	program.markStaticClosureProto(protoIndex);
+	return protoIndex;
+}
+
 function createProgramBuilderFromProgram(
 	base: Program,
 	metadata: ProgramMetadata,
@@ -5415,6 +5498,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 	let entryProtoIndex = -1;
 	let sectionInitProtoIndex = -1;
 	let irqProtoIndex = -1;
+	let exceptionProtoIndex = -1;
 	const entryBuilder = new FunctionBuilder(programBuilder, null, {
 		moduleId,
 		protoId: entryProtoId,
@@ -5493,6 +5577,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 	const entrySemantics = frontend.getFile(chunk.range.path);
 	sectionInitProtoIndex = compileSectionInitProto(programBuilder, moduleId, chunk.range, entrySemantics, frontend);
 	irqProtoIndex = compileInterruptProto(programBuilder, moduleId, chunk.range, entrySemantics, frontend);
+	exceptionProtoIndex = compileExceptionProto(programBuilder, moduleId, chunk.range, entrySemantics, frontend);
 	recordModuleExportContracts(programBuilder, moduleCompileContext);
 	const { program, metadata, constRelocs, constValueRelocs, data, bss, rodataBytes, rodataSymbols, staticModulePaths } = programBuilder.buildProgram();
 	return {
@@ -5501,6 +5586,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 			entryProtoIndex,
 			sectionInitProtoIndex,
 			irqProtoIndex,
+			exceptionProtoIndex,
 			moduleProtoMap: program.moduleProtoMap,
 			staticModulePaths,
 			constRelocs,

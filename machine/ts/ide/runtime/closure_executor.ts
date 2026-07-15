@@ -8,7 +8,7 @@ function runHaltedClosureUntilInterrupt(runtime: Runtime): number {
 	let consumed = 0;
 	let advancedDeadline = false;
 	while (cpu.isHaltedUntilIrq()) {
-		if (cpu.peekPendingInterrupt(runtime.machine.irqController) !== AcceptedInterruptKind.None) {
+		if (cpu.peekPendingInterrupt() !== AcceptedInterruptKind.None) {
 			cpu.clearHaltUntilIrq();
 			return consumed;
 		}

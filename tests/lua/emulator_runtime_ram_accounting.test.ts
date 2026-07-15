@@ -2,14 +2,16 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { BuiltinFunctionId, CPU, RunResult, StringValue, createBuiltinFunction, type CpuRuntimeState } from '../../machine/ts/machine/cpu/cpu';
+import { CPU_STATUS_CART_ENTRY } from '../../machine/ts/machine/cpu/cop0';
+import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { compileLuaSource } from './cpu_test_harness';
 
 function createCpuWithProgram(source: string): { cpu: CPU; entryProtoIndex: number } {
 	const compiled = compileLuaSource(source, 'ram_accounting.lua');
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
-	const cpu = new CPU(memory);
-	cpu.setProgram(compiled.program, compiled.metadata, compiled.metadata);
+	const cpu = new CPU(memory, new IrqController(memory));
+	cpu.setProgram(compiled.program, compiled.metadata, compiled.metadata, 0, 0, 0);
 	return { cpu, entryProtoIndex: compiled.entryProtoIndex };
 }
 
@@ -23,7 +25,7 @@ function collectHeapDeltaAfterRun(source: string): { before: number; after: numb
 
 test('tracked heap bytes include rooted tables and native arrays', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
-	const cpu = new CPU(memory);
+	const cpu = new CPU(memory, new IrqController(memory));
 	const key = StringValue.get(cpu.stringPool.intern('state'));
 	const listKey = StringValue.get(cpu.stringPool.intern('list'));
 
@@ -70,7 +72,7 @@ test('tracked heap bytes include rooted tables and native arrays', () => {
 
 test('tracked heap bytes include explicit extra roots for native functions and handles', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
-	const cpu = new CPU(memory);
+	const cpu = new CPU(memory, new IrqController(memory));
 
 	const nativeFn = cpu.createNativeFunction('external.iterator', () => {});
 	const handle = cpu.createNativeObject({}, {
@@ -90,7 +92,7 @@ test('tracked heap bytes include explicit extra roots for native functions and h
 
 test('builtin primitives are static VM slots outside Lua heap accounting', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
-	const cpu = new CPU(memory);
+	const cpu = new CPU(memory, new IrqController(memory));
 	const next = createBuiltinFunction(BuiltinFunctionId.Next);
 	const before = cpu.collectTrackedHeapBytes();
 
@@ -100,7 +102,7 @@ test('builtin primitives are static VM slots outside Lua heap accounting', () =>
 
 test('builtin primitive save-state uses VM id instead of stable global path', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
-	const cpu = new CPU(memory);
+	const cpu = new CPU(memory, new IrqController(memory));
 	cpu.globals.setStringKey(StringValue.get(cpu.stringPool.intern('foo')), createBuiltinFunction(BuiltinFunctionId.Next));
 
 	const state = cpu.captureRuntimeState(new Map());
@@ -108,7 +110,7 @@ test('builtin primitive save-state uses VM id instead of stable global path', ()
 		{ name: 'foo', value: { tag: 'builtin', id: BuiltinFunctionId.Next } },
 	]);
 
-	const restoredCpu = new CPU(memory);
+	const restoredCpu = new CPU(memory, new IrqController(memory));
 	restoredCpu.restoreRuntimeState(state, new Map());
 	assert.equal(
 		restoredCpu.globals.getStringKey(StringValue.get(restoredCpu.stringPool.intern('foo'))),
@@ -118,7 +120,7 @@ test('builtin primitive save-state uses VM id instead of stable global path', ()
 
 test('CPU save-state leaves host-native bridge values out of CPU roots', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
-	const cpu = new CPU(memory);
+	const cpu = new CPU(memory, new IrqController(memory));
 	cpu.globals.setStringKey(StringValue.get(cpu.stringPool.intern('native')), cpu.createNativeFunction('native_bridge', () => {}));
 
 	assert.deepEqual(cpu.captureRuntimeState(new Map()).globals, []);
@@ -126,7 +128,7 @@ test('CPU save-state leaves host-native bridge values out of CPU roots', () => {
 
 test('tracked heap bytes do not include raw js array capacity without native iteration entries', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
-	const cpu = new CPU(memory);
+	const cpu = new CPU(memory, new IrqController(memory));
 
 	const before = cpu.collectTrackedHeapBytes();
 	const raw = new Array(1024).fill(7);
@@ -154,7 +156,7 @@ test('tracked heap bytes do not include raw js array capacity without native ite
 
 test('program image literals and debug names stay in ROM accounting', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
-	const cpu = new CPU(memory);
+	const cpu = new CPU(memory, new IrqController(memory));
 	const before = cpu.collectTrackedHeapBytes();
 	const compiled = compileLuaSource([
 		'local alpha_beta_gamma = "literal text"',
@@ -163,14 +165,14 @@ test('program image literals and debug names stay in ROM accounting', () => {
 		'return alpha_beta_gamma, field_name',
 	].join('\n'), 'ram_accounting.lua');
 
-	cpu.setProgram(compiled.program, compiled.metadata, compiled.metadata);
+	cpu.setProgram(compiled.program, compiled.metadata, compiled.metadata, 0, 0, 0);
 
 	assert.equal(cpu.collectTrackedHeapBytes(), before);
 });
 
 test('runtime string materialization tracks RAM even when the same text exists in ROM', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
-	const cpu = new CPU(memory);
+	const cpu = new CPU(memory, new IrqController(memory));
 	cpu.stringPool.intern('rom literal', false);
 	const before = cpu.collectTrackedHeapBytes();
 
@@ -185,7 +187,7 @@ test('runtime string materialization tracks RAM even when the same text exists i
 
 test('unreachable runtime strings are reclaimed by the heap collector', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
-	const cpu = new CPU(memory);
+	const cpu = new CPU(memory, new IrqController(memory));
 	const before = cpu.collectTrackedHeapBytes();
 
 	// Intern a tracked runtime string but never root it. The append-only string
@@ -233,8 +235,10 @@ test('restored static closures reuse the static proto cache', () => {
 		haltedUntilIrq: false,
 		memoryWriteBlocked: false,
 		memoryWriteBlockedAddress: 0,
-		maskableInterruptsEnabled: true,
-		maskableInterruptsRestoreEnabled: true,
+		statusWord: CPU_STATUS_CART_ENTRY,
+		causeWord: 0,
+		epcWord: 0,
+		badAddressWord: 0,
 		nonMaskableInterruptPending: false,
 		yieldRequested: false,
 	};

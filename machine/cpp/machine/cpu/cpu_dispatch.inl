@@ -325,13 +325,37 @@ DISPATCH_LABEL(LE) {
 	DISPATCH_CONTINUE();
 }
 
-DISPATCH_LABEL(RESERVED0) {
-	hardHalt();
+DISPATCH_LABEL(MFC0) {
+	if (isUserMode()) {
+		enterSynchronousException(FRAME, CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
+		DISPATCH_CONTINUE();
+	}
+	u32 value = 0u;
+	switch (b) {
+		case COP0_BAD_ADDRESS: value = m_badAddressWord; break;
+		case COP0_STATUS: value = m_statusWord; break;
+		case COP0_CAUSE: value = m_causeWord; break;
+		case COP0_EPC: value = m_epcWord; break;
+		default: hardHalt(); DISPATCH_CONTINUE();
+	}
+	SET_REGISTER_FAST(a, valueNumber(static_cast<double>(value)));
 	DISPATCH_CONTINUE();
 }
 
-DISPATCH_LABEL(RESERVED1) {
-	hardHalt();
+DISPATCH_LABEL(MTC0) {
+	if (isUserMode()) {
+		enterSynchronousException(FRAME, CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
+		DISPATCH_CONTINUE();
+	}
+	const u32 value = toU32(REG(a));
+	switch (b) {
+		case COP0_STATUS: m_statusWord = value; break;
+		case COP0_EPC: m_epcWord = value; break;
+		case COP0_BAD_ADDRESS:
+		case COP0_CAUSE:
+			break;
+		default: hardHalt(); break;
+	}
 	DISPATCH_CONTINUE();
 }
 
@@ -421,15 +445,6 @@ DISPATCH_LABEL(RET) {
 	const int resultOffset = FRAME.stackBase + a;
 	const Value* results = m_stack.data() + resultOffset;
 	closeUpvalues(FRAME);
-	if (FRAME.isInterruptFrame) {
-		m_maskableInterruptsEnabled = FRAME.savedMaskableEnabled;
-		auto finishedInterrupt = std::move(m_frames.back());
-		m_frames.pop_back();
-		m_stackTop = finishedInterrupt->varargBase;
-		m_stack.resize(static_cast<size_t>(m_stackTop));
-		releaseFrame(std::move(finishedInterrupt));
-		DISPATCH_CONTINUE();
-	}
 	auto finished = std::move(m_frames.back());
 	m_frames.pop_back();
 	if (finished->captureReturns) {
@@ -557,8 +572,26 @@ DISPATCH_LABEL(STORE_MEM_WORDS) {
 	DISPATCH_CONTINUE();
 }
 
-DISPATCH_LABEL(RESERVED2) {
-	hardHalt();
+DISPATCH_LABEL(RFE) {
+	if (isUserMode()) {
+		enterSynchronousException(FRAME, CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
+		DISPATCH_CONTINUE();
+	}
+	if (!FRAME.isExceptionFrame) {
+		hardHalt();
+		DISPATCH_CONTINUE();
+	}
+	closeUpvalues(FRAME);
+	auto finished = std::move(m_frames.back());
+	m_frames.pop_back();
+	m_stackTop = finished->varargBase;
+	m_stack.resize(static_cast<size_t>(m_stackTop));
+	m_statusWord = (m_statusWord & ~CPU_STATUS_RFE_RESTORE_MASK)
+		| ((m_statusWord >> 2u) & CPU_STATUS_RFE_RESTORE_MASK);
+	if (!m_frames.empty()) {
+		m_frames.back()->pc = static_cast<int>(m_epcWord);
+	}
+	releaseFrame(std::move(finished));
 	DISPATCH_CONTINUE();
 }
 
