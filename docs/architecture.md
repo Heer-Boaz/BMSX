@@ -1253,12 +1253,17 @@ parsing, button-name string ids, consume state, repeat windows, guarded presses,
 or a high-level event FIFO.
 
 ICU device code consumes only `machine/devices/input/contracts` source ports.
-The host input manager/player layer implements those ports and remains outside
-the device. Platform input adapters publish the supervisor-request line as a
-separate retained input signal; `machine/{ts,cpp}/input` carries its current
-level without turning it into a guest key. The host side may keep its richer
-keyboard/gamepad/pointer mapping, shortcut, IDE, quick-menu, onscreen gamepad,
-and device-assignment logic outside ICU hardware.
+The host input layer implements those ports and remains outside the device.
+Platform input adapters publish the supervisor-request line as a separate
+retained input signal without turning it into a guest key. The browser runtime
+keeps its richer IDE, shortcut, onscreen-gamepad, device-assignment, and
+buffered PlayerInput state under `machine/ts/input`. Native frontends normalize
+their external input ABI once into BMSX-owned numeric source/device/control
+records; `machine/cpp/input` retains fixed keyboard, pad, and pointer state, and
+the native quick menu owns its own fixed edge/repeat records. Those host
+implementations are intentionally target-specific. Only the raw ICU snapshot,
+supervisor line, and runtime input source contracts are mirrored machine
+semantics.
 
 Gameplay/cart PlayerInput semantics live in `cartlib/input/player.lua` and
 `cartlib/input/action_parser.lua`: cartlib reads the raw ICU MMIO snapshot,

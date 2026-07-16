@@ -3,6 +3,7 @@
  */
 
 #include "machine_manager.h"
+#include "host_overlay_menu.h"
 #include "render/shared/bitmap_font.h"
 #include "rom_boot_manager.h"
 #include "system.h"
@@ -95,6 +96,10 @@ bool MachineManager::initialize(Platform* platform) {
 	}
 
 	Input::instance().initialize();
+	m_focus_sub = host->onFocusChange([](bool) {
+		Input::instance().resetInputState();
+		hostOverlayMenu().resetInputState();
+	});
 	m_sound_master = std::make_unique<SoundMaster>();
 	registry().registerObject(m_sound_master.get());
 
@@ -108,7 +113,11 @@ void MachineManager::shutdown() {
 	}
 
 	stop();
-		unloadRom();
+	unloadRom();
+	m_focus_sub.unsubscribe();
+	m_resize_sub.unsubscribe();
+	Input::instance().shutdown();
+	hostOverlayMenu().resetInputState();
 
 	m_texture_manager.reset();
 

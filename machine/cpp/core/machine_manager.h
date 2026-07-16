@@ -224,6 +224,7 @@ private:
 	f32 m_viewport_scale = 1.0f;
 	f32 m_canvas_scale = 1.0f;
 	SubscriptionHandle m_resize_sub;
+	SubscriptionHandle m_focus_sub;
 };
 
 } // namespace bmsx

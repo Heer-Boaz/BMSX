@@ -10,42 +10,15 @@
 #include "common/subscription.h"
 #include "common/primitives.h"
 #include "machine/scheduler/microtask_queue.h"
+#include "platform/input.h"
 #include "render/backend/backend.h"
 #include <functional>
-#include <optional>
 #include <string>
 #include <string_view>
 #include <memory>
 #include <vector>
 
 namespace bmsx {
-
-/* ============================================================================
- * Input event types
- * ============================================================================ */
-
-enum class InputEvtType {
-	ButtonDown,
-	ButtonUp,
-	AxisMove,
-	KeyDown,
-	KeyUp,
-	PointerDown,
-	PointerUp,
-	PointerMove,
-	PointerWheel,
-	SupervisorRequestDown,
-	SupervisorRequestUp
-};
-
-struct InputEvt {
-	InputEvtType type = InputEvtType::ButtonDown;
-	std::string deviceId;
-	std::string code;
-	f32 value = 0.0F;
-	f32 x = 0.0F;
-	f32 y = 0.0F;
-};
 
 /* ============================================================================
  * Viewport dimensions
@@ -105,8 +78,6 @@ class InputHub {
 public:
 	virtual ~InputHub() = default;
 	virtual auto subscribe(std::function<void(const InputEvt&)> handler) -> SubscriptionHandle = 0;
-	virtual auto nextEvt() -> std::optional<InputEvt> = 0;
-	virtual void clearEvtQ() = 0;
 };
 
 /* ============================================================================

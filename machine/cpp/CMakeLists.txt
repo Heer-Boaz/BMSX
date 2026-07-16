@@ -246,13 +246,8 @@ add_library(bmsx_core STATIC
 	machine/devices/audio/save_state.cpp
 
 	# Input systems
-	input/player.cpp
 	input/hid_keys.cpp
-	input/gamepad_buttons.cpp
 	input/manager.cpp
-	input/keyboard.cpp
-	input/gamepad.cpp
-	input/pointer.cpp
 
 	# Render systems
 	render/backend/backend.cpp

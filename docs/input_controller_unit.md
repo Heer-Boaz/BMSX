@@ -71,21 +71,25 @@ IRQ. On the VBlank edge the ICU asks the host input owner to fill one raw
 mirrors the latched registerfile. Reads for the remainder of the frame return
 those stable raw words. There are no computed-on-read action queries.
 
-Independently of the cart-visible sample latch, every VBlank scans the retained
-raw HID keyboard words for the physical F2 line. A low-to-high transition
-requests the CPU's non-maskable system interrupt. An unarmed scan neither
-advances host PlayerInput frame state nor changes any guest-visible ICU word;
-it only aggregates the existing keyboard bitmap. The ICU saves the previous
-line level so a held key cannot become a second edge after save-state restore.
-`inp_ctrl_reset` resets the guest register/sample latch, not that physical edge
-history.
+Independently of the cart-visible sample latch, every VBlank samples the
+retained supervisor-request line. Platform adapters aggregate their physical
+F2/controller sources before that line reaches the ICU; the device never
+decodes HID usages or controller chords. A low-to-high transition requests the
+CPU's non-maskable system interrupt. An unarmed VBlank does not request a raw
+snapshot or change any guest-visible ICU word; it only samples that line. The
+ICU saves the previous level so a held request cannot become a second edge
+after save-state restore. `inp_ctrl_reset` resets the guest register/sample
+latch, not that physical edge history.
 
 ## High-level input owners
 
-Host UI code keeps using the host PlayerInput implementations in
-`machine/ts/input` and `machine/cpp/input` for IDE, quick menu,
-onscreen controls, host shortcuts, device assignment, and complex host-side
-input behavior.
+Browser/IDE UI keeps its buffered PlayerInput implementation in
+`machine/ts/input`. Native platform adapters normalize frontend-specific IDs to
+BMSX numeric input records, while `machine/cpp/input` retains fixed raw device
+state and the native quick-menu owner retains only its own edge/repeat state.
+These target-specific host facilities are not a file-for-file parity surface;
+the shared machine contract starts at the raw ICU snapshot and supervisor
+request line.
 
 Gameplay carts use `cartlib/input/player.lua` and
 `cartlib/input/action_parser.lua`. That Lua layer reads the raw ICU snapshot and

@@ -1,7 +1,6 @@
 #include "core/machine_manager.h"
 #include "common/endian.h"
 #include "input/manager.h"
-#include "input/player.h"
 #include "machine/bus/io.h"
 #include "machine/devices/input/contracts.h"
 #include "machine/devices/gx/gpu.h"
@@ -333,7 +332,7 @@ void testLibretroSupervisorRequestSourcesShareOneLine() {
 	inputHub.poll();
 	input.pollInput();
 	require(input.supervisorRequestLineHigh(), "releasing the controller chord should retain a held F2 request");
-	platform.resetFocusState();
+	platform.notifyFocusChange(false);
 	input.pollInput();
 	require(!input.supervisorRequestLineHigh(), "focus reset should deassert every supervisor-request source");
 	require(requestEdgesDown == 2 && requestEdgesUp == 2, "source handoff and focus reset should preserve aggregate edge counts");

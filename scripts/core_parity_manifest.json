@@ -81,6 +81,11 @@
 			"reason": "host_input_shortcuts_not_core"
 		},
 		{
+			"pattern": "machine/ts/input/**",
+			"category": "host",
+			"reason": "browser_ide_input_state_and_platform_to_icu_snapshot_adapter_not_machine_core"
+		},
+		{
 			"pattern": "machine/ts/platform/index.ts",
 			"category": "barrel",
 			"reason": "ts_barrel"
@@ -262,11 +267,19 @@
 		}
 	],
 	"core_roots": [
-		"machine/ts/input/manager.ts",
+		"machine/ts/common/taskgate.ts",
+		"machine/ts/core/host_frame.ts",
+		"machine/ts/core/host_overlay_menu.ts",
+		"machine/ts/core/machine_manager.ts",
+		"machine/ts/core/rom_boot_manager.ts",
+		"machine/ts/core/system.ts",
 		"machine/ts/machine/cpu/disassembler.ts",
 		"machine/ts/machine/firmware/globals.ts",
 		"machine/ts/machine/machine.ts",
+		"machine/ts/machine/memory/specs.ts",
+		"machine/ts/machine/runtime/boot_timing.ts",
 		"machine/ts/machine/runtime/cpu_state.ts",
+		"machine/ts/machine/runtime/frame/step.ts",
 		"machine/ts/machine/runtime/machine_state.ts",
 		"machine/ts/machine/runtime/runtime.ts",
 		"machine/ts/machine/runtime/save_machine_state.ts",
@@ -274,9 +287,19 @@
 		"machine/ts/machine/runtime/save_state/codec.ts",
 		"machine/ts/machine/runtime/save_state/schema.ts",
 		"machine/ts/render/host_overlay/pipeline.ts",
+		"machine/ts/render/gameview.ts",
+		"machine/ts/render/gx/view_snapshot.ts",
+		"machine/ts/render/post/device_quantize/mode.ts",
+		"machine/ts/render/presentation_state.ts",
 		"machine/ts/render/runtime_state.ts",
+		"machine/ts/render/shared/bmsx_font.ts",
 		"machine/ts/render/shared/glyph_runs.ts",
+		"machine/ts/render/shared/layers.ts",
+		"machine/ts/render/texture_manager.ts",
 		"machine/ts/rompack/format.ts",
+		"machine/ts/rompack/host_system_atlas.generated.ts",
+		"machine/ts/rompack/host_system_atlas.ts",
+		"machine/ts/rompack/loader.ts",
 		"machine/ts/machine/program/linker.ts",
 		"machine/ts/machine/program/loader.ts",
 		"machine/ts/render/shared/submissions.ts",

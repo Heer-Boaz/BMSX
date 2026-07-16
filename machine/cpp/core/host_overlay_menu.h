@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/primitives.h"
+#include "input/gamepad_buttons.h"
 #include "render/host_overlay/commands.h"
 #include "render/shared/submissions.h"
 #include <array>
@@ -11,11 +12,35 @@ namespace bmsx {
 
 class MachineManager;
 class GameView;
+class Input;
+
+enum class HostMenuButtonId : u8 {
+	Start,
+	Select,
+	LeftBumper,
+	RightBumper,
+	Up,
+	Down,
+	Left,
+	Right,
+	A,
+	B,
+	Count,
+};
+
+enum class HostMenuRepeatId : u8 {
+	Up,
+	Down,
+	Left,
+	Right,
+	Count,
+};
 
 class HostOverlayMenu {
 public:
 	HostOverlayMenu();
 	bool tickInput(MachineManager& manager);
+	void resetInputState();
 	void queueRenderCommands(MachineManager& manager, GameView& view);
 	bool queueFrameOverlayCommands(MachineManager& manager, GameView& view);
 	bool active() const { return m_active; }
@@ -24,6 +49,12 @@ private:
 	static constexpr i32 OptionCount = 13;
 	static constexpr i32 UsageBarCount = 3;
 	static constexpr size_t CommandCapacity = 128;
+	struct ButtonRepeatRecord {
+		bool active = false;
+		i32 repeatCount = 0;
+		f64 pressStartMs = -1.0;
+		f64 lastRepeatAtMs = -1.0;
+	};
 
 	void clearRenderCommands();
 	void publishRenderCommands();
@@ -33,6 +64,11 @@ private:
 	void changeSelected(MachineManager& manager, GameView& view, i32 direction);
 	void activateSelected(MachineManager& manager);
 	void rebuildText(MachineManager& manager, GameView& view);
+	bool buttonPressed(const Input& input, HostMenuButtonId button) const;
+	bool buttonJustPressed(const Input& input, HostMenuButtonId button) const;
+	void latchButtonStates(const Input& input);
+	bool advanceButtonRepeat(bool pressed, bool justPressed, ButtonRepeatRecord& repeat, f64 currentTimeMs, f64 frameDurationMs);
+	void resetButtonRepeats();
 
 	bool m_active = false;
 	i32 m_selected = 0;
@@ -51,6 +87,8 @@ private:
 	std::array<GlyphRenderSubmission, OptionCount> m_optionGlyphs;
 	std::array<Host2DKind, CommandCapacity> m_commandKinds;
 	std::array<Host2DRef, CommandCapacity> m_commandRefs;
+	std::array<bool, static_cast<size_t>(HostMenuButtonId::Count)> m_previousButtonStates{};
+	std::array<ButtonRepeatRecord, static_cast<size_t>(HostMenuRepeatId::Count)> m_buttonRepeats;
 	size_t m_commandCount = 0;
 	std::string m_fpsText;
 	i32 m_fpsTextTenths = -1;

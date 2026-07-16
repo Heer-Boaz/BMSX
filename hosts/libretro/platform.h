@@ -18,15 +18,11 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
-#include <unordered_set>
 
 namespace bmsx {
 
 constexpr f64 DEFAULT_LIBRETRO_AUDIO_SAMPLE_RATE = 48000.0;
 
-class GamepadInput;
-class KeyboardInput;
-class PointerInput;
 class LibretroInputHub;
 class LibretroAudioService;
 class LibretroHostClock;
@@ -131,20 +127,6 @@ struct InputState {
 		buttons.fill(0);
 		analog.fill(0);
 	}
-
-	bool isPressed(unsigned player, unsigned button) const {
-		if (player >= MAX_PLAYERS || button >= BUTTONS_PER_PLAYER) return false;
-		return (buttons[player] & (1 << button)) != 0;
-	}
-
-	void setButton(unsigned player, unsigned button, bool pressed) {
-		if (player >= MAX_PLAYERS || button >= BUTTONS_PER_PLAYER) return;
-		if (pressed) {
-			buttons[player] |= (1 << button);
-		} else {
-			buttons[player] &= ~(1 << button);
-		}
-	}
 };
 
 /* ============================================================================
@@ -163,7 +145,6 @@ public:
 	void setInputStateCallback(retro_input_state_t cb);
 	void postKeyboardEvent(std::string_view code, bool down);
 	void clearKeyboardState();
-	void resetFocusState();
 	void setLogCallback(void (*cb)(enum retro_log_level, const char*, ...)) { m_log_cb = cb; }
 	void setSystemDirectory(std::string_view path) { m_system_dir = std::string(path); }
 	void setHwRenderCallbacks(retro_hw_get_current_framebuffer_t get_current_framebuffer,
@@ -248,7 +229,6 @@ private:
 	// Output buffers
 	Framebuffer m_framebuffer;
 	AudioBuffer m_audio_buffer;
-	InputState m_input_state;
 
 	double m_frame_time_sec;
 	BackendType m_backend_type = BackendType::Software;
@@ -268,10 +248,6 @@ private:
 	std::unique_ptr<LibretroAudioService> m_audio_service;
 	std::unique_ptr<LibretroGameViewHost> m_gameview_host;
 	std::unique_ptr<MicrotaskQueue> m_microtask_queue;
-
-	std::unique_ptr<KeyboardInput> m_keyboard_input;
-	std::unique_ptr<PointerInput> m_pointer_input;
-	std::array<std::unique_ptr<GamepadInput>, InputState::MAX_PLAYERS> m_gamepad_inputs;
 
 	// Save RAM
 	std::vector<uint8_t> m_save_ram;
@@ -301,8 +277,6 @@ public:
 
 	// InputHub interface
 	SubscriptionHandle subscribe(std::function<void(const InputEvt&)> handler) override;
-	std::optional<InputEvt> nextEvt() override;
-	void clearEvtQ() override;
 
 private:
 	void emitEvent(const InputEvt& evt);
@@ -311,18 +285,16 @@ private:
 	LibretroPlatform* m_platform;
 	retro_input_poll_t m_input_poll_cb = nullptr;
 	retro_input_state_t m_input_state_cb = nullptr;
-	std::vector<InputEvt> m_event_queue;
 	std::vector<SubscriptionEntry<std::function<void(const InputEvt&)>>> m_handlers;
 	uint32_t m_next_handler_id = 1;
 
 	// Previous state for edge detection
 	InputState m_prev_state;
-	std::array<std::string, InputState::MAX_PLAYERS> m_gamepad_device_ids;
 	std::array<bool, 5> m_prev_pointer_buttons{};
 	i32 m_prev_pointer_x = 0;
 	i32 m_prev_pointer_y = 0;
 	bool m_prev_pointer_position_valid = false;
-	std::unordered_set<std::string> m_pressed_keyboard_codes;
+	std::array<bool, 256> m_pressed_keyboard_usages{};
 	bool m_keyboard_supervisor_request = false;
 	bool m_controller_supervisor_request = false;
 	bool m_supervisor_request_line_high = false;

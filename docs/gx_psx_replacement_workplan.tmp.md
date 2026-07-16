@@ -729,6 +729,28 @@ PSX discrepancy or to start the GTE+ ABI early.
   stable unpaced matrix therefore supplies the attribution: the measured
   regression was inside the then-current GLES2 executor, not machine update or
   presentation timing.
+- [x] Measure BMSX-owned allocations across the complete slowdown timeline.
+  External Heaptrack recording and a temporary analyzer extension selected the
+  allocation-origin module separately from owner stack frames, so Mesa/Gallium
+  allocations below GX calls were not misreported as BMSX heap work. Two
+  repeatable 100/1,050-frame prefix/full pairs measured frames 101--1,050. The
+  original core produced 240 calls/18,124 requested bytes below `main`, 229
+  calls/17,506 bytes below `retro_run`, 3/408 below
+  `FrameSchedulerState::run` and 0/0 below `executeGxGpuVramCommands`. Exact
+  stack aggregation first identified 127 calls/8,712 bytes in the keyboard
+  owner's lazy HID map; replacing it with the constexpr 123-entry code/USB
+  usage table exposed a further 113/9,418 calls/bytes below `main` and
+  102/8,794 below `retro_run`, all on finite input edges. The native input owner
+  was then corrected rather than patched: libretro normalizes its ABI once to
+  BMSX numeric source/device/control records, the hub delivers them
+  synchronously, `Input` retains the sole fixed raw keyboard/pad/pointer state,
+  and the quick menu owns only ten previous-button bits plus four repeat
+  records. The obsolete native string IDs, event queue, device maps,
+  player/action buffers and per-control heap containers were deleted. Two final
+  prefix/full repeats now measure 0 calls/0 requested bytes from both the core
+  and direct-host modules below `main`, `retro_run`, direct keyboard routing,
+  `Input::handleInputEvent`, the frame scheduler and the GX executor. All
+  profiling changes remained outside the product tree.
 - [ ] Re-profile CPU-to-VRAM submission with an upload-heavy cart workload before
   changing it again. The existing owner already packs raw VRAM in one retained
   staging buffer and emits bounded physical wrap rectangles; the particle soak

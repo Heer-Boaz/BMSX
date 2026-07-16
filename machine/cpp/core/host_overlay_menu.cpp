@@ -3,8 +3,8 @@
 #include "core/machine_manager.h"
 #include "render/shared/bitmap_font.h"
 #include "core/rom_boot_manager.h"
+#include "input/hid_keys.h"
 #include "input/manager.h"
-#include "input/player.h"
 #include "machine/runtime/runtime.h"
 #include "platform/platform.h"
 #include "render/gameview.h"
@@ -32,26 +32,28 @@ constexpr i32 kUsagePanelHeight = 32;
 constexpr i32 kUsageRowHeight = 10;
 constexpr i32 kUsageLowPercentTenthsLimit = 100;
 constexpr i32 kUsagePercentTenthsFlag = 1000000;
+constexpr i32 kInitialButtonRepeatDelayFrames = 15;
+constexpr i32 kButtonRepeatIntervalFrames = 4;
 constexpr std::array<const char*, 3> kUsageLabels{"CPU", "RAM", "VRAM"};
 
 struct HostMenuButton {
-	const char* gamepad;
-	const char* keyboard;
+	GamepadButton gamepad;
+	u8 keyboardUsage;
 };
 
-constexpr HostMenuButton kButtonStart{"start", "Enter"};
-constexpr HostMenuButton kButtonSelect{"select", "Backspace"};
-constexpr HostMenuButton kButtonLb{"lb", "ShiftLeft"};
-constexpr HostMenuButton kButtonRb{"rb", "ShiftRight"};
-constexpr HostMenuButton kButtonUp{"up", "ArrowUp"};
-constexpr HostMenuButton kButtonDown{"down", "ArrowDown"};
-constexpr HostMenuButton kButtonLeft{"left", "ArrowLeft"};
-constexpr HostMenuButton kButtonRight{"right", "ArrowRight"};
-constexpr HostMenuButton kButtonA{"a", "KeyX"};
-constexpr HostMenuButton kButtonB{"b", "KeyC"};
-
-constexpr std::array<HostMenuButton, 4> kToggleButtons{kButtonStart, kButtonSelect, kButtonLb, kButtonRb};
-constexpr std::array<HostMenuButton, 7> kMenuButtons{kButtonUp, kButtonDown, kButtonLeft, kButtonRight, kButtonA, kButtonB, kButtonStart};
+constexpr auto kHostMenuButtons = std::to_array<HostMenuButton>({
+	{GamepadButton::Start, HID_USAGE_ENTER},
+	{GamepadButton::Select, HID_USAGE_BACKSPACE},
+	{GamepadButton::LeftBumper, HID_USAGE_SHIFT_LEFT},
+	{GamepadButton::RightBumper, HID_USAGE_SHIFT_RIGHT},
+	{GamepadButton::Up, HID_USAGE_ARROW_UP},
+	{GamepadButton::Down, HID_USAGE_ARROW_DOWN},
+	{GamepadButton::Left, HID_USAGE_ARROW_LEFT},
+	{GamepadButton::Right, HID_USAGE_ARROW_RIGHT},
+	{GamepadButton::A, HID_USAGE_KEY_X},
+	{GamepadButton::B, HID_USAGE_KEY_C},
+});
+static_assert(kHostMenuButtons.size() == static_cast<size_t>(HostMenuButtonId::Count));
 
 constexpr u32 kPanelColor = 0xcc070707u;
 constexpr u32 kHighlightColor = 0xdb1e3f60u;
@@ -104,23 +106,6 @@ constexpr std::array<HostMenuOptionDef, kMenuOptionCount> kOptions{{
 	{HostMenuOptionId::ExitGame, "EXIT GAME", nullptr, 0},
 }};
 
-bool buttonPressed(PlayerInput& player, const HostMenuButton& button) {
-	if (player.getRawButtonState(button.gamepad, InputSource::Gamepad).pressed) {
-		return true;
-	}
-	return player.getRawButtonState(button.keyboard, InputSource::Keyboard).pressed;
-}
-
-bool buttonJustPressed(PlayerInput& player, const HostMenuButton& button) {
-	return player.getRawButtonState(button.gamepad, InputSource::Gamepad).justpressed || player.getRawButtonState(button.keyboard, InputSource::Keyboard).justpressed;
-}
-
-bool buttonEdge(PlayerInput& player, const HostMenuButton& button) {
-	const ActionState gamepad = player.getButtonRepeatState(button.gamepad, InputSource::Gamepad);
-	const ActionState keyboard = player.getButtonRepeatState(button.keyboard, InputSource::Keyboard);
-	return gamepad.justpressed || keyboard.justpressed || actionFlag(gamepad.repeatpressed) || actionFlag(keyboard.repeatpressed);
-}
-
 i32 boolIndex(bool value) {
 	return value ? 1 : 0;
 }
@@ -163,14 +148,6 @@ void setOptionIndex(MachineManager& manager, GameView& view, i32 option, i32 val
 		case HostMenuOptionId::HostShowFps: manager.hostShowFps = boolFromIndex(value); break;
 		case HostMenuOptionId::RebootCart: break;
 		case HostMenuOptionId::ExitGame: break;
-	}
-}
-
-template <size_t N>
-void consumeButtons(PlayerInput& player, const std::array<HostMenuButton, N>& buttons) {
-	for (const HostMenuButton& button : buttons) {
-		player.consumeRawButton(button.gamepad, InputSource::Gamepad);
-		player.consumeRawButton(button.keyboard, InputSource::Keyboard);
 	}
 }
 
@@ -305,46 +282,76 @@ void HostOverlayMenu::queueCommand(Host2DKind kind, Host2DRef ref) {
 
 bool HostOverlayMenu::tickInput(MachineManager& manager) {
 	GameView* view = manager.view();
-	PlayerInput& player = *Input::instance().getPlayerInput(1);
-	const bool comboEdge = buttonPressed(player, kButtonStart) &&
-		buttonPressed(player, kButtonSelect) &&
-		buttonPressed(player, kButtonLb) &&
-		buttonPressed(player, kButtonRb) &&
-		(buttonJustPressed(player, kButtonStart) ||
-			buttonJustPressed(player, kButtonSelect) ||
-			buttonJustPressed(player, kButtonLb) ||
-			buttonJustPressed(player, kButtonRb));
+	const Input& input = Input::instance();
+	const bool comboEdge = buttonPressed(input, HostMenuButtonId::Start) &&
+		buttonPressed(input, HostMenuButtonId::Select) &&
+		buttonPressed(input, HostMenuButtonId::LeftBumper) &&
+		buttonPressed(input, HostMenuButtonId::RightBumper) &&
+		(buttonJustPressed(input, HostMenuButtonId::Start) ||
+			buttonJustPressed(input, HostMenuButtonId::Select) ||
+			buttonJustPressed(input, HostMenuButtonId::LeftBumper) ||
+			buttonJustPressed(input, HostMenuButtonId::RightBumper));
 	if (comboEdge) {
 		toggle();
-		consumeButtons(player, kToggleButtons);
 	}
-	if (!m_active) {
-		return false;
+	bool capturesInput = m_active;
+	if (m_active) {
+		if (buttonJustPressed(input, HostMenuButtonId::B)) {
+			toggle();
+			capturesInput = false;
+		} else {
+			const f64 currentTimeMs = manager.clock()->now();
+			const f64 frameDurationMs = input.frameDurationMs();
+			if (advanceButtonRepeat(
+				buttonPressed(input, HostMenuButtonId::Up),
+				buttonJustPressed(input, HostMenuButtonId::Up),
+				m_buttonRepeats[static_cast<size_t>(HostMenuRepeatId::Up)],
+				currentTimeMs,
+				frameDurationMs
+			)) {
+				m_selected = m_selected == 0 ? kMenuOptionCount - 1 : m_selected - 1;
+				m_dirtyText = true;
+			}
+			if (advanceButtonRepeat(
+				buttonPressed(input, HostMenuButtonId::Down),
+				buttonJustPressed(input, HostMenuButtonId::Down),
+				m_buttonRepeats[static_cast<size_t>(HostMenuRepeatId::Down)],
+				currentTimeMs,
+				frameDurationMs
+			)) {
+				m_selected = (m_selected + 1) % kMenuOptionCount;
+				m_dirtyText = true;
+			}
+			if (advanceButtonRepeat(
+				buttonPressed(input, HostMenuButtonId::Left),
+				buttonJustPressed(input, HostMenuButtonId::Left),
+				m_buttonRepeats[static_cast<size_t>(HostMenuRepeatId::Left)],
+				currentTimeMs,
+				frameDurationMs
+			)) {
+				changeSelected(manager, *view, -1);
+			}
+			if (advanceButtonRepeat(
+				buttonPressed(input, HostMenuButtonId::Right),
+				buttonJustPressed(input, HostMenuButtonId::Right),
+				m_buttonRepeats[static_cast<size_t>(HostMenuRepeatId::Right)],
+				currentTimeMs,
+				frameDurationMs
+			)) {
+				changeSelected(manager, *view, 1);
+			}
+			if (buttonJustPressed(input, HostMenuButtonId::A)) {
+				activateSelected(manager);
+			}
+		}
 	}
-	if (buttonJustPressed(player, kButtonB)) {
-		toggle();
-		consumeButtons(player, kMenuButtons);
-		return false;
-	}
-	if (buttonEdge(player, kButtonUp)) {
-		m_selected = m_selected == 0 ? kMenuOptionCount - 1 : m_selected - 1;
-		m_dirtyText = true;
-	}
-	if (buttonEdge(player, kButtonDown)) {
-		m_selected = (m_selected + 1) % kMenuOptionCount;
-		m_dirtyText = true;
-	}
-	if (buttonEdge(player, kButtonLeft)) {
-		changeSelected(manager, *view, -1);
-	}
-	if (buttonEdge(player, kButtonRight)) {
-		changeSelected(manager, *view, 1);
-	}
-	if (buttonJustPressed(player, kButtonA)) {
-		activateSelected(manager);
-	}
-	consumeButtons(player, kMenuButtons);
-	return true;
+	latchButtonStates(input);
+	return capturesInput;
+}
+
+void HostOverlayMenu::resetInputState() {
+	m_previousButtonStates.fill(false);
+	resetButtonRepeats();
 }
 
 void HostOverlayMenu::queueRenderCommands(MachineManager& manager, GameView& view) {
@@ -472,12 +479,68 @@ void HostOverlayMenu::toggle() {
 	m_active = !m_active;
 	m_selected = 0;
 	m_dirtyText = true;
+	resetButtonRepeats();
 }
 
 void HostOverlayMenu::close() {
 	m_active = false;
 	m_selected = 0;
 	m_dirtyText = true;
+	resetButtonRepeats();
+}
+
+bool HostOverlayMenu::buttonPressed(const Input& input, HostMenuButtonId button) const {
+	const HostMenuButton& binding = kHostMenuButtons[static_cast<size_t>(button)];
+	return input.gamepadButtonPressed(0u, binding.gamepad) || input.keyboardUsagePressed(binding.keyboardUsage);
+}
+
+bool HostOverlayMenu::buttonJustPressed(const Input& input, HostMenuButtonId button) const {
+	const size_t index = static_cast<size_t>(button);
+	return buttonPressed(input, button) && !m_previousButtonStates[index];
+}
+
+void HostOverlayMenu::latchButtonStates(const Input& input) {
+	for (size_t button = 0u; button < m_previousButtonStates.size(); button += 1u) {
+		m_previousButtonStates[button] = buttonPressed(input, static_cast<HostMenuButtonId>(button));
+	}
+}
+
+bool HostOverlayMenu::advanceButtonRepeat(
+	bool pressed,
+	bool justPressed,
+	ButtonRepeatRecord& repeat,
+	f64 currentTimeMs,
+	f64 frameDurationMs
+) {
+	if (justPressed) {
+		repeat.active = true;
+		repeat.repeatCount = 0;
+		repeat.pressStartMs = currentTimeMs;
+		repeat.lastRepeatAtMs = repeat.pressStartMs;
+		return true;
+	}
+	if (!pressed) {
+		repeat = {};
+		return false;
+	}
+	if (!repeat.active) {
+		repeat.active = true;
+		repeat.pressStartMs = currentTimeMs;
+		repeat.lastRepeatAtMs = repeat.pressStartMs;
+	}
+	const f64 nextRepeatAtMs = repeat.repeatCount == 0
+		? repeat.pressStartMs + static_cast<f64>(kInitialButtonRepeatDelayFrames) * frameDurationMs
+		: repeat.lastRepeatAtMs + static_cast<f64>(kButtonRepeatIntervalFrames) * frameDurationMs;
+	if (currentTimeMs < nextRepeatAtMs) {
+		return false;
+	}
+	repeat.repeatCount += 1;
+	repeat.lastRepeatAtMs = nextRepeatAtMs;
+	return true;
+}
+
+void HostOverlayMenu::resetButtonRepeats() {
+	m_buttonRepeats.fill({});
 }
 
 void HostOverlayMenu::changeSelected(MachineManager& manager, GameView& view, i32 direction) {
