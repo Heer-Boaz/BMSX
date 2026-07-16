@@ -140,7 +140,7 @@ const gxGpuTransferVertices = new Float32Array(GX_GPU_TRANSFER_FLOAT_CAPACITY);
 const gxGpuRawVramUpload = new Uint8Array(GX_GPU_RAW_VRAM_UPLOAD_BYTES);
 const gxGpuVramSnapshotScratch = new Uint8Array(GX_GPU_VRAM_BYTE_COUNT);
 const primitiveUniformScratch = new Float32Array(8);
-const texturedUniformScratch = new Float32Array(16);
+const texturedUniformScratch = new Float32Array(20);
 const transferUniformScratch = new Float32Array(4);
 const scanoutUniformScratch = new Uint32Array(4);
 const readbackUniformScratch = new Uint32Array(GX_GPU_READBACK_UNIFORM_BYTES >> 2);
@@ -174,6 +174,7 @@ type GxGpuPrimitiveBatchState = {
 
 type GxGpuSolidBatchState = GxGpuPrimitiveBatchState & {
 	fixedColor: boolean;
+	rectangleRaster: boolean;
 };
 
 type GxGpuLineBatchState = GxGpuPrimitiveBatchState & {
@@ -294,6 +295,7 @@ const gxGpuSolidBatchState: GxGpuSolidBatchState = {
 	blendMode: 0,
 	readsVram: false,
 	fixedColor: false,
+	rectangleRaster: false,
 };
 const gxGpuLineBatchState: GxGpuLineBatchState = {
 	topLeftWord: 0,
@@ -321,7 +323,7 @@ function createVramTexture(device: GPUDevice): GPUTexture {
 function createPrimitiveBindGroupLayout(device: GPUDevice): GPUBindGroupLayout {
 	return device.createBindGroupLayout({
 		entries: [
-			{ binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform', hasDynamicOffset: true } },
+			{ binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform', hasDynamicOffset: true } },
 			{ binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
 			{ binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
 		],
@@ -1297,14 +1299,14 @@ function syncGxGpuTexturedSourceTexture(
 	return overlaps;
 }
 
-function writePrimitiveUniforms(blendEnabled: boolean, blendMode: number, maskBitModeWord: number, ditherEnabled: boolean, interlacedRenderWord: number): void {
+function writePrimitiveUniforms(blendEnabled: boolean, blendMode: number, maskBitModeWord: number, ditherEnabled: boolean, interlacedRenderWord: number, rectangleRaster: boolean): void {
 	primitiveUniformScratch[0] = blendEnabled ? 1 : 0;
 	primitiveUniformScratch[1] = blendMode;
 	primitiveUniformScratch[2] = gxGpuMaskBitCheckBeforeDraw(maskBitModeWord) ? 1 : 0;
 	primitiveUniformScratch[3] = gxGpuMaskBitSetWhileDrawing(maskBitModeWord) ? 1 : 0;
 	primitiveUniformScratch[4] = ditherEnabled ? 1 : 0;
 	primitiveUniformScratch[5] = interlacedRenderWord;
-	primitiveUniformScratch[6] = 0;
+	primitiveUniformScratch[6] = rectangleRaster ? 0 : 0.5;
 	primitiveUniformScratch[7] = 0;
 }
 
@@ -1411,7 +1413,7 @@ function flushSolidCommands(vertexFloatCount: number): number {
 		const drawWidth = gxGpuVramCopyRectScratch.right - gxGpuVramCopyRectScratch.left;
 		const drawHeight = gxGpuVramCopyRectScratch.bottom - gxGpuVramCopyRectScratch.top;
 		if (gxGpuSolidBatchState.readsVram) syncGxGpuSampleTextureLogicalArea(gxGpuVramCopyRectScratch.left, gxGpuVramCopyRectScratch.top, drawWidth, drawHeight);
-		writePrimitiveUniforms(gxGpuSolidBatchState.blendEnabled, gxGpuSolidBatchState.blendMode, gxGpuSolidBatchState.maskBitModeWord, gxGpuSolidBatchState.ditherEnabled, gxGpuSolidBatchState.interlacedRenderWord);
+		writePrimitiveUniforms(gxGpuSolidBatchState.blendEnabled, gxGpuSolidBatchState.blendMode, gxGpuSolidBatchState.maskBitModeWord, gxGpuSolidBatchState.ditherEnabled, gxGpuSolidBatchState.interlacedRenderWord, gxGpuSolidBatchState.rectangleRaster);
 		const uniformByteOffset = gxGpuState.primitiveUniformByteOffset;
 		const vertexByteOffset = gxGpuState.solidVertexByteOffset;
 		gxGpuState.backend.device.queue.writeBuffer(gxGpuState.primitiveUniformBuffer, uniformByteOffset, primitiveUniformScratch);
@@ -1434,7 +1436,7 @@ function renderReadVramSolidQuad(topLeftWord: number, bottomRightWord: number, b
 	let drawWidth = gxGpuVramCopyRectScratch.right - drawLeft;
 	let drawHeight = gxGpuVramCopyRectScratch.bottom - drawTop;
 	syncGxGpuSampleTextureLogicalArea(drawLeft, drawTop, drawWidth, drawHeight);
-	writePrimitiveUniforms(blendEnabled, blendMode, maskBitModeWord, ditherEnabled, interlacedRenderWord);
+	writePrimitiveUniforms(blendEnabled, blendMode, maskBitModeWord, ditherEnabled, interlacedRenderWord, false);
 	const uniformByteOffset = gxGpuState.primitiveUniformByteOffset;
 	const vertexByteOffset = gxGpuState.solidVertexByteOffset;
 	const vertexFloatCount = triangleFloatCount * 2;
@@ -1482,6 +1484,10 @@ function writeTexturedUniforms(commandBuffer: GxGpuCommandBufferView, commandInd
 	texturedUniformScratch[13] = gxGpuMaskBitSetWhileDrawing(maskBitModeWord) ? 1 : 0;
 	texturedUniformScratch[14] = commandBuffer.commandKind[commandIndex] === GX_GPU_COMMAND_DRAW_POLYGON && gxGpuDitheredPolygon(drawModeWord, opcode) ? 1 : 0;
 	texturedUniformScratch[15] = commandBuffer.commandInterlacedRenderWord[commandIndex];
+	texturedUniformScratch[16] = commandBuffer.commandKind[commandIndex] === GX_GPU_COMMAND_DRAW_RECTANGLE ? 0 : 0.5;
+	texturedUniformScratch[17] = 0;
+	texturedUniformScratch[18] = 0;
+	texturedUniformScratch[19] = 0;
 }
 
 function appendTexturedCommandVertices(commandBuffer: GxGpuCommandBufferView, commandIndex: number, vertexFloatCount: number): number {
@@ -1892,6 +1898,7 @@ function executeNewGxGpuCommands(commandBuffer: GxGpuCommandBufferView, readback
 							&& !gxGpuCommandRawTextureEnabled(batchOpcode);
 						const batchStateChanged = topLeftWord !== commandBuffer.commandDrawingAreaTopLeftWord[texturedBatchCommandIndex]
 							|| bottomRightWord !== commandBuffer.commandDrawingAreaBottomRightWord[texturedBatchCommandIndex]
+							|| commandKind !== commandBuffer.commandKind[texturedBatchCommandIndex]
 							|| drawModeWord !== batchDrawModeWord
 							|| commandBuffer.commandTextureWindowWord[commandIndex] !== commandBuffer.commandTextureWindowWord[texturedBatchCommandIndex]
 							|| maskBitModeWord !== commandBuffer.commandMaskBitModeWord[texturedBatchCommandIndex]
@@ -1939,6 +1946,7 @@ function executeNewGxGpuCommands(commandBuffer: GxGpuCommandBufferView, readback
 				const blendMode = blendEnabled ? gxGpuDrawModeTransparencyMode(drawModeWord) : 0;
 				const readsVram = blendEnabled || gxGpuMaskBitCheckBeforeDraw(maskBitModeWord);
 				const fixedColor = commandKind === GX_GPU_COMMAND_DRAW_POLYGON && gxGpuCommandGouraud(opcode);
+				const rectangleRaster = commandKind === GX_GPU_COMMAND_DRAW_RECTANGLE;
 				const splitReadVramQuad = readsVram && commandKind === GX_GPU_COMMAND_DRAW_POLYGON && gxGpuCommandQuadPolygon(opcode);
 				const batchStateChanged = topLeftWord !== gxGpuSolidBatchState.topLeftWord
 					|| bottomRightWord !== gxGpuSolidBatchState.bottomRightWord
@@ -1948,7 +1956,8 @@ function executeNewGxGpuCommands(commandBuffer: GxGpuCommandBufferView, readback
 					|| blendEnabled !== gxGpuSolidBatchState.blendEnabled
 					|| blendMode !== gxGpuSolidBatchState.blendMode
 					|| readsVram !== gxGpuSolidBatchState.readsVram
-					|| fixedColor !== gxGpuSolidBatchState.fixedColor;
+					|| fixedColor !== gxGpuSolidBatchState.fixedColor
+					|| rectangleRaster !== gxGpuSolidBatchState.rectangleRaster;
 				if (solidVertexFloatCount !== 0 && (batchStateChanged || splitReadVramQuad)) {
 					solidVertexFloatCount = flushSolidCommands(solidVertexFloatCount);
 				}
@@ -1961,6 +1970,7 @@ function executeNewGxGpuCommands(commandBuffer: GxGpuCommandBufferView, readback
 				gxGpuSolidBatchState.blendMode = blendMode;
 				gxGpuSolidBatchState.readsVram = readsVram;
 				gxGpuSolidBatchState.fixedColor = fixedColor;
+				gxGpuSolidBatchState.rectangleRaster = rectangleRaster;
 				const commandVertexStart = solidVertexFloatCount;
 				solidVertexFloatCount = appendSolidCommandVertices(commandBuffer, commandIndex, solidVertexFloatCount);
 				const solidVertexFloatStride = fixedColor ? GX_GPU_FIXED_SOLID_VERTEX_FLOATS : GX_GPU_SOLID_VERTEX_FLOATS;
@@ -1991,7 +2001,8 @@ function executeNewGxGpuCommands(commandBuffer: GxGpuCommandBufferView, readback
 					|| gxGpuSolidBatchState.interlacedRenderWord !== interlacedRenderWord
 					|| gxGpuSolidBatchState.blendEnabled
 					|| gxGpuSolidBatchState.readsVram
-					|| gxGpuSolidBatchState.fixedColor)) {
+					|| gxGpuSolidBatchState.fixedColor
+					|| !gxGpuSolidBatchState.rectangleRaster)) {
 					solidVertexFloatCount = flushSolidCommands(solidVertexFloatCount);
 				}
 				gxGpuSolidBatchState.topLeftWord = topLeftWord;
@@ -2003,6 +2014,7 @@ function executeNewGxGpuCommands(commandBuffer: GxGpuCommandBufferView, readback
 				gxGpuSolidBatchState.blendMode = 0;
 				gxGpuSolidBatchState.readsVram = false;
 				gxGpuSolidBatchState.fixedColor = false;
+				gxGpuSolidBatchState.rectangleRaster = true;
 				solidVertexFloatCount = appendFillRectangle(commandBuffer, commandIndex, solidVertexFloatCount);
 				break;
 			}
@@ -2037,7 +2049,7 @@ function executeNewGxGpuCommands(commandBuffer: GxGpuCommandBufferView, readback
 				gxGpuLineBatchState.readsVram = readsVram;
 				gxGpuLineBatchState.spansPhysicalRowBands = drawingAreaSpansPhysicalRowBands;
 				if (lineVertexFloatCount === 0) {
-					writePrimitiveUniforms(blendEnabled, blendMode, maskBitModeWord, ditherEnabled, interlacedRenderWord);
+					writePrimitiveUniforms(blendEnabled, blendMode, maskBitModeWord, ditherEnabled, interlacedRenderWord, false);
 					gxGpuLineBatchState.uniformByteOffset = gxGpuState.primitiveUniformByteOffset;
 					gxGpuState.backend.device.queue.writeBuffer(gxGpuState.primitiveUniformBuffer, gxGpuLineBatchState.uniformByteOffset, primitiveUniformScratch);
 					gxGpuState.primitiveUniformByteOffset += GX_GPU_UNIFORM_SLOT_BYTES;

@@ -16,7 +16,8 @@ fn vs_main(input: VSIn) -> VSOut {
 	var out: VSOut;
 	let clip = vec2<f32>((input.position.x / 512.0) - 1.0, 1.0 - (input.position.y / 256.0));
 	out.position = vec4<f32>(clip, 0.0, 1.0);
-	out.texcoord = input.texcoord;
+	// Transfer vertices carry texel edges; compensate raster pixel-center interpolation.
+	out.texcoord = input.texcoord - vec2<f32>(0.5);
 	return out;
 }
 

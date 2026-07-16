@@ -7,6 +7,7 @@ precision highp float;
 
 in vec2 a_position;
 uniform float u_rasterRowOrigin;
+uniform float u_rasterPhase;
 #if GX_GPU_FIXED_COLOR_PLANE
 in vec4 a_colorPlane0;
 in vec4 a_colorPlane1;
@@ -22,7 +23,7 @@ out vec4 v_color;
 #endif
 
 void main() {
-	vec2 rasterPosition = vec2(a_position.x, a_position.y - u_rasterRowOrigin) + vec2(0.5);
+	vec2 rasterPosition = vec2(a_position.x, a_position.y - u_rasterRowOrigin) + vec2(u_rasterPhase);
 	vec2 clip = vec2((rasterPosition.x / 512.0) - 1.0, 1.0 - (rasterPosition.y / 256.0));
 	gl_Position = vec4(clip, 0.0, 1.0);
 #if GX_GPU_FIXED_COLOR_PLANE

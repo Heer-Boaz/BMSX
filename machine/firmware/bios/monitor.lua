@@ -20,8 +20,6 @@ local irq_dma_done<const> = 0x0001
 local irq_gpu<const> = 0x0040
 local input_arm<const> = 0x00000001
 
-local output_mode_command<const> = 0
-local output_mode_completion<const> = 1
 local palette_text<const> = terminal.palette_text
 local palette_prompt<const> = terminal.palette_accent
 
@@ -50,7 +48,9 @@ local hid_left<const> = 80
 local hid_down<const> = 81
 local hid_up<const> = 82
 local hid_numpad_enter<const> = 88
+local hid_left_control<const> = 224
 local hid_left_shift<const> = 225
+local hid_right_control<const> = 228
 local hid_right_shift<const> = 229
 
 local repeat_delay_frames<const> = 18
@@ -63,7 +63,9 @@ bss monitor_frame: word
 bss monitor_repeat_usage: word
 bss monitor_repeat_frame: word
 bss monitor_pager_active: word
-bss monitor_output_mode: word
+bss monitor_completion_active: word
+bss monitor_completion_count: word
+bss monitor_completion_selection: word
 bss monitor_saved_status: word
 bss monitor_saved_cause: word
 bss monitor_saved_epc: word
@@ -75,6 +77,7 @@ local initialize_input<const> = function()
 	*monitor_repeat_usage = 0
 	*monitor_repeat_frame = 0
 	*monitor_pager_active = 0
+	*monitor_completion_active = 0
 	local current_keys<const>: *word = monitor_current_keys
 	local previous_keys<const>: *word = monitor_previous_keys
 	for index = 0, 7 do
@@ -119,12 +122,7 @@ end
 local finish_output<const> = function()
 	*monitor_pager_active = 0
 	terminal.clear_status()
-	if *monitor_output_mode == output_mode_completion then
-		terminal.write('> ', palette_prompt)
-		monitor_editor.resume()
-	else
-		write_prompt()
-	end
+	write_prompt()
 end
 
 local pump_output<const> = function(line_limit)
@@ -148,7 +146,6 @@ local handle_command_action<const> = function(action)
 		terminal.clear()
 		write_prompt()
 	elseif action == monitor_commands.action_output then
-		*monitor_output_mode = output_mode_command
 		pump_output(terminal.page_rows)
 	else
 		write_prompt()
@@ -161,11 +158,14 @@ local submit_input<const> = function()
 	handle_command_action(monitor_commands.start(line, length))
 end
 
-local show_completion_candidates<const> = function()
-	monitor_editor.detach()
-	terminal.write_code(ascii_newline, palette_text)
-	*monitor_output_mode = output_mode_completion
-	pump_output(terminal.page_rows)
+local close_completion<const> = function()
+	*monitor_completion_active = 0
+	terminal.clear_status()
+end
+
+local move_completion<const> = function(delta)
+	*monitor_completion_selection = (*monitor_completion_selection + delta + *monitor_completion_count) % *monitor_completion_count
+	monitor_editor.show_candidates(*monitor_completion_selection)
 end
 
 local handle_pager_key<const> = function(usage)
@@ -212,21 +212,50 @@ local handle_pager_key<const> = function(usage)
 	return false
 end
 
-local process_hid_key<const> = function(usage, shift)
+local process_hid_key<const> = function(usage, shift, control)
 	if *monitor_pager_active ~= 0 then
 		return handle_pager_key(usage)
+	end
+	if *monitor_completion_active ~= 0 then
+		if usage == hid_tab or usage == hid_right or usage == hid_down then
+			move_completion(1)
+			return usage ~= hid_tab
+		end
+		if usage == hid_left or usage == hid_up then
+			move_completion(-1)
+			return true
+		end
+		if usage == hid_enter or usage == hid_numpad_enter then
+			local selection<const> = *monitor_completion_selection
+			close_completion()
+			monitor_editor.accept_candidate(selection)
+			return false
+		end
+		if usage == hid_escape then
+			close_completion()
+			return false
+		end
+		close_completion()
 	end
 	if usage == hid_enter or usage == hid_numpad_enter then
 		submit_input()
 		return false
 	end
 	if usage == hid_backspace then
-		monitor_editor.backspace()
+		if control then
+			monitor_editor.backspace_word()
+		else
+			monitor_editor.backspace()
+		end
 		return true
 	end
 	if usage == hid_tab then
-		if monitor_editor.complete() then
-			show_completion_candidates()
+		local match_count<const> = monitor_editor.complete()
+		if match_count > 1 then
+			*monitor_completion_active = 1
+			*monitor_completion_count = match_count
+			*monitor_completion_selection = 0
+			monitor_editor.show_candidates(0)
 		end
 		return false
 	end
@@ -243,15 +272,27 @@ local process_hid_key<const> = function(usage, shift)
 		return false
 	end
 	if usage == hid_delete then
-		monitor_editor.delete()
+		if control then
+			monitor_editor.delete_word()
+		else
+			monitor_editor.delete()
+		end
 		return true
 	end
 	if usage == hid_left then
-		monitor_editor.left()
+		if control then
+			monitor_editor.word_left()
+		else
+			monitor_editor.left()
+		end
 		return true
 	end
 	if usage == hid_right then
-		monitor_editor.right()
+		if control then
+			monitor_editor.word_right()
+		else
+			monitor_editor.right()
+		end
 		return true
 	end
 	if usage == hid_up then
@@ -289,10 +330,11 @@ local scan_keyboard<const> = function()
 		current[index] = input_keys[index]
 	end
 	local shift<const> = hid_usage_high(current[hid_left_shift >> 5], hid_left_shift) or hid_usage_high(current[hid_right_shift >> 5], hid_right_shift)
+	local control<const> = hid_usage_high(current[hid_left_control >> 5], hid_left_control) or hid_usage_high(current[hid_right_control >> 5], hid_right_control)
 	local pressed_usage = 0
 	for usage = hid_first_key, hid_last_key do
 		if hid_usage_high(current[usage >> 5], usage) and not hid_usage_high(previous[usage >> 5], usage) then
-			if process_hid_key(usage, shift) then
+			if process_hid_key(usage, shift, control) then
 				pressed_usage = usage
 			end
 		end
@@ -305,7 +347,7 @@ local scan_keyboard<const> = function()
 		if not hid_usage_high(current[repeat_usage >> 5], repeat_usage) then
 			*monitor_repeat_usage = 0
 		elseif *monitor_frame >= *monitor_repeat_frame then
-			process_hid_key(repeat_usage, shift)
+			process_hid_key(repeat_usage, shift, control)
 			*monitor_repeat_frame = *monitor_repeat_frame + repeat_interval_frames
 		end
 	end
@@ -359,7 +401,6 @@ function monitor.enter()
 	terminal.open()
 	terminal.write('BMSX BIOS MONITOR\n', palette_prompt)
 	monitor_commands.start_fault()
-	*monitor_output_mode = output_mode_command
 	pump_output(terminal.page_rows)
 	terminal.flush()
 	gx_gpu.enable_display()

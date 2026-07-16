@@ -7,6 +7,7 @@ bss affine_pixels: word[4]
 local frame = 0
 local irq_mask_register<const>: *word = 0x08000010
 local input_control_register<const>: *word = 0x0800006c
+local gp0<const>: *word = 0x08010240
 local irq_vblank<const> = 0x0004
 local irq_apu<const> = 0x0020
 local vblank_count = 0
@@ -50,10 +51,12 @@ local upload_affine_texture<const> = function()
 	pixels[1] = 0xff00ff00
 	pixels[2] = 0xff0000ff
 	pixels[3] = 0xffffffff
+	*gp0 = 0xe6000001
 	gx_upload_rgba8888_to_direct16_stride(
 		affine_pixels, 0, 0, 2,
 		affine_texture_x, affine_texture_y,
 		2, 2)
+	*gp0 = 0xe6000000
 end
 
 local draw_affine_texture<const> = function()

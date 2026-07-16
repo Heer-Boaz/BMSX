@@ -3,6 +3,7 @@ struct TexturedUniforms {
 	textureWindow: vec4<f32>,
 	params0: vec4<f32>,
 	params1: vec4<f32>,
+	params2: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> u: TexturedUniforms;
@@ -58,7 +59,7 @@ const VRAM_ROW_COUNT = 512u;
 fn vs_main(input: VSIn, @builtin(instance_index) bandIndex: u32) -> VSOut {
 	var out: VSOut;
 	let logicalRowOrigin = bandIndex * VRAM_ROW_COUNT;
-	let rasterPosition = input.position + vec2<f32>(0.5, 0.5 - f32(logicalRowOrigin));
+	let rasterPosition = input.position + vec2<f32>(u.params2.x, u.params2.x - f32(logicalRowOrigin));
 	let clip = vec2<f32>((rasterPosition.x / 512.0) - 1.0, 1.0 - (rasterPosition.y / 256.0));
 	out.position = vec4<f32>(clip, 0.0, 1.0);
 	out.color = input.color;
@@ -75,7 +76,7 @@ fn vs_main(input: VSIn, @builtin(instance_index) bandIndex: u32) -> VSOut {
 fn vs_fixed(input: FixedVSIn, @builtin(instance_index) bandIndex: u32) -> FixedVSOut {
 	var out: FixedVSOut;
 	let logicalRowOrigin = bandIndex * VRAM_ROW_COUNT;
-	let rasterPosition = input.position + vec2<f32>(0.5, 0.5 - f32(logicalRowOrigin));
+	let rasterPosition = input.position + vec2<f32>(u.params2.x, u.params2.x - f32(logicalRowOrigin));
 	let clip = vec2<f32>((rasterPosition.x / 512.0) - 1.0, 1.0 - (rasterPosition.y / 256.0));
 	out.position = vec4<f32>(clip, 0.0, 1.0);
 	out.uvPlaneBase = input.uvPlaneBase;

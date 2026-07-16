@@ -952,17 +952,20 @@ than retaining or reconstructing it.
 
 The BIOS keeps a fixed 128-line cell scrollback, dirty ranges, line editor,
 history and GP0 command list in ordinary `.bss`. A packed ROM table maps each
-4x6 tiny-font codepoint to its physical system-texture coordinates. The initial
-frame is a full clear followed by textured glyph rectangles; later edits clear
-and redraw only dirty cell spans, and ordinary VRAM-to-VRAM copy scrolls the
-visible framebuffer. DMA consumes the retained command words before firmware
-may rebuild them, and the final GP0 IRQ fences GPU completion. No render-time
-Lua tables, strings or pixel buffers are allocated.
+4x6 tiny-font codepoint to its physical system-texture coordinates; lowercase
+ASCII entries intentionally address the corresponding uppercase glyph while
+the retained input bytes remain unchanged. The initial frame is a full clear
+followed by textured glyph rectangles; later edits clear and redraw only dirty
+cell spans, and ordinary VRAM-to-VRAM copy scrolls the visible framebuffer. DMA
+consumes the retained command words before firmware may rebuild them, and the
+final GP0 IRQ fences GPU completion. No render-time Lua tables, strings or
+pixel buffers are allocated.
 
-The firmware line editor supports insertion, deletion, cursor motion, a fixed
-history ring and command-name completion. Long producers feed one fixed row at
-a time into an automatic pager; page/line advance and scrollback never retain a
-second copy of command output. Command metadata is one typed `.rodata` array of
+The firmware line editor supports insertion, deletion, cursor/home/end and
+word motion/deletion, a fixed history ring and command-name completion with a
+retained selectable candidate row. Long producers feed one fixed row at a time
+into an automatic pager; page/line advance and scrollback never retain a second
+copy of command output. Command metadata is one typed `.rodata` array of
 records, so names, usage and descriptions have no parallel blob, offset or
 length tables.
 

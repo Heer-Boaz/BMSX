@@ -10,7 +10,6 @@ local command_not_found<const> = 0xffffffff
 local producer_unknown<const> = 0xfffffffe
 local producer_usage<const> = 0xfffffffd
 local producer_none<const> = 0xfffffffc
-local producer_candidates<const> = 0xfffffffb
 local system_reset<const> = 0x00000001
 local row_done<const> = 1
 local row_more<const> = 2
@@ -64,8 +63,6 @@ bss monitor_context_cause: word
 bss monitor_context_epc: word
 bss monitor_context_bad_address: word
 bss monitor_context_irq_mask: word
-bss monitor_completion_prefix: word[terminal_columns]
-bss monitor_completion_prefix_length: word
 
 monitor_commands.action_none = action_none
 monitor_commands.action_output = action_output
@@ -129,6 +126,24 @@ local matches_prefix<const> = function(name, line, start_index, length)
 		end
 	end
 	return true
+end
+
+local completion_match<const> = function(name, line, start_index, length, capacity)
+	return start_index + #name <= capacity and matches_prefix(name, line, start_index, length)
+end
+
+local completion_start<const> = function(line, length, cursor)
+	if cursor ~= length then
+		return -1
+	end
+	local source<const>: *word = line
+	local start_index<const> = skip_spaces(source, 0, cursor)
+	for index = start_index, cursor - 1 do
+		if source[index] == ascii_space then
+			return -1
+		end
+	end
+	return start_index
 end
 
 local hex_digit<const> = function(code)
@@ -243,27 +258,23 @@ function monitor_commands.start_fault()
 end
 
 function monitor_commands.complete(line, length, cursor, capacity)
-	if cursor ~= length then
+	local source<const>: *word = line
+	local start_index<const> = completion_start(source, length, cursor)
+	if start_index < 0 then
 		return length, cursor, 0, false
 	end
-	local source<const>: *word = line
-	local start_index<const> = skip_spaces(source, 0, cursor)
-	for index = start_index, cursor - 1 do
-		if source[index] == ascii_space then
-			return length, cursor, 0, false
-		end
-	end
 	local prefix_length<const> = cursor - start_index
-	local first_name = ''
+	local first_command = command_not_found
 	local common_length = 0
 	local match_count = 0
 	for command = 0, #command_registry - 1 do
 		local name<const> = command_registry[command].name
-		if matches_prefix(name, source, start_index, prefix_length) then
+		if completion_match(name, source, start_index, prefix_length, capacity) then
 			if match_count == 0 then
-				first_name = name
+				first_command = command
 				common_length = #name
 			else
+				local first_name<const> = command_registry[first_command].name
 				local limit = common_length
 				if #name < limit then
 					limit = #name
@@ -280,6 +291,7 @@ function monitor_commands.complete(line, length, cursor, capacity)
 	if match_count == 0 then
 		return length, cursor, 0, false
 	end
+	local first_name<const> = command_registry[first_command].name
 	local changed = common_length ~= prefix_length
 	for index = 0, common_length - 1 do
 		local code<const> = byte(first_name, index + 1)
@@ -297,16 +309,47 @@ function monitor_commands.complete(line, length, cursor, capacity)
 	return next_length, next_length, match_count, changed
 end
 
-function monitor_commands.start_candidates(line, cursor)
+function monitor_commands.fill_candidates(row, line, length, cursor, capacity, selected)
+	clear_row(row)
 	local source<const>: *word = line
-	local start_index<const> = skip_spaces(source, 0, cursor)
-	local prefix<const>: *word = monitor_completion_prefix
-	*monitor_completion_prefix_length = cursor - start_index
-	for index = 0, *monitor_completion_prefix_length - 1 do
-		prefix[index] = uppercase(source[start_index + index])
+	local start_index<const> = completion_start(source, length, cursor)
+	local prefix_length<const> = cursor - start_index
+	local column = 0
+	local ordinal = 0
+	for command = 0, #command_registry - 1 do
+		local name<const> = command_registry[command].name
+		if completion_match(name, source, start_index, prefix_length, capacity) then
+			if column ~= 0 then
+				column = write_text(row, column, '  ', palette_text)
+			end
+			column = write_text(row, column, name, ordinal == selected and palette_accent or palette_text)
+			ordinal = ordinal + 1
+		end
 	end
-	*monitor_command_producer = producer_candidates
-	*monitor_command_cursor = 0
+end
+
+function monitor_commands.accept_candidate(line, length, cursor, capacity, selected)
+	local target<const>: *word = line
+	local start_index<const> = completion_start(target, length, cursor)
+	local prefix_length<const> = cursor - start_index
+	local ordinal = 0
+	for command = 0, #command_registry - 1 do
+		local name<const> = command_registry[command].name
+		if completion_match(name, target, start_index, prefix_length, capacity) then
+			if ordinal == selected then
+				for index = 1, #name do
+					target[start_index + index - 1] = byte(name, index)
+				end
+				local next_length<const> = start_index + #name
+				if next_length < capacity then
+					target[next_length] = ascii_space
+					return next_length + 1
+				end
+				return next_length
+			end
+			ordinal = ordinal + 1
+		end
+	end
 end
 
 function monitor_commands.start(line, length)
@@ -404,30 +447,6 @@ function monitor_commands.next_row(row)
 		write_text(row, column, command.usage, palette_text)
 		*monitor_command_producer = producer_none
 		return row_done
-	end
-	if producer == producer_candidates then
-		local prefix<const>: *word = monitor_completion_prefix
-		local command = *monitor_command_cursor
-		local column = 0
-		while command < #command_registry do
-			local name<const> = command_registry[command].name
-			if matches_prefix(name, prefix, 0, *monitor_completion_prefix_length) then
-				if column ~= 0 and column + 2 + #name > terminal_columns then
-					break
-				end
-				if column ~= 0 then
-					column = write_text(row, column, '  ', palette_text)
-				end
-				column = write_text(row, column, name, palette_accent)
-			end
-			command = command + 1
-		end
-		*monitor_command_cursor = command
-		if command == #command_registry then
-			*monitor_command_producer = producer_none
-			return row_done
-		end
-		return row_more
 	end
 	local entry<const>: *monitor_command = &command_registry[producer]
 	if entry.kind == command_fault or entry.kind == command_registers then

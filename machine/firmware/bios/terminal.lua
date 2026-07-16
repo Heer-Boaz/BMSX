@@ -298,6 +298,16 @@ function terminal.show_status(text, palette)
 	mark_cell_range_dirty(terminal_rows - 1, 0, terminal_columns)
 end
 
+function terminal.show_status_row(row)
+	local source<const>: *word = row
+	local status<const>: *word = terminal_status_cells
+	for column = 0, terminal_columns - 1 do
+		status[column] = source[column]
+	end
+	*terminal_status_visible = 1
+	mark_cell_range_dirty(terminal_rows - 1, 0, terminal_columns)
+end
+
 function terminal.clear_status()
 	if *terminal_status_visible ~= 0 then
 		*terminal_status_visible = 0
