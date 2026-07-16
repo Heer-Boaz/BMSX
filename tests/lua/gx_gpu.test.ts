@@ -559,6 +559,7 @@ test('GX-GPU decodes PSX GP0 signed vertex and rectangle size words', () => {
 	assert.equal(gxGpuVramWrappedHeight(0, 511), 511);
 	assert.equal(gxGpuVramLogicalAreaOverlapsBounds(1008, 500, 32, 24, 0, 0, 8, 8), true);
 	assert.equal(gxGpuVramLogicalAreaOverlapsBounds(1008, 500, 32, 24, 512, 256, 520, 264), false);
+	assert.equal(gxGpuVramLogicalAreaOverlapsBounds(60, 8, 1, 1, 60, 520, 61, 521), true);
 	assert.equal(gxGpuVramCopyNeedsChunking(10, 20, 12, 24, 32, 16), true);
 	assert.equal(gxGpuVramCopyChunkHeight(20, 24, 16), 4);
 	assert.equal(gxGpuVramCopyNeedsChunking(10, 20, 10, 24, 32, 16), false);
@@ -669,8 +670,8 @@ test('GX-GPU decodes PSX GP0 signed vertex and rectangle size words', () => {
 	assert.equal(gxGpuDrawingAreaRightExclusive(20 | (34 << 10), 12 | (40 << 10)), 0);
 	assert.equal(gxGpuDrawingAreaTop(12 | (40 << 10), 20 | (34 << 10)), 0);
 	assert.equal(gxGpuDrawingAreaBottomExclusive(12 | (40 << 10), 20 | (34 << 10)), 0);
-	assert.equal(gxGpuDrawingAreaTop(12 | (600 << 10), 20 | (700 << 10)), 511);
-	assert.equal(gxGpuDrawingAreaBottomExclusive(12 | (600 << 10), 20 | (700 << 10)), 512);
+	assert.equal(gxGpuDrawingAreaTop(12 | (600 << 10), 20 | (700 << 10)), 600);
+	assert.equal(gxGpuDrawingAreaBottomExclusive(12 | (600 << 10), 20 | (700 << 10)), 701);
 });
 
 test('GX-GPU exposes PSX GP1 display mode instead of a VDP profile register', () => {
@@ -2122,7 +2123,7 @@ test('GX-GPU software texture sampling owns window, page, packed texel, and CLUT
 	], [0x001f, 0x03e0, 0x001f, 0x03e0, 0x001f, 0x03e0, 0x001f, 0x03e0]);
 });
 
-test('GX-GPU software backend applies drawing offsets, inclusive drawing areas, and rectangle coordinate wrap', () => {
+test('GX-GPU software backend applies drawing offsets, raw drawing areas, and coordinate wrap', () => {
 	const commandBuffer = new GxGpuCommandBuffer(standaloneCommandBufferDma);
 	commandBuffer.reset();
 	pushSoftwareCommand(commandBuffer, new Uint32Array([
@@ -2177,6 +2178,48 @@ test('GX-GPU software backend applies drawing offsets, inclusive drawing areas, 
 		0x04000400,
 		(1 << 16) | 1,
 	]), GX_GPU_COMMAND_DRAW_RECTANGLE, GX_GPU_GP0_RECTANGLE_FIRST, 0, 0, 0, GX_GPU_SOFTWARE_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD, 0x00200400);
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((GX_GPU_GP0_RECTANGLE_FIRST << 24) | 0x0000ff) >>> 0,
+		(520 << 16) | 60,
+		(1 << 16) | 1,
+	]), GX_GPU_COMMAND_DRAW_RECTANGLE, GX_GPU_GP0_RECTANGLE_FIRST, 0, 0, 60 | (520 << 10), 60 | (520 << 10));
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((GX_GPU_GP0_RECTANGLE_FIRST << 24) | 0x00ff00) >>> 0,
+		(8 << 16) | 60,
+		(1 << 16) | 1,
+	]), GX_GPU_COMMAND_DRAW_RECTANGLE, GX_GPU_GP0_RECTANGLE_FIRST, 0, 0, 60 | (520 << 10), 60 | (520 << 10));
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((GX_GPU_GP0_RECTANGLE_FIRST << 24) | 0x0000ff) >>> 0,
+		(520 << 16) | 61,
+		(1 << 16) | 1,
+	]), GX_GPU_COMMAND_DRAW_RECTANGLE, GX_GPU_GP0_RECTANGLE_FIRST, 0, 0, 0, 1023 | (1023 << 10));
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((GX_GPU_GP0_RECTANGLE_FIRST << 24) | 0x00ff00) >>> 0,
+		(8 << 16) | 61,
+		(1 << 16) | 1,
+	]), GX_GPU_COMMAND_DRAW_RECTANGLE, GX_GPU_GP0_RECTANGLE_FIRST, 0, 0, 0, 1023 | (1023 << 10));
+	const aliasedQuadOpcode = GX_GPU_GP0_POLYGON_FIRST | GX_GPU_GP0_RENDER_GOURAUD_BIT | GX_GPU_GP0_RENDER_QUAD_OR_POLYLINE_BIT;
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((aliasedQuadOpcode << 24) | 0x0000ff) >>> 0,
+		(1022 << 16) | 105,
+		0x0000ff,
+		(511 << 16) | 100,
+		0x0000ff,
+		(511 << 16) | 110,
+		0x00ff00,
+		105,
+	]), GX_GPU_COMMAND_DRAW_POLYGON, aliasedQuadOpcode, 0, 0, 0, 1023 | (1023 << 10));
+	const blendedAliasedQuadOpcode = aliasedQuadOpcode | 0x02;
+	pushSoftwareCommand(commandBuffer, new Uint32Array([
+		((blendedAliasedQuadOpcode << 24) | 0x0000ff) >>> 0,
+		(1022 << 16) | 125,
+		0x0000ff,
+		(511 << 16) | 120,
+		0x0000ff,
+		(511 << 16) | 130,
+		0x00ff00,
+		125,
+	]), GX_GPU_COMMAND_DRAW_POLYGON, blendedAliasedQuadOpcode, 0, 0, 0, 1023 | (1023 << 10));
 
 	gxGpuSoftwareVram.fill(0);
 	executeGxGpuSoftwareCommands(commandBuffer, 0);
@@ -2209,6 +2252,10 @@ test('GX-GPU software backend applies drawing offsets, inclusive drawing areas, 
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(39, 19)], 0);
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(46, 26)], 0);
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 0)], 0x7fff);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(60, 8)], 0x001f);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(61, 8)], 0x03e0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(105, 255)], 0x020f);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(125, 255)], 0x010f);
 });
 
 test('GX-GPU software fill bypasses drawing-area and mask-bit drawing state', () => {

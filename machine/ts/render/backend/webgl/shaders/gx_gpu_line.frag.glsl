@@ -9,6 +9,7 @@ uniform float u_checkMaskBit;
 uniform float u_setMaskBit;
 uniform float u_ditherEnable;
 uniform float u_interlacedRenderWord;
+uniform float u_rasterRowOrigin;
 in vec2 v_lineStart;
 in vec2 v_lineEnd;
 in vec3 v_colorBase;
@@ -51,7 +52,7 @@ vec3 blendRgb5(vec3 src5, vec3 dst5) {
 }
 
 float ditherOffset() {
-	vec2 pixelCoord = floor(vec2(gl_FragCoord.x - 0.5, VRAM_SIZE.y - gl_FragCoord.y - 0.5));
+	vec2 pixelCoord = floor(vec2(gl_FragCoord.x - 0.5, VRAM_SIZE.y - gl_FragCoord.y - 0.5 + u_rasterRowOrigin));
 	float x = mod(pixelCoord.x, 4.0);
 	float y = mod(pixelCoord.y, 4.0);
 	if (y < 0.5) {
@@ -120,7 +121,7 @@ void discardActiveInterlacedLine() {
 		return;
 	}
 	float activeLineLsb = mod(floor(u_interlacedRenderWord * 0.5), 2.0);
-	float vramY = floor(VRAM_SIZE.y - gl_FragCoord.y);
+	float vramY = floor(VRAM_SIZE.y - gl_FragCoord.y + u_rasterRowOrigin);
 	if (mod(vramY, 2.0) == activeLineLsb) {
 		discard;
 	}
@@ -128,7 +129,7 @@ void discardActiveInterlacedLine() {
 
 void main() {
 	discardActiveInterlacedLine();
-	ivec2 pixelCoord = ivec2(floor(vec2(gl_FragCoord.x - 0.5, VRAM_SIZE.y - gl_FragCoord.y - 0.5)));
+	ivec2 pixelCoord = ivec2(floor(vec2(gl_FragCoord.x - 0.5, VRAM_SIZE.y - gl_FragCoord.y - 0.5 + u_rasterRowOrigin)));
 	ivec2 lineStart = ivec2(v_lineStart);
 	ivec2 delta = ivec2(v_lineEnd) - lineStart;
 	ivec2 absDelta = abs(delta);

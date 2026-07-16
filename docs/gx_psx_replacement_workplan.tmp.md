@@ -511,8 +511,12 @@ and MAME
   - [x] Implement raster-stage signed-11 wrapping for polygon output; do not
     pre-truncate its vertices because +1024 can be a valid exclusive edge and
     production PSX renderers wrap polygons during rasterization.
-  - [ ] Decide the emulated PSX drawing-area Y hardware revision before changing
-    the current 512-row VRAM clamp for 10-bit E3/E4 Y words.
+  - [x] Select the type-2/208-pin drawing-area contract: compare raw 10-bit
+    E3/E4 Y before installed 1024x512 VRAM aliases the physical row with
+    `y & 511`; preserve that order and physical dependency aliasing in software,
+    WebGL2, WebGPU, and GLES2 without widening VRAM. Spanning accelerated draws
+    retain triangle order and synchronize dependent sample feedback between
+    ordered physical-band submissions.
   - [ ] Run the clipping/offset vectors live against accelerated backends.
 - [ ] Exact texture sampling/window/CLUT edge cases.
   - [x] Mirror raw software vectors for E2 U/V replacement, direct16 page wrap,

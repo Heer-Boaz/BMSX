@@ -6,13 +6,15 @@ in vec2 a_lineStart;
 in vec2 a_lineEnd;
 in vec3 a_color0;
 in vec3 a_color1;
+uniform float u_rasterRowOrigin;
 out vec2 v_lineStart;
 out vec2 v_lineEnd;
 out vec3 v_colorBase;
 out vec3 v_colorStep;
 
 void main() {
-	vec2 clip = vec2((a_position.x / 512.0) - 1.0, 1.0 - (a_position.y / 256.0));
+	vec2 rasterPosition = vec2(a_position.x, a_position.y - u_rasterRowOrigin);
+	vec2 clip = vec2((rasterPosition.x / 512.0) - 1.0, 1.0 - (rasterPosition.y / 256.0));
 	gl_Position = vec4(clip, 0.0, 1.0);
 	v_lineStart = a_lineStart;
 	v_lineEnd = a_lineEnd;

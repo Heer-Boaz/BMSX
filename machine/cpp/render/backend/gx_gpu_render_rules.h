@@ -182,20 +182,28 @@ inline u32 gxGpuVramWrappedHeight(u32 y, u32 height) {
 }
 
 inline bool gxGpuVramLogicalAreaOverlapsBounds(u32 x, u32 y, u32 width, u32 height, i32 left, i32 top, i32 right, i32 bottom) {
-	u32 rowY = y & (GX_GPU_VRAM_HEIGHT - 1u);
-	u32 remainingHeight = height;
-	while (remainingHeight != 0u) {
-		const u32 runHeight = gxGpuVramWrappedHeight(rowY, remainingHeight);
-		u32 columnX = x & (GX_GPU_VRAM_WIDTH - 1u);
-		u32 remainingWidth = width;
-		while (remainingWidth != 0u) {
-			const u32 runWidth = gxGpuVramWrappedWidth(columnX, remainingWidth);
-			if (static_cast<i32>(columnX) < right && left < static_cast<i32>(columnX + runWidth) && static_cast<i32>(rowY) < bottom && top < static_cast<i32>(rowY + runHeight)) return true;
-			columnX = (columnX + runWidth) & (GX_GPU_VRAM_WIDTH - 1u);
-			remainingWidth -= runWidth;
+	if (right <= left || bottom <= top) return false;
+	u32 boundsY = static_cast<u32>(top) & (GX_GPU_VRAM_HEIGHT - 1u);
+	u32 remainingBoundsHeight = static_cast<u32>(bottom - top);
+	while (remainingBoundsHeight != 0u) {
+		const u32 boundsRunHeight = gxGpuVramWrappedHeight(boundsY, remainingBoundsHeight);
+		u32 rowY = y & (GX_GPU_VRAM_HEIGHT - 1u);
+		u32 remainingHeight = height;
+		while (remainingHeight != 0u) {
+			const u32 runHeight = gxGpuVramWrappedHeight(rowY, remainingHeight);
+			u32 columnX = x & (GX_GPU_VRAM_WIDTH - 1u);
+			u32 remainingWidth = width;
+			while (remainingWidth != 0u) {
+				const u32 runWidth = gxGpuVramWrappedWidth(columnX, remainingWidth);
+				if (static_cast<i32>(columnX) < right && left < static_cast<i32>(columnX + runWidth) && rowY < boundsY + boundsRunHeight && boundsY < rowY + runHeight) return true;
+				columnX = (columnX + runWidth) & (GX_GPU_VRAM_WIDTH - 1u);
+				remainingWidth -= runWidth;
+			}
+			rowY = (rowY + runHeight) & (GX_GPU_VRAM_HEIGHT - 1u);
+			remainingHeight -= runHeight;
 		}
-		rowY = (rowY + runHeight) & (GX_GPU_VRAM_HEIGHT - 1u);
-		remainingHeight -= runHeight;
+		boundsY = (boundsY + boundsRunHeight) & (GX_GPU_VRAM_HEIGHT - 1u);
+		remainingBoundsHeight -= boundsRunHeight;
 	}
 	return false;
 }

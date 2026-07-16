@@ -138,6 +138,7 @@ void testGp0RawDrawWordDecoders() {
 	require(bmsx::gxGpuVramWrappedHeight(0u, 511u) == 511u, "GX-GPU full-start VRAM height run");
 	require(bmsx::gxGpuVramLogicalAreaOverlapsBounds(1008u, 500u, 32u, 24u, 0, 0, 8, 8), "GX-GPU wrapped VRAM area overlaps low corner bounds");
 	require(!bmsx::gxGpuVramLogicalAreaOverlapsBounds(1008u, 500u, 32u, 24u, 512, 256, 520, 264), "GX-GPU wrapped VRAM area excludes separated bounds");
+	require(bmsx::gxGpuVramLogicalAreaOverlapsBounds(60u, 8u, 1u, 1u, 60, 520, 61, 521), "GX-GPU logical rows alias at installed VRAM height");
 	require(bmsx::gxGpuVramCopyNeedsChunking(10u, 20u, 12u, 24u, 32u, 16u), "GX-GPU diagonal overlapping copy chunks");
 	require(bmsx::gxGpuVramCopyChunkHeight(20u, 24u, 16u) == 4u, "GX-GPU diagonal overlapping copy chunk height");
 	require(!bmsx::gxGpuVramCopyNeedsChunking(10u, 20u, 10u, 24u, 32u, 16u), "GX-GPU vertical-only copy is not chunked");
@@ -247,8 +248,8 @@ void testGp0RawDrawWordDecoders() {
 	require(bmsx::gxGpuDrawingAreaRightExclusive(20u | (34u << 10u), 12u | (40u << 10u)) == 0u, "GX-GPU invalid drawing area right");
 	require(bmsx::gxGpuDrawingAreaTop(12u | (40u << 10u), 20u | (34u << 10u)) == 0u, "GX-GPU invalid drawing area top");
 	require(bmsx::gxGpuDrawingAreaBottomExclusive(12u | (40u << 10u), 20u | (34u << 10u)) == 0u, "GX-GPU invalid drawing area bottom");
-	require(bmsx::gxGpuDrawingAreaTop(12u | (600u << 10u), 20u | (700u << 10u)) == 511u, "GX-GPU drawing area top clamps to VRAM");
-	require(bmsx::gxGpuDrawingAreaBottomExclusive(12u | (600u << 10u), 20u | (700u << 10u)) == 512u, "GX-GPU drawing area bottom clamps to VRAM");
+	require(bmsx::gxGpuDrawingAreaTop(12u | (600u << 10u), 20u | (700u << 10u)) == 600u, "GX-GPU drawing area preserves raw 10-bit top");
+	require(bmsx::gxGpuDrawingAreaBottomExclusive(12u | (600u << 10u), 20u | (700u << 10u)) == 701u, "GX-GPU drawing area preserves raw 10-bit bottom");
 }
 
 void testGp1DisplayModeOwnsPalNtsc() {
@@ -2323,6 +2324,102 @@ void testSoftwareDrawingAreaOffsetClippingAndRectangleCoordinateWrap() {
 		0u,
 		GX_GPU_SOFTWARE_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD,
 		0x00200400u);
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 3>{
+			(bmsx::GX_GPU_GP0_RECTANGLE_FIRST << 24u) | 0x0000ffu,
+			(520u << 16u) | 60u,
+			(1u << 16u) | 1u,
+		},
+		3u,
+		bmsx::GX_GPU_COMMAND_DRAW_RECTANGLE,
+		bmsx::GX_GPU_GP0_RECTANGLE_FIRST,
+		0u,
+		0u,
+		60u | (520u << 10u),
+		60u | (520u << 10u));
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 3>{
+			(bmsx::GX_GPU_GP0_RECTANGLE_FIRST << 24u) | 0x00ff00u,
+			(8u << 16u) | 60u,
+			(1u << 16u) | 1u,
+		},
+		3u,
+		bmsx::GX_GPU_COMMAND_DRAW_RECTANGLE,
+		bmsx::GX_GPU_GP0_RECTANGLE_FIRST,
+		0u,
+		0u,
+		60u | (520u << 10u),
+		60u | (520u << 10u));
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 3>{
+			(bmsx::GX_GPU_GP0_RECTANGLE_FIRST << 24u) | 0x0000ffu,
+			(520u << 16u) | 61u,
+			(1u << 16u) | 1u,
+		},
+		3u,
+		bmsx::GX_GPU_COMMAND_DRAW_RECTANGLE,
+		bmsx::GX_GPU_GP0_RECTANGLE_FIRST,
+		0u,
+		0u,
+		0u,
+		1023u | (1023u << 10u));
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 3>{
+			(bmsx::GX_GPU_GP0_RECTANGLE_FIRST << 24u) | 0x00ff00u,
+			(8u << 16u) | 61u,
+			(1u << 16u) | 1u,
+		},
+		3u,
+		bmsx::GX_GPU_COMMAND_DRAW_RECTANGLE,
+		bmsx::GX_GPU_GP0_RECTANGLE_FIRST,
+		0u,
+		0u,
+		0u,
+		1023u | (1023u << 10u));
+	constexpr uint8_t aliasedQuadOpcode = bmsx::GX_GPU_GP0_POLYGON_FIRST | bmsx::GX_GPU_GP0_RENDER_GOURAUD_BIT | bmsx::GX_GPU_GP0_RENDER_QUAD_OR_POLYLINE_BIT;
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 8>{
+			(aliasedQuadOpcode << 24u) | 0x0000ffu,
+			(1022u << 16u) | 105u,
+			0x0000ffu,
+			(511u << 16u) | 100u,
+			0x0000ffu,
+			(511u << 16u) | 110u,
+			0x00ff00u,
+			105u,
+		},
+		8u,
+		bmsx::GX_GPU_COMMAND_DRAW_POLYGON,
+		aliasedQuadOpcode,
+		0u,
+		0u,
+		0u,
+		1023u | (1023u << 10u));
+	constexpr uint8_t blendedAliasedQuadOpcode = aliasedQuadOpcode | 0x02u;
+	pushSoftwareCommand(
+		commandBuffer,
+		std::array<uint32_t, 8>{
+			(blendedAliasedQuadOpcode << 24u) | 0x0000ffu,
+			(1022u << 16u) | 125u,
+			0x0000ffu,
+			(511u << 16u) | 120u,
+			0x0000ffu,
+			(511u << 16u) | 130u,
+			0x00ff00u,
+			125u,
+		},
+		8u,
+		bmsx::GX_GPU_COMMAND_DRAW_POLYGON,
+		blendedAliasedQuadOpcode,
+		0u,
+		0u,
+		0u,
+		1023u | (1023u << 10u));
 
 	bmsx::g_gxGpuSoftwareVram.fill(0u);
 	bmsx::executeGxGpuSoftwareCommands(commandBuffer, 0u);
@@ -2355,6 +2452,10 @@ void testSoftwareDrawingAreaOffsetClippingAndRectangleCoordinateWrap() {
 	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(39, 19)] == 0u, "GX-GPU software drawing area clips line start");
 	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(46, 26)] == 0u, "GX-GPU software drawing area clips line end");
 	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(0, 0)] == 0x7fffu, "GX-GPU software rectangle wraps post-offset coordinates to signed 11-bit");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(60, 8)] == 0x001fu, "GX-GPU software compares raw drawing Y before physical row aliasing");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(61, 8)] == 0x03e0u, "GX-GPU software preserves command order across aliased logical rows");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(105, 255)] == 0x020fu, "GX-GPU software preserves triangle order across aliased logical row bands");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(125, 255)] == 0x010fu, "GX-GPU software blends against prior triangle writes across aliased logical row bands");
 }
 
 void testSoftwareFillBypassesDrawingAreaAndMaskBitDrawingState() {

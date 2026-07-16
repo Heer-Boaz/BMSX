@@ -60,9 +60,7 @@ inline u32 gxGpuDrawingAreaLeft(u32 topLeftWord, u32 bottomRightWord) {
 inline u32 gxGpuDrawingAreaTop(u32 topLeftWord, u32 bottomRightWord) {
 	const u32 top = (topLeftWord >> 10u) & 0x3ffu;
 	const u32 bottom = (bottomRightWord >> 10u) & 0x3ffu;
-	if (top > bottom) return 0u;
-	const u32 bottomBound = bottom < GX_GPU_VRAM_HEIGHT ? bottom : GX_GPU_VRAM_HEIGHT - 1u;
-	return top < bottomBound ? top : bottomBound;
+	return top <= bottom ? top : 0u;
 }
 
 inline u32 gxGpuDrawingAreaRightExclusive(u32 topLeftWord, u32 bottomRightWord) {
@@ -75,8 +73,7 @@ inline u32 gxGpuDrawingAreaRightExclusive(u32 topLeftWord, u32 bottomRightWord) 
 inline u32 gxGpuDrawingAreaBottomExclusive(u32 topLeftWord, u32 bottomRightWord) {
 	const u32 top = (topLeftWord >> 10u) & 0x3ffu;
 	const u32 bottom = (bottomRightWord >> 10u) & 0x3ffu;
-	if (top > bottom) return 0u;
-	return bottom < GX_GPU_VRAM_HEIGHT - 1u ? bottom + 1u : GX_GPU_VRAM_HEIGHT;
+	return top <= bottom ? bottom + 1u : 0u;
 }
 
 inline bool gxGpuSkipDrawingToActiveField(u32 statusWord) {

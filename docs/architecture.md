@@ -1010,6 +1010,24 @@ packed palette texels, CLUT addressing, STP, mask bits, four five-bit blend
 modes, dithering and RGB555 storage remain raw datapath stages rather than host
 float/color corrections.
 
+GX selects the type-2/208-pin drawing-area contract: GP0(E3h/E4h) retains and
+compares all ten Y bits. Installed VRAM remains exactly 1024x512 words; only the
+physical VRAM row address aliases with `y & 511` after raster clipping. Thus an
+upper-band sample at logical row 520 can store in physical row 8, while row 8
+itself is rejected when E3/E4 selects only the upper band. Accelerated backends
+project each non-empty clipped primitive range through one physical band in the
+normal case and at most two at row 512. Their vertex stage removes the band
+origin, their fragment stage restores logical Y for line DDA, fixed attribute
+planes, dither and interlace, and destination VRAM access remains physical.
+Dependency overlap, sample synchronization and dirty coverage compare the same
+physical aliases. A drawing area spanning both bands keeps GP0 command order by
+ending primitive batches at command boundaries. Within a command, generated
+triangles remain the outer submission order and each triangle visits its lower
+then upper logical band; dependent submissions synchronize the VRAM sample
+shadow between draws so blend, mask and texture feedback observe prior physical
+writes. Line and polyline segments keep their own order as well. Fill and
+image-transfer commands retain their separate physical VRAM datapaths.
+
 TS and C++ software renderers are the executable oracle for this contract, not
 a fallback inside accelerated backends. WebGL2, WebGPU and GLES2 consume the
 same command and raw-state representation and must run the same conformance

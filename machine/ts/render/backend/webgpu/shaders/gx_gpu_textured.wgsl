@@ -27,6 +27,7 @@ struct VSOut {
 	@location(3) @interpolate(flat) uvPlaneBase: vec2<u32>,
 	@location(4) @interpolate(flat) uvPlaneStepX: vec2<u32>,
 	@location(5) @interpolate(flat) uvPlaneStepY: vec2<u32>,
+	@location(6) @interpolate(flat) logicalRowOrigin: u32,
 };
 
 struct FixedVSIn {
@@ -47,14 +48,17 @@ struct FixedVSOut {
 	@location(3) @interpolate(flat) colorPlaneBase: vec3<u32>,
 	@location(4) @interpolate(flat) colorPlaneStepX: vec3<u32>,
 	@location(5) @interpolate(flat) colorPlaneStepY: vec3<u32>,
+	@location(6) @interpolate(flat) logicalRowOrigin: u32,
 };
 
 const VRAM_SIZE = vec2<f32>(1024.0, 512.0);
+const VRAM_ROW_COUNT = 512u;
 
 @vertex
-fn vs_main(input: VSIn) -> VSOut {
+fn vs_main(input: VSIn, @builtin(instance_index) bandIndex: u32) -> VSOut {
 	var out: VSOut;
-	let rasterPosition = input.position + vec2<f32>(0.5);
+	let logicalRowOrigin = bandIndex * VRAM_ROW_COUNT;
+	let rasterPosition = input.position + vec2<f32>(0.5, 0.5 - f32(logicalRowOrigin));
 	let clip = vec2<f32>((rasterPosition.x / 512.0) - 1.0, 1.0 - (rasterPosition.y / 256.0));
 	out.position = vec4<f32>(clip, 0.0, 1.0);
 	out.color = input.color;
@@ -63,13 +67,15 @@ fn vs_main(input: VSIn) -> VSOut {
 	out.uvPlaneBase = input.uvPlaneBase;
 	out.uvPlaneStepX = input.uvPlaneStepX;
 	out.uvPlaneStepY = input.uvPlaneStepY;
+	out.logicalRowOrigin = logicalRowOrigin;
 	return out;
 }
 
 @vertex
-fn vs_fixed(input: FixedVSIn) -> FixedVSOut {
+fn vs_fixed(input: FixedVSIn, @builtin(instance_index) bandIndex: u32) -> FixedVSOut {
 	var out: FixedVSOut;
-	let rasterPosition = input.position + vec2<f32>(0.5);
+	let logicalRowOrigin = bandIndex * VRAM_ROW_COUNT;
+	let rasterPosition = input.position + vec2<f32>(0.5, 0.5 - f32(logicalRowOrigin));
 	let clip = vec2<f32>((rasterPosition.x / 512.0) - 1.0, 1.0 - (rasterPosition.y / 256.0));
 	out.position = vec4<f32>(clip, 0.0, 1.0);
 	out.uvPlaneBase = input.uvPlaneBase;
@@ -78,6 +84,7 @@ fn vs_fixed(input: FixedVSIn) -> FixedVSOut {
 	out.colorPlaneBase = input.colorPlaneBase;
 	out.colorPlaneStepX = input.colorPlaneStepX;
 	out.colorPlaneStepY = input.colorPlaneStepY;
+	out.logicalRowOrigin = logicalRowOrigin;
 	return out;
 }
 
@@ -224,16 +231,18 @@ fn shadeTextured(vertex8: vec3<f32>, fragCoord: vec2<f32>, texcoord: vec2<f32>) 
 
 @fragment
 fn fs_main(input: VSOut) -> @location(0) vec4<f32> {
-	let texcoord = polygonTexcoord(input.texcoord, input.position.xy, input.uvPlaneEnable, input.uvPlaneBase, input.uvPlaneStepX, input.uvPlaneStepY);
-	return shadeTextured(floor(input.color * 255.0), input.position.xy, texcoord);
+	let logicalFragCoord = input.position.xy + vec2<f32>(0.0, f32(input.logicalRowOrigin));
+	let texcoord = polygonTexcoord(input.texcoord, logicalFragCoord, input.uvPlaneEnable, input.uvPlaneBase, input.uvPlaneStepX, input.uvPlaneStepY);
+	return shadeTextured(floor(input.color * 255.0), logicalFragCoord, texcoord);
 }
 
 @fragment
 fn fs_fixed(input: FixedVSOut) -> @location(0) vec4<f32> {
-	let pixel = vec2<u32>(u32(input.position.x), u32(input.position.y));
+	let logicalFragCoord = input.position.xy + vec2<f32>(0.0, f32(input.logicalRowOrigin));
+	let pixel = vec2<u32>(u32(logicalFragCoord.x), u32(logicalFragCoord.y));
 	let colorAccumulator = input.colorPlaneBase + input.colorPlaneStepX * pixel.x + input.colorPlaneStepY * pixel.y;
 	let uvAccumulator = input.uvPlaneBase + input.uvPlaneStepX * pixel.x + input.uvPlaneStepY * pixel.y;
 	let color8 = vec3<f32>((colorAccumulator >> vec3<u32>(12u)) & vec3<u32>(0xffu));
 	let texcoord = vec2<f32>((uvAccumulator >> vec2<u32>(12u)) & vec2<u32>(0xffu));
-	return shadeTextured(color8, input.position.xy, texcoord);
+	return shadeTextured(color8, logicalFragCoord, texcoord);
 }

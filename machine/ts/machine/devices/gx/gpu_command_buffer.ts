@@ -47,9 +47,7 @@ export function gxGpuDrawingAreaLeft(topLeftWord: number, bottomRightWord: numbe
 export function gxGpuDrawingAreaTop(topLeftWord: number, bottomRightWord: number): number {
 	const top = (topLeftWord >>> 10) & 0x3ff;
 	const bottom = (bottomRightWord >>> 10) & 0x3ff;
-	if (top > bottom) return 0;
-	const bottomBound = bottom < GX_GPU_VRAM_HEIGHT ? bottom : GX_GPU_VRAM_HEIGHT - 1;
-	return top < bottomBound ? top : bottomBound;
+	return top <= bottom ? top : 0;
 }
 
 export function gxGpuDrawingAreaRightExclusive(topLeftWord: number, bottomRightWord: number): number {
@@ -62,8 +60,7 @@ export function gxGpuDrawingAreaRightExclusive(topLeftWord: number, bottomRightW
 export function gxGpuDrawingAreaBottomExclusive(topLeftWord: number, bottomRightWord: number): number {
 	const top = (topLeftWord >>> 10) & 0x3ff;
 	const bottom = (bottomRightWord >>> 10) & 0x3ff;
-	if (top > bottom) return 0;
-	return bottom < GX_GPU_VRAM_HEIGHT - 1 ? bottom + 1 : GX_GPU_VRAM_HEIGHT;
+	return top <= bottom ? bottom + 1 : 0;
 }
 
 export function gxGpuSkipDrawingToActiveField(statusWord: number): boolean {

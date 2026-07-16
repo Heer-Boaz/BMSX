@@ -21,14 +21,18 @@ struct VSOut {
 	@location(1) lineEnd: vec2<f32>,
 	@location(2) colorBase: vec3<f32>,
 	@location(3) colorStep: vec3<f32>,
+	@location(4) @interpolate(flat) logicalRowOrigin: u32,
 };
 
 const VRAM_SIZE = vec2<f32>(1024.0, 512.0);
+const VRAM_ROW_COUNT = 512u;
 
 @vertex
-fn vs_main(input: VSIn) -> VSOut {
+fn vs_main(input: VSIn, @builtin(instance_index) bandIndex: u32) -> VSOut {
 	var out: VSOut;
-	let clip = vec2<f32>((input.position.x / 512.0) - 1.0, 1.0 - (input.position.y / 256.0));
+	let logicalRowOrigin = bandIndex * VRAM_ROW_COUNT;
+	let physicalPosition = input.position - vec2<f32>(0.0, f32(logicalRowOrigin));
+	let clip = vec2<f32>((physicalPosition.x / 512.0) - 1.0, 1.0 - (physicalPosition.y / 256.0));
 	out.position = vec4<f32>(clip, 0.0, 1.0);
 	out.lineStart = input.lineStart;
 	out.lineEnd = input.lineEnd;
@@ -40,6 +44,7 @@ fn vs_main(input: VSIn) -> VSOut {
 	if (steps > 0.0) {
 		out.colorStep = sign(colorDelta) * floor(abs(colorDelta) * 4096.0 / steps);
 	}
+	out.logicalRowOrigin = logicalRowOrigin;
 	return out;
 }
 
@@ -97,8 +102,9 @@ fn activeInterlacedLine(fragCoord: vec2<f32>) -> bool {
 
 @fragment
 fn fs_main(input: VSOut) -> @location(0) vec4<f32> {
-	if (activeInterlacedLine(input.position.xy)) { discard; }
-	let pixelCoord = vec2<i32>(floor(input.position.xy - vec2<f32>(0.5)));
+	let logicalFragCoord = input.position.xy + vec2<f32>(0.0, f32(input.logicalRowOrigin));
+	if (activeInterlacedLine(logicalFragCoord)) { discard; }
+	let pixelCoord = vec2<i32>(floor(logicalFragCoord - vec2<f32>(0.5)));
 	let lineStart = vec2<i32>(input.lineStart);
 	let delta = vec2<i32>(input.lineEnd) - lineStart;
 	let absDelta = abs(delta);
@@ -119,10 +125,10 @@ fn fs_main(input: VSOut) -> @location(0) vec4<f32> {
 		if (pixelCoord.x != lineStart.x + xDistance) { discard; }
 	}
 	let rgb8 = floor((input.colorBase + f32(stepIndex) * input.colorStep) / 4096.0);
-	var src5 = rgbToRgb5(rgb8, input.position.xy);
+	var src5 = rgbToRgb5(rgb8, logicalFragCoord);
 	var dstWord = 0.0;
 	if (u.params0.z > 0.5 || u.params0.x > 0.5) {
-		dstWord = rawStorageVramWord(input.position.xy - vec2<f32>(0.5));
+		dstWord = rawStorageVramWord(logicalFragCoord - vec2<f32>(0.5));
 		if (u.params0.z > 0.5 && maskBit(dstWord) > 0.5) { discard; }
 		if (u.params0.x > 0.5) { src5 = blendRgb5(src5, decodeRgb555To5(dstWord)); }
 	}

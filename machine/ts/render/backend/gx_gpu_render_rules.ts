@@ -191,20 +191,28 @@ export function gxGpuVramWrappedHeight(y: number, height: number): number {
 }
 
 export function gxGpuVramLogicalAreaOverlapsBounds(x: number, y: number, width: number, height: number, left: number, top: number, right: number, bottom: number): boolean {
-	let rowY = y & (GX_GPU_VRAM_HEIGHT - 1);
-	let remainingHeight = height;
-	while (remainingHeight !== 0) {
-		const runHeight = gxGpuVramWrappedHeight(rowY, remainingHeight);
-		let columnX = x & (GX_GPU_VRAM_WIDTH - 1);
-		let remainingWidth = width;
-		while (remainingWidth !== 0) {
-			const runWidth = gxGpuVramWrappedWidth(columnX, remainingWidth);
-			if (columnX < right && left < columnX + runWidth && rowY < bottom && top < rowY + runHeight) return true;
-			columnX = (columnX + runWidth) & (GX_GPU_VRAM_WIDTH - 1);
-			remainingWidth -= runWidth;
+	if (right <= left || bottom <= top) return false;
+	let boundsY = top & (GX_GPU_VRAM_HEIGHT - 1);
+	let remainingBoundsHeight = bottom - top;
+	while (remainingBoundsHeight !== 0) {
+		const boundsRunHeight = gxGpuVramWrappedHeight(boundsY, remainingBoundsHeight);
+		let rowY = y & (GX_GPU_VRAM_HEIGHT - 1);
+		let remainingHeight = height;
+		while (remainingHeight !== 0) {
+			const runHeight = gxGpuVramWrappedHeight(rowY, remainingHeight);
+			let columnX = x & (GX_GPU_VRAM_WIDTH - 1);
+			let remainingWidth = width;
+			while (remainingWidth !== 0) {
+				const runWidth = gxGpuVramWrappedWidth(columnX, remainingWidth);
+				if (columnX < right && left < columnX + runWidth && rowY < boundsY + boundsRunHeight && boundsY < rowY + runHeight) return true;
+				columnX = (columnX + runWidth) & (GX_GPU_VRAM_WIDTH - 1);
+				remainingWidth -= runWidth;
+			}
+			rowY = (rowY + runHeight) & (GX_GPU_VRAM_HEIGHT - 1);
+			remainingHeight -= runHeight;
 		}
-		rowY = (rowY + runHeight) & (GX_GPU_VRAM_HEIGHT - 1);
-		remainingHeight -= runHeight;
+		boundsY = (boundsY + boundsRunHeight) & (GX_GPU_VRAM_HEIGHT - 1);
+		remainingBoundsHeight -= boundsRunHeight;
 	}
 	return false;
 }

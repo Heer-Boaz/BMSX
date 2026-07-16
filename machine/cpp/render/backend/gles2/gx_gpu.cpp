@@ -164,8 +164,6 @@ struct GxGpuPrimitiveBatch {
 	size_t vertexFloatStart = 0u;
 	size_t vertexFloatCount = 0u;
 	GxGpuVramCopyRect drawBounds{};
-	u32 topLeftWord = 0u;
-	u32 bottomRightWord = 0u;
 	u32 maskBitModeWord = 0u;
 	u32 blendMode = 0u;
 	u32 interlacedRenderWord = 0u;
@@ -202,6 +200,7 @@ struct GxGpuLineBatchState {
 	bool blendEnabled = false;
 	u32 blendMode = 0u;
 	bool readsVram = false;
+	bool spansPhysicalRowBands = false;
 };
 
 GxGpuVramCopyRect g_vramCopyRectScratch{};
@@ -252,6 +251,7 @@ struct GxGpuRuntime {
 	GLint solidSetMaskBitUniform = -1;
 	GLint solidDitherEnableUniform = -1;
 	GLint solidInterlacedRenderWordUniform = -1;
+	GLint solidRasterRowOriginUniform = -1;
 	GLint fixedSolidPositionAttrib = -1;
 	GLint fixedSolidColorPlane0Attrib = -1;
 	GLint fixedSolidColorPlane1Attrib = -1;
@@ -264,6 +264,7 @@ struct GxGpuRuntime {
 	GLint fixedSolidSetMaskBitUniform = -1;
 	GLint fixedSolidDitherEnableUniform = -1;
 	GLint fixedSolidInterlacedRenderWordUniform = -1;
+	GLint fixedSolidRasterRowOriginUniform = -1;
 	GLint linePositionAttrib = -1;
 	GLint lineStartAttrib = -1;
 	GLint lineEndAttrib = -1;
@@ -276,6 +277,7 @@ struct GxGpuRuntime {
 	GLint lineSetMaskBitUniform = -1;
 	GLint lineDitherEnableUniform = -1;
 	GLint lineInterlacedRenderWordUniform = -1;
+	GLint lineRasterRowOriginUniform = -1;
 	GLint texturedPositionAttrib = -1;
 	GLint texturedColorAttrib = -1;
 	GLint texturedTexcoordAttrib = -1;
@@ -296,6 +298,7 @@ struct GxGpuRuntime {
 	GLint texturedSetMaskBitUniform = -1;
 	GLint texturedDitherEnableUniform = -1;
 	GLint texturedInterlacedRenderWordUniform = -1;
+	GLint texturedRasterRowOriginUniform = -1;
 	GLint fixedTexturedPositionAttrib = -1;
 	GLint fixedTexturedUvPlane01Attrib = -1;
 	GLint fixedTexturedUvPlane23Attrib = -1;
@@ -317,6 +320,7 @@ struct GxGpuRuntime {
 	GLint fixedTexturedSetMaskBitUniform = -1;
 	GLint fixedTexturedDitherEnableUniform = -1;
 	GLint fixedTexturedInterlacedRenderWordUniform = -1;
+	GLint fixedTexturedRasterRowOriginUniform = -1;
 	GLint transferPositionAttrib = -1;
 	GLint transferTexcoordAttrib = -1;
 	GLint transferSourceUniform = -1;
@@ -425,6 +429,7 @@ void initGxGpu(OpenGLES2Backend& backend) {
 	g_gxGpu.solidSetMaskBitUniform = glGetUniformLocation(g_gxGpu.solidProgram, "u_setMaskBit");
 	g_gxGpu.solidDitherEnableUniform = glGetUniformLocation(g_gxGpu.solidProgram, "u_ditherEnable");
 	g_gxGpu.solidInterlacedRenderWordUniform = glGetUniformLocation(g_gxGpu.solidProgram, "u_interlacedRenderWord");
+	g_gxGpu.solidRasterRowOriginUniform = glGetUniformLocation(g_gxGpu.solidProgram, "u_rasterRowOrigin");
 	g_gxGpu.fixedSolidPositionAttrib = glGetAttribLocation(g_gxGpu.fixedSolidProgram, "a_position");
 	g_gxGpu.fixedSolidColorPlane0Attrib = glGetAttribLocation(g_gxGpu.fixedSolidProgram, "a_colorPlane0");
 	g_gxGpu.fixedSolidColorPlane1Attrib = glGetAttribLocation(g_gxGpu.fixedSolidProgram, "a_colorPlane1");
@@ -437,6 +442,7 @@ void initGxGpu(OpenGLES2Backend& backend) {
 	g_gxGpu.fixedSolidSetMaskBitUniform = glGetUniformLocation(g_gxGpu.fixedSolidProgram, "u_setMaskBit");
 	g_gxGpu.fixedSolidDitherEnableUniform = glGetUniformLocation(g_gxGpu.fixedSolidProgram, "u_ditherEnable");
 	g_gxGpu.fixedSolidInterlacedRenderWordUniform = glGetUniformLocation(g_gxGpu.fixedSolidProgram, "u_interlacedRenderWord");
+	g_gxGpu.fixedSolidRasterRowOriginUniform = glGetUniformLocation(g_gxGpu.fixedSolidProgram, "u_rasterRowOrigin");
 	g_gxGpu.linePositionAttrib = glGetAttribLocation(g_gxGpu.lineProgram, "a_position");
 	g_gxGpu.lineStartAttrib = glGetAttribLocation(g_gxGpu.lineProgram, "a_lineStart");
 	g_gxGpu.lineEndAttrib = glGetAttribLocation(g_gxGpu.lineProgram, "a_lineEnd");
@@ -449,6 +455,7 @@ void initGxGpu(OpenGLES2Backend& backend) {
 	g_gxGpu.lineSetMaskBitUniform = glGetUniformLocation(g_gxGpu.lineProgram, "u_setMaskBit");
 	g_gxGpu.lineDitherEnableUniform = glGetUniformLocation(g_gxGpu.lineProgram, "u_ditherEnable");
 	g_gxGpu.lineInterlacedRenderWordUniform = glGetUniformLocation(g_gxGpu.lineProgram, "u_interlacedRenderWord");
+	g_gxGpu.lineRasterRowOriginUniform = glGetUniformLocation(g_gxGpu.lineProgram, "u_rasterRowOrigin");
 	g_gxGpu.texturedPositionAttrib = glGetAttribLocation(g_gxGpu.texturedProgram, "a_position");
 	g_gxGpu.texturedColorAttrib = glGetAttribLocation(g_gxGpu.texturedProgram, "a_color");
 	g_gxGpu.texturedTexcoordAttrib = glGetAttribLocation(g_gxGpu.texturedProgram, "a_texcoord");
@@ -469,6 +476,7 @@ void initGxGpu(OpenGLES2Backend& backend) {
 	g_gxGpu.texturedSetMaskBitUniform = glGetUniformLocation(g_gxGpu.texturedProgram, "u_setMaskBit");
 	g_gxGpu.texturedDitherEnableUniform = glGetUniformLocation(g_gxGpu.texturedProgram, "u_ditherEnable");
 	g_gxGpu.texturedInterlacedRenderWordUniform = glGetUniformLocation(g_gxGpu.texturedProgram, "u_interlacedRenderWord");
+	g_gxGpu.texturedRasterRowOriginUniform = glGetUniformLocation(g_gxGpu.texturedProgram, "u_rasterRowOrigin");
 	g_gxGpu.fixedTexturedPositionAttrib = glGetAttribLocation(g_gxGpu.fixedTexturedProgram, "a_position");
 	g_gxGpu.fixedTexturedUvPlane01Attrib = glGetAttribLocation(g_gxGpu.fixedTexturedProgram, "a_uvPlane01");
 	g_gxGpu.fixedTexturedUvPlane23Attrib = glGetAttribLocation(g_gxGpu.fixedTexturedProgram, "a_uvPlane23");
@@ -490,6 +498,7 @@ void initGxGpu(OpenGLES2Backend& backend) {
 	g_gxGpu.fixedTexturedSetMaskBitUniform = glGetUniformLocation(g_gxGpu.fixedTexturedProgram, "u_setMaskBit");
 	g_gxGpu.fixedTexturedDitherEnableUniform = glGetUniformLocation(g_gxGpu.fixedTexturedProgram, "u_ditherEnable");
 	g_gxGpu.fixedTexturedInterlacedRenderWordUniform = glGetUniformLocation(g_gxGpu.fixedTexturedProgram, "u_interlacedRenderWord");
+	g_gxGpu.fixedTexturedRasterRowOriginUniform = glGetUniformLocation(g_gxGpu.fixedTexturedProgram, "u_rasterRowOrigin");
 	g_gxGpu.transferPositionAttrib = glGetAttribLocation(g_gxGpu.transferProgram, "a_position");
 	g_gxGpu.transferTexcoordAttrib = glGetAttribLocation(g_gxGpu.transferProgram, "a_texcoord");
 	g_gxGpu.transferSourceUniform = glGetUniformLocation(g_gxGpu.transferProgram, "u_source");
@@ -1421,22 +1430,9 @@ void copyVramToVram(const GxGpuCommandBuffer& commandBuffer, u32 commandIndex) {
 	copyVramToVramArea(sourceX, sourceY, targetX, targetY, width, height, maskBitModeWord);
 }
 
-void applyGxGpuDrawingAreaScissor(u32 topLeftWord, u32 bottomRightWord) {
-	const u32 left = gxGpuDrawingAreaLeft(topLeftWord, bottomRightWord);
-	const u32 top = gxGpuDrawingAreaTop(topLeftWord, bottomRightWord);
-	const u32 right = gxGpuDrawingAreaRightExclusive(topLeftWord, bottomRightWord);
-	const u32 bottom = gxGpuDrawingAreaBottomExclusive(topLeftWord, bottomRightWord);
-	glEnable(GL_SCISSOR_TEST);
-	glScissor(
-		static_cast<GLint>(left),
-		static_cast<GLint>(static_cast<u32>(kGxGpuVramHeight) - bottom),
-		static_cast<GLsizei>(right - left),
-		static_cast<GLsizei>(bottom - top));
-}
-
 void resetGxGpuVramCopyRect(GxGpuVramCopyRect& rect) {
 	rect.left = kGxGpuVramWidth;
-	rect.top = kGxGpuVramHeight;
+	rect.top = kGxGpuVramHeight * 2;
 	rect.right = 0;
 	rect.bottom = 0;
 }
@@ -1459,6 +1455,13 @@ void includeGxGpuVramCopyVertex(GxGpuVramCopyRect& rect, i32 x, i32 y) {
 }
 
 void includeGxGpuVramCopyRect(GxGpuVramCopyRect& target, const GxGpuVramCopyRect& source) {
+	if (target.right <= target.left || target.bottom <= target.top) {
+		target = source;
+		return;
+	}
+	if (source.right <= source.left || source.bottom <= source.top) {
+		return;
+	}
 	if (source.left < target.left) {
 		target.left = source.left;
 	}
@@ -1474,7 +1477,18 @@ void includeGxGpuVramCopyRect(GxGpuVramCopyRect& target, const GxGpuVramCopyRect
 }
 
 bool gxGpuVramCopyRectsOverlap(const GxGpuVramCopyRect& a, const GxGpuVramCopyRect& b) {
-	return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+	if (a.right <= a.left || a.bottom <= a.top) {
+		return false;
+	}
+	return gxGpuVramLogicalAreaOverlapsBounds(
+		static_cast<u32>(a.left),
+		static_cast<u32>(a.top),
+		static_cast<u32>(a.right - a.left),
+		static_cast<u32>(a.bottom - a.top),
+		b.left,
+		b.top,
+		b.right,
+		b.bottom);
 }
 
 void clipGxGpuVramCopyRectToDrawingArea(GxGpuVramCopyRect& rect, u32 topLeftWord, u32 bottomRightWord) {
@@ -1493,6 +1507,12 @@ void clipGxGpuVramCopyRectToDrawingArea(GxGpuVramCopyRect& rect, u32 topLeftWord
 	}
 	if (rect.bottom > drawingBottom) {
 		rect.bottom = drawingBottom;
+	}
+	if (rect.right < rect.left) {
+		rect.right = rect.left;
+	}
+	if (rect.bottom < rect.top) {
+		rect.bottom = rect.top;
 	}
 }
 
@@ -1684,6 +1704,70 @@ void syncGxGpuSampleTextureLogicalArea(u32 x, u32 y, u32 width, u32 height) {
 	}
 }
 
+void drawGxGpuLogicalVramBands(
+	const GxGpuVramCopyRect& rect,
+	GLint rasterRowOriginUniform,
+	GLint firstVertex,
+	GLsizei vertexCount,
+	bool textureBarrier,
+	bool syncSampleBetweenDraws) {
+	if (rect.right <= rect.left || rect.bottom <= rect.top) {
+		return;
+	}
+	glEnable(GL_SCISSOR_TEST);
+	const i32 width = rect.right - rect.left;
+	const i32 firstRowOrigin = rect.top & ~(kGxGpuVramHeight - 1);
+	const i32 firstBandBottom = firstRowOrigin + kGxGpuVramHeight;
+	if (rect.bottom <= firstBandBottom) {
+		glScissor(
+			static_cast<GLint>(rect.left),
+			static_cast<GLint>(kGxGpuVramHeight - (rect.bottom - firstRowOrigin)),
+			static_cast<GLsizei>(width),
+			static_cast<GLsizei>(rect.bottom - rect.top));
+		glUniform1f(rasterRowOriginUniform, static_cast<f32>(firstRowOrigin));
+		if (textureBarrier) {
+			g_gxGpu.backend->textureBarrier();
+		}
+		glDrawArrays(GL_TRIANGLES, firstVertex, vertexCount);
+		markGxGpuSampleTextureDirtyLogicalArea(
+			static_cast<u32>(rect.left),
+			static_cast<u32>(rect.top),
+			static_cast<u32>(width),
+			static_cast<u32>(rect.bottom - rect.top));
+		return;
+	}
+	bool drewBand = false;
+	const GLint vertexEnd = firstVertex + vertexCount;
+	for (GLint triangleFirst = firstVertex; triangleFirst < vertexEnd; triangleFirst += 3) {
+		i32 logicalTop = rect.top;
+		while (logicalTop < rect.bottom) {
+			const i32 rowOrigin = logicalTop & ~(kGxGpuVramHeight - 1);
+			const i32 logicalBandBottom = rowOrigin + kGxGpuVramHeight;
+			const i32 logicalBottom = rect.bottom < logicalBandBottom ? rect.bottom : logicalBandBottom;
+			if (drewBand && syncSampleBetweenDraws) {
+				syncGxGpuSampleTextureLogicalArea(0u, 0u, kGxGpuVramWidth, kGxGpuVramHeight);
+			}
+			glScissor(
+				static_cast<GLint>(rect.left),
+				static_cast<GLint>(kGxGpuVramHeight - (logicalBottom - rowOrigin)),
+				static_cast<GLsizei>(width),
+				static_cast<GLsizei>(logicalBottom - logicalTop));
+			glUniform1f(rasterRowOriginUniform, static_cast<f32>(rowOrigin));
+			if (textureBarrier) {
+				g_gxGpu.backend->textureBarrier();
+			}
+			glDrawArrays(GL_TRIANGLES, triangleFirst, 3);
+			markGxGpuSampleTextureDirtyLogicalArea(
+				static_cast<u32>(rect.left),
+				static_cast<u32>(logicalTop),
+				static_cast<u32>(width),
+				static_cast<u32>(logicalBottom - logicalTop));
+			drewBand = true;
+			logicalTop = logicalBottom;
+		}
+	}
+}
+
 void setGxGpuVertexBoundsRect(
 	GxGpuVramCopyRect& rect,
 	const f32* vertices,
@@ -1842,7 +1926,7 @@ void writeTransferUniforms(i32 sourceTextureUnit, u32 maskBitModeWord) {
 	glUniform1f(g_gxGpu.transferSetMaskBitUniform, gxGpuMaskBitSetWhileDrawing(maskBitModeWord) ? 1.0f : 0.0f);
 }
 
-void renderNewSolidCommands(bool fixedColor, size_t vertexFloatCount, GLintptr vertexBufferOffset, const GxGpuVramCopyRect& drawBounds, u32 topLeftWord, u32 bottomRightWord, bool blendEnabled, u32 blendMode, u32 maskBitModeWord, bool ditherEnabled, u32 interlacedRenderWord);
+void renderNewSolidCommands(bool fixedColor, size_t vertexFloatCount, GLintptr vertexBufferOffset, const GxGpuVramCopyRect& drawBounds, bool blendEnabled, u32 blendMode, u32 maskBitModeWord, bool ditherEnabled, u32 interlacedRenderWord);
 void renderReadVramSolidQuad(bool fixedColor, u32 topLeftWord, u32 bottomRightWord, bool blendEnabled, u32 blendMode, u32 maskBitModeWord, bool ditherEnabled, u32 interlacedRenderWord);
 size_t appendLineCommandVertices(const GxGpuCommandBuffer& commandBuffer, u32 commandIndex, size_t vertexFloatCount);
 void renderTexturedCommand(const GxGpuCommandBuffer& commandBuffer, u32 commandIndex, u32 topLeftWord, u32 bottomRightWord);
@@ -1852,8 +1936,6 @@ size_t flushTexturedCommands(const GxGpuCommandBuffer& commandBuffer, size_t ver
 void finishSolidBatch(
 	size_t vertexFloatEnd,
 	bool fixedColor,
-	u32 topLeftWord,
-	u32 bottomRightWord,
 	bool blendEnabled,
 	u32 blendMode,
 	u32 maskBitModeWord,
@@ -1866,8 +1948,6 @@ void finishSolidBatch(
 		batch.vertexFloatStart = g_primitiveSubmission.solidBatchStart;
 		batch.vertexFloatCount = vertexFloatEnd - g_primitiveSubmission.solidBatchStart;
 		batch.drawBounds = g_solidBatchRect;
-		batch.topLeftWord = topLeftWord;
-		batch.bottomRightWord = bottomRightWord;
 		batch.maskBitModeWord = maskBitModeWord;
 		batch.blendMode = blendMode;
 		batch.interlacedRenderWord = interlacedRenderWord;
@@ -1904,8 +1984,6 @@ void renderNewLineCommands(
 	size_t vertexFloatCount,
 	GLintptr vertexBufferOffset,
 	const GxGpuVramCopyRect& drawBounds,
-	u32 topLeftWord,
-	u32 bottomRightWord,
 	bool blendEnabled,
 	u32 blendMode,
 	u32 maskBitModeWord,
@@ -1915,7 +1993,6 @@ void renderNewLineCommands(
 		&& (blendEnabled || gxGpuMaskBitCheckBeforeDraw(maskBitModeWord));
 	const uintptr_t vertexBufferAddress = static_cast<uintptr_t>(vertexBufferOffset);
 	beginGxGpuVramRenderTarget();
-	applyGxGpuDrawingAreaScissor(topLeftWord, bottomRightWord);
 	glUseProgram(g_gxGpu.lineProgram);
 	writePrimitiveUniforms(
 		g_gxGpu.lineVramUniform,
@@ -1943,11 +2020,13 @@ void renderNewLineCommands(
 	glVertexAttribPointer(static_cast<GLuint>(g_gxGpu.lineColor0Attrib), 3, GL_FLOAT, GL_FALSE, kGxGpuLineVertexStride, reinterpret_cast<const void*>(vertexBufferAddress + 6u * sizeof(f32)));
 	glEnableVertexAttribArray(static_cast<GLuint>(g_gxGpu.lineColor1Attrib));
 	glVertexAttribPointer(static_cast<GLuint>(g_gxGpu.lineColor1Attrib), 3, GL_FLOAT, GL_FALSE, kGxGpuLineVertexStride, reinterpret_cast<const void*>(vertexBufferAddress + 9u * sizeof(f32)));
-	if (textureBarrier) {
-		g_gxGpu.backend->textureBarrier();
-	}
-	glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(vertexFloatCount / kGxGpuLineVertexFloats));
-	markGxGpuSampleTextureDirtyArea(drawBounds.left, drawBounds.top, drawBounds.right, drawBounds.bottom);
+	drawGxGpuLogicalVramBands(
+		drawBounds,
+		g_gxGpu.lineRasterRowOriginUniform,
+		0,
+		static_cast<GLsizei>(vertexFloatCount / kGxGpuLineVertexFloats),
+		textureBarrier,
+		!textureBarrier && (blendEnabled || gxGpuMaskBitCheckBeforeDraw(maskBitModeWord)));
 	glDisable(GL_SCISSOR_TEST);
 }
 
@@ -1958,8 +2037,6 @@ void finishLineBatch(size_t vertexFloatEnd) {
 		batch.vertexFloatStart = g_primitiveSubmission.lineBatchStart;
 		batch.vertexFloatCount = vertexFloatEnd - g_primitiveSubmission.lineBatchStart;
 		batch.drawBounds = g_lineBatchRect;
-		batch.topLeftWord = g_lineBatchState.topLeftWord;
-		batch.bottomRightWord = g_lineBatchState.bottomRightWord;
 		batch.maskBitModeWord = g_lineBatchState.maskBitModeWord;
 		batch.blendMode = g_lineBatchState.blendMode;
 		batch.interlacedRenderWord = g_lineBatchState.interlacedRenderWord;
@@ -1995,7 +2072,11 @@ void submitGxGpuPrimitiveBatches() {
 	for (size_t batchIndex = 0u; batchIndex < g_primitiveSubmission.batchCount; batchIndex += 1u) {
 		const GxGpuPrimitiveBatch& batch = g_primitiveSubmission.batches[batchIndex];
 		if (batch.sampleSyncBefore) {
-			syncGxGpuSampleTextureArea(batch.drawBounds.left, batch.drawBounds.top, batch.drawBounds.right, batch.drawBounds.bottom);
+			syncGxGpuSampleTextureLogicalArea(
+				static_cast<u32>(batch.drawBounds.left),
+				static_cast<u32>(batch.drawBounds.top),
+				static_cast<u32>(batch.drawBounds.right - batch.drawBounds.left),
+				static_cast<u32>(batch.drawBounds.bottom - batch.drawBounds.top));
 		}
 		if (batch.kind == GxGpuPrimitiveKind::Solid) {
 			renderNewSolidCommands(
@@ -2003,8 +2084,6 @@ void submitGxGpuPrimitiveBatches() {
 				batch.vertexFloatCount,
 				solidBufferOffset + static_cast<GLintptr>(batch.vertexFloatStart * sizeof(f32)),
 				batch.drawBounds,
-				batch.topLeftWord,
-				batch.bottomRightWord,
 				batch.blendEnabled,
 				batch.blendMode,
 				batch.maskBitModeWord,
@@ -2015,8 +2094,6 @@ void submitGxGpuPrimitiveBatches() {
 				batch.vertexFloatCount,
 				lineBufferOffset + static_cast<GLintptr>(batch.vertexFloatStart * sizeof(f32)),
 				batch.drawBounds,
-				batch.topLeftWord,
-				batch.bottomRightWord,
 				batch.blendEnabled,
 				batch.blendMode,
 				batch.maskBitModeWord,
@@ -2061,9 +2138,9 @@ size_t appendBatchedLineSegment(
 	}
 	const size_t commandVertexStart = offset;
 	offset = appendPreparedLineSegment(offset, g_linePreparedScratch);
-	if (g_lineBatchState.readsVram
-		&& commandVertexStart != g_primitiveSubmission.lineBatchStart
-		&& gxGpuVramCopyRectsOverlap(g_lineBatchRect, g_linePreparedScratch.clippedBounds)) {
+	if (commandVertexStart != g_primitiveSubmission.lineBatchStart
+		&& (g_lineBatchState.spansPhysicalRowBands
+			|| (g_lineBatchState.readsVram && gxGpuVramCopyRectsOverlap(g_lineBatchRect, g_linePreparedScratch.clippedBounds)))) {
 		finishLineBatch(commandVertexStart);
 	}
 	includeGxGpuVramCopyRect(g_lineBatchRect, g_linePreparedScratch.clippedBounds);
@@ -2186,8 +2263,6 @@ u32 executeGxGpuBlendPlan(const GxGpuCommandBuffer& commandBuffer, u32 commandSt
 			batch.vertexFloatStart = lineFloatStart;
 			batch.vertexFloatCount = g_primitiveSubmission.lineFloatCount - lineFloatStart;
 			batch.drawBounds = g_blendPlanLineBounds;
-			batch.topLeftWord = topLeftWord;
-			batch.bottomRightWord = bottomRightWord;
 			batch.maskBitModeWord = maskBitModeWord;
 			batch.blendMode = blendMode;
 			batch.interlacedRenderWord = interlacedRenderWord;
@@ -2203,8 +2278,6 @@ u32 executeGxGpuBlendPlan(const GxGpuCommandBuffer& commandBuffer, u32 commandSt
 			batch.vertexFloatStart = solidFloatStart;
 			batch.vertexFloatCount = g_primitiveSubmission.solidFloatCount - solidFloatStart;
 			batch.drawBounds = g_blendPlanSolidBounds;
-			batch.topLeftWord = topLeftWord;
-			batch.bottomRightWord = bottomRightWord;
 			batch.maskBitModeWord = maskBitModeWord;
 			batch.blendMode = blendMode;
 			batch.interlacedRenderWord = interlacedRenderWord;
@@ -2240,7 +2313,13 @@ void executeNewGxGpuCommands(const GxGpuCommandBuffer& commandBuffer) {
 		const u8 commandKind = commandBuffer.commandKind[commandIndex];
 		const bool commandDrawsTexture = (commandKind == GX_GPU_COMMAND_DRAW_POLYGON || commandKind == GX_GPU_COMMAND_DRAW_RECTANGLE)
 			&& gxGpuCommandDrawsTexture(commandBuffer.commandOpcode[commandIndex], commandBuffer.commandDrawModeWord[commandIndex]);
-		if (gxGpuBlendPlanCommandMatches(commandBuffer, commandIndex, commandIndex)) {
+		if (gxGpuBlendPlanCommandMatches(commandBuffer, commandIndex, commandIndex)
+			&& !(gxGpuDrawingAreaTop(
+				commandBuffer.commandDrawingAreaTopLeftWord[commandIndex],
+				commandBuffer.commandDrawingAreaBottomRightWord[commandIndex]) < GX_GPU_VRAM_HEIGHT
+				&& gxGpuDrawingAreaBottomExclusive(
+					commandBuffer.commandDrawingAreaTopLeftWord[commandIndex],
+					commandBuffer.commandDrawingAreaBottomRightWord[commandIndex]) > GX_GPU_VRAM_HEIGHT)) {
 			u32 blendPlanEnd = commandIndex + 1u;
 			while (blendPlanEnd < presentCommandCount
 				&& blendPlanEnd - commandIndex < kGxGpuLineSegmentCapacity
@@ -2248,7 +2327,7 @@ void executeNewGxGpuCommands(const GxGpuCommandBuffer& commandBuffer) {
 				blendPlanEnd += 1u;
 			}
 			if (blendPlanEnd - commandIndex > 1u) {
-				finishSolidBatch(g_primitiveSubmission.solidFloatCount, solidBatchFixedColor, solidBatchTopLeftWord, solidBatchBottomRightWord, solidBatchBlendEnabled, solidBatchBlendMode, solidBatchMaskBitModeWord, solidBatchDitherEnabled, solidBatchInterlacedRenderWord, solidBatchReadsVram);
+				finishSolidBatch(g_primitiveSubmission.solidFloatCount, solidBatchFixedColor, solidBatchBlendEnabled, solidBatchBlendMode, solidBatchMaskBitModeWord, solidBatchDitherEnabled, solidBatchInterlacedRenderWord, solidBatchReadsVram);
 				texturedVertexFloatCount = flushTexturedCommands(commandBuffer, texturedVertexFloatCount, texturedBatchCommandIndex);
 				finishLineBatch(g_primitiveSubmission.lineFloatCount);
 				commandIndex = executeGxGpuBlendPlan(commandBuffer, commandIndex, blendPlanEnd) - 1u;
@@ -2269,6 +2348,8 @@ void executeNewGxGpuCommands(const GxGpuCommandBuffer& commandBuffer) {
 			const u32 drawModeWord = commandBuffer.commandDrawModeWord[commandIndex];
 			const u32 topLeftWord = commandBuffer.commandDrawingAreaTopLeftWord[commandIndex];
 			const u32 bottomRightWord = commandBuffer.commandDrawingAreaBottomRightWord[commandIndex];
+			const bool drawingAreaSpansPhysicalRowBands = gxGpuDrawingAreaTop(topLeftWord, bottomRightWord) < GX_GPU_VRAM_HEIGHT
+				&& gxGpuDrawingAreaBottomExclusive(topLeftWord, bottomRightWord) > GX_GPU_VRAM_HEIGHT;
 			const u32 maskBitModeWord = commandBuffer.commandMaskBitModeWord[commandIndex];
 			const bool drawsTexture = commandDrawsTexture;
 			const bool fixedSolidColor = commandKind == GX_GPU_COMMAND_DRAW_POLYGON
@@ -2296,8 +2377,8 @@ void executeNewGxGpuCommands(const GxGpuCommandBuffer& commandBuffer) {
 				|| solidBatchReadsVram != readsVram
 				|| solidBatchFixedColor != fixedSolidColor;
 			if (g_primitiveSubmission.solidFloatCount != g_primitiveSubmission.solidBatchStart
-				&& (batchStateChanged || drawsTexture || splitReadVramQuad)) {
-				finishSolidBatch(g_primitiveSubmission.solidFloatCount, solidBatchFixedColor, solidBatchTopLeftWord, solidBatchBottomRightWord, solidBatchBlendEnabled, solidBatchBlendMode, solidBatchMaskBitModeWord, solidBatchDitherEnabled, solidBatchInterlacedRenderWord, solidBatchReadsVram);
+				&& (batchStateChanged || drawsTexture || splitReadVramQuad || drawingAreaSpansPhysicalRowBands)) {
+				finishSolidBatch(g_primitiveSubmission.solidFloatCount, solidBatchFixedColor, solidBatchBlendEnabled, solidBatchBlendMode, solidBatchMaskBitModeWord, solidBatchDitherEnabled, solidBatchInterlacedRenderWord, solidBatchReadsVram);
 			}
 			solidBatchTopLeftWord = topLeftWord;
 			solidBatchBottomRightWord = bottomRightWord;
@@ -2329,7 +2410,7 @@ void executeNewGxGpuCommands(const GxGpuCommandBuffer& commandBuffer) {
 						|| gxGpuCommandSemiTransparencyEnabled(opcode) != gxGpuCommandSemiTransparencyEnabled(batchOpcode)
 						|| ditherEnabled != batchDitherEnabled
 						|| fixedTexturedColor != batchFixedTexturedColor;
-					if (batchStateChanged) {
+					if (batchStateChanged || drawingAreaSpansPhysicalRowBands) {
 						texturedVertexFloatCount = flushTexturedCommands(commandBuffer, texturedVertexFloatCount, texturedBatchCommandIndex);
 					}
 				}
@@ -2375,7 +2456,7 @@ void executeNewGxGpuCommands(const GxGpuCommandBuffer& commandBuffer) {
 				} else if (g_primitiveSubmission.solidFloatCount != commandVertexStart) {
 					setGxGpuVertexBoundsRect(g_solidCommandRect, g_solidVertices.data(), commandVertexStart, g_primitiveSubmission.solidFloatCount, vertexFloatStride, topLeftWord, bottomRightWord);
 					if (readsVram && commandVertexStart != g_primitiveSubmission.solidBatchStart && gxGpuVramCopyRectsOverlap(g_solidBatchRect, g_solidCommandRect)) {
-						finishSolidBatch(commandVertexStart, solidBatchFixedColor, solidBatchTopLeftWord, solidBatchBottomRightWord, solidBatchBlendEnabled, solidBatchBlendMode, solidBatchMaskBitModeWord, solidBatchDitherEnabled, solidBatchInterlacedRenderWord, solidBatchReadsVram);
+						finishSolidBatch(commandVertexStart, solidBatchFixedColor, solidBatchBlendEnabled, solidBatchBlendMode, solidBatchMaskBitModeWord, solidBatchDitherEnabled, solidBatchInterlacedRenderWord, solidBatchReadsVram);
 					}
 					includeGxGpuVramCopyRect(g_solidBatchRect, g_solidCommandRect);
 				}
@@ -2389,7 +2470,7 @@ void executeNewGxGpuCommands(const GxGpuCommandBuffer& commandBuffer) {
 			const bool batchMaskChange = gxGpuMaskBitSetWhileDrawing(solidBatchMaskBitModeWord);
 			if (g_primitiveSubmission.solidFloatCount != g_primitiveSubmission.solidBatchStart
 				&& (solidBatchTopLeftWord != topLeftWord || solidBatchBottomRightWord != bottomRightWord || batchMaskChange || solidBatchDitherEnabled || solidBatchInterlacedRenderWord != interlacedRenderWord || solidBatchBlendEnabled || solidBatchReadsVram || solidBatchFixedColor)) {
-				finishSolidBatch(g_primitiveSubmission.solidFloatCount, solidBatchFixedColor, solidBatchTopLeftWord, solidBatchBottomRightWord, solidBatchBlendEnabled, solidBatchBlendMode, solidBatchMaskBitModeWord, solidBatchDitherEnabled, solidBatchInterlacedRenderWord, solidBatchReadsVram);
+				finishSolidBatch(g_primitiveSubmission.solidFloatCount, solidBatchFixedColor, solidBatchBlendEnabled, solidBatchBlendMode, solidBatchMaskBitModeWord, solidBatchDitherEnabled, solidBatchInterlacedRenderWord, solidBatchReadsVram);
 			}
 			solidBatchTopLeftWord = topLeftWord;
 			solidBatchBottomRightWord = bottomRightWord;
@@ -2417,7 +2498,7 @@ void executeNewGxGpuCommands(const GxGpuCommandBuffer& commandBuffer) {
 		}
 		case GX_GPU_COMMAND_DRAW_LINE:
 		case GX_GPU_COMMAND_DRAW_POLYLINE: {
-			finishSolidBatch(g_primitiveSubmission.solidFloatCount, solidBatchFixedColor, solidBatchTopLeftWord, solidBatchBottomRightWord, solidBatchBlendEnabled, solidBatchBlendMode, solidBatchMaskBitModeWord, solidBatchDitherEnabled, solidBatchInterlacedRenderWord, solidBatchReadsVram);
+			finishSolidBatch(g_primitiveSubmission.solidFloatCount, solidBatchFixedColor, solidBatchBlendEnabled, solidBatchBlendMode, solidBatchMaskBitModeWord, solidBatchDitherEnabled, solidBatchInterlacedRenderWord, solidBatchReadsVram);
 			const u32 opcode = commandBuffer.commandOpcode[commandIndex];
 			const u32 drawModeWord = commandBuffer.commandDrawModeWord[commandIndex];
 			const u32 topLeftWord = commandBuffer.commandDrawingAreaTopLeftWord[commandIndex];
@@ -2446,23 +2527,25 @@ void executeNewGxGpuCommands(const GxGpuCommandBuffer& commandBuffer) {
 			g_lineBatchState.blendEnabled = blendEnabled;
 			g_lineBatchState.blendMode = blendMode;
 			g_lineBatchState.readsVram = readsVram;
+			g_lineBatchState.spansPhysicalRowBands = gxGpuDrawingAreaTop(topLeftWord, bottomRightWord) < GX_GPU_VRAM_HEIGHT
+				&& gxGpuDrawingAreaBottomExclusive(topLeftWord, bottomRightWord) > GX_GPU_VRAM_HEIGHT;
 			g_primitiveSubmission.lineFloatCount = appendLineCommandVertices(commandBuffer, commandIndex, g_primitiveSubmission.lineFloatCount);
 			break;
 		}
 		case GX_GPU_COMMAND_COPY_VRAM_TO_VRAM:
-			finishSolidBatch(g_primitiveSubmission.solidFloatCount, solidBatchFixedColor, solidBatchTopLeftWord, solidBatchBottomRightWord, solidBatchBlendEnabled, solidBatchBlendMode, solidBatchMaskBitModeWord, solidBatchDitherEnabled, solidBatchInterlacedRenderWord, solidBatchReadsVram);
+			finishSolidBatch(g_primitiveSubmission.solidFloatCount, solidBatchFixedColor, solidBatchBlendEnabled, solidBatchBlendMode, solidBatchMaskBitModeWord, solidBatchDitherEnabled, solidBatchInterlacedRenderWord, solidBatchReadsVram);
 			submitGxGpuPrimitiveBatches();
 			copyVramToVram(commandBuffer, commandIndex);
 			break;
 		case GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM:
-			finishSolidBatch(g_primitiveSubmission.solidFloatCount, solidBatchFixedColor, solidBatchTopLeftWord, solidBatchBottomRightWord, solidBatchBlendEnabled, solidBatchBlendMode, solidBatchMaskBitModeWord, solidBatchDitherEnabled, solidBatchInterlacedRenderWord, solidBatchReadsVram);
+			finishSolidBatch(g_primitiveSubmission.solidFloatCount, solidBatchFixedColor, solidBatchBlendEnabled, solidBatchBlendMode, solidBatchMaskBitModeWord, solidBatchDitherEnabled, solidBatchInterlacedRenderWord, solidBatchReadsVram);
 			submitGxGpuPrimitiveBatches();
 			uploadCpuToVram(commandBuffer, commandIndex);
 			break;
 		}
 	}
 	g_gxGpu.processedCommandCount = static_cast<u32>(presentCommandCount);
-	finishSolidBatch(g_primitiveSubmission.solidFloatCount, solidBatchFixedColor, solidBatchTopLeftWord, solidBatchBottomRightWord, solidBatchBlendEnabled, solidBatchBlendMode, solidBatchMaskBitModeWord, solidBatchDitherEnabled, solidBatchInterlacedRenderWord, solidBatchReadsVram);
+	finishSolidBatch(g_primitiveSubmission.solidFloatCount, solidBatchFixedColor, solidBatchBlendEnabled, solidBatchBlendMode, solidBatchMaskBitModeWord, solidBatchDitherEnabled, solidBatchInterlacedRenderWord, solidBatchReadsVram);
 	flushTexturedCommands(commandBuffer, texturedVertexFloatCount, texturedBatchCommandIndex);
 	finishLineBatch(g_primitiveSubmission.lineFloatCount);
 	submitGxGpuPrimitiveBatches();
@@ -2543,13 +2626,12 @@ size_t appendLineCommandVertices(
 	return vertexFloatCount;
 }
 
-void renderNewSolidCommands(bool fixedColor, size_t vertexFloatCount, GLintptr vertexBufferOffset, const GxGpuVramCopyRect& drawBounds, u32 topLeftWord, u32 bottomRightWord, bool blendEnabled, u32 blendMode, u32 maskBitModeWord, bool ditherEnabled, u32 interlacedRenderWord) {
+void renderNewSolidCommands(bool fixedColor, size_t vertexFloatCount, GLintptr vertexBufferOffset, const GxGpuVramCopyRect& drawBounds, bool blendEnabled, u32 blendMode, u32 maskBitModeWord, bool ditherEnabled, u32 interlacedRenderWord) {
 	const bool textureBarrier = g_gxGpu.textureBarrier
 		&& (blendEnabled || gxGpuMaskBitCheckBeforeDraw(maskBitModeWord));
 	const size_t vertexFloatStride = fixedColor ? kGxGpuFixedSolidVertexFloats : kGxGpuSolidVertexFloats;
 	const uintptr_t vertexBufferAddress = static_cast<uintptr_t>(vertexBufferOffset);
 	beginGxGpuVramRenderTarget();
-	applyGxGpuDrawingAreaScissor(topLeftWord, bottomRightWord);
 	glUseProgram(fixedColor ? g_gxGpu.fixedSolidProgram : g_gxGpu.solidProgram);
 	writePrimitiveUniforms(
 		fixedColor ? g_gxGpu.fixedSolidVramUniform : g_gxGpu.solidVramUniform,
@@ -2584,11 +2666,13 @@ void renderNewSolidCommands(bool fixedColor, size_t vertexFloatCount, GLintptr v
 		glEnableVertexAttribArray(static_cast<GLuint>(g_gxGpu.solidColorAttrib));
 		glVertexAttribPointer(static_cast<GLuint>(g_gxGpu.solidColorAttrib), 4, GL_FLOAT, GL_FALSE, kGxGpuSolidVertexStride, reinterpret_cast<const void*>(vertexBufferAddress + 2u * sizeof(f32)));
 	}
-	if (textureBarrier) {
-		g_gxGpu.backend->textureBarrier();
-	}
-	glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(vertexFloatCount / vertexFloatStride));
-	markGxGpuSampleTextureDirtyArea(drawBounds.left, drawBounds.top, drawBounds.right, drawBounds.bottom);
+	drawGxGpuLogicalVramBands(
+		drawBounds,
+		fixedColor ? g_gxGpu.fixedSolidRasterRowOriginUniform : g_gxGpu.solidRasterRowOriginUniform,
+		0,
+		static_cast<GLsizei>(vertexFloatCount / vertexFloatStride),
+		textureBarrier,
+		!textureBarrier && (blendEnabled || gxGpuMaskBitCheckBeforeDraw(maskBitModeWord)));
 	glDisable(GL_SCISSOR_TEST);
 }
 
@@ -2600,14 +2684,22 @@ void renderReadVramSolidQuad(bool fixedColor, u32 topLeftWord, u32 bottomRightWo
 	const GLintptr vertexBufferOffset = g_gxGpu.vertexStream.append(g_solidVertices.data(), vertexByteCount);
 	setGxGpuVertexBoundsRect(g_solidCommandRect, g_solidVertices.data(), 0u, triangleFloatCount, vertexFloatStride, topLeftWord, bottomRightWord);
 	if (!g_gxGpu.textureBarrier) {
-		syncGxGpuSampleTextureArea(g_solidCommandRect.left, g_solidCommandRect.top, g_solidCommandRect.right, g_solidCommandRect.bottom);
+		syncGxGpuSampleTextureLogicalArea(
+			static_cast<u32>(g_solidCommandRect.left),
+			static_cast<u32>(g_solidCommandRect.top),
+			static_cast<u32>(g_solidCommandRect.right - g_solidCommandRect.left),
+			static_cast<u32>(g_solidCommandRect.bottom - g_solidCommandRect.top));
 	}
-	renderNewSolidCommands(fixedColor, triangleFloatCount, vertexBufferOffset, g_solidCommandRect, topLeftWord, bottomRightWord, blendEnabled, blendMode, maskBitModeWord, ditherEnabled, interlacedRenderWord);
+	renderNewSolidCommands(fixedColor, triangleFloatCount, vertexBufferOffset, g_solidCommandRect, blendEnabled, blendMode, maskBitModeWord, ditherEnabled, interlacedRenderWord);
 	setGxGpuVertexBoundsRect(g_solidCommandRect, g_solidVertices.data(), triangleFloatCount, triangleFloatCount * 2u, vertexFloatStride, topLeftWord, bottomRightWord);
 	if (!g_gxGpu.textureBarrier) {
-		syncGxGpuSampleTextureArea(g_solidCommandRect.left, g_solidCommandRect.top, g_solidCommandRect.right, g_solidCommandRect.bottom);
+		syncGxGpuSampleTextureLogicalArea(
+			static_cast<u32>(g_solidCommandRect.left),
+			static_cast<u32>(g_solidCommandRect.top),
+			static_cast<u32>(g_solidCommandRect.right - g_solidCommandRect.left),
+			static_cast<u32>(g_solidCommandRect.bottom - g_solidCommandRect.top));
 	}
-	renderNewSolidCommands(fixedColor, triangleFloatCount, vertexBufferOffset + static_cast<GLintptr>(triangleFloatCount * sizeof(f32)), g_solidCommandRect, topLeftWord, bottomRightWord, blendEnabled, blendMode, maskBitModeWord, ditherEnabled, interlacedRenderWord);
+	renderNewSolidCommands(fixedColor, triangleFloatCount, vertexBufferOffset + static_cast<GLintptr>(triangleFloatCount * sizeof(f32)), g_solidCommandRect, blendEnabled, blendMode, maskBitModeWord, ditherEnabled, interlacedRenderWord);
 }
 
 void renderTransferCommands(size_t vertexFloatCount, GLES2Texture& sourceTexture, i32 sourceTextureUnit, u32 maskBitModeWord) {
@@ -2645,7 +2737,8 @@ void renderTexturedVertices(
 	u32 bottomRightWord,
 	bool textureBarrier,
 	bool splitTriangles,
-	bool syncSourceBetweenTriangles) {
+	bool syncSourceBetweenTriangles,
+	bool syncSampleBetweenDraws) {
 	const u32 opcode = commandBuffer.commandOpcode[commandIndex];
 	const bool fixedColor = commandBuffer.commandKind[commandIndex] == GX_GPU_COMMAND_DRAW_POLYGON
 		&& gxGpuCommandGouraud(opcode)
@@ -2657,7 +2750,6 @@ void renderTexturedVertices(
 	const GLintptr vertexBufferOffset = g_gxGpu.vertexStream.append(g_texturedVertices.data(), vertexByteCount);
 	const uintptr_t vertexBufferAddress = static_cast<uintptr_t>(vertexBufferOffset);
 	beginGxGpuVramRenderTarget();
-	applyGxGpuDrawingAreaScissor(topLeftWord, bottomRightWord);
 	glUseProgram(fixedColor ? g_gxGpu.fixedTexturedProgram : g_gxGpu.texturedProgram);
 	writeTexturedUniforms(commandBuffer, commandIndex, fixedColor);
 	g_gxGpu.backend->setActiveTextureUnit(kGxGpuTextureSampleUnit);
@@ -2697,11 +2789,13 @@ void renderTexturedVertices(
 		glVertexAttribPointer(static_cast<GLuint>(g_gxGpu.texturedUvPlane4Attrib), 2, GL_FLOAT, GL_FALSE, kGxGpuTexturedVertexStride, reinterpret_cast<const void*>(vertexBufferAddress + 16u * sizeof(f32)));
 	}
 	if (!splitTriangles) {
-		if (textureBarrier) {
-			g_gxGpu.backend->textureBarrier();
-		}
-		glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(vertexFloatCount / vertexFloatStride));
-		markGxGpuSampleTextureDirtyArea(g_texturedCommandRect.left, g_texturedCommandRect.top, g_texturedCommandRect.right, g_texturedCommandRect.bottom);
+		drawGxGpuLogicalVramBands(
+			g_texturedCommandRect,
+			fixedColor ? g_gxGpu.fixedTexturedRasterRowOriginUniform : g_gxGpu.texturedRasterRowOriginUniform,
+			0,
+			static_cast<GLsizei>(vertexFloatCount / vertexFloatStride),
+			textureBarrier,
+			syncSampleBetweenDraws);
 	} else {
 		const u32 maskBitModeWord = commandBuffer.commandMaskBitModeWord[commandIndex];
 		const bool readsVram = gxGpuCommandSemiTransparencyEnabled(opcode) || gxGpuMaskBitCheckBeforeDraw(maskBitModeWord);
@@ -2713,13 +2807,19 @@ void renderTexturedVertices(
 			const size_t vertexFloatEnd = vertexFloatStart + triangleFloatCount;
 			setGxGpuVertexBoundsRect(g_vramCopyRectScratch, g_texturedVertices.data(), vertexFloatStart, vertexFloatEnd, vertexFloatStride, topLeftWord, bottomRightWord);
 			if (readsVram && vertexFloatStart != 0u && !textureBarrier) {
-				syncGxGpuSampleTextureArea(g_vramCopyRectScratch.left, g_vramCopyRectScratch.top, g_vramCopyRectScratch.right, g_vramCopyRectScratch.bottom);
+				syncGxGpuSampleTextureLogicalArea(
+					static_cast<u32>(g_vramCopyRectScratch.left),
+					static_cast<u32>(g_vramCopyRectScratch.top),
+					static_cast<u32>(g_vramCopyRectScratch.right - g_vramCopyRectScratch.left),
+					static_cast<u32>(g_vramCopyRectScratch.bottom - g_vramCopyRectScratch.top));
 			}
-			if (textureBarrier) {
-				g_gxGpu.backend->textureBarrier();
-			}
-			glDrawArrays(GL_TRIANGLES, static_cast<GLint>(vertexFloatStart / vertexFloatStride), 3);
-			markGxGpuSampleTextureDirtyArea(g_vramCopyRectScratch.left, g_vramCopyRectScratch.top, g_vramCopyRectScratch.right, g_vramCopyRectScratch.bottom);
+			drawGxGpuLogicalVramBands(
+				g_vramCopyRectScratch,
+				fixedColor ? g_gxGpu.fixedTexturedRasterRowOriginUniform : g_gxGpu.texturedRasterRowOriginUniform,
+				static_cast<GLint>(vertexFloatStart / vertexFloatStride),
+				3,
+				textureBarrier,
+				syncSampleBetweenDraws);
 		}
 	}
 	glDisable(GL_SCISSOR_TEST);
@@ -2752,9 +2852,22 @@ void renderTexturedCommand(
 	const bool sourceOverlapsDestination = (sourceOverlaps & GX_GPU_TEXTURE_SOURCE_COMMAND_OVERLAP) != 0u;
 	const bool textureBarrier = g_gxGpu.textureBarrier && !sourceOverlapsDestination;
 	if (readsVram && !textureBarrier) {
-		syncGxGpuSampleTextureArea(g_texturedCommandRect.left, g_texturedCommandRect.top, g_texturedCommandRect.right, g_texturedCommandRect.bottom);
+		syncGxGpuSampleTextureLogicalArea(
+			static_cast<u32>(g_texturedCommandRect.left),
+			static_cast<u32>(g_texturedCommandRect.top),
+			static_cast<u32>(g_texturedCommandRect.right - g_texturedCommandRect.left),
+			static_cast<u32>(g_texturedCommandRect.bottom - g_texturedCommandRect.top));
 	}
-	renderTexturedVertices(commandBuffer, commandIndex, vertexFloatCount, topLeftWord, bottomRightWord, textureBarrier, commandBuffer.commandKind[commandIndex] == GX_GPU_COMMAND_DRAW_POLYGON, true);
+	renderTexturedVertices(
+		commandBuffer,
+		commandIndex,
+		vertexFloatCount,
+		topLeftWord,
+		bottomRightWord,
+		textureBarrier,
+		commandBuffer.commandKind[commandIndex] == GX_GPU_COMMAND_DRAW_POLYGON,
+		sourceOverlapsDestination,
+		!textureBarrier && (readsVram || sourceOverlapsDestination));
 }
 
 size_t flushTexturedCommands(const GxGpuCommandBuffer& commandBuffer, size_t vertexFloatCount, u32 batchCommandIndex) {
@@ -2777,9 +2890,13 @@ size_t flushTexturedCommands(const GxGpuCommandBuffer& commandBuffer, size_t ver
 		const bool readsVram = gxGpuCommandSemiTransparencyEnabled(opcode) || gxGpuMaskBitCheckBeforeDraw(maskBitModeWord);
 		const bool textureBarrier = readsVram && g_gxGpu.textureBarrier;
 		if (readsVram && !textureBarrier) {
-			syncGxGpuSampleTextureArea(g_texturedCommandRect.left, g_texturedCommandRect.top, g_texturedCommandRect.right, g_texturedCommandRect.bottom);
+			syncGxGpuSampleTextureLogicalArea(
+				static_cast<u32>(g_texturedCommandRect.left),
+				static_cast<u32>(g_texturedCommandRect.top),
+				static_cast<u32>(g_texturedCommandRect.right - g_texturedCommandRect.left),
+				static_cast<u32>(g_texturedCommandRect.bottom - g_texturedCommandRect.top));
 		}
-		renderTexturedVertices(commandBuffer, batchCommandIndex, vertexFloatCount, topLeftWord, bottomRightWord, textureBarrier, readsVram, false);
+		renderTexturedVertices(commandBuffer, batchCommandIndex, vertexFloatCount, topLeftWord, bottomRightWord, textureBarrier, readsVram, false, readsVram && !textureBarrier);
 	}
 	resetGxGpuVramCopyRect(g_texturedBatchRect);
 	return 0u;

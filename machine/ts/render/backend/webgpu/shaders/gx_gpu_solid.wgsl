@@ -15,6 +15,7 @@ struct VSIn {
 struct VSOut {
 	@builtin(position) position: vec4<f32>,
 	@location(0) color: vec4<f32>,
+	@location(1) @interpolate(flat) logicalRowOrigin: u32,
 };
 
 struct FixedVSIn {
@@ -29,29 +30,35 @@ struct FixedVSOut {
 	@location(0) @interpolate(flat) colorPlaneBase: vec3<u32>,
 	@location(1) @interpolate(flat) colorPlaneStepX: vec3<u32>,
 	@location(2) @interpolate(flat) colorPlaneStepY: vec3<u32>,
+	@location(3) @interpolate(flat) logicalRowOrigin: u32,
 };
 
 const VRAM_SIZE = vec2<f32>(1024.0, 512.0);
+const VRAM_ROW_COUNT = 512u;
 
 @vertex
-fn vs_main(input: VSIn) -> VSOut {
+fn vs_main(input: VSIn, @builtin(instance_index) bandIndex: u32) -> VSOut {
 	var out: VSOut;
-	let rasterPosition = input.position + vec2<f32>(0.5);
+	let logicalRowOrigin = bandIndex * VRAM_ROW_COUNT;
+	let rasterPosition = input.position + vec2<f32>(0.5, 0.5 - f32(logicalRowOrigin));
 	let clip = vec2<f32>((rasterPosition.x / 512.0) - 1.0, 1.0 - (rasterPosition.y / 256.0));
 	out.position = vec4<f32>(clip, 0.0, 1.0);
 	out.color = input.color;
+	out.logicalRowOrigin = logicalRowOrigin;
 	return out;
 }
 
 @vertex
-fn vs_fixed(input: FixedVSIn) -> FixedVSOut {
+fn vs_fixed(input: FixedVSIn, @builtin(instance_index) bandIndex: u32) -> FixedVSOut {
 	var out: FixedVSOut;
-	let rasterPosition = input.position + vec2<f32>(0.5);
+	let logicalRowOrigin = bandIndex * VRAM_ROW_COUNT;
+	let rasterPosition = input.position + vec2<f32>(0.5, 0.5 - f32(logicalRowOrigin));
 	let clip = vec2<f32>((rasterPosition.x / 512.0) - 1.0, 1.0 - (rasterPosition.y / 256.0));
 	out.position = vec4<f32>(clip, 0.0, 1.0);
 	out.colorPlaneBase = input.colorPlaneBase;
 	out.colorPlaneStepX = input.colorPlaneStepX;
 	out.colorPlaneStepY = input.colorPlaneStepY;
+	out.logicalRowOrigin = logicalRowOrigin;
 	return out;
 }
 
@@ -160,13 +167,15 @@ fn shadeSolid(color8: vec3<f32>, fragCoord: vec2<f32>) -> vec4<f32> {
 
 @fragment
 fn fs_main(input: VSOut) -> @location(0) vec4<f32> {
-	return shadeSolid(floor(input.color.rgb * 255.0), input.position.xy);
+	let logicalFragCoord = input.position.xy + vec2<f32>(0.0, f32(input.logicalRowOrigin));
+	return shadeSolid(floor(input.color.rgb * 255.0), logicalFragCoord);
 }
 
 @fragment
 fn fs_fixed(input: FixedVSOut) -> @location(0) vec4<f32> {
-	let pixel = vec2<u32>(u32(input.position.x), u32(input.position.y));
+	let logicalFragCoord = input.position.xy + vec2<f32>(0.0, f32(input.logicalRowOrigin));
+	let pixel = vec2<u32>(u32(logicalFragCoord.x), u32(logicalFragCoord.y));
 	let accumulator = input.colorPlaneBase + input.colorPlaneStepX * pixel.x + input.colorPlaneStepY * pixel.y;
 	let color8 = vec3<f32>((accumulator >> vec3<u32>(12u)) & vec3<u32>(0xffu));
-	return shadeSolid(color8, input.position.xy);
+	return shadeSolid(color8, logicalFragCoord);
 }
