@@ -45,7 +45,7 @@ const { build } = require('esbuild');
 const { join, parse, relative, resolve, sep } = require('path');
 
 // @ts-ignore
-const { access, mkdir, readdir, readFile, stat, writeFile, unlink, copyFile, open } = require('fs/promises');
+const { access, mkdir, mkdtemp, readdir, readFile, rename, rm, stat, writeFile, copyFile, open } = require('fs/promises');
 // @ts-ignore
 const { createWriteStream, readFileSync, statSync } = require('fs');
 // @ts-ignore
@@ -1704,10 +1704,6 @@ export async function createTextureAtlases(
 			groupImages[imageIndex].gxTexture = atlas.gxTexture;
 		}
 		assertTextureFitsSlots(atlas.atlasId, build.group, build.slots, groupImages);
-		const previewPng = canvas.toBuffer('image/png');
-		atlas.buffer = previewPng;
-		reportProgress?.(`write texture group ${atlas.atlasId}`);
-		await writeFile(`./rom/_ignore/${textureGroupResourceName(atlas.atlasId)}.png`, previewPng);
 	}
 	if (layout) {
 		for (const groupId of Object.keys(layout.groups)) {
@@ -1724,11 +1720,10 @@ export async function createTextureAtlases(
  * This function processes the provided asset list, removes per-asset metadata and buffers,
  * encodes the global asset metadata, and writes the final ROM file to disk. If a "romlabel" image is present,
  * it is prepended to the ROM file to allow the ROM to be recognized as a PNG image.
- * The function also writes a JSON file with the asset list for debugging purposes.
  *
  * @param assetList - The list of ROM assets to include in the pack.
  * @param rom_name - The name of the ROM, used for output file naming.
- * @returns A Promise that resolves when the ROM file and metadata have been written.
+ * @returns A Promise that resolves when the complete ROM has been atomically published.
  */
 export async function finalizeRompack(
 	assetList: RomAsset[],
@@ -1740,6 +1735,7 @@ export async function finalizeRompack(
 		zipRom: boolean,
 		debug: boolean,
 		programBoot: ProgramBootHeader,
+		outputDirectory: string,
 		assetSymbolVerification?: {
 			expected: ReadonlyArray<RomAssetSymbol>,
 			includeLuaAssets: boolean,
@@ -1748,14 +1744,12 @@ export async function finalizeRompack(
 	}
 ) {
 	const outfileBasename = `${rom_name}${options.debug ? '.debug' : ''}.rom`;
-	const distPath = `./dist/${outfileBasename}`;
-	const ignoreDir = './rom/_ignore';
+	const outputPath = join(options.outputDirectory, outfileBasename);
 	const status = options.status;
 
-	await mkdir('./dist', { recursive: true });
-	await mkdir(ignoreDir, { recursive: true });
+	await mkdir(options.outputDirectory, { recursive: true });
 
-	let romlabelBuffer: Buffer;
+	let romlabelBuffer: Buffer | undefined;
 	const romlabelIndex = assetList.findIndex(asset => asset.type === 'romlabel');
 	if (romlabelIndex >= 0) {
 		const [romlabel] = assetList.splice(romlabelIndex, 1);
@@ -1764,159 +1758,162 @@ export async function finalizeRompack(
 		}
 	}
 
-	const tempFile = `${ignoreDir}/.${outfileBasename}.work`;
-	const writer = createWriteStream(tempFile);
-	let offset = 0;
-	let headerBuffer: Buffer = null;
-	const metadataEntries: Array<{ asset: RomAsset; meta: ImgMeta | AudioMeta }> = [];
-
-	const writeBuffer = async (payload: Buffer) => {
-		if (!payload || payload.length === 0) return;
-		const ok = writer.write(payload);
-		offset += payload.length;
-		if (!ok) {
-			await once(writer, 'drain');
-		}
-	};
-
+	const tempDirectory = await mkdtemp(join(options.outputDirectory, '.rompack-'));
+	const tempFile = join(tempDirectory, outfileBasename);
 	try {
-		await writeBuffer(Buffer.alloc(CART_ROM_HEADER_SIZE));
-		const dataOffset = offset;
-		const payloadRanges = collectRomAssetPayloadRanges(assetList, true);
-		let payloadRangeIndex = 0;
-		for (const asset of assetList) {
-			status?.(`pack ${asset.type}:${asset.resid}`);
-			while (payloadRangeIndex < payloadRanges.length && payloadRanges[payloadRangeIndex].asset === asset) {
-				const range = payloadRanges[payloadRangeIndex];
-				if (range.start !== offset) {
-					throw new Error(`[RomPacker] ROM payload layout mismatch at ${asset.type}:${asset.resid}:${range.kind}; expected offset ${range.start}, writer offset ${offset}.`);
-				}
-				switch (range.kind) {
-					case 'buffer':
-						asset.start = range.start;
-						asset.end = range.end;
-						break;
-					case 'compiled':
-						asset.compiled_start = range.start;
-						asset.compiled_end = range.end;
-						break;
-					case 'texture':
-						asset.texture_start = range.start;
-						asset.texture_end = range.end;
-						if (range.sharedAssets) {
-							for (let sharedIndex = 0; sharedIndex < range.sharedAssets.length; sharedIndex += 1) {
-								const sharedAsset = range.sharedAssets[sharedIndex];
-								sharedAsset.texture_start = range.start;
-								sharedAsset.texture_end = range.end;
+		const writer = createWriteStream(tempFile);
+		let offset = 0;
+		let headerBuffer: Buffer;
+		const metadataEntries: Array<{ asset: RomAsset; meta: ImgMeta | AudioMeta }> = [];
+
+		const writeBuffer = async (payload: Buffer) => {
+			if (!payload || payload.length === 0) return;
+			const ok = writer.write(payload);
+			offset += payload.length;
+			if (!ok) {
+				await once(writer, 'drain');
+			}
+		};
+
+		try {
+			await writeBuffer(Buffer.alloc(CART_ROM_HEADER_SIZE));
+			const dataOffset = offset;
+			const payloadRanges = collectRomAssetPayloadRanges(assetList, true);
+			let payloadRangeIndex = 0;
+			for (const asset of assetList) {
+				status?.(`pack ${asset.type}:${asset.resid}`);
+				while (payloadRangeIndex < payloadRanges.length && payloadRanges[payloadRangeIndex].asset === asset) {
+					const range = payloadRanges[payloadRangeIndex];
+					if (range.start !== offset) {
+						throw new Error(`[RomPacker] ROM payload layout mismatch at ${asset.type}:${asset.resid}:${range.kind}; expected offset ${range.start}, writer offset ${offset}.`);
+					}
+					switch (range.kind) {
+						case 'buffer':
+							asset.start = range.start;
+							asset.end = range.end;
+							break;
+						case 'compiled':
+							asset.compiled_start = range.start;
+							asset.compiled_end = range.end;
+							break;
+						case 'texture':
+							asset.texture_start = range.start;
+							asset.texture_end = range.end;
+							if (range.sharedAssets) {
+								for (let sharedIndex = 0; sharedIndex < range.sharedAssets.length; sharedIndex += 1) {
+									const sharedAsset = range.sharedAssets[sharedIndex];
+									sharedAsset.texture_start = range.start;
+									sharedAsset.texture_end = range.end;
+								}
 							}
-						}
-						break;
-					case 'collision_bin':
-						asset.collision_bin_start = range.start;
-						asset.collision_bin_end = range.end;
-						break;
+							break;
+						case 'collision_bin':
+							asset.collision_bin_start = range.start;
+							asset.collision_bin_end = range.end;
+							break;
+					}
+					await writeBuffer(Buffer.from(range.buffer));
+					payloadRangeIndex += 1;
 				}
-				await writeBuffer(Buffer.from(range.buffer));
-				payloadRangeIndex += 1;
+				const perMeta = asset.imgmeta ?? asset.audiometa;
+				if (perMeta) {
+					metadataEntries.push({ asset, meta: perMeta });
+				}
+				delete asset.imgmeta;
+				delete asset.audiometa;
+				delete asset.buffer;
+				delete asset.compiled_buffer;
+				delete asset.texture_buffer;
+				delete asset.collision_bin_buffer;
 			}
-			const perMeta = asset.imgmeta ?? asset.audiometa;
-			if (perMeta) {
-				metadataEntries.push({ asset, meta: perMeta });
+
+			const dataLength = offset - dataOffset;
+			const assetSymbolVerification = options.assetSymbolVerification;
+			if (assetSymbolVerification) {
+				assertRomAssetSymbolsMatchToc(
+					assetSymbolVerification.expected,
+					assetList,
+					assetSymbolVerification.includeLuaAssets,
+					assetSymbolVerification.defaultPayloadId,
+				);
 			}
-			delete asset.imgmeta;
-			delete asset.audiometa;
-			delete asset.buffer;
-			delete asset.compiled_buffer;
-			delete asset.texture_buffer;
-			delete asset.collision_bin_buffer;
-		}
-
-		const dataLength = offset - dataOffset;
-		const assetSymbolVerification = options.assetSymbolVerification;
-		if (assetSymbolVerification) {
-			assertRomAssetSymbolsMatchToc(
-				assetSymbolVerification.expected,
-				assetList,
-				assetSymbolVerification.includeLuaAssets,
-				assetSymbolVerification.defaultPayloadId,
-			);
-		}
-		let metadataOffset = 0;
-		let metadataLength = 0;
-		if (metadataEntries.length > 0) {
-			status?.('encode shared metadata');
-			const { header, payloads } = buildRomMetadataSection(metadataEntries.map(entry => entry.meta));
-			metadataOffset = offset;
-			await writeBuffer(Buffer.from(header));
-			for (let index = 0; index < metadataEntries.length; index += 1) {
-				const entry = metadataEntries[index];
-				const encoded = Buffer.from(payloads[index]);
-				status?.(`meta ${entry.asset.type}:${entry.asset.resid}`);
-				entry.asset.metabuffer_start = offset;
-				entry.asset.metabuffer_end = offset + encoded.length;
-				await writeBuffer(encoded);
+			let metadataOffset = 0;
+			let metadataLength = 0;
+			if (metadataEntries.length > 0) {
+				status?.('encode shared metadata');
+				const { header, payloads } = buildRomMetadataSection(metadataEntries.map(entry => entry.meta));
+				metadataOffset = offset;
+				await writeBuffer(Buffer.from(header));
+				for (let index = 0; index < metadataEntries.length; index += 1) {
+					const entry = metadataEntries[index];
+					const encoded = Buffer.from(payloads[index]);
+					status?.(`meta ${entry.asset.type}:${entry.asset.resid}`);
+					entry.asset.metabuffer_start = offset;
+					entry.asset.metabuffer_end = offset + encoded.length;
+					await writeBuffer(encoded);
+				}
+				metadataLength = offset - metadataOffset;
 			}
-			metadataLength = offset - metadataOffset;
+			let manifestOffset = 0;
+			let manifestLength = 0;
+			if (options.manifest) {
+				status?.('encode rom manifest');
+				const manifestBuffer = Buffer.from(encodeBinary(options.manifest));
+				manifestOffset = offset;
+				manifestLength = manifestBuffer.length;
+				await writeBuffer(manifestBuffer);
+			}
+
+			status?.('encode toc');
+			const tocBuffer = Buffer.from(encodeRomToc({
+				entries: assetList,
+				projectRootPath: options.projectRootPath,
+			}));
+			const tocOffset = offset;
+			const tocLength = tocBuffer.length;
+			await writeBuffer(tocBuffer);
+
+			headerBuffer = Buffer.alloc(CART_ROM_HEADER_SIZE);
+			Buffer.from(CART_ROM_MAGIC_BYTES).copy(headerBuffer, 0);
+			headerBuffer.writeUInt32LE(CART_ROM_HEADER_SIZE, 4);
+			headerBuffer.writeUInt32LE(manifestOffset, 8);
+			headerBuffer.writeUInt32LE(manifestLength, 12);
+			headerBuffer.writeUInt32LE(tocOffset, 16);
+			headerBuffer.writeUInt32LE(tocLength, 20);
+			headerBuffer.writeUInt32LE(dataOffset, 24);
+			headerBuffer.writeUInt32LE(dataLength, 28);
+			headerBuffer.writeUInt32LE(options.programBoot.version, 32);
+			headerBuffer.writeUInt32LE(options.programBoot.flags, 36);
+			headerBuffer.writeUInt32LE(options.programBoot.resetProtoIndex, 40);
+			headerBuffer.writeUInt32LE(options.programBoot.codeByteCount, 44);
+			headerBuffer.writeUInt32LE(options.programBoot.constPoolCount, 48);
+			headerBuffer.writeUInt32LE(options.programBoot.protoCount, 52);
+			headerBuffer.writeUInt32LE(0, 56);
+			headerBuffer.writeUInt32LE(options.programBoot.constRelocCount, 60);
+			headerBuffer.writeUInt32LE(metadataOffset, 64);
+			headerBuffer.writeUInt32LE(metadataLength, 68);
+			headerBuffer.writeUInt32LE(CART_VDP_CLASS_PSX, 72);
+		} finally {
+			writer.end();
 		}
-		let manifestOffset = 0;
-		let manifestLength = 0;
-		if (options.manifest) {
-			status?.('encode rom manifest');
-			const manifestBuffer = Buffer.from(encodeBinary(options.manifest));
-			manifestOffset = offset;
-			manifestLength = manifestBuffer.length;
-			await writeBuffer(manifestBuffer);
-		}
 
-		status?.('encode toc');
-		const tocBuffer = Buffer.from(encodeRomToc({
-			entries: assetList,
-			projectRootPath: options.projectRootPath,
-		}));
-		const tocOffset = offset;
-		const tocLength = tocBuffer.length;
-		await writeBuffer(tocBuffer);
-
-		headerBuffer = Buffer.alloc(CART_ROM_HEADER_SIZE);
-		Buffer.from(CART_ROM_MAGIC_BYTES).copy(headerBuffer, 0);
-		headerBuffer.writeUInt32LE(CART_ROM_HEADER_SIZE, 4);
-		headerBuffer.writeUInt32LE(manifestOffset, 8);
-		headerBuffer.writeUInt32LE(manifestLength, 12);
-		headerBuffer.writeUInt32LE(tocOffset, 16);
-		headerBuffer.writeUInt32LE(tocLength, 20);
-		headerBuffer.writeUInt32LE(dataOffset, 24);
-		headerBuffer.writeUInt32LE(dataLength, 28);
-		headerBuffer.writeUInt32LE(options.programBoot.version, 32);
-		headerBuffer.writeUInt32LE(options.programBoot.flags, 36);
-		headerBuffer.writeUInt32LE(options.programBoot.resetProtoIndex, 40);
-		headerBuffer.writeUInt32LE(options.programBoot.codeByteCount, 44);
-		headerBuffer.writeUInt32LE(options.programBoot.constPoolCount, 48);
-		headerBuffer.writeUInt32LE(options.programBoot.protoCount, 52);
-		headerBuffer.writeUInt32LE(0, 56);
-		headerBuffer.writeUInt32LE(options.programBoot.constRelocCount, 60);
-		headerBuffer.writeUInt32LE(metadataOffset, 64);
-		headerBuffer.writeUInt32LE(metadataLength, 68);
-		headerBuffer.writeUInt32LE(CART_VDP_CLASS_PSX, 72);
-	} finally {
-		writer.end();
-	}
-
-	await finished(writer);
-	if (headerBuffer) {
+		await finished(writer);
 		const file = await open(tempFile, 'r+');
 		try {
 			await file.write(headerBuffer, 0, headerBuffer.length, 0);
 		} finally {
 			await file.close();
 		}
+		if (options.zipRom || romlabelBuffer) {
+			const romBinary = await readFile(tempFile);
+			const payload = options.zipRom ? Buffer.from(zip(romBinary)) : romBinary;
+			const finalPayload = romlabelBuffer ? Buffer.concat([romlabelBuffer, payload]) : payload;
+			await writeFile(tempFile, finalPayload);
+		}
+		await rename(tempFile, outputPath);
+	} finally {
+		await rm(tempDirectory, { recursive: true, force: true });
 	}
-	const romBinary = await readFile(tempFile);
-	const payload = options.zipRom ? Buffer.from(zip(romBinary)) : romBinary;
-	const finalPayload = romlabelBuffer ? Buffer.concat([romlabelBuffer, payload]) : payload;
-
-	await writeFile(distPath, finalPayload);
-	await unlink(tempFile);
-	await writeFile(`${ignoreDir}/romresources.json`, JSON.stringify(assetList, null, 2));
 }
 
 export async function deployToServer(_rom_name: string, _title: string) {

@@ -39,6 +39,7 @@ const KNOWN_FLAGS = new Set<string>([
 	'-title',
 	'-bootloaderpath',
 	'-respath',
+	'--output-dir',
 	'--debug',
 	'--force',
 	'--skiptypecheck',
@@ -52,6 +53,7 @@ const FLAGS_WITH_VALUES = new Set<string>([
 	'-title',
 	'-bootloaderpath',
 	'-respath',
+	'--output-dir',
 ]);
 const OPT_LEVEL_RE = /^-O([0-3])$/;
 
@@ -189,6 +191,7 @@ function parseOptions(args: string[]): ParsedOptions {
 		writeOut(`  -title <title>           Title override\n`, 'warning');
 		writeOut(`  -bootloaderpath <path>   BIOS-only bootloader path override\n`, 'warning');
 		writeOut(`  -respath <path>          Resource path override\n`, 'warning');
+		writeOut(`  --output-dir <path>      ROM output directory (default: ./dist)\n`, 'warning');
 		writeOut(`  --debug                  Build debug artifacts\n`, 'warning');
 		writeOut(`  --force                  Force the compilation and build of the rompack\n`, 'warning');
 		writeOut(`  --mode <rompack|bios>  What to build (default: rompack)\n`, 'warning');
@@ -218,6 +221,7 @@ function parseOptions(args: string[]): ParsedOptions {
 	const defaultBootloaderPath = './machine/firmware/default_cart';
 	let bootloader_path = getParamOrEnv(args, '-bootloaderpath', 'BOOTLOADER_PATH', defaultBootloaderPath, KNOWN_FLAGS);
 	const respathOverride = getOptionalParam(args, '-respath', 'RES_PATH');
+	const outputDirectory = normalizePathKey(getParamOrEnv(args, '--output-dir', 'ROM_OUTPUT_DIR', './dist', KNOWN_FLAGS));
 	let respath = mode === 'bios' ? './machine/firmware/res' : '';
 
 	let extraLuaRoots: string[] = [];
@@ -245,6 +249,7 @@ function parseOptions(args: string[]): ParsedOptions {
 		title,
 		bootloader_path,
 		respath,
+		outputDirectory,
 		force,
 		debug,
 		skipTypecheck,
@@ -320,7 +325,7 @@ function formatLuaBuildError(err: LuaError, virtualRoots: ReadonlyArray<string>)
 }
 
 async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter): Promise<void> {
-	const { respath, bootloader_path, force, debug, optLevel } = options;
+	const { respath, bootloader_path, outputDirectory, force, debug, optLevel } = options;
 
 	const BIOSResPath = respath || commonResPath;
 	if (!BIOSResPath) {
@@ -349,6 +354,7 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 		const checkBuild = () => isRebuildRequired(BIOSRomName, bootloader_path, BIOSResPath, {
 			extraLuaPaths: [biosLuaPath, systemLuaPath],
 			debug,
+			romFilePath: join(outputDirectory, `${BIOSRomName}${debug ? '.debug' : ''}.rom`),
 		});
 		assetsNeedRebuild = progress ? await progress.runWithDetail(TASK.BIOS_REBUILD_CHECK, checkBuild) : await checkBuild();
 		if (progress) {
@@ -388,11 +394,18 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 		programDomain: 'system',
 	});
 	stripLuaAssets(BIOSRomAssets, debug);
-	await runBIOSStep(TASK.BIOS_FINALIZE, () => finalizeRompack(BIOSRomAssets, BIOSRomName, { projectRootPath: '', manifest: null, zipRom: false, debug, programBoot: BIOSProgramBoot }));
+	await runBIOSStep(TASK.BIOS_FINALIZE, () => finalizeRompack(BIOSRomAssets, BIOSRomName, {
+		projectRootPath: '',
+		manifest: null,
+		zipRom: false,
+		debug,
+		programBoot: BIOSProgramBoot,
+		outputDirectory,
+	}));
 	if (progress) {
 		await progress.showDone();
 	}
-	logOk(`BIOS assets ready → ${pc.white(`dist/${BIOSRomName}${debug ? '.debug' : ''}.rom`)}`);
+	logOk(`BIOS assets ready → ${pc.white(join(outputDirectory, `${BIOSRomName}${debug ? '.debug' : ''}.rom`))}`);
 }
 
 async function main() {
@@ -406,7 +419,7 @@ async function main() {
 		const args = process.argv.slice(2);
 		const options = parseOptions(args);
 
-		let { title, rom_name, bootloader_path, respath, force, debug, optLevel, mode, extraLuaRoots, libraryLuaRoots } = options;
+		let { title, rom_name, bootloader_path, respath, outputDirectory, force, debug, optLevel, mode, extraLuaRoots, libraryLuaRoots } = options;
 
 		if (mode === 'bios') {
 			progress = ui.createProgress(biosBuildTasks);
@@ -451,7 +464,7 @@ async function main() {
 		const { gx_texture_layout, ...runtimeRomManifest } = romManifest;
 		rom_name = romManifest.rom_name ?? rom_name;
 		title = romManifest.title ?? title;
-		romOutputPath = `dist/${rom_name}${romPackDebug ? '.debug' : ''}.rom`;
+		romOutputPath = join(outputDirectory, `${rom_name}${romPackDebug ? '.debug' : ''}.rom`);
 
 		logDivider('Run setup');
 		logBullet('ROM', pc.bold(pc.white(rom_name)));
@@ -469,7 +482,7 @@ async function main() {
 		logBullet('Build', debug ? pc.cyan('DEBUG') : pc.blue('NON-DEBUG'));
 		logBullet('Opt level', pc.white(`-O${optLevel}`));
 		if (!isBIOSMode) {
-			const BIOSRomPath = join(process.cwd(), 'dist', `${SYSTEM_ROM_NAME}${romPackDebug ? '.debug' : ''}.rom`);
+			const BIOSRomPath = join(outputDirectory, `${SYSTEM_ROM_NAME}${romPackDebug ? '.debug' : ''}.rom`);
 			if (!existsSync(BIOSRomPath)) {
 				throw new Error(`BIOS ROM not found at "${BIOSRomPath}". Build the bios ROM first.`);
 			}
@@ -486,12 +499,22 @@ async function main() {
 		logInfo(`Starting for ${pc.bold(pc.blue(`${rom_name}`))}`);
 
 		if (!force) {
-			rebuildRequired = await progress.runWithDetail('Check timestamps', () => isRebuildRequired(rom_name, bootloader_path, respath, { extraLuaPaths: [...extraLuaPathSet, ...libraryLuaPathSet], debug }));
+			rebuildRequired = await progress.runWithDetail('Check timestamps', () => isRebuildRequired(rom_name, bootloader_path, respath, {
+				extraLuaPaths: [...extraLuaPathSet, ...libraryLuaPathSet],
+				debug,
+				romFilePath: romOutputPath,
+				biosRomFilePath: join(outputDirectory, `${SYSTEM_ROM_NAME}${romPackDebug ? '.debug' : ''}.rom`),
+			}));
 			if (!rebuildRequired && resourceRoots.length > 1) {
 				for (let i = 1; i < resourceRoots.length; i++) {
 					const candidate = resourceRoots[i];
 					if (!candidate || candidate === respath) continue;
-					const needs = await progress.runWithDetail('Check timestamps (shared)', () => isRebuildRequired(rom_name, bootloader_path, candidate, { extraLuaPaths: [...extraLuaPathSet, ...libraryLuaPathSet], debug }));
+					const needs = await progress.runWithDetail('Check timestamps (shared)', () => isRebuildRequired(rom_name, bootloader_path, candidate, {
+						extraLuaPaths: [...extraLuaPathSet, ...libraryLuaPathSet],
+						debug,
+						romFilePath: romOutputPath,
+						biosRomFilePath: join(outputDirectory, `${SYSTEM_ROM_NAME}${romPackDebug ? '.debug' : ''}.rom`),
+					}));
 					rebuildRequired = rebuildRequired || needs;
 					if (rebuildRequired) break;
 				}
@@ -507,7 +530,7 @@ async function main() {
 		progress.showInitial();
 
 		await progress.taskCompleted();
-		romOutputPath = `dist/${rom_name}${romPackDebug ? '.debug' : ''}.rom`;
+		romOutputPath = join(outputDirectory, `${rom_name}${romPackDebug ? '.debug' : ''}.rom`);
 
 		if (rebuildRequired) {
 			const romResMetaList = await progress.runWithDetail('Scan resources', () => getResMetaList(resourceRoots, rom_name, {
@@ -573,6 +596,7 @@ async function main() {
 				debug: romPackDebug,
 				zipRom: false,
 				programBoot,
+				outputDirectory,
 				assetSymbolVerification: {
 					expected: assetSymbols,
 					includeLuaAssets: romPackDebug,
@@ -583,7 +607,7 @@ async function main() {
 		}
 
 		await progress.showDone();
-		const romOutput = romOutputPath.length > 0 ? pc.white(romOutputPath) : pc.white('dist/<rom>.rom');
+		const romOutput = romOutputPath.length > 0 ? pc.white(romOutputPath) : pc.white(join(outputDirectory, '<rom>.rom'));
 		logOk(`ROM packing complete → ${romOutput}`);
 		writeOut(`\n`);
 		} catch (e) {

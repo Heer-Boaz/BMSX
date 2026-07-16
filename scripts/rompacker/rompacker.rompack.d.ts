@@ -14,6 +14,7 @@ export interface RomPackerOptions {
 	title: string;
 	bootloader_path: string;
 	respath: string;
+	outputDirectory: string;
 	force: boolean;
 	debug: boolean;
 	platform: RomPackerTarget;
@@ -57,7 +58,7 @@ export interface TextureAtlasResource extends BaseResource<'atlas'> {
 	id: number;
 	atlasId: number;
 	gxTexture?: GxTexture;
-	img?: Canvas & { toBuffer?: (format: string) => Buffer; };
+	img?: Canvas;
 }
 
 export interface AudioResource extends BaseResource<'audio'> {

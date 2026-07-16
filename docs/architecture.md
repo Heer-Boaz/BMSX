@@ -236,7 +236,8 @@ Current artifact roles:
 - `dist/engine.js` / `.debug.js`: browser host/bootstrap artifact. It wires
   browser video, audio, input, and view-host construction around the machine
   runtime.
-- `lib/libbmsx.a`: C++ machine/runtime static library.
+- `libbmsx.a` in its CMake build tree: C++ machine/runtime static library. Build
+  trees never share this target-specific archive.
 - `dist/libretro_bmsx.so` / `.dll` / `.dylib`: libretro core entrypoint around the C++ machine runtime.
 - `bmsx_libretro_host`: local frontend executable that loads a libretro core and
   owns SDL, ALSA, EGL/fbdev, input devices, screenshots, and the process loop.
@@ -247,6 +248,92 @@ Current artifact roles:
 Do not use `platform` as an architecture category for both `libretro` and
 `libretro_host`. `hosts/libretro` is the libretro core entrypoint;
 `hosts/libretro_host` is the local frontend executable that can run that core.
+
+## SNES Mini target ABI and toolchain
+
+The SNES Mini build has two deliberately separate roots:
+
+- `.snesmini/sdk-sysroot` is a generated coherent compile SDK. It contains the
+  Debian Jessie armhf development files plus a static PIC libstdc++ built by the
+  modern cross compiler against those old target headers and libraries. Its
+  builder image, Debian snapshot packages, authenticated Jessie archive
+  metadata, downloaded package hashes, and complete SDK-producing recipe are
+  pinned. Each Docker build returns an immutable image ID; the SDK marker binds
+  that exact image ID to the recipe digest, and the CMake toolchain requires the
+  same pair. The resulting build-toolchain digest keys both build trees and
+  compiler cache, so a changed SDK, compiler, toolchain, or compile-container
+  contract cannot reuse stale objects. A publisher lock bridges SDK creation to
+  the consumer's shared SDK lock, which remains held through acceptance; the SDK
+  cannot be replaced between bootstrap and compile or under a running audit.
+- `.snesmini/rootfs` is an imported snapshot of the actual target userspace. It
+  copies the complete device root except live pseudo-filesystem contents and is
+  used only as the runtime-acceptance authority. Its manifest identifies the
+  complete normalized directory, symlink, mode, special-file, and regular-file
+  content tree, and is verified again for every acceptance run.
+
+Modern C++ language support therefore does not imply a modern target runtime.
+The networkless compile container exposes the repository read-only, masks its
+entire `.snesmini` tree, and then mounts only the generated SDK read-only plus
+the identity-keyed build tree and compiler cache read-write. Generic distro
+headers and target libraries are absent. The imported runtime root is not
+mounted at all. The CMake cross-toolchain consumes the SDK directly and links
+the target-built libstdc++ and libgcc statically. Missing target symbols are
+build failures; the target does not receive compatibility stubs, dummy symbols,
+or per-symbol shims.
+
+Every produced ARM artifact is audited against the imported runtime root. The
+audit verifies ELF32 ARM hard-float, the program interpreter, the complete
+transitive `DT_NEEDED` closure, every strong dynamic-symbol reference and its
+exact GNU-version provider, the symbols loaded explicitly from EGL/GLES, and
+equality between the core export surface and its libretro version map. This is
+stronger than checking only dependency or version names. Audit and QEMU run in
+a second networkless container with the candidate build tree and runtime root
+mounted read-only. Accepted files and their hashes form an immutable release
+directory; one atomic `current` symlink publishes the complete core or host
+release. SNES Mini output therefore never overwrites the native
+`dist/libretro_bmsx.so`.
+
+The core build first force-builds its release BIOS and bare-metal cart directly
+into a private per-run output directory. ROM publication is an atomic rename by
+the rompacker owner, so concurrent normal builds cannot replace or partially
+publish acceptance inputs. Their hashes and the positive frame count are
+recorded in the accepted release. QEMU then loads the cross-built libretro core
+through the target dynamic loader, loads those private ROMs, selects the
+software backend, and executes the requested real frames. This proves the
+CPU/userspace ABI and core execution path on a PC. It does not emulate the SNES
+Mini framebuffer, evdev devices, Mali GLES driver, audio device, or sustained
+target timing; those remain real-hardware acceptance gates.
+
+The operational sequence is:
+
+```bash
+npm run import:snesmini-rootfs -- /path/to/extracted-rootfs-or-tar
+npm run setup:snesmini
+npm run build:platform:libretro-snesmini
+npm run build:libretro-host-snesmini
+```
+
+`build:platform:libretro-snesmini` includes the ARM ABI audit and QEMU frame
+smoke; there is no weaker build-only publication path.
+
+Accepted target releases are available through:
+
+- `dist/snesmini/core/current/libretro_bmsx.so`
+- `dist/snesmini/core/current/libretro_bmsx.info`
+- `dist/snesmini/host/current/bmsx_libretro_host`
+- `acceptance.txt` beside each release's artifacts, containing the immutable
+  builder image, toolchain, build type, runtime-root, and artifact identities;
+  the core record also contains its ROM hashes and executed frame count.
+
+The core and direct host are separate deployable products. The core can be
+installed through the normal libretro-core route. On the SNES Mini, Clover can
+instead start `bmsx_libretro_host` directly and pass it that installed core plus
+the selected cart ROM. The host is not a shell runner around RetroArch: its ARM
+executable is built with the same target SDK, its full runtime closure is
+audited against the same imported device root, and QEMU enters its real CLI
+through that target loader before publication. Clover's desktop `Exec` field
+therefore names the host executable directly; no `/bin/sh` trampoline is part of
+the deployment contract.
 
 ## Repository and package boundary policy
 

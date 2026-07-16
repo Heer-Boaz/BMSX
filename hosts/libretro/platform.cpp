@@ -726,7 +726,7 @@ void LibretroInputHub::emitEvent(const InputEvt& evt) {
 
 namespace {
 
-#if defined(BMSX_SNESMINI_LEGACY)
+#if defined(BMSX_LIBRETRO_SNESMINI_LAYOUT)
 constexpr GamepadButton kLibretroButtonA = GamepadButton::B;
 constexpr GamepadButton kLibretroButtonB = GamepadButton::A;
 constexpr GamepadButton kLibretroButtonX = GamepadButton::Y;

@@ -1,6 +1,6 @@
 # bmsx_libretro_host
 
-Minimal Linux **fbdev + evdev** libretro frontend for debugging on the SNES Mini.
+Linux **fbdev + evdev** libretro frontend for the SNES Mini.
 
 Unlike RetroArch, this executable directly loads a libretro core via `dlopen()` and drives it through the libretro callbacks.
 
@@ -9,21 +9,57 @@ Unlike RetroArch, this executable directly loads a libretro core via `dlopen()` 
 From repo root:
 
 ```bash
-npm run build:platform:libretro-snesmini:debug
+npm run import:snesmini-rootfs -- /path/to/extracted-rootfs-or-tar
+npm run setup:snesmini
+npm run build:platform:libretro-snesmini
+npm run build:libretro-host-snesmini
 ```
 
-Artifacts are placed in `dist/`:
+The imported root must come from the target device. The compile SDK and its
+modern C++ frontend are generated from a pinned, package-hashed recipe and are
+separate from that immutable runtime snapshot. The snapshot is never compiler
+input; every artifact is audited against it before it is accepted.
 
-- `dist/libretro_bmsx.so`
-- `dist/libretro_bmsx.info`
-- `dist/bmsx_libretro_host`
+Accepted target releases are published atomically:
 
-## Run (SNES Mini)
+- `dist/snesmini/core/current/libretro_bmsx.so`
+- `dist/snesmini/core/current/libretro_bmsx.info`
+- `dist/snesmini/host/current/bmsx_libretro_host`
+
+Each `current` link points at an immutable content-addressed release containing
+an `acceptance.txt` with the immutable builder image, toolchain, build type,
+complete runtime-root, and artifact hashes. The core record also binds its
+private smoke-ROM hashes and positive frame count. A failed build or audit never
+changes that link.
+
+For debug artifacts use:
 
 ```bash
-./bmsx_libretro_host --core ./libretro_bmsx.so --no-game --backend software
-./bmsx_libretro_host --core ./libretro_bmsx.so ./somegame.rom --backend software
+npm run build:platform:libretro-snesmini:debug
+npm run build:libretro-host-snesmini:debug
 ```
+
+The core build executes the target loader, core, privately built BIOS and cart,
+and software frames on the PC before publication. The host build separately
+enters the real ARM host CLI through that same imported target loader after its
+full runtime closure has passed the ABI audit. Framebuffer, evdev, GLES, audio,
+and timing still require the real SNES Mini.
+
+## Clover launch (SNES Mini)
+
+The libretro core remains independently installable. Install the accepted host
+artifact as an executable and let the game's Clover desktop entry invoke it
+directly:
+
+```ini
+[Desktop Entry]
+Type=Application
+Exec=/root/bmsx_libretro_host --core /etc/libretro/core/libretro_bmsx.so --system-dir /etc/libretro/system --save-dir /var/saves/CLV-S-BMSX /var/games/CLV-S-BMSX/game.rom
+Path=/var/saves/CLV-S-BMSX
+```
+
+Use the actual installed core, game, and save paths for the Clover title. Do not
+route this command through RetroArch or a `/bin/sh` wrapper.
 
 Options:
 

@@ -18,8 +18,11 @@ rom/**/*.js
 !gl-matrix-min.js
 # Ignore any temp code runner files
 **/tempCodeRunnerFile.*
+**/__pycache__/
+*.pyc
 # Include specific .js files that were previously ignored
 **.map
+!hosts/libretro/libretro.map
 **.tsbuildinfo
 **.rom
 **.d.ts
@@ -69,6 +72,7 @@ temp/**
 **.tmp
 **/screenshots
 *.txt
+!**/CMakeLists.txt
 .vscode/edge-profile-wsl/
 
 # CMake generated files

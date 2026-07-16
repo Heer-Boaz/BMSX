@@ -11,6 +11,10 @@
 #include "input_timeline.h"
 #include "screenshot.h"
 
+#ifndef GL_APIENTRYP
+#define GL_APIENTRYP GL_APIENTRY *
+#endif
+
 enum {
 	kMessageMaxText = 256,
 	kMessageMaxLines = 4,
@@ -120,6 +124,7 @@ typedef void (GL_APIENTRYP PFNGLUSEPROGRAMPROC)(GLuint program);
 typedef void (GL_APIENTRYP PFNGLVERTEXATTRIBPOINTERPROC)(GLuint index, GLint size, GLenum type, GLboolean normalized, GLsizei stride, const void* pointer);
 typedef void (GL_APIENTRYP PFNGLVIEWPORTPROC)(GLint x, GLint y, GLsizei width, GLsizei height);
 typedef GLenum (GL_APIENTRYP PFNGLCHECKFRAMEBUFFERSTATUSPROC)(GLenum target);
+typedef void (GL_APIENTRYP BmsxGlReadPixelsProc)(GLint x, GLint y, GLsizei width, GLsizei height, GLenum format, GLenum type, void* pixels);
 
 static VideoPresenter g_presenter = {
 	.pixel_format = RETRO_PIXEL_FORMAT_XRGB8888,
@@ -170,7 +175,7 @@ static PFNGLUSEPROGRAMPROC glUseProgram_ptr = NULL;
 static PFNGLVERTEXATTRIBPOINTERPROC glVertexAttribPointer_ptr = NULL;
 static PFNGLVIEWPORTPROC glViewport_ptr = NULL;
 static PFNGLCHECKFRAMEBUFFERSTATUSPROC glCheckFramebufferStatus_ptr = NULL;
-static PFNGLREADPIXELSPROC glReadPixels_ptr = NULL;
+static BmsxGlReadPixelsProc glReadPixels_ptr = NULL;
 
 static void message_rebuild_surface(void);
 
@@ -253,48 +258,9 @@ static bool gl_load(void) {
 	} \
 	ASSIGN_PROC(name##_ptr, source_proc); \
 } while (0)
-	GL_LOAD(glActiveTexture);
-	GL_LOAD(glAttachShader);
-	GL_LOAD(glBindBuffer);
-	GL_LOAD(glBindFramebuffer);
-	GL_LOAD(glBindTexture);
-	GL_LOAD(glBufferData);
-	GL_LOAD(glClear);
-	GL_LOAD(glClearColor);
-	GL_LOAD(glCompileShader);
-	GL_LOAD(glCreateProgram);
-	GL_LOAD(glCreateShader);
-	GL_LOAD(glDeleteBuffers);
-	GL_LOAD(glDeleteFramebuffers);
-	GL_LOAD(glDeleteProgram);
-	GL_LOAD(glDeleteShader);
-	GL_LOAD(glDeleteTextures);
-	GL_LOAD(glDisable);
-	GL_LOAD(glEnable);
-	GL_LOAD(glBlendFunc);
-	GL_LOAD(glDrawArrays);
-	GL_LOAD(glEnableVertexAttribArray);
-	GL_LOAD(glFramebufferTexture2D);
-	GL_LOAD(glGenBuffers);
-	GL_LOAD(glGenFramebuffers);
-	GL_LOAD(glGenTextures);
-	GL_LOAD(glGetAttribLocation);
-	GL_LOAD(glGetProgramInfoLog);
-	GL_LOAD(glGetProgramiv);
-	GL_LOAD(glGetShaderInfoLog);
-	GL_LOAD(glGetShaderiv);
-	GL_LOAD(glGetUniformLocation);
-	GL_LOAD(glLinkProgram);
-	GL_LOAD(glShaderSource);
-	GL_LOAD(glTexImage2D);
-	GL_LOAD(glTexParameteri);
-	GL_LOAD(glUniform1f);
-	GL_LOAD(glUniform1i);
-	GL_LOAD(glUseProgram);
-	GL_LOAD(glVertexAttribPointer);
-	GL_LOAD(glViewport);
-	GL_LOAD(glCheckFramebufferStatus);
-	GL_LOAD(glReadPixels);
+#define BMSX_RUNTIME_SYMBOL(name) GL_LOAD(name)
+#include "gles2_symbols.inc"
+#undef BMSX_RUNTIME_SYMBOL
 #undef GL_LOAD
 	return true;
 }

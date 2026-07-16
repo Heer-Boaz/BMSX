@@ -337,14 +337,9 @@ add_library(bmsx_core STATIC
 
 
 # Required for linking static library into shared library.
-set(BMSX_MACHINE_ARTIFACT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../lib")
-file(MAKE_DIRECTORY "${BMSX_MACHINE_ARTIFACT_DIR}")
 set_target_properties(bmsx_core PROPERTIES
 	POSITION_INDEPENDENT_CODE ON
 	OUTPUT_NAME "bmsx"
-	ARCHIVE_OUTPUT_DIRECTORY "${BMSX_MACHINE_ARTIFACT_DIR}"
-	ARCHIVE_OUTPUT_DIRECTORY_DEBUG "${BMSX_MACHINE_ARTIFACT_DIR}"
-	ARCHIVE_OUTPUT_DIRECTORY_RELEASE "${BMSX_MACHINE_ARTIFACT_DIR}"
 )
 
 target_include_directories(bmsx_core PUBLIC
@@ -368,6 +363,9 @@ if(BMSX_ENABLE_GLES2)
 	)
 	find_library(GLESV2_LIBRARY GLESv2 REQUIRED)
 	target_link_libraries(bmsx_core PUBLIC ${GLESV2_LIBRARY})
+	if(UNIX AND NOT APPLE)
+		target_link_libraries(bmsx_core PUBLIC dl)
+	endif()
 endif()
 
 if(BMSX_ENABLE_ZLIB)
@@ -389,7 +387,20 @@ if(BMSX_BUILD_LIBRETRO)
 
 	target_link_libraries(bmsx_libretro PRIVATE bmsx_core)
 	if(UNIX AND NOT APPLE AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-		target_link_options(bmsx_libretro PRIVATE "-Wl,--no-undefined")
+		target_link_options(bmsx_libretro PRIVATE
+			"-Wl,--no-undefined"
+			"-Wl,--version-script=${BMSX_LIBRETRO_DIR}/libretro.map"
+		)
+		set_target_properties(bmsx_libretro PROPERTIES
+			LINK_DEPENDS "${BMSX_LIBRETRO_DIR}/libretro.map"
+		)
+	endif()
+	if(BMSX_SNESMINI_TARGET)
+		target_compile_definitions(bmsx_libretro PRIVATE BMSX_LIBRETRO_SNESMINI_LAYOUT=1)
+		target_link_options(bmsx_libretro PRIVATE
+			-static-libstdc++
+			-static-libgcc
+		)
 	endif()
 	# Libretro naming convention
 	set_target_properties(bmsx_libretro PROPERTIES
@@ -441,10 +452,6 @@ if(BMSX_BUILD_LIBRETRO_HOST)
 		${BMSX_LIBRETRO_HOST_DIR}/video_presenter.c
 	)
 
-	# SNES Mini sysroot uses glibc 2.19; the cross toolchain defaults to time64.
-	if(CMAKE_CROSSCOMPILING)
-		target_compile_definitions(bmsx_libretro_host PRIVATE _TIME_BITS=32)
-	endif()
 	target_link_libraries(bmsx_libretro_host PRIVATE dl rt pthread m ZLIB::ZLIB)
 	target_include_directories(bmsx_libretro_host PRIVATE
 		${BMSX_LIBRETRO_DIR}

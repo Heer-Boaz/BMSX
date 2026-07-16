@@ -19,11 +19,7 @@
 #include <stdexcept>
 #include <utility>
 
-#ifdef BMSX_SNESMINI_LEGACY
-#define BMSX_RUNTIME_ERROR(message) std::runtime_error(std::string(message))
-#else
 #define BMSX_RUNTIME_ERROR(message) std::runtime_error(message)
-#endif
 
 #include "common/rect.h"
 #include "common/types.h"

@@ -1,40 +1,34 @@
 import fs from 'fs';
-import { ProgramSymbolsImage } from '../machine/ts/machine/program/loader';
-import { decodeBinary} from 'bmsx/common/serializer/binencoder';
+import { decodeProgramSymbolsImage } from '../machine/ts/machine/program/loader';
+import { normalizeCartridgeBlob, parseCartHeader } from '../machine/ts/rompack/loader';
+import { decodeRomToc } from '../machine/ts/rompack/toc';
 
-function dump(romPath: string, resourcesJson: string) {
-	const rom = fs.readFileSync(romPath);
-	const assets = JSON.parse(fs.readFileSync(resourcesJson, 'utf8')) as Array<any>;
+function dump(romPath: string) {
+	const { payload } = normalizeCartridgeBlob(fs.readFileSync(romPath));
+	const header = parseCartHeader(payload);
+	const assets = decodeRomToc(payload.subarray(header.tocOffset, header.tocOffset + header.tocLength)).entries;
 	const symbolsAssets = assets.filter(a => a.resid === '__program_symbols__');
 	if (symbolsAssets.length === 0) {
-		console.error('No program_symbols assets found in resources JSON');
-		process.exit(1);
+		throw new Error('ROM has no program-symbols asset.');
 	}
 	for (let i = 0; i < symbolsAssets.length; i++) {
 		const a = symbolsAssets[i];
-		const start = a.start;
-		const end = a.end;
+		const start = a.start!;
+		const end = a.end!;
 		console.log(`Asset ${i}: start=${start} end=${end} size=${end - start}`);
-		const bytes = rom.slice(start, end);
-		try {
-			const obj = decodeBinary(bytes) as ProgramSymbolsImage;
-			const meta = obj.metadata;
-			console.log('protoIds length:', meta.protoIds?.length ?? 0);
-			console.log('systemGlobalNames length:', meta.systemGlobalNames?.length ?? 0);
-			console.log('globalNames length:', meta.globalNames?.length ?? 0);
-			console.log('Sample systemGlobalNames (first 200):');
-			console.log((meta.systemGlobalNames || []).slice(0, 200).join('\n'));
-			console.log('Sample globalNames (first 200):');
-			console.log((meta.globalNames || []).slice(0, 200).join('\n'));
-		} catch (err) {
-			console.error('Failed to decode program symbols at', start, end, err?.message ?? err);
-		}
+		const metadata = decodeProgramSymbolsImage(payload.subarray(start, end));
+		console.log('protoIds length:', metadata.protoIds.length);
+		console.log('systemGlobalNames length:', metadata.systemGlobalNames.length);
+		console.log('globalNames length:', metadata.globalNames.length);
+		console.log('Sample systemGlobalNames (first 200):');
+		console.log(metadata.systemGlobalNames.slice(0, 200).join('\n'));
+		console.log('Sample globalNames (first 200):');
+		console.log(metadata.globalNames.slice(0, 200).join('\n'));
 		console.log('---');
 	}
 }
 
 if (require.main === module) {
 	const rom = process.argv[2] || 'dist/pietious.rom';
-	const resJson = process.argv[3] || 'rom/_ignore/romresources.json';
-	dump(rom, resJson);
+	dump(rom);
 }

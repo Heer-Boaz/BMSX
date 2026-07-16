@@ -75,7 +75,7 @@ Current artifact names encode that split:
 
 - `dist/libbmsx.js`: JavaScript machine/runtime.
 - `dist/engine.js`: browser host/bootstrap.
-- `lib/libbmsx.a`: C++ machine/runtime.
+- `libbmsx.a` in its CMake build tree: C++ machine/runtime.
 - `dist/libretro_bmsx.so`: libretro core built around the C++ machine runtime.
 - `dist/host_headless.js` and `dist/host_cli.js`: Node host modes.
 

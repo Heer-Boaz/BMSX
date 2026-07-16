@@ -183,26 +183,14 @@ static bool egl_load(void) {
 		return false;
 	}
 
-	ASSIGN_PROC(eglGetDisplay_ptr, dlsym(context->egl_library, "eglGetDisplay"));
-	ASSIGN_PROC(eglBindAPI_ptr, dlsym(context->egl_library, "eglBindAPI"));
-	ASSIGN_PROC(eglInitialize_ptr, dlsym(context->egl_library, "eglInitialize"));
-	ASSIGN_PROC(eglChooseConfig_ptr, dlsym(context->egl_library, "eglChooseConfig"));
-	ASSIGN_PROC(eglCreateWindowSurface_ptr, dlsym(context->egl_library, "eglCreateWindowSurface"));
-	ASSIGN_PROC(eglCreateContext_ptr, dlsym(context->egl_library, "eglCreateContext"));
-	ASSIGN_PROC(eglMakeCurrent_ptr, dlsym(context->egl_library, "eglMakeCurrent"));
-	ASSIGN_PROC(eglSwapInterval_ptr, dlsym(context->egl_library, "eglSwapInterval"));
-	ASSIGN_PROC(eglSwapBuffers_ptr, dlsym(context->egl_library, "eglSwapBuffers"));
-	ASSIGN_PROC(eglDestroyContext_ptr, dlsym(context->egl_library, "eglDestroyContext"));
-	ASSIGN_PROC(eglDestroySurface_ptr, dlsym(context->egl_library, "eglDestroySurface"));
-	ASSIGN_PROC(eglTerminate_ptr, dlsym(context->egl_library, "eglTerminate"));
-	ASSIGN_PROC(eglGetError_ptr, dlsym(context->egl_library, "eglGetError"));
-	ASSIGN_PROC(eglGetProcAddress_ptr, dlsym(context->egl_library, "eglGetProcAddress"));
-
-	if (!eglGetDisplay_ptr || !eglBindAPI_ptr || !eglInitialize_ptr || !eglChooseConfig_ptr ||
-			!eglCreateWindowSurface_ptr || !eglCreateContext_ptr ||
-			!eglMakeCurrent_ptr || !eglSwapInterval_ptr || !eglSwapBuffers_ptr ||
-			!eglDestroyContext_ptr || !eglDestroySurface_ptr || !eglTerminate_ptr || !eglGetError_ptr ||
-			!eglGetProcAddress_ptr) {
+	bool symbols_complete = true;
+#define BMSX_RUNTIME_SYMBOL(name) do { \
+	ASSIGN_PROC(name##_ptr, dlsym(context->egl_library, #name)); \
+	symbols_complete = symbols_complete && name##_ptr != NULL; \
+} while (0)
+#include "egl_symbols.inc"
+#undef BMSX_RUNTIME_SYMBOL
+	if (!symbols_complete) {
 		fprintf(stderr, "[libretro-host] egl symbols missing\n");
 		egl_unload();
 		return false;

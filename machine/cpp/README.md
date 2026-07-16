@@ -55,7 +55,7 @@ cmake .. -DCMAKE_BUILD_TYPE=Release
 cmake --build . --config Release
 
 # The output will be:
-# - machine: lib/libbmsx.a
+# - machine: libbmsx.a in this build directory
 # - libretro core: libretro_bmsx.so (Linux), libretro_bmsx.dll (Windows), libretro_bmsx.dylib (macOS)
 ```
 

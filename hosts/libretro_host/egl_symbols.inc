@@ -1,0 +1,14 @@
+BMSX_RUNTIME_SYMBOL(eglGetDisplay);
+BMSX_RUNTIME_SYMBOL(eglBindAPI);
+BMSX_RUNTIME_SYMBOL(eglInitialize);
+BMSX_RUNTIME_SYMBOL(eglChooseConfig);
+BMSX_RUNTIME_SYMBOL(eglCreateWindowSurface);
+BMSX_RUNTIME_SYMBOL(eglCreateContext);
+BMSX_RUNTIME_SYMBOL(eglMakeCurrent);
+BMSX_RUNTIME_SYMBOL(eglSwapInterval);
+BMSX_RUNTIME_SYMBOL(eglSwapBuffers);
+BMSX_RUNTIME_SYMBOL(eglDestroyContext);
+BMSX_RUNTIME_SYMBOL(eglDestroySurface);
+BMSX_RUNTIME_SYMBOL(eglTerminate);
+BMSX_RUNTIME_SYMBOL(eglGetError);
+BMSX_RUNTIME_SYMBOL(eglGetProcAddress);
