@@ -12,8 +12,6 @@
 #endif
 #include <linux/fb.h>
 #include <linux/input.h>
-#include <pthread.h>
-#include <sched.h>
 #include <signal.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -25,16 +23,16 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
-#include <sound/asound.h>
 #include <time.h>
 #include <unistd.h>
 #include <ucontext.h>
 
 #include "libretro.h"
-#include "audio_queue.h"
+#include "audio_output.h"
 #include "core_options.h"
 #include "frame_pacer.h"
 #include "frame_timing.h"
+#include "host_fatal.h"
 #include "input_timeline.h"
 #include "keyboard_input.h"
 #include "screenshot.h"
@@ -115,11 +113,6 @@ static volatile sig_atomic_t g_should_quit = 0;
 enum { kInputTimelineAutoQuitGraceFrames = 0 };
 static bool g_input_debug = false;
 static const uint64_t kExitComboHoldMs = 2000;
-static const unsigned kAudioPeriodFrames = 1024;
-static const unsigned kAudioPeriodCount = 4;
-static const unsigned kAudioPrimePeriods = 4;
-static const unsigned kSdlAudioBufferFrames = 1024;
-static const int kAudioThreadPriority = 20;
 static char g_system_dir[1024] = "";
 static char g_save_dir[1024] = "";
 static LibretroCore* g_core = NULL;
@@ -136,7 +129,6 @@ static SDL_GameController* g_sdl_gamepad = NULL;
 static SDL_JoystickID g_sdl_gamepad_id = -1;
 static uint16_t g_sdl_pad_state = 0;
 static bool g_sdl_focused = true;
-static SDL_AudioDeviceID g_sdl_audio_device = 0;
 #endif
 
 static enum retro_pixel_format g_core_pixel_format = RETRO_PIXEL_FORMAT_XRGB8888;
@@ -158,7 +150,6 @@ static uint64_t g_frame_usec = 0;
 static uint64_t g_frame_ns = 0;
 static uint64_t g_max_run_frames = 0;
 static uint64_t g_run_frame_count = 0;
-static bool g_audio_disabled = false;
 static bool g_sdl_hidden_window = false;
 static struct retro_frame_time_callback g_frame_time_cb = {0};
 static bool g_has_frame_time_cb = false;
@@ -367,25 +358,6 @@ static uint8_t map_sdl_mouse_buttons(uint32_t buttons);
 #endif
 static void clamp_mouse_position_to_framebuffer(void);
 static void set_mouse_absolute_position(int x, int y, bool update_delta);
-static char g_audio_device[64] = "/dev/snd/pcmC0D0p";
-enum { kAudioSampleBufferFrames = 512 };
-static int g_audio_fd = -1;
-static int g_audio_sample_rate = 0;
-static unsigned g_audio_channels = 2;
-static unsigned g_audio_period_frames = 0;
-static unsigned g_audio_period_count = 0;
-static unsigned g_audio_buffer_frames = 0;
-static bool g_audio_prepared = false;
-static unsigned g_audio_underruns = 0;
-static size_t g_sdl_audio_underrun_frames = 0;
-static BmsxAudioQueue g_audio_queue;
-static pthread_t g_audio_thread;
-static bool g_audio_thread_started = false;
-static int16_t* g_audio_thread_buf = NULL;
-static size_t g_audio_thread_buf_frames = 0;
-static int16_t g_audio_sample_buf[kAudioSampleBufferFrames * 2];
-static size_t g_audio_sample_buf_frames = 0;
-
 static void crash_handler(int sig, siginfo_t* si, void* ctx_) {
 #if defined(__arm__)
 	ucontext_t* uc = (ucontext_t*)ctx_;
@@ -423,15 +395,6 @@ static void install_crash_handlers(void) {
 static void on_signal(int signum) {
 	(void)signum;
 	g_should_quit = 1;
-}
-
-static void die(const char* fmt, ...) {
-	va_list ap;
-	va_start(ap, fmt);
-	vfprintf(stderr, fmt, ap);
-	va_end(ap);
-	fputc('\n', stderr);
-	exit(1);
 }
 
 static void host_log(enum retro_log_level level, const char* fmt, ...) {
@@ -1324,14 +1287,14 @@ static bool hw_present_frame(unsigned src_w, unsigned src_h) {
 		fprintf(stderr, "[SCREENSHOT] Capturing frame %llu (%ux%u)\n", (unsigned long long)capture_frame, present_w, present_h);
 		uint8_t* pixels = malloc((size_t)present_w * (size_t)present_h * 4u);
 		if (!pixels) {
-			die("Screenshot allocation failed for %ux%u frame", present_w, present_h);
+			host_fatal("Screenshot allocation failed for %ux%u frame", present_w, present_h);
 		}
 		glBindFramebuffer_ptr(GL_FRAMEBUFFER, g_hw_fbo);
 		glReadPixels_ptr(0, 0, (GLsizei)present_w, (GLsizei)present_h, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
 		char filename[128];
 		snprintf(filename, sizeof(filename), "frame_%05llu.png", (unsigned long long)capture_frame);
 		if (!screenshot_save_png(filename, present_w, present_h, pixels)) {
-			die("Screenshot save failed: %s", filename);
+			host_fatal("Screenshot save failed: %s", filename);
 		}
 		free(pixels);
 		glBindFramebuffer_ptr(GL_FRAMEBUFFER, 0);
@@ -1381,7 +1344,7 @@ static void step_software_frame_capture(void) {
 	const size_t pixel_count = (size_t)g_fb.width * (size_t)g_fb.height;
 	uint8_t* pixels = (uint8_t*)malloc(pixel_count * 4u);
 	if (!pixels) {
-		die("Screenshot allocation failed for %dx%d frame", g_fb.width, g_fb.height);
+		host_fatal("Screenshot allocation failed for %dx%d frame", g_fb.width, g_fb.height);
 	}
 	for (int y = 0; y < g_fb.height; ++y) {
 		const int src_y = g_fb.height - 1 - y;
@@ -1392,7 +1355,7 @@ static void step_software_frame_capture(void) {
 	char filename[128];
 	snprintf(filename, sizeof(filename), "frame_%05llu.png", (unsigned long long)capture_frame);
 	if (!screenshot_save_png(filename, (uint32_t)g_fb.width, (uint32_t)g_fb.height, pixels)) {
-		die("Screenshot save failed: %s", filename);
+		host_fatal("Screenshot save failed: %s", filename);
 	}
 	free(pixels);
 }
@@ -1609,7 +1572,7 @@ static void sdl_resize(unsigned width, unsigned height) {
 	g_fb.map_size = (size_t)g_fb.stride * (size_t)g_fb.height;
 	uint8_t* map = (uint8_t*)realloc(g_fb.map, g_fb.map_size);
 	if (!map) {
-		die("realloc(%zu) failed", g_fb.map_size);
+		host_fatal("realloc(%zu) failed", g_fb.map_size);
 	}
 	g_fb.map = map;
 	memset(g_fb.map, 0, g_fb.map_size);
@@ -1619,7 +1582,7 @@ static void sdl_resize(unsigned width, unsigned height) {
 	g_sdl_texture = SDL_CreateTexture(g_sdl_renderer, SDL_PIXELFORMAT_XRGB8888,
 		SDL_TEXTUREACCESS_STREAMING, g_fb.width, g_fb.height);
 	if (!g_sdl_texture) {
-		die("SDL_CreateTexture failed: %s", SDL_GetError());
+		host_fatal("SDL_CreateTexture failed: %s", SDL_GetError());
 	}
 	SDL_RenderSetLogicalSize(g_sdl_renderer, g_fb.width, g_fb.height);
 	msg_mark_dirty();
@@ -1656,8 +1619,8 @@ static void sdl_update_mouse_position(void) {
 }
 
 static void sdl_init(void) {
-	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER | SDL_INIT_AUDIO) != 0) {
-		die("SDL_Init failed: %s", SDL_GetError());
+	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) != 0) {
+		host_fatal("SDL_Init failed: %s", SDL_GetError());
 	}
 	SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "nearest");
 	unsigned base_w = g_geom_base_w ? g_geom_base_w : 320;
@@ -1682,22 +1645,22 @@ static void sdl_init(void) {
 		(int)window_w, (int)window_h,
 		(int)window_flags);
 	if (!g_sdl_window) {
-		die("SDL_CreateWindow failed: %s", SDL_GetError());
+		host_fatal("SDL_CreateWindow failed: %s", SDL_GetError());
 	}
 	g_sdl_focused = !g_sdl_hidden_window;
 	if (g_sdl_use_gl) {
 		g_sdl_gl_context = SDL_GL_CreateContext(g_sdl_window);
 		if (!g_sdl_gl_context) {
-			die("SDL_GL_CreateContext failed: %s", SDL_GetError());
+			host_fatal("SDL_GL_CreateContext failed: %s", SDL_GetError());
 		}
 		if (SDL_GL_MakeCurrent(g_sdl_window, g_sdl_gl_context) != 0) {
-			die("SDL_GL_MakeCurrent failed: %s", SDL_GetError());
+			host_fatal("SDL_GL_MakeCurrent failed: %s", SDL_GetError());
 		}
 		SDL_GL_SetSwapInterval(0);
 	} else {
 		g_sdl_renderer = SDL_CreateRenderer(g_sdl_window, -1, 0);
 		if (!g_sdl_renderer) {
-			die("SDL_CreateRenderer failed: %s", SDL_GetError());
+			host_fatal("SDL_CreateRenderer failed: %s", SDL_GetError());
 		}
 	}
 	sdl_resize(base_w, base_h);
@@ -1905,13 +1868,13 @@ static void fb_init(FbDev* fb, const char* path) {
 	memset(fb, 0, sizeof(*fb));
 	fb->fd = open(path, O_RDWR);
 	if (fb->fd < 0) {
-		die("Failed to open %s: %s", path, strerror(errno));
+		host_fatal("Failed to open %s: %s", path, strerror(errno));
 	}
 	if (ioctl(fb->fd, FBIOGET_FSCREENINFO, &fb->fix) != 0) {
-		die("FBIOGET_FSCREENINFO failed: %s", strerror(errno));
+		host_fatal("FBIOGET_FSCREENINFO failed: %s", strerror(errno));
 	}
 	if (ioctl(fb->fd, FBIOGET_VSCREENINFO, &fb->var) != 0) {
-		die("FBIOGET_VSCREENINFO failed: %s", strerror(errno));
+		host_fatal("FBIOGET_VSCREENINFO failed: %s", strerror(errno));
 	}
 	fb->width = (int)fb->var.xres;
 	fb->height = (int)fb->var.yres;
@@ -1920,7 +1883,7 @@ static void fb_init(FbDev* fb, const char* path) {
 	fb->map_size = (size_t)fb->fix.smem_len;
 	fb->map = (uint8_t*)mmap(NULL, fb->map_size, PROT_READ | PROT_WRITE, MAP_SHARED, fb->fd, 0);
 	if (fb->map == MAP_FAILED) {
-		die("mmap framebuffer failed: %s", strerror(errno));
+		host_fatal("mmap framebuffer failed: %s", strerror(errno));
 	}
 	fprintf(stderr, "[libretro-host] fbdev %dx%d bpp=%d stride=%d\n", fb->width, fb->height, fb->bpp, fb->stride);
 }
@@ -2132,349 +2095,7 @@ static void video_cb(const void* data, unsigned width, unsigned height, size_t p
 		return;
 	}
 
-	die("Unsupported fbdev bpp: %d", g_fb.bpp);
-}
-
-static void audio_write_frames(const int16_t* data, size_t frames) {
-	if (frames == 0) {
-		return;
-	}
-	size_t remaining = frames;
-	const int16_t* src = data;
-	while (remaining > 0) {
-		struct snd_xferi xfer;
-		xfer.buf = (void*)src;
-		xfer.frames = remaining;
-		xfer.result = 0;
-		if (!g_audio_prepared) {
-			if (ioctl(g_audio_fd, SNDRV_PCM_IOCTL_PREPARE) != 0) {
-				if (errno == EINTR) {
-					continue;
-				}
-				die("SNDRV_PCM_IOCTL_PREPARE failed: %s", strerror(errno));
-			}
-			g_audio_prepared = true;
-		}
-		if (ioctl(g_audio_fd, SNDRV_PCM_IOCTL_WRITEI_FRAMES, &xfer) != 0) {
-			if (errno == EINTR) {
-				continue;
-			}
-			if (errno == EPIPE || errno == ESTRPIPE) {
-				g_audio_prepared = false;
-				++g_audio_underruns;
-				continue;
-			}
-			die("SNDRV_PCM_IOCTL_WRITEI_FRAMES failed: %s", strerror(errno));
-		}
-		if (xfer.result <= 0) {
-			die("SNDRV_PCM_IOCTL_WRITEI_FRAMES made no progress");
-		}
-		remaining -= (size_t)xfer.result;
-		src += (size_t)xfer.result * g_audio_channels;
-	}
-}
-
-static void audio_thread_set_realtime(void) {
-	struct sched_param param;
-	memset(&param, 0, sizeof(param));
-	param.sched_priority = kAudioThreadPriority;
-	int err = pthread_setschedparam(pthread_self(), SCHED_FIFO, &param);
-	if (err != 0) {
-		fprintf(stderr, "[libretro-host] warning: SCHED_FIFO priority %d unavailable (%s), audio thread runs at normal priority\n",
-				kAudioThreadPriority, strerror(err));
-	}
-}
-
-static void* audio_thread_main(void* arg) {
-	(void)arg;
-	audio_thread_set_realtime();
-	const size_t prime_frames = g_audio_period_frames * kAudioPrimePeriods;
-	bool primed = false;
-	for (;;) {
-		size_t min_frames = primed ? g_audio_period_frames : prime_frames;
-		size_t frames = bmsx_audio_queue_pop_wait(&g_audio_queue, g_audio_thread_buf,
-				g_audio_thread_buf_frames, min_frames);
-		if (frames == 0) {
-			break;
-		}
-		primed = true;
-		audio_write_frames(g_audio_thread_buf, frames);
-	}
-	if (ioctl(g_audio_fd, SNDRV_PCM_IOCTL_DRAIN) != 0) {
-		die("SNDRV_PCM_IOCTL_DRAIN failed: %s", strerror(errno));
-	}
-	return NULL;
-}
-
-static void audio_flush_sample_buffer(void) {
-	if (g_audio_sample_buf_frames == 0) {
-		return;
-	}
-	bmsx_audio_queue_push(&g_audio_queue, g_audio_sample_buf, g_audio_sample_buf_frames);
-	g_audio_sample_buf_frames = 0;
-}
-
-static void hw_params_any(struct snd_pcm_hw_params* params) {
-	memset(params, 0, sizeof(*params));
-	for (size_t i = 0; i < sizeof(params->masks) / sizeof(params->masks[0]); ++i) {
-		for (size_t j = 0; j < sizeof(params->masks[i].bits) / sizeof(params->masks[i].bits[0]); ++j) {
-			params->masks[i].bits[j] = 0xFFFFFFFFu;
-		}
-	}
-	for (size_t i = 0; i < sizeof(params->intervals) / sizeof(params->intervals[0]); ++i) {
-		params->intervals[i].min = 0;
-		params->intervals[i].max = UINT_MAX;
-		params->intervals[i].openmin = 0;
-		params->intervals[i].openmax = 0;
-		params->intervals[i].integer = 0;
-		params->intervals[i].empty = 0;
-	}
-	params->rmask = 0;
-	params->cmask = 0;
-}
-
-static void hw_param_mask_set(struct snd_pcm_hw_params* params, snd_pcm_hw_param_t param, unsigned value) {
-	struct snd_mask* mask = &params->masks[param - SNDRV_PCM_HW_PARAM_FIRST_MASK];
-	for (size_t i = 0; i < sizeof(mask->bits) / sizeof(mask->bits[0]); ++i) {
-		mask->bits[i] = 0;
-	}
-	mask->bits[value / 32] |= 1u << (value % 32);
-	params->rmask |= 1u << param;
-}
-
-static void hw_param_interval_set(struct snd_pcm_hw_params* params, snd_pcm_hw_param_t param, unsigned min, unsigned max) {
-	struct snd_interval* interval = &params->intervals[param - SNDRV_PCM_HW_PARAM_FIRST_INTERVAL];
-	interval->min = min;
-	interval->max = max;
-	interval->openmin = 0;
-	interval->openmax = 0;
-	interval->integer = 1;
-	interval->empty = 0;
-	params->rmask |= 1u << param;
-}
-
-static unsigned hw_param_interval_get_min(const struct snd_pcm_hw_params* params, snd_pcm_hw_param_t param) {
-	return params->intervals[param - SNDRV_PCM_HW_PARAM_FIRST_INTERVAL].min;
-}
-
-static unsigned hw_param_interval_get_max(const struct snd_pcm_hw_params* params, snd_pcm_hw_param_t param) {
-	return params->intervals[param - SNDRV_PCM_HW_PARAM_FIRST_INTERVAL].max;
-}
-
-static void audio_set_sw_params(void) {
-	struct snd_pcm_sw_params sw;
-	memset(&sw, 0, sizeof(sw));
-	sw.tstamp_mode = SNDRV_PCM_TSTAMP_ENABLE;
-	sw.period_step = 1;
-	sw.sleep_min = 0;
-	sw.avail_min = 1;
-	sw.xfer_align = g_audio_period_frames / 2;
-	sw.start_threshold = g_audio_period_frames;
-	sw.stop_threshold = g_audio_buffer_frames;
-	sw.silence_threshold = 0;
-	sw.silence_size = 0;
-	sw.boundary = g_audio_buffer_frames;
-	while (sw.boundary * 2u <= (unsigned)(INT_MAX - (int)g_audio_buffer_frames)) {
-		sw.boundary *= 2u;
-	}
-	if (ioctl(g_audio_fd, SNDRV_PCM_IOCTL_SW_PARAMS, &sw) != 0) {
-		die("SNDRV_PCM_IOCTL_SW_PARAMS failed: %s", strerror(errno));
-	}
-}
-
-#ifdef BMSX_LIBRETRO_HOST_SDL
-static void audio_sdl_callback(void* userdata, Uint8* stream, int byte_count) {
-	(void)userdata;
-	const size_t requested_frames = (size_t)byte_count / (g_audio_channels * sizeof(int16_t));
-	const size_t frames = bmsx_audio_queue_read(&g_audio_queue, (int16_t*)stream, requested_frames);
-	const size_t missing_frames = requested_frames - frames;
-	g_sdl_audio_underrun_frames += missing_frames;
-	memset(stream + frames * g_audio_channels * sizeof(int16_t), 0,
-			missing_frames * g_audio_channels * sizeof(int16_t));
-}
-
-static void audio_init_sdl(int sample_rate) {
-	SDL_AudioSpec want;
-	SDL_AudioSpec have;
-	memset(&want, 0, sizeof(want));
-	memset(&have, 0, sizeof(have));
-	want.freq = sample_rate;
-	want.format = AUDIO_S16SYS;
-	want.channels = (Uint8)g_audio_channels;
-	want.samples = (Uint16)kSdlAudioBufferFrames;
-	want.callback = audio_sdl_callback;
-	g_sdl_audio_device = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
-	if (!g_sdl_audio_device) {
-		die("SDL_OpenAudioDevice failed: %s", SDL_GetError());
-	}
-	if (have.freq != sample_rate) {
-		die("SDL audio rate mismatch: requested %d got %d", sample_rate, have.freq);
-	}
-	if (have.channels != g_audio_channels) {
-		die("SDL audio channel mismatch: requested %u got %u", g_audio_channels, have.channels);
-	}
-	g_audio_sample_rate = have.freq;
-	g_audio_buffer_frames = have.samples;
-	g_audio_sample_buf_frames = 0;
-	bmsx_audio_queue_init(&g_audio_queue, (size_t)have.samples * 2u, g_audio_channels,
-			g_frame_timing.enabled);
-	bmsx_audio_queue_prime_silence(&g_audio_queue);
-	g_sdl_audio_underrun_frames = 0;
-	SDL_PauseAudioDevice(g_sdl_audio_device, 0);
-	fprintf(stderr, "[libretro-host] audio: sdl rate=%d ch=%u samples=%u\n",
-			have.freq, have.channels, have.samples);
-}
-
-static void audio_shutdown_sdl(void) {
-	SDL_PauseAudioDevice(g_sdl_audio_device, 1);
-	SDL_CloseAudioDevice(g_sdl_audio_device);
-	g_sdl_audio_device = 0;
-	g_audio_sample_rate = 0;
-	g_audio_buffer_frames = 0;
-	g_audio_sample_buf_frames = 0;
-}
-#endif
-
-static void audio_init(int sample_rate) {
-#ifdef BMSX_LIBRETRO_HOST_SDL
-	if (g_use_sdl) {
-		audio_init_sdl(sample_rate);
-		return;
-	}
-#endif
-	g_audio_fd = open(g_audio_device, O_WRONLY);
-	if (g_audio_fd < 0) {
-		die("Failed to open %s: %s", g_audio_device, strerror(errno));
-	}
-	struct snd_pcm_hw_params hw;
-	hw_params_any(&hw);
-	hw_param_mask_set(&hw, SNDRV_PCM_HW_PARAM_ACCESS, SNDRV_PCM_ACCESS_RW_INTERLEAVED);
-	hw_param_mask_set(&hw, SNDRV_PCM_HW_PARAM_FORMAT, SNDRV_PCM_FORMAT_S16_LE);
-	hw_param_mask_set(&hw, SNDRV_PCM_HW_PARAM_SUBFORMAT, SNDRV_PCM_SUBFORMAT_STD);
-	hw_param_interval_set(&hw, SNDRV_PCM_HW_PARAM_CHANNELS, g_audio_channels, g_audio_channels);
-	hw_param_interval_set(&hw, SNDRV_PCM_HW_PARAM_RATE, (unsigned)sample_rate, (unsigned)sample_rate);
-	hw_param_interval_set(&hw, SNDRV_PCM_HW_PARAM_PERIOD_SIZE, kAudioPeriodFrames, kAudioPeriodFrames);
-	hw_param_interval_set(&hw, SNDRV_PCM_HW_PARAM_PERIODS, kAudioPeriodCount, kAudioPeriodCount);
-	if (ioctl(g_audio_fd, SNDRV_PCM_IOCTL_HW_REFINE, &hw) != 0) {
-		die("SNDRV_PCM_IOCTL_HW_REFINE failed: %s", strerror(errno));
-	}
-	if (ioctl(g_audio_fd, SNDRV_PCM_IOCTL_HW_PARAMS, &hw) != 0) {
-		die("SNDRV_PCM_IOCTL_HW_PARAMS failed: %s", strerror(errno));
-	}
-	unsigned rate_min = hw_param_interval_get_min(&hw, SNDRV_PCM_HW_PARAM_RATE);
-	unsigned rate_max = hw_param_interval_get_max(&hw, SNDRV_PCM_HW_PARAM_RATE);
-	if (rate_min != (unsigned)sample_rate || rate_max != (unsigned)sample_rate) {
-		die("Audio rate mismatch: requested %d got %u-%u", sample_rate, rate_min, rate_max);
-	}
-	unsigned ch_min = hw_param_interval_get_min(&hw, SNDRV_PCM_HW_PARAM_CHANNELS);
-	unsigned ch_max = hw_param_interval_get_max(&hw, SNDRV_PCM_HW_PARAM_CHANNELS);
-	if (ch_min != g_audio_channels || ch_max != g_audio_channels) {
-		die("Audio channel mismatch: requested %u got %u-%u", g_audio_channels, ch_min, ch_max);
-	}
-	g_audio_sample_rate = (int)rate_min;
-	g_audio_period_frames = hw_param_interval_get_min(&hw, SNDRV_PCM_HW_PARAM_PERIOD_SIZE);
-	g_audio_period_count = hw_param_interval_get_min(&hw, SNDRV_PCM_HW_PARAM_PERIODS);
-	if (g_audio_period_frames == 0) {
-		die("Invalid ALSA period size");
-	}
-	if (g_audio_period_count == 0) {
-		die("Invalid ALSA period count");
-	}
-	g_audio_buffer_frames = g_audio_period_frames * g_audio_period_count;
-	audio_set_sw_params();
-	if (ioctl(g_audio_fd, SNDRV_PCM_IOCTL_PREPARE) != 0) {
-		die("SNDRV_PCM_IOCTL_PREPARE failed: %s", strerror(errno));
-	}
-	g_audio_prepared = true;
-	g_audio_underruns = 0;
-	g_audio_thread_buf_frames = g_audio_period_frames;
-	g_audio_thread_buf = (int16_t*)malloc(g_audio_thread_buf_frames * g_audio_channels * sizeof(int16_t));
-	if (!g_audio_thread_buf) {
-		die("malloc(%zu) failed for audio thread buffer",
-				g_audio_thread_buf_frames * g_audio_channels * sizeof(int16_t));
-	}
-	bmsx_audio_queue_init(&g_audio_queue, g_audio_buffer_frames, g_audio_channels,
-			g_frame_timing.enabled);
-	int err = pthread_create(&g_audio_thread, NULL, audio_thread_main, NULL);
-	if (err != 0) {
-		die("pthread_create failed: %s", strerror(err));
-	}
-	g_audio_thread_started = true;
-	g_audio_sample_buf_frames = 0;
-	fprintf(stderr, "[libretro-host] audio: dev=%s rate=%d ch=%u period=%u periods=%u buffer=%u\n",
-			g_audio_device, g_audio_sample_rate, g_audio_channels,
-			g_audio_period_frames, g_audio_period_count, g_audio_buffer_frames);
-}
-
-static void audio_shutdown(void) {
-	audio_flush_sample_buffer();
-#ifdef BMSX_LIBRETRO_HOST_SDL
-	if (g_use_sdl) {
-		audio_shutdown_sdl();
-		if (g_frame_timing.enabled || g_sdl_audio_underrun_frames > 0u) {
-			fprintf(stderr,
-					"[libretro-host] audio stats: queue_capacity_frames=%zu queue_high_water_frames=%zu underrun_frames=%zu\n",
-					g_audio_queue.capacity_frames,
-					g_audio_queue.high_water_frames,
-					g_sdl_audio_underrun_frames);
-		}
-		bmsx_audio_queue_stop(&g_audio_queue);
-		bmsx_audio_queue_destroy(&g_audio_queue);
-		g_sdl_audio_underrun_frames = 0;
-		return;
-	}
-#endif
-	if (g_audio_thread_started) {
-		bmsx_audio_queue_stop(&g_audio_queue);
-		int err = pthread_join(g_audio_thread, NULL);
-		if (err != 0) {
-			die("pthread_join failed: %s", strerror(err));
-		}
-		g_audio_thread_started = false;
-		bmsx_audio_queue_destroy(&g_audio_queue);
-	}
-	if (g_frame_timing.enabled || g_audio_underruns > 0u) {
-		fprintf(stderr, "[libretro-host] audio stats: underruns=%u\n", g_audio_underruns);
-	}
-	if (g_audio_thread_buf) {
-		free(g_audio_thread_buf);
-		g_audio_thread_buf = NULL;
-	}
-	g_audio_thread_buf_frames = 0;
-	if (g_audio_fd >= 0) {
-		close(g_audio_fd);
-	}
-	g_audio_fd = -1;
-	g_audio_sample_rate = 0;
-	g_audio_period_frames = 0;
-	g_audio_period_count = 0;
-	g_audio_buffer_frames = 0;
-	g_audio_sample_buf_frames = 0;
-	g_audio_prepared = false;
-	g_audio_underruns = 0;
-}
-
-static void audio_sample_cb(int16_t left, int16_t right) {
-	if (g_audio_disabled) {
-		return;
-	}
-	const size_t idx = g_audio_sample_buf_frames * g_audio_channels;
-	g_audio_sample_buf[idx] = left;
-	g_audio_sample_buf[idx + 1] = right;
-	++g_audio_sample_buf_frames;
-	if (g_audio_sample_buf_frames >= kAudioSampleBufferFrames) {
-		bmsx_audio_queue_push(&g_audio_queue, g_audio_sample_buf, g_audio_sample_buf_frames);
-		g_audio_sample_buf_frames = 0;
-	}
-}
-
-static size_t audio_batch_cb(const int16_t* data, size_t frames) {
-	if (g_audio_disabled) {
-		return frames;
-	}
-	audio_flush_sample_buffer();
-	bmsx_audio_queue_push(&g_audio_queue, data, frames);
-	return frames;
+	host_fatal("Unsupported fbdev bpp: %d", g_fb.bpp);
 }
 
 static int clamp_int(int value, int min_value, int max_value) {
@@ -2820,7 +2441,7 @@ static void input_open_default_devices(void) {
 		}
 	}
 	if (g_input_dev_count == 0) {
-		die("No input devices opened. Are you running as root / do you have permissions for /dev/input/event*?");
+		host_fatal("No input devices opened. Are you running as root / do you have permissions for /dev/input/event*?");
 	}
 }
 
@@ -2863,7 +2484,7 @@ static void poll_input_devices(void) {
 				if (errno == EAGAIN || errno == EWOULDBLOCK) {
 					break;
 				}
-				die("read(%s) failed: %s", dev->path, strerror(errno));
+				host_fatal("read(%s) failed: %s", dev->path, strerror(errno));
 			}
 			if (n == 0) {
 				keyboard_input_release_source(KEYBOARD_INPUT_SOURCE_EVDEV_FIRST + (unsigned)i);
@@ -2873,7 +2494,7 @@ static void poll_input_devices(void) {
 				break;
 			}
 			if ((size_t)n != sizeof(ev)) {
-				die("Short read from %s: %zd", dev->path, n);
+				host_fatal("Short read from %s: %zd", dev->path, n);
 			}
 
 			if (ev.type == EV_KEY) {
@@ -3165,28 +2786,28 @@ static int16_t input_state_cb(unsigned port, unsigned device, unsigned index, un
 static void* read_file(const char* path, size_t* out_size) {
 	int fd = open(path, O_RDONLY);
 	if (fd < 0) {
-		die("Failed to open %s: %s", path, strerror(errno));
+		host_fatal("Failed to open %s: %s", path, strerror(errno));
 	}
 	struct stat st;
 	if (fstat(fd, &st) != 0) {
-		die("fstat(%s) failed: %s", path, strerror(errno));
+		host_fatal("fstat(%s) failed: %s", path, strerror(errno));
 	}
 	if (st.st_size <= 0) {
-		die("File is empty: %s", path);
+		host_fatal("File is empty: %s", path);
 	}
 	size_t size = (size_t)st.st_size;
 	void* buf = malloc(size);
 	if (!buf) {
-		die("malloc(%zu) failed", size);
+		host_fatal("malloc(%zu) failed", size);
 	}
 	size_t off = 0;
 	while (off < size) {
 		ssize_t n = read(fd, (uint8_t*)buf + off, size - off);
 		if (n < 0) {
-			die("read(%s) failed: %s", path, strerror(errno));
+			host_fatal("read(%s) failed: %s", path, strerror(errno));
 		}
 		if (n == 0) {
-			die("Unexpected EOF while reading %s", path);
+			host_fatal("Unexpected EOF while reading %s", path);
 		}
 		off += (size_t)n;
 	}
@@ -3198,7 +2819,7 @@ static void* read_file(const char* path, size_t* out_size) {
 static void load_symbol(void* handle, const char* name, void* out_fn_ptr) {
 	void* sym = dlsym(handle, name);
 	if (!sym) {
-		die("Missing symbol %s: %s", name, dlerror());
+		host_fatal("Missing symbol %s: %s", name, dlerror());
 	}
 	memcpy(out_fn_ptr, &sym, sizeof(sym));
 }
@@ -3207,7 +2828,7 @@ static void load_core(LibretroCore* core, const char* path) {
 	memset(core, 0, sizeof(*core));
 	core->handle = dlopen(path, RTLD_NOW | RTLD_LOCAL);
 	if (!core->handle) {
-		die("dlopen(%s) failed: %s", path, dlerror());
+		host_fatal("dlopen(%s) failed: %s", path, dlerror());
 	}
 
 	load_symbol(core->handle, "retro_set_environment", &core->retro_set_environment);
@@ -3254,13 +2875,13 @@ static const char* required_arg(int argc, char** argv, int* index) {
 
 static uint64_t parse_positive_u64_arg(const char* text, const char* option_name) {
 	if (!text || !text[0]) {
-		die("%s expects a positive integer", option_name);
+		host_fatal("%s expects a positive integer", option_name);
 	}
 	errno = 0;
 	char* end = NULL;
 	unsigned long long value = strtoull(text, &end, 10);
 	if (errno != 0 || end == text || *end != '\0' || value == 0ull) {
-		die("%s expects a positive integer, got '%s'", option_name, text);
+		host_fatal("%s expects a positive integer, got '%s'", option_name, text);
 	}
 	return (uint64_t)value;
 }
@@ -3277,6 +2898,7 @@ int main(int argc, char** argv) {
 	bool use_input_timeline = false;
 	bool paced_timeline = false;
 	bool auto_timeline = false;
+	bool audio_disabled = false;
 	const char* backend = "software";
 	const char* video_backend = "fb";
 
@@ -3310,7 +2932,7 @@ int main(int argc, char** argv) {
 			continue;
 		}
 		if (strcmp(argv[i], "--no-audio") == 0) {
-			g_audio_disabled = true;
+			audio_disabled = true;
 			continue;
 		}
 		if (strcmp(argv[i], "--hidden-window") == 0) {
@@ -3332,7 +2954,7 @@ int main(int argc, char** argv) {
 		if (strcmp(argv[i], "--crt-postprocessing") == 0) {
 			const char* value = required_arg(argc, argv, &i);
 			if (strcmp(value, "on") != 0 && strcmp(value, "off") != 0) {
-				die("Invalid --crt-postprocessing %s (expected on|off)", value);
+				host_fatal("Invalid --crt-postprocessing %s (expected on|off)", value);
 			}
 			bmsx_core_options_override(&g_core_options, "bmsx_crt_postprocessing", value);
 			continue;
@@ -3340,7 +2962,7 @@ int main(int argc, char** argv) {
 		if (strcmp(argv[i], "--crt-noise") == 0) {
 			const char* value = required_arg(argc, argv, &i);
 			if (strcmp(value, "on") != 0 && strcmp(value, "off") != 0) {
-				die("Invalid --crt-noise %s (expected on|off)", value);
+				host_fatal("Invalid --crt-noise %s (expected on|off)", value);
 			}
 			bmsx_core_options_override(&g_core_options, "bmsx_crt_noise", value);
 			continue;
@@ -3372,22 +2994,23 @@ int main(int argc, char** argv) {
 		usage(argv[0]);
 	}
 	if (strcmp(backend, "software") != 0 && strcmp(backend, "gles2") != 0) {
-		die("Invalid --backend %s (expected software|gles2)", backend);
+		host_fatal("Invalid --backend %s (expected software|gles2)", backend);
 	}
 	if (g_frame_timing.enabled && strcmp(backend, "gles2") != 0) {
-		die("--gles2-timing-report requires --backend gles2");
+		host_fatal("--gles2-timing-report requires --backend gles2");
 	}
 	if (strcmp(video_backend, "fb") != 0 && strcmp(video_backend, "sdl") != 0) {
-		die("Invalid --video %s (expected fb|sdl)", video_backend);
+		host_fatal("Invalid --video %s (expected fb|sdl)", video_backend);
 	}
+	const bool use_sdl_backend = strcmp(video_backend, "sdl") == 0;
 #ifdef BMSX_LIBRETRO_HOST_SDL
-	if (strcmp(video_backend, "sdl") == 0) {
+	if (use_sdl_backend) {
 		g_use_sdl = true;
 		g_sdl_use_gl = (strcmp(backend, "gles2") == 0);
 	}
 #else
-	if (strcmp(video_backend, "sdl") == 0) {
-		die("SDL video backend not available in this build");
+	if (use_sdl_backend) {
+		host_fatal("SDL video backend not available in this build");
 	}
 #endif
 
@@ -3404,8 +3027,8 @@ int main(int argc, char** argv) {
 
 	core.retro_set_environment(environ_cb);
 	core.retro_set_video_refresh(video_cb);
-	core.retro_set_audio_sample(audio_sample_cb);
-	core.retro_set_audio_sample_batch(audio_batch_cb);
+	core.retro_set_audio_sample(audio_output_sample);
+	core.retro_set_audio_sample_batch(audio_output_sample_batch);
 	core.retro_set_input_poll(input_poll_cb);
 	core.retro_set_input_state(input_state_cb);
 
@@ -3462,7 +3085,7 @@ int main(int argc, char** argv) {
 		loaded_ok = core.retro_load_game(&game_info);
 	}
 	if (!loaded_ok) {
-		die("retro_load_game failed");
+		host_fatal("retro_load_game failed");
 	}
 	g_accepted_presentation_count = 0;
 
@@ -3479,14 +3102,14 @@ int main(int argc, char** argv) {
 			av.geometry.max_width, av.geometry.max_height,
 			av.timing.fps, av.timing.sample_rate);
 
-	int audio_rate = (int)(av.timing.sample_rate + 0.5);
+	const int audio_rate = (int)(av.timing.sample_rate + 0.5);
 	if (audio_rate <= 0) {
-		die("Invalid audio sample rate: %.2f", av.timing.sample_rate);
+		host_fatal("Invalid audio sample rate: %.2f", av.timing.sample_rate);
 	}
-	if (g_audio_disabled) {
+	if (audio_disabled) {
 		fprintf(stderr, "[libretro-host] audio: disabled\n");
 	} else {
-		audio_init(audio_rate);
+		audio_output_open(audio_rate, use_sdl_backend, g_frame_timing.enabled);
 	}
 	/*
 	 * Configure input timelines only when explicitly requested:
@@ -3502,7 +3125,7 @@ int main(int argc, char** argv) {
 				g_frame_usec);
 	}
 	const bool unpaced_timeline = input_timeline_is_active() && !paced_timeline;
-	const bool audio_master = !g_audio_disabled && !unpaced_timeline;
+	const bool audio_master = !audio_disabled && !unpaced_timeline;
 	BmsxFramePacer frame_pacer;
 	bmsx_frame_pacer_init(&frame_pacer, monotonic_ns(), g_frame_ns);
 
@@ -3575,8 +3198,8 @@ int main(int argc, char** argv) {
 	}
 	core.retro_unload_game();
 	core.retro_deinit();
-	if (!g_audio_disabled) {
-		audio_shutdown();
+	if (!audio_disabled) {
+		audio_output_close();
 	}
 	for (size_t i = 0; i < g_input_dev_count; ++i) {
 		if (g_input_devs[i].fd >= 0) {

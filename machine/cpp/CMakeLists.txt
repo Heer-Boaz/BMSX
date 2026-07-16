@@ -427,10 +427,12 @@ if(BMSX_BUILD_LIBRETRO_HOST)
 
 	add_executable(bmsx_libretro_host
 		${BMSX_LIBRETRO_HOST_DIR}/main.c
+		${BMSX_LIBRETRO_HOST_DIR}/audio_output.c
 		${BMSX_LIBRETRO_HOST_DIR}/audio_queue.c
 		${BMSX_LIBRETRO_HOST_DIR}/core_options.c
 		${BMSX_LIBRETRO_HOST_DIR}/frame_pacer.c
 		${BMSX_LIBRETRO_HOST_DIR}/frame_timing.c
+		${BMSX_LIBRETRO_HOST_DIR}/host_fatal.c
 		${BMSX_LIBRETRO_HOST_DIR}/input_timeline.c
 		${BMSX_LIBRETRO_HOST_DIR}/keyboard_input.c
 		${BMSX_LIBRETRO_HOST_DIR}/screenshot.c
