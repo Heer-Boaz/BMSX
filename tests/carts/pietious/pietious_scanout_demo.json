@@ -1,7 +1,7 @@
 [
 	{
 		"description": "start game",
-		"frame": 100,
+		"frame": 101,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -15,7 +15,7 @@
 	},
 	{
 		"description": "release start",
-		"frame": 102,
+		"frame": 103,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -29,7 +29,7 @@
 	},
 	{
 		"description": "room scanout frame",
-		"frame": 620,
+		"frame": 621,
 		"capture": true
 	}
 ]

@@ -1,7 +1,7 @@
 [
 	{
 		"description": "stomp_test_move_right_down",
-		"timeMs": 8200,
+		"timeMs": 8220,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -15,7 +15,7 @@
 	},
 	{
 		"description": "stomp_test_run_down",
-		"timeMs": 8220,
+		"timeMs": 8240,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -29,7 +29,7 @@
 	},
 	{
 		"description": "stomp_test_jump_down_repeating",
-		"timeMs": 8800,
+		"timeMs": 8820,
 		"repeat": 16,
 		"repeatEveryMs": 320,
 		"event": {
@@ -45,7 +45,7 @@
 	},
 	{
 		"description": "stomp_test_jump_up_repeating",
-		"timeMs": 8920,
+		"timeMs": 8940,
 		"repeat": 16,
 		"repeatEveryMs": 320,
 		"event": {
@@ -61,7 +61,7 @@
 	},
 	{
 		"description": "stomp_test_idx5_jump_down",
-		"timeMs": 14340,
+		"timeMs": 14360,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -75,7 +75,7 @@
 	},
 	{
 		"description": "stomp_test_idx5_jump_up",
-		"timeMs": 14460,
+		"timeMs": 14480,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -89,7 +89,7 @@
 	},
 	{
 		"description": "stomp_test_run_up",
-		"timeMs": 15600,
+		"timeMs": 15620,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -103,7 +103,7 @@
 	},
 	{
 		"description": "stomp_test_move_right_up",
-		"timeMs": 15620,
+		"timeMs": 15640,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",

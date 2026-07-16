@@ -1,7 +1,7 @@
 [
 	{
 		"description": "press right",
-		"frame": 2,
+		"frame": 3,
 		"capture": true,
 		"event": {
 			"type": "button",
@@ -16,7 +16,7 @@
 	},
 	{
 		"description": "release right",
-		"frame": 6,
+		"frame": 7,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -30,7 +30,7 @@
 	},
 	{
 		"description": "press a (blink placeholder)",
-		"frame": 8,
+		"frame": 9,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -44,7 +44,7 @@
 	},
 	{
 		"description": "release a",
-		"frame": 12,
+		"frame": 13,
 		"capture": true,
 		"event": {
 			"type": "button",

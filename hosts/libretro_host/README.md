@@ -45,4 +45,6 @@ Options:
 
 Input timelines may include `capture: true` entries. Both the libretro host and headless runner save `.png` screenshots into a `screenshots/` subfolder next to the timeline JSON file.
 
+Timeline frame `N` labels the boundary after accepted frontend presentation `N`. Input posted at that boundary affects the next accepted presentation, and a capture records that next presentation under marker `N`. The clock starts at content load, includes BIOS output, and never depends on private cart-start state.
+
 Native host builds require SDL2 and provide the SDL video, audio, and input path. Cross-compiled SNES Mini host builds use fbdev and evdev without SDL.

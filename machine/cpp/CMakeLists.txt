@@ -246,7 +246,6 @@ add_library(bmsx_core STATIC
 	machine/devices/audio/save_state.cpp
 
 	# Input systems
-	input/hid_keys.cpp
 	input/manager.cpp
 
 	# Render systems
@@ -433,6 +432,7 @@ if(BMSX_BUILD_LIBRETRO_HOST)
 		${BMSX_LIBRETRO_HOST_DIR}/frame_pacer.c
 		${BMSX_LIBRETRO_HOST_DIR}/frame_timing.c
 		${BMSX_LIBRETRO_HOST_DIR}/input_timeline.c
+		${BMSX_LIBRETRO_HOST_DIR}/keyboard_input.c
 		${BMSX_LIBRETRO_HOST_DIR}/screenshot.c
 	)
 

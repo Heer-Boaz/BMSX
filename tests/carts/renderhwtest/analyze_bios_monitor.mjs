@@ -27,9 +27,9 @@ function countTerminalPixels(png, top, bottom) {
 	return count;
 }
 
-const game = frame(120);
-const monitor = frame(126);
-const help = frame(160);
+const game = frame(121);
+const monitor = frame(127);
+const help = frame(161);
 assert.equal(game.width, 320);
 assert.equal(game.height, 240);
 for (const output of [monitor, help]) {

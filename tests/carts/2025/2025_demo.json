@@ -1,17 +1,17 @@
 [
 	{
 		"description": "transition consecutive frame 58",
-		"frame": 58,
-		"capture": true
-	},
-	{
-		"description": "transition consecutive frame 59",
 		"frame": 59,
 		"capture": true
 	},
 	{
-		"description": "open intro transition",
+		"description": "transition consecutive frame 59",
 		"frame": 60,
+		"capture": true
+	},
+	{
+		"description": "open intro transition",
+		"frame": 61,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -30,17 +30,17 @@
 	},
 	{
 		"description": "transition consecutive frame 60",
-		"frame": 60,
-		"capture": true
-	},
-	{
-		"description": "transition consecutive frame 61",
 		"frame": 61,
 		"capture": true
 	},
 	{
-		"description": "release transition input",
+		"description": "transition consecutive frame 61",
 		"frame": 62,
+		"capture": true
+	},
+	{
+		"description": "release transition input",
+		"frame": 63,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -59,447 +59,447 @@
 	},
 	{
 		"description": "transition consecutive frame 62",
-		"frame": 62,
-		"capture": true
-	},
-	{
-		"description": "transition consecutive frame 63",
 		"frame": 63,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 64",
+		"description": "transition consecutive frame 63",
 		"frame": 64,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 65",
+		"description": "transition consecutive frame 64",
 		"frame": 65,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 66",
+		"description": "transition consecutive frame 65",
 		"frame": 66,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 67",
+		"description": "transition consecutive frame 66",
 		"frame": 67,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 68",
+		"description": "transition consecutive frame 67",
 		"frame": 68,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 69",
+		"description": "transition consecutive frame 68",
 		"frame": 69,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 70",
+		"description": "transition consecutive frame 69",
 		"frame": 70,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 71",
+		"description": "transition consecutive frame 70",
 		"frame": 71,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 72",
+		"description": "transition consecutive frame 71",
 		"frame": 72,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 73",
+		"description": "transition consecutive frame 72",
 		"frame": 73,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 74",
+		"description": "transition consecutive frame 73",
 		"frame": 74,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 75",
+		"description": "transition consecutive frame 74",
 		"frame": 75,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 76",
+		"description": "transition consecutive frame 75",
 		"frame": 76,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 77",
+		"description": "transition consecutive frame 76",
 		"frame": 77,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 78",
+		"description": "transition consecutive frame 77",
 		"frame": 78,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 79",
+		"description": "transition consecutive frame 78",
 		"frame": 79,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 80",
+		"description": "transition consecutive frame 79",
 		"frame": 80,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 81",
+		"description": "transition consecutive frame 80",
 		"frame": 81,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 82",
+		"description": "transition consecutive frame 81",
 		"frame": 82,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 83",
+		"description": "transition consecutive frame 82",
 		"frame": 83,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 84",
+		"description": "transition consecutive frame 83",
 		"frame": 84,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 85",
+		"description": "transition consecutive frame 84",
 		"frame": 85,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 86",
+		"description": "transition consecutive frame 85",
 		"frame": 86,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 87",
+		"description": "transition consecutive frame 86",
 		"frame": 87,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 88",
+		"description": "transition consecutive frame 87",
 		"frame": 88,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 89",
+		"description": "transition consecutive frame 88",
 		"frame": 89,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 90",
+		"description": "transition consecutive frame 89",
 		"frame": 90,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 91",
+		"description": "transition consecutive frame 90",
 		"frame": 91,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 92",
+		"description": "transition consecutive frame 91",
 		"frame": 92,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 93",
+		"description": "transition consecutive frame 92",
 		"frame": 93,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 94",
+		"description": "transition consecutive frame 93",
 		"frame": 94,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 95",
+		"description": "transition consecutive frame 94",
 		"frame": 95,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 96",
+		"description": "transition consecutive frame 95",
 		"frame": 96,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 97",
+		"description": "transition consecutive frame 96",
 		"frame": 97,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 98",
+		"description": "transition consecutive frame 97",
 		"frame": 98,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 99",
+		"description": "transition consecutive frame 98",
 		"frame": 99,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 100",
+		"description": "transition consecutive frame 99",
 		"frame": 100,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 101",
+		"description": "transition consecutive frame 100",
 		"frame": 101,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 102",
+		"description": "transition consecutive frame 101",
 		"frame": 102,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 103",
+		"description": "transition consecutive frame 102",
 		"frame": 103,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 104",
+		"description": "transition consecutive frame 103",
 		"frame": 104,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 105",
+		"description": "transition consecutive frame 104",
 		"frame": 105,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 106",
+		"description": "transition consecutive frame 105",
 		"frame": 106,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 107",
+		"description": "transition consecutive frame 106",
 		"frame": 107,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 108",
+		"description": "transition consecutive frame 107",
 		"frame": 108,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 109",
+		"description": "transition consecutive frame 108",
 		"frame": 109,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 110",
+		"description": "transition consecutive frame 109",
 		"frame": 110,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 111",
+		"description": "transition consecutive frame 110",
 		"frame": 111,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 112",
+		"description": "transition consecutive frame 111",
 		"frame": 112,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 113",
+		"description": "transition consecutive frame 112",
 		"frame": 113,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 114",
+		"description": "transition consecutive frame 113",
 		"frame": 114,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 115",
+		"description": "transition consecutive frame 114",
 		"frame": 115,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 116",
+		"description": "transition consecutive frame 115",
 		"frame": 116,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 117",
+		"description": "transition consecutive frame 116",
 		"frame": 117,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 118",
+		"description": "transition consecutive frame 117",
 		"frame": 118,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 119",
+		"description": "transition consecutive frame 118",
 		"frame": 119,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 120",
+		"description": "transition consecutive frame 119",
 		"frame": 120,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 121",
+		"description": "transition consecutive frame 120",
 		"frame": 121,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 122",
+		"description": "transition consecutive frame 121",
 		"frame": 122,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 123",
+		"description": "transition consecutive frame 122",
 		"frame": 123,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 124",
+		"description": "transition consecutive frame 123",
 		"frame": 124,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 125",
+		"description": "transition consecutive frame 124",
 		"frame": 125,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 126",
+		"description": "transition consecutive frame 125",
 		"frame": 126,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 127",
+		"description": "transition consecutive frame 126",
 		"frame": 127,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 128",
+		"description": "transition consecutive frame 127",
 		"frame": 128,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 129",
+		"description": "transition consecutive frame 128",
 		"frame": 129,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 130",
+		"description": "transition consecutive frame 129",
 		"frame": 130,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 131",
+		"description": "transition consecutive frame 130",
 		"frame": 131,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 132",
+		"description": "transition consecutive frame 131",
 		"frame": 132,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 133",
+		"description": "transition consecutive frame 132",
 		"frame": 133,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 134",
+		"description": "transition consecutive frame 133",
 		"frame": 134,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 135",
+		"description": "transition consecutive frame 134",
 		"frame": 135,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 136",
+		"description": "transition consecutive frame 135",
 		"frame": 136,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 137",
+		"description": "transition consecutive frame 136",
 		"frame": 137,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 138",
+		"description": "transition consecutive frame 137",
 		"frame": 138,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 139",
+		"description": "transition consecutive frame 138",
 		"frame": 139,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 140",
+		"description": "transition consecutive frame 139",
 		"frame": 140,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 141",
+		"description": "transition consecutive frame 140",
 		"frame": 141,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 142",
+		"description": "transition consecutive frame 141",
 		"frame": 142,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 143",
+		"description": "transition consecutive frame 142",
 		"frame": 143,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 144",
+		"description": "transition consecutive frame 143",
 		"frame": 144,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 145",
+		"description": "transition consecutive frame 144",
 		"frame": 145,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 146",
+		"description": "transition consecutive frame 145",
 		"frame": 146,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 147",
+		"description": "transition consecutive frame 146",
 		"frame": 147,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 148",
+		"description": "transition consecutive frame 147",
 		"frame": 148,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 149",
+		"description": "transition consecutive frame 148",
 		"frame": 149,
 		"capture": true
 	},
 	{
-		"description": "transition consecutive frame 150",
+		"description": "transition consecutive frame 149",
 		"frame": 150,
+		"capture": true
+	},
+	{
+		"description": "transition consecutive frame 150",
+		"frame": 151,
 		"capture": true
 	}
 ]

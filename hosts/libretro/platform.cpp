@@ -47,6 +47,82 @@ constexpr u32 kSaveStateMagic = 0x31534d42u;
 constexpr size_t kSaveStateHeaderBytes = 8u;
 constexpr size_t kSaveStateEnvelopeBytes = kSaveStateHeaderBytes + RUNTIME_SAVE_STATE_WIRE_CAPACITY;
 
+constexpr std::array<i16, RETROK_LAST> makeRetroKeyHidUsages() {
+	std::array<i16, RETROK_LAST> usages{};
+	usages.fill(-1);
+	for (unsigned key = RETROK_a; key <= RETROK_z; key += 1u) {
+		usages[key] = static_cast<i16>(4u + key - RETROK_a);
+	}
+	for (unsigned key = RETROK_1; key <= RETROK_9; key += 1u) {
+		usages[key] = static_cast<i16>(30u + key - RETROK_1);
+	}
+	usages[RETROK_0] = 39;
+	usages[RETROK_RETURN] = HID_USAGE_ENTER;
+	usages[RETROK_ESCAPE] = 41;
+	usages[RETROK_BACKSPACE] = HID_USAGE_BACKSPACE;
+	usages[RETROK_TAB] = 43;
+	usages[RETROK_SPACE] = 44;
+	usages[RETROK_MINUS] = 45;
+	usages[RETROK_EQUALS] = 46;
+	usages[RETROK_LEFTBRACKET] = 47;
+	usages[RETROK_RIGHTBRACKET] = 48;
+	usages[RETROK_BACKSLASH] = 49;
+	usages[RETROK_SEMICOLON] = 51;
+	usages[RETROK_QUOTE] = 52;
+	usages[RETROK_BACKQUOTE] = 53;
+	usages[RETROK_COMMA] = 54;
+	usages[RETROK_PERIOD] = 55;
+	usages[RETROK_SLASH] = 56;
+	usages[RETROK_CAPSLOCK] = 57;
+	for (unsigned key = RETROK_F1; key <= RETROK_F12; key += 1u) {
+		usages[key] = static_cast<i16>(58u + key - RETROK_F1);
+	}
+	usages[RETROK_PRINT] = 70;
+	usages[RETROK_SCROLLOCK] = 71;
+	usages[RETROK_PAUSE] = 72;
+	usages[RETROK_INSERT] = 73;
+	usages[RETROK_HOME] = 74;
+	usages[RETROK_PAGEUP] = 75;
+	usages[RETROK_DELETE] = 76;
+	usages[RETROK_END] = 77;
+	usages[RETROK_PAGEDOWN] = 78;
+	usages[RETROK_RIGHT] = HID_USAGE_ARROW_RIGHT;
+	usages[RETROK_LEFT] = HID_USAGE_ARROW_LEFT;
+	usages[RETROK_DOWN] = HID_USAGE_ARROW_DOWN;
+	usages[RETROK_UP] = HID_USAGE_ARROW_UP;
+	usages[RETROK_NUMLOCK] = 83;
+	usages[RETROK_KP_DIVIDE] = 84;
+	usages[RETROK_KP_MULTIPLY] = 85;
+	usages[RETROK_KP_MINUS] = 86;
+	usages[RETROK_KP_PLUS] = 87;
+	usages[RETROK_KP_ENTER] = 88;
+	for (unsigned key = RETROK_KP1; key <= RETROK_KP9; key += 1u) {
+		usages[key] = static_cast<i16>(89u + key - RETROK_KP1);
+	}
+	usages[RETROK_KP0] = 98;
+	usages[RETROK_KP_PERIOD] = 99;
+	usages[RETROK_OEM_102] = 100;
+	usages[RETROK_MENU] = 101;
+	usages[RETROK_POWER] = 102;
+	usages[RETROK_KP_EQUALS] = 103;
+	for (unsigned key = RETROK_F13; key <= RETROK_F15; key += 1u) {
+		usages[key] = static_cast<i16>(104u + key - RETROK_F13);
+	}
+	usages[RETROK_LCTRL] = 224;
+	usages[RETROK_LSHIFT] = HID_USAGE_SHIFT_LEFT;
+	usages[RETROK_LALT] = 226;
+	usages[RETROK_LMETA] = 227;
+	usages[RETROK_LSUPER] = 227;
+	usages[RETROK_RCTRL] = 228;
+	usages[RETROK_RSHIFT] = HID_USAGE_SHIFT_RIGHT;
+	usages[RETROK_RALT] = 230;
+	usages[RETROK_RMETA] = 231;
+	usages[RETROK_RSUPER] = 231;
+	return usages;
+}
+
+constexpr std::array<i16, RETROK_LAST> kRetroKeyHidUsages = makeRetroKeyHidUsages();
+
 static void installBuiltinRenderPipeline(GameView* view, GPUBackend* backend) {
 	auto registry = std::make_unique<RenderPassLibrary>(backend, view);
 	view->setPipelineRegistry(std::move(registry));
@@ -174,21 +250,6 @@ void LibretroPlatform::setInputPollCallback(retro_input_poll_t cb) {
 void LibretroPlatform::setInputStateCallback(retro_input_state_t cb) {
 	m_input_state_cb = cb;
 	static_cast<LibretroInputHub*>(m_input_hub.get())->setInputStateCallback(cb);
-}
-
-// disable-next-line single_line_method_pattern -- platform input API keeps the concrete libretro input hub hidden from C ABI callers.
-void LibretroPlatform::postKeyboardEvent(std::string_view code, bool down) {
-	static_cast<LibretroInputHub*>(m_input_hub.get())->postKeyboardEvent(code, down);
-}
-
-// disable-next-line single_line_method_pattern -- keyboard reset is part of the platform input boundary; the hub remains private.
-void LibretroPlatform::clearKeyboardState() {
-	static_cast<LibretroInputHub*>(m_input_hub.get())->clearKeyboardState();
-}
-
-void LibretroPlatform::notifyFocusChange(bool focused) {
-	static_cast<LibretroInputHub*>(m_input_hub.get())->resetFocusState();
-	static_cast<LibretroGameViewHost*>(m_gameview_host.get())->notifyFocusChange(focused);
 }
 
 void LibretroPlatform::setHwRenderCallbacks(retro_hw_get_current_framebuffer_t get_current_framebuffer,
@@ -449,6 +510,7 @@ bool LibretroPlatform::loadSystemRomFromFile(const std::string& path) {
 
 void LibretroPlatform::unloadRom() {
 	if (m_rom_loaded) {
+		static_cast<LibretroInputHub*>(m_input_hub.get())->resetState();
 		// Unload ROM from host core
 		if (m_machine_manager) {
 			m_machine_manager->unloadRom();
@@ -895,8 +957,11 @@ void LibretroInputHub::poll() {
 	m_prev_pointer_position_valid = pointerPositionValid;
 }
 
-void LibretroInputHub::postKeyboardEvent(std::string_view code, bool down) {
-	const i32 usage = hidKeyUsageForCode(code);
+void LibretroInputHub::postKeyboardEvent(unsigned keycode, bool down) {
+	if (keycode >= kRetroKeyHidUsages.size()) {
+		return;
+	}
+	const i16 usage = kRetroKeyHidUsages[keycode];
 	if (usage < 0) {
 		return;
 	}
@@ -920,26 +985,7 @@ void LibretroInputHub::postKeyboardEvent(std::string_view code, bool down) {
 	}
 }
 
-void LibretroInputHub::clearKeyboardState() {
-	for (size_t usage = 0u; usage < m_pressed_keyboard_usages.size(); usage += 1u) {
-		if (!m_pressed_keyboard_usages[usage]) {
-			continue;
-		}
-		m_pressed_keyboard_usages[usage] = false;
-		emitEvent(InputEvt{
-			.type = InputEvtType::ButtonUp,
-			.input = InputControl{
-				.source = InputSource::Keyboard,
-				.deviceSlot = 0u,
-				.control = static_cast<u8>(usage),
-			},
-		});
-	}
-	m_keyboard_supervisor_request = false;
-	updateSupervisorRequestLine();
-}
-
-void LibretroInputHub::resetFocusState() {
+void LibretroInputHub::resetState() {
 	m_prev_state.clear();
 	m_prev_pointer_buttons.fill(false);
 	m_prev_pointer_x = 0;
@@ -948,7 +994,7 @@ void LibretroInputHub::resetFocusState() {
 	m_pressed_keyboard_usages.fill(false);
 	m_keyboard_supervisor_request = false;
 	m_controller_supervisor_request = false;
-	updateSupervisorRequestLine();
+	m_supervisor_request_line_high = false;
 }
 
 void LibretroInputHub::updateSupervisorRequestLine() {
@@ -1126,23 +1172,8 @@ SubscriptionHandle LibretroGameViewHost::onResize(std::function<void(const Viewp
 }
 
 SubscriptionHandle LibretroGameViewHost::onFocusChange(std::function<void(bool)> handler) {
-	const uint32_t id = m_next_focus_handler_id++;
-	m_focus_handlers.emplace(id, std::move(handler));
-	return SubscriptionHandle::create([this, id]() {
-		m_focus_handlers.erase(id);
-	});
-}
-
-void LibretroGameViewHost::notifyFocusChange(bool focused) {
-	std::vector<std::function<void(bool)>> handlers;
-	handlers.reserve(m_focus_handlers.size());
-	for (const auto& [id, handler] : m_focus_handlers) {
-		(void)id;
-		handlers.push_back(handler);
-	}
-	for (const auto& handler : handlers) {
-		handler(focused);
-	}
+	(void)handler;
+	return {};
 }
 
 } // namespace bmsx

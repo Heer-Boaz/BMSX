@@ -35,10 +35,6 @@ static retro_audio_sample_batch_t audio_batch_cb = nullptr;
 static retro_input_poll_t input_poll_cb = nullptr;
 static retro_input_state_t input_state_cb = nullptr;
 static retro_log_callback logging;
-extern "C" RETRO_API void bmsx_keyboard_event(const char* code, bool down);
-extern "C" RETRO_API void bmsx_keyboard_reset(void);
-extern "C" RETRO_API void bmsx_focus_changed(bool focused);
-extern "C" RETRO_API bool bmsx_is_cart_program_active(void);
 
 static retro_hw_render_callback g_hw_render;
 static bool g_hw_render_supported = false;
@@ -98,31 +94,10 @@ static void sync_current_av_info(int64_t ufps_scaled) {
 	g_platform->setAVInfo(g_cached_av_info);
 }
 
-extern "C" RETRO_API void bmsx_keyboard_event(const char* code, bool down) {
-	if (!g_platform || !code || !code[0]) {
-		return;
-	}
-	g_platform->postKeyboardEvent(code, down);
-}
-
-extern "C" RETRO_API void bmsx_keyboard_reset(void) {
-	if (!g_platform) {
-		return;
-	}
-	g_platform->clearKeyboardState();
-}
-
-extern "C" RETRO_API void bmsx_focus_changed(bool focused) {
-	if (!g_platform) {
-		return;
-	}
-	g_platform->notifyFocusChange(focused);
-}
-
-extern "C" RETRO_API bool bmsx_is_cart_program_active(void) {
-	// disable-next-line or_nil_fallback_pattern -- libretro may query this before platform creation; nullptr is the external host boundary.
-	auto* manager = g_platform ? g_platform->machineManager() : nullptr;
-	return manager && manager->hasRuntime() && manager->runtime().cartProgramStarted && manager->runtime().isInitialized();
+static void RETRO_CALLCONV keyboard_event(bool down, unsigned keycode, uint32_t character, uint16_t key_modifiers) {
+	(void)character;
+	(void)key_modifiers;
+	static_cast<bmsx::LibretroInputHub*>(g_platform->inputHub())->postKeyboardEvent(keycode, down);
 }
 
 static constexpr const char* kOptionRenderBackend = "bmsx_render_backend";
@@ -1172,6 +1147,8 @@ bool retro_load_game(const struct retro_game_info* game) {
 	}
 
 	sync_current_av_info(g_platform->machineManager()->runtime().timing.ufpsScaled);
+	retro_keyboard_callback keyboardCallback = { keyboard_event };
+	environ_cb(RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK, &keyboardCallback);
 
 	return true;
 }

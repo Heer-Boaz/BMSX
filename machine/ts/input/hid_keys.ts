@@ -1,7 +1,7 @@
 // KeyboardEvent.code -> USB HID usage ID (usage page 0x07, Keyboard/Keypad).
 // The ICU keyboard bitmap is indexed by these usage IDs; this table is the
 // host-side translation from W3C UI Events codes to that hardware bit index.
-// Mirrored by machine/cpp/input/hid_keys.cpp and cartlib/input/keys.lua.
+// Mirrored by cartlib/input/keys.lua; libretro translates RETROK values at its host boundary.
 const HID_KEY_USAGE_BY_CODE: Readonly<Record<string, number>> = Object.freeze({
 	KeyA: 4, KeyB: 5, KeyC: 6, KeyD: 7, KeyE: 8, KeyF: 9, KeyG: 10, KeyH: 11,
 	KeyI: 12, KeyJ: 13, KeyK: 14, KeyL: 15, KeyM: 16, KeyN: 17, KeyO: 18, KeyP: 19,

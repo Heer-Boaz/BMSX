@@ -1,12 +1,12 @@
 [
 	{
 		"description": "game frame before quick menu",
-		"frame": 119,
+		"frame": 120,
 		"capture": true
 	},
 	{
 		"description": "quick menu start down",
-		"frame": 120,
+		"frame": 121,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -25,7 +25,7 @@
 	},
 	{
 		"description": "quick menu select down",
-		"frame": 120,
+		"frame": 121,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -44,7 +44,7 @@
 	},
 	{
 		"description": "quick menu left shoulder down",
-		"frame": 120,
+		"frame": 121,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -63,7 +63,7 @@
 	},
 	{
 		"description": "quick menu right shoulder down",
-		"frame": 120,
+		"frame": 121,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -82,12 +82,12 @@
 	},
 	{
 		"description": "quick menu frame",
-		"frame": 124,
+		"frame": 125,
 		"capture": true
 	},
 	{
 		"description": "quick menu start up",
-		"frame": 126,
+		"frame": 127,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -106,7 +106,7 @@
 	},
 	{
 		"description": "quick menu select up",
-		"frame": 126,
+		"frame": 127,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -125,7 +125,7 @@
 	},
 	{
 		"description": "quick menu left shoulder up",
-		"frame": 126,
+		"frame": 127,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -144,7 +144,7 @@
 	},
 	{
 		"description": "quick menu right shoulder up",
-		"frame": 126,
+		"frame": 127,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",

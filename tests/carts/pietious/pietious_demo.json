@@ -1,17 +1,17 @@
 [
 	{
 		"description": "capture_120",
-		"frame": 120,
+		"frame": 121,
 		"capture": true
 	},
 	{
 		"description": "capture_160",
-		"frame": 160,
+		"frame": 161,
 		"capture": true
 	},
 	{
 		"description": "segment_01_short_hop_press",
-		"frame": 600,
+		"frame": 601,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -25,7 +25,7 @@
 	},
 	{
 		"description": "segment_01_short_hop_release",
-		"frame": 606,
+		"frame": 607,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -39,7 +39,7 @@
 	},
 	{
 		"description": "segment_02_walk_right_start",
-		"frame": 660,
+		"frame": 661,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -53,7 +53,7 @@
 	},
 	{
 		"description": "segment_02_full_jump_press",
-		"frame": 679,
+		"frame": 680,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -67,7 +67,7 @@
 	},
 	{
 		"description": "segment_02_air_control_release_right",
-		"frame": 710,
+		"frame": 711,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -81,7 +81,7 @@
 	},
 	{
 		"description": "segment_02_air_control_press_left",
-		"frame": 710,
+		"frame": 711,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -95,7 +95,7 @@
 	},
 	{
 		"description": "segment_02_air_control_release_left",
-		"frame": 728,
+		"frame": 729,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -109,7 +109,7 @@
 	},
 	{
 		"description": "segment_02_full_jump_release",
-		"frame": 740,
+		"frame": 741,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -123,7 +123,7 @@
 	},
 	{
 		"description": "segment_03_walk_right_for_ledge_drop",
-		"frame": 760,
+		"frame": 761,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -137,7 +137,7 @@
 	},
 	{
 		"description": "segment_03_stop_after_ledge_drop",
-		"frame": 860,
+		"frame": 861,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -151,7 +151,7 @@
 	},
 	{
 		"description": "segment_04_walk_left_start",
-		"frame": 900,
+		"frame": 901,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -165,7 +165,7 @@
 	},
 	{
 		"description": "segment_04_left_jump_press",
-		"frame": 920,
+		"frame": 921,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -179,7 +179,7 @@
 	},
 	{
 		"description": "segment_04_left_jump_release",
-		"frame": 936,
+		"frame": 937,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -193,7 +193,7 @@
 	},
 	{
 		"description": "segment_04_walk_left_stop",
-		"frame": 980,
+		"frame": 981,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -207,7 +207,7 @@
 	},
 	{
 		"description": "segment_05_stairs_up_start",
-		"frame": 1040,
+		"frame": 1041,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -221,7 +221,7 @@
 	},
 	{
 		"description": "segment_05_stairs_up_slash_press",
-		"frame": 1100,
+		"frame": 1101,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -235,7 +235,7 @@
 	},
 	{
 		"description": "segment_05_stairs_up_slash_release",
-		"frame": 1110,
+		"frame": 1111,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -249,7 +249,7 @@
 	},
 	{
 		"description": "segment_05_stairs_up_end",
-		"frame": 1200,
+		"frame": 1201,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -263,7 +263,7 @@
 	},
 	{
 		"description": "segment_06_stairs_down_start",
-		"frame": 1240,
+		"frame": 1241,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -277,7 +277,7 @@
 	},
 	{
 		"description": "segment_06_stairs_down_end",
-		"frame": 1420,
+		"frame": 1421,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -291,7 +291,7 @@
 	},
 	{
 		"description": "segment_07_ground_slash_press",
-		"frame": 1470,
+		"frame": 1471,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -305,7 +305,7 @@
 	},
 	{
 		"description": "segment_07_ground_slash_release",
-		"frame": 1480,
+		"frame": 1481,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -319,7 +319,7 @@
 	},
 	{
 		"description": "segment_08_walk_right_slash_start",
-		"frame": 1520,
+		"frame": 1521,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -333,7 +333,7 @@
 	},
 	{
 		"description": "segment_08_walk_right_slash_press",
-		"frame": 1540,
+		"frame": 1541,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -347,7 +347,7 @@
 	},
 	{
 		"description": "segment_08_walk_right_slash_release",
-		"frame": 1550,
+		"frame": 1551,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -361,7 +361,7 @@
 	},
 	{
 		"description": "segment_08_walk_right_stop",
-		"frame": 1600,
+		"frame": 1601,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -375,7 +375,7 @@
 	},
 	{
 		"description": "segment_09_jump_for_landing_slash_reset_press_up",
-		"frame": 1660,
+		"frame": 1661,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -389,7 +389,7 @@
 	},
 	{
 		"description": "segment_09_jump_for_landing_slash_reset_release_up",
-		"frame": 1672,
+		"frame": 1673,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -403,7 +403,7 @@
 	},
 	{
 		"description": "segment_09_air_slash_press",
-		"frame": 1692,
+		"frame": 1693,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -417,7 +417,7 @@
 	},
 	{
 		"description": "segment_09_air_slash_release",
-		"frame": 1694,
+		"frame": 1695,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -431,7 +431,7 @@
 	},
 	{
 		"description": "segment_09_post_land_slash_probe_1_press",
-		"frame": 1698,
+		"frame": 1699,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -445,7 +445,7 @@
 	},
 	{
 		"description": "segment_09_post_land_slash_probe_1_release",
-		"frame": 1700,
+		"frame": 1701,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -459,7 +459,7 @@
 	},
 	{
 		"description": "segment_09_post_land_slash_probe_2_press",
-		"frame": 1704,
+		"frame": 1705,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -473,7 +473,7 @@
 	},
 	{
 		"description": "segment_09_post_land_slash_probe_2_release",
-		"frame": 1706,
+		"frame": 1707,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -487,7 +487,7 @@
 	},
 	{
 		"description": "segment_09_post_land_slash_probe_3_press",
-		"frame": 1710,
+		"frame": 1711,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -501,7 +501,7 @@
 	},
 	{
 		"description": "segment_09_post_land_slash_probe_3_release",
-		"frame": 1712,
+		"frame": 1713,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -515,7 +515,7 @@
 	},
 	{
 		"description": "segment_10_return_to_stairs_walk_left_start",
-		"frame": 1740,
+		"frame": 1741,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -529,7 +529,7 @@
 	},
 	{
 		"description": "segment_10_return_to_stairs_walk_left_stop",
-		"frame": 1814,
+		"frame": 1815,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -543,7 +543,7 @@
 	},
 	{
 		"description": "segment_10_climb_up_for_step_off_press_up",
-		"frame": 1818,
+		"frame": 1819,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -557,7 +557,7 @@
 	},
 	{
 		"description": "segment_10_climb_up_for_step_off_release_up",
-		"frame": 1974,
+		"frame": 1975,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -571,7 +571,7 @@
 	},
 	{
 		"description": "segment_10_descend_for_step_off_press_down",
-		"frame": 1988,
+		"frame": 1989,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -585,7 +585,7 @@
 	},
 	{
 		"description": "segment_10_descend_for_step_off_release_down",
-		"frame": 2108,
+		"frame": 2109,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -599,7 +599,7 @@
 	},
 	{
 		"description": "segment_10_step_off_press_right",
-		"frame": 2108,
+		"frame": 2109,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -613,7 +613,7 @@
 	},
 	{
 		"description": "segment_10_step_off_release_right",
-		"frame": 2130,
+		"frame": 2131,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",

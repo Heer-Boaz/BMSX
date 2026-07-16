@@ -1,7 +1,7 @@
 [
 	{
 		"description": "segment_01_move_right_down",
-		"timeMs": 8000,
+		"timeMs": 8020,
 		"capture": true,
 		"event": {
 			"type": "button",
@@ -16,7 +16,7 @@
 	},
 	{
 		"description": "segment_01_run_button_down",
-		"timeMs": 8600,
+		"timeMs": 8620,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -30,7 +30,7 @@
 	},
 	{
 		"description": "segment_01_run_button_up",
-		"timeMs": 14000,
+		"timeMs": 14020,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -44,7 +44,7 @@
 	},
 	{
 		"description": "segment_02_roll_tap_1_down",
-		"timeMs": 18600,
+		"timeMs": 18620,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -58,7 +58,7 @@
 	},
 	{
 		"description": "segment_02_roll_tap_1_up",
-		"timeMs": 18640,
+		"timeMs": 18660,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -72,7 +72,7 @@
 	},
 	{
 		"description": "segment_02_roll_tap_2_down_chained",
-		"timeMs": 19480,
+		"timeMs": 19500,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -86,7 +86,7 @@
 	},
 	{
 		"description": "segment_02_roll_tap_2_up_chained",
-		"timeMs": 19520,
+		"timeMs": 19540,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -100,7 +100,7 @@
 	},
 	{
 		"description": "segment_02_roll_jump_down",
-		"timeMs": 19620,
+		"timeMs": 19640,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -114,7 +114,7 @@
 	},
 	{
 		"description": "segment_02_roll_jump_up",
-		"timeMs": 19920,
+		"timeMs": 19940,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -128,7 +128,7 @@
 	},
 	{
 		"description": "segment_03_short_hop_down",
-		"timeMs": 21800,
+		"timeMs": 21820,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -142,7 +142,7 @@
 	},
 	{
 		"description": "segment_03_short_hop_up",
-		"timeMs": 21920,
+		"timeMs": 21940,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -156,7 +156,7 @@
 	},
 	{
 		"description": "segment_04_full_hop_down",
-		"timeMs": 24200,
+		"timeMs": 24220,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -170,7 +170,7 @@
 	},
 	{
 		"description": "segment_04_full_hop_up",
-		"timeMs": 25600,
+		"timeMs": 25620,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -184,7 +184,7 @@
 	},
 	{
 		"description": "segment_05_stop_movement_right",
-		"timeMs": 27200,
+		"timeMs": 27220,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -198,7 +198,7 @@
 	},
 	{
 		"description": "segment_05_move_left_down",
-		"timeMs": 28000,
+		"timeMs": 28020,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -212,7 +212,7 @@
 	},
 	{
 		"description": "segment_05_left_roll_tap_down",
-		"timeMs": 28700,
+		"timeMs": 28720,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -226,7 +226,7 @@
 	},
 	{
 		"description": "segment_05_left_roll_tap_up",
-		"timeMs": 28740,
+		"timeMs": 28760,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -240,7 +240,7 @@
 	},
 	{
 		"description": "segment_99_move_left_up",
-		"timeMs": 30000,
+		"timeMs": 30020,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -254,7 +254,7 @@
 	},
 	{
 		"description": "segment_06_turn_probe_right_down",
-		"timeMs": 30400,
+		"timeMs": 30420,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -268,7 +268,7 @@
 	},
 	{
 		"description": "segment_06_turn_probe_run_down",
-		"timeMs": 31200,
+		"timeMs": 31220,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -282,7 +282,7 @@
 	},
 	{
 		"description": "segment_06_turn_probe_right_up",
-		"timeMs": 32200,
+		"timeMs": 32220,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -296,7 +296,7 @@
 	},
 	{
 		"description": "segment_06_turn_probe_left_down",
-		"timeMs": 32200,
+		"timeMs": 32220,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -310,7 +310,7 @@
 	},
 	{
 		"description": "segment_06_turn_probe_run_up",
-		"timeMs": 33400,
+		"timeMs": 33420,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -324,7 +324,7 @@
 	},
 	{
 		"description": "segment_07_left_jump_down",
-		"timeMs": 33800,
+		"timeMs": 33820,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -338,7 +338,7 @@
 	},
 	{
 		"description": "segment_07_left_jump_up",
-		"timeMs": 34100,
+		"timeMs": 34120,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -352,7 +352,7 @@
 	},
 	{
 		"description": "segment_07_left_roll_down",
-		"timeMs": 34400,
+		"timeMs": 34420,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -366,7 +366,7 @@
 	},
 	{
 		"description": "segment_07_left_roll_up",
-		"timeMs": 34440,
+		"timeMs": 34460,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -380,7 +380,7 @@
 	},
 	{
 		"description": "segment_99_turn_probe_left_up",
-		"timeMs": 34800,
+		"timeMs": 34820,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -394,7 +394,7 @@
 	},
 	{
 		"description": "segment_08_run_jump_right_down",
-		"timeMs": 34920,
+		"timeMs": 34940,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -408,7 +408,7 @@
 	},
 	{
 		"description": "segment_08_run_jump_run_down",
-		"timeMs": 35120,
+		"timeMs": 35140,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -422,7 +422,7 @@
 	},
 	{
 		"description": "segment_08_run_jump_down",
-		"timeMs": 35620,
+		"timeMs": 35640,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -436,7 +436,7 @@
 	},
 	{
 		"description": "segment_08_run_jump_up",
-		"timeMs": 35920,
+		"timeMs": 35940,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -450,7 +450,7 @@
 	},
 	{
 		"description": "segment_08_run_jump_run_up",
-		"timeMs": 36200,
+		"timeMs": 36220,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -464,7 +464,7 @@
 	},
 	{
 		"description": "segment_08_run_jump_right_up",
-		"timeMs": 36200,
+		"timeMs": 36220,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -478,7 +478,7 @@
 	},
 	{
 		"description": "segment_09_barrel_move_right_down",
-		"timeMs": 20200,
+		"timeMs": 20220,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -492,7 +492,7 @@
 	},
 	{
 		"description": "segment_09_barrel_run_hold_down",
-		"timeMs": 20240,
+		"timeMs": 20260,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -506,7 +506,7 @@
 	},
 	{
 		"description": "segment_09_barrel_throw_run_release_up",
-		"timeMs": 20560,
+		"timeMs": 20580,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -520,7 +520,7 @@
 	},
 	{
 		"description": "segment_09_barrel_move_right_up",
-		"timeMs": 20800,
+		"timeMs": 20820,
 		"capture": true,
 		"event": {
 			"type": "button",

@@ -17,7 +17,6 @@
 #include <array>
 #include <memory>
 #include <string>
-#include <unordered_map>
 
 namespace bmsx {
 
@@ -68,15 +67,11 @@ public:
 	// Create a backend for this platform
 	std::unique_ptr<GPUBackend> createBackend() override;
 
-	void notifyFocusChange(bool focused);
-
 private:
 	Framebuffer& m_framebuffer;
 	BackendType m_backend_type;
 	retro_environment_t& m_environ_cb;
 	retro_system_av_info& m_av_info;
-	std::unordered_map<uint32_t, std::function<void(bool)>> m_focus_handlers;
-	uint32_t m_next_focus_handler_id = 1;
 };
 
 /* ============================================================================
@@ -143,8 +138,6 @@ public:
 	void setVideoCallback(retro_video_refresh_t cb) { m_video_cb = cb; }
 	void setInputPollCallback(retro_input_poll_t cb);
 	void setInputStateCallback(retro_input_state_t cb);
-	void postKeyboardEvent(std::string_view code, bool down);
-	void clearKeyboardState();
 	void setLogCallback(void (*cb)(enum retro_log_level, const char*, ...)) { m_log_cb = cb; }
 	void setSystemDirectory(std::string_view path) { m_system_dir = std::string(path); }
 	void setHwRenderCallbacks(retro_hw_get_current_framebuffer_t get_current_framebuffer,
@@ -162,7 +155,6 @@ public:
 	void setResourceUsageGizmo(bool enabled);
 	void setPlatformPaused(bool paused);
 	bool platformPaused() const { return m_platform_paused; }
-	void notifyFocusChange(bool focused);
 	void requestShutdown() override;
 
 	// Configuration
@@ -271,9 +263,8 @@ public:
 	void poll();
 	void setInputPollCallback(retro_input_poll_t cb) { m_input_poll_cb = cb; }
 	void setInputStateCallback(retro_input_state_t cb) { m_input_state_cb = cb; }
-	void postKeyboardEvent(std::string_view code, bool down);
-	void clearKeyboardState();
-	void resetFocusState();
+	void postKeyboardEvent(unsigned keycode, bool down);
+	void resetState();
 
 	// InputHub interface
 	SubscriptionHandle subscribe(std::function<void(const InputEvt&)> handler) override;

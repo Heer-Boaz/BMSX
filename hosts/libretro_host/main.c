@@ -36,6 +36,7 @@
 #include "frame_pacer.h"
 #include "frame_timing.h"
 #include "input_timeline.h"
+#include "keyboard_input.h"
 #include "screenshot.h"
 
 #define BMSX_HOST_USEC_PER_SECOND 1000000ull
@@ -74,11 +75,6 @@ typedef struct LibretroCore {
 
 	void (*retro_cheat_reset)(void);
 	void (*retro_cheat_set)(unsigned, bool, const char*);
-
-	void (*bmsx_keyboard_event)(const char* code, bool down);
-	void (*bmsx_keyboard_reset)(void);
-	void (*bmsx_focus_changed)(bool focused);
-	bool (*bmsx_is_cart_program_active)(void);
 } LibretroCore;
 
 typedef struct FbDev {
@@ -169,9 +165,8 @@ static bool g_has_frame_time_cb = false;
 static unsigned g_last_video_w = 0;
 static unsigned g_last_video_h = 0;
 static bool g_drop_video = false;
-static uint64_t g_presented_cart_frame = 0;
+static uint64_t g_accepted_presentation_count = 0;
 static bool g_core_presented_frame = false;
-static bool g_input_timeline_frame_pending = true;
 
 static BmsxFrameTimingState g_frame_timing = {
 	.warmup_frames = 500u,
@@ -335,7 +330,7 @@ static PFNGLCHECKFRAMEBUFFERSTATUSPROC glCheckFramebufferStatus_ptr = NULL;
 static PFNGLREADPIXELSPROC glReadPixels_ptr = NULL;
 
 static FbDev g_fb;
-enum { kMaxInputDevs = 16 };
+enum { kMaxInputDevs = KEYBOARD_INPUT_EVDEV_SOURCE_COUNT };
 static InputDev g_input_devs[kMaxInputDevs];
 static char g_input_paths[kMaxInputDevs][64];
 static size_t g_input_dev_count = 0;
@@ -367,12 +362,7 @@ static int32_t g_mouse_delta_y = 0;
 static int32_t g_mouse_wheel_y = 0;
 static uint8_t g_mouse_buttons = 0;
 static bool g_mouse_position_valid = false;
-static const char* map_ev_key_to_dom_code(uint16_t code);
-static void core_keyboard_event(const char* code, bool down);
-static void core_focus_changed(bool focused);
-static bool core_cart_program_active(void);
 #ifdef BMSX_LIBRETRO_HOST_SDL
-static const char* map_sdl_scancode_to_dom_code(SDL_Scancode scancode);
 static uint8_t map_sdl_mouse_buttons(uint32_t buttons);
 #endif
 static void clamp_mouse_position_to_framebuffer(void);
@@ -1312,24 +1302,6 @@ static bool hw_present_frame(unsigned src_w, unsigned src_h) {
 	if (present_w == 0 || present_h == 0) {
 		return false;
 	}
-	if (core_cart_program_active()) {
-		uint64_t capture_frame;
-		if (input_timeline_consume_presented_capture(g_presented_cart_frame, &capture_frame)) {
-			fprintf(stderr, "[SCREENSHOT] Capturing frame %llu (%ux%u)\n", (unsigned long long)capture_frame, present_w, present_h);
-			uint8_t* pixels = malloc((size_t)present_w * (size_t)present_h * 4u);
-			if (!pixels) {
-				die("Screenshot allocation failed for %ux%u frame", present_w, present_h);
-			}
-			glBindFramebuffer_ptr(GL_FRAMEBUFFER, g_hw_fbo);
-			glReadPixels_ptr(0, 0, (GLsizei)present_w, (GLsizei)present_h, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
-			char filename[128];
-			snprintf(filename, sizeof(filename), "frame_%05llu.png", (unsigned long long)capture_frame);
-			if (!screenshot_save_png(filename, present_w, present_h, pixels)) {
-				die("Screenshot save failed: %s", filename);
-			}
-			free(pixels);
-		}
-	}
 	int dst_x = 0, dst_y = 0, dst_w = 0, dst_h = 0;
 	compute_dst_rect(g_fb.width, g_fb.height, present_w, present_h, &dst_x, &dst_y, &dst_w, &dst_h);
 	if (dst_w <= 0 || dst_h <= 0) {
@@ -1347,10 +1319,24 @@ static bool hw_present_frame(unsigned src_w, unsigned src_h) {
 	hw_bind_static_blit_vbo(g_blit_vbo);
 	glDrawArrays_ptr(GL_TRIANGLE_STRIP, 0, 4);
 	msg_render_hw();
-
-	if (core_cart_program_active()) {
-		g_presented_cart_frame++;
+	uint64_t capture_frame;
+	if (input_timeline_consume_presented_capture(g_accepted_presentation_count, &capture_frame)) {
+		fprintf(stderr, "[SCREENSHOT] Capturing frame %llu (%ux%u)\n", (unsigned long long)capture_frame, present_w, present_h);
+		uint8_t* pixels = malloc((size_t)present_w * (size_t)present_h * 4u);
+		if (!pixels) {
+			die("Screenshot allocation failed for %ux%u frame", present_w, present_h);
+		}
+		glBindFramebuffer_ptr(GL_FRAMEBUFFER, g_hw_fbo);
+		glReadPixels_ptr(0, 0, (GLsizei)present_w, (GLsizei)present_h, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+		char filename[128];
+		snprintf(filename, sizeof(filename), "frame_%05llu.png", (unsigned long long)capture_frame);
+		if (!screenshot_save_png(filename, present_w, present_h, pixels)) {
+			die("Screenshot save failed: %s", filename);
+		}
+		free(pixels);
+		glBindFramebuffer_ptr(GL_FRAMEBUFFER, 0);
 	}
+
 	if (g_frame_timing.record_frame) {
 		g_frame_timing.current_blit_ns += monotonic_ns() - timing_start_ns;
 		g_frame_timing.current_blit_ran = true;
@@ -1387,12 +1373,8 @@ static void copy_framebuffer_row_to_rgba(uint8_t* dst_line, const uint8_t* src_l
 }
 
 static void step_software_frame_capture(void) {
-	if (!core_cart_program_active()) {
-		return;
-	}
 	uint64_t capture_frame;
-	if (!input_timeline_consume_presented_capture(g_presented_cart_frame, &capture_frame)) {
-		g_presented_cart_frame++;
+	if (!input_timeline_consume_presented_capture(g_accepted_presentation_count, &capture_frame)) {
 		return;
 	}
 	fprintf(stderr, "[SCREENSHOT] Capturing frame %llu (%ux%u)\n", (unsigned long long)capture_frame, g_fb.width, g_fb.height);
@@ -1413,7 +1395,6 @@ static void step_software_frame_capture(void) {
 		die("Screenshot save failed: %s", filename);
 	}
 	free(pixels);
-	g_presented_cart_frame++;
 }
 
 static void egl_unload(void) {
@@ -1844,6 +1825,9 @@ static bool environ_cb(unsigned cmd, void* data) {
 		}
 		case RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS:
 			return true;
+		case RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK:
+			keyboard_input_set_callback(*(const struct retro_keyboard_callback*)data);
+			return true;
 		case RETRO_ENVIRONMENT_SET_GEOMETRY:
 			update_geometry((const struct retro_game_geometry*)data);
 			return true;
@@ -1993,6 +1977,7 @@ static void video_cb(const void* data, unsigned width, unsigned height, size_t p
 		}
 		if (hw_present_frame(width, height)) {
 			g_core_presented_frame = true;
+			g_accepted_presentation_count += 1u;
 		}
 		const uint64_t swap_start_ns = g_frame_timing.record_frame ? monotonic_ns() : 0u;
 #ifdef BMSX_LIBRETRO_HOST_SDL
@@ -2087,6 +2072,7 @@ static void video_cb(const void* data, unsigned width, unsigned height, size_t p
 		step_software_frame_capture();
 		msg_render_software();
 		g_core_presented_frame = true;
+		g_accepted_presentation_count += 1u;
 #ifdef BMSX_LIBRETRO_HOST_SDL
 		if (g_use_sdl) {
 			sdl_present();
@@ -2137,6 +2123,7 @@ static void video_cb(const void* data, unsigned width, unsigned height, size_t p
 		step_software_frame_capture();
 		msg_render_software();
 		g_core_presented_frame = true;
+		g_accepted_presentation_count += 1u;
 #ifdef BMSX_LIBRETRO_HOST_SDL
 		if (g_use_sdl) {
 			sdl_present();
@@ -2566,136 +2553,6 @@ static uint8_t map_ev_key_to_mouse(uint16_t code) {
 	}
 }
 
-typedef enum HostDomCodeSource {
-	kHostDomCodeEvdev,
-#ifdef BMSX_LIBRETRO_HOST_SDL
-	kHostDomCodeSdl,
-#endif
-} HostDomCodeSource;
-
-typedef struct HostDomCodeMapping {
-	uint16_t ev_key;
-#ifdef BMSX_LIBRETRO_HOST_SDL
-	SDL_Scancode sdl_scancode;
-#endif
-	const char* dom_code;
-} HostDomCodeMapping;
-
-#ifdef BMSX_LIBRETRO_HOST_SDL
-#define HOST_DOM_CODE(ev, sdl, dom) { ev, sdl, dom }
-#else
-#define HOST_DOM_CODE(ev, sdl, dom) { ev, dom }
-#endif
-
-static const HostDomCodeMapping kHostDomCodeMap[] = {
-	HOST_DOM_CODE(KEY_F1, SDL_SCANCODE_F1, "F1"),
-	HOST_DOM_CODE(KEY_F2, SDL_SCANCODE_F2, "F2"),
-	HOST_DOM_CODE(KEY_F3, SDL_SCANCODE_F3, "F3"),
-	HOST_DOM_CODE(KEY_F4, SDL_SCANCODE_F4, "F4"),
-	HOST_DOM_CODE(KEY_F5, SDL_SCANCODE_F5, "F5"),
-	HOST_DOM_CODE(KEY_F6, SDL_SCANCODE_F6, "F6"),
-	HOST_DOM_CODE(KEY_F7, SDL_SCANCODE_F7, "F7"),
-	HOST_DOM_CODE(KEY_F8, SDL_SCANCODE_F8, "F8"),
-	HOST_DOM_CODE(KEY_F9, SDL_SCANCODE_F9, "F9"),
-	HOST_DOM_CODE(KEY_F10, SDL_SCANCODE_F10, "F10"),
-	HOST_DOM_CODE(KEY_F11, SDL_SCANCODE_F11, "F11"),
-	HOST_DOM_CODE(KEY_F12, SDL_SCANCODE_F12, "F12"),
-	HOST_DOM_CODE(KEY_UP, SDL_SCANCODE_UP, "ArrowUp"),
-	HOST_DOM_CODE(KEY_DOWN, SDL_SCANCODE_DOWN, "ArrowDown"),
-	HOST_DOM_CODE(KEY_LEFT, SDL_SCANCODE_LEFT, "ArrowLeft"),
-	HOST_DOM_CODE(KEY_RIGHT, SDL_SCANCODE_RIGHT, "ArrowRight"),
-	HOST_DOM_CODE(KEY_PAGEUP, SDL_SCANCODE_PAGEUP, "PageUp"),
-	HOST_DOM_CODE(KEY_PAGEDOWN, SDL_SCANCODE_PAGEDOWN, "PageDown"),
-	HOST_DOM_CODE(KEY_HOME, SDL_SCANCODE_HOME, "Home"),
-	HOST_DOM_CODE(KEY_END, SDL_SCANCODE_END, "End"),
-	HOST_DOM_CODE(KEY_INSERT, SDL_SCANCODE_INSERT, "Insert"),
-	HOST_DOM_CODE(KEY_DELETE, SDL_SCANCODE_DELETE, "Delete"),
-	HOST_DOM_CODE(KEY_BACKSPACE, SDL_SCANCODE_BACKSPACE, "Backspace"),
-	HOST_DOM_CODE(KEY_ENTER, SDL_SCANCODE_RETURN, "Enter"),
-	HOST_DOM_CODE(KEY_KPENTER, SDL_SCANCODE_KP_ENTER, "Enter"),
-	HOST_DOM_CODE(KEY_TAB, SDL_SCANCODE_TAB, "Tab"),
-	HOST_DOM_CODE(KEY_ESC, SDL_SCANCODE_ESCAPE, "Escape"),
-	HOST_DOM_CODE(KEY_SPACE, SDL_SCANCODE_SPACE, "Space"),
-	HOST_DOM_CODE(KEY_LEFTSHIFT, SDL_SCANCODE_LSHIFT, "ShiftLeft"),
-	HOST_DOM_CODE(KEY_RIGHTSHIFT, SDL_SCANCODE_RSHIFT, "ShiftRight"),
-	HOST_DOM_CODE(KEY_LEFTCTRL, SDL_SCANCODE_LCTRL, "ControlLeft"),
-	HOST_DOM_CODE(KEY_RIGHTCTRL, SDL_SCANCODE_RCTRL, "ControlRight"),
-	HOST_DOM_CODE(KEY_LEFTALT, SDL_SCANCODE_LALT, "AltLeft"),
-	HOST_DOM_CODE(KEY_RIGHTALT, SDL_SCANCODE_RALT, "AltRight"),
-	HOST_DOM_CODE(KEY_LEFTMETA, SDL_SCANCODE_LGUI, "MetaLeft"),
-	HOST_DOM_CODE(KEY_RIGHTMETA, SDL_SCANCODE_RGUI, "MetaRight"),
-	HOST_DOM_CODE(KEY_A, SDL_SCANCODE_A, "KeyA"),
-	HOST_DOM_CODE(KEY_B, SDL_SCANCODE_B, "KeyB"),
-	HOST_DOM_CODE(KEY_C, SDL_SCANCODE_C, "KeyC"),
-	HOST_DOM_CODE(KEY_D, SDL_SCANCODE_D, "KeyD"),
-	HOST_DOM_CODE(KEY_E, SDL_SCANCODE_E, "KeyE"),
-	HOST_DOM_CODE(KEY_F, SDL_SCANCODE_F, "KeyF"),
-	HOST_DOM_CODE(KEY_G, SDL_SCANCODE_G, "KeyG"),
-	HOST_DOM_CODE(KEY_H, SDL_SCANCODE_H, "KeyH"),
-	HOST_DOM_CODE(KEY_I, SDL_SCANCODE_I, "KeyI"),
-	HOST_DOM_CODE(KEY_J, SDL_SCANCODE_J, "KeyJ"),
-	HOST_DOM_CODE(KEY_K, SDL_SCANCODE_K, "KeyK"),
-	HOST_DOM_CODE(KEY_L, SDL_SCANCODE_L, "KeyL"),
-	HOST_DOM_CODE(KEY_M, SDL_SCANCODE_M, "KeyM"),
-	HOST_DOM_CODE(KEY_N, SDL_SCANCODE_N, "KeyN"),
-	HOST_DOM_CODE(KEY_O, SDL_SCANCODE_O, "KeyO"),
-	HOST_DOM_CODE(KEY_P, SDL_SCANCODE_P, "KeyP"),
-	HOST_DOM_CODE(KEY_Q, SDL_SCANCODE_Q, "KeyQ"),
-	HOST_DOM_CODE(KEY_R, SDL_SCANCODE_R, "KeyR"),
-	HOST_DOM_CODE(KEY_S, SDL_SCANCODE_S, "KeyS"),
-	HOST_DOM_CODE(KEY_T, SDL_SCANCODE_T, "KeyT"),
-	HOST_DOM_CODE(KEY_U, SDL_SCANCODE_U, "KeyU"),
-	HOST_DOM_CODE(KEY_V, SDL_SCANCODE_V, "KeyV"),
-	HOST_DOM_CODE(KEY_W, SDL_SCANCODE_W, "KeyW"),
-	HOST_DOM_CODE(KEY_X, SDL_SCANCODE_X, "KeyX"),
-	HOST_DOM_CODE(KEY_Y, SDL_SCANCODE_Y, "KeyY"),
-	HOST_DOM_CODE(KEY_Z, SDL_SCANCODE_Z, "KeyZ"),
-	HOST_DOM_CODE(KEY_0, SDL_SCANCODE_0, "Digit0"),
-	HOST_DOM_CODE(KEY_1, SDL_SCANCODE_1, "Digit1"),
-	HOST_DOM_CODE(KEY_2, SDL_SCANCODE_2, "Digit2"),
-	HOST_DOM_CODE(KEY_3, SDL_SCANCODE_3, "Digit3"),
-	HOST_DOM_CODE(KEY_4, SDL_SCANCODE_4, "Digit4"),
-	HOST_DOM_CODE(KEY_5, SDL_SCANCODE_5, "Digit5"),
-	HOST_DOM_CODE(KEY_6, SDL_SCANCODE_6, "Digit6"),
-	HOST_DOM_CODE(KEY_7, SDL_SCANCODE_7, "Digit7"),
-	HOST_DOM_CODE(KEY_8, SDL_SCANCODE_8, "Digit8"),
-	HOST_DOM_CODE(KEY_9, SDL_SCANCODE_9, "Digit9"),
-	HOST_DOM_CODE(KEY_MINUS, SDL_SCANCODE_MINUS, "Minus"),
-	HOST_DOM_CODE(KEY_EQUAL, SDL_SCANCODE_EQUALS, "Equal"),
-	HOST_DOM_CODE(KEY_LEFTBRACE, SDL_SCANCODE_LEFTBRACKET, "BracketLeft"),
-	HOST_DOM_CODE(KEY_RIGHTBRACE, SDL_SCANCODE_RIGHTBRACKET, "BracketRight"),
-	HOST_DOM_CODE(KEY_BACKSLASH, SDL_SCANCODE_BACKSLASH, "Backslash"),
-	HOST_DOM_CODE(KEY_SEMICOLON, SDL_SCANCODE_SEMICOLON, "Semicolon"),
-	HOST_DOM_CODE(KEY_APOSTROPHE, SDL_SCANCODE_APOSTROPHE, "Quote"),
-	HOST_DOM_CODE(KEY_COMMA, SDL_SCANCODE_COMMA, "Comma"),
-	HOST_DOM_CODE(KEY_DOT, SDL_SCANCODE_PERIOD, "Period"),
-	HOST_DOM_CODE(KEY_SLASH, SDL_SCANCODE_SLASH, "Slash"),
-	HOST_DOM_CODE(KEY_GRAVE, SDL_SCANCODE_GRAVE, "Backquote"),
-};
-
-#undef HOST_DOM_CODE
-
-static const char* map_host_key_to_dom_code(HostDomCodeSource source, int code) {
-	for (size_t i = 0; i < sizeof(kHostDomCodeMap) / sizeof(kHostDomCodeMap[0]); ++i) {
-		const HostDomCodeMapping* mapping = &kHostDomCodeMap[i];
-		switch (source) {
-			case kHostDomCodeEvdev:
-				if ((int)mapping->ev_key == code) return mapping->dom_code;
-				break;
-#ifdef BMSX_LIBRETRO_HOST_SDL
-			case kHostDomCodeSdl:
-				if ((int)mapping->sdl_scancode == code) return mapping->dom_code;
-				break;
-#endif
-		}
-	}
-	return NULL;
-}
-
-static const char* map_ev_key_to_dom_code(uint16_t code) {
-	return map_host_key_to_dom_code(kHostDomCodeEvdev, code);
-}
-
 static uint16_t map_ev_key_to_pad(uint16_t code) {
 	switch (code) {
 		case KEY_UP:
@@ -2782,10 +2639,6 @@ static uint16_t map_ev_key_to_pad(uint16_t code) {
 }
 
 #ifdef BMSX_LIBRETRO_HOST_SDL
-static const char* map_sdl_scancode_to_dom_code(SDL_Scancode scancode) {
-	return map_host_key_to_dom_code(kHostDomCodeSdl, scancode);
-}
-
 static uint16_t map_sdl_key_to_pad(SDL_Keycode code) {
 	switch (code) {
 		case SDLK_UP:
@@ -2878,18 +2731,6 @@ static uint8_t map_sdl_mouse_buttons(uint32_t buttons) {
 	return mapped;
 }
 #endif
-
-static void core_keyboard_event(const char* code, bool down) {
-	g_core->bmsx_keyboard_event(code, down);
-}
-
-static void core_focus_changed(bool focused) {
-	g_core->bmsx_focus_changed(focused);
-}
-
-static bool core_cart_program_active(void) {
-	return g_core->bmsx_is_cart_program_active();
-}
 
 static bool input_init_abs_axis(InputDev* dev, unsigned code, int32_t* min_out, int32_t* max_out, bool* has_axis) {
 	struct input_absinfo absinfo;
@@ -3012,6 +2853,9 @@ static void poll_input_devices(void) {
 	reset_mouse_frame_state();
 	for (size_t i = 0; i < g_input_dev_count; ++i) {
 		InputDev* dev = &g_input_devs[i];
+		if (dev->fd < 0) {
+			continue;
+		}
 		struct input_event ev;
 		for (;;) {
 			ssize_t n = read(dev->fd, &ev, sizeof(ev));
@@ -3022,6 +2866,10 @@ static void poll_input_devices(void) {
 				die("read(%s) failed: %s", dev->path, strerror(errno));
 			}
 			if (n == 0) {
+				keyboard_input_release_source(KEYBOARD_INPUT_SOURCE_EVDEV_FIRST + (unsigned)i);
+				close(dev->fd);
+				dev->fd = -1;
+				dev->pad_state = 0;
 				break;
 			}
 			if ((size_t)n != sizeof(ev)) {
@@ -3029,9 +2877,9 @@ static void poll_input_devices(void) {
 			}
 
 			if (ev.type == EV_KEY) {
-				const char* keyboard_code = map_ev_key_to_dom_code(ev.code);
-				if (keyboard_code && (ev.value == 0 || ev.value == 1)) {
-					core_keyboard_event(keyboard_code, ev.value != 0);
+				const enum retro_key keyboard_key = keyboard_input_key_from_evdev(ev.code);
+				if (keyboard_key != RETROK_UNKNOWN && (ev.value == 0 || ev.value == 1)) {
+					keyboard_input_post(KEYBOARD_INPUT_SOURCE_EVDEV_FIRST + (unsigned)i, keyboard_key, ev.value != 0);
 				}
 				const uint8_t mouse_button = map_ev_key_to_mouse(ev.code);
 				if (mouse_button) {
@@ -3183,9 +3031,9 @@ static void poll_input_devices_sdl(void) {
 				if (ev.key.repeat) {
 					break;
 				}
-				const char* keyboard_code = map_sdl_scancode_to_dom_code(ev.key.keysym.scancode);
-				if (keyboard_code) {
-					core_keyboard_event(keyboard_code, ev.type == SDL_KEYDOWN);
+				const enum retro_key keyboard_key = keyboard_input_key_from_sdl(ev.key.keysym.scancode);
+				if (keyboard_key != RETROK_UNKNOWN) {
+					keyboard_input_post(KEYBOARD_INPUT_SOURCE_SDL, keyboard_key, ev.type == SDL_KEYDOWN);
 				}
 				break;
 			}
@@ -3196,11 +3044,9 @@ static void poll_input_devices_sdl(void) {
 					g_sdl_pad_state = 0;
 					g_mouse_buttons = 0;
 					g_mouse_wheel_y = 0;
-					g_core->bmsx_keyboard_reset();
-					core_focus_changed(false);
+					keyboard_input_release_source(KEYBOARD_INPUT_SOURCE_SDL);
 				} else if (ev.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) {
 					g_sdl_focused = true;
-					core_focus_changed(true);
 				}
 				break;
 			case SDL_CONTROLLERDEVICEADDED:
@@ -3388,10 +3234,6 @@ static void load_core(LibretroCore* core, const char* path) {
 	load_symbol(core->handle, "retro_get_memory_size", &core->retro_get_memory_size);
 	load_symbol(core->handle, "retro_cheat_reset", &core->retro_cheat_reset);
 	load_symbol(core->handle, "retro_cheat_set", &core->retro_cheat_set);
-	load_symbol(core->handle, "bmsx_keyboard_event", &core->bmsx_keyboard_event);
-	load_symbol(core->handle, "bmsx_keyboard_reset", &core->bmsx_keyboard_reset);
-	load_symbol(core->handle, "bmsx_focus_changed", &core->bmsx_focus_changed);
-	load_symbol(core->handle, "bmsx_is_cart_program_active", &core->bmsx_is_cart_program_active);
 }
 
 static void usage(const char* argv0) {
@@ -3622,6 +3464,7 @@ int main(int argc, char** argv) {
 	if (!loaded_ok) {
 		die("retro_load_game failed");
 	}
+	g_accepted_presentation_count = 0;
 
 	memset(&av, 0, sizeof(av));
 	core.retro_get_system_av_info(&av);
@@ -3645,7 +3488,6 @@ int main(int argc, char** argv) {
 	} else {
 		audio_init(audio_rate);
 	}
-	input_timeline_bind_keyboard_event(core_keyboard_event);
 	/*
 	 * Configure input timelines only when explicitly requested:
 	 *  - --input-timeline FILE  (use_input_timeline)
@@ -3685,13 +3527,7 @@ int main(int argc, char** argv) {
 				: g_frame_time_cb.reference;
 			g_frame_time_cb.callback(frame_time_usec);
 		}
-		const bool cart_program_active = core_cart_program_active();
-		if (!cart_program_active) {
-			g_input_timeline_frame_pending = true;
-		} else if (g_input_timeline_frame_pending) {
-			input_timeline_tick_frame();
-			g_input_timeline_frame_pending = false;
-		}
+		input_timeline_dispatch_before_run(g_accepted_presentation_count);
 		g_frame_timing.current_video_frame_received = false;
 		g_core_presented_frame = false;
 		g_frame_timing.current_blit_ns = 0u;
@@ -3712,10 +3548,8 @@ int main(int argc, char** argv) {
 					!g_drop_video && g_core_presented_frame);
 		}
 		++g_run_frame_count;
-		if (core_cart_program_active() && g_core_presented_frame) {
-			g_input_timeline_frame_pending = true;
-		}
-		if (g_max_run_frames == 0 && core_cart_program_active() && input_timeline_should_auto_quit(kInputTimelineAutoQuitGraceFrames)) {
+		if (g_max_run_frames == 0 && g_accepted_presentation_count > 1u &&
+				input_timeline_should_auto_quit(g_accepted_presentation_count - 2u, kInputTimelineAutoQuitGraceFrames)) {
 			fprintf(stderr, "[libretro-host] input timeline completed, exiting\n");
 			g_should_quit = 1;
 		}
@@ -3734,13 +3568,16 @@ int main(int argc, char** argv) {
 	if (g_use_hw_render && g_hw_render.context_destroy) {
 		g_hw_render.context_destroy();
 	}
+	input_timeline_shutdown();
+	keyboard_input_release_source(KEYBOARD_INPUT_SOURCE_SDL);
+	for (unsigned source = 0; source < KEYBOARD_INPUT_EVDEV_SOURCE_COUNT; source += 1u) {
+		keyboard_input_release_source(KEYBOARD_INPUT_SOURCE_EVDEV_FIRST + source);
+	}
 	core.retro_unload_game();
 	core.retro_deinit();
 	if (!g_audio_disabled) {
 		audio_shutdown();
 	}
-	input_timeline_shutdown();
-
 	for (size_t i = 0; i < g_input_dev_count; ++i) {
 		if (g_input_devs[i].fd >= 0) {
 			close(g_input_devs[i].fd);

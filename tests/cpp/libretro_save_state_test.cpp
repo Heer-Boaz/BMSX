@@ -274,7 +274,8 @@ void testInputSnapshotReflectsHeldKey() {
 	platform.setLogCallback(discardRetroLog);
 
 	bmsx::Input& input = bmsx::Input::instance();
-	platform.postKeyboardEvent("KeyX", true);
+	auto& inputHub = *static_cast<bmsx::LibretroInputHub*>(platform.inputHub());
+	inputHub.postKeyboardEvent(RETROK_x, true);
 	input.pollInput();
 	bmsx::InputControllerSnapshot snapshot;
 	input.sampleInputControllerSnapshot(0.0, snapshot);
@@ -304,7 +305,7 @@ void testLibretroSupervisorRequestSourcesShareOneLine() {
 	});
 
 	supervisorPadState = 0u;
-	platform.postKeyboardEvent("F2", true);
+	inputHub.postKeyboardEvent(RETROK_F2, true);
 	input.pollInput();
 	require(input.supervisorRequestLineHigh(), "libretro F2 should assert the supervisor-request line");
 	require(requestEdgesDown == 1 && requestEdgesUp == 0, "F2 should emit one supervisor-request rising edge");
@@ -312,7 +313,7 @@ void testLibretroSupervisorRequestSourcesShareOneLine() {
 	supervisorPadState = (1u << RETRO_DEVICE_ID_JOYPAD_DOWN) | (1u << RETRO_DEVICE_ID_JOYPAD_SELECT);
 	inputHub.poll();
 	input.pollInput();
-	platform.postKeyboardEvent("F2", false);
+	inputHub.postKeyboardEvent(RETROK_F2, false);
 	input.pollInput();
 	require(input.supervisorRequestLineHigh(), "releasing F2 should retain a held controller request");
 	require(requestEdgesDown == 1 && requestEdgesUp == 0, "overlapping request sources should not emit duplicate edges");
@@ -326,16 +327,16 @@ void testLibretroSupervisorRequestSourcesShareOneLine() {
 	supervisorPadState = (1u << RETRO_DEVICE_ID_JOYPAD_DOWN) | (1u << RETRO_DEVICE_ID_JOYPAD_SELECT);
 	inputHub.poll();
 	input.pollInput();
-	platform.postKeyboardEvent("F2", true);
+	inputHub.postKeyboardEvent(RETROK_F2, true);
 	input.pollInput();
 	supervisorPadState = 0u;
 	inputHub.poll();
 	input.pollInput();
 	require(input.supervisorRequestLineHigh(), "releasing the controller chord should retain a held F2 request");
-	platform.notifyFocusChange(false);
+	inputHub.postKeyboardEvent(RETROK_F2, false);
 	input.pollInput();
-	require(!input.supervisorRequestLineHigh(), "focus reset should deassert every supervisor-request source");
-	require(requestEdgesDown == 2 && requestEdgesUp == 2, "source handoff and focus reset should preserve aggregate edge counts");
+	require(!input.supervisorRequestLineHigh(), "releasing F2 should deassert the final supervisor-request source");
+	require(requestEdgesDown == 2 && requestEdgesUp == 2, "source handoff should preserve aggregate edge counts");
 
 	edgeSubscription.unsubscribe();
 	supervisorPadState = 0u;

@@ -212,6 +212,8 @@ Important:
 - timeline JSON files may include `capture: true` markers
 - both runners execute the full chosen timeline; “fast” means they do not pace it to realtime
 - screenshots are written to a `screenshots/` subfolder next to the timeline file
+- timeline frame `N` is the boundary after accepted frontend presentation `N`; its input affects the next accepted presentation and a capture records that same next presentation under marker `N`
+- the presentation clock starts at content load and counts BIOS output too; it does not inspect cart startup state
 - when a cart folder name differs from the generated ROM filename, use `--rom-folder <cart-folder>` or an explicit `--input-timeline <file>` when running the custom libretro host manually
 
 ## ROM Inspection

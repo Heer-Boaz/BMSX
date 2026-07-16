@@ -23,8 +23,8 @@ function countPixels(png, left, top, right, bottom, predicate) {
 	return count;
 }
 
-const game = frame(119);
-const menu = frame(124);
+const game = frame(120);
+const menu = frame(125);
 assert.equal(game.width, 320);
 assert.equal(game.height, 240);
 assert.equal(menu.width, game.width);

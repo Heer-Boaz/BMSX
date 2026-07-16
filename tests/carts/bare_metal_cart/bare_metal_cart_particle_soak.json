@@ -1,7 +1,7 @@
 [
 	{
 		"description": "cycle to exploding crystal shards",
-		"frame": 140,
+		"frame": 141,
 		"event": {
 			"type": "button",
 			"code": "ArrowRight",
@@ -10,7 +10,7 @@
 	},
 	{
 		"description": "release exploding crystal shards cycle",
-		"frame": 142,
+		"frame": 143,
 		"event": {
 			"type": "button",
 			"code": "ArrowRight",
@@ -19,7 +19,7 @@
 	},
 	{
 		"description": "cycle to Tera-Flare energy sphere",
-		"frame": 270,
+		"frame": 271,
 		"event": {
 			"type": "button",
 			"code": "ArrowRight",
@@ -28,7 +28,7 @@
 	},
 	{
 		"description": "release Tera-Flare energy sphere cycle",
-		"frame": 272,
+		"frame": 273,
 		"event": {
 			"type": "button",
 			"code": "ArrowRight",
@@ -37,7 +37,7 @@
 	},
 	{
 		"description": "cycle to depth-cued particle storm",
-		"frame": 400,
+		"frame": 401,
 		"event": {
 			"type": "button",
 			"code": "ArrowRight",
@@ -46,7 +46,7 @@
 	},
 	{
 		"description": "release depth-cued particle storm cycle",
-		"frame": 402,
+		"frame": 403,
 		"event": {
 			"type": "button",
 			"code": "ArrowRight",
@@ -55,7 +55,7 @@
 	},
 	{
 		"description": "cycle to Gouraud-lit idol",
-		"frame": 530,
+		"frame": 531,
 		"event": {
 			"type": "button",
 			"code": "ArrowRight",
@@ -64,7 +64,7 @@
 	},
 	{
 		"description": "release Gouraud-lit idol cycle",
-		"frame": 532,
+		"frame": 533,
 		"event": {
 			"type": "button",
 			"code": "ArrowRight",
@@ -73,7 +73,7 @@
 	},
 	{
 		"description": "cycle to framebuffer echo spell",
-		"frame": 660,
+		"frame": 661,
 		"event": {
 			"type": "button",
 			"code": "ArrowRight",
@@ -82,7 +82,7 @@
 	},
 	{
 		"description": "release framebuffer echo spell cycle",
-		"frame": 662,
+		"frame": 663,
 		"event": {
 			"type": "button",
 			"code": "ArrowRight",
@@ -91,7 +91,7 @@
 	},
 	{
 		"description": "cycle left back to Gouraud-lit idol",
-		"frame": 760,
+		"frame": 761,
 		"event": {
 			"type": "button",
 			"code": "ArrowLeft",
@@ -100,7 +100,7 @@
 	},
 	{
 		"description": "release cycle-left control",
-		"frame": 762,
+		"frame": 763,
 		"event": {
 			"type": "button",
 			"code": "ArrowLeft",
@@ -109,7 +109,7 @@
 	},
 	{
 		"description": "cycle right back to framebuffer echo spell",
-		"frame": 830,
+		"frame": 831,
 		"event": {
 			"type": "button",
 			"code": "ArrowRight",
@@ -118,7 +118,7 @@
 	},
 	{
 		"description": "release framebuffer echo cycle",
-		"frame": 832,
+		"frame": 833,
 		"event": {
 			"type": "button",
 			"code": "ArrowRight",
@@ -127,7 +127,7 @@
 	},
 	{
 		"description": "cycle to morph skin near-plane torture",
-		"frame": 860,
+		"frame": 861,
 		"event": {
 			"type": "button",
 			"code": "ArrowRight",
@@ -136,7 +136,7 @@
 	},
 	{
 		"description": "release morph skin torture cycle",
-		"frame": 862,
+		"frame": 863,
 		"event": {
 			"type": "button",
 			"code": "ArrowRight",
@@ -145,7 +145,7 @@
 	},
 	{
 		"description": "cycle left back to framebuffer echo spell",
-		"frame": 980,
+		"frame": 981,
 		"event": {
 			"type": "button",
 			"code": "ArrowLeft",
@@ -154,7 +154,7 @@
 	},
 	{
 		"description": "release framebuffer echo return",
-		"frame": 982,
+		"frame": 983,
 		"event": {
 			"type": "button",
 			"code": "ArrowLeft",
@@ -163,7 +163,7 @@
 	},
 	{
 		"description": "run through frame 1100",
-		"frame": 1100,
+		"frame": 1101,
 		"event": {
 			"type": "button",
 			"code": "ArrowRight",

@@ -478,6 +478,8 @@ bool MachineManager::loadRomFile(const std::string& path) {
 
 void MachineManager::unloadRom() {
 	if (m_rom_loaded) {
+		Input::instance().resetInputState();
+		hostOverlayMenu().resetInputState();
 		m_runtime.reset();
 		m_active_rom = &m_system_rom;
 		machine_manifest = &m_system_rom.machine;

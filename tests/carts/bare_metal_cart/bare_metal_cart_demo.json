@@ -1,14 +1,14 @@
 [
 	{
 		"description": "baseline raw GX offscreen scene and GTE depth mesh",
-		"frame": 120,
+		"frame": 121,
 		"capture": true,
 		"repeat": 8,
 		"repeatEveryFrames": 1
 	},
 	{
 		"description": "cycle to exploding crystal shards",
-		"frame": 140,
+		"frame": 141,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -27,7 +27,7 @@
 	},
 	{
 		"description": "release exploding crystal shards cycle",
-		"frame": 142,
+		"frame": 143,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -46,19 +46,19 @@
 	},
 	{
 		"description": "exploding crystal shards sorted by AVSZ3 phase A",
-		"frame": 200,
+		"frame": 201,
 		"capture": true,
 		"repeat": 16,
 		"repeatEveryFrames": 1
 	},
 	{
 		"description": "exploding crystal shards sorted by AVSZ3 phase B",
-		"frame": 232,
+		"frame": 233,
 		"capture": true
 	},
 	{
 		"description": "cycle to Tera-Flare energy sphere",
-		"frame": 270,
+		"frame": 271,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -77,7 +77,7 @@
 	},
 	{
 		"description": "release Tera-Flare energy sphere cycle",
-		"frame": 272,
+		"frame": 273,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -96,19 +96,19 @@
 	},
 	{
 		"description": "Tera-Flare textured projected shell phase A",
-		"frame": 330,
+		"frame": 331,
 		"capture": true,
 		"repeat": 16,
 		"repeatEveryFrames": 1
 	},
 	{
 		"description": "Tera-Flare textured projected shell phase B",
-		"frame": 362,
+		"frame": 363,
 		"capture": true
 	},
 	{
 		"description": "cycle to depth-cued particle storm",
-		"frame": 400,
+		"frame": 401,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -127,7 +127,7 @@
 	},
 	{
 		"description": "release depth-cued particle storm cycle",
-		"frame": 402,
+		"frame": 403,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -146,19 +146,19 @@
 	},
 	{
 		"description": "depth-cued particle storm DPCS DPCT INTPL phase A",
-		"frame": 460,
+		"frame": 461,
 		"capture": true,
 		"repeat": 16,
 		"repeatEveryFrames": 1
 	},
 	{
 		"description": "depth-cued particle storm DPCS DPCT INTPL phase B",
-		"frame": 492,
+		"frame": 493,
 		"capture": true
 	},
 	{
 		"description": "cycle to Gouraud-lit idol",
-		"frame": 530,
+		"frame": 531,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -177,7 +177,7 @@
 	},
 	{
 		"description": "release Gouraud-lit idol cycle",
-		"frame": 532,
+		"frame": 533,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -196,19 +196,19 @@
 	},
 	{
 		"description": "Gouraud-lit idol NCT NCDT NCCT phase A",
-		"frame": 590,
+		"frame": 591,
 		"capture": true,
 		"repeat": 16,
 		"repeatEveryFrames": 1
 	},
 	{
 		"description": "Gouraud-lit idol NCT NCDT NCCT phase B",
-		"frame": 622,
+		"frame": 623,
 		"capture": true
 	},
 	{
 		"description": "cycle to framebuffer echo spell",
-		"frame": 660,
+		"frame": 661,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -227,7 +227,7 @@
 	},
 	{
 		"description": "release framebuffer echo spell cycle",
-		"frame": 662,
+		"frame": 663,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -246,19 +246,19 @@
 	},
 	{
 		"description": "framebuffer echo spell phase A",
-		"frame": 700,
+		"frame": 701,
 		"capture": true,
 		"repeat": 44,
 		"repeatEveryFrames": 1
 	},
 	{
 		"description": "framebuffer echo spell phase B",
-		"frame": 732,
+		"frame": 733,
 		"capture": true
 	},
 	{
 		"description": "cycle left back to Gouraud-lit idol",
-		"frame": 760,
+		"frame": 761,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -277,7 +277,7 @@
 	},
 	{
 		"description": "release cycle-left control",
-		"frame": 762,
+		"frame": 763,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -296,12 +296,12 @@
 	},
 	{
 		"description": "left cycle returns to Gouraud-lit idol",
-		"frame": 800,
+		"frame": 801,
 		"capture": true
 	},
 	{
 		"description": "cycle right from idol-return back to framebuffer echo spell",
-		"frame": 830,
+		"frame": 831,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -320,7 +320,7 @@
 	},
 	{
 		"description": "release echo recycle control",
-		"frame": 832,
+		"frame": 833,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -339,7 +339,7 @@
 	},
 	{
 		"description": "cycle right to morph skin near-plane torture",
-		"frame": 860,
+		"frame": 861,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -358,7 +358,7 @@
 	},
 	{
 		"description": "release morph skin torture cycle",
-		"frame": 862,
+		"frame": 863,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -377,19 +377,19 @@
 	},
 	{
 		"description": "morph skin lighting near-plane torture phase A",
-		"frame": 920,
+		"frame": 921,
 		"capture": true,
 		"repeat": 16,
 		"repeatEveryFrames": 1
 	},
 	{
 		"description": "morph skin lighting near-plane torture phase B",
-		"frame": 952,
+		"frame": 953,
 		"capture": true
 	},
 	{
 		"description": "cycle left from morph skin torture back to framebuffer echo spell",
-		"frame": 980,
+		"frame": 981,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -408,7 +408,7 @@
 	},
 	{
 		"description": "release morph left control",
-		"frame": 982,
+		"frame": 983,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -427,7 +427,7 @@
 	},
 	{
 		"description": "left cycle returns from morph skin torture to framebuffer echo spell",
-		"frame": 1020,
+		"frame": 1021,
 		"capture": true
 	}
 ]

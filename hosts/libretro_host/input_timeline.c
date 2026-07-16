@@ -13,6 +13,7 @@
 #include <unistd.h>
 
 #include "input_timeline.h"
+#include "keyboard_input.h"
 #include "screenshot.h"
 
 enum { kTestInputCodeMax = 64 };
@@ -21,7 +22,7 @@ enum { kJsonKeyBuffer = 64 };
 
 typedef struct {
 	uint64_t frame;
-	char code[kTestInputCodeMax];
+	enum retro_key key;
 	bool down;
 } TestInputEvent;
 
@@ -68,10 +69,8 @@ static TimelineCaptureEvent* g_test_capture_events = NULL;
 static size_t g_test_capture_event_count = 0;
 static size_t g_test_capture_event_capacity = 0;
 static size_t g_test_capture_event_next = 0;
-static uint64_t g_frame_counter = 0;
 static uint64_t g_timeline_last_frame = 0;
 static bool g_timeline_active = false;
-static void (*g_emit_keyboard_event)(const char* code, bool down) = NULL;
 
 static uint64_t ms_to_frame_index(uint64_t milliseconds, uint64_t frame_usec) {
 	if (frame_usec == 0) {
@@ -194,10 +193,7 @@ static void sort_test_input_events(void) {
 	}
 }
 
-static void add_test_input_event(uint64_t frame, const char* code, bool down) {
-	if (!code || !code[0]) {
-		return;
-	}
+static void add_test_input_event(uint64_t frame, enum retro_key key, bool down) {
 	if (g_test_input_event_count >= g_test_input_event_capacity) {
 		size_t next = g_test_input_event_capacity > 0 ? (g_test_input_event_capacity * 2ull) : 64ull;
 		void* next_buf = realloc(g_test_input_events, next * sizeof(TestInputEvent));
@@ -208,8 +204,8 @@ static void add_test_input_event(uint64_t frame, const char* code, bool down) {
 		g_test_input_events = (TestInputEvent*)next_buf;
 		g_test_input_event_capacity = next;
 	}
-	snprintf(g_test_input_events[g_test_input_event_count].code, sizeof(g_test_input_events[g_test_input_event_count].code), "%s", code);
 	g_test_input_events[g_test_input_event_count].frame = frame;
+	g_test_input_events[g_test_input_event_count].key = key;
 	g_test_input_events[g_test_input_event_count].down = down;
 	++g_test_input_event_count;
 }
@@ -676,6 +672,14 @@ static bool parse_timeline_entry(JsonCursor* cursor, uint64_t frame_usec, uint64
 
 	uint64_t interval_ms = 0;
 	uint64_t repeats = 1;
+	enum retro_key event_key = RETROK_UNKNOWN;
+	if (event_entry.code[0]) {
+		event_key = keyboard_input_key_from_timeline_code(event_entry.code);
+		if (event_key == RETROK_UNKNOWN) {
+			timeline_parse_errorf(cursor, "entry %zu uses unsupported keyboard code '%s'", index, event_entry.code);
+			return false;
+		}
+	}
 	if (has_repeat) {
 		repeats = repeat + 1;
 		if (!has_repeat_every_ms && !has_repeat_every_frames) {
@@ -688,7 +692,7 @@ static bool parse_timeline_entry(JsonCursor* cursor, uint64_t frame_usec, uint64
 		const uint64_t scheduled_ms = base_ms + (step * interval_ms);
 		const uint64_t frame_index = ms_to_frame_index(scheduled_ms, frame_usec);
 		if (event_entry.code[0]) {
-			add_test_input_event(frame_index, event_entry.code, event_entry.down);
+			add_test_input_event(frame_index, event_key, event_entry.down);
 		}
 		if (has_capture) {
 			add_test_capture_event(frame_index);
@@ -717,7 +721,6 @@ static void parse_input_timeline_file(const char* timeline_path, uint64_t frame_
 	free(g_test_capture_events);
 	g_test_capture_events = NULL;
 	g_test_capture_event_capacity = 0;
-	g_frame_counter = 0;
 	g_timeline_last_frame = 0;
 	g_timeline_active = false;
 
@@ -833,10 +836,6 @@ static bool extract_rom_folder_from_path(const char* game_path, char* out, size_
 	return true;
 }
 
-void input_timeline_bind_keyboard_event(void (*emit_input_event)(const char* code, bool down)) {
-	g_emit_keyboard_event = emit_input_event;
-}
-
 void input_timeline_configure(const char* explicit_timeline_path, const char* rom_folder, const char* game_path, uint64_t frame_usec) {
 	char timeline_path[kInputTimelinePathBuffer];
 	const char* selected_path = NULL;
@@ -882,22 +881,25 @@ void input_timeline_configure(const char* explicit_timeline_path, const char* ro
 	}
 }
 
-void input_timeline_tick_frame(void) {
+void input_timeline_dispatch_before_run(uint64_t accepted_presentation_count) {
+	if (accepted_presentation_count == 0) {
+		return;
+	}
+	/* Frame N is the boundary after accepted presentation N; its input affects the next accepted presentation. */
+	const uint64_t frame = accepted_presentation_count - 1u;
 	while (g_test_input_event_next < g_test_input_event_count &&
-			g_test_input_events[g_test_input_event_next].frame <= g_frame_counter) {
+			g_test_input_events[g_test_input_event_next].frame <= frame) {
 		const TestInputEvent* event = &g_test_input_events[g_test_input_event_next];
-		if (g_emit_keyboard_event) {
-			g_emit_keyboard_event(event->code, event->down);
-		}
+		keyboard_input_post(KEYBOARD_INPUT_SOURCE_TIMELINE, event->key, event->down);
 		++g_test_input_event_next;
 	}
-	++g_frame_counter;
 }
 
-bool input_timeline_consume_presented_capture(uint64_t presented_frame, uint64_t* out_frame) {
+bool input_timeline_consume_presented_capture(uint64_t presentation_ordinal, uint64_t* out_frame) {
 	bool should_capture = false;
+	/* Captures retain the boundary label and record the following accepted presentation. */
 	while (g_test_capture_event_next < g_test_capture_event_count &&
-			g_test_capture_events[g_test_capture_event_next].frame < presented_frame) {
+			g_test_capture_events[g_test_capture_event_next].frame < presentation_ordinal) {
 		*out_frame = g_test_capture_events[g_test_capture_event_next].frame;
 		should_capture = true;
 		++g_test_capture_event_next;
@@ -909,7 +911,7 @@ bool input_timeline_is_active(void) {
 	return g_timeline_active;
 }
 
-bool input_timeline_should_auto_quit(uint64_t trailing_frames) {
+bool input_timeline_should_auto_quit(uint64_t completed_frame, uint64_t trailing_frames) {
 	if (!g_timeline_active) {
 		return false;
 	}
@@ -919,10 +921,11 @@ bool input_timeline_should_auto_quit(uint64_t trailing_frames) {
 	if (g_test_capture_event_next < g_test_capture_event_count) {
 		return false;
 	}
-	return g_frame_counter > (g_timeline_last_frame + trailing_frames);
+	return completed_frame > (g_timeline_last_frame + trailing_frames);
 }
 
 void input_timeline_shutdown(void) {
+	keyboard_input_release_source(KEYBOARD_INPUT_SOURCE_TIMELINE);
 	free(g_test_input_events);
 	g_test_input_events = NULL;
 	g_test_input_event_count = 0;
@@ -933,7 +936,6 @@ void input_timeline_shutdown(void) {
 	g_test_capture_event_count = 0;
 	g_test_capture_event_capacity = 0;
 	g_test_capture_event_next = 0;
-	g_frame_counter = 0;
 	g_timeline_last_frame = 0;
 	g_timeline_active = false;
 }

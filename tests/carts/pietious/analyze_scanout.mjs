@@ -4,7 +4,7 @@ import path from 'node:path';
 import { PNG } from 'pngjs';
 
 const screenshotDir = process.argv[2] || path.join('tests', 'carts', 'pietious', 'screenshots');
-const screenshot = PNG.sync.read(fs.readFileSync(path.join(screenshotDir, 'frame_00620.png')));
+const screenshot = PNG.sync.read(fs.readFileSync(path.join(screenshotDir, 'frame_00621.png')));
 assert.equal(screenshot.width, 256);
 assert.equal(screenshot.height, 192);
 

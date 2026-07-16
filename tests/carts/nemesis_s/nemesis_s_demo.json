@@ -1,7 +1,7 @@
 [
 	{
 		"description": "move_right_start",
-		"frame": 600,
+		"frame": 601,
 		"capture": true,
 		"event": {
 			"type": "button",
@@ -16,7 +16,7 @@
 	},
 	{
 		"description": "move_right_stop",
-		"frame": 660,
+		"frame": 661,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -30,7 +30,7 @@
 	},
 	{
 		"description": "move_left_start",
-		"frame": 700,
+		"frame": 701,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -44,7 +44,7 @@
 	},
 	{
 		"description": "move_left_stop",
-		"frame": 730,
+		"frame": 731,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -58,7 +58,7 @@
 	},
 	{
 		"description": "move_up_start",
-		"frame": 760,
+		"frame": 761,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -72,7 +72,7 @@
 	},
 	{
 		"description": "move_up_stop",
-		"frame": 800,
+		"frame": 801,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -86,7 +86,7 @@
 	},
 	{
 		"description": "move_down_start",
-		"frame": 820,
+		"frame": 821,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -100,7 +100,7 @@
 	},
 	{
 		"description": "move_down_stop",
-		"frame": 860,
+		"frame": 861,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -114,7 +114,7 @@
 	},
 	{
 		"description": "fire_1_press",
-		"frame": 900,
+		"frame": 901,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -128,7 +128,7 @@
 	},
 	{
 		"description": "fire_1_release",
-		"frame": 902,
+		"frame": 903,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -142,7 +142,7 @@
 	},
 	{
 		"description": "fire_2_press",
-		"frame": 908,
+		"frame": 909,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -156,7 +156,7 @@
 	},
 	{
 		"description": "fire_2_release",
-		"frame": 910,
+		"frame": 911,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -170,7 +170,7 @@
 	},
 	{
 		"description": "fire_3_press_should_block",
-		"frame": 916,
+		"frame": 917,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -184,7 +184,7 @@
 	},
 	{
 		"description": "fire_3_release",
-		"frame": 918,
+		"frame": 919,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -198,7 +198,7 @@
 	},
 	{
 		"description": "fire_4_press_after_despawn",
-		"frame": 980,
+		"frame": 981,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -212,7 +212,7 @@
 	},
 	{
 		"description": "fire_4_release",
-		"frame": 982,
+		"frame": 983,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -226,7 +226,7 @@
 	},
 	{
 		"description": "fire_hold_press_single_shot_expected",
-		"frame": 940,
+		"frame": 941,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -240,7 +240,7 @@
 	},
 	{
 		"description": "fire_hold_release",
-		"frame": 970,
+		"frame": 971,
 		"capture": true,
 		"event": {
 			"type": "button",

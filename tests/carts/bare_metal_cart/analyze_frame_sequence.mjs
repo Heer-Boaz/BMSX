@@ -9,24 +9,24 @@ const maxAverageLumaDelta = 2.0;
 const sceneDifferenceChangedPixels = 4000;
 const sceneDifferenceMeanAbs = 6.0;
 const frameWindows = [
-	[120, 128, 'baseline'],
-	[200, 216, 'shards'],
-	[330, 346, 'flare'],
-	[460, 476, 'particles'],
-	[590, 606, 'idol'],
-	[700, 744, 'echo'],
-	[920, 936, 'morph'],
+	[121, 129, 'baseline'],
+	[201, 217, 'shards'],
+	[331, 347, 'flare'],
+	[461, 477, 'particles'],
+	[591, 607, 'idol'],
+	[701, 745, 'echo'],
+	[921, 937, 'morph'],
 ];
 const sceneFrames = [
-	[120, 'baseline'],
-	[200, 'shards'],
-	[330, 'flare'],
-	[460, 'particles'],
-	[590, 'idol'],
-	[700, 'echo'],
-	[800, 'idol-return'],
-	[920, 'morph'],
-	[1020, 'echo-return'],
+	[121, 'baseline'],
+	[201, 'shards'],
+	[331, 'flare'],
+	[461, 'particles'],
+	[591, 'idol'],
+	[701, 'echo'],
+	[801, 'idol-return'],
+	[921, 'morph'],
+	[1021, 'echo-return'],
 ];
 
 function readFrame(filePath) {
@@ -123,11 +123,11 @@ function assertSceneDifference(frames, leftFrame, leftLabel, rightFrame, rightLa
 }
 
 function assertControlSceneIdentity(frames) {
-	const idol = frames.get(590);
-	const echo = frames.get(700);
-	const idolReturned = frames.get(800);
-	const morph = frames.get(920);
-	const echoReturned = frames.get(1020);
+	const idol = frames.get(591);
+	const echo = frames.get(701);
+	const idolReturned = frames.get(801);
+	const morph = frames.get(921);
+	const echoReturned = frames.get(1021);
 	if (!idol || !echo || !idolReturned || !morph || !echoReturned) {
 		throw new Error('[bare_metal_cart:frame-scan] Missing idol/echo/morph/returned frames for carousel control assertions.');
 	}

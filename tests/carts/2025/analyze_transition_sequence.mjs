@@ -64,32 +64,32 @@ function assertMonotonicLuma(firstFrame, lastFrame, ascending) {
 	assert(maxDelta < 16, `fade window contains a malformed frame jump: mean RGB delta ${maxDelta}`);
 }
 
-for (let frameNumber = 58; frameNumber <= 150; frameNumber += 1) {
+for (let frameNumber = 59; frameNumber <= 151; frameNumber += 1) {
 	frame(frameNumber);
 }
 
-assert(meanLuma(frame(61)) > 40, 'transition fade-out did not begin from the visible title frame');
-assertMonotonicLuma(61, 74, false);
-assert(meanLuma(frame(74)) < 0.1, 'transition fade-out did not reach black');
-for (let frameNumber = 74; frameNumber <= 78; frameNumber += 1) {
+assert(meanLuma(frame(62)) > 40, 'transition fade-out did not begin from the visible title frame');
+assertMonotonicLuma(62, 75, false);
+assert(meanLuma(frame(75)) < 0.1, 'transition fade-out did not reach black');
+for (let frameNumber = 75; frameNumber <= 79; frameNumber += 1) {
 	assert(meanLuma(frame(frameNumber)) < 0.1, `frame ${frameNumber} flashed while the background texture bank changed`);
 }
 
-const ink = pixel(frame(79), 10, 100);
+const ink = pixel(frame(80), 10, 100);
 assert.deepEqual(ink, [0, 24, 57], 'transition ink background lost its Persona blue');
-const blue = pixel(frame(84), 160, 30);
+const blue = pixel(frame(85), 160, 30);
 assert.deepEqual(blue, [16, 66, 206], 'transition primary panel lost its Persona blue');
-const cyan = pixel(frame(104), 20, 90);
+const cyan = pixel(frame(105), 20, 90);
 assert.deepEqual(cyan, [82, 222, 255], 'transition accent lost its Persona cyan');
 
 let montageBluePixels = 0;
 let montageCyanPixels = 0;
 let montageInkPixels = 0;
 let montagePixelCount = 0;
-let previousMontageFrame = frame(79);
-for (let frameNumber = 79; frameNumber <= 121; frameNumber += 1) {
+let previousMontageFrame = frame(80);
+for (let frameNumber = 80; frameNumber <= 122; frameNumber += 1) {
 	const currentFrame = frame(frameNumber);
-	if (frameNumber > 79) {
+	if (frameNumber > 80) {
 		assert(meanRgbDelta(previousMontageFrame, currentFrame) < 16, `montage frame ${frameNumber} contains a malformed frame jump`);
 	}
 	for (let offset = 0; offset < currentFrame.data.length; offset += 4) {
@@ -113,14 +113,14 @@ assert(montageBluePixels > montagePixelCount * 0.05, 'transition montage lost it
 assert(montageCyanPixels > montagePixelCount * 0.005, 'transition montage lost its cyan accent coverage');
 assert(montageInkPixels > montagePixelCount * 0.5, 'transition montage lost its ink background coverage');
 
-assert(meanLuma(frame(122)) < 1, 'transition fade-in did not begin from black');
-assertMonotonicLuma(122, 136, true);
-assert(meanLuma(frame(136)) > 85, 'transition fade-in did not restore the target background');
+assert(meanLuma(frame(123)) < 1, 'transition fade-in did not begin from black');
+assertMonotonicLuma(123, 137, true);
+assert(meanLuma(frame(137)) > 85, 'transition fade-in did not restore the target background');
 
 console.log(JSON.stringify({
 	screenshotDir,
-	fadeOut: [meanLuma(frame(61)), meanLuma(frame(74))],
-	fadeIn: [meanLuma(frame(122)), meanLuma(frame(136))],
+	fadeOut: [meanLuma(frame(62)), meanLuma(frame(75))],
+	fadeIn: [meanLuma(frame(123)), meanLuma(frame(137))],
 	colors: { ink, blue, cyan },
 	montagePixels: { blue: montageBluePixels, cyan: montageCyanPixels, ink: montageInkPixels },
 }, null, 2));

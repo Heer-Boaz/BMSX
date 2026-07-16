@@ -113,7 +113,7 @@ export class HeadlessGameViewHost implements GameViewHost {
 	private readonly presentedFrameListeners = new Set<(frame: HeadlessPresentedFrame) => void>();
 	public readonly presentSurface = new HeadlessPresentSurface();
 	private readonly presentedFrameScratch: HeadlessPresentedFrame = { frameIndex: 0, width: 0, height: 0 };
-	private presentedFrameIndex = 0;
+	public presentedFrameCount = 0;
 	private readonly viewportCapability: ViewportMetricsProvider;
 	private readonly overlayCapability: OverlayManager;
 	private readonly gamepadCapability: OnscreenGamepadHandleProvider;
@@ -175,10 +175,10 @@ export class HeadlessGameViewHost implements GameViewHost {
 	public presentFrameBuffer(frame: HeadlessPresentedFrameBuffer): void {
 		this.presentSurface.present2D(frame.pixels, frame.width, frame.height);
 		const presentedFrame = this.presentedFrameScratch;
-		presentedFrame.frameIndex = this.presentedFrameIndex;
+		presentedFrame.frameIndex = this.presentedFrameCount;
 		presentedFrame.width = frame.width;
 		presentedFrame.height = frame.height;
-		this.presentedFrameIndex += 1;
+		this.presentedFrameCount += 1;
 		for (const listener of this.presentedFrameListeners) {
 			listener(presentedFrame);
 		}
@@ -192,11 +192,11 @@ export class HeadlessGameViewHost implements GameViewHost {
 	}
 
 	public getPresentedFrameSnapshot(): HeadlessPresentedFrame | null {
-		if (this.presentedFrameIndex <= 0 || this.presentSurface.width <= 0 || this.presentSurface.height <= 0) {
+		if (this.presentedFrameCount <= 0 || this.presentSurface.width <= 0 || this.presentSurface.height <= 0) {
 			return null;
 		}
 		return {
-			frameIndex: this.presentedFrameIndex - 1,
+			frameIndex: this.presentedFrameCount - 1,
 			width: this.presentSurface.width,
 			height: this.presentSurface.height,
 		};

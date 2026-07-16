@@ -1,7 +1,7 @@
 [
 	{
 		"description": "open_lua_ide_press",
-		"frame": 180,
+		"frame": 181,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -15,7 +15,7 @@
 	},
 	{
 		"description": "open_lua_ide_release",
-		"frame": 183,
+		"frame": 184,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",

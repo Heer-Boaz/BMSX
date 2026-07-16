@@ -1,7 +1,7 @@
 [
 	{
 		"description": "assert BIOS monitor NMI",
-		"frame": 120,
+		"frame": 121,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -21,7 +21,7 @@
 	},
 	{
 		"description": "release BIOS monitor NMI key",
-		"frame": 122,
+		"frame": 123,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -40,12 +40,12 @@
 	},
 	{
 		"description": "BIOS monitor entry",
-		"frame": 126,
+		"frame": 127,
 		"capture": true
 	},
 	{
 		"description": "type HELP H",
-		"frame": 130,
+		"frame": 131,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -64,7 +64,7 @@
 	},
 	{
 		"description": "release HELP H",
-		"frame": 132,
+		"frame": 133,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -83,7 +83,7 @@
 	},
 	{
 		"description": "type HELP E",
-		"frame": 136,
+		"frame": 137,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -102,7 +102,7 @@
 	},
 	{
 		"description": "release HELP E",
-		"frame": 138,
+		"frame": 139,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -121,7 +121,7 @@
 	},
 	{
 		"description": "type HELP L",
-		"frame": 142,
+		"frame": 143,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -140,7 +140,7 @@
 	},
 	{
 		"description": "release HELP L",
-		"frame": 144,
+		"frame": 145,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -159,7 +159,7 @@
 	},
 	{
 		"description": "type HELP P",
-		"frame": 148,
+		"frame": 149,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -178,7 +178,7 @@
 	},
 	{
 		"description": "release HELP P",
-		"frame": 150,
+		"frame": 151,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -197,7 +197,7 @@
 	},
 	{
 		"description": "submit HELP",
-		"frame": 154,
+		"frame": 155,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -216,7 +216,7 @@
 	},
 	{
 		"description": "release HELP submit",
-		"frame": 155,
+		"frame": 156,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -235,7 +235,7 @@
 	},
 	{
 		"description": "BIOS monitor HELP output",
-		"frame": 160,
+		"frame": 161,
 		"capture": true
 	}
 ]
