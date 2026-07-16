@@ -23,10 +23,11 @@ class TimingInputSource implements RuntimeInputSource {
 		this.frameDurationMs = frameDurationMs;
 	}
 
-	public sampleInputControllerKeyWords(): void {
+	public sampleInputControllerSnapshot(): void {
 	}
 
-	public sampleInputControllerSnapshot(): void {
+	public supervisorRequestLineHigh(): boolean {
+		return false;
 	}
 
 	public applyInputControllerVibrationEffect(): void {

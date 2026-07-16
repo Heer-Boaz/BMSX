@@ -6,7 +6,7 @@ struct InputControllerState {
 	bool sampleArmed = false;
 	u32 sampleSequence = 0;
 	u32 lastSampleCycle = 0;
-	bool systemNmiLineHigh = false;
+	bool supervisorRequestLineHigh = false;
 	InputControllerRegisterState registers;
 };
 } // namespace bmsx

@@ -27,7 +27,7 @@ private:
 	bool m_sampleArmed = false;
 	u32 m_sampleSequence = 0;
 	u32 m_lastSampleCycle = 0;
-	bool m_systemNmiLineHigh = false;
+	bool m_supervisorRequestLineWasHigh = false;
 	InputControllerSnapshot m_snapshot;
 	InputControllerOutputPort m_outputPort;
 };

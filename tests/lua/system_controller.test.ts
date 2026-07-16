@@ -19,10 +19,11 @@ class SystemResetInputSource implements RuntimeInputSource {
 	public setRuntimeInputFrameDurationMs(): void {
 	}
 
-	public sampleInputControllerKeyWords(): void {
+	public sampleInputControllerSnapshot(): void {
 	}
 
-	public sampleInputControllerSnapshot(): void {
+	public supervisorRequestLineHigh(): boolean {
+		return false;
 	}
 
 	public applyInputControllerVibrationEffect(): void {

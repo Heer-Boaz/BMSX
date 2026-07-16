@@ -319,7 +319,7 @@ function encodeInputControllerState(state: InputControllerState): InputControlle
 		sampleArmed: state.sampleArmed,
 		sampleSequence: state.sampleSequence >>> 0,
 		lastSampleCycle: state.lastSampleCycle >>> 0,
-		systemNmiLineHigh: state.systemNmiLineHigh,
+		supervisorRequestLineHigh: state.supervisorRequestLineHigh,
 		registers: {
 			ctrl: state.registers.ctrl >>> 0,
 			keyWords: encodeVector(state.registers.keyWords, (word) => word >>> 0),
@@ -357,7 +357,7 @@ function decodeInputControllerState(value: unknown, label: string): InputControl
 		sampleArmed: requireBooleanValue(requireObjectKey(object, 'sampleArmed', label, 'machine.input.sampleArmed'), 'machine.input.sampleArmed'),
 		sampleSequence: requireBoundedU32(requireObjectKey(object, 'sampleSequence', label, 'machine.input.sampleSequence'), 'machine.input.sampleSequence', 0, 0xffffffff),
 		lastSampleCycle: requireBoundedU32(requireObjectKey(object, 'lastSampleCycle', label, 'machine.input.lastSampleCycle'), 'machine.input.lastSampleCycle', 0, 0xffffffff),
-		systemNmiLineHigh: requireBooleanValue(requireObjectKey(object, 'systemNmiLineHigh', label, 'machine.input.systemNmiLineHigh'), 'machine.input.systemNmiLineHigh'),
+		supervisorRequestLineHigh: requireBooleanValue(requireObjectKey(object, 'supervisorRequestLineHigh', label, 'machine.input.supervisorRequestLineHigh'), 'machine.input.supervisorRequestLineHigh'),
 		registers: {
 			ctrl: registerWord('ctrl'),
 			keyWords: registerWordVector('keyWords', INPUT_CONTROLLER_KEY_WORD_COUNT),

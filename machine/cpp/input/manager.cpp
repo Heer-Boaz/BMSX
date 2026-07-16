@@ -431,6 +431,7 @@ void Input::shutdown() {
 	m_deviceBindings.clear();
 	m_activePressIds.clear();
 	m_nextPressId = 1;
+	m_supervisorRequestLineHigh = false;
 
 	// Reset player inputs
 	for (auto& player : m_playerInputs) {
@@ -497,6 +498,7 @@ void Input::unregisterDevice(const std::string& deviceId) {
 
 void Input::handleFocusChange(bool /*focused*/) {
 	m_activePressIds.clear();
+	m_supervisorRequestLineHigh = false;
 
 	for (auto& player : m_playerInputs) {
 		if (player) {
@@ -648,6 +650,12 @@ void Input::pollInput() {
 	while (evt.has_value()) {
 		const InputEvt& input = evt.value();
 		switch (input.type) {
+			case InputEvtType::SupervisorRequestDown:
+				m_supervisorRequestLineHigh = true;
+				break;
+			case InputEvtType::SupervisorRequestUp:
+				m_supervisorRequestLineHigh = false;
+				break;
 			case InputEvtType::ButtonDown:
 				handleGamepadButtonEvent(input.deviceId, input.code, true, input.value);
 				break;
@@ -715,6 +723,10 @@ void Input::sampleInputControllerSnapshot(f64 currentTimeMs, InputControllerSnap
 	for (i32 pad = 0; pad < INPUT_CONTROLLER_PAD_COUNT; pad += 1) {
 		samplePadSnapshot(pad, snapshot);
 	}
+}
+
+bool Input::supervisorRequestLineHigh() const {
+	return m_supervisorRequestLineHigh;
 }
 
 void Input::sampleInputControllerKeyWords(std::array<u32, INPUT_CONTROLLER_KEY_WORD_COUNT>& keyWords) {

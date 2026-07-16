@@ -684,7 +684,8 @@ interrupted frame. That root calls the program's `irq(flags)` handler and ends
 in `RFE`; an ordinary Lua return only returns to the root. Host/debugger closure
 calls may wake from a pending IRQ, but they do not consume or vector it. The NMI
 line and system exception vector exist at the CPU boundary; the ICU asserts the
-manual system line from the physical F2 edge at VBlank.
+manual system line from the rising edge of its dedicated supervisor-request
+input at VBlank.
 
 The cart-facing IRQ gate is `IRQ_MASK`, a per-source bitmask with the same bit
 layout as `IRQ_FLAGS`. It resets to `0`, so cold boot starts with no source
@@ -820,8 +821,8 @@ sources. Machine schedulers and devices continue advancing normally. The
 existing NMI request latch is not a terminal implementation by itself: the CPU
 consumes it into the system vector and preserves the latch, raw CP0 words, and
 exception-frame state in the mirrored TS/C++ save-state contract. The ICU
-samples the physical F2 edge and requests that NMI; the BIOS exception handler
-owns monitor entry.
+samples only the dedicated supervisor-request line and requests that NMI; the
+BIOS exception handler owns monitor entry.
 Privilege gates system vectors, CP0 writes, exception return, and other
 explicitly privileged CPU/system-control operations; it does not make ordinary
 RAM inaccessible to carts.
@@ -833,12 +834,18 @@ out-of-memory fault need not leave a working monitor. That is an explicit
 property of the first hardware model, not a condition for host-side repair or
 a hidden fallback VM.
 
-F2 is translated by the physical-input edge into the system/NMI line rather
-than a host UI toggle. While the BIOS monitor owns the CPU, it reads the raw
-ICU USB-HID bitmap, performs its own modifier, repeat, and character mapping,
-and waits on the BIOS IRQ/VBlank path. The cart receives no input because its
-frames are not executing. The host continues to sample the physical devices
-into ICU words; it does not edit a terminal buffer or dispatch commands.
+Platform input owners drive one dedicated supervisor-request line rather than
+injecting a synthetic keyboard event into the ICU. Browser, headless and native
+libretro keyboard paths map physical `F2` to that line while still publishing
+the ordinary F2 HID bit. Libretro also maps the port-0 Down+Select chord; its
+physical buttons remain configurable through the frontend controller mapping.
+That chord is distinct from the host-owned Start+Select+L+R quick-menu action.
+All physical request sources are ORed before a line transition is published.
+While the BIOS monitor owns the CPU, it reads the raw ICU USB-HID bitmap,
+performs its own modifier, repeat, and character mapping, and waits on the BIOS
+IRQ/VBlank path. The cart receives no input because its frames are not
+executing. The host continues to sample the physical devices into ICU words;
+it does not edit a terminal buffer or dispatch commands.
 
 The BIOS terminal uses the ordinary GX GPU and the ordinary primary scanout.
 GX VRAM remains one 1024x512 A1RGB555 word array: 524,288 words, exactly 1 MiB.
@@ -1212,24 +1219,28 @@ State owned by ICU:
 - raw control, keyboard, pointer, pad, and output latch words plus reset/restore
   register mirroring owned by `machine/devices/input/registers`;
 - `sys_inp_ctrl` command side effects, private sample arm/sequence/last-cycle
-  latches, and the VBlank sample-edge datapath owned by
-  `machine/devices/input/controller`;
+  latches, the saved previous supervisor-request level, and both VBlank edge
+  datapaths owned by `machine/devices/input/controller`;
 - output command datapath owned by `machine/devices/input/output_port`.
 
 The runtime VBlank owner enters through the ICU controller edge. The controller
 consumes the arm latch into sample sequence/last-cycle state, asks the host
 input owner to fill one raw `InputControllerSnapshot`, and decodes that snapshot
 into raw MMIO words at the datapath boundary. Later cart reads consume only the
-mirrored register words. The ICU does not own action maps, action-expression
+mirrored register words. Independently of the sample arm, the controller reads
+the retained supervisor-request line once per VBlank and requests NMI only on
+its rising edge; it never decodes HID usages or controller buttons. The ICU does
+not own action maps, action-expression
 parsing, button-name string ids, consume state, repeat windows, guarded presses,
 or a high-level event FIFO.
 
 ICU device code consumes only `machine/devices/input/contracts` source ports.
 The host input manager/player layer implements those ports and remains outside
-the device. The host side may keep its richer keyboard/gamepad/pointer mapping,
-shortcut, IDE, quick-menu, onscreen gamepad, and device-assignment
-logic under `machine/{ts,cpp}/input`; that complexity is not exposed as ICU
-hardware.
+the device. Platform input adapters publish the supervisor-request line as a
+separate retained input signal; `machine/{ts,cpp}/input` carries its current
+level without turning it into a guest key. The host side may keep its richer
+keyboard/gamepad/pointer mapping, shortcut, IDE, quick-menu, onscreen gamepad,
+and device-assignment logic outside ICU hardware.
 
 Gameplay/cart PlayerInput semantics live in `cartlib/input/player.lua` and
 `cartlib/input/action_parser.lua`: cartlib reads the raw ICU MMIO snapshot,

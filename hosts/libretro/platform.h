@@ -306,6 +306,7 @@ public:
 
 private:
 	void emitEvent(const InputEvt& evt);
+	void updateSupervisorRequestLine();
 
 	LibretroPlatform* m_platform;
 	retro_input_poll_t m_input_poll_cb = nullptr;
@@ -322,6 +323,9 @@ private:
 	i32 m_prev_pointer_y = 0;
 	bool m_prev_pointer_position_valid = false;
 	std::unordered_set<std::string> m_pressed_keyboard_codes;
+	bool m_keyboard_supervisor_request = false;
+	bool m_controller_supervisor_request = false;
+	bool m_supervisor_request_line_high = false;
 };
 
 /* ============================================================================

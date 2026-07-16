@@ -612,6 +612,7 @@ export class Input implements RegisterablePersistent, RuntimeInputSource {
 		this.handleInputEvent(event);
 	};
 	private readonly handleFocusChange = (_focused: boolean): void => {
+		this.supervisorRequestLine = false;
 		for (let i = 0; i < this.playerInputs.length; i++) {
 			const player = this.playerInputs[i];
 			if (!player) continue;
@@ -628,6 +629,7 @@ export class Input implements RegisterablePersistent, RuntimeInputSource {
 	private debugHotkeysEnabled = false;
 	public debugHotkeysPaused = false;
 	private gameplayCaptureEnabled = true;
+	private supervisorRequestLine = false;
 	private readonly additionalCaptureKeys: Set<string> = new Set();
 	private readonly globalShortcuts = new GlobalShortcutRegistry();
 	private frameDurationMs = 1000 / 60;
@@ -788,6 +790,7 @@ export class Input implements RegisterablePersistent, RuntimeInputSource {
 			this.inputControllerPointerHandlers.length = 0;
 			this.debugHotkeysEnabled = false;
 		this.debugHotkeysPaused = false;
+		this.supervisorRequestLine = false;
 		this.additionalCaptureKeys.clear();
 	}
 
@@ -824,6 +827,10 @@ export class Input implements RegisterablePersistent, RuntimeInputSource {
 	}
 
 	public handleInputEvent(evt: InputEvt): void {
+		if (evt.type === 'supervisor-request') {
+			this.supervisorRequestLine = evt.down;
+			return;
+		}
 		if (evt.type === 'connect') {
 			this.onDeviceConnected(evt.device);
 			return;
@@ -1101,7 +1108,11 @@ export class Input implements RegisterablePersistent, RuntimeInputSource {
 		}
 	}
 
-	public sampleInputControllerKeyWords(keyWords: Uint32Array): void {
+	public supervisorRequestLineHigh(): boolean {
+		return this.supervisorRequestLine;
+	}
+
+	private sampleInputControllerKeyWords(keyWords: Uint32Array): void {
 		for (let i = 0; i < INPUT_CONTROLLER_KEY_WORD_COUNT; i += 1) {
 			keyWords[i] = 0;
 		}

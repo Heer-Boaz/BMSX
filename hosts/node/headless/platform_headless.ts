@@ -289,6 +289,7 @@ class HeadlessInputDevice implements InputDevice {
 
 class HeadlessInputHub implements InputHub {
 	private readonly subscribers = new Set<(e: InputEvt) => void>();
+	private supervisorRequestLineHigh = false;
 	private readonly devicesList: InputDevice[] = [
 		new HeadlessInputDevice('keyboard:0', 'keyboard'),
 		new HeadlessInputDevice('virtual:0', 'virtual'),
@@ -298,6 +299,11 @@ class HeadlessInputHub implements InputHub {
 		return createSubscriptionHandle(() => { this.subscribers.delete(fn); });
 	}
 	post(e: InputEvt): void {
+		if (e.type === 'button' && e.deviceId === 'keyboard:0' && e.code === 'F2' && e.down !== this.supervisorRequestLineHigh) {
+			this.supervisorRequestLineHigh = e.down;
+			const request: InputEvt = { type: 'supervisor-request', down: e.down, timestamp: e.timestamp };
+			for (const fn of this.subscribers) fn(request);
+		}
 		for (const fn of this.subscribers) fn(e);
 	}
 	devices(): InputDevice[] {

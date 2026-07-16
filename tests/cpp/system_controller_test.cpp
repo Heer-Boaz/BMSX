@@ -29,8 +29,8 @@ void require(bool condition, const char* message) {
 class SystemResetInputSource final : public bmsx::RuntimeInputSource {
 public:
 	void setRuntimeInputFrameDurationMs(bmsx::f64) override {}
-	void sampleInputControllerKeyWords(std::array<bmsx::u32, bmsx::INPUT_CONTROLLER_KEY_WORD_COUNT>&) override {}
 	void sampleInputControllerSnapshot(bmsx::f64, bmsx::InputControllerSnapshot&) override {}
+	auto supervisorRequestLineHigh() const -> bool override { return false; }
 	void applyInputControllerVibrationEffect(bmsx::i32, bmsx::f64, bmsx::f32) override {}
 };
 

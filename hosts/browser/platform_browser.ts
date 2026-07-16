@@ -591,6 +591,8 @@ const buttonMap: { [index: number]: string } = {
 	16: 'home',
 };
 
+const SUPERVISOR_REQUEST_KEY_CODE = 'F2';
+
 function modifiersFrom(event: MouseEvent | PointerEvent | WheelEvent): InputModifiers {
 	return {
 		ctrl: event.ctrlKey === true,
@@ -671,6 +673,9 @@ class BrowserInputHub implements InputHub {
 		const now = this.clock.now();
 		const pressId = this.nextPressId++;
 		this.activeKeyPressIds.set(event.code, pressId);
+		if (event.code === SUPERVISOR_REQUEST_KEY_CODE) {
+			this.post({ type: 'supervisor-request', down: true, timestamp: now });
+		}
 		this.post({ type: 'button', deviceId: 'keyboard:0', code: event.code, down: true, value: 1, timestamp: now, pressId });
 	};
 
@@ -683,17 +688,25 @@ class BrowserInputHub implements InputHub {
 			event.returnValue = false;
 		}
 		const now = this.clock.now();
+		const wasPressed = this.activeKeyPressIds.has(event.code);
 		let pressId = this.activeKeyPressIds.get(event.code);
 		if (!pressId) {
 			pressId = this.nextPressId++;
 		}
 		this.activeKeyPressIds.delete(event.code);
+		if (wasPressed && event.code === SUPERVISOR_REQUEST_KEY_CODE) {
+			this.post({ type: 'supervisor-request', down: false, timestamp: now });
+		}
 		this.post({ type: 'button', deviceId: 'keyboard:0', code: event.code, down: false, value: 0, timestamp: now, pressId });
 	};
 
 	private onWindowFocusChange = () => {
+		const supervisorRequestLineHigh = this.activeKeyPressIds.has(SUPERVISOR_REQUEST_KEY_CODE);
 		this.activeKeyPressIds.clear();
 		this.activePointerPressIds.clear();
+		if (supervisorRequestLineHigh) {
+			this.post({ type: 'supervisor-request', down: false, timestamp: this.clock.now() });
+		}
 	};
 
 	private onPointerDown = (event: PointerEvent) => {

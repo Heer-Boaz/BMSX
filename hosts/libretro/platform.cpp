@@ -745,6 +745,12 @@ constexpr unsigned kRetroPointerIdX = 0;
 constexpr unsigned kRetroPointerIdY = 1;
 constexpr unsigned kRetroPointerIdPressed = 2;
 
+// Frontends own the physical remap. This canonical chord cannot coincide with
+// BMSX's host quick-menu chord (Start+Select+L+R).
+constexpr u16 kSupervisorRequestControllerMask =
+	(1u << RETRO_DEVICE_ID_JOYPAD_DOWN) |
+	(1u << RETRO_DEVICE_ID_JOYPAD_SELECT);
+
 f32 normalizeAxis(i16 value) {
 	return static_cast<f32>(value) / 32767.0f;
 }
@@ -830,6 +836,9 @@ void LibretroInputHub::poll() {
 			emitEvent(evt);
 		}
 	}
+	m_controller_supervisor_request =
+		(new_state.buttons[0] & kSupervisorRequestControllerMask) == kSupervisorRequestControllerMask;
+	updateSupervisorRequestLine();
 
 	const char* pointerDeviceId = kPointerDeviceId;
 
@@ -911,6 +920,7 @@ void LibretroInputHub::poll() {
 }
 
 void LibretroInputHub::postKeyboardEvent(std::string_view code, bool down) {
+	const bool supervisorRequestKey = code == "F2";
 	std::string key(code);
 	const bool isPressed = m_pressed_keyboard_codes.find(key) != m_pressed_keyboard_codes.end();
 	if (down == isPressed) {
@@ -926,6 +936,10 @@ void LibretroInputHub::postKeyboardEvent(std::string_view code, bool down) {
 	evt.deviceId = kKeyboardDeviceId;
 	evt.code = std::move(key);
 	emitEvent(evt);
+	if (supervisorRequestKey) {
+		m_keyboard_supervisor_request = down;
+		updateSupervisorRequestLine();
+	}
 }
 
 void LibretroInputHub::clearKeyboardState() {
@@ -945,6 +959,8 @@ void LibretroInputHub::clearKeyboardState() {
 		evt.code = code;
 		emitEvent(evt);
 	}
+	m_keyboard_supervisor_request = false;
+	updateSupervisorRequestLine();
 }
 
 void LibretroInputHub::resetFocusState() {
@@ -954,7 +970,21 @@ void LibretroInputHub::resetFocusState() {
 	m_prev_pointer_y = 0;
 	m_prev_pointer_position_valid = false;
 	m_pressed_keyboard_codes.clear();
+	m_keyboard_supervisor_request = false;
+	m_controller_supervisor_request = false;
 	clearEvtQ();
+	updateSupervisorRequestLine();
+}
+
+void LibretroInputHub::updateSupervisorRequestLine() {
+	const bool lineHigh = m_keyboard_supervisor_request || m_controller_supervisor_request;
+	if (lineHigh == m_supervisor_request_line_high) {
+		return;
+	}
+	m_supervisor_request_line_high = lineHigh;
+	InputEvt evt;
+	evt.type = lineHigh ? InputEvtType::SupervisorRequestDown : InputEvtType::SupervisorRequestUp;
+	emitEvent(evt);
 }
 
 SubscriptionHandle LibretroInputHub::subscribe(std::function<void(const InputEvt&)> handler) {

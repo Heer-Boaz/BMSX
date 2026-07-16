@@ -33,7 +33,9 @@ enum class InputEvtType {
 	PointerDown,
 	PointerUp,
 	PointerMove,
-	PointerWheel
+	PointerWheel,
+	SupervisorRequestDown,
+	SupervisorRequestUp
 };
 
 struct InputEvt {

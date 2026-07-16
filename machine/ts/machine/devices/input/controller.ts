@@ -15,12 +15,8 @@ import { InputControllerRegisterFile } from './registers';
 import { InputControllerOutputPort } from './output_port';
 import {
 	createInputControllerSnapshot,
-	INPUT_CONTROLLER_SYSTEM_NMI_HID_USAGE,
 	type InputControllerInputSource,
 } from './contracts';
-
-const SYSTEM_NMI_KEY_WORD = INPUT_CONTROLLER_SYSTEM_NMI_HID_USAGE >>> 5;
-const SYSTEM_NMI_KEY_MASK = 1 << (INPUT_CONTROLLER_SYSTEM_NMI_HID_USAGE & 31);
 
 const INPUT_OUTPUT_REGISTER_WRITE_ADDRS = [
 	IO_INP_OUTPUT_PORT,
@@ -32,7 +28,7 @@ export class InputController {
 	private sampleArmed = false;
 	private sampleSequence = 0;
 	private lastSampleCycle = 0;
-	private systemNmiLineHigh = false;
+	private supervisorRequestLineWasHigh = false;
 	private readonly snapshot = createInputControllerSnapshot();
 	private readonly outputPort: InputControllerOutputPort;
 	private readonly registers = new InputControllerRegisterFile();
@@ -54,7 +50,7 @@ export class InputController {
 		this.sampleArmed = false;
 		this.sampleSequence = 0;
 		this.lastSampleCycle = 0;
-		this.systemNmiLineHigh = false;
+		this.supervisorRequestLineWasHigh = false;
 		this.registers.reset();
 		this.memory.writeIoValue(IO_INP_OUTPUT_CTRL, 0);
 		this.registers.mirror(this.memory);
@@ -81,14 +77,12 @@ export class InputController {
 	public onVblankEdge(currentTimeMs: number, nowCycles: number): void {
 		if (this.sampleArmed) {
 			this.input.sampleInputControllerSnapshot(currentTimeMs, this.snapshot);
-		} else {
-			this.input.sampleInputControllerKeyWords(this.snapshot.keyWords);
 		}
-		const systemNmiLineHigh = (this.snapshot.keyWords[SYSTEM_NMI_KEY_WORD] & SYSTEM_NMI_KEY_MASK) !== 0;
-		if (systemNmiLineHigh && !this.systemNmiLineHigh) {
+		const supervisorRequestLineHigh = this.input.supervisorRequestLineHigh();
+		if (supervisorRequestLineHigh && !this.supervisorRequestLineWasHigh) {
 			this.cpu.requestNonMaskableInterrupt();
 		}
-		this.systemNmiLineHigh = systemNmiLineHigh;
+		this.supervisorRequestLineWasHigh = supervisorRequestLineHigh;
 		if (!this.sampleArmed) {
 			return;
 		}
@@ -109,7 +103,7 @@ export class InputController {
 			sampleArmed: this.sampleArmed,
 			sampleSequence: this.sampleSequence,
 			lastSampleCycle: this.lastSampleCycle,
-			systemNmiLineHigh: this.systemNmiLineHigh,
+			supervisorRequestLineHigh: this.supervisorRequestLineWasHigh,
 			registers: this.registers.captureState(),
 		};
 	}
@@ -118,7 +112,7 @@ export class InputController {
 		this.sampleArmed = state.sampleArmed;
 		this.sampleSequence = state.sampleSequence;
 		this.lastSampleCycle = state.lastSampleCycle;
-		this.systemNmiLineHigh = state.systemNmiLineHigh;
+		this.supervisorRequestLineWasHigh = state.supervisorRequestLineHigh;
 		this.registers.restoreState(state.registers);
 		this.memory.writeIoValue(IO_INP_OUTPUT_CTRL, 0);
 		this.registers.mirror(this.memory);

@@ -43,6 +43,15 @@ int16_t discardInputState(unsigned, unsigned, unsigned, unsigned) {
 	return 0;
 }
 
+uint16_t supervisorPadState = 0u;
+
+int16_t supervisorInputState(unsigned port, unsigned device, unsigned, unsigned id) {
+	if (port == 0u && device == RETRO_DEVICE_JOYPAD) {
+		return (supervisorPadState & (1u << id)) != 0u ? 1 : 0;
+	}
+	return 0;
+}
+
 unsigned geometryChangeCount = 0u;
 retro_game_geometry lastGeometry{};
 
@@ -277,6 +286,62 @@ void testInputSnapshotReflectsHeldKey() {
 		"raw ICU snapshot should set the keyboard bit for a held key");
 }
 
+void testLibretroSupervisorRequestSourcesShareOneLine() {
+	retro_system_av_info avInfo{};
+	bmsx::LibretroPlatform platform(bmsx::BackendType::Software, avInfo);
+	platform.setLogCallback(discardRetroLog);
+	platform.setInputPollCallback(discardInputPoll);
+	platform.setInputStateCallback(supervisorInputState);
+	bmsx::Input& input = bmsx::Input::instance();
+	auto& inputHub = *static_cast<bmsx::LibretroInputHub*>(platform.inputHub());
+	int requestEdgesDown = 0;
+	int requestEdgesUp = 0;
+	bmsx::SubscriptionHandle edgeSubscription = platform.inputHub()->subscribe([&](const bmsx::InputEvt& evt) {
+		if (evt.type == bmsx::InputEvtType::SupervisorRequestDown) {
+			requestEdgesDown += 1;
+		} else if (evt.type == bmsx::InputEvtType::SupervisorRequestUp) {
+			requestEdgesUp += 1;
+		}
+	});
+
+	supervisorPadState = 0u;
+	platform.postKeyboardEvent("F2", true);
+	input.pollInput();
+	require(input.supervisorRequestLineHigh(), "libretro F2 should assert the supervisor-request line");
+	require(requestEdgesDown == 1 && requestEdgesUp == 0, "F2 should emit one supervisor-request rising edge");
+
+	supervisorPadState = (1u << RETRO_DEVICE_ID_JOYPAD_DOWN) | (1u << RETRO_DEVICE_ID_JOYPAD_SELECT);
+	inputHub.poll();
+	input.pollInput();
+	platform.postKeyboardEvent("F2", false);
+	input.pollInput();
+	require(input.supervisorRequestLineHigh(), "releasing F2 should retain a held controller request");
+	require(requestEdgesDown == 1 && requestEdgesUp == 0, "overlapping request sources should not emit duplicate edges");
+
+	supervisorPadState = 0u;
+	inputHub.poll();
+	input.pollInput();
+	require(!input.supervisorRequestLineHigh(), "releasing the final request source should deassert the line");
+	require(requestEdgesDown == 1 && requestEdgesUp == 1, "the aggregate line should emit one falling edge");
+
+	supervisorPadState = (1u << RETRO_DEVICE_ID_JOYPAD_DOWN) | (1u << RETRO_DEVICE_ID_JOYPAD_SELECT);
+	inputHub.poll();
+	input.pollInput();
+	platform.postKeyboardEvent("F2", true);
+	input.pollInput();
+	supervisorPadState = 0u;
+	inputHub.poll();
+	input.pollInput();
+	require(input.supervisorRequestLineHigh(), "releasing the controller chord should retain a held F2 request");
+	platform.resetFocusState();
+	input.pollInput();
+	require(!input.supervisorRequestLineHigh(), "focus reset should deassert every supervisor-request source");
+	require(requestEdgesDown == 2 && requestEdgesUp == 2, "source handoff and focus reset should preserve aggregate edge counts");
+
+	edgeSubscription.unsubscribe();
+	supervisorPadState = 0u;
+}
+
 void testLibretroTracksPublishedNativeOutputGeometry() {
 	retro_system_av_info avInfo{};
 	avInfo.geometry.base_width = 320u;
@@ -417,6 +482,7 @@ int main() {
 	testGpureadCodecStoresReadyBytesAndRejectsBackendPhase();
 	testLibretroStateEnvelopeSupportsMaximumGpuread();
 	testInputSnapshotReflectsHeldKey();
+	testLibretroSupervisorRequestSourcesShareOneLine();
 	testLibretroTracksPublishedNativeOutputGeometry();
 	testPublishedDisplayTimingAppliesAtFrameEnd();
 	return 0;

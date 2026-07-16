@@ -5,11 +5,6 @@
 
 namespace bmsx {
 
-namespace {
-constexpr size_t SYSTEM_NMI_KEY_WORD = INPUT_CONTROLLER_SYSTEM_NMI_HID_USAGE >> 5u;
-constexpr u32 SYSTEM_NMI_KEY_MASK = 1u << (INPUT_CONTROLLER_SYSTEM_NMI_HID_USAGE & 31u);
-}
-
 InputController::InputController(Memory& memory, InputControllerInputSource& input, CPU& cpu)
 	: m_memory(memory)
 	, m_input(input)
@@ -26,7 +21,7 @@ void InputController::reset() {
 	m_sampleArmed = false;
 	m_sampleSequence = 0u;
 	m_lastSampleCycle = 0u;
-	m_systemNmiLineHigh = false;
+	m_supervisorRequestLineWasHigh = false;
 	m_registers.reset();
 	m_memory.writeIoValue(IO_INP_OUTPUT_CTRL, valueNumber(0.0));
 	m_registers.mirror(m_memory);
@@ -53,14 +48,12 @@ void InputController::writeControl([[maybe_unused]] u32 addr, Value value) {
 void InputController::onVblankEdge(f64 currentTimeMs, u32 nowCycles) {
 	if (m_sampleArmed) {
 		m_input.sampleInputControllerSnapshot(currentTimeMs, m_snapshot);
-	} else {
-		m_input.sampleInputControllerKeyWords(m_snapshot.keyWords);
 	}
-	const bool systemNmiLineHigh = (m_snapshot.keyWords[SYSTEM_NMI_KEY_WORD] & SYSTEM_NMI_KEY_MASK) != 0u;
-	if (systemNmiLineHigh && !m_systemNmiLineHigh) {
+	const bool supervisorRequestLineHigh = m_input.supervisorRequestLineHigh();
+	if (supervisorRequestLineHigh && !m_supervisorRequestLineWasHigh) {
 		m_cpu.requestNonMaskableInterrupt();
 	}
-	m_systemNmiLineHigh = systemNmiLineHigh;
+	m_supervisorRequestLineWasHigh = supervisorRequestLineHigh;
 	if (!m_sampleArmed) {
 		return;
 	}

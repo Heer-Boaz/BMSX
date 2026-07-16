@@ -163,11 +163,9 @@ public:
 	// Poll all inputs (call once per frame)
 	void pollInput();
 
-	// Sample the raw HID keyboard matrix without advancing cart input frame state.
-	void sampleInputControllerKeyWords(std::array<u32, INPUT_CONTROLLER_KEY_WORD_COUNT>& keyWords) override;
-
 	// Latch the raw input snapshot for one cart-visible simulation frame
 	void sampleInputControllerSnapshot(f64 currentTimeMs, InputControllerSnapshot& snapshot) override;
+	auto supervisorRequestLineHigh() const -> bool override;
 	
 	// ─────────────────────────────────────────────────────────────────────────
 	// Button event handling (from platform)
@@ -224,6 +222,7 @@ private:
 	i32 m_nextPressId = 1;
 	std::unordered_map<std::string, i32> m_activePressIds;
 	SubscriptionHandle m_focusChangeSub;
+	bool m_supervisorRequestLineHigh = false;
 	
 	// ─────────────────────────────────────────────────────────────────────────
 	// Helpers
@@ -234,6 +233,7 @@ private:
 							InputEvent::Type type, f64 timestamp,
 							std::optional<i32> pressId);
 	auto resolvePlatformPressId(const std::string& deviceId, const std::string& code, bool down) -> i32;
+	void sampleInputControllerKeyWords(std::array<u32, INPUT_CONTROLLER_KEY_WORD_COUNT>& keyWords);
 	void samplePadSnapshot(i32 pad, InputControllerSnapshot& snapshot);
 };
 

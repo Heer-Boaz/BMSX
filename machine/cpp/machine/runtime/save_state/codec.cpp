@@ -376,7 +376,7 @@ BinValue encodeInputControllerState(const InputControllerState& state) {
 	object["sampleArmed"] = state.sampleArmed;
 	object["sampleSequence"] = static_cast<i64>(state.sampleSequence);
 	object["lastSampleCycle"] = static_cast<i64>(state.lastSampleCycle);
-	object["systemNmiLineHigh"] = state.systemNmiLineHigh;
+	object["supervisorRequestLineHigh"] = state.supervisorRequestLineHigh;
 	BinObject registers;
 	registers["ctrl"] = static_cast<i64>(state.registers.ctrl);
 	BinArray keyWords;
@@ -413,7 +413,7 @@ InputControllerState decodeInputControllerState(const BinValue& value, const cha
 	state.sampleArmed = requireBool(requireField(object, "sampleArmed", label), "machine.input.sampleArmed");
 	state.sampleSequence = requireU32(requireField(object, "sampleSequence", label), "machine.input.sampleSequence");
 	state.lastSampleCycle = requireU32(requireField(object, "lastSampleCycle", label), "machine.input.lastSampleCycle");
-	state.systemNmiLineHigh = requireBool(requireField(object, "systemNmiLineHigh", label), "machine.input.systemNmiLineHigh");
+	state.supervisorRequestLineHigh = requireBool(requireField(object, "supervisorRequestLineHigh", label), "machine.input.supervisorRequestLineHigh");
 	state.registers.ctrl = requireU32(requireField(registers, "ctrl", "machine.input.registers"), "machine.input.registers.ctrl");
 	const auto decodeWordArray = [&registers](const char* key, u32* out, size_t count) {
 		const BinArray& array = requireArray(requireField(registers, key, "machine.input.registers"), key);

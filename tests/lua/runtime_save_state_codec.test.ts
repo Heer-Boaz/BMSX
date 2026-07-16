@@ -251,7 +251,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					sampleArmed: false,
 					sampleSequence: 3,
 					lastSampleCycle: 77,
-					systemNmiLineHigh: true,
+					supervisorRequestLineHigh: true,
 					registers: {
 						ctrl: 1,
 						keyWords: numberedWords(INPUT_CONTROLLER_KEY_WORD_COUNT),

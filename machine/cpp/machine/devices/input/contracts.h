@@ -15,7 +15,6 @@ namespace bmsx {
 constexpr int INPUT_CONTROLLER_KEY_WORD_COUNT = 8; // 256 HID usage bits
 constexpr int INPUT_CONTROLLER_PAD_COUNT = 4;
 constexpr int INPUT_CONTROLLER_PAD_AXIS_COUNT = 6; // lx, ly, rx, ry, lt, rt
-constexpr u32 INPUT_CONTROLLER_SYSTEM_NMI_HID_USAGE = 59u; // Keyboard F2
 
 // Canonical pad button bit order: bit i in the pad buttons word.
 inline const char* const INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_IDS[] = {
@@ -69,8 +68,8 @@ inline InputControllerSnapshot createInputControllerSnapshot() {
 class InputControllerInputSource {
 public:
 	virtual ~InputControllerInputSource() = default;
-	virtual void sampleInputControllerKeyWords(std::array<u32, INPUT_CONTROLLER_KEY_WORD_COUNT>& keyWords) = 0;
 	virtual void sampleInputControllerSnapshot(f64 currentTimeMs, InputControllerSnapshot& snapshot) = 0;
+	virtual auto supervisorRequestLineHigh() const -> bool = 0;
 	virtual void applyInputControllerVibrationEffect(i32 padIndex, f64 durationMs, f32 intensity) = 0;
 };
 

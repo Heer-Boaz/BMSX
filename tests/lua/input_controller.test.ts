@@ -31,7 +31,6 @@ import {
 	INP_POINTER_BUTTON_SECONDARY,
 	INPUT_CONTROLLER_KEY_WORD_COUNT,
 	INPUT_CONTROLLER_OUTPUT_INTENSITY_Q16_ONE,
-	INPUT_CONTROLLER_SYSTEM_NMI_HID_USAGE,
 	type InputControllerInputSource,
 	type InputControllerSnapshot,
 } from '../../machine/ts/machine/devices/input/contracts';
@@ -39,6 +38,7 @@ import { Memory } from '../../machine/ts/machine/memory/memory';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 
 const HID_KEY_X = 27;
+const HID_KEY_F2 = 59;
 const PAD_A_BIT = 0;
 
 type FakeVibration = {
@@ -65,8 +65,8 @@ function createHarness(): {
 	controller: InputController;
 	vibrations: FakeVibration[];
 	samples: () => number;
-	keySamples: () => number;
 	setKey: (usage: number, down: boolean) => void;
+	setSupervisorRequestLine: (high: boolean) => void;
 } {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
 	const irq = new IrqController(memory);
@@ -75,18 +75,14 @@ function createHarness(): {
 	const keyWords = new Uint32Array(INPUT_CONTROLLER_KEY_WORD_COUNT);
 	keyWords[HID_KEY_X >>> 5] = 1 << (HID_KEY_X & 31);
 	let sampleCount = 0;
-	let keySampleCount = 0;
-	const writeKeyWords = (target: Uint32Array): void => {
-		target.set(keyWords);
-	};
+	let supervisorRequestLineHigh = false;
 	const input: InputControllerInputSource = {
-		sampleInputControllerKeyWords(target) {
-			keySampleCount += 1;
-			writeKeyWords(target);
-		},
 		sampleInputControllerSnapshot(_currentTimeMs: number, snapshot: InputControllerSnapshot) {
 			sampleCount += 1;
 			writeSample(snapshot, keyWords);
+		},
+		supervisorRequestLineHigh() {
+			return supervisorRequestLineHigh;
 		},
 		applyInputControllerVibrationEffect(padIndex, durationMs, intensity) {
 			vibrations.push({ padIndex, durationMs, intensity });
@@ -101,23 +97,27 @@ function createHarness(): {
 		controller,
 		vibrations,
 		samples: () => sampleCount,
-		keySamples: () => keySampleCount,
 		setKey: (usage, down) => {
 			const mask = 1 << (usage & 31);
 			const word = usage >>> 5;
 			keyWords[word] = down ? keyWords[word] | mask : keyWords[word] & ~mask;
+		},
+		setSupervisorRequestLine: high => {
+			supervisorRequestLineHigh = high;
 		},
 	};
 }
 
 test('input controller latches one raw MMIO snapshot on armed VBlank', () => {
 	const live = createHarness();
+	live.setKey(HID_KEY_F2, true);
 	live.memory.writeValue(IO_INP_CTRL, INP_CTRL_ARM);
 	live.controller.onVblankEdge(1000 / 60, 77);
 
 	assert.equal(live.samples(), 1);
 	assert.equal(live.memory.readIoU32(IO_INP_STATUS), 1);
 	assert.equal(live.memory.readIoU32(IO_INP_KEYS + (HID_KEY_X >>> 5) * IO_WORD_SIZE), 1 << (HID_KEY_X & 31));
+	assert.notEqual(live.memory.readIoU32(IO_INP_KEYS + (HID_KEY_F2 >>> 5) * IO_WORD_SIZE) & (1 << (HID_KEY_F2 & 31)), 0);
 	assert.equal(live.memory.readIoU32(IO_INP_POINTER_BUTTONS), (1 << INP_POINTER_BUTTON_PRIMARY) | (1 << INP_POINTER_BUTTON_SECONDARY));
 	assert.equal(live.memory.readIoU32(IO_INP_POINTER_X), encodeSignedFix16(12.5));
 	assert.equal(live.memory.readIoU32(IO_INP_POINTER_Y), encodeSignedFix16(-3.25));
@@ -168,28 +168,27 @@ test('input controller exposes the VBlank sample edge without leaking the sample
 	assert.equal(harness.controller.captureState().sampleArmed, false);
 });
 
-test('input controller drives one system NMI edge from raw F2 without publishing an unarmed snapshot', () => {
+test('input controller drives one system NMI edge from the supervisor request line', () => {
 	const harness = createHarness();
 	const restoredState = harness.controller.captureState();
-	restoredState.systemNmiLineHigh = true;
+	restoredState.supervisorRequestLineHigh = true;
 	harness.controller.restoreState(restoredState);
-	harness.setKey(INPUT_CONTROLLER_SYSTEM_NMI_HID_USAGE, true);
+	harness.setSupervisorRequestLine(true);
 	harness.controller.onVblankEdge(1, 1);
 
 	assert.equal(harness.samples(), 0);
-	assert.equal(harness.keySamples(), 1);
 	assert.equal(harness.memory.readIoU32(IO_INP_STATUS), 0);
-	assert.equal(harness.memory.readIoU32(IO_INP_KEYS + (INPUT_CONTROLLER_SYSTEM_NMI_HID_USAGE >>> 5) * IO_WORD_SIZE), 0);
+	assert.equal(harness.memory.readIoU32(IO_INP_KEYS + (HID_KEY_F2 >>> 5) * IO_WORD_SIZE), 0);
 	assert.equal(harness.cpu.peekPendingInterrupt(), AcceptedInterruptKind.None);
 	harness.memory.writeValue(IO_INP_CTRL, INP_CTRL_RESET);
 	harness.controller.onVblankEdge(2, 2);
 	assert.equal(harness.cpu.peekPendingInterrupt(), AcceptedInterruptKind.None);
 
-	harness.setKey(INPUT_CONTROLLER_SYSTEM_NMI_HID_USAGE, false);
+	harness.setSupervisorRequestLine(false);
 	harness.controller.onVblankEdge(3, 3);
-	harness.setKey(INPUT_CONTROLLER_SYSTEM_NMI_HID_USAGE, true);
+	harness.setSupervisorRequestLine(true);
 	harness.controller.onVblankEdge(4, 4);
 
 	assert.equal(harness.cpu.peekPendingInterrupt(), AcceptedInterruptKind.NonMaskable);
-	assert.equal(harness.controller.captureState().systemNmiLineHigh, true);
+	assert.equal(harness.controller.captureState().supervisorRequestLineHigh, true);
 });

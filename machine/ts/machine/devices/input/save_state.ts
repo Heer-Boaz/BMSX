@@ -4,6 +4,6 @@ export type InputControllerState = {
 	sampleArmed: boolean;
 	sampleSequence: number;
 	lastSampleCycle: number;
-	systemNmiLineHigh: boolean;
+	supervisorRequestLineHigh: boolean;
 	registers: InputControllerRegisterState;
 };

@@ -90,7 +90,7 @@ const std::vector<std::string> RUNTIME_SAVE_STATE_PROP_NAMES = {
 	"lastSampleCycle",
 	"sampleArmed",
 	"sampleSequence",
-	"systemNmiLineHigh",
+	"supervisorRequestLineHigh",
 	"systemControl",
 	"secondary",
 	"sequence",
