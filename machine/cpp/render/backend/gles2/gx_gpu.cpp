@@ -1585,8 +1585,7 @@ void prepareGxGpuLineSegment(
 	}
 	const i32 absDx = x0 < x1 ? x1 - x0 : x0 - x1;
 	const i32 absDy = y0 < y1 ? y1 - y0 : y0 - y1;
-	const i32 steps = absDx >= absDy ? absDx : absDy;
-	if (x0 >= x1 && steps > 0) {
+	if (x0 > x1) {
 		const i32 swapX = x0;
 		const i32 swapY = y0;
 		const u32 swapColor = color0;

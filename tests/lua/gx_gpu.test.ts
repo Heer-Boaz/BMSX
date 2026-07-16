@@ -1705,23 +1705,23 @@ test('GX-GPU software backend captures live VRAM into save-state snapshot', () =
 	assert.equal(saveState.vramBytes[byteIndex + 1], 0x00);
 });
 
-test('GX-GPU software backend rasterizes Gouraud lines with PSX fixed-point steps', () => {
+test('GX-GPU software backend preserves vertical Gouraud packet order through fixed-point steps', () => {
 	const commandBuffer = new GxGpuCommandBuffer(standaloneCommandBufferDma);
 	commandBuffer.reset();
 	const opcode = GX_GPU_GP0_LINE_FIRST | GX_GPU_GP0_RENDER_GOURAUD_BIT;
 	pushSoftwareCommand(commandBuffer, new Uint32Array([
-		((opcode << 24) | 0x0000ff) >>> 0,
+		((opcode << 24) | 0x000008) >>> 0,
 		(10 << 16) | 40,
-		0x00ff00,
-		(14 << 16) | 40,
+		0x000027,
+		(16 << 16) | 40,
 	]), GX_GPU_COMMAND_DRAW_LINE, opcode);
 
 	gxGpuSoftwareVram.fill(0);
 	executeGxGpuSoftwareCommands(commandBuffer, 0);
 
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(40, 10)], 0x001f);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(40, 12)], 0x0210);
-	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(40, 14)], 0x03e0);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(40, 10)], 0x0001);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(40, 13)], 0x0002);
+	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(40, 16)], 0x0004);
 });
 
 test('GX-GPU software backend owns PSX line DDA, sample wrap, and polyline joints', () => {

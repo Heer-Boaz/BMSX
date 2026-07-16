@@ -670,7 +670,7 @@ export function drawGxGpuSoftwareLineSegment(commandBuffer: GxGpuCommandBufferVi
 	const absDx = absI32(x1 - x0);
 	const absDy = absI32(y1 - y0);
 	const steps = absDx >= absDy ? absDx : absDy;
-	if (x0 >= x1 && steps > 0) {
+	if (x0 > x1) {
 		const swapX = x0;
 		const swapY = y0;
 		const swapColor = color0;

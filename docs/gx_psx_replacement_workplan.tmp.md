@@ -500,9 +500,10 @@ and MAME
     pixel-rasterization.
   - [ ] Run the line/polyline DDA, Gouraud, wrap, reject, and double-joint vectors
     live against WebGL2, GLES2, and WebGPU.
-  - [ ] Resolve the DuckStation/Mednafen `x0 >= x1` versus `x0 > x1` vertical
-    Gouraud tie against hardware; all BMSX backends deliberately follow the
-    current DuckStation/software convention until then.
+  - [x] Resolve the vertical Gouraud equality from MAME's equal-X behavior:
+    equal-X endpoints retain GP0 order, so every BMSX backend uses strict
+    `x0 > x1` normalization. A mirrored fixed-point vector distinguishes the
+    resulting midpoint after RGB555 storage.
 - [ ] Exact clipping, drawing offsets, drawing area, and negative coordinate cases.
   - [x] Cover normal negative coordinates plus E5 offsets, inclusive E3/E4
     clipping on every edge, and clipped textured-rectangle UV advance with

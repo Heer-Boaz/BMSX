@@ -621,7 +621,7 @@ void drawGxGpuSoftwareLineSegment(const GxGpuCommandBuffer& commandBuffer, size_
 	const i32 absDx = absI32(x1 - x0);
 	const i32 absDy = absI32(y1 - y0);
 	const i32 steps = absDx >= absDy ? absDx : absDy;
-	if (x0 >= x1 && steps > 0) {
+	if (x0 > x1) {
 		const i32 swapX = x0;
 		const i32 swapY = y0;
 		const u32 swapColor = color0;

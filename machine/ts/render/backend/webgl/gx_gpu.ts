@@ -987,8 +987,7 @@ function appendLineSegment(vertexFloatCount: number, x0: number, y0: number, col
 	}
 	const absDx = x0 < x1 ? x1 - x0 : x0 - x1;
 	const absDy = y0 < y1 ? y1 - y0 : y0 - y1;
-	const steps = absDx >= absDy ? absDx : absDy;
-	if (x0 >= x1 && steps > 0) {
+	if (x0 > x1) {
 		const swapX = x0;
 		const swapY = y0;
 		const swapColor = color0;

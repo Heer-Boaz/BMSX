@@ -1092,7 +1092,11 @@ polygon coordinates wrap at the raster bucket after primitive-size rejection.
 Textured and Gouraud polygons use the shared signed fixed-gradient plane with
 twelve fractional bits, half-texel seed, and twenty-bit UV accumulator wrap.
 Lines use the integer DDA and wrap each emitted sample to signed eleven-bit
-coordinates. Drawing offset, inclusive drawing area, texture window/page,
+coordinates. Endpoints exchange only when the first X exceeds the second; a
+vertical line therefore retains GP0 packet order, matching MAME's
+[`GouraudLine`](https://github.com/mamedev/mame/blob/389e99d4cea2a7a62e0cce227000c4c7d0efdd6b/src/devices/video/psx.cpp#L2149-L2262)
+ordering rather than reversing equal-X colors before fixed-point interpolation.
+Drawing offset, inclusive drawing area, texture window/page,
 packed palette texels, CLUT addressing, STP, mask bits, four five-bit blend
 modes, dithering and RGB555 storage remain raw datapath stages rather than host
 float/color corrections.
