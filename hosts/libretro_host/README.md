@@ -45,4 +45,4 @@ Options:
 
 Input timelines may include `capture: true` entries. Both the libretro host and headless runner save `.png` screenshots into a `screenshots/` subfolder next to the timeline JSON file.
 
-SDL video support is enabled when SDL2 is available during the host build (non-cross builds only).
+Native host builds require SDL2 and provide the SDL video, audio, and input path. Cross-compiled SNES Mini host builds use fbdev and evdev without SDL.

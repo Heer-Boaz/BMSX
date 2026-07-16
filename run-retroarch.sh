@@ -46,6 +46,7 @@ fi
 LOCAL_CFG="$ROOT_DIR/scripts/retroarch.local.cfg"
 
 export LIBRETRO_SYSTEM_DIRECTORY="${LIBRETRO_SYSTEM_DIRECTORY:-$ROOT_DIR/dist}"
+export GALLIUM_DRIVER=d3d12
 
 # Run retroarch directly using the local core, no copying needed!
-gdb --batch --return-child-result -ex "set debuginfod enabled off" -ex "set pagination off" -ex "run" --args "$RETROARCH_BIN" --appendconfig="$LOCAL_CFG" -L "$CORE_PATH" ${ROM_PATH:+"$ROM_PATH"}
+gdb --batch --return-child-result -ex "set debuginfod enabled off" -ex "set pagination off" -ex "run" -ex "bt" --args "$RETROARCH_BIN" --appendconfig="$LOCAL_CFG" -L "$CORE_PATH" ${ROM_PATH:+"$ROM_PATH"}
