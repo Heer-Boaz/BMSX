@@ -19,9 +19,7 @@ typedef struct BmsxVideoSurface {
 
 BmsxVideoSurface* bmsx_video_context_open(
 		BmsxVideoContextKind kind,
-		bool hidden_window,
-		unsigned base_width,
-		unsigned base_height);
+		bool hidden_window);
 void bmsx_video_context_close(void);
 
 bool bmsx_video_context_enable_gles2(void);
@@ -32,5 +30,9 @@ void bmsx_video_context_swap_buffers(void);
 bool bmsx_video_context_prepare_software_frame(unsigned width, unsigned height);
 bool bmsx_video_context_refresh_drawable_size(void);
 void bmsx_video_context_present_software(void);
-bool bmsx_video_context_map_window_point(int window_x, int window_y, int* surface_x, int* surface_y);
+bool bmsx_video_context_window_point_to_surface(
+		int window_x,
+		int window_y,
+		int* surface_x,
+		int* surface_y);
 #endif

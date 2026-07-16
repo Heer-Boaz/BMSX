@@ -10,7 +10,6 @@
 #include <SDL.h>
 #endif
 #include <linux/fb.h>
-#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -92,6 +91,15 @@ static PFNEGLGETPROCADDRESS eglGetProcAddress_ptr = NULL;
 	__eglMustCastToProperFunctionPointerType source_proc = (src); \
 	memcpy(&(dst), &source_proc, sizeof(dst)); \
 } while (0)
+
+#ifdef BMSX_LIBRETRO_HOST_SDL
+static int map_window_axis_to_surface(int position, int window_extent, int surface_extent) {
+	const int64_t numerator = (int64_t)position * surface_extent;
+	return numerator < 0
+		? (int)((numerator - window_extent + 1) / window_extent)
+		: (int)(numerator / window_extent);
+}
+#endif
 
 static void framebuffer_open(void) {
 	BmsxVideoContext* context = &g_video_context;
@@ -322,14 +330,14 @@ static void sdl_resize_software_surface(unsigned width, unsigned height) {
 	SDL_RenderSetLogicalSize(context->renderer, surface->width, surface->height);
 }
 
-static void sdl_open(bool hidden_window, unsigned base_width, unsigned base_height) {
+static void sdl_open(bool hidden_window) {
 	BmsxVideoContext* context = &g_video_context;
 	if (SDL_InitSubSystem(SDL_INIT_VIDEO) != 0) {
 		host_fatal("SDL video initialization failed: %s", SDL_GetError());
 	}
 	SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "nearest");
-	const unsigned frame_width = base_width ? base_width : 320u;
-	const unsigned frame_height = base_height ? base_height : 240u;
+	const unsigned frame_width = 320u;
+	const unsigned frame_height = 240u;
 	unsigned window_width = frame_width * 3u;
 	unsigned window_height = frame_height * 3u;
 	if (window_width < 640u) window_width = 640u;
@@ -399,19 +407,15 @@ static void sdl_close(void) {
 
 BmsxVideoSurface* bmsx_video_context_open(
 		BmsxVideoContextKind kind,
-		bool hidden_window,
-		unsigned base_width,
-		unsigned base_height) {
+		bool hidden_window) {
 	g_video_context.kind = kind;
 	if (kind == BMSX_VIDEO_CONTEXT_FBDEV) {
 		framebuffer_open();
 	} else {
 #ifdef BMSX_LIBRETRO_HOST_SDL
-		sdl_open(hidden_window, base_width, base_height);
+		sdl_open(hidden_window);
 #else
 		(void)hidden_window;
-		(void)base_width;
-		(void)base_height;
 		host_fatal("SDL video backend not available in this build");
 #endif
 	}
@@ -498,13 +502,16 @@ bool bmsx_video_context_refresh_drawable_size(void) {
 
 void bmsx_video_context_present_software(void) {
 	BmsxVideoContext* context = &g_video_context;
+	if (context->kind != BMSX_VIDEO_CONTEXT_SDL_SOFTWARE) {
+		return;
+	}
 	SDL_UpdateTexture(context->texture, NULL, context->surface.pixels, context->surface.stride);
 	SDL_RenderClear(context->renderer);
 	SDL_RenderCopy(context->renderer, context->texture, NULL, NULL);
 	SDL_RenderPresent(context->renderer);
 }
 
-bool bmsx_video_context_map_window_point(
+bool bmsx_video_context_window_point_to_surface(
 		int window_x,
 		int window_y,
 		int* surface_x,
@@ -516,12 +523,14 @@ bool bmsx_video_context_map_window_point(
 		if (viewport.w <= 0 || viewport.h <= 0) {
 			return false;
 		}
-		*surface_x = (int)floor(
-				((double)(window_x - viewport.x) * (double)context->surface.width) /
-				(double)viewport.w);
-		*surface_y = (int)floor(
-				((double)(window_y - viewport.y) * (double)context->surface.height) /
-				(double)viewport.h);
+		*surface_x = map_window_axis_to_surface(
+				window_x - viewport.x,
+				viewport.w,
+				context->surface.width);
+		*surface_y = map_window_axis_to_surface(
+				window_y - viewport.y,
+				viewport.h,
+				context->surface.height);
 		return true;
 	}
 	int window_width = 0;
@@ -530,12 +539,14 @@ bool bmsx_video_context_map_window_point(
 	if (window_width <= 0 || window_height <= 0) {
 		return false;
 	}
-	*surface_x = (int)floor(
-			((double)window_x * (double)context->surface.width) /
-			(double)window_width);
-	*surface_y = (int)floor(
-			((double)window_y * (double)context->surface.height) /
-			(double)window_height);
+	*surface_x = map_window_axis_to_surface(
+			window_x,
+			window_width,
+			context->surface.width);
+	*surface_y = map_window_axis_to_surface(
+			window_y,
+			window_height,
+			context->surface.height);
 	return true;
 }
 #endif

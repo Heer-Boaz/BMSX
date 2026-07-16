@@ -437,6 +437,7 @@ if(BMSX_BUILD_LIBRETRO_HOST)
 		${BMSX_LIBRETRO_HOST_DIR}/keyboard_input.c
 		${BMSX_LIBRETRO_HOST_DIR}/screenshot.c
 		${BMSX_LIBRETRO_HOST_DIR}/video_context.c
+		${BMSX_LIBRETRO_HOST_DIR}/video_presenter.c
 	)
 
 	# SNES Mini sysroot uses glibc 2.19; the cross toolchain defaults to time64.

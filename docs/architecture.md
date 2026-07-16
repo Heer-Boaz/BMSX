@@ -1361,13 +1361,22 @@ consumed.
 The direct Linux host keeps platform video resources in the concrete
 `video_context` owner. That owner contains the fbdev mapping, SDL window,
 renderer and texture, SDL GLES context, EGL context and surface, swap operation,
-drawable extent and window-to-surface mapping. It initializes and quits only the
-SDL video subsystem. Game-controller subsystem state remains with input; audio
-owns the SDL audio subsystem independently. The presenter borrows one retained
-surface record from the context owner and never reacquires or allocates a
-per-frame configuration object. SDL software storage changes only when the
-machine geometry changes, and GLES drawable extent is refreshed on SDL window
-events rather than polled during every presentation.
+drawable extent and physical window-to-surface mapping. It initializes and
+quits only the SDL video subsystem. Game-controller subsystem state remains with
+input; audio owns the SDL audio subsystem independently.
+
+`video_presenter` owns the libretro pixel format and hardware-context callback,
+native game geometry, destination rectangle, accepted-presentation ordinal,
+software conversion, GLES final blit, frontend messages and screenshot capture.
+It borrows one stable surface record from `video_context`; the context may grow
+or replace that record's pixel storage but not the record itself. The presenter
+therefore translates surface points through its retained destination rectangle
+instead of making the platform context duplicate game-layout policy. Its
+message surface, GL objects and capture buffer are retained owner state:
+ordinary frames do not allocate, message geometry uploads only when it changes,
+and repeated captures reuse capacity. SDL software storage changes only when
+the machine geometry changes, and GLES drawable extent is refreshed on SDL
+window events rather than polled during every presentation.
 
 Libretro keyboard input enters through
 `RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK`. The direct host retains source bits
@@ -1393,10 +1402,11 @@ context. Replacement pass singletons are bootstrapped only after the old graph
 and registry have been removed.
 
 Direct-host shutdown invokes the core `context_destroy` callback while the
-frontend context is current, deletes host presenter GL objects, deinitializes
-the core, and only then destroys the SDL/EGL context, surface and window. No
-process-wide `SDL_Quit()` call is allowed to erase resources owned by the input
-or audio subsystems.
+frontend context is current, unloads and deinitializes the core, deletes the
+presenter's remaining GL objects while that same context is still current, and
+only then destroys the SDL/EGL context, surface and window. No process-wide
+`SDL_Quit()` call is allowed to erase resources owned by the input or audio
+subsystems.
 
 Before clean destruction, the GPU commits accelerated VRAM to its retained raw
 snapshot. GX pipeline teardown clears its accelerated command frontier and
