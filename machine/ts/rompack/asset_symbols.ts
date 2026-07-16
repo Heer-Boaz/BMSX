@@ -126,7 +126,7 @@ export function buildRomAssetSymbolModuleSourceFromSymbols(symbols: ReadonlyArra
 		exports.push(`${symbol.name}_addr`);
 		exports.push(`${symbol.name}_len`);
 	}
-	const lines = decls.slice();
+	const lines = ['module<const>', '', ...decls];
 	lines.push('return {');
 	for (let index = 0; index < exports.length; index += 1) {
 		const name = exports[index];
@@ -141,9 +141,9 @@ export function buildRomAssetSymbolModuleSourceFromSymbols(symbols: ReadonlyArra
 
 	- This is a generated build/link product, not a hand-written cartlib module. Every
 		symbol is a per-asset ROM address/length resolved at pack/link time.
-	- The emitted source is standard Lua: top-level `local <const>` declarations (the only
-		Lua-standard constant form) plus a `return` table that exports them by name.
-	- The compiler treats `bmsx/assets` as a const module (see `constModulePaths`): the
+	- The emitted BLua source declares `module<const>`, then top-level `local <const>`
+		declarations and one `return` table that exports them by name.
+	- The compiler therefore treats `bmsx/assets` as a const module: the
 		return table is a compile-time export descriptor, never a runtime table. Every
 		`assets.<symbol>` read is inlined to the constant value at its use site, so the module
 		emits no proto, no global slots, no `require` call and no runtime table construction.

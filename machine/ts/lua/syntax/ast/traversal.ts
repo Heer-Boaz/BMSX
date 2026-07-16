@@ -62,7 +62,7 @@ export function visitLuaExpressionChildren(
 		case LuaSyntaxKind.SizeOfExpression: {
 			const sizeOf = expression as LuaSizeOfExpression;
 			for (const lengthExpression of sizeOf.typeRef.arrayLengths) {
-				visit(lengthExpression);
+				if (lengthExpression) visit(lengthExpression);
 			}
 			return;
 		}

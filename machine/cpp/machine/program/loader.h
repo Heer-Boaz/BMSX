@@ -113,9 +113,15 @@ struct ProgramConstValueReloc {
 	int addend = 0;
 };
 
+struct ProgramRodataConstReloc {
+	int byteOffset = 0;
+	int constIndex = 0;
+};
+
 struct ProgramLink {
 	std::vector<ProgramConstReloc> constRelocs;
 	std::vector<ProgramConstValueReloc> constValueRelocs;
+	std::vector<ProgramRodataConstReloc> rodataConstRelocs;
 	ProgramRuntimeSymbols symbols;
 };
 

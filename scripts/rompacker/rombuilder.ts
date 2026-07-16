@@ -1,7 +1,7 @@
 import { glsl } from "esbuild-plugin-glsl";
 // @ts-ignore
 import type { Stats } from 'fs';
-import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES, CART_VDP_CLASS_PSX, PROGRAM_BOOT_HEADER_VERSION, ROM_GENERATED_CONST_MODULE_PATHS } from '../../machine/ts/rompack/format';
+import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES, CART_VDP_CLASS_PSX, PROGRAM_BOOT_HEADER_VERSION } from '../../machine/ts/rompack/format';
 import { assertRomAssetSymbolsMatchToc, type RomAssetSymbol } from '../../machine/ts/rompack/asset_symbols';
 import type { asset_type, AudioMeta, BoundingBoxPrecalc, CartridgeLayerId, GLTFMesh, HitPolygonsPrecalc, ImgMeta, Polygon, ProgramBootHeader, RectBounds, RomAsset, RomManifest, vec2arr } from '../../machine/ts/rompack/format';
 import { collectRomAssetPayloadRanges } from '../../machine/ts/rompack/asset_layout';
@@ -27,7 +27,7 @@ import {
 	GX_SYSTEM_TEXTURE_X,
 	GX_SYSTEM_TEXTURE_Y,
 } from './gx_texture';
-import { BIOS_TERMINAL_FONT_ASSET_ID, buildBiosTerminalFont } from './bios_terminal_font';
+import { BIOS_TERMINAL_GLYPHS_ASSET_ID, buildBiosTerminalGlyphTable } from './bios_terminal_font';
 import {
 	type GxTextureGroupLayout,
 	type GxTextureLayout,
@@ -1276,9 +1276,9 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 			buffer: buildFixedDirect16Upload(systemTextureGroup.gxTexture!, GX_SYSTEM_TEXTURE_X, GX_SYSTEM_TEXTURE_Y),
 		});
 		romAssets.push({
-			resid: BIOS_TERMINAL_FONT_ASSET_ID,
+			resid: BIOS_TERMINAL_GLYPHS_ASSET_ID,
 			type: 'bin',
-			buffer: buildBiosTerminalFont(resources),
+			buffer: buildBiosTerminalGlyphTable(resources),
 		});
 	}
 	// @ts-ignore
@@ -1505,7 +1505,6 @@ export function appendProgramImage(
 	}
 
 	const chunksByPath = new Map<string, LuaChunk>();
-	const modulePaths: string[] = [];
 	let entryChunk: LuaChunk = null;
 	for (const asset of luaAssets) {
 		const path = toLuaModulePath(asset.source_path);
@@ -1525,7 +1524,6 @@ export function appendProgramImage(
 			throw new Error(`[RomPacker] Failed to decode compiled Lua chunk for "${pathLabel}". First bytes: ${previewHex}. ${error?.message ?? error}`);
 		}
 		chunksByPath.set(path, decoded);
-		modulePaths.push(path);
 		if (asset === entryAsset) {
 			entryChunk = decoded;
 		}
@@ -1540,9 +1538,6 @@ export function appendProgramImage(
 		const chunk = chunksByPath.get(path);
 		modules.push({ path, chunk, source: asset.buffer.toString('utf8') });
 	}
-	// Packer-owned modules are compile-time constants whether their source is kept
-	// as a debug ROM asset (GX layout) or supplied only to this compile (asset symbols).
-	const constModulePaths = modulePaths.filter(path => ROM_GENERATED_CONST_MODULE_PATHS.includes(path));
 	if (options.generatedLuaModules) {
 		for (const generated of options.generatedLuaModules) {
 			if (chunksByPath.has(generated.path)) {
@@ -1554,9 +1549,6 @@ export function appendProgramImage(
 			const chunk = parser.parseChunk();
 			chunksByPath.set(generated.path, chunk);
 			modules.push({ path: generated.path, chunk, source: generated.source });
-			if (!constModulePaths.includes(generated.path)) {
-				constModulePaths.push(generated.path);
-			}
 		}
 	}
 	const externalModules: Array<{ path: string; chunk: LuaChunk; source: string }> = [];
@@ -1580,7 +1572,6 @@ export function appendProgramImage(
 		optLevel,
 		entrySource: entryAsset.buffer.toString('utf8'),
 		externalModules,
-		constModulePaths,
 		programDomain: options.programDomain,
 	});
 	const programImage = encodeCompiledProgramImage(compiled);

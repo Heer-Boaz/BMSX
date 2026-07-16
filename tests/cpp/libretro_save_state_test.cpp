@@ -84,10 +84,6 @@ void testLibretroSaveStateRoundTrip() {
 	const uint32_t savedGp0Word = (bmsx::GX_GPU_GP0_DRAW_MODE << 24u) | 0x123u;
 	memory.writeMappedU32LE(bmsx::IO_GX_GPU_GP0, savedGp0Word);
 	memory.writeMappedU32LE(bmsx::IO_GX_GPU_GP1, bmsx::GX_GPU_GP1_DISPLAY_MODE << 24u);
-	memory.writeMappedU32LE(bmsx::IO_GX_GPU_SYSTEM_VRAM_POSITION, 9u | (7u << 16u));
-	memory.writeMappedU32LE(bmsx::IO_GX_GPU_SYSTEM_VRAM_SIZE, (1u << 16u) | 3u);
-	memory.writeMappedU32LE(bmsx::IO_GX_GPU_SYSTEM_VRAM_CONTROL, bmsx::GX_GPU_SYSTEM_VRAM_PORT_CONTROL_START);
-	memory.writeMappedU32LE(bmsx::IO_GX_GPU_SYSTEM_VRAM_DATA, 0xfc00801fu);
 	std::vector<bmsx::u8> expectedVram(bmsx::GX_GPU_VRAM_BYTE_COUNT);
 	expectedVram[0u] = 0x12u;
 	expectedVram[0x45678u] = 0x34u;
@@ -140,7 +136,6 @@ void testLibretroSaveStateRoundTrip() {
 	memory.writeMappedU32LE(bmsx::GEO_SCRATCH_BASE, 0xaabbccddu);
 	memory.writeMappedU32LE(bmsx::IO_GX_GPU_GP1, bmsx::GX_GPU_GP1_RESET << 24u);
 	memory.writeMappedU32LE(bmsx::IO_GX_GPU_GP0, (bmsx::GX_GPU_GP0_DRAW_MODE << 24u) | 0x456u);
-	memory.writeMappedU32LE(bmsx::IO_GX_GPU_SYSTEM_VRAM_CONTROL, bmsx::GX_GPU_SYSTEM_VRAM_PORT_CONTROL_RESET);
 	runtime.machine.gxGpu.onService(std::numeric_limits<bmsx::i64>::max() >> 1u);
 	std::vector<bmsx::u8> mutatedVram(bmsx::GX_GPU_VRAM_BYTE_COUNT, 0xa5u);
 	runtime.machine.gxGpu.replaceVramSnapshotBytes(mutatedVram.data());
@@ -161,12 +156,6 @@ void testLibretroSaveStateRoundTrip() {
 	const auto& restoredVram = runtime.machine.gxGpu.readVramSnapshotBytes();
 	require(std::equal(expectedVram.begin(), expectedVram.end(), restoredVram.begin()), "libretro loadState should restore GX-owned raw VRAM");
 	require(runtime.machine.gxGpu.readDisplayModeWord() == 0u, "libretro loadState should restore GX-GPU display mode word");
-	memory.writeMappedU32LE(bmsx::IO_GX_GPU_SYSTEM_VRAM_DATA, 0xffff83e0u);
-	const bmsx::GxGpuSystemVramPortState restoredSystemTransfer = runtime.machine.gxGpu.captureState().systemVramPort;
-	require(restoredSystemTransfer.commandCount == 1u
-		&& restoredSystemTransfer.words[0u] == 0xfc00801fu
-		&& restoredSystemTransfer.words[1u] == 0xffff83e0u,
-		"libretro loadState should resume an incomplete GX system-VRAM transfer");
 	require((runtime.machine.gxGpu.readStatus() & bmsx::GX_GPU_STATUS_PAL_MODE) == 0u, "libretro loadState should restore GX-GPU GPUSTAT PAL bit");
 	require(runtime.timing.gpuDisplayModeWord == bmsx::GX_GPU_RESET_DISPLAY_MODE_WORD, "libretro loadState should derive runtime timing from the restored published GPU mode");
 	require(runtime.machine.irqController.hasAssertedMaskableInterruptLine(), "libretro loadState should restore asserted IRQ line state");

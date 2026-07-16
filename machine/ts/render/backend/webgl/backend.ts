@@ -110,9 +110,8 @@ export class WebGLBackend implements GPUBackend {
 
 	private bindTexture2DForUpload(texture: WebGLTexture, desc: TextureParams): void {
 		const gl = this.gl;
-		this.setActiveTexture(TEXTURE_UNIT_UPLOAD);
+		gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_UPLOAD);
 		gl.bindTexture(gl.TEXTURE_2D, texture);
-		this.boundTex2D[TEXTURE_UNIT_UPLOAD] = null;
 		GLR.glSetTexture2DParams(gl, desc);
 	}
 

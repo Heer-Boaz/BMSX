@@ -1,7 +1,6 @@
 import { type color_arr, type TextureSource, type vec2 } from '../../rompack/format';
 import type { GxGpu } from '../../machine/devices/gx/gpu';
 import type { GxGpuCommandBufferView, GxGpuReadbackPortView } from '../../machine/devices/gx/gpu_command_buffer';
-import type { GxGpuSystemVramPortView } from '../../machine/devices/gx/system_vram_port';
 import type { Host2DKind, Host2DRef, Host2DSubmission } from '../shared/submissions';
 import type { GameView } from '../gameview';
 import type { DeviceQuantizeMode } from '../post/device_quantize/mode';
@@ -265,14 +264,10 @@ export type GxGpuPipelineState = {
 	width: number;
 	height: number;
 	commandBuffer: GxGpuCommandBufferView;
-	systemVramPort: GxGpuSystemVramPortView;
 	readbackPort: GxGpuReadbackPortView;
 	statusWord: number;
 	displayModeWord: number;
 	displayStartWord: number;
-	display2StartWord: number;
-	display2SizeWord: number;
-	compositorControlWord: number;
 	vramSnapshotBytes: Uint8Array;
 	vramSnapshotSerial: bigint;
 	targetColorTex?: TextureHandle;
@@ -307,16 +302,12 @@ export interface RenderContext {
 	presentationHistorySourceIndex: 0 | 1;
 	presentationHistoryDestinationIndex: 0 | 1;
 	gxGpuCommandBuffer: GxGpuCommandBufferView;
-	gxGpuSystemVram: GxGpuSystemVramPortView;
 	gxGpuReadbackPort: GxGpuReadbackPortView;
 	gxGpuStatusWord: number;
 	gxGpuDisplayModeWord: number;
 	gxGpuDisplayStartWord: number;
 	gxGpuHorizontalDisplayRangeWord: number;
 	gxGpuVerticalDisplayRangeWord: number;
-	gxGpuDisplay2StartWord: number;
-	gxGpuDisplay2SizeWord: number;
-	gxGpuCompositorControlWord: number;
 	gxGpuVramSnapshotBytes: Uint8Array;
 	gxGpuVramSnapshotSerial: bigint;
 }

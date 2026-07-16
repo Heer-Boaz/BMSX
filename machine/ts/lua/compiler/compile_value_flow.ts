@@ -309,7 +309,9 @@ function evaluateExpressionFact(
 		case LuaSyntaxKind.SizeOfExpression: {
 			let currentState = state;
 			for (const lengthExpression of expression.typeRef.arrayLengths) {
-				currentState = evaluateExpressionFact(lengthExpression, currentState, semantics, closureWrittenSymbols).state;
+				if (lengthExpression) {
+					currentState = evaluateExpressionFact(lengthExpression, currentState, semantics, closureWrittenSymbols).state;
+				}
 			}
 			return { fact: NUMBER_VALUE_FACT, state: currentState };
 		}

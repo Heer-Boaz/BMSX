@@ -595,7 +595,7 @@ DISPATCH_LABEL(RFE) {
 	DISPATCH_CONTINUE();
 }
 
-DISPATCH_LABEL(RESERVED3) {
-	hardHalt();
+DISPATCH_LABEL(LOADKR) {
+	SET_REGISTER_FAST(a, m_program->constPool[static_cast<size_t>(asNumber(REG(b)))]);
 	DISPATCH_CONTINUE();
 }

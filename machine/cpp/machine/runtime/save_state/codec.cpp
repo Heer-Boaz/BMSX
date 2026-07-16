@@ -70,19 +70,6 @@ std::vector<u8> requireBinaryWithLength(const BinValue& value, const char* label
 	return bytes;
 }
 
-template<size_t N>
-std::array<u8, N> requireBinaryArray(const BinValue& value, const char* label) {
-	const BinBinary& bytes = requireBinary(value, label);
-	if (bytes.size() != N) {
-		throw BMSX_RUNTIME_ERROR(std::string(label) + " must contain " + std::to_string(N) + " bytes.");
-	}
-	std::array<u8, N> out{};
-	for (size_t index = 0u; index < N; index += 1u) {
-		out[index] = bytes[index];
-	}
-	return out;
-}
-
 const BinValue& requireField(const BinObject& object, const char* key, const char* label) {
 	auto it = object.find(key);
 	if (it == object.end()) {
@@ -585,49 +572,6 @@ GxGpuCommandBufferState decodeGxGpuCommandBufferState(const BinValue& value, con
 	return state;
 }
 
-BinValue encodeGxGpuSystemVramPortState(const GxGpuSystemVramPortState& state) {
-	BinObject object;
-	object["positionWord"] = static_cast<i64>(state.positionWord);
-	object["sizeWord"] = static_cast<i64>(state.sizeWord);
-	object["controlWord"] = static_cast<i64>(state.controlWord);
-	object["dataWord"] = static_cast<i64>(state.dataWord);
-	object["statusWord"] = static_cast<i64>(state.statusWord);
-	object["commandCount"] = static_cast<i64>(state.commandCount);
-	object["presentCommandCount"] = static_cast<i64>(state.presentCommandCount);
-	object["wordCount"] = static_cast<i64>(state.wordCount);
-	object["activePositionWord"] = static_cast<i64>(state.activePositionWord);
-	object["activeSizeWord"] = static_cast<i64>(state.activeSizeWord);
-	object["activeWordStart"] = static_cast<i64>(state.activeWordStart);
-	object["activeWordsRemaining"] = static_cast<i64>(state.activeWordsRemaining);
-	object["commandPositionWord"] = encodeVector(state.commandPositionWord, encodeScalar<i64, u32>);
-	object["commandSizeWord"] = encodeVector(state.commandSizeWord, encodeScalar<i64, u32>);
-	object["commandWordStart"] = encodeVector(state.commandWordStart, encodeScalar<i64, u32>);
-	object["words"] = encodeVector(state.words, encodeScalar<i64, u32>);
-	return BinValue(std::move(object));
-}
-
-GxGpuSystemVramPortState decodeGxGpuSystemVramPortState(const BinValue& value, const char* label) {
-	const BinObject& object = requireObject(value, label);
-	GxGpuSystemVramPortState state;
-	state.commandCount = requireBoundedU32(requireField(object, "commandCount", label), "machine.gxGpu.systemVramPort.commandCount", 0u, static_cast<u32>(GX_GPU_SYSTEM_VRAM_PORT_COMMAND_CAPACITY));
-	state.wordCount = requireBoundedU32(requireField(object, "wordCount", label), "machine.gxGpu.systemVramPort.wordCount", 0u, static_cast<u32>(GX_GPU_SYSTEM_VRAM_PORT_WORD_CAPACITY));
-	state.positionWord = requireU32(requireField(object, "positionWord", label), "machine.gxGpu.systemVramPort.positionWord");
-	state.sizeWord = requireU32(requireField(object, "sizeWord", label), "machine.gxGpu.systemVramPort.sizeWord");
-	state.controlWord = requireU32(requireField(object, "controlWord", label), "machine.gxGpu.systemVramPort.controlWord");
-	state.dataWord = requireU32(requireField(object, "dataWord", label), "machine.gxGpu.systemVramPort.dataWord");
-	state.statusWord = requireU32(requireField(object, "statusWord", label), "machine.gxGpu.systemVramPort.statusWord");
-	state.presentCommandCount = requireBoundedU32(requireField(object, "presentCommandCount", label), "machine.gxGpu.systemVramPort.presentCommandCount", 0u, static_cast<u32>(state.commandCount));
-	state.activePositionWord = requireU32(requireField(object, "activePositionWord", label), "machine.gxGpu.systemVramPort.activePositionWord");
-	state.activeSizeWord = requireU32(requireField(object, "activeSizeWord", label), "machine.gxGpu.systemVramPort.activeSizeWord");
-	state.activeWordStart = requireBoundedU32(requireField(object, "activeWordStart", label), "machine.gxGpu.systemVramPort.activeWordStart", 0u, static_cast<u32>(state.wordCount));
-	state.activeWordsRemaining = requireBoundedU32(requireField(object, "activeWordsRemaining", label), "machine.gxGpu.systemVramPort.activeWordsRemaining", 0u, static_cast<u32>(GX_GPU_SYSTEM_VRAM_PORT_WORD_CAPACITY));
-	state.commandPositionWord = decodeU32VectorWithLength(requireField(object, "commandPositionWord", label), "machine.gxGpu.systemVramPort.commandPositionWord", state.commandCount);
-	state.commandSizeWord = decodeU32VectorWithLength(requireField(object, "commandSizeWord", label), "machine.gxGpu.systemVramPort.commandSizeWord", state.commandCount);
-	state.commandWordStart = decodeU32VectorWithLength(requireField(object, "commandWordStart", label), "machine.gxGpu.systemVramPort.commandWordStart", state.commandCount);
-	state.words = decodeU32VectorWithLength(requireField(object, "words", label), "machine.gxGpu.systemVramPort.words", state.wordCount);
-	return state;
-}
-
 BinValue encodeGxGpuState(const GxGpuState& state) {
 	BinObject object;
 	BinArray gp0FifoWords;
@@ -674,14 +618,7 @@ BinValue encodeGxGpuState(const GxGpuState& state) {
 	object["presentDisplayStartWord"] = static_cast<i64>(state.presentDisplayStartWord);
 	object["presentHorizontalDisplayRangeWord"] = static_cast<i64>(state.presentHorizontalDisplayRangeWord);
 	object["presentVerticalDisplayRangeWord"] = static_cast<i64>(state.presentVerticalDisplayRangeWord);
-	object["display2StartWord"] = static_cast<i64>(state.display2StartWord);
-	object["display2SizeWord"] = static_cast<i64>(state.display2SizeWord);
-	object["compositorControlWord"] = static_cast<i64>(state.compositorControlWord);
-	object["presentDisplay2StartWord"] = static_cast<i64>(state.presentDisplay2StartWord);
-	object["presentDisplay2SizeWord"] = static_cast<i64>(state.presentDisplay2SizeWord);
-	object["presentCompositorControlWord"] = static_cast<i64>(state.presentCompositorControlWord);
 	object["commandBuffer"] = encodeGxGpuCommandBufferState(state.commandBuffer);
-	object["systemVramPort"] = encodeGxGpuSystemVramPortState(state.systemVramPort);
 	return BinValue(std::move(object));
 }
 
@@ -689,7 +626,6 @@ GxGpuState decodeGxGpuState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
 	GxGpuState state;
 	state.commandBuffer = decodeGxGpuCommandBufferState(requireField(object, "commandBuffer", label), "machine.gxGpu.commandBuffer");
-	state.systemVramPort = decodeGxGpuSystemVramPortState(requireField(object, "systemVramPort", label), "machine.gxGpu.systemVramPort");
 	state.gp0Word = requireU32(requireField(object, "gp0Word", label), "machine.gxGpu.gp0Word");
 	state.gp1Word = requireU32(requireField(object, "gp1Word", label), "machine.gxGpu.gp1Word");
 	state.displayModeWord = requireU32(requireField(object, "displayModeWord", label), "machine.gxGpu.displayModeWord");
@@ -735,12 +671,6 @@ GxGpuState decodeGxGpuState(const BinValue& value, const char* label) {
 	state.presentDisplayStartWord = requireU32(requireField(object, "presentDisplayStartWord", label), "machine.gxGpu.presentDisplayStartWord");
 	state.presentHorizontalDisplayRangeWord = requireU32(requireField(object, "presentHorizontalDisplayRangeWord", label), "machine.gxGpu.presentHorizontalDisplayRangeWord");
 	state.presentVerticalDisplayRangeWord = requireU32(requireField(object, "presentVerticalDisplayRangeWord", label), "machine.gxGpu.presentVerticalDisplayRangeWord");
-	state.display2StartWord = requireU32(requireField(object, "display2StartWord", label), "machine.gxGpu.display2StartWord");
-	state.display2SizeWord = requireU32(requireField(object, "display2SizeWord", label), "machine.gxGpu.display2SizeWord");
-	state.compositorControlWord = requireU32(requireField(object, "compositorControlWord", label), "machine.gxGpu.compositorControlWord");
-	state.presentDisplay2StartWord = requireU32(requireField(object, "presentDisplay2StartWord", label), "machine.gxGpu.presentDisplay2StartWord");
-	state.presentDisplay2SizeWord = requireU32(requireField(object, "presentDisplay2SizeWord", label), "machine.gxGpu.presentDisplay2SizeWord");
-	state.presentCompositorControlWord = requireU32(requireField(object, "presentCompositorControlWord", label), "machine.gxGpu.presentCompositorControlWord");
 	return state;
 }
 
@@ -1301,6 +1231,7 @@ BinValue encodeCpuRuntimeState(const CpuRuntimeState& state) {
 	object["lastInstruction"] = static_cast<i64>(state.lastInstruction);
 	object["instructionBudgetRemaining"] = static_cast<i64>(state.instructionBudgetRemaining);
 	object["haltedUntilIrq"] = state.haltedUntilIrq;
+	object["interruptEventPending"] = state.interruptEventPending;
 	object["memoryWriteBlocked"] = state.memoryWriteBlocked;
 	object["memoryWriteBlockedAddress"] = static_cast<i64>(state.memoryWriteBlockedAddress);
 	object["statusWord"] = static_cast<i64>(state.statusWord);
@@ -1347,6 +1278,7 @@ CpuRuntimeState decodeCpuRuntimeState(const BinValue& value, const char* label) 
 	state.lastInstruction = requireU32(requireField(object, "lastInstruction", label), "cpuState.lastInstruction");
 	state.instructionBudgetRemaining = requireI32(requireField(object, "instructionBudgetRemaining", label), "cpuState.instructionBudgetRemaining");
 	state.haltedUntilIrq = requireBool(requireField(object, "haltedUntilIrq", label), "cpuState.haltedUntilIrq");
+	state.interruptEventPending = requireBool(requireField(object, "interruptEventPending", label), "cpuState.interruptEventPending");
 	state.memoryWriteBlocked = requireBool(requireField(object, "memoryWriteBlocked", label), "cpuState.memoryWriteBlocked");
 	state.memoryWriteBlockedAddress = requireU32(requireField(object, "memoryWriteBlockedAddress", label), "cpuState.memoryWriteBlockedAddress");
 	state.statusWord = requireU32(requireField(object, "statusWord", label), "cpuState.statusWord");

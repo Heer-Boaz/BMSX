@@ -11,7 +11,6 @@
 #include "shared/submissions.h"
 #include "common/registry.h"
 #include "machine/devices/gx/gpu_command_buffer.h"
-#include "machine/devices/gx/system_vram_port.h"
 #include "render/post/device_quantize/mode.h"
 #include "common/subscription.h"
 #include <array>
@@ -91,16 +90,12 @@ public:
 	// Video snapshot fields consumed by the renderer
 	// ─────────────────────────────────────────────────────────────────────────
 	const GxGpuCommandBuffer* gxGpuCommandBuffer = nullptr;
-	const GxGpuSystemVramPort* gxGpuSystemVram = nullptr;
 	GxGpuReadbackPort* gxGpuReadbackPort = nullptr;
 	u32 gxGpuStatusWord = 0u;
 	u32 gxGpuDisplayModeWord = 0u;
 	u32 gxGpuDisplayStartWord = 0u;
 	u32 gxGpuHorizontalDisplayRangeWord = 0u;
 	u32 gxGpuVerticalDisplayRangeWord = 0u;
-	u32 gxGpuDisplay2StartWord = 0u;
-	u32 gxGpuDisplay2SizeWord = 0u;
-	u32 gxGpuCompositorControlWord = 0u;
 	const std::array<u8, GX_GPU_VRAM_BYTE_COUNT>* gxGpuVramSnapshotBytes = nullptr;
 	u64 gxGpuVramSnapshotSerial = 0u;
 

@@ -1,7 +1,6 @@
 import { convertToError } from '../../lua/value';
 import { clearOverlayFrame } from '../../render/host_overlay/overlay_queue';
 import { compileLuaChunkToProgram, encodeCompiledProgramImage } from '../../lua/compiler';
-import { ROM_GENERATED_CONST_MODULE_PATHS } from '../../rompack/format';
 import { inflateExecutableProgramImage } from '../../machine/program/linker';
 import { callClosureIntoSuspended } from './closure_executor';
 import type { Closure } from '../../machine/cpu/cpu';
@@ -97,7 +96,6 @@ export function hotResumeProgramEntry(runtime: Runtime, params: { path: string; 
 		baseMetadata,
 		optLevel: machineManager.sourceState.realtimeCompileOptLevel,
 		entrySource: source,
-		constModulePaths: ROM_GENERATED_CONST_MODULE_PATHS,
 		programDomain: sourceMatch.registry === machineManager.sourceState.systemLuaSources ? 'system' : 'cart',
 	});
 	const programImage = encodeCompiledProgramImage(compiled);

@@ -30,29 +30,16 @@ function countTerminalPixels(png, top, bottom) {
 const game = frame(120);
 const monitor = frame(126);
 const help = frame(160);
-const resumed = frame(198);
-for (const output of [game, monitor, help, resumed]) {
-	assert.equal(output.width, 320);
-	assert.equal(output.height, 240);
+assert.equal(game.width, 320);
+assert.equal(game.height, 240);
+for (const output of [monitor, help]) {
+	assert.equal(output.width, 256);
+	assert.equal(output.height, 192);
 }
-
-const retainedGameStart = 48 * game.width * 4;
-assert.equal(
-	Buffer.compare(game.data.subarray(retainedGameStart), monitor.data.subarray(retainedGameStart)),
-	0,
-	'BIOS monitor changed retained GX scanout below its character cells',
-);
-assert.equal(
-	Buffer.compare(game.data.subarray(retainedGameStart), help.data.subarray(retainedGameStart)),
-	0,
-	'BIOS HELP command changed retained GX scanout below its character cells',
-);
 
 const entryTextPixels = countTerminalPixels(monitor, 0, 36);
 const helpTextPixels = countTerminalPixels(help, 36, 48);
-const resumedTextPixels = countTerminalPixels(resumed, 0, 48);
 assert(entryTextPixels > 80, `BIOS monitor entry text is missing: ${entryTextPixels} pixels`);
 assert(helpTextPixels > 30, `BIOS HELP output is missing: ${helpTextPixels} pixels`);
-assert.equal(resumedTextPixels, 0, 'BIOS display circuit 2 remained enabled after CONT');
 
-console.log(JSON.stringify({ entryTextPixels, helpTextPixels, resumedTextPixels }, null, 2));
+console.log(JSON.stringify({ entryTextPixels, helpTextPixels }, null, 2));

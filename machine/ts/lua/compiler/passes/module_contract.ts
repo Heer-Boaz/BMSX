@@ -89,7 +89,7 @@ const assertExternalConstModuleDeclaresNoStaticStorage = (
 	for (let index = 0; index < declarations.length; index += 1) {
 		const declaration = declarations[index];
 		if (declaration.kind !== 'struct') {
-			throw new Error(`[Compiler] Const module '${modulePath}' declares .${declaration.kind} storage but is not compiled as a source module.`);
+			throw new Error(`Const module '${modulePath}' declares .${declaration.kind} storage but is not compiled as a source module.`);
 		}
 	}
 };
@@ -180,7 +180,7 @@ const buildModuleCompileInfo = (
 	const exportRoot = shapedExportRoot ?? createModuleExportNode();
 	if (constModule && !staticStorage) {
 		if (staticFunctionExportByPathKey.size !== 0) {
-			throw new Error(`[Compiler] Const module '${modulePath}' exports function call targets but is not compiled as a source module.`);
+			throw new Error(`Const module '${modulePath}' exports function call targets but is not compiled as a source module.`);
 		}
 		assertExternalConstModuleDeclaresNoStaticStorage(modulePath, staticStorageDeclarations);
 	}
@@ -207,7 +207,6 @@ const buildModuleCompileInfo = (
 export const buildModuleCompileContext = (
 	modules: ReadonlyArray<ProgramModule>,
 	externalModules: ReadonlyArray<ProgramModule>,
-	constModulePaths: ReadonlySet<string>,
 	frontend: LuaSemanticFrontend,
 ): ModuleCompileContext => {
 	const modulesByPath = new Map<string, ModuleCompileInfo>();
@@ -224,7 +223,7 @@ export const buildModuleCompileContext = (
 	for (let index = 0; index < modules.length; index += 1) {
 		const module = modules[index];
 		moduleDependenciesByPath.set(module.path, collectModuleDependencies(module.chunk, modulePaths));
-		const constModule = constModulePaths.has(module.path);
+		const constModule = module.chunk.constModule;
 		const info = buildModuleCompileInfo(module.path, module.chunk, constModule, constModule, constModule, frontend.getFile(module.path));
 		if (info) {
 			modulesByPath.set(module.path, info);
@@ -237,7 +236,7 @@ export const buildModuleCompileContext = (
 		if (modulesByPath.has(module.path)) {
 			continue;
 		}
-		const info = buildModuleCompileInfo(module.path, module.chunk, true, constModulePaths.has(module.path), false, frontend.getFile(module.path));
+		const info = buildModuleCompileInfo(module.path, module.chunk, true, module.chunk.constModule, false, frontend.getFile(module.path));
 		if (info) {
 			modulesByPath.set(module.path, info);
 			continue;

@@ -84,9 +84,15 @@ export type ProgramConstValueReloc = {
 	addend: number;
 };
 
+export type ProgramRodataConstReloc = {
+	byteOffset: number;
+	constIndex: number;
+};
+
 export type ProgramLink = {
 	constRelocs: ProgramConstReloc[];
 	constValueRelocs: ProgramConstValueReloc[];
+	rodataConstRelocs: ProgramRodataConstReloc[];
 	symbols: ProgramRuntimeSymbols;
 };
 
@@ -300,9 +306,20 @@ function decodeProgramLink(value: unknown): ProgramLink {
 			addend: requireObjectKey(entry, 'addend', entryLabel, `${entryLabel}.addend`) as number,
 		};
 	}
+	const rodataConstRelocValues = requireObjectKey(link, 'rodataConstRelocs', 'ProgramImage.link') as [];
+	const rodataConstRelocs: ProgramRodataConstReloc[] = new Array(rodataConstRelocValues.length);
+	for (let index = 0; index < rodataConstRelocValues.length; index += 1) {
+		const entryLabel = `ProgramImage.link.rodataConstRelocs[${index}]`;
+		const entry = requireObject(rodataConstRelocValues[index], entryLabel);
+		rodataConstRelocs[index] = {
+			byteOffset: requireObjectKey(entry, 'byteOffset', entryLabel, `${entryLabel}.byteOffset`) as number,
+			constIndex: requireObjectKey(entry, 'constIndex', entryLabel, `${entryLabel}.constIndex`) as number,
+		};
+	}
 	return {
 		constRelocs,
 		constValueRelocs,
+		rodataConstRelocs,
 		symbols: decodeProgramRuntimeSymbols(requireObjectKey(link, 'symbols', 'ProgramImage.link')),
 	};
 }

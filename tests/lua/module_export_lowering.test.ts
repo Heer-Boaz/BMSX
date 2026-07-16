@@ -58,11 +58,12 @@ function compileWithModule(
 
 function compileWithConstModule(entrySource: string, modulePath: string, moduleSource: string): { compiled: CompiledProgram; disasm: string } {
 	const entryChunk = parseSource(entrySource, 'entry.lua');
-	const moduleChunk = parseSource(moduleSource, `${modulePath}.lua`);
+	const declaredModuleSource = `module<const>\n${moduleSource}`;
+	const moduleChunk = parseSource(declaredModuleSource, `${modulePath}.lua`);
 	const compiled = compileLuaChunkToProgram(
 		entryChunk,
-		[{ path: modulePath, chunk: moduleChunk, source: moduleSource }],
-		{ entrySource, constModulePaths: [modulePath] },
+		[{ path: modulePath, chunk: moduleChunk, source: declaredModuleSource }],
+		{ entrySource },
 	);
 	return {
 		compiled,

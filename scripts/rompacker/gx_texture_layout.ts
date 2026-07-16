@@ -2,12 +2,6 @@ import {
 	GX_GPU_VRAM_HEIGHT,
 	GX_GPU_VRAM_WIDTH,
 } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
-import {
-	GX_GPU_SYSTEM_VRAM_HEIGHT,
-	GX_GPU_SYSTEM_VRAM_WIDTH,
-	GX_GPU_SYSTEM_VRAM_X,
-	GX_GPU_SYSTEM_VRAM_Y,
-} from '../../machine/ts/machine/devices/gx/system_vram_port';
 import { GX_PALETTE4_CLUT_WORDS } from './gx_texture';
 import { GX_CART_TEXTURE_GROUP_ID_LIMIT } from './texture_atlas_contract';
 
@@ -36,13 +30,6 @@ export type GxTextureLayout = {
 	slots: Record<string, GxTextureSlot>;
 	groups: Record<string, GxTextureGroupLayout>;
 	working_sets: Record<string, string[]>;
-};
-
-const systemVramRect: GxVramRect = {
-	x: GX_GPU_SYSTEM_VRAM_X,
-	y: GX_GPU_SYSTEM_VRAM_Y,
-	width: GX_GPU_SYSTEM_VRAM_WIDTH,
-	height: GX_GPU_SYSTEM_VRAM_HEIGHT,
 };
 
 function rectsOverlap(left: GxVramRect, right: GxVramRect): boolean {
@@ -86,9 +73,6 @@ export function validateGxTextureLayout(layout: GxTextureLayout): void {
 		for (let rectIndex = 0; rectIndex < rects.length; rectIndex += 1) {
 			const rect = rects[rectIndex];
 			assertVramRect(`slots.${slotName}.${rectIndex === 0 ? 'texture' : 'clut'}`, rect);
-			if (rectsOverlap(rect, systemVramRect)) {
-				throw new Error(`[RomPacker] GX slot '${slotName}' overlaps the system VRAM window.`);
-			}
 			for (const [reservedName, reserved] of reservedEntries) {
 				if (rectsOverlap(rect, reserved)) {
 					throw new Error(`[RomPacker] GX slot '${slotName}' overlaps reserved region '${reservedName}'.`);
@@ -163,7 +147,7 @@ export function buildGxTextureLayoutModuleSource(layout: GxTextureLayout): strin
 			exports.push(`${name}_clut`);
 		}
 	}
-	const lines = declarations.slice();
+	const lines = ['module<const>', '', ...declarations];
 	lines.push('', 'return {');
 	for (let index = 0; index < exports.length; index += 1) {
 		lines.push(`\t${exports[index]} = ${exports[index]},`);

@@ -1,8 +1,7 @@
-import { createCanvas } from 'canvas';
-
 import type { ImageResource, Resource } from './rompacker.rompack';
+import { GX_SYSTEM_TEXTURE_X, GX_SYSTEM_TEXTURE_Y } from './gx_texture';
 
-export const BIOS_TERMINAL_FONT_ASSET_ID = 'bios_terminal_font';
+export const BIOS_TERMINAL_GLYPHS_ASSET_ID = 'bios_terminal_glyphs';
 
 const GLYPH_WIDTH = 4;
 const GLYPH_HEIGHT = 6;
@@ -11,7 +10,7 @@ const FIRST_PRINTABLE_ASCII = 0x20;
 const LAST_PRINTABLE_ASCII = 0x7e;
 const GLYPH_RESOURCE_PATTERN = /^tiny_3b_font_code_0x([0-9a-f]{2})$/;
 
-export function buildBiosTerminalFont(resources: readonly Resource[]): Buffer {
+export function buildBiosTerminalGlyphTable(resources: readonly Resource[]): Buffer {
 	const images: Array<ImageResource | undefined> = new Array(GLYPH_WORD_COUNT);
 	for (let index = 0; index < resources.length; index += 1) {
 		const resource = resources[index];
@@ -30,8 +29,6 @@ export function buildBiosTerminalFont(resources: readonly Resource[]): Buffer {
 	}
 
 	const output = Buffer.alloc(GLYPH_WORD_COUNT * 4);
-	const canvas = createCanvas(GLYPH_WIDTH, GLYPH_HEIGHT);
-	const context = canvas.getContext('2d');
 	for (let codepoint = FIRST_PRINTABLE_ASCII; codepoint <= LAST_PRINTABLE_ASCII; codepoint += 1) {
 		const resource = images[codepoint];
 		if (!resource || !resource.img) {
@@ -40,16 +37,7 @@ export function buildBiosTerminalFont(resources: readonly Resource[]): Buffer {
 		if (resource.img.width !== GLYPH_WIDTH || resource.img.height !== GLYPH_HEIGHT) {
 			throw new Error(`[RomPacker] BIOS terminal glyph '${resource.name}' must be ${GLYPH_WIDTH}x${GLYPH_HEIGHT}.`);
 		}
-		context.clearRect(0, 0, GLYPH_WIDTH, GLYPH_HEIGHT);
-		context.drawImage(resource.img, 0, 0);
-		const rgba = context.getImageData(0, 0, GLYPH_WIDTH, GLYPH_HEIGHT).data;
-		let word = 0;
-		for (let pixel = 0; pixel < GLYPH_WIDTH * GLYPH_HEIGHT; pixel += 1) {
-			if (rgba[(pixel << 2) + 3] !== 0) {
-				word |= 1 << pixel;
-			}
-		}
-		output.writeUInt32LE(word >>> 0, codepoint << 2);
+		output.writeUInt32LE((GX_SYSTEM_TEXTURE_X + resource.textureU!) | ((GX_SYSTEM_TEXTURE_Y + resource.textureV!) << 16), codepoint << 2);
 	}
 	return output;
 }

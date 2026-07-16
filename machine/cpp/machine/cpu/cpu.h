@@ -766,6 +766,7 @@ struct CpuRuntimeState {
 	uint32_t lastInstruction = 0;
 	int instructionBudgetRemaining = 0;
 	bool haltedUntilIrq = false;
+	bool interruptEventPending = false;
 	bool memoryWriteBlocked = false;
 	uint32_t memoryWriteBlockedAddress = 0;
 	u32 statusWord = CPU_STATUS_CART_ENTRY;
@@ -1085,6 +1086,7 @@ private:
 	std::vector<std::unique_ptr<CallFrame>> m_frames;
 	std::vector<OpenUpvalueSlot> m_openUpvalues;
 	bool m_haltedUntilIrq = false;
+	bool m_interruptEventPending = false;
 	bool m_memoryWriteBlocked = false;
 	uint32_t m_memoryWriteBlockedAddress = 0;
 	int m_currentInstructionPc = 0;

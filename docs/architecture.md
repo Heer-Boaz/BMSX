@@ -396,6 +396,14 @@ load image; `.bss` is zeroed RAM storage. BLua declarations create typed storage
 symbols and startup code copies `.data` and zeros `.bss` with ordinary CPU
 memory operations. Runtime and rompacker do not parse sections to initialize
 cart data on behalf of the game.
+Initialized `.rodata` and `.data` arrays may infer their outer count from one
+exact initializer, and initialized records use the declared struct layout
+directly. Immutable `string` fields are `.rodata` const-pool references: the
+object image records a relocation for each reference, the linker remaps those
+words, and `LOADKR` loads the referenced interned string without constructing a
+table or string at the field access. String fields are not writable words and
+are not valid in `.data` or `.bss`. A static array's `#` is its resolved type
+dimension, not runtime length metadata.
 Cart library numeric latches that model machine words over time use section
 storage too: AEM keeps request/source/slot words and per-slot active
 source/priority arrays in `.bss`, while Lua tables remain only for actual
@@ -413,6 +421,10 @@ gameplay objects. Static calls resolve through `export_proto` symbols; non-call
 value reads of dynamic module exports use ordinary module-slot relocs so the
 dynamic lane keeps Lua table/function semantics where gameplay deliberately
 chooses that lane.
+Every const module declares `module<const>` in its own BLua source. Generated
+packer modules emit the same declaration at their producer. Packed builds and
+debug source recompilation therefore consume one source-owned contract; the
+rompacker, TOC and host do not maintain a second module-name or attribute list.
 
 ## Memory, CPU, and scheduler
 
@@ -432,7 +444,14 @@ chooses that lane.
 - Ordering compare opcodes consume interned-string lanes when both sides are
   strings; otherwise they consume the numeric register/RK lanes directly. The
   CPU dispatch path does not revalidate producer-owned operand kinds.
-- A CPU parked by `HALT` remains parked until an accepted interrupt. Host/native
+- `HALT` is an interrupt-event wait, not an unconditional sleep for a future
+  edge. The CPU has one event latch. An asynchronous interrupt accepted while
+  code is active sets it; `HALT` consumes a set latch without parking. If no
+  event is latched, the CPU parks until an accepted interrupt. An interrupt that
+  wakes an already parked CPU consumes its event in the wake transition. This
+  makes sequence-latch IRQ waits lossless across the condition-to-`HALT`
+  instruction window without polling or host scheduling.
+- Host/native
   closure entry does not wake it and does not throw. If an entered external
   closure executes `HALT` and no interrupt is scheduled, the host call stops with
   the CPU still parked and the stopped frame intact instead of converting that
@@ -765,7 +784,9 @@ firmware starts with `IEc=1, KUc=0`; a cart starts with `IEc=1, KUc=1`.
 Asynchronous entry happens before the next guest instruction. It writes that
 next byte-PC to `EPC`, so an accepted interrupt after `HALT` resumes after the
 `HALT`. NMI has priority over a maskable IRQ at the same boundary. Both clear
-the CPU's halted-until-interrupt latch. Maskable IRQ entry writes exception code
+the CPU's halted-until-interrupt latch. Entry while active sets the one-bit
+interrupt-event latch; entry that wakes `HALT` leaves it clear because that
+event has already been consumed. Maskable IRQ entry writes exception code
 zero plus `CAUSE.IRQ=bit 10`; manual system entry writes exception code zero
 plus `CAUSE.NMI=bit 16`. The device-source bits remain in `IRQ_FLAGS`. A manual
 NMI edge is accepted only from user mode; supervisor execution inhibits and
@@ -819,50 +840,52 @@ and waits on the BIOS IRQ/VBlank path. The cart receives no input because its
 frames are not executing. The host continues to sample the physical devices
 into ICU words; it does not edit a terminal buffer or dispatch commands.
 
-The monitor uses a second GX display circuit over the same physical VRAM as the
-primary circuit. GX VRAM remains one 1024x512 A1RGB555 word array: 524,288 words,
-exactly 1 MiB. There is no terminal VRAM bank, host framebuffer, character-plane
-SRAM or terminal-owned backend texture. Display circuit 2 has raw start, size and
-compositor-control registers. It scans one VRAM word per output pixel at 1:1
-scale; bit 15 selects coverage and uncovered pixels preserve the primary output.
-Composition happens after progressive scanout or interlaced field weave and
-before device quantization, presentation history and CRT processing.
+The BIOS terminal uses the ordinary GX GPU and the ordinary primary scanout.
+GX VRAM remains one 1024x512 A1RGB555 word array: 524,288 words, exactly 1 MiB.
+There is no second display circuit, terminal VRAM bank, character-plane SRAM,
+terminal write port, host framebuffer or terminal-owned backend texture. Boot
+and monitor firmware program the native 256x192 display mode. Firmware uploads
+the packed system texture through the standard GP0 CPU-to-VRAM packet, then
+draws the terminal with ordinary fill, VRAM-copy and textured-rectangle GP0
+commands. Software, WebGL2, WebGPU and GLES2 therefore execute the same command
+stream used by carts.
 
-The physical rectangle x=512..767, y=0..255 is reserved as the system window
-inside that same VRAM. The system texture occupies y=0..63 and the BIOS terminal
-framebuffer occupies y=64..255. The ROM producer caps the system texture at
-256x64, while cart texture-layout validation excludes the complete 256x256
-window from cart slots and CLUTs. Display circuit 2 itself is not tied to that
-rectangle; its start register addresses the ordinary 1024x512 VRAM datapath.
+The packed system texture remains at x=512..767, y=0..63 and cart manifests
+reserve that actual 256x64 rectangle. The terminal has no permanent texture or
+VRAM reservation: while active, its 256x192 framebuffer is the primary scanout
+at x=0, y=0. Entering the monitor deliberately replaces the cart image rather
+than retaining or reconstructing it.
 
-Firmware writes the reserved window through a dedicated GX system-write port so
-an NMI does not capture, clear or reconstruct a partially assembled cart GP0
-packet. The port exposes local eight-bit X/Y destination lines, eight-bit width
-and height count fields, control/status latches and a 32-bit data register that
-packs two A1RGB555 words. Destination coordinates wrap within the 256x256 system
-window. Its command descriptors and payload lane are fixed-capacity retained
-storage; an incomplete payload is not publishable, completed transfers seal at
-VBlank, and the renderer retires only the sealed prefix. Software, WebGL2,
-WebGPU and GLES2 consume that same ordered transfer stream into their existing
-raw-VRAM owner without per-frame allocation.
+The BIOS keeps a fixed 128-line cell scrollback, dirty ranges, line editor,
+history and GP0 command list in ordinary `.bss`. A packed ROM table maps each
+4x6 tiny-font codepoint to its physical system-texture coordinates. The initial
+frame is a full clear followed by textured glyph rectangles; later edits clear
+and redraw only dirty cell spans, and ordinary VRAM-to-VRAM copy scrolls the
+visible framebuffer. DMA consumes the retained command words before firmware
+may rebuild them, and the final GP0 IRQ fences GPU completion. No render-time
+Lua tables, strings or pixel buffers are allocated.
 
-The BIOS keeps terminal cells and dirty ranges in its ordinary `.bss`, expands
-the packed 4x6 tiny-font ROM resource into dirty A1RGB555 rectangles, and enables
-display circuit 2 only after the initial framebuffer upload is complete. `CONT`
-disables the compositor before `RFE`, immediately revealing the retained game
-scanout. Outstanding cart GPU/DMA work remains in its existing FIFO and
-scheduler state; firmware neither saves/restores GP0 context nor reads pixels
-back through the host. Display-2 registers, write-port latches, retained command
-prefixes and payload words participate in mirrored save-state replay.
+The firmware line editor supports insertion, deletion, cursor motion, a fixed
+history ring and command-name completion. Long producers feed one fixed row at
+a time into an automatic pager; page/line advance and scrollback never retain a
+second copy of command output. Command metadata is one typed `.rodata` array of
+records, so names, usage and descriptions have no parallel blob, offset or
+length tables.
+
+Monitor entry is a one-way supervisor takeover. Firmware masks cart IRQs,
+terminates a live DMA channel through its live count/control registers,
+acknowledges pending cart IRQ sources, resets the GP0 parser, and programs the
+terminal display. It does not capture or restore GPU, DMA, VRAM or cart call
+state. Only machine reset leaves the monitor; transparent display above a
+frozen cart frame and resumable monitor entry remain a separate parked hardware
+problem rather than a host workaround.
 
 The machine-visible monitor command set starts with hardware operations such as
-`HELP`, `FAULT`, `REGS`, `MEM`, `CONT`, and `REBOOT`. It does not expose the
-workspace, host filesystem, JavaScript stack, real-time compiler options, host
-process shutdown, IDE symbol browser, or other current workbench services.
-`CONT` is valid for manual entry and explicitly resumable exception causes;
-unrecoverable guest faults may expose only inspection and reset/reboot.
-Its layout and colors are firmware policy and intentionally do not emulate the
-removed host terminal's appearance.
+`HELP`, `FAULT`, `REGS`, `MEM`, `CLS`, and `REBOOT`. It does not expose the workspace,
+host filesystem, JavaScript stack, real-time compiler options, host process
+shutdown, IDE symbol browser, or other current workbench services. Its layout
+and colors are firmware policy and intentionally do not emulate the removed
+host terminal's appearance.
 
 ### DMA
 
@@ -1252,8 +1275,8 @@ heap budget outside the machine.
 The compact 4x6 `tiny_3b_font_*` glyph set is the BIOS-owned
 `font.get('default')` descriptor for boot and firmware text. The ROM producer
 also packs those source glyphs into a 256-word terminal-font ROM resource. BIOS
-code reads those packed words directly and expands dirty glyph rows through the
-GX system-VRAM write port; it does not inspect an atlas layout. Tiny is the only
+code reads those packed words as physical system-texture coordinates and emits
+ordinary GP0 textured rectangles; it does not inspect an atlas layout. Tiny is the only
 standard font in the BIOS resource package. The MSX 6-pixel font is an
 aesthetic cart/host asset, not a machine or BIOS primitive: carts that want that
 style ship the glyph resources, reserve their own VRAM slot and define the font

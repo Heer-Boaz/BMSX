@@ -10,7 +10,6 @@ constexpr u32 GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD = 0x00044c23u;
 constexpr u32 GX_GPU_DISPLAY_MODE_VERTICAL_RESOLUTION_BIT = 0x04u;
 constexpr u32 GX_GPU_DISPLAY_MODE_RGB24_BIT = 0x10u;
 constexpr u32 GX_GPU_DISPLAY_MODE_VERTICAL_INTERLACE_BIT = 0x20u;
-constexpr u32 GX_GPU_COMPOSITOR_DISPLAY2_ENABLE = 0x01u;
 constexpr u32 GX_GPU_SCANOUT_INTERPRETATION_MASK = GX_GPU_DISPLAY_MODE_VERTICAL_RESOLUTION_BIT | GX_GPU_DISPLAY_MODE_RGB24_BIT | GX_GPU_DISPLAY_MODE_VERTICAL_INTERLACE_BIT;
 
 inline u32 gxGpuDisplayStartX(u32 word) {
@@ -19,15 +18,6 @@ inline u32 gxGpuDisplayStartX(u32 word) {
 
 inline u32 gxGpuDisplayStartY(u32 word) {
 	return (word >> 10u) & 0x1ffu;
-}
-
-
-inline u32 gxGpuDisplay2Width(u32 sizeWord) {
-	return (((sizeWord & 0xffffu) - 1u) & 0x3ffu) + 1u;
-}
-
-inline u32 gxGpuDisplay2Height(u32 sizeWord) {
-	return ((((sizeWord >> 16u) & 0xffffu) - 1u) & 0x1ffu) + 1u;
 }
 
 inline u32 gxGpuScanoutField(u32 statusWord) {

@@ -446,6 +446,7 @@ const computeBlockConstantIn = (
 						break;
 					}
 					case OpCode.GETSYS:
+					case OpCode.LOADKR:
 					case OpCode.GETGL:
 					case OpCode.GETT:
 					case OpCode.GETI:
@@ -617,8 +618,9 @@ const foldConstants = (set: InstructionSet, context: OptimizationContext): Instr
 					break;
 				}
 				case OpCode.GETSYS:
-				case OpCode.GETGL:
-				case OpCode.GETT:
+			case OpCode.GETGL:
+			case OpCode.LOADKR:
+			case OpCode.GETT:
 				case OpCode.GETI:
 				case OpCode.GETFIELD:
 				case OpCode.NEWT:
@@ -965,6 +967,7 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 					break;
 				}
 				case OpCode.GETSYS:
+				case OpCode.LOADKR:
 				case OpCode.GETGL:
 				case OpCode.GETT:
 				case OpCode.GETI:
@@ -1064,6 +1067,9 @@ const eliminateDeadStores = (set: InstructionSet, context: OptimizationContext):
 			case OpCode.JMPIFNOT:
 					pushRegister(uses, instruction.a);
 					break;
+			case OpCode.LOADKR:
+				pushRegister(uses, instruction.b);
+				break;
 			case OpCode.LOAD_MEM_D:
 			case OpCode.STORE_MEM_D:
 			case OpCode.STORE_MEM_WORDS_D:
@@ -1173,6 +1179,7 @@ const eliminateDeadStores = (set: InstructionSet, context: OptimizationContext):
 			case OpCode.KM1:
 			case OpCode.KSMI:
 			case OpCode.LOADK:
+			case OpCode.LOADKR:
 			case OpCode.GETSYS:
 			case OpCode.GETGL:
 			case OpCode.GETI:
@@ -1598,6 +1605,7 @@ const applyClosureTransferForInlining = (
 			return;
 		}
 		case OpCode.LOADK:
+		case OpCode.LOADKR:
 		case OpCode.GETSYS:
 		case OpCode.GETGL:
 		case OpCode.GETI:
@@ -1776,6 +1784,7 @@ const buildInlineExpansion = (
 		const mapped = cloneInstruction(instruction);
 		switch (mapped.op) {
 			case OpCode.MOV:
+			case OpCode.LOADKR:
 			case OpCode.UNM:
 			case OpCode.NOT:
 			case OpCode.LEN:

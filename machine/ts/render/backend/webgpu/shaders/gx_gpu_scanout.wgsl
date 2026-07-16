@@ -3,15 +3,11 @@ struct ScanoutUniforms {
 	display_mode_word: u32,
 	field_height: u32,
 	display_disable_word: u32,
-	display2_start_word: u32,
-	compositor_control_word: u32,
-	display2_size_word: u32,
-	padding1: u32,
 };
 
 @group(0) @binding(0) var<uniform> u: ScanoutUniforms;
-@group(0) @binding(1) var u_primary: texture_2d<f32>;
-@group(0) @binding(2) var u_vram: texture_2d<f32>;
+@group(0) @binding(1) var u_vram: texture_2d<f32>;
+@group(0) @binding(2) var u_sampler: sampler;
 
 @vertex
 fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> @builtin(position) vec4<f32> {
@@ -25,22 +21,6 @@ fn displayStartX() -> u32 {
 
 fn displayStartY() -> u32 {
 	return (u.display_start_word >> 10u) & 0x1ffu;
-}
-
-fn display2StartX() -> u32 {
-	return u.display2_start_word & 0x3ffu;
-}
-
-fn display2StartY() -> u32 {
-	return (u.display2_start_word >> 10u) & 0x1ffu;
-}
-
-fn display2Width() -> u32 {
-	return (((u.display2_size_word & 0xffffu) - 1u) & 0x3ffu) + 1u;
-}
-
-fn display2Height() -> u32 {
-	return ((((u.display2_size_word >> 16u) & 0xffffu) - 1u) & 0x1ffu) + 1u;
 }
 
 fn rawWordAtLogical(x: u32, y: u32) -> u32 {
@@ -69,7 +49,10 @@ fn rgb888AtSourcePixel(sourceX: u32, sourceY: u32) -> vec3<f32> {
 	return vec3<f32>(high0, low1, high1);
 }
 
-fn primaryAtSourcePixel(sourceX: u32, sourceY: u32) -> vec4<f32> {
+@fragment
+fn fs_main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
+	let sourceX = u32(position.x);
+	let sourceY = displayStartY() + u32(position.y);
 	var rgb8: vec3<f32>;
 	if ((u.display_mode_word & 0x10u) != 0u) {
 		rgb8 = rgb888AtSourcePixel(sourceX, sourceY);
@@ -77,28 +60,6 @@ fn primaryAtSourcePixel(sourceX: u32, sourceY: u32) -> vec4<f32> {
 		rgb8 = rgb555ToRgb8(rawWordAtLogical(displayStartX() + sourceX, sourceY));
 	}
 	return vec4<f32>(rgb8 / 255.0, 1.0);
-}
-
-fn composeDisplay2(primary: vec4<f32>, outputX: u32, outputY: u32) -> vec4<f32> {
-	if ((u.compositor_control_word & 1u) == 0u || outputX >= display2Width() || outputY >= display2Height()) {
-		return primary;
-	}
-	let word = rawWordAtLogical(display2StartX() + outputX, display2StartY() + outputY);
-	if ((word & 0x8000u) == 0u) {
-		return primary;
-	}
-	return vec4<f32>(rgb555ToRgb8(word) / 255.0, 1.0);
-}
-
-@fragment
-fn fs_main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
-	let outputX = u32(position.x);
-	let outputY = u32(position.y);
-	var primary = vec4<f32>(0.0, 0.0, 0.0, 1.0);
-	if (u.display_disable_word == 0u) {
-		primary = primaryAtSourcePixel(outputX, displayStartY() + outputY);
-	}
-	return composeDisplay2(primary, outputX, outputY);
 }
 
 @fragment
@@ -110,16 +71,21 @@ fn fs_interlaced_field(@builtin(position) position: vec4<f32>) -> @location(0) v
 	let field = select(0u, 1u, storedY >= u.field_height);
 	let fieldLine = storedY - field * u.field_height;
 	let sourceLineStep = 1u + ((u.display_mode_word >> 2u) & 1u);
+	let sourceX = u32(position.x);
 	let sourceY = displayStartY() + field * (sourceLineStep - 1u) + fieldLine * sourceLineStep;
-	return primaryAtSourcePixel(u32(position.x), sourceY);
+	var rgb8: vec3<f32>;
+	if ((u.display_mode_word & 0x10u) != 0u) {
+		rgb8 = rgb888AtSourcePixel(sourceX, sourceY);
+	} else {
+		rgb8 = rgb555ToRgb8(rawWordAtLogical(displayStartX() + sourceX, sourceY));
+	}
+	return vec4<f32>(rgb8 / 255.0, 1.0);
 }
 
 @fragment
 fn fs_interlaced_weave(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
-	let outputX = u32(position.x);
 	let outputY = u32(position.y);
 	let field = outputY & 1u;
 	let fieldLine = outputY >> 1u;
-	let primary = textureLoad(u_primary, vec2<i32>(i32(outputX), i32(field * u.field_height + fieldLine)), 0);
-	return composeDisplay2(primary, outputX, outputY);
+	return textureLoad(u_vram, vec2<i32>(i32(u32(position.x)), i32(field * u.field_height + fieldLine)), 0);
 }

@@ -382,7 +382,11 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 	await runBIOSStep(TASK.TEXTURE_BUILD, () => createTextureAtlases(BIOSResources));
 	validateAudioEventReferences(BIOSResources);
 	const BIOSRomAssets = await runBIOSStep(TASK.ROM_ASSETS, () => generateRomAssets(BIOSResources, message => progress?.setDetail(message)));
-	const BIOSProgramBoot = appendProgramImage(BIOSRomAssets, SYSTEM_BOOT_ENTRY_PATH, { includeSymbols: debug, optLevel, programDomain: 'system' });
+	const BIOSProgramBoot = appendProgramImage(BIOSRomAssets, SYSTEM_BOOT_ENTRY_PATH, {
+		includeSymbols: debug,
+		optLevel,
+		programDomain: 'system',
+	});
 	stripLuaAssets(BIOSRomAssets, debug);
 	await runBIOSStep(TASK.BIOS_FINALIZE, () => finalizeRompack(BIOSRomAssets, BIOSRomName, { projectRootPath: '', manifest: null, zipRom: false, debug, programBoot: BIOSProgramBoot }));
 	if (progress) {

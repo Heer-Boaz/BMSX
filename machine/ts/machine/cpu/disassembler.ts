@@ -429,6 +429,8 @@ const buildInstructionOperands = (
 			return [registerOperand('a', 'dst', a), plainOperand('bx', 'imm', formatNumber(sbx))];
 		case OpCode.LOADK:
 			return [registerOperand('a', 'dst', a), plainOperand('bx', 'const', formatConst(program, bx, options))];
+		case OpCode.LOADKR:
+			return [registerOperand('a', 'dst', a), registerOperand('b', 'const_index', b)];
 		case OpCode.LOADNIL:
 			return [registerOperand('a', 'base', a), plainOperand('b', 'count', b.toString())];
 		case OpCode.GETSYS:
@@ -578,6 +580,8 @@ const formatInstruction = (
 			return `KSMI r${a}, ${formatNumber(sbx)}`;
 		case OpCode.LOADK:
 			return `LOADK r${a}, ${formatConst(program, bx, options)}`;
+		case OpCode.LOADKR:
+			return `LOADKR r${a}, r${b}`;
 		case OpCode.LOADNIL:
 			return `LOADNIL r${a}, ${b}`;
 		case OpCode.GETSYS:

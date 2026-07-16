@@ -1,19 +1,15 @@
 import {
 	GX_GPU_TEXTURE_MODE_DIRECT16,
 	GX_GPU_TEXTURE_MODE_PALETTE4,
+	GX_GPU_VRAM_WIDTH,
 } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
-import {
-	GX_GPU_SYSTEM_VRAM_WIDTH,
-	GX_GPU_SYSTEM_VRAM_X,
-	GX_GPU_SYSTEM_VRAM_Y,
-} from '../../machine/ts/machine/devices/gx/system_vram_port';
 import { GX_GPU_GP0_CPU_TO_VRAM_FIRST } from '../../machine/ts/machine/devices/gx/gpu';
 import type { ImgMeta } from '../../machine/ts/rompack/format';
 
 export const GX_SYSTEM_TEXTURE_ASSET_ID = 'gx_system_texture';
-export const GX_SYSTEM_TEXTURE_X = GX_GPU_SYSTEM_VRAM_X;
-export const GX_SYSTEM_TEXTURE_Y = GX_GPU_SYSTEM_VRAM_Y;
-export const GX_SYSTEM_TEXTURE_WIDTH = GX_GPU_SYSTEM_VRAM_WIDTH;
+export const GX_SYSTEM_TEXTURE_X = GX_GPU_VRAM_WIDTH >> 1;
+export const GX_SYSTEM_TEXTURE_Y = 0;
+export const GX_SYSTEM_TEXTURE_WIDTH = 256;
 export const GX_SYSTEM_TEXTURE_HEIGHT = 64;
 const GX_PALETTE4_PIXELS_PER_WORD = 4;
 export const GX_PALETTE4_CLUT_WORDS = 16;

@@ -19,7 +19,7 @@ export function getBoundIdentifierReference(
 	}
 	const decl = semantics.getDeclaration(expression.range);
 	if (!decl) {
-		throw new Error(`[Compiler] Missing bound reference for identifier '${expression.name}'.`);
+		throw new Error(`Missing bound reference for identifier '${expression.name}'.`);
 	}
 	return {
 		kind: decl.isGlobal ? 'global' : 'lexical',

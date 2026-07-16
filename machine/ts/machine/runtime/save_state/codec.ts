@@ -24,11 +24,6 @@ import {
 import { GX_GPU_GP0_COMMAND_BUFFER_WORDS, type GxGpuSaveState, type GxGpuState } from '../../devices/gx/gpu';
 import { GX_GPU_COMMAND_CAPACITY, GX_GPU_COMMAND_WORD_CAPACITY, GX_GPU_READBACK_READY, GX_GPU_READBACK_SUBMITTED, GX_GPU_VRAM_BYTE_COUNT, type GxGpuCommandBufferState } from '../../devices/gx/gpu_command_buffer';
 import { GX_GPU_COMMAND_FIFO_STORAGE_WORD_CAPACITY } from '../../devices/gx/gpu_command_fifo';
-import {
-	GX_GPU_SYSTEM_VRAM_PORT_COMMAND_CAPACITY,
-	GX_GPU_SYSTEM_VRAM_PORT_WORD_CAPACITY,
-	type GxGpuSystemVramPortState,
-} from '../../devices/gx/system_vram_port';
 import type { GxGteState } from '../../devices/gx/gte';
 import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT } from '../../devices/gx/gte';
 import type { GeometryJobState } from '../../devices/geometry/job';
@@ -515,51 +510,6 @@ function decodeGxGpuCommandBufferState(value: unknown, label: string): GxGpuComm
 	};
 }
 
-function encodeGxGpuSystemVramPortState(state: GxGpuSystemVramPortState): GxGpuSystemVramPortState {
-	return {
-		positionWord: state.positionWord >>> 0,
-		sizeWord: state.sizeWord >>> 0,
-		controlWord: state.controlWord >>> 0,
-		dataWord: state.dataWord >>> 0,
-		statusWord: state.statusWord >>> 0,
-		commandCount: state.commandCount,
-		presentCommandCount: state.presentCommandCount,
-		wordCount: state.wordCount,
-		activePositionWord: state.activePositionWord >>> 0,
-		activeSizeWord: state.activeSizeWord >>> 0,
-		activeWordStart: state.activeWordStart,
-		activeWordsRemaining: state.activeWordsRemaining,
-		commandPositionWord: encodeVector(state.commandPositionWord, (word) => word >>> 0),
-		commandSizeWord: encodeVector(state.commandSizeWord, (word) => word >>> 0),
-		commandWordStart: encodeVector(state.commandWordStart, (word) => word >>> 0),
-		words: encodeVector(state.words, (word) => word >>> 0),
-	};
-}
-
-function decodeGxGpuSystemVramPortState(value: unknown, label: string): GxGpuSystemVramPortState {
-	const object = requireObject(value, label);
-	const commandCount = requireBoundedU32(requireObjectKey(object, 'commandCount', label, `${label}.commandCount`), `${label}.commandCount`, 0, GX_GPU_SYSTEM_VRAM_PORT_COMMAND_CAPACITY);
-	const wordCount = requireBoundedU32(requireObjectKey(object, 'wordCount', label, `${label}.wordCount`), `${label}.wordCount`, 0, GX_GPU_SYSTEM_VRAM_PORT_WORD_CAPACITY);
-	return {
-		positionWord: requireBoundedU32(requireObjectKey(object, 'positionWord', label, `${label}.positionWord`), `${label}.positionWord`, 0, 0xffffffff),
-		sizeWord: requireBoundedU32(requireObjectKey(object, 'sizeWord', label, `${label}.sizeWord`), `${label}.sizeWord`, 0, 0xffffffff),
-		controlWord: requireBoundedU32(requireObjectKey(object, 'controlWord', label, `${label}.controlWord`), `${label}.controlWord`, 0, 0xffffffff),
-		dataWord: requireBoundedU32(requireObjectKey(object, 'dataWord', label, `${label}.dataWord`), `${label}.dataWord`, 0, 0xffffffff),
-		statusWord: requireBoundedU32(requireObjectKey(object, 'statusWord', label, `${label}.statusWord`), `${label}.statusWord`, 0, 0xffffffff),
-		commandCount,
-		presentCommandCount: requireBoundedU32(requireObjectKey(object, 'presentCommandCount', label, `${label}.presentCommandCount`), `${label}.presentCommandCount`, 0, commandCount),
-		wordCount,
-		activePositionWord: requireBoundedU32(requireObjectKey(object, 'activePositionWord', label, `${label}.activePositionWord`), `${label}.activePositionWord`, 0, 0xffffffff),
-		activeSizeWord: requireBoundedU32(requireObjectKey(object, 'activeSizeWord', label, `${label}.activeSizeWord`), `${label}.activeSizeWord`, 0, 0xffffffff),
-		activeWordStart: requireBoundedU32(requireObjectKey(object, 'activeWordStart', label, `${label}.activeWordStart`), `${label}.activeWordStart`, 0, wordCount),
-		activeWordsRemaining: requireBoundedU32(requireObjectKey(object, 'activeWordsRemaining', label, `${label}.activeWordsRemaining`), `${label}.activeWordsRemaining`, 0, GX_GPU_SYSTEM_VRAM_PORT_WORD_CAPACITY),
-		commandPositionWord: decodeU32FixedArray(requireObjectKey(object, 'commandPositionWord', label, `${label}.commandPositionWord`), `${label}.commandPositionWord`, commandCount),
-		commandSizeWord: decodeU32FixedArray(requireObjectKey(object, 'commandSizeWord', label, `${label}.commandSizeWord`), `${label}.commandSizeWord`, commandCount),
-		commandWordStart: decodeU32FixedArray(requireObjectKey(object, 'commandWordStart', label, `${label}.commandWordStart`), `${label}.commandWordStart`, commandCount),
-		words: decodeU32FixedArray(requireObjectKey(object, 'words', label, `${label}.words`), `${label}.words`, wordCount),
-	};
-}
-
 function encodeGxGpuState(state: GxGpuState): GxGpuState {
 	return {
 		gp0Word: state.gp0Word >>> 0,
@@ -601,14 +551,7 @@ function encodeGxGpuState(state: GxGpuState): GxGpuState {
 		presentDisplayStartWord: state.presentDisplayStartWord >>> 0,
 		presentHorizontalDisplayRangeWord: state.presentHorizontalDisplayRangeWord >>> 0,
 		presentVerticalDisplayRangeWord: state.presentVerticalDisplayRangeWord >>> 0,
-		display2StartWord: state.display2StartWord >>> 0,
-		display2SizeWord: state.display2SizeWord >>> 0,
-		compositorControlWord: state.compositorControlWord >>> 0,
-		presentDisplay2StartWord: state.presentDisplay2StartWord >>> 0,
-		presentDisplay2SizeWord: state.presentDisplay2SizeWord >>> 0,
-		presentCompositorControlWord: state.presentCompositorControlWord >>> 0,
 		commandBuffer: encodeGxGpuCommandBufferState(state.commandBuffer),
-		systemVramPort: encodeGxGpuSystemVramPortState(state.systemVramPort),
 	};
 }
 
@@ -617,7 +560,6 @@ function decodeGxGpuState(value: unknown, label: string): GxGpuState {
 	const gp0CommandWordCount = requireBoundedU32(requireObjectKey(object, 'gp0CommandWordCount', label, `${label}.gp0CommandWordCount`), `${label}.gp0CommandWordCount`, 0, GX_GPU_GP0_COMMAND_BUFFER_WORDS);
 	const gp0FifoWordCount = requireBoundedU32(requireObjectKey(object, 'gp0FifoWordCount', label, `${label}.gp0FifoWordCount`), `${label}.gp0FifoWordCount`, 0, GX_GPU_COMMAND_FIFO_STORAGE_WORD_CAPACITY);
 	const commandBuffer = decodeGxGpuCommandBufferState(requireObjectKey(object, 'commandBuffer', label, `${label}.commandBuffer`), `${label}.commandBuffer`);
-	const systemVramPort = decodeGxGpuSystemVramPortState(requireObjectKey(object, 'systemVramPort', label, `${label}.systemVramPort`), `${label}.systemVramPort`);
 	return {
 		gp0Word: requireBoundedU32(requireObjectKey(object, 'gp0Word', label, `${label}.gp0Word`), `${label}.gp0Word`, 0, 0xffffffff),
 		gp1Word: requireBoundedU32(requireObjectKey(object, 'gp1Word', label, `${label}.gp1Word`), `${label}.gp1Word`, 0, 0xffffffff),
@@ -658,14 +600,7 @@ function decodeGxGpuState(value: unknown, label: string): GxGpuState {
 		presentDisplayStartWord: requireBoundedU32(requireObjectKey(object, 'presentDisplayStartWord', label, `${label}.presentDisplayStartWord`), `${label}.presentDisplayStartWord`, 0, 0xffffffff),
 		presentHorizontalDisplayRangeWord: requireBoundedU32(requireObjectKey(object, 'presentHorizontalDisplayRangeWord', label, `${label}.presentHorizontalDisplayRangeWord`), `${label}.presentHorizontalDisplayRangeWord`, 0, 0xffffffff),
 		presentVerticalDisplayRangeWord: requireBoundedU32(requireObjectKey(object, 'presentVerticalDisplayRangeWord', label, `${label}.presentVerticalDisplayRangeWord`), `${label}.presentVerticalDisplayRangeWord`, 0, 0xffffffff),
-		display2StartWord: requireBoundedU32(requireObjectKey(object, 'display2StartWord', label, `${label}.display2StartWord`), `${label}.display2StartWord`, 0, 0xffffffff),
-		display2SizeWord: requireBoundedU32(requireObjectKey(object, 'display2SizeWord', label, `${label}.display2SizeWord`), `${label}.display2SizeWord`, 0, 0xffffffff),
-		compositorControlWord: requireBoundedU32(requireObjectKey(object, 'compositorControlWord', label, `${label}.compositorControlWord`), `${label}.compositorControlWord`, 0, 0xffffffff),
-		presentDisplay2StartWord: requireBoundedU32(requireObjectKey(object, 'presentDisplay2StartWord', label, `${label}.presentDisplay2StartWord`), `${label}.presentDisplay2StartWord`, 0, 0xffffffff),
-		presentDisplay2SizeWord: requireBoundedU32(requireObjectKey(object, 'presentDisplay2SizeWord', label, `${label}.presentDisplay2SizeWord`), `${label}.presentDisplay2SizeWord`, 0, 0xffffffff),
-		presentCompositorControlWord: requireBoundedU32(requireObjectKey(object, 'presentCompositorControlWord', label, `${label}.presentCompositorControlWord`), `${label}.presentCompositorControlWord`, 0, 0xffffffff),
 		commandBuffer,
-		systemVramPort,
 	};
 }
 
@@ -1181,6 +1116,7 @@ function encodeCpuRuntimeState(state: CpuRuntimeState): CpuRuntimeState {
 		lastInstruction: state.lastInstruction,
 		instructionBudgetRemaining: state.instructionBudgetRemaining,
 		haltedUntilIrq: state.haltedUntilIrq,
+		interruptEventPending: state.interruptEventPending,
 		memoryWriteBlocked: state.memoryWriteBlocked,
 		memoryWriteBlockedAddress: state.memoryWriteBlockedAddress,
 		statusWord: state.statusWord,
@@ -1234,6 +1170,7 @@ function decodeCpuRuntimeState(value: unknown, label: string): CpuRuntimeState {
 		lastInstruction: requireObjectKey(object, 'lastInstruction', label, 'cpuState.lastInstruction') as number,
 		instructionBudgetRemaining: requireObjectKey(object, 'instructionBudgetRemaining', label, 'cpuState.instructionBudgetRemaining') as number,
 		haltedUntilIrq: requireObjectKey(object, 'haltedUntilIrq', label, 'cpuState.haltedUntilIrq') as boolean,
+		interruptEventPending: requireObjectKey(object, 'interruptEventPending', label, 'cpuState.interruptEventPending') as boolean,
 		memoryWriteBlocked: requireObjectKey(object, 'memoryWriteBlocked', label, 'cpuState.memoryWriteBlocked') as boolean,
 		memoryWriteBlockedAddress: requireObjectKey(object, 'memoryWriteBlockedAddress', label, 'cpuState.memoryWriteBlockedAddress') as number,
 		statusWord: requireObjectKey(object, 'statusWord', label, 'cpuState.statusWord') as number,

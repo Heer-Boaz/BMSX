@@ -1414,7 +1414,9 @@ class SemanticBuilder {
 					const pointerTypeRef = localAssignment.pointerTypeRefs[index];
 					if (pointerTypeRef !== null) {
 						for (const lengthExpression of pointerTypeRef.arrayLengths) {
-							this.visitExpression(lengthExpression, { tableBaseDecl: null, tableBasePath: null });
+							if (lengthExpression) {
+								this.visitExpression(lengthExpression, { tableBaseDecl: null, tableBasePath: null });
+							}
 						}
 					}
 				}
@@ -1595,7 +1597,9 @@ class SemanticBuilder {
 				this.declareType(structDeclaration.name);
 				for (const field of structDeclaration.fields) {
 					for (const lengthExpression of field.typeRef.arrayLengths) {
-						this.visitExpression(lengthExpression, { tableBaseDecl: null, tableBasePath: null });
+						if (lengthExpression) {
+							this.visitExpression(lengthExpression, { tableBaseDecl: null, tableBasePath: null });
+						}
 					}
 				}
 				break;
@@ -1604,7 +1608,9 @@ class SemanticBuilder {
 				const bssDeclaration = statement as LuaBssDeclarationStatement;
 				this.declareBss(bssDeclaration.name);
 				for (const lengthExpression of bssDeclaration.typeRef.arrayLengths) {
-					this.visitExpression(lengthExpression, { tableBaseDecl: null, tableBasePath: null });
+					if (lengthExpression) {
+						this.visitExpression(lengthExpression, { tableBaseDecl: null, tableBasePath: null });
+					}
 				}
 				break;
 			}
@@ -1612,7 +1618,9 @@ class SemanticBuilder {
 				const dataDeclaration = statement as LuaDataDeclarationStatement;
 				this.declareData(dataDeclaration.name);
 				for (const lengthExpression of dataDeclaration.typeRef.arrayLengths) {
-					this.visitExpression(lengthExpression, { tableBaseDecl: null, tableBasePath: null });
+					if (lengthExpression) {
+						this.visitExpression(lengthExpression, { tableBaseDecl: null, tableBasePath: null });
+					}
 				}
 				this.visitExpression(dataDeclaration.initializer, { tableBaseDecl: null, tableBasePath: null });
 				break;
@@ -1621,7 +1629,9 @@ class SemanticBuilder {
 				const rodataDeclaration = statement as LuaRodataDeclarationStatement;
 				this.declareRodata(rodataDeclaration.name);
 				for (const lengthExpression of rodataDeclaration.typeRef.arrayLengths) {
-					this.visitExpression(lengthExpression, { tableBaseDecl: null, tableBasePath: null });
+					if (lengthExpression) {
+						this.visitExpression(lengthExpression, { tableBaseDecl: null, tableBasePath: null });
+					}
 				}
 				this.visitExpression(rodataDeclaration.initializer, { tableBaseDecl: null, tableBasePath: null });
 				break;
@@ -1693,7 +1703,9 @@ class SemanticBuilder {
 			}
 			case LuaSyntaxKind.SizeOfExpression: {
 				for (const lengthExpression of expression.typeRef.arrayLengths) {
-					this.visitExpression(lengthExpression, { tableBaseDecl: null, tableBasePath: null });
+					if (lengthExpression) {
+						this.visitExpression(lengthExpression, { tableBaseDecl: null, tableBasePath: null });
+					}
 				}
 				return null;
 			}

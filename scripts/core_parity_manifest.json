@@ -294,7 +294,6 @@
 		"machine/ts/machine/devices/audio/biquad_filter.ts",
 		"machine/ts/machine/devices/audio/output.ts",
 		"machine/ts/machine/devices/gx/gpu_display.ts",
-		"machine/ts/machine/devices/gx/system_vram_port.ts",
 		"machine/ts/machine/devices/gx/gte.ts",
 		"machine/ts/machine/memory/access_kind.ts",
 		"machine/ts/machine/cpu/string_pool.ts",
@@ -314,14 +313,6 @@
 				"machine/cpp/machine/devices/gx/gpu_display.h"
 			],
 			"reason": "gx_gpu_raw_display_register_decode_contract"
-		},
-		{
-			"ts": "machine/ts/machine/devices/gx/system_vram_port.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/gx/system_vram_port.h",
-				"machine/cpp/machine/devices/gx/system_vram_port.cpp"
-			],
-			"reason": "gx_system_vram_transfer_registerfile_and_bounded_queue_contract"
 		},
 		{
 			"ts": "machine/ts/machine/devices/gx/gte.ts",
@@ -1673,40 +1664,6 @@
 	],
 	"strict_runtime_no_heap_functions": [
 		{
-			"file": "machine/ts/machine/devices/gx/system_vram_port.ts",
-			"functions": [
-				"writeRegister",
-				"beginTransfer",
-				"writeData",
-				"retirePresentedCommands"
-			],
-			"reason": "gx_system_vram_transfer_mmio_and_queue_service_must_mutate_fixed_storage_without_gc_churn"
-		},
-		{
-			"file": "machine/cpp/machine/devices/gx/system_vram_port.cpp",
-			"functions": [
-				"writeRegister",
-				"beginTransfer",
-				"writeData",
-				"retirePresentedCommands"
-			],
-			"reason": "gx_system_vram_transfer_mmio_and_queue_service_must_mutate_fixed_storage_without_heap_allocation"
-		},
-		{
-			"file": "machine/ts/render/backend/software/gx_gpu.ts",
-			"functions": [
-				"executeGxGpuSoftwareVramTransfers"
-			],
-			"reason": "software_system_vram_transfer_execution_must_write_retained_vram_without_gc_churn"
-		},
-		{
-			"file": "machine/cpp/render/backend/software/gx_gpu.cpp",
-			"functions": [
-				"executeGxGpuSoftwareVramTransfers"
-			],
-			"reason": "software_system_vram_transfer_execution_must_write_retained_vram_without_heap_allocation"
-		},
-		{
 			"file": "machine/ts/render/post/crt/webgl/pipeline.ts",
 			"functions": [
 				"writeCrtVec3",
@@ -1840,11 +1797,7 @@
 				"appendTexturedPolygon",
 				"appendTexturedRectangle",
 				"writeVramSnapshotUpload",
-				"writeCpuWordsToVramUploadRun",
-				"uploadCpuWordsToVramRows",
 				"uploadCpuToVram",
-				"uploadSystemVramTransfer",
-				"executeNewGxGpuSystemVramTransfers",
 				"copyVramToVramArea",
 				"copyVramToVram",
 				"applyGxGpuDrawingAreaScissor",
@@ -1941,11 +1894,7 @@
 				"appendTexturedPolygon",
 				"appendTexturedRectangle",
 				"writeVramSnapshotUpload",
-				"writeCpuWordsToVramUploadRun",
-				"uploadCpuWordsToVramRows",
 				"uploadCpuToVram",
-				"uploadSystemVramTransfer",
-				"executeNewGxGpuSystemVramTransfers",
 				"copyVramToVramArea",
 				"copyVramToVram",
 				"applyGxGpuDrawingAreaScissor",

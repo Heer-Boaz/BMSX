@@ -79,6 +79,7 @@ export const computeMaxRegister = (instructions: Instruction[]): number => {
 				updateMax(instruction.b);
 				break;
 			case OpCode.MOV:
+			case OpCode.LOADKR:
 			case OpCode.UNM:
 			case OpCode.NOT:
 			case OpCode.LEN:
@@ -170,6 +171,7 @@ export const isPureInstruction = (instruction: Instruction): boolean => {
 		case OpCode.KM1:
 		case OpCode.KSMI:
 		case OpCode.LOADK:
+		case OpCode.LOADKR:
 		case OpCode.LOADNIL:
 		case OpCode.NEWT:
 		case OpCode.ADD:

@@ -101,6 +101,7 @@ function makeProgramImage(
 		link: {
 			constRelocs: Array.from(constRelocs),
 			constValueRelocs: [],
+			rodataConstRelocs: [],
 			symbols,
 		},
 	};

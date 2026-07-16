@@ -2,7 +2,7 @@ import type { RawRomSource } from '../rompack/source';
 import {
 	ROM_ASSET_SYMBOL_MODULE_PATH,
 	ROM_ASSET_SYMBOL_SOURCE_PATH,
-	ROM_GENERATED_CONST_MODULE_PATHS,
+	ROM_GENERATED_MODULE_PATHS,
 	type CartridgeIndex,
 	type CartridgeLayerId,
 	type RomAsset,
@@ -95,7 +95,7 @@ export function buildLuaSources(cartSource: RawRomSource, romSource: RawRomSourc
 		luaRecord.base_src = baseSrc;
 		luaRecord.base_update_timestamp = entry.update_timestamp ?? 0;
 		luaRecord.module_path = toLuaModulePath(entry.source_path);
-		luaRecord.generated = ROM_GENERATED_CONST_MODULE_PATHS.includes(luaRecord.module_path);
+		luaRecord.generated = ROM_GENERATED_MODULE_PATHS.includes(luaRecord.module_path);
 		registerLuaSourceRecord(registry, luaRecord);
 	}
 	registry.can_boot_from_source = sourceCount > 0;

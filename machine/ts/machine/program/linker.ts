@@ -34,6 +34,7 @@ import type {
 } from './loader';
 import { inflateProgram } from './loader';
 import { PROGRAM_STATIC_RAM_BASE, PROGRAM_ROM_BASE, PROGRAM_ROM_SIZE, RAM_END } from '../memory/map';
+import { writeLE32 } from '../../common/endian';
 
 export type LinkedProgramImage = {
 	programImage: ProgramImage;
@@ -918,6 +919,10 @@ export const linkProgramImages = (
 	const rodataBytes = new Uint8Array(linkedRodataByteCount);
 	rodataBytes.set(systemRodata.bytes, 0);
 	rodataBytes.set(cartRodata.bytes, systemRodataByteCount);
+	for (let index = 0; index < cartImage.link.rodataConstRelocs.length; index += 1) {
+		const reloc = cartImage.link.rodataConstRelocs[index];
+		writeLE32(rodataBytes, systemRodataByteCount + reloc.byteOffset, mergedConsts.cartConstRemap[reloc.constIndex]);
+	}
 	const dataBytes = new Uint8Array(linkedDataByteCount);
 	dataBytes.set(systemData.bytes, 0);
 	dataBytes.set(cartData.bytes, systemDataByteCount);
@@ -1000,7 +1005,7 @@ export const linkProgramImages = (
 				symbols: bssSymbols,
 			},
 		},
-		link: { constRelocs: [], constValueRelocs: [], symbols: runtimeSymbols },
+		link: { constRelocs: [], constValueRelocs: [], rodataConstRelocs: [], symbols: runtimeSymbols },
 	};
 
 	return {

@@ -5,7 +5,9 @@ local gp0<const>: *word = 0x08010240
 local gp1<const>: *word = 0x08010244
 
 local gp1_reset<const> = 0x00000000
+local gp1_ack_irq<const> = 0x02000000
 local gp1_display_enable<const> = 0x03000000
+local gp1_display_disable<const> = 0x03000001
 local gp1_dma_direction_cpu_to_gp0<const> = 0x04000002
 local gp1_display_start<const> = 0x05000000
 local gp1_horizontal_display_range<const> = 0x06c60260
@@ -28,6 +30,8 @@ local gp0_draw_textured_rectangle<const> = 0x64000000
 local gp0_draw_raw_textured_rectangle<const> = 0x65000000
 local gp0_draw_semitransparent_rectangle<const> = 0x62000000
 local gp0_draw_line<const> = 0x40000000
+local gp0_irq_request<const> = 0x1f000000
+local gp0_vram_to_vram<const> = 0x80000000
 local gp0_cpu_to_vram<const> = 0xa0000000
 local gp0_draw_mode<const> = 0xe1000000
 local gp0_drawing_area_top_left<const> = 0xe3000000
@@ -132,6 +136,64 @@ end
 
 function gx_gpu.display_size()
 	return current_display_size_word & 0x0000ffff, current_display_size_word >> 16
+end
+
+function gx_gpu.enable_display()
+	*gp1 = gp1_display_enable
+end
+
+function gx_gpu.disable_display()
+	*gp1 = gp1_display_disable
+end
+
+function gx_gpu.ack_irq()
+	*gp1 = gp1_ack_irq
+end
+
+function gx_gpu.encode_fill_rectangle(words, index, x, y, width, height, color_word)
+	local target<const>: *word = words
+	target[index] = gp0_fill_rectangle | color_word
+	target[index + 1] = xy(x, y)
+	target[index + 2] = wh(width, height)
+	return index + 3
+end
+
+function gx_gpu.encode_rectangle(words, index, x, y, width, height, color_word)
+	local target<const>: *word = words
+	target[index] = gp0_draw_rectangle | color_word
+	target[index + 1] = xy(x, y)
+	target[index + 2] = wh(width, height)
+	return index + 3
+end
+
+function gx_gpu.encode_vram_copy(words, index, source_x, source_y, target_x, target_y, width, height)
+	local target<const>: *word = words
+	target[index] = gp0_vram_to_vram
+	target[index + 1] = xy(source_x, source_y)
+	target[index + 2] = xy(target_x, target_y)
+	target[index + 3] = wh(width, height)
+	return index + 4
+end
+
+function gx_gpu.encode_direct16_texture_page(words, index, source_x, source_y)
+	local target<const>: *word = words
+	target[index] = gp0_draw_mode | draw_mode_for_texture_page(source_x, source_y)
+	return index + 1
+end
+
+function gx_gpu.encode_textured_rectangle(words, index, source_x, source_y, x, y, width, height, color_word)
+	local target<const>: *word = words
+	target[index] = gp0_draw_textured_rectangle | color_word
+	target[index + 1] = xy(x, y)
+	target[index + 2] = uv(source_x, source_y)
+	target[index + 3] = wh(width, height)
+	return index + 4
+end
+
+function gx_gpu.encode_irq_request(words, index)
+	local target<const>: *word = words
+	target[index] = gp0_irq_request
+	return index + 1
 end
 
 function gx_gpu.clear_color(color)

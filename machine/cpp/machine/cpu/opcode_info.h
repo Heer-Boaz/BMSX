@@ -60,7 +60,7 @@ enum class OpCode : u8 {
 	STORE_MEM,
 	STORE_MEM_WORDS,
 	RFE,
-	RESERVED3,
+	LOADKR,
 	GETSYS,
 	SETSYS,
 	GETGL,

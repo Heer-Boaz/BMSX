@@ -379,15 +379,15 @@ and MAME
   Retained host modes are RGB565 and MSX10 3:4:3; RGB777 is removed. WebGL,
   GLES2, WebGPU, TS headless and C++ software execute the same mode contract.
 - [x] Remove host-only IDE/terminal framebuffer presentation ownership. The
-  full-screen IDE owns its frame background while the terminal publishes only
-  its content over the retained game scanout; the VDP framebuffer texture and
-  pass no longer exist.
+  full-screen IDE owns its frame background; the BIOS monitor is system-ROM
+  firmware that takes the primary GX scanout through ordinary GP0 commands.
+  The VDP framebuffer texture and pass no longer exist.
 - [x] Complete the retained host-UI publication boundary. Workbench and menu
   publish separate retained lanes rather than exposing the menu controller to
   render backends; WebGPU now renders both lanes natively and WebGL2 consumes
   the same allocation-conscious quad stream. Split-bundle headless execution
-  proves terminal and quick-menu commands reach the backend. Live browser proof
-  remains part of the deferred accelerated session.
+  proves quick-menu commands reach the backend. Live browser proof remains part
+  of the deferred accelerated session.
 - [x] Remove old VDP/RPU cart-visible ABI use after carts are migrated. Cartlib
   consumes GX-owned display metrics directly and the rejected Lua VDP/RPU
   firmware modules are gone rather than retained behind compatibility shims.
@@ -716,9 +716,9 @@ PSX discrepancy or to start the GTE+ ABI early.
 - [x] Move output quantization from VDP MMIO/VOUT into the host presentation
   owner and remove the mirrored VDP view-snapshot consumers.
 - [x] Move host-only framebuffer presentation to its real owner without a
-  compatibility facade. The full-screen IDE emits its own background and the
-  terminal remains transparent outside its content; the mirrored framebuffer
-  texture/pass plumbing is removed.
+  compatibility facade. The full-screen IDE emits its own background and host
+  overlay lanes remain transparent outside their content; the mirrored
+  framebuffer texture/pass plumbing is removed.
 - [x] Remove mapped VDP memory and its timing/register/readback/save-state
   ownership, then delete the mirrored VDP and IMGDEC devices without a facade.
 - [x] Retire old VDP/RPU firmware/system paths after cart migration planning.

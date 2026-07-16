@@ -12,7 +12,7 @@ export const ROM_ASSET_SYMBOL_MODULE_PATH = 'bmsx/assets';
 export const ROM_ASSET_SYMBOL_SOURCE_PATH = `${ROM_ASSET_SYMBOL_MODULE_PATH}.lua`;
 export const GX_TEXTURE_LAYOUT_MODULE_PATH = 'bmsx/gx_texture_layout';
 export const GX_TEXTURE_LAYOUT_SOURCE_PATH = `${GX_TEXTURE_LAYOUT_MODULE_PATH}.lua`;
-export const ROM_GENERATED_CONST_MODULE_PATHS: ReadonlyArray<string> = [
+export const ROM_GENERATED_MODULE_PATHS: ReadonlyArray<string> = [
 	ROM_ASSET_SYMBOL_MODULE_PATH,
 	GX_TEXTURE_LAYOUT_MODULE_PATH,
 ];

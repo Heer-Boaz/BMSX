@@ -314,6 +314,7 @@ return dynamic(12, 0, 10)
 test('installed nested const-function modules reject root runtime values', () => {
 	const modulePath = 'bios/util/nested_clamp';
 	const moduleSource = `
+module<const>
 local function clamp(value, low, high)
 	if value < low then return low end
 	if value > high then return high end
@@ -325,7 +326,7 @@ return { math = { clamp = clamp } }
 	const systemCompiled = compileLuaChunkToProgram(
 		parseSource('return nil', 'system.lua'),
 		[module],
-		{ entrySource: 'return nil', constModulePaths: [modulePath] },
+		{ entrySource: 'return nil' },
 	);
 	const baseProgram = inflateExecutableProgramImage(encodeCompiledProgramImage(systemCompiled));
 	const callSource = `

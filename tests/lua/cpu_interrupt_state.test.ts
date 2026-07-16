@@ -524,6 +524,23 @@ test('frame loop yields after HALT instead of continuing in the same host slice'
 	assert.notEqual(runtime.frameLoop.currentFrameState, null);
 });
 
+test('HALT consumes an interrupt accepted before the wait instruction', () => {
+	const runtime = makeHaltFrameRuntime();
+	const cpu = runtime.machine.cpu;
+	const irqController = runtime.machine.irqController;
+	runtime.machine.memory.writeValue(IO_IRQ_MASK, IRQ_VBLANK);
+	irqController.raise(IRQ_VBLANK);
+
+	assert.equal(cpu.enterPendingInterrupt(), true);
+	assert.equal(cpu.captureRuntimeState(new Map()).interruptEventPending, true);
+	irqController.acknowledge(IRQ_VBLANK);
+	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+
+	assert.equal(cpu.getFrameDepth(), 0);
+	assert.equal(cpu.isHaltedUntilIrq(), false);
+	assert.equal(cpu.captureRuntimeState(new Map()).interruptEventPending, false);
+});
+
 test('frame loop vectors a pending IRQ above a halted cart frame', () => {
 	const runtime = makeHaltFrameRuntime();
 	const cpu = runtime.machine.cpu;

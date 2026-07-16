@@ -10,7 +10,6 @@ import {
 	GX_TEXTURE_LAYOUT_MODULE_PATH,
 	GX_TEXTURE_LAYOUT_SOURCE_PATH,
 	ROM_ASSET_SYMBOL_MODULE_PATH,
-	ROM_GENERATED_CONST_MODULE_PATHS,
 	type CartridgeIndex,
 	type CartridgeLayerId,
 	type RomAsset,
@@ -196,7 +195,6 @@ test('debug package source boot resolves the persisted GX texture layout module'
 		modules,
 		{
 			entrySource: entryRecord.src,
-			constModulePaths: ROM_GENERATED_CONST_MODULE_PATHS,
 			optLevel: 3,
 		},
 	);

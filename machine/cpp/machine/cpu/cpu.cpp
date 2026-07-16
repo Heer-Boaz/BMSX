@@ -1155,7 +1155,7 @@ void CPU::decodeProgram() {
 	m_decodedPages.resize(pageCount);
 	for (DecodedInstructionPage& page : m_decodedPages) {
 		for (DecodedInstruction& decoded : page.words) {
-			decoded.op = static_cast<uint8_t>(OpCode::RESERVED3);
+			decoded.op = static_cast<uint8_t>(OpCode::WIDE);
 			decoded.width = 1;
 		}
 	}
@@ -1241,6 +1241,7 @@ void CPU::start(int entryProtoIndex, NativeArgsView args, u32 statusWord) {
 	lastReturnValues.clear();
 	clearCallStack();
 	m_haltedUntilIrq = false;
+	m_interruptEventPending = false;
 	m_memoryWriteBlocked = false;
 	m_memoryWriteBlockedAddress = 0;
 	m_hardHalted = false;
@@ -1462,6 +1463,7 @@ CpuRuntimeState CPU::captureRuntimeState(const std::unordered_map<std::string, V
 	state.lastInstruction = lastInstruction;
 	state.instructionBudgetRemaining = instructionBudgetRemaining;
 	state.haltedUntilIrq = m_haltedUntilIrq;
+	state.interruptEventPending = m_interruptEventPending;
 	state.memoryWriteBlocked = m_memoryWriteBlocked;
 	state.memoryWriteBlockedAddress = m_memoryWriteBlockedAddress;
 	state.statusWord = m_statusWord;
@@ -1664,6 +1666,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state, std::unordered_map<s
 	lastInstruction = state.lastInstruction;
 	instructionBudgetRemaining = state.instructionBudgetRemaining;
 	m_haltedUntilIrq = state.haltedUntilIrq;
+	m_interruptEventPending = state.interruptEventPending;
 	m_memoryWriteBlocked = state.memoryWriteBlocked;
 	m_memoryWriteBlockedAddress = state.memoryWriteBlockedAddress;
 	m_statusWord = state.statusWord;
@@ -1680,6 +1683,10 @@ void CPU::requestYield() {
 }
 
 void CPU::haltUntilIrq() {
+	if (m_interruptEventPending) {
+		m_interruptEventPending = false;
+		return;
+	}
 	m_haltedUntilIrq = true;
 	m_yieldRequested = false;
 }
@@ -1986,12 +1993,16 @@ AcceptedInterruptKind CPU::peekPendingInterrupt() const {
 bool CPU::enterPendingInterrupt() {
 	if (m_nonMaskableInterruptPending && isUserMode()) {
 		m_nonMaskableInterruptPending = false;
+		const bool wasHalted = m_haltedUntilIrq;
 		enterAsynchronousException(m_systemExceptionProtoIndex, CPU_CAUSE_NMI);
+		if (!wasHalted) m_interruptEventPending = true;
 		return true;
 	}
 	if (canAcceptMaskableInterruptLine()) {
 		const int irqProtoIndex = isUserMode() ? m_cartIrqProtoIndex : m_systemIrqProtoIndex;
+		const bool wasHalted = m_haltedUntilIrq;
 		enterAsynchronousException(irqProtoIndex, CPU_CAUSE_IRQ);
+		if (!wasHalted) m_interruptEventPending = true;
 		return true;
 	}
 	return false;

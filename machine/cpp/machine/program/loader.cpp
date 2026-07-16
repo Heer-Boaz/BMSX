@@ -470,6 +470,14 @@ std::unique_ptr<ProgramImage> decodeProgramImage(const uint8_t* data, size_t siz
 		reloc.addend = relocObj.require("addend").toI32();
 		image->link.constValueRelocs.push_back(std::move(reloc));
 	}
+	const auto& rodataConstRelocsArr = linkObj.require("rodataConstRelocs").asArray();
+	image->link.rodataConstRelocs.reserve(rodataConstRelocsArr.size());
+	for (const auto& relocObj : rodataConstRelocsArr) {
+		ProgramRodataConstReloc reloc;
+		reloc.byteOffset = relocObj.require("byteOffset").toI32();
+		reloc.constIndex = relocObj.require("constIndex").toI32();
+		image->link.rodataConstRelocs.push_back(reloc);
+	}
 	extractProgramRuntimeSymbols(linkObj.require("symbols"), image->link.symbols, "ProgramImage.link.symbols");
 
 	return image;
@@ -557,9 +565,18 @@ std::vector<uint8_t> encodeProgramImage(const ProgramImage& asset) {
 		object["addend"] = BinValue(reloc.addend);
 		constValueRelocs.push_back(BinValue(std::move(object)));
 	}
+	BinArray rodataConstRelocs;
+	rodataConstRelocs.reserve(asset.link.rodataConstRelocs.size());
+	for (const ProgramRodataConstReloc& reloc : asset.link.rodataConstRelocs) {
+		BinObject object;
+		object["byteOffset"] = BinValue(reloc.byteOffset);
+		object["constIndex"] = BinValue(reloc.constIndex);
+		rodataConstRelocs.push_back(BinValue(std::move(object)));
+	}
 	BinObject link;
 	link["constRelocs"] = BinValue(std::move(constRelocs));
 	link["constValueRelocs"] = BinValue(std::move(constValueRelocs));
+	link["rodataConstRelocs"] = BinValue(std::move(rodataConstRelocs));
 	link["symbols"] = encodeRuntimeSymbols(asset.link.symbols);
 
 	BinObject vectors;

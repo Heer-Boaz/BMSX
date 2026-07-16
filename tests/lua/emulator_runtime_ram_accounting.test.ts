@@ -234,6 +234,7 @@ test('restored static closures reuse the static proto cache', () => {
 		lastInstruction: 0,
 		instructionBudgetRemaining: 0,
 		haltedUntilIrq: false,
+		interruptEventPending: false,
 		memoryWriteBlocked: false,
 		memoryWriteBlockedAddress: 0,
 		statusWord: CPU_STATUS_CART_ENTRY,

@@ -154,7 +154,7 @@ export const assertConstModuleExportsAreStatic = (
 			path.push(key);
 			const pathKey = buildModuleExportPathKey(path);
 			if (child.children.size === 0 && !exportConstValueByPathKey.has(pathKey) && !staticFunctionExportByPathKey.has(pathKey)) {
-				throw new Error(`[Compiler] Const module '${modulePath}' export '${pathKey}' is not a compile-time constant or static symbol.`);
+				throw new Error(`Const module '${modulePath}' export '${pathKey}' is not a compile-time constant or static symbol.`);
 			}
 			visit(child, path, visiting);
 			path.pop();

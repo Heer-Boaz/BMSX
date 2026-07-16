@@ -4,7 +4,6 @@ export const GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD = 0x00044c23;
 export const GX_GPU_DISPLAY_MODE_VERTICAL_RESOLUTION_BIT = 0x04;
 export const GX_GPU_DISPLAY_MODE_RGB24_BIT = 0x10;
 export const GX_GPU_DISPLAY_MODE_VERTICAL_INTERLACE_BIT = 0x20;
-export const GX_GPU_COMPOSITOR_DISPLAY2_ENABLE = 0x01;
 export const GX_GPU_SCANOUT_INTERPRETATION_MASK = GX_GPU_DISPLAY_MODE_VERTICAL_RESOLUTION_BIT
 	| GX_GPU_DISPLAY_MODE_RGB24_BIT
 	| GX_GPU_DISPLAY_MODE_VERTICAL_INTERLACE_BIT;
@@ -15,15 +14,6 @@ export function gxGpuDisplayStartX(word: number): number {
 
 export function gxGpuDisplayStartY(word: number): number {
 	return (word >>> 10) & 0x1ff;
-}
-
-
-export function gxGpuDisplay2Width(sizeWord: number): number {
-	return (((sizeWord & 0xffff) - 1) & 0x3ff) + 1;
-}
-
-export function gxGpuDisplay2Height(sizeWord: number): number {
-	return ((((sizeWord >>> 16) & 0xffff) - 1) & 0x1ff) + 1;
 }
 
 export function gxGpuScanoutField(statusWord: number): number {

@@ -20,7 +20,6 @@ struct InterlacedScanoutState {
 	i32 height = 0;
 	u32 displayStartWord = 0u;
 	u32 interpretationWord = 0u;
-	u32 displayDisableWord = 0u;
 	u64 vramSnapshotSerial = 0u;
 	bool valid = false;
 };
@@ -29,47 +28,23 @@ InterlacedScanoutState g_interlacedScanout;
 
 inline u32 rgb888AtSourcePixel(i32 sourceX, i32 sourceY, i32 displayStartX) {
 	const i32 wordX = displayStartX + ((sourceX * 3) >> 1);
-	const i32 gp0Y = sourceY & static_cast<i32>(GX_GPU_VRAM_HEIGHT - 1u);
-	const u32 word0 = g_gxGpuSoftwareVram[gxGpuSoftwareVramIndex(wordX, gp0Y)];
-	const u32 word1 = g_gxGpuSoftwareVram[gxGpuSoftwareVramIndex(wordX + 1, gp0Y)];
+	const u32 word0 = g_gxGpuSoftwareVram[gxGpuSoftwareVramIndex(wordX, sourceY)];
+	const u32 word1 = g_gxGpuSoftwareVram[gxGpuSoftwareVramIndex(wordX + 1, sourceY)];
 	if ((sourceX & 1) == 0) {
 		return (word0 & 0xffu) | ((word0 >> 8u) << 8u) | ((word1 & 0xffu) << 16u);
 	}
 	return (word0 >> 8u) | ((word1 & 0xffu) << 8u) | (((word1 >> 8u) & 0xffu) << 16u);
 }
 
-inline u32 rgb555WordToRgb8(u32 word) {
+inline u32 rgb555AtSourcePixel(i32 sourceX, i32 sourceY) {
+	const u32 word = g_gxGpuSoftwareVram[gxGpuSoftwareVramIndex(sourceX, sourceY)];
 	return static_cast<u32>(gxGpuSoftwareRgb555ChannelTo8(word & 0x1fu))
 		| (static_cast<u32>(gxGpuSoftwareRgb555ChannelTo8((word >> 5u) & 0x1fu)) << 8u)
 		| (static_cast<u32>(gxGpuSoftwareRgb555ChannelTo8((word >> 10u) & 0x1fu)) << 16u);
 }
 
-inline u32 rgb555AtSourcePixel(i32 sourceX, i32 sourceY) {
-	return rgb555WordToRgb8(g_gxGpuSoftwareVram[gxGpuSoftwareVramIndex(sourceX, sourceY & static_cast<i32>(GX_GPU_VRAM_HEIGHT - 1u))]);
-}
-
 inline u32 packOutputArgb(u32 rgb) {
 	return 0xff000000u | ((rgb & 0xffu) << 16u) | (rgb & 0x00ff00u) | ((rgb >> 16u) & 0xffu);
-}
-
-void composeDisplay2(SoftwareBackend& backend, const GxGpuPipelineState& state) {
-	if ((state.compositorControlWord & GX_GPU_COMPOSITOR_DISPLAY2_ENABLE) == 0u) {
-		return;
-	}
-	const i32 displayStartX = static_cast<i32>(gxGpuDisplayStartX(state.display2StartWord));
-	const i32 displayStartY = static_cast<i32>(gxGpuDisplayStartY(state.display2StartWord));
-	const i32 displayWidth = static_cast<i32>(gxGpuDisplay2Width(state.display2SizeWord));
-	const i32 displayHeight = static_cast<i32>(gxGpuDisplay2Height(state.display2SizeWord));
-	const i32 pixelsPerRow = backend.pitch() / static_cast<i32>(sizeof(u32));
-	for (i32 outputY = 0; outputY < backend.height() && outputY < displayHeight; outputY += 1) {
-		u32* const row = backend.framebuffer() + static_cast<size_t>(outputY) * static_cast<size_t>(pixelsPerRow);
-		for (i32 outputX = 0; outputX < backend.width() && outputX < displayWidth; outputX += 1) {
-			const u32 word = g_gxGpuSoftwareVram[gxGpuSoftwareVramIndex(displayStartX + outputX, displayStartY + outputY)];
-			if ((word & 0x8000u) != 0u) {
-				row[outputX] = packOutputArgb(rgb555WordToRgb8(word));
-			}
-		}
-	}
 }
 
 void fillOutputBlack(SoftwareBackend& backend) {
@@ -127,7 +102,6 @@ void scanoutInterlacedVram(SoftwareBackend& backend, const GxGpuPipelineState& s
 		|| g_interlacedScanout.height != height
 		|| g_interlacedScanout.displayStartWord != state.displayStartWord
 		|| g_interlacedScanout.interpretationWord != interpretationWord
-		|| g_interlacedScanout.displayDisableWord != (state.statusWord & GX_GPU_STATUS_DISPLAY_DISABLE)
 		|| g_interlacedScanout.vramSnapshotSerial != state.vramSnapshotSerial;
 	const size_t pixelCount = static_cast<size_t>(width) * static_cast<size_t>(height);
 	if (g_interlacedScanout.pixels.size() != pixelCount) {
@@ -144,14 +118,12 @@ void scanoutInterlacedVram(SoftwareBackend& backend, const GxGpuPipelineState& s
 		g_interlacedScanout.height = height;
 		g_interlacedScanout.displayStartWord = state.displayStartWord;
 		g_interlacedScanout.interpretationWord = interpretationWord;
-		g_interlacedScanout.displayDisableWord = state.statusWord & GX_GPU_STATUS_DISPLAY_DISABLE;
 		g_interlacedScanout.vramSnapshotSerial = state.vramSnapshotSerial;
 		g_interlacedScanout.valid = true;
 	} else {
 		writeInterlacedField(state, gxGpuScanoutField(state.statusWord), sourceLineStep, displayStartX, displayStartY, rgb24, displayDisabled);
 	}
 	copyInterlacedScanout(backend, width, height);
-	composeDisplay2(backend, state);
 }
 
 } // namespace
@@ -165,24 +137,23 @@ void scanoutGxGpuSoftwareVram(SoftwareBackend& backend, const GxGpuPipelineState
 	g_interlacedScanout.valid = false;
 	if ((state.statusWord & GX_GPU_STATUS_DISPLAY_DISABLE) != 0u) {
 		fillOutputBlack(backend);
-	} else {
-		const u32 displayModeWord = state.displayModeWord;
-		const i32 displayStartX = static_cast<i32>(gxGpuDisplayStartX(state.displayStartWord));
-		const i32 displayStartY = static_cast<i32>(gxGpuDisplayStartY(state.displayStartWord));
-		const bool rgb24 = (displayModeWord & GX_GPU_DISPLAY_MODE_RGB24_BIT) != 0u;
-		const i32 targetWidth = backend.width();
-		const i32 targetHeight = backend.height();
-		const i32 pixelsPerRow = backend.pitch() / static_cast<i32>(sizeof(u32));
-		for (i32 outputY = 0; outputY < targetHeight; outputY += 1) {
-			const i32 sourceY = displayStartY + outputY;
-			u32* row = backend.framebuffer() + static_cast<size_t>(outputY) * static_cast<size_t>(pixelsPerRow);
-			for (i32 outputX = 0; outputX < targetWidth; outputX += 1) {
-				const u32 rgb = rgb24 ? rgb888AtSourcePixel(outputX, sourceY, displayStartX) : rgb555AtSourcePixel(displayStartX + outputX, sourceY);
-				row[outputX] = packOutputArgb(rgb);
-			}
+		return;
+	}
+	const u32 displayModeWord = state.displayModeWord;
+	const i32 displayStartX = static_cast<i32>(gxGpuDisplayStartX(state.displayStartWord));
+	const i32 displayStartY = static_cast<i32>(gxGpuDisplayStartY(state.displayStartWord));
+	const bool rgb24 = (displayModeWord & GX_GPU_DISPLAY_MODE_RGB24_BIT) != 0u;
+	const i32 targetWidth = backend.width();
+	const i32 targetHeight = backend.height();
+	const i32 pixelsPerRow = backend.pitch() / static_cast<i32>(sizeof(u32));
+	for (i32 outputY = 0; outputY < targetHeight; outputY += 1) {
+		const i32 sourceY = displayStartY + outputY;
+		u32* row = backend.framebuffer() + static_cast<size_t>(outputY) * static_cast<size_t>(pixelsPerRow);
+		for (i32 outputX = 0; outputX < targetWidth; outputX += 1) {
+			const u32 rgb = rgb24 ? rgb888AtSourcePixel(outputX, sourceY, displayStartX) : rgb555AtSourcePixel(displayStartX + outputX, sourceY);
+			row[outputX] = packOutputArgb(rgb);
 		}
 	}
-	composeDisplay2(backend, state);
 }
 
 } // namespace bmsx

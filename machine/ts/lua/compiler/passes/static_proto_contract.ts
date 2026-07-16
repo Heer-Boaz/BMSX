@@ -4,6 +4,10 @@ import type { Instruction, InstructionSet } from '../optimizer';
 
 export const staticLaneForbiddenOpcodeReason = (op: OpCode): string | null => {
 	switch (op) {
+		// LOADKR only materializes an already-interned program constant selected
+		// by immutable typed .rodata; it performs no table or string allocation.
+		case OpCode.LOADKR:
+			return null;
 		case OpCode.GETSYS:
 		case OpCode.SETSYS:
 		case OpCode.GETGL:
@@ -57,7 +61,7 @@ export const assertStaticFunctionInstructionSet = (
 		const instruction = instructions[index];
 		const reason = staticLaneForbiddenOpcodeReason(instruction.op) ?? instructionLoadKReason(instruction, constPool);
 		if (reason !== null) {
-			throw new Error(`[Compiler] Module function export '${modulePath}:${symbolHandle}' emits forbidden static opcode ${getOpcodeName(instruction.op)} (${reason}). Const-module function exports and static-compatible bare-function modules must compile to scalar/static code using numeric and boolean constants, parameters, function-local words, static calls, branches, and memory loads/stores only.`);
+			throw new Error(`Module function export '${modulePath}:${symbolHandle}' emits forbidden static opcode ${getOpcodeName(instruction.op)} (${reason}). Const-module function exports and static-compatible bare-function modules must compile to scalar/static code using numeric and boolean constants, parameters, function-local words, static calls, branches, and memory loads/stores only.`);
 		}
 	}
 };

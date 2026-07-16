@@ -116,18 +116,21 @@ export class LuaParser {
 	}
 
 	public parseChunk(): LuaChunk {
+		const constModule = this.parseModuleAttribute();
 		const block = this.parseBlock(new Set<LuaTokenType>([LuaTokenType.Eof]));
 		const eofToken = this.consume(LuaTokenType.Eof, 'Expected end of input.');
 		const range = this.rangeFromBlockAndToken(block, eofToken);
 		return {
 			kind: LuaSyntaxKind.Chunk,
 			range,
+			constModule,
 			body: block.body,
 			definitions: this.buildDefinitionIndex(block),
 		};
 	}
 
 	public parseChunkWithRecovery(): { path: LuaChunk; syntaxError: LuaSyntaxError | null } {
+		const constModule = this.parseModuleAttribute();
 		const { block, syntaxError } = this.parseBlockWithRecovery(new Set<LuaTokenType>([LuaTokenType.Eof]));
 		let end: LuaSourcePosition;
 		if (syntaxError) {
@@ -140,10 +143,29 @@ export class LuaParser {
 		const path: LuaChunk = {
 			kind: LuaSyntaxKind.Chunk,
 			range,
+			constModule,
 			body: block.body,
 			definitions: this.buildDefinitionIndex(block),
 		};
 		return { path, syntaxError };
+	}
+
+	private parseModuleAttribute(): boolean {
+		if (this.current().type !== LuaTokenType.Identifier || this.current().lexeme !== 'module') {
+			return false;
+		}
+		if (this.peekType(1) !== LuaTokenType.Less
+			|| this.peekType(2) !== LuaTokenType.Identifier
+			|| this.tokens[this.index + 2].lexeme !== 'const'
+			|| this.peekType(3) !== LuaTokenType.Greater) {
+			return false;
+		}
+		this.advance();
+		this.advance();
+		this.advance();
+		this.advance();
+		this.match(LuaTokenType.Semicolon);
+		return true;
 	}
 
 	private parseBlock(terminators: ReadonlySet<LuaTokenType>): LuaBlock {
@@ -1134,13 +1156,13 @@ export class LuaParser {
 
 	private parseTypeReference(): LuaTypeReference {
 		const nameToken = this.consume(LuaTokenType.Identifier, 'Expected type name.');
-		const arrayLengths: LuaExpression[] = [];
+		const arrayLengths: Array<LuaExpression | null> = [];
+		let end = this.positionFromToken(nameToken);
 		while (this.match(LuaTokenType.LeftBracket)) {
-			const length = this.parseExpression();
-			arrayLengths.push(length);
-			this.consume(LuaTokenType.RightBracket, 'Expected "]" after type array length.');
+			arrayLengths.push(this.check(LuaTokenType.RightBracket) ? null : this.parseExpression());
+			const rightBracket = this.consume(LuaTokenType.RightBracket, 'Expected "]" after type array length.');
+			end = this.positionFromToken(rightBracket);
 		}
-		const end = arrayLengths.length > 0 ? arrayLengths[arrayLengths.length - 1].range.end : this.positionFromToken(nameToken);
 		return {
 			name: nameToken.lexeme,
 			arrayLengths,
@@ -1425,7 +1447,7 @@ export class LuaParser {
 				case LuaSyntaxKind.SizeOfExpression: {
 					const sizeExpression = expression as LuaSizeOfExpression;
 					for (const lengthExpression of sizeExpression.typeRef.arrayLengths) {
-						visitExpression(lengthExpression);
+						if (lengthExpression) visitExpression(lengthExpression);
 					}
 					break;
 				}
@@ -1470,7 +1492,7 @@ export class LuaParser {
 					const pointerTypeRef = localAssignment.pointerTypeRefs[index];
 					if (pointerTypeRef !== null) {
 						for (const lengthExpression of pointerTypeRef.arrayLengths) {
-							visitExpression(lengthExpression);
+							if (lengthExpression) visitExpression(lengthExpression);
 						}
 					}
 					recordAssignmentValue(path, mappedValues[index], currentScope);
@@ -1555,7 +1577,7 @@ export class LuaParser {
 				pushDefinition([structDeclaration.name.name], structDeclaration.name.range, currentScope, 'type');
 				for (const field of structDeclaration.fields) {
 					for (const lengthExpression of field.typeRef.arrayLengths) {
-						visitExpression(lengthExpression);
+						if (lengthExpression) visitExpression(lengthExpression);
 					}
 				}
 				break;
@@ -1564,7 +1586,7 @@ export class LuaParser {
 				const bssDeclaration = statement as LuaBssDeclarationStatement;
 				pushDefinition([bssDeclaration.name.name], bssDeclaration.name.range, currentScope, 'variable');
 				for (const lengthExpression of bssDeclaration.typeRef.arrayLengths) {
-					visitExpression(lengthExpression);
+					if (lengthExpression) visitExpression(lengthExpression);
 				}
 				break;
 			}
@@ -1572,7 +1594,7 @@ export class LuaParser {
 				const dataDeclaration = statement as LuaDataDeclarationStatement;
 				pushDefinition([dataDeclaration.name.name], dataDeclaration.name.range, currentScope, 'variable');
 				for (const lengthExpression of dataDeclaration.typeRef.arrayLengths) {
-					visitExpression(lengthExpression);
+					if (lengthExpression) visitExpression(lengthExpression);
 				}
 				visitExpression(dataDeclaration.initializer);
 				break;
@@ -1581,7 +1603,7 @@ export class LuaParser {
 				const rodataDeclaration = statement as LuaRodataDeclarationStatement;
 				pushDefinition([rodataDeclaration.name.name], rodataDeclaration.name.range, currentScope, 'variable');
 				for (const lengthExpression of rodataDeclaration.typeRef.arrayLengths) {
-					visitExpression(lengthExpression);
+					if (lengthExpression) visitExpression(lengthExpression);
 				}
 				visitExpression(rodataDeclaration.initializer);
 				break;

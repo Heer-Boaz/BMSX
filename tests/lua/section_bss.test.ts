@@ -11,6 +11,7 @@ import { Memory } from '../../machine/ts/machine/memory/memory';
 import { PROGRAM_STATIC_RAM_BASE, PROGRAM_ROM_BASE } from '../../machine/ts/machine/memory/map';
 import { compileLuaChunkToProgram, encodeCompiledProgramImage, type CompiledProgram } from '../../machine/ts/lua/compiler';
 import { inflateExecutableProgramImage, linkProgramImages } from '../../machine/ts/machine/program/linker';
+import { readLE32 } from '../../machine/ts/common/endian';
 
 function parseSource(source: string, path: string) {
 	const lexer = new LuaLexer(source, path);
@@ -22,11 +23,16 @@ function compileSource(source: string, path = 'section_bss.lua') {
 	return compileLuaChunkToProgram(parseSource(source, path), [], { entrySource: source });
 }
 
+function constModule(path: string, source: string) {
+	const declaredSource = `module<const>\n${source}`;
+	return { path, chunk: parseSource(declaredSource, `${path}.lua`), source: declaredSource };
+}
+
 function compileWithConstModule(entrySource: string, modulePath: string, moduleSource: string): CompiledProgram {
 	return compileLuaChunkToProgram(
 		parseSource(entrySource, 'entry.lua'),
-		[{ path: modulePath, chunk: parseSource(moduleSource, `${modulePath}.lua`), source: moduleSource }],
-		{ entrySource, constModulePaths: [modulePath] },
+		[constModule(modulePath, moduleSource)],
+		{ entrySource },
 	);
 }
 
@@ -371,8 +377,7 @@ test('external const modules cannot export function call targets', () => {
 			[],
 			{
 				entrySource: 'return require("state").read()',
-				externalModules: [{ path: 'state', chunk: parseSource(moduleSource, 'state.lua'), source: moduleSource }],
-				constModulePaths: ['state'],
+				externalModules: [constModule('state', moduleSource)],
 			},
 		),
 		/Const module 'state' exports function call targets but is not compiled as a source module/,
@@ -392,10 +397,10 @@ return *ap, *bp, a.counter, b.counter
 	const compiled = compileLuaChunkToProgram(
 		parseSource(entrySource, 'entry.lua'),
 		[
-			{ path: 'state_a', chunk: parseSource('bss counter: word\nreturn { counter = counter }', 'state_a.lua'), source: 'bss counter: word\nreturn { counter = counter }' },
-			{ path: 'state_b', chunk: parseSource('bss counter: word\nreturn { counter = counter }', 'state_b.lua'), source: 'bss counter: word\nreturn { counter = counter }' },
+			constModule('state_a', 'bss counter: word\nreturn { counter = counter }'),
+			constModule('state_b', 'bss counter: word\nreturn { counter = counter }'),
 		],
-		{ entrySource, constModulePaths: ['state_a', 'state_b'] },
+		{ entrySource },
 	);
 	const image = encodeCompiledProgramImage(compiled);
 	assert.deepEqual(image.sections.bss.symbols, [
@@ -410,14 +415,14 @@ test('linked system and cart const-module .bss symbols resolve against their own
 	const systemSource = 'local s<const> = require("sys_state")\nreturn s.counter';
 	const systemCompiled = compileLuaChunkToProgram(
 		parseSource(systemSource, 'system.lua'),
-		[{ path: 'sys_state', chunk: parseSource('bss counter: word\nreturn { counter = counter }', 'sys_state.lua'), source: 'bss counter: word\nreturn { counter = counter }' }],
-		{ entrySource: systemSource, constModulePaths: ['sys_state'] },
+		[constModule('sys_state', 'bss counter: word\nreturn { counter = counter }')],
+		{ entrySource: systemSource },
 	);
 	const cartSource = 'local s<const> = require("cart_state")\nreturn s.counter';
 	const cartCompiled = compileLuaChunkToProgram(
 		parseSource(cartSource, 'cart.lua'),
-		[{ path: 'cart_state', chunk: parseSource('bss counter: word\nreturn { counter = counter }', 'cart_state.lua'), source: 'bss counter: word\nreturn { counter = counter }' }],
-		{ entrySource: cartSource, constModulePaths: ['cart_state'] },
+		[constModule('cart_state', 'bss counter: word\nreturn { counter = counter }')],
+		{ entrySource: cartSource },
 	);
 	const linked = linkProgramImages(
 		encodeCompiledProgramImage(systemCompiled),
@@ -445,8 +450,7 @@ test('external const modules cannot declare .bss storage', () => {
 			[],
 			{
 				entrySource: 'return require("state").counter',
-				externalModules: [{ path: 'state', chunk: parseSource(moduleSource, 'state.lua'), source: moduleSource }],
-				constModulePaths: ['state'],
+				externalModules: [constModule('state', moduleSource)],
 			},
 		),
 		/Const module 'state' declares \.bss storage but is not compiled as a source module/,
@@ -540,14 +544,14 @@ test('linked system and cart const-module .data symbols resolve VMA and LMA rang
 	const systemSource = 'local s<const> = require("sys_data")\nreturn s.value';
 	const systemCompiled = compileLuaChunkToProgram(
 		parseSource(systemSource, 'system.lua'),
-		[{ path: 'sys_data', chunk: parseSource('data value: word = 10\nreturn { value = value }', 'sys_data.lua'), source: 'data value: word = 10\nreturn { value = value }' }],
-		{ entrySource: systemSource, constModulePaths: ['sys_data'] },
+		[constModule('sys_data', 'data value: word = 10\nreturn { value = value }')],
+		{ entrySource: systemSource },
 	);
 	const cartSource = 'local s<const> = require("cart_data")\nreturn s.value';
 	const cartCompiled = compileLuaChunkToProgram(
 		parseSource(cartSource, 'cart.lua'),
-		[{ path: 'cart_data', chunk: parseSource('data value: word = 20\nreturn { value = value }', 'cart_data.lua'), source: 'data value: word = 20\nreturn { value = value }' }],
-		{ entrySource: cartSource, constModulePaths: ['cart_data'] },
+		[constModule('cart_data', 'data value: word = 20\nreturn { value = value }')],
+		{ entrySource: cartSource },
 	);
 	const linked = linkProgramImages(
 		encodeCompiledProgramImage(systemCompiled),
@@ -580,8 +584,7 @@ test('external const modules cannot declare .data storage', () => {
 			[],
 			{
 				entrySource: 'return require("state").counter',
-				externalModules: [{ path: 'state', chunk: parseSource(moduleSource, 'state.lua'), source: moduleSource }],
-				constModulePaths: ['state'],
+				externalModules: [constModule('state', moduleSource)],
 			},
 		),
 		/Const module 'state' declares \.data storage but is not compiled as a source module/,
@@ -625,6 +628,79 @@ return bytes[0], bytes[1], bytes[2], halves[0], halves[1], bytes, halves
 	assert.deepEqual(runColdCompiled(compiled).values, [1, 2, 3, 258, 772, bytesAddr, halvesAddr]);
 });
 
+test('BLua static storage derives dimensions and initializer values from local constants', () => {
+	const result = runCold(`
+local count<const> = 3
+rodata values: word[count] = { count, count + 1, count + 2 }
+return #values, values[0], values[1], values[2]
+`);
+	assert.deepEqual(result.values, [3, 3, 4, 5]);
+});
+
+test('BLua static storage derives dimensions from const-module fields', () => {
+	const compiled = compileWithConstModule(`
+local layout<const> = require('layout')
+local cell_count<const> = layout.columns * layout.rows
+bss cells: word[cell_count]
+return #cells
+`, 'layout', `
+local columns<const> = 4
+local rows<const> = 3
+return { columns = columns, rows = rows }
+`);
+	assert.deepEqual(runColdCompiled(compiled).values, [12]);
+});
+
+test('BLua .rodata records infer array length and load immutable string fields without tables', () => {
+	const source = `
+struct monitor_command
+	name: string
+	usage: string
+	kind: u8
+end
+rodata commands: monitor_command[] = {
+	{ name = 'CLS', usage = 'CLS', kind = 1 },
+	{ name = 'MEM', usage = 'MEM <HEX ADDRESS> [WORDS]', kind = 2 },
+}
+return #commands, commands[0].name == 'CLS', #commands[1].usage, commands[1].kind, sizeof(monitor_command)
+`;
+	const compiled = compileSource(source, 'rodata_records.lua');
+	const image = encodeCompiledProgramImage(compiled);
+	assert.deepEqual(image.link.rodataConstRelocs, [
+		{ byteOffset: 0, constIndex: readLE32(image.sections.rodata.bytes, 0) },
+		{ byteOffset: 4, constIndex: readLE32(image.sections.rodata.bytes, 4) },
+		{ byteOffset: 12, constIndex: readLE32(image.sections.rodata.bytes, 12) },
+		{ byteOffset: 16, constIndex: readLE32(image.sections.rodata.bytes, 16) },
+	]);
+	const disassembly = disassembleProgram(compiled.program, compiled.metadata, { showProtoHeaders: true });
+	assert.match(disassembly, /LOADKR/);
+	assert.doesNotMatch(disassembly, /\bNEWT\b/);
+	assert.deepEqual(runColdCompiled(compiled).values, [2, true, 25, 2, 12]);
+});
+
+test('program linking remaps const references stored in cart .rodata records', () => {
+	const compileRecord = (text: string, path: string): CompiledProgram => compileSource(`
+struct label
+	text: string
+end
+rodata labels: label[] = { { text = '${text}' } }
+return labels[0].text
+`, path);
+	const system = compileRecord('SYSTEM', 'system_rodata_record.lua');
+	const cart = compileRecord('CART', 'cart_rodata_record.lua');
+	const linked = linkProgramImages(
+		encodeCompiledProgramImage(system),
+		system.metadata,
+		encodeCompiledProgramImage(cart),
+		cart.metadata,
+	);
+	const constPool = linked.programImage.sections.rodata.constPool;
+	const bytes = linked.programImage.sections.rodata.bytes;
+	assert.equal(constPool[readLE32(bytes, 0)], 'SYSTEM');
+	assert.equal(constPool[readLE32(bytes, 4)], 'CART');
+	assert.deepEqual(linked.programImage.link.rodataConstRelocs, []);
+});
+
 test('const modules export .rodata storage symbols without runtime module state', () => {
 	const moduleSource = `
 rodata values: word[2] = { 5, 6 }
@@ -657,14 +733,14 @@ test('linked system and cart const-module .rodata symbols resolve against their 
 	const systemSource = 'local s<const> = require("sys_data")\nreturn s.values';
 	const systemCompiled = compileLuaChunkToProgram(
 		parseSource(systemSource, 'system.lua'),
-		[{ path: 'sys_data', chunk: parseSource('rodata values: word[1] = { 10 }\nreturn { values = values }', 'sys_data.lua'), source: 'rodata values: word[1] = { 10 }\nreturn { values = values }' }],
-		{ entrySource: systemSource, constModulePaths: ['sys_data'] },
+		[constModule('sys_data', 'rodata values: word[1] = { 10 }\nreturn { values = values }')],
+		{ entrySource: systemSource },
 	);
 	const cartSource = 'local s<const> = require("cart_data")\nreturn s.values';
 	const cartCompiled = compileLuaChunkToProgram(
 		parseSource(cartSource, 'cart.lua'),
-		[{ path: 'cart_data', chunk: parseSource('rodata values: word[1] = { 20 }\nreturn { values = values }', 'cart_data.lua'), source: 'rodata values: word[1] = { 20 }\nreturn { values = values }' }],
-		{ entrySource: cartSource, constModulePaths: ['cart_data'] },
+		[constModule('cart_data', 'rodata values: word[1] = { 20 }\nreturn { values = values }')],
+		{ entrySource: cartSource },
 	);
 	const linked = linkProgramImages(
 		encodeCompiledProgramImage(systemCompiled),
@@ -692,8 +768,7 @@ test('external const modules cannot declare .rodata storage', () => {
 			[],
 			{
 				entrySource: 'return require("data").values',
-				externalModules: [{ path: 'data', chunk: parseSource(moduleSource, 'data.lua'), source: moduleSource }],
-				constModulePaths: ['data'],
+				externalModules: [constModule('data', moduleSource)],
 			},
 		),
 		/Const module 'data' declares \.rodata storage but is not compiled as a source module/,

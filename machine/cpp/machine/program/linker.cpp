@@ -1,6 +1,7 @@
 #include "machine/program/linker.h"
 #include "machine/cpu/instruction_format.h"
 #include "machine/memory/map.h"
+#include "common/endian.h"
 #include <algorithm>
 #include <cstring>
 #include <iomanip>
@@ -889,6 +890,11 @@ LinkedProgramImage linkProgramImages(
 	linkedSections.rodata.bytes.reserve(linkedRodataByteCount);
 	linkedSections.rodata.bytes.insert(linkedSections.rodata.bytes.end(), systemRodata.bytes.begin(), systemRodata.bytes.end());
 	linkedSections.rodata.bytes.insert(linkedSections.rodata.bytes.end(), cartRodata.bytes.begin(), cartRodata.bytes.end());
+	for (const ProgramRodataConstReloc& reloc : cartImage.link.rodataConstRelocs) {
+		writeLE32(
+			linkedSections.rodata.bytes.data() + systemRodataByteCount + static_cast<size_t>(reloc.byteOffset),
+			static_cast<u32>(merged.cartRemap[static_cast<size_t>(reloc.constIndex)]));
+	}
 	linkedSections.rodata.symbols = systemRodata.symbols;
 	linkedSections.rodata.symbols.reserve(systemRodata.symbols.size() + cartRodata.symbols.size());
 	for (const auto& symbol : cartRodata.symbols) {
@@ -917,6 +923,7 @@ LinkedProgramImage linkProgramImages(
 	linkedImage->sections = std::move(linkedSections);
 	linkedImage->link.constRelocs.clear();
 	linkedImage->link.constValueRelocs.clear();
+	linkedImage->link.rodataConstRelocs.clear();
 	linkedImage->link.symbols = runtimeSymbols;
 
 	const int systemInstructionCount = systemCodeBytes / INSTRUCTION_BYTES;

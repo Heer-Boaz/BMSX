@@ -786,6 +786,9 @@ const collectUsesForLiveness = (instruction: Instruction, maxRegister: number): 
 		case OpCode.MTC0:
 			pushRegister(uses, instruction.a);
 			break;
+		case OpCode.LOADKR:
+			pushRegister(uses, instruction.b);
+			break;
 		case OpCode.LOAD_MEM_D:
 			pushRegister(uses, instruction.b);
 			break;
@@ -889,6 +892,7 @@ const collectDefs = (instruction: Instruction, maxRegister: number): number[] =>
 		case OpCode.KM1:
 		case OpCode.KSMI:
 		case OpCode.LOADK:
+		case OpCode.LOADKR:
 		case OpCode.GETSYS:
 		case OpCode.GETGL:
 		case OpCode.GETI:
@@ -1311,6 +1315,7 @@ const isHoistableInstruction = (instruction: Instruction): boolean => {
 		case OpCode.KSMI:
 		case OpCode.LOADK:
 			return instruction.symbolicReloc === undefined;
+		case OpCode.LOADKR:
 		case OpCode.LOADNIL:
 		case OpCode.ADD:
 		case OpCode.SUB:

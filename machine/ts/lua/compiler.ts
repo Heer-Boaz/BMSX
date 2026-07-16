@@ -61,6 +61,7 @@ import {
 	toLuaModulePath,
 	type ProgramConstReloc,
 	type ProgramConstValueReloc,
+	type ProgramRodataConstReloc,
 	type ProgramDataSection,
 	type ProgramDataSymbol,
 	type ProgramBssSection,
@@ -103,6 +104,7 @@ export type CompiledProgram = {
 	staticModulePaths: string[];
 	constRelocs: ProgramConstReloc[];
 	constValueRelocs: ProgramConstValueReloc[];
+	rodataConstRelocs: ProgramRodataConstReloc[];
 	data: ProgramDataSection;
 	bss: ProgramBssSection;
 	rodataBytes: Uint8Array;
@@ -116,6 +118,7 @@ export type AppendedProgram = {
 	sectionInitProtoIndex: number;
 	constRelocs: ProgramConstReloc[];
 	constValueRelocs: ProgramConstValueReloc[];
+	rodataConstRelocs: ProgramRodataConstReloc[];
 	data: ProgramDataSection;
 	bss: ProgramBssSection;
 	rodataBytes: Uint8Array;
@@ -141,6 +144,7 @@ export function encodeCompiledProgramImage(compiled: CompiledProgram): ProgramIm
 		link: {
 			constRelocs: compiled.constRelocs,
 			constValueRelocs: compiled.constValueRelocs,
+			rodataConstRelocs: compiled.rodataConstRelocs,
 			symbols: {
 				protoIds: compiled.metadata.protoIds,
 				globalNames: compiled.metadata.globalNames,
@@ -175,7 +179,6 @@ type CompileOptions = {
 	optLevel?: OptimizationLevel;
 	entrySource?: string;
 	externalModules?: ReadonlyArray<ProgramModule>;
-	constModulePaths?: ReadonlyArray<string>;
 	programDomain?: ProgramCompileDomain;
 };
 
@@ -233,21 +236,25 @@ type RequireModuleBinding = ModuleBinding | {
 	external: boolean;
 };
 
+type StructScalarAccess =
+	| { kind: 'memory'; memoryKind: MemoryAccessKind }
+	| { kind: 'const_pool' };
+
 type PrimitiveStructType = {
 	size: number;
 	alignment: number;
-	accessKind: MemoryAccessKind;
+	access: StructScalarAccess;
 };
 
 type StructResolvedType = {
 	name: string;
 	baseSize: number;
 	baseAlignment: number;
-	baseAccessKind: MemoryAccessKind | null;
+	baseAccess: StructScalarAccess | null;
 	baseStruct: StructLayout | null;
 	size: number;
 	alignment: number;
-	accessKind: MemoryAccessKind | null;
+	access: StructScalarAccess | null;
 	struct: StructLayout | null;
 	dimensions: number[];
 };
@@ -257,7 +264,7 @@ type StructFieldLayout = {
 	type: StructResolvedType;
 	offset: number;
 	size: number;
-	accessKind: MemoryAccessKind | null;
+	access: StructScalarAccess | null;
 };
 
 type StructLayout = {
@@ -299,6 +306,11 @@ type RodataBinding = {
 	byteCount: number;
 	alignment: number;
 	type: StructResolvedType;
+};
+
+type StaticStorageInitializer = {
+	bytes: Uint8Array;
+	rodataConstRelocs: ProgramRodataConstReloc[];
 };
 
 type StructAddress = {
@@ -353,16 +365,17 @@ const MAX_DISPLACED_MEMORY_BYTE_OFFSET = MAX_DISPLACED_MEMORY_WORD_OFFSET << 2;
 const MAX_SPECIALIZED_TABLE_OPERAND = MAX_EXT_REGISTER_BC;
 
 const PRIMITIVE_STRUCT_TYPES: ReadonlyMap<string, PrimitiveStructType> = new Map([
-	['u8', { size: 1, alignment: 1, accessKind: MemoryAccessKind.U8 }],
-	['i8', { size: 1, alignment: 1, accessKind: MemoryAccessKind.U8 }],
-	['u16', { size: 2, alignment: 2, accessKind: MemoryAccessKind.U16LE }],
-	['i16', { size: 2, alignment: 2, accessKind: MemoryAccessKind.U16LE }],
-	['u32', { size: 4, alignment: 4, accessKind: MemoryAccessKind.U32LE }],
-	['i32', { size: 4, alignment: 4, accessKind: MemoryAccessKind.U32LE }],
-	['f32', { size: 4, alignment: 4, accessKind: MemoryAccessKind.F32LE }],
-	['f64', { size: 8, alignment: 4, accessKind: MemoryAccessKind.F64LE }],
-	['addr', { size: 4, alignment: 4, accessKind: MemoryAccessKind.U32LE }],
-	['word', { size: 4, alignment: 4, accessKind: MemoryAccessKind.Word }],
+	['u8', { size: 1, alignment: 1, access: { kind: 'memory', memoryKind: MemoryAccessKind.U8 } }],
+	['i8', { size: 1, alignment: 1, access: { kind: 'memory', memoryKind: MemoryAccessKind.U8 } }],
+	['u16', { size: 2, alignment: 2, access: { kind: 'memory', memoryKind: MemoryAccessKind.U16LE } }],
+	['i16', { size: 2, alignment: 2, access: { kind: 'memory', memoryKind: MemoryAccessKind.U16LE } }],
+	['u32', { size: 4, alignment: 4, access: { kind: 'memory', memoryKind: MemoryAccessKind.U32LE } }],
+	['i32', { size: 4, alignment: 4, access: { kind: 'memory', memoryKind: MemoryAccessKind.U32LE } }],
+	['f32', { size: 4, alignment: 4, access: { kind: 'memory', memoryKind: MemoryAccessKind.F32LE } }],
+	['f64', { size: 8, alignment: 4, access: { kind: 'memory', memoryKind: MemoryAccessKind.F64LE } }],
+	['addr', { size: 4, alignment: 4, access: { kind: 'memory', memoryKind: MemoryAccessKind.U32LE } }],
+	['word', { size: 4, alignment: 4, access: { kind: 'memory', memoryKind: MemoryAccessKind.Word } }],
+	['string', { size: 4, alignment: 4, access: { kind: 'const_pool' } }],
 ]);
 
 const isSmallSignedImmediate = (value: number): boolean =>
@@ -397,6 +410,7 @@ class ProgramBuilder {
 	public readonly dataBindingsBySymbolHandle = new Map<string, DataBinding>();
 	public readonly rodataBindingsBySymbolHandle = new Map<string, RodataBinding>();
 	private readonly constValueRelocs: ProgramConstValueReloc[] = [];
+	private readonly rodataConstRelocs: ProgramRodataConstReloc[] = [];
 	private readonly relocatedConstIndices = new Set<number>();
 	private bssByteCount = 0;
 	private dataByteCount = 0;
@@ -591,18 +605,22 @@ class ProgramBuilder {
 		return binding;
 	}
 
-	public recordRodata(symbolHandle: string, moduleId: string, name: string, type: StructResolvedType, bytes: Uint8Array): RodataBinding {
+	public recordRodata(symbolHandle: string, moduleId: string, name: string, type: StructResolvedType, initializer: StaticStorageInitializer): RodataBinding {
 		this.assertStaticStorageAllowed('rodata');
 		const existing = this.rodataBindingsBySymbolHandle.get(symbolHandle);
 		if (existing) {
 			return existing;
 		}
 		const offset = this.alignStorageOffset(this.rodataByteCount, type.alignment);
-		const nextByteCount = this.alignStorageOffset(offset + bytes.byteLength, 4);
+		const nextByteCount = this.alignStorageOffset(offset + initializer.bytes.byteLength, 4);
 		const nextBytes = new Uint8Array(nextByteCount);
 		nextBytes.set(this.rodataBytes, 0);
-		nextBytes.set(bytes, offset);
+		nextBytes.set(initializer.bytes, offset);
 		this.rodataBytes = nextBytes;
+		for (let index = 0; index < initializer.rodataConstRelocs.length; index += 1) {
+			const reloc = initializer.rodataConstRelocs[index];
+			this.rodataConstRelocs.push({ byteOffset: offset + reloc.byteOffset, constIndex: reloc.constIndex });
+		}
 		const binding: RodataBinding = {
 			symbolHandle,
 			name,
@@ -690,7 +708,7 @@ class ProgramBuilder {
 
 	private assertStaticStorageAllowed(kind: 'bss' | 'data' | 'rodata'): void {
 		if (!this.canDeclareStaticStorage) {
-			throw new Error(`[Compiler] Host-eval append cannot declare .${kind} storage; static storage belongs to full object builds.`);
+			throw new Error(`Host-eval append cannot declare .${kind} storage; static storage belongs to full object builds.`);
 		}
 	}
 
@@ -901,7 +919,7 @@ class ProgramBuilder {
 		this.protoSlotById.set(protoId, index + 1);
 	}
 
-	public buildProgram(): { program: Program; metadata: ProgramMetadata; constRelocs: ProgramConstReloc[]; constValueRelocs: ProgramConstValueReloc[]; data: ProgramDataSection; bss: ProgramBssSection; rodataBytes: Uint8Array; rodataSymbols: ProgramRodataSymbol[]; staticModulePaths: string[] } {
+	public buildProgram(): { program: Program; metadata: ProgramMetadata; constRelocs: ProgramConstReloc[]; constValueRelocs: ProgramConstValueReloc[]; rodataConstRelocs: ProgramRodataConstReloc[]; data: ProgramDataSection; bss: ProgramBssSection; rodataBytes: Uint8Array; rodataSymbols: ProgramRodataSymbol[]; staticModulePaths: string[] } {
 		let fixedEndBytes = this.baseCode ? this.baseCode.byteLength : 0;
 		let appendedBytes = 0;
 		for (let i = 0; i < this.protoCode.length; i += 1) {
@@ -1013,6 +1031,7 @@ class ProgramBuilder {
 			metadata,
 			constRelocs: fullConstRelocs,
 			constValueRelocs: this.constValueRelocs.slice(),
+			rodataConstRelocs: this.rodataConstRelocs.slice(),
 			data: this.buildDataSection(),
 			bss: this.buildBssSection(),
 			rodataBytes: this.rodataBytes,
@@ -1257,7 +1276,7 @@ class FunctionBuilder {
 		this.initializerBooleanValues[index] = this.compileTimeBooleanValue;
 	}
 
-	public compileStaticFunctionModuleScope(chunk: LuaChunk): void {
+	public compileStaticModuleScope(chunk: LuaChunk): void {
 		this.registerStructDeclarations(chunk.body);
 		this.pushScope(chunk.range);
 		for (let index = 0; index < chunk.body.length; index += 1) {
@@ -1274,7 +1293,18 @@ class FunctionBuilder {
 			const local = statement as LuaLocalAssignmentStatement;
 			this.resetInitializerScratch(local.names.length);
 			for (let valueIndex = 0; valueIndex < local.values.length && valueIndex < local.names.length; valueIndex += 1) {
-				if (local.attributes[valueIndex] === 'const' && this.evaluateCompileTimeExpression(local.values[valueIndex])) {
+				if (local.attributes[valueIndex] !== 'const') {
+					continue;
+				}
+				const moduleBinding = this.resolveConstLocalModuleBinding(local.values[valueIndex]);
+				if (moduleBinding) {
+					this.initializerFlags[valueIndex] |= INIT_HAS_MODULE_BINDING;
+					this.initializerModuleBindings[valueIndex] = moduleBinding;
+					if (this.moduleBindingOwnsCompileTimeLocal(moduleBinding)) {
+						continue;
+					}
+				}
+				if (this.evaluateCompileTimeExpression(local.values[valueIndex])) {
 					this.recordCompileTimeInitializer(valueIndex);
 				}
 			}
@@ -1282,6 +1312,9 @@ class FunctionBuilder {
 				const localName = local.names[nameIndex];
 				const decl = this.requireBoundDeclaration(localName.range, `local '${localName.name}'`);
 				const flags = this.initializerFlags[nameIndex];
+				const moduleBinding = flags & INIT_HAS_MODULE_BINDING
+					? this.initializerModuleBindings[nameIndex]
+					: null;
 				if (flags & INIT_HAS_VALUE) {
 					this.declareLocalFromDecl(
 						decl,
@@ -1290,14 +1323,14 @@ class FunctionBuilder {
 						this.initializerValues[nameIndex],
 						true,
 						null,
-						null,
+						moduleBinding,
 						this.initializerNumberValues[nameIndex],
 						!!(flags & INIT_HAS_NUMBER),
 						this.initializerBooleanValues[nameIndex],
 						!!(flags & INIT_HAS_BOOLEAN),
 					);
 				} else {
-					this.declareLocalFromDecl(decl, localName.range);
+					this.declareLocalFromDecl(decl, localName.range, undefined, null, false, null, moduleBinding);
 				}
 			}
 		}
@@ -1428,7 +1461,7 @@ class FunctionBuilder {
 	private requireStructArrayLength(expression: LuaExpression): number {
 		const value = this.evaluateCompileTimeNumber(expression);
 		if (value === undefined || !Number.isInteger(value) || value <= 0) {
-			throw new Error('[Compiler] Struct array length must be a positive compile-time integer.');
+			throw new Error('Struct array length must be a positive compile-time integer.');
 		}
 		return value;
 	}
@@ -1437,7 +1470,7 @@ class FunctionBuilder {
 		name: string,
 		baseSize: number,
 		baseAlignment: number,
-		baseAccessKind: MemoryAccessKind | null,
+		baseAccess: StructScalarAccess | null,
 		baseStruct: StructLayout | null,
 		dimensions: ReadonlyArray<number>,
 	): StructResolvedType {
@@ -1450,39 +1483,47 @@ class FunctionBuilder {
 			name,
 			baseSize,
 			baseAlignment,
-			baseAccessKind,
+			baseAccess,
 			baseStruct,
 			size,
 			alignment: baseAlignment,
-			accessKind: isElement ? baseAccessKind : null,
+			access: isElement ? baseAccess : null,
 			struct: isElement ? baseStruct : null,
 			dimensions: Array.from(dimensions),
 		};
 	}
 
-	private resolveStructTypeReference(typeRef: LuaTypeReference, resolving: Set<string> = new Set()): StructResolvedType {
+	private resolveStructTypeReference(typeRef: LuaTypeReference, resolving: Set<string> = new Set(), inferredOuterLength?: number): StructResolvedType {
 		const primitive = PRIMITIVE_STRUCT_TYPES.get(typeRef.name);
 		let baseSize: number;
 		let baseAlignment: number;
-		let baseAccessKind: MemoryAccessKind | null;
+		let baseAccess: StructScalarAccess | null;
 		let baseStruct: StructLayout | null;
 		if (primitive !== undefined) {
 			baseSize = primitive.size;
 			baseAlignment = primitive.alignment;
-			baseAccessKind = primitive.accessKind;
+			baseAccess = primitive.access;
 			baseStruct = null;
 		} else {
 			const layout = this.resolveStructLayout(typeRef.name, resolving);
 			baseSize = layout.size;
 			baseAlignment = layout.alignment;
-			baseAccessKind = null;
+			baseAccess = null;
 			baseStruct = layout;
 		}
 		const dimensions: number[] = [];
 		for (let index = 0; index < typeRef.arrayLengths.length; index += 1) {
-			dimensions.push(this.requireStructArrayLength(typeRef.arrayLengths[index]));
+			const lengthExpression = typeRef.arrayLengths[index];
+			if (!lengthExpression) {
+				if (index !== 0 || !inferredOuterLength) {
+					throw new Error('An inferred array length is only valid for the outer dimension of an initialized .data or .rodata declaration.');
+				}
+				dimensions.push(inferredOuterLength);
+				continue;
+			}
+			dimensions.push(this.requireStructArrayLength(lengthExpression));
 		}
-		return this.makeStructResolvedType(typeRef.name, baseSize, baseAlignment, baseAccessKind, baseStruct, dimensions);
+		return this.makeStructResolvedType(typeRef.name, baseSize, baseAlignment, baseAccess, baseStruct, dimensions);
 	}
 
 	private resolveStructLayout(name: string, resolving: Set<string> = new Set()): StructLayout {
@@ -1492,10 +1533,10 @@ class FunctionBuilder {
 		}
 		const declaration = this.program.structDeclarations.get(name);
 		if (!declaration) {
-			throw new Error(`[Compiler] Unknown struct type '${name}'.`);
+			throw new Error(`Unknown struct type '${name}'.`);
 		}
 		if (resolving.has(name)) {
-			throw new Error(`[Compiler] Recursive struct layout '${name}' is not supported.`);
+			throw new Error(`Recursive struct layout '${name}' is not supported.`);
 		}
 		resolving.add(name);
 		let offset = 0;
@@ -1504,7 +1545,7 @@ class FunctionBuilder {
 		for (let index = 0; index < declaration.fields.length; index += 1) {
 			const field = declaration.fields[index] as LuaStructFieldDeclaration;
 			if (fields.has(field.name)) {
-				throw new Error(`[Compiler] Duplicate field '${field.name}' in struct '${name}'.`);
+				throw new Error(`Duplicate field '${field.name}' in struct '${name}'.`);
 			}
 			const type = this.resolveStructTypeReference(field.typeRef, resolving);
 			offset = this.alignStructOffset(offset, type.alignment);
@@ -1513,7 +1554,7 @@ class FunctionBuilder {
 				type,
 				offset,
 				size: type.size,
-				accessKind: type.accessKind,
+				access: type.access,
 			});
 			offset += type.size;
 			alignment = Math.max(alignment, type.alignment);
@@ -1531,13 +1572,13 @@ class FunctionBuilder {
 
 	private typeAfterStructIndex(type: StructResolvedType): StructResolvedType {
 		if (type.dimensions.length === 0) {
-			throw new Error(`[Compiler] Type '${type.name}' is not an array.`);
+			throw new Error(`Type '${type.name}' is not an array.`);
 		}
 		return this.makeStructResolvedType(
 			type.name,
 			type.baseSize,
 			type.baseAlignment,
-			type.baseAccessKind,
+			type.baseAccess,
 			type.baseStruct,
 			type.dimensions.slice(1),
 		);
@@ -1549,11 +1590,11 @@ class FunctionBuilder {
 		let current = this.makeStructResolvedType(typeName, layout.size, layout.alignment, null, layout, []);
 		for (let index = 0; index < fieldPath.length; index += 1) {
 			if (current.struct === null) {
-				throw new Error(`[Compiler] offsetof cannot select '${fieldPath[index]}' through non-struct type '${current.name}'.`);
+				throw new Error(`offsetof cannot select '${fieldPath[index]}' through non-struct type '${current.name}'.`);
 			}
 			const field = current.struct.fields.get(fieldPath[index]);
 			if (field === undefined) {
-				throw new Error(`[Compiler] Unknown field '${fieldPath[index]}' on struct '${current.struct.name}'.`);
+				throw new Error(`Unknown field '${fieldPath[index]}' on struct '${current.struct.name}'.`);
 			}
 			offset += field.offset;
 			current = field.type;
@@ -1563,11 +1604,11 @@ class FunctionBuilder {
 
 	private resolveStructFieldAddress(base: StructAddress, fieldName: string): StructAddress {
 		if (base.type.struct === null) {
-			throw new Error(`[Compiler] Cannot select field '${fieldName}' from non-struct type '${base.type.name}'.`);
+			throw new Error(`Cannot select field '${fieldName}' from non-struct type '${base.type.name}'.`);
 		}
 		const field = base.type.struct.fields.get(fieldName);
 		if (field === undefined) {
-			throw new Error(`[Compiler] Unknown field '${fieldName}' on struct '${base.type.struct.name}'.`);
+			throw new Error(`Unknown field '${fieldName}' on struct '${base.type.struct.name}'.`);
 		}
 		return {
 			baseReg: base.baseReg,
@@ -1886,7 +1927,7 @@ class FunctionBuilder {
 	private requireBoundDeclaration(range: LuaSourceRange, context: string): Decl {
 		const decl = this.semantics.getDeclaration(range);
 		if (!decl) {
-			throw new Error(`[Compiler] Missing bound declaration for ${context}.`);
+			throw new Error(`Missing bound declaration for ${context}.`);
 		}
 		return decl;
 	}
@@ -1907,10 +1948,10 @@ class FunctionBuilder {
 		hasConstBooleanValue = false,
 	): number {
 		if (getMemoryAccessKindForName(name) !== null) {
-			throw new Error(`[Compiler] '${name}' is a reserved memory map name and cannot be used as a local or parameter.`);
+			throw new Error(`'${name}' is a reserved memory map name and cannot be used as a local or parameter.`);
 		}
 		if (isReservedIntrinsicName(name)) {
-			throw new Error(`[Compiler] '${name}' is a reserved intrinsic name and cannot be used as a local or parameter.`);
+			throw new Error(`'${name}' is a reserved intrinsic name and cannot be used as a local or parameter.`);
 		}
 		const reg = this.localCount;
 		this.localCount += 1;
@@ -2138,7 +2179,7 @@ class FunctionBuilder {
 			return;
 		}
 		if (visiting.has(path)) {
-			throw new Error(`[Compiler] Compile-time require cycle includes module '${path}'.`);
+			throw new Error(`Compile-time require cycle includes module '${path}'.`);
 		}
 		const context = this.moduleCompileContext as ModuleCompileContext;
 		const moduleInfo = context.modulesByPath.get(path);
@@ -2173,7 +2214,7 @@ class FunctionBuilder {
 		if (this.program.hasModuleContract(canonicalName)) {
 			return canonicalName;
 		}
-		throw new Error(`[Compiler] Compile-time require module '${name}' was not provided to the program compiler.`);
+		throw new Error(`Compile-time require module '${name}' was not provided to the program compiler.`);
 	}
 
 	private resolveRequireModuleBinding(expression: LuaExpression): RequireModuleBinding | undefined {
@@ -2193,7 +2234,7 @@ class FunctionBuilder {
 			return;
 		}
 		if (call.methodName !== null || call.arguments.length !== 1 || call.arguments[0].kind !== LuaSyntaxKind.StringLiteralExpression) {
-			throw new Error('[Compiler] Compile-time require expects exactly one literal module path.');
+			throw new Error('Compile-time require expects exactly one literal module path.');
 		}
 		const moduleName = (call.arguments[0] as LuaStringLiteralExpression).value;
 		const modulePath = this.resolveKnownModulePath(moduleName);
@@ -2393,7 +2434,7 @@ class FunctionBuilder {
 					this.emitLoadBssAddress(target, binding, 0);
 					return;
 				}
-				throw new Error(`[Compiler] Static module .bss symbol '${value.symbolHandle}' was not recorded.`);
+				throw new Error(`Static module .bss symbol '${value.symbolHandle}' was not recorded.`);
 			}
 			case 'data_addr': {
 				const binding = this.program.dataBindingsBySymbolHandle.get(value.symbolHandle);
@@ -2401,7 +2442,7 @@ class FunctionBuilder {
 					this.emitLoadDataAddress(target, binding, 0);
 					return;
 				}
-				throw new Error(`[Compiler] Static module .data symbol '${value.symbolHandle}' was not recorded.`);
+				throw new Error(`Static module .data symbol '${value.symbolHandle}' was not recorded.`);
 			}
 			case 'rodata_addr': {
 				const binding = this.program.rodataBindingsBySymbolHandle.get(value.symbolHandle);
@@ -2409,7 +2450,7 @@ class FunctionBuilder {
 					this.emitLoadRodataAddress(target, binding, 0);
 					return;
 				}
-				throw new Error(`[Compiler] Static module .rodata symbol '${value.symbolHandle}' was not recorded.`);
+				throw new Error(`Static module .rodata symbol '${value.symbolHandle}' was not recorded.`);
 			}
 		}
 	}
@@ -2434,11 +2475,11 @@ class FunctionBuilder {
 	}
 
 	private failStaticFunctionExportRuntimeValue(symbol: string): never {
-		throw new Error(`[Compiler] Static function export '${symbol}' is a call target, not a Lua runtime value.`);
+		throw new Error(`Static function export '${symbol}' is a call target, not a Lua runtime value.`);
 	}
 
 	private failConstModuleValueCall(binding: ModuleBinding): never {
-		throw new Error(`[Compiler] Const module '${binding.modulePath}' value export '${binding.exportPathKey}' is not a call target.`);
+		throw new Error(`Const module '${binding.modulePath}' value export '${binding.exportPathKey}' is not a call target.`);
 	}
 
 	private resolveModuleExportSlotFromExpression(expression: LuaExpression): string | undefined {
@@ -2496,7 +2537,7 @@ class FunctionBuilder {
 	}
 
 	private failCompileTimeModuleRootRuntimeUse(modulePath: string): never {
-		throw new Error(`[Compiler] Module '${modulePath}' root is compile-time only; access an exported field instead of using the module table as a runtime value.`);
+		throw new Error(`Module '${modulePath}' root is compile-time only; access an exported field instead of using the module table as a runtime value.`);
 	}
 
 	private emitReferenceLoad(reference: LuaBoundReference, target: number): void {
@@ -2554,13 +2595,13 @@ class FunctionBuilder {
 			return;
 		}
 		if (reference.kind === 'map') {
-			throw new Error(`[Compiler] '${name}' is a reserved memory map. Use direct indexing syntax like ${name}[addr].`);
+			throw new Error(`'${name}' is a reserved memory map. Use direct indexing syntax like ${name}[addr].`);
 		}
 		if (reference.kind === 'reserved_intrinsic') {
-			throw new Error(`[Compiler] '${name}' is a reserved intrinsic.`);
+			throw new Error(`'${name}' is a reserved intrinsic.`);
 		}
 		if (reference.kind === 'unresolved') {
-			throw new Error(`[Compiler] '${name}' is not defined.`);
+			throw new Error(`'${name}' is not defined.`);
 		}
 		const access = this.program.resolveGlobalAccess(name);
 		this.emitABx(access.system ? OpCode.GETSYS : OpCode.GETGL, target, access.slot);
@@ -2649,23 +2690,23 @@ class FunctionBuilder {
 		const localBinding = symbolHandle ? this.localBindings.get(symbolHandle) : undefined;
 		if (localBinding !== undefined) {
 			if (localBinding.kind === 'const') {
-				throw new Error(`[Compiler] '${name}' is a constant local and cannot be assigned.`);
+				throw new Error(`'${name}' is a constant local and cannot be assigned.`);
 			}
 			this.emitABC(OpCode.MOV, localBinding.reg, valueReg, 0);
 			return;
 		}
 		const visibleBinding = this.resolveReferenceVisibleBinding(reference);
 		if (visibleBinding !== null && visibleBinding.kind === 'const') {
-			throw new Error(`[Compiler] '${name}' is a constant local and cannot be assigned.`);
+			throw new Error(`'${name}' is a constant local and cannot be assigned.`);
 		}
 		if (this.resolveReferenceBssBinding(reference)) {
-			throw new Error(`[Compiler] '${name}' is .bss storage; assign through a typed pointer or field.`);
+			throw new Error(`'${name}' is .bss storage; assign through a typed pointer or field.`);
 		}
 		if (this.resolveReferenceDataBinding(reference)) {
-			throw new Error(`[Compiler] '${name}' is .data storage; assign through a typed pointer or field.`);
+			throw new Error(`'${name}' is .data storage; assign through a typed pointer or field.`);
 		}
 		if (this.resolveReferenceRodataBinding(reference)) {
-			throw new Error(`[Compiler] '${name}' is .rodata storage and cannot be assigned.`);
+			throw new Error(`'${name}' is .rodata storage and cannot be assigned.`);
 		}
 		const upvalue = this.resolveReferenceUpvalue(reference);
 		if (upvalue !== null) {
@@ -2673,13 +2714,13 @@ class FunctionBuilder {
 			return;
 		}
 		if (reference.kind === 'map') {
-			throw new Error(`[Compiler] '${name}' is a reserved memory map. Use direct indexing syntax like ${name}[addr].`);
+			throw new Error(`'${name}' is a reserved memory map. Use direct indexing syntax like ${name}[addr].`);
 		}
 		if (reference.kind === 'reserved_intrinsic') {
-			throw new Error(`[Compiler] '${name}' is a reserved intrinsic.`);
+			throw new Error(`'${name}' is a reserved intrinsic.`);
 		}
 		if (reference.kind === 'unresolved') {
-			throw new Error(`[Compiler] '${name}' is not defined.`);
+			throw new Error(`'${name}' is not defined.`);
 		}
 		const access = this.program.resolveGlobalAccess(name);
 		this.emitABx(access.system ? OpCode.SETSYS : OpCode.SETGL, valueReg, access.slot);
@@ -2757,7 +2798,7 @@ class FunctionBuilder {
 		}
 		const reason = staticLaneForbiddenOpcodeReason(op) ?? this.staticCallTargetForbiddenLoadKReason(op, bx, symbolicReloc);
 		if (reason !== null) {
-			throw new Error(`[Compiler] Static function export '${this.protoId}' cannot emit forbidden static opcode ${getOpcodeName(op)} (${reason}). Static function exports use numeric and boolean constants, parameters, function-local words, static calls, branches, and memory loads/stores only.`);
+			throw new Error(`Static function export '${this.protoId}' cannot emit forbidden static opcode ${getOpcodeName(op)} (${reason}). Static function exports use numeric and boolean constants, parameters, function-local words, static calls, branches, and memory loads/stores only.`);
 		}
 	}
 
@@ -2992,6 +3033,23 @@ class FunctionBuilder {
 		return true;
 	}
 
+	private setCompileTimeConstExportValue(value: ConstExportValue): boolean {
+		switch (value.kind) {
+			case 'nil':
+				return this.setCompileTimeValue(null);
+			case 'boolean':
+				return this.setCompileTimeBooleanValue(value.value);
+			case 'number':
+				return this.setCompileTimeNumberValue(value.value);
+			case 'string':
+				return this.setCompileTimeValue(this.program.internString(value.value));
+			case 'bss_addr':
+			case 'data_addr':
+			case 'rodata_addr':
+				return false;
+		}
+	}
+
 	private evaluateCompileTimeExpression(expression: LuaExpression): boolean {
 		switch (expression.kind) {
 			case LuaSyntaxKind.NumericLiteralExpression:
@@ -3005,6 +3063,11 @@ class FunctionBuilder {
 			case LuaSyntaxKind.IdentifierExpression: {
 				const binding = this.resolveReferenceConstBinding(getResolvedIdentifierReference(this.semantics, expression as LuaIdentifierExpression));
 				return !!binding && this.setCompileTimeBindingValue(binding);
+			}
+			case LuaSyntaxKind.MemberExpression:
+			case LuaSyntaxKind.IndexExpression: {
+				const exported = this.resolveModuleExportConstValue(expression);
+				return !!exported && this.setCompileTimeConstExportValue(exported.value);
 			}
 			case LuaSyntaxKind.UnaryExpression:
 				return this.evaluateCompileTimeUnaryExpression(expression as LuaUnaryExpression);
@@ -3055,6 +3118,11 @@ class FunctionBuilder {
 					return binding.constNumberValue;
 				}
 				return;
+			}
+			case LuaSyntaxKind.MemberExpression:
+			case LuaSyntaxKind.IndexExpression: {
+				const exported = this.resolveModuleExportConstValue(expression);
+				return exported?.value.kind === 'number' ? exported.value.value : undefined;
 			}
 			case LuaSyntaxKind.UnaryExpression: {
 				const unary = expression as LuaUnaryExpression;
@@ -3345,8 +3413,9 @@ class FunctionBuilder {
 	}
 
 	private recordDataDeclaration(statement: LuaDataDeclarationStatement, declaration: Decl): void {
-		const type = this.resolveStructTypeReference(statement.typeRef);
-		this.program.recordData(declaration.id, this.moduleId, statement.name.name, type, this.encodeStorageInitializer(type, statement.initializer, '.data'));
+		const type = this.resolveInitializedStorageType(statement.typeRef, statement.initializer, '.data');
+		const initializer = this.encodeStorageInitializer(type, statement.initializer, '.data');
+		this.program.recordData(declaration.id, this.moduleId, statement.name.name, type, initializer.bytes);
 	}
 
 	private compileRodataDeclaration(statement: LuaRodataDeclarationStatement): void {
@@ -3354,20 +3423,35 @@ class FunctionBuilder {
 	}
 
 	private recordRodataDeclaration(statement: LuaRodataDeclarationStatement, declaration: Decl): void {
-		const type = this.resolveStructTypeReference(statement.typeRef);
+		const type = this.resolveInitializedStorageType(statement.typeRef, statement.initializer, '.rodata');
 		this.program.recordRodata(declaration.id, this.moduleId, statement.name.name, type, this.encodeStorageInitializer(type, statement.initializer, '.rodata'));
 	}
 
-	private encodeStorageInitializer(type: StructResolvedType, expression: LuaExpression, sectionName: '.data' | '.rodata'): Uint8Array {
-		const bytes = new Uint8Array(type.size);
-		this.writeStorageInitializer(bytes, 0, type, expression, sectionName);
-		return bytes;
+	private resolveInitializedStorageType(typeRef: LuaTypeReference, initializer: LuaExpression, sectionName: '.data' | '.rodata'): StructResolvedType {
+		if (typeRef.arrayLengths.length === 0 || typeRef.arrayLengths[0]) {
+			return this.resolveStructTypeReference(typeRef);
+		}
+		if (initializer.kind !== LuaSyntaxKind.TableConstructorExpression) {
+			throw new Error(`${sectionName} inferred array storage requires a table initializer.`);
+		}
+		const elementCount = (initializer as LuaTableConstructorExpression).fields.length;
+		if (elementCount === 0) {
+			throw new Error(`${sectionName} inferred array storage requires at least one element.`);
+		}
+		return this.resolveStructTypeReference(typeRef, new Set(), elementCount);
 	}
 
-	private writeStorageInitializer(out: Uint8Array, byteOffset: number, type: StructResolvedType, expression: LuaExpression, sectionName: '.data' | '.rodata'): void {
+	private encodeStorageInitializer(type: StructResolvedType, expression: LuaExpression, sectionName: '.data' | '.rodata'): StaticStorageInitializer {
+		const bytes = new Uint8Array(type.size);
+		const rodataConstRelocs: ProgramRodataConstReloc[] = [];
+		this.writeStorageInitializer(bytes, rodataConstRelocs, 0, type, expression, sectionName);
+		return { bytes, rodataConstRelocs };
+	}
+
+	private writeStorageInitializer(out: Uint8Array, rodataConstRelocs: ProgramRodataConstReloc[], byteOffset: number, type: StructResolvedType, expression: LuaExpression, sectionName: '.data' | '.rodata'): void {
 		if (type.dimensions.length !== 0) {
 			if (expression.kind !== LuaSyntaxKind.TableConstructorExpression) {
-				throw new Error(`[Compiler] ${sectionName} array '${type.name}' requires a table initializer.`);
+				throw new Error(`${sectionName} array '${type.name}' requires a table initializer.`);
 			}
 			const table = expression as LuaTableConstructorExpression;
 			const elementType = this.typeAfterStructIndex(type);
@@ -3375,25 +3459,65 @@ class FunctionBuilder {
 			for (let index = 0; index < table.fields.length; index += 1) {
 				const field = table.fields[index];
 				if (field.kind !== LuaTableFieldKind.Array) {
-					throw new Error(`[Compiler] ${sectionName} arrays use positional initializers.`);
+					throw new Error(`${sectionName} arrays use positional initializers.`);
 				}
-				this.writeStorageInitializer(out, byteOffset + elementIndex * elementType.size, elementType, field.value, sectionName);
+				this.writeStorageInitializer(out, rodataConstRelocs, byteOffset + elementIndex * elementType.size, elementType, field.value, sectionName);
 				elementIndex += 1;
 			}
 			if (elementIndex !== type.dimensions[0]) {
-				throw new Error(`[Compiler] ${sectionName} array '${type.name}' expects ${type.dimensions[0]} elements.`);
+				throw new Error(`${sectionName} array '${type.name}' expects ${type.dimensions[0]} elements.`);
 			}
 			return;
 		}
-		if (type.accessKind === null) {
-			throw new Error(`[Compiler] ${sectionName} v1 supports primitive typed storage; '${type.name}' is not a primitive scalar at this initializer position.`);
+		if (type.struct) {
+			if (expression.kind !== LuaSyntaxKind.TableConstructorExpression) {
+				throw new Error(`${sectionName} struct '${type.name}' requires a named-field initializer.`);
+			}
+			const table = expression as LuaTableConstructorExpression;
+			const initializedFields = new Set<string>();
+			for (let index = 0; index < table.fields.length; index += 1) {
+				const initializerField = table.fields[index];
+				if (initializerField.kind !== LuaTableFieldKind.IdentifierKey) {
+					throw new Error(`${sectionName} struct '${type.name}' uses named-field initializers.`);
+				}
+				const field = type.struct.fields.get(initializerField.name);
+				if (!field) {
+					throw new Error(`${sectionName} initializer has no field '${initializerField.name}' in struct '${type.name}'.`);
+				}
+				if (initializedFields.has(initializerField.name)) {
+					throw new Error(`${sectionName} initializer repeats field '${initializerField.name}' in struct '${type.name}'.`);
+				}
+				initializedFields.add(initializerField.name);
+				this.writeStorageInitializer(out, rodataConstRelocs, byteOffset + field.offset, field.type, initializerField.value, sectionName);
+			}
+			for (const field of type.struct.fields.values()) {
+				if (!initializedFields.has(field.name)) {
+					throw new Error(`${sectionName} initializer is missing field '${field.name}' in struct '${type.name}'.`);
+				}
+			}
+			return;
+		}
+		if (!type.access) {
+			throw new Error(`${sectionName} initializer reached a non-scalar '${type.name}'.`);
+		}
+		if (type.access.kind === 'const_pool') {
+			if (sectionName !== '.rodata') {
+				throw new Error(`Static string fields are only valid in .rodata storage.`);
+			}
+			if (!this.evaluateCompileTimeExpression(expression) || !valueIsString(this.compileTimeValue)) {
+				throw new Error('.rodata string initializer must be a compile-time string.');
+			}
+			const constIndex = this.program.constIndex(this.compileTimeValue);
+			writeLE32(out, byteOffset, constIndex);
+			rodataConstRelocs.push({ byteOffset, constIndex });
+			return;
 		}
 		const value = this.evaluateCompileTimeNumber(expression);
 		if (!Number.isInteger(value)) {
-			throw new Error(`[Compiler] ${sectionName} primitive initializer must be a compile-time integer.`);
+			throw new Error(`${sectionName} primitive initializer must be a compile-time integer.`);
 		}
 		const word = value as number;
-		switch (type.accessKind) {
+		switch (type.access.memoryKind) {
 			case MemoryAccessKind.U8:
 				out[byteOffset] = word & 0xff;
 				return;
@@ -3405,7 +3529,7 @@ class FunctionBuilder {
 				writeLE32(out, byteOffset, word);
 				return;
 			default:
-				throw new Error(`[Compiler] ${sectionName} v1 does not support '${type.name}' initializers.`);
+				throw new Error(`${sectionName} v1 does not support '${type.name}' initializers.`);
 		}
 	}
 
@@ -3521,7 +3645,7 @@ class FunctionBuilder {
 			const lastIndex = values.length - 1;
 			const hasInitializer = values.length > 0 && (i < lastIndex || i === lastIndex || (i > lastIndex && this.isMultiReturnExpression(values[lastIndex])));
 			if (attribute === 'const' && !hasInitializer) {
-				throw new Error(`[Compiler] Constant local '${name}' must have an initializer.`);
+				throw new Error(`Constant local '${name}' must have an initializer.`);
 			}
 			const flags = this.initializerFlags[i];
 			const hasInitializerValue = flags & INIT_HAS_VALUE;
@@ -3621,7 +3745,7 @@ class FunctionBuilder {
 				const cop0Register = this.resolveCop0Register(expr as LuaMemberExpression);
 				if (cop0Register) {
 					if (cop0Register !== COP0_STATUS && cop0Register !== COP0_EPC) {
-						throw new Error(`[Compiler] cop0.${(expr as LuaMemberExpression).identifier} is read-only.`);
+						throw new Error(`cop0.${(expr as LuaMemberExpression).identifier} is read-only.`);
 					}
 					targets.push({ kind: 'cop0', register: cop0Register });
 					continue;
@@ -3635,14 +3759,17 @@ class FunctionBuilder {
 				const structAddress = this.resolveStructAddress(expr);
 				if (structAddress) {
 					if (structAddress.readOnly) {
-						throw new Error('[Compiler] Cannot assign to .rodata storage.');
+						throw new Error('Cannot assign to .rodata storage.');
 					}
-					if (structAddress.type.accessKind === null) {
-						throw new Error(`[Compiler] Whole-struct assignment is not supported for '${structAddress.type.name}'; assign scalar fields directly.`);
+					if (!structAddress.type.access) {
+						throw new Error(`Whole-struct assignment is not supported for '${structAddress.type.name}'; assign scalar fields directly.`);
+					}
+					if (structAddress.type.access.kind === 'const_pool') {
+						throw new Error('Static string references are immutable.');
 					}
 					targets.push({
 						kind: 'memory',
-						accessKind: structAddress.type.accessKind!,
+						accessKind: structAddress.type.access.memoryKind,
 						addrReg: structAddress.baseReg,
 						addrOffsetBytes: structAddress.byteOffset,
 					});
@@ -3666,17 +3793,17 @@ class FunctionBuilder {
 				const localBinding = symbolHandle ? this.localBindings.get(symbolHandle) : undefined;
 				if (localBinding !== undefined) {
 					if (localBinding.kind === 'const') {
-						throw new Error(`[Compiler] '${name}' is a constant local and cannot be assigned.`);
+						throw new Error(`'${name}' is a constant local and cannot be assigned.`);
 					}
 					targets.push({ kind: 'local', reg: localBinding.reg });
 					continue;
 				}
 				const visibleBinding = this.resolveReferenceVisibleBinding(reference);
 				if (visibleBinding !== null && visibleBinding.kind === 'const') {
-					throw new Error(`[Compiler] '${name}' is a constant local and cannot be assigned.`);
+					throw new Error(`'${name}' is a constant local and cannot be assigned.`);
 				}
 				if (this.resolveReferenceBssBinding(reference)) {
-					throw new Error(`[Compiler] '${name}' is .bss storage; assign through a typed pointer or field.`);
+					throw new Error(`'${name}' is .bss storage; assign through a typed pointer or field.`);
 				}
 				const upvalue = this.resolveReferenceUpvalue(reference);
 				if (upvalue !== null) {
@@ -3684,13 +3811,13 @@ class FunctionBuilder {
 					continue;
 				}
 				if (reference.kind === 'map') {
-					throw new Error(`[Compiler] '${name}' is a reserved memory map. Use direct indexing syntax like ${name}[addr].`);
+					throw new Error(`'${name}' is a reserved memory map. Use direct indexing syntax like ${name}[addr].`);
 				}
 				if (reference.kind === 'reserved_intrinsic') {
-					throw new Error(`[Compiler] '${name}' is a reserved intrinsic.`);
+					throw new Error(`'${name}' is a reserved intrinsic.`);
 				}
 				if (reference.kind === 'unresolved') {
-					throw new Error(`[Compiler] '${name}' is not defined.`);
+					throw new Error(`'${name}' is not defined.`);
 				}
 				const access = this.program.resolveGlobalAccess(name);
 				targets.push({ kind: 'global', slot: access.slot, system: access.system });
@@ -4131,7 +4258,7 @@ class FunctionBuilder {
 		}
 		if (target.kind === 'simple') {
 			if (!target.finalReference) {
-				throw new Error(`[Compiler] Missing bound function target for '${identifiers[0]}'.`);
+				throw new Error(`Missing bound function target for '${identifiers[0]}'.`);
 			}
 			this.emitReferenceStore(target.finalReference, closureReg);
 			return;
@@ -4139,7 +4266,7 @@ class FunctionBuilder {
 
 		const baseReg = this.allocTemp();
 		if (!target.baseReference) {
-			throw new Error(`[Compiler] Missing bound function base for '${identifiers[0]}'.`);
+			throw new Error(`Missing bound function base for '${identifiers[0]}'.`);
 		}
 		this.emitReferenceLoad(target.baseReference, baseReg);
 		for (let i = 0; i < target.intermediateKeys.length; i += 1) {
@@ -4279,7 +4406,7 @@ class FunctionBuilder {
 		}
 		const structAddress = this.resolveStructScalarAddress(expression as LuaMemberExpression);
 		if (structAddress) {
-			this.emitMemoryLoad(target, structAddress.type.accessKind!, undefined, structAddress.baseReg, structAddress.byteOffset);
+			this.emitStructScalarLoad(target, structAddress);
 			return;
 		}
 		if (this.emitExternalModuleRootFieldLoad(expression.base, expression.identifier, target)) {
@@ -4304,7 +4431,7 @@ class FunctionBuilder {
 			case 'status': return COP0_STATUS;
 			case 'cause': return COP0_CAUSE;
 			case 'epc': return COP0_EPC;
-			default: throw new Error(`[Compiler] Unknown cop0 register '${expression.identifier}'.`);
+			default: throw new Error(`Unknown cop0 register '${expression.identifier}'.`);
 		}
 	}
 
@@ -4325,7 +4452,7 @@ class FunctionBuilder {
 		}
 		const structAddress = this.resolveStructScalarAddress(expression as LuaIndexExpression);
 		if (structAddress) {
-			this.emitMemoryLoad(target, structAddress.type.accessKind!, undefined, structAddress.baseReg, structAddress.byteOffset);
+			this.emitStructScalarLoad(target, structAddress);
 			return;
 		}
 		const indexExpression = (expression as LuaIndexExpression).index;
@@ -4471,7 +4598,7 @@ class FunctionBuilder {
 			elementType = this.typeAfterStructIndex(base.type);
 		} else {
 			if (!base.pointerIndex) {
-				throw new Error(`[Compiler] Type '${base.type.name}' is not an array.`);
+				throw new Error(`Type '${base.type.name}' is not an array.`);
 			}
 			elementType = base.type;
 		}
@@ -4479,7 +4606,7 @@ class FunctionBuilder {
 		const staticIndex = this.evaluateCompileTimeNumber(indexExpression);
 		if (staticIndex !== undefined) {
 			if (!Number.isInteger(staticIndex)) {
-				throw new Error('[Compiler] Struct array index must be an integer when used as a compile-time offset.');
+				throw new Error('Struct array index must be an integer when used as a compile-time offset.');
 			}
 			return {
 				baseReg: base.baseReg,
@@ -4610,15 +4737,40 @@ class FunctionBuilder {
 			}
 		}
 
+	private resolveStaticStorageArrayLength(expression: LuaExpression): number | undefined {
+		if (expression.kind !== LuaSyntaxKind.IdentifierExpression) {
+			return undefined;
+		}
+		const reference = getResolvedIdentifierReference(this.semantics, expression as LuaIdentifierExpression);
+		const binding = this.resolveReferenceBssBinding(reference)
+			?? this.resolveReferenceDataBinding(reference)
+			?? this.resolveReferenceRodataBinding(reference);
+		if (!binding || binding.type.dimensions.length === 0) {
+			return undefined;
+		}
+		return binding.type.dimensions[0];
+	}
+
 	private resolveStructScalarAddress(expression: LuaExpression): StructAddress | undefined {
 		const address = this.resolveStructAddress(expression);
 		if (!address) {
 			return;
 		}
-		if (address.type.accessKind === null) {
-			throw new Error(`[Compiler] Struct expression '${address.type.name}' is an address range; use '&' to pass its address or select a scalar field.`);
+		if (!address.type.access) {
+			throw new Error(`Struct expression '${address.type.name}' is an address range; use '&' to pass its address or select a scalar field.`);
 		}
 		return address;
+	}
+
+	private emitStructScalarLoad(target: number, address: StructAddress): void {
+		const access = address.type.access!;
+		if (access.kind === 'memory') {
+			this.emitMemoryLoad(target, access.memoryKind, undefined, address.baseReg, address.byteOffset);
+			return;
+		}
+		const constIndexReg = this.allocTemp();
+		this.emitMemoryLoad(constIndexReg, MemoryAccessKind.U32LE, undefined, address.baseReg, address.byteOffset);
+		this.emitABC(OpCode.LOADKR, target, constIndexReg, 0);
 	}
 
 	private emitStructAddressValue(address: StructAddress, target: number, resultCount: number): void {
@@ -4769,6 +4921,14 @@ class FunctionBuilder {
 	}
 
 	private compileUnaryExpression(expression: LuaUnaryExpression, target: number, resultCount: number): void {
+		if (expression.operator === LuaUnaryOperator.Length) {
+			const arrayLength = this.resolveStaticStorageArrayLength(expression.operand);
+			if (arrayLength) {
+				this.emitLoadConst(target, arrayLength);
+				if (resultCount > 1) this.emitLoadNil(target + 1, resultCount - 1);
+				return;
+			}
+		}
 		if (expression.operator === LuaUnaryOperator.StringId) {
 			this.compileStringIdUnaryExpression(expression, target, resultCount);
 			return;
@@ -4783,7 +4943,7 @@ class FunctionBuilder {
 					expression.range.start.column,
 				);
 			}
-			this.emitMemoryLoad(target, structAddress.type.accessKind!, undefined, structAddress.baseReg, structAddress.byteOffset);
+			this.emitStructScalarLoad(target, structAddress);
 			if (resultCount > 1) {
 				this.emitLoadNil(target + 1, resultCount - 1);
 			}
@@ -5015,7 +5175,7 @@ class FunctionBuilder {
 			this.failConstModuleValueCall(constModuleValueCallee.binding);
 		}
 		if (this.staticCallTargetScope && moduleCallSlot === undefined && ownStaticFunctionExportSlot === undefined) {
-			throw new Error(`[Compiler] Static function export '${this.protoId}' cannot call a dynamic value. Static function exports call other static exports through link-time symbols.`);
+			throw new Error(`Static function export '${this.protoId}' cannot call a dynamic value. Static function exports call other static exports through link-time symbols.`);
 		}
 		const callProtoIndex = constClosureBinding !== null ? constClosureBinding.constClosureProtoIndex : null;
 		const argCount = expression.arguments.length;
@@ -5442,8 +5602,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 	const canonicalModules = canonicalizeProgramModules(modules, 'program');
 	const canonicalExternalModules = canonicalizeProgramModules(options.externalModules ?? EMPTY_PROGRAM_MODULES, 'external');
 	const frontend = buildCompilerSemanticFrontend(chunk, canonicalModules, canonicalExternalModules, options);
-	const constModulePaths = new Set<string>(options.constModulePaths);
-	const moduleCompileContext = buildModuleCompileContext(canonicalModules, canonicalExternalModules, constModulePaths, frontend);
+	const moduleCompileContext = buildModuleCompileContext(canonicalModules, canonicalExternalModules, frontend);
 	const semanticErrors = collectSemanticCompileErrors(frontend, chunk.range.path);
 	if (semanticErrors.length > 0) {
 		throw new Error(buildCompileFailureMessage(semanticErrors));
@@ -5473,6 +5632,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 			moduleCompileInfo: info,
 		});
 		try {
+			builder.compileStaticModuleScope(module.chunk);
 			builder.compileStaticStorage(collectStaticStorageDeclarations(module.chunk, frontend.getFile(module.path)));
 		} catch (error) {
 			compileErrors.push({
@@ -5500,7 +5660,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 				moduleCompileInfo: info,
 				staticCallTargetScope: true,
 			});
-			staticScope.compileStaticFunctionModuleScope(module.chunk);
+			staticScope.compileStaticModuleScope(module.chunk);
 			const exports = collectStaticFunctionExports(module.chunk, semantics, info.staticFunctionExportByPathKey);
 			for (let exportIndex = 0; exportIndex < exports.length; exportIndex += 1) {
 				const fn = exports[exportIndex];
@@ -5508,7 +5668,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 				const protoIndex = compileFunctionExpression(programBuilder, fn.expression, staticScope, false, protoId, module.path, semantics, frontend);
 				if (!programBuilder.protoHasNoUpvalues(protoIndex)) {
 					const upvalueNames = programBuilder.getProtoUpvalueNames(protoIndex);
-					throw new Error(`[Compiler] Const module '${module.path}' function export '${fn.symbolHandle}' captures runtime local '${upvalueNames[0]}'; function exports may use compile-time constants, parameters, function-local declarations, static calls, and static storage only.`);
+					throw new Error(`Const module '${module.path}' function export '${fn.symbolHandle}' captures runtime local '${upvalueNames[0]}'; function exports may use compile-time constants, parameters, function-local declarations, static calls, and static storage only.`);
 				}
 				assertStaticFunctionInstructionSet(module.path, fn.symbolHandle, programBuilder.getProtoInstructionSet(protoIndex), programBuilder.constPool);
 				programBuilder.markStaticClosureProto(protoIndex);
@@ -5613,7 +5773,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 	irqProtoIndex = compileInterruptProto(programBuilder, moduleId, chunk.range, entrySemantics, frontend);
 	exceptionProtoIndex = compileExceptionProto(programBuilder, moduleId, chunk.range, entrySemantics, frontend);
 	recordModuleExportContracts(programBuilder, moduleCompileContext);
-	const { program, metadata, constRelocs, constValueRelocs, data, bss, rodataBytes, rodataSymbols, staticModulePaths } = programBuilder.buildProgram();
+	const { program, metadata, constRelocs, constValueRelocs, rodataConstRelocs, data, bss, rodataBytes, rodataSymbols, staticModulePaths } = programBuilder.buildProgram();
 	return {
 		program,
 			metadata,
@@ -5625,6 +5785,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 			staticModulePaths,
 			constRelocs,
 		constValueRelocs,
+		rodataConstRelocs,
 		data,
 		bss,
 		rodataBytes,
@@ -5635,14 +5796,13 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 export function appendLuaChunkToProgram(base: Program, programMetadata: ProgramMetadata, chunk: LuaChunk, options: CompileOptions = {}): AppendedProgram {
 	const optLevel = options.optLevel;
 	const externalModules = canonicalizeProgramModules(options.externalModules ?? EMPTY_PROGRAM_MODULES, 'external');
-	const constModulePaths = new Set<string>(options.constModulePaths);
 	const frontend = buildCompilerSemanticFrontend(chunk, EMPTY_PROGRAM_MODULES, externalModules, {
 		baseProgram: options.baseProgram,
 		baseMetadata: programMetadata,
 		optLevel: options.optLevel,
 		entrySource: options.entrySource,
 	});
-	const moduleCompileContext = buildModuleCompileContext(EMPTY_PROGRAM_MODULES, externalModules, constModulePaths, frontend);
+	const moduleCompileContext = buildModuleCompileContext(EMPTY_PROGRAM_MODULES, externalModules, frontend);
 	const semanticErrors = collectSemanticCompileErrors(frontend, chunk.range.path);
 	if (semanticErrors.length > 0) {
 		throw new Error(buildCompileFailureMessage(semanticErrors));
@@ -5688,8 +5848,8 @@ export function appendLuaChunkToProgram(base: Program, programMetadata: ProgramM
 	}
 	sectionInitProtoIndex = compileSectionInitProto(programBuilder, moduleId, chunk.range, frontend.getFile(chunk.range.path), frontend);
 	recordModuleExportContracts(programBuilder, moduleCompileContext);
-	const { program, metadata, constRelocs, constValueRelocs, data, bss, rodataBytes, rodataSymbols } = programBuilder.buildProgram();
-	return { program, metadata, entryProtoIndex, sectionInitProtoIndex, constRelocs, constValueRelocs, data, bss, rodataBytes, rodataSymbols };
+	const { program, metadata, constRelocs, constValueRelocs, rodataConstRelocs, data, bss, rodataBytes, rodataSymbols } = programBuilder.buildProgram();
+	return { program, metadata, entryProtoIndex, sectionInitProtoIndex, constRelocs, constValueRelocs, rodataConstRelocs, data, bss, rodataBytes, rodataSymbols };
 }
 // end normalized-body-acceptable
 // end repeated-sequence-acceptable

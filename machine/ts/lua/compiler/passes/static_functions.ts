@@ -120,7 +120,7 @@ export const collectStaticFunctionExports = (
 		if (entry === undefined) {
 			const expression = value.expression ?? functions.get(value.symbolHandle);
 			if (expression === undefined) {
-				throw new Error(`[Compiler] Const module function export '${value.symbolHandle}' has no top-level function body.`);
+				throw new Error(`Const module function export '${value.symbolHandle}' has no top-level function body.`);
 			}
 			entry = { symbolHandle: value.symbolHandle, expression, slotNames: [] };
 			exportsBySymbol.set(value.symbolHandle, entry);

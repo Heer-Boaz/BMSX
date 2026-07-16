@@ -1,5 +1,11 @@
 local terminal<const> = require('bios/terminal')
+local layout<const> = require('bios/terminal_layout')
+local monitor_editor<const> = require('bios/monitor_editor')
+local monitor_commands<const> = require('bios/monitor_commands')
 local vblank<const> = require('bios/vblank')
+local dma_transfer<const> = require('bios/dma_transfer')
+local gx_gpu<const> = require('system/gx_gpu')
+local romdir<const> = require('system/romdir')
 
 local byte<const> = __bmsx_string_byte
 local monitor<const> = {}
@@ -8,257 +14,73 @@ local irq_ack<const>: *word = 0x0800000c
 local irq_mask<const>: *word = 0x08000010
 local input_control<const>: *word = 0x0800006c
 local input_keys<const>: *word[8] = 0x08000074
-local system_control<const>: *word = 0x0801036c
 
 local irq_vblank<const> = 0x0004
+local irq_dma_done<const> = 0x0001
+local irq_gpu<const> = 0x0040
 local input_arm<const> = 0x00000001
-local system_reset<const> = 0x00000001
-local cause_nmi<const> = 0x00010000
-local cause_coprocessor_unusable<const> = 0x0000002c
 
-local input_capacity<const> = 60
+local output_mode_command<const> = 0
+local output_mode_completion<const> = 1
 local palette_text<const> = terminal.palette_text
-local palette_error<const> = terminal.palette_error
 local palette_prompt<const> = terminal.palette_accent
 
 local ascii_backspace<const> = 8
 local ascii_newline<const> = 10
 local ascii_space<const> = 32
 local ascii_digit_0<const> = 48
-local ascii_digit_9<const> = 57
 local ascii_upper_a<const> = 65
-local ascii_upper_f<const> = 70
 local ascii_lower_a<const> = 97
-local ascii_lower_f<const> = 102
-local ascii_lower_z<const> = 122
 
-local hid_enter<const> = 40
-local hid_backspace<const> = 42
-local hid_space<const> = 44
 local hid_first_key<const> = 4
-local hid_last_key<const> = 56
+local hid_last_key<const> = 115
+local hid_q<const> = 20
+local hid_enter<const> = 40
+local hid_escape<const> = 41
+local hid_backspace<const> = 42
+local hid_tab<const> = 43
+local hid_space<const> = 44
+local hid_home<const> = 74
+local hid_page_up<const> = 75
+local hid_delete<const> = 76
+local hid_end<const> = 77
+local hid_page_down<const> = 78
+local hid_right<const> = 79
+local hid_left<const> = 80
+local hid_down<const> = 81
+local hid_up<const> = 82
+local hid_numpad_enter<const> = 88
 local hid_left_shift<const> = 225
 local hid_right_shift<const> = 229
 
 local repeat_delay_frames<const> = 18
 local repeat_interval_frames<const> = 4
 
-bss monitor_input_line: word[60]
 bss monitor_current_keys: word[8]
 bss monitor_previous_keys: word[8]
-bss monitor_input_length: word
+bss monitor_output_row: word[layout.columns]
 bss monitor_frame: word
 bss monitor_repeat_usage: word
 bss monitor_repeat_frame: word
-bss monitor_action: word
+bss monitor_pager_active: word
+bss monitor_output_mode: word
 bss monitor_saved_status: word
 bss monitor_saved_cause: word
 bss monitor_saved_epc: word
 bss monitor_saved_bad_address: word
 bss monitor_saved_irq_mask: word
-bss monitor_resume_epc: word
-bss monitor_resumable: word
 
 local initialize_input<const> = function()
-	*monitor_input_length = 0
 	*monitor_frame = 0
 	*monitor_repeat_usage = 0
 	*monitor_repeat_frame = 0
-	*monitor_action = 0
-	local input_line<const>: *word = monitor_input_line
-	for index = 0, input_capacity - 1 do
-		input_line[index] = 0
-	end
+	*monitor_pager_active = 0
 	local current_keys<const>: *word = monitor_current_keys
 	local previous_keys<const>: *word = monitor_previous_keys
 	for index = 0, 7 do
 		current_keys[index] = 0
 		previous_keys[index] = 0
 	end
-end
-
-local line_code<const> = function(index)
-	local line<const>: *word = monitor_input_line
-	local code = line[index]
-	if code >= ascii_lower_a and code <= ascii_lower_z then
-		code = code - (ascii_lower_a - ascii_upper_a)
-	end
-	return code
-end
-
-local line_equals<const> = function(text)
-	if *monitor_input_length ~= #text then
-		return false
-	end
-	for index = 0, #text - 1 do
-		if line_code(index) ~= byte(text, index + 1) then
-			return false
-		end
-	end
-	return true
-end
-
-local line_starts_command<const> = function(command)
-	if *monitor_input_length < #command then
-		return false
-	end
-	for index = 0, #command - 1 do
-		if line_code(index) ~= byte(command, index + 1) then
-			return false
-		end
-	end
-	return *monitor_input_length == #command or line_code(#command) == ascii_space
-end
-
-local hex_digit<const> = function(code)
-	if code >= ascii_digit_0 and code <= ascii_digit_9 then
-		return code - ascii_digit_0
-	end
-	if code >= ascii_upper_a and code <= ascii_upper_f then
-		return code - ascii_upper_a + 10
-	end
-	if code >= ascii_lower_a and code <= ascii_lower_f then
-		return code - ascii_lower_a + 10
-	end
-	return -1
-end
-
-local print_fault<const> = function()
-	terminal.write('CAUSE ', palette_prompt)
-	terminal.write_hex_word(*monitor_saved_cause, palette_text)
-	terminal.write_code(ascii_newline, palette_text)
-	terminal.write('EPC   ', palette_prompt)
-	terminal.write_hex_word(*monitor_saved_epc, palette_text)
-	terminal.write_code(ascii_newline, palette_text)
-	terminal.write('BAD   ', palette_prompt)
-	terminal.write_hex_word(*monitor_saved_bad_address, palette_text)
-	terminal.write_code(ascii_newline, palette_text)
-end
-
-local print_registers<const> = function()
-	print_fault()
-	terminal.write('STATUS ', palette_prompt)
-	terminal.write_hex_word(*monitor_saved_status, palette_text)
-	terminal.write_code(ascii_newline, palette_text)
-	terminal.write('IRQMASK ', palette_prompt)
-	terminal.write_hex_word(*monitor_saved_irq_mask, palette_text)
-	terminal.write_code(ascii_newline, palette_text)
-end
-
-local parse_memory_address<const> = function()
-	local index = 3
-	while index < *monitor_input_length and line_code(index) == ascii_space do
-		index = index + 1
-	end
-	if index + 1 < *monitor_input_length and line_code(index) == ascii_digit_0 and line_code(index + 1) == 88 then
-		index = index + 2
-	end
-	local address = 0
-	local digits = 0
-	while index < *monitor_input_length do
-		local code<const> = line_code(index)
-		if code == ascii_space then
-			break
-		end
-		local digit<const> = hex_digit(code)
-		if digit < 0 then
-			return -1
-		end
-		address = (address << 4) | digit
-		digits = digits + 1
-		index = index + 1
-	end
-	while index < *monitor_input_length and line_code(index) == ascii_space do
-		index = index + 1
-	end
-	if digits == 0 or index ~= *monitor_input_length then
-		return -1
-	end
-	return address & 0xffffffff
-end
-
-local dump_memory<const> = function()
-	local address<const> = parse_memory_address()
-	if address < 0 then
-		terminal.write('USAGE: MEM <HEX ADDRESS>\n', palette_error)
-		return
-	end
-	for index = 0, 3 do
-		local word_address<const> = address + index * 4
-		terminal.write_hex_word(word_address, palette_prompt)
-		terminal.write_code(ascii_space, palette_text)
-		terminal.write_hex_word(mem[word_address], palette_text)
-		terminal.write_code(ascii_newline, palette_text)
-	end
-end
-
-local dispatch_command<const> = function()
-	local length<const> = *monitor_input_length
-	if length == 0 then
-		return
-	end
-	if line_equals('HELP') then
-		terminal.write('HELP FAULT REGS MEM CONT REBOOT\n', palette_text)
-		return
-	end
-	if line_equals('FAULT') then
-		print_fault()
-		return
-	end
-	if line_equals('REGS') then
-		print_registers()
-		return
-	end
-	if line_starts_command('MEM') then
-		dump_memory()
-		return
-	end
-	if line_equals('CONT') then
-		if *monitor_resumable == 0 then
-			terminal.write('FAULT IS NOT RESUMABLE\n', palette_error)
-			return
-		end
-		*monitor_action = 1
-		return
-	end
-	if line_equals('REBOOT') then
-		*system_control = system_reset
-		return
-	end
-	terminal.write('UNKNOWN COMMAND\n', palette_error)
-end
-
-local write_prompt<const> = function()
-	terminal.write('> ', palette_prompt)
-end
-
-local submit_input<const> = function()
-	terminal.write_code(ascii_newline, palette_text)
-	dispatch_command()
-	*monitor_input_length = 0
-	if *monitor_action == 0 then
-		write_prompt()
-	end
-end
-
-local erase_input<const> = function()
-	if *monitor_input_length == 0 then
-		return
-	end
-	*monitor_input_length = *monitor_input_length - 1
-	local line<const>: *word = monitor_input_line
-	line[*monitor_input_length] = 0
-	terminal.backspace()
-end
-
-local append_input<const> = function(code)
-	if *monitor_input_length == input_capacity then
-		return
-	end
-	local line<const>: *word = monitor_input_line
-	line[*monitor_input_length] = code
-	*monitor_input_length = *monitor_input_length + 1
-	terminal.write_code(code, palette_text)
 end
 
 local map_hid_key<const> = function(usage, shift)
@@ -272,7 +94,7 @@ local map_hid_key<const> = function(usage, shift)
 		return usage + 19
 	end
 	if usage == 39 then return shift and 41 or ascii_digit_0 end
-	if usage == hid_enter then return ascii_newline end
+	if usage == hid_enter or usage == hid_numpad_enter then return ascii_newline end
 	if usage == hid_backspace then return ascii_backspace end
 	if usage == hid_space then return ascii_space end
 	if usage == 45 then return shift and 95 or 45 end
@@ -289,16 +111,171 @@ local map_hid_key<const> = function(usage, shift)
 	return 0
 end
 
-local process_hid_key<const> = function(usage, shift)
-	local code<const> = map_hid_key(usage, shift)
-	if code == ascii_newline then
-		submit_input()
-	elseif code == ascii_backspace then
-		erase_input()
-	elseif code ~= 0 then
-		append_input(code)
+local write_prompt<const> = function()
+	terminal.write('> ', palette_prompt)
+	monitor_editor.begin()
+end
+
+local finish_output<const> = function()
+	*monitor_pager_active = 0
+	terminal.clear_status()
+	if *monitor_output_mode == output_mode_completion then
+		terminal.write('> ', palette_prompt)
+		monitor_editor.resume()
+	else
+		write_prompt()
 	end
-	return code
+end
+
+local pump_output<const> = function(line_limit)
+	*monitor_pager_active = 0
+	terminal.clear_status()
+	terminal.follow_output()
+	for line = 1, line_limit do
+		local result<const> = monitor_commands.next_row(monitor_output_row)
+		terminal.append_row(monitor_output_row)
+		if result == monitor_commands.row_done then
+			finish_output()
+			return
+		end
+	end
+	*monitor_pager_active = 1
+	terminal.show_status('-- MORE --  ENTER LINE  SPACE PAGE  UP/DOWN SCROLL  Q QUIT', palette_prompt)
+end
+
+local handle_command_action<const> = function(action)
+	if action == monitor_commands.action_clear then
+		terminal.clear()
+		write_prompt()
+	elseif action == monitor_commands.action_output then
+		*monitor_output_mode = output_mode_command
+		pump_output(terminal.page_rows)
+	else
+		write_prompt()
+	end
+end
+
+local submit_input<const> = function()
+	local line<const>, length<const> = monitor_editor.submit()
+	terminal.write_code(ascii_newline, palette_text)
+	handle_command_action(monitor_commands.start(line, length))
+end
+
+local show_completion_candidates<const> = function()
+	monitor_editor.detach()
+	terminal.write_code(ascii_newline, palette_text)
+	*monitor_output_mode = output_mode_completion
+	pump_output(terminal.page_rows)
+end
+
+local handle_pager_key<const> = function(usage)
+	if usage == hid_q or usage == hid_escape then
+		monitor_commands.cancel()
+		terminal.follow_output()
+		finish_output()
+		return false
+	end
+	if usage == hid_up then
+		terminal.scroll_view(1)
+		return true
+	end
+	if usage == hid_page_up then
+		terminal.scroll_view(terminal.page_rows)
+		return true
+	end
+	if usage == hid_home then
+		terminal.scroll_view(0x7fffffff)
+		return false
+	end
+	if usage == hid_end then
+		terminal.follow_output()
+		return false
+	end
+	if usage == hid_down then
+		if not terminal.scroll_view(-1) then
+			pump_output(1)
+		end
+		return true
+	end
+	if usage == hid_enter or usage == hid_numpad_enter then
+		if not terminal.scroll_view(-1) then
+			pump_output(1)
+		end
+		return false
+	end
+	if usage == hid_space or usage == hid_page_down then
+		if not terminal.scroll_view(-terminal.page_rows) then
+			pump_output(terminal.page_rows)
+		end
+		return true
+	end
+	return false
+end
+
+local process_hid_key<const> = function(usage, shift)
+	if *monitor_pager_active ~= 0 then
+		return handle_pager_key(usage)
+	end
+	if usage == hid_enter or usage == hid_numpad_enter then
+		submit_input()
+		return false
+	end
+	if usage == hid_backspace then
+		monitor_editor.backspace()
+		return true
+	end
+	if usage == hid_tab then
+		if monitor_editor.complete() then
+			show_completion_candidates()
+		end
+		return false
+	end
+	if usage == hid_escape then
+		monitor_editor.clear()
+		return false
+	end
+	if usage == hid_home then
+		monitor_editor.home()
+		return false
+	end
+	if usage == hid_end then
+		monitor_editor.move_end()
+		return false
+	end
+	if usage == hid_delete then
+		monitor_editor.delete()
+		return true
+	end
+	if usage == hid_left then
+		monitor_editor.left()
+		return true
+	end
+	if usage == hid_right then
+		monitor_editor.right()
+		return true
+	end
+	if usage == hid_up then
+		monitor_editor.previous()
+		return true
+	end
+	if usage == hid_down then
+		monitor_editor.next()
+		return true
+	end
+	if usage == hid_page_up then
+		terminal.scroll_view(terminal.page_rows)
+		return true
+	end
+	if usage == hid_page_down then
+		terminal.scroll_view(-terminal.page_rows)
+		return true
+	end
+	local code<const> = map_hid_key(usage, shift)
+	if code >= ascii_space then
+		monitor_editor.insert(code)
+		return true
+	end
+	return false
 end
 
 local hid_usage_high<const> = function(word, usage)
@@ -315,8 +292,7 @@ local scan_keyboard<const> = function()
 	local pressed_usage = 0
 	for usage = hid_first_key, hid_last_key do
 		if hid_usage_high(current[usage >> 5], usage) and not hid_usage_high(previous[usage >> 5], usage) then
-			local code<const> = process_hid_key(usage, shift)
-			if code == ascii_backspace or code >= ascii_space then
+			if process_hid_key(usage, shift) then
 				pressed_usage = usage
 			end
 		end
@@ -337,14 +313,13 @@ local scan_keyboard<const> = function()
 		previous[index] = current[index]
 	end
 	*monitor_frame = *monitor_frame + 1
-end
-
-local leave_monitor<const> = function()
-	terminal.close()
-	*irq_mask = 0
-	cop0.epc = *monitor_resume_epc
-	cop0.status = *monitor_saved_status
-	*irq_mask = *monitor_saved_irq_mask
+	if *monitor_pager_active == 0 then
+		if (*monitor_frame & 31) < 16 then
+			terminal.show_cursor()
+		else
+			terminal.hide_cursor()
+		end
+	end
 end
 
 function monitor.enter()
@@ -355,36 +330,47 @@ function monitor.enter()
 	*monitor_saved_epc = cop0.epc
 	*monitor_saved_bad_address = cop0.bad_address
 	*monitor_saved_irq_mask = *irq_mask
-	*monitor_resumable = 0
-	*monitor_resume_epc = *monitor_saved_epc
-	if *monitor_saved_cause == cause_nmi then
-		*monitor_resumable = 1
-	elseif *monitor_saved_cause == cause_coprocessor_unusable then
-		*monitor_resumable = 1
-		*monitor_resume_epc = *monitor_saved_epc + 4
-	end
 
 	*irq_mask = 0
-	*irq_ack = irq_vblank
+	-- Blank scanout before waiting for the next publication boundary. The
+	-- monitor is one-way, so accepted cart GPU work retires instead of being
+	-- captured or restored.
+	gx_gpu.disable_display()
+	gx_gpu.ack_irq()
+	*irq_ack = 0xffffffff
 	vblank.clear()
+	*irq_mask = irq_dma_done | irq_vblank | irq_gpu
+	cop0.status = *monitor_saved_status | 1
+	dma_transfer.abort()
+	vblank.wait()
+
 	initialize_input()
+	monitor_editor.open()
+	monitor_commands.open(
+		*monitor_saved_status,
+		*monitor_saved_cause,
+		*monitor_saved_epc,
+		*monitor_saved_bad_address,
+		*monitor_saved_irq_mask)
+	gx_gpu.reset_256x192_pal()
+	gx_gpu.disable_display()
+	local system_texture<const> = romdir.resource('gx_system_texture')
+	dma_transfer.copy_to_gp0(system_texture.addr, system_texture.len >> 2)
 	terminal.open()
 	terminal.write('BMSX BIOS MONITOR\n', palette_prompt)
-	print_fault()
-	terminal.write('TYPE HELP FOR COMMANDS\n', palette_text)
-	write_prompt()
-	terminal.show_cursor()
+	monitor_commands.start_fault()
+	*monitor_output_mode = output_mode_command
+	pump_output(terminal.page_rows)
 	terminal.flush()
+	gx_gpu.enable_display()
+	vblank.wait()
 
-	*irq_mask = irq_vblank
-	cop0.status = *monitor_saved_status | 1
-	while *monitor_action == 0 do
+	while true do
 		*input_control = input_arm
 		vblank.wait()
 		scan_keyboard()
 		terminal.flush()
 	end
-	leave_monitor()
 end
 
 return monitor

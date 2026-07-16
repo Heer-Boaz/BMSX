@@ -241,6 +241,8 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 			return "KSMI r" + std::to_string(decoded.a) + ", " + formatNumber(decoded.sbx);
 		case OpCode::LOADK:
 			return "LOADK r" + std::to_string(decoded.a) + ", " + formatConstValue(program, decoded.bx);
+		case OpCode::LOADKR:
+			return "LOADKR r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.b);
 		case OpCode::LOADNIL:
 			return "LOADNIL r" + std::to_string(decoded.a) + ", " + std::to_string(decoded.b);
 		case OpCode::GETSYS:
@@ -328,8 +330,6 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 			return "STORE_MEM r" + std::to_string(decoded.a) + ", " + formatRKOperand(program, static_cast<uint32_t>(decoded.b), decoded.rkBitsB);
 		case OpCode::STORE_MEM_WORDS:
 			return "STORE_MEM_WORDS r" + std::to_string(decoded.a) + ", " + formatRKOperand(program, static_cast<uint32_t>(decoded.b), decoded.rkBitsB) + ", " + std::to_string(decoded.c);
-		case OpCode::RESERVED3:
-			return std::string(getOpcodeName(decoded.op));
 		case OpCode::HALT:
 			return "HALT";
 		case OpCode::WIDE:
@@ -358,6 +358,8 @@ std::vector<InstructionOperandDebugInfo> buildInstructionOperands(const DecodedD
 			return {registerOperand("dst", decoded.a), plainOperand("imm", formatNumber(decoded.sbx))};
 		case OpCode::LOADK:
 			return {registerOperand("dst", decoded.a), plainOperand("const", formatConstValue(program, decoded.bx))};
+		case OpCode::LOADKR:
+			return {registerOperand("dst", decoded.a), registerOperand("const_index", decoded.b)};
 		case OpCode::LOADNIL:
 			return {registerOperand("base", decoded.a), plainOperand("count", std::to_string(decoded.b))};
 		case OpCode::GETSYS:
@@ -443,7 +445,6 @@ std::vector<InstructionOperandDebugInfo> buildInstructionOperands(const DecodedD
 		case OpCode::MTC0:
 			return {registerOperand("src", decoded.a), plainOperand("cp0", "c" + std::to_string(decoded.b))};
 		case OpCode::RFE:
-		case OpCode::RESERVED3:
 			return {};
 		case OpCode::HALT:
 			return {};

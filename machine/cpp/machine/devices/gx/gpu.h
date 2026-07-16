@@ -5,7 +5,6 @@
 #include "machine/devices/gx/gpu_command_buffer.h"
 #include "machine/devices/gx/gpu_command_fifo.h"
 #include "machine/devices/gx/gpu_display.h"
-#include "machine/devices/gx/system_vram_port.h"
 
 #include <array>
 #include <vector>
@@ -154,14 +153,7 @@ struct GxGpuState {
 	u32 presentDisplayStartWord = 0;
 	u32 presentHorizontalDisplayRangeWord = 0;
 	u32 presentVerticalDisplayRangeWord = 0;
-	u32 display2StartWord = 0;
-	u32 display2SizeWord = 0;
-	u32 compositorControlWord = 0;
-	u32 presentDisplay2StartWord = 0;
-	u32 presentDisplay2SizeWord = 0;
-	u32 presentCompositorControlWord = 0;
 	GxGpuCommandBufferState commandBuffer;
-	GxGpuSystemVramPortState systemVramPort;
 };
 
 struct GxGpuSaveState : GxGpuState {
@@ -217,9 +209,6 @@ private:
 	i64 m_pendingCommandCompletionCycle = 0;
 	size_t m_pendingCommandTargetCount = 0u;
 	GxGpuCommandBuffer m_commandBuffer;
-	GxGpuSystemVramPort m_systemVramPort;
-	std::array<u8, GX_GPU_VRAM_BYTE_COUNT> m_vramSnapshotBytes{};
-	mutable GxGpuDeviceOutput m_deviceOutput{m_commandBuffer, m_systemVramPort, m_vramSnapshotBytes};
 	std::array<u32, GX_GPU_GP0_COMMAND_BUFFER_WORDS> m_gp0CommandWords{};
 	u32 m_gp0CommandWordCount = 0u;
 	u32 m_gp0CommandTargetWordCount = 0u;
@@ -248,12 +237,6 @@ private:
 	u32 m_presentDisplayStartWord = 0u;
 	u32 m_presentHorizontalDisplayRangeWord = GX_GPU_RESET_HORIZONTAL_DISPLAY_RANGE_WORD;
 	u32 m_presentVerticalDisplayRangeWord = GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD;
-	u32 m_display2StartWord = 0u;
-	u32 m_display2SizeWord = 0u;
-	u32 m_compositorControlWord = 0u;
-	u32 m_presentDisplay2StartWord = 0u;
-	u32 m_presentDisplay2SizeWord = 0u;
-	u32 m_presentCompositorControlWord = 0u;
 	bool m_lastFrameCommitted = false;
 	bool m_scanoutVblankActive = false;
 	u32 m_scanoutInterlacedField = 0u;
@@ -262,7 +245,9 @@ private:
 	i64 m_scanoutFrameStartCycle = 0;
 	int m_scanoutCyclesPerFrame = 1;
 	int m_scanoutTotalScanlines = 313;
+	std::array<u8, GX_GPU_VRAM_BYTE_COUNT> m_vramSnapshotBytes{};
 	u64 m_vramSnapshotSerial = 0u;
+	mutable GxGpuDeviceOutput m_deviceOutput;
 	inline static u64 nextVramSnapshotSerial = 0u;
 
 	void publishVramSnapshotRevision();
@@ -301,8 +286,6 @@ private:
 	void updateScanoutStatusBits();
 	void updateDisplayModeStatusBits();
 	void writeStatusIo();
-	u64 readExtendedDisplayRegister(u32 address);
-	void writeExtendedDisplayRegister(u32 address, u64 value);
 	bool gp0WriteReady();
 	static u64 readGp0Thunk(void* context, u32 addr);
 	static void writeGp0Thunk(void* context, u32 addr, u64 value);

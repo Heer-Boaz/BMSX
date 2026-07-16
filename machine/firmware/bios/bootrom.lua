@@ -9,7 +9,7 @@ require('bios/string')
 math = require('bios/math')
 easing = require('bios/easing')
 
-local dma<const> = require('system/dma')
+local dma_transfer<const> = require('bios/dma_transfer')
 local gx_gpu<const> = require('system/gx_gpu')
 local romdir<const> = require('system/romdir')
 local monitor<const> = require('bios/monitor')
@@ -26,6 +26,8 @@ local cart_program_vector_addr<const> = cart_program_start_addr - 4
 local cart_rom_magic<const> = 0x58534d42
 local cart_rom_base_header_size<const> = 32
 local irq_vblank<const> = 0x0004
+local irq_dma_done<const> = 0x0001
+local irq_gpu<const> = 0x0040
 local input_arm<const> = 0x00000001
 local boot_background<const> = 0xff000040
 local cart_state_missing<const> = 1
@@ -42,9 +44,6 @@ end
 
 function exception()
 	monitor.enter()
-	-- The monitor owns display circuit 2 while active. If execution returns to
-	-- the boot loop, that loop must start a fresh firmware terminal session.
-	*boot_screen_started = 0
 end
 
 local cart_header_present<const> = function()
@@ -100,8 +99,7 @@ local update_boot_screen<const> = function()
 	local cart_ready<const> = cart_present and mem[cart_program_vector_addr] == cart_program_start_addr
 	if cart_ready then
 		-- Runtime starts the cart only after this system root returns. Keep the
-		-- handoff after the first VBlank and leave no BIOS scanout plane enabled.
-		terminal.close()
+		-- handoff after the first VBlank; the cart then programs primary scanout.
 		*irq_mask = 0
 		print('Cart boot requested.')
 		return true
@@ -111,17 +109,18 @@ local update_boot_screen<const> = function()
 end
 
 function init()
+	*irq_mask = irq_dma_done | irq_gpu
 	gx_gpu.reset_256x192_pal()
 	gx_gpu.clear_color(boot_background)
 	local system_texture<const> = romdir.resource('gx_system_texture')
-	dma.copy_to_gp0(system_texture.addr, system_texture.len >> 2)
+	dma_transfer.copy_to_gp0(system_texture.addr, system_texture.len >> 2)
 end
 
 function new_game()
 end
 
 init()
-*irq_mask = irq_vblank
+*irq_mask = irq_dma_done | irq_vblank | irq_gpu
 new_game()
 *input_control = input_arm
 while true do

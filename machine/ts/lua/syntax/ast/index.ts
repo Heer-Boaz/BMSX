@@ -116,6 +116,7 @@ export type LuaExpression =
 
 export type LuaChunk = LuaNode & {
 	readonly kind: LuaSyntaxKind.Chunk;
+	readonly constModule: boolean;
 	readonly body: ReadonlyArray<LuaStatement>;
 	readonly definitions: ReadonlyArray<LuaDefinitionInfo>;
 };
@@ -227,7 +228,7 @@ export type LuaHaltUntilIrqStatement = LuaNode & {
 
 export type LuaTypeReference = {
 	readonly name: string;
-	readonly arrayLengths: ReadonlyArray<LuaExpression>;
+	readonly arrayLengths: ReadonlyArray<LuaExpression | null>;
 	readonly range: LuaSourceRange;
 };
 

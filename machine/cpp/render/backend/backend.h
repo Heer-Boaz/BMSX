@@ -288,9 +288,10 @@ class SoftwareBackend : public GPUBackend {
 		i32 m_default_height;
 		i32 m_default_pitch;
 		u32* m_framebuffer;
-	i32 m_width;
-	i32 m_height;
+		i32 m_width;
+		i32 m_height;
 	i32 m_pitch;  // Bytes per row
+
 	FrameStats m_stats;
 
 	// Texture storage

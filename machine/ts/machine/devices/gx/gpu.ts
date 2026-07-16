@@ -1,12 +1,5 @@
 import type { Value } from '../../cpu/cpu';
-import {
-	IO_GX_GPU_COMPOSITOR_CONTROL,
-	IO_GX_GPU_DISPLAY2_START,
-	IO_GX_GPU_DISPLAY2_SIZE,
-	IO_GX_GPU_GP0,
-	IO_GX_GPU_GP1,
-	IRQ_GPU,
-} from '../../bus/io';
+import { IO_GX_GPU_GP0, IO_GX_GPU_GP1, IRQ_GPU } from '../../bus/io';
 import type { Memory } from '../../memory/memory';
 import type { DeviceScheduler } from '../../scheduler/device';
 import { DEVICE_SERVICE_GPU } from '../../scheduler/device';
@@ -50,7 +43,6 @@ import {
 	gxGpuDisplayStartY,
 } from './gpu_display';
 import { initializeGxGpuVramPowerOn } from './vram_power_on';
-import { GxGpuSystemVramPort, type GxGpuSystemVramPortState } from './system_vram_port';
 
 let gxGpuNextVramSnapshotSerial = 0n;
 
@@ -199,14 +191,7 @@ export type GxGpuState = {
 	presentDisplayStartWord: number;
 	presentHorizontalDisplayRangeWord: number;
 	presentVerticalDisplayRangeWord: number;
-	display2StartWord: number;
-	display2SizeWord: number;
-	compositorControlWord: number;
-	presentDisplay2StartWord: number;
-	presentDisplay2SizeWord: number;
-	presentCompositorControlWord: number;
 	commandBuffer: GxGpuCommandBufferState;
-	systemVramPort: GxGpuSystemVramPortState;
 };
 
 export type GxGpuSaveState = GxGpuState & {
@@ -219,7 +204,6 @@ export class GxGpu {
 	private displayModeWord = GX_GPU_RESET_DISPLAY_MODE_WORD;
 	private statusWord = GX_GPU_STATUS_RESET_WORD;
 	private readonly commandBuffer: GxGpuCommandBuffer;
-	private readonly systemVramPort: GxGpuSystemVramPort;
 	private readonly gp0CommandWords = new Uint32Array(GX_GPU_GP0_COMMAND_BUFFER_WORDS);
 	private readonly gp0Fifo = new GxGpuCommandFifo();
 	private gp0CommandWordCount = 0;
@@ -251,12 +235,6 @@ export class GxGpu {
 	private presentDisplayStartWord = 0;
 	private presentHorizontalDisplayRangeWord = GX_GPU_RESET_HORIZONTAL_DISPLAY_RANGE_WORD;
 	private presentVerticalDisplayRangeWord = GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD;
-	private display2StartWord = 0;
-	private display2SizeWord = 0;
-	private compositorControlWord = 0;
-	private presentDisplay2StartWord = 0;
-	private presentDisplay2SizeWord = 0;
-	private presentCompositorControlWord = 0;
 	private scanoutVblankActive = false;
 	private scanoutInterlacedField = 0;
 	private scanoutInterlacedDisplayField = 0;
@@ -276,19 +254,14 @@ export class GxGpu {
 		private readonly dmaController: DmaController,
 	) {
 		this.commandBuffer = new GxGpuCommandBuffer(dmaController);
-		this.systemVramPort = new GxGpuSystemVramPort(memory);
 		this.deviceOutput = {
 			commandBuffer: this.commandBuffer,
-			systemVramPort: this.systemVramPort,
 			readbackPort: this.commandBuffer.readback,
 			statusWord: GX_GPU_STATUS_RESET_WORD,
 			displayModeWord: GX_GPU_RESET_DISPLAY_MODE_WORD,
 			displayStartWord: 0,
 			horizontalDisplayRangeWord: GX_GPU_RESET_HORIZONTAL_DISPLAY_RANGE_WORD,
 			verticalDisplayRangeWord: GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD,
-			display2StartWord: 0,
-			display2SizeWord: 0,
-			compositorControlWord: 0,
 			vramSnapshotBytes: this.vramSnapshotBytes,
 			vramSnapshotSerial: 0n,
 		};
@@ -297,19 +270,12 @@ export class GxGpu {
 		this.memory.mapIoWriteReady(IO_GX_GPU_GP0, GxGpu.gp0WriteReadyThunk);
 		this.memory.mapIoRead(IO_GX_GPU_GP1, this, GxGpu.readStatusThunk);
 		this.memory.mapIoWrite(IO_GX_GPU_GP1, this, GxGpu.writeGp1Thunk);
-		this.memory.mapIoRead(IO_GX_GPU_DISPLAY2_START, this, GxGpu.readExtendedDisplayRegister);
-		this.memory.mapIoWrite(IO_GX_GPU_DISPLAY2_START, this, GxGpu.writeExtendedDisplayRegister);
-		this.memory.mapIoRead(IO_GX_GPU_DISPLAY2_SIZE, this, GxGpu.readExtendedDisplayRegister);
-		this.memory.mapIoWrite(IO_GX_GPU_DISPLAY2_SIZE, this, GxGpu.writeExtendedDisplayRegister);
-		this.memory.mapIoRead(IO_GX_GPU_COMPOSITOR_CONTROL, this, GxGpu.readExtendedDisplayRegister);
-		this.memory.mapIoWrite(IO_GX_GPU_COMPOSITOR_CONTROL, this, GxGpu.writeExtendedDisplayRegister);
 	}
 
 	public reset(): void {
 		this.textureDisableAllowedWord = 0;
 		this.gpuReadWord = 0;
 		this.commandBuffer.reset();
-		this.systemVramPort.reset();
 		initializeGxGpuVramPowerOn(this.vramSnapshotBytes);
 		this.publishVramSnapshotRevision();
 		this.clearGp0CommandState();
@@ -336,12 +302,6 @@ export class GxGpu {
 		this.presentDisplayStartWord = 0;
 		this.presentHorizontalDisplayRangeWord = GX_GPU_RESET_HORIZONTAL_DISPLAY_RANGE_WORD;
 		this.presentVerticalDisplayRangeWord = GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD;
-		this.display2StartWord = 0;
-		this.display2SizeWord = 0;
-		this.compositorControlWord = 0;
-		this.presentDisplay2StartWord = 0;
-		this.presentDisplay2SizeWord = 0;
-		this.presentCompositorControlWord = 0;
 		this.scanoutVblankActive = false;
 		this.scanoutInterlacedField = 0;
 		this.scanoutInterlacedDisplayField = 0;
@@ -408,14 +368,7 @@ export class GxGpu {
 			presentDisplayStartWord: this.presentDisplayStartWord,
 			presentHorizontalDisplayRangeWord: this.presentHorizontalDisplayRangeWord,
 			presentVerticalDisplayRangeWord: this.presentVerticalDisplayRangeWord,
-			display2StartWord: this.display2StartWord,
-			display2SizeWord: this.display2SizeWord,
-			compositorControlWord: this.compositorControlWord,
-			presentDisplay2StartWord: this.presentDisplay2StartWord,
-			presentDisplay2SizeWord: this.presentDisplay2SizeWord,
-			presentCompositorControlWord: this.presentCompositorControlWord,
 			commandBuffer: this.commandBuffer.captureState(),
-			systemVramPort: this.systemVramPort.captureState(),
 		};
 	}
 
@@ -467,14 +420,7 @@ export class GxGpu {
 		this.presentDisplayStartWord = state.presentDisplayStartWord >>> 0;
 		this.presentHorizontalDisplayRangeWord = state.presentHorizontalDisplayRangeWord >>> 0;
 		this.presentVerticalDisplayRangeWord = state.presentVerticalDisplayRangeWord >>> 0;
-		this.display2StartWord = state.display2StartWord >>> 0;
-		this.display2SizeWord = state.display2SizeWord >>> 0;
-		this.compositorControlWord = state.compositorControlWord >>> 0;
-		this.presentDisplay2StartWord = state.presentDisplay2StartWord >>> 0;
-		this.presentDisplay2SizeWord = state.presentDisplay2SizeWord >>> 0;
-		this.presentCompositorControlWord = state.presentCompositorControlWord >>> 0;
 		this.commandBuffer.restoreState(state.commandBuffer);
-		this.systemVramPort.restoreState(state.systemVramPort);
 		this.m_lastFrameCommitted = false;
 		if (this.pendingCommandCompletionCycle !== 0) {
 			this.scheduler.scheduleDeviceService(DEVICE_SERVICE_GPU, this.pendingCommandCompletionCycle);
@@ -774,9 +720,6 @@ export class GxGpu {
 		this.deviceOutput.displayStartWord = this.presentDisplayStartWord;
 		this.deviceOutput.horizontalDisplayRangeWord = this.presentHorizontalDisplayRangeWord;
 		this.deviceOutput.verticalDisplayRangeWord = this.presentVerticalDisplayRangeWord;
-		this.deviceOutput.display2StartWord = this.presentDisplay2StartWord;
-		this.deviceOutput.display2SizeWord = this.presentDisplay2SizeWord;
-		this.deviceOutput.compositorControlWord = this.presentCompositorControlWord;
 		this.deviceOutput.vramSnapshotSerial = this.vramSnapshotSerial;
 		return this.deviceOutput;
 	}
@@ -792,23 +735,14 @@ export class GxGpu {
 			|| this.presentDisplayModeWord !== this.displayModeWord
 			|| this.presentDisplayStartWord !== this.displayStartWord
 			|| this.presentHorizontalDisplayRangeWord !== this.horizontalDisplayRangeWord
-			|| this.presentVerticalDisplayRangeWord !== this.verticalDisplayRangeWord
-			|| this.presentDisplay2StartWord !== this.display2StartWord
-			|| this.presentDisplay2SizeWord !== this.display2SizeWord
-			|| this.presentCompositorControlWord !== this.compositorControlWord;
+			|| this.presentVerticalDisplayRangeWord !== this.verticalDisplayRangeWord;
 		this.presentStatusWord = this.statusWord;
 		this.presentDisplayModeWord = this.displayModeWord;
 		this.presentDisplayStartWord = this.displayStartWord;
 		this.presentHorizontalDisplayRangeWord = this.horizontalDisplayRangeWord;
 		this.presentVerticalDisplayRangeWord = this.verticalDisplayRangeWord;
 		this.commandBuffer.sealCommandsForPresentation();
-		this.systemVramPort.sealForPresentation();
-		this.presentDisplay2StartWord = this.display2StartWord;
-		this.presentDisplay2SizeWord = this.display2SizeWord;
-		this.presentCompositorControlWord = this.compositorControlWord;
-		this.m_lastFrameCommitted = this.commandBuffer.hasUnretiredPresentCommands()
-			|| this.systemVramPort.hasUnretiredPresentCommands()
-			|| scanoutStateChanged;
+		this.m_lastFrameCommitted = this.commandBuffer.hasUnretiredPresentCommands() || scanoutStateChanged;
 	}
 
 	public lastFrameCommitted(): boolean {
@@ -816,7 +750,6 @@ export class GxGpu {
 	}
 
 	public retirePresentedCommands(): void {
-		this.systemVramPort.retirePresentedCommands();
 		const retiredCommands = this.commandBuffer.presentCommandCount;
 		const retiredWords = this.commandBuffer.retireCommandsPreservingVram();
 		if (this.pendingCommandTargetCount !== 0) {
@@ -1271,30 +1204,5 @@ export class GxGpu {
 	// disable-next-line single_line_method_pattern -- MMIO write thunk is the Memory-owned device callback ABI for GP1.
 	private static writeGp1Thunk(context: GxGpu, _addr: number, value: Value): void {
 		context.writeGp1(value as number);
-	}
-
-	private static readExtendedDisplayRegister(context: GxGpu, address: number): Value {
-		switch (address) {
-			case IO_GX_GPU_DISPLAY2_START: return context.display2StartWord;
-			case IO_GX_GPU_DISPLAY2_SIZE: return context.display2SizeWord;
-			case IO_GX_GPU_COMPOSITOR_CONTROL: return context.compositorControlWord;
-		}
-		throw new Error('GX-GPU extended display read outside mapped registerfile.');
-	}
-
-	private static writeExtendedDisplayRegister(context: GxGpu, address: number, value: Value): void {
-		const word = (value as number) >>> 0;
-		switch (address) {
-			case IO_GX_GPU_DISPLAY2_START:
-				context.display2StartWord = word;
-				return;
-			case IO_GX_GPU_DISPLAY2_SIZE:
-				context.display2SizeWord = word;
-				return;
-			case IO_GX_GPU_COMPOSITOR_CONTROL:
-				context.compositorControlWord = word;
-				return;
-		}
-		throw new Error('GX-GPU extended display write outside mapped registerfile.');
 	}
 }

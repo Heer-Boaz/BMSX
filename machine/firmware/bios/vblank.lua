@@ -14,9 +14,9 @@ function vblank.clear()
 end
 
 function vblank.wait()
-	repeat
+	while *bios_vblank_count == 0 do
 		halt_until_irq
-	until *bios_vblank_count ~= 0
+	end
 	*bios_vblank_count = *bios_vblank_count - 1
 end
 

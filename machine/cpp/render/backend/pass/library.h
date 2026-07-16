@@ -11,7 +11,6 @@
 #include "../../graph/graph.h"
 #include "../../shared/submissions.h"
 #include "machine/devices/gx/gpu_command_buffer.h"
-#include "machine/devices/gx/system_vram_port.h"
 #include "render/post/device_quantize/mode.h"
 #include <array>
 #include <string>
@@ -42,14 +41,10 @@ struct GxGpuPipelineState {
 	i32 width = 0;
 	i32 height = 0;
 	const GxGpuCommandBuffer* commandBuffer = nullptr;
-	const GxGpuSystemVramPort* systemVramPort = nullptr;
 	GxGpuReadbackPort* readbackPort = nullptr;
 	u32 statusWord = 0u;
 	u32 displayModeWord = 0u;
 	u32 displayStartWord = 0u;
-	u32 display2StartWord = 0u;
-	u32 display2SizeWord = 0u;
-	u32 compositorControlWord = 0u;
 	const std::array<u8, GX_GPU_VRAM_BYTE_COUNT>* vramSnapshotBytes = nullptr;
 	u64 vramSnapshotSerial = 0u;
 };

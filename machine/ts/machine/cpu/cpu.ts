@@ -346,6 +346,7 @@ export type CpuRuntimeState = {
 	lastInstruction: number;
 	instructionBudgetRemaining: number;
 	haltedUntilIrq: boolean;
+	interruptEventPending: boolean;
 	memoryWriteBlocked: boolean;
 	memoryWriteBlockedAddress: number;
 	statusWord: number;
@@ -1478,7 +1479,7 @@ function createDecodedInstructionPage(): DecodedInstructionPage {
 		tableCacheIndexes: new Uint32Array(DECODED_PAGE_WORDS),
 	};
 	page.widths.fill(1);
-	page.ops.fill(OpCode.RESERVED3);
+	page.ops.fill(OpCode.WIDE);
 	return page;
 }
 
@@ -1497,6 +1498,7 @@ export class CPU {
 	public readonly stringPool: StringPool;
 	private indexKey: StringValue = null;
 	private haltedUntilIrq = false;
+	private interruptEventPending = false;
 	private memoryWriteBlocked = false;
 	private memoryWriteBlockedAddress = 0;
 	private currentInstructionPc = 0;
@@ -2051,6 +2053,7 @@ export class CPU {
 		this.lastReturnValues.length = 0;
 		this.clearCallStack();
 		this.haltedUntilIrq = false;
+		this.interruptEventPending = false;
 		this.memoryWriteBlocked = false;
 		this.memoryWriteBlockedAddress = 0;
 		this.hardHalted = false;
@@ -2099,6 +2102,10 @@ export class CPU {
 	}
 
 	public haltUntilIrq(): void {
+		if (this.interruptEventPending) {
+			this.interruptEventPending = false;
+			return;
+		}
 		this.haltedUntilIrq = true;
 		this.yieldRequested = false;
 	}
@@ -2165,12 +2172,16 @@ export class CPU {
 	public enterPendingInterrupt(): boolean {
 		if (this.nonMaskableInterruptPending && this.isUserMode()) {
 			this.nonMaskableInterruptPending = false;
+			const wasHalted = this.haltedUntilIrq;
 			this.enterAsynchronousException(this.systemExceptionProtoIndex, CPU_CAUSE_NMI);
+			if (!wasHalted) this.interruptEventPending = true;
 			return true;
 		}
 		if (this.canAcceptMaskableInterruptLine()) {
 			const irqProtoIndex = this.isUserMode() ? this.cartIrqProtoIndex : this.systemIrqProtoIndex;
+			const wasHalted = this.haltedUntilIrq;
 			this.enterAsynchronousException(irqProtoIndex, CPU_CAUSE_IRQ);
+			if (!wasHalted) this.interruptEventPending = true;
 			return true;
 		}
 		return false;
@@ -2746,8 +2757,8 @@ export class CPU {
 						this.frames[this.frames.length - 1].pc = this.epcWord;
 					}
 					return;
-				case OpCode.RESERVED3:
-					this.hardHalt();
+				case OpCode.LOADKR:
+					this.setRegisterFast(frame, registers, a, this.program.constPool[registers.get(b) as number]);
 					return;
 
 				case OpCode.LE: {
@@ -3754,6 +3765,7 @@ export class CPU {
 			lastInstruction: this.lastInstruction,
 			instructionBudgetRemaining: this.instructionBudgetRemaining,
 			haltedUntilIrq: this.haltedUntilIrq,
+			interruptEventPending: this.interruptEventPending,
 			memoryWriteBlocked: this.memoryWriteBlocked,
 			memoryWriteBlockedAddress: this.memoryWriteBlockedAddress,
 			statusWord: this.statusWord,
@@ -3930,6 +3942,7 @@ export class CPU {
 		this.lastInstruction = state.lastInstruction;
 		this.instructionBudgetRemaining = state.instructionBudgetRemaining;
 		this.haltedUntilIrq = state.haltedUntilIrq;
+		this.interruptEventPending = state.interruptEventPending;
 		this.memoryWriteBlocked = state.memoryWriteBlocked;
 		this.memoryWriteBlockedAddress = state.memoryWriteBlockedAddress;
 		this.statusWord = state.statusWord;

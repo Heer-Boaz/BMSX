@@ -56,7 +56,7 @@ const std::array<const char*, OPCODE_COUNT> OPCODE_NAMES{
 	"STORE_MEM",
 	"STORE_MEM_WORDS",
 	"RFE",
-	"RESERVED3",
+	"LOADKR",
 	"GETSYS",
 	"SETSYS",
 	"GETGL",
@@ -123,7 +123,7 @@ const std::array<u8, OPCODE_COUNT> BASE_CYCLES{
 	2u, // STORE_MEM
 	2u, // STORE_MEM_WORDS
 	1u, // RFE
-	1u, // RESERVED3
+	1u, // LOADKR
 	1u, // GETSYS
 	2u, // SETSYS
 	1u, // GETGL
@@ -190,7 +190,7 @@ const std::array<u8, OPCODE_COUNT> OPCODE_USES_BX{
 	0u, // STORE_MEM
 	0u, // STORE_MEM_WORDS
 	0u, // RFE
-	0u, // RESERVED3
+	0u, // LOADKR
 	1u, // GETSYS
 	1u, // SETSYS
 	1u, // GETGL
@@ -257,7 +257,7 @@ const std::array<u8, OPCODE_COUNT> OPCODE_USES_DISP{
 	0u, // STORE_MEM
 	0u, // STORE_MEM_WORDS
 	0u, // RFE
-	0u, // RESERVED3
+	0u, // LOADKR
 	0u, // GETSYS
 	0u, // SETSYS
 	0u, // GETGL

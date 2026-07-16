@@ -52,7 +52,7 @@ export const enum OpCode {
 	STORE_MEM,
 	STORE_MEM_WORDS,
 	RFE,
-	RESERVED3,
+	LOADKR,
 	GETSYS,
 	SETSYS,
 	GETGL,
@@ -126,7 +126,7 @@ export const OPCODE_NAMES: ReadonlyArray<string> = [
 	'STORE_MEM',
 	'STORE_MEM_WORDS',
 	'RFE',
-	'RESERVED3',
+	'LOADKR',
 	'GETSYS',
 	'SETSYS',
 	'GETGL',
@@ -179,7 +179,7 @@ export const OPCODE_CATEGORY: ReadonlyArray<string> = [
 	'bitwise', 'bitwise', 'bitwise', 'bitwise', 'bitwise', 'string concat', 'string concat', 'arithmetic',
 	'logical', 'length', 'bitwise', 'comparison', 'comparison', 'comparison', 'system control', 'system control',
 	'branch/jump', 'branch/jump', 'branch/jump', 'closure creation', 'upvalue', 'upvalue', 'vararg', 'call/return',
-	'call/return', 'memory I/O', 'memory I/O', 'memory I/O', 'system control', 'reserved', 'global/sys access', 'global/sys access',
+	'call/return', 'memory I/O', 'memory I/O', 'memory I/O', 'system control', 'load/move', 'global/sys access', 'global/sys access',
 	'global/sys access', 'global/sys access', 'table get/set', 'table get/set', 'table get/set', 'table get/set', 'table get/set', 'sleep/halt',
 ];
 

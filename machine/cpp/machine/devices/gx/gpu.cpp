@@ -18,25 +18,18 @@ GxGpu::GxGpu(Memory& memory, IrqController& irq, DeviceScheduler& scheduler, Dma
 	, m_scheduler(scheduler)
 	, m_dmaController(dmaController)
 	, m_commandBuffer(dmaController)
-	, m_systemVramPort(memory) {
+	, m_deviceOutput(m_commandBuffer, m_vramSnapshotBytes) {
 	m_memory.mapIoRead(IO_GX_GPU_GP0, this, &GxGpu::readGp0Thunk);
 	m_memory.mapIoWrite(IO_GX_GPU_GP0, this, &GxGpu::writeGp0Thunk);
 	m_memory.mapIoWriteReady(IO_GX_GPU_GP0, &GxGpu::gp0WriteReadyThunk);
 	m_memory.mapIoRead(IO_GX_GPU_GP1, this, &GxGpu::readStatusThunk);
 	m_memory.mapIoWrite(IO_GX_GPU_GP1, this, &GxGpu::writeGp1Thunk);
-	m_memory.mapIoRead<&GxGpu::readExtendedDisplayRegister>(IO_GX_GPU_DISPLAY2_START, *this);
-	m_memory.mapIoWrite<&GxGpu::writeExtendedDisplayRegister>(IO_GX_GPU_DISPLAY2_START, *this);
-	m_memory.mapIoRead<&GxGpu::readExtendedDisplayRegister>(IO_GX_GPU_DISPLAY2_SIZE, *this);
-	m_memory.mapIoWrite<&GxGpu::writeExtendedDisplayRegister>(IO_GX_GPU_DISPLAY2_SIZE, *this);
-	m_memory.mapIoRead<&GxGpu::readExtendedDisplayRegister>(IO_GX_GPU_COMPOSITOR_CONTROL, *this);
-	m_memory.mapIoWrite<&GxGpu::writeExtendedDisplayRegister>(IO_GX_GPU_COMPOSITOR_CONTROL, *this);
 }
 
 void GxGpu::reset() {
 	m_textureDisableAllowedWord = 0u;
 	m_gpuReadWord = 0u;
 	m_commandBuffer.reset();
-	m_systemVramPort.reset();
 	initializeGxGpuVramPowerOn(m_vramSnapshotBytes.data());
 	publishVramSnapshotRevision();
 	clearGp0CommandState();
@@ -63,12 +56,6 @@ void GxGpu::resetGpuRegisters() {
 	m_presentDisplayStartWord = 0u;
 	m_presentHorizontalDisplayRangeWord = GX_GPU_RESET_HORIZONTAL_DISPLAY_RANGE_WORD;
 	m_presentVerticalDisplayRangeWord = GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD;
-	m_display2StartWord = 0u;
-	m_display2SizeWord = 0u;
-	m_compositorControlWord = 0u;
-	m_presentDisplay2StartWord = 0u;
-	m_presentDisplay2SizeWord = 0u;
-	m_presentCompositorControlWord = 0u;
 	m_scanoutVblankActive = false;
 	m_scanoutInterlacedField = 0u;
 	m_scanoutInterlacedDisplayField = 0u;
@@ -130,14 +117,7 @@ GxGpuState GxGpu::captureState() {
 	state.presentDisplayStartWord = m_presentDisplayStartWord;
 	state.presentHorizontalDisplayRangeWord = m_presentHorizontalDisplayRangeWord;
 	state.presentVerticalDisplayRangeWord = m_presentVerticalDisplayRangeWord;
-	state.display2StartWord = m_display2StartWord;
-	state.display2SizeWord = m_display2SizeWord;
-	state.compositorControlWord = m_compositorControlWord;
-	state.presentDisplay2StartWord = m_presentDisplay2StartWord;
-	state.presentDisplay2SizeWord = m_presentDisplay2SizeWord;
-	state.presentCompositorControlWord = m_presentCompositorControlWord;
 	state.commandBuffer = m_commandBuffer.captureState();
-	state.systemVramPort = m_systemVramPort.captureState();
 	return state;
 }
 
@@ -185,14 +165,7 @@ void GxGpu::restoreState(const GxGpuState& state) {
 	m_presentDisplayStartWord = state.presentDisplayStartWord;
 	m_presentHorizontalDisplayRangeWord = state.presentHorizontalDisplayRangeWord;
 	m_presentVerticalDisplayRangeWord = state.presentVerticalDisplayRangeWord;
-	m_display2StartWord = state.display2StartWord;
-	m_display2SizeWord = state.display2SizeWord;
-	m_compositorControlWord = state.compositorControlWord;
-	m_presentDisplay2StartWord = state.presentDisplay2StartWord;
-	m_presentDisplay2SizeWord = state.presentDisplay2SizeWord;
-	m_presentCompositorControlWord = state.presentCompositorControlWord;
 	m_commandBuffer.restoreState(state.commandBuffer);
-	m_systemVramPort.restoreState(state.systemVramPort);
 	if (state.pendingCommandCycles != 0) {
 		m_pendingCommandCompletionCycle = m_scheduler.currentNowCycles() + state.pendingCommandCycles;
 		m_scheduler.scheduleDeviceService(DEVICE_SERVICE_GPU, m_pendingCommandCompletionCycle);
@@ -491,9 +464,6 @@ const GxGpuDeviceOutput& GxGpu::readDeviceOutput() {
 	m_deviceOutput.displayStartWord = m_presentDisplayStartWord;
 	m_deviceOutput.horizontalDisplayRangeWord = m_presentHorizontalDisplayRangeWord;
 	m_deviceOutput.verticalDisplayRangeWord = m_presentVerticalDisplayRangeWord;
-	m_deviceOutput.display2StartWord = m_presentDisplay2StartWord;
-	m_deviceOutput.display2SizeWord = m_presentDisplay2SizeWord;
-	m_deviceOutput.compositorControlWord = m_presentCompositorControlWord;
 	m_deviceOutput.vramSnapshotSerial = m_vramSnapshotSerial;
 	return m_deviceOutput;
 }
@@ -509,27 +479,17 @@ void GxGpu::presentReadyFrameOnVblankEdge() {
 		|| m_presentDisplayModeWord != m_displayModeWord
 		|| m_presentDisplayStartWord != m_displayStartWord
 		|| m_presentHorizontalDisplayRangeWord != m_horizontalDisplayRangeWord
-		|| m_presentVerticalDisplayRangeWord != m_verticalDisplayRangeWord
-		|| m_presentDisplay2StartWord != m_display2StartWord
-		|| m_presentDisplay2SizeWord != m_display2SizeWord
-		|| m_presentCompositorControlWord != m_compositorControlWord;
+		|| m_presentVerticalDisplayRangeWord != m_verticalDisplayRangeWord;
 	m_presentStatusWord = m_statusWord;
 	m_presentDisplayModeWord = m_displayModeWord;
 	m_presentDisplayStartWord = m_displayStartWord;
 	m_presentHorizontalDisplayRangeWord = m_horizontalDisplayRangeWord;
 	m_presentVerticalDisplayRangeWord = m_verticalDisplayRangeWord;
 	m_commandBuffer.sealCommandsForPresentation();
-	m_systemVramPort.sealForPresentation();
-	m_presentDisplay2StartWord = m_display2StartWord;
-	m_presentDisplay2SizeWord = m_display2SizeWord;
-	m_presentCompositorControlWord = m_compositorControlWord;
-	m_lastFrameCommitted = m_commandBuffer.hasUnretiredPresentCommands()
-		|| m_systemVramPort.hasUnretiredPresentCommands()
-		|| scanoutStateChanged;
+	m_lastFrameCommitted = m_commandBuffer.hasUnretiredPresentCommands() || scanoutStateChanged;
 }
 
 void GxGpu::retirePresentedCommands() {
-	m_systemVramPort.retirePresentedCommands();
 	const size_t retiredCommands = m_commandBuffer.presentCommandCount;
 	const size_t retiredWords = m_commandBuffer.retireCommandsPreservingVram();
 	if (m_pendingCommandTargetCount != 0u) {
@@ -950,34 +910,6 @@ void GxGpu::updateDisplayModeStatusBits() {
 void GxGpu::writeStatusIo() {
 	updateDynamicStatusBits();
 	m_memory.writeIoValue(IO_GX_GPU_GP1, valueNumber(static_cast<double>(m_statusWord)));
-}
-
-u64 GxGpu::readExtendedDisplayRegister(u32 address) {
-	switch (address) {
-	case IO_GX_GPU_DISPLAY2_START:
-		return valueNumber(static_cast<double>(m_display2StartWord));
-	case IO_GX_GPU_DISPLAY2_SIZE:
-		return valueNumber(static_cast<double>(m_display2SizeWord));
-	case IO_GX_GPU_COMPOSITOR_CONTROL:
-		return valueNumber(static_cast<double>(m_compositorControlWord));
-	}
-	throw BMSX_RUNTIME_ERROR("GX-GPU extended display read outside mapped registerfile.");
-}
-
-void GxGpu::writeExtendedDisplayRegister(u32 address, u64 value) {
-	const u32 word = toU32(value);
-	switch (address) {
-	case IO_GX_GPU_DISPLAY2_START:
-		m_display2StartWord = word;
-		return;
-	case IO_GX_GPU_DISPLAY2_SIZE:
-		m_display2SizeWord = word;
-		return;
-	case IO_GX_GPU_COMPOSITOR_CONTROL:
-		m_compositorControlWord = word;
-		return;
-	}
-	throw BMSX_RUNTIME_ERROR("GX-GPU extended display write outside mapped registerfile.");
 }
 
 bool GxGpu::gp0WriteReady() {

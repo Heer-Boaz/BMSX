@@ -1,4 +1,3 @@
-#include "common/endian.h"
 #include "machine/devices/gx/gpu.h"
 #include "machine/devices/gx/gpu_command_fifo.h"
 #include "machine/devices/dma/controller.h"
@@ -66,7 +65,6 @@ struct CommandBufferDmaHarness {
 };
 
 CommandBufferDmaHarness commandBufferDmaHarness;
-bmsx::GxGpuSystemVramPort emptySystemVramPort(commandBufferDmaHarness.memory);
 
 void require(bool condition, const char* message) {
 	if (!condition) {
@@ -1232,15 +1230,11 @@ struct SoftwareFrameHarness {
 	bmsx::SoftwareBackend backend;
 	bmsx::GxGpuPipelineState state;
 
-	SoftwareFrameHarness(
-		const bmsx::GxGpuCommandBuffer& commandBuffer,
-		bmsx::GxGpuReadbackPort& readback,
-		const bmsx::GxGpuSystemVramPort& systemVramPort = emptySystemVramPort)
+	SoftwareFrameHarness(const bmsx::GxGpuCommandBuffer& commandBuffer, bmsx::GxGpuReadbackPort& readback)
 		: backend(framebuffer.data(), 256, 256, 256 * static_cast<int32_t>(sizeof(uint32_t))) {
 		state.width = 256;
 		state.height = 256;
 		state.commandBuffer = &commandBuffer;
-		state.systemVramPort = &systemVramPort;
 		state.readbackPort = &readback;
 		state.vramSnapshotBytes = vramSnapshot.get();
 		state.statusWord = 0u;
@@ -2486,14 +2480,6 @@ void testSoftwareScanoutWeavesCurrent480iFieldIntoRetainedOutputLines() {
 		0xffffffffu,
 	}, "GX-GPU 480i scanout initially assembles both wrapped source fields");
 
-	state.display2StartWord = bmsx::GX_GPU_SYSTEM_VRAM_X | (64u << 10u);
-	state.display2SizeWord = (4u << 16u) | 1u;
-	state.compositorControlWord = bmsx::GX_GPU_COMPOSITOR_DISPLAY2_ENABLE;
-	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(bmsx::GX_GPU_SYSTEM_VRAM_X, 65u)] = 0x83e0u;
-	bmsx::scanoutGxGpuSoftwareVram(backend, state);
-	require(framebuffer[1u] == 0xff00ff00u, "GX display2 composes after interlaced field weave");
-	state.compositorControlWord = 0u;
-
 	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(1023, 510)] = 0x7fffu;
 	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(1023, 0)] = 0x7fffu;
 	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(1023, 511)] = 0x001fu;
@@ -2509,15 +2495,13 @@ void testSoftwareScanoutWeavesCurrent480iFieldIntoRetainedOutputLines() {
 	}, "GX-GPU 480i scanout updates only the current field lines");
 
 	state.statusWord = bmsx::GX_GPU_STATUS_DISPLAY_DISABLE | bmsx::GX_GPU_STATUS_INTERLACED_FIELD;
-	state.compositorControlWord = bmsx::GX_GPU_COMPOSITOR_DISPLAY2_ENABLE;
 	bmsx::scanoutGxGpuSoftwareVram(backend, state);
 	require(framebuffer == std::array<uint32_t, 4u>{
 		0xff000000u,
+		0xffff0000u,
+		0xff000000u,
 		0xff00ff00u,
-		0xff000000u,
-		0xff000000u,
-	}, "GX display2 composes over a disabled interlaced primary after field weave");
-	state.compositorControlWord = 0u;
+	}, "GX-GPU disabled interlaced scanout blacks only the current field");
 
 	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(1023, 510)] = 0x7c00u;
 	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(1023, 511)] = 0x7fffu;
@@ -3055,45 +3039,6 @@ void testMmioGp0Gp1() {
 	require((memory.readMappedU32LE(bmsx::IO_GX_GPU_GP1) & bmsx::GX_GPU_STATUS_PAL_MODE) == 0u, "GX-GPU GP1 MMIO GPUSTAT PAL bit");
 }
 
-void testSystemVramTransferAndDisplay2Ownership() {
-	GpuHarness harness;
-	harness.gpu.writeGp0(bmsx::GX_GPU_GP0_POLYGON_FIRST << 24u);
-	const bmsx::GxGpuState gp0Before = harness.gpu.captureState();
-
-	harness.memory.writeMappedU32LE(bmsx::IO_GX_GPU_DISPLAY2_START, bmsx::GX_GPU_SYSTEM_VRAM_X | (64u << 10u));
-	harness.memory.writeMappedU32LE(bmsx::IO_GX_GPU_DISPLAY2_SIZE, (2u << 16u) | 2u);
-	harness.memory.writeMappedU32LE(bmsx::IO_GX_GPU_COMPOSITOR_CONTROL, bmsx::GX_GPU_COMPOSITOR_DISPLAY2_ENABLE);
-	harness.memory.writeMappedU32LE(bmsx::IO_GX_GPU_SYSTEM_VRAM_POSITION, 64u << 16u);
-	harness.memory.writeMappedU32LE(bmsx::IO_GX_GPU_SYSTEM_VRAM_SIZE, (2u << 16u) | 2u);
-	harness.memory.writeMappedU32LE(bmsx::IO_GX_GPU_SYSTEM_VRAM_CONTROL, bmsx::GX_GPU_SYSTEM_VRAM_PORT_CONTROL_START);
-	harness.memory.writeMappedU32LE(bmsx::IO_GX_GPU_SYSTEM_VRAM_DATA, 0xfc00801fu);
-	harness.memory.writeMappedU32LE(bmsx::IO_GX_GPU_SYSTEM_VRAM_DATA, 0xffff83e0u);
-	const bmsx::GxGpuState state = harness.gpu.captureState();
-	require(state.gp0CommandWordCount == gp0Before.gp0CommandWordCount
-		&& state.gp0CommandTargetWordCount == gp0Before.gp0CommandTargetWordCount
-		&& state.gp0CommandWords == gp0Before.gp0CommandWords,
-		"GX system transfer MMIO preserves interrupted GP0 assembly");
-
-	harness.gpu.presentReadyFrameOnVblankEdge();
-	const bmsx::GxGpuDeviceOutput& output = harness.gpu.readDeviceOutput();
-	require(harness.gpu.lastFrameCommitted(), "GX-GPU commits a frame containing only system-display work");
-
-	SoftwareFrameHarness frame(output.commandBuffer, output.readbackPort, output.systemVramPort);
-	*frame.vramSnapshot = output.vramSnapshotBytes;
-	frame.state.vramSnapshotSerial = output.vramSnapshotSerial;
-	frame.state.statusWord = output.statusWord;
-	frame.state.displayModeWord = output.displayModeWord;
-	frame.state.displayStartWord = output.displayStartWord;
-	frame.state.display2StartWord = output.display2StartWord;
-	frame.state.display2SizeWord = output.display2SizeWord;
-	frame.state.compositorControlWord = output.compositorControlWord;
-	bmsx::renderGxGpuSoftwareFrame(frame.backend, frame.state);
-	require(frame.framebuffer[0u] == 0xffff0000u && frame.framebuffer[1u] == 0xff0000ffu
-		&& frame.framebuffer[256u] == 0xff00ff00u && frame.framebuffer[257u] == 0xffffffffu,
-		"GX display2 composes A1RGB555 from the shared system VRAM window");
-	require(frame.framebuffer[2u] == 0xff000000u, "GX display2 geometry excludes VRAM outside its programmed window");
-}
-
 } // namespace
 
 int main() {
@@ -3157,6 +3102,5 @@ int main() {
 	testSoftwareCommandsPreserveTextureMaskBlendAndMaskTestStoreSemantics();
 	testSoftwareCommandsSamplePalette8RectangleFlipAndDitheredModulation();
 	testMmioGp0Gp1();
-	testSystemVramTransferAndDisplay2Ownership();
 	return 0;
 }

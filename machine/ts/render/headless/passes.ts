@@ -63,14 +63,10 @@ function registerHeadlessGxGpuPass(registry: RenderPassLibrary): void {
 		width: 0,
 		height: 0,
 		commandBuffer: registry.view.gxGpuCommandBuffer,
-		systemVramPort: registry.view.gxGpuSystemVram,
 		readbackPort: registry.view.gxGpuReadbackPort,
 		statusWord: registry.view.gxGpuStatusWord,
 		displayModeWord: registry.view.gxGpuDisplayModeWord,
 		displayStartWord: registry.view.gxGpuDisplayStartWord,
-		display2StartWord: registry.view.gxGpuDisplay2StartWord,
-		display2SizeWord: registry.view.gxGpuDisplay2SizeWord,
-		compositorControlWord: registry.view.gxGpuCompositorControlWord,
 		vramSnapshotBytes: registry.view.gxGpuVramSnapshotBytes,
 		vramSnapshotSerial: registry.view.gxGpuVramSnapshotSerial,
 	};
@@ -86,14 +82,10 @@ function registerHeadlessGxGpuPass(registry: RenderPassLibrary): void {
 				gxGpuState.width = view.offscreenCanvasSize.x;
 				gxGpuState.height = view.offscreenCanvasSize.y;
 				gxGpuState.commandBuffer = view.gxGpuCommandBuffer;
-				gxGpuState.systemVramPort = view.gxGpuSystemVram;
 				gxGpuState.readbackPort = view.gxGpuReadbackPort;
 				gxGpuState.statusWord = view.gxGpuStatusWord;
 				gxGpuState.displayModeWord = view.gxGpuDisplayModeWord;
 				gxGpuState.displayStartWord = view.gxGpuDisplayStartWord;
-				gxGpuState.display2StartWord = view.gxGpuDisplay2StartWord;
-				gxGpuState.display2SizeWord = view.gxGpuDisplay2SizeWord;
-				gxGpuState.compositorControlWord = view.gxGpuCompositorControlWord;
 				gxGpuState.vramSnapshotBytes = view.gxGpuVramSnapshotBytes;
 				gxGpuState.vramSnapshotSerial = view.gxGpuVramSnapshotSerial;
 			},
