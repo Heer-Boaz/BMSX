@@ -1358,6 +1358,17 @@ queue is the host pacing master; a second deadline pacer must not compete with
 it, and push/pop/callback paths must not allocate or report dropped samples as
 consumed.
 
+The direct Linux host keeps platform video resources in the concrete
+`video_context` owner. That owner contains the fbdev mapping, SDL window,
+renderer and texture, SDL GLES context, EGL context and surface, swap operation,
+drawable extent and window-to-surface mapping. It initializes and quits only the
+SDL video subsystem. Game-controller subsystem state remains with input; audio
+owns the SDL audio subsystem independently. The presenter borrows one retained
+surface record from the context owner and never reacquires or allocates a
+per-frame configuration object. SDL software storage changes only when the
+machine geometry changes, and GLES drawable extent is refreshed on SDL window
+events rather than polled during every presentation.
+
 Libretro keyboard input enters through
 `RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK`. The direct host retains source bits
 for each physical key source, so releasing one source cannot clear a still-held
@@ -1380,6 +1391,12 @@ their stale host handles and complete CPU-side pipeline state without issuing
 deletes against numeric names that may already belong to the replacement
 context. Replacement pass singletons are bootstrapped only after the old graph
 and registry have been removed.
+
+Direct-host shutdown invokes the core `context_destroy` callback while the
+frontend context is current, deletes host presenter GL objects, deinitializes
+the core, and only then destroys the SDL/EGL context, surface and window. No
+process-wide `SDL_Quit()` call is allowed to erase resources owned by the input
+or audio subsystems.
 
 Before clean destruction, the GPU commits accelerated VRAM to its retained raw
 snapshot. GX pipeline teardown clears its accelerated command frontier and

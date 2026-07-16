@@ -3,14 +3,12 @@
 #include <dirent.h>
 #include <limits.h>
 #include <dlfcn.h>
-#include <EGL/egl.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <GLES2/gl2.h>
 #ifdef BMSX_LIBRETRO_HOST_SDL
 #include <SDL.h>
 #endif
-#include <linux/fb.h>
 #include <linux/input.h>
 #include <signal.h>
 #include <stdarg.h>
@@ -21,7 +19,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
-#include <sys/mman.h>
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
@@ -36,6 +33,7 @@
 #include "input_timeline.h"
 #include "keyboard_input.h"
 #include "screenshot.h"
+#include "video_context.h"
 
 #define BMSX_HOST_USEC_PER_SECOND 1000000ull
 #define BMSX_HOST_NSEC_PER_SECOND 1000000000ull
@@ -75,18 +73,6 @@ typedef struct LibretroCore {
 	void (*retro_cheat_set)(unsigned, bool, const char*);
 } LibretroCore;
 
-typedef struct FbDev {
-	int fd;
-	struct fb_fix_screeninfo fix;
-	struct fb_var_screeninfo var;
-	size_t map_size;
-	uint8_t* map;
-	int width;
-	int height;
-	int bpp;
-	int stride;
-} FbDev;
-
 typedef struct InputDev {
 	const char* path;
 	int fd;
@@ -120,11 +106,6 @@ static BmsxCoreOptions g_core_options;
 
 #ifdef BMSX_LIBRETRO_HOST_SDL
 static bool g_use_sdl = false;
-static bool g_sdl_use_gl = false;
-static SDL_Window* g_sdl_window = NULL;
-static SDL_Renderer* g_sdl_renderer = NULL;
-static SDL_Texture* g_sdl_texture = NULL;
-static SDL_GLContext g_sdl_gl_context = NULL;
 static SDL_GameController* g_sdl_gamepad = NULL;
 static SDL_JoystickID g_sdl_gamepad_id = -1;
 static uint16_t g_sdl_pad_state = 0;
@@ -135,11 +116,6 @@ static enum retro_pixel_format g_core_pixel_format = RETRO_PIXEL_FORMAT_XRGB8888
 static struct retro_hw_render_callback g_hw_render;
 static bool g_use_hw_render = false;
 static bool g_hw_context_pending_reset = false;
-static EGLDisplay g_egl_display = EGL_NO_DISPLAY;
-static EGLContext g_egl_context = EGL_NO_CONTEXT;
-static EGLSurface g_egl_surface = EGL_NO_SURFACE;
-static void* g_egl_lib = NULL;
-static void* g_gles_lib = NULL;
 static unsigned g_geom_base_w = 0;
 static unsigned g_geom_base_h = 0;
 static unsigned g_render_target_w = 0;
@@ -150,7 +126,6 @@ static uint64_t g_frame_usec = 0;
 static uint64_t g_frame_ns = 0;
 static uint64_t g_max_run_frames = 0;
 static uint64_t g_run_frame_count = 0;
-static bool g_sdl_hidden_window = false;
 static struct retro_frame_time_callback g_frame_time_cb = {0};
 static bool g_has_frame_time_cb = false;
 static unsigned g_last_video_w = 0;
@@ -175,13 +150,6 @@ static GLint g_blit_uniform_tex = -1;
 static GLint g_blit_uniform_flip = -1;
 static bool g_gl_loaded = false;
 
-struct fbdev_window {
-	uint16_t width;
-	uint16_t height;
-};
-
-static struct fbdev_window g_fbwin;
-
 static double g_target_fps = 0.0;
 
 #define MSG_MAX_TEXT 256
@@ -204,36 +172,6 @@ static GLuint g_msg_tex = 0;
 static GLuint g_msg_vbo = 0;
 static int g_msg_tex_w = 0;
 static int g_msg_tex_h = 0;
-
-typedef EGLDisplay (EGLAPIENTRYP PFNEGLGETDISPLAY)(EGLNativeDisplayType display_id);
-typedef EGLBoolean (EGLAPIENTRYP PFNEGLBINDAPI)(EGLenum api);
-typedef EGLBoolean (EGLAPIENTRYP PFNEGLINITIALIZE)(EGLDisplay dpy, EGLint* major, EGLint* minor);
-typedef EGLBoolean (EGLAPIENTRYP PFNEGLCHOOSECONFIG)(EGLDisplay dpy, const EGLint* attrib_list, EGLConfig* configs, EGLint config_size, EGLint* num_config);
-typedef EGLSurface (EGLAPIENTRYP PFNEGLCREATEWINDOWSURFACE)(EGLDisplay dpy, EGLConfig config, EGLNativeWindowType win, const EGLint* attrib_list);
-typedef EGLContext (EGLAPIENTRYP PFNEGLCREATECONTEXT)(EGLDisplay dpy, EGLConfig config, EGLContext share_context, const EGLint* attrib_list);
-typedef EGLBoolean (EGLAPIENTRYP PFNEGLMAKECURRENT)(EGLDisplay dpy, EGLSurface draw, EGLSurface read, EGLContext ctx);
-typedef EGLBoolean (EGLAPIENTRYP PFNEGLSWAPINTERVAL)(EGLDisplay dpy, EGLint interval);
-typedef EGLBoolean (EGLAPIENTRYP PFNEGLSWAPBUFFERS)(EGLDisplay dpy, EGLSurface surface);
-typedef EGLBoolean (EGLAPIENTRYP PFNEGLDESTROYCONTEXT)(EGLDisplay dpy, EGLContext ctx);
-typedef EGLBoolean (EGLAPIENTRYP PFNEGLDESTROYSURFACE)(EGLDisplay dpy, EGLSurface surface);
-typedef EGLBoolean (EGLAPIENTRYP PFNEGLTERMINATE)(EGLDisplay dpy);
-typedef EGLint (EGLAPIENTRYP PFNEGLGETERROR)(void);
-typedef __eglMustCastToProperFunctionPointerType (EGLAPIENTRYP PFNEGLGETPROCADDRESS)(const char* procname);
-
-static PFNEGLGETDISPLAY eglGetDisplay_ptr = NULL;
-static PFNEGLBINDAPI eglBindAPI_ptr = NULL;
-static PFNEGLINITIALIZE eglInitialize_ptr = NULL;
-static PFNEGLCHOOSECONFIG eglChooseConfig_ptr = NULL;
-static PFNEGLCREATEWINDOWSURFACE eglCreateWindowSurface_ptr = NULL;
-static PFNEGLCREATECONTEXT eglCreateContext_ptr = NULL;
-static PFNEGLMAKECURRENT eglMakeCurrent_ptr = NULL;
-static PFNEGLSWAPINTERVAL eglSwapInterval_ptr = NULL;
-static PFNEGLSWAPBUFFERS eglSwapBuffers_ptr = NULL;
-static PFNEGLDESTROYCONTEXT eglDestroyContext_ptr = NULL;
-static PFNEGLDESTROYSURFACE eglDestroySurface_ptr = NULL;
-static PFNEGLTERMINATE eglTerminate_ptr = NULL;
-static PFNEGLGETERROR eglGetError_ptr = NULL;
-static PFNEGLGETPROCADDRESS eglGetProcAddress_ptr = NULL;
 
 typedef void (GL_APIENTRYP PFNGLACTIVETEXTUREPROC)(GLenum texture);
 typedef void (GL_APIENTRYP PFNGLATTACHSHADERPROC)(GLuint program, GLuint shader);
@@ -320,7 +258,7 @@ static PFNGLVIEWPORTPROC glViewport_ptr = NULL;
 static PFNGLCHECKFRAMEBUFFERSTATUSPROC glCheckFramebufferStatus_ptr = NULL;
 static PFNGLREADPIXELSPROC glReadPixels_ptr = NULL;
 
-static FbDev g_fb;
+static BmsxVideoSurface* g_video_surface = NULL;
 enum { kMaxInputDevs = KEYBOARD_INPUT_EVDEV_SOURCE_COUNT };
 static InputDev g_input_devs[kMaxInputDevs];
 static char g_input_paths[kMaxInputDevs][64];
@@ -355,9 +293,9 @@ static uint8_t g_mouse_buttons = 0;
 static bool g_mouse_position_valid = false;
 #ifdef BMSX_LIBRETRO_HOST_SDL
 static uint8_t map_sdl_mouse_buttons(uint32_t buttons);
+static void set_mouse_absolute_position(int x, int y, bool update_delta);
 #endif
 static void clamp_mouse_position_to_framebuffer(void);
-static void set_mouse_absolute_position(int x, int y, bool update_delta);
 static void crash_handler(int sig, siginfo_t* si, void* ctx_) {
 #if defined(__arm__)
 	ucontext_t* uc = (ucontext_t*)ctx_;
@@ -428,24 +366,11 @@ static inline uint32_t rgb565_to_xrgb8888(uint16_t p);
 	void* _src = (src); \
 	memcpy(&(dst), &_src, sizeof(dst)); \
 } while (0)
-#define ASSIGN_EGL_PROC(dst, src) do { \
-	__eglMustCastToProperFunctionPointerType _src = (src); \
-	memcpy(&(dst), &_src, sizeof(dst)); \
-} while (0)
 #define PTR_TO_RETRO_PROC(dst, src) do { \
 	void* _src = (src); \
 	memcpy(&(dst), &_src, sizeof(dst)); \
 } while (0)
-#define EGL_TO_RETRO_PROC(dst, src) do { \
-	__eglMustCastToProperFunctionPointerType _src = (src); \
-	memcpy(&(dst), &_src, sizeof(dst)); \
-} while (0)
 #ifdef BMSX_LIBRETRO_HOST_SDL
-static void sdl_init(void);
-static void sdl_shutdown(void);
-static void sdl_prepare_frame(unsigned frame_w, unsigned frame_h);
-static void sdl_present(void);
-static void sdl_sync_gl_drawable_size(void);
 static void poll_input_devices_sdl(void);
 #endif
 
@@ -463,30 +388,12 @@ static uintptr_t RETRO_CALLCONV hw_get_current_framebuffer(void) {
 }
 
 static retro_proc_address_t RETRO_CALLCONV hw_get_proc_address(const char* sym) {
-#ifdef BMSX_LIBRETRO_HOST_SDL
-	if (g_use_sdl && g_sdl_use_gl) {
-		void* proc = SDL_GL_GetProcAddress(sym);
-		if (!proc) {
-			return NULL;
-		}
-		retro_proc_address_t fn = NULL;
-		PTR_TO_RETRO_PROC(fn, proc);
-		return fn;
-	}
-#endif
-	if (sym && g_gles_lib) {
-		void* proc = dlsym(g_gles_lib, sym);
-		if (proc) {
-			retro_proc_address_t fn = NULL;
-			PTR_TO_RETRO_PROC(fn, proc);
-			return fn;
-		}
-	}
-	if (!eglGetProcAddress_ptr) {
+	void* proc = bmsx_video_context_get_gl_proc(sym);
+	if (!proc) {
 		return NULL;
 	}
 	retro_proc_address_t fn = NULL;
-	EGL_TO_RETRO_PROC(fn, eglGetProcAddress_ptr(sym));
+	PTR_TO_RETRO_PROC(fn, proc);
 	return fn;
 }
 
@@ -508,28 +415,12 @@ static void update_geometry(const struct retro_game_geometry* geom) {
 	g_geom_dirty = true;
 }
 
-static void* get_gl_proc(const char* name) {
-	void* proc = NULL;
-#ifdef BMSX_LIBRETRO_HOST_SDL
-	if (g_use_sdl && g_sdl_use_gl) {
-		proc = SDL_GL_GetProcAddress(name);
-	}
-#endif
-	if (g_gles_lib) {
-		proc = dlsym(g_gles_lib, name);
-	}
-	if (!proc && eglGetProcAddress_ptr) {
-		ASSIGN_EGL_PROC(proc, eglGetProcAddress_ptr(name));
-	}
-	return proc;
-}
-
 static bool gl_load(void) {
 	if (g_gl_loaded) {
 		return true;
 	}
 #define GL_LOAD(name, type) do { \
-	void* _proc = get_gl_proc(#name); \
+	void* _proc = bmsx_video_context_get_gl_proc(#name); \
 	if (!_proc) { \
 		fprintf(stderr, "[libretro-host] missing GL proc %s\n", #name); \
 		return false; \
@@ -718,6 +609,34 @@ static bool hw_ensure_fbo(unsigned width, unsigned height) {
 	g_hw_tex_h = height;
 	fprintf(stderr, "[libretro-host] hw render target %ux%u\n", width, height);
 	return true;
+}
+
+static void hw_release_resources(void) {
+	if (!g_gl_loaded) {
+		return;
+	}
+	const GLuint buffers[] = {g_blit_vbo, g_msg_vbo};
+	const GLuint textures[] = {g_hw_tex, g_msg_tex};
+	glDeleteBuffers_ptr(2, buffers);
+	glDeleteTextures_ptr(2, textures);
+	glDeleteFramebuffers_ptr(1, &g_hw_fbo);
+	if (g_blit_program) {
+		glDeleteProgram_ptr(g_blit_program);
+	}
+	g_hw_fbo = 0;
+	g_hw_tex = 0;
+	g_hw_tex_w = 0;
+	g_hw_tex_h = 0;
+	g_blit_program = 0;
+	g_blit_vbo = 0;
+	g_blit_attr_pos = -1;
+	g_blit_attr_uv = -1;
+	g_blit_uniform_tex = -1;
+	g_blit_uniform_flip = -1;
+	g_msg_tex = 0;
+	g_msg_vbo = 0;
+	g_msg_tex_w = 0;
+	g_msg_tex_h = 0;
 }
 
 static void compute_dst_rect(int fb_w, int fb_h, unsigned src_w, unsigned src_h,
@@ -943,22 +862,26 @@ static void blit_rgba_surface_software(
 	int y1 = surface_h;
 	if (dst_x < 0) x0 = -dst_x;
 	if (dst_y < 0) y0 = -dst_y;
-	if (dst_x + x1 > g_fb.width) x1 = g_fb.width - dst_x;
-	if (dst_y + y1 > g_fb.height) y1 = g_fb.height - dst_y;
+	if (dst_x + x1 > g_video_surface->width) x1 = g_video_surface->width - dst_x;
+	if (dst_y + y1 > g_video_surface->height) y1 = g_video_surface->height - dst_y;
 	if (x0 >= x1 || y0 >= y1) return;
 
 	const int clipped_w = x1 - x0;
-	switch (g_fb.bpp) {
+	switch (g_video_surface->bits_per_pixel) {
 		case 32:
 			for (int y = y0; y < y1; ++y) {
-				uint8_t* dst_line = g_fb.map + (size_t)(dst_y + y) * (size_t)g_fb.stride + (size_t)(dst_x + x0) * 4u;
+				uint8_t* dst_line = g_video_surface->pixels +
+						(size_t)(dst_y + y) * (size_t)g_video_surface->stride +
+						(size_t)(dst_x + x0) * 4u;
 				const uint8_t* src_line = surface + (size_t)y * (size_t)surface_stride + (size_t)x0 * 4u;
 				blit_rgba_line_xrgb8888((uint32_t*)dst_line, src_line, clipped_w);
 			}
 			break;
 		case 16:
 			for (int y = y0; y < y1; ++y) {
-				uint8_t* dst_line = g_fb.map + (size_t)(dst_y + y) * (size_t)g_fb.stride + (size_t)(dst_x + x0) * 2u;
+				uint8_t* dst_line = g_video_surface->pixels +
+						(size_t)(dst_y + y) * (size_t)g_video_surface->stride +
+						(size_t)(dst_x + x0) * 2u;
 				const uint8_t* src_line = surface + (size_t)y * (size_t)surface_stride + (size_t)x0 * 4u;
 				blit_rgba_line_rgb565((uint16_t*)dst_line, src_line, clipped_w);
 			}
@@ -1033,17 +956,17 @@ static void hw_draw_rgba_overlay(GLuint tex, GLuint* vbo, int x, int y, int widt
 	if (!*vbo) {
 		glGenBuffers_ptr(1, vbo);
 	}
-	const float left = ((float)x / (float)g_fb.width) * 2.0f - 1.0f;
-	const float right = ((float)(x + width) / (float)g_fb.width) * 2.0f - 1.0f;
-	const float top = 1.0f - ((float)y / (float)g_fb.height) * 2.0f;
-	const float bottom = 1.0f - ((float)(y + height) / (float)g_fb.height) * 2.0f;
+	const float left = ((float)x / (float)g_video_surface->width) * 2.0f - 1.0f;
+	const float right = ((float)(x + width) / (float)g_video_surface->width) * 2.0f - 1.0f;
+	const float top = 1.0f - ((float)y / (float)g_video_surface->height) * 2.0f;
+	const float bottom = 1.0f - ((float)(y + height) / (float)g_video_surface->height) * 2.0f;
 	const float quad[] = {
 		left,  bottom, 0.0f, 0.0f,
 		right, bottom, 1.0f, 0.0f,
 		left,  top,    0.0f, 1.0f,
 		right, top,    1.0f, 1.0f,
 	};
-	glViewport_ptr(0, 0, g_fb.width, g_fb.height);
+	glViewport_ptr(0, 0, g_video_surface->width, g_video_surface->height);
 	glDisable_ptr(GL_DEPTH_TEST);
 	glDisable_ptr(GL_CULL_FACE);
 	glEnable_ptr(GL_BLEND);
@@ -1163,12 +1086,13 @@ static void msg_build_lines(int max_chars) {
 }
 
 static void msg_rebuild_surface(void) {
-	if (g_msg_frames_left == 0 || !g_msg_text[0] || g_fb.width <= 0 || g_fb.height <= 0) {
+	if (g_msg_frames_left == 0 || !g_msg_text[0] ||
+			g_video_surface->width <= 0 || g_video_surface->height <= 0) {
 		return;
 	}
 	int scale = 2;
 	int padding = 6;
-	int max_w = g_fb.width - 24;
+	int max_w = g_video_surface->width - 24;
 	if (max_w < 40) {
 		return;
 	}
@@ -1194,8 +1118,8 @@ static void msg_rebuild_surface(void) {
 	int line_h = (7 * scale) + 2;
 	int surf_w = max_len * (5 + 1) * scale + padding * 2;
 	int surf_h = g_msg_line_count * line_h + padding * 2;
-	if (surf_w > g_fb.width - 8) surf_w = g_fb.width - 8;
-	if (surf_h > g_fb.height - 8) surf_h = g_fb.height - 8;
+	if (surf_w > g_video_surface->width - 8) surf_w = g_video_surface->width - 8;
+	if (surf_h > g_video_surface->height - 8) surf_h = g_video_surface->height - 8;
 	if (surf_w < 1 || surf_h < 1) return;
 
 	if (surf_w != g_msg_surface_w || surf_h != g_msg_surface_h) {
@@ -1214,7 +1138,7 @@ static void msg_rebuild_surface(void) {
 
 	memset(g_msg_surface, 0, (size_t)g_msg_surface_stride * (size_t)g_msg_surface_h);
 	g_msg_x = 8;
-	g_msg_y = g_fb.height - g_msg_surface_h - 12;
+	g_msg_y = g_video_surface->height - g_msg_surface_h - 12;
 	if (g_msg_x < 0) g_msg_x = 0;
 	if (g_msg_y < 0) g_msg_y = 0;
 
@@ -1252,11 +1176,6 @@ static bool hw_present_frame(unsigned src_w, unsigned src_h) {
 	if (!hw_init_blitter()) {
 		return false;
 	}
-#ifdef BMSX_LIBRETRO_HOST_SDL
-	if (g_use_sdl) {
-		sdl_sync_gl_drawable_size();
-	}
-#endif
 	if (!g_hw_tex) {
 		return false;
 	}
@@ -1266,12 +1185,20 @@ static bool hw_present_frame(unsigned src_w, unsigned src_h) {
 		return false;
 	}
 	int dst_x = 0, dst_y = 0, dst_w = 0, dst_h = 0;
-	compute_dst_rect(g_fb.width, g_fb.height, present_w, present_h, &dst_x, &dst_y, &dst_w, &dst_h);
+	compute_dst_rect(
+			g_video_surface->width,
+			g_video_surface->height,
+			present_w,
+			present_h,
+			&dst_x,
+			&dst_y,
+			&dst_w,
+			&dst_h);
 	if (dst_w <= 0 || dst_h <= 0) {
 		return false;
 	}
 	glBindFramebuffer_ptr(GL_FRAMEBUFFER, 0);
-	glViewport_ptr(0, 0, g_fb.width, g_fb.height);
+	glViewport_ptr(0, 0, g_video_surface->width, g_video_surface->height);
 	glClearColor_ptr(0.0f, 0.0f, 0.0f, 1.0f);
 	glClear_ptr(GL_COLOR_BUFFER_BIT);
 	glViewport_ptr(dst_x, dst_y, dst_w, dst_h);
@@ -1315,7 +1242,7 @@ static inline void write_xrgb8888_as_rgba(uint8_t* dst, uint32_t p) {
 }
 
 static void copy_framebuffer_row_to_rgba(uint8_t* dst_line, const uint8_t* src_line, int width) {
-	switch (g_fb.bpp) {
+	switch (g_video_surface->bits_per_pixel) {
 		case 32: {
 			const uint32_t* src = (const uint32_t*)src_line;
 			for (int x = 0; x < width; ++x) {
@@ -1340,182 +1267,38 @@ static void step_software_frame_capture(void) {
 	if (!input_timeline_consume_presented_capture(g_accepted_presentation_count, &capture_frame)) {
 		return;
 	}
-	fprintf(stderr, "[SCREENSHOT] Capturing frame %llu (%ux%u)\n", (unsigned long long)capture_frame, g_fb.width, g_fb.height);
-	const size_t pixel_count = (size_t)g_fb.width * (size_t)g_fb.height;
+	fprintf(stderr,
+			"[SCREENSHOT] Capturing frame %llu (%dx%d)\n",
+			(unsigned long long)capture_frame,
+			g_video_surface->width,
+			g_video_surface->height);
+	const size_t pixel_count =
+			(size_t)g_video_surface->width * (size_t)g_video_surface->height;
 	uint8_t* pixels = (uint8_t*)malloc(pixel_count * 4u);
 	if (!pixels) {
-		host_fatal("Screenshot allocation failed for %dx%d frame", g_fb.width, g_fb.height);
+		host_fatal(
+				"Screenshot allocation failed for %dx%d frame",
+				g_video_surface->width,
+				g_video_surface->height);
 	}
-	for (int y = 0; y < g_fb.height; ++y) {
-		const int src_y = g_fb.height - 1 - y;
-		const uint8_t* src_line = g_fb.map + (size_t)src_y * (size_t)g_fb.stride;
-		uint8_t* dst_line = pixels + (size_t)y * (size_t)g_fb.width * 4u;
-		copy_framebuffer_row_to_rgba(dst_line, src_line, g_fb.width);
+	for (int y = 0; y < g_video_surface->height; ++y) {
+		const int src_y = g_video_surface->height - 1 - y;
+		const uint8_t* src_line = g_video_surface->pixels +
+				(size_t)src_y * (size_t)g_video_surface->stride;
+		uint8_t* dst_line = pixels +
+				(size_t)y * (size_t)g_video_surface->width * 4u;
+		copy_framebuffer_row_to_rgba(dst_line, src_line, g_video_surface->width);
 	}
 	char filename[128];
 	snprintf(filename, sizeof(filename), "frame_%05llu.png", (unsigned long long)capture_frame);
-	if (!screenshot_save_png(filename, (uint32_t)g_fb.width, (uint32_t)g_fb.height, pixels)) {
+	if (!screenshot_save_png(
+			filename,
+			(uint32_t)g_video_surface->width,
+			(uint32_t)g_video_surface->height,
+			pixels)) {
 		host_fatal("Screenshot save failed: %s", filename);
 	}
 	free(pixels);
-}
-
-static void egl_unload(void) {
-	if (g_egl_lib) {
-		dlclose(g_egl_lib);
-		g_egl_lib = NULL;
-	}
-	if (g_gles_lib) {
-		dlclose(g_gles_lib);
-		g_gles_lib = NULL;
-	}
-	eglGetDisplay_ptr = NULL;
-	eglBindAPI_ptr = NULL;
-	eglInitialize_ptr = NULL;
-	eglChooseConfig_ptr = NULL;
-	eglCreateWindowSurface_ptr = NULL;
-	eglCreateContext_ptr = NULL;
-	eglMakeCurrent_ptr = NULL;
-	eglSwapInterval_ptr = NULL;
-	eglSwapBuffers_ptr = NULL;
-	eglDestroyContext_ptr = NULL;
-	eglDestroySurface_ptr = NULL;
-	eglTerminate_ptr = NULL;
-	eglGetError_ptr = NULL;
-	eglGetProcAddress_ptr = NULL;
-}
-
-static bool egl_load(void) {
-	if (g_egl_lib) {
-		return true;
-	}
-	g_gles_lib = dlopen("libGLESv2.so.2", RTLD_LAZY | RTLD_GLOBAL);
-	if (!g_gles_lib) {
-		g_gles_lib = dlopen("libGLESv2.so", RTLD_LAZY | RTLD_GLOBAL);
-	}
-	g_egl_lib = dlopen("libEGL.so.1", RTLD_LAZY | RTLD_LOCAL);
-	if (!g_egl_lib) {
-		g_egl_lib = dlopen("libEGL.so", RTLD_LAZY | RTLD_LOCAL);
-	}
-	if (!g_egl_lib) {
-		fprintf(stderr, "[libretro-host] dlopen(libEGL) failed: %s\n", dlerror());
-		return false;
-	}
-
-	ASSIGN_PROC(eglGetDisplay_ptr, dlsym(g_egl_lib, "eglGetDisplay"));
-	ASSIGN_PROC(eglBindAPI_ptr, dlsym(g_egl_lib, "eglBindAPI"));
-	ASSIGN_PROC(eglInitialize_ptr, dlsym(g_egl_lib, "eglInitialize"));
-	ASSIGN_PROC(eglChooseConfig_ptr, dlsym(g_egl_lib, "eglChooseConfig"));
-	ASSIGN_PROC(eglCreateWindowSurface_ptr, dlsym(g_egl_lib, "eglCreateWindowSurface"));
-	ASSIGN_PROC(eglCreateContext_ptr, dlsym(g_egl_lib, "eglCreateContext"));
-	ASSIGN_PROC(eglMakeCurrent_ptr, dlsym(g_egl_lib, "eglMakeCurrent"));
-	ASSIGN_PROC(eglSwapInterval_ptr, dlsym(g_egl_lib, "eglSwapInterval"));
-	ASSIGN_PROC(eglSwapBuffers_ptr, dlsym(g_egl_lib, "eglSwapBuffers"));
-	ASSIGN_PROC(eglDestroyContext_ptr, dlsym(g_egl_lib, "eglDestroyContext"));
-	ASSIGN_PROC(eglDestroySurface_ptr, dlsym(g_egl_lib, "eglDestroySurface"));
-	ASSIGN_PROC(eglTerminate_ptr, dlsym(g_egl_lib, "eglTerminate"));
-	ASSIGN_PROC(eglGetError_ptr, dlsym(g_egl_lib, "eglGetError"));
-	ASSIGN_PROC(eglGetProcAddress_ptr, dlsym(g_egl_lib, "eglGetProcAddress"));
-
-	if (!eglGetDisplay_ptr || !eglBindAPI_ptr || !eglInitialize_ptr || !eglChooseConfig_ptr ||
-		!eglCreateWindowSurface_ptr || !eglCreateContext_ptr ||
-		!eglMakeCurrent_ptr || !eglSwapInterval_ptr || !eglSwapBuffers_ptr ||
-		!eglDestroyContext_ptr || !eglDestroySurface_ptr || !eglTerminate_ptr || !eglGetError_ptr ||
-		!eglGetProcAddress_ptr) {
-		fprintf(stderr, "[libretro-host] egl symbols missing\n");
-		egl_unload();
-		return false;
-	}
-	return true;
-}
-
-static bool egl_init(void) {
-	EGLint err = EGL_SUCCESS;
-	if (!egl_load()) {
-		return false;
-	}
-	if (!eglBindAPI_ptr(EGL_OPENGL_ES_API)) {
-		fprintf(stderr, "[libretro-host] eglBindAPI failed\n");
-		return false;
-	}
-	g_egl_display = eglGetDisplay_ptr(EGL_DEFAULT_DISPLAY);
-	if (g_egl_display == EGL_NO_DISPLAY) {
-		fprintf(stderr, "[libretro-host] eglGetDisplay failed\n");
-		return false;
-	}
-	if (!eglInitialize_ptr(g_egl_display, NULL, NULL)) {
-		err = eglGetError_ptr();
-		fprintf(stderr, "[libretro-host] eglInitialize failed\n");
-		return false;
-	}
-
-	const EGLint config_attrs[] = {
-		EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
-		EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT,
-		EGL_RED_SIZE, 8,
-		EGL_GREEN_SIZE, 8,
-		EGL_BLUE_SIZE, 8,
-		EGL_ALPHA_SIZE, 0,
-		EGL_NONE
-	};
-	EGLConfig config;
-	EGLint num_configs = 0;
-	if (!eglChooseConfig_ptr(g_egl_display, config_attrs, &config, 1, &num_configs) || num_configs == 0) {
-		err = eglGetError_ptr();
-		fprintf(stderr, "[libretro-host] eglChooseConfig failed\n");
-		return false;
-	}
-
-	g_fbwin.width = (uint16_t)g_fb.width;
-	g_fbwin.height = (uint16_t)g_fb.height;
-	g_egl_surface = eglCreateWindowSurface_ptr(
-		g_egl_display,
-		config,
-		(EGLNativeWindowType)&g_fbwin,
-		NULL
-	);
-	if (g_egl_surface == EGL_NO_SURFACE) {
-		err = eglGetError_ptr();
-		fprintf(stderr, "[libretro-host] eglCreateWindowSurface failed (0x%04x)\n", err);
-		return false;
-	}
-
-	const EGLint ctx_attrs[] = {
-		EGL_CONTEXT_CLIENT_VERSION, 2,
-		EGL_NONE
-	};
-	g_egl_context = eglCreateContext_ptr(g_egl_display, config, EGL_NO_CONTEXT, ctx_attrs);
-	if (g_egl_context == EGL_NO_CONTEXT) {
-		err = eglGetError_ptr();
-		fprintf(stderr, "[libretro-host] eglCreateContext failed\n");
-		return false;
-	}
-
-	if (!eglMakeCurrent_ptr(g_egl_display, g_egl_surface, g_egl_surface, g_egl_context)) {
-		err = eglGetError_ptr();
-		fprintf(stderr, "[libretro-host] eglMakeCurrent failed\n");
-		return false;
-	}
-	eglSwapInterval_ptr(g_egl_display, 0);
-	return true;
-}
-
-static void egl_shutdown(void) {
-	if (g_egl_display == EGL_NO_DISPLAY) {
-		return;
-	}
-	eglMakeCurrent_ptr(g_egl_display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
-	if (g_egl_context != EGL_NO_CONTEXT) {
-		eglDestroyContext_ptr(g_egl_display, g_egl_context);
-		g_egl_context = EGL_NO_CONTEXT;
-	}
-	if (g_egl_surface != EGL_NO_SURFACE) {
-		eglDestroySurface_ptr(g_egl_display, g_egl_surface);
-		g_egl_surface = EGL_NO_SURFACE;
-	}
-	eglTerminate_ptr(g_egl_display);
-	g_egl_display = EGL_NO_DISPLAY;
-	egl_unload();
 }
 
 #ifdef BMSX_LIBRETRO_HOST_SDL
@@ -1536,186 +1319,16 @@ static void sdl_open_first_controller(void) {
 	}
 }
 
-static void sdl_sync_gl_drawable_size(void) {
-	if (!g_sdl_use_gl || !g_sdl_window) {
-		return;
-	}
-	int drawable_w = 0;
-	int drawable_h = 0;
-	SDL_GL_GetDrawableSize(g_sdl_window, &drawable_w, &drawable_h);
-	if (drawable_w <= 0 || drawable_h <= 0) {
-		return;
-	}
-	if (g_fb.width == drawable_w && g_fb.height == drawable_h) {
-		return;
-	}
-	g_fb.width = drawable_w;
-	g_fb.height = drawable_h;
-	g_fb.bpp = 32;
-	g_fb.stride = drawable_w * 4;
-	msg_mark_dirty();
-}
-
-static void sdl_resize(unsigned width, unsigned height) {
-	if (width == 0 || height == 0) {
-		return;
-	}
-	g_fb.width = (int)width;
-	g_fb.height = (int)height;
-	clamp_mouse_position_to_framebuffer();
-	g_fb.bpp = 32;
-	g_fb.stride = (int)(width * 4u);
-	if (g_sdl_use_gl) {
-		msg_mark_dirty();
-		return;
-	}
-	g_fb.map_size = (size_t)g_fb.stride * (size_t)g_fb.height;
-	uint8_t* map = (uint8_t*)realloc(g_fb.map, g_fb.map_size);
-	if (!map) {
-		host_fatal("realloc(%zu) failed", g_fb.map_size);
-	}
-	g_fb.map = map;
-	memset(g_fb.map, 0, g_fb.map_size);
-	if (g_sdl_texture) {
-		SDL_DestroyTexture(g_sdl_texture);
-	}
-	g_sdl_texture = SDL_CreateTexture(g_sdl_renderer, SDL_PIXELFORMAT_XRGB8888,
-		SDL_TEXTUREACCESS_STREAMING, g_fb.width, g_fb.height);
-	if (!g_sdl_texture) {
-		host_fatal("SDL_CreateTexture failed: %s", SDL_GetError());
-	}
-	SDL_RenderSetLogicalSize(g_sdl_renderer, g_fb.width, g_fb.height);
-	msg_mark_dirty();
-}
-
 static void sdl_update_mouse_position(void) {
 	int window_x = 0;
 	int window_y = 0;
 	const uint32_t mouse_state = SDL_GetMouseState(&window_x, &window_y);
 	g_mouse_buttons = map_sdl_mouse_buttons(mouse_state);
-	if (!g_sdl_window || g_fb.width <= 0 || g_fb.height <= 0) {
-		return;
-	}
-	if (g_sdl_renderer) {
-		SDL_Rect viewport;
-		SDL_RenderGetViewport(g_sdl_renderer, &viewport);
-		if (viewport.w <= 0 || viewport.h <= 0) {
-			return;
-		}
-		const int mapped_x = (int)floor(((double)(window_x - viewport.x) * (double)g_fb.width) / (double)viewport.w);
-		const int mapped_y = (int)floor(((double)(window_y - viewport.y) * (double)g_fb.height) / (double)viewport.h);
+	int mapped_x = 0;
+	int mapped_y = 0;
+	if (bmsx_video_context_map_window_point(window_x, window_y, &mapped_x, &mapped_y)) {
 		set_mouse_absolute_position(mapped_x, mapped_y, true);
-		return;
 	}
-	int window_w = 0;
-	int window_h = 0;
-	SDL_GetWindowSize(g_sdl_window, &window_w, &window_h);
-	if (window_w <= 0 || window_h <= 0) {
-		return;
-	}
-	const int mapped_x = (int)floor(((double)window_x * (double)g_fb.width) / (double)window_w);
-	const int mapped_y = (int)floor(((double)window_y * (double)g_fb.height) / (double)window_h);
-	set_mouse_absolute_position(mapped_x, mapped_y, true);
-}
-
-static void sdl_init(void) {
-	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) != 0) {
-		host_fatal("SDL_Init failed: %s", SDL_GetError());
-	}
-	SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "nearest");
-	unsigned base_w = g_geom_base_w ? g_geom_base_w : 320;
-	unsigned base_h = g_geom_base_h ? g_geom_base_h : 240;
-	unsigned window_w = base_w * 3u;
-	unsigned window_h = base_h * 3u;
-	if (window_w < 640) window_w = 640;
-	if (window_h < 480) window_h = 480;
-	uint32_t window_flags = SDL_WINDOW_RESIZABLE;
-	if (g_sdl_hidden_window) {
-		window_flags |= SDL_WINDOW_HIDDEN;
-	}
-	if (g_sdl_use_gl) {
-		SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
-		SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
-		SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
-		SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-		window_flags |= SDL_WINDOW_OPENGL;
-	}
-	g_sdl_window = SDL_CreateWindow("bmsx_libretro_host",
-		SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-		(int)window_w, (int)window_h,
-		(int)window_flags);
-	if (!g_sdl_window) {
-		host_fatal("SDL_CreateWindow failed: %s", SDL_GetError());
-	}
-	g_sdl_focused = !g_sdl_hidden_window;
-	if (g_sdl_use_gl) {
-		g_sdl_gl_context = SDL_GL_CreateContext(g_sdl_window);
-		if (!g_sdl_gl_context) {
-			host_fatal("SDL_GL_CreateContext failed: %s", SDL_GetError());
-		}
-		if (SDL_GL_MakeCurrent(g_sdl_window, g_sdl_gl_context) != 0) {
-			host_fatal("SDL_GL_MakeCurrent failed: %s", SDL_GetError());
-		}
-		SDL_GL_SetSwapInterval(0);
-	} else {
-		g_sdl_renderer = SDL_CreateRenderer(g_sdl_window, -1, 0);
-		if (!g_sdl_renderer) {
-			host_fatal("SDL_CreateRenderer failed: %s", SDL_GetError());
-		}
-	}
-	sdl_resize(base_w, base_h);
-	SDL_ShowCursor(SDL_DISABLE);
-	sdl_open_first_controller();
-}
-
-static void sdl_shutdown(void) {
-	if (g_sdl_gamepad) {
-		SDL_GameControllerClose(g_sdl_gamepad);
-		g_sdl_gamepad = NULL;
-		g_sdl_gamepad_id = -1;
-	}
-	if (g_sdl_texture) {
-		SDL_DestroyTexture(g_sdl_texture);
-		g_sdl_texture = NULL;
-	}
-	if (g_sdl_gl_context) {
-		SDL_GL_DeleteContext(g_sdl_gl_context);
-		g_sdl_gl_context = NULL;
-	}
-	if (g_sdl_renderer) {
-		SDL_DestroyRenderer(g_sdl_renderer);
-		g_sdl_renderer = NULL;
-	}
-	if (g_sdl_window) {
-		SDL_DestroyWindow(g_sdl_window);
-		g_sdl_window = NULL;
-	}
-	SDL_Quit();
-	free(g_fb.map);
-	memset(&g_fb, 0, sizeof(g_fb));
-}
-
-static void sdl_prepare_frame(unsigned frame_w, unsigned frame_h) {
-	unsigned target_w = g_geom_base_w ? g_geom_base_w : frame_w;
-	unsigned target_h = g_geom_base_h ? g_geom_base_h : frame_h;
-	if (target_w == 0 || target_h == 0) {
-		return;
-	}
-	if (g_fb.width != (int)target_w || g_fb.height != (int)target_h) {
-		sdl_resize(target_w, target_h);
-	} else if (g_geom_dirty) {
-		g_geom_dirty = false;
-	}
-}
-
-static void sdl_present(void) {
-	if (g_sdl_use_gl) {
-		return;
-	}
-	SDL_UpdateTexture(g_sdl_texture, NULL, g_fb.map, g_fb.stride);
-	SDL_RenderClear(g_sdl_renderer);
-	SDL_RenderCopy(g_sdl_renderer, g_sdl_texture, NULL, NULL);
-	SDL_RenderPresent(g_sdl_renderer);
 }
 #endif
 
@@ -1816,35 +1429,17 @@ static bool environ_cb(unsigned cmd, void* data) {
 		}
 		case RETRO_ENVIRONMENT_SET_HW_RENDER: {
 			struct retro_hw_render_callback* cb = (struct retro_hw_render_callback*)data;
-#ifdef BMSX_LIBRETRO_HOST_SDL
-			if (g_use_sdl) {
-				if (!g_sdl_use_gl) {
-					fprintf(stderr, "[libretro-host] SDL video backend does not support HW render in software mode\n");
-					return false;
-				}
-				if (!g_sdl_gl_context) {
-					fprintf(stderr, "[libretro-host] SDL GL context is not initialized\n");
-					return false;
-				}
-			}
-#endif
 			if (cb->context_type != RETRO_HW_CONTEXT_OPENGLES2) {
+				return false;
+			}
+			if (!bmsx_video_context_enable_gles2()) {
 				return false;
 			}
 			cb->get_current_framebuffer = hw_get_current_framebuffer;
 			cb->get_proc_address = hw_get_proc_address;
 			g_hw_render = *cb;
-#ifdef BMSX_LIBRETRO_HOST_SDL
-			if (g_use_sdl) {
-				if (!gl_load()) {
-					return false;
-				}
-			} else
-#endif
-			{
-				if (!egl_init()) {
-					return false;
-				}
+			if (!gl_load()) {
+				return false;
 			}
 			g_use_hw_render = true;
 			g_hw_context_pending_reset = (g_hw_render.context_reset != NULL);
@@ -1862,40 +1457,6 @@ static bool environ_cb(unsigned cmd, void* data) {
 	default:
 			return false;
 	}
-}
-
-static void fb_init(FbDev* fb, const char* path) {
-	memset(fb, 0, sizeof(*fb));
-	fb->fd = open(path, O_RDWR);
-	if (fb->fd < 0) {
-		host_fatal("Failed to open %s: %s", path, strerror(errno));
-	}
-	if (ioctl(fb->fd, FBIOGET_FSCREENINFO, &fb->fix) != 0) {
-		host_fatal("FBIOGET_FSCREENINFO failed: %s", strerror(errno));
-	}
-	if (ioctl(fb->fd, FBIOGET_VSCREENINFO, &fb->var) != 0) {
-		host_fatal("FBIOGET_VSCREENINFO failed: %s", strerror(errno));
-	}
-	fb->width = (int)fb->var.xres;
-	fb->height = (int)fb->var.yres;
-	fb->bpp = (int)fb->var.bits_per_pixel;
-	fb->stride = (int)fb->fix.line_length;
-	fb->map_size = (size_t)fb->fix.smem_len;
-	fb->map = (uint8_t*)mmap(NULL, fb->map_size, PROT_READ | PROT_WRITE, MAP_SHARED, fb->fd, 0);
-	if (fb->map == MAP_FAILED) {
-		host_fatal("mmap framebuffer failed: %s", strerror(errno));
-	}
-	fprintf(stderr, "[libretro-host] fbdev %dx%d bpp=%d stride=%d\n", fb->width, fb->height, fb->bpp, fb->stride);
-}
-
-static void fb_shutdown(FbDev* fb) {
-	if (fb->map && fb->map != MAP_FAILED) {
-		munmap(fb->map, fb->map_size);
-	}
-	if (fb->fd >= 0) {
-		close(fb->fd);
-	}
-	memset(fb, 0, sizeof(*fb));
 }
 
 static inline uint16_t rgb888_to_rgb565(uint8_t r, uint8_t g, uint8_t b) {
@@ -1943,14 +1504,7 @@ static void video_cb(const void* data, unsigned width, unsigned height, size_t p
 			g_accepted_presentation_count += 1u;
 		}
 		const uint64_t swap_start_ns = g_frame_timing.record_frame ? monotonic_ns() : 0u;
-#ifdef BMSX_LIBRETRO_HOST_SDL
-		if (g_use_sdl) {
-			SDL_GL_SwapWindow(g_sdl_window);
-		} else
-#endif
-		{
-			eglSwapBuffers_ptr(g_egl_display, g_egl_surface);
-		}
+		bmsx_video_context_swap_buffers();
 		if (g_frame_timing.record_frame) {
 			g_frame_timing.current_swap_ns += monotonic_ns() - swap_start_ns;
 			g_frame_timing.current_swap_ran = true;
@@ -1962,14 +1516,21 @@ static void video_cb(const void* data, unsigned width, unsigned height, size_t p
 	}
 #ifdef BMSX_LIBRETRO_HOST_SDL
 	if (g_use_sdl) {
-		sdl_prepare_frame(width, height);
+		const unsigned target_w = g_geom_base_w ? g_geom_base_w : width;
+		const unsigned target_h = g_geom_base_h ? g_geom_base_h : height;
+		if (bmsx_video_context_prepare_software_frame(target_w, target_h)) {
+			msg_mark_dirty();
+			clamp_mouse_position_to_framebuffer();
+		} else if (g_geom_dirty) {
+			g_geom_dirty = false;
+		}
 	}
 #endif
 	g_last_video_w = width;
 	g_last_video_h = height;
 
-	const int fb_w = g_fb.width;
-	const int fb_h = g_fb.height;
+	const int fb_w = g_video_surface->width;
+	const int fb_h = g_video_surface->height;
 
 	int dst_x = 0;
 	int dst_y = 0;
@@ -1985,10 +1546,12 @@ static void video_cb(const void* data, unsigned width, unsigned height, size_t p
 	if ((int)copy_w > fb_w - dst_x) copy_w = (unsigned)(fb_w - dst_x);
 	if ((int)copy_h > fb_h - dst_y) copy_h = (unsigned)(fb_h - dst_y);
 
-	if (g_fb.bpp == 16) {
+	if (g_video_surface->bits_per_pixel == 16) {
 		if (dst_w == (int)width && dst_h == (int)height) {
 			for (unsigned y = 0; y < copy_h; ++y) {
-				uint8_t* dst_line = g_fb.map + (size_t)(dst_y + (int)y) * (size_t)g_fb.stride + (size_t)dst_x * 2u;
+				uint8_t* dst_line = g_video_surface->pixels +
+						(size_t)(dst_y + (int)y) * (size_t)g_video_surface->stride +
+						(size_t)dst_x * 2u;
 				uint16_t* dst = (uint16_t*)dst_line;
 				const uint8_t* src_line = (const uint8_t*)data + y * pitch;
 				if (g_core_pixel_format == RETRO_PIXEL_FORMAT_RGB565) {
@@ -2009,7 +1572,9 @@ static void video_cb(const void* data, unsigned width, unsigned height, size_t p
 			const uint32_t step_y = (uint32_t)(((uint64_t)height << 16) / (uint32_t)dst_h);
 			for (int y = 0; y < dst_h; ++y) {
 				const uint32_t src_y = (uint32_t)(((uint64_t)y * step_y) >> 16);
-				uint8_t* dst_line = g_fb.map + (size_t)(dst_y + y) * (size_t)g_fb.stride + (size_t)dst_x * 2u;
+				uint8_t* dst_line = g_video_surface->pixels +
+						(size_t)(dst_y + y) * (size_t)g_video_surface->stride +
+						(size_t)dst_x * 2u;
 				uint16_t* dst = (uint16_t*)dst_line;
 				const uint8_t* src_line = (const uint8_t*)data + (size_t)src_y * pitch;
 				uint32_t src_x = 0;
@@ -2038,16 +1603,18 @@ static void video_cb(const void* data, unsigned width, unsigned height, size_t p
 		g_accepted_presentation_count += 1u;
 #ifdef BMSX_LIBRETRO_HOST_SDL
 		if (g_use_sdl) {
-			sdl_present();
+			bmsx_video_context_present_software();
 		}
 #endif
 		return;
 	}
 
-	if (g_fb.bpp == 32) {
+	if (g_video_surface->bits_per_pixel == 32) {
 		if (dst_w == (int)width && dst_h == (int)height) {
 			for (unsigned y = 0; y < copy_h; ++y) {
-				uint8_t* dst_line = g_fb.map + (size_t)(dst_y + (int)y) * (size_t)g_fb.stride + (size_t)dst_x * 4u;
+				uint8_t* dst_line = g_video_surface->pixels +
+						(size_t)(dst_y + (int)y) * (size_t)g_video_surface->stride +
+						(size_t)dst_x * 4u;
 				uint32_t* dst = (uint32_t*)dst_line;
 				const uint8_t* src_line = (const uint8_t*)data + y * pitch;
 				if (g_core_pixel_format == RETRO_PIXEL_FORMAT_XRGB8888) {
@@ -2064,7 +1631,9 @@ static void video_cb(const void* data, unsigned width, unsigned height, size_t p
 			const uint32_t step_y = (uint32_t)(((uint64_t)height << 16) / (uint32_t)dst_h);
 			for (int y = 0; y < dst_h; ++y) {
 				const uint32_t src_y = (uint32_t)(((uint64_t)y * step_y) >> 16);
-				uint8_t* dst_line = g_fb.map + (size_t)(dst_y + y) * (size_t)g_fb.stride + (size_t)dst_x * 4u;
+				uint8_t* dst_line = g_video_surface->pixels +
+						(size_t)(dst_y + y) * (size_t)g_video_surface->stride +
+						(size_t)dst_x * 4u;
 				uint32_t* dst = (uint32_t*)dst_line;
 				const uint8_t* src_line = (const uint8_t*)data + (size_t)src_y * pitch;
 				uint32_t src_x = 0;
@@ -2089,13 +1658,13 @@ static void video_cb(const void* data, unsigned width, unsigned height, size_t p
 		g_accepted_presentation_count += 1u;
 #ifdef BMSX_LIBRETRO_HOST_SDL
 		if (g_use_sdl) {
-			sdl_present();
+			bmsx_video_context_present_software();
 		}
 #endif
 		return;
 	}
 
-	host_fatal("Unsupported fbdev bpp: %d", g_fb.bpp);
+	host_fatal("Unsupported video surface bpp: %d", g_video_surface->bits_per_pixel);
 }
 
 static int clamp_int(int value, int min_value, int max_value) {
@@ -2111,16 +1680,17 @@ static void reset_mouse_frame_state(void) {
 }
 
 static void clamp_mouse_position_to_framebuffer(void) {
-	if (g_fb.width <= 0 || g_fb.height <= 0) {
+	if (g_video_surface->width <= 0 || g_video_surface->height <= 0) {
 		g_mouse_abs_x = 0;
 		g_mouse_abs_y = 0;
 		g_mouse_position_valid = false;
 		return;
 	}
-	g_mouse_abs_x = clamp_int(g_mouse_abs_x, 0, g_fb.width - 1);
-	g_mouse_abs_y = clamp_int(g_mouse_abs_y, 0, g_fb.height - 1);
+	g_mouse_abs_x = clamp_int(g_mouse_abs_x, 0, g_video_surface->width - 1);
+	g_mouse_abs_y = clamp_int(g_mouse_abs_y, 0, g_video_surface->height - 1);
 }
 
+#ifdef BMSX_LIBRETRO_HOST_SDL
 static void set_mouse_absolute_position(int x, int y, bool update_delta) {
 	const bool had_prev = g_mouse_position_valid;
 	const int prev_x = g_mouse_abs_x;
@@ -2134,6 +1704,7 @@ static void set_mouse_absolute_position(int x, int y, bool update_delta) {
 		g_mouse_delta_y = g_mouse_abs_y - prev_y;
 	}
 }
+#endif
 
 static void add_mouse_relative_delta(int dx, int dy) {
 	g_mouse_delta_x += dx;
@@ -2668,6 +2239,12 @@ static void poll_input_devices_sdl(void) {
 					keyboard_input_release_source(KEYBOARD_INPUT_SOURCE_SDL);
 				} else if (ev.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) {
 					g_sdl_focused = true;
+				} else if (ev.window.event == SDL_WINDOWEVENT_SIZE_CHANGED ||
+						ev.window.event == SDL_WINDOWEVENT_DISPLAY_CHANGED) {
+					if (bmsx_video_context_refresh_drawable_size()) {
+						msg_mark_dirty();
+						clamp_mouse_position_to_framebuffer();
+					}
 				}
 				break;
 			case SDL_CONTROLLERDEVICEADDED:
@@ -2771,9 +2348,9 @@ static int16_t input_state_cb(unsigned port, unsigned device, unsigned index, un
 	if (device == RETRO_DEVICE_POINTER) {
 		switch (id) {
 			case kRetroPointerIdX:
-				return encode_pointer_axis(g_mouse_abs_x, g_fb.width);
+				return encode_pointer_axis(g_mouse_abs_x, g_video_surface->width);
 			case kRetroPointerIdY:
-				return encode_pointer_axis(g_mouse_abs_y, g_fb.height);
+				return encode_pointer_axis(g_mouse_abs_y, g_video_surface->height);
 			case kRetroPointerIdPressed:
 				return (g_mouse_buttons & kMouseButtonPrimary) ? 1 : 0;
 			default:
@@ -2899,6 +2476,8 @@ int main(int argc, char** argv) {
 	bool paced_timeline = false;
 	bool auto_timeline = false;
 	bool audio_disabled = false;
+	bool hidden_window = false;
+	BmsxVideoContextKind video_context_kind = BMSX_VIDEO_CONTEXT_FBDEV;
 	const char* backend = "software";
 	const char* video_backend = "fb";
 
@@ -2936,7 +2515,7 @@ int main(int argc, char** argv) {
 			continue;
 		}
 		if (strcmp(argv[i], "--hidden-window") == 0) {
-			g_sdl_hidden_window = true;
+			hidden_window = true;
 			continue;
 		}
 		if (strcmp(argv[i], "--max-frames") == 0) {
@@ -3006,7 +2585,10 @@ int main(int argc, char** argv) {
 #ifdef BMSX_LIBRETRO_HOST_SDL
 	if (use_sdl_backend) {
 		g_use_sdl = true;
-		g_sdl_use_gl = (strcmp(backend, "gles2") == 0);
+		video_context_kind = strcmp(backend, "gles2") == 0
+			? BMSX_VIDEO_CONTEXT_SDL_GLES2
+			: BMSX_VIDEO_CONTEXT_SDL_SOFTWARE;
+		g_sdl_focused = !hidden_window;
 	}
 #else
 	if (use_sdl_backend) {
@@ -3032,17 +2614,23 @@ int main(int argc, char** argv) {
 	core.retro_set_input_poll(input_poll_cb);
 	core.retro_set_input_state(input_state_cb);
 
+	g_video_surface = bmsx_video_context_open(
+			video_context_kind,
+			hidden_window,
+			g_geom_base_w,
+			g_geom_base_h);
 #ifdef BMSX_LIBRETRO_HOST_SDL
 	if (g_use_sdl) {
-		sdl_init();
-	} else {
-		fb_init(&g_fb, "/dev/fb0");
+		if (SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER) != 0) {
+			host_fatal("SDL game-controller initialization failed: %s", SDL_GetError());
+		}
+		SDL_ShowCursor(SDL_DISABLE);
+		sdl_open_first_controller();
+	} else
+#endif
+	{
 		input_open_default_devices();
 	}
-#else
-	fb_init(&g_fb, "/dev/fb0");
-	input_open_default_devices();
-#endif
 
 	core.retro_init();
 	struct retro_system_av_info av;
@@ -3191,6 +2779,7 @@ int main(int argc, char** argv) {
 	if (g_use_hw_render && g_hw_render.context_destroy) {
 		g_hw_render.context_destroy();
 	}
+	hw_release_resources();
 	input_timeline_shutdown();
 	keyboard_input_release_source(KEYBOARD_INPUT_SOURCE_SDL);
 	for (unsigned source = 0; source < KEYBOARD_INPUT_EVDEV_SOURCE_COUNT; source += 1u) {
@@ -3208,13 +2797,16 @@ int main(int argc, char** argv) {
 	}
 #ifdef BMSX_LIBRETRO_HOST_SDL
 	if (g_use_sdl) {
-		sdl_shutdown();
-	} else {
-		fb_shutdown(&g_fb);
+		if (g_sdl_gamepad) {
+			SDL_GameControllerClose(g_sdl_gamepad);
+			g_sdl_gamepad = NULL;
+			g_sdl_gamepad_id = -1;
+		}
+		SDL_QuitSubSystem(SDL_INIT_GAMECONTROLLER);
 	}
-#else
-	fb_shutdown(&g_fb);
 #endif
+	bmsx_video_context_close();
+	g_video_surface = NULL;
 	free(g_msg_surface);
 	g_msg_surface = NULL;
 	if (game_buf) {
@@ -3224,6 +2816,5 @@ int main(int argc, char** argv) {
 		dlclose(core.handle);
 	}
 	bmsx_core_options_destroy(&g_core_options);
-	egl_shutdown();
 	return 0;
 }
