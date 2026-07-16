@@ -710,6 +710,25 @@ PSX discrepancy or to start the GTE+ ABI early.
   measured predecessor scan stays. Three interleaved single-worker Release A/B
   runs remain flat at 5.63 s versus 5.66 s mean user CPU, and all 146 GLES2
   captures remain byte-identical.
+- [x] Attribute the reported slowdown at the actual machine and GX owners.
+  Temporary fixed-storage probes measured wall and thread-CPU time directly
+  around `frameScheduler.run` and `executeGxGpuVramCommands`; no presentation
+  duration was used as a machine proxy and no profiler code remains in the
+  product. Four Latin-square Release rotations compared `e1bfd1a29`, its
+  host-timing patch alone, its GLES2 planner patch alone, and both patches with
+  one BIOS/cart binary, one 1,600-frame particle workload, llvmpipe pinned to
+  one worker and fixed CPU affinity. In the unpaced run the four mean
+  machine/GX wall times were respectively 0.629/2.599, 0.630/2.627,
+  0.627/3.267 and 0.661/3.258 ms. Planner-only versus baseline added 25.7%
+  at the GX owner and combined versus host-only added 24.0%, while the paired
+  machine owner stayed flat apart from one combined-run outlier. A separate
+  native-paced matrix used one particle-default cart without an input timeline;
+  its four means were 0.655/3.274, 0.679/3.447, 0.656/4.212 and 0.646/3.867 ms.
+  That run points in the same planner-only direction, but its host interaction
+  and per-rotation GX spread are too noisy for a causal host-timing claim. The
+  stable unpaced matrix therefore supplies the attribution: the measured
+  regression was inside the then-current GLES2 executor, not machine update or
+  presentation timing.
 - [ ] Re-profile CPU-to-VRAM submission with an upload-heavy cart workload before
   changing it again. The existing owner already packs raw VRAM in one retained
   staging buffer and emits bounded physical wrap rectangles; the particle soak
