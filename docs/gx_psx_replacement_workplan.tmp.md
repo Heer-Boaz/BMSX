@@ -690,6 +690,22 @@ PSX discrepancy or to start the GTE+ ABI early.
   of three Release runs falls from 6.79 s to 6.32 s, and all 146 full-timeline
   captures remain byte-identical. No heap allocation, second vertex copy, VBO
   rotation or cosmetic orphan wrapper was added.
+- [x] Give the GLES2 blend planner one retained prepared-command owner. Line
+  preparation now decides rejection, direction, raster case, normalized
+  endpoints/colors and exact clipped bounds once; rectangles retain their
+  decoded quad and bounds once. The dependency pass compares those bounds and
+  layer emission writes vertices from the retained payload rather than decoding
+  and tessellating every command again. Line and solid layer batches retain
+  separate draw bounds, and all ordinary solid/line batches now pass their
+  already-produced bounds to both sample synchronization and dirty marking, so
+  the renderer no longer rescans their vertex arenas. The fixed command arena
+  adds no heap or per-frame allocation. A temporary full-timeline counter found
+  450 plans, 19,620 planned commands and 1,376,370 integer rectangle comparisons,
+  with a maximum of 146 commands and 10,585 comparisons in one plan. Roughly
+  1,336 comparisons per frame do not justify retained spatial-bin state, so the
+  measured predecessor scan stays. Three interleaved single-worker Release A/B
+  runs remain flat at 5.63 s versus 5.66 s mean user CPU, and all 146 GLES2
+  captures remain byte-identical.
 - [ ] Re-profile CPU-to-VRAM submission with an upload-heavy cart workload before
   changing it again. The existing owner already packs raw VRAM in one retained
   staging buffer and emits bounded physical wrap rectangles; the particle soak
