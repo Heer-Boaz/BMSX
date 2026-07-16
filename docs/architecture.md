@@ -1378,14 +1378,27 @@ and repeated captures reuse capacity. SDL software storage changes only when
 the machine geometry changes, and GLES drawable extent is refreshed on SDL
 window events rather than polled during every presentation.
 
+The direct host's `input_devices` owner contains evdev descriptors and sampled
+axes, the SDL game-controller subsystem and controller handle, physical
+keyboard event routing and source lifecycle, mouse/pointer state, focus policy
+and the input-originated quit latch. `keyboard_input` retains and aggregates the
+per-source key bitsets. The physical owner's poll and state entrypoints are the
+libretro callbacks directly; the run loop does not mirror their state. SDL
+resize events call the concrete video-context and presenter owners in sequence,
+while window-to-surface and surface-to-game coordinate transforms remain
+separate ownership boundaries. Polling uses retained fixed-capacity state and
+performs no allocation.
+
 Libretro keyboard input enters through
 `RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK`. The direct host retains source bits
 for each physical key source, so releasing one source cannot clear a still-held
-equivalent source or generate a duplicate edge. Focus-loss policy remains owned
-by the frontend; the core does not invent a private keyboard ABI or synthetic
-clear event. One accepted-presentation counter orders scripted input, captures
-and automatic exit. Rejected/skipped host presentations do not advance that
-timeline, and neither boot heuristics nor a second frame counter may shift it.
+equivalent source or generate a duplicate edge. Input resources close before
+core teardown because releasing a physical source can still invoke the
+core-owned keyboard callback. Focus-loss policy remains owned by the frontend;
+the core does not invent a private keyboard ABI or synthetic clear event. One
+accepted-presentation counter orders scripted input, captures and automatic
+exit. Rejected/skipped host presentations do not advance that timeline, and
+neither boot heuristics nor a second frame counter may shift it.
 
 The frontend that creates a GLES context owns the current-framebuffer callback
 and `get_proc_address` resolver and supplies both through the libretro hardware

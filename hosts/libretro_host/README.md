@@ -39,7 +39,6 @@ Options:
 - `--max-frames <count>`: owns run lifetime explicitly, including when the timeline has ended
 - `--gles2-timing-report`: prints fixed-size `retro_run`, core-without-presentation, final-blit and swap histograms for the GLES2 callback path at shutdown
 - `--timing-warmup <count>`: excludes the first frames from the timing report
-- `--input-debug`: logs evdev events and the resulting RETRO_DEVICE_JOYPAD state
 - `--crt-postprocessing on|off`: sets the `bmsx_crt_postprocessing` core option
 - `--crt-noise on|off`: sets the `bmsx_crt_noise` core option
 
