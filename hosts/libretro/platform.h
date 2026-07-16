@@ -224,7 +224,6 @@ private:
 
 	double m_frame_time_sec;
 	BackendType m_backend_type = BackendType::Software;
-	bool m_render_surfaces_need_refresh = true;
 
 	// Controller configuration
 	std::array<unsigned, 4> m_controller_devices{};

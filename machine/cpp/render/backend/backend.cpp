@@ -258,7 +258,7 @@ void SoftwareBackend::registerBuiltinPasses(RenderPassLibrary& registry) {
 	registerGxGpuPassSoftware(registry);
 	DeviceQuantizePipeline::Software::registerPass(registry);
 	CRTPipeline::registerCRTPostSoftwarePass(registry);
-	registerHostOverlayBackendPasses<SoftwareBackend, nullptr, beginHostOverlaySoftware, renderHost2DEntrySoftware, endHostOverlaySoftware>(registry);
+	registerHostOverlayBackendPasses<SoftwareBackend, nullptr, nullptr, beginHostOverlaySoftware, renderHost2DEntrySoftware, endHostOverlaySoftware>(registry);
 }
 
 void SoftwareBackend::applyFramebufferTarget(u32* fb, i32 width, i32 height, i32 pitch) {

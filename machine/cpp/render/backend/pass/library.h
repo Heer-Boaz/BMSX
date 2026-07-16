@@ -159,6 +159,7 @@ struct RenderPassDef {
 
 	void (*exec)(GPUBackend*, GameView*, void*, RenderPassStateStorage&, void*) = nullptr;
 	void (*bootstrap)(GPUBackend*, void*) = nullptr;
+	void (*teardown)(GPUBackend*, void*) = nullptr;
 	bool (*shouldExecute)(GameView*, void*) = nullptr;
 	void* context = nullptr;
 
@@ -188,6 +189,12 @@ template<typename Backend, void (*Bootstrap)(Backend&)>
 void bootstrapBackendRenderPass(GPUBackend* backend, void*) {
 	auto& typedBackend = *static_cast<Backend*>(backend);
 	Bootstrap(typedBackend);
+}
+
+template<typename Backend, void (*Teardown)(Backend&)>
+void teardownBackendRenderPass(GPUBackend* backend, void*) {
+	auto& typedBackend = *static_cast<Backend*>(backend);
+	Teardown(typedBackend);
 }
 
 void setPresentationHistoryGraph(RenderPassDef& desc, RenderPassDef::RenderGraphSlot historySlot);

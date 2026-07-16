@@ -30,9 +30,9 @@ GameView::~GameView() {
 }
 
 void GameView::setBackend(std::unique_ptr<GPUBackend> backend) {
-	if (m_renderGraph) {
-		m_renderGraph.reset();
-	}
+	m_renderGraph.reset();
+	m_pipelineRegistry.reset();
+	clearTextures();
 	m_backend = std::move(backend);
 }
 
@@ -51,11 +51,19 @@ void GameView::setRenderTargetSize(i32 width, i32 height) {
 	resetPresentationHistory();
 	rebuildGraph();
 }
+void GameView::clearTextures() {
+	for (const auto& entry : textures) {
+		m_backend->destroyTexture(entry.second);
+	}
+	textures.clear();
+}
+
 void GameView::initializeDefaultTextures() {
 	if (!m_backend) {
 		throw BMSX_RUNTIME_ERROR("[GameView] initializeDefaultTextures called before backend was configured.");
 	}
 
+	clearTextures();
 	textures["_default_albedo"] = m_backend->createSolidTexture2D(1, 1, 0xffffffffu, RGBA8_SRGB_TEXTURE_PARAMS);
 	textures["_default_normal"] = m_backend->createSolidTexture2D(1, 1, 0xff7f7fffu, RGBA8_LINEAR_TEXTURE_PARAMS);
 	textures["_default_mr"] = m_backend->createSolidTexture2D(1, 1, 0xffffffffu, RGBA8_LINEAR_TEXTURE_PARAMS);
@@ -132,6 +140,7 @@ void GameView::dispose() {
 	Registry::instance().deregister(this);
 	m_renderGraph.reset();
 	m_pipelineRegistry.reset();
+	clearTextures();
 	m_backend.reset();
 }
 

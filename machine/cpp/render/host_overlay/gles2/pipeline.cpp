@@ -11,6 +11,7 @@ namespace bmsx {
 namespace {
 
 struct HostOverlayGLES2State {
+	u32 generation = 0u;
 	GLuint program = 0;
 	GLint attribPos = -1;
 	GLint attribUv = -1;
@@ -192,6 +193,7 @@ void drawGlyphsGLES2(OpenGLES2Backend& backend, const GlyphRenderSubmission& com
 } // namespace
 
 void bootstrapHostOverlayGLES2(OpenGLES2Backend& backend) {
+	g_gles2.generation = backend.contextGeneration();
 	g_gles2.program = backend.buildProgram(kHostOverlayVertexShader, kHostOverlayFragmentShader, "host_overlay");
 	g_gles2.attribPos = glGetAttribLocation(g_gles2.program, "a_position");
 	g_gles2.attribUv = glGetAttribLocation(g_gles2.program, "a_texcoord");
@@ -203,6 +205,16 @@ void bootstrapHostOverlayGLES2(OpenGLES2Backend& backend) {
 	const u8 whitePixel[4] = {255u, 255u, 255u, 255u};
 	g_gles2.whiteTexture = backend.createTexture(whitePixel, 1, 1, params);
 	g_gles2.hostAtlasTexture = backend.createTexture(hostSystemAtlasPixels().data(), static_cast<i32>(hostSystemAtlasWidth()), static_cast<i32>(hostSystemAtlasHeight()), params);
+}
+
+void shutdownHostOverlayGLES2(OpenGLES2Backend& backend) {
+	if (g_gles2.generation == backend.contextGeneration()) {
+		glDeleteProgram(g_gles2.program);
+		glDeleteBuffers(1, &g_gles2.vbo);
+	}
+	backend.destroyTexture(g_gles2.whiteTexture);
+	backend.destroyTexture(g_gles2.hostAtlasTexture);
+	g_gles2 = HostOverlayGLES2State{};
 }
 
 void beginHostOverlayGLES2(OpenGLES2Backend& backend, const Host2DPipelineState& state) {

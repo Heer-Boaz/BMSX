@@ -222,6 +222,7 @@ GxGpuVramCopyRect g_blendPlanSolidBounds{};
 
 struct GxGpuRuntime {
 	OpenGLES2Backend* backend = nullptr;
+	u32 generation = 0u;
 	GLuint solidProgram = 0;
 	GLuint fixedSolidProgram = 0;
 	GLuint lineProgram = 0;
@@ -358,6 +359,7 @@ GxGpuRuntime g_gxGpu;
 
 void initializeGxGpuTexture(GLES2Texture& texture, i32 textureUnit, i32 width, i32 height) {
 	glGenTextures(1, &texture.id);
+	texture.generation = g_gxGpu.generation;
 	texture.width = width;
 	texture.height = height;
 	g_gxGpu.backend->setActiveTextureUnit(textureUnit);
@@ -368,6 +370,7 @@ void initializeGxGpuTexture(GLES2Texture& texture, i32 textureUnit, i32 width, i
 
 void initGxGpu(OpenGLES2Backend& backend) {
 	g_gxGpu.backend = &backend;
+	g_gxGpu.generation = backend.contextGeneration();
 	g_primitiveSubmission.batchCount = 0u;
 	g_primitiveSubmission.solidFloatCount = 0u;
 	g_primitiveSubmission.solidBatchStart = 0u;
@@ -407,6 +410,7 @@ void initGxGpu(OpenGLES2Backend& backend) {
 	g_gxGpu.scanoutFieldsTexture.width = 0;
 	g_gxGpu.scanoutFieldsTexture.height = 0;
 	glGenTextures(1, &g_gxGpu.scanoutFieldsTexture.id);
+	g_gxGpu.scanoutFieldsTexture.generation = g_gxGpu.generation;
 	g_gxGpu.backend->setActiveTextureUnit(kGxGpuScanoutFieldsTextureUnit);
 	g_gxGpu.backend->bindTexture2D(&g_gxGpu.scanoutFieldsTexture);
 	applyGLES2TextureParams(RGBA8_LINEAR_TEXTURE_PARAMS);
@@ -526,6 +530,54 @@ void initGxGpu(OpenGLES2Backend& backend) {
 	g_gxGpu.scanoutFieldsVramSnapshotSerial = 0u;
 	g_gxGpu.scanoutFieldsValid = false;
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+void shutdownGxGpu(OpenGLES2Backend& backend) {
+	if (g_gxGpu.generation == backend.contextGeneration()) {
+		const std::array<GLuint, 5> textures{
+			g_gxGpu.vramTexture.id,
+			g_gxGpu.vramSampleTexture.id,
+			g_gxGpu.vramTransferTexture.id,
+			g_gxGpu.readbackTexture.id,
+			g_gxGpu.scanoutFieldsTexture.id,
+		};
+		glDeleteTextures(static_cast<GLsizei>(textures.size()), textures.data());
+
+		const std::array<GLuint, 3> framebuffers{
+			g_gxGpu.vramFramebuffer,
+			g_gxGpu.readbackFramebuffer,
+			g_gxGpu.scanoutFieldsFramebuffer,
+		};
+		glDeleteFramebuffers(static_cast<GLsizei>(framebuffers.size()), framebuffers.data());
+
+		const std::array<GLuint, 2> buffers{
+			g_gxGpu.vertexStream.buffer,
+			g_gxGpu.scanoutVertexBuffer,
+		};
+		glDeleteBuffers(static_cast<GLsizei>(buffers.size()), buffers.data());
+
+		const std::array<GLuint, 10> programs{
+			g_gxGpu.solidProgram,
+			g_gxGpu.fixedSolidProgram,
+			g_gxGpu.lineProgram,
+			g_gxGpu.texturedProgram,
+			g_gxGpu.fixedTexturedProgram,
+			g_gxGpu.transferProgram,
+			g_gxGpu.scanoutProgram,
+			g_gxGpu.scanoutFieldProgram,
+			g_gxGpu.scanoutWeaveProgram,
+			g_gxGpu.readbackProgram,
+		};
+		for (GLuint program : programs) {
+			glDeleteProgram(program);
+		}
+	}
+
+	g_gxGpu = GxGpuRuntime{};
+	g_primitiveSubmission = GxGpuPrimitiveSubmission{};
+	g_lineBatchState = GxGpuLineBatchState{};
+	g_sampleDirtyRect = GxGpuVramCopyRect{};
+	backend.invalidateTextureBindingCache();
 }
 
 size_t writeSolidVertex(size_t offset, f32 x, f32 y, f32 r, f32 g, f32 b) {
@@ -3045,9 +3097,9 @@ void renderGxGpu(GLuint frameFbo, const GxGpuPipelineState& state) {
 	scanoutGxGpuVram(frameFbo, state);
 }
 
-void executeGxGpuPass(GPUBackend*, GameView*, void* fbo, RenderPassStateStorage& stateStorage, void*) {
-	const uintptr_t frameFbo = reinterpret_cast<uintptr_t>(fbo);
-	renderGxGpu(static_cast<GLuint>(frameFbo), stateStorage.gxGpu);
+void executeGxGpuPass(GPUBackend* backend, GameView*, void* fbo, RenderPassStateStorage& stateStorage, void*) {
+	auto& gles = *static_cast<OpenGLES2Backend*>(backend);
+	renderGxGpu(gles.framebufferName(fbo), stateStorage.gxGpu);
 }
 
 } // namespace
@@ -3068,6 +3120,7 @@ void registerGxGpuPass(RenderPassLibrary& registry) {
 	desc.name = "GXGPU";
 	setGxGpuGraph(desc);
 	desc.bootstrap = bootstrapBackendRenderPass<OpenGLES2Backend, initGxGpu>;
+	desc.teardown = teardownBackendRenderPass<OpenGLES2Backend, shutdownGxGpu>;
 	desc.exec = executeGxGpuPass;
 	registry.registerPass(desc);
 }

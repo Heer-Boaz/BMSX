@@ -1,6 +1,6 @@
 # BMSX Architecture Contract
 
-Last checked: 2026-07-15.
+Last checked: 2026-07-16.
 
 This document is the current machine/host boundary contract. It is not a work
 log, a prompt, or a migration diary. If implementation changes land, this file
@@ -1077,6 +1077,15 @@ pack/readback storage, descriptors and backend state are retained owner data:
 steady rendering must not allocate per command, build a second vertex/VRAM
 representation, or copy an entire stream for presentation.
 
+The GLES2 dependency planner retains normalized line and rectangle payloads with
+their clipped bounds. Layer emission consumes those prepared payloads directly,
+and each batch carries its draw bounds through execution; it does not decode or
+clip the same command a second time. The measured command envelope uses a linear
+overlap scan over retained bounds. Spatial bins or another index belong here
+only after a representative workload demonstrates that the scan, rather than
+command execution or the driver, is the bottleneck. Planning, overlap checks
+and layer emission perform no heap work in the steady path.
+
 Pixel parity is a machine contract at GX VRAM scanout. For the same ROM,
 timeline, model profile, and GX display registers, the TypeScript headless
 renderer and C++ libretro/software renderer must emit byte-identical RGBA
@@ -1349,13 +1358,44 @@ queue is the host pacing master; a second deadline pacer must not compete with
 it, and push/pop/callback paths must not allocate or report dropped samples as
 consumed.
 
+Libretro keyboard input enters through
+`RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK`. The direct host retains source bits
+for each physical key source, so releasing one source cannot clear a still-held
+equivalent source or generate a duplicate edge. Focus-loss policy remains owned
+by the frontend; the core does not invent a private keyboard ABI or synthetic
+clear event. One accepted-presentation counter orders scripted input, captures
+and automatic exit. Rejected/skipped host presentations do not advance that
+timeline, and neither boot heuristics nor a second frame counter may shift it.
+
 The frontend that creates a GLES context owns the current-framebuffer callback
 and `get_proc_address` resolver and supplies both through the libretro hardware
 context boundary. The GLES backend resolves context procedures there rather
-than through process-global symbols. Context destruction runs while the core
-and context are still alive. Before destruction, the GPU commits accelerated
-VRAM to its retained snapshot; the first execution after context reset uploads
-that snapshot before reusing accelerated serial/frontier state.
+than through process-global symbols. A libretro context reset may arrive without
+a preceding destroy callback, so every GLES texture, depth buffer and render
+target records the context generation that created its GL name. Clean context
+destruction runs while the context is still alive and deletes matching graph,
+pass, texture-manager, default-texture and backend resources in owner order. An
+unannounced loss advances the generation first; the same owners then discard
+their stale host handles and complete CPU-side pipeline state without issuing
+deletes against numeric names that may already belong to the replacement
+context. Replacement pass singletons are bootstrapped only after the old graph
+and registry have been removed.
+
+Before clean destruction, the GPU commits accelerated VRAM to its retained raw
+snapshot. GX pipeline teardown clears its accelerated command frontier and
+batch state. The first GX execution after context reset uploads that snapshot
+before replaying the current command stream, so a controlled destroy/recreate
+preserves byte-exact VRAM without stale accelerated frontier state. These
+lifecycle paths run only at context setup or loss; frame rendering does not
+perform generation checks or allocate replacement state.
+
+An unannounced loss cannot read back the dead context. Resource recreation is
+safe, but byte-exact VRAM restoration is still open because the retained raw
+snapshot may predate GPU-only writes whose replay commands have already been
+discarded by guest-visible FIFO/readback operation. Do not hide that boundary
+with per-frame full-VRAM readback, parallel software rasterization or an
+asset-reupload special case; it needs a measured, backend-independent VRAM
+coherence contract.
 
 ## Validation policy
 
@@ -1378,6 +1418,16 @@ separate gate: browser or frontend captures must exercise consecutive frames
 through the real backend and cannot be replaced by software parity, a black WSL
 swapchain, sparse screenshots or a hidden compositor window.
 
+Performance attribution uses fixed, allocation-free owner probes and external
+heap traces, not timing or stack anecdotes. Comparative runs keep the ROMs,
+timeline, release build, renderer configuration and CPU affinity fixed and
+rotate variants to separate scheduler, host and GX effects. Native-paced runs
+may corroborate an owner but do not turn pacing noise into a causal result.
+Heap reports attribute calls and requested bytes to the allocating owner rather
+than every driver or runtime frame on its stack. New indexing, upload
+coalescing, frame dropping or other complexity requires a representative
+profile that identifies that exact owner first.
+
 Subagent review is useful at the slice boundary, not for every tiny edit. Review
 findings are blockers only when they identify ownership drift, stale docs,
 performance regression, fake parity, hidden old-format paths, defensive clutter, or
@@ -1398,6 +1448,9 @@ They must not be prompts, migration journals, marketing copy, or product-pitch
 explanations. If a document cannot be made into a current hardware contract, it
 should be deleted.
 
-The active architecture-slice status table lives in
-`docs/open_architecture_slices.md`; the broader hardware-emulation goal lives in
-`docs/goal.md`. This architecture file remains the stable machine contract.
+Only unresolved work belongs in `docs/open_architecture_slices.md`, including
+work explicitly deferred or parked. Once a slice closes, its durable hardware,
+runtime or validation contract is folded into this document and its status row
+is removed; the open matrix is not a completion ledger. The broader
+hardware-emulation goal lives in `docs/goal.md`. This architecture file remains
+the stable machine contract.

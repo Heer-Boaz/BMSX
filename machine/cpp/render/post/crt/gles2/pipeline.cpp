@@ -157,8 +157,7 @@ void renderPresentTextureGLES2State(OpenGLES2Backend& backend, PresentGLES2State
 void executePresentationHistoryGLES2Pass(GPUBackend* backend, GameView*, void* fbo, RenderPassStateStorage& state, void* context) {
 	auto& typedBackend = *static_cast<OpenGLES2Backend*>(backend);
 	auto& typedPipeline = *static_cast<PresentGLES2State*>(context);
-	const auto targetFbo = static_cast<GLuint>(reinterpret_cast<uintptr_t>(fbo));
-	renderPresentTextureGLES2State(typedBackend, typedPipeline, targetFbo, state.present);
+	renderPresentTextureGLES2State(typedBackend, typedPipeline, typedBackend.framebufferName(fbo), state.present);
 }
 
 void renderPresentGLES2State(OpenGLES2Backend& backend, PresentGLES2State& pipeline, const PresentPipelineState& state) {

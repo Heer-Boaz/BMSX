@@ -215,7 +215,13 @@ RenderPassLibrary::RenderPassLibrary(GPUBackend* backend, GameView* view)
 	m_backend->registerBuiltinPasses(*this);
 }
 
-RenderPassLibrary::~RenderPassLibrary() = default;
+RenderPassLibrary::~RenderPassLibrary() {
+	for (auto pass = m_passes.rbegin(); pass != m_passes.rend(); ++pass) {
+		if (pass->teardown) {
+			pass->teardown(m_backend, pass->context);
+		}
+	}
+}
 
 
 void RenderPassLibrary::registerPass(const RenderPassDef& desc) {

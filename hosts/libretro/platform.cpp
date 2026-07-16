@@ -124,6 +124,7 @@ constexpr std::array<i16, RETROK_LAST> makeRetroKeyHidUsages() {
 constexpr std::array<i16, RETROK_LAST> kRetroKeyHidUsages = makeRetroKeyHidUsages();
 
 static void installBuiltinRenderPipeline(GameView* view, GPUBackend* backend) {
+	view->setPipelineRegistry(std::unique_ptr<RenderPassLibrary>());
 	auto registry = std::make_unique<RenderPassLibrary>(backend, view);
 	view->setPipelineRegistry(std::move(registry));
 	view->rebuildGraph();
@@ -270,16 +271,14 @@ void LibretroPlatform::onContextReset() {
 	auto* view = m_machine_manager->view();
 	auto* backend = static_cast<OpenGLES2Backend*>(view->backend());
 	log(RETRO_LOG_INFO, "[BMSX] onContextReset: backend reset\n");
-	backend->onContextReset();
 	backend->setViewportSize(static_cast<i32>(m_framebuffer.width), static_cast<i32>(m_framebuffer.height));
+	backend->onContextReset();
+	m_machine_manager->texmanager()->clear();
 
 	log(RETRO_LOG_INFO, "[BMSX] onContextReset: rebuild render graph\n");
 	installBuiltinRenderPipeline(view, backend);
-	if (m_render_surfaces_need_refresh) {
-		log(RETRO_LOG_INFO, "[BMSX] onContextReset: refresh render surfaces\n");
-		m_machine_manager->refreshRenderSurfaces();
-		m_render_surfaces_need_refresh = false;
-	}
+	log(RETRO_LOG_INFO, "[BMSX] onContextReset: refresh render surfaces\n");
+	m_machine_manager->refreshRenderSurfaces();
 	log(RETRO_LOG_INFO, "[BMSX] onContextReset: done\n");
 #else
 	throw BMSX_RUNTIME_ERROR("[LibretroPlatform] OpenGLES2 backend disabled at compile time.");
@@ -291,9 +290,9 @@ void LibretroPlatform::onContextDestroy() {
 	auto* view = m_machine_manager->view();
 	auto* backend = static_cast<OpenGLES2Backend*>(view->backend());
 	backend->captureGxGpuVramSnapshot(m_machine_manager->runtime().machine.gxGpu);
-	m_machine_manager->texmanager()->clear();
-	m_render_surfaces_need_refresh = true;
 	view->setPipelineRegistry(std::unique_ptr<RenderPassLibrary>());
+	m_machine_manager->texmanager()->clear();
+	view->clearTextures();
 	backend->onContextDestroy();
 #else
 	throw BMSX_RUNTIME_ERROR("[LibretroPlatform] OpenGLES2 backend disabled at compile time.");

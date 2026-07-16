@@ -75,10 +75,11 @@ public:
 	// ─────────────────────────────────────────────────────────────────────────
 	// Frame rendering
 	// ─────────────────────────────────────────────────────────────────────────
-		void initializeDefaultTextures();
-		void drawgame();
-		void captureGxGpuVramSnapshot(GxGpu& gxGpu);
-		void configurePresentation(PresentationMode mode, bool commitFrame);
+	void clearTextures();
+	void initializeDefaultTextures();
+	void drawgame();
+	void captureGxGpuVramSnapshot(GxGpu& gxGpu);
+	void configurePresentation(PresentationMode mode, bool commitFrame);
 	u8 presentationHistoryDestinationIndex() const { return presentationHistorySourceIndex == 0 ? 1 : 0; }
 
 	// ─────────────────────────────────────────────────────────────────────────

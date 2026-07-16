@@ -18,6 +18,7 @@ void applyGLES2TextureParams(const TextureParams& params);
 
 struct GLES2Texture {
 	GLuint id = 0;
+	u32 generation = 0;
 	i32 width = 0;
 	i32 height = 0;
 	bool srgb = false;
@@ -75,6 +76,7 @@ public:
 	void setActiveTextureUnit(i32 unit);
 	void bindTexture2D(TextureHandle tex);
 	void invalidateTextureBindingCache();
+	GLuint framebufferName(void* target) const;
 	void setRenderTarget(GLuint fbo, i32 width, i32 height);
 	GLuint buildProgram(const char* vertexShaderSource, const char* fragmentShaderSource, const char* label, const char* shaderDefines = nullptr);
 	ProcAddress resolveProcAddress(const char* name) const;

@@ -124,8 +124,14 @@ struct OpenGLES2PostPipelines {
 
 struct GLES2DepthTexture {
 	GLuint id = 0;
+	u32 generation = 0;
 	i32 width = 0;
 	i32 height = 0;
+};
+
+struct GLES2RenderTarget {
+	GLuint id = 0;
+	u32 generation = 0;
 };
 
 static size_t rgba8ByteCount(i32 width, i32 height) {
@@ -169,7 +175,7 @@ void OpenGLES2Backend::registerBuiltinPasses(RenderPassLibrary& registry) {
 	CRTPipeline::registerPresentGLES2Pass(registry, m_post_pipelines->present);
 	CRTPipeline::registerCRTGLES2Pass(registry, m_post_pipelines->crt);
 
-	registerHostOverlayBackendPasses<OpenGLES2Backend, bootstrapHostOverlayGLES2, beginHostOverlayGLES2, renderHost2DEntryGLES2, endHostOverlayGLES2>(registry);
+	registerHostOverlayBackendPasses<OpenGLES2Backend, bootstrapHostOverlayGLES2, shutdownHostOverlayGLES2, beginHostOverlayGLES2, renderHost2DEntryGLES2, endHostOverlayGLES2>(registry);
 }
 
 OpenGLES2Backend::ProcAddress OpenGLES2Backend::resolveProcAddress(const char* name) const {
@@ -226,6 +232,7 @@ TextureHandle OpenGLES2Backend::createTexture(const u8* data, i32 width,
 		throw std::runtime_error("[GLES2] createTexture called before context reset.");
 	}
 	auto* tex = new GLES2Texture{};
+	tex->generation = m_context_generation;
 	tex->width = width;
 	tex->height = height;
 	tex->logicalSrgb = params.srgb;
@@ -341,7 +348,9 @@ void OpenGLES2Backend::destroyTexture(TextureHandle handle) {
 	std::fprintf(stderr, "[BMSX][GLES2] destroyTexture id=%u\n",
 					static_cast<unsigned>(tex->id));
 	}
-	glDeleteTextures(1, &tex->id);
+	if (tex->generation == m_context_generation) {
+		glDeleteTextures(1, &tex->id);
+	}
 	invalidateTextureBindingCache();
 	delete tex;
 }
@@ -360,6 +369,7 @@ TextureHandle OpenGLES2Backend::createColorTexture(i32 width, i32 height, const 
 
 TextureHandle OpenGLES2Backend::createDepthTexture(i32 width, i32 height) {
 	auto* depth = new GLES2DepthTexture{};
+	depth->generation = m_context_generation;
 	depth->width = width;
 	depth->height = height;
 	glGenRenderbuffers(1, &depth->id);
@@ -370,14 +380,17 @@ TextureHandle OpenGLES2Backend::createDepthTexture(i32 width, i32 height) {
 
 void OpenGLES2Backend::destroyDepthTexture(TextureHandle handle) {
 	auto* depth = static_cast<GLES2DepthTexture*>(handle);
-	glDeleteRenderbuffers(1, &depth->id);
+	if (depth->generation == m_context_generation) {
+		glDeleteRenderbuffers(1, &depth->id);
+	}
 	delete depth;
 }
 
 void* OpenGLES2Backend::createRenderTarget(TextureHandle color, TextureHandle depth) {
-	GLuint fbo = 0;
-	glGenFramebuffers(1, &fbo);
-	glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+	auto* target = new GLES2RenderTarget{};
+	target->generation = m_context_generation;
+	glGenFramebuffers(1, &target->id);
+	glBindFramebuffer(GL_FRAMEBUFFER, target->id);
 	if (color != nullptr) {
 		auto* texture = static_cast<GLES2Texture*>(color);
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture->id, 0);
@@ -386,17 +399,19 @@ void* OpenGLES2Backend::createRenderTarget(TextureHandle color, TextureHandle de
 		auto* depthTexture = static_cast<GLES2DepthTexture*>(depth);
 		glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depthTexture->id);
 	}
-	return reinterpret_cast<void*>(static_cast<uintptr_t>(fbo));
+	return target;
 }
 
 void OpenGLES2Backend::destroyRenderTarget(void* target) {
-	GLuint fbo = static_cast<GLuint>(reinterpret_cast<uintptr_t>(target));
-	glDeleteFramebuffers(1, &fbo);
+	auto* renderTarget = static_cast<GLES2RenderTarget*>(target);
+	if (renderTarget->generation == m_context_generation) {
+		glDeleteFramebuffers(1, &renderTarget->id);
+	}
+	delete renderTarget;
 }
 
 void OpenGLES2Backend::activateRenderTarget(void* target, i32 width, i32 height) {
-	const GLuint fbo = static_cast<GLuint>(reinterpret_cast<uintptr_t>(target));
-	setRenderTarget(fbo, width, height);
+	setRenderTarget(framebufferName(target), width, height);
 }
 
 void OpenGLES2Backend::activateDefaultRenderTarget() {
@@ -535,6 +550,12 @@ void OpenGLES2Backend::setContextCallbacks(FramebufferGetter framebufferGetter, 
 void OpenGLES2Backend::onContextReset() {
 	m_context_ready = true;
 	m_context_generation += 1u;
+	m_current_fbo = 0;
+	m_backbuffer_fbo = 0;
+	m_target_width = m_default_width;
+	m_target_height = m_default_height;
+	m_readback_fbo = 0;
+	*m_post_pipelines = OpenGLES2PostPipelines{};
 	invalidateTextureBindingCache();
 	glDisable(GL_DITHER);
 	const char* extensions = reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS));
@@ -559,16 +580,24 @@ void OpenGLES2Backend::onContextDestroy() {
 	CRTPipeline::shutdownCRTGLES2(m_post_pipelines->crt);
 	CRTPipeline::shutdownPresentGLES2(m_post_pipelines->present);
 	DeviceQuantizePipeline::GLES2::shutdown(m_post_pipelines->deviceQuantize);
-	m_context_ready = false;
-	m_context_generation += 1u;
-	invalidateTextureBindingCache();
-	m_supports_srgb_textures = false;
-	m_supports_uint_indices = false;
-	m_texture_barrier = nullptr;
 	if (m_readback_fbo != 0) {
 		glDeleteFramebuffers(1, &m_readback_fbo);
 		m_readback_fbo = 0;
 	}
+	m_context_ready = false;
+	m_context_generation += 1u;
+	m_current_fbo = 0;
+	m_backbuffer_fbo = 0;
+	m_target_width = m_default_width;
+	m_target_height = m_default_height;
+	invalidateTextureBindingCache();
+	m_supports_srgb_textures = false;
+	m_supports_uint_indices = false;
+	m_texture_barrier = nullptr;
+}
+
+GLuint OpenGLES2Backend::framebufferName(void* target) const {
+	return target ? static_cast<GLES2RenderTarget*>(target)->id : 0;
 }
 
 void OpenGLES2Backend::setActiveTextureUnit(i32 unit) {

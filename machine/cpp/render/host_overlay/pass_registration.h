@@ -14,13 +14,6 @@ inline void writeHostMenuPassState(const RenderPassDef::RenderGraphPassContext& 
 	writeHostMenuState(state.hostMenu, *ctx.view);
 }
 
-template<typename Backend, auto Bootstrap>
-void bootstrapHostOverlayPass(GPUBackend* backend, void*) {
-	if constexpr (Bootstrap != nullptr) {
-		Bootstrap(*static_cast<Backend*>(backend));
-	}
-}
-
 inline bool shouldExecuteHostOverlayPass(GameView*, void*) {
 	return hasPendingOverlayFrame();
 }
@@ -51,7 +44,7 @@ void renderHostMenuPass(GPUBackend* backend, GameView*, void*, RenderPassStateSt
 	End(typedBackend);
 }
 
-template<typename Backend, auto Bootstrap, auto Begin, auto RenderEntry, auto End>
+template<typename Backend, auto Bootstrap, auto Teardown, auto Begin, auto RenderEntry, auto End>
 void registerHostOverlayPass(RenderPassLibrary& registry) {
 	RenderPassDef desc;
 	desc.id = "host_overlay";
@@ -61,7 +54,8 @@ void registerHostOverlayPass(RenderPassLibrary& registry) {
 	desc.graph->presentInput = RenderPassDef::RenderPassGraphDef::PresentInput::Auto;
 	desc.graph->writeState = writeHostOverlayPassState;
 	if constexpr (Bootstrap != nullptr) {
-		desc.bootstrap = bootstrapHostOverlayPass<Backend, Bootstrap>;
+		desc.bootstrap = bootstrapBackendRenderPass<Backend, Bootstrap>;
+		desc.teardown = teardownBackendRenderPass<Backend, Teardown>;
 	}
 	desc.shouldExecute = shouldExecuteHostOverlayPass;
 	desc.exec = renderHostOverlayPass<Backend, Begin, RenderEntry, End>;
@@ -82,9 +76,9 @@ void registerHostMenuPass(RenderPassLibrary& registry) {
 	registry.registerPass(desc);
 }
 
-template<typename Backend, auto Bootstrap, auto Begin, auto RenderEntry, auto End>
+template<typename Backend, auto Bootstrap, auto Teardown, auto Begin, auto RenderEntry, auto End>
 void registerHostOverlayBackendPasses(RenderPassLibrary& registry) {
-	registerHostOverlayPass<Backend, Bootstrap, Begin, RenderEntry, End>(registry);
+	registerHostOverlayPass<Backend, Bootstrap, Teardown, Begin, RenderEntry, End>(registry);
 	registerHostMenuPass<Backend, Begin, RenderEntry, End>(registry);
 }
 
