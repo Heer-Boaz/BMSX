@@ -1510,16 +1510,21 @@ neither boot heuristics nor a second frame counter may shift it.
 The frontend that creates a GLES context owns the current-framebuffer callback
 and `get_proc_address` resolver and supplies both through the libretro hardware
 context boundary. The GLES backend resolves context procedures there rather
-than through process-global symbols. A libretro context reset may arrive without
-a preceding destroy callback, so every GLES texture, depth buffer and render
-target records the context generation that created its GL name. Clean context
-destruction runs while the context is still alive and deletes matching graph,
-pass, texture-manager, default-texture and backend resources in owner order. An
-unannounced loss advances the generation first; the same owners then discard
-their stale host handles and complete CPU-side pipeline state without issuing
-deletes against numeric names that may already belong to the replacement
-context. Replacement pass singletons are bootstrapped only after the old graph
-and registry have been removed.
+than through process-global symbols. One libretro lifecycle value distinguishes
+software operation, an accepted request awaiting the frontend callback, a
+received reset awaiting deferred initialization, a ready context and a terminal
+hardware fault. Acceptance of `SET_HW_RENDER` is not itself a context-reset
+event and never starts GL initialization.
+
+Every GLES texture, depth buffer and render target records the context
+generation that created its GL name. Clean context destruction runs while the
+context is still alive and deletes matching graph, pass, texture-manager,
+default-texture and backend resources in owner order. A reset without a
+preceding destroy means the old context is already dead under the libretro ABI.
+The backend advances its generation first and the graph, pass and texture
+owners then release only CPU-side state; no stale numeric GL name is deleted
+against the replacement context. The core does not build replacement resources
+or execute another machine frame after that transition.
 
 Direct-host shutdown invokes the core `context_destroy` callback while the
 frontend context is current, unloads and deinitializes the core, deletes the
@@ -1532,17 +1537,25 @@ Before clean destruction, the GPU commits accelerated VRAM to its retained raw
 snapshot. GX pipeline teardown clears its accelerated command frontier and
 batch state. The first GX execution after context reset uploads that snapshot
 before replaying the current command stream, so a controlled destroy/recreate
-preserves byte-exact VRAM without stale accelerated frontier state. These
-lifecycle paths run only at context setup or loss; frame rendering does not
-perform generation checks or allocate replacement state.
+preserves byte-exact guest VRAM without stale accelerated frontier state.
+Presentation-history and the previous 480i field are host presentation caches,
+not guest VRAM, and are rebuilt after the first completed scanout. These
+lifecycle paths run only at context setup or loss; ordinary frame rendering
+does not perform generation checks or allocate replacement state.
 
-An unannounced loss cannot read back the dead context. Resource recreation is
-safe, but byte-exact VRAM restoration is still open because the retained raw
-snapshot may predate GPU-only writes whose replay commands have already been
-discarded by guest-visible FIFO/readback operation. Do not hide that boundary
-with per-frame full-VRAM readback, parallel software rasterization or an
-asset-reupload special case; it needs a measured, backend-independent VRAM
-coherence contract.
+An unannounced loss cannot read back the dead context. The retained raw snapshot
+may predate GPU-only writes whose replay commands were retired after
+presentation, so silently uploading that snapshot would corrupt emulated
+hardware state. BMSX therefore treats this external device loss as
+non-resumable: it abandons the dead generation without GL calls, reports the
+fault, requests frontend shutdown and advances no further machine frames. This
+matches the production boundary used by DuckStation for device loss, while
+controlled renderer recreation in DuckStation likewise performs a complete
+VRAM readback before destroying the old backend. Transparent recovery would
+instead require a GX-owned, fixed-capacity command journal plus occasional full
+VRAM checkpoints before the journal fills. That is a separate machine-data
+authority design with measurable runtime cost, not a host lifecycle fix; it is
+not introduced without an explicit product requirement and a checkpoint budget.
 
 ## Validation policy
 

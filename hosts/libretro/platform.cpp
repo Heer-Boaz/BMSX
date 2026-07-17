@@ -299,6 +299,20 @@ void LibretroPlatform::onContextDestroy() {
 #endif
 }
 
+void LibretroPlatform::onContextLost() {
+#if BMSX_ENABLE_GLES2
+	auto* view = m_machine_manager->view();
+	auto* backend = static_cast<OpenGLES2Backend*>(view->backend());
+	// Retire the generation before owners release handles: the replacement context may reuse the same numeric GL names.
+	backend->onContextLost();
+	view->setPipelineRegistry(std::unique_ptr<RenderPassLibrary>());
+	m_machine_manager->texmanager()->clear();
+	view->clearTextures();
+#else
+	throw BMSX_RUNTIME_ERROR("[LibretroPlatform] OpenGLES2 backend disabled at compile time.");
+#endif
+}
+
 void LibretroPlatform::setAVInfo(const retro_system_av_info& info) {
 	const auto& geometry = info.geometry;
 	const unsigned baseWidth = geometry.base_width;

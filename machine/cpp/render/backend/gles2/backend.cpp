@@ -582,14 +582,19 @@ void OpenGLES2Backend::onContextDestroy() {
 	DeviceQuantizePipeline::GLES2::shutdown(m_post_pipelines->deviceQuantize);
 	if (m_readback_fbo != 0) {
 		glDeleteFramebuffers(1, &m_readback_fbo);
-		m_readback_fbo = 0;
 	}
+	onContextLost();
+}
+
+void OpenGLES2Backend::onContextLost() {
 	m_context_ready = false;
 	m_context_generation += 1u;
 	m_current_fbo = 0;
 	m_backbuffer_fbo = 0;
 	m_target_width = m_default_width;
 	m_target_height = m_default_height;
+	m_readback_fbo = 0;
+	*m_post_pipelines = OpenGLES2PostPipelines{};
 	invalidateTextureBindingCache();
 	m_supports_srgb_textures = false;
 	m_supports_uint_indices = false;

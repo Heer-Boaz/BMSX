@@ -36,14 +36,17 @@ static retro_input_poll_t input_poll_cb = nullptr;
 static retro_input_state_t input_state_cb = nullptr;
 static retro_log_callback logging;
 
+enum class HardwareContextLifecycle : uint8_t {
+	Software,
+	AwaitingReset,
+	ResetPending,
+	Ready,
+	Fatal,
+};
+
 static retro_hw_render_callback g_hw_render;
-static bool g_hw_render_supported = false;
-static bool g_hw_render_requested = false;
-static bool g_hw_context_pending = false;
-static bool g_hw_context_ready = false;
+static HardwareContextLifecycle g_hw_context_lifecycle = HardwareContextLifecycle::Software;
 static bmsx::BackendType g_active_backend = bmsx::BackendType::Software;
-static bmsx::BackendType g_hw_render_backend = bmsx::BackendType::Software;
-static std::string g_hw_render_failure_reason;
 static std::string g_backend_error;
 static std::string g_system_dir;
 
@@ -470,7 +473,6 @@ static RenderBackendPreference parse_backend_preference(const char* value);
 static bmsx::BackendType resolve_backend_preference(RenderBackendPreference preference);
 static bool is_hardware_backend(bmsx::BackendType type);
 static const char* backend_label(bmsx::BackendType type);
-static void apply_backend_preference(RenderBackendPreference preference);
 static void fail_hardware_backend(bmsx::BackendType backend, const char* reason);
 static bool read_crt_postprocessing_enabled();
 static bool read_crt_noise_enabled();
@@ -527,7 +529,16 @@ static const char* backend_label(bmsx::BackendType type) {
 }
 
 static bool isHardwareBackendActive() {
-	return g_backend_error.empty() && is_hardware_backend(g_active_backend);
+	switch (g_hw_context_lifecycle) {
+		case HardwareContextLifecycle::AwaitingReset:
+		case HardwareContextLifecycle::ResetPending:
+		case HardwareContextLifecycle::Ready:
+			return is_hardware_backend(g_active_backend);
+		case HardwareContextLifecycle::Software:
+		case HardwareContextLifecycle::Fatal:
+			return false;
+	}
+	__builtin_unreachable();
 }
 
 static void set_crt_option_values(bool enabled) {
@@ -806,9 +817,7 @@ static bmsx::DeviceQuantizeMode read_device_quantize_mode() {
 static void fail_hardware_backend(bmsx::BackendType backend, const char* reason) {
 	g_active_backend = backend;
 	g_backend_error = reason;
-	g_hw_render_supported = false;
-	g_hw_context_pending = false;
-	g_hw_context_ready = false;
+	g_hw_context_lifecycle = HardwareContextLifecycle::Fatal;
 	logging.log(RETRO_LOG_ERROR, "%s\n", reason);
 	retro_message msg;
 	msg.msg = g_backend_error.c_str();
@@ -816,52 +825,14 @@ static void fail_hardware_backend(bmsx::BackendType backend, const char* reason)
 	environ_cb(RETRO_ENVIRONMENT_SET_MESSAGE, &msg);
 }
 
-static void apply_backend_preference(RenderBackendPreference preference) {
-	g_backend_preference = preference;
-	const bmsx::BackendType desired_backend = resolve_backend_preference(preference);
-	if (g_hw_render_requested) {
-		if (preference == RenderBackendPreference::Software) {
-			logging.log(RETRO_LOG_INFO,
-						"[BMSX] Software backend requested, but a hardware backend is already active; restart required\n");
-		}
-		g_active_backend = g_hw_render_backend;
-		return;
-	}
-
-	if (is_hardware_backend(desired_backend)) {
-		if (!g_hw_render_supported) {
-			std::string reason;
-			if (!g_hw_render_failure_reason.empty()) {
-				reason =
-					std::string("[BMSX] ") + backend_label(desired_backend) +
-					" backend failed: " + g_hw_render_failure_reason;
-			} else {
-				reason =
-					std::string("[BMSX] ") + backend_label(desired_backend) +
-					" backend failed to start.";
-			}
-			fail_hardware_backend(desired_backend, reason.c_str());
-			return;
-		}
-		g_backend_error.clear();
-		g_active_backend = desired_backend;
-		return;
-	}
-
-	g_backend_error.clear();
-	g_active_backend = desired_backend;
-}
-
 static void request_hw_context_for_backend(bmsx::BackendType backend) {
-	g_hw_render_supported = false;
-	g_hw_render_requested = false;
-	g_hw_render_backend = bmsx::BackendType::Software;
+	g_backend_error.clear();
+	g_hw_context_lifecycle = HardwareContextLifecycle::Software;
 	if (!is_hardware_backend(backend)) {
 		return;
 	}
 
-	g_hw_render_backend = backend;
-	g_hw_render_requested = true;
+	g_hw_context_lifecycle = HardwareContextLifecycle::AwaitingReset;
 	std::memset(&g_hw_render, 0, sizeof(g_hw_render));
 	g_hw_render.context_type = RETRO_HW_CONTEXT_OPENGLES2;
 	g_hw_render.context_reset = hw_context_reset;
@@ -877,18 +848,12 @@ static void request_hw_context_for_backend(bmsx::BackendType backend) {
 	logging.log(RETRO_LOG_INFO, "[BMSX] Requesting HW context for backend %s\n", backend_label(backend));
 
 	if (!environ_cb(RETRO_ENVIRONMENT_SET_HW_RENDER, &g_hw_render)) {
-		g_hw_render_failure_reason = "RETRO_ENVIRONMENT_SET_HW_RENDER rejected by frontend";
-		g_hw_render_supported = false;
-		g_hw_render_requested = false;
-		g_hw_render_backend = bmsx::BackendType::Software;
-		g_hw_context_pending = false;
-		g_hw_context_ready = false;
+		const std::string reason =
+			std::string("[BMSX] ") + backend_label(backend) +
+			" backend failed: RETRO_ENVIRONMENT_SET_HW_RENDER rejected by frontend";
+		fail_hardware_backend(backend, reason.c_str());
 		return;
 	}
-	g_hw_render_supported = true;
-	g_hw_context_pending = true;
-	g_hw_context_ready = false;
-	g_hw_render_failure_reason.clear();
 }
 
 void retro_set_environment(retro_environment_t cb) {
@@ -990,8 +955,9 @@ void retro_init(void) {
 	g_crt_aperture_enabled = read_crt_aperture_enabled();
 	g_device_quantize_mode = read_device_quantize_mode();
 	g_resource_usage_gizmo_enabled = read_resource_usage_gizmo_enabled();
+	g_backend_preference = preference;
+	g_active_backend = desired_backend;
 	request_hw_context_for_backend(desired_backend);
-	apply_backend_preference(preference);
 	set_core_options(BMSX_ENABLE_GLES2);
 
 	const char* system_dir = nullptr;
@@ -1007,18 +973,18 @@ void retro_init(void) {
 	logging.log(RETRO_LOG_INFO, "[BMSX] System directory not provided\n");
 	}
 	if (!isHardwareBackendActive()) {
-	const bmsx::BackendType desired_backend = resolve_backend_preference(g_backend_preference);
-	if (is_hardware_backend(desired_backend)) {
-		const std::string reason =
-			std::string("[BMSX] ") + backend_label(desired_backend) +
-			" hardware backend was requested but not initialized.";
-		fail_hardware_backend(desired_backend, reason.c_str());
-	} else {
-		logging.log(RETRO_LOG_INFO,
-					"[BMSX] Software backend selected via core option\n");
-	}
-	g_hw_context_pending = false;
-	g_hw_context_ready = false;
+		const bmsx::BackendType desired_backend = resolve_backend_preference(g_backend_preference);
+		if (is_hardware_backend(desired_backend)) {
+			if (g_hw_context_lifecycle != HardwareContextLifecycle::Fatal) {
+				const std::string reason =
+					std::string("[BMSX] ") + backend_label(desired_backend) +
+					" hardware backend was requested but not initialized.";
+				fail_hardware_backend(desired_backend, reason.c_str());
+			}
+		} else {
+			logging.log(RETRO_LOG_INFO,
+						"[BMSX] Software backend selected via core option\n");
+		}
 	}
 
 	// Set pixel format
@@ -1059,7 +1025,6 @@ void retro_init(void) {
 						"[BMSX] %s setup exception: %s\n",
 						backend_label(g_active_backend),
 						err.what());
-			g_hw_render_failure_reason = err.what();
 			const std::string reason =
 				std::string("[BMSX] ") + backend_label(g_active_backend) +
 				" setup failed: " + err.what();
@@ -1077,6 +1042,7 @@ void retro_deinit(void) {
 
 	delete g_platform;
 	g_platform = nullptr;
+	g_hw_context_lifecycle = HardwareContextLifecycle::Software;
 }
 
 unsigned retro_api_version(void) { return RETRO_API_VERSION; }
@@ -1180,31 +1146,38 @@ void retro_reset(void) {
 }
 
 void retro_run(void) {
-	if (isHardwareBackendActive() && g_hw_context_pending && g_platform) {
-		try {
-			g_platform->onContextReset();
-			g_hw_context_ready = true;
-			g_hw_context_pending = false;
-			g_hw_render_failure_reason.clear();
-		} catch (const std::exception& err) {
-			logging.log(RETRO_LOG_ERROR,
-						"[BMSX] %s context reset exception: %s\n",
-						backend_label(g_active_backend),
-						err.what());
-			g_hw_render_failure_reason = err.what();
+	switch (g_hw_context_lifecycle) {
+		case HardwareContextLifecycle::Software:
+		case HardwareContextLifecycle::Ready:
+			break;
+		case HardwareContextLifecycle::ResetPending:
+			try {
+				g_platform->onContextReset();
+				g_hw_context_lifecycle = HardwareContextLifecycle::Ready;
+			} catch (const std::exception& err) {
+				logging.log(RETRO_LOG_ERROR,
+							"[BMSX] %s context reset exception: %s\n",
+							backend_label(g_active_backend),
+							err.what());
+				g_platform->onContextLost();
+				const std::string reason =
+					std::string("[BMSX] ") + backend_label(g_active_backend) +
+					" context reset failed: " + err.what();
+				fail_hardware_backend(g_active_backend, reason.c_str());
+				environ_cb(RETRO_ENVIRONMENT_SHUTDOWN, nullptr);
+				return;
+			}
+			break;
+		case HardwareContextLifecycle::AwaitingReset: {
 			const std::string reason =
 				std::string("[BMSX] ") + backend_label(g_active_backend) +
-				" context reset failed: " + err.what();
+				" frontend did not initialize the requested hardware context.";
 			fail_hardware_backend(g_active_backend, reason.c_str());
+			environ_cb(RETRO_ENVIRONMENT_SHUTDOWN, nullptr);
 			return;
 		}
-	}
-	if (isHardwareBackendActive() && !g_hw_context_ready) {
-		const std::string reason =
-			std::string("[BMSX] ") + backend_label(g_active_backend) +
-			" hw render context not initialized.";
-		fail_hardware_backend(g_active_backend, reason.c_str());
-		return;
+		case HardwareContextLifecycle::Fatal:
+			return;
 	}
 	bool vars_updated = false;
 	if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &vars_updated) && vars_updated) {
@@ -1380,22 +1353,41 @@ static void fallback_log(enum retro_log_level level, const char* fmt, ...) {
 
 static void hw_context_reset() {
 	logging.log(RETRO_LOG_INFO, "[BMSX] hw_context_reset called. g_platform=%p\n", g_platform);
-	if (!g_hw_render_requested) {
-		logging.log(RETRO_LOG_INFO, "[BMSX] hw_context_reset ignored (not requested)\n");
-		return;
+	switch (g_hw_context_lifecycle) {
+		case HardwareContextLifecycle::AwaitingReset:
+		case HardwareContextLifecycle::ResetPending:
+			g_hw_context_lifecycle = HardwareContextLifecycle::ResetPending;
+			return;
+		case HardwareContextLifecycle::Ready: {
+			// Libretro omits context_destroy only when the old context is already dead.
+			// Retired GX commands cannot reconstruct newer GPU-only VRAM from the last snapshot.
+			g_platform->onContextLost();
+			const std::string reason =
+				std::string("[BMSX] ") + backend_label(g_active_backend) +
+				" context was lost before guest VRAM could be checkpointed.";
+			fail_hardware_backend(g_active_backend, reason.c_str());
+			environ_cb(RETRO_ENVIRONMENT_SHUTDOWN, nullptr);
+			return;
+		}
+		case HardwareContextLifecycle::Software:
+		case HardwareContextLifecycle::Fatal:
+			return;
 	}
-	g_hw_context_pending = true;
-	g_hw_context_ready = false;
 }
 
 static void hw_context_destroy() {
 	logging.log(RETRO_LOG_INFO, "[BMSX] hw_context_destroy called\n");
-	if (!g_hw_render_requested) {
-		return;
+	switch (g_hw_context_lifecycle) {
+		case HardwareContextLifecycle::Ready:
+			g_platform->onContextDestroy();
+			g_hw_context_lifecycle = HardwareContextLifecycle::AwaitingReset;
+			return;
+		case HardwareContextLifecycle::ResetPending:
+			g_hw_context_lifecycle = HardwareContextLifecycle::AwaitingReset;
+			return;
+		case HardwareContextLifecycle::Software:
+		case HardwareContextLifecycle::AwaitingReset:
+		case HardwareContextLifecycle::Fatal:
+			return;
 	}
-	if (g_hw_context_ready && g_platform) {
-		g_platform->onContextDestroy();
-	}
-	g_hw_context_ready = false;
-	g_hw_context_pending = false;
 }

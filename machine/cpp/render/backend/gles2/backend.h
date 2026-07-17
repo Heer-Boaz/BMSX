@@ -72,6 +72,7 @@ public:
 	void setContextCallbacks(FramebufferGetter framebufferGetter, ProcAddressGetter procAddressGetter);
 	void onContextReset();
 	void onContextDestroy();
+	void onContextLost();
 
 	void setActiveTextureUnit(i32 unit);
 	void bindTexture2D(TextureHandle tex);

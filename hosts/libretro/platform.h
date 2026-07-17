@@ -144,6 +144,7 @@ public:
 								retro_hw_get_proc_address_t get_proc_address);
 	void onContextReset();
 	void onContextDestroy();
+	void onContextLost();
 	void setCrtEffectOptions(bool applyNoise,
 								bool applyColorBleed,
 								bool applyScanlines,
