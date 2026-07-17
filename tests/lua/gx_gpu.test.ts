@@ -1060,12 +1060,18 @@ test('GX-GPU GPUSTAT readiness tracks GP0 packet assembly and payload phases', (
 	gpu.writeGp0(0x00000000);
 	gpu.writeGp0(0x00000001);
 	gpu.writeGp0(0x00000002);
-	gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_FIFO);
-	gpu.writeGp0(0x00000000);
+	for (let index = 0; index < 4; index += 1) {
+		gpu.writeGp0(0x03000000);
+	}
+	gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
 	status = gpu.readStatus();
 	assert.equal((status & GX_GPU_STATUS_GPU_IDLE) >>> 0, 0);
 	assert.equal((status & GX_GPU_STATUS_READY_TO_RECEIVE_DMA) >>> 0, 0);
 	assert.equal((status & GX_GPU_STATUS_DMA_DATA_REQUEST) >>> 0, 0);
+	gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_FIFO);
+	status = gpu.readStatus();
+	assert.equal((status & GX_GPU_STATUS_READY_TO_RECEIVE_DMA) >>> 0, 0);
+	assert.equal((status & GX_GPU_STATUS_DMA_DATA_REQUEST) >>> 0, GX_GPU_STATUS_DMA_DATA_REQUEST);
 	assert.equal(commands.commandCount, 1);
 	assert.equal(commands.executedCommandCount, 0);
 	completeGpuCommands(gpu);

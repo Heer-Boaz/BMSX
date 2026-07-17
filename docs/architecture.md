@@ -1054,6 +1054,12 @@ polls, retries, drops, or queues a replacement word. Save-state preserves FIFO,
 packet assembly, execution frontier, and the active deadline relative to
 scheduler time.
 
+GP1(04h) selects the GPUSTAT bit-25 request mux. FIFO mode exposes the
+physical sixteen-word FIFO-not-full line; CPU-to-GP0 mode exposes the stricter
+GPUSTAT bit-28 DMA-block-ready line; GPUREAD-to-CPU mode exposes bit 27. The
+selected write request is the same line consumed by the DMA controller, while
+direct CPU writes retain their independent physical FIFO-slot readiness.
+
 GP1 decodes the complete eight-bit command field. Undefined commands in the
 40h--FFh range are no-ops rather than aliases of commands 00h--3Fh, matching
 Mednafen's physical-hardware observation and MAME's control decoder.

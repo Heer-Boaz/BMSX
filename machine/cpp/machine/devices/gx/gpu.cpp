@@ -854,7 +854,6 @@ void GxGpu::updateCommandStatusBits() {
 	// CPU stores need one physical FIFO slot; DMA packet acceptance is a
 	// separate, stricter GPUSTAT line while a command is being assembled.
 	m_dmaController.setGxGpuCpuWriteReady(m_gp0Fifo.count() < GX_GPU_COMMAND_FIFO_WORD_CAPACITY);
-	m_dmaController.setGxGpuDmaWriteReady(readyToReceiveDma);
 }
 
 void GxGpu::updateDynamicStatusBits() {
@@ -867,6 +866,8 @@ void GxGpu::updateDmaRequestStatusBit() {
 	u32 dmaRequest = 0u;
 	switch (dmaDirection) {
 	case GX_GPU_DMA_DIRECTION_FIFO:
+		dmaRequest = m_gp0Fifo.count() < GX_GPU_COMMAND_FIFO_WORD_CAPACITY ? GX_GPU_STATUS_DMA_DATA_REQUEST : 0u;
+		break;
 	case GX_GPU_DMA_DIRECTION_CPU_TO_GP0:
 		dmaRequest = m_statusWord & GX_GPU_STATUS_READY_TO_RECEIVE_DMA;
 		break;
@@ -879,6 +880,9 @@ void GxGpu::updateDmaRequestStatusBit() {
 	} else {
 		m_statusWord &= ~GX_GPU_STATUS_DMA_DATA_REQUEST;
 	}
+	m_dmaController.setGxGpuDmaWriteReady(
+		(dmaDirection == GX_GPU_DMA_DIRECTION_FIFO || dmaDirection == GX_GPU_DMA_DIRECTION_CPU_TO_GP0)
+		&& dmaRequest != 0u);
 }
 
 bool GxGpu::gpuStatInInterleaved480iMode() const {

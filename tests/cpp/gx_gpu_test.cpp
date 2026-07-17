@@ -573,12 +573,18 @@ void testGpustatReadinessTracksGp0PacketAssemblyAndPayloadPhases() {
 	gpu.writeGp0(0x00000000u);
 	gpu.writeGp0(0x00000001u);
 	gpu.writeGp0(0x00000002u);
-	gpu.writeGp1((bmsx::GX_GPU_GP1_DMA_DIRECTION << 24u) | bmsx::GX_GPU_DMA_DIRECTION_FIFO);
-	gpu.writeGp0(0x00000000u);
+	for (bmsx::u32 index = 0u; index < 4u; index += 1u) {
+		gpu.writeGp0(0x03000000u);
+	}
+	gpu.writeGp1((bmsx::GX_GPU_GP1_DMA_DIRECTION << 24u) | bmsx::GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
 	status = gpu.readStatus();
 	require((status & bmsx::GX_GPU_STATUS_GPU_IDLE) == 0u, "GX-GPU GPUSTAT fixed packet remains busy during execution");
 	require((status & bmsx::GX_GPU_STATUS_READY_TO_RECEIVE_DMA) == 0u, "GX-GPU complete queued packet lowers receive readiness");
-	require((status & bmsx::GX_GPU_STATUS_DMA_DATA_REQUEST) == 0u, "GX-GPU FIFO request follows receive readiness");
+	require((status & bmsx::GX_GPU_STATUS_DMA_DATA_REQUEST) == 0u, "GX-GPU CPU-to-GP0 request follows DMA-block readiness");
+	gpu.writeGp1((bmsx::GX_GPU_GP1_DMA_DIRECTION << 24u) | bmsx::GX_GPU_DMA_DIRECTION_FIFO);
+	status = gpu.readStatus();
+	require((status & bmsx::GX_GPU_STATUS_READY_TO_RECEIVE_DMA) == 0u, "GX-GPU queued packet keeps DMA-block readiness low");
+	require((status & bmsx::GX_GPU_STATUS_DMA_DATA_REQUEST) != 0u, "GX-GPU FIFO request follows physical FIFO capacity");
 	require(commands.commandCount == 1u, "GX-GPU fixed packet command emitted");
 	require(commands.executedCommandCount == 0u, "GX-GPU fixed packet waits at the execution frontier");
 	completeGpuCommands(harness);

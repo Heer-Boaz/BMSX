@@ -460,6 +460,10 @@ and MAME
     each word; CPU GP0 stores use
     the MMIO write-ready line and jump to the device completion edge without
     polling, dropped words or producer-side waits.
+  - [x] Give GPUSTAT bit 25 its real GP1(04h) request mux: FIFO mode reports
+    the physical sixteen-word FIFO-not-full line, CPU-to-GP0 reports bit 28,
+    and GPUREAD-to-CPU reports bit 27. The DMA controller consumes that same
+    selected request rather than reusing DMA-block readiness for FIFO mode.
 - [ ] Complete GP0/GP1 command decode edge cases and command-buffer ordering.
   - [x] Distinguish machine/device reset from GP1(00h): both clear GPU
     registers, packet/FIFO state and the active readback request, while only
