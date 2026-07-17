@@ -1,9 +1,9 @@
 import {
 	GX_GPU_TEXTURE_MODE_DIRECT16,
 	GX_GPU_TEXTURE_MODE_PALETTE4,
-	GX_GPU_VRAM_WIDTH,
 } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
 import { GX_GPU_GP0_CPU_TO_VRAM_FIRST } from '../../machine/ts/machine/devices/gx/gpu';
+import { GX_GPU_VRAM_WIDTH } from '../../machine/ts/machine/devices/gx/vram_address';
 import type { ImgMeta } from '../../machine/ts/rompack/format';
 
 export const GX_SYSTEM_TEXTURE_ASSET_ID = 'gx_system_texture';

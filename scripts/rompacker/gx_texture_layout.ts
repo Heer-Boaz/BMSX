@@ -1,7 +1,7 @@
 import {
 	GX_GPU_VRAM_HEIGHT,
 	GX_GPU_VRAM_WIDTH,
-} from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
+} from '../../machine/ts/machine/devices/gx/vram_address';
 import { GX_PALETTE4_CLUT_WORDS } from './gx_texture';
 import { GX_CART_TEXTURE_GROUP_ID_LIMIT } from './texture_atlas_contract';
 

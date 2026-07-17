@@ -125,6 +125,21 @@ test('GX layout validation rejects overlapping slots in one cart-authored workin
 	);
 });
 
+test('GX layout validation rejects texture storage outside physical VRAM', () => {
+	const layout: GxTextureLayout = {
+		reserved: {},
+		slots: {
+		main: { texture: { x: 1024, y: 0, width: 1, height: 1 } },
+		},
+		groups: {},
+		working_sets: {},
+	};
+	assert.throws(
+		() => validateGxTextureLayout(layout),
+		/outside 1024x512 VRAM/,
+	);
+});
+
 test('GX layout validation rejects a palette4 CLUT that cannot be encoded exactly', () => {
 	const layout: GxTextureLayout = {
 		reserved: {},
