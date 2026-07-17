@@ -102,7 +102,7 @@ BinArray encodeStorageSymbols(const std::vector<Symbol>& symbols) {
 		object["offset"] = BinValue(static_cast<i64>(symbol.offset));
 		object["byteCount"] = BinValue(static_cast<i64>(symbol.byteCount));
 		object["alignment"] = BinValue(static_cast<i64>(symbol.alignment));
-		values.push_back(BinValue(std::move(object)));
+		values.emplace_back(std::move(object));
 	}
 	return values;
 }
@@ -192,7 +192,7 @@ BinValue encodeProto(const Proto& proto) {
 		BinObject uv;
 		uv["inStack"] = BinValue(upvalue.isLocal);
 		uv["index"] = BinValue(upvalue.index);
-		upvalues.push_back(BinValue(std::move(uv)));
+		upvalues.emplace_back(std::move(uv));
 	}
 	object["upvalueDescs"] = BinValue(std::move(upvalues));
 	return BinValue(std::move(object));
@@ -563,7 +563,7 @@ std::vector<uint8_t> encodeProgramImage(const ProgramImage& asset) {
 		}
 		object["symbol"] = BinValue(reloc.symbol);
 		object["addend"] = BinValue(reloc.addend);
-		constValueRelocs.push_back(BinValue(std::move(object)));
+		constValueRelocs.emplace_back(std::move(object));
 	}
 	BinArray rodataConstRelocs;
 	rodataConstRelocs.reserve(asset.link.rodataConstRelocs.size());
@@ -571,7 +571,7 @@ std::vector<uint8_t> encodeProgramImage(const ProgramImage& asset) {
 		BinObject object;
 		object["byteOffset"] = BinValue(reloc.byteOffset);
 		object["constIndex"] = BinValue(reloc.constIndex);
-		rodataConstRelocs.push_back(BinValue(std::move(object)));
+		rodataConstRelocs.emplace_back(std::move(object));
 	}
 	BinObject link;
 	link["constRelocs"] = BinValue(std::move(constRelocs));
