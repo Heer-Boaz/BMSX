@@ -1372,12 +1372,21 @@ The former AOUT occupancy MMIO words remain reserved address holes so the later
 APU register addresses do not move; APU status exposes command FIFO state, not
 host queue occupancy.
 
-`audio/SoundMaster` owns host master gain, the retained 44.1-kHz-to-host-rate
-resampler, and the latency-profile prebuffer. Browser and libretro transports
-may pull in arbitrary chunk sizes without mutating APU state. Resampler phase
-and boundary samples persist across host callbacks, and startup/resume waits
-for the configured source prebuffer instead of repeatedly running the device
-ahead of machine time. Clearing or underrunning host transport can produce
+`audio/SoundMaster` owns host master gain and the retained
+44.1-kHz-to-host-rate resampler. Browser and libretro transports may request
+arbitrary chunk sizes without choosing APU time or changing device cadence.
+Resampler phase and boundary samples persist across callbacks and source
+starvation. A pull publishes only the frames backed by a complete interpolation
+window; it neither waits for a second source-side prebuffer nor pads an
+unavailable tail with queued silence. Immediately before a host drain, the APU
+controller materializes samples only through its own current scheduler cycle.
+This removes the internal 128-sample service quantum from host cadence without
+generating future machine audio or moving the absolute next device deadline.
+The browser worker writes exactly that produced prefix into its retained
+AudioWorklet transport, while libretro submits exactly that produced prefix to
+the frontend batch callback. Buffer targets and underrun policy therefore stay
+at the actual host transport rather than accumulating another frame of hidden
+machine-output latency. Clearing or underrunning host transport can produce
 silence only; it cannot backpressure the APU.
 
 Save-state first synchronizes the APU to the scheduler cycle, then captures the

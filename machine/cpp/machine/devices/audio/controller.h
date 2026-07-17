@@ -32,6 +32,7 @@ public:
 	void dispose();
 	void setTiming(int64_t cpuHz, int64_t nowCycles);
 	void onService(int64_t nowCycles);
+	[[nodiscard]] auto synchronizeOutput() -> ApuOutputRing&;
 	AudioControllerState captureState();
 	void restoreState(const AudioControllerState& state, int64_t nowCycles);
 

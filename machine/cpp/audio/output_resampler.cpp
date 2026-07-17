@@ -1,80 +1,56 @@
 #include "audio/output_resampler.h"
 
-#include "common/clamp.h"
 #include "machine/common/numeric.h"
 #include "machine/devices/audio/contracts.h"
 #include "machine/devices/audio/output_ring.h"
-
-#include <algorithm>
 
 namespace bmsx {
 
 void AudioOutputResampler::reset() {
 	m_outputRate = 0;
 	m_phase = 0.0;
-	m_started = false;
 	m_hasCurrent = false;
 	m_hasNext = false;
 }
 
-void AudioOutputResampler::pull(
+auto AudioOutputResampler::pull(
 	ApuOutputRing& ring,
 	i16* output,
 	size_t frameCount,
 	i32 outputSampleRate,
-	f32 outputGain,
-	size_t startThresholdFrames
-) {
+	f32 outputGain
+) -> size_t {
 	if (m_outputRate != outputSampleRate) {
 		reset();
 		m_outputRate = outputSampleRate;
 	}
-	if (!m_started) {
-		if (ring.queuedFrames() < startThresholdFrames) {
-			std::fill_n(output, frameCount * 2u, static_cast<i16>(0));
-			return;
-		}
-		m_started = true;
-	}
 	const f64 sourceStep = static_cast<f64>(APU_SAMPLE_RATE_HZ) / static_cast<f64>(outputSampleRate);
 	size_t outputIndex = 0u;
-	bool underrun = false;
-	for (size_t frame = 0u; frame < frameCount; frame += 1u) {
+	size_t producedFrames = 0u;
+	while (producedFrames < frameCount) {
 		if (!prime(ring)) {
-			underrun = true;
 			break;
+		}
+		while (m_phase >= 1.0) {
+			if (ring.queuedFrames() == 0u) {
+				return producedFrames;
+			}
+			m_phase -= 1.0;
+			m_currentLeft = m_nextLeft;
+			m_currentRight = m_nextRight;
+			readNext(ring);
 		}
 		const f64 left = static_cast<f64>(m_currentLeft)
 			+ static_cast<f64>(m_nextLeft - m_currentLeft) * m_phase;
 		const f64 right = static_cast<f64>(m_currentRight)
 			+ static_cast<f64>(m_nextRight - m_currentRight) * m_phase;
-		output[outputIndex] = static_cast<i16>(saturateRoundedI32(clamp(left * outputGain, -32768.0, 32767.0)));
-		output[outputIndex + 1u] = static_cast<i16>(saturateRoundedI32(clamp(right * outputGain, -32768.0, 32767.0)));
+		output[outputIndex] = static_cast<i16>(roundI32(left * outputGain));
+		output[outputIndex + 1u] = static_cast<i16>(roundI32(right * outputGain));
 		outputIndex += 2u;
+		producedFrames += 1u;
 		m_phase += sourceStep;
-		while (m_phase >= 1.0) {
-			m_phase -= 1.0;
-			m_currentLeft = m_nextLeft;
-			m_currentRight = m_nextRight;
-			m_hasCurrent = true;
-			m_hasNext = false;
-			if (ring.queuedFrames() == 0u) {
-				underrun = true;
-				break;
-			}
-			readNext(ring);
-		}
-		if (underrun) {
-			break;
-		}
 	}
-	if (underrun) {
-		m_phase = 0.0;
-		m_started = false;
-		m_hasCurrent = false;
-		m_hasNext = false;
-		std::fill(output + outputIndex, output + frameCount * 2u, static_cast<i16>(0));
-	}
+	return producedFrames;
 }
 
 bool AudioOutputResampler::prime(ApuOutputRing& ring) {

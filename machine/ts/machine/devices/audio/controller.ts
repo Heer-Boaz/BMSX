@@ -3,6 +3,7 @@ import { ApuCommandIngress } from './command_ingress';
 import { ApuCommandExecutor } from './command_executor';
 import type { DeviceScheduler } from '../../scheduler/device';
 import type { ApuOutputMixer } from './output';
+import type { ApuOutputRing } from './output_ring';
 import type { AudioControllerState } from './save_state';
 import { ApuSourceDma } from './source';
 import { ApuCommandFifo } from './command_fifo';
@@ -179,6 +180,11 @@ export class AudioController {
 			this.commandExecutor.drainCommandFifo();
 		}
 		this.serviceClock.scheduleNext(nowCycles);
+	}
+
+	public synchronizeOutput(): ApuOutputRing {
+		this.serviceClock.synchronize(this.scheduler.currentNowCycles());
+		return this.audioOutput.outputRing;
 	}
 
 }

@@ -120,6 +120,43 @@ void testMachineCaptureIncludesMaterializedApuEndIrq() {
 	require((saveState.irq.pendingFlags & bmsx::IRQ_APU) != 0u, "save-state capture should include the APU END interrupt raised while synchronizing audio");
 }
 
+void advanceScheduledApuTo(AudioMachineHarness& harness, bmsx::i64 targetCycle) {
+	while (harness.machine.scheduler.nextDeadline() <= targetCycle) {
+		const bmsx::i64 deadline = harness.machine.scheduler.nextDeadline();
+		harness.machine.scheduler.advanceTo(deadline);
+		harness.machine.audioController.onService(deadline);
+	}
+	harness.machine.scheduler.advanceTo(targetCycle);
+}
+
+void testHostSynchronizationExposesEveryElapsedPalSample() {
+	AudioMachineHarness scheduledOnly;
+	AudioMachineHarness hostSynchronized;
+	programEndingPcmVoice(scheduledOnly);
+	programEndingPcmVoice(hostSynchronized);
+	constexpr bmsx::i64 samplesPerPalFrame = bmsx::APU_SAMPLE_RATE_HZ / 50;
+
+	advanceScheduledApuTo(scheduledOnly, samplesPerPalFrame * 2);
+	bmsx::ApuOutputRing& scheduledOutputRing = scheduledOnly.machine.audioController.synchronizeOutput();
+
+	advanceScheduledApuTo(hostSynchronized, samplesPerPalFrame);
+	bmsx::ApuOutputRing& synchronizedOutputRing = hostSynchronized.machine.audioController.synchronizeOutput();
+	require(synchronizedOutputRing.queuedFrames() == static_cast<size_t>(samplesPerPalFrame), "one PAL host boundary should expose every elapsed APU sample");
+	advanceScheduledApuTo(hostSynchronized, samplesPerPalFrame * 2);
+	require(hostSynchronized.machine.audioController.synchronizeOutput().queuedFrames() == static_cast<size_t>(samplesPerPalFrame * 2), "two synchronized PAL frames should expose the full machine timeline");
+
+	const bmsx::AudioControllerState scheduledState = scheduledOnly.machine.audioController.captureState();
+	const bmsx::AudioControllerState synchronizedState = hostSynchronized.machine.audioController.captureState();
+	require(synchronizedState.output.voices.empty() && scheduledState.output.voices.empty(), "host synchronization must preserve voice END timing");
+	require(synchronizedState.sampleCarry == scheduledState.sampleCarry, "host synchronization must preserve the APU clock carry");
+	require(synchronizedState.eventSequence == scheduledState.eventSequence, "host synchronization must preserve APU event cadence");
+	require(hostSynchronized.memory.readIoU32(bmsx::IO_IRQ_FLAGS) == scheduledOnly.memory.readIoU32(bmsx::IO_IRQ_FLAGS), "host synchronization must preserve IRQ state");
+	require(scheduledOutputRing.queuedFrames() == static_cast<size_t>(samplesPerPalFrame * 2), "scheduled APU service plus final synchronization should expose the same timeline");
+	while (scheduledOutputRing.queuedFrames() != 0u) {
+		require(synchronizedOutputRing.readFramePacked() == scheduledOutputRing.readFramePacked(), "host synchronization must preserve exact output PCM");
+	}
+}
+
 void programBadpVoice(AudioHarness& harness) {
 	std::array<bmsx::u8, 60> bytes{};
 	bytes[0] = 0x42u;
@@ -334,9 +371,9 @@ void testResamplerChunkContinuityAndUnderrun() {
 	std::array<bmsx::i16, 34> splitFirst{};
 	std::array<bmsx::i16, 86> splitSecond{};
 	std::array<bmsx::i16, 120> batched{};
-	split.pull(splitRing, splitFirst.data(), splitFirst.size() / 2u, 48000, 0.75F, 16u);
-	split.pull(splitRing, splitSecond.data(), splitSecond.size() / 2u, 48000, 0.75F, 16u);
-	batch.pull(batchRing, batched.data(), batched.size() / 2u, 48000, 0.75F, 16u);
+	require(split.pull(splitRing, splitFirst.data(), splitFirst.size() / 2u, 48000, 0.75F) == splitFirst.size() / 2u, "first resampler chunk should be produced immediately");
+	require(split.pull(splitRing, splitSecond.data(), splitSecond.size() / 2u, 48000, 0.75F) == splitSecond.size() / 2u, "second resampler chunk should be complete");
+	require(batch.pull(batchRing, batched.data(), batched.size() / 2u, 48000, 0.75F) == batched.size() / 2u, "batched resampler pull should be complete");
 	for (size_t index = 0u; index < splitFirst.size(); index += 1u) {
 		require(splitFirst[index] == batched[index], "resampler chunks should retain the same interpolation phase");
 	}
@@ -344,27 +381,37 @@ void testResamplerChunkContinuityAndUnderrun() {
 		require(splitSecond[index] == batched[splitFirst.size() + index], "resampler chunks should match one batched pull");
 	}
 
-	std::array<bmsx::i16, 4> initial{{-9000, 9000, -8000, 8000}};
-	std::array<bmsx::i16, 32> refill{};
-	for (size_t index = 0u; index < refill.size(); index += 1u) {
-		refill[index] = static_cast<bmsx::i16>(1000 + static_cast<int>(index) * 37);
+	constexpr size_t sourceFramesPerPalFrame = static_cast<size_t>(bmsx::APU_SAMPLE_RATE_HZ / 50);
+	constexpr size_t outputFramesPerPalFrame = 48000u / 50u;
+	std::array<bmsx::i16, sourceFramesPerPalFrame * 4u> palSource{};
+	for (size_t frame = 0u; frame < palSource.size() / 2u; frame += 1u) {
+		palSource[frame * 2u] = static_cast<bmsx::i16>(static_cast<int>(frame) * 13 - 12000);
+		palSource[frame * 2u + 1u] = static_cast<bmsx::i16>(12000 - static_cast<int>(frame) * 7);
 	}
-	bmsx::ApuOutputRing starvedRing;
-	starvedRing.write(initial.data(), initial.size() / 2u);
-	bmsx::AudioOutputResampler recovered;
-	std::array<bmsx::i16, 4> starvedOutput{};
-	recovered.pull(starvedRing, starvedOutput.data(), starvedOutput.size() / 2u, 11025, 1.0F, 2u);
-	require(starvedOutput[2] == 0 && starvedOutput[3] == 0, "resampler underrun should silence the remaining host frames");
+	bmsx::ApuOutputRing referenceRing;
+	referenceRing.write(palSource.data(), palSource.size() / 2u);
+	bmsx::AudioOutputResampler reference;
+	std::array<bmsx::i16, (outputFramesPerPalFrame - 1u) * 2u> referenceFirst{};
+	std::array<bmsx::i16, outputFramesPerPalFrame * 2u> referenceSecond{};
+	require(reference.pull(referenceRing, referenceFirst.data(), referenceFirst.size() / 2u, 48000, 1.0F) == referenceFirst.size() / 2u, "reference PAL prefix should be complete");
+	require(reference.pull(referenceRing, referenceSecond.data(), referenceSecond.size() / 2u, 48000, 1.0F) == referenceSecond.size() / 2u, "reference second PAL frame should be complete");
 
-	bmsx::ApuOutputRing freshRing;
-	starvedRing.write(refill.data(), refill.size() / 2u);
-	freshRing.write(refill.data(), refill.size() / 2u);
-	std::array<bmsx::i16, 4> recoveredOutput{};
-	std::array<bmsx::i16, 4> freshOutput{};
-	recovered.pull(starvedRing, recoveredOutput.data(), recoveredOutput.size() / 2u, 11025, 1.0F, 2u);
-	bmsx::AudioOutputResampler fresh;
-	fresh.pull(freshRing, freshOutput.data(), freshOutput.size() / 2u, 11025, 1.0F, 2u);
-	require(recoveredOutput == freshOutput, "resampler recovery should start from a fresh interpolation window");
+	bmsx::ApuOutputRing starvedRing;
+	starvedRing.write(palSource.data(), sourceFramesPerPalFrame);
+	bmsx::AudioOutputResampler starved;
+	std::array<bmsx::i16, outputFramesPerPalFrame * 2u> starvedFirst{};
+	starvedFirst.fill(12345);
+	const size_t producedFirst = starved.pull(starvedRing, starvedFirst.data(), starvedFirst.size() / 2u, 48000, 1.0F);
+	require(producedFirst == outputFramesPerPalFrame - 1u, "one PAL hardware frame should publish only its interpolable host frames");
+	for (size_t index = 0u; index < referenceFirst.size(); index += 1u) {
+		require(starvedFirst[index] == referenceFirst[index], "starved PAL output should match the uninterrupted prefix");
+	}
+	require(starvedFirst[producedFirst * 2u] == 12345 && starvedFirst[producedFirst * 2u + 1u] == 12345, "resampler must not write unpublished silence");
+
+	starvedRing.write(palSource.data() + sourceFramesPerPalFrame * 2u, sourceFramesPerPalFrame);
+	std::array<bmsx::i16, outputFramesPerPalFrame * 2u> recoveredSecond{};
+	require(starved.pull(starvedRing, recoveredSecond.data(), recoveredSecond.size() / 2u, 48000, 1.0F) == recoveredSecond.size() / 2u, "resampler should resume with a complete second PAL frame");
+	require(recoveredSecond == referenceSecond, "resampler should preserve interpolation phase across source starvation");
 }
 
 } // namespace
@@ -372,6 +419,7 @@ void testResamplerChunkContinuityAndUnderrun() {
 int main() {
 	testOutputRingExposesUnsignedHardwareWords();
 	testMachineCaptureIncludesMaterializedApuEndIrq();
+	testHostSynchronizationExposesEveryElapsedPalSample();
 	testBadpInterpolationWindowAndRestore();
 	testRuntimeClockResetAndRestorePreserveApuTimebase();
 	testFilterAndFadeRestore();

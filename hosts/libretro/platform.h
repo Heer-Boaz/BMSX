@@ -91,7 +91,7 @@ struct AudioBuffer {
 			buffer.resize(num_samples * 2u);
 		}
 		data = buffer.data();
-		samples = num_samples;
+		samples = 0;
 		return buffer.data();
 	}
 

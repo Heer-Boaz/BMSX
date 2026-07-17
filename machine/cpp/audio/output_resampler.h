@@ -11,14 +11,13 @@ class ApuOutputRing;
 class AudioOutputResampler final {
 public:
 	void reset();
-	void pull(
+	[[nodiscard]] auto pull(
 		ApuOutputRing& ring,
 		i16* output,
 		size_t frameCount,
 		i32 outputSampleRate,
-		f32 outputGain,
-		size_t startThresholdFrames
-	);
+		f32 outputGain
+	) -> size_t;
 
 private:
 	[[nodiscard]] auto prime(ApuOutputRing& ring) -> bool;
@@ -26,7 +25,6 @@ private:
 
 	i32 m_outputRate = 0;
 	f64 m_phase = 0.0;
-	bool m_started = false;
 	bool m_hasCurrent = false;
 	bool m_hasNext = false;
 	i32 m_currentLeft = 0;

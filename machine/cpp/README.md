@@ -32,7 +32,7 @@ The C++ runtime focuses on mirroring the machine boundary from the TypeScript im
 
 - `machine/` owns CPU, memory, MMIO registers, device controllers, firmware, program loading, timing, and runtime state.
 - `render/`, `audio/`, `input/`, and `platform/` adapt machine state to C++ host edges.
-- `audio/SoundMaster` owns host master gain, retained output-rate conversion, and prebuffering only. The machine owns the continuous 44.1-kHz AOUT timeline next to the APU controller; source bytes, cursor/remainder, fade/filter/BADP state, mixing, END timing, and the presentation ring live under `machine/devices/audio`.
+- `audio/SoundMaster` owns host master gain and retained output-rate conversion. Buffering and underrun policy belong to the browser AudioWorklet or libretro frontend. The machine owns the continuous 44.1-kHz AOUT timeline next to the APU controller; source bytes, cursor/remainder, fade/filter/BADP state, mixing, END timing, and the presentation ring live under `machine/devices/audio`.
 
 ## Building
 

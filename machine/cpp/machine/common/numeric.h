@@ -70,6 +70,12 @@ inline auto saturateI32(i64 value) -> i32 {
 	return static_cast<i32>(value);
 }
 
+inline auto roundI32(double value) -> i32 {
+	const double biased = value + 0.5;
+	const i32 truncated = static_cast<i32>(biased);
+	return truncated - static_cast<i32>(biased < 0.0 && static_cast<double>(truncated) != biased);
+}
+
 inline auto saturateRoundedI32(double value) -> i32 {
 	if (value <= static_cast<double>(std::numeric_limits<i32>::min())) {
 		return std::numeric_limits<i32>::min();

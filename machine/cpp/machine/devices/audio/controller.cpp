@@ -79,4 +79,9 @@ void AudioController::onService(int64_t nowCycles) {
 	m_serviceClock.scheduleNext(nowCycles);
 }
 
+auto AudioController::synchronizeOutput() -> ApuOutputRing& {
+	m_serviceClock.synchronize(m_scheduler.currentNowCycles());
+	return m_audioOutput.outputRing;
+}
+
 } // namespace bmsx

@@ -1052,8 +1052,8 @@ void LibretroAudioService::collectSamples(AudioBuffer& buffer) {
 	m_sample_accumulator -= frames;
 
 	int16_t* output = buffer.beginWrite(frames);
-	soundMaster->pullOutputFrames(
-		m_platform->machineManager()->runtime().machine.audioOutput.outputRing,
+	buffer.samples = soundMaster->pullOutputFrames(
+		m_platform->machineManager()->runtime().machine.audioController,
 		output,
 		frames,
 		static_cast<i32>(m_sample_rate)

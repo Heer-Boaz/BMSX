@@ -1,11 +1,9 @@
-import { clamp } from '../common/clamp';
 import { APU_SAMPLE_RATE_HZ } from '../machine/devices/audio/contracts';
 import type { ApuOutputRing } from '../machine/devices/audio/output_ring';
 
 export class AudioOutputResampler {
 	private outputRate = 0;
 	private phase = 0;
-	private started = false;
 	private hasCurrent = false;
 	private hasNext = false;
 	private currentLeft = 0;
@@ -16,7 +14,6 @@ export class AudioOutputResampler {
 	public reset(): void {
 		this.outputRate = 0;
 		this.phase = 0;
-		this.started = false;
 		this.hasCurrent = false;
 		this.hasNext = false;
 	}
@@ -27,54 +24,37 @@ export class AudioOutputResampler {
 		frameCount: number,
 		outputSampleRate: number,
 		outputGain: number,
-		startThresholdFrames: number,
-	): void {
+	): number {
 		if (this.outputRate !== outputSampleRate) {
 			this.reset();
 			this.outputRate = outputSampleRate;
 		}
-		if (!this.started) {
-			if (ring.queuedFrames() < startThresholdFrames) {
-				output.fill(0, 0, frameCount * 2);
-				return;
-			}
-			this.started = true;
-		}
 		const sourceStep = APU_SAMPLE_RATE_HZ / outputSampleRate;
 		let outputIndex = 0;
-		let underrun = false;
+		let producedFrames = 0;
 		outputFrames:
-		for (let frame = 0; frame < frameCount; frame += 1) {
+		while (producedFrames < frameCount) {
 			if (!this.prime(ring)) {
-				underrun = true;
 				break;
 			}
-			const left = this.currentLeft + (this.nextLeft - this.currentLeft) * this.phase;
-			const right = this.currentRight + (this.nextRight - this.currentRight) * this.phase;
-			output[outputIndex] = Math.round(clamp(left * outputGain, -32768, 32767));
-			output[outputIndex + 1] = Math.round(clamp(right * outputGain, -32768, 32767));
-			outputIndex += 2;
-			this.phase += sourceStep;
 			while (this.phase >= 1) {
+				if (ring.queuedFrames() === 0) {
+					break outputFrames;
+				}
 				this.phase -= 1;
 				this.currentLeft = this.nextLeft;
 				this.currentRight = this.nextRight;
-				this.hasCurrent = true;
-				this.hasNext = false;
-				if (ring.queuedFrames() === 0) {
-					underrun = true;
-					break outputFrames;
-				}
 				this.readNext(ring);
 			}
+			const left = this.currentLeft + (this.nextLeft - this.currentLeft) * this.phase;
+			const right = this.currentRight + (this.nextRight - this.currentRight) * this.phase;
+			output[outputIndex] = Math.round(left * outputGain);
+			output[outputIndex + 1] = Math.round(right * outputGain);
+			outputIndex += 2;
+			producedFrames += 1;
+			this.phase += sourceStep;
 		}
-		if (underrun) {
-			this.phase = 0;
-			this.started = false;
-			this.hasCurrent = false;
-			this.hasNext = false;
-			output.fill(0, outputIndex, frameCount * 2);
-		}
+		return producedFrames;
 	}
 
 	private prime(ring: ApuOutputRing): boolean {

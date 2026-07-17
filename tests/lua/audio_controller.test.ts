@@ -703,6 +703,15 @@ function advanceRealApu(harness: ReturnType<typeof createRealAudioHarness>, nowC
 	harness.audio.onService(nowCycles);
 }
 
+function advanceScheduledApuTo(harness: ReturnType<typeof createRealAudioHarness>, targetCycle: number): void {
+	while (harness.scheduler.nextDeadline() <= targetCycle) {
+		const deadline = harness.scheduler.nextDeadline();
+		harness.scheduler.advanceTo(deadline);
+		harness.audio.onService(deadline);
+	}
+	harness.scheduler.advanceTo(targetCycle);
+}
+
 function programLongPcmVoice(memory: Memory, slot = 1): void {
 	const frames = 32;
 	const bytes = new Uint8Array(frames);
@@ -783,11 +792,35 @@ test('APU state is invariant under host pull chunking and underflow', () => {
 
 	const first = new Int16Array(6);
 	const second = new Int16Array(4);
-	drained.hostOutput.pull(drained.audioOutput.outputRing, first, 3, 48000, 0.75, 1);
-	drained.hostOutput.pull(drained.audioOutput.outputRing, second, 2, 48000, 0.75, 1);
-	drained.hostOutput.pull(drained.audioOutput.outputRing, new Int16Array(128), 64, 48000, 0.75, 1);
+	drained.hostOutput.pull(drained.audioOutput.outputRing, first, 3, 48000, 0.75);
+	drained.hostOutput.pull(drained.audioOutput.outputRing, second, 2, 48000, 0.75);
+	drained.hostOutput.pull(drained.audioOutput.outputRing, new Int16Array(128), 64, 48000, 0.75);
 
 	assert.deepEqual(drained.audio.captureState(), untouched.audio.captureState());
+});
+
+test('APU host synchronization exposes every elapsed PAL sample without changing device cadence', () => {
+	const scheduledOnly = createRealAudioHarness();
+	const hostSynchronized = createRealAudioHarness();
+	beginLongPcmVoice(scheduledOnly);
+	beginLongPcmVoice(hostSynchronized);
+	const samplesPerPalFrame = APU_SAMPLE_RATE_HZ / 50;
+
+	advanceScheduledApuTo(scheduledOnly, samplesPerPalFrame * 2);
+	const scheduledOutputRing = scheduledOnly.audio.synchronizeOutput();
+
+	advanceScheduledApuTo(hostSynchronized, samplesPerPalFrame);
+	const synchronizedOutputRing = hostSynchronized.audio.synchronizeOutput();
+	assert.equal(synchronizedOutputRing.queuedFrames(), samplesPerPalFrame);
+	advanceScheduledApuTo(hostSynchronized, samplesPerPalFrame * 2);
+	assert.equal(hostSynchronized.audio.synchronizeOutput().queuedFrames(), samplesPerPalFrame * 2);
+
+	assert.deepEqual(hostSynchronized.audio.captureState(), scheduledOnly.audio.captureState());
+	assert.equal(hostSynchronized.memory.readIoU32(IO_IRQ_FLAGS), scheduledOnly.memory.readIoU32(IO_IRQ_FLAGS));
+	assert.equal(scheduledOutputRing.queuedFrames(), samplesPerPalFrame * 2);
+	while (scheduledOutputRing.queuedFrames() !== 0) {
+		assert.equal(synchronizedOutputRing.readFramePacked(), scheduledOutputRing.readFramePacked());
+	}
 });
 
 test('APU machine output preserves the silent interval between voices', () => {
@@ -836,8 +869,8 @@ test('APU save restore resumes the exact future PCM phase while transport stays 
 
 	const liveOutput = new Int16Array(4);
 	const restoredOutput = new Int16Array(4);
-	live.hostOutput.pull(live.audioOutput.outputRing, liveOutput, 2, APU_SAMPLE_RATE_HZ, 1, 1);
-	restored.hostOutput.pull(restored.audioOutput.outputRing, restoredOutput, 2, APU_SAMPLE_RATE_HZ, 1, 1);
+	live.hostOutput.pull(live.audioOutput.outputRing, liveOutput, 2, APU_SAMPLE_RATE_HZ, 1);
+	restored.hostOutput.pull(restored.audioOutput.outputRing, restoredOutput, 2, APU_SAMPLE_RATE_HZ, 1);
 	assert.deepEqual(restoredOutput, liveOutput);
 });
 
