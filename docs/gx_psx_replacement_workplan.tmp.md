@@ -482,13 +482,13 @@ and MAME
     command processing. Abandoned image headers and partial polylines also
     truncate their uncommitted word suffix, while received image payload remains
     a partial upload command.
-  - [x] Make GP1(00h/01h) also cut C0 during its decoded-but-not-yet-active
-    device cycle. The command buffer truncates that marker at the existing
-    execution frontier and the GPU cancels only its now-ownerless deadline;
-    accepted draws and their deadlines, the GPUREAD latch, raw VRAM, and a C0
-    still waiting behind a draw in the physical FIFO keep their direct hardware
-    semantics. Mirrored immediate, queued, and save/restore regressions cover
-    both GP1 transitions.
+  - [x] Make GP1(00h/01h) reset GP0 execution timing at the transition edge.
+    The command buffer truncates a decoded C0 marker at the existing execution
+    frontier, discards a C0 still waiting in the physical FIFO, synchronously
+    completes a surviving accepted raster/upload frontier, and cancels the old
+    device deadline. The GPUREAD latch and raw VRAM remain unchanged. Mirrored
+    immediate, queued, partial-upload, and save/restore regressions cover both
+    GP1 transitions.
   - [x] Put a real packet-boundary sequencer before the physical GP0 FIFO. Four
     raw latches track fixed packets, CPU-to-VRAM payload length, and mono/Gouraud
     polyline phase without scanning or allocating. At a command boundary

@@ -298,7 +298,7 @@ void testGp1ResetRestoresRegistersAndPreservesAcceptedGpuWork() {
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_TEXTURE_PAGE_Y_HIGH) == 0u, "GX-GPU GP1 reset clears texture-page Y-high status bit");
 	require(gpu.readDisplayModeWord() == bmsx::GX_GPU_RESET_DISPLAY_MODE_WORD, "GX-GPU GP1 reset display mode");
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_PAL_MODE) == bmsx::GX_GPU_STATUS_PAL_MODE, "GX-GPU GP1 reset PAL bit");
-	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_RESET_WORD) == (bmsx::GX_GPU_STATUS_RESET_WORD & ~bmsx::GX_GPU_STATUS_GPU_IDLE), "GX-GPU GP1 reset base bits preserve accepted execution");
+	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_RESET_WORD) == bmsx::GX_GPU_STATUS_RESET_WORD, "GX-GPU GP1 reset completes accepted execution at the reset boundary");
 	gpu.writeGp0((bmsx::GX_GPU_GP0_DRAW_MODE << 24u) | bmsx::GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_HIGH);
 	completeGpuCommands(harness);
 	require((gpu.readDrawModeWord() & bmsx::GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_HIGH) == bmsx::GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_HIGH, "GX-GPU draw mode retains texture-page Y-high after GP1 reset");
@@ -1095,7 +1095,7 @@ void testSaveStateRestoresCommandTimeAndFifoSuffixRelativeToSchedulerTime() {
 	require((restored.gpu.readStatus() & bmsx::GX_GPU_STATUS_GPU_IDLE) == bmsx::GX_GPU_STATUS_GPU_IDLE, "GX-GPU restore becomes idle after the FIFO suffix completes");
 }
 
-void testGp1ClearCutsActiveC0AtExecutionFrontierWithoutCancelingDraws() {
+void testGp1ClearCompletesAcceptedDrawsAndCutsC0AtExecutionFrontier() {
 	GpuHarness active;
 	bmsx::DeviceScheduler& activeScheduler = active.scheduler;
 	active.gpu.writeGp1((bmsx::GX_GPU_GP1_GET_GPU_INFO << 24u) | 0x07u);
@@ -1133,17 +1133,14 @@ void testGp1ClearCutsActiveC0AtExecutionFrontierWithoutCancelingDraws() {
 	queued.gpu.writeGp0(bmsx::GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24u);
 	queued.gpu.writeGp0(0u);
 	queued.gpu.writeGp0((1u << 16u) | 1u);
-	const bmsx::i64 queuedFillDeadline = queued.scheduler.nextDeadline();
 	queued.gpu.writeGp1(bmsx::GX_GPU_GP1_CLEAR_FIFO << 24u);
 	const bmsx::GxGpuCommandBuffer& queuedCommands = queued.gpu.readDeviceOutput().commandBuffer;
 	require(queuedCommands.commandCount == 1u, "GX-GPU GP1 clear preserves an active fill");
-	require(queuedCommands.executedCommandCount == 0u, "GX-GPU active fill remains timed after GP1 clear");
+	require(queuedCommands.executedCommandCount == 1u, "GX-GPU GP1 clear completes its accepted fill frontier");
 	require(queued.gpu.captureState().gp0FifoWordCount == 0u, "GX-GPU GP1 clear discards C0 still queued behind a draw");
-	require(queued.scheduler.nextDeadline() == queuedFillDeadline, "GX-GPU GP1 clear preserves an active draw deadline");
-	queued.scheduler.advanceTo(queuedFillDeadline);
-	queued.gpu.onService(queuedFillDeadline);
-	require(queuedCommands.executedCommandCount == 1u, "GX-GPU active draw completes after GP1 clear");
+	require(queued.scheduler.nextDeadline() == std::numeric_limits<bmsx::i64>::max(), "GX-GPU GP1 clear cancels its prior draw deadline");
 	require(queuedCommands.readback.phase() == bmsx::GX_GPU_READBACK_IDLE, "GX-GPU queued C0 never activates after GP1 clear");
+	require((queued.gpu.readStatus() & bmsx::GX_GPU_STATUS_GPU_IDLE) != 0u, "GX-GPU GP1 clear becomes idle at its accepted fill frontier");
 }
 
 void testGp1ResetCancelsRestoredActiveC0Deadline() {
@@ -1211,9 +1208,9 @@ void testGp1ClearFifoClearsPartialGp0PacketsAndFlushesPartialCpuToVramUploads() 
 	require(commands.words[commands.commandWordStart[0] + 4u] == ((bmsx::GX_GPU_GP0_MASK_BIT << 24u) | 0x000002u), "GX-GPU partial CPU-to-VRAM final payload word");
 	require(gpu.readDrawModeWord() == 0x000222u, "GX-GPU partial CPU-to-VRAM payload does not execute draw mode");
 	require(gpu.readMaskBitModeWord() == 3u, "GX-GPU partial CPU-to-VRAM payload does not execute mask bit");
-	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_GPU_IDLE) == 0u, "GX-GPU GP1 clear FIFO keeps the flushed CPU-to-VRAM command busy");
-	completeGpuCommands(harness);
-	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_GPU_IDLE) == bmsx::GX_GPU_STATUS_GPU_IDLE, "GX-GPU partial CPU-to-VRAM reaches idle at completion");
+	require(commands.executedCommandCount == 1u, "GX-GPU GP1 clear FIFO completes the flushed CPU-to-VRAM frontier");
+	require(harness.scheduler.nextDeadline() == std::numeric_limits<bmsx::i64>::max(), "GX-GPU GP1 clear FIFO cancels the flushed upload deadline");
+	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_GPU_IDLE) == bmsx::GX_GPU_STATUS_GPU_IDLE, "GX-GPU partial CPU-to-VRAM is idle at the reset boundary");
 
 	gpu.writeGp0((0x48u << 24u) | 0x0000ffu);
 	gpu.writeGp0(0x00010002u);
@@ -3298,7 +3295,7 @@ int main() {
 	testSaveStateRestoresPartialPolylineCommand();
 	testSaveStateRestoresGouraudPolylineIngressPhase();
 	testSaveStateRestoresCommandTimeAndFifoSuffixRelativeToSchedulerTime();
-	testGp1ClearCutsActiveC0AtExecutionFrontierWithoutCancelingDraws();
+	testGp1ClearCompletesAcceptedDrawsAndCutsC0AtExecutionFrontier();
 	testGp1ResetCancelsRestoredActiveC0Deadline();
 	testGp1ClearFifoClearsPartialGp0PacketsAndFlushesPartialCpuToVramUploads();
 	testSoftwareTextureModulationMath();

@@ -687,12 +687,14 @@ void GxGpu::clearGp0Fifo(i64 nowCycles) {
 		m_commandBuffer.wordCount = m_gp0PolylineCommandWordStart;
 	}
 	m_commandBuffer.abortReadbackAndQueuedCommands();
-	// A removed C0 marker leaves no command for its device deadline to complete.
-	if (m_pendingCommandTargetCount > m_commandBuffer.commandCount) {
-		m_scheduler.cancelDeviceService(DEVICE_SERVICE_GPU);
-		m_pendingCommandCompletionCycle = 0;
-		m_pendingCommandTargetCount = 0u;
+	// GP1(01h) completes accepted raster/upload work, but not a C0 removed above.
+	if (m_pendingCommandTargetCount > m_commandBuffer.executedCommandCount
+		&& m_pendingCommandTargetCount <= m_commandBuffer.commandCount) {
+		m_commandBuffer.completeCommandExecution(m_pendingCommandTargetCount);
 	}
+	m_scheduler.cancelDeviceService(DEVICE_SERVICE_GPU);
+	m_pendingCommandCompletionCycle = 0;
+	m_pendingCommandTargetCount = 0u;
 	m_gp0CommandWords.fill(0u);
 	m_gp0CommandWordCount = 0u;
 	m_gp0CommandTargetWordCount = 0u;

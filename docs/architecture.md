@@ -1091,17 +1091,21 @@ Its register reset clears the E1 texture-page-Y-high bit, mirrored in GPUSTAT
 bit 15, but preserves the separate GP1(09h) VRAM-Y-address-extension latch;
 only machine reset clears that latch.
 Already accepted backend commands and received image payload remain in the
-retained execution log, while an incomplete packet/polyline and an active
-readback suffix are discarded. GP1(00h) preserves both the GPUREAD data latch
-and the 1 MiB VRAM contents; machine reset clears the latch to zero. Every render
-backend consumes the same raw snapshot revision; the command buffer has no
-second VRAM-clear signal or backend-specific reset route.
+retained execution log. The surviving accepted execution frontier completes at
+the GP1 transition and its old device deadline is removed, while an incomplete
+packet/polyline and an active readback suffix are discarded. GP1(00h) preserves
+both the GPUREAD data latch and the 1 MiB VRAM contents; machine reset clears the
+latch to zero. Every render backend consumes the same raw snapshot revision; the
+command buffer has no second VRAM-clear signal or backend-specific reset route.
 
 GP1(01h) clears in-progress GP0 packet/FIFO state and aborts an active
 VRAM-to-CPU transfer. Commands before a still-pending C0 fence remain in their
 stable retained prefix; the C0 marker and its queued suffix are discarded.
 Abandoned image headers and partial polylines truncate their uncommitted word
-suffix; already received image payload remains one partial upload command.
+suffix; already received image payload remains one partial upload command and
+completes at the reset edge. A surviving accepted raster command likewise
+advances the execution frontier immediately, whereas a removed C0 marker never
+activates readback. In every case the pre-reset GPU deadline is cancelled.
 Submitted or ready readback state is invalidated by generation, lowers the DMA
 ready line, and cannot be completed by a stale backend callback. The GPUREAD
 data latch and raw VRAM remain unchanged.

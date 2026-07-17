@@ -971,12 +971,14 @@ export class GxGpu {
 			this.commandBuffer.wordCount = this.gp0PolylineCommandWordStart;
 		}
 		this.commandBuffer.abortReadbackAndQueuedCommands();
-		// A removed C0 marker leaves no command for its device deadline to complete.
-		if (this.pendingCommandTargetCount > this.commandBuffer.commandCount) {
-			this.scheduler.cancelDeviceService(DEVICE_SERVICE_GPU);
-			this.pendingCommandCompletionCycle = 0;
-			this.pendingCommandTargetCount = 0;
+		// GP1(01h) completes accepted raster/upload work, but not a C0 removed above.
+		if (this.pendingCommandTargetCount > this.commandBuffer.executedCommandCount
+			&& this.pendingCommandTargetCount <= this.commandBuffer.commandCount) {
+			this.commandBuffer.completeCommandExecution(this.pendingCommandTargetCount);
 		}
+		this.scheduler.cancelDeviceService(DEVICE_SERVICE_GPU);
+		this.pendingCommandCompletionCycle = 0;
+		this.pendingCommandTargetCount = 0;
 		this.gp0CommandWords.fill(0);
 		this.gp0CommandWordCount = 0;
 		this.gp0CommandTargetWordCount = 0;
