@@ -1765,6 +1765,7 @@ export async function finalizeRompack(
 		let offset = 0;
 		let headerBuffer: Buffer;
 		const metadataEntries: Array<{ asset: RomAsset; meta: ImgMeta | AudioMeta }> = [];
+		const wordPaddingByLength = Array.from({ length: CART_ROM_WORD_ALIGNMENT }, (_, length) => Buffer.alloc(length));
 
 		const writeBuffer = async (payload: Buffer) => {
 			if (!payload || payload.length === 0) return;
@@ -1777,7 +1778,7 @@ export async function finalizeRompack(
 		const alignRomWordSection = async () => {
 			const paddingLength = (-offset) & (CART_ROM_WORD_ALIGNMENT - 1);
 			if (paddingLength !== 0) {
-				await writeBuffer(Buffer.alloc(paddingLength));
+				await writeBuffer(wordPaddingByLength[paddingLength]);
 			}
 		};
 
@@ -1790,6 +1791,10 @@ export async function finalizeRompack(
 				status?.(`pack ${asset.type}:${asset.resid}`);
 				while (payloadRangeIndex < payloadRanges.length && payloadRanges[payloadRangeIndex].asset === asset) {
 					const range = payloadRanges[payloadRangeIndex];
+					const paddingLength = range.start - offset;
+					if (paddingLength !== 0) {
+						await writeBuffer(wordPaddingByLength[paddingLength]);
+					}
 					if (range.start !== offset) {
 						throw new Error(`[RomPacker] ROM payload layout mismatch at ${asset.type}:${asset.resid}:${range.kind}; expected offset ${range.start}, writer offset ${offset}.`);
 					}

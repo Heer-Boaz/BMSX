@@ -1,4 +1,4 @@
-import { CART_ROM_HEADER_SIZE, type RomAsset } from './format';
+import { CART_ROM_HEADER_SIZE, CART_ROM_WORD_ALIGNMENT, type RomAsset } from './format';
 
 export type RomAssetPayloadKind = 'buffer' | 'compiled' | 'texture' | 'collision_bin';
 
@@ -11,12 +11,20 @@ export type RomAssetPayloadRange = {
 	sharedAssets?: RomAsset[];
 };
 
-type SharedTexturePayloadRange = RomAssetPayloadRange & { sharedAssets: RomAsset[] };
-
 export function collectRomAssetPayloadRanges(assetList: ReadonlyArray<RomAsset>, includeLuaAssets: boolean): RomAssetPayloadRange[] {
 	const ranges: RomAssetPayloadRange[] = [];
-	const textureRanges = new Map<Buffer, SharedTexturePayloadRange>();
+	const textureSharedAssets = new Map<Buffer, RomAsset[]>();
 	let offset = CART_ROM_HEADER_SIZE;
+	const appendPayloadRange = (asset: RomAsset, kind: RomAssetPayloadKind, buffer: Buffer, sharedAssets?: RomAsset[]) => {
+		offset += (-offset) & (CART_ROM_WORD_ALIGNMENT - 1);
+		const start = offset;
+		offset += buffer.length;
+		const range: RomAssetPayloadRange = { asset, kind, start, end: offset, buffer };
+		if (sharedAssets) {
+			range.sharedAssets = sharedAssets;
+		}
+		ranges.push(range);
+	};
 	for (let index = 0; index < assetList.length; index += 1) {
 		const asset = assetList[index];
 		if (asset.type === 'lua' && !includeLuaAssets) {
@@ -24,34 +32,26 @@ export function collectRomAssetPayloadRanges(assetList: ReadonlyArray<RomAsset>,
 		}
 		const buffer = asset.buffer;
 		if (buffer && buffer.length > 0) {
-			const start = offset;
-			offset += buffer.length;
-			ranges.push({ asset, kind: 'buffer', start, end: offset, buffer });
+			appendPayloadRange(asset, 'buffer', buffer);
 		}
 		const compiledBuffer = asset.compiled_buffer;
 		if (compiledBuffer && compiledBuffer.length > 0) {
-			const start = offset;
-			offset += compiledBuffer.length;
-			ranges.push({ asset, kind: 'compiled', start, end: offset, buffer: compiledBuffer });
+			appendPayloadRange(asset, 'compiled', compiledBuffer);
 		}
 		const textureBuffer = asset.texture_buffer;
 		if (textureBuffer && textureBuffer.length > 0) {
-			const sharedRange = textureRanges.get(textureBuffer);
-			if (sharedRange) {
-				sharedRange.sharedAssets.push(asset);
+			const sharedAssets = textureSharedAssets.get(textureBuffer);
+			if (sharedAssets) {
+				sharedAssets.push(asset);
 			} else {
-				const start = offset;
-				offset += textureBuffer.length;
-				const range: SharedTexturePayloadRange = { asset, kind: 'texture', start, end: offset, buffer: textureBuffer, sharedAssets: [] };
-				textureRanges.set(textureBuffer, range);
-				ranges.push(range);
+				const newSharedAssets: RomAsset[] = [];
+				textureSharedAssets.set(textureBuffer, newSharedAssets);
+				appendPayloadRange(asset, 'texture', textureBuffer, newSharedAssets);
 			}
 		}
 		const collisionBinBuffer = asset.collision_bin_buffer;
 		if (collisionBinBuffer && collisionBinBuffer.length > 0) {
-			const start = offset;
-			offset += collisionBinBuffer.length;
-			ranges.push({ asset, kind: 'collision_bin', start, end: offset, buffer: collisionBinBuffer });
+			appendPayloadRange(asset, 'collision_bin', collisionBinBuffer);
 		}
 	}
 	return ranges;
