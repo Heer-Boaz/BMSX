@@ -29,7 +29,6 @@ constexpr u32 GX_GPU_GP1_GET_GPU_INFO = 0x10u;
 constexpr u32 GX_GPU_GP1_GET_GPU_INFO_LAST = 0x1fu;
 constexpr u32 GX_GPU_GP1_OPCODE_SHIFT = 24u;
 constexpr u32 GX_GPU_GP1_PARAM_MASK = 0x00ffffffu;
-constexpr u32 GX_GPU_GP1_OPCODE_MASK = 0x3fu;
 constexpr u32 GX_GPU_GP1_GET_GPU_INFO_INDEX_MASK = 0x0fu;
 constexpr u32 GX_GPU_INFO_GPU_TYPE_208PIN = 0x00000002u;
 

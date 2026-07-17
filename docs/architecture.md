@@ -1051,6 +1051,10 @@ polls, retries, drops, or queues a replacement word. Save-state preserves FIFO,
 packet assembly, execution frontier, and the active deadline relative to
 scheduler time.
 
+GP1 decodes the complete eight-bit command field. Undefined commands in the
+40h--FFh range are no-ops rather than aliases of commands 00h--3Fh, matching
+Mednafen's physical-hardware observation and MAME's control decoder.
+
 GP0(1Fh) asserts the GPUSTAT interrupt-request source and raises `IRQ_GPU` only
 on its low-to-high transition. `IRQ_ACK` clears the IRQ controller's pending
 edge without changing GPUSTAT, so another GP0(1Fh) cannot retrigger while the

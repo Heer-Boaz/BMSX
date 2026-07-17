@@ -694,6 +694,15 @@ void testGp1CrtcRangeRegistersLatchMaskedRawWords() {
 	require(gpu.lastFrameCommitted(), "GX-GPU CRTC state change commits a presentation frame");
 }
 
+void testGp1UndefinedHighOpcodeDoesNotMirrorReset() {
+	GpuHarness harness;
+	bmsx::GxGpu& gpu = harness.gpu;
+
+	gpu.writeGp1(bmsx::GX_GPU_GP1_DISPLAY_MODE << 24u);
+	gpu.writeGp1(0x40000000u);
+	require(gpu.readDisplayModeWord() == 0u, "GX-GPU GP1 40h does not mirror reset");
+}
+
 void testGp0IrqRequestAndGp1Acknowledge() {
 	GpuHarness harness;
 	bmsx::GxGpu& gpu = harness.gpu;
@@ -3159,6 +3168,7 @@ int main() {
 	testCommandTimingGatesGpustatIdleAndVblankExecutionFrontier();
 	testGp0MmioWriteReadyTracksFifoCapacity();
 	testGp1CrtcRangeRegistersLatchMaskedRawWords();
+	testGp1UndefinedHighOpcodeDoesNotMirrorReset();
 	testGp0IrqRequestAndGp1Acknowledge();
 	testGp0DrawModeAndMaskBitEnvironmentCommands();
 	testGp0EnvironmentRegistersAndGpuInfoQueries();

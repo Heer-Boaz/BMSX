@@ -1160,6 +1160,14 @@ test('GX-GPU latches PSX GP1 CRTC range registers as masked raw words', () => {
 	assert.equal(gpu.lastFrameCommitted(), true);
 });
 
+test('GX-GPU does not mirror undefined GP1 40h to reset', () => {
+	const { gpu } = createGpu();
+
+	gpu.writeGp1(GX_GPU_GP1_DISPLAY_MODE << 24);
+	gpu.writeGp1(0x40000000);
+	assert.equal(gpu.readDisplayModeWord(), 0);
+});
+
 test('GX-GPU handles PSX GP0 IRQ request and GP1 interrupt acknowledge', () => {
 	const { memory, gpu } = createGpu();
 

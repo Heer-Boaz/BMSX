@@ -368,7 +368,7 @@ u32 GxGpu::writeGp1(u32 word) {
 	const i64 nowCycles = m_scheduler.currentNowCycles();
 	synchronizeCommandExecution(nowCycles);
 	m_gp1Word = word;
-	const u32 opcode = (word >> GX_GPU_GP1_OPCODE_SHIFT) & GX_GPU_GP1_OPCODE_MASK;
+	const u32 opcode = word >> GX_GPU_GP1_OPCODE_SHIFT;
 	switch (opcode) {
 	case GX_GPU_GP1_RESET:
 		clearGp0Fifo(nowCycles);

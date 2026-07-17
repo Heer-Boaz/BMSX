@@ -67,7 +67,6 @@ export const GX_GPU_GP1_GET_GPU_INFO = 0x10;
 export const GX_GPU_GP1_GET_GPU_INFO_LAST = 0x1f;
 export const GX_GPU_GP1_OPCODE_SHIFT = 24;
 export const GX_GPU_GP1_PARAM_MASK = 0x00ffffff;
-export const GX_GPU_GP1_OPCODE_MASK = 0x3f;
 export const GX_GPU_GP1_GET_GPU_INFO_INDEX_MASK = 0x0f;
 export const GX_GPU_INFO_GPU_TYPE_208PIN = 0x00000002;
 
@@ -624,7 +623,7 @@ export class GxGpu {
 		this.synchronizeCommandTiming(nowCycles);
 		const command = word >>> 0;
 		this.gp1Word = command;
-		const opcode = (command >>> GX_GPU_GP1_OPCODE_SHIFT) & GX_GPU_GP1_OPCODE_MASK;
+		const opcode = command >>> GX_GPU_GP1_OPCODE_SHIFT;
 		switch (opcode) {
 			case GX_GPU_GP1_RESET:
 				this.clearGp0Fifo(nowCycles);
