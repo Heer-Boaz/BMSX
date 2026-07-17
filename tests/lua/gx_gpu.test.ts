@@ -855,6 +855,39 @@ test('GX-GPU mirrors PSX GPUSTAT interlaced field and scanout line bits', () => 
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_DISPLAY_LINE_LSB) >>> 0, 0);
 	gpu.presentReadyFrameOnVblankEdge();
 	assert.equal(gpu.lastFrameCommitted(), true);
+
+	gpu.setScanoutTiming(true, 90, 100, 10);
+	gpu.setScanoutTiming(false, 0, 100, 10);
+	gpu.setScanoutTiming(true, 90, 100, 10);
+	gpu.presentReadyFrameOnVblankEdge();
+	assert.equal(gpu.lastFrameCommitted(), true);
+
+	gpu.writeGp1(GX_GPU_GP1_RESET << 24);
+	assert.equal((gpu.readStatus() & GX_GPU_STATUS_DISPLAY_LINE_LSB) >>> 0, GX_GPU_STATUS_DISPLAY_LINE_LSB >>> 0);
+	const presentedBeforeResetEdge = gpu.readDeviceOutput();
+	assert.equal(presentedBeforeResetEdge.displayModeWord, 0x00000024);
+	assert.equal(presentedBeforeResetEdge.displayStartWord, 7 << 10);
+	assert.equal(gpu.lastFrameCommitted(), true);
+
+	gpu.writeGp1((GX_GPU_GP1_DISPLAY_MODE << 24) | 0x00000024);
+	gpu.setScanoutTiming(false, 0, 100, 10);
+	assert.equal(
+		(gpu.readStatus() & (GX_GPU_STATUS_INTERLACED_FIELD | GX_GPU_STATUS_DISPLAY_LINE_LSB)) >>> 0,
+		GX_GPU_STATUS_DISPLAY_LINE_LSB >>> 0,
+	);
+	gpu.presentReadyFrameOnVblankEdge();
+	assert.equal(gpu.lastFrameCommitted(), true);
+	const presentedAfterResetEdge = gpu.readDeviceOutput();
+	assert.equal(presentedAfterResetEdge.displayModeWord, 0x00000024);
+	assert.equal(presentedAfterResetEdge.displayStartWord, 0);
+
+	gpu.reset();
+	assert.equal(
+		(gpu.readStatus() & (GX_GPU_STATUS_INTERLACED_FIELD | GX_GPU_STATUS_DISPLAY_LINE_LSB)) >>> 0,
+		GX_GPU_STATUS_INTERLACED_FIELD >>> 0,
+	);
+	assert.equal(gpu.readDeviceOutput().displayModeWord, GX_GPU_RESET_DISPLAY_MODE_WORD);
+	assert.equal(gpu.lastFrameCommitted(), false);
 });
 
 test('GX-GPU state restore preserves interlaced field latches', () => {
@@ -1769,6 +1802,7 @@ test('GX-GPU software backend captures live VRAM into save-state snapshot', () =
 	assert.equal(saveState.vramBytes.length, GX_GPU_VRAM_BYTE_COUNT);
 	assert.equal(saveState.vramBytes[byteIndex], 0x1f);
 	assert.equal(saveState.vramBytes[byteIndex + 1], 0x00);
+	gpu.writeGp1(GX_GPU_GP1_RESET << 24);
 	gpu.presentReadyFrameOnVblankEdge();
 	assert.equal(gpu.lastFrameCommitted(), true);
 	gpu.retirePresentedCommands();

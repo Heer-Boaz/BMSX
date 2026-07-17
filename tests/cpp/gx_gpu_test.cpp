@@ -355,6 +355,34 @@ void testInterlacedScanoutStatusBits() {
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_DISPLAY_LINE_LSB) == 0u, "GX-GPU 480i active display line bit follows display field");
 	gpu.presentReadyFrameOnVblankEdge();
 	require(gpu.lastFrameCommitted(), "GX-GPU field-only transition commits a presentation frame");
+
+	gpu.setScanoutTiming(true, 90, 100, 10);
+	gpu.setScanoutTiming(false, 0, 100, 10);
+	gpu.setScanoutTiming(true, 90, 100, 10);
+	gpu.presentReadyFrameOnVblankEdge();
+	require(gpu.lastFrameCommitted(), "GX-GPU records the field transition before GP1 reset");
+
+	gpu.writeGp1(bmsx::GX_GPU_GP1_RESET << 24u);
+	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_DISPLAY_LINE_LSB) == bmsx::GX_GPU_STATUS_DISPLAY_LINE_LSB, "GX-GPU GP1 reset preserves physical scanout phase");
+	const bmsx::GxGpuDeviceOutput& presentedBeforeResetEdge = gpu.readDeviceOutput();
+	require(presentedBeforeResetEdge.displayModeWord == 0x00000024u, "GX-GPU GP1 reset retains the VBLANK-latched display mode");
+	require(presentedBeforeResetEdge.displayStartWord == (7u << 10u), "GX-GPU GP1 reset retains the VBLANK-latched display start");
+	require(gpu.lastFrameCommitted(), "GX-GPU GP1 reset preserves a successful prior VBLANK result");
+
+	gpu.writeGp1((bmsx::GX_GPU_GP1_DISPLAY_MODE << 24u) | 0x00000024u);
+	gpu.setScanoutTiming(false, 0, 100, 10);
+	const uint32_t scanoutMask = bmsx::GX_GPU_STATUS_INTERLACED_FIELD | bmsx::GX_GPU_STATUS_DISPLAY_LINE_LSB;
+	require((gpu.readStatus() & scanoutMask) == bmsx::GX_GPU_STATUS_DISPLAY_LINE_LSB, "GX-GPU GP1 reset retains the entry display-field latch and toggles the raw field once at exit");
+	gpu.presentReadyFrameOnVblankEdge();
+	require(gpu.lastFrameCommitted(), "GX-GPU post-reset registers publish on the next VBLANK");
+	const bmsx::GxGpuDeviceOutput& presentedAfterResetEdge = gpu.readDeviceOutput();
+	require(presentedAfterResetEdge.displayModeWord == 0x00000024u, "GX-GPU VBLANK publishes the current display mode");
+	require(presentedAfterResetEdge.displayStartWord == 0u, "GX-GPU VBLANK publishes the reset display start");
+
+	gpu.reset();
+	require((gpu.readStatus() & scanoutMask) == bmsx::GX_GPU_STATUS_INTERLACED_FIELD, "GX-GPU machine reset initializes physical scanout phase");
+	require(gpu.readDeviceOutput().displayModeWord == bmsx::GX_GPU_RESET_DISPLAY_MODE_WORD, "GX-GPU machine reset initializes presented display mode");
+	require(!gpu.lastFrameCommitted(), "GX-GPU machine reset initializes the VBLANK result");
 }
 
 void testStateRestorePreservesInterlacedFieldLatches() {
@@ -1770,6 +1798,7 @@ void testSoftwareBackendCapturesMidFrameVramAndPublishesItOnce() {
 	const size_t byteIndex = bmsx::gxGpuSoftwareVramIndex(4, 5) << 1u;
 	require(gpu.readVramSnapshotBytes()[byteIndex] == 0x1fu, "GX-GPU snapshot capture stores rendered VRAM low byte");
 	require(gpu.readVramSnapshotBytes()[byteIndex + 1u] == 0u, "GX-GPU snapshot capture stores rendered VRAM high byte");
+	gpu.writeGp1(bmsx::GX_GPU_GP1_RESET << 24u);
 	gpu.presentReadyFrameOnVblankEdge();
 	require(gpu.lastFrameCommitted(), "GX-GPU compacted mid-frame VRAM publishes on the next VBLANK");
 	gpu.retirePresentedCommands();

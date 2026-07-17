@@ -469,11 +469,15 @@ and MAME
     registers, packet/FIFO state and the active readback request, while only
     machine reset clears the accepted backend log, regenerates the fixed raw
     VRAM power-on pattern, advances the shared unsigned 64-bit snapshot revision
-    and clears GPUREAD to zero. GP1 reset retains accepted commands and received
+    and clears GPUREAD to zero. Machine reset also initializes physical
+    beam/VBlank/field phase and the VBlank-latched presentation state. GP1 reset
+    leaves that phase running, retains the previously presented registers until
+    the next VBlank edge, preserves the prior edge result and cannot swallow a
+    pending compacted-VRAM publication. It retains accepted commands and received
     A0 payload alongside the GPUREAD latch and raw VRAM. The command buffer owns
-    no separate VRAM-clear signal. Mirrored TS/C++ raw-VRAM tests cover the
-    pattern digest, reset/save-state distinction and persistent-backend machine
-    recreation.
+    no separate VRAM-clear signal. Mirrored TS/C++ raw-VRAM and scanout tests
+    cover the pattern digest, reset/save-state distinction, physical field phase,
+    deferred register publication and persistent-backend machine recreation.
   - [x] Make GP1(01h) abort active C0 readback state and its queued suffix.
     Pending fences retain the stable command prefix without a revision; a
     submitted/ready transfer invalidates its backend generation and publishes a

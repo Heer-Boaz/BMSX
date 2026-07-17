@@ -44,7 +44,26 @@ void GxGpu::reset() {
 	initializeGxGpuVramPowerOn(m_vramSnapshotBytes.data());
 	publishVramSnapshotRevision();
 	clearGp0CommandState();
+	m_scanoutVblankActive = false;
+	m_scanoutInterlacedField = 0u;
+	m_scanoutInterlacedDisplayField = 0u;
+	m_scanoutActiveLineLsb = 0u;
+	m_scanoutFrameStartCycle = 0;
+	m_scanoutCyclesPerFrame = 1;
+	m_scanoutTotalScanlines = 313;
 	resetGpuRegisters();
+	latchPresentationRegisters();
+	m_lastFrameCommitted = false;
+	m_vramPresentationPending = false;
+}
+
+void GxGpu::latchPresentationRegisters() {
+	m_presentStatusWord = m_statusWord;
+	m_presentDisplayModeWord = m_displayModeWord;
+	m_presentDisplayStartWord = m_displayStartWord;
+	m_presentVramYAddressExtensionWord = m_vramYAddressExtensionWord;
+	m_presentHorizontalDisplayRangeWord = m_horizontalDisplayRangeWord;
+	m_presentVerticalDisplayRangeWord = m_verticalDisplayRangeWord;
 }
 
 void GxGpu::resetGpuRegisters() {
@@ -62,21 +81,6 @@ void GxGpu::resetGpuRegisters() {
 	m_displayStartWord = 0u;
 	m_horizontalDisplayRangeWord = GX_GPU_RESET_HORIZONTAL_DISPLAY_RANGE_WORD;
 	m_verticalDisplayRangeWord = GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD;
-	m_presentStatusWord = GX_GPU_STATUS_RESET_WORD;
-	m_presentDisplayModeWord = GX_GPU_RESET_DISPLAY_MODE_WORD;
-	m_presentDisplayStartWord = 0u;
-	m_presentVramYAddressExtensionWord = m_vramYAddressExtensionWord;
-	m_presentHorizontalDisplayRangeWord = GX_GPU_RESET_HORIZONTAL_DISPLAY_RANGE_WORD;
-	m_presentVerticalDisplayRangeWord = GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD;
-	m_scanoutVblankActive = false;
-	m_scanoutInterlacedField = 0u;
-	m_scanoutInterlacedDisplayField = 0u;
-	m_scanoutActiveLineLsb = 0u;
-	m_scanoutFrameStartCycle = 0;
-	m_scanoutCyclesPerFrame = 1;
-	m_scanoutTotalScanlines = 313;
-	m_lastFrameCommitted = false;
-	m_vramPresentationPending = false;
 	updateDisplayModeStatusBits();
 	m_memory.writeIoValue(IO_GX_GPU_GP0, valueNumber(static_cast<double>(m_gpuReadWord)));
 	writeStatusIo();
@@ -584,12 +588,7 @@ void GxGpu::presentReadyFrameOnVblankEdge() {
 		|| m_presentVramYAddressExtensionWord != m_vramYAddressExtensionWord
 		|| m_presentHorizontalDisplayRangeWord != m_horizontalDisplayRangeWord
 		|| m_presentVerticalDisplayRangeWord != m_verticalDisplayRangeWord;
-	m_presentStatusWord = m_statusWord;
-	m_presentDisplayModeWord = m_displayModeWord;
-	m_presentDisplayStartWord = m_displayStartWord;
-	m_presentVramYAddressExtensionWord = m_vramYAddressExtensionWord;
-	m_presentHorizontalDisplayRangeWord = m_horizontalDisplayRangeWord;
-	m_presentVerticalDisplayRangeWord = m_verticalDisplayRangeWord;
+	latchPresentationRegisters();
 	m_commandBuffer.sealCommandsForPresentation();
 	m_lastFrameCommitted = m_vramPresentationPending
 		|| m_commandBuffer.hasUnretiredPresentCommands()
@@ -1009,7 +1008,6 @@ void GxGpu::updateScanoutStatusBits() {
 		}
 	} else {
 		m_scanoutActiveLineLsb = 0u;
-		m_scanoutInterlacedDisplayField = 0u;
 		if (((displayStartY + static_cast<u32>(scanoutLine())) & 1u) != 0u) {
 			scanoutBits |= GX_GPU_STATUS_DISPLAY_LINE_LSB;
 		}

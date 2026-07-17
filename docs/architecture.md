@@ -1085,8 +1085,13 @@ pending latch as two distinct hardware words.
 
 Machine/device reset and GP1(00h) are distinct GPU transitions. A machine reset
 regenerates the deterministic raw-VRAM power-on contents, advances the shared
-unsigned 64-bit snapshot revision, and clears the retained command stream. GP1(00h)
-resets GPU registers and applies the same packet/FIFO transition as GP1(01h).
+unsigned 64-bit snapshot revision, clears the retained command stream, initializes
+the physical scanout beam/VBlank/field phase, and initializes the VBlank-latched
+presentation state. GP1(00h) resets GPU registers at the current physical scanout
+phase and applies the same packet/FIFO transition as GP1(01h). It does not publish
+those reset register values directly: the previous presented registers remain
+visible until the next VBlank presentation edge, and neither the prior edge result
+nor a pending compacted-VRAM publication is discarded.
 Its register reset clears the E1 texture-page-Y-high bit, mirrored in GPUSTAT
 bit 15, but preserves the separate GP1(09h) VRAM-Y-address-extension latch;
 only machine reset clears that latch.

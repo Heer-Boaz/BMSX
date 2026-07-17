@@ -274,6 +274,7 @@ private:
 	void publishVramSnapshotRevision();
 	void retireCommandPrefix(size_t retiredCommands);
 	void resetGpuRegisters();
+	void latchPresentationRegisters();
 	void writeDisplayDisableWord(u32 word);
 	void clearGp0CommandState();
 	void clearGp0Fifo(i64 nowCycles);
