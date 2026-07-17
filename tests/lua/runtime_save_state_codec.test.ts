@@ -245,6 +245,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 						],
 					},
 					sampleCarry: 8,
+					sampleSequence: 9,
 					apuStatus: 1,
 					apuFaultCode: 0x0102,
 					apuFaultDetail: 0x1234,

@@ -46,6 +46,7 @@ export async function resumeFromSnapshot(runtime: Runtime, state: RuntimeResumeS
 	runtime.luaRuntimeFailed = false;
 	clearOverlayFrame();
 	applyRuntimeMachineState(runtime, snapshot.machineState);
+	machineManager.sndmaster.resetPlaybackState();
 	resumeLuaProgramState(runtime, snapshot, preserveSystemModules);
 }
 

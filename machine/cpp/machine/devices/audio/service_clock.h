@@ -21,7 +21,8 @@ public:
 
 	void reset(i64 nowCycles);
 	i64 captureSampleCarry() const;
-	void restore(i64 sampleCarry, i64 nowCycles);
+	i64 captureSampleSequence() const;
+	void restore(i64 sampleCarry, i64 sampleSequence, i64 nowCycles);
 	void setCpuHz(i64 cpuHz, i64 nowCycles);
 	void synchronize(i64 nowCycles);
 	void scheduleNext(i64 nowCycles);
@@ -33,6 +34,7 @@ private:
 	const ApuOutputMixer& m_audioOutput;
 	i64 m_cpuHz;
 	i64 m_sampleCarry = 0;
+	i64 m_sampleSequence = 0;
 	i64 m_lastCycle = 0;
 	BudgetAccrual m_budgetAccrual{};
 };

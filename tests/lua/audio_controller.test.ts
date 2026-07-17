@@ -83,6 +83,7 @@ import {
 } from '../../machine/ts/machine/bus/io';
 import { AudioController } from '../../machine/ts/machine/devices/audio/controller';
 import { ApuOutputMixer } from '../../machine/ts/machine/devices/audio/output';
+import { APU_OUTPUT_RING_CAPACITY_FRAMES } from '../../machine/ts/machine/devices/audio/output_ring';
 import { resolveApuPhaseStep } from '../../machine/ts/machine/devices/audio/playback';
 import { ApuSourceDma } from '../../machine/ts/machine/devices/audio/source';
 import type { AudioControllerState, ApuOutputState, ApuOutputVoiceState } from '../../machine/ts/machine/devices/audio/save_state';
@@ -91,6 +92,7 @@ import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { CART_ROM_BASE, PROGRAM_ROM_BASE, RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/machine/memory/map';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
+import { cyclesUntilBudgetUnits } from '../../machine/ts/machine/scheduler/budget';
 import { AudioOutputResampler } from '../../machine/ts/audio/output_resampler';
 import { Machine } from '../../machine/ts/machine/machine';
 import { captureMachineSaveState, captureMachineState } from '../../machine/ts/machine/save_state';
@@ -859,6 +861,7 @@ test('APU save restore resumes the exact future PCM phase while transport stays 
 	beginLongPcmVoice(live);
 	advanceRealApu(live, 7);
 	const saved = live.audio.captureState();
+	assert.equal(saved.sampleSequence, 7);
 	const restored = restoreRealAudioHarness(saved, 7);
 
 	assert.equal(restored.audioOutput.outputRing.queuedFrames(), 0);
@@ -986,7 +989,54 @@ test('APU output-ring overflow drops presentation history without stalling hardw
 	writeApuCommand(harness.memory, harness.audio, APU_CMD_PLAY);
 
 	advanceRealApu(harness, 20000);
-	assert.equal(harness.audioOutput.outputRing.queuedFrames(), 16384);
+	assert.equal(harness.audioOutput.outputRing.queuedFrames(), APU_OUTPUT_RING_CAPACITY_FRAMES);
 	assert.equal(harness.memory.readIoU32(IO_APU_ACTIVE_MASK), 2);
 	assert.equal(harness.audio.captureState().output.voices.length, 1);
+});
+
+test('APU output reaches a 48 kHz PAL host within the bounded presentation window after one idle second', () => {
+	const cpuHz = 50_000_000;
+	const hostSampleRate = 48000;
+	const hostFramesPerPalFrame = 960;
+	const harness = createRealAudioHarness();
+	harness.audio.setTiming(cpuHz, 0);
+	const primeCycle = cyclesUntilBudgetUnits(cpuHz, APU_SAMPLE_RATE_HZ, 0, 2);
+	advanceRealApu(harness, primeCycle);
+	const primedOutput = new Int16Array(2);
+	assert.equal(harness.hostOutput.pull(harness.audioOutput.outputRing, primedOutput, 1, hostSampleRate, 1), 1);
+	assert.deepEqual(primedOutput, new Int16Array(2));
+
+	const playCycle = primeCycle + cpuHz;
+	advanceRealApu(harness, playCycle);
+	assert.equal(harness.audio.captureState().sampleSequence, APU_SAMPLE_RATE_HZ + 2);
+	assert.equal(harness.audioOutput.outputRing.queuedFrames(), APU_OUTPUT_RING_CAPACITY_FRAMES);
+
+	writeSquareGeneratorRegisters(harness.memory);
+	harness.memory.writeValue(IO_APU_RATE_STEP_Q16, APU_RATE_STEP_Q16_ONE);
+	harness.memory.writeValue(IO_APU_GAIN_Q12, 0x1000);
+	harness.memory.writeValue(IO_APU_SLOT, 1);
+	harness.memory.writeValue(IO_APU_CMD, APU_CMD_PLAY);
+	harness.audio.onService(playCycle);
+	const carry = harness.audio.captureState().sampleCarry;
+	advanceRealApu(harness, playCycle + cyclesUntilBudgetUnits(cpuHz, APU_SAMPLE_RATE_HZ, carry, 2));
+
+	const output = new Int16Array(hostFramesPerPalFrame * 2);
+	const historyNumerator = APU_OUTPUT_RING_CAPACITY_FRAMES * hostSampleRate + APU_SAMPLE_RATE_HZ - 1;
+	const historyAtHostRate = (historyNumerator - historyNumerator % APU_SAMPLE_RATE_HZ) / APU_SAMPLE_RATE_HZ;
+	const publicationBound = historyAtHostRate + hostFramesPerPalFrame;
+	let publishedFrames = 0;
+	let firstAudibleFrame = -1;
+	while (publishedFrames < publicationBound && firstAudibleFrame < 0) {
+		const produced = harness.hostOutput.pull(harness.audioOutput.outputRing, output, hostFramesPerPalFrame, hostSampleRate, 1);
+		assert.notEqual(produced, 0, 'host drain must keep making progress through retained presentation');
+		for (let frame = 0; frame < produced; frame += 1) {
+			if (output[frame * 2] !== 0 || output[frame * 2 + 1] !== 0) {
+				firstAudibleFrame = publishedFrames + frame;
+				break;
+			}
+		}
+		publishedFrames += produced;
+	}
+	assert.notEqual(firstAudibleFrame, -1, 'post-command audio must reach the host resampler');
+	assert.ok(firstAudibleFrame < publicationBound, 'post-command audio must stay within AOUT history plus one host publication quantum');
 });

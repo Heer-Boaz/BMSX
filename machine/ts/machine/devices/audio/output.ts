@@ -296,18 +296,20 @@ export class ApuOutputMixer {
 		return earliest;
 	}
 
-	public renderMachineFrames(frameCount: number): number {
+	public renderMachineFrames(frameCount: number, startSequence: number): number {
 		let endedMask = 0;
 		let remaining = frameCount;
+		let batchSequence = startSequence;
 		while (remaining !== 0) {
 			const batchFrames = remaining < ApuOutputMixer.MIX_BATCH_FRAMES ? remaining : ApuOutputMixer.MIX_BATCH_FRAMES;
-			endedMask |= this.renderMachineBatch(batchFrames);
+			endedMask |= this.renderMachineBatch(batchFrames, batchSequence);
+			batchSequence += batchFrames;
 			remaining -= batchFrames;
 		}
 		return endedMask >>> 0;
 	}
 
-	private renderMachineBatch(frameCount: number): number {
+	private renderMachineBatch(frameCount: number, startSequence: number): number {
 		const totalSamples = frameCount * 2;
 		this.mixBuffer.fill(0, 0, totalSamples);
 		let endedMask = 0;
@@ -415,7 +417,7 @@ export class ApuOutputMixer {
 		for (let index = 0; index < totalSamples; index += 1) {
 			output[index] = Math.round(clamp(mix[index]!, -1, 1) * 32767);
 		}
-		this.outputRing.write(output, frameCount);
+		this.outputRing.write(output, frameCount, startSequence);
 		return endedMask >>> 0;
 	}
 

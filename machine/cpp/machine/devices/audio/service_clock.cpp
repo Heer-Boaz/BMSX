@@ -22,6 +22,7 @@ ApuServiceClock::ApuServiceClock(
 
 void ApuServiceClock::reset(i64 nowCycles) {
 	m_sampleCarry = 0;
+	m_sampleSequence = 0;
 	m_lastCycle = nowCycles;
 	m_scheduler.cancelDeviceService(DEVICE_SERVICE_APU);
 }
@@ -30,8 +31,13 @@ i64 ApuServiceClock::captureSampleCarry() const {
 	return m_sampleCarry;
 }
 
-void ApuServiceClock::restore(i64 sampleCarry, i64 nowCycles) {
+i64 ApuServiceClock::captureSampleSequence() const {
+	return m_sampleSequence;
+}
+
+void ApuServiceClock::restore(i64 sampleCarry, i64 sampleSequence, i64 nowCycles) {
 	m_sampleCarry = sampleCarry;
+	m_sampleSequence = sampleSequence;
 	m_lastCycle = nowCycles;
 }
 
@@ -46,7 +52,8 @@ void ApuServiceClock::synchronize(i64 nowCycles) {
 	accrueBudgetUnits(m_budgetAccrual, m_cpuHz, APU_SAMPLE_RATE_HZ, m_sampleCarry, cycles);
 	m_sampleCarry = m_budgetAccrual.carry;
 	if (m_budgetAccrual.wholeUnits != 0) {
-		m_activeSlots.advance(m_budgetAccrual.wholeUnits);
+		m_activeSlots.advance(m_budgetAccrual.wholeUnits, m_sampleSequence);
+		m_sampleSequence += m_budgetAccrual.wholeUnits;
 	}
 }
 

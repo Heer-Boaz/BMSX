@@ -6,6 +6,7 @@ export class AudioOutputResampler {
 	private phase = 0;
 	private hasCurrent = false;
 	private hasNext = false;
+	private lastSourceSequence = 0;
 	private currentLeft = 0;
 	private currentRight = 0;
 	private nextLeft = 0;
@@ -28,6 +29,11 @@ export class AudioOutputResampler {
 		if (this.outputRate !== outputSampleRate) {
 			this.reset();
 			this.outputRate = outputSampleRate;
+		}
+		if (this.hasCurrent && ring.queuedFrames() !== 0 && ring.firstFrameSequence() !== this.lastSourceSequence + 1) {
+			this.phase %= 1;
+			this.hasCurrent = false;
+			this.hasNext = false;
 		}
 		const sourceStep = APU_SAMPLE_RATE_HZ / outputSampleRate;
 		let outputIndex = 0;
@@ -62,6 +68,7 @@ export class AudioOutputResampler {
 			if (ring.queuedFrames() === 0) {
 				return false;
 			}
+			this.lastSourceSequence = ring.firstFrameSequence();
 			const packed = ring.readFramePacked();
 			this.currentLeft = (packed << 16) >> 16;
 			this.currentRight = packed >> 16;
@@ -77,6 +84,7 @@ export class AudioOutputResampler {
 	}
 
 	private readNext(ring: ApuOutputRing): void {
+		this.lastSourceSequence = ring.firstFrameSequence();
 		const packed = ring.readFramePacked();
 		this.nextLeft = (packed << 16) >> 16;
 		this.nextRight = packed >> 16;

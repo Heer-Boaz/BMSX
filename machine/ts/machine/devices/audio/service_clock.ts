@@ -8,6 +8,7 @@ import { ApuOutputMixer } from './output';
 export class ApuServiceClock {
 	private cpuHz = APU_SAMPLE_RATE_HZ;
 	private sampleCarry = 0;
+	private sampleSequence = 0;
 	private lastCycle = 0;
 	private readonly budgetAccrual: BudgetAccrual = { wholeUnits: 0, carry: 0 };
 
@@ -20,6 +21,7 @@ export class ApuServiceClock {
 
 	public reset(nowCycles: number): void {
 		this.sampleCarry = 0;
+		this.sampleSequence = 0;
 		this.lastCycle = nowCycles;
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_APU);
 	}
@@ -28,8 +30,13 @@ export class ApuServiceClock {
 		return this.sampleCarry;
 	}
 
-	public restore(sampleCarry: number, nowCycles: number): void {
+	public captureSampleSequence(): number {
+		return this.sampleSequence;
+	}
+
+	public restore(sampleCarry: number, sampleSequence: number, nowCycles: number): void {
 		this.sampleCarry = sampleCarry;
+		this.sampleSequence = sampleSequence;
 		this.lastCycle = nowCycles;
 	}
 
@@ -44,7 +51,8 @@ export class ApuServiceClock {
 		accrueBudgetUnits(this.budgetAccrual, this.cpuHz, APU_SAMPLE_RATE_HZ, this.sampleCarry, cycles);
 		this.sampleCarry = this.budgetAccrual.carry;
 		if (this.budgetAccrual.wholeUnits !== 0) {
-			this.activeSlots.advance(this.budgetAccrual.wholeUnits);
+			this.activeSlots.advance(this.budgetAccrual.wholeUnits, this.sampleSequence);
+			this.sampleSequence += this.budgetAccrual.wholeUnits;
 		}
 	}
 

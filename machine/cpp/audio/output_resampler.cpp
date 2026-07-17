@@ -24,6 +24,11 @@ auto AudioOutputResampler::pull(
 		reset();
 		m_outputRate = outputSampleRate;
 	}
+	if (m_hasCurrent && ring.queuedFrames() != 0u && ring.firstFrameSequence() != m_lastSourceSequence + 1) {
+		m_phase -= static_cast<i64>(m_phase);
+		m_hasCurrent = false;
+		m_hasNext = false;
+	}
 	const f64 sourceStep = static_cast<f64>(APU_SAMPLE_RATE_HZ) / static_cast<f64>(outputSampleRate);
 	size_t outputIndex = 0u;
 	size_t producedFrames = 0u;
@@ -58,6 +63,7 @@ bool AudioOutputResampler::prime(ApuOutputRing& ring) {
 		if (ring.queuedFrames() == 0u) {
 			return false;
 		}
+		m_lastSourceSequence = ring.firstFrameSequence();
 		const u32 packed = ring.readFramePacked();
 		m_currentLeft = static_cast<i16>(packed & 0xffffu);
 		m_currentRight = static_cast<i16>(packed >> 16u);
@@ -73,6 +79,7 @@ bool AudioOutputResampler::prime(ApuOutputRing& ring) {
 }
 
 void AudioOutputResampler::readNext(ApuOutputRing& ring) {
+	m_lastSourceSequence = ring.firstFrameSequence();
 	const u32 packed = ring.readFramePacked();
 	m_nextLeft = static_cast<i16>(packed & 0xffffu);
 	m_nextRight = static_cast<i16>(packed >> 16u);

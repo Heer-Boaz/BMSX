@@ -1334,15 +1334,16 @@ Cart-visible ingress and state are:
 - source/sample memory;
 - active-slot, status, fault, event, and IRQ latches.
 
-The service clock retains an absolute machine-cycle edge and the fractional
-CPU-cycle-to-sample carry. It synchronizes the voice datapath to the exact
-current machine cycle before live selected-slot writes, command admission,
-timing-dependent reads, and save-state capture. Normal service runs are batched
-to at most 128 samples, but the next service deadline is shortened to the first
-finite-source or fade completion. Slot END and its IRQ therefore occur on the
-exact hardware sample edge without scheduling one emulator event per sample.
-Command FIFO consumption occurs at the command-write machine-cycle edge; a
-batch can never render across a live register mutation.
+The service clock retains an absolute machine-cycle edge, the fractional
+CPU-cycle-to-sample carry, and the absolute DAC-sample sequence. It synchronizes
+the voice datapath to the exact current machine cycle before live selected-slot
+writes, command admission, timing-dependent reads, and save-state capture.
+Normal service runs are batched to at most 128 samples, but the next service
+deadline is shortened to the first finite-source or fade completion. Slot END
+and its IRQ therefore occur on the exact hardware sample edge without
+scheduling one emulator event per sample. Command FIFO consumption occurs at
+the command-write machine-cycle edge; a batch can never render across a live
+register mutation.
 
 `machine/devices/audio/slot_bank` owns raw slot register words, slot phases, and
 active-mask state only. The live AOUT voice record is the single playback
@@ -1364,22 +1365,26 @@ and host pull perform no allocation; source programming and save-state remain
 explicit non-realtime boundaries that may allocate source or serialized state.
 
 The mixer writes the continuous 44.1-kHz machine timeline, including silent
-intervals, to the fixed-capacity AOUT ring. That ring is presentation transport,
-not cart-visible hardware state. When a host is late or absent, the ring
-overwrites its oldest presentation frames while voice phase, filters, fades,
-END events, IRQs, and emulated time continue normally.
+intervals, to the 3072-frame AOUT presentation ring. Each batch carries its
+absolute DAC sequence and the ring retains the sequence of its oldest frame.
+The ring is not cart-visible hardware state. When a host is late or absent, it
+keeps at most about 70 ms and overwrites older presentation history while voice
+phase, filters, fades, END events, IRQs, and emulated time continue normally.
 The former AOUT occupancy MMIO words remain reserved address holes so the later
 APU register addresses do not move; APU status exposes command FIFO state, not
 host queue occupancy.
 
 `audio/SoundMaster` owns host master gain and the retained
-44.1-kHz-to-host-rate resampler. Browser and libretro transports may request
-arbitrary chunk sizes without choosing APU time or changing device cadence.
-Resampler phase and boundary samples persist across callbacks and source
-starvation. A pull publishes only the frames backed by a complete interpolation
-window; it neither waits for a second source-side prebuffer nor pads an
-unavailable tail with queued silence. Immediately before a host drain, the APU
-controller materializes samples only through its own current scheduler cycle.
+44.1-kHz-to-host-rate resampler. Browser and libretro transports request bounded
+chunks without choosing APU time or changing device cadence. Resampler phase
+and boundary samples persist across callbacks and source starvation. If AOUT
+has overwritten the sequence following a retained interpolation endpoint, the
+resampler starts at the oldest still-present frame without resetting the
+fractional output-clock phase. A pull publishes only the frames backed by a
+complete interpolation window; it neither waits for a second source-side
+prebuffer nor pads an unavailable tail with queued silence. Immediately before
+a host drain, the APU controller materializes samples only through its own
+current scheduler cycle.
 This removes the internal 128-sample service quantum from host cadence without
 generating future machine audio or moving the absolute next device deadline.
 The browser worker writes exactly that produced prefix into its retained
@@ -1390,11 +1395,11 @@ machine-output latency. Clearing or underrunning host transport can produce
 silence only; it cannot backpressure the APU.
 
 Save-state first synchronizes the APU to the scheduler cycle, then captures the
-command FIFO, raw slot bank, source-DMA bytes, service-clock carry, event/fault
-latches, and the single live voice datapath. It deliberately excludes the AOUT
-ring and host resampler. Restore reinstates machine state at the restored cycle,
-clears presentation transport, restores voices without generating samples, and
-schedules the next exact hardware edge.
+command FIFO, raw slot bank, source-DMA bytes, service-clock carry and DAC
+sequence, event/fault latches, and the single live voice datapath. It deliberately
+excludes the AOUT ring and host resampler. Restore reinstates machine state at
+the restored cycle, clears presentation transport, restores voices without
+generating samples, and schedules the next exact hardware edge.
 
 The mirrored owners are `machine/devices/audio/{controller,service_clock,
 active_slots,slot_bank,command_ingress,command_executor,output,output_ring,

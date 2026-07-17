@@ -44,8 +44,8 @@ export class ApuActiveSlots {
 		this.writeActiveMask();
 	}
 
-	public advance(samples: number): void {
-		const endedMask = this.audioOutput.renderMachineFrames(samples);
+	public advance(samples: number, startSequence: number): void {
+		const endedMask = this.audioOutput.renderMachineFrames(samples, startSequence);
 		for (let slot = 0; slot < APU_SLOT_COUNT; slot += 1) {
 			if ((endedMask & (1 << slot)) !== 0) {
 				const sourceAddr = this.slots.sourceAddr(slot);

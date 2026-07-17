@@ -889,6 +889,7 @@ BinValue encodeAudioControllerState(const AudioControllerState& state) {
 	output["voices"] = encodeVector<ApuOutputVoiceState>(state.output.voices, encodeApuOutputVoiceState);
 	object["output"] = BinValue(std::move(output));
 	object["sampleCarry"] = encodeScalar<f64>(state.sampleCarry);
+	object["sampleSequence"] = encodeScalar<f64>(state.sampleSequence);
 	object["apuStatus"] = encodeScalar<f64>(state.apuStatus);
 	object["apuFaultCode"] = encodeScalar<f64>(state.apuFaultCode);
 	object["apuFaultDetail"] = encodeScalar<f64>(state.apuFaultDetail);
@@ -915,6 +916,7 @@ AudioControllerState decodeAudioControllerState(const BinValue& value, const cha
 	}
 	state.output = decodeApuOutputState(requireField(object, "output", label), "machine.audio.output");
 	state.sampleCarry = requireI64(requireField(object, "sampleCarry", label), "machine.audio.sampleCarry");
+	state.sampleSequence = requireI64(requireField(object, "sampleSequence", label), "machine.audio.sampleSequence");
 	state.apuStatus = requireU32(requireField(object, "apuStatus", label), "machine.audio.apuStatus");
 	state.apuFaultCode = requireU32(requireField(object, "apuFaultCode", label), "machine.audio.apuFaultCode");
 	state.apuFaultDetail = requireU32(requireField(object, "apuFaultDetail", label), "machine.audio.apuFaultDetail");

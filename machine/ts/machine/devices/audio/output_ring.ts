@@ -1,27 +1,43 @@
-export const APU_OUTPUT_RING_CAPACITY_FRAMES = 16384;
+export const APU_OUTPUT_RING_CAPACITY_FRAMES = 3072;
 export const APU_OUTPUT_RING_CAPACITY_SAMPLES = APU_OUTPUT_RING_CAPACITY_FRAMES * 2;
 
 export class ApuOutputRing {
 	private readonly queue = new Int16Array(APU_OUTPUT_RING_CAPACITY_SAMPLES);
 	private readFrame = 0;
 	private queuedFramesValue = 0;
+	private firstFrameSequenceValue = 0;
 
 	public clear(): void {
 		this.readFrame = 0;
 		this.queuedFramesValue = 0;
+		this.firstFrameSequenceValue = 0;
 	}
 
 	public queuedFrames(): number {
 		return this.queuedFramesValue;
 	}
 
-	public write(samples: Int16Array, frameCount: number): void {
+	public firstFrameSequence(): number {
+		return this.firstFrameSequenceValue;
+	}
+
+	public write(samples: Int16Array, frameCount: number, startSequence: number): void {
+		if (this.queuedFramesValue === 0) {
+			this.firstFrameSequenceValue = startSequence;
+		}
 		const overflowFrames = frameCount - (APU_OUTPUT_RING_CAPACITY_FRAMES - this.queuedFramesValue);
 		if (overflowFrames > 0) {
-			this.readFrame = (this.readFrame + overflowFrames) % APU_OUTPUT_RING_CAPACITY_FRAMES;
+			this.readFrame += overflowFrames;
+			if (this.readFrame >= APU_OUTPUT_RING_CAPACITY_FRAMES) {
+				this.readFrame -= APU_OUTPUT_RING_CAPACITY_FRAMES;
+			}
 			this.queuedFramesValue -= overflowFrames;
+			this.firstFrameSequenceValue += overflowFrames;
 		}
-		const writeFrame = (this.readFrame + this.queuedFramesValue) % APU_OUTPUT_RING_CAPACITY_FRAMES;
+		let writeFrame = this.readFrame + this.queuedFramesValue;
+		if (writeFrame >= APU_OUTPUT_RING_CAPACITY_FRAMES) {
+			writeFrame -= APU_OUTPUT_RING_CAPACITY_FRAMES;
+		}
 		let firstSpan = APU_OUTPUT_RING_CAPACITY_FRAMES - writeFrame;
 		if (firstSpan > frameCount) {
 			firstSpan = frameCount;
@@ -48,8 +64,12 @@ export class ApuOutputRing {
 	public readFramePacked(): number {
 		const sampleIndex = this.readFrame * 2;
 		const packed = ((this.queue[sampleIndex + 1]! & 0xffff) << 16) | (this.queue[sampleIndex]! & 0xffff);
-		this.readFrame = (this.readFrame + 1) % APU_OUTPUT_RING_CAPACITY_FRAMES;
+		this.readFrame += 1;
+		if (this.readFrame === APU_OUTPUT_RING_CAPACITY_FRAMES) {
+			this.readFrame = 0;
+		}
 		this.queuedFramesValue -= 1;
+		this.firstFrameSequenceValue += 1;
 		if (this.queuedFramesValue === 0) {
 			this.readFrame = 0;
 		}

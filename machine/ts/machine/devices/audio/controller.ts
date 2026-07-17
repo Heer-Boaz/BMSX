@@ -145,6 +145,7 @@ export class AudioController {
 			slotSourceBytes: this.sourceDma.captureState(),
 			output: this.audioOutput.captureState(),
 			sampleCarry: this.serviceClock.captureSampleCarry(),
+			sampleSequence: this.serviceClock.captureSampleSequence(),
 			apuStatus: this.fault.status,
 			apuFaultCode: this.fault.code,
 			apuFaultDetail: this.fault.detail,
@@ -160,7 +161,7 @@ export class AudioController {
 		this.eventLatch.restoreState(state);
 		this.slots.restore(state.slotPhases, state.slotRegisterWords);
 		this.sourceDma.restoreState(state.slotSourceBytes);
-		this.serviceClock.restore(state.sampleCarry, nowCycles);
+		this.serviceClock.restore(state.sampleCarry, state.sampleSequence, nowCycles);
 		this.fault.restore(state.apuStatus, state.apuFaultCode, state.apuFaultDetail);
 		this.activeSlots.writeActiveMask();
 		for (const voiceState of state.output.voices) {

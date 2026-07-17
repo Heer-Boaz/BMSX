@@ -123,6 +123,7 @@ AudioControllerState AudioController::captureState() {
 	state.slotSourceBytes = m_sourceDma.captureState();
 	state.output = m_audioOutput.captureState();
 	state.sampleCarry = m_serviceClock.captureSampleCarry();
+	state.sampleSequence = m_serviceClock.captureSampleSequence();
 	state.apuStatus = m_fault.status;
 	state.apuFaultCode = m_fault.code;
 	state.apuFaultDetail = m_fault.detail;
@@ -138,7 +139,7 @@ void AudioController::restoreState(const AudioControllerState& state, int64_t no
 	m_eventLatch.restoreState({state.eventSequence, state.eventKind, state.eventSlot, state.eventSourceAddr});
 	m_slots.restore(state.slotPhases, state.slotRegisterWords);
 	m_sourceDma.restoreState(state.slotSourceBytes);
-	m_serviceClock.restore(state.sampleCarry, nowCycles);
+	m_serviceClock.restore(state.sampleCarry, state.sampleSequence, nowCycles);
 	m_fault.restore(state.apuStatus, state.apuFaultCode, state.apuFaultDetail);
 	m_activeSlots.writeActiveMask();
 	for (const ApuOutputVoiceState& voiceState : state.output.voices) {

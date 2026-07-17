@@ -14,6 +14,7 @@
 #include "machine/runtime/machine_state.h"
 #include "machine/runtime/runtime.h"
 #include "machine/save_state.h"
+#include "machine/scheduler/budget.h"
 #include "machine/scheduler/device.h"
 
 #include <array>
@@ -66,12 +67,12 @@ struct AudioMachineHarness {
 	SilentInputSource input;
 	bmsx::Machine machine;
 
-	AudioMachineHarness()
+	explicit AudioMachineHarness(bmsx::i64 cpuHz = bmsx::APU_SAMPLE_RATE_HZ)
 		: memory(bmsx::MemoryInit{{emptyRom.data(), 0u}, {emptyRom.data(), 0u}})
 		, machine(memory, input) {
 		machine.initializeSystemIo();
 		machine.resetDevices();
-		machine.audioController.setTiming(bmsx::APU_SAMPLE_RATE_HZ, 0);
+		machine.audioController.setTiming(cpuHz, 0);
 	}
 };
 
@@ -84,7 +85,7 @@ void require(bool condition, const char* message) {
 void testOutputRingExposesUnsignedHardwareWords() {
 	bmsx::ApuOutputRing ring;
 	const std::array<bmsx::i16, 2> frame{{0x1234, static_cast<bmsx::i16>(-0x8000)}};
-	ring.write(frame.data(), 1u);
+	ring.write(frame.data(), 1u, 0);
 	require(ring.readFramePacked() == 0x80001234u, "output ring should expose one unsigned packed stereo word");
 }
 
@@ -364,8 +365,8 @@ void testResamplerChunkContinuityAndUnderrun() {
 	}
 	bmsx::ApuOutputRing splitRing;
 	bmsx::ApuOutputRing batchRing;
-	splitRing.write(source.data(), source.size() / 2u);
-	batchRing.write(source.data(), source.size() / 2u);
+	splitRing.write(source.data(), source.size() / 2u, 0);
+	batchRing.write(source.data(), source.size() / 2u, 0);
 	bmsx::AudioOutputResampler split;
 	bmsx::AudioOutputResampler batch;
 	std::array<bmsx::i16, 34> splitFirst{};
@@ -389,7 +390,7 @@ void testResamplerChunkContinuityAndUnderrun() {
 		palSource[frame * 2u + 1u] = static_cast<bmsx::i16>(12000 - static_cast<int>(frame) * 7);
 	}
 	bmsx::ApuOutputRing referenceRing;
-	referenceRing.write(palSource.data(), palSource.size() / 2u);
+	referenceRing.write(palSource.data(), palSource.size() / 2u, 0);
 	bmsx::AudioOutputResampler reference;
 	std::array<bmsx::i16, (outputFramesPerPalFrame - 1u) * 2u> referenceFirst{};
 	std::array<bmsx::i16, outputFramesPerPalFrame * 2u> referenceSecond{};
@@ -397,7 +398,7 @@ void testResamplerChunkContinuityAndUnderrun() {
 	require(reference.pull(referenceRing, referenceSecond.data(), referenceSecond.size() / 2u, 48000, 1.0F) == referenceSecond.size() / 2u, "reference second PAL frame should be complete");
 
 	bmsx::ApuOutputRing starvedRing;
-	starvedRing.write(palSource.data(), sourceFramesPerPalFrame);
+	starvedRing.write(palSource.data(), sourceFramesPerPalFrame, 0);
 	bmsx::AudioOutputResampler starved;
 	std::array<bmsx::i16, outputFramesPerPalFrame * 2u> starvedFirst{};
 	starvedFirst.fill(12345);
@@ -408,10 +409,87 @@ void testResamplerChunkContinuityAndUnderrun() {
 	}
 	require(starvedFirst[producedFirst * 2u] == 12345 && starvedFirst[producedFirst * 2u + 1u] == 12345, "resampler must not write unpublished silence");
 
-	starvedRing.write(palSource.data() + sourceFramesPerPalFrame * 2u, sourceFramesPerPalFrame);
+	starvedRing.write(palSource.data() + sourceFramesPerPalFrame * 2u, sourceFramesPerPalFrame, static_cast<bmsx::i64>(sourceFramesPerPalFrame));
 	std::array<bmsx::i16, outputFramesPerPalFrame * 2u> recoveredSecond{};
 	require(starved.pull(starvedRing, recoveredSecond.data(), recoveredSecond.size() / 2u, 48000, 1.0F) == recoveredSecond.size() / 2u, "resampler should resume with a complete second PAL frame");
 	require(recoveredSecond == referenceSecond, "resampler should preserve interpolation phase across source starvation");
+}
+
+void testResamplerDropsOverwrittenInterpolationEndpoints() {
+	bmsx::ApuOutputRing ring;
+	const std::array<bmsx::i16, 6> initial{{100, 100, 200, 200, 300, 300}};
+	ring.write(initial.data(), initial.size() / 2u, 0);
+	bmsx::AudioOutputResampler resampler;
+	std::array<bmsx::i16, 4> first{};
+	require(resampler.pull(ring, first.data(), 2u, 48000, 1.0F) == 2u, "initial output frames should be available");
+	require(first[0] == 100 && first[1] == 100 && first[2] == 192 && first[3] == 192, "initial output should establish a non-zero fractional source phase");
+
+	std::array<bmsx::i16, bmsx::APU_OUTPUT_RING_CAPACITY_SAMPLES> retained{};
+	retained[0] = 1000;
+	retained[1] = 1000;
+	for (size_t frame = 1u; frame < bmsx::APU_OUTPUT_RING_CAPACITY_FRAMES; frame += 1u) {
+		retained[frame * 2u] = 2000;
+		retained[frame * 2u + 1u] = 2000;
+	}
+	ring.write(retained.data(), bmsx::APU_OUTPUT_RING_CAPACITY_FRAMES, 3);
+	std::array<bmsx::i16, 2> afterOverwrite{};
+	require(resampler.pull(ring, afterOverwrite.data(), 1u, 48000, 1.0F) == 1u, "retained output frame should be available after overwrite");
+	require(afterOverwrite[0] == 1838 && afterOverwrite[1] == 1838, "resampler must discard stale endpoints while retaining only fractional output phase");
+}
+
+void testOutputPresentationReachesPalHostAfterOneIdleSecond() {
+	constexpr bmsx::i64 cpuHz = 50'000'000;
+	constexpr bmsx::i32 hostSampleRate = 48000;
+	constexpr size_t hostFramesPerPalFrame = 960u;
+	AudioMachineHarness harness(cpuHz);
+	const bmsx::i64 primeCycle = bmsx::cyclesUntilBudgetUnits(cpuHz, bmsx::APU_SAMPLE_RATE_HZ, 0, 2);
+	harness.machine.scheduler.advanceTo(primeCycle);
+	harness.machine.audioController.onService(primeCycle);
+	bmsx::AudioOutputResampler hostOutput;
+	std::array<bmsx::i16, 2> primedOutput{};
+	require(hostOutput.pull(harness.machine.audioOutput.outputRing, primedOutput.data(), 1u, hostSampleRate, 1.0F) == 1u, "host resampler should prime from the initial silent DAC window");
+	require(primedOutput[0] == 0 && primedOutput[1] == 0, "initial DAC window should be silent");
+
+	const bmsx::i64 playCycle = primeCycle + cpuHz;
+	harness.machine.scheduler.advanceTo(playCycle);
+	harness.machine.audioController.onService(playCycle);
+	require(harness.machine.audioController.captureState().sampleSequence == bmsx::APU_SAMPLE_RATE_HZ + 2, "50 MHz APU clock should produce exactly one idle second after resampler priming");
+	require(harness.machine.audioOutput.outputRing.queuedFrames() == bmsx::APU_OUTPUT_RING_CAPACITY_FRAMES, "presentation history should remain bounded during idle output");
+
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_SAMPLE_RATE_HZ, bmsx::APU_SAMPLE_RATE_HZ / 4u);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_CHANNELS, 1u);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_FRAME_COUNT, 2u);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_LOOP_END_SAMPLE, 2u);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_RATE_STEP_Q16, bmsx::APU_RATE_STEP_Q16_ONE);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_GAIN_Q12, bmsx::APU_GAIN_Q12_ONE);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_GENERATOR_KIND, bmsx::APU_GENERATOR_SQUARE);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_GENERATOR_DUTY_Q12, 0x0800u);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_SLOT, 1u);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_CMD, bmsx::APU_CMD_PLAY);
+	harness.machine.audioController.onService(playCycle);
+	const bmsx::i64 carry = harness.machine.audioController.captureState().sampleCarry;
+	const bmsx::i64 firstAudioCycle = playCycle + bmsx::cyclesUntilBudgetUnits(cpuHz, bmsx::APU_SAMPLE_RATE_HZ, carry, 2);
+	harness.machine.scheduler.advanceTo(firstAudioCycle);
+	harness.machine.audioController.onService(firstAudioCycle);
+
+	std::array<bmsx::i16, hostFramesPerPalFrame * 2u> output{};
+	constexpr size_t historyAtHostRate = (bmsx::APU_OUTPUT_RING_CAPACITY_FRAMES * static_cast<size_t>(hostSampleRate)
+		+ static_cast<size_t>(bmsx::APU_SAMPLE_RATE_HZ) - 1u) / static_cast<size_t>(bmsx::APU_SAMPLE_RATE_HZ);
+	constexpr size_t publicationBound = historyAtHostRate + hostFramesPerPalFrame;
+	size_t publishedFrames = 0u;
+	size_t firstAudibleFrame = publicationBound;
+	while (publishedFrames < publicationBound && firstAudibleFrame == publicationBound) {
+		const size_t produced = hostOutput.pull(harness.machine.audioOutput.outputRing, output.data(), hostFramesPerPalFrame, hostSampleRate, 1.0F);
+		require(produced != 0u, "host drain should keep making progress through retained presentation");
+		for (size_t frame = 0u; frame < produced; frame += 1u) {
+			if (output[frame * 2u] != 0 || output[frame * 2u + 1u] != 0) {
+				firstAudibleFrame = publishedFrames + frame;
+				break;
+			}
+		}
+		publishedFrames += produced;
+	}
+	require(firstAudibleFrame < publicationBound, "post-command audio should reach the host within AOUT history plus one publication quantum");
 }
 
 } // namespace
@@ -424,5 +502,7 @@ int main() {
 	testRuntimeClockResetAndRestorePreserveApuTimebase();
 	testFilterAndFadeRestore();
 	testResamplerChunkContinuityAndUnderrun();
+	testResamplerDropsOverwrittenInterpolationEndpoints();
+	testOutputPresentationReachesPalHostAfterOneIdleSecond();
 	return 0;
 }

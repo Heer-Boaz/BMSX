@@ -213,18 +213,20 @@ i64 ApuOutputMixer::samplesUntilNextEvent(i64 limit) const {
 	return earliest;
 }
 
-u32 ApuOutputMixer::renderMachineFrames(i64 frameCount) {
+u32 ApuOutputMixer::renderMachineFrames(i64 frameCount, i64 startSequence) {
 	u32 endedMask = 0u;
 	i64 remaining = frameCount;
+	i64 batchSequence = startSequence;
 	while (remaining != 0) {
 		const size_t batchFrames = static_cast<size_t>(std::min<i64>(remaining, MIX_BATCH_FRAMES));
-		endedMask |= renderMachineBatch(batchFrames);
+		endedMask |= renderMachineBatch(batchFrames, batchSequence);
+		batchSequence += static_cast<i64>(batchFrames);
 		remaining -= static_cast<i64>(batchFrames);
 	}
 	return endedMask;
 }
 
-u32 ApuOutputMixer::renderMachineBatch(size_t frameCount) {
+u32 ApuOutputMixer::renderMachineBatch(size_t frameCount, i64 startSequence) {
 	const size_t totalSamples = frameCount * 2u;
 	std::fill_n(m_mixBuffer.data(), totalSamples, 0.0F);
 	u32 endedMask = 0u;
@@ -334,7 +336,7 @@ u32 ApuOutputMixer::renderMachineBatch(size_t frameCount) {
 	for (size_t index = 0; index < totalSamples; index += 1u) {
 		output[index] = static_cast<i16>(saturateRoundedI32(static_cast<f64>(clamp(mix[index], -1.0F, 1.0F)) * 32767.0));
 	}
-	outputRing.write(output, frameCount);
+	outputRing.write(output, frameCount, startSequence);
 	return endedMask;
 }
 

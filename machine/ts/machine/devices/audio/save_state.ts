@@ -60,6 +60,7 @@ export type AudioControllerState = {
 	slotSourceBytes: Uint8Array[];
 	output: ApuOutputState;
 	sampleCarry: number;
+	sampleSequence: number;
 	apuStatus: number;
 	apuFaultCode: number;
 	apuFaultDetail: number;

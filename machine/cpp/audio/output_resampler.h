@@ -27,6 +27,7 @@ private:
 	f64 m_phase = 0.0;
 	bool m_hasCurrent = false;
 	bool m_hasNext = false;
+	i64 m_lastSourceSequence = 0;
 	i32 m_currentLeft = 0;
 	i32 m_currentRight = 0;
 	i32 m_nextLeft = 0;

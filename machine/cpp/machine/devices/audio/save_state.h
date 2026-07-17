@@ -69,6 +69,7 @@ struct AudioControllerState {
 	ApuSlotSourceBytes slotSourceBytes{};
 	ApuOutputState output;
 	int64_t sampleCarry = 0;
+	int64_t sampleSequence = 0;
 	uint32_t apuStatus = 0;
 	uint32_t apuFaultCode = APU_FAULT_NONE;
 	uint32_t apuFaultDetail = 0;

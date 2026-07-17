@@ -25,7 +25,7 @@ public:
 	void setActive(ApuAudioSlot slot, const ApuParameterRegisterWords& registerWords);
 	void stop(ApuAudioSlot slot);
 	void setPhase(ApuAudioSlot slot, ApuSlotPhase phase);
-	void advance(i64 samples);
+	void advance(i64 samples, i64 startSequence);
 
 private:
 	Memory& m_memory;

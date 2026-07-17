@@ -45,8 +45,8 @@ void ApuActiveSlots::setPhase(ApuAudioSlot slot, ApuSlotPhase phase) {
 	writeActiveMask();
 }
 
-void ApuActiveSlots::advance(i64 samples) {
-	const u32 endedMask = m_audioOutput.renderMachineFrames(samples);
+void ApuActiveSlots::advance(i64 samples, i64 startSequence) {
+	const u32 endedMask = m_audioOutput.renderMachineFrames(samples, startSequence);
 	for (ApuAudioSlot slot = 0; slot < APU_SLOT_COUNT; slot += 1u) {
 		if ((endedMask & (1u << slot)) != 0u) {
 			const u32 sourceAddr = m_slots.sourceAddr(slot);

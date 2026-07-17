@@ -50,7 +50,7 @@ public:
 	void stopSlot(ApuAudioSlot slot, u32 fadeSamples = 0);
 	void stopAllVoices();
 	[[nodiscard]] auto samplesUntilNextEvent(i64 limit) const -> i64;
-	[[nodiscard]] auto renderMachineFrames(i64 frameCount) -> u32;
+	[[nodiscard]] auto renderMachineFrames(i64 frameCount, i64 startSequence) -> u32;
 
 private:
 	static constexpr size_t MIX_BATCH_SAMPLES = MIX_BATCH_FRAMES * 2u;
@@ -86,7 +86,7 @@ private:
 	friend auto captureApuOutputVoiceState(const VoiceRecord& record) -> ApuOutputVoiceState;
 	friend void restoreApuOutputVoiceState(VoiceRecord& record, const ApuOutputVoiceState& state);
 
-	[[nodiscard]] auto renderMachineBatch(size_t frameCount) -> u32;
+	[[nodiscard]] auto renderMachineBatch(size_t frameCount, i64 startSequence) -> u32;
 	void buildVoiceFromData(
 		VoiceRecord& record,
 		const ApuAudioSource& source,
