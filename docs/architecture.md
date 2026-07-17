@@ -1051,13 +1051,18 @@ DMA is one register channel. `READ_ADDR`, `WRITE_ADDR`, `TRANSFER_COUNT` and
 `CONTROL` remain live while `STATUS.BUSY` is set; `TRIGGER` is a write-only,
 self-clearing start strobe. The count is expressed in 32-bit bus transfers.
 Control selects read/write address incrementing and one request input: forced,
-GX write, GX read or disabled. GX requests are GPU-owned lines gated by the GP1
-DMA-direction register.
+GX write, GX read, disabled, APU write or APU read; selector words 6 and 7 have
+no asserted input. GX requests are GPU-owned lines gated by the GP1
+DMA-direction register. APU requests are the sample-transfer FIFO's empty/write
+and full/read lines.
 
-The scheduler grants at most sixteen word slots per DMA service deadline and
-the channel resamples DREQ before every word. A low request discards unused
-slots and a later edge begins a fresh timing interval. Every word is a mapped
-bus read followed by a mapped bus write and then live address/count writeback.
+The scheduler grants at most sixteen word slots per DMA service deadline.
+Forced and GX request modes resample DREQ before every word. A low request discards
+unused slots and a later edge begins a fresh timing interval. The APU's
+empty/full request acknowledges one whole sixteen-word FIFO grant; that request
+is latched only for the granted slots because the first accepted word necessarily
+deasserts the level line. Every word is a mapped bus read followed by a mapped
+bus write and then live address/count writeback.
 Memory remains the sole bus-fault owner; a fault does not invent a DMA error
 state or abort the channel. Completion clears `BUSY`, sets `DONE` and raises
 `IRQ_DMA_DONE`. The ROM texture producer emits native RGB555/STP GP0 streams;
@@ -1342,8 +1347,9 @@ Cart-visible ingress and state are:
 
 The service clock retains an absolute machine-cycle edge, the fractional
 CPU-cycle-to-sample carry, and the absolute DAC-sample sequence. It synchronizes
-the voice datapath to the exact current machine cycle before live selected-slot
-writes, command admission, timing-dependent reads, and save-state capture.
+the voice datapath and sample-transfer datapath to the exact current machine
+cycle before live selected-slot writes, command admission, timing-dependent
+reads, and save-state capture.
 Normal service runs are batched to at most 128 samples, but the next service
 deadline is shortened to the first finite-source or fade completion. Slot END
 and its IRQ therefore occur on the exact hardware sample edge without
@@ -1366,9 +1372,9 @@ datapath owner. It retains:
 The quotient and remainder are retained separately so synchronization batch
 size cannot change pitch, loop position, or END timing. Source-rate/rate-word
 products are decoded when voice programming changes, not in the per-sample
-loop. PCM mixing uses retained fixed-capacity scratch buffers. Sample generation
-and host pull perform no allocation; source programming and save-state remain
-explicit non-realtime boundaries that may allocate source or serialized state.
+loop. PCM mixing uses retained fixed-capacity scratch buffers. Sample generation,
+host pull, PLAY, and live source replacement perform no allocation. Only
+save-state capture may allocate serialized state outside the realtime datapath.
 
 The mixer writes the continuous 44.1-kHz machine timeline, including silent
 intervals, to the 3072-frame AOUT presentation ring. Each batch carries its
@@ -1400,28 +1406,75 @@ at the actual host transport rather than accumulating another frame of hidden
 machine-output latency. Clearing or underrunning host transport can produce
 silence only; it cannot backpressure the APU.
 
-Save-state first synchronizes the APU to the scheduler cycle, then captures the
-command FIFO, raw slot bank, source-DMA bytes, service-clock carry and DAC
-sequence, event/fault latches, and the single live voice datapath. It deliberately
-excludes the AOUT ring and host resampler. Restore reinstates machine state at
-the restored cycle, clears presentation transport, restores voices without
-generating samples, and schedules the next exact hardware edge.
+Save-state first synchronizes the unified APU clock domain to the scheduler cycle, then
+captures the command FIFO, raw slot bank, internal sample-RAM and transfer unit,
+service-clock carry and DAC sequence, event/fault latches, and the single live
+voice datapath. It deliberately excludes immutable sample-ROM, the AOUT ring,
+and host resampler. Restore reinstates machine state at the restored cycle,
+clears presentation transport, restores voices without generating samples, and
+schedules the next exact hardware edge.
 
 The mirrored owners are `machine/devices/audio/{controller,service_clock,
-active_slots,slot_bank,command_ingress,command_executor,output,output_ring,
-save_state}` in TS and C++. Source metadata, PCM, BADP, filter, command FIFO,
+sample_memory,sample_transfer,active_slots,slot_bank,command_ingress,
+command_executor,output,output_ring,save_state}` in TS and C++. Source metadata, PCM, BADP, filter, command FIFO,
 event, selected-slot, status, and fault responsibilities remain in their
 corresponding dedicated audio/device owner files.
 
-The current `ApuSourceDma` ingress stores either a retained immutable ROM byte
-view or exact-size device-owned source bytes per slot. RAM-backed and
-zero-filled/tail sources are copied when a voice is programmed, and save-state
-serializes those slot bytes. This gives deterministic playback today, but it is
-not the final hardware memory contract: ROM views and RAM snapshots have
-different visibility, transfer timing is absent, and allocation size follows a
-cart descriptor. `APU-MEM-01` tracks replacement by fixed APU sample RAM and a
-timed channel on the existing DMA controller; no second audio-only fake DMA is
-allowed.
+The APU owns a separate 32-bit sample address space. It is not an alias of the
+CPU bus. Three physical chip selects live on that bus:
+
+- the immutable system sample-ROM at `0x00000000`;
+- the immutable cartridge sample-ROM at `0x01000000`;
+- 512 KiB of internal sample-RAM at `0x10000000`.
+
+The two ROM chip selects make large cartridge music directly addressable, as
+on a ROM-fed sample chip; they are not generic main-memory views. Program ROM
+and CPU RAM are absent from the sample bus. A voice range must fit wholly in one
+physical window and never wraps. Internal RAM remains a single retained backing
+store, so DMA writes become visible to every active voice at the transfer
+datapath's hardware completion edge. PLAY, source replacement, and sample
+generation allocate nothing. BADP voices retain only the seek-entry count and
+table offset and binary-search the encoded table in place.
+
+The three APU words historically reserved after the selected-slot register bank
+are the transfer-address, 32-bit transfer-data, and raw transfer-control
+registers. Control bits 1:0 select STOP, MANUAL_WRITE, DMA_WRITE, or DMA_READ;
+all other bits remain raw and currently have no datapath effect. The address
+register remains the programmed raw word, while its low nineteen bits with the
+low two alignment bits cleared seed a separate physical RAM address latch.
+Transfers increment that latch by four and wrap on the 512-KiB boundary.
+
+MANUAL_WRITE stores one 32-bit data word directly in sample-RAM. DMA transfers
+use a fixed sixteen-word FIFO. A write request is asserted only when that FIFO
+is empty and a read request only when it is full, matching one grant of the
+existing sixteen-word DMA arbiter. DMA write overflow drops the unaccepted word;
+DMA read underflow returns the retained transfer-data latch. CPU data reads
+return that same latch. The mapped CPU/DMA bus carries its initiating master
+strobe through the existing single IO decoder and handler table: only a DMA
+data-port read pops the FIFO and only a DMA data-port write pushes it. A
+control-mode change first synchronizes the transfer
+datapath, then cancels its outstanding batch and clears the FIFO; entering
+DMA_READ begins filling it, while STOP has no transfer in flight. DMA completion
+means that the last bus word was accepted by the FIFO, not that a pending write
+batch has reached sample-RAM.
+
+The internal transfer clock is `APU_SAMPLE_RATE_HZ * 24`, or 1,058,400 words per
+second. `DEVICE_SERVICE_APU_TRANSFER` advances fixed batches with the same
+integer budget/carry model used by the other timed units; it never schedules one
+host callback per word. At an equal scheduler cycle the transfer unit is
+synchronized before the voice clock samples RAM. APU status preserves its
+existing fault/selected-slot/busy/FIFO bits and adds DMA request at bit 7,
+DMA-read request at bit 8, DMA-write request at bit 9, and transfer busy at bit
+10.
+
+The existing DMA request selector widens from two to three bits without moving
+the existing values: FORCE=0, GX_WRITE=1, GX_READ=2, DISABLED=3,
+APU_WRITE=4, APU_READ=5, and 6/7 assert no request. This is still the one machine
+DMA controller; the APU does not contain a second host-side copy engine.
+Save-state synchronizes the APU clock domain, stores internal RAM once plus FIFO,
+address/control/data latches, timing carry, and the relative transfer deadline,
+and excludes immutable sample-ROM. The TS and C++ runtimes implement this same
+sample-bus, transfer, DMA, and persistence contract.
 
 The existing filter register ABI is not yet a complete raw hardware contract.
 Unknown filter-kind words currently alias a defined mode, while zero or extreme

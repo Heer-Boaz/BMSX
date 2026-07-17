@@ -9,8 +9,6 @@
 
 namespace bmsx {
 
-using ApuSlotSourceBytes = std::array<std::vector<u8>, APU_SLOT_COUNT>;
-
 struct ApuBiquadFilterState {
 	bool enabled = false;
 	f64 b0 = 1.0;
@@ -57,6 +55,20 @@ struct ApuOutputState {
 	std::vector<ApuOutputVoiceState> voices;
 };
 
+struct ApuSampleTransferState {
+	u32 transferAddressWord = 0;
+	u32 transferDataWord = 0;
+	u32 transferControlWord = 0;
+	u32 currentAddress = 0;
+	std::array<u32, APU_TRANSFER_FIFO_WORD_CAPACITY> fifoWords{};
+	u32 fifoReadIndex = 0;
+	u32 fifoWriteIndex = 0;
+	u32 fifoCount = 0;
+	i64 timingCarry = 0;
+	u32 scheduledWords = 0;
+	i64 scheduledCycles = 0;
+};
+
 struct AudioControllerState {
 	std::array<uint32_t, APU_PARAMETER_REGISTER_COUNT> registerWords{};
 	ApuCommandFifoState commandFifo;
@@ -66,7 +78,8 @@ struct AudioControllerState {
 	uint32_t eventSourceAddr = 0;
 	std::array<uint32_t, APU_SLOT_COUNT> slotPhases{};
 	std::array<uint32_t, APU_SLOT_REGISTER_WORD_COUNT> slotRegisterWords{};
-	ApuSlotSourceBytes slotSourceBytes{};
+	std::vector<u8> sampleRam;
+	ApuSampleTransferState sampleTransfer;
 	ApuOutputState output;
 	int64_t sampleCarry = 0;
 	int64_t sampleSequence = 0;

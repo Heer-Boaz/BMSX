@@ -8,6 +8,7 @@
 #include "machine/devices/audio/event_latch.h"
 #include "machine/devices/audio/output.h"
 #include "machine/devices/audio/queue_status_registers.h"
+#include "machine/devices/audio/sample_memory.h"
 #include "machine/devices/audio/save_state.h"
 #include "machine/devices/audio/selected_slot_latch.h"
 #include "machine/devices/audio/service_clock.h"
@@ -22,16 +23,18 @@ namespace bmsx {
 class ApuOutputMixer;
 class IrqController;
 class DeviceScheduler;
+class DmaController;
 
 class AudioController {
 public:
-	AudioController(Memory& memory, ApuOutputMixer& audioOutput, IrqController& irq, DeviceScheduler& scheduler);
+	AudioController(Memory& memory, ApuOutputMixer& audioOutput, DmaController& dma, IrqController& irq, DeviceScheduler& scheduler);
 	~AudioController() = default;
 
 	void reset();
 	void dispose();
 	void setTiming(int64_t cpuHz, int64_t nowCycles);
 	void onService(int64_t nowCycles);
+	void onTransferService(int64_t nowCycles);
 	[[nodiscard]] auto synchronizeOutput() -> ApuOutputRing&;
 	AudioControllerState captureState();
 	void restoreState(const AudioControllerState& state, int64_t nowCycles);
@@ -45,7 +48,7 @@ private:
 	ApuSlotBank m_slots;
 	DeviceStatusLatch m_fault;
 	ApuSelectedSlotLatch m_selectedSlotLatch;
-	ApuSourceDma m_sourceDma;
+	ApuSampleMemory m_sampleMemory;
 	ApuActiveSlots m_activeSlots;
 	ApuServiceClock m_serviceClock;
 	ApuStatusRegister m_statusRegister;

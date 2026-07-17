@@ -7,6 +7,16 @@
 namespace bmsx {
 
 constexpr uint32_t APU_SAMPLE_RATE_HZ = 44100U;
+constexpr uint32_t APU_SAMPLE_RAM_BASE = 0x10000000U;
+constexpr uint32_t APU_SAMPLE_RAM_BYTES = 512U * 1024U;
+constexpr uint32_t APU_SAMPLE_RAM_ADDRESS_MASK = APU_SAMPLE_RAM_BYTES - 1U;
+constexpr uint32_t APU_TRANSFER_FIFO_WORD_CAPACITY = 16U;
+constexpr uint32_t APU_TRANSFER_WORDS_PER_SECOND = APU_SAMPLE_RATE_HZ * 24U;
+constexpr uint32_t APU_TRANSFER_MODE_STOP = 0U;
+constexpr uint32_t APU_TRANSFER_MODE_MANUAL_WRITE = 1U;
+constexpr uint32_t APU_TRANSFER_MODE_DMA_WRITE = 2U;
+constexpr uint32_t APU_TRANSFER_MODE_DMA_READ = 3U;
+constexpr uint32_t APU_TRANSFER_MODE_MASK = 0x3U;
 constexpr uint32_t APU_RATE_STEP_Q16_ONE = 0x10000U;
 constexpr uint32_t APU_GAIN_Q12_ONE = 0x1000U;
 constexpr uint32_t APU_COMMAND_FIFO_CAPACITY = 16U;
@@ -57,6 +67,10 @@ constexpr uint32_t APU_STATUS_SELECTED_SLOT_ACTIVE = 1U << 1U;
 constexpr uint32_t APU_STATUS_BUSY = 1U << 2U;
 constexpr uint32_t APU_STATUS_CMD_FIFO_EMPTY = 1U << 5U;
 constexpr uint32_t APU_STATUS_CMD_FIFO_FULL = 1U << 6U;
+constexpr uint32_t APU_STATUS_DMA_REQUEST = 1U << 7U;
+constexpr uint32_t APU_STATUS_DMA_READ_REQUEST = 1U << 8U;
+constexpr uint32_t APU_STATUS_DMA_WRITE_REQUEST = 1U << 9U;
+constexpr uint32_t APU_STATUS_TRANSFER_BUSY = 1U << 10U;
 
 constexpr uint32_t APU_FAULT_NONE = 0U;
 constexpr uint32_t APU_FAULT_BAD_CMD = 0x0001U;

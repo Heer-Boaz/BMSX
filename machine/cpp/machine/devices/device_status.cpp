@@ -67,7 +67,7 @@ void DeviceStatusLatch::raise(uint32_t code, uint32_t detail) const {
 }
 
 // disable-next-line single_line_method_pattern -- memory-map callbacks require a C-style thunk into the device status latch owner.
-void DeviceStatusLatch::acknowledgeWriteThunk(void* context, uint32_t, Value) {
+void DeviceStatusLatch::acknowledgeWriteThunk(void* context, uint32_t, Value, MappedBusMaster) {
 	static_cast<DeviceStatusLatch*>(context)->acknowledge();
 }
 

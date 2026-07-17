@@ -6,6 +6,7 @@
 #include "machine/devices/geometry/job.h"
 #include "machine/devices/geometry/save_state.h"
 #include "machine/devices/geometry/xform2.h"
+#include "machine/memory/bus_master.h"
 #include "machine/memory/memory.h"
 #include "machine/scheduler/device.h"
 
@@ -35,9 +36,9 @@ public:
 	void onCtrlWrite(int64_t nowCycles);
 
 private:
-	static void onCommandWriteThunk(void* context, uint32_t addr, Value value);
-	static void onCtrlWriteThunk(void* context, uint32_t addr, Value value);
-	static void onFaultAckWriteThunk(void* context, uint32_t addr, Value value);
+	static void onCommandWriteThunk(void* context, uint32_t addr, Value value, MappedBusMaster busMaster);
+	static void onCtrlWriteThunk(void* context, uint32_t addr, Value value, MappedBusMaster busMaster);
+	static void onFaultAckWriteThunk(void* context, uint32_t addr, Value value, MappedBusMaster busMaster);
 
 	using GeoJob = GeometryJobState;
 	void onCommandDoorbell(int64_t nowCycles, uint32_t command);

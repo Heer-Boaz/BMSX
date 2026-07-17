@@ -4,6 +4,7 @@
 
 #include "machine/bus/io.h"
 #include "machine/cpu/cpu.h"
+#include "machine/devices/dma/controller.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/scheduler/device.h"
 
@@ -22,19 +23,20 @@ constexpr DeviceStatusRegisters APU_DEVICE_STATUS_REGISTERS{
 
 } // namespace
 
-AudioController::AudioController(Memory& memory, ApuOutputMixer& audioOutput, IrqController& irq, DeviceScheduler& scheduler)
+AudioController::AudioController(Memory& memory, ApuOutputMixer& audioOutput, DmaController& dma, IrqController& irq, DeviceScheduler& scheduler)
 	: m_memory(memory)
 	, m_audioOutput(audioOutput)
 	, m_scheduler(scheduler)
 	, m_eventLatch(memory, irq)
 	, m_fault(memory, APU_DEVICE_STATUS_REGISTERS)
 	, m_selectedSlotLatch(memory, m_fault, m_slots)
-	, m_activeSlots(memory, m_audioOutput, m_sourceDma, m_eventLatch, m_slots, m_selectedSlotLatch)
-	, m_serviceClock(scheduler, m_commandFifo, m_activeSlots, m_audioOutput)
+	, m_sampleMemory(memory)
+	, m_activeSlots(memory, m_audioOutput, m_eventLatch, m_slots, m_selectedSlotLatch)
+	, m_serviceClock(memory, m_sampleMemory, dma, scheduler, m_commandFifo, m_activeSlots, m_audioOutput)
 	, m_statusRegister(m_fault, m_slots, m_commandFifo, m_serviceClock, scheduler)
 	, m_commandIngress(memory, m_commandFifo, m_fault, m_serviceClock, scheduler)
 	, m_queueStatusRegisters(m_commandFifo)
-	, m_commandExecutor(memory, m_audioOutput, scheduler, m_commandFifo, m_sourceDma, m_activeSlots, m_slots, m_selectedSlotLatch, m_fault, m_serviceClock) {
+	, m_commandExecutor(memory, m_audioOutput, scheduler, m_commandFifo, m_sampleMemory, m_activeSlots, m_slots, m_selectedSlotLatch, m_fault, m_serviceClock) {
 	m_memory.mapIoRead(IO_APU_STATUS, &m_statusRegister, &ApuStatusRegister::readThunk);
 	m_memory.mapIoWrite(IO_APU_CMD, &m_commandIngress, &ApuCommandIngress::onCommandWriteThunk);
 	m_memory.mapIoWrite(IO_APU_SLOT, &m_selectedSlotLatch, &ApuSelectedSlotLatch::refreshThunk);
@@ -49,14 +51,14 @@ AudioController::AudioController(Memory& memory, ApuOutputMixer& audioOutput, Ir
 }
 
 void AudioController::dispose() {
-	m_serviceClock.reset(m_scheduler.currentNowCycles());
+	m_serviceClock.dispose();
 	m_audioOutput.resetPlaybackState();
 }
 
 void AudioController::reset() {
 	m_commandFifo.reset();
 	m_slots.reset();
-	m_sourceDma.reset();
+	m_sampleMemory.reset();
 	m_serviceClock.reset(m_scheduler.currentNowCycles());
 	m_audioOutput.resetPlaybackState();
 	m_fault.resetStatus();
@@ -79,8 +81,13 @@ void AudioController::onService(int64_t nowCycles) {
 	m_serviceClock.scheduleNext(nowCycles);
 }
 
+void AudioController::onTransferService(int64_t nowCycles) {
+	m_serviceClock.synchronize(nowCycles);
+}
+
 auto AudioController::synchronizeOutput() -> ApuOutputRing& {
-	m_serviceClock.synchronize(m_scheduler.currentNowCycles());
+	const i64 nowCycles = m_scheduler.currentNowCycles();
+	m_serviceClock.synchronize(nowCycles);
 	return m_audioOutput.outputRing;
 }
 

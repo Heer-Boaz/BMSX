@@ -1,9 +1,24 @@
+import {
+	IO_APU_TRANSFER_ADDRESS,
+	IO_APU_TRANSFER_CONTROL,
+	IO_APU_TRANSFER_DATA,
+} from '../../bus/io';
+import type { Value } from '../../cpu/cpu';
+import {
+	MAPPED_BUS_MASTER_DMA,
+	type MappedBusMaster,
+} from '../../memory/bus_master';
+import type { Memory } from '../../memory/memory';
 import { accrueBudgetUnits, cyclesUntilBudgetUnits, type BudgetAccrual } from '../../scheduler/budget';
 import { DEVICE_SERVICE_APU, type DeviceScheduler } from '../../scheduler/device';
+import type { DmaController } from '../dma/controller';
 import type { ApuActiveSlots } from './active_slots';
 import type { ApuCommandFifo } from './command_fifo';
 import { APU_SAMPLE_RATE_HZ } from './contracts';
 import { ApuOutputMixer } from './output';
+import type { ApuSampleMemory } from './sample_memory';
+import type { ApuSampleTransferState } from './save_state';
+import { ApuSampleTransfer } from './sample_transfer';
 
 export class ApuServiceClock {
 	private cpuHz = APU_SAMPLE_RATE_HZ;
@@ -11,18 +26,38 @@ export class ApuServiceClock {
 	private sampleSequence = 0;
 	private lastCycle = 0;
 	private readonly budgetAccrual: BudgetAccrual = { wholeUnits: 0, carry: 0 };
+	private readonly sampleTransfer: ApuSampleTransfer;
 
 	public constructor(
+		memory: Memory,
+		sampleMemory: ApuSampleMemory,
+		private readonly dma: DmaController,
 		private readonly scheduler: DeviceScheduler,
 		private readonly commandFifo: ApuCommandFifo,
 		private readonly activeSlots: ApuActiveSlots,
 		private readonly audioOutput: ApuOutputMixer,
-	) {}
+	) {
+		this.sampleTransfer = new ApuSampleTransfer(memory, sampleMemory, dma, scheduler);
+		memory.mapIoWrite(IO_APU_TRANSFER_ADDRESS, this, ApuServiceClock.transferAddressWriteThunk);
+		memory.mapIoRead(IO_APU_TRANSFER_DATA, this, ApuServiceClock.transferDataReadThunk);
+		memory.mapIoWrite(IO_APU_TRANSFER_DATA, this, ApuServiceClock.transferDataWriteThunk);
+		memory.mapIoWriteReady(IO_APU_TRANSFER_DATA, ApuServiceClock.transferDataWriteReadyThunk);
+		memory.mapIoWrite(IO_APU_TRANSFER_CONTROL, this, ApuServiceClock.transferControlWriteThunk);
+	}
 
 	public reset(nowCycles: number): void {
+		this.sampleTransfer.reset();
 		this.sampleCarry = 0;
 		this.sampleSequence = 0;
 		this.lastCycle = nowCycles;
+		this.scheduler.cancelDeviceService(DEVICE_SERVICE_APU);
+	}
+
+	public dispose(): void {
+		this.sampleTransfer.dispose();
+		this.sampleCarry = 0;
+		this.sampleSequence = 0;
+		this.lastCycle = this.scheduler.currentNowCycles();
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_APU);
 	}
 
@@ -34,26 +69,36 @@ export class ApuServiceClock {
 		return this.sampleSequence;
 	}
 
-	public restore(sampleCarry: number, sampleSequence: number, nowCycles: number): void {
+	public sampleTransferStatusBits(): number {
+		return this.sampleTransfer.statusBits();
+	}
+
+	public captureSampleTransferState(nowCycles: number): ApuSampleTransferState {
+		return this.sampleTransfer.captureState(nowCycles);
+	}
+
+	public restore(sampleCarry: number, sampleSequence: number, sampleTransferState: ApuSampleTransferState, nowCycles: number): void {
 		this.sampleCarry = sampleCarry;
 		this.sampleSequence = sampleSequence;
 		this.lastCycle = nowCycles;
+		this.sampleTransfer.restoreState(sampleTransferState, nowCycles);
 	}
 
 	public setCpuHz(cpuHz: number, nowCycles: number): void {
 		this.synchronize(nowCycles);
+		this.sampleTransfer.setTiming(cpuHz, nowCycles);
 		this.cpuHz = cpuHz;
 	}
 
 	public synchronize(nowCycles: number): void {
-		const cycles = nowCycles - this.lastCycle;
-		this.lastCycle = nowCycles;
-		accrueBudgetUnits(this.budgetAccrual, this.cpuHz, APU_SAMPLE_RATE_HZ, this.sampleCarry, cycles);
-		this.sampleCarry = this.budgetAccrual.carry;
-		if (this.budgetAccrual.wholeUnits !== 0) {
-			this.activeSlots.advance(this.budgetAccrual.wholeUnits, this.sampleSequence);
-			this.sampleSequence += this.budgetAccrual.wholeUnits;
+		while (this.sampleTransfer.scheduledWords !== 0
+			&& this.sampleTransfer.scheduledDeadline <= nowCycles) {
+			const deadline = this.sampleTransfer.scheduledDeadline;
+			this.advanceVoicesTo(deadline - 1);
+			this.sampleTransfer.completeService();
+			this.advanceVoicesTo(deadline);
 		}
+		this.advanceVoicesTo(nowCycles);
 	}
 
 	public scheduleNext(nowCycles: number): void {
@@ -66,5 +111,73 @@ export class ApuServiceClock {
 			DEVICE_SERVICE_APU,
 			nowCycles + cyclesUntilBudgetUnits(this.cpuHz, APU_SAMPLE_RATE_HZ, this.sampleCarry, serviceFrames),
 		);
+	}
+
+	private static transferAddressWriteThunk(context: ApuServiceClock, _addr: number, value: Value): void {
+		const nowCycles = context.scheduler.currentNowCycles();
+		context.synchronizeBeforeTransferAccess(nowCycles);
+		context.sampleTransfer.writeAddress(value as number);
+		context.advanceVoicesTo(nowCycles);
+	}
+
+	private static transferDataReadThunk(context: ApuServiceClock, _addr: number, busMaster: MappedBusMaster): number {
+		const nowCycles = context.scheduler.currentNowCycles();
+		context.synchronizeBeforeTransferAccess(nowCycles);
+		const value = busMaster === MAPPED_BUS_MASTER_DMA
+			? context.sampleTransfer.readDmaData()
+			: context.sampleTransfer.readCpuData();
+		context.advanceVoicesTo(nowCycles);
+		return value;
+	}
+
+	private static transferDataWriteThunk(context: ApuServiceClock, _addr: number, value: Value, busMaster: MappedBusMaster): void {
+		const nowCycles = context.scheduler.currentNowCycles();
+		context.synchronizeBeforeTransferAccess(nowCycles);
+		if (busMaster === MAPPED_BUS_MASTER_DMA) {
+			context.sampleTransfer.writeDmaData(value as number);
+		} else {
+			context.sampleTransfer.writeCpuData(value as number);
+		}
+		context.advanceVoicesTo(nowCycles);
+	}
+
+	private static transferDataWriteReadyThunk(context: ApuServiceClock): boolean {
+		return !context.dma.ownsApuDataPort();
+	}
+
+	private static transferControlWriteThunk(context: ApuServiceClock, _addr: number, value: Value): void {
+		const nowCycles = context.scheduler.currentNowCycles();
+		context.synchronizeBeforeTransferAccess(nowCycles);
+		context.sampleTransfer.writeControl(value as number);
+		context.advanceVoicesTo(nowCycles);
+	}
+
+	private synchronizeBeforeTransferAccess(nowCycles: number): void {
+		while (this.sampleTransfer.scheduledWords !== 0
+			&& this.sampleTransfer.scheduledDeadline < nowCycles) {
+			const deadline = this.sampleTransfer.scheduledDeadline;
+			this.advanceVoicesTo(deadline - 1);
+			this.sampleTransfer.completeService();
+			this.advanceVoicesTo(deadline);
+		}
+		this.advanceVoicesTo(nowCycles - 1);
+		while (this.sampleTransfer.scheduledWords !== 0
+			&& this.sampleTransfer.scheduledDeadline <= nowCycles) {
+			this.sampleTransfer.completeService();
+		}
+	}
+
+	private advanceVoicesTo(cycle: number): void {
+		if (cycle <= this.lastCycle) {
+			return;
+		}
+		const cycles = cycle - this.lastCycle;
+		this.lastCycle = cycle;
+		accrueBudgetUnits(this.budgetAccrual, this.cpuHz, APU_SAMPLE_RATE_HZ, this.sampleCarry, cycles);
+		this.sampleCarry = this.budgetAccrual.carry;
+		if (this.budgetAccrual.wholeUnits !== 0) {
+			this.activeSlots.advance(this.budgetAccrual.wholeUnits, this.sampleSequence);
+			this.sampleSequence += this.budgetAccrual.wholeUnits;
+		}
 	}
 }

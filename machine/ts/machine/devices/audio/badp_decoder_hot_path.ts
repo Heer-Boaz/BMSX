@@ -1,14 +1,13 @@
 import { clamp } from '../../../common/clamp';
-import { readI16LE, readLE16 } from '../../../common/endian';
-import { type ApuBadpDecoderState } from './badp_decoder';
+import { readI16LE, readLE16, readLE32 } from '../../../common/endian';
+import { type ApuBadpDecoderState, type ApuBadpSeekTable } from './badp_decoder';
 
 export type ApuBadpDecodeTarget = {
 	sourceBytes: Uint8Array;
 	dataOffset: number;
 	frames: number;
 	channels: number;
-	badpSeekFrames: Uint32Array<ArrayBufferLike>;
-	badpSeekOffsets: Uint32Array<ArrayBufferLike>;
+	badpSeekTable: ApuBadpSeekTable;
 	badp: ApuBadpDecoderState;
 };
 
@@ -125,10 +124,11 @@ function seekApuBadpDecoderToFrame(record: ApuBadpDecodeTarget, frame: number): 
 	}
 	let seekIndex = 0;
 	let lo = 0;
-	let hi = record.badpSeekFrames.length - 1;
+	const seekTable = record.badpSeekTable;
+	let hi = seekTable.entryCount - 1;
 	while (lo <= hi) {
 		const mid = (lo + hi) >> 1;
-		if (record.badpSeekFrames[mid]! <= frame) {
+		if (readLE32(seekTable.bytes, seekTable.byteOffset + mid * 8) <= frame) {
 			seekIndex = mid;
 			lo = mid + 1;
 		} else {
@@ -138,8 +138,8 @@ function seekApuBadpDecoderToFrame(record: ApuBadpDecodeTarget, frame: number): 
 			hi = mid - 1;
 		}
 	}
-	let currentFrame = record.badpSeekFrames[seekIndex]!;
-	let cursor = record.badpSeekOffsets[seekIndex]!;
+	let currentFrame = seekTable.entryCount === 0 ? 0 : readLE32(seekTable.bytes, seekTable.byteOffset + seekIndex * 8);
+	let cursor = seekTable.entryCount === 0 ? 0 : readLE32(seekTable.bytes, seekTable.byteOffset + seekIndex * 8 + 4);
 	loadApuBadpBlock(record, cursor);
 	while (currentFrame + badp.blockFrames <= frame) {
 		currentFrame += badp.blockFrames;

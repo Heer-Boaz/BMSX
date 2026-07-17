@@ -6,6 +6,7 @@ import {
 	APU_COMMAND_FIFO_REGISTER_WORD_COUNT,
 	APU_PARAMETER_REGISTER_COUNT,
 	APU_RATE_STEP_Q16_ONE,
+	APU_SAMPLE_RAM_BYTES,
 	APU_PARAMETER_SLOT_INDEX,
 	APU_PARAMETER_SOURCE_ADDR_INDEX,
 	APU_SLOT_COUNT,
@@ -13,6 +14,7 @@ import {
 	APU_SLOT_PHASE_IDLE,
 	APU_SLOT_PHASE_PLAYING,
 	APU_SLOT_REGISTER_WORD_COUNT,
+	APU_TRANSFER_FIFO_WORD_CAPACITY,
 	apuSlotRegisterWordIndex,
 } from '../../machine/ts/machine/devices/audio/contracts';
 import { GEOMETRY_CONTROLLER_PHASE_BUSY, GEOMETRY_CONTROLLER_REGISTER_COUNT } from '../../machine/ts/machine/devices/geometry/contracts';
@@ -55,7 +57,8 @@ function createRuntimeSaveState(): RuntimeSaveState {
 	audioSlotRegisterWords[apuSlotRegisterWordIndex(0, APU_PARAMETER_SOURCE_ADDR_INDEX)] = 0x1000;
 	audioSlotRegisterWords[apuSlotRegisterWordIndex(1, APU_PARAMETER_SOURCE_ADDR_INDEX)] = 0x2000;
 	audioSlotRegisterWords[apuSlotRegisterWordIndex(2, APU_PARAMETER_SOURCE_ADDR_INDEX)] = 0x3000;
-	const audioSlotSourceBytes = Array.from({ length: APU_SLOT_COUNT }, (_, slot) => new Uint8Array(slot === 1 ? [9, 8, 7, 6] : []));
+	const audioSampleRam = new Uint8Array(APU_SAMPLE_RAM_BYTES);
+	audioSampleRam.set([9, 8, 7, 6], 0x20);
 	return {
 		machineState: {
 			psxGpuDisplayModeWord: PSX_GPU_DISPLAY_MODE_PAL_WORD,
@@ -202,7 +205,20 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					eventSourceAddr: 0x2000,
 					slotPhases: Array.from({ length: APU_SLOT_COUNT }, (_, slot) => slot === 1 ? APU_SLOT_PHASE_FADING : (slot === 2 ? APU_SLOT_PHASE_PLAYING : APU_SLOT_PHASE_IDLE)),
 					slotRegisterWords: audioSlotRegisterWords,
-					slotSourceBytes: audioSlotSourceBytes,
+					sampleRam: audioSampleRam,
+					sampleTransfer: {
+						fifoWords: numberedWords(APU_TRANSFER_FIFO_WORD_CAPACITY),
+						fifoReadIndex: 1,
+						fifoWriteIndex: 4,
+						fifoCount: 3,
+						transferAddressWord: 0x20,
+						transferDataWord: 0x44332211,
+						transferControlWord: 2,
+						currentAddress: 0x20,
+						timingCarry: 123,
+						scheduledWords: 3,
+						scheduledCycles: 7,
+					},
 					output: {
 						voices: [
 							{

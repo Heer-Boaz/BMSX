@@ -4,6 +4,7 @@
 #include "machine/cpu/cpu.h"
 #include "machine/devices/audio/controller.h"
 #include "machine/devices/audio/output.h"
+#include "machine/devices/dma/controller.h"
 #include "machine/devices/input/contracts.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/machine.h"
@@ -24,23 +25,28 @@
 namespace {
 
 struct AudioHarness {
-	std::array<bmsx::u8, 1> emptyRom{{0}};
+	std::array<bmsx::u8, 4> systemRom{{0xc0u, 0x80u, 0x80u, 0x80u}};
+	std::array<bmsx::u8, 4> cartRom{{0x40u, 0x80u, 0x80u, 0x80u}};
 	bmsx::Memory memory;
 	bmsx::IrqController irq;
 	bmsx::CPU cpu;
 	bmsx::DeviceScheduler scheduler;
 	bmsx::ApuOutputMixer output;
+	bmsx::DmaController dma;
 	bmsx::AudioController audio;
 
 	AudioHarness()
-		: memory(bmsx::MemoryInit{{emptyRom.data(), 0u}, {emptyRom.data(), 0u}})
+		: memory(bmsx::MemoryInit{{systemRom.data(), systemRom.size()}, {cartRom.data(), cartRom.size()}})
 		, irq(memory)
 		, cpu(memory, irq)
 		, scheduler(cpu)
 		, output()
-		, audio(memory, output, irq, scheduler) {
+		, dma(memory, cpu, irq, scheduler)
+		, audio(memory, output, dma, irq, scheduler) {
 		irq.reset();
+		dma.reset();
 		audio.reset();
+		dma.setTiming(bmsx::APU_TRANSFER_WORDS_PER_SECOND, bmsx::APU_TRANSFER_WORDS_PER_SECOND, 0);
 		audio.setTiming(bmsx::APU_SAMPLE_RATE_HZ, 0);
 	}
 };
@@ -90,8 +96,10 @@ void testOutputRingExposesUnsignedHardwareWords() {
 }
 
 void programEndingPcmVoice(AudioMachineHarness& harness) {
-	harness.memory.writeMappedU32LE(bmsx::RAM_BASE, 0x11223344u);
-	harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_ADDR, bmsx::RAM_BASE);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_ADDRESS, 0u);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_CONTROL, bmsx::APU_TRANSFER_MODE_MANUAL_WRITE);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_DATA, 0x11223344u);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_ADDR, bmsx::APU_SAMPLE_RAM_BASE);
 	harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_BYTES, 4u);
 	harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_SAMPLE_RATE_HZ, bmsx::APU_SAMPLE_RATE_HZ);
 	harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_CHANNELS, 1u);
@@ -176,8 +184,12 @@ void programBadpVoice(AudioHarness& harness) {
 	bytes[57] = 0x11u;
 	bytes[58] = 0x11u;
 	bytes[59] = 0x11u;
-	harness.memory.writeBytes(bmsx::PROGRAM_STATIC_RAM_BASE, bytes.data(), bytes.size());
-	harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_ADDR, bmsx::PROGRAM_STATIC_RAM_BASE);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_ADDRESS, 0u);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_CONTROL, bmsx::APU_TRANSFER_MODE_MANUAL_WRITE);
+	for (size_t offset = 0u; offset < bytes.size(); offset += bmsx::IO_WORD_SIZE) {
+		harness.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_DATA, bmsx::readLE32(bytes.data() + offset));
+	}
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_ADDR, bmsx::APU_SAMPLE_RAM_BASE);
 	harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_BYTES, static_cast<bmsx::u32>(bytes.size()));
 	harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_SAMPLE_RATE_HZ, bmsx::APU_SAMPLE_RATE_HZ / 2u);
 	harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_CHANNELS, 1u);
@@ -249,6 +261,242 @@ void testBadpInterpolationWindowAndRestore() {
 	restored.scheduler.advanceTo(8);
 	restored.audio.onService(8);
 	require(restored.audio.captureState().output.voices.empty(), "BADP seek past the source should end on the next DAC sample");
+}
+
+void testSampleTransferEdgeOrdering() {
+	auto programVoice = [](AudioHarness& harness) {
+		harness.audio.setTiming(bmsx::APU_TRANSFER_WORDS_PER_SECOND, 0);
+		harness.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_ADDRESS, 0u);
+		harness.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_CONTROL, bmsx::APU_TRANSFER_MODE_MANUAL_WRITE);
+		harness.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_DATA, 0x40404040u);
+		harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_ADDR, bmsx::APU_SAMPLE_RAM_BASE);
+		harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_BYTES, 4u);
+		harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_SAMPLE_RATE_HZ, bmsx::APU_SAMPLE_RATE_HZ);
+		harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_CHANNELS, 1u);
+		harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_BITS_PER_SAMPLE, 8u);
+		harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_FRAME_COUNT, 4u);
+		harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_DATA_OFFSET, 0u);
+		harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_DATA_BYTES, 4u);
+		harness.memory.writeMappedU32LE(bmsx::IO_APU_RATE_STEP_Q16, bmsx::APU_RATE_STEP_Q16_ONE);
+		harness.memory.writeMappedU32LE(bmsx::IO_APU_GAIN_Q12, bmsx::APU_GAIN_Q12_ONE);
+		harness.memory.writeMappedU32LE(bmsx::IO_APU_SLOT, 1u);
+		harness.memory.writeMappedU32LE(bmsx::IO_APU_CMD, bmsx::APU_CMD_PLAY);
+		harness.audio.onService(0);
+	};
+
+	auto programTransferEdge = [&programVoice](AudioHarness& harness) {
+		programVoice(harness);
+		const bmsx::u32 dmaSource = bmsx::PROGRAM_STATIC_RAM_BASE + 0x300u;
+		harness.memory.writeMappedU32LE(dmaSource, 0xc0c0c0c0u);
+		harness.scheduler.advanceTo(46);
+		harness.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_ADDRESS, 0u);
+		harness.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_CONTROL, bmsx::APU_TRANSFER_MODE_DMA_WRITE);
+		harness.memory.writeMappedU32LE(bmsx::IO_DMA_READ_ADDR, dmaSource);
+		harness.memory.writeMappedU32LE(bmsx::IO_DMA_WRITE_ADDR, bmsx::IO_APU_TRANSFER_DATA);
+		harness.memory.writeMappedU32LE(bmsx::IO_DMA_TRANSFER_COUNT, 1u);
+		harness.memory.writeMappedU32LE(bmsx::IO_DMA_CONTROL, bmsx::DMA_CONTROL_REQUEST_APU_WRITE);
+		harness.memory.writeMappedU32LE(bmsx::IO_DMA_TRIGGER, bmsx::DMA_TRIGGER_START);
+		const bmsx::i64 dmaDeadline = harness.scheduler.nextDeadline();
+		require(dmaDeadline == 47, "single-word APU DMA should receive its bus grant on cycle 47");
+		harness.scheduler.advanceTo(dmaDeadline);
+		harness.dma.onService(dmaDeadline);
+	};
+
+	AudioHarness scheduled;
+	AudioHarness status;
+	AudioHarness captured;
+	programTransferEdge(scheduled);
+	programTransferEdge(status);
+	programTransferEdge(captured);
+
+	scheduled.scheduler.advanceTo(48);
+	scheduled.audio.onTransferService(48);
+	status.scheduler.advanceTo(48);
+	status.memory.readIoU32(bmsx::IO_APU_STATUS);
+	captured.scheduler.advanceTo(48);
+	const bmsx::AudioControllerState capturedState = captured.audio.captureState();
+
+	bmsx::ApuOutputRing& scheduledRing = scheduled.audio.synchronizeOutput();
+	bmsx::ApuOutputRing& statusRing = status.audio.synchronizeOutput();
+	bmsx::ApuOutputRing& capturedRing = captured.audio.synchronizeOutput();
+	require(scheduledRing.queuedFrames() == 2u, "transfer service should expose both DAC edges through cycle 48");
+	require(statusRing.queuedFrames() == 2u, "APU status should synchronize both DAC edges through cycle 48");
+	require(capturedRing.queuedFrames() == 2u, "APU capture should synchronize both DAC edges through cycle 48");
+	const bmsx::u32 beforeTransfer = scheduledRing.readFramePacked();
+	const bmsx::u32 atTransfer = scheduledRing.readFramePacked();
+	require(static_cast<bmsx::i16>(beforeTransfer & 0xffffu) < 0, "the DAC edge before the transfer deadline should read old sample RAM");
+	require(static_cast<bmsx::i16>(atTransfer & 0xffffu) > 0, "the DAC edge on the transfer deadline should read newly written sample RAM");
+	require(statusRing.readFramePacked() == beforeTransfer && statusRing.readFramePacked() == atTransfer, "status synchronization should preserve transfer-edge PCM ordering");
+	require(capturedRing.readFramePacked() == beforeTransfer && capturedRing.readFramePacked() == atTransfer, "capture synchronization should preserve transfer-edge PCM ordering");
+	require(bmsx::readLE32(capturedState.sampleRam.data()) == 0xc0c0c0c0u, "capture on the transfer deadline should include the completed sample-RAM write");
+
+	AudioHarness manual;
+	programVoice(manual);
+	manual.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_ADDRESS, 0u);
+	manual.scheduler.advanceTo(24);
+	manual.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_DATA, 0xc0c0c0c0u);
+	bmsx::ApuOutputRing& manualRing = manual.audio.synchronizeOutput();
+	require(manualRing.queuedFrames() == 1u, "same-cycle manual RAM write should produce exactly one elapsed DAC sample");
+	require(static_cast<bmsx::i16>(manualRing.readFramePacked() & 0xffffu) > 0, "manual RAM write should precede a DAC sample on the same cycle");
+}
+
+void testSampleBusDmaAndMidTransferRestore() {
+	{
+		AudioHarness harness;
+		auto programPcm = [&](bmsx::u32 sourceAddress) {
+			harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_ADDR, sourceAddress);
+			harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_BYTES, 4u);
+			harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_SAMPLE_RATE_HZ, bmsx::APU_SAMPLE_RATE_HZ);
+			harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_CHANNELS, 1u);
+			harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_BITS_PER_SAMPLE, 8u);
+			harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_FRAME_COUNT, 4u);
+			harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_DATA_OFFSET, 0u);
+			harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_DATA_BYTES, 4u);
+			harness.memory.writeMappedU32LE(bmsx::IO_APU_RATE_STEP_Q16, bmsx::APU_RATE_STEP_Q16_ONE);
+			harness.memory.writeMappedU32LE(bmsx::IO_APU_GAIN_Q12, bmsx::APU_GAIN_Q12_ONE);
+			harness.memory.writeMappedU32LE(bmsx::IO_APU_SLOT, 1u);
+			harness.memory.writeMappedU32LE(bmsx::IO_APU_CMD, bmsx::APU_CMD_PLAY);
+			harness.audio.onService(harness.scheduler.nowCycles());
+		};
+
+		programPcm(bmsx::SYSTEM_ROM_BASE);
+		harness.scheduler.advanceTo(1);
+		harness.audio.onService(1);
+		const auto systemSample = static_cast<bmsx::i16>(harness.output.outputRing.readFramePacked() & 0xffffu);
+		require(systemSample > 0, "APU should fetch PCM from the system ROM chip select");
+
+		programPcm(bmsx::CART_ROM_BASE);
+		harness.scheduler.advanceTo(2);
+		harness.audio.onService(2);
+		const auto cartSample = static_cast<bmsx::i16>(harness.output.outputRing.readFramePacked() & 0xffffu);
+		require(cartSample < 0, "APU should fetch PCM from the cart ROM chip select");
+
+		harness.memory.writeMappedU32LE(bmsx::PROGRAM_STATIC_RAM_BASE, 0x11223344u);
+		programPcm(bmsx::PROGRAM_STATIC_RAM_BASE);
+		const bmsx::AudioControllerState rejected = harness.audio.captureState();
+		require(harness.memory.readIoU32(bmsx::IO_APU_FAULT_CODE) == bmsx::APU_FAULT_SOURCE_RANGE, "CPU RAM should fault on the APU sample bus");
+		require(harness.memory.readIoU32(bmsx::IO_APU_FAULT_DETAIL) == bmsx::PROGRAM_STATIC_RAM_BASE, "source-range fault should latch the rejected CPU address");
+		require(rejected.output.voices.size() == 1u, "a rejected PLAY must retain the active ROM voice");
+		require(rejected.output.voices[0].cursorQ16 == static_cast<bmsx::i64>(bmsx::APU_RATE_STEP_Q16_ONE), "a rejected PLAY must not restart the active voice");
+		require(rejected.slotRegisterWords[bmsx::apuSlotRegisterWordIndex(1u, bmsx::APU_PARAMETER_SOURCE_ADDR_INDEX)] == bmsx::CART_ROM_BASE, "a rejected PLAY must not replace active slot state");
+		require(bmsx::readLE32(rejected.sampleRam.data()) == 0u, "direct ROM playback must not stage samples in APU RAM");
+
+		harness.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_ADDRESS, 0u);
+		harness.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_CONTROL, bmsx::APU_TRANSFER_MODE_MANUAL_WRITE);
+		harness.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_DATA, 0x808080c0u);
+		programPcm(bmsx::APU_SAMPLE_RAM_BASE);
+		harness.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_ADDRESS, 0u);
+		harness.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_DATA, 0x80808040u);
+		harness.scheduler.advanceTo(3);
+		harness.audio.onService(3);
+		const auto mutatedSample = static_cast<bmsx::i16>(harness.output.outputRing.readFramePacked() & 0xffffu);
+		require(mutatedSample < 0, "an active voice should observe writes through its retained APU sample-RAM view");
+	}
+
+	AudioHarness live;
+	live.audio.setTiming(bmsx::APU_TRANSFER_WORDS_PER_SECOND, 0);
+	const bmsx::u32 source = bmsx::PROGRAM_STATIC_RAM_BASE + 0x100u;
+	const bmsx::u32 target = bmsx::PROGRAM_STATIC_RAM_BASE + 0x200u;
+	const bmsx::u32 transferAddress = bmsx::APU_SAMPLE_RAM_BYTES - 8u;
+	for (bmsx::u32 index = 0u; index < 32u; index += 1u) {
+		live.memory.writeMappedU32LE(source + index * bmsx::IO_WORD_SIZE, 0x5a000000u | index);
+	}
+	auto serviceDma = [](AudioHarness& harness) {
+		const bmsx::i64 deadline = harness.scheduler.nextDeadline();
+		require(deadline > harness.scheduler.nowCycles(), "APU DMA grant should have a future deadline");
+		harness.scheduler.advanceTo(deadline);
+		harness.dma.onService(deadline);
+	};
+	auto serviceTransfer = [](AudioHarness& harness) {
+		const bmsx::i64 deadline = harness.scheduler.nextDeadline();
+		require(deadline > harness.scheduler.nowCycles(), "APU sample transfer should have a future deadline");
+		harness.scheduler.advanceTo(deadline);
+		harness.audio.onTransferService(deadline);
+	};
+
+	live.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_ADDRESS, transferAddress);
+	live.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_CONTROL, bmsx::APU_TRANSFER_MODE_DMA_WRITE);
+	live.memory.writeMappedU32LE(bmsx::IO_DMA_READ_ADDR, source);
+	live.memory.writeMappedU32LE(bmsx::IO_DMA_WRITE_ADDR, bmsx::IO_APU_TRANSFER_DATA);
+	live.memory.writeMappedU32LE(bmsx::IO_DMA_TRANSFER_COUNT, 32u);
+	live.memory.writeMappedU32LE(bmsx::IO_DMA_CONTROL, bmsx::DMA_CONTROL_READ_INCREMENT | bmsx::DMA_CONTROL_REQUEST_APU_WRITE);
+	live.memory.writeMappedU32LE(bmsx::IO_DMA_TRIGGER, bmsx::DMA_TRIGGER_START);
+	require(!live.memory.mappedWriteReady(bmsx::IO_APU_TRANSFER_DATA), "BUSY DMA should own the shared APU data port");
+	serviceDma(live);
+
+	const bmsx::i64 savedNow = live.scheduler.nowCycles();
+	const bmsx::MemorySaveState savedMemory = live.memory.captureSaveState();
+	const bmsx::AudioControllerState savedAudio = live.audio.captureState();
+	const bmsx::DmaControllerState savedDma = live.dma.captureState();
+	require(bmsx::readLE32(savedAudio.sampleRam.data() + transferAddress) == 0u, "DMA FIFO words should not reach sample RAM before transfer time elapses");
+	require(savedAudio.sampleTransfer.fifoCount == bmsx::APU_TRANSFER_FIFO_WORD_CAPACITY, "one DMA grant should fill the APU transfer FIFO");
+	require(savedAudio.sampleTransfer.scheduledWords == 1u, "the first accepted FIFO word should establish the transfer deadline");
+
+	AudioHarness restored;
+	restored.audio.setTiming(bmsx::APU_TRANSFER_WORDS_PER_SECOND, 0);
+	restored.scheduler.advanceTo(savedNow);
+	restored.memory.restoreSaveState(savedMemory);
+	restored.dma.restoreState(savedDma, savedNow);
+	restored.audio.restoreState(savedAudio, savedNow);
+	restored.dma.postLoad();
+
+	serviceTransfer(live);
+	serviceTransfer(live);
+	serviceDma(live);
+	serviceTransfer(live);
+	serviceTransfer(live);
+	serviceTransfer(restored);
+	serviceTransfer(restored);
+	serviceDma(restored);
+	serviceTransfer(restored);
+	serviceTransfer(restored);
+
+	const bmsx::AudioControllerState liveCompleted = live.audio.captureState();
+	const bmsx::AudioControllerState restoredCompleted = restored.audio.captureState();
+	require(live.memory.readIoU32(bmsx::IO_DMA_STATUS) == bmsx::DMA_STATUS_DONE, "APU DMA write should complete");
+	require(restored.memory.readIoU32(bmsx::IO_DMA_STATUS) == bmsx::DMA_STATUS_DONE, "restored APU DMA write should complete");
+	require(restoredCompleted.sampleRam == liveCompleted.sampleRam, "mid-transfer restore should produce identical APU sample RAM");
+	require(restoredCompleted.sampleTransfer.currentAddress == liveCompleted.sampleTransfer.currentAddress, "mid-transfer restore should preserve the transfer address phase");
+	require(restoredCompleted.sampleTransfer.fifoCount == 0u && restoredCompleted.sampleTransfer.scheduledWords == 0u, "completed DMA write should leave the transfer datapath idle");
+	for (bmsx::u32 index = 0u; index < 32u; index += 1u) {
+		const bmsx::u32 sampleAddress = (transferAddress + index * bmsx::IO_WORD_SIZE) & bmsx::APU_SAMPLE_RAM_ADDRESS_MASK;
+		require(bmsx::readLE32(liveCompleted.sampleRam.data() + sampleAddress) == (0x5a000000u | index), "APU sample RAM writes should wrap at 512 KiB");
+	}
+
+	live.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_ADDRESS, transferAddress);
+	live.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_CONTROL, bmsx::APU_TRANSFER_MODE_DMA_READ);
+	live.memory.writeMappedU32LE(bmsx::IO_DMA_READ_ADDR, bmsx::IO_APU_TRANSFER_DATA);
+	live.memory.writeMappedU32LE(bmsx::IO_DMA_WRITE_ADDR, target);
+	live.memory.writeMappedU32LE(bmsx::IO_DMA_TRANSFER_COUNT, 32u);
+	live.memory.writeMappedU32LE(bmsx::IO_DMA_CONTROL, bmsx::DMA_CONTROL_WRITE_INCREMENT | bmsx::DMA_CONTROL_REQUEST_APU_READ);
+	live.memory.writeMappedU32LE(bmsx::IO_DMA_TRIGGER, bmsx::DMA_TRIGGER_START);
+	serviceTransfer(live);
+	const bmsx::AudioControllerState beforeCpuRead = live.audio.captureState();
+	const bmsx::u32 cpuReadLatch = live.memory.readMappedU32LE(bmsx::IO_APU_TRANSFER_DATA);
+	const bmsx::AudioControllerState afterCpuRead = live.audio.captureState();
+	require(cpuReadLatch == beforeCpuRead.sampleTransfer.transferDataWord, "CPU APU-data reads should return the retained transfer latch");
+	require(beforeCpuRead.sampleTransfer.fifoCount == bmsx::APU_TRANSFER_FIFO_WORD_CAPACITY
+		&& afterCpuRead.sampleTransfer.fifoCount == bmsx::APU_TRANSFER_FIFO_WORD_CAPACITY,
+		"CPU APU-data reads must not consume a DMA-read FIFO word");
+	serviceDma(live);
+	serviceTransfer(live);
+	serviceTransfer(live);
+	serviceDma(live);
+	live.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_CONTROL, bmsx::APU_TRANSFER_MODE_STOP);
+	require(live.memory.readIoU32(bmsx::IO_DMA_STATUS) == bmsx::DMA_STATUS_DONE, "APU DMA read should complete");
+	for (bmsx::u32 index = 0u; index < 32u; index += 1u) {
+		require(live.memory.readMappedU32LE(target + index * bmsx::IO_WORD_SIZE) == (0x5a000000u | index), "APU DMA read should round-trip wrapped sample RAM words");
+	}
+	require(live.memory.mappedWriteReady(bmsx::IO_APU_TRANSFER_DATA), "DMA completion should release the shared APU data port");
+
+	live.memory.writeMappedU32LE(bmsx::IO_DMA_READ_ADDR, bmsx::IO_APU_TRANSFER_DATA);
+	live.memory.writeMappedU32LE(bmsx::IO_DMA_WRITE_ADDR, target);
+	live.memory.writeMappedU32LE(bmsx::IO_DMA_TRANSFER_COUNT, 1u);
+	live.memory.writeMappedU32LE(bmsx::IO_DMA_CONTROL, bmsx::DMA_CONTROL_REQUEST_DISABLED);
+	live.memory.writeMappedU32LE(bmsx::IO_DMA_TRIGGER, bmsx::DMA_TRIGGER_START);
+	require(!live.memory.mappedWriteReady(bmsx::IO_APU_TRANSFER_DATA), "a busy disabled channel should retain its programmed APU port ownership");
+	live.memory.writeMappedU32LE(bmsx::IO_DMA_READ_ADDR, source);
+	require(live.memory.mappedWriteReady(bmsx::IO_APU_TRANSFER_DATA), "reprogramming a busy DMA address away from APU data should release the CPU port");
 }
 
 void testRuntimeClockResetAndRestorePreserveApuTimebase() {
@@ -499,6 +747,8 @@ int main() {
 	testMachineCaptureIncludesMaterializedApuEndIrq();
 	testHostSynchronizationExposesEveryElapsedPalSample();
 	testBadpInterpolationWindowAndRestore();
+	testSampleTransferEdgeOrdering();
+	testSampleBusDmaAndMidTransferRestore();
 	testRuntimeClockResetAndRestorePreserveApuTimebase();
 	testFilterAndFadeRestore();
 	testResamplerChunkContinuityAndUnderrun();

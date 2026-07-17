@@ -10,7 +10,6 @@
 #include "machine/devices/audio/save_state.h"
 
 #include <array>
-#include <vector>
 
 namespace bmsx {
 
@@ -65,8 +64,7 @@ private:
 		size_t frames = 0;
 		u32 generatorKind = APU_GENERATOR_NONE;
 		u32 generatorDutyQ12 = 0;
-		std::vector<u32> badpSeekFrames;
-		std::vector<u32> badpSeekOffsets;
+		ApuBadpSeekTable badpSeekTable;
 		i64 loopStartQ16 = -1;
 		i64 loopEndQ16 = -1;
 		ApuOutputPlayback playback;
@@ -91,7 +89,6 @@ private:
 		VoiceRecord& record,
 		const ApuAudioSource& source,
 		const Span<const u8>& sourceBytes,
-		const ApuOutputPlayback& playback,
 		u32 rateStepQ16Word,
 		i64 cursorQ16,
 		i32 phaseRemainder,
@@ -108,6 +105,7 @@ private:
 	std::array<VoiceRecord, APU_SLOT_COUNT> m_voices{};
 	std::array<f32, MIX_BATCH_SAMPLES> m_mixBuffer{};
 	std::array<i16, MIX_BATCH_SAMPLES> m_renderBuffer{};
+	ApuPhaseStep m_phaseStep{};
 	f64 m_sampledLeft = 0.0;
 	f64 m_sampledRight = 0.0;
 };

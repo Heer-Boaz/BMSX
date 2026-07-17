@@ -2,6 +2,17 @@ export const APU_SAMPLE_RATE_HZ = 44100;
 export const APU_RATE_STEP_Q16_ONE = 0x1_0000;
 export const APU_GAIN_Q12_ONE = 0x1000;
 export const APU_COMMAND_FIFO_CAPACITY = 16;
+export const APU_SAMPLE_RAM_BASE = 0x1000_0000;
+export const APU_SAMPLE_RAM_BYTES = 512 * 1024;
+export const APU_SAMPLE_RAM_ADDRESS_MASK = APU_SAMPLE_RAM_BYTES - 1;
+export const APU_TRANSFER_FIFO_WORD_CAPACITY = 16;
+export const APU_TRANSFER_WORDS_PER_SECOND = APU_SAMPLE_RATE_HZ * 24;
+
+export const APU_TRANSFER_MODE_MASK = 0x3;
+export const APU_TRANSFER_MODE_STOP = 0;
+export const APU_TRANSFER_MODE_MANUAL_WRITE = 1;
+export const APU_TRANSFER_MODE_DMA_WRITE = 2;
+export const APU_TRANSFER_MODE_DMA_READ = 3;
 
 export const APU_CMD_NONE = 0;
 export const APU_CMD_PLAY = 1;
@@ -49,6 +60,10 @@ export const APU_STATUS_SELECTED_SLOT_ACTIVE = 1 << 1;
 export const APU_STATUS_BUSY = 1 << 2;
 export const APU_STATUS_CMD_FIFO_EMPTY = 1 << 5;
 export const APU_STATUS_CMD_FIFO_FULL = 1 << 6;
+export const APU_STATUS_DMA_REQUEST = 1 << 7;
+export const APU_STATUS_DMA_READ_REQUEST = 1 << 8;
+export const APU_STATUS_DMA_WRITE_REQUEST = 1 << 9;
+export const APU_STATUS_TRANSFER_BUSY = 1 << 10;
 
 export const APU_FAULT_NONE = 0;
 export const APU_FAULT_BAD_CMD = 0x0001;

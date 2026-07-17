@@ -2,12 +2,12 @@ import { IO_APU_ACTIVE_MASK } from '../../bus/io';
 import type { Memory } from '../../memory/memory';
 import type { ApuEventLatch } from './event_latch';
 import type { ApuOutputMixer } from './output';
-import { ApuSelectedSlotLatch } from './selected_slot_latch';
-import type { ApuSourceDma } from './source';
+import type { ApuSelectedSlotLatch } from './selected_slot_latch';
 import type { ApuSlotBank } from './slot_bank';
 import {
 	APU_EVENT_SLOT_ENDED,
 	APU_SLOT_COUNT,
+	APU_SLOT_PHASE_IDLE,
 	type ApuAudioSlot,
 	type ApuParameterRegisterWords,
 	type ApuSlotPhase,
@@ -17,7 +17,6 @@ export class ApuActiveSlots {
 	public constructor(
 		private readonly memory: Memory,
 		private readonly audioOutput: ApuOutputMixer,
-		private readonly sourceDma: ApuSourceDma,
 		private readonly eventLatch: ApuEventLatch,
 		private readonly slots: ApuSlotBank,
 		private readonly selectedSlotLatch: ApuSelectedSlotLatch,
@@ -25,7 +24,7 @@ export class ApuActiveSlots {
 
 	public writeActiveMask(): void {
 		this.memory.writeIoValue(IO_APU_ACTIVE_MASK, this.slots.activeMask);
-		ApuSelectedSlotLatch.refreshThunk(this.selectedSlotLatch);
+		this.selectedSlotLatch.refresh();
 	}
 
 	public setActive(slot: ApuAudioSlot, registerWords: ApuParameterRegisterWords): void {
@@ -35,7 +34,11 @@ export class ApuActiveSlots {
 
 	public stop(slot: ApuAudioSlot): void {
 		this.slots.clearSlot(slot);
-		this.sourceDma.clearSlot(slot);
+		this.writeActiveMask();
+	}
+
+	public deactivate(slot: ApuAudioSlot): void {
+		this.slots.setPhase(slot, APU_SLOT_PHASE_IDLE);
 		this.writeActiveMask();
 	}
 

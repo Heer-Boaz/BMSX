@@ -2,6 +2,20 @@ import type { ApuAudioSlot } from './contracts';
 import type { BiquadFilterState } from './biquad_filter';
 import type { ApuCommandFifoState } from './command_fifo';
 
+export type ApuSampleTransferState = {
+	transferAddressWord: number;
+	transferDataWord: number;
+	transferControlWord: number;
+	currentAddress: number;
+	fifoWords: number[];
+	fifoReadIndex: number;
+	fifoWriteIndex: number;
+	fifoCount: number;
+	timingCarry: number;
+	scheduledWords: number;
+	scheduledCycles: number;
+};
+
 export type ApuBiquadFilterState = {
 	enabled: boolean;
 	b0: number;
@@ -57,7 +71,8 @@ export type AudioControllerState = {
 	eventSourceAddr: number;
 	slotPhases: number[];
 	slotRegisterWords: number[];
-	slotSourceBytes: Uint8Array[];
+	sampleRam: Uint8Array;
+	sampleTransfer: ApuSampleTransferState;
 	output: ApuOutputState;
 	sampleCarry: number;
 	sampleSequence: number;

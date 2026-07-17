@@ -872,6 +872,39 @@ ApuCommandFifoState decodeApuCommandFifoState(const BinValue& value, const char*
 	return state;
 }
 
+BinValue encodeApuSampleTransferState(const ApuSampleTransferState& state) {
+	BinObject object;
+	object["fifoWords"] = encodeFixedArray(state.fifoWords, encodeScalar<f64, u32>);
+	object["fifoReadIndex"] = encodeScalar<f64>(state.fifoReadIndex);
+	object["fifoWriteIndex"] = encodeScalar<f64>(state.fifoWriteIndex);
+	object["fifoCount"] = encodeScalar<f64>(state.fifoCount);
+	object["transferAddressWord"] = encodeScalar<f64>(state.transferAddressWord);
+	object["transferDataWord"] = encodeScalar<f64>(state.transferDataWord);
+	object["transferControlWord"] = encodeScalar<f64>(state.transferControlWord);
+	object["currentAddress"] = encodeScalar<f64>(state.currentAddress);
+	object["timingCarry"] = encodeScalar<f64>(state.timingCarry);
+	object["scheduledWords"] = encodeScalar<f64>(state.scheduledWords);
+	object["scheduledCycles"] = encodeScalar<f64>(state.scheduledCycles);
+	return BinValue(std::move(object));
+}
+
+ApuSampleTransferState decodeApuSampleTransferState(const BinValue& value, const char* label) {
+	const BinObject& object = requireObject(value, label);
+	ApuSampleTransferState state;
+	state.fifoWords = decodeU32Array<APU_TRANSFER_FIFO_WORD_CAPACITY>(requireField(object, "fifoWords", label), "machine.audio.sampleTransfer.fifoWords");
+	state.fifoReadIndex = requireBoundedU32(requireField(object, "fifoReadIndex", label), "machine.audio.sampleTransfer.fifoReadIndex", 0u, APU_TRANSFER_FIFO_WORD_CAPACITY - 1u);
+	state.fifoWriteIndex = requireBoundedU32(requireField(object, "fifoWriteIndex", label), "machine.audio.sampleTransfer.fifoWriteIndex", 0u, APU_TRANSFER_FIFO_WORD_CAPACITY - 1u);
+	state.fifoCount = requireBoundedU32(requireField(object, "fifoCount", label), "machine.audio.sampleTransfer.fifoCount", 0u, APU_TRANSFER_FIFO_WORD_CAPACITY);
+	state.transferAddressWord = requireU32(requireField(object, "transferAddressWord", label), "machine.audio.sampleTransfer.transferAddressWord");
+	state.transferDataWord = requireU32(requireField(object, "transferDataWord", label), "machine.audio.sampleTransfer.transferDataWord");
+	state.transferControlWord = requireU32(requireField(object, "transferControlWord", label), "machine.audio.sampleTransfer.transferControlWord");
+	state.currentAddress = requireBoundedU32(requireField(object, "currentAddress", label), "machine.audio.sampleTransfer.currentAddress", 0u, APU_SAMPLE_RAM_ADDRESS_MASK);
+	state.timingCarry = requireI64(requireField(object, "timingCarry", label), "machine.audio.sampleTransfer.timingCarry");
+	state.scheduledWords = requireBoundedU32(requireField(object, "scheduledWords", label), "machine.audio.sampleTransfer.scheduledWords", 0u, APU_TRANSFER_FIFO_WORD_CAPACITY);
+	state.scheduledCycles = requireI64(requireField(object, "scheduledCycles", label), "machine.audio.sampleTransfer.scheduledCycles");
+	return state;
+}
+
 BinValue encodeAudioControllerState(const AudioControllerState& state) {
 	BinObject object;
 	object["registerWords"] = encodeFixedArray(state.registerWords, encodeScalar<f64, u32>);
@@ -882,9 +915,8 @@ BinValue encodeAudioControllerState(const AudioControllerState& state) {
 	object["eventSourceAddr"] = encodeScalar<f64>(state.eventSourceAddr);
 	object["slotPhases"] = encodeFixedArray(state.slotPhases, encodeScalar<f64, u32>);
 	object["slotRegisterWords"] = encodeFixedArray(state.slotRegisterWords, encodeScalar<f64, u32>);
-	object["slotSourceBytes"] = encodeFixedArray(state.slotSourceBytes, [](const std::vector<u8>& bytes) {
-		return BinValue(BinBinary(bytes.begin(), bytes.end()));
-	});
+	object["sampleRam"] = BinValue(BinBinary(state.sampleRam.begin(), state.sampleRam.end()));
+	object["sampleTransfer"] = encodeApuSampleTransferState(state.sampleTransfer);
 	BinObject output;
 	output["voices"] = encodeVector<ApuOutputVoiceState>(state.output.voices, encodeApuOutputVoiceState);
 	object["output"] = BinValue(std::move(output));
@@ -907,13 +939,11 @@ AudioControllerState decodeAudioControllerState(const BinValue& value, const cha
 	state.eventSourceAddr = requireU32(requireField(object, "eventSourceAddr", label), "machine.audio.eventSourceAddr");
 	state.slotPhases = decodeU32Array<APU_SLOT_COUNT>(requireField(object, "slotPhases", label), "machine.audio.slotPhases");
 	state.slotRegisterWords = decodeU32Array<APU_SLOT_REGISTER_WORD_COUNT>(requireField(object, "slotRegisterWords", label), "machine.audio.slotRegisterWords");
-	const BinArray& slotSourceBytes = requireArray(requireField(object, "slotSourceBytes", label), "machine.audio.slotSourceBytes");
-	if (slotSourceBytes.size() != APU_SLOT_COUNT) {
-		throw BMSX_RUNTIME_ERROR("machine.audio.slotSourceBytes must contain APU_SLOT_COUNT binary entries.");
+	state.sampleRam = requireBinary(requireField(object, "sampleRam", label), "machine.audio.sampleRam");
+	if (state.sampleRam.size() != APU_SAMPLE_RAM_BYTES) {
+		throw BMSX_RUNTIME_ERROR("machine.audio.sampleRam must contain APU_SAMPLE_RAM_BYTES bytes.");
 	}
-	for (size_t slot = 0; slot < APU_SLOT_COUNT; slot += 1u) {
-		state.slotSourceBytes[slot] = requireBinary(slotSourceBytes[slot], "machine.audio.slotSourceBytes[]");
-	}
+	state.sampleTransfer = decodeApuSampleTransferState(requireField(object, "sampleTransfer", label), "machine.audio.sampleTransfer");
 	state.output = decodeApuOutputState(requireField(object, "output", label), "machine.audio.output");
 	state.sampleCarry = requireI64(requireField(object, "sampleCarry", label), "machine.audio.sampleCarry");
 	state.sampleSequence = requireI64(requireField(object, "sampleSequence", label), "machine.audio.sampleSequence");

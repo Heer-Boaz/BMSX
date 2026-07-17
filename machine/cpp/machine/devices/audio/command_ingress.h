@@ -2,6 +2,7 @@
 
 #include "common/primitives.h"
 #include "machine/cpu/cpu.h"
+#include "machine/memory/bus_master.h"
 
 namespace bmsx {
 
@@ -19,7 +20,7 @@ public:
 		ApuServiceClock& serviceClock,
 		DeviceScheduler& scheduler);
 
-	static void onCommandWriteThunk(void* context, u32 addr, Value value);
+	static void onCommandWriteThunk(void* context, u32 addr, Value value, MappedBusMaster busMaster);
 
 private:
 	Memory& m_memory;

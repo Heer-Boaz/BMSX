@@ -18,7 +18,8 @@ constexpr uint8_t DEVICE_SERVICE_GEO = 1;
 constexpr uint8_t DEVICE_SERVICE_DMA = 2;
 constexpr uint8_t DEVICE_SERVICE_APU = 3;
 constexpr uint8_t DEVICE_SERVICE_GPU = 4;
-constexpr uint8_t DeviceServiceKindCount = DEVICE_SERVICE_GPU + 1;
+constexpr uint8_t DEVICE_SERVICE_APU_TRANSFER = 5;
+constexpr uint8_t DeviceServiceKindCount = DEVICE_SERVICE_APU_TRANSFER + 1;
 
 class DeviceScheduler {
 public:

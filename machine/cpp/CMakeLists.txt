@@ -235,6 +235,8 @@ add_library(bmsx_core STATIC
 	machine/devices/audio/command_ingress.cpp
 	machine/devices/audio/command_latch.cpp
 	machine/devices/audio/event_latch.cpp
+	machine/devices/audio/sample_memory.cpp
+	machine/devices/audio/sample_transfer.cpp
 	machine/devices/audio/source.cpp
 	machine/devices/audio/selected_slot_latch.cpp
 	machine/devices/audio/service_clock.cpp

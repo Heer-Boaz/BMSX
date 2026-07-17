@@ -2,8 +2,6 @@
 
 #include "common/types.h"
 
-#include <vector>
-
 namespace bmsx {
 
 struct ApuBadpDecoderState {
@@ -23,12 +21,13 @@ struct ApuBadpDecoderState {
 	i16 previousDecodedRight = 0;
 };
 
-struct ApuBadpSeekTableResult {
-	std::vector<u32> frames;
-	std::vector<u32> offsets;
+struct ApuBadpSeekTable {
+	const u8* bytes = nullptr;
+	size_t byteOffset = 0;
+	u32 entryCount = 0;
 };
 
-ApuBadpSeekTableResult readApuBadpSeekTable(const u8* bytes, size_t byteOffset);
+void loadApuBadpSeekTable(ApuBadpSeekTable& out, const u8* bytes, size_t byteOffset);
 
 
 } // namespace bmsx

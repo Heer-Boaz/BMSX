@@ -5,7 +5,7 @@ import type { DeviceScheduler } from '../../scheduler/device';
 import type { ApuOutputMixer } from './output';
 import type { ApuOutputRing } from './output_ring';
 import type { AudioControllerState } from './save_state';
-import { ApuSourceDma } from './source';
+import { ApuSampleMemory } from './sample_memory';
 import { ApuCommandFifo } from './command_fifo';
 import { ApuEventLatch } from './event_latch';
 import { clearApuCommandLatch } from './command_latch';
@@ -36,6 +36,7 @@ import {
 import { Memory } from '../../memory/memory';
 import { DeviceStatusLatch, type DeviceStatusRegisters } from '../device_status';
 import type { IrqController } from '../irq/controller';
+import type { DmaController } from '../dma/controller';
 
 const APU_DEVICE_STATUS_REGISTERS: DeviceStatusRegisters = {
 	statusAddr: IO_APU_STATUS,
@@ -53,7 +54,7 @@ const APU_QUEUE_STATUS_REGISTER_ADDRS = [
 ] as const;
 
 export class AudioController {
-	private readonly sourceDma: ApuSourceDma;
+	private readonly sampleMemory: ApuSampleMemory;
 	private readonly eventLatch: ApuEventLatch;
 	private readonly commandFifo = new ApuCommandFifo();
 	private readonly slots = new ApuSlotBank();
@@ -69,15 +70,16 @@ export class AudioController {
 	public constructor(
 		private readonly memory: Memory,
 		private readonly audioOutput: ApuOutputMixer,
+		dma: DmaController,
 		irq: IrqController,
 		private readonly scheduler: DeviceScheduler,
 	) {
-		this.sourceDma = new ApuSourceDma(memory);
+		this.sampleMemory = new ApuSampleMemory(memory);
 		this.eventLatch = new ApuEventLatch(memory, irq);
 		this.fault = new DeviceStatusLatch(memory, APU_DEVICE_STATUS_REGISTERS);
 		this.selectedSlotLatch = new ApuSelectedSlotLatch(memory, this.fault, this.slots);
-		this.activeSlots = new ApuActiveSlots(memory, this.audioOutput, this.sourceDma, this.eventLatch, this.slots, this.selectedSlotLatch);
-		this.serviceClock = new ApuServiceClock(scheduler, this.commandFifo, this.activeSlots, this.audioOutput);
+		this.activeSlots = new ApuActiveSlots(memory, this.audioOutput, this.eventLatch, this.slots, this.selectedSlotLatch);
+		this.serviceClock = new ApuServiceClock(memory, this.sampleMemory, dma, scheduler, this.commandFifo, this.activeSlots, this.audioOutput);
 		this.statusRegister = new ApuStatusRegister(this.fault, this.slots, this.commandFifo, this.serviceClock, scheduler);
 		this.commandIngress = new ApuCommandIngress(memory, this.commandFifo, this.fault, this.serviceClock, scheduler);
 		this.queueStatusRegisters = new ApuQueueStatusRegisters(this.commandFifo);
@@ -86,7 +88,7 @@ export class AudioController {
 			this.audioOutput,
 			scheduler,
 			this.commandFifo,
-			this.sourceDma,
+			this.sampleMemory,
 			this.activeSlots,
 			this.slots,
 			this.selectedSlotLatch,
@@ -108,13 +110,13 @@ export class AudioController {
 	}
 
 	public dispose(): void {
-		this.serviceClock.reset(this.scheduler.currentNowCycles());
+		this.serviceClock.dispose();
 		this.audioOutput.resetPlaybackState();
 	}
 
 	public reset(): void {
 		this.commandFifo.reset();
-		this.sourceDma.reset();
+		this.sampleMemory.reset();
 		this.slots.reset();
 		this.serviceClock.reset(this.scheduler.currentNowCycles());
 		this.audioOutput.resetPlaybackState();
@@ -142,7 +144,8 @@ export class AudioController {
 			eventSourceAddr: event.eventSourceAddr,
 			slotPhases: this.slots.captureSlotPhases(),
 			slotRegisterWords: this.slots.captureSlotRegisterWords(),
-			slotSourceBytes: this.sourceDma.captureState(),
+			sampleRam: this.sampleMemory.captureState(),
+			sampleTransfer: this.serviceClock.captureSampleTransferState(nowCycles),
 			output: this.audioOutput.captureState(),
 			sampleCarry: this.serviceClock.captureSampleCarry(),
 			sampleSequence: this.serviceClock.captureSampleSequence(),
@@ -159,9 +162,9 @@ export class AudioController {
 		}
 		this.commandFifo.restoreState(state.commandFifo);
 		this.eventLatch.restoreState(state);
+		this.sampleMemory.restoreState(state.sampleRam);
 		this.slots.restore(state.slotPhases, state.slotRegisterWords);
-		this.sourceDma.restoreState(state.slotSourceBytes);
-		this.serviceClock.restore(state.sampleCarry, state.sampleSequence, nowCycles);
+		this.serviceClock.restore(state.sampleCarry, state.sampleSequence, state.sampleTransfer, nowCycles);
 		this.fault.restore(state.apuStatus, state.apuFaultCode, state.apuFaultDetail);
 		this.activeSlots.writeActiveMask();
 		for (const voiceState of state.output.voices) {
@@ -181,6 +184,10 @@ export class AudioController {
 			this.commandExecutor.drainCommandFifo();
 		}
 		this.serviceClock.scheduleNext(nowCycles);
+	}
+
+	public onTransferService(nowCycles: number): void {
+		this.serviceClock.synchronize(nowCycles);
 	}
 
 	public synchronizeOutput(): ApuOutputRing {

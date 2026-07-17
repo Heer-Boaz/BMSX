@@ -5,6 +5,7 @@
 #include "machine/devices/audio/active_slots.h"
 #include "machine/devices/audio/command_fifo.h"
 #include "machine/devices/audio/output.h"
+#include "machine/devices/audio/sample_memory.h"
 #include "machine/devices/audio/selected_slot_latch.h"
 #include "machine/devices/audio/service_clock.h"
 #include "machine/devices/audio/source.h"
@@ -19,7 +20,7 @@ ApuCommandExecutor::ApuCommandExecutor(Memory& memory,
 	ApuOutputMixer& audioOutput,
 	DeviceScheduler& scheduler,
 	ApuCommandFifo& commandFifo,
-	ApuSourceDma& sourceDma,
+	ApuSampleMemory& sampleMemory,
 	ApuActiveSlots& activeSlots,
 	ApuSlotBank& slots,
 	ApuSelectedSlotLatch& selectedSlotLatch,
@@ -29,7 +30,7 @@ ApuCommandExecutor::ApuCommandExecutor(Memory& memory,
 	, m_audioOutput(audioOutput)
 	, m_scheduler(scheduler)
 	, m_commandFifo(commandFifo)
-	, m_sourceDma(sourceDma)
+	, m_sampleMemory(sampleMemory)
 	, m_activeSlots(activeSlots)
 	, m_slots(slots)
 	, m_selectedSlotLatch(selectedSlotLatch)
@@ -46,17 +47,18 @@ void ApuCommandExecutor::drainCommandFifo() {
 void ApuCommandExecutor::restoreOutputVoice(const ApuOutputVoiceState& state) {
 	const ApuAudioSlot slot = state.slot;
 	m_slots.loadRegisterWords(slot, m_slotRegisterDispatchWords);
-	const ApuAudioSource source = resolveApuAudioSource(m_slotRegisterDispatchWords);
+	loadApuAudioSource(m_source, m_slotRegisterDispatchWords);
+	bindSource(m_source);
 	m_audioOutput.restoreVoice(
 		slot,
-		source,
-		m_sourceDma.bytesForSlot(slot),
+		m_source,
+		m_sourceView,
 		m_slotRegisterDispatchWords,
 		state
 	);
 }
 
-Value ApuCommandExecutor::selectedSlotRegisterReadThunk(void* context, u32 addr) {
+Value ApuCommandExecutor::selectedSlotRegisterReadThunk(void* context, u32 addr, MappedBusMaster) {
 	auto& executor = *static_cast<ApuCommandExecutor*>(context);
 	const i64 nowCycles = executor.m_scheduler.currentNowCycles();
 	executor.m_serviceClock.synchronize(nowCycles);
@@ -65,7 +67,7 @@ Value ApuCommandExecutor::selectedSlotRegisterReadThunk(void* context, u32 addr)
 	return valueNumber(static_cast<double>(executor.m_slots.registerWord(slot, parameterIndex)));
 }
 
-void ApuCommandExecutor::selectedSlotRegisterWriteThunk(void* context, u32 addr, Value value) {
+void ApuCommandExecutor::selectedSlotRegisterWriteThunk(void* context, u32 addr, Value value, MappedBusMaster) {
 	auto& executor = *static_cast<ApuCommandExecutor*>(context);
 	const i64 nowCycles = executor.m_scheduler.currentNowCycles();
 	executor.m_serviceClock.synchronize(nowCycles);
@@ -92,15 +94,18 @@ void ApuCommandExecutor::executeCommand(u32 command, const ApuParameterRegisterW
 }
 
 void ApuCommandExecutor::play(const ApuParameterRegisterWords& registerWords) {
-	const ApuAudioSource source = resolveApuAudioSource(registerWords);
+	loadApuAudioSource(m_source, registerWords);
 	const ApuAudioSlot slot = registerWords[APU_PARAMETER_SLOT_INDEX] & APU_SLOT_INDEX_MASK;
-	startPlay(source, slot, registerWords);
+	startPlay(m_source, slot, registerWords);
 }
 
 void ApuCommandExecutor::startPlay(const ApuAudioSource& source, ApuAudioSlot slot, const ApuParameterRegisterWords& registerWords) {
-	m_sourceDma.loadSlot(m_memory, slot, source);
+	if (!bindSource(source)) {
+		m_fault.raise(APU_FAULT_SOURCE_RANGE, source.sourceAddr);
+		return;
+	}
 	m_activeSlots.setActive(slot, registerWords);
-	m_audioOutput.playVoice(slot, source, m_sourceDma.bytesForSlot(slot), registerWords);
+	m_audioOutput.playVoice(slot, source, m_sourceView, registerWords);
 }
 
 void ApuCommandExecutor::stopSlot(const ApuParameterRegisterWords& registerWords) {
@@ -129,20 +134,33 @@ void ApuCommandExecutor::writeSlotRegisterWord(ApuAudioSlot slot, u32 parameterI
 	m_slots.writeRegisterWord(slot, parameterIndex, word);
 	if ((m_slots.activeMask() & (1u << slot)) != 0u) {
 		m_slots.loadRegisterWords(slot, m_slotRegisterDispatchWords);
-		const ApuAudioSource source = resolveApuAudioSource(m_slotRegisterDispatchWords);
+		loadApuAudioSource(m_source, m_slotRegisterDispatchWords);
 		if (apuParameterProgramsSourceBuffer(parameterIndex)) {
-			m_sourceDma.loadSlot(m_memory, slot, source);
-			m_audioOutput.replaceVoiceSource(slot, source, m_sourceDma.bytesForSlot(slot), m_slotRegisterDispatchWords);
+			if (!bindSource(m_source)) {
+				m_audioOutput.stopSlot(slot);
+				m_activeSlots.deactivate(slot);
+				m_fault.raise(APU_FAULT_SOURCE_RANGE, m_source.sourceAddr);
+				return;
+			}
+			m_audioOutput.replaceVoiceSource(slot, m_source, m_sourceView, m_slotRegisterDispatchWords);
 		} else {
 			m_audioOutput.writeSlotRegisterWord(
 				slot,
-				source,
+				m_source,
 				m_slotRegisterDispatchWords,
 				parameterIndex
 			);
 		}
 	}
-	ApuSelectedSlotLatch::refreshThunk(&m_selectedSlotLatch, IO_APU_SLOT, valueNil());
+	m_selectedSlotLatch.refresh();
+}
+
+bool ApuCommandExecutor::bindSource(const ApuAudioSource& source) {
+	if (apuAudioSourceUsesGenerator(source)) {
+		m_sourceView = {};
+		return true;
+	}
+	return m_sampleMemory.bindSource(source.sourceAddr, source.sourceBytes, m_sourceView);
 }
 
 } // namespace bmsx

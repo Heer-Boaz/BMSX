@@ -22,11 +22,11 @@ ApuStatusRegister::ApuStatusRegister(
 	, m_serviceClock(serviceClock)
 	, m_scheduler(scheduler) {}
 
-Value ApuStatusRegister::readThunk(void* context, [[maybe_unused]] u32 addr) {
+Value ApuStatusRegister::readThunk(void* context, [[maybe_unused]] u32 addr, MappedBusMaster) {
 	auto& reg = *static_cast<ApuStatusRegister*>(context);
 	const i64 nowCycles = reg.m_scheduler.currentNowCycles();
 	reg.m_serviceClock.synchronize(nowCycles);
-	u32 status = reg.m_fault.status;
+	u32 status = reg.m_fault.status | reg.m_serviceClock.sampleTransferStatusBits();
 	if (reg.m_slots.activeMask() != 0u || !reg.m_commandFifo.empty()) {
 		status |= APU_STATUS_BUSY;
 	}

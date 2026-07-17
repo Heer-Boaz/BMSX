@@ -1,36 +1,11 @@
 #include "machine/devices/audio/controller.h"
 #include "machine/devices/audio/output.h"
-#include "machine/devices/audio/source.h"
 
 #include "machine/bus/io.h"
 #include "machine/cpu/cpu.h"
 #include "machine/scheduler/device.h"
 
-#include <cstring>
-
 namespace bmsx {
-
-ApuSlotSourceBytes ApuSourceDma::captureState() const {
-	ApuSlotSourceBytes state;
-	for (ApuAudioSlot slot = 0; slot < APU_SLOT_COUNT; slot += 1u) {
-		const Span<const u8> bytes = m_slotSources[slot].bytes;
-		std::vector<u8>& slotBytes = state[slot];
-		slotBytes.resize(bytes.size());
-		if (!bytes.empty()) {
-			std::memcpy(slotBytes.data(), bytes.data(), bytes.size());
-		}
-	}
-	return state;
-}
-
-void ApuSourceDma::restoreState(const ApuSlotSourceBytes& slotSourceBytes) {
-	for (ApuAudioSlot slot = 0; slot < APU_SLOT_COUNT; slot += 1u) {
-		SlotSource& slotSource = m_slotSources[slot];
-		const std::vector<u8>& stateBytes = slotSourceBytes[slot];
-		slotSource.ownedBytes = std::vector<u8>(stateBytes.begin(), stateBytes.end());
-		slotSource.bindOwnedBytes();
-	}
-}
 
 ApuOutputVoiceState captureApuOutputVoiceState(const ApuOutputMixer::VoiceRecord& record) {
 	ApuOutputVoiceState voice;
@@ -120,7 +95,8 @@ AudioControllerState AudioController::captureState() {
 	state.eventSourceAddr = event.eventSourceAddr;
 	state.slotPhases = m_slots.slotPhases();
 	state.slotRegisterWords = m_slots.slotRegisterWords();
-	state.slotSourceBytes = m_sourceDma.captureState();
+	state.sampleRam = m_sampleMemory.captureState();
+	state.sampleTransfer = m_serviceClock.captureSampleTransferState(nowCycles);
 	state.output = m_audioOutput.captureState();
 	state.sampleCarry = m_serviceClock.captureSampleCarry();
 	state.sampleSequence = m_serviceClock.captureSampleSequence();
@@ -138,8 +114,8 @@ void AudioController::restoreState(const AudioControllerState& state, int64_t no
 	m_commandFifo.restoreState(state.commandFifo);
 	m_eventLatch.restoreState({state.eventSequence, state.eventKind, state.eventSlot, state.eventSourceAddr});
 	m_slots.restore(state.slotPhases, state.slotRegisterWords);
-	m_sourceDma.restoreState(state.slotSourceBytes);
-	m_serviceClock.restore(state.sampleCarry, state.sampleSequence, nowCycles);
+	m_sampleMemory.restoreState(state.sampleRam);
+	m_serviceClock.restore(state.sampleCarry, state.sampleSequence, state.sampleTransfer, nowCycles);
 	m_fault.restore(state.apuStatus, state.apuFaultCode, state.apuFaultDetail);
 	m_activeSlots.writeActiveMask();
 	for (const ApuOutputVoiceState& voiceState : state.output.voices) {

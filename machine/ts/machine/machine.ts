@@ -17,6 +17,7 @@ import { SystemController } from './devices/system/controller';
 import { Memory } from './memory/memory';
 import {
 	DEVICE_SERVICE_APU,
+	DEVICE_SERVICE_APU_TRANSFER,
 	DEVICE_SERVICE_DMA,
 	DEVICE_SERVICE_GEO,
 	DEVICE_SERVICE_GPU,
@@ -51,8 +52,8 @@ export class Machine {
 		this.systemController = new SystemController(this.memory, this.cpu);
 		this.scheduler = new DeviceScheduler(this.cpu);
 		this.audioOutput = new ApuOutputMixer();
-		this.audioController = new AudioController(this.memory, this.audioOutput, this.irqController, this.scheduler);
 		this.dmaController = new DmaController(this.memory, this.cpu, this.irqController, this.scheduler);
+		this.audioController = new AudioController(this.memory, this.audioOutput, this.dmaController, this.irqController, this.scheduler);
 		this.geometryController = new GeometryController(this.memory, this.irqController, this.scheduler);
 		this.gxGpu = new GxGpu(this.memory, this.irqController, this.scheduler, this.dmaController);
 		this.gxGte = new GxGte(this.memory);
@@ -99,6 +100,9 @@ export class Machine {
 				return;
 			case DEVICE_SERVICE_APU:
 				this.audioController.onService(nowCycles);
+				return;
+			case DEVICE_SERVICE_APU_TRANSFER:
+				this.audioController.onTransferService(nowCycles);
 				return;
 			case DEVICE_SERVICE_GPU:
 				this.gxGpu.onService(nowCycles);

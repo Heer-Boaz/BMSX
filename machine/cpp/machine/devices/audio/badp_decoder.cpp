@@ -8,25 +8,10 @@
 
 namespace bmsx {
 
-ApuBadpSeekTableResult readApuBadpSeekTable(const u8* bytes, size_t byteOffset) {
-	ApuBadpSeekTableResult result;
-	const u32 seekEntryCount = readLE32(bytes + byteOffset + 28u);
-	const u32 seekTableOffset = readLE32(bytes + byteOffset + 32u);
-	const size_t seekCount = seekEntryCount > 0u ? static_cast<size_t>(seekEntryCount) : 1u;
-	result.frames.resize(seekCount);
-	result.offsets.resize(seekCount);
-	if (seekEntryCount > 0u) {
-		size_t cursor = byteOffset + static_cast<size_t>(seekTableOffset);
-		for (size_t index = 0; index < seekCount; index += 1u) {
-			result.frames[index] = readLE32(bytes + cursor);
-			result.offsets[index] = readLE32(bytes + cursor + 4u);
-			cursor += 8u;
-		}
-	} else {
-		result.frames[0] = 0u;
-		result.offsets[0] = 0u;
-	}
-	return result;
+void loadApuBadpSeekTable(ApuBadpSeekTable& out, const u8* bytes, size_t byteOffset) {
+	out.bytes = bytes;
+	out.byteOffset = byteOffset + readLE32(bytes + byteOffset + 32u);
+	out.entryCount = readLE32(bytes + byteOffset + 28u);
 }
 
 } // namespace bmsx

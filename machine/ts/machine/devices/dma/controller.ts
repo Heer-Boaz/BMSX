@@ -1,5 +1,7 @@
 import {
 	DMA_CONTROL_READ_INCREMENT,
+	DMA_CONTROL_REQUEST_APU_READ,
+	DMA_CONTROL_REQUEST_APU_WRITE,
 	DMA_CONTROL_REQUEST_FORCE,
 	DMA_CONTROL_REQUEST_GX_READ,
 	DMA_CONTROL_REQUEST_GX_WRITE,
@@ -14,6 +16,7 @@ import {
 	IO_DMA_TRANSFER_COUNT,
 	IO_DMA_TRIGGER,
 	IO_DMA_WRITE_ADDR,
+	IO_APU_TRANSFER_DATA,
 	IO_GX_GPU_GP0,
 	IRQ_DMA_DONE,
 } from '../../bus/io';
@@ -52,6 +55,8 @@ export class DmaController {
 	private gxGpuDmaWriteReady = false;
 	private gxGpuCpuWriteReady = false;
 	private gxGpuDmaDirection = 0;
+	private apuDmaReadReady = false;
+	private apuDmaWriteReady = false;
 	private serviceActive = false;
 	private restorePending = false;
 
@@ -62,7 +67,8 @@ export class DmaController {
 		private readonly scheduler: DeviceScheduler,
 	) {
 		this.memory.mapIoWrite(IO_DMA_CONTROL, this, DmaController.controlWriteThunk);
-		this.memory.mapIoWrite(IO_DMA_WRITE_ADDR, this, DmaController.writeAddressWriteThunk);
+		this.memory.mapIoWrite(IO_DMA_READ_ADDR, this, DmaController.portAddressWriteThunk);
+		this.memory.mapIoWrite(IO_DMA_WRITE_ADDR, this, DmaController.portAddressWriteThunk);
 		this.memory.mapIoWrite(IO_DMA_TRIGGER, this, DmaController.triggerWriteThunk);
 	}
 
@@ -70,8 +76,8 @@ export class DmaController {
 		context.requestInputChanged();
 	}
 
-	private static writeAddressWriteThunk(context: DmaController): void {
-		context.resumeGxGpuCpuWrite();
+	private static portAddressWriteThunk(context: DmaController): void {
+		context.resumeCpuPortWrites();
 	}
 
 	private static triggerWriteThunk(context: DmaController, _addr: number, value: Value): void {
@@ -130,7 +136,7 @@ export class DmaController {
 			return;
 		}
 		this.gxGpuCpuWriteReady = ready;
-		this.resumeGxGpuCpuWrite();
+		this.resumeCpuPortWrites();
 	}
 
 	public setGxGpuDmaDirection(direction: number): void {
@@ -141,8 +147,30 @@ export class DmaController {
 		this.requestInputChanged();
 	}
 
+	public setApuDmaReadReady(ready: boolean): void {
+		if (this.apuDmaReadReady === ready) {
+			return;
+		}
+		this.apuDmaReadReady = ready;
+		this.requestInputChanged();
+	}
+
+	public setApuDmaWriteReady(ready: boolean): void {
+		if (this.apuDmaWriteReady === ready) {
+			return;
+		}
+		this.apuDmaWriteReady = ready;
+		this.requestInputChanged();
+	}
+
 	public isGxGpuCpuPortWriteReady(): boolean {
 		return this.gxGpuCpuWriteReady && !this.ownsGxGpuWritePort();
+	}
+
+	public ownsApuDataPort(): boolean {
+		return this.busy()
+			&& (this.memory.readIoU32(IO_DMA_READ_ADDR) === IO_APU_TRANSFER_DATA
+				|| this.memory.readIoU32(IO_DMA_WRITE_ADDR) === IO_APU_TRANSFER_DATA);
 	}
 
 	public reset(): void {
@@ -154,6 +182,8 @@ export class DmaController {
 		this.gxGpuDmaWriteReady = false;
 		this.gxGpuCpuWriteReady = false;
 		this.gxGpuDmaDirection = 0;
+		this.apuDmaReadReady = false;
+		this.apuDmaWriteReady = false;
 		this.serviceActive = false;
 		this.restorePending = false;
 		this.memory.writeIoValue(IO_DMA_READ_ADDR, 0);
@@ -171,11 +201,14 @@ export class DmaController {
 		this.scheduledGrantWords = 0;
 		this.serviceDeadline = 0;
 		this.serviceActive = true;
+		const request = this.memory.readIoU32(IO_DMA_CONTROL) & DMA_CONTROL_REQUEST_MASK;
+		const latchRequestForGrant = (request === DMA_CONTROL_REQUEST_APU_WRITE || request === DMA_CONTROL_REQUEST_APU_READ)
+			&& this.requestAsserted();
 		let slot = 0;
 		while (slot < grantWords
 			&& this.busy()
 			&& this.memory.readIoU32(IO_DMA_TRANSFER_COUNT) !== 0
-			&& this.requestAsserted()) {
+			&& (latchRequestForGrant || this.requestAsserted())) {
 			this.transferWord();
 			slot += 1;
 		}
@@ -199,8 +232,8 @@ export class DmaController {
 		const writeAddress = this.memory.readIoU32(IO_DMA_WRITE_ADDR);
 		const transferCount = this.memory.readIoU32(IO_DMA_TRANSFER_COUNT);
 		const control = this.memory.readIoU32(IO_DMA_CONTROL);
-		const word = this.memory.readMappedU32LE(readAddress);
-		this.memory.writeMappedU32LE(writeAddress, word);
+		const word = this.memory.readMappedDmaU32LE(readAddress);
+		this.memory.writeMappedDmaU32LE(writeAddress, word);
 		this.memory.writeIoValue(
 			IO_DMA_READ_ADDR,
 			(control & DMA_CONTROL_READ_INCREMENT) !== 0 ? (readAddress + IO_WORD_SIZE) >>> 0 : readAddress,
@@ -210,8 +243,10 @@ export class DmaController {
 			(control & DMA_CONTROL_WRITE_INCREMENT) !== 0 ? (writeAddress + IO_WORD_SIZE) >>> 0 : writeAddress,
 		);
 		this.memory.writeIoValue(IO_DMA_TRANSFER_COUNT, (transferCount - 1) >>> 0);
-		if (writeAddress === IO_GX_GPU_GP0 && (control & DMA_CONTROL_WRITE_INCREMENT) !== 0) {
-			this.resumeGxGpuCpuWrite();
+		if (((writeAddress === IO_GX_GPU_GP0 || writeAddress === IO_APU_TRANSFER_DATA)
+				&& (control & DMA_CONTROL_WRITE_INCREMENT) !== 0)
+			|| (readAddress === IO_APU_TRANSFER_DATA && (control & DMA_CONTROL_READ_INCREMENT) !== 0)) {
+			this.resumeCpuPortWrites();
 		}
 	}
 
@@ -222,7 +257,7 @@ export class DmaController {
 		this.timingCarry = 0;
 		this.memory.writeIoValue(IO_DMA_STATUS, DMA_STATUS_DONE);
 		this.irq.raise(IRQ_DMA_DONE);
-		this.resumeGxGpuCpuWrite();
+		this.resumeCpuPortWrites();
 	}
 
 	public captureState(): DmaControllerState {
@@ -264,7 +299,7 @@ export class DmaController {
 				this.cancelGrant();
 			}
 		}
-		this.resumeGxGpuCpuWrite();
+		this.resumeCpuPortWrites();
 	}
 
 	private scheduleGrant(anchorCycle: number): void {
@@ -285,7 +320,7 @@ export class DmaController {
 	}
 
 	private requestInputChanged(): void {
-		if (this.restorePending || !this.busy()) {
+		if (this.restorePending || this.serviceActive || !this.busy()) {
 			return;
 		}
 		if (!this.requestAsserted()) {
@@ -296,7 +331,7 @@ export class DmaController {
 			this.finishTransfer();
 			return;
 		}
-		if (!this.serviceActive && this.scheduledGrantWords === 0) {
+		if (this.scheduledGrantWords === 0) {
 			this.scheduleGrant(this.scheduler.currentNowCycles());
 		}
 	}
@@ -311,6 +346,10 @@ export class DmaController {
 					&& this.gxGpuDmaWriteReady;
 			case DMA_CONTROL_REQUEST_GX_READ:
 				return this.gxGpuDmaDirection === GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU && this.gxGpuReadReady;
+			case DMA_CONTROL_REQUEST_APU_WRITE:
+				return this.apuDmaWriteReady;
+			case DMA_CONTROL_REQUEST_APU_READ:
+				return this.apuDmaReadReady;
 			default:
 				return false;
 		}
@@ -324,9 +363,12 @@ export class DmaController {
 		return this.busy() && this.memory.readIoU32(IO_DMA_WRITE_ADDR) === IO_GX_GPU_GP0;
 	}
 
-	private resumeGxGpuCpuWrite(): void {
+	private resumeCpuPortWrites(): void {
 		if (this.gxGpuCpuWriteReady && !this.ownsGxGpuWritePort()) {
 			this.cpu.resumeMemoryWrite(IO_GX_GPU_GP0);
+		}
+		if (!this.ownsApuDataPort()) {
+			this.cpu.resumeMemoryWrite(IO_APU_TRANSFER_DATA);
 		}
 	}
 }

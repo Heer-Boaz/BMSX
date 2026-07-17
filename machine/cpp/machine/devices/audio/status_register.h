@@ -2,6 +2,7 @@
 
 #include "common/types.h"
 #include "machine/cpu/cpu.h"
+#include "machine/memory/bus_master.h"
 
 namespace bmsx {
 
@@ -21,7 +22,7 @@ public:
 		DeviceScheduler& scheduler
 	);
 
-	static Value readThunk(void* context, u32 addr);
+	static Value readThunk(void* context, u32 addr, MappedBusMaster busMaster);
 
 private:
 	const DeviceStatusLatch& m_fault;

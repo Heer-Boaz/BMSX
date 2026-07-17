@@ -77,7 +77,7 @@ auto Runtime::machineElapsedMs() const -> f64 {
 	return static_cast<f64>(machine.scheduler.currentNowCycles()) * 1000.0 / static_cast<f64>(timing.cpuHz);
 }
 
-Value Runtime::onTimeMsReadThunk(void* context, uint32_t addr) {
+Value Runtime::onTimeMsReadThunk(void* context, uint32_t addr, MappedBusMaster) {
 	const auto* runtime = static_cast<Runtime*>(context);
 	return runtime->onTimeMsRead(addr);
 }
@@ -86,7 +86,7 @@ Value Runtime::onTimeMsRead([[maybe_unused]] uint32_t addr) const {
 	return valueNumber(static_cast<double>(machineTimeMs()));
 }
 
-Value Runtime::onFrameMsReadThunk(void* context, uint32_t addr) {
+Value Runtime::onFrameMsReadThunk(void* context, uint32_t addr, MappedBusMaster) {
 	const auto* runtime = static_cast<Runtime*>(context);
 	return runtime->onFrameMsRead(addr);
 }
@@ -95,7 +95,7 @@ Value Runtime::onFrameMsRead([[maybe_unused]] uint32_t addr) const {
 	return valueNumber(timing.frameDurationMs);
 }
 
-Value Runtime::onCyclesPerFrameReadThunk(void* context, uint32_t addr) {
+Value Runtime::onCyclesPerFrameReadThunk(void* context, uint32_t addr, MappedBusMaster) {
 	const auto* runtime = static_cast<Runtime*>(context);
 	return runtime->onCyclesPerFrameRead(addr);
 }
@@ -104,19 +104,19 @@ Value Runtime::onCyclesPerFrameRead([[maybe_unused]] uint32_t addr) const {
 	return valueNumber(static_cast<double>(timing.cycleBudgetPerFrame));
 }
 
-void Runtime::onGxGpuGp1WriteThunk(void* context, uint32_t addr, Value value) {
+void Runtime::onGxGpuGp1WriteThunk(void* context, uint32_t addr, Value value, MappedBusMaster) {
 	auto* runtime = static_cast<Runtime*>(context);
 	(void)addr;
 	runtime->machine.gxGpu.writeGp1(toU32(value));
 }
 
-void Runtime::onLuaOutputCodepointWriteThunk(void* context, uint32_t addr, Value value) {
+void Runtime::onLuaOutputCodepointWriteThunk(void* context, uint32_t addr, Value value, MappedBusMaster) {
 	auto* runtime = static_cast<Runtime*>(context);
 	(void)addr;
 	appendUtf8Codepoint(runtime->luaOutputLineBuffer, toU32(value));
 }
 
-void Runtime::onLuaOutputFlushWriteThunk(void* context, uint32_t addr, Value value) {
+void Runtime::onLuaOutputFlushWriteThunk(void* context, uint32_t addr, Value value, MappedBusMaster) {
 	auto* runtime = static_cast<Runtime*>(context);
 	runtime->onLuaOutputFlushWrite(addr, value);
 }

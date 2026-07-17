@@ -25,6 +25,7 @@ export class ApuStatusRegister {
 		return (context.fault.status
 			| (busy ? APU_STATUS_BUSY : 0)
 			| (context.commandFifo.empty ? APU_STATUS_CMD_FIFO_EMPTY : 0)
-			| (context.commandFifo.full ? APU_STATUS_CMD_FIFO_FULL : 0)) >>> 0;
+			| (context.commandFifo.full ? APU_STATUS_CMD_FIFO_FULL : 0)
+			| context.serviceClock.sampleTransferStatusBits()) >>> 0;
 	}
 }

@@ -1,8 +1,9 @@
 import { readLE32 } from '../../../common/endian';
 
-export type ApuBadpSeekTableResult = {
-	frames: Uint32Array<ArrayBufferLike>;
-	offsets: Uint32Array<ArrayBufferLike>;
+export type ApuBadpSeekTable = {
+	bytes: Uint8Array;
+	byteOffset: number;
+	entryCount: number;
 };
 
 export type ApuBadpDecoderState = {
@@ -22,22 +23,8 @@ export type ApuBadpDecoderState = {
 	previousDecodedRight: number;
 };
 
-export function readApuBadpSeekTable(bytes: Uint8Array, byteOffset: number): ApuBadpSeekTableResult {
-	const seekEntryCount = readLE32(bytes, byteOffset + 28);
-	const seekTableOffset = readLE32(bytes, byteOffset + 32);
-	const seekCount = seekEntryCount > 0 ? seekEntryCount : 1;
-	const seekFrames = new Uint32Array(seekCount);
-	const seekOffsets = new Uint32Array(seekCount);
-	if (seekEntryCount > 0) {
-		let cursor = byteOffset + seekTableOffset;
-		for (let index = 0; index < seekCount; index += 1) {
-			seekFrames[index] = readLE32(bytes, cursor);
-			seekOffsets[index] = readLE32(bytes, cursor + 4);
-			cursor += 8;
-		}
-	} else {
-		seekFrames[0] = 0;
-		seekOffsets[0] = 0;
-	}
-	return { frames: seekFrames, offsets: seekOffsets };
+export function loadApuBadpSeekTable(out: ApuBadpSeekTable, bytes: Uint8Array, byteOffset: number): void {
+	out.bytes = bytes;
+	out.byteOffset = byteOffset + readLE32(bytes, byteOffset + 32);
+	out.entryCount = readLE32(bytes, byteOffset + 28);
 }

@@ -111,15 +111,7 @@ export function applyApuOutputFilter(playback: ApuOutputPlayback, registerWords:
 	playback.filterGain = toSignedWord(registerWords[APU_PARAMETER_FILTER_GAIN_MILLIDB_INDEX]!) / 1000;
 }
 
-export function resolveApuOutputPlayback(registerWords: ApuParameterRegisterWords): ApuOutputPlayback {
-	const playback: ApuOutputPlayback = {
-		gainLinear: resolveApuGainLinear(registerWords[APU_PARAMETER_GAIN_Q12_INDEX]!),
-		filterEnabled: false,
-		filterType: 'lowpass',
-		filterFrequency: 0,
-		filterQ: 0,
-		filterGain: 0,
-	};
+export function loadApuOutputPlayback(playback: ApuOutputPlayback, registerWords: ApuParameterRegisterWords): void {
+	playback.gainLinear = resolveApuGainLinear(registerWords[APU_PARAMETER_GAIN_Q12_INDEX]!);
 	applyApuOutputFilter(playback, registerWords);
-	return playback;
 }

@@ -44,11 +44,9 @@ void applyApuOutputFilter(ApuOutputPlayback& playback, const ApuParameterRegiste
 	playback.filterGain = static_cast<f64>(toSignedWord(registerWords[APU_PARAMETER_FILTER_GAIN_MILLIDB_INDEX])) / 1000.0;
 }
 
-ApuOutputPlayback resolveApuOutputPlayback(const ApuParameterRegisterWords& registerWords) {
-	ApuOutputPlayback playback;
+void loadApuOutputPlayback(ApuOutputPlayback& playback, const ApuParameterRegisterWords& registerWords) {
 	playback.gainLinear = resolveApuGainLinear(registerWords[APU_PARAMETER_GAIN_Q12_INDEX]);
 	applyApuOutputFilter(playback, registerWords);
-	return playback;
 }
 
 } // namespace bmsx

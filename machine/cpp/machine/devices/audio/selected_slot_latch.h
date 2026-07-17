@@ -2,6 +2,7 @@
 
 #include "machine/cpu/cpu.h"
 #include "common/types.h"
+#include "machine/memory/bus_master.h"
 
 namespace bmsx {
 
@@ -14,7 +15,8 @@ public:
 	ApuSelectedSlotLatch(Memory& memory, DeviceStatusLatch& status, ApuSlotBank& slots);
 
 	void reset();
-	static void refreshThunk(void* context, u32 addr, Value value);
+	void refresh();
+	static void refreshThunk(void* context, u32 addr, Value value, MappedBusMaster busMaster);
 
 private:
 	Memory& m_memory;

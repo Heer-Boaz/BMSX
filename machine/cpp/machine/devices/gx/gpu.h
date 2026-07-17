@@ -5,6 +5,7 @@
 #include "machine/devices/gx/gpu_command_buffer.h"
 #include "machine/devices/gx/gpu_command_fifo.h"
 #include "machine/devices/gx/gpu_display.h"
+#include "machine/memory/bus_master.h"
 
 #include <array>
 #include <vector>
@@ -312,11 +313,11 @@ private:
 	void updateDisplayModeStatusBits();
 	void writeStatusIo();
 	bool gp0WriteReady();
-	static u64 readGp0Thunk(void* context, u32 addr);
-	static void writeGp0Thunk(void* context, u32 addr, u64 value);
+	static u64 readGp0Thunk(void* context, u32 addr, MappedBusMaster busMaster);
+	static void writeGp0Thunk(void* context, u32 addr, u64 value, MappedBusMaster busMaster);
 	static bool gp0WriteReadyThunk(void* context, u32 addr);
-	static u64 readStatusThunk(void* context, u32 addr);
-	static void writeGp1Thunk(void* context, u32 addr, u64 value);
+	static u64 readStatusThunk(void* context, u32 addr, MappedBusMaster busMaster);
+	static void writeGp1Thunk(void* context, u32 addr, u64 value, MappedBusMaster busMaster);
 };
 
 } // namespace bmsx

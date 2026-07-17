@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { writeLE16, writeLE32 } from '../../machine/ts/common/endian';
+import { readLE32, writeLE16, writeLE32 } from '../../machine/ts/common/endian';
 import {
 	APU_COMMAND_FIFO_CAPACITY,
 	APU_CMD_PLAY,
@@ -14,7 +14,6 @@ import {
 	APU_FAULT_NONE,
 	APU_FAULT_SOURCE_RANGE,
 	APU_FAULT_UNSUPPORTED_FORMAT,
-	APU_GENERATOR_NONE,
 	APU_GENERATOR_SQUARE,
 	APU_PARAMETER_GENERATOR_DUTY_Q12_INDEX,
 	APU_PARAMETER_GENERATOR_KIND_INDEX,
@@ -24,6 +23,8 @@ import {
 	APU_PARAMETER_START_SAMPLE_INDEX,
 	APU_RATE_STEP_Q16_ONE,
 	APU_PARAMETER_SLOT_INDEX,
+	APU_SAMPLE_RAM_BASE,
+	APU_SAMPLE_RAM_BYTES,
 	APU_SLOT_REGISTER_WORD_COUNT,
 	APU_PARAMETER_SOURCE_ADDR_INDEX,
 	APU_PARAMETER_SOURCE_SAMPLE_RATE_HZ_INDEX,
@@ -35,11 +36,24 @@ import {
 	APU_STATUS_BUSY,
 	APU_STATUS_CMD_FIFO_EMPTY,
 	APU_STATUS_CMD_FIFO_FULL,
+	APU_STATUS_DMA_READ_REQUEST,
+	APU_STATUS_DMA_WRITE_REQUEST,
 	APU_STATUS_FAULT,
 	APU_STATUS_SELECTED_SLOT_ACTIVE,
+	APU_TRANSFER_MODE_DMA_READ,
+	APU_TRANSFER_MODE_DMA_WRITE,
+	APU_TRANSFER_MODE_MANUAL_WRITE,
+	APU_TRANSFER_WORDS_PER_SECOND,
 	apuSlotRegisterWordIndex,
 } from '../../machine/ts/machine/devices/audio/contracts';
 import {
+	DMA_CONTROL_READ_INCREMENT,
+	DMA_CONTROL_REQUEST_APU_READ,
+	DMA_CONTROL_REQUEST_APU_WRITE,
+	DMA_CONTROL_WRITE_INCREMENT,
+	DMA_STATUS_BUSY,
+	DMA_STATUS_DONE,
+	DMA_TRIGGER_START,
 	IO_APU_CMD,
 	IO_APU_CMD_CAPACITY,
 	IO_APU_CMD_FREE,
@@ -77,7 +91,16 @@ import {
 	IO_APU_SELECTED_SLOT_REG0,
 	IO_APU_SELECTED_SLOT_REG_COUNT,
 	IO_APU_SLOT,
+	IO_APU_TRANSFER_ADDRESS,
+	IO_APU_TRANSFER_CONTROL,
+	IO_APU_TRANSFER_DATA,
 	IO_ARG_STRIDE,
+	IO_DMA_CONTROL,
+	IO_DMA_READ_ADDR,
+	IO_DMA_STATUS,
+	IO_DMA_TRANSFER_COUNT,
+	IO_DMA_TRIGGER,
+	IO_DMA_WRITE_ADDR,
 	IO_IRQ_FLAGS,
 	IRQ_APU,
 } from '../../machine/ts/machine/bus/io';
@@ -85,11 +108,13 @@ import { AudioController } from '../../machine/ts/machine/devices/audio/controll
 import { ApuOutputMixer } from '../../machine/ts/machine/devices/audio/output';
 import { APU_OUTPUT_RING_CAPACITY_FRAMES } from '../../machine/ts/machine/devices/audio/output_ring';
 import { resolveApuPhaseStep } from '../../machine/ts/machine/devices/audio/playback';
-import { ApuSourceDma } from '../../machine/ts/machine/devices/audio/source';
+import { ApuSampleMemory } from '../../machine/ts/machine/devices/audio/sample_memory';
+import type { ApuSourceByteView } from '../../machine/ts/machine/devices/audio/source';
 import type { AudioControllerState, ApuOutputState, ApuOutputVoiceState } from '../../machine/ts/machine/devices/audio/save_state';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
+import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
-import { CART_ROM_BASE, PROGRAM_ROM_BASE, RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/machine/memory/map';
+import { CART_ROM_BASE, PROGRAM_ROM_BASE, PROGRAM_STATIC_RAM_BASE, RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/machine/memory/map';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 import { cyclesUntilBudgetUnits } from '../../machine/ts/machine/scheduler/budget';
@@ -140,18 +165,22 @@ function createFakeOutputVoiceState(voice: FakeVoiceInfo): ApuOutputVoiceState {
 	};
 }
 
-function createAudioControllerHarness(audioOutput: object): { memory: Memory; audio: AudioController; scheduler: DeviceScheduler } {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+function createAudioControllerHarness(
+	audioOutput: object,
+	memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) }),
+): { memory: Memory; audio: AudioController; dma: DmaController; scheduler: DeviceScheduler } {
 	const irq = new IrqController(memory);
 	const cpu = new CPU(memory, irq);
 	const scheduler = new DeviceScheduler(cpu);
-	const audio = new AudioController(memory, audioOutput as ApuOutputMixer, irq, scheduler);
+	const dma = new DmaController(memory, cpu, irq, scheduler);
+	const audio = new AudioController(memory, audioOutput as ApuOutputMixer, dma, irq, scheduler);
+	dma.reset();
 	audio.reset();
 	audio.setTiming(APU_SAMPLE_RATE_HZ, 0);
-	return { memory, audio, scheduler };
+	return { memory, audio, dma, scheduler };
 }
 
-function createAudioHarness(): { memory: Memory; audio: AudioController; scheduler: DeviceScheduler } {
+function createAudioHarness(): { memory: Memory; audio: AudioController; dma: DmaController; scheduler: DeviceScheduler } {
 	const audioOutput = {
 		playVoice: () => {},
 		replaceVoiceSource: () => {},
@@ -167,7 +196,7 @@ function createAudioHarness(): { memory: Memory; audio: AudioController; schedul
 	return createAudioControllerHarness(audioOutput);
 }
 
-function createRealAudioHarness(): { memory: Memory; audio: AudioController; scheduler: DeviceScheduler; audioOutput: ApuOutputMixer; hostOutput: AudioOutputResampler } {
+function createRealAudioHarness(): { memory: Memory; audio: AudioController; dma: DmaController; scheduler: DeviceScheduler; audioOutput: ApuOutputMixer; hostOutput: AudioOutputResampler } {
 	const audioOutput = new ApuOutputMixer();
 	return { ...createAudioControllerHarness(audioOutput), audioOutput, hostOutput: new AudioOutputResampler() };
 }
@@ -204,10 +233,10 @@ function createActiveVoiceAudioHarness(stopSlotWithFade = false): {
 	let stoppedFadeSamples = 0;
 	let slotGainQ12 = 0;
 	const audioOutput = {
-		playVoice: (slot: number, source: { sourceAddr: number }, _runtimeBytes: Uint8Array, registerWords: readonly number[]) => {
+		playVoice: (slot: number, source: { sourceAddr: number }, _sourceBytes: ApuSourceByteView, registerWords: readonly number[]) => {
 			activeVoice = { slot, sourceAddr: source.sourceAddr, registerWords, playbackCursorQ16: registerWords[APU_PARAMETER_START_SAMPLE_INDEX]! * APU_RATE_STEP_Q16_ONE, stopFadeSamples: 0 };
 		},
-		replaceVoiceSource: (slot: number, source: { sourceAddr: number }, _runtimeBytes: Uint8Array, registerWords: readonly number[]) => {
+		replaceVoiceSource: (slot: number, source: { sourceAddr: number }, _sourceBytes: ApuSourceByteView, registerWords: readonly number[]) => {
 			const playbackCursorQ16 = activeVoice === null ? 0 : activeVoice.playbackCursorQ16;
 			activeVoice = { slot, sourceAddr: source.sourceAddr, registerWords, playbackCursorQ16, stopFadeSamples: stoppedFadeSamples };
 		},
@@ -238,7 +267,7 @@ function createActiveVoiceAudioHarness(stopSlotWithFade = false): {
 		captureState: (): ApuOutputState => ({
 			voices: activeVoice === null ? [] : [createFakeOutputVoiceState(activeVoice)],
 		}),
-		restoreVoice: (slot: number, source: { sourceAddr: number }, _runtimeBytes: Uint8Array, registerWords: readonly number[], state: ApuOutputVoiceState) => {
+		restoreVoice: (slot: number, source: { sourceAddr: number }, _sourceBytes: ApuSourceByteView, registerWords: readonly number[], state: ApuOutputVoiceState) => {
 			activeVoice = { slot, sourceAddr: source.sourceAddr, registerWords, playbackCursorQ16: state.cursorQ16, stopFadeSamples: state.fadeSamplesRemaining };
 		},
 		samplesUntilNextEvent: (limit: number) => stoppedFadeSamples !== 0 && stoppedFadeSamples < limit ? stoppedFadeSamples : limit,
@@ -283,71 +312,258 @@ test('APU contract constants keep hardware command values', () => {
 	assert.equal(IO_APU_SELECTED_SLOT_REG_COUNT, APU_PARAMETER_REGISTER_COUNT);
 });
 
-test('APU source DMA views mapped BIOS/cart ROM and owns RAM samples', () => {
+test('APU sample bus binds ROM directly, owns sample RAM, and rejects CPU memory', () => {
 	const systemRom = new Uint8Array([0xa1, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6]);
 	const cartRom = new Uint8Array([0xb1, 0xb2, 0xb3, 0xb4, 0xb5, 0xb6, 0xb7, 0xb8]);
 	const memory = new Memory({ systemRom, cartRom });
-	const sourceDma = new ApuSourceDma(memory);
-	const source = {
-		sourceAddr: SYSTEM_ROM_BASE + 1,
-		sourceBytes: 4,
-		sampleRateHz: 44100,
-		channels: 1,
-		bitsPerSample: 8,
-		frameCount: 4,
-		dataOffset: 0,
-		dataBytes: 4,
-		loopStartSample: 0,
-		loopEndSample: 0,
-		generatorKind: APU_GENERATOR_NONE,
-		generatorDutyQ12: 0,
-	};
+	const sampleMemory = new ApuSampleMemory(memory);
+	const view: ApuSourceByteView = { bytes: new Uint8Array(0), byteOffset: 0, byteLength: 0 };
 
-	sourceDma.loadSlot(1, source);
-	const biosBytes = sourceDma.bytesForSlot(1);
-	assert.deepEqual(Array.from(biosBytes.bytes.subarray(biosBytes.byteOffset, biosBytes.byteOffset + biosBytes.byteLength)), [0xa2, 0xa3, 0xa4, 0xa5]);
-	assert.equal(biosBytes.bytes.buffer, systemRom.buffer);
+	assert.equal(sampleMemory.bindSource(SYSTEM_ROM_BASE + 1, 4, view), true);
+	assert.equal(view.bytes, systemRom);
+	assert.deepEqual(Array.from(view.bytes.subarray(view.byteOffset, view.byteOffset + view.byteLength)), [0xa2, 0xa3, 0xa4, 0xa5]);
+	assert.equal(sampleMemory.bindSource(CART_ROM_BASE + 2, 4, view), true);
+	assert.equal(view.bytes, cartRom);
+	assert.deepEqual(Array.from(view.bytes.subarray(view.byteOffset, view.byteOffset + view.byteLength)), [0xb3, 0xb4, 0xb5, 0xb6]);
 
-	source.sourceAddr = CART_ROM_BASE + 2;
-	sourceDma.loadSlot(1, source);
-	const cartBytes = sourceDma.bytesForSlot(1);
-	assert.deepEqual(Array.from(cartBytes.bytes.subarray(cartBytes.byteOffset, cartBytes.byteOffset + cartBytes.byteLength)), [0xb3, 0xb4, 0xb5, 0xb6]);
-	assert.equal(cartBytes.bytes.buffer, cartRom.buffer);
-
-	assert.equal(memory.readMappedU32LE(CART_ROM_BASE + 6), 0x0000b8b7);
-	assert.equal(memory.readU8(CART_ROM_BASE + 0x1000), 0);
-	assert.equal(memory.isReadableMainMemoryRange(CART_ROM_BASE + 0x1000, 4), true);
-	assert.equal(memory.isImmutableMainMemoryRange(CART_ROM_BASE + 0x1000, 4), false);
-	source.sourceAddr = CART_ROM_BASE + 6;
-	sourceDma.loadSlot(1, source);
-	const cartTailBytes = sourceDma.bytesForSlot(1);
-	assert.deepEqual(Array.from(cartTailBytes.bytes.subarray(cartTailBytes.byteOffset, cartTailBytes.byteOffset + cartTailBytes.byteLength)), [0xb7, 0xb8, 0x00, 0x00]);
-	assert.notEqual(cartTailBytes.bytes.buffer, cartRom.buffer);
-
-	memory.writeU32(RAM_BASE, 0x44332211);
-	source.sourceAddr = RAM_BASE;
-	sourceDma.loadSlot(1, source);
-	const ramBytes = sourceDma.bytesForSlot(1);
-	memory.writeU8(RAM_BASE, 0xee);
-	assert.deepEqual(Array.from(ramBytes.bytes.subarray(ramBytes.byteOffset, ramBytes.byteOffset + ramBytes.byteLength)), [0x11, 0x22, 0x33, 0x44]);
-	assert.notEqual(ramBytes.bytes.buffer, systemRom.buffer);
-	assert.notEqual(ramBytes.bytes.buffer, cartRom.buffer);
-
-	memory.setProgramRom(new Uint8Array([0xc1, 0xc2, 0xc3, 0xc4]), 0);
-	assert.equal(memory.isImmutableMainMemoryRange(PROGRAM_ROM_BASE, 4), false);
+	sampleMemory.writeWord(0, 0x44332211);
+	assert.equal(sampleMemory.bindSource(APU_SAMPLE_RAM_BASE, 4, view), true);
+	assert.deepEqual(Array.from(view.bytes.subarray(view.byteOffset, view.byteOffset + view.byteLength)), [0x11, 0x22, 0x33, 0x44]);
+	sampleMemory.writeWord(0, 0x88776655);
+	assert.deepEqual(Array.from(view.bytes.subarray(view.byteOffset, view.byteOffset + view.byteLength)), [0x55, 0x66, 0x77, 0x88]);
+	memory.writeU32(RAM_BASE, 0xccbbaa99);
+	assert.equal(sampleMemory.bindSource(RAM_BASE, 4, view), false);
+	memory.setProgramRom(new Uint8Array([0xc1, 0xc2, 0xc3, 0xc4]), 4);
+	assert.equal(memory.readMappedU32LE(PROGRAM_ROM_BASE), 0xc4c3c2c1);
+	assert.equal(sampleMemory.bindSource(PROGRAM_ROM_BASE, 4, view), true);
+	assert.deepEqual(Array.from(view.bytes.subarray(view.byteOffset, view.byteOffset + view.byteLength)), [0x55, 0x66, 0x77, 0x88]);
 });
 
-function writeValidSourceRegisters(memory: Memory): void {
-	memory.writeU32(RAM_BASE, 0x11223344);
-	memory.writeValue(IO_APU_SOURCE_ADDR, RAM_BASE);
-	memory.writeValue(IO_APU_SOURCE_BYTES, 4);
-	memory.writeValue(IO_APU_SOURCE_SAMPLE_RATE_HZ, 44100);
+function writeSampleRamBytes(memory: Memory, bytes: Uint8Array): void {
+	memory.writeValue(IO_APU_TRANSFER_ADDRESS, 0);
+	memory.writeValue(IO_APU_TRANSFER_CONTROL, 1);
+	for (let offset = 0; offset < bytes.byteLength; offset += 4) {
+		memory.writeValue(IO_APU_TRANSFER_DATA, readLE32(bytes, offset));
+	}
+	memory.writeValue(IO_APU_TRANSFER_CONTROL, 0);
+}
+
+function writePcmSourceRegisters(memory: Memory, sourceAddr: number, sourceBytes: number): void {
+	memory.writeValue(IO_APU_SOURCE_ADDR, sourceAddr);
+	memory.writeValue(IO_APU_SOURCE_BYTES, sourceBytes);
+	memory.writeValue(IO_APU_SOURCE_SAMPLE_RATE_HZ, APU_SAMPLE_RATE_HZ);
 	memory.writeValue(IO_APU_SOURCE_CHANNELS, 1);
 	memory.writeValue(IO_APU_SOURCE_BITS_PER_SAMPLE, 8);
-	memory.writeValue(IO_APU_SOURCE_FRAME_COUNT, 4);
+	memory.writeValue(IO_APU_SOURCE_FRAME_COUNT, sourceBytes);
 	memory.writeValue(IO_APU_SOURCE_DATA_OFFSET, 0);
-	memory.writeValue(IO_APU_SOURCE_DATA_BYTES, 4);
+	memory.writeValue(IO_APU_SOURCE_DATA_BYTES, sourceBytes);
 }
+
+function writeValidSourceRegisters(memory: Memory): void {
+	writeSampleRamBytes(memory, new Uint8Array([0x44, 0x33, 0x22, 0x11]));
+	writePcmSourceRegisters(memory, APU_SAMPLE_RAM_BASE, 4);
+}
+
+test('APU voices read cart sample ROM directly and reject CPU RAM addresses', () => {
+	const cartMemory = new Memory({
+		systemRom: new Uint8Array(0),
+		cartRom: new Uint8Array([0x44, 0x33, 0x22, 0x11]),
+	});
+	const cartHarness = createAudioControllerHarness(new ApuOutputMixer(), cartMemory);
+	writePcmSourceRegisters(cartMemory, CART_ROM_BASE, 4);
+	cartMemory.writeValue(IO_APU_SLOT, 1);
+	cartMemory.writeValue(IO_APU_CMD, APU_CMD_PLAY);
+	cartHarness.audio.onService(0);
+	const cartState = cartHarness.audio.captureState();
+	assert.equal(cartState.output.voices.length, 1);
+	assert.equal(cartState.slotRegisterWords[apuSlotRegisterWordIndex(1, APU_PARAMETER_SOURCE_ADDR_INDEX)], CART_ROM_BASE);
+	assert.deepEqual(cartState.sampleRam.subarray(0, 4), new Uint8Array(4));
+
+	const cpuHarness = createAudioHarness();
+	cpuHarness.memory.writeMappedU32LE(PROGRAM_STATIC_RAM_BASE, 0x11223344);
+	writePcmSourceRegisters(cpuHarness.memory, PROGRAM_STATIC_RAM_BASE, 4);
+	cpuHarness.memory.writeValue(IO_APU_SLOT, 1);
+	cpuHarness.memory.writeValue(IO_APU_CMD, APU_CMD_PLAY);
+	cpuHarness.audio.onService(0);
+	assertApuFaultLatch(cpuHarness.memory, APU_FAULT_SOURCE_RANGE);
+	assert.equal(cpuHarness.memory.readIoU32(IO_APU_ACTIVE_MASK), 0);
+});
+
+function serviceScheduledDmaGrant(harness: ReturnType<typeof createAudioHarness>): void {
+	const state = harness.dma.captureState();
+	assert.notEqual(state.scheduledGrantWords, 0);
+	const deadline = harness.scheduler.nowCycles + state.scheduledGrantCycles;
+	harness.scheduler.advanceTo(deadline);
+	harness.dma.onService(deadline);
+}
+
+function serviceScheduledSampleTransfer(harness: ReturnType<typeof createAudioHarness>): void {
+	const state = harness.audio.captureState().sampleTransfer;
+	assert.notEqual(state.scheduledWords, 0);
+	const deadline = harness.scheduler.nowCycles + state.scheduledCycles;
+	harness.scheduler.advanceTo(deadline);
+	harness.audio.onTransferService(deadline);
+}
+
+function finishDmaWriteToSampleRam(harness: ReturnType<typeof createAudioHarness>): void {
+	serviceScheduledSampleTransfer(harness);
+	serviceScheduledSampleTransfer(harness);
+	serviceScheduledDmaGrant(harness);
+	serviceScheduledSampleTransfer(harness);
+	serviceScheduledSampleTransfer(harness);
+}
+
+function createTransferEdgeHarness(): ReturnType<typeof createAudioControllerHarness> & { audioOutput: ApuOutputMixer } {
+	const audioOutput = new ApuOutputMixer();
+	const harness = createAudioControllerHarness(audioOutput);
+	harness.dma.setTiming(APU_TRANSFER_WORDS_PER_SECOND, APU_TRANSFER_WORDS_PER_SECOND, 0);
+	harness.audio.setTiming(APU_TRANSFER_WORDS_PER_SECOND, 0);
+	writeSampleRamBytes(harness.memory, new Uint8Array([0x40, 0x40, 0x40, 0x40]));
+	writePcmSourceRegisters(harness.memory, APU_SAMPLE_RAM_BASE, 4);
+	harness.memory.writeValue(IO_APU_SLOT, 1);
+	harness.memory.writeValue(IO_APU_CMD, APU_CMD_PLAY);
+	harness.audio.onService(0);
+	const dmaSource = PROGRAM_STATIC_RAM_BASE + 0x300;
+	harness.memory.writeMappedU32LE(dmaSource, 0xc0c0c0c0);
+	harness.scheduler.advanceTo(46);
+	harness.memory.writeMappedU32LE(IO_APU_TRANSFER_ADDRESS, 0);
+	harness.memory.writeMappedU32LE(IO_APU_TRANSFER_CONTROL, APU_TRANSFER_MODE_DMA_WRITE);
+	harness.memory.writeMappedU32LE(IO_DMA_READ_ADDR, dmaSource);
+	harness.memory.writeMappedU32LE(IO_DMA_WRITE_ADDR, IO_APU_TRANSFER_DATA);
+	harness.memory.writeMappedU32LE(IO_DMA_TRANSFER_COUNT, 1);
+	harness.memory.writeMappedU32LE(IO_DMA_CONTROL, DMA_CONTROL_REQUEST_APU_WRITE);
+	harness.memory.writeMappedU32LE(IO_DMA_TRIGGER, DMA_TRIGGER_START);
+	serviceScheduledDmaGrant(harness);
+	return { ...harness, audioOutput };
+}
+
+test('APU transfer clock makes RAM writes visible on their exact DAC edge', () => {
+	const scheduled = createTransferEdgeHarness();
+	const status = createTransferEdgeHarness();
+	const captured = createTransferEdgeHarness();
+
+	scheduled.scheduler.advanceTo(48);
+	scheduled.audio.onTransferService(48);
+	status.scheduler.advanceTo(48);
+	status.memory.readIoU32(IO_APU_STATUS);
+	captured.scheduler.advanceTo(48);
+	const capturedState = captured.audio.captureState();
+
+	const scheduledRing = scheduled.audio.synchronizeOutput();
+	const statusRing = status.audio.synchronizeOutput();
+	const capturedRing = captured.audio.synchronizeOutput();
+	assert.equal(scheduledRing.queuedFrames(), 2);
+	assert.equal(statusRing.queuedFrames(), 2);
+	assert.equal(capturedRing.queuedFrames(), 2);
+	const scheduledBefore = scheduledRing.readFramePacked();
+	const scheduledAtEdge = scheduledRing.readFramePacked();
+	assert.ok((scheduledBefore << 16 >> 16) < 0);
+	assert.ok((scheduledAtEdge << 16 >> 16) > 0);
+	assert.equal(statusRing.readFramePacked(), scheduledBefore);
+	assert.equal(statusRing.readFramePacked(), scheduledAtEdge);
+	assert.equal(capturedRing.readFramePacked(), scheduledBefore);
+	assert.equal(capturedRing.readFramePacked(), scheduledAtEdge);
+	assert.equal(readLE32(capturedState.sampleRam, 0), 0xc0c0c0c0);
+});
+
+test('APU manual RAM writes precede a same-cycle DAC sample', () => {
+	const harness = createRealAudioHarness();
+	harness.audio.setTiming(APU_TRANSFER_WORDS_PER_SECOND, 0);
+	writeSampleRamBytes(harness.memory, new Uint8Array([0x40, 0x40, 0x40, 0x40]));
+	writePcmSourceRegisters(harness.memory, APU_SAMPLE_RAM_BASE, 4);
+	harness.memory.writeValue(IO_APU_SLOT, 1);
+	harness.memory.writeValue(IO_APU_CMD, APU_CMD_PLAY);
+	harness.audio.onService(0);
+	harness.memory.writeMappedU32LE(IO_APU_TRANSFER_ADDRESS, 0);
+	harness.memory.writeMappedU32LE(IO_APU_TRANSFER_CONTROL, APU_TRANSFER_MODE_MANUAL_WRITE);
+	harness.scheduler.advanceTo(24);
+	harness.memory.writeMappedU32LE(IO_APU_TRANSFER_DATA, 0xc0c0c0c0);
+	const ring = harness.audio.synchronizeOutput();
+	assert.equal(ring.queuedFrames(), 1);
+	assert.ok((ring.readFramePacked() << 16 >> 16) > 0);
+});
+
+test('APU DMA round-trip obeys FIFO timing, RAM wrap, and mid-transfer restore', () => {
+	const live = createAudioHarness();
+	live.dma.setTiming(APU_TRANSFER_WORDS_PER_SECOND, APU_TRANSFER_WORDS_PER_SECOND, 0);
+	live.audio.setTiming(APU_TRANSFER_WORDS_PER_SECOND, 0);
+	const source = PROGRAM_STATIC_RAM_BASE + 0x100;
+	const target = PROGRAM_STATIC_RAM_BASE + 0x200;
+	const transferAddress = APU_SAMPLE_RAM_BYTES - 8;
+	for (let index = 0; index < 32; index += 1) {
+		live.memory.writeMappedU32LE(source + index * 4, (0x5a000000 | index) >>> 0);
+	}
+
+	live.memory.writeMappedU32LE(IO_APU_TRANSFER_ADDRESS, transferAddress);
+	live.memory.writeMappedU32LE(IO_APU_TRANSFER_CONTROL, APU_TRANSFER_MODE_DMA_WRITE);
+	assert.equal(live.memory.readIoU32(IO_APU_STATUS) & APU_STATUS_DMA_WRITE_REQUEST, APU_STATUS_DMA_WRITE_REQUEST);
+	live.memory.writeMappedU32LE(IO_DMA_READ_ADDR, source);
+	live.memory.writeMappedU32LE(IO_DMA_WRITE_ADDR, IO_APU_TRANSFER_DATA);
+	live.memory.writeMappedU32LE(IO_DMA_TRANSFER_COUNT, 32);
+	live.memory.writeMappedU32LE(IO_DMA_CONTROL, DMA_CONTROL_READ_INCREMENT | DMA_CONTROL_REQUEST_APU_WRITE);
+	live.memory.writeMappedU32LE(IO_DMA_TRIGGER, DMA_TRIGGER_START);
+	assert.equal(live.memory.readIoU32(IO_DMA_STATUS), DMA_STATUS_BUSY);
+	serviceScheduledDmaGrant(live);
+	assert.equal(live.memory.readIoU32(IO_DMA_TRANSFER_COUNT), 16);
+	assert.equal(live.memory.readIoU32(IO_APU_STATUS) & APU_STATUS_DMA_WRITE_REQUEST, 0);
+
+	const savedNow = live.scheduler.nowCycles;
+	const savedMemory = live.memory.captureSaveState();
+	const savedAudio = live.audio.captureState();
+	const savedDma = live.dma.captureState();
+	assert.equal(readLE32(savedAudio.sampleRam, transferAddress), 0);
+	assert.equal(savedAudio.sampleTransfer.fifoCount, 16);
+	assert.equal(savedAudio.sampleTransfer.scheduledWords, 1);
+
+	const restored = createAudioHarness();
+	restored.dma.setTiming(APU_TRANSFER_WORDS_PER_SECOND, APU_TRANSFER_WORDS_PER_SECOND, 0);
+	restored.audio.setTiming(APU_TRANSFER_WORDS_PER_SECOND, 0);
+	restored.scheduler.advanceTo(savedNow);
+	restored.memory.restoreSaveState(savedMemory);
+	restored.dma.restoreState(savedDma, savedNow);
+	restored.audio.restoreState(savedAudio, savedNow);
+	restored.dma.postLoad();
+
+	serviceScheduledSampleTransfer(live);
+	assert.equal(readLE32(live.audio.captureState().sampleRam, transferAddress), 0x5a000000);
+	serviceScheduledSampleTransfer(live);
+	serviceScheduledDmaGrant(live);
+	serviceScheduledSampleTransfer(live);
+	serviceScheduledSampleTransfer(live);
+	finishDmaWriteToSampleRam(restored);
+	assert.equal(live.memory.readIoU32(IO_DMA_STATUS), DMA_STATUS_DONE);
+	assert.equal(restored.memory.readIoU32(IO_DMA_STATUS), DMA_STATUS_DONE);
+	const liveCompleted = live.audio.captureState();
+	const restoredCompleted = restored.audio.captureState();
+	assert.deepEqual(restoredCompleted.sampleRam.subarray(0, 120), liveCompleted.sampleRam.subarray(0, 120));
+	assert.deepEqual(restoredCompleted.sampleRam.subarray(transferAddress), liveCompleted.sampleRam.subarray(transferAddress));
+	assert.deepEqual(restoredCompleted.sampleTransfer, liveCompleted.sampleTransfer);
+	assert.equal(restoredCompleted.sampleCarry, liveCompleted.sampleCarry);
+	assert.equal(restoredCompleted.sampleSequence, liveCompleted.sampleSequence);
+
+	live.memory.writeMappedU32LE(IO_APU_TRANSFER_ADDRESS, transferAddress);
+	live.memory.writeMappedU32LE(IO_APU_TRANSFER_CONTROL, APU_TRANSFER_MODE_DMA_READ);
+	live.memory.writeMappedU32LE(IO_DMA_READ_ADDR, IO_APU_TRANSFER_DATA);
+	live.memory.writeMappedU32LE(IO_DMA_WRITE_ADDR, target);
+	live.memory.writeMappedU32LE(IO_DMA_TRANSFER_COUNT, 32);
+	live.memory.writeMappedU32LE(IO_DMA_CONTROL, DMA_CONTROL_WRITE_INCREMENT | DMA_CONTROL_REQUEST_APU_READ);
+	live.memory.writeMappedU32LE(IO_DMA_TRIGGER, DMA_TRIGGER_START);
+	assert.equal(live.memory.readIoU32(IO_DMA_STATUS), DMA_STATUS_BUSY);
+	serviceScheduledSampleTransfer(live);
+	assert.equal(live.memory.readIoU32(IO_APU_STATUS) & APU_STATUS_DMA_READ_REQUEST, APU_STATUS_DMA_READ_REQUEST);
+	assert.equal(live.audio.captureState().sampleTransfer.fifoCount, 16);
+	live.memory.readMappedU32LE(IO_APU_TRANSFER_DATA);
+	assert.equal(live.audio.captureState().sampleTransfer.fifoCount, 16);
+	serviceScheduledDmaGrant(live);
+	serviceScheduledSampleTransfer(live);
+	serviceScheduledSampleTransfer(live);
+	serviceScheduledDmaGrant(live);
+	live.memory.writeMappedU32LE(IO_APU_TRANSFER_CONTROL, 0);
+	assert.equal(live.memory.readIoU32(IO_DMA_STATUS), DMA_STATUS_DONE);
+	for (let index = 0; index < 32; index += 1) {
+		assert.equal(live.memory.readMappedU32LE(target + index * 4), (0x5a000000 | index) >>> 0);
+	}
+});
 
 function writeSquareGeneratorRegisters(memory: Memory): void {
 	memory.writeValue(IO_APU_SOURCE_ADDR, 0);
@@ -376,8 +592,8 @@ function writeBadpSourceRegisters(memory: Memory, sampleRateHz: number): void {
 	writeLE16(bytes, 50, 12);
 	writeLE16(bytes, 52, 0);
 	bytes.set([0x11, 0x11, 0x11, 0x11], 56);
-	memory.writeBytes(RAM_BASE, bytes);
-	memory.writeValue(IO_APU_SOURCE_ADDR, RAM_BASE);
+	writeSampleRamBytes(memory, bytes);
+	memory.writeValue(IO_APU_SOURCE_ADDR, APU_SAMPLE_RAM_BASE);
 	memory.writeValue(IO_APU_SOURCE_BYTES, bytes.byteLength);
 	memory.writeValue(IO_APU_SOURCE_SAMPLE_RATE_HZ, sampleRateHz);
 	memory.writeValue(IO_APU_SOURCE_CHANNELS, 1);
@@ -419,9 +635,9 @@ function assertApuSlotOneActiveReadback(memory: Memory, slotRegisterWord = 1): v
 	const status = memory.readIoU32(IO_APU_STATUS);
 	assert.equal((status & APU_STATUS_SELECTED_SLOT_ACTIVE) !== 0, true);
 	assert.equal((status & APU_STATUS_BUSY) !== 0, true);
-	assert.equal(memory.readIoU32(IO_APU_SELECTED_SOURCE_ADDR), RAM_BASE);
+	assert.equal(memory.readIoU32(IO_APU_SELECTED_SOURCE_ADDR), APU_SAMPLE_RAM_BASE);
 	assert.equal(memory.readIoU32(IO_APU_ACTIVE_MASK), 2);
-	assert.equal(memory.readIoU32(IO_APU_SELECTED_SLOT_REG0), RAM_BASE);
+	assert.equal(memory.readIoU32(IO_APU_SELECTED_SLOT_REG0), APU_SAMPLE_RAM_BASE);
 	assert.equal(memory.readIoU32(IO_APU_SELECTED_SLOT_REG0 + APU_PARAMETER_SLOT_INDEX * IO_ARG_STRIDE), slotRegisterWord);
 }
 
@@ -444,7 +660,7 @@ function assertApuIdleReadback(memory: Memory): void {
 function assertApuSlotEndedEvent(memory: Memory, eventSequence: number): void {
 	assert.equal(memory.readIoU32(IO_APU_EVENT_KIND), APU_EVENT_SLOT_ENDED);
 	assert.equal(memory.readIoU32(IO_APU_EVENT_SLOT), 1);
-	assert.equal(memory.readIoU32(IO_APU_EVENT_SOURCE_ADDR), RAM_BASE);
+	assert.equal(memory.readIoU32(IO_APU_EVENT_SOURCE_ADDR), APU_SAMPLE_RAM_BASE);
 	assert.equal(memory.readIoU32(IO_APU_EVENT_SEQ), eventSequence);
 }
 
@@ -555,8 +771,8 @@ test('APU selected-slot active status is device-owned and saved', async () => {
 	assert.equal(activeState.registerWords[APU_PARAMETER_SLOT_INDEX], 1);
 	assert.equal(memory.readIoU32(IO_APU_ACTIVE_MASK), 2);
 	assert.equal(activeState.slotPhases[1], APU_SLOT_PHASE_PLAYING);
-	assert.equal(activeState.slotRegisterWords[slotOneSourceRegister], RAM_BASE);
-	assert.deepEqual(Array.from(activeState.slotSourceBytes[1]!), [0x44, 0x33, 0x22, 0x11]);
+	assert.equal(activeState.slotRegisterWords[slotOneSourceRegister], APU_SAMPLE_RAM_BASE);
+	assert.deepEqual(Array.from(activeState.sampleRam.subarray(0, 4)), [0x44, 0x33, 0x22, 0x11]);
 
 	memory.writeValue(IO_APU_SLOT, 0);
 	assertApuSelectedSlotInactive(memory);
@@ -571,8 +787,8 @@ test('APU selected-slot active status is device-owned and saved', async () => {
 	assert.equal(restored.memory.readIoU32(IO_APU_ACTIVE_MASK), 2);
 	assert.equal(restoredActiveState.slotPhases[1], APU_SLOT_PHASE_PLAYING);
 	assert.equal(restored.memory.readIoU32(IO_APU_SLOT), 1);
-	assert.equal(restoredActiveState.slotRegisterWords[slotOneSourceRegister], RAM_BASE);
-	assert.deepEqual(Array.from(restoredActiveState.slotSourceBytes[1]!), [0x44, 0x33, 0x22, 0x11]);
+	assert.equal(restoredActiveState.slotRegisterWords[slotOneSourceRegister], APU_SAMPLE_RAM_BASE);
+	assert.deepEqual(Array.from(restoredActiveState.sampleRam.subarray(0, 4)), [0x44, 0x33, 0x22, 0x11]);
 	assertApuSlotOneActiveReadback(restored.memory);
 
 	writeApuCommand(restored.memory, restored.audio, APU_CMD_STOP_SLOT);
@@ -581,7 +797,7 @@ test('APU selected-slot active status is device-owned and saved', async () => {
 	assert.equal(restored.memory.readIoU32(IO_APU_ACTIVE_MASK), 0);
 	assert.equal(restoredStoppedState.slotPhases[1], APU_SLOT_PHASE_IDLE);
 	assert.equal(restoredStoppedState.slotRegisterWords[slotOneSourceRegister], 0);
-	assert.equal(restoredStoppedState.slotSourceBytes[1]!.byteLength, 0);
+	assert.deepEqual(Array.from(restoredStoppedState.sampleRam.subarray(0, 4)), [0x44, 0x33, 0x22, 0x11]);
 });
 
 test('APU slot selectors decode low register bits without bad-slot guards', () => {
@@ -674,7 +890,7 @@ test('APU same-source slot replay keeps the new voice latch active', async () =>
 	assertApuSlotOneActiveReadback(memory);
 	const replayState = audio.captureState();
 	assert.equal(memory.readIoU32(IO_APU_ACTIVE_MASK), 2);
-	assert.equal(replayState.slotRegisterWords[slotOneSourceRegister], RAM_BASE);
+	assert.equal(replayState.slotRegisterWords[slotOneSourceRegister], APU_SAMPLE_RAM_BASE);
 
 	const staleVoice = activeVoice();
 	assert.notEqual(staleVoice, null);
@@ -720,8 +936,8 @@ function programLongPcmVoice(memory: Memory, slot = 1): void {
 	for (let frame = 0; frame < frames; frame += 1) {
 		bytes[frame] = (frame * 7 + 16) & 0xff;
 	}
-	memory.writeBytes(RAM_BASE, bytes);
-	memory.writeValue(IO_APU_SOURCE_ADDR, RAM_BASE);
+	writeSampleRamBytes(memory, bytes);
+	memory.writeValue(IO_APU_SOURCE_ADDR, APU_SAMPLE_RAM_BASE);
 	memory.writeValue(IO_APU_SOURCE_BYTES, bytes.byteLength);
 	memory.writeValue(IO_APU_SOURCE_SAMPLE_RATE_HZ, APU_SAMPLE_RATE_HZ);
 	memory.writeValue(IO_APU_SOURCE_CHANNELS, 1);

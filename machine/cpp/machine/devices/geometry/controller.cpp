@@ -33,18 +33,18 @@ GeometryController::GeometryController(
 	m_memory.mapIoWrite(IO_GEO_FAULT_ACK, this, &GeometryController::onFaultAckWriteThunk);
 }
 
-void GeometryController::onCommandWriteThunk(void* context, uint32_t, Value value) {
+void GeometryController::onCommandWriteThunk(void* context, uint32_t, Value value, MappedBusMaster) {
 	auto* controller = static_cast<GeometryController*>(context);
 	controller->onCommandDoorbell(controller->m_scheduler.currentNowCycles(), toU32(value));
 }
 
 // disable-next-line normalized_ast_duplicate_pattern -- device MMIO thunks share callback shape while each device owns its scheduler timing.
-void GeometryController::onCtrlWriteThunk(void* context, uint32_t, Value) {
+void GeometryController::onCtrlWriteThunk(void* context, uint32_t, Value, MappedBusMaster) {
 	auto* controller = static_cast<GeometryController*>(context);
 	controller->onCtrlWrite(controller->m_scheduler.currentNowCycles());
 }
 
-void GeometryController::onFaultAckWriteThunk(void* context, uint32_t, Value value) {
+void GeometryController::onFaultAckWriteThunk(void* context, uint32_t, Value value, MappedBusMaster) {
 	auto* controller = static_cast<GeometryController*>(context);
 	controller->onFaultAckWrite(value);
 }

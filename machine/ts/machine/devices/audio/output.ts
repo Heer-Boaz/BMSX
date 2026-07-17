@@ -1,6 +1,6 @@
 import { clamp, clamp01 } from '../../../common/clamp';
 import { BiquadFilterState, configureBiquadFilter } from './biquad_filter';
-import { readApuBadpSeekTable, type ApuBadpDecoderState } from './badp_decoder';
+import { loadApuBadpSeekTable, type ApuBadpDecoderState, type ApuBadpSeekTable } from './badp_decoder';
 import {
 	createApuBadpDecoderState,
 	readApuBadpFrameAt,
@@ -10,9 +10,9 @@ import { ApuOutputRing } from './output_ring';
 import { APU_PCM_SAMPLE_SCALE, readApuPcmSample } from './pcm_decoder_hot_path';
 import {
 	applyApuOutputFilter,
+	loadApuOutputPlayback,
 	resolveApuGainLinear,
 	resolveApuPhaseStep,
-	resolveApuOutputPlayback,
 	type ApuPhaseStep,
 	type ApuOutputPlayback,
 } from './playback';
@@ -54,8 +54,7 @@ type ApuOutputVoice = ApuOutputVoiceStateAccess & {
 	frames: number;
 	generatorKind: number;
 	generatorDutyQ12: number;
-	badpSeekFrames: Uint32Array<ArrayBufferLike>;
-	badpSeekOffsets: Uint32Array<ArrayBufferLike>;
+	badpSeekTable: ApuBadpSeekTable;
 	loopStartQ16: number;
 	loopEndQ16: number;
 	playback: ApuOutputPlayback;
@@ -66,8 +65,6 @@ type ApuOutputVoice = ApuOutputVoiceStateAccess & {
 };
 
 const EMPTY_SOURCE_BYTES = new Uint8Array(0);
-const EMPTY_BADP_SEEK_FRAMES = new Uint32Array(0);
-const EMPTY_BADP_SEEK_OFFSETS = new Uint32Array(0);
 
 function audioFrameIndex(cursorQ16: number): number {
 	return (cursorQ16 - (cursorQ16 % APU_RATE_STEP_Q16_ONE)) / APU_RATE_STEP_Q16_ONE;
@@ -96,8 +93,11 @@ export class ApuOutputMixer {
 				frames: 0,
 				generatorKind: 0,
 				generatorDutyQ12: 0,
-				badpSeekFrames: EMPTY_BADP_SEEK_FRAMES,
-				badpSeekOffsets: EMPTY_BADP_SEEK_OFFSETS,
+				badpSeekTable: {
+					bytes: EMPTY_SOURCE_BYTES,
+					byteOffset: 0,
+					entryCount: 0,
+				},
 				loopStartQ16: -1,
 				loopEndQ16: -1,
 				playback: {
@@ -147,17 +147,16 @@ export class ApuOutputMixer {
 		sourceBytes: ApuSourceByteView,
 		registerWords: ApuParameterRegisterWords,
 	): void {
-		const playback = resolveApuOutputPlayback(registerWords);
 		const record = this.voices[slot]!;
+		loadApuOutputPlayback(record.playback, registerWords);
 		this.buildVoiceFromData(
 			record,
 			source,
 			sourceBytes,
-			playback,
 			registerWords[APU_PARAMETER_RATE_STEP_Q16_INDEX]!,
 			registerWords[APU_PARAMETER_START_SAMPLE_INDEX]! * APU_RATE_STEP_Q16_ONE,
 			0,
-			clamp01(playback.gainLinear),
+			clamp01(record.playback.gainLinear),
 		);
 	}
 
@@ -173,8 +172,8 @@ export class ApuOutputMixer {
 		const fadeStartGain = record.fadeStartGain;
 		const fadeSamplesRemaining = record.fadeSamplesRemaining;
 		const fadeSamplesTotal = record.fadeSamplesTotal;
-		const playback = resolveApuOutputPlayback(registerWords);
-		this.buildVoiceFromData(record, source, sourceBytes, playback, registerWords[APU_PARAMETER_RATE_STEP_Q16_INDEX]!, cursorQ16, phaseRemainder, record.gain);
+		loadApuOutputPlayback(record.playback, registerWords);
+		this.buildVoiceFromData(record, source, sourceBytes, registerWords[APU_PARAMETER_RATE_STEP_Q16_INDEX]!, cursorQ16, phaseRemainder, record.gain);
 		record.fadeStartGain = fadeStartGain;
 		record.fadeSamplesRemaining = fadeSamplesRemaining;
 		record.fadeSamplesTotal = fadeSamplesTotal;
@@ -187,9 +186,9 @@ export class ApuOutputMixer {
 		registerWords: ApuParameterRegisterWords,
 		state: ApuOutputVoiceState,
 	): void {
-		const playback = resolveApuOutputPlayback(registerWords);
 		const record = this.voices[slot]!;
-		this.buildVoiceFromData(record, source, sourceBytes, playback, registerWords[APU_PARAMETER_RATE_STEP_Q16_INDEX]!, state.cursorQ16, state.phaseRemainder, state.gain);
+		loadApuOutputPlayback(record.playback, registerWords);
+		this.buildVoiceFromData(record, source, sourceBytes, registerWords[APU_PARAMETER_RATE_STEP_Q16_INDEX]!, state.cursorQ16, state.phaseRemainder, state.gain);
 		restoreApuOutputVoiceState(record, state);
 		record.active = true;
 	}
@@ -425,19 +424,11 @@ export class ApuOutputMixer {
 		record: ApuOutputVoice,
 		source: ApuAudioSource,
 		sourceBytes: ApuSourceByteView,
-		playback: ApuOutputPlayback,
 		rateStepQ16Word: number,
 		cursorQ16: number,
 		phaseRemainder: number,
 		initialGain: number,
 	): void {
-		let badpSeekFrames: Uint32Array<ArrayBufferLike> = EMPTY_BADP_SEEK_FRAMES;
-		let badpSeekOffsets: Uint32Array<ArrayBufferLike> = EMPTY_BADP_SEEK_OFFSETS;
-		if (!apuAudioSourceUsesGenerator(source) && source.bitsPerSample === 4) {
-			const badpSeek = readApuBadpSeekTable(sourceBytes.bytes, sourceBytes.byteOffset);
-			badpSeekFrames = badpSeek.frames;
-			badpSeekOffsets = badpSeek.offsets;
-		}
 		record.active = true;
 		record.channels = source.channels;
 		record.bitsPerSample = source.bitsPerSample;
@@ -446,9 +437,13 @@ export class ApuOutputMixer {
 		record.frames = source.frameCount;
 		record.generatorKind = source.generatorKind;
 		record.generatorDutyQ12 = source.generatorDutyQ12;
-		record.badpSeekFrames = badpSeekFrames;
-		record.badpSeekOffsets = badpSeekOffsets;
-		record.playback = playback;
+		if (!apuAudioSourceUsesGenerator(source) && source.bitsPerSample === 4) {
+			loadApuBadpSeekTable(record.badpSeekTable, sourceBytes.bytes, sourceBytes.byteOffset);
+		} else {
+			record.badpSeekTable.bytes = EMPTY_SOURCE_BYTES;
+			record.badpSeekTable.byteOffset = 0;
+			record.badpSeekTable.entryCount = 0;
+		}
 		record.cursorQ16 = cursorQ16;
 		record.phaseRemainder = phaseRemainder;
 		this.configurePhaseStep(record, rateStepQ16Word, source.sampleRateHz);

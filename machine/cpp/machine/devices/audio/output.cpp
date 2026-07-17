@@ -11,7 +11,6 @@
 #include "machine/devices/audio/source.h"
 
 #include <algorithm>
-#include <utility>
 
 namespace bmsx {
 namespace {
@@ -42,16 +41,16 @@ void ApuOutputMixer::playVoice(
 	const Span<const u8>& sourceBytes,
 	const ApuParameterRegisterWords& registerWords
 ) {
-	const ApuOutputPlayback playback = resolveApuOutputPlayback(registerWords);
+	VoiceRecord& record = m_voices[slot];
+	loadApuOutputPlayback(record.playback, registerWords);
 	buildVoiceFromData(
-		m_voices[slot],
+		record,
 		source,
 		sourceBytes,
-		playback,
 		registerWords[APU_PARAMETER_RATE_STEP_Q16_INDEX],
 		static_cast<i64>(registerWords[APU_PARAMETER_START_SAMPLE_INDEX]) * static_cast<i64>(APU_RATE_STEP_Q16_ONE),
 		0,
-		clamp(playback.gainLinear, 0.0, 1.0)
+		clamp(record.playback.gainLinear, 0.0, 1.0)
 	);
 }
 
@@ -68,12 +67,11 @@ void ApuOutputMixer::replaceVoiceSource(
 	const f64 fadeStartGain = record.fadeStartGain;
 	const u32 fadeSamplesRemaining = record.fadeSamplesRemaining;
 	const u32 fadeSamplesTotal = record.fadeSamplesTotal;
-	const ApuOutputPlayback playback = resolveApuOutputPlayback(registerWords);
+	loadApuOutputPlayback(record.playback, registerWords);
 	buildVoiceFromData(
 		record,
 		source,
 		sourceBytes,
-		playback,
 		registerWords[APU_PARAMETER_RATE_STEP_Q16_INDEX],
 		cursorQ16,
 		phaseRemainder,
@@ -91,13 +89,12 @@ void ApuOutputMixer::restoreVoice(
 	const ApuParameterRegisterWords& registerWords,
 	const ApuOutputVoiceState& state
 ) {
-	const ApuOutputPlayback playback = resolveApuOutputPlayback(registerWords);
 	VoiceRecord& record = m_voices[slot];
+	loadApuOutputPlayback(record.playback, registerWords);
 	buildVoiceFromData(
 		record,
 		source,
 		sourceBytes,
-		playback,
 		registerWords[APU_PARAMETER_RATE_STEP_Q16_INDEX],
 		state.cursorQ16,
 		state.phaseRemainder,
@@ -344,18 +341,17 @@ void ApuOutputMixer::buildVoiceFromData(
 	VoiceRecord& record,
 	const ApuAudioSource& source,
 	const Span<const u8>& sourceBytes,
-	const ApuOutputPlayback& playback,
 	u32 rateStepQ16Word,
 	i64 cursorQ16,
 	i32 phaseRemainder,
 	f64 initialGain
 ) {
-	std::vector<u32> badpSeekFrames;
-	std::vector<u32> badpSeekOffsets;
 	if (!apuAudioSourceUsesGenerator(source) && source.bitsPerSample == 4u) {
-		ApuBadpSeekTableResult seek = readApuBadpSeekTable(sourceBytes.data(), 0u);
-		badpSeekFrames = std::move(seek.frames);
-		badpSeekOffsets = std::move(seek.offsets);
+		loadApuBadpSeekTable(record.badpSeekTable, sourceBytes.data(), 0u);
+	} else {
+		record.badpSeekTable.bytes = nullptr;
+		record.badpSeekTable.byteOffset = 0u;
+		record.badpSeekTable.entryCount = 0u;
 	}
 	record.active = true;
 	record.channels = source.channels;
@@ -365,9 +361,6 @@ void ApuOutputMixer::buildVoiceFromData(
 	record.frames = source.frameCount;
 	record.generatorKind = source.generatorKind;
 	record.generatorDutyQ12 = source.generatorDutyQ12;
-	record.badpSeekFrames = std::move(badpSeekFrames);
-	record.badpSeekOffsets = std::move(badpSeekOffsets);
-	record.playback = playback;
 	record.cursorQ16 = cursorQ16;
 	record.phaseRemainder = phaseRemainder;
 	configurePhaseStep(record, rateStepQ16Word, source.sampleRateHz);
@@ -384,8 +377,7 @@ void ApuOutputMixer::buildVoiceFromData(
 			record.sourceBytes + record.dataOffset,
 			record.frames,
 			record.channels,
-			record.badpSeekFrames,
-			record.badpSeekOffsets,
+			record.badpSeekTable,
 			record.badp,
 			audioFrameIndex(record.cursorQ16)
 		);
@@ -393,10 +385,9 @@ void ApuOutputMixer::buildVoiceFromData(
 }
 
 void ApuOutputMixer::configurePhaseStep(VoiceRecord& record, u32 rateStepQ16Word, u32 sampleRateHz) {
-	ApuPhaseStep phaseStep;
-	resolveApuPhaseStep(phaseStep, rateStepQ16Word, sampleRateHz);
-	record.phaseStepQ16 = phaseStep.wholeQ16;
-	record.phaseStepRemainder = phaseStep.remainder;
+	resolveApuPhaseStep(m_phaseStep, rateStepQ16Word, sampleRateHz);
+	record.phaseStepQ16 = m_phaseStep.wholeQ16;
+	record.phaseStepRemainder = m_phaseStep.remainder;
 }
 
 void ApuOutputMixer::applyVoiceGainQ12(VoiceRecord& record, u32 gainQ12Word) {
@@ -429,8 +420,7 @@ void ApuOutputMixer::seekVoice(VoiceRecord& record, u32 startFrame) {
 			record.sourceBytes + record.dataOffset,
 			record.frames,
 			record.channels,
-			record.badpSeekFrames,
-			record.badpSeekOffsets,
+			record.badpSeekTable,
 			record.badp,
 			startFrame
 		);
@@ -445,8 +435,7 @@ void ApuOutputMixer::readVoiceFrame(VoiceRecord& record, size_t frame) {
 			record.sourceBytes + record.dataOffset,
 			record.frames,
 			record.channels,
-			record.badpSeekFrames,
-			record.badpSeekOffsets,
+			record.badpSeekTable,
 			record.badp,
 			frame,
 			left,

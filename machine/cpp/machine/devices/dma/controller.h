@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/primitives.h"
+#include "machine/memory/bus_master.h"
 
 namespace bmsx {
 
@@ -29,7 +30,10 @@ public:
 	void setGxGpuDmaWriteReady(bool ready);
 	void setGxGpuCpuWriteReady(bool ready);
 	void setGxGpuDmaDirection(u32 direction);
+	void setApuDmaReadReady(bool ready);
+	void setApuDmaWriteReady(bool ready);
 	bool isGxGpuCpuPortWriteReady() const;
+	bool ownsApuDataPort() const;
 	void onService(i64 nowCycles);
 	void reset();
 	DmaControllerState captureState() const;
@@ -39,9 +43,9 @@ public:
 private:
 	static constexpr u32 DMA_SERVICE_GRANT_WORDS = 16u;
 
-	static void onControlWriteThunk(void* context, u32 addr, u64 value);
-	static void onWriteAddressWriteThunk(void* context, u32 addr, u64 value);
-	static void onTriggerWriteThunk(void* context, u32 addr, u64 value);
+	static void onControlWriteThunk(void* context, u32 addr, u64 value, MappedBusMaster busMaster);
+	static void onAddressWriteThunk(void* context, u32 addr, u64 value, MappedBusMaster busMaster);
+	static void onTriggerWriteThunk(void* context, u32 addr, u64 value, MappedBusMaster busMaster);
 
 	void onTriggerWrite(u32 value);
 	void transferWord();
@@ -52,7 +56,7 @@ private:
 	bool requestAsserted() const;
 	bool busy() const;
 	bool ownsGxGpuWritePort() const;
-	void resumeGxGpuCpuWrite();
+	void resumeCpuPortWrites();
 
 	i64 m_cpuHz = 1;
 	i64 m_wordsPerSec = 1;
@@ -63,6 +67,8 @@ private:
 	bool m_gxGpuDmaWriteReady = false;
 	bool m_gxGpuCpuWriteReady = false;
 	u32 m_gxGpuDmaDirection = 0;
+	bool m_apuDmaReadReady = false;
+	bool m_apuDmaWriteReady = false;
 	bool m_serviceActive = false;
 	bool m_restorePending = false;
 	Memory& m_memory;

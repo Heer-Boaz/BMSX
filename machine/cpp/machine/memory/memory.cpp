@@ -165,20 +165,20 @@ u8 Memory::readMainMemoryU8(uint32_t addr, uint32_t faultAccess) const {
 	return 0;
 }
 
-Value Memory::readIoSlotValue(int slot, uint32_t addr) const {
+Value Memory::readIoSlotValue(int slot, uint32_t addr, MappedBusMaster busMaster) const {
 	const IoReadBinding& binding = m_ioReadHandlers[static_cast<size_t>(slot)];
 	if (binding.handler != nullptr) {
-		return binding.handler(binding.context, addr);
+		return binding.handler(binding.context, addr, busMaster);
 	}
 	return m_ioSlots[static_cast<size_t>(slot)];
 }
 
-void Memory::writeIoSlotValue(int slot, uint32_t addr, Value value) {
+void Memory::writeIoSlotValue(int slot, uint32_t addr, Value value, MappedBusMaster busMaster) {
 	const size_t slotIndex = static_cast<size_t>(slot);
 	m_ioSlots[slotIndex] = value;
 	const IoWriteBinding& binding = m_ioWriteHandlers[slotIndex];
 	if (binding.handler != nullptr) {
-		binding.handler(binding.context, addr, value);
+		binding.handler(binding.context, addr, value, busMaster);
 	}
 }
 
@@ -233,7 +233,7 @@ void Memory::clearBusFault() {
 Value Memory::readValue(uint32_t addr) const {
 	const int slot = ioAlignedSlot(addr);
 	if (slot >= 0) {
-		return readIoSlotValue(slot, addr);
+		return readIoSlotValue(slot, addr, MAPPED_BUS_MASTER_CPU);
 	}
 	if (addressRangeWithin(addr, PROGRAM_ROM_BASE, PROGRAM_ROM_SIZE, 4)) {
 		return valueNumber(static_cast<double>(readProgramRomWord(addr)));
@@ -247,7 +247,7 @@ Value Memory::readValue(uint32_t addr) const {
 Value Memory::readMappedValue(uint32_t addr) const {
 	const int slot = ioAlignedSlot(addr);
 	if (slot >= 0) {
-		return readIoSlotValue(slot, addr);
+		return readIoSlotValue(slot, addr, MAPPED_BUS_MASTER_CPU);
 	}
 	if (isIoRegionRange(addr, 4)) {
 		raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_ACCESS_READ_WORD);
@@ -277,7 +277,7 @@ Value Memory::readMappedValue(uint32_t addr) const {
 void Memory::writeValue(uint32_t addr, Value value) {
 	const int slot = ioAlignedSlot(addr);
 	if (slot >= 0) {
-		writeIoSlotValue(slot, addr, value);
+		writeIoSlotValue(slot, addr, value, MAPPED_BUS_MASTER_CPU);
 		return;
 	}
 	writeU32(addr, toU32(value));
@@ -294,7 +294,7 @@ void Memory::writeMappedValue(uint32_t addr, Value value) {
 			raiseBusFault(BUS_FAULT_READ_ONLY, addr, BUS_ACCESS_WRITE_WORD);
 			return;
 		}
-		writeIoSlotValue(slot, addr, value);
+		writeIoSlotValue(slot, addr, value, MAPPED_BUS_MASTER_CPU);
 		return;
 	}
 	if (isIoRegionRange(addr, 4)) {
@@ -314,7 +314,7 @@ u8 Memory::readU8(uint32_t addr) const {
 u8 Memory::readMappedU8(uint32_t addr) const {
 	const int slot = ioAlignedSlot(addr);
 	if (slot >= 0) {
-		return static_cast<u8>(toU32(readIoSlotValue(slot, addr)) & 0xffu);
+		return static_cast<u8>(toU32(readIoSlotValue(slot, addr, MAPPED_BUS_MASTER_CPU)) & 0xffu);
 	}
 	if (isIoRegionRange(addr, 1)) {
 		raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_ACCESS_READ_U8);
@@ -342,11 +342,11 @@ void Memory::writeMappedU8(uint32_t addr, u8 value) {
 }
 
 uint32_t Memory::readIoU32(uint32_t addr) const {
-	return toU32(readIoSlotValue(static_cast<int>((addr - IO_BASE) / IO_WORD_SIZE), addr));
+	return toU32(readIoSlotValue(static_cast<int>((addr - IO_BASE) / IO_WORD_SIZE), addr, MAPPED_BUS_MASTER_CPU));
 }
 
 int32_t Memory::readIoI32(uint32_t addr) const {
-	return static_cast<int32_t>(toU32(readIoSlotValue(static_cast<int>((addr - IO_BASE) / IO_WORD_SIZE), addr)));
+	return static_cast<int32_t>(toU32(readIoSlotValue(static_cast<int>((addr - IO_BASE) / IO_WORD_SIZE), addr, MAPPED_BUS_MASTER_CPU)));
 }
 
 uint32_t Memory::readU32(uint32_t addr) const {
@@ -402,9 +402,17 @@ uint32_t Memory::readMappedU16LE(uint32_t addr) const {
 }
 
 uint32_t Memory::readMappedU32LE(uint32_t addr, uint32_t faultAccess) const {
+	return readMappedBusU32LE(addr, faultAccess, MAPPED_BUS_MASTER_CPU);
+}
+
+uint32_t Memory::readMappedDmaU32LE(uint32_t addr) const {
+	return readMappedBusU32LE(addr, BUS_ACCESS_READ_U32, MAPPED_BUS_MASTER_DMA);
+}
+
+uint32_t Memory::readMappedBusU32LE(uint32_t addr, uint32_t faultAccess, MappedBusMaster busMaster) const {
 	const int slot = ioAlignedSlot(addr);
 	if (slot >= 0) {
-		return toU32(readIoSlotValue(slot, addr));
+		return toU32(readIoSlotValue(slot, addr, busMaster));
 	}
 	if (isIoRegionRange(addr, 4)) {
 		raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, faultAccess);
@@ -472,6 +480,14 @@ void Memory::writeMappedU16LE(uint32_t addr, uint32_t value) {
 }
 
 void Memory::writeMappedU32LE(uint32_t addr, uint32_t value, uint32_t faultAccess) {
+	writeMappedBusU32LE(addr, value, faultAccess, MAPPED_BUS_MASTER_CPU);
+}
+
+void Memory::writeMappedDmaU32LE(uint32_t addr, uint32_t value) {
+	writeMappedBusU32LE(addr, value, BUS_ACCESS_WRITE_U32, MAPPED_BUS_MASTER_DMA);
+}
+
+void Memory::writeMappedBusU32LE(uint32_t addr, uint32_t value, uint32_t faultAccess, MappedBusMaster busMaster) {
 	const int slot = ioAlignedSlot(addr);
 	if (slot >= 0) {
 		if (isLuaReadOnlyIoAddress(addr)) {
@@ -479,7 +495,7 @@ void Memory::writeMappedU32LE(uint32_t addr, uint32_t value, uint32_t faultAcces
 			return;
 		}
 		const Value word = valueNumber(static_cast<double>(value));
-		writeIoSlotValue(slot, addr, word);
+		writeIoSlotValue(slot, addr, word, busMaster);
 		return;
 	}
 	if (isIoRegionRange(addr, 4)) {
@@ -556,13 +572,7 @@ bool Memory::isReadableMainMemoryRange(uint32_t addr, size_t length) const {
 		|| isReadableRam;
 }
 
-bool Memory::isImmutableMainMemoryRange(uint32_t addr, size_t length) const {
-	return length > 0u
-		&& (isRangeWithinRegion(addr, length, SYSTEM_ROM_BASE, static_cast<uint32_t>(m_systemRom.size))
-			|| isRangeWithinRegion(addr, length, CART_ROM_BASE, static_cast<uint32_t>(m_cartRom.size)));
-}
-
-bool Memory::bindImmutableMainMemoryView(uint32_t addr, size_t length, Span<const u8>& out) const {
+bool Memory::bindRomByteView(uint32_t addr, size_t length, Span<const u8>& out) const {
 	size_t offset = 0;
 	if (length > 0u && addressRangeOffset(addr, SYSTEM_ROM_BASE, m_systemRom.size, length, offset)) {
 		out.data_ = m_systemRom.data + offset;
@@ -583,7 +593,7 @@ bool Memory::isRamRange(uint32_t addr, size_t length) const {
 		&& static_cast<size_t>(addr - RAM_BASE) <= m_ram.size() - length;
 }
 
-void Memory::onBusFaultAckWriteThunk(void* context, uint32_t addr, Value value) {
+void Memory::onBusFaultAckWriteThunk(void* context, uint32_t addr, Value value, MappedBusMaster) {
 	Memory* memory = static_cast<Memory*>(context);
 	memory->onBusFaultAckWrite(addr, value);
 }

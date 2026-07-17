@@ -766,6 +766,7 @@
 				"ApuBadpDecoderSaveState",
 				"ApuOutputVoiceState",
 				"ApuOutputState",
+				"ApuSampleTransferState",
 				"AudioControllerState"
 			],
 			"reason": "devices_audio_save_state_shape_contract"
@@ -797,7 +798,7 @@
 				"machine/cpp/machine/devices/audio/badp_decoder.h"
 			],
 			"symbols": [
-				"ApuBadpSeekTableResult",
+				"ApuBadpSeekTable",
 				"ApuBadpDecoderState"
 			],
 			"reason": "devices_audio_badp_decoder_shape_contract"
@@ -1702,6 +1703,54 @@
 	],
 	"strict_runtime_no_heap_functions": [
 		{
+			"file": "machine/ts/machine/devices/audio/service_clock.ts",
+			"functions": [
+				"synchronize",
+				"synchronizeBeforeTransferAccess",
+				"advanceVoicesTo"
+			],
+			"reason": "apu_clock_and_transfer_ordering_must_remain_allocation_free"
+		},
+		{
+			"file": "machine/cpp/machine/devices/audio/service_clock.cpp",
+			"functions": [
+				"synchronize",
+				"synchronizeBeforeTransferAccess",
+				"advanceVoicesTo"
+			],
+			"reason": "apu_clock_and_transfer_ordering_must_remain_allocation_free"
+		},
+		{
+			"file": "machine/ts/machine/devices/audio/sample_transfer.ts",
+			"functions": [
+				"completeService",
+				"readDmaData",
+				"writeDmaData",
+				"writeControl",
+				"completeBatch",
+				"scheduleBatch",
+				"pushFifo",
+				"popFifo",
+				"updateDmaRequests"
+			],
+			"reason": "apu_sample_transfer_fifo_and_service_must_remain_allocation_free"
+		},
+		{
+			"file": "machine/cpp/machine/devices/audio/sample_transfer.cpp",
+			"functions": [
+				"completeService",
+				"readDmaData",
+				"writeDmaData",
+				"writeControl",
+				"completeBatch",
+				"scheduleBatch",
+				"pushFifo",
+				"popFifo",
+				"updateDmaRequests"
+			],
+			"reason": "apu_sample_transfer_fifo_and_service_must_remain_allocation_free"
+		},
+		{
 			"file": "machine/ts/machine/devices/audio/output.ts",
 			"functions": [
 				"renderMachineFrames",
@@ -2028,11 +2077,13 @@
 				"setGxGpuReadReady",
 				"setGxGpuDmaWriteReady",
 				"setGxGpuDmaDirection",
+				"setApuDmaReadReady",
+				"setApuDmaWriteReady",
 				"onService",
 				"transferWord",
 				"scheduleGrant",
 				"requestInputChanged",
-				"resumeGxGpuCpuWrite"
+				"resumeCpuPortWrites"
 			],
 			"reason": "dma_live_channel_service_and_request_lines_must_remain_heap_free"
 		},
@@ -2043,11 +2094,13 @@
 				"setGxGpuReadReady",
 				"setGxGpuDmaWriteReady",
 				"setGxGpuDmaDirection",
+				"setApuDmaReadReady",
+				"setApuDmaWriteReady",
 				"onService",
 				"transferWord",
 				"scheduleGrant",
 				"requestInputChanged",
-				"resumeGxGpuCpuWrite"
+				"resumeCpuPortWrites"
 			],
 			"reason": "dma_live_channel_service_and_request_lines_must_remain_heap_free"
 		},

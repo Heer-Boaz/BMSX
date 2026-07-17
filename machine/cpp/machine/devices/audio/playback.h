@@ -25,6 +25,6 @@ auto resolveApuGainLinear(u32 gainQ12Word) -> f64;
 void resolveApuPhaseStep(ApuPhaseStep& out, u32 rateStepQ16Word, u32 sourceSampleRateHz);
 auto decodeApuFilterType(u32 kind) -> std::string_view;
 void applyApuOutputFilter(ApuOutputPlayback& playback, const ApuParameterRegisterWords& registerWords);
-auto resolveApuOutputPlayback(const ApuParameterRegisterWords& registerWords) -> ApuOutputPlayback;
+void loadApuOutputPlayback(ApuOutputPlayback& playback, const ApuParameterRegisterWords& registerWords);
 
 } // namespace bmsx

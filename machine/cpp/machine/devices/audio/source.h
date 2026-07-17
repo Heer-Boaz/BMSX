@@ -1,18 +1,10 @@
 #pragma once
 
-#include "common/primitives.h"
-#include "common/types.h"
 #include "machine/devices/audio/contracts.h"
-#include "machine/devices/audio/save_state.h"
-
-#include <array>
-#include <vector>
 
 namespace bmsx {
 
-class Memory;
-
-ApuAudioSource resolveApuAudioSource(const ApuParameterRegisterWords& registerWords);
+void loadApuAudioSource(ApuAudioSource& out, const ApuParameterRegisterWords& registerWords);
 constexpr bool apuAudioSourceUsesGenerator(const ApuAudioSource& source) {
 	return source.generatorKind != APU_GENERATOR_NONE;
 }
@@ -28,23 +20,5 @@ constexpr bool apuParameterProgramsSourceBuffer(uint32_t parameterIndex) {
 		|| parameterIndex == APU_PARAMETER_SOURCE_DATA_BYTES_INDEX
 		|| parameterIndex == APU_PARAMETER_GENERATOR_KIND_INDEX;
 }
-
-class ApuSourceDma final {
-public:
-	void reset();
-	void clearSlot(ApuAudioSlot slot);
-	void loadSlot(const Memory& memory, ApuAudioSlot slot, const ApuAudioSource& source);
-	const Span<const u8>& bytesForSlot(ApuAudioSlot slot) const { return m_slotSources[slot].bytes; }
-	ApuSlotSourceBytes captureState() const;
-	void restoreState(const ApuSlotSourceBytes& slotSourceBytes);
-
-private:
-	struct SlotSource {
-		std::vector<u8> ownedBytes;
-		Span<const u8> bytes;
-		void bindOwnedBytes();
-	};
-	std::array<SlotSource, APU_SLOT_COUNT> m_slotSources{};
-};
 
 } // namespace bmsx

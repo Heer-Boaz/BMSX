@@ -93,8 +93,7 @@ inline void decodeNextApuBadpFrame(const u8* data, u32 channels, ApuBadpDecoderS
 inline void seekApuBadpDecoderToFrame(const u8* data,
 										size_t frames,
 										u32 channels,
-										const std::vector<u32>& seekFrames,
-										const std::vector<u32>& seekOffsets,
+										const ApuBadpSeekTable& seekTable,
 										ApuBadpDecoderState& decoder,
 										i64 frame) {
 	decoder.decodedFrame = -1;
@@ -107,23 +106,29 @@ inline void seekApuBadpDecoderToFrame(const u8* data,
 		decoder.nextFrame = frames;
 		return;
 	}
-	size_t seekIndex = 0;
-	size_t lo = 0;
-	size_t hi = seekFrames.size() - 1;
-	while (lo <= hi) {
-		const size_t mid = (lo + hi) >> 1;
-		if (static_cast<i64>(seekFrames[mid]) <= frame) {
-			seekIndex = mid;
-			lo = mid + 1;
-		} else {
-			if (mid == 0) {
-				break;
+	i64 currentFrame = 0;
+	size_t cursor = 0;
+	if (seekTable.entryCount != 0u) {
+		u32 seekIndex = 0u;
+		u32 lo = 0u;
+		u32 hi = seekTable.entryCount - 1u;
+		while (lo <= hi) {
+			const u32 mid = (lo + hi) >> 1u;
+			const u32 seekFrame = readLE32(seekTable.bytes + seekTable.byteOffset + static_cast<size_t>(mid) * 8u);
+			if (static_cast<i64>(seekFrame) <= frame) {
+				seekIndex = mid;
+				lo = mid + 1u;
+			} else {
+				if (mid == 0u) {
+					break;
+				}
+				hi = mid - 1u;
 			}
-			hi = mid - 1;
 		}
+		const u8* entry = seekTable.bytes + seekTable.byteOffset + static_cast<size_t>(seekIndex) * 8u;
+		currentFrame = readLE32(entry);
+		cursor = readLE32(entry + 4u);
 	}
-	i64 currentFrame = seekFrames[seekIndex];
-	size_t cursor = static_cast<size_t>(seekOffsets[seekIndex]);
 	loadApuBadpBlock(data, channels, decoder, cursor);
 	while (currentFrame + static_cast<i64>(decoder.blockFrames) <= frame) {
 		currentFrame += static_cast<i64>(decoder.blockFrames);
@@ -139,19 +144,17 @@ inline void seekApuBadpDecoderToFrame(const u8* data,
 inline void resetApuBadpDecoder(const u8* data,
 								size_t frames,
 								u32 channels,
-								const std::vector<u32>& seekFrames,
-								const std::vector<u32>& seekOffsets,
+								const ApuBadpSeekTable& seekTable,
 								ApuBadpDecoderState& decoder,
 								i64 frame) {
 	decoder = ApuBadpDecoderState{};
-	seekApuBadpDecoderToFrame(data, frames, channels, seekFrames, seekOffsets, decoder, frame);
+	seekApuBadpDecoderToFrame(data, frames, channels, seekTable, decoder, frame);
 }
 
 inline void readApuBadpFrameAt(const u8* data,
 								size_t frames,
 								u32 channels,
-								const std::vector<u32>& seekFrames,
-								const std::vector<u32>& seekOffsets,
+								const ApuBadpSeekTable& seekTable,
 								ApuBadpDecoderState& decoder,
 								size_t frame,
 								i16& outLeft,
@@ -167,7 +170,7 @@ inline void readApuBadpFrameAt(const u8* data,
 		return;
 	}
 	if (frame < decoder.nextFrame) {
-		seekApuBadpDecoderToFrame(data, frames, channels, seekFrames, seekOffsets, decoder, frame);
+		seekApuBadpDecoderToFrame(data, frames, channels, seekTable, decoder, frame);
 	}
 	while (decoder.nextFrame <= frame) {
 		decodeNextApuBadpFrame(data, channels, decoder);

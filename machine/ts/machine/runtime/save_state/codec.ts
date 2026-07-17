@@ -11,7 +11,8 @@ import type {
 	ApuOutputVoiceState,
 } from '../../devices/audio/save_state';
 import type { ApuCommandFifoState } from '../../devices/audio/command_fifo';
-import { APU_COMMAND_FIFO_CAPACITY, APU_COMMAND_FIFO_REGISTER_WORD_COUNT, APU_PARAMETER_REGISTER_COUNT, APU_SLOT_COUNT, APU_SLOT_REGISTER_WORD_COUNT } from '../../devices/audio/contracts';
+import type { ApuSampleTransferState } from '../../devices/audio/save_state';
+import { APU_COMMAND_FIFO_CAPACITY, APU_COMMAND_FIFO_REGISTER_WORD_COUNT, APU_PARAMETER_REGISTER_COUNT, APU_SAMPLE_RAM_ADDRESS_MASK, APU_SAMPLE_RAM_BYTES, APU_SLOT_COUNT, APU_SLOT_REGISTER_WORD_COUNT, APU_TRANSFER_FIFO_WORD_CAPACITY } from '../../devices/audio/contracts';
 import type { StringPoolState, StringPoolStateEntry } from '../../cpu/string_pool';
 import type { InputControllerState } from '../../devices/input/save_state';
 import { INPUT_CONTROLLER_KEY_WORD_COUNT, INPUT_CONTROLLER_PAD_AXIS_COUNT, INPUT_CONTROLLER_PAD_COUNT } from '../../devices/input/contracts';
@@ -112,18 +113,6 @@ function decodeIntegerFixedArray(value: unknown, label: string, length: number, 
 	const out = new Array<number>(length);
 	for (let index = 0; index < length; index += 1) {
 		out[index] = decode(entries[index], `${label}[${index}]`);
-	}
-	return out;
-}
-
-function decodeBinaryFixedArray(value: unknown, label: string, length: number): Uint8Array[] {
-	const entries = requireArray(value, label);
-	if (entries.length !== length) {
-		throw new Error(`${label} must contain ${length} binary entries.`);
-	}
-	const out = new Array<Uint8Array>(length);
-	for (let index = 0; index < length; index += 1) {
-		out[index] = requireBinaryValue(entries[index], `${label}[${index}]`);
 	}
 	return out;
 }
@@ -818,6 +807,39 @@ function decodeApuCommandFifoState(value: unknown, label: string): ApuCommandFif
 	};
 }
 
+function encodeApuSampleTransferState(state: ApuSampleTransferState): ApuSampleTransferState {
+	return {
+		fifoWords: encodeVector(state.fifoWords, (word) => word >>> 0),
+		fifoReadIndex: state.fifoReadIndex,
+		fifoWriteIndex: state.fifoWriteIndex,
+		fifoCount: state.fifoCount,
+		transferAddressWord: state.transferAddressWord,
+		transferDataWord: state.transferDataWord,
+		transferControlWord: state.transferControlWord,
+		currentAddress: state.currentAddress,
+		timingCarry: state.timingCarry,
+		scheduledWords: state.scheduledWords,
+		scheduledCycles: state.scheduledCycles,
+	};
+}
+
+function decodeApuSampleTransferState(value: unknown, label: string): ApuSampleTransferState {
+	const object = requireObject(value, label);
+	return {
+		fifoWords: decodeU32FixedArray(requireObjectKey(object, 'fifoWords', label, `${label}.fifoWords`), `${label}.fifoWords`, APU_TRANSFER_FIFO_WORD_CAPACITY),
+		fifoReadIndex: requireBoundedU32(requireObjectKey(object, 'fifoReadIndex', label, `${label}.fifoReadIndex`), `${label}.fifoReadIndex`, 0, APU_TRANSFER_FIFO_WORD_CAPACITY - 1),
+		fifoWriteIndex: requireBoundedU32(requireObjectKey(object, 'fifoWriteIndex', label, `${label}.fifoWriteIndex`), `${label}.fifoWriteIndex`, 0, APU_TRANSFER_FIFO_WORD_CAPACITY - 1),
+		fifoCount: requireBoundedU32(requireObjectKey(object, 'fifoCount', label, `${label}.fifoCount`), `${label}.fifoCount`, 0, APU_TRANSFER_FIFO_WORD_CAPACITY),
+		transferAddressWord: requireBoundedU32(requireObjectKey(object, 'transferAddressWord', label, `${label}.transferAddressWord`), `${label}.transferAddressWord`, 0, 0xffffffff),
+		transferDataWord: requireBoundedU32(requireObjectKey(object, 'transferDataWord', label, `${label}.transferDataWord`), `${label}.transferDataWord`, 0, 0xffffffff),
+		transferControlWord: requireBoundedU32(requireObjectKey(object, 'transferControlWord', label, `${label}.transferControlWord`), `${label}.transferControlWord`, 0, 0xffffffff),
+		currentAddress: requireBoundedU32(requireObjectKey(object, 'currentAddress', label, `${label}.currentAddress`), `${label}.currentAddress`, 0, APU_SAMPLE_RAM_ADDRESS_MASK),
+		timingCarry: requireI64(requireObjectKey(object, 'timingCarry', label, `${label}.timingCarry`), `${label}.timingCarry`),
+		scheduledWords: requireBoundedU32(requireObjectKey(object, 'scheduledWords', label, `${label}.scheduledWords`), `${label}.scheduledWords`, 0, APU_TRANSFER_FIFO_WORD_CAPACITY),
+		scheduledCycles: requireI64(requireObjectKey(object, 'scheduledCycles', label, `${label}.scheduledCycles`), `${label}.scheduledCycles`),
+	};
+}
+
 function encodeAudioControllerState(state: AudioControllerState): AudioControllerState {
 	return {
 		registerWords: encodeVector(state.registerWords, (word) => word >>> 0),
@@ -828,7 +850,8 @@ function encodeAudioControllerState(state: AudioControllerState): AudioControlle
 		eventSourceAddr: state.eventSourceAddr,
 		slotPhases: encodeVector(state.slotPhases, (phase) => phase >>> 0),
 		slotRegisterWords: encodeVector(state.slotRegisterWords, (word) => word >>> 0),
-		slotSourceBytes: encodeVector(state.slotSourceBytes, (bytes) => bytes),
+		sampleRam: state.sampleRam,
+		sampleTransfer: encodeApuSampleTransferState(state.sampleTransfer),
 		output: encodeApuOutputState(state.output),
 		sampleCarry: state.sampleCarry,
 		sampleSequence: state.sampleSequence,
@@ -849,7 +872,8 @@ function decodeAudioControllerState(value: unknown, label: string): AudioControl
 		eventSourceAddr: requireBoundedU32(requireObjectKey(object, 'eventSourceAddr', label, 'machine.audio.eventSourceAddr'), 'machine.audio.eventSourceAddr', 0, 0xffffffff),
 		slotPhases: decodeU32FixedArray(requireObjectKey(object, 'slotPhases', label, 'machine.audio.slotPhases'), 'machine.audio.slotPhases', APU_SLOT_COUNT),
 		slotRegisterWords: decodeU32FixedArray(requireObjectKey(object, 'slotRegisterWords', label, 'machine.audio.slotRegisterWords'), 'machine.audio.slotRegisterWords', APU_SLOT_REGISTER_WORD_COUNT),
-		slotSourceBytes: decodeBinaryFixedArray(requireObjectKey(object, 'slotSourceBytes', label, 'machine.audio.slotSourceBytes'), 'machine.audio.slotSourceBytes', APU_SLOT_COUNT),
+		sampleRam: requireBinaryFixedLength(requireObjectKey(object, 'sampleRam', label, 'machine.audio.sampleRam'), 'machine.audio.sampleRam', APU_SAMPLE_RAM_BYTES),
+		sampleTransfer: decodeApuSampleTransferState(requireObjectKey(object, 'sampleTransfer', label, 'machine.audio.sampleTransfer'), 'machine.audio.sampleTransfer'),
 		output: decodeApuOutputState(requireObjectKey(object, 'output', label, 'machine.audio.output'), 'machine.audio.output'),
 		sampleCarry: requireI64(requireObjectKey(object, 'sampleCarry', label, 'machine.audio.sampleCarry'), 'machine.audio.sampleCarry'),
 		sampleSequence: requireI64(requireObjectKey(object, 'sampleSequence', label, 'machine.audio.sampleSequence'), 'machine.audio.sampleSequence'),

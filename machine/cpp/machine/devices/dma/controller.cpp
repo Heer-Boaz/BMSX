@@ -17,19 +17,20 @@ DmaController::DmaController(Memory& memory, CPU& cpu, IrqController& irq, Devic
 	, m_irq(irq)
 	, m_scheduler(scheduler) {
 	m_memory.mapIoWrite(IO_DMA_CONTROL, this, &DmaController::onControlWriteThunk);
-	m_memory.mapIoWrite(IO_DMA_WRITE_ADDR, this, &DmaController::onWriteAddressWriteThunk);
+	m_memory.mapIoWrite(IO_DMA_READ_ADDR, this, &DmaController::onAddressWriteThunk);
+	m_memory.mapIoWrite(IO_DMA_WRITE_ADDR, this, &DmaController::onAddressWriteThunk);
 	m_memory.mapIoWrite(IO_DMA_TRIGGER, this, &DmaController::onTriggerWriteThunk);
 }
 
-void DmaController::onControlWriteThunk(void* context, u32, Value) {
+void DmaController::onControlWriteThunk(void* context, u32, Value, MappedBusMaster) {
 	static_cast<DmaController*>(context)->requestInputChanged();
 }
 
-void DmaController::onWriteAddressWriteThunk(void* context, u32, Value) {
-	static_cast<DmaController*>(context)->resumeGxGpuCpuWrite();
+void DmaController::onAddressWriteThunk(void* context, u32, Value, MappedBusMaster) {
+	static_cast<DmaController*>(context)->resumeCpuPortWrites();
 }
 
-void DmaController::onTriggerWriteThunk(void* context, u32, u64 value) {
+void DmaController::onTriggerWriteThunk(void* context, u32, u64 value, MappedBusMaster) {
 	static_cast<DmaController*>(context)->onTriggerWrite(toU32(value));
 }
 
@@ -89,7 +90,7 @@ void DmaController::setGxGpuCpuWriteReady(bool ready) {
 		return;
 	}
 	m_gxGpuCpuWriteReady = ready;
-	resumeGxGpuCpuWrite();
+	resumeCpuPortWrites();
 }
 
 void DmaController::setGxGpuDmaDirection(u32 direction) {
@@ -100,8 +101,30 @@ void DmaController::setGxGpuDmaDirection(u32 direction) {
 	requestInputChanged();
 }
 
+void DmaController::setApuDmaReadReady(bool ready) {
+	if (m_apuDmaReadReady == ready) {
+		return;
+	}
+	m_apuDmaReadReady = ready;
+	requestInputChanged();
+}
+
+void DmaController::setApuDmaWriteReady(bool ready) {
+	if (m_apuDmaWriteReady == ready) {
+		return;
+	}
+	m_apuDmaWriteReady = ready;
+	requestInputChanged();
+}
+
 bool DmaController::isGxGpuCpuPortWriteReady() const {
 	return m_gxGpuCpuWriteReady && !ownsGxGpuWritePort();
+}
+
+bool DmaController::ownsApuDataPort() const {
+	return busy()
+		&& (m_memory.readIoU32(IO_DMA_READ_ADDR) == IO_APU_TRANSFER_DATA
+			|| m_memory.readIoU32(IO_DMA_WRITE_ADDR) == IO_APU_TRANSFER_DATA);
 }
 
 void DmaController::reset() {
@@ -113,6 +136,8 @@ void DmaController::reset() {
 	m_gxGpuDmaWriteReady = false;
 	m_gxGpuCpuWriteReady = false;
 	m_gxGpuDmaDirection = 0u;
+	m_apuDmaReadReady = false;
+	m_apuDmaWriteReady = false;
 	m_serviceActive = false;
 	m_restorePending = false;
 	m_memory.writeIoValue(IO_DMA_READ_ADDR, valueNumber(0.0));
@@ -126,6 +151,10 @@ void DmaController::reset() {
 void DmaController::onService(i64) {
 	const u32 grantWords = m_scheduledGrantWords;
 	const i64 grantDeadline = m_serviceDeadline;
+	const u32 request = m_memory.readIoU32(IO_DMA_CONTROL) & DMA_CONTROL_REQUEST_MASK;
+	const bool latchRequestForGrant = (request == DMA_CONTROL_REQUEST_APU_WRITE
+		|| request == DMA_CONTROL_REQUEST_APU_READ)
+		&& requestAsserted();
 	m_scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
 	m_scheduledGrantWords = 0u;
 	m_serviceDeadline = 0;
@@ -134,7 +163,7 @@ void DmaController::onService(i64) {
 		slot < grantWords
 			&& busy()
 			&& m_memory.readIoU32(IO_DMA_TRANSFER_COUNT) != 0u
-			&& requestAsserted();
+			&& (latchRequestForGrant || requestAsserted());
 		slot += 1u) {
 		transferWord();
 	}
@@ -158,8 +187,8 @@ void DmaController::transferWord() {
 	const u32 writeAddress = m_memory.readIoU32(IO_DMA_WRITE_ADDR);
 	const u32 transferCount = m_memory.readIoU32(IO_DMA_TRANSFER_COUNT);
 	const u32 control = m_memory.readIoU32(IO_DMA_CONTROL);
-	const u32 word = m_memory.readMappedU32LE(readAddress);
-	m_memory.writeMappedU32LE(writeAddress, word);
+	const u32 word = m_memory.readMappedDmaU32LE(readAddress);
+	m_memory.writeMappedDmaU32LE(writeAddress, word);
 	m_memory.writeIoValue(
 		IO_DMA_READ_ADDR,
 		valueNumber(static_cast<f64>((control & DMA_CONTROL_READ_INCREMENT) != 0u ? readAddress + IO_WORD_SIZE : readAddress))
@@ -169,8 +198,10 @@ void DmaController::transferWord() {
 		valueNumber(static_cast<f64>((control & DMA_CONTROL_WRITE_INCREMENT) != 0u ? writeAddress + IO_WORD_SIZE : writeAddress))
 	);
 	m_memory.writeIoValue(IO_DMA_TRANSFER_COUNT, valueNumber(static_cast<f64>(transferCount - 1u)));
-	if (writeAddress == IO_GX_GPU_GP0 && (control & DMA_CONTROL_WRITE_INCREMENT) != 0u) {
-		resumeGxGpuCpuWrite();
+	if (((writeAddress == IO_GX_GPU_GP0 || writeAddress == IO_APU_TRANSFER_DATA)
+			&& (control & DMA_CONTROL_WRITE_INCREMENT) != 0u)
+		|| (readAddress == IO_APU_TRANSFER_DATA && (control & DMA_CONTROL_READ_INCREMENT) != 0u)) {
+		resumeCpuPortWrites();
 	}
 }
 
@@ -181,7 +212,7 @@ void DmaController::finishTransfer() {
 	m_timingCarry = 0;
 	m_memory.writeIoValue(IO_DMA_STATUS, valueNumber(static_cast<f64>(DMA_STATUS_DONE)));
 	m_irq.raise(IRQ_DMA_DONE);
-	resumeGxGpuCpuWrite();
+	resumeCpuPortWrites();
 }
 
 DmaControllerState DmaController::captureState() const {
@@ -221,7 +252,7 @@ void DmaController::postLoad() {
 			cancelGrant();
 		}
 	}
-	resumeGxGpuCpuWrite();
+	resumeCpuPortWrites();
 }
 
 void DmaController::scheduleGrant(i64 anchorCycle) {
@@ -242,7 +273,7 @@ void DmaController::cancelGrant() {
 }
 
 void DmaController::requestInputChanged() {
-	if (m_restorePending || !busy()) {
+	if (m_restorePending || m_serviceActive || !busy()) {
 		return;
 	}
 	if (!requestAsserted()) {
@@ -253,7 +284,7 @@ void DmaController::requestInputChanged() {
 		finishTransfer();
 		return;
 	}
-	if (!m_serviceActive && m_scheduledGrantWords == 0u) {
+	if (m_scheduledGrantWords == 0u) {
 		scheduleGrant(m_scheduler.currentNowCycles());
 	}
 }
@@ -268,6 +299,10 @@ bool DmaController::requestAsserted() const {
 			&& m_gxGpuDmaWriteReady;
 	case DMA_CONTROL_REQUEST_GX_READ:
 		return m_gxGpuDmaDirection == GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU && m_gxGpuReadReady;
+	case DMA_CONTROL_REQUEST_APU_WRITE:
+		return m_apuDmaWriteReady;
+	case DMA_CONTROL_REQUEST_APU_READ:
+		return m_apuDmaReadReady;
 	default:
 		return false;
 	}
@@ -281,9 +316,12 @@ bool DmaController::ownsGxGpuWritePort() const {
 	return busy() && m_memory.readIoU32(IO_DMA_WRITE_ADDR) == IO_GX_GPU_GP0;
 }
 
-void DmaController::resumeGxGpuCpuWrite() {
+void DmaController::resumeCpuPortWrites() {
 	if (m_gxGpuCpuWriteReady && !ownsGxGpuWritePort()) {
 		m_cpu.resumeMemoryWrite(IO_GX_GPU_GP0);
+	}
+	if (!ownsApuDataPort()) {
+		m_cpu.resumeMemoryWrite(IO_APU_TRANSFER_DATA);
 	}
 }
 

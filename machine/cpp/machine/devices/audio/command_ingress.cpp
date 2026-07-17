@@ -22,7 +22,7 @@ ApuCommandIngress::ApuCommandIngress(Memory& memory,
 	, m_serviceClock(serviceClock)
 	, m_scheduler(scheduler) {}
 
-void ApuCommandIngress::onCommandWriteThunk(void* context, [[maybe_unused]] u32 addr, [[maybe_unused]] Value value) {
+void ApuCommandIngress::onCommandWriteThunk(void* context, [[maybe_unused]] u32 addr, [[maybe_unused]] Value value, MappedBusMaster) {
 	auto& ingress = *static_cast<ApuCommandIngress*>(context);
 	const i64 nowCycles = ingress.m_scheduler.currentNowCycles();
 	ingress.m_serviceClock.synchronize(nowCycles);

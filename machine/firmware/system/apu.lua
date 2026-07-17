@@ -3,6 +3,7 @@
 local endian<const> = require("bios/common/endian")
 local read_u16le<const> = endian.read_u16le
 local read_u32le<const> = endian.read_u32le
+local dma<const> = require("system/dma")
 
 struct apu_command_registers
 	source_addr: word
@@ -43,6 +44,28 @@ local apu<const> = {
 }
 
 local command_registers<const>: *apu_command_registers = 0x08000128
+local transfer_address<const>: *word = 0x080001f0
+local transfer_control<const>: *word = 0x080001f8
+local transfer_mode_stop<const> = 0x00000000
+local transfer_mode_dma_write<const> = 0x00000002
+local transfer_mode_dma_read<const> = 0x00000003
+
+apu.sample_ram_base = 0x10000000
+apu.sample_ram_bytes = 0x00080000
+
+function apu.upload(source, sample_ram_offset, word_count)
+	*transfer_control = transfer_mode_stop
+	*transfer_address = sample_ram_offset
+	*transfer_control = transfer_mode_dma_write
+	dma.copy_to_apu(source, word_count)
+end
+
+function apu.download(target, sample_ram_offset, word_count)
+	*transfer_control = transfer_mode_stop
+	*transfer_address = sample_ram_offset
+	*transfer_control = transfer_mode_dma_read
+	dma.copy_from_apu(target, word_count)
+end
 
 function apu.seconds_to_samples(seconds)
 	return seconds * 0x0000ac44
@@ -53,7 +76,7 @@ function apu.ms_to_samples(ms)
 end
 
 local rom_base_for_payload<const> = function(payload_id)
-	if payload_id == 'system' then -- ?????????? There isn't any BIOS audio?!
+	if payload_id == 'system' then
 		return 0x00000000
 	end
 	return 0x01000000

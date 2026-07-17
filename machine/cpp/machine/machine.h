@@ -33,8 +33,8 @@ public:
 	SystemController systemController;
 	DeviceScheduler scheduler;
 	ApuOutputMixer audioOutput;
-	AudioController audioController;
 	DmaController dmaController;
+	AudioController audioController;
 	GeometryController geometryController;
 	GxGpu gxGpu;
 	GxGte gxGte;

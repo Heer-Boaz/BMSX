@@ -28,7 +28,8 @@ MachineState captureMachineState(Machine& machine) {
 	MachineState state;
 	// GPU capture first synchronizes overdue command time and publishes its DREQ
 	// edges; the dependent DMA grant must be captured after that transition. APU
-	// capture likewise materializes sample-accurate END events before IRQ state.
+	// capture likewise materializes transfer DREQ and sample-accurate END edges
+	// before the dependent DMA and IRQ state.
 	state.gxGpu = machine.gxGpu.captureState();
 	state.audio = machine.audioController.captureState();
 	state.dma = machine.dmaController.captureState();
