@@ -133,7 +133,7 @@ import {
 	GX_GPU_GP0_TEXTURE_WINDOW,
 	GX_GPU_GP0_VRAM_TO_VRAM_FIRST,
 	GX_GPU_GP0_VRAM_TO_CPU_FIRST,
-	GX_GPU_INFO_GPU_TYPE_208PIN,
+	GX_GPU_INFO_GPU_TYPE_V2,
 	GX_GPU_GP1_RESET,
 	GX_GPU_GP1_CLEAR_FIFO,
 	GX_GPU_GP1_ACK_INTERRUPT,
@@ -347,7 +347,7 @@ test('GX-GPU GP1 clear FIFO aborts a pending GPUREAD without dropping prior comm
 	assert.equal(gpu.readVramSnapshotSerial(), vramSnapshotSerial);
 	assert.equal(readback.phase, GX_GPU_READBACK_IDLE);
 	assert.notEqual(readback.token, readbackToken);
-	assert.equal(gpu.readGp0(), GX_GPU_INFO_GPU_TYPE_208PIN);
+	assert.equal(gpu.readGp0(), GX_GPU_INFO_GPU_TYPE_V2);
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_GPU_IDLE) >>> 0, GX_GPU_STATUS_GPU_IDLE);
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_READY_TO_RECEIVE_DMA) >>> 0, GX_GPU_STATUS_READY_TO_RECEIVE_DMA);
 
@@ -401,7 +401,7 @@ test('GX-GPU GP1 clear FIFO aborts a ready GPUREAD and its queued suffix', () =>
 	assert.equal(readback.phase, GX_GPU_READBACK_IDLE);
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_READY_TO_SEND_VRAM) >>> 0, 0);
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_DMA_DATA_REQUEST) >>> 0, 0);
-	assert.equal(gpu.readGp0(), GX_GPU_INFO_GPU_TYPE_208PIN);
+	assert.equal(gpu.readGp0(), GX_GPU_INFO_GPU_TYPE_V2);
 
 	gpu.writeGp0(GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24);
 	gpu.writeGp0(32);
@@ -787,7 +787,7 @@ test('GX-GPU GP1 reset restores registers and preserves accepted GPU work', () =
 	assert.equal(gpu.readGp0(), 0);
 });
 
-test('GX-GPU mirrors PSX GP1 display mode fields into GPUSTAT bits', () => {
+test('GX-GPU mirrors type-2 GP1 display mode fields into GPUSTAT bits', () => {
 	const { gpu } = createGpu();
 
 	gpu.writeGp1((GX_GPU_GP1_DISPLAY_MODE << 24) | 0x00ffffff);
@@ -795,22 +795,21 @@ test('GX-GPU mirrors PSX GP1 display mode fields into GPUSTAT bits', () => {
 	assert.equal(gpu.readDisplayModeWord(), GX_GPU_DISPLAY_MODE_MASK);
 	assert.equal(
 		(gpu.readStatus() & (
-			GX_GPU_STATUS_REVERSE_FLAG
-			| GX_GPU_STATUS_HORIZONTAL_RESOLUTION_2
+			GX_GPU_STATUS_HORIZONTAL_RESOLUTION_2
 			| GX_GPU_STATUS_VERTICAL_RESOLUTION
 			| GX_GPU_STATUS_PAL_MODE
 			| GX_GPU_STATUS_DISPLAY_AREA_COLOR_DEPTH_24
 			| GX_GPU_STATUS_VERTICAL_INTERLACE
 		)) >>> 0,
 		(
-			GX_GPU_STATUS_REVERSE_FLAG
-			| GX_GPU_STATUS_HORIZONTAL_RESOLUTION_2
+			GX_GPU_STATUS_HORIZONTAL_RESOLUTION_2
 			| GX_GPU_STATUS_VERTICAL_RESOLUTION
 			| GX_GPU_STATUS_PAL_MODE
 			| GX_GPU_STATUS_DISPLAY_AREA_COLOR_DEPTH_24
 			| GX_GPU_STATUS_VERTICAL_INTERLACE
 		) >>> 0,
 	);
+	assert.equal((gpu.readStatus() & GX_GPU_STATUS_REVERSE_FLAG) >>> 0, 0);
 	assert.equal((gpu.readStatus() & (0x3 << 17)) >>> 0, 0x3 << 17);
 });
 
@@ -1246,13 +1245,13 @@ test('GX-GPU handles PSX GP0 environment registers and GP1 GPU-info queries', ()
 	gpu.writeGp1((GX_GPU_GP1_GET_GPU_INFO << 24) | 0x12);
 	assert.equal(gpu.readGpuReadWord(), GX_GPU_TEXTURE_WINDOW_MASK);
 	gpu.writeGp1((GX_GPU_GP1_GET_GPU_INFO << 24) | 0x07);
-	assert.equal(gpu.readGpuReadWord(), GX_GPU_INFO_GPU_TYPE_208PIN);
+	assert.equal(gpu.readGpuReadWord(), GX_GPU_INFO_GPU_TYPE_V2);
 	gpu.writeGp1((GX_GPU_GP1_GET_GPU_INFO << 24) | 0x0a);
-	assert.equal(gpu.readGpuReadWord(), GX_GPU_INFO_GPU_TYPE_208PIN);
+	assert.equal(gpu.readGpuReadWord(), GX_GPU_INFO_GPU_TYPE_V2);
 	gpu.writeGp1((GX_GPU_GP1_GET_GPU_INFO << 24) | 0x08);
 	assert.equal(gpu.readGpuReadWord(), 0);
 	gpu.writeGp1((GX_GPU_GP1_GET_GPU_INFO_LAST << 24) | 0x07);
-	assert.equal(gpu.readGpuReadWord(), GX_GPU_INFO_GPU_TYPE_208PIN);
+	assert.equal(gpu.readGpuReadWord(), GX_GPU_INFO_GPU_TYPE_V2);
 	gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU);
 	gpu.writeGp1((GX_GPU_GP1_GET_GPU_INFO << 24) | 0x07);
 	const status = gpu.readStatus();
@@ -1506,7 +1505,7 @@ test('GX-GPU GP1 clear cuts an active C0 at the execution frontier without cance
 	assert.equal(activeCommands.wordCount, 3);
 	assert.equal(activeCommands.readback.phase, GX_GPU_READBACK_IDLE);
 	assert.equal(active.scheduler.nextDeadline(), Number.MAX_SAFE_INTEGER);
-	assert.equal(active.gpu.readGp0(), GX_GPU_INFO_GPU_TYPE_208PIN);
+	assert.equal(active.gpu.readGp0(), GX_GPU_INFO_GPU_TYPE_V2);
 	const status = active.gpu.readStatus();
 	assert.equal((status & GX_GPU_STATUS_GPU_IDLE) >>> 0, GX_GPU_STATUS_GPU_IDLE);
 	assert.equal((status & GX_GPU_STATUS_READY_TO_SEND_VRAM) >>> 0, 0);
@@ -1553,7 +1552,7 @@ test('GX-GPU GP1 reset cancels a restored active C0 deadline', () => {
 	assert.equal(reset.commandBuffer.executedCommandCount, 0);
 	assert.equal(reset.commandBuffer.readbackPhase, GX_GPU_READBACK_IDLE);
 	assert.equal(restored.scheduler.nextDeadline(), Number.MAX_SAFE_INTEGER);
-	assert.equal(restored.gpu.readGp0(), GX_GPU_INFO_GPU_TYPE_208PIN);
+	assert.equal(restored.gpu.readGp0(), GX_GPU_INFO_GPU_TYPE_V2);
 	assert.equal(restored.gpu.readVramSnapshotSerial(), snapshotSerial);
 	assert.equal((restored.gpu.readStatus() & GX_GPU_STATUS_RESET_WORD) >>> 0, GX_GPU_STATUS_RESET_WORD);
 });

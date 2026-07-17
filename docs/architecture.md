@@ -188,6 +188,9 @@ Display configuration is raw GPU register state. GP1(08h) horizontal-resolution
 bits own native scanout width, GP1(07h) start/end own the active line count, and
 GP1(05h) owns the VRAM scanout origin. GP1(06h) is retained horizontal timing
 state; changing it does not manufacture a logical width or resize a target.
+GX identifies as the type-2 GPU through GP1(10h/07h). GP1(08h) therefore retains
+its complete low-byte input word but bit 7 does not drive GPUSTAT bit 14 or
+reverse scanout; that reverse facility belongs to the type-1 GPU.
 Software, WebGL2, WebGPU, and GLES2 scan out those native pixel coordinates
 directly. Presentation resizes the retained canvas, framebuffer, and backend
 targets only when the dimensions derived from the latched raw words change; it

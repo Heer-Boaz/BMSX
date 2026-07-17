@@ -70,7 +70,7 @@ export const GX_GPU_GP1_GET_GPU_INFO_LAST = 0x1f;
 export const GX_GPU_GP1_OPCODE_SHIFT = 24;
 export const GX_GPU_GP1_PARAM_MASK = 0x00ffffff;
 export const GX_GPU_GP1_GET_GPU_INFO_INDEX_MASK = 0x0f;
-export const GX_GPU_INFO_GPU_TYPE_208PIN = 0x00000002;
+export const GX_GPU_INFO_GPU_TYPE_V2 = 0x00000002;
 
 export const GX_GPU_GP0_DRAW_MODE = 0xe1;
 export const GX_GPU_GP0_TEXTURE_WINDOW = 0xe2;
@@ -1077,7 +1077,7 @@ export class GxGpu {
 				this.gpuReadWord = this.drawingOffsetWord;
 				break;
 			case 0x07:
-				this.gpuReadWord = GX_GPU_INFO_GPU_TYPE_208PIN;
+				this.gpuReadWord = GX_GPU_INFO_GPU_TYPE_V2;
 				break;
 			case 0x08:
 				this.gpuReadWord = 0;
@@ -1191,8 +1191,7 @@ export class GxGpu {
 			| ((displayMode & 0x08) << 17)
 			| ((displayMode & 0x10) << 17)
 			| ((displayMode & 0x20) << 17)
-			| ((displayMode & 0x40) << 10)
-			| ((displayMode & 0x80) << 7);
+			| ((displayMode & 0x40) << 10);
 		this.statusWord = ((this.statusWord & ~GX_GPU_STATUS_DISPLAY_MODE_MASK) | statusDisplayModeBits) >>> 0;
 		this.updateScanoutStatusBits();
 	}

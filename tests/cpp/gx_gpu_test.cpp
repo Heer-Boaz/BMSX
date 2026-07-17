@@ -322,13 +322,13 @@ void testDisplayModeStatusBits() {
 	gpu.writeGp1((bmsx::GX_GPU_GP1_DISPLAY_MODE << 24u) | 0x00ffffffu);
 
 	require(gpu.readDisplayModeWord() == bmsx::GX_GPU_DISPLAY_MODE_MASK, "GX-GPU GP1 display mode latches low byte");
-	const uint32_t statusBits = bmsx::GX_GPU_STATUS_REVERSE_FLAG
-		| bmsx::GX_GPU_STATUS_HORIZONTAL_RESOLUTION_2
+	const uint32_t statusBits = bmsx::GX_GPU_STATUS_HORIZONTAL_RESOLUTION_2
 		| bmsx::GX_GPU_STATUS_VERTICAL_RESOLUTION
 		| bmsx::GX_GPU_STATUS_PAL_MODE
 		| bmsx::GX_GPU_STATUS_DISPLAY_AREA_COLOR_DEPTH_24
 		| bmsx::GX_GPU_STATUS_VERTICAL_INTERLACE;
-	require((gpu.readStatus() & statusBits) == statusBits, "GX-GPU display mode GPUSTAT single-bit fields");
+	require((gpu.readStatus() & statusBits) == statusBits, "GX-GPU type-2 display mode GPUSTAT single-bit fields");
+	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_REVERSE_FLAG) == 0u, "GX-GPU type-2 display mode ignores the reverse flag");
 	require((gpu.readStatus() & (0x3u << 17u)) == (0x3u << 17u), "GX-GPU display mode GPUSTAT horizontal resolution");
 }
 
@@ -787,13 +787,13 @@ void testGp0EnvironmentRegistersAndGpuInfoQueries() {
 	gpu.writeGp1((bmsx::GX_GPU_GP1_GET_GPU_INFO << 24u) | 0x12u);
 	require(gpu.readGpuReadWord() == bmsx::GX_GPU_TEXTURE_WINDOW_MASK, "GX-GPU GP1 info selector mirrors low nibble");
 	gpu.writeGp1((bmsx::GX_GPU_GP1_GET_GPU_INFO << 24u) | 0x07u);
-	require(gpu.readGpuReadWord() == bmsx::GX_GPU_INFO_GPU_TYPE_208PIN, "GX-GPU GP1 info GPU type query");
+	require(gpu.readGpuReadWord() == bmsx::GX_GPU_INFO_GPU_TYPE_V2, "GX-GPU GP1 info GPU type query");
 	gpu.writeGp1((bmsx::GX_GPU_GP1_GET_GPU_INFO << 24u) | 0x0au);
-	require(gpu.readGpuReadWord() == bmsx::GX_GPU_INFO_GPU_TYPE_208PIN, "GX-GPU GP1 info high index keeps latch");
+	require(gpu.readGpuReadWord() == bmsx::GX_GPU_INFO_GPU_TYPE_V2, "GX-GPU GP1 info high index keeps latch");
 	gpu.writeGp1((bmsx::GX_GPU_GP1_GET_GPU_INFO << 24u) | 0x08u);
 	require(gpu.readGpuReadWord() == 0u, "GX-GPU GP1 info unknown query");
 	gpu.writeGp1((bmsx::GX_GPU_GP1_GET_GPU_INFO_LAST << 24u) | 0x07u);
-	require(gpu.readGpuReadWord() == bmsx::GX_GPU_INFO_GPU_TYPE_208PIN, "GX-GPU GP1 info mirrored opcode GPU type query");
+	require(gpu.readGpuReadWord() == bmsx::GX_GPU_INFO_GPU_TYPE_V2, "GX-GPU GP1 info mirrored opcode GPU type query");
 	gpu.writeGp1((bmsx::GX_GPU_GP1_DMA_DIRECTION << 24u) | bmsx::GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU);
 	gpu.writeGp1((bmsx::GX_GPU_GP1_GET_GPU_INFO << 24u) | 0x07u);
 	const uint32_t status = gpu.readStatus();
@@ -1062,7 +1062,7 @@ void testGp1ClearCutsActiveC0AtExecutionFrontierWithoutCancelingDraws() {
 	require(activeCommands.wordCount == 3u, "GX-GPU GP1 clear truncates active C0 words");
 	require(activeCommands.readback.phase() == bmsx::GX_GPU_READBACK_IDLE, "GX-GPU GP1 clear keeps the pre-activation readback idle");
 	require(activeScheduler.nextDeadline() == std::numeric_limits<bmsx::i64>::max(), "GX-GPU GP1 clear cancels the removed C0 deadline");
-	require(active.gpu.readGp0() == bmsx::GX_GPU_INFO_GPU_TYPE_208PIN, "GX-GPU GP1 clear preserves the GPUREAD latch before C0 activation");
+	require(active.gpu.readGp0() == bmsx::GX_GPU_INFO_GPU_TYPE_V2, "GX-GPU GP1 clear preserves the GPUREAD latch before C0 activation");
 	const bmsx::u32 status = active.gpu.readStatus();
 	require((status & bmsx::GX_GPU_STATUS_GPU_IDLE) != 0u, "GX-GPU GP1 clear restores idle after removing active C0");
 	require((status & bmsx::GX_GPU_STATUS_READY_TO_SEND_VRAM) == 0u, "GX-GPU removed C0 never becomes send-ready");
@@ -1109,7 +1109,7 @@ void testGp1ResetCancelsRestoredActiveC0Deadline() {
 	require(reset.commandBuffer.executedCommandCount == 0u, "GX-GPU GP1 reset leaves no restored C0 execution frontier");
 	require(reset.commandBuffer.readbackPhase == bmsx::GX_GPU_READBACK_IDLE, "GX-GPU GP1 reset leaves restored C0 readback idle");
 	require(restored.scheduler.nextDeadline() == std::numeric_limits<bmsx::i64>::max(), "GX-GPU GP1 reset cancels a restored C0 deadline");
-	require(restored.gpu.readGp0() == bmsx::GX_GPU_INFO_GPU_TYPE_208PIN, "GX-GPU GP1 reset preserves the restored GPUREAD latch");
+	require(restored.gpu.readGp0() == bmsx::GX_GPU_INFO_GPU_TYPE_V2, "GX-GPU GP1 reset preserves the restored GPUREAD latch");
 	require(restored.gpu.readVramSnapshotSerial() == snapshotSerial, "GX-GPU GP1 reset preserves restored raw VRAM");
 	require((restored.gpu.readStatus() & bmsx::GX_GPU_STATUS_RESET_WORD) == bmsx::GX_GPU_STATUS_RESET_WORD, "GX-GPU GP1 reset becomes idle after removing restored C0");
 }
@@ -1506,7 +1506,7 @@ void testGp1ClearFifoAbortsPendingGpureadWithoutDroppingPriorCommands() {
 	require(gpu.readVramSnapshotSerial() == vramSnapshotSerial, "GX-GPU pending readback abort preserves VRAM revision");
 	require(readback.phase() == bmsx::GX_GPU_READBACK_IDLE, "GX-GPU GP1 clear FIFO idles pending readback");
 	require(readback.token() != readbackToken, "GX-GPU GP1 clear FIFO invalidates pending readback token");
-	require(gpu.readGp0() == bmsx::GX_GPU_INFO_GPU_TYPE_208PIN, "GX-GPU GP1 clear FIFO preserves GPUREAD data latch");
+	require(gpu.readGp0() == bmsx::GX_GPU_INFO_GPU_TYPE_V2, "GX-GPU GP1 clear FIFO preserves GPUREAD data latch");
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_GPU_IDLE) != 0u, "GX-GPU GP1 clear FIFO restores GPU idle after pending readback");
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_READY_TO_RECEIVE_DMA) != 0u, "GX-GPU GP1 clear FIFO restores receive-ready after pending readback");
 
@@ -1567,7 +1567,7 @@ void testGp1ClearFifoAbortsReadyGpureadAndQueuedSuffix() {
 	require(readback.phase() == bmsx::GX_GPU_READBACK_IDLE, "GX-GPU GP1 clear FIFO idles ready readback");
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_READY_TO_SEND_VRAM) == 0u, "GX-GPU GP1 clear FIFO lowers GPUREAD ready");
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_DMA_DATA_REQUEST) == 0u, "GX-GPU GP1 clear FIFO lowers GPUREAD DMA request");
-	require(gpu.readGp0() == bmsx::GX_GPU_INFO_GPU_TYPE_208PIN, "GX-GPU GP1 clear FIFO preserves ready GPUREAD latch");
+	require(gpu.readGp0() == bmsx::GX_GPU_INFO_GPU_TYPE_V2, "GX-GPU GP1 clear FIFO preserves ready GPUREAD latch");
 
 	gpu.writeGp0(bmsx::GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24u);
 	gpu.writeGp0(32u);

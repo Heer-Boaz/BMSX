@@ -798,7 +798,7 @@ void GxGpu::writeGpuInfoQuery(u32 word) {
 		m_gpuReadWord = m_drawingOffsetWord;
 		break;
 	case 0x07u:
-		m_gpuReadWord = GX_GPU_INFO_GPU_TYPE_208PIN;
+		m_gpuReadWord = GX_GPU_INFO_GPU_TYPE_V2;
 		break;
 	case 0x08u:
 		m_gpuReadWord = 0u;
@@ -915,8 +915,7 @@ void GxGpu::updateDisplayModeStatusBits() {
 		| ((displayMode & 0x08u) << 17u)
 		| ((displayMode & 0x10u) << 17u)
 		| ((displayMode & 0x20u) << 17u)
-		| ((displayMode & 0x40u) << 10u)
-		| ((displayMode & 0x80u) << 7u);
+		| ((displayMode & 0x40u) << 10u);
 	m_statusWord = (m_statusWord & ~GX_GPU_STATUS_DISPLAY_MODE_MASK) | statusDisplayModeBits;
 	updateScanoutStatusBits();
 }

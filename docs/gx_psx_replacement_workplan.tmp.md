@@ -436,6 +436,9 @@ and MAME
     catch-up, and mid-frame VRAM snapshots compact/publish their exact prefix.
   - [ ] Run the same vector live against WebGL2, GLES2 and WebGPU.
 - [ ] Complete GPUSTAT details and timing-visible bits against references.
+  - [x] Fix the GPU revision contract to type 2: GP1 info query 07h reports V2,
+    the complete GP1(08h) low byte remains retained register input, and the
+    type-1-only reverse bit never appears in GPUSTAT or scanout.
   - [x] Route GP0(1Fh) through a real `IRQ_GPU` source edge. GP1(02h)
     deasserts GPUSTAT bit 24 without consuming the IRQ controller's pending
     latch; `IRQ_ACK` owns that latch. Repeated GP0(1Fh) words while the source
