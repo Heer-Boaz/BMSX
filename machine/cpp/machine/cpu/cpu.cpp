@@ -2017,6 +2017,11 @@ void CPU::enterSynchronousException(CallFrame& interruptedFrame, u32 causeWord) 
 	enterException(m_systemExceptionProtoIndex, causeWord, static_cast<u32>(m_currentInstructionPc));
 }
 
+void CPU::enterSynchronousAddressException(CallFrame& interruptedFrame, u32 causeWord, u32 address) {
+	m_badAddressWord = address;
+	enterSynchronousException(interruptedFrame, causeWord);
+}
+
 void CPU::enterException(int protoIndex, u32 causeWord, u32 epcWord) {
 	m_epcWord = epcWord;
 	m_causeWord = causeWord;

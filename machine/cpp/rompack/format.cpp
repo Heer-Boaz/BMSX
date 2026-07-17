@@ -20,6 +20,11 @@ void assertSectionRange(size_t offset, size_t length, size_t total, const char* 
 	}
 }
 
+constexpr u32 alignCartRomWordSection(u32 offset) {
+	return (offset + static_cast<u32>(CART_ROM_WORD_ALIGNMENT - 1u))
+		& ~static_cast<u32>(CART_ROM_WORD_ALIGNMENT - 1u);
+}
+
 void writeCartRomHeader(u8* data, const CartRomHeader& header) {
 	std::copy(CART_ROM_MAGIC_BYTES.begin(), CART_ROM_MAGIC_BYTES.end(), data);
 	writeLE32(data + 4, header.headerSize);
@@ -147,7 +152,7 @@ std::vector<u8> encodeProgramCartRom(const CartManifest& cart, const MachineMani
 	header.headerSize = CART_ROM_HEADER_SIZE;
 	header.manifestOffset = CART_ROM_HEADER_SIZE;
 	header.manifestLength = static_cast<u32>(manifest.size());
-	header.tocOffset = header.manifestOffset + header.manifestLength;
+	header.tocOffset = alignCartRomWordSection(header.manifestOffset + header.manifestLength);
 	header.dataOffset = header.tocOffset;
 	header.dataLength = static_cast<u32>(program.size());
 	header.programBootVersion = PROGRAM_BOOT_HEADER_VERSION;
@@ -167,7 +172,7 @@ std::vector<u8> encodeProgramCartRom(const CartManifest& cart, const MachineMani
 
 	const std::vector<u8> toc = encodeRomToc(RomTocPayload{{programEntry}, std::nullopt});
 	header.tocLength = static_cast<u32>(toc.size());
-	header.dataOffset += header.tocLength;
+	header.dataOffset = alignCartRomWordSection(header.tocOffset + header.tocLength);
 	programEntry.rom.start = static_cast<i32>(header.dataOffset);
 	programEntry.rom.end = static_cast<i32>(header.dataOffset + header.dataLength);
 	const std::vector<u8> finalToc = encodeRomToc(RomTocPayload{{programEntry}, std::nullopt});

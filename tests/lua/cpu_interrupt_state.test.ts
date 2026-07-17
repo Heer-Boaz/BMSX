@@ -6,6 +6,8 @@ import { writeInstruction, INSTRUCTION_BYTES } from '../../machine/ts/machine/cp
 import { BASE_CYCLES, encodeFixedCallArgCount } from '../../machine/ts/machine/cpu/opcode_info';
 import {
 	COP0_CAUSE,
+	CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD,
+	CPU_CAUSE_CODE_ADDRESS_ERROR_STORE,
 	CPU_CAUSE_CODE_DATA_BUS_ERROR,
 	CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE,
 	CPU_CAUSE_NMI,
@@ -32,7 +34,7 @@ import type { MicrotaskQueue } from '../../machine/ts/machine/scheduler/microtas
 import { captureMachineSaveState, captureMachineState, restoreMachineSaveState, restoreMachineState } from '../../machine/ts/machine/save_state';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { MemoryAccessKind } from '../../machine/ts/machine/memory/access_kind';
-import { IO_WORD_SIZE } from '../../machine/ts/machine/memory/map';
+import { IO_WORD_SIZE, PROGRAM_STATIC_RAM_BASE } from '../../machine/ts/machine/memory/map';
 import { compileLuaChunkToProgram, encodeCompiledProgramImage } from '../../machine/ts/lua/compiler';
 import { callClosureIntoWithScheduler } from '../../machine/ts/ide/runtime/closure_executor';
 import { inflateExecutableProgramImage, linkProgramImages } from '../../machine/ts/machine/program/linker';
@@ -868,6 +870,105 @@ test('CPU mapped bus errors enter the system exception vector without committing
 	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_UNMAPPED);
 	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_ADDR), unmappedAddress);
 	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_ACCESS), BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U8);
+});
+
+test('CPU mapped memory accepts byte addresses and four-byte-aligned f64 addresses', () => {
+	const byteAddress = PROGRAM_STATIC_RAM_BASE + 0x101;
+	const f64Address = PROGRAM_STATIC_RAM_BASE + 0x104;
+	const code = new Uint8Array(6 * INSTRUCTION_BYTES);
+	writeInstruction(code, 0, OpCode.LOADK, 0, 0, 0, 0);
+	writeInstruction(code, 1, OpCode.LOAD_MEM, 1, 0, MemoryAccessKind.U8, 0);
+	writeInstruction(code, 2, OpCode.LOADK, 0, 0, 1, 0);
+	writeInstruction(code, 3, OpCode.LOAD_MEM, 2, 0, MemoryAccessKind.F64LE, 0);
+	writeInstruction(code, 4, OpCode.RET, 1, 2, 0, 0);
+	writeInstruction(code, 5, OpCode.HALT, 0, 0, 0, 0);
+
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+	const irqController = new IrqController(memory);
+	const cpu = new CPU(memory, irqController);
+	const program: Program = {
+		code,
+		programRom: code,
+		programRomTextByteLength: code.byteLength,
+		constPool: [byteAddress, f64Address],
+		protos: [
+			{ ...makeProto(5 * INSTRUCTION_BYTES), maxStack: 3 },
+			{ ...makeProto(INSTRUCTION_BYTES), entryPC: 5 * INSTRUCTION_BYTES },
+		],
+		stringPool: cpu.stringPool,
+		constPoolStringPool: cpu.stringPool,
+	};
+	const metadata = makeMetadata(program.protos.length);
+	cpu.setProgram(program, metadata, metadata, 1, 1, 1);
+	memory.writeMappedU8(byteAddress, 0x5a);
+	memory.writeMappedF64LE(f64Address, Math.PI);
+
+	cpu.start(0);
+	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	assert.deepEqual(cpu.lastReturnValues, [0x5a, Math.PI]);
+});
+
+test('CPU address errors vector before any mapped-memory bus cycle or destination commit', () => {
+	const alignedAddress = PROGRAM_STATIC_RAM_BASE + 0x100;
+	const faultAddress = alignedAddress + 1;
+	const cases = [
+		{ name: 'LOAD_MEM_D u16', op: OpCode.LOAD_MEM_D, operandC: MemoryAccessKind.U16LE, valueCount: 1, cause: CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD },
+		{ name: 'LOAD_MEM f64', op: OpCode.LOAD_MEM, operandC: MemoryAccessKind.F64LE, valueCount: 1, cause: CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD },
+		{ name: 'STORE_MEM_D u32', op: OpCode.STORE_MEM_D, operandC: MemoryAccessKind.U32LE, valueCount: 1, cause: CPU_CAUSE_CODE_ADDRESS_ERROR_STORE },
+		{ name: 'STORE_MEM f64', op: OpCode.STORE_MEM, operandC: MemoryAccessKind.F64LE, valueCount: 1, cause: CPU_CAUSE_CODE_ADDRESS_ERROR_STORE },
+		{ name: 'STORE_MEM_WORDS_D', op: OpCode.STORE_MEM_WORDS_D, operandC: 2, valueCount: 2, cause: CPU_CAUSE_CODE_ADDRESS_ERROR_STORE },
+		{ name: 'STORE_MEM_WORDS', op: OpCode.STORE_MEM_WORDS, operandC: 2, valueCount: 2, cause: CPU_CAUSE_CODE_ADDRESS_ERROR_STORE },
+	] as const;
+
+	for (const testCase of cases) {
+		const memoryInstruction = 2 + testCase.valueCount;
+		const instructionCount = memoryInstruction + 2;
+		const code = new Uint8Array(instructionCount * INSTRUCTION_BYTES);
+		writeInstruction(code, 0, OpCode.HALT, 0, 0, 0, 0);
+		writeInstruction(code, 1, OpCode.LOADK, 0, 0, 0, 0);
+		for (let value = 0; value < testCase.valueCount; value += 1) {
+			writeInstruction(code, 2 + value, OpCode.K1, 1 + value, 0, 0, 0);
+		}
+		writeInstruction(code, memoryInstruction, testCase.op, 1, 0, testCase.operandC, 0);
+		writeInstruction(code, memoryInstruction + 1, OpCode.RET, 0, 0, 0, 0);
+
+		const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+		const irqController = new IrqController(memory);
+		const cpu = new CPU(memory, irqController);
+		const program: Program = {
+			code,
+			programRom: code,
+			programRomTextByteLength: code.byteLength,
+			constPool: [faultAddress],
+			protos: [
+				makeProto(INSTRUCTION_BYTES),
+				{ ...makeProto((instructionCount - 1) * INSTRUCTION_BYTES), entryPC: INSTRUCTION_BYTES, maxStack: testCase.valueCount + 1 },
+			],
+			stringPool: cpu.stringPool,
+			constPoolStringPool: cpu.stringPool,
+		};
+		const metadata = makeMetadata(program.protos.length);
+		cpu.setProgram(program, metadata, metadata, 0, 0, 0);
+		memory.writeMappedU32LE(alignedAddress, 0x11223344);
+		memory.writeMappedU32LE(alignedAddress + 4, 0x55667788);
+		memory.writeMappedU32LE(alignedAddress + 8, 0x99aabbcc);
+		const faultSequence = memory.readBusFaultSequence();
+
+		cpu.start(1);
+		assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted, testCase.name);
+		const state = cpu.captureRuntimeState(new Map());
+		assert.equal(state.causeWord, testCase.cause, testCase.name);
+		assert.equal(state.epcWord, memoryInstruction * INSTRUCTION_BYTES, testCase.name);
+		assert.equal(state.badAddressWord, faultAddress, testCase.name);
+		assert.equal(state.frames.at(-1)!.protoIndex, 0, testCase.name);
+		assert.equal(memory.readBusFaultSequence(), faultSequence, testCase.name);
+		assert.equal(cpu.readFrameRegister(0, 1), 1, testCase.name);
+		assert.deepEqual([
+			memory.readMappedU32LE(alignedAddress),
+			memory.readMappedU32LE(alignedAddress + 4),
+			memory.readMappedU32LE(alignedAddress + 8),
+		], [0x11223344, 0x55667788, 0x99aabbcc], testCase.name);
+	}
 });
 
 test('CPU runtime snapshot preserves nested table object identities', () => {

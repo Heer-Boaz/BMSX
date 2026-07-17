@@ -13,6 +13,8 @@ import {
 	COP0_CAUSE,
 	COP0_EPC,
 	COP0_STATUS,
+	CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD,
+	CPU_CAUSE_CODE_ADDRESS_ERROR_STORE,
 	CPU_CAUSE_CODE_DATA_BUS_ERROR,
 	CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE,
 	CPU_CAUSE_IRQ,
@@ -25,7 +27,7 @@ import {
 } from './cop0';
 import { CpuExecutionProfiler, formatCpuProfilerReport, type CpuProfilerReportOptions } from './profiler';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord, signExtend } from './instruction_format';
-import { MemoryAccessKind } from '../memory/access_kind';
+import { MEMORY_ACCESS_KIND_ALIGNMENT_MASKS, MemoryAccessKind } from '../memory/access_kind';
 import { ScratchBuffer } from '../../common/scratchbuffer';
 import { ScratchArrayStack } from '../../common/scratchstack';
 import { luaFloorDivide, luaModulo } from '../../lua/numeric';
@@ -2197,6 +2199,11 @@ export class CPU {
 		this.enterException(this.systemExceptionProtoIndex, causeWord, this.currentInstructionPc);
 	}
 
+	private enterSynchronousAddressException(interruptedFrame: CallFrame, causeWord: number, address: number): void {
+		this.badAddressWord = address >>> 0;
+		this.enterSynchronousException(interruptedFrame, causeWord);
+	}
+
 	private enterException(protoIndex: number, causeWord: number, epcWord: number): void {
 		this.epcWord = epcWord >>> 0;
 		this.causeWord = causeWord >>> 0;
@@ -2883,6 +2890,17 @@ export class CPU {
 				case OpCode.STORE_MEM_D:
 				case OpCode.STORE_MEM_WORDS_D: {
 					const addr = (registers.get(b) as number) + (disp << 2);
+					const alignmentMask = op === OpCode.STORE_MEM_WORDS_D
+						? MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[MemoryAccessKind.Word]
+						: MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[c as MemoryAccessKind];
+					if ((addr & alignmentMask) !== 0) {
+						this.enterSynchronousAddressException(
+							frame,
+							op === OpCode.LOAD_MEM_D ? CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD : CPU_CAUSE_CODE_ADDRESS_ERROR_STORE,
+							addr,
+						);
+						return;
+					}
 					if (op !== OpCode.LOAD_MEM_D && !this.memory.mappedWriteReady(addr)) {
 						this.blockMappedWrite(frame, addr);
 						return;
@@ -2951,6 +2969,10 @@ export class CPU {
 				}
 				case OpCode.LOAD_MEM: {
 					const addr = this.readRK(frame, rkB) as number;
+					if ((addr & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[c as MemoryAccessKind]) !== 0) {
+						this.enterSynchronousAddressException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, addr);
+						return;
+					}
 					const faultSequence = this.memory.readBusFaultSequence();
 					let value: Value;
 					switch (c) {
@@ -2982,6 +3004,10 @@ export class CPU {
 				}
 				case OpCode.STORE_MEM: {
 					const addr = this.readRK(frame, rkB) as number;
+					if ((addr & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[c as MemoryAccessKind]) !== 0) {
+						this.enterSynchronousAddressException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, addr);
+						return;
+					}
 					if (!this.memory.mappedWriteReady(addr)) {
 						this.blockMappedWrite(frame, addr);
 						return;
@@ -3015,6 +3041,10 @@ export class CPU {
 				}
 				case OpCode.STORE_MEM_WORDS: {
 					const addr = this.readRK(frame, rkB) as number;
+					if ((addr & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[MemoryAccessKind.Word]) !== 0) {
+						this.enterSynchronousAddressException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, addr);
+						return;
+					}
 					if (!this.memory.mappedWriteReady(addr)) {
 						this.blockMappedWrite(frame, addr);
 						return;

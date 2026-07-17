@@ -9,6 +9,8 @@ export const enum MemoryAccessKind {
 
 export const MEMORY_ACCESS_KIND_NAMES = ['mem', 'mem8', 'mem16le', 'mem32le', 'memf32le', 'memf64le'] as const;
 
+export const MEMORY_ACCESS_KIND_ALIGNMENT_MASKS = [3, 0, 1, 3, 3, 3] as const;
+
 export function getMemoryAccessKindForName(name: string): MemoryAccessKind | null {
 	switch (name) {
 		case 'mem':

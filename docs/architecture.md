@@ -401,6 +401,17 @@ Owners:
 The ROM package and program image use the current wire records only. There is no
 old-format reader and no decode path for obsolete records.
 
+Every top-level ROM section begins on a four-byte boundary. The producer inserts
+zero padding between the byte-exact data, metadata, manifest, and TOC spans;
+padding is not included in any section length. CPU-word fields in the header,
+metadata header, and TOC can therefore be consumed directly. Values inside the
+packed binary codec remain byte-packed: firmware reconstructs `f32` and `f64`
+words from little-endian bytes instead of issuing potentially misaligned CPU
+word loads. Generic asset payloads remain byte-contiguous rather than receiving
+implicit padding; byte-packed formats such as BADP decode their multibyte header
+fields through the same endian owner. Consumers do not weaken CPU alignment or
+infer alternate layouts.
+
 Runtime package records describe ROM payloads; they do not own duplicate audio,
 atlas, or binary payload bytes. The active machine keeps one CPU-visible ROM
 backing per loaded layer. Native path-based libretro loads use read-only mapped
@@ -848,7 +859,7 @@ registers with CPU instructions rather than MMIO or host builtins:
 
 | Register | CP0 index | Meaning |
 | --- | ---: | --- |
-| `BAD_ADDRESS` | 8 | Faulting guest address; asynchronous entry leaves the previous latch value unchanged. |
+| `BAD_ADDRESS` | 8 | Last address-error guest address; every other exception class leaves the previous latch value unchanged. |
 | `STATUS` | 12 | Raw privilege/interrupt stack described below. |
 | `CAUSE` | 13 | Raw exception code and asserted CPU-line bits. |
 | `EPC` | 14 | Guest byte-PC at which exception return resumes. |
@@ -894,7 +905,18 @@ narrow:
 | Cause | `CAUSE.ExcCode` | `EPC` | `BAD_ADDRESS` | Resume rule |
 | --- | ---: | --- | --- | --- |
 | User execution of `MFC0`, `MTC0`, or `RFE` | 11 (`CAUSE[6:2] = 11`) | Faulting instruction | Unchanged | The handler must replace `EPC` with another instruction address before `RFE`; unchanged `EPC` retries the fault. |
+| Misaligned CPU mapped-memory load | 4 (`CAUSE[6:2] = 4`, `AdEL`) | Faulting instruction | Exact load address | Unchanged `EPC` retries the complete load. The faulting access issues no bus cycle and does not commit its destination. |
+| Misaligned CPU mapped-memory store | 5 (`CAUSE[6:2] = 5`, `AdES`) | Faulting instruction | Exact store address | Unchanged `EPC` retries the complete store. The faulting access issues no bus cycle; a multiword store commits no prefix. |
 | Bus error during a CPU mapped-memory load or store | 7 (`CAUSE[6:2] = 7`) | Faulting instruction | Unchanged | Unchanged `EPC` retries the complete instruction. A load does not commit its destination. A multiword store retains completed prefix writes, stops at the faulting cycle and does not issue its tail. |
+
+CPU alignment is part of instruction execution rather than a defensive memory
+API check. Byte accesses have no alignment requirement, 16-bit accesses require
+two-byte alignment, and word, 32-bit, `f32`, `f64`, and multiword accesses
+require four-byte alignment. `f64` uses two ordered 32-bit bus cycles and
+therefore retains the compiler ABI's four-byte alignment. The CPU checks the
+effective address before write-readiness sampling, bus-fault sampling, or any
+mapped-memory cycle, then latches `BAD_ADDRESS` and enters the system exception
+vector on `AdEL` or `AdES`.
 
 The mapped-memory owner publishes a runtime-only monotonically changing bus
 fault sequence alongside the sticky guest-visible fault registers. The CPU
@@ -909,8 +931,7 @@ entry path instead of a synthetic double-fault halt. It pushes the raw status
 mode stack again, overwrites the CP0 exception latches and enters another system
 exception root above the interrupted supervisor frame. Firmware must preserve
 any outer exception context it intends to resume. No other host/runtime failure
-is converted into a CPU cause. Misaligned-address exceptions require their own
-explicit table rows before implementation.
+is converted into a CPU cause.
 
 Exception entry pushes a generated exception-root closure above the stopped
 frames. That root calls the program-owned handler and ends in `RFE`; a normal

@@ -1,7 +1,7 @@
 import { glsl } from "esbuild-plugin-glsl";
 // @ts-ignore
 import type { Stats } from 'fs';
-import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES, CART_VDP_CLASS_PSX, PROGRAM_BOOT_HEADER_VERSION } from '../../machine/ts/rompack/format';
+import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES, CART_ROM_WORD_ALIGNMENT, CART_VDP_CLASS_PSX, PROGRAM_BOOT_HEADER_VERSION } from '../../machine/ts/rompack/format';
 import { assertRomAssetSymbolsMatchToc, type RomAssetSymbol } from '../../machine/ts/rompack/asset_symbols';
 import type { asset_type, AudioMeta, BoundingBoxPrecalc, CartridgeLayerId, GLTFMesh, HitPolygonsPrecalc, ImgMeta, Polygon, ProgramBootHeader, RectBounds, RomAsset, RomManifest, vec2arr } from '../../machine/ts/rompack/format';
 import { collectRomAssetPayloadRanges } from '../../machine/ts/rompack/asset_layout';
@@ -1774,6 +1774,12 @@ export async function finalizeRompack(
 				await once(writer, 'drain');
 			}
 		};
+		const alignRomWordSection = async () => {
+			const paddingLength = (-offset) & (CART_ROM_WORD_ALIGNMENT - 1);
+			if (paddingLength !== 0) {
+				await writeBuffer(Buffer.alloc(paddingLength));
+			}
+		};
 
 		try {
 			await writeBuffer(Buffer.alloc(CART_ROM_HEADER_SIZE));
@@ -1842,6 +1848,7 @@ export async function finalizeRompack(
 			if (metadataEntries.length > 0) {
 				status?.('encode shared metadata');
 				const { header, payloads } = buildRomMetadataSection(metadataEntries.map(entry => entry.meta));
+				await alignRomWordSection();
 				metadataOffset = offset;
 				await writeBuffer(Buffer.from(header));
 				for (let index = 0; index < metadataEntries.length; index += 1) {
@@ -1859,6 +1866,7 @@ export async function finalizeRompack(
 			if (options.manifest) {
 				status?.('encode rom manifest');
 				const manifestBuffer = Buffer.from(encodeBinary(options.manifest));
+				await alignRomWordSection();
 				manifestOffset = offset;
 				manifestLength = manifestBuffer.length;
 				await writeBuffer(manifestBuffer);
@@ -1869,6 +1877,7 @@ export async function finalizeRompack(
 				entries: assetList,
 				projectRootPath: options.projectRootPath,
 			}));
+			await alignRomWordSection();
 			const tocOffset = offset;
 			const tocLength = tocBuffer.length;
 			await writeBuffer(tocBuffer);

@@ -23,6 +23,7 @@ constexpr size_t CART_ROM_BASE_HEADER_SIZE = 32;
 constexpr size_t CART_ROM_PROGRAM_HEADER_SIZE = 64;
 constexpr size_t CART_ROM_METADATA_HEADER_SIZE = 72;
 constexpr size_t CART_ROM_HEADER_SIZE = 76;
+constexpr size_t CART_ROM_WORD_ALIGNMENT = 4;
 constexpr u32 CART_VDP_CLASS_PSX = 1;
 constexpr u32 PROGRAM_BOOT_HEADER_VERSION = 1;
 

@@ -26,6 +26,15 @@ inline constexpr std::array<std::string_view, 6> MEMORY_ACCESS_KIND_NAMES{
 	"memf64le",
 };
 
+inline constexpr std::array<u32, 6> MEMORY_ACCESS_KIND_ALIGNMENT_MASKS{
+	3u,
+	0u,
+	1u,
+	3u,
+	3u,
+	3u,
+};
+
 std::optional<MemoryAccessKind> getMemoryAccessKindForName(std::string_view name);
 
 } // namespace bmsx

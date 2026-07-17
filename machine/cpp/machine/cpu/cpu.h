@@ -1076,6 +1076,7 @@ private:
 	void clearHaltAfterAcceptedInterrupt();
 	void enterAsynchronousException(int protoIndex, u32 causeWord);
 	void enterSynchronousException(CallFrame& interruptedFrame, u32 causeWord);
+	void enterSynchronousAddressException(CallFrame& interruptedFrame, u32 causeWord, u32 address);
 	void enterException(int protoIndex, u32 causeWord, u32 epcWord);
 	void hardHalt();
 	void blockMappedWrite(CallFrame& frame, uint32_t address);

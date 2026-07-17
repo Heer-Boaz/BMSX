@@ -6,6 +6,7 @@ export const CART_ROM_BASE_HEADER_SIZE = 32;
 export const CART_ROM_PROGRAM_HEADER_SIZE = 64;
 export const CART_ROM_METADATA_HEADER_SIZE = 72;
 export const CART_ROM_HEADER_SIZE = 76;
+export const CART_ROM_WORD_ALIGNMENT = 4;
 export const CART_VDP_CLASS_PSX = 1;
 export const PROGRAM_BOOT_HEADER_VERSION = 1;
 export const ROM_ASSET_SYMBOL_MODULE_PATH = 'bmsx/assets';

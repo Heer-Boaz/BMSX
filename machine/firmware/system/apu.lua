@@ -2,6 +2,7 @@
 -- BIOS-side APU command helpers. Cart-visible audio control is MMIO.
 local endian<const> = require("bios/common/endian")
 local read_u16le<const> = endian.read_u16le
+local read_u32le<const> = endian.read_u32le
 
 struct apu_command_registers
 	source_addr: word
@@ -58,11 +59,10 @@ local rom_base_for_payload<const> = function(payload_id)
 	return 0x01000000
 end
 local read_badp_source<const> = function(addr, source_bytes)
-	local header<const>: *word = addr
 	local channels<const> = read_u16le(addr + 6)
-	local sample_rate_hz<const> = header[2]
-	local frame_count<const> = header[3]
-	local data_offset<const> = header[9]
+	local sample_rate_hz<const> = read_u32le(addr + 8)
+	local frame_count<const> = read_u32le(addr + 12)
+	local data_offset<const> = read_u32le(addr + 36)
 	return {
 		sample_rate_hz = sample_rate_hz,
 		channels = channels,

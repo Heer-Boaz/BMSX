@@ -1,4 +1,5 @@
 local bin<const> = {}
+local read_u32le<const> = require('bios/common/endian').read_u32le
 local float_bits<const> = require('bios/common/float_bits')
 local u32_to_f32<const> = float_bits.u32_to_f32
 local u32s_to_f64<const> = float_bits.u32s_to_f64
@@ -152,7 +153,7 @@ read_value = function(reader)
 		value = false
 	elseif tag == tag_f64 then
 		need(reader, 8, 'float64')
-		value = u32s_to_f64(mem32le[reader.pos + 4], mem32le[reader.pos])
+		value = u32s_to_f64(read_u32le(reader.pos + 4), read_u32le(reader.pos))
 		reader.pos = reader.pos + 8
 	elseif tag == tag_str then
 		value = read_string(reader, 'string')
@@ -168,7 +169,7 @@ read_value = function(reader)
 		value = read_varint(reader, 'int')
 	elseif tag == tag_f32 then
 		need(reader, 4, 'float32')
-		value = u32_to_f32(mem32le[reader.pos])
+		value = u32_to_f32(read_u32le(reader.pos))
 		reader.pos = reader.pos + 4
 	elseif tag == tag_set then
 		value = read_array(reader)

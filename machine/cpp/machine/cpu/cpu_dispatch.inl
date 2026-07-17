@@ -490,6 +490,10 @@ DISPATCH_LABEL(RET) {
 
 DISPATCH_LABEL(LOAD_MEM_D) {
 	const uint32_t addr = static_cast<uint32_t>(asNumber(REG(b))) + (static_cast<uint32_t>(disp) << 2);
+	if ((addr & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[static_cast<size_t>(c)]) != 0u) {
+		enterSynchronousAddressException(FRAME, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, addr);
+		DISPATCH_CONTINUE();
+	}
 	const uint32_t faultSequence = m_memory.readBusFaultSequence();
 	Value value;
 	switch (static_cast<MemoryAccessKind>(c)) {
@@ -511,6 +515,10 @@ DISPATCH_LABEL(LOAD_MEM_D) {
 
 DISPATCH_LABEL(STORE_MEM_D) {
 	const uint32_t addr = static_cast<uint32_t>(asNumber(REG(b))) + (static_cast<uint32_t>(disp) << 2);
+	if ((addr & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[static_cast<size_t>(c)]) != 0u) {
+		enterSynchronousAddressException(FRAME, CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, addr);
+		DISPATCH_CONTINUE();
+	}
 	if (!m_memory.mappedWriteReady(addr)) {
 		blockMappedWrite(FRAME, addr);
 		DISPATCH_BLOCKED();
@@ -533,6 +541,10 @@ DISPATCH_LABEL(STORE_MEM_D) {
 
 DISPATCH_LABEL(STORE_MEM_WORDS_D) {
 	const uint32_t addr = static_cast<uint32_t>(asNumber(REG(b))) + (static_cast<uint32_t>(disp) << 2);
+	if ((addr & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[static_cast<size_t>(MemoryAccessKind::Word)]) != 0u) {
+		enterSynchronousAddressException(FRAME, CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, addr);
+		DISPATCH_CONTINUE();
+	}
 	if (!m_memory.mappedWriteReady(addr)) {
 		blockMappedWrite(FRAME, addr);
 		DISPATCH_BLOCKED();
@@ -544,6 +556,10 @@ DISPATCH_LABEL(STORE_MEM_WORDS_D) {
 
 DISPATCH_LABEL(LOAD_MEM) {
 	const uint32_t addr = static_cast<uint32_t>(asNumber(readRK(FRAME, rkB)));
+	if ((addr & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[static_cast<size_t>(c)]) != 0u) {
+		enterSynchronousAddressException(FRAME, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, addr);
+		DISPATCH_CONTINUE();
+	}
 	const uint32_t faultSequence = m_memory.readBusFaultSequence();
 	Value value;
 	switch (static_cast<MemoryAccessKind>(c)) {
@@ -565,6 +581,10 @@ DISPATCH_LABEL(LOAD_MEM) {
 
 DISPATCH_LABEL(STORE_MEM) {
 	const uint32_t addr = static_cast<uint32_t>(asNumber(readRK(FRAME, rkB)));
+	if ((addr & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[static_cast<size_t>(c)]) != 0u) {
+		enterSynchronousAddressException(FRAME, CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, addr);
+		DISPATCH_CONTINUE();
+	}
 	if (!m_memory.mappedWriteReady(addr)) {
 		blockMappedWrite(FRAME, addr);
 		DISPATCH_BLOCKED();
@@ -587,6 +607,10 @@ DISPATCH_LABEL(STORE_MEM) {
 
 DISPATCH_LABEL(STORE_MEM_WORDS) {
 	const uint32_t addr = static_cast<uint32_t>(asNumber(readRK(FRAME, rkB)));
+	if ((addr & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[static_cast<size_t>(MemoryAccessKind::Word)]) != 0u) {
+		enterSynchronousAddressException(FRAME, CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, addr);
+		DISPATCH_CONTINUE();
+	}
 	if (!m_memory.mappedWriteReady(addr)) {
 		blockMappedWrite(FRAME, addr);
 		DISPATCH_BLOCKED();

@@ -5,6 +5,7 @@
 #include "machine/cpu/opcode_info.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/access_kind.h"
+#include "machine/memory/map.h"
 #include "machine/memory/memory.h"
 
 #include <array>
@@ -212,6 +213,108 @@ void testMappedBusErrorsEnterTheSystemExceptionVector() {
 	require(harness.memory.readIoU32(bmsx::IO_SYS_BUS_FAULT_ACCESS) == (bmsx::BUS_FAULT_ACCESS_READ | bmsx::BUS_FAULT_ACCESS_U8), "burst tail does not overwrite the first-fault access");
 }
 
+void testMappedMemoryAlignmentContract() {
+	constexpr uint32_t BYTE_ADDRESS = bmsx::PROGRAM_STATIC_RAM_BASE + 0x101u;
+	constexpr uint32_t F64_ADDRESS = bmsx::PROGRAM_STATIC_RAM_BASE + 0x104u;
+	constexpr double F64_VALUE = 3.141592653589793;
+	std::array<bmsx::u8, 1> emptyRom{{0}};
+	bmsx::Memory memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, { emptyRom.data(), 0u } });
+	bmsx::IrqController irq(memory);
+	bmsx::CPU cpu(memory, irq);
+	bmsx::Program program;
+	program.programRom.resize(6u * bmsx::INSTRUCTION_BYTES);
+	program.programRomTextByteLength = program.programRom.size();
+	program.constPoolStringPool = &program.stringPool;
+	program.constPool = {
+		bmsx::valueNumber(static_cast<double>(BYTE_ADDRESS)),
+		bmsx::valueNumber(static_cast<double>(F64_ADDRESS)),
+	};
+	std::span<bmsx::u8> code(program.programRom);
+	bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 0);
+	bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::LOAD_MEM), 1, 0, static_cast<bmsx::u8>(bmsx::MemoryAccessKind::U8));
+	bmsx::writeInstruction(code, 2, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 1);
+	bmsx::writeInstruction(code, 3, static_cast<bmsx::u8>(bmsx::OpCode::LOAD_MEM), 2, 0, static_cast<bmsx::u8>(bmsx::MemoryAccessKind::F64LE));
+	bmsx::writeInstruction(code, 4, static_cast<bmsx::u8>(bmsx::OpCode::RET), 1, 2, 0);
+	bmsx::writeInstruction(code, 5, static_cast<bmsx::u8>(bmsx::OpCode::HALT), 0, 0, 0);
+	program.protos.push_back(makeProto(0, 5, 3));
+	program.protos.push_back(makeProto(5 * bmsx::INSTRUCTION_BYTES, 1));
+
+	bmsx::ProgramRuntimeSymbols runtimeSymbols;
+	cpu.setProgram(&program, runtimeSymbols, nullptr, 1, 1, 1);
+	memory.writeMappedU8(BYTE_ADDRESS, 0x5au);
+	memory.writeMappedF64LE(F64_ADDRESS, F64_VALUE);
+	cpu.start(0);
+	require(cpu.run(100) == bmsx::RunResult::Halted, "aligned mapped loads complete");
+	require(cpu.lastReturnValues.size() == 2u, "aligned mapped loads return both values");
+	require(bmsx::asNumber(cpu.lastReturnValues[0]) == 0x5a, "byte access accepts an odd address");
+	require(bmsx::asNumber(cpu.lastReturnValues[1]) == F64_VALUE, "f64 access accepts four-byte alignment");
+}
+
+void testAddressErrorsPrecedeMappedMemoryBusCycles() {
+	struct AddressErrorCase {
+		bmsx::OpCode op;
+		bmsx::u8 operandC;
+		int valueCount;
+		bmsx::u32 cause;
+		const char* name;
+	};
+	constexpr std::array<AddressErrorCase, 6> CASES{{
+		{ bmsx::OpCode::LOAD_MEM_D, static_cast<bmsx::u8>(bmsx::MemoryAccessKind::U16LE), 1, bmsx::CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, "LOAD_MEM_D u16" },
+		{ bmsx::OpCode::LOAD_MEM, static_cast<bmsx::u8>(bmsx::MemoryAccessKind::F64LE), 1, bmsx::CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, "LOAD_MEM f64" },
+		{ bmsx::OpCode::STORE_MEM_D, static_cast<bmsx::u8>(bmsx::MemoryAccessKind::U32LE), 1, bmsx::CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, "STORE_MEM_D u32" },
+		{ bmsx::OpCode::STORE_MEM, static_cast<bmsx::u8>(bmsx::MemoryAccessKind::F64LE), 1, bmsx::CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, "STORE_MEM f64" },
+		{ bmsx::OpCode::STORE_MEM_WORDS_D, 2, 2, bmsx::CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, "STORE_MEM_WORDS_D" },
+		{ bmsx::OpCode::STORE_MEM_WORDS, 2, 2, bmsx::CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, "STORE_MEM_WORDS" },
+	}};
+	constexpr uint32_t ALIGNED_ADDRESS = bmsx::PROGRAM_STATIC_RAM_BASE + 0x100u;
+	constexpr uint32_t FAULT_ADDRESS = ALIGNED_ADDRESS + 1u;
+
+	for (const AddressErrorCase& testCase : CASES) {
+		const int memoryInstruction = 2 + testCase.valueCount;
+		const int instructionCount = memoryInstruction + 2;
+		std::array<bmsx::u8, 1> emptyRom{{0}};
+		bmsx::Memory memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, { emptyRom.data(), 0u } });
+		bmsx::IrqController irq(memory);
+		bmsx::CPU cpu(memory, irq);
+		bmsx::Program program;
+		program.programRom.resize(static_cast<size_t>(instructionCount) * bmsx::INSTRUCTION_BYTES);
+		program.programRomTextByteLength = program.programRom.size();
+		program.constPoolStringPool = &program.stringPool;
+		program.constPool = { bmsx::valueNumber(static_cast<double>(FAULT_ADDRESS)) };
+		std::span<bmsx::u8> code(program.programRom);
+		bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::HALT), 0, 0, 0);
+		bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 0);
+		for (int value = 0; value < testCase.valueCount; ++value) {
+			bmsx::writeInstruction(code, 2 + value, static_cast<bmsx::u8>(bmsx::OpCode::K1), static_cast<bmsx::u8>(1 + value), 0, 0);
+		}
+		bmsx::writeInstruction(code, memoryInstruction, static_cast<bmsx::u8>(testCase.op), 1, 0, testCase.operandC);
+		bmsx::writeInstruction(code, memoryInstruction + 1, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
+		program.protos.push_back(makeProto(0, 1));
+		program.protos.push_back(makeProto(bmsx::INSTRUCTION_BYTES, instructionCount - 1, testCase.valueCount + 1));
+
+		bmsx::ProgramRuntimeSymbols runtimeSymbols;
+		std::unordered_map<std::string, bmsx::Value> moduleCache;
+		cpu.setProgram(&program, runtimeSymbols, nullptr, 0, 0, 0);
+		memory.writeMappedU32LE(ALIGNED_ADDRESS, 0x11223344u);
+		memory.writeMappedU32LE(ALIGNED_ADDRESS + 4u, 0x55667788u);
+		memory.writeMappedU32LE(ALIGNED_ADDRESS + 8u, 0x99aabbccu);
+		const uint32_t faultSequence = memory.readBusFaultSequence();
+
+		cpu.start(1);
+		require(cpu.run(100) == bmsx::RunResult::Halted, testCase.name);
+		const bmsx::CpuRuntimeState state = cpu.captureRuntimeState(moduleCache);
+		require(state.causeWord == testCase.cause, testCase.name);
+		require(state.epcWord == static_cast<uint32_t>(memoryInstruction * bmsx::INSTRUCTION_BYTES), testCase.name);
+		require(state.badAddressWord == FAULT_ADDRESS, testCase.name);
+		require(state.frames.back().protoIndex == 0, testCase.name);
+		require(memory.readBusFaultSequence() == faultSequence, testCase.name);
+		require(bmsx::asNumber(cpu.readFrameRegister(0, 1)) == 1.0, testCase.name);
+		require(memory.readMappedU32LE(ALIGNED_ADDRESS) == 0x11223344u, testCase.name);
+		require(memory.readMappedU32LE(ALIGNED_ADDRESS + 4u) == 0x55667788u, testCase.name);
+		require(memory.readMappedU32LE(ALIGNED_ADDRESS + 8u) == 0x99aabbccu, testCase.name);
+	}
+}
+
 } // namespace
 
 int main() {
@@ -219,5 +322,7 @@ int main() {
 	testPrivilegeVectorRoutingAndCp0Fault();
 	testSystemAndOrdinaryGlobalRegisterfilesStayDistinct();
 	testMappedBusErrorsEnterTheSystemExceptionVector();
+	testMappedMemoryAlignmentContract();
+	testAddressErrorsPrecedeMappedMemoryBusCycles();
 	return 0;
 }
