@@ -1144,14 +1144,24 @@ test('GX-GPU command timing gates GPUSTAT idle and the VBLANK execution frontier
 	assert.equal(commands.presentCommandCount, 1);
 });
 
-test('GX-GPU drives the GP0 MMIO write-ready line from FIFO capacity', () => {
+test('GX-GPU bypasses the FIFO for hardware NOPs and drives GP0 write-ready from stored words', () => {
 	const { memory, gpu, scheduler } = createGpu();
 
 	gpu.writeGp0((GX_GPU_GP0_FILL_RECTANGLE << 24) | 0x0000ff);
 	gpu.writeGp0(0);
 	gpu.writeGp0((1 << 16) | 1);
+	for (let index = 0; index < GX_GPU_COMMAND_FIFO_WORD_CAPACITY * 2; index += 1) {
+		gpu.writeGp0(0);
+	}
+	gpu.writeGp0(0x04000000);
+	gpu.writeGp0(0x1e000000);
+	gpu.writeGp0(0xe0000000);
+	gpu.writeGp0(0xe7000000);
+	gpu.writeGp0(0xef000000);
+	assert.equal(memory.mappedWriteReady(IO_GX_GPU_GP0), true);
+	assert.equal(scheduler.nextDeadline(), 29);
 	for (let index = 0; index < GX_GPU_COMMAND_FIFO_WORD_CAPACITY; index += 1) {
-		gpu.writeGp0((GX_GPU_GP0_DRAW_MODE << 24) | index);
+		gpu.writeGp0(0x03000000 | index);
 	}
 
 	assert.equal(memory.mappedWriteReady(IO_GX_GPU_GP0), false);

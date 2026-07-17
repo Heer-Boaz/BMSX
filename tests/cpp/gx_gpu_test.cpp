@@ -658,14 +658,24 @@ void testCommandTimingGatesGpustatIdleAndVblankExecutionFrontier() {
 	require(commands.presentCommandCount == 1u, "GX-GPU VBLANK publishes the completed fill");
 }
 
-void testGp0MmioWriteReadyTracksFifoCapacity() {
+void testGp0NopsBypassFifoAndWriteReadyTracksStoredWords() {
 	GpuHarness harness;
 
 	harness.gpu.writeGp0((bmsx::GX_GPU_GP0_FILL_RECTANGLE << 24u) | 0x0000ffu);
 	harness.gpu.writeGp0(0u);
 	harness.gpu.writeGp0((1u << 16u) | 1u);
+	for (size_t index = 0u; index < bmsx::GX_GPU_COMMAND_FIFO_WORD_CAPACITY * 2u; index += 1u) {
+		harness.gpu.writeGp0(0u);
+	}
+	harness.gpu.writeGp0(0x04000000u);
+	harness.gpu.writeGp0(0x1e000000u);
+	harness.gpu.writeGp0(0xe0000000u);
+	harness.gpu.writeGp0(0xe7000000u);
+	harness.gpu.writeGp0(0xef000000u);
+	require(harness.memory.mappedWriteReady(bmsx::IO_GX_GPU_GP0), "GX-GPU hardware NOPs bypass the physical FIFO");
+	require(harness.scheduler.nextDeadline() == 29, "GX-GPU hardware NOPs do not add command time");
 	for (size_t index = 0u; index < bmsx::GX_GPU_COMMAND_FIFO_WORD_CAPACITY; index += 1u) {
-		harness.gpu.writeGp0((bmsx::GX_GPU_GP0_DRAW_MODE << 24u) | static_cast<uint32_t>(index));
+		harness.gpu.writeGp0(0x03000000u | static_cast<uint32_t>(index));
 	}
 
 	require(!harness.memory.mappedWriteReady(bmsx::IO_GX_GPU_GP0), "GX-GPU lowers GP0 MMIO write-ready at FIFO capacity");
@@ -3234,7 +3244,7 @@ int main() {
 	testDisplayDisableAndDmaDirectionStatusBits();
 	testGpustatReadinessTracksGp0PacketAssemblyAndPayloadPhases();
 	testCommandTimingGatesGpustatIdleAndVblankExecutionFrontier();
-	testGp0MmioWriteReadyTracksFifoCapacity();
+	testGp0NopsBypassFifoAndWriteReadyTracksStoredWords();
 	testGp1CrtcRangeRegistersLatchMaskedRawWords();
 	testGp1UndefinedHighOpcodeDoesNotMirrorReset();
 	testGp0IrqRequestAndGp1Acknowledge();

@@ -1054,6 +1054,13 @@ polls, retries, drops, or queues a replacement word. Save-state preserves FIFO,
 packet assembly, execution frontier, and the active deadline relative to
 scheduler time.
 
+The command sequencer recognizes GP0(00h), GP0(04h--1Eh), GP0(E0h), and
+GP0(E7h--EFh) as zero-time NOPs only at a command boundary. It consumes such a
+word immediately from the FIFO head even while the execution datapath is busy,
+so a stream of NOPs cannot occupy FIFO capacity. Parameter, image, and polyline
+payload words are never opcode-decoded. GP0(03h) is not in this bypass class and
+occupies one FIFO word like other unknown commands.
+
 GP1(04h) selects the GPUSTAT bit-25 request mux. FIFO mode exposes the
 physical sixteen-word FIFO-not-full line; CPU-to-GP0 mode exposes the stricter
 GPUSTAT bit-28 DMA-block-ready line; GPUREAD-to-CPU mode exposes bit 27. The

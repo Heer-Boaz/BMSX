@@ -100,6 +100,13 @@ export const GX_GPU_GP0_RENDER_GOURAUD_BIT = 0x10;
 export const GX_GPU_GP0_RECTANGLE_SIZE_MASK = 0x18;
 export const GX_GPU_GP0_COMMAND_BUFFER_WORDS = 16;
 
+function gxGpuGp0OpcodeBypassesFifo(opcode: number): boolean {
+	return opcode === 0x00
+		|| (opcode >= 0x04 && opcode <= 0x1e)
+		|| opcode === 0xe0
+		|| (opcode >= 0xe7 && opcode <= 0xef);
+}
+
 export const GX_GPU_DISPLAY_START_MASK = 0x000ffffe;
 export const GX_GPU_DISPLAY_MODE_MASK = 0x000000ff;
 export const GX_GPU_HORIZONTAL_DISPLAY_RANGE_MASK = 0x00ffffff;
@@ -503,9 +510,16 @@ export class GxGpu {
 	}
 
 	private processGp0Fifo(nowCycles: number): void {
-		while (this.pendingCommandCompletionCycle === 0
-			&& this.commandBuffer.readback.phase === GX_GPU_READBACK_IDLE
+		while (this.commandBuffer.readback.phase === GX_GPU_READBACK_IDLE
 			&& !this.gp0Fifo.empty()) {
+			if (this.pendingCommandCompletionCycle !== 0) {
+				// The active command has consumed its packet, so the FIFO head is a command boundary.
+				if (!gxGpuGp0OpcodeBypassesFifo(this.gp0Fifo.peek() >>> GX_GPU_GP0_OPCODE_SHIFT)) {
+					return;
+				}
+				this.gp0Fifo.pop();
+				continue;
+			}
 			if (this.gp0ImageLoadWordsRemaining !== 0) {
 				this.consumeImageLoadWord(this.gp0Fifo.pop(), nowCycles);
 				continue;
@@ -515,6 +529,11 @@ export class GxGpu {
 				continue;
 			}
 			if (this.gp0CommandTargetWordCount === 0) {
+				// Payload owners run first because an opaque data word may have a NOP opcode byte.
+				if (gxGpuGp0OpcodeBypassesFifo(this.gp0Fifo.peek() >>> GX_GPU_GP0_OPCODE_SHIFT)) {
+					this.gp0Fifo.pop();
+					continue;
+				}
 				this.gp0CommandTargetWordCount = this.gp0CommandWordCountForOpcode(this.gp0Fifo.peek() >>> GX_GPU_GP0_OPCODE_SHIFT);
 			}
 			while (this.gp0CommandWordCount < this.gp0CommandTargetWordCount && !this.gp0Fifo.empty()) {

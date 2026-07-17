@@ -489,6 +489,13 @@ and MAME
     still waiting behind a draw in the physical FIFO keep their direct hardware
     semantics. Mirrored immediate, queued, and save/restore regressions cover
     both GP1 transitions.
+  - [x] Decode the physically non-buffered GP0 NOP family at the command
+    sequencer head. GP0(00h), 04h--1Eh, E0h and E7h--EFh consume no execution
+    time and drain while the raster datapath is busy; parameter/image/polyline
+    payload remains opaque, and GP0(03h) continues to occupy FIFO capacity.
+    Mirrored TS/C++ vectors keep a long fill pending, submit more than sixteen
+    NOPs without changing its deadline, then prove that sixteen GP0(03h) words
+    still fill the physical FIFO.
 - [x] DMA interaction behavior beyond the register/status paths.
   - [x] RAM-to-GP0 DMA word streams feed the memory-mapped GX-GPU GP0 command
     port in TS and C++.

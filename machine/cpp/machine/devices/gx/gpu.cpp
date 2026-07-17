@@ -12,6 +12,17 @@
 
 namespace bmsx {
 
+namespace {
+
+constexpr bool gxGpuGp0OpcodeBypassesFifo(u32 opcode) {
+	return opcode == 0x00u
+		|| (opcode >= 0x04u && opcode <= 0x1eu)
+		|| opcode == 0xe0u
+		|| (opcode >= 0xe7u && opcode <= 0xefu);
+}
+
+} // namespace
+
 GxGpu::GxGpu(Memory& memory, IrqController& irq, DeviceScheduler& scheduler, DmaController& dmaController)
 	: m_memory(memory)
 	, m_irq(irq)
@@ -261,9 +272,16 @@ void GxGpu::synchronizeCommandExecution(i64 nowCycles) {
 }
 
 void GxGpu::consumeGp0Fifo(i64 commandStartCycle) {
-	while (m_pendingCommandCompletionCycle == 0
-		&& m_commandBuffer.readback.phase() == GX_GPU_READBACK_IDLE
+	while (m_commandBuffer.readback.phase() == GX_GPU_READBACK_IDLE
 		&& !m_gp0Fifo.empty()) {
+		if (m_pendingCommandCompletionCycle != 0) {
+			// The active command has consumed its packet, so the FIFO head is a command boundary.
+			if (!gxGpuGp0OpcodeBypassesFifo(m_gp0Fifo.peek() >> GX_GPU_GP0_OPCODE_SHIFT)) {
+				return;
+			}
+			m_gp0Fifo.pop();
+			continue;
+		}
 		if (m_gp0ImageLoadWordsRemaining != 0u) {
 			consumeImageLoadWord(m_gp0Fifo.pop(), commandStartCycle);
 			continue;
@@ -273,6 +291,11 @@ void GxGpu::consumeGp0Fifo(i64 commandStartCycle) {
 			continue;
 		}
 		if (m_gp0CommandTargetWordCount == 0u) {
+			// Payload owners run first because an opaque data word may have a NOP opcode byte.
+			if (gxGpuGp0OpcodeBypassesFifo(m_gp0Fifo.peek() >> GX_GPU_GP0_OPCODE_SHIFT)) {
+				m_gp0Fifo.pop();
+				continue;
+			}
 			m_gp0CommandTargetWordCount = gp0CommandWordCountForOpcode(m_gp0Fifo.peek() >> GX_GPU_GP0_OPCODE_SHIFT);
 		}
 		while (m_gp0CommandWordCount < m_gp0CommandTargetWordCount && !m_gp0Fifo.empty()) {
