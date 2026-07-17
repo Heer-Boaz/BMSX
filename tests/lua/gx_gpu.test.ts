@@ -772,7 +772,10 @@ test('GX-GPU GP1 reset restores registers and preserves accepted GPU work', () =
 	assert.equal(gpu.readDisplayModeWord(), GX_GPU_RESET_DISPLAY_MODE_WORD);
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_PAL_MODE) >>> 0, GX_GPU_STATUS_PAL_MODE);
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_RESET_WORD) >>> 0, (GX_GPU_STATUS_RESET_WORD & ~GX_GPU_STATUS_GPU_IDLE) >>> 0);
+	gpu.writeGp0((GX_GPU_GP0_DRAW_MODE << 24) | GX_GPU_DRAW_MODE_TEXTURE_DISABLE);
 	completeGpuCommands(gpu);
+	assert.equal((gpu.readDrawModeWord() & GX_GPU_DRAW_MODE_TEXTURE_DISABLE) >>> 0, GX_GPU_DRAW_MODE_TEXTURE_DISABLE);
+	assert.equal((gpu.readStatus() & GX_GPU_STATUS_TEXTURE_DISABLE) >>> 0, GX_GPU_STATUS_TEXTURE_DISABLE);
 	gpu.presentReadyFrameOnVblankEdge();
 	gxGpuSoftwareVram.fill(0);
 	assert.equal(executeGxGpuSoftwareCommands(commandBuffer, 0, commandBuffer.presentCommandCount), 2);

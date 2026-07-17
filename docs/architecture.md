@@ -1070,6 +1070,8 @@ Machine/device reset and GP1(00h) are distinct GPU transitions. A machine reset
 regenerates the deterministic raw-VRAM power-on contents, advances the shared
 unsigned 64-bit snapshot revision, and clears the retained command stream. GP1(00h)
 resets GPU registers and applies the same packet/FIFO transition as GP1(01h).
+Its register reset clears E1 texture-disable state but preserves the separate
+GP1(09h) permission latch; only machine reset clears that latch.
 Already accepted backend commands and received image payload remain in the
 retained execution log, while an incomplete packet/polyline and an active
 readback suffix are discarded. GP1(00h) preserves both the GPUREAD data latch

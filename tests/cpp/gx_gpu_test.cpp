@@ -300,7 +300,10 @@ void testGp1ResetRestoresRegistersAndPreservesAcceptedGpuWork() {
 	require(gpu.readDisplayModeWord() == bmsx::GX_GPU_RESET_DISPLAY_MODE_WORD, "GX-GPU GP1 reset display mode");
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_PAL_MODE) == bmsx::GX_GPU_STATUS_PAL_MODE, "GX-GPU GP1 reset PAL bit");
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_RESET_WORD) == (bmsx::GX_GPU_STATUS_RESET_WORD & ~bmsx::GX_GPU_STATUS_GPU_IDLE), "GX-GPU GP1 reset base bits preserve accepted execution");
+	gpu.writeGp0((bmsx::GX_GPU_GP0_DRAW_MODE << 24u) | bmsx::GX_GPU_DRAW_MODE_TEXTURE_DISABLE);
 	completeGpuCommands(harness);
+	require((gpu.readDrawModeWord() & bmsx::GX_GPU_DRAW_MODE_TEXTURE_DISABLE) == bmsx::GX_GPU_DRAW_MODE_TEXTURE_DISABLE, "GX-GPU GP1 reset preserves GP1 texture-disable permission");
+	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_TEXTURE_DISABLE) == bmsx::GX_GPU_STATUS_TEXTURE_DISABLE, "GX-GPU GP1 reset accepts a later permitted texture-disable bit in GPUSTAT");
 	gpu.presentReadyFrameOnVblankEdge();
 	bmsx::g_gxGpuSoftwareVram.fill(0u);
 	require(bmsx::executeGxGpuSoftwareCommands(commandBuffer, 0u, commandBuffer.presentCommandCount) == 2u, "GX-GPU GP1 reset publishes accepted pre-reset work");

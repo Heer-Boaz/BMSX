@@ -439,6 +439,9 @@ and MAME
   - [x] Fix the GPU revision contract to type 2: GP1 info query 07h reports V2,
     the complete GP1(08h) low byte remains retained register input, and the
     type-1-only reverse bit never appears in GPUSTAT or scanout.
+  - [x] Keep GP1(09h) outside GP1(00h) soft reset. The reset clears the current
+    E1 bit and GPUSTAT bit 15, but the retained permission controls the next E1
+    write until a machine reset clears it.
   - [x] Route GP0(1Fh) through a real `IRQ_GPU` source edge. GP1(02h)
     deasserts GPUSTAT bit 24 without consuming the IRQ controller's pending
     latch; `IRQ_ACK` owns that latch. Repeated GP0(1Fh) words while the source
