@@ -2,6 +2,7 @@
 -- BIOS Audio Event Map dispatcher. AEM rules decide what to play; APU writes live in apu.lua.
 
 local apu<const> = require('system/apu')
+local aem_biquad<const> = require('cartlib/aem_biquad')
 local eventemitter<const> = require('cartlib/eventemitter').eventemitter
 local compile_matcher<const> = require('cartlib/event_matcher').compile
 local romdir<const> = require('system/romdir')
@@ -50,10 +51,10 @@ local compile_apu_defaults<const> = function(action)
 	action.__apu_rate = 1
 	action.__apu_rate_range_min = 0
 	action.__apu_rate_range_span = 0
-	action.__apu_filter_kind = 0x00000000
-	action.__apu_filter_freq_hz = 0
-	action.__apu_filter_q_milli = 1000
-	action.__apu_filter_gain_millidb = 0
+	action.__apu_filter_control = 0x00000000
+	action.__apu_filter_b0_b1 = apu.filter_coefficient_one
+	action.__apu_filter_b2_a1 = 0x00000000
+	action.__apu_filter_a2 = 0x00000000
 end
 
 local compile_modulation<const> = function(action, params)
@@ -87,14 +88,10 @@ local compile_modulation<const> = function(action, params)
 
 	local filter<const> = params.filter
 	if filter ~= nil then
-		local filter_kind<const> = apu.filter_kind[filter.type]
-		if filter_kind == nil then
-			error('aem invalid filter type: ' .. tostring(filter.type))
-		end
-		action.__apu_filter_kind = filter_kind
-		action.__apu_filter_freq_hz = filter.frequency
-		action.__apu_filter_q_milli = filter.q * 1000
-		action.__apu_filter_gain_millidb = filter.gain * 1000
+		action.__apu_filter_control,
+			action.__apu_filter_b0_b1,
+			action.__apu_filter_b2_a1,
+			action.__apu_filter_a2 = aem_biquad.design(filter)
 	end
 end
 
@@ -402,10 +399,10 @@ local run_prepared_play<const> = function(play)
 		play.rate_step_q16,
 		play.gain_q12,
 		play.start_sample,
-		play.filter_kind,
-		play.filter_freq_hz,
-		play.filter_q_milli,
-		play.filter_gain_millidb
+		play.filter_control,
+		play.filter_b0_b1,
+		play.filter_b2_a1,
+		play.filter_a2
 	)
 end
 
@@ -451,10 +448,10 @@ local prepare_plain_play<const> = function(audio_record, slot)
 		rate_step_q16 = 0x00010000,
 		gain_q12 = 0x00001000,
 		start_sample = 0,
-		filter_kind = 0x00000000,
-		filter_freq_hz = 0,
-		filter_q_milli = 1000,
-		filter_gain_millidb = 0,
+		filter_control = 0x00000000,
+		filter_b0_b1 = apu.filter_coefficient_one,
+		filter_b2_a1 = 0x00000000,
+		filter_a2 = 0x00000000,
 	}
 end
 
@@ -492,10 +489,10 @@ local prepare_action_play<const> = function(audio_record, slot, action)
 		rate_step_q16 = rate_step_q16,
 		gain_q12 = gain_q12,
 		start_sample = start_sample,
-		filter_kind = action.__apu_filter_kind,
-		filter_freq_hz = action.__apu_filter_freq_hz,
-		filter_q_milli = action.__apu_filter_q_milli,
-		filter_gain_millidb = action.__apu_filter_gain_millidb,
+		filter_control = action.__apu_filter_control,
+		filter_b0_b1 = action.__apu_filter_b0_b1,
+		filter_b2_a1 = action.__apu_filter_b2_a1,
+		filter_a2 = action.__apu_filter_a2,
 	}
 end
 
@@ -548,7 +545,7 @@ local play_music_now<const> = function(audio_record, transition, gain_q12, slot)
 	*current_music_source_addr = source.source_addr
 	*current_music_slot = target_slot
 	mark_slot_active(target_slot, source.source_addr, audio_record.audiometa.priority)
-	apu.play(source, target_slot, 0x00010000, gain_q12 or 0x00001000, transition_start_sample(audio_record, transition), 0x00000000, 0, 1000, 0)
+	apu.play(source, target_slot, 0x00010000, gain_q12 or 0x00001000, transition_start_sample(audio_record, transition), 0x00000000, apu.filter_coefficient_one, 0x00000000, 0x00000000)
 end
 
 local queue_music_after_current<const> = function(request_seq, audio_record, transition)

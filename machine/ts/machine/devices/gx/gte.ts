@@ -9,6 +9,7 @@ import {
 } from '../../bus/io';
 import { IO_WORD_SIZE } from '../../memory/map';
 import type { Memory } from '../../memory/memory';
+import { highSignedHalfword, lowSignedHalfword, shiftRightSigned, wrapI32 } from '../../common/numeric';
 
 export const GX_GTE_DATA_REGISTER_COUNT = 32;
 export const GX_GTE_CONTROL_REGISTER_COUNT = 32;
@@ -106,15 +107,6 @@ const GTE_DIVIDE_TABLE = new Uint8Array([
 	0x00,
 ]);
 
-function sign16(value: number): number {
-	const signed = (value << 16) >> 16;
-	return signed;
-}
-
-function highSign16(value: number): number {
-	return value >> 16;
-}
-
 function signExtend44(value: number): number {
 	if (value > INT44_MAX) {
 		return value - INT44_RANGE;
@@ -125,25 +117,11 @@ function signExtend44(value: number): number {
 	return value;
 }
 
-function shiftRightSigned(value: number, bits: number): number {
-	const divisor = 2 ** bits;
-	const shifted = value / divisor;
-	const truncated = shifted | 0;
-	if (shifted < truncated) {
-		return truncated - 1;
-	}
-	return truncated;
-}
-
 function shiftGte(value: number, sf: number): number {
 	if (sf > 0) {
 		return shiftRightSigned(value, 12);
 	}
 	return value;
-}
-
-function toSigned32(value: number): number {
-	return value | 0;
 }
 
 function countLeadingBits(word: number): number {
@@ -269,7 +247,7 @@ export class GxGte {
 			case 9:
 			case 10:
 			case 11:
-				return sign16(this.dataRegisterWords[index]) >>> 0;
+				return lowSignedHalfword(this.dataRegisterWords[index]) >>> 0;
 			case 7:
 			case 16:
 			case 17:
@@ -296,7 +274,7 @@ export class GxGte {
 			case 9:
 			case 10:
 			case 11:
-				this.dataRegisterWords[index] = sign16(word) >>> 0;
+				this.dataRegisterWords[index] = lowSignedHalfword(word) >>> 0;
 				break;
 			case 7:
 			case 16:
@@ -311,9 +289,9 @@ export class GxGte {
 				this.dataRegisterWords[14] = word;
 				break;
 			case 28:
-				this.dataRegisterWords[9] = sign16((word & 0x1f) << 7) >>> 0;
-				this.dataRegisterWords[10] = sign16((word & 0x3e0) << 2) >>> 0;
-				this.dataRegisterWords[11] = sign16((word & 0x7c00) >> 3) >>> 0;
+				this.dataRegisterWords[9] = lowSignedHalfword((word & 0x1f) << 7) >>> 0;
+				this.dataRegisterWords[10] = lowSignedHalfword((word & 0x3e0) << 2) >>> 0;
+				this.dataRegisterWords[11] = lowSignedHalfword((word & 0x7c00) >> 3) >>> 0;
 				this.dataRegisterWords[28] = word & 0x7fff;
 				break;
 			case 29:
@@ -342,7 +320,7 @@ export class GxGte {
 			case 27:
 			case 29:
 			case 30:
-				this.controlRegisterWords[index] = sign16(word) >>> 0;
+				this.controlRegisterWords[index] = lowSignedHalfword(word) >>> 0;
 				break;
 			case 31:
 				this.controlRegisterWords[31] = this.withFlagError(word & GX_GTE_FLAG_WRITE_MASK);
@@ -508,7 +486,7 @@ export class GxGte {
 	}
 
 	private mac(index: number, value: number, positiveOverflow: boolean, negativeOverflow: boolean): number {
-		const shifted = toSigned32(shiftGte(value, this.currentSf));
+		const shifted = wrapI32(shiftGte(value, this.currentSf));
 		switch (index) {
 			case 1:
 				if (positiveOverflow) {
@@ -592,9 +570,9 @@ export class GxGte {
 
 	private executeOp(sf: number, lm: number): void {
 		this.currentSf = sf;
-		const ir1 = sign16(this.dataRegisterWords[9]);
-		const ir2 = sign16(this.dataRegisterWords[10]);
-		const ir3 = sign16(this.dataRegisterWords[11]);
+		const ir1 = lowSignedHalfword(this.dataRegisterWords[9]);
+		const ir2 = lowSignedHalfword(this.dataRegisterWords[10]);
+		const ir3 = lowSignedHalfword(this.dataRegisterWords[11]);
 		this.writeIrFromMac(1, this.mac(1, this.rt(1, 1) * ir3 - this.rt(2, 2) * ir2, false, false), lm);
 		this.writeIrFromMac(2, this.mac(2, this.rt(2, 2) * ir1 - this.rt(0, 0) * ir3, false, false), lm);
 		this.writeIrFromMac(3, this.mac(3, this.rt(0, 0) * ir2 - this.rt(1, 1) * ir1, false, false), lm);
@@ -606,7 +584,7 @@ export class GxGte {
 	}
 
 	private executeIntpl(sf: number, lm: number): void {
-		this.depthCue(sign16(this.dataRegisterWords[9]) << 12, sign16(this.dataRegisterWords[10]) << 12, sign16(this.dataRegisterWords[11]) << 12, sf, lm);
+		this.depthCue(lowSignedHalfword(this.dataRegisterWords[9]) << 12, lowSignedHalfword(this.dataRegisterWords[10]) << 12, lowSignedHalfword(this.dataRegisterWords[11]) << 12, sf, lm);
 		this.pushRgbFromMac();
 	}
 
@@ -657,13 +635,13 @@ export class GxGte {
 
 	private colorApply(sf: number, lm: number): void {
 		this.currentSf = sf;
-		this.writeIrFromMac(1, this.macSigned44(1, (this.rgbR() << 4) * sign16(this.dataRegisterWords[9])), lm);
-		this.writeIrFromMac(2, this.macSigned44(2, (this.rgbG() << 4) * sign16(this.dataRegisterWords[10])), lm);
-		this.writeIrFromMac(3, this.macSigned44(3, (this.rgbB() << 4) * sign16(this.dataRegisterWords[11])), lm);
+		this.writeIrFromMac(1, this.macSigned44(1, (this.rgbR() << 4) * lowSignedHalfword(this.dataRegisterWords[9])), lm);
+		this.writeIrFromMac(2, this.macSigned44(2, (this.rgbG() << 4) * lowSignedHalfword(this.dataRegisterWords[10])), lm);
+		this.writeIrFromMac(3, this.macSigned44(3, (this.rgbB() << 4) * lowSignedHalfword(this.dataRegisterWords[11])), lm);
 	}
 
 	private depthCueColor(sf: number, lm: number): void {
-		this.depthCue((this.rgbR() << 4) * sign16(this.dataRegisterWords[9]), (this.rgbG() << 4) * sign16(this.dataRegisterWords[10]), (this.rgbB() << 4) * sign16(this.dataRegisterWords[11]), sf, lm);
+		this.depthCue((this.rgbR() << 4) * lowSignedHalfword(this.dataRegisterWords[9]), (this.rgbG() << 4) * lowSignedHalfword(this.dataRegisterWords[10]), (this.rgbB() << 4) * lowSignedHalfword(this.dataRegisterWords[11]), sf, lm);
 	}
 
 	private executeNcsForVector(vectorIndex: number, sf: number, lm: number): void {
@@ -700,9 +678,9 @@ export class GxGte {
 
 	private executeSqr(sf: number, lm: number): void {
 		this.currentSf = sf;
-		const ir1 = sign16(this.dataRegisterWords[9]);
-		const ir2 = sign16(this.dataRegisterWords[10]);
-		const ir3 = sign16(this.dataRegisterWords[11]);
+		const ir1 = lowSignedHalfword(this.dataRegisterWords[9]);
+		const ir2 = lowSignedHalfword(this.dataRegisterWords[10]);
+		const ir3 = lowSignedHalfword(this.dataRegisterWords[11]);
 		this.writeIrFromMac(1, this.mac(1, ir1 * ir1, false, false), lm);
 		this.writeIrFromMac(2, this.mac(2, ir2 * ir2, false, false), lm);
 		this.writeIrFromMac(3, this.mac(3, ir3 * ir3, false, false), lm);
@@ -723,20 +701,20 @@ export class GxGte {
 
 	private executeGpf(sf: number, lm: number): void {
 		this.currentSf = sf;
-		const ir0 = sign16(this.dataRegisterWords[8]);
-		this.writeIrFromMac(1, this.macSigned44(1, ir0 * sign16(this.dataRegisterWords[9])), lm);
-		this.writeIrFromMac(2, this.macSigned44(2, ir0 * sign16(this.dataRegisterWords[10])), lm);
-		this.writeIrFromMac(3, this.macSigned44(3, ir0 * sign16(this.dataRegisterWords[11])), lm);
+		const ir0 = lowSignedHalfword(this.dataRegisterWords[8]);
+		this.writeIrFromMac(1, this.macSigned44(1, ir0 * lowSignedHalfword(this.dataRegisterWords[9])), lm);
+		this.writeIrFromMac(2, this.macSigned44(2, ir0 * lowSignedHalfword(this.dataRegisterWords[10])), lm);
+		this.writeIrFromMac(3, this.macSigned44(3, ir0 * lowSignedHalfword(this.dataRegisterWords[11])), lm);
 		this.pushRgbFromMac();
 	}
 
 	private executeGpl(sf: number, lm: number): void {
 		this.currentSf = sf;
-		const ir0 = sign16(this.dataRegisterWords[8]);
+		const ir0 = lowSignedHalfword(this.dataRegisterWords[8]);
 		const macShift = sf === 0 ? 0 : 12;
-		this.writeIrFromMac(1, this.macSigned44(1, sign16(this.dataRegisterWords[9]) * ir0 + ((this.dataRegisterWords[25] | 0) * (1 << macShift))), lm);
-		this.writeIrFromMac(2, this.macSigned44(2, sign16(this.dataRegisterWords[10]) * ir0 + ((this.dataRegisterWords[26] | 0) * (1 << macShift))), lm);
-		this.writeIrFromMac(3, this.macSigned44(3, sign16(this.dataRegisterWords[11]) * ir0 + ((this.dataRegisterWords[27] | 0) * (1 << macShift))), lm);
+		this.writeIrFromMac(1, this.macSigned44(1, lowSignedHalfword(this.dataRegisterWords[9]) * ir0 + ((this.dataRegisterWords[25] | 0) * (1 << macShift))), lm);
+		this.writeIrFromMac(2, this.macSigned44(2, lowSignedHalfword(this.dataRegisterWords[10]) * ir0 + ((this.dataRegisterWords[26] | 0) * (1 << macShift))), lm);
+		this.writeIrFromMac(3, this.macSigned44(3, lowSignedHalfword(this.dataRegisterWords[11]) * ir0 + ((this.dataRegisterWords[27] | 0) * (1 << macShift))), lm);
 		this.pushRgbFromMac();
 	}
 
@@ -768,7 +746,7 @@ export class GxGte {
 
 	private depthCue(inR: number, inG: number, inB: number, sf: number, lm: number): void {
 		this.currentSf = sf;
-		const ir0 = sign16(this.dataRegisterWords[8]);
+		const ir0 = lowSignedHalfword(this.dataRegisterWords[8]);
 		const r = this.limitIr(1, this.macSigned44(1, this.rfc() * 4096 - inR), 0);
 		const g = this.limitIr(2, this.macSigned44(2, this.gfc() * 4096 - inG), 0);
 		const b = this.limitIr(3, this.macSigned44(3, this.bfc() * 4096 - inB), 0);
@@ -814,9 +792,9 @@ export class GxGte {
 		const hOverSz3 = this.divideWithLimit(this.h(), this.sz(3));
 		this.dataRegisterWords[12] = this.dataRegisterWords[13];
 		this.dataRegisterWords[13] = this.dataRegisterWords[14];
-		this.writeMac0(this.ofx() + sign16(this.dataRegisterWords[9]) * hOverSz3);
+		this.writeMac0(this.ofx() + lowSignedHalfword(this.dataRegisterWords[9]) * hOverSz3);
 		const sx2 = this.limitScreen(shiftRightSigned(this.mac0, 16), GX_GTE_FLAG_ERROR | GX_GTE_FLAG_SX2_SAT);
-		this.writeMac0(this.ofy() + sign16(this.dataRegisterWords[10]) * hOverSz3);
+		this.writeMac0(this.ofy() + lowSignedHalfword(this.dataRegisterWords[10]) * hOverSz3);
 		const sy2 = this.limitScreen(shiftRightSigned(this.mac0, 16), GX_GTE_FLAG_ERROR | GX_GTE_FLAG_SY2_SAT);
 		this.dataRegisterWords[14] = ((sx2 & 0xffff) | ((sy2 & 0xffff) << 16)) >>> 0;
 		if (last) {
@@ -971,9 +949,9 @@ export class GxGte {
 	}
 
 	private packRgbFromIr(): number {
-		const r = this.limitRgb5(sign16(this.dataRegisterWords[9]) >> 7);
-		const g = this.limitRgb5(sign16(this.dataRegisterWords[10]) >> 7);
-		const b = this.limitRgb5(sign16(this.dataRegisterWords[11]) >> 7);
+		const r = this.limitRgb5(lowSignedHalfword(this.dataRegisterWords[9]) >> 7);
+		const g = this.limitRgb5(lowSignedHalfword(this.dataRegisterWords[10]) >> 7);
+		const b = this.limitRgb5(lowSignedHalfword(this.dataRegisterWords[11]) >> 7);
 		const rgb = r | (g << 5) | (b << 10);
 		return rgb >>> 0;
 	}
@@ -989,20 +967,20 @@ export class GxGte {
 	}
 
 	private vx(index: number): number {
-		return sign16(this.dataRegisterWords[index * 2]);
+		return lowSignedHalfword(this.dataRegisterWords[index * 2]);
 	}
 
 	private vy(index: number): number {
-		return highSign16(this.dataRegisterWords[index * 2]);
+		return highSignedHalfword(this.dataRegisterWords[index * 2]);
 	}
 
 	private vz(index: number): number {
-		return sign16(this.dataRegisterWords[index * 2 + 1]);
+		return lowSignedHalfword(this.dataRegisterWords[index * 2 + 1]);
 	}
 
 	private vector(vectorIndex: number, component: number): number {
 		if (vectorIndex === 3) {
-			return sign16(this.dataRegisterWords[9 + component]);
+			return lowSignedHalfword(this.dataRegisterWords[9 + component]);
 		}
 		switch (component) {
 			case 0: return this.vx(vectorIndex);
@@ -1016,24 +994,24 @@ export class GxGte {
 			switch (row * 3 + column) {
 				case 0: return -(this.dataRegisterWords[6] & 0xff) * 16;
 				case 1: return (this.dataRegisterWords[6] & 0xff) * 16;
-				case 2: return sign16(this.dataRegisterWords[8]);
+				case 2: return lowSignedHalfword(this.dataRegisterWords[8]);
 				case 3:
 				case 4:
-				case 5: return sign16(this.controlRegisterWords[1]);
-				default: return sign16(this.controlRegisterWords[2]);
+				case 5: return lowSignedHalfword(this.controlRegisterWords[1]);
+				default: return lowSignedHalfword(this.controlRegisterWords[2]);
 			}
 		}
 		const base = matrix * 8;
 		switch (row * 3 + column) {
-			case 0: return sign16(this.controlRegisterWords[base]);
-			case 1: return highSign16(this.controlRegisterWords[base]);
-			case 2: return sign16(this.controlRegisterWords[base + 1]);
-			case 3: return highSign16(this.controlRegisterWords[base + 1]);
-			case 4: return sign16(this.controlRegisterWords[base + 2]);
-			case 5: return highSign16(this.controlRegisterWords[base + 2]);
-			case 6: return sign16(this.controlRegisterWords[base + 3]);
-			case 7: return highSign16(this.controlRegisterWords[base + 3]);
-			default: return sign16(this.controlRegisterWords[base + 4]);
+			case 0: return lowSignedHalfword(this.controlRegisterWords[base]);
+			case 1: return highSignedHalfword(this.controlRegisterWords[base]);
+			case 2: return lowSignedHalfword(this.controlRegisterWords[base + 1]);
+			case 3: return highSignedHalfword(this.controlRegisterWords[base + 1]);
+			case 4: return lowSignedHalfword(this.controlRegisterWords[base + 2]);
+			case 5: return highSignedHalfword(this.controlRegisterWords[base + 2]);
+			case 6: return lowSignedHalfword(this.controlRegisterWords[base + 3]);
+			case 7: return highSignedHalfword(this.controlRegisterWords[base + 3]);
+			default: return lowSignedHalfword(this.controlRegisterWords[base + 4]);
 		}
 	}
 
@@ -1046,15 +1024,15 @@ export class GxGte {
 
 	private rt(row: number, column: number): number {
 		switch (row * 3 + column) {
-			case 0: return sign16(this.controlRegisterWords[0]);
-			case 1: return highSign16(this.controlRegisterWords[0]);
-			case 2: return sign16(this.controlRegisterWords[1]);
-			case 3: return highSign16(this.controlRegisterWords[1]);
-			case 4: return sign16(this.controlRegisterWords[2]);
-			case 5: return highSign16(this.controlRegisterWords[2]);
-			case 6: return sign16(this.controlRegisterWords[3]);
-			case 7: return highSign16(this.controlRegisterWords[3]);
-			default: return sign16(this.controlRegisterWords[4]);
+			case 0: return lowSignedHalfword(this.controlRegisterWords[0]);
+			case 1: return highSignedHalfword(this.controlRegisterWords[0]);
+			case 2: return lowSignedHalfword(this.controlRegisterWords[1]);
+			case 3: return highSignedHalfword(this.controlRegisterWords[1]);
+			case 4: return lowSignedHalfword(this.controlRegisterWords[2]);
+			case 5: return highSignedHalfword(this.controlRegisterWords[2]);
+			case 6: return lowSignedHalfword(this.controlRegisterWords[3]);
+			case 7: return highSignedHalfword(this.controlRegisterWords[3]);
+			default: return lowSignedHalfword(this.controlRegisterWords[4]);
 		}
 	}
 
@@ -1067,7 +1045,7 @@ export class GxGte {
 	}
 
 	private dqa(): number {
-		return sign16(this.controlRegisterWords[27]);
+		return lowSignedHalfword(this.controlRegisterWords[27]);
 	}
 
 	private dqb(): number {
@@ -1083,11 +1061,11 @@ export class GxGte {
 	}
 
 	private zsf3(): number {
-		return sign16(this.controlRegisterWords[29]);
+		return lowSignedHalfword(this.controlRegisterWords[29]);
 	}
 
 	private zsf4(): number {
-		return sign16(this.controlRegisterWords[30]);
+		return lowSignedHalfword(this.controlRegisterWords[30]);
 	}
 
 	private rgbc(): number {
@@ -1127,11 +1105,11 @@ export class GxGte {
 	}
 
 	private sx(index: number): number {
-		return sign16(this.dataRegisterWords[12 + index]);
+		return lowSignedHalfword(this.dataRegisterWords[12 + index]);
 	}
 
 	private sy(index: number): number {
-		return highSign16(this.dataRegisterWords[12 + index]);
+		return highSignedHalfword(this.dataRegisterWords[12 + index]);
 	}
 
 	private sz(index: number): number {

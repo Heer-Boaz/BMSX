@@ -743,32 +743,20 @@ GxGteState decodeGxGteState(const BinValue& value, const char* label) {
 
 BinValue encodeApuBiquadFilterState(const ApuBiquadFilterState& state) {
 	BinObject object;
-	object["enabled"] = BinValue(state.enabled);
-	object["b0"] = encodeScalar<f64>(state.b0);
-	object["b1"] = encodeScalar<f64>(state.b1);
-	object["b2"] = encodeScalar<f64>(state.b2);
-	object["a1"] = encodeScalar<f64>(state.a1);
-	object["a2"] = encodeScalar<f64>(state.a2);
-	object["l1"] = encodeScalar<f64>(state.l1);
-	object["l2"] = encodeScalar<f64>(state.l2);
-	object["r1"] = encodeScalar<f64>(state.r1);
-	object["r2"] = encodeScalar<f64>(state.r2);
+	object["l1"] = static_cast<i64>(state.l1);
+	object["l2"] = static_cast<i64>(state.l2);
+	object["r1"] = static_cast<i64>(state.r1);
+	object["r2"] = static_cast<i64>(state.r2);
 	return BinValue(std::move(object));
 }
 
 ApuBiquadFilterState decodeApuBiquadFilterState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
 	ApuBiquadFilterState state;
-	state.enabled = requireBool(requireField(object, "enabled", label), "machine.audio.output.voices.filter.enabled");
-	state.b0 = requireNumber(requireField(object, "b0", label), "machine.audio.output.voices.filter.b0");
-	state.b1 = requireNumber(requireField(object, "b1", label), "machine.audio.output.voices.filter.b1");
-	state.b2 = requireNumber(requireField(object, "b2", label), "machine.audio.output.voices.filter.b2");
-	state.a1 = requireNumber(requireField(object, "a1", label), "machine.audio.output.voices.filter.a1");
-	state.a2 = requireNumber(requireField(object, "a2", label), "machine.audio.output.voices.filter.a2");
-	state.l1 = requireNumber(requireField(object, "l1", label), "machine.audio.output.voices.filter.l1");
-	state.l2 = requireNumber(requireField(object, "l2", label), "machine.audio.output.voices.filter.l2");
-	state.r1 = requireNumber(requireField(object, "r1", label), "machine.audio.output.voices.filter.r1");
-	state.r2 = requireNumber(requireField(object, "r2", label), "machine.audio.output.voices.filter.r2");
+	state.l1 = requireI32(requireField(object, "l1", label), "machine.audio.output.voices.filter.l1");
+	state.l2 = requireI32(requireField(object, "l2", label), "machine.audio.output.voices.filter.l2");
+	state.r1 = requireI32(requireField(object, "r1", label), "machine.audio.output.voices.filter.r1");
+	state.r2 = requireI32(requireField(object, "r2", label), "machine.audio.output.voices.filter.r2");
 	return state;
 }
 

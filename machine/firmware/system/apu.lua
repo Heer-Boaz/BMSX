@@ -20,28 +20,19 @@ struct apu_command_registers
 	rate_step_q16: word
 	gain_q12: word
 	start_sample: word
-	filter_kind: word
-	filter_freq_hz: word
-	filter_q_milli: word
-	filter_gain_millidb: word
+	filter_control: word
+	filter_b0_b1: word
+	filter_b2_a1: word
+	filter_a2: word
 	fade_samples: word
 	generator_kind: word
 	generator_duty_q12: word
 	cmd: word
 end
 
-local apu<const> = {
-	filter_kind = {
-		lowpass = 0x00000001,
-		highpass = 0x00000002,
-		bandpass = 0x00000003,
-		notch = 0x00000004,
-		allpass = 0x00000005,
-		peaking = 0x00000006,
-		lowshelf = 0x00000007,
-		highshelf = 0x00000008,
-	},
-}
+local apu<const> = {}
+local output_sample_rate_hz<const> = 0x0000ac44
+local filter_coefficient_one<const> = 0x00004000
 
 local command_registers<const>: *apu_command_registers = 0x08000128
 local transfer_address<const>: *word = 0x080001f0
@@ -52,6 +43,9 @@ local transfer_mode_dma_read<const> = 0x00000003
 
 apu.sample_ram_base = 0x10000000
 apu.sample_ram_bytes = 0x00080000
+apu.output_sample_rate_hz = output_sample_rate_hz
+apu.filter_control_enable = 0x00000001
+apu.filter_coefficient_one = filter_coefficient_one
 
 function apu.upload(source, sample_ram_offset, word_count)
 	*transfer_control = transfer_mode_stop
@@ -68,11 +62,11 @@ function apu.download(target, sample_ram_offset, word_count)
 end
 
 function apu.seconds_to_samples(seconds)
-	return seconds * 0x0000ac44
+	return seconds * output_sample_rate_hz
 end
 
 function apu.ms_to_samples(ms)
-	return ms * 0x0000ac44 / 1000
+	return ms * output_sample_rate_hz / 1000
 end
 
 local rom_base_for_payload<const> = function(payload_id)
@@ -134,7 +128,7 @@ function apu.loop_start_sample(record)
 	return apu.source(record).loop_start_sample
 end
 
-function apu.play(source, slot, rate_step_q16, gain_q12, start_sample, filter_kind, filter_freq_hz, filter_q_milli, filter_gain_millidb)
+function apu.play(source, slot, rate_step_q16, gain_q12, start_sample, filter_control, filter_b0_b1, filter_b2_a1, filter_a2)
 	command_registers->source_addr = source.source_addr
 	command_registers->source_bytes = source.source_bytes
 	command_registers->sample_rate_hz = source.sample_rate_hz
@@ -149,10 +143,10 @@ function apu.play(source, slot, rate_step_q16, gain_q12, start_sample, filter_ki
 	command_registers->rate_step_q16 = rate_step_q16
 	command_registers->gain_q12 = gain_q12
 	command_registers->start_sample = start_sample
-	command_registers->filter_kind = filter_kind
-	command_registers->filter_freq_hz = filter_freq_hz
-	command_registers->filter_q_milli = filter_q_milli
-	command_registers->filter_gain_millidb = filter_gain_millidb
+	command_registers->filter_control = filter_control
+	command_registers->filter_b0_b1 = filter_b0_b1
+	command_registers->filter_b2_a1 = filter_b2_a1
+	command_registers->filter_a2 = filter_a2
 	command_registers->fade_samples = 0
 	command_registers->generator_kind = 0
 	command_registers->generator_duty_q12 = 0x00001000
@@ -174,10 +168,10 @@ function apu.play_plain(source, slot)
 	command_registers->rate_step_q16 = 0x00010000
 	command_registers->gain_q12 = 0x00001000
 	command_registers->start_sample = 0
-	command_registers->filter_kind = 0x00000000
-	command_registers->filter_freq_hz = 0
-	command_registers->filter_q_milli = 1000
-	command_registers->filter_gain_millidb = 0
+	command_registers->filter_control = 0x00000000
+	command_registers->filter_b0_b1 = filter_coefficient_one
+	command_registers->filter_b2_a1 = 0x00000000
+	command_registers->filter_a2 = 0x00000000
 	command_registers->fade_samples = 0
 	command_registers->generator_kind = 0
 	command_registers->generator_duty_q12 = 0x00001000

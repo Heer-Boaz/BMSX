@@ -67,7 +67,6 @@ private:
 		ApuBadpSeekTable badpSeekTable;
 		i64 loopStartQ16 = -1;
 		i64 loopEndQ16 = -1;
-		ApuOutputPlayback playback;
 		i64 cursorQ16 = 0;
 		i32 phaseRemainder = 0;
 		i64 phaseStepQ16 = 0;
@@ -100,14 +99,14 @@ private:
 	void seekVoice(VoiceRecord& record, u32 startFrame);
 	void readVoiceFrame(VoiceRecord& record, size_t frame);
 	static auto wrapLoopCursor(i64 cursorQ16, i64 loopStartQ16, i64 loopEndQ16) -> i64;
-	void configureRecordFilter(VoiceRecord& record);
+	void configureRecordFilter(VoiceRecord& record, const ApuParameterRegisterWords& registerWords);
 
 	std::array<VoiceRecord, APU_SLOT_COUNT> m_voices{};
 	std::array<f32, MIX_BATCH_SAMPLES> m_mixBuffer{};
 	std::array<i16, MIX_BATCH_SAMPLES> m_renderBuffer{};
 	ApuPhaseStep m_phaseStep{};
-	f64 m_sampledLeft = 0.0;
-	f64 m_sampledRight = 0.0;
+	i32 m_sampledLeft = 0;
+	i32 m_sampledRight = 0;
 };
 
 } // namespace bmsx

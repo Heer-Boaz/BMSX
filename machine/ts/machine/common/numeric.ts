@@ -15,6 +15,27 @@ export function toSignedWord(value: number): number {
 	return value | 0;
 }
 
+export function lowSignedHalfword(value: number): number {
+	const halfword = value & 0xffff;
+	return halfword < 0x8000 ? halfword : halfword - 0x1_0000;
+}
+
+export function highSignedHalfword(value: number): number {
+	const halfword = value >>> 16;
+	return halfword < 0x8000 ? halfword : halfword - 0x1_0000;
+}
+
+export function wrapI32(value: number): number {
+	return value | 0;
+}
+
+export function shiftRightSigned(value: number, bits: number): number {
+	const divisor = 2 ** bits;
+	const remainder = value % divisor;
+	const quotient = (value - remainder) / divisor;
+	return remainder < 0 ? quotient - 1 : quotient;
+}
+
 export function encodeSignedFix16(value: number): number {
 	return Math.trunc(value * FIX16_SCALE) >>> 0;
 }

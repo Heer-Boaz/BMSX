@@ -672,12 +672,6 @@ function decodeGxGteState(value: unknown, label: string): GxGteState {
 
 function encodeApuBiquadFilterState(state: ApuBiquadFilterState): ApuBiquadFilterState {
 	return {
-		enabled: state.enabled,
-		b0: state.b0,
-		b1: state.b1,
-		b2: state.b2,
-		a1: state.a1,
-		a2: state.a2,
 		l1: state.l1,
 		l2: state.l2,
 		r1: state.r1,
@@ -688,16 +682,10 @@ function encodeApuBiquadFilterState(state: ApuBiquadFilterState): ApuBiquadFilte
 function decodeApuBiquadFilterState(value: unknown, label: string): ApuBiquadFilterState {
 	const object = requireObject(value, label);
 	return {
-		enabled: requireBooleanValue(requireObjectKey(object, 'enabled', label, `${label}.enabled`), `${label}.enabled`),
-		b0: requireNumberValue(requireObjectKey(object, 'b0', label, `${label}.b0`), `${label}.b0`),
-		b1: requireNumberValue(requireObjectKey(object, 'b1', label, `${label}.b1`), `${label}.b1`),
-		b2: requireNumberValue(requireObjectKey(object, 'b2', label, `${label}.b2`), `${label}.b2`),
-		a1: requireNumberValue(requireObjectKey(object, 'a1', label, `${label}.a1`), `${label}.a1`),
-		a2: requireNumberValue(requireObjectKey(object, 'a2', label, `${label}.a2`), `${label}.a2`),
-		l1: requireNumberValue(requireObjectKey(object, 'l1', label, `${label}.l1`), `${label}.l1`),
-		l2: requireNumberValue(requireObjectKey(object, 'l2', label, `${label}.l2`), `${label}.l2`),
-		r1: requireNumberValue(requireObjectKey(object, 'r1', label, `${label}.r1`), `${label}.r1`),
-		r2: requireNumberValue(requireObjectKey(object, 'r2', label, `${label}.r2`), `${label}.r2`),
+		l1: requireI32(requireObjectKey(object, 'l1', label, `${label}.l1`), `${label}.l1`),
+		l2: requireI32(requireObjectKey(object, 'l2', label, `${label}.l2`), `${label}.l2`),
+		r1: requireI32(requireObjectKey(object, 'r1', label, `${label}.r1`), `${label}.r1`),
+		r2: requireI32(requireObjectKey(object, 'r2', label, `${label}.r2`), `${label}.r2`),
 	};
 }
 

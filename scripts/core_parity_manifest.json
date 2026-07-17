@@ -783,16 +783,6 @@
 			"reason": "save_state_shape_contract"
 		},
 		{
-			"ts": "machine/ts/machine/devices/audio/playback.ts",
-			"cpp": [
-				"machine/cpp/machine/devices/audio/playback.h"
-			],
-			"symbols": [
-				"ApuOutputPlayback"
-			],
-			"reason": "devices_audio_playback_shape_contract"
-		},
-		{
 			"ts": "machine/ts/machine/devices/audio/badp_decoder.ts",
 			"cpp": [
 				"machine/cpp/machine/devices/audio/badp_decoder.h"

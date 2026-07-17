@@ -42,7 +42,8 @@ void ApuOutputMixer::playVoice(
 	const ApuParameterRegisterWords& registerWords
 ) {
 	VoiceRecord& record = m_voices[slot];
-	loadApuOutputPlayback(record.playback, registerWords);
+	record.filter.reset();
+	configureRecordFilter(record, registerWords);
 	buildVoiceFromData(
 		record,
 		source,
@@ -50,7 +51,7 @@ void ApuOutputMixer::playVoice(
 		registerWords[APU_PARAMETER_RATE_STEP_Q16_INDEX],
 		static_cast<i64>(registerWords[APU_PARAMETER_START_SAMPLE_INDEX]) * static_cast<i64>(APU_RATE_STEP_Q16_ONE),
 		0,
-		clamp(record.playback.gainLinear, 0.0, 1.0)
+		clamp(resolveApuGainLinear(registerWords[APU_PARAMETER_GAIN_Q12_INDEX]), 0.0, 1.0)
 	);
 }
 
@@ -67,7 +68,6 @@ void ApuOutputMixer::replaceVoiceSource(
 	const f64 fadeStartGain = record.fadeStartGain;
 	const u32 fadeSamplesRemaining = record.fadeSamplesRemaining;
 	const u32 fadeSamplesTotal = record.fadeSamplesTotal;
-	loadApuOutputPlayback(record.playback, registerWords);
 	buildVoiceFromData(
 		record,
 		source,
@@ -77,6 +77,7 @@ void ApuOutputMixer::replaceVoiceSource(
 		phaseRemainder,
 		gain
 	);
+	configureRecordFilter(record, registerWords);
 	record.fadeStartGain = fadeStartGain;
 	record.fadeSamplesRemaining = fadeSamplesRemaining;
 	record.fadeSamplesTotal = fadeSamplesTotal;
@@ -90,7 +91,6 @@ void ApuOutputMixer::restoreVoice(
 	const ApuOutputVoiceState& state
 ) {
 	VoiceRecord& record = m_voices[slot];
-	loadApuOutputPlayback(record.playback, registerWords);
 	buildVoiceFromData(
 		record,
 		source,
@@ -100,6 +100,8 @@ void ApuOutputMixer::restoreVoice(
 		state.phaseRemainder,
 		state.gain
 	);
+	record.filter.reset();
+	configureRecordFilter(record, registerWords);
 	restoreApuOutputVoiceState(record, state);
 	record.active = true;
 }
@@ -128,12 +130,11 @@ void ApuOutputMixer::writeSlotRegisterWord(
 		case APU_PARAMETER_START_SAMPLE_INDEX:
 			seekVoice(record, registerWords[APU_PARAMETER_START_SAMPLE_INDEX]);
 			return;
-		case APU_PARAMETER_FILTER_KIND_INDEX:
-		case APU_PARAMETER_FILTER_FREQ_HZ_INDEX:
-		case APU_PARAMETER_FILTER_Q_MILLI_INDEX:
-		case APU_PARAMETER_FILTER_GAIN_MILLIDB_INDEX:
-			applyApuOutputFilter(record.playback, registerWords);
-			configureRecordFilter(record);
+		case APU_PARAMETER_FILTER_CONTROL_INDEX:
+		case APU_PARAMETER_FILTER_B0_B1_INDEX:
+		case APU_PARAMETER_FILTER_B2_A1_INDEX:
+		case APU_PARAMETER_FILTER_A2_INDEX:
+			configureRecordFilter(record, registerWords);
 			return;
 		default:
 			return;
@@ -253,20 +254,19 @@ u32 ApuOutputMixer::renderMachineBatch(size_t frameCount, i64 startSequence) {
 			if (fadeRemaining != 0u) {
 				gain = record.fadeStartGain * static_cast<f64>(fadeRemaining) / static_cast<f64>(record.fadeSamplesTotal);
 			}
-			f64 left = 0.0;
-			f64 right = 0.0;
+			i32 leftSample = 0;
+			i32 rightSample = 0;
 			if (record.generatorKind == APU_GENERATOR_SQUARE) {
 				const i64 fractionQ16 = cursorQ16 % static_cast<i64>(APU_RATE_STEP_Q16_ONE);
-				const f64 sample = fractionQ16 * static_cast<i64>(APU_GAIN_Q12_ONE)
+				const i32 sample = fractionQ16 * static_cast<i64>(APU_GAIN_Q12_ONE)
 					< static_cast<i64>(record.generatorDutyQ12) * static_cast<i64>(APU_RATE_STEP_Q16_ONE)
-					? 1.0
-					: -1.0;
-				left = sample;
-				right = sample;
+					? 0x7fff
+					: -0x8000;
+				leftSample = sample;
+				rightSample = sample;
 			} else {
 				const i64 frameIndex = audioFrameIndex(cursorQ16);
-				const f64 fraction = static_cast<f64>(cursorQ16 % static_cast<i64>(APU_RATE_STEP_Q16_ONE))
-					/ static_cast<f64>(APU_RATE_STEP_Q16_ONE);
+				const u32 fractionQ16 = static_cast<u32>(cursorQ16 % static_cast<i64>(APU_RATE_STEP_Q16_ONE));
 				i64 nextFrame = frameIndex + 1;
 				if (hasLoop) {
 					const i64 loopEndFrame = record.loopEndQ16 / static_cast<i64>(APU_RATE_STEP_Q16_ONE);
@@ -277,22 +277,24 @@ u32 ApuOutputMixer::renderMachineBatch(size_t frameCount, i64 startSequence) {
 					nextFrame = frameIndex;
 				}
 				readVoiceFrame(record, static_cast<size_t>(frameIndex));
-				const f64 left0 = m_sampledLeft;
-				const f64 right0 = m_sampledRight;
-				left = left0;
-				right = right0;
+				const i32 left0 = m_sampledLeft;
+				const i32 right0 = m_sampledRight;
+				leftSample = left0;
+				rightSample = right0;
 				if (nextFrame != frameIndex) {
 					readVoiceFrame(record, static_cast<size_t>(nextFrame));
-					left = left0 + (m_sampledLeft - left0) * fraction;
-					right = right0 + (m_sampledRight - right0) * fraction;
+					leftSample = interpolateApuPcmSample(left0, m_sampledLeft, fractionQ16);
+					rightSample = interpolateApuPcmSample(right0, m_sampledRight, fractionQ16);
 				}
 			}
 			if (record.filter.enabled) {
-				record.filter.processStereo(left, right);
+				record.filter.processStereo(leftSample, rightSample);
+				leftSample = record.filter.outputLeft;
+				rightSample = record.filter.outputRight;
 			}
 			const size_t outIndex = frame * 2u;
-			mix[outIndex] = static_cast<f32>(static_cast<f64>(mix[outIndex]) + left * gain);
-			mix[outIndex + 1u] = static_cast<f32>(static_cast<f64>(mix[outIndex + 1u]) + right * gain);
+			mix[outIndex] = static_cast<f32>(static_cast<f64>(mix[outIndex]) + static_cast<f64>(leftSample) * APU_PCM_SAMPLE_SCALE * gain);
+			mix[outIndex + 1u] = static_cast<f32>(static_cast<f64>(mix[outIndex + 1u]) + static_cast<f64>(rightSample) * APU_PCM_SAMPLE_SCALE * gain);
 
 			phaseRemainder += record.phaseStepRemainder;
 			i32 phaseCarry = 0;
@@ -368,9 +370,7 @@ void ApuOutputMixer::buildVoiceFromData(
 	record.fadeStartGain = initialGain;
 	record.fadeSamplesRemaining = 0u;
 	record.fadeSamplesTotal = 0u;
-	record.filter.reset();
 	applyVoiceLoopBounds(record, source);
-	configureRecordFilter(record);
 	record.usesBadp = !apuAudioSourceUsesGenerator(source) && source.bitsPerSample == 4u;
 	if (record.usesBadp) {
 		resetApuBadpDecoder(
@@ -392,7 +392,6 @@ void ApuOutputMixer::configurePhaseStep(VoiceRecord& record, u32 rateStepQ16Word
 
 void ApuOutputMixer::applyVoiceGainQ12(VoiceRecord& record, u32 gainQ12Word) {
 	const f64 gain = clamp(resolveApuGainLinear(gainQ12Word), 0.0, 1.0);
-	record.playback.gainLinear = gain;
 	if (record.fadeSamplesRemaining != 0u) {
 		record.fadeStartGain = gain;
 		record.gain = gain * static_cast<f64>(record.fadeSamplesRemaining) / static_cast<f64>(record.fadeSamplesTotal);
@@ -441,18 +440,16 @@ void ApuOutputMixer::readVoiceFrame(VoiceRecord& record, size_t frame) {
 			left,
 			right
 		);
-		m_sampledLeft = static_cast<f64>(left) * static_cast<f64>(APU_PCM_SAMPLE_SCALE);
-		m_sampledRight = static_cast<f64>(right) * static_cast<f64>(APU_PCM_SAMPLE_SCALE);
+		m_sampledLeft = left;
+		m_sampledRight = right;
 		return;
 	}
 	const size_t baseSample = frame * record.channels;
 	const bool is16Bit = record.bitsPerSample == 16u;
-	m_sampledLeft = static_cast<f64>(readApuPcmSample(record.sourceBytes, record.dataOffset, is16Bit, baseSample))
-		* static_cast<f64>(APU_PCM_SAMPLE_SCALE);
+	m_sampledLeft = readApuPcmSample(record.sourceBytes, record.dataOffset, is16Bit, baseSample);
 	m_sampledRight = record.channels == 1u
 		? m_sampledLeft
-		: static_cast<f64>(readApuPcmSample(record.sourceBytes, record.dataOffset, is16Bit, baseSample + 1u))
-			* static_cast<f64>(APU_PCM_SAMPLE_SCALE);
+		: readApuPcmSample(record.sourceBytes, record.dataOffset, is16Bit, baseSample + 1u);
 }
 
 i64 ApuOutputMixer::wrapLoopCursor(i64 cursorQ16, i64 loopStartQ16, i64 loopEndQ16) {
@@ -464,18 +461,13 @@ i64 ApuOutputMixer::wrapLoopCursor(i64 cursorQ16, i64 loopStartQ16, i64 loopEndQ
 	return loopStartQ16 + wrapped;
 }
 
-void ApuOutputMixer::configureRecordFilter(VoiceRecord& record) {
-	if (!record.playback.filterEnabled) {
-		record.filter.reset();
-		return;
-	}
+void ApuOutputMixer::configureRecordFilter(VoiceRecord& record, const ApuParameterRegisterWords& registerWords) {
 	configureBiquadFilter(
 		record.filter,
-		record.playback.filterType,
-		record.playback.filterFrequency,
-		record.playback.filterQ,
-		record.playback.filterGain,
-		APU_SAMPLE_RATE_HZ
+		registerWords[APU_PARAMETER_FILTER_CONTROL_INDEX],
+		registerWords[APU_PARAMETER_FILTER_B0_B1_INDEX],
+		registerWords[APU_PARAMETER_FILTER_B2_A1_INDEX],
+		registerWords[APU_PARAMETER_FILTER_A2_INDEX]
 	);
 }
 

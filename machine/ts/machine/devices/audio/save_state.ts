@@ -17,12 +17,6 @@ export type ApuSampleTransferState = {
 };
 
 export type ApuBiquadFilterState = {
-	enabled: boolean;
-	b0: number;
-	b1: number;
-	b2: number;
-	a1: number;
-	a2: number;
 	l1: number;
 	l2: number;
 	r1: number;
@@ -103,12 +97,6 @@ export function captureApuOutputVoiceState(record: ApuOutputVoiceStateAccess): A
 		fadeSamplesRemaining: record.fadeSamplesRemaining,
 		fadeSamplesTotal: record.fadeSamplesTotal,
 		filter: {
-			enabled: record.filter.enabled,
-			b0: record.filter.b0,
-			b1: record.filter.b1,
-			b2: record.filter.b2,
-			a1: record.filter.a1,
-			a2: record.filter.a2,
 			l1: record.filter.l1,
 			l2: record.filter.l2,
 			r1: record.filter.r1,
@@ -140,12 +128,6 @@ export function restoreApuOutputVoiceState(record: ApuOutputVoiceStateAccess, st
 	record.fadeStartGain = state.fadeStartGain;
 	record.fadeSamplesRemaining = state.fadeSamplesRemaining;
 	record.fadeSamplesTotal = state.fadeSamplesTotal;
-	record.filter.enabled = state.filter.enabled;
-	record.filter.b0 = state.filter.b0;
-	record.filter.b1 = state.filter.b1;
-	record.filter.b2 = state.filter.b2;
-	record.filter.a1 = state.filter.a1;
-	record.filter.a2 = state.filter.a2;
 	record.filter.l1 = state.filter.l1;
 	record.filter.l2 = state.filter.l2;
 	record.filter.r1 = state.filter.r1;

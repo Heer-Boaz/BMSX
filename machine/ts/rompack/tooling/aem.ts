@@ -1,5 +1,7 @@
 import { load as loadYaml } from 'js-yaml';
 
+import { APU_SAMPLE_RATE_HZ } from '../../machine/devices/audio/contracts';
+
 // Authoring-time AEM schema and validation. AEM may describe audio behavior,
 // but it is not the machine audio device or a host-side shortcut around MMIO.
 export type StructuredTextDocumentFormat = 'yaml' | 'json';
@@ -321,9 +323,13 @@ function checkModulationParams(
 	}
 	if (typeof filter.frequency !== 'number') {
 		errors.push(`Invalid filter.frequency '${filter.frequency}' at ${where}: expected number`);
+	} else if (!(filter.frequency > 0 && filter.frequency < APU_SAMPLE_RATE_HZ / 2)) {
+		errors.push(`Invalid filter.frequency '${filter.frequency}' at ${where}: expected a value greater than 0 and below ${APU_SAMPLE_RATE_HZ / 2}`);
 	}
 	if (typeof filter.q !== 'number') {
 		errors.push(`Invalid filter.q '${filter.q}' at ${where}: expected number`);
+	} else if (!(filter.q > 0)) {
+		errors.push(`Invalid filter.q '${filter.q}' at ${where}: expected a positive value`);
 	}
 	if (typeof filter.gain !== 'number') {
 		errors.push(`Invalid filter.gain '${filter.gain}' at ${where}: expected number`);

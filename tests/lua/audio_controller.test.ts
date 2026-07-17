@@ -8,8 +8,8 @@ import {
 	APU_CMD_SET_SLOT_GAIN,
 	APU_CMD_STOP_SLOT,
 	APU_EVENT_SLOT_ENDED,
-	APU_FILTER_HIGHSHELF,
-	APU_FILTER_LOWPASS,
+	APU_FILTER_COEFFICIENT_ONE,
+	APU_FILTER_CONTROL_ENABLE,
 	APU_FAULT_BAD_CMD,
 	APU_FAULT_NONE,
 	APU_FAULT_SOURCE_RANGE,
@@ -17,6 +17,8 @@ import {
 	APU_GENERATOR_SQUARE,
 	APU_PARAMETER_GENERATOR_DUTY_Q12_INDEX,
 	APU_PARAMETER_GENERATOR_KIND_INDEX,
+	APU_PARAMETER_FILTER_B0_B1_INDEX,
+	APU_PARAMETER_FILTER_CONTROL_INDEX,
 	APU_PARAMETER_REGISTER_COUNT,
 	APU_PARAMETER_GAIN_Q12_INDEX,
 	APU_PARAMETER_RATE_STEP_Q16_INDEX,
@@ -66,10 +68,10 @@ import {
 	IO_APU_FADE_SAMPLES,
 	IO_APU_FAULT_ACK,
 	IO_APU_FAULT_CODE,
-	IO_APU_FILTER_FREQ_HZ,
-	IO_APU_FILTER_GAIN_MILLIDB,
-	IO_APU_FILTER_KIND,
-	IO_APU_FILTER_Q_MILLI,
+	IO_APU_FILTER_B0_B1,
+	IO_APU_FILTER_A2,
+	IO_APU_FILTER_CONTROL,
+	IO_APU_FILTER_B2_A1,
 	IO_APU_GAIN_Q12,
 	IO_APU_GENERATOR_DUTY_Q12,
 	IO_APU_GENERATOR_KIND,
@@ -105,8 +107,10 @@ import {
 	IRQ_APU,
 } from '../../machine/ts/machine/bus/io';
 import { AudioController } from '../../machine/ts/machine/devices/audio/controller';
+import { BiquadFilterState, configureBiquadFilter } from '../../machine/ts/machine/devices/audio/biquad_filter';
 import { ApuOutputMixer } from '../../machine/ts/machine/devices/audio/output';
 import { APU_OUTPUT_RING_CAPACITY_FRAMES } from '../../machine/ts/machine/devices/audio/output_ring';
+import { interpolateApuPcmSample } from '../../machine/ts/machine/devices/audio/pcm_decoder_hot_path';
 import { resolveApuPhaseStep } from '../../machine/ts/machine/devices/audio/playback';
 import { ApuSampleMemory } from '../../machine/ts/machine/devices/audio/sample_memory';
 import type { ApuSourceByteView } from '../../machine/ts/machine/devices/audio/source';
@@ -135,12 +139,6 @@ function createFakeOutputVoiceState(voice: FakeVoiceInfo): ApuOutputVoiceState {
 		fadeSamplesRemaining: voice.stopFadeSamples,
 		fadeSamplesTotal: voice.stopFadeSamples,
 		filter: {
-			enabled: false,
-			b0: 1,
-			b1: 0,
-			b2: 0,
-			a1: 0,
-			a2: 0,
 			l1: 0,
 			l2: 0,
 			r1: 0,
@@ -299,7 +297,8 @@ test('APU contract constants keep hardware command values', () => {
 	assert.equal(APU_SLOT_PHASE_FADING, 2);
 	assert.equal(APU_FAULT_SOURCE_RANGE, 0x0102);
 	assert.equal(APU_FAULT_UNSUPPORTED_FORMAT, 0x0201);
-	assert.equal(APU_FILTER_HIGHSHELF, 8);
+	assert.equal(APU_FILTER_CONTROL_ENABLE, 1);
+	assert.equal(APU_FILTER_COEFFICIENT_ONE, 0x4000);
 	assert.equal(APU_EVENT_SLOT_ENDED, 1);
 	assert.equal(APU_GENERATOR_SQUARE, 1);
 	assert.equal(APU_PARAMETER_REGISTER_COUNT, 21);
@@ -310,6 +309,33 @@ test('APU contract constants keep hardware command values', () => {
 	assert.equal(APU_SLOT_REGISTER_WORD_COUNT, 336);
 	assert.equal(IO_APU_PARAMETER_REGISTER_ADDRS.length, APU_PARAMETER_REGISTER_COUNT);
 	assert.equal(IO_APU_SELECTED_SLOT_REG_COUNT, APU_PARAMETER_REGISTER_COUNT);
+});
+
+test('APU raw Q14 biquad has exact signed decode, wrap, saturation, and retained delay state', () => {
+	const filter = new BiquadFilterState();
+	configureBiquadFilter(filter, 0xffff0001, 0x10002000, 0xe000f000, 0xdead0800);
+	assert.equal(filter.enabled, true);
+	assert.deepEqual([filter.b0, filter.b1, filter.b2, filter.a1, filter.a2], [8192, 4096, -4096, -8192, 2048]);
+	filter.processStereo(16384, -16384);
+	assert.deepEqual(
+		[filter.outputLeft, filter.outputRight, filter.l1, filter.l2, filter.r1, filter.r2],
+		[8192, -8192, 134217728, -83886080, -134217728, 83886080],
+	);
+
+	configureBiquadFilter(filter, 0, 0x80008000, 0x80008000, 0xbeef8000);
+	assert.equal(filter.enabled, false);
+	assert.deepEqual([filter.l1, filter.l2, filter.r1, filter.r2], [134217728, -83886080, -134217728, 83886080]);
+
+	filter.l1 = 0;
+	filter.l2 = 0x7fffffff;
+	filter.r1 = 0;
+	filter.r2 = 0x7fffffff;
+	filter.processStereo(-0x8000, -0x8000);
+	assert.deepEqual(
+		[filter.outputLeft, filter.outputRight, filter.l1, filter.l2, filter.r1, filter.r2],
+		[0x7fff, 0x7fff, 0x3fffffff, -0x40000000, 0x3fffffff, -0x40000000],
+	);
+	assert.equal(interpolateApuPcmSample(0x7fff, -0x8000, 0x8000), -1);
 });
 
 test('APU sample bus binds ROM directly, owns sample RAM, and rejects CPU memory', () => {
@@ -833,10 +859,10 @@ test('APU parameter registerfile is device-owned and saved', () => {
 	memory.writeValue(IO_APU_RATE_STEP_Q16, 0x18000);
 	memory.writeValue(IO_APU_GAIN_Q12, 0x0800);
 	memory.writeValue(IO_APU_START_SAMPLE, 6);
-	memory.writeValue(IO_APU_FILTER_KIND, APU_FILTER_HIGHSHELF);
-	memory.writeValue(IO_APU_FILTER_FREQ_HZ, 1200);
-	memory.writeValue(IO_APU_FILTER_Q_MILLI, 700);
-	memory.writeValue(IO_APU_FILTER_GAIN_MILLIDB, 3000);
+	memory.writeValue(IO_APU_FILTER_CONTROL, 0xa5a50001);
+	memory.writeValue(IO_APU_FILTER_B0_B1, 0x1234abcd);
+	memory.writeValue(IO_APU_FILTER_B2_A1, 0x89abcdef);
+	memory.writeValue(IO_APU_FILTER_A2, 0x76543210);
 	memory.writeValue(IO_APU_FADE_SAMPLES, APU_SAMPLE_RATE_HZ);
 	memory.writeValue(IO_APU_GENERATOR_KIND, APU_GENERATOR_SQUARE);
 	memory.writeValue(IO_APU_GENERATOR_DUTY_Q12, 0x0800);
@@ -859,10 +885,10 @@ test('APU parameter registerfile is device-owned and saved', () => {
 	assert.equal(restored.memory.readIoU32(IO_APU_RATE_STEP_Q16), 0x18000);
 	assert.equal(restored.memory.readIoU32(IO_APU_GAIN_Q12), 0x0800);
 	assert.equal(restored.memory.readIoU32(IO_APU_START_SAMPLE), 6);
-	assert.equal(restored.memory.readIoU32(IO_APU_FILTER_KIND), APU_FILTER_HIGHSHELF);
-	assert.equal(restored.memory.readIoU32(IO_APU_FILTER_FREQ_HZ), 1200);
-	assert.equal(restored.memory.readIoU32(IO_APU_FILTER_Q_MILLI), 700);
-	assert.equal(restored.memory.readIoU32(IO_APU_FILTER_GAIN_MILLIDB), 3000);
+	assert.equal(restored.memory.readIoU32(IO_APU_FILTER_CONTROL), 0xa5a50001);
+	assert.equal(restored.memory.readIoU32(IO_APU_FILTER_B0_B1), 0x1234abcd);
+	assert.equal(restored.memory.readIoU32(IO_APU_FILTER_B2_A1), 0x89abcdef);
+	assert.equal(restored.memory.readIoU32(IO_APU_FILTER_A2), 0x76543210);
 	assert.equal(restored.memory.readIoU32(IO_APU_FADE_SAMPLES), APU_SAMPLE_RATE_HZ);
 	assert.equal(restored.memory.readIoU32(IO_APU_GENERATOR_KIND), APU_GENERATOR_SQUARE);
 	assert.equal(restored.memory.readIoU32(IO_APU_GENERATOR_DUTY_Q12), 0x0800);
@@ -1140,27 +1166,36 @@ test('APU filter history and STOP fade resume at the exact saved sample', () => 
 	writeSquareGeneratorRegisters(live.memory);
 	live.memory.writeValue(IO_APU_RATE_STEP_Q16, APU_RATE_STEP_Q16_ONE);
 	live.memory.writeValue(IO_APU_GAIN_Q12, 0x1000);
-	live.memory.writeValue(IO_APU_FILTER_KIND, APU_FILTER_LOWPASS);
-	live.memory.writeValue(IO_APU_FILTER_FREQ_HZ, 1200);
-	live.memory.writeValue(IO_APU_FILTER_Q_MILLI, 700);
+	live.memory.writeValue(IO_APU_FILTER_CONTROL, APU_FILTER_CONTROL_ENABLE);
+	live.memory.writeValue(IO_APU_FILTER_B0_B1, 0x10002000);
+	live.memory.writeValue(IO_APU_FILTER_B2_A1, 0xe000f000);
+	live.memory.writeValue(IO_APU_FILTER_A2, 0x0800);
 	live.memory.writeValue(IO_APU_SLOT, 1);
 	writeApuCommand(live.memory, live.audio, APU_CMD_PLAY);
 	advanceRealApu(live, 3);
 
 	live.memory.writeValue(IO_APU_SLOT, 1);
+	const history = live.audio.captureState().output.voices[0]!.filter;
+	live.memory.writeMappedU32LE(IO_APU_SELECTED_SLOT_REG0 + APU_PARAMETER_FILTER_B0_B1_INDEX * IO_ARG_STRIDE, 0x10002000);
+	assert.deepEqual(live.audio.captureState().output.voices[0]!.filter, history);
+	live.memory.writeMappedU32LE(IO_APU_SELECTED_SLOT_REG0 + APU_PARAMETER_SOURCE_SAMPLE_RATE_HZ_INDEX * IO_ARG_STRIDE, APU_SAMPLE_RATE_HZ / 4);
+	assert.deepEqual(live.audio.captureState().output.voices[0]!.filter, history);
+	live.memory.writeMappedU32LE(IO_APU_SELECTED_SLOT_REG0 + APU_PARAMETER_FILTER_CONTROL_INDEX * IO_ARG_STRIDE, 0);
+	advanceRealApu(live, 4);
+	assert.deepEqual(live.audio.captureState().output.voices[0]!.filter, history);
+	live.memory.writeMappedU32LE(IO_APU_SELECTED_SLOT_REG0 + APU_PARAMETER_FILTER_CONTROL_INDEX * IO_ARG_STRIDE, APU_FILTER_CONTROL_ENABLE);
 	live.memory.writeValue(IO_APU_FADE_SAMPLES, 4);
 	live.memory.writeValue(IO_APU_CMD, APU_CMD_STOP_SLOT);
-	live.audio.onService(3);
-	advanceRealApu(live, 5);
+	live.audio.onService(4);
+	advanceRealApu(live, 6);
 	const saved = live.audio.captureState();
 	const savedVoice = saved.output.voices[0]!;
 	assert.equal(savedVoice.fadeSamplesRemaining, 2);
-	assert.equal(savedVoice.filter.enabled, true);
 	assert.notEqual(savedVoice.filter.l1, 0);
 	live.audioOutput.outputRing.clear();
-	const restored = restoreRealAudioHarness(saved, 5);
-	advanceRealApu(live, 7);
-	advanceRealApu(restored, 7);
+	const restored = restoreRealAudioHarness(saved, 6);
+	advanceRealApu(live, 8);
+	advanceRealApu(restored, 8);
 	assert.deepEqual(restored.audio.captureState(), live.audio.captureState());
 	for (let frame = 0; frame < 2; frame += 1) {
 		assert.equal(restored.audioOutput.outputRing.readFramePacked(), live.audioOutput.outputRing.readFramePacked());

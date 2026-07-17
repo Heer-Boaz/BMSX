@@ -3,7 +3,9 @@
 #include "machine/bus/io.h"
 #include "machine/cpu/cpu.h"
 #include "machine/devices/audio/controller.h"
+#include "machine/devices/audio/biquad_filter.h"
 #include "machine/devices/audio/output.h"
+#include "machine/devices/audio/pcm_decoder_hot_path.h"
 #include "machine/devices/dma/controller.h"
 #include "machine/devices/input/contracts.h"
 #include "machine/devices/irq/controller.h"
@@ -562,14 +564,42 @@ void programFilteredSquareVoice(AudioHarness& harness) {
 	harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_LOOP_END_SAMPLE, 2u);
 	harness.memory.writeMappedU32LE(bmsx::IO_APU_RATE_STEP_Q16, bmsx::APU_RATE_STEP_Q16_ONE);
 	harness.memory.writeMappedU32LE(bmsx::IO_APU_GAIN_Q12, bmsx::APU_GAIN_Q12_ONE);
-	harness.memory.writeMappedU32LE(bmsx::IO_APU_FILTER_KIND, bmsx::APU_FILTER_LOWPASS);
-	harness.memory.writeMappedU32LE(bmsx::IO_APU_FILTER_FREQ_HZ, 1200u);
-	harness.memory.writeMappedU32LE(bmsx::IO_APU_FILTER_Q_MILLI, 700u);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_FILTER_CONTROL, bmsx::APU_FILTER_CONTROL_ENABLE);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_FILTER_B0_B1, 0x10002000u);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_FILTER_B2_A1, 0xe000f000u);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_FILTER_A2, 0x0800u);
 	harness.memory.writeMappedU32LE(bmsx::IO_APU_GENERATOR_KIND, bmsx::APU_GENERATOR_SQUARE);
 	harness.memory.writeMappedU32LE(bmsx::IO_APU_GENERATOR_DUTY_Q12, 0x0800u);
 	harness.memory.writeMappedU32LE(bmsx::IO_APU_SLOT, 1u);
 	harness.memory.writeMappedU32LE(bmsx::IO_APU_CMD, bmsx::APU_CMD_PLAY);
 	harness.audio.onService(0);
+}
+
+void testRawBiquadDatapath() {
+	bmsx::BiquadFilterState filter;
+	bmsx::configureBiquadFilter(filter, 0xffff0001u, 0x10002000u, 0xe000f000u, 0xdead0800u);
+	require(filter.enabled, "raw biquad control bit should enable the datapath");
+	require(filter.b0 == 8192 && filter.b1 == 4096 && filter.b2 == -4096 && filter.a1 == -8192 && filter.a2 == 2048,
+		"raw biquad coefficient halfwords should decode as signed Q14");
+	filter.processStereo(16384, -16384);
+	require(filter.outputLeft == 8192 && filter.outputRight == -8192, "raw biquad should produce the exact first Q14 output");
+	require(filter.l1 == 134217728 && filter.l2 == -83886080 && filter.r1 == -134217728 && filter.r2 == 83886080,
+		"raw biquad should retain exact transposed delay words");
+
+	bmsx::configureBiquadFilter(filter, 0u, 0x80008000u, 0x80008000u, 0xbeef8000u);
+	require(!filter.enabled, "cleared control bit should bypass the datapath");
+	require(filter.l1 == 134217728 && filter.l2 == -83886080 && filter.r1 == -134217728 && filter.r2 == 83886080,
+		"raw coefficient writes should preserve delay words");
+	filter.l1 = 0;
+	filter.l2 = 0x7fffffff;
+	filter.r1 = 0;
+	filter.r2 = 0x7fffffff;
+	filter.processStereo(-0x8000, -0x8000);
+	require(filter.outputLeft == 0x7fff && filter.outputRight == 0x7fff, "raw biquad output should saturate to signed 16-bit");
+	require(filter.l1 == 0x3fffffff && filter.l2 == -0x40000000 && filter.r1 == 0x3fffffff && filter.r2 == -0x40000000,
+		"raw biquad delay writes should wrap to signed 32-bit");
+	require(bmsx::interpolateApuPcmSample(0x7fff, -0x8000, 0x8000u) == -1,
+		"APU interpolation should use exact signed Q16 arithmetic");
 }
 
 void testFilterAndFadeRestore() {
@@ -578,24 +608,49 @@ void testFilterAndFadeRestore() {
 	live.scheduler.advanceTo(3);
 	live.audio.onService(3);
 	live.memory.writeMappedU32LE(bmsx::IO_APU_SLOT, 1u);
+	const bmsx::ApuBiquadFilterState history = live.audio.captureState().output.voices[0].filter;
+	live.memory.writeMappedU32LE(
+		bmsx::IO_APU_SELECTED_SLOT_REG0 + bmsx::APU_PARAMETER_FILTER_B0_B1_INDEX * bmsx::IO_WORD_SIZE,
+		0x10002000u
+	);
+	require(live.audio.captureState().output.voices[0].filter.l1 == history.l1,
+		"live coefficient writes should preserve filter history");
+	live.memory.writeMappedU32LE(
+		bmsx::IO_APU_SELECTED_SLOT_REG0 + bmsx::APU_PARAMETER_SOURCE_SAMPLE_RATE_HZ_INDEX * bmsx::IO_WORD_SIZE,
+		bmsx::APU_SAMPLE_RATE_HZ / 4u
+	);
+	require(live.audio.captureState().output.voices[0].filter.l1 == history.l1,
+		"live source replacement should preserve filter history");
+	live.memory.writeMappedU32LE(
+		bmsx::IO_APU_SELECTED_SLOT_REG0 + bmsx::APU_PARAMETER_FILTER_CONTROL_INDEX * bmsx::IO_WORD_SIZE,
+		0u
+	);
+	live.scheduler.advanceTo(4);
+	live.audio.onService(4);
+	const bmsx::ApuBiquadFilterState bypassed = live.audio.captureState().output.voices[0].filter;
+	require(bypassed.l1 == history.l1 && bypassed.l2 == history.l2 && bypassed.r1 == history.r1 && bypassed.r2 == history.r2,
+		"disabled filter should bypass samples without advancing delay words");
+	live.memory.writeMappedU32LE(
+		bmsx::IO_APU_SELECTED_SLOT_REG0 + bmsx::APU_PARAMETER_FILTER_CONTROL_INDEX * bmsx::IO_WORD_SIZE,
+		bmsx::APU_FILTER_CONTROL_ENABLE
+	);
 	live.memory.writeMappedU32LE(bmsx::IO_APU_FADE_SAMPLES, 4u);
 	live.memory.writeMappedU32LE(bmsx::IO_APU_CMD, bmsx::APU_CMD_STOP_SLOT);
-	live.audio.onService(3);
-	live.scheduler.advanceTo(5);
-	live.audio.onService(5);
+	live.audio.onService(4);
+	live.scheduler.advanceTo(6);
+	live.audio.onService(6);
 	const bmsx::AudioControllerState saved = live.audio.captureState();
 	require(saved.output.voices[0].fadeSamplesRemaining == 2u, "STOP fade should retain its remaining hardware samples");
-	require(saved.output.voices[0].filter.enabled, "active filter state should be saved");
-	require(saved.output.voices[0].filter.l1 != 0.0, "active filter history should be saved");
+	require(saved.output.voices[0].filter.l1 != 0, "active filter history should be saved");
 	live.output.outputRing.clear();
 
 	AudioHarness restored;
-	restored.scheduler.advanceTo(5);
-	restored.audio.restoreState(saved, 5);
-	live.scheduler.advanceTo(7);
-	live.audio.onService(7);
-	restored.scheduler.advanceTo(7);
-	restored.audio.onService(7);
+	restored.scheduler.advanceTo(6);
+	restored.audio.restoreState(saved, 6);
+	live.scheduler.advanceTo(8);
+	live.audio.onService(8);
+	restored.scheduler.advanceTo(8);
+	restored.audio.onService(8);
 	const bmsx::AudioControllerState liveEnd = live.audio.captureState();
 	const bmsx::AudioControllerState restoredEnd = restored.audio.captureState();
 	require(restoredEnd.output.voices.empty() && liveEnd.output.voices.empty(), "restored fade should end on the same hardware sample");
@@ -750,6 +805,7 @@ int main() {
 	testSampleTransferEdgeOrdering();
 	testSampleBusDmaAndMidTransferRestore();
 	testRuntimeClockResetAndRestorePreserveApuTimebase();
+	testRawBiquadDatapath();
 	testFilterAndFadeRestore();
 	testResamplerChunkContinuityAndUnderrun();
 	testResamplerDropsOverwrittenInterpolationEndpoints();

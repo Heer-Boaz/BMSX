@@ -1,6 +1,7 @@
 #include "machine/devices/gx/gte.h"
 
 #include "machine/bus/io.h"
+#include "machine/common/numeric.h"
 #include "machine/cpu/cpu.h"
 #include "machine/memory/memory.h"
 
@@ -33,14 +34,6 @@ constexpr std::array<u8, 257> gteDivideTable{{
 	0x00,
 }};
 
-inline i32 sign16(u32 value) {
-	return static_cast<i16>(value & 0xffffu);
-}
-
-inline i32 highSign16(u32 value) {
-	return static_cast<i16>((value >> 16u) & 0xffffu);
-}
-
 inline i64 signExtend44(i64 value) {
 	if (value > int44Max) {
 		return value - int44Range;
@@ -51,19 +44,11 @@ inline i64 signExtend44(i64 value) {
 	return value;
 }
 
-inline i64 shiftRightSigned(i64 value, u32 bits) {
-	return value >> bits;
-}
-
 inline i64 shiftGte(i64 value, u32 sf) {
 	if (sf > 0u) {
 		return shiftRightSigned(value, 12u);
 	}
 	return value;
-}
-
-inline i32 toSigned32(i64 value) {
-	return static_cast<i32>(value);
 }
 
 u32 countLeadingBits(u32 word) {
@@ -172,7 +157,7 @@ u32 GxGte::readDataRegister(u32 index) const {
 	case 9:
 	case 10:
 	case 11:
-		return static_cast<u32>(sign16(m_dataRegisterWords[index]));
+		return static_cast<u32>(lowSignedHalfword(m_dataRegisterWords[index]));
 	case 7:
 	case 16:
 	case 17:
@@ -198,7 +183,7 @@ void GxGte::writeDataRegister(u32 index, u32 value) {
 	case 9:
 	case 10:
 	case 11:
-		m_dataRegisterWords[index] = static_cast<u32>(sign16(value));
+		m_dataRegisterWords[index] = static_cast<u32>(lowSignedHalfword(value));
 		break;
 	case 7:
 	case 16:
@@ -213,9 +198,9 @@ void GxGte::writeDataRegister(u32 index, u32 value) {
 		m_dataRegisterWords[14] = value;
 		break;
 	case 28:
-		m_dataRegisterWords[9] = static_cast<u32>(sign16((value & 0x1fu) << 7u));
-		m_dataRegisterWords[10] = static_cast<u32>(sign16((value & 0x3e0u) << 2u));
-		m_dataRegisterWords[11] = static_cast<u32>(sign16((value & 0x7c00u) >> 3u));
+		m_dataRegisterWords[9] = static_cast<u32>(lowSignedHalfword((value & 0x1fu) << 7u));
+		m_dataRegisterWords[10] = static_cast<u32>(lowSignedHalfword((value & 0x3e0u) << 2u));
+		m_dataRegisterWords[11] = static_cast<u32>(lowSignedHalfword((value & 0x7c00u) >> 3u));
 		m_dataRegisterWords[28] = value & 0x7fffu;
 		break;
 	case 29:
@@ -244,7 +229,7 @@ void GxGte::writeControlRegister(u32 index, u32 value) {
 	case 27:
 	case 29:
 	case 30:
-		m_controlRegisterWords[index] = static_cast<u32>(sign16(value));
+		m_controlRegisterWords[index] = static_cast<u32>(lowSignedHalfword(value));
 		break;
 	case 31:
 		m_controlRegisterWords[31] = withFlagError(value & GX_GTE_FLAG_WRITE_MASK);
@@ -411,7 +396,7 @@ i32 GxGte::lim(i32 value, i32 max, i32 min, u32 flag) {
 }
 
 i32 GxGte::mac(u32 index, i64 value, bool positiveOverflow, bool negativeOverflow) {
-	const i32 shifted = toSigned32(shiftGte(value, m_currentSf));
+	const i32 shifted = wrapI32(shiftGte(value, m_currentSf));
 	switch (index) {
 	case 1:
 		if (positiveOverflow) {
@@ -493,9 +478,9 @@ void GxGte::writeIrFromMac(u32 index, i32 value, u32 lm) {
 
 void GxGte::executeOp(u32 sf, u32 lm) {
 	m_currentSf = sf;
-	const i32 ir1 = sign16(m_dataRegisterWords[9]);
-	const i32 ir2 = sign16(m_dataRegisterWords[10]);
-	const i32 ir3 = sign16(m_dataRegisterWords[11]);
+	const i32 ir1 = lowSignedHalfword(m_dataRegisterWords[9]);
+	const i32 ir2 = lowSignedHalfword(m_dataRegisterWords[10]);
+	const i32 ir3 = lowSignedHalfword(m_dataRegisterWords[11]);
 	writeIrFromMac(1u, mac(1u, static_cast<i64>(rt(1u, 1u)) * ir3 - static_cast<i64>(rt(2u, 2u)) * ir2, false, false), lm);
 	writeIrFromMac(2u, mac(2u, static_cast<i64>(rt(2u, 2u)) * ir1 - static_cast<i64>(rt(0u, 0u)) * ir3, false, false), lm);
 	writeIrFromMac(3u, mac(3u, static_cast<i64>(rt(0u, 0u)) * ir2 - static_cast<i64>(rt(1u, 1u)) * ir1, false, false), lm);
@@ -507,7 +492,7 @@ void GxGte::executeDpcs(u32 sf, u32 lm) {
 }
 
 void GxGte::executeIntpl(u32 sf, u32 lm) {
-	depthCue(static_cast<i64>(sign16(m_dataRegisterWords[9])) * 4096ll, static_cast<i64>(sign16(m_dataRegisterWords[10])) * 4096ll, static_cast<i64>(sign16(m_dataRegisterWords[11])) * 4096ll, sf, lm);
+	depthCue(static_cast<i64>(lowSignedHalfword(m_dataRegisterWords[9])) * 4096ll, static_cast<i64>(lowSignedHalfword(m_dataRegisterWords[10])) * 4096ll, static_cast<i64>(lowSignedHalfword(m_dataRegisterWords[11])) * 4096ll, sf, lm);
 	pushRgbFromMac();
 }
 
@@ -558,13 +543,13 @@ void GxGte::colorMatrix(u32 sf, u32 lm) {
 
 void GxGte::colorApply(u32 sf, u32 lm) {
 	m_currentSf = sf;
-	writeIrFromMac(1u, macSigned44(1u, static_cast<i64>(rgbR() << 4u) * sign16(m_dataRegisterWords[9])), lm);
-	writeIrFromMac(2u, macSigned44(2u, static_cast<i64>(rgbG() << 4u) * sign16(m_dataRegisterWords[10])), lm);
-	writeIrFromMac(3u, macSigned44(3u, static_cast<i64>(rgbB() << 4u) * sign16(m_dataRegisterWords[11])), lm);
+	writeIrFromMac(1u, macSigned44(1u, static_cast<i64>(rgbR() << 4u) * lowSignedHalfword(m_dataRegisterWords[9])), lm);
+	writeIrFromMac(2u, macSigned44(2u, static_cast<i64>(rgbG() << 4u) * lowSignedHalfword(m_dataRegisterWords[10])), lm);
+	writeIrFromMac(3u, macSigned44(3u, static_cast<i64>(rgbB() << 4u) * lowSignedHalfword(m_dataRegisterWords[11])), lm);
 }
 
 void GxGte::depthCueColor(u32 sf, u32 lm) {
-	depthCue(static_cast<i64>(rgbR() << 4u) * sign16(m_dataRegisterWords[9]), static_cast<i64>(rgbG() << 4u) * sign16(m_dataRegisterWords[10]), static_cast<i64>(rgbB() << 4u) * sign16(m_dataRegisterWords[11]), sf, lm);
+	depthCue(static_cast<i64>(rgbR() << 4u) * lowSignedHalfword(m_dataRegisterWords[9]), static_cast<i64>(rgbG() << 4u) * lowSignedHalfword(m_dataRegisterWords[10]), static_cast<i64>(rgbB() << 4u) * lowSignedHalfword(m_dataRegisterWords[11]), sf, lm);
 }
 
 void GxGte::executeNcsForVector(u32 vectorIndex, u32 sf, u32 lm) {
@@ -601,9 +586,9 @@ void GxGte::executeCdp(u32 sf, u32 lm) {
 
 void GxGte::executeSqr(u32 sf, u32 lm) {
 	m_currentSf = sf;
-	const i32 ir1 = sign16(m_dataRegisterWords[9]);
-	const i32 ir2 = sign16(m_dataRegisterWords[10]);
-	const i32 ir3 = sign16(m_dataRegisterWords[11]);
+	const i32 ir1 = lowSignedHalfword(m_dataRegisterWords[9]);
+	const i32 ir2 = lowSignedHalfword(m_dataRegisterWords[10]);
+	const i32 ir3 = lowSignedHalfword(m_dataRegisterWords[11]);
 	writeIrFromMac(1u, mac(1u, static_cast<i64>(ir1) * ir1, false, false), lm);
 	writeIrFromMac(2u, mac(2u, static_cast<i64>(ir2) * ir2, false, false), lm);
 	writeIrFromMac(3u, mac(3u, static_cast<i64>(ir3) * ir3, false, false), lm);
@@ -624,21 +609,21 @@ void GxGte::executeDpct(u32 sf, u32 lm) {
 
 void GxGte::executeGpf(u32 sf, u32 lm) {
 	m_currentSf = sf;
-	const i32 ir0 = sign16(m_dataRegisterWords[8]);
-	writeIrFromMac(1u, macSigned44(1u, static_cast<i64>(ir0) * sign16(m_dataRegisterWords[9])), lm);
-	writeIrFromMac(2u, macSigned44(2u, static_cast<i64>(ir0) * sign16(m_dataRegisterWords[10])), lm);
-	writeIrFromMac(3u, macSigned44(3u, static_cast<i64>(ir0) * sign16(m_dataRegisterWords[11])), lm);
+	const i32 ir0 = lowSignedHalfword(m_dataRegisterWords[8]);
+	writeIrFromMac(1u, macSigned44(1u, static_cast<i64>(ir0) * lowSignedHalfword(m_dataRegisterWords[9])), lm);
+	writeIrFromMac(2u, macSigned44(2u, static_cast<i64>(ir0) * lowSignedHalfword(m_dataRegisterWords[10])), lm);
+	writeIrFromMac(3u, macSigned44(3u, static_cast<i64>(ir0) * lowSignedHalfword(m_dataRegisterWords[11])), lm);
 	pushRgbFromMac();
 }
 
 void GxGte::executeGpl(u32 sf, u32 lm) {
 	m_currentSf = sf;
-	const i32 ir0 = sign16(m_dataRegisterWords[8]);
+	const i32 ir0 = lowSignedHalfword(m_dataRegisterWords[8]);
 	const u32 macShift = sf == 0u ? 0u : 12u;
 	const i64 macScale = 1ll << macShift;
-	writeIrFromMac(1u, macSigned44(1u, static_cast<i64>(sign16(m_dataRegisterWords[9])) * ir0 + static_cast<i64>(static_cast<i32>(m_dataRegisterWords[25])) * macScale), lm);
-	writeIrFromMac(2u, macSigned44(2u, static_cast<i64>(sign16(m_dataRegisterWords[10])) * ir0 + static_cast<i64>(static_cast<i32>(m_dataRegisterWords[26])) * macScale), lm);
-	writeIrFromMac(3u, macSigned44(3u, static_cast<i64>(sign16(m_dataRegisterWords[11])) * ir0 + static_cast<i64>(static_cast<i32>(m_dataRegisterWords[27])) * macScale), lm);
+	writeIrFromMac(1u, macSigned44(1u, static_cast<i64>(lowSignedHalfword(m_dataRegisterWords[9])) * ir0 + static_cast<i64>(static_cast<i32>(m_dataRegisterWords[25])) * macScale), lm);
+	writeIrFromMac(2u, macSigned44(2u, static_cast<i64>(lowSignedHalfword(m_dataRegisterWords[10])) * ir0 + static_cast<i64>(static_cast<i32>(m_dataRegisterWords[26])) * macScale), lm);
+	writeIrFromMac(3u, macSigned44(3u, static_cast<i64>(lowSignedHalfword(m_dataRegisterWords[11])) * ir0 + static_cast<i64>(static_cast<i32>(m_dataRegisterWords[27])) * macScale), lm);
 	pushRgbFromMac();
 }
 
@@ -680,7 +665,7 @@ void GxGte::executeMvmva(u32 opcode, u32 sf, u32 lm) {
 
 void GxGte::depthCue(i64 inR, i64 inG, i64 inB, u32 sf, u32 lm) {
 	m_currentSf = sf;
-	const i32 ir0 = sign16(m_dataRegisterWords[8]);
+	const i32 ir0 = lowSignedHalfword(m_dataRegisterWords[8]);
 	const i32 r = limitIr(1u, macSigned44(1u, static_cast<i64>(rfc()) * 4096ll - inR), 0u);
 	const i32 g = limitIr(2u, macSigned44(2u, static_cast<i64>(gfc()) * 4096ll - inG), 0u);
 	const i32 b = limitIr(3u, macSigned44(3u, static_cast<i64>(bfc()) * 4096ll - inB), 0u);
@@ -726,9 +711,9 @@ void GxGte::executeRtps(u32 vectorIndex, u32 sf, u32 lm, bool last) {
 	const u32 hOverSz3 = divideWithLimit(h(), sz(3u));
 	m_dataRegisterWords[12] = m_dataRegisterWords[13];
 	m_dataRegisterWords[13] = m_dataRegisterWords[14];
-	writeMac0(static_cast<i64>(ofx()) + static_cast<i64>(sign16(m_dataRegisterWords[9])) * hOverSz3);
+	writeMac0(static_cast<i64>(ofx()) + static_cast<i64>(lowSignedHalfword(m_dataRegisterWords[9])) * hOverSz3);
 	const i32 sx2 = limitScreen(shiftRightSigned(m_mac0, 16u), GX_GTE_FLAG_ERROR | GX_GTE_FLAG_SX2_SAT);
-	writeMac0(static_cast<i64>(ofy()) + static_cast<i64>(sign16(m_dataRegisterWords[10])) * hOverSz3);
+	writeMac0(static_cast<i64>(ofy()) + static_cast<i64>(lowSignedHalfword(m_dataRegisterWords[10])) * hOverSz3);
 	const i32 sy2 = limitScreen(shiftRightSigned(m_mac0, 16u), GX_GTE_FLAG_ERROR | GX_GTE_FLAG_SY2_SAT);
 	m_dataRegisterWords[14] = (static_cast<u32>(sx2) & 0xffffu) | (static_cast<u32>(sy2) << 16u);
 	if (last) {
@@ -882,9 +867,9 @@ void GxGte::pushRgbFromMac() {
 }
 
 u32 GxGte::packRgbFromIr() const {
-	const u32 r = limitRgb5(sign16(m_dataRegisterWords[9]) >> 7u);
-	const u32 g = limitRgb5(sign16(m_dataRegisterWords[10]) >> 7u);
-	const u32 b = limitRgb5(sign16(m_dataRegisterWords[11]) >> 7u);
+	const u32 r = limitRgb5(lowSignedHalfword(m_dataRegisterWords[9]) >> 7u);
+	const u32 g = limitRgb5(lowSignedHalfword(m_dataRegisterWords[10]) >> 7u);
+	const u32 b = limitRgb5(lowSignedHalfword(m_dataRegisterWords[11]) >> 7u);
 	return r | (g << 5u) | (b << 10u);
 }
 
@@ -899,20 +884,20 @@ u32 GxGte::limitRgb5(i32 value) {
 }
 
 i32 GxGte::vx(u32 index) const {
-	return sign16(m_dataRegisterWords[index * 2u]);
+	return lowSignedHalfword(m_dataRegisterWords[index * 2u]);
 }
 
 i32 GxGte::vy(u32 index) const {
-	return highSign16(m_dataRegisterWords[index * 2u]);
+	return highSignedHalfword(m_dataRegisterWords[index * 2u]);
 }
 
 i32 GxGte::vz(u32 index) const {
-	return sign16(m_dataRegisterWords[index * 2u + 1u]);
+	return lowSignedHalfword(m_dataRegisterWords[index * 2u + 1u]);
 }
 
 i32 GxGte::vector(u32 vectorIndex, u32 component) const {
 	if (vectorIndex == 3u) {
-		return sign16(m_dataRegisterWords[9u + component]);
+		return lowSignedHalfword(m_dataRegisterWords[9u + component]);
 	}
 	switch (component) {
 	case 0u: return vx(vectorIndex);
@@ -926,24 +911,24 @@ i32 GxGte::mx(u32 matrix, u32 row, u32 column) const {
 		switch (row * 3u + column) {
 		case 0u: return -static_cast<i32>(m_dataRegisterWords[6] & 0xffu) * 16;
 		case 1u: return static_cast<i32>(m_dataRegisterWords[6] & 0xffu) * 16;
-		case 2u: return sign16(m_dataRegisterWords[8]);
+		case 2u: return lowSignedHalfword(m_dataRegisterWords[8]);
 		case 3u:
 		case 4u:
-		case 5u: return sign16(m_controlRegisterWords[1]);
-		default: return sign16(m_controlRegisterWords[2]);
+		case 5u: return lowSignedHalfword(m_controlRegisterWords[1]);
+		default: return lowSignedHalfword(m_controlRegisterWords[2]);
 		}
 	}
 	const u32 base = matrix * 8u;
 	switch (row * 3u + column) {
-	case 0u: return sign16(m_controlRegisterWords[base]);
-	case 1u: return highSign16(m_controlRegisterWords[base]);
-	case 2u: return sign16(m_controlRegisterWords[base + 1u]);
-	case 3u: return highSign16(m_controlRegisterWords[base + 1u]);
-	case 4u: return sign16(m_controlRegisterWords[base + 2u]);
-	case 5u: return highSign16(m_controlRegisterWords[base + 2u]);
-	case 6u: return sign16(m_controlRegisterWords[base + 3u]);
-	case 7u: return highSign16(m_controlRegisterWords[base + 3u]);
-	default: return sign16(m_controlRegisterWords[base + 4u]);
+	case 0u: return lowSignedHalfword(m_controlRegisterWords[base]);
+	case 1u: return highSignedHalfword(m_controlRegisterWords[base]);
+	case 2u: return lowSignedHalfword(m_controlRegisterWords[base + 1u]);
+	case 3u: return highSignedHalfword(m_controlRegisterWords[base + 1u]);
+	case 4u: return lowSignedHalfword(m_controlRegisterWords[base + 2u]);
+	case 5u: return highSignedHalfword(m_controlRegisterWords[base + 2u]);
+	case 6u: return lowSignedHalfword(m_controlRegisterWords[base + 3u]);
+	case 7u: return highSignedHalfword(m_controlRegisterWords[base + 3u]);
+	default: return lowSignedHalfword(m_controlRegisterWords[base + 4u]);
 	}
 }
 
@@ -956,15 +941,15 @@ i32 GxGte::cv(u32 vectorIndex, u32 row) const {
 
 i32 GxGte::rt(u32 row, u32 column) const {
 	switch (row * 3u + column) {
-	case 0: return sign16(m_controlRegisterWords[0]);
-	case 1: return highSign16(m_controlRegisterWords[0]);
-	case 2: return sign16(m_controlRegisterWords[1]);
-	case 3: return highSign16(m_controlRegisterWords[1]);
-	case 4: return sign16(m_controlRegisterWords[2]);
-	case 5: return highSign16(m_controlRegisterWords[2]);
-	case 6: return sign16(m_controlRegisterWords[3]);
-	case 7: return highSign16(m_controlRegisterWords[3]);
-	default: return sign16(m_controlRegisterWords[4]);
+	case 0: return lowSignedHalfword(m_controlRegisterWords[0]);
+	case 1: return highSignedHalfword(m_controlRegisterWords[0]);
+	case 2: return lowSignedHalfword(m_controlRegisterWords[1]);
+	case 3: return highSignedHalfword(m_controlRegisterWords[1]);
+	case 4: return lowSignedHalfword(m_controlRegisterWords[2]);
+	case 5: return highSignedHalfword(m_controlRegisterWords[2]);
+	case 6: return lowSignedHalfword(m_controlRegisterWords[3]);
+	case 7: return highSignedHalfword(m_controlRegisterWords[3]);
+	default: return lowSignedHalfword(m_controlRegisterWords[4]);
 	}
 }
 
@@ -977,7 +962,7 @@ u32 GxGte::h() const {
 }
 
 i32 GxGte::dqa() const {
-	return sign16(m_controlRegisterWords[27]);
+	return lowSignedHalfword(m_controlRegisterWords[27]);
 }
 
 i32 GxGte::dqb() const {
@@ -993,11 +978,11 @@ i32 GxGte::ofy() const {
 }
 
 i32 GxGte::zsf3() const {
-	return sign16(m_controlRegisterWords[29]);
+	return lowSignedHalfword(m_controlRegisterWords[29]);
 }
 
 i32 GxGte::zsf4() const {
-	return sign16(m_controlRegisterWords[30]);
+	return lowSignedHalfword(m_controlRegisterWords[30]);
 }
 
 u32 GxGte::rgbc() const {
@@ -1037,11 +1022,11 @@ i32 GxGte::bfc() const {
 }
 
 i32 GxGte::sx(u32 index) const {
-	return sign16(m_dataRegisterWords[12u + index]);
+	return lowSignedHalfword(m_dataRegisterWords[12u + index]);
 }
 
 i32 GxGte::sy(u32 index) const {
-	return highSign16(m_dataRegisterWords[12u + index]);
+	return highSignedHalfword(m_dataRegisterWords[12u + index]);
 }
 
 u32 GxGte::sz(u32 index) const {

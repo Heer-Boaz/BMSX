@@ -12,7 +12,31 @@ constexpr i64 FIX16_ONE = static_cast<i64>(1) << FIX16_SHIFT;
 constexpr double FIX16_SCALE = static_cast<double>(FIX16_ONE);
 
 inline auto toSignedWord(u32 value) -> i32 {
-	return static_cast<i32>(value);
+	i32 result = 0;
+	std::memcpy(&result, &value, sizeof(result));
+	return result;
+}
+
+inline auto lowSignedHalfword(u32 value) -> i32 {
+	const u32 halfword = value & 0xffffU;
+	return halfword < 0x8000U ? static_cast<i32>(halfword) : static_cast<i32>(halfword) - 0x10000;
+}
+
+inline auto highSignedHalfword(u32 value) -> i32 {
+	const u32 halfword = value >> 16U;
+	return halfword < 0x8000U ? static_cast<i32>(halfword) : static_cast<i32>(halfword) - 0x10000;
+}
+
+inline auto wrapI32(i64 value) -> i32 {
+	const u32 word = static_cast<u32>(static_cast<u64>(value));
+	return toSignedWord(word);
+}
+
+inline auto shiftRightSigned(i64 value, u32 bits) -> i64 {
+	const i64 divisor = static_cast<i64>(1) << bits;
+	const i64 remainder = value % divisor;
+	const i64 quotient = (value - remainder) / divisor;
+	return remainder < 0 ? quotient - 1 : quotient;
 }
 
 inline auto encodeSignedFix16(f32 value) -> u32 {

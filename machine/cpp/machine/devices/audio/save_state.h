@@ -10,16 +10,10 @@
 namespace bmsx {
 
 struct ApuBiquadFilterState {
-	bool enabled = false;
-	f64 b0 = 1.0;
-	f64 b1 = 0.0;
-	f64 b2 = 0.0;
-	f64 a1 = 0.0;
-	f64 a2 = 0.0;
-	f64 l1 = 0.0;
-	f64 l2 = 0.0;
-	f64 r1 = 0.0;
-	f64 r2 = 0.0;
+	i32 l1 = 0;
+	i32 l2 = 0;
+	i32 r1 = 0;
+	i32 r2 = 0;
 };
 
 struct ApuBadpDecoderSaveState {

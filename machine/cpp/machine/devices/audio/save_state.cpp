@@ -16,12 +16,6 @@ ApuOutputVoiceState captureApuOutputVoiceState(const ApuOutputMixer::VoiceRecord
 	voice.fadeStartGain = record.fadeStartGain;
 	voice.fadeSamplesRemaining = record.fadeSamplesRemaining;
 	voice.fadeSamplesTotal = record.fadeSamplesTotal;
-	voice.filter.enabled = record.filter.enabled;
-	voice.filter.b0 = record.filter.b0;
-	voice.filter.b1 = record.filter.b1;
-	voice.filter.b2 = record.filter.b2;
-	voice.filter.a1 = record.filter.a1;
-	voice.filter.a2 = record.filter.a2;
 	voice.filter.l1 = record.filter.l1;
 	voice.filter.l2 = record.filter.l2;
 	voice.filter.r1 = record.filter.r1;
@@ -52,12 +46,6 @@ void restoreApuOutputVoiceState(ApuOutputMixer::VoiceRecord& record, const ApuOu
 	record.fadeStartGain = state.fadeStartGain;
 	record.fadeSamplesRemaining = state.fadeSamplesRemaining;
 	record.fadeSamplesTotal = state.fadeSamplesTotal;
-	record.filter.enabled = state.filter.enabled;
-	record.filter.b0 = state.filter.b0;
-	record.filter.b1 = state.filter.b1;
-	record.filter.b2 = state.filter.b2;
-	record.filter.a1 = state.filter.a1;
-	record.filter.a2 = state.filter.a2;
 	record.filter.l1 = state.filter.l1;
 	record.filter.l2 = state.filter.l2;
 	record.filter.r1 = state.filter.r1;

@@ -1476,12 +1476,53 @@ address/control/data latches, timing carry, and the relative transfer deadline,
 and excludes immutable sample-ROM. The TS and C++ runtimes implement this same
 sample-bus, transfer, DMA, and persistence contract.
 
-The existing filter register ABI is not yet a complete raw hardware contract.
-Unknown filter-kind words currently alias a defined mode, while zero or extreme
-Q/gain words do not yet have specified fixed datapath, saturation, and
-save-state semantics shared by TS and C++. `APU-DSP-01` owns that remaining
-register-level decision; it must define every representable word rather than
-adding guards or host-number fallbacks to the mixer.
+The voice filter is a raw fixed-point DSP block, not a host-side filter-type
+API. Its four existing slot words are `FILTER_CONTROL`, `FILTER_B0_B1`,
+`FILTER_B2_A1`, and `FILTER_A2`. Control bit 0 enables the block; all other
+control bits remain retained raw words without a current datapath effect.
+`B0_B1` packs signed-Q14 `b0` low and `b1` high, `B2_A1` packs signed-Q14 `b2`
+low and `a1` high, and the low halfword of `A2` is signed-Q14 `a2`. The unused
+high halfword of `A2` is likewise retained but ignored. Every halfword pattern
+therefore has direct deterministic meaning; the device no longer decodes
+filter names, frequency, Q, gain, or host floating-point coefficients.
+
+PCM and BADP decode to signed sixteen-bit samples. Q16 interpolation performs
+one wide signed multiply and arithmetic shift by sixteen; the square generator
+emits `32767` or `-32768`. Each stereo channel then executes a transposed
+direct-form-II section with signed 64-bit intermediates:
+
+```text
+y   = arithmetic_shift_right(b0 * x + z1, 14)
+z1' = low_signed_32_bits(b1 * x - a1 * y + z2)
+z2' = low_signed_32_bits(b2 * x - a2 * y)
+```
+
+The unsaturated `y` feeds the recurrence. Only the sample delivered to the
+mixer saturates to signed sixteen-bit; both delay-register writes wrap to their
+low signed 32 bits. A disabled block passes the same interpolated signed-16
+sample onward and freezes both stereo delay pairs. `PLAY` clears the delays
+before loading the slot words. Live control/coefficient writes and source
+replacement reload only the raw configuration and preserve delays.
+
+The raw slot bank is the sole saved owner of filter configuration. A live voice
+saves only `l1`, `l2`, `r1`, and `r2`; restore reloads the slot words first and
+then reinstates those four delay words. TS and C++ use the same integer
+datapath and exact raw-word vectors. The sample loop performs no trigonometry,
+host-number validation, table construction, or allocation.
+
+AEM keeps its author-facing filter names and parameters in cartlib. During AEM
+rule compilation, `cartlib/aem_biquad.lua` uses the BIOS math owner to design
+the section once and the BIOS numeric owner to round and saturate each
+coefficient to signed Q14 before packing the four hardware words. The AEM
+tooling rejects non-positive Q and frequencies outside the open interval from
+zero to the APU Nyquist frequency; no runtime clamp repairs invalid authored
+data. This split follows the production pattern of separating coefficient
+design from retained raw filter state, as in
+[MAME's biquad device](https://github.com/mamedev/mame/blob/master/src/devices/sound/flt_biquad.cpp),
+while the integer sample boundary and explicit saturation follow the
+[MAME PSX SPU](https://github.com/mamedev/mame/blob/master/src/devices/sound/spu.cpp),
+[DuckStation SPU](https://github.com/stenzek/duckstation/blob/master/src/core/spu.cpp),
+and miniaudio's signed-16 fixed-point biquad datapath.
 
 ### GEO
 

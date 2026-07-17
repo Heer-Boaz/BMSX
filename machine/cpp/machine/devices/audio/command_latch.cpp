@@ -22,10 +22,10 @@ void resetApuCommandLatch(Memory& memory) {
 	memory.writeValue(IO_APU_RATE_STEP_Q16, valueNumber(static_cast<double>(APU_RATE_STEP_Q16_ONE)));
 	memory.writeValue(IO_APU_GAIN_Q12, valueNumber(static_cast<double>(APU_GAIN_Q12_ONE)));
 	memory.writeValue(IO_APU_START_SAMPLE, valueNumber(0.0));
-	memory.writeValue(IO_APU_FILTER_KIND, valueNumber(static_cast<double>(APU_FILTER_NONE)));
-	memory.writeValue(IO_APU_FILTER_FREQ_HZ, valueNumber(0.0));
-	memory.writeValue(IO_APU_FILTER_Q_MILLI, valueNumber(1000.0));
-	memory.writeValue(IO_APU_FILTER_GAIN_MILLIDB, valueNumber(0.0));
+	memory.writeValue(IO_APU_FILTER_CONTROL, valueNumber(0.0));
+	memory.writeValue(IO_APU_FILTER_B0_B1, valueNumber(static_cast<double>(APU_FILTER_COEFFICIENT_ONE)));
+	memory.writeValue(IO_APU_FILTER_B2_A1, valueNumber(0.0));
+	memory.writeValue(IO_APU_FILTER_A2, valueNumber(0.0));
 	memory.writeValue(IO_APU_FADE_SAMPLES, valueNumber(0.0));
 	memory.writeValue(IO_APU_GENERATOR_KIND, valueNumber(static_cast<double>(APU_GENERATOR_NONE)));
 	memory.writeValue(IO_APU_GENERATOR_DUTY_Q12, valueNumber(static_cast<double>(APU_GAIN_Q12_ONE / 2u)));
