@@ -658,12 +658,17 @@ void testCommandTimingGatesGpustatIdleAndVblankExecutionFrontier() {
 	require(commands.presentCommandCount == 1u, "GX-GPU VBLANK publishes the completed fill");
 }
 
-void testGp0NopsBypassFifoAndWriteReadyTracksStoredWords() {
+void testGp0IngressBypassesPhysicalFifoOnlyAtCommandBoundaries() {
 	GpuHarness harness;
 
 	harness.gpu.writeGp0((bmsx::GX_GPU_GP0_FILL_RECTANGLE << 24u) | 0x0000ffu);
 	harness.gpu.writeGp0(0u);
 	harness.gpu.writeGp0((1u << 16u) | 1u);
+	harness.gpu.writeGp0((bmsx::GX_GPU_GP0_FILL_RECTANGLE << 24u) | 0x0000aau);
+	harness.gpu.writeGp0((bmsx::GX_GPU_GP0_DRAWING_AREA_TOP_LEFT << 24u) | 0x00012345u);
+	harness.gpu.writeGp0((1u << 16u) | 1u);
+	require(harness.gpu.readDrawingAreaTopLeftWord() == 0u, "GX-GPU fixed payload remains opaque to ingress sideband decode");
+	require(harness.gpu.captureState().gp0FifoWordCount == 3u, "GX-GPU stores the queued fixed packet");
 	for (size_t index = 0u; index < bmsx::GX_GPU_COMMAND_FIFO_WORD_CAPACITY * 2u; index += 1u) {
 		harness.gpu.writeGp0(0u);
 	}
@@ -672,9 +677,17 @@ void testGp0NopsBypassFifoAndWriteReadyTracksStoredWords() {
 	harness.gpu.writeGp0(0xe0000000u);
 	harness.gpu.writeGp0(0xe7000000u);
 	harness.gpu.writeGp0(0xef000000u);
-	require(harness.memory.mappedWriteReady(bmsx::IO_GX_GPU_GP0), "GX-GPU hardware NOPs bypass the physical FIFO");
-	require(harness.scheduler.nextDeadline() == 29, "GX-GPU hardware NOPs do not add command time");
-	for (size_t index = 0u; index < bmsx::GX_GPU_COMMAND_FIFO_WORD_CAPACITY; index += 1u) {
+	harness.gpu.writeGp0((bmsx::GX_GPU_GP0_DRAWING_AREA_TOP_LEFT << 24u) | 0x00054321u);
+	harness.gpu.writeGp0((bmsx::GX_GPU_GP0_DRAWING_AREA_BOTTOM_RIGHT << 24u) | 0x00023456u);
+	harness.gpu.writeGp0((bmsx::GX_GPU_GP0_DRAWING_OFFSET << 24u) | 0x00345678u);
+	const bmsx::GxGpuState bypassedState = harness.gpu.captureState();
+	require(bypassedState.gp0FifoWordCount == 3u, "GX-GPU NOP and drawing-register sidebands do not occupy FIFO slots");
+	require(harness.gpu.readDrawingAreaTopLeftWord() == (0x00054321u & bmsx::GX_GPU_DRAWING_AREA_MASK), "GX-GPU E3 overtakes queued raster packets");
+	require(harness.gpu.readDrawingAreaBottomRightWord() == (0x00023456u & bmsx::GX_GPU_DRAWING_AREA_MASK), "GX-GPU E4 overtakes queued raster packets");
+	require(harness.gpu.readDrawingOffsetWord() == (0x00345678u & bmsx::GX_GPU_DRAWING_OFFSET_MASK), "GX-GPU E5 overtakes queued raster packets");
+	require(harness.memory.mappedWriteReady(bmsx::IO_GX_GPU_GP0), "GX-GPU ingress sidebands preserve physical FIFO capacity");
+	require(harness.scheduler.nextDeadline() == 29, "GX-GPU ingress sidebands do not add command time");
+	for (size_t index = 3u; index < bmsx::GX_GPU_COMMAND_FIFO_WORD_CAPACITY; index += 1u) {
 		harness.gpu.writeGp0(0x03000000u | static_cast<uint32_t>(index));
 	}
 
@@ -991,20 +1004,25 @@ void testSaveStateRestoresPartialCpuToVramUpload() {
 	GpuHarness imageHarness;
 	bmsx::GxGpu& imageGpu = imageHarness.gpu;
 	imageGpu.writeGp0(bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24u);
-	imageGpu.writeGp0(0u);
+	imageGpu.writeGp0((bmsx::GX_GPU_GP0_DRAWING_AREA_TOP_LEFT << 24u) | 0x00123456u);
 	imageGpu.writeGp0((2u << 16u) | 2u);
-	imageGpu.writeGp0(0x001f03e0u);
+	imageGpu.writeGp0((bmsx::GX_GPU_GP0_DRAWING_AREA_BOTTOM_RIGHT << 24u) | 0x001f03e0u);
+	require(imageGpu.readDrawingAreaTopLeftWord() == 0u, "GX-GPU image header remains opaque to ingress sideband decode");
+	require(imageGpu.readDrawingAreaBottomRightWord() == 0u, "GX-GPU image payload remains opaque to ingress sideband decode");
 
 	GpuHarness restoredImageHarness;
 	bmsx::GxGpu& restoredImageGpu = restoredImageHarness.gpu;
 	restoredImageGpu.restoreState(imageGpu.captureState());
-	restoredImageGpu.writeGp0(0x7c00ffffu);
+	restoredImageGpu.writeGp0((bmsx::GX_GPU_GP0_DRAWING_OFFSET << 24u) | 0x0000ffffu);
 	const bmsx::GxGpuCommandBuffer& imageCommands = restoredImageGpu.readDeviceOutput().commandBuffer;
 	require(imageCommands.commandCount == 1u, "GX-GPU save-state restores partial CPU-to-VRAM upload");
 	require(imageCommands.commandKind[0] == bmsx::GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM, "GX-GPU restored upload command kind");
 	require(imageCommands.commandWordCount[0] == 5u, "GX-GPU restored upload command word count");
-	require(imageCommands.words[imageCommands.commandWordStart[0] + 3u] == 0x001f03e0u, "GX-GPU restored upload keeps first payload word");
-	require(imageCommands.words[imageCommands.commandWordStart[0] + 4u] == 0x7c00ffffu, "GX-GPU restored upload accepts final payload word");
+	require(imageCommands.words[imageCommands.commandWordStart[0] + 3u] == ((bmsx::GX_GPU_GP0_DRAWING_AREA_BOTTOM_RIGHT << 24u) | 0x001f03e0u), "GX-GPU restored upload keeps first payload word");
+	require(imageCommands.words[imageCommands.commandWordStart[0] + 4u] == ((bmsx::GX_GPU_GP0_DRAWING_OFFSET << 24u) | 0x0000ffffu), "GX-GPU restored upload accepts final payload word");
+	require(restoredImageGpu.readDrawingAreaTopLeftWord() == 0u, "GX-GPU restored image header does not mutate E3 latch");
+	require(restoredImageGpu.readDrawingAreaBottomRightWord() == 0u, "GX-GPU restored image payload does not mutate E4 latch");
+	require(restoredImageGpu.readDrawingOffsetWord() == 0u, "GX-GPU restored image payload does not mutate E5 latch");
 }
 
 void testSaveStateRestoresPartialPolylineCommand() {
@@ -1023,6 +1041,28 @@ void testSaveStateRestoresPartialPolylineCommand() {
 	require(polylineCommands.commandKind[0] == bmsx::GX_GPU_COMMAND_DRAW_POLYLINE, "GX-GPU restored polyline command kind");
 	require(polylineCommands.commandWordCount[0] == 3u, "GX-GPU restored polyline command word count");
 	require(polylineCommands.words[polylineCommands.commandWordStart[0] + 2u] == 0x00020003u, "GX-GPU restored polyline keeps last vertex word");
+}
+
+void testSaveStateRestoresGouraudPolylineIngressPhase() {
+	GpuHarness gouraudPolylineHarness;
+	bmsx::GxGpu& gouraudPolylineGpu = gouraudPolylineHarness.gpu;
+	gouraudPolylineGpu.writeGp0((0x58u << 24u) | 0x0000ffu);
+	gouraudPolylineGpu.writeGp0(0x00010002u);
+	gouraudPolylineGpu.writeGp0(0x00010203u);
+	gouraudPolylineGpu.writeGp0(0x00020003u);
+	gouraudPolylineGpu.writeGp0(0x00040506u);
+
+	GpuHarness restoredGouraudPolylineHarness;
+	bmsx::GxGpu& restoredGouraudPolylineGpu = restoredGouraudPolylineHarness.gpu;
+	restoredGouraudPolylineGpu.restoreState(gouraudPolylineGpu.captureState());
+	restoredGouraudPolylineGpu.writeGp0(0x50005000u);
+	require(restoredGouraudPolylineGpu.readDeviceOutput().commandBuffer.commandCount == 0u, "GX-GPU restored Gouraud coordinate phase keeps terminator-shaped data");
+	restoredGouraudPolylineGpu.writeGp0(0x50005000u);
+	const bmsx::GxGpuCommandBuffer& gouraudPolylineCommands = restoredGouraudPolylineGpu.readDeviceOutput().commandBuffer;
+	require(gouraudPolylineCommands.commandCount == 1u, "GX-GPU restored Gouraud color phase accepts terminator");
+	require(gouraudPolylineCommands.commandKind[0] == bmsx::GX_GPU_COMMAND_DRAW_POLYLINE, "GX-GPU restored Gouraud polyline command kind");
+	require(gouraudPolylineCommands.commandWordCount[0] == 6u, "GX-GPU restored Gouraud polyline retains phase-one coordinate");
+	require(gouraudPolylineCommands.words[gouraudPolylineCommands.commandWordStart[0] + 5u] == 0x50005000u, "GX-GPU restored Gouraud coordinate stores terminator-shaped word");
 }
 
 void testSaveStateRestoresCommandTimeAndFifoSuffixRelativeToSchedulerTime() {
@@ -3244,7 +3284,7 @@ int main() {
 	testDisplayDisableAndDmaDirectionStatusBits();
 	testGpustatReadinessTracksGp0PacketAssemblyAndPayloadPhases();
 	testCommandTimingGatesGpustatIdleAndVblankExecutionFrontier();
-	testGp0NopsBypassFifoAndWriteReadyTracksStoredWords();
+	testGp0IngressBypassesPhysicalFifoOnlyAtCommandBoundaries();
 	testGp1CrtcRangeRegistersLatchMaskedRawWords();
 	testGp1UndefinedHighOpcodeDoesNotMirrorReset();
 	testGp0IrqRequestAndGp1Acknowledge();
@@ -3256,6 +3296,7 @@ int main() {
 	testSaveStateRestoresPartialFixedGp0Command();
 	testSaveStateRestoresPartialCpuToVramUpload();
 	testSaveStateRestoresPartialPolylineCommand();
+	testSaveStateRestoresGouraudPolylineIngressPhase();
 	testSaveStateRestoresCommandTimeAndFifoSuffixRelativeToSchedulerTime();
 	testGp1ClearCutsActiveC0AtExecutionFrontierWithoutCancelingDraws();
 	testGp1ResetCancelsRestoredActiveC0Deadline();

@@ -16,6 +16,7 @@ import {
 	apuSlotRegisterWordIndex,
 } from '../../machine/ts/machine/devices/audio/contracts';
 import { GEOMETRY_CONTROLLER_PHASE_BUSY, GEOMETRY_CONTROLLER_REGISTER_COUNT } from '../../machine/ts/machine/devices/geometry/contracts';
+import { GX_GPU_GP0_INGRESS_POLYLINE_PAYLOAD } from '../../machine/ts/machine/devices/gx/gpu';
 import { GX_GPU_READBACK_READY, GX_GPU_READBACK_SUBMITTED } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
 import { GX_GPU_VRAM_BYTE_COUNT } from '../../machine/ts/machine/devices/gx/vram_address';
 import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT } from '../../machine/ts/machine/devices/gx/gte';
@@ -109,6 +110,10 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					gp0CommandWords: [0x200000ff, 0x00010002],
 					gp0FifoWordCount: 2,
 					gp0FifoWords: [0xe1000123, 0xe6000003],
+					gp0IngressPhase: GX_GPU_GP0_INGRESS_POLYLINE_PAYLOAD,
+					gp0IngressWordsRemaining: 0,
+					gp0IngressPolylineWordsPerVertex: 2,
+					gp0IngressPolylinePayloadPhase: 1,
 					pendingCommandCycles: 17,
 					pendingCommandTargetCount: 2,
 					gp0ImageLoadWordsRemaining: 3,

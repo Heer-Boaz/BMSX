@@ -592,6 +592,10 @@ BinValue encodeGxGpuState(const GxGpuState& state) {
 	object["gp0CommandWords"] = encodeVector(state.gp0CommandWords, encodeScalar<i64, u32>);
 	object["gp0FifoWordCount"] = static_cast<i64>(state.gp0FifoWordCount);
 	object["gp0FifoWords"] = BinValue(std::move(gp0FifoWords));
+	object["gp0IngressPhase"] = static_cast<i64>(state.gp0IngressPhase);
+	object["gp0IngressWordsRemaining"] = static_cast<i64>(state.gp0IngressWordsRemaining);
+	object["gp0IngressPolylineWordsPerVertex"] = static_cast<i64>(state.gp0IngressPolylineWordsPerVertex);
+	object["gp0IngressPolylinePayloadPhase"] = static_cast<i64>(state.gp0IngressPolylinePayloadPhase);
 	object["pendingCommandCycles"] = state.pendingCommandCycles;
 	object["pendingCommandTargetCount"] = static_cast<i64>(state.pendingCommandTargetCount);
 	object["gp0ImageLoadWordsRemaining"] = static_cast<i64>(state.gp0ImageLoadWordsRemaining);
@@ -647,6 +651,10 @@ GxGpuState decodeGxGpuState(const BinValue& value, const char* label) {
 	for (size_t index = 0u; index < state.gp0FifoWordCount; index += 1u) {
 		state.gp0FifoWords[index] = requireU32(gp0FifoWords[index], "machine.gxGpu.gp0FifoWords[]");
 	}
+	state.gp0IngressPhase = requireBoundedU32(requireField(object, "gp0IngressPhase", label), "machine.gxGpu.gp0IngressPhase", 0u, GX_GPU_GP0_INGRESS_POLYLINE_PAYLOAD);
+	state.gp0IngressWordsRemaining = requireBoundedU32(requireField(object, "gp0IngressWordsRemaining", label), "machine.gxGpu.gp0IngressWordsRemaining", 0u, GX_GPU_COMMAND_WORD_CAPACITY);
+	state.gp0IngressPolylineWordsPerVertex = requireBoundedU32(requireField(object, "gp0IngressPolylineWordsPerVertex", label), "machine.gxGpu.gp0IngressPolylineWordsPerVertex", 0u, 2u);
+	state.gp0IngressPolylinePayloadPhase = requireBoundedU32(requireField(object, "gp0IngressPolylinePayloadPhase", label), "machine.gxGpu.gp0IngressPolylinePayloadPhase", 0u, 1u);
 	state.pendingCommandCycles = requireBoundedU32(requireField(object, "pendingCommandCycles", label), "machine.gxGpu.pendingCommandCycles", 0u, 0xffffffffu);
 	state.pendingCommandTargetCount = requireBoundedU32(requireField(object, "pendingCommandTargetCount", label), "machine.gxGpu.pendingCommandTargetCount", 0u, static_cast<u32>(state.commandBuffer.commandCount));
 	state.gp0ImageLoadWordsRemaining = requireBoundedU32(requireField(object, "gp0ImageLoadWordsRemaining", label), "machine.gxGpu.gp0ImageLoadWordsRemaining", 0u, GX_GPU_COMMAND_WORD_CAPACITY);

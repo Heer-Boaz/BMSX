@@ -1043,23 +1043,27 @@ device trees, mapped apertures, scheduler services, VBlank hooks, MMIO words,
 readback state and save-state fields are removed. The ROM package marker is the
 only remaining `vdp_class` name and must not be used as a compatibility route.
 
-The GP0 command processor has one fixed sixteen-word FIFO and one integer
-execution clock running at two GPU ticks per CPU cycle. Packet decode admits a
-command to the retained execution stream; the scheduler completes it at its
-absolute device deadline. GPUSTAT receive-ready, idle, DMA request and the
-published execution frontier derive from that same state. A CPU GP0 store that
-reaches a full FIFO remains the pending CPU instruction and resumes at the next
-device edge that makes its exact MMIO address writable; neither CPU nor host
-polls, retries, drops, or queues a replacement word. Save-state preserves FIFO,
-packet assembly, execution frontier, and the active deadline relative to
-scheduler time.
+The GP0 command processor has an ingress sequencer, one fixed sixteen-word FIFO,
+and one integer execution clock running at two GPU ticks per CPU cycle. Packet
+decode admits a command to the retained execution stream; the scheduler
+completes it at its absolute device deadline. GPUSTAT receive-ready, idle, DMA
+request and the published execution frontier derive from that same state. A CPU
+GP0 store that reaches a full FIFO remains the pending CPU instruction and
+resumes at the next device edge that makes its exact MMIO address writable;
+neither CPU nor host polls, retries, drops, or queues a replacement word.
+Save-state preserves the ingress phase, FIFO, packet assembly, execution
+frontier, and active deadline relative to scheduler time.
 
-The command sequencer recognizes GP0(00h), GP0(04h--1Eh), GP0(E0h), and
-GP0(E7h--EFh) as zero-time NOPs only at a command boundary. It consumes such a
-word immediately from the FIFO head even while the execution datapath is busy,
-so a stream of NOPs cannot occupy FIFO capacity. Parameter, image, and polyline
-payload words are never opcode-decoded. GP0(03h) is not in this bypass class and
-occupies one FIFO word like other unknown commands.
+The ingress sequencer tracks fixed packets, CPU-to-VRAM headers and payload
+length, and mono/Gouraud polyline vertex phase before deciding whether an
+accepted word reaches the FIFO. At a proven command boundary GP0(00h),
+GP0(04h--1Eh), GP0(E0h), and GP0(E7h--EFh) are discarded as physical NOPs, while
+GP0(E3h--E5h) write the drawing-area and drawing-offset register latches
+directly. These words consume neither FIFO capacity nor execution time and can
+take effect while older raster packets remain queued. Fixed parameters, image
+headers/payload, and polyline payload are opaque; a polyline terminator is still
+stored so the execution-side packet owner consumes the same stream boundary.
+GP0(03h) occupies one FIFO word like other unknown commands.
 
 GP1(04h) selects the GPUSTAT bit-25 request mux. FIFO mode exposes the
 physical sixteen-word FIFO-not-full line; CPU-to-GP0 mode exposes the stricter

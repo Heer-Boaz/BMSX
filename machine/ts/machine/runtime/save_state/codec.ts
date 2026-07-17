@@ -21,7 +21,12 @@ import {
 	GEOMETRY_CONTROLLER_REGISTER_COUNT,
 	type GeometryControllerPhase,
 } from '../../devices/geometry/contracts';
-import { GX_GPU_GP0_COMMAND_BUFFER_WORDS, type GxGpuSaveState, type GxGpuState } from '../../devices/gx/gpu';
+import {
+	GX_GPU_GP0_COMMAND_BUFFER_WORDS,
+	GX_GPU_GP0_INGRESS_POLYLINE_PAYLOAD,
+	type GxGpuSaveState,
+	type GxGpuState,
+} from '../../devices/gx/gpu';
 import { GX_GPU_COMMAND_CAPACITY, GX_GPU_COMMAND_WORD_CAPACITY, GX_GPU_READBACK_READY, GX_GPU_READBACK_SUBMITTED, type GxGpuCommandBufferState } from '../../devices/gx/gpu_command_buffer';
 import {
 	GX_GPU_VRAM_BYTE_COUNT,
@@ -531,6 +536,10 @@ function encodeGxGpuState(state: GxGpuState): GxGpuState {
 		gp0CommandWords: encodeVector(state.gp0CommandWords, (word) => word >>> 0),
 		gp0FifoWordCount: state.gp0FifoWordCount >>> 0,
 		gp0FifoWords: encodeVector(state.gp0FifoWords, (word) => word >>> 0),
+		gp0IngressPhase: state.gp0IngressPhase >>> 0,
+		gp0IngressWordsRemaining: state.gp0IngressWordsRemaining >>> 0,
+		gp0IngressPolylineWordsPerVertex: state.gp0IngressPolylineWordsPerVertex >>> 0,
+		gp0IngressPolylinePayloadPhase: state.gp0IngressPolylinePayloadPhase >>> 0,
 		pendingCommandCycles: state.pendingCommandCycles,
 		pendingCommandTargetCount: state.pendingCommandTargetCount >>> 0,
 		gp0ImageLoadWordsRemaining: state.gp0ImageLoadWordsRemaining >>> 0,
@@ -582,6 +591,10 @@ function decodeGxGpuState(value: unknown, label: string): GxGpuState {
 		gp0CommandWords: decodeU32FixedArray(requireObjectKey(object, 'gp0CommandWords', label, `${label}.gp0CommandWords`), `${label}.gp0CommandWords`, gp0CommandWordCount),
 		gp0FifoWordCount,
 		gp0FifoWords: decodeU32FixedArray(requireObjectKey(object, 'gp0FifoWords', label, `${label}.gp0FifoWords`), `${label}.gp0FifoWords`, gp0FifoWordCount),
+		gp0IngressPhase: requireBoundedU32(requireObjectKey(object, 'gp0IngressPhase', label, `${label}.gp0IngressPhase`), `${label}.gp0IngressPhase`, 0, GX_GPU_GP0_INGRESS_POLYLINE_PAYLOAD),
+		gp0IngressWordsRemaining: requireBoundedU32(requireObjectKey(object, 'gp0IngressWordsRemaining', label, `${label}.gp0IngressWordsRemaining`), `${label}.gp0IngressWordsRemaining`, 0, GX_GPU_COMMAND_WORD_CAPACITY),
+		gp0IngressPolylineWordsPerVertex: requireBoundedU32(requireObjectKey(object, 'gp0IngressPolylineWordsPerVertex', label, `${label}.gp0IngressPolylineWordsPerVertex`), `${label}.gp0IngressPolylineWordsPerVertex`, 0, 2),
+		gp0IngressPolylinePayloadPhase: requireBoundedU32(requireObjectKey(object, 'gp0IngressPolylinePayloadPhase', label, `${label}.gp0IngressPolylinePayloadPhase`), `${label}.gp0IngressPolylinePayloadPhase`, 0, 1),
 		pendingCommandCycles: requireBoundedU32(requireObjectKey(object, 'pendingCommandCycles', label, `${label}.pendingCommandCycles`), `${label}.pendingCommandCycles`, 0, 0xffffffff),
 		pendingCommandTargetCount: requireBoundedU32(requireObjectKey(object, 'pendingCommandTargetCount', label, `${label}.pendingCommandTargetCount`), `${label}.pendingCommandTargetCount`, 0, commandBuffer.commandCount),
 		gp0ImageLoadWordsRemaining: requireBoundedU32(requireObjectKey(object, 'gp0ImageLoadWordsRemaining', label, `${label}.gp0ImageLoadWordsRemaining`), `${label}.gp0ImageLoadWordsRemaining`, 0, GX_GPU_COMMAND_WORD_CAPACITY),

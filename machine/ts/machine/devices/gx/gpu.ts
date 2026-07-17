@@ -100,7 +100,14 @@ export const GX_GPU_GP0_RENDER_GOURAUD_BIT = 0x10;
 export const GX_GPU_GP0_RECTANGLE_SIZE_MASK = 0x18;
 export const GX_GPU_GP0_COMMAND_BUFFER_WORDS = 16;
 
-function gxGpuGp0OpcodeBypassesFifo(opcode: number): boolean {
+export const GX_GPU_GP0_INGRESS_COMMAND = 0;
+export const GX_GPU_GP0_INGRESS_FIXED = 1;
+export const GX_GPU_GP0_INGRESS_IMAGE_HEADER = 2;
+export const GX_GPU_GP0_INGRESS_IMAGE_PAYLOAD = 3;
+export const GX_GPU_GP0_INGRESS_POLYLINE_HEADER = 4;
+export const GX_GPU_GP0_INGRESS_POLYLINE_PAYLOAD = 5;
+
+function gxGpuGp0OpcodeIsNop(opcode: number): boolean {
 	return opcode === 0x00
 		|| (opcode >= 0x04 && opcode <= 0x1e)
 		|| opcode === 0xe0
@@ -167,6 +174,10 @@ export type GxGpuState = {
 	gp0CommandWords: number[];
 	gp0FifoWordCount: number;
 	gp0FifoWords: number[];
+	gp0IngressPhase: number;
+	gp0IngressWordsRemaining: number;
+	gp0IngressPolylineWordsPerVertex: number;
+	gp0IngressPolylinePayloadPhase: number;
 	pendingCommandCycles: number;
 	pendingCommandTargetCount: number;
 	gp0ImageLoadWordsRemaining: number;
@@ -214,6 +225,10 @@ export class GxGpu {
 	private readonly commandBuffer: GxGpuCommandBuffer;
 	private readonly gp0CommandWords = new Uint32Array(GX_GPU_GP0_COMMAND_BUFFER_WORDS);
 	private readonly gp0Fifo = new GxGpuCommandFifo();
+	private gp0IngressPhase = GX_GPU_GP0_INGRESS_COMMAND;
+	private gp0IngressWordsRemaining = 0;
+	private gp0IngressPolylineWordsPerVertex = 0;
+	private gp0IngressPolylinePayloadPhase = 0;
 	private gp0CommandWordCount = 0;
 	private gp0CommandTargetWordCount = 0;
 	private pendingCommandCompletionCycle = 0;
@@ -349,6 +364,10 @@ export class GxGpu {
 			gp0CommandWords: Array.from(this.gp0CommandWords.subarray(0, this.gp0CommandWordCount)),
 			gp0FifoWordCount,
 			gp0FifoWords,
+			gp0IngressPhase: this.gp0IngressPhase,
+			gp0IngressWordsRemaining: this.gp0IngressWordsRemaining,
+			gp0IngressPolylineWordsPerVertex: this.gp0IngressPolylineWordsPerVertex,
+			gp0IngressPolylinePayloadPhase: this.gp0IngressPolylinePayloadPhase,
 			pendingCommandCycles: this.pendingCommandCompletionCycle === 0
 				? 0
 				: this.pendingCommandCompletionCycle - nowCycles,
@@ -403,6 +422,10 @@ export class GxGpu {
 		for (let index = 0; index < state.gp0FifoWordCount; index += 1) {
 			this.gp0Fifo.push(state.gp0FifoWords[index]!);
 		}
+		this.gp0IngressPhase = state.gp0IngressPhase >>> 0;
+		this.gp0IngressWordsRemaining = state.gp0IngressWordsRemaining >>> 0;
+		this.gp0IngressPolylineWordsPerVertex = state.gp0IngressPolylineWordsPerVertex >>> 0;
+		this.gp0IngressPolylinePayloadPhase = state.gp0IngressPolylinePayloadPhase >>> 0;
 		this.pendingCommandCompletionCycle = state.pendingCommandCycles === 0
 			? 0
 			: this.scheduler.currentNowCycles() + state.pendingCommandCycles;
@@ -504,22 +527,100 @@ export class GxGpu {
 		this.synchronizeCommandTiming(nowCycles);
 		this.gp0Word = word >>> 0;
 		this.memory.writeIoValue(IO_GX_GPU_GP0, this.gp0Word);
-		this.gp0Fifo.push(this.gp0Word);
+		this.acceptGp0Word(this.gp0Word);
 		this.processGp0Fifo(nowCycles);
 		this.updateDynamicStatusBits();
 	}
 
-	private processGp0Fifo(nowCycles: number): void {
-		while (this.commandBuffer.readback.phase === GX_GPU_READBACK_IDLE
-			&& !this.gp0Fifo.empty()) {
-			if (this.pendingCommandCompletionCycle !== 0) {
-				// The active command has consumed its packet, so the FIFO head is a command boundary.
-				if (!gxGpuGp0OpcodeBypassesFifo(this.gp0Fifo.peek() >>> GX_GPU_GP0_OPCODE_SHIFT)) {
+	private acceptGp0Word(word: number): void {
+		switch (this.gp0IngressPhase) {
+			case GX_GPU_GP0_INGRESS_COMMAND: {
+				const opcode = word >>> GX_GPU_GP0_OPCODE_SHIFT;
+				if (gxGpuGp0OpcodeIsNop(opcode)) {
 					return;
 				}
-				this.gp0Fifo.pop();
-				continue;
+				switch (opcode) {
+					case GX_GPU_GP0_DRAWING_AREA_TOP_LEFT:
+						this.drawingAreaTopLeftWord = word & GX_GPU_DRAWING_AREA_MASK;
+						return;
+					case GX_GPU_GP0_DRAWING_AREA_BOTTOM_RIGHT:
+						this.drawingAreaBottomRightWord = word & GX_GPU_DRAWING_AREA_MASK;
+						return;
+					case GX_GPU_GP0_DRAWING_OFFSET:
+						this.drawingOffsetWord = word & GX_GPU_DRAWING_OFFSET_MASK;
+						return;
+				}
+
+				this.gp0Fifo.push(word);
+				if (opcode >= GX_GPU_GP0_CPU_TO_VRAM_FIRST && opcode <= GX_GPU_GP0_CPU_TO_VRAM_LAST) {
+					this.gp0IngressPhase = GX_GPU_GP0_INGRESS_IMAGE_HEADER;
+					this.gp0IngressWordsRemaining = 2;
+					return;
+				}
+				if (opcode >= GX_GPU_GP0_LINE_FIRST
+					&& opcode <= GX_GPU_GP0_LINE_LAST
+					&& (opcode & GX_GPU_GP0_RENDER_QUAD_OR_POLYLINE_BIT) !== 0) {
+					this.gp0IngressPhase = GX_GPU_GP0_INGRESS_POLYLINE_HEADER;
+					this.gp0IngressWordsRemaining = this.gp0LineWordCount(opcode) - 1;
+					this.gp0IngressPolylineWordsPerVertex = (opcode & GX_GPU_GP0_RENDER_GOURAUD_BIT) !== 0 ? 2 : 1;
+					this.gp0IngressPolylinePayloadPhase = 0;
+					return;
+				}
+				this.gp0IngressWordsRemaining = this.gp0CommandWordCountForOpcode(opcode) - 1;
+				if (this.gp0IngressWordsRemaining !== 0) {
+					this.gp0IngressPhase = GX_GPU_GP0_INGRESS_FIXED;
+				}
+				return;
 			}
+			case GX_GPU_GP0_INGRESS_FIXED:
+				this.gp0Fifo.push(word);
+				this.gp0IngressWordsRemaining -= 1;
+				if (this.gp0IngressWordsRemaining === 0) {
+					this.gp0IngressPhase = GX_GPU_GP0_INGRESS_COMMAND;
+				}
+				return;
+			case GX_GPU_GP0_INGRESS_IMAGE_HEADER:
+				this.gp0Fifo.push(word);
+				this.gp0IngressWordsRemaining -= 1;
+				if (this.gp0IngressWordsRemaining === 0) {
+					this.gp0IngressPhase = GX_GPU_GP0_INGRESS_IMAGE_PAYLOAD;
+					this.gp0IngressWordsRemaining = ((gxGpuTransferWidth(word) * gxGpuTransferHeight(word)) + 1) >>> 1;
+				}
+				return;
+			case GX_GPU_GP0_INGRESS_IMAGE_PAYLOAD:
+				this.gp0Fifo.push(word);
+				this.gp0IngressWordsRemaining -= 1;
+				if (this.gp0IngressWordsRemaining === 0) {
+					this.gp0IngressPhase = GX_GPU_GP0_INGRESS_COMMAND;
+				}
+				return;
+			case GX_GPU_GP0_INGRESS_POLYLINE_HEADER:
+				this.gp0Fifo.push(word);
+				this.gp0IngressWordsRemaining -= 1;
+				if (this.gp0IngressWordsRemaining === 0) {
+					this.gp0IngressPhase = GX_GPU_GP0_INGRESS_POLYLINE_PAYLOAD;
+				}
+				return;
+			case GX_GPU_GP0_INGRESS_POLYLINE_PAYLOAD:
+				this.gp0Fifo.push(word);
+				if (this.gp0IngressPolylinePayloadPhase === 0 && (word & 0xf000f000) === 0x50005000) {
+					this.gp0IngressPhase = GX_GPU_GP0_INGRESS_COMMAND;
+					this.gp0IngressPolylineWordsPerVertex = 0;
+					this.gp0IngressPolylinePayloadPhase = 0;
+					return;
+				}
+				this.gp0IngressPolylinePayloadPhase += 1;
+				if (this.gp0IngressPolylinePayloadPhase === this.gp0IngressPolylineWordsPerVertex) {
+					this.gp0IngressPolylinePayloadPhase = 0;
+				}
+				return;
+		}
+	}
+
+	private processGp0Fifo(nowCycles: number): void {
+		while (this.pendingCommandCompletionCycle === 0
+			&& this.commandBuffer.readback.phase === GX_GPU_READBACK_IDLE
+			&& !this.gp0Fifo.empty()) {
 			if (this.gp0ImageLoadWordsRemaining !== 0) {
 				this.consumeImageLoadWord(this.gp0Fifo.pop(), nowCycles);
 				continue;
@@ -529,11 +630,6 @@ export class GxGpu {
 				continue;
 			}
 			if (this.gp0CommandTargetWordCount === 0) {
-				// Payload owners run first because an opaque data word may have a NOP opcode byte.
-				if (gxGpuGp0OpcodeBypassesFifo(this.gp0Fifo.peek() >>> GX_GPU_GP0_OPCODE_SHIFT)) {
-					this.gp0Fifo.pop();
-					continue;
-				}
 				this.gp0CommandTargetWordCount = this.gp0CommandWordCountForOpcode(this.gp0Fifo.peek() >>> GX_GPU_GP0_OPCODE_SHIFT);
 			}
 			while (this.gp0CommandWordCount < this.gp0CommandTargetWordCount && !this.gp0Fifo.empty()) {
@@ -571,18 +667,6 @@ export class GxGpu {
 				break;
 			case GX_GPU_GP0_TEXTURE_WINDOW:
 				this.textureWindowWord = this.gp0CommandWords[0] & GX_GPU_TEXTURE_WINDOW_MASK;
-				this.startCommandTiming(1, this.commandBuffer.commandCount, nowCycles);
-				break;
-			case GX_GPU_GP0_DRAWING_AREA_TOP_LEFT:
-				this.drawingAreaTopLeftWord = this.gp0CommandWords[0] & GX_GPU_DRAWING_AREA_MASK;
-				this.startCommandTiming(1, this.commandBuffer.commandCount, nowCycles);
-				break;
-			case GX_GPU_GP0_DRAWING_AREA_BOTTOM_RIGHT:
-				this.drawingAreaBottomRightWord = this.gp0CommandWords[0] & GX_GPU_DRAWING_AREA_MASK;
-				this.startCommandTiming(1, this.commandBuffer.commandCount, nowCycles);
-				break;
-			case GX_GPU_GP0_DRAWING_OFFSET:
-				this.drawingOffsetWord = this.gp0CommandWords[0] & GX_GPU_DRAWING_OFFSET_MASK;
 				this.startCommandTiming(1, this.commandBuffer.commandCount, nowCycles);
 				break;
 			case GX_GPU_GP0_MASK_BIT:
@@ -869,6 +953,7 @@ export class GxGpu {
 	private clearGp0CommandState(): void {
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_GPU);
 		this.gp0Fifo.reset();
+		this.clearGp0IngressState();
 		this.pendingCommandCompletionCycle = 0;
 		this.pendingCommandTargetCount = 0;
 		this.gp0CommandWords.fill(0);
@@ -880,6 +965,7 @@ export class GxGpu {
 
 	private clearGp0Fifo(nowCycles: number): void {
 		this.gp0Fifo.reset();
+		this.clearGp0IngressState();
 		this.flushImageLoadToVram(nowCycles);
 		if (this.gp0PolylineCommandWordCount !== 0) {
 			this.commandBuffer.wordCount = this.gp0PolylineCommandWordStart;
@@ -896,6 +982,13 @@ export class GxGpu {
 		this.gp0CommandTargetWordCount = 0;
 		this.clearImageLoadState();
 		this.clearPolylineState();
+	}
+
+	private clearGp0IngressState(): void {
+		this.gp0IngressPhase = GX_GPU_GP0_INGRESS_COMMAND;
+		this.gp0IngressWordsRemaining = 0;
+		this.gp0IngressPolylineWordsPerVertex = 0;
+		this.gp0IngressPolylinePayloadPhase = 0;
 	}
 
 	private clearPolylineState(): void {

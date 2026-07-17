@@ -60,6 +60,13 @@ constexpr u32 GX_GPU_GP0_RENDER_GOURAUD_BIT = 0x10u;
 constexpr u32 GX_GPU_GP0_RECTANGLE_SIZE_MASK = 0x18u;
 constexpr u32 GX_GPU_GP0_COMMAND_BUFFER_WORDS = 16u;
 
+constexpr u32 GX_GPU_GP0_INGRESS_COMMAND = 0u;
+constexpr u32 GX_GPU_GP0_INGRESS_FIXED = 1u;
+constexpr u32 GX_GPU_GP0_INGRESS_IMAGE_HEADER = 2u;
+constexpr u32 GX_GPU_GP0_INGRESS_IMAGE_PAYLOAD = 3u;
+constexpr u32 GX_GPU_GP0_INGRESS_POLYLINE_HEADER = 4u;
+constexpr u32 GX_GPU_GP0_INGRESS_POLYLINE_PAYLOAD = 5u;
+
 constexpr u32 GX_GPU_DISPLAY_START_MASK = 0x000ffffeu;
 constexpr u32 GX_GPU_DISPLAY_MODE_MASK = 0x000000ffu;
 constexpr u32 GX_GPU_HORIZONTAL_DISPLAY_RANGE_MASK = 0x00ffffffu;
@@ -120,6 +127,10 @@ struct GxGpuState {
 	std::vector<u32> gp0CommandWords;
 	size_t gp0FifoWordCount = 0u;
 	std::array<u32, GX_GPU_COMMAND_FIFO_STORAGE_WORD_CAPACITY> gp0FifoWords{};
+	u32 gp0IngressPhase = GX_GPU_GP0_INGRESS_COMMAND;
+	u32 gp0IngressWordsRemaining = 0u;
+	u32 gp0IngressPolylineWordsPerVertex = 0u;
+	u32 gp0IngressPolylinePayloadPhase = 0u;
 	i64 pendingCommandCycles = 0;
 	size_t pendingCommandTargetCount = 0u;
 	u32 gp0ImageLoadWordsRemaining = 0;
@@ -210,6 +221,10 @@ private:
 	u32 m_displayModeWord = GX_GPU_RESET_DISPLAY_MODE_WORD;
 	u32 m_statusWord = GX_GPU_STATUS_RESET_WORD;
 	GxGpuCommandFifo m_gp0Fifo;
+	u32 m_gp0IngressPhase = GX_GPU_GP0_INGRESS_COMMAND;
+	u32 m_gp0IngressWordsRemaining = 0u;
+	u32 m_gp0IngressPolylineWordsPerVertex = 0u;
+	u32 m_gp0IngressPolylinePayloadPhase = 0u;
 	i64 m_pendingCommandCompletionCycle = 0;
 	size_t m_pendingCommandTargetCount = 0u;
 	GxGpuCommandBuffer m_commandBuffer;
@@ -262,6 +277,7 @@ private:
 	void writeDisplayDisableWord(u32 word);
 	void clearGp0CommandState();
 	void clearGp0Fifo(i64 nowCycles);
+	void clearGp0IngressState();
 	void clearPolylineState();
 	void clearImageLoadState();
 	void finishImageLoadToVram(i64 commandStartCycle);
@@ -269,6 +285,7 @@ private:
 	void consumeImageLoadWord(u32 word, i64 commandStartCycle);
 	void consumeGp0PolylinePayloadWord(u32 word, i64 commandStartCycle);
 	void beginPolylinePayload(u32 opcode, u32 commandWordCount);
+	void acceptGp0Word(u32 word);
 	void consumeGp0Fifo(i64 commandStartCycle);
 	void synchronizeCommandExecution(i64 nowCycles);
 	void beginCommandCompletion(i64 commandTicks, size_t targetCommandCount, i64 commandStartCycle);
