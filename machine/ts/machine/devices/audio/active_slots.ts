@@ -4,18 +4,16 @@ import type { ApuEventLatch } from './event_latch';
 import type { ApuOutputMixer } from './output';
 import { ApuSelectedSlotLatch } from './selected_slot_latch';
 import type { ApuSourceDma } from './source';
-import type { ApuSlotAdvanceResult, ApuSlotBank } from './slot_bank';
+import type { ApuSlotBank } from './slot_bank';
 import {
 	APU_EVENT_SLOT_ENDED,
 	APU_SLOT_COUNT,
 	type ApuAudioSlot,
 	type ApuParameterRegisterWords,
 	type ApuSlotPhase,
-	type ApuVoiceId,
 } from './contracts';
 
 export class ApuActiveSlots {
-	private readonly advanceResult: ApuSlotAdvanceResult = { ended: false, voiceId: 0, sourceAddr: 0 };
 	public constructor(
 		private readonly memory: Memory,
 		private readonly audioOutput: ApuOutputMixer,
@@ -30,8 +28,8 @@ export class ApuActiveSlots {
 		ApuSelectedSlotLatch.refreshThunk(this.selectedSlotLatch);
 	}
 
-	public setActive(slot: ApuAudioSlot, registerWords: ApuParameterRegisterWords, voiceId: ApuVoiceId): void {
-		this.slots.setActive(slot, registerWords, voiceId);
+	public setActive(slot: ApuAudioSlot, registerWords: ApuParameterRegisterWords): void {
+		this.slots.setActive(slot, registerWords);
 		this.writeActiveMask();
 	}
 
@@ -47,25 +45,13 @@ export class ApuActiveSlots {
 	}
 
 	public advance(samples: number): void {
-		const result = this.advanceResult;
-		const activeMask = this.slots.activeMask;
+		const endedMask = this.audioOutput.renderMachineFrames(samples);
 		for (let slot = 0; slot < APU_SLOT_COUNT; slot += 1) {
-			if ((activeMask & (1 << slot)) !== 0) {
-				this.slots.advanceSlot(slot, samples, result);
-				if (result.ended) {
-					this.audioOutput.stopSlot(slot);
-					this.emitSlotEvent(slot, result.voiceId, result.sourceAddr);
-				}
+			if ((endedMask & (1 << slot)) !== 0) {
+				const sourceAddr = this.slots.sourceAddr(slot);
+				this.stop(slot);
+				this.eventLatch.emit(APU_EVENT_SLOT_ENDED, slot, sourceAddr);
 			}
 		}
 	}
-
-	private emitSlotEvent(slot: ApuAudioSlot, voiceId: ApuVoiceId, sourceAddr: number): void {
-		if (this.slots.voiceId(slot) !== voiceId) {
-			return;
-		}
-		this.stop(slot);
-		this.eventLatch.emit(APU_EVENT_SLOT_ENDED, slot, sourceAddr);
-	}
-
 }

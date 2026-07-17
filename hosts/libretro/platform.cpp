@@ -34,10 +34,6 @@
 namespace bmsx {
 namespace {
 constexpr double kFrameSpikeMultiplier = 1.2;
-constexpr size_t kAudioRefillMarginFrames = 128;
-constexpr size_t kAudioRequestAheadFrames = 256;
-constexpr size_t kAudioTargetMinFrames = 384;
-constexpr size_t kAudioTargetMaxFrames = 4096;
 constexpr size_t kAudioReserveVideoFrames = 10;
 constexpr size_t kAudioReserveFrames = static_cast<size_t>(DEFAULT_LIBRETRO_AUDIO_SAMPLE_RATE * static_cast<double>(HZ_SCALE) / static_cast<double>(PAL_REFRESH_UFPS_SCALED)) * kAudioReserveVideoFrames;
 constexpr const char* kReleaseSystemRomName = "bmsx-bios.rom";
@@ -1037,21 +1033,11 @@ LibretroAudioService::LibretroAudioService(LibretroPlatform* platform)
 void LibretroAudioService::setTiming(double sampleRate) {
 	m_sample_rate = sampleRate;
 	m_sample_accumulator = 0.0;
-	refreshTargetBufferFrames();
 }
 
 void LibretroAudioService::resetQueue() {
 	m_sample_accumulator = 0.0;
-}
-
-void LibretroAudioService::refreshTargetBufferFrames() {
-	const SoundMaster* soundMaster = m_platform->machineManager()->soundMaster();
-	const size_t framesPerFrame = static_cast<size_t>(std::ceil(m_sample_rate * soundMaster->mixFrameTimeSec()));
-	const size_t requested = static_cast<size_t>(std::ceil(m_sample_rate * soundMaster->mixTargetAheadSec()))
-		+ kAudioRequestAheadFrames
-		+ kAudioRefillMarginFrames;
-	const size_t targetFillFrames = std::clamp(requested, kAudioTargetMinFrames, kAudioTargetMaxFrames);
-	m_target_buffer_frames = targetFillFrames > framesPerFrame ? targetFillFrames - framesPerFrame : 0;
+	m_platform->machineManager()->soundMaster()->resetPlaybackState();
 }
 
 void LibretroAudioService::collectSamples(AudioBuffer& buffer) {
@@ -1065,9 +1051,13 @@ void LibretroAudioService::collectSamples(AudioBuffer& buffer) {
 	}
 	m_sample_accumulator -= frames;
 
-	const size_t targetFrames = frames + m_target_buffer_frames;
 	int16_t* output = buffer.beginWrite(frames);
-	m_platform->machineManager()->runtime().machine.audioOutput.pullOutputFrames(output, frames, static_cast<i32>(m_sample_rate), soundMaster->masterVolume(), targetFrames - frames);
+	soundMaster->pullOutputFrames(
+		m_platform->machineManager()->runtime().machine.audioOutput.outputRing,
+		output,
+		frames,
+		static_cast<i32>(m_sample_rate)
+	);
 }
 
 /* ============================================================================

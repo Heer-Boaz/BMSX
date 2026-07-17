@@ -301,7 +301,6 @@ public:
 
 	void setTiming(double sampleRate);
 	void resetQueue();
-	void refreshTargetBufferFrames();
 
 	void collectSamples(AudioBuffer& buffer);
 
@@ -309,7 +308,6 @@ private:
 	LibretroPlatform* m_platform;
 	double m_sample_rate = DEFAULT_LIBRETRO_AUDIO_SAMPLE_RATE;
 	double m_sample_accumulator = 0.0;
-	size_t m_target_buffer_frames = 0;
 };
 
 /* ============================================================================

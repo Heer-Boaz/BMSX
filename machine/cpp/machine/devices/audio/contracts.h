@@ -9,8 +9,6 @@ namespace bmsx {
 constexpr uint32_t APU_SAMPLE_RATE_HZ = 44100U;
 constexpr uint32_t APU_RATE_STEP_Q16_ONE = 0x10000U;
 constexpr uint32_t APU_GAIN_Q12_ONE = 0x1000U;
-constexpr uint32_t APU_OUTPUT_QUEUE_CAPACITY_FRAMES = 16384U;
-constexpr uint32_t APU_OUTPUT_QUEUE_CAPACITY_SAMPLES = APU_OUTPUT_QUEUE_CAPACITY_FRAMES * 2U;
 constexpr uint32_t APU_COMMAND_FIFO_CAPACITY = 16U;
 
 constexpr uint32_t APU_CMD_NONE = 0U;
@@ -57,8 +55,6 @@ constexpr auto apuSlotRegisterWordIndex(uint32_t slot, uint32_t parameterIndex) 
 constexpr uint32_t APU_STATUS_FAULT = 1U << 0U;
 constexpr uint32_t APU_STATUS_SELECTED_SLOT_ACTIVE = 1U << 1U;
 constexpr uint32_t APU_STATUS_BUSY = 1U << 2U;
-constexpr uint32_t APU_STATUS_OUTPUT_EMPTY = 1U << 3U;
-constexpr uint32_t APU_STATUS_OUTPUT_FULL = 1U << 4U;
 constexpr uint32_t APU_STATUS_CMD_FIFO_EMPTY = 1U << 5U;
 constexpr uint32_t APU_STATUS_CMD_FIFO_FULL = 1U << 6U;
 
@@ -86,7 +82,6 @@ constexpr uint32_t APU_FILTER_HIGHSHELF = 8U;
 constexpr uint32_t APU_EVENT_NONE = 0U;
 constexpr uint32_t APU_EVENT_SLOT_ENDED = 1U;
 
-using ApuVoiceId = uint64_t;
 using ApuAudioSlot = uint32_t;
 using ApuSlotPhase = uint32_t;
 using ApuParameterRegisterWords = std::array<uint32_t, APU_PARAMETER_REGISTER_COUNT>;
@@ -105,9 +100,5 @@ struct ApuAudioSource {
 	uint32_t generatorKind = 0;
 	uint32_t generatorDutyQ12 = 0;
 };
-
-constexpr auto advanceApuPlaybackCursorQ16(int64_t cursorQ16, int64_t samples, int64_t rateStepQ16, uint32_t sourceSampleRateHz) -> int64_t {
-	return cursorQ16 + (samples * rateStepQ16 * static_cast<int64_t>(sourceSampleRateHz) / static_cast<int64_t>(APU_SAMPLE_RATE_HZ));
-}
 
 } // namespace bmsx

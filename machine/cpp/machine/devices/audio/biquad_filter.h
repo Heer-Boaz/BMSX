@@ -7,23 +7,23 @@ namespace bmsx {
 
 struct BiquadFilterState {
 	bool enabled = false;
-	f32 b0 = 1.0F;
-	f32 b1 = 0.0F;
-	f32 b2 = 0.0F;
-	f32 a1 = 0.0F;
-	f32 a2 = 0.0F;
-	f32 l1 = 0.0F;
-	f32 l2 = 0.0F;
-	f32 r1 = 0.0F;
-	f32 r2 = 0.0F;
+	f64 b0 = 1.0;
+	f64 b1 = 0.0;
+	f64 b2 = 0.0;
+	f64 a1 = 0.0;
+	f64 a2 = 0.0;
+	f64 l1 = 0.0;
+	f64 l2 = 0.0;
+	f64 r1 = 0.0;
+	f64 r2 = 0.0;
 
 	void reset();
 
-	void processStereo(f32& left, f32& right) {
-		const f32 inputL = left;
-		const f32 inputR = right;
-		const f32 outputL = (b0 * inputL) + l1;
-		const f32 outputR = (b0 * inputR) + r1;
+	void processStereo(f64& left, f64& right) {
+		const f64 inputL = left;
+		const f64 inputR = right;
+		const f64 outputL = (b0 * inputL) + l1;
+		const f64 outputR = (b0 * inputR) + r1;
 		l1 = (b1 * inputL) - (a1 * outputL) + l2;
 		l2 = (b2 * inputL) - (a2 * outputL);
 		r1 = (b1 * inputR) - (a1 * outputR) + r2;
@@ -36,10 +36,10 @@ struct BiquadFilterState {
 void configureBiquadFilter(
 	BiquadFilterState& state,
 	std::string_view type,
-	f32 frequency,
-	f32 q,
-	f32 gain,
-	f32 sampleRate
+	f64 frequency,
+	f64 q,
+	f64 gain,
+	f64 sampleRate
 );
 
 } // namespace bmsx

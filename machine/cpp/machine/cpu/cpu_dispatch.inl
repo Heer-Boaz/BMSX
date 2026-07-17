@@ -435,16 +435,27 @@ DISPATCH_LABEL(CALL) {
 		runHousekeeping();
 		DISPATCH_CONTINUE();
 	}
-	Closure* closure = asClosure(callee);
-	pushFrame(FRAME, closure, a + 1, argCount, a, retCount, false, FRAME.pc - INSTRUCTION_BYTES);
-	DISPATCH_CONTINUE();
+	throw LuaExecutionError("Attempted to call a non-function value.");
 }
 
 DISPATCH_LABEL(RET) {
 	int count = b == 0 ? std::max(FRAME.top - a, 0) : b;
+	closeUpvalues(FRAME);
+	if (m_protectedCallDepth > 0) {
+		const size_t continuationIndex = m_protectedCallDepth - 1;
+		ProtectedCallContinuation& continuation = m_protectedCallContinuations.get(continuationIndex);
+		if (continuation.target == &FRAME) {
+			finishProtectedCall(continuationIndex, FRAME, a, count);
+			auto finished = std::move(m_frames.back());
+			m_frames.pop_back();
+			m_stackTop = finished->varargBase;
+			m_stack.resize(static_cast<size_t>(m_stackTop));
+			releaseFrame(std::move(finished));
+			DISPATCH_CONTINUE();
+		}
+	}
 	const int resultOffset = FRAME.stackBase + a;
 	const Value* results = m_stack.data() + resultOffset;
-	closeUpvalues(FRAME);
 	auto finished = std::move(m_frames.back());
 	m_frames.pop_back();
 	if (finished->captureReturns) {

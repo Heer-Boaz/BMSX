@@ -29,8 +29,8 @@ void ApuActiveSlots::writeActiveMask() {
 	ApuSelectedSlotLatch::refreshThunk(&m_selectedSlotLatch, IO_APU_SLOT, valueNil());
 }
 
-void ApuActiveSlots::setActive(ApuAudioSlot slot, const ApuParameterRegisterWords& registerWords, ApuVoiceId voiceId) {
-	m_slots.setActive(slot, registerWords, voiceId);
+void ApuActiveSlots::setActive(ApuAudioSlot slot, const ApuParameterRegisterWords& registerWords) {
+	m_slots.setActive(slot, registerWords);
 	writeActiveMask();
 }
 
@@ -46,24 +46,14 @@ void ApuActiveSlots::setPhase(ApuAudioSlot slot, ApuSlotPhase phase) {
 }
 
 void ApuActiveSlots::advance(i64 samples) {
-	const u32 activeMask = m_slots.activeMask();
+	const u32 endedMask = m_audioOutput.renderMachineFrames(samples);
 	for (ApuAudioSlot slot = 0; slot < APU_SLOT_COUNT; slot += 1u) {
-		if ((activeMask & (1u << slot)) != 0u) {
-			const ApuSlotAdvanceResult result = m_slots.advanceSlot(slot, samples);
-			if (result.ended) {
-				m_audioOutput.stopSlot(slot);
-				emitSlotEvent(slot, result.voiceId, result.sourceAddr);
-			}
+		if ((endedMask & (1u << slot)) != 0u) {
+			const u32 sourceAddr = m_slots.sourceAddr(slot);
+			stop(slot);
+			m_eventLatch.emit(APU_EVENT_SLOT_ENDED, slot, sourceAddr);
 		}
 	}
-}
-
-void ApuActiveSlots::emitSlotEvent(ApuAudioSlot slot, ApuVoiceId voiceId, u32 sourceAddr) {
-	if (m_slots.voiceId(slot) != voiceId) {
-		return;
-	}
-	stop(slot);
-	m_eventLatch.emit(APU_EVENT_SLOT_ENDED, slot, sourceAddr);
 }
 
 } // namespace bmsx

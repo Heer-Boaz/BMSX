@@ -47,7 +47,6 @@ void Machine::refreshDeviceTimings(const MachineTiming& timing, i64 nowCycles) {
 void Machine::advanceDevices(int cycles) {
 	const i64 nextNow = scheduler.nowCycles() + cycles;
 	geometryController.accrueCycles(cycles, nextNow);
-	audioController.accrueCycles(cycles, nextNow);
 	scheduler.advanceTo(nextNow);
 }
 

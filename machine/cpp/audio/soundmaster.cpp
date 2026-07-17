@@ -4,8 +4,12 @@
 
 #include "soundmaster.h"
 
+#include "machine/devices/audio/contracts.h"
+#include "machine/devices/audio/output_ring.h"
 #include "machine/runtime/timing/constants.h"
 #include "machine/model_registry.h"
+
+#include <cmath>
 
 namespace bmsx {
 
@@ -14,22 +18,28 @@ static constexpr f64 MIX_LOW_OVERHEAD_SEC = 0.004;
 static constexpr f64 MIX_BALANCED_OVERHEAD_SEC = 0.006;
 static constexpr f64 MIX_SAFE_OVERHEAD_SEC = 0.012;
 
-
 SoundMaster::SoundMaster()
 	: m_mixUfpsScaled(PAL_REFRESH_UFPS_SCALED)
 	, m_mixFrameTimeSec(static_cast<f64>(HZ_SCALE) / static_cast<f64>(PAL_REFRESH_UFPS_SCALED))
-	, m_mixTargetAheadSec(m_mixFrameTimeSec + MIX_LOW_OVERHEAD_SEC) {
+	, m_mixTargetAheadSec(m_mixFrameTimeSec + MIX_LOW_OVERHEAD_SEC)
+	, m_mixSourcePrebufferFrames(static_cast<size_t>(std::ceil(m_mixTargetAheadSec * APU_SAMPLE_RATE_HZ))) {
 }
-
 
 const Identifier& SoundMaster::registryId() const {
 	static const Identifier id = "sm";
 	return id;
 }
 
-
 void SoundMaster::setMasterVolume(f32 value) {
 	m_masterVolume = clampVolume(value);
+}
+
+void SoundMaster::resetPlaybackState() {
+	m_outputResampler.reset();
+}
+
+void SoundMaster::pullOutputFrames(ApuOutputRing& ring, i16* output, size_t frameCount, i32 outputSampleRate) {
+	m_outputResampler.pull(ring, output, frameCount, outputSampleRate, m_masterVolume, m_mixSourcePrebufferFrames);
 }
 
 void SoundMaster::setMixerUfpsScaled(i64 ufpsScaled) {
@@ -55,6 +65,7 @@ f64 SoundMaster::profileOverheadSec() const {
 void SoundMaster::recomputeMixTarget() {
 	m_mixFrameTimeSec = static_cast<f64>(HZ_SCALE) / static_cast<f64>(m_mixUfpsScaled);
 	m_mixTargetAheadSec = m_mixFrameTimeSec + profileOverheadSec();
+	m_mixSourcePrebufferFrames = static_cast<size_t>(std::ceil(m_mixTargetAheadSec * APU_SAMPLE_RATE_HZ));
 }
 
 f32 SoundMaster::clampVolume(f32 value) const {

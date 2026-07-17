@@ -89,30 +89,6 @@ function makeProgram(cpu: CPU): Program {
 	};
 }
 
-type InstructionSpec = readonly [OpCode, number, number, number, number];
-
-function makeInstructionProgram(cpu: CPU, instructions: readonly InstructionSpec[]): Program {
-	const code = new Uint8Array(instructions.length * INSTRUCTION_BYTES);
-	for (let index = 0; index < instructions.length; index += 1) {
-		const instruction = instructions[index];
-		writeInstruction(code, index, instruction[0], instruction[1], instruction[2], instruction[3], instruction[4]);
-	}
-	const pool = cpu.stringPool;
-	return {
-		code,
-		programRom: code,
-		programRomTextByteLength: code.byteLength,
-		constPool: [],
-		protos: [{ ...makeProto(code.byteLength), maxStack: 2 }, { ...makeProto(0), entryPC: code.byteLength }],
-		stringPool: pool,
-		constPoolStringPool: pool,
-	};
-}
-
-function makeSingleOpcodeProgram(cpu: CPU, op: OpCode): Program {
-	return makeInstructionProgram(cpu, [[op, 0, 0, 0, 0]]);
-}
-
 function makeCpuWithProgram(programForCpu: (cpu: CPU) => Program): { memory: Memory; cpu: CPU; irqController: IrqController } {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
 	const irqController = new IrqController(memory);
@@ -142,22 +118,26 @@ function makeThrowingNativeProgram(cpu: CPU, nativeFunction: Value): Program {
 }
 
 function makeRuntime(cpu: CPU, irqController: IrqController, sliceStats?: { begin: number; end: number }): Runtime {
+	let cpuSliceActive = false;
 	return {
 		machine: {
 			cpu,
 			memory: cpu.memory,
 			irqController,
 			gxGpu: { backendReadbackBlocksMachine: () => false },
-			scheduler: {
-				nowCycles: 0,
-				hasDueTimer: () => false,
-				nextDeadline: () => Number.MAX_SAFE_INTEGER,
-				beginCpuSlice: () => {
-					if (sliceStats) {
+				scheduler: {
+					nowCycles: 0,
+					hasDueTimer: () => false,
+					nextDeadline: () => Number.MAX_SAFE_INTEGER,
+					isCpuSliceActive: () => cpuSliceActive,
+					beginCpuSlice: () => {
+						cpuSliceActive = true;
+						if (sliceStats) {
 						sliceStats.begin += 1;
 					}
 				},
-				endCpuSlice: () => {
+					endCpuSlice: () => {
+						cpuSliceActive = false;
 					if (sliceStats) {
 						sliceStats.end += 1;
 					}
@@ -220,6 +200,7 @@ function makeHaltFrameRuntime(): Runtime {
 		nowCycles: 0,
 		hasDueTimer: () => false,
 		nextDeadline: () => Number.MAX_SAFE_INTEGER,
+		isCpuSliceActive: () => false,
 		beginCpuSlice: () => {},
 		endCpuSlice: () => {},
 	};
@@ -366,20 +347,54 @@ function returnFromInterruptFrame(runtime: Runtime, state: FrameState, cpu: CPU,
 	assert.equal(cpu.getFrameDepth(), 0);
 }
 
-test('CPU protected calls preserve halted callee stop state without Lua results', () => {
-	for (const builtinId of [BuiltinFunctionId.PCall, BuiltinFunctionId.XPCall]) {
-		const { cpu: haltedCpu } = makeCpuWithProgram(cpu => makeSingleOpcodeProgram(cpu, OpCode.HALT));
-		const haltedOut: Value[] = [];
-		const haltedArgs = builtinId === BuiltinFunctionId.XPCall
-			? [haltedCpu.rootClosure(0), haltedCpu.rootClosure(1)]
-			: [haltedCpu.rootClosure(0)];
+test('CPU protected-call microcode preempts, saves, resumes, and preserves Lua results', () => {
+	const source = `
+marker = {}
+local succeed<const> = function()
+	return 3, 4
+end
+local fail<const> = function()
+	error(marker)
+end
+local handle<const> = function(value)
+	return value
+end
+success, success_a, success_b = pcall(succeed)
+failure, handled = xpcall(fail, handle)
+nested_outer, nested_inner, nested_a, nested_b = pcall(pcall, succeed)
+`;
+	const { cpu } = makeCompiledCpu(source);
+	cpu.setGlobalByKey(StringValue.get(cpu.stringPool.intern('error')), createBuiltinFunction(BuiltinFunctionId.Error));
+	cpu.setGlobalByKey(StringValue.get(cpu.stringPool.intern('pcall')), createBuiltinFunction(BuiltinFunctionId.PCall));
+	cpu.setGlobalByKey(StringValue.get(cpu.stringPool.intern('xpcall')), createBuiltinFunction(BuiltinFunctionId.XPCall));
 
-		haltedCpu.callBuiltinFunction(createBuiltinFunction(builtinId), haltedArgs, haltedOut);
-
-		assert.equal(haltedCpu.isHaltedUntilIrq(), true);
-		assert.equal(haltedCpu.getFrameDepth(), 1);
-		assert.deepEqual(haltedOut, []);
+	const moduleCache = new Map<string, Value>();
+	let restoredProtectedCall = false;
+	while (cpu.getFrameDepth() > 0) {
+		assert.equal(cpu.runUntilDepth(0, 1), cpu.getFrameDepth() === 0 ? RunResult.Halted : RunResult.Yielded);
+		if (!restoredProtectedCall && cpu.getFrameDepth() > 0) {
+			const state = cpu.captureRuntimeState(moduleCache);
+			if (state.protectedCalls.length > 0) {
+				cpu.restoreRuntimeState(state, moduleCache);
+				restoredProtectedCall = true;
+			}
+		}
 	}
+
+	assert.equal(restoredProtectedCall, true);
+	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('success'))), true);
+	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('success_a'))), 3);
+	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('success_b'))), 4);
+	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('failure'))), false);
+	assert.equal(
+		cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('handled'))),
+		cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('marker'))),
+	);
+	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('nested_outer'))), true);
+	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('nested_inner'))), true);
+	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('nested_a'))), 3);
+	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('nested_b'))), 4);
+	assert.deepEqual(cpu.captureRuntimeState(moduleCache).protectedCalls, []);
 });
 
 function callClosureInto(runtime: Runtime, fn: Closure, args: ReadonlyArray<Value>, out: Value[]): void {
@@ -501,19 +516,20 @@ test('CPU external closure calls that throw after executing preserve spent budge
 	assert.equal(cpu.getFrameDepth(), 1);
 });
 
-test('CPU frame executor closes scheduler slice when execution throws', () => {
+test('CPU frame executor rejects native Lua re-entry and closes the scheduler slice', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
 	const irqController = new IrqController(memory);
 	const cpu = new CPU(memory, irqController);
-	const throwingNative = cpu.createNativeFunction('throwing_native', () => {
-		throw new Error('native boom');
+	let runtime!: Runtime;
+	const reenteringNative = cpu.createNativeFunction('reentering_native', () => {
+		runtime.callClosureInto(cpu.rootClosure(1), EMPTY_CALL_ARGS, []);
 	}, { base: 7, perArg: 0, perRet: 0 });
 	const metadata = makeMetadata();
-	cpu.setProgram(makeThrowingNativeProgram(cpu, throwingNative), metadata, metadata, 0, 0, 0);
+	cpu.setProgram(makeThrowingNativeProgram(cpu, reenteringNative), metadata, metadata, 0, 0, 0);
 	cpu.start(0);
 
 	const sliceStats = { begin: 0, end: 0 };
-	const runtime = makeRuntime(cpu, irqController, sliceStats);
+	runtime = makeRuntime(cpu, irqController, sliceStats);
 	const executor = new CpuExecutionState(runtime);
 	assert.throws(
 		() => executor.runWithBudget({
@@ -524,7 +540,7 @@ test('CPU frame executor closes scheduler slice when execution throws', () => {
 			cycleCarryGranted: 0,
 			activeCpuUsedCycles: 0,
 		}),
-		/native boom/,
+		/External Lua closure execution requires a suspended CPU/,
 	);
 	assert.deepEqual(sliceStats, { begin: 1, end: 1 });
 });

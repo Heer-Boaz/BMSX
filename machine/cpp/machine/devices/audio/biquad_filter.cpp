@@ -8,7 +8,7 @@ namespace bmsx {
 
 namespace {
 
-constexpr f32 BIQUAD_PI = 3.14159265358979323846f;
+constexpr f64 BIQUAD_PI = 3.14159265358979323846;
 
 enum class BiquadFilterKind {
 	Lowpass,
@@ -68,122 +68,122 @@ BiquadFilterKind resolveBiquadFilterKind(std::string_view type) {
 
 void BiquadFilterState::reset() {
 	enabled = false;
-	b0 = 1.0f;
-	b1 = 0.0f;
-	b2 = 0.0f;
-	a1 = 0.0f;
-	a2 = 0.0f;
-	l1 = 0.0f;
-	l2 = 0.0f;
-	r1 = 0.0f;
-	r2 = 0.0f;
+	b0 = 1.0;
+	b1 = 0.0;
+	b2 = 0.0;
+	a1 = 0.0;
+	a2 = 0.0;
+	l1 = 0.0;
+	l2 = 0.0;
+	r1 = 0.0;
+	r2 = 0.0;
 }
 
 void configureBiquadFilter(
 	BiquadFilterState& state,
 	std::string_view type,
-	f32 frequency,
-	f32 q,
-	f32 gain,
-	f32 sampleRate
+	f64 frequency,
+	f64 q,
+	f64 gain,
+	f64 sampleRate
 ) {
-	frequency = std::clamp(frequency, 0.001f, sampleRate * 0.499f);
+	frequency = std::clamp(frequency, 0.001, sampleRate * 0.499);
 
-	const f32 omega = 2.0f * BIQUAD_PI * frequency / sampleRate;
-	const f32 sinOmega = std::sin(omega);
-	const f32 cosOmega = std::cos(omega);
-	const f32 alpha = sinOmega / (2.0f * q);
-	const f32 A = std::pow(10.0f, gain / 40.0f);
-	const f32 sqrtA = std::sqrt(A);
-	const f32 twoSqrtAAlpha = 2.0f * sqrtA * alpha;
+	const f64 omega = 2.0 * BIQUAD_PI * frequency / sampleRate;
+	const f64 sinOmega = std::sin(omega);
+	const f64 cosOmega = std::cos(omega);
+	const f64 alpha = sinOmega / (2.0 * q);
+	const f64 A = std::pow(10.0, gain / 40.0);
+	const f64 sqrtA = std::sqrt(A);
+	const f64 twoSqrtAAlpha = 2.0 * sqrtA * alpha;
 
-	f32 b0 = 1.0f;
-	f32 b1 = 0.0f;
-	f32 b2 = 0.0f;
-	f32 a0 = 1.0f;
-	f32 a1 = 0.0f;
-	f32 a2 = 0.0f;
+	f64 b0 = 1.0;
+	f64 b1 = 0.0;
+	f64 b2 = 0.0;
+	f64 a0 = 1.0;
+	f64 a1 = 0.0;
+	f64 a2 = 0.0;
 
 	switch (resolveBiquadFilterKind(type)) {
 		case BiquadFilterKind::Lowpass:
-			b0 = (1.0f - cosOmega) * 0.5f;
-			b1 = 1.0f - cosOmega;
-			b2 = (1.0f - cosOmega) * 0.5f;
-			a0 = 1.0f + alpha;
-			a1 = -2.0f * cosOmega;
-			a2 = 1.0f - alpha;
+			b0 = (1.0 - cosOmega) * 0.5;
+			b1 = 1.0 - cosOmega;
+			b2 = (1.0 - cosOmega) * 0.5;
+			a0 = 1.0 + alpha;
+			a1 = -2.0 * cosOmega;
+			a2 = 1.0 - alpha;
 			break;
 		case BiquadFilterKind::Highpass:
-			b0 = (1.0f + cosOmega) * 0.5f;
-			b1 = -(1.0f + cosOmega);
-			b2 = (1.0f + cosOmega) * 0.5f;
-			a0 = 1.0f + alpha;
-			a1 = -2.0f * cosOmega;
-			a2 = 1.0f - alpha;
+			b0 = (1.0 + cosOmega) * 0.5;
+			b1 = -(1.0 + cosOmega);
+			b2 = (1.0 + cosOmega) * 0.5;
+			a0 = 1.0 + alpha;
+			a1 = -2.0 * cosOmega;
+			a2 = 1.0 - alpha;
 			break;
 		case BiquadFilterKind::Bandpass:
-			b0 = sinOmega * 0.5f;
-			b1 = 0.0f;
-			b2 = -sinOmega * 0.5f;
-			a0 = 1.0f + alpha;
-			a1 = -2.0f * cosOmega;
-			a2 = 1.0f - alpha;
+			b0 = sinOmega * 0.5;
+			b1 = 0.0;
+			b2 = -sinOmega * 0.5;
+			a0 = 1.0 + alpha;
+			a1 = -2.0 * cosOmega;
+			a2 = 1.0 - alpha;
 			break;
 		case BiquadFilterKind::Notch:
-			b0 = 1.0f;
-			b1 = -2.0f * cosOmega;
-			b2 = 1.0f;
-			a0 = 1.0f + alpha;
-			a1 = -2.0f * cosOmega;
-			a2 = 1.0f - alpha;
+			b0 = 1.0;
+			b1 = -2.0 * cosOmega;
+			b2 = 1.0;
+			a0 = 1.0 + alpha;
+			a1 = -2.0 * cosOmega;
+			a2 = 1.0 - alpha;
 			break;
 		case BiquadFilterKind::Allpass:
-			b0 = 1.0f - alpha;
-			b1 = -2.0f * cosOmega;
-			b2 = 1.0f + alpha;
-			a0 = 1.0f + alpha;
-			a1 = -2.0f * cosOmega;
-			a2 = 1.0f - alpha;
+			b0 = 1.0 - alpha;
+			b1 = -2.0 * cosOmega;
+			b2 = 1.0 + alpha;
+			a0 = 1.0 + alpha;
+			a1 = -2.0 * cosOmega;
+			a2 = 1.0 - alpha;
 			break;
 		case BiquadFilterKind::Peaking:
-			b0 = 1.0f + alpha * A;
-			b1 = -2.0f * cosOmega;
-			b2 = 1.0f - alpha * A;
-			a0 = 1.0f + alpha / A;
-			a1 = -2.0f * cosOmega;
-			a2 = 1.0f - alpha / A;
+			b0 = 1.0 + alpha * A;
+			b1 = -2.0 * cosOmega;
+			b2 = 1.0 - alpha * A;
+			a0 = 1.0 + alpha / A;
+			a1 = -2.0 * cosOmega;
+			a2 = 1.0 - alpha / A;
 			break;
 		case BiquadFilterKind::Lowshelf:
-			b0 = A * ((A + 1.0f) - (A - 1.0f) * cosOmega + twoSqrtAAlpha);
-			b1 = 2.0f * A * ((A - 1.0f) - (A + 1.0f) * cosOmega);
-			b2 = A * ((A + 1.0f) - (A - 1.0f) * cosOmega - twoSqrtAAlpha);
-			a0 = (A + 1.0f) + (A - 1.0f) * cosOmega + twoSqrtAAlpha;
-			a1 = -2.0f * ((A - 1.0f) + (A + 1.0f) * cosOmega);
-			a2 = (A + 1.0f) + (A - 1.0f) * cosOmega - twoSqrtAAlpha;
+			b0 = A * ((A + 1.0) - (A - 1.0) * cosOmega + twoSqrtAAlpha);
+			b1 = 2.0 * A * ((A - 1.0) - (A + 1.0) * cosOmega);
+			b2 = A * ((A + 1.0) - (A - 1.0) * cosOmega - twoSqrtAAlpha);
+			a0 = (A + 1.0) + (A - 1.0) * cosOmega + twoSqrtAAlpha;
+			a1 = -2.0 * ((A - 1.0) + (A + 1.0) * cosOmega);
+			a2 = (A + 1.0) + (A - 1.0) * cosOmega - twoSqrtAAlpha;
 			break;
 		case BiquadFilterKind::Highshelf:
-			b0 = A * ((A + 1.0f) + (A - 1.0f) * cosOmega + twoSqrtAAlpha);
-			b1 = -2.0f * A * ((A - 1.0f) + (A + 1.0f) * cosOmega);
-			b2 = A * ((A + 1.0f) + (A - 1.0f) * cosOmega - twoSqrtAAlpha);
-			a0 = (A + 1.0f) - (A - 1.0f) * cosOmega + twoSqrtAAlpha;
-			a1 = 2.0f * ((A - 1.0f) - (A + 1.0f) * cosOmega);
-			a2 = (A + 1.0f) - (A - 1.0f) * cosOmega - twoSqrtAAlpha;
+			b0 = A * ((A + 1.0) + (A - 1.0) * cosOmega + twoSqrtAAlpha);
+			b1 = -2.0 * A * ((A - 1.0) + (A + 1.0) * cosOmega);
+			b2 = A * ((A + 1.0) + (A - 1.0) * cosOmega - twoSqrtAAlpha);
+			a0 = (A + 1.0) - (A - 1.0) * cosOmega + twoSqrtAAlpha;
+			a1 = 2.0 * ((A - 1.0) - (A + 1.0) * cosOmega);
+			a2 = (A + 1.0) - (A - 1.0) * cosOmega - twoSqrtAAlpha;
 			break;
 		case BiquadFilterKind::Unknown:
 			throw BMSX_RUNTIME_ERROR("Unsupported biquad filter type.");
 	}
 
-	const f32 invA0 = 1.0f / a0;
+	const f64 invA0 = 1.0 / a0;
 	state.enabled = true;
 	state.b0 = b0 * invA0;
 	state.b1 = b1 * invA0;
 	state.b2 = b2 * invA0;
 	state.a1 = a1 * invA0;
 	state.a2 = a2 * invA0;
-	state.l1 = 0.0f;
-	state.l2 = 0.0f;
-	state.r1 = 0.0f;
-	state.r2 = 0.0f;
+	state.l1 = 0.0;
+	state.l2 = 0.0;
+	state.r1 = 0.0;
+	state.r2 = 0.0;
 }
 
 } // namespace bmsx

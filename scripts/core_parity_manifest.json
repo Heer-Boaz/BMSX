@@ -1130,6 +1130,30 @@
 	],
 	"strict_file_pair_parity": [
 		{
+			"ts": "machine/ts/audio/output_resampler.ts",
+			"cpp": [
+				"machine/cpp/audio/output_resampler.h",
+				"machine/cpp/audio/output_resampler.cpp"
+			],
+			"reason": "retained_host_audio_resampler_filename_parity"
+		},
+		{
+			"ts": "machine/ts/machine/devices/audio/output.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/audio/output.h",
+				"machine/cpp/machine/devices/audio/output.cpp"
+			],
+			"reason": "apu_machine_dac_output_owner_filename_parity"
+		},
+		{
+			"ts": "machine/ts/machine/devices/audio/output_ring.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/audio/output_ring.h",
+				"machine/cpp/machine/devices/audio/output_ring.cpp"
+			],
+			"reason": "apu_host_transport_ring_owner_filename_parity"
+		},
+		{
 			"ts": "machine/ts/render/post/crt/webgl/pipeline.ts",
 			"cpp": [
 				"machine/cpp/render/post/crt/gles2/pipeline.h",
@@ -1678,6 +1702,58 @@
 	],
 	"strict_runtime_no_heap_functions": [
 		{
+			"file": "machine/ts/machine/devices/audio/output.ts",
+			"functions": [
+				"renderMachineFrames",
+				"renderMachineBatch",
+				"readVoiceFrame"
+			],
+			"reason": "apu_machine_dac_generation_must_remain_allocation_free"
+		},
+		{
+			"file": "machine/cpp/machine/devices/audio/output.cpp",
+			"functions": [
+				"renderMachineFrames",
+				"renderMachineBatch",
+				"readVoiceFrame"
+			],
+			"reason": "apu_machine_dac_generation_must_remain_allocation_free"
+		},
+		{
+			"file": "machine/ts/machine/devices/audio/output_ring.ts",
+			"functions": [
+				"write",
+				"readFramePacked"
+			],
+			"reason": "apu_host_transport_ring_must_remain_allocation_free"
+		},
+		{
+			"file": "machine/cpp/machine/devices/audio/output_ring.cpp",
+			"functions": [
+				"write",
+				"readFramePacked"
+			],
+			"reason": "apu_host_transport_ring_must_remain_allocation_free"
+		},
+		{
+			"file": "machine/ts/audio/output_resampler.ts",
+			"functions": [
+				"pull",
+				"prime",
+				"readNext"
+			],
+			"reason": "host_audio_pull_and_interpolation_must_remain_allocation_free"
+		},
+		{
+			"file": "machine/cpp/audio/output_resampler.cpp",
+			"functions": [
+				"pull",
+				"prime",
+				"readNext"
+			],
+			"reason": "host_audio_pull_and_interpolation_must_remain_allocation_free"
+		},
+		{
 			"file": "machine/ts/render/post/crt/webgl/pipeline.ts",
 			"functions": [
 				"writeCrtVec3",
@@ -2005,6 +2081,55 @@
 		}
 	],
 	"strict_runtime_method_parity": [
+		{
+			"ts": "machine/ts/audio/output_resampler.ts",
+			"cpp": [
+				"machine/cpp/audio/output_resampler.h",
+				"machine/cpp/audio/output_resampler.cpp"
+			],
+			"methods": [
+				"reset",
+				"pull",
+				"prime",
+				"readNext"
+			],
+			"reason": "retained_host_audio_resampler_method_contract"
+		},
+		{
+			"ts": "machine/ts/machine/devices/audio/output.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/audio/output.h",
+				"machine/cpp/machine/devices/audio/output.cpp",
+				"machine/cpp/machine/devices/audio/save_state.cpp"
+			],
+			"methods": [
+				"resetPlaybackState",
+				"captureState",
+				"playVoice",
+				"replaceVoiceSource",
+				"restoreVoice",
+				"writeSlotRegisterWord",
+				"stopSlot",
+				"stopAllVoices",
+				"samplesUntilNextEvent",
+				"renderMachineFrames"
+			],
+			"reason": "apu_machine_dac_output_method_contract"
+		},
+		{
+			"ts": "machine/ts/machine/devices/audio/output_ring.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/audio/output_ring.h",
+				"machine/cpp/machine/devices/audio/output_ring.cpp"
+			],
+			"methods": [
+				"clear",
+				"queuedFrames",
+				"write",
+				"readFramePacked"
+			],
+			"reason": "apu_host_transport_ring_method_contract"
+		},
 		{
 			"ts": "machine/ts/machine/runtime/runtime.ts",
 			"cpp": [

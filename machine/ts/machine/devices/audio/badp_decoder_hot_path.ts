@@ -42,6 +42,9 @@ export function createApuBadpDecoderState(): ApuBadpDecoderState {
 		decodedFrame: -1,
 		decodedLeft: 0,
 		decodedRight: 0,
+		previousDecodedFrame: -1,
+		previousDecodedLeft: 0,
+		previousDecodedRight: 0,
 	};
 }
 
@@ -58,20 +61,33 @@ export function resetApuBadpDecoder(record: ApuBadpDecodeTarget, frame: number):
 	badp.decodedFrame = -1;
 	badp.decodedLeft = 0;
 	badp.decodedRight = 0;
+	badp.previousDecodedFrame = -1;
+	badp.previousDecodedLeft = 0;
+	badp.previousDecodedRight = 0;
 	seekApuBadpDecoderToFrame(record, frame);
 }
 
-export function readApuBadpFrameAt(record: ApuBadpDecodeTarget, frame: number): void {
+export function readApuBadpFrameAt(record: ApuBadpDecodeTarget, frame: number): number {
 	const badp = record.badp;
+	let left: number;
+	let right: number;
 	if (badp.decodedFrame === frame) {
-		return;
+		left = badp.decodedLeft;
+		right = badp.decodedRight;
+	} else if (badp.previousDecodedFrame === frame) {
+		left = badp.previousDecodedLeft;
+		right = badp.previousDecodedRight;
+	} else {
+		if (frame < badp.nextFrame) {
+			seekApuBadpDecoderToFrame(record, frame);
+		}
+		while (badp.nextFrame <= frame) {
+			decodeNextApuBadpFrame(record);
+		}
+		left = badp.decodedLeft;
+		right = badp.decodedRight;
 	}
-	if (frame < badp.nextFrame) {
-		seekApuBadpDecoderToFrame(record, frame);
-	}
-	while (badp.nextFrame <= frame) {
-		decodeNextApuBadpFrame(record);
-	}
+	return (left & 0xffff) | ((right & 0xffff) << 16);
 }
 
 function loadApuBadpBlock(record: ApuBadpDecodeTarget, offset: number): void {
@@ -97,11 +113,14 @@ function loadApuBadpBlock(record: ApuBadpDecodeTarget, offset: number): void {
 
 function seekApuBadpDecoderToFrame(record: ApuBadpDecodeTarget, frame: number): void {
 	const badp = record.badp;
-	if (frame === record.frames) {
-		badp.nextFrame = frame;
-		badp.decodedFrame = frame - 1;
-		badp.decodedLeft = 0;
-		badp.decodedRight = 0;
+	badp.decodedFrame = -1;
+	badp.decodedLeft = 0;
+	badp.decodedRight = 0;
+	badp.previousDecodedFrame = -1;
+	badp.previousDecodedLeft = 0;
+	badp.previousDecodedRight = 0;
+	if (frame >= record.frames) {
+		badp.nextFrame = record.frames;
 		return;
 	}
 	let seekIndex = 0;
@@ -128,7 +147,6 @@ function seekApuBadpDecoderToFrame(record: ApuBadpDecodeTarget, frame: number): 
 		loadApuBadpBlock(record, cursor);
 	}
 	badp.nextFrame = currentFrame;
-	badp.decodedFrame = currentFrame - 1;
 	while (badp.nextFrame <= frame) {
 		decodeNextApuBadpFrame(record);
 	}
@@ -175,6 +193,9 @@ function decodeNextApuBadpFrame(record: ApuBadpDecodeTarget): void {
 	}
 	badp.blockFrameIndex += 1;
 	badp.nextFrame += 1;
+	badp.previousDecodedFrame = badp.decodedFrame;
+	badp.previousDecodedLeft = badp.decodedLeft;
+	badp.previousDecodedRight = badp.decodedRight;
 	badp.decodedFrame = badp.nextFrame - 1;
 	badp.decodedLeft = left;
 	badp.decodedRight = right;

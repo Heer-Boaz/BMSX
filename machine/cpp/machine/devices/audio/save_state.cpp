@@ -4,6 +4,7 @@
 
 #include "machine/bus/io.h"
 #include "machine/cpu/cpu.h"
+#include "machine/scheduler/device.h"
 
 #include <cstring>
 
@@ -34,13 +35,12 @@ void ApuSourceDma::restoreState(const ApuSlotSourceBytes& slotSourceBytes) {
 ApuOutputVoiceState captureApuOutputVoiceState(const ApuOutputMixer::VoiceRecord& record) {
 	ApuOutputVoiceState voice;
 	voice.slot = record.slot;
-	voice.position = record.position;
-	voice.step = record.step;
+	voice.cursorQ16 = record.cursorQ16;
+	voice.phaseRemainder = record.phaseRemainder;
 	voice.gain = record.gain;
-	voice.targetGain = record.targetGain;
-	voice.gainRampRemaining = record.gainRampRemaining;
-	voice.stopAfter = record.stopAfter;
-	voice.filterSampleRate = record.filterSampleRate;
+	voice.fadeStartGain = record.fadeStartGain;
+	voice.fadeSamplesRemaining = record.fadeSamplesRemaining;
+	voice.fadeSamplesTotal = record.fadeSamplesTotal;
 	voice.filter.enabled = record.filter.enabled;
 	voice.filter.b0 = record.filter.b0;
 	voice.filter.b1 = record.filter.b1;
@@ -64,17 +64,19 @@ ApuOutputVoiceState captureApuOutputVoiceState(const ApuOutputMixer::VoiceRecord
 	voice.badp.decodedFrame = record.badp.decodedFrame;
 	voice.badp.decodedLeft = record.badp.decodedLeft;
 	voice.badp.decodedRight = record.badp.decodedRight;
+	voice.badp.previousDecodedFrame = record.badp.previousDecodedFrame;
+	voice.badp.previousDecodedLeft = record.badp.previousDecodedLeft;
+	voice.badp.previousDecodedRight = record.badp.previousDecodedRight;
 	return voice;
 }
 
 void restoreApuOutputVoiceState(ApuOutputMixer::VoiceRecord& record, const ApuOutputVoiceState& state) {
-	record.position = state.position;
-	record.step = state.step;
+	record.cursorQ16 = state.cursorQ16;
+	record.phaseRemainder = state.phaseRemainder;
 	record.gain = state.gain;
-	record.targetGain = state.targetGain;
-	record.gainRampRemaining = state.gainRampRemaining;
-	record.stopAfter = state.stopAfter;
-	record.filterSampleRate = state.filterSampleRate;
+	record.fadeStartGain = state.fadeStartGain;
+	record.fadeSamplesRemaining = state.fadeSamplesRemaining;
+	record.fadeSamplesTotal = state.fadeSamplesTotal;
 	record.filter.enabled = state.filter.enabled;
 	record.filter.b0 = state.filter.b0;
 	record.filter.b1 = state.filter.b1;
@@ -96,11 +98,16 @@ void restoreApuOutputVoiceState(ApuOutputMixer::VoiceRecord& record, const ApuOu
 	record.badp.payloadOffset = state.badp.payloadOffset;
 	record.badp.nibbleCursor = state.badp.nibbleCursor;
 	record.badp.decodedFrame = state.badp.decodedFrame;
-	record.badp.decodedLeft = static_cast<i16>(state.badp.decodedLeft);
-	record.badp.decodedRight = static_cast<i16>(state.badp.decodedRight);
+	record.badp.decodedLeft = state.badp.decodedLeft;
+	record.badp.decodedRight = state.badp.decodedRight;
+	record.badp.previousDecodedFrame = state.badp.previousDecodedFrame;
+	record.badp.previousDecodedLeft = state.badp.previousDecodedLeft;
+	record.badp.previousDecodedRight = state.badp.previousDecodedRight;
 }
 
-AudioControllerState AudioController::captureState() const {
+AudioControllerState AudioController::captureState() {
+	const i64 nowCycles = m_scheduler.currentNowCycles();
+	m_serviceClock.synchronize(nowCycles);
 	AudioControllerState state;
 	for (size_t index = 0; index < APU_PARAMETER_REGISTER_COUNT; index += 1u) {
 		state.registerWords[index] = m_memory.readIoU32(IO_APU_PARAMETER_REGISTER_ADDRS[index]);
@@ -114,12 +121,8 @@ AudioControllerState AudioController::captureState() const {
 	state.slotPhases = m_slots.slotPhases();
 	state.slotRegisterWords = m_slots.slotRegisterWords();
 	state.slotSourceBytes = m_sourceDma.captureState();
-	state.slotPlaybackCursorQ16 = m_slots.slotPlaybackCursorQ16();
-	state.slotFadeSamplesRemaining = m_slots.slotFadeSamplesRemaining();
-	state.slotFadeSamplesTotal = m_slots.slotFadeSamplesTotal();
 	state.output = m_audioOutput.captureState();
 	state.sampleCarry = m_serviceClock.captureSampleCarry();
-	state.availableSamples = m_serviceClock.captureAvailableSamples();
 	state.apuStatus = m_fault.status;
 	state.apuFaultCode = m_fault.code;
 	state.apuFaultDetail = m_fault.detail;
@@ -127,28 +130,19 @@ AudioControllerState AudioController::captureState() const {
 }
 
 void AudioController::restoreState(const AudioControllerState& state, int64_t nowCycles) {
-	m_slots.resetVoiceIds();
 	m_audioOutput.resetPlaybackState();
 	for (size_t index = 0; index < APU_PARAMETER_REGISTER_COUNT; index += 1u) {
 		m_memory.writeIoValue(IO_APU_PARAMETER_REGISTER_ADDRS[index], valueNumber(static_cast<double>(state.registerWords[index])));
 	}
 	m_commandFifo.restoreState(state.commandFifo);
 	m_eventLatch.restoreState({state.eventSequence, state.eventKind, state.eventSlot, state.eventSourceAddr});
-	m_slots.restore(
-		state.slotPhases,
-		state.slotRegisterWords,
-		state.slotPlaybackCursorQ16,
-		state.slotFadeSamplesRemaining,
-		state.slotFadeSamplesTotal
-	);
+	m_slots.restore(state.slotPhases, state.slotRegisterWords);
 	m_sourceDma.restoreState(state.slotSourceBytes);
-	m_serviceClock.restore(state.sampleCarry, state.availableSamples);
+	m_serviceClock.restore(state.sampleCarry, nowCycles);
 	m_fault.restore(state.apuStatus, state.apuFaultCode, state.apuFaultDetail);
 	m_activeSlots.writeActiveMask();
 	for (const ApuOutputVoiceState& voiceState : state.output.voices) {
-		const ApuVoiceId voiceId = m_slots.allocateVoiceId();
-		m_slots.assignVoiceId(voiceState.slot, voiceId);
-		m_commandExecutor.restoreOutputVoice(voiceState, voiceId);
+		m_commandExecutor.restoreOutputVoice(voiceState);
 	}
 	m_serviceClock.scheduleNext(nowCycles);
 }

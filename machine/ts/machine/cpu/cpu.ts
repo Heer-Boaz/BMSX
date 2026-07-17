@@ -134,6 +134,19 @@ export class LuaThrownValueError extends Error {
 	}
 }
 
+export class LuaExecutionError extends Error {
+	public constructor(message: string) {
+		super(message);
+		this.name = 'LuaExecutionError';
+	}
+}
+
+export const enum ProtectedCallKind {
+	PCall,
+	XPCallBody,
+	XPCallHandler,
+}
+
 export type BuiltinFunction = {
 	readonly kind: typeof BUILTIN_FUNCTION_KIND;
 	readonly id: BuiltinFunctionId;
@@ -332,6 +345,16 @@ export type CpuFrameState = {
 	isExceptionFrame: boolean;
 };
 
+export type CpuProtectedCallState = {
+	kind: ProtectedCallKind;
+	callerFrameIndex: number;
+	targetFrameIndex: number;
+	returnsToProtectedParent: boolean;
+	callBase: number;
+	returnCount: number;
+	handlerRegister: number;
+};
+
 export type CpuRootValueState = {
 	name: string;
 	value: CpuValueState;
@@ -342,6 +365,7 @@ export type CpuRuntimeState = {
 	globals: CpuRootValueState[];
 	moduleCache: CpuRootValueState[];
 	frames: CpuFrameState[];
+	protectedCalls: CpuProtectedCallState[];
 	lastReturnValues: CpuValueState[];
 	objects: CpuObjectState[];
 	openUpvalues: number[];
@@ -498,6 +522,16 @@ type CallFrame = {
 	isExceptionFrame: boolean;
 };
 
+class ProtectedCallContinuation {
+	public kind = ProtectedCallKind.PCall;
+	public caller: CallFrame | null = null;
+	public target: CallFrame | null = null;
+	public returnsToProtectedParent = false;
+	public callBase = 0;
+	public returnCount = 0;
+	public handlerRegister = -1;
+}
+
 type HashNode = {
 	key: Value;
 	value: Value;
@@ -554,7 +588,7 @@ export class Table {
 
 	public get(key: Value): Value {
 		if (key === null) {
-			throw new Error('Table index is nil.');
+			throw new LuaExecutionError('Table index is nil.');
 		}
 		const index = this.getArrayIndex(key);
 		if (index !== null && index < this.array.length) {
@@ -569,7 +603,7 @@ export class Table {
 
 	public set(key: Value, value: Value): void {
 		if (key === null) {
-			throw new Error('Table index is nil.');
+			throw new LuaExecutionError('Table index is nil.');
 		}
 		const index = this.getArrayIndex(key);
 		if (index !== null) {
@@ -1514,9 +1548,11 @@ export class CPU {
 	private systemIrqProtoIndex!: number;
 	private cartIrqProtoIndex!: number;
 	private systemExceptionProtoIndex!: number;
-	private hostExternalCallDepth = 0;
+	private hostExternalCallActive = false;
 	private yieldRequested = false;
 	private readonly frames: CallFrame[] = [];
+	private readonly protectedCallContinuations = new ScratchBuffer<ProtectedCallContinuation>(() => new ProtectedCallContinuation(), MAX_POOLED_FRAMES);
+	private protectedCallDepth = 0;
 	private readonly openUpvalues: OpenUpvalueSlot[] = [];
 	private readonly registerNativeArgsScratch = new ScratchBuffer<RegisterNativeArgsView>(() => new RegisterNativeArgsView());
 	private registerNativeArgsScratchIndex = 0;
@@ -1663,7 +1699,7 @@ export class CPU {
 			}
 			current = indexer;
 		}
-		throw new Error('Metatable __index loop detected.');
+		throw new LuaExecutionError('Metatable __index loop detected.');
 	}
 
 	private loadTableIndex(base: Value, key: Value): Value {
@@ -1692,7 +1728,7 @@ export class CPU {
 			}
 			return null;
 		}
-		throw new Error('Attempted to index field on a non-table value.');
+		throw new LuaExecutionError('Attempted to index field on a non-table value.');
 	}
 
 	private loadTableIntegerIndexCached(cacheIndex: number, base: Value, index: number): Value {
@@ -1739,7 +1775,7 @@ export class CPU {
 			}
 			return directValue;
 		}
-		throw new Error('Attempted to index field on a non-table value.');
+		throw new LuaExecutionError('Attempted to index field on a non-table value.');
 	}
 
 	private loadTableFieldIndexCached(cacheIndex: number, base: Value, key: StringValue): Value {
@@ -1785,7 +1821,7 @@ export class CPU {
 			}
 			return directValue;
 		}
-		throw new Error('Attempted to index field on a non-table value.');
+		throw new LuaExecutionError('Attempted to index field on a non-table value.');
 	}
 
 	private storeTableIndex(base: Value, key: Value, value: Value): void {
@@ -1797,7 +1833,7 @@ export class CPU {
 			base.set(key, value);
 			return;
 		}
-		throw new Error('Attempted to assign to a non-table value.');
+		throw new LuaExecutionError('Attempted to assign to a non-table value.');
 	}
 
 	private storeTableIntegerIndex(base: Value, index: number, value: Value): void {
@@ -1809,7 +1845,7 @@ export class CPU {
 			base.set(index, value);
 			return;
 		}
-		throw new Error('Attempted to assign to a non-table value.');
+		throw new LuaExecutionError('Attempted to assign to a non-table value.');
 	}
 
 	private storeTableFieldIndex(base: Value, key: StringValue, value: Value): void {
@@ -1821,7 +1857,7 @@ export class CPU {
 			base.set(key, value);
 			return;
 		}
-		throw new Error('Attempted to assign to a non-table value.');
+		throw new LuaExecutionError('Attempted to assign to a non-table value.');
 	}
 
 	private acquireFrame(): CallFrame {
@@ -1859,6 +1895,12 @@ export class CPU {
 	}
 
 	private clearCallStack(): void {
+		for (let index = 0; index < this.protectedCallDepth; index += 1) {
+			const continuation = this.protectedCallContinuations.peek(index);
+			continuation.caller = null;
+			continuation.target = null;
+		}
+		this.protectedCallDepth = 0;
 		while (this.frames.length > 0) {
 			const frame = this.frames.pop()!;
 			this.closeUpvalues(frame);
@@ -2065,7 +2107,7 @@ export class CPU {
 		this.epcWord = 0;
 		this.badAddressWord = 0;
 		this.nonMaskableInterruptPending = false;
-		this.hostExternalCallDepth = 0;
+		this.hostExternalCallActive = false;
 		this.yieldRequested = false;
 		this.pushFrame(this.rootClosure(entryProtoIndex), args, 0, 0, false, this.program.protos[entryProtoIndex].entryPC);
 		enforceLuaHeapBudget();
@@ -2083,15 +2125,15 @@ export class CPU {
 	}
 
 	public enterHostExternalCall(): void {
-		this.hostExternalCallDepth += 1;
+		this.hostExternalCallActive = true;
 	}
 
 	public leaveHostExternalCall(): void {
-		this.hostExternalCallDepth -= 1;
+		this.hostExternalCallActive = false;
 	}
 
 	public isHostExternalCallActive(): boolean {
-		return this.hostExternalCallDepth !== 0;
+		return this.hostExternalCallActive;
 	}
 
 	public callExternal(closure: Closure, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS): void {
@@ -2236,57 +2278,65 @@ export class CPU {
 		const baseCycles = BASE_CYCLES;
 		const decodedPages = this.decodedPages;
 		while (frames.length > targetDepth) {
-			if (this.hardHalted || this.haltedUntilIrq || this.memoryWriteBlocked) {
-				return RunResult.Halted;
+			try {
+				while (frames.length > targetDepth) {
+					if (this.hardHalted || this.haltedUntilIrq || this.memoryWriteBlocked) {
+						return RunResult.Halted;
+					}
+					if (this.yieldRequested) {
+						this.yieldRequested = false;
+						return RunResult.Yielded;
+					}
+					if (this.instructionBudgetRemaining <= 0) {
+						return RunResult.Yielded;
+					}
+					if (!this.hostExternalCallActive
+						&& ((this.nonMaskableInterruptPending && (this.statusWord & CPU_STATUS_USER_MODE_CURRENT) !== 0)
+							|| ((this.statusWord & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) !== 0
+								&& this.irqController.hasAssertedMaskableInterruptLine()))
+					) {
+						this.enterPendingInterrupt();
+						continue;
+					}
+					const frame = frames[frames.length - 1];
+					const pc = frame.pc;
+					const wordIndex = pc / INSTRUCTION_BYTES;
+					if ((wordIndex >>> 0) >= this.decodedWordCount) {
+						this.hardHalt();
+						return RunResult.Halted;
+					}
+					const pageIndex = wordIndex >>> DECODED_PAGE_SHIFT;
+					const page = decodedPages[pageIndex];
+					const pageOffset = wordIndex & DECODED_PAGE_MASK;
+					const width = page.widths[pageOffset];
+					const op = page.ops[pageOffset];
+					this.currentInstructionPc = pc;
+					frame.pc = pc + (width * INSTRUCTION_BYTES);
+					this.lastPc = pc + ((width - 1) * INSTRUCTION_BYTES);
+					this.lastInstruction = page.words[pageOffset];
+					if (profiler !== null) {
+						profiler.record(wordIndex, op);
+					}
+					this.instructionBudgetRemaining -= baseCycles[op];
+					this.executeInstruction(
+						frame,
+						page.tableCacheIndexes[pageOffset],
+						op,
+						page.a[pageOffset],
+						page.b[pageOffset],
+						page.c[pageOffset],
+						page.bx[pageOffset],
+						page.sbx[pageOffset],
+						page.rkB[pageOffset],
+						page.rkC[pageOffset],
+						page.disp[pageOffset],
+					);
+				}
+			} catch (error) {
+				if (!this.handleProtectedCallError(error)) {
+					throw error;
+				}
 			}
-			if (this.yieldRequested) {
-				this.yieldRequested = false;
-				return RunResult.Yielded;
-			}
-			if (this.instructionBudgetRemaining <= 0) {
-				return RunResult.Yielded;
-			}
-			if (this.hostExternalCallDepth === 0
-				&& ((this.nonMaskableInterruptPending && (this.statusWord & CPU_STATUS_USER_MODE_CURRENT) !== 0)
-					|| ((this.statusWord & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) !== 0
-						&& this.irqController.hasAssertedMaskableInterruptLine()))
-			) {
-				this.enterPendingInterrupt();
-				continue;
-			}
-			const frame = frames[frames.length - 1];
-			const pc = frame.pc;
-			const wordIndex = pc / INSTRUCTION_BYTES;
-			if ((wordIndex >>> 0) >= this.decodedWordCount) {
-				this.hardHalt();
-				return RunResult.Halted;
-			}
-			const pageIndex = wordIndex >>> DECODED_PAGE_SHIFT;
-			const page = decodedPages[pageIndex];
-			const pageOffset = wordIndex & DECODED_PAGE_MASK;
-			const width = page.widths[pageOffset];
-			const op = page.ops[pageOffset];
-			this.currentInstructionPc = pc;
-			frame.pc = pc + (width * INSTRUCTION_BYTES);
-			this.lastPc = pc + ((width - 1) * INSTRUCTION_BYTES);
-			this.lastInstruction = page.words[pageOffset];
-			if (profiler !== null) {
-				profiler.record(wordIndex, op);
-			}
-			this.instructionBudgetRemaining -= baseCycles[op];
-			this.executeInstruction(
-				frame,
-				page.tableCacheIndexes[pageOffset],
-				op,
-				page.a[pageOffset],
-				page.b[pageOffset],
-				page.c[pageOffset],
-				page.bx[pageOffset],
-				page.sbx[pageOffset],
-				page.rkB[pageOffset],
-				page.rkC[pageOffset],
-				page.disp[pageOffset],
-			);
 		}
 		return RunResult.Halted;
 	}
@@ -2297,6 +2347,15 @@ export class CPU {
 			this.closeUpvalues(frame);
 			this.stackTop = frame.varargBase;
 			this.releaseFrame(frame);
+		}
+		while (this.protectedCallDepth > 0) {
+			const continuation = this.protectedCallContinuations.peek(this.protectedCallDepth - 1);
+			if (this.frames.indexOf(continuation.caller!) >= 0) {
+				break;
+			}
+			continuation.caller = null;
+			continuation.target = null;
+			this.protectedCallDepth -= 1;
 		}
 	}
 
@@ -2339,19 +2398,25 @@ export class CPU {
 			profiler.record(wordIndex, op);
 		}
 		this.charge(BASE_CYCLES[op]);
-		this.executeInstruction(
-			frame,
-			page.tableCacheIndexes[pageOffset],
-			op,
-			page.a[pageOffset],
-			page.b[pageOffset],
-			page.c[pageOffset],
-			page.bx[pageOffset],
-			page.sbx[pageOffset],
-			page.rkB[pageOffset],
-			page.rkC[pageOffset],
-			page.disp[pageOffset],
-		);
+		try {
+			this.executeInstruction(
+				frame,
+				page.tableCacheIndexes[pageOffset],
+				op,
+				page.a[pageOffset],
+				page.b[pageOffset],
+				page.c[pageOffset],
+				page.bx[pageOffset],
+				page.sbx[pageOffset],
+				page.rkB[pageOffset],
+				page.rkC[pageOffset],
+				page.disp[pageOffset],
+			);
+		} catch (error) {
+			if (!this.handleProtectedCallError(error)) {
+				throw error;
+			}
+		}
 	}
 
 	public getDebugState(): { pc: number; instr: number; registers: Value[] } {
@@ -2846,13 +2911,27 @@ export class CPU {
 						}
 						return;
 					}
-					this.pushFrameFromCaller(frame, callee as Closure, a + 1, argCount, a, c, false, frame.pc - INSTRUCTION_BYTES);
-					return;
+					if (valueIsClosure(callee)) {
+						this.pushFrameFromCaller(frame, callee, a + 1, argCount, a, c, false, frame.pc - INSTRUCTION_BYTES);
+						return;
+					}
+					throw new LuaExecutionError('Attempted to call a non-function value.');
 				}
 				case OpCode.RET: {
 					const total = b === 0 ? Math.max(frame.top - a, 0) : b;
 					this.closeUpvalues(frame);
 					const frameIndex = this.frames.length - 1;
+					if (this.protectedCallDepth > 0) {
+						const continuationIndex = this.protectedCallDepth - 1;
+						const continuation = this.protectedCallContinuations.peek(continuationIndex);
+						if (continuation.target === frame) {
+							this.finishProtectedCallFromRegisters(continuationIndex, registers, a, total);
+							this.frames.pop();
+							this.stackTop = frame.varargBase;
+							this.releaseFrame(frame);
+							return;
+						}
+					}
 					if (frame.captureReturns) {
 						if (this.externalReturnSink !== null) {
 							this.captureValuesIntoArrayFromRegisters(this.externalReturnSink, registers, a, total);
@@ -3101,7 +3180,7 @@ export class CPU {
 		return frame;
 	}
 
-	private pushFrameFromCaller(caller: CallFrame, closure: Closure, argBase: number, argCount: number, returnBase: number, returnCount: number, captureReturns: boolean, callSitePc: number): void {
+	private pushFrameFromCaller(caller: CallFrame, closure: Closure, argBase: number, argCount: number, returnBase: number, returnCount: number, captureReturns: boolean, callSitePc: number): CallFrame {
 		const proto = this.program.protos[closure.protoIndex];
 		const frame = this.acquireFrame();
 		frame.protoIndex = closure.protoIndex;
@@ -3130,6 +3209,7 @@ export class CPU {
 			}
 		}
 		this.frames.push(frame);
+		return frame;
 	}
 
 	private createClosure(frame: CallFrame, protoIndex: number): Closure {
@@ -3379,16 +3459,17 @@ export class CPU {
 				this.runBuiltinError(args);
 				break;
 			case BuiltinFunctionId.PCall:
-				this.runBuiltinPCall(args, out);
-				break;
 			case BuiltinFunctionId.XPCall:
-				this.runBuiltinXPCall(args, out);
-				break;
+				throw new Error('Protected calls execute as Lua CPU microcode.');
 		}
 	}
 
 	private runBuiltinFunction(fn: BuiltinFunction, frame: CallFrame, callBase: number, returnCount: number, argCount: number): void {
 		this.charge(fn.cost.base);
+		if (fn.id === BuiltinFunctionId.PCall || fn.id === BuiltinFunctionId.XPCall) {
+			this.startProtectedCall(fn.id, frame, callBase, returnCount, callBase + 1, argCount, false);
+			return;
+		}
 		const nativeArgs = this.acquireRegisterNativeArgs();
 		const results = this.nativeReturnScratch.acquire();
 		try {
@@ -3400,6 +3481,228 @@ export class CPU {
 		} finally {
 			this.releaseRegisterNativeArgs(nativeArgs);
 			this.nativeReturnScratch.release(results);
+		}
+	}
+
+	private startProtectedCall(
+		id: BuiltinFunctionId.PCall | BuiltinFunctionId.XPCall,
+		caller: CallFrame,
+		callBase: number,
+		returnCount: number,
+		argumentBase: number,
+		argumentCount: number,
+		returnsToProtectedParent: boolean,
+	): void {
+		const continuationIndex = this.protectedCallDepth;
+		const continuation = this.protectedCallContinuations.get(continuationIndex);
+		this.protectedCallDepth = continuationIndex + 1;
+		continuation.kind = id === BuiltinFunctionId.PCall ? ProtectedCallKind.PCall : ProtectedCallKind.XPCallBody;
+		continuation.caller = caller;
+		continuation.target = null;
+		continuation.returnsToProtectedParent = returnsToProtectedParent;
+		continuation.callBase = callBase;
+		continuation.returnCount = returnCount;
+		continuation.handlerRegister = id === BuiltinFunctionId.XPCall ? argumentBase + 1 : -1;
+
+		const targetArgumentOffset = id === BuiltinFunctionId.PCall ? 1 : 2;
+		this.invokeProtectedTarget(
+			continuationIndex,
+			caller.registers.get(argumentBase),
+			argumentBase + targetArgumentOffset,
+			Math.max(argumentCount - targetArgumentOffset, 0),
+		);
+	}
+
+	private invokeProtectedTarget(continuationIndex: number, target: Value, argumentBase: number, argumentCount: number): void {
+		const continuation = this.protectedCallContinuations.peek(continuationIndex);
+		const caller = continuation.caller!;
+		if (valueIsClosure(target)) {
+			continuation.target = this.pushFrameFromCaller(
+				caller,
+				target,
+				argumentBase,
+				argumentCount,
+				0,
+				0,
+				false,
+				caller.pc - INSTRUCTION_BYTES,
+			);
+			return;
+		}
+		if (isBuiltinFunction(target)) {
+			this.charge(target.cost.base);
+			if (target.id === BuiltinFunctionId.PCall || target.id === BuiltinFunctionId.XPCall) {
+				this.startProtectedCall(target.id, caller, continuation.callBase, 0, argumentBase, argumentCount, true);
+				return;
+			}
+			const nativeArgs = this.acquireRegisterNativeArgs();
+			const results = this.nativeReturnScratch.acquire();
+			try {
+				nativeArgs.bind(caller.registers, argumentBase, argumentCount);
+				this.callBuiltinFunctionView(target, nativeArgs, results);
+				this.finishProtectedCallFromArray(continuationIndex, results);
+			} finally {
+				this.releaseRegisterNativeArgs(nativeArgs);
+				this.nativeReturnScratch.release(results);
+			}
+			return;
+		}
+		if (isNativeFunction(target)) {
+			this.charge(target.cost.base);
+			const nativeArgs = this.acquireRegisterNativeArgs();
+			const results = this.nativeReturnScratch.acquire();
+			try {
+				nativeArgs.bind(caller.registers, argumentBase, argumentCount);
+				target.invoke(nativeArgs, results);
+				enforceLuaHeapBudget();
+				this.finishProtectedCallFromArray(continuationIndex, results);
+			} finally {
+				this.releaseRegisterNativeArgs(nativeArgs);
+				this.nativeReturnScratch.release(results);
+			}
+			return;
+		}
+		throw new LuaExecutionError('Attempted to call a non-function value.');
+	}
+
+	private finishProtectedCallFromArray(continuationIndex: number, values: Value[]): void {
+		const continuation = this.protectedCallContinuations.peek(continuationIndex);
+		const prefix = continuation.kind !== ProtectedCallKind.XPCallHandler;
+		const resultCount = this.writeProtectedResultsFromArray(continuation, prefix, values);
+		this.finishProtectedContinuation(continuationIndex, resultCount);
+	}
+
+	private finishProtectedCallFromRegisters(continuationIndex: number, source: RegisterFile, sourceBase: number, sourceCount: number): void {
+		const continuation = this.protectedCallContinuations.peek(continuationIndex);
+		const prefix = continuation.kind !== ProtectedCallKind.XPCallHandler;
+		const resultCount = this.writeProtectedResultsFromRegisters(continuation, prefix, source, sourceBase, sourceCount);
+		this.finishProtectedContinuation(continuationIndex, resultCount);
+	}
+
+	private finishProtectedCallWithError(continuationIndex: number, errorValue: Value): void {
+		const continuation = this.protectedCallContinuations.peek(continuationIndex);
+		const caller = continuation.caller!;
+		const resultCount = continuation.returnCount === 0 ? 2 : continuation.returnCount;
+		if (resultCount > 0) {
+			const registers = this.ensureRegisterCapacity(caller, continuation.callBase + resultCount - 1);
+			registers.setBool(continuation.callBase, false);
+			if (resultCount > 1) {
+				registers.set(continuation.callBase + 1, errorValue);
+				for (let index = 2; index < resultCount; index += 1) {
+					registers.setNil(continuation.callBase + index);
+				}
+			}
+		}
+		caller.top = continuation.callBase + resultCount;
+		this.finishProtectedContinuation(continuationIndex, resultCount);
+	}
+
+	private writeProtectedResultsFromArray(continuation: ProtectedCallContinuation, prefix: boolean, values: Value[]): number {
+		const caller = continuation.caller!;
+		const resultCount = continuation.returnCount === 0 ? values.length + 1 : continuation.returnCount;
+		if (resultCount > 0) {
+			const registers = this.ensureRegisterCapacity(caller, continuation.callBase + resultCount - 1);
+			registers.setBool(continuation.callBase, prefix);
+			const copiedCount = Math.min(values.length, resultCount - 1);
+			for (let index = 0; index < copiedCount; index += 1) {
+				registers.set(continuation.callBase + index + 1, values[index]);
+			}
+			for (let index = copiedCount + 1; index < resultCount; index += 1) {
+				registers.setNil(continuation.callBase + index);
+			}
+		}
+		caller.top = continuation.callBase + resultCount;
+		return resultCount;
+	}
+
+	private writeProtectedResultsFromRegisters(
+		continuation: ProtectedCallContinuation,
+		prefix: boolean,
+		source: RegisterFile,
+		sourceBase: number,
+		sourceCount: number,
+	): number {
+		const caller = continuation.caller!;
+		const resultCount = continuation.returnCount === 0 ? sourceCount + 1 : continuation.returnCount;
+		if (resultCount > 0) {
+			const registers = this.ensureRegisterCapacity(caller, continuation.callBase + resultCount - 1);
+			const copiedCount = Math.min(sourceCount, resultCount - 1);
+			if (copiedCount > 0) {
+				if (registers === source) {
+					registers.moveRange(continuation.callBase + 1, sourceBase, copiedCount);
+				} else {
+					registers.copyRangeFrom(source, continuation.callBase + 1, sourceBase, copiedCount);
+				}
+			}
+			registers.setBool(continuation.callBase, prefix);
+			for (let index = copiedCount + 1; index < resultCount; index += 1) {
+				registers.setNil(continuation.callBase + index);
+			}
+		}
+		caller.top = continuation.callBase + resultCount;
+		return resultCount;
+	}
+
+	private finishProtectedContinuation(continuationIndex: number, resultCount: number): void {
+		const continuation = this.protectedCallContinuations.peek(continuationIndex);
+		const caller = continuation.caller!;
+		const callBase = continuation.callBase;
+		const returnsToProtectedParent = continuation.returnsToProtectedParent;
+		continuation.target = null;
+		continuation.caller = null;
+		this.protectedCallDepth = continuationIndex;
+		if (returnsToProtectedParent) {
+			this.finishProtectedCallFromRegisters(continuationIndex - 1, caller.registers, callBase, resultCount);
+		}
+	}
+
+	private handleProtectedCallError(error: unknown): boolean {
+		let errorValue: Value;
+		if (error instanceof LuaThrownValueError) {
+			errorValue = error.value;
+		} else if (error instanceof LuaExecutionError) {
+			errorValue = StringValue.get(this.stringPool.intern(error.message));
+		} else {
+			return false;
+		}
+
+		for (;;) {
+			if (this.protectedCallDepth === 0) {
+				return false;
+			}
+			const continuationIndex = this.protectedCallDepth - 1;
+			const continuation = this.protectedCallContinuations.peek(continuationIndex);
+			const caller = continuation.caller!;
+			const callerIndex = this.frames.indexOf(caller);
+			for (let frameIndex = this.frames.length - 1; frameIndex > callerIndex; frameIndex -= 1) {
+				if (this.frames[frameIndex].isExceptionFrame) {
+					return false;
+				}
+			}
+			this.unwindToDepth(callerIndex + 1);
+			if (continuation.kind !== ProtectedCallKind.XPCallBody) {
+				this.finishProtectedCallWithError(continuationIndex, errorValue);
+				return true;
+			}
+
+			continuation.kind = ProtectedCallKind.XPCallHandler;
+			continuation.target = null;
+			const handler = caller.registers.get(continuation.handlerRegister);
+			this.setRegister(caller, continuation.callBase, errorValue);
+			try {
+				this.invokeProtectedTarget(continuationIndex, handler, continuation.callBase, 1);
+				return true;
+			} catch (handlerError) {
+				if (handlerError instanceof LuaThrownValueError) {
+					errorValue = handlerError.value;
+					continue;
+				}
+				if (handlerError instanceof LuaExecutionError) {
+					errorValue = StringValue.get(this.stringPool.intern(handlerError.message));
+					continue;
+				}
+				throw handlerError;
+			}
 		}
 	}
 
@@ -3524,114 +3827,6 @@ export class CPU {
 	private runBuiltinError(args: NativeArgs): never {
 		const value = args.get(0);
 		throw new LuaThrownValueError(value, this.valueToString(value));
-	}
-
-	private callValueInto(callee: Value, args: ReadonlyArray<Value>, out: Value[]): boolean {
-		out.length = 0;
-		if (isBuiltinFunction(callee)) {
-			this.callBuiltinFunction(callee, args, out);
-			return !this.hardHalted && !this.haltedUntilIrq;
-		}
-		if (isNativeFunction(callee)) {
-			const nativeArgs = this.acquireArrayNativeArgs(args);
-			try {
-				callee.invoke(nativeArgs, out);
-				return !this.hardHalted && !this.haltedUntilIrq;
-			} finally {
-				this.releaseArrayNativeArgs(nativeArgs);
-			}
-		}
-		const closure = callee as Closure;
-		const depth = this.frames.length;
-		const previousBudget = this.instructionBudgetRemaining;
-		const previousSink = this.swapExternalReturnSink(out);
-		const budgetSentinel = Number.MAX_SAFE_INTEGER;
-		let spentBudget = 0;
-		let activeBudget = 0;
-		let completed = true;
-		try {
-			this.pushFrame(closure, args, 0, 0, true, this.program.protos[closure.protoIndex].entryPC);
-			while (this.frames.length > depth) {
-				activeBudget = budgetSentinel;
-				const result = this.runUntilDepth(depth, budgetSentinel);
-				spentBudget += activeBudget - this.instructionBudgetRemaining;
-				activeBudget = 0;
-				if (this.frames.length > depth && result === RunResult.Halted) {
-					completed = false;
-					break;
-				}
-			}
-		} catch (error) {
-			if (activeBudget > 0) {
-				spentBudget += activeBudget - this.instructionBudgetRemaining;
-			}
-			this.unwindToDepth(depth);
-			throw error;
-		} finally {
-			this.swapExternalReturnSink(previousSink);
-			this.instructionBudgetRemaining = previousBudget - spentBudget;
-		}
-		return completed;
-	}
-
-	private runBuiltinPCall(args: NativeArgs, out: Value[]): void {
-		const callArgs = this.nativeReturnScratch.acquire();
-		const results = this.nativeReturnScratch.acquire();
-		try {
-			callArgs.length = 0;
-			for (let index = 1; index < args.length; index += 1) {
-				callArgs.push(args.get(index));
-			}
-			if (!this.callValueInto(args.get(0), callArgs, results)) {
-				return;
-			}
-			out.length = 0;
-			out.push(true);
-			for (let index = 0; index < results.length; index += 1) {
-				out.push(results[index]);
-			}
-		} catch (error) {
-			out.length = 0;
-			out.push(false, error instanceof LuaThrownValueError ? error.value : StringValue.get(this.stringPool.intern(error instanceof Error ? error.message : String(error))));
-		} finally {
-			this.nativeReturnScratch.release(results);
-			this.nativeReturnScratch.release(callArgs);
-		}
-	}
-
-	private runBuiltinXPCall(args: NativeArgs, out: Value[]): void {
-		const callArgs = this.nativeReturnScratch.acquire();
-		const handlerArgs = this.nativeReturnScratch.acquire();
-		const results = this.nativeReturnScratch.acquire();
-		try {
-			callArgs.length = 0;
-			for (let index = 2; index < args.length; index += 1) {
-				callArgs.push(args.get(index));
-			}
-			if (!this.callValueInto(args.get(0), callArgs, results)) {
-				return;
-			}
-			out.length = 0;
-			out.push(true);
-			for (let index = 0; index < results.length; index += 1) {
-				out.push(results[index]);
-			}
-		} catch (error) {
-			handlerArgs.length = 0;
-			handlerArgs.push(error instanceof LuaThrownValueError ? error.value : StringValue.get(this.stringPool.intern(error instanceof Error ? error.message : String(error))));
-			if (!this.callValueInto(args.get(1), handlerArgs, results)) {
-				return;
-			}
-			out.length = 0;
-			out.push(false);
-			for (let index = 0; index < results.length; index += 1) {
-				out.push(results[index]);
-			}
-		} finally {
-			this.nativeReturnScratch.release(results);
-			this.nativeReturnScratch.release(handlerArgs);
-			this.nativeReturnScratch.release(callArgs);
-		}
 	}
 
 	public captureRuntimeState(moduleCache: ReadonlyMap<string, Value>): CpuRuntimeState {
@@ -3798,6 +3993,20 @@ export class CPU {
 				isExceptionFrame: frame.isExceptionFrame,
 			};
 		}
+		const protectedCalls = new Array<CpuProtectedCallState>(this.protectedCallDepth);
+		for (let index = 0; index < this.protectedCallDepth; index += 1) {
+			const continuation = this.protectedCallContinuations.peek(index);
+			const caller = continuation.caller!;
+			protectedCalls[index] = {
+				kind: continuation.kind,
+				callerFrameIndex: this.frames.indexOf(caller),
+				targetFrameIndex: continuation.target === null ? -1 : this.frames.indexOf(continuation.target),
+				returnsToProtectedParent: continuation.returnsToProtectedParent,
+				callBase: continuation.callBase,
+				returnCount: continuation.returnCount,
+				handlerRegister: continuation.handlerRegister,
+			};
+		}
 
 		const lastReturnValues = new Array<CpuValueState>(this.lastReturnValues.length);
 		for (let index = 0; index < this.lastReturnValues.length; index += 1) {
@@ -3814,6 +4023,7 @@ export class CPU {
 			globals,
 			moduleCache: moduleCacheState,
 			frames,
+			protectedCalls,
 			lastReturnValues,
 			objects,
 			openUpvalues,
@@ -3966,6 +4176,18 @@ export class CPU {
 			frame.top = frameState.top;
 			this.frames.push(frame);
 		}
+		for (let index = 0; index < state.protectedCalls.length; index += 1) {
+			const continuationState = state.protectedCalls[index];
+			const continuation = this.protectedCallContinuations.get(index);
+			continuation.kind = continuationState.kind;
+			continuation.caller = this.frames[continuationState.callerFrameIndex];
+			continuation.target = continuationState.targetFrameIndex < 0 ? null : this.frames[continuationState.targetFrameIndex];
+			continuation.returnsToProtectedParent = continuationState.returnsToProtectedParent;
+			continuation.callBase = continuationState.callBase;
+			continuation.returnCount = continuationState.returnCount;
+			continuation.handlerRegister = continuationState.handlerRegister;
+		}
+		this.protectedCallDepth = state.protectedCalls.length;
 
 		for (let index = 0; index < state.openUpvalues.length; index += 1) {
 			const upvalueState = state.objects[state.openUpvalues[index]] as Extract<CpuObjectState, { kind: 'upvalue' }>;

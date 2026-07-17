@@ -85,7 +85,6 @@ export class Machine {
 	public advanceDevices(cycles: number): void {
 		const nextNow = this.scheduler.nowCycles + cycles;
 		this.geometryController.accrueCycles(cycles, nextNow);
-		this.audioController.accrueCycles(cycles, nextNow);
 		this.scheduler.advanceTo(nextNow);
 	}
 

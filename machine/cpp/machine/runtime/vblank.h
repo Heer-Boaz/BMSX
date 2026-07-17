@@ -19,7 +19,6 @@ public:
 	void setVblankCycles(Runtime& runtime, int cycles);
 	void setNextFrameTiming(int cycleBudgetPerFrame, int vblankCycles);
 	int getCyclesIntoFrame(const Runtime& runtime) const;
-	void resetScheduler(Runtime& runtime);
 	void reset(Runtime& runtime);
 	RuntimeVblankSnapshot capture(const Runtime& runtime) const;
 	void restore(Runtime& runtime, const RuntimeVblankSnapshot& state);

@@ -9,8 +9,8 @@ struct BudgetAccrual {
 	i64 carry = 0;
 };
 
-inline void accrueBudgetUnits(BudgetAccrual& out, i64 cpuHz, i64 unitsPerSec, i64 carry, int cycles) {
-	const i64 numerator = unitsPerSec * static_cast<i64>(cycles) + carry;
+inline void accrueBudgetUnits(BudgetAccrual& out, i64 cpuHz, i64 unitsPerSec, i64 carry, i64 cycles) {
+	const i64 numerator = unitsPerSec * cycles + carry;
 	out.wholeUnits = numerator / cpuHz;
 	out.carry = numerator % cpuHz;
 }

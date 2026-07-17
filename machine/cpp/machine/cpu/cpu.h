@@ -521,6 +521,10 @@ struct LuaThrownValueError final : std::exception {
 	const char* what() const noexcept override { return message.c_str(); }
 };
 
+struct LuaExecutionError final : std::runtime_error {
+	using std::runtime_error::runtime_error;
+};
+
 struct NativeFunction : GCObject {
 	std::string name;
 	NativeFunctionInvoke invoke;
@@ -658,6 +662,12 @@ enum class RunResult {
 	Yielded,
 };
 
+enum class ProtectedCallKind : uint8_t {
+	PCall,
+	XPCallBody,
+	XPCallHandler,
+};
+
 struct CallFrame {
 	int protoIndex = 0;
 	int pc = 0;
@@ -673,6 +683,16 @@ struct CallFrame {
 	bool captureReturns = false;
 	int callSitePc = 0;
 	bool isExceptionFrame = false;
+};
+
+struct ProtectedCallContinuation {
+	ProtectedCallKind kind = ProtectedCallKind::PCall;
+	CallFrame* caller = nullptr;
+	CallFrame* target = nullptr;
+	bool returnsToProtectedParent = false;
+	int callBase = 0;
+	int returnCount = 0;
+	int handlerRegister = -1;
 };
 
 struct TableHashNodeState {
@@ -749,6 +769,16 @@ struct CpuFrameState {
 	bool isExceptionFrame = false;
 };
 
+struct CpuProtectedCallState {
+	ProtectedCallKind kind = ProtectedCallKind::PCall;
+	int callerFrameIndex = -1;
+	int targetFrameIndex = -1;
+	bool returnsToProtectedParent = false;
+	int callBase = 0;
+	int returnCount = 0;
+	int handlerRegister = -1;
+};
+
 struct CpuRootValueState {
 	std::string name;
 	CpuValueState value;
@@ -759,6 +789,7 @@ struct CpuRuntimeState {
 	std::vector<CpuRootValueState> globals;
 	std::vector<CpuRootValueState> moduleCache;
 	std::vector<CpuFrameState> frames;
+	std::vector<CpuProtectedCallState> protectedCalls;
 	std::vector<CpuValueState> lastReturnValues;
 	std::vector<CpuObjectState> objects;
 	std::vector<int> openUpvalues;
@@ -970,7 +1001,7 @@ public:
 	bool enterPendingInterrupt();
 	void enterHostExternalCall();
 	void leaveHostExternalCall();
-	bool isHostExternalCallActive() const { return m_hostExternalCallDepth != 0; }
+	bool isHostExternalCallActive() const { return m_hostExternalCallActive; }
 	RunResult run(int instructionBudget);
 	RunResult runUntilDepth(int targetDepth, int instructionBudget);
 	void unwindToDepth(int targetDepth);
@@ -1011,7 +1042,6 @@ public:
 
 private:
 	friend class NativeResultsScratchScope;
-
 	void executeInstruction(CallFrame& frame, const DecodedInstruction& decoded);
 	void runBuiltinFunction(BuiltinFunction& fn, CallFrame& frame, int callBase, int returnCount, int argCount);
 	void runBuiltinNextValue(Value target, Value key, NativeResults& out);
@@ -1023,9 +1053,16 @@ private:
 	void runBuiltinStringByte(NativeArgsView args, NativeResults& out);
 	void runBuiltinStringChar(NativeArgsView args, NativeResults& out);
 	void runBuiltinError(NativeArgsView args);
-	void runBuiltinPCall(NativeArgsView args, NativeResults& out);
-	void runBuiltinXPCall(NativeArgsView args, NativeResults& out);
-	bool callValueInto(Value callee, NativeArgsView args, NativeResults& out);
+	void startProtectedCall(BuiltinFunctionId id, CallFrame& caller, int callBase, int returnCount,
+		int argumentBase, int argumentCount, bool returnsToProtectedParent);
+	void invokeProtectedTarget(size_t continuationIndex, Value target, int argumentBase, int argumentCount);
+	void finishProtectedCall(size_t continuationIndex, const Value* values, int valueCount);
+	void finishProtectedCall(size_t continuationIndex, CallFrame& source, int sourceBase, int sourceCount);
+	void finishProtectedCallWithError(size_t continuationIndex, Value errorValue);
+	int writeProtectedResults(ProtectedCallContinuation& continuation, bool prefix, const Value* values, int valueCount);
+	int writeProtectedResults(ProtectedCallContinuation& continuation, bool prefix, CallFrame& source, int sourceBase, int sourceCount);
+	void finishProtectedContinuation(size_t continuationIndex, int resultCount);
+	bool handleProtectedCallError(Value errorValue);
 	void runHousekeeping();
 	void tickHotLoopHousekeeping();
 	void initializeGlobalSlots(const ProgramRuntimeSymbols& runtimeSymbols, const std::unordered_map<StringId, Value>& previousSystemGlobals);
@@ -1085,6 +1122,8 @@ private:
 	Program* m_program = nullptr;
 	ProgramMetadata* m_metadata = nullptr;
 	std::vector<std::unique_ptr<CallFrame>> m_frames;
+	ScratchBuffer<ProtectedCallContinuation> m_protectedCallContinuations;
+	size_t m_protectedCallDepth = 0;
 	std::vector<OpenUpvalueSlot> m_openUpvalues;
 	bool m_haltedUntilIrq = false;
 	bool m_interruptEventPending = false;
@@ -1101,7 +1140,7 @@ private:
 	int m_cartIrqProtoIndex;
 	int m_systemExceptionProtoIndex;
 	bool m_yieldRequested = false;
-	int m_hostExternalCallDepth = 0;
+	bool m_hostExternalCallActive = false;
 	Memory& m_memory;
 	IrqController& m_irqController;
 	StringPool m_stringPool;

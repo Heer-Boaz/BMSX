@@ -4,6 +4,8 @@ import { PAL_REFRESH_UFPS_SCALED } from '../machine/model_registry';
 import { HZ_SCALE } from '../machine/runtime/timing/constants';
 import { clamp01 } from '../common/clamp';
 import { isIOSAudioTarget } from '../platform/browser_audio_target';
+import { APU_SAMPLE_RATE_HZ } from '../machine/devices/audio/contracts';
+import { AudioOutputResampler } from './output_resampler';
 
 const MIX_MINIMAL_OVERHEAD_SEC = 0.002;
 const MIX_LOW_OVERHEAD_SEC = 0.004;
@@ -19,14 +21,17 @@ export class SoundMaster {
 	private mixUfpsScaled = PAL_REFRESH_UFPS_SCALED;
 	private mixLatencyProfile: MixLatencyProfile;
 	private mixTargetAheadSec: number;
-	private readonly pullRuntimeOutput: AudioOutputPuller = (output, frameCount, sampleRate, targetQueuedFrames): void => {
-		machineManager.runtime.machine.audioOutput.pullOutputFrames(output, frameCount, sampleRate, 1, targetQueuedFrames);
+	private mixSourcePrebufferFrames: number;
+	private readonly outputResampler = new AudioOutputResampler();
+	private readonly pullRuntimeOutput: AudioOutputPuller = (output, frameCount, sampleRate): void => {
+		this.outputResampler.pull(machineManager.runtime.machine.audioOutput.outputRing, output, frameCount, sampleRate, 1, this.mixSourcePrebufferFrames);
 	};
 
 	private constructor() {
 		this.globalSuspensions = new Set();
 		this.mixLatencyProfile = isIOSAudioTarget() ? 'safe' : 'low';
 		this.mixTargetAheadSec = (HZ_SCALE / this.mixUfpsScaled) + this.profileOverheadSec();
+		this.mixSourcePrebufferFrames = Math.ceil(this.mixTargetAheadSec * APU_SAMPLE_RATE_HZ);
 	}
 
 	private get A(): AudioService {
@@ -47,6 +52,8 @@ export class SoundMaster {
 	}
 
 	public resetPlaybackState(): void {
+		this.outputResampler.reset();
+		machineManager.runtime.machine.audioOutput.outputRing.clear();
 		if (this.audio) {
 			this.A.clearRuntimeAudioTransport();
 		}
@@ -80,6 +87,7 @@ export class SoundMaster {
 	private recomputeMixTarget(): void {
 		const frameTimeSec = HZ_SCALE / this.mixUfpsScaled;
 		this.mixTargetAheadSec = frameTimeSec + this.profileOverheadSec();
+		this.mixSourcePrebufferFrames = Math.ceil(this.mixTargetAheadSec * APU_SAMPLE_RATE_HZ);
 		if (this.audio && this.globalSuspensions.size === 0) {
 			this.A.setFrameTimeSec(this.mixTargetAheadSec);
 		}
@@ -97,6 +105,8 @@ export class SoundMaster {
 	}
 
 	private startMixer(): void {
+		this.outputResampler.reset();
+		machineManager.runtime.machine.audioOutput.outputRing.clear();
 		this.A.clearRuntimeAudioTransport();
 		this.A.setFrameTimeSec(this.mixTargetAheadSec);
 		this.A.setRuntimeAudioPuller(this.pullRuntimeOutput);
@@ -106,6 +116,8 @@ export class SoundMaster {
 	private stopMixer(): void {
 		this.A.setRuntimeAudioPuller(null);
 		this.A.clearRuntimeAudioTransport();
+		this.outputResampler.reset();
+		machineManager.runtime.machine.audioOutput.outputRing.clear();
 	}
 
 	public pause(): void {

@@ -562,8 +562,7 @@ export class WorkerStreamingAudioService implements AudioService {
 					framesToWrite = budgetFrames;
 				}
 				this.ensureRuntimeOutputBuffer(framesToWrite);
-				const retainedOutputFrames = targetFrames - queuedFrames - framesToWrite;
-				this.runtimeAudioPuller(this.runtimeOutputBuffer, framesToWrite, this.ctx.sampleRate, retainedOutputFrames);
+				this.runtimeAudioPuller(this.runtimeOutputBuffer, framesToWrite, this.ctx.sampleRate);
 				this.writeRuntimeFrames(this.runtimeOutputBuffer, framesToWrite);
 				budgetFrames -= framesToWrite;
 			}

@@ -17,6 +17,9 @@ export type ApuBadpDecoderState = {
 	decodedFrame: number;
 	decodedLeft: number;
 	decodedRight: number;
+	previousDecodedFrame: number;
+	previousDecodedLeft: number;
+	previousDecodedRight: number;
 };
 
 export function readApuBadpSeekTable(bytes: Uint8Array, byteOffset: number): ApuBadpSeekTableResult {

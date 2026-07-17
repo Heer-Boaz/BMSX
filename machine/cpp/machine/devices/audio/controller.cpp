@@ -30,17 +30,14 @@ AudioController::AudioController(Memory& memory, ApuOutputMixer& audioOutput, Ir
 	, m_fault(memory, APU_DEVICE_STATUS_REGISTERS)
 	, m_selectedSlotLatch(memory, m_fault, m_slots)
 	, m_activeSlots(memory, m_audioOutput, m_sourceDma, m_eventLatch, m_slots, m_selectedSlotLatch)
-	, m_statusRegister(m_fault, m_slots, m_commandFifo, m_audioOutput.outputRing)
-	, m_serviceClock(scheduler, m_commandFifo, m_slots)
+	, m_serviceClock(scheduler, m_commandFifo, m_activeSlots, m_audioOutput)
+	, m_statusRegister(m_fault, m_slots, m_commandFifo, m_serviceClock, scheduler)
 	, m_commandIngress(memory, m_commandFifo, m_fault, m_serviceClock, scheduler)
-	, m_queueStatusRegisters(m_commandFifo, m_audioOutput.outputRing)
+	, m_queueStatusRegisters(m_commandFifo)
 	, m_commandExecutor(memory, m_audioOutput, scheduler, m_commandFifo, m_sourceDma, m_activeSlots, m_slots, m_selectedSlotLatch, m_fault, m_serviceClock) {
 	m_memory.mapIoRead(IO_APU_STATUS, &m_statusRegister, &ApuStatusRegister::readThunk);
 	m_memory.mapIoWrite(IO_APU_CMD, &m_commandIngress, &ApuCommandIngress::onCommandWriteThunk);
 	m_memory.mapIoWrite(IO_APU_SLOT, &m_selectedSlotLatch, &ApuSelectedSlotLatch::refreshThunk);
-	m_memory.mapIoRead(IO_APU_OUTPUT_QUEUED_FRAMES, &m_queueStatusRegisters, &ApuQueueStatusRegisters::readThunk);
-	m_memory.mapIoRead(IO_APU_OUTPUT_FREE_FRAMES, &m_queueStatusRegisters, &ApuQueueStatusRegisters::readThunk);
-	m_memory.mapIoRead(IO_APU_OUTPUT_CAPACITY_FRAMES, &m_queueStatusRegisters, &ApuQueueStatusRegisters::readThunk);
 	m_memory.mapIoRead(IO_APU_CMD_QUEUED, &m_queueStatusRegisters, &ApuQueueStatusRegisters::readThunk);
 	m_memory.mapIoRead(IO_APU_CMD_FREE, &m_queueStatusRegisters, &ApuQueueStatusRegisters::readThunk);
 	m_memory.mapIoRead(IO_APU_CMD_CAPACITY, &m_queueStatusRegisters, &ApuQueueStatusRegisters::readThunk);
@@ -52,7 +49,7 @@ AudioController::AudioController(Memory& memory, ApuOutputMixer& audioOutput, Ir
 }
 
 void AudioController::dispose() {
-	m_serviceClock.reset();
+	m_serviceClock.reset(m_scheduler.currentNowCycles());
 	m_audioOutput.resetPlaybackState();
 }
 
@@ -60,7 +57,7 @@ void AudioController::reset() {
 	m_commandFifo.reset();
 	m_slots.reset();
 	m_sourceDma.reset();
-	m_serviceClock.reset();
+	m_serviceClock.reset(m_scheduler.currentNowCycles());
 	m_audioOutput.resetPlaybackState();
 	m_fault.resetStatus();
 	clearApuCommandLatch(m_memory);
@@ -70,30 +67,15 @@ void AudioController::reset() {
 }
 
 void AudioController::setTiming(int64_t cpuHz, int64_t nowCycles) {
-	m_serviceClock.setCpuHz(cpuHz);
-	if (m_slots.activeMask() == 0u && m_commandFifo.empty()) {
-		m_serviceClock.clearBudget();
-	}
-	m_serviceClock.scheduleNext(nowCycles);
-}
-
-void AudioController::accrueCycles(int cycles, int64_t nowCycles) {
-	if (m_slots.activeMask() == 0u || cycles <= 0) {
-		return;
-	}
-	m_serviceClock.accrueCycles(cycles);
+	m_serviceClock.setCpuHz(cpuHz, nowCycles);
 	m_serviceClock.scheduleNext(nowCycles);
 }
 
 void AudioController::onService(int64_t nowCycles) {
+	m_serviceClock.synchronize(nowCycles);
 	if (!m_commandFifo.empty()) {
 		m_commandExecutor.drainCommandFifo();
 	}
-	if (m_slots.activeMask() == 0u || !m_serviceClock.pendingSamples()) {
-		m_serviceClock.scheduleNext(nowCycles);
-		return;
-	}
-	m_activeSlots.advance(m_serviceClock.consumeSamples());
 	m_serviceClock.scheduleNext(nowCycles);
 }
 

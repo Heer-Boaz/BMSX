@@ -62,6 +62,10 @@ export class DeviceScheduler {
 		return this.activeSliceBaseCycle + (this.activeSliceBudgetCycles - this.cpu.instructionBudgetRemaining);
 	}
 
+	public isCpuSliceActive(): boolean {
+		return this.schedulerSliceActive;
+	}
+
 	public beginCpuSlice(sliceBudget: number): void {
 		this.schedulerSliceActive = true;
 		this.activeSliceBaseCycle = this.schedulerNowCycles;
@@ -119,6 +123,11 @@ export class DeviceScheduler {
 
 	public cancelDeviceService(deviceKind: number): void {
 		this.deviceServiceTimerGeneration[deviceKind] = nextTimerGeneration(this.deviceServiceTimerGeneration[deviceKind]!);
+	}
+
+	public cancelVblankTimers(): void {
+		this.vblankEnterTimerGeneration = nextTimerGeneration(this.vblankEnterTimerGeneration);
+		this.vblankEndTimerGeneration = nextTimerGeneration(this.vblankEndTimerGeneration);
 	}
 
 	private clearTimerHeap(): void {

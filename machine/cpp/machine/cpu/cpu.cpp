@@ -454,7 +454,7 @@ void Table::removeFromHash(const Value& key) {
 
 Value Table::get(const Value& key) const {
 	if (isNil(key)) {
-		throw BMSX_RUNTIME_ERROR("Table index is nil.");
+		throw LuaExecutionError("Table index is nil.");
 	}
 	int index = 0;
 	if (getArrayIndex(key, index)) {
@@ -472,7 +472,7 @@ Value Table::get(const Value& key) const {
 
 void Table::set(const Value& key, const Value& value) {
 	if (isNil(key)) {
-		throw BMSX_RUNTIME_ERROR("Table index is nil.");
+		throw LuaExecutionError("Table index is nil.");
 	}
 	int index = 0;
 	bool isArrayKey = getArrayIndex(key, index);
@@ -927,7 +927,8 @@ CPU::NativeLocalRootsScope::~NativeLocalRootsScope() {
 }
 
 CPU::CPU(Memory& memory, IrqController& irqController)
-	: m_memory(memory)
+	: m_protectedCallContinuations(MAX_POOLED_FRAMES)
+	, m_memory(memory)
 	, m_irqController(irqController)
 	, m_stringPool(true)
 	, m_heap(m_stringPool) {
@@ -1251,7 +1252,7 @@ void CPU::start(int entryProtoIndex, NativeArgsView args, u32 statusWord) {
 	m_badAddressWord = 0u;
 	m_nonMaskableInterruptPending = false;
 	m_yieldRequested = false;
-	m_hostExternalCallDepth = 0;
+	m_hostExternalCallActive = false;
 	Closure* closure = &rootClosure(entryProtoIndex);
 	pushFrame(closure, args.data(), args.size(), 0, 0, false, m_program->protos[entryProtoIndex].entryPC);
 	runHousekeeping();
@@ -1450,6 +1451,26 @@ CpuRuntimeState CPU::captureRuntimeState(const std::unordered_map<std::string, V
 		}
 		state.frames.push_back(std::move(frameState));
 	}
+	state.protectedCalls.reserve(m_protectedCallDepth);
+	for (size_t index = 0; index < m_protectedCallDepth; ++index) {
+		const ProtectedCallContinuation& continuation = m_protectedCallContinuations.peek(index);
+		CpuProtectedCallState continuationState;
+		continuationState.kind = continuation.kind;
+		continuationState.returnsToProtectedParent = continuation.returnsToProtectedParent;
+		continuationState.callBase = continuation.callBase;
+		continuationState.returnCount = continuation.returnCount;
+		continuationState.handlerRegister = continuation.handlerRegister;
+		for (size_t frameIndex = 0; frameIndex < m_frames.size(); ++frameIndex) {
+			CallFrame* frame = m_frames[frameIndex].get();
+			if (frame == continuation.caller) {
+				continuationState.callerFrameIndex = static_cast<int>(frameIndex);
+			}
+			if (frame == continuation.target) {
+				continuationState.targetFrameIndex = static_cast<int>(frameIndex);
+			}
+		}
+		state.protectedCalls.push_back(continuationState);
+	}
 	state.lastReturnValues.reserve(lastReturnValues.size());
 	for (const Value& value : lastReturnValues) {
 		state.lastReturnValues.push_back(captureValueState(value));
@@ -1637,6 +1658,20 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state, std::unordered_map<s
 		frame->top = frameState.top;
 		m_frames.push_back(std::move(frame));
 	}
+	for (size_t index = 0; index < state.protectedCalls.size(); ++index) {
+		const CpuProtectedCallState& continuationState = state.protectedCalls[index];
+		ProtectedCallContinuation& continuation = m_protectedCallContinuations.get(index);
+		continuation.kind = continuationState.kind;
+		continuation.caller = m_frames[static_cast<size_t>(continuationState.callerFrameIndex)].get();
+		continuation.target = continuationState.targetFrameIndex < 0
+			? nullptr
+			: m_frames[static_cast<size_t>(continuationState.targetFrameIndex)].get();
+		continuation.returnsToProtectedParent = continuationState.returnsToProtectedParent;
+		continuation.callBase = continuationState.callBase;
+		continuation.returnCount = continuationState.returnCount;
+		continuation.handlerRegister = continuationState.handlerRegister;
+	}
+	m_protectedCallDepth = state.protectedCalls.size();
 
 	for (int upvalueRef : state.openUpvalues) {
 		const CpuObjectState& objectState = state.objects[static_cast<size_t>(upvalueRef)];
@@ -1732,22 +1767,212 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, NativeArgsView args, NativeRe
 			runBuiltinError(args);
 			break;
 		case BuiltinFunctionId::PCall:
-			runBuiltinPCall(args, out);
-			break;
 		case BuiltinFunctionId::XPCall:
-			runBuiltinXPCall(args, out);
-			break;
+			throw std::runtime_error("Protected calls execute as Lua CPU microcode.");
 	}
 }
 
 void CPU::runBuiltinFunction(BuiltinFunction& fn, CallFrame& frame, int callBase, int returnCount, int argCount) {
 	instructionBudgetRemaining -= static_cast<int>(fn.cycleBase);
+	if (fn.id == BuiltinFunctionId::PCall || fn.id == BuiltinFunctionId::XPCall) {
+		startProtectedCall(fn.id, frame, callBase, returnCount, callBase + 1, argCount, false);
+		return;
+	}
 	auto outScratch = acquireNativeReturnScratch();
 	NativeResults& out = outScratch.get();
 	const NativeArgsView args(frame.registers + static_cast<size_t>(callBase + 1), static_cast<size_t>(argCount));
 	callBuiltinFunction(fn, args, out);
 	if (!m_frames.empty() && m_frames.back().get() == &frame) {
 		writeReturnValues(frame, callBase, returnCount, out.data(), static_cast<int>(out.size()));
+	}
+}
+
+void CPU::startProtectedCall(BuiltinFunctionId id, CallFrame& caller, int callBase, int returnCount,
+	int argumentBase, int argumentCount, bool returnsToProtectedParent) {
+	const size_t continuationIndex = m_protectedCallDepth;
+	ProtectedCallContinuation& continuation = m_protectedCallContinuations.get(continuationIndex);
+	m_protectedCallDepth = continuationIndex + 1;
+	continuation.kind = id == BuiltinFunctionId::PCall ? ProtectedCallKind::PCall : ProtectedCallKind::XPCallBody;
+	continuation.caller = &caller;
+	continuation.target = nullptr;
+	continuation.returnsToProtectedParent = returnsToProtectedParent;
+	continuation.callBase = callBase;
+	continuation.returnCount = returnCount;
+	continuation.handlerRegister = id == BuiltinFunctionId::XPCall ? argumentBase + 1 : -1;
+
+	const int targetArgumentOffset = id == BuiltinFunctionId::PCall ? 1 : 2;
+	invokeProtectedTarget(
+		continuationIndex,
+		caller.registers[static_cast<size_t>(argumentBase)],
+		argumentBase + targetArgumentOffset,
+		std::max(argumentCount - targetArgumentOffset, 0)
+	);
+}
+
+void CPU::invokeProtectedTarget(size_t continuationIndex, Value target, int argumentBase, int argumentCount) {
+	ProtectedCallContinuation& continuation = m_protectedCallContinuations.get(continuationIndex);
+	CallFrame& caller = *continuation.caller;
+	if (valueIsClosure(target)) {
+		continuation.target = pushFrame(caller, asClosure(target), argumentBase, argumentCount, 0, 0, false, caller.pc - INSTRUCTION_BYTES);
+		return;
+	}
+	if (valueIsBuiltinFunction(target)) {
+		BuiltinFunction& builtin = *asBuiltinFunction(target);
+		instructionBudgetRemaining -= static_cast<int>(builtin.cycleBase);
+		if (builtin.id == BuiltinFunctionId::PCall || builtin.id == BuiltinFunctionId::XPCall) {
+			startProtectedCall(builtin.id, caller, continuation.callBase, 0, argumentBase, argumentCount, true);
+			return;
+		}
+		auto resultsScratch = acquireNativeReturnScratch();
+		NativeResults& results = resultsScratch.get();
+		callBuiltinFunction(
+			builtin,
+			NativeArgsView(caller.registers + static_cast<size_t>(argumentBase), static_cast<size_t>(argumentCount)),
+			results
+		);
+		finishProtectedCall(continuationIndex, results.data(), static_cast<int>(results.size()));
+		return;
+	}
+	if (valueIsNativeFunction(target)) {
+		NativeFunction* function = asNativeFunction(target);
+		instructionBudgetRemaining -= static_cast<int>(function->cycleBase);
+		auto resultsScratch = acquireNativeReturnScratch();
+		NativeResults& results = resultsScratch.get();
+		function->invoke(
+			NativeArgsView(caller.registers + static_cast<size_t>(argumentBase), static_cast<size_t>(argumentCount)),
+			results
+		);
+		runHousekeeping();
+		finishProtectedCall(continuationIndex, results.data(), static_cast<int>(results.size()));
+		return;
+	}
+	throw LuaExecutionError("Attempted to call a non-function value.");
+}
+
+void CPU::finishProtectedCall(size_t continuationIndex, const Value* values, int valueCount) {
+	ProtectedCallContinuation& continuation = m_protectedCallContinuations.get(continuationIndex);
+	const bool prefix = continuation.kind != ProtectedCallKind::XPCallHandler;
+	const int resultCount = writeProtectedResults(continuation, prefix, values, valueCount);
+	finishProtectedContinuation(continuationIndex, resultCount);
+}
+
+void CPU::finishProtectedCall(size_t continuationIndex, CallFrame& source, int sourceBase, int sourceCount) {
+	ProtectedCallContinuation& continuation = m_protectedCallContinuations.get(continuationIndex);
+	const bool prefix = continuation.kind != ProtectedCallKind::XPCallHandler;
+	const int resultCount = writeProtectedResults(continuation, prefix, source, sourceBase, sourceCount);
+	finishProtectedContinuation(continuationIndex, resultCount);
+}
+
+void CPU::finishProtectedCallWithError(size_t continuationIndex, Value errorValue) {
+	ProtectedCallContinuation& continuation = m_protectedCallContinuations.get(continuationIndex);
+	CallFrame& caller = *continuation.caller;
+	const int resultCount = continuation.returnCount == 0 ? 2 : continuation.returnCount;
+	if (resultCount > 0) {
+		Value* registers = ensureRegisterCapacity(caller, continuation.callBase + resultCount - 1);
+		registers[static_cast<size_t>(continuation.callBase)] = valueBool(false);
+		if (resultCount > 1) {
+			registers[static_cast<size_t>(continuation.callBase + 1)] = errorValue;
+			for (int index = 2; index < resultCount; ++index) {
+				registers[static_cast<size_t>(continuation.callBase + index)] = valueNil();
+			}
+		}
+	}
+	caller.top = continuation.callBase + resultCount;
+	finishProtectedContinuation(continuationIndex, resultCount);
+}
+
+int CPU::writeProtectedResults(ProtectedCallContinuation& continuation, bool prefix, const Value* values, int valueCount) {
+	CallFrame& caller = *continuation.caller;
+	const int resultCount = continuation.returnCount == 0 ? valueCount + 1 : continuation.returnCount;
+	if (resultCount > 0) {
+		Value* registers = ensureRegisterCapacity(caller, continuation.callBase + resultCount - 1);
+		registers[static_cast<size_t>(continuation.callBase)] = valueBool(prefix);
+		const int copiedCount = std::min(valueCount, resultCount - 1);
+		if (copiedCount > 0) {
+			std::memcpy(
+				registers + continuation.callBase + 1,
+				values,
+				static_cast<size_t>(copiedCount) * sizeof(Value)
+			);
+		}
+		for (int index = copiedCount + 1; index < resultCount; ++index) {
+			registers[static_cast<size_t>(continuation.callBase + index)] = valueNil();
+		}
+	}
+	caller.top = continuation.callBase + resultCount;
+	return resultCount;
+}
+
+int CPU::writeProtectedResults(ProtectedCallContinuation& continuation, bool prefix, CallFrame& source, int sourceBase, int sourceCount) {
+	CallFrame& caller = *continuation.caller;
+	const int resultCount = continuation.returnCount == 0 ? sourceCount + 1 : continuation.returnCount;
+	if (resultCount > 0) {
+		Value* registers = ensureRegisterCapacity(caller, continuation.callBase + resultCount - 1);
+		const int copiedCount = std::min(sourceCount, resultCount - 1);
+		if (copiedCount > 0) {
+			std::memmove(
+				registers + continuation.callBase + 1,
+				source.registers + sourceBase,
+				static_cast<size_t>(copiedCount) * sizeof(Value)
+			);
+		}
+		registers[static_cast<size_t>(continuation.callBase)] = valueBool(prefix);
+		for (int index = copiedCount + 1; index < resultCount; ++index) {
+			registers[static_cast<size_t>(continuation.callBase + index)] = valueNil();
+		}
+	}
+	caller.top = continuation.callBase + resultCount;
+	return resultCount;
+}
+
+void CPU::finishProtectedContinuation(size_t continuationIndex, int resultCount) {
+	ProtectedCallContinuation& continuation = m_protectedCallContinuations.get(continuationIndex);
+	CallFrame* caller = continuation.caller;
+	const int callBase = continuation.callBase;
+	const bool returnsToProtectedParent = continuation.returnsToProtectedParent;
+	continuation.caller = nullptr;
+	continuation.target = nullptr;
+	m_protectedCallDepth = continuationIndex;
+	if (returnsToProtectedParent) {
+		finishProtectedCall(continuationIndex - 1, *caller, callBase, resultCount);
+	}
+}
+
+bool CPU::handleProtectedCallError(Value errorValue) {
+	for (;;) {
+		if (m_protectedCallDepth == 0) {
+			return false;
+		}
+		const size_t continuationIndex = m_protectedCallDepth - 1;
+		ProtectedCallContinuation& continuation = m_protectedCallContinuations.get(continuationIndex);
+		int callerIndex = 0;
+		while (m_frames[static_cast<size_t>(callerIndex)].get() != continuation.caller) {
+			callerIndex += 1;
+		}
+		for (int frameIndex = static_cast<int>(m_frames.size()) - 1; frameIndex > callerIndex; --frameIndex) {
+			if (m_frames[static_cast<size_t>(frameIndex)]->isExceptionFrame) {
+				return false;
+			}
+		}
+		unwindToDepth(callerIndex + 1);
+		if (continuation.kind != ProtectedCallKind::XPCallBody) {
+			finishProtectedCallWithError(continuationIndex, errorValue);
+			return true;
+		}
+
+		continuation.kind = ProtectedCallKind::XPCallHandler;
+		continuation.target = nullptr;
+		CallFrame& caller = *continuation.caller;
+		const Value handler = caller.registers[static_cast<size_t>(continuation.handlerRegister)];
+		setRegister(caller, continuation.callBase, errorValue);
+		try {
+			invokeProtectedTarget(continuationIndex, handler, continuation.callBase, 1);
+			return true;
+		} catch (const LuaThrownValueError& handlerError) {
+			errorValue = handlerError.value;
+		} catch (const LuaExecutionError& handlerError) {
+			errorValue = valueString(m_stringPool.intern(handlerError.what()));
+		}
 	}
 }
 
@@ -1867,103 +2092,6 @@ void CPU::runBuiltinError(NativeArgsView args) {
 	throw LuaThrownValueError(value, m_stringPool);
 }
 
-bool CPU::callValueInto(Value callee, NativeArgsView args, NativeResults& out) {
-	out.clear();
-	if (valueIsBuiltinFunction(callee)) {
-		callBuiltinFunction(*asBuiltinFunction(callee), args, out);
-		return !m_hardHalted && !m_haltedUntilIrq;
-	}
-	if (valueIsNativeFunction(callee)) {
-		asNativeFunction(callee)->invoke(args, out);
-		return !m_hardHalted && !m_haltedUntilIrq;
-	}
-	Closure* closure = asClosure(callee);
-	const int depthBefore = static_cast<int>(m_frames.size());
-	const int previousBudget = instructionBudgetRemaining;
-	const int budgetSentinel = std::numeric_limits<int>::max();
-	NativeResults* previousSink = swapExternalReturnSink(&out);
-	int spentBudget = 0;
-	int activeBudget = 0;
-	bool completed = true;
-	try {
-		pushFrame(closure, args.data(), args.size(), 0, 0, true, m_program->protos[closure->protoIndex].entryPC);
-		while (static_cast<int>(m_frames.size()) > depthBefore) {
-			activeBudget = budgetSentinel;
-			RunResult result = runUntilDepth(depthBefore, budgetSentinel);
-			spentBudget += activeBudget - instructionBudgetRemaining;
-			activeBudget = 0;
-			if (static_cast<int>(m_frames.size()) > depthBefore && result == RunResult::Halted) {
-				completed = false;
-				break;
-			}
-		}
-	} catch (...) {
-		if (activeBudget > 0) {
-			spentBudget += activeBudget - instructionBudgetRemaining;
-		}
-		unwindToDepth(depthBefore);
-		instructionBudgetRemaining = previousBudget - spentBudget;
-		swapExternalReturnSink(previousSink);
-		throw;
-	}
-	instructionBudgetRemaining = previousBudget - spentBudget;
-	swapExternalReturnSink(previousSink);
-	return completed;
-}
-
-void CPU::runBuiltinPCall(NativeArgsView args, NativeResults& out) {
-	auto resultsScratch = acquireNativeReturnScratch();
-	NativeResults& results = resultsScratch.get();
-	try {
-		if (!callValueInto(args[0], args.tailFrom(1), results)) {
-			return;
-		}
-		out.clear();
-		out.push_back(valueBool(true));
-		out.append(results.data(), results.size());
-	} catch (const LuaThrownValueError& e) {
-		out.clear();
-		out.push_back(valueBool(false));
-		out.push_back(e.value);
-	} catch (const std::exception& e) {
-		out.clear();
-		out.push_back(valueBool(false));
-		out.push_back(valueString(m_stringPool.intern(e.what())));
-	} catch (...) {
-		out.clear();
-		out.push_back(valueBool(false));
-		out.push_back(valueString(m_stringPool.intern("error")));
-	}
-}
-
-void CPU::runBuiltinXPCall(NativeArgsView args, NativeResults& out) {
-	auto resultsScratch = acquireNativeReturnScratch();
-	auto handlerArgsScratch = acquireNativeReturnScratch();
-	NativeResults& results = resultsScratch.get();
-	NativeResults& handlerArgs = handlerArgsScratch.get();
-	try {
-		if (!callValueInto(args[0], args.tailFrom(2), results)) {
-			return;
-		}
-		out.clear();
-		out.push_back(valueBool(true));
-		out.append(results.data(), results.size());
-		return;
-	} catch (const LuaThrownValueError& e) {
-		handlerArgs.push_back(e.value);
-	} catch (const std::exception& e) {
-		handlerArgs.push_back(valueString(m_stringPool.intern(e.what())));
-	} catch (...) {
-		handlerArgs.push_back(valueString(m_stringPool.intern("error")));
-	}
-	if (!callValueInto(args[1], NativeArgsView(handlerArgs.data(), handlerArgs.size()), results)) {
-		return;
-	}
-	out.clear();
-	out.push_back(valueBool(false));
-	out.append(results.data(), results.size());
-}
-
 void CPU::clearHaltUntilIrq() {
 	m_haltedUntilIrq = false;
 	m_yieldRequested = false;
@@ -2033,11 +2161,11 @@ void CPU::enterException(int protoIndex, u32 causeWord, u32 epcWord) {
 }
 
 void CPU::enterHostExternalCall() {
-	++m_hostExternalCallDepth;
+	m_hostExternalCallActive = true;
 }
 
 void CPU::leaveHostExternalCall() {
-	--m_hostExternalCallDepth;
+	m_hostExternalCallActive = false;
 }
 
 void CPU::clearHaltAfterAcceptedInterrupt() {
@@ -2084,7 +2212,9 @@ RunResult CPU::run(int instructionBudget) {
 	};
 #pragma GCC diagnostic pop
 #endif
-	runHousekeeping();
+	for (;;) {
+		try {
+			runHousekeeping();
 dispatch_loop_check:
 	if (frames.empty()) {
 		return RunResult::Halted;
@@ -2099,7 +2229,7 @@ dispatch_loop_check:
 	if (instructionBudgetRemaining <= 0) {
 		return RunResult::Yielded;
 	}
-	if (m_hostExternalCallDepth == 0
+	if (!m_hostExternalCallActive
 		&& ((m_nonMaskableInterruptPending && isUserMode())
 			|| ((m_statusWord & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
 				&& m_irqController.hasAssertedMaskableInterruptLine()))
@@ -2201,6 +2331,16 @@ dispatch_continue:
 #undef REG
 #undef FRAME
 #endif
+		} catch (const LuaThrownValueError& error) {
+			if (!handleProtectedCallError(error.value)) {
+				throw;
+			}
+		} catch (const LuaExecutionError& error) {
+			if (!handleProtectedCallError(valueString(m_stringPool.intern(error.what())))) {
+				throw;
+			}
+		}
+	}
 }
 
 RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget) {
@@ -2229,7 +2369,9 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget) {
 	};
 #pragma GCC diagnostic pop
 #endif
-	runHousekeeping();
+	for (;;) {
+		try {
+			runHousekeeping();
 dispatch_loop_check:
 	if (static_cast<int>(frames.size()) <= targetDepth) {
 		return RunResult::Halted;
@@ -2244,7 +2386,7 @@ dispatch_loop_check:
 	if (instructionBudgetRemaining <= 0) {
 		return RunResult::Yielded;
 	}
-	if (m_hostExternalCallDepth == 0
+	if (!m_hostExternalCallActive
 		&& ((m_nonMaskableInterruptPending && isUserMode())
 			|| ((m_statusWord & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
 				&& m_irqController.hasAssertedMaskableInterruptLine()))
@@ -2346,6 +2488,16 @@ dispatch_continue:
 #undef REG
 #undef FRAME
 #endif
+		} catch (const LuaThrownValueError& error) {
+			if (!handleProtectedCallError(error.value)) {
+				throw;
+			}
+		} catch (const LuaExecutionError& error) {
+			if (!handleProtectedCallError(valueString(m_stringPool.intern(error.what())))) {
+				throw;
+			}
+		}
+	}
 }
 
 void CPU::unwindToDepth(int targetDepth) {
@@ -2356,6 +2508,22 @@ void CPU::unwindToDepth(int targetDepth) {
 		m_stackTop = finished->varargBase;
 		m_stack.resize(static_cast<size_t>(m_stackTop));
 		releaseFrame(std::move(finished));
+	}
+	while (m_protectedCallDepth > 0) {
+		ProtectedCallContinuation& continuation = m_protectedCallContinuations.get(m_protectedCallDepth - 1);
+		bool callerActive = false;
+		for (const auto& frame : m_frames) {
+			if (frame.get() == continuation.caller) {
+				callerActive = true;
+				break;
+			}
+		}
+		if (callerActive) {
+			break;
+		}
+		continuation.caller = nullptr;
+		continuation.target = nullptr;
+		m_protectedCallDepth -= 1;
 	}
 }
 
@@ -2396,7 +2564,17 @@ void CPU::step() {
 	lastPc = pc + ((static_cast<int>(decoded.width) - 1) * INSTRUCTION_BYTES);
 	lastInstruction = decoded.word;
 	instructionBudgetRemaining -= static_cast<int>(BASE_CYCLES[decoded.op]);
-	executeInstruction(frame, decoded);
+	try {
+		executeInstruction(frame, decoded);
+	} catch (const LuaThrownValueError& error) {
+		if (!handleProtectedCallError(error.value)) {
+			throw;
+		}
+	} catch (const LuaExecutionError& error) {
+		if (!handleProtectedCallError(valueString(m_stringPool.intern(error.what())))) {
+			throw;
+		}
+	}
 }
 
 std::optional<SourceRange> CPU::getDebugRange(int pc) const {
@@ -2741,7 +2919,7 @@ Value CPU::resolveTableIndexChain(Table* table, Getter get) {
 		}
 		current = asTable(indexerValue);
 	}
-	throw BMSX_RUNTIME_ERROR("Metatable __index loop detected.");
+	throw LuaExecutionError("Metatable __index loop detected.");
 }
 
 Value CPU::resolveTableIndex(Table* table, const Value& key) {
@@ -2788,7 +2966,7 @@ Value CPU::loadTableIndex(const Value& base, const Value& key) {
 		}
 		return directValue;
 	}
-	throw BMSX_RUNTIME_ERROR("Attempted to index field on a non-table value.");
+	throw LuaExecutionError("Attempted to index field on a non-table value.");
 }
 
 Value CPU::loadTableIntegerIndexCached(int cacheIndex, const Value& base, int index) {
@@ -2833,7 +3011,7 @@ Value CPU::loadTableIntegerIndexCached(int cacheIndex, const Value& base, int in
 		}
 		return directValue;
 	}
-	throw BMSX_RUNTIME_ERROR("Attempted to index field on a non-table value.");
+	throw LuaExecutionError("Attempted to index field on a non-table value.");
 }
 
 Value CPU::loadTableIntegerIndex(const Value& base, int index) {
@@ -2862,7 +3040,7 @@ Value CPU::loadTableIntegerIndex(const Value& base, int index) {
 		}
 		return directValue;
 	}
-	throw BMSX_RUNTIME_ERROR("Attempted to index field on a non-table value.");
+	throw LuaExecutionError("Attempted to index field on a non-table value.");
 }
 
 Value CPU::loadTableFieldIndexCached(int cacheIndex, const Value& base, StringId key) {
@@ -2907,7 +3085,7 @@ Value CPU::loadTableFieldIndexCached(int cacheIndex, const Value& base, StringId
 		}
 		return directValue;
 	}
-	throw BMSX_RUNTIME_ERROR("Attempted to index field on a non-table value.");
+	throw LuaExecutionError("Attempted to index field on a non-table value.");
 }
 
 Value CPU::loadTableFieldIndex(const Value& base, StringId key) {
@@ -2936,7 +3114,7 @@ Value CPU::loadTableFieldIndex(const Value& base, StringId key) {
 		}
 		return directValue;
 	}
-	throw BMSX_RUNTIME_ERROR("Attempted to index field on a non-table value.");
+	throw LuaExecutionError("Attempted to index field on a non-table value.");
 }
 
 void CPU::storeTableIndex(const Value& base, const Value& key, const Value& value) {
@@ -2948,7 +3126,7 @@ void CPU::storeTableIndex(const Value& base, const Value& key, const Value& valu
 		asNativeObject(base)->set(key, value);
 		return;
 	}
-	throw BMSX_RUNTIME_ERROR("Attempted to assign to a non-table value.");
+	throw LuaExecutionError("Attempted to assign to a non-table value.");
 }
 
 void CPU::storeTableIntegerIndex(const Value& base, int index, const Value& value) {
@@ -2960,7 +3138,7 @@ void CPU::storeTableIntegerIndex(const Value& base, int index, const Value& valu
 		asNativeObject(base)->set(valueNumber(static_cast<double>(index)), value);
 		return;
 	}
-	throw BMSX_RUNTIME_ERROR("Attempted to assign to a non-table value.");
+	throw LuaExecutionError("Attempted to assign to a non-table value.");
 }
 
 void CPU::storeTableFieldIndex(const Value& base, StringId key, const Value& value) {
@@ -2972,7 +3150,7 @@ void CPU::storeTableFieldIndex(const Value& base, StringId key, const Value& val
 		asNativeObject(base)->set(valueString(key), value);
 		return;
 	}
-	throw BMSX_RUNTIME_ERROR("Attempted to assign to a non-table value.");
+	throw LuaExecutionError("Attempted to assign to a non-table value.");
 }
 
 std::unique_ptr<CallFrame> CPU::acquireFrame() {
@@ -2997,6 +3175,12 @@ void CPU::releaseFrame(std::unique_ptr<CallFrame> frame) {
 }
 
 void CPU::clearCallStack() {
+	for (size_t index = 0; index < m_protectedCallDepth; ++index) {
+		ProtectedCallContinuation& continuation = m_protectedCallContinuations.get(index);
+		continuation.caller = nullptr;
+		continuation.target = nullptr;
+	}
+	m_protectedCallDepth = 0;
 	while (!m_frames.empty()) {
 		CallFrame* frame = m_frames.back().get();
 		closeUpvalues(*frame);

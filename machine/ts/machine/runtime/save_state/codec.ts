@@ -1,6 +1,6 @@
 import { decodeBinaryWithPropTable, encodeBinaryWithPropTable, requireObject, requireObjectKey } from '../../../common/serializer/binencoder';
 import type { MachineSaveState } from '../../save_state';
-import type { BuiltinFunctionId, CpuFrameState, CpuObjectState, CpuRootValueState, CpuRuntimeState, CpuValueState } from '../../cpu/cpu';
+import type { BuiltinFunctionId, CpuFrameState, CpuObjectState, CpuProtectedCallState, CpuRootValueState, CpuRuntimeState, CpuValueState } from '../../cpu/cpu';
 import type { IrqControllerState } from '../../devices/irq/save_state';
 import type { AudioControllerState } from '../../devices/audio/save_state';
 import type { DmaControllerState } from '../../devices/dma/controller';
@@ -155,6 +155,14 @@ function requireI32(value: unknown, label: string): number {
 		throw new Error(`${label} must be an i32 value.`);
 	}
 	return value | 0;
+}
+
+function requireI16(value: unknown, label: string): number {
+	const word = requireI32(value, label);
+	if (word < -0x8000 || word > 0x7fff) {
+		throw new Error(`${label} must be an i16 value.`);
+	}
+	return word;
 }
 
 function requireI64(value: unknown, label: string): number {
@@ -717,6 +725,9 @@ function encodeApuBadpDecoderState(state: ApuBadpDecoderSaveState): ApuBadpDecod
 		decodedFrame: state.decodedFrame,
 		decodedLeft: state.decodedLeft,
 		decodedRight: state.decodedRight,
+		previousDecodedFrame: state.previousDecodedFrame,
+		previousDecodedLeft: state.previousDecodedLeft,
+		previousDecodedRight: state.previousDecodedRight,
 	};
 }
 
@@ -732,21 +743,23 @@ function decodeApuBadpDecoderState(value: unknown, label: string): ApuBadpDecode
 		payloadOffset: requireBoundedU32(requireObjectKey(object, 'payloadOffset', label, `${label}.payloadOffset`), `${label}.payloadOffset`, 0, 0xffffffff),
 		nibbleCursor: requireBoundedU32(requireObjectKey(object, 'nibbleCursor', label, `${label}.nibbleCursor`), `${label}.nibbleCursor`, 0, 0xffffffff),
 		decodedFrame: requireI64(requireObjectKey(object, 'decodedFrame', label, `${label}.decodedFrame`), `${label}.decodedFrame`),
-		decodedLeft: requireI32(requireObjectKey(object, 'decodedLeft', label, `${label}.decodedLeft`), `${label}.decodedLeft`),
-		decodedRight: requireI32(requireObjectKey(object, 'decodedRight', label, `${label}.decodedRight`), `${label}.decodedRight`),
+		decodedLeft: requireI16(requireObjectKey(object, 'decodedLeft', label, `${label}.decodedLeft`), `${label}.decodedLeft`),
+		decodedRight: requireI16(requireObjectKey(object, 'decodedRight', label, `${label}.decodedRight`), `${label}.decodedRight`),
+		previousDecodedFrame: requireI64(requireObjectKey(object, 'previousDecodedFrame', label, `${label}.previousDecodedFrame`), `${label}.previousDecodedFrame`),
+		previousDecodedLeft: requireI16(requireObjectKey(object, 'previousDecodedLeft', label, `${label}.previousDecodedLeft`), `${label}.previousDecodedLeft`),
+		previousDecodedRight: requireI16(requireObjectKey(object, 'previousDecodedRight', label, `${label}.previousDecodedRight`), `${label}.previousDecodedRight`),
 	};
 }
 
 function encodeApuOutputVoiceState(state: ApuOutputVoiceState): ApuOutputVoiceState {
 	return {
 		slot: state.slot,
-		position: state.position,
-		step: state.step,
+		cursorQ16: state.cursorQ16,
+		phaseRemainder: state.phaseRemainder,
 		gain: state.gain,
-		targetGain: state.targetGain,
-		gainRampRemaining: state.gainRampRemaining,
-		stopAfter: state.stopAfter,
-		filterSampleRate: state.filterSampleRate,
+		fadeStartGain: state.fadeStartGain,
+		fadeSamplesRemaining: state.fadeSamplesRemaining,
+		fadeSamplesTotal: state.fadeSamplesTotal,
 		filter: encodeApuBiquadFilterState(state.filter),
 		badp: encodeApuBadpDecoderState(state.badp),
 	};
@@ -756,13 +769,12 @@ function decodeApuOutputVoiceState(value: unknown, label: string): ApuOutputVoic
 	const object = requireObject(value, label);
 	return {
 		slot: requireBoundedU32(requireObjectKey(object, 'slot', label, `${label}.slot`), `${label}.slot`, 0, APU_SLOT_COUNT - 1),
-		position: requireNumberValue(requireObjectKey(object, 'position', label, `${label}.position`), `${label}.position`),
-		step: requireNumberValue(requireObjectKey(object, 'step', label, `${label}.step`), `${label}.step`),
+		cursorQ16: requireI64(requireObjectKey(object, 'cursorQ16', label, `${label}.cursorQ16`), `${label}.cursorQ16`),
+		phaseRemainder: requireI32(requireObjectKey(object, 'phaseRemainder', label, `${label}.phaseRemainder`), `${label}.phaseRemainder`),
 		gain: requireNumberValue(requireObjectKey(object, 'gain', label, `${label}.gain`), `${label}.gain`),
-		targetGain: requireNumberValue(requireObjectKey(object, 'targetGain', label, `${label}.targetGain`), `${label}.targetGain`),
-		gainRampRemaining: requireNumberValue(requireObjectKey(object, 'gainRampRemaining', label, `${label}.gainRampRemaining`), `${label}.gainRampRemaining`),
-		stopAfter: requireNumberValue(requireObjectKey(object, 'stopAfter', label, `${label}.stopAfter`), `${label}.stopAfter`),
-		filterSampleRate: requireI32(requireObjectKey(object, 'filterSampleRate', label, `${label}.filterSampleRate`), `${label}.filterSampleRate`),
+		fadeStartGain: requireNumberValue(requireObjectKey(object, 'fadeStartGain', label, `${label}.fadeStartGain`), `${label}.fadeStartGain`),
+		fadeSamplesRemaining: requireBoundedU32(requireObjectKey(object, 'fadeSamplesRemaining', label, `${label}.fadeSamplesRemaining`), `${label}.fadeSamplesRemaining`, 0, 0xffffffff),
+		fadeSamplesTotal: requireBoundedU32(requireObjectKey(object, 'fadeSamplesTotal', label, `${label}.fadeSamplesTotal`), `${label}.fadeSamplesTotal`, 0, 0xffffffff),
 		filter: decodeApuBiquadFilterState(requireObjectKey(object, 'filter', label, `${label}.filter`), `${label}.filter`),
 		badp: decodeApuBadpDecoderState(requireObjectKey(object, 'badp', label, `${label}.badp`), `${label}.badp`),
 	};
@@ -817,12 +829,8 @@ function encodeAudioControllerState(state: AudioControllerState): AudioControlle
 		slotPhases: encodeVector(state.slotPhases, (phase) => phase >>> 0),
 		slotRegisterWords: encodeVector(state.slotRegisterWords, (word) => word >>> 0),
 		slotSourceBytes: encodeVector(state.slotSourceBytes, (bytes) => bytes),
-		slotPlaybackCursorQ16: encodeVector(state.slotPlaybackCursorQ16, (word) => word),
-		slotFadeSamplesRemaining: encodeVector(state.slotFadeSamplesRemaining, (word) => word >>> 0),
-		slotFadeSamplesTotal: encodeVector(state.slotFadeSamplesTotal, (word) => word >>> 0),
 		output: encodeApuOutputState(state.output),
 		sampleCarry: state.sampleCarry,
-		availableSamples: state.availableSamples,
 		apuStatus: state.apuStatus,
 		apuFaultCode: state.apuFaultCode,
 		apuFaultDetail: state.apuFaultDetail,
@@ -841,12 +849,8 @@ function decodeAudioControllerState(value: unknown, label: string): AudioControl
 		slotPhases: decodeU32FixedArray(requireObjectKey(object, 'slotPhases', label, 'machine.audio.slotPhases'), 'machine.audio.slotPhases', APU_SLOT_COUNT),
 		slotRegisterWords: decodeU32FixedArray(requireObjectKey(object, 'slotRegisterWords', label, 'machine.audio.slotRegisterWords'), 'machine.audio.slotRegisterWords', APU_SLOT_REGISTER_WORD_COUNT),
 		slotSourceBytes: decodeBinaryFixedArray(requireObjectKey(object, 'slotSourceBytes', label, 'machine.audio.slotSourceBytes'), 'machine.audio.slotSourceBytes', APU_SLOT_COUNT),
-		slotPlaybackCursorQ16: decodeIntegerFixedArray(requireObjectKey(object, 'slotPlaybackCursorQ16', label, 'machine.audio.slotPlaybackCursorQ16'), 'machine.audio.slotPlaybackCursorQ16', APU_SLOT_COUNT, 'i64', requireI64),
-		slotFadeSamplesRemaining: decodeU32FixedArray(requireObjectKey(object, 'slotFadeSamplesRemaining', label, 'machine.audio.slotFadeSamplesRemaining'), 'machine.audio.slotFadeSamplesRemaining', APU_SLOT_COUNT),
-		slotFadeSamplesTotal: decodeU32FixedArray(requireObjectKey(object, 'slotFadeSamplesTotal', label, 'machine.audio.slotFadeSamplesTotal'), 'machine.audio.slotFadeSamplesTotal', APU_SLOT_COUNT),
 		output: decodeApuOutputState(requireObjectKey(object, 'output', label, 'machine.audio.output'), 'machine.audio.output'),
 		sampleCarry: requireI64(requireObjectKey(object, 'sampleCarry', label, 'machine.audio.sampleCarry'), 'machine.audio.sampleCarry'),
-		availableSamples: requireI64(requireObjectKey(object, 'availableSamples', label, 'machine.audio.availableSamples'), 'machine.audio.availableSamples'),
 		apuStatus: requireBoundedU32(requireObjectKey(object, 'apuStatus', label, 'machine.audio.apuStatus'), 'machine.audio.apuStatus', 0, 0xffffffff),
 		apuFaultCode: requireBoundedU32(requireObjectKey(object, 'apuFaultCode', label, 'machine.audio.apuFaultCode'), 'machine.audio.apuFaultCode', 0, 0xffffffff),
 		apuFaultDetail: requireBoundedU32(requireObjectKey(object, 'apuFaultDetail', label, 'machine.audio.apuFaultDetail'), 'machine.audio.apuFaultDetail', 0, 0xffffffff),
@@ -1115,6 +1119,31 @@ function decodeCpuFrameState(value: unknown, label: string): CpuFrameState {
 	};
 }
 
+function encodeCpuProtectedCallState(state: CpuProtectedCallState): CpuProtectedCallState {
+	return {
+		kind: state.kind,
+		callerFrameIndex: state.callerFrameIndex,
+		targetFrameIndex: state.targetFrameIndex,
+		returnsToProtectedParent: state.returnsToProtectedParent,
+		callBase: state.callBase,
+		returnCount: state.returnCount,
+		handlerRegister: state.handlerRegister,
+	};
+}
+
+function decodeCpuProtectedCallState(value: unknown, label: string): CpuProtectedCallState {
+	const object = requireObject(value, label);
+	return {
+		kind: requireObjectKey(object, 'kind', label, 'cpuProtectedCallState.kind') as CpuProtectedCallState['kind'],
+		callerFrameIndex: requireObjectKey(object, 'callerFrameIndex', label, 'cpuProtectedCallState.callerFrameIndex') as number,
+		targetFrameIndex: requireObjectKey(object, 'targetFrameIndex', label, 'cpuProtectedCallState.targetFrameIndex') as number,
+		returnsToProtectedParent: requireObjectKey(object, 'returnsToProtectedParent', label, 'cpuProtectedCallState.returnsToProtectedParent') as boolean,
+		callBase: requireObjectKey(object, 'callBase', label, 'cpuProtectedCallState.callBase') as number,
+		returnCount: requireObjectKey(object, 'returnCount', label, 'cpuProtectedCallState.returnCount') as number,
+		handlerRegister: requireObjectKey(object, 'handlerRegister', label, 'cpuProtectedCallState.handlerRegister') as number,
+	};
+}
+
 function encodeCpuRootValueState(state: CpuRootValueState): CpuRootValueState {
 	return {
 		name: state.name,
@@ -1136,6 +1165,7 @@ function encodeCpuRuntimeState(state: CpuRuntimeState): CpuRuntimeState {
 		globals: encodeVector(state.globals, encodeCpuRootValueState),
 		moduleCache: encodeVector(state.moduleCache, encodeCpuRootValueState),
 		frames: encodeVector(state.frames, encodeCpuFrameState),
+		protectedCalls: encodeVector(state.protectedCalls, encodeCpuProtectedCallState),
 		lastReturnValues: encodeVector(state.lastReturnValues, encodeCpuValueState),
 		objects: encodeVector(state.objects, encodeCpuObjectState),
 		openUpvalues: encodeVector(state.openUpvalues, (value) => value),
@@ -1177,6 +1207,11 @@ function decodeCpuRuntimeState(value: unknown, label: string): CpuRuntimeState {
 			requireObjectKey(object, 'frames', label, 'cpuState.frames'),
 			'cpuState.frames',
 			(entry) => decodeCpuFrameState(entry, 'cpuState.frames[]'),
+		),
+		protectedCalls: decodeVector(
+			requireObjectKey(object, 'protectedCalls', label, 'cpuState.protectedCalls'),
+			'cpuState.protectedCalls',
+			(entry) => decodeCpuProtectedCallState(entry, 'cpuState.protectedCalls[]'),
 		),
 		lastReturnValues: decodeVector(
 			requireObjectKey(object, 'lastReturnValues', label, 'cpuState.lastReturnValues'),

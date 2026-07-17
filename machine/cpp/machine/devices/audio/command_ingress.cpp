@@ -24,20 +24,24 @@ ApuCommandIngress::ApuCommandIngress(Memory& memory,
 
 void ApuCommandIngress::onCommandWriteThunk(void* context, [[maybe_unused]] u32 addr, [[maybe_unused]] Value value) {
 	auto& ingress = *static_cast<ApuCommandIngress*>(context);
+	const i64 nowCycles = ingress.m_scheduler.currentNowCycles();
+	ingress.m_serviceClock.synchronize(nowCycles);
 	const u32 command = ingress.m_memory.readIoU32(IO_APU_CMD);
 	switch (command) {
 		case APU_CMD_PLAY:
 		case APU_CMD_STOP_SLOT:
 		case APU_CMD_SET_SLOT_GAIN:
 			ingress.m_commandFifo.enqueue(command, ingress.m_memory);
-			ingress.m_serviceClock.scheduleNext(ingress.m_scheduler.currentNowCycles());
+			ingress.m_serviceClock.scheduleNext(nowCycles);
 			clearApuCommandLatch(ingress.m_memory);
 			return;
 		case APU_CMD_NONE:
+			ingress.m_serviceClock.scheduleNext(nowCycles);
 			return;
 		default:
 			ingress.m_fault.raise(APU_FAULT_BAD_CMD, command);
 			clearApuCommandLatch(ingress.m_memory);
+			ingress.m_serviceClock.scheduleNext(nowCycles);
 			return;
 	}
 }

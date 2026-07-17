@@ -198,6 +198,15 @@ void testGpureadCodecStoresReadyBytesAndRejectsBackendPhase() {
 	require(platform.loadRom(rom.data(), rom.size()), "libretro should load a program cart ROM for GPUREAD codec validation");
 	bmsx::RuntimeSaveState ready = bmsx::captureRuntimeSaveState(platform.machineManager()->runtime());
 	bmsx::GxGpuCommandBufferState& readyReadback = ready.machineState.machine.gxGpu.commandBuffer;
+	bmsx::CpuProtectedCallState protectedCall;
+	protectedCall.kind = bmsx::ProtectedCallKind::XPCallHandler;
+	protectedCall.callerFrameIndex = 2;
+	protectedCall.targetFrameIndex = -1;
+	protectedCall.returnsToProtectedParent = true;
+	protectedCall.callBase = 4;
+	protectedCall.returnCount = 3;
+	protectedCall.handlerRegister = 7;
+	ready.cpuState.protectedCalls.push_back(protectedCall);
 	readyReadback.readbackPhase = bmsx::GX_GPU_READBACK_READY;
 	readyReadback.readbackX = 1023u;
 	readyReadback.readbackY = 511u;
@@ -206,6 +215,10 @@ void testGpureadCodecStoresReadyBytesAndRejectsBackendPhase() {
 	readyReadback.readbackPixelCursor = 1u;
 	readyReadback.readbackPixelBytes = { 0x11u, 0x11u, 0x22u, 0x22u, 0x33u, 0x33u };
 	const bmsx::RuntimeSaveState decodedReady = bmsx::decodeRuntimeSaveState(bmsx::encodeRuntimeSaveState(ready));
+	const bmsx::CpuProtectedCallState& decodedProtectedCall = decodedReady.cpuState.protectedCalls[0];
+	require(decodedProtectedCall.kind == bmsx::ProtectedCallKind::XPCallHandler, "native codec preserves protected-call phase");
+	require(decodedProtectedCall.callerFrameIndex == 2 && decodedProtectedCall.targetFrameIndex == -1, "native codec preserves protected-call frame references");
+	require(decodedProtectedCall.returnsToProtectedParent && decodedProtectedCall.callBase == 4 && decodedProtectedCall.returnCount == 3 && decodedProtectedCall.handlerRegister == 7, "native codec preserves protected-call return state");
 	const bmsx::GxGpuCommandBufferState& decodedReadyReadback = decodedReady.machineState.machine.gxGpu.commandBuffer;
 	require(decodedReadyReadback.readbackPhase == bmsx::GX_GPU_READBACK_READY, "native codec preserves READY GPUREAD phase");
 	require(decodedReadyReadback.readbackPixelCursor == 1u, "native codec preserves READY GPUREAD cursor");
@@ -442,6 +455,7 @@ void testPublishedDisplayTimingAppliesAtFrameEnd() {
 	runtime.machine.scheduler.setNowCycles(frameEndCycle + 1);
 	runtime.vblank.handleEndTimer(runtime);
 	require(runtime.timing.gpuVerticalDisplayRangeWord == range192, "vblank end should apply the published 192-line range to next-frame timing");
+	runtime.machine.scheduler.cancelDeviceService(bmsx::DEVICE_SERVICE_APU);
 	require(runtime.machine.scheduler.nextDeadline() == frameEndCycle + 61341, "late frame-end service must not shift PAL 192-line scanout timing");
 
 	frameEndCycle += runtime.timing.cycleBudgetPerFrame;
@@ -452,6 +466,7 @@ void testPublishedDisplayTimingAppliesAtFrameEnd() {
 	runtime.machine.scheduler.setNowCycles(frameEndCycle);
 	runtime.vblank.handleEndTimer(runtime);
 	require(runtime.timing.gpuVerticalDisplayRangeWord == range212, "frame end should activate published PAL 212-line timing");
+	runtime.machine.scheduler.cancelDeviceService(bmsx::DEVICE_SERVICE_APU);
 	require(runtime.machine.scheduler.nextDeadline() == frameEndCycle + 67731, "PAL 212-line frame scheduling should start vblank after 67731 active cycles");
 
 	frameEndCycle += runtime.timing.cycleBudgetPerFrame;
@@ -464,6 +479,7 @@ void testPublishedDisplayTimingAppliesAtFrameEnd() {
 	runtime.vblank.handleEndTimer(runtime);
 	require(runtime.timing.gpuDisplayModeWord == bmsx::PSX_GPU_DISPLAY_MODE_NTSC_WORD, "frame end should activate published NTSC timing");
 	require(runtime.timing.gpuVerticalDisplayRangeWord == range192, "frame end should activate published NTSC 192-line timing");
+	runtime.machine.scheduler.cancelDeviceService(bmsx::DEVICE_SERVICE_APU);
 	require(runtime.machine.scheduler.nextDeadline() == frameEndCycle + 61129, "NTSC 192-line mode should expose 22287 vblank cycles at 5MHz");
 
 	frameEndCycle += runtime.timing.cycleBudgetPerFrame;
@@ -472,6 +488,7 @@ void testPublishedDisplayTimingAppliesAtFrameEnd() {
 	runtime.machine.scheduler.setNowCycles(frameEndCycle);
 	runtime.vblank.handleEndTimer(runtime);
 	require(runtime.timing.gpuVerticalDisplayRangeWord == range212, "frame end should activate published NTSC 212-line timing");
+	runtime.machine.scheduler.cancelDeviceService(bmsx::DEVICE_SERVICE_APU);
 	require(runtime.machine.scheduler.nextDeadline() == frameEndCycle + 67496, "NTSC 212-line frame scheduling should start vblank after 67496 active cycles");
 }
 

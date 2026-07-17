@@ -3,7 +3,6 @@
 #include "machine/bus/io.h"
 #include "machine/devices/gx/device_output.h"
 #include "machine/runtime/runtime.h"
-#include "machine/runtime/timing/config.h"
 #include "machine/scheduler/device.h"
 
 namespace bmsx {
@@ -42,13 +41,10 @@ int VblankState::getCyclesIntoFrame(const Runtime& runtime) const {
 	return static_cast<int>(runtime.machine.scheduler.nowCycles() - m_frameStartCycle);
 }
 
-void VblankState::resetScheduler(Runtime& runtime) {
-	runtime.machine.scheduler.reset();
-	m_frameStartCycle = 0;
-}
-
 void VblankState::reset(Runtime& runtime) {
-	resetScheduler(runtime);
+	auto& scheduler = runtime.machine.scheduler;
+	scheduler.cancelVblankTimers();
+	m_frameStartCycle = scheduler.currentNowCycles();
 	m_vblankActive = false;
 	m_vblankSequence = 0;
 	m_lastCompletedVblankSequence = 0;
@@ -58,7 +54,6 @@ void VblankState::reset(Runtime& runtime) {
 		publishVblankTiming(runtime, true);
 	}
 	scheduleCurrentFrameTimers(runtime);
-	refreshDeviceTimings(runtime, runtime.machine.scheduler.nowCycles());
 }
 
 RuntimeVblankSnapshot VblankState::capture(const Runtime& runtime) const {
@@ -71,16 +66,14 @@ RuntimeVblankSnapshot VblankState::capture(const Runtime& runtime) const {
 void VblankState::restore(Runtime& runtime, const RuntimeVblankSnapshot& state) {
 	runtime.frameScheduler.reset();
 	runtime.frameLoop.reset();
-	resetScheduler(runtime);
+	runtime.machine.scheduler.reset();
 	runtime.machine.scheduler.setNowCycles(state.nowCycles);
 	m_frameStartCycle = state.nowCycles - state.cyclesIntoFrame;
 	m_vblankSequence = 0;
 	m_lastCompletedVblankSequence = 0;
 	m_activeTickCompleted = false;
-	runtime.machine.irqController.postLoad();
 	publishVblankTiming(runtime, m_vblankStartCycle == 0 || getCyclesIntoFrame(runtime) >= m_vblankStartCycle);
 	scheduleCurrentFrameTimers(runtime);
-	refreshDeviceTimings(runtime, runtime.machine.scheduler.nowCycles());
 }
 
 void VblankState::beginTick() {

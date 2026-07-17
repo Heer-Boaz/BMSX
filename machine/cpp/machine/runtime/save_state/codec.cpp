@@ -109,6 +109,15 @@ i32 requireI32(const BinValue& value, const char* label) {
 	return static_cast<i32>(number);
 }
 
+i16 requireI16(const BinValue& value, const char* label) {
+	const i32 word = requireI32(value, label);
+	if (word < static_cast<i32>(std::numeric_limits<i16>::min())
+		|| word > static_cast<i32>(std::numeric_limits<i16>::max())) {
+		throw BMSX_RUNTIME_ERROR(std::string(label) + " must be a 16-bit integer.");
+	}
+	return static_cast<i16>(word);
+}
+
 i64 requireI64(const BinValue& value, const char* label) {
 	const f64 number = requireNumber(value, label);
 	if (std::floor(number) != number) {
@@ -751,15 +760,15 @@ ApuBiquadFilterState decodeApuBiquadFilterState(const BinValue& value, const cha
 	const BinObject& object = requireObject(value, label);
 	ApuBiquadFilterState state;
 	state.enabled = requireBool(requireField(object, "enabled", label), "machine.audio.output.voices.filter.enabled");
-	state.b0 = static_cast<f32>(requireNumber(requireField(object, "b0", label), "machine.audio.output.voices.filter.b0"));
-	state.b1 = static_cast<f32>(requireNumber(requireField(object, "b1", label), "machine.audio.output.voices.filter.b1"));
-	state.b2 = static_cast<f32>(requireNumber(requireField(object, "b2", label), "machine.audio.output.voices.filter.b2"));
-	state.a1 = static_cast<f32>(requireNumber(requireField(object, "a1", label), "machine.audio.output.voices.filter.a1"));
-	state.a2 = static_cast<f32>(requireNumber(requireField(object, "a2", label), "machine.audio.output.voices.filter.a2"));
-	state.l1 = static_cast<f32>(requireNumber(requireField(object, "l1", label), "machine.audio.output.voices.filter.l1"));
-	state.l2 = static_cast<f32>(requireNumber(requireField(object, "l2", label), "machine.audio.output.voices.filter.l2"));
-	state.r1 = static_cast<f32>(requireNumber(requireField(object, "r1", label), "machine.audio.output.voices.filter.r1"));
-	state.r2 = static_cast<f32>(requireNumber(requireField(object, "r2", label), "machine.audio.output.voices.filter.r2"));
+	state.b0 = requireNumber(requireField(object, "b0", label), "machine.audio.output.voices.filter.b0");
+	state.b1 = requireNumber(requireField(object, "b1", label), "machine.audio.output.voices.filter.b1");
+	state.b2 = requireNumber(requireField(object, "b2", label), "machine.audio.output.voices.filter.b2");
+	state.a1 = requireNumber(requireField(object, "a1", label), "machine.audio.output.voices.filter.a1");
+	state.a2 = requireNumber(requireField(object, "a2", label), "machine.audio.output.voices.filter.a2");
+	state.l1 = requireNumber(requireField(object, "l1", label), "machine.audio.output.voices.filter.l1");
+	state.l2 = requireNumber(requireField(object, "l2", label), "machine.audio.output.voices.filter.l2");
+	state.r1 = requireNumber(requireField(object, "r1", label), "machine.audio.output.voices.filter.r1");
+	state.r2 = requireNumber(requireField(object, "r2", label), "machine.audio.output.voices.filter.r2");
 	return state;
 }
 
@@ -776,6 +785,9 @@ BinValue encodeApuBadpDecoderState(const ApuBadpDecoderSaveState& state) {
 	object["decodedFrame"] = encodeScalar<f64>(state.decodedFrame);
 	object["decodedLeft"] = encodeScalar<f64>(state.decodedLeft);
 	object["decodedRight"] = encodeScalar<f64>(state.decodedRight);
+	object["previousDecodedFrame"] = encodeScalar<f64>(state.previousDecodedFrame);
+	object["previousDecodedLeft"] = encodeScalar<f64>(state.previousDecodedLeft);
+	object["previousDecodedRight"] = encodeScalar<f64>(state.previousDecodedRight);
 	return BinValue(std::move(object));
 }
 
@@ -791,21 +803,23 @@ ApuBadpDecoderSaveState decodeApuBadpDecoderState(const BinValue& value, const c
 	state.payloadOffset = requireU32(requireField(object, "payloadOffset", label), "machine.audio.output.voices.badp.payloadOffset");
 	state.nibbleCursor = requireU32(requireField(object, "nibbleCursor", label), "machine.audio.output.voices.badp.nibbleCursor");
 	state.decodedFrame = requireI64(requireField(object, "decodedFrame", label), "machine.audio.output.voices.badp.decodedFrame");
-	state.decodedLeft = requireI32(requireField(object, "decodedLeft", label), "machine.audio.output.voices.badp.decodedLeft");
-	state.decodedRight = requireI32(requireField(object, "decodedRight", label), "machine.audio.output.voices.badp.decodedRight");
+	state.decodedLeft = requireI16(requireField(object, "decodedLeft", label), "machine.audio.output.voices.badp.decodedLeft");
+	state.decodedRight = requireI16(requireField(object, "decodedRight", label), "machine.audio.output.voices.badp.decodedRight");
+	state.previousDecodedFrame = requireI64(requireField(object, "previousDecodedFrame", label), "machine.audio.output.voices.badp.previousDecodedFrame");
+	state.previousDecodedLeft = requireI16(requireField(object, "previousDecodedLeft", label), "machine.audio.output.voices.badp.previousDecodedLeft");
+	state.previousDecodedRight = requireI16(requireField(object, "previousDecodedRight", label), "machine.audio.output.voices.badp.previousDecodedRight");
 	return state;
 }
 
 BinValue encodeApuOutputVoiceState(const ApuOutputVoiceState& state) {
 	BinObject object;
 	object["slot"] = encodeScalar<f64>(state.slot);
-	object["position"] = encodeScalar<f64>(state.position);
-	object["step"] = encodeScalar<f64>(state.step);
+	object["cursorQ16"] = encodeScalar<f64>(state.cursorQ16);
+	object["phaseRemainder"] = encodeScalar<f64>(state.phaseRemainder);
 	object["gain"] = encodeScalar<f64>(state.gain);
-	object["targetGain"] = encodeScalar<f64>(state.targetGain);
-	object["gainRampRemaining"] = encodeScalar<f64>(state.gainRampRemaining);
-	object["stopAfter"] = encodeScalar<f64>(state.stopAfter);
-	object["filterSampleRate"] = encodeScalar<f64>(state.filterSampleRate);
+	object["fadeStartGain"] = encodeScalar<f64>(state.fadeStartGain);
+	object["fadeSamplesRemaining"] = encodeScalar<f64>(state.fadeSamplesRemaining);
+	object["fadeSamplesTotal"] = encodeScalar<f64>(state.fadeSamplesTotal);
 	object["filter"] = encodeApuBiquadFilterState(state.filter);
 	object["badp"] = encodeApuBadpDecoderState(state.badp);
 	return BinValue(std::move(object));
@@ -815,13 +829,12 @@ ApuOutputVoiceState decodeApuOutputVoiceState(const BinValue& value, const char*
 	const BinObject& object = requireObject(value, label);
 	ApuOutputVoiceState state;
 	state.slot = requireBoundedU32(requireField(object, "slot", label), "machine.audio.output.voices.slot", 0u, APU_SLOT_COUNT - 1u);
-	state.position = requireNumber(requireField(object, "position", label), "machine.audio.output.voices.position");
-	state.step = requireNumber(requireField(object, "step", label), "machine.audio.output.voices.step");
-	state.gain = static_cast<f32>(requireNumber(requireField(object, "gain", label), "machine.audio.output.voices.gain"));
-	state.targetGain = static_cast<f32>(requireNumber(requireField(object, "targetGain", label), "machine.audio.output.voices.targetGain"));
-	state.gainRampRemaining = requireNumber(requireField(object, "gainRampRemaining", label), "machine.audio.output.voices.gainRampRemaining");
-	state.stopAfter = requireNumber(requireField(object, "stopAfter", label), "machine.audio.output.voices.stopAfter");
-	state.filterSampleRate = requireI32(requireField(object, "filterSampleRate", label), "machine.audio.output.voices.filterSampleRate");
+	state.cursorQ16 = requireI64(requireField(object, "cursorQ16", label), "machine.audio.output.voices.cursorQ16");
+	state.phaseRemainder = requireI32(requireField(object, "phaseRemainder", label), "machine.audio.output.voices.phaseRemainder");
+	state.gain = requireNumber(requireField(object, "gain", label), "machine.audio.output.voices.gain");
+	state.fadeStartGain = requireNumber(requireField(object, "fadeStartGain", label), "machine.audio.output.voices.fadeStartGain");
+	state.fadeSamplesRemaining = requireU32(requireField(object, "fadeSamplesRemaining", label), "machine.audio.output.voices.fadeSamplesRemaining");
+	state.fadeSamplesTotal = requireU32(requireField(object, "fadeSamplesTotal", label), "machine.audio.output.voices.fadeSamplesTotal");
 	state.filter = decodeApuBiquadFilterState(requireField(object, "filter", label), "machine.audio.output.voices.filter");
 	state.badp = decodeApuBadpDecoderState(requireField(object, "badp", label), "machine.audio.output.voices.badp");
 	return state;
@@ -872,14 +885,10 @@ BinValue encodeAudioControllerState(const AudioControllerState& state) {
 	object["slotSourceBytes"] = encodeFixedArray(state.slotSourceBytes, [](const std::vector<u8>& bytes) {
 		return BinValue(BinBinary(bytes.begin(), bytes.end()));
 	});
-	object["slotPlaybackCursorQ16"] = encodeFixedArray(state.slotPlaybackCursorQ16, encodeScalar<f64, i64>);
-	object["slotFadeSamplesRemaining"] = encodeFixedArray(state.slotFadeSamplesRemaining, encodeScalar<f64, u32>);
-	object["slotFadeSamplesTotal"] = encodeFixedArray(state.slotFadeSamplesTotal, encodeScalar<f64, u32>);
 	BinObject output;
 	output["voices"] = encodeVector<ApuOutputVoiceState>(state.output.voices, encodeApuOutputVoiceState);
 	object["output"] = BinValue(std::move(output));
 	object["sampleCarry"] = encodeScalar<f64>(state.sampleCarry);
-	object["availableSamples"] = encodeScalar<f64>(state.availableSamples);
 	object["apuStatus"] = encodeScalar<f64>(state.apuStatus);
 	object["apuFaultCode"] = encodeScalar<f64>(state.apuFaultCode);
 	object["apuFaultDetail"] = encodeScalar<f64>(state.apuFaultDetail);
@@ -904,12 +913,8 @@ AudioControllerState decodeAudioControllerState(const BinValue& value, const cha
 	for (size_t slot = 0; slot < APU_SLOT_COUNT; slot += 1u) {
 		state.slotSourceBytes[slot] = requireBinary(slotSourceBytes[slot], "machine.audio.slotSourceBytes[]");
 	}
-	state.slotPlaybackCursorQ16 = decodeI64Array<APU_SLOT_COUNT>(requireField(object, "slotPlaybackCursorQ16", label), "machine.audio.slotPlaybackCursorQ16");
-	state.slotFadeSamplesRemaining = decodeU32Array<APU_SLOT_COUNT>(requireField(object, "slotFadeSamplesRemaining", label), "machine.audio.slotFadeSamplesRemaining");
-	state.slotFadeSamplesTotal = decodeU32Array<APU_SLOT_COUNT>(requireField(object, "slotFadeSamplesTotal", label), "machine.audio.slotFadeSamplesTotal");
 	state.output = decodeApuOutputState(requireField(object, "output", label), "machine.audio.output");
 	state.sampleCarry = requireI64(requireField(object, "sampleCarry", label), "machine.audio.sampleCarry");
-	state.availableSamples = requireI64(requireField(object, "availableSamples", label), "machine.audio.availableSamples");
 	state.apuStatus = requireU32(requireField(object, "apuStatus", label), "machine.audio.apuStatus");
 	state.apuFaultCode = requireU32(requireField(object, "apuFaultCode", label), "machine.audio.apuFaultCode");
 	state.apuFaultDetail = requireU32(requireField(object, "apuFaultDetail", label), "machine.audio.apuFaultDetail");
@@ -1205,6 +1210,31 @@ CpuFrameState decodeCpuFrameState(const BinValue& value, const char* label) {
 	return state;
 }
 
+BinValue encodeCpuProtectedCallState(const CpuProtectedCallState& state) {
+	BinObject object;
+	object["kind"] = static_cast<i64>(state.kind);
+	object["callerFrameIndex"] = static_cast<i64>(state.callerFrameIndex);
+	object["targetFrameIndex"] = static_cast<i64>(state.targetFrameIndex);
+	object["returnsToProtectedParent"] = state.returnsToProtectedParent;
+	object["callBase"] = static_cast<i64>(state.callBase);
+	object["returnCount"] = static_cast<i64>(state.returnCount);
+	object["handlerRegister"] = static_cast<i64>(state.handlerRegister);
+	return BinValue(std::move(object));
+}
+
+CpuProtectedCallState decodeCpuProtectedCallState(const BinValue& value, const char* label) {
+	const BinObject& object = requireObject(value, label);
+	CpuProtectedCallState state;
+	state.kind = static_cast<ProtectedCallKind>(requireI32(requireField(object, "kind", label), "cpuProtectedCallState.kind"));
+	state.callerFrameIndex = requireI32(requireField(object, "callerFrameIndex", label), "cpuProtectedCallState.callerFrameIndex");
+	state.targetFrameIndex = requireI32(requireField(object, "targetFrameIndex", label), "cpuProtectedCallState.targetFrameIndex");
+	state.returnsToProtectedParent = requireBool(requireField(object, "returnsToProtectedParent", label), "cpuProtectedCallState.returnsToProtectedParent");
+	state.callBase = requireI32(requireField(object, "callBase", label), "cpuProtectedCallState.callBase");
+	state.returnCount = requireI32(requireField(object, "returnCount", label), "cpuProtectedCallState.returnCount");
+	state.handlerRegister = requireI32(requireField(object, "handlerRegister", label), "cpuProtectedCallState.handlerRegister");
+	return state;
+}
+
 BinValue encodeCpuRootValueState(const CpuRootValueState& state) {
 	BinObject object;
 	object["name"] = state.name;
@@ -1233,6 +1263,9 @@ BinValue encodeCpuRuntimeState(const CpuRuntimeState& state) {
 	});
 	object["frames"] = encodeVector(state.frames, [](const CpuFrameState& value) {
 		return encodeCpuFrameState(value);
+	});
+	object["protectedCalls"] = encodeVector(state.protectedCalls, [](const CpuProtectedCallState& value) {
+		return encodeCpuProtectedCallState(value);
 	});
 	object["lastReturnValues"] = encodeVector(state.lastReturnValues, [](const CpuValueState& value) {
 		return encodeCpuValueState(value);
@@ -1277,6 +1310,10 @@ CpuRuntimeState decodeCpuRuntimeState(const BinValue& value, const char* label) 
 	state.frames = decodeVector<CpuFrameState>(requireField(object, "frames", label), "cpuState.frames",
 		[](const BinValue& entryValue, size_t) {
 			return decodeCpuFrameState(entryValue, "cpuState.frames[]");
+		});
+	state.protectedCalls = decodeVector<CpuProtectedCallState>(requireField(object, "protectedCalls", label), "cpuState.protectedCalls",
+		[](const BinValue& entryValue, size_t) {
+			return decodeCpuProtectedCallState(entryValue, "cpuState.protectedCalls[]");
 		});
 	state.lastReturnValues = decodeVector<CpuValueState>(requireField(object, "lastReturnValues", label), "cpuState.lastReturnValues",
 		[](const BinValue& entryValue, size_t) {

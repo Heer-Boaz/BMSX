@@ -19,7 +19,6 @@ export function setCycleBudgetPerFrame(runtime: Runtime, value: number): void {
 		return;
 	}
 	timing.cycleBudgetPerFrame = value;
-	refreshDeviceTimings(runtime, runtime.machine.scheduler.currentNowCycles());
 	runtime.vblank.configureCycleBudget();
 }
 
@@ -29,6 +28,7 @@ export function setFrameTiming(runtime: Runtime, cpuHz: number, cycleBudgetPerFr
 	if (cycleBudgetPerFrame !== timing.cycleBudgetPerFrame) {
 		timing.cycleBudgetPerFrame = cycleBudgetPerFrame;
 	}
+	refreshDeviceTimings(runtime, runtime.machine.scheduler.currentNowCycles());
 	runtime.vblank.setVblankCycles(vblankCycles);
 }
 

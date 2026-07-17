@@ -4,12 +4,14 @@
 
 namespace bmsx {
 
-f32 resolveApuGainLinear(u32 gainQ12Word) {
-	return static_cast<f32>(toSignedWord(gainQ12Word)) / static_cast<f32>(APU_GAIN_Q12_ONE);
+f64 resolveApuGainLinear(u32 gainQ12Word) {
+	return static_cast<f64>(toSignedWord(gainQ12Word)) / static_cast<f64>(APU_GAIN_Q12_ONE);
 }
 
-f32 resolveApuPlaybackRate(u32 rateStepQ16Word) {
-	return static_cast<f32>(toSignedWord(rateStepQ16Word)) / static_cast<f32>(APU_RATE_STEP_Q16_ONE);
+void resolveApuPhaseStep(ApuPhaseStep& out, u32 rateStepQ16Word, u32 sourceSampleRateHz) {
+	const i64 product = static_cast<i64>(toSignedWord(rateStepQ16Word)) * static_cast<i64>(sourceSampleRateHz);
+	out.wholeQ16 = product / static_cast<i64>(APU_SAMPLE_RATE_HZ);
+	out.remainder = static_cast<i32>(product % static_cast<i64>(APU_SAMPLE_RATE_HZ));
 }
 
 std::string_view decodeApuFilterType(u32 kind) {
@@ -37,14 +39,13 @@ void applyApuOutputFilter(ApuOutputPlayback& playback, const ApuParameterRegiste
 	const u32 filterKind = registerWords[APU_PARAMETER_FILTER_KIND_INDEX];
 	playback.filterEnabled = filterKind != APU_FILTER_NONE;
 	playback.filterType = decodeApuFilterType(filterKind);
-	playback.filterFrequency = static_cast<f32>(toSignedWord(registerWords[APU_PARAMETER_FILTER_FREQ_HZ_INDEX]));
-	playback.filterQ = static_cast<f32>(toSignedWord(registerWords[APU_PARAMETER_FILTER_Q_MILLI_INDEX])) / 1000.0f;
-	playback.filterGain = static_cast<f32>(toSignedWord(registerWords[APU_PARAMETER_FILTER_GAIN_MILLIDB_INDEX])) / 1000.0f;
+	playback.filterFrequency = static_cast<f64>(toSignedWord(registerWords[APU_PARAMETER_FILTER_FREQ_HZ_INDEX]));
+	playback.filterQ = static_cast<f64>(toSignedWord(registerWords[APU_PARAMETER_FILTER_Q_MILLI_INDEX])) / 1000.0;
+	playback.filterGain = static_cast<f64>(toSignedWord(registerWords[APU_PARAMETER_FILTER_GAIN_MILLIDB_INDEX])) / 1000.0;
 }
 
 ApuOutputPlayback resolveApuOutputPlayback(const ApuParameterRegisterWords& registerWords) {
 	ApuOutputPlayback playback;
-	playback.playbackRate = resolveApuPlaybackRate(registerWords[APU_PARAMETER_RATE_STEP_Q16_INDEX]);
 	playback.gainLinear = resolveApuGainLinear(registerWords[APU_PARAMETER_GAIN_Q12_INDEX]);
 	applyApuOutputFilter(playback, registerWords);
 	return playback;

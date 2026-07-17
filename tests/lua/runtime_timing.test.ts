@@ -10,8 +10,27 @@ import { Memory } from '../../machine/ts/machine/memory/memory';
 import type { RuntimeInputSource } from '../../machine/ts/machine/runtime/input';
 import { GX_GPU_GP1_RESET, GX_GPU_GP1_DISPLAY_MODE, GX_GPU_GP1_VERTICAL_DISPLAY_RANGE, GX_GPU_STATUS_PAL_MODE } from '../../machine/ts/machine/devices/gx/gpu';
 import { GX_GPU_RESET_DISPLAY_MODE_WORD, GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD } from '../../machine/ts/machine/devices/gx/gpu_display';
-import { IO_GX_GPU_GP1 } from '../../machine/ts/machine/bus/io';
+import {
+	IO_APU_CMD,
+	IO_APU_GAIN_Q12,
+	IO_APU_GENERATOR_DUTY_Q12,
+	IO_APU_GENERATOR_KIND,
+	IO_APU_RATE_STEP_Q16,
+	IO_APU_SLOT,
+	IO_APU_SOURCE_CHANNELS,
+	IO_APU_SOURCE_FRAME_COUNT,
+	IO_APU_SOURCE_LOOP_END_SAMPLE,
+	IO_APU_SOURCE_SAMPLE_RATE_HZ,
+	IO_GX_GPU_GP1,
+} from '../../machine/ts/machine/bus/io';
 import { applyRuntimeMachineState, captureRuntimeMachineState } from '../../machine/ts/machine/runtime/machine_state';
+import { DEVICE_SERVICE_APU } from '../../machine/ts/machine/scheduler/device';
+import {
+	APU_CMD_PLAY,
+	APU_GAIN_Q12_ONE,
+	APU_GENERATOR_SQUARE,
+	APU_RATE_STEP_Q16_ONE,
+} from '../../machine/ts/machine/devices/audio/contracts';
 
 const GX_GPU_VERTICAL_DISPLAY_RANGE_192_WORD = ((35 + 192) << 10) | 35;
 const GX_GPU_VERTICAL_DISPLAY_RANGE_212_WORD = ((35 + 212) << 10) | 35;
@@ -96,6 +115,7 @@ test('runtime timing consumes published PSX GP1 display mode without shifting a 
 	assert.equal(runtime.timing.gpuDisplayModeWord, PSX_GPU_DISPLAY_MODE_NTSC_WORD);
 	assert.equal(runtime.timing.ufpsScaled, NTSC_REFRESH_UFPS_SCALED);
 	assert.equal(runtime.timing.totalScanlines, 262);
+	runtime.machine.scheduler.cancelDeviceService(DEVICE_SERVICE_APU);
 	assert.equal(runtime.machine.scheduler.nextDeadline(), frameEndCycle + 76411);
 });
 
@@ -136,6 +156,7 @@ test('runtime timing switches 240, 192, and 212 native display ranges only after
 	runtime.machine.scheduler.setNowCycles(frameEndCycle);
 	runtime.vblank.handleEndTimer();
 	assert.equal(runtime.timing.gpuVerticalDisplayRangeWord, GX_GPU_VERTICAL_DISPLAY_RANGE_192_WORD);
+	runtime.machine.scheduler.cancelDeviceService(DEVICE_SERVICE_APU);
 	assert.equal(runtime.machine.scheduler.nextDeadline(), frameEndCycle + 61341);
 
 	frameEndCycle += runtime.timing.cycleBudgetPerFrame;
@@ -145,6 +166,7 @@ test('runtime timing switches 240, 192, and 212 native display ranges only after
 	runtime.machine.scheduler.setNowCycles(frameEndCycle);
 	runtime.vblank.handleEndTimer();
 	assert.equal(runtime.timing.gpuVerticalDisplayRangeWord, GX_GPU_VERTICAL_DISPLAY_RANGE_212_WORD);
+	runtime.machine.scheduler.cancelDeviceService(DEVICE_SERVICE_APU);
 	assert.equal(runtime.machine.scheduler.nextDeadline(), frameEndCycle + 67731);
 
 	frameEndCycle += runtime.timing.cycleBudgetPerFrame;
@@ -153,6 +175,7 @@ test('runtime timing switches 240, 192, and 212 native display ranges only after
 	runtime.machine.scheduler.setNowCycles(frameEndCycle);
 	runtime.vblank.handleEndTimer();
 	assert.equal(runtime.timing.gpuVerticalDisplayRangeWord, GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD);
+	runtime.machine.scheduler.cancelDeviceService(DEVICE_SERVICE_APU);
 	assert.equal(runtime.machine.scheduler.nextDeadline(), frameEndCycle + 76677);
 });
 
@@ -177,5 +200,46 @@ test('runtime restore derives timing from published display raw while preserving
 	assert.equal(runtime.machine.gxGpu.readVerticalDisplayRangeWord(), GX_GPU_VERTICAL_DISPLAY_RANGE_212_WORD);
 	assert.equal(runtime.machine.gxGpu.readDeviceOutput().verticalDisplayRangeWord, GX_GPU_VERTICAL_DISPLAY_RANGE_192_WORD);
 	assert.equal(runtime.timing.gpuVerticalDisplayRangeWord, GX_GPU_VERTICAL_DISPLAY_RANGE_192_WORD);
+	runtime.machine.scheduler.cancelDeviceService(DEVICE_SERVICE_APU);
 	assert.equal(runtime.machine.scheduler.nextDeadline(), state.vblank.nowCycles + 61341);
+});
+
+test('VBLANK reset and runtime restore preserve the active APU clock domain', () => {
+	const runtime = createTimingRuntime();
+	const memory = runtime.machine.memory;
+	memory.writeMappedU32LE(IO_APU_SOURCE_SAMPLE_RATE_HZ, runtime.timing.cpuHz);
+	memory.writeMappedU32LE(IO_APU_SOURCE_CHANNELS, 1);
+	memory.writeMappedU32LE(IO_APU_SOURCE_FRAME_COUNT, 2);
+	memory.writeMappedU32LE(IO_APU_SOURCE_LOOP_END_SAMPLE, 2);
+	memory.writeMappedU32LE(IO_APU_RATE_STEP_Q16, APU_RATE_STEP_Q16_ONE);
+	memory.writeMappedU32LE(IO_APU_GAIN_Q12, APU_GAIN_Q12_ONE);
+	memory.writeMappedU32LE(IO_APU_GENERATOR_KIND, APU_GENERATOR_SQUARE);
+	memory.writeMappedU32LE(IO_APU_GENERATOR_DUTY_Q12, 0x0800);
+	memory.writeMappedU32LE(IO_APU_SLOT, 1);
+	memory.writeMappedU32LE(IO_APU_CMD, APU_CMD_PLAY);
+	runtime.machine.audioController.onService(0);
+
+	runtime.machine.scheduler.advanceTo(100_000);
+	runtime.machine.audioController.onService(100_000);
+	runtime.machine.audioOutput.outputRing.clear();
+	runtime.vblank.reset();
+	assert.equal(runtime.machine.scheduler.nowCycles, 100_000);
+	runtime.machine.scheduler.advanceTo(100_114);
+	runtime.machine.audioController.onService(100_114);
+	assert.equal(runtime.machine.audioOutput.outputRing.queuedFrames(), 1);
+
+	const state = captureRuntimeMachineState(runtime);
+	runtime.machine.scheduler.advanceTo(200_000);
+	runtime.machine.audioController.onService(200_000);
+	runtime.machine.audioOutput.outputRing.clear();
+	applyRuntimeMachineState(runtime, state);
+	assert.equal(runtime.machine.scheduler.nowCycles, 100_114);
+	assert.equal(runtime.machine.audioOutput.outputRing.queuedFrames(), 0);
+	runtime.machine.scheduler.advanceTo(100_228);
+	runtime.machine.audioController.onService(100_228);
+	assert.equal(runtime.machine.audioOutput.outputRing.queuedFrames(), 1);
+
+	runtime.resetHardwareState();
+	assert.equal(runtime.machine.scheduler.nowCycles, 0);
+	assert.equal(runtime.machine.audioOutput.outputRing.queuedFrames(), 0);
 });

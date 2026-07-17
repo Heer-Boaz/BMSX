@@ -1,8 +1,6 @@
 export const APU_SAMPLE_RATE_HZ = 44100;
 export const APU_RATE_STEP_Q16_ONE = 0x1_0000;
 export const APU_GAIN_Q12_ONE = 0x1000;
-export const APU_OUTPUT_QUEUE_CAPACITY_FRAMES = 16384;
-export const APU_OUTPUT_QUEUE_CAPACITY_SAMPLES = APU_OUTPUT_QUEUE_CAPACITY_FRAMES * 2;
 export const APU_COMMAND_FIFO_CAPACITY = 16;
 
 export const APU_CMD_NONE = 0;
@@ -49,8 +47,6 @@ export function apuSlotRegisterWordIndex(slot: number, parameterIndex: number): 
 export const APU_STATUS_FAULT = 1 << 0;
 export const APU_STATUS_SELECTED_SLOT_ACTIVE = 1 << 1;
 export const APU_STATUS_BUSY = 1 << 2;
-export const APU_STATUS_OUTPUT_EMPTY = 1 << 3;
-export const APU_STATUS_OUTPUT_FULL = 1 << 4;
 export const APU_STATUS_CMD_FIFO_EMPTY = 1 << 5;
 export const APU_STATUS_CMD_FIFO_FULL = 1 << 6;
 
@@ -79,7 +75,6 @@ export const APU_EVENT_NONE = 0;
 export const APU_EVENT_SLOT_ENDED = 1;
 
 export type ApuAudioSlot = number;
-export type ApuVoiceId = number;
 export type ApuSlotPhase = number;
 export type ApuParameterRegisterWords = ArrayLike<number>;
 
@@ -96,9 +91,4 @@ export interface ApuAudioSource {
 	loopEndSample: number;
 	generatorKind: number;
 	generatorDutyQ12: number;
-}
-
-export function advanceApuPlaybackCursorQ16(cursorQ16: number, samples: number, rateStepQ16: number, sourceSampleRateHz: number): number {
-	const deltaNumerator = samples * rateStepQ16 * sourceSampleRateHz;
-	return cursorQ16 + (deltaNumerator - (deltaNumerator % APU_SAMPLE_RATE_HZ)) / APU_SAMPLE_RATE_HZ;
 }

@@ -225,6 +225,7 @@ add_library(bmsx_core STATIC
 	common/scratchbuffer.cpp
 
 	# Audio systems
+	audio/output_resampler.cpp
 	audio/soundmaster.cpp
 	machine/devices/audio/active_slots.cpp
 	machine/devices/audio/badp_decoder.cpp
@@ -531,6 +532,12 @@ if(BMSX_BUILD_TESTS)
 	)
 	target_link_libraries(bmsx_dma_controller_tests PRIVATE bmsx_core)
 	add_test(NAME bmsx_dma_controller_tests COMMAND bmsx_dma_controller_tests)
+
+	add_executable(bmsx_audio_controller_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/audio_controller_test.cpp
+	)
+	target_link_libraries(bmsx_audio_controller_tests PRIVATE bmsx_core)
+	add_test(NAME bmsx_audio_controller_tests COMMAND bmsx_audio_controller_tests)
 
 	add_executable(bmsx_memory_bus_fault_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/memory_bus_fault_test.cpp

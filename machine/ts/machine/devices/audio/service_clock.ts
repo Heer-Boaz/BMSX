@@ -1,24 +1,26 @@
 import { accrueBudgetUnits, cyclesUntilBudgetUnits, type BudgetAccrual } from '../../scheduler/budget';
 import { DEVICE_SERVICE_APU, type DeviceScheduler } from '../../scheduler/device';
+import type { ApuActiveSlots } from './active_slots';
 import type { ApuCommandFifo } from './command_fifo';
 import { APU_SAMPLE_RATE_HZ } from './contracts';
-import type { ApuSlotBank } from './slot_bank';
+import type { ApuOutputMixer } from './output';
 
 export class ApuServiceClock {
 	private cpuHz = APU_SAMPLE_RATE_HZ;
 	private sampleCarry = 0;
-	private availableSamples = 0;
+	private lastCycle = 0;
 	private readonly budgetAccrual: BudgetAccrual = { wholeUnits: 0, carry: 0 };
 
 	public constructor(
 		private readonly scheduler: DeviceScheduler,
 		private readonly commandFifo: ApuCommandFifo,
-		private readonly slots: ApuSlotBank,
+		private readonly activeSlots: ApuActiveSlots,
+		private readonly audioOutput: ApuOutputMixer,
 	) {}
 
-	public reset(): void {
+	public reset(nowCycles: number): void {
 		this.sampleCarry = 0;
-		this.availableSamples = 0;
+		this.lastCycle = nowCycles;
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_APU);
 	}
 
@@ -26,38 +28,24 @@ export class ApuServiceClock {
 		return this.sampleCarry;
 	}
 
-	public captureAvailableSamples(): number {
-		return this.availableSamples;
-	}
-
-	public restore(sampleCarry: number, availableSamples: number): void {
+	public restore(sampleCarry: number, nowCycles: number): void {
 		this.sampleCarry = sampleCarry;
-		this.availableSamples = availableSamples;
+		this.lastCycle = nowCycles;
 	}
 
-	public setCpuHz(cpuHz: number): void {
+	public setCpuHz(cpuHz: number, nowCycles: number): void {
+		this.synchronize(nowCycles);
 		this.cpuHz = cpuHz;
 	}
 
-	public clearBudget(): void {
-		this.sampleCarry = 0;
-		this.availableSamples = 0;
-	}
-
-	public accrueCycles(cycles: number): void {
+	public synchronize(nowCycles: number): void {
+		const cycles = nowCycles - this.lastCycle;
+		this.lastCycle = nowCycles;
 		accrueBudgetUnits(this.budgetAccrual, this.cpuHz, APU_SAMPLE_RATE_HZ, this.sampleCarry, cycles);
 		this.sampleCarry = this.budgetAccrual.carry;
-		this.availableSamples += this.budgetAccrual.wholeUnits;
-	}
-
-	public pendingSamples(): boolean {
-		return this.availableSamples !== 0;
-	}
-
-	public consumeSamples(): number {
-		const samples = this.availableSamples;
-		this.availableSamples = 0;
-		return samples;
+		if (this.budgetAccrual.wholeUnits !== 0) {
+			this.activeSlots.advance(this.budgetAccrual.wholeUnits);
+		}
 	}
 
 	public scheduleNext(nowCycles: number): void {
@@ -65,19 +53,11 @@ export class ApuServiceClock {
 			this.scheduler.scheduleDeviceService(DEVICE_SERVICE_APU, nowCycles);
 			return;
 		}
-		if (this.slots.activeMask === 0) {
-			this.scheduler.cancelDeviceService(DEVICE_SERVICE_APU);
-			this.sampleCarry = 0;
-			this.availableSamples = 0;
-			return;
-		}
-		if (this.availableSamples > 0) {
-			this.scheduler.scheduleDeviceService(DEVICE_SERVICE_APU, nowCycles);
-			return;
-		}
+		const serviceBatchFrames = 128;
+		const serviceFrames = this.audioOutput.samplesUntilNextEvent(serviceBatchFrames);
 		this.scheduler.scheduleDeviceService(
 			DEVICE_SERVICE_APU,
-			nowCycles + cyclesUntilBudgetUnits(this.cpuHz, APU_SAMPLE_RATE_HZ, this.sampleCarry, 1),
+			nowCycles + cyclesUntilBudgetUnits(this.cpuHz, APU_SAMPLE_RATE_HZ, this.sampleCarry, serviceFrames),
 		);
 	}
 }

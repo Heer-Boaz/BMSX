@@ -18,6 +18,9 @@ struct ApuBadpDecoderState {
 	i64 decodedFrame = -1;
 	i16 decodedLeft = 0;
 	i16 decodedRight = 0;
+	i64 previousDecodedFrame = -1;
+	i16 previousDecodedLeft = 0;
+	i16 previousDecodedRight = 0;
 };
 
 struct ApuBadpSeekTableResult {

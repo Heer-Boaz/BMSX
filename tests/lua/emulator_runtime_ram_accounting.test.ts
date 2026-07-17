@@ -227,6 +227,7 @@ test('restored static closures reuse the static proto cache', () => {
 		globals: [],
 		moduleCache: [],
 		frames: [],
+		protectedCalls: [],
 		lastReturnValues: [{ tag: 'ref', id: 0 }],
 		objects: [{ kind: 'closure', protoIndex: staticProtoIndex, upvalues: [] }],
 		openUpvalues: [],

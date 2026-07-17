@@ -134,8 +134,10 @@ export class Runtime {
 
 	public resetHardwareState(): void {
 		this.luaOutputLineBuffer = '';
+		this.machine.scheduler.reset();
 		this.machine.resetDevices();
 		this.vblank.reset();
+		refreshDeviceTimings(this, this.machine.scheduler.nowCycles);
 	}
 
 	public resetRuntimeForProgramReload(): void {
@@ -269,6 +271,9 @@ export class Runtime {
 	// start repeated-sequence-acceptable -- External closure calls keep frame/budget restore code direct instead of routing through callback plumbing.
 	public callClosureInto(fn: Closure, args: ReadonlyArray<Value>, out: Value[]): void {
 		const cpu = this.machine.cpu;
+		if (this.machine.scheduler.isCpuSliceActive() || cpu.isHostExternalCallActive()) {
+			throw new Error('External Lua closure execution requires a suspended CPU.');
+		}
 		const depth = cpu.getFrameDepth();
 		const previousBudget = cpu.instructionBudgetRemaining;
 		const budgetSentinel = Number.MAX_SAFE_INTEGER;

@@ -1,7 +1,6 @@
 import { IRQ_VBLANK } from '../bus/io';
 import type { FrameState } from './frame/state';
 import { Runtime } from './runtime';
-import { refreshDeviceTimings } from './timing/config';
 import { TIMER_KIND_VBLANK_BEGIN, TIMER_KIND_VBLANK_END } from '../scheduler/device';
 
 export type RuntimeVblankSnapshot = {
@@ -62,25 +61,20 @@ export class VblankState {
 		return runtime.machine.scheduler.nowCycles - this.frameStartCycle;
 	}
 
-	public resetScheduler(): void {
-		const runtime = this.runtime;
-		runtime.machine.scheduler.reset();
-		this.frameStartCycle = 0;
-	}
-
 	public reset(): void {
-		this.resetScheduler();
+		const runtime = this.runtime;
+		const scheduler = runtime.machine.scheduler;
+		scheduler.cancelVblankTimers();
+		this.frameStartCycle = scheduler.currentNowCycles();
 		this.vblankActive = false;
 		this.vblankSequence = 0;
 		this.lastCompletedVblankSequence = 0;
-		const runtime = this.runtime;
 		runtime.machine.inputController.cancelSampleArm();
 		runtime.machine.irqController.postLoad();
 		if (this.vblankStartCycle === 0) {
 			this.publishVblankTiming(true);
 		}
 		this.scheduleCurrentFrameTimers();
-		refreshDeviceTimings(runtime, runtime.machine.scheduler.nowCycles);
 	}
 
 	public capture(): RuntimeVblankSnapshot {
@@ -95,16 +89,14 @@ export class VblankState {
 		const runtime = this.runtime;
 		runtime.frameScheduler.reset();
 		runtime.frameLoop.reset();
-		this.resetScheduler();
+		runtime.machine.scheduler.reset();
 		runtime.machine.scheduler.setNowCycles(state.nowCycles);
 		this.frameStartCycle = state.nowCycles - state.cyclesIntoFrame;
 		this.vblankSequence = 0;
 		this.lastCompletedVblankSequence = 0;
 		this.activeTickCompleted = false;
-		runtime.machine.irqController.postLoad();
 		this.publishVblankTiming(this.vblankStartCycle === 0 || this.getCyclesIntoFrame() >= this.vblankStartCycle);
 		this.scheduleCurrentFrameTimers();
-		refreshDeviceTimings(runtime, runtime.machine.scheduler.nowCycles);
 	}
 
 	public beginTick(): void {

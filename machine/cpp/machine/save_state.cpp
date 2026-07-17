@@ -27,13 +27,14 @@ void restoreSharedDeviceState(
 MachineState captureMachineState(Machine& machine) {
 	MachineState state;
 	// GPU capture first synchronizes overdue command time and publishes its DREQ
-	// edges; the dependent DMA grant must be captured after that transition.
+	// edges; the dependent DMA grant must be captured after that transition. APU
+	// capture likewise materializes sample-accurate END events before IRQ state.
 	state.gxGpu = machine.gxGpu.captureState();
+	state.audio = machine.audioController.captureState();
 	state.dma = machine.dmaController.captureState();
 	state.geometry = machine.geometryController.captureState();
 	state.gxGte = machine.gxGte.captureState();
 	state.irq = machine.irqController.captureState();
-	state.audio = machine.audioController.captureState();
 	state.input = machine.inputController.captureState();
 	state.systemControl = machine.systemController.captureState();
 	return state;
@@ -50,12 +51,12 @@ MachineSaveState captureMachineSaveState(Machine& machine) {
 	MachineSaveState state;
 	// See captureMachineState: GPU command time owns the request-line edge.
 	state.gxGpu = machine.gxGpu.captureSaveState();
+	state.audio = machine.audioController.captureState();
 	state.memory = machine.memory.captureSaveState();
 	state.dma = machine.dmaController.captureState();
 	state.geometry = machine.geometryController.captureState();
 	state.gxGte = machine.gxGte.captureState();
 	state.irq = machine.irqController.captureState();
-	state.audio = machine.audioController.captureState();
 	state.stringPool = machine.cpu.stringPool().captureState();
 	state.input = machine.inputController.captureState();
 	state.systemControl = machine.systemController.captureState();

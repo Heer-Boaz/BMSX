@@ -82,6 +82,9 @@ inline void decodeNextApuBadpFrame(const u8* data, u32 channels, ApuBadpDecoderS
 	}
 	decoder.blockFrameIndex += 1;
 	decoder.nextFrame += 1;
+	decoder.previousDecodedFrame = decoder.decodedFrame;
+	decoder.previousDecodedLeft = decoder.decodedLeft;
+	decoder.previousDecodedRight = decoder.decodedRight;
 	decoder.decodedFrame = static_cast<i64>(decoder.nextFrame) - 1;
 	decoder.decodedLeft = static_cast<i16>(left);
 	decoder.decodedRight = static_cast<i16>(right);
@@ -93,12 +96,15 @@ inline void seekApuBadpDecoderToFrame(const u8* data,
 										const std::vector<u32>& seekFrames,
 										const std::vector<u32>& seekOffsets,
 										ApuBadpDecoderState& decoder,
-										size_t frame) {
-	if (frame == frames) {
-		decoder.nextFrame = frame;
-		decoder.decodedFrame = static_cast<i64>(frame) - 1;
-		decoder.decodedLeft = 0;
-		decoder.decodedRight = 0;
+										i64 frame) {
+	decoder.decodedFrame = -1;
+	decoder.decodedLeft = 0;
+	decoder.decodedRight = 0;
+	decoder.previousDecodedFrame = -1;
+	decoder.previousDecodedLeft = 0;
+	decoder.previousDecodedRight = 0;
+	if (frame >= static_cast<i64>(frames)) {
+		decoder.nextFrame = frames;
 		return;
 	}
 	size_t seekIndex = 0;
@@ -106,7 +112,7 @@ inline void seekApuBadpDecoderToFrame(const u8* data,
 	size_t hi = seekFrames.size() - 1;
 	while (lo <= hi) {
 		const size_t mid = (lo + hi) >> 1;
-		if (seekFrames[mid] <= frame) {
+		if (static_cast<i64>(seekFrames[mid]) <= frame) {
 			seekIndex = mid;
 			lo = mid + 1;
 		} else {
@@ -116,17 +122,16 @@ inline void seekApuBadpDecoderToFrame(const u8* data,
 			hi = mid - 1;
 		}
 	}
-	size_t currentFrame = static_cast<size_t>(seekFrames[seekIndex]);
+	i64 currentFrame = seekFrames[seekIndex];
 	size_t cursor = static_cast<size_t>(seekOffsets[seekIndex]);
 	loadApuBadpBlock(data, channels, decoder, cursor);
-	while (currentFrame + decoder.blockFrames <= frame) {
-		currentFrame += decoder.blockFrames;
+	while (currentFrame + static_cast<i64>(decoder.blockFrames) <= frame) {
+		currentFrame += static_cast<i64>(decoder.blockFrames);
 		cursor = decoder.blockEnd;
 		loadApuBadpBlock(data, channels, decoder, cursor);
 	}
-	decoder.nextFrame = currentFrame;
-	decoder.decodedFrame = static_cast<i64>(currentFrame) - 1;
-	while (decoder.nextFrame <= frame) {
+	decoder.nextFrame = static_cast<size_t>(currentFrame);
+	while (static_cast<i64>(decoder.nextFrame) <= frame) {
 		decodeNextApuBadpFrame(data, channels, decoder);
 	}
 }
@@ -137,7 +142,7 @@ inline void resetApuBadpDecoder(const u8* data,
 								const std::vector<u32>& seekFrames,
 								const std::vector<u32>& seekOffsets,
 								ApuBadpDecoderState& decoder,
-								size_t frame) {
+								i64 frame) {
 	decoder = ApuBadpDecoderState{};
 	seekApuBadpDecoderToFrame(data, frames, channels, seekFrames, seekOffsets, decoder, frame);
 }
@@ -154,6 +159,11 @@ inline void readApuBadpFrameAt(const u8* data,
 	if (decoder.decodedFrame == static_cast<i64>(frame)) {
 		outLeft = decoder.decodedLeft;
 		outRight = decoder.decodedRight;
+		return;
+	}
+	if (decoder.previousDecodedFrame == static_cast<i64>(frame)) {
+		outLeft = decoder.previousDecodedLeft;
+		outRight = decoder.previousDecodedRight;
 		return;
 	}
 	if (frame < decoder.nextFrame) {

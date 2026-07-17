@@ -1,24 +1,28 @@
 #include "machine/devices/audio/service_clock.h"
 
+#include "machine/devices/audio/active_slots.h"
 #include "machine/devices/audio/command_fifo.h"
 #include "machine/devices/audio/contracts.h"
-#include "machine/devices/audio/slot_bank.h"
-#include "machine/scheduler/budget.h"
+#include "machine/devices/audio/output.h"
 #include "machine/scheduler/device.h"
-
-#include <utility>
 
 namespace bmsx {
 
-ApuServiceClock::ApuServiceClock(DeviceScheduler& scheduler, const ApuCommandFifo& commandFifo, const ApuSlotBank& slots)
+ApuServiceClock::ApuServiceClock(
+	DeviceScheduler& scheduler,
+	const ApuCommandFifo& commandFifo,
+	ApuActiveSlots& activeSlots,
+	const ApuOutputMixer& audioOutput
+)
 	: m_scheduler(scheduler)
 	, m_commandFifo(commandFifo)
-	, m_slots(slots)
+	, m_activeSlots(activeSlots)
+	, m_audioOutput(audioOutput)
 	, m_cpuHz(APU_SAMPLE_RATE_HZ) {}
 
-void ApuServiceClock::reset() {
+void ApuServiceClock::reset(i64 nowCycles) {
 	m_sampleCarry = 0;
-	m_availableSamples = 0;
+	m_lastCycle = nowCycles;
 	m_scheduler.cancelDeviceService(DEVICE_SERVICE_APU);
 }
 
@@ -26,37 +30,24 @@ i64 ApuServiceClock::captureSampleCarry() const {
 	return m_sampleCarry;
 }
 
-i64 ApuServiceClock::captureAvailableSamples() const {
-	return m_availableSamples;
-}
-
-void ApuServiceClock::restore(i64 sampleCarry, i64 availableSamples) {
+void ApuServiceClock::restore(i64 sampleCarry, i64 nowCycles) {
 	m_sampleCarry = sampleCarry;
-	m_availableSamples = availableSamples;
+	m_lastCycle = nowCycles;
 }
 
-void ApuServiceClock::setCpuHz(i64 cpuHz) {
+void ApuServiceClock::setCpuHz(i64 cpuHz, i64 nowCycles) {
+	synchronize(nowCycles);
 	m_cpuHz = cpuHz;
 }
 
-void ApuServiceClock::clearBudget() {
-	m_sampleCarry = 0;
-	m_availableSamples = 0;
-}
-
-void ApuServiceClock::accrueCycles(int cycles) {
-	BudgetAccrual accrual;
-	accrueBudgetUnits(accrual, m_cpuHz, APU_SAMPLE_RATE_HZ, m_sampleCarry, cycles);
-	m_availableSamples += accrual.wholeUnits;
-	m_sampleCarry = accrual.carry;
-}
-
-bool ApuServiceClock::pendingSamples() const {
-	return m_availableSamples != 0;
-}
-
-i64 ApuServiceClock::consumeSamples() {
-	return std::exchange(m_availableSamples, 0);
+void ApuServiceClock::synchronize(i64 nowCycles) {
+	const i64 cycles = nowCycles - m_lastCycle;
+	m_lastCycle = nowCycles;
+	accrueBudgetUnits(m_budgetAccrual, m_cpuHz, APU_SAMPLE_RATE_HZ, m_sampleCarry, cycles);
+	m_sampleCarry = m_budgetAccrual.carry;
+	if (m_budgetAccrual.wholeUnits != 0) {
+		m_activeSlots.advance(m_budgetAccrual.wholeUnits);
+	}
 }
 
 void ApuServiceClock::scheduleNext(i64 nowCycles) {
@@ -64,17 +55,12 @@ void ApuServiceClock::scheduleNext(i64 nowCycles) {
 		m_scheduler.scheduleDeviceService(DEVICE_SERVICE_APU, nowCycles);
 		return;
 	}
-	if (m_slots.activeMask() == 0u) {
-		m_scheduler.cancelDeviceService(DEVICE_SERVICE_APU);
-		m_sampleCarry = 0;
-		m_availableSamples = 0;
-		return;
-	}
-	if (m_availableSamples > 0) {
-		m_scheduler.scheduleDeviceService(DEVICE_SERVICE_APU, nowCycles);
-		return;
-	}
-	m_scheduler.scheduleDeviceService(DEVICE_SERVICE_APU, nowCycles + cyclesUntilBudgetUnits(m_cpuHz, APU_SAMPLE_RATE_HZ, m_sampleCarry, 1));
+	constexpr i64 serviceBatchFrames = 128;
+	const i64 serviceFrames = m_audioOutput.samplesUntilNextEvent(serviceBatchFrames);
+	m_scheduler.scheduleDeviceService(
+		DEVICE_SERVICE_APU,
+		nowCycles + cyclesUntilBudgetUnits(m_cpuHz, APU_SAMPLE_RATE_HZ, m_sampleCarry, serviceFrames)
+	);
 }
 
 } // namespace bmsx

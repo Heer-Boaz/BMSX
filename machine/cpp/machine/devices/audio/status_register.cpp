@@ -2,20 +2,30 @@
 
 #include "machine/devices/audio/command_fifo.h"
 #include "machine/devices/audio/contracts.h"
-#include "machine/devices/audio/output_ring.h"
+#include "machine/devices/audio/service_clock.h"
 #include "machine/devices/audio/slot_bank.h"
 #include "machine/devices/device_status.h"
+#include "machine/scheduler/device.h"
 
 namespace bmsx {
 
-ApuStatusRegister::ApuStatusRegister(const DeviceStatusLatch& fault, const ApuSlotBank& slots, const ApuCommandFifo& commandFifo, const ApuOutputRing& outputRing)
+ApuStatusRegister::ApuStatusRegister(
+	const DeviceStatusLatch& fault,
+	const ApuSlotBank& slots,
+	const ApuCommandFifo& commandFifo,
+	ApuServiceClock& serviceClock,
+	DeviceScheduler& scheduler
+)
 	: m_fault(fault)
 	, m_slots(slots)
 	, m_commandFifo(commandFifo)
-	, m_outputRing(outputRing) {}
+	, m_serviceClock(serviceClock)
+	, m_scheduler(scheduler) {}
 
 Value ApuStatusRegister::readThunk(void* context, [[maybe_unused]] u32 addr) {
 	auto& reg = *static_cast<ApuStatusRegister*>(context);
+	const i64 nowCycles = reg.m_scheduler.currentNowCycles();
+	reg.m_serviceClock.synchronize(nowCycles);
 	u32 status = reg.m_fault.status;
 	if (reg.m_slots.activeMask() != 0u || !reg.m_commandFifo.empty()) {
 		status |= APU_STATUS_BUSY;
@@ -25,13 +35,6 @@ Value ApuStatusRegister::readThunk(void* context, [[maybe_unused]] u32 addr) {
 	}
 	if (reg.m_commandFifo.full()) {
 		status |= APU_STATUS_CMD_FIFO_FULL;
-	}
-	const size_t queuedFrames = reg.m_outputRing.queuedFrames();
-	if (queuedFrames == 0u) {
-		status |= APU_STATUS_OUTPUT_EMPTY;
-	}
-	if (queuedFrames >= reg.m_outputRing.capacityFrames()) {
-		status |= APU_STATUS_OUTPUT_FULL;
 	}
 	return valueNumber(static_cast<double>(status));
 }

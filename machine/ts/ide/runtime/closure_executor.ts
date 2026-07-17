@@ -36,6 +36,9 @@ function runHaltedClosureUntilInterrupt(runtime: Runtime): number {
 export function callClosureIntoWithScheduler(runtime: Runtime, fn: Closure, args: ReadonlyArray<Value>, out: Value[]): void {
 	const cpu = runtime.machine.cpu;
 	const scheduler = runtime.machine.scheduler;
+	if (scheduler.isCpuSliceActive() || cpu.isHostExternalCallActive()) {
+		throw new Error('External Lua closure execution requires a suspended CPU.');
+	}
 	const depth = cpu.getFrameDepth();
 	const previousBudget = cpu.instructionBudgetRemaining;
 	const budgetSentinel = Number.MAX_SAFE_INTEGER;

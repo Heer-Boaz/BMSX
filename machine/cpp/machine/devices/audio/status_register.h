@@ -6,13 +6,20 @@
 namespace bmsx {
 
 class ApuCommandFifo;
-class ApuOutputRing;
+class ApuServiceClock;
 class ApuSlotBank;
+class DeviceScheduler;
 class DeviceStatusLatch;
 
 class ApuStatusRegister final {
 public:
-	ApuStatusRegister(const DeviceStatusLatch& fault, const ApuSlotBank& slots, const ApuCommandFifo& commandFifo, const ApuOutputRing& outputRing);
+	ApuStatusRegister(
+		const DeviceStatusLatch& fault,
+		const ApuSlotBank& slots,
+		const ApuCommandFifo& commandFifo,
+		ApuServiceClock& serviceClock,
+		DeviceScheduler& scheduler
+	);
 
 	static Value readThunk(void* context, u32 addr);
 
@@ -20,7 +27,8 @@ private:
 	const DeviceStatusLatch& m_fault;
 	const ApuSlotBank& m_slots;
 	const ApuCommandFifo& m_commandFifo;
-	const ApuOutputRing& m_outputRing;
+	ApuServiceClock& m_serviceClock;
+	DeviceScheduler& m_scheduler;
 };
 
 } // namespace bmsx

@@ -6,17 +6,15 @@
 namespace bmsx {
 
 class ApuCommandFifo;
-class ApuOutputRing;
 
 class ApuQueueStatusRegisters final {
 public:
-	ApuQueueStatusRegisters(const ApuCommandFifo& commandFifo, const ApuOutputRing& outputRing);
+	explicit ApuQueueStatusRegisters(const ApuCommandFifo& commandFifo);
 
 	static Value readThunk(void* context, u32 addr);
 
 private:
 	const ApuCommandFifo& m_commandFifo;
-	const ApuOutputRing& m_outputRing;
 };
 
 } // namespace bmsx

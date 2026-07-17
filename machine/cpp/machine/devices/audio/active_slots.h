@@ -22,7 +22,7 @@ public:
 		ApuSelectedSlotLatch& selectedSlotLatch);
 
 	void writeActiveMask();
-	void setActive(ApuAudioSlot slot, const ApuParameterRegisterWords& registerWords, ApuVoiceId voiceId);
+	void setActive(ApuAudioSlot slot, const ApuParameterRegisterWords& registerWords);
 	void stop(ApuAudioSlot slot);
 	void setPhase(ApuAudioSlot slot, ApuSlotPhase phase);
 	void advance(i64 samples);
@@ -34,8 +34,6 @@ private:
 	ApuEventLatch& m_eventLatch;
 	ApuSlotBank& m_slots;
 	ApuSelectedSlotLatch& m_selectedSlotLatch;
-
-	void emitSlotEvent(ApuAudioSlot slot, ApuVoiceId voiceId, u32 sourceAddr);
 };
 
 } // namespace bmsx

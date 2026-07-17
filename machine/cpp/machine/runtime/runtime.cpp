@@ -410,8 +410,10 @@ void Runtime::setGlobal(std::string_view name, const Value& value) {
 
 void Runtime::resetHardwareState() {
 	luaOutputLineBuffer.clear();
+	machine.scheduler.reset();
 	machine.resetDevices();
 	vblank.reset(*this);
+	refreshDeviceTimings(*this, machine.scheduler.nowCycles());
 }
 
 } // namespace bmsx

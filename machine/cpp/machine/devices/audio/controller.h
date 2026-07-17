@@ -17,7 +17,6 @@
 #include "machine/devices/device_status.h"
 #include "machine/memory/memory.h"
 
-
 namespace bmsx {
 
 class ApuOutputMixer;
@@ -32,9 +31,8 @@ public:
 	void reset();
 	void dispose();
 	void setTiming(int64_t cpuHz, int64_t nowCycles);
-	void accrueCycles(int cycles, int64_t nowCycles);
 	void onService(int64_t nowCycles);
-	AudioControllerState captureState() const;
+	AudioControllerState captureState();
 	void restoreState(const AudioControllerState& state, int64_t nowCycles);
 
 private:
@@ -48,12 +46,11 @@ private:
 	ApuSelectedSlotLatch m_selectedSlotLatch;
 	ApuSourceDma m_sourceDma;
 	ApuActiveSlots m_activeSlots;
-	ApuStatusRegister m_statusRegister;
 	ApuServiceClock m_serviceClock;
+	ApuStatusRegister m_statusRegister;
 	ApuCommandIngress m_commandIngress;
 	ApuQueueStatusRegisters m_queueStatusRegisters;
 	ApuCommandExecutor m_commandExecutor;
-
 };
 
 } // namespace bmsx

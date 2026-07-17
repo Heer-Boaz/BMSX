@@ -36,15 +36,17 @@ export type MachineSaveState = {
 
 export function captureMachineState(machine: Machine): MachineState {
 	// GPU capture first synchronizes overdue command time and publishes its DREQ
-	// edges; the dependent DMA grant must be captured after that transition.
+	// edges; the dependent DMA grant must be captured after that transition. APU
+	// capture likewise materializes sample-accurate END events before IRQ state.
 	const gxGpu = machine.gxGpu.captureState();
+	const audio = machine.audioController.captureState();
 	return {
 		dma: machine.dmaController.captureState(),
 		geometry: machine.geometryController.captureState(),
 		gxGpu,
 		gxGte: machine.gxGte.captureState(),
 		irq: machine.irqController.captureState(),
-		audio: machine.audioController.captureState(),
+		audio,
 		input: machine.inputController.captureState(),
 		systemControl: machine.systemController.captureState(),
 	};
@@ -60,6 +62,7 @@ export function restoreMachineState(machine: Machine, state: MachineState): void
 export function captureMachineSaveState(machine: Machine): MachineSaveState {
 	// See captureMachineState: GPU command time owns the request-line edge.
 	const gxGpu = machine.gxGpu.captureSaveState();
+	const audio = machine.audioController.captureState();
 	return {
 		memory: machine.memory.captureSaveState(),
 		dma: machine.dmaController.captureState(),
@@ -67,7 +70,7 @@ export function captureMachineSaveState(machine: Machine): MachineSaveState {
 		gxGpu,
 		gxGte: machine.gxGte.captureState(),
 		irq: machine.irqController.captureState(),
-		audio: machine.audioController.captureState(),
+		audio,
 		stringPool: machine.cpu.stringPool.captureState(),
 		input: machine.inputController.captureState(),
 		systemControl: machine.systemController.captureState(),

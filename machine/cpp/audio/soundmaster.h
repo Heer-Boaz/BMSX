@@ -7,9 +7,14 @@
 
 #pragma once
 
+#include "audio/output_resampler.h"
 #include "common/registry.h"
 
+#include <cstddef>
+
 namespace bmsx {
+
+class ApuOutputRing;
 
 enum class MixLatencyProfile {
 	Minimal,
@@ -26,10 +31,10 @@ public:
 	[[nodiscard]] auto registryId() const -> const Identifier& override;
 	[[nodiscard]] auto isRegistryPersistent() const -> bool override { return true; }
 
-
 	[[nodiscard]] auto masterVolume() const -> f32 { return m_masterVolume; }
 	void setMasterVolume(f32 value);
-
+	void resetPlaybackState();
+	void pullOutputFrames(ApuOutputRing& ring, i16* output, size_t frameCount, i32 outputSampleRate);
 
 	void setMixerUfpsScaled(i64 ufpsScaled);
 	void setLatencyProfile(MixLatencyProfile profile);
@@ -45,7 +50,9 @@ private:
 	i64 m_mixUfpsScaled;
 	f64 m_mixFrameTimeSec;
 	f64 m_mixTargetAheadSec;
+	size_t m_mixSourcePrebufferFrames;
 	MixLatencyProfile m_mixLatencyProfile = MixLatencyProfile::Low;
+	AudioOutputResampler m_outputResampler;
 };
 
 } // namespace bmsx

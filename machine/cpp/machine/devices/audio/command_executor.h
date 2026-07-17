@@ -32,9 +32,7 @@ public:
 		ApuServiceClock& serviceClock);
 
 	void drainCommandFifo();
-	void restoreOutputVoice(const ApuOutputVoiceState& state, ApuVoiceId voiceId);
-	Value onSelectedSlotRegisterRead(u32 addr) const;
-	void onSelectedSlotRegisterWrite(u32 addr, Value value);
+	void restoreOutputVoice(const ApuOutputVoiceState& state);
 	static Value selectedSlotRegisterReadThunk(void* context, u32 addr);
 	static void selectedSlotRegisterWriteThunk(void* context, u32 addr, Value value);
 
@@ -57,10 +55,7 @@ private:
 	void startPlay(const ApuAudioSource& source, ApuAudioSlot slot, const ApuParameterRegisterWords& registerWords);
 	void stopSlot(const ApuParameterRegisterWords& registerWords);
 	void setSlotGain(const ApuParameterRegisterWords& registerWords);
-	void replaceSlotSourceDma(ApuAudioSlot slot, const ApuAudioSource& source);
 	void writeSlotRegisterWord(ApuAudioSlot slot, u32 parameterIndex, u32 word);
-	void playOutputVoice(ApuAudioSlot slot, ApuVoiceId voiceId, const ApuAudioSource& source, const ApuParameterRegisterWords& registerWords, u32 fadeSamples);
-	const ApuParameterRegisterWords& fadeOutputRegisterWords(ApuAudioSlot slot, const ApuParameterRegisterWords& registerWords);
 };
 
 } // namespace bmsx

@@ -28,6 +28,7 @@ public:
 	void setNowCycles(i64 nowCycles);
 	void reset();
 	i64 currentNowCycles() const;
+	bool isCpuSliceActive() const { return m_schedulerSliceActive; }
 	void beginCpuSlice(int sliceBudget);
 	void endCpuSlice();
 	void advanceTo(i64 nowCycles);
@@ -37,6 +38,7 @@ public:
 	void scheduleVblankTimer(uint8_t timerKind, i64 deadlineCycles);
 	void scheduleDeviceService(uint8_t deviceKind, i64 deadlineCycles);
 	void cancelDeviceService(uint8_t deviceKind);
+	void cancelVblankTimers();
 
 private:
 	static uint32_t nextTimerGeneration(uint32_t value);

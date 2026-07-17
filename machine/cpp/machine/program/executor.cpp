@@ -1,6 +1,7 @@
 #include "machine/runtime/runtime.h"
 
 #include <limits>
+#include <stdexcept>
 
 namespace bmsx {
 namespace {
@@ -40,6 +41,9 @@ int runHaltedClosureUntilInterrupt(Runtime& runtime) {
 
 void Runtime::callClosureInto(Closure& fn, NativeArgsView args, NativeResults& out) {
 	CPU& cpu = machine.cpu;
+	if (machine.scheduler.isCpuSliceActive() || cpu.isHostExternalCallActive()) {
+		throw std::runtime_error("External Lua closure execution requires a suspended CPU.");
+	}
 	int depthBefore = cpu.getFrameDepth();
 	const int previousBudget = cpu.instructionBudgetRemaining;
 	const int budgetSentinel = std::numeric_limits<int>::max();

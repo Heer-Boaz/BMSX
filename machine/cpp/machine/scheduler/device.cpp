@@ -103,6 +103,11 @@ void DeviceScheduler::cancelDeviceService(uint8_t deviceKind) {
 	generation = nextTimerGeneration(generation);
 }
 
+void DeviceScheduler::cancelVblankTimers() {
+	m_vblankEnterTimerGeneration = nextTimerGeneration(m_vblankEnterTimerGeneration);
+	m_vblankEndTimerGeneration = nextTimerGeneration(m_vblankEndTimerGeneration);
+}
+
 void DeviceScheduler::clearTimerHeap() {
 	m_timerCount = 0;
 	m_timerDeadlines.clear();

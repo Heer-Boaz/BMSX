@@ -315,6 +315,82 @@ void testAddressErrorsPrecedeMappedMemoryBusCycles() {
 	}
 }
 
+void testProtectedCallMicrocodePreemptsSavesAndHandlesLuaErrors() {
+	std::array<bmsx::u8, 1> emptyRom{{0}};
+	bmsx::Memory memory(bmsx::MemoryInit{{emptyRom.data(), 0u}, {emptyRom.data(), 0u}});
+	bmsx::IrqController irq(memory);
+	bmsx::CPU cpu(memory, irq);
+	bmsx::Program program;
+	program.programRom.resize(22u * bmsx::INSTRUCTION_BYTES);
+	program.programRomTextByteLength = program.programRom.size();
+	program.constPoolStringPool = &program.stringPool;
+	program.constPool = {
+		cpu.createBuiltinFunction(bmsx::BuiltinFunctionId::PCall),
+		cpu.createBuiltinFunction(bmsx::BuiltinFunctionId::XPCall),
+		cpu.createBuiltinFunction(bmsx::BuiltinFunctionId::Error),
+		bmsx::valueNumber(3.0),
+		bmsx::valueNumber(4.0),
+		bmsx::valueNumber(42.0),
+	};
+	std::span<bmsx::u8> code(program.programRom);
+	bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 0);
+	bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 1, 0, 1);
+	bmsx::writeInstruction(code, 2, static_cast<bmsx::u8>(bmsx::OpCode::CALL), 0, bmsx::encodeFixedCallArgCount(1), 3);
+	bmsx::writeInstruction(code, 3, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 3, 0);
+	bmsx::writeInstruction(code, 4, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 3);
+	bmsx::writeInstruction(code, 5, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 1, 0, 4);
+	bmsx::writeInstruction(code, 6, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 2, 0);
+
+	bmsx::writeInstruction(code, 7, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 1);
+	bmsx::writeInstruction(code, 8, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 1, 0, 3);
+	bmsx::writeInstruction(code, 9, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 2, 0, 4);
+	bmsx::writeInstruction(code, 10, static_cast<bmsx::u8>(bmsx::OpCode::CALL), 0, bmsx::encodeFixedCallArgCount(2), 2);
+	bmsx::writeInstruction(code, 11, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 2, 0);
+	bmsx::writeInstruction(code, 12, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 2);
+	bmsx::writeInstruction(code, 13, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 1, 0, 5);
+	bmsx::writeInstruction(code, 14, static_cast<bmsx::u8>(bmsx::OpCode::CALL), 0, bmsx::encodeFixedCallArgCount(1), 0);
+	bmsx::writeInstruction(code, 15, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
+	bmsx::writeInstruction(code, 16, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 1, 0);
+
+	bmsx::writeInstruction(code, 17, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 0);
+	bmsx::writeInstruction(code, 18, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 1, 0, 0);
+	bmsx::writeInstruction(code, 19, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 2, 0, 1);
+	bmsx::writeInstruction(code, 20, static_cast<bmsx::u8>(bmsx::OpCode::CALL), 0, bmsx::encodeFixedCallArgCount(2), 4);
+	bmsx::writeInstruction(code, 21, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 4, 0);
+
+	program.protos.push_back(makeProto(0, 4, 3));
+	program.protos.push_back(makeProto(4 * bmsx::INSTRUCTION_BYTES, 3, 2));
+	program.protos.push_back(makeProto(7 * bmsx::INSTRUCTION_BYTES, 5, 3));
+	program.protos.push_back(makeProto(12 * bmsx::INSTRUCTION_BYTES, 4, 2));
+	bmsx::Proto handler = makeProto(16 * bmsx::INSTRUCTION_BYTES, 1);
+	handler.numParams = 1;
+	program.protos.push_back(handler);
+	program.protos.push_back(makeProto(17 * bmsx::INSTRUCTION_BYTES, 5, 3));
+	bmsx::ProgramRuntimeSymbols runtimeSymbols;
+	cpu.setProgram(&program, runtimeSymbols, nullptr, 0, 0, 0);
+	std::unordered_map<std::string, bmsx::Value> moduleCache;
+
+	cpu.start(0);
+	require(cpu.run(3) == bmsx::RunResult::Yielded, "pcall body should remain preemptible");
+	bmsx::CpuRuntimeState state = cpu.captureRuntimeState(moduleCache);
+	require(state.protectedCalls.size() == 1u, "save state should retain the active protected call");
+	cpu.restoreRuntimeState(state, moduleCache);
+	require(cpu.run(100) == bmsx::RunResult::Halted, "restored pcall should complete");
+	require(cpu.lastReturnValues.size() == 3u && bmsx::isTruthy(cpu.lastReturnValues[0]), "pcall should return success");
+	require(bmsx::asNumber(cpu.lastReturnValues[1]) == 3.0 && bmsx::asNumber(cpu.lastReturnValues[2]) == 4.0, "pcall should preserve multiple results");
+
+	cpu.start(2);
+	require(cpu.run(100) == bmsx::RunResult::Halted, "xpcall error path should complete");
+	require(cpu.lastReturnValues.size() == 2u && !bmsx::isTruthy(cpu.lastReturnValues[0]), "xpcall should return failure");
+	require(bmsx::asNumber(cpu.lastReturnValues[1]) == 42.0, "xpcall handler should receive the thrown Lua value");
+
+	cpu.start(5);
+	require(cpu.run(100) == bmsx::RunResult::Halted, "nested pcall should complete");
+	require(cpu.lastReturnValues.size() == 4u, "nested pcall should preserve the open result sequence");
+	require(bmsx::isTruthy(cpu.lastReturnValues[0]) && bmsx::isTruthy(cpu.lastReturnValues[1]), "nested pcall should prefix both success values");
+	require(bmsx::asNumber(cpu.lastReturnValues[2]) == 3.0 && bmsx::asNumber(cpu.lastReturnValues[3]) == 4.0, "nested pcall should preserve child results");
+}
+
 } // namespace
 
 int main() {
@@ -324,5 +400,6 @@ int main() {
 	testMappedBusErrorsEnterTheSystemExceptionVector();
 	testMappedMemoryAlignmentContract();
 	testAddressErrorsPrecedeMappedMemoryBusCycles();
+	testProtectedCallMicrocodePreemptsSavesAndHandlesLuaErrors();
 	return 0;
 }

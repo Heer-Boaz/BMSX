@@ -8,17 +8,21 @@
 namespace bmsx {
 
 struct ApuOutputPlayback {
-	f32 playbackRate = 1.0F;
-	f32 gainLinear = 1.0F;
+	f64 gainLinear = 1.0;
 	bool filterEnabled = false;
 	std::string_view filterType;
-	f32 filterFrequency = 0.0F;
-	f32 filterQ = 0.0F;
-	f32 filterGain = 0.0F;
+	f64 filterFrequency = 0.0;
+	f64 filterQ = 0.0;
+	f64 filterGain = 0.0;
 };
 
-auto resolveApuGainLinear(u32 gainQ12Word) -> f32;
-auto resolveApuPlaybackRate(u32 rateStepQ16Word) -> f32;
+struct ApuPhaseStep {
+	i64 wholeQ16 = 0;
+	i32 remainder = 0;
+};
+
+auto resolveApuGainLinear(u32 gainQ12Word) -> f64;
+void resolveApuPhaseStep(ApuPhaseStep& out, u32 rateStepQ16Word, u32 sourceSampleRateHz);
 auto decodeApuFilterType(u32 kind) -> std::string_view;
 void applyApuOutputFilter(ApuOutputPlayback& playback, const ApuParameterRegisterWords& registerWords);
 auto resolveApuOutputPlayback(const ApuParameterRegisterWords& registerWords) -> ApuOutputPlayback;

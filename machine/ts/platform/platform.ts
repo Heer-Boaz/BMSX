@@ -144,7 +144,7 @@ export interface Platform {
 	gameviewHost: GameViewHost;
 }
 
-export type AudioOutputPuller = (output: Int16Array, frameCount: number, sampleRate: number, targetQueuedFrames: number) => void;
+export type AudioOutputPuller = (output: Int16Array, frameCount: number, sampleRate: number) => void;
 
 export interface AudioService {
 	readonly available: boolean;

@@ -27,7 +27,6 @@ private:
 	DeviceStatusLatch& m_fault;
 	ApuServiceClock& m_serviceClock;
 	DeviceScheduler& m_scheduler;
-
 };
 
 } // namespace bmsx

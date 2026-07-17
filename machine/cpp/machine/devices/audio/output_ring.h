@@ -8,19 +8,20 @@
 
 namespace bmsx {
 
+constexpr size_t APU_OUTPUT_RING_CAPACITY_FRAMES = 16384u;
+constexpr size_t APU_OUTPUT_RING_CAPACITY_SAMPLES = APU_OUTPUT_RING_CAPACITY_FRAMES * 2u;
+
 class ApuOutputRing final {
 public:
 	void clear();
 	size_t queuedFrames() const;
-	size_t capacityFrames() const;
-	size_t freeFrames() const;
 	i16* renderBuffer();
 	void write(const i16* samples, size_t frameCount);
-	void read(i16* output, size_t frameCount);
+	u32 readFramePacked();
 
 private:
-	std::array<i16, APU_OUTPUT_QUEUE_CAPACITY_SAMPLES> m_queue{};
-	std::array<i16, APU_OUTPUT_QUEUE_CAPACITY_SAMPLES> m_renderBuffer{};
+	std::array<i16, APU_OUTPUT_RING_CAPACITY_SAMPLES> m_queue{};
+	std::array<i16, APU_OUTPUT_RING_CAPACITY_SAMPLES> m_renderBuffer{};
 	size_t m_readFrame = 0;
 	size_t m_queuedFrames = 0;
 };

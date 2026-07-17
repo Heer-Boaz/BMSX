@@ -27,17 +27,19 @@ export type ApuBadpDecoderSaveState = {
 	decodedFrame: number;
 	decodedLeft: number;
 	decodedRight: number;
+	previousDecodedFrame: number;
+	previousDecodedLeft: number;
+	previousDecodedRight: number;
 };
 
 export type ApuOutputVoiceState = {
 	slot: ApuAudioSlot;
-	position: number;
-	step: number;
+	cursorQ16: number;
+	phaseRemainder: number;
 	gain: number;
-	targetGain: number;
-	gainRampRemaining: number;
-	stopAfter: number;
-	filterSampleRate: number;
+	fadeStartGain: number;
+	fadeSamplesRemaining: number;
+	fadeSamplesTotal: number;
 	filter: ApuBiquadFilterState;
 	badp: ApuBadpDecoderSaveState;
 };
@@ -56,12 +58,8 @@ export type AudioControllerState = {
 	slotPhases: number[];
 	slotRegisterWords: number[];
 	slotSourceBytes: Uint8Array[];
-	slotPlaybackCursorQ16: number[];
-	slotFadeSamplesRemaining: number[];
-	slotFadeSamplesTotal: number[];
 	output: ApuOutputState;
 	sampleCarry: number;
-	availableSamples: number;
 	apuStatus: number;
 	apuFaultCode: number;
 	apuFaultDetail: number;
@@ -82,13 +80,12 @@ export type ApuOutputVoiceStateAccess = Omit<ApuOutputVoiceState, 'filter' | 'ba
 export function captureApuOutputVoiceState(record: ApuOutputVoiceStateAccess): ApuOutputVoiceState {
 	return {
 		slot: record.slot,
-		position: record.position,
-		step: record.step,
+		cursorQ16: record.cursorQ16,
+		phaseRemainder: record.phaseRemainder,
 		gain: record.gain,
-		targetGain: record.targetGain,
-		gainRampRemaining: record.gainRampRemaining,
-		stopAfter: record.stopAfter,
-		filterSampleRate: record.filterSampleRate,
+		fadeStartGain: record.fadeStartGain,
+		fadeSamplesRemaining: record.fadeSamplesRemaining,
+		fadeSamplesTotal: record.fadeSamplesTotal,
 		filter: {
 			enabled: record.filter.enabled,
 			b0: record.filter.b0,
@@ -113,18 +110,20 @@ export function captureApuOutputVoiceState(record: ApuOutputVoiceStateAccess): A
 			decodedFrame: record.badp.decodedFrame,
 			decodedLeft: record.badp.decodedLeft,
 			decodedRight: record.badp.decodedRight,
+			previousDecodedFrame: record.badp.previousDecodedFrame,
+			previousDecodedLeft: record.badp.previousDecodedLeft,
+			previousDecodedRight: record.badp.previousDecodedRight,
 		},
 	};
 }
 
 export function restoreApuOutputVoiceState(record: ApuOutputVoiceStateAccess, state: ApuOutputVoiceState): void {
-	record.position = state.position;
-	record.step = state.step;
+	record.cursorQ16 = state.cursorQ16;
+	record.phaseRemainder = state.phaseRemainder;
 	record.gain = state.gain;
-	record.targetGain = state.targetGain;
-	record.gainRampRemaining = state.gainRampRemaining;
-	record.stopAfter = state.stopAfter;
-	record.filterSampleRate = state.filterSampleRate;
+	record.fadeStartGain = state.fadeStartGain;
+	record.fadeSamplesRemaining = state.fadeSamplesRemaining;
+	record.fadeSamplesTotal = state.fadeSamplesTotal;
 	record.filter.enabled = state.filter.enabled;
 	record.filter.b0 = state.filter.b0;
 	record.filter.b1 = state.filter.b1;
@@ -148,4 +147,7 @@ export function restoreApuOutputVoiceState(record: ApuOutputVoiceStateAccess, st
 	record.badp.decodedFrame = state.badp.decodedFrame;
 	record.badp.decodedLeft = state.badp.decodedLeft;
 	record.badp.decodedRight = state.badp.decodedRight;
+	record.badp.previousDecodedFrame = state.badp.previousDecodedFrame;
+	record.badp.previousDecodedLeft = state.badp.previousDecodedLeft;
+	record.badp.previousDecodedRight = state.badp.previousDecodedRight;
 }

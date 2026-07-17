@@ -23,20 +23,24 @@ export class ApuCommandIngress {
 	) {}
 
 	public static onCommandWriteThunk(context: ApuCommandIngress): void {
+		const nowCycles = context.scheduler.currentNowCycles();
+		context.serviceClock.synchronize(nowCycles);
 		const command = context.memory.readIoU32(IO_APU_CMD);
 		switch (command) {
 			case APU_CMD_PLAY:
 			case APU_CMD_STOP_SLOT:
 			case APU_CMD_SET_SLOT_GAIN:
 				context.commandFifo.enqueue(command, context.memory);
-				context.serviceClock.scheduleNext(context.scheduler.currentNowCycles());
+				context.serviceClock.scheduleNext(nowCycles);
 				clearApuCommandLatch(context.memory);
 				return;
 			case APU_CMD_NONE:
+				context.serviceClock.scheduleNext(nowCycles);
 				return;
 			default:
 				context.fault.raise(APU_FAULT_BAD_CMD, command);
 				clearApuCommandLatch(context.memory);
+				context.serviceClock.scheduleNext(nowCycles);
 				return;
 		}
 	}

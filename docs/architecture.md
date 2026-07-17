@@ -558,10 +558,19 @@ rompacker, TOC and host do not maintain a second module-name or attribute list.
   the CPU still parked and the stopped frame intact instead of converting that
   state into a host exception or fast-forwarding device time outside the frame
   scheduler.
-- Protected-call VM primitives are non-yieldable CPU primitives. If a protected
-  callee stops before returning, `pcall`/`xpcall` do not synthesize Lua success
-  or error results; the CPU preserves the callee's actual stop state, whether
-  hard-halted by malformed instruction flow or parked by `HALT`.
+- `pcall` and `xpcall` are retained Lua-CPU microcode, not BIOS algorithms and
+  not recursive host interpreter calls. BIOS ROM only installs their guest
+  bindings. A protected invocation retains its caller, target, return window,
+  and optional handler across ordinary cycle-budget yields, `HALT`, blocked
+  MMIO, and save/restore. Lua returns and Lua errors complete that continuation;
+  a supervisor exception frame is a strict barrier and remains hardware state.
+  A hard halt or parked target therefore stays stopped instead of being
+  converted into a fabricated Lua result.
+- Host/IDE closure entry is permitted only while the CPU is suspended outside
+  an active scheduler slice. Native code cannot recursively run the Lua CPU
+  inside an executing instruction. Scheduler-aware external execution owns its
+  own ordinary CPU slices and device deadlines instead of crossing an APU,
+  GPU, DMA, or IRQ edge on a nested host stack.
 - The frame scheduler owns CPU/device advancement and IRQ/VBlank timing. The
   host frame pump may request work; it does not own device state transitions.
 - VBlank is a machine edge. Devices with VBlank behavior expose explicit edge
@@ -665,7 +674,7 @@ Saved:
   determines future output.
 - APU command/source/output state that determines future audio output,
   including the command FIFO ring, queued parameter latch words, active AOUT
-  voice position, gain-ramp, filter history, and BADP decoder state.
+  voice cursor/remainder, fade envelope, filter history, and BADP decoder state.
 - GEO command/result/fault state and device-visible scratch/result memory.
 - ICU registerfile, sample latch, committed action records, and sampled action
   status/value words.
@@ -1313,96 +1322,93 @@ not runtime or machine state. Parity captures disable these effects, including
 
 ### APU and AOUT
 
-APU is an audio device, not a sound service.
+APU is a fixed-rate audio device, not a host sound service. Its hardware sample
+clock is 44.1 kHz. Host callback cadence, host sample rate, audio-device buffer
+size, and whether a host drains audio at all never advance or modify an APU
+voice.
 
-Cart-visible ingress:
+Cart-visible ingress and state are:
 
-- APU register writes;
-- command FIFO words;
-- parameter registers;
+- parameter and selected-slot registerfiles;
+- command FIFO words and command-queue status;
 - source/sample memory;
-- status/fault/IRQ words.
+- active-slot, status, fault, event, and IRQ latches.
 
-Internal units:
+The service clock retains an absolute machine-cycle edge and the fractional
+CPU-cycle-to-sample carry. It synchronizes the voice datapath to the exact
+current machine cycle before live selected-slot writes, command admission,
+timing-dependent reads, and save-state capture. Normal service runs are batched
+to at most 128 samples, but the next service deadline is shortened to the first
+finite-source or fade completion. Slot END and its IRQ therefore occur on the
+exact hardware sample edge without scheduling one emulator event per sample.
+Command FIFO consumption occurs at the command-write machine-cycle edge; a
+batch can never render across a live register mutation.
 
-- APU registerfile/status/fault latch;
-- command doorbell ingress, command FIFO, and parameter latch bank;
-- service clock: CPU-cycle sample accrual, carry latch, pending-sample latch, and APU scheduler edge;
-- active-slot datapath: active-mask register image, slot phase transitions, source-byte teardown, selected-slot refresh, and slot-ended event emission;
-- slot bank: slot phases, per-slot register words, playback cursors, fade counters, and voice ids;
-- source bytes DMA bank and metadata validator;
-- playback parameter decoder;
-- mixer/filter datapath and retained mix buffer;
-- AOUT active voice records;
-- PCM source data validator;
-- BADP block decoder and seek-table datapath;
-- AOUT fixed-capacity output ring, retained render buffer, and host-audio pull
-  edge.
+`machine/devices/audio/slot_bank` owns raw slot register words, slot phases, and
+active-mask state only. The live AOUT voice record is the single playback
+datapath owner. It retains:
 
-Save-state captures active AOUT voice datapath state. It does not capture the
-already-rendered AOUT output ring; queued frames at the host edge are not
-machine state and are rebuilt from the restored voice datapath. The audio
-save-state data contract lives in dedicated `machine/devices/audio/save_state`
-files on both runtimes. The shared device-status latch owns fault/status/code/detail register images and
-fault-ack writes through mirrored `machine/devices/device_status` files. The
-command latch default register image is owned by
-mirrored `machine/devices/audio/command_latch` files. The command-doorbell
-ingress path is owned by mirrored `machine/devices/audio/command_ingress` files;
-it admits command words into the FIFO, clears the command latch, raises command
-faults, and wakes the service clock. Command FIFO drain, PLAY/STOP/GAIN command
-execution, the selected-slot register window, source-DMA replacement, and AOUT
-voice replay are owned by mirrored `machine/devices/audio/command_executor`
-files. The APU event latch
-(sequence, kind, slot, source address, and IRQ edge) is owned by mirrored
-`machine/devices/audio/event_latch` files. The command FIFO ring,
-read/write pointers, queued count, and per-entry parameter words are owned by
-mirrored `machine/devices/audio/command_fifo` files and are saved through that
-owner. Queue-depth status registers for command FIFO and AOUT output ring state
-are owned by mirrored `machine/devices/audio/queue_status_registers` files. The APU service clock owns CPU-cycle sample accrual, carry and
-pending-sample latches, and the scheduler service edge in mirrored
-`machine/devices/audio/service_clock` files; aggregate save-state stores only
-those latch words.
-The selected-slot source/status latch is owned by mirrored
-`machine/devices/audio/selected_slot_latch` files. Slot selector words are raw
-APU register words; the command executor and selected-slot latch decode the low
-slot-index bits at the datapath boundary and preserve the raw selector word in
-the slot register image. The active-slot datapath is owned by mirrored
-`machine/devices/audio/active_slots` files; it writes the CPU-visible
-active-mask register image, clears source-DMA slot bytes when a slot stops,
-refreshes the selected-slot latch, and emits slot-ended events from the advance
-edge. The composite APU status register read datapath is owned by
-mirrored `machine/devices/audio/status_register` files. The APU slot bank owns
-slot phase/register/cursor/fade/voice-id words in mirrored
-`machine/devices/audio/slot_bank` files; aggregate save-state records
-read and restore those live words through that owner.
-The AOUT playback/filter parameter decoder is owned by mirrored `machine/devices/audio/playback` files. The APU source register decoder, source DMA latch, and source metadata validator are owned by mirrored `machine/devices/audio/source` files. The PCM source data validator is owned by mirrored `machine/devices/audio/pcm_decoder` files; scalar PCM sample decode lives in mirrored `pcm_decoder_hot_path` files so AOUT keeps the same retained-buffer hot path without owning sample-format decoding. The BADP decoder and seek-table datapath are owned by mirrored
-`machine/devices/audio/badp_decoder` files; active decoder latches stay in the
-voice record and are captured through the audio save-state contract. C++ keeps
-its per-sample BADP decode loop in a C++-only `badp_decoder_hot_path` internal
-header included only by `output.cpp`, so the hot path remains same-TU inline
-without exposing those helpers through the public audio headers; TS mirrors that
-split in `badp_decoder_hot_path.ts`. The host-edge AOUT output ring
-is owned by mirrored
-`machine/devices/audio/output_ring` files; the mixer fills that ring from live
-voice state, and save-state deliberately excludes the already-rendered ring
-frames.
-C++ keeps aggregate capture/restore method bodies in the audio save-state
-translation unit. TS keeps aggregate controller methods at the private-field
-device boundary while command-FIFO state transfer stays on the FIFO hardware
-owner, including the FIFO save-state record shape. BADP fixture proof covers
-saved decoder latches and selected-slot start-sample mutation while a
-decoder-backed voice is active.
+- signed Q16 source cursor;
+- the signed division remainder for `rate_step * source_rate / 44100`;
+- decoded source and loop bounds;
+- fade envelope counters and current gain;
+- fixed-44.1-kHz filter coefficients/history;
+- BADP seek state and the retained current/previous decoded-frame window used
+  by interpolation.
 
-APU source DMA slots store either a retained immutable ROM byte view or
-device-owned source bytes. ROM-backed sources bind directly to the system/cart
-ROM backing through the memory owner and do not copy sample payload into the
-slot. RAM-backed and zero-filled/tail sources are copied into exact-size
-device-owned bytes so later RAM writes cannot mutate active voices and stale
-sample capacity is not retained. Save-state serializes the active source bytes
-deterministically and restore rebuilds exact-size owned slot bytes.
+The quotient and remainder are retained separately so synchronization batch
+size cannot change pitch, loop position, or END timing. Source-rate/rate-word
+products are decoded when voice programming changes, not in the per-sample
+loop. PCM mixing uses retained fixed-capacity scratch buffers. Sample generation
+and host pull perform no allocation; source programming and save-state remain
+explicit non-realtime boundaries that may allocate source or serialized state.
 
-Hot paths must use retained buffers and fixed-size state. No per-sample,
-per-render, or per-pull allocation is acceptable.
+The mixer writes the continuous 44.1-kHz machine timeline, including silent
+intervals, to the fixed-capacity AOUT ring. That ring is presentation transport,
+not cart-visible hardware state. When a host is late or absent, the ring
+overwrites its oldest presentation frames while voice phase, filters, fades,
+END events, IRQs, and emulated time continue normally.
+The former AOUT occupancy MMIO words remain reserved address holes so the later
+APU register addresses do not move; APU status exposes command FIFO state, not
+host queue occupancy.
+
+`audio/SoundMaster` owns host master gain, the retained 44.1-kHz-to-host-rate
+resampler, and the latency-profile prebuffer. Browser and libretro transports
+may pull in arbitrary chunk sizes without mutating APU state. Resampler phase
+and boundary samples persist across host callbacks, and startup/resume waits
+for the configured source prebuffer instead of repeatedly running the device
+ahead of machine time. Clearing or underrunning host transport can produce
+silence only; it cannot backpressure the APU.
+
+Save-state first synchronizes the APU to the scheduler cycle, then captures the
+command FIFO, raw slot bank, source-DMA bytes, service-clock carry, event/fault
+latches, and the single live voice datapath. It deliberately excludes the AOUT
+ring and host resampler. Restore reinstates machine state at the restored cycle,
+clears presentation transport, restores voices without generating samples, and
+schedules the next exact hardware edge.
+
+The mirrored owners are `machine/devices/audio/{controller,service_clock,
+active_slots,slot_bank,command_ingress,command_executor,output,output_ring,
+save_state}` in TS and C++. Source metadata, PCM, BADP, filter, command FIFO,
+event, selected-slot, status, and fault responsibilities remain in their
+corresponding dedicated audio/device owner files.
+
+The current `ApuSourceDma` ingress stores either a retained immutable ROM byte
+view or exact-size device-owned source bytes per slot. RAM-backed and
+zero-filled/tail sources are copied when a voice is programmed, and save-state
+serializes those slot bytes. This gives deterministic playback today, but it is
+not the final hardware memory contract: ROM views and RAM snapshots have
+different visibility, transfer timing is absent, and allocation size follows a
+cart descriptor. `APU-MEM-01` tracks replacement by fixed APU sample RAM and a
+timed channel on the existing DMA controller; no second audio-only fake DMA is
+allowed.
+
+The existing filter register ABI is not yet a complete raw hardware contract.
+Unknown filter-kind words currently alias a defined mode, while zero or extreme
+Q/gain words do not yet have specified fixed datapath, saturation, and
+save-state semantics shared by TS and C++. `APU-DSP-01` owns that remaining
+register-level decision; it must define every representable word rather than
+adding guards or host-number fallbacks to the mixer.
 
 ### GEO
 

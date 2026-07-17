@@ -27,7 +27,7 @@ import type { RuntimeSaveState } from '../../machine/ts/machine/runtime/save_sta
 import { RUNTIME_SAVE_STATE_WIRE_CAPACITY, decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state/codec';
 import { decodeBinaryWithPropTable } from '../../machine/ts/common/serializer/binencoder';
 import { RUNTIME_SAVE_STATE_PROP_NAMES } from '../../machine/ts/machine/runtime/save_state/schema';
-import { BuiltinFunctionId } from '../../machine/ts/machine/cpu/cpu';
+import { BuiltinFunctionId, ProtectedCallKind } from '../../machine/ts/machine/cpu/cpu';
 import { CPU_STATUS_CART_ENTRY } from '../../machine/ts/machine/cpu/cop0';
 import { DMA_STATUS_BUSY } from '../../machine/ts/machine/bus/io';
 import { RAM_BASE, RAM_END } from '../../machine/ts/machine/memory/map';
@@ -203,20 +203,16 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					slotPhases: Array.from({ length: APU_SLOT_COUNT }, (_, slot) => slot === 1 ? APU_SLOT_PHASE_FADING : (slot === 2 ? APU_SLOT_PHASE_PLAYING : APU_SLOT_PHASE_IDLE)),
 					slotRegisterWords: audioSlotRegisterWords,
 					slotSourceBytes: audioSlotSourceBytes,
-					slotPlaybackCursorQ16: Array.from({ length: APU_SLOT_COUNT }, (_, slot) => slot === 1 ? 2 * APU_RATE_STEP_Q16_ONE : 0),
-					slotFadeSamplesRemaining: Array.from({ length: APU_SLOT_COUNT }, (_, slot) => slot === 1 ? 7 : 0),
-					slotFadeSamplesTotal: Array.from({ length: APU_SLOT_COUNT }, (_, slot) => slot === 1 ? 11 : 0),
 					output: {
 						voices: [
 							{
 								slot: 1,
-								position: 2.5,
-								step: 1,
+								cursorQ16: 2 * APU_RATE_STEP_Q16_ONE,
+								phaseRemainder: 22050,
 								gain: 0.75,
-								targetGain: 0.5,
-								gainRampRemaining: 0.25,
-								stopAfter: 0.125,
-								filterSampleRate: 44100,
+								fadeStartGain: 0.75,
+								fadeSamplesRemaining: 7,
+								fadeSamplesTotal: 11,
 								filter: {
 									enabled: true,
 									b0: 0.1,
@@ -241,12 +237,14 @@ function createRuntimeSaveState(): RuntimeSaveState {
 									decodedFrame: 11,
 									decodedLeft: -12,
 									decodedRight: 13,
+									previousDecodedFrame: 10,
+									previousDecodedLeft: -11,
+									previousDecodedRight: 12,
 								},
 							},
 						],
 					},
 					sampleCarry: 8,
-					availableSamples: 9,
 					apuStatus: 1,
 					apuFaultCode: 0x0102,
 					apuFaultDetail: 0x1234,
@@ -310,6 +308,15 @@ function createRuntimeSaveState(): RuntimeSaveState {
 			],
 			moduleCache: [],
 			frames: [],
+			protectedCalls: [{
+				kind: ProtectedCallKind.XPCallHandler,
+				callerFrameIndex: 2,
+				targetFrameIndex: -1,
+				returnsToProtectedParent: true,
+				callBase: 4,
+				returnCount: 3,
+				handlerRegister: 7,
+			}],
 			lastReturnValues: [],
 			objects: [],
 			openUpvalues: [],
