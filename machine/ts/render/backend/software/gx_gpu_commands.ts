@@ -6,14 +6,12 @@ import {
 	GX_GPU_COMMAND_DRAW_RECTANGLE,
 	GX_GPU_COMMAND_FILL_RECTANGLE,
 	GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
-	GX_GPU_VRAM_HEIGHT,
 	gxGpuTransferHeight,
 	gxGpuTransferWidth,
 	type GxGpuCommandBufferView,
 	gxGpuSigned11,
 } from '../../../machine/devices/gx/gpu_command_buffer';
 import {
-	gxGpuCommandDrawsTexture,
 	gxGpuCommandGouraud,
 	gxGpuCommandQuadPolygon,
 	gxGpuCommandRectangleHeight,
@@ -32,6 +30,10 @@ import {
 	gxGpuTextureV,
 	gxGpuVertexY,
 } from '../gx_gpu_render_rules';
+import {
+	gxGpuVramYAddress,
+	gxGpuVramYBankInstalled,
+} from '../../../machine/devices/gx/vram_address';
 import {
 	GX_GPU_SOFTWARE_VRAM_WORDS,
 	gxGpuSoftwareInterlacedSkipsLine,
@@ -56,13 +58,17 @@ function executeFillRectangle(commandBuffer: GxGpuCommandBufferView, commandInde
 	const colorWord = gxGpuSoftwareRgb888WordToRgb555(commandBuffer.words[wordStart]);
 	const xyWord = commandBuffer.words[wordStart + 1];
 	const sizeWord = commandBuffer.words[wordStart + 2];
+	const vramYAddressExtensionWord = commandBuffer.commandVramYAddressExtensionWord[commandIndex];
 	const x = gxGpuFillX(xyWord);
-	const y = gxGpuTransferY(xyWord);
+	const y = gxGpuTransferY(xyWord, vramYAddressExtensionWord);
 	const width = gxGpuFillWidth(sizeWord);
 	const height = gxGpuFillHeight(sizeWord);
 	const interlacedRenderWord = commandBuffer.commandInterlacedRenderWord[commandIndex];
 	for (let row = 0; row < height; row += 1) {
-		const targetY = (y + row) & (GX_GPU_VRAM_HEIGHT - 1);
+		const targetY = gxGpuVramYAddress(y + row, vramYAddressExtensionWord);
+		if (!gxGpuVramYBankInstalled(targetY)) {
+			continue;
+		}
 		if (gxGpuSoftwareInterlacedSkipsLine(targetY, interlacedRenderWord)) {
 			continue;
 		}
@@ -76,8 +82,9 @@ function executeCpuToVram(commandBuffer: GxGpuCommandBufferView, commandIndex: n
 	const wordStart = commandBuffer.commandWordStart[commandIndex];
 	const xyWord = commandBuffer.words[wordStart + 1];
 	const sizeWord = commandBuffer.words[wordStart + 2];
+	const vramYAddressExtensionWord = commandBuffer.commandVramYAddressExtensionWord[commandIndex];
 	const x = gxGpuTransferX(xyWord);
-	const y = gxGpuTransferY(xyWord);
+	const y = gxGpuTransferY(xyWord, vramYAddressExtensionWord);
 	const width = gxGpuTransferWidth(sizeWord);
 	const height = gxGpuTransferHeight(sizeWord);
 	const emittedPixels = gxGpuTransferEmittedPixelCount(width, height, commandBuffer.commandWordCount[commandIndex]);
@@ -87,7 +94,11 @@ function executeCpuToVram(commandBuffer: GxGpuCommandBufferView, commandIndex: n
 	for (let row = 0; row < height && emittedPixel < emittedPixels; row += 1) {
 		const rowRemaining = emittedPixels - emittedPixel;
 		const rowWidth = rowRemaining < width ? rowRemaining : width;
-		const targetY = (y + row) & (GX_GPU_VRAM_HEIGHT - 1);
+		const targetY = gxGpuVramYAddress(y + row, vramYAddressExtensionWord);
+		if (!gxGpuVramYBankInstalled(targetY)) {
+			emittedPixel += rowWidth;
+			continue;
+		}
 		for (let column = 0; column < rowWidth; column += 1) {
 			const payloadWord = commandBuffer.words[payloadWordStart + (emittedPixel >>> 1)];
 			gxGpuSoftwareWriteMaskedVramWord(gxGpuSoftwareVramIndex(x + column, targetY), gxGpuTransferPixelWord(payloadWord, emittedPixel), maskBitModeWord);
@@ -96,10 +107,15 @@ function executeCpuToVram(commandBuffer: GxGpuCommandBufferView, commandIndex: n
 	}
 }
 
-function copyVramArea(sourceX: number, sourceY: number, targetX: number, targetY: number, width: number, height: number, maskBitModeWord: number): void {
+function copyVramArea(sourceX: number, sourceY: number, targetX: number, targetY: number, width: number, height: number, maskBitModeWord: number, vramYAddressExtensionWord: number): void {
 	let scratchIndex = 0;
 	for (let row = 0; row < height; row += 1) {
-		const rowSourceY = sourceY + row;
+		const rowSourceY = gxGpuVramYAddress(sourceY + row, vramYAddressExtensionWord);
+		if (!gxGpuVramYBankInstalled(rowSourceY)) {
+			gxGpuSoftwareCopyScratch.fill(0, scratchIndex, scratchIndex + width);
+			scratchIndex += width;
+			continue;
+		}
 		for (let column = 0; column < width; column += 1) {
 			gxGpuSoftwareCopyScratch[scratchIndex] = gxGpuSoftwareVram[gxGpuSoftwareVramIndex(sourceX + column, rowSourceY)];
 			scratchIndex += 1;
@@ -107,7 +123,11 @@ function copyVramArea(sourceX: number, sourceY: number, targetX: number, targetY
 	}
 	scratchIndex = 0;
 	for (let row = 0; row < height; row += 1) {
-		const rowTargetY = targetY + row;
+		const rowTargetY = gxGpuVramYAddress(targetY + row, vramYAddressExtensionWord);
+		if (!gxGpuVramYBankInstalled(rowTargetY)) {
+			scratchIndex += width;
+			continue;
+		}
 		for (let column = 0; column < width; column += 1) {
 			gxGpuSoftwareWriteMaskedVramWord(gxGpuSoftwareVramIndex(targetX + column, rowTargetY), gxGpuSoftwareCopyScratch[scratchIndex], maskBitModeWord);
 			scratchIndex += 1;
@@ -120,14 +140,16 @@ function executeVramToVram(commandBuffer: GxGpuCommandBufferView, commandIndex: 
 	const sourceWord = commandBuffer.words[wordStart + 1];
 	const targetWord = commandBuffer.words[wordStart + 2];
 	const sizeWord = commandBuffer.words[wordStart + 3];
+	const vramYAddressExtensionWord = commandBuffer.commandVramYAddressExtensionWord[commandIndex];
 	copyVramArea(
 		gxGpuTransferX(sourceWord),
-		gxGpuTransferY(sourceWord),
+		gxGpuTransferY(sourceWord, vramYAddressExtensionWord),
 		gxGpuTransferX(targetWord),
-		gxGpuTransferY(targetWord),
+		gxGpuTransferY(targetWord, vramYAddressExtensionWord),
 		gxGpuTransferWidth(sizeWord),
 		gxGpuTransferHeight(sizeWord),
 		commandBuffer.commandMaskBitModeWord[commandIndex],
+		vramYAddressExtensionWord,
 	);
 }
 
@@ -140,7 +162,7 @@ function executeDrawPolygon(commandBuffer: GxGpuCommandBufferView, commandIndex:
 	const dy = gxGpuDrawingOffsetY(drawingOffsetWord);
 	const ditherEnabled = gxGpuDitheredPolygon(drawModeWord, opcode);
 	const gouraud = gxGpuCommandGouraud(opcode);
-	if (gxGpuCommandDrawsTexture(opcode, drawModeWord)) {
+	if (gxGpuCommandTextureEnabled(opcode)) {
 		if (gouraud) {
 			const color0 = commandBuffer.words[wordStart];
 			const xy0 = commandBuffer.words[wordStart + 1];
@@ -176,35 +198,6 @@ function executeDrawPolygon(commandBuffer: GxGpuCommandBufferView, commandIndex:
 		}
 		return;
 	}
-	if (gxGpuCommandTextureEnabled(opcode)) {
-		if (gouraud) {
-			const color0 = commandBuffer.words[wordStart];
-			const xy0 = commandBuffer.words[wordStart + 1];
-			const color1 = commandBuffer.words[wordStart + 3];
-			const xy1 = commandBuffer.words[wordStart + 4];
-			const color2 = commandBuffer.words[wordStart + 6];
-			const xy2 = commandBuffer.words[wordStart + 7];
-			drawGxGpuSoftwareTriangle(commandBuffer, commandIndex, dx + gxGpuSigned11(xy0), dy + gxGpuVertexY(xy0), color0, dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color1, dx + gxGpuSigned11(xy2), dy + gxGpuVertexY(xy2), color2, ditherEnabled);
-			if (gxGpuCommandQuadPolygon(opcode)) {
-				const color3 = commandBuffer.words[wordStart + 9];
-				const xy3 = commandBuffer.words[wordStart + 10];
-				drawGxGpuSoftwareTriangle(commandBuffer, commandIndex, dx + gxGpuSigned11(xy2), dy + gxGpuVertexY(xy2), color2, dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color1, dx + gxGpuSigned11(xy3), dy + gxGpuVertexY(xy3), color3, ditherEnabled);
-			}
-			return;
-		}
-
-		const color = commandBuffer.words[wordStart];
-		const xy0 = commandBuffer.words[wordStart + 1];
-		const xy1 = commandBuffer.words[wordStart + 3];
-		const xy2 = commandBuffer.words[wordStart + 5];
-		drawGxGpuSoftwareTriangle(commandBuffer, commandIndex, dx + gxGpuSigned11(xy0), dy + gxGpuVertexY(xy0), color, dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color, dx + gxGpuSigned11(xy2), dy + gxGpuVertexY(xy2), color, ditherEnabled);
-		if (gxGpuCommandQuadPolygon(opcode)) {
-			const xy3 = commandBuffer.words[wordStart + 7];
-			drawGxGpuSoftwareTriangle(commandBuffer, commandIndex, dx + gxGpuSigned11(xy2), dy + gxGpuVertexY(xy2), color, dx + gxGpuSigned11(xy1), dy + gxGpuVertexY(xy1), color, dx + gxGpuSigned11(xy3), dy + gxGpuVertexY(xy3), color, ditherEnabled);
-		}
-		return;
-	}
-
 	if (gouraud) {
 		const color0 = commandBuffer.words[wordStart];
 		const xy0 = commandBuffer.words[wordStart + 1];
@@ -234,7 +227,6 @@ function executeDrawPolygon(commandBuffer: GxGpuCommandBufferView, commandIndex:
 
 function executeDrawRectangle(commandBuffer: GxGpuCommandBufferView, commandIndex: number): void {
 	const opcode = commandBuffer.commandOpcode[commandIndex];
-	const drawModeWord = commandBuffer.commandDrawModeWord[commandIndex];
 	const wordStart = commandBuffer.commandWordStart[commandIndex];
 	const colorWord = commandBuffer.words[wordStart];
 	const xyWord = commandBuffer.words[wordStart + 1];
@@ -244,7 +236,7 @@ function executeDrawRectangle(commandBuffer: GxGpuCommandBufferView, commandInde
 	const drawingOffsetWord = commandBuffer.commandDrawingOffsetWord[commandIndex];
 	const x = gxGpuSigned11(gxGpuSigned11(drawingOffsetWord) + gxGpuSigned11(xyWord));
 	const y = gxGpuSigned11(gxGpuDrawingOffsetY(drawingOffsetWord) + gxGpuVertexY(xyWord));
-	if (gxGpuCommandDrawsTexture(opcode, drawModeWord)) {
+	if (gxGpuCommandTextureEnabled(opcode)) {
 		drawGxGpuSoftwareTexturedRectangle(commandBuffer, commandIndex, x, y, width, height, colorWord, commandBuffer.words[wordStart + 2]);
 		return;
 	}

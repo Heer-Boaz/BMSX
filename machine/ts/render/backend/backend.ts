@@ -269,6 +269,7 @@ export type GxGpuPipelineState = {
 	statusWord: number;
 	displayModeWord: number;
 	displayStartWord: number;
+	vramYAddressExtensionWord: number;
 	vramSnapshotBytes: Uint8Array;
 	vramSnapshotSerial: bigint;
 	targetColorTex?: TextureHandle;
@@ -307,6 +308,7 @@ export interface RenderContext {
 	gxGpuStatusWord: number;
 	gxGpuDisplayModeWord: number;
 	gxGpuDisplayStartWord: number;
+	gxGpuVramYAddressExtensionWord: number;
 	gxGpuHorizontalDisplayRangeWord: number;
 	gxGpuVerticalDisplayRangeWord: number;
 	gxGpuVramSnapshotBytes: Uint8Array;

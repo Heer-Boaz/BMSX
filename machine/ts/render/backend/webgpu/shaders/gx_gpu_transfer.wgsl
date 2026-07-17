@@ -50,7 +50,7 @@ fn encodeRgb555(color5: vec3<f32>, outputMaskBit: f32) -> vec4<f32> {
 @fragment
 fn fs_main(input: VSOut) -> @location(0) vec4<f32> {
 	let destinationLogical = floor(input.position.xy);
-	let sourceWord = rawSourceLogicalWord(destinationLogical + input.sourceOffset);
+	let sourceWord = rawSourceLogicalWord(destinationLogical + input.sourceOffset) * u.params.z;
 	if (u.params.x > 0.5) {
 		let dstWord = rawVramStorageWord(input.position.xy - vec2<f32>(0.5));
 		if (wordMaskBit(dstWord) > 0.5) { discard; }

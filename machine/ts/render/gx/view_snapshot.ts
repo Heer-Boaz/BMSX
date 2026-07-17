@@ -7,6 +7,7 @@ export function commitGxGpuViewSnapshot(view: GameView, output: GxGpuDeviceOutpu
 	view.gxGpuStatusWord = output.statusWord;
 	view.gxGpuDisplayModeWord = output.displayModeWord;
 	view.gxGpuDisplayStartWord = output.displayStartWord;
+	view.gxGpuVramYAddressExtensionWord = output.vramYAddressExtensionWord;
 	view.gxGpuHorizontalDisplayRangeWord = output.horizontalDisplayRangeWord;
 	view.gxGpuVerticalDisplayRangeWord = output.verticalDisplayRangeWord;
 	view.gxGpuVramSnapshotBytes = output.vramSnapshotBytes;

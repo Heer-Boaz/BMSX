@@ -151,7 +151,7 @@ Implemented or partially covered GX-GPU areas include:
   event record at the system owner. Stable collider high-water frames allocate
   no pair rows or event DTOs; only the documented begin/stay/end events are
   emitted.
-- Texture windows/CLUT-ish paths, texture disable, modulation math, mask/fill
+- Texture windows, CLUT paths, texture-page Y addressing, modulation math, mask/fill
   behavior, oversized primitive culling, and VRAM copy overlap chunking.
 - Raw PSX textured quad polygons are covered in TS/C++ software/headless tests
   and have GX firmware/cartlib helpers for cart-visible affine textured draws.
@@ -421,7 +421,13 @@ and MAME
   scale an active range over a fixed host target and do not modify cart assets.
   Mirrored software vectors, libretro transitions, and GLES2/llvmpipe captures
   are green; live WebGL2/WebGPU browser proof remains deferred.
-- [x] Texture disable.
+- [x] Model GP1(09h).0 as the VRAM Y9 address gate and GP0(E1h).11/GPUSTAT
+  bit 15 as the texture-page Y9 latch, independent of texture enable. The physical
+  1 MiB VRAM remains one 1024x512 word bank: a closed gate aliases lower rows,
+  while an open gate exposes the BSX pulled-down upper bank where reads return
+  zero and writes vanish. Commands, VBlank scanout and GPUREAD retain the gate
+  that owns their address decode; every software and accelerated backend uses
+  the same contract without a second VRAM allocation.
 - [ ] GPUREAD / VRAM-to-CPU command execution and ordering.
   - [x] Fix the device/backend owner, fence, completion, cursor, DMA and
     save-state contract before implementation.
@@ -440,8 +446,9 @@ and MAME
     the complete GP1(08h) low byte remains retained register input, and the
     type-1-only reverse bit never appears in GPUSTAT or scanout.
   - [x] Keep GP1(09h) outside GP1(00h) soft reset. The reset clears the current
-    E1 bit and GPUSTAT bit 15, but the retained permission controls the next E1
-    write until a machine reset clears it.
+    E1 texture-page Y9 bit and GPUSTAT bit 15, while the retained VRAM Y9 address
+    gate continues to control all subsequent GPU address decoding until a
+    machine reset clears it.
   - [x] Route GP0(1Fh) through a real `IRQ_GPU` source edge. GP1(02h)
     deasserts GPUSTAT bit 24 without consuming the IRQ controller's pending
     latch; `IRQ_ACK` owns that latch. Repeated GP0(1Fh) words while the source

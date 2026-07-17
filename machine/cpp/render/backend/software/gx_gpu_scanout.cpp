@@ -20,6 +20,7 @@ struct InterlacedScanoutState {
 	i32 height = 0;
 	u32 displayStartWord = 0u;
 	u32 interpretationWord = 0u;
+	u32 vramYAddressExtensionWord = 0u;
 	u64 vramSnapshotSerial = 0u;
 	bool valid = false;
 };
@@ -72,11 +73,12 @@ void writeInterlacedField(
 	for (i32 fieldLine = 0; fieldLine < fieldHeight; fieldLine += 1) {
 		u32* const row = g_interlacedScanout.pixels.data()
 			+ static_cast<size_t>((fieldLine << 1) + static_cast<i32>(field)) * static_cast<size_t>(width);
-		if (displayDisabled) {
+		const u32 addressedSourceY = gxGpuVramYAddress(static_cast<u32>(sourceY), state.vramYAddressExtensionWord);
+		if (displayDisabled || !gxGpuVramYBankInstalled(addressedSourceY)) {
 			std::fill_n(row, width, 0xff000000u);
 		} else {
 			for (i32 outputX = 0; outputX < width; outputX += 1) {
-				const u32 rgb = rgb24 ? rgb888AtSourcePixel(outputX, sourceY, displayStartX) : rgb555AtSourcePixel(displayStartX + outputX, sourceY);
+				const u32 rgb = rgb24 ? rgb888AtSourcePixel(outputX, static_cast<i32>(addressedSourceY), displayStartX) : rgb555AtSourcePixel(displayStartX + outputX, static_cast<i32>(addressedSourceY));
 				row[outputX] = packOutputArgb(rgb);
 			}
 		}
@@ -102,13 +104,14 @@ void scanoutInterlacedVram(SoftwareBackend& backend, const GxGpuPipelineState& s
 		|| g_interlacedScanout.height != height
 		|| g_interlacedScanout.displayStartWord != state.displayStartWord
 		|| g_interlacedScanout.interpretationWord != interpretationWord
+		|| g_interlacedScanout.vramYAddressExtensionWord != state.vramYAddressExtensionWord
 		|| g_interlacedScanout.vramSnapshotSerial != state.vramSnapshotSerial;
 	const size_t pixelCount = static_cast<size_t>(width) * static_cast<size_t>(height);
 	if (g_interlacedScanout.pixels.size() != pixelCount) {
 		g_interlacedScanout.pixels.resize(pixelCount);
 	}
 	const i32 displayStartX = static_cast<i32>(gxGpuDisplayStartX(state.displayStartWord));
-	const i32 displayStartY = static_cast<i32>(gxGpuDisplayStartY(state.displayStartWord));
+	const i32 displayStartY = static_cast<i32>(gxGpuDisplayStartY(state.displayStartWord, state.vramYAddressExtensionWord));
 	const bool rgb24 = (state.displayModeWord & GX_GPU_DISPLAY_MODE_RGB24_BIT) != 0u;
 	const bool displayDisabled = (state.statusWord & GX_GPU_STATUS_DISPLAY_DISABLE) != 0u;
 	if (invalid) {
@@ -118,6 +121,7 @@ void scanoutInterlacedVram(SoftwareBackend& backend, const GxGpuPipelineState& s
 		g_interlacedScanout.height = height;
 		g_interlacedScanout.displayStartWord = state.displayStartWord;
 		g_interlacedScanout.interpretationWord = interpretationWord;
+		g_interlacedScanout.vramYAddressExtensionWord = state.vramYAddressExtensionWord;
 		g_interlacedScanout.vramSnapshotSerial = state.vramSnapshotSerial;
 		g_interlacedScanout.valid = true;
 	} else {
@@ -141,16 +145,20 @@ void scanoutGxGpuSoftwareVram(SoftwareBackend& backend, const GxGpuPipelineState
 	}
 	const u32 displayModeWord = state.displayModeWord;
 	const i32 displayStartX = static_cast<i32>(gxGpuDisplayStartX(state.displayStartWord));
-	const i32 displayStartY = static_cast<i32>(gxGpuDisplayStartY(state.displayStartWord));
+	const i32 displayStartY = static_cast<i32>(gxGpuDisplayStartY(state.displayStartWord, state.vramYAddressExtensionWord));
 	const bool rgb24 = (displayModeWord & GX_GPU_DISPLAY_MODE_RGB24_BIT) != 0u;
 	const i32 targetWidth = backend.width();
 	const i32 targetHeight = backend.height();
 	const i32 pixelsPerRow = backend.pitch() / static_cast<i32>(sizeof(u32));
 	for (i32 outputY = 0; outputY < targetHeight; outputY += 1) {
-		const i32 sourceY = displayStartY + outputY;
 		u32* row = backend.framebuffer() + static_cast<size_t>(outputY) * static_cast<size_t>(pixelsPerRow);
+		const u32 sourceY = gxGpuVramYAddress(static_cast<u32>(displayStartY + outputY), state.vramYAddressExtensionWord);
+		if (!gxGpuVramYBankInstalled(sourceY)) {
+			std::fill_n(row, targetWidth, 0xff000000u);
+			continue;
+		}
 		for (i32 outputX = 0; outputX < targetWidth; outputX += 1) {
-			const u32 rgb = rgb24 ? rgb888AtSourcePixel(outputX, sourceY, displayStartX) : rgb555AtSourcePixel(displayStartX + outputX, sourceY);
+			const u32 rgb = rgb24 ? rgb888AtSourcePixel(outputX, static_cast<i32>(sourceY), displayStartX) : rgb555AtSourcePixel(displayStartX + outputX, static_cast<i32>(sourceY));
 			row[outputX] = packOutputArgb(rgb);
 		}
 	}

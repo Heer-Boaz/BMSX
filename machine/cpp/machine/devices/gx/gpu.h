@@ -24,7 +24,7 @@ constexpr u32 GX_GPU_GP1_DISPLAY_START = 0x05u;
 constexpr u32 GX_GPU_GP1_HORIZONTAL_DISPLAY_RANGE = 0x06u;
 constexpr u32 GX_GPU_GP1_VERTICAL_DISPLAY_RANGE = 0x07u;
 constexpr u32 GX_GPU_GP1_DISPLAY_MODE = 0x08u;
-constexpr u32 GX_GPU_GP1_ALLOW_TEXTURE_DISABLE = 0x09u;
+constexpr u32 GX_GPU_GP1_VRAM_Y_ADDRESS_EXTENSION = 0x09u;
 constexpr u32 GX_GPU_GP1_GET_GPU_INFO = 0x10u;
 constexpr u32 GX_GPU_GP1_GET_GPU_INFO_LAST = 0x1fu;
 constexpr u32 GX_GPU_GP1_OPCODE_SHIFT = 24u;
@@ -59,10 +59,8 @@ constexpr u32 GX_GPU_GP0_RENDER_QUAD_OR_POLYLINE_BIT = 0x08u;
 constexpr u32 GX_GPU_GP0_RENDER_GOURAUD_BIT = 0x10u;
 constexpr u32 GX_GPU_GP0_RECTANGLE_SIZE_MASK = 0x18u;
 constexpr u32 GX_GPU_GP0_COMMAND_BUFFER_WORDS = 16u;
-constexpr u32 GX_GPU_VRAM_WIDTH_MASK = 0x3ffu;
-constexpr u32 GX_GPU_VRAM_HEIGHT_MASK = 0x1ffu;
 
-constexpr u32 GX_GPU_DISPLAY_START_MASK = 0x0007fffeu;
+constexpr u32 GX_GPU_DISPLAY_START_MASK = 0x000ffffeu;
 constexpr u32 GX_GPU_DISPLAY_MODE_MASK = 0x000000ffu;
 constexpr u32 GX_GPU_HORIZONTAL_DISPLAY_RANGE_MASK = 0x00ffffffu;
 constexpr u32 GX_GPU_VERTICAL_DISPLAY_RANGE_MASK = 0x000fffffu;
@@ -80,7 +78,7 @@ constexpr u32 GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU = 3u;
 
 constexpr u32 GX_GPU_STATUS_INTERLACED_FIELD = 1u << 13u;
 constexpr u32 GX_GPU_STATUS_REVERSE_FLAG = 1u << 14u;
-constexpr u32 GX_GPU_STATUS_TEXTURE_DISABLE = 1u << 15u;
+constexpr u32 GX_GPU_STATUS_TEXTURE_PAGE_Y_HIGH = 1u << 15u;
 constexpr u32 GX_GPU_STATUS_HORIZONTAL_RESOLUTION_2 = 1u << 16u;
 constexpr u32 GX_GPU_STATUS_HORIZONTAL_RESOLUTION_1_SHIFT = 17u;
 constexpr u32 GX_GPU_STATUS_VERTICAL_RESOLUTION = 1u << 19u;
@@ -143,13 +141,14 @@ struct GxGpuState {
 	u32 displayStartWord = 0;
 	u32 horizontalDisplayRangeWord = 0;
 	u32 verticalDisplayRangeWord = 0;
-	u32 textureDisableAllowedWord = 0;
+	u32 vramYAddressExtensionWord = 0;
 	u32 scanoutInterlacedField = 0;
 	u32 scanoutInterlacedDisplayField = 0;
 	u32 scanoutActiveLineLsb = 0;
 	u32 presentStatusWord = 0;
 	u32 presentDisplayModeWord = 0;
 	u32 presentDisplayStartWord = 0;
+	u32 presentVramYAddressExtensionWord = 0;
 	u32 presentHorizontalDisplayRangeWord = 0;
 	u32 presentVerticalDisplayRangeWord = 0;
 	bool vramPresentationPending = false;
@@ -199,7 +198,7 @@ public:
 	u32 readDisplayStartWord() const;
 	u32 readHorizontalDisplayRangeWord() const;
 	u32 readVerticalDisplayRangeWord() const;
-	u32 readTextureDisableAllowedWord() const;
+	u32 readVramYAddressExtensionWord() const;
 
 private:
 	Memory& m_memory;
@@ -236,10 +235,11 @@ private:
 	u32 m_displayStartWord = 0u;
 	u32 m_horizontalDisplayRangeWord = GX_GPU_RESET_HORIZONTAL_DISPLAY_RANGE_WORD;
 	u32 m_verticalDisplayRangeWord = GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD;
-	u32 m_textureDisableAllowedWord = 0u;
+	u32 m_vramYAddressExtensionWord = 0u;
 	u32 m_presentStatusWord = GX_GPU_STATUS_RESET_WORD;
 	u32 m_presentDisplayModeWord = GX_GPU_RESET_DISPLAY_MODE_WORD;
 	u32 m_presentDisplayStartWord = 0u;
+	u32 m_presentVramYAddressExtensionWord = 0u;
 	u32 m_presentHorizontalDisplayRangeWord = GX_GPU_RESET_HORIZONTAL_DISPLAY_RANGE_WORD;
 	u32 m_presentVerticalDisplayRangeWord = GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD;
 	bool m_lastFrameCommitted = false;

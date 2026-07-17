@@ -73,6 +73,7 @@ export class GameView implements RenderContext {
 	public gxGpuStatusWord = 0;
 	public gxGpuDisplayModeWord = 0;
 	public gxGpuDisplayStartWord = 0;
+	public gxGpuVramYAddressExtensionWord = 0;
 	public gxGpuHorizontalDisplayRangeWord = 0;
 	public gxGpuVerticalDisplayRangeWord = 0;
 	public gxGpuVramSnapshotBytes!: Uint8Array;

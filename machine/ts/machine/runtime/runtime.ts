@@ -17,7 +17,7 @@ import { refreshDeviceTimings } from './timing/config';
 import { HZ_SCALE } from './timing/constants';
 import { calcCyclesPerFrameScaled, resolveVblankCycles } from './timing';
 import { GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD, gxGpuVerticalVisibleLines } from '../devices/gx/gpu_display';
-import { GX_GPU_VRAM_BYTE_COUNT } from '../devices/gx/gpu_command_buffer';
+import { GX_GPU_VRAM_BYTE_COUNT } from '../devices/gx/vram_address';
 import { IO_GX_GPU_GP1, IO_SYS_CYCLES_PER_FRAME, IO_SYS_FRAME_MS, IO_SYS_PRINT_CHAR, IO_SYS_PRINT_FLUSH, IO_SYS_TIME_MS } from '../bus/io';
 import { Machine } from '../machine';
 import type { RuntimeInputSource } from './input';

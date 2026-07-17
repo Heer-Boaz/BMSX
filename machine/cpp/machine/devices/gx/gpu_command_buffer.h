@@ -2,6 +2,7 @@
 
 #include "common/primitives.h"
 #include "machine/devices/dma/controller.h"
+#include "machine/devices/gx/vram_address.h"
 
 #include <algorithm>
 #include <array>
@@ -15,13 +16,9 @@ class GxGpu;
 
 constexpr size_t GX_GPU_COMMAND_CAPACITY = 4096u;
 constexpr size_t GX_GPU_COMMAND_WORD_CAPACITY = 0x80000u;
-constexpr u32 GX_GPU_VRAM_WIDTH = 1024u;
-constexpr u32 GX_GPU_VRAM_HEIGHT = 512u;
-constexpr size_t GX_GPU_VRAM_WORD_COUNT = static_cast<size_t>(GX_GPU_VRAM_WIDTH) * static_cast<size_t>(GX_GPU_VRAM_HEIGHT);
-constexpr size_t GX_GPU_VRAM_BYTE_COUNT = GX_GPU_VRAM_WORD_COUNT * 2u;
 constexpr u32 GX_GPU_DRAW_MODE_POLYGON_TEXPAGE_MASK = 0x09ffu;
 constexpr u32 GX_GPU_DRAW_MODE_DITHER_ENABLED = 1u << 9u;
-constexpr u32 GX_GPU_DRAW_MODE_TEXTURE_DISABLE = 1u << 11u;
+constexpr u32 GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_HIGH = 1u << 11u;
 constexpr u32 GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP = 1u << 12u;
 constexpr u32 GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP = 1u << 13u;
 constexpr u8 GX_GPU_INTERLACED_RENDER_ENABLE = 0x01u;
@@ -57,9 +54,9 @@ inline u32 gxGpuDrawingAreaLeft(u32 topLeftWord, u32 bottomRightWord) {
 	return left <= (bottomRightWord & 0x3ffu) ? left : 0u;
 }
 
-inline u32 gxGpuDrawingAreaTop(u32 topLeftWord, u32 bottomRightWord) {
-	const u32 top = (topLeftWord >> 10u) & 0x3ffu;
-	const u32 bottom = (bottomRightWord >> 10u) & 0x3ffu;
+inline u32 gxGpuDrawingAreaTop(u32 topLeftWord, u32 bottomRightWord, u32 vramYAddressExtensionWord) {
+	const u32 top = gxGpuVramYAddress(topLeftWord >> 10u, vramYAddressExtensionWord);
+	const u32 bottom = gxGpuVramYAddress(bottomRightWord >> 10u, vramYAddressExtensionWord);
 	return top <= bottom ? top : 0u;
 }
 
@@ -70,9 +67,9 @@ inline u32 gxGpuDrawingAreaRightExclusive(u32 topLeftWord, u32 bottomRightWord) 
 	return right < GX_GPU_VRAM_WIDTH - 1u ? right + 1u : GX_GPU_VRAM_WIDTH;
 }
 
-inline u32 gxGpuDrawingAreaBottomExclusive(u32 topLeftWord, u32 bottomRightWord) {
-	const u32 top = (topLeftWord >> 10u) & 0x3ffu;
-	const u32 bottom = (bottomRightWord >> 10u) & 0x3ffu;
+inline u32 gxGpuDrawingAreaBottomExclusive(u32 topLeftWord, u32 bottomRightWord, u32 vramYAddressExtensionWord) {
+	const u32 top = gxGpuVramYAddress(topLeftWord >> 10u, vramYAddressExtensionWord);
+	const u32 bottom = gxGpuVramYAddress(bottomRightWord >> 10u, vramYAddressExtensionWord);
 	return top <= bottom ? bottom + 1u : 0u;
 }
 
@@ -118,6 +115,7 @@ struct GxGpuCommandBufferState {
 	std::vector<u32> commandWordStart;
 	std::vector<u32> commandWordCount;
 	std::vector<u32> commandDrawModeWord;
+	std::vector<u8> commandVramYAddressExtensionWord;
 	std::vector<u32> commandTextureWindowWord;
 	std::vector<u32> commandDrawingAreaTopLeftWord;
 	std::vector<u32> commandDrawingAreaBottomRightWord;
@@ -129,6 +127,7 @@ struct GxGpuCommandBufferState {
 	size_t readbackFenceCommandCount = 0u;
 	u32 readbackX = 0u;
 	u32 readbackY = 0u;
+	u8 readbackVramYAddressExtensionWord = 0u;
 	u32 readbackWidth = 0u;
 	u32 readbackHeight = 0u;
 	u32 readbackPixelCursor = 0u;
@@ -145,6 +144,7 @@ public:
 	size_t fenceCommandCount() const { return m_fenceCommandCount; }
 	u32 x() const { return m_x; }
 	u32 y() const { return m_y; }
+	u8 vramYAddressExtensionWord() const { return m_vramYAddressExtensionWord; }
 	u32 width() const { return m_width; }
 	u32 height() const { return m_height; }
 	u32 pixelCursor() const { return m_pixelCursor; }
@@ -186,6 +186,7 @@ private:
 			m_fenceCommandCount = 0u;
 			m_x = 0u;
 			m_y = 0u;
+			m_vramYAddressExtensionWord = 0u;
 			m_width = 0u;
 			m_height = 0u;
 			m_pixelCursor = 0u;
@@ -194,9 +195,10 @@ private:
 		return word;
 	}
 
-	void activate(u32 positionWord, u32 sizeWord, size_t fenceCommandCount) {
+	void activate(u32 positionWord, u32 sizeWord, size_t fenceCommandCount, u8 vramYAddressExtensionWord) {
 		m_x = positionWord & (GX_GPU_VRAM_WIDTH - 1u);
-		m_y = (positionWord >> 16u) & (GX_GPU_VRAM_HEIGHT - 1u);
+		m_vramYAddressExtensionWord = vramYAddressExtensionWord;
+		m_y = gxGpuVramYAddress(positionWord >> 16u, vramYAddressExtensionWord);
 		m_width = gxGpuTransferWidth(sizeWord);
 		m_height = gxGpuTransferHeight(sizeWord);
 		m_pixelCursor = 0u;
@@ -211,6 +213,7 @@ private:
 		m_fenceCommandCount = 0u;
 		m_x = 0u;
 		m_y = 0u;
+		m_vramYAddressExtensionWord = 0u;
 		m_width = 0u;
 		m_height = 0u;
 		m_pixelCursor = 0u;
@@ -222,6 +225,7 @@ private:
 	size_t m_fenceCommandCount = 0u;
 	u32 m_x = 0u;
 	u32 m_y = 0u;
+	u8 m_vramYAddressExtensionWord = 0u;
 	u32 m_width = 0u;
 	u32 m_height = 0u;
 	u32 m_pixelCursor = 0u;
@@ -241,7 +245,7 @@ private:
 
 	void activateReadback(size_t commandIndex) {
 		const size_t wordStart = commandWordStart[commandIndex];
-		readback.activate(words[wordStart + 1u], words[wordStart + 2u], commandIndex + 1u);
+		readback.activate(words[wordStart + 1u], words[wordStart + 2u], commandIndex + 1u, commandVramYAddressExtensionWord[commandIndex]);
 	}
 
 	void clearCommandState() {
@@ -267,6 +271,7 @@ public:
 	std::array<u32, GX_GPU_COMMAND_CAPACITY> commandWordStart{};
 	std::array<u32, GX_GPU_COMMAND_CAPACITY> commandWordCount{};
 	std::array<u32, GX_GPU_COMMAND_CAPACITY> commandDrawModeWord{};
+	std::array<u8, GX_GPU_COMMAND_CAPACITY> commandVramYAddressExtensionWord{};
 	std::array<u32, GX_GPU_COMMAND_CAPACITY> commandTextureWindowWord{};
 	std::array<u32, GX_GPU_COMMAND_CAPACITY> commandDrawingAreaTopLeftWord{};
 	std::array<u32, GX_GPU_COMMAND_CAPACITY> commandDrawingAreaBottomRightWord{};
@@ -322,6 +327,7 @@ public:
 		state.commandWordStart.assign(commandWordStart.begin(), commandWordStart.begin() + static_cast<std::ptrdiff_t>(commandCount));
 		state.commandWordCount.assign(commandWordCount.begin(), commandWordCount.begin() + static_cast<std::ptrdiff_t>(commandCount));
 		state.commandDrawModeWord.assign(commandDrawModeWord.begin(), commandDrawModeWord.begin() + static_cast<std::ptrdiff_t>(commandCount));
+		state.commandVramYAddressExtensionWord.assign(commandVramYAddressExtensionWord.begin(), commandVramYAddressExtensionWord.begin() + static_cast<std::ptrdiff_t>(commandCount));
 		state.commandTextureWindowWord.assign(commandTextureWindowWord.begin(), commandTextureWindowWord.begin() + static_cast<std::ptrdiff_t>(commandCount));
 		state.commandDrawingAreaTopLeftWord.assign(commandDrawingAreaTopLeftWord.begin(), commandDrawingAreaTopLeftWord.begin() + static_cast<std::ptrdiff_t>(commandCount));
 		state.commandDrawingAreaBottomRightWord.assign(commandDrawingAreaBottomRightWord.begin(), commandDrawingAreaBottomRightWord.begin() + static_cast<std::ptrdiff_t>(commandCount));
@@ -333,6 +339,7 @@ public:
 		state.readbackFenceCommandCount = readback.m_fenceCommandCount;
 		state.readbackX = readback.m_x;
 		state.readbackY = readback.m_y;
+		state.readbackVramYAddressExtensionWord = readback.m_vramYAddressExtensionWord;
 		state.readbackWidth = readback.m_width;
 		state.readbackHeight = readback.m_height;
 		state.readbackPixelCursor = readback.m_pixelCursor;
@@ -355,6 +362,7 @@ public:
 			commandWordStart[index] = state.commandWordStart[index];
 			commandWordCount[index] = state.commandWordCount[index];
 			commandDrawModeWord[index] = state.commandDrawModeWord[index];
+			commandVramYAddressExtensionWord[index] = state.commandVramYAddressExtensionWord[index];
 			commandTextureWindowWord[index] = state.commandTextureWindowWord[index];
 			commandDrawingAreaTopLeftWord[index] = state.commandDrawingAreaTopLeftWord[index];
 			commandDrawingAreaBottomRightWord[index] = state.commandDrawingAreaBottomRightWord[index];
@@ -369,6 +377,7 @@ public:
 		readback.m_fenceCommandCount = state.readbackFenceCommandCount;
 		readback.m_x = state.readbackX;
 		readback.m_y = state.readbackY;
+		readback.m_vramYAddressExtensionWord = state.readbackVramYAddressExtensionWord;
 		readback.m_width = state.readbackWidth;
 		readback.m_height = state.readbackHeight;
 		readback.m_pixelCursor = state.readbackPixelCursor;
@@ -394,6 +403,7 @@ public:
 			commandWordStart[commandIndex] = commandWordStart[sourceIndex] - static_cast<u32>(retiredWords);
 			commandWordCount[commandIndex] = commandWordCount[sourceIndex];
 			commandDrawModeWord[commandIndex] = commandDrawModeWord[sourceIndex];
+			commandVramYAddressExtensionWord[commandIndex] = commandVramYAddressExtensionWord[sourceIndex];
 			commandTextureWindowWord[commandIndex] = commandTextureWindowWord[sourceIndex];
 			commandDrawingAreaTopLeftWord[commandIndex] = commandDrawingAreaTopLeftWord[sourceIndex];
 			commandDrawingAreaBottomRightWord[commandIndex] = commandDrawingAreaBottomRightWord[sourceIndex];
@@ -456,6 +466,7 @@ public:
 		size_t wordStart,
 		u32 commandWords,
 		u32 drawModeWord,
+		u8 vramYAddressExtensionWord,
 		u32 textureWindowWord,
 		u32 drawingAreaTopLeftWord,
 		u32 drawingAreaBottomRightWord,
@@ -468,6 +479,7 @@ public:
 		commandWordStart[commandIndex] = static_cast<u32>(wordStart);
 		commandWordCount[commandIndex] = commandWords;
 		commandDrawModeWord[commandIndex] = drawModeWord;
+		commandVramYAddressExtensionWord[commandIndex] = vramYAddressExtensionWord;
 		commandTextureWindowWord[commandIndex] = textureWindowWord;
 		commandDrawingAreaTopLeftWord[commandIndex] = drawingAreaTopLeftWord;
 		commandDrawingAreaBottomRightWord[commandIndex] = drawingAreaBottomRightWord;

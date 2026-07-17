@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/primitives.h"
+#include "machine/devices/gx/vram_address.h"
 
 namespace bmsx {
 
@@ -16,8 +17,8 @@ inline u32 gxGpuDisplayStartX(u32 word) {
 	return word & 0x3ffu;
 }
 
-inline u32 gxGpuDisplayStartY(u32 word) {
-	return (word >> 10u) & 0x1ffu;
+inline u32 gxGpuDisplayStartY(u32 word, u32 vramYAddressExtensionWord) {
+	return gxGpuVramYAddress(word >> 10u, vramYAddressExtensionWord);
 }
 
 inline u32 gxGpuScanoutField(u32 statusWord) {

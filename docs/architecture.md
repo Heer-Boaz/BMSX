@@ -1070,8 +1070,9 @@ Machine/device reset and GP1(00h) are distinct GPU transitions. A machine reset
 regenerates the deterministic raw-VRAM power-on contents, advances the shared
 unsigned 64-bit snapshot revision, and clears the retained command stream. GP1(00h)
 resets GPU registers and applies the same packet/FIFO transition as GP1(01h).
-Its register reset clears E1 texture-disable state but preserves the separate
-GP1(09h) permission latch; only machine reset clears that latch.
+Its register reset clears the E1 texture-page-Y-high bit, mirrored in GPUSTAT
+bit 15, but preserves the separate GP1(09h) VRAM-Y-address-extension latch;
+only machine reset clears that latch.
 Already accepted backend commands and received image payload remain in the
 retained execution log, while an incomplete packet/polyline and an active
 readback suffix are discarded. GP1(00h) preserves both the GPUREAD data latch
@@ -1134,23 +1135,35 @@ packed palette texels, CLUT addressing, STP, mask bits, four five-bit blend
 modes, dithering and RGB555 storage remain raw datapath stages rather than host
 float/color corrections.
 
-GX selects the type-2/208-pin drawing-area contract: GP0(E3h/E4h) retains and
-compares all ten Y bits. Installed VRAM remains exactly 1024x512 words; only the
-physical VRAM row address aliases with `y & 511` after raster clipping. Thus an
-upper-band sample at logical row 520 can store in physical row 8, while row 8
-itself is rejected when E3/E4 selects only the upper band. Accelerated backends
-project each non-empty clipped primitive range through one physical band in the
-normal case and at most two at row 512. Their vertex stage removes the band
-origin, their fragment stage restores logical Y for line DDA, fixed attribute
-planes, dither and interlace, and destination VRAM access remains physical.
-Dependency overlap, sample synchronization and dirty coverage compare the same
-physical aliases. A drawing area spanning both bands keeps GP0 command order by
+GX selects the type-2/208-pin drawing-area contract: GP0(E3h/E4h) retains all
+ten Y bits. GP1(09h).0 gates address bit Y9 at the VRAM address decoder for
+drawing-area bounds, texture pages, CLUTs, transfers, copies, fills, readback and
+scanout. With the gate closed, logical Y addresses alias into rows 0--511. With
+the gate open, all ten bits reach the decoder. GP0(E1h).11 is the raw texture
+page Y9 bit in either state and GPUSTAT bit 15 mirrors that latch; it never
+disables texturing.
+
+Installed VRAM remains exactly 1024x512 words. The unpopulated upper address
+bank is a BSX hardware contract: its sixteen-bit data bus is pulled down, so
+reads return zero and writes vanish. This is not claimed as a universal reading
+of unspecified retail-PSX expansion-space data. Commands retain the GP1(09h)
+latch that applied when they entered the execution stream, VBlank retains it for
+scanout, and GP0(C0h) retains it for the complete readback transfer. Backends
+split logical ranges at the 512-row bank edge, issue normal work only for the
+installed bank, and represent an uninstalled source with a zero read mask; they
+do not allocate a second VRAM image or branch per pixel on the host.
+
+Accelerated backends project each non-empty installed primitive range through
+one physical band. Their vertex stage removes the band origin, while their
+fragment stage restores logical Y for line DDA, fixed attribute planes, dither
+and interlace. A drawing area spanning both banks keeps GP0 command order by
 ending primitive batches at command boundaries. Within a command, generated
-triangles remain the outer submission order and each triangle visits its lower
-then upper logical band; dependent submissions synchronize the VRAM sample
-shadow between draws so blend, mask and texture feedback observe prior physical
-writes. Line and polyline segments keep their own order as well. Fill and
-image-transfer commands retain their separate physical VRAM datapaths.
+triangles remain in outer submission order. Dependent submissions synchronize
+the VRAM sample shadow between draws so blend, mask and texture feedback observe
+prior installed writes. Texture-page and CLUT bank masks remain independent: an
+absent texture page supplies texel word zero, whose palette index may still read
+an installed CLUT entry. Line and polyline segments keep their own order as
+well. Fill and image-transfer commands retain their separate VRAM datapaths.
 
 Accelerated primitive batches retain the rasterizer class `Polygon`,
 `Rectangle`, or `Line`; draw rectangles and fill rectangles therefore share the

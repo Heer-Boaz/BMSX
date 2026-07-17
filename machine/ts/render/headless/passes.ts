@@ -67,6 +67,7 @@ function registerHeadlessGxGpuPass(registry: RenderPassLibrary): void {
 		statusWord: registry.view.gxGpuStatusWord,
 		displayModeWord: registry.view.gxGpuDisplayModeWord,
 		displayStartWord: registry.view.gxGpuDisplayStartWord,
+		vramYAddressExtensionWord: registry.view.gxGpuVramYAddressExtensionWord,
 		vramSnapshotBytes: registry.view.gxGpuVramSnapshotBytes,
 		vramSnapshotSerial: registry.view.gxGpuVramSnapshotSerial,
 	};
@@ -86,6 +87,7 @@ function registerHeadlessGxGpuPass(registry: RenderPassLibrary): void {
 				gxGpuState.statusWord = view.gxGpuStatusWord;
 				gxGpuState.displayModeWord = view.gxGpuDisplayModeWord;
 				gxGpuState.displayStartWord = view.gxGpuDisplayStartWord;
+				gxGpuState.vramYAddressExtensionWord = view.gxGpuVramYAddressExtensionWord;
 				gxGpuState.vramSnapshotBytes = view.gxGpuVramSnapshotBytes;
 				gxGpuState.vramSnapshotSerial = view.gxGpuVramSnapshotSerial;
 			},

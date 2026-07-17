@@ -3,6 +3,10 @@ struct ScanoutUniforms {
 	display_mode_word: u32,
 	field_height: u32,
 	display_disable_word: u32,
+	vram_y_address_extension_word: u32,
+	_padding0: u32,
+	_padding1: u32,
+	_padding2: u32,
 };
 
 @group(0) @binding(0) var<uniform> u: ScanoutUniforms;
@@ -20,14 +24,17 @@ fn displayStartX() -> u32 {
 }
 
 fn displayStartY() -> u32 {
-	return (u.display_start_word >> 10u) & 0x1ffu;
+	let yAddressMask = select(0x1ffu, 0x3ffu, u.vram_y_address_extension_word != 0u);
+	return (u.display_start_word >> 10u) & yAddressMask;
 }
 
 fn rawWordAtLogical(x: u32, y: u32) -> u32 {
-	let rawPixel = textureLoad(u_vram, vec2<i32>(i32(x & 0x3ffu), i32(y & 0x1ffu)), 0);
+	let yAddressMask = select(0x1ffu, 0x3ffu, u.vram_y_address_extension_word != 0u);
+	let logicalY = y & yAddressMask;
+	let rawPixel = textureLoad(u_vram, vec2<i32>(i32(x & 0x3ffu), i32(logicalY & 0x1ffu)), 0);
 	let lowByte = u32(rawPixel.r * 255.0 + 0.5);
 	let highByte = u32(rawPixel.g * 255.0 + 0.5);
-	return lowByte | (highByte << 8u);
+	return select(0u, lowByte | (highByte << 8u), logicalY < 512u);
 }
 
 fn rgb555ToRgb8(word: u32) -> vec3<f32> {

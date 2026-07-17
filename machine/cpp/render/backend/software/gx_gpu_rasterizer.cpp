@@ -80,20 +80,22 @@ inline u32 sampleGxGpuSoftwareTextureWord(
 	u32 textureWindowOrX,
 	u32 textureWindowOrY,
 	u32 clutBaseX,
-	u32 clutBaseY) {
+	u32 clutBaseY,
+	u32 pageReadMask,
+	u32 clutReadMask) {
 	const u32 windowedU = textureWindowCoord(u, textureWindowAndX, textureWindowOrX);
 	const u32 windowedV = textureWindowCoord(v, textureWindowAndY, textureWindowOrY);
 	if (textureMode == GX_GPU_TEXTURE_MODE_PALETTE4) {
-		const u32 textureWord = g_gxGpuSoftwareVram[gxGpuSoftwareVramIndex(static_cast<i32>(pageX + (windowedU / 4u)), static_cast<i32>(pageY + windowedV))];
+		const u32 textureWord = g_gxGpuSoftwareVram[gxGpuSoftwareVramIndex(static_cast<i32>(pageX + (windowedU / 4u)), static_cast<i32>(pageY + windowedV))] & pageReadMask;
 		const u32 paletteIndex = (textureWord >> ((windowedU & 3u) << 2u)) & 0x0fu;
-		return g_gxGpuSoftwareVram[gxGpuSoftwareVramIndex(static_cast<i32>(clutBaseX + paletteIndex), static_cast<i32>(clutBaseY))];
+		return g_gxGpuSoftwareVram[gxGpuSoftwareVramIndex(static_cast<i32>(clutBaseX + paletteIndex), static_cast<i32>(clutBaseY))] & clutReadMask;
 	}
 	if (textureMode == GX_GPU_TEXTURE_MODE_PALETTE8) {
-		const u32 textureWord = g_gxGpuSoftwareVram[gxGpuSoftwareVramIndex(static_cast<i32>(pageX + (windowedU / 2u)), static_cast<i32>(pageY + windowedV))];
+		const u32 textureWord = g_gxGpuSoftwareVram[gxGpuSoftwareVramIndex(static_cast<i32>(pageX + (windowedU / 2u)), static_cast<i32>(pageY + windowedV))] & pageReadMask;
 		const u32 paletteIndex = (textureWord >> ((windowedU & 1u) << 3u)) & 0xffu;
-		return g_gxGpuSoftwareVram[gxGpuSoftwareVramIndex(static_cast<i32>(clutBaseX + paletteIndex), static_cast<i32>(clutBaseY))];
+		return g_gxGpuSoftwareVram[gxGpuSoftwareVramIndex(static_cast<i32>(clutBaseX + paletteIndex), static_cast<i32>(clutBaseY))] & clutReadMask;
 	}
-	return g_gxGpuSoftwareVram[gxGpuSoftwareVramIndex(static_cast<i32>(pageX + windowedU), static_cast<i32>(pageY + windowedV))];
+	return g_gxGpuSoftwareVram[gxGpuSoftwareVramIndex(static_cast<i32>(pageX + windowedU), static_cast<i32>(pageY + windowedV))] & pageReadMask;
 }
 
 inline void writeGxGpuSoftwareTexturedPixel(
@@ -130,10 +132,12 @@ inline void writeGxGpuSoftwareTexturedPixel(
 void drawGxGpuSoftwareRectangle(const GxGpuCommandBuffer& commandBuffer, size_t commandIndex, i32 x0, i32 y0, u32 width, u32 height, u32 colorWord) {
 	const u32 topLeftWord = commandBuffer.commandDrawingAreaTopLeftWord[commandIndex];
 	const u32 bottomRightWord = commandBuffer.commandDrawingAreaBottomRightWord[commandIndex];
+	const u32 vramYAddressExtensionWord = commandBuffer.commandVramYAddressExtensionWord[commandIndex];
 	const i32 areaLeft = static_cast<i32>(gxGpuDrawingAreaLeft(topLeftWord, bottomRightWord));
-	const i32 areaTop = static_cast<i32>(gxGpuDrawingAreaTop(topLeftWord, bottomRightWord));
+	const i32 areaTop = static_cast<i32>(gxGpuDrawingAreaTop(topLeftWord, bottomRightWord, vramYAddressExtensionWord));
 	const i32 areaRight = static_cast<i32>(gxGpuDrawingAreaRightExclusive(topLeftWord, bottomRightWord));
-	const i32 areaBottom = static_cast<i32>(gxGpuDrawingAreaBottomExclusive(topLeftWord, bottomRightWord));
+	i32 areaBottom = static_cast<i32>(gxGpuDrawingAreaBottomExclusive(topLeftWord, bottomRightWord, vramYAddressExtensionWord));
+	if (areaBottom > static_cast<i32>(GX_GPU_VRAM_HEIGHT)) areaBottom = static_cast<i32>(GX_GPU_VRAM_HEIGHT);
 	const i32 left = x0 > areaLeft ? x0 : areaLeft;
 	const i32 top = y0 > areaTop ? y0 : areaTop;
 	const i32 rectangleRight = x0 + static_cast<i32>(width);
@@ -189,10 +193,12 @@ void drawGxGpuSoftwareTriangle(
 	}
 	const u32 topLeftWord = commandBuffer.commandDrawingAreaTopLeftWord[commandIndex];
 	const u32 bottomRightWord = commandBuffer.commandDrawingAreaBottomRightWord[commandIndex];
+	const u32 vramYAddressExtensionWord = commandBuffer.commandVramYAddressExtensionWord[commandIndex];
 	const i32 areaLeft = static_cast<i32>(gxGpuDrawingAreaLeft(topLeftWord, bottomRightWord));
-	const i32 areaTop = static_cast<i32>(gxGpuDrawingAreaTop(topLeftWord, bottomRightWord));
+	const i32 areaTop = static_cast<i32>(gxGpuDrawingAreaTop(topLeftWord, bottomRightWord, vramYAddressExtensionWord));
 	const i32 areaRight = static_cast<i32>(gxGpuDrawingAreaRightExclusive(topLeftWord, bottomRightWord));
-	const i32 areaBottom = static_cast<i32>(gxGpuDrawingAreaBottomExclusive(topLeftWord, bottomRightWord));
+	i32 areaBottom = static_cast<i32>(gxGpuDrawingAreaBottomExclusive(topLeftWord, bottomRightWord, vramYAddressExtensionWord));
+	if (areaBottom > static_cast<i32>(GX_GPU_VRAM_HEIGHT)) areaBottom = static_cast<i32>(GX_GPU_VRAM_HEIGHT);
 	const i32 min12x = x1 < x2 ? x1 : x2;
 	const i32 max12x = x1 > x2 ? x1 : x2;
 	const i32 min12y = y1 < y2 ? y1 : y2;
@@ -350,10 +356,12 @@ void drawGxGpuSoftwareTexturedTriangle(
 	}
 	const u32 topLeftWord = commandBuffer.commandDrawingAreaTopLeftWord[commandIndex];
 	const u32 bottomRightWord = commandBuffer.commandDrawingAreaBottomRightWord[commandIndex];
+	const u32 vramYAddressExtensionWord = commandBuffer.commandVramYAddressExtensionWord[commandIndex];
 	const i32 areaLeft = static_cast<i32>(gxGpuDrawingAreaLeft(topLeftWord, bottomRightWord));
-	const i32 areaTop = static_cast<i32>(gxGpuDrawingAreaTop(topLeftWord, bottomRightWord));
+	const i32 areaTop = static_cast<i32>(gxGpuDrawingAreaTop(topLeftWord, bottomRightWord, vramYAddressExtensionWord));
 	const i32 areaRight = static_cast<i32>(gxGpuDrawingAreaRightExclusive(topLeftWord, bottomRightWord));
-	const i32 areaBottom = static_cast<i32>(gxGpuDrawingAreaBottomExclusive(topLeftWord, bottomRightWord));
+	i32 areaBottom = static_cast<i32>(gxGpuDrawingAreaBottomExclusive(topLeftWord, bottomRightWord, vramYAddressExtensionWord));
+	if (areaBottom > static_cast<i32>(GX_GPU_VRAM_HEIGHT)) areaBottom = static_cast<i32>(GX_GPU_VRAM_HEIGHT);
 	const i32 min12x = x1 < x2 ? x1 : x2;
 	const i32 max12x = x1 > x2 ? x1 : x2;
 	const i32 min12y = y1 < y2 ? y1 : y2;
@@ -385,14 +393,16 @@ void drawGxGpuSoftwareTexturedTriangle(
 	const u32 textureWindowWord = commandBuffer.commandTextureWindowWord[commandIndex];
 	const u32 textureWord0 = commandBuffer.words[commandBuffer.commandWordStart[commandIndex] + 2u];
 	const u32 pageX = gxGpuDrawModeTexturePageBaseX(drawModeWord);
-	const u32 pageY = gxGpuDrawModeTexturePageBaseY(drawModeWord);
+	const u32 pageY = gxGpuDrawModeTexturePageBaseY(drawModeWord, vramYAddressExtensionWord);
 	const u32 textureMode = gxGpuDrawModeTextureMode(drawModeWord);
 	const u32 textureWindowAndX = gxGpuTextureWindowAndX(textureWindowWord);
 	const u32 textureWindowAndY = gxGpuTextureWindowAndY(textureWindowWord);
 	const u32 textureWindowOrX = gxGpuTextureWindowOrX(textureWindowWord);
 	const u32 textureWindowOrY = gxGpuTextureWindowOrY(textureWindowWord);
 	const u32 clutBaseX = gxGpuTextureClutBaseX(textureWord0);
-	const u32 clutBaseY = gxGpuTextureClutBaseY(textureWord0);
+	const u32 clutBaseY = gxGpuTextureClutBaseY(textureWord0, vramYAddressExtensionWord);
+	const u32 pageReadMask = gxGpuVramYBankInstalled(pageY) ? 0xffffu : 0u;
+	const u32 clutReadMask = gxGpuVramYBankInstalled(clutBaseY) ? 0xffffu : 0u;
 	const bool rawTextureEnabled = gxGpuCommandRawTextureEnabled(opcode);
 	const bool interpolatesColor = !sameColor && !rawTextureEnabled;
 	const bool semiTransparencyEnabled = gxGpuCommandSemiTransparencyEnabled(opcode);
@@ -496,7 +506,9 @@ void drawGxGpuSoftwareTexturedTriangle(
 					textureWindowOrX,
 					textureWindowOrY,
 					clutBaseX,
-					clutBaseY);
+					clutBaseY,
+					pageReadMask,
+					clutReadMask);
 				writeGxGpuSoftwareTexturedPixel(
 					x,
 					y,
@@ -537,10 +549,12 @@ void drawGxGpuSoftwareTexturedTriangle(
 void drawGxGpuSoftwareTexturedRectangle(const GxGpuCommandBuffer& commandBuffer, size_t commandIndex, i32 x0, i32 y0, u32 width, u32 height, u32 colorWord, u32 textureWord) {
 	const u32 topLeftWord = commandBuffer.commandDrawingAreaTopLeftWord[commandIndex];
 	const u32 bottomRightWord = commandBuffer.commandDrawingAreaBottomRightWord[commandIndex];
+	const u32 vramYAddressExtensionWord = commandBuffer.commandVramYAddressExtensionWord[commandIndex];
 	const i32 areaLeft = static_cast<i32>(gxGpuDrawingAreaLeft(topLeftWord, bottomRightWord));
-	const i32 areaTop = static_cast<i32>(gxGpuDrawingAreaTop(topLeftWord, bottomRightWord));
+	const i32 areaTop = static_cast<i32>(gxGpuDrawingAreaTop(topLeftWord, bottomRightWord, vramYAddressExtensionWord));
 	const i32 areaRight = static_cast<i32>(gxGpuDrawingAreaRightExclusive(topLeftWord, bottomRightWord));
-	const i32 areaBottom = static_cast<i32>(gxGpuDrawingAreaBottomExclusive(topLeftWord, bottomRightWord));
+	i32 areaBottom = static_cast<i32>(gxGpuDrawingAreaBottomExclusive(topLeftWord, bottomRightWord, vramYAddressExtensionWord));
+	if (areaBottom > static_cast<i32>(GX_GPU_VRAM_HEIGHT)) areaBottom = static_cast<i32>(GX_GPU_VRAM_HEIGHT);
 	const i32 left = x0 > areaLeft ? x0 : areaLeft;
 	const i32 top = y0 > areaTop ? y0 : areaTop;
 	const i32 rectangleRight = x0 + static_cast<i32>(width);
@@ -555,14 +569,16 @@ void drawGxGpuSoftwareTexturedRectangle(const GxGpuCommandBuffer& commandBuffer,
 	const u32 opcode = commandBuffer.commandOpcode[commandIndex];
 	const u32 textureWindowWord = commandBuffer.commandTextureWindowWord[commandIndex];
 	const u32 pageX = gxGpuDrawModeTexturePageBaseX(drawModeWord);
-	const u32 pageY = gxGpuDrawModeTexturePageBaseY(drawModeWord);
+	const u32 pageY = gxGpuDrawModeTexturePageBaseY(drawModeWord, vramYAddressExtensionWord);
 	const u32 textureMode = gxGpuDrawModeTextureMode(drawModeWord);
 	const u32 textureWindowAndX = gxGpuTextureWindowAndX(textureWindowWord);
 	const u32 textureWindowAndY = gxGpuTextureWindowAndY(textureWindowWord);
 	const u32 textureWindowOrX = gxGpuTextureWindowOrX(textureWindowWord);
 	const u32 textureWindowOrY = gxGpuTextureWindowOrY(textureWindowWord);
 	const u32 clutBaseX = gxGpuTextureClutBaseX(textureWord);
-	const u32 clutBaseY = gxGpuTextureClutBaseY(textureWord);
+	const u32 clutBaseY = gxGpuTextureClutBaseY(textureWord, vramYAddressExtensionWord);
+	const u32 pageReadMask = gxGpuVramYBankInstalled(pageY) ? 0xffffu : 0u;
+	const u32 clutReadMask = gxGpuVramYBankInstalled(clutBaseY) ? 0xffffu : 0u;
 	const bool rawTextureEnabled = gxGpuCommandRawTextureEnabled(opcode);
 	const bool semiTransparencyEnabled = gxGpuCommandSemiTransparencyEnabled(opcode);
 	const u32 blendMode = gxGpuDrawModeTransparencyMode(drawModeWord);
@@ -591,7 +607,9 @@ void drawGxGpuSoftwareTexturedRectangle(const GxGpuCommandBuffer& commandBuffer,
 				textureWindowOrX,
 				textureWindowOrY,
 				clutBaseX,
-				clutBaseY);
+				clutBaseY,
+				pageReadMask,
+				clutReadMask);
 			writeGxGpuSoftwareTexturedPixel(
 				x,
 				y,
@@ -614,10 +632,12 @@ void drawGxGpuSoftwareLineSegment(const GxGpuCommandBuffer& commandBuffer, size_
 	}
 	const u32 topLeftWord = commandBuffer.commandDrawingAreaTopLeftWord[commandIndex];
 	const u32 bottomRightWord = commandBuffer.commandDrawingAreaBottomRightWord[commandIndex];
+	const u32 vramYAddressExtensionWord = commandBuffer.commandVramYAddressExtensionWord[commandIndex];
 	const i32 areaLeft = static_cast<i32>(gxGpuDrawingAreaLeft(topLeftWord, bottomRightWord));
-	const i32 areaTop = static_cast<i32>(gxGpuDrawingAreaTop(topLeftWord, bottomRightWord));
+	const i32 areaTop = static_cast<i32>(gxGpuDrawingAreaTop(topLeftWord, bottomRightWord, vramYAddressExtensionWord));
 	const i32 areaRight = static_cast<i32>(gxGpuDrawingAreaRightExclusive(topLeftWord, bottomRightWord));
-	const i32 areaBottom = static_cast<i32>(gxGpuDrawingAreaBottomExclusive(topLeftWord, bottomRightWord));
+	i32 areaBottom = static_cast<i32>(gxGpuDrawingAreaBottomExclusive(topLeftWord, bottomRightWord, vramYAddressExtensionWord));
+	if (areaBottom > static_cast<i32>(GX_GPU_VRAM_HEIGHT)) areaBottom = static_cast<i32>(GX_GPU_VRAM_HEIGHT);
 	const i32 absDx = absI32(x1 - x0);
 	const i32 absDy = absI32(y1 - y0);
 	const i32 steps = absDx >= absDy ? absDx : absDy;

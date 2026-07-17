@@ -92,7 +92,7 @@ void testGp0RawDrawWordDecoders() {
 	require(bmsx::gxGpuSigned11(0x000007ffu) == -1, "GX-GPU vertex x decode");
 	require(bmsx::gxGpuVertexY(0x07ff0000u) == -1, "GX-GPU vertex y decode");
 	require(bmsx::gxGpuDisplayStartX(123u | (456u << 10u)) == 123u, "GX-GPU display start x decode");
-	require(bmsx::gxGpuDisplayStartY(123u | (456u << 10u)) == 456u, "GX-GPU display start y decode");
+	require(bmsx::gxGpuDisplayStartY(123u | (456u << 10u), 0u) == 456u, "GX-GPU display start y decode");
 	require(bmsx::gxGpuScanoutField(bmsx::GX_GPU_STATUS_INTERLACED_FIELD) == 0u, "GX-GPU GPUSTAT field zero decode");
 	require(bmsx::gxGpuScanoutField(0u) == 1u, "GX-GPU GPUSTAT field one decode");
 	require(bmsx::gxGpuScanoutSourceLineStep(0u) == 0u, "GX-GPU progressive scanout line step");
@@ -133,12 +133,12 @@ void testGp0RawDrawWordDecoders() {
 	require(bmsx::gxGpuVramWrappedWidth(1000u, 12u) == 12u, "GX-GPU non-wrapped VRAM width run");
 	require(bmsx::gxGpuVramWrappedWidth(1008u, 1024u) == 16u, "GX-GPU wrapped VRAM width first run");
 	require(bmsx::gxGpuVramWrappedWidth(0u, 1008u) == 1008u, "GX-GPU full-start VRAM width run");
-	require(bmsx::gxGpuVramWrappedHeight(500u, 12u) == 12u, "GX-GPU non-wrapped VRAM height run");
-	require(bmsx::gxGpuVramWrappedHeight(511u, 511u) == 1u, "GX-GPU wrapped VRAM height first run");
-	require(bmsx::gxGpuVramWrappedHeight(0u, 511u) == 511u, "GX-GPU full-start VRAM height run");
-	require(bmsx::gxGpuVramLogicalAreaOverlapsBounds(1008u, 500u, 32u, 24u, 0, 0, 8, 8), "GX-GPU wrapped VRAM area overlaps low corner bounds");
-	require(!bmsx::gxGpuVramLogicalAreaOverlapsBounds(1008u, 500u, 32u, 24u, 512, 256, 520, 264), "GX-GPU wrapped VRAM area excludes separated bounds");
-	require(bmsx::gxGpuVramLogicalAreaOverlapsBounds(60u, 8u, 1u, 1u, 60, 520, 61, 521), "GX-GPU logical rows alias at installed VRAM height");
+	require(bmsx::gxGpuVramWrappedHeight(500u, 12u, 0u) == 12u, "GX-GPU non-wrapped VRAM height run");
+	require(bmsx::gxGpuVramWrappedHeight(511u, 511u, 0u) == 1u, "GX-GPU wrapped VRAM height first run");
+	require(bmsx::gxGpuVramWrappedHeight(0u, 511u, 0u) == 511u, "GX-GPU full-start VRAM height run");
+	require(bmsx::gxGpuVramLogicalAreaOverlapsBounds(1008u, 500u, 32u, 24u, 0, 0, 8, 8, 0u), "GX-GPU wrapped VRAM area overlaps low corner bounds");
+	require(!bmsx::gxGpuVramLogicalAreaOverlapsBounds(1008u, 500u, 32u, 24u, 512, 256, 520, 264, 0u), "GX-GPU wrapped VRAM area excludes separated bounds");
+	require(bmsx::gxGpuVramLogicalAreaOverlapsBounds(60u, 8u, 1u, 1u, 60, 520, 61, 521, 0u), "GX-GPU logical rows alias at installed VRAM height");
 	require(bmsx::gxGpuVramCopyNeedsChunking(10u, 20u, 12u, 24u, 32u, 16u), "GX-GPU diagonal overlapping copy chunks");
 	require(bmsx::gxGpuVramCopyChunkHeight(20u, 24u, 16u) == 4u, "GX-GPU diagonal overlapping copy chunk height");
 	require(!bmsx::gxGpuVramCopyNeedsChunking(10u, 20u, 10u, 24u, 32u, 16u), "GX-GPU vertical-only copy is not chunked");
@@ -163,7 +163,7 @@ void testGp0RawDrawWordDecoders() {
 	require(uvInterpolants[29] == 18.0f, "GX-GPU attribute plane carries Y gradient through digit 3");
 
 	require(bmsx::gxGpuTransferX(0x01ff03ffu) == 1023u, "GX-GPU transfer x decode");
-	require(bmsx::gxGpuTransferY(0x01ff03ffu) == 511u, "GX-GPU transfer y decode");
+	require(bmsx::gxGpuTransferY(0x01ff03ffu, 0u) == 511u, "GX-GPU transfer y decode");
 	require(bmsx::gxGpuTransferWidth(0u) == 1024u, "GX-GPU zero transfer width means full VRAM row");
 	require(bmsx::gxGpuTransferHeight(0u) == 512u, "GX-GPU zero transfer height means full VRAM height");
 	require(bmsx::gxGpuTransferWidth(0x012c0007u) == 7u, "GX-GPU transfer width decode");
@@ -181,18 +181,17 @@ void testGp0RawDrawWordDecoders() {
 	require(!bmsx::gxGpuCommandRawTextureEnabled(0x24u), "GX-GPU raw texture bit disabled");
 	require(bmsx::gxGpuCommandSemiTransparencyEnabled(0x22u), "GX-GPU semi-transparency bit enabled");
 	require(!bmsx::gxGpuCommandSemiTransparencyEnabled(0x20u), "GX-GPU semi-transparency bit disabled");
-	require(bmsx::gxGpuCommandDrawsTexture(0x24u, 0u), "GX-GPU textured opcode draws texture");
-	require(!bmsx::gxGpuCommandDrawsTexture(0x24u, bmsx::GX_GPU_DRAW_MODE_TEXTURE_DISABLE), "GX-GPU texture-disable stops texture sampling");
-	require(!bmsx::gxGpuCommandDrawsTexture(0x20u, 0u), "GX-GPU untextured opcode does not draw texture");
-	require(bmsx::gxGpuDrawModeTextureDisableEnabled(bmsx::GX_GPU_DRAW_MODE_TEXTURE_DISABLE), "GX-GPU texture-disable bit enabled");
-	require(!bmsx::gxGpuDrawModeTextureDisableEnabled(0u), "GX-GPU texture-disable bit disabled");
+	require(bmsx::gxGpuCommandTextureEnabled(0x24u), "GX-GPU textured opcode draws texture");
+	require(!bmsx::gxGpuCommandTextureEnabled(0x20u), "GX-GPU untextured opcode does not draw texture");
+	require(bmsx::gxGpuDrawModeTexturePageBaseY(bmsx::GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_HIGH, 0u) == 0u, "GX-GPU closed Y gate suppresses texture page bit 9");
+	require(bmsx::gxGpuDrawModeTexturePageBaseY(bmsx::GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_HIGH, 1u) == 512u, "GX-GPU open Y gate retains texture page bit 9");
 	require(bmsx::gxGpuDrawModeDitherEnabled(bmsx::GX_GPU_DRAW_MODE_DITHER_ENABLED), "GX-GPU dither bit enabled");
 	require(!bmsx::gxGpuDrawModeDitherEnabled(0u), "GX-GPU dither bit disabled");
 	require(bmsx::gxGpuDitheredPolygon(bmsx::GX_GPU_DRAW_MODE_DITHER_ENABLED, bmsx::GX_GPU_GP0_POLYGON_FIRST | bmsx::GX_GPU_GP0_RENDER_GOURAUD_BIT), "GX-GPU Gouraud polygon dithered");
 	require(!bmsx::gxGpuDitheredPolygon(bmsx::GX_GPU_DRAW_MODE_DITHER_ENABLED, bmsx::GX_GPU_GP0_POLYGON_FIRST), "GX-GPU flat untextured polygon not dithered");
 	require(bmsx::gxGpuDitheredPolygon(bmsx::GX_GPU_DRAW_MODE_DITHER_ENABLED, bmsx::GX_GPU_GP0_POLYGON_FIRST | bmsx::GX_GPU_GP0_RENDER_TEXTURE_BIT), "GX-GPU blended textured polygon dithered");
-	require(!bmsx::gxGpuDitheredPolygon(bmsx::GX_GPU_DRAW_MODE_DITHER_ENABLED | bmsx::GX_GPU_DRAW_MODE_TEXTURE_DISABLE, bmsx::GX_GPU_GP0_POLYGON_FIRST | bmsx::GX_GPU_GP0_RENDER_TEXTURE_BIT), "GX-GPU texture-disabled flat polygon not dithered");
-	require(bmsx::gxGpuDitheredPolygon(bmsx::GX_GPU_DRAW_MODE_DITHER_ENABLED | bmsx::GX_GPU_DRAW_MODE_TEXTURE_DISABLE, bmsx::GX_GPU_GP0_POLYGON_FIRST | bmsx::GX_GPU_GP0_RENDER_TEXTURE_BIT | bmsx::GX_GPU_GP0_RENDER_GOURAUD_BIT), "GX-GPU texture-disabled Gouraud polygon dithered");
+	require(bmsx::gxGpuDitheredPolygon(bmsx::GX_GPU_DRAW_MODE_DITHER_ENABLED | bmsx::GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_HIGH, bmsx::GX_GPU_GP0_POLYGON_FIRST | bmsx::GX_GPU_GP0_RENDER_TEXTURE_BIT), "GX-GPU high-page flat polygon remains textured and dithered");
+	require(bmsx::gxGpuDitheredPolygon(bmsx::GX_GPU_DRAW_MODE_DITHER_ENABLED | bmsx::GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_HIGH, bmsx::GX_GPU_GP0_POLYGON_FIRST | bmsx::GX_GPU_GP0_RENDER_TEXTURE_BIT | bmsx::GX_GPU_GP0_RENDER_GOURAUD_BIT), "GX-GPU high-page Gouraud polygon remains textured and dithered");
 	require(!bmsx::gxGpuDitheredPolygon(bmsx::GX_GPU_DRAW_MODE_DITHER_ENABLED, bmsx::GX_GPU_GP0_POLYGON_FIRST | bmsx::GX_GPU_GP0_RENDER_TEXTURE_BIT | 0x01u), "GX-GPU raw textured polygon not dithered");
 	require(!bmsx::gxGpuDitheredPolygon(0u, bmsx::GX_GPU_GP0_POLYGON_FIRST | bmsx::GX_GPU_GP0_RENDER_GOURAUD_BIT), "GX-GPU dither disabled by draw mode");
 	require(bmsx::gxGpuDrawModeTextureRectangleXFlip(bmsx::GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP), "GX-GPU textured rectangle X flip bit enabled");
@@ -218,10 +217,10 @@ void testGp0RawDrawWordDecoders() {
 	require(bmsx::gxGpuTextureV(0x01c3ab56u) == 0xabu, "GX-GPU texture V decode");
 	require(bmsx::gxGpuTextureAttribute(0x01c3ab56u) == 0x01c3u, "GX-GPU texture attribute decode");
 	require(bmsx::gxGpuTextureClutBaseX(0x01c3ab56u) == 48u, "GX-GPU CLUT X base decode");
-	require(bmsx::gxGpuTextureClutBaseY(0x01c3ab56u) == 7u, "GX-GPU CLUT Y base decode");
+	require(bmsx::gxGpuTextureClutBaseY(0x01c3ab56u, 0u) == 7u, "GX-GPU CLUT Y base decode");
 	require(bmsx::gxGpuDrawModeTexturePageBaseX(0x0013u) == 192u, "GX-GPU texture page X base decode");
-	require(bmsx::gxGpuDrawModeTexturePageBaseY(0x0013u) == 256u, "GX-GPU texture page Y base decode");
-	require(bmsx::gxGpuDrawModeTexturePageBaseY(0x0810u) == 256u, "GX-GPU texture page Y base ignores texture-disable bit");
+	require(bmsx::gxGpuDrawModeTexturePageBaseY(0x0013u, 0u) == 256u, "GX-GPU texture page Y base decode");
+	require(bmsx::gxGpuDrawModeTexturePageBaseY(0x0810u, 0u) == 256u, "GX-GPU closed Y gate suppresses the high texture-page bank bit");
 	require(bmsx::gxGpuDrawModeTextureMode(0x0100u) == bmsx::GX_GPU_TEXTURE_MODE_DIRECT16, "GX-GPU texture mode decode");
 	require(bmsx::gxGpuDrawModeTransparencyMode(0x0060u) == 3u, "GX-GPU transparency mode decode");
 	require(bmsx::gxGpuPolygonTexturePageWordIndex(0x24u) == 4u, "GX-GPU flat textured polygon texpage word index");
@@ -241,15 +240,15 @@ void testGp0RawDrawWordDecoders() {
 	require(bmsx::gxGpuDrawingAreaX(12u | (34u << 10u)) == 12u, "GX-GPU drawing area x decode");
 	require(bmsx::gxGpuDrawingAreaY(12u | (34u << 10u)) == 34u, "GX-GPU drawing area y decode");
 	require(bmsx::gxGpuDrawingAreaLeft(12u | (34u << 10u), 20u | (40u << 10u)) == 12u, "GX-GPU drawing area left");
-	require(bmsx::gxGpuDrawingAreaTop(12u | (34u << 10u), 20u | (40u << 10u)) == 34u, "GX-GPU drawing area top");
+	require(bmsx::gxGpuDrawingAreaTop(12u | (34u << 10u), 20u | (40u << 10u), 0u) == 34u, "GX-GPU drawing area top");
 	require(bmsx::gxGpuDrawingAreaRightExclusive(12u | (34u << 10u), 20u | (40u << 10u)) == 21u, "GX-GPU drawing area right exclusive");
-	require(bmsx::gxGpuDrawingAreaBottomExclusive(12u | (34u << 10u), 20u | (40u << 10u)) == 41u, "GX-GPU drawing area bottom exclusive");
+	require(bmsx::gxGpuDrawingAreaBottomExclusive(12u | (34u << 10u), 20u | (40u << 10u), 0u) == 41u, "GX-GPU drawing area bottom exclusive");
 	require(bmsx::gxGpuDrawingAreaLeft(20u | (34u << 10u), 12u | (40u << 10u)) == 0u, "GX-GPU invalid drawing area left");
 	require(bmsx::gxGpuDrawingAreaRightExclusive(20u | (34u << 10u), 12u | (40u << 10u)) == 0u, "GX-GPU invalid drawing area right");
-	require(bmsx::gxGpuDrawingAreaTop(12u | (40u << 10u), 20u | (34u << 10u)) == 0u, "GX-GPU invalid drawing area top");
-	require(bmsx::gxGpuDrawingAreaBottomExclusive(12u | (40u << 10u), 20u | (34u << 10u)) == 0u, "GX-GPU invalid drawing area bottom");
-	require(bmsx::gxGpuDrawingAreaTop(12u | (600u << 10u), 20u | (700u << 10u)) == 600u, "GX-GPU drawing area preserves raw 10-bit top");
-	require(bmsx::gxGpuDrawingAreaBottomExclusive(12u | (600u << 10u), 20u | (700u << 10u)) == 701u, "GX-GPU drawing area preserves raw 10-bit bottom");
+	require(bmsx::gxGpuDrawingAreaTop(12u | (40u << 10u), 20u | (34u << 10u), 0u) == 0u, "GX-GPU invalid drawing area top");
+	require(bmsx::gxGpuDrawingAreaBottomExclusive(12u | (40u << 10u), 20u | (34u << 10u), 0u) == 0u, "GX-GPU invalid drawing area bottom");
+	require(bmsx::gxGpuDrawingAreaTop(12u | (600u << 10u), 20u | (700u << 10u), 1u) == 600u, "GX-GPU drawing area preserves raw 10-bit top");
+	require(bmsx::gxGpuDrawingAreaBottomExclusive(12u | (600u << 10u), 20u | (700u << 10u), 1u) == 701u, "GX-GPU drawing area preserves raw 10-bit bottom");
 }
 
 void testGp1DisplayModeOwnsPalNtsc() {
@@ -273,7 +272,7 @@ void testGp1ResetRestoresRegistersAndPreservesAcceptedGpuWork() {
 	const uint32_t commandSerial = commandBuffer.serial;
 	const bmsx::u64 vramSnapshotSerial = gpu.readVramSnapshotSerial();
 
-	gpu.writeGp1((bmsx::GX_GPU_GP1_ALLOW_TEXTURE_DISABLE << 24u) | 1u);
+	gpu.writeGp1((bmsx::GX_GPU_GP1_VRAM_Y_ADDRESS_EXTENSION << 24u) | 1u);
 	gpu.writeGp1((bmsx::GX_GPU_GP1_DISPLAY_MODE << 24u) | 0x00000000u);
 	gpu.writeGp0((bmsx::GX_GPU_GP0_DRAWING_AREA_TOP_LEFT << 24u) | 0x00054321u);
 	gpu.writeGp1((bmsx::GX_GPU_GP1_GET_GPU_INFO << 24u) | 0x03u);
@@ -295,15 +294,15 @@ void testGp1ResetRestoresRegistersAndPreservesAcceptedGpuWork() {
 	require(commandBuffer.serial == commandSerial, "GX-GPU GP1 reset preserves stable accepted command revision");
 	require(gpu.readVramSnapshotSerial() == vramSnapshotSerial, "GX-GPU GP1 reset preserves backend VRAM revision");
 	require(gpu.readGp0() == 0x00054321u, "GX-GPU GP1 reset preserves the GPUREAD data latch");
-	require(gpu.readTextureDisableAllowedWord() == 1u, "GX-GPU GP1 reset preserves texture-disable allowance");
-	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_TEXTURE_DISABLE) == 0u, "GX-GPU GP1 reset clears texture-disable status bit");
+	require(gpu.readVramYAddressExtensionWord() == 1u, "GX-GPU GP1 reset preserves VRAM Y-address extension latch");
+	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_TEXTURE_PAGE_Y_HIGH) == 0u, "GX-GPU GP1 reset clears texture-page Y-high status bit");
 	require(gpu.readDisplayModeWord() == bmsx::GX_GPU_RESET_DISPLAY_MODE_WORD, "GX-GPU GP1 reset display mode");
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_PAL_MODE) == bmsx::GX_GPU_STATUS_PAL_MODE, "GX-GPU GP1 reset PAL bit");
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_RESET_WORD) == (bmsx::GX_GPU_STATUS_RESET_WORD & ~bmsx::GX_GPU_STATUS_GPU_IDLE), "GX-GPU GP1 reset base bits preserve accepted execution");
-	gpu.writeGp0((bmsx::GX_GPU_GP0_DRAW_MODE << 24u) | bmsx::GX_GPU_DRAW_MODE_TEXTURE_DISABLE);
+	gpu.writeGp0((bmsx::GX_GPU_GP0_DRAW_MODE << 24u) | bmsx::GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_HIGH);
 	completeGpuCommands(harness);
-	require((gpu.readDrawModeWord() & bmsx::GX_GPU_DRAW_MODE_TEXTURE_DISABLE) == bmsx::GX_GPU_DRAW_MODE_TEXTURE_DISABLE, "GX-GPU GP1 reset preserves GP1 texture-disable permission");
-	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_TEXTURE_DISABLE) == bmsx::GX_GPU_STATUS_TEXTURE_DISABLE, "GX-GPU GP1 reset accepts a later permitted texture-disable bit in GPUSTAT");
+	require((gpu.readDrawModeWord() & bmsx::GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_HIGH) == bmsx::GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_HIGH, "GX-GPU draw mode retains texture-page Y-high after GP1 reset");
+	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_TEXTURE_PAGE_Y_HIGH) == bmsx::GX_GPU_STATUS_TEXTURE_PAGE_Y_HIGH, "GX-GPU texture-page Y-high mirrors to GPUSTAT");
 	gpu.presentReadyFrameOnVblankEdge();
 	bmsx::g_gxGpuSoftwareVram.fill(0u);
 	require(bmsx::executeGxGpuSoftwareCommands(commandBuffer, 0u, commandBuffer.presentCommandCount) == 2u, "GX-GPU GP1 reset publishes accepted pre-reset work");
@@ -678,12 +677,12 @@ void testGp1CrtcRangeRegistersLatchMaskedRawWords() {
 	gpu.writeGp1((bmsx::GX_GPU_GP1_DISPLAY_START << 24u) | 0x00ffffffu);
 	gpu.writeGp1((bmsx::GX_GPU_GP1_HORIZONTAL_DISPLAY_RANGE << 24u) | 0x00ffffffu);
 	gpu.writeGp1((bmsx::GX_GPU_GP1_VERTICAL_DISPLAY_RANGE << 24u) | 0x00ffffffu);
-	gpu.writeGp1((bmsx::GX_GPU_GP1_ALLOW_TEXTURE_DISABLE << 24u) | 0x00ffffffu);
+	gpu.writeGp1((bmsx::GX_GPU_GP1_VRAM_Y_ADDRESS_EXTENSION << 24u) | 0x00ffffffu);
 
 	require(gpu.readDisplayStartWord() == bmsx::GX_GPU_DISPLAY_START_MASK, "GX-GPU GP1 display start mask");
 	require(gpu.readHorizontalDisplayRangeWord() == bmsx::GX_GPU_HORIZONTAL_DISPLAY_RANGE_MASK, "GX-GPU GP1 horizontal display range mask");
 	require(gpu.readVerticalDisplayRangeWord() == bmsx::GX_GPU_VERTICAL_DISPLAY_RANGE_MASK, "GX-GPU GP1 vertical display range mask");
-	require(gpu.readTextureDisableAllowedWord() == 1u, "GX-GPU GP1 texture-disable allowance latch");
+	require(gpu.readVramYAddressExtensionWord() == 1u, "GX-GPU GP1 VRAM Y-address extension latch");
 
 	require(gpu.readDeviceOutput().displayStartWord == 0u, "GX-GPU output display start remains latched before VBLANK");
 	completeGpuCommands(harness);
@@ -738,26 +737,26 @@ void testGp0DrawModeAndMaskBitEnvironmentCommands() {
 	gpu.writeGp0((bmsx::GX_GPU_GP0_DRAW_MODE << 24u) | 0x00ffffffu);
 	completeGpuCommands(harness);
 
-	require(gpu.readDrawModeWord() == (bmsx::GX_GPU_DRAW_MODE_MASK & ~bmsx::GX_GPU_DRAW_MODE_TEXTURE_DISABLE), "GX-GPU GP0 draw-mode ignores texture-disable before GP1 allow");
+	require(gpu.readDrawModeWord() == bmsx::GX_GPU_DRAW_MODE_MASK, "GX-GPU GP0 draw-mode latches texture-page Y-high independently of GP1 gate");
 	require((gpu.readStatus() & bmsx::GX_GPU_DRAW_MODE_GPUSTAT_MASK) == bmsx::GX_GPU_DRAW_MODE_GPUSTAT_MASK, "GX-GPU GP0 draw-mode GPUSTAT bits");
-	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_TEXTURE_DISABLE) == 0u, "GX-GPU GP0 texture-disable ignored before GP1 allow");
+	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_TEXTURE_PAGE_Y_HIGH) == bmsx::GX_GPU_STATUS_TEXTURE_PAGE_Y_HIGH, "GX-GPU texture-page Y-high mirrors to GPUSTAT before GP1 gate opens");
 	require((gpu.readDrawModeWord() & bmsx::GX_GPU_DRAW_MODE_DITHER_ENABLED) == bmsx::GX_GPU_DRAW_MODE_DITHER_ENABLED, "GX-GPU GP0 dither source bit");
 	require((gpu.readDrawModeWord() & bmsx::GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP) == bmsx::GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP, "GX-GPU GP0 textured rectangle X flip source bit");
 	require((gpu.readDrawModeWord() & bmsx::GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP) == bmsx::GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP, "GX-GPU GP0 textured rectangle Y flip source bit");
 
-	gpu.writeGp1((bmsx::GX_GPU_GP1_ALLOW_TEXTURE_DISABLE << 24u) | 1u);
-	require(gpu.readTextureDisableAllowedWord() == 1u, "GX-GPU GP1 texture-disable allowance raw word");
-	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_TEXTURE_DISABLE) == 0u, "GX-GPU GP1 texture-disable allowance does not set GPUSTAT by itself");
+	gpu.writeGp1((bmsx::GX_GPU_GP1_VRAM_Y_ADDRESS_EXTENSION << 24u) | 1u);
+	require(gpu.readVramYAddressExtensionWord() == 1u, "GX-GPU GP1 VRAM Y-address extension raw word");
+	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_TEXTURE_PAGE_Y_HIGH) == bmsx::GX_GPU_STATUS_TEXTURE_PAGE_Y_HIGH, "GX-GPU GP1 gate does not alter texture-page Y-high GPUSTAT");
 	gpu.writeGp0((bmsx::GX_GPU_GP0_DRAW_MODE << 24u) | 0x00ffffffu);
 	completeGpuCommands(harness);
-	require(gpu.readDrawModeWord() == bmsx::GX_GPU_DRAW_MODE_MASK, "GX-GPU GP0 draw-mode accepts texture-disable after GP1 allow");
-	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_TEXTURE_DISABLE) == bmsx::GX_GPU_STATUS_TEXTURE_DISABLE, "GX-GPU GP0 texture-disable mirrors to GPUSTAT when allowed");
+	require(gpu.readDrawModeWord() == bmsx::GX_GPU_DRAW_MODE_MASK, "GX-GPU GP0 draw-mode remains latched after opening the VRAM Y gate");
+	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_TEXTURE_PAGE_Y_HIGH) == bmsx::GX_GPU_STATUS_TEXTURE_PAGE_Y_HIGH, "GX-GPU texture-page Y-high remains mirrored after opening the VRAM Y gate");
 
 	gpu.writeGp0((bmsx::GX_GPU_GP0_MASK_BIT << 24u) | 0x00000003u);
 	completeGpuCommands(harness);
 	require(gpu.readMaskBitModeWord() == 3u, "GX-GPU GP0 mask-bit raw word");
 	require((gpu.readStatus() & ((1u << 11u) | (1u << 12u))) == (3u << 11u), "GX-GPU GP0 mask-bit GPUSTAT bits");
-	require((gpu.readDrawModeWord() & bmsx::GX_GPU_DRAW_MODE_TEXTURE_DISABLE) == bmsx::GX_GPU_DRAW_MODE_TEXTURE_DISABLE, "GX-GPU GP0 draw-mode texture-disable source bit");
+	require((gpu.readDrawModeWord() & bmsx::GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_HIGH) == bmsx::GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_HIGH, "GX-GPU GP0 draw-mode texture-page Y-high source bit");
 }
 
 void testGp0EnvironmentRegistersAndGpuInfoQueries() {
@@ -1196,7 +1195,8 @@ void pushSoftwareCommand(
 	uint32_t drawingAreaBottomRightWord = GX_GPU_SOFTWARE_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD,
 	uint32_t drawingOffsetWord = 0u,
 	uint32_t maskBitModeWord = 0u,
-	uint8_t interlacedRenderWord = 0u) {
+	uint8_t interlacedRenderWord = 0u,
+	uint8_t vramYAddressExtensionWord = 0u) {
 	const size_t wordStart = commandBuffer.appendWords(words.data(), wordCount);
 	commandBuffer.pushCommand(
 		kind,
@@ -1204,6 +1204,7 @@ void pushSoftwareCommand(
 		wordStart,
 		static_cast<uint32_t>(wordCount),
 		drawModeWord,
+		vramYAddressExtensionWord,
 		textureWindowWord,
 		drawingAreaTopLeftWord,
 		drawingAreaBottomRightWord,
@@ -1396,6 +1397,29 @@ void testGpureadPreservesRowMajorOrderAcrossXAndYWrap() {
 	bmsx::renderGxGpuSoftwareFrame(frame.backend, frame.state);
 	require(gpu.readGp0() == 0x22221111u, "GX-GPU GPUREAD preserves wrapped first row");
 	require(gpu.readGp0() == 0x44443333u, "GX-GPU GPUREAD preserves wrapped second row");
+}
+
+void testOpenYGateExposesAbsentUpperVramBankAsPulledDownStorage() {
+	GpuHarness harness;
+	bmsx::GxGpu& gpu = harness.gpu;
+	auto vramBytes = std::make_unique<std::array<bmsx::u8, bmsx::GX_GPU_VRAM_BYTE_COUNT>>();
+	(*vramBytes)[0u] = 0x34u;
+	(*vramBytes)[1u] = 0x12u;
+	gpu.replaceVramSnapshotBytes(vramBytes->data());
+	gpu.writeGp1((bmsx::GX_GPU_GP1_VRAM_Y_ADDRESS_EXTENSION << 24u) | 1u);
+	gpu.writeGp0(bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24u);
+	gpu.writeGp0(512u << 16u);
+	gpu.writeGp0((1u << 16u) | 1u);
+	gpu.writeGp0(0x0000abcdu);
+	gpu.writeGp0(bmsx::GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24u);
+	gpu.writeGp0(512u << 16u);
+	gpu.writeGp0((1u << 16u) | 1u);
+	completeGpuCommands(harness);
+	const bmsx::GxGpuDeviceOutput& output = gpu.readDeviceOutput();
+	SoftwareFrameHarness frame(output.commandBuffer, output.readbackPort);
+	frame.backend.executeGxGpuReadback(gpu);
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(0, 0)] == 0x1234u, "GX-GPU upper-bank write does not alias installed VRAM when Y gate is open");
+	require(gpu.readGp0() == 0u, "GX-GPU absent upper bank reads as a pulled-down word");
 }
 
 void testGpureadQueuesLaterC0BehindActiveFence() {
@@ -1659,6 +1683,7 @@ void testSoftwareBackendConsumesOnlyPresentableCommands() {
 		bmsx::GX_GPU_GP0_FILL_RECTANGLE,
 		wordStart,
 		static_cast<uint32_t>(words.size()),
+		0u,
 		0u,
 		0u,
 		0u,
@@ -2237,6 +2262,18 @@ void testSoftwareTextureWindowPageAndClutEdges() {
 		0x140146ffu,
 		(1u << 16u) | 2u,
 	}, 4u, bmsx::GX_GPU_COMMAND_DRAW_RECTANGLE, opcode, 0x0fu);
+	pushSoftwareCommand(commandBuffer, std::array<uint32_t, 4>{
+		(opcode << 24u) | 0x808080u,
+		(60u << 16u) | 60u,
+		(((100u << 6u) | (320u >> 4u)) << 16u),
+		(1u << 16u) | 1u,
+	}, 4u, bmsx::GX_GPU_COMMAND_DRAW_RECTANGLE, opcode, bmsx::GX_GPU_TEXTURE_MODE_PALETTE4 | bmsx::GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_HIGH, 0u, 0u, GX_GPU_SOFTWARE_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD, 0u, 0u, 0u, 1u);
+	pushSoftwareCommand(commandBuffer, std::array<uint32_t, 4>{
+		(opcode << 24u) | 0x808080u,
+		(60u << 16u) | 61u,
+		(((512u << 6u) | (320u >> 4u)) << 16u),
+		(1u << 16u) | 1u,
+	}, 4u, bmsx::GX_GPU_COMMAND_DRAW_RECTANGLE, opcode, bmsx::GX_GPU_TEXTURE_MODE_PALETTE4, 0u, 0u, GX_GPU_SOFTWARE_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD, 0u, 0u, 0u, 1u);
 
 	bmsx::g_gxGpuSoftwareVram.fill(0u);
 	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(15, 15)] = 0x001fu;
@@ -2254,6 +2291,9 @@ void testSoftwareTextureWindowPageAndClutEdges() {
 	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(960, 70)] = 0x0002u;
 	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(17, 80)] = 0x001fu;
 	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(18, 80)] = 0x03e0u;
+	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(0, 0)] = 0x0001u;
+	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(320, 100)] = 0x001fu;
+	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(61, 60)] = 0x7c00u;
 	bmsx::executeGxGpuSoftwareCommands(commandBuffer, 0u, commandBuffer.presentCommandCount);
 
 	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(10, 10)] == 0x001fu, "GX-GPU software texture window replaces the masked U bits");
@@ -2268,6 +2308,8 @@ void testSoftwareTextureWindowPageAndClutEdges() {
 	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(41, 40)] == 0x03e0u, "GX-GPU software palette8 samples the high byte and wraps the CLUT lookup horizontally");
 	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(50, 50)] == 0x001fu, "GX-GPU software palette4 samples the high nibble at the page edge");
 	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(51, 50)] == 0x03e0u, "GX-GPU software palette4 advances into the wrapped texture word");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(60, 60)] == 0x001fu, "GX-GPU software absent texture page still indexes installed CLUT entry zero");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(61, 60)] == 0x7c00u, "GX-GPU software absent CLUT produces transparent palette data independently of the texture page");
 }
 
 void testSoftwareDrawingAreaOffsetClippingAndRectangleCoordinateWrap() {
@@ -2481,10 +2523,10 @@ void testSoftwareDrawingAreaOffsetClippingAndRectangleCoordinateWrap() {
 	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(39, 19)] == 0u, "GX-GPU software drawing area clips line start");
 	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(46, 26)] == 0u, "GX-GPU software drawing area clips line end");
 	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(0, 0)] == 0x7fffu, "GX-GPU software rectangle wraps post-offset coordinates to signed 11-bit");
-	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(60, 8)] == 0x001fu, "GX-GPU software compares raw drawing Y before physical row aliasing");
-	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(61, 8)] == 0x03e0u, "GX-GPU software preserves command order across aliased logical rows");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(60, 8)] == 0x03e0u, "GX-GPU closed Y gate masks drawing-area Y9 before raster clipping");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(61, 8)] == 0x03e0u, "GX-GPU closed Y gate addresses the installed lower row");
 	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(105, 255)] == 0x020fu, "GX-GPU software preserves triangle order across aliased logical row bands");
-	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(125, 255)] == 0x010fu, "GX-GPU software blends against prior triangle writes across aliased logical row bands");
+	require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(125, 255)] == 0x0107u, "GX-GPU closed Y gate rasterizes one installed-bank triangle sample");
 }
 
 void testSoftwareFillBypassesDrawingAreaAndMaskBitDrawingState() {
@@ -3205,6 +3247,7 @@ int main() {
 	testSoftwareTextureModulationMath();
 	testGpureadFencesBackendWorkAndPacksWrappedOddPixels();
 	testGpureadPreservesRowMajorOrderAcrossXAndYWrap();
+	testOpenYGateExposesAbsentUpperVramBankAsPulledDownStorage();
 	testGpureadQueuesLaterC0BehindActiveFence();
 	testGpureadDoesNotClaimC0AppendedAfterPublishedFence();
 	testGp1ClearFifoAbortsPendingGpureadWithoutDroppingPriorCommands();

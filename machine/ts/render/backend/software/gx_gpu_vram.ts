@@ -1,9 +1,8 @@
 import {
 	GX_GPU_INTERLACED_RENDER_ACTIVE_LINE_LSB,
 	GX_GPU_INTERLACED_RENDER_ENABLE,
-	GX_GPU_VRAM_HEIGHT,
-	GX_GPU_VRAM_WIDTH,
 } from '../../../machine/devices/gx/gpu_command_buffer';
+import { GX_GPU_VRAM_HEIGHT, GX_GPU_VRAM_WIDTH } from '../../../machine/devices/gx/vram_address';
 import { gxGpuMaskBitCheckBeforeDraw, gxGpuMaskBitSetWhileDrawing } from '../gx_gpu_render_rules';
 
 export const GX_GPU_SOFTWARE_VRAM_WORDS = GX_GPU_VRAM_WIDTH * GX_GPU_VRAM_HEIGHT;

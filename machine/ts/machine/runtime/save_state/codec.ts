@@ -22,7 +22,13 @@ import {
 	type GeometryControllerPhase,
 } from '../../devices/geometry/contracts';
 import { GX_GPU_GP0_COMMAND_BUFFER_WORDS, type GxGpuSaveState, type GxGpuState } from '../../devices/gx/gpu';
-import { GX_GPU_COMMAND_CAPACITY, GX_GPU_COMMAND_WORD_CAPACITY, GX_GPU_READBACK_READY, GX_GPU_READBACK_SUBMITTED, GX_GPU_VRAM_BYTE_COUNT, type GxGpuCommandBufferState } from '../../devices/gx/gpu_command_buffer';
+import { GX_GPU_COMMAND_CAPACITY, GX_GPU_COMMAND_WORD_CAPACITY, GX_GPU_READBACK_READY, GX_GPU_READBACK_SUBMITTED, type GxGpuCommandBufferState } from '../../devices/gx/gpu_command_buffer';
+import {
+	GX_GPU_VRAM_BYTE_COUNT,
+	GX_GPU_VRAM_HEIGHT,
+	GX_GPU_VRAM_WIDTH,
+	GX_GPU_VRAM_Y_ADDRESS_PERIOD,
+} from '../../devices/gx/vram_address';
 import { GX_GPU_COMMAND_FIFO_STORAGE_WORD_CAPACITY } from '../../devices/gx/gpu_command_fifo';
 import type { GxGteState } from '../../devices/gx/gte';
 import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT } from '../../devices/gx/gte';
@@ -451,6 +457,7 @@ function encodeGxGpuCommandBufferState(state: GxGpuCommandBufferState): GxGpuCom
 		commandWordStart: encodeVector(state.commandWordStart, (word) => word >>> 0),
 		commandWordCount: encodeVector(state.commandWordCount, (word) => word >>> 0),
 		commandDrawModeWord: encodeVector(state.commandDrawModeWord, (word) => word >>> 0),
+		commandVramYAddressExtensionWord: encodeVector(state.commandVramYAddressExtensionWord, (word) => word >>> 0),
 		commandTextureWindowWord: encodeVector(state.commandTextureWindowWord, (word) => word >>> 0),
 		commandDrawingAreaTopLeftWord: encodeVector(state.commandDrawingAreaTopLeftWord, (word) => word >>> 0),
 		commandDrawingAreaBottomRightWord: encodeVector(state.commandDrawingAreaBottomRightWord, (word) => word >>> 0),
@@ -462,6 +469,7 @@ function encodeGxGpuCommandBufferState(state: GxGpuCommandBufferState): GxGpuCom
 		readbackFenceCommandCount: state.readbackFenceCommandCount,
 		readbackX: state.readbackX,
 		readbackY: state.readbackY,
+		readbackVramYAddressExtensionWord: state.readbackVramYAddressExtensionWord,
 		readbackWidth: state.readbackWidth,
 		readbackHeight: state.readbackHeight,
 		readbackPixelCursor: state.readbackPixelCursor,
@@ -475,8 +483,8 @@ function decodeGxGpuCommandBufferState(value: unknown, label: string): GxGpuComm
 	const executedCommandCount = requireBoundedU32(requireObjectKey(object, 'executedCommandCount', label, `${label}.executedCommandCount`), `${label}.executedCommandCount`, 0, commandCount);
 	const presentCommandCount = requireBoundedU32(requireObjectKey(object, 'presentCommandCount', label, `${label}.presentCommandCount`), `${label}.presentCommandCount`, 0, executedCommandCount);
 	const wordCount = requireBoundedU32(requireObjectKey(object, 'wordCount', label, `${label}.wordCount`), `${label}.wordCount`, 0, GX_GPU_COMMAND_WORD_CAPACITY);
-	const readbackWidth = requireBoundedU32(requireObjectKey(object, 'readbackWidth', label, `${label}.readbackWidth`), `${label}.readbackWidth`, 0, 1024);
-	const readbackHeight = requireBoundedU32(requireObjectKey(object, 'readbackHeight', label, `${label}.readbackHeight`), `${label}.readbackHeight`, 0, 512);
+	const readbackWidth = requireBoundedU32(requireObjectKey(object, 'readbackWidth', label, `${label}.readbackWidth`), `${label}.readbackWidth`, 0, GX_GPU_VRAM_WIDTH);
+	const readbackHeight = requireBoundedU32(requireObjectKey(object, 'readbackHeight', label, `${label}.readbackHeight`), `${label}.readbackHeight`, 0, GX_GPU_VRAM_HEIGHT);
 	const readbackPixelCount = readbackWidth * readbackHeight;
 	const readbackPhase = requireBoundedU32(requireObjectKey(object, 'readbackPhase', label, `${label}.readbackPhase`), `${label}.readbackPhase`, 0, GX_GPU_READBACK_READY);
 	if (readbackPhase === GX_GPU_READBACK_SUBMITTED) {
@@ -492,6 +500,7 @@ function decodeGxGpuCommandBufferState(value: unknown, label: string): GxGpuComm
 		commandWordStart: decodeU32FixedArray(requireObjectKey(object, 'commandWordStart', label, `${label}.commandWordStart`), `${label}.commandWordStart`, commandCount),
 		commandWordCount: decodeU32FixedArray(requireObjectKey(object, 'commandWordCount', label, `${label}.commandWordCount`), `${label}.commandWordCount`, commandCount),
 		commandDrawModeWord: decodeU32FixedArray(requireObjectKey(object, 'commandDrawModeWord', label, `${label}.commandDrawModeWord`), `${label}.commandDrawModeWord`, commandCount),
+		commandVramYAddressExtensionWord: decodeU8FixedArray(requireObjectKey(object, 'commandVramYAddressExtensionWord', label, `${label}.commandVramYAddressExtensionWord`), `${label}.commandVramYAddressExtensionWord`, commandCount),
 		commandTextureWindowWord: decodeU32FixedArray(requireObjectKey(object, 'commandTextureWindowWord', label, `${label}.commandTextureWindowWord`), `${label}.commandTextureWindowWord`, commandCount),
 		commandDrawingAreaTopLeftWord: decodeU32FixedArray(requireObjectKey(object, 'commandDrawingAreaTopLeftWord', label, `${label}.commandDrawingAreaTopLeftWord`), `${label}.commandDrawingAreaTopLeftWord`, commandCount),
 		commandDrawingAreaBottomRightWord: decodeU32FixedArray(requireObjectKey(object, 'commandDrawingAreaBottomRightWord', label, `${label}.commandDrawingAreaBottomRightWord`), `${label}.commandDrawingAreaBottomRightWord`, commandCount),
@@ -501,8 +510,9 @@ function decodeGxGpuCommandBufferState(value: unknown, label: string): GxGpuComm
 		words: decodeU32FixedArray(requireObjectKey(object, 'words', label, `${label}.words`), `${label}.words`, wordCount),
 		readbackPhase,
 		readbackFenceCommandCount: requireBoundedU32(requireObjectKey(object, 'readbackFenceCommandCount', label, `${label}.readbackFenceCommandCount`), `${label}.readbackFenceCommandCount`, 0, commandCount),
-		readbackX: requireBoundedU32(requireObjectKey(object, 'readbackX', label, `${label}.readbackX`), `${label}.readbackX`, 0, 1023),
-		readbackY: requireBoundedU32(requireObjectKey(object, 'readbackY', label, `${label}.readbackY`), `${label}.readbackY`, 0, 511),
+		readbackX: requireBoundedU32(requireObjectKey(object, 'readbackX', label, `${label}.readbackX`), `${label}.readbackX`, 0, GX_GPU_VRAM_WIDTH - 1),
+		readbackY: requireBoundedU32(requireObjectKey(object, 'readbackY', label, `${label}.readbackY`), `${label}.readbackY`, 0, GX_GPU_VRAM_Y_ADDRESS_PERIOD - 1),
+		readbackVramYAddressExtensionWord: requireBoundedU32(requireObjectKey(object, 'readbackVramYAddressExtensionWord', label, `${label}.readbackVramYAddressExtensionWord`), `${label}.readbackVramYAddressExtensionWord`, 0, 1),
 		readbackWidth,
 		readbackHeight,
 		readbackPixelCursor: requireBoundedU32(requireObjectKey(object, 'readbackPixelCursor', label, `${label}.readbackPixelCursor`), `${label}.readbackPixelCursor`, 0, readbackPixelCount),
@@ -542,13 +552,14 @@ function encodeGxGpuState(state: GxGpuState): GxGpuState {
 		displayStartWord: state.displayStartWord >>> 0,
 		horizontalDisplayRangeWord: state.horizontalDisplayRangeWord >>> 0,
 		verticalDisplayRangeWord: state.verticalDisplayRangeWord >>> 0,
-		textureDisableAllowedWord: state.textureDisableAllowedWord >>> 0,
+		vramYAddressExtensionWord: state.vramYAddressExtensionWord >>> 0,
 		scanoutInterlacedField: state.scanoutInterlacedField >>> 0,
 		scanoutInterlacedDisplayField: state.scanoutInterlacedDisplayField >>> 0,
 		scanoutActiveLineLsb: state.scanoutActiveLineLsb >>> 0,
 		presentStatusWord: state.presentStatusWord >>> 0,
 		presentDisplayModeWord: state.presentDisplayModeWord >>> 0,
 		presentDisplayStartWord: state.presentDisplayStartWord >>> 0,
+		presentVramYAddressExtensionWord: state.presentVramYAddressExtensionWord >>> 0,
 		presentHorizontalDisplayRangeWord: state.presentHorizontalDisplayRangeWord >>> 0,
 		presentVerticalDisplayRangeWord: state.presentVerticalDisplayRangeWord >>> 0,
 		vramPresentationPending: state.vramPresentationPending,
@@ -592,13 +603,14 @@ function decodeGxGpuState(value: unknown, label: string): GxGpuState {
 		displayStartWord: requireBoundedU32(requireObjectKey(object, 'displayStartWord', label, `${label}.displayStartWord`), `${label}.displayStartWord`, 0, 0xffffffff),
 		horizontalDisplayRangeWord: requireBoundedU32(requireObjectKey(object, 'horizontalDisplayRangeWord', label, `${label}.horizontalDisplayRangeWord`), `${label}.horizontalDisplayRangeWord`, 0, 0xffffffff),
 		verticalDisplayRangeWord: requireBoundedU32(requireObjectKey(object, 'verticalDisplayRangeWord', label, `${label}.verticalDisplayRangeWord`), `${label}.verticalDisplayRangeWord`, 0, 0xffffffff),
-		textureDisableAllowedWord: requireBoundedU32(requireObjectKey(object, 'textureDisableAllowedWord', label, `${label}.textureDisableAllowedWord`), `${label}.textureDisableAllowedWord`, 0, 0xffffffff),
+		vramYAddressExtensionWord: requireBoundedU32(requireObjectKey(object, 'vramYAddressExtensionWord', label, `${label}.vramYAddressExtensionWord`), `${label}.vramYAddressExtensionWord`, 0, 0xffffffff),
 		scanoutInterlacedField: requireBoundedU32(requireObjectKey(object, 'scanoutInterlacedField', label, `${label}.scanoutInterlacedField`), `${label}.scanoutInterlacedField`, 0, 1),
 		scanoutInterlacedDisplayField: requireBoundedU32(requireObjectKey(object, 'scanoutInterlacedDisplayField', label, `${label}.scanoutInterlacedDisplayField`), `${label}.scanoutInterlacedDisplayField`, 0, 1),
 		scanoutActiveLineLsb: requireBoundedU32(requireObjectKey(object, 'scanoutActiveLineLsb', label, `${label}.scanoutActiveLineLsb`), `${label}.scanoutActiveLineLsb`, 0, 1),
 		presentStatusWord: requireBoundedU32(requireObjectKey(object, 'presentStatusWord', label, `${label}.presentStatusWord`), `${label}.presentStatusWord`, 0, 0xffffffff),
 		presentDisplayModeWord: requireBoundedU32(requireObjectKey(object, 'presentDisplayModeWord', label, `${label}.presentDisplayModeWord`), `${label}.presentDisplayModeWord`, 0, 0xffffffff),
 		presentDisplayStartWord: requireBoundedU32(requireObjectKey(object, 'presentDisplayStartWord', label, `${label}.presentDisplayStartWord`), `${label}.presentDisplayStartWord`, 0, 0xffffffff),
+		presentVramYAddressExtensionWord: requireBoundedU32(requireObjectKey(object, 'presentVramYAddressExtensionWord', label, `${label}.presentVramYAddressExtensionWord`), `${label}.presentVramYAddressExtensionWord`, 0, 1),
 		presentHorizontalDisplayRangeWord: requireBoundedU32(requireObjectKey(object, 'presentHorizontalDisplayRangeWord', label, `${label}.presentHorizontalDisplayRangeWord`), `${label}.presentHorizontalDisplayRangeWord`, 0, 0xffffffff),
 		presentVerticalDisplayRangeWord: requireBoundedU32(requireObjectKey(object, 'presentVerticalDisplayRangeWord', label, `${label}.presentVerticalDisplayRangeWord`), `${label}.presentVerticalDisplayRangeWord`, 0, 0xffffffff),
 		vramPresentationPending: requireBooleanValue(requireObjectKey(object, 'vramPresentationPending', label, `${label}.vramPresentationPending`), `${label}.vramPresentationPending`),

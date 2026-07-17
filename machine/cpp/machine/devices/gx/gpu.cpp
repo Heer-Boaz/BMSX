@@ -27,7 +27,7 @@ GxGpu::GxGpu(Memory& memory, IrqController& irq, DeviceScheduler& scheduler, Dma
 }
 
 void GxGpu::reset() {
-	m_textureDisableAllowedWord = 0u;
+	m_vramYAddressExtensionWord = 0u;
 	m_gpuReadWord = 0u;
 	m_commandBuffer.reset();
 	initializeGxGpuVramPowerOn(m_vramSnapshotBytes.data());
@@ -54,6 +54,7 @@ void GxGpu::resetGpuRegisters() {
 	m_presentStatusWord = GX_GPU_STATUS_RESET_WORD;
 	m_presentDisplayModeWord = GX_GPU_RESET_DISPLAY_MODE_WORD;
 	m_presentDisplayStartWord = 0u;
+	m_presentVramYAddressExtensionWord = m_vramYAddressExtensionWord;
 	m_presentHorizontalDisplayRangeWord = GX_GPU_RESET_HORIZONTAL_DISPLAY_RANGE_WORD;
 	m_presentVerticalDisplayRangeWord = GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD;
 	m_scanoutVblankActive = false;
@@ -109,13 +110,14 @@ GxGpuState GxGpu::captureState() {
 	state.displayStartWord = m_displayStartWord;
 	state.horizontalDisplayRangeWord = m_horizontalDisplayRangeWord;
 	state.verticalDisplayRangeWord = m_verticalDisplayRangeWord;
-	state.textureDisableAllowedWord = m_textureDisableAllowedWord;
+	state.vramYAddressExtensionWord = m_vramYAddressExtensionWord;
 	state.scanoutInterlacedField = m_scanoutInterlacedField;
 	state.scanoutInterlacedDisplayField = m_scanoutInterlacedDisplayField;
 	state.scanoutActiveLineLsb = m_scanoutActiveLineLsb;
 	state.presentStatusWord = m_presentStatusWord;
 	state.presentDisplayModeWord = m_presentDisplayModeWord;
 	state.presentDisplayStartWord = m_presentDisplayStartWord;
+	state.presentVramYAddressExtensionWord = m_presentVramYAddressExtensionWord;
 	state.presentHorizontalDisplayRangeWord = m_presentHorizontalDisplayRangeWord;
 	state.presentVerticalDisplayRangeWord = m_presentVerticalDisplayRangeWord;
 	state.vramPresentationPending = m_vramPresentationPending;
@@ -158,13 +160,14 @@ void GxGpu::restoreState(const GxGpuState& state) {
 	m_displayStartWord = state.displayStartWord;
 	m_horizontalDisplayRangeWord = state.horizontalDisplayRangeWord;
 	m_verticalDisplayRangeWord = state.verticalDisplayRangeWord;
-	m_textureDisableAllowedWord = state.textureDisableAllowedWord;
+	m_vramYAddressExtensionWord = state.vramYAddressExtensionWord;
 	m_scanoutInterlacedField = state.scanoutInterlacedField;
 	m_scanoutInterlacedDisplayField = state.scanoutInterlacedDisplayField;
 	m_scanoutActiveLineLsb = state.scanoutActiveLineLsb;
 	m_presentStatusWord = state.presentStatusWord;
 	m_presentDisplayModeWord = state.presentDisplayModeWord;
 	m_presentDisplayStartWord = state.presentDisplayStartWord;
+	m_presentVramYAddressExtensionWord = state.presentVramYAddressExtensionWord;
 	m_presentHorizontalDisplayRangeWord = state.presentHorizontalDisplayRangeWord;
 	m_presentVerticalDisplayRangeWord = state.presentVerticalDisplayRangeWord;
 	m_vramPresentationPending = state.vramPresentationPending;
@@ -411,8 +414,8 @@ u32 GxGpu::writeGp1(u32 word) {
 	case GX_GPU_GP1_DISPLAY_MODE:
 		writeDisplayModeWord(word & GX_GPU_DISPLAY_MODE_MASK);
 		break;
-	case GX_GPU_GP1_ALLOW_TEXTURE_DISABLE:
-		m_textureDisableAllowedWord = word & 0x1u;
+	case GX_GPU_GP1_VRAM_Y_ADDRESS_EXTENSION:
+		m_vramYAddressExtensionWord = word & 0x1u;
 		writeStatusIo();
 		break;
 	case GX_GPU_GP1_GET_GPU_INFO:
@@ -469,6 +472,7 @@ const GxGpuDeviceOutput& GxGpu::readDeviceOutput() {
 	m_deviceOutput.statusWord = m_presentStatusWord;
 	m_deviceOutput.displayModeWord = m_presentDisplayModeWord;
 	m_deviceOutput.displayStartWord = m_presentDisplayStartWord;
+	m_deviceOutput.vramYAddressExtensionWord = m_presentVramYAddressExtensionWord;
 	m_deviceOutput.horizontalDisplayRangeWord = m_presentHorizontalDisplayRangeWord;
 	m_deviceOutput.verticalDisplayRangeWord = m_presentVerticalDisplayRangeWord;
 	m_deviceOutput.vramSnapshotSerial = m_vramSnapshotSerial;
@@ -485,11 +489,13 @@ void GxGpu::presentReadyFrameOnVblankEdge() {
 	const bool scanoutStateChanged = (m_presentStatusWord & visibleStatusMask) != visibleStatusWord
 		|| m_presentDisplayModeWord != m_displayModeWord
 		|| m_presentDisplayStartWord != m_displayStartWord
+		|| m_presentVramYAddressExtensionWord != m_vramYAddressExtensionWord
 		|| m_presentHorizontalDisplayRangeWord != m_horizontalDisplayRangeWord
 		|| m_presentVerticalDisplayRangeWord != m_verticalDisplayRangeWord;
 	m_presentStatusWord = m_statusWord;
 	m_presentDisplayModeWord = m_displayModeWord;
 	m_presentDisplayStartWord = m_displayStartWord;
+	m_presentVramYAddressExtensionWord = m_vramYAddressExtensionWord;
 	m_presentHorizontalDisplayRangeWord = m_horizontalDisplayRangeWord;
 	m_presentVerticalDisplayRangeWord = m_verticalDisplayRangeWord;
 	m_commandBuffer.sealCommandsForPresentation();
@@ -555,8 +561,8 @@ u32 GxGpu::readVerticalDisplayRangeWord() const {
 	return m_verticalDisplayRangeWord;
 }
 
-u32 GxGpu::readTextureDisableAllowedWord() const {
-	return m_textureDisableAllowedWord;
+u32 GxGpu::readVramYAddressExtensionWord() const {
+	return m_vramYAddressExtensionWord;
 }
 
 void GxGpu::writeDisplayDisableWord(u32 word) {
@@ -728,6 +734,7 @@ void GxGpu::pushGpuCommand(u8 kind, u32 opcode, size_t wordStart, u32 commandWor
 		wordStart,
 		commandWordCount,
 		m_drawModeWord,
+		static_cast<u8>(m_vramYAddressExtensionWord),
 		m_textureWindowWord,
 		m_drawingAreaTopLeftWord,
 		m_drawingAreaBottomRightWord,
@@ -742,6 +749,7 @@ void GxGpu::pushGpuCommand(u8 kind, u32 opcode, size_t wordStart, u32 commandWor
 			wordStart,
 			commandWordCount,
 			m_drawModeWord,
+			m_vramYAddressExtensionWord,
 			m_drawingAreaTopLeftWord,
 			m_drawingAreaBottomRightWord,
 			m_drawingOffsetWord,
@@ -763,19 +771,16 @@ void GxGpu::beginImageLoadToVram(u32 opcode, u32 commandWordCount) {
 
 void GxGpu::writeDrawModeWord(u32 word) {
 	m_drawModeWord = word & GX_GPU_DRAW_MODE_MASK;
-	if (m_textureDisableAllowedWord == 0u) {
-		m_drawModeWord &= ~GX_GPU_DRAW_MODE_TEXTURE_DISABLE;
-	}
 	updateDrawModeStatusBits();
 }
 
 void GxGpu::updateDrawModeStatusBits() {
-	const u32 textureDisable = (m_drawModeWord & GX_GPU_DRAW_MODE_TEXTURE_DISABLE) != 0u
-		? GX_GPU_STATUS_TEXTURE_DISABLE
+	const u32 texturePageYHigh = (m_drawModeWord & GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_HIGH) != 0u
+		? GX_GPU_STATUS_TEXTURE_PAGE_Y_HIGH
 		: 0u;
-	m_statusWord = (m_statusWord & ~(GX_GPU_DRAW_MODE_GPUSTAT_MASK | GX_GPU_STATUS_TEXTURE_DISABLE))
+	m_statusWord = (m_statusWord & ~(GX_GPU_DRAW_MODE_GPUSTAT_MASK | GX_GPU_STATUS_TEXTURE_PAGE_Y_HIGH))
 		| (m_drawModeWord & GX_GPU_DRAW_MODE_GPUSTAT_MASK)
-		| textureDisable;
+		| texturePageYHigh;
 }
 
 void GxGpu::writeMaskBitModeWord(u32 word) {
@@ -888,7 +893,7 @@ int GxGpu::scanoutLine() const {
 
 void GxGpu::updateScanoutStatusBits() {
 	u32 scanoutBits = 0u;
-	const u32 displayStartY = gxGpuDisplayStartY(m_displayStartWord);
+	const u32 displayStartY = gxGpuDisplayStartY(m_displayStartWord, m_vramYAddressExtensionWord);
 	if (gpuStatInInterleaved480iMode()) {
 		m_scanoutActiveLineLsb = (displayStartY + m_scanoutInterlacedDisplayField) & 1u;
 		const u32 displayedField = m_scanoutVblankActive ? 0u : m_scanoutInterlacedDisplayField;

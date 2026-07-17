@@ -15,7 +15,7 @@ import { registerHeadlessPasses, registerHeadlessPresentPass } from './passes';
 import { registerHostOverlayPass_Headless, registerHostMenuPass_Headless } from '../host_overlay/headless/pipeline';
 import { captureGxGpuVramSnapshot, executeGxGpuSoftwareVramCommands } from '../backend/software/gx_gpu';
 import type { GxGpu } from '../../machine/devices/gx/gpu';
-import { GX_GPU_VRAM_BYTE_COUNT } from '../../machine/devices/gx/gpu_command_buffer';
+import { GX_GPU_VRAM_BYTE_COUNT } from '../../machine/devices/gx/vram_address';
 
 type HeadlessTextureRecord = {
 	id: number;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "machine/devices/gx/gpu_command_buffer.h"
+#include "machine/devices/gx/vram_address.h"
 #include "machine/devices/gx/gpu_display.h"
 
 namespace bmsx {
@@ -123,14 +124,6 @@ inline bool gxGpuCommandTextureEnabled(u32 opcode) {
 	return (opcode & 0x04u) != 0u;
 }
 
-inline bool gxGpuDrawModeTextureDisableEnabled(u32 drawModeWord) {
-	return (drawModeWord & GX_GPU_DRAW_MODE_TEXTURE_DISABLE) != 0u;
-}
-
-inline bool gxGpuCommandDrawsTexture(u32 opcode, u32 drawModeWord) {
-	return gxGpuCommandTextureEnabled(opcode) && !gxGpuDrawModeTextureDisableEnabled(drawModeWord);
-}
-
 inline bool gxGpuCommandQuadPolygon(u32 opcode) {
 	return (opcode & 0x08u) != 0u;
 }
@@ -182,21 +175,23 @@ inline u32 gxGpuVramWrappedWidth(u32 x, u32 width) {
 	return width <= edgeWidth ? width : edgeWidth;
 }
 
-inline u32 gxGpuVramWrappedHeight(u32 y, u32 height) {
-	const u32 edgeHeight = GX_GPU_VRAM_HEIGHT - y;
+inline u32 gxGpuVramWrappedHeight(u32 y, u32 height, u32 vramYAddressExtensionWord) {
+	const u32 logicalY = gxGpuVramYAddress(y, vramYAddressExtensionWord);
+	const u32 edgeHeight = GX_GPU_VRAM_HEIGHT - (logicalY & (GX_GPU_VRAM_HEIGHT - 1u));
 	return height <= edgeHeight ? height : edgeHeight;
 }
 
-inline bool gxGpuVramLogicalAreaOverlapsBounds(u32 x, u32 y, u32 width, u32 height, i32 left, i32 top, i32 right, i32 bottom) {
+inline bool gxGpuVramLogicalAreaOverlapsBounds(u32 x, u32 y, u32 width, u32 height, i32 left, i32 top, i32 right, i32 bottom, u32 vramYAddressExtensionWord) {
 	if (right <= left || bottom <= top) return false;
-	u32 boundsY = static_cast<u32>(top) & (GX_GPU_VRAM_HEIGHT - 1u);
+	const u32 yAddressMask = gxGpuVramYAddressMask(vramYAddressExtensionWord);
+	u32 boundsY = static_cast<u32>(top) & yAddressMask;
 	u32 remainingBoundsHeight = static_cast<u32>(bottom - top);
 	while (remainingBoundsHeight != 0u) {
-		const u32 boundsRunHeight = gxGpuVramWrappedHeight(boundsY, remainingBoundsHeight);
-		u32 rowY = y & (GX_GPU_VRAM_HEIGHT - 1u);
+		const u32 boundsRunHeight = gxGpuVramWrappedHeight(boundsY, remainingBoundsHeight, vramYAddressExtensionWord);
+		u32 rowY = y & yAddressMask;
 		u32 remainingHeight = height;
 		while (remainingHeight != 0u) {
-			const u32 runHeight = gxGpuVramWrappedHeight(rowY, remainingHeight);
+			const u32 runHeight = gxGpuVramWrappedHeight(rowY, remainingHeight, vramYAddressExtensionWord);
 			u32 columnX = x & (GX_GPU_VRAM_WIDTH - 1u);
 			u32 remainingWidth = width;
 			while (remainingWidth != 0u) {
@@ -205,10 +200,10 @@ inline bool gxGpuVramLogicalAreaOverlapsBounds(u32 x, u32 y, u32 width, u32 heig
 				columnX = (columnX + runWidth) & (GX_GPU_VRAM_WIDTH - 1u);
 				remainingWidth -= runWidth;
 			}
-			rowY = (rowY + runHeight) & (GX_GPU_VRAM_HEIGHT - 1u);
+			rowY = (rowY + runHeight) & yAddressMask;
 			remainingHeight -= runHeight;
 		}
-		boundsY = (boundsY + boundsRunHeight) & (GX_GPU_VRAM_HEIGHT - 1u);
+		boundsY = (boundsY + boundsRunHeight) & yAddressMask;
 		remainingBoundsHeight -= boundsRunHeight;
 	}
 	return false;
@@ -234,8 +229,8 @@ inline u32 gxGpuTransferX(u32 xyWord) {
 	return xyWord & 0x3ffu;
 }
 
-inline u32 gxGpuTransferY(u32 xyWord) {
-	return (xyWord >> 16u) & 0x1ffu;
+inline u32 gxGpuTransferY(u32 xyWord, u32 vramYAddressExtensionWord) {
+	return gxGpuVramYAddress(xyWord >> 16u, vramYAddressExtensionWord);
 }
 
 inline u32 gxGpuTransferPixelWord(u32 payloadWord, u32 pixelIndex) {
@@ -264,8 +259,8 @@ inline u32 gxGpuTextureClutBaseX(u32 textureWord) {
 	return (gxGpuTextureAttribute(textureWord) & 0x3fu) << 4u;
 }
 
-inline u32 gxGpuTextureClutBaseY(u32 textureWord) {
-	return (gxGpuTextureAttribute(textureWord) >> 6u) & 0x1ffu;
+inline u32 gxGpuTextureClutBaseY(u32 textureWord, u32 vramYAddressExtensionWord) {
+	return gxGpuVramYAddress(gxGpuTextureAttribute(textureWord) >> 6u, vramYAddressExtensionWord);
 }
 
 inline bool gxGpuDrawModeDitherEnabled(u32 drawModeWord) {
@@ -306,7 +301,7 @@ inline i64 gxGpuTriangleEdgeCoverageMinimum(i64 stepX, i64 stepY) {
 
 inline bool gxGpuDitheredPolygon(u32 drawModeWord, u32 opcode) {
 	return gxGpuDrawModeDitherEnabled(drawModeWord)
-		&& (gxGpuCommandDrawsTexture(opcode, drawModeWord)
+		&& (gxGpuCommandTextureEnabled(opcode)
 			? !gxGpuCommandRawTextureEnabled(opcode)
 			: gxGpuCommandGouraud(opcode));
 }
@@ -315,8 +310,8 @@ inline u32 gxGpuDrawModeTexturePageBaseX(u32 drawModeWord) {
 	return (drawModeWord & 0x0fu) << 6u;
 }
 
-inline u32 gxGpuDrawModeTexturePageBaseY(u32 drawModeWord) {
-	return ((drawModeWord >> 4u) & 0x01u) << 8u;
+inline u32 gxGpuDrawModeTexturePageBaseY(u32 drawModeWord, u32 vramYAddressExtensionWord) {
+	return gxGpuVramYAddress((((drawModeWord >> 4u) & 0x01u) << 8u) | (((drawModeWord >> 11u) & 0x01u) << 9u), vramYAddressExtensionWord);
 }
 
 inline u32 gxGpuDrawModeTextureMode(u32 drawModeWord) {

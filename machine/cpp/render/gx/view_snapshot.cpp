@@ -11,6 +11,7 @@ void commitGxGpuViewSnapshot(GameView& view, const GxGpuDeviceOutput& output) {
 	view.gxGpuStatusWord = output.statusWord;
 	view.gxGpuDisplayModeWord = output.displayModeWord;
 	view.gxGpuDisplayStartWord = output.displayStartWord;
+	view.gxGpuVramYAddressExtensionWord = output.vramYAddressExtensionWord;
 	view.gxGpuHorizontalDisplayRangeWord = output.horizontalDisplayRangeWord;
 	view.gxGpuVerticalDisplayRangeWord = output.verticalDisplayRangeWord;
 	view.gxGpuVramSnapshotBytes = &output.vramSnapshotBytes;

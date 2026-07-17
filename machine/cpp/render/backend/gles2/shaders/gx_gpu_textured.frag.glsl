@@ -7,6 +7,8 @@ precision highp float;
 uniform sampler2D u_vram;
 uniform vec2 u_texPageBase;
 uniform vec2 u_clutBase;
+uniform float u_texturePageReadMask;
+uniform float u_clutReadMask;
 uniform vec2 u_textureWindowAnd;
 uniform vec2 u_textureWindowOr;
 uniform float u_textureMode;
@@ -127,19 +129,19 @@ vec4 samplePsxTexture() {
 	float textureWord;
 	if (u_textureMode < 0.5) {
 		vec2 wordCoord = vec2(u_texPageBase.x + floor(windowed.x / 4.0), u_texPageBase.y + windowed.y);
-		textureWord = rawVramWord(wordCoord);
+		textureWord = rawVramWord(wordCoord) * u_texturePageReadMask;
 		float paletteIndex = palette4Index(textureWord, windowed.x);
-		float paletteWord = rawVramWord(vec2(u_clutBase.x + paletteIndex, u_clutBase.y));
+		float paletteWord = rawVramWord(vec2(u_clutBase.x + paletteIndex, u_clutBase.y)) * u_clutReadMask;
 		return vec4(decodeRgb555To5(paletteWord), paletteWord == 0.0 ? -1.0 : wordMaskBit(paletteWord));
 	}
 	if (u_textureMode < 1.5) {
 		vec2 wordCoord = vec2(u_texPageBase.x + floor(windowed.x / 2.0), u_texPageBase.y + windowed.y);
-		textureWord = rawVramWord(wordCoord);
+		textureWord = rawVramWord(wordCoord) * u_texturePageReadMask;
 		float paletteIndex = palette8Index(textureWord, windowed.x);
-		float paletteWord = rawVramWord(vec2(u_clutBase.x + paletteIndex, u_clutBase.y));
+		float paletteWord = rawVramWord(vec2(u_clutBase.x + paletteIndex, u_clutBase.y)) * u_clutReadMask;
 		return vec4(decodeRgb555To5(paletteWord), paletteWord == 0.0 ? -1.0 : wordMaskBit(paletteWord));
 	}
-	textureWord = rawVramWord(u_texPageBase + windowed);
+	textureWord = rawVramWord(u_texPageBase + windowed) * u_texturePageReadMask;
 	return vec4(decodeRgb555To5(textureWord), textureWord == 0.0 ? -1.0 : wordMaskBit(textureWord));
 }
 

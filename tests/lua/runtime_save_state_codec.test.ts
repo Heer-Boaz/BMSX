@@ -16,7 +16,8 @@ import {
 	apuSlotRegisterWordIndex,
 } from '../../machine/ts/machine/devices/audio/contracts';
 import { GEOMETRY_CONTROLLER_PHASE_BUSY, GEOMETRY_CONTROLLER_REGISTER_COUNT } from '../../machine/ts/machine/devices/geometry/contracts';
-import { GX_GPU_READBACK_READY, GX_GPU_READBACK_SUBMITTED, GX_GPU_VRAM_BYTE_COUNT } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
+import { GX_GPU_READBACK_READY, GX_GPU_READBACK_SUBMITTED } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
+import { GX_GPU_VRAM_BYTE_COUNT } from '../../machine/ts/machine/devices/gx/vram_address';
 import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT } from '../../machine/ts/machine/devices/gx/gte';
 import { INPUT_CONTROLLER_KEY_WORD_COUNT, INPUT_CONTROLLER_PAD_AXIS_COUNT, INPUT_CONTROLLER_PAD_COUNT } from '../../machine/ts/machine/devices/input/contracts';
 import { PSX_GPU_DISPLAY_MODE_PAL_WORD } from '../../machine/ts/machine/model_registry';
@@ -129,7 +130,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					displayStartWord: 0x00011844,
 					horizontalDisplayRangeWord: 0x00c60260,
 					verticalDisplayRangeWord: 0x0003fc10,
-					textureDisableAllowedWord: 1,
+					vramYAddressExtensionWord: 1,
 					scanoutInterlacedField: 1,
 					scanoutInterlacedDisplayField: 1,
 					scanoutActiveLineLsb: 0,
@@ -138,6 +139,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					presentDisplayStartWord: 0x00011844,
 					presentHorizontalDisplayRangeWord: 0x00c60260,
 					presentVerticalDisplayRangeWord: 0x0003fc10,
+					presentVramYAddressExtensionWord: 1,
 					vramPresentationPending: false,
 					commandBuffer: {
 						commandCount: 2,
@@ -149,6 +151,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 						commandWordStart: [0, 4],
 						commandWordCount: [4, 3],
 						commandDrawModeWord: [0x0183, 0x0183],
+						commandVramYAddressExtensionWord: [0, 1],
 						commandTextureWindowWord: [0x0f0f, 0x0f0f],
 						commandDrawingAreaTopLeftWord: [0, 0],
 						commandDrawingAreaBottomRightWord: [0x00ef013f, 0x00ef013f],
@@ -160,6 +163,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 						readbackFenceCommandCount: 0,
 						readbackX: 0,
 						readbackY: 0,
+						readbackVramYAddressExtensionWord: 0,
 						readbackWidth: 0,
 						readbackHeight: 0,
 						readbackPixelCursor: 0,

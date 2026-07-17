@@ -19,8 +19,7 @@ import {
 	GX_GPU_READBACK_PENDING,
 	GX_GPU_READBACK_READY,
 	GX_GPU_READBACK_SUBMITTED,
-	GX_GPU_VRAM_BYTE_COUNT,
-	GX_GPU_DRAW_MODE_TEXTURE_DISABLE,
+	GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_HIGH,
 	GxGpuCommandBuffer,
 	type GxGpuCommandBufferState,
 	gxGpuInterlacedRenderWord,
@@ -30,6 +29,7 @@ import {
 	gxGpuTransferHeight,
 	gxGpuTransferWidth,
 } from './gpu_command_buffer';
+import { GX_GPU_VRAM_BYTE_COUNT } from './vram_address';
 import {
 	GX_GPU_COMMAND_FIFO_WORD_CAPACITY,
 	GxGpuCommandFifo,
@@ -50,7 +50,7 @@ let gxGpuNextVramSnapshotSerial = 0n;
 
 export {
 	GX_GPU_DRAW_MODE_DITHER_ENABLED,
-	GX_GPU_DRAW_MODE_TEXTURE_DISABLE,
+	GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_HIGH,
 	GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP,
 	GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP,
 } from './gpu_command_buffer';
@@ -64,7 +64,7 @@ export const GX_GPU_GP1_DISPLAY_START = 0x05;
 export const GX_GPU_GP1_HORIZONTAL_DISPLAY_RANGE = 0x06;
 export const GX_GPU_GP1_VERTICAL_DISPLAY_RANGE = 0x07;
 export const GX_GPU_GP1_DISPLAY_MODE = 0x08;
-export const GX_GPU_GP1_ALLOW_TEXTURE_DISABLE = 0x09;
+export const GX_GPU_GP1_VRAM_Y_ADDRESS_EXTENSION = 0x09;
 export const GX_GPU_GP1_GET_GPU_INFO = 0x10;
 export const GX_GPU_GP1_GET_GPU_INFO_LAST = 0x1f;
 export const GX_GPU_GP1_OPCODE_SHIFT = 24;
@@ -99,10 +99,8 @@ export const GX_GPU_GP0_RENDER_QUAD_OR_POLYLINE_BIT = 0x08;
 export const GX_GPU_GP0_RENDER_GOURAUD_BIT = 0x10;
 export const GX_GPU_GP0_RECTANGLE_SIZE_MASK = 0x18;
 export const GX_GPU_GP0_COMMAND_BUFFER_WORDS = 16;
-export const GX_GPU_VRAM_WIDTH_MASK = 0x3ff;
-export const GX_GPU_VRAM_HEIGHT_MASK = 0x1ff;
 
-export const GX_GPU_DISPLAY_START_MASK = 0x0007fffe;
+export const GX_GPU_DISPLAY_START_MASK = 0x000ffffe;
 export const GX_GPU_DISPLAY_MODE_MASK = 0x000000ff;
 export const GX_GPU_HORIZONTAL_DISPLAY_RANGE_MASK = 0x00ffffff;
 export const GX_GPU_VERTICAL_DISPLAY_RANGE_MASK = 0x000fffff;
@@ -120,7 +118,7 @@ export const GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU = 3;
 
 export const GX_GPU_STATUS_INTERLACED_FIELD = 1 << 13;
 export const GX_GPU_STATUS_REVERSE_FLAG = 1 << 14;
-export const GX_GPU_STATUS_TEXTURE_DISABLE = 1 << 15;
+export const GX_GPU_STATUS_TEXTURE_PAGE_Y_HIGH = 1 << 15;
 export const GX_GPU_STATUS_HORIZONTAL_RESOLUTION_2 = 1 << 16;
 export const GX_GPU_STATUS_HORIZONTAL_RESOLUTION_1_SHIFT = 17;
 export const GX_GPU_STATUS_VERTICAL_RESOLUTION = 1 << 19;
@@ -183,13 +181,14 @@ export type GxGpuState = {
 	displayStartWord: number;
 	horizontalDisplayRangeWord: number;
 	verticalDisplayRangeWord: number;
-	textureDisableAllowedWord: number;
+	vramYAddressExtensionWord: number;
 	scanoutInterlacedField: number;
 	scanoutInterlacedDisplayField: number;
 	scanoutActiveLineLsb: number;
 	presentStatusWord: number;
 	presentDisplayModeWord: number;
 	presentDisplayStartWord: number;
+	presentVramYAddressExtensionWord: number;
 	presentHorizontalDisplayRangeWord: number;
 	presentVerticalDisplayRangeWord: number;
 	vramPresentationPending: boolean;
@@ -231,10 +230,11 @@ export class GxGpu {
 	private displayStartWord = 0;
 	private horizontalDisplayRangeWord = GX_GPU_RESET_HORIZONTAL_DISPLAY_RANGE_WORD;
 	private verticalDisplayRangeWord = GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD;
-	private textureDisableAllowedWord = 0;
+	private vramYAddressExtensionWord = 0;
 	private presentStatusWord = GX_GPU_STATUS_RESET_WORD;
 	private presentDisplayModeWord = GX_GPU_RESET_DISPLAY_MODE_WORD;
 	private presentDisplayStartWord = 0;
+	private presentVramYAddressExtensionWord = 0;
 	private presentHorizontalDisplayRangeWord = GX_GPU_RESET_HORIZONTAL_DISPLAY_RANGE_WORD;
 	private presentVerticalDisplayRangeWord = GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD;
 	private scanoutVblankActive = false;
@@ -263,6 +263,7 @@ export class GxGpu {
 			statusWord: GX_GPU_STATUS_RESET_WORD,
 			displayModeWord: GX_GPU_RESET_DISPLAY_MODE_WORD,
 			displayStartWord: 0,
+			vramYAddressExtensionWord: 0,
 			horizontalDisplayRangeWord: GX_GPU_RESET_HORIZONTAL_DISPLAY_RANGE_WORD,
 			verticalDisplayRangeWord: GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD,
 			vramSnapshotBytes: this.vramSnapshotBytes,
@@ -276,7 +277,7 @@ export class GxGpu {
 	}
 
 	public reset(): void {
-		this.textureDisableAllowedWord = 0;
+		this.vramYAddressExtensionWord = 0;
 		this.gpuReadWord = 0;
 		this.commandBuffer.reset();
 		initializeGxGpuVramPowerOn(this.vramSnapshotBytes);
@@ -303,6 +304,7 @@ export class GxGpu {
 		this.presentStatusWord = GX_GPU_STATUS_RESET_WORD;
 		this.presentDisplayModeWord = GX_GPU_RESET_DISPLAY_MODE_WORD;
 		this.presentDisplayStartWord = 0;
+		this.presentVramYAddressExtensionWord = this.vramYAddressExtensionWord;
 		this.presentHorizontalDisplayRangeWord = GX_GPU_RESET_HORIZONTAL_DISPLAY_RANGE_WORD;
 		this.presentVerticalDisplayRangeWord = GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD;
 		this.scanoutVblankActive = false;
@@ -363,13 +365,14 @@ export class GxGpu {
 			displayStartWord: this.displayStartWord,
 			horizontalDisplayRangeWord: this.horizontalDisplayRangeWord,
 			verticalDisplayRangeWord: this.verticalDisplayRangeWord,
-			textureDisableAllowedWord: this.textureDisableAllowedWord,
+			vramYAddressExtensionWord: this.vramYAddressExtensionWord,
 			scanoutInterlacedField: this.scanoutInterlacedField,
 			scanoutInterlacedDisplayField: this.scanoutInterlacedDisplayField,
 			scanoutActiveLineLsb: this.scanoutActiveLineLsb,
 			presentStatusWord: this.presentStatusWord,
 			presentDisplayModeWord: this.presentDisplayModeWord,
 			presentDisplayStartWord: this.presentDisplayStartWord,
+			presentVramYAddressExtensionWord: this.presentVramYAddressExtensionWord,
 			presentHorizontalDisplayRangeWord: this.presentHorizontalDisplayRangeWord,
 			presentVerticalDisplayRangeWord: this.presentVerticalDisplayRangeWord,
 			vramPresentationPending: this.vramPresentationPending,
@@ -416,13 +419,14 @@ export class GxGpu {
 		this.displayStartWord = state.displayStartWord >>> 0;
 		this.horizontalDisplayRangeWord = state.horizontalDisplayRangeWord >>> 0;
 		this.verticalDisplayRangeWord = state.verticalDisplayRangeWord >>> 0;
-		this.textureDisableAllowedWord = state.textureDisableAllowedWord >>> 0;
+		this.vramYAddressExtensionWord = state.vramYAddressExtensionWord >>> 0;
 		this.scanoutInterlacedField = state.scanoutInterlacedField >>> 0;
 		this.scanoutInterlacedDisplayField = state.scanoutInterlacedDisplayField >>> 0;
 		this.scanoutActiveLineLsb = state.scanoutActiveLineLsb >>> 0;
 		this.presentStatusWord = state.presentStatusWord >>> 0;
 		this.presentDisplayModeWord = state.presentDisplayModeWord >>> 0;
 		this.presentDisplayStartWord = state.presentDisplayStartWord >>> 0;
+		this.presentVramYAddressExtensionWord = state.presentVramYAddressExtensionWord >>> 0;
 		this.presentHorizontalDisplayRangeWord = state.presentHorizontalDisplayRangeWord >>> 0;
 		this.presentVerticalDisplayRangeWord = state.presentVerticalDisplayRangeWord >>> 0;
 		this.vramPresentationPending = state.vramPresentationPending;
@@ -670,8 +674,8 @@ export class GxGpu {
 			case GX_GPU_GP1_DISPLAY_MODE:
 				this.writeDisplayModeWord(command & GX_GPU_DISPLAY_MODE_MASK);
 				break;
-			case GX_GPU_GP1_ALLOW_TEXTURE_DISABLE:
-				this.textureDisableAllowedWord = command & 0x1;
+			case GX_GPU_GP1_VRAM_Y_ADDRESS_EXTENSION:
+				this.vramYAddressExtensionWord = command & 0x1;
 				this.writeStatusIo();
 				break;
 			case GX_GPU_GP1_GET_GPU_INFO:
@@ -728,6 +732,7 @@ export class GxGpu {
 		this.deviceOutput.statusWord = this.presentStatusWord;
 		this.deviceOutput.displayModeWord = this.presentDisplayModeWord;
 		this.deviceOutput.displayStartWord = this.presentDisplayStartWord;
+		this.deviceOutput.vramYAddressExtensionWord = this.presentVramYAddressExtensionWord;
 		this.deviceOutput.horizontalDisplayRangeWord = this.presentHorizontalDisplayRangeWord;
 		this.deviceOutput.verticalDisplayRangeWord = this.presentVerticalDisplayRangeWord;
 		this.deviceOutput.vramSnapshotSerial = this.vramSnapshotSerial;
@@ -753,11 +758,13 @@ export class GxGpu {
 		const scanoutStateChanged = (this.presentStatusWord & visibleStatusMask) !== visibleStatusWord
 			|| this.presentDisplayModeWord !== this.displayModeWord
 			|| this.presentDisplayStartWord !== this.displayStartWord
+			|| this.presentVramYAddressExtensionWord !== this.vramYAddressExtensionWord
 			|| this.presentHorizontalDisplayRangeWord !== this.horizontalDisplayRangeWord
 			|| this.presentVerticalDisplayRangeWord !== this.verticalDisplayRangeWord;
 		this.presentStatusWord = this.statusWord;
 		this.presentDisplayModeWord = this.displayModeWord;
 		this.presentDisplayStartWord = this.displayStartWord;
+		this.presentVramYAddressExtensionWord = this.vramYAddressExtensionWord;
 		this.presentHorizontalDisplayRangeWord = this.horizontalDisplayRangeWord;
 		this.presentVerticalDisplayRangeWord = this.verticalDisplayRangeWord;
 		this.commandBuffer.sealCommandsForPresentation();
@@ -827,8 +834,8 @@ export class GxGpu {
 		return this.verticalDisplayRangeWord;
 	}
 
-	public readTextureDisableAllowedWord(): number {
-		return this.textureDisableAllowedWord;
+	public readVramYAddressExtensionWord(): number {
+		return this.vramYAddressExtensionWord;
 	}
 
 	private writeDisplayDisableWord(word: number): void {
@@ -1002,6 +1009,7 @@ export class GxGpu {
 			wordStart,
 			commandWordCount,
 			this.drawModeWord,
+			this.vramYAddressExtensionWord,
 			this.textureWindowWord,
 			this.drawingAreaTopLeftWord,
 			this.drawingAreaBottomRightWord,
@@ -1017,6 +1025,7 @@ export class GxGpu {
 				wordStart,
 				commandWordCount,
 				this.drawModeWord,
+				this.vramYAddressExtensionWord,
 				this.drawingAreaTopLeftWord,
 				this.drawingAreaBottomRightWord,
 				this.drawingOffsetWord,
@@ -1040,20 +1049,17 @@ export class GxGpu {
 
 	private writeDrawModeWord(word: number): void {
 		this.drawModeWord = word & GX_GPU_DRAW_MODE_MASK;
-		if (this.textureDisableAllowedWord === 0) {
-			this.drawModeWord = (this.drawModeWord & ~GX_GPU_DRAW_MODE_TEXTURE_DISABLE) >>> 0;
-		}
 		this.updateDrawModeStatusBits();
 		this.writeStatusIo();
 	}
 
 	private updateDrawModeStatusBits(): void {
-		const textureDisable = (this.drawModeWord & GX_GPU_DRAW_MODE_TEXTURE_DISABLE) !== 0
-			? GX_GPU_STATUS_TEXTURE_DISABLE
+		const texturePageYHigh = (this.drawModeWord & GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_HIGH) !== 0
+			? GX_GPU_STATUS_TEXTURE_PAGE_Y_HIGH
 			: 0;
-		this.statusWord = ((this.statusWord & ~(GX_GPU_DRAW_MODE_GPUSTAT_MASK | GX_GPU_STATUS_TEXTURE_DISABLE))
+		this.statusWord = ((this.statusWord & ~(GX_GPU_DRAW_MODE_GPUSTAT_MASK | GX_GPU_STATUS_TEXTURE_PAGE_Y_HIGH))
 			| (this.drawModeWord & GX_GPU_DRAW_MODE_GPUSTAT_MASK)
-			| textureDisable) >>> 0;
+			| texturePageYHigh) >>> 0;
 	}
 
 	private writeMaskBitModeWord(word: number): void {
@@ -1164,7 +1170,7 @@ export class GxGpu {
 
 	private updateScanoutStatusBits(): void {
 		let scanoutBits = 0;
-		const displayStartY = gxGpuDisplayStartY(this.displayStartWord);
+		const displayStartY = gxGpuDisplayStartY(this.displayStartWord, this.vramYAddressExtensionWord);
 		if (this.gpuStatInInterleaved480iMode()) {
 			this.scanoutActiveLineLsb = (displayStartY + this.scanoutInterlacedDisplayField) & 1;
 			const displayedField = this.scanoutVblankActive ? 0 : this.scanoutInterlacedDisplayField;

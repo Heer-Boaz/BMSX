@@ -95,6 +95,7 @@ public:
 	u32 gxGpuStatusWord = 0u;
 	u32 gxGpuDisplayModeWord = 0u;
 	u32 gxGpuDisplayStartWord = 0u;
+	u32 gxGpuVramYAddressExtensionWord = 0u;
 	u32 gxGpuHorizontalDisplayRangeWord = 0u;
 	u32 gxGpuVerticalDisplayRangeWord = 0u;
 	const std::array<u8, GX_GPU_VRAM_BYTE_COUNT>* gxGpuVramSnapshotBytes = nullptr;

@@ -7,6 +7,7 @@ import {
 	gxGpuScanoutField,
 	gxGpuScanoutSourceLineStep,
 } from '../../../machine/devices/gx/gpu_display';
+import { gxGpuVramYAddress, gxGpuVramYBankInstalled } from '../../../machine/devices/gx/vram_address';
 import type { GxGpuPipelineState } from '../backend';
 import {
 	gxGpuSoftwareRgb555ChannelTo8,
@@ -19,6 +20,7 @@ let interlacedWidth = 0;
 let interlacedHeight = 0;
 let interlacedDisplayStartWord = 0;
 let interlacedInterpretationWord = 0;
+let interlacedVramYAddressExtensionWord = 0;
 let interlacedVramSnapshotSerial = 0n;
 let interlacedValid = false;
 
@@ -60,7 +62,8 @@ function writeInterlacedField(
 	let sourceY = displayStartY + field * (sourceLineStep - 1);
 	let outputOffset = field * width * 4;
 	for (let fieldLine = 0; fieldLine < fieldHeight; fieldLine += 1) {
-		if (displayDisabled) {
+		const logicalSourceY = gxGpuVramYAddress(sourceY, state.vramYAddressExtensionWord);
+		if (displayDisabled || !gxGpuVramYBankInstalled(logicalSourceY)) {
 			const rowEnd = outputOffset + width * 4;
 			for (let offset = outputOffset; offset < rowEnd; offset += 4) {
 				interlacedPixels[offset] = 0;
@@ -71,7 +74,7 @@ function writeInterlacedField(
 		} else {
 			let offset = outputOffset;
 			for (let outputX = 0; outputX < width; outputX += 1) {
-				const rgb = rgb24 ? rgb888AtSourcePixel(outputX, sourceY, displayStartX) : rgb555AtSourcePixel(displayStartX + outputX, sourceY);
+				const rgb = rgb24 ? rgb888AtSourcePixel(outputX, logicalSourceY, displayStartX) : rgb555AtSourcePixel(displayStartX + outputX, logicalSourceY);
 				writeOutputRgb(interlacedPixels, offset, rgb);
 				offset += 4;
 			}
@@ -93,12 +96,13 @@ function scanoutInterlacedVram(state: GxGpuPipelineState, target: Uint8Array, so
 		|| interlacedHeight !== height
 		|| interlacedDisplayStartWord !== displayStartWord
 		|| interlacedInterpretationWord !== interpretationWord
+		|| interlacedVramYAddressExtensionWord !== state.vramYAddressExtensionWord
 		|| interlacedVramSnapshotSerial !== state.vramSnapshotSerial;
 	if (interlacedPixels.byteLength !== byteLength) {
 		interlacedPixels = new Uint8Array(byteLength);
 	}
 	const displayStartX = gxGpuDisplayStartX(displayStartWord);
-	const displayStartY = gxGpuDisplayStartY(displayStartWord);
+	const displayStartY = gxGpuDisplayStartY(displayStartWord, state.vramYAddressExtensionWord);
 	const rgb24 = (displayModeWord & GX_GPU_DISPLAY_MODE_RGB24_BIT) !== 0;
 	const displayDisabled = (state.statusWord & GX_GPU_STATUS_DISPLAY_DISABLE) !== 0;
 	if (invalid) {
@@ -108,6 +112,7 @@ function scanoutInterlacedVram(state: GxGpuPipelineState, target: Uint8Array, so
 		interlacedHeight = height;
 		interlacedDisplayStartWord = displayStartWord;
 		interlacedInterpretationWord = interpretationWord;
+		interlacedVramYAddressExtensionWord = state.vramYAddressExtensionWord;
 		interlacedVramSnapshotSerial = state.vramSnapshotSerial;
 		interlacedValid = true;
 	} else {
@@ -132,11 +137,17 @@ export function scanoutGxGpuSoftwareVram(state: GxGpuPipelineState, target: Uint
 		return;
 	}
 	const displayStartX = gxGpuDisplayStartX(state.displayStartWord);
-	const displayStartY = gxGpuDisplayStartY(state.displayStartWord);
+	const displayStartY = gxGpuDisplayStartY(state.displayStartWord, state.vramYAddressExtensionWord);
 	const rgb24 = (displayModeWord & GX_GPU_DISPLAY_MODE_RGB24_BIT) !== 0;
 	let offset = 0;
 	for (let outputY = 0; outputY < state.height; outputY += 1) {
-		const sourceY = displayStartY + outputY;
+		const sourceY = gxGpuVramYAddress(displayStartY + outputY, state.vramYAddressExtensionWord);
+		if (!gxGpuVramYBankInstalled(sourceY)) {
+			const rowEnd = offset + state.width * 4;
+			target.fill(0, offset, rowEnd);
+			for (; offset < rowEnd; offset += 4) target[offset + 3] = 255;
+			continue;
+		}
 		for (let outputX = 0; outputX < state.width; outputX += 1) {
 			const rgb = rgb24 ? rgb888AtSourcePixel(outputX, sourceY, displayStartX) : rgb555AtSourcePixel(displayStartX + outputX, sourceY);
 			writeOutputRgb(target, offset, rgb);

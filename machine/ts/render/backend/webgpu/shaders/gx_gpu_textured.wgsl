@@ -157,21 +157,21 @@ fn samplePsxTexture(sampleCoord: vec2<f32>) -> vec4<f32> {
 	var textureWord: f32;
 	if (u.params0.x < 0.5) {
 		let wordCoord = vec2<f32>(pageBase.x + floor(windowed.x / 4.0), pageBase.y + windowed.y);
-		textureWord = rawVramWord(wordCoord);
+		textureWord = rawVramWord(wordCoord) * u.params2.y;
 		let paletteIndex = palette4Index(textureWord, windowed.x);
-		let paletteWord = rawVramWord(vec2<f32>(clutBase.x + paletteIndex, clutBase.y));
+		let paletteWord = rawVramWord(vec2<f32>(clutBase.x + paletteIndex, clutBase.y)) * u.params2.z;
 		let alpha = select(wordMaskBit(paletteWord), -1.0, paletteWord == 0.0);
 		return vec4<f32>(decodeRgb555To5(paletteWord), alpha);
 	}
 	if (u.params0.x < 1.5) {
 		let wordCoord = vec2<f32>(pageBase.x + floor(windowed.x / 2.0), pageBase.y + windowed.y);
-		textureWord = rawVramWord(wordCoord);
+		textureWord = rawVramWord(wordCoord) * u.params2.y;
 		let paletteIndex = palette8Index(textureWord, windowed.x);
-		let paletteWord = rawVramWord(vec2<f32>(clutBase.x + paletteIndex, clutBase.y));
+		let paletteWord = rawVramWord(vec2<f32>(clutBase.x + paletteIndex, clutBase.y)) * u.params2.z;
 		let alpha = select(wordMaskBit(paletteWord), -1.0, paletteWord == 0.0);
 		return vec4<f32>(decodeRgb555To5(paletteWord), alpha);
 	}
-	textureWord = rawVramWord(pageBase + windowed);
+	textureWord = rawVramWord(pageBase + windowed) * u.params2.y;
 	let alpha = select(wordMaskBit(textureWord), -1.0, textureWord == 0.0);
 	return vec4<f32>(decodeRgb555To5(textureWord), alpha);
 }

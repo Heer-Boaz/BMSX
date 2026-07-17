@@ -1,14 +1,15 @@
 import type { DmaController } from '../dma/controller';
+import {
+	GX_GPU_VRAM_BYTE_COUNT,
+	GX_GPU_VRAM_WIDTH,
+	gxGpuVramYAddress,
+} from './vram_address';
 
 export const GX_GPU_COMMAND_CAPACITY = 4096;
 export const GX_GPU_COMMAND_WORD_CAPACITY = 0x80000;
-export const GX_GPU_VRAM_WIDTH = 1024;
-export const GX_GPU_VRAM_HEIGHT = 512;
-export const GX_GPU_VRAM_WORD_COUNT = GX_GPU_VRAM_WIDTH * GX_GPU_VRAM_HEIGHT;
-export const GX_GPU_VRAM_BYTE_COUNT = GX_GPU_VRAM_WORD_COUNT * 2;
 export const GX_GPU_DRAW_MODE_POLYGON_TEXPAGE_MASK = 0x09ff;
 export const GX_GPU_DRAW_MODE_DITHER_ENABLED = 1 << 9;
-export const GX_GPU_DRAW_MODE_TEXTURE_DISABLE = 1 << 11;
+export const GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_HIGH = 1 << 11;
 export const GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP = 1 << 12;
 export const GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP = 1 << 13;
 export const GX_GPU_INTERLACED_RENDER_ENABLE = 0x01;
@@ -44,9 +45,9 @@ export function gxGpuDrawingAreaLeft(topLeftWord: number, bottomRightWord: numbe
 	return left <= (bottomRightWord & 0x3ff) ? left : 0;
 }
 
-export function gxGpuDrawingAreaTop(topLeftWord: number, bottomRightWord: number): number {
-	const top = (topLeftWord >>> 10) & 0x3ff;
-	const bottom = (bottomRightWord >>> 10) & 0x3ff;
+export function gxGpuDrawingAreaTop(topLeftWord: number, bottomRightWord: number, vramYAddressExtensionWord: number): number {
+	const top = gxGpuVramYAddress(topLeftWord >>> 10, vramYAddressExtensionWord);
+	const bottom = gxGpuVramYAddress(bottomRightWord >>> 10, vramYAddressExtensionWord);
 	return top <= bottom ? top : 0;
 }
 
@@ -57,9 +58,9 @@ export function gxGpuDrawingAreaRightExclusive(topLeftWord: number, bottomRightW
 	return right < GX_GPU_VRAM_WIDTH - 1 ? right + 1 : GX_GPU_VRAM_WIDTH;
 }
 
-export function gxGpuDrawingAreaBottomExclusive(topLeftWord: number, bottomRightWord: number): number {
-	const top = (topLeftWord >>> 10) & 0x3ff;
-	const bottom = (bottomRightWord >>> 10) & 0x3ff;
+export function gxGpuDrawingAreaBottomExclusive(topLeftWord: number, bottomRightWord: number, vramYAddressExtensionWord: number): number {
+	const top = gxGpuVramYAddress(topLeftWord >>> 10, vramYAddressExtensionWord);
+	const bottom = gxGpuVramYAddress(bottomRightWord >>> 10, vramYAddressExtensionWord);
 	return top <= bottom ? bottom + 1 : 0;
 }
 
@@ -105,6 +106,7 @@ export type GxGpuCommandBufferState = {
 	commandWordStart: number[];
 	commandWordCount: number[];
 	commandDrawModeWord: number[];
+	commandVramYAddressExtensionWord: number[];
 	commandTextureWindowWord: number[];
 	commandDrawingAreaTopLeftWord: number[];
 	commandDrawingAreaBottomRightWord: number[];
@@ -116,6 +118,7 @@ export type GxGpuCommandBufferState = {
 	readbackFenceCommandCount: number;
 	readbackX: number;
 	readbackY: number;
+	readbackVramYAddressExtensionWord: number;
 	readbackWidth: number;
 	readbackHeight: number;
 	readbackPixelCursor: number;
@@ -133,6 +136,7 @@ export type GxGpuCommandBufferView = {
 	readonly commandWordStart: ArrayLike<number>;
 	readonly commandWordCount: ArrayLike<number>;
 	readonly commandDrawModeWord: ArrayLike<number>;
+	readonly commandVramYAddressExtensionWord: ArrayLike<number>;
 	readonly commandTextureWindowWord: ArrayLike<number>;
 	readonly commandDrawingAreaTopLeftWord: ArrayLike<number>;
 	readonly commandDrawingAreaBottomRightWord: ArrayLike<number>;
@@ -147,6 +151,7 @@ export type GxGpuReadbackView = {
 	readonly fenceCommandCount: number;
 	readonly x: number;
 	readonly y: number;
+	readonly vramYAddressExtensionWord: number;
 	readonly width: number;
 	readonly height: number;
 	readonly pixelCursor: number;
@@ -164,6 +169,7 @@ class GxGpuReadbackPort implements GxGpuReadbackPortView {
 	public fenceCommandCount = 0;
 	public x = 0;
 	public y = 0;
+	public vramYAddressExtensionWord = 0;
 	public width = 0;
 	public height = 0;
 	public pixelCursor = 0;
@@ -174,9 +180,10 @@ class GxGpuReadbackPort implements GxGpuReadbackPortView {
 	}
 
 	/** @internal Command-buffer owner transition; excluded from GxGpuReadbackPortView. */
-	public activate(positionWord: number, sizeWord: number, fenceCommandCount: number): void {
+	public activate(positionWord: number, sizeWord: number, fenceCommandCount: number, vramYAddressExtensionWord: number): void {
 		this.x = positionWord & (GX_GPU_VRAM_WIDTH - 1);
-		this.y = (positionWord >>> 16) & (GX_GPU_VRAM_HEIGHT - 1);
+		this.vramYAddressExtensionWord = vramYAddressExtensionWord;
+		this.y = gxGpuVramYAddress(positionWord >>> 16, vramYAddressExtensionWord);
 		this.width = gxGpuTransferWidth(sizeWord);
 		this.height = gxGpuTransferHeight(sizeWord);
 		this.pixelCursor = 0;
@@ -192,6 +199,7 @@ class GxGpuReadbackPort implements GxGpuReadbackPortView {
 		this.fenceCommandCount = 0;
 		this.x = 0;
 		this.y = 0;
+		this.vramYAddressExtensionWord = 0;
 		this.width = 0;
 		this.height = 0;
 		this.pixelCursor = 0;
@@ -230,6 +238,7 @@ class GxGpuReadbackPort implements GxGpuReadbackPortView {
 			this.fenceCommandCount = 0;
 			this.x = 0;
 			this.y = 0;
+			this.vramYAddressExtensionWord = 0;
 			this.width = 0;
 			this.height = 0;
 			this.pixelCursor = 0;
@@ -250,7 +259,7 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 
 	private activateReadback(commandIndex: number): void {
 		const wordStart = this.commandWordStart[commandIndex];
-		this.readback.activate(this.words[wordStart + 1], this.words[wordStart + 2], commandIndex + 1);
+		this.readback.activate(this.words[wordStart + 1], this.words[wordStart + 2], commandIndex + 1, this.commandVramYAddressExtensionWord[commandIndex]);
 	}
 
 	private clearCommandState(): void {
@@ -271,6 +280,7 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 	public readonly commandWordStart = new Uint32Array(GX_GPU_COMMAND_CAPACITY);
 	public readonly commandWordCount = new Uint32Array(GX_GPU_COMMAND_CAPACITY);
 	public readonly commandDrawModeWord = new Uint32Array(GX_GPU_COMMAND_CAPACITY);
+	public readonly commandVramYAddressExtensionWord = new Uint8Array(GX_GPU_COMMAND_CAPACITY);
 	public readonly commandTextureWindowWord = new Uint32Array(GX_GPU_COMMAND_CAPACITY);
 	public readonly commandDrawingAreaTopLeftWord = new Uint32Array(GX_GPU_COMMAND_CAPACITY);
 	public readonly commandDrawingAreaBottomRightWord = new Uint32Array(GX_GPU_COMMAND_CAPACITY);
@@ -332,6 +342,7 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 			commandWordStart: Array.from(this.commandWordStart.subarray(0, commandCount)),
 			commandWordCount: Array.from(this.commandWordCount.subarray(0, commandCount)),
 			commandDrawModeWord: Array.from(this.commandDrawModeWord.subarray(0, commandCount)),
+			commandVramYAddressExtensionWord: Array.from(this.commandVramYAddressExtensionWord.subarray(0, commandCount)),
 			commandTextureWindowWord: Array.from(this.commandTextureWindowWord.subarray(0, commandCount)),
 			commandDrawingAreaTopLeftWord: Array.from(this.commandDrawingAreaTopLeftWord.subarray(0, commandCount)),
 			commandDrawingAreaBottomRightWord: Array.from(this.commandDrawingAreaBottomRightWord.subarray(0, commandCount)),
@@ -343,6 +354,7 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 			readbackFenceCommandCount: this.readback.fenceCommandCount,
 			readbackX: this.readback.x,
 			readbackY: this.readback.y,
+			readbackVramYAddressExtensionWord: this.readback.vramYAddressExtensionWord,
 			readbackWidth: this.readback.width,
 			readbackHeight: this.readback.height,
 			readbackPixelCursor: this.readback.pixelCursor,
@@ -363,6 +375,7 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 		this.commandWordStart.set(state.commandWordStart, 0);
 		this.commandWordCount.set(state.commandWordCount, 0);
 		this.commandDrawModeWord.set(state.commandDrawModeWord, 0);
+		this.commandVramYAddressExtensionWord.set(state.commandVramYAddressExtensionWord, 0);
 		this.commandTextureWindowWord.set(state.commandTextureWindowWord, 0);
 		this.commandDrawingAreaTopLeftWord.set(state.commandDrawingAreaTopLeftWord, 0);
 		this.commandDrawingAreaBottomRightWord.set(state.commandDrawingAreaBottomRightWord, 0);
@@ -374,6 +387,7 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 		this.readback.fenceCommandCount = state.readbackFenceCommandCount;
 		this.readback.x = state.readbackX;
 		this.readback.y = state.readbackY;
+		this.readback.vramYAddressExtensionWord = state.readbackVramYAddressExtensionWord;
 		this.readback.width = state.readbackWidth;
 		this.readback.height = state.readbackHeight;
 		this.readback.pixelCursor = state.readbackPixelCursor;
@@ -398,6 +412,7 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 		this.commandWordStart.copyWithin(0, retiredCommands, oldCommandCount);
 		this.commandWordCount.copyWithin(0, retiredCommands, oldCommandCount);
 		this.commandDrawModeWord.copyWithin(0, retiredCommands, oldCommandCount);
+		this.commandVramYAddressExtensionWord.copyWithin(0, retiredCommands, oldCommandCount);
 		this.commandTextureWindowWord.copyWithin(0, retiredCommands, oldCommandCount);
 		this.commandDrawingAreaTopLeftWord.copyWithin(0, retiredCommands, oldCommandCount);
 		this.commandDrawingAreaBottomRightWord.copyWithin(0, retiredCommands, oldCommandCount);
@@ -461,6 +476,7 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 		wordStart: number,
 		wordCount: number,
 		drawModeWord: number,
+		vramYAddressExtensionWord: number,
 		textureWindowWord: number,
 		drawingAreaTopLeftWord: number,
 		drawingAreaBottomRightWord: number,
@@ -474,6 +490,7 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 		this.commandWordStart[commandIndex] = wordStart;
 		this.commandWordCount[commandIndex] = wordCount;
 		this.commandDrawModeWord[commandIndex] = drawModeWord >>> 0;
+		this.commandVramYAddressExtensionWord[commandIndex] = vramYAddressExtensionWord;
 		this.commandTextureWindowWord[commandIndex] = textureWindowWord >>> 0;
 		this.commandDrawingAreaTopLeftWord[commandIndex] = drawingAreaTopLeftWord >>> 0;
 		this.commandDrawingAreaBottomRightWord[commandIndex] = drawingAreaBottomRightWord >>> 0;

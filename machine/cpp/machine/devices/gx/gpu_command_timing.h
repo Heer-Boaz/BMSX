@@ -13,6 +13,7 @@ i64 gxGpuCommandTicks(
 	size_t wordStart,
 	u32 wordCount,
 	u32 drawModeWord,
+	u32 vramYAddressExtensionWord,
 	u32 drawingAreaTopLeftWord,
 	u32 drawingAreaBottomRightWord,
 	u32 drawingOffsetWord,

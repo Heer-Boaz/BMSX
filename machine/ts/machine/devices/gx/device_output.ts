@@ -6,6 +6,7 @@ export type GxGpuDeviceOutput = Readonly<{
 	statusWord: number;
 	displayModeWord: number;
 	displayStartWord: number;
+	vramYAddressExtensionWord: number;
 	horizontalDisplayRangeWord: number;
 	verticalDisplayRangeWord: number;
 	vramSnapshotBytes: Uint8Array;

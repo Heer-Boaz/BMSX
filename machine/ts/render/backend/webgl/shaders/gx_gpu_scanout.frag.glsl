@@ -4,6 +4,7 @@ precision highp float;
 uniform sampler2D u_vram;
 uniform vec4 u_display;
 uniform vec4 u_interlace;
+uniform float u_vramYAddressExtensionWord;
 out vec4 outputColor;
 
 const vec2 VRAM_SIZE = vec2(1024.0, 512.0);
@@ -15,9 +16,12 @@ float rawWordFromPixel(vec4 rawPixel) {
 }
 
 float rawWordAtLogical(float x, float y) {
-	vec2 vramCoord = vec2(mod(x, VRAM_SIZE.x), mod(y, VRAM_SIZE.y));
+	float yPeriod = mix(VRAM_SIZE.y, VRAM_SIZE.y * 2.0, step(0.5, u_vramYAddressExtensionWord));
+	float logicalY = mod(y, yPeriod);
+	float installed = 1.0 - step(VRAM_SIZE.y, logicalY);
+	vec2 vramCoord = vec2(mod(x, VRAM_SIZE.x), mod(logicalY, VRAM_SIZE.y));
 	vec2 texcoord = vec2((vramCoord.x + 0.5) / VRAM_SIZE.x, 1.0 - (vramCoord.y + 0.5) / VRAM_SIZE.y);
-	return rawWordFromPixel(texture(u_vram, texcoord));
+	return rawWordFromPixel(texture(u_vram, texcoord)) * installed;
 }
 
 vec3 rgb555ToRgb8(float word) {

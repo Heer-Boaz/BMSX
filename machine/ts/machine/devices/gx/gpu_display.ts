@@ -1,3 +1,5 @@
+import { gxGpuVramYAddress } from './vram_address';
+
 export const GX_GPU_RESET_DISPLAY_MODE_WORD = 0x00000009;
 export const GX_GPU_RESET_HORIZONTAL_DISPLAY_RANGE_WORD = 0x00c60260;
 export const GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD = 0x00044c23;
@@ -12,8 +14,8 @@ export function gxGpuDisplayStartX(word: number): number {
 	return word & 0x3ff;
 }
 
-export function gxGpuDisplayStartY(word: number): number {
-	return (word >>> 10) & 0x1ff;
+export function gxGpuDisplayStartY(word: number, vramYAddressExtensionWord: number): number {
+	return gxGpuVramYAddress(word >>> 10, vramYAddressExtensionWord);
 }
 
 export function gxGpuScanoutField(statusWord: number): number {

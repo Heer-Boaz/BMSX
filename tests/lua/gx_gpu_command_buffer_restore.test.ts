@@ -36,6 +36,7 @@ function pushFillCommand(commandBuffer: GxGpuCommandBuffer): void {
 		0,
 		0,
 		0,
+		0,
 		GX_GPU_SOFTWARE_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD,
 		0,
 		0,

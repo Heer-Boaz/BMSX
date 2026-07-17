@@ -1,13 +1,16 @@
 import {
 	GX_GPU_DRAW_MODE_DITHER_ENABLED,
-	GX_GPU_DRAW_MODE_TEXTURE_DISABLE,
 	GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP,
 	GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP,
-	GX_GPU_VRAM_HEIGHT,
-	GX_GPU_VRAM_WIDTH,
 	gxGpuSigned11,
 	gxGpuTextureAttribute,
 } from '../../machine/devices/gx/gpu_command_buffer';
+import {
+	GX_GPU_VRAM_HEIGHT,
+	GX_GPU_VRAM_WIDTH,
+	gxGpuVramYAddress,
+	gxGpuVramYAddressMask,
+} from '../../machine/devices/gx/vram_address';
 
 export const GX_GPU_MAX_PRIMITIVE_WIDTH = 1024;
 export const GX_GPU_MAX_PRIMITIVE_HEIGHT = 512;
@@ -132,14 +135,6 @@ export function gxGpuCommandTextureEnabled(opcode: number): boolean {
 	return (opcode & 0x04) !== 0;
 }
 
-export function gxGpuDrawModeTextureDisableEnabled(drawModeWord: number): boolean {
-	return (drawModeWord & GX_GPU_DRAW_MODE_TEXTURE_DISABLE) !== 0;
-}
-
-export function gxGpuCommandDrawsTexture(opcode: number, drawModeWord: number): boolean {
-	return gxGpuCommandTextureEnabled(opcode) && !gxGpuDrawModeTextureDisableEnabled(drawModeWord);
-}
-
 export function gxGpuCommandQuadPolygon(opcode: number): boolean {
 	return (opcode & 0x08) !== 0;
 }
@@ -191,21 +186,23 @@ export function gxGpuVramWrappedWidth(x: number, width: number): number {
 	return width <= edgeWidth ? width : edgeWidth;
 }
 
-export function gxGpuVramWrappedHeight(y: number, height: number): number {
-	const edgeHeight = GX_GPU_VRAM_HEIGHT - y;
+export function gxGpuVramWrappedHeight(y: number, height: number, vramYAddressExtensionWord: number): number {
+	const logicalY = gxGpuVramYAddress(y, vramYAddressExtensionWord);
+	const edgeHeight = GX_GPU_VRAM_HEIGHT - (logicalY & (GX_GPU_VRAM_HEIGHT - 1));
 	return height <= edgeHeight ? height : edgeHeight;
 }
 
-export function gxGpuVramLogicalAreaOverlapsBounds(x: number, y: number, width: number, height: number, left: number, top: number, right: number, bottom: number): boolean {
+export function gxGpuVramLogicalAreaOverlapsBounds(x: number, y: number, width: number, height: number, left: number, top: number, right: number, bottom: number, vramYAddressExtensionWord: number): boolean {
 	if (right <= left || bottom <= top) return false;
-	let boundsY = top & (GX_GPU_VRAM_HEIGHT - 1);
+	const yAddressMask = gxGpuVramYAddressMask(vramYAddressExtensionWord);
+	let boundsY = top & yAddressMask;
 	let remainingBoundsHeight = bottom - top;
 	while (remainingBoundsHeight !== 0) {
-		const boundsRunHeight = gxGpuVramWrappedHeight(boundsY, remainingBoundsHeight);
-		let rowY = y & (GX_GPU_VRAM_HEIGHT - 1);
+		const boundsRunHeight = gxGpuVramWrappedHeight(boundsY, remainingBoundsHeight, vramYAddressExtensionWord);
+		let rowY = y & yAddressMask;
 		let remainingHeight = height;
 		while (remainingHeight !== 0) {
-			const runHeight = gxGpuVramWrappedHeight(rowY, remainingHeight);
+			const runHeight = gxGpuVramWrappedHeight(rowY, remainingHeight, vramYAddressExtensionWord);
 			let columnX = x & (GX_GPU_VRAM_WIDTH - 1);
 			let remainingWidth = width;
 			while (remainingWidth !== 0) {
@@ -214,10 +211,10 @@ export function gxGpuVramLogicalAreaOverlapsBounds(x: number, y: number, width: 
 				columnX = (columnX + runWidth) & (GX_GPU_VRAM_WIDTH - 1);
 				remainingWidth -= runWidth;
 			}
-			rowY = (rowY + runHeight) & (GX_GPU_VRAM_HEIGHT - 1);
+			rowY = (rowY + runHeight) & yAddressMask;
 			remainingHeight -= runHeight;
 		}
-		boundsY = (boundsY + boundsRunHeight) & (GX_GPU_VRAM_HEIGHT - 1);
+		boundsY = (boundsY + boundsRunHeight) & yAddressMask;
 		remainingBoundsHeight -= boundsRunHeight;
 	}
 	return false;
@@ -243,8 +240,8 @@ export function gxGpuTransferX(xyWord: number): number {
 	return xyWord & 0x3ff;
 }
 
-export function gxGpuTransferY(xyWord: number): number {
-	return (xyWord >>> 16) & 0x1ff;
+export function gxGpuTransferY(xyWord: number, vramYAddressExtensionWord: number): number {
+	return gxGpuVramYAddress(xyWord >>> 16, vramYAddressExtensionWord);
 }
 
 export function gxGpuTransferPixelWord(payloadWord: number, pixelIndex: number): number {
@@ -273,8 +270,8 @@ export function gxGpuTextureClutBaseX(textureWord: number): number {
 	return (gxGpuTextureAttribute(textureWord) & 0x3f) << 4;
 }
 
-export function gxGpuTextureClutBaseY(textureWord: number): number {
-	return (gxGpuTextureAttribute(textureWord) >>> 6) & 0x1ff;
+export function gxGpuTextureClutBaseY(textureWord: number, vramYAddressExtensionWord: number): number {
+	return gxGpuVramYAddress(gxGpuTextureAttribute(textureWord) >>> 6, vramYAddressExtensionWord);
 }
 
 export function gxGpuDrawModeDitherEnabled(drawModeWord: number): boolean {
@@ -315,7 +312,7 @@ export function gxGpuTriangleEdgeCoverageMinimum(stepX: number, stepY: number): 
 
 export function gxGpuDitheredPolygon(drawModeWord: number, opcode: number): boolean {
 	return gxGpuDrawModeDitherEnabled(drawModeWord)
-		&& (gxGpuCommandDrawsTexture(opcode, drawModeWord)
+		&& (gxGpuCommandTextureEnabled(opcode)
 			? !gxGpuCommandRawTextureEnabled(opcode)
 			: gxGpuCommandGouraud(opcode));
 }
@@ -324,8 +321,8 @@ export function gxGpuDrawModeTexturePageBaseX(drawModeWord: number): number {
 	return (drawModeWord & 0x0f) << 6;
 }
 
-export function gxGpuDrawModeTexturePageBaseY(drawModeWord: number): number {
-	return ((drawModeWord >>> 4) & 0x01) << 8;
+export function gxGpuDrawModeTexturePageBaseY(drawModeWord: number, vramYAddressExtensionWord: number): number {
+	return gxGpuVramYAddress((((drawModeWord >>> 4) & 0x01) << 8) | (((drawModeWord >>> 11) & 0x01) << 9), vramYAddressExtensionWord);
 }
 
 export function gxGpuDrawModeTextureMode(drawModeWord: number): number {

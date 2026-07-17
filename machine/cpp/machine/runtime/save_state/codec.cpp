@@ -520,6 +520,7 @@ BinValue encodeGxGpuCommandBufferState(const GxGpuCommandBufferState& state) {
 	object["commandWordStart"] = encodeVector(state.commandWordStart, encodeScalar<i64, u32>);
 	object["commandWordCount"] = encodeVector(state.commandWordCount, encodeScalar<i64, u32>);
 	object["commandDrawModeWord"] = encodeVector(state.commandDrawModeWord, encodeScalar<i64, u32>);
+	object["commandVramYAddressExtensionWord"] = encodeVector(state.commandVramYAddressExtensionWord, encodeScalar<i64, u8>);
 	object["commandTextureWindowWord"] = encodeVector(state.commandTextureWindowWord, encodeScalar<i64, u32>);
 	object["commandDrawingAreaTopLeftWord"] = encodeVector(state.commandDrawingAreaTopLeftWord, encodeScalar<i64, u32>);
 	object["commandDrawingAreaBottomRightWord"] = encodeVector(state.commandDrawingAreaBottomRightWord, encodeScalar<i64, u32>);
@@ -531,6 +532,7 @@ BinValue encodeGxGpuCommandBufferState(const GxGpuCommandBufferState& state) {
 	object["readbackFenceCommandCount"] = static_cast<i64>(state.readbackFenceCommandCount);
 	object["readbackX"] = static_cast<i64>(state.readbackX);
 	object["readbackY"] = static_cast<i64>(state.readbackY);
+	object["readbackVramYAddressExtensionWord"] = static_cast<i64>(state.readbackVramYAddressExtensionWord);
 	object["readbackWidth"] = static_cast<i64>(state.readbackWidth);
 	object["readbackHeight"] = static_cast<i64>(state.readbackHeight);
 	object["readbackPixelCursor"] = static_cast<i64>(state.readbackPixelCursor);
@@ -550,6 +552,7 @@ GxGpuCommandBufferState decodeGxGpuCommandBufferState(const BinValue& value, con
 	state.commandWordStart = decodeU32VectorWithLength(requireField(object, "commandWordStart", label), "machine.gxGpu.commandBuffer.commandWordStart", state.commandCount);
 	state.commandWordCount = decodeU32VectorWithLength(requireField(object, "commandWordCount", label), "machine.gxGpu.commandBuffer.commandWordCount", state.commandCount);
 	state.commandDrawModeWord = decodeU32VectorWithLength(requireField(object, "commandDrawModeWord", label), "machine.gxGpu.commandBuffer.commandDrawModeWord", state.commandCount);
+	state.commandVramYAddressExtensionWord = decodeU8VectorWithLength(requireField(object, "commandVramYAddressExtensionWord", label), "machine.gxGpu.commandBuffer.commandVramYAddressExtensionWord", state.commandCount);
 	state.commandTextureWindowWord = decodeU32VectorWithLength(requireField(object, "commandTextureWindowWord", label), "machine.gxGpu.commandBuffer.commandTextureWindowWord", state.commandCount);
 	state.commandDrawingAreaTopLeftWord = decodeU32VectorWithLength(requireField(object, "commandDrawingAreaTopLeftWord", label), "machine.gxGpu.commandBuffer.commandDrawingAreaTopLeftWord", state.commandCount);
 	state.commandDrawingAreaBottomRightWord = decodeU32VectorWithLength(requireField(object, "commandDrawingAreaBottomRightWord", label), "machine.gxGpu.commandBuffer.commandDrawingAreaBottomRightWord", state.commandCount);
@@ -563,7 +566,8 @@ GxGpuCommandBufferState decodeGxGpuCommandBufferState(const BinValue& value, con
 	}
 	state.readbackFenceCommandCount = requireBoundedU32(requireField(object, "readbackFenceCommandCount", label), "machine.gxGpu.commandBuffer.readbackFenceCommandCount", 0u, static_cast<u32>(state.commandCount));
 	state.readbackX = requireBoundedU32(requireField(object, "readbackX", label), "machine.gxGpu.commandBuffer.readbackX", 0u, GX_GPU_VRAM_WIDTH - 1u);
-	state.readbackY = requireBoundedU32(requireField(object, "readbackY", label), "machine.gxGpu.commandBuffer.readbackY", 0u, GX_GPU_VRAM_HEIGHT - 1u);
+	state.readbackY = requireBoundedU32(requireField(object, "readbackY", label), "machine.gxGpu.commandBuffer.readbackY", 0u, GX_GPU_VRAM_Y_ADDRESS_PERIOD - 1u);
+	state.readbackVramYAddressExtensionWord = static_cast<u8>(requireBoundedU32(requireField(object, "readbackVramYAddressExtensionWord", label), "machine.gxGpu.commandBuffer.readbackVramYAddressExtensionWord", 0u, 1u));
 	state.readbackWidth = requireBoundedU32(requireField(object, "readbackWidth", label), "machine.gxGpu.commandBuffer.readbackWidth", 0u, GX_GPU_VRAM_WIDTH);
 	state.readbackHeight = requireBoundedU32(requireField(object, "readbackHeight", label), "machine.gxGpu.commandBuffer.readbackHeight", 0u, GX_GPU_VRAM_HEIGHT);
 	const size_t readbackPixelCount = static_cast<size_t>(state.readbackWidth) * static_cast<size_t>(state.readbackHeight);
@@ -609,13 +613,14 @@ BinValue encodeGxGpuState(const GxGpuState& state) {
 	object["displayStartWord"] = static_cast<i64>(state.displayStartWord);
 	object["horizontalDisplayRangeWord"] = static_cast<i64>(state.horizontalDisplayRangeWord);
 	object["verticalDisplayRangeWord"] = static_cast<i64>(state.verticalDisplayRangeWord);
-	object["textureDisableAllowedWord"] = static_cast<i64>(state.textureDisableAllowedWord);
+	object["vramYAddressExtensionWord"] = static_cast<i64>(state.vramYAddressExtensionWord);
 	object["scanoutInterlacedField"] = static_cast<i64>(state.scanoutInterlacedField);
 	object["scanoutInterlacedDisplayField"] = static_cast<i64>(state.scanoutInterlacedDisplayField);
 	object["scanoutActiveLineLsb"] = static_cast<i64>(state.scanoutActiveLineLsb);
 	object["presentStatusWord"] = static_cast<i64>(state.presentStatusWord);
 	object["presentDisplayModeWord"] = static_cast<i64>(state.presentDisplayModeWord);
 	object["presentDisplayStartWord"] = static_cast<i64>(state.presentDisplayStartWord);
+	object["presentVramYAddressExtensionWord"] = static_cast<i64>(state.presentVramYAddressExtensionWord);
 	object["presentHorizontalDisplayRangeWord"] = static_cast<i64>(state.presentHorizontalDisplayRangeWord);
 	object["presentVerticalDisplayRangeWord"] = static_cast<i64>(state.presentVerticalDisplayRangeWord);
 	object["vramPresentationPending"] = state.vramPresentationPending;
@@ -663,13 +668,14 @@ GxGpuState decodeGxGpuState(const BinValue& value, const char* label) {
 	state.displayStartWord = requireU32(requireField(object, "displayStartWord", label), "machine.gxGpu.displayStartWord");
 	state.horizontalDisplayRangeWord = requireU32(requireField(object, "horizontalDisplayRangeWord", label), "machine.gxGpu.horizontalDisplayRangeWord");
 	state.verticalDisplayRangeWord = requireU32(requireField(object, "verticalDisplayRangeWord", label), "machine.gxGpu.verticalDisplayRangeWord");
-	state.textureDisableAllowedWord = requireU32(requireField(object, "textureDisableAllowedWord", label), "machine.gxGpu.textureDisableAllowedWord");
+	state.vramYAddressExtensionWord = requireU32(requireField(object, "vramYAddressExtensionWord", label), "machine.gxGpu.vramYAddressExtensionWord");
 	state.scanoutInterlacedField = requireBoundedU32(requireField(object, "scanoutInterlacedField", label), "machine.gxGpu.scanoutInterlacedField", 0u, 1u);
 	state.scanoutInterlacedDisplayField = requireBoundedU32(requireField(object, "scanoutInterlacedDisplayField", label), "machine.gxGpu.scanoutInterlacedDisplayField", 0u, 1u);
 	state.scanoutActiveLineLsb = requireBoundedU32(requireField(object, "scanoutActiveLineLsb", label), "machine.gxGpu.scanoutActiveLineLsb", 0u, 1u);
 	state.presentStatusWord = requireU32(requireField(object, "presentStatusWord", label), "machine.gxGpu.presentStatusWord");
 	state.presentDisplayModeWord = requireU32(requireField(object, "presentDisplayModeWord", label), "machine.gxGpu.presentDisplayModeWord");
 	state.presentDisplayStartWord = requireU32(requireField(object, "presentDisplayStartWord", label), "machine.gxGpu.presentDisplayStartWord");
+	state.presentVramYAddressExtensionWord = requireBoundedU32(requireField(object, "presentVramYAddressExtensionWord", label), "machine.gxGpu.presentVramYAddressExtensionWord", 0u, 1u);
 	state.presentHorizontalDisplayRangeWord = requireU32(requireField(object, "presentHorizontalDisplayRangeWord", label), "machine.gxGpu.presentHorizontalDisplayRangeWord");
 	state.presentVerticalDisplayRangeWord = requireU32(requireField(object, "presentVerticalDisplayRangeWord", label), "machine.gxGpu.presentVerticalDisplayRangeWord");
 	state.vramPresentationPending = requireBool(requireField(object, "vramPresentationPending", label), "machine.gxGpu.vramPresentationPending");
