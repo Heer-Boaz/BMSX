@@ -75,6 +75,8 @@ for (const name of Object.keys(captures)) {
 	assert.equal(output.height, 192, `${name} height`);
 }
 
+assertText(frame('entry'), 1, 0, 'EXCEPTION ', accent);
+assertText(frame('entry'), 1, 10, 'NMI  SUPERVISOR REQUEST', text);
 assertGlyph(frame('uppercaseInput'), 4, 2, 'H', text);
 assertText(frame('firstCandidate'), 31, 0, 'REBOOT', accent);
 assertText(frame('firstCandidate'), 31, 8, 'REGS', text);

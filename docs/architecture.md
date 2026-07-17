@@ -986,6 +986,12 @@ IRQ/VBlank path. The cart receives no input because its frames are not
 executing. The host continues to sample the physical devices into ICU words;
 it does not edit a terminal buffer or dispatch commands.
 
+Monitor entry arms one ordinary ICU sample before its existing publication
+VBlank, then seeds both sides of the firmware key-edge state from those latched
+words. A key held while the exception was raised must therefore be released
+before it can become monitor editor input; no platform filters or synthetic
+release events participate in this boundary.
+
 The BIOS terminal uses the ordinary GX GPU and the ordinary primary scanout.
 GX VRAM remains one 1024x512 A1RGB555 word array: 524,288 words, exactly 1 MiB.
 There is no second display circuit, terminal VRAM bank, character-plane SRAM,

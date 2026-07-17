@@ -66,6 +66,10 @@ export function buildBiosMonitorTimeline() {
 		frame += 2;
 	}
 
+	const supervisorPressId = pressId;
+	pressId += 1;
+	const heldCartKeyPressId = pressId;
+	pressId += 1;
 	entries.push({
 		description: 'cart frame before BIOS monitor entry',
 		frame,
@@ -77,16 +81,18 @@ export function buildBiosMonitorTimeline() {
 			down: true,
 			value: 1,
 			timestamp: frame * 20,
-			pressId,
+			pressId: supervisorPressId,
 			modifiers,
 		},
 	});
 	captures.game = frame;
+	event('KeyC', true, heldCartKeyPressId, 'hold cart key across BIOS monitor entry');
 	frame += 2;
-	event('F2', false, pressId, 'release BIOS monitor key');
-	pressId += 1;
+	event('F2', false, supervisorPressId, 'release BIOS monitor key');
 	frame += 4;
 	capture('entry', 'BIOS monitor entry');
+	event('KeyC', false, heldCartKeyPressId, 'release cart key after first monitor scan');
+	frame += 4;
 
 	type('h');
 	capture('uppercaseInput', 'unshifted input uses uppercase presentation');

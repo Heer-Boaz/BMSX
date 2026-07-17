@@ -82,8 +82,9 @@ local initialize_input<const> = function()
 	local current_keys<const>: *word = monitor_current_keys
 	local previous_keys<const>: *word = monitor_previous_keys
 	for index = 0, 7 do
-		current_keys[index] = 0
-		previous_keys[index] = 0
+		local keys<const> = input_keys[index]
+		current_keys[index] = keys
+		previous_keys[index] = keys
 	end
 end
 
@@ -382,6 +383,9 @@ function monitor.enter()
 	*irq_mask = irq_dma_done | irq_vblank | irq_gpu
 	cop0.status = *monitor_saved_status | 1
 	dma_transfer.abort()
+	-- Seed monitor edge state from one monitor-owned ICU sample. Keys held while
+	-- the exception was raised must be released before they become editor input.
+	*input_control = input_arm
 	vblank.wait()
 
 	initialize_input()

@@ -37,6 +37,15 @@ local command_memory<const> = 4
 local command_reboot<const> = 5
 local command_registers<const> = 6
 
+local cause_code_mask<const> = 0x0000007c
+local cause_nmi<const> = 0x00010000
+local exception_code_address_error_load<const> = 4
+local exception_code_address_error_store<const> = 5
+local exception_code_data_bus_error<const> = 7
+local exception_code_coprocessor_unusable<const> = 11
+local exception_nmi<const> = 0xfffffffb
+local exception_unknown<const> = 0xfffffffa
+
 struct monitor_command
 	name: string
 	usage: string
@@ -53,6 +62,20 @@ rodata command_registry: monitor_command[] = {
 	{ name = 'REGS', usage = 'REGS', description = 'SHOW CP0 AND IRQ STATE', kind = command_registers },
 }
 
+struct monitor_exception
+	code: u8
+	mnemonic: string
+	description: string
+	has_bad_address: u8
+end
+
+rodata exception_registry: monitor_exception[] = {
+	{ code = exception_code_address_error_load, mnemonic = 'ADEL', description = 'ADDRESS ERROR LOAD', has_bad_address = 1 },
+	{ code = exception_code_address_error_store, mnemonic = 'ADES', description = 'ADDRESS ERROR STORE', has_bad_address = 1 },
+	{ code = exception_code_data_bus_error, mnemonic = 'DBE', description = 'DATA BUS ERROR', has_bad_address = 0 },
+	{ code = exception_code_coprocessor_unusable, mnemonic = 'CPU', description = 'COPROCESSOR UNUSABLE', has_bad_address = 0 },
+}
+
 bss monitor_command_producer: word
 bss monitor_command_cursor: word
 bss monitor_command_value: word
@@ -65,6 +88,8 @@ bss monitor_context_cause: word
 bss monitor_context_epc: word
 bss monitor_context_bad_address: word
 bss monitor_context_irq_mask: word
+bss monitor_context_exception: word
+bss monitor_context_has_bad_address: word
 
 monitor_commands.action_none = action_none
 monitor_commands.action_output = action_output
@@ -229,6 +254,19 @@ local write_hex<const> = function(row, column, value, palette)
 	return column
 end
 
+local exception_at<const> = function(cause)
+	if (cause & cause_nmi) ~= 0 then
+		return exception_nmi
+	end
+	local code<const> = (cause & cause_code_mask) >> 2
+	for exception = 0, #exception_registry - 1 do
+		if exception_registry[exception].code == code then
+			return exception
+		end
+	end
+	return exception_unknown
+end
+
 local start_usage<const> = function(command)
 	*monitor_command_producer = producer_usage
 	*monitor_command_value = command
@@ -246,6 +284,12 @@ function monitor_commands.open(status, cause, epc, bad_address, irq_mask)
 	*monitor_context_epc = epc
 	*monitor_context_bad_address = bad_address
 	*monitor_context_irq_mask = irq_mask
+	local exception<const> = exception_at(cause)
+	*monitor_context_exception = exception
+	*monitor_context_has_bad_address = 0
+	if exception ~= exception_nmi and exception ~= exception_unknown then
+		*monitor_context_has_bad_address = exception_registry[exception].has_bad_address
+	end
 	*monitor_command_producer = producer_none
 end
 
@@ -444,24 +488,42 @@ function monitor_commands.next_row(row)
 	if entry.kind == command_fault or entry.kind == command_registers then
 		local cursor<const> = *monitor_command_cursor
 		local column = 0
-		if cursor == 0 then
-			column = write_text(row, 0, 'CAUSE   ', palette_accent)
-			write_hex(row, column, *monitor_context_cause, palette_text)
-		elseif cursor == 1 then
-			column = write_text(row, 0, 'EPC     ', palette_accent)
-			write_hex(row, column, *monitor_context_epc, palette_text)
-		elseif cursor == 2 then
-			column = write_text(row, 0, 'BADADDR ', palette_accent)
-			write_hex(row, column, *monitor_context_bad_address, palette_text)
-		elseif cursor == 3 then
-			column = write_text(row, 0, 'STATUS  ', palette_accent)
-			write_hex(row, column, *monitor_context_status, palette_text)
+		if entry.kind == command_fault and cursor == 0 then
+			column = write_text(row, 0, 'EXCEPTION ', palette_accent)
+			local exception<const> = *monitor_context_exception
+			if exception == exception_nmi then
+				column = write_text(row, column, 'NMI  ', palette_text)
+				write_text(row, column, 'SUPERVISOR REQUEST', palette_text)
+			elseif exception == exception_unknown then
+				write_text(row, column, 'RESERVED', palette_text)
+			else
+				local definition<const>: *monitor_exception = &exception_registry[exception]
+				column = write_text(row, column, definition.mnemonic, palette_text)
+				column = write_text(row, column, '  ', palette_text)
+				write_text(row, column, definition.description, palette_text)
+			end
 		else
-			column = write_text(row, 0, 'IRQMASK ', palette_accent)
-			write_hex(row, column, *monitor_context_irq_mask, palette_text)
+			local register_cursor<const> = entry.kind == command_fault and cursor - 1 or cursor
+			if register_cursor == 0 then
+				column = write_text(row, 0, 'CAUSE   ', palette_accent)
+				write_hex(row, column, *monitor_context_cause, palette_text)
+			elseif register_cursor == 1 then
+				column = write_text(row, 0, 'EPC     ', palette_accent)
+				write_hex(row, column, *monitor_context_epc, palette_text)
+			elseif register_cursor == 2 then
+				column = write_text(row, 0, 'BADADDR ', palette_accent)
+				write_hex(row, column, *monitor_context_bad_address, palette_text)
+			elseif register_cursor == 3 then
+				column = write_text(row, 0, 'STATUS  ', palette_accent)
+				write_hex(row, column, *monitor_context_status, palette_text)
+			else
+				column = write_text(row, 0, 'IRQMASK ', palette_accent)
+				write_hex(row, column, *monitor_context_irq_mask, palette_text)
+			end
 		end
 		*monitor_command_cursor = cursor + 1
-		if (entry.kind == command_fault and cursor == 2) or cursor == 4 then
+		if (entry.kind == command_fault and (cursor == 3 or (cursor == 2 and *monitor_context_has_bad_address == 0)))
+			or (entry.kind == command_registers and cursor == 4) then
 			*monitor_command_producer = producer_none
 			return row_done
 		end
