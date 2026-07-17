@@ -725,7 +725,7 @@ PSX discrepancy or to start the GTE+ ABI early.
   core and GL context are alive; and V2/V1/legacy core-option definitions feed a
   retained option register that preserves explicit CLI overrides and update
   state. These are cold configuration owners, not per-frame DTO validation.
-- [ ] Remove the remaining private keyboard/focus/cart-start direct-host ABI.
+- [x] Remove the remaining private keyboard/focus/cart-start direct-host ABI.
   Standard libretro keyboard delivery and a frontend-owned timeline origin must
   replace it without a boot-delay heuristic or a new compatibility facade.
 - [x] Give GLES2 dynamic vertex submission a retained stream-buffer lifecycle.
