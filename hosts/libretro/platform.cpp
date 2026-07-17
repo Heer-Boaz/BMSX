@@ -789,12 +789,6 @@ constexpr unsigned kRetroPointerIdX = 0;
 constexpr unsigned kRetroPointerIdY = 1;
 constexpr unsigned kRetroPointerIdPressed = 2;
 
-// Frontends own the physical remap. This canonical chord cannot coincide with
-// BMSX's host quick-menu chord (Start+Select+L+R).
-constexpr u16 kSupervisorRequestControllerMask =
-	(1u << RETRO_DEVICE_ID_JOYPAD_DOWN) |
-	(1u << RETRO_DEVICE_ID_JOYPAD_SELECT);
-
 f32 normalizeAxis(i16 value) {
 	// Libretro exposes the complete signed 16-bit range. Preserve both endpoints.
 	return static_cast<f32>(value) / (value < 0 ? 32768.0F : 32767.0F);
@@ -879,10 +873,6 @@ void LibretroInputHub::poll() {
 			});
 		}
 	}
-
-	m_controller_supervisor_request =
-		(newState.buttons[0] & kSupervisorRequestControllerMask) == kSupervisorRequestControllerMask;
-	updateSupervisorRequestLine();
 
 	const i16 mouseDeltaX = m_input_state_cb(0, RETRO_DEVICE_MOUSE, 0, kRetroMouseIdX);
 	const i16 mouseDeltaY = m_input_state_cb(0, RETRO_DEVICE_MOUSE, 0, kRetroMouseIdY);
@@ -989,8 +979,10 @@ void LibretroInputHub::postKeyboardEvent(unsigned keycode, bool down) {
 		.value = down ? 1.0F : 0.0F,
 	});
 	if (usage == HID_USAGE_F2) {
-		m_keyboard_supervisor_request = down;
-		updateSupervisorRequestLine();
+		emitEvent(InputEvt{
+			.type = down ? InputEvtType::SupervisorRequestDown : InputEvtType::SupervisorRequestUp,
+			.input = {},
+		});
 	}
 }
 
@@ -1001,21 +993,6 @@ void LibretroInputHub::resetState() {
 	m_prev_pointer_y = 0;
 	m_prev_pointer_position_valid = false;
 	m_pressed_keyboard_usages.fill(false);
-	m_keyboard_supervisor_request = false;
-	m_controller_supervisor_request = false;
-	m_supervisor_request_line_high = false;
-}
-
-void LibretroInputHub::updateSupervisorRequestLine() {
-	const bool lineHigh = m_keyboard_supervisor_request || m_controller_supervisor_request;
-	if (lineHigh == m_supervisor_request_line_high) {
-		return;
-	}
-	m_supervisor_request_line_high = lineHigh;
-	emitEvent(InputEvt{
-		.type = lineHigh ? InputEvtType::SupervisorRequestDown : InputEvtType::SupervisorRequestUp,
-		.input = {},
-	});
 }
 
 SubscriptionHandle LibretroInputHub::subscribe(std::function<void(const InputEvt&)> handler) {

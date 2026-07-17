@@ -976,10 +976,10 @@ a hidden fallback VM.
 Platform input owners drive one dedicated supervisor-request line rather than
 injecting a synthetic keyboard event into the ICU. Browser, headless and native
 libretro keyboard paths map physical `F2` to that line while still publishing
-the ordinary F2 HID bit. Libretro also maps the port-0 Down+Select chord; its
-physical buttons remain configurable through the frontend controller mapping.
-That chord is distinct from the host-owned Start+Select+L+R quick-menu action.
-All physical request sources are ORed before a line transition is published.
+the ordinary F2 HID bit. Ordinary RetroPad buttons remain gameplay input and do
+not drive that system line. A controller-only frontend must expose a separate
+frontend-owned supervisor control rather than reserve a gameplay chord or
+inject F2.
 While the BIOS monitor owns the CPU, it reads the raw ICU USB-HID bitmap,
 performs its own modifier, repeat, and character mapping, and waits on the BIOS
 IRQ/VBlank path. The cart receives no input because its frames are not

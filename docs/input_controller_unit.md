@@ -73,7 +73,7 @@ those stable raw words. There are no computed-on-read action queries.
 
 Independently of the cart-visible sample latch, every VBlank samples the
 retained supervisor-request line. Platform adapters aggregate their physical
-F2/controller sources before that line reaches the ICU; the device never
+supervisor controls before that line reaches the ICU; the device never
 decodes HID usages or controller chords. A low-to-high transition requests the
 CPU's non-maskable system interrupt. An unarmed VBlank does not request a raw
 snapshot or change any guest-visible ICU word; it only samples that line. The
