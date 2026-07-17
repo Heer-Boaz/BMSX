@@ -6,11 +6,7 @@ import {
 	readApuBadpFrameAt,
 	resetApuBadpDecoder,
 } from './badp_decoder_hot_path';
-import {
-	APU_OUTPUT_RING_CAPACITY_FRAMES,
-	APU_OUTPUT_RING_CAPACITY_SAMPLES,
-	ApuOutputRing,
-} from './output_ring';
+import { ApuOutputRing } from './output_ring';
 import { APU_PCM_SAMPLE_SCALE, readApuPcmSample } from './pcm_decoder_hot_path';
 import {
 	applyApuOutputFilter,
@@ -78,9 +74,12 @@ function audioFrameIndex(cursorQ16: number): number {
 }
 
 export class ApuOutputMixer {
+	public static readonly MIX_BATCH_FRAMES = 128;
+	private static readonly MIX_BATCH_SAMPLES = ApuOutputMixer.MIX_BATCH_FRAMES * 2;
 	public readonly outputRing = new ApuOutputRing();
 	private readonly voices: ApuOutputVoice[] = [];
-	private readonly mixBuffer = new Float32Array(APU_OUTPUT_RING_CAPACITY_SAMPLES);
+	private readonly mixBuffer = new Float32Array(ApuOutputMixer.MIX_BATCH_SAMPLES);
+	private readonly renderBuffer = new Int16Array(ApuOutputMixer.MIX_BATCH_SAMPLES);
 	private readonly phaseStep: ApuPhaseStep = { wholeQ16: 0, remainder: 0 };
 	private sampledLeft = 0;
 	private sampledRight = 0;
@@ -301,7 +300,7 @@ export class ApuOutputMixer {
 		let endedMask = 0;
 		let remaining = frameCount;
 		while (remaining !== 0) {
-			const batchFrames = remaining < APU_OUTPUT_RING_CAPACITY_FRAMES ? remaining : APU_OUTPUT_RING_CAPACITY_FRAMES;
+			const batchFrames = remaining < ApuOutputMixer.MIX_BATCH_FRAMES ? remaining : ApuOutputMixer.MIX_BATCH_FRAMES;
 			endedMask |= this.renderMachineBatch(batchFrames);
 			remaining -= batchFrames;
 		}
@@ -412,7 +411,7 @@ export class ApuOutputMixer {
 			}
 		}
 
-		const output = this.outputRing.renderBuffer;
+		const output = this.renderBuffer;
 		for (let index = 0; index < totalSamples; index += 1) {
 			output[index] = Math.round(clamp(mix[index]!, -1, 1) * 32767);
 		}

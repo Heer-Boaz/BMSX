@@ -3,7 +3,7 @@ import { DEVICE_SERVICE_APU, type DeviceScheduler } from '../../scheduler/device
 import type { ApuActiveSlots } from './active_slots';
 import type { ApuCommandFifo } from './command_fifo';
 import { APU_SAMPLE_RATE_HZ } from './contracts';
-import type { ApuOutputMixer } from './output';
+import { ApuOutputMixer } from './output';
 
 export class ApuServiceClock {
 	private cpuHz = APU_SAMPLE_RATE_HZ;
@@ -53,8 +53,7 @@ export class ApuServiceClock {
 			this.scheduler.scheduleDeviceService(DEVICE_SERVICE_APU, nowCycles);
 			return;
 		}
-		const serviceBatchFrames = 128;
-		const serviceFrames = this.audioOutput.samplesUntilNextEvent(serviceBatchFrames);
+		const serviceFrames = this.audioOutput.samplesUntilNextEvent(ApuOutputMixer.MIX_BATCH_FRAMES);
 		this.scheduler.scheduleDeviceService(
 			DEVICE_SERVICE_APU,
 			nowCycles + cyclesUntilBudgetUnits(this.cpuHz, APU_SAMPLE_RATE_HZ, this.sampleCarry, serviceFrames),

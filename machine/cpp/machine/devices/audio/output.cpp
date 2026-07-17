@@ -217,7 +217,7 @@ u32 ApuOutputMixer::renderMachineFrames(i64 frameCount) {
 	u32 endedMask = 0u;
 	i64 remaining = frameCount;
 	while (remaining != 0) {
-		const size_t batchFrames = static_cast<size_t>(std::min<i64>(remaining, APU_OUTPUT_RING_CAPACITY_FRAMES));
+		const size_t batchFrames = static_cast<size_t>(std::min<i64>(remaining, MIX_BATCH_FRAMES));
 		endedMask |= renderMachineBatch(batchFrames);
 		remaining -= static_cast<i64>(batchFrames);
 	}
@@ -330,7 +330,7 @@ u32 ApuOutputMixer::renderMachineBatch(size_t frameCount) {
 		}
 	}
 
-	i16* output = outputRing.renderBuffer();
+	i16* output = m_renderBuffer.data();
 	for (size_t index = 0; index < totalSamples; index += 1u) {
 		output[index] = static_cast<i16>(saturateRoundedI32(static_cast<f64>(clamp(mix[index], -1.0F, 1.0F)) * 32767.0));
 	}

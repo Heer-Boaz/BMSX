@@ -2,7 +2,6 @@ export const APU_OUTPUT_RING_CAPACITY_FRAMES = 16384;
 export const APU_OUTPUT_RING_CAPACITY_SAMPLES = APU_OUTPUT_RING_CAPACITY_FRAMES * 2;
 
 export class ApuOutputRing {
-	public readonly renderBuffer = new Int16Array(APU_OUTPUT_RING_CAPACITY_SAMPLES);
 	private readonly queue = new Int16Array(APU_OUTPUT_RING_CAPACITY_SAMPLES);
 	private readFrame = 0;
 	private queuedFramesValue = 0;

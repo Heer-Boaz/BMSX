@@ -16,6 +16,7 @@ namespace bmsx {
 
 class ApuOutputMixer final {
 public:
+	static constexpr size_t MIX_BATCH_FRAMES = 128u;
 	ApuOutputMixer();
 	ApuOutputRing outputRing;
 
@@ -52,6 +53,8 @@ public:
 	[[nodiscard]] auto renderMachineFrames(i64 frameCount) -> u32;
 
 private:
+	static constexpr size_t MIX_BATCH_SAMPLES = MIX_BATCH_FRAMES * 2u;
+
 	struct VoiceRecord {
 		bool active = false;
 		ApuAudioSlot slot = 0;
@@ -103,7 +106,8 @@ private:
 	void configureRecordFilter(VoiceRecord& record);
 
 	std::array<VoiceRecord, APU_SLOT_COUNT> m_voices{};
-	std::array<f32, APU_OUTPUT_RING_CAPACITY_SAMPLES> m_mixBuffer{};
+	std::array<f32, MIX_BATCH_SAMPLES> m_mixBuffer{};
+	std::array<i16, MIX_BATCH_SAMPLES> m_renderBuffer{};
 	f64 m_sampledLeft = 0.0;
 	f64 m_sampledRight = 0.0;
 };

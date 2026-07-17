@@ -13,10 +13,6 @@ size_t ApuOutputRing::queuedFrames() const {
 	return m_queuedFrames;
 }
 
-i16* ApuOutputRing::renderBuffer() {
-	return m_renderBuffer.data();
-}
-
 void ApuOutputRing::write(const i16* samples, size_t frameCount) {
 	const size_t freeFrames = APU_OUTPUT_RING_CAPACITY_FRAMES - m_queuedFrames;
 	if (frameCount > freeFrames) {

@@ -15,13 +15,11 @@ class ApuOutputRing final {
 public:
 	void clear();
 	size_t queuedFrames() const;
-	i16* renderBuffer();
 	void write(const i16* samples, size_t frameCount);
 	u32 readFramePacked();
 
 private:
 	std::array<i16, APU_OUTPUT_RING_CAPACITY_SAMPLES> m_queue{};
-	std::array<i16, APU_OUTPUT_RING_CAPACITY_SAMPLES> m_renderBuffer{};
 	size_t m_readFrame = 0;
 	size_t m_queuedFrames = 0;
 };

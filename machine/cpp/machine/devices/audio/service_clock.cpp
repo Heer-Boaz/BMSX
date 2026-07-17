@@ -55,8 +55,7 @@ void ApuServiceClock::scheduleNext(i64 nowCycles) {
 		m_scheduler.scheduleDeviceService(DEVICE_SERVICE_APU, nowCycles);
 		return;
 	}
-	constexpr i64 serviceBatchFrames = 128;
-	const i64 serviceFrames = m_audioOutput.samplesUntilNextEvent(serviceBatchFrames);
+	const i64 serviceFrames = m_audioOutput.samplesUntilNextEvent(ApuOutputMixer::MIX_BATCH_FRAMES);
 	m_scheduler.scheduleDeviceService(
 		DEVICE_SERVICE_APU,
 		nowCycles + cyclesUntilBudgetUnits(m_cpuHz, APU_SAMPLE_RATE_HZ, m_sampleCarry, serviceFrames)
