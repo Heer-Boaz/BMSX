@@ -1496,6 +1496,28 @@ while window-to-surface and surface-to-game coordinate transforms remain
 separate ownership boundaries. Polling uses retained fixed-capacity state and
 performs no allocation.
 
+The direct host's `core_session` is the concrete loaded-core owner. It retains
+the dynamic-library handle, complete libretro API table, system information,
+core options, independent system/save-directory pointers, frame-time callback,
+current frame periods and core-requested shutdown latch for exactly one core
+lifetime. Libretro's contextless environment callback reaches that one active
+session and routes video and keyboard commands directly to their existing
+owners; it does not expose a generic host context or a wrapper API around
+`retro_run()` and the other raw core entrypoints. The API version is accepted
+only when it equals the frontend header version, and every mandatory symbol is
+resolved before the core is initialized.
+
+Content bytes for a core that does not require a full path live only across the
+`retro_load_game()` call, as required by the default non-persistent libretro
+content contract. `retro_get_system_av_info()` is queried only after that load
+succeeds. A missing save directory remains absent rather than aliasing the
+system directory. Software presentation starts in libretro's 0RGB1555 default
+and retains allocation-free conversion for 0RGB1555, RGB565 and XRGB8888;
+BMSX's explicit format negotiation therefore adds no per-frame allocation or
+extra conversion to its existing hot paths. CLI parsing, POSIX signals,
+multi-owner startup/shutdown ordering, pacing and measurement counters remain
+stack/runloop state in `main.c`.
+
 Libretro keyboard input enters through
 `RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK`. The direct host retains source bits
 for each physical key source, so releasing one source cannot clear a still-held

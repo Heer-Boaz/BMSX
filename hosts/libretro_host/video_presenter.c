@@ -127,7 +127,7 @@ typedef GLenum (GL_APIENTRYP PFNGLCHECKFRAMEBUFFERSTATUSPROC)(GLenum target);
 typedef void (GL_APIENTRYP BmsxGlReadPixelsProc)(GLint x, GLint y, GLsizei width, GLsizei height, GLenum format, GLenum type, void* pixels);
 
 static VideoPresenter g_presenter = {
-	.pixel_format = RETRO_PIXEL_FORMAT_XRGB8888,
+	.pixel_format = RETRO_PIXEL_FORMAT_0RGB1555,
 	.blit_position_attribute = -1,
 	.blit_texcoord_attribute = -1,
 	.blit_texture_uniform = -1,
@@ -200,6 +200,27 @@ static inline uint32_t rgb565_to_xrgb8888(uint16_t pixel) {
 	const uint8_t blue5 = (uint8_t)(pixel & 0x1F);
 	const uint8_t red = (uint8_t)((red5 << 3) | (red5 >> 2));
 	const uint8_t green = (uint8_t)((green6 << 2) | (green6 >> 4));
+	const uint8_t blue = (uint8_t)((blue5 << 3) | (blue5 >> 2));
+	return (uint32_t)((red << 16) | (green << 8) | blue);
+}
+
+static inline uint16_t rgb1555_to_rgb565(uint16_t pixel) {
+	const uint16_t red5 = (pixel >> 10) & 0x1F;
+	const uint16_t green5 = (pixel >> 5) & 0x1F;
+	const uint16_t blue5 = pixel & 0x1F;
+	return (uint16_t)(
+			(red5 << 11) |
+			(green5 << 6) |
+			((green5 >> 4) << 5) |
+			blue5);
+}
+
+static inline uint32_t rgb1555_to_xrgb8888(uint16_t pixel) {
+	const uint8_t red5 = (uint8_t)((pixel >> 10) & 0x1F);
+	const uint8_t green5 = (uint8_t)((pixel >> 5) & 0x1F);
+	const uint8_t blue5 = (uint8_t)(pixel & 0x1F);
+	const uint8_t red = (uint8_t)((red5 << 3) | (red5 >> 2));
+	const uint8_t green = (uint8_t)((green5 << 3) | (green5 >> 2));
 	const uint8_t blue = (uint8_t)((blue5 << 3) | (blue5 >> 2));
 	return (uint32_t)((red << 16) | (green << 8) | blue);
 }
@@ -1231,7 +1252,7 @@ static void copy_software_frame(
 				const uint8_t* source = (const uint8_t*)data + (size_t)y * pitch;
 				if (presenter->pixel_format == RETRO_PIXEL_FORMAT_RGB565) {
 					memcpy(target, source, copy_width * 2u);
-				} else {
+				} else if (presenter->pixel_format == RETRO_PIXEL_FORMAT_XRGB8888) {
 					const uint32_t* pixels = (const uint32_t*)source;
 					for (unsigned x = 0; x < copy_width; ++x) {
 						const uint32_t pixel = pixels[x];
@@ -1239,6 +1260,11 @@ static void copy_software_frame(
 								(uint8_t)((pixel >> 16) & 0xFF),
 								(uint8_t)((pixel >> 8) & 0xFF),
 								(uint8_t)(pixel & 0xFF));
+					}
+				} else {
+					const uint16_t* pixels = (const uint16_t*)source;
+					for (unsigned x = 0; x < copy_width; ++x) {
+						target[x] = rgb1555_to_rgb565(pixels[x]);
 					}
 				}
 			}
@@ -1266,7 +1292,7 @@ static void copy_software_frame(
 						target[x] = pixels[source_x >> 16];
 						source_x += step_x;
 					}
-				} else {
+				} else if (presenter->pixel_format == RETRO_PIXEL_FORMAT_XRGB8888) {
 					const uint32_t* pixels = (const uint32_t*)source;
 					for (int x = 0; x < destination_width; ++x) {
 						const uint32_t pixel = pixels[source_x >> 16];
@@ -1274,6 +1300,12 @@ static void copy_software_frame(
 								(uint8_t)((pixel >> 16) & 0xFF),
 								(uint8_t)((pixel >> 8) & 0xFF),
 								(uint8_t)(pixel & 0xFF));
+						source_x += step_x;
+					}
+				} else {
+					const uint16_t* pixels = (const uint16_t*)source;
+					for (int x = 0; x < destination_width; ++x) {
+						target[x] = rgb1555_to_rgb565(pixels[source_x >> 16]);
 						source_x += step_x;
 					}
 				}
@@ -1292,10 +1324,15 @@ static void copy_software_frame(
 				const uint8_t* source = (const uint8_t*)data + (size_t)y * pitch;
 				if (presenter->pixel_format == RETRO_PIXEL_FORMAT_XRGB8888) {
 					memcpy(target, source, copy_width * 4u);
-				} else {
+				} else if (presenter->pixel_format == RETRO_PIXEL_FORMAT_RGB565) {
 					const uint16_t* pixels = (const uint16_t*)source;
 					for (unsigned x = 0; x < copy_width; ++x) {
 						target[x] = rgb565_to_xrgb8888(pixels[x]);
+					}
+				} else {
+					const uint16_t* pixels = (const uint16_t*)source;
+					for (unsigned x = 0; x < copy_width; ++x) {
+						target[x] = rgb1555_to_xrgb8888(pixels[x]);
 					}
 				}
 			}
@@ -1323,10 +1360,16 @@ static void copy_software_frame(
 						target[x] = pixels[source_x >> 16];
 						source_x += step_x;
 					}
-				} else {
+				} else if (presenter->pixel_format == RETRO_PIXEL_FORMAT_RGB565) {
 					const uint16_t* pixels = (const uint16_t*)source;
 					for (int x = 0; x < destination_width; ++x) {
 						target[x] = rgb565_to_xrgb8888(pixels[source_x >> 16]);
+						source_x += step_x;
+					}
+				} else {
+					const uint16_t* pixels = (const uint16_t*)source;
+					for (int x = 0; x < destination_width; ++x) {
+						target[x] = rgb1555_to_xrgb8888(pixels[source_x >> 16]);
 						source_x += step_x;
 					}
 				}
@@ -1345,7 +1388,7 @@ void video_presenter_open(
 	g_presenter = (VideoPresenter){
 		.surface = surface,
 		.frame_timing = frame_timing,
-		.pixel_format = RETRO_PIXEL_FORMAT_XRGB8888,
+		.pixel_format = RETRO_PIXEL_FORMAT_0RGB1555,
 		.source_width = 320,
 		.source_height = 240,
 		.geometry_aspect = 4.0f / 3.0f,
@@ -1405,6 +1448,7 @@ void video_presenter_update_av_info(const struct retro_system_av_info* av_info) 
 
 bool video_presenter_accept_pixel_format(enum retro_pixel_format pixel_format) {
 	switch (pixel_format) {
+		case RETRO_PIXEL_FORMAT_0RGB1555:
 		case RETRO_PIXEL_FORMAT_XRGB8888:
 		case RETRO_PIXEL_FORMAT_RGB565:
 			g_presenter.pixel_format = pixel_format;

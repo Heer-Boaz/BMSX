@@ -441,6 +441,7 @@ if(BMSX_BUILD_LIBRETRO_HOST)
 		${BMSX_LIBRETRO_HOST_DIR}/audio_output.c
 		${BMSX_LIBRETRO_HOST_DIR}/audio_queue.c
 		${BMSX_LIBRETRO_HOST_DIR}/core_options.c
+		${BMSX_LIBRETRO_HOST_DIR}/core_session.c
 		${BMSX_LIBRETRO_HOST_DIR}/frame_pacer.c
 		${BMSX_LIBRETRO_HOST_DIR}/frame_timing.c
 		${BMSX_LIBRETRO_HOST_DIR}/host_fatal.c
