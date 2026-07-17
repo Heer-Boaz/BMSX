@@ -2155,9 +2155,8 @@ function appendLineCommandVertices(
 	return vertexFloatCount;
 }
 
-function executeNewGxGpuCommands(commandBuffer: GxGpuCommandBufferView): void {
+function executeNewGxGpuCommands(commandBuffer: GxGpuCommandBufferView, commandLimit: number): void {
 	let commandIndex = gxGpuState.processedCommandCount;
-	const presentCommandCount = commandBuffer.presentCommandCount;
 	const commandKindWords = commandBuffer.commandKind;
 	const commandDrawingAreaTopLeftWords = commandBuffer.commandDrawingAreaTopLeftWord;
 	const commandDrawingAreaBottomRightWords = commandBuffer.commandDrawingAreaBottomRightWord;
@@ -2179,7 +2178,7 @@ function executeNewGxGpuCommands(commandBuffer: GxGpuCommandBufferView): void {
 	resetGxGpuVramCopyRect(gxGpuSolidBatchRect);
 	resetGxGpuVramCopyRect(gxGpuTexturedBatchRect);
 	resetGxGpuVramCopyRect(gxGpuLineBatchRect);
-	for (; commandIndex < presentCommandCount; commandIndex += 1) {
+	for (; commandIndex < commandLimit; commandIndex += 1) {
 		const commandKind = commandKindWords[commandIndex];
 		const commandDrawsTexture = (commandKind === GX_GPU_COMMAND_DRAW_POLYGON || commandKind === GX_GPU_COMMAND_DRAW_RECTANGLE)
 			&& gxGpuCommandDrawsTexture(commandBuffer.commandOpcode[commandIndex], commandBuffer.commandDrawModeWord[commandIndex]);
@@ -2378,7 +2377,9 @@ function executeNewGxGpuCommands(commandBuffer: GxGpuCommandBufferView): void {
 				break;
 		}
 	}
-	gxGpuState.processedCommandCount = presentCommandCount;
+	if (gxGpuState.processedCommandCount < commandLimit) {
+		gxGpuState.processedCommandCount = commandLimit;
+	}
 	finishSolidBatch(vertexFloatCount, solidBatchFixedColor, solidBatchTopLeftWord, solidBatchBottomRightWord, solidBatchBlendEnabled, solidBatchBlendMode, solidBatchMaskBitModeWord, solidBatchDitherEnabled, solidBatchInterlacedRenderWord, solidBatchReadsVram, solidBatchRasterKind);
 	flushTexturedCommands(commandBuffer, texturedVertexFloatCount, texturedBatchCommandIndex);
 	flushLineCommands(lineVertexFloatCount);
@@ -2771,7 +2772,7 @@ function scanoutGxGpuVram(fbo: WebGLFramebuffer, state: RenderPassStateRegistry[
 	scanoutProgressiveGxGpuVram(fbo, state);
 }
 
-function executeGxGpuVramCommands(source: GxGpuVramSource): void {
+export function executeGxGpuVramCommands(source: GxGpuVramSource, commandLimit: number): void {
 	const commandBuffer = source.commandBuffer;
 	const commandSerial = commandBuffer.serial;
 	if (gxGpuState.vramSnapshotSerial !== source.vramSnapshotSerial) {
@@ -2783,12 +2784,12 @@ function executeGxGpuVramCommands(source: GxGpuVramSource): void {
 		gxGpuState.processedCommandCount = 0;
 		gxGpuState.processedCommandSerial = commandSerial;
 	}
-	executeNewGxGpuCommands(commandBuffer);
-	completeGxGpuReadback(commandBuffer, source.readbackPort);
+	executeNewGxGpuCommands(commandBuffer, commandLimit);
+	completeGxGpuReadback(commandLimit, source.readbackPort);
 }
 
-function completeGxGpuReadback(commandBuffer: GxGpuCommandBufferView, readback: GxGpuVramSource['readbackPort']): void {
-	if (!readback.claimReadback(commandBuffer.presentCommandCount)) {
+function completeGxGpuReadback(commandLimit: number, readback: GxGpuVramSource['readbackPort']): void {
+	if (!readback.claimReadback(commandLimit)) {
 		return;
 	}
 	const readbackToken = readback.token;
@@ -2821,7 +2822,7 @@ function completeGxGpuReadback(commandBuffer: GxGpuCommandBufferView, readback: 
 }
 
 export function captureRenderedVramSnapshot(gxGpu: GxGpu, output: GxGpuVramSource): void {
-	executeGxGpuVramCommands(output);
+	executeGxGpuVramCommands(output, output.commandBuffer.executedCommandCount);
 	const gl = gxGpuState.gl;
 	gl.bindFramebuffer(gl.FRAMEBUFFER, gxGpuState.vramFramebuffer);
 	gl.pixelStorei(gl.PACK_ALIGNMENT, 1);
@@ -2836,11 +2837,11 @@ export function captureRenderedVramSnapshot(gxGpu: GxGpu, output: GxGpuVramSourc
 			readbackByteOffset += GX_GPU_RAW_VRAM_BYTES_PER_PIXEL;
 		}
 	}
-	gxGpuState.vramSnapshotSerial = gxGpu.commitRenderedVramSnapshotBytes(gxGpuVramSnapshotScratch);
+	gxGpuState.vramSnapshotSerial = gxGpu.commitRenderedVramSnapshotBytes(gxGpuVramSnapshotScratch, gxGpuState.processedCommandCount);
 }
 
 function renderGxGpuPass(fbo: WebGLFramebuffer, state: RenderPassStateRegistry['gx_gpu']): void {
-	executeGxGpuVramCommands(state);
+	executeGxGpuVramCommands(state, state.commandBuffer.presentCommandCount);
 	scanoutGxGpuVram(fbo, state);
 }
 

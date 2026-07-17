@@ -13,7 +13,7 @@ import { createSolidRgba8Pixels, writeColorRgba8Pixels } from '../shared/solid_p
 import type { RenderPassLibrary } from '../backend/pass/library';
 import { registerHeadlessPasses, registerHeadlessPresentPass } from './passes';
 import { registerHostOverlayPass_Headless, registerHostMenuPass_Headless } from '../host_overlay/headless/pipeline';
-import { captureGxGpuVramSnapshot } from '../backend/software/gx_gpu';
+import { captureGxGpuVramSnapshot, executeGxGpuSoftwareVramCommands } from '../backend/software/gx_gpu';
 import type { GxGpu } from '../../machine/devices/gx/gpu';
 import { GX_GPU_VRAM_BYTE_COUNT } from '../../machine/devices/gx/gpu_command_buffer';
 
@@ -413,6 +413,11 @@ export class HeadlessGPUBackend implements GPUBackend {
 
 	getFrameStats(): typeof this.frameStats {
 		return this.frameStats;
+	}
+
+	executeGxGpuReadback(gxGpu: GxGpu): void {
+		const output = gxGpu.readDeviceOutput();
+		executeGxGpuSoftwareVramCommands(output, output.readbackPort.fenceCommandCount);
 	}
 
 	captureGxGpuVramSnapshot(gxGpu: GxGpu): void {

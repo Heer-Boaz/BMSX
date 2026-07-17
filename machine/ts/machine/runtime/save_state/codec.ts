@@ -551,6 +551,7 @@ function encodeGxGpuState(state: GxGpuState): GxGpuState {
 		presentDisplayStartWord: state.presentDisplayStartWord >>> 0,
 		presentHorizontalDisplayRangeWord: state.presentHorizontalDisplayRangeWord >>> 0,
 		presentVerticalDisplayRangeWord: state.presentVerticalDisplayRangeWord >>> 0,
+		vramPresentationPending: state.vramPresentationPending,
 		commandBuffer: encodeGxGpuCommandBufferState(state.commandBuffer),
 	};
 }
@@ -600,6 +601,7 @@ function decodeGxGpuState(value: unknown, label: string): GxGpuState {
 		presentDisplayStartWord: requireBoundedU32(requireObjectKey(object, 'presentDisplayStartWord', label, `${label}.presentDisplayStartWord`), `${label}.presentDisplayStartWord`, 0, 0xffffffff),
 		presentHorizontalDisplayRangeWord: requireBoundedU32(requireObjectKey(object, 'presentHorizontalDisplayRangeWord', label, `${label}.presentHorizontalDisplayRangeWord`), `${label}.presentHorizontalDisplayRangeWord`, 0, 0xffffffff),
 		presentVerticalDisplayRangeWord: requireBoundedU32(requireObjectKey(object, 'presentVerticalDisplayRangeWord', label, `${label}.presentVerticalDisplayRangeWord`), `${label}.presentVerticalDisplayRangeWord`, 0, 0xffffffff),
+		vramPresentationPending: requireBooleanValue(requireObjectKey(object, 'vramPresentationPending', label, `${label}.vramPresentationPending`), `${label}.vramPresentationPending`),
 		commandBuffer,
 	};
 }

@@ -1269,8 +1269,8 @@ void writeGxGpuVramSnapshotFromReadback() {
 	}
 }
 
-void completeGxGpuReadback(const GxGpuCommandBuffer& commandBuffer, GxGpuReadbackPort& readback) {
-	if (!readback.claimReadback(commandBuffer.presentCommandCount)) {
+void completeGxGpuReadback(size_t commandLimit, GxGpuReadbackPort& readback) {
+	if (!readback.claimReadback(commandLimit)) {
 		return;
 	}
 	const u32 readbackToken = readback.token();
@@ -2345,9 +2345,8 @@ u32 executeGxGpuBlendPlan(const GxGpuCommandBuffer& commandBuffer, u32 commandSt
 	return commandEnd;
 }
 
-void executeNewGxGpuCommands(const GxGpuCommandBuffer& commandBuffer) {
+void executeNewGxGpuCommands(const GxGpuCommandBuffer& commandBuffer, size_t commandLimit) {
 	u32 commandIndex = g_gxGpu.processedCommandCount;
-	const size_t presentCommandCount = commandBuffer.presentCommandCount;
 	u32 solidBatchTopLeftWord = kGxGpuFullDrawingAreaTopLeftWord;
 	u32 solidBatchBottomRightWord = kGxGpuFullDrawingAreaBottomRightWord;
 	u32 solidBatchMaskBitModeWord = 0u;
@@ -2363,7 +2362,7 @@ void executeNewGxGpuCommands(const GxGpuCommandBuffer& commandBuffer) {
 	resetGxGpuVramCopyRect(g_solidBatchRect);
 	resetGxGpuVramCopyRect(g_texturedBatchRect);
 	resetGxGpuVramCopyRect(g_lineBatchRect);
-	for (; commandIndex < presentCommandCount; commandIndex += 1u) {
+	for (; commandIndex < commandLimit; commandIndex += 1u) {
 		const u8 commandKind = commandBuffer.commandKind[commandIndex];
 		const bool commandDrawsTexture = (commandKind == GX_GPU_COMMAND_DRAW_POLYGON || commandKind == GX_GPU_COMMAND_DRAW_RECTANGLE)
 			&& gxGpuCommandDrawsTexture(commandBuffer.commandOpcode[commandIndex], commandBuffer.commandDrawModeWord[commandIndex]);
@@ -2375,7 +2374,7 @@ void executeNewGxGpuCommands(const GxGpuCommandBuffer& commandBuffer) {
 					commandBuffer.commandDrawingAreaTopLeftWord[commandIndex],
 					commandBuffer.commandDrawingAreaBottomRightWord[commandIndex]) > GX_GPU_VRAM_HEIGHT)) {
 			u32 blendPlanEnd = commandIndex + 1u;
-			while (blendPlanEnd < presentCommandCount
+			while (blendPlanEnd < commandLimit
 				&& blendPlanEnd - commandIndex < kGxGpuLineSegmentCapacity
 				&& gxGpuBlendPlanCommandMatches(commandBuffer, blendPlanEnd, commandIndex)) {
 				blendPlanEnd += 1u;
@@ -2605,7 +2604,7 @@ void executeNewGxGpuCommands(const GxGpuCommandBuffer& commandBuffer) {
 			break;
 		}
 	}
-	g_gxGpu.processedCommandCount = static_cast<u32>(presentCommandCount);
+	g_gxGpu.processedCommandCount = commandIndex;
 	finishSolidBatch(g_primitiveSubmission.solidFloatCount, solidBatchFixedColor, solidBatchBlendEnabled, solidBatchBlendMode, solidBatchMaskBitModeWord, solidBatchDitherEnabled, solidBatchInterlacedRenderWord, solidBatchReadsVram, solidBatchRasterKind);
 	flushTexturedCommands(commandBuffer, texturedVertexFloatCount, texturedBatchCommandIndex);
 	finishLineBatch(g_primitiveSubmission.lineFloatCount);
@@ -3087,7 +3086,7 @@ void scanoutGxGpuVram(GLuint frameFbo, const GxGpuPipelineState& state) {
 	scanoutProgressiveGxGpuVram(frameFbo, state);
 }
 
-void executeGxGpuVramCommands(const GxGpuCommandBuffer& commandBuffer, GxGpuReadbackPort& readback, const std::array<u8, GX_GPU_VRAM_BYTE_COUNT>& snapshotBytes, u64 snapshotSerial) {
+void executeGxGpuVramCommands(const GxGpuCommandBuffer& commandBuffer, GxGpuReadbackPort& readback, const std::array<u8, GX_GPU_VRAM_BYTE_COUNT>& snapshotBytes, u64 snapshotSerial, size_t commandLimit) {
 	if (!g_gxGpu.vramSnapshotValid || g_gxGpu.vramSnapshotSerial != snapshotSerial) {
 		uploadGxGpuVramSnapshot(snapshotBytes);
 		g_gxGpu.processedCommandCount = 0u;
@@ -3098,12 +3097,12 @@ void executeGxGpuVramCommands(const GxGpuCommandBuffer& commandBuffer, GxGpuRead
 		g_gxGpu.processedCommandCount = 0u;
 		g_gxGpu.processedCommandSerial = commandBuffer.serial;
 	}
-	executeNewGxGpuCommands(commandBuffer);
-	completeGxGpuReadback(commandBuffer, readback);
+	executeNewGxGpuCommands(commandBuffer, commandLimit);
+	completeGxGpuReadback(commandLimit, readback);
 }
 
 void renderGxGpu(GLuint frameFbo, const GxGpuPipelineState& state) {
-	executeGxGpuVramCommands(*state.commandBuffer, *state.readbackPort, *state.vramSnapshotBytes, state.vramSnapshotSerial);
+	executeGxGpuVramCommands(*state.commandBuffer, *state.readbackPort, *state.vramSnapshotBytes, state.vramSnapshotSerial, state.commandBuffer->presentCommandCount);
 	scanoutGxGpuVram(frameFbo, state);
 }
 
@@ -3114,13 +3113,18 @@ void executeGxGpuPass(GPUBackend* backend, GameView*, void* fbo, RenderPassState
 
 } // namespace
 
+void OpenGLES2Backend::executeGxGpuReadback(GxGpu& gxGpu) {
+	const GxGpuDeviceOutput& output = gxGpu.readDeviceOutput();
+	executeGxGpuVramCommands(output.commandBuffer, output.readbackPort, output.vramSnapshotBytes, output.vramSnapshotSerial, output.readbackPort.fenceCommandCount());
+}
+
 void OpenGLES2Backend::captureGxGpuVramSnapshot(GxGpu& gxGpu) {
 	const GxGpuDeviceOutput& output = gxGpu.readDeviceOutput();
-	executeGxGpuVramCommands(output.commandBuffer, output.readbackPort, output.vramSnapshotBytes, output.vramSnapshotSerial);
+	executeGxGpuVramCommands(output.commandBuffer, output.readbackPort, output.vramSnapshotBytes, output.vramSnapshotSerial, output.commandBuffer.executedCommandCount);
 	setRenderTarget(g_gxGpu.vramFramebuffer, kGxGpuVramWidth, kGxGpuVramHeight);
 	glReadPixels(0, 0, kGxGpuVramWidth, kGxGpuVramHeight, GL_RGBA, GL_UNSIGNED_BYTE, g_rawVramReadback.data());
 	writeGxGpuVramSnapshotFromReadback();
-	g_gxGpu.vramSnapshotSerial = gxGpu.commitRenderedVramSnapshotBytes(g_vramSnapshotScratch.data());
+	g_gxGpu.vramSnapshotSerial = gxGpu.commitRenderedVramSnapshotBytes(g_vramSnapshotScratch.data(), g_gxGpu.processedCommandCount);
 	g_gxGpu.vramSnapshotValid = true;
 }
 

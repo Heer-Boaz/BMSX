@@ -6,6 +6,6 @@ namespace bmsx {
 
 struct GxGpuCommandBuffer;
 
-size_t executeGxGpuSoftwareCommands(const GxGpuCommandBuffer& commandBuffer, size_t processedCommandCount);
+size_t executeGxGpuSoftwareCommands(const GxGpuCommandBuffer& commandBuffer, size_t processedCommandCount, size_t commandLimit);
 
 } // namespace bmsx

@@ -7,8 +7,8 @@
  * - Shared runtime contract in this file: TextureHandle, BackendCaps,
  *   ColorAttachmentSpec, DepthAttachmentSpec, RenderPassDesc, PassEncoder,
  *   GPUBackend texture/render-target methods, render-pass methods, draw methods
- *   except TS drawIndexed indexType, GX VRAM snapshot capture, frame lifecycle,
- *   getCaps(), and stats.
+ *   except TS drawIndexed indexType, GX readback-fence execution and VRAM
+ *   snapshot capture, frame lifecycle, getCaps(), and stats.
  * - Shared render semantics above this boundary are GX GPU command buffers.
  *   Concrete WebGL/GLES pass code owns GPU API binding such as shader
  *   programs, VAO/buffer state, glVertexAttribPointer calls, uniform binding,
@@ -205,6 +205,7 @@ public:
 	virtual void beginFrame() = 0;
 	virtual void endFrame() = 0;
 	virtual FrameStats getFrameStats() const = 0;
+	virtual void executeGxGpuReadback(GxGpu& gxGpu) = 0;
 	virtual void captureGxGpuVramSnapshot(GxGpu& gxGpu) = 0;
 
 	// ─────────────────────────────────────────────────────────────────────────
@@ -256,6 +257,7 @@ class SoftwareBackend : public GPUBackend {
 	void beginFrame() override;
 	void endFrame() override;
 	FrameStats getFrameStats() const override { return m_stats; }
+	void executeGxGpuReadback(GxGpu& gxGpu) override;
 	void captureGxGpuVramSnapshot(GxGpu& gxGpu) override;
 
 	// Capabilities

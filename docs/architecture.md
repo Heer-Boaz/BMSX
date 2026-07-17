@@ -1087,12 +1087,30 @@ GP0(C0h) is an execution-stream fence. Commands through that marker execute
 before the backend reads raw VRAM; later commands remain unpublished until the
 entire transfer has been consumed. `GxGpuReadbackPort` owns the request latches,
 fence, completion phase, fixed 512K-pixel exchange storage, and read cursor.
+The device deadline that activates C0 stops CPU execution at that exact machine
+cycle. The host then asks the active backend to execute through the C0 fence;
+this is independent of VBlank sealing and scanout presentation. Synchronous
+backends resume the same host frame. WebGPU submission and mapping suspend the
+in-flight machine frame, and their elapsed host time is discarded rather than
+converted into machine catch-up time. If restore replaces a request while an
+older map is still in flight, the backend claims the replacement request,
+invalidates the old completion by token and submits the claimed fence when the
+mapping buffer becomes available; the host never spins or advances machine time.
 Software backends copy directly from their raw-VRAM owner. Accelerated backends
 pack the logically wrapped 16-bit pixels on the GPU and perform one API
 readback into that retained exchange storage; they do not maintain a CPU VRAM
 shadow or run a per-pixel pack loop. GPUREAD emits the low pixel first, pads an
 odd final high halfword with zero, and leaves the final data latch unchanged
 after completion.
+
+Backend VRAM capture executes through the device's complete execution frontier,
+not merely the last VBlank presentation frontier. The captured raw snapshot
+replaces that exact command prefix and rebases the retained suffix. When capture
+occurs between VBlanks, the GPU retains one presentation-pending latch so the
+new raw snapshot is published on the next VBlank exactly once. The machine
+owner holds both execution and rendering gates across asynchronous backend
+capture and state encoding, so the copied bytes and retired prefix cannot come
+from different live command-stream generations.
 
 #### Raster and store datapath
 

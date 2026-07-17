@@ -155,7 +155,7 @@ export type GxGpuReadbackView = {
 };
 
 export type GxGpuReadbackPortView = GxGpuReadbackView & {
-	claimReadback(presentCommandCount: number): boolean;
+	claimReadback(executedCommandCount: number): boolean;
 	completeReadback(token: number): void;
 };
 
@@ -199,8 +199,8 @@ class GxGpuReadbackPort implements GxGpuReadbackPortView {
 		this.dmaController.setGxGpuReadReady(false);
 	}
 
-	public claimReadback(presentCommandCount: number): boolean {
-		if (this.phase !== GX_GPU_READBACK_PENDING || presentCommandCount !== this.fenceCommandCount) {
+	public claimReadback(executedCommandCount: number): boolean {
+		if (this.phase !== GX_GPU_READBACK_PENDING || executedCommandCount !== this.fenceCommandCount) {
 			return false;
 		}
 		this.phase = GX_GPU_READBACK_SUBMITTED;
@@ -382,8 +382,7 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 		this.readback.dmaController.setGxGpuReadReady(this.readback.phase === GX_GPU_READBACK_READY);
 	}
 
-	public retireCommandsPreservingVram(): number {
-		const retiredCommands = this.presentCommandCount;
+	public retireCommandsPreservingVram(retiredCommands: number): number {
 		if (retiredCommands === 0) {
 			return 0;
 		}
@@ -411,7 +410,9 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 		this.words.copyWithin(0, retiredWords, oldWordCount);
 		this.commandCount = remainingCommands;
 		this.executedCommandCount -= retiredCommands;
-		this.presentCommandCount = 0;
+		this.presentCommandCount = retiredCommands < this.presentCommandCount
+			? this.presentCommandCount - retiredCommands
+			: 0;
 		this.wordCount = remainingWords;
 		this.readback.fenceCommandCount = retiredCommands < this.readback.fenceCommandCount
 			? this.readback.fenceCommandCount - retiredCommands
@@ -421,18 +422,15 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 	}
 
 	public sealCommandsForPresentation(): void {
-		if (this.readback.phase === GX_GPU_READBACK_PENDING) {
+		if (this.readback.phase !== GX_GPU_READBACK_IDLE) {
 			this.presentCommandCount = this.readback.fenceCommandCount;
-		} else if (this.readback.phase === GX_GPU_READBACK_IDLE) {
-			this.presentCommandCount = this.executedCommandCount;
 		} else {
-			this.presentCommandCount = 0;
+			this.presentCommandCount = this.executedCommandCount;
 		}
 	}
 
 	public hasUnretiredPresentCommands(): boolean {
-		return this.presentCommandCount !== 0
-			|| (this.readback.phase === GX_GPU_READBACK_PENDING && this.presentCommandCount === this.readback.fenceCommandCount);
+		return this.presentCommandCount !== 0;
 	}
 
 	public appendWord(word: number): void {

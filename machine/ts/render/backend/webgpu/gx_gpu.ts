@@ -220,6 +220,8 @@ type WebGpuGxGpuState = {
 	gpureadToken: number;
 	gpureadPort: GxGpuVramSource['readbackPort'] | null;
 	gpureadCompletion: Promise<void> | null;
+	gpureadDeferredGpu: GxGpu | null;
+	gpureadDeferredToken: number;
 	vramTexture: GPUTexture;
 	vramSampleTexture: GPUTexture;
 	vramTransferTexture: GPUTexture;
@@ -540,6 +542,8 @@ function bootstrapGxGpuPass(backend: WebGPUBackend): void {
 		gpureadToken: 0,
 		gpureadPort: null,
 		gpureadCompletion: null,
+		gpureadDeferredGpu: null,
+		gpureadDeferredToken: 0,
 		vramTexture,
 		vramSampleTexture,
 		vramTransferTexture,
@@ -1833,13 +1837,18 @@ function appendLineCommandVertices(commandBuffer: GxGpuCommandBufferView, comman
 	return vertexFloatCount;
 }
 
-function executeNewGxGpuCommands(commandBuffer: GxGpuCommandBufferView, readback: GxGpuVramSource['readbackPort']): void {
+function executeNewGxGpuCommands(
+	commandBuffer: GxGpuCommandBufferView,
+	readback: GxGpuVramSource['readbackPort'],
+	commandLimit: number,
+	readbackClaimed: boolean,
+): void {
 	let commandIndex = gxGpuState.processedCommandCount;
-	const presentCommandCount = commandBuffer.presentCommandCount;
 	const readbackCanSubmit = gxGpuState.gpureadCompletion === null
-		&& readback.phase === GX_GPU_READBACK_PENDING
-		&& commandBuffer.presentCommandCount === readback.fenceCommandCount;
-	if (commandIndex === presentCommandCount && !readbackCanSubmit) {
+		&& (readback.phase === GX_GPU_READBACK_PENDING
+			|| (readbackClaimed && readback.phase === GX_GPU_READBACK_SUBMITTED))
+		&& commandLimit === readback.fenceCommandCount;
+	if (commandIndex >= commandLimit && !readbackCanSubmit) {
 		return;
 	}
 	gxGpuState.activeEncoder = gxGpuState.backend.device.createCommandEncoder();
@@ -1857,7 +1866,7 @@ function executeNewGxGpuCommands(commandBuffer: GxGpuCommandBufferView, readback
 	resetGxGpuVramCopyRect(gxGpuSolidBatchRect);
 	resetGxGpuVramCopyRect(gxGpuTexturedBatchRect);
 	resetGxGpuVramCopyRect(gxGpuLineBatchRect);
-	for (; commandIndex < presentCommandCount; commandIndex += 1) {
+	for (; commandIndex < commandLimit; commandIndex += 1) {
 		const commandKind = commandBuffer.commandKind[commandIndex];
 		const topLeftWord = commandKind === GX_GPU_COMMAND_FILL_RECTANGLE ? GX_GPU_FULL_DRAWING_AREA_TOP_LEFT_WORD : commandBuffer.commandDrawingAreaTopLeftWord[commandIndex];
 		const bottomRightWord = commandKind === GX_GPU_COMMAND_FILL_RECTANGLE ? GX_GPU_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD : commandBuffer.commandDrawingAreaBottomRightWord[commandIndex];
@@ -2075,7 +2084,7 @@ function executeNewGxGpuCommands(commandBuffer: GxGpuCommandBufferView, readback
 	if (lineVertexFloatCount !== 0) flushLineCommands(lineVertexFloatCount);
 	const encoder = gxGpuState.activeEncoder!;
 	let readbackSubmitted = false;
-	if (gxGpuState.gpureadCompletion === null && readback.claimReadback(commandBuffer.presentCommandCount)) {
+	if (readbackCanSubmit && (readbackClaimed || readback.claimReadback(commandLimit))) {
 		const pixelCount = readback.width * readback.height;
 		const wordCount = (pixelCount + 1) >> 1;
 		const packedWidth = wordCount < GX_GPU_READBACK_PACK_WIDTH ? wordCount : GX_GPU_READBACK_PACK_WIDTH;
@@ -2105,13 +2114,15 @@ function executeNewGxGpuCommands(commandBuffer: GxGpuCommandBufferView, readback
 	gxGpuState.submitCommandBuffers[0] = encoder.finish();
 	gxGpuState.backend.device.queue.submit(gxGpuState.submitCommandBuffers);
 	gxGpuState.activeEncoder = undefined;
-	gxGpuState.processedCommandCount = presentCommandCount;
+	if (gxGpuState.processedCommandCount < commandLimit) {
+		gxGpuState.processedCommandCount = commandLimit;
+	}
 	if (readbackSubmitted) {
 		gxGpuState.gpureadCompletion = gxGpuState.gpureadBuffer.mapAsync(GPUMapMode.READ, 0, gxGpuState.gpureadMappedByteCount).then(completeGxGpuReadback);
 	}
 }
 
-function executeGxGpuVramCommands(source: GxGpuVramSource): void {
+function executeGxGpuVramCommands(source: GxGpuVramSource, commandLimit: number, readbackClaimed: boolean): void {
 	const commandBuffer = source.commandBuffer;
 	const commandSerial = commandBuffer.serial;
 	if (gxGpuState.vramSnapshotSerial !== source.vramSnapshotSerial) {
@@ -2123,22 +2134,45 @@ function executeGxGpuVramCommands(source: GxGpuVramSource): void {
 		gxGpuState.processedCommandCount = 0;
 		gxGpuState.processedCommandSerial = commandSerial;
 	}
-	executeNewGxGpuCommands(commandBuffer, source.readbackPort);
+	executeNewGxGpuCommands(commandBuffer, source.readbackPort, commandLimit, readbackClaimed);
+}
+
+export function serviceGxGpuReadback(gxGpu: GxGpu, source: GxGpuVramSource): void {
+	const readback = source.readbackPort;
+	const commandLimit = readback.fenceCommandCount;
+	if (gxGpuState.gpureadCompletion !== null) {
+		readback.claimReadback(commandLimit);
+		gxGpuState.gpureadDeferredGpu = gxGpu;
+		gxGpuState.gpureadDeferredToken = readback.token;
+		return;
+	}
+	executeGxGpuVramCommands(source, commandLimit, false);
+}
+
+function submitDeferredGxGpuReadback(): void {
+	const gxGpu = gxGpuState.gpureadDeferredGpu;
+	if (gxGpu === null) {
+		return;
+	}
+	const token = gxGpuState.gpureadDeferredToken;
+	gxGpuState.gpureadDeferredGpu = null;
+	const output = gxGpu.readDeviceOutput();
+	const readback = output.readbackPort;
+	if (readback.phase === GX_GPU_READBACK_SUBMITTED && readback.token === token) {
+		executeGxGpuVramCommands(output, readback.fenceCommandCount, true);
+	}
 }
 
 function completeGxGpuReadback(): void {
 	const readback = gxGpuState.gpureadPort!;
-	if (readback.phase !== GX_GPU_READBACK_SUBMITTED || readback.token !== gxGpuState.gpureadToken) {
-		gxGpuState.gpureadBuffer.unmap();
-		gxGpuState.gpureadPort = null;
-		gxGpuState.gpureadCompletion = null;
-		return;
+	if (readback.phase === GX_GPU_READBACK_SUBMITTED && readback.token === gxGpuState.gpureadToken) {
+		readback.pixelBytes.set(new Uint8Array(gxGpuState.gpureadBuffer.getMappedRange(0, gxGpuState.gpureadMappedByteCount)));
+		readback.completeReadback(gxGpuState.gpureadToken);
 	}
-	readback.pixelBytes.set(new Uint8Array(gxGpuState.gpureadBuffer.getMappedRange(0, gxGpuState.gpureadMappedByteCount)));
 	gxGpuState.gpureadBuffer.unmap();
-	readback.completeReadback(gxGpuState.gpureadToken);
 	gxGpuState.gpureadPort = null;
 	gxGpuState.gpureadCompletion = null;
+	submitDeferredGxGpuReadback();
 }
 
 function scanoutProgressiveGxGpuVram(state: RenderPassStateRegistry['gx_gpu']): void {
@@ -2273,7 +2307,7 @@ function scanoutGxGpuVram(state: RenderPassStateRegistry['gx_gpu']): void {
 }
 
 function renderGxGpuPass(state: RenderPassStateRegistry['gx_gpu']): void {
-	executeGxGpuVramCommands(state);
+	executeGxGpuVramCommands(state, state.commandBuffer.presentCommandCount, false);
 	scanoutGxGpuVram(state);
 }
 
@@ -2315,7 +2349,7 @@ export function registerGxGpuPass(registry: RenderPassLibrary): void {
 }
 
 export async function captureRenderedVramSnapshot(gxGpu: GxGpu, output: GxGpuVramSource): Promise<void> {
-	executeGxGpuVramCommands(output);
+	executeGxGpuVramCommands(output, output.commandBuffer.executedCommandCount, false);
 	if (gxGpuState.gpureadCompletion !== null) {
 		await gxGpuState.gpureadCompletion;
 	}
@@ -2335,5 +2369,5 @@ export async function captureRenderedVramSnapshot(gxGpu: GxGpu, output: GxGpuVra
 		readbackByteOffset += GX_GPU_RAW_VRAM_BYTES_PER_PIXEL;
 	}
 	gxGpuState.vramReadbackBuffer.unmap();
-	gxGpuState.vramSnapshotSerial = gxGpu.commitRenderedVramSnapshotBytes(gxGpuVramSnapshotScratch);
+	gxGpuState.vramSnapshotSerial = gxGpu.commitRenderedVramSnapshotBytes(gxGpuVramSnapshotScratch, gxGpuState.processedCommandCount);
 }

@@ -152,6 +152,7 @@ struct GxGpuState {
 	u32 presentDisplayStartWord = 0;
 	u32 presentHorizontalDisplayRangeWord = 0;
 	u32 presentVerticalDisplayRangeWord = 0;
+	bool vramPresentationPending = false;
 	GxGpuCommandBufferState commandBuffer;
 };
 
@@ -168,7 +169,7 @@ public:
 	GxGpuSaveState captureSaveState();
 	void restoreSaveState(const GxGpuSaveState& state);
 	void replaceVramSnapshotBytes(const u8* bytes);
-	u64 commitRenderedVramSnapshotBytes(const u8* bytes);
+	u64 commitRenderedVramSnapshotBytes(const u8* bytes, size_t renderedCommandCount);
 	const std::array<u8, GX_GPU_VRAM_BYTE_COUNT>& readVramSnapshotBytes() const { return m_vramSnapshotBytes; }
 	u64 readVramSnapshotSerial() const { return m_vramSnapshotSerial; }
 	u32 readGp0();
@@ -181,6 +182,11 @@ public:
 	void setScanoutTiming(bool vblankActive, int cyclesIntoFrame, int cyclesPerFrame, int totalScanlines);
 	u32 readGpuReadWord() const;
 	const GxGpuDeviceOutput& readDeviceOutput();
+	bool backendReadbackPending() const { return m_commandBuffer.readback.phase() == GX_GPU_READBACK_PENDING; }
+	bool backendReadbackBlocksMachine() const {
+		const u8 phase = m_commandBuffer.readback.phase();
+		return phase == GX_GPU_READBACK_PENDING || phase == GX_GPU_READBACK_SUBMITTED;
+	}
 	void presentReadyFrameOnVblankEdge();
 	bool lastFrameCommitted() const { return m_lastFrameCommitted; }
 	void retirePresentedCommands();
@@ -237,6 +243,7 @@ private:
 	u32 m_presentHorizontalDisplayRangeWord = GX_GPU_RESET_HORIZONTAL_DISPLAY_RANGE_WORD;
 	u32 m_presentVerticalDisplayRangeWord = GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD;
 	bool m_lastFrameCommitted = false;
+	bool m_vramPresentationPending = false;
 	bool m_scanoutVblankActive = false;
 	u32 m_scanoutInterlacedField = 0u;
 	u32 m_scanoutInterlacedDisplayField = 0u;
@@ -250,6 +257,7 @@ private:
 	inline static u64 nextVramSnapshotSerial = 0u;
 
 	void publishVramSnapshotRevision();
+	void retireCommandPrefix(size_t retiredCommands);
 	void resetGpuRegisters();
 	void writeDisplayDisableWord(u32 word);
 	void clearGp0CommandState();

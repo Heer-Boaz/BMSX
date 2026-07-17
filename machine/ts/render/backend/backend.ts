@@ -12,8 +12,8 @@ import type { RenderPassLibrary } from './pass/library';
  * - Shared runtime contract in this file: TextureHandle, BackendCaps,
  *   ColorAttachmentSpec, DepthAttachmentSpec, RenderPassDesc, PassEncoder,
  *   GPUBackend texture methods, render-pass methods, draw methods except TS
- *   drawIndexed indexType, GX VRAM snapshot capture, frame lifecycle, getCaps(),
- *   and stats.
+ *   drawIndexed indexType, GX readback-fence execution and VRAM snapshot
+ *   capture, frame lifecycle, getCaps(), and stats.
  * - Shared render semantics above this boundary are GX GPU command buffers.
  *   Concrete WebGL/GLES pass code owns GPU API binding such as shader
  *   programs, VAO/buffer state, vertexAttribPointer calls, uniform block
@@ -241,6 +241,7 @@ export interface GPUBackend {
 	beginFrame(): void;
 	endFrame(): void;
 	getFrameStats(): { draws: number; drawIndexed: number; drawsInstanced: number; drawIndexedInstanced: number; bytesUploaded: number };
+	executeGxGpuReadback(gxGpu: GxGpu): void;
 	captureGxGpuVramSnapshot(gxGpu: GxGpu): void | Promise<void>;
 	// Optional: fine-grained upload accounting for HUD
 	accountUpload(kind: 'vertex' | 'index' | 'uniform' | 'texture', bytes: number): void;

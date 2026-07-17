@@ -52,7 +52,7 @@ test('GX-GPU command-buffer restore republishes the retained command stream', ()
 	const state = commandBuffer.captureState();
 	const commandSerial = commandBuffer.serial;
 
-	commandBuffer.retireCommandsPreservingVram();
+	commandBuffer.retireCommandsPreservingVram(commandBuffer.presentCommandCount);
 	commandBuffer.restoreState(state);
 
 	assert.notEqual(commandBuffer.serial, commandSerial);
@@ -64,12 +64,12 @@ test('GX-GPU command-buffer retire compacts presented command stream', () => {
 	const commandBuffer = new GxGpuCommandBuffer(commandBufferDma);
 	commandBuffer.reset();
 	pushFillCommand(commandBuffer);
-	commandBuffer.retireCommandsPreservingVram();
+	commandBuffer.retireCommandsPreservingVram(commandBuffer.presentCommandCount);
 
 	gxGpuSoftwareVram.fill(0);
 	assert.equal(commandBuffer.commandCount, 0);
 	assert.equal(commandBuffer.presentCommandCount, 0);
-	assert.equal(executeGxGpuSoftwareCommands(commandBuffer, 0), 0);
+	assert.equal(executeGxGpuSoftwareCommands(commandBuffer, 0, commandBuffer.presentCommandCount), 0);
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 0)], 0);
 });
 
@@ -79,7 +79,7 @@ test('GX-GPU command-buffer retire preserves partial payload words after sealed 
 	pushFillCommand(commandBuffer);
 	commandBuffer.appendWord(0xa0b0c0d0);
 
-	assert.equal(commandBuffer.retireCommandsPreservingVram(), 3);
+	assert.equal(commandBuffer.retireCommandsPreservingVram(commandBuffer.presentCommandCount), 3);
 	assert.equal(commandBuffer.commandCount, 0);
 	assert.equal(commandBuffer.presentCommandCount, 0);
 	assert.equal(commandBuffer.wordCount, 1);

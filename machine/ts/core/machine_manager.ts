@@ -309,8 +309,15 @@ export class MachineManager {
 	}
 
 	public async captureRuntimeSaveStateBytes(): Promise<Uint8Array> {
-		await this.view.captureGxGpuVramSnapshot(this.runtime.machine.gxGpu);
-		return captureRuntimeSaveStateBytes(this.runtime);
+		const renderToken = renderGate.begin({ blocking: true, tag: 'save-state-capture' });
+		const runToken = runGate.begin({ blocking: true, tag: 'save-state-capture' });
+		try {
+			await this.view.captureGxGpuVramSnapshot(this.runtime.machine.gxGpu);
+			return captureRuntimeSaveStateBytes(this.runtime);
+		} finally {
+			renderGate.end(renderToken);
+			runGate.end(runToken);
+		}
 	}
 
 }

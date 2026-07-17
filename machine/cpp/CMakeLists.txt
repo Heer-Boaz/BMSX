@@ -311,7 +311,6 @@ add_library(bmsx_core STATIC
 	machine/runtime/cpu_executor.cpp
 	machine/runtime/boot_timing.cpp
 	machine/runtime/frame/loop.cpp
-	machine/runtime/frame/step.cpp
 	machine/program/executor.cpp
 	machine/program/scratch.cpp
 	machine/scheduler/frame.cpp

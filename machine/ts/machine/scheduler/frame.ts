@@ -53,6 +53,7 @@ export class FrameSchedulerState {
 	private tickCompletionReadIndex = 0;
 	private tickCompletionWriteIndex = 0;
 	private tickCompletionCount = 0;
+	private backendServiceSuspended = false;
 
 	constructor(private readonly runtime: Runtime) {
 	}
@@ -73,7 +74,9 @@ export class FrameSchedulerState {
 
 	private canRunScheduledUpdate(): boolean {
 		const runtime = this.runtime;
-		if (!runtime.luaInitialized || runtime.luaRuntimeFailed) {
+		if (!runtime.luaInitialized
+			|| runtime.luaRuntimeFailed
+			|| runtime.machine.gxGpu.backendReadbackBlocksMachine()) {
 			return false;
 		}
 		return (runtime.frameLoop.frameActive && runtime.frameLoop.frameState.cycleBudgetRemaining > 0)
@@ -106,6 +109,7 @@ export class FrameSchedulerState {
 	public reset(): void {
 		this.clearQueuedTime();
 		this.clearTickCompletionQueue();
+		this.backendServiceSuspended = false;
 	}
 
 	public resetTickTelemetry(): void {
@@ -154,6 +158,7 @@ export class FrameSchedulerState {
 		this.lastTickCompleted = state.lastTickCompleted;
 		this.lastTickConsumedSequence = state.lastTickConsumedSequence;
 		this.tickCompletionReadIndex = 0;
+		this.backendServiceSuspended = false;
 		this.tickCompletionWriteIndex = state.queuedTickCompletions.length % TICK_COMPLETION_QUEUE_CAPACITY;
 		this.tickCompletionCount = state.queuedTickCompletions.length;
 		for (let index = 0; index < TICK_COMPLETION_QUEUE_CAPACITY; index += 1) {
@@ -172,13 +177,26 @@ export class FrameSchedulerState {
 	}
 
 	public run(hostDeltaMs: number): void {
-		this.accumulateHostTime(hostDeltaMs);
 		const runtime = this.runtime;
+		if (runtime.machine.gxGpu.backendReadbackBlocksMachine()) {
+			this.backendServiceSuspended = true;
+			return;
+		}
+		if (this.backendServiceSuspended) {
+			// Backend submission/mapping latency is host time, not machine time. Resume
+			// the in-flight machine frame without turning that latency into catch-up.
+			this.backendServiceSuspended = false;
+			hostDeltaMs = 0;
+		}
+		this.accumulateHostTime(hostDeltaMs);
 		while (this.canRunScheduledUpdate()) {
 			const progressed = runtime.frameLoop.tickUpdate();
 			if (runtime.frameLoop.frameActive && !progressed) {
 				break;
 			}
+		}
+		if (runtime.machine.gxGpu.backendReadbackBlocksMachine()) {
+			this.backendServiceSuspended = true;
 		}
 	}
 

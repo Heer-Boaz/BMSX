@@ -204,14 +204,9 @@ test('GX-GPU GPUREAD fences prior backend work and packs wrapped odd pixels', ()
 	assert.equal(gpu.readStatus() & GX_GPU_STATUS_READY_TO_SEND_VRAM, 0);
 	assert.equal(gpu.readStatus() & GX_GPU_STATUS_READY_TO_RECEIVE_DMA, 0);
 	completeGpuCommands(gpu);
-	gpu.presentReadyFrameOnVblankEdge();
 	const output = gpu.readDeviceOutput();
-	executeGxGpuSoftwareVramCommands({
-		commandBuffer: output.commandBuffer,
-		readbackPort: output.readbackPort,
-		vramSnapshotBytes: output.vramSnapshotBytes,
-		vramSnapshotSerial: output.vramSnapshotSerial,
-	});
+	assert.equal(output.commandBuffer.presentCommandCount, 0);
+	new HeadlessGPUBackend().executeGxGpuReadback(gpu);
 
 	assert.equal(gpu.readStatus() & GX_GPU_STATUS_READY_TO_SEND_VRAM, GX_GPU_STATUS_READY_TO_SEND_VRAM);
 	assert.equal(gpu.readStatus() & GX_GPU_STATUS_DMA_DATA_REQUEST, GX_GPU_STATUS_DMA_DATA_REQUEST);
@@ -247,7 +242,8 @@ test('GX-GPU GPUREAD preserves row-major order across X and Y wrap', () => {
 	gpu.writeGp0(sizeWord);
 	completeGpuCommands(gpu);
 	gpu.presentReadyFrameOnVblankEdge();
-	executeGxGpuSoftwareVramCommands(gpu.readDeviceOutput());
+	const output = gpu.readDeviceOutput();
+	executeGxGpuSoftwareVramCommands(output, output.commandBuffer.presentCommandCount);
 	assert.equal(gpu.readGp0(), 0x22221111);
 	assert.equal(gpu.readGp0(), 0x44443333);
 });
@@ -273,14 +269,14 @@ test('GX-GPU queues a later C0 transfer behind the active GPUREAD fence', () => 
 	completeGpuCommands(gpu);
 	gpu.presentReadyFrameOnVblankEdge();
 	let output = gpu.readDeviceOutput();
-	executeGxGpuSoftwareVramCommands(output);
+	executeGxGpuSoftwareVramCommands(output, output.commandBuffer.presentCommandCount);
 	gpu.retirePresentedCommands();
 	assert.equal(gpu.readGp0(), 0x00001111);
 
 	completeGpuCommands(gpu);
 	gpu.presentReadyFrameOnVblankEdge();
 	output = gpu.readDeviceOutput();
-	executeGxGpuSoftwareVramCommands(output);
+	executeGxGpuSoftwareVramCommands(output, output.commandBuffer.presentCommandCount);
 	assert.equal(gpu.readGp0(), 0x00002222);
 });
 
@@ -302,7 +298,7 @@ test('GX-GPU does not claim a C0 appended after the published frame fence', () =
 	gpu.writeGp0((1 << 16) | 1);
 	completeGpuCommands(gpu);
 	let output = gpu.readDeviceOutput();
-	executeGxGpuSoftwareVramCommands(output);
+	executeGxGpuSoftwareVramCommands(output, output.commandBuffer.presentCommandCount);
 	assert.equal(output.readbackPort.phase, GX_GPU_READBACK_PENDING);
 	assert.equal(gpu.readStatus() & GX_GPU_STATUS_READY_TO_SEND_VRAM, 0);
 	gpu.retirePresentedCommands();
@@ -311,7 +307,7 @@ test('GX-GPU does not claim a C0 appended after the published frame fence', () =
 	completeGpuCommands(gpu);
 	gpu.presentReadyFrameOnVblankEdge();
 	output = gpu.readDeviceOutput();
-	executeGxGpuSoftwareVramCommands(output);
+	executeGxGpuSoftwareVramCommands(output, output.commandBuffer.presentCommandCount);
 	assert.equal(gpu.readGp0(), 0x00001234);
 });
 
@@ -358,7 +354,8 @@ test('GX-GPU GP1 clear FIFO aborts a pending GPUREAD without dropping prior comm
 	completeGpuCommands(gpu);
 	gpu.presentReadyFrameOnVblankEdge();
 	assert.equal(readback.phase, GX_GPU_READBACK_IDLE);
-	executeGxGpuSoftwareVramCommands(gpu.readDeviceOutput());
+	const presentOutput = gpu.readDeviceOutput();
+	executeGxGpuSoftwareVramCommands(presentOutput, presentOutput.commandBuffer.presentCommandCount);
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 0)], 0x001f);
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(16, 0)], powerOnWord16);
 });
@@ -378,15 +375,16 @@ test('GX-GPU GP1 clear FIFO aborts a ready GPUREAD and its queued suffix', () =>
 	gpu.writeGp0((1 << 16) | 1);
 	gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU);
 	completeGpuCommands(gpu);
-	gpu.presentReadyFrameOnVblankEdge();
 	let output = gpu.readDeviceOutput();
-	executeGxGpuSoftwareVramCommands(output);
 	const commandBuffer = output.commandBuffer;
 	const readback = output.readbackPort;
+	new HeadlessGPUBackend().executeGxGpuReadback(gpu);
 	const readbackToken = readback.token;
 	assert.equal(readback.phase, GX_GPU_READBACK_READY);
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_READY_TO_SEND_VRAM) >>> 0, GX_GPU_STATUS_READY_TO_SEND_VRAM);
 	assert.equal((gpu.readStatus() & GX_GPU_STATUS_DMA_DATA_REQUEST) >>> 0, GX_GPU_STATUS_DMA_DATA_REQUEST);
+	gpu.presentReadyFrameOnVblankEdge();
+	assert.equal(commandBuffer.presentCommandCount, readback.fenceCommandCount);
 	gpu.retirePresentedCommands();
 	assert.equal(commandBuffer.commandCount, 0);
 	assert.equal(readback.fenceCommandCount, 0);
@@ -426,7 +424,7 @@ test('GX-GPU GP1 clear FIFO aborts a ready GPUREAD and its queued suffix', () =>
 	completeGpuCommands(gpu);
 	gpu.presentReadyFrameOnVblankEdge();
 	output = gpu.readDeviceOutput();
-	executeGxGpuSoftwareVramCommands(output);
+	executeGxGpuSoftwareVramCommands(output, output.commandBuffer.presentCommandCount);
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 0)], 0x001f);
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(16, 0)], powerOnWord16);
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(32, 0)], 0x7c00);
@@ -458,10 +456,8 @@ test('GX-GPU restore re-arms submitted GPUREAD and reset clears its retained req
 	assert.equal(readback.phase, GX_GPU_READBACK_PENDING);
 	readback.completeReadback(staleToken);
 	assert.equal(readback.phase, GX_GPU_READBACK_PENDING);
-	completeGpuCommands(gpu);
-	gpu.presentReadyFrameOnVblankEdge();
-	assert.equal(gpu.lastFrameCommitted(), true);
-	executeGxGpuSoftwareVramCommands(gpu.readDeviceOutput());
+	assert.equal(commandBuffer.presentCommandCount, 0);
+	new HeadlessGPUBackend().executeGxGpuReadback(gpu);
 	assert.equal(gpu.readGp0(), 0x00001234);
 
 	gpu.writeGp0(GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24);
@@ -705,7 +701,8 @@ test('GX-GPU owns deterministic power-on VRAM across reset, save-state, and mach
 	assert.equal(firstBytes[GX_GPU_VRAM_BYTE_COUNT - 1], 26);
 	assert.equal(gxGpuVramDigest(firstBytes), 0xd1dc1ded);
 
-	executeGxGpuSoftwareVramCommands(first.readDeviceOutput());
+	let output = first.readDeviceOutput();
+	executeGxGpuSoftwareVramCommands(output, output.commandBuffer.presentCommandCount);
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 0)], powerOnWord0);
 	first.writeGp0(GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24);
 	first.writeGp0(0);
@@ -713,12 +710,14 @@ test('GX-GPU owns deterministic power-on VRAM across reset, save-state, and mach
 	first.writeGp0(0x00001234);
 	completeGpuCommands(first);
 	first.presentReadyFrameOnVblankEdge();
-	executeGxGpuSoftwareVramCommands(first.readDeviceOutput());
+	output = first.readDeviceOutput();
+	executeGxGpuSoftwareVramCommands(output, output.commandBuffer.presentCommandCount);
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 0)], 0x1234);
 
 	const second = createGpu().gpu;
 	assert.ok(second.readVramSnapshotSerial() > firstSerial);
-	executeGxGpuSoftwareVramCommands(second.readDeviceOutput());
+	output = second.readDeviceOutput();
+	executeGxGpuSoftwareVramCommands(output, output.commandBuffer.presentCommandCount);
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 0)], powerOnWord0);
 
 	const gp1Serial = second.readVramSnapshotSerial();
@@ -776,7 +775,7 @@ test('GX-GPU GP1 reset restores registers and preserves accepted GPU work', () =
 	completeGpuCommands(gpu);
 	gpu.presentReadyFrameOnVblankEdge();
 	gxGpuSoftwareVram.fill(0);
-	assert.equal(executeGxGpuSoftwareCommands(commandBuffer, 0), 2);
+	assert.equal(executeGxGpuSoftwareCommands(commandBuffer, 0, commandBuffer.presentCommandCount), 2);
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 0)], 0x001f);
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(32, 0)], 0x001f);
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(33, 0)], 0x03e0);
@@ -944,14 +943,14 @@ test('GX-GPU partial presentation snapshot does not expose queued commands', () 
 	assert.equal(commands.presentCommandCount, 0);
 
 	gxGpuSoftwareVram.fill(0);
-	assert.equal(executeGxGpuSoftwareCommands(commands, 0), 0);
+	assert.equal(executeGxGpuSoftwareCommands(commands, 0, commands.presentCommandCount), 0);
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 0)], 0);
 	assert.equal(commands.commandCount, 1);
 	assert.equal(commands.presentCommandCount, 0);
 
 	completeGpuCommands(gpu);
 	gpu.presentReadyFrameOnVblankEdge();
-	assert.equal(executeGxGpuSoftwareCommands(commands, 0), 1);
+	assert.equal(executeGxGpuSoftwareCommands(commands, 0, commands.presentCommandCount), 1);
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 0)], 0x001f);
 
 	gpu.retirePresentedCommands();
@@ -973,7 +972,7 @@ test('GX-GPU retire preserves commands appended after the sealed VBLANK snapshot
 	gpu.writeGp0((1 << 16) | 1);
 
 	gxGpuSoftwareVram.fill(0);
-	assert.equal(executeGxGpuSoftwareCommands(commands, 0), 1);
+	assert.equal(executeGxGpuSoftwareCommands(commands, 0, commands.presentCommandCount), 1);
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 0)], 0x001f);
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(32, 0)], 0);
 
@@ -981,7 +980,7 @@ test('GX-GPU retire preserves commands appended after the sealed VBLANK snapshot
 	assert.deepEqual([commands.commandCount, commands.presentCommandCount], [1, 0]);
 	completeGpuCommands(gpu);
 	gpu.presentReadyFrameOnVblankEdge();
-	assert.equal(executeGxGpuSoftwareCommands(commands, 0), 1);
+	assert.equal(executeGxGpuSoftwareCommands(commands, 0, commands.presentCommandCount), 1);
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(32, 0)], 0x03e0);
 });
 
@@ -1675,11 +1674,11 @@ test('GX-GPU software backend consumes only presentable commands', () => {
 	commandBuffer.completeCommandExecution(commandBuffer.commandCount);
 
 	gxGpuSoftwareVram.fill(0);
-	assert.equal(executeGxGpuSoftwareCommands(commandBuffer, 0), 0);
+	assert.equal(executeGxGpuSoftwareCommands(commandBuffer, 0, commandBuffer.presentCommandCount), 0);
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(4, 5)], 0);
 
 	commandBuffer.sealCommandsForPresentation();
-	assert.equal(executeGxGpuSoftwareCommands(commandBuffer, 0), 1);
+	assert.equal(executeGxGpuSoftwareCommands(commandBuffer, 0, commandBuffer.presentCommandCount), 1);
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(4, 5)], 0x001f);
 });
 
@@ -1689,28 +1688,21 @@ test('GX-GPU software backend captures live VRAM into save-state snapshot', () =
 	gpu.writeGp0((5 << 16) | 4);
 	gpu.writeGp0((1 << 16) | 1);
 	completeGpuCommands(gpu);
-	gpu.presentReadyFrameOnVblankEdge();
 	const output = gpu.readDeviceOutput();
-	const pixels = new Uint8Array(GX_GPU_SOFTWARE_TEST_WIDTH * GX_GPU_SOFTWARE_TEST_HEIGHT * 4);
-	renderGxGpuSoftwareFrame({
-		width: GX_GPU_SOFTWARE_TEST_WIDTH,
-		height: GX_GPU_SOFTWARE_TEST_HEIGHT,
-		commandBuffer: output.commandBuffer,
-		readbackPort: output.readbackPort,
-		statusWord: output.statusWord,
-		displayModeWord: output.displayModeWord,
-		displayStartWord: output.displayStartWord,
-		vramSnapshotBytes: output.vramSnapshotBytes,
-		vramSnapshotSerial: output.vramSnapshotSerial,
-	}, pixels);
-
 	const backend = new HeadlessGPUBackend();
 	backend.captureGxGpuVramSnapshot(gpu);
+	assert.equal(output.commandBuffer.commandCount, 0);
+	assert.equal(output.commandBuffer.presentCommandCount, 0);
 	const saveState = gpu.captureSaveState();
 	const byteIndex = gxGpuSoftwareVramIndex(4, 5) << 1;
 	assert.equal(saveState.vramBytes.length, GX_GPU_VRAM_BYTE_COUNT);
 	assert.equal(saveState.vramBytes[byteIndex], 0x1f);
 	assert.equal(saveState.vramBytes[byteIndex + 1], 0x00);
+	gpu.presentReadyFrameOnVblankEdge();
+	assert.equal(gpu.lastFrameCommitted(), true);
+	gpu.retirePresentedCommands();
+	gpu.presentReadyFrameOnVblankEdge();
+	assert.equal(gpu.lastFrameCommitted(), false);
 });
 
 test('GX-GPU software backend preserves vertical Gouraud packet order through fixed-point steps', () => {
@@ -1725,7 +1717,7 @@ test('GX-GPU software backend preserves vertical Gouraud packet order through fi
 	]), GX_GPU_COMMAND_DRAW_LINE, opcode);
 
 	gxGpuSoftwareVram.fill(0);
-	executeGxGpuSoftwareCommands(commandBuffer, 0);
+	executeGxGpuSoftwareCommands(commandBuffer, 0, commandBuffer.presentCommandCount);
 
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(40, 10)], 0x0001);
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(40, 13)], 0x0002);
@@ -1777,7 +1769,7 @@ test('GX-GPU software backend owns PSX line DDA, sample wrap, and polyline joint
 	]), GX_GPU_COMMAND_DRAW_POLYLINE, polylineOpcode);
 
 	gxGpuSoftwareVram.fill(0);
-	executeGxGpuSoftwareCommands(commandBuffer, 0);
+	executeGxGpuSoftwareCommands(commandBuffer, 0, commandBuffer.presentCommandCount);
 
 	for (const [x, y] of [[10, 10], [11, 11], [12, 11], [13, 12], [14, 12]]) {
 		assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(x, y)], 0x001f);
@@ -1830,7 +1822,7 @@ test('GX-GPU software backend blends untextured semi-transparent rectangles with
 	}
 
 	gxGpuSoftwareVram.fill(0);
-	executeGxGpuSoftwareCommands(commandBuffer, 0);
+	executeGxGpuSoftwareCommands(commandBuffer, 0, commandBuffer.presentCommandCount);
 
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(10, 20)], 0x7def);
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(20, 20)], 0x7fff);
@@ -1876,7 +1868,7 @@ test('GX-GPU software backend owns PSX triangle edges and quad seams exactly onc
 	]), GX_GPU_COMMAND_DRAW_POLYGON, semiTransparentQuadOpcode);
 
 	gxGpuSoftwareVram.fill(0);
-	executeGxGpuSoftwareCommands(commandBuffer, 0);
+	executeGxGpuSoftwareCommands(commandBuffer, 0, commandBuffer.presentCommandCount);
 
 	for (let row = 0; row < 4; row += 1) {
 		for (let column = 0; column < 4 - row; column += 1) {
@@ -1936,7 +1928,7 @@ test('GX-GPU software Gouraud triangles use PSX fixed-12 color planes before sto
 	]), GX_GPU_COMMAND_DRAW_POLYGON, texturedGouraudOpcode, GX_GPU_TEXTURE_MODE_DIRECT16 << 7);
 
 	gxGpuSoftwareVram.fill(0);
-	executeGxGpuSoftwareCommands(commandBuffer, 0);
+	executeGxGpuSoftwareCommands(commandBuffer, 0, commandBuffer.presentCommandCount);
 
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(13, 13)], 0x000b);
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(33, 33)], 0x000b);
@@ -1979,7 +1971,7 @@ test('GX-GPU software polygons wrap the raster bucket after drawing offset and p
 	]), GX_GPU_COMMAND_DRAW_POLYGON, gouraudPolygonOpcode, 0, 0, 0x0007f40b, 0x0007f80c, 0x00200000);
 
 	gxGpuSoftwareVram.fill(0);
-	executeGxGpuSoftwareCommands(commandBuffer, 0);
+	executeGxGpuSoftwareCommands(commandBuffer, 0, commandBuffer.presentCommandCount);
 
 	for (let row = 0; row < 4; row += 1) {
 		for (let column = 0; column < 4 - row; column += 1) {
@@ -2050,7 +2042,7 @@ test('GX-GPU software textured polygons use PSX fixed-point UV gradients and hal
 	]), GX_GPU_COMMAND_DRAW_POLYGON, opcode, GX_GPU_TEXTURE_MODE_DIRECT16 << 7);
 
 	gxGpuSoftwareVram.fill(0);
-	executeGxGpuSoftwareCommands(commandBuffer, 0);
+	executeGxGpuSoftwareCommands(commandBuffer, 0, commandBuffer.presentCommandCount);
 
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(10, 10)], 0x001f);
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(11, 10)], 0x03e0);
@@ -2117,7 +2109,7 @@ test('GX-GPU software texture sampling owns window, page, packed texel, and CLUT
 	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(960, 70)] = 0x0002;
 	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(17, 80)] = 0x001f;
 	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(18, 80)] = 0x03e0;
-	executeGxGpuSoftwareCommands(commandBuffer, 0);
+	executeGxGpuSoftwareCommands(commandBuffer, 0, commandBuffer.presentCommandCount);
 
 	assert.deepEqual([
 		gxGpuSoftwareVram[gxGpuSoftwareVramIndex(10, 10)], gxGpuSoftwareVram[gxGpuSoftwareVramIndex(11, 10)],
@@ -2230,7 +2222,7 @@ test('GX-GPU software backend applies drawing offsets, raw drawing areas, and co
 	]), GX_GPU_COMMAND_DRAW_POLYGON, blendedAliasedQuadOpcode, 0, 0, 0, 1023 | (1023 << 10));
 
 	gxGpuSoftwareVram.fill(0);
-	executeGxGpuSoftwareCommands(commandBuffer, 0);
+	executeGxGpuSoftwareCommands(commandBuffer, 0, commandBuffer.presentCommandCount);
 
 	for (let row = 0; row < 4; row += 1) {
 		for (let column = 0; column < 4 - row; column += 1) {
@@ -2282,7 +2274,7 @@ test('GX-GPU software fill bypasses drawing-area and mask-bit drawing state', ()
 	]), GX_GPU_COMMAND_FILL_RECTANGLE, GX_GPU_GP0_FILL_RECTANGLE, 0, 0, 0, 0, 0, 3);
 
 	gxGpuSoftwareVram.fill(0);
-	executeGxGpuSoftwareCommands(commandBuffer, 0);
+	executeGxGpuSoftwareCommands(commandBuffer, 0, commandBuffer.presentCommandCount);
 
 	for (let x = 80; x < 96; x += 1) {
 		assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(x, 30)], 0x03e0);
@@ -2453,7 +2445,7 @@ test('GX-GPU software backend retires consumed command logs without clearing VRA
 	renderGxGpuSoftwareFrame(state, pixels);
 	assertRgbaPixel(pixels, 0, 0, 255, 0, 0);
 
-	commandBuffer.retireCommandsPreservingVram();
+	commandBuffer.retireCommandsPreservingVram(commandBuffer.presentCommandCount);
 	renderGxGpuSoftwareFrame(state, pixels);
 	assertRgbaPixel(pixels, 0, 0, 255, 0, 0);
 
@@ -2692,7 +2684,7 @@ test('GX-GPU software commands preserve texture mask, blend, and mask-test store
 		(1 << 16) | 1,
 	]), GX_GPU_COMMAND_DRAW_RECTANGLE, GX_GPU_GP0_RECTANGLE_FIRST | 0x02, 0, 0, 0, GX_GPU_SOFTWARE_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD, 0, 2);
 	gxGpuSoftwareVram.fill(0);
-	executeGxGpuSoftwareCommands(commandBuffer, 0);
+	executeGxGpuSoftwareCommands(commandBuffer, 0, commandBuffer.presentCommandCount);
 
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(10, 20)], 0x81ef);
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(11, 20)], 0x03e0);
@@ -2766,7 +2758,7 @@ test('GX-GPU software commands sample palette8, rectangle flip, and dithered mod
 	]), GX_GPU_COMMAND_DRAW_POLYGON, texturedPolygonOpcode, ditheredDirect16PageWord);
 
 	gxGpuSoftwareVram.fill(0);
-	executeGxGpuSoftwareCommands(commandBuffer, 0);
+	executeGxGpuSoftwareCommands(commandBuffer, 0, commandBuffer.presentCommandCount);
 
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(30, 20)], 0x7c00);
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(31, 20)], 0x03e0);

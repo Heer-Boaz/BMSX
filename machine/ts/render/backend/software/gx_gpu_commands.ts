@@ -297,9 +297,8 @@ function executeDrawPolyline(commandBuffer: GxGpuCommandBufferView, commandIndex
 	}
 }
 
-export function executeGxGpuSoftwareCommands(commandBuffer: GxGpuCommandBufferView, processedCommandCount: number): number {
-	const presentCommandCount = commandBuffer.presentCommandCount;
-	for (let commandIndex = processedCommandCount; commandIndex < presentCommandCount; commandIndex += 1) {
+export function executeGxGpuSoftwareCommands(commandBuffer: GxGpuCommandBufferView, processedCommandCount: number, commandLimit: number): number {
+	for (let commandIndex = processedCommandCount; commandIndex < commandLimit; commandIndex += 1) {
 		switch (commandBuffer.commandKind[commandIndex]) {
 			case GX_GPU_COMMAND_DRAW_POLYGON:
 				executeDrawPolygon(commandBuffer, commandIndex);
@@ -324,5 +323,5 @@ export function executeGxGpuSoftwareCommands(commandBuffer: GxGpuCommandBufferVi
 				break;
 		}
 	}
-	return presentCommandCount;
+	return processedCommandCount < commandLimit ? commandLimit : processedCommandCount;
 }

@@ -279,7 +279,6 @@
 		"machine/ts/machine/memory/specs.ts",
 		"machine/ts/machine/runtime/boot_timing.ts",
 		"machine/ts/machine/runtime/cpu_state.ts",
-		"machine/ts/machine/runtime/frame/step.ts",
 		"machine/ts/machine/runtime/machine_state.ts",
 		"machine/ts/machine/runtime/runtime.ts",
 		"machine/ts/machine/runtime/save_machine_state.ts",
@@ -546,14 +545,6 @@
 				"machine/cpp/machine/runtime/cpu_state.cpp"
 			],
 			"reason": "runtime_cpu_state_contract"
-		},
-		{
-			"ts": "machine/ts/machine/runtime/frame/step.ts",
-			"cpp": [
-				"machine/cpp/machine/runtime/frame/step.h",
-				"machine/cpp/machine/runtime/frame/step.cpp"
-			],
-			"reason": "runtime_frame_step_contract"
 		},
 		{
 			"ts": "machine/ts/machine/scheduler/device.ts",

@@ -259,9 +259,8 @@ void executeDrawPolyline(const GxGpuCommandBuffer& commandBuffer, size_t command
 
 } // namespace
 
-size_t executeGxGpuSoftwareCommands(const GxGpuCommandBuffer& commandBuffer, size_t processedCommandCount) {
-	const size_t presentCommandCount = commandBuffer.presentCommandCount;
-	for (size_t commandIndex = processedCommandCount; commandIndex < presentCommandCount; commandIndex += 1u) {
+size_t executeGxGpuSoftwareCommands(const GxGpuCommandBuffer& commandBuffer, size_t processedCommandCount, size_t commandLimit) {
+	for (size_t commandIndex = processedCommandCount; commandIndex < commandLimit; commandIndex += 1u) {
 		switch (commandBuffer.commandKind[commandIndex]) {
 			case GX_GPU_COMMAND_DRAW_POLYGON:
 				executeDrawPolygon(commandBuffer, commandIndex);
@@ -286,7 +285,7 @@ size_t executeGxGpuSoftwareCommands(const GxGpuCommandBuffer& commandBuffer, siz
 				break;
 		}
 	}
-	return presentCommandCount;
+	return processedCommandCount < commandLimit ? commandLimit : processedCommandCount;
 }
 
 } // namespace bmsx

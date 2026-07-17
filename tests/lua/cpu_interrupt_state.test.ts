@@ -13,6 +13,7 @@ import {
 import { IO_IRQ_MASK, IO_IRQ_FLAGS, IRQ_VBLANK } from '../../machine/ts/machine/bus/io';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { SystemController } from '../../machine/ts/machine/devices/system/controller';
+import { GX_GPU_GP0_VRAM_TO_CPU_FIRST } from '../../machine/ts/machine/devices/gx/gpu';
 import { Machine } from '../../machine/ts/machine/machine';
 import type { MicrotaskQueue } from '../../machine/ts/machine/scheduler/microtask_queue';
 import { captureMachineSaveState, captureMachineState, restoreMachineSaveState, restoreMachineState } from '../../machine/ts/machine/save_state';
@@ -129,6 +130,7 @@ function makeRuntime(cpu: CPU, irqController: IrqController, sliceStats?: { begi
 			cpu,
 			memory: cpu.memory,
 			irqController,
+			gxGpu: { backendReadbackBlocksMachine: () => false },
 			scheduler: {
 				nowCycles: 0,
 				hasDueTimer: () => false,
@@ -181,12 +183,7 @@ function makeMachine(): Machine {
 		}),
 		beginFrame: () => {},
 	};
-	const machine = new Machine(
-		memory,
-		{ x: 256, y: 212 },
-		input as never,
-		INLINE_MICROTASKS,
-	);
+	const machine = new Machine(memory, input as never);
 	machine.initializeSystemIo();
 	machine.resetDevices();
 	return machine;
@@ -215,6 +212,7 @@ function makeHaltFrameRuntime(): Runtime {
 			memory,
 			irqController,
 			systemController,
+			gxGpu: { backendReadbackBlocksMachine: () => false },
 			scheduler,
 			advanceDevices: (cycles: number) => {
 				scheduler.nowCycles += cycles;
@@ -286,6 +284,7 @@ function makeCompiledIrqRuntime(source: string): { cpu: CPU; irqController: IrqC
 			cpu,
 			memory,
 			irqController,
+			gxGpu: { backendReadbackBlocksMachine: () => false },
 			scheduler,
 			advanceDevices: (cycles: number) => { scheduler.nowCycles += cycles; },
 		},
@@ -829,6 +828,68 @@ test('frame scheduler does not burn active CPU budget while halted for IRQ witho
 
 	assert.equal(frameState.cycleBudgetRemaining, remaining);
 	assert.equal(runtime.machine.cpu.isHaltedUntilIrq(), true);
+});
+
+test('frame scheduler discards host time spent waiting for GPU backend execution', () => {
+	const runtime = makeHaltFrameRuntime();
+	let backendBlocked = true;
+	(runtime.machine.gxGpu as unknown as { backendReadbackBlocksMachine(): boolean }).backendReadbackBlocksMachine = () => backendBlocked;
+	runtime.frameScheduler = new FrameSchedulerState(runtime);
+
+	runtime.frameScheduler.run(runtime.timing.frameDurationMs);
+	assert.equal(runtime.frameLoop.currentFrameState, null);
+
+	backendBlocked = false;
+	runtime.frameScheduler.run(runtime.timing.frameDurationMs);
+	assert.equal(runtime.frameLoop.currentFrameState, null);
+
+	runtime.frameScheduler.run(runtime.timing.frameDurationMs);
+	assert.notEqual(runtime.frameLoop.currentFrameState, null);
+});
+
+test('CPU execution stops at the device deadline that activates GPUREAD', () => {
+	const machine = makeMachine();
+	const cpu = machine.cpu;
+	const instructionCount = 64;
+	const code = new Uint8Array((instructionCount + 1) * INSTRUCTION_BYTES);
+	for (let instruction = 0; instruction < instructionCount; instruction += 1) {
+		writeInstruction(code, instruction, OpCode.LOADNIL, 0, 0, 0, 0);
+	}
+	writeInstruction(code, instructionCount, OpCode.RET, 0, 0, 0, 0);
+	const program: Program = {
+		code,
+		programRom: code,
+		programRomTextByteLength: code.byteLength,
+		constPool: [],
+		protos: [makeProto(code.byteLength)],
+		stringPool: cpu.stringPool,
+		constPoolStringPool: cpu.stringPool,
+	};
+	const metadata = makeMetadata(1);
+	cpu.setProgram(program, metadata, metadata, 0, 0, 0);
+	cpu.start(0);
+	machine.gxGpu.writeGp0(GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24);
+	machine.gxGpu.writeGp0(0);
+	machine.gxGpu.writeGp0((1 << 16) | 1);
+	const readbackDeadline = machine.scheduler.nextDeadline();
+	const runtime = {
+		machine,
+		vblank: {
+			tickCompleted: false,
+			handleBeginTimer: () => {},
+			handleEndTimer: () => {},
+		},
+	} as unknown as Runtime;
+	const state = makeFrameState();
+	state.cycleBudgetRemaining = 100;
+	state.cycleBudgetGranted = 100;
+
+	new CpuExecutionState(runtime).runWithBudget(state);
+
+	assert.equal(machine.gxGpu.backendReadbackPending(), true);
+	assert.equal(machine.scheduler.nowCycles, readbackDeadline);
+	assert.equal(cpu.getFrameDepth(), 1);
+	assert.equal(state.cycleBudgetRemaining > 0, true);
 });
 
 test('IRQ state restore preserves asserted line and cart-visible flags', () => {

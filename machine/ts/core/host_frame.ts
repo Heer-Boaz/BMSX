@@ -3,14 +3,8 @@ import { hostOverlayMenu } from './host_overlay_menu';
 import * as workbenchMode from '../ide/workbench/mode';
 import { syncRuntimeSourceActivity } from '../ide/runtime/sources';
 import type { Runtime } from '../machine/runtime/runtime';
-import { runRuntimeFrameStepInto, type RuntimeFrameStepResult } from '../machine/runtime/frame/step';
 
 const MAX_HOST_FRAME_DELTA_MS = 250;
-const hostFrameStepResult: RuntimeFrameStepResult = {
-	previousTickSequence: 0,
-	tickSequence: 0,
-	tickAdvanced: false,
-};
 
 export function runMachineHostFrame(runtime: Runtime, currentTime: number, runReady: boolean): void {
 	const manager = machineManager;
@@ -48,10 +42,15 @@ export function runMachineHostFrame(runtime: Runtime, currentTime: number, runRe
 				runtime.frameScheduler.clearQueuedTime();
 			} else {
 				manager.deltatime = runtime.timing.frameDurationMs;
-				runRuntimeFrameStepInto(hostFrameStepResult, runtime, hostDeltaMs);
+				const previousTickSequence = runtime.frameScheduler.lastTickSequence;
+				runtime.frameScheduler.run(hostDeltaMs);
+				while (runtime.machine.gxGpu.backendReadbackPending()) {
+					manager.view.backend.executeGxGpuReadback(runtime.machine.gxGpu);
+					runtime.frameScheduler.run(0);
+				}
 				syncRuntimeSourceActivity(manager.sourceState, runtime.cartProgramStarted);
 				manager.syncRuntimeAudioTiming();
-				screen.syncAfterRuntimeUpdate(runtime, hostFrameStepResult.previousTickSequence);
+				screen.syncAfterRuntimeUpdate(runtime, previousTickSequence);
 			}
 			if (hostOverlayQueued) {
 				screen.requestHeldPresentation();

@@ -3,7 +3,6 @@
 #include "core/host_overlay_menu.h"
 #include "common/time.h"
 #include "input/manager.h"
-#include "machine/runtime/frame/step.h"
 #include "machine/runtime/runtime.h"
 
 #include <chrono>
@@ -53,10 +52,14 @@ bool MachineManager::runHostFrame(
 		if (!platformPaused && !hostMenuActive) {
 			m_delta_time = runtime.timing.frameDurationMs / 1000.0;
 			if (frameReady) {
-				RuntimeFrameStepResult stepResult;
-				runRuntimeFrameStepInto(stepResult, runtime, hostDeltaMs);
+				const i64 previousTickSequence = runtime.frameScheduler.lastTickSequence;
+				runtime.frameScheduler.run(runtime, hostDeltaMs);
+				while (runtime.machine.gxGpu.backendReadbackPending()) {
+					m_view->backend()->executeGxGpuReadback(runtime.machine.gxGpu);
+					runtime.frameScheduler.run(runtime, 0.0);
+				}
 				syncRuntimeAudioTiming();
-				m_screen.syncAfterRuntimeUpdate(runtime, stepResult.previousTickSequence);
+				m_screen.syncAfterRuntimeUpdate(runtime, previousTickSequence);
 			}
 		} else {
 			runtime.frameScheduler.clearQueuedTime();

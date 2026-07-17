@@ -16,7 +16,7 @@ type GxGpuSoftwareVramSource = {
 	vramSnapshotSerial: bigint;
 };
 
-export function executeGxGpuSoftwareVramCommands(source: GxGpuSoftwareVramSource): void {
+export function executeGxGpuSoftwareVramCommands(source: GxGpuSoftwareVramSource, commandLimit: number): void {
 	const commandBuffer = source.commandBuffer;
 	const readback = source.readbackPort;
 	const commandSerial = commandBuffer.serial;
@@ -29,8 +29,8 @@ export function executeGxGpuSoftwareVramCommands(source: GxGpuSoftwareVramSource
 		gxGpuSoftwareProcessedCommandCount = 0;
 		gxGpuSoftwareProcessedCommandSerial = commandSerial;
 	}
-	gxGpuSoftwareProcessedCommandCount = executeGxGpuSoftwareCommands(commandBuffer, gxGpuSoftwareProcessedCommandCount);
-	if (readback.claimReadback(commandBuffer.presentCommandCount)) {
+	gxGpuSoftwareProcessedCommandCount = executeGxGpuSoftwareCommands(commandBuffer, gxGpuSoftwareProcessedCommandCount, commandLimit);
+	if (readback.claimReadback(commandLimit)) {
 		const readbackToken = readback.token;
 		let pixel = 0;
 		for (let row = 0; row < readback.height; row += 1) {
@@ -48,18 +48,18 @@ export function executeGxGpuSoftwareVramCommands(source: GxGpuSoftwareVramSource
 }
 
 export function renderGxGpuSoftwareFrame(state: GxGpuPipelineState, target: Uint8Array): void {
-	executeGxGpuSoftwareVramCommands(state);
+	executeGxGpuSoftwareVramCommands(state, state.commandBuffer.presentCommandCount);
 	scanoutGxGpuSoftwareVram(state, target);
 }
 
 export function captureGxGpuVramSnapshot(gxGpu: GxGpu, snapshotBytes: Uint8Array): void {
 	const output = gxGpu.readDeviceOutput();
-	executeGxGpuSoftwareVramCommands(output);
+	executeGxGpuSoftwareVramCommands(output, output.commandBuffer.executedCommandCount);
 	for (let wordIndex = 0; wordIndex < GX_GPU_SOFTWARE_VRAM_WORDS; wordIndex += 1) {
 		const byteIndex = wordIndex << 1;
 		const word = gxGpuSoftwareVram[wordIndex];
 		snapshotBytes[byteIndex] = word & 0xff;
 		snapshotBytes[byteIndex + 1] = word >>> 8;
 	}
-	gxGpuSoftwareVramSnapshotSerial = gxGpu.commitRenderedVramSnapshotBytes(snapshotBytes);
+	gxGpuSoftwareVramSnapshotSerial = gxGpu.commitRenderedVramSnapshotBytes(snapshotBytes, gxGpuSoftwareProcessedCommandCount);
 }

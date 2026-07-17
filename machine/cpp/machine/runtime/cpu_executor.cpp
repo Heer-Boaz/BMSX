@@ -30,8 +30,12 @@ void dispatchRuntimeTimer(Runtime& runtime, uint8_t kind, uint8_t payload) {
 
 bool CpuExecutionState::runHaltedUntilIrq(Runtime& runtime, FrameState& frameState) {
 	auto& cpu = runtime.machine.cpu;
+	auto& gxGpu = runtime.machine.gxGpu;
 	int& cycleBudgetRemaining = frameState.cycleBudgetRemaining;
 	bool tickCompleted = runDueRuntimeTimers(runtime);
+	if (gxGpu.backendReadbackBlocksMachine()) {
+		return tickCompleted;
+	}
 	if (!cpu.isHaltedUntilIrq()) {
 		return tickCompleted;
 	}
@@ -55,12 +59,18 @@ bool CpuExecutionState::runHaltedUntilIrq(Runtime& runtime, FrameState& frameSta
 			const i64 cyclesToTarget = nextDeadline - scheduler.nowCycles();
 			if (cyclesToTarget <= 0) {
 				tickCompleted = runDueRuntimeTimers(runtime);
+				if (gxGpu.backendReadbackBlocksMachine()) {
+					return tickCompleted;
+				}
 				continue;
 			}
 			const int idleCycles = static_cast<int>(std::min<i64>(cycleBudgetRemaining, cyclesToTarget));
 			cycleBudgetRemaining -= idleCycles;
 			frameState.cycleBudgetRemaining = cycleBudgetRemaining;
 			tickCompleted = advanceRuntimeTime(runtime, idleCycles);
+			if (gxGpu.backendReadbackBlocksMachine()) {
+				return tickCompleted;
+			}
 			continue;
 		}
 		return true;
@@ -74,19 +84,12 @@ RunResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState& frameSt
 	int remaining = frameState.cycleBudgetRemaining;
 	RunResult result = RunResult::Yielded;
 	bool tickCompleted = runDueRuntimeTimers(runtime);
-	if (tickCompleted) {
-		frameState.cycleBudgetRemaining = remaining;
-		return result;
-	}
-	while (remaining > 0) {
+	while (remaining > 0 && !tickCompleted && !machine.gxGpu.backendReadbackBlocksMachine()) {
 		if (cpu.isMemoryWriteBlocked()) {
 			const i64 nextDeadline = scheduler.nextDeadline();
 			const i64 deadlineBudget = nextDeadline - scheduler.nowCycles();
 			if (deadlineBudget <= 0) {
 				tickCompleted = runDueRuntimeTimers(runtime);
-				if (tickCompleted) {
-					break;
-				}
 				continue;
 			}
 			// Device-ready edges release blocked MMIO stores. Advance to scheduled
@@ -95,9 +98,6 @@ RunResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState& frameSt
 			remaining -= waitCycles;
 			frameState.activeCpuUsedCycles += waitCycles;
 			tickCompleted = advanceRuntimeTime(runtime, waitCycles);
-			if (tickCompleted) {
-				break;
-			}
 			continue;
 		}
 		int sliceBudget = remaining;
@@ -106,9 +106,6 @@ RunResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState& frameSt
 			const i64 deadlineBudget = nextDeadline - scheduler.nowCycles();
 			if (deadlineBudget <= 0) {
 				tickCompleted = runDueRuntimeTimers(runtime);
-				if (tickCompleted) {
-					break;
-				}
 				continue;
 			}
 			if (deadlineBudget < sliceBudget) {
@@ -128,9 +125,6 @@ RunResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState& frameSt
 			remaining -= consumed;
 			frameState.activeCpuUsedCycles += consumed;
 			tickCompleted = advanceRuntimeTime(runtime, consumed);
-		}
-		if (tickCompleted) {
-			break;
 		}
 		if (cpu.isMemoryWriteBlocked()) {
 			continue;

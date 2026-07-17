@@ -308,6 +308,13 @@ WebGPU, including GPUREAD-to-RAM DMA. Live accelerated conformance remains open.
   reach the real backend VRAM before readback; later commands remain behind the
   fence until the read transfer is consumed. A later C0 marker remains queued
   and cannot overwrite the active request latches.
+- The C0 device deadline stops CPU execution at its exact machine cycle. The
+  host services the backend through the C0 fence without waiting for VBlank or
+  presenting scanout. Synchronous backends resume the same host frame; WebGPU
+  mapping suspends machine time and its host latency is never accumulated as
+  catch-up time. Restore during an older WebGPU map claims the replacement
+  generation into retained backend state and submits it after the stale map
+  releases the shared buffer, without a host busy-wait.
 - The command stream stays read-only to render code. A retained
   `GxGpuReadbackPort` is the real owner of the request latches, fence,
   completion phase, maximum 1024x512 pixel result buffer and the consumption
@@ -336,6 +343,12 @@ WebGPU, including GPUREAD-to-RAM DMA. Live accelerated conformance remains open.
   logical PENDING; the current-format codec stores phase/fence/cursor/latch and
   READY result pixels and rejects SUBMITTED on the wire. Async completion checks
   its generation before writing any result byte.
+- Full VRAM capture executes through the complete device execution frontier and
+  compacts exactly that prefix into the retained raw snapshot. Mid-frame capture
+  retains one save-stated publication latch so the snapshot reaches scanout on
+  the next VBlank exactly once; suffix commands and active packet word offsets
+  are rebased instead of discarded. The machine owner holds its execution and
+  rendering gates through the complete async capture-and-codec interval.
 - The mirrored TS/C++ current-format codec has one explicit 16 MiB wire
   capacity and rejects overflow before both encode and decode. Libretro reports
   a fixed header + 16 MiB envelope. Every save captures and encodes once, then
@@ -417,6 +430,10 @@ and MAME
     browser execution.
   - [x] Feed GPUREAD into RAM through the custom DMA controller without polling
     or consuming the latch while GPUSTAT ready-to-send is low.
+  - [x] Decouple C0 backend execution from VBlank presentation. CPU execution
+    stops at the C0 device deadline, synchronous and asynchronous backends use
+    the same explicit fence frontier, backend wait time cannot create scheduler
+    catch-up, and mid-frame VRAM snapshots compact/publish their exact prefix.
   - [ ] Run the same vector live against WebGL2, GLES2 and WebGPU.
 - [ ] Complete GPUSTAT details and timing-visible bits against references.
   - [x] Route GP0(1Fh) through a real `IRQ_GPU` source edge. GP1(02h)

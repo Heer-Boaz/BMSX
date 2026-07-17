@@ -64,6 +64,7 @@ private:
 	size_t m_tickCompletionReadIndex = 0;
 	size_t m_tickCompletionWriteIndex = 0;
 	size_t m_tickCompletionCount = 0;
+	bool m_backendServiceSuspended = false;
 };
 
 } // namespace bmsx

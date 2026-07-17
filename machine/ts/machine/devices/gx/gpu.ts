@@ -16,7 +16,9 @@ import {
 	GX_GPU_COMMAND_READ_VRAM_TO_CPU,
 	GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
 	GX_GPU_READBACK_IDLE,
+	GX_GPU_READBACK_PENDING,
 	GX_GPU_READBACK_READY,
+	GX_GPU_READBACK_SUBMITTED,
 	GX_GPU_VRAM_BYTE_COUNT,
 	GX_GPU_DRAW_MODE_TEXTURE_DISABLE,
 	GxGpuCommandBuffer,
@@ -190,6 +192,7 @@ export type GxGpuState = {
 	presentDisplayStartWord: number;
 	presentHorizontalDisplayRangeWord: number;
 	presentVerticalDisplayRangeWord: number;
+	vramPresentationPending: boolean;
 	commandBuffer: GxGpuCommandBufferState;
 };
 
@@ -242,6 +245,7 @@ export class GxGpu {
 	private scanoutCyclesPerFrame = 1;
 	private scanoutTotalScanlines = 313;
 	private m_lastFrameCommitted = false;
+	private vramPresentationPending = false;
 	private readonly vramSnapshotBytes = new Uint8Array(GX_GPU_VRAM_BYTE_COUNT);
 	private vramSnapshotSerial = 0n;
 	private readonly deviceOutput: { -readonly [Key in keyof GxGpuDeviceOutput]: GxGpuDeviceOutput[Key] };
@@ -309,6 +313,7 @@ export class GxGpu {
 		this.scanoutCyclesPerFrame = 1;
 		this.scanoutTotalScanlines = 313;
 		this.m_lastFrameCommitted = false;
+		this.vramPresentationPending = false;
 		this.updateDisplayModeStatusBits();
 		this.updateScanoutStatusBits();
 		this.updateDmaRequestStatusBit();
@@ -367,6 +372,7 @@ export class GxGpu {
 			presentDisplayStartWord: this.presentDisplayStartWord,
 			presentHorizontalDisplayRangeWord: this.presentHorizontalDisplayRangeWord,
 			presentVerticalDisplayRangeWord: this.presentVerticalDisplayRangeWord,
+			vramPresentationPending: this.vramPresentationPending,
 			commandBuffer: this.commandBuffer.captureState(),
 		};
 	}
@@ -419,6 +425,7 @@ export class GxGpu {
 		this.presentDisplayStartWord = state.presentDisplayStartWord >>> 0;
 		this.presentHorizontalDisplayRangeWord = state.presentHorizontalDisplayRangeWord >>> 0;
 		this.presentVerticalDisplayRangeWord = state.presentVerticalDisplayRangeWord >>> 0;
+		this.vramPresentationPending = state.vramPresentationPending;
 		this.commandBuffer.restoreState(state.commandBuffer);
 		this.m_lastFrameCommitted = false;
 		if (this.pendingCommandCompletionCycle !== 0) {
@@ -443,12 +450,16 @@ export class GxGpu {
 	public replaceVramSnapshotBytes(bytes: Uint8Array): void {
 		this.vramSnapshotBytes.set(bytes);
 		this.publishVramSnapshotRevision();
+		this.vramPresentationPending = true;
 	}
 
-	public commitRenderedVramSnapshotBytes(bytes: Uint8Array): bigint {
+	public commitRenderedVramSnapshotBytes(bytes: Uint8Array, renderedCommandCount: number): bigint {
 		this.vramSnapshotBytes.set(bytes);
 		this.publishVramSnapshotRevision();
-		this.retirePresentedCommands();
+		if (renderedCommandCount !== 0) {
+			this.retireCommandPrefix(renderedCommandCount);
+			this.vramPresentationPending = true;
+		}
 		return this.vramSnapshotSerial;
 	}
 
@@ -723,6 +734,15 @@ export class GxGpu {
 		return this.deviceOutput;
 	}
 
+	public backendReadbackPending(): boolean {
+		return this.commandBuffer.readback.phase === GX_GPU_READBACK_PENDING;
+	}
+
+	public backendReadbackBlocksMachine(): boolean {
+		const phase = this.commandBuffer.readback.phase;
+		return phase === GX_GPU_READBACK_PENDING || phase === GX_GPU_READBACK_SUBMITTED;
+	}
+
 	public presentReadyFrameOnVblankEdge(): void {
 		this.synchronizeCommandTiming(this.scheduler.currentNowCycles());
 		this.updateScanoutStatusBits();
@@ -741,7 +761,9 @@ export class GxGpu {
 		this.presentHorizontalDisplayRangeWord = this.horizontalDisplayRangeWord;
 		this.presentVerticalDisplayRangeWord = this.verticalDisplayRangeWord;
 		this.commandBuffer.sealCommandsForPresentation();
-		this.m_lastFrameCommitted = this.commandBuffer.hasUnretiredPresentCommands() || scanoutStateChanged;
+		this.m_lastFrameCommitted = this.vramPresentationPending
+			|| this.commandBuffer.hasUnretiredPresentCommands()
+			|| scanoutStateChanged;
 	}
 
 	public lastFrameCommitted(): boolean {
@@ -750,7 +772,12 @@ export class GxGpu {
 
 	public retirePresentedCommands(): void {
 		const retiredCommands = this.commandBuffer.presentCommandCount;
-		const retiredWords = this.commandBuffer.retireCommandsPreservingVram();
+		this.retireCommandPrefix(retiredCommands);
+		this.vramPresentationPending = false;
+	}
+
+	private retireCommandPrefix(retiredCommands: number): void {
+		const retiredWords = this.commandBuffer.retireCommandsPreservingVram(retiredCommands);
 		if (this.pendingCommandTargetCount !== 0) {
 			this.pendingCommandTargetCount -= retiredCommands;
 		}

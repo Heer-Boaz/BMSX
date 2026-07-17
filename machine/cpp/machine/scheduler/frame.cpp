@@ -21,7 +21,9 @@ bool FrameSchedulerState::hasScheduledFrame(const Runtime& runtime) const {
 }
 
 bool FrameSchedulerState::canRunScheduledUpdate(const Runtime& runtime) const {
-	if (!runtime.m_luaInitialized || runtime.m_runtimeFailed) {
+	if (!runtime.m_luaInitialized
+		|| runtime.m_runtimeFailed
+		|| runtime.machine.gxGpu.backendReadbackBlocksMachine()) {
 		return false;
 	}
 	return (runtime.frameLoop.frameActive && runtime.frameLoop.frameState.cycleBudgetRemaining > 0)
@@ -53,6 +55,7 @@ void FrameSchedulerState::clearTickCompletionQueue() {
 void FrameSchedulerState::reset() {
 	clearQueuedTime();
 	clearTickCompletionQueue();
+	m_backendServiceSuspended = false;
 }
 
 void FrameSchedulerState::resetTickTelemetry() {
@@ -95,6 +98,7 @@ void FrameSchedulerState::restoreState(const FrameSchedulerStateSnapshot& state)
 	lastTickCompleted = state.lastTickCompleted;
 	lastTickConsumedSequence = state.lastTickConsumedSequence;
 	m_tickCompletionReadIndex = 0;
+	m_backendServiceSuspended = false;
 	const size_t queuedTickCompletionCount = state.queuedTickCompletions.size();
 	m_tickCompletionWriteIndex = queuedTickCompletionCount % TICK_COMPLETION_QUEUE_CAPACITY;
 	m_tickCompletionCount = queuedTickCompletionCount;
@@ -161,12 +165,25 @@ bool FrameSchedulerState::startScheduledFrame(Runtime& runtime) {
 }
 
 void FrameSchedulerState::run(Runtime& runtime, f64 hostDeltaMs) {
+	if (runtime.machine.gxGpu.backendReadbackBlocksMachine()) {
+		m_backendServiceSuspended = true;
+		return;
+	}
+	if (m_backendServiceSuspended) {
+		// Backend submission/mapping latency is host time, not machine time. Resume
+		// the in-flight machine frame without turning that latency into catch-up.
+		m_backendServiceSuspended = false;
+		hostDeltaMs = 0.0;
+	}
 	accumulateHostTime(runtime, hostDeltaMs);
 	while (canRunScheduledUpdate(runtime)) {
 		const bool progressed = runtime.frameLoop.tickUpdate(runtime);
 		if (runtime.frameLoop.frameActive && !progressed) {
 			break;
 		}
+	}
+	if (runtime.machine.gxGpu.backendReadbackBlocksMachine()) {
+		m_backendServiceSuspended = true;
 	}
 }
 

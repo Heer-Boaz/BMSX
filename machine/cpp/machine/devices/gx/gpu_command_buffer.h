@@ -152,8 +152,8 @@ public:
 	u8* pixelBytes() { return m_pixelBytes.get(); }
 	const u8* pixelBytes() const { return m_pixelBytes.get(); }
 
-	bool claimReadback(size_t presentCommandCount) {
-		if (m_phase != GX_GPU_READBACK_PENDING || presentCommandCount != m_fenceCommandCount) {
+	bool claimReadback(size_t executedCommandCount) {
+		if (m_phase != GX_GPU_READBACK_PENDING || executedCommandCount != m_fenceCommandCount) {
 			return false;
 		}
 		m_phase = GX_GPU_READBACK_SUBMITTED;
@@ -377,8 +377,7 @@ public:
 		readback.m_dmaController.setGxGpuReadReady(readback.m_phase == GX_GPU_READBACK_READY);
 	}
 
-	size_t retireCommandsPreservingVram() {
-		const size_t retiredCommands = presentCommandCount;
+	size_t retireCommandsPreservingVram(size_t retiredCommands) {
 		if (retiredCommands == 0u) {
 			return 0u;
 		}
@@ -407,7 +406,9 @@ public:
 		}
 		commandCount = remainingCommands;
 		executedCommandCount -= retiredCommands;
-		presentCommandCount = 0u;
+		presentCommandCount = retiredCommands < presentCommandCount
+			? presentCommandCount - retiredCommands
+			: 0u;
 		wordCount = remainingWords;
 		readback.m_fenceCommandCount = retiredCommands < readback.m_fenceCommandCount
 			? readback.m_fenceCommandCount - retiredCommands
@@ -417,18 +418,15 @@ public:
 	}
 
 	void sealCommandsForPresentation() {
-		if (readback.m_phase == GX_GPU_READBACK_PENDING) {
+		if (readback.m_phase != GX_GPU_READBACK_IDLE) {
 			presentCommandCount = readback.m_fenceCommandCount;
-		} else if (readback.m_phase == GX_GPU_READBACK_IDLE) {
-			presentCommandCount = executedCommandCount;
 		} else {
-			presentCommandCount = 0u;
+			presentCommandCount = executedCommandCount;
 		}
 	}
 
 	bool hasUnretiredPresentCommands() const {
-		return presentCommandCount != 0u
-			|| (readback.m_phase == GX_GPU_READBACK_PENDING && presentCommandCount == readback.m_fenceCommandCount);
+		return presentCommandCount != 0u;
 	}
 
 	void appendWord(u32 word) {

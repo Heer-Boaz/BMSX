@@ -14,8 +14,12 @@ export class CpuExecutionState {
 	public runHaltedUntilIrq(state: FrameState): boolean {
 		const runtime = this.runtime;
 		const cpu = runtime.machine.cpu;
+		const gxGpu = runtime.machine.gxGpu;
 		let cycleBudgetRemaining = state.cycleBudgetRemaining;
 		let tickCompleted = runDueRuntimeTimers(runtime);
+		if (gxGpu.backendReadbackBlocksMachine()) {
+			return tickCompleted;
+		}
 		if (!cpu.isHaltedUntilIrq()) {
 			return tickCompleted;
 		}
@@ -39,12 +43,18 @@ export class CpuExecutionState {
 				const cyclesToTarget = nextDeadline - scheduler.nowCycles;
 				if (cyclesToTarget <= 0) {
 					tickCompleted = runDueRuntimeTimers(runtime);
+					if (gxGpu.backendReadbackBlocksMachine()) {
+						return tickCompleted;
+					}
 					continue;
 				}
 				const idleCycles = cyclesToTarget < cycleBudgetRemaining ? cyclesToTarget : cycleBudgetRemaining;
 				cycleBudgetRemaining -= idleCycles;
 				state.cycleBudgetRemaining = cycleBudgetRemaining;
 				tickCompleted = advanceRuntimeTime(runtime, idleCycles);
+				if (gxGpu.backendReadbackBlocksMachine()) {
+					return tickCompleted;
+				}
 				continue;
 			}
 			return true;
@@ -58,20 +68,13 @@ export class CpuExecutionState {
 		const scheduler = runtime.machine.scheduler;
 		const cpu = runtime.machine.cpu;
 		let tickCompleted = runDueRuntimeTimers(runtime);
-		if (tickCompleted) {
-			state.cycleBudgetRemaining = remaining;
-			return result;
-		}
 		// start repeated-sequence-acceptable -- CPU scheduler loop mirrors external-call scheduling without extracting a callback-heavy helper.
-		while (remaining > 0) {
+		while (remaining > 0 && !tickCompleted && !runtime.machine.gxGpu.backendReadbackBlocksMachine()) {
 			if (cpu.isMemoryWriteBlocked()) {
 				const nextDeadline = scheduler.nextDeadline();
 				const deadlineBudget = nextDeadline - scheduler.nowCycles;
 				if (deadlineBudget <= 0) {
 					tickCompleted = runDueRuntimeTimers(runtime);
-					if (tickCompleted) {
-						break;
-					}
 					continue;
 				}
 				// Device-ready edges release blocked MMIO stores. Advance to scheduled
@@ -80,9 +83,6 @@ export class CpuExecutionState {
 				remaining -= waitCycles;
 				state.activeCpuUsedCycles += waitCycles;
 				tickCompleted = advanceRuntimeTime(runtime, waitCycles);
-				if (tickCompleted) {
-					break;
-				}
 				continue;
 			}
 			let sliceBudget = remaining;
@@ -91,9 +91,6 @@ export class CpuExecutionState {
 				const deadlineBudget = nextDeadline - scheduler.nowCycles;
 				if (deadlineBudget <= 0) {
 					tickCompleted = runDueRuntimeTimers(runtime);
-					if (tickCompleted) {
-						break;
-					}
 					continue;
 				}
 				if (deadlineBudget < sliceBudget) {
@@ -111,9 +108,6 @@ export class CpuExecutionState {
 				remaining -= consumed;
 				state.activeCpuUsedCycles += consumed;
 				tickCompleted = advanceRuntimeTime(runtime, consumed);
-			}
-			if (tickCompleted) {
-				break;
 			}
 			if (cpu.isMemoryWriteBlocked()) {
 				continue;

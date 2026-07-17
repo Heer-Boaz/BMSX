@@ -21,7 +21,7 @@ void executeGxGpuSoftwarePass(GPUBackend* backend, GameView*, void*, RenderPassS
 	renderGxGpuSoftwareFrame(static_cast<SoftwareBackend&>(*backend), stateStorage.gxGpu);
 }
 
-void executeGxGpuSoftwareVramCommands(const GxGpuCommandBuffer& commandBuffer, GxGpuReadbackPort& readback, const std::array<u8, GX_GPU_VRAM_BYTE_COUNT>& snapshotBytes, u64 snapshotSerial) {
+void executeGxGpuSoftwareVramCommands(const GxGpuCommandBuffer& commandBuffer, GxGpuReadbackPort& readback, const std::array<u8, GX_GPU_VRAM_BYTE_COUNT>& snapshotBytes, u64 snapshotSerial, size_t commandLimit) {
 	const u32 commandSerial = commandBuffer.serial;
 	if (g_gxGpuSoftwareVramSnapshotSerial != snapshotSerial) {
 		loadGxGpuSoftwareVramBytes(snapshotBytes.data());
@@ -32,8 +32,8 @@ void executeGxGpuSoftwareVramCommands(const GxGpuCommandBuffer& commandBuffer, G
 		g_gxGpuSoftwareProcessedCommandCount = 0u;
 		g_gxGpuSoftwareProcessedCommandSerial = commandSerial;
 	}
-	g_gxGpuSoftwareProcessedCommandCount = executeGxGpuSoftwareCommands(commandBuffer, g_gxGpuSoftwareProcessedCommandCount);
-	if (readback.claimReadback(commandBuffer.presentCommandCount)) {
+	g_gxGpuSoftwareProcessedCommandCount = executeGxGpuSoftwareCommands(commandBuffer, g_gxGpuSoftwareProcessedCommandCount, commandLimit);
+	if (readback.claimReadback(commandLimit)) {
 		const u32 readbackToken = readback.token();
 		u8* const readbackPixelBytes = readback.pixelBytes();
 		size_t pixel = 0u;
@@ -54,20 +54,25 @@ void executeGxGpuSoftwareVramCommands(const GxGpuCommandBuffer& commandBuffer, G
 } // namespace
 
 void renderGxGpuSoftwareFrame(SoftwareBackend& backend, const GxGpuPipelineState& state) {
-	executeGxGpuSoftwareVramCommands(*state.commandBuffer, *state.readbackPort, *state.vramSnapshotBytes, state.vramSnapshotSerial);
+	executeGxGpuSoftwareVramCommands(*state.commandBuffer, *state.readbackPort, *state.vramSnapshotBytes, state.vramSnapshotSerial, state.commandBuffer->presentCommandCount);
 	scanoutGxGpuSoftwareVram(backend, state);
+}
+
+void SoftwareBackend::executeGxGpuReadback(GxGpu& gxGpu) {
+	const GxGpuDeviceOutput& output = gxGpu.readDeviceOutput();
+	executeGxGpuSoftwareVramCommands(output.commandBuffer, output.readbackPort, output.vramSnapshotBytes, output.vramSnapshotSerial, output.readbackPort.fenceCommandCount());
 }
 
 void SoftwareBackend::captureGxGpuVramSnapshot(GxGpu& gxGpu) {
 	const GxGpuDeviceOutput& output = gxGpu.readDeviceOutput();
-	executeGxGpuSoftwareVramCommands(output.commandBuffer, output.readbackPort, output.vramSnapshotBytes, output.vramSnapshotSerial);
+	executeGxGpuSoftwareVramCommands(output.commandBuffer, output.readbackPort, output.vramSnapshotBytes, output.vramSnapshotSerial, output.commandBuffer.executedCommandCount);
 	for (size_t wordIndex = 0u; wordIndex < kGxGpuSoftwareVramWords; wordIndex += 1u) {
 		const size_t byteIndex = wordIndex << 1u;
 		const u16 word = g_gxGpuSoftwareVram[wordIndex];
 		g_gxGpuSoftwareVramSnapshotScratch[byteIndex] = static_cast<u8>(word & 0xffu);
 		g_gxGpuSoftwareVramSnapshotScratch[byteIndex + 1u] = static_cast<u8>(word >> 8u);
 	}
-	g_gxGpuSoftwareVramSnapshotSerial = gxGpu.commitRenderedVramSnapshotBytes(g_gxGpuSoftwareVramSnapshotScratch.data());
+	g_gxGpuSoftwareVramSnapshotSerial = gxGpu.commitRenderedVramSnapshotBytes(g_gxGpuSoftwareVramSnapshotScratch.data(), g_gxGpuSoftwareProcessedCommandCount);
 }
 
 void registerGxGpuPassSoftware(RenderPassLibrary& registry) {

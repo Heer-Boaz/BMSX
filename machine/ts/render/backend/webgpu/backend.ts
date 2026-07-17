@@ -6,7 +6,7 @@ import { createSolidRgba8Pixels, writeSolidRgba8Pixels } from '../../shared/soli
 import type { GxGpu } from '../../../machine/devices/gx/gpu';
 import { registerCRT } from '../../post/crt/webgpu/pipeline';
 import { registerDeviceQuantize } from '../../post/device_quantize/webgpu/pipeline';
-import { captureRenderedVramSnapshot, registerGxGpuPass } from './gx_gpu';
+import { captureRenderedVramSnapshot, registerGxGpuPass, serviceGxGpuReadback } from './gx_gpu';
 import { updateAndBindFrameUniforms } from '../frame_uniforms';
 import type { RenderPassLibrary } from '../pass/library';
 import { registerHostOverlayPassesWebGPU } from '../../host_overlay/webgpu/pipeline';
@@ -85,6 +85,10 @@ export class WebGPUBackend implements GPUBackend {
 	beginFrame(): void { this._bytesUploaded = 0; }
 	endFrame(): void { }
 	getFrameStats() { return { draws: 0, drawIndexed: 0, drawsInstanced: 0, drawIndexedInstanced: 0, bytesUploaded: this._bytesUploaded, vertexBytes: 0, indexBytes: 0, uniformBytes: this._bytesUploaded, textureBytes: 0 }; }
+	executeGxGpuReadback(gxGpu: GxGpu): void {
+		const output = gxGpu.readDeviceOutput();
+		serviceGxGpuReadback(gxGpu, output);
+	}
 	captureGxGpuVramSnapshot(gxGpu: GxGpu): Promise<void> {
 		const output = gxGpu.readDeviceOutput();
 		return captureRenderedVramSnapshot(gxGpu, output);

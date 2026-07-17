@@ -246,6 +246,7 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'presentDisplayStartWord',
 	'presentHorizontalDisplayRangeWord',
 	'presentVerticalDisplayRangeWord',
+	'vramPresentationPending',
 	'commandBuffer',
 	'vramBytes',
 	'commandCount',

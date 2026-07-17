@@ -64,6 +64,7 @@ void GxGpu::resetGpuRegisters() {
 	m_scanoutCyclesPerFrame = 1;
 	m_scanoutTotalScanlines = 313;
 	m_lastFrameCommitted = false;
+	m_vramPresentationPending = false;
 	updateDisplayModeStatusBits();
 	m_memory.writeIoValue(IO_GX_GPU_GP0, valueNumber(static_cast<double>(m_gpuReadWord)));
 	writeStatusIo();
@@ -117,6 +118,7 @@ GxGpuState GxGpu::captureState() {
 	state.presentDisplayStartWord = m_presentDisplayStartWord;
 	state.presentHorizontalDisplayRangeWord = m_presentHorizontalDisplayRangeWord;
 	state.presentVerticalDisplayRangeWord = m_presentVerticalDisplayRangeWord;
+	state.vramPresentationPending = m_vramPresentationPending;
 	state.commandBuffer = m_commandBuffer.captureState();
 	return state;
 }
@@ -165,6 +167,7 @@ void GxGpu::restoreState(const GxGpuState& state) {
 	m_presentDisplayStartWord = state.presentDisplayStartWord;
 	m_presentHorizontalDisplayRangeWord = state.presentHorizontalDisplayRangeWord;
 	m_presentVerticalDisplayRangeWord = state.presentVerticalDisplayRangeWord;
+	m_vramPresentationPending = state.vramPresentationPending;
 	m_commandBuffer.restoreState(state.commandBuffer);
 	if (state.pendingCommandCycles != 0) {
 		m_pendingCommandCompletionCycle = m_scheduler.currentNowCycles() + state.pendingCommandCycles;
@@ -193,12 +196,16 @@ void GxGpu::restoreSaveState(const GxGpuSaveState& state) {
 void GxGpu::replaceVramSnapshotBytes(const u8* bytes) {
 	std::copy(bytes, bytes + GX_GPU_VRAM_BYTE_COUNT, m_vramSnapshotBytes.begin());
 	publishVramSnapshotRevision();
+	m_vramPresentationPending = true;
 }
 
-u64 GxGpu::commitRenderedVramSnapshotBytes(const u8* bytes) {
+u64 GxGpu::commitRenderedVramSnapshotBytes(const u8* bytes, size_t renderedCommandCount) {
 	std::copy(bytes, bytes + GX_GPU_VRAM_BYTE_COUNT, m_vramSnapshotBytes.begin());
 	publishVramSnapshotRevision();
-	retirePresentedCommands();
+	if (renderedCommandCount != 0u) {
+		retireCommandPrefix(renderedCommandCount);
+		m_vramPresentationPending = true;
+	}
 	return m_vramSnapshotSerial;
 }
 
@@ -486,12 +493,19 @@ void GxGpu::presentReadyFrameOnVblankEdge() {
 	m_presentHorizontalDisplayRangeWord = m_horizontalDisplayRangeWord;
 	m_presentVerticalDisplayRangeWord = m_verticalDisplayRangeWord;
 	m_commandBuffer.sealCommandsForPresentation();
-	m_lastFrameCommitted = m_commandBuffer.hasUnretiredPresentCommands() || scanoutStateChanged;
+	m_lastFrameCommitted = m_vramPresentationPending
+		|| m_commandBuffer.hasUnretiredPresentCommands()
+		|| scanoutStateChanged;
 }
 
 void GxGpu::retirePresentedCommands() {
 	const size_t retiredCommands = m_commandBuffer.presentCommandCount;
-	const size_t retiredWords = m_commandBuffer.retireCommandsPreservingVram();
+	retireCommandPrefix(retiredCommands);
+	m_vramPresentationPending = false;
+}
+
+void GxGpu::retireCommandPrefix(size_t retiredCommands) {
+	const size_t retiredWords = m_commandBuffer.retireCommandsPreservingVram(retiredCommands);
 	if (m_pendingCommandTargetCount != 0u) {
 		m_pendingCommandTargetCount -= retiredCommands;
 	}

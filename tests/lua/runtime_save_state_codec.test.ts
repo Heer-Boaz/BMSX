@@ -138,6 +138,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					presentDisplayStartWord: 0x00011844,
 					presentHorizontalDisplayRangeWord: 0x00c60260,
 					presentVerticalDisplayRangeWord: 0x0003fc10,
+					vramPresentationPending: false,
 					commandBuffer: {
 						commandCount: 2,
 						executedCommandCount: 1,

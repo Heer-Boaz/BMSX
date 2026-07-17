@@ -618,6 +618,7 @@ BinValue encodeGxGpuState(const GxGpuState& state) {
 	object["presentDisplayStartWord"] = static_cast<i64>(state.presentDisplayStartWord);
 	object["presentHorizontalDisplayRangeWord"] = static_cast<i64>(state.presentHorizontalDisplayRangeWord);
 	object["presentVerticalDisplayRangeWord"] = static_cast<i64>(state.presentVerticalDisplayRangeWord);
+	object["vramPresentationPending"] = state.vramPresentationPending;
 	object["commandBuffer"] = encodeGxGpuCommandBufferState(state.commandBuffer);
 	return BinValue(std::move(object));
 }
@@ -671,6 +672,7 @@ GxGpuState decodeGxGpuState(const BinValue& value, const char* label) {
 	state.presentDisplayStartWord = requireU32(requireField(object, "presentDisplayStartWord", label), "machine.gxGpu.presentDisplayStartWord");
 	state.presentHorizontalDisplayRangeWord = requireU32(requireField(object, "presentHorizontalDisplayRangeWord", label), "machine.gxGpu.presentHorizontalDisplayRangeWord");
 	state.presentVerticalDisplayRangeWord = requireU32(requireField(object, "presentVerticalDisplayRangeWord", label), "machine.gxGpu.presentVerticalDisplayRangeWord");
+	state.vramPresentationPending = requireBool(requireField(object, "vramPresentationPending", label), "machine.gxGpu.vramPresentationPending");
 	return state;
 }
 

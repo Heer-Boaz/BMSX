@@ -12,7 +12,7 @@ import { registerCRT } from '../../post/crt/webgl/pipeline';
 import { registerDeviceQuantize } from '../../post/device_quantize/webgl/pipeline';
 import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms } from '../frame_uniforms';
 import type { RenderPassLibrary } from '../pass/library';
-import { captureRenderedVramSnapshot, registerGxGpuPass } from './gx_gpu';
+import { captureRenderedVramSnapshot, executeGxGpuVramCommands, registerGxGpuPass } from './gx_gpu';
 import type { GxGpu } from '../../../machine/devices/gx/gpu';
 
 // (Texture units sourced from render_view constants to avoid duplication.)
@@ -722,6 +722,10 @@ export class WebGLBackend implements GPUBackend {
 	endFrame(): void { /* no-op for now */ }
 	getFrameStats() {
 		return this.frameStats;
+	}
+	executeGxGpuReadback(gxGpu: GxGpu): void {
+		const output = gxGpu.readDeviceOutput();
+		executeGxGpuVramCommands(output, output.readbackPort.fenceCommandCount);
 	}
 	captureGxGpuVramSnapshot(gxGpu: GxGpu): void {
 		const output = gxGpu.readDeviceOutput();
