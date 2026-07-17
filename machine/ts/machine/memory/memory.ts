@@ -13,6 +13,8 @@ import {
 } from './map';
 import {
 	BUS_FAULT_ACCESS_READ,
+	BUS_FAULT_ACCESS_F32,
+	BUS_FAULT_ACCESS_F64,
 	BUS_FAULT_ACCESS_U8,
 	BUS_FAULT_ACCESS_U16,
 	BUS_FAULT_ACCESS_U32,
@@ -59,8 +61,12 @@ const BUS_ACCESS_READ_U8 = BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U8;
 const BUS_ACCESS_WRITE_U8 = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U8;
 const BUS_ACCESS_READ_U16 = BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U16;
 const BUS_ACCESS_READ_U32 = BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32;
+const BUS_ACCESS_READ_F32 = BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_F32;
+const BUS_ACCESS_READ_F64 = BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_F64;
 const BUS_ACCESS_WRITE_U16 = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U16;
 const BUS_ACCESS_WRITE_U32 = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32;
+const BUS_ACCESS_WRITE_F32 = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_F32;
+const BUS_ACCESS_WRITE_F64 = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_F64;
 
 export type IoReadHandler<TContext> = (context: TContext, addr: number) => Value;
 export type IoWriteHandler<TContext> = (context: TContext, addr: number, value: Value) => void;
@@ -109,6 +115,7 @@ export class Memory {
 	private busFaultCode = BUS_FAULT_NONE;
 	private busFaultAddr = 0;
 	private busFaultAccess = 0;
+	private busFaultSequence = 0;
 
 	public constructor(init: MemoryInit) {
 		this.systemRom = init.systemRom;
@@ -157,6 +164,10 @@ export class Memory {
 		if (slot < 0) return true;
 		const handler = this.ioWriteReadyHandlers[slot];
 		return handler === null || handler(this.ioWriteContexts[slot], addr);
+	}
+
+	public readBusFaultSequence(): number {
+		return this.busFaultSequence;
 	}
 
 	public setProgramRom(rom: Uint8Array, textByteLength: number): void {
@@ -487,13 +498,13 @@ export class Memory {
 		}
 	}
 
-	public readMappedU32LE(addr: number): number {
+	public readMappedU32LE(addr: number, faultAccess = BUS_ACCESS_READ_U32): number {
 		const slot = this.ioAlignedSlot(addr);
 		if (slot >= 0) {
 			return (this.readIoSlotValue(slot, addr) as number) >>> 0;
 		}
 		if (this.isIoRegionRange(addr, 4)) {
-			this.raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_ACCESS_READ_U32);
+			this.raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, faultAccess);
 			return 0;
 		}
 		if (this.isProgramRomReadableRange(addr, 4)) {
@@ -508,25 +519,32 @@ export class Memory {
 		else if (addr >= RAM_BASE) {
 			const ramOffset = addr - RAM_BASE;
 			if (ramOffset + 4 > this.ram.byteLength) {
-				this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_READ_U32);
+				this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, faultAccess);
 				return 0;
 			}
 			return readLE32(this.ram, ramOffset);
 		}
 		else {
-			this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_READ_U32);
+			this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, faultAccess);
 			return 0;
 		}
 	}
 
 	public readMappedF32LE(addr: number): number {
-		this.mappedFloatView.setUint32(0, this.readMappedU32LE(addr), true);
+		this.mappedFloatView.setUint32(0, this.readMappedU32LE(addr, BUS_ACCESS_READ_F32), true);
 		return this.mappedFloatView.getFloat32(0, true);
 	}
 
 	public readMappedF64LE(addr: number): number {
-		this.mappedFloatView.setUint32(0, this.readMappedU32LE(addr), true);
-		this.mappedFloatView.setUint32(4, this.readMappedU32LE(addr + 4), true);
+		const faultSequence = this.busFaultSequence;
+		this.mappedFloatView.setUint32(0, this.readMappedU32LE(addr, BUS_ACCESS_READ_F64), true);
+		if (this.busFaultSequence !== faultSequence) {
+			return 0;
+		}
+		this.mappedFloatView.setUint32(4, this.readMappedU32LE(addr + 4, BUS_ACCESS_READ_F64), true);
+		if (this.busFaultSequence !== faultSequence) {
+			return 0;
+		}
 		return this.mappedFloatView.getFloat64(0, true);
 	}
 
@@ -548,11 +566,11 @@ export class Memory {
 		this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_WRITE_U16);
 	}
 
-	public writeMappedU32LE(addr: number, value: number): void {
+	public writeMappedU32LE(addr: number, value: number, faultAccess = BUS_ACCESS_WRITE_U32): void {
 		const slot = this.ioAlignedSlot(addr);
 		if (slot >= 0) {
 			if (this.isLuaReadOnlyIoAddress(addr)) {
-				this.raiseBusFault(BUS_FAULT_READ_ONLY, addr, BUS_ACCESS_WRITE_U32);
+				this.raiseBusFault(BUS_FAULT_READ_ONLY, addr, faultAccess);
 				return;
 			}
 			const word = value >>> 0;
@@ -560,24 +578,28 @@ export class Memory {
 			return;
 		}
 		if (this.isIoRegionRange(addr, 4)) {
-			this.raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_ACCESS_WRITE_U32);
+			this.raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, faultAccess);
 			return;
 		}
 		if (this.writeRamWordLE(addr, 4, value)) {
 			return;
 		}
-		this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_WRITE_U32);
+		this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, faultAccess);
 	}
 
 	public writeMappedF32LE(addr: number, value: number): void {
 		this.mappedFloatView.setFloat32(0, value, true);
-		this.writeMappedU32LE(addr, this.mappedFloatView.getUint32(0, true));
+		this.writeMappedU32LE(addr, this.mappedFloatView.getUint32(0, true), BUS_ACCESS_WRITE_F32);
 	}
 
 	public writeMappedF64LE(addr: number, value: number): void {
 		this.mappedFloatView.setFloat64(0, value, true);
-		this.writeMappedU32LE(addr, this.mappedFloatView.getUint32(0, true));
-		this.writeMappedU32LE(addr + 4, this.mappedFloatView.getUint32(4, true));
+		const faultSequence = this.busFaultSequence;
+		this.writeMappedU32LE(addr, this.mappedFloatView.getUint32(0, true), BUS_ACCESS_WRITE_F64);
+		if (this.busFaultSequence !== faultSequence) {
+			return;
+		}
+		this.writeMappedU32LE(addr + 4, this.mappedFloatView.getUint32(4, true), BUS_ACCESS_WRITE_F64);
 	}
 
 	public readBytesInto(addr: number, out: Uint8Array, length: number, dstOffset = 0): void {
@@ -666,6 +688,7 @@ export class Memory {
 	}
 
 	private raiseBusFault(code: number, addr: number, access: number): void {
+		this.busFaultSequence = (this.busFaultSequence + 1) >>> 0;
 		if (this.busFaultCode !== BUS_FAULT_NONE) {
 			return;
 		}

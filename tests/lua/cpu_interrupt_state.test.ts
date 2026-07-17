@@ -5,12 +5,25 @@ import { BuiltinFunctionId, CPU, EMPTY_CALL_ARGS, Table, createBuiltinFunction, 
 import { writeInstruction, INSTRUCTION_BYTES } from '../../machine/ts/machine/cpu/instruction_format';
 import { BASE_CYCLES, encodeFixedCallArgCount } from '../../machine/ts/machine/cpu/opcode_info';
 import {
+	COP0_CAUSE,
+	CPU_CAUSE_CODE_DATA_BUS_ERROR,
 	CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE,
 	CPU_CAUSE_NMI,
 	CPU_STATUS_CART_ENTRY,
 	CPU_STATUS_SYSTEM_ENTRY,
 } from '../../machine/ts/machine/cpu/cop0';
-import { IO_IRQ_MASK, IO_IRQ_FLAGS, IRQ_VBLANK } from '../../machine/ts/machine/bus/io';
+import {
+	BUS_FAULT_ACCESS_READ,
+	BUS_FAULT_ACCESS_U8,
+	BUS_FAULT_UNMAPPED,
+	IO_IRQ_MASK,
+	IO_IRQ_FLAGS,
+	IO_SYS_BUS_FAULT_ACCESS,
+	IO_SYS_BUS_FAULT_ACK,
+	IO_SYS_BUS_FAULT_ADDR,
+	IO_SYS_BUS_FAULT_CODE,
+	IRQ_VBLANK,
+} from '../../machine/ts/machine/bus/io';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { SystemController } from '../../machine/ts/machine/devices/system/controller';
 import { GX_GPU_GP0_VRAM_TO_CPU_FIRST } from '../../machine/ts/machine/devices/gx/gpu';
@@ -18,6 +31,8 @@ import { Machine } from '../../machine/ts/machine/machine';
 import type { MicrotaskQueue } from '../../machine/ts/machine/scheduler/microtask_queue';
 import { captureMachineSaveState, captureMachineState, restoreMachineSaveState, restoreMachineState } from '../../machine/ts/machine/save_state';
 import { Memory } from '../../machine/ts/machine/memory/memory';
+import { MemoryAccessKind } from '../../machine/ts/machine/memory/access_kind';
+import { IO_WORD_SIZE } from '../../machine/ts/machine/memory/map';
 import { compileLuaChunkToProgram, encodeCompiledProgramImage } from '../../machine/ts/lua/compiler';
 import { callClosureIntoWithScheduler } from '../../machine/ts/ide/runtime/closure_executor';
 import { inflateExecutableProgramImage, linkProgramImages } from '../../machine/ts/machine/program/linker';
@@ -785,6 +800,74 @@ continued = 1
 		assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('continued'))), 1);
 		assert.equal(cpu.captureRuntimeState(new Map()).statusWord, CPU_STATUS_CART_ENTRY);
 	}
+});
+
+test('CPU mapped bus errors enter the system exception vector without committing a faulting tail', () => {
+	const userBusLoadProto = 0;
+	const systemExceptionProto = 1;
+	const systemBusBurstProto = 2;
+	const unmappedAddress = 0x06000000;
+	const code = new Uint8Array(14 * INSTRUCTION_BYTES);
+	writeInstruction(code, 0, OpCode.LOADK, 0, 0, 0, 0);
+	writeInstruction(code, 1, OpCode.K1, 1, 0, 0, 0);
+	writeInstruction(code, 2, OpCode.LOAD_MEM_D, 1, 0, MemoryAccessKind.Word, 0);
+	writeInstruction(code, 3, OpCode.RET, 1, 1, 0, 0);
+	writeInstruction(code, 4, OpCode.MFC0, 0, COP0_CAUSE, 0, 0);
+	writeInstruction(code, 5, OpCode.RFE, 0, 0, 0, 0);
+	writeInstruction(code, 6, OpCode.LOADK, 0, 0, 1, 0);
+	writeInstruction(code, 7, OpCode.K1, 1, 0, 0, 0);
+	writeInstruction(code, 8, OpCode.K1, 2, 0, 0, 0);
+	writeInstruction(code, 9, OpCode.K1, 3, 0, 0, 0);
+	writeInstruction(code, 10, OpCode.K1, 4, 0, 0, 0);
+	writeInstruction(code, 11, OpCode.K1, 5, 0, 0, 0);
+	writeInstruction(code, 12, OpCode.STORE_MEM_WORDS_D, 1, 0, 5, 0);
+	writeInstruction(code, 13, OpCode.RET, 0, 0, 0, 0);
+
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+	const irqController = new IrqController(memory);
+	const cpu = new CPU(memory, irqController);
+	const program: Program = {
+		code,
+		programRom: code,
+		programRomTextByteLength: code.byteLength,
+		constPool: [unmappedAddress, IO_SYS_BUS_FAULT_CODE - IO_WORD_SIZE],
+		protos: [
+			{ ...makeProto(4 * INSTRUCTION_BYTES), maxStack: 2 },
+			{ ...makeProto(2 * INSTRUCTION_BYTES), entryPC: 4 * INSTRUCTION_BYTES },
+			{ ...makeProto(8 * INSTRUCTION_BYTES), entryPC: 6 * INSTRUCTION_BYTES, maxStack: 6 },
+		],
+		stringPool: cpu.stringPool,
+		constPoolStringPool: cpu.stringPool,
+	};
+	const metadata = makeMetadata(program.protos.length);
+	cpu.setProgram(program, metadata, metadata, systemExceptionProto, systemExceptionProto, systemExceptionProto);
+
+	cpu.start(userBusLoadProto);
+	assert.equal(cpu.runUntilDepth(0, 4), RunResult.Yielded);
+	const loadFault = cpu.captureRuntimeState(new Map());
+	assert.equal(loadFault.causeWord, CPU_CAUSE_CODE_DATA_BUS_ERROR);
+	assert.equal(loadFault.epcWord, 2 * INSTRUCTION_BYTES);
+	assert.equal(loadFault.badAddressWord, 0);
+	assert.equal(loadFault.frames.at(-1)!.protoIndex, systemExceptionProto);
+	assert.equal(cpu.readFrameRegister(0, 1), 1);
+	loadFault.epcWord += INSTRUCTION_BYTES;
+	cpu.restoreRuntimeState(loadFault, new Map());
+	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	assert.deepEqual(cpu.lastReturnValues, [1]);
+
+	memory.writeMappedU32LE(IO_SYS_BUS_FAULT_ACK, 1);
+	memory.readMappedU8(unmappedAddress);
+	cpu.start(systemBusBurstProto, EMPTY_CALL_ARGS, CPU_STATUS_SYSTEM_ENTRY);
+	assert.equal(cpu.runUntilDepth(0, 10), RunResult.Yielded);
+	const burstFault = cpu.captureRuntimeState(new Map());
+	assert.equal(burstFault.causeWord, CPU_CAUSE_CODE_DATA_BUS_ERROR);
+	assert.equal(burstFault.epcWord, 12 * INSTRUCTION_BYTES);
+	assert.equal(burstFault.statusWord, CPU_STATUS_SYSTEM_ENTRY << 2);
+	assert.equal(burstFault.frames.at(-1)!.protoIndex, systemExceptionProto);
+	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE - IO_WORD_SIZE), 1);
+	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_UNMAPPED);
+	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_ADDR), unmappedAddress);
+	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_ACCESS), BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U8);
 });
 
 test('CPU runtime snapshot preserves nested table object identities', () => {

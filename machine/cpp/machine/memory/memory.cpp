@@ -17,8 +17,12 @@ constexpr uint32_t BUS_ACCESS_READ_U8 = BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS
 constexpr uint32_t BUS_ACCESS_WRITE_U8 = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U8;
 constexpr uint32_t BUS_ACCESS_READ_U16 = BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U16;
 constexpr uint32_t BUS_ACCESS_READ_U32 = BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32;
+constexpr uint32_t BUS_ACCESS_READ_F32 = BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_F32;
+constexpr uint32_t BUS_ACCESS_READ_F64 = BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_F64;
 constexpr uint32_t BUS_ACCESS_WRITE_U16 = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U16;
 constexpr uint32_t BUS_ACCESS_WRITE_U32 = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32;
+constexpr uint32_t BUS_ACCESS_WRITE_F32 = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_F32;
+constexpr uint32_t BUS_ACCESS_WRITE_F64 = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_F64;
 
 inline bool addressRangeOffset(uint32_t addr, uint32_t base, size_t size, size_t length, size_t& outOffset) {
 	if (addr < base || length > size) {
@@ -397,13 +401,13 @@ uint32_t Memory::readMappedU16LE(uint32_t addr) const {
 	}
 }
 
-uint32_t Memory::readMappedU32LE(uint32_t addr) const {
+uint32_t Memory::readMappedU32LE(uint32_t addr, uint32_t faultAccess) const {
 	const int slot = ioAlignedSlot(addr);
 	if (slot >= 0) {
 		return toU32(readIoSlotValue(slot, addr));
 	}
 	if (isIoRegionRange(addr, 4)) {
-		raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_ACCESS_READ_U32);
+		raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, faultAccess);
 		return 0;
 	}
 	size_t offset = 0;
@@ -416,26 +420,33 @@ uint32_t Memory::readMappedU32LE(uint32_t addr) const {
 	} else if (addr >= RAM_BASE) {
 		offset = static_cast<size_t>(addr - RAM_BASE);
 		if (offset + 4 > m_ram.size()) {
-			raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_READ_U32);
+			raiseBusFault(BUS_FAULT_UNMAPPED, addr, faultAccess);
 			return 0;
 		}
 		return readLE32(m_ram.data() + offset);
 	} else {
-		raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_READ_U32);
+		raiseBusFault(BUS_FAULT_UNMAPPED, addr, faultAccess);
 		return 0;
 	}
 }
 
 float Memory::readMappedF32LE(uint32_t addr) const {
-	const uint32_t bits = readMappedU32LE(addr);
+	const uint32_t bits = readMappedU32LE(addr, BUS_ACCESS_READ_F32);
 	float value = 0.0f;
 	std::memcpy(&value, &bits, sizeof(value));
 	return value;
 }
 
 double Memory::readMappedF64LE(uint32_t addr) const {
-	const uint64_t lo = static_cast<uint64_t>(readMappedU32LE(addr));
-	const uint64_t hi = static_cast<uint64_t>(readMappedU32LE(addr + 4));
+	const uint32_t faultSequence = m_busFaultSequence;
+	const uint64_t lo = static_cast<uint64_t>(readMappedU32LE(addr, BUS_ACCESS_READ_F64));
+	if (m_busFaultSequence != faultSequence) {
+		return 0.0;
+	}
+	const uint64_t hi = static_cast<uint64_t>(readMappedU32LE(addr + 4, BUS_ACCESS_READ_F64));
+	if (m_busFaultSequence != faultSequence) {
+		return 0.0;
+	}
 	const uint64_t bits = (hi << 32) | lo;
 	double value = 0.0;
 	std::memcpy(&value, &bits, sizeof(value));
@@ -460,11 +471,11 @@ void Memory::writeMappedU16LE(uint32_t addr, uint32_t value) {
 	raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_WRITE_U16);
 }
 
-void Memory::writeMappedU32LE(uint32_t addr, uint32_t value) {
+void Memory::writeMappedU32LE(uint32_t addr, uint32_t value, uint32_t faultAccess) {
 	const int slot = ioAlignedSlot(addr);
 	if (slot >= 0) {
 		if (isLuaReadOnlyIoAddress(addr)) {
-			raiseBusFault(BUS_FAULT_READ_ONLY, addr, BUS_ACCESS_WRITE_U32);
+			raiseBusFault(BUS_FAULT_READ_ONLY, addr, faultAccess);
 			return;
 		}
 		const Value word = valueNumber(static_cast<double>(value));
@@ -472,26 +483,30 @@ void Memory::writeMappedU32LE(uint32_t addr, uint32_t value) {
 		return;
 	}
 	if (isIoRegionRange(addr, 4)) {
-		raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_ACCESS_WRITE_U32);
+		raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, faultAccess);
 		return;
 	}
 	if (writeRamWordLE(addr, 4, value)) {
 		return;
 	}
-	raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_WRITE_U32);
+	raiseBusFault(BUS_FAULT_UNMAPPED, addr, faultAccess);
 }
 
 void Memory::writeMappedF32LE(uint32_t addr, float value) {
 	uint32_t bits = 0;
 	std::memcpy(&bits, &value, sizeof(bits));
-	writeMappedU32LE(addr, bits);
+	writeMappedU32LE(addr, bits, BUS_ACCESS_WRITE_F32);
 }
 
 void Memory::writeMappedF64LE(uint32_t addr, double value) {
 	uint64_t bits = 0;
 	std::memcpy(&bits, &value, sizeof(bits));
-	writeMappedU32LE(addr, static_cast<uint32_t>(bits & 0xffffffffull));
-	writeMappedU32LE(addr + 4, static_cast<uint32_t>(bits >> 32));
+	const uint32_t faultSequence = m_busFaultSequence;
+	writeMappedU32LE(addr, static_cast<uint32_t>(bits & 0xffffffffull), BUS_ACCESS_WRITE_F64);
+	if (m_busFaultSequence != faultSequence) {
+		return;
+	}
+	writeMappedU32LE(addr + 4, static_cast<uint32_t>(bits >> 32), BUS_ACCESS_WRITE_F64);
 }
 
 void Memory::writeBytes(uint32_t addr, const u8* data, size_t length) {
@@ -581,6 +596,7 @@ void Memory::onBusFaultAckWrite(uint32_t addr, Value value) {
 }
 
 void Memory::raiseBusFault(uint32_t code, uint32_t addr, uint32_t access) const {
+	m_busFaultSequence += 1u;
 	if (m_busFaultCode != BUS_FAULT_NONE) {
 		return;
 	}

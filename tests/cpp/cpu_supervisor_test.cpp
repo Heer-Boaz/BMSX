@@ -4,6 +4,7 @@
 #include "machine/cpu/instruction_format.h"
 #include "machine/cpu/opcode_info.h"
 #include "machine/devices/irq/controller.h"
+#include "machine/memory/access_kind.h"
 #include "machine/memory/memory.h"
 
 #include <array>
@@ -20,6 +21,13 @@ constexpr int CART_IRQ_PROTO = 2;
 constexpr int SYSTEM_EXCEPTION_PROTO = 3;
 constexpr int USER_CP0_PROTO = 4;
 constexpr int SYSTEM_CP0_PROTO = 5;
+constexpr int USER_BUS_LOAD_PROTO = 6;
+constexpr int SYSTEM_BUS_BURST_PROTO = 7;
+
+constexpr int USER_BUS_LOAD_PC = 13;
+constexpr int SYSTEM_BUS_BURST_PC = 17;
+constexpr int PROGRAM_INSTRUCTION_COUNT = 25;
+constexpr uint32_t UNMAPPED_ADDRESS = 0x06000000u;
 
 void require(bool condition, const char* message) {
 	if (!condition) {
@@ -48,9 +56,13 @@ struct CpuSupervisorHarness {
 		: memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, { emptyRom.data(), 0u } })
 		, irq(memory)
 		, cpu(memory, irq) {
-		program.programRom.resize(13u * bmsx::INSTRUCTION_BYTES);
+		program.programRom.resize(PROGRAM_INSTRUCTION_COUNT * bmsx::INSTRUCTION_BYTES);
 		program.programRomTextByteLength = program.programRom.size();
 		program.constPoolStringPool = &program.stringPool;
+		program.constPool = {
+			bmsx::valueNumber(static_cast<double>(UNMAPPED_ADDRESS)),
+			bmsx::valueNumber(static_cast<double>(bmsx::IO_SYS_BUS_FAULT_CODE - bmsx::IO_WORD_SIZE)),
+		};
 		std::span<bmsx::u8> code(program.programRom);
 
 		bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::HALT), 0, 0, 0);
@@ -66,6 +78,18 @@ struct CpuSupervisorHarness {
 		bmsx::writeInstruction(code, 10, static_cast<bmsx::u8>(bmsx::OpCode::MFC0), 0, bmsx::COP0_STATUS, 0);
 		bmsx::writeInstruction(code, 11, static_cast<bmsx::u8>(bmsx::OpCode::MTC0), 0, bmsx::COP0_EPC, 0);
 		bmsx::writeInstruction(code, 12, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
+		bmsx::writeInstruction(code, 13, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 0);
+		bmsx::writeInstruction(code, 14, static_cast<bmsx::u8>(bmsx::OpCode::K1), 1, 0, 0);
+		bmsx::writeInstruction(code, 15, static_cast<bmsx::u8>(bmsx::OpCode::LOAD_MEM_D), 1, 0, static_cast<bmsx::u8>(bmsx::MemoryAccessKind::Word));
+		bmsx::writeInstruction(code, 16, static_cast<bmsx::u8>(bmsx::OpCode::RET), 1, 1, 0);
+		bmsx::writeInstruction(code, 17, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 1);
+		bmsx::writeInstruction(code, 18, static_cast<bmsx::u8>(bmsx::OpCode::K1), 1, 0, 0);
+		bmsx::writeInstruction(code, 19, static_cast<bmsx::u8>(bmsx::OpCode::K1), 2, 0, 0);
+		bmsx::writeInstruction(code, 20, static_cast<bmsx::u8>(bmsx::OpCode::K1), 3, 0, 0);
+		bmsx::writeInstruction(code, 21, static_cast<bmsx::u8>(bmsx::OpCode::K1), 4, 0, 0);
+		bmsx::writeInstruction(code, 22, static_cast<bmsx::u8>(bmsx::OpCode::K1), 5, 0, 0);
+		bmsx::writeInstruction(code, 23, static_cast<bmsx::u8>(bmsx::OpCode::STORE_MEM_WORDS_D), 1, 0, 5);
+		bmsx::writeInstruction(code, 24, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
 
 		program.protos.push_back(makeProto(0, 3));
 		program.protos.push_back(makeProto(3 * bmsx::INSTRUCTION_BYTES, 1));
@@ -73,6 +97,8 @@ struct CpuSupervisorHarness {
 		program.protos.push_back(makeProto(5 * bmsx::INSTRUCTION_BYTES, 2));
 		program.protos.push_back(makeProto(7 * bmsx::INSTRUCTION_BYTES, 3));
 		program.protos.push_back(makeProto(10 * bmsx::INSTRUCTION_BYTES, 3));
+		program.protos.push_back(makeProto(USER_BUS_LOAD_PC * bmsx::INSTRUCTION_BYTES, SYSTEM_BUS_BURST_PC - USER_BUS_LOAD_PC, 2));
+		program.protos.push_back(makeProto(SYSTEM_BUS_BURST_PC * bmsx::INSTRUCTION_BYTES, PROGRAM_INSTRUCTION_COUNT - SYSTEM_BUS_BURST_PC, 6));
 
 		irq.reset();
 		cpu.setProgram(&program, runtimeSymbols, nullptr, SYSTEM_IRQ_PROTO, CART_IRQ_PROTO, SYSTEM_EXCEPTION_PROTO);
@@ -156,11 +182,42 @@ void testSystemAndOrdinaryGlobalRegisterfilesStayDistinct() {
 	require(bmsx::asNumber(harness.cpu.getGlobalByKey(irqKey)) == 22.0, "save-state restores the ordinary global independently");
 }
 
+void testMappedBusErrorsEnterTheSystemExceptionVector() {
+	CpuSupervisorHarness harness;
+	harness.cpu.start(USER_BUS_LOAD_PROTO);
+	require(harness.cpu.run(4) == bmsx::RunResult::Yielded, "faulting mapped load enters the exception root");
+	bmsx::CpuRuntimeState loadFault = harness.cpu.captureRuntimeState(harness.moduleCache);
+	require(loadFault.causeWord == bmsx::CPU_CAUSE_CODE_DATA_BUS_ERROR, "mapped load latches DBE");
+	require(loadFault.epcWord == 15u * bmsx::INSTRUCTION_BYTES, "mapped load EPC identifies the faulting instruction");
+	require(loadFault.badAddressWord == 0u, "DBE leaves BAD_ADDRESS unchanged");
+	require(loadFault.frames.back().protoIndex == SYSTEM_EXCEPTION_PROTO, "mapped load selects the system exception vector");
+	require(bmsx::asNumber(harness.cpu.readFrameRegister(0, 1)) == 1.0, "faulting load does not commit its destination register");
+	loadFault.epcWord += bmsx::INSTRUCTION_BYTES;
+	harness.cpu.restoreRuntimeState(loadFault, harness.moduleCache);
+	require(harness.cpu.run(100) == bmsx::RunResult::Halted, "RFE can skip the faulting mapped load");
+	require(harness.cpu.lastReturnValues.size() == 1u && bmsx::asNumber(harness.cpu.lastReturnValues[0]) == 1.0, "mapped load resume retains the destination value");
+
+	harness.memory.writeMappedU32LE(bmsx::IO_SYS_BUS_FAULT_ACK, 1u);
+	harness.memory.readMappedU8(UNMAPPED_ADDRESS);
+	harness.cpu.start(SYSTEM_BUS_BURST_PROTO, {}, bmsx::CPU_STATUS_SYSTEM_ENTRY);
+	require(harness.cpu.run(10) == bmsx::RunResult::Yielded, "supervisor burst fault enters a nested exception root");
+	const bmsx::CpuRuntimeState burstFault = harness.cpu.captureRuntimeState(harness.moduleCache);
+	require(burstFault.causeWord == bmsx::CPU_CAUSE_CODE_DATA_BUS_ERROR, "supervisor burst latches DBE");
+	require(burstFault.epcWord == 23u * bmsx::INSTRUCTION_BYTES, "supervisor burst EPC identifies the faulting instruction");
+	require(burstFault.statusWord == (bmsx::CPU_STATUS_SYSTEM_ENTRY << 2u), "supervisor DBE pushes the status mode stack");
+	require(burstFault.frames.back().protoIndex == SYSTEM_EXCEPTION_PROTO, "supervisor DBE selects the system exception vector");
+	require(harness.memory.readIoU32(bmsx::IO_SYS_BUS_FAULT_CODE - bmsx::IO_WORD_SIZE) == 1u, "burst retains the completed write prefix");
+	require(harness.memory.readIoU32(bmsx::IO_SYS_BUS_FAULT_CODE) == bmsx::BUS_FAULT_UNMAPPED, "occupied first-fault state does not hide a new CPU DBE");
+	require(harness.memory.readIoU32(bmsx::IO_SYS_BUS_FAULT_ADDR) == UNMAPPED_ADDRESS, "burst tail does not overwrite the first-fault address");
+	require(harness.memory.readIoU32(bmsx::IO_SYS_BUS_FAULT_ACCESS) == (bmsx::BUS_FAULT_ACCESS_READ | bmsx::BUS_FAULT_ACCESS_U8), "burst tail does not overwrite the first-fault access");
+}
+
 } // namespace
 
 int main() {
 	testManualNmiAndSaveStateReturn();
 	testPrivilegeVectorRoutingAndCp0Fault();
 	testSystemAndOrdinaryGlobalRegisterfilesStayDistinct();
+	testMappedBusErrorsEnterTheSystemExceptionVector();
 	return 0;
 }

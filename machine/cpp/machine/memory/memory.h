@@ -48,6 +48,7 @@ public:
 	}
 	void setProgramRom(const u8* data, size_t size, size_t textByteLength);
 	bool mappedWriteReady(uint32_t addr);
+	uint32_t readBusFaultSequence() const { return m_busFaultSequence; }
 
 	Value readValue(uint32_t addr) const;
 	Value readMappedValue(uint32_t addr) const;
@@ -64,12 +65,12 @@ public:
 	int32_t readIoI32(uint32_t addr) const;
 	uint32_t readU32(uint32_t addr) const;
 	uint32_t readMappedU16LE(uint32_t addr) const;
-	uint32_t readMappedU32LE(uint32_t addr) const;
+	uint32_t readMappedU32LE(uint32_t addr, uint32_t faultAccess = BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32) const;
 	float readMappedF32LE(uint32_t addr) const;
 	double readMappedF64LE(uint32_t addr) const;
 	void writeU32(uint32_t addr, uint32_t value);
 	void writeMappedU16LE(uint32_t addr, uint32_t value);
-	void writeMappedU32LE(uint32_t addr, uint32_t value);
+	void writeMappedU32LE(uint32_t addr, uint32_t value, uint32_t faultAccess = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32);
 	void writeMappedF32LE(uint32_t addr, float value);
 	void writeMappedF64LE(uint32_t addr, double value);
 
@@ -111,6 +112,7 @@ private:
 	mutable uint32_t m_busFaultCode = BUS_FAULT_NONE;
 	mutable uint32_t m_busFaultAddr = 0;
 	mutable uint32_t m_busFaultAccess = 0;
+	mutable uint32_t m_busFaultSequence = 0;
 
 	bool isIoRegionRange(uint32_t addr, size_t length) const;
 	int ioAlignedSlot(uint32_t addr) const {

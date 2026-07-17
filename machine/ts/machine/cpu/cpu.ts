@@ -13,6 +13,7 @@ import {
 	COP0_CAUSE,
 	COP0_EPC,
 	COP0_STATUS,
+	CPU_CAUSE_CODE_DATA_BUS_ERROR,
 	CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE,
 	CPU_CAUSE_IRQ,
 	CPU_CAUSE_NMI,
@@ -2893,73 +2894,90 @@ export class CPU {
 					}
 					if (op === OpCode.STORE_MEM_D) {
 						const value = registers.get(a);
-						if (c === MemoryAccessKind.Word) {
-							this.memory.writeMappedValue(addr, value);
-							return;
-						}
+						const faultSequence = this.memory.readBusFaultSequence();
 						switch (c) {
+							case MemoryAccessKind.Word:
+								this.memory.writeMappedValue(addr, value);
+								break;
 							case MemoryAccessKind.U8:
 								this.memory.writeMappedU8(addr, value as number);
-								return;
+								break;
 							case MemoryAccessKind.U16LE:
 								this.memory.writeMappedU16LE(addr, value as number);
-								return;
+								break;
 							case MemoryAccessKind.U32LE:
 								this.memory.writeMappedU32LE(addr, value as number);
-								return;
+								break;
 							case MemoryAccessKind.F32LE:
 								this.memory.writeMappedF32LE(addr, value as number);
-								return;
+								break;
 							case MemoryAccessKind.F64LE:
 								this.memory.writeMappedF64LE(addr, value as number);
-								return;
+								break;
+						}
+						if (this.memory.readBusFaultSequence() !== faultSequence) {
+							this.enterSynchronousException(frame, CPU_CAUSE_CODE_DATA_BUS_ERROR);
 						}
 						return;
 					}
+					const faultSequence = this.memory.readBusFaultSequence();
+					let value: Value;
 					switch (c) {
 						case MemoryAccessKind.Word:
-							this.setRegisterFast(frame, registers, a, this.memory.readMappedValue(addr));
-							return;
+							value = this.memory.readMappedValue(addr);
+							break;
 						case MemoryAccessKind.U8:
-							this.setRegisterFast(frame, registers, a, this.memory.readMappedU8(addr));
-							return;
+							value = this.memory.readMappedU8(addr);
+							break;
 						case MemoryAccessKind.U16LE:
-							this.setRegisterFast(frame, registers, a, this.memory.readMappedU16LE(addr));
-							return;
+							value = this.memory.readMappedU16LE(addr);
+							break;
 						case MemoryAccessKind.U32LE:
-							this.setRegisterFast(frame, registers, a, this.memory.readMappedU32LE(addr));
-							return;
+							value = this.memory.readMappedU32LE(addr);
+							break;
 						case MemoryAccessKind.F32LE:
-							this.setRegisterFast(frame, registers, a, this.memory.readMappedF32LE(addr));
-							return;
+							value = this.memory.readMappedF32LE(addr);
+							break;
 						case MemoryAccessKind.F64LE:
-							this.setRegisterFast(frame, registers, a, this.memory.readMappedF64LE(addr));
-							return;
+							value = this.memory.readMappedF64LE(addr);
+							break;
 					}
+					if (this.memory.readBusFaultSequence() !== faultSequence) {
+						this.enterSynchronousException(frame, CPU_CAUSE_CODE_DATA_BUS_ERROR);
+						return;
+					}
+					this.setRegisterFast(frame, registers, a, value);
 					return;
 				}
 				case OpCode.LOAD_MEM: {
 					const addr = this.readRK(frame, rkB) as number;
+					const faultSequence = this.memory.readBusFaultSequence();
+					let value: Value;
 					switch (c) {
 						case MemoryAccessKind.Word:
-							this.setRegisterFast(frame, registers, a, this.memory.readMappedValue(addr));
-							return;
+							value = this.memory.readMappedValue(addr);
+							break;
 						case MemoryAccessKind.U8:
-							this.setRegisterFast(frame, registers, a, this.memory.readMappedU8(addr));
-							return;
+							value = this.memory.readMappedU8(addr);
+							break;
 						case MemoryAccessKind.U16LE:
-							this.setRegisterFast(frame, registers, a, this.memory.readMappedU16LE(addr));
-							return;
+							value = this.memory.readMappedU16LE(addr);
+							break;
 						case MemoryAccessKind.U32LE:
-							this.setRegisterFast(frame, registers, a, this.memory.readMappedU32LE(addr));
-							return;
+							value = this.memory.readMappedU32LE(addr);
+							break;
 						case MemoryAccessKind.F32LE:
-							this.setRegisterFast(frame, registers, a, this.memory.readMappedF32LE(addr));
-							return;
+							value = this.memory.readMappedF32LE(addr);
+							break;
 						case MemoryAccessKind.F64LE:
-							this.setRegisterFast(frame, registers, a, this.memory.readMappedF64LE(addr));
-							return;
+							value = this.memory.readMappedF64LE(addr);
+							break;
 					}
+					if (this.memory.readBusFaultSequence() !== faultSequence) {
+						this.enterSynchronousException(frame, CPU_CAUSE_CODE_DATA_BUS_ERROR);
+						return;
+					}
+					this.setRegisterFast(frame, registers, a, value);
 					return;
 				}
 				case OpCode.STORE_MEM: {
@@ -2969,26 +2987,29 @@ export class CPU {
 						return;
 					}
 					const value = registers.get(a);
-					if (c === MemoryAccessKind.Word) {
-						this.memory.writeMappedValue(addr, value);
-						return;
-					}
+					const faultSequence = this.memory.readBusFaultSequence();
 					switch (c) {
+						case MemoryAccessKind.Word:
+							this.memory.writeMappedValue(addr, value);
+							break;
 						case MemoryAccessKind.U8:
 							this.memory.writeMappedU8(addr, value as number);
-							return;
+							break;
 						case MemoryAccessKind.U16LE:
 							this.memory.writeMappedU16LE(addr, value as number);
-							return;
+							break;
 						case MemoryAccessKind.U32LE:
 							this.memory.writeMappedU32LE(addr, value as number);
-							return;
+							break;
 						case MemoryAccessKind.F32LE:
 							this.memory.writeMappedF32LE(addr, value as number);
-							return;
+							break;
 						case MemoryAccessKind.F64LE:
 							this.memory.writeMappedF64LE(addr, value as number);
-							return;
+							break;
+					}
+					if (this.memory.readBusFaultSequence() !== faultSequence) {
+						this.enterSynchronousException(frame, CPU_CAUSE_CODE_DATA_BUS_ERROR);
 					}
 					return;
 				}
@@ -3265,9 +3286,14 @@ export class CPU {
 	}
 
 	private writeMappedWordSequence(frame: CallFrame, addr: number, valueBase: number, valueCount: number): void {
+		const faultSequence = this.memory.readBusFaultSequence();
 		let writeAddr = addr;
 		for (let offset = 0; offset < valueCount; offset += 1) {
 			this.memory.writeMappedValue(writeAddr, frame.registers.get(valueBase + offset));
+			if (this.memory.readBusFaultSequence() !== faultSequence) {
+				this.enterSynchronousException(frame, CPU_CAUSE_CODE_DATA_BUS_ERROR);
+				return;
+			}
 			writeAddr += 4;
 		}
 	}

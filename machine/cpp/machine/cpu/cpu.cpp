@@ -2698,9 +2698,14 @@ Value* CPU::ensureRegisterCapacity(CallFrame& frame, int index) {
 }
 
 void CPU::writeMappedWordSequence(CallFrame& frame, uint32_t addr, int valueBase, int valueCount) {
+	const uint32_t faultSequence = m_memory.readBusFaultSequence();
 	uint32_t writeAddr = addr;
 	for (int offset = 0; offset < valueCount; ++offset) {
 		m_memory.writeMappedValue(writeAddr, frame.registers[static_cast<size_t>(valueBase + offset)]);
+		if (m_memory.readBusFaultSequence() != faultSequence) {
+			enterSynchronousException(frame, CPU_CAUSE_CODE_DATA_BUS_ERROR);
+			return;
+		}
 		writeAddr += 4;
 	}
 }

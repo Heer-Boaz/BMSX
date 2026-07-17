@@ -724,6 +724,12 @@ Bus fault access flag values:
 | `BUS_FAULT_ACCESS_F32` | `0x1000` | The access width was little-endian 32-bit float. |
 | `BUS_FAULT_ACCESS_F64` | `0x2000` | The access width was little-endian 64-bit float. |
 
+The access-width flag describes the CPU or device transaction, not an internal
+host load used to carry its bits. A mapped `F32LE` transaction therefore
+latches `BUS_FAULT_ACCESS_F32`, and either 32-bit bus cycle of an `F64LE`
+transaction latches `BUS_FAULT_ACCESS_F64`. An `F64LE` transaction does not
+issue its second bus cycle when the first cycle faults.
+
 ### Host fault publication
 
 The host fault registers publish host startup fault state into the machine
@@ -888,10 +894,23 @@ narrow:
 | Cause | `CAUSE.ExcCode` | `EPC` | `BAD_ADDRESS` | Resume rule |
 | --- | ---: | --- | --- | --- |
 | User execution of `MFC0`, `MTC0`, or `RFE` | 11 (`CAUSE[6:2] = 11`) | Faulting instruction | Unchanged | The handler must replace `EPC` with another instruction address before `RFE`; unchanged `EPC` retries the fault. |
+| Bus error during a CPU mapped-memory load or store | 7 (`CAUSE[6:2] = 7`) | Faulting instruction | Unchanged | Unchanged `EPC` retries the complete instruction. A load does not commit its destination. A multiword store retains completed prefix writes, stops at the faulting cycle and does not issue its tail. |
 
-No other host/runtime failure is converted into this cause. Address faults and
-supervisor double-fault behavior require their own explicit table rows before
-implementation.
+The mapped-memory owner publishes a runtime-only monotonically changing bus
+fault sequence alongside the sticky guest-visible fault registers. The CPU
+samples that sideband around its own transaction, so a new CPU bus error still
+vectors when an older first-fault record occupies `BUS_FAULT_CODE`. The
+sideband is neither guest-visible nor save-state data: no transaction remains
+in flight at a save-state boundary. DMA and other device-master faults continue
+to update only the sticky bus-fault registers and never vector the CPU.
+
+A synchronous bus error in supervisor mode follows the same R3000-style nested
+entry path instead of a synthetic double-fault halt. It pushes the raw status
+mode stack again, overwrites the CP0 exception latches and enters another system
+exception root above the interrupted supervisor frame. Firmware must preserve
+any outer exception context it intends to resume. No other host/runtime failure
+is converted into a CPU cause. Misaligned-address exceptions require their own
+explicit table rows before implementation.
 
 Exception entry pushes a generated exception-root closure above the stopped
 frames. That root calls the program-owned handler and ends in `RFE`; a normal

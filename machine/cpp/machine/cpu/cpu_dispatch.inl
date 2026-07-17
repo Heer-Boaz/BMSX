@@ -490,14 +490,22 @@ DISPATCH_LABEL(RET) {
 
 DISPATCH_LABEL(LOAD_MEM_D) {
 	const uint32_t addr = static_cast<uint32_t>(asNumber(REG(b))) + (static_cast<uint32_t>(disp) << 2);
+	const uint32_t faultSequence = m_memory.readBusFaultSequence();
+	Value value;
 	switch (static_cast<MemoryAccessKind>(c)) {
-		case MemoryAccessKind::Word: SET_REGISTER_FAST(a, m_memory.readMappedValue(addr)); break;
-		case MemoryAccessKind::U8: SET_REGISTER_FAST(a, valueNumber(static_cast<double>(m_memory.readMappedU8(addr)))); break;
-		case MemoryAccessKind::U16LE: SET_REGISTER_FAST(a, valueNumber(static_cast<double>(m_memory.readMappedU16LE(addr)))); break;
-		case MemoryAccessKind::U32LE: SET_REGISTER_FAST(a, valueNumber(static_cast<double>(m_memory.readMappedU32LE(addr)))); break;
-		case MemoryAccessKind::F32LE: SET_REGISTER_FAST(a, valueNumber(static_cast<double>(m_memory.readMappedF32LE(addr)))); break;
-		case MemoryAccessKind::F64LE: SET_REGISTER_FAST(a, valueNumber(m_memory.readMappedF64LE(addr))); break;
+		case MemoryAccessKind::Word: value = m_memory.readMappedValue(addr); break;
+		case MemoryAccessKind::U8: value = valueNumber(static_cast<double>(m_memory.readMappedU8(addr))); break;
+		case MemoryAccessKind::U16LE: value = valueNumber(static_cast<double>(m_memory.readMappedU16LE(addr))); break;
+		case MemoryAccessKind::U32LE: value = valueNumber(static_cast<double>(m_memory.readMappedU32LE(addr))); break;
+		case MemoryAccessKind::F32LE: value = valueNumber(static_cast<double>(m_memory.readMappedF32LE(addr))); break;
+		case MemoryAccessKind::F64LE: value = valueNumber(m_memory.readMappedF64LE(addr)); break;
+		default: __builtin_unreachable();
 	}
+	if (m_memory.readBusFaultSequence() != faultSequence) {
+		enterSynchronousException(FRAME, CPU_CAUSE_CODE_DATA_BUS_ERROR);
+		DISPATCH_CONTINUE();
+	}
+	SET_REGISTER_FAST(a, value);
 	DISPATCH_CONTINUE();
 }
 
@@ -508,6 +516,7 @@ DISPATCH_LABEL(STORE_MEM_D) {
 		DISPATCH_BLOCKED();
 	}
 	const Value value = REG(a);
+	const uint32_t faultSequence = m_memory.readBusFaultSequence();
 	switch (static_cast<MemoryAccessKind>(c)) {
 		case MemoryAccessKind::Word: m_memory.writeMappedValue(addr, value); break;
 		case MemoryAccessKind::U8: m_memory.writeMappedU8(addr, static_cast<u8>(toU32(asNumber(value)))); break;
@@ -515,6 +524,9 @@ DISPATCH_LABEL(STORE_MEM_D) {
 		case MemoryAccessKind::U32LE: m_memory.writeMappedU32LE(addr, toU32(asNumber(value))); break;
 		case MemoryAccessKind::F32LE: m_memory.writeMappedF32LE(addr, static_cast<float>(asNumber(value))); break;
 		case MemoryAccessKind::F64LE: m_memory.writeMappedF64LE(addr, asNumber(value)); break;
+	}
+	if (m_memory.readBusFaultSequence() != faultSequence) {
+		enterSynchronousException(FRAME, CPU_CAUSE_CODE_DATA_BUS_ERROR);
 	}
 	DISPATCH_CONTINUE();
 }
@@ -532,14 +544,22 @@ DISPATCH_LABEL(STORE_MEM_WORDS_D) {
 
 DISPATCH_LABEL(LOAD_MEM) {
 	const uint32_t addr = static_cast<uint32_t>(asNumber(readRK(FRAME, rkB)));
+	const uint32_t faultSequence = m_memory.readBusFaultSequence();
+	Value value;
 	switch (static_cast<MemoryAccessKind>(c)) {
-		case MemoryAccessKind::Word: SET_REGISTER_FAST(a, m_memory.readMappedValue(addr)); break;
-		case MemoryAccessKind::U8: SET_REGISTER_FAST(a, valueNumber(static_cast<double>(m_memory.readMappedU8(addr)))); break;
-		case MemoryAccessKind::U16LE: SET_REGISTER_FAST(a, valueNumber(static_cast<double>(m_memory.readMappedU16LE(addr)))); break;
-		case MemoryAccessKind::U32LE: SET_REGISTER_FAST(a, valueNumber(static_cast<double>(m_memory.readMappedU32LE(addr)))); break;
-		case MemoryAccessKind::F32LE: SET_REGISTER_FAST(a, valueNumber(static_cast<double>(m_memory.readMappedF32LE(addr)))); break;
-		case MemoryAccessKind::F64LE: SET_REGISTER_FAST(a, valueNumber(m_memory.readMappedF64LE(addr))); break;
+		case MemoryAccessKind::Word: value = m_memory.readMappedValue(addr); break;
+		case MemoryAccessKind::U8: value = valueNumber(static_cast<double>(m_memory.readMappedU8(addr))); break;
+		case MemoryAccessKind::U16LE: value = valueNumber(static_cast<double>(m_memory.readMappedU16LE(addr))); break;
+		case MemoryAccessKind::U32LE: value = valueNumber(static_cast<double>(m_memory.readMappedU32LE(addr))); break;
+		case MemoryAccessKind::F32LE: value = valueNumber(static_cast<double>(m_memory.readMappedF32LE(addr))); break;
+		case MemoryAccessKind::F64LE: value = valueNumber(m_memory.readMappedF64LE(addr)); break;
+		default: __builtin_unreachable();
 	}
+	if (m_memory.readBusFaultSequence() != faultSequence) {
+		enterSynchronousException(FRAME, CPU_CAUSE_CODE_DATA_BUS_ERROR);
+		DISPATCH_CONTINUE();
+	}
+	SET_REGISTER_FAST(a, value);
 	DISPATCH_CONTINUE();
 }
 
@@ -550,6 +570,7 @@ DISPATCH_LABEL(STORE_MEM) {
 		DISPATCH_BLOCKED();
 	}
 	const Value value = REG(a);
+	const uint32_t faultSequence = m_memory.readBusFaultSequence();
 	switch (static_cast<MemoryAccessKind>(c)) {
 		case MemoryAccessKind::Word: m_memory.writeMappedValue(addr, value); break;
 		case MemoryAccessKind::U8: m_memory.writeMappedU8(addr, static_cast<u8>(toU32(asNumber(value)))); break;
@@ -557,6 +578,9 @@ DISPATCH_LABEL(STORE_MEM) {
 		case MemoryAccessKind::U32LE: m_memory.writeMappedU32LE(addr, toU32(asNumber(value))); break;
 		case MemoryAccessKind::F32LE: m_memory.writeMappedF32LE(addr, static_cast<float>(asNumber(value))); break;
 		case MemoryAccessKind::F64LE: m_memory.writeMappedF64LE(addr, asNumber(value)); break;
+	}
+	if (m_memory.readBusFaultSequence() != faultSequence) {
+		enterSynchronousException(FRAME, CPU_CAUSE_CODE_DATA_BUS_ERROR);
 	}
 	DISPATCH_CONTINUE();
 }
