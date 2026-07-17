@@ -58,6 +58,8 @@ bss monitor_command_cursor: word
 bss monitor_command_value: word
 bss monitor_command_address: word
 bss monitor_command_remaining: word
+bss monitor_completion_commands: word[#command_registry]
+bss monitor_completion_start: word
 bss monitor_context_status: word
 bss monitor_context_cause: word
 bss monitor_context_epc: word
@@ -259,6 +261,7 @@ end
 
 function monitor_commands.complete(line, length, cursor, capacity)
 	local source<const>: *word = line
+	local matches<const>: *word = monitor_completion_commands
 	local start_index<const> = completion_start(source, length, cursor)
 	if start_index < 0 then
 		return length, cursor, 0, false
@@ -270,6 +273,7 @@ function monitor_commands.complete(line, length, cursor, capacity)
 	for command = 0, #command_registry - 1 do
 		local name<const> = command_registry[command].name
 		if completion_match(name, source, start_index, prefix_length, capacity) then
+			matches[match_count] = command
 			if match_count == 0 then
 				first_command = command
 				common_length = #name
@@ -291,6 +295,7 @@ function monitor_commands.complete(line, length, cursor, capacity)
 	if match_count == 0 then
 		return length, cursor, 0, false
 	end
+	*monitor_completion_start = start_index
 	local first_name<const> = command_registry[first_command].name
 	local changed = common_length ~= prefix_length
 	for index = 0, common_length - 1 do
@@ -309,47 +314,34 @@ function monitor_commands.complete(line, length, cursor, capacity)
 	return next_length, next_length, match_count, changed
 end
 
-function monitor_commands.fill_candidates(row, line, length, cursor, capacity, selected)
+function monitor_commands.fill_candidates(row, match_count, selected)
 	clear_row(row)
-	local source<const>: *word = line
-	local start_index<const> = completion_start(source, length, cursor)
-	local prefix_length<const> = cursor - start_index
+	local matches<const>: *word = monitor_completion_commands
 	local column = 0
-	local ordinal = 0
-	for command = 0, #command_registry - 1 do
+	for ordinal = 0, match_count - 1 do
+		local command<const> = matches[ordinal]
 		local name<const> = command_registry[command].name
-		if completion_match(name, source, start_index, prefix_length, capacity) then
-			if column ~= 0 then
-				column = write_text(row, column, '  ', palette_text)
-			end
-			column = write_text(row, column, name, ordinal == selected and palette_accent or palette_text)
-			ordinal = ordinal + 1
+		if column ~= 0 then
+			column = write_text(row, column, '  ', palette_text)
 		end
+		column = write_text(row, column, name, ordinal == selected and palette_accent or palette_text)
 	end
 end
 
-function monitor_commands.accept_candidate(line, length, cursor, capacity, selected)
+function monitor_commands.accept_candidate(line, capacity, selected)
 	local target<const>: *word = line
-	local start_index<const> = completion_start(target, length, cursor)
-	local prefix_length<const> = cursor - start_index
-	local ordinal = 0
-	for command = 0, #command_registry - 1 do
-		local name<const> = command_registry[command].name
-		if completion_match(name, target, start_index, prefix_length, capacity) then
-			if ordinal == selected then
-				for index = 1, #name do
-					target[start_index + index - 1] = byte(name, index)
-				end
-				local next_length<const> = start_index + #name
-				if next_length < capacity then
-					target[next_length] = ascii_space
-					return next_length + 1
-				end
-				return next_length
-			end
-			ordinal = ordinal + 1
-		end
+	local matches<const>: *word = monitor_completion_commands
+	local name<const> = command_registry[matches[selected]].name
+	local start_index<const> = *monitor_completion_start
+	for index = 1, #name do
+		target[start_index + index - 1] = byte(name, index)
 	end
+	local next_length<const> = start_index + #name
+	if next_length < capacity then
+		target[next_length] = ascii_space
+		return next_length + 1
+	end
+	return next_length
 end
 
 function monitor_commands.start(line, length)

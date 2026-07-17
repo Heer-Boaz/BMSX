@@ -4,7 +4,7 @@ uniform sampler2D u_source;
 uniform sampler2D u_vram;
 uniform float u_checkMaskBit;
 uniform float u_setMaskBit;
-varying vec2 v_texcoord;
+varying vec2 v_sourceOffset;
 
 const vec2 VRAM_SIZE = vec2(1024.0, 512.0);
 
@@ -44,7 +44,8 @@ vec4 encodeRgb555(vec3 color5, float outputMaskBit) {
 }
 
 void main() {
-	float sourceWord = rawSourceLogicalWord(v_texcoord);
+	vec2 destinationLogical = vec2(floor(gl_FragCoord.x), floor(VRAM_SIZE.y - gl_FragCoord.y));
+	float sourceWord = rawSourceLogicalWord(destinationLogical + v_sourceOffset);
 	if (u_checkMaskBit > 0.5) {
 		float dstWord = rawVramStorageWord(gl_FragCoord.xy - vec2(0.5));
 		if (wordMaskBit(dstWord) > 0.5) {

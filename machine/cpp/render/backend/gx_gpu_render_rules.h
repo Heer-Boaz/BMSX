@@ -17,6 +17,12 @@ constexpr size_t GX_GPU_TRIANGLE_ATTRIBUTE_RADIX_DIGITS = 5u;
 constexpr u32 GX_GPU_TEXTURE_SOURCE_COMMAND_OVERLAP = 1u;
 constexpr u32 GX_GPU_TEXTURE_SOURCE_BATCH_OVERLAP = 2u;
 
+enum class GxGpuRasterKind : u8 {
+	Polygon,
+	Rectangle,
+	Line,
+};
+
 inline i32 gxGpuTriangleRasterShift(i32 coord0, i32 coord1, i32 coord2) {
 	const i32 minimum = coord0 < coord1 ? (coord0 < coord2 ? coord0 : coord2) : (coord1 < coord2 ? coord1 : coord2);
 	return minimum < -(GX_GPU_VERTEX_COORD_PERIOD >> 1) ? GX_GPU_VERTEX_COORD_PERIOD : 0;

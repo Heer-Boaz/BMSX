@@ -1,12 +1,11 @@
 precision highp float;
 
 attribute vec2 a_position;
-attribute vec2 a_texcoord;
-varying vec2 v_texcoord;
+attribute vec2 a_sourceOffset;
+varying vec2 v_sourceOffset;
 
 void main() {
 	vec2 clip = vec2((a_position.x / 512.0) - 1.0, 1.0 - (a_position.y / 256.0));
 	gl_Position = vec4(clip, 0.0, 1.0);
-	// Transfer vertices carry texel edges; compensate raster pixel-center interpolation.
-	v_texcoord = a_texcoord - vec2(0.5);
+	v_sourceOffset = a_sourceOffset;
 }

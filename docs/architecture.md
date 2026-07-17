@@ -952,22 +952,25 @@ than retaining or reconstructing it.
 
 The BIOS keeps a fixed 128-line cell scrollback, dirty ranges, line editor,
 history and GP0 command list in ordinary `.bss`. A packed ROM table maps each
-4x6 tiny-font codepoint to its physical system-texture coordinates; lowercase
-ASCII entries intentionally address the corresponding uppercase glyph while
-the retained input bytes remain unchanged. The initial frame is a full clear
-followed by textured glyph rectangles; later edits clear and redraw only dirty
-cell spans, and ordinary VRAM-to-VRAM copy scrolls the visible framebuffer. DMA
-consumes the retained command words before firmware may rebuild them, and the
-final GP0 IRQ fences GPU completion. No render-time Lua tables, strings or
-pixel buffers are allocated.
+4x6 tiny-font codepoint one-to-one to its physical system-texture coordinates.
+The monitor's HID-to-console-ASCII producer emits uppercase alphabetic bytes;
+the ROM packer and glyph renderer do not reinterpret text. The initial frame is
+a full clear followed by textured glyph rectangles; later edits clear and
+redraw only dirty cell spans, and ordinary VRAM-to-VRAM copy scrolls the visible
+framebuffer. DMA consumes the retained command words before firmware may
+rebuild them, and the final GP0 IRQ fences GPU completion. No render-time Lua
+tables, strings or pixel buffers are allocated.
 
 The firmware line editor supports insertion, deletion, cursor/home/end and
 word motion/deletion, a fixed history ring and command-name completion with a
-retained selectable candidate row. Long producers feed one fixed row at a time
-into an automatic pager; page/line advance and scrollback never retain a second
-copy of command output. Command metadata is one typed `.rodata` array of
-records, so names, usage and descriptions have no parallel blob, offset or
-length tables.
+retained selectable candidate row. Edit, completion and pager are one explicit
+monitor mode rather than overlapping flags. Completion scans the command
+registry once, stores the matching registry indices in fixed `.bss` whose
+capacity derives from that registry, and reuses that set for selection and
+acceptance. Long producers feed one fixed row at a time into an automatic
+pager; page/line advance and scrollback never retain a second copy of command
+output. Command metadata is one typed `.rodata` array of records, so names,
+usage and descriptions have no parallel blob, offset or length tables.
 
 Monitor entry is a one-way supervisor takeover. Firmware masks cart IRQs,
 terminates a live DMA channel through its live count/control registers,
@@ -1121,6 +1124,16 @@ then upper logical band; dependent submissions synchronize the VRAM sample
 shadow between draws so blend, mask and texture feedback observe prior physical
 writes. Line and polyline segments keep their own order as well. Fill and
 image-transfer commands retain their separate physical VRAM datapaths.
+
+Accelerated primitive batches retain the rasterizer class `Polygon`,
+`Rectangle`, or `Line`; draw rectangles and fill rectangles therefore share the
+same rectangle coverage without pretending to retain a representative GP0
+command. Only the vertex/uniform boundary decodes polygon versus rectangle
+sample phase. VRAM transfer vertices carry destination position plus a constant
+source-minus-destination offset. The fragment datapath derives the integer
+destination pixel from the backend fragment position and adds that offset
+before VRAM wrapping, so copy semantics do not depend on interpolated texture
+coordinates or a half-texel compensation.
 
 TS and C++ software renderers are the executable oracle for this contract, not
 a fallback inside accelerated backends. WebGL2, WebGPU and GLES2 consume the

@@ -3,6 +3,9 @@ import {
 	GX_GPU_DRAW_MODE_TEXTURE_DISABLE,
 	GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP,
 	GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP,
+	GX_GPU_COMMAND_DRAW_LINE,
+	GX_GPU_COMMAND_DRAW_POLYGON,
+	GX_GPU_COMMAND_DRAW_POLYLINE,
 	GX_GPU_VRAM_HEIGHT,
 	GX_GPU_VRAM_WIDTH,
 	gxGpuSigned11,
@@ -20,6 +23,12 @@ export const GX_GPU_TRIANGLE_ATTRIBUTE_RADIX_BITS = 4;
 export const GX_GPU_TRIANGLE_ATTRIBUTE_RADIX_DIGITS = 5;
 export const GX_GPU_TEXTURE_SOURCE_COMMAND_OVERLAP = 1;
 export const GX_GPU_TEXTURE_SOURCE_BATCH_OVERLAP = 2;
+
+export const enum GxGpuRasterKind {
+	Polygon,
+	Rectangle,
+	Line,
+}
 
 export function gxGpuTriangleRasterShift(coord0: number, coord1: number, coord2: number): number {
 	const minimum = coord0 < coord1 ? (coord0 < coord2 ? coord0 : coord2) : (coord1 < coord2 ? coord1 : coord2);

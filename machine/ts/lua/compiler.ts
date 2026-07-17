@@ -3093,10 +3093,15 @@ class FunctionBuilder {
 			case LuaUnaryOperator.Not:
 				return this.evaluateCompileTimeExpression(expression.operand)
 					&& this.setCompileTimeBooleanValue(!isTruthyValue(this.compileTimeValue));
-			case LuaUnaryOperator.Length:
+			case LuaUnaryOperator.Length: {
+				const arrayLength = this.resolveStaticStorageArrayLength(expression.operand);
+				if (arrayLength !== undefined) {
+					return this.setCompileTimeNumberValue(arrayLength);
+				}
 				return this.evaluateCompileTimeExpression(expression.operand)
 					&& valueIsString(this.compileTimeValue)
 					&& this.setCompileTimeNumberValue(this.program.stringPool.codepointCount(asStringId(this.compileTimeValue)));
+			}
 			case LuaUnaryOperator.BitwiseNot: {
 				const value = this.evaluateCompileTimeNumber(expression.operand);
 				return (value || value === 0) && this.setCompileTimeNumberValue(~value);
@@ -3137,11 +3142,16 @@ class FunctionBuilder {
 						if (value || value === 0) return ~value;
 						return;
 					}
-					case LuaUnaryOperator.Length:
+					case LuaUnaryOperator.Length: {
+						const arrayLength = this.resolveStaticStorageArrayLength(unary.operand);
+						if (arrayLength !== undefined) {
+							return arrayLength;
+						}
 						if (this.evaluateCompileTimeExpression(unary.operand) && valueIsString(this.compileTimeValue)) {
 							return this.program.stringPool.codepointCount(asStringId(this.compileTimeValue));
 						}
 						return;
+					}
 					default:
 						return;
 				}

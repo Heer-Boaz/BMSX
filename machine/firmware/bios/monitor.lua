@@ -28,7 +28,10 @@ local ascii_newline<const> = 10
 local ascii_space<const> = 32
 local ascii_digit_0<const> = 48
 local ascii_upper_a<const> = 65
-local ascii_lower_a<const> = 97
+
+local monitor_mode_edit<const> = 0
+local monitor_mode_pager<const> = 1
+local monitor_mode_completion<const> = 2
 
 local hid_first_key<const> = 4
 local hid_last_key<const> = 115
@@ -62,8 +65,7 @@ bss monitor_output_row: word[layout.columns]
 bss monitor_frame: word
 bss monitor_repeat_usage: word
 bss monitor_repeat_frame: word
-bss monitor_pager_active: word
-bss monitor_completion_active: word
+bss monitor_mode: word
 bss monitor_completion_count: word
 bss monitor_completion_selection: word
 bss monitor_saved_status: word
@@ -76,8 +78,7 @@ local initialize_input<const> = function()
 	*monitor_frame = 0
 	*monitor_repeat_usage = 0
 	*monitor_repeat_frame = 0
-	*monitor_pager_active = 0
-	*monitor_completion_active = 0
+	*monitor_mode = monitor_mode_edit
 	local current_keys<const>: *word = monitor_current_keys
 	local previous_keys<const>: *word = monitor_previous_keys
 	for index = 0, 7 do
@@ -88,7 +89,7 @@ end
 
 local map_hid_key<const> = function(usage, shift)
 	if usage >= 4 and usage <= 29 then
-		return (shift and ascii_upper_a or ascii_lower_a) + usage - 4
+		return ascii_upper_a + usage - 4
 	end
 	if usage >= 30 and usage <= 38 then
 		if shift then
@@ -120,13 +121,12 @@ local write_prompt<const> = function()
 end
 
 local finish_output<const> = function()
-	*monitor_pager_active = 0
+	*monitor_mode = monitor_mode_edit
 	terminal.clear_status()
 	write_prompt()
 end
 
 local pump_output<const> = function(line_limit)
-	*monitor_pager_active = 0
 	terminal.clear_status()
 	terminal.follow_output()
 	for line = 1, line_limit do
@@ -137,7 +137,7 @@ local pump_output<const> = function(line_limit)
 			return
 		end
 	end
-	*monitor_pager_active = 1
+	*monitor_mode = monitor_mode_pager
 	terminal.show_status('-- MORE --  ENTER LINE  SPACE PAGE  UP/DOWN SCROLL  Q QUIT', palette_prompt)
 end
 
@@ -158,14 +158,9 @@ local submit_input<const> = function()
 	handle_command_action(monitor_commands.start(line, length))
 end
 
-local close_completion<const> = function()
-	*monitor_completion_active = 0
-	terminal.clear_status()
-end
-
 local move_completion<const> = function(delta)
 	*monitor_completion_selection = (*monitor_completion_selection + delta + *monitor_completion_count) % *monitor_completion_count
-	monitor_editor.show_candidates(*monitor_completion_selection)
+	monitor_editor.show_candidates(*monitor_completion_selection, *monitor_completion_count)
 end
 
 local handle_pager_key<const> = function(usage)
@@ -213,10 +208,10 @@ local handle_pager_key<const> = function(usage)
 end
 
 local process_hid_key<const> = function(usage, shift, control)
-	if *monitor_pager_active ~= 0 then
+	if *monitor_mode == monitor_mode_pager then
 		return handle_pager_key(usage)
 	end
-	if *monitor_completion_active ~= 0 then
+	if *monitor_mode == monitor_mode_completion then
 		if usage == hid_tab or usage == hid_right or usage == hid_down then
 			move_completion(1)
 			return usage ~= hid_tab
@@ -227,15 +222,18 @@ local process_hid_key<const> = function(usage, shift, control)
 		end
 		if usage == hid_enter or usage == hid_numpad_enter then
 			local selection<const> = *monitor_completion_selection
-			close_completion()
+			*monitor_mode = monitor_mode_edit
+			terminal.clear_status()
 			monitor_editor.accept_candidate(selection)
 			return false
 		end
 		if usage == hid_escape then
-			close_completion()
+			*monitor_mode = monitor_mode_edit
+			terminal.clear_status()
 			return false
 		end
-		close_completion()
+		*monitor_mode = monitor_mode_edit
+		terminal.clear_status()
 	end
 	if usage == hid_enter or usage == hid_numpad_enter then
 		submit_input()
@@ -252,10 +250,10 @@ local process_hid_key<const> = function(usage, shift, control)
 	if usage == hid_tab then
 		local match_count<const> = monitor_editor.complete()
 		if match_count > 1 then
-			*monitor_completion_active = 1
+			*monitor_mode = monitor_mode_completion
 			*monitor_completion_count = match_count
 			*monitor_completion_selection = 0
-			monitor_editor.show_candidates(0)
+			monitor_editor.show_candidates(0, match_count)
 		end
 		return false
 	end
@@ -355,7 +353,7 @@ local scan_keyboard<const> = function()
 		previous[index] = current[index]
 	end
 	*monitor_frame = *monitor_frame + 1
-	if *monitor_pager_active == 0 then
+	if *monitor_mode == monitor_mode_edit then
 		if (*monitor_frame & 31) < 16 then
 			terminal.show_cursor()
 		else

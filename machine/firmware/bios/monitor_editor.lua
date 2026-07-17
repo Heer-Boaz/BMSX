@@ -303,13 +303,10 @@ function monitor_editor.complete()
 	return match_count
 end
 
-function monitor_editor.show_candidates(selected)
+function monitor_editor.show_candidates(selected, match_count)
 	monitor_commands.fill_candidates(
 		monitor_editor_candidate_row,
-		monitor_editor_line,
-		*monitor_editor_length,
-		*monitor_editor_cursor,
-		input_capacity,
+		match_count,
 		selected)
 	terminal.show_status_row(monitor_editor_candidate_row)
 end
@@ -317,8 +314,6 @@ end
 function monitor_editor.accept_candidate(selected)
 	local length<const> = monitor_commands.accept_candidate(
 		monitor_editor_line,
-		*monitor_editor_length,
-		*monitor_editor_cursor,
 		input_capacity,
 		selected)
 	*monitor_editor_length = length
