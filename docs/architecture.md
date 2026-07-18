@@ -911,11 +911,22 @@ next byte-PC to `EPC`, so an accepted interrupt after `HALT` resumes after the
 the CPU's halted-until-interrupt latch. Entry while active sets the one-bit
 interrupt-event latch; entry that wakes `HALT` leaves it clear because that
 event has already been consumed. Maskable IRQ entry writes exception code
-zero plus `CAUSE.IRQ=bit 10`; manual system entry writes exception code zero
-plus `CAUSE.NMI=bit 16`. The device-source bits remain in `IRQ_FLAGS`. A manual
-NMI edge is accepted only from user mode; supervisor execution inhibits and
-drops further manual edges, so opening the monitor or handling a cart IRQ cannot
-recursively open another monitor. The first synchronous cause is deliberately
+zero plus `CAUSE.IRQ=bit 10`; system entry writes exception code zero plus
+`CAUSE.NMI=bit 16`. The device-source bits remain in `IRQ_FLAGS`. NMI is
+admitted independently of the current privilege bit, so the system-entry edge
+can preempt a cart IRQ root that reached supervisor mode immediately before the
+common device fence. The system controller emits at most one NMI for that
+transition. A later supervisor-request edge in an active resumable monitor sets
+the supervisor exit-request status bit instead, so monitor entry cannot recurse.
+
+NMI has one fixed hardware return bank for the interrupted `CAUSE`, `EPC`, and
+`BAD_ADDRESS` words. The exception-root frame records that it owns this bank;
+the eventual `RFE` therefore restores it even when nested BIOS VBlank IRQs have
+overwritten the visible CP0 cause latch. `RFE` first uses the firmware-selected
+NMI `EPC` to resume the interrupted instruction and then exposes the banked CP0
+words, allowing an interrupted cart IRQ's later `RFE` to retain its own return
+PC. This is fixed scalar CPU state, is included in save states, and is not a
+general dynamic exception stack. The first synchronous cause is deliberately
 narrow:
 
 | Cause | `CAUSE.ExcCode` | `EPC` | `BAD_ADDRESS` | Resume rule |
@@ -967,8 +978,10 @@ sources. Machine schedulers and devices continue advancing normally. The
 existing NMI request latch is not a terminal implementation by itself: the CPU
 consumes it into the system vector and preserves the latch, raw CP0 words, and
 exception-frame state in the mirrored TS/C++ save-state contract. The ICU
-samples only the dedicated supervisor-request line and requests that NMI; the
-BIOS exception handler owns monitor entry.
+samples only the dedicated supervisor-request line. Its rising edge requests a
+system-controller transition; the controller raises NMI only after the user
+device context has reached its entry fence. The BIOS exception handler owns
+monitor entry.
 Privilege gates system vectors, CP0 writes, exception return, and other
 explicitly privileged CPU/system-control operations; it does not make ordinary
 RAM inaccessible to carts.
@@ -1006,6 +1019,48 @@ firmware `.rodata` registry and includes `BAD_ADDRESS` only for address faults;
 `FAULT` and `REGS` retain the underlying raw words. Fault presentation therefore
 does not depend on host exception text or a frontend-owned terminal overlay.
 
+System control is a small privileged registerfile rather than a host callback:
+
+| Register | Address | Meaning |
+| --- | ---: | --- |
+| `SYS_CONTROL` | `0x08010350` | Write-only command bits: machine reset `0x1`, enter fenced supervisor context `0x2`, leave resumable supervisor context `0x4`, destructive fault takeover `0x8`. It reads back as zero. Supervisor commands are accepted only in supervisor mode. |
+| `SYS_STATUS` | `0x08010354` | Read-only raw bits: supervisor transition/context active `0x1`, exit requested `0x2`, context resumable `0x4`. |
+
+A supervisor-request edge in user mode starts `ENTRY_QUIESCE`. Hardware closes
+new GP1 writes, DMA triggers and geometry doorbells, while an admitted DMA
+block, the currently open GP0 packet, GPU execution and an active geometry job
+reach their normal hardware boundaries. The GPU, DMA and geometry owners each
+publish their completion edge; the system service never polls a renderer,
+busy-waits, or repeatedly schedules itself at the current cycle. At the common
+fence the controller aborts any still-waiting CPU mapped-store handshake, raises
+NMI and enters `ENTRY_VECTOR`. A blocked store has not issued a bus cycle and
+its PC already names the complete instruction, so `EPC` retains it for retry
+after resume without a port-specific release list. The firmware saves the
+post-exception CP0 words. `CAUSE.NMI` selects `SYS_CONTROL.ENTER`; a synchronous
+cause selects `SYS_CONTROL.FAULT`. Firmware therefore classifies the exception
+explicitly instead of inferring transition intent from mutable device phase.
+
+That enter command banks the raw user IRQ registerfile, the live DMA channel
+registers and timing carry, and the GPU's scalar register/latch state. The GPU
+FIFO, packet parser, readback path and command stream are canonically empty at
+the fence, so there is no second parser, FIFO, command buffer or VRAM image.
+The supervisor receives fresh IRQ, DMA and GPU registerfiles over the same
+MMIO addresses. A GPU bank switch clears its quiesce/ingress latches before the
+new raw register words republish CPU-port readiness and DREQ, so no transition
+exposes lines derived from the previous owner. Geometry remains quiescent with its completed registerfile
+resident. A synchronous cart or monitor fault cannot wait for an unfinished
+producer: `SYS_CONTROL.FAULT` cancels a pending entry NMI, destructively discards
+transient GPU, DMA and geometry work, preserves VRAM, clears every retained user
+context bank and marks the monitor non-resumable. A nested monitor fault can
+therefore never resume through stale state from the earlier monitor entry.
+
+The APU is autonomous and continues playing while the monitor is active. Its
+events accumulate in the hidden user IRQ pending bank; supervisor VBlank, DMA
+and GPU sources use the visible supervisor bank. The CPU interrupt line is
+derived only from the visible bank. This preserves user audio timing and IRQ
+state without giving firmware a duplicate APU or routing user events into the
+monitor.
+
 The BIOS terminal uses the ordinary GX GPU and the ordinary primary scanout.
 GX VRAM remains one 1024x512 A1RGB555 word array: 524,288 words, exactly 1 MiB.
 There is no second display circuit, terminal VRAM bank, character-plane SRAM,
@@ -1016,11 +1071,16 @@ draws the terminal with ordinary fill, VRAM-copy and textured-rectangle GP0
 commands. Software, WebGL2, WebGPU and GLES2 therefore execute the same command
 stream used by carts.
 
-The packed system texture remains at x=512..767, y=0..63 and cart manifests
-reserve that actual 256x64 rectangle. The terminal has no permanent texture or
-VRAM reservation: while active, its 256x192 framebuffer is the primary scanout
-at x=0, y=0. Entering the monitor deliberately replaces the cart image rather
-than retaining or reconstructing it.
+The standard machine layout reserves the existing 256x256 texture-page-aligned
+region at x=512..767, y=0..255. Its top 256x64 words remain the packed system
+texture; the lower 256x192 words are the terminal framebuffer. This is 128 KiB
+inside the existing 1 MiB VRAM, not additional memory. The rompacker validates
+the exact physical reservation in every GX cart layout, and boot/monitor
+firmware scan out and draw at `(512,64)` directly. Cart framebuffers and
+textures therefore remain untouched while the monitor replaces the primary
+scanout, and restoring the user display registers exposes the already retained
+cart image. This is still a scanout takeover, not alpha composition over the
+cart; a true overlay remains a separate GPU feature.
 
 The BIOS keeps a fixed 128-line cell scrollback, dirty ranges, line editor,
 history and GP0 command list in ordinary `.bss`. A packed ROM table maps each
@@ -1044,16 +1104,20 @@ pager; page/line advance and scrollback never retain a second copy of command
 output. Command metadata is one typed `.rodata` array of records, so names,
 usage and descriptions have no parallel blob, offset or length tables.
 
-Monitor entry is a one-way supervisor takeover. Firmware masks cart IRQs,
-terminates a live DMA channel through its live count/control registers,
-acknowledges pending cart IRQ sources, resets the GP0 parser, and programs the
-terminal display. It does not capture or restore GPU, DMA, VRAM or cart call
-state. Only machine reset leaves the monitor; transparent display above a
-frozen cart frame and resumable monitor entry remain a separate parked hardware
-problem rather than a host workaround.
+Monitor exit is the reverse hardware boundary. A new supervisor-request edge
+sets `SYS_STATUS.EXIT_REQUESTED`; firmware observes it on VBlank and writes
+`SYS_CONTROL.LEAVE`. `CONT` additionally clears the monitor-owned saved fault
+record before issuing the same leave command. `LEAVING` holds CPU execution
+while supervisor GPU/DMA/geometry work reaches the same completion fence, then
+restores the raw user banks and releases the existing exception root. The saved
+post-exception `STATUS` keeps maskable entry disabled until compiler-emitted
+`RFE` atomically restores user privilege/interrupt state and resumes at `EPC`.
+There is no host state, framebuffer copy, global IRQ acknowledge, DMA abort or
+retry loop on either path. A non-resumable synchronous fault rejects `CONT` and
+can leave only through reset.
 
 The machine-visible monitor command set starts with hardware operations such as
-`HELP`, `FAULT`, `REGS`, `MEM`, `CLS`, and `REBOOT`. It does not expose the workspace,
+`HELP`, `FAULT`, `REGS`, `MEM`, `CLS`, `CONT`, and `REBOOT`. It does not expose the workspace,
 host filesystem, JavaScript stack, real-time compiler options, host process
 shutdown, IDE symbol browser, or other current workbench services. Its layout
 and colors are firmware policy and intentionally do not emulate the removed
@@ -1652,8 +1716,9 @@ consumes the arm latch into sample sequence/last-cycle state, asks the host
 input owner to fill one raw `InputControllerSnapshot`, and decodes that snapshot
 into raw MMIO words at the datapath boundary. Later cart reads consume only the
 mirrored register words. Independently of the sample arm, the controller reads
-the retained supervisor-request line once per VBlank and requests NMI only on
-its rising edge; it never decodes HID usages or controller buttons. The ICU does
+the retained supervisor-request line once per VBlank and publishes its rising
+edge to the system controller; only the completed common device fence raises
+NMI. The ICU never decodes HID usages or controller buttons. The ICU does
 not own action maps, action-expression
 parsing, button-name string ids, consume state, repeat windows, guarded presses,
 or a high-level event FIFO.

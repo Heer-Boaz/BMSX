@@ -14,6 +14,9 @@ IrqController::IrqController(Memory& memory)
 void IrqController::reset() {
 	m_pendingFlags = 0;
 	m_mask = 0;
+	m_userPendingFlags = 0;
+	m_userMask = 0;
+	m_supervisorContextActive = false;
 	m_memory.writeIoValue(IO_IRQ_ACK, valueNumber(0.0));
 	m_memory.writeIoValue(IO_IRQ_MASK, valueNumber(0.0));
 }
@@ -29,6 +32,41 @@ void IrqController::raise(uint32_t mask) {
 	if (next != m_pendingFlags) {
 		m_pendingFlags = next;
 	}
+}
+
+void IrqController::raiseUser(uint32_t mask) {
+	if (!m_supervisorContextActive) {
+		raise(mask);
+		return;
+	}
+	m_userPendingFlags |= mask;
+}
+
+void IrqController::enterSupervisorContext() {
+	m_userPendingFlags = m_pendingFlags;
+	m_userMask = m_mask;
+	m_supervisorContextActive = true;
+	m_pendingFlags = 0u;
+	m_mask = 0u;
+	postLoad();
+}
+
+void IrqController::enterSupervisorFaultContext() {
+	m_userPendingFlags = 0u;
+	m_userMask = 0u;
+	m_supervisorContextActive = true;
+	m_pendingFlags = 0u;
+	m_mask = 0u;
+	postLoad();
+}
+
+void IrqController::leaveSupervisorContext() {
+	m_pendingFlags = m_userPendingFlags;
+	m_mask = m_userMask;
+	m_userPendingFlags = 0u;
+	m_userMask = 0u;
+	m_supervisorContextActive = false;
+	postLoad();
 }
 
 void IrqController::acknowledge(uint32_t mask) {

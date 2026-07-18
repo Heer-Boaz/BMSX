@@ -30,7 +30,6 @@ public:
 	Memory& memory;
 	IrqController irqController;
 	CPU cpu;
-	SystemController systemController;
 	DeviceScheduler scheduler;
 	ApuOutputMixer audioOutput;
 	DmaController dmaController;
@@ -38,6 +37,7 @@ public:
 	GeometryController geometryController;
 	GxGpu gxGpu;
 	GxGte gxGte;
+	SystemController systemController;
 	InputController inputController;
 
 	void initializeSystemIo();

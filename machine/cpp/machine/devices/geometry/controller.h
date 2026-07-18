@@ -34,9 +34,14 @@ public:
 	GeometryControllerState captureState() const;
 	void restoreState(const GeometryControllerState& state, int64_t nowCycles);
 	void onCtrlWrite(int64_t nowCycles);
+	void beginSupervisorQuiesce();
+	bool supervisorQuiescent() const { return m_phase != GeometryControllerPhase::Busy; }
+	void leaveSupervisorContext();
+	void enterSupervisorFaultContext();
 
 private:
 	static void onCommandWriteThunk(void* context, uint32_t addr, Value value, MappedBusSignals busSignals);
+	static bool commandWriteReadyThunk(void* context, uint32_t addr);
 	static void onCtrlWriteThunk(void* context, uint32_t addr, Value value, MappedBusSignals busSignals);
 	static void onFaultAckWriteThunk(void* context, uint32_t addr, Value value, MappedBusSignals busSignals);
 
@@ -49,6 +54,7 @@ private:
 	void finishSuccess(uint32_t processed);
 	void finishError(uint32_t code, uint32_t recordIndex, bool signalIrq = true);
 	void finishRejected(uint32_t code);
+	void notifySupervisorBoundary();
 
 	int64_t m_cpuHz = 1;
 	int64_t m_workUnitsPerSec = 1;
@@ -56,6 +62,7 @@ private:
 	uint32_t m_availableWorkUnits = 0;
 	GeometryControllerPhase m_phase = GeometryControllerPhase::Idle;
 	std::optional<GeoJob> m_activeJob;
+	bool m_supervisorQuiesceRequested = false;
 	Memory& m_memory;
 	IrqController& m_irq;
 	DeviceScheduler& m_scheduler;

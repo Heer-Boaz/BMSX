@@ -66,9 +66,9 @@ void FrameLoopState::runUpdatePhase(Runtime& runtime) {
 	auto& cpu = runtime.machine.cpu;
 	try {
 		while (true) {
-			if (cpu.isHaltedUntilIrq()) {
-				const bool tickCompleted = runtime.cpuExecution.runHaltedUntilIrq(runtime, frameState);
-				if (tickCompleted || cpu.isHaltedUntilIrq()) {
+			if (cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld()) {
+				const bool tickCompleted = runtime.cpuExecution.runStoppedCpu(runtime, frameState);
+				if (tickCompleted || cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld()) {
 					return;
 				}
 				continue;
@@ -130,7 +130,7 @@ bool FrameLoopState::tickUpdate(Runtime& runtime) {
 
 	runActiveFrameState(runtime);
 	if (frameActive
-		&& runtime.machine.cpu.isHaltedUntilIrq()
+		&& (runtime.machine.cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld())
 		&& runtime.machine.scheduler.nextDeadline() == std::numeric_limits<i64>::max()) {
 		// Cart parked waiting for an interrupt that nothing has scheduled: report
 		// no progress so the scheduler yields the host slice instead of spinning.

@@ -58,6 +58,6 @@ export class ApuEventLatch {
 		this.memory.writeValue(IO_APU_EVENT_SLOT, slot);
 		this.memory.writeValue(IO_APU_EVENT_SOURCE_ADDR, sourceAddr);
 		this.memory.writeValue(IO_APU_EVENT_SEQ, this.eventSequence);
-		this.irq.raise(IRQ_APU);
+		this.irq.raiseUser(IRQ_APU);
 	}
 }

@@ -6,6 +6,7 @@ const modifiers = { ctrl: false, shift: false, alt: false, meta: false };
 const keyCodes = {
 	' ': 'Space',
 	'0': 'Digit0',
+	'1': 'Digit1',
 	'2': 'Digit2',
 	'5': 'Digit5',
 	'6': 'Digit6',
@@ -111,6 +112,14 @@ export function buildBiosMonitorTimeline() {
 	withControl('Delete', 'erase next word');
 	capture('wordDelete', 'forward word deletion');
 	tap('Escape', 'clear completed input');
+	type('regs');
+	tap('Enter', 'seed command history');
+	type('cls');
+	tap('Enter', 'submit CLS');
+	tap('ArrowUp', 'recall CLS from command history');
+	capture('historyRecall', 'command history restores the submitted line');
+	tap('Enter', 'submit recalled CLS');
+	capture('historyExecuted', 'recalled command executes as the original line');
 
 	for (let repetition = 0; repetition < 6; repetition += 1) {
 		type('help');
@@ -123,6 +132,32 @@ export function buildBiosMonitorTimeline() {
 	capture('firstPage', 'first automatic memory page');
 	tap('Space', 'advance automatic pager');
 	capture('secondPage', 'second automatic memory page');
+
+	tap('F2', 'resume cart from BIOS monitor');
+	frame += 8;
+	capture('resumedF2', 'cart resumed through supervisor request line');
+	tap('F2', 're-enter BIOS monitor');
+	frame += 6;
+	capture('secondEntry', 'BIOS monitor re-entry');
+	type('cont');
+	tap('Enter', 'submit CONT');
+	frame += 10;
+	capture('resumedCont', 'cart resumed through CONT');
+
+	tap('F2', 're-enter BIOS monitor for nested fault');
+	frame += 6;
+	capture('faultEntry', 'BIOS monitor entry before nested fault');
+	type('mem 1');
+	tap('Enter', 'issue unaligned monitor memory read');
+	frame += 10;
+	capture('nestedFault', 'nested monitor address fault');
+	tap('F2', 'attempt line exit from non-resumable nested fault');
+	frame += 6;
+	capture('nestedFaultAfterF2', 'nested fault remains after supervisor line edge');
+	type('cont');
+	tap('Enter', 'attempt CONT from non-resumable nested fault');
+	frame += 4;
+	capture('nonResumable', 'CONT reports non-resumable nested fault');
 
 	return { entries, captures };
 }

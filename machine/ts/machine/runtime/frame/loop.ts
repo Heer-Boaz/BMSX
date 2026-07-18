@@ -84,7 +84,7 @@ export class FrameLoopState {
 		}
 		this.runActiveFrameState();
 		if (this.frameActive
-			&& runtime.machine.cpu.isHaltedUntilIrq()
+			&& (runtime.machine.cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld())
 			&& runtime.machine.scheduler.nextDeadline() === Number.MAX_SAFE_INTEGER) {
 			// Cart parked waiting for an interrupt that nothing has scheduled: report
 			// no progress so the scheduler yields the host slice instead of spinning.
@@ -152,9 +152,9 @@ export class FrameLoopState {
 		}
 		try {
 			while (true) {
-				if (cpu.isHaltedUntilIrq()) {
-					const tickCompleted = cpuExecution.runHaltedUntilIrq(state);
-					if (tickCompleted || cpu.isHaltedUntilIrq()) {
+				if (cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld()) {
+					const tickCompleted = cpuExecution.runStoppedCpu(state);
+					if (tickCompleted || cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld()) {
 						return;
 					}
 					continue;

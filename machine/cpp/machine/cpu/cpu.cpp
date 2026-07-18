@@ -1250,6 +1250,9 @@ void CPU::start(int entryProtoIndex, NativeArgsView args, u32 statusWord) {
 	m_causeWord = 0u;
 	m_epcWord = 0u;
 	m_badAddressWord = 0u;
+	m_nmiReturnCauseWord = 0u;
+	m_nmiReturnEpcWord = 0u;
+	m_nmiReturnBadAddressWord = 0u;
 	m_nonMaskableInterruptPending = false;
 	m_yieldRequested = false;
 	m_hostExternalCallActive = false;
@@ -1441,6 +1444,7 @@ CpuRuntimeState CPU::captureRuntimeState(const std::unordered_map<std::string, V
 		frameState.captureReturns = frame.captureReturns;
 		frameState.callSitePc = frame.callSitePc;
 		frameState.isExceptionFrame = frame.isExceptionFrame;
+		frameState.isNonMaskableExceptionFrame = frame.isNonMaskableExceptionFrame;
 		frameState.registers.reserve(static_cast<size_t>(frame.top));
 		for (int index = 0; index < frame.top; ++index) {
 			frameState.registers.push_back(captureValueState(frame.registers[static_cast<size_t>(index)]));
@@ -1491,6 +1495,9 @@ CpuRuntimeState CPU::captureRuntimeState(const std::unordered_map<std::string, V
 	state.causeWord = m_causeWord;
 	state.epcWord = m_epcWord;
 	state.badAddressWord = m_badAddressWord;
+	state.nmiReturnCauseWord = m_nmiReturnCauseWord;
+	state.nmiReturnEpcWord = m_nmiReturnEpcWord;
+	state.nmiReturnBadAddressWord = m_nmiReturnBadAddressWord;
 	state.nonMaskableInterruptPending = m_nonMaskableInterruptPending;
 	state.yieldRequested = m_yieldRequested;
 	return state;
@@ -1635,6 +1642,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state, std::unordered_map<s
 		frame->captureReturns = frameState.captureReturns;
 		frame->callSitePc = frameState.callSitePc;
 		frame->isExceptionFrame = frameState.isExceptionFrame;
+		frame->isNonMaskableExceptionFrame = frameState.isNonMaskableExceptionFrame;
 		frame->varargBase = m_stackTop;
 		frame->varargCount = static_cast<int>(frameState.varargs.size());
 		frame->stackBase = frame->varargBase + frame->varargCount;
@@ -1708,6 +1716,9 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state, std::unordered_map<s
 	m_causeWord = state.causeWord;
 	m_epcWord = state.epcWord;
 	m_badAddressWord = state.badAddressWord;
+	m_nmiReturnCauseWord = state.nmiReturnCauseWord;
+	m_nmiReturnEpcWord = state.nmiReturnEpcWord;
+	m_nmiReturnBadAddressWord = state.nmiReturnBadAddressWord;
 	m_nonMaskableInterruptPending = state.nonMaskableInterruptPending;
 	m_yieldRequested = state.yieldRequested;
 	collectHeap();
@@ -2118,9 +2129,9 @@ void CPU::clearHaltUntilIrq() {
 }
 
 void CPU::requestNonMaskableInterrupt() {
-	if (isUserMode()) {
-		m_nonMaskableInterruptPending = true;
-	}
+	// NMI is an edge latch and can preempt the supervisor IRQ root reached
+	// immediately before a system-request fence.
+	m_nonMaskableInterruptPending = true;
 }
 
 bool CPU::canAcceptMaskableInterruptLine() const {
@@ -2129,7 +2140,7 @@ bool CPU::canAcceptMaskableInterruptLine() const {
 }
 
 AcceptedInterruptKind CPU::peekPendingInterrupt() const {
-	if (m_nonMaskableInterruptPending && isUserMode()) {
+	if (m_nonMaskableInterruptPending) {
 		return AcceptedInterruptKind::NonMaskable;
 	}
 	if (canAcceptMaskableInterruptLine()) {
@@ -2139,10 +2150,17 @@ AcceptedInterruptKind CPU::peekPendingInterrupt() const {
 }
 
 bool CPU::enterPendingInterrupt() {
-	if (m_nonMaskableInterruptPending && isUserMode()) {
+	if (m_nonMaskableInterruptPending) {
 		m_nonMaskableInterruptPending = false;
 		const bool wasHalted = m_haltedUntilIrq;
+		const u32 returnCauseWord = m_causeWord;
+		const u32 returnEpcWord = m_epcWord;
+		const u32 returnBadAddressWord = m_badAddressWord;
 		enterAsynchronousException(m_systemExceptionProtoIndex, CPU_CAUSE_NMI);
+		m_frames.back()->isNonMaskableExceptionFrame = true;
+		m_nmiReturnCauseWord = returnCauseWord;
+		m_nmiReturnEpcWord = returnEpcWord;
+		m_nmiReturnBadAddressWord = returnBadAddressWord;
 		if (!wasHalted) m_interruptEventPending = true;
 		return true;
 	}
@@ -2206,6 +2224,13 @@ void CPU::resumeMemoryWrite(uint32_t address) {
 	}
 }
 
+void CPU::abortStalledMemoryWrite() {
+	// A stalled mapped store has issued no bus cycle and blockMappedWrite()
+	// already rewound its PC. Supervisor entry can therefore abort the wait;
+	// RFE retries the complete instruction at EPC in the restored user context.
+	m_memoryWriteBlocked = false;
+}
+
 RunResult CPU::run(int instructionBudget) {
 	instructionBudgetRemaining = instructionBudget;
 	auto& frames = m_frames;
@@ -2250,7 +2275,7 @@ dispatch_loop_check:
 		return RunResult::Yielded;
 	}
 	if (!m_hostExternalCallActive
-		&& ((m_nonMaskableInterruptPending && isUserMode())
+		&& (m_nonMaskableInterruptPending
 			|| ((m_statusWord & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
 				&& m_irqController.hasAssertedMaskableInterruptLine()))
 	) {
@@ -2407,7 +2432,7 @@ dispatch_loop_check:
 		return RunResult::Yielded;
 	}
 	if (!m_hostExternalCallActive
-		&& ((m_nonMaskableInterruptPending && isUserMode())
+		&& (m_nonMaskableInterruptPending
 			|| ((m_statusWord & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
 				&& m_irqController.hasAssertedMaskableInterruptLine()))
 	) {
@@ -3189,6 +3214,7 @@ void CPU::releaseFrame(std::unique_ptr<CallFrame> frame) {
 	frame->stackBase = 0;
 	frame->stackCapacity = 0;
 	frame->isExceptionFrame = false;
+	frame->isNonMaskableExceptionFrame = false;
 	if (m_framePool.size() < static_cast<size_t>(MAX_POOLED_FRAMES)) {
 		m_framePool.push_back(std::move(frame));
 	}

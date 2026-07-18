@@ -32,7 +32,7 @@ import {
 import type { CPU, Value } from '../../cpu/cpu';
 import type { IrqController } from '../irq/controller';
 import { cyclesUntilBudgetUnits } from '../../scheduler/budget';
-import { DEVICE_SERVICE_DMA, type DeviceScheduler } from '../../scheduler/device';
+import { DEVICE_SERVICE_DMA, DEVICE_SERVICE_SYSTEM, type DeviceScheduler } from '../../scheduler/device';
 import {
 	GX_GPU_DMA_DIRECTION_CPU_TO_GP0,
 	GX_GPU_DMA_DIRECTION_FIFO,
@@ -48,6 +48,13 @@ export type DmaControllerState = {
 	timingCarry: number;
 	scheduledBlockWords: number;
 	scheduledBlockCycles: number;
+	supervisorQuiesceRequested: boolean;
+	userReadAddressWord: number;
+	userWriteAddressWord: number;
+	userTransferCountWord: number;
+	userControlWord: number;
+	userStatusWord: number;
+	userTimingCarry: number;
 };
 
 export class DmaController {
@@ -64,6 +71,13 @@ export class DmaController {
 	private apuDmaWriteReady = false;
 	private serviceActive = false;
 	private restorePending = false;
+	private supervisorQuiesceRequested = false;
+	private userReadAddressWord = 0;
+	private userWriteAddressWord = 0;
+	private userTransferCountWord = 0;
+	private userControlWord = 0;
+	private userStatusWord = 0;
+	private userTimingCarry = 0;
 
 	public constructor(
 		private readonly memory: Memory,
@@ -75,6 +89,11 @@ export class DmaController {
 		this.memory.mapIoWrite(IO_DMA_READ_ADDR, this, DmaController.portAddressWriteThunk);
 		this.memory.mapIoWrite(IO_DMA_WRITE_ADDR, this, DmaController.portAddressWriteThunk);
 		this.memory.mapIoWrite(IO_DMA_TRIGGER, this, DmaController.triggerWriteThunk);
+		this.memory.mapIoWriteReady(IO_DMA_TRIGGER, DmaController.triggerWriteReadyThunk);
+	}
+
+	private static triggerWriteReadyThunk(context: DmaController): boolean {
+		return !context.supervisorQuiesceRequested;
 	}
 
 	private static controlWriteThunk(context: DmaController): void {
@@ -196,6 +215,13 @@ export class DmaController {
 		this.apuDmaWriteReady = false;
 		this.serviceActive = false;
 		this.restorePending = false;
+		this.supervisorQuiesceRequested = false;
+		this.userReadAddressWord = 0;
+		this.userWriteAddressWord = 0;
+		this.userTransferCountWord = 0;
+		this.userControlWord = 0;
+		this.userStatusWord = 0;
+		this.userTimingCarry = 0;
 		this.memory.writeIoValue(IO_DMA_READ_ADDR, 0);
 		this.memory.writeIoValue(IO_DMA_WRITE_ADDR, 0);
 		this.memory.writeIoValue(IO_DMA_TRANSFER_COUNT, 0);
@@ -225,6 +251,7 @@ export class DmaController {
 		}
 		this.serviceActive = false;
 		if (!this.busy()) {
+			this.notifySupervisorBoundary();
 			return;
 		}
 		if (this.memory.readIoU32(IO_DMA_TRANSFER_COUNT) === 0) {
@@ -232,7 +259,10 @@ export class DmaController {
 			return;
 		}
 		if (!this.requestAsserted()) {
-			this.timingCarry = 0;
+			if (!this.supervisorQuiesceRequested) {
+				this.timingCarry = 0;
+			}
+			this.notifySupervisorBoundary();
 			return;
 		}
 		this.admitBlock(blockDeadline);
@@ -268,6 +298,7 @@ export class DmaController {
 		this.memory.writeIoValue(IO_DMA_STATUS, DMA_STATUS_DONE);
 		this.irq.raise(IRQ_DMA_DONE);
 		this.resumeCpuPortWrites();
+		this.notifySupervisorBoundary();
 	}
 
 	public captureState(): DmaControllerState {
@@ -282,6 +313,13 @@ export class DmaController {
 			scheduledBlockCycles: this.scheduledBlockWords === 0
 				? 0
 				: this.serviceDeadline - this.scheduler.currentNowCycles(),
+			supervisorQuiesceRequested: this.supervisorQuiesceRequested,
+			userReadAddressWord: this.userReadAddressWord,
+			userWriteAddressWord: this.userWriteAddressWord,
+			userTransferCountWord: this.userTransferCountWord,
+			userControlWord: this.userControlWord,
+			userStatusWord: this.userStatusWord,
+			userTimingCarry: this.userTimingCarry,
 		};
 	}
 
@@ -298,6 +336,13 @@ export class DmaController {
 		this.serviceDeadline = nowCycles + state.scheduledBlockCycles;
 		this.serviceActive = false;
 		this.restorePending = true;
+		this.supervisorQuiesceRequested = state.supervisorQuiesceRequested;
+		this.userReadAddressWord = state.userReadAddressWord >>> 0;
+		this.userWriteAddressWord = state.userWriteAddressWord >>> 0;
+		this.userTransferCountWord = state.userTransferCountWord >>> 0;
+		this.userControlWord = state.userControlWord >>> 0;
+		this.userStatusWord = state.userStatusWord >>> 0;
+		this.userTimingCarry = state.userTimingCarry;
 	}
 
 	public postLoad(): void {
@@ -306,6 +351,81 @@ export class DmaController {
 			this.scheduler.scheduleDeviceService(DEVICE_SERVICE_DMA, this.serviceDeadline);
 		}
 		this.resumeCpuPortWrites();
+	}
+
+	public beginSupervisorQuiesce(): void {
+		this.supervisorQuiesceRequested = true;
+		this.requestInputChanged();
+		this.notifySupervisorBoundary();
+	}
+
+	public supervisorQuiescent(): boolean {
+		return this.scheduledBlockWords === 0 && !this.serviceActive;
+	}
+
+	public hasAdmittedGxGpuWriteBlock(): boolean {
+		return this.scheduledBlockWords !== 0 && this.ownsGxGpuWritePort();
+	}
+
+	public enterSupervisorContext(): void {
+		this.userReadAddressWord = this.memory.readIoU32(IO_DMA_READ_ADDR);
+		this.userWriteAddressWord = this.memory.readIoU32(IO_DMA_WRITE_ADDR);
+		this.userTransferCountWord = this.memory.readIoU32(IO_DMA_TRANSFER_COUNT);
+		this.userControlWord = this.memory.readIoU32(IO_DMA_CONTROL);
+		this.userStatusWord = this.memory.readIoU32(IO_DMA_STATUS);
+		this.userTimingCarry = this.timingCarry;
+		this.clearLiveTransfer();
+		this.supervisorQuiesceRequested = false;
+	}
+
+	public enterSupervisorFaultContext(): void {
+		this.clearLiveTransfer();
+		this.userReadAddressWord = 0;
+		this.userWriteAddressWord = 0;
+		this.userTransferCountWord = 0;
+		this.userControlWord = 0;
+		this.userStatusWord = 0;
+		this.userTimingCarry = 0;
+		this.supervisorQuiesceRequested = false;
+	}
+
+	public leaveSupervisorContext(): void {
+		this.clearLiveTransfer();
+		this.memory.writeIoValue(IO_DMA_READ_ADDR, this.userReadAddressWord);
+		this.memory.writeIoValue(IO_DMA_WRITE_ADDR, this.userWriteAddressWord);
+		this.memory.writeIoValue(IO_DMA_TRANSFER_COUNT, this.userTransferCountWord);
+		this.memory.writeIoValue(IO_DMA_CONTROL, this.userControlWord);
+		this.memory.writeIoValue(IO_DMA_STATUS, this.userStatusWord);
+		this.timingCarry = this.userTimingCarry;
+		this.supervisorQuiesceRequested = false;
+		this.userReadAddressWord = 0;
+		this.userWriteAddressWord = 0;
+		this.userTransferCountWord = 0;
+		this.userControlWord = 0;
+		this.userStatusWord = 0;
+		this.userTimingCarry = 0;
+		this.requestInputChanged();
+	}
+
+	private clearLiveTransfer(): void {
+		this.scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
+		this.timingCarry = 0;
+		this.scheduledBlockWords = 0;
+		this.serviceDeadline = 0;
+		this.serviceActive = false;
+		this.restorePending = false;
+		this.memory.writeIoValue(IO_DMA_READ_ADDR, 0);
+		this.memory.writeIoValue(IO_DMA_WRITE_ADDR, 0);
+		this.memory.writeIoValue(IO_DMA_TRANSFER_COUNT, 0);
+		this.memory.writeIoValue(IO_DMA_CONTROL, 0);
+		this.memory.writeIoValue(IO_DMA_STATUS, 0);
+		this.memory.writeIoValue(IO_DMA_TRIGGER, 0);
+	}
+
+	private notifySupervisorBoundary(): void {
+		if (this.supervisorQuiesceRequested && this.supervisorQuiescent()) {
+			this.scheduler.scheduleDeviceService(DEVICE_SERVICE_SYSTEM, this.scheduler.currentNowCycles());
+		}
 	}
 
 	private admitBlock(anchorCycle: number): void {
@@ -335,14 +455,23 @@ export class DmaController {
 			return;
 		}
 		if (!this.requestAsserted()) {
-			this.timingCarry = 0;
+			if (!this.supervisorQuiesceRequested) {
+				this.timingCarry = 0;
+			}
+			this.notifySupervisorBoundary();
 			return;
 		}
 		this.admitBlock(this.scheduler.currentNowCycles());
 	}
 
 	private requestAsserted(): boolean {
-		switch (this.memory.readIoU32(IO_DMA_CONTROL) & DMA_CONTROL_REQUEST_MASK) {
+		const request = this.memory.readIoU32(IO_DMA_CONTROL) & DMA_CONTROL_REQUEST_MASK;
+		if (this.supervisorQuiesceRequested
+			&& request !== DMA_CONTROL_REQUEST_GX_WRITE
+			&& request !== DMA_CONTROL_REQUEST_GX_READ) {
+			return false;
+		}
+		switch (request) {
 			case DMA_CONTROL_REQUEST_FORCE:
 				return true;
 			case DMA_CONTROL_REQUEST_GX_WRITE:

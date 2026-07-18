@@ -11,7 +11,7 @@ class Runtime;
 
 class CpuExecutionState {
 public:
-	bool runHaltedUntilIrq(Runtime& runtime, FrameState& frameState);
+	bool runStoppedCpu(Runtime& runtime, FrameState& frameState);
 	RunResult runWithBudget(Runtime& runtime, FrameState& frameState);
 };
 

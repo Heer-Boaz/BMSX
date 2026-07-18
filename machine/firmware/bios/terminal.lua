@@ -15,6 +15,8 @@ local terminal_rows<const> = layout.rows
 local scrollback_rows<const> = layout.scrollback_rows
 local terminal_width<const> = terminal_columns * glyph_width
 local terminal_height<const> = terminal_rows * glyph_height
+local terminal_vram_x<const> = layout.vram_x
+local terminal_vram_y<const> = layout.vram_y
 local ascii_newline<const> = 10
 local cursor_cell<const> = 0x0000015f
 local terminal_background_word<const> = 0x00000000
@@ -365,11 +367,11 @@ function terminal.flush()
 	local command_words<const>: *word = terminal_command_words
 	local command_word_count = 0
 	if dirty_rows == all_rows_dirty then
-		command_word_count = gx_gpu.encode_fill_rectangle(command_words, command_word_count, 0, 0, terminal_width, terminal_height, terminal_background_word)
+		command_word_count = gx_gpu.encode_fill_rectangle(command_words, command_word_count, terminal_vram_x, terminal_vram_y, terminal_width, terminal_height, terminal_background_word)
 	elseif *terminal_scroll_rows ~= 0 then
 		local scroll_pixels<const> = *terminal_scroll_rows * glyph_height
-		command_word_count = gx_gpu.encode_vram_copy(command_words, command_word_count, 0, scroll_pixels, 0, 0, terminal_width, terminal_height - scroll_pixels)
-		command_word_count = gx_gpu.encode_fill_rectangle(command_words, command_word_count, 0, terminal_height - scroll_pixels, terminal_width, scroll_pixels, terminal_background_word)
+		command_word_count = gx_gpu.encode_vram_copy(command_words, command_word_count, terminal_vram_x, terminal_vram_y + scroll_pixels, terminal_vram_x, terminal_vram_y, terminal_width, terminal_height - scroll_pixels)
+		command_word_count = gx_gpu.encode_fill_rectangle(command_words, command_word_count, terminal_vram_x, terminal_vram_y + terminal_height - scroll_pixels, terminal_width, scroll_pixels, terminal_background_word)
 	end
 	command_word_count = gx_gpu.encode_direct16_texture_page(command_words, command_word_count, terminal_glyphs[0x20] & 0xffff, terminal_glyphs[0x20] >> 16)
 	local cursor_row = -1

@@ -343,6 +343,7 @@ export type CpuFrameState = {
 	captureReturns: boolean;
 	callSitePc: number;
 	isExceptionFrame: boolean;
+	isNonMaskableExceptionFrame: boolean;
 };
 
 export type CpuProtectedCallState = {
@@ -380,6 +381,9 @@ export type CpuRuntimeState = {
 	causeWord: number;
 	epcWord: number;
 	badAddressWord: number;
+	nmiReturnCauseWord: number;
+	nmiReturnEpcWord: number;
+	nmiReturnBadAddressWord: number;
 	nonMaskableInterruptPending: boolean;
 	yieldRequested: boolean;
 };
@@ -520,6 +524,7 @@ type CallFrame = {
 	captureReturns: boolean;
 	callSitePc: number;
 	isExceptionFrame: boolean;
+	isNonMaskableExceptionFrame: boolean;
 };
 
 class ProtectedCallContinuation {
@@ -1544,6 +1549,9 @@ export class CPU {
 	private causeWord = 0;
 	private epcWord = 0;
 	private badAddressWord = 0;
+	private nmiReturnCauseWord = 0;
+	private nmiReturnEpcWord = 0;
+	private nmiReturnBadAddressWord = 0;
 	private nonMaskableInterruptPending = false;
 	private systemIrqProtoIndex!: number;
 	private cartIrqProtoIndex!: number;
@@ -1879,6 +1887,7 @@ export class CPU {
 			captureReturns: false,
 			callSitePc: 0,
 			isExceptionFrame: false,
+			isNonMaskableExceptionFrame: false,
 		};
 	}
 
@@ -1889,6 +1898,7 @@ export class CPU {
 		frame.stackCapacity = 0;
 		frame.registers.rebind(this.stackRegisters, 0, 0);
 		frame.isExceptionFrame = false;
+		frame.isNonMaskableExceptionFrame = false;
 		if (this.framePool.length < MAX_POOLED_FRAMES) {
 			this.framePool.push(frame);
 		}
@@ -2106,6 +2116,9 @@ export class CPU {
 		this.causeWord = 0;
 		this.epcWord = 0;
 		this.badAddressWord = 0;
+		this.nmiReturnCauseWord = 0;
+		this.nmiReturnEpcWord = 0;
+		this.nmiReturnBadAddressWord = 0;
 		this.nonMaskableInterruptPending = false;
 		this.hostExternalCallActive = false;
 		this.yieldRequested = false;
@@ -2182,6 +2195,13 @@ export class CPU {
 		}
 	}
 
+	public abortStalledMemoryWrite(): void {
+		// A stalled mapped store has issued no bus cycle and blockMappedWrite()
+		// already rewound its PC. Supervisor entry can therefore abort the wait;
+		// RFE retries the complete instruction at EPC in the restored user context.
+		this.memoryWriteBlocked = false;
+	}
+
 	private blockMappedWrite(frame: CallFrame, address: number): void {
 		frame.pc = this.currentInstructionPc;
 		this.memoryWriteBlocked = true;
@@ -2194,9 +2214,13 @@ export class CPU {
 	}
 
 	public requestNonMaskableInterrupt(): void {
-		if (this.isUserMode()) {
-			this.nonMaskableInterruptPending = true;
-		}
+		// NMI is an edge latch and can preempt the supervisor IRQ root reached
+		// immediately before a system-request fence.
+		this.nonMaskableInterruptPending = true;
+	}
+
+	public cancelNonMaskableInterrupt(): void {
+		this.nonMaskableInterruptPending = false;
 	}
 
 	public canAcceptMaskableInterruptLine(): boolean {
@@ -2205,7 +2229,7 @@ export class CPU {
 	}
 
 	public peekPendingInterrupt(): AcceptedInterruptKind {
-		if (this.nonMaskableInterruptPending && this.isUserMode()) {
+		if (this.nonMaskableInterruptPending) {
 			return AcceptedInterruptKind.NonMaskable;
 		}
 		if (this.canAcceptMaskableInterruptLine()) {
@@ -2215,10 +2239,17 @@ export class CPU {
 	}
 
 	public enterPendingInterrupt(): boolean {
-		if (this.nonMaskableInterruptPending && this.isUserMode()) {
+		if (this.nonMaskableInterruptPending) {
 			this.nonMaskableInterruptPending = false;
 			const wasHalted = this.haltedUntilIrq;
+			const returnCauseWord = this.causeWord;
+			const returnEpcWord = this.epcWord;
+			const returnBadAddressWord = this.badAddressWord;
 			this.enterAsynchronousException(this.systemExceptionProtoIndex, CPU_CAUSE_NMI);
+			this.frames[this.frames.length - 1].isNonMaskableExceptionFrame = true;
+			this.nmiReturnCauseWord = returnCauseWord;
+			this.nmiReturnEpcWord = returnEpcWord;
+			this.nmiReturnBadAddressWord = returnBadAddressWord;
 			if (!wasHalted) this.interruptEventPending = true;
 			return true;
 		}
@@ -2291,7 +2322,7 @@ export class CPU {
 						return RunResult.Yielded;
 					}
 					if (!this.hostExternalCallActive
-						&& ((this.nonMaskableInterruptPending && (this.statusWord & CPU_STATUS_USER_MODE_CURRENT) !== 0)
+						&& (this.nonMaskableInterruptPending
 							|| ((this.statusWord & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) !== 0
 								&& this.irqController.hasAssertedMaskableInterruptLine()))
 					) {
@@ -2820,6 +2851,8 @@ export class CPU {
 						this.hardHalt();
 						return;
 					}
+					const returnFromNmi = frame.isNonMaskableExceptionFrame;
+					const returnPc = this.epcWord;
 					this.closeUpvalues(frame);
 					this.frames.pop();
 					this.stackTop = frame.varargBase;
@@ -2827,7 +2860,12 @@ export class CPU {
 					this.statusWord = ((this.statusWord & ~CPU_STATUS_RFE_RESTORE_MASK)
 						| ((this.statusWord >> 2) & CPU_STATUS_RFE_RESTORE_MASK)) >>> 0;
 					if (this.frames.length > 0) {
-						this.frames[this.frames.length - 1].pc = this.epcWord;
+						this.frames[this.frames.length - 1].pc = returnPc;
+					}
+					if (returnFromNmi) {
+						this.causeWord = this.nmiReturnCauseWord;
+						this.epcWord = this.nmiReturnEpcWord;
+						this.badAddressWord = this.nmiReturnBadAddressWord;
 					}
 					return;
 				case OpCode.LOADKR:
@@ -4006,6 +4044,7 @@ export class CPU {
 				captureReturns: frame.captureReturns,
 				callSitePc: frame.callSitePc,
 				isExceptionFrame: frame.isExceptionFrame,
+				isNonMaskableExceptionFrame: frame.isNonMaskableExceptionFrame,
 			};
 		}
 		const protectedCalls = new Array<CpuProtectedCallState>(this.protectedCallDepth);
@@ -4053,6 +4092,9 @@ export class CPU {
 			causeWord: this.causeWord,
 			epcWord: this.epcWord,
 			badAddressWord: this.badAddressWord,
+			nmiReturnCauseWord: this.nmiReturnCauseWord,
+			nmiReturnEpcWord: this.nmiReturnEpcWord,
+			nmiReturnBadAddressWord: this.nmiReturnBadAddressWord,
 			nonMaskableInterruptPending: this.nonMaskableInterruptPending,
 			yieldRequested: this.yieldRequested,
 		};
@@ -4179,6 +4221,7 @@ export class CPU {
 			frame.captureReturns = frameState.captureReturns;
 			frame.callSitePc = frameState.callSitePc;
 			frame.isExceptionFrame = frameState.isExceptionFrame;
+			frame.isNonMaskableExceptionFrame = frameState.isNonMaskableExceptionFrame;
 			frame.varargBase = this.stackTop;
 			frame.varargCount = frameState.varargs.length;
 			const registers = this.prepareFrameRegisters(frame, proto.maxStack);
@@ -4242,6 +4285,9 @@ export class CPU {
 		this.causeWord = state.causeWord;
 		this.epcWord = state.epcWord;
 		this.badAddressWord = state.badAddressWord;
+		this.nmiReturnCauseWord = state.nmiReturnCauseWord;
+		this.nmiReturnEpcWord = state.nmiReturnEpcWord;
+		this.nmiReturnBadAddressWord = state.nmiReturnBadAddressWord;
 		this.nonMaskableInterruptPending = state.nonMaskableInterruptPending;
 		this.yieldRequested = state.yieldRequested;
 		refreshTrackedLuaHeapBytes();

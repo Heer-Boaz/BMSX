@@ -110,7 +110,7 @@ local load_history<const> = function(offset)
 	local lengths<const>: *word = monitor_editor_history_lengths
 	local slot<const> = latest_history_slot(offset)
 	local length<const> = lengths[slot]
-	load_words(history + slot * input_capacity, length, length)
+	load_words(&history[slot * input_capacity], length, length)
 end
 
 function monitor_editor.open()

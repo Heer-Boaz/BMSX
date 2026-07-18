@@ -640,6 +640,8 @@ DISPATCH_LABEL(RFE) {
 		hardHalt();
 		DISPATCH_CONTINUE();
 	}
+	const bool returnFromNmi = FRAME.isNonMaskableExceptionFrame;
+	const u32 returnPc = m_epcWord;
 	closeUpvalues(FRAME);
 	auto finished = std::move(m_frames.back());
 	m_frames.pop_back();
@@ -648,7 +650,12 @@ DISPATCH_LABEL(RFE) {
 	m_statusWord = (m_statusWord & ~CPU_STATUS_RFE_RESTORE_MASK)
 		| ((m_statusWord >> 2u) & CPU_STATUS_RFE_RESTORE_MASK);
 	if (!m_frames.empty()) {
-		m_frames.back()->pc = static_cast<int>(m_epcWord);
+		m_frames.back()->pc = static_cast<int>(returnPc);
+	}
+	if (returnFromNmi) {
+		m_causeWord = m_nmiReturnCauseWord;
+		m_epcWord = m_nmiReturnEpcWord;
+		m_badAddressWord = m_nmiReturnBadAddressWord;
 	}
 	releaseFrame(std::move(finished));
 	DISPATCH_CONTINUE();

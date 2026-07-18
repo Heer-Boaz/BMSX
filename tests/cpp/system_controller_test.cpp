@@ -1,11 +1,9 @@
 #include "machine/bus/io.h"
-#include "machine/cpu/cpu.h"
 #include "machine/cpu/instruction_format.h"
 #include "machine/cpu/opcode_info.h"
-#include "machine/devices/irq/controller.h"
-#include "machine/devices/system/controller.h"
 #include "machine/devices/gx/gpu_display.h"
 #include "machine/firmware/boot_primitives.h"
+#include "machine/machine.h"
 #include "machine/memory/memory.h"
 #include "machine/model_registry.h"
 #include "machine/program/linker.h"
@@ -56,10 +54,10 @@ bmsx::ProgramImage makeReturnProgramImage() {
 void testResetCommandLatch() {
 	std::array<bmsx::u8, 1> emptyRom{{0}};
 	bmsx::Memory memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, { emptyRom.data(), 0u } });
-	bmsx::IrqController irq(memory);
-	bmsx::CPU cpu(memory, irq);
-	bmsx::SystemController controller(memory, cpu);
-	controller.reset();
+	SystemResetInputSource input;
+	bmsx::Machine machine(memory, input);
+	machine.resetDevices();
+	bmsx::SystemController& controller = machine.systemController;
 
 	memory.writeMappedU32LE(bmsx::IO_SYS_CONTROL, bmsx::SYS_CONTROL_RESET);
 	require(memory.readIoU32(bmsx::IO_SYS_CONTROL) == 0u, "system control command register is self-clearing");

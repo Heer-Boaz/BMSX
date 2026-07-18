@@ -53,7 +53,7 @@ import type { Value } from '../../cpu/cpu';
 import { Memory } from '../../memory/memory';
 import type { IrqController } from '../irq/controller';
 import { accrueBudgetUnits, cyclesUntilBudgetUnits, type BudgetAccrual } from '../../scheduler/budget';
-import { DEVICE_SERVICE_GEO, type DeviceScheduler } from '../../scheduler/device';
+import { DEVICE_SERVICE_GEO, DEVICE_SERVICE_SYSTEM, type DeviceScheduler } from '../../scheduler/device';
 
 const GEO_SERVICE_BATCH_RECORDS = 1;
 
@@ -73,6 +73,7 @@ export class GeometryController {
 	private readonly xform2: GeometryXform2Unit;
 	private readonly sat2: GeometrySat2Unit;
 	private readonly overlap2d: GeometryOverlap2dUnit;
+	private supervisorQuiesceRequested = false;
 
 	public constructor(
 		private readonly memory: Memory,
@@ -83,8 +84,13 @@ export class GeometryController {
 		this.sat2 = new GeometrySat2Unit(memory);
 		this.overlap2d = new GeometryOverlap2dUnit(memory);
 		this.memory.mapIoWrite(IO_GEO_CMD, this, GeometryController.onCommandWrite);
+		this.memory.mapIoWriteReady(IO_GEO_CMD, GeometryController.commandWriteReady);
 		this.memory.mapIoWrite(IO_GEO_CTRL, this, GeometryController.onCtrlRegisterWrite);
 		this.memory.mapIoWrite(IO_GEO_FAULT_ACK, this, GeometryController.onFaultAckWrite);
+	}
+
+	private static commandWriteReady(context: GeometryController): boolean {
+		return !context.supervisorQuiesceRequested;
 	}
 
 	private static onCommandWrite(context: GeometryController, _addr: number, value: Value): void {
@@ -200,6 +206,7 @@ export class GeometryController {
 		this.workCarry = 0;
 		this.availableWorkUnits = 0;
 		this.activeJob = null;
+		this.supervisorQuiesceRequested = false;
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
 		this.memory.writeValue(IO_GEO_SRC0, 0);
 		this.memory.writeValue(IO_GEO_SRC1, 0);
@@ -231,6 +238,7 @@ export class GeometryController {
 			activeJob: this.activeJob === null ? null : { ...this.activeJob },
 			workCarry: this.workCarry,
 			availableWorkUnits: this.availableWorkUnits,
+			supervisorQuiesceRequested: this.supervisorQuiesceRequested,
 		};
 	}
 
@@ -242,8 +250,41 @@ export class GeometryController {
 		this.activeJob = state.activeJob === null ? null : { ...state.activeJob };
 		this.workCarry = state.workCarry;
 		this.availableWorkUnits = state.availableWorkUnits;
+		this.supervisorQuiesceRequested = state.supervisorQuiesceRequested;
 		this.memory.writeIoValue(IO_GEO_CTRL, this.memory.readIoU32(IO_GEO_CTRL) & ~GEO_CTRL_ABORT);
 		this.scheduleNextService(nowCycles);
+	}
+
+	public beginSupervisorQuiesce(): void {
+		this.supervisorQuiesceRequested = true;
+		this.notifySupervisorBoundary();
+	}
+
+	public supervisorQuiescent(): boolean {
+		return this.phase !== GEOMETRY_CONTROLLER_PHASE_BUSY;
+	}
+
+	public leaveSupervisorContext(): void {
+		this.supervisorQuiesceRequested = false;
+	}
+
+	public enterSupervisorFaultContext(): void {
+		this.scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
+		this.phase = GEOMETRY_CONTROLLER_PHASE_IDLE;
+		this.activeJob = null;
+		this.workCarry = 0;
+		this.availableWorkUnits = 0;
+		this.supervisorQuiesceRequested = true;
+		this.memory.writeIoValue(IO_GEO_CMD, 0);
+		this.memory.writeValue(IO_GEO_STATUS, 0);
+		this.memory.writeValue(IO_GEO_PROCESSED, 0);
+		this.memory.writeValue(IO_GEO_FAULT, 0);
+	}
+
+	private notifySupervisorBoundary(): void {
+		if (this.supervisorQuiesceRequested) {
+			this.scheduler.scheduleDeviceService(DEVICE_SERVICE_SYSTEM, this.scheduler.currentNowCycles());
+		}
 	}
 
 	public onCtrlWrite(_nowCycles: number): void {
@@ -357,6 +398,7 @@ export class GeometryController {
 		this.memory.writeValue(IO_GEO_PROCESSED, processed >>> 0);
 		this.memory.writeValue(IO_GEO_FAULT, 0);
 		this.irq.raise(IRQ_GEO_DONE);
+		this.notifySupervisorBoundary();
 	}
 
 	private finishError(code: number, recordIndex: number): void {
@@ -368,6 +410,7 @@ export class GeometryController {
 		this.memory.writeValue(IO_GEO_STATUS, GEO_STATUS_DONE | GEO_STATUS_ERROR);
 		this.memory.writeValue(IO_GEO_FAULT, packFault(code, recordIndex));
 		this.irq.raise(IRQ_GEO_ERROR);
+		this.notifySupervisorBoundary();
 	}
 
 	private finishRejected(code: number): void {
@@ -380,5 +423,6 @@ export class GeometryController {
 		this.memory.writeValue(IO_GEO_PROCESSED, 0);
 		this.memory.writeValue(IO_GEO_FAULT, packFault(code, GEO_FAULT_RECORD_INDEX_NONE));
 		this.irq.raise(IRQ_GEO_ERROR);
+		this.notifySupervisorBoundary();
 	}
 }

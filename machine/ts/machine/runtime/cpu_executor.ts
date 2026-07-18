@@ -11,21 +11,25 @@ export class CpuExecutionState {
 	constructor(private readonly runtime: Runtime) {
 	}
 
-	public runHaltedUntilIrq(state: FrameState): boolean {
+	public runStoppedCpu(state: FrameState): boolean {
 		const runtime = this.runtime;
-		const cpu = runtime.machine.cpu;
-		const gxGpu = runtime.machine.gxGpu;
+		const machine = runtime.machine;
+		const cpu = machine.cpu;
+		const gxGpu = machine.gxGpu;
 		let cycleBudgetRemaining = state.cycleBudgetRemaining;
 		let tickCompleted = runDueRuntimeTimers(runtime);
 		if (gxGpu.backendReadbackBlocksMachine()) {
 			return tickCompleted;
 		}
-		if (!cpu.isHaltedUntilIrq()) {
+		if (!cpu.isHaltedUntilIrq() && !machine.systemController.cpuHeld()) {
 			return tickCompleted;
 		}
-		const scheduler = runtime.machine.scheduler;
+		const scheduler = machine.scheduler;
 		while (true) {
-			if (cpu.enterPendingInterrupt()) {
+			if (!machine.systemController.cpuHeld() && cpu.enterPendingInterrupt()) {
+				return tickCompleted;
+			}
+			if (!cpu.isHaltedUntilIrq() && !machine.systemController.cpuHeld()) {
 				return tickCompleted;
 			}
 			if (tickCompleted) {
@@ -69,7 +73,10 @@ export class CpuExecutionState {
 		const cpu = runtime.machine.cpu;
 		let tickCompleted = runDueRuntimeTimers(runtime);
 		// start repeated-sequence-acceptable -- CPU scheduler loop mirrors external-call scheduling without extracting a callback-heavy helper.
-		while (remaining > 0 && !tickCompleted && !runtime.machine.gxGpu.backendReadbackBlocksMachine()) {
+		while (remaining > 0
+			&& !tickCompleted
+			&& !runtime.machine.gxGpu.backendReadbackBlocksMachine()
+			&& !runtime.machine.systemController.cpuHeld()) {
 			if (cpu.isMemoryWriteBlocked()) {
 				const nextDeadline = scheduler.nextDeadline();
 				const deadlineBudget = nextDeadline - scheduler.nowCycles;

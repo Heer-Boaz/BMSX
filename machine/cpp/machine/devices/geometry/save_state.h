@@ -15,6 +15,7 @@ struct GeometryControllerState {
 	std::optional<GeometryJobState> activeJob;
 	int64_t workCarry = 0;
 	uint32_t availableWorkUnits = 0;
+	bool supervisorQuiesceRequested = false;
 };
 
 } // namespace bmsx

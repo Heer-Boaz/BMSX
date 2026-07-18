@@ -23,7 +23,7 @@ import {
 } from '../../machine/ts/machine/bus/io';
 import { IO_WORD_SIZE } from '../../machine/ts/machine/memory/map';
 import { encodeSignedFix16 } from '../../machine/ts/machine/common/numeric';
-import { AcceptedInterruptKind, CPU } from '../../machine/ts/machine/cpu/cpu';
+import { AcceptedInterruptKind } from '../../machine/ts/machine/cpu/cpu';
 import { InputController } from '../../machine/ts/machine/devices/input/controller';
 import {
 	INP_OUTPUT_CTRL_APPLY,
@@ -35,7 +35,7 @@ import {
 	type InputControllerSnapshot,
 } from '../../machine/ts/machine/devices/input/contracts';
 import { Memory } from '../../machine/ts/machine/memory/memory';
-import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
+import { Machine } from '../../machine/ts/machine/machine';
 
 const HID_KEY_X = 27;
 const HID_KEY_F2 = 59;
@@ -61,7 +61,7 @@ function writeSample(snapshot: InputControllerSnapshot, keyWords: Uint32Array): 
 
 function createHarness(): {
 	memory: Memory;
-	cpu: CPU;
+	machine: Machine;
 	controller: InputController;
 	vibrations: FakeVibration[];
 	samples: () => number;
@@ -69,8 +69,6 @@ function createHarness(): {
 	setSupervisorRequestLine: (high: boolean) => void;
 } {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
-	const irq = new IrqController(memory);
-	const cpu = new CPU(memory, irq);
 	const vibrations: FakeVibration[] = [];
 	const keyWords = new Uint32Array(INPUT_CONTROLLER_KEY_WORD_COUNT);
 	keyWords[HID_KEY_X >>> 5] = 1 << (HID_KEY_X & 31);
@@ -89,11 +87,12 @@ function createHarness(): {
 		},
 		setRuntimeInputFrameDurationMs() { },
 	};
-	const controller = new InputController(memory, input, cpu);
-	controller.reset();
+	const machine = new Machine(memory, input);
+	machine.resetDevices();
+	const controller = machine.inputController;
 	return {
 		memory,
-		cpu,
+		machine,
 		controller,
 		vibrations,
 		samples: () => sampleCount,
@@ -168,7 +167,7 @@ test('input controller exposes the VBlank sample edge without leaking the sample
 	assert.equal(harness.controller.captureState().sampleArmed, false);
 });
 
-test('input controller drives one system NMI edge from the supervisor request line', () => {
+test('input controller raises one supervisor request edge and the device fence vectors NMI', () => {
 	const harness = createHarness();
 	const restoredState = harness.controller.captureState();
 	restoredState.supervisorRequestLineHigh = true;
@@ -179,16 +178,18 @@ test('input controller drives one system NMI edge from the supervisor request li
 	assert.equal(harness.samples(), 0);
 	assert.equal(harness.memory.readIoU32(IO_INP_STATUS), 0);
 	assert.equal(harness.memory.readIoU32(IO_INP_KEYS + (HID_KEY_F2 >>> 5) * IO_WORD_SIZE), 0);
-	assert.equal(harness.cpu.peekPendingInterrupt(), AcceptedInterruptKind.None);
+	assert.equal(harness.machine.cpu.peekPendingInterrupt(), AcceptedInterruptKind.None);
 	harness.memory.writeValue(IO_INP_CTRL, INP_CTRL_RESET);
 	harness.controller.onVblankEdge(2, 2);
-	assert.equal(harness.cpu.peekPendingInterrupt(), AcceptedInterruptKind.None);
+	assert.equal(harness.machine.cpu.peekPendingInterrupt(), AcceptedInterruptKind.None);
 
 	harness.setSupervisorRequestLine(false);
 	harness.controller.onVblankEdge(3, 3);
 	harness.setSupervisorRequestLine(true);
 	harness.controller.onVblankEdge(4, 4);
 
-	assert.equal(harness.cpu.peekPendingInterrupt(), AcceptedInterruptKind.NonMaskable);
+	assert.equal(harness.machine.cpu.peekPendingInterrupt(), AcceptedInterruptKind.None);
+	harness.machine.systemController.onService();
+	assert.equal(harness.machine.cpu.peekPendingInterrupt(), AcceptedInterruptKind.NonMaskable);
 	assert.equal(harness.controller.captureState().supervisorRequestLineHigh, true);
 });

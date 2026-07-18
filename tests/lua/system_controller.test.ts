@@ -2,9 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { IO_SYS_CONTROL, SYS_CONTROL_RESET } from '../../machine/ts/machine/bus/io';
-import { CPU } from '../../machine/ts/machine/cpu/cpu';
-import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
-import { SystemController } from '../../machine/ts/machine/devices/system/controller';
+import { Machine } from '../../machine/ts/machine/machine';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { PROGRAM_STATIC_RAM_BASE } from '../../machine/ts/machine/memory/map';
 import { linkBootProgramImages } from '../../machine/ts/machine/program/linker';
@@ -54,10 +52,9 @@ function compileProgram(source: string, path: string, programDomain: 'cart' | 's
 
 test('system control reset command is write-only, self-clearing, and save-state visible', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
-	const irq = new IrqController(memory);
-	const cpu = new CPU(memory, irq);
-	const controller = new SystemController(memory, cpu);
-	controller.reset();
+	const machine = new Machine(memory, new SystemResetInputSource());
+	machine.resetDevices();
+	const controller = machine.systemController;
 
 	memory.writeMappedU32LE(IO_SYS_CONTROL, SYS_CONTROL_RESET);
 	assert.equal(memory.readIoU32(IO_SYS_CONTROL), 0);

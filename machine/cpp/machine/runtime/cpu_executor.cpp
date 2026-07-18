@@ -28,20 +28,24 @@ void dispatchRuntimeTimer(Runtime& runtime, uint8_t kind, uint8_t payload) {
 
 } // namespace
 
-bool CpuExecutionState::runHaltedUntilIrq(Runtime& runtime, FrameState& frameState) {
+bool CpuExecutionState::runStoppedCpu(Runtime& runtime, FrameState& frameState) {
 	auto& cpu = runtime.machine.cpu;
 	auto& gxGpu = runtime.machine.gxGpu;
+	auto& system = runtime.machine.systemController;
 	int& cycleBudgetRemaining = frameState.cycleBudgetRemaining;
 	bool tickCompleted = runDueRuntimeTimers(runtime);
 	if (gxGpu.backendReadbackBlocksMachine()) {
 		return tickCompleted;
 	}
-	if (!cpu.isHaltedUntilIrq()) {
+	if (!cpu.isHaltedUntilIrq() && !system.cpuHeld()) {
 		return tickCompleted;
 	}
 	auto& scheduler = runtime.machine.scheduler;
 	while (true) {
-		if (cpu.enterPendingInterrupt()) {
+		if (!system.cpuHeld() && cpu.enterPendingInterrupt()) {
+			return tickCompleted;
+		}
+		if (!cpu.isHaltedUntilIrq() && !system.cpuHeld()) {
 			return tickCompleted;
 		}
 		if (tickCompleted) {
@@ -84,7 +88,10 @@ RunResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState& frameSt
 	int remaining = frameState.cycleBudgetRemaining;
 	RunResult result = RunResult::Yielded;
 	bool tickCompleted = runDueRuntimeTimers(runtime);
-	while (remaining > 0 && !tickCompleted && !machine.gxGpu.backendReadbackBlocksMachine()) {
+	while (remaining > 0
+		&& !tickCompleted
+		&& !machine.gxGpu.backendReadbackBlocksMachine()
+		&& !machine.systemController.cpuHeld()) {
 		if (cpu.isMemoryWriteBlocked()) {
 			const i64 nextDeadline = scheduler.nextDeadline();
 			const i64 deadlineBudget = nextDeadline - scheduler.nowCycles();

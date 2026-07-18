@@ -20,6 +20,11 @@ DmaController::DmaController(Memory& memory, CPU& cpu, IrqController& irq, Devic
 	m_memory.mapIoWrite(IO_DMA_READ_ADDR, this, &DmaController::onAddressWriteThunk);
 	m_memory.mapIoWrite(IO_DMA_WRITE_ADDR, this, &DmaController::onAddressWriteThunk);
 	m_memory.mapIoWrite(IO_DMA_TRIGGER, this, &DmaController::onTriggerWriteThunk);
+	m_memory.mapIoWriteReady(IO_DMA_TRIGGER, &DmaController::triggerWriteReadyThunk);
+}
+
+bool DmaController::triggerWriteReadyThunk(void* context, u32) {
+	return !static_cast<DmaController*>(context)->m_supervisorQuiesceRequested;
 }
 
 void DmaController::onControlWriteThunk(void* context, u32, Value, MappedBusSignals) {
@@ -145,6 +150,13 @@ void DmaController::reset() {
 	m_apuDmaWriteReady = false;
 	m_serviceActive = false;
 	m_restorePending = false;
+	m_supervisorQuiesceRequested = false;
+	m_userReadAddressWord = 0u;
+	m_userWriteAddressWord = 0u;
+	m_userTransferCountWord = 0u;
+	m_userControlWord = 0u;
+	m_userStatusWord = 0u;
+	m_userTimingCarry = 0;
 	m_memory.writeIoValue(IO_DMA_READ_ADDR, valueNumber(0.0));
 	m_memory.writeIoValue(IO_DMA_WRITE_ADDR, valueNumber(0.0));
 	m_memory.writeIoValue(IO_DMA_TRANSFER_COUNT, valueNumber(0.0));
@@ -174,6 +186,7 @@ void DmaController::onService(i64) {
 	}
 	m_serviceActive = false;
 	if (!busy()) {
+		notifySupervisorBoundary();
 		return;
 	}
 	if (m_memory.readIoU32(IO_DMA_TRANSFER_COUNT) == 0u) {
@@ -181,7 +194,10 @@ void DmaController::onService(i64) {
 		return;
 	}
 	if (!requestAsserted()) {
-		m_timingCarry = 0;
+		if (!m_supervisorQuiesceRequested) {
+			m_timingCarry = 0;
+		}
+		notifySupervisorBoundary();
 		return;
 	}
 	admitBlock(blockDeadline);
@@ -217,6 +233,7 @@ void DmaController::finishTransfer() {
 	m_memory.writeIoValue(IO_DMA_STATUS, valueNumber(static_cast<f64>(DMA_STATUS_DONE)));
 	m_irq.raise(IRQ_DMA_DONE);
 	resumeCpuPortWrites();
+	notifySupervisorBoundary();
 }
 
 DmaControllerState DmaController::captureState() const {
@@ -229,6 +246,13 @@ DmaControllerState DmaController::captureState() const {
 	state.timingCarry = m_timingCarry;
 	state.scheduledBlockWords = m_scheduledBlockWords;
 	state.scheduledBlockCycles = m_scheduledBlockWords == 0u ? 0 : m_serviceDeadline - m_scheduler.currentNowCycles();
+	state.supervisorQuiesceRequested = m_supervisorQuiesceRequested;
+	state.userReadAddressWord = m_userReadAddressWord;
+	state.userWriteAddressWord = m_userWriteAddressWord;
+	state.userTransferCountWord = m_userTransferCountWord;
+	state.userControlWord = m_userControlWord;
+	state.userStatusWord = m_userStatusWord;
+	state.userTimingCarry = m_userTimingCarry;
 	return state;
 }
 
@@ -245,6 +269,13 @@ void DmaController::restoreState(const DmaControllerState& state, i64 nowCycles)
 	m_serviceDeadline = nowCycles + state.scheduledBlockCycles;
 	m_serviceActive = false;
 	m_restorePending = true;
+	m_supervisorQuiesceRequested = state.supervisorQuiesceRequested;
+	m_userReadAddressWord = state.userReadAddressWord;
+	m_userWriteAddressWord = state.userWriteAddressWord;
+	m_userTransferCountWord = state.userTransferCountWord;
+	m_userControlWord = state.userControlWord;
+	m_userStatusWord = state.userStatusWord;
+	m_userTimingCarry = state.userTimingCarry;
 }
 
 void DmaController::postLoad() {
@@ -253,6 +284,77 @@ void DmaController::postLoad() {
 		m_scheduler.scheduleDeviceService(DEVICE_SERVICE_DMA, m_serviceDeadline);
 	}
 	resumeCpuPortWrites();
+}
+
+void DmaController::beginSupervisorQuiesce() {
+	m_supervisorQuiesceRequested = true;
+	requestInputChanged();
+	notifySupervisorBoundary();
+}
+
+bool DmaController::hasAdmittedGxGpuWriteBlock() const {
+	return m_scheduledBlockWords != 0u && ownsGxGpuWritePort();
+}
+
+void DmaController::enterSupervisorContext() {
+	m_userReadAddressWord = m_memory.readIoU32(IO_DMA_READ_ADDR);
+	m_userWriteAddressWord = m_memory.readIoU32(IO_DMA_WRITE_ADDR);
+	m_userTransferCountWord = m_memory.readIoU32(IO_DMA_TRANSFER_COUNT);
+	m_userControlWord = m_memory.readIoU32(IO_DMA_CONTROL);
+	m_userStatusWord = m_memory.readIoU32(IO_DMA_STATUS);
+	m_userTimingCarry = m_timingCarry;
+	clearLiveTransfer();
+	m_supervisorQuiesceRequested = false;
+}
+
+void DmaController::enterSupervisorFaultContext() {
+	clearLiveTransfer();
+	m_userReadAddressWord = 0u;
+	m_userWriteAddressWord = 0u;
+	m_userTransferCountWord = 0u;
+	m_userControlWord = 0u;
+	m_userStatusWord = 0u;
+	m_userTimingCarry = 0;
+	m_supervisorQuiesceRequested = false;
+}
+
+void DmaController::leaveSupervisorContext() {
+	clearLiveTransfer();
+	m_memory.writeIoValue(IO_DMA_READ_ADDR, valueNumber(static_cast<f64>(m_userReadAddressWord)));
+	m_memory.writeIoValue(IO_DMA_WRITE_ADDR, valueNumber(static_cast<f64>(m_userWriteAddressWord)));
+	m_memory.writeIoValue(IO_DMA_TRANSFER_COUNT, valueNumber(static_cast<f64>(m_userTransferCountWord)));
+	m_memory.writeIoValue(IO_DMA_CONTROL, valueNumber(static_cast<f64>(m_userControlWord)));
+	m_memory.writeIoValue(IO_DMA_STATUS, valueNumber(static_cast<f64>(m_userStatusWord)));
+	m_timingCarry = m_userTimingCarry;
+	m_supervisorQuiesceRequested = false;
+	m_userReadAddressWord = 0u;
+	m_userWriteAddressWord = 0u;
+	m_userTransferCountWord = 0u;
+	m_userControlWord = 0u;
+	m_userStatusWord = 0u;
+	m_userTimingCarry = 0;
+	requestInputChanged();
+}
+
+void DmaController::clearLiveTransfer() {
+	m_scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
+	m_timingCarry = 0;
+	m_scheduledBlockWords = 0u;
+	m_serviceDeadline = 0;
+	m_serviceActive = false;
+	m_restorePending = false;
+	m_memory.writeIoValue(IO_DMA_READ_ADDR, valueNumber(0.0));
+	m_memory.writeIoValue(IO_DMA_WRITE_ADDR, valueNumber(0.0));
+	m_memory.writeIoValue(IO_DMA_TRANSFER_COUNT, valueNumber(0.0));
+	m_memory.writeIoValue(IO_DMA_CONTROL, valueNumber(0.0));
+	m_memory.writeIoValue(IO_DMA_STATUS, valueNumber(0.0));
+	m_memory.writeIoValue(IO_DMA_TRIGGER, valueNumber(0.0));
+}
+
+void DmaController::notifySupervisorBoundary() {
+	if (m_supervisorQuiesceRequested && supervisorQuiescent()) {
+		m_scheduler.scheduleDeviceService(DEVICE_SERVICE_SYSTEM, m_scheduler.currentNowCycles());
+	}
 }
 
 void DmaController::admitBlock(i64 anchorCycle) {
@@ -282,14 +384,23 @@ void DmaController::requestInputChanged() {
 		return;
 	}
 	if (!requestAsserted()) {
-		m_timingCarry = 0;
+		if (!m_supervisorQuiesceRequested) {
+			m_timingCarry = 0;
+		}
+		notifySupervisorBoundary();
 		return;
 	}
 	admitBlock(m_scheduler.currentNowCycles());
 }
 
 bool DmaController::requestAsserted() const {
-	switch (m_memory.readIoU32(IO_DMA_CONTROL) & DMA_CONTROL_REQUEST_MASK) {
+	const u32 request = m_memory.readIoU32(IO_DMA_CONTROL) & DMA_CONTROL_REQUEST_MASK;
+	if (m_supervisorQuiesceRequested
+		&& request != DMA_CONTROL_REQUEST_GX_WRITE
+		&& request != DMA_CONTROL_REQUEST_GX_READ) {
+		return false;
+	}
+	switch (request) {
 	case DMA_CONTROL_REQUEST_FORCE:
 		return true;
 	case DMA_CONTROL_REQUEST_GX_WRITE:

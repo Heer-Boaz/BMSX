@@ -21,6 +21,7 @@ import {
 	DEVICE_SERVICE_DMA,
 	DEVICE_SERVICE_GEO,
 	DEVICE_SERVICE_GPU,
+	DEVICE_SERVICE_SYSTEM,
 	DeviceScheduler,
 } from './scheduler/device';
 
@@ -49,7 +50,6 @@ export class Machine {
 	) {
 		this.irqController = new IrqController(this.memory);
 		this.cpu = new CPU(this.memory, this.irqController);
-		this.systemController = new SystemController(this.memory, this.cpu);
 		this.scheduler = new DeviceScheduler(this.cpu);
 		this.audioOutput = new ApuOutputMixer();
 		this.dmaController = new DmaController(this.memory, this.cpu, this.irqController, this.scheduler);
@@ -57,7 +57,16 @@ export class Machine {
 		this.geometryController = new GeometryController(this.memory, this.irqController, this.scheduler);
 		this.gxGpu = new GxGpu(this.memory, this.irqController, this.scheduler, this.dmaController);
 		this.gxGte = new GxGte(this.memory);
-		this.inputController = new InputController(this.memory, input, this.cpu);
+		this.systemController = new SystemController(
+			this.memory,
+			this.cpu,
+			this.scheduler,
+			this.irqController,
+			this.dmaController,
+			this.geometryController,
+			this.gxGpu,
+		);
+		this.inputController = new InputController(this.memory, input, this.systemController);
 	}
 
 	public initializeSystemIo(): void {
@@ -67,7 +76,6 @@ export class Machine {
 	}
 
 	public resetDevices(): void {
-		this.systemController.reset();
 		this.irqController.reset();
 		this.inputController.reset();
 		this.dmaController.reset();
@@ -75,6 +83,7 @@ export class Machine {
 		this.gxGpu.reset();
 		this.gxGte.reset();
 		this.audioController.reset();
+		this.systemController.reset();
 	}
 
 	public refreshDeviceTimings(timing: MachineTiming, nowCycles: number): void {
@@ -106,6 +115,9 @@ export class Machine {
 				return;
 			case DEVICE_SERVICE_GPU:
 				this.gxGpu.onService(nowCycles);
+				return;
+			case DEVICE_SERVICE_SYSTEM:
+				this.systemController.onService();
 				return;
 			default:
 				throw new Error(`Runtime fault: unknown device service kind ${deviceKind}.`);

@@ -11,15 +11,21 @@ void restoreSharedDeviceState(
 	const GeometryControllerState& geometry,
 	const IrqControllerState& irq,
 	const AudioControllerState& audio,
-	const InputControllerState& input,
-	const SystemControllerState& systemControl
+	const InputControllerState& input
 ) {
-	machine.systemController.restoreState(systemControl);
 	machine.dmaController.restoreState(dma, machine.scheduler.nowCycles());
 	machine.geometryController.restoreState(geometry, machine.scheduler.nowCycles());
 	machine.irqController.restoreState(irq);
 	machine.audioController.restoreState(audio, machine.scheduler.nowCycles());
 	machine.inputController.restoreState(input);
+}
+
+void finishDeviceRestore(Machine& machine, const SystemControllerState& systemControl) {
+	// GPU/APU restore their request lines while DMA admission is held. Publish
+	// those lines once, then restore the system phase that owns their fences.
+	machine.dmaController.postLoad();
+	machine.systemController.restoreState(systemControl);
+	machine.systemController.postLoad();
 }
 
 } // namespace
@@ -42,10 +48,10 @@ MachineState captureMachineState(Machine& machine) {
 }
 
 void restoreMachineState(Machine& machine, const MachineState& state) {
-	restoreSharedDeviceState(machine, state.dma, state.geometry, state.irq, state.audio, state.input, state.systemControl);
+	restoreSharedDeviceState(machine, state.dma, state.geometry, state.irq, state.audio, state.input);
 	machine.gxGpu.restoreState(state.gxGpu);
-	machine.dmaController.postLoad();
 	machine.gxGte.restoreState(state.gxGte);
+	finishDeviceRestore(machine, state.systemControl);
 }
 
 MachineSaveState captureMachineSaveState(Machine& machine) {
@@ -67,10 +73,10 @@ MachineSaveState captureMachineSaveState(Machine& machine) {
 void restoreMachineSaveState(Machine& machine, const MachineSaveState& state) {
 	machine.memory.restoreSaveState(state.memory);
 	machine.cpu.stringPool().restoreState(state.stringPool);
-	restoreSharedDeviceState(machine, state.dma, state.geometry, state.irq, state.audio, state.input, state.systemControl);
+	restoreSharedDeviceState(machine, state.dma, state.geometry, state.irq, state.audio, state.input);
 	machine.gxGpu.restoreSaveState(state.gxGpu);
-	machine.dmaController.postLoad();
 	machine.gxGte.restoreState(state.gxGte);
+	finishDeviceRestore(machine, state.systemControl);
 }
 
 } // namespace bmsx

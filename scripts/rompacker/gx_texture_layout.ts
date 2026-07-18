@@ -2,7 +2,13 @@ import {
 	GX_GPU_VRAM_HEIGHT,
 	GX_GPU_VRAM_WIDTH,
 } from '../../machine/ts/machine/devices/gx/vram_address';
-import { GX_PALETTE4_CLUT_WORDS } from './gx_texture';
+import {
+	GX_PALETTE4_CLUT_WORDS,
+	GX_SYSTEM_VRAM_HEIGHT,
+	GX_SYSTEM_VRAM_WIDTH,
+	GX_SYSTEM_VRAM_X,
+	GX_SYSTEM_VRAM_Y,
+} from './gx_texture';
 import { GX_CART_TEXTURE_GROUP_ID_LIMIT } from './texture_atlas_contract';
 
 export type GxTextureBuildMode = 'direct16' | 'palette4';
@@ -54,6 +60,14 @@ function slotRects(slot: GxTextureSlot): GxVramRect[] {
 
 export function validateGxTextureLayout(layout: GxTextureLayout): void {
 	const reservedEntries = Object.entries(layout.reserved);
+	const system = layout.reserved.system;
+	if (!system
+		|| system.x !== GX_SYSTEM_VRAM_X
+		|| system.y !== GX_SYSTEM_VRAM_Y
+		|| system.width !== GX_SYSTEM_VRAM_WIDTH
+		|| system.height !== GX_SYSTEM_VRAM_HEIGHT) {
+		throw new Error(`[RomPacker] GX reserved region 'system' must be ${GX_SYSTEM_VRAM_WIDTH}x${GX_SYSTEM_VRAM_HEIGHT} at (${GX_SYSTEM_VRAM_X},${GX_SYSTEM_VRAM_Y}).`);
+	}
 	for (let index = 0; index < reservedEntries.length; index += 1) {
 		const [name, rect] = reservedEntries[index];
 		if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {

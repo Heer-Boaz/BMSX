@@ -1,7 +1,5 @@
 #include "machine/bus/io.h"
-#include "machine/cpu/cpu.h"
-#include "machine/devices/input/controller.h"
-#include "machine/devices/irq/controller.h"
+#include "machine/machine.h"
 #include "machine/memory/map.h"
 #include "machine/memory/memory.h"
 
@@ -48,43 +46,41 @@ public:
 struct InputControllerHarness {
 	std::array<bmsx::u8, 1> emptyRom{{0}};
 	bmsx::Memory memory;
-	bmsx::IrqController irq;
-	bmsx::CPU cpu;
 	TestInput input;
-	bmsx::InputController controller;
+	bmsx::Machine machine;
 
 	InputControllerHarness()
 		: memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, { emptyRom.data(), 0u } })
-		, irq(memory)
-		, cpu(memory, irq)
-		, controller(memory, input, cpu) {
-		irq.reset();
-		controller.reset();
+		, machine(memory, input) {
+		machine.resetDevices();
 	}
 };
 
 void testSystemNmiEdgeDoesNotPublishAnUnarmedSnapshot() {
 	InputControllerHarness harness;
-	bmsx::InputControllerState restored = harness.controller.captureState();
+	bmsx::InputController& controller = harness.machine.inputController;
+	bmsx::InputControllerState restored = controller.captureState();
 	restored.supervisorRequestLineHigh = true;
-	harness.controller.restoreState(restored);
+	controller.restoreState(restored);
 	harness.input.supervisorRequestLine = true;
-	harness.controller.onVblankEdge(1.0, 1u);
+	controller.onVblankEdge(1.0, 1u);
 
 	require(harness.input.fullSampleCount == 0, "unarmed VBlank does not sample the full input frame");
 	require(harness.memory.readIoU32(bmsx::IO_INP_STATUS) == 0u, "unarmed VBlank leaves the sample sequence unchanged");
-	require(harness.cpu.peekPendingInterrupt() == bmsx::AcceptedInterruptKind::None, "a restored high request line is not a new edge");
+	require(harness.machine.cpu.peekPendingInterrupt() == bmsx::AcceptedInterruptKind::None, "a restored high request line is not a new edge");
 
 	harness.memory.writeMappedU32LE(bmsx::IO_INP_CTRL, bmsx::INP_CTRL_RESET);
-	harness.controller.onVblankEdge(2.0, 2u);
-	require(harness.cpu.peekPendingInterrupt() == bmsx::AcceptedInterruptKind::None, "guest ICU reset cannot synthesize a physical edge");
+	controller.onVblankEdge(2.0, 2u);
+	require(harness.machine.cpu.peekPendingInterrupt() == bmsx::AcceptedInterruptKind::None, "guest ICU reset cannot synthesize a physical edge");
 
 	harness.input.supervisorRequestLine = false;
-	harness.controller.onVblankEdge(3.0, 3u);
+	controller.onVblankEdge(3.0, 3u);
 	harness.input.supervisorRequestLine = true;
-	harness.controller.onVblankEdge(4.0, 4u);
-	require(harness.cpu.peekPendingInterrupt() == bmsx::AcceptedInterruptKind::NonMaskable, "a new supervisor-request rising edge requests NMI");
-	require(harness.controller.captureState().supervisorRequestLineHigh, "save-state retains the physical edge level");
+	controller.onVblankEdge(4.0, 4u);
+	require(harness.machine.cpu.peekPendingInterrupt() == bmsx::AcceptedInterruptKind::None, "the ICU edge waits for the common device fence");
+	harness.machine.systemController.onService();
+	require(harness.machine.cpu.peekPendingInterrupt() == bmsx::AcceptedInterruptKind::NonMaskable, "the completed fence requests NMI");
+	require(controller.captureState().supervisorRequestLineHigh, "save-state retains the physical edge level");
 }
 
 void testArmedVblankPublishesTheFullSnapshot() {
@@ -92,7 +88,7 @@ void testArmedVblankPublishesTheFullSnapshot() {
 	InputControllerHarness harness;
 	harness.input.setKey(f2Usage, true);
 	harness.memory.writeMappedU32LE(bmsx::IO_INP_CTRL, bmsx::INP_CTRL_ARM);
-	harness.controller.onVblankEdge(1.0, 7u);
+	harness.machine.inputController.onVblankEdge(1.0, 7u);
 
 	require(harness.input.fullSampleCount == 1, "armed VBlank samples one full input frame");
 	require(harness.memory.readIoU32(bmsx::IO_INP_STATUS) == 1u, "armed VBlank advances the sample sequence");

@@ -73,6 +73,7 @@ import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX
 import { buildLuaSemanticFrontend, type LuaBoundReference, type LuaSemanticFrontend, type LuaSemanticFrontendFile } from './semantic/frontend';
 import { MMIO_REGISTER_SPEC_BY_ADDRESS, MMIO_REGISTER_SPEC_BY_NAME, type MmioWriteRequirement } from '../machine/bus/registers';
 import { ValueKindFlowAnalyzer, type SymbolFlowState } from './compiler/compile_value_flow';
+import { evaluateCompileTimeNumberBinaryOperator } from './compiler/compile_time_number';
 import { SYSTEM_ROM_BOOT_PRIMITIVE_NAMES, SYSTEM_ROM_BOOT_SYMBOL_NAMES, SYSTEM_ROM_BOOT_SYMBOL_NAME_SET, SYSTEM_ROM_VECTOR_HANDLER_NAME_SET } from './compiler/system_boot_symbols';
 import { LuaSyntaxError } from './errors';
 import { Decl } from './semantic/model';
@@ -86,7 +87,6 @@ import {
 	classifyFunctionDeclarationTarget,
 } from './compiler/target_semantics';
 import { getMemoryAccessKindForName, MemoryAccessKind } from '../machine/memory/access_kind';
-import { luaFloorDivide, luaModulo } from './numeric';
 import { writeLE16, writeLE32 } from '../common/endian';
 import { isReservedIntrinsicName } from './semantic/common';
 import { IO_IRQ_FLAGS } from '../machine/bus/io';
@@ -3114,38 +3114,7 @@ class FunctionBuilder {
 		const left = this.evaluateCompileTimeNumber(expression.left);
 		const right = this.evaluateCompileTimeNumber(expression.right);
 		if ((!left && left !== 0) || (!right && right !== 0)) return;
-		return this.evaluateCompileTimeNumberBinaryOperator(expression.operator, left, right);
-	}
-
-	private evaluateCompileTimeNumberBinaryOperator(operator: LuaBinaryOperator, left: number, right: number): number | undefined {
-		switch (operator) {
-			case LuaBinaryOperator.BitwiseOr:
-				return left | right;
-			case LuaBinaryOperator.BitwiseXor:
-				return left ^ right;
-			case LuaBinaryOperator.BitwiseAnd:
-				return left & right;
-			case LuaBinaryOperator.ShiftLeft:
-				return left << (right & 31);
-			case LuaBinaryOperator.ShiftRight:
-				return left >> (right & 31);
-			case LuaBinaryOperator.Add:
-				return left + right;
-			case LuaBinaryOperator.Subtract:
-				return left - right;
-			case LuaBinaryOperator.Multiply:
-				return left * right;
-			case LuaBinaryOperator.Divide:
-				return left / right;
-			case LuaBinaryOperator.FloorDivide:
-				return luaFloorDivide(left, right);
-			case LuaBinaryOperator.Modulus:
-				return luaModulo(left, right);
-			case LuaBinaryOperator.Exponent:
-				return Math.pow(left, right);
-			default:
-				return;
-		}
+		return evaluateCompileTimeNumberBinaryOperator(expression.operator, left, right);
 	}
 
 	private evaluateCompileTimeNumberBinaryInto(expression: LuaBinaryExpression): boolean {

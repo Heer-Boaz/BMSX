@@ -42,7 +42,7 @@ void ApuEventLatch::emit(u32 kind, ApuAudioSlot slot, u32 sourceAddr) {
 	m_memory.writeValue(IO_APU_EVENT_SLOT, valueNumber(static_cast<double>(slot)));
 	m_memory.writeValue(IO_APU_EVENT_SOURCE_ADDR, valueNumber(static_cast<double>(sourceAddr)));
 	m_memory.writeValue(IO_APU_EVENT_SEQ, valueNumber(static_cast<double>(m_eventSequence)));
-	m_irq.raise(IRQ_APU);
+	m_irq.raiseUser(IRQ_APU);
 }
 
 } // namespace bmsx

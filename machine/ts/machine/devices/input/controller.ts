@@ -8,8 +8,9 @@ import {
 	IO_INP_OUTPUT_PORT,
 	IO_INP_STATUS,
 } from '../../bus/io';
-import type { CPU, Value } from '../../cpu/cpu';
+import type { Value } from '../../cpu/cpu';
 import { Memory } from '../../memory/memory';
+import type { SystemController } from '../system/controller';
 import type { InputControllerState } from './save_state';
 import { InputControllerRegisterFile } from './registers';
 import { InputControllerOutputPort } from './output_port';
@@ -36,7 +37,7 @@ export class InputController {
 	public constructor(
 		private readonly memory: Memory,
 		private readonly input: InputControllerInputSource,
-		private readonly cpu: CPU,
+		private readonly system: SystemController,
 	) {
 		this.outputPort = new InputControllerOutputPort(input, this.registers, memory);
 		this.memory.mapIoWrite(IO_INP_CTRL, this, InputController.writeControl);
@@ -80,7 +81,7 @@ export class InputController {
 		}
 		const supervisorRequestLineHigh = this.input.supervisorRequestLineHigh();
 		if (supervisorRequestLineHigh && !this.supervisorRequestLineWasHigh) {
-			this.cpu.requestNonMaskableInterrupt();
+			this.system.requestSupervisorLineEdge();
 		}
 		this.supervisorRequestLineWasHigh = supervisorRequestLineHigh;
 		if (!this.sampleArmed) {

@@ -7,4 +7,5 @@ export type GeometryControllerState = {
 	activeJob: GeometryJobState | null;
 	workCarry: number;
 	availableWorkUnits: number;
+	supervisorQuiesceRequested: boolean;
 };

@@ -16,6 +16,7 @@ GeometryControllerState GeometryController::captureState() const {
 	state.activeJob = m_activeJob;
 	state.workCarry = m_workCarry;
 	state.availableWorkUnits = m_availableWorkUnits;
+	state.supervisorQuiesceRequested = m_supervisorQuiesceRequested;
 	return state;
 }
 
@@ -27,6 +28,7 @@ void GeometryController::restoreState(const GeometryControllerState& state, int6
 	m_activeJob = state.activeJob;
 	m_workCarry = state.workCarry;
 	m_availableWorkUnits = state.availableWorkUnits;
+	m_supervisorQuiesceRequested = state.supervisorQuiesceRequested;
 	m_memory.writeIoValue(IO_GEO_CTRL, valueNumber(static_cast<double>(m_memory.readIoU32(IO_GEO_CTRL) & ~GEO_CTRL_ABORT)));
 	scheduleNextService(nowCycles);
 }

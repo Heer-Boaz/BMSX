@@ -1,6 +1,7 @@
 import {
 	LuaSyntaxKind,
 	LuaUnaryOperator,
+	type LuaBinaryExpression,
 	type LuaBooleanLiteralExpression,
 	type LuaChunk,
 	type LuaExpression,
@@ -11,6 +12,7 @@ import {
 	type LuaTableConstructorExpression,
 	type LuaUnaryExpression,
 } from '../../syntax/ast';
+import { evaluateCompileTimeNumberBinaryOperator } from '../compile_time_number';
 import type { LuaSemanticFrontendFile } from '../../semantic/frontend';
 import { getBoundIdentifierReference as getResolvedIdentifierReference } from '../bound_reference';
 import { visitNamedTableFields } from './expression_paths';
@@ -59,6 +61,16 @@ const evaluateModuleConstLiteral = (
 			return operand !== undefined && operand.kind === 'number'
 				? { kind: 'number', value: -operand.value }
 				: undefined;
+		}
+		case LuaSyntaxKind.BinaryExpression: {
+			const binary = expression as LuaBinaryExpression;
+			const left = evaluateModuleConstLiteral(binary.left, constValuesBySymbol, semantics);
+			const right = evaluateModuleConstLiteral(binary.right, constValuesBySymbol, semantics);
+			if (left?.kind !== 'number' || right?.kind !== 'number') {
+				return undefined;
+			}
+			const value = evaluateCompileTimeNumberBinaryOperator(binary.operator, left.value, right.value);
+			return value === undefined ? undefined : { kind: 'number', value };
 		}
 		default:
 			return undefined;

@@ -35,6 +35,7 @@ GxGpu::GxGpu(Memory& memory, IrqController& irq, DeviceScheduler& scheduler, Dma
 	m_memory.mapIoWriteReady(IO_GX_GPU_GP0, &GxGpu::gp0WriteReadyThunk);
 	m_memory.mapIoRead(IO_GX_GPU_GP1, this, &GxGpu::readStatusThunk);
 	m_memory.mapIoWrite(IO_GX_GPU_GP1, this, &GxGpu::writeGp1Thunk);
+	m_memory.mapIoWriteReady(IO_GX_GPU_GP1, &GxGpu::gp1WriteReadyThunk);
 }
 
 void GxGpu::reset() {
@@ -51,6 +52,86 @@ void GxGpu::reset() {
 	m_scanoutFrameStartCycle = 0;
 	m_scanoutCyclesPerFrame = 1;
 	m_scanoutTotalScanlines = 313;
+	resetGpuRegisters();
+	latchPresentationRegisters();
+	m_lastFrameCommitted = false;
+	m_vramPresentationPending = false;
+	m_supervisorQuiesceRequested = false;
+	m_supervisorIngressStopped = false;
+	clearRegisterContext(m_userContext);
+}
+
+void GxGpu::clearRegisterContext(GxGpuRegisterContextState& context) {
+	context = GxGpuRegisterContextState{};
+}
+
+void GxGpu::storeLiveRegisterContext(GxGpuRegisterContextState& context) const {
+	context.gp0Word = m_gp0Word;
+	context.gp1Word = m_gp1Word;
+	context.displayModeWord = m_displayModeWord;
+	context.statusWord = m_statusWord;
+	context.gpuReadWord = m_gpuReadWord;
+	context.drawModeWord = m_drawModeWord;
+	context.textureWindowWord = m_textureWindowWord;
+	context.drawingAreaTopLeftWord = m_drawingAreaTopLeftWord;
+	context.drawingAreaBottomRightWord = m_drawingAreaBottomRightWord;
+	context.drawingOffsetWord = m_drawingOffsetWord;
+	context.maskBitModeWord = m_maskBitModeWord;
+	context.displayStartWord = m_displayStartWord;
+	context.horizontalDisplayRangeWord = m_horizontalDisplayRangeWord;
+	context.verticalDisplayRangeWord = m_verticalDisplayRangeWord;
+	context.vramYAddressExtensionWord = m_vramYAddressExtensionWord;
+	context.scanoutInterlacedField = m_scanoutInterlacedField;
+	context.scanoutInterlacedDisplayField = m_scanoutInterlacedDisplayField;
+	context.scanoutActiveLineLsb = m_scanoutActiveLineLsb;
+	context.presentStatusWord = m_presentStatusWord;
+	context.presentDisplayModeWord = m_presentDisplayModeWord;
+	context.presentDisplayStartWord = m_presentDisplayStartWord;
+	context.presentVramYAddressExtensionWord = m_presentVramYAddressExtensionWord;
+	context.presentHorizontalDisplayRangeWord = m_presentHorizontalDisplayRangeWord;
+	context.presentVerticalDisplayRangeWord = m_presentVerticalDisplayRangeWord;
+	context.vramPresentationPending = m_vramPresentationPending;
+}
+
+void GxGpu::loadLiveRegisterContext(const GxGpuRegisterContextState& context) {
+	m_gp0Word = context.gp0Word;
+	m_gp1Word = context.gp1Word;
+	m_displayModeWord = context.displayModeWord;
+	m_statusWord = context.statusWord;
+	m_gpuReadWord = context.gpuReadWord;
+	m_drawModeWord = context.drawModeWord;
+	m_textureWindowWord = context.textureWindowWord;
+	m_drawingAreaTopLeftWord = context.drawingAreaTopLeftWord;
+	m_drawingAreaBottomRightWord = context.drawingAreaBottomRightWord;
+	m_drawingOffsetWord = context.drawingOffsetWord;
+	m_maskBitModeWord = context.maskBitModeWord;
+	m_displayStartWord = context.displayStartWord;
+	m_horizontalDisplayRangeWord = context.horizontalDisplayRangeWord;
+	m_verticalDisplayRangeWord = context.verticalDisplayRangeWord;
+	m_vramYAddressExtensionWord = context.vramYAddressExtensionWord;
+	m_scanoutInterlacedField = context.scanoutInterlacedField;
+	m_scanoutInterlacedDisplayField = context.scanoutInterlacedDisplayField;
+	m_scanoutActiveLineLsb = context.scanoutActiveLineLsb;
+	m_presentStatusWord = context.presentStatusWord;
+	m_presentDisplayModeWord = context.presentDisplayModeWord;
+	m_presentDisplayStartWord = context.presentDisplayStartWord;
+	m_presentVramYAddressExtensionWord = context.presentVramYAddressExtensionWord;
+	m_presentHorizontalDisplayRangeWord = context.presentHorizontalDisplayRangeWord;
+	m_presentVerticalDisplayRangeWord = context.presentVerticalDisplayRangeWord;
+	m_vramPresentationPending = context.vramPresentationPending;
+	m_dmaController.setGxGpuDmaDirection((m_statusWord & GX_GPU_STATUS_DMA_DIRECTION_MASK) >> GX_GPU_STATUS_DMA_DIRECTION_SHIFT);
+	m_memory.writeIoValue(IO_GX_GPU_GP0, valueNumber(static_cast<double>(m_gp0Word)));
+	writeStatusIo();
+}
+
+void GxGpu::resetTransientContext() {
+	m_commandBuffer.reset();
+	clearGp0CommandState();
+	m_gpuReadWord = 0u;
+	m_vramYAddressExtensionWord = 0u;
+	m_scanoutInterlacedField = 0u;
+	m_scanoutInterlacedDisplayField = 0u;
+	m_scanoutActiveLineLsb = 0u;
 	resetGpuRegisters();
 	latchPresentationRegisters();
 	m_lastFrameCommitted = false;
@@ -140,6 +221,9 @@ GxGpuState GxGpu::captureState() {
 	state.presentHorizontalDisplayRangeWord = m_presentHorizontalDisplayRangeWord;
 	state.presentVerticalDisplayRangeWord = m_presentVerticalDisplayRangeWord;
 	state.vramPresentationPending = m_vramPresentationPending;
+	state.supervisorQuiesceRequested = m_supervisorQuiesceRequested;
+	state.supervisorIngressStopped = m_supervisorIngressStopped;
+	state.userContext = m_userContext;
 	state.commandBuffer = m_commandBuffer.captureState();
 	return state;
 }
@@ -194,6 +278,9 @@ void GxGpu::restoreState(const GxGpuState& state) {
 	m_presentHorizontalDisplayRangeWord = state.presentHorizontalDisplayRangeWord;
 	m_presentVerticalDisplayRangeWord = state.presentVerticalDisplayRangeWord;
 	m_vramPresentationPending = state.vramPresentationPending;
+	m_supervisorQuiesceRequested = state.supervisorQuiesceRequested;
+	m_supervisorIngressStopped = state.supervisorIngressStopped;
+	m_userContext = state.userContext;
 	m_commandBuffer.restoreState(state.commandBuffer);
 	if (state.pendingCommandCycles != 0) {
 		m_pendingCommandCompletionCycle = m_scheduler.currentNowCycles() + state.pendingCommandCycles;
@@ -205,6 +292,63 @@ void GxGpu::restoreState(const GxGpuState& state) {
 	m_lastFrameCommitted = false;
 	m_memory.writeIoValue(IO_GX_GPU_GP0, valueNumber(static_cast<double>(m_gp0Word)));
 	writeStatusIo();
+}
+
+void GxGpu::beginSupervisorQuiesce() {
+	m_supervisorQuiesceRequested = true;
+	if (m_gp0IngressPhase == GX_GPU_GP0_INGRESS_COMMAND
+		&& !m_dmaController.hasAdmittedGxGpuWriteBlock()) {
+		m_supervisorIngressStopped = true;
+	}
+	updateDynamicStatusBits();
+	notifySupervisorBoundary();
+}
+
+bool GxGpu::supervisorQuiescent() {
+	synchronizeCommandExecution(m_scheduler.currentNowCycles());
+	return supervisorFenceReady();
+}
+
+bool GxGpu::supervisorFenceReady() const {
+	return m_supervisorQuiesceRequested
+		&& m_supervisorIngressStopped
+		&& m_pendingCommandCompletionCycle == 0
+		&& m_gp0Fifo.empty()
+		&& m_gp0IngressPhase == GX_GPU_GP0_INGRESS_COMMAND
+		&& m_gp0IngressWordsRemaining == 0u
+		&& m_gp0CommandWordCount == 0u
+		&& m_gp0CommandTargetWordCount == 0u
+		&& m_gp0ImageLoadWordsRemaining == 0u
+		&& m_gp0ImageLoadCommandWordCount == 0u
+		&& m_gp0PolylineWordsPerVertex == 0u
+		&& m_gp0PolylineCommandWordCount == 0u
+		&& m_commandBuffer.readback.phase() == GX_GPU_READBACK_IDLE
+		&& m_commandBuffer.commandCount == 0u
+		&& m_commandBuffer.wordCount == 0u;
+}
+
+void GxGpu::enterSupervisorContext() {
+	updateScanoutStatusBits();
+	updateDynamicStatusBits();
+	storeLiveRegisterContext(m_userContext);
+	m_supervisorQuiesceRequested = false;
+	m_supervisorIngressStopped = false;
+	resetTransientContext();
+}
+
+void GxGpu::enterSupervisorFaultContext() {
+	m_supervisorQuiesceRequested = false;
+	m_supervisorIngressStopped = false;
+	resetTransientContext();
+	clearRegisterContext(m_userContext);
+}
+
+void GxGpu::leaveSupervisorContext() {
+	m_supervisorQuiesceRequested = false;
+	m_supervisorIngressStopped = false;
+	resetTransientContext();
+	loadLiveRegisterContext(m_userContext);
+	clearRegisterContext(m_userContext);
 }
 
 GxGpuSaveState GxGpu::captureSaveState() {
@@ -232,6 +376,7 @@ u64 GxGpu::commitRenderedVramSnapshotBytes(const u8* bytes, size_t renderedComma
 		retireCommandPrefix(renderedCommandCount);
 		m_vramPresentationPending = true;
 	}
+	notifySupervisorBoundary();
 	return m_vramSnapshotSerial;
 }
 
@@ -249,17 +394,25 @@ u32 GxGpu::readGp0() {
 		m_memory.writeIoValue(IO_GX_GPU_GP0, valueNumber(static_cast<double>(m_gpuReadWord)));
 	}
 	updateDynamicStatusBits();
+	notifySupervisorBoundary();
 	return m_gpuReadWord;
 }
 
-void GxGpu::writeGp0(u32 word) {
+void GxGpu::writeGp0(u32 word, MappedBusSignals busSignals) {
 	const i64 nowCycles = m_scheduler.currentNowCycles();
 	synchronizeCommandExecution(nowCycles);
 	m_gp0Word = word;
 	m_memory.writeIoValue(IO_GX_GPU_GP0, valueNumber(static_cast<double>(m_gp0Word)));
 	acceptGp0Word(word);
 	consumeGp0Fifo(nowCycles);
+	if (m_supervisorQuiesceRequested
+		&& m_gp0IngressPhase == GX_GPU_GP0_INGRESS_COMMAND
+		&& ((busSignals & MAPPED_BUS_MASTER_DMA) == 0u
+			|| (busSignals & MAPPED_BUS_DMA_BLOCK_END) != 0u)) {
+		m_supervisorIngressStopped = true;
+	}
 	updateDynamicStatusBits();
+	notifySupervisorBoundary();
 }
 
 void GxGpu::acceptGp0Word(u32 word) {
@@ -353,6 +506,7 @@ void GxGpu::onService(i64 nowCycles) {
 }
 
 void GxGpu::synchronizeCommandExecution(i64 nowCycles) {
+	bool completed = false;
 	while (m_pendingCommandCompletionCycle != 0 && nowCycles >= m_pendingCommandCompletionCycle) {
 		const i64 commandCompletionCycle = m_pendingCommandCompletionCycle;
 		const size_t completedCommandCount = m_pendingCommandTargetCount;
@@ -365,6 +519,10 @@ void GxGpu::synchronizeCommandExecution(i64 nowCycles) {
 		if (m_commandBuffer.readback.phase() == GX_GPU_READBACK_IDLE) {
 			consumeGp0Fifo(commandCompletionCycle);
 		}
+		completed = true;
+	}
+	if (completed) {
+		notifySupervisorBoundary();
 	}
 }
 
@@ -599,6 +757,7 @@ void GxGpu::retirePresentedCommands() {
 	const size_t retiredCommands = m_commandBuffer.presentCommandCount;
 	retireCommandPrefix(retiredCommands);
 	m_vramPresentationPending = false;
+	notifySupervisorBoundary();
 }
 
 void GxGpu::retireCommandPrefix(size_t retiredCommands) {
@@ -927,7 +1086,7 @@ void GxGpu::updateCommandStatusBits() {
 	u32 commandStatusBits = 0u;
 	const bool readbackIdle = m_commandBuffer.readback.phase() == GX_GPU_READBACK_IDLE;
 	bool readyToReceiveDma = false;
-	if (readbackIdle) {
+	if (readbackIdle && !m_supervisorIngressStopped) {
 		if (m_gp0ImageLoadWordsRemaining != 0u) {
 			readyToReceiveDma = m_gp0Fifo.count() < GX_GPU_COMMAND_FIFO_WORD_CAPACITY;
 		} else if (m_gp0PolylineWordsPerVertex != 0u) {
@@ -960,7 +1119,8 @@ void GxGpu::updateCommandStatusBits() {
 	m_statusWord = (m_statusWord & ~GX_GPU_STATUS_COMMAND_STATE_MASK) | commandStatusBits;
 	// CPU stores need one physical FIFO slot; DMA packet acceptance is a
 	// separate, stricter GPUSTAT line while a command is being assembled.
-	m_dmaController.setGxGpuCpuWriteReady(m_gp0Fifo.count() < GX_GPU_COMMAND_FIFO_WORD_CAPACITY);
+	m_dmaController.setGxGpuCpuWriteReady(
+		!m_supervisorIngressStopped && m_gp0Fifo.count() < GX_GPU_COMMAND_FIFO_WORD_CAPACITY);
 }
 
 void GxGpu::updateDynamicStatusBits() {
@@ -971,16 +1131,17 @@ void GxGpu::updateDynamicStatusBits() {
 void GxGpu::updateDmaRequestStatusBit() {
 	const u32 dmaDirection = (m_statusWord & GX_GPU_STATUS_DMA_DIRECTION_MASK) >> GX_GPU_STATUS_DMA_DIRECTION_SHIFT;
 	u32 dmaRequest = 0u;
-	switch (dmaDirection) {
-	case GX_GPU_DMA_DIRECTION_FIFO:
-		dmaRequest = m_gp0Fifo.count() < GX_GPU_COMMAND_FIFO_WORD_CAPACITY ? GX_GPU_STATUS_DMA_DATA_REQUEST : 0u;
-		break;
-	case GX_GPU_DMA_DIRECTION_CPU_TO_GP0:
-		dmaRequest = m_statusWord & GX_GPU_STATUS_READY_TO_RECEIVE_DMA;
-		break;
-	case GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU:
+	if (dmaDirection == GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU) {
 		dmaRequest = m_statusWord & GX_GPU_STATUS_READY_TO_SEND_VRAM;
-		break;
+	} else if (!m_supervisorIngressStopped) {
+		switch (dmaDirection) {
+		case GX_GPU_DMA_DIRECTION_FIFO:
+			dmaRequest = m_gp0Fifo.count() < GX_GPU_COMMAND_FIFO_WORD_CAPACITY ? GX_GPU_STATUS_DMA_DATA_REQUEST : 0u;
+			break;
+		case GX_GPU_DMA_DIRECTION_CPU_TO_GP0:
+			dmaRequest = m_statusWord & GX_GPU_STATUS_READY_TO_RECEIVE_DMA;
+			break;
+		}
 	}
 	if (dmaRequest != 0u) {
 		m_statusWord |= GX_GPU_STATUS_DMA_DATA_REQUEST;
@@ -1043,7 +1204,13 @@ void GxGpu::writeStatusIo() {
 bool GxGpu::gp0WriteReady() {
 	synchronizeCommandExecution(m_scheduler.currentNowCycles());
 	updateDynamicStatusBits();
-	return m_dmaController.isGxGpuCpuPortWriteReady();
+	return !m_supervisorIngressStopped && m_dmaController.isGxGpuCpuPortWriteReady();
+}
+
+void GxGpu::notifySupervisorBoundary() {
+	if (supervisorFenceReady()) {
+		m_scheduler.scheduleDeviceService(DEVICE_SERVICE_SYSTEM, m_scheduler.currentNowCycles());
+	}
 }
 
 u64 GxGpu::readGp0Thunk(void* context, u32 addr, MappedBusSignals) {
@@ -1052,15 +1219,20 @@ u64 GxGpu::readGp0Thunk(void* context, u32 addr, MappedBusSignals) {
 	return valueNumber(static_cast<double>(gpu.readGp0()));
 }
 
-void GxGpu::writeGp0Thunk(void* context, u32 addr, u64 value, MappedBusSignals) {
+void GxGpu::writeGp0Thunk(void* context, u32 addr, u64 value, MappedBusSignals busSignals) {
 	(void)addr;
 	GxGpu& gpu = *static_cast<GxGpu*>(context);
-	gpu.writeGp0(toU32(value));
+	gpu.writeGp0(toU32(value), busSignals);
 }
 
 bool GxGpu::gp0WriteReadyThunk(void* context, u32 addr) {
 	(void)addr;
 	return static_cast<GxGpu*>(context)->gp0WriteReady();
+}
+
+bool GxGpu::gp1WriteReadyThunk(void* context, u32 addr) {
+	(void)addr;
+	return !static_cast<GxGpu*>(context)->m_supervisorQuiesceRequested;
 }
 
 u64 GxGpu::readStatusThunk(void* context, u32 addr, MappedBusSignals) {

@@ -683,6 +683,7 @@ struct CallFrame {
 	bool captureReturns = false;
 	int callSitePc = 0;
 	bool isExceptionFrame = false;
+	bool isNonMaskableExceptionFrame = false;
 };
 
 struct ProtectedCallContinuation {
@@ -767,6 +768,7 @@ struct CpuFrameState {
 	bool captureReturns = false;
 	int callSitePc = 0;
 	bool isExceptionFrame = false;
+	bool isNonMaskableExceptionFrame = false;
 };
 
 struct CpuProtectedCallState {
@@ -804,6 +806,9 @@ struct CpuRuntimeState {
 	u32 causeWord = 0;
 	u32 epcWord = 0;
 	u32 badAddressWord = 0;
+	u32 nmiReturnCauseWord = 0;
+	u32 nmiReturnEpcWord = 0;
+	u32 nmiReturnBadAddressWord = 0;
 	bool nonMaskableInterruptPending = false;
 	bool yieldRequested = false;
 };
@@ -994,8 +999,10 @@ public:
 	bool isHaltedUntilIrq() const { return m_haltedUntilIrq; }
 	bool isMemoryWriteBlocked() const { return m_memoryWriteBlocked; }
 	void resumeMemoryWrite(uint32_t address);
+	void abortStalledMemoryWrite();
 	bool isUserMode() const { return (m_statusWord & CPU_STATUS_USER_MODE_CURRENT) != 0u; }
 	void requestNonMaskableInterrupt();
+	void cancelNonMaskableInterrupt() { m_nonMaskableInterruptPending = false; }
 	bool canAcceptMaskableInterruptLine() const;
 	AcceptedInterruptKind peekPendingInterrupt() const;
 	bool enterPendingInterrupt();
@@ -1135,6 +1142,9 @@ private:
 	u32 m_causeWord = 0;
 	u32 m_epcWord = 0;
 	u32 m_badAddressWord = 0;
+	u32 m_nmiReturnCauseWord = 0;
+	u32 m_nmiReturnEpcWord = 0;
+	u32 m_nmiReturnBadAddressWord = 0;
 	bool m_nonMaskableInterruptPending = false;
 	int m_systemIrqProtoIndex;
 	int m_cartIrqProtoIndex;

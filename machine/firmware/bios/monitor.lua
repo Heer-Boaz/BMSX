@@ -10,15 +10,22 @@ local romdir<const> = require('system/romdir')
 local byte<const> = __bmsx_string_byte
 local monitor<const> = {}
 
-local irq_ack<const>: *word = 0x0800000c
 local irq_mask<const>: *word = 0x08000010
 local input_control<const>: *word = 0x0800006c
 local input_keys<const>: *word[8] = 0x08000074
+local system_control<const>: *word = 0x08010350
+local system_status<const>: *word = 0x08010354
 
 local irq_vblank<const> = 0x0004
 local irq_dma_done<const> = 0x0001
 local irq_gpu<const> = 0x0040
 local input_arm<const> = 0x00000001
+local system_supervisor_enter<const> = 0x00000002
+local system_supervisor_leave<const> = 0x00000004
+local system_supervisor_fault<const> = 0x00000008
+local system_supervisor_exit_requested<const> = 0x00000002
+local system_supervisor_resumable<const> = 0x00000004
+local cause_nmi<const> = 0x00010000
 
 local palette_text<const> = terminal.palette_text
 local palette_prompt<const> = terminal.palette_accent
@@ -73,6 +80,7 @@ bss monitor_saved_cause: word
 bss monitor_saved_epc: word
 bss monitor_saved_bad_address: word
 bss monitor_saved_irq_mask: word
+bss monitor_continue_requested: word
 
 local initialize_input<const> = function()
 	*monitor_frame = 0
@@ -148,6 +156,14 @@ local handle_command_action<const> = function(action)
 		write_prompt()
 	elseif action == monitor_commands.action_output then
 		pump_output(terminal.page_rows)
+	elseif action == monitor_commands.action_continue then
+		if (*system_status & system_supervisor_resumable) == 0 then
+			terminal.write('FAULT IS NOT RESUMABLE\n', terminal.palette_error)
+			write_prompt()
+			return
+		end
+		monitor_commands.clear_fault()
+		*monitor_continue_requested = 1
 	else
 		write_prompt()
 	end
@@ -363,6 +379,12 @@ local scan_keyboard<const> = function()
 	end
 end
 
+local leave_monitor<const> = function()
+	cop0.epc = *monitor_saved_epc
+	cop0.status = *monitor_saved_status
+	*system_control = system_supervisor_leave
+end
+
 function monitor.enter()
 	-- Nested VBlank IRQ entry overwrites CP0 latches, so preserve the interrupted
 	-- context before the monitor enables maskable supervisor interrupts.
@@ -371,18 +393,19 @@ function monitor.enter()
 	*monitor_saved_epc = cop0.epc
 	*monitor_saved_bad_address = cop0.bad_address
 	*monitor_saved_irq_mask = *irq_mask
+	*monitor_continue_requested = 0
 
-	*irq_mask = 0
-	-- Blank scanout before waiting for the next publication boundary. The
-	-- monitor is one-way, so accepted cart GPU work retires instead of being
-	-- captured or restored.
-	gx_gpu.disable_display()
-	gx_gpu.ack_irq()
-	*irq_ack = 0xffffffff
+	-- Firmware owns exception classification: NMI completes the quiesced,
+	-- resumable transition; every synchronous fault destructively invalidates
+	-- retained user device banks while preserving VRAM.
+	if (*monitor_saved_cause & cause_nmi) ~= 0 then
+		*system_control = system_supervisor_enter
+	else
+		*system_control = system_supervisor_fault
+	end
 	vblank.clear()
 	*irq_mask = irq_dma_done | irq_vblank | irq_gpu
 	cop0.status = *monitor_saved_status | 1
-	dma_transfer.abort()
 	-- Seed monitor edge state from one monitor-owned ICU sample. Keys held while
 	-- the exception was raised must be released before they become editor input.
 	*input_control = input_arm
@@ -398,6 +421,8 @@ function monitor.enter()
 		*monitor_saved_irq_mask)
 	gx_gpu.reset_256x192_pal()
 	gx_gpu.disable_display()
+	gx_gpu.display_origin(layout.vram_origin)
+	gx_gpu.draw_target(layout.vram_origin)
 	local system_texture<const> = romdir.resource('gx_system_texture')
 	dma_transfer.copy_to_gp0(system_texture.addr, system_texture.len >> 2)
 	terminal.open()
@@ -411,8 +436,16 @@ function monitor.enter()
 	while true do
 		*input_control = input_arm
 		vblank.wait()
+		if (*system_status & system_supervisor_exit_requested) ~= 0 then
+			leave_monitor()
+			return
+		end
 		scan_keyboard()
 		terminal.flush()
+		if *monitor_continue_requested ~= 0 then
+			leave_monitor()
+			return
+		end
 	end
 end
 

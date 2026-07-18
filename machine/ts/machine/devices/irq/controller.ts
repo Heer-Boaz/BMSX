@@ -6,6 +6,9 @@ import type { IrqControllerState } from './save_state';
 export class IrqController {
 	private pendingFlags = 0;
 	private mask = 0;
+	private userPendingFlags = 0;
+	private userMask = 0;
+	private supervisorContextActive = false;
 
 	public constructor(private readonly memory: Memory) {
 		this.memory.mapIoRead(IO_IRQ_FLAGS, this, IrqController.onFlagsReadThunk);
@@ -17,6 +20,9 @@ export class IrqController {
 	public reset(): void {
 		this.pendingFlags = 0;
 		this.mask = 0;
+		this.userPendingFlags = 0;
+		this.userMask = 0;
+		this.supervisorContextActive = false;
 		this.memory.writeIoValue(IO_IRQ_ACK, 0);
 		this.memory.writeIoValue(IO_IRQ_MASK, 0);
 	}
@@ -31,12 +37,45 @@ export class IrqController {
 		return {
 			mask: this.mask,
 			pendingFlags: this.pendingFlags,
+			userMask: this.userMask,
+			userPendingFlags: this.userPendingFlags,
+			supervisorContextActive: this.supervisorContextActive,
 		};
 	}
 
 	public restoreState(state: IrqControllerState): void {
 		this.mask = state.mask >>> 0;
 		this.pendingFlags = state.pendingFlags >>> 0;
+		this.userMask = state.userMask >>> 0;
+		this.userPendingFlags = state.userPendingFlags >>> 0;
+		this.supervisorContextActive = state.supervisorContextActive;
+		this.postLoad();
+	}
+
+	public enterSupervisorContext(): void {
+		this.userPendingFlags = this.pendingFlags;
+		this.userMask = this.mask;
+		this.supervisorContextActive = true;
+		this.pendingFlags = 0;
+		this.mask = 0;
+		this.postLoad();
+	}
+
+	public enterSupervisorFaultContext(): void {
+		this.userPendingFlags = 0;
+		this.userMask = 0;
+		this.supervisorContextActive = true;
+		this.pendingFlags = 0;
+		this.mask = 0;
+		this.postLoad();
+	}
+
+	public leaveSupervisorContext(): void {
+		this.pendingFlags = this.userPendingFlags;
+		this.mask = this.userMask;
+		this.userPendingFlags = 0;
+		this.userMask = 0;
+		this.supervisorContextActive = false;
 		this.postLoad();
 	}
 
@@ -49,6 +88,14 @@ export class IrqController {
 		if (next !== this.pendingFlags) {
 			this.pendingFlags = next;
 		}
+	}
+
+	public raiseUser(mask: number): void {
+		if (!this.supervisorContextActive) {
+			this.raise(mask);
+			return;
+		}
+		this.userPendingFlags = (this.userPendingFlags | (mask >>> 0)) >>> 0;
 	}
 
 	public acknowledge(mask: number): void {

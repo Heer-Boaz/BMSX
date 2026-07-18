@@ -118,6 +118,34 @@ constexpr u32 GX_GPU_STATUS_DISPLAY_MODE_MASK = GX_GPU_STATUS_REVERSE_FLAG
 	| GX_GPU_STATUS_DISPLAY_AREA_COLOR_DEPTH_24
 	| GX_GPU_STATUS_VERTICAL_INTERLACE;
 
+struct GxGpuRegisterContextState {
+	u32 gp0Word = 0;
+	u32 gp1Word = 0;
+	u32 displayModeWord = GX_GPU_RESET_DISPLAY_MODE_WORD;
+	u32 statusWord = GX_GPU_STATUS_RESET_WORD;
+	u32 gpuReadWord = 0;
+	u32 drawModeWord = 0;
+	u32 textureWindowWord = 0;
+	u32 drawingAreaTopLeftWord = 0;
+	u32 drawingAreaBottomRightWord = 0;
+	u32 drawingOffsetWord = 0;
+	u32 maskBitModeWord = 0;
+	u32 displayStartWord = 0;
+	u32 horizontalDisplayRangeWord = GX_GPU_RESET_HORIZONTAL_DISPLAY_RANGE_WORD;
+	u32 verticalDisplayRangeWord = GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD;
+	u32 vramYAddressExtensionWord = 0;
+	u32 scanoutInterlacedField = 0;
+	u32 scanoutInterlacedDisplayField = 0;
+	u32 scanoutActiveLineLsb = 0;
+	u32 presentStatusWord = GX_GPU_STATUS_RESET_WORD;
+	u32 presentDisplayModeWord = GX_GPU_RESET_DISPLAY_MODE_WORD;
+	u32 presentDisplayStartWord = 0;
+	u32 presentVramYAddressExtensionWord = 0;
+	u32 presentHorizontalDisplayRangeWord = GX_GPU_RESET_HORIZONTAL_DISPLAY_RANGE_WORD;
+	u32 presentVerticalDisplayRangeWord = GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD;
+	bool vramPresentationPending = false;
+};
+
 struct GxGpuState {
 	u32 gp0Word = 0;
 	u32 gp1Word = 0;
@@ -164,6 +192,9 @@ struct GxGpuState {
 	u32 presentHorizontalDisplayRangeWord = 0;
 	u32 presentVerticalDisplayRangeWord = 0;
 	bool vramPresentationPending = false;
+	bool supervisorQuiesceRequested = false;
+	bool supervisorIngressStopped = false;
+	GxGpuRegisterContextState userContext;
 	GxGpuCommandBufferState commandBuffer;
 };
 
@@ -184,7 +215,7 @@ public:
 	const std::array<u8, GX_GPU_VRAM_BYTE_COUNT>& readVramSnapshotBytes() const { return m_vramSnapshotBytes; }
 	u64 readVramSnapshotSerial() const { return m_vramSnapshotSerial; }
 	u32 readGp0();
-	void writeGp0(u32 word);
+	void writeGp0(u32 word, MappedBusSignals busSignals = MAPPED_BUS_MASTER_CPU);
 	u32 readStatus();
 	u32 writeGp1(u32 word);
 	void onService(i64 nowCycles);
@@ -211,6 +242,11 @@ public:
 	u32 readHorizontalDisplayRangeWord() const;
 	u32 readVerticalDisplayRangeWord() const;
 	u32 readVramYAddressExtensionWord() const;
+	void beginSupervisorQuiesce();
+	bool supervisorQuiescent();
+	void enterSupervisorContext();
+	void enterSupervisorFaultContext();
+	void leaveSupervisorContext();
 
 private:
 	Memory& m_memory;
@@ -260,6 +296,9 @@ private:
 	u32 m_presentVerticalDisplayRangeWord = GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD;
 	bool m_lastFrameCommitted = false;
 	bool m_vramPresentationPending = false;
+	bool m_supervisorQuiesceRequested = false;
+	bool m_supervisorIngressStopped = false;
+	GxGpuRegisterContextState m_userContext;
 	bool m_scanoutVblankActive = false;
 	u32 m_scanoutInterlacedField = 0u;
 	u32 m_scanoutInterlacedDisplayField = 0u;
@@ -273,6 +312,12 @@ private:
 	inline static u64 nextVramSnapshotSerial = 0u;
 
 	void publishVramSnapshotRevision();
+	void clearRegisterContext(GxGpuRegisterContextState& context);
+	void storeLiveRegisterContext(GxGpuRegisterContextState& context) const;
+	void loadLiveRegisterContext(const GxGpuRegisterContextState& context);
+	void resetTransientContext();
+	bool supervisorFenceReady() const;
+	void notifySupervisorBoundary();
 	void retireCommandPrefix(size_t retiredCommands);
 	void resetGpuRegisters();
 	void latchPresentationRegisters();
@@ -316,6 +361,7 @@ private:
 	static u64 readGp0Thunk(void* context, u32 addr, MappedBusSignals busSignals);
 	static void writeGp0Thunk(void* context, u32 addr, u64 value, MappedBusSignals busSignals);
 	static bool gp0WriteReadyThunk(void* context, u32 addr);
+	static bool gp1WriteReadyThunk(void* context, u32 addr);
 	static u64 readStatusThunk(void* context, u32 addr, MappedBusSignals busSignals);
 	static void writeGp1Thunk(void* context, u32 addr, u64 value, MappedBusSignals busSignals);
 };

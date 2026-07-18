@@ -335,6 +335,9 @@ BinValue encodeIrqControllerState(const IrqControllerState& state) {
 	BinObject object;
 	object["mask"] = static_cast<f64>(state.mask);
 	object["pendingFlags"] = static_cast<f64>(state.pendingFlags);
+	object["userMask"] = static_cast<f64>(state.userMask);
+	object["userPendingFlags"] = static_cast<f64>(state.userPendingFlags);
+	object["supervisorContextActive"] = state.supervisorContextActive;
 	return BinValue(std::move(object));
 }
 
@@ -343,6 +346,9 @@ IrqControllerState decodeIrqControllerState(const BinValue& value, const char* l
 	IrqControllerState state;
 	state.mask = requireU32(requireField(object, "mask", label), "machine.irq.mask");
 	state.pendingFlags = requireU32(requireField(object, "pendingFlags", label), "machine.irq.pendingFlags");
+	state.userMask = requireU32(requireField(object, "userMask", label), "machine.irq.userMask");
+	state.userPendingFlags = requireU32(requireField(object, "userPendingFlags", label), "machine.irq.userPendingFlags");
+	state.supervisorContextActive = requireBool(requireField(object, "supervisorContextActive", label), "machine.irq.supervisorContextActive");
 	return state;
 }
 
@@ -497,6 +503,7 @@ BinValue encodeGeometryControllerState(const GeometryControllerState& state) {
 	object["activeJob"] = state.activeJob.has_value() ? encodeGeometryJobState(*state.activeJob) : BinValue(nullptr);
 	object["workCarry"] = static_cast<i64>(state.workCarry);
 	object["availableWorkUnits"] = static_cast<i64>(state.availableWorkUnits);
+	object["supervisorQuiesceRequested"] = state.supervisorQuiesceRequested;
 	return BinValue(std::move(object));
 }
 
@@ -515,6 +522,7 @@ GeometryControllerState decodeGeometryControllerState(const BinValue& value, con
 	}
 	state.workCarry = requireI64(requireField(object, "workCarry", label), "machine.geometry.workCarry");
 	state.availableWorkUnits = requireU32(requireField(object, "availableWorkUnits", label), "machine.geometry.availableWorkUnits");
+	state.supervisorQuiesceRequested = requireBool(requireField(object, "supervisorQuiesceRequested", label), "machine.geometry.supervisorQuiesceRequested");
 	return state;
 }
 
@@ -585,6 +593,67 @@ GxGpuCommandBufferState decodeGxGpuCommandBufferState(const BinValue& value, con
 	return state;
 }
 
+BinValue encodeGxGpuRegisterContextState(const GxGpuRegisterContextState& state) {
+	BinObject object;
+	object["gp0Word"] = static_cast<i64>(state.gp0Word);
+	object["gp1Word"] = static_cast<i64>(state.gp1Word);
+	object["displayModeWord"] = static_cast<i64>(state.displayModeWord);
+	object["statusWord"] = static_cast<i64>(state.statusWord);
+	object["gpuReadWord"] = static_cast<i64>(state.gpuReadWord);
+	object["drawModeWord"] = static_cast<i64>(state.drawModeWord);
+	object["textureWindowWord"] = static_cast<i64>(state.textureWindowWord);
+	object["drawingAreaTopLeftWord"] = static_cast<i64>(state.drawingAreaTopLeftWord);
+	object["drawingAreaBottomRightWord"] = static_cast<i64>(state.drawingAreaBottomRightWord);
+	object["drawingOffsetWord"] = static_cast<i64>(state.drawingOffsetWord);
+	object["maskBitModeWord"] = static_cast<i64>(state.maskBitModeWord);
+	object["displayStartWord"] = static_cast<i64>(state.displayStartWord);
+	object["horizontalDisplayRangeWord"] = static_cast<i64>(state.horizontalDisplayRangeWord);
+	object["verticalDisplayRangeWord"] = static_cast<i64>(state.verticalDisplayRangeWord);
+	object["vramYAddressExtensionWord"] = static_cast<i64>(state.vramYAddressExtensionWord);
+	object["scanoutInterlacedField"] = static_cast<i64>(state.scanoutInterlacedField);
+	object["scanoutInterlacedDisplayField"] = static_cast<i64>(state.scanoutInterlacedDisplayField);
+	object["scanoutActiveLineLsb"] = static_cast<i64>(state.scanoutActiveLineLsb);
+	object["presentStatusWord"] = static_cast<i64>(state.presentStatusWord);
+	object["presentDisplayModeWord"] = static_cast<i64>(state.presentDisplayModeWord);
+	object["presentDisplayStartWord"] = static_cast<i64>(state.presentDisplayStartWord);
+	object["presentVramYAddressExtensionWord"] = static_cast<i64>(state.presentVramYAddressExtensionWord);
+	object["presentHorizontalDisplayRangeWord"] = static_cast<i64>(state.presentHorizontalDisplayRangeWord);
+	object["presentVerticalDisplayRangeWord"] = static_cast<i64>(state.presentVerticalDisplayRangeWord);
+	object["vramPresentationPending"] = state.vramPresentationPending;
+	return BinValue(std::move(object));
+}
+
+GxGpuRegisterContextState decodeGxGpuRegisterContextState(const BinValue& value, const char* label) {
+	const BinObject& object = requireObject(value, label);
+	GxGpuRegisterContextState state;
+	state.gp0Word = requireU32(requireField(object, "gp0Word", label), "machine.gxGpu.userContext.gp0Word");
+	state.gp1Word = requireU32(requireField(object, "gp1Word", label), "machine.gxGpu.userContext.gp1Word");
+	state.displayModeWord = requireU32(requireField(object, "displayModeWord", label), "machine.gxGpu.userContext.displayModeWord");
+	state.statusWord = requireU32(requireField(object, "statusWord", label), "machine.gxGpu.userContext.statusWord");
+	state.gpuReadWord = requireU32(requireField(object, "gpuReadWord", label), "machine.gxGpu.userContext.gpuReadWord");
+	state.drawModeWord = requireU32(requireField(object, "drawModeWord", label), "machine.gxGpu.userContext.drawModeWord");
+	state.textureWindowWord = requireU32(requireField(object, "textureWindowWord", label), "machine.gxGpu.userContext.textureWindowWord");
+	state.drawingAreaTopLeftWord = requireU32(requireField(object, "drawingAreaTopLeftWord", label), "machine.gxGpu.userContext.drawingAreaTopLeftWord");
+	state.drawingAreaBottomRightWord = requireU32(requireField(object, "drawingAreaBottomRightWord", label), "machine.gxGpu.userContext.drawingAreaBottomRightWord");
+	state.drawingOffsetWord = requireU32(requireField(object, "drawingOffsetWord", label), "machine.gxGpu.userContext.drawingOffsetWord");
+	state.maskBitModeWord = requireU32(requireField(object, "maskBitModeWord", label), "machine.gxGpu.userContext.maskBitModeWord");
+	state.displayStartWord = requireU32(requireField(object, "displayStartWord", label), "machine.gxGpu.userContext.displayStartWord");
+	state.horizontalDisplayRangeWord = requireU32(requireField(object, "horizontalDisplayRangeWord", label), "machine.gxGpu.userContext.horizontalDisplayRangeWord");
+	state.verticalDisplayRangeWord = requireU32(requireField(object, "verticalDisplayRangeWord", label), "machine.gxGpu.userContext.verticalDisplayRangeWord");
+	state.vramYAddressExtensionWord = requireU32(requireField(object, "vramYAddressExtensionWord", label), "machine.gxGpu.userContext.vramYAddressExtensionWord");
+	state.scanoutInterlacedField = requireBoundedU32(requireField(object, "scanoutInterlacedField", label), "machine.gxGpu.userContext.scanoutInterlacedField", 0u, 1u);
+	state.scanoutInterlacedDisplayField = requireBoundedU32(requireField(object, "scanoutInterlacedDisplayField", label), "machine.gxGpu.userContext.scanoutInterlacedDisplayField", 0u, 1u);
+	state.scanoutActiveLineLsb = requireBoundedU32(requireField(object, "scanoutActiveLineLsb", label), "machine.gxGpu.userContext.scanoutActiveLineLsb", 0u, 1u);
+	state.presentStatusWord = requireU32(requireField(object, "presentStatusWord", label), "machine.gxGpu.userContext.presentStatusWord");
+	state.presentDisplayModeWord = requireU32(requireField(object, "presentDisplayModeWord", label), "machine.gxGpu.userContext.presentDisplayModeWord");
+	state.presentDisplayStartWord = requireU32(requireField(object, "presentDisplayStartWord", label), "machine.gxGpu.userContext.presentDisplayStartWord");
+	state.presentVramYAddressExtensionWord = requireBoundedU32(requireField(object, "presentVramYAddressExtensionWord", label), "machine.gxGpu.userContext.presentVramYAddressExtensionWord", 0u, 1u);
+	state.presentHorizontalDisplayRangeWord = requireU32(requireField(object, "presentHorizontalDisplayRangeWord", label), "machine.gxGpu.userContext.presentHorizontalDisplayRangeWord");
+	state.presentVerticalDisplayRangeWord = requireU32(requireField(object, "presentVerticalDisplayRangeWord", label), "machine.gxGpu.userContext.presentVerticalDisplayRangeWord");
+	state.vramPresentationPending = requireBool(requireField(object, "vramPresentationPending", label), "machine.gxGpu.userContext.vramPresentationPending");
+	return state;
+}
+
 BinValue encodeGxGpuState(const GxGpuState& state) {
 	BinObject object;
 	BinArray gp0FifoWords;
@@ -637,6 +706,9 @@ BinValue encodeGxGpuState(const GxGpuState& state) {
 	object["presentHorizontalDisplayRangeWord"] = static_cast<i64>(state.presentHorizontalDisplayRangeWord);
 	object["presentVerticalDisplayRangeWord"] = static_cast<i64>(state.presentVerticalDisplayRangeWord);
 	object["vramPresentationPending"] = state.vramPresentationPending;
+	object["supervisorQuiesceRequested"] = state.supervisorQuiesceRequested;
+	object["supervisorIngressStopped"] = state.supervisorIngressStopped;
+	object["userContext"] = encodeGxGpuRegisterContextState(state.userContext);
 	object["commandBuffer"] = encodeGxGpuCommandBufferState(state.commandBuffer);
 	return BinValue(std::move(object));
 }
@@ -696,6 +768,9 @@ GxGpuState decodeGxGpuState(const BinValue& value, const char* label) {
 	state.presentHorizontalDisplayRangeWord = requireU32(requireField(object, "presentHorizontalDisplayRangeWord", label), "machine.gxGpu.presentHorizontalDisplayRangeWord");
 	state.presentVerticalDisplayRangeWord = requireU32(requireField(object, "presentVerticalDisplayRangeWord", label), "machine.gxGpu.presentVerticalDisplayRangeWord");
 	state.vramPresentationPending = requireBool(requireField(object, "vramPresentationPending", label), "machine.gxGpu.vramPresentationPending");
+	state.supervisorQuiesceRequested = requireBool(requireField(object, "supervisorQuiesceRequested", label), "machine.gxGpu.supervisorQuiesceRequested");
+	state.supervisorIngressStopped = requireBool(requireField(object, "supervisorIngressStopped", label), "machine.gxGpu.supervisorIngressStopped");
+	state.userContext = decodeGxGpuRegisterContextState(requireField(object, "userContext", label), "machine.gxGpu.userContext");
 	return state;
 }
 
@@ -951,6 +1026,13 @@ BinValue encodeDmaControllerState(const DmaControllerState& state) {
 	object["timingCarry"] = encodeScalar<f64>(state.timingCarry);
 	object["scheduledBlockWords"] = encodeScalar<f64>(state.scheduledBlockWords);
 	object["scheduledBlockCycles"] = encodeScalar<f64>(state.scheduledBlockCycles);
+	object["supervisorQuiesceRequested"] = state.supervisorQuiesceRequested;
+	object["userReadAddressWord"] = encodeScalar<f64>(state.userReadAddressWord);
+	object["userWriteAddressWord"] = encodeScalar<f64>(state.userWriteAddressWord);
+	object["userTransferCountWord"] = encodeScalar<f64>(state.userTransferCountWord);
+	object["userControlWord"] = encodeScalar<f64>(state.userControlWord);
+	object["userStatusWord"] = encodeScalar<f64>(state.userStatusWord);
+	object["userTimingCarry"] = encodeScalar<f64>(state.userTimingCarry);
 	return BinValue(std::move(object));
 }
 
@@ -965,12 +1047,22 @@ DmaControllerState decodeDmaControllerState(const BinValue& value, const char* l
 	state.timingCarry = requireI64(requireField(object, "timingCarry", label), "machine.dma.timingCarry");
 	state.scheduledBlockWords = requireBoundedU32(requireField(object, "scheduledBlockWords", label), "machine.dma.scheduledBlockWords", 0u, 16u);
 	state.scheduledBlockCycles = requireI64(requireField(object, "scheduledBlockCycles", label), "machine.dma.scheduledBlockCycles");
+	state.supervisorQuiesceRequested = requireBool(requireField(object, "supervisorQuiesceRequested", label), "machine.dma.supervisorQuiesceRequested");
+	state.userReadAddressWord = requireU32(requireField(object, "userReadAddressWord", label), "machine.dma.userReadAddressWord");
+	state.userWriteAddressWord = requireU32(requireField(object, "userWriteAddressWord", label), "machine.dma.userWriteAddressWord");
+	state.userTransferCountWord = requireU32(requireField(object, "userTransferCountWord", label), "machine.dma.userTransferCountWord");
+	state.userControlWord = requireU32(requireField(object, "userControlWord", label), "machine.dma.userControlWord");
+	state.userStatusWord = requireU32(requireField(object, "userStatusWord", label), "machine.dma.userStatusWord");
+	state.userTimingCarry = requireI64(requireField(object, "userTimingCarry", label), "machine.dma.userTimingCarry");
 	return state;
 }
 
 BinValue encodeSystemControllerState(const SystemControllerState& state) {
 	BinObject object;
 	object["resetRequested"] = state.resetRequested;
+	object["supervisorPhase"] = static_cast<i64>(state.supervisorPhase);
+	object["supervisorResumable"] = state.supervisorResumable;
+	object["supervisorExitRequested"] = state.supervisorExitRequested;
 	return BinValue(std::move(object));
 }
 
@@ -978,6 +1070,9 @@ SystemControllerState decodeSystemControllerState(const BinValue& value, const c
 	const BinObject& object = requireObject(value, label);
 	SystemControllerState state;
 	state.resetRequested = requireBool(requireField(object, "resetRequested", label), "machineState.machine.systemControl.resetRequested");
+	state.supervisorPhase = static_cast<u8>(requireBoundedU32(requireField(object, "supervisorPhase", label), "machineState.machine.systemControl.supervisorPhase", SYSTEM_SUPERVISOR_PHASE_USER, SYSTEM_SUPERVISOR_PHASE_LEAVING));
+	state.supervisorResumable = requireBool(requireField(object, "supervisorResumable", label), "machineState.machine.systemControl.supervisorResumable");
+	state.supervisorExitRequested = requireBool(requireField(object, "supervisorExitRequested", label), "machineState.machine.systemControl.supervisorExitRequested");
 	return state;
 }
 
@@ -1204,6 +1299,7 @@ BinValue encodeCpuFrameState(const CpuFrameState& state) {
 	object["captureReturns"] = state.captureReturns;
 	object["callSitePc"] = static_cast<i64>(state.callSitePc);
 	object["isExceptionFrame"] = state.isExceptionFrame;
+	object["isNonMaskableExceptionFrame"] = state.isNonMaskableExceptionFrame;
 	return BinValue(std::move(object));
 }
 
@@ -1227,6 +1323,7 @@ CpuFrameState decodeCpuFrameState(const BinValue& value, const char* label) {
 	state.captureReturns = requireBool(requireField(object, "captureReturns", label), "cpuFrameState.captureReturns");
 	state.callSitePc = requireI32(requireField(object, "callSitePc", label), "cpuFrameState.callSitePc");
 	state.isExceptionFrame = requireBool(requireField(object, "isExceptionFrame", label), "cpuFrameState.isExceptionFrame");
+	state.isNonMaskableExceptionFrame = requireBool(requireField(object, "isNonMaskableExceptionFrame", label), "cpuFrameState.isNonMaskableExceptionFrame");
 	return state;
 }
 
@@ -1307,6 +1404,9 @@ BinValue encodeCpuRuntimeState(const CpuRuntimeState& state) {
 	object["causeWord"] = static_cast<i64>(state.causeWord);
 	object["epcWord"] = static_cast<i64>(state.epcWord);
 	object["badAddressWord"] = static_cast<i64>(state.badAddressWord);
+	object["nmiReturnCauseWord"] = static_cast<i64>(state.nmiReturnCauseWord);
+	object["nmiReturnEpcWord"] = static_cast<i64>(state.nmiReturnEpcWord);
+	object["nmiReturnBadAddressWord"] = static_cast<i64>(state.nmiReturnBadAddressWord);
 	object["nonMaskableInterruptPending"] = state.nonMaskableInterruptPending;
 	object["yieldRequested"] = state.yieldRequested;
 	return BinValue(std::move(object));
@@ -1358,6 +1458,9 @@ CpuRuntimeState decodeCpuRuntimeState(const BinValue& value, const char* label) 
 	state.causeWord = requireU32(requireField(object, "causeWord", label), "cpuState.causeWord");
 	state.epcWord = requireU32(requireField(object, "epcWord", label), "cpuState.epcWord");
 	state.badAddressWord = requireU32(requireField(object, "badAddressWord", label), "cpuState.badAddressWord");
+	state.nmiReturnCauseWord = requireU32(requireField(object, "nmiReturnCauseWord", label), "cpuState.nmiReturnCauseWord");
+	state.nmiReturnEpcWord = requireU32(requireField(object, "nmiReturnEpcWord", label), "cpuState.nmiReturnEpcWord");
+	state.nmiReturnBadAddressWord = requireU32(requireField(object, "nmiReturnBadAddressWord", label), "cpuState.nmiReturnBadAddressWord");
 	state.nonMaskableInterruptPending = requireBool(requireField(object, "nonMaskableInterruptPending", label), "cpuState.nonMaskableInterruptPending");
 	state.yieldRequested = requireBool(requireField(object, "yieldRequested", label), "cpuState.yieldRequested");
 	return state;

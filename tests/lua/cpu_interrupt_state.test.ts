@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { BuiltinFunctionId, CPU, EMPTY_CALL_ARGS, Table, createBuiltinFunction, OpCode, RunResult, StringValue, type Closure, type Program, type ProgramMetadata, type Proto, type Value } from '../../machine/ts/machine/cpu/cpu';
+import { AcceptedInterruptKind, BuiltinFunctionId, CPU, EMPTY_CALL_ARGS, Table, createBuiltinFunction, OpCode, RunResult, StringValue, type Closure, type Program, type ProgramMetadata, type Proto, type Value } from '../../machine/ts/machine/cpu/cpu';
 import { writeInstruction, INSTRUCTION_BYTES } from '../../machine/ts/machine/cpu/instruction_format';
 import { BASE_CYCLES, encodeFixedCallArgCount } from '../../machine/ts/machine/cpu/opcode_info';
 import {
@@ -18,8 +18,10 @@ import {
 	BUS_FAULT_ACCESS_READ,
 	BUS_FAULT_ACCESS_U8,
 	BUS_FAULT_UNMAPPED,
+	IO_IRQ_ACK,
 	IO_IRQ_MASK,
 	IO_IRQ_FLAGS,
+	IO_APU_TRANSFER_DATA,
 	IO_SYS_BUS_FAULT_ACCESS,
 	IO_SYS_BUS_FAULT_ACK,
 	IO_SYS_BUS_FAULT_ADDR,
@@ -27,7 +29,6 @@ import {
 	IRQ_VBLANK,
 } from '../../machine/ts/machine/bus/io';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
-import { SystemController } from '../../machine/ts/machine/devices/system/controller';
 import { GX_GPU_GP0_VRAM_TO_CPU_FIRST } from '../../machine/ts/machine/devices/gx/gpu';
 import { Machine } from '../../machine/ts/machine/machine';
 import type { MicrotaskQueue } from '../../machine/ts/machine/scheduler/microtask_queue';
@@ -125,6 +126,10 @@ function makeRuntime(cpu: CPU, irqController: IrqController, sliceStats?: { begi
 			cpu,
 			memory: cpu.memory,
 			irqController,
+			systemController: {
+				cpuHeld: () => false,
+				takeResetRequest: () => false,
+			},
 			gxGpu: { backendReadbackBlocksMachine: () => false },
 				scheduler: {
 					nowCycles: 0,
@@ -191,8 +196,6 @@ function makeHaltFrameRuntime(): Runtime {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
 	const irqController = new IrqController(memory);
 	const cpu = new CPU(memory, irqController);
-	const systemController = new SystemController(memory, cpu);
-	systemController.reset();
 	const program = makeProgram(cpu);
 	const metadata = makeMetadata(program.protos.length);
 	cpu.setProgram(program, metadata, metadata, 2, 2, 2);
@@ -210,7 +213,10 @@ function makeHaltFrameRuntime(): Runtime {
 			cpu,
 			memory,
 			irqController,
-			systemController,
+			systemController: {
+				cpuHeld: () => false,
+				takeResetRequest: () => false,
+			},
 			gxGpu: { backendReadbackBlocksMachine: () => false },
 			scheduler,
 			advanceDevices: (cycles: number) => {
@@ -283,6 +289,7 @@ function makeCompiledIrqRuntime(source: string): { cpu: CPU; irqController: IrqC
 			cpu,
 			memory,
 			irqController,
+			systemController: { cpuHeld: () => false },
 			gxGpu: { backendReadbackBlocksMachine: () => false },
 			scheduler,
 			advanceDevices: (cycles: number) => { scheduler.nowCycles += cycles; },
@@ -320,7 +327,7 @@ function runCompiledVblankIrq(source: string): { cpu: CPU; irqController: IrqCon
 	const { cpu, irqController, cpuExecution, state } = makeCompiledIrqRuntime(source);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
 	irqController.raise(IRQ_VBLANK);
-	assert.equal(cpuExecution.runHaltedUntilIrq(state), false);
+	assert.equal(cpuExecution.runStoppedCpu(state), false);
 	cpuExecution.runWithBudget(state);
 	return { cpu, irqController };
 }
@@ -606,7 +613,7 @@ test('frame loop vectors a pending IRQ above a halted cart frame', () => {
 
 	irqController.raise(IRQ_VBLANK);
 	const state = makeFrameState();
-	const tickCompleted = runtime.cpuExecution.runHaltedUntilIrq(state);
+	const tickCompleted = runtime.cpuExecution.runStoppedCpu(state);
 
 	assert.equal(tickCompleted, false);
 	assert.equal(cpu.isHaltedUntilIrq(), false);
@@ -802,7 +809,7 @@ test('CPU save-state captured inside an interrupt frame restores and returns to 
 	runtime.machine.memory.writeValue(IO_IRQ_MASK, IRQ_VBLANK);
 	irqController.raise(IRQ_VBLANK);
 	const state = makeFrameState();
-	runtime.cpuExecution.runHaltedUntilIrq(state);
+	runtime.cpuExecution.runStoppedCpu(state);
 	assertInterruptFrameActive(cpu, irqController);
 
 	const snapshot = cpu.captureRuntimeState(moduleCache);
@@ -846,6 +853,60 @@ resumed = 1
 	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('exception_status'))), CPU_STATUS_CART_ENTRY << 2);
 	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('resumed'))), 1);
 	assert.equal(cpu.captureRuntimeState(new Map()).statusWord, CPU_STATUS_CART_ENTRY);
+});
+
+test('system NMI preempts a stalled cart IRQ root and RFE retries its unaccepted mapped store', () => {
+	const source = `
+local irq_ack_addr<const> = ${IO_IRQ_ACK}
+local irq_mask_addr<const> = ${IO_IRQ_MASK}
+local irq_vblank<const> = ${IRQ_VBLANK}
+local data_port<const>: *word = ${IO_APU_TRANSFER_DATA}
+exception_count = 0
+store_complete = 0
+cart_resumed = 0
+function irq(flags)
+	*data_port = 0x12345678
+	store_complete = store_complete + 1
+	mem[irq_ack_addr] = flags
+end
+function exception()
+	exception_count = exception_count + 1
+end
+mem[irq_mask_addr] = irq_vblank
+halt_until_irq
+cart_resumed = 1
+`;
+	const { cpu, irqController } = makeCompiledCpu(source);
+	const port = { ready: false, writes: 0 };
+	cpu.memory.mapIoWrite(IO_APU_TRANSFER_DATA, port, context => {
+		context.writes += 1;
+	});
+	cpu.memory.mapIoWriteReady(IO_APU_TRANSFER_DATA, context => context.ready);
+
+	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	irqController.raise(IRQ_VBLANK);
+	assert.equal(cpu.enterPendingInterrupt(), true);
+	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	assert.equal(cpu.isMemoryWriteBlocked(), true);
+	assert.equal(port.writes, 0);
+	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('store_complete'))), 0);
+
+	cpu.abortStalledMemoryWrite();
+	cpu.requestNonMaskableInterrupt();
+	assert.equal(cpu.peekPendingInterrupt(), AcceptedInterruptKind.NonMaskable);
+	assert.equal(cpu.enterPendingInterrupt(), true);
+	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
+	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('exception_count'))), 1);
+	assert.equal(cpu.isMemoryWriteBlocked(), true);
+	assert.equal(port.writes, 0);
+	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('store_complete'))), 0);
+
+	port.ready = true;
+	cpu.resumeMemoryWrite(IO_APU_TRANSFER_DATA);
+	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
+	assert.equal(port.writes, 1);
+	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('store_complete'))), 1);
+	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('cart_resumed'))), 1);
 });
 
 test('user CP0 access vectors synchronously and a supervisor EPC write selects the resume instruction', () => {

@@ -1,14 +1,14 @@
 #include "machine/devices/input/controller.h"
 
 #include "machine/bus/io.h"
-#include "machine/cpu/cpu.h"
+#include "machine/devices/system/controller.h"
 
 namespace bmsx {
 
-InputController::InputController(Memory& memory, InputControllerInputSource& input, CPU& cpu)
+InputController::InputController(Memory& memory, InputControllerInputSource& input, SystemController& system)
 	: m_memory(memory)
 	, m_input(input)
-	, m_cpu(cpu)
+	, m_system(system)
 	, m_outputPort(input, m_registers, memory) {
 	m_memory.mapIoWrite<&InputController::writeControl>(IO_INP_CTRL, *this);
 	m_memory.mapIoWrite<&InputControllerRegisterFile::write>(IO_INP_OUTPUT_PORT, m_registers);
@@ -51,7 +51,7 @@ void InputController::onVblankEdge(f64 currentTimeMs, u32 nowCycles) {
 	}
 	const bool supervisorRequestLineHigh = m_input.supervisorRequestLineHigh();
 	if (supervisorRequestLineHigh && !m_supervisorRequestLineWasHigh) {
-		m_cpu.requestNonMaskableInterrupt();
+		m_system.requestSupervisorLineEdge();
 	}
 	m_supervisorRequestLineWasHigh = supervisorRequestLineHigh;
 	if (!m_sampleArmed) {

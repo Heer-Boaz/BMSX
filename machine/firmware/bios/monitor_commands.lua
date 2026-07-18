@@ -16,6 +16,7 @@ local row_more<const> = 2
 local action_none<const> = 0
 local action_output<const> = 1
 local action_clear<const> = 2
+local action_continue<const> = 3
 
 local palette_text<const> = terminal.palette_text
 local palette_error<const> = terminal.palette_error
@@ -36,6 +37,7 @@ local command_help<const> = 3
 local command_memory<const> = 4
 local command_reboot<const> = 5
 local command_registers<const> = 6
+local command_continue<const> = 7
 
 local cause_code_mask<const> = 0x0000007c
 local cause_nmi<const> = 0x00010000
@@ -55,6 +57,7 @@ end
 
 rodata command_registry: monitor_command[] = {
 	{ name = 'CLS', usage = 'CLS', description = 'CLEAR TERMINAL OUTPUT', kind = command_clear },
+	{ name = 'CONT', usage = 'CONT', description = 'CLEAR FAULT AND RESUME CART', kind = command_continue },
 	{ name = 'FAULT', usage = 'FAULT', description = 'SHOW SAVED FAULT STATE', kind = command_fault },
 	{ name = 'HELP', usage = 'HELP [COMMAND]', description = 'LIST COMMANDS OR SHOW HELP', kind = command_help },
 	{ name = 'MEM', usage = 'MEM <HEX ADDRESS> [WORDS]', description = 'READ MEMORY WORDS', kind = command_memory },
@@ -94,6 +97,7 @@ bss monitor_context_has_bad_address: word
 monitor_commands.action_none = action_none
 monitor_commands.action_output = action_output
 monitor_commands.action_clear = action_clear
+monitor_commands.action_continue = action_continue
 monitor_commands.row_done = row_done
 monitor_commands.row_more = row_more
 
@@ -303,6 +307,13 @@ function monitor_commands.start_fault()
 	end
 end
 
+function monitor_commands.clear_fault()
+	*monitor_context_cause = 0
+	*monitor_context_bad_address = 0
+	*monitor_context_exception = exception_unknown
+	*monitor_context_has_bad_address = 0
+end
+
 function monitor_commands.complete(line, length, cursor, capacity)
 	local source<const>: *word = line
 	local matches<const>: *word = monitor_completion_commands
@@ -405,6 +416,12 @@ function monitor_commands.start(line, length)
 			return start_usage(command)
 		end
 		return action_clear
+	end
+	if entry.kind == command_continue then
+		if not arguments_end(line, argument_index, length) then
+			return start_usage(command)
+		end
+		return action_continue
 	end
 	if entry.kind == command_reboot then
 		if not arguments_end(line, argument_index, length) then

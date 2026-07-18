@@ -56,8 +56,8 @@ export function captureMachineState(machine: Machine): MachineState {
 export function restoreMachineState(machine: Machine, state: MachineState): void {
 	restoreSharedDeviceState(machine, state);
 	machine.gxGpu.restoreState(state.gxGpu);
-	machine.dmaController.postLoad();
 	machine.gxGte.restoreState(state.gxGte);
+	finishDeviceRestore(machine, state.systemControl);
 }
 
 export function captureMachineSaveState(machine: Machine): MachineSaveState {
@@ -83,15 +83,22 @@ export function restoreMachineSaveState(machine: Machine, state: MachineSaveStat
 	machine.cpu.stringPool.restoreState(state.stringPool);
 	restoreSharedDeviceState(machine, state);
 	machine.gxGpu.restoreSaveState(state.gxGpu);
-	machine.dmaController.postLoad();
 	machine.gxGte.restoreState(state.gxGte);
+	finishDeviceRestore(machine, state.systemControl);
 }
 
-function restoreSharedDeviceState(machine: Machine, state: Pick<MachineState, 'dma' | 'geometry' | 'irq' | 'audio' | 'input' | 'systemControl'>): void {
-	machine.systemController.restoreState(state.systemControl);
+function restoreSharedDeviceState(machine: Machine, state: Pick<MachineState, 'dma' | 'geometry' | 'irq' | 'audio' | 'input'>): void {
 	machine.dmaController.restoreState(state.dma, machine.scheduler.nowCycles);
 	machine.geometryController.restoreState(state.geometry, machine.scheduler.nowCycles);
 	machine.irqController.restoreState(state.irq);
 	machine.audioController.restoreState(state.audio, machine.scheduler.nowCycles);
 	machine.inputController.restoreState(state.input);
+}
+
+function finishDeviceRestore(machine: Machine, systemControl: SystemControllerState): void {
+	// GPU/APU restore their request lines while DMA admission is held. Publish
+	// those lines once, then restore the system phase that owns their fences.
+	machine.dmaController.postLoad();
+	machine.systemController.restoreState(systemControl);
+	machine.systemController.postLoad();
 }

@@ -11,6 +11,7 @@ const glyphs = new Array(256);
 const black = 0x000000;
 const text = 0xffffff;
 const accent = 0xffff39;
+const error = 0xff5a5a;
 
 function frame(name) {
 	const number = captures[name];
@@ -68,11 +69,16 @@ const game = frame('game');
 assert.equal(game.width, 320);
 assert.equal(game.height, 240);
 
+const cartCaptures = new Set(['game', 'resumedF2', 'resumedCont']);
 for (const name of Object.keys(captures)) {
-	if (name === 'game') continue;
 	const output = frame(name);
-	assert.equal(output.width, 256, `${name} width`);
-	assert.equal(output.height, 192, `${name} height`);
+	if (cartCaptures.has(name)) {
+		assert.equal(output.width, 320, `${name} width`);
+		assert.equal(output.height, 240, `${name} height`);
+	} else {
+		assert.equal(output.width, 256, `${name} width`);
+		assert.equal(output.height, 192, `${name} height`);
+	}
 }
 
 assertText(frame('entry'), 1, 0, 'EXCEPTION ', accent);
@@ -85,7 +91,10 @@ assertText(frame('secondCandidate'), 31, 8, 'REGS', accent);
 assertText(frame('acceptedCandidate'), 4, 2, 'REGS', text);
 assertText(frame('wordBackspace'), 4, 2, 'REGS TWO', text);
 assertText(frame('wordDelete'), 4, 2, 'REGS ', text);
-assertText(frame('scrolled'), 0, 0, 'COMMAND  DESCRIPTION', accent);
+assertText(frame('historyRecall'), 0, 2, 'CLS', text);
+assertText(frame('historyExecuted'), 0, 0, '> ', accent);
+assertText(frame('historyExecuted'), 1, 0, ' ', text);
+assertText(frame('scrolled'), 0, 0, 'HELP', accent);
 
 const pagerText = '-- MORE --  ENTER LINE  SPACE PAGE  UP/DOWN SCROLL  Q QUIT';
 assertText(frame('firstPage'), 31, 0, pagerText, accent);
@@ -93,5 +102,11 @@ assertText(frame('secondPage'), 31, 0, pagerText, accent);
 assertTerminalPalette(frame('scrolled'));
 assertTerminalPalette(frame('firstPage'));
 assertTerminalPalette(frame('secondPage'));
+assert.notEqual(Buffer.compare(game.data, frame('resumedF2').data), 0, 'F2 resume must advance cart rendering');
+assert.notEqual(Buffer.compare(frame('resumedF2').data, frame('resumedCont').data), 0, 'CONT resume must advance cart rendering');
+assertText(frame('nestedFault'), 1, 0, 'EXCEPTION ', accent);
+assertText(frame('nestedFault'), 1, 10, 'ADEL  ADDRESS ERROR LOAD', text);
+assertText(frame('nestedFaultAfterF2'), 1, 10, 'ADEL  ADDRESS ERROR LOAD', text);
+assertText(frame('nonResumable'), 6, 0, 'FAULT IS NOT RESUMABLE', error);
 
 console.log(JSON.stringify(captures, null, 2));

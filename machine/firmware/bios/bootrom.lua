@@ -15,6 +15,7 @@ local romdir<const> = require('system/romdir')
 local monitor<const> = require('bios/monitor')
 local system<const> = require('bios/system')
 local terminal<const> = require('bios/terminal')
+local terminal_layout<const> = require('bios/terminal_layout')
 local vblank<const> = require('bios/vblank')
 
 local irq_mask<const>: *word = 0x08000010
@@ -111,6 +112,8 @@ end
 function init()
 	*irq_mask = irq_dma_done | irq_gpu
 	gx_gpu.reset_256x192_pal()
+	gx_gpu.display_origin(terminal_layout.vram_origin)
+	gx_gpu.draw_target(terminal_layout.vram_origin)
 	gx_gpu.clear_color(boot_background)
 	local system_texture<const> = romdir.resource('gx_system_texture')
 	dma_transfer.copy_to_gp0(system_texture.addr, system_texture.len >> 2)

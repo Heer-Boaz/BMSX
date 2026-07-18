@@ -9,7 +9,6 @@ Machine::Machine(Memory& memoryRef, InputControllerInputSource& input)
 	: memory(memoryRef)
 	, irqController(memory)
 	, cpu(memory, irqController)
-	, systemController(memory, cpu)
 	, scheduler(cpu)
 	, audioOutput()
 	, dmaController(memory, cpu, irqController, scheduler)
@@ -17,7 +16,8 @@ Machine::Machine(Memory& memoryRef, InputControllerInputSource& input)
 	, geometryController(memory, irqController, scheduler)
 	, gxGpu(memory, irqController, scheduler, dmaController)
 	, gxGte(memory)
-	, inputController(memory, input, cpu)
+	, systemController(memory, cpu, scheduler, irqController, dmaController, geometryController, gxGpu)
+	, inputController(memory, input, systemController)
 {
 }
 
@@ -28,7 +28,6 @@ void Machine::initializeSystemIo() {
 }
 
 void Machine::resetDevices() {
-	systemController.reset();
 	irqController.reset();
 	inputController.reset();
 	dmaController.reset();
@@ -36,6 +35,7 @@ void Machine::resetDevices() {
 	gxGpu.reset();
 	gxGte.reset();
 	audioController.reset();
+	systemController.reset();
 }
 
 void Machine::refreshDeviceTimings(const MachineTiming& timing, i64 nowCycles) {
@@ -67,6 +67,9 @@ void Machine::runDeviceService(uint8_t deviceKind) {
 			return;
 		case DEVICE_SERVICE_GPU:
 			gxGpu.onService(nowCycles);
+			return;
+		case DEVICE_SERVICE_SYSTEM:
+			systemController.onService();
 			return;
 		default:
 			throw BMSX_RUNTIME_ERROR("unknown device service kind " + std::to_string(deviceKind) + ".");
