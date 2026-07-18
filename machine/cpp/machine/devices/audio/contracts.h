@@ -18,7 +18,8 @@ constexpr uint32_t APU_TRANSFER_MODE_DMA_WRITE = 2U;
 constexpr uint32_t APU_TRANSFER_MODE_DMA_READ = 3U;
 constexpr uint32_t APU_TRANSFER_MODE_MASK = 0x3U;
 constexpr uint32_t APU_RATE_STEP_Q16_ONE = 0x10000U;
-constexpr uint32_t APU_GAIN_Q12_ONE = 0x1000U;
+constexpr uint32_t APU_GAIN_Q12_FRACTION_BITS = 12U;
+constexpr uint32_t APU_GAIN_Q12_ONE = 1U << APU_GAIN_Q12_FRACTION_BITS;
 constexpr uint32_t APU_COMMAND_FIFO_CAPACITY = 16U;
 
 constexpr uint32_t APU_CMD_NONE = 0U;

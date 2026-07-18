@@ -51,8 +51,11 @@ The goal is not complete until all of these are true in the current checkout:
 1. Continue splitting monolithic device controllers along hardware-unit
    boundaries: registerfiles, latches, FIFOs, datapaths, timing edges, and
    service points.
-2. Keep ICU moving toward distinct register, action-table, FIFO, sample-latch,
-   query, and output datapaths without creating wrapper layers.
+2. Keep ICU as the raw register, sample-latch, and output datapath described in
+   `docs/architecture.md`. Gameplay action maps, parsing, consume/repeat state,
+   and guarded presses belong to cartlib; device assignment and platform input
+   buffering belong to host input owners. Do not add an ICU action table or
+   high-level event FIFO.
 3. Keep GX GPU/APU/GEO contracts honest: device-visible state first, host queues and
    renderer/audio backends only at output edges.
 4. Treat save-state as passive persistence of live machine state; do not create

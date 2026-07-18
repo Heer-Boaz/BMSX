@@ -27,16 +27,26 @@ and its own native GTE+ and GPU. It is not intended to remain a PSX emulator or
 to accumulate compatibility wrappers around PSX command packets.
 
 The PSX GTE emulation is nevertheless the deliberate hardware foundation for
-GTE+. The active phase finishes and preserves exact PSX register, opcode,
-fixed-point, saturation, flag, timing, and pipeline behavior before any GTE+
-contract is designed or exposed. GTE+ must extend that raw model explicitly;
-it may not replace unfinished PSX behavior with host geometry, material,
-morphing, or renderer objects.
+GTE+. That foundation was formally accepted on 2026-07-18: all 22 canonical
+opcodes were audited against DuckStation, Mednafen, and MAME; both runtime
+owners matched all 64 output register words in each of the 1,100 runs in the
+pinned JaCzekanski hardware log; and the mirrored focused suites cover raw
+register behavior, fixed-point stages, saturation, flags, divide, MAC/IR
+ordering, timing, and save-state latches. The evidence and exact pinned input
+remain in the [GX workplan](gx_psx_replacement_workplan.tmp.md#4-gte-parity),
+the [TS vectors](../tests/lua/gx_gte.test.ts), and the
+[C++ vectors](../tests/cpp/gx_gte_test.cpp). A later PSX discrepancy is a
+foundation regression to fix, not a reason to reinterpret the accepted raw
+words through a compatibility path.
 
-The later BSX hardware may add native depth-buffered rendering, morphing, and
-other geometry or raster capabilities. Their GPU-local-memory, register,
-packet, and datapath contracts are intentionally deferred until the PSX GTE
-foundation is accepted. The retired VDP/RPU ABI is not a design source or a
+`BSX-GTE-01` is therefore an active hardware-design slice. GTE+ must extend the
+accepted PSX register/opcode model explicitly; it may not replace it with host
+geometry, material, morphing, or renderer objects, and an extension may not
+reinterpret an existing PSX opcode or register word. Native depth-buffered
+rendering, morphing, and other geometry or raster capabilities remain candidate
+BSX hardware rather than an ABI. Their first GPU-local-memory, register, packet,
+datapath, timing, flag, and save-state contract must be reviewed before any new
+word becomes cart-visible. The retired VDP/RPU ABI is not a design source or a
 compatibility route for that work.
 
 Host wall clocks, browser performance counters, UI timers, and process scheduling
@@ -681,10 +691,11 @@ Saved:
   determines future output.
 - APU command/source/output state that determines future audio output,
   including the command FIFO ring, queued parameter latch words, active AOUT
-  voice cursor/remainder, fade envelope, filter history, and BADP decoder state.
+  voice cursor/remainder, signed-Q12 gain/fade datapath, filter history, and
+  BADP decoder state.
 - GEO command/result/fault state and device-visible scratch/result memory.
-- ICU registerfile, sample latch, committed action records, and sampled action
-  status/value words.
+- ICU raw registerfile, sample arm/sequence/last-cycle latches, and previous
+  supervisor-request level.
 
 Not saved:
 
@@ -1087,8 +1098,68 @@ the exact physical reservation in every GX cart layout, and boot/monitor
 firmware scan out and draw at `(512,64)` directly. Cart framebuffers and
 textures therefore remain untouched while the monitor replaces the primary
 scanout, and restoring the user display registers exposes the already retained
-cart image. This is still a scanout takeover, not alpha composition over the
-cart; a true overlay remains a separate GPU feature.
+cart image. Until `BIOS-TERM-OVERLAY-01` is implemented, this remains a primary
+scanout takeover rather than simultaneous composition.
+
+#### GX scanout composition plane
+
+The accepted `BIOS-TERM-OVERLAY-01` hardware design adds one ordinary,
+cart-visible GX composition plane to every GPU register context. It is not a
+second display circuit: the existing primary display registers remain the sole
+owner of scan timing, output dimensions, PAL/NTSC cadence, RGB15/RGB24
+interpretation, interlace, and display disable. The composition plane has no
+command FIFO, rasterizer, scaler, memory, or backend texture. It selects a raw
+A1RGB555 window from the same physical GX VRAM and places that window in the
+primary scanout's native output coordinates. A disabled control word takes the
+existing scanout datapath and performs no composition-plane VRAM read.
+
+The first BSX GX revision assigns the currently unused GP1 opcodes below. Each
+register stores its complete 24-bit parameter word; reserved bits are retained
+and ignored by this revision rather than normalized by firmware or a backend.
+
+| Command | Raw parameter layout |
+| --- | --- |
+| `GP1(0Ah)` `COMPOSITION_CONTROL` | Bit 0 enables the plane. Bits 1--23 are retained and ignored. |
+| `GP1(0Bh)` `COMPOSITION_SOURCE` | Bits 0--9 are source X; bits 10--19 are source Y. Bits 20--23 are retained and ignored. |
+| `GP1(0Ch)` `COMPOSITION_SIZE` | Bits 0--9 are `width_minus_one`; bits 10--18 are `height_minus_one`. Every word therefore denotes 1--1024 by 1--512 source pixels. Bits 19--23 are retained and ignored. |
+| `GP1(0Dh)` `COMPOSITION_DESTINATION` | Bits 0--10 are signed two's-complement destination X; bits 11--21 are signed two's-complement destination Y. Bits 22--23 are retained and ignored. |
+
+The destination rectangle is clipped against the primary native output; it is
+never scaled. Source X wraps on the 1024-word VRAM row. Source Y passes through
+the same GP1(09h) Y9 address gate as primary scanout, and the uninstalled upper
+bank retains its normal zero-read behavior. GP1(03h) blanks the primary input
+before composition; with the plane disabled this is the existing all-black
+result. For a covered destination pixel, bit 15 of the selected source word is
+coverage: a set bit replaces the primary RGB value with that word's RGB555
+value, and a clear bit preserves the primary pixel. There is no implicit color
+key, constant alpha, blend mode, or format conversion beyond the normal RGB555
+scanout expansion. Coverage therefore remains ordinary VRAM data that carts
+and firmware produce through GP0(E6h), uploads, copies, or normal draws.
+
+Composition runs in native pixel coordinates after primary field assembly and
+inside the GX machine pass, before device quantization, presentation history,
+CRT processing, and host overlay lanes. GP1 writes update live raw words;
+VBlank publishes all four words atomically with the existing primary display
+registers. GP1(00h) clears the live composition words, making the plane disabled
+at the next VBlank, while machine reset initializes both live and presented
+control words disabled. Save-state stores the live and presented raw words in
+the same GPU register context as the primary display words. Backends consume
+those words and the existing VRAM directly; they do not retain composed pixels
+or a second machine-visible image.
+
+In normal execution the active context is composed as primary followed by its
+composition plane. During a resumable supervisor context, the banked user's
+VBlank-published primary and composition words remain the frozen base, and the
+active supervisor context's ordinary composition plane is applied above that
+base. The selected base primary remains the scan-timing and native-dimension
+owner; supervisor composition words latch on those VBlank edges. This reuses
+the same plane datapath and copies no pixels; the GPU already banks the raw user
+register context and shares VRAM. Leaving the supervisor restores that context
+unchanged. A destructive fault, which deliberately clears the resumable user
+bank, uses the supervisor context's own primary and plane. Monitor firmware will
+draw coverage-bearing terminal pixels into the reserved VRAM surface and
+program GP1(0Ah)--GP1(0Dh); it receives no terminal-only port, display circuit,
+memory bank, or host command lane.
 
 The BIOS keeps a fixed 128-line cell scrollback, dirty ranges, line editor,
 history and GP0 command list in ordinary `.bss`. A packed ROM table maps each
@@ -1514,7 +1585,8 @@ datapath owner. It retains:
 - signed Q16 source cursor;
 - the signed division remainder for `rate_step * source_rate / 44100`;
 - decoded source and loop bounds;
-- fade envelope counters and current gain;
+- signed-Q12 current gain plus the integer fade quotient, signed remainder,
+  error accumulator, and sample counters;
 - fixed-44.1-kHz filter coefficients/history;
 - BADP seek state and the retained current/previous decoded-frame window used
   by interpolation.
@@ -1522,9 +1594,32 @@ datapath owner. It retains:
 The quotient and remainder are retained separately so synchronization batch
 size cannot change pitch, loop position, or END timing. Source-rate/rate-word
 products are decoded when voice programming changes, not in the per-sample
-loop. PCM mixing uses retained fixed-capacity scratch buffers. Sample generation,
-host pull, PLAY, and live source replacement perform no allocation. Only
-save-state capture may allocate serialized state outside the realtime datapath.
+loop. The 32-bit gain register is decoded once as signed Q12 and retained without
+clamping, so negative and overrange words remain distinct hardware inputs. A
+STOP fade derives one integer quotient, signed remainder, and initial error from
+that retained gain; each DAC edge advances the error and current Q12 gain without
+floating point or a per-sample divide. A live gain write during a fade writes the
+current signed-Q12 latch and derives a new fade slope over the remaining edges.
+The current-gain latch wraps as signed 32-bit state and the error latch commits as
+unsigned 32-bit state on every edge, including for non-canonical but representable
+save-state bit combinations.
+
+Each voice contributes `signed_i16_sample * signed_Q12_gain` directly to a wide
+stereo accumulator. TypeScript stores exact integer-valued `number` entries in a
+retained `Float64Array`; with sixteen voices the largest representable sum stays
+below `2^53`. C++ uses retained `i64` entries. After every voice has contributed,
+the mixer performs one arithmetic Q12 shift and one signed-i16 saturation for
+each left/right DAC sample. It never saturates or normalizes an individual gain
+product or mix contribution before the sum; the separate biquad datapath retains
+its own documented i16 output boundary. This follows the signed integer
+volume-product and explicit accumulator-boundary model used by
+[DuckStation](https://github.com/stenzek/duckstation/blob/39fe70c84b10600727c6d176791fee8ae86705b1/src/core/spu.cpp#L43-L50) and
+[Mednafen](https://github.com/libretro-mirrors/mednafen-git/blob/f0ee9d595db68ad5247ba5ac6a8367fdced9c3fc/src/psx/spu.cpp#L716-L731), while
+BMSX keeps its own Q12 and sixteen-voice hardware contract.
+
+PCM mixing uses retained fixed-capacity scratch buffers. Sample generation, host
+pull, PLAY, and live source replacement perform no allocation. Only save-state
+capture may allocate serialized state outside the realtime datapath.
 
 The mixer writes the continuous 44.1-kHz machine timeline, including silent
 intervals, to the 3072-frame AOUT presentation ring. Each batch carries its
@@ -1559,9 +1654,10 @@ silence only; it cannot backpressure the APU.
 Save-state first synchronizes the unified APU clock domain to the scheduler cycle, then
 captures the command FIFO, raw slot bank, internal sample-RAM and transfer unit,
 service-clock carry and DAC sequence, event/fault latches, and the single live
-voice datapath. It deliberately excludes immutable sample-ROM, the AOUT ring,
-and host resampler. Restore reinstates machine state at the restored cycle,
-clears presentation transport, restores voices without generating samples, and
+voice datapath, including the signed-Q12 gain and fade quotient/remainder/error
+latches. It deliberately excludes immutable sample-ROM, the AOUT ring, and host
+resampler. Restore reinstates machine state at the restored cycle, clears
+presentation transport, restores voices without generating samples, and
 schedules the next exact hardware edge.
 
 The mirrored owners are `machine/devices/audio/{controller,service_clock,
@@ -1832,9 +1928,9 @@ references to their existing command kinds, payload references and counts.
 Backends consume only that pass state; they do not read a menu/workbench
 controller or clone the commands into a per-frame DTO. WebGPU and WebGL2 own
 their concrete pipelines, atlases, buffers and uploads behind that boundary.
-The BIOS display-2 circuit is not an overlay-queue lane. The full-screen IDE
-owns and emits its own frame background; the quick menu publishes only its own
-host commands over the retained game scanout.
+The cart-visible GX composition plane is not an `overlay_queue` lane. The
+full-screen IDE owns and emits its own frame background; the quick menu
+publishes only its own host commands over the retained game scanout.
 WebGPU is the default accelerated browser backend and WebGL2 is its fallback;
 host validation failures do not reverse that ownership or introduce a second
 presentation facade.

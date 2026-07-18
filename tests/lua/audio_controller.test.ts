@@ -10,6 +10,8 @@ import {
 	APU_EVENT_SLOT_ENDED,
 	APU_FILTER_COEFFICIENT_ONE,
 	APU_FILTER_CONTROL_ENABLE,
+	APU_GAIN_Q12_FRACTION_BITS,
+	APU_GAIN_Q12_ONE,
 	APU_FAULT_BAD_CMD,
 	APU_FAULT_NONE,
 	APU_FAULT_SOURCE_RANGE,
@@ -137,8 +139,10 @@ function createFakeOutputVoiceState(voice: FakeVoiceInfo): ApuOutputVoiceState {
 		slot: voice.slot,
 		cursorQ16: voice.playbackCursorQ16,
 		phaseRemainder: 0,
-		gain: 1,
-		fadeStartGain: 1,
+		gainQ12: 0x1000,
+		fadeStepQ12: 0,
+		fadeStepRemainder: 0,
+		fadeError: 0,
 		fadeSamplesRemaining: voice.stopFadeSamples,
 		fadeSamplesTotal: voice.stopFadeSamples,
 		filter: {
@@ -640,6 +644,14 @@ function writeSquareGeneratorRegisters(memory: Memory): void {
 	memory.writeValue(IO_APU_GENERATOR_DUTY_Q12, 0x0800);
 }
 
+function startConstantSquareVoice(harness: ReturnType<typeof createRealAudioHarness>, slot: number, gainQ12Word: number): void {
+	writeSquareGeneratorRegisters(harness.memory);
+	harness.memory.writeValue(IO_APU_RATE_STEP_Q16, 0);
+	harness.memory.writeValue(IO_APU_GAIN_Q12, gainQ12Word);
+	harness.memory.writeValue(IO_APU_SLOT, slot);
+	writeApuCommand(harness.memory, harness.audio, APU_CMD_PLAY);
+}
+
 function writeBadpSourceRegisters(memory: Memory, sampleRateHz: number): void {
 	const bytes = new Uint8Array(60);
 	bytes.set([0x42, 0x41, 0x44, 0x50], 0);
@@ -1130,6 +1142,101 @@ test('APU machine output preserves the silent interval between voices', () => {
 	assert.notEqual(left[0], 0);
 	assert.deepEqual(left.slice(4, 8), new Int16Array(4));
 	assert.notEqual(left[8], 0);
+});
+
+test('APU signed-Q12 gain, wide mixing, fade, and save restore follow exact raw vectors', () => {
+	assert.equal(APU_GAIN_Q12_FRACTION_BITS, 12);
+
+	const negative = createRealAudioHarness();
+	startConstantSquareVoice(negative, 1, 0xffff_f000);
+	advanceRealApu(negative, 1);
+	assert.equal(negative.audio.captureState().output.voices[0]!.gainQ12, -APU_GAIN_Q12_ONE);
+	assert.equal(negative.audioOutput.outputRing.readFramePacked(), 0x8001_8001);
+
+	const overrange = createRealAudioHarness();
+	startConstantSquareVoice(overrange, 1, 0x0000_2000);
+	advanceRealApu(overrange, 1);
+	assert.equal(overrange.audio.captureState().output.voices[0]!.gainQ12, 2 * APU_GAIN_Q12_ONE);
+	assert.equal(overrange.audioOutput.outputRing.readFramePacked(), 0x7fff_7fff);
+
+	const cancellation = createRealAudioHarness();
+	startConstantSquareVoice(cancellation, 1, 0x0000_2000);
+	startConstantSquareVoice(cancellation, 2, 0xffff_e000);
+	advanceRealApu(cancellation, 1);
+	assert.equal(cancellation.audioOutput.outputRing.readFramePacked(), 0);
+
+	const saturatedMix = createRealAudioHarness();
+	startConstantSquareVoice(saturatedMix, 1, APU_GAIN_Q12_ONE);
+	startConstantSquareVoice(saturatedMix, 2, APU_GAIN_Q12_ONE);
+	advanceRealApu(saturatedMix, 1);
+	assert.equal(saturatedMix.audioOutput.outputRing.readFramePacked(), 0x7fff_7fff);
+
+	const wrappedFadeSource = createRealAudioHarness();
+	startConstantSquareVoice(wrappedFadeSource, 1, APU_GAIN_Q12_ONE);
+	const wrappedFadeState = wrappedFadeSource.audio.captureState();
+	wrappedFadeState.output.voices[0]!.gainQ12 = 0x7fff_ffff;
+	wrappedFadeState.output.voices[0]!.fadeStepQ12 = -0x8000_0000;
+	wrappedFadeState.output.voices[0]!.fadeStepRemainder = -0x8000_0000;
+	wrappedFadeState.output.voices[0]!.fadeError = 0xffff_ffff;
+	wrappedFadeState.output.voices[0]!.fadeSamplesRemaining = 3;
+	wrappedFadeState.output.voices[0]!.fadeSamplesTotal = 1;
+	const wrappedFade = restoreRealAudioHarness(wrappedFadeState, 0);
+	advanceRealApu(wrappedFade, 2);
+	assert.equal(wrappedFade.audioOutput.outputRing.readFramePacked(), 0x7fff_7fff);
+	assert.equal(wrappedFade.audioOutput.outputRing.readFramePacked(), 0);
+	const wrappedFadeResult = wrappedFade.audio.captureState().output.voices[0]!;
+	assert.deepEqual(
+		{
+			gainQ12: wrappedFadeResult.gainQ12,
+			fadeError: wrappedFadeResult.fadeError,
+			fadeSamplesRemaining: wrappedFadeResult.fadeSamplesRemaining,
+		},
+		{
+			gainQ12: -0x7fff_ffff,
+			fadeError: 0xffff_fffd,
+			fadeSamplesRemaining: 1,
+		},
+	);
+
+	const live = createRealAudioHarness();
+	startConstantSquareVoice(live, 1, 0xffff_efff);
+	live.memory.writeValue(IO_APU_SLOT, 1);
+	live.memory.writeValue(IO_APU_FADE_SAMPLES, 4);
+	live.memory.writeValue(IO_APU_CMD, APU_CMD_STOP_SLOT);
+	live.audio.onService(0);
+	advanceRealApu(live, 2);
+	assert.equal(live.audioOutput.outputRing.readFramePacked(), 0x8000_8000);
+	assert.equal(live.audioOutput.outputRing.readFramePacked(), 0xa000_a000);
+	const saved = live.audio.captureState();
+	assert.deepEqual(
+		{
+			gainQ12: saved.output.voices[0]!.gainQ12,
+			fadeStepQ12: saved.output.voices[0]!.fadeStepQ12,
+			fadeStepRemainder: saved.output.voices[0]!.fadeStepRemainder,
+			fadeError: saved.output.voices[0]!.fadeError,
+			fadeSamplesRemaining: saved.output.voices[0]!.fadeSamplesRemaining,
+			fadeSamplesTotal: saved.output.voices[0]!.fadeSamplesTotal,
+		},
+		{
+			gainQ12: -0x0800,
+			fadeStepQ12: -0x0400,
+			fadeStepRemainder: -1,
+			fadeError: 1,
+			fadeSamplesRemaining: 2,
+			fadeSamplesTotal: 4,
+		},
+	);
+
+	live.audioOutput.outputRing.clear();
+	const restored = restoreRealAudioHarness(saved, 2);
+	advanceRealApu(live, 4);
+	advanceRealApu(restored, 4);
+	for (const expected of [0xc000_c000, 0xe000_e000]) {
+		assert.equal(live.audioOutput.outputRing.readFramePacked(), expected);
+		assert.equal(restored.audioOutput.outputRing.readFramePacked(), expected);
+	}
+	assert.equal(restored.audio.captureState().output.voices.length, 0);
+	assert.deepEqual(restored.audio.captureState(), live.audio.captureState());
 });
 
 test('APU save restore resumes the exact future PCM phase while transport stays unsaved', () => {

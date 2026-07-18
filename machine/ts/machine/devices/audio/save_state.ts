@@ -44,8 +44,10 @@ export type ApuOutputVoiceState = {
 	slot: ApuAudioSlot;
 	cursorQ16: number;
 	phaseRemainder: number;
-	gain: number;
-	fadeStartGain: number;
+	gainQ12: number;
+	fadeStepQ12: number;
+	fadeStepRemainder: number;
+	fadeError: number;
 	fadeSamplesRemaining: number;
 	fadeSamplesTotal: number;
 	filter: ApuBiquadFilterState;
@@ -92,8 +94,10 @@ export function captureApuOutputVoiceState(record: ApuOutputVoiceStateAccess): A
 		slot: record.slot,
 		cursorQ16: record.cursorQ16,
 		phaseRemainder: record.phaseRemainder,
-		gain: record.gain,
-		fadeStartGain: record.fadeStartGain,
+		gainQ12: record.gainQ12,
+		fadeStepQ12: record.fadeStepQ12,
+		fadeStepRemainder: record.fadeStepRemainder,
+		fadeError: record.fadeError,
 		fadeSamplesRemaining: record.fadeSamplesRemaining,
 		fadeSamplesTotal: record.fadeSamplesTotal,
 		filter: {
@@ -124,8 +128,10 @@ export function captureApuOutputVoiceState(record: ApuOutputVoiceStateAccess): A
 export function restoreApuOutputVoiceState(record: ApuOutputVoiceStateAccess, state: ApuOutputVoiceState): void {
 	record.cursorQ16 = state.cursorQ16;
 	record.phaseRemainder = state.phaseRemainder;
-	record.gain = state.gain;
-	record.fadeStartGain = state.fadeStartGain;
+	record.gainQ12 = state.gainQ12;
+	record.fadeStepQ12 = state.fadeStepQ12;
+	record.fadeStepRemainder = state.fadeStepRemainder;
+	record.fadeError = state.fadeError;
 	record.fadeSamplesRemaining = state.fadeSamplesRemaining;
 	record.fadeSamplesTotal = state.fadeSamplesTotal;
 	record.filter.l1 = state.filter.l1;

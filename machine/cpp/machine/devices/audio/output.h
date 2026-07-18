@@ -71,8 +71,10 @@ private:
 		i32 phaseRemainder = 0;
 		i64 phaseStepQ16 = 0;
 		i32 phaseStepRemainder = 0;
-		f64 gain = 1.0;
-		f64 fadeStartGain = 1.0;
+		i32 gainQ12 = APU_GAIN_Q12_ONE;
+		i32 fadeStepQ12 = 0;
+		i32 fadeStepRemainder = 0;
+		u32 fadeError = 0;
 		u32 fadeSamplesRemaining = 0;
 		u32 fadeSamplesTotal = 0;
 		BiquadFilterState filter;
@@ -90,11 +92,11 @@ private:
 		const Span<const u8>& sourceBytes,
 		u32 rateStepQ16Word,
 		i64 cursorQ16,
-		i32 phaseRemainder,
-		f64 initialGain
+		i32 phaseRemainder
 	);
 	void configurePhaseStep(VoiceRecord& record, u32 rateStepQ16Word, u32 sampleRateHz);
 	void applyVoiceGainQ12(VoiceRecord& record, u32 gainQ12Word);
+	void configureFade(VoiceRecord& record, u32 fadeSamples);
 	void applyVoiceLoopBounds(VoiceRecord& record, const ApuAudioSource& source);
 	void seekVoice(VoiceRecord& record, u32 startFrame);
 	void readVoiceFrame(VoiceRecord& record, size_t frame);
@@ -102,7 +104,7 @@ private:
 	void configureRecordFilter(VoiceRecord& record, const ApuParameterRegisterWords& registerWords);
 
 	std::array<VoiceRecord, APU_SLOT_COUNT> m_voices{};
-	std::array<f32, MIX_BATCH_SAMPLES> m_mixBuffer{};
+	std::array<i64, MIX_BATCH_SAMPLES> m_mixBuffer{};
 	std::array<i16, MIX_BATCH_SAMPLES> m_renderBuffer{};
 	ApuPhaseStep m_phaseStep{};
 	i32 m_sampledLeft = 0;

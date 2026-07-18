@@ -37,8 +37,10 @@ struct ApuOutputVoiceState {
 	ApuAudioSlot slot = 0;
 	i64 cursorQ16 = 0;
 	i32 phaseRemainder = 0;
-	f64 gain = 1.0;
-	f64 fadeStartGain = 1.0;
+	i32 gainQ12 = APU_GAIN_Q12_ONE;
+	i32 fadeStepQ12 = 0;
+	i32 fadeStepRemainder = 0;
+	u32 fadeError = 0;
 	u32 fadeSamplesRemaining = 0;
 	u32 fadeSamplesTotal = 0;
 	ApuBiquadFilterState filter;

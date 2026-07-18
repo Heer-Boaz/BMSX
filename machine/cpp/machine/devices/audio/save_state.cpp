@@ -12,8 +12,10 @@ ApuOutputVoiceState captureApuOutputVoiceState(const ApuOutputMixer::VoiceRecord
 	voice.slot = record.slot;
 	voice.cursorQ16 = record.cursorQ16;
 	voice.phaseRemainder = record.phaseRemainder;
-	voice.gain = record.gain;
-	voice.fadeStartGain = record.fadeStartGain;
+	voice.gainQ12 = record.gainQ12;
+	voice.fadeStepQ12 = record.fadeStepQ12;
+	voice.fadeStepRemainder = record.fadeStepRemainder;
+	voice.fadeError = record.fadeError;
 	voice.fadeSamplesRemaining = record.fadeSamplesRemaining;
 	voice.fadeSamplesTotal = record.fadeSamplesTotal;
 	voice.filter.l1 = record.filter.l1;
@@ -42,8 +44,10 @@ ApuOutputVoiceState captureApuOutputVoiceState(const ApuOutputMixer::VoiceRecord
 void restoreApuOutputVoiceState(ApuOutputMixer::VoiceRecord& record, const ApuOutputVoiceState& state) {
 	record.cursorQ16 = state.cursorQ16;
 	record.phaseRemainder = state.phaseRemainder;
-	record.gain = state.gain;
-	record.fadeStartGain = state.fadeStartGain;
+	record.gainQ12 = state.gainQ12;
+	record.fadeStepQ12 = state.fadeStepQ12;
+	record.fadeStepRemainder = state.fadeStepRemainder;
+	record.fadeError = state.fadeError;
 	record.fadeSamplesRemaining = state.fadeSamplesRemaining;
 	record.fadeSamplesTotal = state.fadeSamplesTotal;
 	record.filter.l1 = state.filter.l1;

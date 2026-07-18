@@ -166,14 +166,6 @@ function requireI64(value: unknown, label: string): number {
 	return word;
 }
 
-function requireNumberValue(value: unknown, label: string): number {
-	const number = value as number;
-	if (+number !== number || number - number !== 0) {
-		throw new Error(`${label} must be numeric.`);
-	}
-	return number;
-}
-
 function requireBooleanValue(value: unknown, label: string): boolean {
 	if (Object.is(value, true)) {
 		return true;
@@ -813,8 +805,10 @@ function encodeApuOutputVoiceState(state: ApuOutputVoiceState): ApuOutputVoiceSt
 		slot: state.slot,
 		cursorQ16: state.cursorQ16,
 		phaseRemainder: state.phaseRemainder,
-		gain: state.gain,
-		fadeStartGain: state.fadeStartGain,
+		gainQ12: state.gainQ12,
+		fadeStepQ12: state.fadeStepQ12,
+		fadeStepRemainder: state.fadeStepRemainder,
+		fadeError: state.fadeError,
 		fadeSamplesRemaining: state.fadeSamplesRemaining,
 		fadeSamplesTotal: state.fadeSamplesTotal,
 		filter: encodeApuBiquadFilterState(state.filter),
@@ -828,8 +822,10 @@ function decodeApuOutputVoiceState(value: unknown, label: string): ApuOutputVoic
 		slot: requireBoundedU32(requireObjectKey(object, 'slot', label, `${label}.slot`), `${label}.slot`, 0, APU_SLOT_COUNT - 1),
 		cursorQ16: requireI64(requireObjectKey(object, 'cursorQ16', label, `${label}.cursorQ16`), `${label}.cursorQ16`),
 		phaseRemainder: requireI32(requireObjectKey(object, 'phaseRemainder', label, `${label}.phaseRemainder`), `${label}.phaseRemainder`),
-		gain: requireNumberValue(requireObjectKey(object, 'gain', label, `${label}.gain`), `${label}.gain`),
-		fadeStartGain: requireNumberValue(requireObjectKey(object, 'fadeStartGain', label, `${label}.fadeStartGain`), `${label}.fadeStartGain`),
+		gainQ12: requireI32(requireObjectKey(object, 'gainQ12', label, `${label}.gainQ12`), `${label}.gainQ12`),
+		fadeStepQ12: requireI32(requireObjectKey(object, 'fadeStepQ12', label, `${label}.fadeStepQ12`), `${label}.fadeStepQ12`),
+		fadeStepRemainder: requireI32(requireObjectKey(object, 'fadeStepRemainder', label, `${label}.fadeStepRemainder`), `${label}.fadeStepRemainder`),
+		fadeError: requireBoundedU32(requireObjectKey(object, 'fadeError', label, `${label}.fadeError`), `${label}.fadeError`, 0, 0xffffffff),
 		fadeSamplesRemaining: requireBoundedU32(requireObjectKey(object, 'fadeSamplesRemaining', label, `${label}.fadeSamplesRemaining`), `${label}.fadeSamplesRemaining`, 0, 0xffffffff),
 		fadeSamplesTotal: requireBoundedU32(requireObjectKey(object, 'fadeSamplesTotal', label, `${label}.fadeSamplesTotal`), `${label}.fadeSamplesTotal`, 0, 0xffffffff),
 		filter: decodeApuBiquadFilterState(requireObjectKey(object, 'filter', label, `${label}.filter`), `${label}.filter`),

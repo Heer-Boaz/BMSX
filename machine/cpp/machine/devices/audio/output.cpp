@@ -50,9 +50,14 @@ void ApuOutputMixer::playVoice(
 		sourceBytes,
 		registerWords[APU_PARAMETER_RATE_STEP_Q16_INDEX],
 		static_cast<i64>(registerWords[APU_PARAMETER_START_SAMPLE_INDEX]) * static_cast<i64>(APU_RATE_STEP_Q16_ONE),
-		0,
-		clamp(resolveApuGainLinear(registerWords[APU_PARAMETER_GAIN_Q12_INDEX]), 0.0, 1.0)
+		0
 	);
+	record.gainQ12 = toSignedWord(registerWords[APU_PARAMETER_GAIN_Q12_INDEX]);
+	record.fadeStepQ12 = 0;
+	record.fadeStepRemainder = 0;
+	record.fadeError = 0u;
+	record.fadeSamplesRemaining = 0u;
+	record.fadeSamplesTotal = 0u;
 }
 
 void ApuOutputMixer::replaceVoiceSource(
@@ -62,25 +67,15 @@ void ApuOutputMixer::replaceVoiceSource(
 	const ApuParameterRegisterWords& registerWords
 ) {
 	VoiceRecord& record = m_voices[slot];
-	const i64 cursorQ16 = record.cursorQ16;
-	const i32 phaseRemainder = record.phaseRemainder;
-	const f64 gain = record.gain;
-	const f64 fadeStartGain = record.fadeStartGain;
-	const u32 fadeSamplesRemaining = record.fadeSamplesRemaining;
-	const u32 fadeSamplesTotal = record.fadeSamplesTotal;
 	buildVoiceFromData(
 		record,
 		source,
 		sourceBytes,
 		registerWords[APU_PARAMETER_RATE_STEP_Q16_INDEX],
-		cursorQ16,
-		phaseRemainder,
-		gain
+		record.cursorQ16,
+		record.phaseRemainder
 	);
 	configureRecordFilter(record, registerWords);
-	record.fadeStartGain = fadeStartGain;
-	record.fadeSamplesRemaining = fadeSamplesRemaining;
-	record.fadeSamplesTotal = fadeSamplesTotal;
 }
 
 void ApuOutputMixer::restoreVoice(
@@ -97,8 +92,7 @@ void ApuOutputMixer::restoreVoice(
 		sourceBytes,
 		registerWords[APU_PARAMETER_RATE_STEP_Q16_INDEX],
 		state.cursorQ16,
-		state.phaseRemainder,
-		state.gain
+		state.phaseRemainder
 	);
 	record.filter.reset();
 	configureRecordFilter(record, registerWords);
@@ -144,9 +138,7 @@ void ApuOutputMixer::writeSlotRegisterWord(
 void ApuOutputMixer::stopSlot(ApuAudioSlot slot, u32 fadeSamples) {
 	VoiceRecord& record = m_voices[slot];
 	if (fadeSamples != 0u && record.active) {
-		record.fadeStartGain = record.gain;
-		record.fadeSamplesRemaining = fadeSamples;
-		record.fadeSamplesTotal = fadeSamples;
+		configureFade(record, fadeSamples);
 		return;
 	}
 	record.active = false;
@@ -226,9 +218,9 @@ u32 ApuOutputMixer::renderMachineFrames(i64 frameCount, i64 startSequence) {
 
 u32 ApuOutputMixer::renderMachineBatch(size_t frameCount, i64 startSequence) {
 	const size_t totalSamples = frameCount * 2u;
-	std::fill_n(m_mixBuffer.data(), totalSamples, 0.0F);
+	std::fill_n(m_mixBuffer.data(), totalSamples, 0);
 	u32 endedMask = 0u;
-	f32* mix = m_mixBuffer.data();
+	i64* mix = m_mixBuffer.data();
 
 	for (ApuAudioSlot slot = 0; slot < APU_SLOT_COUNT; slot += 1u) {
 		VoiceRecord& record = m_voices[slot];
@@ -239,8 +231,15 @@ u32 ApuOutputMixer::renderMachineBatch(size_t frameCount, i64 startSequence) {
 		const bool hasLoop = record.loopEndQ16 > record.loopStartQ16;
 		i64 cursorQ16 = record.cursorQ16;
 		i32 phaseRemainder = record.phaseRemainder;
-		f64 gain = record.gain;
+		i32 gainQ12 = record.gainQ12;
+		u32 fadeError = record.fadeError;
 		u32 fadeRemaining = record.fadeSamplesRemaining;
+		const u64 fadeRemainderMagnitude = record.fadeStepRemainder < 0
+			? static_cast<u64>(-static_cast<i64>(record.fadeStepRemainder))
+			: static_cast<u64>(record.fadeStepRemainder);
+		const i32 fadeRemainderSign = record.fadeStepRemainder < 0
+			? -1
+			: (record.fadeStepRemainder > 0 ? 1 : 0);
 		bool ended = false;
 
 		for (size_t frame = 0; frame < frameCount; frame += 1u) {
@@ -251,9 +250,6 @@ u32 ApuOutputMixer::renderMachineBatch(size_t frameCount, i64 startSequence) {
 				break;
 			}
 
-			if (fadeRemaining != 0u) {
-				gain = record.fadeStartGain * static_cast<f64>(fadeRemaining) / static_cast<f64>(record.fadeSamplesTotal);
-			}
 			i32 leftSample = 0;
 			i32 rightSample = 0;
 			if (record.generatorKind == APU_GENERATOR_SQUARE) {
@@ -293,8 +289,8 @@ u32 ApuOutputMixer::renderMachineBatch(size_t frameCount, i64 startSequence) {
 				rightSample = record.filter.outputRight;
 			}
 			const size_t outIndex = frame * 2u;
-			mix[outIndex] = static_cast<f32>(static_cast<f64>(mix[outIndex]) + static_cast<f64>(leftSample) * APU_PCM_SAMPLE_SCALE * gain);
-			mix[outIndex + 1u] = static_cast<f32>(static_cast<f64>(mix[outIndex + 1u]) + static_cast<f64>(rightSample) * APU_PCM_SAMPLE_SCALE * gain);
+			mix[outIndex] += static_cast<i64>(leftSample) * static_cast<i64>(gainQ12);
+			mix[outIndex + 1u] += static_cast<i64>(rightSample) * static_cast<i64>(gainQ12);
 
 			phaseRemainder += record.phaseStepRemainder;
 			i32 phaseCarry = 0;
@@ -315,6 +311,19 @@ u32 ApuOutputMixer::renderMachineBatch(size_t frameCount, i64 startSequence) {
 					ended = true;
 					break;
 				}
+				const u64 nextFadeError = static_cast<u64>(fadeError) + fadeRemainderMagnitude;
+				i32 fadeRemainderCarry = 0;
+				if (nextFadeError >= record.fadeSamplesTotal) {
+					fadeError = static_cast<u32>(nextFadeError - record.fadeSamplesTotal);
+					fadeRemainderCarry = fadeRemainderSign;
+				} else {
+					fadeError = static_cast<u32>(nextFadeError);
+				}
+				gainQ12 = wrapI32(
+					static_cast<i64>(gainQ12)
+					- static_cast<i64>(record.fadeStepQ12)
+					- static_cast<i64>(fadeRemainderCarry)
+				);
 			} else if (!hasLoop && (cursorQ16 < 0 || cursorQ16 >= framesInRecordQ16)) {
 				ended = true;
 				break;
@@ -323,7 +332,8 @@ u32 ApuOutputMixer::renderMachineBatch(size_t frameCount, i64 startSequence) {
 
 		record.cursorQ16 = cursorQ16;
 		record.phaseRemainder = phaseRemainder;
-		record.gain = gain;
+		record.gainQ12 = gainQ12;
+		record.fadeError = fadeError;
 		record.fadeSamplesRemaining = fadeRemaining;
 		if (ended) {
 			record.active = false;
@@ -333,7 +343,11 @@ u32 ApuOutputMixer::renderMachineBatch(size_t frameCount, i64 startSequence) {
 
 	i16* output = m_renderBuffer.data();
 	for (size_t index = 0; index < totalSamples; index += 1u) {
-		output[index] = static_cast<i16>(saturateRoundedI32(static_cast<f64>(clamp(mix[index], -1.0F, 1.0F)) * 32767.0));
+		output[index] = static_cast<i16>(clamp<i64>(
+			shiftRightSigned(mix[index], APU_GAIN_Q12_FRACTION_BITS),
+			-0x8000,
+			0x7fff
+		));
 	}
 	outputRing.write(output, frameCount, startSequence);
 	return endedMask;
@@ -345,10 +359,10 @@ void ApuOutputMixer::buildVoiceFromData(
 	const Span<const u8>& sourceBytes,
 	u32 rateStepQ16Word,
 	i64 cursorQ16,
-	i32 phaseRemainder,
-	f64 initialGain
+	i32 phaseRemainder
 ) {
-	if (!apuAudioSourceUsesGenerator(source) && source.bitsPerSample == 4u) {
+	const bool usesBadp = !apuAudioSourceUsesGenerator(source) && source.bitsPerSample == 4u;
+	if (usesBadp) {
 		loadApuBadpSeekTable(record.badpSeekTable, sourceBytes.data(), 0u);
 	} else {
 		record.badpSeekTable.bytes = nullptr;
@@ -366,12 +380,8 @@ void ApuOutputMixer::buildVoiceFromData(
 	record.cursorQ16 = cursorQ16;
 	record.phaseRemainder = phaseRemainder;
 	configurePhaseStep(record, rateStepQ16Word, source.sampleRateHz);
-	record.gain = initialGain;
-	record.fadeStartGain = initialGain;
-	record.fadeSamplesRemaining = 0u;
-	record.fadeSamplesTotal = 0u;
 	applyVoiceLoopBounds(record, source);
-	record.usesBadp = !apuAudioSourceUsesGenerator(source) && source.bitsPerSample == 4u;
+	record.usesBadp = usesBadp;
 	if (record.usesBadp) {
 		resetApuBadpDecoder(
 			record.sourceBytes + record.dataOffset,
@@ -391,14 +401,20 @@ void ApuOutputMixer::configurePhaseStep(VoiceRecord& record, u32 rateStepQ16Word
 }
 
 void ApuOutputMixer::applyVoiceGainQ12(VoiceRecord& record, u32 gainQ12Word) {
-	const f64 gain = clamp(resolveApuGainLinear(gainQ12Word), 0.0, 1.0);
+	record.gainQ12 = toSignedWord(gainQ12Word);
 	if (record.fadeSamplesRemaining != 0u) {
-		record.fadeStartGain = gain;
-		record.gain = gain * static_cast<f64>(record.fadeSamplesRemaining) / static_cast<f64>(record.fadeSamplesTotal);
-		return;
+		configureFade(record, record.fadeSamplesRemaining);
 	}
-	record.gain = gain;
-	record.fadeStartGain = gain;
+}
+
+void ApuOutputMixer::configureFade(VoiceRecord& record, u32 fadeSamples) {
+	const i64 gainQ12 = record.gainQ12;
+	const i64 remainder = gainQ12 % static_cast<i64>(fadeSamples);
+	record.fadeStepQ12 = static_cast<i32>((gainQ12 - remainder) / static_cast<i64>(fadeSamples));
+	record.fadeStepRemainder = static_cast<i32>(remainder);
+	record.fadeError = fadeSamples - 1u;
+	record.fadeSamplesRemaining = fadeSamples;
+	record.fadeSamplesTotal = fadeSamples;
 }
 
 void ApuOutputMixer::applyVoiceLoopBounds(VoiceRecord& record, const ApuAudioSource& source) {

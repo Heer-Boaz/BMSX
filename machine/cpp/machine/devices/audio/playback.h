@@ -10,7 +10,6 @@ struct ApuPhaseStep {
 	i32 remainder = 0;
 };
 
-auto resolveApuGainLinear(u32 gainQ12Word) -> f64;
 void resolveApuPhaseStep(ApuPhaseStep& out, u32 rateStepQ16Word, u32 sourceSampleRateHz);
 
 } // namespace bmsx

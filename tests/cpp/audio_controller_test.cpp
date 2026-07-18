@@ -594,20 +594,33 @@ void testRuntimeClockResetAndRestorePreserveApuTimebase() {
 	require(machine.audioOutput.outputRing.queuedFrames() == 0u, "hardware reset should clear APU presentation audio");
 }
 
-void programFilteredSquareVoice(AudioHarness& harness) {
+void writeSquareGeneratorRegisters(AudioHarness& harness) {
 	harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_SAMPLE_RATE_HZ, bmsx::APU_SAMPLE_RATE_HZ / 4u);
 	harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_CHANNELS, 1u);
 	harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_FRAME_COUNT, 2u);
 	harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_LOOP_END_SAMPLE, 2u);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_GENERATOR_KIND, bmsx::APU_GENERATOR_SQUARE);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_GENERATOR_DUTY_Q12, 0x0800u);
+}
+
+void programFilteredSquareVoice(AudioHarness& harness) {
+	writeSquareGeneratorRegisters(harness);
 	harness.memory.writeMappedU32LE(bmsx::IO_APU_RATE_STEP_Q16, bmsx::APU_RATE_STEP_Q16_ONE);
 	harness.memory.writeMappedU32LE(bmsx::IO_APU_GAIN_Q12, bmsx::APU_GAIN_Q12_ONE);
 	harness.memory.writeMappedU32LE(bmsx::IO_APU_FILTER_CONTROL, bmsx::APU_FILTER_CONTROL_ENABLE);
 	harness.memory.writeMappedU32LE(bmsx::IO_APU_FILTER_B0_B1, 0x10002000u);
 	harness.memory.writeMappedU32LE(bmsx::IO_APU_FILTER_B2_A1, 0xe000f000u);
 	harness.memory.writeMappedU32LE(bmsx::IO_APU_FILTER_A2, 0x0800u);
-	harness.memory.writeMappedU32LE(bmsx::IO_APU_GENERATOR_KIND, bmsx::APU_GENERATOR_SQUARE);
-	harness.memory.writeMappedU32LE(bmsx::IO_APU_GENERATOR_DUTY_Q12, 0x0800u);
 	harness.memory.writeMappedU32LE(bmsx::IO_APU_SLOT, 1u);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_CMD, bmsx::APU_CMD_PLAY);
+	harness.audio.onService(0);
+}
+
+void programConstantSquareVoice(AudioHarness& harness, bmsx::ApuAudioSlot slot, bmsx::u32 gainQ12Word) {
+	writeSquareGeneratorRegisters(harness);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_RATE_STEP_Q16, 0u);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_GAIN_Q12, gainQ12Word);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_SLOT, slot);
 	harness.memory.writeMappedU32LE(bmsx::IO_APU_CMD, bmsx::APU_CMD_PLAY);
 	harness.audio.onService(0);
 }
@@ -637,6 +650,116 @@ void testRawBiquadDatapath() {
 		"raw biquad delay writes should wrap to signed 32-bit");
 	require(bmsx::interpolateApuPcmSample(0x7fff, -0x8000, 0x8000u) == -1,
 		"APU interpolation should use exact signed Q16 arithmetic");
+}
+
+void testFixedPointMixerVectors() {
+	require(bmsx::APU_GAIN_Q12_FRACTION_BITS == 12u, "APU gain should retain twelve fractional bits");
+
+	AudioHarness negative;
+	programConstantSquareVoice(negative, 1u, 0xfffff000u);
+	negative.scheduler.advanceTo(1);
+	negative.audio.onService(1);
+	require(negative.audio.captureState().output.voices[0].gainQ12 == -static_cast<bmsx::i32>(bmsx::APU_GAIN_Q12_ONE),
+		"negative gain should remain a signed Q12 latch");
+	require(negative.output.outputRing.readFramePacked() == 0x80018001u,
+		"negative gain should invert the raw square sample");
+
+	AudioHarness overrange;
+	programConstantSquareVoice(overrange, 1u, 0x00002000u);
+	overrange.scheduler.advanceTo(1);
+	overrange.audio.onService(1);
+	require(overrange.audio.captureState().output.voices[0].gainQ12 == 2 * static_cast<bmsx::i32>(bmsx::APU_GAIN_Q12_ONE),
+		"overrange gain should remain in the signed Q12 latch");
+	require(overrange.output.outputRing.readFramePacked() == 0x7fff7fffu,
+		"overrange gain should saturate only at the DAC output");
+
+	AudioHarness cancellation;
+	programConstantSquareVoice(cancellation, 1u, 0x00002000u);
+	programConstantSquareVoice(cancellation, 2u, 0xffffe000u);
+	cancellation.scheduler.advanceTo(1);
+	cancellation.audio.onService(1);
+	require(cancellation.output.outputRing.readFramePacked() == 0u,
+		"opposite overrange voices should cancel in the wide Q12 accumulator");
+
+	AudioHarness saturatedMix;
+	programConstantSquareVoice(saturatedMix, 1u, bmsx::APU_GAIN_Q12_ONE);
+	programConstantSquareVoice(saturatedMix, 2u, bmsx::APU_GAIN_Q12_ONE);
+	saturatedMix.scheduler.advanceTo(1);
+	saturatedMix.audio.onService(1);
+	require(saturatedMix.output.outputRing.readFramePacked() == 0x7fff7fffu,
+		"the final sum of multiple voices should saturate to signed 16-bit");
+
+	AudioHarness wrappedFadeSource;
+	programConstantSquareVoice(wrappedFadeSource, 1u, bmsx::APU_GAIN_Q12_ONE);
+	bmsx::AudioControllerState wrappedFadeState = wrappedFadeSource.audio.captureState();
+	bmsx::ApuOutputVoiceState& wrappedFadeVoice = wrappedFadeState.output.voices[0];
+	wrappedFadeVoice.gainQ12 = 0x7fffffff;
+	wrappedFadeVoice.fadeStepQ12 = bmsx::toSignedWord(0x80000000u);
+	wrappedFadeVoice.fadeStepRemainder = bmsx::toSignedWord(0x80000000u);
+	wrappedFadeVoice.fadeError = 0xffffffffu;
+	wrappedFadeVoice.fadeSamplesRemaining = 3u;
+	wrappedFadeVoice.fadeSamplesTotal = 1u;
+	AudioHarness wrappedFade;
+	wrappedFade.audio.restoreState(wrappedFadeState, 0);
+	wrappedFade.scheduler.advanceTo(2);
+	wrappedFade.audio.onService(2);
+	require(wrappedFade.output.outputRing.readFramePacked() == 0x7fff7fffu,
+		"a full-range retained gain should saturate only at the DAC boundary");
+	require(wrappedFade.output.outputRing.readFramePacked() == 0u,
+		"the signed gain latch should wrap on each fade edge");
+	const bmsx::AudioControllerState wrappedFadeResultState = wrappedFade.audio.captureState();
+	const bmsx::ApuOutputVoiceState& wrappedFadeResult = wrappedFadeResultState.output.voices[0];
+	require(wrappedFadeResult.gainQ12 == -0x7fffffff
+		&& wrappedFadeResult.fadeError == 0xfffffffdu
+		&& wrappedFadeResult.fadeSamplesRemaining == 1u,
+		"non-canonical retained fade bits should follow the i32/u32 latch datapath");
+
+	AudioHarness live;
+	programConstantSquareVoice(live, 1u, 0xffffefffu);
+	live.memory.writeMappedU32LE(bmsx::IO_APU_SLOT, 1u);
+	live.memory.writeMappedU32LE(bmsx::IO_APU_FADE_SAMPLES, 4u);
+	live.memory.writeMappedU32LE(bmsx::IO_APU_CMD, bmsx::APU_CMD_STOP_SLOT);
+	live.audio.onService(0);
+	live.scheduler.advanceTo(2);
+	live.audio.onService(2);
+	bmsx::ApuOutputRing& liveOutputRing = live.output.outputRing;
+	require(liveOutputRing.readFramePacked() == 0x80008000u,
+		"the first negative fade sample should saturate at the DAC boundary");
+	require(liveOutputRing.readFramePacked() == 0xa000a000u,
+		"negative fade interpolation should use the exact second Q12 level");
+	const bmsx::AudioControllerState saved = live.audio.captureState();
+	const bmsx::ApuOutputVoiceState& savedVoice = saved.output.voices[0];
+	require(savedVoice.gainQ12 == -0x0800
+		&& savedVoice.fadeStepQ12 == -0x0400
+		&& savedVoice.fadeStepRemainder == -1
+		&& savedVoice.fadeError == 1u
+		&& savedVoice.fadeSamplesRemaining == 2u
+		&& savedVoice.fadeSamplesTotal == 4u,
+		"save-state should retain the exact signed Q12 fade datapath");
+	liveOutputRing.clear();
+
+	AudioHarness restored;
+	restored.scheduler.advanceTo(2);
+	restored.audio.restoreState(saved, 2);
+	live.scheduler.advanceTo(4);
+	live.audio.onService(4);
+	restored.scheduler.advanceTo(4);
+	restored.audio.onService(4);
+	bmsx::ApuOutputRing& restoredOutputRing = restored.output.outputRing;
+	for (const bmsx::u32 expected : {0xc000c000u, 0xe000e000u}) {
+		require(liveOutputRing.readFramePacked() == expected,
+			"the uninterrupted fade should emit the exact future Q12 sample");
+		require(restoredOutputRing.readFramePacked() == expected,
+			"the restored fade should emit the exact same future Q12 sample");
+	}
+	const bmsx::AudioControllerState liveEnd = live.audio.captureState();
+	const bmsx::AudioControllerState restoredEnd = restored.audio.captureState();
+	require(liveEnd.output.voices.empty() && restoredEnd.output.voices.empty(),
+		"the live and restored fixed-point fade should end on the same DAC edge");
+	require(liveEnd.sampleSequence == restoredEnd.sampleSequence,
+		"the restored fixed-point fade should preserve sample continuity");
+	require(liveEnd.eventSequence == restoredEnd.eventSequence,
+		"the restored fixed-point fade should preserve sample and event continuity");
 }
 
 void testFilterAndFadeRestore() {
@@ -844,6 +967,7 @@ int main() {
 	testSampleTransferWrongDirectionBlock();
 	testRuntimeClockResetAndRestorePreserveApuTimebase();
 	testRawBiquadDatapath();
+	testFixedPointMixerVectors();
 	testFilterAndFadeRestore();
 	testResamplerChunkContinuityAndUnderrun();
 	testResamplerDropsOverwrittenInterpolationEndpoints();

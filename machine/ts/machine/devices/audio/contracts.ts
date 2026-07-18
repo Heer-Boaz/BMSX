@@ -1,6 +1,7 @@
 export const APU_SAMPLE_RATE_HZ = 44100;
 export const APU_RATE_STEP_Q16_ONE = 0x1_0000;
-export const APU_GAIN_Q12_ONE = 0x1000;
+export const APU_GAIN_Q12_FRACTION_BITS = 12;
+export const APU_GAIN_Q12_ONE = 1 << APU_GAIN_Q12_FRACTION_BITS;
 export const APU_COMMAND_FIFO_CAPACITY = 16;
 export const APU_SAMPLE_RAM_BASE = 0x1000_0000;
 export const APU_SAMPLE_RAM_BYTES = 512 * 1024;

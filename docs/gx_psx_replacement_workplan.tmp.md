@@ -5,7 +5,7 @@ This is **not** a stable ABI contract and is **not** more authoritative than the
 live checkout. It is a temporary execution checklist so agents can see the
 current direction, completed slices, known blockers, and next work.
 
-Last refreshed: 2026-07-15
+Last refreshed: 2026-07-18
 Do not duplicate recent commit history here. Use `git log --oneline` for that.
 
 ## Source of truth
@@ -20,15 +20,17 @@ software-renderer requirement.
 ## Active goal
 
 Replace the current BMSX VDP/RPU direction with a PSX-style GX GPU/GTE machine.
-The active target is real PSX-GTE/GPU parity, with completion of the PSX-GTE
-emulation as the current hardware-foundation focus. The PSX GTE is the
-deliberate basis for the eventual BSX GTE+, not a temporary implementation to
+The PSX-GTE hardware foundation was formally accepted on 2026-07-18. Exact
+PSX-GPU behavior and live accelerated conformance remain ongoing parity work,
+but they no longer block design of the first native BSX GTE+ extension. The PSX
+GTE remains the deliberate base for GTE+, not a temporary implementation to
 discard once fantasy extensions start.
 
 The long-term console identity is BSX: a fantasy descendant of the PlayStation
 architecture with the Lua CPU and its own native GTE+ and GPU. That end state is
-recorded in `docs/architecture.md`; it is not active implementation scope until
-the PSX-GTE foundation is accepted.
+recorded in `docs/architecture.md`. `BSX-GTE-01` is now the active contract
+slice; no GTE+ register or opcode becomes implementation scope until that first
+extension contract has been reviewed.
 
 Completion means all of these are true:
 
@@ -56,9 +58,10 @@ Completion means all of these are true:
 - Do not add defensive require/ensure/fallback/provider/adapter/injection
   patterns.
 - Do not keep adding features to the old VDP/RPU spectacle path.
-- Do not design or expose BSX GTE+, depth, morphing, local-memory, or native
-  surface extensions through the ABI yet. Preserve the goals for later, after
-  the PSX-GTE foundation is real and accepted.
+- Do not expose or implement BSX GTE+, depth, morphing, local-memory, or native
+  surface words before `BSX-GTE-01` has selected and reviewed one coherent raw
+  hardware slice. Those are candidate capabilities, not permission to grow a
+  speculative ABI in parallel.
 
 ## Current implementation owners
 
@@ -595,9 +598,9 @@ and MAME
 
 ### 4. GTE parity
 
-This is the foundation gate for the later BSX GTE+. Checked coverage records
-the current evidence; it is not permission to route around a newly discovered
-PSX discrepancy or to start the GTE+ ABI early.
+This foundation gate was formally accepted on 2026-07-18. Checked coverage is
+the retained evidence; a newly discovered PSX discrepancy is still a regression
+to fix and never permission to route around the raw base contract.
 
 - [x] Broad raw COP2/GTE register and opcode implementation exists.
 - [x] RTPS/RTPT, NCLIP, OP, MVMVA, depth, lighting/color, SQR, GPF/GPL families
@@ -613,6 +616,23 @@ PSX discrepancy or to start the GTE+ ABI early.
 - [x] Fill missing edge cases for flags, saturation, divide overflow, MAC/IR
   behavior, and unusual register combinations.
 - [x] Keep TS and C++ GTE behavior mirrored.
+- [x] Re-run the focused acceptance gate on 2026-07-18: all 34 TS vectors, the
+  C++ `bmsx_gx_gte_tests` target, and `audit:core-parity` pass in the live
+  checkout. Accept the PSX-GTE foundation and move GTE+ from deferred goal to
+  active contract design.
+
+### 4a. BSX GTE+ contract
+
+- [ ] Select one first native GTE+ datapath instead of designing depth,
+  morphing, local memory, surfaces, and packets as a speculative bundle.
+- [ ] Define its raw registers/opcodes, input and output word formats, pipeline
+  ordering, cycle timing, saturation/flag behavior, reset state, and save-state
+  latches without reinterpreting any accepted PSX word.
+- [ ] Define only the GX handoff and GPU-local-memory behavior required by that
+  datapath. Host geometry/material/renderer objects and the retired VDP/RPU ABI
+  are not design inputs.
+- [ ] Review the complete hardware contract before adding cart-visible words or
+  mirrored TS/C++ implementation.
 
 ### 5. Backend parity
 
@@ -835,6 +855,31 @@ PSX discrepancy or to start the GTE+ ABI early.
 - [ ] Keep TS headless and C++ libretro software/headless runs green for
   render-visible GX/PSX changes.
 
+### 5a. GX scanout composition plane
+
+The raw contract is fixed in
+[`docs/architecture.md`](architecture.md#gx-scanout-composition-plane). This is
+one mirrored vertical implementation slice, not a host-overlay or terminal-only
+shortcut.
+
+- [ ] Add GP1(0Ah)--GP1(0Dh) raw live/present registers, reset/VBlank behavior,
+  register-context banking, device output, and current-format save-state to the
+  TS and C++ GPU owners.
+- [ ] Extend the shared scanout contract and TS/C++ software oracles with exact
+  A1 coverage, source wrap/Y9 bank behavior, signed destination clipping,
+  display-disable, reset-latch, and resumable-supervisor composition vectors.
+- [ ] Consume the same words and existing raw-VRAM resource inside WebGL2,
+  WebGPU, and GLES2 scanout. Do not allocate a composed image, copy a cart
+  framebuffer, or add a backend/host terminal texture.
+- [ ] Add the GP1 constants to the shared firmware GX owner. Monitor rendering
+  must produce coverage through ordinary E6-aware GP0 draws and program the
+  generic plane; GP0(02h) fill cannot be treated as coverage-bearing because
+  the accepted PSX fill datapath bypasses E6.
+- [ ] Prove identical TS/C++ terminal captures with the cart scanout retained
+  below the terminal, then run GLES2/WebGL2/WebGPU conformance and the existing
+  visible `BIOS-TERM-LIVE-01` acceptance. Cart code must exercise the same GP1
+  words independently of supervisor mode.
+
 ### 6. VDP/RPU removal
 
 - [x] Identify every active VDP/RPU presentation registration and machine output
@@ -858,9 +903,10 @@ PSX discrepancy or to start the GTE+ ABI early.
   residual machine implementation is removed.
 - [x] Remove old VDP/RPU and IMGDEC tests that only protected the failed
   renderer-descriptor and runtime decode ABIs.
-- [x] Record BSX with its own native GTE+/GPU as the long-term hardware goal,
-  while keeping its depth, morphing, local-memory and surface contracts deferred
-  behind the accepted PSX-GTE foundation. Do not preserve the old VDP/RPU ABI.
+- [x] Record BSX with its own native GTE+/GPU as the long-term hardware goal.
+  The PSX-GTE foundation is now accepted; `BSX-GTE-01` must still select and
+  review the first coherent extension before depth, morphing, local-memory, or
+  surface words are exposed. Do not preserve the old VDP/RPU ABI.
 
 ### 7. Cart migration
 

@@ -879,8 +879,10 @@ BinValue encodeApuOutputVoiceState(const ApuOutputVoiceState& state) {
 	object["slot"] = encodeScalar<f64>(state.slot);
 	object["cursorQ16"] = encodeScalar<f64>(state.cursorQ16);
 	object["phaseRemainder"] = encodeScalar<f64>(state.phaseRemainder);
-	object["gain"] = encodeScalar<f64>(state.gain);
-	object["fadeStartGain"] = encodeScalar<f64>(state.fadeStartGain);
+	object["gainQ12"] = encodeScalar<f64>(state.gainQ12);
+	object["fadeStepQ12"] = encodeScalar<f64>(state.fadeStepQ12);
+	object["fadeStepRemainder"] = encodeScalar<f64>(state.fadeStepRemainder);
+	object["fadeError"] = encodeScalar<f64>(state.fadeError);
 	object["fadeSamplesRemaining"] = encodeScalar<f64>(state.fadeSamplesRemaining);
 	object["fadeSamplesTotal"] = encodeScalar<f64>(state.fadeSamplesTotal);
 	object["filter"] = encodeApuBiquadFilterState(state.filter);
@@ -894,8 +896,10 @@ ApuOutputVoiceState decodeApuOutputVoiceState(const BinValue& value, const char*
 	state.slot = requireBoundedU32(requireField(object, "slot", label), "machine.audio.output.voices.slot", 0u, APU_SLOT_COUNT - 1u);
 	state.cursorQ16 = requireI64(requireField(object, "cursorQ16", label), "machine.audio.output.voices.cursorQ16");
 	state.phaseRemainder = requireI32(requireField(object, "phaseRemainder", label), "machine.audio.output.voices.phaseRemainder");
-	state.gain = requireNumber(requireField(object, "gain", label), "machine.audio.output.voices.gain");
-	state.fadeStartGain = requireNumber(requireField(object, "fadeStartGain", label), "machine.audio.output.voices.fadeStartGain");
+	state.gainQ12 = requireI32(requireField(object, "gainQ12", label), "machine.audio.output.voices.gainQ12");
+	state.fadeStepQ12 = requireI32(requireField(object, "fadeStepQ12", label), "machine.audio.output.voices.fadeStepQ12");
+	state.fadeStepRemainder = requireI32(requireField(object, "fadeStepRemainder", label), "machine.audio.output.voices.fadeStepRemainder");
+	state.fadeError = requireU32(requireField(object, "fadeError", label), "machine.audio.output.voices.fadeError");
 	state.fadeSamplesRemaining = requireU32(requireField(object, "fadeSamplesRemaining", label), "machine.audio.output.voices.fadeSamplesRemaining");
 	state.fadeSamplesTotal = requireU32(requireField(object, "fadeSamplesTotal", label), "machine.audio.output.voices.fadeSamplesTotal");
 	state.filter = decodeApuBiquadFilterState(requireField(object, "filter", label), "machine.audio.output.voices.filter");

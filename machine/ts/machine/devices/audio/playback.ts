@@ -1,8 +1,5 @@
 import { toSignedWord } from '../../common/numeric';
-import {
-	APU_GAIN_Q12_ONE,
-	APU_SAMPLE_RATE_HZ,
-} from './contracts';
+import { APU_SAMPLE_RATE_HZ } from './contracts';
 
 const U16_BASE = 0x1_0000;
 const U16_BASE_SQUARED = 0x1_0000_0000;
@@ -11,10 +8,6 @@ const U16_BASE_CUBED = 0x1_0000_0000_0000;
 export interface ApuPhaseStep {
 	wholeQ16: number;
 	remainder: number;
-}
-
-export function resolveApuGainLinear(gainQ12Word: number): number {
-	return toSignedWord(gainQ12Word) / APU_GAIN_Q12_ONE;
 }
 
 export function resolveApuPhaseStep(out: ApuPhaseStep, rateStepQ16Word: number, sourceSampleRateHz: number): void {

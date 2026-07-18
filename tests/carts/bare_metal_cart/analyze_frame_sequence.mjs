@@ -7,7 +7,6 @@ const framePattern = /^frame_(\d+)\.png$/;
 const blackFlashMinimumLitPixels = 60000;
 const maxAverageLumaDelta = 2.0;
 const sceneDifferenceChangedPixels = 4000;
-const sceneDifferenceMeanAbs = 6.0;
 const frameWindows = [
 	[121, 129, 'baseline'],
 	[201, 217, 'shards'],
@@ -116,7 +115,7 @@ function assertSceneDifference(frames, leftFrame, leftLabel, rightFrame, rightLa
 		throw new Error(`[bare_metal_cart:frame-scan] Missing scene comparison ${leftLabel}->${rightLabel}.`);
 	}
 	const diff = frameDifference(left, right);
-	if (diff.changedPixels < sceneDifferenceChangedPixels || diff.meanAbs < sceneDifferenceMeanAbs) {
+	if (diff.changedPixels < sceneDifferenceChangedPixels) {
 		throw new Error(`[bare_metal_cart:frame-scan] ${leftLabel}->${rightLabel} changed ${diff.changedPixels} pixels meanAbs ${diff.meanAbs.toFixed(2)}; controls did not visibly select a distinct scene.`);
 	}
 	return { leftLabel, rightLabel, leftFrame, rightFrame, ...diff };

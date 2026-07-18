@@ -268,8 +268,10 @@ function createRuntimeSaveState(): RuntimeSaveState {
 								slot: 1,
 								cursorQ16: 2 * APU_RATE_STEP_Q16_ONE,
 								phaseRemainder: 22050,
-								gain: 0.75,
-								fadeStartGain: 0.75,
+								gainQ12: 1954,
+								fadeStepQ12: 279,
+								fadeStepRemainder: 3,
+								fadeError: 0,
 								fadeSamplesRemaining: 7,
 								fadeSamplesTotal: 11,
 								filter: {
