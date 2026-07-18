@@ -19,4 +19,5 @@ void input_devices_close(void);
 
 void input_devices_poll(void);
 int16_t input_devices_state(unsigned port, unsigned device, unsigned index, unsigned id);
+bool RETRO_CALLCONV input_devices_supervisor_request_line_high(void);
 bool input_devices_quit_requested(void);

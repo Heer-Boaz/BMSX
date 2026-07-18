@@ -191,7 +191,10 @@ void appendSystemRomCandidates(std::vector<std::string>& paths, const std::strin
  * LibretroPlatform implementation
  * ============================================================================ */
 
-LibretroPlatform::LibretroPlatform(BackendType backend_type, retro_system_av_info& av_info)
+LibretroPlatform::LibretroPlatform(
+	BackendType backend_type,
+	retro_system_av_info& av_info,
+	bmsx_supervisor_request_line_t supervisorRequestLine)
 	: m_frame_time_sec(static_cast<double>(HZ_SCALE) / static_cast<double>(PAL_REFRESH_UFPS_SCALED))
 	, m_backend_type(backend_type) {
 	m_framebuffer.resize(
@@ -205,7 +208,7 @@ LibretroPlatform::LibretroPlatform(BackendType backend_type, retro_system_av_inf
 	m_clock = std::make_unique<LibretroHostClock>();
 	m_frame_loop = std::make_unique<LibretroFrameLoop>();
 	m_lifecycle = std::make_unique<DefaultLifecycle>();
-	m_input_hub = std::make_unique<LibretroInputHub>(this);
+	m_input_hub = std::make_unique<LibretroInputHub>(this, supervisorRequestLine);
 	m_audio_service = std::make_unique<LibretroAudioService>(this);
 	m_gameview_host = std::make_unique<LibretroGameViewHost>(m_framebuffer, m_backend_type, m_environ_cb, av_info);
 	m_microtask_queue = std::make_unique<DefaultMicrotaskQueue>();
@@ -724,14 +727,32 @@ size_t LibretroPlatform::getSystemRAMSize() const {
  * LibretroInputHub implementation
  * ============================================================================ */
 
-LibretroInputHub::LibretroInputHub(LibretroPlatform* platform)
-	: m_platform(platform) {
+LibretroInputHub::LibretroInputHub(
+	LibretroPlatform* platform,
+	bmsx_supervisor_request_line_t supervisorRequestLine)
+	: m_platform(platform)
+	, m_supervisor_request_line(supervisorRequestLine) {
 }
 
 void LibretroInputHub::emitEvent(const InputEvt& evt) {
 	for (const auto& entry : m_handlers) {
 		entry.handler(evt);
 	}
+}
+
+void LibretroInputHub::publishSupervisorRequestLine() {
+	const bool requestHigh =
+		m_host_supervisor_request_high || m_keyboard_supervisor_request_high;
+	if (requestHigh == m_prev_supervisor_request_high) {
+		return;
+	}
+	emitEvent(InputEvt{
+		.type = requestHigh
+			? InputEvtType::SupervisorRequestDown
+			: InputEvtType::SupervisorRequestUp,
+		.input = {},
+	});
+	m_prev_supervisor_request_high = requestHigh;
 }
 
 namespace {
@@ -807,6 +828,8 @@ i32 pointerAxisToViewport(i16 value, i32 extent) {
 
 void LibretroInputHub::poll() {
 	m_input_poll_cb();
+	m_host_supervisor_request_high = m_supervisor_request_line();
+	publishSupervisorRequestLine();
 	InputState newState;
 
 	for (u8 player = 0u; player < InputState::MAX_PLAYERS; player += 1u) {
@@ -979,10 +1002,7 @@ void LibretroInputHub::postKeyboardEvent(unsigned keycode, bool down) {
 		.value = down ? 1.0F : 0.0F,
 	});
 	if (usage == HID_USAGE_F2) {
-		emitEvent(InputEvt{
-			.type = down ? InputEvtType::SupervisorRequestDown : InputEvtType::SupervisorRequestUp,
-			.input = {},
-		});
+		m_keyboard_supervisor_request_high = down;
 	}
 }
 
@@ -992,6 +1012,9 @@ void LibretroInputHub::resetState() {
 	m_prev_pointer_x = 0;
 	m_prev_pointer_y = 0;
 	m_prev_pointer_position_valid = false;
+	m_host_supervisor_request_high = false;
+	m_keyboard_supervisor_request_high = false;
+	m_prev_supervisor_request_high = false;
 	m_pressed_keyboard_usages.fill(false);
 }
 

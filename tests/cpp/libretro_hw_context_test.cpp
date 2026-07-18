@@ -18,11 +18,18 @@ uintptr_t RETRO_CALLCONV frontendGetCurrentFramebuffer() {
 	return 7u;
 }
 
+bool RETRO_CALLCONV supervisorRequestLineLow() {
+	return false;
+}
+
 } // namespace
 
 int main() {
 	retro_system_av_info avInfo{};
-	bmsx::LibretroPlatform platform(bmsx::BackendType::OpenGLES2, avInfo);
+	bmsx::LibretroPlatform platform(
+		bmsx::BackendType::OpenGLES2,
+		avInfo,
+		supervisorRequestLineLow);
 	platform.setHwRenderCallbacks(frontendGetCurrentFramebuffer, frontendGetProcAddress);
 	auto* backend = static_cast<bmsx::OpenGLES2Backend*>(platform.machineManager()->view()->backend());
 	if (backend->resolveProcAddress("glTextureBarrierNV") != frontendGlProc) {

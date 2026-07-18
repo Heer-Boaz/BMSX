@@ -10,7 +10,9 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "bmsx_libretro.h"
 #include "host_fatal.h"
+#include "input_devices.h"
 #include "keyboard_input.h"
 #include "video_presenter.h"
 
@@ -175,6 +177,10 @@ void core_session_close(BmsxCoreSession* session) {
 bool core_session_environment(unsigned command, void* data) {
 	BmsxCoreSession* session = g_active_session;
 	switch (command) {
+		case BMSX_ENVIRONMENT_GET_SUPERVISOR_REQUEST_INTERFACE_V1:
+			((BmsxSupervisorRequestInterfaceV1*)data)->request_line_high =
+					input_devices_supervisor_request_line_high;
+			return true;
 		case RETRO_ENVIRONMENT_GET_LOG_INTERFACE: {
 			struct retro_log_callback* callback = (struct retro_log_callback*)data;
 			callback->log = host_log;

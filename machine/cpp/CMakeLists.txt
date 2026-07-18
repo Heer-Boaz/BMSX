@@ -451,6 +451,7 @@ if(BMSX_BUILD_LIBRETRO_HOST)
 		${BMSX_LIBRETRO_HOST_DIR}/input_timeline.c
 		${BMSX_LIBRETRO_HOST_DIR}/keyboard_input.c
 		${BMSX_LIBRETRO_HOST_DIR}/screenshot.c
+		${BMSX_LIBRETRO_HOST_DIR}/supervisor_chord.c
 		${BMSX_LIBRETRO_HOST_DIR}/video_context.c
 		${BMSX_LIBRETRO_HOST_DIR}/video_presenter.c
 	)
@@ -507,6 +508,16 @@ if(BMSX_BUILD_TESTS)
 		${BMSX_LIBRETRO_DIR}
 	)
 	add_test(NAME bmsx_libretro_host_core_options_tests COMMAND bmsx_libretro_host_core_options_tests)
+
+	add_executable(bmsx_libretro_host_supervisor_chord_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_host_supervisor_chord_test.c
+		${BMSX_LIBRETRO_HOST_DIR}/supervisor_chord.c
+	)
+	target_include_directories(bmsx_libretro_host_supervisor_chord_tests PRIVATE
+		${BMSX_LIBRETRO_HOST_DIR}
+		${BMSX_LIBRETRO_DIR}
+	)
+	add_test(NAME bmsx_libretro_host_supervisor_chord_tests COMMAND bmsx_libretro_host_supervisor_chord_tests)
 
 	if(UNIX AND NOT APPLE)
 		add_executable(bmsx_libretro_host_audio_queue_tests
@@ -581,6 +592,18 @@ if(BMSX_BUILD_TESTS)
 		${BMSX_LIBRETRO_DIR}
 	)
 	add_test(NAME bmsx_libretro_save_state_tests COMMAND bmsx_libretro_save_state_tests)
+
+	add_executable(bmsx_libretro_environment_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_environment_test.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/support/program_rom_fixture.cpp
+		${BMSX_LIBRETRO_DIR}/entry.cpp
+		${BMSX_LIBRETRO_DIR}/platform.cpp
+	)
+	target_link_libraries(bmsx_libretro_environment_tests PRIVATE bmsx_core)
+	target_include_directories(bmsx_libretro_environment_tests PRIVATE
+		${BMSX_LIBRETRO_DIR}
+	)
+	add_test(NAME bmsx_libretro_environment_tests COMMAND bmsx_libretro_environment_tests)
 
 	if(BMSX_ENABLE_GLES2)
 		add_executable(bmsx_libretro_hw_context_tests

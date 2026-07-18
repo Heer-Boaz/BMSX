@@ -9,7 +9,7 @@
 #ifndef BMSX_LIBRETRO_PLATFORM_H
 #define BMSX_LIBRETRO_PLATFORM_H
 
-#include "libretro.h"
+#include "bmsx_libretro.h"
 #include "platform/platform.h"
 #include "render/backend/backend.h"
 #include "render/post/device_quantize/mode.h"
@@ -130,7 +130,10 @@ struct InputState {
 
 class LibretroPlatform : public Platform {
 public:
-	LibretroPlatform(BackendType backend_type, retro_system_av_info& av_info);
+	LibretroPlatform(
+		BackendType backend_type,
+		retro_system_av_info& av_info,
+		bmsx_supervisor_request_line_t supervisorRequestLine);
 	~LibretroPlatform() override;
 
 	// Libretro callback setters
@@ -258,7 +261,9 @@ private:
 
 class LibretroInputHub : public InputHub {
 public:
-	explicit LibretroInputHub(LibretroPlatform* platform);
+	LibretroInputHub(
+		LibretroPlatform* platform,
+		bmsx_supervisor_request_line_t supervisorRequestLine);
 
 	void poll();
 	void setInputPollCallback(retro_input_poll_t cb) { m_input_poll_cb = cb; }
@@ -271,8 +276,10 @@ public:
 
 private:
 	void emitEvent(const InputEvt& evt);
+	void publishSupervisorRequestLine();
 
 	LibretroPlatform* m_platform;
+	bmsx_supervisor_request_line_t m_supervisor_request_line;
 	retro_input_poll_t m_input_poll_cb = nullptr;
 	retro_input_state_t m_input_state_cb = nullptr;
 	std::vector<SubscriptionEntry<std::function<void(const InputEvt&)>>> m_handlers;
@@ -284,6 +291,9 @@ private:
 	i32 m_prev_pointer_x = 0;
 	i32 m_prev_pointer_y = 0;
 	bool m_prev_pointer_position_valid = false;
+	bool m_host_supervisor_request_high = false;
+	bool m_keyboard_supervisor_request_high = false;
+	bool m_prev_supervisor_request_high = false;
 	std::array<bool, 256> m_pressed_keyboard_usages{};
 };
 

@@ -56,6 +56,9 @@ extern "C" {
 
 #define RETRO_API_VERSION 1
 
+/* Frontend-internal environment callbacks should include this bit. */
+#define RETRO_ENVIRONMENT_PRIVATE 0x20000
+
 /* Used for checking API/ABI mismatches */
 #define RETRO_ENVIRONMENT_SET_ROTATION 1
 #define RETRO_ENVIRONMENT_GET_OVERSCAN 2 /* Obsolete */

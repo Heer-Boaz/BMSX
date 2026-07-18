@@ -17,6 +17,7 @@
 
 #include "host_fatal.h"
 #include "keyboard_input.h"
+#include "supervisor_chord.h"
 #include "video_presenter.h"
 
 enum {
@@ -78,6 +79,7 @@ typedef struct InputDevices {
 	int32_t mouse_wheel_y;
 	uint8_t mouse_buttons;
 	bool mouse_position_valid;
+	bool supervisor_request_line_high;
 	int16_t pointer_x;
 	int16_t pointer_y;
 	bool pointer_inside_game_viewport;
@@ -350,14 +352,24 @@ static void open_evdev_devices(void) {
 	}
 }
 
+static void close_evdev_device(InputDevice* device, size_t index) {
+	keyboard_input_release_source(
+			KEYBOARD_INPUT_SOURCE_EVDEV_FIRST + (unsigned)index);
+	close(device->fd);
+	device->fd = -1;
+	device->pad_state = 0;
+}
+
 static void finalize_pad_state(uint16_t pad_state) {
 	InputDevices* input = &g_input_devices;
-	input->pad_state = pad_state;
+	input->pad_state = bmsx_supervisor_chord_update(
+			&input->supervisor_request_line_high,
+			pad_state);
 	const bool exit_combo_down =
-			(pad_state & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_START)) &&
-			(pad_state & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_SELECT)) &&
-			(pad_state & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_L)) &&
-			(pad_state & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_R));
+			(input->pad_state & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_START)) &&
+			(input->pad_state & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_SELECT)) &&
+			(input->pad_state & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_L)) &&
+			(input->pad_state & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_R));
 	if (!exit_combo_down) {
 		input->exit_combo_start_milliseconds = 0;
 		return;
@@ -460,17 +472,17 @@ static void poll_evdev_devices(void) {
 				if (errno == EAGAIN || errno == EWOULDBLOCK) {
 					break;
 				}
+				if (errno == ENODEV) {
+					close_evdev_device(device, index);
+					break;
+				}
 				host_fatal(
 						"read(%s) failed: %s",
 						device->path,
 						strerror(errno));
 			}
 			if (!bytes) {
-				keyboard_input_release_source(
-						KEYBOARD_INPUT_SOURCE_EVDEV_FIRST + (unsigned)index);
-				close(device->fd);
-				device->fd = -1;
-				device->pad_state = 0;
+				close_evdev_device(device, index);
 				break;
 			}
 			if ((size_t)bytes != sizeof(event)) {
@@ -540,6 +552,9 @@ static void poll_evdev_devices(void) {
 						break;
 				}
 			}
+		}
+		if (device->fd < 0) {
+			continue;
 		}
 		pad_state |= device->pad_state;
 		if (device->has_hat) {
@@ -836,9 +851,7 @@ void input_devices_close(void) {
 #endif
 	for (size_t index = 0; index < input->device_count; ++index) {
 		if (input->devices[index].fd >= 0) {
-			keyboard_input_release_source(
-					KEYBOARD_INPUT_SOURCE_EVDEV_FIRST + (unsigned)index);
-			close(input->devices[index].fd);
+			close_evdev_device(&input->devices[index], index);
 		}
 	}
 }
@@ -910,6 +923,10 @@ int16_t input_devices_state(
 		}
 	}
 	return 0;
+}
+
+bool RETRO_CALLCONV input_devices_supervisor_request_line_high(void) {
+	return g_input_devices.supervisor_request_line_high;
 }
 
 bool input_devices_quit_requested(void) {

@@ -44,6 +44,12 @@ int16_t discardInputState(unsigned, unsigned, unsigned, unsigned) {
 	return 0;
 }
 
+bool supervisorRequestLineHigh = false;
+
+bool RETRO_CALLCONV readSupervisorRequestLine() {
+	return supervisorRequestLineHigh;
+}
+
 uint16_t gamepadState = 0u;
 
 int16_t gamepadInputState(unsigned port, unsigned device, unsigned, unsigned id) {
@@ -66,7 +72,10 @@ bool captureEnvironment(unsigned command, void* data) {
 
 void testLibretroSaveStateRoundTrip() {
 	retro_system_av_info avInfo{};
-	bmsx::LibretroPlatform platform(bmsx::BackendType::Software, avInfo);
+	bmsx::LibretroPlatform platform(
+		bmsx::BackendType::Software,
+		avInfo,
+		readSupervisorRequestLine);
 	platform.setLogCallback(discardRetroLog);
 	require(platform.getStateSize() == 0u, "libretro state size should be zero before a ROM is loaded");
 	require(platform.machineManager()->loadSystemRomOwned(bmsx::test::makeMinimalProgramRom(bmsx::ProgramBootTarget::System)), "libretro should load the system program ROM");
@@ -193,7 +202,10 @@ void testLibretroSaveStateRoundTrip() {
 
 void testGpureadCodecStoresReadyBytesAndRejectsBackendPhase() {
 	retro_system_av_info avInfo{};
-	bmsx::LibretroPlatform platform(bmsx::BackendType::Software, avInfo);
+	bmsx::LibretroPlatform platform(
+		bmsx::BackendType::Software,
+		avInfo,
+		readSupervisorRequestLine);
 	platform.setLogCallback(discardRetroLog);
 	require(platform.machineManager()->loadSystemRomOwned(bmsx::test::makeMinimalProgramRom(bmsx::ProgramBootTarget::System)), "libretro should load the system program ROM for GPUREAD codec validation");
 	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalProgramRom(bmsx::ProgramBootTarget::Cart);
@@ -265,7 +277,10 @@ void testGpureadCodecStoresReadyBytesAndRejectsBackendPhase() {
 
 void testLibretroStateEnvelopeSupportsMaximumGpuread() {
 	retro_system_av_info avInfo{};
-	bmsx::LibretroPlatform platform(bmsx::BackendType::Software, avInfo);
+	bmsx::LibretroPlatform platform(
+		bmsx::BackendType::Software,
+		avInfo,
+		readSupervisorRequestLine);
 	platform.setLogCallback(discardRetroLog);
 	require(platform.machineManager()->loadSystemRomOwned(bmsx::test::makeMinimalProgramRom(bmsx::ProgramBootTarget::System)), "libretro should load the system program ROM for GPUREAD envelope validation");
 	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalProgramRom(bmsx::ProgramBootTarget::Cart);
@@ -285,7 +300,10 @@ void testLibretroStateEnvelopeSupportsMaximumGpuread() {
 
 void testInputSnapshotReflectsHeldKey() {
 	retro_system_av_info avInfo{};
-	bmsx::LibretroPlatform platform(bmsx::BackendType::Software, avInfo);
+	bmsx::LibretroPlatform platform(
+		bmsx::BackendType::Software,
+		avInfo,
+		readSupervisorRequestLine);
 	platform.setLogCallback(discardRetroLog);
 
 	bmsx::Input& input = bmsx::Input::instance();
@@ -302,8 +320,12 @@ void testInputSnapshotReflectsHeldKey() {
 }
 
 void testLibretroSupervisorRequestIsSeparateFromGameplay() {
+	supervisorRequestLineHigh = false;
 	retro_system_av_info avInfo{};
-	bmsx::LibretroPlatform platform(bmsx::BackendType::Software, avInfo);
+	bmsx::LibretroPlatform platform(
+		bmsx::BackendType::Software,
+		avInfo,
+		readSupervisorRequestLine);
 	platform.setLogCallback(discardRetroLog);
 	platform.setInputPollCallback(discardInputPoll);
 	platform.setInputStateCallback(gamepadInputState);
@@ -334,25 +356,51 @@ void testLibretroSupervisorRequestIsSeparateFromGameplay() {
 	require((snapshot.pads[0].buttons & gameplayButtons) == gameplayButtons,
 		"RetroPad Down and Select must remain ordinary cart-visible gameplay buttons");
 
-	inputHub.postKeyboardEvent(RETROK_F2, true);
+	gamepadState = 0u;
+	inputHub.poll();
 	input.pollInput();
-	require(input.supervisorRequestLineHigh(), "libretro F2 should assert the supervisor-request line");
-	require(requestEdgesDown == 1 && requestEdgesUp == 0, "F2 should emit one supervisor-request rising edge");
+	supervisorRequestLineHigh = true;
+	inputHub.poll();
+	input.pollInput();
+	require(input.supervisorRequestLineHigh(), "the negotiated host line should assert the supervisor request");
+	require(requestEdgesDown == 1 && requestEdgesUp == 0, "the negotiated host line should emit one rising edge");
+	inputHub.poll();
+	input.pollInput();
+	require(requestEdgesDown == 1 && requestEdgesUp == 0, "a held host line must not repeat its rising edge");
+
+	inputHub.postKeyboardEvent(RETROK_F2, true);
+	supervisorRequestLineHigh = false;
+	inputHub.poll();
+	input.pollInput();
+	require(input.supervisorRequestLineHigh(), "F2 should keep the shared request line high as the host line falls");
+	require(requestEdgesDown == 1 && requestEdgesUp == 0, "a host release crossing an F2 press must not publish false edges");
 	input.sampleInputControllerSnapshot(0.0, snapshot);
 	require((snapshot.keyWords[bmsx::HID_USAGE_F2 >> 5u] & (1u << (bmsx::HID_USAGE_F2 & 31u))) != 0u,
 		"libretro F2 must remain an ordinary cart-visible HID key while asserting the supervisor line");
 
 	inputHub.postKeyboardEvent(RETROK_F2, false);
+	supervisorRequestLineHigh = true;
+	inputHub.poll();
+	input.pollInput();
+	require(input.supervisorRequestLineHigh(), "the host should keep the shared request line high as F2 falls");
+	require(requestEdgesDown == 1 && requestEdgesUp == 0, "an F2 release crossing a host press must not publish false edges");
+
+	inputHub.postKeyboardEvent(RETROK_F2, true);
+	supervisorRequestLineHigh = false;
+	inputHub.poll();
+	input.pollInput();
+	require(input.supervisorRequestLineHigh(), "F2 should retain the line through the reverse crossing transition");
+	require(requestEdgesDown == 1 && requestEdgesUp == 0, "the reverse crossing transition must keep one continuous request pulse");
+
+	inputHub.postKeyboardEvent(RETROK_F2, false);
+	inputHub.poll();
 	input.pollInput();
 	require(!input.supervisorRequestLineHigh(), "releasing F2 should deassert the supervisor-request line");
-	require(requestEdgesDown == 1 && requestEdgesUp == 1, "F2 should emit one complete supervisor-request pulse");
+	require(requestEdgesDown == 1 && requestEdgesUp == 1, "overlapping host and F2 sources should emit one complete supervisor-request pulse");
 	input.sampleInputControllerSnapshot(0.0, snapshot);
 	require((snapshot.keyWords[bmsx::HID_USAGE_F2 >> 5u] & (1u << (bmsx::HID_USAGE_F2 & 31u))) == 0u,
 		"releasing libretro F2 must clear its ordinary HID key");
 
-	gamepadState = 0u;
-	inputHub.poll();
-	input.pollInput();
 	edgeSubscription.unsubscribe();
 }
 
@@ -365,7 +413,10 @@ void testLibretroTracksPublishedNativeOutputGeometry() {
 	avInfo.geometry.aspect_ratio = static_cast<float>(bmsx::PSX_GPU_DISPLAY_ASPECT_WIDTH) / static_cast<float>(bmsx::PSX_GPU_DISPLAY_ASPECT_HEIGHT);
 	geometryChangeCount = 0u;
 	lastGeometry = {};
-	bmsx::LibretroPlatform platform(bmsx::BackendType::Software, avInfo);
+	bmsx::LibretroPlatform platform(
+		bmsx::BackendType::Software,
+		avInfo,
+		readSupervisorRequestLine);
 	platform.setEnvironmentCallback(captureEnvironment);
 	platform.setLogCallback(discardRetroLog);
 	platform.setInputPollCallback(discardInputPoll);
@@ -436,7 +487,10 @@ void testPublishedDisplayTimingAppliesAtFrameEnd() {
 	require(bmsx::resolveVblankCycles(5000000, bmsx::NTSC_REFRESH_UFPS_SCALED, bmsx::NTSC_TOTAL_SCANLINES, 192) == 22287, "NTSC 192-line mode should expose 22287 vblank cycles at 5MHz");
 
 	retro_system_av_info avInfo{};
-	bmsx::LibretroPlatform platform(bmsx::BackendType::Software, avInfo);
+	bmsx::LibretroPlatform platform(
+		bmsx::BackendType::Software,
+		avInfo,
+		readSupervisorRequestLine);
 	platform.setLogCallback(discardRetroLog);
 	require(platform.machineManager()->loadSystemRomOwned(bmsx::test::makeMinimalProgramRom(bmsx::ProgramBootTarget::System)), "libretro should load the system program ROM for published timing validation");
 	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalProgramRom(bmsx::ProgramBootTarget::Cart);

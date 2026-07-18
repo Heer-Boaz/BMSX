@@ -15,7 +15,7 @@
 #include <string>
 #include <cctype>
 
-#include "libretro.h"
+#include "bmsx_libretro.h"
 #include "platform.h"
 #include "core/machine_manager.h"
 #include "machine/model_registry.h"
@@ -35,6 +35,13 @@ static retro_audio_sample_batch_t audio_batch_cb = nullptr;
 static retro_input_poll_t input_poll_cb = nullptr;
 static retro_input_state_t input_state_cb = nullptr;
 static retro_log_callback logging;
+
+static bool RETRO_CALLCONV supervisor_request_line_low(void) {
+	return false;
+}
+
+static bmsx_supervisor_request_line_t g_supervisor_request_line_cb =
+	supervisor_request_line_low;
 
 enum class HardwareContextLifecycle : uint8_t {
 	Software,
@@ -469,7 +476,9 @@ static void hw_context_reset();
 static void hw_context_destroy();
 static void set_core_options(bool default_gles2);
 static RenderBackendPreference read_backend_preference();
+#if BMSX_ENABLE_GLES2
 static RenderBackendPreference parse_backend_preference(const char* value);
+#endif
 static bmsx::BackendType resolve_backend_preference(RenderBackendPreference preference);
 static bool is_hardware_backend(bmsx::BackendType type);
 static const char* backend_label(bmsx::BackendType type);
@@ -715,6 +724,7 @@ static void set_core_options(bool default_gles2) {
 	environ_cb(RETRO_ENVIRONMENT_SET_VARIABLES, g_option_vars);
 }
 
+#if BMSX_ENABLE_GLES2
 static RenderBackendPreference parse_backend_preference(const char* value) {
 	if (!value || !value[0]) return RenderBackendPreference::Auto;
 	if (std::strcmp(value, kRenderBackendSoftware) == 0 || std::strcmp(value, "Software") == 0) {
@@ -728,6 +738,7 @@ static RenderBackendPreference parse_backend_preference(const char* value) {
 				value);
 	return RenderBackendPreference::Auto;
 }
+#endif
 
 static bool parse_toggle_option(const char* value, const char* label, bool default_value) {
 	if (!value || !value[0]) return default_value;
@@ -858,6 +869,16 @@ static void request_hw_context_for_backend(bmsx::BackendType backend) {
 
 void retro_set_environment(retro_environment_t cb) {
 	environ_cb = cb;
+	BmsxSupervisorRequestInterfaceV1 supervisorRequestInterface{
+		supervisor_request_line_low,
+	};
+	if (cb(BMSX_ENVIRONMENT_GET_SUPERVISOR_REQUEST_INTERFACE_V1,
+			&supervisorRequestInterface)) {
+		g_supervisor_request_line_cb =
+			supervisorRequestInterface.request_line_high;
+	} else {
+		g_supervisor_request_line_cb = supervisor_request_line_low;
+	}
 
 	// Try to get logging interface
 	if (!cb(RETRO_ENVIRONMENT_GET_LOG_INTERFACE, &logging)) {
@@ -1000,7 +1021,10 @@ void retro_init(void) {
 	initialize_default_av_info(g_cached_av_info);
 	g_cached_av_info_valid = true;
 	g_current_ufps_scaled = bmsx::PAL_REFRESH_UFPS_SCALED;
-	g_platform = new bmsx::LibretroPlatform(g_active_backend, g_cached_av_info);
+	g_platform = new bmsx::LibretroPlatform(
+		g_active_backend,
+		g_cached_av_info,
+		g_supervisor_request_line_cb);
 	g_platform->setEnvironmentCallback(environ_cb);
 	g_platform->setLogCallback(logging.log);
 	g_platform->setSystemDirectory(g_system_dir);

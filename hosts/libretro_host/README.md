@@ -83,3 +83,11 @@ Input timelines may include `capture: true` entries. Both the libretro host and 
 Timeline frame `N` labels the boundary after accepted frontend presentation `N`. Input posted at that boundary affects the next accepted presentation, and a capture records that next presentation under marker `N`. The clock starts at content load, includes BIOS output, and never depends on private cart-start state.
 
 Native host builds require SDL2 and provide the SDL video, audio, and input path. Cross-compiled SNES Mini host builds use fbdev and evdev without SDL.
+
+## Host controls
+
+- Down+Select opens or closes the BIOS supervisor terminal. A partial chord
+  remains normal gameplay; once both buttons are held, the host consumes both
+  until they are fully released. The core receives a dedicated supervisor line,
+  not a synthetic F2 key.
+- L+R+Start+Select held for two seconds exits the direct host.
