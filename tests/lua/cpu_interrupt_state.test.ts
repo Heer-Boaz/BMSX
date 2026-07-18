@@ -36,6 +36,7 @@ import { Memory } from '../../machine/ts/machine/memory/memory';
 import { MemoryAccessKind } from '../../machine/ts/machine/memory/access_kind';
 import { IO_WORD_SIZE, PROGRAM_STATIC_RAM_BASE } from '../../machine/ts/machine/memory/map';
 import { compileLuaChunkToProgram, encodeCompiledProgramImage } from '../../machine/ts/lua/compiler';
+import type { OptimizationLevel } from '../../machine/ts/lua/compiler/optimizer';
 import { callClosureIntoWithScheduler } from '../../machine/ts/ide/runtime/closure_executor';
 import { inflateExecutableProgramImage, linkProgramImages } from '../../machine/ts/machine/program/linker';
 import { CpuExecutionState } from '../../machine/ts/machine/runtime/cpu_executor';
@@ -297,7 +298,7 @@ function makeCompiledIrqRuntime(source: string): { cpu: CPU; irqController: IrqC
 	};
 }
 
-function makeCompiledCpu(source: string, optLevel: 0 | 3 = 0): { cpu: CPU; irqController: IrqController; image: ReturnType<typeof encodeCompiledProgramImage> } {
+function makeCompiledCpu(source: string, optLevel: OptimizationLevel = 0): { cpu: CPU; irqController: IrqController; image: ReturnType<typeof encodeCompiledProgramImage> } {
 	const compiled = compileLuaChunkToProgram(parseLuaChunk(source, 'supervisor_vector.lua'), [], { entrySource: source, optLevel });
 	const image = encodeCompiledProgramImage(compiled);
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
@@ -639,6 +640,33 @@ end
 	const irqSeen = cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('irq_seen')));
 	assert.equal(irqSeen, IRQ_VBLANK);
 	assert.equal((irqController.captureState().pendingFlags & IRQ_VBLANK) === 0, true);
+});
+
+test('IRQ closures preserve snapshots of captured locals at every optimization level', () => {
+	const source = `
+local irq_ack_addr<const> = 0x0800000c
+local irq_mask_addr<const> = 0x08000010
+local irq_vblank<const> = 0x0004
+local sequence = 0
+function irq(flags)
+	sequence = sequence + 1
+	mem[irq_ack_addr] = flags
+end
+mem[irq_mask_addr] = irq_vblank
+local before<const> = sequence
+halt_until_irq
+observed_before = before
+observed_sequence = sequence
+`;
+	for (const optLevel of [0, 1, 2, 3] as const) {
+		const { cpu, irqController } = makeCompiledCpu(source, optLevel);
+		assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted, `O${optLevel} initial run`);
+		irqController.raise(IRQ_VBLANK);
+		assert.equal(cpu.enterPendingInterrupt(), true, `O${optLevel} IRQ entry`);
+		assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted, `O${optLevel} resumed run`);
+		assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('observed_before'))), 0, `O${optLevel} snapshot`);
+		assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('observed_sequence'))), 1, `O${optLevel} live sequence`);
+	}
 });
 
 test('linked system and cart handlers remain distinct across CPU save-state', () => {

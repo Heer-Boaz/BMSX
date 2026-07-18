@@ -56,6 +56,9 @@ export function validateGxTextureLayout(layout: GxTextureLayout): void {
 	const reservedEntries = Object.entries(layout.reserved);
 	for (let index = 0; index < reservedEntries.length; index += 1) {
 		const [name, rect] = reservedEntries[index];
+		if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+			throw new Error(`[RomPacker] GX reserved region '${name}' is not a Lua identifier.`);
+		}
 		assertVramRect(`reserved.${name}`, rect);
 		for (let otherIndex = 0; otherIndex < index; otherIndex += 1) {
 			const [otherName, otherRect] = reservedEntries[otherIndex];
@@ -94,6 +97,9 @@ export function validateGxTextureLayout(layout: GxTextureLayout): void {
 		if (group.slots.length === 0) {
 			throw new Error(`[RomPacker] GX texture group ${groupId} has no VRAM slots.`);
 		}
+		if (!group.page_local && group.mode !== 'direct16') {
+			throw new Error(`[RomPacker] GX tiled texture group ${groupId} must use direct16 texture pages.`);
+		}
 		for (let slotIndex = 0; slotIndex < group.slots.length; slotIndex += 1) {
 			const slotName = group.slots[slotIndex];
 			const slot = layout.slots[slotName];
@@ -108,6 +114,9 @@ export function validateGxTextureLayout(layout: GxTextureLayout): void {
 				if ((slot.texture.x & 0x3f) !== 0 || (clut.x & 0x0f) !== 0 || clut.width < GX_PALETTE4_CLUT_WORDS || clut.height < 1) {
 					throw new Error(`[RomPacker] GX palette4 slot '${slotName}' is not aligned for a PSX texture page and 16-word CLUT.`);
 				}
+			}
+			if (!group.page_local && ((slot.texture.x & 0xff) !== 0 || (slot.texture.y & 0xff) !== 0)) {
+				throw new Error(`[RomPacker] GX tiled texture slot '${slotName}' must start on a texture-page boundary.`);
 			}
 		}
 	}
@@ -136,6 +145,12 @@ export function validateGxTextureLayout(layout: GxTextureLayout): void {
 export function buildGxTextureLayoutModuleSource(layout: GxTextureLayout): string {
 	const declarations: string[] = [];
 	const exports: string[] = [];
+	const reservedEntries = Object.entries(layout.reserved).sort(([left], [right]) => left.localeCompare(right));
+	for (let index = 0; index < reservedEntries.length; index += 1) {
+		const [name, rect] = reservedEntries[index];
+		declarations.push(`local ${name}<const> = ${(rect.x | (rect.y << 16)) >>> 0}`);
+		exports.push(name);
+	}
 	const slotEntries = Object.entries(layout.slots).sort(([left], [right]) => left.localeCompare(right));
 	for (let index = 0; index < slotEntries.length; index += 1) {
 		const [name, slot] = slotEntries[index];

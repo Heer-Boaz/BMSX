@@ -758,6 +758,9 @@ function buildImgMetaFromCollisionBuild(res: ImageResource, collision: ImageColl
 		imgmeta.gx_source_x = GX_SYSTEM_TEXTURE_X + res.textureU!;
 		imgmeta.gx_source_y = GX_SYSTEM_TEXTURE_Y + res.textureV!;
 	}
+	if (res.gxPageTiles) {
+		imgmeta.gx_page_tiles = res.gxPageTiles;
+	}
 	return imgmeta;
 }
 

@@ -33,6 +33,3 @@ export const buildModuleExportSlotName = (
 	}
 	return out;
 };
-
-export const buildModuleRootFieldSlotName = (modulePath: string, key: string): string =>
-	`${buildModuleSlotPrefix(modulePath)}__${sanitizeModuleSlotSegment(key)}`;

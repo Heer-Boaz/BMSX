@@ -5,6 +5,7 @@ combat_monster_id = 'p3.combat.monster'
 combat_maya_a_id = 'p3.combat.maya_a'
 combat_maya_b_id = 'p3.combat.maya_b'
 combat_all_out_id = 'p3.combat.all_out'
+combat_all_out_portrait_id = 'p3.combat.all_out_portrait'
 text_main_id = 'p3.text.main'
 text_choice_id = 'p3.text.choice'
 text_prompt_id = 'p3.text.prompt'
@@ -224,16 +225,16 @@ function apply_background(id)
 		return
 	end
 	local bg<const> = oget(bg_id)
-	bg:gfx(id)
+	bg.surface_component:set_imgid(id)
 end
 
 function show_background(id)
 	local bg<const> = oget(bg_id)
 	if id ~= nil then
-		bg:gfx(id)
+		bg.surface_component:set_imgid(id)
 	end
 	bg.visible = true
-	bg.sprite_component.color = p3_white_color
+	bg.surface_component.color = p3_white_color
 	return bg
 end
 
@@ -266,4 +267,5 @@ function hide_combat_sprites()
 	oget(combat_maya_a_id).visible = false
 	oget(combat_maya_b_id).visible = false
 	oget(combat_all_out_id).visible = false
+	oget(combat_all_out_portrait_id).visible = false
 end

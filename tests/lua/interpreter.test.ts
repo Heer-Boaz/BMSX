@@ -55,6 +55,21 @@ return caller()
 	assert.equal(result[0], 41);
 });
 
+test('optimized code preserves a local snapshot across a closure mutation', () => {
+	const source = `
+local sequence = 0
+local advance<const> = function()
+	sequence = sequence + 1
+end
+local before<const> = sequence
+advance()
+return before, sequence
+`;
+	for (const optLevel of [0, 2, 3] as const) {
+		assert.deepEqual(runCompiledLua(source, INTERPRETER_SEMANTICS_PATH, optLevel), [0, 1]);
+	}
+});
+
 test('handles tables, method calls, and boolean logic', () => {
 	const result = runCompiledLua(`
 local tracker = { total = 10 }

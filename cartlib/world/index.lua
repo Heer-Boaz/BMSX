@@ -53,6 +53,7 @@ local active_component_bucket_types<const> = {
 	'prohibitleavingscreencomponent',
 	'screenboundarycomponent',
 	'spritecomponent',
+	'surfacecomponent',
 	'textcomponent',
 	'tilelayercomponent',
 	'tilecollisioncomponent',

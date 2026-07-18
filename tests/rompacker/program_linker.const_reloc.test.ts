@@ -482,13 +482,13 @@ test('ProgramCompiler does not confuse shadowed locals with outer const bindings
 	assert.ok(compiled.program.code.length > 0);
 });
 
-test('ProgramCompiler rewrites const require member call targets to export-proto relocations', () => {
+test('ProgramCompiler rewrites explicit const-module call targets to export-proto relocations', () => {
 	const moduleSource = [
-		'local mod<const> = {}',
-		'function mod.foo()',
+		'module<const>',
+		'local foo<const> = function()',
 		'\treturn 1',
 		'end',
-		'return mod',
+		'return { foo = foo }',
 	].join('\n');
 	const entrySource = [
 		'local mod<const> = require("mod")',
@@ -506,7 +506,7 @@ test('ProgramCompiler rewrites const require member call targets to export-proto
 	assert.equal(entryOps.includes(OpCode.SELF), false);
 });
 
-test('ProgramCompiler rewrites external const require member call targets inside closures', () => {
+test('ProgramCompiler reads external dynamic call targets from the live module table inside closures', () => {
 	const moduleSource = [
 		'local mod<const> = {}',
 		'function mod.foo()',
@@ -531,43 +531,14 @@ test('ProgramCompiler rewrites external const require member call targets inside
 	);
 	const closureProtoIndex = compiled.metadata.protoIds.findIndex((id) => id.includes('read_foo'));
 	assert.notEqual(closureProtoIndex, -1);
-	const closureTargets = collectProtoRelocSymbols(compiled, closureProtoIndex, 'export_proto');
+	const moduleTargets = collectProtoRelocSymbols(compiled, closureProtoIndex, 'module');
+	const exportTargets = collectProtoRelocSymbols(compiled, closureProtoIndex, 'export_proto');
 	const closureOps = collectProtoOps(compiled.program, closureProtoIndex);
-	assert.ok(closureTargets.includes('mod__foo'));
+	assert.ok(moduleTargets.includes('mod'));
+	assert.equal(moduleTargets.includes('mod__foo'), false);
+	assert.equal(exportTargets.includes('mod__foo'), false);
 	assert.equal(closureOps.includes(OpCode.GETUP), false);
-	assert.equal(closureOps.includes(OpCode.GETFIELD), false);
-});
-
-test('ProgramCompiler emits module-slot relocations for direct external root fields inside closures', () => {
-	const moduleSource = [
-		'local mod<const> = {}',
-		'function mod.foo()',
-		'\treturn 1',
-		'end',
-		'return mod',
-	].join('\n');
-	const entrySource = [
-		'local mod<const> = require("mod")',
-		'local function read_missing()',
-		'\treturn mod.missing',
-		'end',
-		'return read_missing()',
-	].join('\n');
-	const compiled = compileLuaChunkToProgram(
-		parseChunk(entrySource, 'cart.lua'),
-		[],
-		{
-			entrySource,
-			externalModules: [{ path: 'mod', chunk: parseChunk(moduleSource, 'mod'), source: moduleSource }],
-		},
-	);
-	const closureProtoIndex = compiled.metadata.protoIds.findIndex((id) => id.includes('read_missing'));
-	assert.notEqual(closureProtoIndex, -1);
-	const closureTargets = collectProtoRelocSymbols(compiled, closureProtoIndex, 'module');
-	const closureOps = collectProtoOps(compiled.program, closureProtoIndex);
-	assert.ok(closureTargets.includes('mod__missing'));
-	assert.equal(closureOps.includes(OpCode.GETUP), false);
-	assert.equal(closureOps.includes(OpCode.GETFIELD), false);
+	assert.equal(closureOps.includes(OpCode.GETFIELD), true);
 });
 
 test('ProgramCompiler reads external dynamic module roots from export slots inside closures', () => {
@@ -610,7 +581,7 @@ test('ProgramCompiler reads external dynamic module roots from export slots insi
 	assert.equal(globalReads.includes('mod') || systemReads.includes('mod'), true);
 });
 
-test('ProgramCompiler emits module export slot stores from module returns', () => {
+test('ProgramCompiler publishes one live root slot for dynamic module returns', () => {
 	const moduleSource = [
 		'local constants<const> = {}',
 		'constants.room = { tile_size = 8 }',
@@ -632,9 +603,12 @@ test('ProgramCompiler emits module export slot stores from module returns', () =
 	const moduleStores = collectProtoGlobalNames(compiled.program, compiled.metadata.globalNames, moduleProtoIndex!, OpCode.SETGL);
 	const entryLoads = collectProtoGlobalNames(compiled.program, compiled.metadata.globalNames, compiled.entryProtoIndex, OpCode.GETGL);
 	const entryOps = collectProtoOps(compiled.program, compiled.entryProtoIndex);
-	assert.ok(moduleStores.includes('constants__room'));
-	assert.ok(moduleStores.includes('constants__room__tile_size'));
-	assert.ok(entryLoads.includes('constants__room'));
+	assert.deepEqual(compiled.program.moduleExports, [{ path: 'constants', exportPathKey: '', slotName: 'constants' }]);
+	assert.ok(moduleStores.includes('constants'));
+	assert.equal(moduleStores.includes('constants__room'), false);
+	assert.equal(moduleStores.includes('constants__room__tile_size'), false);
+	assert.ok(entryLoads.includes('constants'));
+	assert.equal(entryLoads.includes('constants__room'), false);
 	assert.equal(entryOps.includes(OpCode.GETFIELD), true);
 });
 
@@ -659,7 +633,7 @@ test('ProgramCompiler canonicalizes raw module source paths at the API boundary'
 	assert.ok(compiled.metadata.protoIds.some(id => id.includes('module:room/index')));
 });
 
-test('flattened module export slots stay in sync with compile-time require imports', () => {
+test('dynamic module imports keep nested values on the live root table', () => {
 	const moduleSource = [
 		'local constants<const> = {}',
 		'constants.room = { tile_size = 8 }',
@@ -686,10 +660,10 @@ test('flattened module export slots stay in sync with compile-time require impor
 	const room = cpu.lastReturnValues[1];
 	assert.ok(room instanceof Table);
 	assert.equal(room.getStringKey(StringValue.get(cpu.stringPool.intern('tile_size'))), 8);
-	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('constants__room__tile_size'))), 8);
+	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('constants__room__tile_size'))), null);
 });
 
-test('flattened module export slots survive program append swaps', () => {
+test('dynamic module roots survive program append swaps', () => {
 	const moduleSource = [
 		'local constants<const> = {}',
 		'constants.room = { tile_size = 8 }',
@@ -711,8 +685,9 @@ test('flattened module export slots survive program append swaps', () => {
 	runStaticModuleInitializers(cpu, compiled);
 	cpu.start(compiled.entryProtoIndex);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
-	const slotKey = StringValue.get(cpu.stringPool.intern('constants__room__tile_size'));
-	assert.equal(cpu.getGlobalByKey(slotKey), 8);
+	const rootKey = StringValue.get(cpu.stringPool.intern('constants'));
+	const root = cpu.getGlobalByKey(rootKey);
+	assert.ok(root instanceof Table);
 
 	const hostEvalSource = 'return 1';
 	const appended = appendLuaChunkToProgram(
@@ -722,7 +697,7 @@ test('flattened module export slots survive program append swaps', () => {
 		{ entrySource: hostEvalSource },
 	);
 	cpu.setProgram(appended.program, appended.metadata, appended.metadata, 0, 0, 0);
-	assert.equal(cpu.getGlobalByKey(slotKey), 8);
+	assert.equal(cpu.getGlobalByKey(rootKey), root);
 });
 
 test('ProgramLinker patches Bx relocations against large system const pools', () => {
@@ -1123,11 +1098,11 @@ test('compiled program images resolve hot-resume export relocs through the execu
 	const baseCompiled = compileLuaChunkToProgram(parseChunk(baseSource, 'cart.lua'), [], { entrySource: baseSource });
 	const baseProgram = inflateExecutableProgramImage(encodeCompiledProgramImage(baseCompiled));
 	const moduleSource = [
-		'local mod<const> = {}',
-		'function mod.foo()',
+		'module<const>',
+		'local foo<const> = function()',
 		'	return 7',
 		'end',
-		'return mod',
+		'return { foo = foo }',
 	].join('\n');
 	const entrySource = [
 		'local mod<const> = require("mod")',

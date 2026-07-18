@@ -47,12 +47,15 @@ local texture_mode_palette4<const> = 0x00000000
 local texture_mode_direct16<const> = 0x00000002
 local draw_mode_texture_palette4<const> = texture_mode_palette4 << 7
 local draw_mode_texture_direct16<const> = texture_mode_direct16 << 7
+local draw_mode_texture_rectangle_x_flip<const> = 0x00001000
+local draw_mode_texture_rectangle_y_flip<const> = 0x00002000
 
 local texture_page_span<const> = 256
 local sqrt<const> = require('bios/math').sqrt
 
 local current_draw_mode = 0
 local current_display_size_word = 0
+local current_draw_origin_word = 0
 
 local argb_to_gp0_rgb<const> = function(color)
 	return ((color & 0x00ff0000) >> 16) | (color & 0x0000ff00) | ((color & 0x000000ff) << 16)
@@ -101,23 +104,34 @@ local uv_clut<const> = function(u, v, clut_x, clut_y)
 	return uv(u, v) | ((((clut_x >> 4) & 0x0000003f) | ((clut_y & 0x000001ff) << 6)) << 16)
 end
 
-local texture_page_remaining<const> = function(source_coord)
-	return texture_page_span - (source_coord & 0x000000ff)
+function gx_gpu.draw_target(origin_word)
+	local x<const> = origin_word & 0x0000ffff
+	local y<const> = origin_word >> 16
+	local width<const> = current_display_size_word & 0x0000ffff
+	local height<const> = current_display_size_word >> 16
+	current_draw_origin_word = origin_word
+	*gp0 = gp0_drawing_area_top_left | x | (y << 10)
+	*gp0 = gp0_drawing_area_bottom_right | (x + width - 1) | ((y + height - 1) << 10)
+	*gp0 = gp0_drawing_offset | (x & 0x000007ff) | ((y & 0x000007ff) << 11)
+end
+
+function gx_gpu.display_origin(origin_word)
+	local x<const> = origin_word & 0x0000ffff
+	local y<const> = origin_word >> 16
+	*gp1 = gp1_display_start | x | (y << 10)
 end
 
 local program_display<const> = function(horizontal_resolution, video_standard, vertical_start, width, height)
 	*gp1 = gp1_reset
 	*gp1 = gp1_display_mode | horizontal_resolution | video_standard
-	*gp1 = gp1_display_start
+	current_display_size_word = width | (height << 16)
+	gx_gpu.display_origin(0)
 	*gp1 = gp1_horizontal_display_range
 	*gp1 = gp1_vertical_display_range | vertical_start | ((vertical_start + height) << 10)
 	*gp1 = gp1_dma_direction_cpu_to_gp0
-	current_display_size_word = width | (height << 16)
 	current_draw_mode = draw_mode_blend_half
 	*gp0 = gp0_draw_mode | current_draw_mode
-	*gp0 = gp0_drawing_area_top_left
-	*gp0 = gp0_drawing_area_bottom_right | (width - 1) | ((height - 1) << 10)
-	*gp0 = gp0_drawing_offset
+	gx_gpu.draw_target(0)
 	*gp0 = gp0_mask_bit_mode
 	*gp1 = gp1_display_enable
 end
@@ -198,8 +212,12 @@ end
 
 function gx_gpu.clear_color(color)
 	*gp0 = gp0_fill_rectangle | argb_to_gp0_rgb(color)
-	*gp0 = 0x00000000
+	*gp0 = current_draw_origin_word
 	*gp0 = current_display_size_word
+end
+
+function gx_gpu.request_irq()
+	*gp0 = gp0_irq_request
 end
 
 local emit_rect_color<const> = function(opcode, x0, y0, x1, y1, color)
@@ -315,68 +333,32 @@ function gx_gpu.begin_vram_upload(target_x, target_y, width, height)
 	*gp0 = wh(width, height)
 end
 
-function gx_gpu.draw_direct16_textured_rect_color(source_x, source_y, x, y, width, height, color)
+function gx_gpu.draw_direct16_textured_rect_color(source_x, source_y, x, y, width, height, color, rectangle_flip_mode)
 	local raw_texture<const> = (color & 0x00ffffff) == 0x00ffffff
-	local textured_word
-	if not raw_texture then
-		textured_word = gp0_draw_textured_rectangle | argb_to_gp0_texture_rgb(color)
+	local texture_x<const> = (rectangle_flip_mode & draw_mode_texture_rectangle_x_flip) ~= 0 and source_x + width - 1 or source_x
+	local texture_y<const> = (rectangle_flip_mode & draw_mode_texture_rectangle_y_flip) ~= 0 and source_y + height - 1 or source_y
+	*gp0 = gp0_draw_mode | draw_mode_for_texture_page(texture_x, texture_y) | rectangle_flip_mode
+	if raw_texture then
+		*gp0 = gp0_draw_raw_textured_rectangle | 0x00808080
+	else
+		*gp0 = gp0_draw_textured_rectangle | argb_to_gp0_texture_rgb(color)
 	end
-	if width <= texture_page_remaining(source_x) and height <= texture_page_remaining(source_y) then
-		*gp0 = gp0_draw_mode | draw_mode_for_texture_page(source_x, source_y)
-		if raw_texture then
-			*gp0 = gp0_draw_raw_textured_rectangle | 0x00808080
-		else
-			*gp0 = textured_word
-		end
-		*gp0 = xy(x, y)
-		*gp0 = (source_x & 0x000000ff) | ((source_y & 0x000000ff) << 8)
-		*gp0 = wh(width, height)
-		return
-	end
-	local remaining_h = height
-	local draw_source_y = source_y
-	local draw_y = y
-	while remaining_h > 0 do
-		local chunk_h = texture_page_remaining(draw_source_y)
-		if chunk_h > remaining_h then
-			chunk_h = remaining_h
-		end
-		local remaining_w = width
-		local draw_source_x = source_x
-		local draw_x = x
-		while remaining_w > 0 do
-			local chunk_w = texture_page_remaining(draw_source_x)
-			if chunk_w > remaining_w then
-				chunk_w = remaining_w
-			end
-			*gp0 = gp0_draw_mode | draw_mode_for_texture_page(draw_source_x, draw_source_y)
-			if raw_texture then
-				*gp0 = gp0_draw_raw_textured_rectangle | 0x00808080
-			else
-				*gp0 = textured_word
-			end
-			*gp0 = xy(draw_x, draw_y)
-			*gp0 = (draw_source_x & 0x000000ff) | ((draw_source_y & 0x000000ff) << 8)
-			*gp0 = wh(chunk_w, chunk_h)
-			remaining_w = remaining_w - chunk_w
-			draw_source_x = draw_source_x + chunk_w
-			draw_x = draw_x + chunk_w
-		end
-		remaining_h = remaining_h - chunk_h
-		draw_source_y = draw_source_y + chunk_h
-		draw_y = draw_y + chunk_h
-	end
+	*gp0 = xy(x, y)
+	*gp0 = (texture_x & 0x000000ff) | ((texture_y & 0x000000ff) << 8)
+	*gp0 = wh(width, height)
 end
 
-function gx_gpu.draw_palette4_textured_rect_color(texture_x, clut_x, clut_y, source_x, source_y, x, y, width, height, color)
-	*gp0 = gp0_draw_mode | draw_mode_for_palette4_page(texture_x, source_x, source_y)
+function gx_gpu.draw_palette4_textured_rect_color(texture_x, clut_x, clut_y, source_x, source_y, x, y, width, height, color, rectangle_flip_mode)
+	local texture_source_x<const> = (rectangle_flip_mode & draw_mode_texture_rectangle_x_flip) ~= 0 and source_x + width - 1 or source_x
+	local texture_source_y<const> = (rectangle_flip_mode & draw_mode_texture_rectangle_y_flip) ~= 0 and source_y + height - 1 or source_y
+	*gp0 = gp0_draw_mode | draw_mode_for_palette4_page(texture_x, texture_source_x, texture_source_y) | rectangle_flip_mode
 	if (color & 0x00ffffff) == 0x00ffffff then
 		*gp0 = gp0_draw_raw_textured_rectangle | 0x00808080
 	else
 		*gp0 = gp0_draw_textured_rectangle | argb_to_gp0_texture_rgb(color)
 	end
 	*gp0 = xy(x, y)
-	*gp0 = uv_clut(source_x, source_y, clut_x, clut_y)
+	*gp0 = uv_clut(texture_source_x, texture_source_y, clut_x, clut_y)
 	*gp0 = wh(width, height)
 end
 

@@ -721,6 +721,10 @@ export class ValueKindFlowAnalyzer {
 		return this.stateAtStatement.get(statement) ?? this.state;
 	}
 
+	isWrittenByNestedClosure(symbolHandle: string): boolean {
+		return this.closureWrittenSymbols.has(symbolHandle);
+	}
+
 	// -----------------------------------------------------------------------
 	//  Statement-list traversal
 	// -----------------------------------------------------------------------

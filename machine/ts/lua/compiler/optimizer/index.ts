@@ -46,6 +46,7 @@ export type OptimizationContext = {
 	getProtoMeta: (protoIndex: number) => OptimizationProtoMeta;
 	getProtoInstructionSet: (protoIndex: number) => InstructionSet | null;
 	relocatedConstIndices: ReadonlySet<number>;
+	closureWrittenRegisters: ReadonlySet<number>;
 };
 
 export type InstructionSet = {
@@ -74,6 +75,19 @@ const getConstForOperand = (
 		return constPoolValueForOptimization(context, constIndex);
 	}
 	return constants.get(operand);
+};
+
+const recordRegisterConstant = (
+	constants: Map<number, ConstValue>,
+	context: OptimizationContext,
+	register: number,
+	value: ConstValue,
+): void => {
+	if (context.closureWrittenRegisters.has(register)) {
+		constants.delete(register);
+		return;
+	}
+	constants.set(register, value);
 };
 
 const removeNoOps = (set: InstructionSet): InstructionSet => {
@@ -326,6 +340,11 @@ const markCapturedClosureRegisters = (
 	context: OptimizationContext,
 	registerCount: number,
 ): void => {
+	for (let reg = 0; reg < registerCount; reg += 1) {
+		if (context.closureWrittenRegisters.has(reg)) {
+			captured[reg] = 1;
+		}
+	}
 	for (let i = 0; i < instructions.length; i += 1) {
 		const instruction = instructions[i];
 		if (instruction.op !== OpCode.CLOSURE) {
@@ -378,14 +397,14 @@ const computeBlockConstantIn = (
 				const instruction = instructions[i];
 				const immediate = getImmediateConstValue(instruction, context);
 				if (immediate) {
-					constants.set(instruction.a, immediate);
+					recordRegisterConstant(constants, context, instruction.a, immediate);
 					continue;
 				}
 				switch (instruction.op) {
 					case OpCode.MOV: {
 						const source = constants.get(instruction.b);
 						if (source) {
-							constants.set(instruction.a, source);
+							recordRegisterConstant(constants, context, instruction.a, source);
 						} else {
 							constants.delete(instruction.a);
 						}
@@ -394,7 +413,7 @@ const computeBlockConstantIn = (
 					case OpCode.LOADK: {
 						const value = loadKConstValueForOptimization(instruction, context);
 						if (value) {
-							constants.set(instruction.a, value);
+							recordRegisterConstant(constants, context, instruction.a, value);
 						} else {
 							constants.delete(instruction.a);
 						}
@@ -402,7 +421,7 @@ const computeBlockConstantIn = (
 					}
 					case OpCode.LOADNIL: {
 						for (let offset = 0; offset < instruction.b; offset += 1) {
-							constants.set(instruction.a + offset, nilConst);
+							recordRegisterConstant(constants, context, instruction.a + offset, nilConst);
 						}
 						break;
 					}
@@ -414,7 +433,7 @@ const computeBlockConstantIn = (
 						if (operand) {
 							const result = evaluateUnary(instruction.op, operand.value, context);
 							if (result !== null && isConstPoolValue(result)) {
-								constants.set(instruction.a, { value: result, constIndex: context.constIndex(result) });
+								recordRegisterConstant(constants, context, instruction.a, { value: result, constIndex: context.constIndex(result) });
 								break;
 							}
 						}
@@ -438,7 +457,7 @@ const computeBlockConstantIn = (
 						if (left && right) {
 							const result = evaluateBinary(instruction.op, left.value, right.value);
 							if (result !== null && isConstPoolValue(result)) {
-								constants.set(instruction.a, { value: result, constIndex: context.constIndex(result) });
+								recordRegisterConstant(constants, context, instruction.a, { value: result, constIndex: context.constIndex(result) });
 								break;
 							}
 						}
@@ -507,7 +526,7 @@ const foldConstants = (set: InstructionSet, context: OptimizationContext): Instr
 			const instruction = instructions[i];
 			const immediate = getImmediateConstValue(instruction, context);
 			if (immediate) {
-				constants.set(instruction.a, immediate);
+				recordRegisterConstant(constants, context, instruction.a, immediate);
 				continue;
 			}
 
@@ -550,7 +569,7 @@ const foldConstants = (set: InstructionSet, context: OptimizationContext): Instr
 					const result = evaluateUnary(instruction.op, operand.value, context);
 					if (result !== null && isConstPoolValue(result)) {
 						const folded = replaceWithConst(instruction, instruction.a, result, context);
-						constants.set(instruction.a, folded);
+						recordRegisterConstant(constants, context, instruction.a, folded);
 						continue;
 					}
 				}
@@ -576,7 +595,7 @@ const foldConstants = (set: InstructionSet, context: OptimizationContext): Instr
 					const result = evaluateBinary(instruction.op, left.value, right.value);
 					if (result !== null && isConstPoolValue(result)) {
 						const folded = replaceWithConst(instruction, instruction.a, result, context);
-						constants.set(instruction.a, folded);
+						recordRegisterConstant(constants, context, instruction.a, folded);
 						continue;
 					}
 				}
@@ -586,7 +605,7 @@ const foldConstants = (set: InstructionSet, context: OptimizationContext): Instr
 				case OpCode.MOV: {
 					const source = constants.get(instruction.b);
 					if (source) {
-						constants.set(instruction.a, source);
+						recordRegisterConstant(constants, context, instruction.a, source);
 					} else {
 						constants.delete(instruction.a);
 					}
@@ -595,7 +614,7 @@ const foldConstants = (set: InstructionSet, context: OptimizationContext): Instr
 				case OpCode.LOADK: {
 					const value = loadKConstValueForOptimization(instruction, context);
 					if (value) {
-						constants.set(instruction.a, value);
+						recordRegisterConstant(constants, context, instruction.a, value);
 					} else {
 						constants.delete(instruction.a);
 					}
@@ -603,7 +622,7 @@ const foldConstants = (set: InstructionSet, context: OptimizationContext): Instr
 				}
 				case OpCode.LOADNIL: {
 					for (let offset = 0; offset < instruction.b; offset += 1) {
-						constants.set(instruction.a + offset, nilConst);
+						recordRegisterConstant(constants, context, instruction.a + offset, nilConst);
 					}
 					break;
 				}
@@ -730,11 +749,17 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 
 	const setConst = (constants: Map<number, ConstValue>, copies: Map<number, number>, register: number, value: ConstValue): void => {
 		killRegister(constants, copies, register);
+		if (context.closureWrittenRegisters.has(register)) {
+			return;
+		}
 		constants.set(register, value);
 	};
 
 	const setCopy = (constants: Map<number, ConstValue>, copies: Map<number, number>, register: number, source: number): void => {
 		killRegister(constants, copies, register);
+		if (context.closureWrittenRegisters.has(register) || context.closureWrittenRegisters.has(source)) {
+			return;
+		}
 		copies.set(register, source);
 	};
 

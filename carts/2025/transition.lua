@@ -119,7 +119,7 @@ function transition.register_states(states)
 	end
 
 	local finish_transition_fade_in<const> = function(self)
-		oget(bg_id).sprite_component.color = p3_white_color
+		oget(bg_id).surface_component.color = p3_white_color
 		hide_transition_layers()
 		return '/run_node'
 	end
@@ -224,9 +224,9 @@ function transition.register_states(states)
 			accent.color = 0
 			if self.skip_transition_fade then
 				apply_background(self.transition_target_bg)
-				background.sprite_component.color = p3_black_color
+				background.surface_component.color = p3_black_color
 			else
-				background.sprite_component.color = p3_white_color
+				background.surface_component.color = p3_white_color
 			end
 			local w<const> = screen_width
 			local target<const> = {
@@ -303,7 +303,7 @@ function transition.register_states(states)
 			oget(text_transition_id):clear_text()
 			local background<const> = show_background(nil)
 			hide_transition_layers()
-			background.sprite_component.color = p3_black_color
+			background.surface_component.color = p3_black_color
 			local frames<const> = build_transition_fade_in_frames()
 			self:define_timeline(timeline.new({
 				id = overgang_post_fade_in_timeline_id,
@@ -332,7 +332,7 @@ function transition.register_states(states)
 		},
 		leaving_state = function(self)
 			self:stop_timeline(overgang_post_fade_in_timeline_id)
-			oget(bg_id).sprite_component.color = p3_white_color
+			oget(bg_id).surface_component.color = p3_white_color
 			hide_transition_layers()
 		end,
 	}
@@ -371,7 +371,7 @@ function transition.register_states(states)
 			overlay.color = 0
 			overlay.blend_mode = gx_draw_mode_blend_subtract
 			overlay.blend_color = 0
-			background.sprite_component.color = p3_white_color
+			background.surface_component.color = p3_white_color
 			local target<const> = { bg = background, overlay = overlay }
 			local frames<const> = build_fade_frames({
 				hold_black = self.fade_hold_black,

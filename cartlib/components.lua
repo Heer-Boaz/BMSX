@@ -201,11 +201,48 @@ function spritecomponent:draw()
 	local draw_scale<const> = self.draw_scale
 	local scale_x<const> = self.scale.x * draw_scale.x
 	local scale_y<const> = self.scale.y * draw_scale.y
-	if flip_flags == 0 and scale_x == 1 and scale_y == 1 then
-		gx_image.blit_rect_color(rect, x, y, self.color)
+	if scale_x == 1 and scale_y == 1 then
+		gx_image.blit_rect_color(rect, x, y, self.color, flip_flags)
 		return
 	end
 	gx_image.blit_rect_affine_color(rect, x, y, rect.w * scale_x, 0.0, 0.0, rect.h * scale_y, flip_flags, self.color)
+end
+
+local surfacecomponent<const> = {}
+surfacecomponent.__index = surfacecomponent
+setmetatable(surfacecomponent, { __index = visualcomponent })
+
+function surfacecomponent.new(opts)
+	opts = opts or {}
+	opts.type_name = 'surfacecomponent'
+	local self<const> = setmetatable(visualcomponent.new(opts), surfacecomponent)
+	self.color = opts.color or 0xffffffff
+	self:set_imgid(opts.imgid)
+	return self
+end
+
+function surfacecomponent:set_imgid(imgid)
+	self.imgid = imgid
+	if imgid then
+		self.image = gx_image.rect(imgid)
+	else
+		self.image = nil
+	end
+end
+
+function surfacecomponent:draw()
+	local image<const> = self.image
+	if not image then
+		return
+	end
+	local parent<const> = self.parent
+	local x<const> = parent.x + self.offset.x + self.draw_offset.x
+	local y<const> = parent.y + self.offset.y + self.draw_offset.y
+	local tiles<const> = image.tiles
+	for index = 1, #tiles do
+		local tile<const> = tiles[index]
+		gx_image.blit_rect_color(tile, x + tile.x, y + tile.y, self.color, 0)
+	end
 end
 
 local tilelayercomponent<const> = {}
@@ -842,7 +879,7 @@ function textcomponent:render_glyphs(x, y)
 			local cursor_x = line_x
 			for glyph_index = 1, line_length do
 				local glyph<const> = line[glyph_index]
-				gx_image.blit_rect_color(glyph.gx_image, cursor_x, line_y, color)
+				gx_image.blit_rect_color(glyph.gx_image, cursor_x, line_y, color, 0)
 				cursor_x = cursor_x + glyph.advance
 			end
 		end
@@ -1141,6 +1178,7 @@ end
 local componentregistry<const> = {
 	component = component,
 	spritecomponent = spritecomponent,
+	surfacecomponent = surfacecomponent,
 	tilelayercomponent = tilelayercomponent,
 	collider2dcomponent = collider2dcomponent,
 	timelinecomponent = timelinecomponent,
@@ -1172,6 +1210,7 @@ return {
 	component = component,
 	visualcomponent = visualcomponent,
 	spritecomponent = spritecomponent,
+	surfacecomponent = surfacecomponent,
 	tilelayercomponent = tilelayercomponent,
 	collider2dcomponent = collider2dcomponent,
 	timelinecomponent = timelinecomponent,

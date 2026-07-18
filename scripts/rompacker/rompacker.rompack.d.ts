@@ -4,7 +4,7 @@
 import { Buffer } from 'buffer';
 import type { Canvas, Image as NodeCanvasImage } from 'canvas';
 import type { GxTexture } from './gx_texture';
-import type { asset_type } from '../../machine/ts/rompack/format';
+import type { asset_type, GxTexturePageTile } from '../../machine/ts/rompack/format';
 
 export type RomPackerTarget = 'browser' | 'cli' | 'headless' | 'libretro-wsl' | 'libretro-win' | 'libretro-snesmini';
 export type RomPackerMode = 'rompack' | 'bios';
@@ -51,6 +51,7 @@ export interface ImageResource extends BaseResource<'image'> {
 	textureU?: number;
 	textureV?: number;
 	gxTexture?: GxTexture;
+	gxPageTiles?: GxTexturePageTile[];
 }
 
 // Rombuilder-only packing group. It is never serialized as a ROM resource.

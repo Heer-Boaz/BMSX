@@ -25,6 +25,15 @@ end
 local combat_module<const> = require('combat')
 local dialogue_module<const> = require('dialogue')
 local transition_module<const> = require('transition')
+
+local surface_object_class<const> = {}
+
+function surface_object_class:ctor()
+	self.surface_component = self:get_component('surfacecomponent')
+	if self.imgid then
+		self.surface_component:set_imgid(self.imgid)
+	end
+end
 local dialogue_node_kinds<const> = {
 	dialogue = true,
 	dialogue_inline = true,
@@ -220,8 +229,8 @@ local register_director<const> = function()
 	})
 	define_prefab({
 		def_id = 'p3.bg',
-		class = {},
-		type = 'sprite',
+		class = surface_object_class,
+		components = { 'surfacecomponent' },
 	})
 	define_prefab({
 		def_id = 'p3.text.main',
@@ -265,6 +274,11 @@ local register_director<const> = function()
 	})
 	define_prefab({
 		def_id = 'p3.combat.all_out',
+		class = surface_object_class,
+		components = { 'surfacecomponent' },
+	})
+	define_prefab({
+		def_id = 'p3.combat.all_out_portrait',
 		class = {},
 		type = 'sprite',
 	})
@@ -363,6 +377,12 @@ function new_game()
 		id = combat_all_out_id,
 		pos = { x = 0, y = 0, z = 800 },
 		imgid = 'all_out',
+		visible = false,
+	})
+	inst('p3.combat.all_out_portrait', {
+		id = combat_all_out_portrait_id,
+		pos = { x = 0, y = 0, z = 750 },
+		imgid = 'maya_v_s',
 		visible = false,
 	})
 

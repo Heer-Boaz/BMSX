@@ -82,37 +82,54 @@ function runStaticModuleInitializers(cpu: CPU, compiled: CompiledProgram): void 
 	cpu.syncGlobalSlotsToTable();
 }
 
-// Module return values remain real tables so direct compile-time import member
-// reads and dynamic consumers keep Lua semantics. Static module-root calls still
-// lower their call target to an export_proto relocation so the linker can replace
-// function exports with direct CLOSURE operands.
-test('static module function calls use export-proto relocations while preserving runtime tables', () => {
+test('dynamic module calls observe replaced direct and method fields at every optimization level', () => {
 	const moduleSource = [
-		'local api = {}',
-		'function api.update() end',
+		'local api = { value = 10 }',
+		'function api.read() return 7 end',
+		'function api:method() return self.value end',
 		'return api',
 	].join('\n');
-	const compiled = compileWithModule('local api<const> = require("foo")\napi.update()', 'foo', moduleSource);
-	const disasm = compiled.disasm;
-	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'foo__update'), true, 'static module-root call must emit an export-proto relocation');
-	assert.match(disasm, /\bNEWT\b/, 'module table must still be materialized for module-root consumers');
-	assert.match(disasm, /\bSETFIELD\b/, 'exported function must still be stored on the returned table');
-	assert.match(disasm, /\bSET(GL|SYS)\b/, 'export slot must remain populated for value reads and non-symbol exports');
+	const entrySource = [
+		'local api<const> = require("foo")',
+		'api.read = function() return 9 end',
+		'api.method = function(self) return self.value + 1 end',
+		'return api.read(), api:method()',
+	].join('\n');
+	for (const optLevel of [0, 3] as const) {
+		const { compiled, constRelocs, disasm } = compileWithModule(entrySource, 'foo', moduleSource, [], optLevel);
+		assert.equal(constRelocs.some(reloc => reloc.kind === 'export_proto' && (reloc.symbol === 'foo__read' || reloc.symbol === 'foo__method')), false);
+		assert.equal(constRelocs.some(reloc => reloc.kind === 'module' && reloc.symbol.startsWith('foo__')), false);
+		assert.match(disasm, /\bGETFIELD\b/);
+		assert.match(disasm, /\bSELF\b/);
+		assert.deepEqual(compiled.program.moduleExports, [{ path: 'foo', exportPathKey: '', slotName: 'foo' }]);
+		assert.equal(compiled.metadata.exportProtoIdBySlot.foo__read, undefined);
+		assert.equal(compiled.metadata.exportProtoIdBySlot.foo__method, undefined);
+		const image = encodeCompiledProgramImage(compiled);
+		const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+		const cpu = new CPU(memory, new IrqController(memory));
+		cpu.setProgram(inflateExecutableProgramImage(image), image.link.symbols, compiled.metadata, 0, 0, 0);
+		cpu.start(image.vectors.sectionInitProtoIndex);
+		assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+		runStaticModuleInitializers(cpu, compiled);
+		cpu.start(image.vectors.resetProtoIndex);
+		assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+		assert.deepEqual(Array.from(cpu.lastReturnValues), [9, 11]);
+	}
 });
 
-test('module export functions call sibling exports through link symbols', () => {
+test('explicit const-module functions call sibling exports through link symbols', () => {
 	const moduleSource = [
-		'local api<const> = {}',
-		'function api.linear(value) return value end',
-		'function api.twice(value) return api.linear(value) * 2 end',
-		'return api',
+		'module<const>',
+		'local linear<const> = function(value) return value end',
+		'local twice<const> = function(value) return linear(value) * 2 end',
+		'return { linear = linear, twice = twice }',
 	].join('\n');
 	const compiled = compileWithModule('return require("foo").twice(3)', 'foo', moduleSource);
-	assert.equal(compiled.compiled.metadata.exportProtoIdBySlot.foo__linear?.includes('/decl:api.linear'), true);
-	assert.equal(compiled.compiled.metadata.exportProtoIdBySlot.foo__twice?.includes('/decl:api.twice'), true);
+	assert.equal(compiled.compiled.metadata.exportProtoIdBySlot.foo__linear?.includes('/static:'), true);
+	assert.equal(compiled.compiled.metadata.exportProtoIdBySlot.foo__twice?.includes('/static:'), true);
 	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'foo__linear'), true);
 	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'foo__twice'), true);
-	assert.match(compiled.disasm, /\bNEWT\b/, 'module table remains available for normal module-root consumers');
+	assert.doesNotMatch(compiled.disasm, /\bNEWT\b/, 'const-module exports do not materialize a runtime table');
 	const image = encodeCompiledProgramImage(compiled.compiled);
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
 	const cpu = new CPU(memory, new IrqController(memory));
@@ -124,7 +141,7 @@ test('module export functions call sibling exports through link symbols', () => 
 	assert.deepEqual(Array.from(cpu.lastReturnValues), [6]);
 });
 
-test('bios easing exports a linkable function while keeping its Lua table', () => {
+test('bios easing calls through its live runtime table', () => {
 	const moduleSource = readFileSync('machine/firmware/bios/easing.lua', 'utf8');
 	const compiled = compileWithModule(
 		'return require("bios/easing").arc01(0.25)',
@@ -132,30 +149,49 @@ test('bios easing exports a linkable function while keeping its Lua table', () =
 		moduleSource,
 		[{ path: 'bios/util/clamp', source: readFileSync('machine/firmware/bios/util/clamp.lua', 'utf8') }],
 	);
-	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'bios__easing__arc01'), true);
+	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'bios__easing__arc01'), false);
+	assert.match(compiled.disasm, /\bGETFIELD\b/, 'runtime module calls load the current table field');
 	assert.match(compiled.disasm, /\bNEWT\b/, 'public easing table remains available for Lua API consumers');
+	const image = encodeCompiledProgramImage(compiled.compiled);
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+	const cpu = new CPU(memory, new IrqController(memory));
+	cpu.setProgram(inflateExecutableProgramImage(image), image.link.symbols, compiled.compiled.metadata, 0, 0, 0);
+	cpu.start(image.vectors.sectionInitProtoIndex);
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	runStaticModuleInitializers(cpu, compiled.compiled);
+	cpu.start(image.vectors.resetProtoIndex);
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	assert.deepEqual(Array.from(cpu.lastReturnValues), [0.5]);
 });
 
-// Non-call value reads must not use export_proto relocations; data exports use module-slot relocs.
-test('static module data reads use module slots, not export-proto relocations', () => {
+test('dynamic module data reads observe table mutations at every optimization level', () => {
 	const moduleSource = [
-		'local api = { value = 7 }',
+		'local api<const> = { value = 0 }',
+		'function api.bump()',
+		'\tapi.value = api.value + 1',
+		'\tlocal alias<const> = api',
+		'\treturn api.value, alias.value',
+		'end',
 		'return api',
 	].join('\n');
-	const compiled = compileWithModule('local api<const> = require("foo")\nreturn api.value + 1', 'foo', moduleSource);
-	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'foo__value'), false, 'data reads must not emit export-proto relocations');
-	let hasModuleValueReloc = false;
-	for (let index = 0; index < compiled.constRelocs.length; index += 1) {
-		const reloc = compiled.constRelocs[index];
-		if (reloc.kind === 'module' && reloc.symbol === 'foo__value') {
-			hasModuleValueReloc = true;
-			break;
-		}
+	for (const optLevel of [0, 3] as const) {
+		const { compiled, constRelocs, disasm } = compileWithModule('local api<const> = require("foo")\nreturn api.bump()', 'foo', moduleSource, [], optLevel);
+		assert.equal(constRelocs.some(reloc => reloc.kind === 'module' && reloc.symbol === 'foo__value'), false, 'mutable fields must not read stale initialization-time export slots');
+		assert.match(disasm, /\bGETFIELD\b/, 'mutable fields must be read from the live module table');
+		const image = encodeCompiledProgramImage(compiled);
+		const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+		const cpu = new CPU(memory, new IrqController(memory));
+		cpu.setProgram(inflateExecutableProgramImage(image), image.link.symbols, compiled.metadata, 0, 0, 0);
+		cpu.start(image.vectors.sectionInitProtoIndex);
+		assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+		runStaticModuleInitializers(cpu, compiled);
+		cpu.start(image.vectors.resetProtoIndex);
+		assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+		assert.deepEqual(Array.from(cpu.lastReturnValues), [1, 1]);
 	}
-	assert.equal(hasModuleValueReloc, true, 'data read must target the module export slot');
 });
 
-test('dynamic module function value reads use module slots, not export-proto relocations', () => {
+test('dynamic module function value reads use the live table, not export-proto relocations', () => {
 	const moduleSource = [
 		'local api = {}',
 		'function api.read() return 7 end',
@@ -163,15 +199,8 @@ test('dynamic module function value reads use module slots, not export-proto rel
 	].join('\n');
 	const compiled = compileWithModule('local api<const> = require("foo")\nlocal read = api.read\nreturn read()', 'foo', moduleSource);
 	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'foo__read'), false, 'function value read must not emit an export-proto relocation');
-	let hasModuleFunctionReloc = false;
-	for (let index = 0; index < compiled.constRelocs.length; index += 1) {
-		const reloc = compiled.constRelocs[index];
-		if (reloc.kind === 'module' && reloc.symbol === 'foo__read') {
-			hasModuleFunctionReloc = true;
-			break;
-		}
-	}
-	assert.equal(hasModuleFunctionReloc, true, 'function value read must target the runtime export slot');
+	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'module' && reloc.symbol === 'foo__read'), false, 'function value read must not target an initialization-time export slot');
+	assert.match(compiled.disasm, /\bGETFIELD\b/, 'function value read must use the live module table');
 	const image = encodeCompiledProgramImage(compiled.compiled);
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
 	const cpu = new CPU(memory, new IrqController(memory));
@@ -209,7 +238,7 @@ test('optimizer preserves a sibling closure upvalue environment', () => {
 	assert.deepEqual(Array.from(cpu.lastReturnValues), [41, null]);
 });
 
-// Nested namespaces are runtime tables; flat export slots only represent direct fields.
+// Nested namespaces in dynamic modules remain ordinary runtime-table paths.
 test('nested module export namespace uses the table path', () => {
 	const moduleSource = [
 		'local function a() end',
@@ -280,6 +309,37 @@ test('host-eval append resolves installed module roots from the program image', 
 	cpu.start(appended.entryProtoIndex);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	assert.deepEqual(Array.from(cpu.lastReturnValues), [10]);
+});
+
+test('host-eval append calls installed dynamic module fields through the live root', () => {
+	const moduleSource = [
+		'local api = {}',
+		'function api.read() return 7 end',
+		'return api',
+	].join('\n');
+	const entrySource = [
+		'local api<const> = require("foo")',
+		'api.read = function() return 9 end',
+		'return 0',
+	].join('\n');
+	const { compiled } = compileWithModule(entrySource, 'foo', moduleSource);
+	const image = encodeCompiledProgramImage(compiled);
+	const baseProgram = inflateExecutableProgramImage(image);
+	const source = 'local api<const> = require("foo")\nreturn api.read()';
+	const appended = appendLuaChunkToProgram(baseProgram, compiled.metadata, parseSource(source, 'host_eval.lua'), { entrySource: source });
+	assert.equal(appended.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'foo__read'), false);
+	resolveRuntimeProgramRelocations(appended.program, appended.metadata, appended.constRelocs);
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+	const cpu = new CPU(memory, new IrqController(memory));
+	cpu.setProgram(appended.program, appended.metadata, appended.metadata, 0, 0, 0);
+	cpu.start(image.vectors.sectionInitProtoIndex);
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	runStaticModuleInitializers(cpu, compiled);
+	cpu.start(compiled.entryProtoIndex);
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	cpu.start(appended.entryProtoIndex);
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	assert.deepEqual(Array.from(cpu.lastReturnValues), [9]);
 });
 
 test('const modules inline export constants without runtime module state', () => {

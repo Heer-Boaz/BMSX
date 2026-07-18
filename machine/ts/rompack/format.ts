@@ -354,9 +354,19 @@ export interface ImgMeta {
 	gx_clut_offset?: number; // Byte offset of palette words within the texture payload.
 	gx_source_x?: number; // Fixed resident source X for system-ROM images.
 	gx_source_y?: number; // Fixed resident source Y for system-ROM images.
+	gx_page_tiles?: GxTexturePageTile[]; // Producer-sliced page-local rectangles for an explicitly tiled image.
 	boundingbox?: BoundingBoxPrecalc; // The bounding box of the image. Used for collision detection.
 	centerpoint?: vec2arr; // The center point of the image, based on the bounding box.
 	hitpolygons?: HitPolygonsPrecalc; // The concave hull polygons for collision detection, with flipped variants.
+}
+
+export interface GxTexturePageTile {
+	u: number;
+	v: number;
+	x: number;
+	y: number;
+	w: number;
+	h: number;
 }
 
 export type TextureSource = unknown & { close?(): void; width: number; height: number; data?: Uint8Array; }; // platform-specific source type (e.g. ImageBitmap in browsers)

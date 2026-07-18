@@ -1486,7 +1486,7 @@ const computeLiveOut = (
 	return liveOut;
 };
 
-const applyLoopInvariantCodeMotion = (set: InstructionSet): InstructionSet => {
+const applyLoopInvariantCodeMotion = (set: InstructionSet, context: OptimizationContext): InstructionSet => {
 	const { instructions, ranges } = set;
 	if (instructions.length === 0) {
 		return set;
@@ -1675,6 +1675,9 @@ const applyLoopInvariantCodeMotion = (set: InstructionSet): InstructionSet => {
 					continue;
 				}
 				const dest = defs[0];
+				if (context.closureWrittenRegisters.has(dest)) {
+					continue;
+				}
 				if (defCount[dest] !== 1) {
 					continue;
 				}
@@ -1684,7 +1687,7 @@ const applyLoopInvariantCodeMotion = (set: InstructionSet): InstructionSet => {
 				const uses = collectUsesForLiveness(instruction, maxRegister);
 				let invariant = true;
 				for (let u = 0; u < uses.length; u += 1) {
-					if (defCount[uses[u]] > 0) {
+					if (context.closureWrittenRegisters.has(uses[u]) || defCount[uses[u]] > 0) {
 						invariant = false;
 						break;
 					}
@@ -1842,6 +1845,12 @@ const unrollNumericForLoops = (set: InstructionSet, context: OptimizationContext
 			const limitReg = ltPos.b;
 			const indexReg = ltPos.c;
 			if (ltNeg.b !== indexReg || ltNeg.c !== limitReg) {
+				continue;
+			}
+			if (context.closureWrittenRegisters.has(indexReg)
+				|| context.closureWrittenRegisters.has(limitReg)
+				|| context.closureWrittenRegisters.has(stepReg)
+			) {
 				continue;
 			}
 			const incInstr = instructions[incIndex];
@@ -2025,7 +2034,7 @@ const unrollNumericForLoops = (set: InstructionSet, context: OptimizationContext
 
 const applyLoopOptimizations = (set: InstructionSet, context: OptimizationContext): InstructionSet => {
 	let current = unrollNumericForLoops(set, context);
-	current = applyLoopInvariantCodeMotion(current);
+	current = applyLoopInvariantCodeMotion(current, context);
 	return current;
 };
 
@@ -2040,6 +2049,11 @@ const eliminateDeadStoresGlobal = (set: InstructionSet, context: OptimizationCon
 	const blocks = buildBasicBlocks(instructions);
 	const { successors } = buildBlockGraph(instructions, blocks);
 	const captured = new Uint8Array(registerCount);
+	for (let reg = 0; reg < registerCount; reg += 1) {
+		if (context.closureWrittenRegisters.has(reg)) {
+			captured[reg] = 1;
+		}
+	}
 	for (let i = 0; i < count; i += 1) {
 		const instruction = instructions[i];
 		if (instruction.op !== OpCode.CLOSURE) {
@@ -2294,6 +2308,9 @@ export const applyGlobalOptimizations = (
 	}
 
 	for (let reg = 0; reg <= maxRegister; reg += 1) {
+		if (context.closureWrittenRegisters.has(reg)) {
+			continue;
+		}
 		const defBlocks = Array.from(defBlocksByReg[reg]);
 		if (defBlocks.length < 2) {
 			continue;
@@ -2384,8 +2401,16 @@ export const applyGlobalOptimizations = (
 			const uses = collectUsesForSsa(instruction);
 			for (let u = 0; u < uses.length; u += 1) {
 				const operand = uses[u];
-				const regStack = stacks[operand.reg];
-				const valueId = regStack[regStack.length - 1];
+				let valueId: number;
+				if (context.closureWrittenRegisters.has(operand.reg)) {
+					// An IRQ closure may rewrite this open upvalue between any two instructions.
+					valueId = valueReg.length;
+					valueReg.push(operand.reg);
+					valueDef.push({ kind: 'instr', index: -1 });
+				} else {
+					const regStack = stacks[operand.reg];
+					valueId = regStack[regStack.length - 1];
+				}
 				addUseSlot(i, { ...operand, valueId });
 			}
 			const defs = collectDefs(instruction, maxRegister);
@@ -2393,6 +2418,9 @@ export const applyGlobalOptimizations = (
 				const slots: DefSlot[] = [];
 				for (let d = 0; d < defs.length; d += 1) {
 					const reg = defs[d];
+					if (context.closureWrittenRegisters.has(reg)) {
+						continue;
+					}
 					const valueId = pushValue(reg, { kind: 'instr', index: i });
 					if (defs.length === 1) {
 						instrPrimaryDef[i] = valueId;

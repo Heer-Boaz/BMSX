@@ -40,7 +40,13 @@ local irq_mask_addr<const> = 0x08000010
 local irq_vblank<const> = 0x0004
 local irq_geo_done_error<const> = 0x0018
 local irq_apu<const> = 0x0020
-local vblank_count = 0
+local irq_gpu<const> = 0x0040
+local framebuffer_front<const> = texture_layout.framebuffer_front
+local framebuffer_back<const> = texture_layout.framebuffer_back
+local vblank_sequence = 0
+local gpu_completion_sequence = 0
+local front_framebuffer = framebuffer_front
+local back_framebuffer = framebuffer_back
 
 local register_collision_profiles<const> = function()
 	collision_profiles.define('player', {
@@ -61,11 +67,16 @@ local register_collision_profiles<const> = function()
 	})
 end
 
-local wait_vblank<const> = function()
-	repeat
+local wait_vblank_after<const> = function(sequence)
+	while vblank_sequence == sequence do
 		halt_until_irq
-	until vblank_count ~= 0
-	vblank_count = vblank_count - 1
+	end
+end
+
+local wait_gpu_after<const> = function(sequence)
+	while gpu_completion_sequence == sequence do
+		halt_until_irq
+	end
 end
 
 local grant_starting_loadout<const> = function()
@@ -131,8 +142,15 @@ end
 function init()
 	mem[irq_mask_addr] = 0
 	on_irq(irq_vblank, function()
-		vblank_count = vblank_count + 1
+		vblank_sequence = vblank_sequence + 1
 	end)
+	on_irq(irq_gpu, function()
+		gx_gpu.ack_irq()
+		gpu_completion_sequence = gpu_completion_sequence + 1
+	end)
+	gx_gpu.draw_target(framebuffer_front)
+	gx_clear_color(0xff000000)
+	gx_gpu.draw_target(framebuffer_back)
 	gx_clear_color(0xff000000)
 	pietious_font.register_fonts()
 
@@ -189,18 +207,25 @@ end
 -- tick at half the display refresh rate.
 init()
 gx_texture.upload(gx_image.rect('pietolon_stand_r').texture, texture_layout.gameplay, texture_layout.gameplay_clut)
-mem[irq_mask_addr] = irq_vblank | irq_geo_done_error | irq_apu
+mem[irq_mask_addr] = irq_vblank | irq_geo_done_error | irq_apu | irq_gpu
 new_game()
 mem[0x0800006c] = 0x00000001
-wait_vblank()
+wait_vblank_after(vblank_sequence)
 
 while true do
 	update_world()
 
-	wait_vblank()
+	wait_vblank_after(vblank_sequence)
 	gx_clear_color(0xff000000)
 	draw_world()
+	local completion_sequence<const> = gpu_completion_sequence
+	gx_gpu.request_irq()
+	wait_gpu_after(completion_sequence)
 
 	mem[0x0800006c] = 0x00000001
-	wait_vblank()
+	gx_gpu.display_origin(back_framebuffer)
+	local flip_vblank_sequence<const> = vblank_sequence
+	wait_vblank_after(flip_vblank_sequence)
+	front_framebuffer, back_framebuffer = back_framebuffer, front_framebuffer
+	gx_gpu.draw_target(back_framebuffer)
 end

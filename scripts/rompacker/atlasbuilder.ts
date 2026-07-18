@@ -1,5 +1,6 @@
 import type { Canvas, CanvasRenderingContext2D } from 'canvas';
 import { resolve as resolvePath, sep as pathSep } from 'path';
+import type { GxTexturePageTile } from '../../machine/ts/rompack/format';
 import type { ImageResource } from './rompacker.rompack';
 import {
 	GX_CART_TEXTURE_GROUP_ID_LIMIT,
@@ -27,6 +28,30 @@ type SkylineNode = {
 	y: number;
 	width: number;
 };
+
+function buildTexturePageTiles(image: ImageResource, x: number, y: number): GxTexturePageTile[] {
+	const tiles: GxTexturePageTile[] = [];
+	let targetY = 0;
+	let sourceY = y;
+	while (targetY < image.img!.height) {
+		let height = GX_TEXTURE_PAGE_PIXELS - (sourceY & (GX_TEXTURE_PAGE_PIXELS - 1));
+		const remainingHeight = image.img!.height - targetY;
+		if (height > remainingHeight) height = remainingHeight;
+		let targetX = 0;
+		let sourceX = x;
+		while (targetX < image.img!.width) {
+			let width = GX_TEXTURE_PAGE_PIXELS - (sourceX & (GX_TEXTURE_PAGE_PIXELS - 1));
+			const remainingWidth = image.img!.width - targetX;
+			if (width > remainingWidth) width = remainingWidth;
+			tiles.push({ u: sourceX, v: sourceY, x: targetX, y: targetY, w: width, h: height });
+			targetX += width;
+			sourceX += width;
+		}
+		targetY += height;
+		sourceY += height;
+	}
+	return tiles;
+}
 
 export function resolveTextureGroupId(filepath: string, systemResourceRoots: readonly string[], current = 0): number {
 	const absolutePath = resolvePath(filepath);
@@ -202,6 +227,9 @@ export function createTextureAtlas(images: ImageResource[], bounds: TexturePacki
 		context.drawImage(item.image.img!, item.x, item.y);
 		item.image.textureU = item.x;
 		item.image.textureV = item.y;
+		if (!bounds.pageLocal) {
+			item.image.gxPageTiles = buildTexturePageTiles(item.image, item.x, item.y);
+		}
 	}
 	return canvas;
 }

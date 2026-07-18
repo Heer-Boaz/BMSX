@@ -519,10 +519,12 @@ and function text-symbols without producing a runtime module table, module proto
 global slot, or runtime `require` call. Function text-symbols are call targets
 only: const aliases may name them for direct calls, but they are not Lua runtime
 values and cannot be stored in tables, assigned to dynamic locals, or returned as
-gameplay objects. Static calls resolve through `export_proto` symbols; non-call
-value reads of dynamic module exports use ordinary module-slot relocs so the
-dynamic lane keeps Lua table/function semantics where gameplay deliberately
-chooses that lane.
+gameplay objects. Static calls resolve through `export_proto` symbols. Dynamic
+module value reads and calls load fields from the live root table; module slots
+hold module roots, not initialization-time copies of mutable fields. This keeps
+ordinary Lua table and function semantics where gameplay deliberately chooses
+the dynamic lane. A `<const>` local fixes only that local binding; it does not
+turn the required module or any of its fields into a static ABI.
 Every const module declares `module<const>` in its own BLua source. Generated
 packer modules emit the same declaration at their producer. Packed builds and
 debug source recompilation therefore consume one source-owned contract; the
@@ -1106,12 +1108,13 @@ latch, or software retry loop.
 ### GX GPU/GTE
 
 Cartlib submits painter-ordered 2D work through one retained visual-component
-list per world space. Sprite, tile, text and custom visual components share the
+list per world space. Sprite, surface, tile, text and custom visual components share the
 same effective depth `parent.z + offset.z + draw_offset.z`; lower depths submit
 first and higher depths submit last. Activation sequence is the stable equal-z
 tie-break. Add/remove updates that same list and its indices, while one in-place
 BIOS sort accounts for runtime depth changes before the visual system draws the
-components polymorphically. There are no kind-priority stages, subsystem draw
+components polymorphically. Cart-authored depth alone establishes occlusion;
+there are no kind-priority stages, subsystem draw
 escape paths, per-frame display-list records or backend-facing visual DTOs.
 
 Text layout is retained component state. Text, font, wrap or textobject-dimension
@@ -1179,6 +1182,14 @@ GPU source remains asserted. GP1(02h) deasserts the GPU source but does not
 clear an already-pending `IRQ_GPU`; cart code acknowledges that pending bit
 through `IRQ_ACK`. This keeps the GPU source latch and the system interrupt
 pending latch as two distinct hardware words.
+
+A cart that page-flips uses that ordered GP0 IRQ packet as its completion fence:
+it finishes the back page, appends GP0(1Fh), waits for `IRQ_GPU`, programs
+GP1(05h), snapshots the VBlank sequence after that store, and waits for the next
+sequence edge before reusing the former front page. Missing the current beam
+edge can delay publication by one frame but cannot expose a page still being
+written. The cart waits through `halt_until_irq`; it does not poll GPUSTAT,
+drain a host queue, or ask the renderer to publish an atomic frame.
 
 Machine/device reset and GP1(00h) are distinct GPU transitions. A machine reset
 regenerates the deterministic raw-VRAM power-on contents, advances the shared
@@ -1248,6 +1259,14 @@ store boundary. Triangles use top-left edge ownership and half-open bounds;
 polygon coordinates wrap at the raster bucket after primitive-size rejection.
 Textured and Gouraud polygons use the shared signed fixed-gradient plane with
 twelve fractional bits, half-texel seed, and twenty-bit UV accumulator wrap.
+Textured rectangles retain their separate fixed-function sampling rule: packet
+U/V names the texel sampled by the first covered destination pixel, and the E1
+rectangle flip bits change the per-pixel step from +1 to -1 on that axis.
+Accelerated rectangle vertices seed a negative axis one texel past packet U/V so
+fragment-center interpolation followed by integer texture addressing produces
+the same first texel and decrement sequence as the fixed-function software
+datapath. This phase belongs to rectangle emission in each backend, not to a
+host-coordinate conversion helper or to cart-authored UV adjustment.
 Lines use the integer DDA and wrap each emitted sample to signed eleven-bit
 coordinates. Endpoints exchange only when the first X exceeds the second; a
 vertical line therefore retains GP0 packet order, matching MAME's
@@ -1322,9 +1341,12 @@ and emits only each packed texture/CLUT slot's physical destination words. The
 cart decides when a raw texture payload is transferred and which region it
 replaces. Firmware only emits the GP0 transfer packet and DMA moves its ROM
 words. Ordinary sprite/tile images stay within one hardware texture page; the
-central rectangle primitive alone splits a surface that was authored to span
-pages. There is no runtime semantic slot manager, atlas cache, scene-aware
-firmware policy, runtime image decoder or mapped RGBA staging aperture.
+rectangle primitive therefore emits exactly one native packet. Explicit large
+image groups are producer-partitioned into retained page-local records and use
+the cartlib surface component's single linear submission pass. Firmware never
+discovers or splits image pages at draw time. There is no runtime semantic slot
+manager, atlas cache, scene-aware firmware policy, runtime image decoder or
+mapped RGBA staging aperture.
 
 #### Accelerated backend execution
 

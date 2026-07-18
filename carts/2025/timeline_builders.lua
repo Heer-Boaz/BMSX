@@ -695,7 +695,7 @@ function builders.build_combat_exit_fade_in_frames()
 		local c<const> = smoothstep(u)
 		local level<const> = round_number(c * 255)
 		frames[#frames + 1] = {
-			sprite_component = {
+			surface_component = {
 				color = color.mix_rgb_with_alpha(p3_black_color, p3_white_color, level, 1),
 			},
 		}
@@ -745,7 +745,7 @@ function builders.apply_transition_frame(target, frame_index, params)
 		overlay_color = color.mix_rgb_with_alpha(base, p3_black_color, level, 1)
 	end
 
-	target.bg.sprite_component.color = background_color
+	target.bg.surface_component.color = background_color
 	target.overlay.color = overlay_color
 	target.overlay.blend_color = overlay_blend_color
 	for i = 1, #panels do
@@ -784,7 +784,7 @@ function builders.build_transition_fade_in_frames()
 		local u<const> = frame_index / (overgang_fade_in_frames - 1)
 		local level<const> = round_number(smoothstep(u) * 255)
 		frames[#frames + 1] = {
-			sprite_component = {
+			surface_component = {
 				color = color.mix_rgb_with_alpha(p3_black_color, p3_white_color, level, 1),
 			},
 		}
@@ -814,7 +814,7 @@ function builders.build_fade_frames(params)
 		end
 
 		frames[#frames + 1] = {
-			bg = { sprite_component = { color = background_color } },
+			bg = { surface_component = { color = background_color } },
 			overlay = {
 				color = 0,
 				blend_color = blend_level == 0 and 0 or color.mix_rgb_with_alpha(p3_black_color, p3_white_color, blend_level, 1),

@@ -369,7 +369,7 @@ function combat.define_fsm()
 
 	local finish_combat_exit_fade_in<const> = function(self)
 		local bg<const> = oget(bg_id)
-		bg.sprite_component.color = p3_white_color
+		bg.surface_component.color = p3_white_color
 		return '/combat_done'
 	end
 
@@ -962,7 +962,7 @@ function combat.define_fsm()
 			oget(text_choice_id).highlight_jitter_enabled = true
 			local monster<const> = oget(combat_monster_id)
 			local maya_a<const> = oget(combat_maya_a_id)
-			local portrait<const> = oget(combat_all_out_id)
+			local portrait<const> = oget(combat_all_out_portrait_id)
 			portrait:gfx('maya_v_s')
 			portrait.visible = true
 			portrait.z = 750
@@ -1029,7 +1029,7 @@ function combat.define_fsm()
 			self:stop_timeline(combat_hover_timeline_id)
 			self:stop_timeline(combat_all_out_prompt_timeline_id)
 			self:clear_combat_parallax_transform()
-			local portrait<const> = oget(combat_all_out_id)
+			local portrait<const> = oget(combat_all_out_portrait_id)
 			portrait.visible = false
 			portrait.sprite_component.scale = { x = 1, y = 1 }
 			oget(text_choice_id).highlight_jitter_enabled = false
@@ -1049,8 +1049,6 @@ function combat.define_fsm()
 			clear_texts(text_ids_all)
 			local all_out<const> = oget(combat_all_out_id)
 			texture_residency.load_all_out()
-			all_out:gfx('all_out')
-			all_out.sprite_component.scale = { x = 1, y = 1 }
 			all_out.visible = true
 			all_out.x = 0
 			all_out.y = 0
@@ -1322,7 +1320,7 @@ function combat.define_fsm()
 		},
 		entering_state = function(self)
 			local bg<const> = show_background(self.combat_exit_target_bg)
-			bg.sprite_component.color = p3_black_color
+			bg.surface_component.color = p3_black_color
 			self:play_timeline(combat_exit_fade_in_timeline_id, { rewind = true, snap_to_start = true, target = bg })
 		end,
 		input_eval = 'first',
@@ -1335,7 +1333,7 @@ function combat.define_fsm()
 		},
 		leaving_state = function(self)
 			local bg<const> = oget(bg_id)
-			bg.sprite_component.color = p3_white_color
+			bg.surface_component.color = p3_white_color
 		end,
 	}
 

@@ -238,10 +238,13 @@ destinations and simultaneous working sets in `gx_texture_layout`. The producer
 validates those regions, packs within the smallest legal slot, and generates
 compile-time raw destination words. Its deterministic skyline packer keeps every
 ordinary image inside one 256x256 sampling page. A physically larger surface may
-span pages and is split only by the central rectangle primitive; ordinary rect
-and affine draws perform no runtime page discovery. The compact BIOS direct16
-texture remains one fixed 256x256 page and emits one A0 stream. The independent
-host-systematlas remains a host UI renderresource, not cart residency.
+span pages only as an explicit non-page-local producer group. The packer emits
+retained page-local part records and the cartlib surface component submits one
+native rectangle per part in a single linear pass. Ordinary rect and affine
+draws perform no runtime page discovery, and the firmware rectangle primitive
+always emits one packet. The compact BIOS direct16 texture remains one fixed
+256x256 page and emits one A0 stream. The independent host-systematlas remains a
+host UI renderresource, not cart residency.
 
 The `2025` cart deliberately replaces its pre-GX unlimited-atlas assumptions
 with an explicit 1024x512 VRAM map. The top half contains the 320x240
@@ -877,12 +880,23 @@ PSX discrepancy or to start the GTE+ ABI early.
   exact RGB555 scanout in TS headless, C++ software, and GLES2/llvmpipe. The
   montage overlay also reaches black before the separate post-fade state when
   the incoming fade is skipped, instead of ending in a full-screen hard cut.
+  Ordinary sprites remain page-local. Explicit full-screen backgrounds and the
+  all-out surface are producer-partitioned into retained page-local parts and
+  submit one native rectangle per part; firmware performs no page discovery or
+  nested splitting in the sprite hot path.
 - [x] Migrate `pietious` engine/cart rendering. Its producer-only image group is
   packed at ROM build time under an explicit Palette4 asset contract as native
   PSX 4-bpp texture data plus CLUT, DMA-uploaded into a cart-authored VRAM slot,
   and consumed by retained GX tile sources. The per-frame tile path emits raw
   textured rectangles without rebuilding tables, decoding RGBA pixels, or using
   a VDP stream shim. Every image is page-local and each blit emits one primitive.
+  Unscaled flips use the rectangle flip register bits in all backends. The cart
+  owns two 256x192 framebuffer pages and changes GP1 display origin only after
+  an ordered GP0 IRQ completion fence and a VBlank edge, so the retained HUD and
+  room frame are never published as a partial command prefix. Its world-1 wall
+  remains ordinary authored painter depth, while dynamic module fields remain
+  live table state so the seven-enemy progression latch removes both wall visual
+  and collider without a cart-specific bypass.
 - [x] Replace the current `bare_metal_cart` RPU descriptor smoke path with
   GX/GTE-owned PSX-style primitives. `bare_metal_cart` now programs raw GP0,
   GP1, and GTE registers directly instead of going through BIOS/system GX

@@ -101,7 +101,7 @@ local stagger_track<const> = function(target, params, event)
 	if bg then
 		local u<const> = tween_u(t, cfg.bg_start, cfg.bg_duration, bg_ease)
 		local brightness<const> = cfg.bg_from + ((cfg.bg_to - cfg.bg_from) * u)
-		bg.sprite_component.color = color.mix_rgb_with_alpha(p3_black_color, params.bg_base_color, round_number(brightness * 255), 1)
+		bg.surface_component.color = color.mix_rgb_with_alpha(p3_black_color, params.bg_base_color, round_number(brightness * 255), 1)
 	end
 
 	local poses<const> = params.pose_targets
@@ -204,7 +204,7 @@ function stagger.play(owner, preset_id, opts)
 	local text_prompt_base_color
 
 	if bg then
-		local base<const> = bg.sprite_component.color
+		local base<const> = bg.surface_component.color
 		timeline_cfg.bg_base_color = base
 		timeline_cfg.bg_from = 1
 		if opts.bg_dim ~= nil and not opts.bg_dim then
@@ -212,7 +212,7 @@ function stagger.play(owner, preset_id, opts)
 		elseif opts.bg_brightness ~= nil then
 			timeline_cfg.bg_to = opts.bg_brightness
 		end
-		bg.sprite_component.color = base
+		bg.surface_component.color = base
 	end
 
 	if text_main then

@@ -36,27 +36,35 @@ function gx_image.rect(imgid)
 		v = v,
 		w = meta.width,
 		h = meta.height,
+		tiles = meta.gx_page_tiles,
 	}
+	local tiles<const> = rect.tiles
+	if tiles then
+		for index = 1, #tiles do
+			tiles[index].texture = texture
+		end
+	end
 	image_by_id[imgid] = rect
 	return rect
 end
 
-function gx_image.blit_rect_color(rect, x, y, color)
+function gx_image.blit_rect_color(rect, x, y, color, flip_flags)
 	local texture<const> = rect.texture
+	local rectangle_flip_mode<const> = flip_flags << 12
 	if texture.mode == palette4_mode then
 		gx_gpu.draw_palette4_textured_rect_color(
 			texture.x, texture.clut_x, texture.clut_y,
 			rect.u, texture.y + rect.v,
-			x, y, rect.w, rect.h, color)
+			x, y, rect.w, rect.h, color, rectangle_flip_mode)
 		return
 	end
 	gx_gpu.draw_direct16_textured_rect_color(
 		texture.x + rect.u, texture.y + rect.v,
-		x, y, rect.w, rect.h, color)
+		x, y, rect.w, rect.h, color, rectangle_flip_mode)
 end
 
 function gx_image.blit_img_color(imgid, x, y, color)
-	gx_image.blit_rect_color(gx_image.rect(imgid), x, y, color)
+	gx_image.blit_rect_color(gx_image.rect(imgid), x, y, color, 0)
 end
 
 function gx_image.tile_run_sources(sources, tile_count, columns, tile_size, origin_x, origin_y)
@@ -66,7 +74,7 @@ function gx_image.tile_run_sources(sources, tile_count, columns, tile_size, orig
 	for index = 1, tile_count do
 		local rect<const> = sources[index]
 		if rect then
-			gx_image.blit_rect_color(rect, target_x, target_y, 0xffffffff)
+			gx_image.blit_rect_color(rect, target_x, target_y, 0xffffffff, 0)
 		end
 		column = column + 1
 		if column == columns then

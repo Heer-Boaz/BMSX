@@ -28,7 +28,6 @@ import {
 } from './module_shape';
 
 export type { ConstExportValue } from './const_module_exports';
-export type { ModuleExportNode } from './module_shape';
 
 export type ProgramModule = {
 	path: string;
@@ -41,7 +40,6 @@ export type ModuleCompileInfo = {
 	external: boolean;
 	constModule: boolean;
 	returnExpression: LuaExpression;
-	exportRoot: ModuleExportNode;
 	exportSlotsByPathKey: Map<string, string>;
 	exportConstValueByPathKey: Map<string, ConstExportValue>;
 	staticFunctionExportByPathKey: Map<string, StaticFunctionExportSymbol>;
@@ -169,15 +167,18 @@ const buildModuleCompileInfo = (
 		}
 	}
 	const moduleOwnsStaticStorage = staticStorage || (!external && hasStaticStorageDeclaration);
-	const staticFunctionExportByPathKey = collectStaticFunctionExportSymbolsByPathKey(modulePath, chunk, returnExpression, semantics, constModule);
+	const staticFunctionExportByPathKey = constModule || returnExpression.kind === LuaSyntaxKind.FunctionExpression
+		? collectStaticFunctionExportSymbolsByPathKey(modulePath, chunk, returnExpression, semantics, constModule)
+		: new Map<string, StaticFunctionExportSymbol>();
 	const rootStaticFunctionExport = staticFunctionExportByPathKey.has('');
 	const compileTimeModule = constModule || rootStaticFunctionExport;
-	const shapedExportRoot = buildModuleShapeFromExpression(returnExpression, buildTopLevelLocalModuleShapes(chunk));
-	const hasShapedExports = shapedExportRoot && shapedExportRoot.children.size !== 0;
-	if (compileTimeModule && !rootStaticFunctionExport && !hasShapedExports) {
-		return null;
+	let exportRoot: ModuleExportNode | null = null;
+	if (compileTimeModule) {
+		exportRoot = buildModuleShapeFromExpression(returnExpression, buildTopLevelLocalModuleShapes(chunk)) ?? createModuleExportNode();
+		if (!rootStaticFunctionExport && exportRoot.children.size === 0) {
+			return null;
+		}
 	}
-	const exportRoot = shapedExportRoot ?? createModuleExportNode();
 	if (constModule && !staticStorage) {
 		if (staticFunctionExportByPathKey.size !== 0) {
 			throw new Error(`Const module '${modulePath}' exports function call targets but is not compiled as a source module.`);
@@ -187,16 +188,18 @@ const buildModuleCompileInfo = (
 	const exportConstValueByPathKey = compileTimeModule
 		? buildConstModuleExportValues(chunk, returnExpression, moduleOwnsStaticStorage, semantics)
 		: new Map<string, ConstExportValue>();
-	if (compileTimeModule) {
+	if (exportRoot) {
 		assertConstModuleExportsAreStatic(modulePath, exportRoot, exportConstValueByPathKey, staticFunctionExportByPathKey);
 	}
+	const exportSlotsByPathKey = exportRoot
+		? buildModuleExportSlots(modulePath, exportRoot, rootStaticFunctionExport)
+		: new Map<string, string>([['', buildModuleExportSlotName(modulePath, [])]]);
 	return {
 		path: modulePath,
 		external,
 		constModule: compileTimeModule,
 		returnExpression,
-		exportRoot,
-		exportSlotsByPathKey: buildModuleExportSlots(modulePath, exportRoot, !compileTimeModule || rootStaticFunctionExport),
+		exportSlotsByPathKey,
 		exportConstValueByPathKey,
 		staticFunctionExportByPathKey,
 		staticFunctionExportSlotBySymbolHandle: buildStaticFunctionExportSlotBySymbolHandle(staticFunctionExportByPathKey),
