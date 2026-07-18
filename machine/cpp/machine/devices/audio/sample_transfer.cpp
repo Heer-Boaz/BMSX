@@ -116,12 +116,14 @@ auto ApuSampleTransfer::readCpuData() const -> u32 {
 	return m_dataLatch;
 }
 
-auto ApuSampleTransfer::readDmaData() -> u32 {
-	if (m_fifoCount != 0u) {
+auto ApuSampleTransfer::readDmaData(bool grantEnd) -> u32 {
+	if (m_mode == APU_TRANSFER_MODE_DMA_READ && m_fifoCount != 0u) {
 		m_dataLatch = popFifo();
 		m_memory.writeIoValue(IO_APU_TRANSFER_DATA, valueNumber(static_cast<f64>(m_dataLatch)));
 		updateDmaRequests();
-		scheduleBatch(m_scheduler.currentNowCycles());
+		if (grantEnd) {
+			scheduleBatch(m_scheduler.currentNowCycles());
+		}
 	}
 	return m_dataLatch;
 }
@@ -134,11 +136,15 @@ void ApuSampleTransfer::writeCpuData(u32 word) {
 	}
 }
 
-void ApuSampleTransfer::writeDmaData(u32 word) {
+void ApuSampleTransfer::writeDmaData(u32 word, bool grantEnd) {
 	m_dataLatch = word;
-	pushFifo(word);
-	updateDmaRequests();
-	scheduleBatch(m_scheduler.currentNowCycles());
+	if (m_mode == APU_TRANSFER_MODE_DMA_WRITE) {
+		pushFifo(word);
+		updateDmaRequests();
+		if (grantEnd) {
+			scheduleBatch(m_scheduler.currentNowCycles());
+		}
+	}
 }
 
 void ApuSampleTransfer::writeControl(u32 word) {

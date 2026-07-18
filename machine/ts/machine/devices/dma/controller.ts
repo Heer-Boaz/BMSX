@@ -22,6 +22,11 @@ import {
 } from '../../bus/io';
 import { IO_WORD_SIZE } from '../../memory/map';
 import { Memory } from '../../memory/memory';
+import {
+	MAPPED_BUS_MASTER_DMA,
+	MAPPED_BUS_DMA_GRANT_END,
+	type MappedBusSignals,
+} from '../../memory/bus_signals';
 import type { CPU, Value } from '../../cpu/cpu';
 import type { IrqController } from '../irq/controller';
 import { cyclesUntilBudgetUnits } from '../../scheduler/budget';
@@ -209,7 +214,10 @@ export class DmaController {
 			&& this.busy()
 			&& this.memory.readIoU32(IO_DMA_TRANSFER_COUNT) !== 0
 			&& (latchRequestForGrant || this.requestAsserted())) {
-			this.transferWord();
+			const transferCount = this.memory.readIoU32(IO_DMA_TRANSFER_COUNT);
+			const busSignals: MappedBusSignals = MAPPED_BUS_MASTER_DMA
+				| (slot + 1 === grantWords || transferCount === 1 ? MAPPED_BUS_DMA_GRANT_END : 0);
+			this.transferWord(transferCount, busSignals);
 			slot += 1;
 		}
 		this.serviceActive = false;
@@ -227,13 +235,12 @@ export class DmaController {
 		this.scheduleGrant(grantDeadline);
 	}
 
-	private transferWord(): void {
+	private transferWord(transferCount: number, busSignals: MappedBusSignals): void {
 		const readAddress = this.memory.readIoU32(IO_DMA_READ_ADDR);
 		const writeAddress = this.memory.readIoU32(IO_DMA_WRITE_ADDR);
-		const transferCount = this.memory.readIoU32(IO_DMA_TRANSFER_COUNT);
 		const control = this.memory.readIoU32(IO_DMA_CONTROL);
-		const word = this.memory.readMappedDmaU32LE(readAddress);
-		this.memory.writeMappedDmaU32LE(writeAddress, word);
+		const word = this.memory.readMappedDmaU32LE(readAddress, busSignals);
+		this.memory.writeMappedDmaU32LE(writeAddress, word, busSignals);
 		this.memory.writeIoValue(
 			IO_DMA_READ_ADDR,
 			(control & DMA_CONTROL_READ_INCREMENT) !== 0 ? (readAddress + IO_WORD_SIZE) >>> 0 : readAddress,

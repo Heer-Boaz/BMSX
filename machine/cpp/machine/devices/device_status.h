@@ -1,7 +1,7 @@
 #pragma once
 
 #include "common/primitives.h"
-#include "machine/memory/bus_master.h"
+#include "machine/memory/bus_signals.h"
 #include "machine/memory/memory.h"
 
 namespace bmsx {
@@ -25,7 +25,7 @@ public:
 	void acknowledge() const;
 	void setStatusFlag(uint32_t mask, bool active) const;
 	void raise(uint32_t code, uint32_t detail) const;
-	static void acknowledgeWriteThunk(void* context, uint32_t addr, Value value, MappedBusMaster busMaster);
+	static void acknowledgeWriteThunk(void* context, uint32_t addr, Value value, MappedBusSignals busSignals);
 
 	mutable uint32_t status = 0;
 	mutable uint32_t code = 0;

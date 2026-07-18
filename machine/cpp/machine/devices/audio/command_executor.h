@@ -3,7 +3,7 @@
 #include "common/primitives.h"
 #include "machine/cpu/cpu.h"
 #include "machine/devices/audio/contracts.h"
-#include "machine/memory/bus_master.h"
+#include "machine/memory/bus_signals.h"
 
 namespace bmsx {
 
@@ -34,8 +34,8 @@ public:
 
 	void drainCommandFifo();
 	void restoreOutputVoice(const ApuOutputVoiceState& state);
-	static Value selectedSlotRegisterReadThunk(void* context, u32 addr, MappedBusMaster busMaster);
-	static void selectedSlotRegisterWriteThunk(void* context, u32 addr, Value value, MappedBusMaster busMaster);
+	static Value selectedSlotRegisterReadThunk(void* context, u32 addr, MappedBusSignals busSignals);
+	static void selectedSlotRegisterWriteThunk(void* context, u32 addr, Value value, MappedBusSignals busSignals);
 
 private:
 	Memory& m_memory;

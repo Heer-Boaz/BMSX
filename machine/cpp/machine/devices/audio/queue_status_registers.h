@@ -2,7 +2,7 @@
 
 #include "common/primitives.h"
 #include "machine/cpu/cpu.h"
-#include "machine/memory/bus_master.h"
+#include "machine/memory/bus_signals.h"
 
 namespace bmsx {
 
@@ -12,7 +12,7 @@ class ApuQueueStatusRegisters final {
 public:
 	explicit ApuQueueStatusRegisters(const ApuCommandFifo& commandFifo);
 
-	static Value readThunk(void* context, u32 addr, MappedBusMaster busMaster);
+	static Value readThunk(void* context, u32 addr, MappedBusSignals busSignals);
 
 private:
 	const ApuCommandFifo& m_commandFifo;

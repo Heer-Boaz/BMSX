@@ -42,6 +42,7 @@ import {
 	APU_STATUS_DMA_WRITE_REQUEST,
 	APU_STATUS_FAULT,
 	APU_STATUS_SELECTED_SLOT_ACTIVE,
+	APU_TRANSFER_FIFO_WORD_CAPACITY,
 	APU_TRANSFER_MODE_DMA_READ,
 	APU_TRANSFER_MODE_DMA_WRITE,
 	APU_TRANSFER_MODE_MANUAL_WRITE,
@@ -52,6 +53,7 @@ import {
 	DMA_CONTROL_READ_INCREMENT,
 	DMA_CONTROL_REQUEST_APU_READ,
 	DMA_CONTROL_REQUEST_APU_WRITE,
+	DMA_CONTROL_REQUEST_FORCE,
 	DMA_CONTROL_WRITE_INCREMENT,
 	DMA_STATUS_BUSY,
 	DMA_STATUS_DONE,
@@ -433,9 +435,7 @@ function serviceScheduledSampleTransfer(harness: ReturnType<typeof createAudioHa
 
 function finishDmaWriteToSampleRam(harness: ReturnType<typeof createAudioHarness>): void {
 	serviceScheduledSampleTransfer(harness);
-	serviceScheduledSampleTransfer(harness);
 	serviceScheduledDmaGrant(harness);
-	serviceScheduledSampleTransfer(harness);
 	serviceScheduledSampleTransfer(harness);
 }
 
@@ -539,7 +539,7 @@ test('APU DMA round-trip obeys FIFO timing, RAM wrap, and mid-transfer restore',
 	const savedDma = live.dma.captureState();
 	assert.equal(readLE32(savedAudio.sampleRam, transferAddress), 0);
 	assert.equal(savedAudio.sampleTransfer.fifoCount, 16);
-	assert.equal(savedAudio.sampleTransfer.scheduledWords, 1);
+	assert.equal(savedAudio.sampleTransfer.scheduledWords, 16);
 
 	const restored = createAudioHarness();
 	restored.dma.setTiming(APU_TRANSFER_WORDS_PER_SECOND, APU_TRANSFER_WORDS_PER_SECOND, 0);
@@ -552,9 +552,7 @@ test('APU DMA round-trip obeys FIFO timing, RAM wrap, and mid-transfer restore',
 
 	serviceScheduledSampleTransfer(live);
 	assert.equal(readLE32(live.audio.captureState().sampleRam, transferAddress), 0x5a000000);
-	serviceScheduledSampleTransfer(live);
 	serviceScheduledDmaGrant(live);
-	serviceScheduledSampleTransfer(live);
 	serviceScheduledSampleTransfer(live);
 	finishDmaWriteToSampleRam(restored);
 	assert.equal(live.memory.readIoU32(IO_DMA_STATUS), DMA_STATUS_DONE);
@@ -582,13 +580,48 @@ test('APU DMA round-trip obeys FIFO timing, RAM wrap, and mid-transfer restore',
 	assert.equal(live.audio.captureState().sampleTransfer.fifoCount, 16);
 	serviceScheduledDmaGrant(live);
 	serviceScheduledSampleTransfer(live);
-	serviceScheduledSampleTransfer(live);
 	serviceScheduledDmaGrant(live);
 	live.memory.writeMappedU32LE(IO_APU_TRANSFER_CONTROL, 0);
 	assert.equal(live.memory.readIoU32(IO_DMA_STATUS), DMA_STATUS_DONE);
 	for (let index = 0; index < 32; index += 1) {
 		assert.equal(live.memory.readMappedU32LE(target + index * 4), (0x5a000000 | index) >>> 0);
 	}
+});
+
+test('APU transfer FIFO is not consumed by a forced wrong-direction DMA grant', () => {
+	const harness = createAudioHarness();
+	harness.dma.setTiming(APU_TRANSFER_WORDS_PER_SECOND, APU_TRANSFER_WORDS_PER_SECOND * 2, 0);
+	harness.audio.setTiming(APU_TRANSFER_WORDS_PER_SECOND, 0);
+	const source = PROGRAM_STATIC_RAM_BASE + 0x500;
+	const target = PROGRAM_STATIC_RAM_BASE + 0x600;
+	for (let index = 0; index < 32; index += 1) {
+		harness.memory.writeMappedU32LE(source + index * 4, (0x66000000 | index) >>> 0);
+	}
+
+	harness.memory.writeMappedU32LE(IO_APU_TRANSFER_CONTROL, APU_TRANSFER_MODE_DMA_WRITE);
+	harness.memory.writeMappedU32LE(IO_DMA_READ_ADDR, source);
+	harness.memory.writeMappedU32LE(IO_DMA_WRITE_ADDR, IO_APU_TRANSFER_DATA);
+	harness.memory.writeMappedU32LE(IO_DMA_TRANSFER_COUNT, 32);
+	harness.memory.writeMappedU32LE(IO_DMA_CONTROL, DMA_CONTROL_READ_INCREMENT | DMA_CONTROL_REQUEST_APU_WRITE);
+	harness.memory.writeMappedU32LE(IO_DMA_TRIGGER, DMA_TRIGGER_START);
+	serviceScheduledDmaGrant(harness);
+	const before = harness.audio.captureState().sampleTransfer;
+	assert.equal(before.fifoCount, APU_TRANSFER_FIFO_WORD_CAPACITY);
+	assert.equal(before.scheduledWords, APU_TRANSFER_FIFO_WORD_CAPACITY);
+
+	harness.memory.writeMappedU32LE(IO_DMA_READ_ADDR, IO_APU_TRANSFER_DATA);
+	harness.memory.writeMappedU32LE(IO_DMA_WRITE_ADDR, target);
+	harness.memory.writeMappedU32LE(IO_DMA_CONTROL, DMA_CONTROL_WRITE_INCREMENT | DMA_CONTROL_REQUEST_FORCE);
+	serviceScheduledDmaGrant(harness);
+	const afterReverseGrant = harness.audio.captureState().sampleTransfer;
+	assert.equal(afterReverseGrant.fifoCount, APU_TRANSFER_FIFO_WORD_CAPACITY);
+	assert.equal(afterReverseGrant.scheduledWords, APU_TRANSFER_FIFO_WORD_CAPACITY);
+
+	serviceScheduledSampleTransfer(harness);
+	const completed = harness.audio.captureState();
+	assert.equal(completed.sampleTransfer.fifoCount, 0);
+	assert.equal(completed.sampleTransfer.scheduledWords, 0);
+	assert.equal(readLE32(completed.sampleRam, 0), 0x66000000);
 });
 
 function writeSquareGeneratorRegisters(memory: Memory): void {

@@ -56,9 +56,8 @@ import {
 import { readLE16, readLE32, writeLE16, writeLE32 } from '../../common/endian';
 import {
 	MAPPED_BUS_MASTER_CPU,
-	MAPPED_BUS_MASTER_DMA,
-	type MappedBusMaster,
-} from './bus_master';
+	type MappedBusSignals,
+} from './bus_signals';
 
 const BUS_ACCESS_READ_WORD = BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_WORD;
 const BUS_ACCESS_WRITE_WORD = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_WORD;
@@ -73,11 +72,11 @@ const BUS_ACCESS_WRITE_U32 = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32;
 const BUS_ACCESS_WRITE_F32 = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_F32;
 const BUS_ACCESS_WRITE_F64 = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_F64;
 
-export type IoReadHandler<TContext> = (context: TContext, addr: number, busMaster: MappedBusMaster) => Value;
-export type IoWriteHandler<TContext> = (context: TContext, addr: number, value: Value, busMaster: MappedBusMaster) => void;
+export type IoReadHandler<TContext> = (context: TContext, addr: number, busSignals: MappedBusSignals) => Value;
+export type IoWriteHandler<TContext> = (context: TContext, addr: number, value: Value, busSignals: MappedBusSignals) => void;
 export type IoWriteReadyHandler<TContext> = (context: TContext, addr: number) => boolean;
-type StoredIoReadHandler = (context: unknown, addr: number, busMaster: MappedBusMaster) => Value;
-type StoredIoWriteHandler = (context: unknown, addr: number, value: Value, busMaster: MappedBusMaster) => void;
+type StoredIoReadHandler = (context: unknown, addr: number, busSignals: MappedBusSignals) => Value;
+type StoredIoWriteHandler = (context: unknown, addr: number, value: Value, busSignals: MappedBusSignals) => void;
 type StoredIoWriteReadyHandler = (context: unknown, addr: number) => boolean;
 
 export type MemorySaveState = {
@@ -267,16 +266,16 @@ export class Memory {
 		return 0;
 	}
 
-	private readIoSlotValue(slot: number, addr: number, busMaster: MappedBusMaster): Value {
+	private readIoSlotValue(slot: number, addr: number, busSignals: MappedBusSignals): Value {
 		const handler = this.ioReadHandlers[slot];
-		return handler !== null ? handler(this.ioReadContexts[slot], addr, busMaster) : this.ioSlots[slot];
+		return handler !== null ? handler(this.ioReadContexts[slot], addr, busSignals) : this.ioSlots[slot];
 	}
 
-	private writeIoSlotValue(slot: number, addr: number, value: Value, busMaster: MappedBusMaster): void {
+	private writeIoSlotValue(slot: number, addr: number, value: Value, busSignals: MappedBusSignals): void {
 		this.ioSlots[slot] = value;
 		const handler = this.ioWriteHandlers[slot];
 		if (handler !== null) {
-			handler(this.ioWriteContexts[slot], addr, value, busMaster);
+			handler(this.ioWriteContexts[slot], addr, value, busSignals);
 		}
 	}
 
@@ -535,10 +534,10 @@ export class Memory {
 		}
 	}
 
-	public readMappedDmaU32LE(addr: number): number {
+	public readMappedDmaU32LE(addr: number, busSignals: MappedBusSignals): number {
 		const slot = this.ioAlignedSlot(addr);
 		if (slot >= 0) {
-			return (this.readIoSlotValue(slot, addr, MAPPED_BUS_MASTER_DMA) as number) >>> 0;
+			return (this.readIoSlotValue(slot, addr, busSignals) as number) >>> 0;
 		}
 		return this.readMappedU32LE(addr);
 	}
@@ -600,14 +599,14 @@ export class Memory {
 		this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, faultAccess);
 	}
 
-	public writeMappedDmaU32LE(addr: number, value: number): void {
+	public writeMappedDmaU32LE(addr: number, value: number, busSignals: MappedBusSignals): void {
 		const slot = this.ioAlignedSlot(addr);
 		if (slot >= 0) {
 			if (this.isLuaReadOnlyIoAddress(addr)) {
 				this.raiseBusFault(BUS_FAULT_READ_ONLY, addr, BUS_ACCESS_WRITE_U32);
 				return;
 			}
-			this.writeIoSlotValue(slot, addr, value >>> 0, MAPPED_BUS_MASTER_DMA);
+			this.writeIoSlotValue(slot, addr, value >>> 0, busSignals);
 			return;
 		}
 		this.writeMappedU32LE(addr, value);

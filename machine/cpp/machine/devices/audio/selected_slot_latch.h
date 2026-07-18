@@ -2,7 +2,7 @@
 
 #include "machine/cpu/cpu.h"
 #include "common/types.h"
-#include "machine/memory/bus_master.h"
+#include "machine/memory/bus_signals.h"
 
 namespace bmsx {
 
@@ -16,7 +16,7 @@ public:
 
 	void reset();
 	void refresh();
-	static void refreshThunk(void* context, u32 addr, Value value, MappedBusMaster busMaster);
+	static void refreshThunk(void* context, u32 addr, Value value, MappedBusSignals busSignals);
 
 private:
 	Memory& m_memory;

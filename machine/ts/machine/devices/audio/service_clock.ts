@@ -6,8 +6,9 @@ import {
 import type { Value } from '../../cpu/cpu';
 import {
 	MAPPED_BUS_MASTER_DMA,
-	type MappedBusMaster,
-} from '../../memory/bus_master';
+	MAPPED_BUS_DMA_GRANT_END,
+	type MappedBusSignals,
+} from '../../memory/bus_signals';
 import type { Memory } from '../../memory/memory';
 import { accrueBudgetUnits, cyclesUntilBudgetUnits, type BudgetAccrual } from '../../scheduler/budget';
 import { DEVICE_SERVICE_APU, type DeviceScheduler } from '../../scheduler/device';
@@ -120,21 +121,21 @@ export class ApuServiceClock {
 		context.advanceVoicesTo(nowCycles);
 	}
 
-	private static transferDataReadThunk(context: ApuServiceClock, _addr: number, busMaster: MappedBusMaster): number {
+	private static transferDataReadThunk(context: ApuServiceClock, _addr: number, busSignals: MappedBusSignals): number {
 		const nowCycles = context.scheduler.currentNowCycles();
 		context.synchronizeBeforeTransferAccess(nowCycles);
-		const value = busMaster === MAPPED_BUS_MASTER_DMA
-			? context.sampleTransfer.readDmaData()
+		const value = (busSignals & MAPPED_BUS_MASTER_DMA) !== 0
+			? context.sampleTransfer.readDmaData((busSignals & MAPPED_BUS_DMA_GRANT_END) !== 0)
 			: context.sampleTransfer.readCpuData();
 		context.advanceVoicesTo(nowCycles);
 		return value;
 	}
 
-	private static transferDataWriteThunk(context: ApuServiceClock, _addr: number, value: Value, busMaster: MappedBusMaster): void {
+	private static transferDataWriteThunk(context: ApuServiceClock, _addr: number, value: Value, busSignals: MappedBusSignals): void {
 		const nowCycles = context.scheduler.currentNowCycles();
 		context.synchronizeBeforeTransferAccess(nowCycles);
-		if (busMaster === MAPPED_BUS_MASTER_DMA) {
-			context.sampleTransfer.writeDmaData(value as number);
+		if ((busSignals & MAPPED_BUS_MASTER_DMA) !== 0) {
+			context.sampleTransfer.writeDmaData(value as number, (busSignals & MAPPED_BUS_DMA_GRANT_END) !== 0);
 		} else {
 			context.sampleTransfer.writeCpuData(value as number);
 		}

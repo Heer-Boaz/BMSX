@@ -41,11 +41,11 @@ void IrqController::acknowledge(uint32_t mask) {
 	m_memory.writeIoValue(IO_IRQ_ACK, valueNumber(0.0));
 }
 
-Value IrqController::onFlagsReadThunk(void* context, [[maybe_unused]] uint32_t addr, MappedBusMaster) {
+Value IrqController::onFlagsReadThunk(void* context, [[maybe_unused]] uint32_t addr, MappedBusSignals) {
 	return valueNumber(static_cast<double>(static_cast<IrqController*>(context)->m_pendingFlags));
 }
 
-void IrqController::onAckWriteThunk(void* context, [[maybe_unused]] uint32_t addr, Value value, MappedBusMaster) {
+void IrqController::onAckWriteThunk(void* context, [[maybe_unused]] uint32_t addr, Value value, MappedBusSignals) {
 	auto& irq = *static_cast<IrqController*>(context);
 	const uint32_t mask = toU32(value);
 	if (mask != 0u) {
@@ -57,11 +57,11 @@ void IrqController::onAckWriteThunk(void* context, [[maybe_unused]] uint32_t add
 	irq.m_memory.writeIoValue(IO_IRQ_ACK, valueNumber(0.0));
 }
 
-Value IrqController::onMaskReadThunk(void* context, [[maybe_unused]] uint32_t addr, MappedBusMaster) {
+Value IrqController::onMaskReadThunk(void* context, [[maybe_unused]] uint32_t addr, MappedBusSignals) {
 	return valueNumber(static_cast<double>(static_cast<IrqController*>(context)->m_mask));
 }
 
-void IrqController::onMaskWriteThunk(void* context, [[maybe_unused]] uint32_t addr, Value value, MappedBusMaster) {
+void IrqController::onMaskWriteThunk(void* context, [[maybe_unused]] uint32_t addr, Value value, MappedBusSignals) {
 	static_cast<IrqController*>(context)->m_mask = toU32(value);
 }
 

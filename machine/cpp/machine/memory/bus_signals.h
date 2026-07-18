@@ -1,0 +1,15 @@
+#pragma once
+
+#include "common/primitives.h"
+
+namespace bmsx {
+
+using MappedBusSignals = u8;
+
+constexpr MappedBusSignals MAPPED_BUS_MASTER_CPU = 0u;
+constexpr MappedBusSignals MAPPED_BUS_MASTER_DMA = 1u;
+// IO handlers receive the initiating master plus raw bus strobes. DMA asserts
+// GRANT_END on the final word of an admitted service grant.
+constexpr MappedBusSignals MAPPED_BUS_DMA_GRANT_END = 2u;
+
+} // namespace bmsx

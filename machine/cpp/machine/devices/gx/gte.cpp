@@ -115,34 +115,34 @@ void GxGte::restoreState(const GxGteState& state) {
 }
 
 
-u64 GxGte::readDataRegisterThunk(void* context, u32 addr, MappedBusMaster) {
+u64 GxGte::readDataRegisterThunk(void* context, u32 addr, MappedBusSignals) {
 	GxGte& gte = *static_cast<GxGte*>(context);
 	return valueNumber(static_cast<double>(gte.readDataRegister((addr - IO_GX_GTE_DATA0) / IO_WORD_SIZE)));
 }
 
-void GxGte::writeDataRegisterThunk(void* context, u32 addr, u64 value, MappedBusMaster) {
+void GxGte::writeDataRegisterThunk(void* context, u32 addr, u64 value, MappedBusSignals) {
 	GxGte& gte = *static_cast<GxGte*>(context);
 	gte.writeDataRegister((addr - IO_GX_GTE_DATA0) / IO_WORD_SIZE, toU32(value));
 }
 
-u64 GxGte::readControlRegisterThunk(void* context, u32 addr, MappedBusMaster) {
+u64 GxGte::readControlRegisterThunk(void* context, u32 addr, MappedBusSignals) {
 	GxGte& gte = *static_cast<GxGte*>(context);
 	return valueNumber(static_cast<double>(gte.readControlRegister((addr - IO_GX_GTE_CONTROL0) / IO_WORD_SIZE)));
 }
 
-void GxGte::writeControlRegisterThunk(void* context, u32 addr, u64 value, MappedBusMaster) {
+void GxGte::writeControlRegisterThunk(void* context, u32 addr, u64 value, MappedBusSignals) {
 	GxGte& gte = *static_cast<GxGte*>(context);
 	gte.writeControlRegister((addr - IO_GX_GTE_CONTROL0) / IO_WORD_SIZE, toU32(value));
 }
 
-void GxGte::writeCommandThunk(void* context, u32 addr, u64 value, MappedBusMaster) {
+void GxGte::writeCommandThunk(void* context, u32 addr, u64 value, MappedBusSignals) {
 	(void)addr;
 	GxGte& gte = *static_cast<GxGte*>(context);
 	gte.m_lastCycles = gte.execute(toU32(value));
 	gte.m_memory.writeIoValue(IO_GX_GTE_CYCLES, valueNumber(static_cast<double>(gte.m_lastCycles)));
 }
 
-u64 GxGte::readCyclesThunk(void* context, u32 addr, MappedBusMaster) {
+u64 GxGte::readCyclesThunk(void* context, u32 addr, MappedBusSignals) {
 	(void)addr;
 	GxGte& gte = *static_cast<GxGte*>(context);
 	return valueNumber(static_cast<double>(gte.m_lastCycles));

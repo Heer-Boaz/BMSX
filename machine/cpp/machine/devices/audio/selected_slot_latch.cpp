@@ -19,7 +19,7 @@ void ApuSelectedSlotLatch::reset() {
 	m_status.setStatusFlag(APU_STATUS_SELECTED_SLOT_ACTIVE, false);
 }
 
-void ApuSelectedSlotLatch::refreshThunk(void* context, [[maybe_unused]] u32 addr, [[maybe_unused]] Value value, MappedBusMaster) {
+void ApuSelectedSlotLatch::refreshThunk(void* context, [[maybe_unused]] u32 addr, [[maybe_unused]] Value value, MappedBusSignals) {
 	static_cast<ApuSelectedSlotLatch*>(context)->refresh();
 }
 

@@ -58,7 +58,7 @@ void ApuCommandExecutor::restoreOutputVoice(const ApuOutputVoiceState& state) {
 	);
 }
 
-Value ApuCommandExecutor::selectedSlotRegisterReadThunk(void* context, u32 addr, MappedBusMaster) {
+Value ApuCommandExecutor::selectedSlotRegisterReadThunk(void* context, u32 addr, MappedBusSignals) {
 	auto& executor = *static_cast<ApuCommandExecutor*>(context);
 	const i64 nowCycles = executor.m_scheduler.currentNowCycles();
 	executor.m_serviceClock.synchronize(nowCycles);
@@ -67,7 +67,7 @@ Value ApuCommandExecutor::selectedSlotRegisterReadThunk(void* context, u32 addr,
 	return valueNumber(static_cast<double>(executor.m_slots.registerWord(slot, parameterIndex)));
 }
 
-void ApuCommandExecutor::selectedSlotRegisterWriteThunk(void* context, u32 addr, Value value, MappedBusMaster) {
+void ApuCommandExecutor::selectedSlotRegisterWriteThunk(void* context, u32 addr, Value value, MappedBusSignals) {
 	auto& executor = *static_cast<ApuCommandExecutor*>(context);
 	const i64 nowCycles = executor.m_scheduler.currentNowCycles();
 	executor.m_serviceClock.synchronize(nowCycles);

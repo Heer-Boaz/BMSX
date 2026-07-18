@@ -22,15 +22,15 @@ DmaController::DmaController(Memory& memory, CPU& cpu, IrqController& irq, Devic
 	m_memory.mapIoWrite(IO_DMA_TRIGGER, this, &DmaController::onTriggerWriteThunk);
 }
 
-void DmaController::onControlWriteThunk(void* context, u32, Value, MappedBusMaster) {
+void DmaController::onControlWriteThunk(void* context, u32, Value, MappedBusSignals) {
 	static_cast<DmaController*>(context)->requestInputChanged();
 }
 
-void DmaController::onAddressWriteThunk(void* context, u32, Value, MappedBusMaster) {
+void DmaController::onAddressWriteThunk(void* context, u32, Value, MappedBusSignals) {
 	static_cast<DmaController*>(context)->resumeCpuPortWrites();
 }
 
-void DmaController::onTriggerWriteThunk(void* context, u32, u64 value, MappedBusMaster) {
+void DmaController::onTriggerWriteThunk(void* context, u32, u64 value, MappedBusSignals) {
 	static_cast<DmaController*>(context)->onTriggerWrite(toU32(value));
 }
 
@@ -165,7 +165,10 @@ void DmaController::onService(i64) {
 			&& m_memory.readIoU32(IO_DMA_TRANSFER_COUNT) != 0u
 			&& (latchRequestForGrant || requestAsserted());
 		slot += 1u) {
-		transferWord();
+		const u32 transferCount = m_memory.readIoU32(IO_DMA_TRANSFER_COUNT);
+		const MappedBusSignals busSignals = MAPPED_BUS_MASTER_DMA
+			| (slot + 1u == grantWords || transferCount == 1u ? MAPPED_BUS_DMA_GRANT_END : 0u);
+		transferWord(transferCount, busSignals);
 	}
 	m_serviceActive = false;
 	if (!busy()) {
@@ -182,13 +185,12 @@ void DmaController::onService(i64) {
 	scheduleGrant(grantDeadline);
 }
 
-void DmaController::transferWord() {
+void DmaController::transferWord(u32 transferCount, MappedBusSignals busSignals) {
 	const u32 readAddress = m_memory.readIoU32(IO_DMA_READ_ADDR);
 	const u32 writeAddress = m_memory.readIoU32(IO_DMA_WRITE_ADDR);
-	const u32 transferCount = m_memory.readIoU32(IO_DMA_TRANSFER_COUNT);
 	const u32 control = m_memory.readIoU32(IO_DMA_CONTROL);
-	const u32 word = m_memory.readMappedDmaU32LE(readAddress);
-	m_memory.writeMappedDmaU32LE(writeAddress, word);
+	const u32 word = m_memory.readMappedDmaU32LE(readAddress, busSignals);
+	m_memory.writeMappedDmaU32LE(writeAddress, word, busSignals);
 	m_memory.writeIoValue(
 		IO_DMA_READ_ADDR,
 		valueNumber(static_cast<f64>((control & DMA_CONTROL_READ_INCREMENT) != 0u ? readAddress + IO_WORD_SIZE : readAddress))

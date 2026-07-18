@@ -22,7 +22,7 @@ ApuStatusRegister::ApuStatusRegister(
 	, m_serviceClock(serviceClock)
 	, m_scheduler(scheduler) {}
 
-Value ApuStatusRegister::readThunk(void* context, [[maybe_unused]] u32 addr, MappedBusMaster) {
+Value ApuStatusRegister::readThunk(void* context, [[maybe_unused]] u32 addr, MappedBusSignals) {
 	auto& reg = *static_cast<ApuStatusRegister*>(context);
 	const i64 nowCycles = reg.m_scheduler.currentNowCycles();
 	reg.m_serviceClock.synchronize(nowCycles);

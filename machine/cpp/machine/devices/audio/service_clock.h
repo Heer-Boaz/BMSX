@@ -2,7 +2,7 @@
 
 #include "common/primitives.h"
 #include "machine/devices/audio/sample_transfer.h"
-#include "machine/memory/bus_master.h"
+#include "machine/memory/bus_signals.h"
 #include "machine/scheduler/budget.h"
 
 namespace bmsx {
@@ -44,11 +44,11 @@ public:
 	[[nodiscard]] auto sampleTransferStatusBits() const -> u32;
 
 private:
-	static u64 readTransferDataThunk(void* context, u32 addr, MappedBusMaster busMaster);
-	static void writeTransferAddressThunk(void* context, u32 addr, u64 value, MappedBusMaster busMaster);
-	static void writeTransferDataThunk(void* context, u32 addr, u64 value, MappedBusMaster busMaster);
+	static u64 readTransferDataThunk(void* context, u32 addr, MappedBusSignals busSignals);
+	static void writeTransferAddressThunk(void* context, u32 addr, u64 value, MappedBusSignals busSignals);
+	static void writeTransferDataThunk(void* context, u32 addr, u64 value, MappedBusSignals busSignals);
 	static bool transferDataWriteReadyThunk(void* context, u32 addr);
-	static void writeTransferControlThunk(void* context, u32 addr, u64 value, MappedBusMaster busMaster);
+	static void writeTransferControlThunk(void* context, u32 addr, u64 value, MappedBusSignals busSignals);
 
 	void synchronizeBeforeTransferAccess(i64 nowCycles);
 	void advanceVoicesTo(i64 cycle);

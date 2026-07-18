@@ -1041,13 +1041,13 @@ bool GxGpu::gp0WriteReady() {
 	return m_dmaController.isGxGpuCpuPortWriteReady();
 }
 
-u64 GxGpu::readGp0Thunk(void* context, u32 addr, MappedBusMaster) {
+u64 GxGpu::readGp0Thunk(void* context, u32 addr, MappedBusSignals) {
 	(void)addr;
 	GxGpu& gpu = *static_cast<GxGpu*>(context);
 	return valueNumber(static_cast<double>(gpu.readGp0()));
 }
 
-void GxGpu::writeGp0Thunk(void* context, u32 addr, u64 value, MappedBusMaster) {
+void GxGpu::writeGp0Thunk(void* context, u32 addr, u64 value, MappedBusSignals) {
 	(void)addr;
 	GxGpu& gpu = *static_cast<GxGpu*>(context);
 	gpu.writeGp0(toU32(value));
@@ -1058,13 +1058,13 @@ bool GxGpu::gp0WriteReadyThunk(void* context, u32 addr) {
 	return static_cast<GxGpu*>(context)->gp0WriteReady();
 }
 
-u64 GxGpu::readStatusThunk(void* context, u32 addr, MappedBusMaster) {
+u64 GxGpu::readStatusThunk(void* context, u32 addr, MappedBusSignals) {
 	(void)addr;
 	GxGpu& gpu = *static_cast<GxGpu*>(context);
 	return valueNumber(static_cast<double>(gpu.readStatus()));
 }
 
-void GxGpu::writeGp1Thunk(void* context, u32 addr, u64 value, MappedBusMaster) {
+void GxGpu::writeGp1Thunk(void* context, u32 addr, u64 value, MappedBusSignals) {
 	(void)addr;
 	GxGpu& gpu = *static_cast<GxGpu*>(context);
 	gpu.writeGp1(toU32(value));

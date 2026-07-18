@@ -1,7 +1,7 @@
 #pragma once
 
 #include "common/primitives.h"
-#include "machine/memory/bus_master.h"
+#include "machine/memory/bus_signals.h"
 
 namespace bmsx {
 
@@ -43,12 +43,12 @@ public:
 private:
 	static constexpr u32 DMA_SERVICE_GRANT_WORDS = 16u;
 
-	static void onControlWriteThunk(void* context, u32 addr, u64 value, MappedBusMaster busMaster);
-	static void onAddressWriteThunk(void* context, u32 addr, u64 value, MappedBusMaster busMaster);
-	static void onTriggerWriteThunk(void* context, u32 addr, u64 value, MappedBusMaster busMaster);
+	static void onControlWriteThunk(void* context, u32 addr, u64 value, MappedBusSignals busSignals);
+	static void onAddressWriteThunk(void* context, u32 addr, u64 value, MappedBusSignals busSignals);
+	static void onTriggerWriteThunk(void* context, u32 addr, u64 value, MappedBusSignals busSignals);
 
 	void onTriggerWrite(u32 value);
-	void transferWord();
+	void transferWord(u32 transferCount, MappedBusSignals busSignals);
 	void finishTransfer();
 	void scheduleGrant(i64 anchorCycle);
 	void cancelGrant();

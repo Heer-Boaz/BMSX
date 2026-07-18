@@ -432,7 +432,7 @@ void testSampleBusDmaAndMidTransferRestore() {
 	const bmsx::DmaControllerState savedDma = live.dma.captureState();
 	require(bmsx::readLE32(savedAudio.sampleRam.data() + transferAddress) == 0u, "DMA FIFO words should not reach sample RAM before transfer time elapses");
 	require(savedAudio.sampleTransfer.fifoCount == bmsx::APU_TRANSFER_FIFO_WORD_CAPACITY, "one DMA grant should fill the APU transfer FIFO");
-	require(savedAudio.sampleTransfer.scheduledWords == 1u, "the first accepted FIFO word should establish the transfer deadline");
+	require(savedAudio.sampleTransfer.scheduledWords == bmsx::APU_TRANSFER_FIFO_WORD_CAPACITY, "the admitted DMA grant should establish one complete FIFO transfer batch");
 
 	AudioHarness restored;
 	restored.audio.setTiming(bmsx::APU_TRANSFER_WORDS_PER_SECOND, 0);
@@ -443,14 +443,10 @@ void testSampleBusDmaAndMidTransferRestore() {
 	restored.dma.postLoad();
 
 	serviceTransfer(live);
-	serviceTransfer(live);
 	serviceDma(live);
 	serviceTransfer(live);
-	serviceTransfer(live);
-	serviceTransfer(restored);
 	serviceTransfer(restored);
 	serviceDma(restored);
-	serviceTransfer(restored);
 	serviceTransfer(restored);
 
 	const bmsx::AudioControllerState liveCompleted = live.audio.captureState();
@@ -482,7 +478,6 @@ void testSampleBusDmaAndMidTransferRestore() {
 		"CPU APU-data reads must not consume a DMA-read FIFO word");
 	serviceDma(live);
 	serviceTransfer(live);
-	serviceTransfer(live);
 	serviceDma(live);
 	live.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_CONTROL, bmsx::APU_TRANSFER_MODE_STOP);
 	require(live.memory.readIoU32(bmsx::IO_DMA_STATUS) == bmsx::DMA_STATUS_DONE, "APU DMA read should complete");
@@ -499,6 +494,48 @@ void testSampleBusDmaAndMidTransferRestore() {
 	require(!live.memory.mappedWriteReady(bmsx::IO_APU_TRANSFER_DATA), "a busy disabled channel should retain its programmed APU port ownership");
 	live.memory.writeMappedU32LE(bmsx::IO_DMA_READ_ADDR, source);
 	require(live.memory.mappedWriteReady(bmsx::IO_APU_TRANSFER_DATA), "reprogramming a busy DMA address away from APU data should release the CPU port");
+}
+
+void testSampleTransferWrongDirectionGrant() {
+	AudioHarness harness;
+	harness.dma.setTiming(bmsx::APU_TRANSFER_WORDS_PER_SECOND, bmsx::APU_TRANSFER_WORDS_PER_SECOND * 2, 0);
+	harness.audio.setTiming(bmsx::APU_TRANSFER_WORDS_PER_SECOND, 0);
+	const bmsx::u32 source = bmsx::PROGRAM_STATIC_RAM_BASE + 0x500u;
+	const bmsx::u32 target = bmsx::PROGRAM_STATIC_RAM_BASE + 0x600u;
+	for (bmsx::u32 index = 0u; index < 32u; index += 1u) {
+		harness.memory.writeMappedU32LE(source + index * bmsx::IO_WORD_SIZE, 0x66000000u | index);
+	}
+
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_CONTROL, bmsx::APU_TRANSFER_MODE_DMA_WRITE);
+	harness.memory.writeMappedU32LE(bmsx::IO_DMA_READ_ADDR, source);
+	harness.memory.writeMappedU32LE(bmsx::IO_DMA_WRITE_ADDR, bmsx::IO_APU_TRANSFER_DATA);
+	harness.memory.writeMappedU32LE(bmsx::IO_DMA_TRANSFER_COUNT, 32u);
+	harness.memory.writeMappedU32LE(bmsx::IO_DMA_CONTROL, bmsx::DMA_CONTROL_READ_INCREMENT | bmsx::DMA_CONTROL_REQUEST_APU_WRITE);
+	harness.memory.writeMappedU32LE(bmsx::IO_DMA_TRIGGER, bmsx::DMA_TRIGGER_START);
+	auto serviceDma = [](AudioHarness& fixture) {
+		const bmsx::i64 deadline = fixture.scheduler.nextDeadline();
+		fixture.scheduler.advanceTo(deadline);
+		fixture.dma.onService(deadline);
+	};
+	serviceDma(harness);
+	const bmsx::ApuSampleTransferState before = harness.audio.captureState().sampleTransfer;
+	require(before.fifoCount == bmsx::APU_TRANSFER_FIFO_WORD_CAPACITY, "one APU-write grant should fill the transfer FIFO");
+	require(before.scheduledWords == bmsx::APU_TRANSFER_FIFO_WORD_CAPACITY, "one APU-write grant should schedule one FIFO batch");
+
+	harness.memory.writeMappedU32LE(bmsx::IO_DMA_READ_ADDR, bmsx::IO_APU_TRANSFER_DATA);
+	harness.memory.writeMappedU32LE(bmsx::IO_DMA_WRITE_ADDR, target);
+	harness.memory.writeMappedU32LE(bmsx::IO_DMA_CONTROL, bmsx::DMA_CONTROL_WRITE_INCREMENT | bmsx::DMA_CONTROL_REQUEST_FORCE);
+	serviceDma(harness);
+	const bmsx::ApuSampleTransferState afterReverseGrant = harness.audio.captureState().sampleTransfer;
+	require(afterReverseGrant.fifoCount == bmsx::APU_TRANSFER_FIFO_WORD_CAPACITY, "wrong-direction DMA reads must not consume the APU-write FIFO");
+	require(afterReverseGrant.scheduledWords == bmsx::APU_TRANSFER_FIFO_WORD_CAPACITY, "wrong-direction DMA reads must not alter the scheduled APU-write batch");
+
+	const bmsx::i64 transferDeadline = harness.scheduler.nextDeadline();
+	harness.scheduler.advanceTo(transferDeadline);
+	harness.audio.onTransferService(transferDeadline);
+	const bmsx::AudioControllerState completed = harness.audio.captureState();
+	require(completed.sampleTransfer.fifoCount == 0u && completed.sampleTransfer.scheduledWords == 0u, "the retained write FIFO should drain exactly once");
+	require(bmsx::readLE32(completed.sampleRam.data()) == 0x66000000u, "the retained write FIFO should reach sample RAM without underflow");
 }
 
 void testRuntimeClockResetAndRestorePreserveApuTimebase() {
@@ -804,6 +841,7 @@ int main() {
 	testBadpInterpolationWindowAndRestore();
 	testSampleTransferEdgeOrdering();
 	testSampleBusDmaAndMidTransferRestore();
+	testSampleTransferWrongDirectionGrant();
 	testRuntimeClockResetAndRestorePreserveApuTimebase();
 	testRawBiquadDatapath();
 	testFilterAndFadeRestore();

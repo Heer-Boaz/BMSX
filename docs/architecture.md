@@ -1074,7 +1074,11 @@ unused slots and a later edge begins a fresh timing interval. The APU's
 empty/full request acknowledges one whole sixteen-word FIFO grant; that request
 is latched only for the granted slots because the first accepted word necessarily
 deasserts the level line. Every word is a mapped bus read followed by a mapped
-bus write and then live address/count writeback.
+bus write and then live address/count writeback. On the final slot of an admitted
+grant, or on the final live transfer word, DMA also drives `GRANT_END` as part of
+the mapped bus transaction. Devices which latch a whole grant use that bus edge
+to start one internal batch; there is no device-specific callback from the DMA
+controller.
 Memory remains the sole bus-fault owner; a fault does not invent a DMA error
 state or abort the channel. Completion clears `BUSY`, sets `DONE` and raises
 `IRQ_DMA_DONE`. The ROM texture producer emits native RGB555/STP GP0 streams;
@@ -1462,8 +1466,10 @@ is empty and a read request only when it is full, matching one grant of the
 existing sixteen-word DMA arbiter. DMA write overflow drops the unaccepted word;
 DMA read underflow returns the retained transfer-data latch. CPU data reads
 return that same latch. The mapped CPU/DMA bus carries its initiating master
-strobe through the existing single IO decoder and handler table: only a DMA
-data-port read pops the FIFO and only a DMA data-port write pushes it. A
+and grant-end strobes through the existing single IO decoder and handler table.
+DMA-data reads pop only in DMA_READ mode and DMA-data writes push only in
+DMA_WRITE mode. A wrong-direction DMA access still reaches the raw data latch,
+but cannot mutate the other mode's FIFO. A
 control-mode change first synchronizes the transfer
 datapath, then cancels its outstanding batch and clears the FIFO; entering
 DMA_READ begins filling it, while STOP has no transfer in flight. DMA completion
@@ -1472,9 +1478,12 @@ batch has reached sample-RAM.
 
 The internal transfer clock is `APU_SAMPLE_RATE_HZ * 24`, or 1,058,400 words per
 second. `DEVICE_SERVICE_APU_TRANSFER` advances fixed batches with the same
-integer budget/carry model used by the other timed units; it never schedules one
-host callback per word. At an equal scheduler cycle the transfer unit is
-synchronized before the voice clock samples RAM. APU status preserves its
+integer budget/carry model used by the other timed units. The final DMA grant
+word schedules the accepted FIFO words as one batch at their shared completion
+deadline; it never schedules one host callback per word. Batch visibility is
+atomic at that deadline rather than a claim of per-word SPU-bus visibility. At
+an equal scheduler cycle the transfer unit is synchronized before the voice
+clock samples RAM. APU status preserves its
 existing fault/selected-slot/busy/FIFO bits and adds DMA request at bit 7,
 DMA-read request at bit 8, DMA-write request at bit 9, and transfer busy at bit
 10.

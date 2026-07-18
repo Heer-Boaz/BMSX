@@ -5,7 +5,7 @@
 #include <vector>
 
 #include "machine/cpu/cpu.h"
-#include "machine/memory/bus_master.h"
+#include "machine/memory/bus_signals.h"
 #include "machine/memory/map.h"
 #include "machine/bus/io.h"
 #include "common/primitives.h"
@@ -30,8 +30,8 @@ struct MemoryInit {
 
 class Memory {
 public:
-	using IoReadHandler = Value (*)(void* context, uint32_t addr, MappedBusMaster busMaster);
-	using IoWriteHandler = void (*)(void* context, uint32_t addr, Value value, MappedBusMaster busMaster);
+	using IoReadHandler = Value (*)(void* context, uint32_t addr, MappedBusSignals busSignals);
+	using IoWriteHandler = void (*)(void* context, uint32_t addr, Value value, MappedBusSignals busSignals);
 	using IoWriteReadyHandler = bool (*)(void* context, uint32_t addr);
 
 	explicit Memory(const MemoryInit& init);
@@ -67,13 +67,13 @@ public:
 	uint32_t readU32(uint32_t addr) const;
 	uint32_t readMappedU16LE(uint32_t addr) const;
 	uint32_t readMappedU32LE(uint32_t addr, uint32_t faultAccess = BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32) const;
-	uint32_t readMappedDmaU32LE(uint32_t addr) const;
+	uint32_t readMappedDmaU32LE(uint32_t addr, MappedBusSignals busSignals) const;
 	float readMappedF32LE(uint32_t addr) const;
 	double readMappedF64LE(uint32_t addr) const;
 	void writeU32(uint32_t addr, uint32_t value);
 	void writeMappedU16LE(uint32_t addr, uint32_t value);
 	void writeMappedU32LE(uint32_t addr, uint32_t value, uint32_t faultAccess = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32);
-	void writeMappedDmaU32LE(uint32_t addr, uint32_t value);
+	void writeMappedDmaU32LE(uint32_t addr, uint32_t value, MappedBusSignals busSignals);
 	void writeMappedF32LE(uint32_t addr, float value);
 	void writeMappedF64LE(uint32_t addr, double value);
 
@@ -129,21 +129,21 @@ private:
 	uint32_t readSystemOrCartRomU32(uint32_t addr) const;
 	bool isRangeWithinRegion(uint32_t addr, size_t length, uint32_t base, uint32_t size) const;
 	bool isLuaReadOnlyIoAddress(uint32_t addr) const;
-	Value readIoSlotValue(int slot, uint32_t addr, MappedBusMaster busMaster) const;
-	void writeIoSlotValue(int slot, uint32_t addr, Value value, MappedBusMaster busMaster);
-	uint32_t readMappedBusU32LE(uint32_t addr, uint32_t faultAccess, MappedBusMaster busMaster) const;
-	void writeMappedBusU32LE(uint32_t addr, uint32_t value, uint32_t faultAccess, MappedBusMaster busMaster);
+	Value readIoSlotValue(int slot, uint32_t addr, MappedBusSignals busSignals) const;
+	void writeIoSlotValue(int slot, uint32_t addr, Value value, MappedBusSignals busSignals);
+	uint32_t readMappedBusU32LE(uint32_t addr, uint32_t faultAccess, MappedBusSignals busSignals) const;
+	void writeMappedBusU32LE(uint32_t addr, uint32_t value, uint32_t faultAccess, MappedBusSignals busSignals);
 	bool writeRamU8(uint32_t addr, u8 value);
 	bool writeRamWordLE(uint32_t addr, size_t byteLength, uint32_t value);
 	template <auto Method, typename TObject>
-	static Value readMember(void* context, uint32_t addr, MappedBusMaster) {
+	static Value readMember(void* context, uint32_t addr, MappedBusSignals) {
 		return (static_cast<TObject*>(context)->*Method)(addr);
 	}
 	template <auto Method, typename TObject>
-	static void writeMember(void* context, uint32_t addr, Value value, MappedBusMaster) {
+	static void writeMember(void* context, uint32_t addr, Value value, MappedBusSignals) {
 		(static_cast<TObject*>(context)->*Method)(addr, value);
 	}
-	static void onBusFaultAckWriteThunk(void* context, uint32_t addr, Value value, MappedBusMaster busMaster);
+	static void onBusFaultAckWriteThunk(void* context, uint32_t addr, Value value, MappedBusSignals busSignals);
 	void onBusFaultAckWrite(uint32_t addr, Value value);
 	void raiseBusFault(uint32_t code, uint32_t addr, uint32_t access) const;
 	u8 readMainMemoryU8(uint32_t addr, uint32_t faultAccess) const;

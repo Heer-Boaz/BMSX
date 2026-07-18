@@ -18,7 +18,7 @@
 #include "machine/runtime/save_state.h"
 #include "machine/program/loader.h"
 #include "machine/program/scratch.h"
-#include "machine/memory/bus_master.h"
+#include "machine/memory/bus_signals.h"
 #include "machine/memory/memory.h"
 #include "machine/runtime/frame/loop.h"
 #include "machine/runtime/host_fault.h"
@@ -186,15 +186,15 @@ private:
 	bool m_runtimeFailed = false;
 	static size_t getBaseRamUsedBytesThunk(void* context);
 	static size_t collectTrackedHeapBytesThunk(void* context);
-	static Value onTimeMsReadThunk(void* context, uint32_t addr, MappedBusMaster busMaster);
+	static Value onTimeMsReadThunk(void* context, uint32_t addr, MappedBusSignals busSignals);
 	Value onTimeMsRead(uint32_t addr) const;
-	static Value onFrameMsReadThunk(void* context, uint32_t addr, MappedBusMaster busMaster);
+	static Value onFrameMsReadThunk(void* context, uint32_t addr, MappedBusSignals busSignals);
 	Value onFrameMsRead(uint32_t addr) const;
-	static Value onCyclesPerFrameReadThunk(void* context, uint32_t addr, MappedBusMaster busMaster);
+	static Value onCyclesPerFrameReadThunk(void* context, uint32_t addr, MappedBusSignals busSignals);
 	Value onCyclesPerFrameRead(uint32_t addr) const;
-	static void onGxGpuGp1WriteThunk(void* context, uint32_t addr, Value value, MappedBusMaster busMaster);
-	static void onLuaOutputCodepointWriteThunk(void* context, uint32_t addr, Value value, MappedBusMaster busMaster);
-	static void onLuaOutputFlushWriteThunk(void* context, uint32_t addr, Value value, MappedBusMaster busMaster);
+	static void onGxGpuGp1WriteThunk(void* context, uint32_t addr, Value value, MappedBusSignals busSignals);
+	static void onLuaOutputCodepointWriteThunk(void* context, uint32_t addr, Value value, MappedBusSignals busSignals);
+	static void onLuaOutputFlushWriteThunk(void* context, uint32_t addr, Value value, MappedBusSignals busSignals);
 	void onLuaOutputFlushWrite(uint32_t addr, Value value);
 
 	PendingCall m_pendingCall = PendingCall::None;

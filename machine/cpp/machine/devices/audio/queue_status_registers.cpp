@@ -8,7 +8,7 @@ namespace bmsx {
 ApuQueueStatusRegisters::ApuQueueStatusRegisters(const ApuCommandFifo& commandFifo)
 	: m_commandFifo(commandFifo) {}
 
-Value ApuQueueStatusRegisters::readThunk(void* context, u32 addr, MappedBusMaster) {
+Value ApuQueueStatusRegisters::readThunk(void* context, u32 addr, MappedBusSignals) {
 	auto& regs = *static_cast<ApuQueueStatusRegisters*>(context);
 	switch (addr) {
 		case IO_APU_CMD_QUEUED:

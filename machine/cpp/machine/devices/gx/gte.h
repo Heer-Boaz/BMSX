@@ -1,7 +1,7 @@
 #pragma once
 
 #include "common/primitives.h"
-#include "machine/memory/bus_master.h"
+#include "machine/memory/bus_signals.h"
 
 #include <array>
 
@@ -194,12 +194,12 @@ private:
 	i32 sy(u32 index) const;
 	u32 sz(u32 index) const;
 
-	static u64 readDataRegisterThunk(void* context, u32 addr, MappedBusMaster busMaster);
-	static void writeDataRegisterThunk(void* context, u32 addr, u64 value, MappedBusMaster busMaster);
-	static u64 readControlRegisterThunk(void* context, u32 addr, MappedBusMaster busMaster);
-	static void writeControlRegisterThunk(void* context, u32 addr, u64 value, MappedBusMaster busMaster);
-	static void writeCommandThunk(void* context, u32 addr, u64 value, MappedBusMaster busMaster);
-	static u64 readCyclesThunk(void* context, u32 addr, MappedBusMaster busMaster);
+	static u64 readDataRegisterThunk(void* context, u32 addr, MappedBusSignals busSignals);
+	static void writeDataRegisterThunk(void* context, u32 addr, u64 value, MappedBusSignals busSignals);
+	static u64 readControlRegisterThunk(void* context, u32 addr, MappedBusSignals busSignals);
+	static void writeControlRegisterThunk(void* context, u32 addr, u64 value, MappedBusSignals busSignals);
+	static void writeCommandThunk(void* context, u32 addr, u64 value, MappedBusSignals busSignals);
+	static u64 readCyclesThunk(void* context, u32 addr, MappedBusSignals busSignals);
 };
 
 } // namespace bmsx
