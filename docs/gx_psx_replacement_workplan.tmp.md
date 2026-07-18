@@ -813,11 +813,20 @@ PSX discrepancy or to start the GTE+ ABI early.
   and direct-host modules below `main`, `retro_run`, direct keyboard routing,
   `Input::handleInputEvent`, the frame scheduler and the GX executor. All
   profiling changes remained outside the product tree.
-- [ ] Re-profile CPU-to-VRAM submission with an upload-heavy cart workload before
-  changing it again. The existing owner already packs raw VRAM in one retained
-  staging buffer and emits bounded physical wrap rectangles; the particle soak
-  issues only three texture uploads in 1,000 frames and therefore cannot justify
-  or validate further cross-command coalescing.
+- [x] Re-profile CPU-to-VRAM submission with an upload-heavy cart workload before
+  changing it again. `bare_metal_cart_upload_soak` builds one retained 38,403-word
+  A0 packet, submits it through the ordinary DMA controller each VBlank, and
+  sleeps on the DMA IRQ rather than polling. The opt-in direct-host profile times
+  the complete accelerated upload route and separately counts logical direct16
+  bytes and actual RGBA host calls/bytes; standard frontends decline that private
+  interface and execute no timing path. After a 300-frame warmup, 900 measured
+  320x240 uploads produced 900 host calls, 138,240,000 logical bytes and
+  276,480,000 host bytes. One recorded WSL llvmpipe run used 68.460 ms upload
+  CPU time total, 0.076 ms mean and 0.707 ms maximum per command. Its full
+  `retro_run` mean/p95/p99/max was 4.289/5/5/6.446 ms. A no-upload run reported
+  zero commands, calls, bytes and upload time. One logical packet is therefore
+  already one physical host upload;
+  cross-command coalescing has no measured justification.
 - [ ] Keep WebGL2/GLES2 behavior synchronized for every new GX command.
 - [ ] Wire the existing TS/C++ software/headless renderer to the same GX/PSX
   contract as oracle/backend, not as a fallback inside GPU backends.

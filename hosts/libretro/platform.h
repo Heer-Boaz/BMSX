@@ -55,7 +55,12 @@ private:
 
 class LibretroGameViewHost : public GameViewHost {
 public:
-	LibretroGameViewHost(Framebuffer& framebuffer, BackendType backend_type, retro_environment_t& environ_cb, retro_system_av_info& av_info);
+	LibretroGameViewHost(
+		Framebuffer& framebuffer,
+		BackendType backend_type,
+		retro_environment_t& environ_cb,
+		retro_system_av_info& av_info,
+		bool profileGxUploads);
 
 	// GameViewHost interface
 	void* getCapability(std::string_view name) override;
@@ -72,6 +77,7 @@ private:
 	BackendType m_backend_type;
 	retro_environment_t& m_environ_cb;
 	retro_system_av_info& m_av_info;
+	bool m_profile_gx_uploads;
 };
 
 /* ============================================================================
@@ -133,7 +139,8 @@ public:
 	LibretroPlatform(
 		BackendType backend_type,
 		retro_system_av_info& av_info,
-		bmsx_supervisor_request_line_t supervisorRequestLine);
+		bmsx_supervisor_request_line_t supervisorRequestLine,
+		bool profileGxUploads);
 	~LibretroPlatform() override;
 
 	// Libretro callback setters

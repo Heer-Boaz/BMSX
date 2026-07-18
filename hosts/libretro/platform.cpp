@@ -194,7 +194,8 @@ void appendSystemRomCandidates(std::vector<std::string>& paths, const std::strin
 LibretroPlatform::LibretroPlatform(
 	BackendType backend_type,
 	retro_system_av_info& av_info,
-	bmsx_supervisor_request_line_t supervisorRequestLine)
+	bmsx_supervisor_request_line_t supervisorRequestLine,
+	bool profileGxUploads)
 	: m_frame_time_sec(static_cast<double>(HZ_SCALE) / static_cast<double>(PAL_REFRESH_UFPS_SCALED))
 	, m_backend_type(backend_type) {
 	m_framebuffer.resize(
@@ -210,7 +211,12 @@ LibretroPlatform::LibretroPlatform(
 	m_lifecycle = std::make_unique<DefaultLifecycle>();
 	m_input_hub = std::make_unique<LibretroInputHub>(this, supervisorRequestLine);
 	m_audio_service = std::make_unique<LibretroAudioService>(this);
-	m_gameview_host = std::make_unique<LibretroGameViewHost>(m_framebuffer, m_backend_type, m_environ_cb, av_info);
+	m_gameview_host = std::make_unique<LibretroGameViewHost>(
+		m_framebuffer,
+		m_backend_type,
+		m_environ_cb,
+		av_info,
+		profileGxUploads);
 	m_microtask_queue = std::make_unique<DefaultMicrotaskQueue>();
 
 	// Initialize controller devices
@@ -1095,11 +1101,17 @@ void LibretroFrameLoop::stop() {
  * LibretroGameViewHost implementation
  * ============================================================================ */
 
-LibretroGameViewHost::LibretroGameViewHost(Framebuffer& framebuffer, BackendType backend_type, retro_environment_t& environ_cb, retro_system_av_info& av_info)
+LibretroGameViewHost::LibretroGameViewHost(
+	Framebuffer& framebuffer,
+	BackendType backend_type,
+	retro_environment_t& environ_cb,
+	retro_system_av_info& av_info,
+	bool profileGxUploads)
 	: m_framebuffer(framebuffer)
 	, m_backend_type(backend_type)
 	, m_environ_cb(environ_cb)
-	, m_av_info(av_info) {
+	, m_av_info(av_info)
+	, m_profile_gx_uploads(profileGxUploads) {
 }
 
 std::unique_ptr<GPUBackend> LibretroGameViewHost::createBackend() {
@@ -1108,7 +1120,8 @@ std::unique_ptr<GPUBackend> LibretroGameViewHost::createBackend() {
 #if BMSX_ENABLE_GLES2
 			return std::make_unique<OpenGLES2Backend>(
 				static_cast<i32>(m_framebuffer.width),
-				static_cast<i32>(m_framebuffer.height)
+				static_cast<i32>(m_framebuffer.height),
+				m_profile_gx_uploads
 			);
 #else
 			throw BMSX_RUNTIME_ERROR("[LibretroGameViewHost] OpenGLES2 backend disabled at compile time.");

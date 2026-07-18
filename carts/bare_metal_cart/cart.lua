@@ -1,3 +1,5 @@
+local dma<const> = require('system/dma')
+
 local irq_mask_register<const>: *word = 0x08000010
 local irq_ack_register<const>: *word = 0x0800000c
 local inp_keys<const>: *word[8] = 0x08000074
@@ -8,6 +10,7 @@ local gte_data<const>: *word[32] = 0x08010248
 local gte_control<const>: *word[32] = 0x080102c8
 local gte_command<const>: *word = 0x08010348
 
+local irq_dma_done<const> = 0x0001
 local irq_vblank<const> = 0x0004
 local irq_pending_flags = 0
 
@@ -22,6 +25,7 @@ local key_w<const> = 26
 local key_s<const> = 22
 local key_a<const> = 4
 local key_d<const> = 7
+local key_u<const> = 24
 local key_arrow_right<const> = 79
 local key_arrow_left<const> = 80
 local key_shift_left<const> = 225
@@ -35,9 +39,15 @@ local texture_width<const> = 64
 local texture_height<const> = 64
 local texture_vram_x<const> = 512
 local texture_vram_y<const> = 256
+local frame_upload_pixel_count<const> = screen_width * screen_height
+local frame_upload_payload_word_count<const> = (frame_upload_pixel_count + 1) >> 1
+local frame_upload_command_word_count<const> = 3 + frame_upload_payload_word_count
+bss frame_upload_command_words: word[frame_upload_command_word_count]
+local frame_upload_command_ready = false
 
 local gp1_reset<const> = 0x00000000
 local gp1_display_enable<const> = 0x03000000
+local gp1_dma_direction_cpu_to_gp0<const> = 0x04000002
 local gp1_display_start<const> = 0x05000000
 local gp1_horizontal_display_range<const> = 0x06c6e27e
 local gp1_vertical_display_range<const> = 0x07000000
@@ -158,6 +168,13 @@ local wait_vblank<const> = function()
 	irq_pending_flags = irq_pending_flags - (irq_pending_flags & irq_vblank)
 end
 
+local wait_dma_done<const> = function()
+	while (irq_pending_flags & irq_dma_done) == 0 do
+		halt_until_irq
+	end
+	irq_pending_flags = irq_pending_flags - (irq_pending_flags & irq_dma_done)
+end
+
 local key_down<const> = function(key)
 	return (inp_keys[key >> 5] & (1 << (key & 31))) ~= 0
 end
@@ -258,6 +275,7 @@ local gpu_reset_320x240_pal<const> = function()
 	*gp1 = gp1_display_start
 	*gp1 = gp1_horizontal_display_range
 	*gp1 = gp1_vertical_display_range | vertical_display_range_start | ((vertical_display_range_start + screen_height) << 10)
+	*gp1 = gp1_dma_direction_cpu_to_gp0
 	*gp0 = gp0_draw_mode | draw_mode_blend_half
 	gpu_drawing_window(0, 0, screen_width - 1, screen_height - 1)
 	gpu_drawing_offset(0, 0)
@@ -491,6 +509,41 @@ local build_texture<const> = function()
 		end
 		py = py + 1
 	end
+end
+
+local build_frame_upload_command<const> = function()
+	local words<const>: *word = &frame_upload_command_words
+	words[0] = gp0_cpu_to_vram
+	words[1] = xy(0, 0)
+	words[2] = wh(screen_width, screen_height)
+	local payload_word = 0
+	local y = 0
+	while y < screen_height do
+		local x = 0
+		while x < screen_width do
+			local pixel0<const> = 0x00008000
+				| (((x >> 3) & 0x0000001f) << 10)
+				| (((y >> 3) & 0x0000001f) << 5)
+				| (((x + y) >> 4) & 0x0000001f)
+			local pixel1<const> = 0x00008000
+				| ((((x + 1) >> 3) & 0x0000001f) << 10)
+				| (((y >> 3) & 0x0000001f) << 5)
+				| ((((x + 1) + y) >> 4) & 0x0000001f)
+			words[3 + payload_word] = pixel0 | (pixel1 << 16)
+			payload_word = payload_word + 1
+			x = x + 2
+		end
+		y = y + 1
+	end
+end
+
+local upload_frame<const> = function()
+	if not frame_upload_command_ready then
+		build_frame_upload_command()
+		frame_upload_command_ready = true
+	end
+	dma.copy_to_gp0(&frame_upload_command_words, frame_upload_command_word_count)
+	wait_dma_done()
 end
 
 local update_input<const> = function()
@@ -1164,7 +1217,7 @@ local advance_animation<const> = function()
 	update_animation_vectors()
 end
 
-*irq_mask_register = irq_vblank
+*irq_mask_register = irq_dma_done | irq_vblank
 gpu_reset_320x240_pal()
 build_angle_table()
 update_animation_vectors()
@@ -1175,7 +1228,11 @@ wait_vblank()
 while true do
 	wait_vblank()
 	update_input()
-	draw_frame()
+	if key_down(key_u) then
+		upload_frame()
+	else
+		draw_frame()
+	end
 	advance_animation()
 	frame = frame + 1
 end

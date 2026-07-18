@@ -177,6 +177,14 @@ void core_session_close(BmsxCoreSession* session) {
 bool core_session_environment(unsigned command, void* data) {
 	BmsxCoreSession* session = g_active_session;
 	switch (command) {
+		case BMSX_ENVIRONMENT_SET_GX_UPLOAD_PROFILE_INTERFACE_V1:
+			if (!session->accept_gx_upload_profile_interface) {
+				return false;
+			}
+			session->gx_upload_profile =
+					*(const BmsxGxUploadProfileInterfaceV1*)data;
+			session->gx_upload_profile_interface_set = true;
+			return true;
 		case BMSX_ENVIRONMENT_GET_SUPERVISOR_REQUEST_INTERFACE_V1:
 			((BmsxSupervisorRequestInterfaceV1*)data)->request_line_high =
 					input_devices_supervisor_request_line_high;

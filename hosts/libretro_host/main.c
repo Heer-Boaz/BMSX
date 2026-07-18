@@ -247,6 +247,7 @@ int main(int argc, char** argv) {
 
 	BmsxCoreSession session;
 	core_session_open(&session, core_path, system_dir, save_dir);
+	session.accept_gx_upload_profile_interface = frame_timing.enabled;
 	bmsx_core_options_override(
 			&session.options,
 			"bmsx_render_backend",
@@ -266,6 +267,9 @@ int main(int argc, char** argv) {
 
 	BmsxLibretroApi* core = &session.api;
 	core->retro_set_environment(core_session_environment);
+	if (frame_timing.enabled && !session.gx_upload_profile_interface_set) {
+		host_fatal("--gles2-timing-report requires GX upload profile interface v1");
+	}
 	core->retro_set_video_refresh(video_presenter_refresh);
 	core->retro_set_audio_sample(audio_output_sample);
 	core->retro_set_audio_sample_batch(audio_output_sample_batch);
@@ -352,8 +356,19 @@ int main(int argc, char** argv) {
 		const uint64_t run_start_ns = frame_timing.record_frame ? monotonic_ns() : 0u;
 		core->retro_run();
 		const bool presented_frame = video_presenter_end_frame();
+		const uint64_t run_end_ns = frame_timing.record_frame ? monotonic_ns() : 0u;
 		if (frame_timing.record_frame) {
-			const uint64_t run_ns = monotonic_ns() - run_start_ns;
+			BmsxGxUploadProfileFrameV1 gx_upload_frame;
+			if (session.gx_upload_profile.read_frame(
+					frame_timing.gx_render_frame_serial,
+					&gx_upload_frame)) {
+				frame_timing.gx_render_frame_serial =
+						gx_upload_frame.render_frame_serial;
+				bmsx_frame_timing_record_gx_upload(
+						&frame_timing.report,
+						&gx_upload_frame);
+			}
+			const uint64_t run_ns = run_end_ns - run_start_ns;
 			bmsx_frame_timing_record(&frame_timing.report,
 					run_ns,
 					frame_timing.current_blit_ns,

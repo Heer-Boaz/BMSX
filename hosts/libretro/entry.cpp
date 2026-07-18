@@ -21,6 +21,9 @@
 #include "machine/model_registry.h"
 #include "machine/devices/gx/gpu_display.h"
 #include "machine/runtime/runtime.h"
+#if BMSX_ENABLE_GLES2
+#include "render/backend/gles2/backend.h"
+#endif
 
 // Core info
 static constexpr const char* CORE_NAME = "BMSX";
@@ -79,9 +82,33 @@ static std::string sanitizeSystemDir(std::string_view path) {
 
 // The platform instance
 static bmsx::LibretroPlatform* g_platform = nullptr;
+static bool g_profile_gx_uploads = false;
 static retro_system_av_info g_cached_av_info{};
 static bool g_cached_av_info_valid = false;
 static int64_t g_current_ufps_scaled = bmsx::PAL_REFRESH_UFPS_SCALED;
+
+#if BMSX_ENABLE_GLES2
+static bool RETRO_CALLCONV read_gx_upload_profile_frame(
+		uint64_t afterRenderFrameSerial,
+		BmsxGxUploadProfileFrameV1* frame) {
+	auto* backend = static_cast<bmsx::OpenGLES2Backend*>(
+		g_platform->machineManager()->view()->backend());
+	bmsx::GxCpuToVramProfileFrame profile;
+	if (!backend->readGxCpuToVramProfileFrame(afterRenderFrameSerial, profile)) {
+		return false;
+	}
+	*frame = BmsxGxUploadProfileFrameV1{
+		profile.renderFrameSerial,
+		profile.commands,
+		profile.logicalBytes,
+		profile.hostCalls,
+		profile.hostBytes,
+		profile.cpuNanoseconds,
+		profile.maxCommandNanoseconds,
+	};
+	return true;
+}
+#endif
 
 static void initialize_default_av_info(retro_system_av_info& av) {
 	std::memset(&av, 0, sizeof(av));
@@ -869,6 +896,16 @@ static void request_hw_context_for_backend(bmsx::BackendType backend) {
 
 void retro_set_environment(retro_environment_t cb) {
 	environ_cb = cb;
+#if BMSX_ENABLE_GLES2
+	BmsxGxUploadProfileInterfaceV1 gxUploadProfileInterface{
+		read_gx_upload_profile_frame,
+	};
+	g_profile_gx_uploads = cb(
+		BMSX_ENVIRONMENT_SET_GX_UPLOAD_PROFILE_INTERFACE_V1,
+		&gxUploadProfileInterface);
+#else
+	g_profile_gx_uploads = false;
+#endif
 	BmsxSupervisorRequestInterfaceV1 supervisorRequestInterface{
 		supervisor_request_line_low,
 	};
@@ -1024,7 +1061,8 @@ void retro_init(void) {
 	g_platform = new bmsx::LibretroPlatform(
 		g_active_backend,
 		g_cached_av_info,
-		g_supervisor_request_line_cb);
+		g_supervisor_request_line_cb,
+		g_profile_gx_uploads);
 	g_platform->setEnvironmentCallback(environ_cb);
 	g_platform->setLogCallback(logging.log);
 	g_platform->setSystemDirectory(g_system_dir);

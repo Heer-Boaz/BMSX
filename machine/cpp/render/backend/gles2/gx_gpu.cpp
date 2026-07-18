@@ -9,6 +9,7 @@
 #include "render/backend/pass/library.h"
 
 #include <array>
+#include <chrono>
 #include <cstdint>
 
 namespace bmsx {
@@ -1351,6 +1352,12 @@ void writeCpuToVramUploadRun(
 	}
 }
 
+struct GxCpuToVramUploadProfile {
+	u64 hostCalls = 0u;
+	u64 hostBytes = 0u;
+};
+
+template <bool Profile>
 size_t uploadCpuToVramRows(
 	const GxGpuCommandBuffer& commandBuffer,
 	u32 payloadWordStart,
@@ -1362,7 +1369,8 @@ size_t uploadCpuToVramRows(
 	u32 rowCount,
 	u32 maskBitModeWord,
 	size_t transferVertexFloatCount,
-	u32 vramYAddressExtensionWord) {
+	u32 vramYAddressExtensionWord,
+	GxCpuToVramUploadProfile* profile) {
 	u32 targetRunY = gxGpuVramYAddress(y + sourceRowStart, vramYAddressExtensionWord);
 	u32 sourceRunRow = sourceRowStart;
 	u32 remainingRows = rowCount;
@@ -1391,6 +1399,12 @@ size_t uploadCpuToVramRows(
 				GL_RGBA,
 				GL_UNSIGNED_BYTE,
 				g_rawVramUpload.data());
+			if constexpr (Profile) {
+				profile->hostCalls += 1u;
+				profile->hostBytes += static_cast<u64>(runWidth)
+					* static_cast<u64>(runHeight)
+					* kGxGpuRawVramBytesPerPixel;
+			}
 			if (maskBitModeWord != 0u) {
 				transferVertexFloatCount = appendTransferQuad(transferVertexFloatCount, targetRunX, targetRunY, runWidth, runHeight, targetRunX, targetRunY);
 			}
@@ -1410,7 +1424,11 @@ void syncGxGpuSampleTextureLogicalArea(u32 x, u32 y, u32 width, u32 height, u32 
 void renderTransferCommands(size_t vertexFloatCount, GLES2Texture& sourceTexture, i32 sourceTextureUnit, u32 maskBitModeWord, u32 sourceReadMask);
 void submitGxGpuPrimitiveBatches();
 
-void uploadCpuToVram(const GxGpuCommandBuffer& commandBuffer, u32 commandIndex) {
+template <bool Profile>
+u32 executeCpuToVramUpload(
+		const GxGpuCommandBuffer& commandBuffer,
+		u32 commandIndex,
+		GxCpuToVramUploadProfile* profile) {
 	const u32 wordStart = commandBuffer.commandWordStart[commandIndex];
 	const u32 xyWord = commandBuffer.words[wordStart + 1u];
 	const u32 sizeWord = commandBuffer.words[wordStart + 2u];
@@ -1426,7 +1444,7 @@ void uploadCpuToVram(const GxGpuCommandBuffer& commandBuffer, u32 commandIndex) 
 	const u32 payloadWordStart = wordStart + 3u;
 	const u32 maskBitModeWord = commandBuffer.commandMaskBitModeWord[commandIndex];
 	if (!gxGpuVramYSpanOverlapsInstalledBank(y, uploadHeight, vramYAddressExtensionWord)) {
-		return;
+		return uploadedPixels;
 	}
 	size_t transferVertexFloatCount = 0u;
 
@@ -1434,10 +1452,34 @@ void uploadCpuToVram(const GxGpuCommandBuffer& commandBuffer, u32 commandIndex) 
 	g_gxGpu.backend->setActiveTextureUnit(maskBitModeWord == 0u ? kGxGpuScanoutTextureUnit : kGxGpuTextureTransferUnit);
 	g_gxGpu.backend->bindTexture2D(maskBitModeWord == 0u ? &g_gxGpu.vramTexture : &g_gxGpu.vramTransferTexture);
 	if (fullRows != 0u) {
-		transferVertexFloatCount = uploadCpuToVramRows(commandBuffer, payloadWordStart, x, y, width, 0u, width, fullRows, maskBitModeWord, transferVertexFloatCount, vramYAddressExtensionWord);
+		transferVertexFloatCount = uploadCpuToVramRows<Profile>(
+			commandBuffer,
+			payloadWordStart,
+			x,
+			y,
+			width,
+			0u,
+			width,
+			fullRows,
+			maskBitModeWord,
+			transferVertexFloatCount,
+			vramYAddressExtensionWord,
+			profile);
 	}
 	if (lastRowWidth != 0u) {
-		transferVertexFloatCount = uploadCpuToVramRows(commandBuffer, payloadWordStart, x, y, width, fullRows, lastRowWidth, 1u, maskBitModeWord, transferVertexFloatCount, vramYAddressExtensionWord);
+		transferVertexFloatCount = uploadCpuToVramRows<Profile>(
+			commandBuffer,
+			payloadWordStart,
+			x,
+			y,
+			width,
+			fullRows,
+			lastRowWidth,
+			1u,
+			maskBitModeWord,
+			transferVertexFloatCount,
+			vramYAddressExtensionWord,
+			profile);
 	}
 	if (maskBitModeWord != 0u) {
 		if (gxGpuMaskBitCheckBeforeDraw(maskBitModeWord)) {
@@ -1453,6 +1495,24 @@ void uploadCpuToVram(const GxGpuCommandBuffer& commandBuffer, u32 commandIndex) 
 	if (lastRowWidth != 0u) {
 		markGxGpuSampleTextureDirtyLogicalArea(x, y + fullRows, lastRowWidth, 1u, vramYAddressExtensionWord);
 	}
+	return uploadedPixels;
+}
+
+void uploadCpuToVram(const GxGpuCommandBuffer& commandBuffer, u32 commandIndex) {
+	if (!g_gxGpu.backend->profilesGxUploads()) {
+		executeCpuToVramUpload<false>(commandBuffer, commandIndex, nullptr);
+		return;
+	}
+	GxCpuToVramUploadProfile profile{};
+	const auto start = std::chrono::steady_clock::now();
+	const u32 uploadedPixels = executeCpuToVramUpload<true>(commandBuffer, commandIndex, &profile);
+	const u64 cpuNanoseconds = static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+		std::chrono::steady_clock::now() - start).count());
+	g_gxGpu.backend->recordGxCpuToVramUpload(
+		static_cast<u64>(uploadedPixels) * sizeof(u16),
+		profile.hostCalls,
+		profile.hostBytes,
+		cpuNanoseconds);
 }
 
 void copyVramToVramArea(

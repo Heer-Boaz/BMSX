@@ -1,0 +1,11 @@
+[
+	{
+		"description": "stream one retained 320x240 direct16 frame through DMA every VBlank",
+		"frame": 200,
+		"event": {
+			"type": "button",
+			"code": "KeyU",
+			"down": true
+		}
+	}
+]

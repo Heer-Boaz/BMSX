@@ -496,7 +496,10 @@ if(BMSX_BUILD_TESTS)
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_host_frame_timing_test.c
 		${BMSX_LIBRETRO_HOST_DIR}/frame_timing.c
 	)
-	target_include_directories(bmsx_libretro_host_frame_timing_tests PRIVATE ${BMSX_LIBRETRO_HOST_DIR})
+	target_include_directories(bmsx_libretro_host_frame_timing_tests PRIVATE
+		${BMSX_LIBRETRO_HOST_DIR}
+		${BMSX_LIBRETRO_DIR}
+	)
 	add_test(NAME bmsx_libretro_host_frame_timing_tests COMMAND bmsx_libretro_host_frame_timing_tests)
 
 	add_executable(bmsx_libretro_host_core_options_tests

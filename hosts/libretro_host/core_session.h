@@ -6,6 +6,7 @@
 #include <stdint.h>
 
 #include "core_options.h"
+#include "bmsx_libretro.h"
 #include "libretro.h"
 
 typedef struct BmsxLibretroApi {
@@ -52,6 +53,9 @@ typedef struct BmsxCoreSession {
 	struct retro_frame_time_callback frame_time;
 	uint64_t frame_period_usec;
 	uint64_t frame_period_ns;
+	BmsxGxUploadProfileInterfaceV1 gx_upload_profile;
+	bool accept_gx_upload_profile_interface;
+	bool gx_upload_profile_interface_set;
 	bool shutdown_requested;
 } BmsxCoreSession;
 

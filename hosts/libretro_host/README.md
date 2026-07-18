@@ -73,7 +73,7 @@ Options:
 - `--input-timeline <path>`: replays an explicit input timeline
 - `--paced-timeline`: keeps an active timeline on the normal host deadline instead of running it as fast as possible
 - `--max-frames <count>`: owns run lifetime explicitly, including when the timeline has ended
-- `--gles2-timing-report`: prints fixed-size `retro_run`, core-without-presentation, final-blit and swap histograms for the GLES2 callback path at shutdown
+- `--gles2-timing-report`: prints fixed-size `retro_run`, core-without-presentation, final-blit and swap histograms plus GX CPU-to-VRAM command/call/byte/time totals for the GLES2 callback path at shutdown
 - `--timing-warmup <count>`: excludes the first frames from the timing report
 - `--crt-postprocessing on|off`: sets the `bmsx_crt_postprocessing` core option
 - `--crt-noise on|off`: sets the `bmsx_crt_noise` core option

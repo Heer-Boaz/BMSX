@@ -211,11 +211,12 @@ OpenGLES2Backend::ProcAddress OpenGLES2Backend::resolveProcAddress(const char* c
 	return resolveProcAddress(extName);
 }
 
-OpenGLES2Backend::OpenGLES2Backend(i32 width, i32 height)
+OpenGLES2Backend::OpenGLES2Backend(i32 width, i32 height, bool profileGxUploads)
 	: m_default_width(width)
 	, m_default_height(height)
 	, m_target_width(width)
 	, m_target_height(height)
+	, m_profile_gx_uploads(profileGxUploads)
 	, m_post_pipelines(std::make_unique<OpenGLES2PostPipelines>()) {}
 
 OpenGLES2Backend::~OpenGLES2Backend() = default;
@@ -490,6 +491,12 @@ void OpenGLES2Backend::drawIndexed(PassEncoder& pass, i32 indexCount,
 
 void OpenGLES2Backend::beginFrame() {
 	m_stats = FrameStats{};
+	if (m_profile_gx_uploads) {
+		const u64 renderFrameSerial =
+			m_gx_cpu_to_vram_profile_frame.renderFrameSerial + 1u;
+		m_gx_cpu_to_vram_profile_frame = GxCpuToVramProfileFrame{};
+		m_gx_cpu_to_vram_profile_frame.renderFrameSerial = renderFrameSerial;
+	}
 	// RetroArch can mutate GL state between frames; reset caches so bindings are
 	// refreshed.
 	invalidateTextureBindingCache();
@@ -510,6 +517,31 @@ void OpenGLES2Backend::beginFrame() {
 	glDisable(GL_SCISSOR_TEST);
 	glDisable(GL_STENCIL_TEST);
 	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+}
+
+bool OpenGLES2Backend::readGxCpuToVramProfileFrame(
+		u64 afterRenderFrameSerial,
+		GxCpuToVramProfileFrame& frame) const {
+	if (m_gx_cpu_to_vram_profile_frame.renderFrameSerial <= afterRenderFrameSerial) {
+		return false;
+	}
+	frame = m_gx_cpu_to_vram_profile_frame;
+	return true;
+}
+
+void OpenGLES2Backend::recordGxCpuToVramUpload(
+		u64 logicalBytes,
+		u64 hostCalls,
+		u64 hostBytes,
+		u64 cpuNanoseconds) {
+	m_gx_cpu_to_vram_profile_frame.commands += 1u;
+	m_gx_cpu_to_vram_profile_frame.logicalBytes += logicalBytes;
+	m_gx_cpu_to_vram_profile_frame.hostCalls += hostCalls;
+	m_gx_cpu_to_vram_profile_frame.hostBytes += hostBytes;
+	m_gx_cpu_to_vram_profile_frame.cpuNanoseconds += cpuNanoseconds;
+	if (m_gx_cpu_to_vram_profile_frame.maxCommandNanoseconds < cpuNanoseconds) {
+		m_gx_cpu_to_vram_profile_frame.maxCommandNanoseconds = cpuNanoseconds;
+	}
 }
 
 void OpenGLES2Backend::endFrame() {

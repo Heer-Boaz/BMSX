@@ -27,13 +27,23 @@ struct GLES2Texture {
 
 struct OpenGLES2PostPipelines;
 
+struct GxCpuToVramProfileFrame {
+	u64 renderFrameSerial;
+	u64 commands;
+	u64 logicalBytes;
+	u64 hostCalls;
+	u64 hostBytes;
+	u64 cpuNanoseconds;
+	u64 maxCommandNanoseconds;
+};
+
 class OpenGLES2Backend : public GPUBackend {
 public:
 	using FramebufferGetter = uintptr_t (*)();
 	using ProcAddress = void (*)();
 	using ProcAddressGetter = ProcAddress (*)(const char*);
 
-	OpenGLES2Backend(i32 width, i32 height);
+	OpenGLES2Backend(i32 width, i32 height, bool profileGxUploads);
 	~OpenGLES2Backend() override;
 
 	BackendType type() const override { return BackendType::OpenGLES2; }
@@ -88,6 +98,9 @@ public:
 	void textureBarrier() const { m_texture_barrier(); }
 	GLuint backbuffer() const { return m_backbuffer_fbo; }
 	u32 contextGeneration() const { return m_context_generation; }
+	bool profilesGxUploads() const { return m_profile_gx_uploads; }
+	bool readGxCpuToVramProfileFrame(u64 afterRenderFrameSerial, GxCpuToVramProfileFrame& frame) const;
+	void recordGxCpuToVramUpload(u64 logicalBytes, u64 hostCalls, u64 hostBytes, u64 cpuNanoseconds);
 
 	static GLES2Texture* asTexture(TextureHandle handle) { return static_cast<GLES2Texture*>(handle); }
 
@@ -102,6 +115,8 @@ private:
 	i32 m_target_width = 0;
 	i32 m_target_height = 0;
 	FrameStats m_stats{};
+	bool m_profile_gx_uploads = false;
+	GxCpuToVramProfileFrame m_gx_cpu_to_vram_profile_frame{};
 	i32 m_active_texture_unit = -1;
 	std::array<GLuint, kTrackedTextureUnits> m_bound_texture_2d_by_unit{};
 	std::unique_ptr<OpenGLES2PostPipelines> m_post_pipelines;
