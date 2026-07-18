@@ -3493,6 +3493,12 @@ export class CPU {
 		argumentCount: number,
 		returnsToProtectedParent: boolean,
 	): void {
+		if (id === BuiltinFunctionId.XPCall) {
+			const handler = argumentCount > 1 ? caller.registers.get(argumentBase + 1) : null;
+			if (!valueIsClosure(handler) && !isBuiltinFunction(handler) && !isNativeFunction(handler)) {
+				throw new LuaExecutionError('xpcall error handler must be a function.');
+			}
+		}
 		const continuationIndex = this.protectedCallDepth;
 		const continuation = this.protectedCallContinuations.get(continuationIndex);
 		this.protectedCallDepth = continuationIndex + 1;
@@ -3507,7 +3513,7 @@ export class CPU {
 		const targetArgumentOffset = id === BuiltinFunctionId.PCall ? 1 : 2;
 		this.invokeProtectedTarget(
 			continuationIndex,
-			caller.registers.get(argumentBase),
+			argumentCount > 0 ? caller.registers.get(argumentBase) : null,
 			argumentBase + targetArgumentOffset,
 			Math.max(argumentCount - targetArgumentOffset, 0),
 		);
@@ -3567,15 +3573,21 @@ export class CPU {
 
 	private finishProtectedCallFromArray(continuationIndex: number, values: Value[]): void {
 		const continuation = this.protectedCallContinuations.peek(continuationIndex);
-		const prefix = continuation.kind !== ProtectedCallKind.XPCallHandler;
-		const resultCount = this.writeProtectedResultsFromArray(continuation, prefix, values);
+		if (continuation.kind === ProtectedCallKind.XPCallHandler) {
+			this.finishProtectedCallWithError(continuationIndex, values.length > 0 ? values[0] : null);
+			return;
+		}
+		const resultCount = this.writeProtectedResultsFromArray(continuation, true, values);
 		this.finishProtectedContinuation(continuationIndex, resultCount);
 	}
 
 	private finishProtectedCallFromRegisters(continuationIndex: number, source: RegisterFile, sourceBase: number, sourceCount: number): void {
 		const continuation = this.protectedCallContinuations.peek(continuationIndex);
-		const prefix = continuation.kind !== ProtectedCallKind.XPCallHandler;
-		const resultCount = this.writeProtectedResultsFromRegisters(continuation, prefix, source, sourceBase, sourceCount);
+		if (continuation.kind === ProtectedCallKind.XPCallHandler) {
+			this.finishProtectedCallWithError(continuationIndex, sourceCount > 0 ? source.get(sourceBase) : null);
+			return;
+		}
+		const resultCount = this.writeProtectedResultsFromRegisters(continuation, true, source, sourceBase, sourceCount);
 		this.finishProtectedContinuation(continuationIndex, resultCount);
 	}
 
@@ -3681,7 +3693,10 @@ export class CPU {
 			}
 			this.unwindToDepth(callerIndex + 1);
 			if (continuation.kind !== ProtectedCallKind.XPCallBody) {
-				this.finishProtectedCallWithError(continuationIndex, errorValue);
+				const result = continuation.kind === ProtectedCallKind.XPCallHandler
+					? StringValue.get(this.stringPool.intern('error in error handling'))
+					: errorValue;
+				this.finishProtectedCallWithError(continuationIndex, result);
 				return true;
 			}
 

@@ -1789,6 +1789,14 @@ void CPU::runBuiltinFunction(BuiltinFunction& fn, CallFrame& frame, int callBase
 
 void CPU::startProtectedCall(BuiltinFunctionId id, CallFrame& caller, int callBase, int returnCount,
 	int argumentBase, int argumentCount, bool returnsToProtectedParent) {
+	if (id == BuiltinFunctionId::XPCall) {
+		const Value handler = argumentCount > 1
+			? caller.registers[static_cast<size_t>(argumentBase + 1)]
+			: valueNil();
+		if (!valueIsClosure(handler) && !valueIsBuiltinFunction(handler) && !valueIsNativeFunction(handler)) {
+			throw LuaExecutionError("xpcall error handler must be a function.");
+		}
+	}
 	const size_t continuationIndex = m_protectedCallDepth;
 	ProtectedCallContinuation& continuation = m_protectedCallContinuations.get(continuationIndex);
 	m_protectedCallDepth = continuationIndex + 1;
@@ -1803,7 +1811,7 @@ void CPU::startProtectedCall(BuiltinFunctionId id, CallFrame& caller, int callBa
 	const int targetArgumentOffset = id == BuiltinFunctionId::PCall ? 1 : 2;
 	invokeProtectedTarget(
 		continuationIndex,
-		caller.registers[static_cast<size_t>(argumentBase)],
+		argumentCount > 0 ? caller.registers[static_cast<size_t>(argumentBase)] : valueNil(),
 		argumentBase + targetArgumentOffset,
 		std::max(argumentCount - targetArgumentOffset, 0)
 	);
@@ -1851,15 +1859,24 @@ void CPU::invokeProtectedTarget(size_t continuationIndex, Value target, int argu
 
 void CPU::finishProtectedCall(size_t continuationIndex, const Value* values, int valueCount) {
 	ProtectedCallContinuation& continuation = m_protectedCallContinuations.get(continuationIndex);
-	const bool prefix = continuation.kind != ProtectedCallKind::XPCallHandler;
-	const int resultCount = writeProtectedResults(continuation, prefix, values, valueCount);
+	if (continuation.kind == ProtectedCallKind::XPCallHandler) {
+		finishProtectedCallWithError(continuationIndex, valueCount > 0 ? values[0] : valueNil());
+		return;
+	}
+	const int resultCount = writeProtectedResults(continuation, true, values, valueCount);
 	finishProtectedContinuation(continuationIndex, resultCount);
 }
 
 void CPU::finishProtectedCall(size_t continuationIndex, CallFrame& source, int sourceBase, int sourceCount) {
 	ProtectedCallContinuation& continuation = m_protectedCallContinuations.get(continuationIndex);
-	const bool prefix = continuation.kind != ProtectedCallKind::XPCallHandler;
-	const int resultCount = writeProtectedResults(continuation, prefix, source, sourceBase, sourceCount);
+	if (continuation.kind == ProtectedCallKind::XPCallHandler) {
+		finishProtectedCallWithError(
+			continuationIndex,
+			sourceCount > 0 ? source.registers[static_cast<size_t>(sourceBase)] : valueNil()
+		);
+		return;
+	}
+	const int resultCount = writeProtectedResults(continuation, true, source, sourceBase, sourceCount);
 	finishProtectedContinuation(continuationIndex, resultCount);
 }
 
@@ -1956,7 +1973,10 @@ bool CPU::handleProtectedCallError(Value errorValue) {
 		}
 		unwindToDepth(callerIndex + 1);
 		if (continuation.kind != ProtectedCallKind::XPCallBody) {
-			finishProtectedCallWithError(continuationIndex, errorValue);
+			const Value result = continuation.kind == ProtectedCallKind::XPCallHandler
+				? valueString(m_stringPool.intern("error in error handling"))
+				: errorValue;
+			finishProtectedCallWithError(continuationIndex, result);
 			return true;
 		}
 

@@ -401,16 +401,17 @@ Owners:
 The ROM package and program image use the current wire records only. There is no
 old-format reader and no decode path for obsolete records.
 
-Every top-level ROM section begins on a four-byte boundary. The producer inserts
-zero padding between the byte-exact data, metadata, manifest, and TOC spans;
-padding is not included in any section length. CPU-word fields in the header,
-metadata header, and TOC can therefore be consumed directly. Values inside the
-packed binary codec remain byte-packed: firmware reconstructs `f32` and `f64`
-words from little-endian bytes instead of issuing potentially misaligned CPU
-word loads. Generic asset payloads remain byte-contiguous rather than receiving
-implicit padding; byte-packed formats such as BADP decode their multibyte header
-fields through the same endian owner. Consumers do not weaken CPU alignment or
-infer alternate layouts.
+Every top-level ROM section and every main, compiled, texture, and collision
+asset payload begins on a four-byte boundary. The producer inserts zero padding
+between top-level sections and between aligned asset ranges. Inter-section
+padding falls outside section lengths; inter-asset padding occupies data-section
+space but is excluded from each asset's declared length. Generated `bmsx/assets`
+payload addresses can therefore feed typed CPU word loads directly. Per-entry
+metadata remains byte-packed inside the aligned metadata section: its
+`metabuffer` offsets are byte addresses, and consumers decode multibyte fields
+through little-endian byte reads. Values inside an individual packed format
+likewise remain byte-packed. The producer does not insert padding inside a
+format, and consumers do not weaken CPU alignment or infer alternate layouts.
 
 Runtime package records describe ROM payloads; they do not own duplicate audio,
 atlas, or binary payload bytes. The active machine keeps one CPU-visible ROM
@@ -565,7 +566,11 @@ rompacker, TOC and host do not maintain a second module-name or attribute list.
   MMIO, and save/restore. Lua returns and Lua errors complete that continuation;
   a supervisor exception frame is a strict barrier and remains hardware state.
   A hard halt or parked target therefore stays stopped instead of being
-  converted into a fabricated Lua result.
+  converted into a fabricated Lua result. `xpcall` validates its handler before
+  arming the continuation or executing the body. A handled body error produces
+  exactly `false` plus the handler's first result, using `nil` when the handler
+  returns nothing and discarding further results; a handler error produces the
+  stable Lua error value `error in error handling`.
 - Host/IDE closure entry is permitted only while the CPU is suspended outside
   an active scheduler slice. Native code cannot recursively run the Lua CPU
   inside an executing instruction. Scheduler-aware external execution owns its
@@ -991,6 +996,13 @@ VBlank, then seeds both sides of the firmware key-edge state from those latched
 words. A key held while the exception was raised must therefore be released
 before it can become monitor editor input; no platform filters or synthetic
 release events participate in this boundary.
+
+Monitor entry snapshots the raw `STATUS`, `CAUSE`, `EPC`, `BAD_ADDRESS`, and IRQ
+mask words before enabling nested supervisor IRQs or changing IRQ/GPU
+ownership. The automatic fault output decodes the architectural cause from a
+firmware `.rodata` registry and includes `BAD_ADDRESS` only for address faults;
+`FAULT` and `REGS` retain the underlying raw words. Fault presentation therefore
+does not depend on host exception text or a frontend-owned terminal overlay.
 
 The BIOS terminal uses the ordinary GX GPU and the ordinary primary scanout.
 GX VRAM remains one 1024x512 A1RGB555 word array: 524,288 words, exactly 1 MiB.

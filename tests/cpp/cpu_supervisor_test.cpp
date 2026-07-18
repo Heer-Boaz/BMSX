@@ -321,7 +321,7 @@ void testProtectedCallMicrocodePreemptsSavesAndHandlesLuaErrors() {
 	bmsx::IrqController irq(memory);
 	bmsx::CPU cpu(memory, irq);
 	bmsx::Program program;
-	program.programRom.resize(22u * bmsx::INSTRUCTION_BYTES);
+	program.programRom.resize(34u * bmsx::INSTRUCTION_BYTES);
 	program.programRomTextByteLength = program.programRom.size();
 	program.constPoolStringPool = &program.stringPool;
 	program.constPool = {
@@ -350,22 +350,38 @@ void testProtectedCallMicrocodePreemptsSavesAndHandlesLuaErrors() {
 	bmsx::writeInstruction(code, 13, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 1, 0, 5);
 	bmsx::writeInstruction(code, 14, static_cast<bmsx::u8>(bmsx::OpCode::CALL), 0, bmsx::encodeFixedCallArgCount(1), 0);
 	bmsx::writeInstruction(code, 15, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
-	bmsx::writeInstruction(code, 16, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 1, 0);
+	bmsx::writeInstruction(code, 16, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 1, 0, 3);
+	bmsx::writeInstruction(code, 17, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 2, 0);
 
-	bmsx::writeInstruction(code, 17, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 0);
-	bmsx::writeInstruction(code, 18, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 1, 0, 0);
-	bmsx::writeInstruction(code, 19, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 2, 0, 1);
-	bmsx::writeInstruction(code, 20, static_cast<bmsx::u8>(bmsx::OpCode::CALL), 0, bmsx::encodeFixedCallArgCount(2), 4);
-	bmsx::writeInstruction(code, 21, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 4, 0);
+	bmsx::writeInstruction(code, 18, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 0);
+	bmsx::writeInstruction(code, 19, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 1, 0, 0);
+	bmsx::writeInstruction(code, 20, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 2, 0, 1);
+	bmsx::writeInstruction(code, 21, static_cast<bmsx::u8>(bmsx::OpCode::CALL), 0, bmsx::encodeFixedCallArgCount(2), 4);
+	bmsx::writeInstruction(code, 22, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 4, 0);
+
+	bmsx::writeInstruction(code, 23, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 0);
+	bmsx::writeInstruction(code, 24, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 1, 0, 1);
+	bmsx::writeInstruction(code, 25, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 2, 0, 1);
+	bmsx::writeInstruction(code, 26, static_cast<bmsx::u8>(bmsx::OpCode::LOADNIL), 3, 0, 0);
+	bmsx::writeInstruction(code, 27, static_cast<bmsx::u8>(bmsx::OpCode::CALL), 0, bmsx::encodeFixedCallArgCount(3), 2);
+	bmsx::writeInstruction(code, 28, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 2, 0);
+
+	bmsx::writeInstruction(code, 29, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 1);
+	bmsx::writeInstruction(code, 30, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 1, 0, 3);
+	bmsx::writeInstruction(code, 31, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 2, 0, 3);
+	bmsx::writeInstruction(code, 32, static_cast<bmsx::u8>(bmsx::OpCode::CALL), 0, bmsx::encodeFixedCallArgCount(2), 2);
+	bmsx::writeInstruction(code, 33, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 2, 0);
 
 	program.protos.push_back(makeProto(0, 4, 3));
 	program.protos.push_back(makeProto(4 * bmsx::INSTRUCTION_BYTES, 3, 2));
 	program.protos.push_back(makeProto(7 * bmsx::INSTRUCTION_BYTES, 5, 3));
 	program.protos.push_back(makeProto(12 * bmsx::INSTRUCTION_BYTES, 4, 2));
-	bmsx::Proto handler = makeProto(16 * bmsx::INSTRUCTION_BYTES, 1);
+	bmsx::Proto handler = makeProto(16 * bmsx::INSTRUCTION_BYTES, 2, 2);
 	handler.numParams = 1;
 	program.protos.push_back(handler);
-	program.protos.push_back(makeProto(17 * bmsx::INSTRUCTION_BYTES, 5, 3));
+	program.protos.push_back(makeProto(18 * bmsx::INSTRUCTION_BYTES, 5, 3));
+	program.protos.push_back(makeProto(23 * bmsx::INSTRUCTION_BYTES, 6, 4));
+	program.protos.push_back(makeProto(29 * bmsx::INSTRUCTION_BYTES, 5, 3));
 	bmsx::ProgramRuntimeSymbols runtimeSymbols;
 	cpu.setProgram(&program, runtimeSymbols, nullptr, 0, 0, 0);
 	std::unordered_map<std::string, bmsx::Value> moduleCache;
@@ -383,6 +399,17 @@ void testProtectedCallMicrocodePreemptsSavesAndHandlesLuaErrors() {
 	require(cpu.run(100) == bmsx::RunResult::Halted, "xpcall error path should complete");
 	require(cpu.lastReturnValues.size() == 2u && !bmsx::isTruthy(cpu.lastReturnValues[0]), "xpcall should return failure");
 	require(bmsx::asNumber(cpu.lastReturnValues[1]) == 42.0, "xpcall handler should receive the thrown Lua value");
+
+	cpu.start(6);
+	require(cpu.run(100) == bmsx::RunResult::Halted, "invalid xpcall handler should be caught by the outer pcall");
+	require(cpu.lastReturnValues.size() == 2u && !bmsx::isTruthy(cpu.lastReturnValues[0]), "xpcall should validate its handler before running the body");
+	require(bmsx::valueIsString(cpu.lastReturnValues[1]), "invalid xpcall handler should return a Lua error value");
+
+	cpu.start(7);
+	require(cpu.run(100) == bmsx::RunResult::Halted, "xpcall handler failure should complete");
+	require(cpu.lastReturnValues.size() == 2u && !bmsx::isTruthy(cpu.lastReturnValues[0]), "xpcall handler failure should return failure");
+	require(bmsx::valueIsString(cpu.lastReturnValues[1]), "xpcall handler failure should return the Lua error-in-handler value");
+	require(cpu.stringPool().toString(bmsx::asStringId(cpu.lastReturnValues[1])) == "error in error handling", "xpcall should hide the handler's replacement error");
 
 	cpu.start(5);
 	require(cpu.run(100) == bmsx::RunResult::Halted, "nested pcall should complete");

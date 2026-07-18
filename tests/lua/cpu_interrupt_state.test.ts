@@ -359,8 +359,17 @@ end
 local handle<const> = function(value)
 	return value
 end
+local handle_multiple<const> = function(value)
+	return value, 99
+end
+local handle_failure<const> = function()
+	error(marker)
+end
 success, success_a, success_b = pcall(succeed)
 failure, handled = xpcall(fail, handle)
+invalid_handler_success, invalid_handler_error = pcall(xpcall, succeed, nil)
+multiple_failure, multiple_handled, multiple_extra = xpcall(fail, handle_multiple)
+handler_failure, handler_failure_error = xpcall(fail, handle_failure)
 nested_outer, nested_inner, nested_a, nested_b = pcall(pcall, succeed)
 `;
 	const { cpu } = makeCompiledCpu(source);
@@ -390,6 +399,18 @@ nested_outer, nested_inner, nested_a, nested_b = pcall(pcall, succeed)
 		cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('handled'))),
 		cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('marker'))),
 	);
+	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('invalid_handler_success'))), false);
+	assert.ok(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('invalid_handler_error'))) instanceof StringValue);
+	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('multiple_failure'))), false);
+	assert.equal(
+		cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('multiple_handled'))),
+		cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('marker'))),
+	);
+	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('multiple_extra'))), null);
+	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('handler_failure'))), false);
+	const handlerFailureError = cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('handler_failure_error')));
+	assert.ok(handlerFailureError instanceof StringValue);
+	assert.equal(cpu.stringPool.toString(handlerFailureError.id), 'error in error handling');
 	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('nested_outer'))), true);
 	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('nested_inner'))), true);
 	assert.equal(cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('nested_a'))), 3);
