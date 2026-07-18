@@ -66,13 +66,6 @@ export class SoundMaster {
 		this.recomputeMixTarget();
 	}
 
-	public setLatencyProfile(profile: MixLatencyProfile): void {
-		this.mixLatencyProfile = profile;
-		if (this.audio) {
-			this.recomputeMixTarget();
-		}
-	}
-
 	private profileOverheadSec(): number {
 		switch (this.mixLatencyProfile) {
 			case 'minimal': return MIX_MINIMAL_OVERHEAD_SEC;
@@ -88,10 +81,6 @@ export class SoundMaster {
 		if (this.audio && this.globalSuspensions.size === 0) {
 			this.A.setFrameTimeSec(this.mixTargetAheadSec);
 		}
-	}
-
-	public getLatencyProfile(): MixLatencyProfile {
-		return this.mixLatencyProfile;
 	}
 
 	public finishFrame(): void {
@@ -158,10 +147,10 @@ export class SoundMaster {
 	}
 
 	public get volume(): number {
-		return clamp01(this.A.getMasterGain());
+		return this.A.getMasterGain();
 	}
 
 	public set volume(value: number) {
-		this.A.setMasterGain(clamp01(value));
+		this.A.setMasterGain(value);
 	}
 }

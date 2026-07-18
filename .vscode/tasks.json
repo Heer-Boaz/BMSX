@@ -2,12 +2,12 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
-			"label": "Compile Browser Engine",
+			"label": "Compile Browser Machine",
 			"type": "shell",
 			"command": "npm",
 			"args": [
 				"run",
-				"compile:engine",
+				"compile:machine",
 			],
 			"problemMatcher": [],
 			"group": {

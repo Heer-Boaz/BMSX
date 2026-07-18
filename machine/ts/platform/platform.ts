@@ -148,8 +148,6 @@ export type AudioOutputPuller = (output: Int16Array, frameCount: number, sampleR
 
 export interface AudioService {
 	readonly available: boolean;
-	currentTime(): number;
-	outputSampleRate(): number;
 	setRuntimeAudioPuller(puller: AudioOutputPuller | null): void;
 	clearRuntimeAudioTransport(): void;
 	pumpRuntimeAudio(): void;
