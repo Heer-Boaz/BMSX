@@ -28,9 +28,17 @@ discard once fantasy extensions start.
 
 The long-term console identity is BSX: a fantasy descendant of the PlayStation
 architecture with the Lua CPU and its own native GTE+ and GPU. That end state is
-recorded in `docs/architecture.md`. `BSX-GTE-01` is now the active contract
-slice; no GTE+ register or opcode becomes implementation scope until that first
-extension contract has been reviewed.
+recorded in `docs/architecture.md`. The selected GPU-side foundation first
+installs the complete uniform 2 MiB VRAM address space (`GX-VRAM-02`) and then
+replaces single-output scanout with the exact PS2 PCRTC dual read-output/merge
+block (`GX-PCRTC-01`). `BSX-GTE-01` separately remains the active geometry
+contract slice; no new GTE opcode becomes implementation scope until its first
+datapath contract has been reviewed.
+
+The terminal remains BIOS firmware. Its later `CALL` extension path is supplied
+by a real second cartridge slot and a Lua developer cartridge, not by moving IDE
+objects into firmware or injecting host callbacks. `CART-EXP-01` owns the slot
+bus first; `BIOS-TERM-EXT-01` owns the command ABI after that.
 
 Completion means all of these are true:
 
@@ -62,6 +70,12 @@ Completion means all of these are true:
   surface words before `BSX-GTE-01` has selected and reviewed one coherent raw
   hardware slice. Those are candidate capabilities, not permission to grow a
   speculative ABI in parallel.
+- Do not implement the rejected GP1(0Ah)--GP1(0Dh) composition plane, a
+  terminal-only display circuit, or a permanent GP1-to-PCRTC compatibility
+  adapter. All display producers migrate to the selected PCRTC contract.
+- Do not represent the second cartridge slot as a host plugin, manifest object
+  registry or callback table. Do not move former IDE/workspace functionality
+  into BIOS; cart Lua and real cartridge devices own that functionality.
 
 ## Current implementation owners
 
@@ -70,6 +84,9 @@ GX owners:
 - TypeScript GPU: `machine/ts/machine/devices/gx/gpu.ts`
 - TypeScript GTE: `machine/ts/machine/devices/gx/gte.ts`
 - TypeScript command buffer: `machine/ts/machine/devices/gx/gpu_command_buffer.ts`
+- Mirrored raw-VRAM address owners:
+  `machine/ts/machine/devices/gx/vram_address.ts`,
+  `machine/cpp/machine/devices/gx/vram_address.h`
 - C++ GPU: `machine/cpp/machine/devices/gx/gpu.cpp`, `machine/cpp/machine/devices/gx/gpu.h`
 - C++ GTE: `machine/cpp/machine/devices/gx/gte.cpp`, `machine/cpp/machine/devices/gx/gte.h`
 - C++ command buffer: `machine/cpp/machine/devices/gx/gpu_command_buffer.h`
@@ -84,6 +101,9 @@ GX owners:
   `scripts/rompacker/rombuilder.ts`
 - BIOS fixed system-texture consumers: `machine/firmware/bios/bootrom.lua`,
   `machine/firmware/system/font.lua`
+- BIOS monitor/terminal owners: `machine/firmware/bios/monitor.lua`,
+  `machine/firmware/bios/monitor_commands.lua`,
+  `machine/firmware/bios/terminal.lua`
 
 Residual VDP/IMGDEC machine ownership has been removed from both runtimes.
 The ROM `vdp_class: psx` field remains a package-format compatibility marker;
@@ -249,9 +269,12 @@ always emits one packet. The compact BIOS direct16 texture remains one fixed
 256x256 page and emits one A0 stream. The independent host-systematlas remains a
 host UI renderresource, not cart residency.
 
-The `2025` cart deliberately replaces its pre-GX unlimited-atlas assumptions
-with an explicit 1024x512 VRAM map. The top half contains the 320x240
-framebuffer, Maya B, the fixed system page, and adjacent Maya A/V_S textures.
+The `2025` cart deliberately replaced its pre-GX unlimited-atlas assumptions
+with the current implementation's explicit 1024x512 VRAM map. `GX-VRAM-02`
+migrates this producer layout to the uniform 1024x1024 resource and relocated
+system page without preserving the old half as an allocator class. Today, the
+top half contains the 320x240 framebuffer, Maya B, the fixed system page, and
+adjacent Maya A/V_S textures.
 The bottom half contains two 384x256 background banks and a separate monster
 bank. The common combat textures remain resident; a monster switch replaces
 only the monster bank, while the opaque all-out image deliberately replaces the
@@ -428,12 +451,12 @@ and MAME
   Mirrored software vectors, libretro transitions, and GLES2/llvmpipe captures
   are green; live WebGL2/WebGPU browser proof remains deferred.
 - [x] Model GP1(09h).0 as the VRAM Y9 address gate and GP0(E1h).11/GPUSTAT
-  bit 15 as the texture-page Y9 latch, independent of texture enable. The physical
-  1 MiB VRAM remains one 1024x512 word bank: a closed gate aliases lower rows,
-  while an open gate exposes the BSX pulled-down upper bank where reads return
-  zero and writes vanish. Commands, VBlank scanout and GPUREAD retain the gate
-  that owns their address decode; every software and accelerated backend uses
-  the same contract without a second VRAM allocation.
+  bit 15 as the texture-page Y9 latch, independent of texture enable. The
+  accepted 1 MiB foundation proved closed-gate row aliasing and captured-gate
+  command/readback behavior consistently in every backend. `GX-VRAM-02` keeps
+  that address decoder but installs all 1024 rows and removes the temporary
+  pulled-down upper-bank behavior rather than preserving it as a compatibility
+  mode.
 - [ ] GPUREAD / VRAM-to-CPU command execution and ordering.
   - [x] Fix the device/backend owner, fence, completion, cursor, DMA and
     save-state contract before implementation.
@@ -533,9 +556,10 @@ and MAME
 
 ### 3. Raster and VRAM behavior
 
-- [x] Deterministic 1 MiB raw-VRAM power-on contents owned by GX device reset;
-  every backend consumes the same retained snapshot and save-state restores the
-  stored bytes rather than regenerating them.
+- [x] Deterministic raw-VRAM power-on contents owned by GX device reset; every
+  backend consumes the same retained snapshot and save-state restores stored
+  bytes rather than regenerating them. `GX-VRAM-02` widens this owner from the
+  accepted 1 MiB foundation to the selected 2 MiB array.
 - [x] Texture modulation math aligned to PSX behavior.
 - [x] Fill rectangle masking and fill geometry wrapping.
 - [x] Oversized primitive culling.
@@ -577,11 +601,10 @@ and MAME
     pre-truncate its vertices because +1024 can be a valid exclusive edge and
     production PSX renderers wrap polygons during rasterization.
   - [x] Select the type-2/208-pin drawing-area contract: compare raw 10-bit
-    E3/E4 Y before installed 1024x512 VRAM aliases the physical row with
-    `y & 511`; preserve that order and physical dependency aliasing in software,
-    WebGL2, WebGPU, and GLES2 without widening VRAM. Spanning accelerated draws
-    retain triangle order and synchronize dependent sample feedback between
-    ordered physical-band submissions.
+    E3/E4 Y before the accepted 1 MiB foundation applies its Y9 gate; preserve
+    that decode order and physical dependency aliasing in software, WebGL2,
+    WebGPU, and GLES2. `GX-VRAM-02` changes installed storage, not the ordering
+    of raw bounds comparison versus address decode.
   - [ ] Run the clipping/offset vectors live against accelerated backends.
 - [ ] Exact texture sampling/window/CLUT edge cases.
   - [x] Mirror raw software vectors for E2 U/V replacement, direct16 page wrap,
@@ -595,6 +618,33 @@ and MAME
   - [ ] Run the same mask/STP/blend/dither/store vectors live against WebGL2,
     GLES2, and WebGPU.
 - [ ] Readback-visible VRAM contents after every accelerated operation.
+
+### 3a. Uniform 2 MiB GX VRAM
+
+The target contract is fixed in
+[`docs/architecture.md`](architecture.md#raster-and-store-datapath). This is one
+mirrored storage/addressing migration, not a legacy lower bank plus an extension
+allocator.
+
+- [ ] Change the central TS/C++ GX VRAM owner to one 1024x1024-word,
+  2 MiB array. Remove open-bus constants, installed-bank predicates and
+  512-row physical-band planning instead of leaving dead branches behind.
+- [ ] Resize deterministic power-on storage, raw snapshots, software VRAM/copy
+  scratch, accelerated resources and readback/capture staging at their owners.
+  Update current-format save-state capacity/schema directly; add no old reader.
+- [ ] Keep GP1(09h) as the captured Y9 address-decoder latch: closed aliases to
+  rows 0--511, open reaches all installed rows. Apply it before addressing the
+  same resource in transfers, raster, textures, CLUT, copies and GPUREAD.
+- [ ] Move the fixed 256x256 system reservation to x=768..1023,
+  y=768..1023. The system texture occupies y=768..831 and the terminal surface
+  starts at `(768,832)`. Update firmware, producer constants, every cart layout
+  and focused producer diagnostics together. The normal rompacker rejects
+  overlap; bare-metal writes remain physically possible and unprotected.
+- [ ] Prove lower/upper-half draws, textures/CLUT independence, transfers,
+  copies, wrap, GPUREAD, reset and save-state in mirrored TS/C++ vectors, then
+  run software/headless parity and the accelerated backend conformance bundle.
+- [ ] Do not change texture-page dimensions or introduce a separate GTE+ VRAM
+  addressing path in this slice. All installed words are the same cart resource.
 
 ### 4. GTE parity
 
@@ -855,30 +905,38 @@ to fix and never permission to route around the raw base contract.
 - [ ] Keep TS headless and C++ libretro software/headless runs green for
   render-visible GX/PSX changes.
 
-### 5a. GX scanout composition plane
+### 5a. PS2 PCRTC dual read-output and merge
 
-The raw contract is fixed in
-[`docs/architecture.md`](architecture.md#gx-scanout-composition-plane). This is
-one mirrored vertical implementation slice, not a host-overlay or terminal-only
-shortcut.
+The direction is fixed in
+[`docs/architecture.md`](architecture.md#gx-pcrtc-dual-read-output-circuits).
+The earlier GP1(0Ah)--GP1(0Dh) A1 composition plane is rejected and must not be
+implemented. The selected output hardware follows the real PS2 read-circuit and
+merge model rather than a terminal-shaped approximation.
 
-- [ ] Add GP1(0Ah)--GP1(0Dh) raw live/present registers, reset/VBlank behavior,
-  register-context banking, device output, and current-format save-state to the
-  TS and C++ GPU owners.
-- [ ] Extend the shared scanout contract and TS/C++ software oracles with exact
-  A1 coverage, source wrap/Y9 bank behavior, signed destination clipping,
-  display-disable, reset-latch, and resumable-supervisor composition vectors.
-- [ ] Consume the same words and existing raw-VRAM resource inside WebGL2,
-  WebGPU, and GLES2 scanout. Do not allocate a composed image, copy a cart
-  framebuffer, or add a backend/host terminal texture.
-- [ ] Add the GP1 constants to the shared firmware GX owner. Monitor rendering
-  must produce coverage through ordinary E6-aware GP0 draws and program the
-  generic plane; GP0(02h) fill cannot be treated as coverage-bearing because
-  the accepted PSX fill datapath bypasses E6.
-- [ ] Prove identical TS/C++ terminal captures with the cart scanout retained
-  below the terminal, then run GLES2/WebGL2/WebGPU conformance and the existing
-  visible `BIOS-TERM-LIVE-01` acceptance. Cart code must exercise the same GP1
-  words independently of supervisor mode.
+- [ ] Review PS2SDK and PCSX2 and freeze the complete raw BSX mapping for
+  `PMODE`, `DISPFB1`, `DISPLAY1`, `DISPFB2`, `DISPLAY2`, and `BGCOLOR`, including
+  framebuffer PSM/address semantics, magnification, rectangles, alpha/background
+  merge, reset, beam-edge publication, IRQ/timing interaction and save-state.
+  Do not substitute custom 24-bit GP1 words for an unresolved field.
+- [ ] Add the PCRTC registerfile and two read-output circuits to the mirrored
+  TS/C++ device owners. PCRTC is the sole scanout authority after migration;
+  move BIOS, cartlib and cart producers together and remove the old active GP1
+  display path rather than retaining an adapter or runtime selector.
+- [ ] Integrate resumable supervisor ownership at the raw register boundary.
+  The retained user circuit-1 readout is the frozen game base, supervisor
+  circuit 2 reads the terminal surface, and `PMODE` performs the merge. Leaving
+  restores the user context unchanged; destructive faults have no resumable
+  base and program the active background/circuits explicitly.
+- [ ] Extend TS/C++ software oracles with both circuit rectangles, source
+  offsets, magnification, supported PSMs, constant/source alpha selection,
+  background, overlap/clipping, interlace and context/save-state vectors.
+- [ ] Make WebGL2, WebGPU and GLES2 consume those same raw words and the one
+  1024x1024 VRAM resource. Do not allocate a composed machine image, copy a cart
+  framebuffer or add a backend/host terminal texture.
+- [ ] Move monitor scanout to PCRTC circuit 2 over the circuit-1 cart frame and
+  prove byte-identical TS/C++ captures, accelerated conformance and the visible
+  `BIOS-TERM-LIVE-01` run. Normal cart code must exercise both circuits and the
+  same `PMODE` merge independently of supervisor mode.
 
 ### 6. VDP/RPU removal
 
@@ -985,15 +1043,57 @@ shortcut.
   programming. Cartlib/prelude no longer publishes the old VDP/RPU ABI, the
   seven Lua VDP/RPU firmware modules are removed, and carts consume GX-owned
   display metrics instead of retired VDP MMIO words.
-- [ ] Keep BSX extensions separate and post-parity.
+- [ ] Keep unselected BSX extensions behind reviewed hardware contracts. The
+  selected 2 MiB VRAM and PCRTC migrations proceed through their named slices,
+  not through a legacy/native runtime mode.
+
+### 7a. Two cartridge slots and terminal `CALL`
+
+This is a machine-bus slice followed by a firmware/developer-cart slice. The
+terminal remains BIOS firmware throughout.
+
+- [ ] Freeze `CART-EXP-01`: two physical slot identities, ROM/device chip
+  selects, address decode and arbitration, executable boot selection, discovery,
+  reset, IRQ/DMA wiring, insertion policy and save-state. Follow the real-device
+  expansion shape visible in openMSX's slot manager and RAM/audio/video carts;
+  do not copy MSX paging or expose host extension objects.
+- [ ] Extend ROM loading, machine construction, direct/libretro/browser/headless
+  host inputs and both save-state owners with the same two raw slot inputs. A
+  minimal ROM/Lua cart, RAM cart and MMIO/IRQ device cart must prove the bus
+  before terminal integration.
+- [ ] Freeze `BIOS-TERM-EXT-01`: raw extension descriptors and Lua entry words,
+  deterministic slot/name resolution, argument/result memory, call/return and
+  timing, help/completion metadata and fixed row/pager output.
+- [ ] Add one built-in `CALL <name> [arguments]` dispatcher to the existing BIOS
+  command owner. Extensions execute cart-resident Lua and feed the existing
+  retained terminal; they do not register host callbacks, replace input/editor
+  state or own another renderer.
+- [ ] Build the developer cartridge above that ABI. Move editor, compiler,
+  symbol and workspace-like behavior into its Lua only when the required RAM,
+  persistent storage or debug access exists as concrete cartridge hardware.
+  BIOS and host IDE code are not providers for missing device capabilities.
+- [ ] Validate reset, missing/duplicate names, both slot orders, nested IRQs,
+  save/restore during an extension call, bounded output and terminal rendering
+  in TS/C++ headless plus the relevant accelerated visible run.
 
 ## Recommended next functional slices
 
 Pick one vertical slice and finish it before committing:
 
-1. **Visible GX migration regressions**: finish live host-UI and accelerated
+1. **Uniform 2 MiB VRAM (`GX-VRAM-02`)**: install the complete 1024x1024 array,
+   remove open-bus/band machinery, move the system reservation to the
+   bottom-right page and finish the mirrored storage/backend/producer tests.
+2. **Exact PS2 PCRTC (`GX-PCRTC-01`)**: after the VRAM slice, freeze the raw
+   register/PSM/timing contract and deliver both read circuits plus `PMODE`
+   merge through TS/C++ and every backend. Do not revive the custom GP1 plane.
+3. **Two-slot expansion bus (`CART-EXP-01`)**: specify and implement the physical
+   slot/bus/save-state boundary before any terminal command extension.
+4. **Terminal extension and developer cart (`BIOS-TERM-EXT-01`)**: add the BIOS
+   `CALL` dispatcher over the reviewed cartridge ABI, then move developer
+   functionality into cart Lua backed by real extension hardware.
+5. **Visible GX migration regressions**: finish live host-UI and accelerated
    browser scanout proof when a real browser is available.
-2. **Accelerated feedback performance**: run the frontend-resolved NV barrier
+6. **Accelerated feedback performance**: run the frontend-resolved NV barrier
    path in the real Windows RetroArch context. If that concrete context does not
    expose NV texture barrier, measure its actual extensions and ordering before
    choosing another GPU feedback mechanism; do not infer one from the GPU name

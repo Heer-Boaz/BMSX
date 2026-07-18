@@ -181,7 +181,7 @@ frontend executable. It never owns cart-observable machine semantics.
 
 The active machine model is `psx`. The model owns fixed hardware facts:
 50 MHz CPU clock, 4 MB RAM, a 6,553,600 word/s DMA datapath, a 16,384,000
-work-unit/s geometry unit, and a PSX-style GPU with 1 MiB of raw VRAM. Machine
+work-unit/s geometry unit, and a PSX-style GPU with 2 MiB of raw VRAM. Machine
 reset initializes that VRAM with the fixed GX power-on bit pattern. GPU reset
 starts from a 320×240 PAL display configuration; that is a reset register state,
 not a fixed host scanout size.
@@ -194,16 +194,19 @@ open slice by itself. Guest Lua does not receive a `machine_manifest`,
 machine registry are host/tooling input; cart-visible behavior is still
 programmed through CPU-visible ROM, RAM, MMIO, BIOS Lua, and link symbols.
 
-Display configuration is raw GPU register state. GP1(08h) horizontal-resolution
-bits own native scanout width, GP1(07h) start/end own the active line count, and
-GP1(05h) owns the VRAM scanout origin. GP1(06h) is retained horizontal timing
-state; changing it does not manufacture a logical width or resize a target.
-GX identifies as the type-2 GPU through GP1(10h/07h). GP1(08h) therefore retains
-its complete low-byte input word but bit 7 does not drive GPUSTAT bit 14 or
-reverse scanout; that reverse facility belongs to the type-1 GPU.
-Software, WebGL2, WebGPU, and GLES2 scan out those native pixel coordinates
-directly. Presentation resizes the retained canvas, framebuffer, and backend
-targets only when the dimensions derived from the latched raw words change; it
+Display configuration is raw hardware register state. The implemented PSX
+foundation currently derives one output from GP1(05h)--GP1(08h): GP1(08h) owns
+native width, GP1(07h) the active line count, GP1(05h) the VRAM origin and
+GP1(06h) retained horizontal timing. GX identifies as the type-2 GPU through
+GP1(10h/07h), so GP1(08h) retains its complete low-byte input word but bit 7
+does not drive GPUSTAT bit 14 or reverse scanout. These exact semantics remain
+regression evidence while `GX-PCRTC-01` replaces the single-output path; they
+are not translated through a permanent GP1-to-PCRTC adapter.
+
+After that producer migration, the raw PCRTC registerfile owns both native
+read-output rectangles and their merge. Software, WebGL2, WebGPU, and GLES2
+scan out those native pixel coordinates directly. Presentation resizes retained
+host targets only when dimensions derived from the latched raw words change; it
 does not scale an active range over a fixed 320×240 target. Physical 4:3 display
 layout is separate host presentation policy and does not change the native
 buffer.
@@ -669,13 +672,16 @@ program-ROM backing into the fixed CPU window and the window itself determines
 which bytes are observable; the memory device does not revalidate producer size
 or throw during install.
 
-System ROM and cart ROM are fixed CPU-visible address windows. The backing
-payload may be shorter than the window or absent; bytes beyond the backing read
-as zero through the bus. The memory owner exposes immutable ROM residency by
-binding caller-owned retained byte views for ranges that are fully backed by the
-system/cart ROM payload. It must not allocate or return fresh view/span objects
-on device load paths, and an empty or zero-filled window tail is not immutable
-backing.
+System ROM and the boot-selected executable cartridge ROM are fixed CPU-visible
+address windows. Two cartridge slots do not create overlapping generic ROM
+facades: `CART-EXP-01` must assign each slot's physical ROM/device chip selects
+and arbitration before the expansion slot is implemented. For every mapped ROM
+window, the backing payload may be shorter than the window or absent; bytes
+beyond the backing read as zero through the bus. The memory owner exposes
+immutable ROM residency by binding caller-owned retained byte views for ranges
+that are fully backed by the selected ROM payload. It must not allocate or
+return fresh view/span objects on device load paths, and an empty or zero-filled
+window tail is not immutable backing.
 
 ## Save-state contract
 
@@ -687,7 +693,7 @@ Saved:
   state, scheduler/VBlank state, device registerfiles/latches/FIFOs/buffers, and
   device-visible memory.
 - GX GPU raw register words, GP0 packet assembly, retained command-buffer state,
-  raw 1 MiB VRAM, transfer/readback latches, and display timing state that
+  raw 2 MiB VRAM, transfer/readback latches, PCRTC state, and display timing that
   determines future output.
 - APU command/source/output state that determines future audio output,
   including the command FIFO ring, queued parameter latch words, active AOUT
@@ -1080,86 +1086,65 @@ derived only from the visible bank. This preserves user audio timing and IRQ
 state without giving firmware a duplicate APU or routing user events into the
 monitor.
 
-The BIOS terminal uses the ordinary GX GPU and the ordinary primary scanout.
-GX VRAM remains one 1024x512 A1RGB555 word array: 524,288 words, exactly 1 MiB.
-There is no second display circuit, terminal VRAM bank, character-plane SRAM,
-terminal write port, host framebuffer or terminal-owned backend texture. Boot
-and monitor firmware program the native 256x192 display mode. Firmware uploads
-the packed system texture through the standard GP0 CPU-to-VRAM packet, then
-draws the terminal with ordinary fill, VRAM-copy and textured-rectangle GP0
+The BIOS terminal uses the ordinary GX raster/store path. GX VRAM is one
+uniform 1024x1024 raw 16-bit word array: 1,048,576 words, exactly 2 MiB. All ten
+Y address bits name installed memory when the Y9 gate is open; the lower and
+upper halves are not different allocator classes or legacy/native banks. There
+is no terminal VRAM bank, character-plane SRAM, terminal write port, host
+framebuffer or terminal-owned backend texture. Firmware uploads the packed
+system texture through the standard GP0 CPU-to-VRAM packet, then draws the
+terminal surface with ordinary fill, VRAM-copy and textured-rectangle GP0
 commands. Software, WebGL2, WebGPU and GLES2 therefore execute the same command
 stream used by carts.
 
-The standard machine layout reserves the existing 256x256 texture-page-aligned
-region at x=512..767, y=0..255. Its top 256x64 words remain the packed system
-texture; the lower 256x192 words are the terminal framebuffer. This is 128 KiB
-inside the existing 1 MiB VRAM, not additional memory. The rompacker validates
-the exact physical reservation in every GX cart layout, and boot/monitor
-firmware scan out and draw at `(512,64)` directly. Cart framebuffers and
-textures therefore remain untouched while the monitor replaces the primary
-scanout, and restoring the user display registers exposes the already retained
-cart image. Until `BIOS-TERM-OVERLAY-01` is implemented, this remains a primary
-scanout takeover rather than simultaneous composition.
+The standard machine layout reserves the bottom-right 256x256 page at
+x=768..1023, y=768..1023. Its top 256x64 words hold the packed system texture;
+the lower 256x192 words hold the terminal surface at `(768,832)`. This is a
+128 KiB convention inside the shared 2 MiB VRAM, not protected or additional
+memory. The rompacker rejects overlap for ordinary cart layouts. Bare-metal
+cart code can still address those words and accepts that doing so may corrupt
+firmware rendering; hardware does not hide, restore or redirect the region.
+Every other installed VRAM word is an ordinary cart resource.
 
-#### GX scanout composition plane
+#### GX PCRTC dual read-output circuits
 
-The accepted `BIOS-TERM-OVERLAY-01` hardware design adds one ordinary,
-cart-visible GX composition plane to every GPU register context. It is not a
-second display circuit: the existing primary display registers remain the sole
-owner of scan timing, output dimensions, PAL/NTSC cadence, RGB15/RGB24
-interpretation, interlace, and display disable. The composition plane has no
-command FIFO, rasterizer, scaler, memory, or backend texture. It selects a raw
-A1RGB555 window from the same physical GX VRAM and places that window in the
-primary scanout's native output coordinates. A disabled control word takes the
-existing scanout datapath and performs no composition-plane VRAM read.
+The rejected GP1(0Ah)--GP1(0Dh) A1RGB555 composition plane is not part of the
+BSX hardware contract. `GX-PCRTC-01` instead replaces the single-output GX
+scanout contract with the PlayStation 2 GS PCRTC dual rectangular read-output
+and merge design. This is not a terminal-only plane or a reduced derivative:
+the selected register block retains the raw PS2 layouts and behavior of
+`PMODE`, `DISPFB1`, `DISPLAY1`, `DISPFB2`, `DISPLAY2`, and `BGCOLOR`, including
+both circuit enables, framebuffer base/width/format, source offsets, output
+position and extent, horizontal/vertical magnification, background selection,
+alpha-source selection and constant-alpha merge. The reference layouts are
+visible in [PS2SDK's privileged GS register owner](https://github.com/ps2dev/ps2sdk/blob/78c5bae9d2fa20bce6596554a4461000d4b9098e/common/include/gs_privileged.h#L14-L43)
+and [PCSX2's raw register definitions](https://github.com/PCSX2/pcsx2/blob/470e995c6c1404dfa76c9efff60d7f47acb63562/pcsx2/GS/GSRegs.h#L321-L410).
 
-The first BSX GX revision assigns the currently unused GP1 opcodes below. Each
-register stores its complete 24-bit parameter word; reserved bits are retained
-and ignored by this revision rather than normalized by firmware or a backend.
+PCRTC is a post-raster hardware unit. Its two circuits read the authoritative
+GX VRAM directly and merge before device quantization, presentation history,
+CRT processing and host overlay lanes. It owns no rasterizer, command FIFO,
+framebuffer copy, composed image or backend texture. The software and
+accelerated backends consume the same raw register words and VRAM; backend
+optimizations may skip a provably invisible circuit but may not change the
+merge result. PCSX2's production merge owner demonstrates the same separation
+between the two read circuits, their source/destination rectangles and the
+[`PMODE` merge](https://github.com/PCSX2/pcsx2/blob/470e995c6c1404dfa76c9efff60d7f47acb63562/pcsx2/GS/Renderers/Common/GSRenderer.cpp#L82-L240).
 
-| Command | Raw parameter layout |
-| --- | --- |
-| `GP1(0Ah)` `COMPOSITION_CONTROL` | Bit 0 enables the plane. Bits 1--23 are retained and ignored. |
-| `GP1(0Bh)` `COMPOSITION_SOURCE` | Bits 0--9 are source X; bits 10--19 are source Y. Bits 20--23 are retained and ignored. |
-| `GP1(0Ch)` `COMPOSITION_SIZE` | Bits 0--9 are `width_minus_one`; bits 10--18 are `height_minus_one`. Every word therefore denotes 1--1024 by 1--512 source pixels. Bits 19--23 are retained and ignored. |
-| `GP1(0Dh)` `COMPOSITION_DESTINATION` | Bits 0--10 are signed two's-complement destination X; bits 11--21 are signed two's-complement destination Y. Bits 22--23 are retained and ignored. |
+Once this slice lands, PCRTC is the sole GX scanout authority. BIOS, cartlib and
+cart producers migrate together; there is no permanent GP1-to-PCRTC adapter,
+legacy/native display selector or parallel presentation path. The complete raw
+MMIO map, supported PS2 framebuffer-format/address behavior, beam-edge latching,
+reset and save-state words must be reviewed before implementation rather than
+being replaced by custom 24-bit GP1 commands.
 
-The destination rectangle is clipped against the primary native output; it is
-never scaled. Source X wraps on the 1024-word VRAM row. Source Y passes through
-the same GP1(09h) Y9 address gate as primary scanout, and the uninstalled upper
-bank retains its normal zero-read behavior. GP1(03h) blanks the primary input
-before composition; with the plane disabled this is the existing all-black
-result. For a covered destination pixel, bit 15 of the selected source word is
-coverage: a set bit replaces the primary RGB value with that word's RGB555
-value, and a clear bit preserves the primary pixel. There is no implicit color
-key, constant alpha, blend mode, or format conversion beyond the normal RGB555
-scanout expansion. Coverage therefore remains ordinary VRAM data that carts
-and firmware produce through GP0(E6h), uploads, copies, or normal draws.
-
-Composition runs in native pixel coordinates after primary field assembly and
-inside the GX machine pass, before device quantization, presentation history,
-CRT processing, and host overlay lanes. GP1 writes update live raw words;
-VBlank publishes all four words atomically with the existing primary display
-registers. GP1(00h) clears the live composition words, making the plane disabled
-at the next VBlank, while machine reset initializes both live and presented
-control words disabled. Save-state stores the live and presented raw words in
-the same GPU register context as the primary display words. Backends consume
-those words and the existing VRAM directly; they do not retain composed pixels
-or a second machine-visible image.
-
-In normal execution the active context is composed as primary followed by its
-composition plane. During a resumable supervisor context, the banked user's
-VBlank-published primary and composition words remain the frozen base, and the
-active supervisor context's ordinary composition plane is applied above that
-base. The selected base primary remains the scan-timing and native-dimension
-owner; supervisor composition words latch on those VBlank edges. This reuses
-the same plane datapath and copies no pixels; the GPU already banks the raw user
-register context and shares VRAM. Leaving the supervisor restores that context
-unchanged. A destructive fault, which deliberately clears the resumable user
-bank, uses the supervisor context's own primary and plane. Monitor firmware will
-draw coverage-bearing terminal pixels into the reserved VRAM surface and
-program GP1(0Ah)--GP1(0Dh); it receives no terminal-only port, display circuit,
-memory bank, or host command lane.
+Normal carts may use both read circuits. During resumable supervisor entry, the
+system controller retains the user's complete raw PCRTC context and keeps its
+VBlank-published circuit-1 game readout as the frozen base. Monitor firmware
+draws the terminal into the reserved VRAM page, programs circuit 2 and uses the
+exact `PMODE` merge above circuit 1. Leaving the supervisor restores the user
+context unchanged. A destructive fault has no resumable base and programs both
+terminal presentation and background through the active supervisor PCRTC
+context. No path copies the cart framebuffer or allocates terminal-only memory.
 
 The BIOS keeps a fixed 128-line cell scrollback, dirty ranges, line editor,
 history and GP0 command list in ordinary `.bss`. A packed ROM table maps each
@@ -1201,6 +1186,40 @@ host filesystem, JavaScript stack, real-time compiler options, host process
 shutdown, IDE symbol browser, or other current workbench services. Its layout
 and colors are firmware policy and intentionally do not emulate the removed
 host terminal's appearance.
+
+#### Cartridge expansion and terminal `CALL`
+
+BSX has two physical cartridge slots. A slot may contribute ROM and executable
+Lua as well as decoded RAM, MMIO registerfiles, IRQ/DMA sources, audio hardware,
+storage or another concrete peripheral. This follows the MSX principle that a
+cartridge can extend the machine rather than merely supply one software image;
+openMSX models the same distinction with external-slot ownership and extensions
+that install real memory or devices, for example its
+[cartridge-slot manager](https://github.com/openMSX/openMSX/blob/d1b8f2c81b3fcafde528e91e6133a7278a732e04/src/CartridgeSlotManager.cc#L120-L180),
+[2 MiB RAM cartridge](https://github.com/openMSX/openMSX/blob/d1b8f2c81b3fcafde528e91e6133a7278a732e04/share/extensions/ram2mb.xml), and
+[GFX9000 device cartridge](https://github.com/openMSX/openMSX/blob/d1b8f2c81b3fcafde528e91e6133a7278a732e04/share/extensions/gfx9000.xml).
+BSX does not copy MSX slot paging; `CART-EXP-01` must define its own raw slot
+identity, bus decode/arbitration, boot selection, discovery, reset, interrupt,
+DMA and save-state contract before a second cart becomes observable.
+
+The BIOS terminal remains the terminal. Its retained cells, editor, input,
+completion, pager and GX rendering stay in system firmware. A built-in
+`CALL <name> [arguments]` command will resolve a named extension exported by an
+inserted cartridge and transfer execution to Lua resident in that cartridge.
+The extension owns its command semantics and mutable state but writes through
+the firmware terminal's row/pager contract; it does not replace the terminal,
+publish a host overlay or install a host callback table. Slot priority, name
+collisions, raw descriptors/entry words, argument/result memory and call/return
+timing remain the explicit `BIOS-TERM-EXT-01` ABI-design boundary.
+
+The intended developer cartridge uses that mechanism to move former runtime
+IDE capabilities into cart-resident Lua rather than growing the BIOS monitor.
+An editor, compiler, symbol tool or workspace-like command belongs there. Any
+RAM, persistent storage, debug port or other capability it needs must be a real
+cartridge device visible through the machine bus. Host filesystem, workbench
+objects and JavaScript services never become implicit terminal extensions.
+Immutable cartridge ROM remains host-loaded input; extension RAM,
+registerfiles, FIFOs and in-flight device state are machine/save-state data.
 
 ### DMA
 
@@ -1350,7 +1369,7 @@ Already accepted backend commands and received image payload remain in the
 retained execution log. The surviving accepted execution frontier completes at
 the GP1 transition and its old device deadline is removed, while an incomplete
 packet/polyline and an active readback suffix are discarded. GP1(00h) preserves
-both the GPUREAD data latch and the 1 MiB VRAM contents; machine reset clears the
+both the GPUREAD data latch and the 2 MiB VRAM contents; machine reset clears the
 latch to zero. Every render backend consumes the same raw snapshot revision; the
 command buffer has no second VRAM-clear signal or backend-specific reset route.
 
@@ -1421,34 +1440,30 @@ modes, dithering and RGB555 storage remain raw datapath stages rather than host
 float/color corrections.
 
 GX selects the type-2/208-pin drawing-area contract: GP0(E3h/E4h) retains all
-ten Y bits. GP1(09h).0 gates address bit Y9 at the VRAM address decoder for
-drawing-area bounds, texture pages, CLUTs, transfers, copies, fills, readback and
-scanout. With the gate closed, logical Y addresses alias into rows 0--511. With
-the gate open, all ten bits reach the decoder. GP0(E1h).11 is the raw texture
-page Y9 bit in either state and GPUSTAT bit 15 mirrors that latch; it never
-disables texturing.
+ten Y bits. GP1(09h).0 gates address bit Y9 at the existing GP0 raster/transfer
+VRAM decoder for drawing-area bounds, texture pages, CLUTs, transfers, copies,
+fills and readback. With the gate closed, logical Y addresses alias into rows
+0--511. With the gate open, all ten bits reach the installed 1024-row array.
+GP0(E1h).11 is the raw texture-page Y9 bit in either state and GPUSTAT bit 15
+mirrors that latch; it never disables texturing. PCRTC reads use their own exact
+`DISPFB` address/format contract rather than inheriting this GP1 latch.
 
-Installed VRAM remains exactly 1024x512 words. The unpopulated upper address
-bank is a BSX hardware contract: its sixteen-bit data bus is pulled down, so
-reads return zero and writes vanish. This is not claimed as a universal reading
-of unspecified retail-PSX expansion-space data. Commands retain the GP1(09h)
-latch that applied when they entered the execution stream, VBlank retains it for
-scanout, and GP0(C0h) retains it for the complete readback transfer. Backends
-split logical ranges at the 512-row bank edge, issue normal work only for the
-installed bank, and represent an uninstalled source with a zero read mask; they
-do not allocate a second VRAM image or branch per pixel on the host.
+Installed VRAM is exactly 1024x1024 words. It is one uniform physical array;
+there is no unpopulated upper bank, pulled-down read behavior, legacy half or
+second VRAM owner. Commands retain the GP1(09h) latch that applied when they
+entered the execution stream, and GP0(C0h) retains it for the complete readback
+transfer. Standard BSX firmware and cart producers open the gate and allocate
+across all 1024 rows except the shared bottom-right system reservation. Closing
+the gate remains deterministic address-decoder behavior, not an allocator mode.
 
-Accelerated backends project each non-empty installed primitive range through
-one physical band. Their vertex stage removes the band origin, while their
-fragment stage restores logical Y for line DDA, fixed attribute planes, dither
-and interlace. A drawing area spanning both banks keeps GP0 command order by
-ending primitive batches at command boundaries. Within a command, generated
-triangles remain in outer submission order. Dependent submissions synchronize
-the VRAM sample shadow between draws so blend, mask and texture feedback observe
-prior installed writes. Texture-page and CLUT bank masks remain independent: an
-absent texture page supplies texel word zero, whose palette index may still read
-an installed CLUT entry. Line and polyline segments keep their own order as
-well. Fill and image-transfer commands retain their separate VRAM datapaths.
+Software and accelerated backends own one 1024x1024 raw-VRAM resource. They
+apply the captured Y9 gate before addressing that resource and split only for a
+real 1024-row wrap or command dependency; they do not split at row 512, create
+a zero-read mask or allocate a second image. Generated triangles remain in
+outer submission order. Dependent submissions synchronize the VRAM sample
+shadow between draws so blend, mask and texture feedback observe prior writes.
+Line and polyline segments keep their own order as well. Fill and image-transfer
+commands retain their separate VRAM datapaths.
 
 Accelerated primitive batches retain the rasterizer class `Polygon`,
 `Rectangle`, or `Line`; draw rectangles and fill rectangles therefore share the
@@ -1928,7 +1943,7 @@ references to their existing command kinds, payload references and counts.
 Backends consume only that pass state; they do not read a menu/workbench
 controller or clone the commands into a per-frame DTO. WebGPU and WebGL2 own
 their concrete pipelines, atlases, buffers and uploads behind that boundary.
-The cart-visible GX composition plane is not an `overlay_queue` lane. The
+The machine-visible PCRTC merge is not an `overlay_queue` lane. The
 full-screen IDE owns and emits its own frame background; the quick menu
 publishes only its own host commands over the retained game scanout.
 WebGPU is the default accelerated browser backend and WebGL2 is its fallback;
