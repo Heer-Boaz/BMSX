@@ -879,8 +879,8 @@ function encodeDmaControllerState(state: DmaControllerState): DmaControllerState
 		controlWord: state.controlWord,
 		statusWord: state.statusWord,
 		timingCarry: state.timingCarry,
-		scheduledGrantWords: state.scheduledGrantWords,
-		scheduledGrantCycles: state.scheduledGrantCycles,
+		scheduledBlockWords: state.scheduledBlockWords,
+		scheduledBlockCycles: state.scheduledBlockCycles,
 	};
 }
 
@@ -893,8 +893,8 @@ function decodeDmaControllerState(value: unknown, label: string): DmaControllerS
 		controlWord: requireBoundedU32(requireObjectKey(object, 'controlWord', label, `${label}.controlWord`), `${label}.controlWord`, 0, 0xffffffff),
 		statusWord: requireBoundedU32(requireObjectKey(object, 'statusWord', label, `${label}.statusWord`), `${label}.statusWord`, 0, 0xffffffff),
 		timingCarry: requireI64(requireObjectKey(object, 'timingCarry', label, `${label}.timingCarry`), `${label}.timingCarry`),
-		scheduledGrantWords: requireBoundedU32(requireObjectKey(object, 'scheduledGrantWords', label, `${label}.scheduledGrantWords`), `${label}.scheduledGrantWords`, 0, 16),
-		scheduledGrantCycles: requireI64(requireObjectKey(object, 'scheduledGrantCycles', label, `${label}.scheduledGrantCycles`), `${label}.scheduledGrantCycles`),
+		scheduledBlockWords: requireBoundedU32(requireObjectKey(object, 'scheduledBlockWords', label, `${label}.scheduledBlockWords`), `${label}.scheduledBlockWords`, 0, 16),
+		scheduledBlockCycles: requireI64(requireObjectKey(object, 'scheduledBlockCycles', label, `${label}.scheduledBlockCycles`), `${label}.scheduledBlockCycles`),
 	};
 }
 

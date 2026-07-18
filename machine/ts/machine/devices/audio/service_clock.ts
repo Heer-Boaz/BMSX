@@ -6,7 +6,7 @@ import {
 import type { Value } from '../../cpu/cpu';
 import {
 	MAPPED_BUS_MASTER_DMA,
-	MAPPED_BUS_DMA_GRANT_END,
+	MAPPED_BUS_DMA_BLOCK_END,
 	type MappedBusSignals,
 } from '../../memory/bus_signals';
 import type { Memory } from '../../memory/memory';
@@ -125,7 +125,7 @@ export class ApuServiceClock {
 		const nowCycles = context.scheduler.currentNowCycles();
 		context.synchronizeBeforeTransferAccess(nowCycles);
 		const value = (busSignals & MAPPED_BUS_MASTER_DMA) !== 0
-			? context.sampleTransfer.readDmaData((busSignals & MAPPED_BUS_DMA_GRANT_END) !== 0)
+			? context.sampleTransfer.readDmaData((busSignals & MAPPED_BUS_DMA_BLOCK_END) !== 0)
 			: context.sampleTransfer.readCpuData();
 		context.advanceVoicesTo(nowCycles);
 		return value;
@@ -135,7 +135,7 @@ export class ApuServiceClock {
 		const nowCycles = context.scheduler.currentNowCycles();
 		context.synchronizeBeforeTransferAccess(nowCycles);
 		if ((busSignals & MAPPED_BUS_MASTER_DMA) !== 0) {
-			context.sampleTransfer.writeDmaData(value as number, (busSignals & MAPPED_BUS_DMA_GRANT_END) !== 0);
+			context.sampleTransfer.writeDmaData(value as number, (busSignals & MAPPED_BUS_DMA_BLOCK_END) !== 0);
 		} else {
 			context.sampleTransfer.writeCpuData(value as number);
 		}

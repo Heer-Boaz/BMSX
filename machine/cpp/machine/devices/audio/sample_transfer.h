@@ -29,9 +29,9 @@ private:
 
 	void writeAddress(u32 word);
 	[[nodiscard]] auto readCpuData() const -> u32;
-	[[nodiscard]] auto readDmaData(bool grantEnd) -> u32;
+	[[nodiscard]] auto readDmaData(bool blockEnd) -> u32;
 	void writeCpuData(u32 word);
-	void writeDmaData(u32 word, bool grantEnd);
+	void writeDmaData(u32 word, bool blockEnd);
 	void writeControl(u32 word);
 	void completeService();
 	void clearFifo();

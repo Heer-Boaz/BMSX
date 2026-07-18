@@ -3,6 +3,7 @@ import { test } from 'node:test';
 
 import {
 	BUS_FAULT_UNMAPPED,
+	DMA_CONTROL_BLOCK_WORDS_16,
 	DMA_CONTROL_READ_INCREMENT,
 	DMA_CONTROL_REQUEST_DISABLED,
 	DMA_CONTROL_REQUEST_FORCE,
@@ -26,15 +27,20 @@ import {
 } from '../../machine/ts/machine/bus/io';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
-import { GX_GPU_COMMAND_FILL_RECTANGLE } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
+import {
+	GX_GPU_COMMAND_FILL_RECTANGLE,
+	GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
+} from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
 import {
 	GX_GPU_DMA_DIRECTION_CPU_TO_GP0,
 	GX_GPU_DMA_DIRECTION_FIFO,
 	GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU,
 	GX_GPU_DMA_DIRECTION_OFF,
+	GX_GPU_GP0_CPU_TO_VRAM_FIRST,
 	GX_GPU_GP0_FILL_RECTANGLE,
 	GX_GPU_GP0_VRAM_TO_CPU_FIRST,
 	GX_GPU_GP1_DMA_DIRECTION,
+	GX_GPU_STATUS_READY_TO_RECEIVE_DMA,
 	GxGpu,
 } from '../../machine/ts/machine/devices/gx/gpu';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
@@ -51,8 +57,9 @@ type DmaGpuFixture = {
 
 const RAM_COPY_CONTROL = DMA_CONTROL_READ_INCREMENT
 	| DMA_CONTROL_WRITE_INCREMENT
-	| DMA_CONTROL_REQUEST_FORCE;
-const GP0_WRITE_CONTROL = DMA_CONTROL_READ_INCREMENT | DMA_CONTROL_REQUEST_GX_WRITE;
+	| DMA_CONTROL_REQUEST_FORCE
+	| DMA_CONTROL_BLOCK_WORDS_16;
+const GP0_WRITE_CONTROL = DMA_CONTROL_READ_INCREMENT | DMA_CONTROL_REQUEST_GX_WRITE | DMA_CONTROL_BLOCK_WORDS_16;
 const GP0_READ_CONTROL = DMA_CONTROL_WRITE_INCREMENT | DMA_CONTROL_REQUEST_GX_READ;
 
 function createDmaGpuFixture(): DmaGpuFixture {
@@ -134,7 +141,32 @@ test('GX FIFO DREQ feeds GP0 and owns the shared port while BUSY', () => {
 	assert.equal(memory.mappedWriteReady(IO_GX_GPU_GP0), true);
 });
 
-test('a deasserted DREQ discards its pending grant and rearms from the new edge', () => {
+test('CPU-to-GP0 DMA streams an A0 payload across programmed blocks', () => {
+	const fixture = createDmaGpuFixture();
+	const { memory, gpu } = fixture;
+	const source = PROGRAM_STATIC_RAM_BASE + 0x380;
+	memory.writeMappedU32LE(source, GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24);
+	memory.writeMappedU32LE(source + 4, 0);
+	memory.writeMappedU32LE(source + 8, (1 << 16) | 34);
+	for (let index = 0; index < 17; index += 1) {
+		memory.writeMappedU32LE(source + 12 + index * 4, (0x55000000 | index) >>> 0);
+	}
+
+	gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
+	programTransfer(memory, source, IO_GX_GPU_GP0, 20, GP0_WRITE_CONTROL);
+	runNextDmaService(fixture);
+	assert.equal(memory.readIoU32(IO_DMA_TRANSFER_COUNT), 4);
+	assert.equal(memory.readIoU32(IO_DMA_STATUS), DMA_STATUS_BUSY);
+	assert.equal(gpu.readStatus() & GX_GPU_STATUS_READY_TO_RECEIVE_DMA, GX_GPU_STATUS_READY_TO_RECEIVE_DMA);
+	runNextDmaService(fixture);
+
+	const commands = gpu.readDeviceOutput().commandBuffer;
+	assert.equal(memory.readIoU32(IO_DMA_STATUS), DMA_STATUS_DONE);
+	assert.equal(commands.commandCount, 1);
+	assert.equal(commands.commandKind[0], GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM);
+});
+
+test('an admitted DMA block survives DREQ drop, timing changes, and restore', () => {
 	const fixture = createDmaGpuFixture();
 	const { memory, dma, gpu, scheduler } = fixture;
 	const source = PROGRAM_STATIC_RAM_BASE + 0x400;
@@ -146,12 +178,14 @@ test('a deasserted DREQ discards its pending grant and rearms from the new edge'
 	assert.equal(scheduler.nextDeadline(), 8);
 
 	scheduler.advanceTo(3);
-	dma.setTiming(4, 1, 3);
+	dma.setTiming(8, 1, 3);
 	assert.equal(scheduler.nextDeadline(), 8);
 	gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_OFF);
-	assert.equal(scheduler.nextDeadline(), Number.MAX_SAFE_INTEGER);
-	gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
-	assert.equal(scheduler.nextDeadline(), 11);
+	assert.equal(scheduler.nextDeadline(), 8);
+	const state = dma.captureState();
+	dma.restoreState(state, scheduler.nowCycles);
+	dma.postLoad();
+	assert.equal(scheduler.nextDeadline(), 8);
 
 	runNextDmaService(fixture);
 	assert.equal(memory.readIoU32(IO_DMA_STATUS), DMA_STATUS_DONE);
@@ -185,6 +219,7 @@ test('DMA resamples finite GX read DREQ between words and resumes on a later rea
 	assert.equal(readback.claimReadback(output.commandBuffer.presentCommandCount), true);
 	readback.completeReadback(readback.token);
 	runNextDmaService(fixture);
+	runNextDmaService(fixture);
 
 	assert.equal(memory.readMappedU32LE(destination), 0x22221111);
 	assert.equal(memory.readMappedU32LE(destination + 4), 0x00003333);
@@ -197,8 +232,9 @@ test('DMA resamples finite GX read DREQ between words and resumes on a later rea
 	gpu.writeGp0(GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24);
 	gpu.writeGp0(0);
 	gpu.writeGp0((1 << 16) | 2);
-	scheduler.advanceTo(3);
-	gpu.onService(3);
+	const readbackDeadline = scheduler.nextDeadline();
+	scheduler.advanceTo(readbackDeadline);
+	gpu.onService(readbackDeadline);
 	gpu.presentReadyFrameOnVblankEdge();
 	output = gpu.readDeviceOutput();
 	readback = output.readbackPort;

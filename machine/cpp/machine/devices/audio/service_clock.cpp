@@ -41,7 +41,7 @@ u64 ApuServiceClock::readTransferDataThunk(void* context, u32, MappedBusSignals 
 	const i64 nowCycles = clock.m_scheduler.currentNowCycles();
 	clock.synchronizeBeforeTransferAccess(nowCycles);
 	const u32 word = (busSignals & MAPPED_BUS_MASTER_DMA) != 0u
-		? clock.m_sampleTransfer.readDmaData((busSignals & MAPPED_BUS_DMA_GRANT_END) != 0u)
+		? clock.m_sampleTransfer.readDmaData((busSignals & MAPPED_BUS_DMA_BLOCK_END) != 0u)
 		: clock.m_sampleTransfer.readCpuData();
 	clock.advanceVoicesTo(nowCycles);
 	return valueNumber(static_cast<f64>(word));
@@ -60,7 +60,7 @@ void ApuServiceClock::writeTransferDataThunk(void* context, u32, u64 value, Mapp
 	const i64 nowCycles = clock.m_scheduler.currentNowCycles();
 	clock.synchronizeBeforeTransferAccess(nowCycles);
 	if ((busSignals & MAPPED_BUS_MASTER_DMA) != 0u) {
-		clock.m_sampleTransfer.writeDmaData(toU32(value), (busSignals & MAPPED_BUS_DMA_GRANT_END) != 0u);
+		clock.m_sampleTransfer.writeDmaData(toU32(value), (busSignals & MAPPED_BUS_DMA_BLOCK_END) != 0u);
 	} else {
 		clock.m_sampleTransfer.writeCpuData(toU32(value));
 	}

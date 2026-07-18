@@ -928,14 +928,19 @@ void GxGpu::updateCommandStatusBits() {
 	const bool readbackIdle = m_commandBuffer.readback.phase() == GX_GPU_READBACK_IDLE;
 	bool readyToReceiveDma = false;
 	if (readbackIdle) {
-		if (m_gp0ImageLoadWordsRemaining != 0u || m_gp0PolylineWordsPerVertex != 0u) {
+		if (m_gp0ImageLoadWordsRemaining != 0u) {
 			readyToReceiveDma = m_gp0Fifo.count() < GX_GPU_COMMAND_FIFO_WORD_CAPACITY;
-		} else if (m_gp0CommandWordCount != 0u) {
-			readyToReceiveDma = m_gp0CommandWordCount < m_gp0CommandTargetWordCount;
-		} else if (m_gp0Fifo.empty()) {
+		} else if (m_gp0PolylineWordsPerVertex != 0u) {
+			readyToReceiveDma = false;
+		} else if (m_gp0CommandWordCount == 0u && m_gp0Fifo.empty()) {
 			readyToReceiveDma = true;
 		} else {
-			readyToReceiveDma = m_gp0Fifo.count() < gp0CommandWordCountForOpcode(m_gp0Fifo.peek() >> GX_GPU_GP0_OPCODE_SHIFT);
+			const bool assemblingPacket = m_gp0CommandWordCount != 0u;
+			const u32 opcode = (assemblingPacket ? m_gp0CommandWords[0] : m_gp0Fifo.peek()) >> GX_GPU_GP0_OPCODE_SHIFT;
+			const u32 packetWordCount = assemblingPacket ? m_gp0CommandWordCount : m_gp0Fifo.count();
+			const u32 packetTargetWordCount = assemblingPacket ? m_gp0CommandTargetWordCount : gp0CommandWordCountForOpcode(opcode);
+			const bool polygonOrLinePacket = opcode >= GX_GPU_GP0_POLYGON_FIRST && opcode <= GX_GPU_GP0_LINE_LAST;
+			readyToReceiveDma = !polygonOrLinePacket && packetWordCount < packetTargetWordCount;
 		}
 	}
 	if (readyToReceiveDma) {

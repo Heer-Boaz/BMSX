@@ -76,8 +76,8 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					controlWord: 5,
 					statusWord: DMA_STATUS_BUSY,
 					timingCarry: 12345,
-					scheduledGrantWords: 5,
-					scheduledGrantCycles: 17,
+					scheduledBlockWords: 5,
+					scheduledBlockCycles: 17,
 				},
 				geometry: {
 					phase: GEOMETRY_CONTROLLER_PHASE_BUSY,

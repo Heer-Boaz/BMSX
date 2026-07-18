@@ -1,4 +1,6 @@
 import {
+	DMA_CONTROL_BLOCK_WORDS_MASK,
+	DMA_CONTROL_BLOCK_WORDS_SHIFT,
 	DMA_CONTROL_READ_INCREMENT,
 	DMA_CONTROL_REQUEST_APU_READ,
 	DMA_CONTROL_REQUEST_APU_WRITE,
@@ -24,7 +26,7 @@ import { IO_WORD_SIZE } from '../../memory/map';
 import { Memory } from '../../memory/memory';
 import {
 	MAPPED_BUS_MASTER_DMA,
-	MAPPED_BUS_DMA_GRANT_END,
+	MAPPED_BUS_DMA_BLOCK_END,
 	type MappedBusSignals,
 } from '../../memory/bus_signals';
 import type { CPU, Value } from '../../cpu/cpu';
@@ -37,8 +39,6 @@ import {
 	GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU,
 } from '../gx/gpu';
 
-const DMA_SERVICE_GRANT_WORDS = 16;
-
 export type DmaControllerState = {
 	readAddressWord: number;
 	writeAddressWord: number;
@@ -46,15 +46,15 @@ export type DmaControllerState = {
 	controlWord: number;
 	statusWord: number;
 	timingCarry: number;
-	scheduledGrantWords: number;
-	scheduledGrantCycles: number;
+	scheduledBlockWords: number;
+	scheduledBlockCycles: number;
 };
 
 export class DmaController {
 	private cpuHz = 1;
 	private wordsPerSec = 1;
 	private timingCarry = 0;
-	private scheduledGrantWords = 0;
+	private scheduledBlockWords = 0;
 	private serviceDeadline = 0;
 	private gxGpuReadReady = false;
 	private gxGpuDmaWriteReady = false;
@@ -91,7 +91,7 @@ export class DmaController {
 			return;
 		}
 		context.scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
-		context.scheduledGrantWords = 0;
+		context.scheduledBlockWords = 0;
 		context.serviceDeadline = 0;
 		context.timingCarry = 0;
 		context.memory.writeIoValue(IO_DMA_STATUS, DMA_STATUS_BUSY);
@@ -100,7 +100,7 @@ export class DmaController {
 			return;
 		}
 		if (context.requestAsserted()) {
-			context.scheduleGrant(context.scheduler.currentNowCycles());
+			context.admitBlock(context.scheduler.currentNowCycles());
 		}
 	}
 
@@ -110,12 +110,17 @@ export class DmaController {
 		}
 		this.cpuHz = cpuHz;
 		this.wordsPerSec = wordsPerSec;
-		this.cancelGrant();
+		this.timingCarry = 0;
+		// Admission latches the current block's completion edge. New timing starts
+		// with the next block rather than replaying elapsed bus time.
+		if (this.scheduledBlockWords !== 0) {
+			return;
+		}
 		if (this.busy() && this.requestAsserted()) {
 			if (this.memory.readIoU32(IO_DMA_TRANSFER_COUNT) === 0) {
 				this.finishTransfer();
 			} else {
-				this.scheduleGrant(nowCycles);
+				this.admitBlock(nowCycles);
 			}
 		}
 	}
@@ -181,7 +186,7 @@ export class DmaController {
 	public reset(): void {
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
 		this.timingCarry = 0;
-		this.scheduledGrantWords = 0;
+		this.scheduledBlockWords = 0;
 		this.serviceDeadline = 0;
 		this.gxGpuReadReady = false;
 		this.gxGpuDmaWriteReady = false;
@@ -200,23 +205,21 @@ export class DmaController {
 	}
 
 	public onService(_nowCycles: number): void {
-		const grantWords = this.scheduledGrantWords;
-		const grantDeadline = this.serviceDeadline;
+		const admittedBlockWords = this.scheduledBlockWords;
+		const blockDeadline = this.serviceDeadline;
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
-		this.scheduledGrantWords = 0;
+		this.scheduledBlockWords = 0;
 		this.serviceDeadline = 0;
 		this.serviceActive = true;
-		const request = this.memory.readIoU32(IO_DMA_CONTROL) & DMA_CONTROL_REQUEST_MASK;
-		const latchRequestForGrant = (request === DMA_CONTROL_REQUEST_APU_WRITE || request === DMA_CONTROL_REQUEST_APU_READ)
-			&& this.requestAsserted();
+		const remainingAtService = this.memory.readIoU32(IO_DMA_TRANSFER_COUNT);
+		const blockWords = admittedBlockWords < remainingAtService ? admittedBlockWords : remainingAtService;
 		let slot = 0;
-		while (slot < grantWords
+		while (slot < blockWords
 			&& this.busy()
-			&& this.memory.readIoU32(IO_DMA_TRANSFER_COUNT) !== 0
-			&& (latchRequestForGrant || this.requestAsserted())) {
+			&& this.memory.readIoU32(IO_DMA_TRANSFER_COUNT) !== 0) {
 			const transferCount = this.memory.readIoU32(IO_DMA_TRANSFER_COUNT);
 			const busSignals: MappedBusSignals = MAPPED_BUS_MASTER_DMA
-				| (slot + 1 === grantWords || transferCount === 1 ? MAPPED_BUS_DMA_GRANT_END : 0);
+				| (slot + 1 === blockWords ? MAPPED_BUS_DMA_BLOCK_END : 0);
 			this.transferWord(transferCount, busSignals);
 			slot += 1;
 		}
@@ -232,7 +235,7 @@ export class DmaController {
 			this.timingCarry = 0;
 			return;
 		}
-		this.scheduleGrant(grantDeadline);
+		this.admitBlock(blockDeadline);
 	}
 
 	private transferWord(transferCount: number, busSignals: MappedBusSignals): void {
@@ -259,7 +262,7 @@ export class DmaController {
 
 	private finishTransfer(): void {
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
-		this.scheduledGrantWords = 0;
+		this.scheduledBlockWords = 0;
 		this.serviceDeadline = 0;
 		this.timingCarry = 0;
 		this.memory.writeIoValue(IO_DMA_STATUS, DMA_STATUS_DONE);
@@ -275,8 +278,8 @@ export class DmaController {
 			controlWord: this.memory.readIoU32(IO_DMA_CONTROL),
 			statusWord: this.memory.readIoU32(IO_DMA_STATUS),
 			timingCarry: this.timingCarry,
-			scheduledGrantWords: this.scheduledGrantWords,
-			scheduledGrantCycles: this.scheduledGrantWords === 0
+			scheduledBlockWords: this.scheduledBlockWords,
+			scheduledBlockCycles: this.scheduledBlockWords === 0
 				? 0
 				: this.serviceDeadline - this.scheduler.currentNowCycles(),
 		};
@@ -291,56 +294,51 @@ export class DmaController {
 		this.memory.writeIoValue(IO_DMA_STATUS, state.statusWord);
 		this.memory.writeIoValue(IO_DMA_TRIGGER, 0);
 		this.timingCarry = state.timingCarry;
-		this.scheduledGrantWords = state.scheduledGrantWords;
-		this.serviceDeadline = nowCycles + state.scheduledGrantCycles;
+		this.scheduledBlockWords = state.scheduledBlockWords;
+		this.serviceDeadline = nowCycles + state.scheduledBlockCycles;
 		this.serviceActive = false;
 		this.restorePending = true;
 	}
 
 	public postLoad(): void {
 		this.restorePending = false;
-		if (this.scheduledGrantWords !== 0) {
-			if (this.requestAsserted()) {
-				this.scheduler.scheduleDeviceService(DEVICE_SERVICE_DMA, this.serviceDeadline);
-			} else {
-				this.cancelGrant();
-			}
+		if (this.scheduledBlockWords !== 0) {
+			this.scheduler.scheduleDeviceService(DEVICE_SERVICE_DMA, this.serviceDeadline);
 		}
 		this.resumeCpuPortWrites();
 	}
 
-	private scheduleGrant(anchorCycle: number): void {
+	private admitBlock(anchorCycle: number): void {
 		const remaining = this.memory.readIoU32(IO_DMA_TRANSFER_COUNT);
-		const grantWords = remaining < DMA_SERVICE_GRANT_WORDS ? remaining : DMA_SERVICE_GRANT_WORDS;
-		const grantCycles = cyclesUntilBudgetUnits(this.cpuHz, this.wordsPerSec, this.timingCarry, grantWords);
-		this.timingCarry = (this.wordsPerSec * grantCycles + this.timingCarry) % this.cpuHz;
-		this.scheduledGrantWords = grantWords;
-		this.serviceDeadline = anchorCycle + grantCycles;
-		this.scheduler.scheduleDeviceService(DEVICE_SERVICE_DMA, this.serviceDeadline);
+		const control = this.memory.readIoU32(IO_DMA_CONTROL);
+		const programmedBlockWords = ((control & DMA_CONTROL_BLOCK_WORDS_MASK) >>> DMA_CONTROL_BLOCK_WORDS_SHIFT) + 1;
+		this.scheduleAdmittedBlock(anchorCycle, remaining < programmedBlockWords ? remaining : programmedBlockWords);
 	}
 
-	private cancelGrant(): void {
-		this.scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
-		this.scheduledGrantWords = 0;
-		this.serviceDeadline = 0;
-		this.timingCarry = 0;
+	private scheduleAdmittedBlock(anchorCycle: number, blockWords: number): void {
+		const blockCycles = cyclesUntilBudgetUnits(this.cpuHz, this.wordsPerSec, this.timingCarry, blockWords);
+		this.timingCarry = (this.wordsPerSec * blockCycles + this.timingCarry) % this.cpuHz;
+		this.scheduledBlockWords = blockWords;
+		this.serviceDeadline = anchorCycle + blockCycles;
+		this.scheduler.scheduleDeviceService(DEVICE_SERVICE_DMA, this.serviceDeadline);
 	}
 
 	private requestInputChanged(): void {
 		if (this.restorePending || this.serviceActive || !this.busy()) {
 			return;
 		}
-		if (!this.requestAsserted()) {
-			this.cancelGrant();
-			return;
-		}
 		if (this.memory.readIoU32(IO_DMA_TRANSFER_COUNT) === 0) {
 			this.finishTransfer();
 			return;
 		}
-		if (this.scheduledGrantWords === 0) {
-			this.scheduleGrant(this.scheduler.currentNowCycles());
+		if (this.scheduledBlockWords !== 0) {
+			return;
 		}
+		if (!this.requestAsserted()) {
+			this.timingCarry = 0;
+			return;
+		}
+		this.admitBlock(this.scheduler.currentNowCycles());
 	}
 
 	private requestAsserted(): boolean {

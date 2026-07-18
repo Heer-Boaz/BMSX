@@ -1217,11 +1217,20 @@ export class GxGpu {
 		const readbackIdle = this.commandBuffer.readback.phase === GX_GPU_READBACK_IDLE;
 		const fifoWordCount = this.gp0Fifo.count();
 		let readyToReceive = false;
-		if (readbackIdle && fifoWordCount < GX_GPU_COMMAND_FIFO_WORD_CAPACITY) {
-			if (this.gp0ImageLoadWordsRemaining !== 0 || this.gp0PolylineWordsPerVertex !== 0 || fifoWordCount === 0) {
+		if (readbackIdle) {
+			if (this.gp0ImageLoadWordsRemaining !== 0) {
+				readyToReceive = fifoWordCount < GX_GPU_COMMAND_FIFO_WORD_CAPACITY;
+			} else if (this.gp0PolylineWordsPerVertex !== 0) {
+				readyToReceive = false;
+			} else if (this.gp0CommandWordCount === 0 && fifoWordCount === 0) {
 				readyToReceive = true;
 			} else {
-				readyToReceive = fifoWordCount < this.gp0CommandWordCountForOpcode(this.gp0Fifo.peek() >>> GX_GPU_GP0_OPCODE_SHIFT);
+				const assemblingPacket = this.gp0CommandWordCount !== 0;
+				const opcode = (assemblingPacket ? this.gp0CommandWords[0] : this.gp0Fifo.peek()) >>> GX_GPU_GP0_OPCODE_SHIFT;
+				const packetWordCount = assemblingPacket ? this.gp0CommandWordCount : fifoWordCount;
+				const packetTargetWordCount = assemblingPacket ? this.gp0CommandTargetWordCount : this.gp0CommandWordCountForOpcode(opcode);
+				const polygonOrLinePacket = opcode >= GX_GPU_GP0_POLYGON_FIRST && opcode <= GX_GPU_GP0_LINE_LAST;
+				readyToReceive = !polygonOrLinePacket && packetWordCount < packetTargetWordCount;
 			}
 		}
 		if (readyToReceive) {

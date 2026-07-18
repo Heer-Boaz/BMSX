@@ -115,7 +115,7 @@ void testLibretroSaveStateRoundTrip() {
 	memory.writeMappedU32LE(bmsx::IO_DMA_READ_ADDR, dmaSource);
 	memory.writeMappedU32LE(bmsx::IO_DMA_WRITE_ADDR, bmsx::IO_GX_GPU_GP0);
 	memory.writeMappedU32LE(bmsx::IO_DMA_TRANSFER_COUNT, static_cast<uint32_t>(dmaWords.size()));
-	memory.writeMappedU32LE(bmsx::IO_DMA_CONTROL, bmsx::DMA_CONTROL_READ_INCREMENT | bmsx::DMA_CONTROL_REQUEST_GX_WRITE);
+	memory.writeMappedU32LE(bmsx::IO_DMA_CONTROL, bmsx::DMA_CONTROL_READ_INCREMENT | bmsx::DMA_CONTROL_REQUEST_GX_WRITE | bmsx::DMA_CONTROL_BLOCK_WORDS_16);
 	memory.writeMappedU32LE(bmsx::IO_DMA_TRIGGER, bmsx::DMA_TRIGGER_START);
 	const bmsx::i64 firstDmaServiceCycle = runtime.machine.scheduler.currentNowCycles() + 1;
 	runtime.machine.scheduler.advanceTo(firstDmaServiceCycle);
@@ -137,7 +137,7 @@ void testLibretroSaveStateRoundTrip() {
 	std::memcpy(saved.data() + 8u, blockedPayload.data(), blockedPayload.size());
 	std::memset(saved.data() + 8u + blockedPayload.size(), 0, saved.size() - 8u - blockedPayload.size());
 	const bmsx::DmaControllerState mutatingDmaState = runtime.machine.dmaController.captureState();
-	const bmsx::i64 dmaMutationCycle = runtime.machine.scheduler.currentNowCycles() + mutatingDmaState.scheduledGrantCycles;
+	const bmsx::i64 dmaMutationCycle = runtime.machine.scheduler.currentNowCycles() + mutatingDmaState.scheduledBlockCycles;
 	runtime.machine.scheduler.advanceTo(dmaMutationCycle);
 	runtime.machine.dmaController.onService(dmaMutationCycle);
 	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == bmsx::DMA_STATUS_DONE, "DMA mutation should complete before loadState");
@@ -180,7 +180,7 @@ void testLibretroSaveStateRoundTrip() {
 	require(!memory.mappedWriteReady(bmsx::IO_GX_GPU_GP0), "restored DMA should retain GP0 ownership");
 	require(runtime.machine.cpu.isMemoryWriteBlocked(), "restored GP0 store should remain blocked while DMA owns the port");
 	const bmsx::DmaControllerState restoredDmaState = runtime.machine.dmaController.captureState();
-	const int64_t dmaResumeCycle = runtime.machine.scheduler.currentNowCycles() + restoredDmaState.scheduledGrantCycles;
+	const int64_t dmaResumeCycle = runtime.machine.scheduler.currentNowCycles() + restoredDmaState.scheduledBlockCycles;
 	runtime.machine.scheduler.advanceTo(dmaResumeCycle);
 	runtime.machine.dmaController.onService(dmaResumeCycle);
 	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == bmsx::DMA_STATUS_DONE, "restored DMA should complete the GP0 packet");

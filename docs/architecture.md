@@ -1062,23 +1062,34 @@ host terminal's appearance.
 DMA is one register channel. `READ_ADDR`, `WRITE_ADDR`, `TRANSFER_COUNT` and
 `CONTROL` remain live while `STATUS.BUSY` is set; `TRIGGER` is a write-only,
 self-clearing start strobe. The count is expressed in 32-bit bus transfers.
-Control selects read/write address incrementing and one request input: forced,
-GX write, GX read, disabled, APU write or APU read; selector words 6 and 7 have
-no asserted input. GX requests are GPU-owned lines gated by the GP1
+Control selects read/write address incrementing, one request input and a
+four-bit `block_words_minus_one` field. Every raw block field therefore denotes
+one through sixteen words without a special zero case. Request selectors are
+forced, GX write, GX read, disabled, APU write or APU read; selector words 6 and
+7 have no asserted input. GX requests are GPU-owned lines gated by the GP1
 DMA-direction register. APU requests are the sample-transfer FIFO's empty/write
 and full/read lines.
 
-The scheduler grants at most sixteen word slots per DMA service deadline.
-Forced and GX request modes resample DREQ before every word. A low request discards
-unused slots and a later edge begins a fresh timing interval. The APU's
-empty/full request acknowledges one whole sixteen-word FIFO grant; that request
-is latched only for the granted slots because the first accepted word necessarily
-deasserts the level line. Every word is a mapped bus read followed by a mapped
-bus write and then live address/count writeback. On the final slot of an admitted
-grant, or on the final live transfer word, DMA also drives `GRANT_END` as part of
-the mapped bus transaction. Devices which latch a whole grant use that bus edge
-to start one internal batch; there is no device-specific callback from the DMA
-controller.
+A high request admits one hardware block of the programmed size, shortened only
+by the live final transfer count. Block length is latched at admission. A later
+DREQ-low edge or save/load cannot revoke that block; device-timing changes
+apply only when the next block is admitted and cannot move its completion edge.
+DREQ is sampled again only before admitting the next block. Every admitted word
+is a mapped bus read followed by a mapped bus write and then live address/count
+writeback. The final actually transferred word also drives `BLOCK_END` on that
+mapped transaction. Devices which consume a block as one batch use this bus
+edge directly; there is no device-specific callback from the DMA controller. A
+control write made by DMA itself can change incrementing within the current
+block, but its request selector and block size govern only the next admission.
+
+The system DMA firmware programs sixteen-word bulk blocks. The APU FIFO is also
+sixteen words: its first accepted word may lower the level DREQ, while the
+already admitted block continues and `BLOCK_END` starts exactly one timed
+sample-RAM batch. A short final block carries its actual word count. GX
+CPU-to-GP0 command-sync producers must keep each polygon or line packet wholly
+inside one block; longer polylines or unaligned command streams select FIFO or
+forced request mode. Packet alignment is command-list ownership, not a hidden
+repair in `system/dma.lua`.
 Memory remains the sole bus-fault owner; a fault does not invent a DMA error
 state or abort the channel. Completion clears `BUSY`, sets `DONE` and raises
 `IRQ_DMA_DONE`. The ROM texture producer emits native RGB555/STP GP0 streams;
@@ -1146,6 +1157,16 @@ physical sixteen-word FIFO-not-full line; CPU-to-GP0 mode exposes the stricter
 GPUSTAT bit-28 DMA-block-ready line; GPUREAD-to-CPU mode exposes bit 27. The
 selected write request is the same line consumed by the DMA controller, while
 direct CPU writes retain their independent physical FIFO-slot readiness.
+
+GPUSTAT bit 28 reports command-front-end block admission rather than rasterizer
+idleness. Ordinary incomplete fixed packets remain ready; a complete packet
+still queued behind earlier work is not. Polygon and line opcodes lower the bit
+immediately and keep it low through the complete packet, while a polyline keeps
+it low through its terminator. Dispatch reopens the front end even while bit 26
+still reports downstream raster work. CPU-to-VRAM payload streaming instead
+follows physical FIFO capacity, so an A0 upload can cross multiple admitted DMA
+blocks. In CPU-to-GP0 mode bit 25 is exactly this bit-28 line; FIFO mode remains
+the independent physical FIFO-not-full line.
 
 GP1 decodes the complete eight-bit command field. Undefined commands in the
 40h--FFh range are no-ops rather than aliases of commands 00h--3Fh, matching
@@ -1462,11 +1483,11 @@ Transfers increment that latch by four and wrap on the 512-KiB boundary.
 
 MANUAL_WRITE stores one 32-bit data word directly in sample-RAM. DMA transfers
 use a fixed sixteen-word FIFO. A write request is asserted only when that FIFO
-is empty and a read request only when it is full, matching one grant of the
+is empty and a read request only when it is full, matching one block of the
 existing sixteen-word DMA arbiter. DMA write overflow drops the unaccepted word;
 DMA read underflow returns the retained transfer-data latch. CPU data reads
 return that same latch. The mapped CPU/DMA bus carries its initiating master
-and grant-end strobes through the existing single IO decoder and handler table.
+and block-end strobes through the existing single IO decoder and handler table.
 DMA-data reads pop only in DMA_READ mode and DMA-data writes push only in
 DMA_WRITE mode. A wrong-direction DMA access still reaches the raw data latch,
 but cannot mutate the other mode's FIFO. A
@@ -1478,7 +1499,7 @@ batch has reached sample-RAM.
 
 The internal transfer clock is `APU_SAMPLE_RATE_HZ * 24`, or 1,058,400 words per
 second. `DEVICE_SERVICE_APU_TRANSFER` advances fixed batches with the same
-integer budget/carry model used by the other timed units. The final DMA grant
+integer budget/carry model used by the other timed units. The final DMA block
 word schedules the accepted FIFO words as one batch at their shared completion
 deadline; it never schedules one host callback per word. Batch visibility is
 atomic at that deadline rather than a claim of per-word SPU-bus visibility. At

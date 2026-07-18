@@ -441,7 +441,7 @@ and MAME
     the same explicit fence frontier, backend wait time cannot create scheduler
     catch-up, and mid-frame VRAM snapshots compact/publish their exact prefix.
   - [ ] Run the same vector live against WebGL2, GLES2 and WebGPU.
-- [ ] Complete GPUSTAT details and timing-visible bits against references.
+- [x] Complete GPUSTAT details and timing-visible bits against references.
   - [x] Fix the GPU revision contract to type 2: GP1 info query 07h reports V2,
     the complete GP1(08h) low byte remains retained register input, and the
     type-1-only reverse bit never appears in GPUSTAT or scanout.
@@ -456,14 +456,23 @@ and MAME
     the full assert, system-ack, no-retrigger, GPU-ack and retrigger sequence.
   - [x] Model command execution time and FIFO-capacity-visible readiness with a
     central integer GPU scheduler, fixed FIFO, execution frontier and mirrored
-    save-state. DMA grants at most sixteen word slots and resamples DREQ before
-    each word; CPU GP0 stores use
+    save-state. DMA CONTROL programs one-to-sixteen-word hardware blocks; DREQ
+    admits a complete block and is sampled again only at the next block boundary.
+    CPU GP0 stores use
     the MMIO write-ready line and jump to the device completion edge without
     polling, dropped words or producer-side waits.
   - [x] Give GPUSTAT bit 25 its real GP1(04h) request mux: FIFO mode reports
     the physical sixteen-word FIFO-not-full line, CPU-to-GP0 reports bit 28,
     and GPUREAD-to-CPU reports bit 27. The DMA controller consumes that same
     selected request rather than reusing DMA-block readiness for FIFO mode.
+  - [x] Match the command-front-end quirk behind bit 28: polygon and line
+    opcodes lower readiness immediately, polylines keep it low through their
+    terminator, ordinary incomplete fixed packets remain ready, and dispatch
+    can reopen the front end while downstream raster work still keeps bit 26
+    low. A0 payload streaming follows physical FIFO capacity and crosses DMA
+    blocks. The producer-visible block latch survives DREQ-low, timing changes
+    and save/load without moving its completion edge; `BLOCK_END` marks the
+    actual final word of a short block.
 - [ ] Complete GP0/GP1 command decode edge cases and command-buffer ordering.
   - [x] Distinguish machine/device reset from GP1(00h): both clear GPU
     registers, packet/FIFO state and the active readback request, while only
@@ -511,9 +520,10 @@ and MAME
     completion edge.
   - [x] Replace descriptor admission, tickets, queue progress and byte budgets
     with one live word-transfer channel. GP1 gates the GPU-owned DREQ lines;
-    request-low discards unused grant slots, direct bus faults remain
+    request-high admits one producer-programmed hardware block, an admitted
+    block survives later request-low edges, direct bus faults remain
     Memory-owned, and current-format save-state stores raw registers plus the
-    real timing/grant latches.
+    real block/timing latches.
 
 ### 3. Raster and VRAM behavior
 

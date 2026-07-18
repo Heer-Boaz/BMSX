@@ -18,8 +18,9 @@ namespace {
 
 constexpr uint32_t RAM_COPY_CONTROL = bmsx::DMA_CONTROL_READ_INCREMENT
 	| bmsx::DMA_CONTROL_WRITE_INCREMENT
-	| bmsx::DMA_CONTROL_REQUEST_FORCE;
-constexpr uint32_t GP0_WRITE_CONTROL = bmsx::DMA_CONTROL_READ_INCREMENT | bmsx::DMA_CONTROL_REQUEST_GX_WRITE;
+	| bmsx::DMA_CONTROL_REQUEST_FORCE
+	| bmsx::DMA_CONTROL_BLOCK_WORDS_16;
+constexpr uint32_t GP0_WRITE_CONTROL = bmsx::DMA_CONTROL_READ_INCREMENT | bmsx::DMA_CONTROL_REQUEST_GX_WRITE | bmsx::DMA_CONTROL_BLOCK_WORDS_16;
 constexpr uint32_t GP0_READ_CONTROL = bmsx::DMA_CONTROL_WRITE_INCREMENT | bmsx::DMA_CONTROL_REQUEST_GX_READ;
 
 struct DmaGpuHarness {
@@ -116,7 +117,32 @@ void testGxWriteRequestAndPortOwnership() {
 	require(memory.mappedWriteReady(bmsx::IO_GX_GPU_GP0), "DMA completion releases GP0");
 }
 
-void testRequestEdgeRestartsTiming() {
+void testCpuToGp0ImagePayloadCrossesBlocks() {
+	DmaGpuHarness harness;
+	bmsx::Memory& memory = harness.memory;
+	const uint32_t source = bmsx::PROGRAM_STATIC_RAM_BASE + 0x380u;
+	memory.writeMappedU32LE(source, bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24u);
+	memory.writeMappedU32LE(source + 4u, 0u);
+	memory.writeMappedU32LE(source + 8u, (1u << 16u) | 34u);
+	for (uint32_t index = 0u; index < 17u; index += 1u) {
+		memory.writeMappedU32LE(source + 12u + index * 4u, 0x55000000u | index);
+	}
+
+	harness.gpu.writeGp1((bmsx::GX_GPU_GP1_DMA_DIRECTION << 24u) | bmsx::GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
+	programTransfer(memory, source, bmsx::IO_GX_GPU_GP0, 20u, GP0_WRITE_CONTROL);
+	runNextDmaService(harness);
+	require(memory.readIoU32(bmsx::IO_DMA_TRANSFER_COUNT) == 4u, "the first programmed block transfers sixteen A0 words");
+	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == bmsx::DMA_STATUS_BUSY, "the A0 transfer remains active between blocks");
+	require((harness.gpu.readStatus() & bmsx::GX_GPU_STATUS_READY_TO_RECEIVE_DMA) != 0u, "A0 payload streaming keeps the command front end ready");
+	runNextDmaService(harness);
+
+	const bmsx::GxGpuCommandBuffer& commands = harness.gpu.readDeviceOutput().commandBuffer;
+	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == bmsx::DMA_STATUS_DONE, "the final partial A0 block completes DMA");
+	require(commands.commandCount == 1u, "A0 DMA emits one upload command");
+	require(commands.commandKind[0] == bmsx::GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM, "A0 DMA retains the upload command kind");
+}
+
+void testAdmittedBlockSurvivesRequestDropAndRestore() {
 	DmaGpuHarness harness;
 	bmsx::Memory& memory = harness.memory;
 	const uint32_t source = bmsx::PROGRAM_STATIC_RAM_BASE + 0x400u;
@@ -125,17 +151,19 @@ void testRequestEdgeRestartsTiming() {
 	harness.dma.setTiming(4, 1, 0);
 	harness.gpu.writeGp1((bmsx::GX_GPU_GP1_DMA_DIRECTION << 24u) | bmsx::GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
 	programTransfer(memory, source, bmsx::IO_GX_GPU_GP0, 2u, GP0_WRITE_CONTROL);
-	require(harness.scheduler.nextDeadline() == 8, "DMA grants two words after eight cycles");
+	require(harness.scheduler.nextDeadline() == 8, "DMA blocks two words after eight cycles");
 
 	harness.scheduler.advanceTo(3);
-	harness.dma.setTiming(4, 1, 3);
-	require(harness.scheduler.nextDeadline() == 8, "unchanged clock programming preserves the active DMA phase");
+	harness.dma.setTiming(8, 1, 3);
+	require(harness.scheduler.nextDeadline() == 8, "timing changes apply after the admitted block completion edge");
 	harness.gpu.writeGp1((bmsx::GX_GPU_GP1_DMA_DIRECTION << 24u) | bmsx::GX_GPU_DMA_DIRECTION_OFF);
-	require(harness.scheduler.nextDeadline() == std::numeric_limits<int64_t>::max(), "DREQ low cancels the grant");
-	harness.gpu.writeGp1((bmsx::GX_GPU_GP1_DMA_DIRECTION << 24u) | bmsx::GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
-	require(harness.scheduler.nextDeadline() == 11, "new DREQ edge starts a fresh timing interval");
+	require(harness.scheduler.nextDeadline() == 8, "DREQ low does not cancel an admitted block");
+	const bmsx::DmaControllerState state = harness.dma.captureState();
+	harness.dma.restoreState(state, harness.scheduler.nowCycles());
+	harness.dma.postLoad();
+	require(harness.scheduler.nextDeadline() == 8, "restore preserves an admitted block while DREQ is low");
 	runNextDmaService(harness);
-	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == bmsx::DMA_STATUS_DONE, "rearmed DMA completes");
+	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == bmsx::DMA_STATUS_DONE, "the admitted block completes while DREQ remains low");
 }
 
 void testFiniteGxReadRequest() {
@@ -167,6 +195,7 @@ void testFiniteGxReadRequest() {
 	require(firstReadback.claimReadback(firstOutput.commandBuffer.presentCommandCount), "first readback claims its fence");
 	firstReadback.completeReadback(firstReadback.token());
 	runNextDmaService(harness);
+	runNextDmaService(harness);
 
 	require(memory.readMappedU32LE(destination) == 0x22221111u, "DMA reads packed pixel word 0");
 	require(memory.readMappedU32LE(destination + 4u) == 0x00003333u, "DMA reads the odd final pixel");
@@ -179,8 +208,9 @@ void testFiniteGxReadRequest() {
 	gpu.writeGp0(bmsx::GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24u);
 	gpu.writeGp0(0u);
 	gpu.writeGp0((1u << 16u) | 2u);
-	harness.scheduler.advanceTo(3);
-	gpu.onService(3);
+	const bmsx::i64 readbackDeadline = harness.scheduler.nextDeadline();
+	harness.scheduler.advanceTo(readbackDeadline);
+	gpu.onService(readbackDeadline);
 	gpu.presentReadyFrameOnVblankEdge();
 	const bmsx::GxGpuDeviceOutput& secondOutput = gpu.readDeviceOutput();
 	bmsx::GxGpuReadbackPort& secondReadback = secondOutput.readbackPort;
@@ -247,7 +277,8 @@ void testZeroCountTrigger() {
 int main() {
 	testLiveRegisterChannel();
 	testGxWriteRequestAndPortOwnership();
-	testRequestEdgeRestartsTiming();
+	testCpuToGp0ImagePayloadCrossesBlocks();
+	testAdmittedBlockSurvivesRequestDropAndRestore();
 	testFiniteGxReadRequest();
 	testBusFaultProgress();
 	testSelfDmaWritebackOrder();

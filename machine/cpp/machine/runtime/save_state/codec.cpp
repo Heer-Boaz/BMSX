@@ -949,8 +949,8 @@ BinValue encodeDmaControllerState(const DmaControllerState& state) {
 	object["controlWord"] = encodeScalar<f64>(state.controlWord);
 	object["statusWord"] = encodeScalar<f64>(state.statusWord);
 	object["timingCarry"] = encodeScalar<f64>(state.timingCarry);
-	object["scheduledGrantWords"] = encodeScalar<f64>(state.scheduledGrantWords);
-	object["scheduledGrantCycles"] = encodeScalar<f64>(state.scheduledGrantCycles);
+	object["scheduledBlockWords"] = encodeScalar<f64>(state.scheduledBlockWords);
+	object["scheduledBlockCycles"] = encodeScalar<f64>(state.scheduledBlockCycles);
 	return BinValue(std::move(object));
 }
 
@@ -963,8 +963,8 @@ DmaControllerState decodeDmaControllerState(const BinValue& value, const char* l
 	state.controlWord = requireU32(requireField(object, "controlWord", label), "machine.dma.controlWord");
 	state.statusWord = requireU32(requireField(object, "statusWord", label), "machine.dma.statusWord");
 	state.timingCarry = requireI64(requireField(object, "timingCarry", label), "machine.dma.timingCarry");
-	state.scheduledGrantWords = requireBoundedU32(requireField(object, "scheduledGrantWords", label), "machine.dma.scheduledGrantWords", 0u, 16u);
-	state.scheduledGrantCycles = requireI64(requireField(object, "scheduledGrantCycles", label), "machine.dma.scheduledGrantCycles");
+	state.scheduledBlockWords = requireBoundedU32(requireField(object, "scheduledBlockWords", label), "machine.dma.scheduledBlockWords", 0u, 16u);
+	state.scheduledBlockCycles = requireI64(requireField(object, "scheduledBlockCycles", label), "machine.dma.scheduledBlockCycles");
 	return state;
 }
 

@@ -40,7 +40,7 @@ void DmaController::onTriggerWrite(u32 value) {
 		return;
 	}
 	m_scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
-	m_scheduledGrantWords = 0u;
+	m_scheduledBlockWords = 0u;
 	m_serviceDeadline = 0;
 	m_timingCarry = 0;
 	m_memory.writeIoValue(IO_DMA_STATUS, valueNumber(static_cast<f64>(DMA_STATUS_BUSY)));
@@ -49,7 +49,7 @@ void DmaController::onTriggerWrite(u32 value) {
 		return;
 	}
 	if (requestAsserted()) {
-		scheduleGrant(m_scheduler.currentNowCycles());
+		admitBlock(m_scheduler.currentNowCycles());
 	}
 }
 
@@ -59,12 +59,17 @@ void DmaController::setTiming(i64 cpuHz, i64 wordsPerSec, i64 nowCycles) {
 	}
 	m_cpuHz = cpuHz;
 	m_wordsPerSec = wordsPerSec;
-	cancelGrant();
+	m_timingCarry = 0;
+	// Admission latches the current block's completion edge. New timing starts
+	// with the next block rather than replaying elapsed bus time.
+	if (m_scheduledBlockWords != 0u) {
+		return;
+	}
 	if (busy() && requestAsserted()) {
 		if (m_memory.readIoU32(IO_DMA_TRANSFER_COUNT) == 0u) {
 			finishTransfer();
 		} else {
-			scheduleGrant(nowCycles);
+			admitBlock(nowCycles);
 		}
 	}
 }
@@ -130,7 +135,7 @@ bool DmaController::ownsApuDataPort() const {
 void DmaController::reset() {
 	m_scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
 	m_timingCarry = 0;
-	m_scheduledGrantWords = 0u;
+	m_scheduledBlockWords = 0u;
 	m_serviceDeadline = 0;
 	m_gxGpuReadReady = false;
 	m_gxGpuDmaWriteReady = false;
@@ -149,25 +154,22 @@ void DmaController::reset() {
 }
 
 void DmaController::onService(i64) {
-	const u32 grantWords = m_scheduledGrantWords;
-	const i64 grantDeadline = m_serviceDeadline;
-	const u32 request = m_memory.readIoU32(IO_DMA_CONTROL) & DMA_CONTROL_REQUEST_MASK;
-	const bool latchRequestForGrant = (request == DMA_CONTROL_REQUEST_APU_WRITE
-		|| request == DMA_CONTROL_REQUEST_APU_READ)
-		&& requestAsserted();
+	const u32 admittedBlockWords = m_scheduledBlockWords;
+	const i64 blockDeadline = m_serviceDeadline;
 	m_scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
-	m_scheduledGrantWords = 0u;
+	m_scheduledBlockWords = 0u;
 	m_serviceDeadline = 0;
 	m_serviceActive = true;
+	const u32 remainingAtService = m_memory.readIoU32(IO_DMA_TRANSFER_COUNT);
+	const u32 blockWords = admittedBlockWords < remainingAtService ? admittedBlockWords : remainingAtService;
 	for (u32 slot = 0u;
-		slot < grantWords
+		slot < blockWords
 			&& busy()
-			&& m_memory.readIoU32(IO_DMA_TRANSFER_COUNT) != 0u
-			&& (latchRequestForGrant || requestAsserted());
+			&& m_memory.readIoU32(IO_DMA_TRANSFER_COUNT) != 0u;
 		slot += 1u) {
 		const u32 transferCount = m_memory.readIoU32(IO_DMA_TRANSFER_COUNT);
 		const MappedBusSignals busSignals = MAPPED_BUS_MASTER_DMA
-			| (slot + 1u == grantWords || transferCount == 1u ? MAPPED_BUS_DMA_GRANT_END : 0u);
+			| (slot + 1u == blockWords ? MAPPED_BUS_DMA_BLOCK_END : 0u);
 		transferWord(transferCount, busSignals);
 	}
 	m_serviceActive = false;
@@ -182,7 +184,7 @@ void DmaController::onService(i64) {
 		m_timingCarry = 0;
 		return;
 	}
-	scheduleGrant(grantDeadline);
+	admitBlock(blockDeadline);
 }
 
 void DmaController::transferWord(u32 transferCount, MappedBusSignals busSignals) {
@@ -209,7 +211,7 @@ void DmaController::transferWord(u32 transferCount, MappedBusSignals busSignals)
 
 void DmaController::finishTransfer() {
 	m_scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
-	m_scheduledGrantWords = 0u;
+	m_scheduledBlockWords = 0u;
 	m_serviceDeadline = 0;
 	m_timingCarry = 0;
 	m_memory.writeIoValue(IO_DMA_STATUS, valueNumber(static_cast<f64>(DMA_STATUS_DONE)));
@@ -225,8 +227,8 @@ DmaControllerState DmaController::captureState() const {
 	state.controlWord = m_memory.readIoU32(IO_DMA_CONTROL);
 	state.statusWord = m_memory.readIoU32(IO_DMA_STATUS);
 	state.timingCarry = m_timingCarry;
-	state.scheduledGrantWords = m_scheduledGrantWords;
-	state.scheduledGrantCycles = m_scheduledGrantWords == 0u ? 0 : m_serviceDeadline - m_scheduler.currentNowCycles();
+	state.scheduledBlockWords = m_scheduledBlockWords;
+	state.scheduledBlockCycles = m_scheduledBlockWords == 0u ? 0 : m_serviceDeadline - m_scheduler.currentNowCycles();
 	return state;
 }
 
@@ -239,56 +241,51 @@ void DmaController::restoreState(const DmaControllerState& state, i64 nowCycles)
 	m_memory.writeIoValue(IO_DMA_STATUS, valueNumber(static_cast<f64>(state.statusWord)));
 	m_memory.writeIoValue(IO_DMA_TRIGGER, valueNumber(0.0));
 	m_timingCarry = state.timingCarry;
-	m_scheduledGrantWords = state.scheduledGrantWords;
-	m_serviceDeadline = nowCycles + state.scheduledGrantCycles;
+	m_scheduledBlockWords = state.scheduledBlockWords;
+	m_serviceDeadline = nowCycles + state.scheduledBlockCycles;
 	m_serviceActive = false;
 	m_restorePending = true;
 }
 
 void DmaController::postLoad() {
 	m_restorePending = false;
-	if (m_scheduledGrantWords != 0u) {
-		if (requestAsserted()) {
-			m_scheduler.scheduleDeviceService(DEVICE_SERVICE_DMA, m_serviceDeadline);
-		} else {
-			cancelGrant();
-		}
+	if (m_scheduledBlockWords != 0u) {
+		m_scheduler.scheduleDeviceService(DEVICE_SERVICE_DMA, m_serviceDeadline);
 	}
 	resumeCpuPortWrites();
 }
 
-void DmaController::scheduleGrant(i64 anchorCycle) {
+void DmaController::admitBlock(i64 anchorCycle) {
 	const u32 remaining = m_memory.readIoU32(IO_DMA_TRANSFER_COUNT);
-	const u32 grantWords = remaining < DMA_SERVICE_GRANT_WORDS ? remaining : DMA_SERVICE_GRANT_WORDS;
-	const i64 grantCycles = cyclesUntilBudgetUnits(m_cpuHz, m_wordsPerSec, m_timingCarry, grantWords);
-	m_timingCarry = (m_wordsPerSec * grantCycles + m_timingCarry) % m_cpuHz;
-	m_scheduledGrantWords = grantWords;
-	m_serviceDeadline = anchorCycle + grantCycles;
-	m_scheduler.scheduleDeviceService(DEVICE_SERVICE_DMA, m_serviceDeadline);
+	const u32 control = m_memory.readIoU32(IO_DMA_CONTROL);
+	const u32 programmedBlockWords = ((control & DMA_CONTROL_BLOCK_WORDS_MASK) >> DMA_CONTROL_BLOCK_WORDS_SHIFT) + 1u;
+	scheduleAdmittedBlock(anchorCycle, remaining < programmedBlockWords ? remaining : programmedBlockWords);
 }
 
-void DmaController::cancelGrant() {
-	m_scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
-	m_scheduledGrantWords = 0u;
-	m_serviceDeadline = 0;
-	m_timingCarry = 0;
+void DmaController::scheduleAdmittedBlock(i64 anchorCycle, u32 blockWords) {
+	const i64 blockCycles = cyclesUntilBudgetUnits(m_cpuHz, m_wordsPerSec, m_timingCarry, blockWords);
+	m_timingCarry = (m_wordsPerSec * blockCycles + m_timingCarry) % m_cpuHz;
+	m_scheduledBlockWords = blockWords;
+	m_serviceDeadline = anchorCycle + blockCycles;
+	m_scheduler.scheduleDeviceService(DEVICE_SERVICE_DMA, m_serviceDeadline);
 }
 
 void DmaController::requestInputChanged() {
 	if (m_restorePending || m_serviceActive || !busy()) {
 		return;
 	}
-	if (!requestAsserted()) {
-		cancelGrant();
-		return;
-	}
 	if (m_memory.readIoU32(IO_DMA_TRANSFER_COUNT) == 0u) {
 		finishTransfer();
 		return;
 	}
-	if (m_scheduledGrantWords == 0u) {
-		scheduleGrant(m_scheduler.currentNowCycles());
+	if (m_scheduledBlockWords != 0u) {
+		return;
 	}
+	if (!requestAsserted()) {
+		m_timingCarry = 0;
+		return;
+	}
+	admitBlock(m_scheduler.currentNowCycles());
 }
 
 bool DmaController::requestAsserted() const {

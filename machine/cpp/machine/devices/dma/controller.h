@@ -17,8 +17,8 @@ struct DmaControllerState {
 	u32 controlWord = 0;
 	u32 statusWord = 0;
 	i64 timingCarry = 0;
-	u32 scheduledGrantWords = 0;
-	i64 scheduledGrantCycles = 0;
+	u32 scheduledBlockWords = 0;
+	i64 scheduledBlockCycles = 0;
 };
 
 class DmaController {
@@ -41,8 +41,6 @@ public:
 	void postLoad();
 
 private:
-	static constexpr u32 DMA_SERVICE_GRANT_WORDS = 16u;
-
 	static void onControlWriteThunk(void* context, u32 addr, u64 value, MappedBusSignals busSignals);
 	static void onAddressWriteThunk(void* context, u32 addr, u64 value, MappedBusSignals busSignals);
 	static void onTriggerWriteThunk(void* context, u32 addr, u64 value, MappedBusSignals busSignals);
@@ -50,8 +48,8 @@ private:
 	void onTriggerWrite(u32 value);
 	void transferWord(u32 transferCount, MappedBusSignals busSignals);
 	void finishTransfer();
-	void scheduleGrant(i64 anchorCycle);
-	void cancelGrant();
+	void admitBlock(i64 anchorCycle);
+	void scheduleAdmittedBlock(i64 anchorCycle, u32 blockWords);
 	void requestInputChanged();
 	bool requestAsserted() const;
 	bool busy() const;
@@ -61,7 +59,7 @@ private:
 	i64 m_cpuHz = 1;
 	i64 m_wordsPerSec = 1;
 	i64 m_timingCarry = 0;
-	u32 m_scheduledGrantWords = 0;
+	u32 m_scheduledBlockWords = 0;
 	i64 m_serviceDeadline = 0;
 	bool m_gxGpuReadReady = false;
 	bool m_gxGpuDmaWriteReady = false;

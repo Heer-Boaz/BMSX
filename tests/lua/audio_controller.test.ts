@@ -50,6 +50,7 @@ import {
 	apuSlotRegisterWordIndex,
 } from '../../machine/ts/machine/devices/audio/contracts';
 import {
+	DMA_CONTROL_BLOCK_WORDS_16,
 	DMA_CONTROL_READ_INCREMENT,
 	DMA_CONTROL_REQUEST_APU_READ,
 	DMA_CONTROL_REQUEST_APU_WRITE,
@@ -417,10 +418,10 @@ test('APU voices read cart sample ROM directly and reject CPU RAM addresses', ()
 	assert.equal(cpuHarness.memory.readIoU32(IO_APU_ACTIVE_MASK), 0);
 });
 
-function serviceScheduledDmaGrant(harness: ReturnType<typeof createAudioHarness>): void {
+function serviceScheduledDmaBlock(harness: ReturnType<typeof createAudioHarness>): void {
 	const state = harness.dma.captureState();
-	assert.notEqual(state.scheduledGrantWords, 0);
-	const deadline = harness.scheduler.nowCycles + state.scheduledGrantCycles;
+	assert.notEqual(state.scheduledBlockWords, 0);
+	const deadline = harness.scheduler.nowCycles + state.scheduledBlockCycles;
 	harness.scheduler.advanceTo(deadline);
 	harness.dma.onService(deadline);
 }
@@ -435,7 +436,7 @@ function serviceScheduledSampleTransfer(harness: ReturnType<typeof createAudioHa
 
 function finishDmaWriteToSampleRam(harness: ReturnType<typeof createAudioHarness>): void {
 	serviceScheduledSampleTransfer(harness);
-	serviceScheduledDmaGrant(harness);
+	serviceScheduledDmaBlock(harness);
 	serviceScheduledSampleTransfer(harness);
 }
 
@@ -459,7 +460,7 @@ function createTransferEdgeHarness(): ReturnType<typeof createAudioControllerHar
 	harness.memory.writeMappedU32LE(IO_DMA_TRANSFER_COUNT, 1);
 	harness.memory.writeMappedU32LE(IO_DMA_CONTROL, DMA_CONTROL_REQUEST_APU_WRITE);
 	harness.memory.writeMappedU32LE(IO_DMA_TRIGGER, DMA_TRIGGER_START);
-	serviceScheduledDmaGrant(harness);
+	serviceScheduledDmaBlock(harness);
 	return { ...harness, audioOutput };
 }
 
@@ -526,10 +527,10 @@ test('APU DMA round-trip obeys FIFO timing, RAM wrap, and mid-transfer restore',
 	live.memory.writeMappedU32LE(IO_DMA_READ_ADDR, source);
 	live.memory.writeMappedU32LE(IO_DMA_WRITE_ADDR, IO_APU_TRANSFER_DATA);
 	live.memory.writeMappedU32LE(IO_DMA_TRANSFER_COUNT, 32);
-	live.memory.writeMappedU32LE(IO_DMA_CONTROL, DMA_CONTROL_READ_INCREMENT | DMA_CONTROL_REQUEST_APU_WRITE);
+	live.memory.writeMappedU32LE(IO_DMA_CONTROL, DMA_CONTROL_READ_INCREMENT | DMA_CONTROL_REQUEST_APU_WRITE | DMA_CONTROL_BLOCK_WORDS_16);
 	live.memory.writeMappedU32LE(IO_DMA_TRIGGER, DMA_TRIGGER_START);
 	assert.equal(live.memory.readIoU32(IO_DMA_STATUS), DMA_STATUS_BUSY);
-	serviceScheduledDmaGrant(live);
+	serviceScheduledDmaBlock(live);
 	assert.equal(live.memory.readIoU32(IO_DMA_TRANSFER_COUNT), 16);
 	assert.equal(live.memory.readIoU32(IO_APU_STATUS) & APU_STATUS_DMA_WRITE_REQUEST, 0);
 
@@ -552,7 +553,7 @@ test('APU DMA round-trip obeys FIFO timing, RAM wrap, and mid-transfer restore',
 
 	serviceScheduledSampleTransfer(live);
 	assert.equal(readLE32(live.audio.captureState().sampleRam, transferAddress), 0x5a000000);
-	serviceScheduledDmaGrant(live);
+	serviceScheduledDmaBlock(live);
 	serviceScheduledSampleTransfer(live);
 	finishDmaWriteToSampleRam(restored);
 	assert.equal(live.memory.readIoU32(IO_DMA_STATUS), DMA_STATUS_DONE);
@@ -570,7 +571,7 @@ test('APU DMA round-trip obeys FIFO timing, RAM wrap, and mid-transfer restore',
 	live.memory.writeMappedU32LE(IO_DMA_READ_ADDR, IO_APU_TRANSFER_DATA);
 	live.memory.writeMappedU32LE(IO_DMA_WRITE_ADDR, target);
 	live.memory.writeMappedU32LE(IO_DMA_TRANSFER_COUNT, 32);
-	live.memory.writeMappedU32LE(IO_DMA_CONTROL, DMA_CONTROL_WRITE_INCREMENT | DMA_CONTROL_REQUEST_APU_READ);
+	live.memory.writeMappedU32LE(IO_DMA_CONTROL, DMA_CONTROL_WRITE_INCREMENT | DMA_CONTROL_REQUEST_APU_READ | DMA_CONTROL_BLOCK_WORDS_16);
 	live.memory.writeMappedU32LE(IO_DMA_TRIGGER, DMA_TRIGGER_START);
 	assert.equal(live.memory.readIoU32(IO_DMA_STATUS), DMA_STATUS_BUSY);
 	serviceScheduledSampleTransfer(live);
@@ -578,9 +579,9 @@ test('APU DMA round-trip obeys FIFO timing, RAM wrap, and mid-transfer restore',
 	assert.equal(live.audio.captureState().sampleTransfer.fifoCount, 16);
 	live.memory.readMappedU32LE(IO_APU_TRANSFER_DATA);
 	assert.equal(live.audio.captureState().sampleTransfer.fifoCount, 16);
-	serviceScheduledDmaGrant(live);
+	serviceScheduledDmaBlock(live);
 	serviceScheduledSampleTransfer(live);
-	serviceScheduledDmaGrant(live);
+	serviceScheduledDmaBlock(live);
 	live.memory.writeMappedU32LE(IO_APU_TRANSFER_CONTROL, 0);
 	assert.equal(live.memory.readIoU32(IO_DMA_STATUS), DMA_STATUS_DONE);
 	for (let index = 0; index < 32; index += 1) {
@@ -588,7 +589,7 @@ test('APU DMA round-trip obeys FIFO timing, RAM wrap, and mid-transfer restore',
 	}
 });
 
-test('APU transfer FIFO is not consumed by a forced wrong-direction DMA grant', () => {
+test('APU transfer FIFO is not consumed by a forced wrong-direction DMA block', () => {
 	const harness = createAudioHarness();
 	harness.dma.setTiming(APU_TRANSFER_WORDS_PER_SECOND, APU_TRANSFER_WORDS_PER_SECOND * 2, 0);
 	harness.audio.setTiming(APU_TRANSFER_WORDS_PER_SECOND, 0);
@@ -602,20 +603,20 @@ test('APU transfer FIFO is not consumed by a forced wrong-direction DMA grant', 
 	harness.memory.writeMappedU32LE(IO_DMA_READ_ADDR, source);
 	harness.memory.writeMappedU32LE(IO_DMA_WRITE_ADDR, IO_APU_TRANSFER_DATA);
 	harness.memory.writeMappedU32LE(IO_DMA_TRANSFER_COUNT, 32);
-	harness.memory.writeMappedU32LE(IO_DMA_CONTROL, DMA_CONTROL_READ_INCREMENT | DMA_CONTROL_REQUEST_APU_WRITE);
+	harness.memory.writeMappedU32LE(IO_DMA_CONTROL, DMA_CONTROL_READ_INCREMENT | DMA_CONTROL_REQUEST_APU_WRITE | DMA_CONTROL_BLOCK_WORDS_16);
 	harness.memory.writeMappedU32LE(IO_DMA_TRIGGER, DMA_TRIGGER_START);
-	serviceScheduledDmaGrant(harness);
+	serviceScheduledDmaBlock(harness);
 	const before = harness.audio.captureState().sampleTransfer;
 	assert.equal(before.fifoCount, APU_TRANSFER_FIFO_WORD_CAPACITY);
 	assert.equal(before.scheduledWords, APU_TRANSFER_FIFO_WORD_CAPACITY);
 
 	harness.memory.writeMappedU32LE(IO_DMA_READ_ADDR, IO_APU_TRANSFER_DATA);
 	harness.memory.writeMappedU32LE(IO_DMA_WRITE_ADDR, target);
-	harness.memory.writeMappedU32LE(IO_DMA_CONTROL, DMA_CONTROL_WRITE_INCREMENT | DMA_CONTROL_REQUEST_FORCE);
-	serviceScheduledDmaGrant(harness);
-	const afterReverseGrant = harness.audio.captureState().sampleTransfer;
-	assert.equal(afterReverseGrant.fifoCount, APU_TRANSFER_FIFO_WORD_CAPACITY);
-	assert.equal(afterReverseGrant.scheduledWords, APU_TRANSFER_FIFO_WORD_CAPACITY);
+	harness.memory.writeMappedU32LE(IO_DMA_CONTROL, DMA_CONTROL_WRITE_INCREMENT | DMA_CONTROL_REQUEST_FORCE | DMA_CONTROL_BLOCK_WORDS_16);
+	serviceScheduledDmaBlock(harness);
+	const afterReverseBlock = harness.audio.captureState().sampleTransfer;
+	assert.equal(afterReverseBlock.fifoCount, APU_TRANSFER_FIFO_WORD_CAPACITY);
+	assert.equal(afterReverseBlock.scheduledWords, APU_TRANSFER_FIFO_WORD_CAPACITY);
 
 	serviceScheduledSampleTransfer(harness);
 	const completed = harness.audio.captureState();

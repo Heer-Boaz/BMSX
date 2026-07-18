@@ -148,24 +148,24 @@ export class ApuSampleTransfer {
 		}
 	}
 
-	public readDmaData(grantEnd: boolean): number {
+	public readDmaData(blockEnd: boolean): number {
 		if (this.mode === APU_TRANSFER_MODE_DMA_READ && this.fifoCount !== 0) {
 			this.dataLatch = this.popFifo();
 			this.memory.writeIoValue(IO_APU_TRANSFER_DATA, this.dataLatch);
 			this.updateDmaRequests();
-			if (grantEnd) {
+			if (blockEnd) {
 				this.scheduleBatch(this.scheduler.currentNowCycles());
 			}
 		}
 		return this.dataLatch;
 	}
 
-	public writeDmaData(word: number, grantEnd: boolean): void {
+	public writeDmaData(word: number, blockEnd: boolean): void {
 		this.dataLatch = word >>> 0;
 		if (this.mode === APU_TRANSFER_MODE_DMA_WRITE) {
 			this.pushFifo(this.dataLatch);
 			this.updateDmaRequests();
-			if (grantEnd) {
+			if (blockEnd) {
 				this.scheduleBatch(this.scheduler.currentNowCycles());
 			}
 		}
