@@ -175,7 +175,7 @@ void OpenGLES2Backend::registerBuiltinPasses(RenderPassLibrary& registry) {
 	CRTPipeline::registerPresentGLES2Pass(registry, m_post_pipelines->present);
 	CRTPipeline::registerCRTGLES2Pass(registry, m_post_pipelines->crt);
 
-	registerHostOverlayBackendPasses<OpenGLES2Backend, bootstrapHostOverlayGLES2, shutdownHostOverlayGLES2, beginHostOverlayGLES2, renderHost2DEntryGLES2, endHostOverlayGLES2>(registry);
+	registerHostOverlayBackendPassesWithLifecycle<OpenGLES2Backend, bootstrapHostOverlayGLES2, shutdownHostOverlayGLES2, beginHostOverlayGLES2, renderHost2DEntryGLES2, endHostOverlayGLES2>(registry);
 }
 
 OpenGLES2Backend::ProcAddress OpenGLES2Backend::resolveProcAddress(const char* name) const {

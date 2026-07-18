@@ -44,8 +44,8 @@ void renderHostMenuPass(GPUBackend* backend, GameView*, void*, RenderPassStateSt
 	End(typedBackend);
 }
 
-template<typename Backend, auto Bootstrap, auto Teardown, auto Begin, auto RenderEntry, auto End>
-void registerHostOverlayPass(RenderPassLibrary& registry) {
+template<typename Backend, auto Begin, auto RenderEntry, auto End>
+RenderPassDef makeHostOverlayPassDefinition() {
 	RenderPassDef desc;
 	desc.id = "host_overlay";
 	desc.name = "HostOverlay";
@@ -53,13 +53,9 @@ void registerHostOverlayPass(RenderPassLibrary& registry) {
 	desc.graph = RenderPassDef::RenderPassGraphDef{};
 	desc.graph->presentInput = RenderPassDef::RenderPassGraphDef::PresentInput::Auto;
 	desc.graph->writeState = writeHostOverlayPassState;
-	if constexpr (Bootstrap != nullptr) {
-		desc.bootstrap = bootstrapBackendRenderPass<Backend, Bootstrap>;
-		desc.teardown = teardownBackendRenderPass<Backend, Teardown>;
-	}
 	desc.shouldExecute = shouldExecuteHostOverlayPass;
 	desc.exec = renderHostOverlayPass<Backend, Begin, RenderEntry, End>;
-	registry.registerPass(desc);
+	return desc;
 }
 
 template<typename Backend, auto Begin, auto RenderEntry, auto End>
@@ -76,9 +72,20 @@ void registerHostMenuPass(RenderPassLibrary& registry) {
 	registry.registerPass(desc);
 }
 
-template<typename Backend, auto Bootstrap, auto Teardown, auto Begin, auto RenderEntry, auto End>
+template<typename Backend, auto Begin, auto RenderEntry, auto End>
 void registerHostOverlayBackendPasses(RenderPassLibrary& registry) {
-	registerHostOverlayPass<Backend, Bootstrap, Teardown, Begin, RenderEntry, End>(registry);
+	registry.registerPass(
+		makeHostOverlayPassDefinition<Backend, Begin, RenderEntry, End>());
+	registerHostMenuPass<Backend, Begin, RenderEntry, End>(registry);
+}
+
+template<typename Backend, auto Bootstrap, auto Teardown, auto Begin, auto RenderEntry, auto End>
+void registerHostOverlayBackendPassesWithLifecycle(RenderPassLibrary& registry) {
+	RenderPassDef desc =
+		makeHostOverlayPassDefinition<Backend, Begin, RenderEntry, End>();
+	desc.bootstrap = bootstrapBackendRenderPass<Backend, Bootstrap>;
+	desc.teardown = teardownBackendRenderPass<Backend, Teardown>;
+	registry.registerPass(desc);
 	registerHostMenuPass<Backend, Begin, RenderEntry, End>(registry);
 }
 
