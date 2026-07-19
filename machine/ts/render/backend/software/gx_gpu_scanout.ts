@@ -29,9 +29,8 @@ let interlacedValid = false;
 let interlacedVramReplacementSerial = 0n;
 
 const GENERIC_CIRCUIT_WRITE_RGBA = 0;
-const GENERIC_CIRCUIT_WRITE_RGB = 1;
-const GENERIC_CIRCUIT_WRITE_ALPHA = 2;
-const GENERIC_CIRCUIT_BLEND = 3;
+const GENERIC_CIRCUIT_BLEND_ALPHA = 1;
+const GENERIC_CIRCUIT_BLEND_PRESERVE_ALPHA = 2;
 
 function rawWordAtAddress(address: number): number {
 	return gxGpuSoftwareVram[address & (GX_GPU_VRAM_WORD_COUNT - 1)];
@@ -77,9 +76,9 @@ function circuitPixel(circuit: GxGpuPcrtcCircuit, sourceX: number, sourceY: numb
 		return rgb555Color(word) | ((word & 0x8000) !== 0 ? 0x80000000 : 0);
 	}
 	if (circuit.framebufferPsm === GX_GPU_PSGPU24) {
-		return rawByteAtAddress(gxGpuLocalMemoryByteAddressGpu24(circuit.framebufferBaseWord, circuit.framebufferWidth, sourceX, sourceY, 0))
-			| (rawByteAtAddress(gxGpuLocalMemoryByteAddressGpu24(circuit.framebufferBaseWord, circuit.framebufferWidth, sourceX, sourceY, 1)) << 8)
-			| (rawByteAtAddress(gxGpuLocalMemoryByteAddressGpu24(circuit.framebufferBaseWord, circuit.framebufferWidth, sourceX, sourceY, 2)) << 16)
+		return rawByteAtAddress(gxGpuLocalMemoryByteAddressGpu24(circuit.framebufferBaseWord, circuit.framebufferPagesPerRow, sourceX, sourceY, 0))
+			| (rawByteAtAddress(gxGpuLocalMemoryByteAddressGpu24(circuit.framebufferBaseWord, circuit.framebufferPagesPerRow, sourceX, sourceY, 1)) << 8)
+			| (rawByteAtAddress(gxGpuLocalMemoryByteAddressGpu24(circuit.framebufferBaseWord, circuit.framebufferPagesPerRow, sourceX, sourceY, 2)) << 16)
 			| 0x80000000;
 	}
 	if (circuit.framebufferPsm === GX_GPU_PSMGX16) {
@@ -136,7 +135,8 @@ function writeGx16RgbRows(
 	circuit: GxGpuPcrtcCircuit,
 	firstRow: number,
 	rowStep: number,
-	writeSourceAlpha: boolean,
+	outputAlphaMask: number,
+	constantOutputAlpha: number,
 ): void {
 	const left = circuit.displayX < state.width ? circuit.displayX : state.width;
 	const right = circuit.displayRight < state.width ? circuit.displayRight : state.width;
@@ -149,7 +149,7 @@ function writeGx16RgbRows(
 		let output = outputY * state.width + left;
 		for (let outputX = left; outputX < right; outputX += 1) {
 			const word = rawWordAtAddress(address);
-			const alpha = writeSourceAlpha ? (word & 0x8000) << 16 : target[output] & 0xff000000;
+			const alpha = (target[output] & outputAlphaMask) | constantOutputAlpha;
 			target[output] = (rgb555Color(word) | alpha) >>> 0;
 			address += 1;
 			output += 1;
@@ -157,10 +157,11 @@ function writeGx16RgbRows(
 	}
 }
 
-function writeGx16AlphaRows(
+function writeGx16ConstantAlphaRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
 	circuit: GxGpuPcrtcCircuit,
+	outputAlpha: number,
 	firstRow: number,
 	rowStep: number,
 ): void {
@@ -169,13 +170,9 @@ function writeGx16AlphaRows(
 	if (left >= right) return;
 	for (let outputY = firstRow; outputY < state.height; outputY += rowStep) {
 		if (outputY < circuit.displayY || outputY >= circuit.displayBottom) continue;
-		let address = circuit.framebufferBaseWord
-			+ gx16SourceY(circuit, state.pcrtcScanout, outputY) * circuit.framebufferWidth
-			+ circuit.framebufferX + left - circuit.displayX;
 		let output = outputY * state.width + left;
 		for (let outputX = left; outputX < right; outputX += 1) {
-			target[output] = (target[output] & 0x00ffffff) | ((rawWordAtAddress(address) & 0x8000) << 16);
-			address += 1;
+			target[output] = (target[output] & 0x00ffffff) | outputAlpha;
 			output += 1;
 		}
 	}
@@ -189,6 +186,7 @@ function writeGx16SourceAlphaRows(
 	firstRow: number,
 	rowStep: number,
 ): void {
+	const outputAlphaMask = preserveOutputAlpha ? 0xff000000 : 0;
 	const left = circuit.displayX < state.width ? circuit.displayX : state.width;
 	const right = circuit.displayRight < state.width ? circuit.displayRight : state.width;
 	if (left >= right) return;
@@ -203,9 +201,8 @@ function writeGx16SourceAlphaRows(
 			const sourceMask = -(word >>> 15);
 			const destination = target[output];
 			const rgb = (rgb555Color(word) & sourceMask) | (destination & ~sourceMask & 0x00ffffff);
-			const outputAlpha = preserveOutputAlpha
-				? destination & 0xff000000
-				: (word & 0x8000) << 16;
+			const outputAlpha = (destination & outputAlphaMask)
+				| (sourceMask & ~outputAlphaMask & 0xff000000);
 			target[output] = (rgb | outputAlpha) >>> 0;
 			address += 1;
 			output += 1;
@@ -222,6 +219,8 @@ function writeGx16BlendedRows(
 	firstRow: number,
 	rowStep: number,
 ): void {
+	const outputAlphaMask = preserveOutputAlpha ? 0xff000000 : 0;
+	const constantOutputAlpha = preserveOutputAlpha ? 0 : alpha << 24;
 	const left = circuit.displayX < state.width ? circuit.displayX : state.width;
 	const right = circuit.displayRight < state.width ? circuit.displayRight : state.width;
 	if (left >= right) return;
@@ -233,7 +232,7 @@ function writeGx16BlendedRows(
 		let output = outputY * state.width + left;
 		for (let outputX = left; outputX < right; outputX += 1) {
 			const word = rawWordAtAddress(address);
-			const outputAlpha = preserveOutputAlpha ? target[output] & 0xff000000 : (word & 0x8000) << 16;
+			const outputAlpha = (target[output] & outputAlphaMask) | constantOutputAlpha;
 			target[output] = blendOutputRgba(target[output], rgb555Color(word), alpha, outputAlpha);
 			address += 1;
 			output += 1;
@@ -250,34 +249,34 @@ function writeGx16OutputRows(
 	const scanout = state.pcrtcScanout;
 	const circuit1 = scanout.circuits[0];
 	const circuit2 = scanout.circuits[1];
-	if (scanout.rgbUnderlayFromCircuit2 && scanout.circuit2CoversOutput) {
-		if (scanout.outputAlphaFromCircuit2) {
-			writeGx16CircuitRows(state, target, circuit2, firstRow, rowStep);
-		} else {
-			writeGx16RgbRows(state, target, circuit2, firstRow, rowStep, false);
-		}
+	if (scanout.circuit2SampleRequired && scanout.circuit2CoversOutput) {
+		writeGx16CircuitRows(state, target, circuit2, firstRow, rowStep);
 	} else {
 		fillBackgroundRows(state, target, firstRow, rowStep);
-		if (scanout.rgbUnderlayFromCircuit2) {
-			writeGx16RgbRows(state, target, circuit2, firstRow, rowStep, scanout.outputAlphaFromCircuit2);
-		} else if (scanout.outputAlphaFromCircuit2 && circuit2.enabled) {
-			writeGx16AlphaRows(state, target, circuit2, firstRow, rowStep);
-		}
+		if (scanout.circuit2SampleRequired) writeGx16CircuitRows(state, target, circuit2, firstRow, rowStep);
 	}
 	if (!circuit1.enabled) return;
 	if (!scanout.blendAlphaFromRegister) {
-		writeGx16SourceAlphaRows(state, target, circuit1, scanout.outputAlphaFromCircuit2, firstRow, rowStep);
+		writeGx16SourceAlphaRows(state, target, circuit1, scanout.preserveUnderlayAlpha, firstRow, rowStep);
 		return;
 	}
 	if (scanout.blendAlpha === 0) {
-		if (!scanout.outputAlphaFromCircuit2) writeGx16AlphaRows(state, target, circuit1, firstRow, rowStep);
+		if (!scanout.preserveUnderlayAlpha) writeGx16ConstantAlphaRows(state, target, circuit1, 0, firstRow, rowStep);
 		return;
 	}
 	if (scanout.blendAlpha === 255) {
-		writeGx16RgbRows(state, target, circuit1, firstRow, rowStep, !scanout.outputAlphaFromCircuit2);
+		writeGx16RgbRows(
+			state,
+			target,
+			circuit1,
+			firstRow,
+			rowStep,
+			scanout.preserveUnderlayAlpha ? 0xff000000 : 0,
+			scanout.preserveUnderlayAlpha ? 0 : 0xff000000,
+		);
 		return;
 	}
-	writeGx16BlendedRows(state, target, circuit1, scanout.blendAlpha, scanout.outputAlphaFromCircuit2, firstRow, rowStep);
+	writeGx16BlendedRows(state, target, circuit1, scanout.blendAlpha, scanout.preserveUnderlayAlpha, firstRow, rowStep);
 }
 
 function writeGenericCircuitRows(
@@ -309,38 +308,15 @@ function writeGenericCircuitRows(
 		let sourceX = sourceXStart;
 		let sourceRemainder = sourceRemainderStart;
 		let output = outputY * state.width + left;
-		if (operation === GENERIC_CIRCUIT_BLEND) {
+		if (operation !== GENERIC_CIRCUIT_WRITE_RGBA) {
+			const outputAlphaMask = operation === GENERIC_CIRCUIT_BLEND_PRESERVE_ALPHA ? 0xff000000 : 0;
 			for (let outputX = left; outputX < right; outputX += 1) {
 				const source = circuitPixel(circuit, sourceX, sourceY);
 				let blendAlpha = scanout.blendAlphaFromRegister ? scanout.blendAlpha : source >>> 23 & 0x1fe;
 				if (blendAlpha > 255) blendAlpha = 255;
-				const outputAlpha = scanout.outputAlphaFromCircuit2
-					? target[output] & 0xff000000
-					: source & 0xff000000;
+				const outputAlpha = (target[output] & outputAlphaMask)
+					| ((blendAlpha << 24) & ~outputAlphaMask);
 				target[output] = blendOutputRgba(target[output], source, blendAlpha, outputAlpha);
-				sourceX += circuit.sourceAdvanceX;
-				sourceRemainder += circuit.sourceRemainderStepX;
-				if (sourceRemainder >= circuit.magnificationX) {
-					sourceRemainder -= circuit.magnificationX;
-					sourceX += 1;
-				}
-				output += 1;
-			}
-		} else if (operation === GENERIC_CIRCUIT_WRITE_RGBA) {
-			for (let outputX = left; outputX < right; outputX += 1) {
-				target[output] = circuitPixel(circuit, sourceX, sourceY) >>> 0;
-				sourceX += circuit.sourceAdvanceX;
-				sourceRemainder += circuit.sourceRemainderStepX;
-				if (sourceRemainder >= circuit.magnificationX) {
-					sourceRemainder -= circuit.magnificationX;
-					sourceX += 1;
-				}
-				output += 1;
-			}
-		} else if (operation === GENERIC_CIRCUIT_WRITE_RGB) {
-			for (let outputX = left; outputX < right; outputX += 1) {
-				const source = circuitPixel(circuit, sourceX, sourceY);
-				target[output] = (source & 0x00ffffff) | (target[output] & 0xff000000);
 				sourceX += circuit.sourceAdvanceX;
 				sourceRemainder += circuit.sourceRemainderStepX;
 				if (sourceRemainder >= circuit.magnificationX) {
@@ -351,8 +327,7 @@ function writeGenericCircuitRows(
 			}
 		} else {
 			for (let outputX = left; outputX < right; outputX += 1) {
-				const source = circuitPixel(circuit, sourceX, sourceY);
-				target[output] = (target[output] & 0x00ffffff) | (source & 0xff000000);
+				target[output] = circuitPixel(circuit, sourceX, sourceY) >>> 0;
 				sourceX += circuit.sourceAdvanceX;
 				sourceRemainder += circuit.sourceRemainderStepX;
 				if (sourceRemainder >= circuit.magnificationX) {
@@ -373,20 +348,27 @@ function writeGenericOutputRows(
 ): void {
 	const scanout = state.pcrtcScanout;
 	fillBackgroundRows(state, target, firstRow, rowStep);
-	if (scanout.rgbUnderlayFromCircuit2) {
+	if (scanout.circuit2SampleRequired) {
 		writeGenericCircuitRows(
 			state,
 			target,
 			scanout.circuits[1],
-			scanout.outputAlphaFromCircuit2 ? GENERIC_CIRCUIT_WRITE_RGBA : GENERIC_CIRCUIT_WRITE_RGB,
+			GENERIC_CIRCUIT_WRITE_RGBA,
 			firstRow,
 			rowStep,
 		);
-	} else if (scanout.outputAlphaFromCircuit2 && scanout.circuits[1].enabled) {
-		writeGenericCircuitRows(state, target, scanout.circuits[1], GENERIC_CIRCUIT_WRITE_ALPHA, firstRow, rowStep);
 	}
 	if (scanout.circuits[0].enabled) {
-		writeGenericCircuitRows(state, target, scanout.circuits[0], GENERIC_CIRCUIT_BLEND, firstRow, rowStep);
+		writeGenericCircuitRows(
+			state,
+			target,
+			scanout.circuits[0],
+			scanout.preserveUnderlayAlpha
+				? GENERIC_CIRCUIT_BLEND_PRESERVE_ALPHA
+				: GENERIC_CIRCUIT_BLEND_ALPHA,
+			firstRow,
+			rowStep,
+		);
 	}
 }
 
@@ -397,12 +379,14 @@ function writeOutputRows(
 	rowStep: number,
 ): void {
 	if (state.pcrtcScanout.compositionPath === GX_GPU_PCRTC_COMPOSE_GX16_DIRECT_CIRCUIT1) {
-		writeGx16CircuitRows(
+		writeGx16RgbRows(
 			state,
 			target,
 			state.pcrtcScanout.circuits[0],
 			firstRow,
 			rowStep,
+			0,
+			0xff000000,
 		);
 		return;
 	}

@@ -102,8 +102,10 @@ int localMemoryAddress16(int baseWord, int pagesPerRow, int x, int y, bool signe
 	return wrapPowerOfTwo(baseWord + wrapPowerOfTwo(page, 256) * 4096 + block * 128 + localMemoryColumn16(pageX, pageY), 1048576);
 }
 
-int localMemoryByteAddressGpu24(int baseWord, int framebufferWidth, int pixelX, int y, int channel) {
-	return wrapPowerOfTwo(baseWord * 2 + (y * framebufferWidth + pixelX) * 3 + channel, 2097152);
+int localMemoryByteAddressGpu24(int baseWord, int pagesPerRow, int pixelX, int y, int channel) {
+	int logicalByte = pixelX * 3 + channel;
+	int wordAddress = localMemoryAddress16(baseWord, pagesPerRow, logicalByte / 2, y, false);
+	return wrapPowerOfTwo(wordAddress * 2 + wrapPowerOfTwo(logicalByte, 2), 2097152);
 }
 
 bool circuitContainsOutput(ivec4 display, ivec4 extent, int outputX, int outputY) {
@@ -143,9 +145,9 @@ ivec4 circuitPixel(ivec4 framebuffer, ivec4 display, ivec4 extentPhase, ivec4 sa
 	}
 	if (framebuffer.z == 18) {
 		return ivec4(
-			rawByteAtAddress(localMemoryByteAddressGpu24(framebuffer.x, framebuffer.y, sourceX, sourceY, 0)),
-			rawByteAtAddress(localMemoryByteAddressGpu24(framebuffer.x, framebuffer.y, sourceX, sourceY, 1)),
-			rawByteAtAddress(localMemoryByteAddressGpu24(framebuffer.x, framebuffer.y, sourceX, sourceY, 2)),
+			rawByteAtAddress(localMemoryByteAddressGpu24(framebuffer.x, pagesPerRow, sourceX, sourceY, 0)),
+			rawByteAtAddress(localMemoryByteAddressGpu24(framebuffer.x, pagesPerRow, sourceX, sourceY, 1)),
+			rawByteAtAddress(localMemoryByteAddressGpu24(framebuffer.x, pagesPerRow, sourceX, sourceY, 2)),
 			128);
 	}
 	if (framebuffer.z == 31) {
@@ -156,13 +158,11 @@ ivec4 circuitPixel(ivec4 framebuffer, ivec4 display, ivec4 extentPhase, ivec4 sa
 }
 
 ivec4 mergedPixel(int outputX, int outputY) {
-	ivec4 under = ivec4(u_pcrtc[1].yzw, 0);
+	ivec4 under = ivec4(u_pcrtc[1].yzw, u_pcrtc[2].z);
 	bool circuit2ContainsOutput = u_pcrtc[0].y != 0
 		&& circuitContainsOutput(u_pcrtc[8], u_pcrtc[9], outputX, outputY);
 	if (circuit2ContainsOutput) {
-		ivec4 circuit2 = circuitPixel(u_pcrtc[7], u_pcrtc[8], u_pcrtc[9], u_pcrtc[10], outputX, outputY);
-		if (u_pcrtc[2].y != 0) under.rgb = circuit2.rgb;
-		if (u_pcrtc[0].w != 0) under.a = circuit2.a;
+		under = circuitPixel(u_pcrtc[7], u_pcrtc[8], u_pcrtc[9], u_pcrtc[10], outputX, outputY);
 	}
 	if (u_pcrtc[0].x == 0 || !circuitContainsOutput(u_pcrtc[4], u_pcrtc[5], outputX, outputY)) {
 		return under;
@@ -175,12 +175,13 @@ ivec4 mergedPixel(int outputX, int outputY) {
 		(circuit1.g * alpha + under.g * inverseAlpha + 127) / 255,
 		(circuit1.b * alpha + under.b * inverseAlpha + 127) / 255
 	);
-	return ivec4(rgb, u_pcrtc[0].w != 0 ? under.a : circuit1.a);
+	return ivec4(rgb, u_pcrtc[0].w != 0 ? under.a : alpha);
 }
 
 vec4 outputPixel(int outputX, int outputY) {
 #if defined(GX_GPU_SCANOUT_GX16_DIRECT)
-	return vec4(circuitPixel(u_pcrtc[3], u_pcrtc[4], u_pcrtc[5], u_pcrtc[6], outputX, outputY)) / 255.0;
+	ivec4 circuit1 = circuitPixel(u_pcrtc[3], u_pcrtc[4], u_pcrtc[5], u_pcrtc[6], outputX, outputY);
+	return vec4(ivec4(circuit1.rgb, 255)) / 255.0;
 #else
 	return vec4(mergedPixel(outputX, outputY)) / 255.0;
 #endif

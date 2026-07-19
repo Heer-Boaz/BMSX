@@ -3079,14 +3079,14 @@ void writeGxGpuScanoutPcrtcUniforms(const GxGpuPcrtcScanout& scanout) {
 	g_scanoutPcrtcUniforms[0] = scanout.circuits[0u].enabled ? 1 : 0;
 	g_scanoutPcrtcUniforms[1] = scanout.circuit2SampleRequired ? 1 : 0;
 	g_scanoutPcrtcUniforms[2] = scanout.blendAlphaFromRegister ? 1 : 0;
-	g_scanoutPcrtcUniforms[3] = scanout.outputAlphaFromCircuit2 ? 1 : 0;
+	g_scanoutPcrtcUniforms[3] = scanout.preserveUnderlayAlpha ? 1 : 0;
 	g_scanoutPcrtcUniforms[4] = static_cast<GLint>(scanout.outputHeight);
 	g_scanoutPcrtcUniforms[5] = static_cast<GLint>(scanout.backgroundColor & 0xffu);
 	g_scanoutPcrtcUniforms[6] = static_cast<GLint>((scanout.backgroundColor >> 8u) & 0xffu);
 	g_scanoutPcrtcUniforms[7] = static_cast<GLint>((scanout.backgroundColor >> 16u) & 0xffu);
 	g_scanoutPcrtcUniforms[8] = static_cast<GLint>(scanout.blendAlpha);
-	g_scanoutPcrtcUniforms[9] = scanout.rgbUnderlayFromCircuit2 ? 1 : 0;
-	g_scanoutPcrtcUniforms[10] = 0;
+	g_scanoutPcrtcUniforms[9] = 0;
+	g_scanoutPcrtcUniforms[10] = static_cast<GLint>(scanout.backgroundColor >> 24u);
 	g_scanoutPcrtcUniforms[11] = 0;
 	for (u32 circuit = 0u; circuit < 2u; circuit += 1u) {
 		const size_t offset = 12u + static_cast<size_t>(circuit) * 16u;
@@ -3186,7 +3186,7 @@ void scanoutInterlacedGxGpuVram(GLuint frameFbo, const GxGpuPipelineState& state
 			static_cast<GLfloat>(state.pcrtcScanout->backgroundColor & 0xffu) / 255.0f,
 			static_cast<GLfloat>((state.pcrtcScanout->backgroundColor >> 8u) & 0xffu) / 255.0f,
 			static_cast<GLfloat>((state.pcrtcScanout->backgroundColor >> 16u) & 0xffu) / 255.0f,
-			0.0f);
+			static_cast<GLfloat>(state.pcrtcScanout->backgroundColor >> 24u) / 255.0f);
 		glClear(GL_COLOR_BUFFER_BIT);
 	}
 	glViewport(0, fieldOffset, width, fieldHeight);

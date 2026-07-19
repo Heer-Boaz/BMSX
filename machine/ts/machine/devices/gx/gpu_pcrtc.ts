@@ -285,8 +285,7 @@ export class GxGpuPcrtcScanout {
 	public backgroundColor = 0;
 	public blendAlpha = 0;
 	public blendAlphaFromRegister = false;
-	public outputAlphaFromCircuit2 = false;
-	public rgbUnderlayFromCircuit2 = false;
+	public preserveUnderlayAlpha = false;
 	public circuit2SampleRequired = false;
 	public circuit2CoversOutput = false;
 	public interlaced = false;
@@ -388,13 +387,12 @@ export class GxGpuPcrtcScanout {
 				&& signalStepX === circuit.magnificationX
 				&& circuit.magnificationY === 1;
 		}
-		this.backgroundColor = words[GX_GPU_PCRTC_BGCOLOR_LOW]! & 0x00ffffff;
 		this.blendAlpha = (pmode >>> GX_GPU_PCRTC_PMODE_ALP_SHIFT) & 0xff;
+		this.backgroundColor = (words[GX_GPU_PCRTC_BGCOLOR_LOW]! & 0x00ffffff)
+			| (this.blendAlpha << 24);
 		this.blendAlphaFromRegister = (pmode & GX_GPU_PCRTC_PMODE_MMOD) !== 0;
-		this.outputAlphaFromCircuit2 = (pmode & GX_GPU_PCRTC_PMODE_AMOD) !== 0;
-		this.rgbUnderlayFromCircuit2 = circuit2.enabled && (pmode & GX_GPU_PCRTC_PMODE_SLBG) === 0;
-		this.circuit2SampleRequired = circuit2.enabled
-			&& (this.rgbUnderlayFromCircuit2 || this.outputAlphaFromCircuit2);
+		this.preserveUnderlayAlpha = (pmode & GX_GPU_PCRTC_PMODE_AMOD) !== 0;
+		this.circuit2SampleRequired = circuit2.enabled && (pmode & GX_GPU_PCRTC_PMODE_SLBG) === 0;
 		this.interlaced = (smode2 & GX_GPU_PCRTC_SMODE2_INT) !== 0;
 		this.frameMode = this.interlaced && (smode2 & GX_GPU_PCRTC_SMODE2_FFMD) !== 0;
 		for (const circuit of this.circuits) {
@@ -423,7 +421,7 @@ export class GxGpuPcrtcScanout {
 			&& circuit1.framebufferPsm === GX_GPU_PSMGX16
 			&& this.blendAlphaFromRegister
 			&& this.blendAlpha === 255
-			&& !this.outputAlphaFromCircuit2
+			&& !this.preserveUnderlayAlpha
 			&& circuit1CoversOutput) {
 			this.compositionPath = GX_GPU_PCRTC_COMPOSE_GX16_DIRECT_CIRCUIT1;
 		} else if ((!circuit1.enabled || circuit1.linearSampling && circuit1.framebufferPsm === GX_GPU_PSMGX16)

@@ -92,10 +92,12 @@ export function gxGpuLocalMemoryAddressGx16(
 
 export function gxGpuLocalMemoryByteAddressGpu24(
 	baseWord: number,
-	framebufferWidth: number,
+	pagesPerRow: number,
 	pixelX: number,
 	y: number,
 	channel: number,
 ): number {
-	return ((baseWord << 1) + (y * framebufferWidth + pixelX) * 3 + channel) & GX_GPU_VRAM_BYTE_MASK;
+	const logicalByte = pixelX * 3 + channel;
+	const wordAddress = gxGpuLocalMemoryAddress16(baseWord, pagesPerRow, logicalByte >>> 1, y);
+	return ((wordAddress << 1) | (logicalByte & 1)) & GX_GPU_VRAM_BYTE_MASK;
 }

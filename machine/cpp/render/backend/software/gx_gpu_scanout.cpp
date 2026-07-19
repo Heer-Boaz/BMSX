@@ -24,9 +24,8 @@ InterlacedScanoutState g_interlacedScanout;
 
 enum class GenericCircuitOperation : u32 {
 	WriteRgba,
-	WriteRgb,
-	WriteAlpha,
-	Blend,
+	BlendAlpha,
+	BlendPreserveAlpha,
 };
 
 inline u32 rawWordAtAddress(u32 address) {
@@ -68,11 +67,11 @@ u32 circuitPixel(
 	}
 	if (circuit.framebufferPsm == GX_GPU_PSGPU24) {
 		return rawByteAtAddress(gxGpuLocalMemoryByteAddressGpu24(
-				circuit.framebufferBaseWord, circuit.framebufferWidth, sourceX, sourceY, 0u))
+				circuit.framebufferBaseWord, circuit.framebufferPagesPerRow, sourceX, sourceY, 0u))
 			| (rawByteAtAddress(gxGpuLocalMemoryByteAddressGpu24(
-				circuit.framebufferBaseWord, circuit.framebufferWidth, sourceX, sourceY, 1u)) << 8u)
+				circuit.framebufferBaseWord, circuit.framebufferPagesPerRow, sourceX, sourceY, 1u)) << 8u)
 			| (rawByteAtAddress(gxGpuLocalMemoryByteAddressGpu24(
-				circuit.framebufferBaseWord, circuit.framebufferWidth, sourceX, sourceY, 2u)) << 16u)
+				circuit.framebufferBaseWord, circuit.framebufferPagesPerRow, sourceX, sourceY, 2u)) << 16u)
 			| 0x80000000u;
 	}
 	if (circuit.framebufferPsm == GX_GPU_PSMGX16) {
@@ -156,7 +155,8 @@ void writeGx16RgbRows(
 	const GxGpuPcrtcCircuit& circuit,
 	i32 firstRow,
 	i32 rowStep,
-	bool writeSourceAlpha) {
+	u32 outputAlphaMask,
+	u32 constantOutputAlpha) {
 	const u32 outputWidth = static_cast<u32>(state.width);
 	const u32 left = circuit.displayX < outputWidth ? circuit.displayX : outputWidth;
 	const u32 right = circuit.displayRight < outputWidth ? circuit.displayRight : outputWidth;
@@ -170,7 +170,7 @@ void writeGx16RgbRows(
 		u32* output = pixels + static_cast<size_t>(outputY) * static_cast<size_t>(pixelsPerRow) + left;
 		for (u32 outputX = left; outputX < right; outputX += 1u) {
 			const u32 word = rawWordAtAddress(address);
-			const u32 alpha = writeSourceAlpha ? (word & 0x8000u) << 16u : *output & 0xff000000u;
+			const u32 alpha = (*output & outputAlphaMask) | constantOutputAlpha;
 			*output = outputArgb(rgb555Color(word)) | alpha;
 			address += 1u;
 			output += 1;
@@ -178,11 +178,12 @@ void writeGx16RgbRows(
 	}
 }
 
-void writeGx16AlphaRows(
+void writeGx16ConstantAlphaRows(
 	u32* pixels,
 	i32 pixelsPerRow,
 	const GxGpuPipelineState& state,
 	const GxGpuPcrtcCircuit& circuit,
+	u32 outputAlpha,
 	i32 firstRow,
 	i32 rowStep) {
 	const u32 outputWidth = static_cast<u32>(state.width);
@@ -192,13 +193,9 @@ void writeGx16AlphaRows(
 	for (i32 outputY = firstRow; outputY < state.height; outputY += rowStep) {
 		const u32 y = static_cast<u32>(outputY);
 		if (y < circuit.displayY || y >= circuit.displayBottom) continue;
-		u32 address = circuit.framebufferBaseWord
-			+ gx16SourceY(circuit, *state.pcrtcScanout, y) * circuit.framebufferWidth
-			+ circuit.framebufferX + left - circuit.displayX;
 		u32* output = pixels + static_cast<size_t>(outputY) * static_cast<size_t>(pixelsPerRow) + left;
 		for (u32 outputX = left; outputX < right; outputX += 1u) {
-			*output = (*output & 0x00ffffffu) | ((rawWordAtAddress(address) & 0x8000u) << 16u);
-			address += 1u;
+			*output = (*output & 0x00ffffffu) | outputAlpha;
 			output += 1;
 		}
 	}
@@ -212,6 +209,7 @@ void writeGx16SourceAlphaRows(
 	bool preserveOutputAlpha,
 	i32 firstRow,
 	i32 rowStep) {
+	const u32 outputAlphaMask = preserveOutputAlpha ? 0xff000000u : 0u;
 	const u32 outputWidth = static_cast<u32>(state.width);
 	const u32 left = circuit.displayX < outputWidth ? circuit.displayX : outputWidth;
 	const u32 right = circuit.displayRight < outputWidth ? circuit.displayRight : outputWidth;
@@ -229,9 +227,8 @@ void writeGx16SourceAlphaRows(
 			const u32 destination = *output;
 			const u32 rgb = (outputArgb(rgb555Color(word)) & sourceMask)
 				| (destination & ~sourceMask & 0x00ffffffu);
-			const u32 outputAlpha = preserveOutputAlpha
-				? destination & 0xff000000u
-				: (word & 0x8000u) << 16u;
+			const u32 outputAlpha = (destination & outputAlphaMask)
+				| (sourceMask & ~outputAlphaMask & 0xff000000u);
 			*output = rgb | outputAlpha;
 			address += 1u;
 			output += 1;
@@ -248,6 +245,8 @@ void writeGx16BlendedRows(
 	bool preserveOutputAlpha,
 	i32 firstRow,
 	i32 rowStep) {
+	const u32 outputAlphaMask = preserveOutputAlpha ? 0xff000000u : 0u;
+	const u32 constantOutputAlpha = preserveOutputAlpha ? 0u : alpha << 24u;
 	const u32 outputWidth = static_cast<u32>(state.width);
 	const u32 left = circuit.displayX < outputWidth ? circuit.displayX : outputWidth;
 	const u32 right = circuit.displayRight < outputWidth ? circuit.displayRight : outputWidth;
@@ -261,7 +260,7 @@ void writeGx16BlendedRows(
 		u32* output = pixels + static_cast<size_t>(outputY) * static_cast<size_t>(pixelsPerRow) + left;
 		for (u32 outputX = left; outputX < right; outputX += 1u) {
 			const u32 word = rawWordAtAddress(address);
-			const u32 outputAlpha = preserveOutputAlpha ? *output & 0xff000000u : (word & 0x8000u) << 16u;
+			const u32 outputAlpha = (*output & outputAlphaMask) | constantOutputAlpha;
 			*output = blendOutputArgb(*output, rgb555Color(word), alpha, outputAlpha);
 			address += 1u;
 			output += 1;
@@ -278,36 +277,38 @@ void writeGx16OutputRows(
 	const GxGpuPcrtcScanout& scanout = *state.pcrtcScanout;
 	const GxGpuPcrtcCircuit& circuit1 = scanout.circuits[0u];
 	const GxGpuPcrtcCircuit& circuit2 = scanout.circuits[1u];
-	if (scanout.rgbUnderlayFromCircuit2 && scanout.circuit2CoversOutput) {
-		if (scanout.outputAlphaFromCircuit2) {
-			writeGx16CircuitRows(pixels, pixelsPerRow, state, circuit2, firstRow, rowStep);
-		} else {
-			writeGx16RgbRows(pixels, pixelsPerRow, state, circuit2, firstRow, rowStep, false);
-		}
+	if (scanout.circuit2SampleRequired && scanout.circuit2CoversOutput) {
+		writeGx16CircuitRows(pixels, pixelsPerRow, state, circuit2, firstRow, rowStep);
 	} else {
 		fillBackgroundRows(pixels, pixelsPerRow, state, firstRow, rowStep);
-		if (scanout.rgbUnderlayFromCircuit2) {
-			writeGx16RgbRows(pixels, pixelsPerRow, state, circuit2, firstRow, rowStep, scanout.outputAlphaFromCircuit2);
-		} else if (scanout.outputAlphaFromCircuit2 && circuit2.enabled) {
-			writeGx16AlphaRows(pixels, pixelsPerRow, state, circuit2, firstRow, rowStep);
+		if (scanout.circuit2SampleRequired) {
+			writeGx16CircuitRows(pixels, pixelsPerRow, state, circuit2, firstRow, rowStep);
 		}
 	}
 	if (!circuit1.enabled) return;
 	if (!scanout.blendAlphaFromRegister) {
-		writeGx16SourceAlphaRows(pixels, pixelsPerRow, state, circuit1, scanout.outputAlphaFromCircuit2, firstRow, rowStep);
+		writeGx16SourceAlphaRows(pixels, pixelsPerRow, state, circuit1, scanout.preserveUnderlayAlpha, firstRow, rowStep);
 		return;
 	}
 	if (scanout.blendAlpha == 0u) {
-		if (!scanout.outputAlphaFromCircuit2) {
-			writeGx16AlphaRows(pixels, pixelsPerRow, state, circuit1, firstRow, rowStep);
+		if (!scanout.preserveUnderlayAlpha) {
+			writeGx16ConstantAlphaRows(pixels, pixelsPerRow, state, circuit1, 0u, firstRow, rowStep);
 		}
 		return;
 	}
 	if (scanout.blendAlpha == 255u) {
-		writeGx16RgbRows(pixels, pixelsPerRow, state, circuit1, firstRow, rowStep, !scanout.outputAlphaFromCircuit2);
+		writeGx16RgbRows(
+			pixels,
+			pixelsPerRow,
+			state,
+			circuit1,
+			firstRow,
+			rowStep,
+			scanout.preserveUnderlayAlpha ? 0xff000000u : 0u,
+			scanout.preserveUnderlayAlpha ? 0u : 0xff000000u);
 		return;
 	}
-	writeGx16BlendedRows(pixels, pixelsPerRow, state, circuit1, scanout.blendAlpha, scanout.outputAlphaFromCircuit2, firstRow, rowStep);
+	writeGx16BlendedRows(pixels, pixelsPerRow, state, circuit1, scanout.blendAlpha, scanout.preserveUnderlayAlpha, firstRow, rowStep);
 }
 
 void writeGenericCircuitRows(
@@ -341,38 +342,17 @@ void writeGenericCircuitRows(
 		u32 sourceX = sourceXStart;
 		u32 sourceRemainder = sourceRemainderStart;
 		u32* output = pixels + static_cast<size_t>(outputY) * static_cast<size_t>(pixelsPerRow) + left;
-		if (operation == GenericCircuitOperation::Blend) {
+		if (operation != GenericCircuitOperation::WriteRgba) {
+			const u32 outputAlphaMask = operation == GenericCircuitOperation::BlendPreserveAlpha
+				? 0xff000000u
+				: 0u;
 			for (u32 outputX = left; outputX < right; outputX += 1u) {
 				const u32 source = circuitPixel(circuit, sourceX, sourceY);
 				u32 blendAlpha = scanout.blendAlphaFromRegister ? scanout.blendAlpha : (source >> 23u) & 0x1feu;
 				if (blendAlpha > 255u) blendAlpha = 255u;
-				const u32 outputAlpha = scanout.outputAlphaFromCircuit2
-					? *output & 0xff000000u
-					: source & 0xff000000u;
+				const u32 outputAlpha = (*output & outputAlphaMask)
+					| ((blendAlpha << 24u) & ~outputAlphaMask);
 				*output = blendOutputArgb(*output, source, blendAlpha, outputAlpha);
-				sourceX += circuit.sourceAdvanceX;
-				sourceRemainder += circuit.sourceRemainderStepX;
-				if (sourceRemainder >= circuit.magnificationX) {
-					sourceRemainder -= circuit.magnificationX;
-					sourceX += 1u;
-				}
-				output += 1;
-			}
-		} else if (operation == GenericCircuitOperation::WriteRgba) {
-			for (u32 outputX = left; outputX < right; outputX += 1u) {
-				*output = outputArgb(circuitPixel(circuit, sourceX, sourceY));
-				sourceX += circuit.sourceAdvanceX;
-				sourceRemainder += circuit.sourceRemainderStepX;
-				if (sourceRemainder >= circuit.magnificationX) {
-					sourceRemainder -= circuit.magnificationX;
-					sourceX += 1u;
-				}
-				output += 1;
-			}
-		} else if (operation == GenericCircuitOperation::WriteRgb) {
-			for (u32 outputX = left; outputX < right; outputX += 1u) {
-				const u32 source = circuitPixel(circuit, sourceX, sourceY);
-				*output = (outputArgb(source) & 0x00ffffffu) | (*output & 0xff000000u);
 				sourceX += circuit.sourceAdvanceX;
 				sourceRemainder += circuit.sourceRemainderStepX;
 				if (sourceRemainder >= circuit.magnificationX) {
@@ -383,8 +363,7 @@ void writeGenericCircuitRows(
 			}
 		} else {
 			for (u32 outputX = left; outputX < right; outputX += 1u) {
-				const u32 source = circuitPixel(circuit, sourceX, sourceY);
-				*output = (*output & 0x00ffffffu) | (source & 0xff000000u);
+				*output = outputArgb(circuitPixel(circuit, sourceX, sourceY));
 				sourceX += circuit.sourceAdvanceX;
 				sourceRemainder += circuit.sourceRemainderStepX;
 				if (sourceRemainder >= circuit.magnificationX) {
@@ -405,24 +384,13 @@ void writeGenericOutputRows(
 	i32 rowStep) {
 	const GxGpuPcrtcScanout& scanout = *state.pcrtcScanout;
 	fillBackgroundRows(pixels, pixelsPerRow, state, firstRow, rowStep);
-	if (scanout.rgbUnderlayFromCircuit2) {
+	if (scanout.circuit2SampleRequired) {
 		writeGenericCircuitRows(
 			pixels,
 			pixelsPerRow,
 			state,
 			scanout.circuits[1u],
-			scanout.outputAlphaFromCircuit2
-				? GenericCircuitOperation::WriteRgba
-				: GenericCircuitOperation::WriteRgb,
-			firstRow,
-			rowStep);
-	} else if (scanout.outputAlphaFromCircuit2 && scanout.circuits[1u].enabled) {
-		writeGenericCircuitRows(
-			pixels,
-			pixelsPerRow,
-			state,
-			scanout.circuits[1u],
-			GenericCircuitOperation::WriteAlpha,
+			GenericCircuitOperation::WriteRgba,
 			firstRow,
 			rowStep);
 	}
@@ -432,7 +400,9 @@ void writeGenericOutputRows(
 			pixelsPerRow,
 			state,
 			scanout.circuits[0u],
-			GenericCircuitOperation::Blend,
+			scanout.preserveUnderlayAlpha
+				? GenericCircuitOperation::BlendPreserveAlpha
+				: GenericCircuitOperation::BlendAlpha,
 			firstRow,
 			rowStep);
 	}
@@ -445,13 +415,15 @@ void writeOutputRows(
 	i32 firstRow,
 	i32 rowStep) {
 	if (state.pcrtcScanout->compositionPath == GX_GPU_PCRTC_COMPOSE_GX16_DIRECT_CIRCUIT1) {
-		writeGx16CircuitRows(
+		writeGx16RgbRows(
 			pixels,
 			pixelsPerRow,
 			state,
 			state.pcrtcScanout->circuits[0u],
 			firstRow,
-			rowStep);
+			rowStep,
+			0u,
+			0xff000000u);
 		return;
 	}
 	if (state.pcrtcScanout->compositionPath == GX_GPU_PCRTC_COMPOSE_GX16) {

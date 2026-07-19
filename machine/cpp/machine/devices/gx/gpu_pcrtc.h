@@ -148,8 +148,7 @@ struct GxGpuPcrtcScanout {
 	u32 backgroundColor = 0u;
 	u32 blendAlpha = 0u;
 	bool blendAlphaFromRegister = false;
-	bool outputAlphaFromCircuit2 = false;
-	bool rgbUnderlayFromCircuit2 = false;
+	bool preserveUnderlayAlpha = false;
 	bool circuit2SampleRequired = false;
 	bool circuit2CoversOutput = false;
 	bool interlaced = false;

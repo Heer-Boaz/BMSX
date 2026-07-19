@@ -188,12 +188,11 @@ void GxGpuPcrtcScanout::update(
 			&& signalStepX == circuit.magnificationX
 			&& circuit.magnificationY == 1u;
 	}
-	backgroundColor = words[GX_GPU_PCRTC_BGCOLOR_LOW] & 0x00ffffffu;
 	blendAlpha = (pmode >> GX_GPU_PCRTC_PMODE_ALP_SHIFT) & 0xffu;
+	backgroundColor = (words[GX_GPU_PCRTC_BGCOLOR_LOW] & 0x00ffffffu) | (blendAlpha << 24u);
 	blendAlphaFromRegister = (pmode & GX_GPU_PCRTC_PMODE_MMOD) != 0u;
-	outputAlphaFromCircuit2 = (pmode & GX_GPU_PCRTC_PMODE_AMOD) != 0u;
-	rgbUnderlayFromCircuit2 = circuit2.enabled && (pmode & GX_GPU_PCRTC_PMODE_SLBG) == 0u;
-	circuit2SampleRequired = circuit2.enabled && (rgbUnderlayFromCircuit2 || outputAlphaFromCircuit2);
+	preserveUnderlayAlpha = (pmode & GX_GPU_PCRTC_PMODE_AMOD) != 0u;
+	circuit2SampleRequired = circuit2.enabled && (pmode & GX_GPU_PCRTC_PMODE_SLBG) == 0u;
 	interlaced = (smode2 & GX_GPU_PCRTC_SMODE2_INT) != 0u;
 	frameMode = interlaced && (smode2 & GX_GPU_PCRTC_SMODE2_FFMD) != 0u;
 	for (GxGpuPcrtcCircuit& circuit : circuits) {
@@ -220,7 +219,7 @@ void GxGpuPcrtcScanout::update(
 		&& circuit1.framebufferPsm == GX_GPU_PSMGX16
 		&& blendAlphaFromRegister
 		&& blendAlpha == 255u
-		&& !outputAlphaFromCircuit2
+		&& !preserveUnderlayAlpha
 		&& circuit1CoversOutput) {
 		compositionPath = GX_GPU_PCRTC_COMPOSE_GX16_DIRECT_CIRCUIT1;
 	} else if ((!circuit1.enabled || (circuit1.linearSampling && circuit1.framebufferPsm == GX_GPU_PSMGX16))

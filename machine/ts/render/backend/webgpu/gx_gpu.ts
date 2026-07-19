@@ -2122,14 +2122,14 @@ function writeGxGpuScanoutUniforms(scanout: GxGpuPcrtcScanout): void {
 	scanoutUniformScratch[0] = scanout.circuits[0].enabled ? 1 : 0;
 	scanoutUniformScratch[1] = scanout.circuit2SampleRequired ? 1 : 0;
 	scanoutUniformScratch[2] = scanout.blendAlphaFromRegister ? 1 : 0;
-	scanoutUniformScratch[3] = scanout.outputAlphaFromCircuit2 ? 1 : 0;
+	scanoutUniformScratch[3] = scanout.preserveUnderlayAlpha ? 1 : 0;
 	scanoutUniformScratch[4] = scanout.outputHeight;
 	scanoutUniformScratch[5] = scanout.backgroundColor & 0xff;
 	scanoutUniformScratch[6] = scanout.backgroundColor >>> 8 & 0xff;
 	scanoutUniformScratch[7] = scanout.backgroundColor >>> 16 & 0xff;
 	scanoutUniformScratch[8] = scanout.blendAlpha;
-	scanoutUniformScratch[9] = scanout.rgbUnderlayFromCircuit2 ? 1 : 0;
-	scanoutUniformScratch[10] = 0;
+	scanoutUniformScratch[9] = 0;
+	scanoutUniformScratch[10] = scanout.backgroundColor >>> 24;
 	scanoutUniformScratch[11] = 0;
 	for (let circuit = 0; circuit < 2; circuit += 1) {
 		const offset = 12 + circuit * 16;
@@ -2249,7 +2249,7 @@ function scanoutInterlacedGxGpuVram(state: RenderPassStateRegistry['gx_gpu']): v
 			r: (state.pcrtcScanout.backgroundColor & 0xff) / 255,
 			g: (state.pcrtcScanout.backgroundColor >>> 8 & 0xff) / 255,
 			b: (state.pcrtcScanout.backgroundColor >>> 16 & 0xff) / 255,
-			a: 0,
+			a: (state.pcrtcScanout.backgroundColor >>> 24) / 255,
 		};
 	}
 	gxGpuState.scanoutFieldsColorAttachment!.loadOp = invalid ? 'clear' : 'load';

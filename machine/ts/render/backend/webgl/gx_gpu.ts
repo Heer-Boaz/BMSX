@@ -2574,14 +2574,14 @@ function writeGxGpuScanoutPcrtcUniforms(scanout: GxGpuPcrtcScanout): void {
 	gxGpuScanoutPcrtcUniforms[0] = scanout.circuits[0].enabled ? 1 : 0;
 	gxGpuScanoutPcrtcUniforms[1] = scanout.circuit2SampleRequired ? 1 : 0;
 	gxGpuScanoutPcrtcUniforms[2] = scanout.blendAlphaFromRegister ? 1 : 0;
-	gxGpuScanoutPcrtcUniforms[3] = scanout.outputAlphaFromCircuit2 ? 1 : 0;
+	gxGpuScanoutPcrtcUniforms[3] = scanout.preserveUnderlayAlpha ? 1 : 0;
 	gxGpuScanoutPcrtcUniforms[4] = scanout.outputHeight;
 	gxGpuScanoutPcrtcUniforms[5] = scanout.backgroundColor & 0xff;
 	gxGpuScanoutPcrtcUniforms[6] = scanout.backgroundColor >>> 8 & 0xff;
 	gxGpuScanoutPcrtcUniforms[7] = scanout.backgroundColor >>> 16 & 0xff;
 	gxGpuScanoutPcrtcUniforms[8] = scanout.blendAlpha;
-	gxGpuScanoutPcrtcUniforms[9] = scanout.rgbUnderlayFromCircuit2 ? 1 : 0;
-	gxGpuScanoutPcrtcUniforms[10] = 0;
+	gxGpuScanoutPcrtcUniforms[9] = 0;
+	gxGpuScanoutPcrtcUniforms[10] = scanout.backgroundColor >>> 24;
 	gxGpuScanoutPcrtcUniforms[11] = 0;
 	for (let circuit = 0; circuit < 2; circuit += 1) {
 		const offset = 12 + circuit * 16;
@@ -2686,7 +2686,7 @@ function scanoutInterlacedGxGpuVram(fbo: WebGLFramebuffer, state: RenderPassStat
 			(state.pcrtcScanout.backgroundColor & 0xff) / 255,
 			(state.pcrtcScanout.backgroundColor >>> 8 & 0xff) / 255,
 			(state.pcrtcScanout.backgroundColor >>> 16 & 0xff) / 255,
-			0,
+			(state.pcrtcScanout.backgroundColor >>> 24) / 255,
 		);
 		gl.clear(gl.COLOR_BUFFER_BIT);
 	}
