@@ -3363,6 +3363,13 @@ void testPcrtcExecutesMmodAndAmodAgainstFullCircuitAlpha() {
 	pcrtcWords[bmsx::GX_GPU_PCRTC_PMODE_LOW] |= bmsx::GX_GPU_PCRTC_PMODE_AMOD;
 	pcrtcTiming.update(pcrtcWords);
 	pcrtcScanout.update(pcrtcWords, pcrtcTiming);
+	require(pcrtcScanout.circuits[0u].samplePath == bmsx::GX_GPU_PCRTC_STORAGE_CT32
+		&& pcrtcScanout.circuits[1u].samplePath == bmsx::GX_GPU_PCRTC_STORAGE_CT32,
+		"GX-GPU PCRTC retains both constant-alpha CT32 sample paths");
+	require(pcrtcScanout.circuit1OutputPath == bmsx::GX_GPU_PCRTC_SCANOUT_DRAW_BLEND_CONSTANT_RGB
+		&& pcrtcScanout.circuit2OutputPath == bmsx::GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGBA
+		&& pcrtcScanout.compositionPath == bmsx::GX_GPU_PCRTC_COMPOSE_GENERIC,
+		"GX-GPU PCRTC retains the fused constant-alpha AMOD output paths");
 	bmsx::scanoutGxGpuSoftwareVram(backend, state);
 	require(framebuffer[0u] == 0x28232d37u, "GX-GPU PCRTC AMOD preserves circuit-two alpha with constant-alpha RGB blend");
 }
@@ -3435,6 +3442,17 @@ void testSoftwareScanoutWeavesCurrent480iFieldIntoRetainedOutputLines() {
 	bmsx::scanoutGxGpuSoftwareVram(backend, state);
 	pcrtcWords[bmsx::GX_GPU_PCRTC_SMODE2_LOW] = bmsx::GX_GPU_PCRTC_SMODE2_INT | bmsx::GX_GPU_PCRTC_SMODE2_FFMD;
 	pcrtcScanout.update(pcrtcWords, pcrtcTiming);
+	require(pcrtcScanout.circuits[0u].samplePath == bmsx::GX_GPU_PCRTC_SAMPLE_LINEAR_GX16,
+		"GX-GPU PCRTC retains the linear GX16 sample path");
+	require(pcrtcScanout.evenFieldHeight == 2u
+		&& pcrtcScanout.oddFieldHeight == 2u
+		&& pcrtcScanout.fieldHeight == 2u
+		&& pcrtcScanout.fieldOffset == 0u,
+		"GX-GPU PCRTC retains even-field output geometry");
+	require(pcrtcScanout.circuits[0u].fieldDisplayY == 0u
+		&& pcrtcScanout.circuits[0u].fieldDisplayLineStart == 0u
+		&& pcrtcScanout.circuits[0u].fieldDisplayLineCount == 2u,
+		"GX-GPU PCRTC retains even-field circuit display lines");
 	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(1023, 510)] = 0x001fu;
 	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(1023, 511)] = 0x7c00u;
 	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(1023, 512)] = 0x03e0u;
@@ -3454,6 +3472,12 @@ void testSoftwareScanoutWeavesCurrent480iFieldIntoRetainedOutputLines() {
 	bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(1023, 513)] = 0x03e0u;
 	state.statusWord = 0u;
 	pcrtcScanout.setField(1u);
+	require(pcrtcScanout.fieldHeight == 2u && pcrtcScanout.fieldOffset == 2u,
+		"GX-GPU PCRTC retains odd-field output geometry");
+	require(pcrtcScanout.circuits[0u].fieldDisplayY == 1u
+		&& pcrtcScanout.circuits[0u].fieldDisplayLineStart == 0u
+		&& pcrtcScanout.circuits[0u].fieldDisplayLineCount == 2u,
+		"GX-GPU PCRTC retains odd-field circuit display lines");
 	bmsx::scanoutGxGpuSoftwareVram(backend, state);
 
 	require(framebuffer == std::array<uint32_t, 4u>{

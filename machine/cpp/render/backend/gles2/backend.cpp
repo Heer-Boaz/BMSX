@@ -697,11 +697,21 @@ GLuint OpenGLES2Backend::buildProgram(
 	const char* shaderDefines,
 	std::span<const GLES2AttributeBinding> attributeBindings) {
 	const GLuint vertexShader = compileShader(GL_VERTEX_SHADER, vertexShaderSource, label, "vertex", shaderDefines);
-	const GLuint fragmentShader = compileShader(GL_FRAGMENT_SHADER, fragmentShaderSource, label, "fragment", shaderDefines);
-	const GLuint program = linkProgram(vertexShader, fragmentShader, label, attributeBindings);
-	glDeleteShader(vertexShader);
-	glDeleteShader(fragmentShader);
-	return program;
+	try {
+		const GLuint fragmentShader = compileShader(GL_FRAGMENT_SHADER, fragmentShaderSource, label, "fragment", shaderDefines);
+		try {
+			const GLuint program = linkProgram(vertexShader, fragmentShader, label, attributeBindings);
+			glDeleteShader(fragmentShader);
+			glDeleteShader(vertexShader);
+			return program;
+		} catch (...) {
+			glDeleteShader(fragmentShader);
+			throw;
+		}
+	} catch (...) {
+		glDeleteShader(vertexShader);
+		throw;
+	}
 }
 
 GLuint OpenGLES2Backend::compileShader(
@@ -729,9 +739,14 @@ GLuint OpenGLES2Backend::buildProgramWithVertexShader(
 	std::span<const GLES2AttributeBinding> attributeBindings) {
 	const GLuint fragmentShader = compileShader(
 		GL_FRAGMENT_SHADER, fragmentShaderSource, label, "fragment", shaderDefines);
-	const GLuint program = linkProgram(vertexShader, fragmentShader, label, attributeBindings);
-	glDeleteShader(fragmentShader);
-	return program;
+	try {
+		const GLuint program = linkProgram(vertexShader, fragmentShader, label, attributeBindings);
+		glDeleteShader(fragmentShader);
+		return program;
+	} catch (...) {
+		glDeleteShader(fragmentShader);
+		throw;
+	}
 }
 
 }  // namespace bmsx

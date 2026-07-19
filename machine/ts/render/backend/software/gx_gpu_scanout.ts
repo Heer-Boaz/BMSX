@@ -22,30 +22,6 @@ function fillBackgroundRows(state: GxGpuPipelineState, target: Uint32Array, firs
 	}
 }
 
-function writeGx16OutputRows(
-	state: GxGpuPipelineState,
-	target: Uint32Array,
-	firstRow: number,
-	rowStep: number,
-): void {
-	const scanout = state.pcrtcScanout;
-	if (scanout.backgroundRequired) fillBackgroundRows(state, target, firstRow, rowStep);
-	writeGx16CircuitRows(state, target, scanout.circuits[1], scanout.circuit2OutputPath);
-	writeGx16CircuitRows(state, target, scanout.circuits[0], scanout.circuit1OutputPath);
-}
-
-function writeGenericOutputRows(
-	state: GxGpuPipelineState,
-	target: Uint32Array,
-	firstRow: number,
-	rowStep: number,
-): void {
-	const scanout = state.pcrtcScanout;
-	if (scanout.backgroundRequired) fillBackgroundRows(state, target, firstRow, rowStep);
-	writeGenericCircuitRows(state, target, scanout.circuits[1], scanout.circuit2OutputPath);
-	writeGenericCircuitRows(state, target, scanout.circuits[0], scanout.circuit1OutputPath);
-}
-
 function writeOutputRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
@@ -57,11 +33,12 @@ function writeOutputRows(
 		writeGx16CircuitRows(state, target, scanout.circuits[0], scanout.circuit1OutputPath);
 		return;
 	}
-	if (scanout.compositionPath === GX_GPU_PCRTC_COMPOSE_GX16) {
-		writeGx16OutputRows(state, target, firstRow, rowStep);
-		return;
-	}
-	writeGenericOutputRows(state, target, firstRow, rowStep);
+	if (scanout.backgroundRequired) fillBackgroundRows(state, target, firstRow, rowStep);
+	const writeCircuitRows = scanout.compositionPath === GX_GPU_PCRTC_COMPOSE_GX16
+		? writeGx16CircuitRows
+		: writeGenericCircuitRows;
+	writeCircuitRows(state, target, scanout.circuits[1], scanout.circuit2OutputPath);
+	writeCircuitRows(state, target, scanout.circuits[0], scanout.circuit1OutputPath);
 }
 
 function scanoutInterlacedVram(state: GxGpuPipelineState, target: Uint32Array): void {

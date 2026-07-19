@@ -485,6 +485,7 @@ export class WebGLBackend implements GPUBackend {
 		}
 		return shader;
 	}
+	// Program linking borrows both shaders; the compiling build operation owns deletion.
 	linkProgram(vertexShader: WebGLShader, fragmentShader: WebGLShader, label: string): WebGLProgram {
 		const gl = this.gl;
 		const program = gl.createProgram()!;
@@ -498,6 +499,7 @@ export class WebGLBackend implements GPUBackend {
 		}
 		return program;
 	}
+	// Shared-vertex builds borrow the vertex shader and own the fragment shader they compile.
 	buildProgramWithVertexShader(
 		vertexShader: WebGLShader,
 		fragmentSource: string,
@@ -507,18 +509,25 @@ export class WebGLBackend implements GPUBackend {
 		const fragmentShader = this.compileShader(
 			this.gl.FRAGMENT_SHADER, fragmentSource, label, 'fs', shaderDefines,
 		);
-		const program = this.linkProgram(vertexShader, fragmentShader, label);
-		this.gl.deleteShader(fragmentShader);
-		return program;
+		try {
+			return this.linkProgram(vertexShader, fragmentShader, label);
+		} finally {
+			this.gl.deleteShader(fragmentShader);
+		}
 	}
 	buildProgram(vsSource: string, fsSource: string, label: string, shaderDefines = ''): WebGLProgram {
 		const gl = this.gl;
 		const vertexShader = this.compileShader(gl.VERTEX_SHADER, vsSource, label, 'vs', shaderDefines);
-		const fragmentShader = this.compileShader(gl.FRAGMENT_SHADER, fsSource, label, 'fs', shaderDefines);
-		const program = this.linkProgram(vertexShader, fragmentShader, label);
-		gl.deleteShader(vertexShader);
-		gl.deleteShader(fragmentShader);
-		return program;
+		try {
+			const fragmentShader = this.compileShader(gl.FRAGMENT_SHADER, fsSource, label, 'fs', shaderDefines);
+			try {
+				return this.linkProgram(vertexShader, fragmentShader, label);
+			} finally {
+				gl.deleteShader(fragmentShader);
+			}
+		} finally {
+			gl.deleteShader(vertexShader);
+		}
 	}
 
 	// --- Optional buffer/VAO helpers ---

@@ -100,16 +100,6 @@ constexpr std::array<f32, kGxGpuScanoutFloatCount> g_scanoutVertices{
 	3.0f, -1.0f,
 	-1.0f, 3.0f,
 };
-std::array<std::array<GLint, 20u>, 2u> g_scanoutCircuitUniforms{};
-u32 g_scanoutCircuitUniformRevision = 0u;
-i32 g_scanoutCircuitUniformField = -1;
-bool g_scanoutCircuitUniformValid = false;
-u32 g_scanoutFixedStateRevision = 0u;
-bool g_scanoutFixedStateValid = false;
-GLfloat g_scanoutBackgroundRed = 0.0f;
-GLfloat g_scanoutBackgroundGreen = 0.0f;
-GLfloat g_scanoutBackgroundBlue = 0.0f;
-GLfloat g_scanoutBlendAlpha = 0.0f;
 
 struct GxGpuVramCopyRect {
 	i32 left = 0;
@@ -343,6 +333,16 @@ struct GxGpuRuntime {
 	GLint scanoutWeaveInterlaceUniform = -1;
 	GLint readbackParamsUniform = -1;
 	GLint readbackVramYAddressExtensionUniform = -1;
+	std::array<std::array<GLint, 20u>, 2u> scanoutCircuitWords{};
+	u32 scanoutCircuitWordRevision = 0u;
+	i32 scanoutCircuitWordField = -1;
+	bool scanoutCircuitWordsValid = false;
+	u32 scanoutFixedStateRevision = 0u;
+	bool scanoutFixedStateValid = false;
+	GLfloat scanoutBackgroundRed = 0.0f;
+	GLfloat scanoutBackgroundGreen = 0.0f;
+	GLfloat scanoutBackgroundBlue = 0.0f;
+	GLfloat scanoutBlendAlpha = 0.0f;
 	std::array<u32, kGxGpuScanoutProgramCount> scanoutUniformRevisions{};
 	std::array<i8, kGxGpuScanoutProgramCount> scanoutUniformCircuits{};
 	std::array<u32, kGxGpuScanoutProgramCount> scanoutFieldUniformRevisions{};
@@ -393,56 +393,61 @@ void initGxGpu(OpenGLES2Backend& backend) {
 	g_gxGpu.transferProgram = g_gxGpu.backend->buildProgram(kGxGpuTransferVertexShader, kGxGpuTransferFragmentShader, "gx_gpu_transfer");
 	const GLuint scanoutVertexShader = g_gxGpu.backend->compileShader(
 		GL_VERTEX_SHADER, kGxGpuScanoutVertexShader, "gx_gpu_scanout_shared", "vertex");
-	for (size_t program = 0u; program < kGxGpuScanoutProgramCount; program += 1u) {
-		const size_t storageProgram = program % kGxGpuScanoutProgramStorageCount;
-		const size_t storagePath = storageProgram == static_cast<size_t>(GX_GPU_PCRTC_SAMPLE_LINEAR_GX16)
-			? static_cast<size_t>(GX_GPU_PCRTC_STORAGE_GX16)
-			: storageProgram;
-		char defines[160]{};
-		const int baseLength = std::snprintf(
-			defines,
-			sizeof(defines),
-			"#define GX_GPU_SCANOUT_STORAGE_PATH %zu\n",
-			storagePath);
-		size_t defineLength = static_cast<size_t>(baseLength);
-		if (storageProgram == static_cast<size_t>(GX_GPU_PCRTC_SAMPLE_LINEAR_GX16)) {
-			defineLength += static_cast<size_t>(std::snprintf(
-				defines + defineLength,
-				sizeof(defines) - defineLength,
-				"#define GX_GPU_SCANOUT_LINEAR_GX16 1\n"));
+	try {
+		for (size_t program = 0u; program < kGxGpuScanoutProgramCount; program += 1u) {
+			const size_t storageProgram = program % kGxGpuScanoutProgramStorageCount;
+			const size_t storagePath = storageProgram == static_cast<size_t>(GX_GPU_PCRTC_SAMPLE_LINEAR_GX16)
+				? static_cast<size_t>(GX_GPU_PCRTC_STORAGE_GX16)
+				: storageProgram;
+			char defines[160]{};
+			const int baseLength = std::snprintf(
+				defines,
+				sizeof(defines),
+				"#define GX_GPU_SCANOUT_STORAGE_PATH %zu\n",
+				storagePath);
+			size_t defineLength = static_cast<size_t>(baseLength);
+			if (storageProgram == static_cast<size_t>(GX_GPU_PCRTC_SAMPLE_LINEAR_GX16)) {
+				defineLength += static_cast<size_t>(std::snprintf(
+					defines + defineLength,
+					sizeof(defines) - defineLength,
+					"#define GX_GPU_SCANOUT_LINEAR_GX16 1\n"));
+			}
+			if (program >= kGxGpuScanoutDoubleAlphaProgramBase) {
+				std::snprintf(
+					defines + defineLength,
+					sizeof(defines) - defineLength,
+					"#define GX_GPU_SCANOUT_DOUBLE_ALPHA 1\n");
+			}
+			char label[64]{};
+			std::snprintf(label, sizeof(label), "gx_gpu_scanout_%zu", program);
+			g_gxGpu.scanoutPrograms[program] = g_gxGpu.backend->buildProgramWithVertexShader(
+				scanoutVertexShader, kGxGpuScanoutFragmentShader, label, defines, kGxGpuScanoutAttributeBindings);
+			char fieldDefines[200]{};
+			std::snprintf(fieldDefines, sizeof(fieldDefines), "%s%s", kGxGpuInterlacedFieldShaderDefine, defines);
+			std::snprintf(label, sizeof(label), "gx_gpu_scanout_field_%zu", program);
+			g_gxGpu.scanoutFieldPrograms[program] = g_gxGpu.backend->buildProgramWithVertexShader(
+				scanoutVertexShader, kGxGpuScanoutFragmentShader, label, fieldDefines, kGxGpuScanoutAttributeBindings);
 		}
-		if (program >= kGxGpuScanoutDoubleAlphaProgramBase) {
-			std::snprintf(
-				defines + defineLength,
-				sizeof(defines) - defineLength,
-				"#define GX_GPU_SCANOUT_DOUBLE_ALPHA 1\n");
-		}
-		char label[64]{};
-		std::snprintf(label, sizeof(label), "gx_gpu_scanout_%zu", program);
-		g_gxGpu.scanoutPrograms[program] = g_gxGpu.backend->buildProgramWithVertexShader(
-			scanoutVertexShader, kGxGpuScanoutFragmentShader, label, defines, kGxGpuScanoutAttributeBindings);
-		char fieldDefines[200]{};
-		std::snprintf(fieldDefines, sizeof(fieldDefines), "%s%s", kGxGpuInterlacedFieldShaderDefine, defines);
-		std::snprintf(label, sizeof(label), "gx_gpu_scanout_field_%zu", program);
-		g_gxGpu.scanoutFieldPrograms[program] = g_gxGpu.backend->buildProgramWithVertexShader(
-			scanoutVertexShader, kGxGpuScanoutFragmentShader, label, fieldDefines, kGxGpuScanoutAttributeBindings);
+		constexpr char kGxGpuScanoutWeaveDefines[] =
+			"#define GX_GPU_INTERLACED_WEAVE 1\n"
+			"#define GX_GPU_SCANOUT_STORAGE_PATH 6\n";
+		g_gxGpu.scanoutWeaveProgram = g_gxGpu.backend->buildProgramWithVertexShader(
+			scanoutVertexShader,
+			kGxGpuScanoutFragmentShader,
+			"gx_gpu_scanout_weave",
+			kGxGpuScanoutWeaveDefines,
+			kGxGpuScanoutAttributeBindings);
+		g_gxGpu.readbackProgram = g_gxGpu.backend->buildProgramWithVertexShader(
+			scanoutVertexShader,
+			kGxGpuReadbackFragmentShader,
+			"gx_gpu_readback",
+			nullptr,
+			kGxGpuScanoutAttributeBindings);
+		glDeleteShader(scanoutVertexShader);
+	} catch (...) {
+		glDeleteShader(scanoutVertexShader);
+		throw;
 	}
-	constexpr char kGxGpuScanoutWeaveDefines[] =
-		"#define GX_GPU_INTERLACED_WEAVE 1\n"
-		"#define GX_GPU_SCANOUT_STORAGE_PATH 6\n";
-	g_gxGpu.scanoutWeaveProgram = g_gxGpu.backend->buildProgramWithVertexShader(
-		scanoutVertexShader,
-		kGxGpuScanoutFragmentShader,
-		"gx_gpu_scanout_weave",
-		kGxGpuScanoutWeaveDefines,
-		kGxGpuScanoutAttributeBindings);
-	g_gxGpu.readbackProgram = g_gxGpu.backend->buildProgramWithVertexShader(
-		scanoutVertexShader,
-		kGxGpuReadbackFragmentShader,
-		"gx_gpu_readback",
-		nullptr,
-		kGxGpuScanoutAttributeBindings);
-	glDeleteShader(scanoutVertexShader);
 
 	initializeGxGpuTexture(g_gxGpu.vramTexture, kGxGpuScanoutTextureUnit, kGxGpuVramWidth, kGxGpuVramHeight);
 	initializeGxGpuTexture(g_gxGpu.vramSampleTexture, kGxGpuTextureSampleUnit, kGxGpuVramWidth, kGxGpuVramHeight);
@@ -577,10 +582,6 @@ void initGxGpu(OpenGLES2Backend& backend) {
 	g_gxGpu.scanoutFieldUniformFields.fill(-1);
 	g_gxGpu.scanoutFieldInterlaceFields.fill(-1);
 	g_gxGpu.scanoutFieldsValid = false;
-	g_scanoutCircuitUniformRevision = 0u;
-	g_scanoutCircuitUniformField = -1;
-	g_scanoutCircuitUniformValid = false;
-	g_scanoutFixedStateValid = false;
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
@@ -3149,22 +3150,22 @@ void writeGxGpuScanoutCircuitUniforms(
 
 void prepareGxGpuScanoutState(const GxGpuPcrtcScanout& scanout) {
 	const i32 field = scanout.interlaced ? static_cast<i32>(scanout.field) : -1;
-	if (!g_scanoutCircuitUniformValid
-		|| g_scanoutCircuitUniformRevision != scanout.revision
-		|| g_scanoutCircuitUniformField != field) {
-		writeGxGpuScanoutCircuitUniforms(g_scanoutCircuitUniforms[0u], scanout, scanout.circuits[0u]);
-		writeGxGpuScanoutCircuitUniforms(g_scanoutCircuitUniforms[1u], scanout, scanout.circuits[1u]);
-		g_scanoutCircuitUniformRevision = scanout.revision;
-		g_scanoutCircuitUniformField = field;
-		g_scanoutCircuitUniformValid = true;
+	if (!g_gxGpu.scanoutCircuitWordsValid
+		|| g_gxGpu.scanoutCircuitWordRevision != scanout.revision
+		|| g_gxGpu.scanoutCircuitWordField != field) {
+		writeGxGpuScanoutCircuitUniforms(g_gxGpu.scanoutCircuitWords[0u], scanout, scanout.circuits[0u]);
+		writeGxGpuScanoutCircuitUniforms(g_gxGpu.scanoutCircuitWords[1u], scanout, scanout.circuits[1u]);
+		g_gxGpu.scanoutCircuitWordRevision = scanout.revision;
+		g_gxGpu.scanoutCircuitWordField = field;
+		g_gxGpu.scanoutCircuitWordsValid = true;
 	}
-	if (!g_scanoutFixedStateValid || g_scanoutFixedStateRevision != scanout.revision) {
-		g_scanoutBackgroundRed = static_cast<GLfloat>(scanout.backgroundColor & 0xffu) / 255.0f;
-		g_scanoutBackgroundGreen = static_cast<GLfloat>((scanout.backgroundColor >> 8u) & 0xffu) / 255.0f;
-		g_scanoutBackgroundBlue = static_cast<GLfloat>((scanout.backgroundColor >> 16u) & 0xffu) / 255.0f;
-		g_scanoutBlendAlpha = static_cast<GLfloat>(scanout.blendAlpha) / 255.0f;
-		g_scanoutFixedStateRevision = scanout.revision;
-		g_scanoutFixedStateValid = true;
+	if (!g_gxGpu.scanoutFixedStateValid || g_gxGpu.scanoutFixedStateRevision != scanout.revision) {
+		g_gxGpu.scanoutBackgroundRed = static_cast<GLfloat>(scanout.backgroundColor & 0xffu) / 255.0f;
+		g_gxGpu.scanoutBackgroundGreen = static_cast<GLfloat>((scanout.backgroundColor >> 8u) & 0xffu) / 255.0f;
+		g_gxGpu.scanoutBackgroundBlue = static_cast<GLfloat>((scanout.backgroundColor >> 16u) & 0xffu) / 255.0f;
+		g_gxGpu.scanoutBlendAlpha = static_cast<GLfloat>(scanout.blendAlpha) / 255.0f;
+		g_gxGpu.scanoutFixedStateRevision = scanout.revision;
+		g_gxGpu.scanoutFixedStateValid = true;
 	}
 }
 
@@ -3180,7 +3181,7 @@ void publishGxGpuScanoutCircuitUniforms(
 			glUniform4iv(
 				g_gxGpu.scanoutFieldCircuitUniforms[programIndex],
 				5,
-				g_scanoutCircuitUniforms[circuitIndex].data());
+				g_gxGpu.scanoutCircuitWords[circuitIndex].data());
 			g_gxGpu.scanoutFieldUniformCircuits[programIndex] = static_cast<i8>(circuitIndex);
 			g_gxGpu.scanoutFieldUniformFields[programIndex] = static_cast<i8>(scanout.field);
 			g_gxGpu.scanoutFieldUniformRevisions[programIndex] = scanout.revision;
@@ -3203,7 +3204,7 @@ void publishGxGpuScanoutCircuitUniforms(
 		glUniform4iv(
 			g_gxGpu.scanoutCircuitUniforms[programIndex],
 			5,
-			g_scanoutCircuitUniforms[circuitIndex].data());
+			g_gxGpu.scanoutCircuitWords[circuitIndex].data());
 		g_gxGpu.scanoutUniformCircuits[programIndex] = static_cast<i8>(circuitIndex);
 		g_gxGpu.scanoutUniformRevisions[programIndex] = scanout.revision;
 	}
@@ -3239,12 +3240,12 @@ void drawGxGpuScanoutPass(
 		glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_FALSE);
 	} else if (drawPath == GX_GPU_PCRTC_SCANOUT_DRAW_BLEND_CONSTANT_RGB) {
 		glEnable(GL_BLEND);
-		glBlendColor(0.0f, 0.0f, 0.0f, g_scanoutBlendAlpha);
+		glBlendColor(0.0f, 0.0f, 0.0f, g_gxGpu.scanoutBlendAlpha);
 		glBlendFunc(GL_CONSTANT_ALPHA, GL_ONE_MINUS_CONSTANT_ALPHA);
 		glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_FALSE);
 	} else if (drawPath == GX_GPU_PCRTC_SCANOUT_DRAW_BLEND_CONSTANT_RGBA) {
 		glEnable(GL_BLEND);
-		glBlendColor(0.0f, 0.0f, 0.0f, g_scanoutBlendAlpha);
+		glBlendColor(0.0f, 0.0f, 0.0f, g_gxGpu.scanoutBlendAlpha);
 		glBlendFuncSeparate(GL_CONSTANT_ALPHA, GL_ONE_MINUS_CONSTANT_ALPHA, GL_ONE, GL_ZERO);
 		glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 	}
@@ -3283,14 +3284,6 @@ void drawGxGpuScanoutCircuit(
 }
 
 void prepareGxGpuScanoutDraw() {
-	glBindBuffer(GL_ARRAY_BUFFER, g_gxGpu.scanoutVertexBuffer);
-	glEnableVertexAttribArray(kGxGpuScanoutPositionAttrib);
-	glVertexAttribPointer(kGxGpuScanoutPositionAttrib, 2, GL_FLOAT, GL_FALSE, kGxGpuScanoutVertexStride, nullptr);
-}
-
-void scanoutProgressiveGxGpuVram(GLuint frameFbo, const GxGpuPipelineState& state) {
-	const GxGpuPcrtcScanout& scanout = *state.pcrtcScanout;
-	g_gxGpu.backend->setRenderTarget(frameFbo, state.width, state.height);
 	glDisable(GL_SCISSOR_TEST);
 	glDisable(GL_DEPTH_TEST);
 	glDepthMask(GL_FALSE);
@@ -3299,9 +3292,17 @@ void scanoutProgressiveGxGpuVram(GLuint frameFbo, const GxGpuPipelineState& stat
 	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 	g_gxGpu.backend->setActiveTextureUnit(kGxGpuScanoutTextureUnit);
 	g_gxGpu.backend->bindTexture2D(&g_gxGpu.vramTexture);
+	glBindBuffer(GL_ARRAY_BUFFER, g_gxGpu.scanoutVertexBuffer);
+	glEnableVertexAttribArray(kGxGpuScanoutPositionAttrib);
+	glVertexAttribPointer(kGxGpuScanoutPositionAttrib, 2, GL_FLOAT, GL_FALSE, kGxGpuScanoutVertexStride, nullptr);
+}
+
+void scanoutProgressiveGxGpuVram(GLuint frameFbo, const GxGpuPipelineState& state) {
+	const GxGpuPcrtcScanout& scanout = *state.pcrtcScanout;
+	g_gxGpu.backend->setRenderTarget(frameFbo, state.width, state.height);
 	prepareGxGpuScanoutDraw();
 	if (scanout.backgroundRequired != 0u) {
-		glClearColor(g_scanoutBackgroundRed, g_scanoutBackgroundGreen, g_scanoutBackgroundBlue, 0.0f);
+		glClearColor(g_gxGpu.scanoutBackgroundRed, g_gxGpu.scanoutBackgroundGreen, g_gxGpu.scanoutBackgroundBlue, 0.0f);
 		glClear(GL_COLOR_BUFFER_BIT);
 	}
 	glEnable(GL_SCISSOR_TEST);
@@ -3332,17 +3333,9 @@ void scanoutInterlacedGxGpuVram(GLuint frameFbo, const GxGpuPipelineState& state
 
 	g_gxGpu.backend->setRenderTarget(g_gxGpu.scanoutFieldsFramebuffer, width, height);
 	glViewport(0, fieldOffset, width, fieldHeight);
-	glDisable(GL_SCISSOR_TEST);
-	glDisable(GL_DEPTH_TEST);
-	glDepthMask(GL_FALSE);
-	glDisable(GL_CULL_FACE);
-	glDisable(GL_BLEND);
-	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-	g_gxGpu.backend->setActiveTextureUnit(kGxGpuScanoutTextureUnit);
-	g_gxGpu.backend->bindTexture2D(&g_gxGpu.vramTexture);
 	prepareGxGpuScanoutDraw();
 	if (invalid || scanout.backgroundRequired != 0u) {
-		glClearColor(g_scanoutBackgroundRed, g_scanoutBackgroundGreen, g_scanoutBackgroundBlue, 0.0f);
+		glClearColor(g_gxGpu.scanoutBackgroundRed, g_gxGpu.scanoutBackgroundGreen, g_gxGpu.scanoutBackgroundBlue, 0.0f);
 	}
 	if (invalid) {
 		glClear(GL_COLOR_BUFFER_BIT);

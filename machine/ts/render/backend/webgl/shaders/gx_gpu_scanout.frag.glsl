@@ -108,8 +108,10 @@ uvec4 circuitPixel(uint outputX, uint outputY) {
 	return uvec4(rgb & 0xffu, (rgb >> 8u) & 0xffu, (rgb >> 16u) & 0xffu, 128u);
 #elif GX_GPU_SCANOUT_STORAGE_PATH == 5
 	return rgb555Pixel(rawWordAtAddress(u_circuit[0].x + sourceY * u_circuit[0].y + sourceX));
-#else
+#elif GX_GPU_SCANOUT_STORAGE_PATH == 6
 	return uvec4(0u);
+#else
+#error Unsupported GX GPU scanout storage path
 #endif
 #endif
 }

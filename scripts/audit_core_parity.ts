@@ -34,16 +34,20 @@ type StrictRuntimeNoChurnEntry = { files: string[]; reason: string };
 type StrictRuntimeNoHeapFunctionEntry = { file: string; functions: string[]; reason: string };
 type StrictLuaNoHeapFunctionEntry = { file: string; functions: string[]; top_level_loops?: boolean; reason: string };
 type StrictRpuTableParityEntry = { ts: string; cpp: string; tables: string[]; reason: string };
-type StrictShaderAttributeLocation = { name: string; location: number };
+type StrictShaderAttributeLocation = { name: string; location: number; gles2_symbol: string };
 type StrictShaderParityEntry = {
 	webgl: string;
 	gles2: string;
 	attribute_locations?: StrictShaderAttributeLocation[];
+	gles2_binding_file?: string;
+	gles2_binding_array?: string;
+	gles2_binding_uses?: number;
 	reason: string;
 };
 type StrictShaderDatapathParityEntry = { webgl: string; gles2: string; functions: string[]; reason: string };
 type StrictFileLayoutEntry = { present?: string[]; absent?: string[]; reason: string };
 type StrictFilePairParityEntry = { ts: string; cpp: string[]; reason: string };
+type StrictGeneratedTsParityExclusion = { ts: string; generator: string; reason: string };
 type StrictSaveStateSchemaParityEntry = { ts: string; cpp: string; symbol: string; reason: string };
 type CppMissingTsExclusion = { cpp: string; reason: string };
 type StrictRuntimeSymbols = { constants: Map<string, string>; constantValues: Map<string, string>; functions: Map<string, string[]> };
@@ -62,6 +66,7 @@ type Manifest = {
 	strict_shader_datapath_parity?: StrictShaderDatapathParityEntry[];
 	strict_file_layout?: StrictFileLayoutEntry[];
 	strict_file_pair_parity?: StrictFilePairParityEntry[];
+	strict_generated_ts_parity_exclusions?: StrictGeneratedTsParityExclusion[];
 	strict_save_state_schema_parity?: StrictSaveStateSchemaParityEntry[];
 	cpp_missing_ts_exclusions?: CppMissingTsExclusion[];
 };
@@ -72,6 +77,8 @@ const repoRoot = process.cwd();
 const sourceRoot = 'machine/ts';
 const cppRoot = 'machine/cpp';
 const manifestPath = 'scripts/core_parity_manifest.json';
+const noShaderAttributeLocations: readonly StrictShaderAttributeLocation[] = [];
+const noGeneratedTsParityExclusions: readonly StrictGeneratedTsParityExclusion[] = [];
 
 function repoPath(value: string): string {
 	const relative = path.relative(repoRoot, value);
@@ -1178,16 +1185,45 @@ function auditStrictShaderParity(manifest: Manifest): string[] {
 			continue;
 		}
 		const webglSource = fs.readFileSync(path.join(repoRoot, entry.webgl), 'utf8');
-		for (const attribute of entry.attribute_locations ?? []) {
+		const attributeLocations = entry.attribute_locations ?? noShaderAttributeLocations;
+		for (const attribute of attributeLocations) {
 			const declaration = new RegExp(
 				`layout\\s*\\(\\s*location\\s*=\\s*${attribute.location}\\s*\\)\\s*in\\s+\\w+\\s+${escapedRegExpLiteral(attribute.name)}\\s*;`,
 			);
 			if (!declaration.test(webglSource)) {
-				errors.push(`${entry.webgl}: fixed attribute ${attribute.name} is not bound to location ${attribute.location}`);
+					errors.push(`${entry.webgl}: fixed attribute ${attribute.name} is not bound to location ${attribute.location}`);
 			}
 		}
-		const webglText = canonicalRpuShaderText(entry.webgl, entry.attribute_locations ?? []);
-		const gles2Text = canonicalRpuShaderText(entry.gles2, []);
+		if (attributeLocations.length !== 0) {
+			const bindingFile = entry.gles2_binding_file!;
+			const bindingArray = entry.gles2_binding_array!;
+			const bindingSource = fs.readFileSync(path.join(repoRoot, bindingFile), 'utf8');
+			for (const attribute of attributeLocations) {
+				const location = new RegExp(
+					`constexpr\\s+GLuint\\s+${escapedRegExpLiteral(attribute.gles2_symbol)}\\s*=\\s*${attribute.location}u?\\s*;`,
+				);
+				if (!location.test(bindingSource)) {
+					errors.push(`${bindingFile}: ${attribute.gles2_symbol} is not location ${attribute.location}`);
+				}
+				const binding = new RegExp(
+					`\\{\\s*${escapedRegExpLiteral(attribute.gles2_symbol)}\\s*,\\s*"${escapedRegExpLiteral(attribute.name)}"\\s*\\}`,
+				);
+				if (!binding.test(bindingSource)) {
+					errors.push(`${bindingFile}: ${bindingArray} does not bind ${attribute.name} through ${attribute.gles2_symbol}`);
+				}
+			}
+			const bindingCall = new RegExp(
+				`buildProgramWithVertexShader\\([\\s\\S]*?\\b${escapedRegExpLiteral(bindingArray)}\\b\\s*\\)`,
+				'g',
+			);
+			let bindingUses = 0;
+			while (bindingCall.exec(bindingSource) !== null) bindingUses += 1;
+			if (bindingUses !== entry.gles2_binding_uses!) {
+				errors.push(`${bindingFile}: ${bindingArray} has ${bindingUses} program uses, expected ${entry.gles2_binding_uses}`);
+			}
+		}
+		const webglText = canonicalRpuShaderText(entry.webgl, attributeLocations);
+		const gles2Text = canonicalRpuShaderText(entry.gles2, noShaderAttributeLocations);
 		if (webglText !== gles2Text) {
 			errors.push(`${entry.webgl}: shader body differs from ${entry.gles2}`);
 		}
@@ -1297,6 +1333,22 @@ function auditStrictFilePairParity(manifest: Manifest): string[] {
 			if (cppBase !== tsBase) {
 				errors.push(`${entry.ts}: strict parity basename ${tsBase} differs from ${cppFile} basename ${cppBase} (${entry.reason})`);
 			}
+		}
+	}
+	for (const entry of manifest.strict_generated_ts_parity_exclusions ?? noGeneratedTsParityExclusions) {
+		const tsPath = path.join(repoRoot, entry.ts);
+		const generatorPath = path.join(repoRoot, entry.generator);
+		if (!fs.existsSync(tsPath)) {
+			errors.push(`${entry.ts}: generated TS parity exclusion file missing (${entry.reason})`);
+			continue;
+		}
+		if (!fs.existsSync(generatorPath)) {
+			errors.push(`${entry.generator}: generated TS parity exclusion generator missing (${entry.reason})`);
+			continue;
+		}
+		const source = fs.readFileSync(tsPath, 'utf8');
+		if (!source.startsWith(`// Generated by ${entry.generator}.`)) {
+			errors.push(`${entry.ts}: generated TS parity exclusion is not owned by ${entry.generator}`);
 		}
 	}
 	return errors;

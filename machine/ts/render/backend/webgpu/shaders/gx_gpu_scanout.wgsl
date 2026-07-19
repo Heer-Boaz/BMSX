@@ -131,8 +131,11 @@ fn circuitPixel(outputX: u32, outputY: u32) -> vec4<u32> {
 		case 5u: {
 			return rgb555Pixel(rawWordAtAddress(u.circuit[0].x + sourceY * u.circuit[0].y + sourceX));
 		}
-		default: {
+		case 6u: {
 			return vec4<u32>(0u);
+		}
+		default: {
+			return vec4<u32>(storagePath & 0xffu, (storagePath >> 8u) & 0xffu, 0xffu, 0xffu);
 		}
 	}
 }

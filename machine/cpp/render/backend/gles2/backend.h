@@ -102,11 +102,13 @@ public:
 		const char* label,
 		const char* stage,
 		const char* shaderDefines = nullptr);
+	// Program linking borrows both shader names; the compiling build operation owns deletion.
 	GLuint linkProgram(
 		GLuint vertexShader,
 		GLuint fragmentShader,
 		const char* label,
 		std::span<const GLES2AttributeBinding> attributeBindings = {});
+	// Shared-vertex builds borrow the vertex shader and own the fragment shader they compile.
 	GLuint buildProgramWithVertexShader(
 		GLuint vertexShader,
 		const char* fragmentShaderSource,

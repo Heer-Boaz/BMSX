@@ -907,10 +907,14 @@
 		{
 			"webgl": "machine/ts/render/backend/webgl/shaders/gx_gpu_scanout.vert.glsl",
 			"gles2": "machine/cpp/render/backend/gles2/shaders/gx_gpu_scanout.vert.glsl",
+			"gles2_binding_file": "machine/cpp/render/backend/gles2/gx_gpu.cpp",
+			"gles2_binding_array": "kGxGpuScanoutAttributeBindings",
+			"gles2_binding_uses": 4,
 			"attribute_locations": [
 				{
 					"name": "a_position",
-					"location": 0
+					"location": 0,
+					"gles2_symbol": "kGxGpuScanoutPositionAttrib"
 				}
 			],
 			"reason": "gx_gpu_scanout_vertex_shader_contract"
@@ -1214,6 +1218,29 @@
 				"machine/cpp/render/backend/gles2/gx_gpu.cpp"
 			],
 			"reason": "gx_gpu_host_gpu_backend_filename_parity"
+		},
+		{
+			"ts": "machine/ts/machine/devices/gx/gpu_pcrtc.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/gx/gpu_pcrtc.h",
+				"machine/cpp/machine/devices/gx/gpu_pcrtc.cpp"
+			],
+			"reason": "gx_gpu_pcrtc_retained_scanout_owner_filename_parity"
+		},
+		{
+			"ts": "machine/ts/render/backend/software/gx_gpu_scanout.ts",
+			"cpp": [
+				"machine/cpp/render/backend/software/gx_gpu_scanout.h",
+				"machine/cpp/render/backend/software/gx_gpu_scanout.cpp"
+			],
+			"reason": "gx_gpu_software_scanout_filename_parity"
+		}
+	],
+	"strict_generated_ts_parity_exclusions": [
+		{
+			"ts": "machine/ts/render/backend/software/gx_gpu_scanout_specialized.generated.ts",
+			"generator": "scripts/render/generate_gx_gpu_software_scanout_specializations.mjs",
+			"reason": "TS emits storage-and-operation-specialized loops while C++ owns equivalent native specializations in gx_gpu_scanout.cpp"
 		}
 	],
 	"public_symbol_parity": [

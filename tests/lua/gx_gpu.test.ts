@@ -44,6 +44,7 @@ import { GX_GPU_VRAM_BYTE_COUNT, GX_GPU_VRAM_WIDTH } from '../../machine/ts/mach
 import { GX_GPU_COMMAND_FIFO_WORD_CAPACITY } from '../../machine/ts/machine/devices/gx/gpu_command_fifo';
 import {
 	GX_GPU_PCRTC_BGCOLOR_LOW,
+	GX_GPU_PCRTC_COMPOSE_GENERIC,
 	GX_GPU_PCRTC_CSR_FIELD,
 	GX_GPU_PCRTC_CSR_FLUSH,
 	GX_GPU_PCRTC_CSR_HIGH,
@@ -69,6 +70,10 @@ import {
 	GX_GPU_PCRTC_PMODE_LOW,
 	GX_GPU_PCRTC_PMODE_MMOD,
 	GX_GPU_PCRTC_PMODE_SLBG,
+	GX_GPU_PCRTC_SAMPLE_LINEAR_GX16,
+	GX_GPU_PCRTC_SCANOUT_DRAW_BLEND_CONSTANT_RGB,
+	GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGBA,
+	GX_GPU_PCRTC_STORAGE_CT32,
 	GX_GPU_PCRTC_RESET_CSR_WORD,
 	GX_GPU_PCRTC_RESET_IMR_WORD,
 	GX_GPU_PCRTC_SMODE1_LOW,
@@ -3188,6 +3193,19 @@ test('GX-GPU PCRTC executes MMOD and AMOD against full circuit alpha', () => {
 	pcrtcWords[GX_GPU_PCRTC_PMODE_LOW] |= GX_GPU_PCRTC_PMODE_AMOD;
 	pcrtcTiming.update(pcrtcWords);
 	pcrtcScanout.update(pcrtcWords, pcrtcTiming);
+	assert.deepEqual({
+		circuit1SamplePath: pcrtcScanout.circuits[0].samplePath,
+		circuit2SamplePath: pcrtcScanout.circuits[1].samplePath,
+		circuit1OutputPath: pcrtcScanout.circuit1OutputPath,
+		circuit2OutputPath: pcrtcScanout.circuit2OutputPath,
+		compositionPath: pcrtcScanout.compositionPath,
+	}, {
+		circuit1SamplePath: GX_GPU_PCRTC_STORAGE_CT32,
+		circuit2SamplePath: GX_GPU_PCRTC_STORAGE_CT32,
+		circuit1OutputPath: GX_GPU_PCRTC_SCANOUT_DRAW_BLEND_CONSTANT_RGB,
+		circuit2OutputPath: GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGBA,
+		compositionPath: GX_GPU_PCRTC_COMPOSE_GENERIC,
+	});
 	scanoutGxGpuSoftwareVram(state, pixelWords);
 	assert.equal(pixelWords[0], 0x28372d23);
 });
@@ -3275,6 +3293,25 @@ test('GX-GPU software scanout weaves the current 480i field into retained output
 	scanoutGxGpuSoftwareVram(state, pixelWords);
 	pcrtcWords[GX_GPU_PCRTC_SMODE2_LOW] = GX_GPU_PCRTC_SMODE2_INT | GX_GPU_PCRTC_SMODE2_FFMD;
 	pcrtcScanout.update(pcrtcWords, pcrtcTiming);
+	assert.deepEqual({
+		samplePath: pcrtcScanout.circuits[0].samplePath,
+		evenFieldHeight: pcrtcScanout.evenFieldHeight,
+		oddFieldHeight: pcrtcScanout.oddFieldHeight,
+		fieldHeight: pcrtcScanout.fieldHeight,
+		fieldOffset: pcrtcScanout.fieldOffset,
+		fieldDisplayY: pcrtcScanout.circuits[0].fieldDisplayY,
+		fieldDisplayLineStart: pcrtcScanout.circuits[0].fieldDisplayLineStart,
+		fieldDisplayLineCount: pcrtcScanout.circuits[0].fieldDisplayLineCount,
+	}, {
+		samplePath: GX_GPU_PCRTC_SAMPLE_LINEAR_GX16,
+		evenFieldHeight: 2,
+		oddFieldHeight: 2,
+		fieldHeight: 2,
+		fieldOffset: 0,
+		fieldDisplayY: 0,
+		fieldDisplayLineStart: 0,
+		fieldDisplayLineCount: 2,
+	});
 	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1023, 510)] = 0x001f;
 	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1023, 511)] = 0x7c00;
 	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1023, 512)] = 0x03e0;
@@ -3294,6 +3331,19 @@ test('GX-GPU software scanout weaves the current 480i field into retained output
 	gxGpuSoftwareVram[gxGpuSoftwareVramIndex(1023, 513)] = 0x03e0;
 	state.statusWord = 0;
 	pcrtcScanout.setField(1);
+	assert.deepEqual({
+		fieldHeight: pcrtcScanout.fieldHeight,
+		fieldOffset: pcrtcScanout.fieldOffset,
+		fieldDisplayY: pcrtcScanout.circuits[0].fieldDisplayY,
+		fieldDisplayLineStart: pcrtcScanout.circuits[0].fieldDisplayLineStart,
+		fieldDisplayLineCount: pcrtcScanout.circuits[0].fieldDisplayLineCount,
+	}, {
+		fieldHeight: 2,
+		fieldOffset: 2,
+		fieldDisplayY: 1,
+		fieldDisplayLineStart: 0,
+		fieldDisplayLineCount: 2,
+	});
 	scanoutGxGpuSoftwareVram(state, pixelWords);
 
 	assert.deepEqual(Array.from(pixels), [
