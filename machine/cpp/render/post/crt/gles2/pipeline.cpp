@@ -88,8 +88,8 @@ void initCRTGLES2(OpenGLES2Backend& backend, CRTGLES2State& pipeline) {
 
 	pipeline.uniform_resolution = glGetUniformLocation(pipeline.program, "u_resolution");
 	pipeline.uniform_src_resolution = glGetUniformLocation(pipeline.program, "u_srcResolution");
+	pipeline.uniform_src_texel = glGetUniformLocation(pipeline.program, "u_srcTexel");
 	pipeline.uniform_scale = glGetUniformLocation(pipeline.program, "u_scale");
-	pipeline.uniform_fragscale = glGetUniformLocation(pipeline.program, "u_fragscale");
 	pipeline.uniform_time = glGetUniformLocation(pipeline.program, "u_time");
 	pipeline.uniform_random = glGetUniformLocation(pipeline.program, "u_random");
 	pipeline.uniform_apply_noise = glGetUniformLocation(pipeline.program, "u_enableNoise");
@@ -108,11 +108,11 @@ void initCRTGLES2(OpenGLES2Backend& backend, CRTGLES2State& pipeline) {
 	initializeFullscreenPostProcessProgram(pipeline.program, pipeline.uniform_texture, pipeline.quad);
 	if (kCRTVerboseLog) {
 		std::fprintf(stderr,
-						"[BMSX][GLES2][CRT] init program=%u attribs(pos=%d uv=%d) uniforms(res=%d srcRes=%d scale=%d fragscale=%d time=%d random=%d tex=%d)\n",
+						"[BMSX][GLES2][CRT] init program=%u attribs(pos=%d uv=%d) uniforms(res=%d srcRes=%d srcTexel=%d scale=%d time=%d random=%d tex=%d)\n",
 						static_cast<unsigned>(pipeline.program), pipeline.attrib_pos,
 						pipeline.attrib_uv, pipeline.uniform_resolution,
-						pipeline.uniform_src_resolution, pipeline.uniform_scale,
-						pipeline.uniform_fragscale, pipeline.uniform_time,
+						pipeline.uniform_src_resolution, pipeline.uniform_src_texel,
+						pipeline.uniform_scale, pipeline.uniform_time,
 						pipeline.uniform_random, pipeline.uniform_texture);
 	}
 }
@@ -165,10 +165,10 @@ void renderCRTGLES2State(OpenGLES2Backend& backend, CRTGLES2State& pipeline, con
 	if (kCRTVerboseLog) {
 		auto* srcTex = OpenGLES2Backend::asTexture(state.colorTex);
 		std::fprintf(stderr,
-						"[BMSX][GLES2][CRT] render backbuffer_fbo=%u colorTex=%u size=%dx%d base=%dx%d\n",
+						"[BMSX][GLES2][CRT] render backbuffer_fbo=%u colorTex=%u size=%dx%d source=%dx%d\n",
 						static_cast<unsigned>(backend.backbuffer()),
 						static_cast<unsigned>(srcTex->id), state.width,
-						state.height, state.baseWidth, state.baseHeight);
+						state.height, state.srcWidth, state.srcHeight);
 	}
 	beginFullscreenPostProcessDraw(
 		backend,
@@ -180,11 +180,17 @@ void renderCRTGLES2State(OpenGLES2Backend& backend, CRTGLES2State& pipeline, con
 		state.width,
 		state.height);
 	glUniform2f(pipeline.uniform_resolution, static_cast<float>(state.width), static_cast<float>(state.height));
-	glUniform2f(pipeline.uniform_src_resolution, static_cast<float>(state.baseWidth), static_cast<float>(state.baseHeight));
 	glUniform1f(pipeline.uniform_scale, 1.0f);
-	glUniform1f(pipeline.uniform_fragscale, static_cast<float>(state.srcWidth) / static_cast<float>(state.baseWidth));
-	glUniform1f(pipeline.uniform_time, state.time);
-	glUniform1f(pipeline.uniform_random, static_cast<float>(std::rand()) / static_cast<float>(RAND_MAX));
+	if (pipeline.source_width != state.srcWidth || pipeline.source_height != state.srcHeight) {
+		pipeline.source_width = state.srcWidth;
+		pipeline.source_height = state.srcHeight;
+		glUniform2f(pipeline.uniform_src_resolution, static_cast<float>(state.srcWidth), static_cast<float>(state.srcHeight));
+		glUniform2f(pipeline.uniform_src_texel, 1.0f / static_cast<float>(state.srcWidth), 1.0f / static_cast<float>(state.srcHeight));
+	}
+	if (state.options.applyNoise) {
+		glUniform1f(pipeline.uniform_time, state.time);
+		glUniform1f(pipeline.uniform_random, static_cast<float>(std::rand()) / static_cast<float>(RAND_MAX));
+	}
 
 	glUniform1i(pipeline.uniform_apply_noise, state.options.applyNoise ? 1 : 0);
 	glUniform1i(pipeline.uniform_apply_color_bleed, state.options.applyColorBleed ? 1 : 0);

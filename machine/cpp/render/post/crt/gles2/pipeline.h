@@ -22,8 +22,8 @@ struct CRTGLES2State {
 	GLint attrib_uv = -1;
 	GLint uniform_resolution = -1;
 	GLint uniform_src_resolution = -1;
+	GLint uniform_src_texel = -1;
 	GLint uniform_scale = -1;
-	GLint uniform_fragscale = -1;
 	GLint uniform_time = -1;
 	GLint uniform_random = -1;
 	GLint uniform_apply_noise = -1;
@@ -38,6 +38,8 @@ struct CRTGLES2State {
 	GLint uniform_blur_intensity = -1;
 	GLint uniform_glow_color = -1;
 	GLint uniform_texture = -1;
+	i32 source_width = 0;
+	i32 source_height = 0;
 	FullscreenQuad quad;
 };
 

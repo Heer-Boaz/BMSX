@@ -29,13 +29,40 @@ function bindPresentShaderInputs(backend: WebGLBackend, state: RenderPassStateRe
 	backend.setUniform1f('u_scale', 1.0);
 	backend.setActiveTexture(TEXTURE_UNIT_POST_PROCESSING_SOURCE);
 	backend.bindTexture2D(state.colorTex as WebGLTexture);
-	backend.setUniform1i('u_texture', TEXTURE_UNIT_POST_PROCESSING_SOURCE);
 }
 
 export function registerCRT(registry: RenderPassLibrary): void {
 	let historyQuadA: FullscreenQuad;
 	let historyQuadB: FullscreenQuad;
 	let presentQuad: FullscreenQuad;
+	let crtSourceWidth = 0;
+	let crtSourceHeight = 0;
+	function bindCRTUniforms(backend: WebGLBackend, state: RenderPassStateRegistry['crt']): void {
+		backend.setUniform2f('u_resolution', state.width, state.height);
+		backend.setUniform1f('u_scale', 1.0);
+		if (crtSourceWidth !== state.srcWidth || crtSourceHeight !== state.srcHeight) {
+			crtSourceWidth = state.srcWidth;
+			crtSourceHeight = state.srcHeight;
+			backend.setUniform2f('u_srcResolution', state.srcWidth, state.srcHeight);
+			backend.setUniform2f('u_srcTexel', 1 / state.srcWidth, 1 / state.srcHeight);
+		}
+		const opts = state.options;
+		if (opts.applyNoise) {
+			backend.setUniform1f('u_random', Math.random());
+			backend.setUniform1f('u_time', state.time);
+		}
+		backend.setUniform1i('u_enableNoise', opts.applyNoise ? 1 : 0);
+		backend.setUniform1i('u_enableColorBleed', opts.applyColorBleed ? 1 : 0);
+		backend.setUniform1i('u_enableScanlines', opts.applyScanlines ? 1 : 0);
+		backend.setUniform1i('u_enableBlur', opts.applyBlur ? 1 : 0);
+		backend.setUniform1i('u_enableGlow', opts.applyGlow ? 1 : 0);
+		backend.setUniform1i('u_enableFringing', opts.applyFringing ? 1 : 0);
+		backend.setUniform1i('u_enableAperture', opts.applyAperture ? 1 : 0);
+		backend.setUniform1f('u_noiseIntensity', opts.noiseIntensity);
+		backend.setUniform3fv('u_colorBleed', writeCrtVec3(crtColorBleedScratch, opts.colorBleed));
+		backend.setUniform1f('u_blurIntensity', opts.blurIntensity);
+		backend.setUniform3fv('u_glowColor', writeCrtVec3(crtGlowColorScratch, opts.glowColor));
+	}
 
 	registry.register({
 		id: 'presentation_history_a',
@@ -46,7 +73,8 @@ export function registerCRT(registry: RenderPassLibrary): void {
 		graph: { reads: ['frame_color', 'device_color'], writes: ['frame_history_a'], writeState: writePresentationHistoryPassState },
 		shouldExecute: shouldUpdatePresentationHistoryA,
 		bootstrap: (backend) => {
-			const gl = (backend as WebGLBackend).gl as WebGL2RenderingContext;
+			const webgl = backend as WebGLBackend;
+			const gl = webgl.gl as WebGL2RenderingContext;
 			historyQuadA = {
 				gl,
 				positionBuffer: null,
@@ -59,6 +87,7 @@ export function registerCRT(registry: RenderPassLibrary): void {
 				label: 'PresentationHistoryA',
 			};
 			createFullscreenQuad(historyQuadA);
+			webgl.setUniform1i('u_texture', TEXTURE_UNIT_POST_PROCESSING_SOURCE);
 		},
 		exec: (_be: WebGLBackend, fbo, state: RenderPassStateRegistry['presentation_history_a']) => {
 			renderFullscreenToFramebuffer(historyQuadA, fbo as WebGLFramebuffer, state.width, state.height);
@@ -77,7 +106,8 @@ export function registerCRT(registry: RenderPassLibrary): void {
 		graph: { reads: ['frame_color', 'device_color'], writes: ['frame_history_b'], writeState: writePresentationHistoryPassState },
 		shouldExecute: shouldUpdatePresentationHistoryB,
 		bootstrap: (backend) => {
-			const gl = (backend as WebGLBackend).gl as WebGL2RenderingContext;
+			const webgl = backend as WebGLBackend;
+			const gl = webgl.gl as WebGL2RenderingContext;
 			historyQuadB = {
 				gl,
 				positionBuffer: null,
@@ -90,6 +120,7 @@ export function registerCRT(registry: RenderPassLibrary): void {
 				label: 'PresentationHistoryB',
 			};
 			createFullscreenQuad(historyQuadB);
+			webgl.setUniform1i('u_texture', TEXTURE_UNIT_POST_PROCESSING_SOURCE);
 		},
 		exec: (_be: WebGLBackend, fbo, state: RenderPassStateRegistry['presentation_history_b']) => {
 			renderFullscreenToFramebuffer(historyQuadB, fbo as WebGLFramebuffer, state.width, state.height);
@@ -109,7 +140,8 @@ export function registerCRT(registry: RenderPassLibrary): void {
 		graph: { presentInput: 'auto', writeState: writePresentPassState },
 		shouldExecute: shouldExecuteAutoPresentPass,
 		bootstrap: (backend) => {
-			const gl = (backend as WebGLBackend).gl as WebGL2RenderingContext;
+			const webgl = backend as WebGLBackend;
+			const gl = webgl.gl as WebGL2RenderingContext;
 			presentQuad = {
 				gl,
 				positionBuffer: null,
@@ -122,6 +154,7 @@ export function registerCRT(registry: RenderPassLibrary): void {
 				label: 'Present',
 			};
 			createFullscreenQuad(presentQuad);
+			webgl.setUniform1i('u_texture', TEXTURE_UNIT_POST_PROCESSING_SOURCE);
 		},
 		exec: (_be: WebGLBackend, _fbo, state: RenderPassStateRegistry['present']) => {
 			renderFullscreenToFramebuffer(presentQuad, null, state.width, state.height);
@@ -142,7 +175,8 @@ export function registerCRT(registry: RenderPassLibrary): void {
 		graph: { presentInput: 'auto', writeState: writeCrtPassState },
 		shouldExecute: shouldExecuteAutoCrtPass,
 		bootstrap: (backend) => {
-			const gl = (backend as WebGLBackend).gl as WebGL2RenderingContext;
+			const webgl = backend as WebGLBackend;
+			const gl = webgl.gl as WebGL2RenderingContext;
 			crtQuad = {
 				gl,
 				positionBuffer: null,
@@ -155,6 +189,7 @@ export function registerCRT(registry: RenderPassLibrary): void {
 				label: 'CRT',
 			};
 			createFullscreenQuad(crtQuad);
+			webgl.setUniform1i('u_texture', TEXTURE_UNIT_POST_PROCESSING_SOURCE);
 		},
 		exec: (_be: WebGLBackend, _fbo, state: RenderPassStateRegistry['crt']) => {
 			renderFullscreenToFramebuffer(crtQuad, null, state.width, state.height);
@@ -174,28 +209,4 @@ function renderFullscreenToFramebuffer(fullscreenQuad: FullscreenQuad, fbo: WebG
 	updateFullscreenQuad(fullscreenQuad, width, height);
 	bindFullscreenQuad(fullscreenQuad, fullscreenQuad.positionAttrib, fullscreenQuad.texcoordAttrib);
 	gl.drawArrays(gl.TRIANGLES, 0, 6);
-}
-
-function bindCRTUniforms(backend: WebGLBackend, state: RenderPassStateRegistry['crt']): void {
-	const outW = state.width;
-	const outH = state.height;
-	backend.setUniform1f('u_random', Math.random());
-	backend.setUniform2f('u_resolution', outW, outH);
-	backend.setUniform2f('u_srcResolution', state.baseWidth, state.baseHeight);
-	backend.setUniform1f('u_scale', 1.0);
-	backend.setUniform1f('u_fragscale', state.srcWidth / state.baseWidth);
-	backend.setUniform1f('u_time', state.time);
-	const opts = state.options;
-	backend.setUniform1i('u_enableNoise', opts.applyNoise ? 1 : 0);
-	backend.setUniform1i('u_enableColorBleed', opts.applyColorBleed ? 1 : 0);
-	backend.setUniform1i('u_enableScanlines', opts.applyScanlines ? 1 : 0);
-	backend.setUniform1i('u_enableBlur', opts.applyBlur ? 1 : 0);
-	backend.setUniform1i('u_enableGlow', opts.applyGlow ? 1 : 0);
-	backend.setUniform1i('u_enableFringing', opts.applyFringing ? 1 : 0);
-	backend.setUniform1i('u_enableAperture', opts.applyAperture ? 1 : 0);
-	backend.setUniform1f('u_noiseIntensity', opts.noiseIntensity);
-	backend.setUniform3fv('u_colorBleed', writeCrtVec3(crtColorBleedScratch, opts.colorBleed));
-	backend.setUniform1f('u_blurIntensity', opts.blurIntensity);
-	backend.setUniform3fv('u_glowColor', writeCrtVec3(crtGlowColorScratch, opts.glowColor));
-	backend.setUniform1i('u_texture', TEXTURE_UNIT_POST_PROCESSING_SOURCE);
 }

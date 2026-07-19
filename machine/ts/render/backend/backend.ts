@@ -357,8 +357,6 @@ export interface CRTPipelineOptions {
 export interface CRTPipelineState {
 	width: number;
 	height: number;
-	baseWidth: number;
-	baseHeight: number;
 	srcWidth: number;
 	srcHeight: number;
 	time: number;

@@ -3,7 +3,7 @@ precision highp float;
 
 uniform sampler2D u_texture;
 uniform vec2 u_srcResolution;
-uniform float u_fragscale;
+uniform vec2 u_srcTexel;
 
 uniform float u_time;
 uniform float u_random;
@@ -30,8 +30,9 @@ const float FRINGING_CONTRAST_COEF = 0.4;
 const float FRINGING_MIX           = 0.11;
 
 const float FRINGING_OFFSET = 0.5;
-const float BLUR_FOOTPRINT_PX = 0.5;
 const float K_NORM = 1.0 / 256.0;
+const float ONE_THIRD = 1.0 / 3.0;
+const float TWO_THIRDS = 2.0 / 3.0;
 
 const float BLACK_CUTOFF = 0.015;
 const float BLACK_SOFT   = 0.060;
@@ -49,93 +50,52 @@ float hashNoise(vec2 uv, float t){
 	return fract((p.x + p.y) * p.z);
 }
 
-struct BlurContrast { vec3 blurred; float contrast; };
+struct BlurContrast { vec3 center; vec3 blurred; float contrast; };
 
-BlurContrast applyBlurAndContrast(vec2 uv, vec2 texel, float footprintPx){
-	vec2 stepUV = texel * footprintPx;
-	vec3 accum = vec3(0.0);
-	float centerLum = 0.0;
-	float neighLum = 0.0;
-	vec3 s;
+// Nearest filtering collapses the half-texel 5x5 binomial taps into these
+// exact 3x3 phase-dependent weights.
+BlurContrast applyBlurAndContrast(vec2 uv, vec2 sourcePixel){
+	vec2 upperHalf = step(vec2(0.5), fract(sourcePixel));
+	vec2 blurBefore = mix(vec2(5.0), vec2(1.0), upperHalf);
+	vec2 blurAfter = mix(vec2(1.0), vec2(5.0), upperHalf);
+	vec2 contrastBefore = vec2(1.0) - upperHalf;
+	vec2 contrastAfter = upperHalf;
+	vec3 blurred = vec3(0.0);
+	vec3 neighborhood = vec3(0.0);
+	vec3 left;
+	vec3 center;
+	vec3 right;
 
-	// Unrolled 5x5 kernel to keep GLES2 fast without array indexing.
-	s = texture(u_texture, uv + vec2(-2.0, -2.0) * stepUV).rgb;
-	accum += s * 1.0;
-	s = texture(u_texture, uv + vec2(-1.0, -2.0) * stepUV).rgb;
-	accum += s * 4.0;
-	s = texture(u_texture, uv + vec2(0.0, -2.0) * stepUV).rgb;
-	accum += s * 6.0;
-	s = texture(u_texture, uv + vec2(1.0, -2.0) * stepUV).rgb;
-	accum += s * 4.0;
-	s = texture(u_texture, uv + vec2(2.0, -2.0) * stepUV).rgb;
-	accum += s * 1.0;
+	left = texture(u_texture, uv - u_srcTexel).rgb;
+	center = texture(u_texture, uv + vec2(0.0, -u_srcTexel.y)).rgb;
+	right = texture(u_texture, uv + vec2(u_srcTexel.x, -u_srcTexel.y)).rgb;
+	blurred += (left * blurBefore.x + center * 10.0 + right * blurAfter.x) * blurBefore.y;
+	neighborhood += (left * contrastBefore.x + center * 2.0 + right * contrastAfter.x) * contrastBefore.y;
 
-	s = texture(u_texture, uv + vec2(-2.0, -1.0) * stepUV).rgb;
-	accum += s * 4.0;
-	s = texture(u_texture, uv + vec2(-1.0, -1.0) * stepUV).rgb;
-	accum += s * 16.0;
-	neighLum += dot(s, LUMA);
-	s = texture(u_texture, uv + vec2(0.0, -1.0) * stepUV).rgb;
-	accum += s * 24.0;
-	neighLum += dot(s, LUMA);
-	s = texture(u_texture, uv + vec2(1.0, -1.0) * stepUV).rgb;
-	accum += s * 16.0;
-	neighLum += dot(s, LUMA);
-	s = texture(u_texture, uv + vec2(2.0, -1.0) * stepUV).rgb;
-	accum += s * 4.0;
+	left = texture(u_texture, uv + vec2(-u_srcTexel.x, 0.0)).rgb;
+	center = texture(u_texture, uv).rgb;
+	vec3 centerColor = center;
+	right = texture(u_texture, uv + vec2(u_srcTexel.x, 0.0)).rgb;
+	blurred += (left * blurBefore.x + center * 10.0 + right * blurAfter.x) * 10.0;
+	neighborhood += (left * contrastBefore.x + center * 2.0 + right * contrastAfter.x) * 2.0;
 
-	s = texture(u_texture, uv + vec2(-2.0, 0.0) * stepUV).rgb;
-	accum += s * 6.0;
-	s = texture(u_texture, uv + vec2(-1.0, 0.0) * stepUV).rgb;
-	accum += s * 24.0;
-	neighLum += dot(s, LUMA);
-	s = texture(u_texture, uv).rgb;
-	accum += s * 36.0;
-	centerLum = dot(s, LUMA);
-	s = texture(u_texture, uv + vec2(1.0, 0.0) * stepUV).rgb;
-	accum += s * 24.0;
-	neighLum += dot(s, LUMA);
-	s = texture(u_texture, uv + vec2(2.0, 0.0) * stepUV).rgb;
-	accum += s * 6.0;
-
-	s = texture(u_texture, uv + vec2(-2.0, 1.0) * stepUV).rgb;
-	accum += s * 4.0;
-	s = texture(u_texture, uv + vec2(-1.0, 1.0) * stepUV).rgb;
-	accum += s * 16.0;
-	neighLum += dot(s, LUMA);
-	s = texture(u_texture, uv + vec2(0.0, 1.0) * stepUV).rgb;
-	accum += s * 24.0;
-	neighLum += dot(s, LUMA);
-	s = texture(u_texture, uv + vec2(1.0, 1.0) * stepUV).rgb;
-	accum += s * 16.0;
-	neighLum += dot(s, LUMA);
-	s = texture(u_texture, uv + vec2(2.0, 1.0) * stepUV).rgb;
-	accum += s * 4.0;
-
-	s = texture(u_texture, uv + vec2(-2.0, 2.0) * stepUV).rgb;
-	accum += s * 1.0;
-	s = texture(u_texture, uv + vec2(-1.0, 2.0) * stepUV).rgb;
-	accum += s * 4.0;
-	s = texture(u_texture, uv + vec2(0.0, 2.0) * stepUV).rgb;
-	accum += s * 6.0;
-	s = texture(u_texture, uv + vec2(1.0, 2.0) * stepUV).rgb;
-	accum += s * 4.0;
-	s = texture(u_texture, uv + vec2(2.0, 2.0) * stepUV).rgb;
-	accum += s * 1.0;
-
-	accum *= K_NORM;
+	left = texture(u_texture, uv + vec2(-u_srcTexel.x, u_srcTexel.y)).rgb;
+	center = texture(u_texture, uv + vec2(0.0, u_srcTexel.y)).rgb;
+	right = texture(u_texture, uv + u_srcTexel).rgb;
+	blurred += (left * blurBefore.x + center * 10.0 + right * blurAfter.x) * blurAfter.y;
+	neighborhood += (left * contrastBefore.x + center * 2.0 + right * contrastAfter.x) * contrastAfter.y;
 
 	BlurContrast bc;
-	bc.blurred = accum;
-	bc.contrast = abs(centerLum - (neighLum * 0.125));
+	bc.center = centerColor;
+	bc.blurred = blurred * K_NORM;
+	bc.contrast = abs(dot(centerColor, LUMA) - dot(neighborhood - centerColor, LUMA) * 0.125);
 	return bc;
 }
 
 const float SCANLINE_DEPTH = 0.07;
 
-vec3 applyScanlines(vec3 colorLinear, vec2 uv, vec2 srcPxRes){
-	float row   = floor(uv.y * srcPxRes.y);
-	float phase = cos(3.14159265359 * row);
+vec3 applyScanlines(vec3 colorLinear, float sourceY){
+	float phase = 1.0 - 2.0 * step(0.5, fract(sourceY * 0.5));
 
 	float lum = dot(colorLinear, LUMA);
 	float A   = mix(SCANLINE_DEPTH, 0.12, lum);
@@ -147,21 +107,20 @@ vec3 applyScanlines(vec3 colorLinear, vec2 uv, vec2 srcPxRes){
 	return colorLinear * (1.0 + k * (m - 1.0));
 }
 
-vec3 applyApertureMask(vec3 colorLinear, vec2 uv, vec2 srcPxRes){
-	float x = floor(uv.x * srcPxRes.x);
-	float p = mod(x, 3.0);
-	float r = step(0.5, 1.0 - abs(p - 0.0));
-	float g = step(0.5, 1.0 - abs(p - 1.0));
-	float b = step(0.5, 1.0 - abs(p - 2.0));
-	vec3 mask = vec3(1.0) + APERTURE_STRENGTH * (vec3(r, g, b) * 2.0 - 1.0);
+vec3 applyApertureMask(vec3 colorLinear, float sourceX){
+	float p = fract(sourceX * ONE_THIRD);
+	float greenOrBlue = step(ONE_THIRD, p);
+	float blue = step(TWO_THIRDS, p);
+	vec3 active = vec3(1.0 - greenOrBlue, greenOrBlue - blue, blue);
+	vec3 maskDelta = APERTURE_STRENGTH * (active * 2.0 - 1.0);
 
 	float lum = dot(colorLinear, LUMA);
 	float k   = smoothstep(0.0, 0.25, lum);
 	k = sqrt(k);
-	return colorLinear * (1.0 + k * (mask - 1.0));
+	return colorLinear * (1.0 + k * maskDelta);
 }
 
-vec3 applyFringing(vec3 color, vec2 uv, vec2 texel, float contrast, float mixAmount){
+vec3 applyFringing(vec3 color, vec2 uv, float centerGreen, float contrast, float mixAmount){
 	vec2 dUV = uv - vec2(FRINGING_OFFSET);
 	float d  = length(dUV) / length(vec2(0.5));
 	vec2 dir = (d > 0.0) ? (dUV / d) : vec2(1.0, 0.0);
@@ -170,20 +129,18 @@ vec3 applyFringing(vec3 color, vec2 uv, vec2 texel, float contrast, float mixAmo
 					+ FRINGING_QUAD_COEF * (d * d)
 					+ FRINGING_CONTRAST_COEF * contrast;
 
-	vec2 shiftUV = dir * (shiftPx * texel);
+	vec2 shiftUV = dir * (shiftPx * u_srcTexel);
 
 	float r = texture(u_texture, uv + shiftUV).r;
-	float g = texture(u_texture, uv).g;
 	float b = texture(u_texture, uv - shiftUV).b;
-	vec3 fringed = vec3(r, g, b);
+	vec3 fringed = vec3(r, centerGreen, b);
 
 	return mix(color, fringed, mixAmount);
 }
 
-vec3 applyNoise(vec3 color, vec2 uv, vec2 srcPxRes){
-	float y_src    = uv.y * srcPxRes.y;
-	float lineNoise= hashNoise(vec2(0.0, floor(y_src) + u_time * 30.0), 0.0) - 0.5;
-	float pixNoise = hashNoise(uv * srcPxRes + vec2(u_random), u_time) - 0.5;
+vec3 applyNoise(vec3 color, vec2 sourcePixel){
+	float lineNoise= hashNoise(vec2(0.0, float(int(sourcePixel.y)) + u_time * 30.0), 0.0) - 0.5;
+	float pixNoise = hashNoise(sourcePixel + vec2(u_random), u_time) - 0.5;
 	float lum      = dot(color, LUMA);
 	float n        = mix(pixNoise, lineNoise, 0.35);
 	float k        = smoothstep(BLACK_CUTOFF, BLACK_SOFT, lum);
@@ -192,20 +149,18 @@ vec3 applyNoise(vec3 color, vec2 uv, vec2 srcPxRes){
 }
 
 void main(){
-	vec2 srcPxRes = u_srcResolution * u_fragscale;
-	vec2 texel    = 1.0 / srcPxRes;
-
-	vec3 color = texture(u_texture, v_texcoord).rgb;
-
-	if (u_enableColorBleed) color += u_colorBleed;
-
+	vec2 sourcePixel = v_texcoord * u_srcResolution;
 	BlurContrast bc;
 	if (u_enableBlur || u_enableFringing || u_enableAperture || u_enableScanlines) {
-		bc = applyBlurAndContrast(v_texcoord, texel, BLUR_FOOTPRINT_PX);
+		bc = applyBlurAndContrast(v_texcoord, sourcePixel);
 	} else {
-		bc.blurred = color;
+		bc.center = texture(u_texture, v_texcoord).rgb;
+		bc.blurred = bc.center;
 		bc.contrast = 0.0;
 	}
+	vec3 color = bc.center;
+
+	if (u_enableColorBleed) color += u_colorBleed;
 
 	float edge = smoothstep(0.01, 0.05, bc.contrast);
 
@@ -216,16 +171,16 @@ void main(){
 
 	if (u_enableFringing) {
 		float mixK = FRINGING_MIX * edge;
-		color = applyFringing(color, v_texcoord, texel, bc.contrast, mixK);
+		color = applyFringing(color, v_texcoord, bc.center.g, bc.contrast, mixK);
 	}
 
 	if (u_enableScanlines) {
-		vec3 s = applyScanlines(color, v_texcoord, srcPxRes);
+		vec3 s = applyScanlines(color, sourcePixel.y);
 		color = mix(s, color, edge);
 	}
 
 	if (u_enableAperture) {
-		vec3 a = applyApertureMask(color, v_texcoord, srcPxRes);
+		vec3 a = applyApertureMask(color, sourcePixel.x);
 		color = mix(a, color, edge);
 	}
 
@@ -235,7 +190,7 @@ void main(){
 		color += u_glowColor * b * k;
 	}
 
-	if (u_enableNoise) color += applyNoise(color, v_texcoord, srcPxRes);
+	if (u_enableNoise) color += applyNoise(color, sourcePixel);
 
 	float lumFinal = dot(color, LUMA);
 	float keep     = smoothstep(BLACK_CUTOFF, BLACK_SOFT, lumFinal);

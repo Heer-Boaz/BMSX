@@ -78,8 +78,6 @@ export function createCrtPassState(): CRTPipelineState {
 	return {
 		width: 0,
 		height: 0,
-		baseWidth: 0,
-		baseHeight: 0,
 		srcWidth: 0,
 		srcHeight: 0,
 		time: 0,
@@ -105,8 +103,6 @@ export function writeCrtPassState(ctx: RenderGraphPassContext, state: CRTPipelin
 	const applyCrt = view.crt_postprocessing_enabled;
 	state.width = view.canvasSize.x;
 	state.height = view.canvasSize.y;
-	state.baseWidth = view.viewportSize.x;
-	state.baseHeight = view.viewportSize.y;
 	state.srcWidth = view.offscreenCanvasSize.x;
 	state.srcHeight = view.offscreenCanvasSize.y;
 	state.time = ctx.time;

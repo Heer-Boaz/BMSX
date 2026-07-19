@@ -95,8 +95,6 @@ void writeAutoCRTPipelineState(const RenderPassDef::RenderGraphPassContext& ctx,
 	CRTPipelineState& crtState = state.crt;
 	crtState.width = static_cast<i32>(view->canvasSize.x);
 	crtState.height = static_cast<i32>(view->canvasSize.y);
-	crtState.baseWidth = static_cast<i32>(view->viewportSize.x);
-	crtState.baseHeight = static_cast<i32>(view->viewportSize.y);
 	crtState.srcWidth = static_cast<i32>(view->offscreenCanvasSize.x);
 	crtState.srcHeight = static_cast<i32>(view->offscreenCanvasSize.y);
 	crtState.time = static_cast<f32>(ctx.time);

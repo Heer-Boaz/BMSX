@@ -17,13 +17,16 @@ type TextureBindCache = {
 	bindGroup: GPUBindGroup | null;
 };
 
-function writeCrtUniforms(out: Float32Array, state: RenderPassStateRegistry['crt']): void {
-	out[0] = state.baseWidth;
-	out[1] = state.baseHeight;
-	out[2] = state.srcWidth / state.baseWidth;
-	out[3] = state.time;
-	out[4] = Math.random();
+function writeCrtUniforms(out: Float32Array, state: RenderPassStateRegistry['crt'], sourceTexelX: number, sourceTexelY: number): void {
+	out[0] = state.srcWidth;
+	out[1] = state.srcHeight;
+	out[2] = sourceTexelX;
+	out[3] = sourceTexelY;
 	const opts = state.options;
+	if (opts.applyNoise) {
+		out[4] = Math.random();
+		out[14] = state.time;
+	}
 	out[5] = opts.applyNoise ? 1 : 0;
 	out[6] = opts.applyColorBleed ? 1 : 0;
 	out[7] = opts.applyScanlines ? 1 : 0;
@@ -138,6 +141,10 @@ export function registerCRT(registry: RenderPassLibrary): void {
 	let crtPipeline: GPURenderPipeline;
 	let sampler: GPUSampler;
 	let uniformBuffer: GPUBuffer;
+	let crtSourceWidth = 0;
+	let crtSourceHeight = 0;
+	let crtSourceTexelX = 0;
+	let crtSourceTexelY = 0;
 	const historyACache: TextureBindCache = { texture: null, view: null, bindGroup: null };
 	const historyBCache: TextureBindCache = { texture: null, view: null, bindGroup: null };
 	const presentCache: TextureBindCache = { texture: null, view: null, bindGroup: null };
@@ -216,7 +223,13 @@ export function registerCRT(registry: RenderPassLibrary): void {
 		shouldExecute: shouldExecuteAutoCrtPass,
 		exec: (backend, _fbo, state: RenderPassStateRegistry['crt']) => {
 			const wgpu = backend as WebGPUBackend;
-			writeCrtUniforms(crtUniformScratch, state);
+			if (crtSourceWidth !== state.srcWidth || crtSourceHeight !== state.srcHeight) {
+				crtSourceWidth = state.srcWidth;
+				crtSourceHeight = state.srcHeight;
+				crtSourceTexelX = 1 / state.srcWidth;
+				crtSourceTexelY = 1 / state.srcHeight;
+			}
+			writeCrtUniforms(crtUniformScratch, state, crtSourceTexelX, crtSourceTexelY);
 			wgpu.device.queue.writeBuffer(uniformBuffer, 0, crtUniformScratch);
 			const bindGroup = crtBindGroupForTexture(wgpu.device, crtLayout, uniformBuffer, sampler, crtCache, state.colorTex as GPUTexture);
 			renderFullscreen(backend, crtPipeline, bindGroup, wgpu.context.getCurrentTexture());
