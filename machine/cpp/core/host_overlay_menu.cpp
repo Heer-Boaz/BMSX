@@ -125,7 +125,7 @@ i32 optionIndex(MachineManager& manager, GameView& view, i32 option) {
 		case HostMenuOptionId::CrtGlow: return boolIndex(view.applyGlow);
 		case HostMenuOptionId::CrtFringing: return boolIndex(view.applyFringing);
 		case HostMenuOptionId::CrtAperture: return boolIndex(view.applyAperture);
-		case HostMenuOptionId::DeviceQuantize: return static_cast<i32>(view.deviceQuantizeMode);
+		case HostMenuOptionId::DeviceQuantize: return static_cast<i32>(view.deviceQuantizeMode());
 		case HostMenuOptionId::HostShowFps: return boolIndex(manager.hostShowFps);
 		case HostMenuOptionId::RebootCart: return 0;
 		case HostMenuOptionId::ExitGame: return 0;
@@ -144,7 +144,7 @@ void setOptionIndex(MachineManager& manager, GameView& view, i32 option, i32 val
 		case HostMenuOptionId::CrtGlow: view.applyGlow = boolFromIndex(value); break;
 		case HostMenuOptionId::CrtFringing: view.applyFringing = boolFromIndex(value); break;
 		case HostMenuOptionId::CrtAperture: view.applyAperture = boolFromIndex(value); break;
-		case HostMenuOptionId::DeviceQuantize: view.deviceQuantizeMode = static_cast<DeviceQuantizeMode>(value); break;
+		case HostMenuOptionId::DeviceQuantize: view.setDeviceQuantizeMode(static_cast<DeviceQuantizeMode>(value)); break;
 		case HostMenuOptionId::HostShowFps: manager.hostShowFps = boolFromIndex(value); break;
 		case HostMenuOptionId::RebootCart: break;
 		case HostMenuOptionId::ExitGame: break;

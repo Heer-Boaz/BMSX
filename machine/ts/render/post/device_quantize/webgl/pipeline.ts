@@ -66,8 +66,7 @@ function renderDeviceQuantize(fullscreenQuad: FullscreenQuad, fbo: WebGLFramebuf
 function bindDeviceQuantizeUniforms(backend: WebGLBackend, state: RenderPassStateRegistry['device_quantize']): void {
 	backend.setUniform2f('u_resolution', state.width, state.height);
 	backend.setUniform1f('u_scale', 1.0);
-	backend.setUniform2f('u_srcResolution', state.baseWidth, state.baseHeight);
-	backend.setUniform1f('u_fragscale', state.width / state.baseWidth);
-	backend.setUniform1i('u_device_quantize_mode', state.deviceQuantizeMode);
+	backend.setUniform2f('u_source_pixel_scale', state.sourcePixelScaleX, state.sourcePixelScaleY);
+	backend.setUniform3fv('u_quantize_levels', state.quantizeLevels);
 	backend.setUniform1i('u_texture', TEXTURE_UNIT_POST_PROCESSING_SOURCE);
 }

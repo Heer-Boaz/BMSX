@@ -18,6 +18,15 @@ namespace {
 
 constexpr f32 kLinearToSignalTableScale = 4095.0f;
 constexpr f32 kSignalToLinearTableScale = 4095.0f;
+constexpr u32 kQuantizeInputCount = 256u;
+constexpr u32 kBayerThresholdCount = 16u;
+
+constexpr std::array<u8, 16> kBayer4x4{{
+	0u,  8u,  2u, 10u,
+	12u, 4u, 14u,  6u,
+	3u, 11u,  1u,  9u,
+	15u, 7u, 13u,  5u,
+}};
 
 std::array<f32, 4096> buildLinearToSignalTable() {
 	std::array<f32, 4096> table{};
@@ -57,27 +66,45 @@ inline f32 signalToLinear(const std::array<f32, 4096>& table, f32 c) {
 	return tableLookup(table, c, kSignalToLinearTableScale);
 }
 
-inline f32 bayer4x4_0_1(i32 x, i32 y) {
-	static constexpr f32 bayer[16] = {
-		0.0f,  8.0f,  2.0f, 10.0f,
-		12.0f, 4.0f, 14.0f, 6.0f,
-		3.0f, 11.0f, 1.0f,  9.0f,
-		15.0f, 7.0f, 13.0f, 5.0f,
-	};
-	return (bayer[(x & 3) + ((y & 3) << 2)] + 0.5f) * (1.0f / 16.0f);
-}
-
-inline f32 quantizeOrderedConditional(f32 c, f32 levels, f32 threshold) {
-	const f32 v = c * levels;
-	const f32 q = static_cast<f32>(static_cast<i32>(v));
-	const f32 f = v - q;
-	return (q + (f >= threshold ? 1.0f : 0.0f)) / levels;
-}
-
 inline u8 byteFromLinear(f32 c) {
 	const f32 v = clamp(c, 0.0f, 1.0f) * 255.0f;
 	return static_cast<u8>(v);
 }
+
+using QuantizeTable = std::array<u8, kBayerThresholdCount * kQuantizeInputCount>;
+
+QuantizeTable buildQuantizeTable(f32 levels) {
+	QuantizeTable table{};
+	for (u32 thresholdIndex = 0u; thresholdIndex < kBayerThresholdCount; thresholdIndex += 1u) {
+		const f32 threshold = (static_cast<f32>(thresholdIndex) + 0.5f) * (1.0f / 16.0f);
+		for (u32 signalByte = 0u; signalByte < kQuantizeInputCount; signalByte += 1u) {
+			const f32 signal = linearToSignal(
+				kLinearToSignalTable,
+				static_cast<f32>(signalByte) * (1.0f / 255.0f));
+			const f32 value = signal * levels;
+			const f32 bucket = static_cast<f32>(static_cast<i32>(value));
+			const f32 quantized = (bucket + (value - bucket >= threshold ? 1.0f : 0.0f)) / levels;
+			table[thresholdIndex * kQuantizeInputCount + signalByte] = byteFromLinear(
+				signalToLinear(kSignalToLinearTable, quantized));
+		}
+	}
+	return table;
+}
+
+const QuantizeTable kQuantize7 = buildQuantizeTable(7.0f);
+const QuantizeTable kQuantize15 = buildQuantizeTable(15.0f);
+const QuantizeTable kQuantize31 = buildQuantizeTable(31.0f);
+const QuantizeTable kQuantize63 = buildQuantizeTable(63.0f);
+
+const std::array<const QuantizeTable*, 2> kRedTableByActiveMode{{
+	&kQuantize31,
+	&kQuantize7,
+}};
+
+const std::array<const QuantizeTable*, 2> kGreenTableByActiveMode{{
+	&kQuantize63,
+	&kQuantize15,
+}};
 
 void renderDeviceQuantizeSoftware(SoftwareBackend& backend, const DeviceQuantizePipelineState& state) {
 	auto* colorTex = static_cast<SoftwareTexture*>(state.colorTex);
@@ -88,37 +115,45 @@ void renderDeviceQuantizeSoftware(SoftwareBackend& backend, const DeviceQuantize
 	const i32 dstHeight = backend.height();
 	const i32 dstPixelsPerRow = backend.pitch() / static_cast<i32>(sizeof(u32));
 
-	const auto& linearToSignalLut = kLinearToSignalTable;
-	const auto& signalToLinearLut = kSignalToLinearTable;
+	const u32 activeModeIndex = static_cast<u32>(state.deviceQuantizeMode) - static_cast<u32>(DeviceQuantizeMode::Rgb565);
+	const QuantizeTable& redBlueTable = *kRedTableByActiveMode[activeModeIndex];
+	const QuantizeTable& greenTable = *kGreenTableByActiveMode[activeModeIndex];
+	const i32 sourceXStep = srcWidth / dstWidth;
+	const i32 sourceXRemainder = srcWidth % dstWidth;
+	const i32 sourceYStep = colorTex->height / dstHeight;
+	const i32 sourceYRemainder = colorTex->height % dstHeight;
+	i32 sourceY = 0;
+	i32 sourceYError = 0;
 
 	for (i32 y = 0; y < dstHeight; y += 1) {
-		const i32 sy = y * colorTex->height / dstHeight;
-		const u32* srcRow = src + static_cast<size_t>(sy) * static_cast<size_t>(srcWidth);
+		const u32* srcRow = src + static_cast<size_t>(sourceY) * static_cast<size_t>(srcWidth);
 		u32* dstRow = dst + static_cast<size_t>(y) * static_cast<size_t>(dstPixelsPerRow);
+		const u32 bayerRowOffset = static_cast<u32>(sourceY & 3) << 2u;
+		i32 sourceX = 0;
+		i32 sourceXError = 0;
 		for (i32 x = 0; x < dstWidth; x += 1) {
-			const i32 sx = x * srcWidth / dstWidth;
-			const u32 pixel = srcRow[sx];
-			const f32 signalR = linearToSignal(linearToSignalLut, static_cast<f32>((pixel >> 16) & 0xffu) * (1.0f / 255.0f));
-			const f32 signalG = linearToSignal(linearToSignalLut, static_cast<f32>((pixel >> 8) & 0xffu) * (1.0f / 255.0f));
-			const f32 signalB = linearToSignal(linearToSignalLut, static_cast<f32>(pixel & 0xffu) * (1.0f / 255.0f));
-			f32 outR = signalR;
-			f32 outG = signalG;
-			f32 outB = signalB;
-			if (state.deviceQuantizeMode == DeviceQuantizeMode::Rgb565) {
-				const f32 threshold = bayer4x4_0_1(sx, sy);
-				outR = quantizeOrderedConditional(signalR, 31.0f, threshold);
-				outG = quantizeOrderedConditional(signalG, 63.0f, threshold);
-				outB = quantizeOrderedConditional(signalB, 31.0f, threshold);
-			} else if (state.deviceQuantizeMode == DeviceQuantizeMode::Msx10Rgb343) {
-				const f32 threshold = bayer4x4_0_1(sx, sy);
-				outR = quantizeOrderedConditional(signalR, 7.0f, threshold);
-				outG = quantizeOrderedConditional(signalG, 15.0f, threshold);
-				outB = quantizeOrderedConditional(signalB, 7.0f, threshold);
-			}
+			const u32 pixel = srcRow[sourceX];
+			const u32 bayerIndex = static_cast<u32>(sourceX & 3) | bayerRowOffset;
+			const u32 tableOffset = static_cast<u32>(kBayer4x4[bayerIndex]) << 8u;
+			const u32 red = redBlueTable[tableOffset + ((pixel >> 16u) & 0xffu)];
+			const u32 green = greenTable[tableOffset + ((pixel >> 8u) & 0xffu)];
+			const u32 blue = redBlueTable[tableOffset + (pixel & 0xffu)];
 			dstRow[x] = (0xffu << 24)
-				| (static_cast<u32>(byteFromLinear(signalToLinear(signalToLinearLut, outR))) << 16)
-				| (static_cast<u32>(byteFromLinear(signalToLinear(signalToLinearLut, outG))) << 8)
-				| static_cast<u32>(byteFromLinear(signalToLinear(signalToLinearLut, outB)));
+				| (red << 16u)
+				| (green << 8u)
+				| blue;
+			sourceX += sourceXStep;
+			sourceXError += sourceXRemainder;
+			if (sourceXError >= dstWidth) {
+				sourceXError -= dstWidth;
+				sourceX += 1;
+			}
+		}
+		sourceY += sourceYStep;
+		sourceYError += sourceYRemainder;
+		if (sourceYError >= dstHeight) {
+			sourceYError -= dstHeight;
+			sourceY += 1;
 		}
 	}
 }

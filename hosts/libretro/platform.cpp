@@ -361,7 +361,7 @@ void LibretroPlatform::setCrtEffectOptions(bool applyNoise,
 
 void LibretroPlatform::setDeviceQuantizeMode(DeviceQuantizeMode mode) {
 	m_device_quantize_mode = mode;
-	m_machine_manager->view()->deviceQuantizeMode = mode;
+	m_machine_manager->view()->setDeviceQuantizeMode(mode);
 }
 
 void LibretroPlatform::setResourceUsageGizmo(bool enabled) {

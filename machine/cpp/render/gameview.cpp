@@ -74,6 +74,11 @@ void GameView::configurePresentation(PresentationMode mode, bool commitFrame) {
 	commitPresentationFrame = commitFrame;
 }
 
+void GameView::setDeviceQuantizeMode(DeviceQuantizeMode mode) {
+	m_deviceQuantizeMode = mode;
+	m_deviceQuantizeLevels = DEVICE_QUANTIZE_LEVELS[static_cast<u32>(mode)];
+}
+
 void GameView::resetPresentationHistory() {
 	presentationMode = PresentationMode::Completed;
 	commitPresentationFrame = false;

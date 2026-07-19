@@ -49,7 +49,7 @@ RenderGraphSlot presentationHistorySlot(u8 index) {
 
 TextureHandle currentFrameSourceTexture(const RenderPassDef::RenderGraphPassContext& ctx) {
 	const GameView& view = *ctx.view;
-	return ctx.deviceColorEnabled && view.deviceQuantizeMode != DeviceQuantizeMode::None
+	return ctx.deviceColorEnabled && view.deviceQuantizeMode() != DeviceQuantizeMode::None
 		? ctx.getTexture(RenderPassDef::RenderGraphSlot::DeviceColor)
 		: ctx.getTexture(RenderPassDef::RenderGraphSlot::FrameColor);
 }
@@ -134,7 +134,12 @@ void writeDeviceQuantizePipelineState(const RenderPassDef::RenderGraphPassContex
 		deviceQuantizeState.baseHeight,
 		*view);
 	deviceQuantizeState.colorTex = ctx.getTexture(RenderPassDef::RenderGraphSlot::FrameColor);
-	deviceQuantizeState.deviceQuantizeMode = view->deviceQuantizeMode;
+	const f32 scale = static_cast<f32>(deviceQuantizeState.width) / static_cast<f32>(deviceQuantizeState.baseWidth);
+	deviceQuantizeState.deviceQuantizeMode = view->deviceQuantizeMode();
+	deviceQuantizeState.quantizeLevels = &view->deviceQuantizeLevels();
+	deviceQuantizeState.sourcePixelScaleX = static_cast<f32>(deviceQuantizeState.baseWidth - 1) / static_cast<f32>(deviceQuantizeState.width);
+	deviceQuantizeState.sourcePixelScaleY = static_cast<f32>(deviceQuantizeState.baseHeight - 1) / (static_cast<f32>(deviceQuantizeState.baseHeight) * scale);
+	deviceQuantizeState.sourcePixelTargetHeight = static_cast<f32>(deviceQuantizeState.baseHeight) * scale;
 }
 
 } // namespace
@@ -201,7 +206,7 @@ bool shouldExecuteAutoCRTPass(GameView* view, void*) {
 }
 
 bool shouldExecuteDeviceQuantizePass(GameView* view, void*) {
-	return view->deviceQuantizeMode != DeviceQuantizeMode::None;
+	return view->deviceQuantizeMode() != DeviceQuantizeMode::None;
 }
 
 void registerFrameResolvePass(RenderPassLibrary& registry) {

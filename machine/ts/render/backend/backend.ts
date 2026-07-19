@@ -329,6 +329,10 @@ export interface DeviceQuantizePipelineState {
 	baseHeight: number;
 	colorTex: TextureHandle;
 	deviceQuantizeMode: DeviceQuantizeMode;
+	quantizeLevels: Float32Array;
+	sourcePixelScaleX: number;
+	sourcePixelScaleY: number;
+	sourcePixelTargetHeight: number;
 }
 
 export type PresentPipelineState = {

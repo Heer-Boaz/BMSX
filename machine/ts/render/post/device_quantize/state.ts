@@ -1,6 +1,6 @@
 import type { RenderGraphPassContext, RenderPassStateRegistry, TextureHandle } from '../../backend/backend';
 import type { GameView } from '../../gameview';
-import { DeviceQuantizeMode } from './mode';
+import { DEVICE_QUANTIZE_LEVELS, DeviceQuantizeMode } from './mode';
 
 export function createDeviceQuantizeState(): RenderPassStateRegistry['device_quantize'] {
 	return {
@@ -10,6 +10,10 @@ export function createDeviceQuantizeState(): RenderPassStateRegistry['device_qua
 		baseHeight: 0,
 		colorTex: null as TextureHandle,
 		deviceQuantizeMode: DeviceQuantizeMode.None,
+		quantizeLevels: DEVICE_QUANTIZE_LEVELS[DeviceQuantizeMode.None],
+		sourcePixelScaleX: 0,
+		sourcePixelScaleY: 0,
+		sourcePixelTargetHeight: 0,
 	};
 }
 
@@ -19,5 +23,11 @@ export function writeDeviceQuantizeState(ctx: RenderGraphPassContext, state: Ren
 	state.baseWidth = ctx.view.viewportSize.x;
 	state.baseHeight = ctx.view.viewportSize.y;
 	state.colorTex = ctx.getTex('frame_color');
-	state.deviceQuantizeMode = (ctx.view as GameView).deviceQuantizeMode;
+	const view = ctx.view as GameView;
+	const scale = state.width / state.baseWidth;
+	state.deviceQuantizeMode = view.deviceQuantizeMode;
+	state.quantizeLevels = view.deviceQuantizeLevels;
+	state.sourcePixelScaleX = (state.baseWidth - 1) / state.width;
+	state.sourcePixelScaleY = (state.baseHeight - 1) / (state.baseHeight * scale);
+	state.sourcePixelTargetHeight = state.baseHeight * scale;
 }

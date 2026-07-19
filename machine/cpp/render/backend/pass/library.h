@@ -95,6 +95,10 @@ struct DeviceQuantizePipelineState {
 	i32 baseHeight = 0;
 	TextureHandle colorTex = nullptr;
 	DeviceQuantizeMode deviceQuantizeMode = DeviceQuantizeMode::None;
+	const std::array<f32, 3>* quantizeLevels = &DEVICE_QUANTIZE_LEVELS[0];
+	f32 sourcePixelScaleX = 0.0f;
+	f32 sourcePixelScaleY = 0.0f;
+	f32 sourcePixelTargetHeight = 0.0f;
 };
 
 struct Host2DPipelineState {

@@ -6,7 +6,7 @@ import { DeviceQuantizeMode } from '../mode';
 import { createDeviceQuantizeState, writeDeviceQuantizeState } from '../state';
 import fragmentShaderCode from './shaders/device_quantize.frag.wgsl';
 
-const DEVICE_QUANTIZE_UNIFORM_FLOATS = 4;
+const DEVICE_QUANTIZE_UNIFORM_FLOATS = 8;
 const deviceQuantizeUniformScratch = new Float32Array(DEVICE_QUANTIZE_UNIFORM_FLOATS);
 
 type TextureBindCache = {
@@ -16,10 +16,12 @@ type TextureBindCache = {
 };
 
 function writeDeviceQuantizeUniforms(state: RenderPassStateRegistry['device_quantize']): void {
-	deviceQuantizeUniformScratch[0] = state.baseWidth;
-	deviceQuantizeUniformScratch[1] = state.baseHeight;
-	deviceQuantizeUniformScratch[2] = state.width / state.baseWidth;
-	deviceQuantizeUniformScratch[3] = state.deviceQuantizeMode;
+	deviceQuantizeUniformScratch[0] = state.sourcePixelScaleX;
+	deviceQuantizeUniformScratch[1] = state.sourcePixelScaleY;
+	deviceQuantizeUniformScratch[2] = state.sourcePixelTargetHeight;
+	deviceQuantizeUniformScratch[3] = state.quantizeLevels[0];
+	deviceQuantizeUniformScratch[4] = state.quantizeLevels[1];
+	deviceQuantizeUniformScratch[5] = state.quantizeLevels[2];
 }
 
 function deviceQuantizeBindGroupForTexture(
