@@ -261,6 +261,7 @@ add_library(bmsx_core STATIC
 	render/gameview.cpp
 	render/post/crt/software/pipeline.cpp
 	render/post/crt/software/crt_processor.cpp
+	render/post/device_quantize/lut.cpp
 	render/post/device_quantize/software/pipeline.cpp
 	render/backend/frame_uniforms.cpp
 	render/host_overlay/pipeline.cpp
@@ -543,6 +544,12 @@ if(BMSX_BUILD_TESTS)
 	)
 	target_link_libraries(bmsx_gx_gpu_tests PRIVATE bmsx_core)
 	add_test(NAME bmsx_gx_gpu_tests COMMAND bmsx_gx_gpu_tests)
+
+	add_executable(bmsx_device_quantize_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/device_quantize_test.cpp
+	)
+	target_link_libraries(bmsx_device_quantize_tests PRIVATE bmsx_core)
+	add_test(NAME bmsx_device_quantize_tests COMMAND bmsx_device_quantize_tests)
 
 	add_executable(bmsx_dma_controller_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/dma_controller_test.cpp

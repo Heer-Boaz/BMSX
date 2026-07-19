@@ -120,7 +120,7 @@ public:
 	// ─────────────────────────────────────────────────────────────────────────
 	bool crt_postprocessing_enabled = true;
 	DeviceQuantizeMode deviceQuantizeMode() const { return m_deviceQuantizeMode; }
-	const std::array<f32, 3>& deviceQuantizeLevels() const { return m_deviceQuantizeLevels; }
+	u64 deviceQuantizeConfigurationRevision() const { return m_deviceQuantizeConfigurationRevision; }
 	void setDeviceQuantizeMode(DeviceQuantizeMode mode);
 
 	// CRT effect toggles and parameters
@@ -170,7 +170,7 @@ private:
 	std::unique_ptr<RenderPassLibrary> m_pipelineRegistry;
 	std::unique_ptr<RenderGraphRuntime> m_renderGraph;
 	DeviceQuantizeMode m_deviceQuantizeMode = DeviceQuantizeMode::None;
-	std::array<f32, 3> m_deviceQuantizeLevels = DEVICE_QUANTIZE_LEVELS[0];
+	u64 m_deviceQuantizeConfigurationRevision = 0u;
 
 	// Frame timing
 	i32 m_renderFrameIndex = 0;

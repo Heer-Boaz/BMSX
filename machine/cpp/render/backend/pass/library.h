@@ -12,7 +12,7 @@
 #include "../../shared/submissions.h"
 #include "machine/devices/gx/gpu_command_buffer.h"
 #include "machine/devices/gx/gpu_pcrtc.h"
-#include "render/post/device_quantize/mode.h"
+#include "render/post/device_quantize/lut.h"
 #include <array>
 #include <string>
 #include <vector>
@@ -31,8 +31,6 @@ class Runtime;
 struct GxGpuCommandBuffer;
 enum class Host2DKind : u8;
 using Host2DRef = const void*;
-
-void writeRenderPassViewportSize(i32& width, i32& height, i32& baseWidth, i32& baseHeight, const GameView& view);
 
 /* ============================================================================
  * Render pass state types
@@ -91,14 +89,9 @@ struct CRTPipelineState {
 struct DeviceQuantizePipelineState {
 	i32 width = 0;
 	i32 height = 0;
-	i32 baseWidth = 0;
-	i32 baseHeight = 0;
 	TextureHandle colorTex = nullptr;
-	DeviceQuantizeMode deviceQuantizeMode = DeviceQuantizeMode::None;
-	const std::array<f32, 3>* quantizeLevels = &DEVICE_QUANTIZE_LEVELS[0];
-	f32 sourcePixelScaleX = 0.0f;
-	f32 sourcePixelScaleY = 0.0f;
-	f32 sourcePixelTargetHeight = 0.0f;
+	const DeviceQuantizeLuts* luts = nullptr;
+	u64 configurationRevision = 0xffffffffffffffffull;
 };
 
 struct Host2DPipelineState {

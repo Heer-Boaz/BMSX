@@ -288,6 +288,7 @@
 		"machine/ts/render/host_overlay/pipeline.ts",
 		"machine/ts/render/gameview.ts",
 		"machine/ts/render/gx/view_snapshot.ts",
+		"machine/ts/render/post/device_quantize/lut.ts",
 		"machine/ts/render/post/device_quantize/mode.ts",
 		"machine/ts/render/presentation_state.ts",
 		"machine/ts/render/runtime_state.ts",
@@ -1182,6 +1183,14 @@
 			"reason": "device_quantize_mode_owner_filename_parity"
 		},
 		{
+			"ts": "machine/ts/render/post/device_quantize/lut.ts",
+			"cpp": [
+				"machine/cpp/render/post/device_quantize/lut.h",
+				"machine/cpp/render/post/device_quantize/lut.cpp"
+			],
+			"reason": "device_quantize_lut_owner_filename_parity"
+		},
+		{
 			"ts": "machine/ts/render/post/device_quantize/webgl/pipeline.ts",
 			"cpp": [
 				"machine/cpp/render/post/device_quantize/gles2/pipeline.h",
@@ -1849,10 +1858,19 @@
 		{
 			"file": "machine/ts/render/post/device_quantize/webgl/pipeline.ts",
 			"functions": [
-				"bindDeviceQuantizeUniforms",
+				"prepareDeviceQuantizeWebGl",
+				"executeDeviceQuantizeWebGl",
 				"renderDeviceQuantize"
 			],
-			"reason": "webgl_device_quantize_hot_path_must_reuse_retained_state_without_runtime_wrappers"
+			"reason": "webgl_device_quantize_prepare_and_draw_must_reuse_retained_state_without_runtime_wrappers"
+		},
+		{
+			"file": "machine/ts/render/post/device_quantize/webgpu/pipeline.ts",
+			"functions": [
+				"writeDeviceQuantizeWebGpuState",
+				"executeDeviceQuantizeWebGpu"
+			],
+			"reason": "webgpu_device_quantize_frame_callbacks_must_keep_allocations_inside_the_cold_revision_publication_owner"
 		},
 		{
 			"file": "machine/ts/render/post/device_quantize/state.ts",
@@ -1862,18 +1880,25 @@
 			"reason": "device_quantize_graph_state_must_be_written_into_retained_storage"
 		},
 		{
-			"file": "machine/ts/render/post/device_quantize/webgpu/pipeline.ts",
-			"functions": [
-				"writeDeviceQuantizeUniforms"
-			],
-			"reason": "webgpu_device_quantize_hot_path_must_reuse_retained_uniform_storage"
-		},
-		{
 			"file": "machine/ts/render/post/device_quantize/headless/pipeline.ts",
 			"functions": [
 				"applyHeadlessDeviceQuantize"
 			],
 			"reason": "headless_device_quantize_hot_path_must_reuse_retained_lookup_tables_without_frame_allocations"
+		},
+		{
+			"file": "machine/cpp/render/post/device_quantize/software/pipeline.cpp",
+			"functions": [
+				"renderDeviceQuantizeSoftware"
+			],
+			"reason": "software_device_quantize_hot_path_must_reuse_retained_compact_lookup_tables_without_heap_work"
+		},
+		{
+			"file": "machine/cpp/render/post/device_quantize/gles2/pipeline.cpp",
+			"functions": [
+				"renderDeviceQuantizeGLES2"
+			],
+			"reason": "gles2_device_quantize_draw_must_reuse_retained_resources_without_heap_work"
 		},
 		{
 			"file": "machine/ts/ide/runtime/overlay_renderer.ts",

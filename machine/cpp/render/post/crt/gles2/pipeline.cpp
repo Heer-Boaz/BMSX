@@ -8,6 +8,7 @@
 #include "render/backend/pass/library.h"
 #include "render/gameview.h"
 #include "render/backend/gles2/fullscreen_quad.h"
+#include "render/backend/gles2/texture_units.h"
 #include "render/post/crt/gles2/shaders/crt_post_shaders.h"
 
 #include <cstdio>
@@ -20,8 +21,6 @@ namespace CRTPipeline {
 namespace {
 
 constexpr bool kCRTVerboseLog = false;
-
-constexpr int kTexUnitPostProcess = 3;
 
 void logFramebufferDitherState() {
 	GLint red_bits = 0;
@@ -45,7 +44,7 @@ void logFramebufferDitherState() {
 void initializeFullscreenPostProcessProgram(GLuint program, GLint uniformTexture, FullscreenQuad& quad) {
 	createFullscreenQuad(quad);
 	glUseProgram(program);
-	glUniform1i(uniformTexture, kTexUnitPostProcess);
+	glUniform1i(uniformTexture, GLES2_TEXTURE_UNIT_POST_PROCESSING_SOURCE);
 }
 
 void beginFullscreenPostProcessDraw(OpenGLES2Backend& backend,
@@ -53,12 +52,10 @@ void beginFullscreenPostProcessDraw(OpenGLES2Backend& backend,
 										GLuint program,
 										GLint attribPosition,
 										GLint attribUv,
-										GLint uniformTexture,
 										GLuint targetFbo,
 										i32 width,
 										i32 height) {
 	glUseProgram(program);
-	glUniform1i(uniformTexture, kTexUnitPostProcess);
 	updateFullscreenQuad(quad, width, height);
 	backend.setRenderTarget(targetFbo, width, height);
 	glDisable(GL_DEPTH_TEST);
@@ -141,14 +138,13 @@ void renderPresentTextureGLES2State(OpenGLES2Backend& backend, PresentGLES2State
 		pipeline.program,
 		pipeline.attrib_pos,
 		pipeline.attrib_uv,
-		pipeline.uniform_texture,
 		targetFbo,
 		state.width,
 		state.height);
 	glUniform2f(pipeline.uniform_resolution, static_cast<float>(state.width), static_cast<float>(state.height));
 	glUniform1f(pipeline.uniform_scale, 1.0f);
 
-	backend.setActiveTextureUnit(kTexUnitPostProcess);
+	backend.setActiveTextureUnit(GLES2_TEXTURE_UNIT_POST_PROCESSING_SOURCE);
 	backend.bindTexture2D(state.colorTex);
 
 	glDrawArrays(GL_TRIANGLES, 0, 6);
@@ -180,7 +176,6 @@ void renderCRTGLES2State(OpenGLES2Backend& backend, CRTGLES2State& pipeline, con
 		pipeline.program,
 		pipeline.attrib_pos,
 		pipeline.attrib_uv,
-		pipeline.uniform_texture,
 		backend.backbuffer(),
 		state.width,
 		state.height);
@@ -206,7 +201,7 @@ void renderCRTGLES2State(OpenGLES2Backend& backend, CRTGLES2State& pipeline, con
 	glUniform1f(pipeline.uniform_blur_intensity, state.options.blurIntensity);
 	glUniform3f(pipeline.uniform_glow_color, glowColor[0], glowColor[1], glowColor[2]);
 
-	backend.setActiveTextureUnit(kTexUnitPostProcess);
+	backend.setActiveTextureUnit(GLES2_TEXTURE_UNIT_POST_PROCESSING_SOURCE);
 	backend.bindTexture2D(state.colorTex);
 
 	glDrawArrays(GL_TRIANGLES, 0, 6);

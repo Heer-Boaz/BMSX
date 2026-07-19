@@ -76,8 +76,8 @@ static uint64_t monotonic_ns(void) {
 static void usage(const char* argv0) {
 	fprintf(stderr,
 			"Usage:\n"
-			"  %s --core ./libretro_bmsx.so --no-game [--backend software|gles2] [--video fb|sdl] [--hidden-window] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--input-timeline FILE] [--paced-timeline] [--auto-timeline] [--no-audio] [--max-frames N] [--gles2-timing-report] [--timing-warmup N] [--crt-postprocessing on|off] [--crt-noise on|off]\n"
-			"  %s --core ./libretro_bmsx.so GAME.rom [--backend software|gles2] [--video fb|sdl] [--hidden-window] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--input-timeline FILE] [--paced-timeline] [--auto-timeline] [--no-audio] [--max-frames N] [--gles2-timing-report] [--timing-warmup N] [--crt-postprocessing on|off] [--crt-noise on|off]\n",
+			"  %s --core ./libretro_bmsx.so --no-game [--backend software|gles2] [--video fb|sdl] [--hidden-window] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--input-timeline FILE] [--paced-timeline] [--auto-timeline] [--no-audio] [--max-frames N] [--gles2-timing-report] [--timing-warmup N] [--crt-postprocessing on|off] [--crt-noise on|off] [--dither off|rgb565|msx10]\n"
+			"  %s --core ./libretro_bmsx.so GAME.rom [--backend software|gles2] [--video fb|sdl] [--hidden-window] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--input-timeline FILE] [--paced-timeline] [--auto-timeline] [--no-audio] [--max-frames N] [--gles2-timing-report] [--timing-warmup N] [--crt-postprocessing on|off] [--crt-noise on|off] [--dither off|rgb565|msx10]\n",
 			argv0, argv0);
 	exit(2);
 }
@@ -113,6 +113,7 @@ int main(int argc, char** argv) {
 	const char* input_timeline = NULL;
 	const char* crt_postprocessing = NULL;
 	const char* crt_noise = NULL;
+	const char* dither = NULL;
 	bool use_input_timeline = false;
 	bool paced_timeline = false;
 	bool auto_timeline = false;
@@ -193,6 +194,14 @@ int main(int argc, char** argv) {
 			crt_noise = value;
 			continue;
 		}
+		if (strcmp(argv[i], "--dither") == 0) {
+			const char* value = required_arg(argc, argv, &i);
+			if (strcmp(value, "off") != 0 && strcmp(value, "rgb565") != 0 && strcmp(value, "msx10") != 0) {
+				host_fatal("Invalid --dither %s (expected off|rgb565|msx10)", value);
+			}
+			dither = value;
+			continue;
+		}
 		if (strcmp(argv[i], "--rom-folder") == 0) {
 			rom_folder = required_arg(argc, argv, &i);
 			continue;
@@ -263,6 +272,12 @@ int main(int argc, char** argv) {
 				&session.options,
 				"bmsx_crt_noise",
 				crt_noise);
+	}
+	if (dither) {
+		bmsx_core_options_override(
+				&session.options,
+				"bmsx_dither",
+				dither);
 	}
 
 	BmsxLibretroApi* core = &session.api;

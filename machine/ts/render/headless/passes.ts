@@ -1,5 +1,5 @@
 import type { RenderPassLibrary } from '../backend/pass/library';
-import type { GxGpuPipelineState } from '../backend/backend';
+import type { GxGpuPipelineState, RenderPassStateRegistry } from '../backend/backend';
 import type { GameView } from '../gameview';
 import type { Host2DSubmission } from '../shared/submissions';
 import type { HeadlessPresentHost, HeadlessPresentedFrameBuffer } from './view';
@@ -8,6 +8,7 @@ import { renderHeadlessHost2DEntry, renderHeadlessHost2DSubmission } from './hos
 import { renderGxGpuSoftwareFrame } from '../backend/software/gx_gpu';
 import { applyHeadlessDeviceQuantize } from '../post/device_quantize/headless/pipeline';
 import { DeviceQuantizeMode } from '../post/device_quantize/mode';
+import { createDeviceQuantizeState, writeDeviceQuantizeState } from '../post/device_quantize/state';
 
 export function registerHeadlessPasses(registry: RenderPassLibrary): void {
 	registerFramePasses(registry);
@@ -122,11 +123,15 @@ function registerHeadlessDeviceQuantizePass(registry: RenderPassLibrary): void {
 		id: 'device_quantize',
 		name: 'HeadlessDeviceQuantize',
 		stateOnly: true,
-		graph: { reads: ['frame_color'], writes: ['device_color'] },
+		initialState: createDeviceQuantizeState(),
+		graph: {
+			reads: ['frame_color'],
+			writes: ['device_color'],
+			writeState: writeDeviceQuantizeState,
+		},
 		shouldExecute: (view) => view.deviceQuantizeMode !== DeviceQuantizeMode.None,
-		exec: () => {
-			const view = registry.view as GameView;
-			applyHeadlessDeviceQuantize(headlessCompositePixels, headlessFrameWidth, headlessFrameHeight, view.deviceQuantizeMode);
+		exec: (_backend, _fbo, state: RenderPassStateRegistry['device_quantize']) => {
+			applyHeadlessDeviceQuantize(headlessCompositePixels, headlessFrameWidth, headlessFrameHeight, state.luts);
 		},
 	});
 }

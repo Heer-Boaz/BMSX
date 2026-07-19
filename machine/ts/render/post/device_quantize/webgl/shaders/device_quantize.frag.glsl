@@ -2,37 +2,11 @@
 precision highp float;
 
 uniform sampler2D u_texture;
-uniform vec2 u_source_pixel_scale;
-uniform vec3 u_quantize_levels;
+uniform sampler2D u_quantize_lut;
+uniform vec2 u_resolution;
 
 in vec2 v_texcoord;
 out vec4 outputColor;
-
-float linear_to_srgb_channel(float c) {
-	if (c <= 0.0031308) return c * 12.92;
-	return 1.055 * pow(c, 1.0 / 2.4) - 0.055;
-}
-
-vec3 linear_to_srgb(vec3 c) {
-	return vec3(
-		linear_to_srgb_channel(c.r),
-		linear_to_srgb_channel(c.g),
-		linear_to_srgb_channel(c.b)
-	);
-}
-
-float srgb_to_linear_channel(float c) {
-	if (c <= 0.04045) return c / 12.92;
-	return pow((c + 0.055) / 1.055, 2.4);
-}
-
-vec3 srgb_to_linear(vec3 c) {
-	return vec3(
-		srgb_to_linear_channel(c.r),
-		srgb_to_linear_channel(c.g),
-		srgb_to_linear_channel(c.b)
-	);
-}
 
 float bayer4x4_raw(ivec2 pixel){
 	vec2 w = mod(vec2(pixel), vec2(4.0));
@@ -41,24 +15,22 @@ float bayer4x4_raw(ivec2 pixel){
 	return abs(lo.x - lo.y) * 8.0 + lo.y * 4.0 + abs(hi.x - hi.y) * 2.0 + hi.y;
 }
 
-float bayer4x4_0_1(ivec2 pixel){
+float quantize_lut_row(ivec2 pixel){
 	return (bayer4x4_raw(pixel) + 0.5) * (1.0 / 16.0);
 }
 
-vec3 quantize_ordered_conditional(vec3 sRGB, vec3 levels, vec3 thr){
-	vec3 v = sRGB * levels;
-	vec3 q = vec3(float(int(v.r)), float(int(v.g)), float(int(v.b)));
-	q += step(thr, v - q);
-	return q / levels;
+float quantize_lut_column(float channel){
+	return (channel * 255.0 + 0.5) * (1.0 / 256.0);
 }
 
 void main(){
-	ivec2 sourcePixel = ivec2(gl_FragCoord.xy * u_source_pixel_scale + vec2(0.5));
-
+	ivec2 logicalPixel = ivec2(gl_FragCoord.x, u_resolution.y - gl_FragCoord.y);
 	vec3 color = texture(u_texture, v_texcoord).rgb;
-	vec3 sigS = linear_to_srgb(color);
-	sigS = quantize_ordered_conditional(sigS, u_quantize_levels, vec3(bayer4x4_0_1(sourcePixel)));
-	color = srgb_to_linear(sigS);
-
-	outputColor = vec4(color, 1.0);
+	float lutRow = quantize_lut_row(logicalPixel);
+	outputColor = vec4(
+		texture(u_quantize_lut, vec2(quantize_lut_column(color.r), lutRow)).r,
+		texture(u_quantize_lut, vec2(quantize_lut_column(color.g), lutRow)).g,
+		texture(u_quantize_lut, vec2(quantize_lut_column(color.b), lutRow)).b,
+		1.0
+	);
 }

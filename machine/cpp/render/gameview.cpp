@@ -75,8 +75,11 @@ void GameView::configurePresentation(PresentationMode mode, bool commitFrame) {
 }
 
 void GameView::setDeviceQuantizeMode(DeviceQuantizeMode mode) {
+	if (m_deviceQuantizeMode == mode) {
+		return;
+	}
 	m_deviceQuantizeMode = mode;
-	m_deviceQuantizeLevels = DEVICE_QUANTIZE_LEVELS[static_cast<u32>(mode)];
+	m_deviceQuantizeConfigurationRevision += 1u;
 }
 
 void GameView::resetPresentationHistory() {
@@ -134,6 +137,7 @@ void GameView::rebuildGraph() {
 		return;
 	}
 	resetPresentationHistory();
+	m_deviceQuantizeConfigurationRevision += 1u;
 	m_renderGraph = m_pipelineRegistry->buildRenderGraph();
 }
 

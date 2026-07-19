@@ -15,13 +15,6 @@
 
 namespace bmsx {
 
-void writeRenderPassViewportSize(i32& width, i32& height, i32& baseWidth, i32& baseHeight, const GameView& view) {
-	width = static_cast<i32>(view.offscreenCanvasSize.x);
-	height = static_cast<i32>(view.offscreenCanvasSize.y);
-	baseWidth = static_cast<i32>(view.viewportSize.x);
-	baseHeight = static_cast<i32>(view.viewportSize.y);
-}
-
 namespace {
 
 void noopRenderPass(GPUBackend*, GameView*, void*, RenderPassStateStorage&, void*) {
@@ -127,19 +120,15 @@ void writeAutoCRTPipelineState(const RenderPassDef::RenderGraphPassContext& ctx,
 void writeDeviceQuantizePipelineState(const RenderPassDef::RenderGraphPassContext& ctx, RenderPassStateStorage& state) {
 	auto* view = ctx.view;
 	DeviceQuantizePipelineState& deviceQuantizeState = state.deviceQuantize;
-	writeRenderPassViewportSize(
-		deviceQuantizeState.width,
-		deviceQuantizeState.height,
-		deviceQuantizeState.baseWidth,
-		deviceQuantizeState.baseHeight,
-		*view);
-	deviceQuantizeState.colorTex = ctx.getTexture(RenderPassDef::RenderGraphSlot::FrameColor);
-	const f32 scale = static_cast<f32>(deviceQuantizeState.width) / static_cast<f32>(deviceQuantizeState.baseWidth);
-	deviceQuantizeState.deviceQuantizeMode = view->deviceQuantizeMode();
-	deviceQuantizeState.quantizeLevels = &view->deviceQuantizeLevels();
-	deviceQuantizeState.sourcePixelScaleX = static_cast<f32>(deviceQuantizeState.baseWidth - 1) / static_cast<f32>(deviceQuantizeState.width);
-	deviceQuantizeState.sourcePixelScaleY = static_cast<f32>(deviceQuantizeState.baseHeight - 1) / (static_cast<f32>(deviceQuantizeState.baseHeight) * scale);
-	deviceQuantizeState.sourcePixelTargetHeight = static_cast<f32>(deviceQuantizeState.baseHeight) * scale;
+	const u64 configurationRevision = view->deviceQuantizeConfigurationRevision();
+	if (deviceQuantizeState.configurationRevision != configurationRevision) {
+		deviceQuantizeState.width = static_cast<i32>(view->offscreenCanvasSize.x);
+		deviceQuantizeState.height = static_cast<i32>(view->offscreenCanvasSize.y);
+		deviceQuantizeState.colorTex = ctx.getTexture(RenderPassDef::RenderGraphSlot::FrameColor);
+		deviceQuantizeState.luts = &DEVICE_QUANTIZE_LUTS[
+			static_cast<u32>(view->deviceQuantizeMode()) - static_cast<u32>(DeviceQuantizeMode::Rgb565)];
+		deviceQuantizeState.configurationRevision = configurationRevision;
+	}
 }
 
 } // namespace

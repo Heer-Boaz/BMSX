@@ -1,9 +1,9 @@
-precision mediump float;
+precision highp float;
 
 attribute vec2 a_position;
 attribute vec2 a_texcoord;
 
-uniform vec2 u_resolution;
+uniform highp vec2 u_resolution;
 uniform float u_scale;
 
 varying vec2 v_texcoord;

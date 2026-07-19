@@ -4,7 +4,7 @@ import type { GxGpuCommandBufferView, GxGpuReadbackPortView } from '../../machin
 import type { GxGpuPcrtcScanout } from '../../machine/devices/gx/gpu_pcrtc';
 import type { Host2DKind, Host2DRef, Host2DSubmission } from '../shared/submissions';
 import type { GameView } from '../gameview';
-import type { DeviceQuantizeMode } from '../post/device_quantize/mode';
+import type { DeviceQuantizeLuts } from '../post/device_quantize/lut';
 import type { TextureParams } from './texture_params';
 import type { RenderPassLibrary } from './pass/library';
 
@@ -166,6 +166,7 @@ export interface RenderPassDef<S = unknown> {
 	 * (e.g., buffers, VAOs, default textures). Called once at registration time.
 	 */
 	bootstrap?: (backend: GPUBackend) => void;
+	teardown?: (backend: GPUBackend) => void;
 	exec: (backend: GPUBackend, fbo: unknown, state: S, pipelineHandle: RenderPassInstanceHandle | null) => void;
 	prepare?: (backend: GPUBackend, state: S) => void;
 }
@@ -212,9 +213,9 @@ export interface GPUBackend {
 	endRenderPass(pass: PassEncoder): void;
 	getCaps(): BackendCaps;
 	registerBuiltinPasses(registry: RenderPassLibrary): void;
-	createRenderPassInstance?(desc: GraphicsPipelineBuildDesc): RenderPassInstanceHandle;
-	destroyRenderPassInstance?(p: RenderPassInstanceHandle): void;
-	setGraphicsPipeline?(pass: PassEncoder, pipeline: RenderPassInstanceHandle): void;
+	createRenderPassInstance(desc: GraphicsPipelineBuildDesc): RenderPassInstanceHandle;
+	destroyRenderPassInstance(p: RenderPassInstanceHandle): void;
+	setGraphicsPipeline(pass: PassEncoder, pipeline: RenderPassInstanceHandle): void;
 	bindRenderPassPipeline?(pass: PassEncoder, pipeline: RenderPassInstanceHandle, bindingLayout?: GraphicsPipelineBindingLayout): void;
 	draw(pass: PassEncoder, first: number, count: number): void;
 	drawIndexed(pass: PassEncoder, indexCount: number, firstIndex: number, indexType?: number): void;
@@ -325,14 +326,9 @@ export type RenderingViewportType = 'viewport' | 'offscreen';
 export interface DeviceQuantizePipelineState {
 	width: number;
 	height: number;
-	baseWidth: number;
-	baseHeight: number;
 	colorTex: TextureHandle;
-	deviceQuantizeMode: DeviceQuantizeMode;
-	quantizeLevels: Float32Array;
-	sourcePixelScaleX: number;
-	sourcePixelScaleY: number;
-	sourcePixelTargetHeight: number;
+	luts: DeviceQuantizeLuts;
+	configurationRevision: number;
 }
 
 export type PresentPipelineState = {

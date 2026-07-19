@@ -1,33 +1,28 @@
 import type { RenderGraphPassContext, RenderPassStateRegistry, TextureHandle } from '../../backend/backend';
 import type { GameView } from '../../gameview';
-import { DEVICE_QUANTIZE_LEVELS, DeviceQuantizeMode } from './mode';
+import { DeviceQuantizeMode } from './mode';
+import { DEVICE_QUANTIZE_LUTS, type DeviceQuantizeLuts } from './lut';
 
 export function createDeviceQuantizeState(): RenderPassStateRegistry['device_quantize'] {
 	return {
 		width: 0,
 		height: 0,
-		baseWidth: 0,
-		baseHeight: 0,
 		colorTex: null as TextureHandle,
-		deviceQuantizeMode: DeviceQuantizeMode.None,
-		quantizeLevels: DEVICE_QUANTIZE_LEVELS[DeviceQuantizeMode.None],
-		sourcePixelScaleX: 0,
-		sourcePixelScaleY: 0,
-		sourcePixelTargetHeight: 0,
+		luts: null as DeviceQuantizeLuts,
+		configurationRevision: -1,
 	};
 }
 
-export function writeDeviceQuantizeState(ctx: RenderGraphPassContext, state: RenderPassStateRegistry['device_quantize']): void {
-	state.width = ctx.view.offscreenCanvasSize.x;
-	state.height = ctx.view.offscreenCanvasSize.y;
-	state.baseWidth = ctx.view.viewportSize.x;
-	state.baseHeight = ctx.view.viewportSize.y;
-	state.colorTex = ctx.getTex('frame_color');
+export function writeDeviceQuantizeState(ctx: RenderGraphPassContext, state: RenderPassStateRegistry['device_quantize']): boolean {
 	const view = ctx.view as GameView;
-	const scale = state.width / state.baseWidth;
-	state.deviceQuantizeMode = view.deviceQuantizeMode;
-	state.quantizeLevels = view.deviceQuantizeLevels;
-	state.sourcePixelScaleX = (state.baseWidth - 1) / state.width;
-	state.sourcePixelScaleY = (state.baseHeight - 1) / (state.baseHeight * scale);
-	state.sourcePixelTargetHeight = state.baseHeight * scale;
+	const configurationRevision = view.deviceQuantizeConfigurationRevision;
+	if (state.configurationRevision === configurationRevision) {
+		return false;
+	}
+	state.width = view.offscreenCanvasSize.x;
+	state.height = view.offscreenCanvasSize.y;
+	state.colorTex = ctx.getTex('frame_color');
+	state.luts = DEVICE_QUANTIZE_LUTS[view.deviceQuantizeMode - DeviceQuantizeMode.Rgb565];
+	state.configurationRevision = configurationRevision;
+	return true;
 }

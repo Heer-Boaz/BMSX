@@ -1,61 +1,36 @@
-import type { ColorAttachmentSpec, RenderPassDesc, RenderPassStateRegistry, TextureHandle } from '../../../backend/backend';
+import type { ColorAttachmentSpec, RenderGraphPassContext, RenderPassDesc, RenderPassStateRegistry, TextureHandle } from '../../../backend/backend';
 import type { RenderPassLibrary } from '../../../backend/pass/library';
 import type { WebGPUBackend, WebGPUPassEncoder } from '../../../backend/webgpu/backend';
+import { RGBA8_LINEAR_TEXTURE_PARAMS } from '../../../backend/texture_params';
 import vertexShaderCode from '../../webgpu/shaders/fullscreen.vert.wgsl';
 import { DeviceQuantizeMode } from '../mode';
+import { DEVICE_QUANTIZE_LUT_HEIGHT, DEVICE_QUANTIZE_LUTS, DEVICE_QUANTIZE_LUT_WIDTH } from '../lut';
 import { createDeviceQuantizeState, writeDeviceQuantizeState } from '../state';
 import fragmentShaderCode from './shaders/device_quantize.frag.wgsl';
 
-const DEVICE_QUANTIZE_UNIFORM_FLOATS = 8;
-const deviceQuantizeUniformScratch = new Float32Array(DEVICE_QUANTIZE_UNIFORM_FLOATS);
-
-type TextureBindCache = {
-	texture: GPUTexture | null;
-	view: GPUTextureView | null;
-	bindGroup: GPUBindGroup | null;
-};
-
-export function writeDeviceQuantizeUniforms(out: Float32Array, state: RenderPassStateRegistry['device_quantize']): void {
-	out[0] = state.sourcePixelScaleX;
-	out[1] = state.sourcePixelScaleY;
-	out[2] = state.sourcePixelTargetHeight;
-	out[4] = state.quantizeLevels[0];
-	out[5] = state.quantizeLevels[1];
-	out[6] = state.quantizeLevels[2];
-}
-
-function deviceQuantizeBindGroupForTexture(
-	device: GPUDevice,
-	layout: GPUBindGroupLayout,
-	uniformBuffer: GPUBuffer,
-	sampler: GPUSampler,
-	cache: TextureBindCache,
-	texture: GPUTexture,
-): GPUBindGroup {
-	if (cache.texture !== texture) {
-		cache.texture = texture;
-		cache.view = texture.createView();
-		cache.bindGroup = device.createBindGroup({
+export function registerDeviceQuantize(registry: RenderPassLibrary): void {
+	let device: GPUDevice;
+	let pipeline: GPURenderPipeline;
+	let layout: GPUBindGroupLayout;
+	let sampler: GPUSampler;
+	let lutTextures: [GPUTexture, GPUTexture];
+	let lutViews: [GPUTextureView, GPUTextureView];
+	let targetTexture: GPUTexture;
+	let bindGroup: GPUBindGroup;
+	const colorAttachment: ColorAttachmentSpec = { tex: null as TextureHandle };
+	const passDesc: RenderPassDesc = { label: 'DeviceQuantize (WebGPU)', color: colorAttachment };
+	function publishDeviceQuantizeWebGpuState(ctx: RenderGraphPassContext, state: RenderPassStateRegistry['device_quantize']): void {
+		targetTexture = ctx.getTex('device_color') as GPUTexture;
+		const lutView = state.luts === DEVICE_QUANTIZE_LUTS[0] ? lutViews[0] : lutViews[1];
+		bindGroup = device.createBindGroup({
 			layout,
 			entries: [
-				{ binding: 0, resource: { buffer: uniformBuffer } },
-				{ binding: 1, resource: cache.view },
+				{ binding: 0, resource: (state.colorTex as GPUTexture).createView() },
+				{ binding: 1, resource: lutView },
 				{ binding: 2, resource: sampler },
 			],
 		});
 	}
-	return cache.bindGroup as GPUBindGroup;
-}
-
-export function registerDeviceQuantize(registry: RenderPassLibrary): void {
-	let pipeline: GPURenderPipeline;
-	let layout: GPUBindGroupLayout;
-	let sampler: GPUSampler;
-	let uniformBuffer: GPUBuffer;
-	let targetTexture: GPUTexture;
-	const bindCache: TextureBindCache = { texture: null, view: null, bindGroup: null };
-	const colorAttachment: ColorAttachmentSpec = { tex: null as TextureHandle };
-	const passDesc: RenderPassDesc = { label: 'DeviceQuantize (WebGPU)', color: colorAttachment };
 
 	registry.register({
 		id: 'device_quantize',
@@ -65,18 +40,19 @@ export function registerDeviceQuantize(registry: RenderPassLibrary): void {
 		graph: {
 			reads: ['frame_color'],
 			writes: ['device_color'],
-			writeState: (ctx, state: RenderPassStateRegistry['device_quantize']) => {
-				writeDeviceQuantizeState(ctx, state);
-				targetTexture = ctx.getTex('device_color') as GPUTexture;
+			writeState: function writeDeviceQuantizeWebGpuState(ctx, state: RenderPassStateRegistry['device_quantize']) {
+				if (writeDeviceQuantizeState(ctx, state)) {
+					publishDeviceQuantizeWebGpuState(ctx, state);
+				}
 			},
 		},
 		shouldExecute: (view) => view.deviceQuantizeMode !== DeviceQuantizeMode.None,
 		bootstrap: (backend) => {
 			const wgpu = backend as WebGPUBackend;
-			const device = wgpu.device;
+			device = wgpu.device;
 			layout = device.createBindGroupLayout({
 				entries: [
-					{ binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+					{ binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
 					{ binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
 					{ binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
 				],
@@ -93,14 +69,19 @@ export function registerDeviceQuantize(registry: RenderPassLibrary): void {
 				},
 				primitive: { topology: 'triangle-list' },
 			});
-			sampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' });
-			uniformBuffer = device.createBuffer({ size: DEVICE_QUANTIZE_UNIFORM_FLOATS * Float32Array.BYTES_PER_ELEMENT, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+			sampler = device.createSampler({ magFilter: 'nearest', minFilter: 'nearest', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' });
+			lutTextures = [
+				wgpu.createTexture(DEVICE_QUANTIZE_LUTS[0].texture, DEVICE_QUANTIZE_LUT_WIDTH, DEVICE_QUANTIZE_LUT_HEIGHT, RGBA8_LINEAR_TEXTURE_PARAMS) as GPUTexture,
+				wgpu.createTexture(DEVICE_QUANTIZE_LUTS[1].texture, DEVICE_QUANTIZE_LUT_WIDTH, DEVICE_QUANTIZE_LUT_HEIGHT, RGBA8_LINEAR_TEXTURE_PARAMS) as GPUTexture,
+			];
+			lutViews = [lutTextures[0].createView(), lutTextures[1].createView()];
 		},
-		exec: (backend, _fbo, state: RenderPassStateRegistry['device_quantize']) => {
+		teardown: (backend) => {
+			backend.destroyTexture(lutTextures[0]);
+			backend.destroyTexture(lutTextures[1]);
+		},
+		exec: function executeDeviceQuantizeWebGpu(backend) {
 			const wgpu = backend as WebGPUBackend;
-			writeDeviceQuantizeUniforms(deviceQuantizeUniformScratch, state);
-			wgpu.device.queue.writeBuffer(uniformBuffer, 0, deviceQuantizeUniformScratch);
-			const bindGroup = deviceQuantizeBindGroupForTexture(wgpu.device, layout, uniformBuffer, sampler, bindCache, state.colorTex as GPUTexture);
 			colorAttachment.tex = targetTexture;
 			const pass = wgpu.beginRenderPass(passDesc) as WebGPUPassEncoder;
 			pass.encoder.setPipeline(pipeline);

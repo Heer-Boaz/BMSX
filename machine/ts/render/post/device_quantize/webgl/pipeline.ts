@@ -1,14 +1,17 @@
 import type { RenderPassLibrary } from '../../../backend/pass/library';
 import type { RenderPassStateRegistry } from '../../../backend/backend';
 import type { WebGLBackend } from '../../../backend/webgl/backend';
-import { TEXTURE_UNIT_POST_PROCESSING_SOURCE } from '../../../backend/webgl/constants';
+import { TEXTURE_UNIT_DEVICE_QUANTIZE_LUT, TEXTURE_UNIT_POST_PROCESSING_SOURCE } from '../../../backend/webgl/constants';
+import { RGBA8_LINEAR_TEXTURE_PARAMS } from '../../../backend/texture_params';
 import fragmentShaderDeviceCode from './shaders/device_quantize.frag.glsl';
 import vertexShaderCRTCode from '../../webgl/shaders/fullscreen.vert.glsl';
 import { DeviceQuantizeMode } from '../mode';
+import { DEVICE_QUANTIZE_LUT_HEIGHT, DEVICE_QUANTIZE_LUTS, DEVICE_QUANTIZE_LUT_WIDTH } from '../lut';
 import { createDeviceQuantizeState, writeDeviceQuantizeState } from '../state';
 import {
 	bindFullscreenQuad,
 	createFullscreenQuad,
+	destroyFullscreenQuad,
 	updateFullscreenQuad,
 	POST_PROCESS_TEXCOORDS,
 	type FullscreenQuad,
@@ -16,6 +19,9 @@ import {
 
 export function registerDeviceQuantize(registry: RenderPassLibrary): void {
 	let fullscreenQuad: FullscreenQuad;
+	let lutTextures: [WebGLTexture, WebGLTexture];
+	let activeLutTexture: WebGLTexture;
+	let publishedConfigurationRevision = -1;
 	registry.register({
 		id: 'device_quantize',
 		name: 'DeviceQuantize',
@@ -28,7 +34,8 @@ export function registerDeviceQuantize(registry: RenderPassLibrary): void {
 		vsCode: vertexShaderCRTCode,
 		fsCode: fragmentShaderDeviceCode,
 		bootstrap: (backend) => {
-			const gl = (backend as WebGLBackend).gl as WebGL2RenderingContext;
+			const webgl = backend as WebGLBackend;
+			const gl = webgl.gl as WebGL2RenderingContext;
 			fullscreenQuad = {
 				gl,
 				positionBuffer: null,
@@ -41,13 +48,31 @@ export function registerDeviceQuantize(registry: RenderPassLibrary): void {
 				label: 'DeviceQuantize',
 			};
 			createFullscreenQuad(fullscreenQuad);
+			lutTextures = [
+				webgl.createTexture(DEVICE_QUANTIZE_LUTS[0].texture, DEVICE_QUANTIZE_LUT_WIDTH, DEVICE_QUANTIZE_LUT_HEIGHT, RGBA8_LINEAR_TEXTURE_PARAMS),
+				webgl.createTexture(DEVICE_QUANTIZE_LUTS[1].texture, DEVICE_QUANTIZE_LUT_WIDTH, DEVICE_QUANTIZE_LUT_HEIGHT, RGBA8_LINEAR_TEXTURE_PARAMS),
+			];
+			webgl.setUniform1f('u_scale', 1.0);
+			webgl.setUniform1i('u_texture', TEXTURE_UNIT_POST_PROCESSING_SOURCE);
+			webgl.setUniform1i('u_quantize_lut', TEXTURE_UNIT_DEVICE_QUANTIZE_LUT);
+		},
+		teardown: (backend) => {
+			destroyFullscreenQuad(fullscreenQuad);
+			backend.destroyTexture(lutTextures[0]);
+			backend.destroyTexture(lutTextures[1]);
 		},
 		shouldExecute: (view) => view.deviceQuantizeMode !== DeviceQuantizeMode.None,
-		exec: (_be: WebGLBackend, fbo, state: RenderPassStateRegistry['device_quantize']) => {
+		exec: function executeDeviceQuantizeWebGl(_be: WebGLBackend, fbo, state: RenderPassStateRegistry['device_quantize']) {
 			renderDeviceQuantize(fullscreenQuad, fbo as WebGLFramebuffer, state);
 		},
-		prepare: (be: WebGLBackend, state: RenderPassStateRegistry['device_quantize']) => {
-			bindDeviceQuantizeUniforms(be, state);
+		prepare: function prepareDeviceQuantizeWebGl(be: WebGLBackend, state: RenderPassStateRegistry['device_quantize']) {
+			if (publishedConfigurationRevision !== state.configurationRevision) {
+				be.setUniform2f('u_resolution', state.width, state.height);
+				activeLutTexture = state.luts === DEVICE_QUANTIZE_LUTS[0] ? lutTextures[0] : lutTextures[1];
+				be.setActiveTexture(TEXTURE_UNIT_DEVICE_QUANTIZE_LUT);
+				be.bindTexture2D(activeLutTexture);
+				publishedConfigurationRevision = state.configurationRevision;
+			}
 			be.setActiveTexture(TEXTURE_UNIT_POST_PROCESSING_SOURCE);
 			be.bindTexture2D(state.colorTex as WebGLTexture);
 		},
@@ -61,12 +86,4 @@ function renderDeviceQuantize(fullscreenQuad: FullscreenQuad, fbo: WebGLFramebuf
 	updateFullscreenQuad(fullscreenQuad, state.width, state.height);
 	bindFullscreenQuad(fullscreenQuad, fullscreenQuad.positionAttrib, fullscreenQuad.texcoordAttrib);
 	gl.drawArrays(gl.TRIANGLES, 0, 6);
-}
-
-function bindDeviceQuantizeUniforms(backend: WebGLBackend, state: RenderPassStateRegistry['device_quantize']): void {
-	backend.setUniform2f('u_resolution', state.width, state.height);
-	backend.setUniform1f('u_scale', 1.0);
-	backend.setUniform2f('u_source_pixel_scale', state.sourcePixelScaleX, state.sourcePixelScaleY);
-	backend.setUniform3fv('u_quantize_levels', state.quantizeLevels);
-	backend.setUniform1i('u_texture', TEXTURE_UNIT_POST_PROCESSING_SOURCE);
 }

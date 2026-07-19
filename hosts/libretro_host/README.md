@@ -77,6 +77,7 @@ Options:
 - `--timing-warmup <count>`: excludes the first frames from the timing report
 - `--crt-postprocessing on|off`: sets the `bmsx_crt_postprocessing` core option
 - `--crt-noise on|off`: sets the `bmsx_crt_noise` core option
+- `--dither off|rgb565|msx10`: sets the `bmsx_dither` core option
 
 Input timelines may include `capture: true` entries. Both the libretro host and headless runner save `.png` screenshots into a `screenshots/` subfolder next to the timeline JSON file.
 

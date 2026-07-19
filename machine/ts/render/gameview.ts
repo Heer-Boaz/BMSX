@@ -4,7 +4,7 @@ import type { vec2 } from '../rompack/format';
 import type { BackendContext, GPUBackend, PresentationMode, RenderContext, TextureHandle } from './backend/backend';
 import { RGBA8_LINEAR_TEXTURE_PARAMS, RGBA8_SRGB_TEXTURE_PARAMS } from './backend/texture_params';
 import { RenderPassLibrary } from './backend/pass/library';
-import { DEVICE_QUANTIZE_LEVELS, DeviceQuantizeMode } from './post/device_quantize/mode';
+import { DeviceQuantizeMode } from './post/device_quantize/mode';
 import { RenderGraphRuntime, buildFrameData, updateExternalFrameTiming } from './graph/graph';
 import type {
 	GameViewHost,
@@ -29,6 +29,14 @@ export class GameView implements RenderContext {
 			this.renderGraph.dispose();
 			this.renderGraph = null;
 		}
+		if (this.pipelineRegistry) {
+			this.pipelineRegistry.dispose();
+			this.pipelineRegistry = undefined;
+		}
+		for (const name in this.textures) {
+			this.backend.destroyTexture(this.textures[name]);
+		}
+		this.textures = {};
 		if (GameView.fullscreenKeyListenerUnsub) {
 			GameView.fullscreenKeyListenerUnsub.unsubscribe();
 			GameView.fullscreenKeyListenerUnsub = null;
@@ -93,16 +101,17 @@ export class GameView implements RenderContext {
 	public enable_aperture = false; // Whether to apply an aperture mask in the CRT shader; This is a stylistic choice that can be toggled independently of the other CRT effects
 	public show_resource_usage_gizmo = false;
 	private _deviceQuantizeMode = DeviceQuantizeMode.None;
-	private _deviceQuantizeLevels = DEVICE_QUANTIZE_LEVELS[DeviceQuantizeMode.None];
+	private _deviceQuantizeConfigurationRevision = 0;
 	public get deviceQuantizeMode(): DeviceQuantizeMode {
 		return this._deviceQuantizeMode;
 	}
 	public set deviceQuantizeMode(mode: DeviceQuantizeMode) {
+		if (this._deviceQuantizeMode === mode) return;
 		this._deviceQuantizeMode = mode;
-		this._deviceQuantizeLevels = DEVICE_QUANTIZE_LEVELS[mode];
+		this._deviceQuantizeConfigurationRevision += 1;
 	}
-	public get deviceQuantizeLevels(): Float32Array {
-		return this._deviceQuantizeLevels;
+	public get deviceQuantizeConfigurationRevision(): number {
+		return this._deviceQuantizeConfigurationRevision;
 	}
 	public noiseIntensity = 0.3;
 	public colorBleed: [number, number, number] = [0.02, 0.0, 0.0];
@@ -381,6 +390,7 @@ export class GameView implements RenderContext {
 		if (this.renderGraph) {
 			this.renderGraph.dispose();
 		}
+		this._deviceQuantizeConfigurationRevision += 1;
 		// GameView implements RenderContext directly
 		this.renderGraph = this.pipelineRegistry.buildRenderGraph();
 		renderGate.end(token);

@@ -1,6 +1,7 @@
 #include "render/host_overlay/gles2/pipeline.h"
 
 #if BMSX_ENABLE_GLES2
+#include "render/backend/gles2/texture_units.h"
 #include "render/host_overlay/gles2/host_overlay_shaders.h"
 #include "render/shared/glyph_runs.h"
 #include "rompack/host_system_atlas.h"
@@ -17,7 +18,6 @@ struct HostOverlayGLES2State {
 	GLint attribUv = -1;
 	GLint uniformResolution = -1;
 	GLint uniformColor = -1;
-	GLint uniformTexture = -1;
 	GLuint vbo = 0;
 	TextureHandle whiteTexture = nullptr;
 	TextureHandle hostAtlasTexture = nullptr;
@@ -26,9 +26,8 @@ struct HostOverlayGLES2State {
 HostOverlayGLES2State g_gles2;
 
 void bindTexture(OpenGLES2Backend& backend, TextureHandle texture) {
-	backend.setActiveTextureUnit(0);
+	backend.setActiveTextureUnit(GLES2_TEXTURE_UNIT_HOST_2D);
 	backend.bindTexture2D(texture);
-	glUniform1i(g_gles2.uniformTexture, 0);
 }
 
 void drawVerticesGLES2(const float (&vertices)[24]) {
@@ -199,7 +198,8 @@ void bootstrapHostOverlayGLES2(OpenGLES2Backend& backend) {
 	g_gles2.attribUv = glGetAttribLocation(g_gles2.program, "a_texcoord");
 	g_gles2.uniformResolution = glGetUniformLocation(g_gles2.program, "u_resolution");
 	g_gles2.uniformColor = glGetUniformLocation(g_gles2.program, "u_color");
-	g_gles2.uniformTexture = glGetUniformLocation(g_gles2.program, "u_texture");
+	glUseProgram(g_gles2.program);
+	glUniform1i(glGetUniformLocation(g_gles2.program, "u_texture"), GLES2_TEXTURE_UNIT_HOST_2D);
 	glGenBuffers(1, &g_gles2.vbo);
 	const TextureParams& params = RGBA8_LINEAR_TEXTURE_PARAMS;
 	const u8 whitePixel[4] = {255u, 255u, 255u, 255u};

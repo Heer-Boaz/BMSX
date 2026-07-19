@@ -7,5 +7,6 @@ export const TEXTURE_UNIT_SLOT_SECONDARY = 1;
 export const TEXTURE_UNIT_SLOT_SYSTEM = 11;
 export const TEXTURE_UNIT_CUBEMAP = 6;
 export const TEXTURE_UNIT_POST_PROCESSING_SOURCE = 8;
+export const TEXTURE_UNIT_DEVICE_QUANTIZE_LUT = 9;
 // A high-numbered scratch unit for temporary uploads
 export const TEXTURE_UNIT_UPLOAD = 15;

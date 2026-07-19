@@ -10,7 +10,9 @@ interface RegisteredPassRec {
 	id: string;
 	exec: (backend: GPUBackend, fbo: unknown, state: unknown, pipelineHandle: RenderPassInstanceHandle | null) => void;
 	prepare?: (backend: GPUBackend, state: unknown) => void;
+	teardown?: (backend: GPUBackend) => void;
 	pipelineHandle: RenderPassInstanceHandle | null;
+	ownsPipelineHandle: boolean;
 	passEncoder: PassEncoder;
 	state?: unknown;
 	bindingLayout?: RenderPassDef['bindingLayout'];
@@ -29,6 +31,7 @@ export class RenderPassLibrary {
 		const idStr = String(desc.id);
 		if (this.registered.has(idStr)) throw new Error(`Render pass '${desc.id}' already registered`);
 		let pipelineHandle: RenderPassInstanceHandle | null = null;
+		let ownsPipelineHandle = false;
 		if (desc.sharedPipelineWith) {
 			const sharedPassId = String(desc.sharedPipelineWith);
 			const sharedPass = this.registered.get(sharedPassId);
@@ -42,7 +45,7 @@ export class RenderPassLibrary {
 				throw new Error(`Render pass '${desc.id}' cannot define shaders when sharedPipelineWith='${sharedPassId}'`);
 			}
 			pipelineHandle = sharedPass.pipelineHandle;
-		} else if (this.backend.createRenderPassInstance && (desc.vsCode || desc.fsCode)) {
+		} else if (desc.vsCode || desc.fsCode) {
 			pipelineHandle = this.backend.createRenderPassInstance({
 				label: desc.name,
 				vsCode: desc.vsCode,
@@ -52,12 +55,15 @@ export class RenderPassLibrary {
 				depthTest: !!desc.depthTest,
 				depthWrite: desc.depthWrite ?? !!desc.writesDepth,
 			});
+			ownsPipelineHandle = true;
 		}
 		const rec: RegisteredPassRec = {
 			id: idStr,
 			exec: desc.exec,
 			prepare: desc.prepare,
+			teardown: desc.teardown,
 			pipelineHandle,
+			ownsPipelineHandle,
 			passEncoder: { fbo: null, desc: { label: idStr } as RenderPassDesc },
 			state: desc.initialState,
 			bindingLayout: desc.bindingLayout,
@@ -74,12 +80,25 @@ export class RenderPassLibrary {
 		this.passes.push(desc);
 	}
 
+	dispose(): void {
+		for (let index = this.passes.length - 1; index >= 0; index -= 1) {
+			const rec = this.registered.get(String(this.passes[index].id))!;
+			rec.teardown?.(this.backend);
+			if (rec.ownsPipelineHandle) this.backend.destroyRenderPassInstance(rec.pipelineHandle!);
+		}
+		this.passes.length = 0;
+		this.passEnabled.clear();
+		this.registered.clear();
+	}
+
 	setState<PState extends RenderPassStateId>(id: PState, state: RenderPassStateRegistry[PState]): void {
 		const p = this.registered.get(String(id)); if (!p) throw new Error(`Render pass '${String(id)}' not found`);
 		p.state = state;
 	}
 	getState<PState extends RenderPassStateId>(id: PState): RenderPassStateRegistry[PState] {
-		return this.registered.get(String(id))?.state as RenderPassStateRegistry[PState];
+		const pass = this.registered.get(String(id));
+		if (!pass) throw new Error(`Render pass '${String(id)}' not found`);
+		return pass.state as RenderPassStateRegistry[PState];
 	}
 
 	execute(id: string, fbo: unknown): void {

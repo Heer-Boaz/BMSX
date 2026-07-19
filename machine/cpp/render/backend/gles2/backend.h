@@ -136,6 +136,7 @@ public:
 
 private:
 	static constexpr i32 kTrackedTextureUnits = 16;
+	void bindTextureForUpload(GLuint texture, const TextureParams& params);
 	FramebufferGetter m_get_framebuffer = nullptr;
 	ProcAddressGetter m_get_proc_address = nullptr;
 	GLuint m_current_fbo = 0;
@@ -149,6 +150,7 @@ private:
 	GxCpuToVramProfileFrame m_gx_cpu_to_vram_profile_frame{};
 	i32 m_active_texture_unit = -1;
 	std::array<GLuint, kTrackedTextureUnits> m_bound_texture_2d_by_unit{};
+	u32 m_touched_texture_units = 0u;
 	std::unique_ptr<OpenGLES2PostPipelines> m_post_pipelines;
 	GLuint m_readback_fbo = 0;
 	u32 m_context_generation = 0;

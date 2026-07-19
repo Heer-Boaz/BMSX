@@ -9,10 +9,12 @@
 #include "render/host_overlay/gles2/pipeline.h"
 #include "render/backend/pass/library.h"
 #include "render/backend/gles2/gx_gpu.h"
+#include "render/backend/gles2/texture_units.h"
 #include "core/machine_manager.h"
 #include "render/shared/solid_pixels.h"
 
 #include <array>
+#include <bit>
 #include <cmath>
 #include <cstdio>
 #include <string_view>
@@ -34,12 +36,6 @@ constexpr bool kGLES2FinishFrame = false;
 
 
 namespace {
-
-void bindGLES2TextureForUpload(GLuint texture, const bmsx::TextureParams& params) {
-	glBindTexture(GL_TEXTURE_2D, texture);
-	bmsx::applyGLES2TextureParams(params);
-	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-}
 
 GLuint compileGLES2Shader(GLenum type, const char* source, const char* shaderDefines, const char* label, const char* stage) {
 	const GLuint shader = glCreateShader(type);
@@ -231,6 +227,17 @@ void OpenGLES2Backend::invalidateTextureBindingCache() {
 	m_bound_texture_2d_by_unit.fill(0);
 }
 
+void OpenGLES2Backend::bindTextureForUpload(GLuint texture, const TextureParams& params) {
+	setActiveTextureUnit(GLES2_TEXTURE_UNIT_UPLOAD);
+	if (m_bound_texture_2d_by_unit[GLES2_TEXTURE_UNIT_UPLOAD] != texture) {
+		glBindTexture(GL_TEXTURE_2D, texture);
+		m_bound_texture_2d_by_unit[GLES2_TEXTURE_UNIT_UPLOAD] = texture;
+		m_touched_texture_units |= 1u << static_cast<u32>(GLES2_TEXTURE_UNIT_UPLOAD);
+	}
+	applyGLES2TextureParams(params);
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+}
+
 TextureHandle OpenGLES2Backend::createTexture(const u8* data, i32 width,
 												i32 height,
 												const TextureParams& params) {
@@ -249,7 +256,7 @@ TextureHandle OpenGLES2Backend::createTexture(const u8* data, i32 width,
 
 	const GLint internalFormat = tex->srgb ? static_cast<GLint>(GL_SRGB_ALPHA_EXT) : static_cast<GLint>(GL_RGBA);
 	glGenTextures(1, &tex->id);
-	bindGLES2TextureForUpload(tex->id, params);
+	bindTextureForUpload(tex->id, params);
 	glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, width, height, 0, GL_RGBA,
 					GL_UNSIGNED_BYTE, uploadData);
 	invalidateTextureBindingCache();
@@ -278,7 +285,7 @@ void OpenGLES2Backend::updateTexture(TextureHandle handle, const u8* data, i32 w
 	std::vector<u8> linearized;
 	const u8* uploadData = prepareGLES2UploadData(data, width, height, logicalSrgb, useSrgbTexture, linearized);
 
-	bindGLES2TextureForUpload(tex->id, params);
+	bindTextureForUpload(tex->id, params);
 	if (needsRecreate) {
 		const GLint internalFormat = useSrgbTexture ? static_cast<GLint>(GL_SRGB_ALPHA_EXT) : static_cast<GLint>(GL_RGBA);
 		glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, uploadData);
@@ -306,7 +313,7 @@ TextureHandle OpenGLES2Backend::resizeTexture(TextureHandle handle, i32 width, i
 	const bool logicalSrgb = params.srgb;
 	const bool useSrgbTexture = logicalSrgb && m_supports_srgb_textures;
 	std::vector<u8> zeroed(rgba8ByteCount(width, height), 0);
-	bindGLES2TextureForUpload(tex->id, params);
+	bindTextureForUpload(tex->id, params);
 	const GLint internalFormat = useSrgbTexture ? static_cast<GLint>(GL_SRGB_ALPHA_EXT) : static_cast<GLint>(GL_RGBA);
 	glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, zeroed.data());
 	tex->width = width;
@@ -329,7 +336,7 @@ void OpenGLES2Backend::updateTextureRegion(TextureHandle handle, const u8* data,
 	auto* tex = static_cast<GLES2Texture*>(handle);
 	std::vector<u8> linearized;
 	const u8* uploadData = prepareGLES2UploadData(data, width, height, tex->logicalSrgb, tex->srgb, linearized);
-	bindGLES2TextureForUpload(tex->id, params);
+	bindTextureForUpload(tex->id, params);
 	glTexSubImage2D(GL_TEXTURE_2D, 0, x, y, width, height, GL_RGBA, GL_UNSIGNED_BYTE, uploadData);
 	invalidateTextureBindingCache();
 	if (kGLES2VerboseLog) {
@@ -557,11 +564,20 @@ void OpenGLES2Backend::endFrame() {
 	glUseProgram(0);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
-	for (int unit = 0; unit <= 3; ++unit) {
-		glActiveTexture(GL_TEXTURE0 + unit);
+	u32 touchedTextureUnits = m_touched_texture_units;
+	while (touchedTextureUnits != 0u) {
+		const i32 unit = static_cast<i32>(std::countr_zero(touchedTextureUnits));
+		if (m_active_texture_unit != unit) {
+			glActiveTexture(GL_TEXTURE0 + unit);
+			m_active_texture_unit = unit;
+		}
 		glBindTexture(GL_TEXTURE_2D, 0);
+		touchedTextureUnits &= touchedTextureUnits - 1u;
 	}
-	glActiveTexture(GL_TEXTURE0);
+	if (m_touched_texture_units != 0u && m_active_texture_unit != 0) {
+		glActiveTexture(GL_TEXTURE0);
+	}
+	m_touched_texture_units = 0u;
 	invalidateTextureBindingCache();
 	if constexpr (kGLES2FinishFrame) {
 	glFinish();
@@ -593,6 +609,7 @@ void OpenGLES2Backend::onContextReset() {
 	m_target_height = m_default_height;
 	m_readback_fbo = 0;
 	*m_post_pipelines = OpenGLES2PostPipelines{};
+	m_touched_texture_units = 0u;
 	invalidateTextureBindingCache();
 	glDisable(GL_DITHER);
 	const char* extensions = reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS));
@@ -616,7 +633,7 @@ void OpenGLES2Backend::onContextReset() {
 void OpenGLES2Backend::onContextDestroy() {
 	CRTPipeline::shutdownCRTGLES2(m_post_pipelines->crt);
 	CRTPipeline::shutdownPresentGLES2(m_post_pipelines->present);
-	DeviceQuantizePipeline::GLES2::shutdown(m_post_pipelines->deviceQuantize);
+	DeviceQuantizePipeline::GLES2::shutdown(*this, m_post_pipelines->deviceQuantize);
 	if (m_readback_fbo != 0) {
 		glDeleteFramebuffers(1, &m_readback_fbo);
 	}
@@ -626,12 +643,14 @@ void OpenGLES2Backend::onContextDestroy() {
 void OpenGLES2Backend::onContextLost() {
 	m_context_ready = false;
 	m_context_generation += 1u;
+	DeviceQuantizePipeline::GLES2::releaseLostTextureHandles(*this, m_post_pipelines->deviceQuantize);
 	m_current_fbo = 0;
 	m_backbuffer_fbo = 0;
 	m_target_width = m_default_width;
 	m_target_height = m_default_height;
 	m_readback_fbo = 0;
 	*m_post_pipelines = OpenGLES2PostPipelines{};
+	m_touched_texture_units = 0u;
 	invalidateTextureBindingCache();
 	m_supports_srgb_textures = false;
 	m_supports_uint_indices = false;
@@ -662,6 +681,7 @@ void OpenGLES2Backend::bindTexture2D(TextureHandle tex) {
 	if (m_bound_texture_2d_by_unit[unit] == gltex->id) return;
 	glBindTexture(GL_TEXTURE_2D, gltex->id);
 	m_bound_texture_2d_by_unit[unit] = gltex->id;
+	m_touched_texture_units |= 1u << static_cast<u32>(unit);
 	if (kGLES2VerboseLog) {
 	std::fprintf(stderr, "[BMSX][GLES2] bindTexture2D unit=%d id=%u\n", unit,
 					static_cast<unsigned>(gltex->id));
