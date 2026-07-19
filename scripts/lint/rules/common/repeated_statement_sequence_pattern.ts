@@ -2,7 +2,7 @@ import ts from 'typescript';
 import { lineInAnalysisRegion, type AnalysisRegion } from '../../../analysis/lint_suppressions';
 import { noteQualityLedger, type QualityLedger } from '../../../analysis/quality_ledger';
 import type { FunctionInfo } from '../../language/cpp/syntax/declarations';
-import { collectStatementRanges } from '../../language/cpp/syntax/syntax';
+import { collectCppContextualStatementRanges } from '../../language/cpp/syntax/syntax';
 import { normalizedTokenText, type Token } from '../../language/cpp/syntax/tokens';
 import { defineLintRule } from '../../rule';
 import { compactStatementText } from '../../ts_node';
@@ -191,21 +191,19 @@ function forEachUnreportedDuplicateSequence<TEntry extends StatementSequenceEntr
 export function collectTokenRepeatedStatementSequences(
 	file: string,
 	tokens: readonly Token[],
-	pairs: readonly number[],
 	info: FunctionInfo,
 	regions: readonly AnalysisRegion[],
 	sequences: TokenStatementSequenceInfo[],
 ): void {
-	for (let index = info.bodyStart; index < info.bodyEnd; index += 1) {
-		if (tokens[index].text !== '{') {
-			continue;
-		}
-		const close = pairs[index];
-		if (close < 0 || close > info.bodyEnd) {
-			continue;
-		}
-		collectTokenRepeatedStatementSequencesInBlock(file, tokens, index + 1, close, info.name, regions, sequences);
-	}
+	collectTokenRepeatedStatementSequencesInBlock(
+		file,
+		tokens,
+		info.bodyStart + 1,
+		info.bodyEnd,
+		info.name,
+		regions,
+		sequences,
+	);
 }
 
 function collectTokenRepeatedStatementSequencesInBlock(
@@ -217,13 +215,13 @@ function collectTokenRepeatedStatementSequencesInBlock(
 	regions: readonly AnalysisRegion[],
 	sequences: TokenStatementSequenceInfo[],
 ): void {
-	const ranges = collectStatementRanges(tokens, blockStart, blockEnd);
+	const ranges = collectCppContextualStatementRanges(tokens, blockStart, blockEnd);
 	if (ranges.length < CPP_REPEATED_STATEMENT_SEQUENCE_MIN_COUNT) {
 		return;
 	}
 	const statementTexts: string[] = [];
 	for (let index = 0; index < ranges.length; index += 1) {
-		statementTexts.push(normalizedTokenText(tokens, ranges[index][0], ranges[index][1]));
+		statementTexts.push(normalizedTokenText(tokens, ranges[index].start, ranges[index].end));
 	}
 	for (let index = 0; index <= ranges.length - CPP_REPEATED_STATEMENT_SEQUENCE_MIN_COUNT; index += 1) {
 		let textLength = 0;
@@ -236,13 +234,13 @@ function collectTokenRepeatedStatementSequencesInBlock(
 				break;
 			}
 			textLength += text.length;
-			parts.push(text);
+			parts.push(`${ranges[index + offset].context}\u0001${text}`);
 		}
 		if (!usable || textLength < CPP_REPEATED_STATEMENT_SEQUENCE_MIN_TEXT_LENGTH) {
 			continue;
 		}
-		const first = ranges[index][0];
-		const last = ranges[index + CPP_REPEATED_STATEMENT_SEQUENCE_MIN_COUNT - 1][1] - 1;
+		const first = ranges[index].start;
+		const last = ranges[index + CPP_REPEATED_STATEMENT_SEQUENCE_MIN_COUNT - 1].end - 1;
 		if (lineInAnalysisRegion(regions, 'repeated-sequence-acceptable', tokens[first].line)) {
 			continue;
 		}

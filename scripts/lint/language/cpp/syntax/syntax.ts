@@ -401,6 +401,51 @@ export function collectCppStatementRanges(tokens: readonly CppToken[], start: nu
 	return ranges;
 }
 
+export type CppContextualStatementRange = {
+	start: number;
+	end: number;
+	context: string;
+};
+
+export function collectCppContextualStatementRanges(
+	tokens: readonly CppToken[],
+	start: number,
+	end: number,
+): CppContextualStatementRange[] {
+	const ranges: CppContextualStatementRange[] = [];
+	const parentContexts: string[] = [];
+	let context = '';
+	let statementStart = start;
+	let parenDepth = 0;
+	let bracketDepth = 0;
+	for (let index = start; index < end; index += 1) {
+		const text = tokens[index].text;
+		if (text === '(') parenDepth += 1;
+		else if (text === ')') parenDepth -= 1;
+		else if (text === '[') bracketDepth += 1;
+		else if (text === ']') bracketDepth -= 1;
+		else if (text === '{') {
+			const block = normalizedCppTokenText(tokens, statementStart, index);
+			parentContexts.push(context);
+			context = context.length === 0 ? block : `${context}\u0000${block}`;
+			statementStart = index + 1;
+		} else if (text === '}') {
+			context = parentContexts.pop()!;
+			statementStart = index + 1;
+		} else if (text === ';' && parenDepth === 0 && bracketDepth === 0) {
+			if (statementStart < index) {
+				ranges.push({
+					start: statementStart,
+					end: index,
+					context,
+				});
+			}
+			statementStart = index + 1;
+		}
+	}
+	return ranges;
+}
+
 export function hasCppDeclarationPrefix(tokens: readonly CppToken[], start: number, nameIndex: number): boolean {
 	if (nameIndex <= start) {
 		return false;

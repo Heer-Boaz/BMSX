@@ -167,7 +167,7 @@ export function analyzeFiles(files: readonly string[]): AnalysisResult {
 			lintStringSwitchChains(file, tokens, pairs, info, lintIssues);
 			lintRepeatedExpressions(file, tokens, pairs, info, lintIssues);
 			lintSemanticRepeatedExpressions(file, tokens, pairs, info, lintIssues);
-			collectTokenRepeatedStatementSequences(file, tokens, pairs, info, regions, statementSequences);
+			collectTokenRepeatedStatementSequences(file, tokens, info, regions, statementSequences);
 			collectNormalizedBody(file, tokens, pairs, info, regions, normalizedBodies, ledger);
 		}
 		if (facadeStats !== null) {
