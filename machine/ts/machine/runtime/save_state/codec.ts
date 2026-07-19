@@ -47,6 +47,7 @@ import type { GeometryControllerState } from '../../devices/geometry/save_state'
 import type { MemorySaveState } from '../../memory/memory';
 import { RAM_BASE, RAM_END } from '../../memory/map';
 import type { FrameSchedulerStateSnapshot } from '../../scheduler/frame';
+import type { FrameLoopStateSnapshot } from '../frame/loop';
 import type { RuntimeSaveMachineState } from '../save_machine_state';
 import type { RuntimeSaveState } from '../save_state';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../save_state';
@@ -210,6 +211,38 @@ function decodeFrameSchedulerState(value: unknown, label: string): FrameSchedule
 		lastTickVisualFrameCommitted: requireObjectKey(object, 'lastTickVisualFrameCommitted', label, 'frameScheduler.lastTickVisualFrameCommitted') as boolean,
 		lastTickCompleted: requireObjectKey(object, 'lastTickCompleted', label, 'frameScheduler.lastTickCompleted') as boolean,
 		lastTickConsumedSequence: requireI64(requireObjectKey(object, 'lastTickConsumedSequence', label, 'frameScheduler.lastTickConsumedSequence'), 'frameScheduler.lastTickConsumedSequence'),
+	};
+}
+
+function encodeFrameLoopState(state: FrameLoopStateSnapshot): FrameLoopStateSnapshot {
+	return {
+		frameState: {
+			updateExecuted: state.frameState.updateExecuted,
+			luaFaulted: state.frameState.luaFaulted,
+			cycleBudgetRemaining: state.frameState.cycleBudgetRemaining,
+			cycleBudgetGranted: state.frameState.cycleBudgetGranted,
+			cycleCarryGranted: state.frameState.cycleCarryGranted,
+			activeCpuUsedCycles: state.frameState.activeCpuUsedCycles,
+		},
+		frameActive: state.frameActive,
+		frameDeltaMs: state.frameDeltaMs,
+	};
+}
+
+function decodeFrameLoopState(value: unknown, label: string): FrameLoopStateSnapshot {
+	const object = requireObject(value, label);
+	const frameState = requireObject(requireObjectKey(object, 'frameState', label, `${label}.frameState`), `${label}.frameState`);
+	return {
+		frameState: {
+			updateExecuted: requireBooleanValue(requireObjectKey(frameState, 'updateExecuted', label, `${label}.frameState.updateExecuted`), `${label}.frameState.updateExecuted`),
+			luaFaulted: requireBooleanValue(requireObjectKey(frameState, 'luaFaulted', label, `${label}.frameState.luaFaulted`), `${label}.frameState.luaFaulted`),
+			cycleBudgetRemaining: requireI64(requireObjectKey(frameState, 'cycleBudgetRemaining', label, `${label}.frameState.cycleBudgetRemaining`), `${label}.frameState.cycleBudgetRemaining`),
+			cycleBudgetGranted: requireI64(requireObjectKey(frameState, 'cycleBudgetGranted', label, `${label}.frameState.cycleBudgetGranted`), `${label}.frameState.cycleBudgetGranted`),
+			cycleCarryGranted: requireI64(requireObjectKey(frameState, 'cycleCarryGranted', label, `${label}.frameState.cycleCarryGranted`), `${label}.frameState.cycleCarryGranted`),
+			activeCpuUsedCycles: requireI64(requireObjectKey(frameState, 'activeCpuUsedCycles', label, `${label}.frameState.activeCpuUsedCycles`), `${label}.frameState.activeCpuUsedCycles`),
+		},
+		frameActive: requireBooleanValue(requireObjectKey(object, 'frameActive', label, `${label}.frameActive`), `${label}.frameActive`),
+		frameDeltaMs: requireObjectKey(object, 'frameDeltaMs', label, `${label}.frameDeltaMs`) as number,
 	};
 }
 
@@ -1047,6 +1080,7 @@ function encodeRuntimeSaveMachineState(state: RuntimeSaveMachineState): RuntimeS
 	return {
 		machine: encodeMachineSaveState(state.machine),
 		frameScheduler: encodeFrameSchedulerState(state.frameScheduler),
+		frameLoop: encodeFrameLoopState(state.frameLoop),
 		schedulerNowCycles: state.schedulerNowCycles,
 	};
 }
@@ -1056,6 +1090,7 @@ function decodeRuntimeSaveMachineState(value: unknown, label: string): RuntimeSa
 	return {
 		machine: decodeMachineSaveState(requireObjectKey(object, 'machine', label, 'machineState.machine'), 'machineState.machine'),
 		frameScheduler: decodeFrameSchedulerState(requireObjectKey(object, 'frameScheduler', label, 'machineState.frameScheduler'), 'machineState.frameScheduler'),
+		frameLoop: decodeFrameLoopState(requireObjectKey(object, 'frameLoop', label, 'machineState.frameLoop'), 'machineState.frameLoop'),
 		schedulerNowCycles: requireI64(requireObjectKey(object, 'schedulerNowCycles', label, 'machineState.schedulerNowCycles'), 'machineState.schedulerNowCycles'),
 	};
 }

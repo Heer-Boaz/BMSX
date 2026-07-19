@@ -278,6 +278,46 @@ FrameSchedulerStateSnapshot decodeFrameSchedulerState(const BinValue& value, con
 	return state;
 }
 
+BinValue encodeFrameState(const FrameState& state) {
+	BinObject object;
+	object["updateExecuted"] = state.updateExecuted;
+	object["luaFaulted"] = state.luaFaulted;
+	object["cycleBudgetRemaining"] = state.cycleBudgetRemaining;
+	object["cycleBudgetGranted"] = state.cycleBudgetGranted;
+	object["cycleCarryGranted"] = state.cycleCarryGranted;
+	object["activeCpuUsedCycles"] = state.activeCpuUsedCycles;
+	return BinValue(std::move(object));
+}
+
+FrameState decodeFrameState(const BinValue& value, const char* label) {
+	const BinObject& object = requireObject(value, label);
+	FrameState state;
+	state.updateExecuted = requireBool(requireField(object, "updateExecuted", label), "machineState.frameLoop.frameState.updateExecuted");
+	state.luaFaulted = requireBool(requireField(object, "luaFaulted", label), "machineState.frameLoop.frameState.luaFaulted");
+	state.cycleBudgetRemaining = requireI64(requireField(object, "cycleBudgetRemaining", label), "machineState.frameLoop.frameState.cycleBudgetRemaining");
+	state.cycleBudgetGranted = requireI64(requireField(object, "cycleBudgetGranted", label), "machineState.frameLoop.frameState.cycleBudgetGranted");
+	state.cycleCarryGranted = requireI64(requireField(object, "cycleCarryGranted", label), "machineState.frameLoop.frameState.cycleCarryGranted");
+	state.activeCpuUsedCycles = requireI64(requireField(object, "activeCpuUsedCycles", label), "machineState.frameLoop.frameState.activeCpuUsedCycles");
+	return state;
+}
+
+BinValue encodeFrameLoopState(const FrameLoopStateSnapshot& state) {
+	BinObject object;
+	object["frameState"] = encodeFrameState(state.frameState);
+	object["frameActive"] = state.frameActive;
+	object["frameDeltaMs"] = state.frameDeltaMs;
+	return BinValue(std::move(object));
+}
+
+FrameLoopStateSnapshot decodeFrameLoopState(const BinValue& value, const char* label) {
+	const BinObject& object = requireObject(value, label);
+	FrameLoopStateSnapshot state;
+	state.frameState = decodeFrameState(requireField(object, "frameState", label), "machineState.frameLoop.frameState");
+	state.frameActive = requireBool(requireField(object, "frameActive", label), "machineState.frameLoop.frameActive");
+	state.frameDeltaMs = requireNumber(requireField(object, "frameDeltaMs", label), "machineState.frameLoop.frameDeltaMs");
+	return state;
+}
+
 BinValue encodeMemorySaveState(const MemorySaveState& state) {
 	BinObject object;
 	object["ram"] = BinValue(BinBinary(state.ram.begin(), state.ram.end()));
@@ -1123,6 +1163,7 @@ BinValue encodeRuntimeSaveMachineState(const RuntimeSaveMachineState& state) {
 	BinObject object;
 	object["machine"] = encodeMachineSaveState(state.machine);
 	object["frameScheduler"] = encodeFrameSchedulerState(state.frameScheduler);
+	object["frameLoop"] = encodeFrameLoopState(state.frameLoop);
 	object["schedulerNowCycles"] = state.schedulerNowCycles;
 	return BinValue(std::move(object));
 }
@@ -1132,6 +1173,7 @@ RuntimeSaveMachineState decodeRuntimeSaveMachineState(const BinValue& value, con
 	RuntimeSaveMachineState state;
 	state.machine = decodeMachineSaveState(requireField(object, "machine", label), "machineState.machine");
 	state.frameScheduler = decodeFrameSchedulerState(requireField(object, "frameScheduler", label), "machineState.frameScheduler");
+	state.frameLoop = decodeFrameLoopState(requireField(object, "frameLoop", label), "machineState.frameLoop");
 	state.schedulerNowCycles = requireI64(requireField(object, "schedulerNowCycles", label), "machineState.schedulerNowCycles");
 	return state;
 }

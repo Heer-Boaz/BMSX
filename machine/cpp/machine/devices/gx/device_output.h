@@ -36,6 +36,7 @@ struct GxGpuDeviceOutput {
 	const GxGpuPcrtcScanout& pcrtcScanout;
 	const std::array<u8, GX_GPU_VRAM_BYTE_COUNT>& vramSnapshotBytes;
 	u64 vramSnapshotSerial = 0u;
+	u64 vramReplacementSerial = 0u;
 };
 
 } // namespace bmsx

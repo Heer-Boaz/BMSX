@@ -15,4 +15,5 @@ export type GxGpuDeviceOutput = Readonly<{
 	pcrtcScanout: GxGpuPcrtcScanout;
 	vramSnapshotBytes: Uint8Array;
 	vramSnapshotSerial: bigint;
+	vramReplacementSerial: bigint;
 }>;

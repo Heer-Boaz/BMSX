@@ -383,6 +383,7 @@ type GxGpuState = {
 	scanoutFieldsWidth: number;
 	scanoutFieldsHeight: number;
 	scanoutFieldsValid: boolean;
+	scanoutFieldsVramReplacementSerial: bigint;
 	processedCommandCount: number;
 	processedCommandSerial: number;
 	vramSnapshotSerial: bigint;
@@ -628,6 +629,7 @@ function bootstrapGxGpuPass(backend: WebGLBackend): void {
 		scanoutFieldsWidth: 0,
 		scanoutFieldsHeight: 0,
 		scanoutFieldsValid: false,
+		scanoutFieldsVramReplacementSerial: 0n,
 		processedCommandCount: 0,
 		processedCommandSerial: 0,
 		vramSnapshotSerial: 0n,
@@ -2650,7 +2652,8 @@ function scanoutInterlacedGxGpuVram(fbo: WebGLFramebuffer, state: RenderPassStat
 	const pcrtcChanged = gxGpuState.scanoutFieldPcrtcRevision !== state.pcrtcScanout.revision
 		|| gxGpuState.scanoutFieldValue !== field;
 	const invalid = !gxGpuState.scanoutFieldsValid
-		|| sizeChanged;
+		|| sizeChanged
+		|| gxGpuState.scanoutFieldsVramReplacementSerial !== state.vramReplacementSerial;
 	if (sizeChanged) {
 		backend.setActiveTexture(GX_GPU_SCANOUT_FIELDS_TEXTURE_UNIT);
 		backend.bindTexture2D(gxGpuState.scanoutFieldsTexture);
@@ -2694,6 +2697,7 @@ function scanoutInterlacedGxGpuVram(fbo: WebGLFramebuffer, state: RenderPassStat
 		gxGpuState.scanoutFieldsWidth = width;
 		gxGpuState.scanoutFieldsHeight = height;
 		gxGpuState.scanoutFieldsValid = true;
+		gxGpuState.scanoutFieldsVramReplacementSerial = state.vramReplacementSerial;
 	}
 
 	gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
@@ -2805,6 +2809,7 @@ function writeGxGpuState(ctx: RenderGraphPassContext, state: RenderPassStateRegi
 	state.pcrtcScanout = ctx.view.gxGpuPcrtcScanout;
 	state.vramSnapshotBytes = ctx.view.gxGpuVramSnapshotBytes;
 	state.vramSnapshotSerial = ctx.view.gxGpuVramSnapshotSerial;
+	state.vramReplacementSerial = ctx.view.gxGpuVramReplacementSerial;
 }
 
 export function registerGxGpuPass(registry: RenderPassLibrary): void {
@@ -2820,6 +2825,7 @@ export function registerGxGpuPass(registry: RenderPassLibrary): void {
 		pcrtcScanout: registry.view.gxGpuPcrtcScanout,
 		vramSnapshotBytes: registry.view.gxGpuVramSnapshotBytes,
 		vramSnapshotSerial: registry.view.gxGpuVramSnapshotSerial,
+		vramReplacementSerial: registry.view.gxGpuVramReplacementSerial,
 	};
 	registry.register({
 		id: 'gx_gpu',

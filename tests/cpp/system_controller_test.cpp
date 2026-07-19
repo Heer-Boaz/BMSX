@@ -10,6 +10,7 @@
 #include "machine/program/loader.h"
 #include "machine/runtime/boot_timing.h"
 #include "machine/runtime/input.h"
+#include "machine/runtime/machine_state.h"
 #include "machine/runtime/runtime.h"
 
 #include <array>
@@ -120,10 +121,58 @@ void testRuntimeSystemRebootBoundary() {
 	require(runtime.cartProgramStarted, "rebooted system root can hand off to the original cart entry");
 }
 
+void testRuntimeRestorePreservesInFlightFrameBudgetAndResetsHostClock() {
+	std::array<bmsx::u8, 1> emptyRom{{0}};
+	const bmsx::ResolvedRuntimeTiming timing = bmsx::resolveRuntimeTiming(bmsx::PSX_MACHINE_SPEC.cpuFreqHz);
+	SystemResetInputSource input;
+	bmsx::Runtime runtime(
+		bmsx::RuntimeOptions{
+			{ emptyRom.data(), 0u },
+			{ emptyRom.data(), 0u },
+			timing.pcrtcRunning,
+			timing.ufpsScaled,
+			timing.cpuHz,
+			timing.cycleBudgetPerFrame,
+			timing.totalHalfLines,
+			timing.activeDisplayHalfLines,
+			timing.dmaWordsPerSec,
+			timing.geoWorkUnitsPerSec,
+		},
+		input
+	);
+	runtime.frameLoop.beginFrameState(runtime, 23'456, 34'567);
+	runtime.frameLoop.frameState.updateExecuted = true;
+	runtime.frameLoop.frameState.luaFaulted = true;
+	runtime.frameLoop.frameState.cycleBudgetRemaining = 12'345;
+	runtime.frameLoop.frameState.activeCpuUsedCycles = 45'678;
+	runtime.frameLoop.frameDeltaMs = 20.096;
+	runtime.frameLoop.currentTimeSeconds = 0.9875;
+	const bmsx::RuntimeMachineState snapshot = bmsx::captureRuntimeMachineState(runtime);
+
+	runtime.frameLoop.frameActive = false;
+	runtime.frameLoop.frameState = bmsx::FrameState{false, false, 99, 98, 97, 96};
+	runtime.frameLoop.frameDeltaMs = 1.0;
+	runtime.frameLoop.currentTimeSeconds = 2.0;
+	bmsx::applyRuntimeMachineState(runtime, snapshot);
+
+	const bmsx::FrameLoopStateSnapshot restored = runtime.frameLoop.captureState();
+	require(restored.frameActive == snapshot.frameLoop.frameActive, "runtime restore preserves in-flight frame activity");
+	require(restored.frameState.updateExecuted == snapshot.frameLoop.frameState.updateExecuted, "runtime restore preserves in-flight update completion");
+	require(restored.frameState.luaFaulted == snapshot.frameLoop.frameState.luaFaulted, "runtime restore preserves in-flight Lua fault state");
+	require(restored.frameState.cycleBudgetRemaining == snapshot.frameLoop.frameState.cycleBudgetRemaining, "runtime restore preserves remaining in-flight cycles");
+	require(restored.frameState.cycleBudgetGranted == snapshot.frameLoop.frameState.cycleBudgetGranted, "runtime restore preserves granted in-flight cycles");
+	require(restored.frameState.cycleCarryGranted == snapshot.frameLoop.frameState.cycleCarryGranted, "runtime restore preserves carried in-flight cycles");
+	require(restored.frameState.activeCpuUsedCycles == snapshot.frameLoop.frameState.activeCpuUsedCycles, "runtime restore preserves used in-flight cycles");
+	require(restored.frameDeltaMs == snapshot.frameLoop.frameDeltaMs, "runtime restore preserves in-flight frame duration");
+	require(runtime.frameLoop.currentTimeSeconds == 0.0, "runtime restore resets the host clock outside machine state");
+	require(!runtime.vblank.tickCompleted(), "runtime restore prepares the next physical VBlank edge");
+}
+
 } // namespace
 
 int main() {
 	testResetCommandLatch();
 	testRuntimeSystemRebootBoundary();
+	testRuntimeRestorePreservesInFlightFrameBudgetAndResetsHostClock();
 	return 0;
 }

@@ -17,6 +17,7 @@ struct InterlacedScanoutState {
 	i32 width = 0;
 	i32 height = 0;
 	bool valid = false;
+	u64 vramReplacementSerial = 0u;
 };
 
 InterlacedScanoutState g_interlacedScanout;
@@ -463,7 +464,8 @@ void writeOutputRows(
 void scanoutInterlacedVram(SoftwareBackend& backend, const GxGpuPipelineState& state) {
 	const bool geometryChanged = !g_interlacedScanout.valid
 		|| g_interlacedScanout.width != state.width
-		|| g_interlacedScanout.height != state.height;
+		|| g_interlacedScanout.height != state.height
+		|| g_interlacedScanout.vramReplacementSerial != state.vramReplacementSerial;
 	const size_t pixelCount = static_cast<size_t>(state.width) * static_cast<size_t>(state.height);
 	if (g_interlacedScanout.pixels.size() != pixelCount) {
 		g_interlacedScanout.pixels.resize(pixelCount);
@@ -476,6 +478,7 @@ void scanoutInterlacedVram(SoftwareBackend& backend, const GxGpuPipelineState& s
 		g_interlacedScanout.width = state.width;
 		g_interlacedScanout.height = state.height;
 		g_interlacedScanout.valid = true;
+		g_interlacedScanout.vramReplacementSerial = state.vramReplacementSerial;
 	}
 	writeOutputRows(
 		g_interlacedScanout.pixels.data(),

@@ -56,6 +56,7 @@ void GxGpu::reset() {
 	m_commandBuffer.reset();
 	initializeGxGpuVramPowerOn(m_vramSnapshotBytes->data());
 	publishVramSnapshotRevision();
+	publishVramReplacementRevision();
 	clearGp0CommandState();
 	m_scanoutInterlacedField = 0u;
 	m_scanoutInterlacedDisplayField = 0u;
@@ -380,6 +381,7 @@ void GxGpu::restoreSaveState(const GxGpuSaveState& state) {
 void GxGpu::replaceVramSnapshotBytes(const u8* bytes) {
 	std::copy(bytes, bytes + GX_GPU_VRAM_BYTE_COUNT, m_vramSnapshotBytes->begin());
 	publishVramSnapshotRevision();
+	publishVramReplacementRevision();
 	m_vramPresentationPending = true;
 }
 
@@ -397,6 +399,11 @@ u64 GxGpu::commitRenderedVramSnapshotBytes(const u8* bytes, size_t renderedComma
 void GxGpu::publishVramSnapshotRevision() {
 	nextVramSnapshotSerial += 1u;
 	m_vramSnapshotSerial = nextVramSnapshotSerial;
+}
+
+void GxGpu::publishVramReplacementRevision() {
+	nextVramReplacementSerial += 1u;
+	m_vramReplacementSerial = nextVramReplacementSerial;
 }
 
 u32 GxGpu::readGp0() {
@@ -748,6 +755,7 @@ void GxGpu::writePcrtcRegister(u32 index, u32 word) {
 			m_pcrtc.reset(nowCycles);
 			m_pcrtcTimingPublicationPending = true;
 			latchPresentationRegisters();
+			m_pcrtcPresentationPending = true;
 		} else if ((actions & GX_GPU_PCRTC_CSR_FLUSH) != 0u) {
 			clearGp0Fifo(nowCycles);
 		}
@@ -792,6 +800,7 @@ const GxGpuDeviceOutput& GxGpu::readDeviceOutput() {
 	m_deviceOutput.horizontalDisplayRangeWord = m_presentHorizontalDisplayRangeWord;
 	m_deviceOutput.verticalDisplayRangeWord = m_presentVerticalDisplayRangeWord;
 	m_deviceOutput.vramSnapshotSerial = m_vramSnapshotSerial;
+	m_deviceOutput.vramReplacementSerial = m_vramReplacementSerial;
 	return m_deviceOutput;
 }
 

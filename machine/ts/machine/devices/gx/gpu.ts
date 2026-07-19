@@ -79,6 +79,7 @@ import {
 } from './gpu_pcrtc';
 
 let gxGpuNextVramSnapshotSerial = 0n;
+let gxGpuNextVramReplacementSerial = 0n;
 
 export const GX_GPU_SERVICE_RUNTIME_EDGE_MASK = 0x3;
 export const GX_GPU_SERVICE_TIMING_PUBLISHED = 1 << 2;
@@ -365,6 +366,7 @@ export class GxGpu {
 	};
 	private readonly vramSnapshotBytes = new Uint8Array(GX_GPU_VRAM_BYTE_COUNT);
 	private vramSnapshotSerial = 0n;
+	private vramReplacementSerial = 0n;
 	private readonly deviceOutput: { -readonly [Key in keyof GxGpuDeviceOutput]: GxGpuDeviceOutput[Key] };
 
 	public constructor(
@@ -389,6 +391,7 @@ export class GxGpu {
 			pcrtcScanout: this.pcrtc.scanout,
 			vramSnapshotBytes: this.vramSnapshotBytes,
 			vramSnapshotSerial: 0n,
+			vramReplacementSerial: 0n,
 		};
 		this.memory.mapIoRead(IO_GX_GPU_GP0, this, GxGpu.readGp0Thunk);
 		this.memory.mapIoWrite(IO_GX_GPU_GP0, this, GxGpu.writeGp0Thunk);
@@ -412,6 +415,7 @@ export class GxGpu {
 		this.commandBuffer.reset();
 		initializeGxGpuVramPowerOn(this.vramSnapshotBytes);
 		this.publishVramSnapshotRevision();
+		this.publishVramReplacementRevision();
 		this.clearGp0CommandState();
 		this.scanoutInterlacedField = 0;
 		this.scanoutInterlacedDisplayField = 0;
@@ -796,6 +800,7 @@ export class GxGpu {
 	public replaceVramSnapshotBytes(bytes: Uint8Array): void {
 		this.vramSnapshotBytes.set(bytes);
 		this.publishVramSnapshotRevision();
+		this.publishVramReplacementRevision();
 		this.vramPresentationPending = true;
 	}
 
@@ -815,12 +820,21 @@ export class GxGpu {
 		this.vramSnapshotSerial = gxGpuNextVramSnapshotSerial;
 	}
 
+	private publishVramReplacementRevision(): void {
+		gxGpuNextVramReplacementSerial = BigInt.asUintN(64, gxGpuNextVramReplacementSerial + 1n);
+		this.vramReplacementSerial = gxGpuNextVramReplacementSerial;
+	}
+
 	public readVramSnapshotBytes(): Uint8Array {
 		return this.vramSnapshotBytes;
 	}
 
 	public readVramSnapshotSerial(): bigint {
 		return this.vramSnapshotSerial;
+	}
+
+	public readVramReplacementSerial(): bigint {
+		return this.vramReplacementSerial;
 	}
 
 	public readGp0(): number {
@@ -1169,6 +1183,7 @@ export class GxGpu {
 				this.pcrtc.reset(nowCycles);
 				this.pcrtcTimingPublicationPending = true;
 				this.latchPresentationRegisters();
+				this.pcrtcPresentationPending = true;
 			} else if ((actions & GX_GPU_PCRTC_CSR_FLUSH) !== 0) {
 				this.clearGp0Fifo(nowCycles);
 			}
@@ -1213,6 +1228,7 @@ export class GxGpu {
 		this.deviceOutput.horizontalDisplayRangeWord = this.presentHorizontalDisplayRangeWord;
 		this.deviceOutput.verticalDisplayRangeWord = this.presentVerticalDisplayRangeWord;
 		this.deviceOutput.vramSnapshotSerial = this.vramSnapshotSerial;
+		this.deviceOutput.vramReplacementSerial = this.vramReplacementSerial;
 		return this.deviceOutput;
 	}
 

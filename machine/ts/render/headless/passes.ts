@@ -74,6 +74,7 @@ function registerHeadlessGxGpuPass(registry: RenderPassLibrary): void {
 		pcrtcScanout: registry.view.gxGpuPcrtcScanout,
 		vramSnapshotBytes: registry.view.gxGpuVramSnapshotBytes,
 		vramSnapshotSerial: registry.view.gxGpuVramSnapshotSerial,
+		vramReplacementSerial: registry.view.gxGpuVramReplacementSerial,
 	};
 	registry.register<GxGpuPipelineState>({
 		id: 'gx_gpu',
@@ -95,6 +96,7 @@ function registerHeadlessGxGpuPass(registry: RenderPassLibrary): void {
 				gxGpuState.pcrtcScanout = view.gxGpuPcrtcScanout;
 				gxGpuState.vramSnapshotBytes = view.gxGpuVramSnapshotBytes;
 				gxGpuState.vramSnapshotSerial = view.gxGpuVramSnapshotSerial;
+				gxGpuState.vramReplacementSerial = view.gxGpuVramReplacementSerial;
 			},
 		},
 		exec: (_backend, _fbo, state) => {

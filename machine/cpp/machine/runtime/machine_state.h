@@ -1,6 +1,7 @@
 #pragma once
 
 #include "machine/save_state.h"
+#include "machine/runtime/frame/loop.h"
 #include "machine/scheduler/frame.h"
 #include <cstdint>
 
@@ -11,6 +12,7 @@ class Runtime;
 struct RuntimeMachineState {
 	MachineState machine;
 	FrameSchedulerStateSnapshot frameScheduler;
+	FrameLoopStateSnapshot frameLoop;
 	i64 schedulerNowCycles = 0;
 };
 

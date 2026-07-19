@@ -226,6 +226,7 @@ private:
 	i64 deadlineAtHalfLine(u32 halfLine) const;
 	void advanceBeam(u32 halfLine);
 	void resumeHsync(i64 nowCycles);
+	u32 elapsedHalfLines(i64 nowCycles) const;
 	void skipSuppressedHsyncs(u32 halfLine);
 	u32 periodicEventCount(u32 firstHalfLine, u32 targetHalfLine) const;
 	bool raiseEvent(u32 event);

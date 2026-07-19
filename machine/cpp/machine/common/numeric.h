@@ -119,6 +119,10 @@ inline auto saturateRoundedI32(double value) -> i32 {
 	return result;
 }
 
+inline auto multiplyHighU32(u32 lhs, u32 rhs) -> u32 {
+	return static_cast<u32>((static_cast<u64>(lhs) * rhs) >> 32u);
+}
+
 inline auto saturatingAdd64(i64 lhs, i64 rhs) -> i64 {
 	if (rhs > 0 && lhs > (std::numeric_limits<i64>::max() - rhs)) {
 		return std::numeric_limits<i64>::max();

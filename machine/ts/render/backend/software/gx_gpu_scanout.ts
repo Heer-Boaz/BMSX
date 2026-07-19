@@ -26,6 +26,7 @@ let interlacedPixels = new Uint32Array(0);
 let interlacedWidth = 0;
 let interlacedHeight = 0;
 let interlacedValid = false;
+let interlacedVramReplacementSerial = 0n;
 
 const GENERIC_CIRCUIT_WRITE_RGBA = 0;
 const GENERIC_CIRCUIT_WRITE_RGB = 1;
@@ -416,7 +417,8 @@ function scanoutInterlacedVram(state: GxGpuPipelineState, target: Uint32Array): 
 	const pixelCount = state.width * state.height;
 	const geometryChanged = !interlacedValid
 		|| interlacedWidth !== state.width
-		|| interlacedHeight !== state.height;
+		|| interlacedHeight !== state.height
+		|| interlacedVramReplacementSerial !== state.vramReplacementSerial;
 	if (interlacedPixels.length !== pixelCount) {
 		interlacedPixels = new Uint32Array(pixelCount);
 	}
@@ -425,6 +427,7 @@ function scanoutInterlacedVram(state: GxGpuPipelineState, target: Uint32Array): 
 		interlacedWidth = state.width;
 		interlacedHeight = state.height;
 		interlacedValid = true;
+		interlacedVramReplacementSerial = state.vramReplacementSerial;
 	}
 	writeOutputRows(state, interlacedPixels, state.pcrtcScanout.field, 2);
 	target.set(interlacedPixels);

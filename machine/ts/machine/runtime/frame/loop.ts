@@ -2,6 +2,12 @@ import type { FrameState } from './state';
 import { Runtime } from '../runtime';
 import { RunResult } from '../../cpu/cpu';
 
+export type FrameLoopStateSnapshot = {
+	frameState: FrameState;
+	frameActive: boolean;
+	frameDeltaMs: number;
+};
+
 export class FrameLoopState {
 	public currentTimeMs = 0;
 	public frameDeltaMs = 0;
@@ -26,11 +32,7 @@ export class FrameLoopState {
 	public reset(): void {
 		this.currentTimeMs = 0;
 		this.frameDeltaMs = 0;
-	}
-
-	public resetFrameState(): void {
-		const runtime = this.runtime;
-		this.abandonFrameState();
+		this.frameActive = false;
 		const state = this.frameState;
 		state.updateExecuted = false;
 		state.luaFaulted = false;
@@ -38,6 +40,32 @@ export class FrameLoopState {
 		state.cycleBudgetGranted = 0;
 		state.cycleCarryGranted = 0;
 		state.activeCpuUsedCycles = 0;
+	}
+
+	public captureState(): FrameLoopStateSnapshot {
+		return {
+			frameState: { ...this.frameState },
+			frameActive: this.frameActive,
+			frameDeltaMs: this.frameDeltaMs,
+		};
+	}
+
+	public restoreState(snapshot: FrameLoopStateSnapshot): void {
+		this.reset();
+		const state = this.frameState;
+		state.updateExecuted = snapshot.frameState.updateExecuted;
+		state.luaFaulted = snapshot.frameState.luaFaulted;
+		state.cycleBudgetRemaining = snapshot.frameState.cycleBudgetRemaining;
+		state.cycleBudgetGranted = snapshot.frameState.cycleBudgetGranted;
+		state.cycleCarryGranted = snapshot.frameState.cycleCarryGranted;
+		state.activeCpuUsedCycles = snapshot.frameState.activeCpuUsedCycles;
+		this.frameActive = snapshot.frameActive;
+		this.frameDeltaMs = snapshot.frameDeltaMs;
+	}
+
+	public resetFrameState(): void {
+		const runtime = this.runtime;
+		this.abandonFrameState();
 		runtime.machine.cpu.clearHaltUntilIrq();
 		runtime.frameScheduler.reset();
 		this.reset();

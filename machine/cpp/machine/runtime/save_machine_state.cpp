@@ -9,6 +9,7 @@ RuntimeSaveMachineState captureRuntimeSaveMachineState(Runtime& runtime) {
 	RuntimeSaveMachineState state;
 	state.machine = captureMachineSaveState(runtime.machine);
 	state.frameScheduler = runtime.frameScheduler.captureState();
+	state.frameLoop = runtime.frameLoop.captureState();
 	state.schedulerNowCycles = runtime.machine.scheduler.currentNowCycles();
 	return state;
 }
@@ -22,6 +23,7 @@ void applyRuntimeSaveMachineState(Runtime& runtime, const RuntimeSaveMachineStat
 	restoreMachineSaveState(runtime.machine, state.machine);
 	runtime.applyPublishedGxGpuPcrtcTiming(runtime.machine.gxGpu.readDeviceOutput().pcrtcTiming);
 	runtime.frameScheduler.restoreState(state.frameScheduler);
+	runtime.frameLoop.restoreState(state.frameLoop);
 }
 
 } // namespace bmsx

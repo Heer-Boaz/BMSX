@@ -4,6 +4,7 @@ import {
 	IO_GX_PCRTC_TIMING_WORD_COUNT,
 	IO_GX_PCRTC_WORD_COUNT,
 } from '../../bus/io';
+import { multiplyHighU32 } from '../../common/numeric';
 import { IO_WORD_SIZE } from '../../memory/map';
 import { GX_GPU_PSMGX16 } from './gpu_local_memory';
 
@@ -85,6 +86,7 @@ const GX_GPU_PCRTC_VERTICAL_STAGE_FIELD_END = 2;
 
 const PCRTC_REFERENCE_CLOCK_HZ = 13_500_000;
 const PCRTC_HZ_SCALE = 1_000_000;
+const U32_LIMB_SCALE = 0x1_0000_0000;
 export const GX_GPU_PCRTC_SOURCE_DIVISION_SHIFT = 18;
 const PCRTC_SOURCE_DIVISION_SCALE = 1 << GX_GPU_PCRTC_SOURCE_DIVISION_SHIFT;
 
@@ -539,11 +541,7 @@ export class GxGpuPcrtc {
 
 	public currentHalfLine(nowCycles: number): number {
 		if (!this.timing.running) return 0;
-		const elapsedNumerator = (nowCycles - this.beamCycle) * this.timing.halfLineClockDenominator
-			- this.beamRemainder;
-		const elapsedHalfLines = (elapsedNumerator - elapsedNumerator % this.halfLineSystemNumerator)
-			/ this.halfLineSystemNumerator;
-		return this.beamHalfLine + elapsedHalfLines;
+		return this.beamHalfLine + this.elapsedHalfLines(nowCycles);
 	}
 
 	public nextDeadlineCycle(): number {
@@ -562,11 +560,7 @@ export class GxGpuPcrtc {
 		// CPU instructions are atomic and may service this device after its deadline. Advance from
 		// the retained beam epoch: anchoring to nowCycles accumulates lateness into scanout phase.
 		// Do not compensate by changing VBlank-edge tick completion or cart first-tick semantics.
-		const elapsedNumerator = (nowCycles - this.beamCycle) * this.timing.halfLineClockDenominator
-			- this.beamRemainder;
-		const elapsedRemainder = elapsedNumerator % this.halfLineSystemNumerator;
-		const elapsedHalfLines = (elapsedNumerator - elapsedRemainder) / this.halfLineSystemNumerator;
-		const targetHalfLine = this.beamHalfLine + elapsedHalfLines;
+		const targetHalfLine = this.beamHalfLine + this.elapsedHalfLines(nowCycles);
 		const totalHalfLines = this.timing.totalHalfLines;
 
 		let firstVblankHalfLine = this.timing.activeDisplayHalfLines;
@@ -789,11 +783,61 @@ export class GxGpuPcrtc {
 	}
 
 	private resumeHsync(nowCycles: number): void {
-		const elapsedNumerator = (nowCycles - this.beamCycle) * this.timing.halfLineClockDenominator
-			- this.beamRemainder;
-		const elapsedHalfLines = (elapsedNumerator - elapsedNumerator % this.halfLineSystemNumerator)
-			/ this.halfLineSystemNumerator;
-		this.skipSuppressedHsyncs(this.beamHalfLine + elapsedHalfLines);
+		this.skipSuppressedHsyncs(this.beamHalfLine + this.elapsedHalfLines(nowCycles));
+	}
+
+	private elapsedHalfLines(nowCycles: number): number {
+		const elapsedCycles = nowCycles - this.beamCycle;
+		const denominator = this.timing.halfLineClockDenominator;
+		let halfLines = Math.trunc(
+			(elapsedCycles * denominator - this.beamRemainder) / this.halfLineSystemNumerator,
+		) >>> 0;
+
+		const elapsedLow = elapsedCycles >>> 0;
+		const elapsedHigh = (elapsedCycles - elapsedLow) / U32_LIMB_SCALE;
+		let numeratorLow = Math.imul(elapsedLow, denominator) >>> 0;
+		const numeratorLowHigh = multiplyHighU32(elapsedLow, denominator);
+		const elapsedHighProduct = elapsedHigh * denominator;
+		const elapsedHighProductLow = elapsedHighProduct >>> 0;
+		let numeratorMiddle = (numeratorLowHigh + elapsedHighProductLow) >>> 0;
+		let numeratorHigh = (elapsedHighProduct - elapsedHighProductLow) / U32_LIMB_SCALE
+			+ (numeratorMiddle < numeratorLowHigh ? 1 : 0);
+		if (numeratorLow < this.beamRemainder) {
+			if (numeratorMiddle === 0) numeratorHigh -= 1;
+			numeratorMiddle = (numeratorMiddle - 1) >>> 0;
+		}
+		numeratorLow = (numeratorLow - this.beamRemainder) >>> 0;
+
+		const periodLow = this.halfLineSystemNumerator >>> 0;
+		const periodHigh = (this.halfLineSystemNumerator - periodLow) / U32_LIMB_SCALE;
+		const candidateLow = Math.imul(periodLow, halfLines) >>> 0;
+		const candidateLowHigh = multiplyHighU32(periodLow, halfLines);
+		const periodHighProduct = periodHigh * halfLines;
+		const periodHighProductLow = periodHighProduct >>> 0;
+		const candidateMiddle = (candidateLowHigh + periodHighProductLow) >>> 0;
+		const candidateHigh = (periodHighProduct - periodHighProductLow) / U32_LIMB_SCALE
+			+ (candidateMiddle < candidateLowHigh ? 1 : 0);
+
+		if (numeratorHigh < candidateHigh
+			|| numeratorHigh === candidateHigh && (
+				numeratorMiddle < candidateMiddle
+				|| numeratorMiddle === candidateMiddle && numeratorLow < candidateLow
+			)) {
+			return halfLines - 1;
+		}
+
+		const differenceLow = (numeratorLow - candidateLow) >>> 0;
+		const lowBorrow = numeratorLow < candidateLow ? 1 : 0;
+		const candidateMiddleWithBorrow = candidateMiddle + lowBorrow;
+		const differenceMiddle = (numeratorMiddle - candidateMiddleWithBorrow) >>> 0;
+		const differenceHigh = numeratorHigh - candidateHigh
+			- (numeratorMiddle < candidateMiddleWithBorrow ? 1 : 0);
+		if (differenceHigh !== 0
+			|| differenceMiddle > periodHigh
+			|| differenceMiddle === periodHigh && differenceLow >= periodLow) {
+			halfLines += 1;
+		}
+		return halfLines;
 	}
 
 	private skipSuppressedHsyncs(halfLine: number): void {

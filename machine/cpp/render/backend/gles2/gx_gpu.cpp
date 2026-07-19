@@ -347,6 +347,7 @@ struct GxGpuRuntime {
 	bool scanoutPcrtcUniformValid = false;
 	bool scanoutFieldPcrtcUniformValid = false;
 	bool scanoutFieldsValid = false;
+	u64 scanoutFieldsVramReplacementSerial = 0u;
 	u32 processedCommandCount = 0;
 	u32 processedCommandSerial = 0;
 	u64 vramSnapshotSerial = 0u;
@@ -3150,7 +3151,8 @@ void scanoutInterlacedGxGpuVram(GLuint frameFbo, const GxGpuPipelineState& state
 	const bool pcrtcChanged = g_gxGpu.scanoutFieldPcrtcRevision != state.pcrtcScanout->revision
 		|| g_gxGpu.scanoutFieldValue != field;
 	const bool invalid = !g_gxGpu.scanoutFieldsValid
-		|| sizeChanged;
+		|| sizeChanged
+		|| g_gxGpu.scanoutFieldsVramReplacementSerial != state.vramReplacementSerial;
 	if (sizeChanged) {
 		g_gxGpu.backend->setActiveTextureUnit(kGxGpuScanoutFieldsTextureUnit);
 		g_gxGpu.backend->bindTexture2D(&g_gxGpu.scanoutFieldsTexture);
@@ -3197,6 +3199,7 @@ void scanoutInterlacedGxGpuVram(GLuint frameFbo, const GxGpuPipelineState& state
 	glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(kGxGpuScanoutVertexCount));
 	if (invalid) {
 		g_gxGpu.scanoutFieldsValid = true;
+		g_gxGpu.scanoutFieldsVramReplacementSerial = state.vramReplacementSerial;
 	}
 
 	g_gxGpu.backend->setRenderTarget(frameFbo, width, height);

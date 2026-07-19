@@ -217,6 +217,7 @@ public:
 	u64 commitRenderedVramSnapshotBytes(const u8* bytes, size_t renderedCommandCount);
 	const std::array<u8, GX_GPU_VRAM_BYTE_COUNT>& readVramSnapshotBytes() const { return *m_vramSnapshotBytes; }
 	u64 readVramSnapshotSerial() const { return m_vramSnapshotSerial; }
+	u64 readVramReplacementSerial() const { return m_vramReplacementSerial; }
 	u32 readGp0();
 	void writeGp0(u32 word, MappedBusSignals busSignals = MAPPED_BUS_MASTER_CPU);
 	u32 readStatus();
@@ -312,10 +313,13 @@ private:
 	bool m_pcrtcPresentationPending = false;
 	std::unique_ptr<std::array<u8, GX_GPU_VRAM_BYTE_COUNT>> m_vramSnapshotBytes;
 	u64 m_vramSnapshotSerial = 0u;
+	u64 m_vramReplacementSerial = 0u;
 	mutable GxGpuDeviceOutput m_deviceOutput;
 	inline static u64 nextVramSnapshotSerial = 0u;
+	inline static u64 nextVramReplacementSerial = 0u;
 
 	void publishVramSnapshotRevision();
+	void publishVramReplacementRevision();
 	void clearRegisterContext(GxGpuRegisterContextState& context);
 	void storeLiveRegisterContext(GxGpuRegisterContextState& context) const;
 	void loadLiveRegisterContext(const GxGpuRegisterContextState& context);

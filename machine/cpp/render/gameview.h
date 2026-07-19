@@ -102,6 +102,7 @@ public:
 	const GxGpuPcrtcScanout* gxGpuPcrtcScanout = nullptr;
 	const std::array<u8, GX_GPU_VRAM_BYTE_COUNT>* gxGpuVramSnapshotBytes = nullptr;
 	u64 gxGpuVramSnapshotSerial = 0u;
+	u64 gxGpuVramReplacementSerial = 0u;
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// Pipeline registry

@@ -772,6 +772,7 @@ test('GX-GPU owns deterministic power-on VRAM across reset, save-state, and mach
 	const first = createGpu().gpu;
 	const firstBytes = first.readVramSnapshotBytes();
 	const firstSerial = first.readVramSnapshotSerial();
+	const firstReplacementSerial = first.readVramReplacementSerial();
 	const powerOnWord0 = firstBytes[0]! | (firstBytes[1]! << 8);
 
 	assert.equal(firstBytes[0], 38);
@@ -801,16 +802,20 @@ test('GX-GPU owns deterministic power-on VRAM across reset, save-state, and mach
 
 	const second = createGpu().gpu;
 	assert.ok(second.readVramSnapshotSerial() > firstSerial);
+	assert.ok(second.readVramReplacementSerial() > firstReplacementSerial);
 	output = second.readDeviceOutput();
 	executeGxGpuSoftwareVramCommands(output, output.commandBuffer.presentCommandCount);
 	assert.equal(gxGpuSoftwareVram[gxGpuSoftwareVramIndex(0, 0)], powerOnWord0);
 
 	const gp1Serial = second.readVramSnapshotSerial();
+	const gp1ReplacementSerial = second.readVramReplacementSerial();
 	second.writeGp1(GX_GPU_GP1_RESET << 24);
 	assert.equal(second.readVramSnapshotSerial(), gp1Serial);
+	assert.equal(second.readVramReplacementSerial(), gp1ReplacementSerial);
 	assert.equal(gxGpuVramDigest(second.readVramSnapshotBytes()), 0xb3ba77ea);
 	second.reset();
 	assert.ok(second.readVramSnapshotSerial() > gp1Serial);
+	assert.ok(second.readVramReplacementSerial() > gp1ReplacementSerial);
 	assert.equal(gxGpuVramDigest(second.readVramSnapshotBytes()), 0xb3ba77ea);
 
 	const restoredBytes = second.readVramSnapshotBytes().slice();
@@ -820,9 +825,11 @@ test('GX-GPU owns deterministic power-on VRAM across reset, save-state, and mach
 	second.replaceVramSnapshotBytes(restoredBytes);
 	const saveState = second.captureSaveState();
 	const savedSerial = second.readVramSnapshotSerial();
+	const savedReplacementSerial = second.readVramReplacementSerial();
 	second.reset();
 	second.restoreSaveState(saveState);
 	assert.ok(second.readVramSnapshotSerial() > savedSerial);
+	assert.ok(second.readVramReplacementSerial() > savedReplacementSerial);
 	assert.equal(second.readVramSnapshotBytes()[0], 0x5a);
 	assert.equal(second.readVramSnapshotBytes()[upperByteIndex], 0xa5);
 });
@@ -1398,6 +1405,10 @@ test('GX-GPU PCRTC CSR FLUSH and RESET execute owner actions without latching ac
 	const { memory, gpu } = createGpu();
 	const csrLow = gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_CSR_LOW);
 	const pmodeLow = gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_PMODE_LOW);
+	gpu.presentReadyFrameOnVblankEdge();
+	gpu.retirePresentedCommands();
+	gpu.presentReadyFrameOnVblankEdge();
+	assert.equal(gpu.lastFrameCommitted(), false);
 	gpu.writeGp0(GX_GPU_GP0_POLYGON_FIRST << 24);
 	assert.equal(gpu.captureState().gp0CommandWordCount, 1);
 	memory.writeMappedU32LE(csrLow, GX_GPU_PCRTC_CSR_FLUSH);
@@ -1410,6 +1421,11 @@ test('GX-GPU PCRTC CSR FLUSH and RESET execute owner actions without latching ac
 	assert.equal(memory.readMappedU32LE(csrLow), GX_GPU_PCRTC_RESET_CSR_WORD);
 	assert.equal(memory.readMappedU32LE(gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_IMR_LOW)), GX_GPU_PCRTC_RESET_IMR_WORD);
 	assert.deepEqual([gpu.readDeviceOutput().pcrtcScanout.outputWidth, gpu.readDeviceOutput().pcrtcScanout.outputHeight], [0, 0]);
+	gpu.presentReadyFrameOnVblankEdge();
+	assert.equal(gpu.lastFrameCommitted(), true);
+	gpu.retirePresentedCommands();
+	gpu.presentReadyFrameOnVblankEdge();
+	assert.equal(gpu.lastFrameCommitted(), false);
 });
 
 test('GX-GPU handles PSX GP0 draw mode and mask-bit environment commands', () => {
@@ -2609,6 +2625,7 @@ test('GX-GPU software scanout consumes CPU upload, VRAM copy, and fill commands'
 		pcrtcScanout: GX_GPU_SOFTWARE_TEST_PCRTC_SCANOUT,
 		vramSnapshotBytes: GX_GPU_SOFTWARE_TEST_VRAM_SNAPSHOT,
 		vramSnapshotSerial: 0n,
+		vramReplacementSerial: 0n,
 	}, pixelWords);
 
 	assertRgbaPixel(pixels, 0, 0, 255, 0, 0);
@@ -2639,6 +2656,7 @@ test('GX-GPU software scanout renders the native target without host scaling', (
 		pcrtcScanout,
 		vramSnapshotBytes: GX_GPU_SOFTWARE_TEST_VRAM_SNAPSHOT,
 		vramSnapshotSerial: 0n,
+		vramReplacementSerial: 0n,
 	};
 	pcrtcWords[GX_GPU_PCRTC_DISPFB1_HIGH] = 900 | (400 << 11);
 	pcrtcWords[GX_GPU_PCRTC_DISPLAY1_HIGH] = 1023 | (191 << 12);
@@ -2709,6 +2727,7 @@ test('GX-GPU PCRTC composes source-alpha terminal cells over retained circuit-tw
 		pcrtcScanout,
 		vramSnapshotBytes: GX_GPU_SOFTWARE_TEST_VRAM_SNAPSHOT,
 		vramSnapshotSerial: 0n,
+		vramReplacementSerial: 0n,
 	};
 	gxGpuSoftwareVram.fill(0);
 	gxGpuSoftwareVram[0] = 0x001f;
@@ -2840,6 +2859,7 @@ test('GX-GPU PCRTC projects display signals and samples the source at circuit ma
 		pcrtcScanout,
 		vramSnapshotBytes: GX_GPU_SOFTWARE_TEST_VRAM_SNAPSHOT,
 		vramSnapshotSerial: 0n,
+		vramReplacementSerial: 0n,
 	}, pixelWords);
 	assert.deepEqual(Array.from(new Uint8Array(pixelWords.buffer)), [
 		255, 0, 0, 0, 0, 0, 255, 0,
@@ -2898,6 +2918,7 @@ test('GX-GPU PCRTC keeps mixed-magnification circuits on one signal grid', () =>
 		pcrtcScanout,
 		vramSnapshotBytes: GX_GPU_SOFTWARE_TEST_VRAM_SNAPSHOT,
 		vramSnapshotSerial: 0n,
+		vramReplacementSerial: 0n,
 	}, pixelWords);
 	assert.deepEqual(Array.from(pixelWords), [
 		0x00000000, 0x00000000, 0x00000000,
@@ -2946,6 +2967,7 @@ test('GX-GPU PCRTC keeps circuit-one source phase independent from circuit-two c
 		pcrtcScanout,
 		vramSnapshotBytes: GX_GPU_SOFTWARE_TEST_VRAM_SNAPSHOT,
 		vramSnapshotSerial: 0n,
+		vramReplacementSerial: 0n,
 	};
 	gxGpuSoftwareVram.fill(0);
 	gxGpuSoftwareVram[gxGpuLocalMemoryAddress16S(4096, 1, 0, 0)] = 0x001f;
@@ -3025,6 +3047,7 @@ test('GX-GPU PCRTC reads every supported DISPFB pixel storage format and backgro
 		pcrtcScanout,
 		vramSnapshotBytes: GX_GPU_SOFTWARE_TEST_VRAM_SNAPSHOT,
 		vramSnapshotSerial: 0n,
+		vramReplacementSerial: 0n,
 	};
 	gxGpuSoftwareVram.fill(0);
 	const vramBytes = new Uint8Array(
@@ -3130,6 +3153,7 @@ test('GX-GPU PCRTC executes MMOD and AMOD against full circuit alpha', () => {
 		pcrtcScanout,
 		vramSnapshotBytes: GX_GPU_SOFTWARE_TEST_VRAM_SNAPSHOT,
 		vramSnapshotSerial: 0n,
+		vramReplacementSerial: 0n,
 	};
 	gxGpuSoftwareVram.fill(0);
 	gxGpuSoftwareVram[4096] = 0x786e;
@@ -3180,6 +3204,7 @@ test('GX-GPU software scanout weaves the current 480i field into retained output
 		pcrtcScanout,
 		vramSnapshotBytes: GX_GPU_SOFTWARE_TEST_VRAM_SNAPSHOT,
 		vramSnapshotSerial: 1n,
+		vramReplacementSerial: 1n,
 	};
 	pcrtcWords[GX_GPU_PCRTC_DISPFB1_HIGH] = 1023 | (510 << 11);
 	pcrtcWords[GX_GPU_PCRTC_DISPLAY1_HIGH] = 3 << 12;
@@ -3241,6 +3266,15 @@ test('GX-GPU software scanout weaves the current 480i field into retained output
 		255, 0, 0, 0,
 		255, 255, 255, 0,
 	]);
+
+	state.vramReplacementSerial = 2n;
+	scanoutGxGpuSoftwareVram(state, pixelWords);
+	assert.deepEqual(Array.from(pixels), [
+		0, 0, 0, 0,
+		0, 0, 255, 0,
+		0, 0, 0, 0,
+		255, 255, 255, 0,
+	]);
 });
 
 test('GX-GPU software scanout maps FIELD phases and FRAME rows', () => {
@@ -3262,6 +3296,7 @@ test('GX-GPU software scanout maps FIELD phases and FRAME rows', () => {
 		pcrtcScanout,
 		vramSnapshotBytes: GX_GPU_SOFTWARE_TEST_VRAM_SNAPSHOT,
 		vramSnapshotSerial: 1n,
+		vramReplacementSerial: 1n,
 	};
 	pcrtcWords[GX_GPU_PCRTC_DISPFB1_HIGH] = 1023 | (510 << 11);
 	pcrtcWords[GX_GPU_PCRTC_DISPLAY1_HIGH] = 3 << 12;
@@ -3344,6 +3379,7 @@ test('GX-GPU software scanout retains the final even line at odd interlaced heig
 		pcrtcScanout,
 		vramSnapshotBytes: GX_GPU_SOFTWARE_TEST_VRAM_SNAPSHOT,
 		vramSnapshotSerial: 1n,
+		vramReplacementSerial: 1n,
 	};
 	pcrtcWords[GX_GPU_PCRTC_DISPFB1_HIGH] = 0;
 	pcrtcWords[GX_GPU_PCRTC_DISPLAY1_HIGH] = 3 | (4 << 12);
@@ -3387,6 +3423,7 @@ test('GX-GPU software backend retires consumed command logs without clearing VRA
 		pcrtcScanout: GX_GPU_SOFTWARE_TEST_PCRTC_SCANOUT,
 		vramSnapshotBytes: GX_GPU_SOFTWARE_TEST_VRAM_SNAPSHOT,
 		vramSnapshotSerial: 0n,
+		vramReplacementSerial: 0n,
 	};
 	const pixelWords = new Uint32Array(GX_GPU_SOFTWARE_TEST_WIDTH * GX_GPU_SOFTWARE_TEST_HEIGHT);
 	const pixels = new Uint8Array(pixelWords.buffer);
@@ -3446,6 +3483,7 @@ test('GX-GPU software scanout consumes solid polygon, rectangle, and line comman
 		pcrtcScanout: GX_GPU_SOFTWARE_TEST_PCRTC_SCANOUT,
 		vramSnapshotBytes: GX_GPU_SOFTWARE_TEST_VRAM_SNAPSHOT,
 		vramSnapshotSerial: 0n,
+		vramReplacementSerial: 0n,
 	}, pixelWords);
 
 	assertRgbaPixel(pixels, 5, 5, 255, 0, 0);
@@ -3553,6 +3591,7 @@ test('GX-GPU software scanout consumes textured primitives', () => {
 		pcrtcScanout: GX_GPU_SOFTWARE_TEST_PCRTC_SCANOUT,
 		vramSnapshotBytes: GX_GPU_SOFTWARE_TEST_VRAM_SNAPSHOT,
 		vramSnapshotSerial: 0n,
+		vramReplacementSerial: 0n,
 	}, pixelWords);
 
 	assertRgbaPixel(pixels, 40, 10, 255, 0, 0);

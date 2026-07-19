@@ -272,6 +272,7 @@ type WebGpuGxGpuState = {
 	scanoutFieldsWidth: number;
 	scanoutFieldsHeight: number;
 	scanoutFieldsValid: boolean;
+	scanoutFieldsVramReplacementSerial: bigint;
 	processedCommandCount: number;
 	processedCommandSerial: number;
 	vramSnapshotSerial: bigint;
@@ -595,6 +596,7 @@ function bootstrapGxGpuPass(backend: WebGPUBackend): void {
 		scanoutFieldsWidth: 0,
 		scanoutFieldsHeight: 0,
 		scanoutFieldsValid: false,
+		scanoutFieldsVramReplacementSerial: 0n,
 		processedCommandCount: 0,
 		processedCommandSerial: 0,
 		vramSnapshotSerial: 0n,
@@ -2199,7 +2201,8 @@ function scanoutInterlacedGxGpuVram(state: RenderPassStateRegistry['gx_gpu']): v
 	const fieldOffset = field === 0 ? 0 : evenFieldHeight;
 	const sizeChanged = gxGpuState.scanoutFieldsWidth !== width || gxGpuState.scanoutFieldsHeight !== height;
 	const invalid = !gxGpuState.scanoutFieldsValid
-		|| sizeChanged;
+		|| sizeChanged
+		|| gxGpuState.scanoutFieldsVramReplacementSerial !== state.vramReplacementSerial;
 	if (sizeChanged) {
 		if (gxGpuState.scanoutFieldsTexture) {
 			gxGpuState.scanoutFieldsTexture.destroy();
@@ -2258,6 +2261,7 @@ function scanoutInterlacedGxGpuVram(state: RenderPassStateRegistry['gx_gpu']): v
 	fieldPass.draw(3);
 	fieldPass.end();
 	gxGpuState.scanoutFieldsValid = true;
+	gxGpuState.scanoutFieldsVramReplacementSerial = state.vramReplacementSerial;
 
 	gxGpuState.scanoutColorAttachment.view = gxGpuState.scanoutTargetView;
 	gxGpuState.scanoutColorAttachment.loadOp = 'load';
@@ -2296,6 +2300,7 @@ function writeGxGpuState(ctx: RenderGraphPassContext, state: RenderPassStateRegi
 	state.pcrtcScanout = ctx.view.gxGpuPcrtcScanout;
 	state.vramSnapshotBytes = ctx.view.gxGpuVramSnapshotBytes;
 	state.vramSnapshotSerial = ctx.view.gxGpuVramSnapshotSerial;
+	state.vramReplacementSerial = ctx.view.gxGpuVramReplacementSerial;
 	state.targetColorTex = ctx.getTex('frame_color');
 }
 
@@ -2312,6 +2317,7 @@ export function registerGxGpuPass(registry: RenderPassLibrary): void {
 		pcrtcScanout: registry.view.gxGpuPcrtcScanout,
 		vramSnapshotBytes: registry.view.gxGpuVramSnapshotBytes,
 		vramSnapshotSerial: registry.view.gxGpuVramSnapshotSerial,
+		vramReplacementSerial: registry.view.gxGpuVramReplacementSerial,
 		targetColorTex: null,
 	};
 	registry.register({

@@ -7,9 +7,17 @@ namespace bmsx {
 
 class Runtime;
 
+struct FrameLoopStateSnapshot {
+	FrameState frameState;
+	bool frameActive = false;
+	f64 frameDeltaMs = 0.0;
+};
+
 class FrameLoopState {
 public:
 	void reset();
+	FrameLoopStateSnapshot captureState() const;
+	void restoreState(const FrameLoopStateSnapshot& state);
 	void resetFrameState(Runtime& runtime);
 	void beginFrameState(Runtime& runtime, i64 budget, i64 carry);
 	bool tickUpdate(Runtime& runtime);

@@ -368,6 +368,18 @@ function createRuntimeSaveState(): RuntimeSaveState {
 				lastTickCompleted: true,
 				lastTickConsumedSequence: 111,
 			},
+			frameLoop: {
+				frameState: {
+					updateExecuted: true,
+					luaFaulted: false,
+					cycleBudgetRemaining: 12_345,
+					cycleBudgetGranted: 23_456,
+					cycleCarryGranted: 34_567,
+					activeCpuUsedCycles: 45_678,
+				},
+				frameActive: true,
+				frameDeltaMs: 20.096,
+			},
 			schedulerNowCycles: 1234,
 		},
 		cpuState: {
@@ -430,6 +442,7 @@ test('runtime save-state codec preserves string pool ROM/runtime ownership', () 
 	assert.deepEqual(decoded.machineState.machine.input, state.machineState.machine.input);
 	assert.deepEqual(decoded.machineState.machine.systemControl, state.machineState.machine.systemControl);
 	assert.deepEqual(decoded.machineState.frameScheduler, state.machineState.frameScheduler);
+	assert.deepEqual(decoded.machineState.frameLoop, state.machineState.frameLoop);
 	assert.deepEqual(decoded.cpuState.systemGlobals, state.cpuState.systemGlobals);
 });
 

@@ -274,6 +274,7 @@ export type GxGpuPipelineState = {
 	pcrtcScanout: GxGpuPcrtcScanout;
 	vramSnapshotBytes: Uint8Array;
 	vramSnapshotSerial: bigint;
+	vramReplacementSerial: bigint;
 	targetColorTex?: TextureHandle;
 };
 
@@ -316,6 +317,7 @@ export interface RenderContext {
 	gxGpuPcrtcScanout: GxGpuPcrtcScanout;
 	gxGpuVramSnapshotBytes: Uint8Array;
 	gxGpuVramSnapshotSerial: bigint;
+	gxGpuVramReplacementSerial: bigint;
 }
 
 export type RenderingViewportType = 'viewport' | 'offscreen';

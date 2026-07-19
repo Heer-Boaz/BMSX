@@ -94,6 +94,7 @@ void writeGxGpuPipelineState(const RenderPassDef::RenderGraphPassContext& ctx, R
 	gxGpuState.pcrtcScanout = ctx.view->gxGpuPcrtcScanout;
 	gxGpuState.vramSnapshotBytes = ctx.view->gxGpuVramSnapshotBytes;
 	gxGpuState.vramSnapshotSerial = ctx.view->gxGpuVramSnapshotSerial;
+	gxGpuState.vramReplacementSerial = ctx.view->gxGpuVramReplacementSerial;
 }
 
 void writeAutoCRTPipelineState(const RenderPassDef::RenderGraphPassContext& ctx, RenderPassStateStorage& state) {

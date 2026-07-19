@@ -30,6 +30,7 @@ import {
 	GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED,
 	GX_GPU_PCRTC_RESET_TOTAL_HALF_LINES,
 	GX_GPU_PCRTC_RUNTIME_EDGE_VBLANK_BEGIN,
+	GX_GPU_PCRTC_RUNTIME_EDGE_VBLANK_END,
 	GX_GPU_PCRTC_SMODE1_HIGH,
 	GX_GPU_PCRTC_SMODE1_LOW,
 	GX_GPU_PCRTC_SMODE1_SINT,
@@ -158,6 +159,33 @@ test('PCRTC accepts cycle zero and coalesces sub-cycle fields into one runtime e
 	assert.equal(pcrtc.field(), 1);
 });
 
+test('PCRTC advances exact raw half-lines beyond the double product precision boundary', () => {
+	const pcrtc = new GxGpuPcrtc();
+	pcrtc.reset(0);
+	pcrtc.writeConfigWord(GX_GPU_PCRTC_SMODE1_LOW, 0x0000082f, 0);
+	pcrtc.writeConfigWord(GX_GPU_PCRTC_SMODE1_HIGH, 0x00000010, 0);
+	pcrtc.writeConfigWord(GX_GPU_PCRTC_SYNCH1_LOW, 0x000ed724, 0);
+	pcrtc.writeConfigWord(GX_GPU_PCRTC_SYNCH1_HIGH, 0x07b4c800, 0);
+	pcrtc.writeConfigWord(GX_GPU_PCRTC_SYNCH2_LOW, 0x07d79334, 0);
+	pcrtc.writeConfigWord(GX_GPU_PCRTC_SYNCH2_HIGH, 0, 0);
+	pcrtc.writeConfigWord(GX_GPU_PCRTC_SYNCV_LOW, 0xc1611944, 0);
+	pcrtc.writeConfigWord(GX_GPU_PCRTC_SYNCV_HIGH, 0x40661ece, 0);
+	pcrtc.setCpuHz(50_000_000, 0);
+
+	for (const deadline of [2_029_892, 793_687_425, 1_593_464_523]) {
+		assert.equal(pcrtc.nextDeadlineCycle(), deadline);
+		pcrtc.service(deadline);
+	}
+	assert.equal(pcrtc.nextDeadlineCycle(), 10_376_803_360);
+	assert.equal(pcrtc.currentHalfLine(10_376_803_359), 10_223);
+	assert.equal(pcrtc.currentHalfLine(10_376_803_360), 10_224);
+	assert.notEqual(pcrtc.service(10_376_803_360) & GX_GPU_PCRTC_RUNTIME_EDGE_VBLANK_END, 0);
+	const state = pcrtc.captureState(10_376_803_360);
+	assert.equal(state.beamCycleOffset, 0);
+	assert.equal(state.beamRemainder, 0);
+	assert.equal(state.beamHalfLine, 0);
+});
+
 test('runtime publishes live PCRTC timing immediately and latches presentation words at VBlank', () => {
 	const runtime = createTimingRuntime();
 	cancelAudioServices(runtime);
@@ -220,6 +248,35 @@ test('runtime restore preserves physical beam phase and a pending presentation t
 	assert.notEqual(restoredPcrtc.presentWords[GX_GPU_PCRTC_SYNCV_HIGH], PCRTC_SYNCV_192_LINE_FIELD_WORD);
 	assert.equal(runtime.timing.activeDisplayHalfLines, 384);
 	assert.equal(runtime.machine.scheduler.nextDeadline(), pendingDeadline);
+});
+
+test('runtime restore preserves an in-flight frame budget and resets only its host clock', () => {
+	const runtime = createTimingRuntime();
+	cancelAudioServices(runtime);
+	runtime.frameLoop.beginFrameState(23_456, 34_567);
+	const active = runtime.frameLoop.frameState;
+	active.updateExecuted = true;
+	active.luaFaulted = true;
+	active.cycleBudgetRemaining = 12_345;
+	active.activeCpuUsedCycles = 45_678;
+	runtime.frameLoop.frameDeltaMs = 20.096;
+	runtime.frameLoop.currentTimeMs = 987.5;
+	const snapshot = captureRuntimeMachineState(runtime);
+
+	runtime.frameLoop.frameActive = false;
+	active.updateExecuted = false;
+	active.luaFaulted = false;
+	active.cycleBudgetRemaining = 99;
+	active.cycleBudgetGranted = 98;
+	active.cycleCarryGranted = 97;
+	active.activeCpuUsedCycles = 96;
+	runtime.frameLoop.frameDeltaMs = 1;
+	runtime.frameLoop.currentTimeMs = 2;
+	applyRuntimeMachineState(runtime, snapshot);
+
+	assert.deepEqual(runtime.frameLoop.captureState(), snapshot.frameLoop);
+	assert.equal(runtime.frameLoop.currentTimeMs, 0);
+	assert.equal(runtime.vblank.tickCompleted, false);
 });
 
 test('host machine-cycle grants remain exact while PCRTC is stopped', () => {

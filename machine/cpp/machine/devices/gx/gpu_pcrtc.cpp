@@ -304,9 +304,7 @@ bool GxGpuPcrtc::writeImr(u32 word) {
 
 u32 GxGpuPcrtc::currentHalfLine(i64 nowCycles) const {
 	if (!timing.running) return 0u;
-	const i64 elapsedNumerator = (nowCycles - m_beamCycle) * timing.halfLineClockDenominator
-		- m_beamRemainder;
-	return m_beamHalfLine + static_cast<u32>(elapsedNumerator / m_halfLineSystemNumerator);
+	return m_beamHalfLine + elapsedHalfLines(nowCycles);
 }
 
 i64 GxGpuPcrtc::nextDeadlineCycle() const {
@@ -324,10 +322,7 @@ u32 GxGpuPcrtc::service(i64 nowCycles) {
 	// CPU instructions are atomic and may service this device after its deadline. Advance from
 	// the retained beam epoch: anchoring to nowCycles accumulates lateness into scanout phase.
 	// Do not compensate by changing VBlank-edge tick completion or cart first-tick semantics.
-	const i64 elapsedNumerator = (nowCycles - m_beamCycle) * timing.halfLineClockDenominator
-		- m_beamRemainder;
-	const u32 elapsedHalfLines = static_cast<u32>(elapsedNumerator / m_halfLineSystemNumerator);
-	const u32 targetHalfLine = m_beamHalfLine + elapsedHalfLines;
+	const u32 targetHalfLine = m_beamHalfLine + elapsedHalfLines(nowCycles);
 	const u32 totalHalfLines = timing.totalHalfLines;
 
 	u32 firstVblankHalfLine = timing.activeDisplayHalfLines;
@@ -549,9 +544,13 @@ void GxGpuPcrtc::advanceBeam(u32 halfLine) {
 }
 
 void GxGpuPcrtc::resumeHsync(i64 nowCycles) {
+	skipSuppressedHsyncs(m_beamHalfLine + elapsedHalfLines(nowCycles));
+}
+
+u32 GxGpuPcrtc::elapsedHalfLines(i64 nowCycles) const {
 	const i64 elapsedNumerator = (nowCycles - m_beamCycle) * timing.halfLineClockDenominator
 		- m_beamRemainder;
-	skipSuppressedHsyncs(m_beamHalfLine + static_cast<u32>(elapsedNumerator / m_halfLineSystemNumerator));
+	return static_cast<u32>(elapsedNumerator / m_halfLineSystemNumerator);
 }
 
 void GxGpuPcrtc::skipSuppressedHsyncs(u32 halfLine) {

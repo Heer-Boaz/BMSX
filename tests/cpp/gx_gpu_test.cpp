@@ -144,6 +144,33 @@ void testPcrtcRetainsFrameBudgetsAboveSignedCpuSlice() {
 	require(pcrtc.timing.nextVblankCycleBudget > 0x7fffffff, "GX-GPU PCRTC retains a 64-bit next-VBlank cycle budget");
 }
 
+void testPcrtcAdvancesExactRawHalfLinesBeyondDoubleProductPrecision() {
+	bmsx::GxGpuPcrtc pcrtc;
+	pcrtc.reset(0);
+	pcrtc.writeConfigWord(bmsx::GX_GPU_PCRTC_SMODE1_LOW, 0x0000082fu, 0);
+	pcrtc.writeConfigWord(bmsx::GX_GPU_PCRTC_SMODE1_HIGH, 0x00000010u, 0);
+	pcrtc.writeConfigWord(bmsx::GX_GPU_PCRTC_SYNCH1_LOW, 0x000ed724u, 0);
+	pcrtc.writeConfigWord(bmsx::GX_GPU_PCRTC_SYNCH1_HIGH, 0x07b4c800u, 0);
+	pcrtc.writeConfigWord(bmsx::GX_GPU_PCRTC_SYNCH2_LOW, 0x07d79334u, 0);
+	pcrtc.writeConfigWord(bmsx::GX_GPU_PCRTC_SYNCH2_HIGH, 0u, 0);
+	pcrtc.writeConfigWord(bmsx::GX_GPU_PCRTC_SYNCV_LOW, 0xc1611944u, 0);
+	pcrtc.writeConfigWord(bmsx::GX_GPU_PCRTC_SYNCV_HIGH, 0x40661eceu, 0);
+	pcrtc.setCpuHz(50'000'000, 0);
+
+	for (const bmsx::i64 deadline : std::array<bmsx::i64, 3>{2'029'892, 793'687'425, 1'593'464'523}) {
+		require(pcrtc.nextDeadlineCycle() == deadline, "GX-GPU PCRTC raw precision vector reaches its exact intermediate deadline");
+		pcrtc.service(deadline);
+	}
+	require(pcrtc.nextDeadlineCycle() == 10'376'803'360, "GX-GPU PCRTC raw precision vector reaches its exact field deadline");
+	require(pcrtc.currentHalfLine(10'376'803'359) == 10'223u, "GX-GPU PCRTC raw precision vector stays before the field edge one cycle early");
+	require(pcrtc.currentHalfLine(10'376'803'360) == 10'224u, "GX-GPU PCRTC raw precision vector reaches the exact field half-line");
+	require((pcrtc.service(10'376'803'360) & bmsx::GX_GPU_PCRTC_RUNTIME_EDGE_VBLANK_END) != 0u, "GX-GPU PCRTC raw precision vector publishes the exact field-end edge");
+	const bmsx::GxGpuPcrtcState state = pcrtc.captureState(10'376'803'360);
+	require(state.beamCycleOffset == 0, "GX-GPU PCRTC raw precision vector retains the exact beam cycle");
+	require(state.beamRemainder == 0u, "GX-GPU PCRTC raw precision vector retains the exact beam remainder");
+	require(state.beamHalfLine == 0u, "GX-GPU PCRTC raw precision vector starts the next field at half-line zero");
+}
+
 void testGp0RawDrawWordDecoders() {
 	require(bmsx::gxGpuSigned11(0x000003ffu) == 1023, "GX-GPU signed 11-bit positive coordinate");
 	require(bmsx::gxGpuSigned11(0x00000400u) == -1024, "GX-GPU signed 11-bit minimum coordinate");
@@ -899,6 +926,10 @@ void testPcrtcCsrFlushAndResetExecuteOwnerActions() {
 	bmsx::Memory& memory = harness.memory;
 	const bmsx::u32 csrLow = bmsx::gxGpuPcrtcRegisterAddress(bmsx::GX_GPU_PCRTC_CSR_LOW);
 	const bmsx::u32 pmodeLow = bmsx::gxGpuPcrtcRegisterAddress(bmsx::GX_GPU_PCRTC_PMODE_LOW);
+	gpu.presentReadyFrameOnVblankEdge();
+	gpu.retirePresentedCommands();
+	gpu.presentReadyFrameOnVblankEdge();
+	require(!gpu.lastFrameCommitted(), "GX-GPU PCRTC reset vector starts without pending presentation work");
 	gpu.writeGp0(bmsx::GX_GPU_GP0_POLYGON_FIRST << 24u);
 	require(gpu.captureState().gp0CommandWordCount == 1u, "GX-GPU PCRTC FLUSH vector starts with a partial GP0 packet");
 	memory.writeMappedU32LE(csrLow, bmsx::GX_GPU_PCRTC_CSR_FLUSH);
@@ -911,6 +942,11 @@ void testPcrtcCsrFlushAndResetExecuteOwnerActions() {
 	require(memory.readMappedU32LE(csrLow) == bmsx::GX_GPU_PCRTC_RESET_CSR_WORD, "GX-GPU PCRTC RESET restores CSR");
 	require(memory.readMappedU32LE(bmsx::gxGpuPcrtcRegisterAddress(bmsx::GX_GPU_PCRTC_IMR_LOW)) == bmsx::GX_GPU_PCRTC_RESET_IMR_WORD, "GX-GPU PCRTC RESET restores IMR");
 	require(gpu.readDeviceOutput().pcrtcScanout.outputWidth == 0u && gpu.readDeviceOutput().pcrtcScanout.outputHeight == 0u, "GX-GPU PCRTC RESET publishes no scanout while both circuits are disabled");
+	gpu.presentReadyFrameOnVblankEdge();
+	require(gpu.lastFrameCommitted(), "GX-GPU PCRTC RESET publishes the reset scanout at the next VBlank edge");
+	gpu.retirePresentedCommands();
+	gpu.presentReadyFrameOnVblankEdge();
+	require(!gpu.lastFrameCommitted(), "GX-GPU PCRTC RESET presentation latch clears after publication");
 }
 
 void testGp0DrawModeAndMaskBitEnvironmentCommands() {
@@ -1493,12 +1529,14 @@ struct SoftwareFrameHarness {
 
 void testPowerOnVramResetSaveStateAndMachineRecreation() {
 	bmsx::u64 firstSerial = 0u;
+	bmsx::u64 firstReplacementSerial = 0u;
 	bmsx::u16 powerOnWord0 = 0u;
 	{
 		GpuHarness harness;
 		bmsx::GxGpu& first = harness.gpu;
 		const auto& bytes = first.readVramSnapshotBytes();
 		firstSerial = first.readVramSnapshotSerial();
+		firstReplacementSerial = first.readVramReplacementSerial();
 		powerOnWord0 = static_cast<bmsx::u16>(static_cast<bmsx::u32>(bytes[0u]) | (static_cast<bmsx::u32>(bytes[1u]) << 8u));
 
 		require(bytes[0u] == 38u, "GX-GPU power-on VRAM first byte");
@@ -1534,6 +1572,7 @@ void testPowerOnVramResetSaveStateAndMachineRecreation() {
 		GpuHarness harness;
 		bmsx::GxGpu& second = harness.gpu;
 		require(second.readVramSnapshotSerial() > firstSerial, "GX-GPU recreated machine publishes a newer VRAM snapshot revision");
+		require(second.readVramReplacementSerial() > firstReplacementSerial, "GX-GPU recreated machine publishes a newer raw VRAM replacement revision");
 		const bmsx::GxGpuDeviceOutput& output = second.readDeviceOutput();
 		SoftwareFrameHarness frame(output.commandBuffer, output.readbackPort);
 		*frame.vramSnapshot = output.vramSnapshotBytes;
@@ -1542,11 +1581,14 @@ void testPowerOnVramResetSaveStateAndMachineRecreation() {
 		require(bmsx::g_gxGpuSoftwareVram[bmsx::gxGpuSoftwareVramIndex(0, 0)] == powerOnWord0, "GX-GPU recreated machine replaces persistent backend VRAM");
 
 		const bmsx::u64 gp1Serial = second.readVramSnapshotSerial();
+		const bmsx::u64 gp1ReplacementSerial = second.readVramReplacementSerial();
 		second.writeGp1(bmsx::GX_GPU_GP1_RESET << 24u);
 		require(second.readVramSnapshotSerial() == gp1Serial, "GX-GPU GP1 reset preserves VRAM snapshot revision");
+		require(second.readVramReplacementSerial() == gp1ReplacementSerial, "GX-GPU GP1 reset preserves raw VRAM replacement revision");
 		require(gxGpuVramDigest(second.readVramSnapshotBytes()) == 0xb3ba77eau, "GX-GPU GP1 reset preserves power-on VRAM bytes");
 		second.reset();
 		require(second.readVramSnapshotSerial() > gp1Serial, "GX-GPU device reset publishes a newer VRAM snapshot revision");
+		require(second.readVramReplacementSerial() > gp1ReplacementSerial, "GX-GPU device reset publishes a newer raw VRAM replacement revision");
 		require(gxGpuVramDigest(second.readVramSnapshotBytes()) == 0xb3ba77eau, "GX-GPU device reset reproduces power-on VRAM bytes");
 
 		auto restoredBytes = std::make_unique<std::array<bmsx::u8, bmsx::GX_GPU_VRAM_BYTE_COUNT>>(second.readVramSnapshotBytes());
@@ -1556,9 +1598,11 @@ void testPowerOnVramResetSaveStateAndMachineRecreation() {
 		second.replaceVramSnapshotBytes(restoredBytes->data());
 		const bmsx::GxGpuSaveState saveState = second.captureSaveState();
 		const bmsx::u64 savedSerial = second.readVramSnapshotSerial();
+		const bmsx::u64 savedReplacementSerial = second.readVramReplacementSerial();
 		second.reset();
 		second.restoreSaveState(saveState);
 		require(second.readVramSnapshotSerial() > savedSerial, "GX-GPU save-state restore publishes a newer VRAM snapshot revision");
+		require(second.readVramReplacementSerial() > savedReplacementSerial, "GX-GPU save-state restore publishes a newer raw VRAM replacement revision");
 		require(second.readVramSnapshotBytes()[0u] == 0x5au, "GX-GPU save-state restore uses saved raw VRAM bytes");
 		require(second.readVramSnapshotBytes()[upperByteIndex] == 0xa5u, "GX-GPU save-state restore preserves installed upper VRAM bytes");
 	}
@@ -3324,6 +3368,7 @@ void testSoftwareScanoutWeavesCurrent480iFieldIntoRetainedOutputLines() {
 	state.displayModeWord = bmsx::GX_GPU_DISPLAY_MODE_VERTICAL_INTERLACE_BIT | bmsx::GX_GPU_DISPLAY_MODE_VERTICAL_RESOLUTION_BIT;
 	state.displayStartWord = 1023u | (510u << 10u);
 	state.vramSnapshotSerial = 1u;
+	state.vramReplacementSerial = 1u;
 	pcrtcWords[bmsx::GX_GPU_PCRTC_DISPFB1_HIGH] = 1023u | (510u << 11u);
 	pcrtcWords[bmsx::GX_GPU_PCRTC_DISPLAY1_HIGH] = 3u << 12u;
 	pcrtcTiming.update(pcrtcWords);
@@ -3384,7 +3429,16 @@ void testSoftwareScanoutWeavesCurrent480iFieldIntoRetainedOutputLines() {
 		0x000000ffu,
 		0x00ff0000u,
 		0x00ffffffu,
-	}, "GX-GPU snapshot replacement preserves the retained counter-field");
+	}, "GX-GPU ordinary VRAM publication preserves the retained counter-field");
+
+	state.vramReplacementSerial = 2u;
+	bmsx::scanoutGxGpuSoftwareVram(backend, state);
+	require(framebuffer == std::array<uint32_t, 4u>{
+		0x00000000u,
+		0x000000ffu,
+		0x00000000u,
+		0x00ffffffu,
+	}, "GX-GPU raw VRAM replacement clears the retained counter-field");
 }
 
 void testSoftwareScanoutMapsFieldPhasesAndFrameRows() {
@@ -4099,6 +4153,7 @@ int main() {
 	testPcrtcSintStopsBeamAndReleaseStartsFreshLineEpoch();
 	testPcrtcAcceptsCycleZeroAndCoalescesSubCycleFields();
 	testPcrtcRetainsFrameBudgetsAboveSignedCpuSlice();
+	testPcrtcAdvancesExactRawHalfLinesBeyondDoubleProductPrecision();
 	testGp0RawDrawWordDecoders();
 	testGp1DisplayModeOwnsPalNtsc();
 	testPowerOnVramResetSaveStateAndMachineRecreation();

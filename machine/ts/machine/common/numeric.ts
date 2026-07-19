@@ -90,6 +90,23 @@ export function saturateRoundedI32(value: number): number {
 	return rounded | 0;
 }
 
+export function multiplyHighU32(lhs: number, rhs: number): number {
+	const lhsLow = lhs & 0xffff;
+	const lhsHigh = lhs >>> 16;
+	const rhsLow = rhs & 0xffff;
+	const rhsHigh = rhs >>> 16;
+	const lowProduct = Math.imul(lhsLow, rhsLow) >>> 0;
+	const crossLowHigh = Math.imul(lhsLow, rhsHigh) >>> 0;
+	const crossHighLow = Math.imul(lhsHigh, rhsLow) >>> 0;
+	const middle = (lowProduct >>> 16) + (crossLowHigh & 0xffff) + (crossHighLow & 0xffff);
+	return (
+		Math.imul(lhsHigh, rhsHigh)
+		+ (crossLowHigh >>> 16)
+		+ (crossHighLow >>> 16)
+		+ (middle >>> 16)
+	) >>> 0;
+}
+
 function multiplyHighI32(lhs: number, rhs: number): number {
 	const lhsLow = lhs & 0xffff;
 	const lhsHigh = lhs >> 16;
