@@ -359,6 +359,7 @@ export class GxGpuPcrtcScanout {
 	public cropSignalX = 0;
 	public cropSignalY = 0;
 	public compositionPath = GX_GPU_PCRTC_COMPOSE_GENERIC;
+	public outputActive = false;
 	public outputWidth = 0;
 	public outputHeight = 0;
 	public revision = 0;
@@ -432,7 +433,8 @@ export class GxGpuPcrtcScanout {
 		const circuit1 = this.circuits[0];
 		const circuit2 = this.circuits[1];
 		const pixelOutputActive = timing.running && timing.signalStepX !== 0;
-		const anyEnabled = pixelOutputActive && (circuit1.enabled || circuit2.enabled);
+		const anyEnabled = pixelOutputActive && (circuit1.enabled | circuit2.enabled) !== 0;
+		this.outputActive = anyEnabled;
 		let cropSignalX = circuit1.enabled ? circuit1.displaySignalX : circuit2.displaySignalX;
 		let cropSignalY = circuit1.enabled ? circuit1.displaySignalY : circuit2.displaySignalY;
 		if (circuit1.enabled && circuit2.enabled) {

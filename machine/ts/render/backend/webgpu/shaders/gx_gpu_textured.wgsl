@@ -152,7 +152,7 @@ fn ditherOffset(coord: vec2<u32>) -> i32 {
 fn modulatedTextureRgb5(texture5: vec3<u32>, vertex8: vec3<u32>, fragCoord: vec2<u32>) -> vec3<u32> {
 	let preDither = vec3<i32>((texture5 * vertex8) >> vec3<u32>(4u));
 	let dither = select(0, ditherOffset(fragCoord), u.params1.z != 0u);
-	return vec3<u32>(clamp((preDither + vec3<i32>(dither)) >> vec3<i32>(3), vec3<i32>(0), vec3<i32>(31)));
+	return vec3<u32>(clamp((preDither + vec3<i32>(dither)) >> vec3<u32>(3u), vec3<i32>(0), vec3<i32>(31)));
 }
 
 fn encodeRgb555(color5: vec3<u32>, outputMaskBit: u32) -> vec4<f32> {

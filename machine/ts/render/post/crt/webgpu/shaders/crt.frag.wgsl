@@ -104,8 +104,8 @@ fn applyApertureMask(colorLinear: vec3<f32>, sourceX: f32) -> vec3<f32> {
 	let p = fract(sourceX * ONE_THIRD);
 	let greenOrBlue = step(ONE_THIRD, p);
 	let blue = step(TWO_THIRDS, p);
-	let active = vec3<f32>(1.0 - greenOrBlue, greenOrBlue - blue, blue);
-	let maskDelta = APERTURE_STRENGTH * (active * 2.0 - vec3<f32>(1.0));
+	let apertureChannel = vec3<f32>(1.0 - greenOrBlue, greenOrBlue - blue, blue);
+	let maskDelta = APERTURE_STRENGTH * (apertureChannel * 2.0 - vec3<f32>(1.0));
 	let lum = dot(colorLinear, LUMA);
 	let k = sqrt(smoothstep(0.0, 0.25, lum));
 	return colorLinear * (vec3<f32>(1.0) + k * maskDelta);

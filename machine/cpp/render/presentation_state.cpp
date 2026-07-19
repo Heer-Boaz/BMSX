@@ -188,10 +188,9 @@ bool RenderPresentationState::render(MachineManager& manager, Runtime& runtime, 
 		const GxGpuDeviceOutput& output = runtime.machine.gxGpu.readDeviceOutput();
 		const i32 width = static_cast<i32>(output.pcrtcScanout.outputWidth);
 		const i32 height = static_cast<i32>(output.pcrtcScanout.outputHeight);
-		const bool displayConfigurationChanged = static_cast<i32>(manager.m_view->offscreenCanvasSize.x) != width
-			|| static_cast<i32>(manager.m_view->offscreenCanvasSize.y) != height;
+		const bool displayConfigurationChanged = manager.m_view->gxGpuPcrtcScanoutRevision != output.pcrtcScanout.revision;
 		commitGxGpuViewSnapshot(*manager.m_view, output);
-		if (displayConfigurationChanged) {
+		if (displayConfigurationChanged && output.pcrtcScanout.outputActive) {
 			manager.m_view->setRenderTargetSize(width, height);
 		}
 		manager.m_view->configurePresentation(presentMode, commitFrame);

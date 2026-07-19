@@ -100,6 +100,7 @@ public:
 	u32 gxGpuHorizontalDisplayRangeWord = 0u;
 	u32 gxGpuVerticalDisplayRangeWord = 0u;
 	const GxGpuPcrtcScanout* gxGpuPcrtcScanout = nullptr;
+	u32 gxGpuPcrtcScanoutRevision = 0u;
 	const std::array<u8, GX_GPU_VRAM_BYTE_COUNT>* gxGpuVramSnapshotBytes = nullptr;
 	u64 gxGpuVramSnapshotSerial = 0u;
 	u64 gxGpuVramReplacementSerial = 0u;

@@ -83,10 +83,9 @@ export class RenderPresentationState {
 		const output = runtime.machine.gxGpu.readDeviceOutput();
 		const width = output.pcrtcScanout.outputWidth;
 		const height = output.pcrtcScanout.outputHeight;
-		const displayConfigurationChanged = view.offscreenCanvasSize.x !== width
-			|| view.offscreenCanvasSize.y !== height;
+		const displayConfigurationChanged = view.gxGpuPcrtcScanoutRevision !== output.pcrtcScanout.revision;
 		commitGxGpuViewSnapshot(view, output);
-		if (displayConfigurationChanged) {
+		if (displayConfigurationChanged && output.pcrtcScanout.outputActive) {
 			view.setRenderTargetSize(width, height);
 		}
 		view.configurePresentation(mode, commitFrame);

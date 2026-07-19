@@ -109,8 +109,8 @@ vec3 applyApertureMask(vec3 colorLinear, float sourceX){
 	float p = fract(sourceX * ONE_THIRD);
 	float greenOrBlue = step(ONE_THIRD, p);
 	float blue = step(TWO_THIRDS, p);
-	vec3 active = vec3(1.0 - greenOrBlue, greenOrBlue - blue, blue);
-	vec3 maskDelta = APERTURE_STRENGTH * (active * 2.0 - 1.0);
+	vec3 apertureChannel = vec3(1.0 - greenOrBlue, greenOrBlue - blue, blue);
+	vec3 maskDelta = APERTURE_STRENGTH * (apertureChannel * 2.0 - 1.0);
 
 	float lum = dot(colorLinear, LUMA);
 	float k   = smoothstep(0.0, 0.25, lum);

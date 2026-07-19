@@ -194,6 +194,7 @@ struct GxGpuPcrtcScanout {
 	u32 cropSignalX = 0u;
 	u32 cropSignalY = 0u;
 	u32 compositionPath = GX_GPU_PCRTC_COMPOSE_GENERIC;
+	bool outputActive = false;
 	u32 outputWidth = 0u;
 	u32 outputHeight = 0u;
 	u32 revision = 0u;

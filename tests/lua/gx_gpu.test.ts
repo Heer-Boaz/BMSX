@@ -1425,6 +1425,7 @@ test('GX-GPU PCRTC CSR FLUSH and RESET execute owner actions without latching ac
 	assert.equal(memory.readMappedU32LE(pmodeLow), 0);
 	assert.equal(memory.readMappedU32LE(csrLow), GX_GPU_PCRTC_RESET_CSR_WORD);
 	assert.equal(memory.readMappedU32LE(gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_IMR_LOW)), GX_GPU_PCRTC_RESET_IMR_WORD);
+	assert.equal(gpu.readDeviceOutput().pcrtcScanout.outputActive, false);
 	assert.deepEqual([gpu.readDeviceOutput().pcrtcScanout.outputWidth, gpu.readDeviceOutput().pcrtcScanout.outputHeight], [0, 0]);
 	gpu.presentReadyFrameOnVblankEdge();
 	assert.equal(gpu.lastFrameCommitted(), true);
@@ -3916,6 +3917,7 @@ test('GX-GPU PCRTC publishes raw words and maps retained user circuit one under 
 	gpu.presentReadyFrameOnVblankEdge();
 	output = gpu.readDeviceOutput();
 	assert.equal(output.pcrtcWords[GX_GPU_PCRTC_PMODE_LOW], 0x0000ff23);
+	assert.equal(output.pcrtcScanout.outputActive, true);
 	assert.deepEqual([output.pcrtcScanout.outputWidth, output.pcrtcScanout.outputHeight], [320, 240]);
 
 	gpu.enterSupervisorContext();

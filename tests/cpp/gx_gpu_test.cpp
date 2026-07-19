@@ -941,6 +941,7 @@ void testPcrtcCsrFlushAndResetExecuteOwnerActions() {
 	require(memory.readMappedU32LE(pmodeLow) == 0u, "GX-GPU PCRTC RESET restores active PMODE");
 	require(memory.readMappedU32LE(csrLow) == bmsx::GX_GPU_PCRTC_RESET_CSR_WORD, "GX-GPU PCRTC RESET restores CSR");
 	require(memory.readMappedU32LE(bmsx::gxGpuPcrtcRegisterAddress(bmsx::GX_GPU_PCRTC_IMR_LOW)) == bmsx::GX_GPU_PCRTC_RESET_IMR_WORD, "GX-GPU PCRTC RESET restores IMR");
+	require(!gpu.readDeviceOutput().pcrtcScanout.outputActive, "GX-GPU PCRTC RESET publishes inactive output while both circuits are disabled");
 	require(gpu.readDeviceOutput().pcrtcScanout.outputWidth == 0u && gpu.readDeviceOutput().pcrtcScanout.outputHeight == 0u, "GX-GPU PCRTC RESET publishes no scanout while both circuits are disabled");
 	gpu.presentReadyFrameOnVblankEdge();
 	require(gpu.lastFrameCommitted(), "GX-GPU PCRTC RESET publishes the reset scanout at the next VBlank edge");
@@ -4190,6 +4191,7 @@ void testPcrtcPublishesRawWordsAndMapsRetainedUserCircuitOneUnderSupervisor() {
 	gpu.presentReadyFrameOnVblankEdge();
 	output = &gpu.readDeviceOutput();
 	require(output->pcrtcWords[bmsx::GX_GPU_PCRTC_PMODE_LOW] == 0x0000ff23u, "GX-GPU PCRTC publishes the user PMODE word at VBlank");
+	require(output->pcrtcScanout.outputActive, "GX-GPU PCRTC publishes active output when a read circuit is enabled");
 	require(output->pcrtcScanout.outputWidth == 320u && output->pcrtcScanout.outputHeight == 240u, "GX-GPU PCRTC normalizes the raw signal origin and publishes the native envelope at VBlank");
 
 	gpu.enterSupervisorContext();

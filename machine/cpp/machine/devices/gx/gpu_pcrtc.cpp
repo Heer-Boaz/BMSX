@@ -179,6 +179,7 @@ void GxGpuPcrtcScanout::update(
 	GxGpuPcrtcCircuit& circuit2 = circuits[1u];
 	const bool pixelOutputActive = timing.running && timing.signalStepX != 0u;
 	const bool anyEnabled = pixelOutputActive && (circuit1.enabled || circuit2.enabled);
+	outputActive = anyEnabled;
 	u32 cropSignalX = circuit1.enabled ? circuit1.displaySignalX : circuit2.displaySignalX;
 	u32 cropSignalY = circuit1.enabled ? circuit1.displaySignalY : circuit2.displaySignalY;
 	if (circuit1.enabled && circuit2.enabled) {
