@@ -81,29 +81,31 @@ Current artifact names encode that split:
 
 ## Runtime Timing
 
-BMSX takes video standard from the raw PSX GP1 display-mode word. Bit 3 selects
-PAL (50 Hz, 313 scanlines); a clear bit selects NTSC (60000/1001 Hz,
-262 scanlines). The machine model fixes the CPU at 50 MHz; the GPU reset display
-configuration is 320×240 PAL. GP1(08h) owns native scanout width and GP1(07h)
-owns the active vertical range, so carts can also program native 256×192 and
-256×212 output. GP1(06h) remains a horizontal timing range and does not select
-logical width. Cart manifests do not own refresh rate, render size, or a
-`vblank_cycles` override.
+BMSX fixes the CPU at 50 MHz and resets GX to 320×240 PAL. The PSX GP1 register
+set still owns raster/status state, including its native 256, 320, 368, 512 and
+640-column modes. The PS2-style PCRTC is the sole scanout clock and geometry
+owner: `SMODE1/2`, `SYNCH1/2` and `SYNCV` drive the physical beam, while
+`DISPFB1/2`, `DISPLAY1/2` and `PMODE` select and merge the visible rectangles.
+Cart manifests do not own refresh rate, render size, or a `vblank_cycles`
+override.
 
-The runtime derives the frame and VBLANK cycle budgets from those hardware
-words:
+The standard mode envelope reaches 1920×1080. Raw PCRTC programming covers the PSX
+240p/480i family, PS2 640×448i NTSC and 640×512i PAL, and the PS2 DTV outputs
+720×480p, 656×576p, 1280×720p and 1920×1080i. This envelope is not a register
+clamp: other representable words still flow through the PCRTC datapath. The
+firmware exposes direct reset presets for 256/320/368/512/640×240,
+640×480i, 640×448i and 640×512i; bare-metal carts may instead program the raw
+registerfile. Libretro advertises 1920×1080 initially and raises its complete AV
+contract when raw dual-circuit composition exceeds that standard envelope, so
+startup does not reserve the theoretical maximum and metadata never becomes an
+implicit clamp on raw words.
 
-```text
-cyclesPerFrame = cpuHz / refreshHz
-visibleCycles = floor(cyclesPerFrame * activeDisplayLines / totalScanlines)
-vblankCycles = cyclesPerFrame - visibleCycles
-```
-
-The GPU publishes the raw display words at VBlank and the scheduler applies the
-published video standard and active-line count to the next frame. Carts own
-lower game cadence by counting VBLANK IRQs. They program GX through GP0/GP1 and
-may DMA native GP0 streams directly from ROM/RAM; there is no VDP stream or
-manifest timing facade.
+The GPU publishes composition words at VBlank. Physical timing writes take
+effect in the PCRTC beam owner, which supplies exact rational CPU-cycle
+deadlines to the scheduler. Carts own lower game cadence by counting VBLANK
+IRQs. They program GX through GP0/GP1 and PCRTC MMIO and may DMA native GP0
+streams directly from ROM/RAM; there is no VDP stream or manifest timing
+facade.
 
 ## Common Commands
 

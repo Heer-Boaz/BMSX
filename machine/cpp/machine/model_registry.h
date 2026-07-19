@@ -5,8 +5,8 @@
 
 namespace bmsx {
 
-// Console-model registry: the machine owns fixed PSX-class hardware, device
-// throughput/programming-model parameters, and PSX GPU display timing state.
+// Console-model registry: the machine owns fixed PSX-class raster hardware,
+// PS2-class PCRTC presentation aspect, and device throughput/timing parameters.
 
 enum class MachineVdpClass { Psx };
 enum class PsxGpuVideoStandard { Pal, Ntsc };
@@ -14,10 +14,8 @@ enum class PsxGpuVideoStandard { Pal, Ntsc };
 constexpr i64 PSX_CPU_FREQ_HZ = 50000000;
 constexpr i64 PSX_DMA_WORDS_PER_SEC = 6553600;
 constexpr i64 PSX_RAM_BYTES = 0x00400000;
-constexpr i32 PSX_GPU_MAX_DISPLAY_WIDTH = 640;
-constexpr i32 PSX_GPU_MAX_DISPLAY_HEIGHT = 480;
-constexpr i32 PSX_GPU_DISPLAY_ASPECT_WIDTH = 4;
-constexpr i32 PSX_GPU_DISPLAY_ASPECT_HEIGHT = 3;
+constexpr i32 GX_GPU_DISPLAY_ASPECT_WIDTH = 4;
+constexpr i32 GX_GPU_DISPLAY_ASPECT_HEIGHT = 3;
 
 constexpr i64 PSX_GEO_WORK_UNITS_PER_SEC = 16384000;
 

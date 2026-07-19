@@ -38,7 +38,7 @@ import {
 	createSubscriptionHandle,
 } from 'bmsx/platform';
 import { HZ_SCALE } from 'bmsx/machine/runtime/timing/constants';
-import { PSX_GPU_DISPLAY_ASPECT_HEIGHT, PSX_GPU_DISPLAY_ASPECT_WIDTH } from 'bmsx/machine/model_registry';
+import { GX_GPU_DISPLAY_ASPECT_HEIGHT, GX_GPU_DISPLAY_ASPECT_WIDTH } from 'bmsx/machine/model_registry';
 import { WorkerStreamingAudioService } from './worker_audio';
 import { type GamepadControlHandle, type GameViewCanvas, type GameViewHost, type HostEventListenerTarget, type HostEventOptions, type HostWindowEventType, type OnscreenGamepadHandles, type OverlayHandle, type SurfaceBounds, type ViewportDimensions } from 'bmsx/platform';
 import { type vec2 } from 'bmsx/rompack/format';
@@ -1508,7 +1508,7 @@ export class BrowserGameViewHost implements GameViewHost {
 			}
 		}
 
-		const presentationHeight = viewportSize.x * PSX_GPU_DISPLAY_ASPECT_HEIGHT / PSX_GPU_DISPLAY_ASPECT_WIDTH;
+		const presentationHeight = viewportSize.x * GX_GPU_DISPLAY_ASPECT_HEIGHT / GX_GPU_DISPLAY_ASPECT_WIDTH;
 		const dx = adjustedWidth / viewportSize.x;
 		const dy = effectiveHeight / presentationHeight;
 		const viewportScale = Math.floor(Math.min(dx, dy) * 2) / 2;
@@ -1549,7 +1549,7 @@ export class BrowserGameViewHost implements GameViewHost {
 		const viewportBottomInset = Math.max(0, viewportHeight - visibleViewportBottom);
 
 		const displayWidth = Math.round(this.lastViewportSize.x * size.viewportScale);
-		const displayHeight = Math.round(this.lastViewportSize.x * PSX_GPU_DISPLAY_ASPECT_HEIGHT / PSX_GPU_DISPLAY_ASPECT_WIDTH * size.viewportScale);
+		const displayHeight = Math.round(this.lastViewportSize.x * GX_GPU_DISPLAY_ASPECT_HEIGHT / GX_GPU_DISPLAY_ASPECT_WIDTH * size.viewportScale);
 
 		const horizontalContainer = Math.max(viewportWidth, size.width, displayWidth);
 		const verticalContainer = Math.max(viewportHeight, size.height, displayHeight);

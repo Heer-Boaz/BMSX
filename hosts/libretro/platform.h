@@ -58,7 +58,6 @@ public:
 	LibretroGameViewHost(
 		Framebuffer& framebuffer,
 		BackendType backend_type,
-		retro_environment_t& environ_cb,
 		retro_system_av_info& av_info,
 		bool profileGxUploads);
 
@@ -75,7 +74,6 @@ public:
 private:
 	Framebuffer& m_framebuffer;
 	BackendType m_backend_type;
-	retro_environment_t& m_environ_cb;
 	retro_system_av_info& m_av_info;
 	bool m_profile_gx_uploads;
 };

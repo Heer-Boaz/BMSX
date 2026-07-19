@@ -61,12 +61,14 @@ int16_t gamepadInputState(unsigned port, unsigned device, unsigned, unsigned id)
 }
 
 unsigned geometryChangeCount = 0u;
-retro_game_geometry lastGeometry{};
+unsigned avInfoChangeCount = 0u;
 
 bool captureEnvironment(unsigned command, void* data) {
 	if (command == RETRO_ENVIRONMENT_SET_GEOMETRY) {
-		lastGeometry = *static_cast<retro_game_geometry*>(data);
+		(void)data;
 		geometryChangeCount += 1u;
+	} else if (command == RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO) {
+		avInfoChangeCount += 1u;
 	}
 	return true;
 }
@@ -426,11 +428,11 @@ void testLibretroTracksPublishedNativeOutputGeometry() {
 	retro_system_av_info avInfo{};
 	avInfo.geometry.base_width = 320u;
 	avInfo.geometry.base_height = 240u;
-	avInfo.geometry.max_width = static_cast<unsigned>(bmsx::PSX_GPU_MAX_DISPLAY_WIDTH);
-	avInfo.geometry.max_height = static_cast<unsigned>(bmsx::PSX_GPU_MAX_DISPLAY_HEIGHT);
-	avInfo.geometry.aspect_ratio = static_cast<float>(bmsx::PSX_GPU_DISPLAY_ASPECT_WIDTH) / static_cast<float>(bmsx::PSX_GPU_DISPLAY_ASPECT_HEIGHT);
+	avInfo.geometry.max_width = 1920u;
+	avInfo.geometry.max_height = 1080u;
+	avInfo.geometry.aspect_ratio = static_cast<float>(bmsx::GX_GPU_DISPLAY_ASPECT_WIDTH) / static_cast<float>(bmsx::GX_GPU_DISPLAY_ASPECT_HEIGHT);
 	geometryChangeCount = 0u;
-	lastGeometry = {};
+	avInfoChangeCount = 0u;
 	bmsx::LibretroPlatform platform(
 		bmsx::BackendType::Software,
 		avInfo,
@@ -457,23 +459,18 @@ void testLibretroTracksPublishedNativeOutputGeometry() {
 	memory.writeMappedU32LE(bmsx::gxGpuPcrtcRegisterAddress(bmsx::GX_GPU_PCRTC_PMODE_LOW), 0x0000ff21u);
 	gpu.presentReadyFrameOnVblankEdge();
 	require(platform.runFrame(), "libretro paused frame should present the published 192-line output");
-	require(geometryChangeCount == 1u, "libretro should publish one geometry transition for 256x192");
-	require(lastGeometry.base_width == 256u && lastGeometry.base_height == 192u, "libretro geometry transition should expose native 256x192");
-	require(lastGeometry.max_width == static_cast<unsigned>(bmsx::PSX_GPU_MAX_DISPLAY_WIDTH), "libretro geometry should retain the maximum display width");
-	require(lastGeometry.max_height == static_cast<unsigned>(bmsx::PSX_GPU_MAX_DISPLAY_HEIGHT), "libretro geometry should retain the maximum display height");
-	require(lastGeometry.aspect_ratio == static_cast<float>(bmsx::PSX_GPU_DISPLAY_ASPECT_WIDTH) / static_cast<float>(bmsx::PSX_GPU_DISPLAY_ASPECT_HEIGHT), "libretro geometry should retain the model aspect ratio");
 	require(platform.getFramebuffer().width == 256u && platform.getFramebuffer().height == 192u, "libretro framebuffer should resize to native 256x192");
 	require(avInfo.geometry.base_width == 256u && avInfo.geometry.base_height == 192u, "libretro AV cache should track the published 256x192 output");
+	require(avInfo.geometry.max_width == 1920u && avInfo.geometry.max_height == 1080u, "libretro AV cache should retain the standard display envelope");
+	require(avInfo.geometry.aspect_ratio == static_cast<float>(bmsx::GX_GPU_DISPLAY_ASPECT_WIDTH) / static_cast<float>(bmsx::GX_GPU_DISPLAY_ASPECT_HEIGHT), "libretro AV cache should retain the model aspect ratio");
 
 	require(platform.runFrame(), "libretro paused frame should hold the unchanged 192-line output");
-	require(geometryChangeCount == 1u, "libretro should not republish unchanged native geometry");
 
 	const uint32_t alternateHorizontalRange = 0x00c6e27eu;
 	gpu.writeGp1((bmsx::GX_GPU_GP1_HORIZONTAL_DISPLAY_RANGE << 24u) | alternateHorizontalRange);
 	gpu.presentReadyFrameOnVblankEdge();
 	require(platform.runFrame(), "libretro paused frame should consume the changed horizontal timing range");
 	require(gpu.readDeviceOutput().horizontalDisplayRangeWord == alternateHorizontalRange, "GX-GPU should publish the changed horizontal timing range as raw state");
-	require(geometryChangeCount == 1u, "horizontal timing range must not act as a logical-width transition");
 	require(platform.getFramebuffer().width == 256u && platform.getFramebuffer().height == 192u, "horizontal timing range must not resize the native framebuffer");
 
 	gpu.writeGp1((bmsx::GX_GPU_GP1_VERTICAL_DISPLAY_RANGE << 24u) | range212);
@@ -486,7 +483,6 @@ void testLibretroTracksPublishedNativeOutputGeometry() {
 	require(platform.saveState(saved.data(), saved.size()), "libretro should save pending live 212-line state with published 192-line output");
 	gpu.presentReadyFrameOnVblankEdge();
 	require(platform.runFrame(), "libretro paused frame should present the published 212-line output");
-	require(geometryChangeCount == 2u, "libretro should publish one geometry transition back to 256x212");
 	require(platform.getFramebuffer().width == 256u && platform.getFramebuffer().height == 212u, "libretro framebuffer should resize to native 256x212");
 	require(avInfo.geometry.base_width == 256u && avInfo.geometry.base_height == 212u, "libretro AV cache should track the published 256x212 output");
 
@@ -497,9 +493,27 @@ void testLibretroTracksPublishedNativeOutputGeometry() {
 	require(gpu.readDeviceOutput().pcrtcWords[bmsx::GX_GPU_PCRTC_DISPLAY1_HIGH] == (1023u | (191u << 12u)), "libretro state restore should preserve published PCRTC geometry");
 	require(runtime.timing.pcrtcRevision == gpu.readDeviceOutput().pcrtcTiming.revision, "libretro state restore should restore the physical PCRTC timing revision");
 	require(platform.runFrame(), "libretro paused frame should present restored 192-line output");
-	require(geometryChangeCount == 3u, "libretro restore should publish one transition to restored 256x192 geometry");
 	require(platform.getFramebuffer().width == 256u && platform.getFramebuffer().height == 192u, "libretro restore should resize the framebuffer to restored native geometry");
 	require(avInfo.geometry.base_width == 256u && avInfo.geometry.base_height == 192u, "libretro AV cache should track restored native geometry");
+
+	memory.writeMappedU32LE(bmsx::gxGpuPcrtcRegisterAddress(bmsx::GX_GPU_PCRTC_SMODE1_LOW), 0x40206504u);
+	memory.writeMappedU32LE(bmsx::gxGpuPcrtcRegisterAddress(bmsx::GX_GPU_PCRTC_SMODE2_LOW), bmsx::GX_GPU_PCRTC_SMODE2_INT);
+	memory.writeMappedU32LE(bmsx::gxGpuPcrtcRegisterAddress(bmsx::GX_GPU_PCRTC_SYNCV_LOW), 0x02101401u);
+	memory.writeMappedU32LE(bmsx::gxGpuPcrtcRegisterAddress(bmsx::GX_GPU_PCRTC_DISPLAY1_LOW), 0u);
+	memory.writeMappedU32LE(bmsx::gxGpuPcrtcRegisterAddress(bmsx::GX_GPU_PCRTC_DISPLAY1_HIGH), 1919u | (1079u << 12u));
+	gpu.presentReadyFrameOnVblankEdge();
+	require(platform.runFrame(), "libretro paused frame should present the published PS2 1080i output");
+	require(avInfo.geometry.base_width == 1920u && avInfo.geometry.base_height == 1080u, "libretro AV cache should expose native PS2 1080i");
+	require(avInfo.geometry.max_width == 1920u && avInfo.geometry.max_height == 1080u, "libretro AV cache should retain the standard PS2 output envelope");
+	require(platform.getFramebuffer().width == 1920u && platform.getFramebuffer().height == 1080u, "libretro framebuffer should resize to native PS2 1080i");
+
+	memory.writeMappedU32LE(bmsx::gxGpuPcrtcRegisterAddress(bmsx::GX_GPU_PCRTC_DISPLAY1_HIGH), 1920u | (1080u << 12u));
+	gpu.presentReadyFrameOnVblankEdge();
+	require(platform.runFrame(), "libretro paused frame should present raw output beyond the standard PS2 envelope");
+	require(avInfo.geometry.base_width == 1921u && avInfo.geometry.base_height == 1081u, "libretro AV cache should expose the expanded raw output");
+	require(avInfo.geometry.max_width == 1921u && avInfo.geometry.max_height == 1081u, "libretro AV cache should grow its maximum geometry to the raw output");
+	require(platform.getFramebuffer().width == 1921u && platform.getFramebuffer().height == 1081u, "libretro framebuffer should follow raw output beyond the standard envelope");
+	require(geometryChangeCount == 0u && avInfoChangeCount == 0u, "the platform view stack must leave libretro environment notifications to retro_run");
 }
 
 void testPhysicalPcrtcTimingPublishesAtServiceAndPresentationAtVblank() {

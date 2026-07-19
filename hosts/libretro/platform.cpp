@@ -196,7 +196,7 @@ LibretroPlatform::LibretroPlatform(
 	retro_system_av_info& av_info,
 	bmsx_supervisor_request_line_t supervisorRequestLine,
 	bool profileGxUploads)
-	: m_frame_time_sec(static_cast<double>(HZ_SCALE) / static_cast<double>(PAL_REFRESH_UFPS_SCALED))
+	: m_frame_time_sec(static_cast<double>(HZ_SCALE) / static_cast<double>(GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED))
 	, m_backend_type(backend_type) {
 	m_framebuffer.resize(
 		gxGpuDisplayModeScreenWidth(GX_GPU_RESET_DISPLAY_MODE_WORD),
@@ -214,7 +214,6 @@ LibretroPlatform::LibretroPlatform(
 	m_gameview_host = std::make_unique<LibretroGameViewHost>(
 		m_framebuffer,
 		m_backend_type,
-		m_environ_cb,
 		av_info,
 		profileGxUploads);
 	m_microtask_queue = std::make_unique<DefaultMicrotaskQueue>();
@@ -1102,14 +1101,12 @@ void LibretroFrameLoop::stop() {
  * ============================================================================ */
 
 LibretroGameViewHost::LibretroGameViewHost(
-	Framebuffer& framebuffer,
-	BackendType backend_type,
-	retro_environment_t& environ_cb,
-	retro_system_av_info& av_info,
-	bool profileGxUploads)
+		Framebuffer& framebuffer,
+		BackendType backend_type,
+		retro_system_av_info& av_info,
+		bool profileGxUploads)
 	: m_framebuffer(framebuffer)
 	, m_backend_type(backend_type)
-	, m_environ_cb(environ_cb)
 	, m_av_info(av_info)
 	, m_profile_gx_uploads(profileGxUploads) {
 }
@@ -1139,10 +1136,12 @@ std::unique_ptr<GPUBackend> LibretroGameViewHost::createBackend() {
 }
 
 void LibretroGameViewHost::setRenderTargetSize(GPUBackend& backend, i32 width, i32 height) {
-	m_av_info.geometry.base_width = static_cast<unsigned>(width);
-	m_av_info.geometry.base_height = static_cast<unsigned>(height);
-	m_av_info.geometry.aspect_ratio = static_cast<float>(PSX_GPU_DISPLAY_ASPECT_WIDTH) / static_cast<float>(PSX_GPU_DISPLAY_ASPECT_HEIGHT);
-	m_environ_cb(RETRO_ENVIRONMENT_SET_GEOMETRY, &m_av_info.geometry);
+	auto& geometry = m_av_info.geometry;
+	geometry.base_width = static_cast<unsigned>(width);
+	geometry.base_height = static_cast<unsigned>(height);
+	geometry.aspect_ratio = static_cast<float>(GX_GPU_DISPLAY_ASPECT_WIDTH) / static_cast<float>(GX_GPU_DISPLAY_ASPECT_HEIGHT);
+	if (geometry.base_width > geometry.max_width) geometry.max_width = geometry.base_width;
+	if (geometry.base_height > geometry.max_height) geometry.max_height = geometry.base_height;
 	m_framebuffer.resize(static_cast<unsigned>(width), static_cast<unsigned>(height));
 #if BMSX_ENABLE_GLES2
 	if (backend.type() == BackendType::OpenGLES2) {

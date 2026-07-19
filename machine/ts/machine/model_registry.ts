@@ -1,7 +1,7 @@
 import { HZ_SCALE } from './runtime/timing/constants';
 
-// Console-model registry: the machine owns fixed PSX-class hardware, device
-// throughput/programming-model parameters, and PSX GPU display timing state.
+// Console-model registry: the machine owns fixed PSX-class raster hardware,
+// PS2-class PCRTC presentation aspect, and device throughput/timing parameters.
 
 export type MachineVdpClass = 'psx';
 export type PsxGpuVideoStandard = 'pal' | 'ntsc';
@@ -9,10 +9,8 @@ export type PsxGpuVideoStandard = 'pal' | 'ntsc';
 export const PSX_CPU_FREQ_HZ = 50_000_000;
 export const PSX_DMA_WORDS_PER_SEC = 6_553_600;
 export const PSX_RAM_BYTES = 0x00400000;
-export const PSX_GPU_MAX_DISPLAY_WIDTH = 640;
-export const PSX_GPU_MAX_DISPLAY_HEIGHT = 480;
-export const PSX_GPU_DISPLAY_ASPECT_WIDTH = 4;
-export const PSX_GPU_DISPLAY_ASPECT_HEIGHT = 3;
+export const GX_GPU_DISPLAY_ASPECT_WIDTH = 4;
+export const GX_GPU_DISPLAY_ASPECT_HEIGHT = 3;
 
 export const PSX_GEO_WORK_UNITS_PER_SEC = 16_384_000;
 

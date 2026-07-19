@@ -85,7 +85,15 @@ static bmsx::LibretroPlatform* g_platform = nullptr;
 static bool g_profile_gx_uploads = false;
 static retro_system_av_info g_cached_av_info{};
 static bool g_cached_av_info_valid = false;
-static int64_t g_current_ufps_scaled = bmsx::PAL_REFRESH_UFPS_SCALED;
+static retro_system_av_info g_frontend_av_info{};
+static bool g_frontend_av_info_valid = false;
+static int64_t g_current_ufps_scaled = bmsx::GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED;
+
+enum class AvInfoNotification : uint8_t {
+	None,
+	Geometry,
+	System,
+};
 
 #if BMSX_ENABLE_GLES2
 static bool RETRO_CALLCONV read_gx_upload_profile_frame(
@@ -114,11 +122,11 @@ static void initialize_default_av_info(retro_system_av_info& av) {
 	std::memset(&av, 0, sizeof(av));
 	av.geometry.base_width = bmsx::gxGpuDisplayModeScreenWidth(bmsx::GX_GPU_RESET_DISPLAY_MODE_WORD);
 	av.geometry.base_height = static_cast<unsigned>(bmsx::gxGpuVerticalVisibleLines(bmsx::GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD, bmsx::GX_GPU_RESET_DISPLAY_MODE_WORD));
-	av.geometry.max_width = static_cast<unsigned>(bmsx::PSX_GPU_MAX_DISPLAY_WIDTH);
-	av.geometry.max_height = static_cast<unsigned>(bmsx::PSX_GPU_MAX_DISPLAY_HEIGHT);
-	av.geometry.aspect_ratio = static_cast<float>(bmsx::PSX_GPU_DISPLAY_ASPECT_WIDTH) / static_cast<float>(bmsx::PSX_GPU_DISPLAY_ASPECT_HEIGHT);
+	av.geometry.max_width = 1920u;
+	av.geometry.max_height = 1080u;
+	av.geometry.aspect_ratio = static_cast<float>(bmsx::GX_GPU_DISPLAY_ASPECT_WIDTH) / static_cast<float>(bmsx::GX_GPU_DISPLAY_ASPECT_HEIGHT);
 	av.timing.sample_rate = bmsx::DEFAULT_LIBRETRO_AUDIO_SAMPLE_RATE;
-	av.timing.fps = static_cast<double>(bmsx::PAL_REFRESH_UFPS_SCALED) / static_cast<double>(bmsx::HZ_SCALE);
+	av.timing.fps = static_cast<double>(bmsx::GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED) / static_cast<double>(bmsx::HZ_SCALE);
 }
 
 static void sync_current_av_info(int64_t ufps_scaled) {
@@ -129,6 +137,39 @@ static void sync_current_av_info(int64_t ufps_scaled) {
 	g_cached_av_info_valid = true;
 	g_current_ufps_scaled = ufps_scaled;
 	g_platform->setAVInfo(g_cached_av_info);
+}
+
+static AvInfoNotification pending_av_info_notification() {
+	if (!g_frontend_av_info_valid
+			|| g_cached_av_info.geometry.max_width != g_frontend_av_info.geometry.max_width
+			|| g_cached_av_info.geometry.max_height != g_frontend_av_info.geometry.max_height
+			|| g_cached_av_info.timing.fps != g_frontend_av_info.timing.fps
+			|| g_cached_av_info.timing.sample_rate != g_frontend_av_info.timing.sample_rate) {
+		return AvInfoNotification::System;
+	}
+	if (g_cached_av_info.geometry.base_width != g_frontend_av_info.geometry.base_width
+			|| g_cached_av_info.geometry.base_height != g_frontend_av_info.geometry.base_height
+			|| g_cached_av_info.geometry.aspect_ratio != g_frontend_av_info.geometry.aspect_ratio) {
+		return AvInfoNotification::Geometry;
+	}
+	return AvInfoNotification::None;
+}
+
+static AvInfoNotification publish_pending_av_info() {
+	const AvInfoNotification notification = pending_av_info_notification();
+	switch (notification) {
+		case AvInfoNotification::None:
+			return notification;
+		case AvInfoNotification::Geometry:
+			environ_cb(RETRO_ENVIRONMENT_SET_GEOMETRY, &g_cached_av_info.geometry);
+			break;
+		case AvInfoNotification::System:
+			environ_cb(RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO, &g_cached_av_info);
+			break;
+	}
+	g_frontend_av_info = g_cached_av_info;
+	g_frontend_av_info_valid = true;
+	return notification;
 }
 
 static void RETRO_CALLCONV keyboard_event(bool down, unsigned keycode, uint32_t character, uint16_t key_modifiers) {
@@ -896,6 +937,7 @@ static void request_hw_context_for_backend(bmsx::BackendType backend) {
 
 void retro_set_environment(retro_environment_t cb) {
 	environ_cb = cb;
+	g_frontend_av_info_valid = false;
 #if BMSX_ENABLE_GLES2
 	BmsxGxUploadProfileInterfaceV1 gxUploadProfileInterface{
 		read_gx_upload_profile_frame,
@@ -1057,7 +1099,7 @@ void retro_init(void) {
 	// Create platform instance
 	initialize_default_av_info(g_cached_av_info);
 	g_cached_av_info_valid = true;
-	g_current_ufps_scaled = bmsx::PAL_REFRESH_UFPS_SCALED;
+	g_current_ufps_scaled = bmsx::GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED;
 	g_platform = new bmsx::LibretroPlatform(
 		g_active_backend,
 		g_cached_av_info,
@@ -1105,6 +1147,7 @@ void retro_deinit(void) {
 	delete g_platform;
 	g_platform = nullptr;
 	g_hw_context_lifecycle = HardwareContextLifecycle::Software;
+	g_frontend_av_info_valid = false;
 }
 
 unsigned retro_api_version(void) { return RETRO_API_VERSION; }
@@ -1124,6 +1167,8 @@ void retro_get_system_av_info(struct retro_system_av_info* info) {
 		g_cached_av_info_valid = true;
 	}
 	*info = g_cached_av_info;
+	g_frontend_av_info = g_cached_av_info;
+	g_frontend_av_info_valid = true;
 
 	logging.log(
 		RETRO_LOG_INFO,
@@ -1194,7 +1239,7 @@ bool retro_load_game_special(unsigned game_type,
 void retro_unload_game(void) {
 	logging.log(RETRO_LOG_INFO, "[BMSX] Unloading game\n");
 	g_platform->unloadRom();
-	sync_current_av_info(bmsx::PAL_REFRESH_UFPS_SCALED);
+	sync_current_av_info(bmsx::GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED);
 }
 
 /* ============================================================================
@@ -1208,6 +1253,10 @@ void retro_reset(void) {
 }
 
 void retro_run(void) {
+	// Libretro video notifications belong to retro_run. Publishing a change that
+	// was queued by reset/state work first lets a synchronous frontend context
+	// reset enter the lifecycle switch below in this same frame.
+	publish_pending_av_info();
 	switch (g_hw_context_lifecycle) {
 		case HardwareContextLifecycle::Software:
 		case HardwareContextLifecycle::Ready:
@@ -1314,24 +1363,28 @@ void retro_run(void) {
 			g_platform->setResourceUsageGizmo(g_resource_usage_gizmo_enabled);
 		}
 	}
+	const bool hardware_frame = isHardwareBackendActive();
 	const bool video_frame_presented = g_platform->runFrame();
 	const int64_t runtime_ufps_scaled = g_platform->machineManager()->runtime().timing.ufpsScaled;
-	if (runtime_ufps_scaled != g_current_ufps_scaled) {
+	const bool timing_changed = runtime_ufps_scaled != g_current_ufps_scaled;
+	if (timing_changed) {
 		g_platform->machineManager()->syncRuntimeAudioTiming();
 		sync_current_av_info(runtime_ufps_scaled);
-		environ_cb(RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO, &g_cached_av_info);
 	}
+	const AvInfoNotification av_info_notification = publish_pending_av_info();
+	const bool suppress_hardware_frame =
+		hardware_frame && av_info_notification == AvInfoNotification::System;
 
 	// Output video
 	const auto& fb = g_platform->getFramebuffer();
-	if (video_frame_presented) {
-		if (isHardwareBackendActive()) {
+	if (video_frame_presented && !suppress_hardware_frame) {
+		if (hardware_frame) {
 			video_cb(RETRO_HW_FRAME_BUFFER_VALID, fb.width, fb.height, 0);
 		} else {
 			video_cb(fb.data, fb.width, fb.height, fb.pitch);
 		}
 	} else {
-		video_cb(nullptr, fb.width, fb.height, isHardwareBackendActive() ? 0 : fb.pitch);
+		video_cb(nullptr, fb.width, fb.height, hardware_frame ? 0 : fb.pitch);
 	}
 
 	// Output audio

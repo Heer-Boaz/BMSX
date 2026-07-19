@@ -329,6 +329,65 @@ void testGp0RawDrawWordDecoders() {
 	require(bmsx::gxGpuDrawingAreaBottomExclusive(12u | (600u << 10u), 20u | (700u << 10u), 1u) == 701u, "GX-GPU drawing area preserves raw 10-bit bottom");
 }
 
+void testPcrtcDecodesNativePsxAndPs2OutputResolutions() {
+	std::array<bmsx::u32, bmsx::GX_GPU_PCRTC_CONFIG_WORD_COUNT> words{};
+	words[bmsx::GX_GPU_PCRTC_PMODE_LOW] = 0x0000ff21u;
+	words[bmsx::GX_GPU_PCRTC_SMODE1_HIGH] = 0x00000007u;
+	words[bmsx::GX_GPU_PCRTC_SYNCH1_LOW] = 0x1fc83030u;
+	words[bmsx::GX_GPU_PCRTC_SYNCH1_HIGH] = 0x0007f5c2u;
+	words[bmsx::GX_GPU_PCRTC_SYNCH2_LOW] = 0x003484bcu;
+	words[bmsx::GX_GPU_PCRTC_SYNCV_HIGH] = 0x00a90005u;
+	bmsx::GxGpuPcrtcTiming timing;
+	bmsx::GxGpuPcrtcScanout scanout;
+	struct OutputMode {
+		bmsx::u32 width;
+		bmsx::u32 height;
+		bmsx::u32 signalStep;
+		bmsx::u32 interlaced;
+	};
+	constexpr std::array<OutputMode, 12> modes{{
+		{256u, 240u, 4u, 0u},
+		{320u, 240u, 4u, 0u},
+		{368u, 240u, 4u, 0u},
+		{512u, 240u, 4u, 0u},
+		{640u, 240u, 4u, 0u},
+		{640u, 480u, 4u, 1u},
+		{640u, 448u, 4u, 1u},
+		{640u, 512u, 4u, 1u},
+		{720u, 480u, 2u, 0u},
+		{656u, 576u, 2u, 0u},
+		{1280u, 720u, 1u, 0u},
+		{1920u, 1080u, 1u, 1u},
+	}};
+
+	for (const OutputMode& mode : modes) {
+		words[bmsx::GX_GPU_PCRTC_SMODE1_LOW] = (0x40806504u & ~(0x0fu << 21u)) | (mode.signalStep << 21u);
+		words[bmsx::GX_GPU_PCRTC_SMODE2_LOW] = mode.interlaced * bmsx::GX_GPU_PCRTC_SMODE2_INT;
+		words[bmsx::GX_GPU_PCRTC_SYNCV_LOW] = mode.interlaced != 0u ? 0x02101401u : 0x02101404u;
+		words[bmsx::GX_GPU_PCRTC_DISPLAY1_LOW] = (mode.signalStep - 1u) << 23u;
+		words[bmsx::GX_GPU_PCRTC_DISPLAY1_HIGH] = (mode.width * mode.signalStep - 1u) | ((mode.height - 1u) << 12u);
+		timing.update(words);
+		scanout.update(words, timing);
+		require(scanout.outputActive, "GX-GPU PCRTC standard output mode should be active");
+		require(scanout.outputWidth == mode.width, "GX-GPU PCRTC standard output mode should retain its native width");
+		require(scanout.outputHeight == mode.height, "GX-GPU PCRTC standard output mode should retain its native height");
+		require(scanout.interlaced == (mode.interlaced != 0u), "GX-GPU PCRTC standard output mode should retain its scan structure");
+		require(scanout.circuits[0u].sourceAdvanceX == 1u, "GX-GPU PCRTC standard output mode should consume native source columns");
+	}
+
+	words[bmsx::GX_GPU_PCRTC_PMODE_LOW] = 0x0000ff23u;
+	words[bmsx::GX_GPU_PCRTC_SMODE1_LOW] = 0x40206504u;
+	words[bmsx::GX_GPU_PCRTC_SMODE2_LOW] = 0u;
+	words[bmsx::GX_GPU_PCRTC_DISPLAY1_LOW] = 0u;
+	words[bmsx::GX_GPU_PCRTC_DISPLAY1_HIGH] = 0u;
+	words[bmsx::GX_GPU_PCRTC_DISPLAY2_LOW] = 0x0fffu | (0x07ffu << 12u);
+	words[bmsx::GX_GPU_PCRTC_DISPLAY2_HIGH] = 0x0fffu | (0x07ffu << 12u);
+	timing.update(words);
+	scanout.update(words, timing);
+	require(scanout.outputWidth == 8191u, "GX-GPU PCRTC dual circuits should expose the full raw horizontal composition bound");
+	require(scanout.outputHeight == 4095u, "GX-GPU PCRTC dual circuits should expose the full raw vertical composition bound");
+}
+
 void testGp1DisplayModeOwnsPalNtsc() {
 	GpuHarness harness;
 	bmsx::GxGpu& gpu = harness.gpu;
@@ -4238,6 +4297,7 @@ int main() {
 	testPcrtcRetainsFrameBudgetsAboveSignedCpuSlice();
 	testPcrtcAdvancesExactRawHalfLinesBeyondDoubleProductPrecision();
 	testGp0RawDrawWordDecoders();
+	testPcrtcDecodesNativePsxAndPs2OutputResolutions();
 	testGp1DisplayModeOwnsPalNtsc();
 	testPowerOnVramResetSaveStateAndMachineRecreation();
 	testGp1ResetRestoresRegistersAndPreservesAcceptedGpuWork();

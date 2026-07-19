@@ -44,6 +44,7 @@ import { GX_GPU_VRAM_BYTE_COUNT, GX_GPU_VRAM_WIDTH } from '../../machine/ts/mach
 import { GX_GPU_COMMAND_FIFO_WORD_CAPACITY } from '../../machine/ts/machine/devices/gx/gpu_command_fifo';
 import {
 	GX_GPU_PCRTC_BGCOLOR_LOW,
+	GX_GPU_PCRTC_CONFIG_WORD_COUNT,
 	GX_GPU_PCRTC_COMPOSE_GENERIC,
 	GX_GPU_PCRTC_CSR_FIELD,
 	GX_GPU_PCRTC_CSR_FLUSH,
@@ -76,11 +77,16 @@ import {
 	GX_GPU_PCRTC_STORAGE_CT32,
 	GX_GPU_PCRTC_RESET_CSR_WORD,
 	GX_GPU_PCRTC_RESET_IMR_WORD,
+	GX_GPU_PCRTC_SMODE1_HIGH,
 	GX_GPU_PCRTC_SMODE1_LOW,
 	GX_GPU_PCRTC_SMODE1_SINT,
 	GX_GPU_PCRTC_SMODE2_FFMD,
 	GX_GPU_PCRTC_SMODE2_INT,
 	GX_GPU_PCRTC_SMODE2_LOW,
+	GX_GPU_PCRTC_SYNCH1_HIGH,
+	GX_GPU_PCRTC_SYNCH1_LOW,
+	GX_GPU_PCRTC_SYNCH2_LOW,
+	GX_GPU_PCRTC_SYNCV_HIGH,
 	GX_GPU_PCRTC_SYNCV_LOW,
 	gxGpuPcrtcRegisterAddress,
 	GxGpuPcrtcScanout,
@@ -758,6 +764,59 @@ test('GX-GPU decodes PSX GP0 signed vertex and rectangle size words', () => {
 	assert.equal(gxGpuDrawingAreaBottomExclusive(12 | (40 << 10), 20 | (34 << 10), 0), 0);
 	assert.equal(gxGpuDrawingAreaTop(12 | (600 << 10), 20 | (700 << 10), 1), 600);
 	assert.equal(gxGpuDrawingAreaBottomExclusive(12 | (600 << 10), 20 | (700 << 10), 1), 701);
+});
+
+test('GX-GPU PCRTC decodes native PSX and PS2 output resolutions from raw words', () => {
+	const words = new Uint32Array(GX_GPU_PCRTC_CONFIG_WORD_COUNT);
+	words[GX_GPU_PCRTC_PMODE_LOW] = 0x0000ff21;
+	words[GX_GPU_PCRTC_SMODE1_HIGH] = 0x00000007;
+	words[GX_GPU_PCRTC_SYNCH1_LOW] = 0x1fc83030;
+	words[GX_GPU_PCRTC_SYNCH1_HIGH] = 0x0007f5c2;
+	words[GX_GPU_PCRTC_SYNCH2_LOW] = 0x003484bc;
+	words[GX_GPU_PCRTC_SYNCV_HIGH] = 0x00a90005;
+	const timing = new GxGpuPcrtcTiming();
+	const scanout = new GxGpuPcrtcScanout();
+	const modes = [
+		[256, 240, 4, 0],
+		[320, 240, 4, 0],
+		[368, 240, 4, 0],
+		[512, 240, 4, 0],
+		[640, 240, 4, 0],
+		[640, 480, 4, 1],
+		[640, 448, 4, 1],
+		[640, 512, 4, 1],
+		[720, 480, 2, 0],
+		[656, 576, 2, 0],
+		[1280, 720, 1, 0],
+		[1920, 1080, 1, 1],
+	] as const;
+
+	for (const [width, height, signalStep, interlaced] of modes) {
+		words[GX_GPU_PCRTC_SMODE1_LOW] = ((0x40806504 & ~(0xf << 21)) | (signalStep << 21)) >>> 0;
+		words[GX_GPU_PCRTC_SMODE2_LOW] = interlaced * GX_GPU_PCRTC_SMODE2_INT;
+		words[GX_GPU_PCRTC_SYNCV_LOW] = interlaced !== 0 ? 0x02101401 : 0x02101404;
+		words[GX_GPU_PCRTC_DISPLAY1_LOW] = (signalStep - 1) << 23;
+		words[GX_GPU_PCRTC_DISPLAY1_HIGH] = (width * signalStep - 1) | ((height - 1) << 12);
+		timing.update(words);
+		scanout.update(words, timing);
+		assert.equal(scanout.outputActive, true);
+		assert.equal(scanout.outputWidth, width);
+		assert.equal(scanout.outputHeight, height);
+		assert.equal(scanout.interlaced, interlaced !== 0);
+		assert.equal(scanout.circuits[0].sourceAdvanceX, 1);
+	}
+
+	words[GX_GPU_PCRTC_PMODE_LOW] = 0x0000ff23;
+	words[GX_GPU_PCRTC_SMODE1_LOW] = 0x40206504;
+	words[GX_GPU_PCRTC_SMODE2_LOW] = 0;
+	words[GX_GPU_PCRTC_DISPLAY1_LOW] = 0;
+	words[GX_GPU_PCRTC_DISPLAY1_HIGH] = 0;
+	words[GX_GPU_PCRTC_DISPLAY2_LOW] = 0x0fff | (0x07ff << 12);
+	words[GX_GPU_PCRTC_DISPLAY2_HIGH] = 0x0fff | (0x07ff << 12);
+	timing.update(words);
+	scanout.update(words, timing);
+	assert.equal(scanout.outputWidth, 8191);
+	assert.equal(scanout.outputHeight, 4095);
 });
 
 test('GX-GPU exposes PSX GP1 display mode instead of a VDP profile register', () => {

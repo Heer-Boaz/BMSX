@@ -1232,6 +1232,19 @@ surface. Pixel `x` reads the two swizzled 16-bit words at logical word columns
 three RGB bytes from those raw words. `FBW` therefore remains the PSMCT16 page
 count for row and page advancement.
 
+The standard mode envelope reaches 1920x1080, matching the largest PS2 DTV mode
+rather than the earlier PSX-only 640x480 declaration. Mirrored raw
+vectors cover the PSX 256/320/368/512/640-column 240p family and 640x480i, PS2
+640x448i NTSC and 640x512i PAL, plus 720x480p, 656x576p, 1280x720p and
+1920x1080i. Libretro starts with that standard maximum and publishes
+`SET_SYSTEM_AV_INFO` with a larger maximum only when raw dual-circuit composition
+exceeds it. Every representable `SMODE`, `DISPLAY` and `DISPFB` word therefore
+continues through the same deterministic datapath without forcing frontends to
+reserve the theoretical maximum at startup. The system firmware owns coherent
+reset presets for the PSX widths and the three SD interlaced outputs; those
+helpers program GP1 and PCRTC raw words independently and do not create a
+permanent GP1-to-PCRTC adapter.
+
 Software scanout selects its composition datapath once from the published
 PCRTC state. The common RGB555 case clears the selected rows, writes circuit 2
 with its raw STP-derived alpha, then runs the selected source- or
