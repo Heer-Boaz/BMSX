@@ -67,6 +67,7 @@ void updateFieldTraversal(GxGpuPcrtcCircuit& circuit, bool interlaced, u32 field
 	circuit.fieldDisplayY = interlaced
 		? circuit.displayY + ((circuit.displayY ^ field) & 1u)
 		: circuit.displayY;
+	circuit.fieldDisplayLineStart = circuit.fieldDisplayY >> 1u;
 	circuit.fieldDisplayLineCount = circuit.fieldDisplayY < circuit.displayBottom
 		? ((circuit.displayBottom - circuit.fieldDisplayY - 1u) / outputRowStep) + 1u
 		: 0u;
@@ -202,6 +203,7 @@ void GxGpuPcrtcScanout::update(
 			circuit.fieldSourcePhase = 0u;
 			circuit.fieldSourceStride = 1u;
 			circuit.linearSampling = false;
+			circuit.samplePath = circuit.framebufferStoragePath;
 			continue;
 		}
 		const u32 displayHigh = words[circuitDisplayLowIndex(index) + 1u];
@@ -219,6 +221,10 @@ void GxGpuPcrtcScanout::update(
 		circuit.linearSampling = circuit.sourcePhaseX == 0u
 			&& signalStepX == circuit.magnificationX
 			&& circuit.magnificationY == 1u;
+		circuit.samplePath = circuit.framebufferStoragePath == GX_GPU_PCRTC_STORAGE_GX16
+			&& circuit.linearSampling
+			? GX_GPU_PCRTC_SAMPLE_LINEAR_GX16
+			: circuit.framebufferStoragePath;
 	}
 	backgroundColor = words[GX_GPU_PCRTC_BGCOLOR_LOW] & 0x00ffffffu;
 	blendAlpha = (pmode >> GX_GPU_PCRTC_PMODE_ALP_SHIFT) & 0xffu;
@@ -237,6 +243,10 @@ void GxGpuPcrtcScanout::update(
 		if (circuit2.displayRight > outputWidth) outputWidth = circuit2.displayRight;
 		if (circuit2.displayBottom > outputHeight) outputHeight = circuit2.displayBottom;
 	}
+	evenFieldHeight = (outputHeight + 1u) >> 1u;
+	oddFieldHeight = outputHeight >> 1u;
+	fieldHeight = field == 0u ? evenFieldHeight : oddFieldHeight;
+	fieldOffset = field == 0u ? 0u : evenFieldHeight;
 	const bool circuit1CoversOutput = circuit1.displayX == 0u
 		&& circuit1.displayY == 0u
 		&& circuit1.displayRight >= outputWidth
@@ -258,39 +268,41 @@ void GxGpuPcrtcScanout::update(
 			circuit2OutputPath = GX_GPU_PCRTC_SCANOUT_DRAW_RAW_ALPHA;
 		}
 	}
-	circuit1ColorPath = GX_GPU_PCRTC_SCANOUT_DRAW_NONE;
-	circuit1AlphaPath = GX_GPU_PCRTC_SCANOUT_DRAW_NONE;
+	circuit1OutputPath = GX_GPU_PCRTC_SCANOUT_DRAW_NONE;
 	if (circuit1.enabled != 0u) {
 		if (mmod == 0u) {
-			circuit1ColorPath = GX_GPU_PCRTC_SCANOUT_DRAW_BLEND_SOURCE_RGB;
+			circuit1OutputPath = amod == 0u
+				? GX_GPU_PCRTC_SCANOUT_DRAW_BLEND_SOURCE_RGBA
+				: GX_GPU_PCRTC_SCANOUT_DRAW_BLEND_SOURCE_RGB;
 		} else if (blendAlpha == 255u) {
-			circuit1ColorPath = (amod == 0u
+			circuit1OutputPath = (amod == 0u
 				? GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGBA
 				: GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGB);
-		} else if (blendAlpha != 0u) {
-			circuit1ColorPath = GX_GPU_PCRTC_SCANOUT_DRAW_BLEND_CONSTANT_RGB;
-		}
-		if (amod == 0u
-			&& circuit1ColorPath != GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGBA) {
-			circuit1AlphaPath = GX_GPU_PCRTC_SCANOUT_DRAW_RAW_ALPHA;
+		} else if (blendAlpha == 0u) {
+			circuit1OutputPath = amod == 0u
+				? GX_GPU_PCRTC_SCANOUT_DRAW_RAW_ALPHA
+				: GX_GPU_PCRTC_SCANOUT_DRAW_NONE;
+		} else {
+			circuit1OutputPath = amod == 0u
+				? GX_GPU_PCRTC_SCANOUT_DRAW_BLEND_CONSTANT_RGBA
+				: GX_GPU_PCRTC_SCANOUT_DRAW_BLEND_CONSTANT_RGB;
 		}
 	}
 	backgroundRequired = 1u;
 	if (circuit1CoversOutput
-		&& circuit1ColorPath == GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGBA) {
+		&& circuit1OutputPath == GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGBA) {
 		circuit2OutputPath = GX_GPU_PCRTC_SCANOUT_DRAW_NONE;
 		backgroundRequired = 0u;
 	} else if (circuit2CoversOutput
 		&& circuit2OutputPath == GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGBA) {
 		backgroundRequired = 0u;
 	}
-	const bool circuit1SampleRequired = circuit1ColorPath != GX_GPU_PCRTC_SCANOUT_DRAW_NONE
-		|| circuit1AlphaPath != GX_GPU_PCRTC_SCANOUT_DRAW_NONE;
+	const bool circuit1SampleRequired = circuit1OutputPath != GX_GPU_PCRTC_SCANOUT_DRAW_NONE;
 	const bool circuit2SampleRequired = circuit2OutputPath != GX_GPU_PCRTC_SCANOUT_DRAW_NONE;
 	if (circuit1.enabled
 		&& circuit1.linearSampling
 		&& circuit1.framebufferStoragePath == GX_GPU_PCRTC_STORAGE_GX16
-		&& circuit1ColorPath == GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGBA
+		&& circuit1OutputPath == GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGBA
 		&& circuit1CoversOutput) {
 		compositionPath = GX_GPU_PCRTC_COMPOSE_GX16_DIRECT_CIRCUIT1;
 	} else if ((!circuit1SampleRequired || (circuit1.linearSampling && circuit1.framebufferStoragePath == GX_GPU_PCRTC_STORAGE_GX16))
@@ -304,8 +316,11 @@ void GxGpuPcrtcScanout::update(
 
 void GxGpuPcrtcScanout::setField(u32 value) {
 	field = value;
+	if (!interlaced) return;
+	fieldHeight = value == 0u ? evenFieldHeight : oddFieldHeight;
+	fieldOffset = value == 0u ? 0u : evenFieldHeight;
 	for (GxGpuPcrtcCircuit& circuit : circuits) {
-		circuit.fieldSourcePhase = interlaced && !frameMode
+		circuit.fieldSourcePhase = !frameMode
 			? (circuit.displaySignalY ^ value) & 1u
 			: 0u;
 		updateFieldTraversal(circuit, interlaced, field, outputRowStep);

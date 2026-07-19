@@ -5,7 +5,9 @@ precision highp int;
 out vec4 outputColor;
 
 uniform sampler2D u_vram;
-uniform uvec4 u_circuit[5];
+layout(std140) uniform GxGpuScanoutCircuit {
+	uvec4 u_circuit[5];
+};
 uniform uvec4 u_interlace;
 
 uint rawWordAtAddress(uint address) {

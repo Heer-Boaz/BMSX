@@ -1222,11 +1222,13 @@ how the scanout datapath advances or repeats source samples from the
 `DISPFB.DBX/DBY` origin; they are not a second host-frame bounds calculation.
 `DISPFB.FBP` remains an 8 KiB base unit, `FBW` remains a 64-pixel unit, and the
 selected `PSMCT32`, `PSMCT24`, `PSMCT16`, `PSMCT16S`, and packed `PSGPU24`
-datapaths address the same uniform raw-word VRAM with word/byte wrap at its
-physical boundary. The selected packed-24 datapath addresses byte channel `c`
-of source pixel `(x, y)` as
-`((FBP_words << 1) + (y * FBW_pixels + x) * 3 + c) & VRAM_byte_mask`; it does
-not reinterpret the pixel row stride as a 16-bit page count.
+datapaths address the same uniform raw-word VRAM with word wrap at its physical
+boundary. `PSGPU24` is a packed RGB byte stream stored through the GS
+`PSMCT16` page/block/column swizzle, not a linear `framebufferWidth * 3` byte
+surface. Pixel `x` reads the two swizzled 16-bit words at logical word columns
+`(x * 3) >> 1` and `((x * 3) >> 1) + 1`; even and odd pixels then select their
+three RGB bytes from those raw words. `FBW` therefore remains the PSMCT16 page
+count for row and page advancement.
 
 Software scanout selects its composition datapath once from the published
 PCRTC state. The common RGB555 case clears the selected rows, writes circuit 2

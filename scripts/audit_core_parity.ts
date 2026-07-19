@@ -34,7 +34,13 @@ type StrictRuntimeNoChurnEntry = { files: string[]; reason: string };
 type StrictRuntimeNoHeapFunctionEntry = { file: string; functions: string[]; reason: string };
 type StrictLuaNoHeapFunctionEntry = { file: string; functions: string[]; top_level_loops?: boolean; reason: string };
 type StrictRpuTableParityEntry = { ts: string; cpp: string; tables: string[]; reason: string };
-type StrictShaderParityEntry = { webgl: string; gles2: string; reason: string };
+type StrictShaderAttributeLocation = { name: string; location: number };
+type StrictShaderParityEntry = {
+	webgl: string;
+	gles2: string;
+	attribute_locations?: StrictShaderAttributeLocation[];
+	reason: string;
+};
 type StrictShaderDatapathParityEntry = { webgl: string; gles2: string; functions: string[]; reason: string };
 type StrictFileLayoutEntry = { present?: string[]; absent?: string[]; reason: string };
 type StrictFilePairParityEntry = { ts: string; cpp: string[]; reason: string };
@@ -1137,9 +1143,15 @@ function auditStrictRpuTableParity(manifest: Manifest): string[] {
 }
 
 
-function canonicalRpuShaderText(file: string): string {
-	return fs.readFileSync(path.join(repoRoot, file), 'utf8')
-		.replace(/layout\s*\(\s*location\s*=\s*\d+\s*\)\s*/g, '')
+function canonicalRpuShaderText(file: string, attributeLocations: readonly StrictShaderAttributeLocation[]): string {
+	let source = fs.readFileSync(path.join(repoRoot, file), 'utf8');
+	for (const attribute of attributeLocations) {
+		const declaration = new RegExp(
+			`layout\\s*\\(\\s*location\\s*=\\s*${attribute.location}\\s*\\)\\s*(?=in\\s+\\w+\\s+${escapedRegExpLiteral(attribute.name)}\\s*;)`,
+		);
+		source = source.replace(declaration, '');
+	}
+	return source
 		.replace(/layout\(std140\)\s+uniform\s+FrameUniforms\s*\{[\s\S]*?\};/g, 'uniform vec2 u_logical_size;')
 		.replace(/\bu_logicalSize\b/g, 'u_logical_size')
 		.replace(/\bflat\s+(in|out)\s+uint\b/g, '$1 float')
@@ -1165,8 +1177,17 @@ function auditStrictShaderParity(manifest: Manifest): string[] {
 			errors.push(`${entry.webgl}: shader basename differs from ${entry.gles2}`);
 			continue;
 		}
-		const webglText = canonicalRpuShaderText(entry.webgl);
-		const gles2Text = canonicalRpuShaderText(entry.gles2);
+		const webglSource = fs.readFileSync(path.join(repoRoot, entry.webgl), 'utf8');
+		for (const attribute of entry.attribute_locations ?? []) {
+			const declaration = new RegExp(
+				`layout\\s*\\(\\s*location\\s*=\\s*${attribute.location}\\s*\\)\\s*in\\s+\\w+\\s+${escapedRegExpLiteral(attribute.name)}\\s*;`,
+			);
+			if (!declaration.test(webglSource)) {
+				errors.push(`${entry.webgl}: fixed attribute ${attribute.name} is not bound to location ${attribute.location}`);
+			}
+		}
+		const webglText = canonicalRpuShaderText(entry.webgl, entry.attribute_locations ?? []);
+		const gles2Text = canonicalRpuShaderText(entry.gles2, []);
 		if (webglText !== gles2Text) {
 			errors.push(`${entry.webgl}: shader body differs from ${entry.gles2}`);
 		}
@@ -1176,8 +1197,23 @@ function auditStrictShaderParity(manifest: Manifest): string[] {
 
 function shaderInterfaceNames(source: string): string[] {
 	const names: string[] = [];
+	let uniformBlock = false;
 	for (const line of source.split('\n')) {
-		const match = line.trim().match(/^(?:flat\s+)?(?:uniform|in|out|attribute|varying)\s+\w+\s+(\w+)/);
+		const trimmed = line.trim();
+		if (uniformBlock) {
+			if (trimmed.startsWith('}')) {
+				uniformBlock = false;
+				continue;
+			}
+			const member = trimmed.match(/^\w+\s+(\w+)(?:\s*\[[^\]]+\])?\s*;/);
+			if (member !== null) names.push(member[1]);
+			continue;
+		}
+		if (/^(?:layout\s*\([^)]*\)\s*)?uniform\s+\w+\s*\{/.test(trimmed)) {
+			uniformBlock = true;
+			continue;
+		}
+		const match = trimmed.match(/^(?:layout\s*\([^)]*\)\s*)?(?:flat\s+)?(?:uniform|in|out|attribute|varying)\s+\w+\s+(\w+)/);
 		if (match !== null && match[1] !== 'outputColor') names.push(match[1]);
 	}
 	return names.sort();

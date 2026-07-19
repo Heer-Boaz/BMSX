@@ -6,9 +6,10 @@
 #define BMSX_GLES2_BACKEND_H
 
 #include "render/backend/backend.h"
-#include <cstdint>
 #include <array>
+#include <cstdint>
 #include <memory>
+#include <span>
 
 #include <GLES2/gl2.h>
 
@@ -26,6 +27,11 @@ struct GLES2Texture {
 };
 
 struct OpenGLES2PostPipelines;
+
+struct GLES2AttributeBinding {
+	GLuint location;
+	const char* name;
+};
 
 struct GxCpuToVramProfileFrame {
 	u64 renderFrameSerial;
@@ -90,7 +96,29 @@ public:
 	void invalidateTextureBindingCache();
 	GLuint framebufferName(void* target) const;
 	void setRenderTarget(GLuint fbo, i32 width, i32 height);
-	GLuint buildProgram(const char* vertexShaderSource, const char* fragmentShaderSource, const char* label, const char* shaderDefines = nullptr);
+	GLuint compileShader(
+		GLenum type,
+		const char* source,
+		const char* label,
+		const char* stage,
+		const char* shaderDefines = nullptr);
+	GLuint linkProgram(
+		GLuint vertexShader,
+		GLuint fragmentShader,
+		const char* label,
+		std::span<const GLES2AttributeBinding> attributeBindings = {});
+	GLuint buildProgramWithVertexShader(
+		GLuint vertexShader,
+		const char* fragmentShaderSource,
+		const char* label,
+		const char* shaderDefines = nullptr,
+		std::span<const GLES2AttributeBinding> attributeBindings = {});
+	GLuint buildProgram(
+		const char* vertexShaderSource,
+		const char* fragmentShaderSource,
+		const char* label,
+		const char* shaderDefines = nullptr,
+		std::span<const GLES2AttributeBinding> attributeBindings = {});
 	ProcAddress resolveProcAddress(const char* name) const;
 	ProcAddress resolveProcAddress(const char* coreName, const char* angleName, const char* extName) const;
 	bool supportsUintIndices() const { return m_supports_uint_indices; }

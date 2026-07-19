@@ -32,9 +32,10 @@ architecture with the Lua CPU and its own native GTE+ and GPU. That end state is
 recorded in `docs/architecture.md`. The selected GPU-side foundation now has
 the complete uniform 2 MiB VRAM address space (`GX-VRAM-02`) and the exact PS2
 PCRTC dual read-output/merge block (`GX-PCRTC-01`). Its physical beam,
-independent machine clock and context ownership are implemented; the packed
-`PSGPU24` row-stride correction, renewed broad runtime gates and visible
-WebGL2/WebGPU acceptance remain open. `BSX-GTE-01` closes the separately
+independent machine clock and context ownership are implemented; renewed broad
+runtime gates and visible WebGL2/WebGPU acceptance remain open. Packed
+`PSGPU24` now follows the GS PSMCT16 swizzle rather than a fabricated linear
+row stride. `BSX-GTE-01` closes the separately
 addressed three-lane fixed-Q12 `VMAD3` implementation. Later depth, local-memory
 and packet-emission work remains separate rather than being implied by this
 first extension.
@@ -1016,11 +1017,12 @@ merge model rather than a terminal-shaped approximation.
   1024x1024 VRAM resource. Do not allocate a composed machine image, copy a cart
   framebuffer or add a backend/host terminal texture.
 - [x] Correct packed `PSGPU24` addressing at the central local-memory owner and
-  every software/shader consumer. Row stride is `framebufferWidth * 3` bytes,
-  not page-count-based; mirrored vectors must cover an in-row sample, row 64
-  and physical byte wrap before this PSM can be called exact. TS/C++ and all
-  three scanout shaders now use the same byte-address equation and mirrored
-  vectors cover those boundaries.
+  every software/shader consumer. The packed RGB stream uses the GS PSMCT16
+  page/block/column swizzle: pixel `x` consumes logical word columns
+  `(x * 3) >> 1` and `+ 1`, with `FBW` retained as the PSMCT16 page count.
+  Mirrored vectors cover even/odd pixels, column layout, row 64, nonzero base
+  and physical word wrap; TS/C++ and all three scanout shaders use that same
+  address equation.
 - [x] Move monitor scanout to PCRTC circuit 1 over the retained circuit-2 cart
   frame and prove byte-identical TS/C++ captures plus hidden GLES2/llvmpipe
   conformance. TS software proves the sparse

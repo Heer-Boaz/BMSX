@@ -907,6 +907,12 @@
 		{
 			"webgl": "machine/ts/render/backend/webgl/shaders/gx_gpu_scanout.vert.glsl",
 			"gles2": "machine/cpp/render/backend/gles2/shaders/gx_gpu_scanout.vert.glsl",
+			"attribute_locations": [
+				{
+					"name": "a_position",
+					"location": 0
+				}
+			],
 			"reason": "gx_gpu_scanout_vertex_shader_contract"
 		},
 		{

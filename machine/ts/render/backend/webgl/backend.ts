@@ -44,10 +44,16 @@ export class WebGLBackend implements GPUBackend {
 	private cachedDepthMask: boolean = null;
 	private cachedDepthTestEnabled: boolean = null;
 	private cachedDepthFunc: number = null;
-	private cachedBlendFunc: { src: number; dst: number } = null;
+	private cachedBlendSrcRgb = -1;
+	private cachedBlendDstRgb = -1;
+	private cachedBlendSrcAlpha = -1;
+	private cachedBlendDstAlpha = -1;
 	private currentActiveTexUnit = 0;
 	private boundTex2D: (WebGLTexture | null)[] = [];
 	private boundTexCube: (WebGLTexture | null)[] = [];
+	private boundUniformBuffers: (WebGLBuffer | null)[] = [];
+	private boundUniformBufferOffsets = new Int32Array(16).fill(-1);
+	private boundUniformBufferSizes = new Int32Array(16).fill(-1);
 	private texInfo = new WeakMap<WebGLTexture, { w: number; h: number; srgb: boolean }>();
 	private readbackFbo: WebGLFramebuffer = null;
 	private uniformCache = new WeakMap<WebGLProgram, Map<string, WebGLUniformLocation>>();
@@ -463,37 +469,56 @@ export class WebGLBackend implements GPUBackend {
 		// Migrate to external manager.setState; for now keep extraStates
 		this.extraStates[label] = state;
 	}
+	compileShader(type: number, source: string, label: string, stage: string, shaderDefines = ''): WebGLShader {
+		const gl = this.gl;
+		const shader = gl.createShader(type)!;
+		if (shaderDefines.length !== 0) {
+			const versionEnd = source.indexOf('\n') + 1;
+			source = source.slice(0, versionEnd) + shaderDefines + source.slice(versionEnd);
+		}
+		gl.shaderSource(shader, source);
+		gl.compileShader(shader);
+		if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+			const log = gl.getShaderInfoLog(shader);
+			gl.deleteShader(shader);
+			throw new Error(`Shader compile failed (${label}:${stage}): ${log}`);
+		}
+		return shader;
+	}
+	linkProgram(vertexShader: WebGLShader, fragmentShader: WebGLShader, label: string): WebGLProgram {
+		const gl = this.gl;
+		const program = gl.createProgram()!;
+		gl.attachShader(program, vertexShader);
+		gl.attachShader(program, fragmentShader);
+		gl.linkProgram(program);
+		if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+			const log = gl.getProgramInfoLog(program);
+			gl.deleteProgram(program);
+			throw new Error(`Program link failed (${label}): ${log}`);
+		}
+		return program;
+	}
+	buildProgramWithVertexShader(
+		vertexShader: WebGLShader,
+		fragmentSource: string,
+		label: string,
+		shaderDefines = '',
+	): WebGLProgram {
+		const fragmentShader = this.compileShader(
+			this.gl.FRAGMENT_SHADER, fragmentSource, label, 'fs', shaderDefines,
+		);
+		const program = this.linkProgram(vertexShader, fragmentShader, label);
+		this.gl.deleteShader(fragmentShader);
+		return program;
+	}
 	buildProgram(vsSource: string, fsSource: string, label: string, shaderDefines = ''): WebGLProgram {
 		const gl = this.gl;
-		function compile(type: number, source: string, stage: string): WebGLShader {
-			const shader = gl.createShader(type);
-			if (!shader) return null;
-			if (shaderDefines.length !== 0) {
-				const versionEnd = source.indexOf('\n') + 1;
-				source = source.slice(0, versionEnd) + shaderDefines + source.slice(versionEnd);
-			}
-			gl.shaderSource(shader, source);
-			gl.compileShader(shader);
-			if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-				console.error(`Shader compile failed (${label}:${stage}):`, gl.getShaderInfoLog(shader));
-				gl.deleteShader(shader);
-				return null;
-			}
-			return shader;
-		}
-		const vs = compile(gl.VERTEX_SHADER, vsSource, 'vs');
-		const fs = compile(gl.FRAGMENT_SHADER, fsSource, 'fs');
-		if (!vs || !fs) return null;
-		const prog = gl.createProgram();
-		if (!prog) return null;
-		gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
-		if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
-			console.error('Program link failed (' + label + '):', gl.getProgramInfoLog(prog));
-			gl.deleteProgram(prog);
-			return null;
-		}
-		gl.deleteShader(vs); gl.deleteShader(fs);
-		return prog;
+		const vertexShader = this.compileShader(gl.VERTEX_SHADER, vsSource, label, 'vs', shaderDefines);
+		const fragmentShader = this.compileShader(gl.FRAGMENT_SHADER, fsSource, label, 'fs', shaderDefines);
+		const program = this.linkProgram(vertexShader, fragmentShader, label);
+		gl.deleteShader(vertexShader);
+		gl.deleteShader(fragmentShader);
+		return program;
 	}
 
 	// --- Optional buffer/VAO helpers ---
@@ -631,8 +656,24 @@ export class WebGLBackend implements GPUBackend {
 		}
 
 	bindUniformBufferBase(bindingIndex: number, buf: WebGLBuffer): void {
+		if (this.boundUniformBuffers[bindingIndex] === buf
+			&& this.boundUniformBufferOffsets[bindingIndex] === 0
+			&& this.boundUniformBufferSizes[bindingIndex] === 0) return;
 		const gl = this.gl;
 		gl.bindBufferBase(gl.UNIFORM_BUFFER, bindingIndex, buf);
+		this.boundUniformBuffers[bindingIndex] = buf;
+		this.boundUniformBufferOffsets[bindingIndex] = 0;
+		this.boundUniformBufferSizes[bindingIndex] = 0;
+	}
+	bindUniformBufferRange(bindingIndex: number, buf: WebGLBuffer, byteOffset: number, byteSize: number): void {
+		if (this.boundUniformBuffers[bindingIndex] === buf
+			&& this.boundUniformBufferOffsets[bindingIndex] === byteOffset
+			&& this.boundUniformBufferSizes[bindingIndex] === byteSize) return;
+		const gl = this.gl;
+		gl.bindBufferRange(gl.UNIFORM_BUFFER, bindingIndex, buf, byteOffset, byteSize);
+		this.boundUniformBuffers[bindingIndex] = buf;
+		this.boundUniformBufferOffsets[bindingIndex] = byteOffset;
+		this.boundUniformBufferSizes[bindingIndex] = byteSize;
 	}
 
 	// --- Render state helpers ---
@@ -818,9 +859,25 @@ export class WebGLBackend implements GPUBackend {
 		this.cachedBlendEnabled = enabled;
 	}
 	setBlendFunc(src: number, dst: number): void {
-		const c = this.cachedBlendFunc;
-		if (c && c.src === src && c.dst === dst) return;
+		if (this.cachedBlendSrcRgb === src
+			&& this.cachedBlendDstRgb === dst
+			&& this.cachedBlendSrcAlpha === src
+			&& this.cachedBlendDstAlpha === dst) return;
 		this.gl.blendFunc(src, dst);
-		this.cachedBlendFunc = { src, dst };
+		this.cachedBlendSrcRgb = src;
+		this.cachedBlendDstRgb = dst;
+		this.cachedBlendSrcAlpha = src;
+		this.cachedBlendDstAlpha = dst;
+	}
+	setBlendFuncSeparate(srcRgb: number, dstRgb: number, srcAlpha: number, dstAlpha: number): void {
+		if (this.cachedBlendSrcRgb === srcRgb
+			&& this.cachedBlendDstRgb === dstRgb
+			&& this.cachedBlendSrcAlpha === srcAlpha
+			&& this.cachedBlendDstAlpha === dstAlpha) return;
+		this.gl.blendFuncSeparate(srcRgb, dstRgb, srcAlpha, dstAlpha);
+		this.cachedBlendSrcRgb = srcRgb;
+		this.cachedBlendDstRgb = dstRgb;
+		this.cachedBlendSrcAlpha = srcAlpha;
+		this.cachedBlendDstAlpha = dstAlpha;
 	}
 }
