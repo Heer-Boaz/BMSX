@@ -15,13 +15,13 @@ type TextureBindCache = {
 	bindGroup: GPUBindGroup | null;
 };
 
-function writeDeviceQuantizeUniforms(state: RenderPassStateRegistry['device_quantize']): void {
-	deviceQuantizeUniformScratch[0] = state.sourcePixelScaleX;
-	deviceQuantizeUniformScratch[1] = state.sourcePixelScaleY;
-	deviceQuantizeUniformScratch[2] = state.sourcePixelTargetHeight;
-	deviceQuantizeUniformScratch[3] = state.quantizeLevels[0];
-	deviceQuantizeUniformScratch[4] = state.quantizeLevels[1];
-	deviceQuantizeUniformScratch[5] = state.quantizeLevels[2];
+export function writeDeviceQuantizeUniforms(out: Float32Array, state: RenderPassStateRegistry['device_quantize']): void {
+	out[0] = state.sourcePixelScaleX;
+	out[1] = state.sourcePixelScaleY;
+	out[2] = state.sourcePixelTargetHeight;
+	out[4] = state.quantizeLevels[0];
+	out[5] = state.quantizeLevels[1];
+	out[6] = state.quantizeLevels[2];
 }
 
 function deviceQuantizeBindGroupForTexture(
@@ -98,7 +98,7 @@ export function registerDeviceQuantize(registry: RenderPassLibrary): void {
 		},
 		exec: (backend, _fbo, state: RenderPassStateRegistry['device_quantize']) => {
 			const wgpu = backend as WebGPUBackend;
-			writeDeviceQuantizeUniforms(state);
+			writeDeviceQuantizeUniforms(deviceQuantizeUniformScratch, state);
 			wgpu.device.queue.writeBuffer(uniformBuffer, 0, deviceQuantizeUniformScratch);
 			const bindGroup = deviceQuantizeBindGroupForTexture(wgpu.device, layout, uniformBuffer, sampler, bindCache, state.colorTex as GPUTexture);
 			colorAttachment.tex = targetTexture;
