@@ -263,7 +263,7 @@ FrameSchedulerStateSnapshot decodeFrameSchedulerState(const BinValue& value, con
 	const BinObject& object = requireObject(value, label);
 	FrameSchedulerStateSnapshot state;
 	state.accumulatedHostTimeMs = requireNumber(requireField(object, "accumulatedHostTimeMs", label), "frameScheduler.accumulatedHostTimeMs");
-	state.cycleGrantRemainder = requireI64(requireField(object, "cycleGrantRemainder", label), "frameScheduler.cycleGrantRemainder");
+	state.cycleGrantRemainder = requireNumber(requireField(object, "cycleGrantRemainder", label), "frameScheduler.cycleGrantRemainder");
 	state.carriedCycleBudget = requireI64(requireField(object, "carriedCycleBudget", label), "frameScheduler.carriedCycleBudget");
 	state.tickCompletionPending = requireBool(requireField(object, "tickCompletionPending", label), "frameScheduler.tickCompletionPending");
 	state.tickCompletionVisualCommitted = requireBool(requireField(object, "tickCompletionVisualCommitted", label), "frameScheduler.tickCompletionVisualCommitted");

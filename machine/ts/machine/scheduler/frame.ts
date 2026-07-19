@@ -27,10 +27,7 @@ type BudgetFrameState = {
 	cycleBudgetGranted: number;
 };
 
-const MACHINE_SERVICE_QUANTA_PER_SECOND = 60;
-const MACHINE_SERVICE_QUANTUM_MS = 1000 / MACHINE_SERVICE_QUANTA_PER_SECOND;
-const MAX_CATCH_UP_QUANTA = 5;
-const MACHINE_SERVICE_EPSILON_MS = 0.000001;
+const MAX_CATCH_UP_MS = 1000 / 12;
 export class FrameSchedulerState {
 	public lastTickSequence = 0;
 	public lastTickBudgetGranted = 0;
@@ -51,15 +48,10 @@ export class FrameSchedulerState {
 	}
 
 	private accumulateHostTime(deltaMs: number): void {
-		const maxAccumulatedMs = MACHINE_SERVICE_QUANTUM_MS * MAX_CATCH_UP_QUANTA;
 		this.accumulatedHostTimeMs += deltaMs;
-		if (this.accumulatedHostTimeMs > maxAccumulatedMs) {
-			this.accumulatedHostTimeMs = maxAccumulatedMs;
+		if (this.accumulatedHostTimeMs > MAX_CATCH_UP_MS) {
+			this.accumulatedHostTimeMs = MAX_CATCH_UP_MS;
 		}
-	}
-
-	private hasScheduledSlice(): boolean {
-		return this.accumulatedHostTimeMs + MACHINE_SERVICE_EPSILON_MS >= MACHINE_SERVICE_QUANTUM_MS;
 	}
 
 	private canRunScheduledUpdate(): boolean {
@@ -71,18 +63,17 @@ export class FrameSchedulerState {
 		}
 		return (runtime.frameLoop.frameActive && runtime.frameLoop.frameState.cycleBudgetRemaining > 0)
 			|| this.carriedCycleBudget > 0
-			|| this.hasScheduledSlice();
+			|| this.accumulatedHostTimeMs > 0;
 	}
 
 	private takeScheduledCycleBudget(): number {
-		if (!this.hasScheduledSlice()) return -1;
-		this.accumulatedHostTimeMs -= MACHINE_SERVICE_QUANTUM_MS;
-		if (this.accumulatedHostTimeMs < 0) {
-			this.accumulatedHostTimeMs = 0;
-		}
-		const numerator = this.runtime.timing.cpuHz + this.cycleGrantRemainder;
-		this.cycleGrantRemainder = numerator % MACHINE_SERVICE_QUANTA_PER_SECOND;
-		return (numerator - this.cycleGrantRemainder) / MACHINE_SERVICE_QUANTA_PER_SECOND;
+		if (this.accumulatedHostTimeMs <= 0) return -1;
+		const exactBudget = this.accumulatedHostTimeMs * this.runtime.timing.cpuCyclesPerMillisecond
+			+ this.cycleGrantRemainder;
+		const budget = Math.trunc(exactBudget);
+		this.cycleGrantRemainder = exactBudget - budget;
+		this.accumulatedHostTimeMs = 0;
+		return budget;
 	}
 
 	public clearQueuedTime(): void {
@@ -212,18 +203,18 @@ export class FrameSchedulerState {
 
 	public refillFrameBudget(frameState: BudgetFrameState): boolean {
 		const budget = this.takeScheduledCycleBudget();
-		if (budget < 0) return false;
+		if (budget <= 0) return false;
 		frameState.cycleBudgetRemaining += budget;
 		frameState.cycleBudgetGranted += budget;
 		return true;
 	}
 
 	public startScheduledFrame(): boolean {
-		let budget = this.carriedCycleBudget;
-		const carry = budget;
+		const carry = this.carriedCycleBudget;
+		let budget = carry;
 		if (budget === 0) {
 			budget = this.takeScheduledCycleBudget();
-			if (budget < 0) return false;
+			if (budget <= 0) return false;
 		}
 		this.carriedCycleBudget = 0;
 		const runtime = this.runtime;

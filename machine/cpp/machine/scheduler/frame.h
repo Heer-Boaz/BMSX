@@ -15,7 +15,7 @@ struct TickCompletion {
 
 struct FrameSchedulerStateSnapshot {
 	f64 accumulatedHostTimeMs = 0.0;
-	i64 cycleGrantRemainder = 0;
+	f64 cycleGrantRemainder = 0.0;
 	i64 carriedCycleBudget = 0;
 	bool tickCompletionPending = false;
 	bool tickCompletionVisualCommitted = false;
@@ -55,11 +55,10 @@ public:
 private:
 	void accumulateHostTime(f64 deltaMs);
 	bool canRunScheduledUpdate(const Runtime& runtime) const;
-	bool hasScheduledSlice() const;
 	i64 takeScheduledCycleBudget(const Runtime& runtime);
 
 	f64 m_accumulatedHostTimeMs = 0.0;
-	i64 m_cycleGrantRemainder = 0;
+	f64 m_cycleGrantRemainder = 0.0;
 	i64 m_carriedCycleBudget = 0;
 	bool m_tickCompletionPending = false;
 	bool m_tickCompletionVisualCommitted = false;

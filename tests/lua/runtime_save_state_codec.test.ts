@@ -355,7 +355,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 			},
 			frameScheduler: {
 				accumulatedHostTimeMs: 1.5,
-				cycleGrantRemainder: 5,
+				cycleGrantRemainder: 0.5,
 				carriedCycleBudget: 22,
 				tickCompletionPending: true,
 				tickCompletionVisualCommitted: true,

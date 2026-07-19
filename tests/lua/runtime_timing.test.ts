@@ -305,7 +305,7 @@ test('host machine-cycle grants remain exact while PCRTC is stopped', () => {
 		},
 	};
 	const runtime = {
-		timing: { cpuHz: 5_000_000, pcrtcRunning: false },
+		timing: { cpuHz: 5_000_000, cpuCyclesPerMillisecond: 5_000, pcrtcRunning: false },
 		luaInitialized: true,
 		luaRuntimeFailed: false,
 		machine: {
@@ -320,8 +320,14 @@ test('host machine-cycle grants remain exact while PCRTC is stopped', () => {
 	(runtime as unknown as { frameScheduler: FrameSchedulerState }).frameScheduler = scheduler;
 
 	scheduler.run(50);
-	assert.deepEqual(grants, [83_333, 83_333, 83_334]);
-	assert.equal(grants[0]! + grants[1]! + grants[2]!, 250_000);
+	assert.deepEqual(grants, [250_000]);
+
+	scheduler.reset();
+	grants.length = 0;
+	for (let hostFrame = 0; hostFrame < 2; hostFrame += 1) {
+		scheduler.run(0.0001);
+	}
+	assert.deepEqual(grants, [1]);
 });
 
 test('stopped PCRTC has no video deadline and hardware reset restores the exact beam', () => {

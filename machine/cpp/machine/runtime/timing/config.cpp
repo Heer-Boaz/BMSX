@@ -22,6 +22,7 @@ void setCycleBudgetPerFrame(Runtime& runtime, i64 value) {
 
 void setFrameTiming(Runtime& runtime, i64 cpuHz, i64 cycleBudgetPerFrame) {
 	runtime.timing.cpuHz = cpuHz;
+	runtime.timing.cpuCyclesPerMillisecond = static_cast<f64>(cpuHz) / 1000.0;
 	if (cycleBudgetPerFrame != runtime.timing.cycleBudgetPerFrame) {
 		runtime.timing.cycleBudgetPerFrame = cycleBudgetPerFrame;
 	}

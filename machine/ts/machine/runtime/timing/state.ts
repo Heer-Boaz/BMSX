@@ -3,6 +3,7 @@ import { HZ_SCALE } from './constants';
 export class TimingState {
 	public ufps: number;
 	public frameDurationMs: number;
+	public cpuCyclesPerMillisecond: number;
 	public pcrtcRevision = 0;
 
 	constructor(
@@ -17,5 +18,6 @@ export class TimingState {
 	) {
 		this.ufps = ufpsScaled / HZ_SCALE;
 		this.frameDurationMs = 1000 / this.ufps;
+		this.cpuCyclesPerMillisecond = cpuHz / 1000;
 	}
 }

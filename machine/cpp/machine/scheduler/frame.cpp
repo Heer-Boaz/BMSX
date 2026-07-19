@@ -3,22 +3,14 @@
 
 namespace bmsx {
 namespace {
-constexpr i64 MACHINE_SERVICE_QUANTA_PER_SECOND = 60;
-constexpr f64 MACHINE_SERVICE_QUANTUM_MS = 1000.0 / static_cast<f64>(MACHINE_SERVICE_QUANTA_PER_SECOND);
-constexpr int MAX_CATCH_UP_QUANTA = 5;
-constexpr f64 MACHINE_SERVICE_EPSILON_MS = 0.000001;
+constexpr f64 MAX_CATCH_UP_MS = 1000.0 / 12.0;
 }
 
 void FrameSchedulerState::accumulateHostTime(f64 deltaMs) {
-	const f64 maxAccumulatedMs = MACHINE_SERVICE_QUANTUM_MS * static_cast<f64>(MAX_CATCH_UP_QUANTA);
 	m_accumulatedHostTimeMs += deltaMs;
-	if (m_accumulatedHostTimeMs > maxAccumulatedMs) {
-		m_accumulatedHostTimeMs = maxAccumulatedMs;
+	if (m_accumulatedHostTimeMs > MAX_CATCH_UP_MS) {
+		m_accumulatedHostTimeMs = MAX_CATCH_UP_MS;
 	}
-}
-
-bool FrameSchedulerState::hasScheduledSlice() const {
-	return m_accumulatedHostTimeMs + MACHINE_SERVICE_EPSILON_MS >= MACHINE_SERVICE_QUANTUM_MS;
 }
 
 bool FrameSchedulerState::canRunScheduledUpdate(const Runtime& runtime) const {
@@ -29,18 +21,17 @@ bool FrameSchedulerState::canRunScheduledUpdate(const Runtime& runtime) const {
 	}
 	return (runtime.frameLoop.frameActive && runtime.frameLoop.frameState.cycleBudgetRemaining > 0)
 		|| m_carriedCycleBudget > 0
-		|| hasScheduledSlice();
+		|| m_accumulatedHostTimeMs > 0.0;
 }
 
 i64 FrameSchedulerState::takeScheduledCycleBudget(const Runtime& runtime) {
-	if (!hasScheduledSlice()) return -1;
-	m_accumulatedHostTimeMs -= MACHINE_SERVICE_QUANTUM_MS;
-	if (m_accumulatedHostTimeMs < 0.0) {
-		m_accumulatedHostTimeMs = 0.0;
-	}
-	const i64 numerator = runtime.timing.cpuHz + m_cycleGrantRemainder;
-	m_cycleGrantRemainder = numerator % MACHINE_SERVICE_QUANTA_PER_SECOND;
-	return numerator / MACHINE_SERVICE_QUANTA_PER_SECOND;
+	if (m_accumulatedHostTimeMs <= 0.0) return -1;
+	const f64 exactBudget = m_accumulatedHostTimeMs * runtime.timing.cpuCyclesPerMillisecond
+		+ m_cycleGrantRemainder;
+	const i64 budget = static_cast<i64>(exactBudget);
+	m_cycleGrantRemainder = exactBudget - static_cast<f64>(budget);
+	m_accumulatedHostTimeMs = 0.0;
+	return budget;
 }
 
 void FrameSchedulerState::clearQueuedTime() {
@@ -56,7 +47,7 @@ void FrameSchedulerState::clearPendingTickCompletion() {
 
 void FrameSchedulerState::reset() {
 	clearQueuedTime();
-	m_cycleGrantRemainder = 0;
+	m_cycleGrantRemainder = 0.0;
 	clearPendingTickCompletion();
 	m_backendServiceSuspended = false;
 }
@@ -139,18 +130,18 @@ bool FrameSchedulerState::consumeTickCompletion(TickCompletion& outCompletion) {
 
 bool FrameSchedulerState::refillFrameBudget(Runtime& runtime, FrameState& frameState) {
 	const i64 budget = takeScheduledCycleBudget(runtime);
-	if (budget < 0) return false;
+	if (budget <= 0) return false;
 	frameState.cycleBudgetRemaining += budget;
 	frameState.cycleBudgetGranted += budget;
 	return true;
 }
 
 bool FrameSchedulerState::startScheduledFrame(Runtime& runtime) {
-	i64 budget = m_carriedCycleBudget;
-	const i64 carry = budget;
+	const i64 carry = m_carriedCycleBudget;
+	i64 budget = carry;
 	if (budget == 0) {
 		budget = takeScheduledCycleBudget(runtime);
-		if (budget < 0) return false;
+		if (budget <= 0) return false;
 	}
 	m_carriedCycleBudget = 0;
 	lastTickCompleted = false;

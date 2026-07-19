@@ -199,7 +199,7 @@ function decodeFrameSchedulerState(value: unknown, label: string): FrameSchedule
 	const object = requireObject(value, label);
 	return {
 		accumulatedHostTimeMs: requireObjectKey(object, 'accumulatedHostTimeMs', label, 'frameScheduler.accumulatedHostTimeMs') as number,
-		cycleGrantRemainder: requireI64(requireObjectKey(object, 'cycleGrantRemainder', label, 'frameScheduler.cycleGrantRemainder'), 'frameScheduler.cycleGrantRemainder'),
+		cycleGrantRemainder: requireObjectKey(object, 'cycleGrantRemainder', label, 'frameScheduler.cycleGrantRemainder') as number,
 		carriedCycleBudget: requireI64(requireObjectKey(object, 'carriedCycleBudget', label, 'frameScheduler.carriedCycleBudget'), 'frameScheduler.carriedCycleBudget'),
 		tickCompletionPending: requireBooleanValue(requireObjectKey(object, 'tickCompletionPending', label, 'frameScheduler.tickCompletionPending'), 'frameScheduler.tickCompletionPending'),
 		tickCompletionVisualCommitted: requireBooleanValue(requireObjectKey(object, 'tickCompletionVisualCommitted', label, 'frameScheduler.tickCompletionVisualCommitted'), 'frameScheduler.tickCompletionVisualCommitted'),

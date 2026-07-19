@@ -2,6 +2,7 @@
 #include "machine/cpu/instruction_format.h"
 #include "machine/cpu/opcode_info.h"
 #include "machine/devices/gx/gpu_display.h"
+#include "machine/devices/gx/gpu_pcrtc.h"
 #include "machine/firmware/boot_primitives.h"
 #include "machine/machine.h"
 #include "machine/memory/memory.h"
@@ -12,6 +13,7 @@
 #include "machine/runtime/input.h"
 #include "machine/runtime/machine_state.h"
 #include "machine/runtime/runtime.h"
+#include "machine/scheduler/device.h"
 
 #include <array>
 #include <span>
@@ -33,9 +35,9 @@ public:
 	void applyInputControllerVibrationEffect(bmsx::i32, bmsx::f64, bmsx::f32) override {}
 };
 
-bmsx::ProgramImage makeReturnProgramImage() {
+bmsx::ProgramImage makeProgramImageWithResetInstruction(bmsx::OpCode opcode) {
 	bmsx::ProgramImage image;
-	image.sections.text.code.resize(bmsx::INSTRUCTION_BYTES);
+	image.sections.text.code.resize(bmsx::INSTRUCTION_BYTES * 2u);
 	bmsx::writeInstruction(
 		std::span<bmsx::u8>(image.sections.text.code),
 		0,
@@ -44,13 +46,54 @@ bmsx::ProgramImage makeReturnProgramImage() {
 		0,
 		0
 	);
-	bmsx::Proto proto;
-	proto.entryPC = 0;
-	proto.codeLen = bmsx::INSTRUCTION_BYTES;
-	proto.maxStack = 1;
-	image.sections.text.protos.push_back(proto);
+	bmsx::writeInstruction(
+		std::span<bmsx::u8>(image.sections.text.code),
+		1,
+		static_cast<bmsx::u8>(opcode),
+		0,
+		0,
+		0
+	);
+	bmsx::Proto sectionInitializer;
+	sectionInitializer.entryPC = 0;
+	sectionInitializer.codeLen = bmsx::INSTRUCTION_BYTES;
+	sectionInitializer.maxStack = 1;
+	image.sections.text.protos.push_back(sectionInitializer);
+	bmsx::Proto reset;
+	reset.entryPC = bmsx::INSTRUCTION_BYTES;
+	reset.codeLen = bmsx::INSTRUCTION_BYTES;
+	reset.maxStack = 1;
+	image.sections.text.protos.push_back(reset);
+	image.vectors.sectionInitProtoIndex = 0;
+	image.vectors.resetProtoIndex = 1;
 	return image;
 }
+
+struct SystemRuntimeFixture {
+	std::array<bmsx::u8, 1> emptyRom{{0}};
+	bmsx::ResolvedRuntimeTiming timing;
+	SystemResetInputSource input;
+	bmsx::Runtime runtime;
+
+	SystemRuntimeFixture()
+		: timing(bmsx::resolveRuntimeTiming(bmsx::PSX_MACHINE_SPEC.cpuFreqHz))
+		, runtime(
+			bmsx::RuntimeOptions{
+				{ emptyRom.data(), 0u },
+				{ emptyRom.data(), 0u },
+				timing.pcrtcRunning,
+				timing.ufpsScaled,
+				timing.cpuHz,
+				timing.cycleBudgetPerFrame,
+				timing.totalHalfLines,
+				timing.activeDisplayHalfLines,
+				timing.dmaWordsPerSec,
+				timing.geoWorkUnitsPerSec,
+			},
+			input
+		) {
+	}
+};
 
 void testResetCommandLatch() {
 	std::array<bmsx::u8, 1> emptyRom{{0}};
@@ -72,31 +115,15 @@ void testResetCommandLatch() {
 }
 
 void testRuntimeSystemRebootBoundary() {
-	std::array<bmsx::u8, 1> emptyRom{{0}};
-	const bmsx::ResolvedRuntimeTiming timing = bmsx::resolveRuntimeTiming(bmsx::PSX_MACHINE_SPEC.cpuFreqHz);
-	SystemResetInputSource input;
-	bmsx::Runtime runtime(
-		bmsx::RuntimeOptions{
-			{ emptyRom.data(), 0u },
-			{ emptyRom.data(), 0u },
-			timing.pcrtcRunning,
-			timing.ufpsScaled,
-			timing.cpuHz,
-			timing.cycleBudgetPerFrame,
-			timing.totalHalfLines,
-			timing.activeDisplayHalfLines,
-			timing.dmaWordsPerSec,
-			timing.geoWorkUnitsPerSec,
-		},
-		input
-	);
+	SystemRuntimeFixture fixture;
+	bmsx::Runtime& runtime = fixture.runtime;
 	runtime.resetRuntimeForProgramReload();
 	runtime.enterSystemFirmware();
-	bmsx::ProgramImage systemImage = makeReturnProgramImage();
+	bmsx::ProgramImage systemImage = makeProgramImageWithResetInstruction(bmsx::OpCode::RET);
 	for (const bmsx::LuaBootPrimitive& primitive : bmsx::LUA_BOOT_PRIMITIVES) {
 		systemImage.link.symbols.systemGlobalNames.emplace_back(primitive.name);
 	}
-	const bmsx::ProgramImage cartImage = makeReturnProgramImage();
+	const bmsx::ProgramImage cartImage = makeProgramImageWithResetInstruction(bmsx::OpCode::RET);
 	runtime.bootLinkedProgramImage(bmsx::linkBootProgramImages(
 		systemImage,
 		nullptr,
@@ -107,55 +134,73 @@ void testRuntimeSystemRebootBoundary() {
 
 	require(runtime.isInitialized(), "linked system program initializes before the first frame");
 	require(!runtime.cartProgramStarted, "linked boot begins in system firmware");
-	runtime.frameScheduler.run(runtime, runtime.timing.frameDurationMs);
+	bmsx::FrameSchedulerState& frameScheduler = runtime.frameScheduler;
+	const bmsx::f64 frameDurationMs = runtime.timing.frameDurationMs;
+	frameScheduler.run(runtime, frameDurationMs);
 	require(runtime.cartProgramStarted, "system root return starts the preserved cart entry");
 
 	runtime.machine.memory.writeMappedU32LE(bmsx::IO_SYS_CONTROL, bmsx::SYS_CONTROL_RESET);
-	runtime.frameScheduler.run(runtime, runtime.timing.frameDurationMs);
+	frameScheduler.run(runtime, frameDurationMs);
 	require(!runtime.cartProgramStarted, "system reset restarts the system program before cart execution");
 	require(!runtime.machine.systemController.captureState().resetRequested, "runtime boundary consumes the system reset latch");
-	require(runtime.frameScheduler.lastTickSequence == 0, "system reset clears scheduler sequence state");
+	require(frameScheduler.lastTickSequence == 0, "system reset clears scheduler sequence state");
 	require(runtime.isInitialized(), "system program is pending after reset");
 
-	runtime.frameScheduler.run(runtime, runtime.timing.frameDurationMs);
+	frameScheduler.run(runtime, frameDurationMs);
 	require(runtime.cartProgramStarted, "rebooted system root can hand off to the original cart entry");
 }
 
+void testHostDeltaGrantsOneFractionallyRetainedMachineBudget() {
+	SystemRuntimeFixture fixture;
+	bmsx::Runtime& runtime = fixture.runtime;
+	runtime.resetRuntimeForProgramReload();
+	runtime.enterSystemFirmware();
+	bmsx::ProgramImage systemImage = makeProgramImageWithResetInstruction(bmsx::OpCode::HALT);
+	for (const bmsx::LuaBootPrimitive& primitive : bmsx::LUA_BOOT_PRIMITIVES) {
+		systemImage.link.symbols.systemGlobalNames.emplace_back(primitive.name);
+	}
+	const bmsx::ProgramImage cartImage = makeProgramImageWithResetInstruction(bmsx::OpCode::HALT);
+	runtime.bootLinkedProgramImage(bmsx::linkBootProgramImages(
+		systemImage,
+		nullptr,
+		cartImage,
+		nullptr,
+		bmsx::ProgramBootTarget::System
+	));
+	const bmsx::u32 smode1Address = bmsx::gxGpuPcrtcRegisterAddress(bmsx::GX_GPU_PCRTC_SMODE1_LOW);
+	const bmsx::u32 smode1 = runtime.machine.memory.readMappedU32LE(smode1Address);
+	runtime.machine.memory.writeMappedU32LE(smode1Address, smode1 | bmsx::GX_GPU_PCRTC_SMODE1_SINT);
+	runtime.machine.runDeviceService(bmsx::DEVICE_SERVICE_GPU);
+	runtime.machine.scheduler.cancelDeviceService(bmsx::DEVICE_SERVICE_APU);
+	runtime.machine.scheduler.cancelDeviceService(bmsx::DEVICE_SERVICE_APU_TRANSFER);
+
+	runtime.frameScheduler.run(runtime, 50.03125);
+
+	require(runtime.frameLoop.frameActive, "host delta starts one in-flight machine budget while PCRTC is stopped");
+	require(runtime.frameLoop.frameState.cycleBudgetGranted == 2'501'562, "host delta grants its complete machine-cycle budget once");
+	require(runtime.frameScheduler.captureState().cycleGrantRemainder == 0.5, "host delta retains its fractional machine cycle");
+}
+
 void testRuntimeRestorePreservesInFlightFrameBudgetAndResetsHostClock() {
-	std::array<bmsx::u8, 1> emptyRom{{0}};
-	const bmsx::ResolvedRuntimeTiming timing = bmsx::resolveRuntimeTiming(bmsx::PSX_MACHINE_SPEC.cpuFreqHz);
-	SystemResetInputSource input;
-	bmsx::Runtime runtime(
-		bmsx::RuntimeOptions{
-			{ emptyRom.data(), 0u },
-			{ emptyRom.data(), 0u },
-			timing.pcrtcRunning,
-			timing.ufpsScaled,
-			timing.cpuHz,
-			timing.cycleBudgetPerFrame,
-			timing.totalHalfLines,
-			timing.activeDisplayHalfLines,
-			timing.dmaWordsPerSec,
-			timing.geoWorkUnitsPerSec,
-		},
-		input
-	);
-	runtime.frameLoop.beginFrameState(runtime, 23'456, 34'567);
-	runtime.frameLoop.frameState.updateExecuted = true;
-	runtime.frameLoop.frameState.luaFaulted = true;
-	runtime.frameLoop.frameState.cycleBudgetRemaining = 12'345;
-	runtime.frameLoop.frameState.activeCpuUsedCycles = 45'678;
-	runtime.frameLoop.frameDeltaMs = 20.096;
-	runtime.frameLoop.currentTimeSeconds = 0.9875;
+	SystemRuntimeFixture fixture;
+	bmsx::Runtime& runtime = fixture.runtime;
+	bmsx::FrameLoopState& frameLoop = runtime.frameLoop;
+	frameLoop.beginFrameState(runtime, 23'456, 34'567);
+	frameLoop.frameState.updateExecuted = true;
+	frameLoop.frameState.luaFaulted = true;
+	frameLoop.frameState.cycleBudgetRemaining = 12'345;
+	frameLoop.frameState.activeCpuUsedCycles = 45'678;
+	frameLoop.frameDeltaMs = 20.096;
+	frameLoop.currentTimeSeconds = 0.9875;
 	const bmsx::RuntimeMachineState snapshot = bmsx::captureRuntimeMachineState(runtime);
 
-	runtime.frameLoop.frameActive = false;
-	runtime.frameLoop.frameState = bmsx::FrameState{false, false, 99, 98, 97, 96};
-	runtime.frameLoop.frameDeltaMs = 1.0;
-	runtime.frameLoop.currentTimeSeconds = 2.0;
+	frameLoop.frameActive = false;
+	frameLoop.frameState = bmsx::FrameState{false, false, 99, 98, 97, 96};
+	frameLoop.frameDeltaMs = 1.0;
+	frameLoop.currentTimeSeconds = 2.0;
 	bmsx::applyRuntimeMachineState(runtime, snapshot);
 
-	const bmsx::FrameLoopStateSnapshot restored = runtime.frameLoop.captureState();
+	const bmsx::FrameLoopStateSnapshot restored = frameLoop.captureState();
 	require(restored.frameActive == snapshot.frameLoop.frameActive, "runtime restore preserves in-flight frame activity");
 	require(restored.frameState.updateExecuted == snapshot.frameLoop.frameState.updateExecuted, "runtime restore preserves in-flight update completion");
 	require(restored.frameState.luaFaulted == snapshot.frameLoop.frameState.luaFaulted, "runtime restore preserves in-flight Lua fault state");
@@ -164,7 +209,7 @@ void testRuntimeRestorePreservesInFlightFrameBudgetAndResetsHostClock() {
 	require(restored.frameState.cycleCarryGranted == snapshot.frameLoop.frameState.cycleCarryGranted, "runtime restore preserves carried in-flight cycles");
 	require(restored.frameState.activeCpuUsedCycles == snapshot.frameLoop.frameState.activeCpuUsedCycles, "runtime restore preserves used in-flight cycles");
 	require(restored.frameDeltaMs == snapshot.frameLoop.frameDeltaMs, "runtime restore preserves in-flight frame duration");
-	require(runtime.frameLoop.currentTimeSeconds == 0.0, "runtime restore resets the host clock outside machine state");
+	require(frameLoop.currentTimeSeconds == 0.0, "runtime restore resets the host clock outside machine state");
 	require(!runtime.vblank.tickCompleted(), "runtime restore prepares the next physical VBlank edge");
 }
 
@@ -174,5 +219,6 @@ int main() {
 	testResetCommandLatch();
 	testRuntimeSystemRebootBoundary();
 	testRuntimeRestorePreservesInFlightFrameBudgetAndResetsHostClock();
+	testHostDeltaGrantsOneFractionallyRetainedMachineBudget();
 	return 0;
 }

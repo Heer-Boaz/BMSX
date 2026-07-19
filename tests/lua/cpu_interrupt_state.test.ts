@@ -234,6 +234,8 @@ function makeHaltFrameRuntime(): Runtime {
 		frameLoop: null as never,
 		cpuExecution: null as never,
 		timing: {
+			cpuHz: 5_000,
+			cpuCyclesPerMillisecond: 5,
 			cycleBudgetPerFrame: 100,
 			frameDurationMs: 20,
 		},

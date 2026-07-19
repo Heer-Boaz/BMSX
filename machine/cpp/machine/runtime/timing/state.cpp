@@ -21,6 +21,7 @@ TimingState::TimingState(
 	, totalHalfLines(totalHalfLines)
 	, activeDisplayHalfLines(activeDisplayHalfLines)
 	, cpuHz(cpuHz)
+	, cpuCyclesPerMillisecond(static_cast<f64>(cpuHz) / 1000.0)
 	, cycleBudgetPerFrame(cycleBudgetPerFrame)
 	, geoWorkUnitsPerSec(geoWorkUnitsPerSec)
 	, dmaWordsPerSec(dmaWordsPerSec) {

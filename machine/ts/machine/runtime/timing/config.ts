@@ -24,6 +24,7 @@ export function setCycleBudgetPerFrame(runtime: Runtime, value: number): void {
 export function setFrameTiming(runtime: Runtime, cpuHz: number, cycleBudgetPerFrame: number): void {
 	const timing = runtime.timing;
 	timing.cpuHz = cpuHz;
+	timing.cpuCyclesPerMillisecond = cpuHz / 1000;
 	if (cycleBudgetPerFrame !== timing.cycleBudgetPerFrame) {
 		timing.cycleBudgetPerFrame = cycleBudgetPerFrame;
 	}
