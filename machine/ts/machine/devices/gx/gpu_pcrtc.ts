@@ -84,6 +84,14 @@ export const GX_GPU_PCRTC_STORAGE_GX16 = 5;
 export const GX_GPU_PCRTC_STORAGE_ZERO = 6;
 export const GX_GPU_PCRTC_STORAGE_COUNT = 7;
 
+export const GX_GPU_PCRTC_SCANOUT_DRAW_NONE = 0;
+export const GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGB = 1;
+export const GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGBA = 2;
+export const GX_GPU_PCRTC_SCANOUT_DRAW_RAW_ALPHA = 3;
+export const GX_GPU_PCRTC_SCANOUT_DRAW_BLEND_SOURCE_RGB = 4;
+export const GX_GPU_PCRTC_SCANOUT_DRAW_BLEND_CONSTANT_RGB = 5;
+export const GX_GPU_PCRTC_SCANOUT_DRAW_PATH_COUNT = 6;
+
 export const GX_GPU_PCRTC_RESET_DISPFB_LOW = (16 << 9) | (GX_GPU_PSMGX16 << 15);
 export const GX_GPU_PCRTC_RESET_DISPLAY_LOW = 0x018252a8;
 export const GX_GPU_PCRTC_RESET_DISPLAY_HIGH = 0x000ef4ff;
@@ -133,7 +141,6 @@ export type GxGpuPcrtcCircuit = {
 	framebufferBaseWord: number;
 	framebufferWidth: number;
 	framebufferPagesPerRow: number;
-	framebufferPsm: number;
 	framebufferStoragePath: number;
 	framebufferX: number;
 	framebufferY: number;
@@ -156,6 +163,13 @@ export type GxGpuPcrtcCircuit = {
 	interlacedSourceDivisionMultiplierY: number;
 	fieldSourcePhase: number;
 	fieldSourceStride: number;
+	fieldDisplayY: number;
+	fieldDisplayLineCount: number;
+	fieldSourceNumeratorY: number;
+	fieldSourceNumeratorStepY: number;
+	fieldSourceDivisionMultiplierY: number;
+	linearFieldSourceY: number;
+	linearFieldSourceRowStep: number;
 	magnificationX: number;
 	magnificationY: number;
 	linearSampling: boolean;
@@ -212,7 +226,6 @@ function createCircuit(): GxGpuPcrtcCircuit {
 		framebufferBaseWord: 0,
 		framebufferWidth: 0,
 		framebufferPagesPerRow: 0,
-		framebufferPsm: 0,
 		framebufferStoragePath: GX_GPU_PCRTC_STORAGE_CT32,
 		framebufferX: 0,
 		framebufferY: 0,
@@ -235,6 +248,13 @@ function createCircuit(): GxGpuPcrtcCircuit {
 		interlacedSourceDivisionMultiplierY: PCRTC_SOURCE_DIVISION_SCALE >> 1,
 		fieldSourcePhase: 0,
 		fieldSourceStride: 1,
+		fieldDisplayY: 0,
+		fieldDisplayLineCount: 0,
+		fieldSourceNumeratorY: 0,
+		fieldSourceNumeratorStepY: 1,
+		fieldSourceDivisionMultiplierY: PCRTC_SOURCE_DIVISION_SCALE,
+		linearFieldSourceY: 0,
+		linearFieldSourceRowStep: 1,
 		magnificationX: 1,
 		magnificationY: 1,
 		linearSampling: true,
@@ -317,16 +337,14 @@ export class GxGpuPcrtcScanout {
 	public readonly circuits: [GxGpuPcrtcCircuit, GxGpuPcrtcCircuit] = [createCircuit(), createCircuit()];
 	public backgroundColor = 0;
 	public blendAlpha = 0;
-	public blendAlphaFromRegister = 0;
-	public outputAlphaFromCircuit2 = 0;
-	public outputCircuit1AlphaMask = 0xff000000;
-	public outputCircuit2AlphaMask = 0;
-	public rgbUnderlayFromCircuit2 = 0;
-	public circuit2SampleRequired = 0;
-	public circuit2CoversOutput = false;
+	public circuit2OutputPath = GX_GPU_PCRTC_SCANOUT_DRAW_NONE;
+	public circuit1ColorPath = GX_GPU_PCRTC_SCANOUT_DRAW_NONE;
+	public circuit1AlphaPath = GX_GPU_PCRTC_SCANOUT_DRAW_NONE;
+	public backgroundRequired = 1;
 	public interlaced = false;
 	public frameMode = false;
 	public field = 0;
+	public outputRowStep = 1;
 	public cropSignalX = 0;
 	public cropSignalY = 0;
 	public compositionPath = GX_GPU_PCRTC_COMPOSE_GENERIC;
@@ -334,12 +352,35 @@ export class GxGpuPcrtcScanout {
 	public outputHeight = 0;
 	public revision = 0;
 
+	private updateFieldTraversal(circuit: GxGpuPcrtcCircuit): void {
+		circuit.fieldDisplayY = this.interlaced
+			? circuit.displayY + ((circuit.displayY ^ this.field) & 1)
+			: circuit.displayY;
+		if (circuit.fieldDisplayY < circuit.displayBottom) {
+			const rowSpan = circuit.displayBottom - circuit.fieldDisplayY - 1;
+			circuit.fieldDisplayLineCount = (rowSpan - rowSpan % this.outputRowStep) / this.outputRowStep + 1;
+		} else {
+			circuit.fieldDisplayLineCount = 0;
+		}
+		const relativeY = circuit.fieldDisplayY - circuit.displayY;
+		circuit.fieldSourceNumeratorY = circuit.sourcePhaseY + relativeY * circuit.sourceStepY;
+		circuit.fieldSourceNumeratorStepY = this.outputRowStep * circuit.sourceStepY;
+		circuit.fieldSourceDivisionMultiplierY = this.interlaced
+			? circuit.interlacedSourceDivisionMultiplierY
+			: circuit.sourceDivisionMultiplierY;
+		circuit.linearFieldSourceY = circuit.framebufferY + (this.interlaced
+			? (relativeY >> 1) * circuit.fieldSourceStride + circuit.fieldSourcePhase
+			: relativeY);
+		circuit.linearFieldSourceRowStep = this.interlaced ? circuit.fieldSourceStride : 1;
+	}
+
 	public setField(field: number): void {
 		this.field = field;
 		for (const circuit of this.circuits) {
 			circuit.fieldSourcePhase = this.interlaced && !this.frameMode
 				? (circuit.displaySignalY ^ field) & 1
 				: 0;
+			this.updateFieldTraversal(circuit);
 		}
 	}
 
@@ -357,8 +398,8 @@ export class GxGpuPcrtcScanout {
 			circuit.framebufferBaseWord = (dispFbLow & 0x1ff) << 12;
 			circuit.framebufferWidth = ((dispFbLow >>> 9) & 0x3f) * 64;
 			circuit.framebufferPagesPerRow = (dispFbLow >>> 9) & 0x3f;
-			circuit.framebufferPsm = (dispFbLow >>> 15) & 0x1f;
-			circuit.framebufferStoragePath = framebufferStoragePath(circuit.framebufferPsm, index);
+			const psm = (dispFbLow >>> 15) & 0x1f;
+			circuit.framebufferStoragePath = framebufferStoragePath(psm, index);
 			circuit.framebufferX = dispFbHigh & 0x7ff;
 			circuit.framebufferY = (dispFbHigh >>> 11) & 0x7ff;
 			circuit.displaySignalX = displayLow & 0xfff;
@@ -426,21 +467,15 @@ export class GxGpuPcrtcScanout {
 		}
 		this.backgroundColor = words[GX_GPU_PCRTC_BGCOLOR_LOW]! & 0x00ffffff;
 		this.blendAlpha = (pmode >>> GX_GPU_PCRTC_PMODE_ALP_SHIFT) & 0xff;
-		this.blendAlphaFromRegister = pmode >>> GX_GPU_PCRTC_PMODE_MMOD_SHIFT & 1;
-		this.outputAlphaFromCircuit2 = pmode >>> GX_GPU_PCRTC_PMODE_AMOD_SHIFT & 1;
-		this.outputCircuit2AlphaMask = ((0 - this.outputAlphaFromCircuit2) & 0xff000000) >>> 0;
-		this.outputCircuit1AlphaMask = (this.outputCircuit2AlphaMask ^ 0xff000000) >>> 0;
-		this.rgbUnderlayFromCircuit2 = circuit2.enabled
-			* ((pmode >>> GX_GPU_PCRTC_PMODE_SLBG_SHIFT & 1) ^ 1);
-		this.circuit2SampleRequired = circuit2.enabled
-			* (this.rgbUnderlayFromCircuit2 | this.outputAlphaFromCircuit2);
 		this.interlaced = (smode2 & GX_GPU_PCRTC_SMODE2_INT) !== 0;
 		this.frameMode = this.interlaced && (smode2 & GX_GPU_PCRTC_SMODE2_FFMD) !== 0;
+		this.outputRowStep = this.interlaced ? 2 : 1;
 		for (const circuit of this.circuits) {
 			circuit.fieldSourceStride = this.interlaced && !this.frameMode ? 2 : 1;
 			circuit.fieldSourcePhase = this.interlaced && !this.frameMode
 				? (circuit.displaySignalY ^ this.field) & 1
 				: 0;
+			this.updateFieldTraversal(circuit);
 		}
 
 		this.outputWidth = circuit1.enabled ? circuit1.displayRight : circuit2.enabled ? circuit2.displayRight : 0;
@@ -453,20 +488,60 @@ export class GxGpuPcrtcScanout {
 			&& circuit1.displayY === 0
 			&& circuit1.displayRight >= this.outputWidth
 			&& circuit1.displayBottom >= this.outputHeight;
-		this.circuit2CoversOutput = circuit2.displayX === 0
+		const circuit2CoversOutput = circuit2.displayX === 0
 			&& circuit2.displayY === 0
 			&& circuit2.displayRight >= this.outputWidth
 			&& circuit2.displayBottom >= this.outputHeight;
+		const mmod = pmode >>> GX_GPU_PCRTC_PMODE_MMOD_SHIFT & 1;
+		const amod = pmode >>> GX_GPU_PCRTC_PMODE_AMOD_SHIFT & 1;
+		const slbg = pmode >>> GX_GPU_PCRTC_PMODE_SLBG_SHIFT & 1;
+		this.circuit2OutputPath = GX_GPU_PCRTC_SCANOUT_DRAW_NONE;
+		if (circuit2.enabled) {
+			if (slbg === 0) {
+				this.circuit2OutputPath = (amod === 0
+					? GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGB
+					: GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGBA);
+			} else if (amod !== 0) {
+				this.circuit2OutputPath = GX_GPU_PCRTC_SCANOUT_DRAW_RAW_ALPHA;
+			}
+		}
+		this.circuit1ColorPath = GX_GPU_PCRTC_SCANOUT_DRAW_NONE;
+		this.circuit1AlphaPath = GX_GPU_PCRTC_SCANOUT_DRAW_NONE;
+		if (circuit1.enabled) {
+			if (mmod === 0) {
+				this.circuit1ColorPath = GX_GPU_PCRTC_SCANOUT_DRAW_BLEND_SOURCE_RGB;
+			} else if (this.blendAlpha === 255) {
+				this.circuit1ColorPath = (amod === 0
+					? GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGBA
+					: GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGB);
+			} else if (this.blendAlpha !== 0) {
+				this.circuit1ColorPath = GX_GPU_PCRTC_SCANOUT_DRAW_BLEND_CONSTANT_RGB;
+			}
+			if (amod === 0
+				&& this.circuit1ColorPath !== GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGBA) {
+				this.circuit1AlphaPath = GX_GPU_PCRTC_SCANOUT_DRAW_RAW_ALPHA;
+			}
+		}
+		this.backgroundRequired = 1;
+		if (circuit1CoversOutput
+			&& this.circuit1ColorPath === GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGBA) {
+			this.circuit2OutputPath = GX_GPU_PCRTC_SCANOUT_DRAW_NONE;
+			this.backgroundRequired = 0;
+		} else if (circuit2CoversOutput
+			&& this.circuit2OutputPath === GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGBA) {
+			this.backgroundRequired = 0;
+		}
+		const circuit1SampleRequired = this.circuit1ColorPath !== GX_GPU_PCRTC_SCANOUT_DRAW_NONE
+			|| this.circuit1AlphaPath !== GX_GPU_PCRTC_SCANOUT_DRAW_NONE;
+		const circuit2SampleRequired = this.circuit2OutputPath !== GX_GPU_PCRTC_SCANOUT_DRAW_NONE;
 		if (circuit1.enabled
 			&& circuit1.linearSampling
 			&& circuit1.framebufferStoragePath === GX_GPU_PCRTC_STORAGE_GX16
-			&& this.blendAlphaFromRegister
-			&& this.blendAlpha === 255
-			&& !this.outputAlphaFromCircuit2
+			&& this.circuit1ColorPath === GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGBA
 			&& circuit1CoversOutput) {
 			this.compositionPath = GX_GPU_PCRTC_COMPOSE_GX16_DIRECT_CIRCUIT1;
-		} else if ((!circuit1.enabled || circuit1.linearSampling && circuit1.framebufferStoragePath === GX_GPU_PCRTC_STORAGE_GX16)
-			&& (!this.circuit2SampleRequired || circuit2.linearSampling && circuit2.framebufferStoragePath === GX_GPU_PCRTC_STORAGE_GX16)) {
+		} else if ((!circuit1SampleRequired || circuit1.linearSampling && circuit1.framebufferStoragePath === GX_GPU_PCRTC_STORAGE_GX16)
+			&& (!circuit2SampleRequired || circuit2.linearSampling && circuit2.framebufferStoragePath === GX_GPU_PCRTC_STORAGE_GX16)) {
 			this.compositionPath = GX_GPU_PCRTC_COMPOSE_GX16;
 		} else {
 			this.compositionPath = GX_GPU_PCRTC_COMPOSE_GENERIC;

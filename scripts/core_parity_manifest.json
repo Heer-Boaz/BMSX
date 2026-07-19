@@ -893,7 +893,7 @@
 		{
 			"webgl": "machine/ts/render/backend/webgl/shaders/gx_gpu_scanout.frag.glsl",
 			"gles2": "machine/cpp/render/backend/gles2/shaders/gx_gpu_scanout.frag.glsl",
-			"functions": ["rawWordAtAddress", "rgb555Pixel", "circuitContainsOutput", "circuitPixel", "mergedPixel", "outputPixel", "main"],
+			"functions": ["rawWordAtAddress", "rgb555Pixel", "localMemoryAddress32", "localMemoryColumn16", "localMemoryAddress16", "localMemoryAddressGpu24", "circuitPixel", "outputPixel", "main"],
 			"reason": "gx_gpu_raw_vram_decode_shader_contract"
 		},
 		{

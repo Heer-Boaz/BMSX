@@ -5,7 +5,7 @@ precision highp int;
 out vec4 outputColor;
 
 uniform sampler2D u_vram;
-uniform uvec4 u_pcrtc[11];
+uniform uvec4 u_circuit[5];
 uniform uvec4 u_interlace;
 
 uint rawWordAtAddress(uint address) {
@@ -66,81 +66,58 @@ uint localMemoryAddressGpu24(uint baseWord, uint pagesPerRow, uint pixelX, uint 
 	return localMemoryAddress16(baseWord, pagesPerRow, ((pixelX * 3u) >> 1u) + word, y, false);
 }
 
-bool circuitContainsOutput(uvec4 display, uvec4 extent, uint outputX, uint outputY) {
-	return outputX >= display.y
-		&& outputY >= display.z
-		&& outputX < extent.x
-		&& outputY < extent.y;
-}
-
-uvec4 circuitPixel(uvec4 framebuffer, uvec4 display, uvec4 extentPhase, uvec4 sampling, uint outputX, uint outputY) {
-#if defined(GX_GPU_SCANOUT_GX16)
-	uint sourceX = framebuffer.w + outputX - display.y;
+uvec4 circuitPixel(uint outputX, uint outputY) {
+#if defined(GX_GPU_SCANOUT_LINEAR_GX16)
+	uint sourceX = u_circuit[0].w + outputX - u_circuit[1].y;
 #if defined(GX_GPU_INTERLACED_FIELD)
-	uint sourceY = display.x + ((outputY - display.z) >> 1u) * sampling.y + extentPhase.w;
+	uint sourceY = u_circuit[3].w + ((outputY - u_circuit[3].z) >> 1u) * u_circuit[4].x;
 #else
-	uint sourceY = display.x + outputY - display.z;
+	uint sourceY = u_circuit[3].w + outputY - u_circuit[3].z;
 #endif
-	return rgb555Pixel(rawWordAtAddress(framebuffer.x + sourceY * framebuffer.y + sourceX));
+	return rgb555Pixel(rawWordAtAddress(u_circuit[0].x + sourceY * u_circuit[0].y + sourceX));
 #else
-	uint sourceXNumerator = extentPhase.z + (outputX - display.y) * sampling.x;
-	uint sourceYNumerator = outputY - display.z;
-	uint sourceX = framebuffer.w + ((sourceXNumerator * sampling.z) >> 18u);
-	uint sourceY = display.x
-		+ (((sourceYNumerator * display.w) >> 18u) * sampling.y)
-		+ extentPhase.w;
-	uint pagesPerRow = framebuffer.y >> 6u;
-	if (framebuffer.z == 0u || framebuffer.z == 1u) {
-		uint address = localMemoryAddress32(framebuffer.x, pagesPerRow, sourceX, sourceY);
-		uint low = rawWordAtAddress(address);
-		uint high = rawWordAtAddress(address + 1u);
-		uint alpha = framebuffer.z == 0u ? high >> 8u : 128u;
-		return uvec4(low & 0xffu, low >> 8u, high & 0xffu, alpha);
-	}
-	if (framebuffer.z == 2u || framebuffer.z == 3u) {
-		uint address = localMemoryAddress16(framebuffer.x, pagesPerRow, sourceX, sourceY, framebuffer.z == 3u);
-		return rgb555Pixel(rawWordAtAddress(address));
-	}
-	if (framebuffer.z == 4u) {
-		uint first = rawWordAtAddress(localMemoryAddressGpu24(framebuffer.x, pagesPerRow, sourceX, sourceY, 0u));
-		uint second = rawWordAtAddress(localMemoryAddressGpu24(framebuffer.x, pagesPerRow, sourceX, sourceY, 1u));
-		uint rgb = (sourceX & 1u) == 0u
-			? first | ((second & 0xffu) << 16u)
-			: (first >> 8u) | (second << 8u);
-		return uvec4(rgb & 0xffu, (rgb >> 8u) & 0xffu, (rgb >> 16u) & 0xffu, 128u);
-	}
-	if (framebuffer.z == 5u) {
-		return rgb555Pixel(rawWordAtAddress(framebuffer.x + sourceY * framebuffer.y + sourceX));
-	}
+	uint sourceXNumerator = u_circuit[2].x + (outputX - u_circuit[1].y) * u_circuit[2].z;
+	uint sourceX = u_circuit[0].w + ((sourceXNumerator * u_circuit[3].x) >> 18u);
+	uint sourceY = u_circuit[1].x
+		+ ((((outputY - u_circuit[1].z) * u_circuit[1].w) >> 18u) * u_circuit[2].w)
+		+ u_circuit[2].y;
+#if GX_GPU_SCANOUT_STORAGE_PATH == 0
+	uint address = localMemoryAddress32(u_circuit[0].x, u_circuit[0].z, sourceX, sourceY);
+	uint low = rawWordAtAddress(address);
+	uint high = rawWordAtAddress(address + 1u);
+	return uvec4(low & 0xffu, low >> 8u, high & 0xffu, high >> 8u);
+#elif GX_GPU_SCANOUT_STORAGE_PATH == 1
+	uint address = localMemoryAddress32(u_circuit[0].x, u_circuit[0].z, sourceX, sourceY);
+	uint low = rawWordAtAddress(address);
+	uint high = rawWordAtAddress(address + 1u);
+	return uvec4(low & 0xffu, low >> 8u, high & 0xffu, 128u);
+#elif GX_GPU_SCANOUT_STORAGE_PATH == 2
+	return rgb555Pixel(rawWordAtAddress(localMemoryAddress16(
+		u_circuit[0].x, u_circuit[0].z, sourceX, sourceY, false)));
+#elif GX_GPU_SCANOUT_STORAGE_PATH == 3
+	return rgb555Pixel(rawWordAtAddress(localMemoryAddress16(
+		u_circuit[0].x, u_circuit[0].z, sourceX, sourceY, true)));
+#elif GX_GPU_SCANOUT_STORAGE_PATH == 4
+	uint first = rawWordAtAddress(localMemoryAddressGpu24(u_circuit[0].x, u_circuit[0].z, sourceX, sourceY, 0u));
+	uint second = rawWordAtAddress(localMemoryAddressGpu24(u_circuit[0].x, u_circuit[0].z, sourceX, sourceY, 1u));
+	uint rgb = (sourceX & 1u) == 0u
+		? first | ((second & 0xffu) << 16u)
+		: (first >> 8u) | (second << 8u);
+	return uvec4(rgb & 0xffu, (rgb >> 8u) & 0xffu, (rgb >> 16u) & 0xffu, 128u);
+#elif GX_GPU_SCANOUT_STORAGE_PATH == 5
+	return rgb555Pixel(rawWordAtAddress(u_circuit[0].x + sourceY * u_circuit[0].y + sourceX));
+#else
 	return uvec4(0u);
 #endif
-}
-
-uvec4 mergedPixel(uint outputX, uint outputY) {
-	uvec4 under = uvec4(u_pcrtc[1].yzw, 0u);
-	bool circuit2ContainsOutput = u_pcrtc[0].y != 0u
-		&& circuitContainsOutput(u_pcrtc[8], u_pcrtc[9], outputX, outputY);
-	if (circuit2ContainsOutput) {
-		uvec4 circuit2 = circuitPixel(u_pcrtc[7], u_pcrtc[8], u_pcrtc[9], u_pcrtc[10], outputX, outputY);
-		if (u_pcrtc[2].y != 0u) under.rgb = circuit2.rgb;
-		if (u_pcrtc[0].w != 0u) under.a = circuit2.a;
-	}
-	if (u_pcrtc[0].x == 0u || !circuitContainsOutput(u_pcrtc[4], u_pcrtc[5], outputX, outputY)) {
-		return under;
-	}
-	uvec4 circuit1 = circuitPixel(u_pcrtc[3], u_pcrtc[4], u_pcrtc[5], u_pcrtc[6], outputX, outputY);
-	uint alpha = u_pcrtc[0].z != 0u ? u_pcrtc[2].x : min(circuit1.a << 1u, 255u);
-	uint inverseAlpha = 255u - alpha;
-	uvec3 rgb = (circuit1.rgb * uvec3(alpha) + under.rgb * uvec3(inverseAlpha) + uvec3(127u)) / uvec3(255u);
-	return uvec4(rgb, u_pcrtc[0].w != 0u ? under.a : circuit1.a);
+#endif
 }
 
 vec4 outputPixel(uint outputX, uint outputY) {
-#if defined(GX_GPU_SCANOUT_GX16_DIRECT)
-	return vec4(circuitPixel(u_pcrtc[3], u_pcrtc[4], u_pcrtc[5], u_pcrtc[6], outputX, outputY)) / 255.0;
-#else
-	return vec4(mergedPixel(outputX, outputY)) / 255.0;
+	uvec4 pixel = circuitPixel(outputX, outputY);
+#if defined(GX_GPU_SCANOUT_DOUBLE_ALPHA)
+	pixel.a = min(pixel.a << 1u, 255u);
 #endif
+	return vec4(pixel) / 255.0;
 }
 
 void main() {
@@ -159,7 +136,7 @@ void main() {
 	uint outputY = u_interlace.z + fieldLine * 2u;
 	outputColor = outputPixel(uint(gl_FragCoord.x), outputY);
 #else
-	uint outputY = u_pcrtc[1].x - 1u - uint(gl_FragCoord.y);
+	uint outputY = u_circuit[3].y - 1u - uint(gl_FragCoord.y);
 	outputColor = outputPixel(uint(gl_FragCoord.x), outputY);
 #endif
 }

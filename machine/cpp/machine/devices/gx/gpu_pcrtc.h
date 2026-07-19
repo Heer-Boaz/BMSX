@@ -76,6 +76,14 @@ constexpr u32 GX_GPU_PCRTC_STORAGE_GX16 = 5u;
 constexpr u32 GX_GPU_PCRTC_STORAGE_ZERO = 6u;
 constexpr u32 GX_GPU_PCRTC_STORAGE_COUNT = 7u;
 
+constexpr u32 GX_GPU_PCRTC_SCANOUT_DRAW_NONE = 0u;
+constexpr u32 GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGB = 1u;
+constexpr u32 GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGBA = 2u;
+constexpr u32 GX_GPU_PCRTC_SCANOUT_DRAW_RAW_ALPHA = 3u;
+constexpr u32 GX_GPU_PCRTC_SCANOUT_DRAW_BLEND_SOURCE_RGB = 4u;
+constexpr u32 GX_GPU_PCRTC_SCANOUT_DRAW_BLEND_CONSTANT_RGB = 5u;
+constexpr u32 GX_GPU_PCRTC_SCANOUT_DRAW_PATH_COUNT = 6u;
+
 constexpr u32 GX_GPU_PCRTC_RESET_DISPFB_LOW = (16u << 9u) | (GX_GPU_PSMGX16 << 15u);
 constexpr u32 GX_GPU_PCRTC_RESET_DISPLAY_LOW = 0x018252a8u;
 constexpr u32 GX_GPU_PCRTC_RESET_DISPLAY_HIGH = 0x000ef4ffu;
@@ -112,7 +120,6 @@ struct GxGpuPcrtcCircuit {
 	u32 framebufferBaseWord = 0u;
 	u32 framebufferWidth = 0u;
 	u32 framebufferPagesPerRow = 0u;
-	u32 framebufferPsm = 0u;
 	u32 framebufferStoragePath = GX_GPU_PCRTC_STORAGE_CT32;
 	u32 framebufferX = 0u;
 	u32 framebufferY = 0u;
@@ -135,6 +142,13 @@ struct GxGpuPcrtcCircuit {
 	u32 interlacedSourceDivisionMultiplierY = 1u << (GX_GPU_PCRTC_SOURCE_DIVISION_SHIFT - 1u);
 	u32 fieldSourcePhase = 0u;
 	u32 fieldSourceStride = 1u;
+	u32 fieldDisplayY = 0u;
+	u32 fieldDisplayLineCount = 0u;
+	u32 fieldSourceNumeratorY = 0u;
+	u32 fieldSourceNumeratorStepY = 1u;
+	u32 fieldSourceDivisionMultiplierY = 1u << GX_GPU_PCRTC_SOURCE_DIVISION_SHIFT;
+	u32 linearFieldSourceY = 0u;
+	u32 linearFieldSourceRowStep = 1u;
 	u32 magnificationX = 1u;
 	u32 magnificationY = 1u;
 	bool linearSampling = true;
@@ -160,16 +174,14 @@ struct GxGpuPcrtcScanout {
 	std::array<GxGpuPcrtcCircuit, 2u> circuits{};
 	u32 backgroundColor = 0u;
 	u32 blendAlpha = 0u;
-	u32 blendAlphaFromRegister = 0u;
-	u32 outputAlphaFromCircuit2 = 0u;
-	u32 outputCircuit1AlphaMask = 0xff000000u;
-	u32 outputCircuit2AlphaMask = 0u;
-	u32 rgbUnderlayFromCircuit2 = 0u;
-	u32 circuit2SampleRequired = 0u;
-	bool circuit2CoversOutput = false;
+	u32 circuit2OutputPath = GX_GPU_PCRTC_SCANOUT_DRAW_NONE;
+	u32 circuit1ColorPath = GX_GPU_PCRTC_SCANOUT_DRAW_NONE;
+	u32 circuit1AlphaPath = GX_GPU_PCRTC_SCANOUT_DRAW_NONE;
+	u32 backgroundRequired = 1u;
 	bool interlaced = false;
 	bool frameMode = false;
 	u32 field = 0u;
+	u32 outputRowStep = 1u;
 	u32 cropSignalX = 0u;
 	u32 cropSignalY = 0u;
 	u32 compositionPath = GX_GPU_PCRTC_COMPOSE_GENERIC;

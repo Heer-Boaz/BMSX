@@ -20,7 +20,18 @@ import {
 	gxGpuDrawingAreaTop,
 	gxGpuSigned11,
 } from '../../../machine/devices/gx/gpu_command_buffer';
-import type { GxGpuPcrtcScanout } from '../../../machine/devices/gx/gpu_pcrtc';
+import {
+	GX_GPU_PCRTC_SCANOUT_DRAW_BLEND_CONSTANT_RGB,
+	GX_GPU_PCRTC_SCANOUT_DRAW_BLEND_SOURCE_RGB,
+	GX_GPU_PCRTC_SCANOUT_DRAW_NONE,
+	GX_GPU_PCRTC_SCANOUT_DRAW_RAW_ALPHA,
+	GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGBA,
+	GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGB,
+	GX_GPU_PCRTC_STORAGE_COUNT,
+	GX_GPU_PCRTC_STORAGE_GX16,
+	type GxGpuPcrtcCircuit,
+	type GxGpuPcrtcScanout,
+} from '../../../machine/devices/gx/gpu_pcrtc';
 import {
 	GX_GPU_TEXTURE_SOURCE_BATCH_OVERLAP,
 	GX_GPU_TEXTURE_SOURCE_COMMAND_OVERLAP,
@@ -128,6 +139,9 @@ const GX_GPU_TRANSFER_VERTICES_PER_SEGMENT = 6;
 const GX_GPU_TRANSFER_SEGMENTS_PER_ROW = 3;
 const GX_GPU_TRANSFER_FLOAT_CAPACITY = GX_GPU_TRANSFER_MAX_HEIGHT * GX_GPU_TRANSFER_SEGMENTS_PER_ROW * GX_GPU_TRANSFER_VERTICES_PER_SEGMENT * GX_GPU_TRANSFER_VERTEX_FLOATS;
 const GX_GPU_SCANOUT_VERTEX_FLOATS = 2;
+const GX_GPU_SCANOUT_PROGRAM_STORAGE_COUNT = GX_GPU_PCRTC_STORAGE_COUNT + 1;
+const GX_GPU_SCANOUT_DOUBLE_ALPHA_PROGRAM_BASE = GX_GPU_SCANOUT_PROGRAM_STORAGE_COUNT;
+const GX_GPU_SCANOUT_PROGRAM_COUNT = GX_GPU_SCANOUT_PROGRAM_STORAGE_COUNT * 2;
 const GX_GPU_RAW_VRAM_BYTES_PER_PIXEL = 4;
 const GX_GPU_RAW_VRAM_UPLOAD_BYTES = GX_GPU_VRAM_WIDTH * GX_GPU_VRAM_HEIGHT * GX_GPU_RAW_VRAM_BYTES_PER_PIXEL;
 const GX_GPU_RAW_VRAM_READBACK_BYTES = GX_GPU_VRAM_WIDTH * GX_GPU_VRAM_HEIGHT * GX_GPU_RAW_VRAM_BYTES_PER_PIXEL;
@@ -137,10 +151,6 @@ const GX_GPU_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD = (GX_GPU_VRAM_WIDTH - 1) | ((G
 const GX_GPU_FIXED_COLOR_PLANE_SHADER_DEFINE = '#define GX_GPU_FIXED_COLOR_PLANE 1\n';
 const GX_GPU_INTERLACED_FIELD_SHADER_DEFINE = '#define GX_GPU_INTERLACED_FIELD 1\n';
 const GX_GPU_INTERLACED_WEAVE_SHADER_DEFINE = '#define GX_GPU_INTERLACED_WEAVE 1\n';
-const GX_GPU_SCANOUT_GX16_SHADER_DEFINE = '#define GX_GPU_SCANOUT_GX16 1\n';
-const GX_GPU_SCANOUT_GX16_DIRECT_SHADER_DEFINE = '#define GX_GPU_SCANOUT_GX16 1\n#define GX_GPU_SCANOUT_GX16_DIRECT 1\n';
-const GX_GPU_SCANOUT_FIELD_GX16_SHADER_DEFINE = '#define GX_GPU_INTERLACED_FIELD 1\n#define GX_GPU_SCANOUT_GX16 1\n';
-const GX_GPU_SCANOUT_FIELD_GX16_DIRECT_SHADER_DEFINE = '#define GX_GPU_INTERLACED_FIELD 1\n#define GX_GPU_SCANOUT_GX16 1\n#define GX_GPU_SCANOUT_GX16_DIRECT 1\n';
 
 const gxGpuSolidVertices = new Float32Array(GX_GPU_SOLID_FLOAT_CAPACITY);
 const gxGpuSolidVertexWords = new Uint32Array(gxGpuSolidVertices.buffer);
@@ -154,7 +164,7 @@ const gxGpuRawVramUpload = new Uint8Array(GX_GPU_RAW_VRAM_UPLOAD_BYTES);
 const gxGpuRawVramReadback = new Uint8Array(GX_GPU_RAW_VRAM_READBACK_BYTES);
 const gxGpuVramSnapshotScratch = new Uint8Array(GX_GPU_VRAM_BYTE_COUNT);
 const gxGpuScanoutVertices = new Float32Array([-1, -1, 3, -1, -1, 3]);
-const gxGpuScanoutPcrtcUniforms = new Uint32Array(44);
+const gxGpuScanoutCircuitUniforms = new Uint32Array(20);
 type GxGpuVramCopyRect = {
 	left: number;
 	top: number;
@@ -264,8 +274,8 @@ type GxGpuState = {
 	texturedProgram: WebGLProgram;
 	fixedTexturedProgram: WebGLProgram;
 	transferProgram: WebGLProgram;
-	scanoutPrograms: [WebGLProgram, WebGLProgram, WebGLProgram];
-	scanoutFieldPrograms: [WebGLProgram, WebGLProgram, WebGLProgram];
+	scanoutPrograms: WebGLProgram[];
+	scanoutFieldPrograms: WebGLProgram[];
 	scanoutWeaveProgram: WebGLProgram;
 	readbackProgram: WebGLProgram;
 	vramTexture: WebGLTexture;
@@ -361,13 +371,11 @@ type GxGpuState = {
 	transferVramUniform: WebGLUniformLocation;
 	transferCheckMaskBitUniform: WebGLUniformLocation;
 	transferSetMaskBitUniform: WebGLUniformLocation;
-	scanoutPositionAttribs: [number, number, number];
-	scanoutVramUniforms: [WebGLUniformLocation, WebGLUniformLocation, WebGLUniformLocation];
-	scanoutPcrtcUniforms: [WebGLUniformLocation, WebGLUniformLocation, WebGLUniformLocation];
-	scanoutFieldPositionAttribs: [number, number, number];
-	scanoutFieldVramUniforms: [WebGLUniformLocation, WebGLUniformLocation, WebGLUniformLocation];
-	scanoutFieldPcrtcUniforms: [WebGLUniformLocation, WebGLUniformLocation, WebGLUniformLocation];
-	scanoutFieldInterlaceUniforms: [WebGLUniformLocation, WebGLUniformLocation, WebGLUniformLocation];
+	scanoutVramUniforms: WebGLUniformLocation[];
+	scanoutCircuitUniforms: WebGLUniformLocation[];
+	scanoutFieldVramUniforms: WebGLUniformLocation[];
+	scanoutFieldCircuitUniforms: WebGLUniformLocation[];
+	scanoutFieldInterlaceUniforms: WebGLUniformLocation[];
 	scanoutWeavePositionAttrib: number;
 	scanoutWeaveVramUniform: WebGLUniformLocation;
 	scanoutWeaveInterlaceUniform: WebGLUniformLocation;
@@ -375,11 +383,12 @@ type GxGpuState = {
 	readbackVramUniform: WebGLUniformLocation;
 	readbackParamsUniform: WebGLUniformLocation;
 	readbackVramYAddressExtensionUniform: WebGLUniformLocation;
-	scanoutPcrtcRevision: number;
-	scanoutFieldPcrtcRevision: number;
-	scanoutFieldValue: number;
-	scanoutPcrtcUniformValid: boolean;
-	scanoutFieldPcrtcUniformValid: boolean;
+	scanoutUniformRevisions: Uint32Array;
+	scanoutUniformCircuits: Int8Array;
+	scanoutUniformFields: Int8Array;
+	scanoutFieldUniformRevisions: Uint32Array;
+	scanoutFieldUniformCircuits: Int8Array;
+	scanoutFieldUniformFields: Int8Array;
 	scanoutFieldsWidth: number;
 	scanoutFieldsHeight: number;
 	scanoutFieldsValid: boolean;
@@ -407,17 +416,31 @@ function bootstrapGxGpuPass(backend: WebGLBackend): void {
 	const texturedProgram = backend.buildProgram(texturedVertexShader, texturedFragmentShader, 'gx_gpu_textured');
 	const fixedTexturedProgram = backend.buildProgram(texturedVertexShader, texturedFragmentShader, 'gx_gpu_fixed_textured', GX_GPU_FIXED_COLOR_PLANE_SHADER_DEFINE);
 	const transferProgram = backend.buildProgram(transferVertexShader, transferFragmentShader, 'gx_gpu_transfer');
-	const scanoutPrograms: [WebGLProgram, WebGLProgram, WebGLProgram] = [
-		backend.buildProgram(scanoutVertexShader, scanoutFragmentShader, 'gx_gpu_scanout'),
-		backend.buildProgram(scanoutVertexShader, scanoutFragmentShader, 'gx_gpu_scanout_gx16', GX_GPU_SCANOUT_GX16_SHADER_DEFINE),
-		backend.buildProgram(scanoutVertexShader, scanoutFragmentShader, 'gx_gpu_scanout_gx16_direct', GX_GPU_SCANOUT_GX16_DIRECT_SHADER_DEFINE),
-	];
-	const scanoutFieldPrograms: [WebGLProgram, WebGLProgram, WebGLProgram] = [
-		backend.buildProgram(scanoutVertexShader, scanoutFragmentShader, 'gx_gpu_scanout_field', GX_GPU_INTERLACED_FIELD_SHADER_DEFINE),
-		backend.buildProgram(scanoutVertexShader, scanoutFragmentShader, 'gx_gpu_scanout_field_gx16', GX_GPU_SCANOUT_FIELD_GX16_SHADER_DEFINE),
-		backend.buildProgram(scanoutVertexShader, scanoutFragmentShader, 'gx_gpu_scanout_field_gx16_direct', GX_GPU_SCANOUT_FIELD_GX16_DIRECT_SHADER_DEFINE),
-	];
-	const scanoutWeaveProgram = backend.buildProgram(scanoutVertexShader, scanoutFragmentShader, 'gx_gpu_scanout_weave', GX_GPU_INTERLACED_WEAVE_SHADER_DEFINE);
+	const scanoutPrograms: WebGLProgram[] = [];
+	const scanoutFieldPrograms: WebGLProgram[] = [];
+	for (let program = 0; program < GX_GPU_SCANOUT_PROGRAM_COUNT; program += 1) {
+		const storageProgram = program % GX_GPU_SCANOUT_PROGRAM_STORAGE_COUNT;
+		const storagePath = storageProgram === GX_GPU_PCRTC_STORAGE_COUNT
+			? GX_GPU_PCRTC_STORAGE_GX16
+			: storageProgram;
+		let defines = `#define GX_GPU_SCANOUT_STORAGE_PATH ${storagePath}\n`;
+		if (storageProgram === GX_GPU_PCRTC_STORAGE_COUNT) defines += '#define GX_GPU_SCANOUT_LINEAR_GX16 1\n';
+		if (program >= GX_GPU_SCANOUT_DOUBLE_ALPHA_PROGRAM_BASE) defines += '#define GX_GPU_SCANOUT_DOUBLE_ALPHA 1\n';
+		scanoutPrograms.push(backend.buildProgram(
+			scanoutVertexShader, scanoutFragmentShader, `gx_gpu_scanout_${program}`, defines));
+		scanoutFieldPrograms.push(backend.buildProgram(
+			scanoutVertexShader,
+			scanoutFragmentShader,
+			`gx_gpu_scanout_field_${program}`,
+			GX_GPU_INTERLACED_FIELD_SHADER_DEFINE + defines,
+		));
+	}
+	const scanoutWeaveProgram = backend.buildProgram(
+		scanoutVertexShader,
+		scanoutFragmentShader,
+		'gx_gpu_scanout_weave',
+		GX_GPU_INTERLACED_WEAVE_SHADER_DEFINE + '#define GX_GPU_SCANOUT_STORAGE_PATH 6\n',
+	);
 	const readbackProgram = backend.buildProgram(scanoutVertexShader, readbackFragmentShader, 'gx_gpu_readback');
 	const vramTexture = gl.createTexture() as WebGLTexture;
 	initializeGxGpuTexture(backend, vramTexture, GX_GPU_SCANOUT_TEXTURE_UNIT);
@@ -472,6 +495,14 @@ function bootstrapGxGpuPass(backend: WebGLBackend): void {
 	const scanoutVertexBuffer = gl.createBuffer() as WebGLBuffer;
 	backend.bindArrayBuffer(scanoutVertexBuffer);
 	gl.bufferData(gl.ARRAY_BUFFER, gxGpuScanoutVertices, gl.STATIC_DRAW);
+	const scanoutUniformCircuits = new Int8Array(GX_GPU_SCANOUT_PROGRAM_COUNT);
+	const scanoutUniformFields = new Int8Array(GX_GPU_SCANOUT_PROGRAM_COUNT);
+	const scanoutFieldUniformCircuits = new Int8Array(GX_GPU_SCANOUT_PROGRAM_COUNT);
+	const scanoutFieldUniformFields = new Int8Array(GX_GPU_SCANOUT_PROGRAM_COUNT);
+	scanoutUniformCircuits.fill(-1);
+	scanoutUniformFields.fill(-1);
+	scanoutFieldUniformCircuits.fill(-1);
+	scanoutFieldUniformFields.fill(-1);
 
 	gxGpuState = {
 		backend,
@@ -579,41 +610,11 @@ function bootstrapGxGpuPass(backend: WebGLBackend): void {
 		transferVramUniform: gl.getUniformLocation(transferProgram, 'u_vram') as WebGLUniformLocation,
 		transferCheckMaskBitUniform: gl.getUniformLocation(transferProgram, 'u_checkMaskBit') as WebGLUniformLocation,
 		transferSetMaskBitUniform: gl.getUniformLocation(transferProgram, 'u_setMaskBit') as WebGLUniformLocation,
-		scanoutPositionAttribs: [
-			gl.getAttribLocation(scanoutPrograms[0], 'a_position'),
-			gl.getAttribLocation(scanoutPrograms[1], 'a_position'),
-			gl.getAttribLocation(scanoutPrograms[2], 'a_position'),
-		],
-		scanoutVramUniforms: [
-			gl.getUniformLocation(scanoutPrograms[0], 'u_vram') as WebGLUniformLocation,
-			gl.getUniformLocation(scanoutPrograms[1], 'u_vram') as WebGLUniformLocation,
-			gl.getUniformLocation(scanoutPrograms[2], 'u_vram') as WebGLUniformLocation,
-		],
-		scanoutPcrtcUniforms: [
-			gl.getUniformLocation(scanoutPrograms[0], 'u_pcrtc[0]') as WebGLUniformLocation,
-			gl.getUniformLocation(scanoutPrograms[1], 'u_pcrtc[0]') as WebGLUniformLocation,
-			gl.getUniformLocation(scanoutPrograms[2], 'u_pcrtc[0]') as WebGLUniformLocation,
-		],
-		scanoutFieldPositionAttribs: [
-			gl.getAttribLocation(scanoutFieldPrograms[0], 'a_position'),
-			gl.getAttribLocation(scanoutFieldPrograms[1], 'a_position'),
-			gl.getAttribLocation(scanoutFieldPrograms[2], 'a_position'),
-		],
-		scanoutFieldVramUniforms: [
-			gl.getUniformLocation(scanoutFieldPrograms[0], 'u_vram') as WebGLUniformLocation,
-			gl.getUniformLocation(scanoutFieldPrograms[1], 'u_vram') as WebGLUniformLocation,
-			gl.getUniformLocation(scanoutFieldPrograms[2], 'u_vram') as WebGLUniformLocation,
-		],
-		scanoutFieldPcrtcUniforms: [
-			gl.getUniformLocation(scanoutFieldPrograms[0], 'u_pcrtc[0]') as WebGLUniformLocation,
-			gl.getUniformLocation(scanoutFieldPrograms[1], 'u_pcrtc[0]') as WebGLUniformLocation,
-			gl.getUniformLocation(scanoutFieldPrograms[2], 'u_pcrtc[0]') as WebGLUniformLocation,
-		],
-		scanoutFieldInterlaceUniforms: [
-			gl.getUniformLocation(scanoutFieldPrograms[0], 'u_interlace') as WebGLUniformLocation,
-			gl.getUniformLocation(scanoutFieldPrograms[1], 'u_interlace') as WebGLUniformLocation,
-			gl.getUniformLocation(scanoutFieldPrograms[2], 'u_interlace') as WebGLUniformLocation,
-		],
+		scanoutVramUniforms: scanoutPrograms.map(program => gl.getUniformLocation(program, 'u_vram') as WebGLUniformLocation),
+		scanoutCircuitUniforms: scanoutPrograms.map(program => gl.getUniformLocation(program, 'u_circuit[0]') as WebGLUniformLocation),
+		scanoutFieldVramUniforms: scanoutFieldPrograms.map(program => gl.getUniformLocation(program, 'u_vram') as WebGLUniformLocation),
+		scanoutFieldCircuitUniforms: scanoutFieldPrograms.map(program => gl.getUniformLocation(program, 'u_circuit[0]') as WebGLUniformLocation),
+		scanoutFieldInterlaceUniforms: scanoutFieldPrograms.map(program => gl.getUniformLocation(program, 'u_interlace') as WebGLUniformLocation),
 		scanoutWeavePositionAttrib: gl.getAttribLocation(scanoutWeaveProgram, 'a_position'),
 		scanoutWeaveVramUniform: gl.getUniformLocation(scanoutWeaveProgram, 'u_vram') as WebGLUniformLocation,
 		scanoutWeaveInterlaceUniform: gl.getUniformLocation(scanoutWeaveProgram, 'u_interlace') as WebGLUniformLocation,
@@ -621,11 +622,12 @@ function bootstrapGxGpuPass(backend: WebGLBackend): void {
 		readbackVramUniform: gl.getUniformLocation(readbackProgram, 'u_vram') as WebGLUniformLocation,
 		readbackParamsUniform: gl.getUniformLocation(readbackProgram, 'u_readback') as WebGLUniformLocation,
 		readbackVramYAddressExtensionUniform: gl.getUniformLocation(readbackProgram, 'u_vramYAddressExtensionWord') as WebGLUniformLocation,
-		scanoutPcrtcRevision: 0,
-		scanoutFieldPcrtcRevision: 0,
-		scanoutFieldValue: 0,
-		scanoutPcrtcUniformValid: false,
-		scanoutFieldPcrtcUniformValid: false,
+		scanoutUniformRevisions: new Uint32Array(GX_GPU_SCANOUT_PROGRAM_COUNT),
+		scanoutUniformCircuits,
+		scanoutUniformFields,
+		scanoutFieldUniformRevisions: new Uint32Array(GX_GPU_SCANOUT_PROGRAM_COUNT),
+		scanoutFieldUniformCircuits,
+		scanoutFieldUniformFields,
 		scanoutFieldsWidth: 0,
 		scanoutFieldsHeight: 0,
 		scanoutFieldsValid: false,
@@ -2570,87 +2572,157 @@ function flushTexturedCommands(commandBuffer: GxGpuCommandBufferView, vertexFloa
 	return 0;
 }
 
-function writeGxGpuScanoutPcrtcUniforms(scanout: GxGpuPcrtcScanout): void {
-	gxGpuScanoutPcrtcUniforms[0] = scanout.circuits[0].enabled;
-	gxGpuScanoutPcrtcUniforms[1] = scanout.circuit2SampleRequired;
-	gxGpuScanoutPcrtcUniforms[2] = scanout.blendAlphaFromRegister;
-	gxGpuScanoutPcrtcUniforms[3] = scanout.outputAlphaFromCircuit2;
-	gxGpuScanoutPcrtcUniforms[4] = scanout.outputHeight;
-	gxGpuScanoutPcrtcUniforms[5] = scanout.backgroundColor & 0xff;
-	gxGpuScanoutPcrtcUniforms[6] = scanout.backgroundColor >>> 8 & 0xff;
-	gxGpuScanoutPcrtcUniforms[7] = scanout.backgroundColor >>> 16 & 0xff;
-	gxGpuScanoutPcrtcUniforms[8] = scanout.blendAlpha;
-	gxGpuScanoutPcrtcUniforms[9] = scanout.rgbUnderlayFromCircuit2;
-	gxGpuScanoutPcrtcUniforms[10] = 0;
-	gxGpuScanoutPcrtcUniforms[11] = 0;
-	for (let circuit = 0; circuit < 2; circuit += 1) {
-		const offset = 12 + circuit * 16;
-		const scanoutCircuit = scanout.circuits[circuit]!;
-		gxGpuScanoutPcrtcUniforms[offset] = scanoutCircuit.framebufferBaseWord;
-		gxGpuScanoutPcrtcUniforms[offset + 1] = scanoutCircuit.framebufferWidth;
-		gxGpuScanoutPcrtcUniforms[offset + 2] = scanoutCircuit.framebufferStoragePath;
-		gxGpuScanoutPcrtcUniforms[offset + 3] = scanoutCircuit.framebufferX;
-		gxGpuScanoutPcrtcUniforms[offset + 4] = scanoutCircuit.framebufferY;
-		gxGpuScanoutPcrtcUniforms[offset + 5] = scanoutCircuit.displayX;
-		gxGpuScanoutPcrtcUniforms[offset + 6] = scanoutCircuit.displayY;
-		gxGpuScanoutPcrtcUniforms[offset + 7] = scanout.interlaced
-			? scanoutCircuit.interlacedSourceDivisionMultiplierY
-			: scanoutCircuit.sourceDivisionMultiplierY;
-		gxGpuScanoutPcrtcUniforms[offset + 8] = scanoutCircuit.displayRight;
-		gxGpuScanoutPcrtcUniforms[offset + 9] = scanoutCircuit.displayBottom;
-		gxGpuScanoutPcrtcUniforms[offset + 10] = scanoutCircuit.sourcePhaseX;
-		gxGpuScanoutPcrtcUniforms[offset + 11] = scanoutCircuit.fieldSourcePhase;
-		gxGpuScanoutPcrtcUniforms[offset + 12] = scanoutCircuit.sourceStepX;
-		gxGpuScanoutPcrtcUniforms[offset + 13] = scanoutCircuit.fieldSourceStride;
-		gxGpuScanoutPcrtcUniforms[offset + 14] = scanoutCircuit.sourceDivisionMultiplierX;
-		gxGpuScanoutPcrtcUniforms[offset + 15] = 0;
+function writeGxGpuScanoutCircuitUniforms(scanout: GxGpuPcrtcScanout, circuit: GxGpuPcrtcCircuit): void {
+	gxGpuScanoutCircuitUniforms[0] = circuit.framebufferBaseWord;
+	gxGpuScanoutCircuitUniforms[1] = circuit.framebufferWidth;
+	gxGpuScanoutCircuitUniforms[2] = circuit.framebufferPagesPerRow;
+	gxGpuScanoutCircuitUniforms[3] = circuit.framebufferX;
+	gxGpuScanoutCircuitUniforms[4] = circuit.framebufferY;
+	gxGpuScanoutCircuitUniforms[5] = circuit.displayX;
+	gxGpuScanoutCircuitUniforms[6] = circuit.displayY;
+	gxGpuScanoutCircuitUniforms[7] = circuit.fieldSourceDivisionMultiplierY;
+	gxGpuScanoutCircuitUniforms[8] = circuit.sourcePhaseX;
+	gxGpuScanoutCircuitUniforms[9] = circuit.fieldSourcePhase;
+	gxGpuScanoutCircuitUniforms[10] = circuit.sourceStepX;
+	gxGpuScanoutCircuitUniforms[11] = circuit.fieldSourceStride;
+	gxGpuScanoutCircuitUniforms[12] = circuit.sourceDivisionMultiplierX;
+	gxGpuScanoutCircuitUniforms[13] = scanout.outputHeight;
+	gxGpuScanoutCircuitUniforms[14] = circuit.fieldDisplayY;
+	gxGpuScanoutCircuitUniforms[15] = circuit.linearFieldSourceY;
+	gxGpuScanoutCircuitUniforms[16] = circuit.linearFieldSourceRowStep;
+	gxGpuScanoutCircuitUniforms[17] = 0;
+	gxGpuScanoutCircuitUniforms[18] = 0;
+	gxGpuScanoutCircuitUniforms[19] = 0;
+}
+
+function drawGxGpuScanoutCircuit(
+	state: RenderPassStateRegistry['gx_gpu'],
+	circuitIndex: number,
+	drawPath: number,
+	fieldProgram: boolean,
+	fieldHeight: number,
+	fieldOffset: number,
+): void {
+	if (drawPath === GX_GPU_PCRTC_SCANOUT_DRAW_NONE) return;
+	const backend = gxGpuState.backend;
+	const gl = gxGpuState.gl;
+	const scanout = state.pcrtcScanout;
+	const circuit = scanout.circuits[circuitIndex]!;
+	let programIndex = circuit.framebufferStoragePath;
+	if (programIndex === GX_GPU_PCRTC_STORAGE_GX16 && circuit.linearSampling) {
+		programIndex = GX_GPU_PCRTC_STORAGE_COUNT;
 	}
+	if (drawPath === GX_GPU_PCRTC_SCANOUT_DRAW_BLEND_SOURCE_RGB) {
+		programIndex += GX_GPU_SCANOUT_DOUBLE_ALPHA_PROGRAM_BASE;
+	}
+	const programs = fieldProgram ? gxGpuState.scanoutFieldPrograms : gxGpuState.scanoutPrograms;
+	const vramUniforms = fieldProgram ? gxGpuState.scanoutFieldVramUniforms : gxGpuState.scanoutVramUniforms;
+	const circuitUniforms = fieldProgram ? gxGpuState.scanoutFieldCircuitUniforms : gxGpuState.scanoutCircuitUniforms;
+	const uniformRevisions = fieldProgram ? gxGpuState.scanoutFieldUniformRevisions : gxGpuState.scanoutUniformRevisions;
+	const uniformCircuits = fieldProgram ? gxGpuState.scanoutFieldUniformCircuits : gxGpuState.scanoutUniformCircuits;
+	const uniformFields = fieldProgram ? gxGpuState.scanoutFieldUniformFields : gxGpuState.scanoutUniformFields;
+	backend.useProgram(programs[programIndex]!);
+	gl.uniform1i(vramUniforms[programIndex]!, GX_GPU_SCANOUT_TEXTURE_UNIT);
+	if (uniformCircuits[programIndex] !== circuitIndex
+		|| uniformFields[programIndex] !== scanout.field
+		|| uniformRevisions[programIndex] !== scanout.revision) {
+		writeGxGpuScanoutCircuitUniforms(scanout, circuit);
+		gl.uniform4uiv(circuitUniforms[programIndex]!, gxGpuScanoutCircuitUniforms);
+		uniformCircuits[programIndex] = circuitIndex;
+		uniformFields[programIndex] = scanout.field;
+		uniformRevisions[programIndex] = scanout.revision;
+	}
+	if (fieldProgram) {
+		gl.uniform4ui(
+			gxGpuState.scanoutFieldInterlaceUniforms[programIndex]!,
+			fieldHeight,
+			scanout.outputHeight,
+			scanout.field,
+			fieldOffset,
+		);
+		const fieldLineStart = circuit.fieldDisplayY >> 1;
+		gl.scissor(
+			circuit.displayX,
+			fieldOffset + fieldHeight - fieldLineStart - circuit.fieldDisplayLineCount,
+			circuit.displayWidth,
+			circuit.fieldDisplayLineCount,
+		);
+	} else {
+		gl.scissor(
+			circuit.displayX,
+			scanout.outputHeight - circuit.displayBottom,
+			circuit.displayWidth,
+			circuit.displayHeight,
+		);
+	}
+	if (drawPath === GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGB) {
+		backend.setBlendEnabled(false);
+		gl.colorMask(true, true, true, false);
+	} else if (drawPath === GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGBA) {
+		backend.setBlendEnabled(false);
+		gl.colorMask(true, true, true, true);
+	} else if (drawPath === GX_GPU_PCRTC_SCANOUT_DRAW_RAW_ALPHA) {
+		backend.setBlendEnabled(false);
+		gl.colorMask(false, false, false, true);
+	} else if (drawPath === GX_GPU_PCRTC_SCANOUT_DRAW_BLEND_SOURCE_RGB) {
+		backend.setBlendEnabled(true);
+		backend.setBlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+		gl.colorMask(true, true, true, false);
+	} else if (drawPath === GX_GPU_PCRTC_SCANOUT_DRAW_BLEND_CONSTANT_RGB) {
+		backend.setBlendEnabled(true);
+		gl.blendColor(0, 0, 0, scanout.blendAlpha / 255);
+		backend.setBlendFunc(gl.CONSTANT_ALPHA, gl.ONE_MINUS_CONSTANT_ALPHA);
+		gl.colorMask(true, true, true, false);
+	}
+	gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
 
 function scanoutProgressiveGxGpuVram(fbo: WebGLFramebuffer, state: RenderPassStateRegistry['gx_gpu']): void {
 	const backend = gxGpuState.backend;
 	const gl = gxGpuState.gl;
-	const compositionPath = state.pcrtcScanout.compositionPath;
-	const positionAttrib = gxGpuState.scanoutPositionAttribs[compositionPath];
+	const scanout = state.pcrtcScanout;
 	gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
 	backend.setViewportRect(0, 0, state.width, state.height);
-	gl.disable(gl.SCISSOR_TEST);
 	backend.setDepthTestEnabled(false);
 	backend.setDepthMask(false);
 	backend.setCullEnabled(false);
-	backend.setBlendEnabled(false);
-	backend.useProgram(gxGpuState.scanoutPrograms[compositionPath]);
-	gl.uniform1i(gxGpuState.scanoutVramUniforms[compositionPath], GX_GPU_SCANOUT_TEXTURE_UNIT);
-	if (!gxGpuState.scanoutPcrtcUniformValid || gxGpuState.scanoutPcrtcRevision !== state.pcrtcScanout.revision) {
-		writeGxGpuScanoutPcrtcUniforms(state.pcrtcScanout);
-		gl.uniform4uiv(gxGpuState.scanoutPcrtcUniforms[compositionPath], gxGpuScanoutPcrtcUniforms);
-		gxGpuState.scanoutPcrtcRevision = state.pcrtcScanout.revision;
-		gxGpuState.scanoutPcrtcUniformValid = true;
-	}
 	backend.setActiveTexture(GX_GPU_SCANOUT_TEXTURE_UNIT);
 	backend.bindTexture2D(gxGpuState.vramTexture);
 	backend.bindVertexArray(null);
 	backend.bindArrayBuffer(gxGpuState.scanoutVertexBuffer);
-	gl.enableVertexAttribArray(positionAttrib);
-	gl.vertexAttribPointer(positionAttrib, 2, gl.FLOAT, false, GX_GPU_SCANOUT_VERTEX_FLOATS * 4, 0);
-	gl.drawArrays(gl.TRIANGLES, 0, 3);
+	gl.enableVertexAttribArray(0);
+	gl.vertexAttribPointer(0, 2, gl.FLOAT, false, GX_GPU_SCANOUT_VERTEX_FLOATS * 4, 0);
+	gl.disable(gl.SCISSOR_TEST);
+	gl.colorMask(true, true, true, true);
+	if (scanout.backgroundRequired !== 0) {
+		gl.clearColor(
+			(scanout.backgroundColor & 0xff) / 255,
+			(scanout.backgroundColor >>> 8 & 0xff) / 255,
+			(scanout.backgroundColor >>> 16 & 0xff) / 255,
+			0,
+		);
+		gl.clear(gl.COLOR_BUFFER_BIT);
+	}
+	gl.enable(gl.SCISSOR_TEST);
+	drawGxGpuScanoutCircuit(state, 1, scanout.circuit2OutputPath, false, 0, 0);
+	drawGxGpuScanoutCircuit(state, 0, scanout.circuit1ColorPath, false, 0, 0);
+	drawGxGpuScanoutCircuit(state, 0, scanout.circuit1AlphaPath, false, 0, 0);
+	gl.disable(gl.SCISSOR_TEST);
+	backend.setBlendEnabled(false);
+	gl.colorMask(true, true, true, true);
 }
 
 function scanoutInterlacedGxGpuVram(fbo: WebGLFramebuffer, state: RenderPassStateRegistry['gx_gpu']): void {
 	const backend = gxGpuState.backend;
 	const gl = gxGpuState.gl;
+	const scanout = state.pcrtcScanout;
 	const width = state.width;
 	const height = state.height;
 	const evenFieldHeight = (height + 1) >> 1;
 	const oddFieldHeight = height >> 1;
-	const field = state.pcrtcScanout.field;
-	const compositionPath = state.pcrtcScanout.compositionPath;
-	const positionAttrib = gxGpuState.scanoutFieldPositionAttribs[compositionPath];
-	const fieldHeight = field === 0 ? evenFieldHeight : oddFieldHeight;
-	const fieldOffset = field === 0 ? 0 : evenFieldHeight;
+	const fieldHeight = scanout.field === 0 ? evenFieldHeight : oddFieldHeight;
+	const fieldOffset = scanout.field === 0 ? 0 : evenFieldHeight;
 	const sizeChanged = gxGpuState.scanoutFieldsWidth !== width || gxGpuState.scanoutFieldsHeight !== height;
-	const pcrtcChanged = gxGpuState.scanoutFieldPcrtcRevision !== state.pcrtcScanout.revision
-		|| gxGpuState.scanoutFieldValue !== field;
 	const invalid = !gxGpuState.scanoutFieldsValid
 		|| sizeChanged
 		|| gxGpuState.scanoutFieldsVramReplacementSerial !== state.vramReplacementSerial;
@@ -2661,47 +2733,54 @@ function scanoutInterlacedGxGpuVram(fbo: WebGLFramebuffer, state: RenderPassStat
 	}
 
 	gl.bindFramebuffer(gl.FRAMEBUFFER, gxGpuState.scanoutFieldsFramebuffer);
-	gl.disable(gl.SCISSOR_TEST);
+	backend.setViewportRect(0, fieldOffset, width, fieldHeight);
 	backend.setDepthTestEnabled(false);
 	backend.setDepthMask(false);
 	backend.setCullEnabled(false);
 	backend.setBlendEnabled(false);
-	backend.useProgram(gxGpuState.scanoutFieldPrograms[compositionPath]);
-	gl.uniform1i(gxGpuState.scanoutFieldVramUniforms[compositionPath], GX_GPU_SCANOUT_TEXTURE_UNIT);
-	if (!gxGpuState.scanoutFieldPcrtcUniformValid || pcrtcChanged) {
-		writeGxGpuScanoutPcrtcUniforms(state.pcrtcScanout);
-		gl.uniform4uiv(gxGpuState.scanoutFieldPcrtcUniforms[compositionPath], gxGpuScanoutPcrtcUniforms);
-		gxGpuState.scanoutFieldPcrtcRevision = state.pcrtcScanout.revision;
-		gxGpuState.scanoutFieldValue = field;
-		gxGpuState.scanoutFieldPcrtcUniformValid = true;
-	}
 	backend.setActiveTexture(GX_GPU_SCANOUT_TEXTURE_UNIT);
 	backend.bindTexture2D(gxGpuState.vramTexture);
 	backend.bindVertexArray(null);
 	backend.bindArrayBuffer(gxGpuState.scanoutVertexBuffer);
-	gl.enableVertexAttribArray(positionAttrib);
-	gl.vertexAttribPointer(positionAttrib, 2, gl.FLOAT, false, GX_GPU_SCANOUT_VERTEX_FLOATS * 4, 0);
+	gl.enableVertexAttribArray(0);
+	gl.vertexAttribPointer(0, 2, gl.FLOAT, false, GX_GPU_SCANOUT_VERTEX_FLOATS * 4, 0);
+	gl.colorMask(true, true, true, true);
+	gl.disable(gl.SCISSOR_TEST);
 	if (invalid) {
 		gl.clearColor(
-			(state.pcrtcScanout.backgroundColor & 0xff) / 255,
-			(state.pcrtcScanout.backgroundColor >>> 8 & 0xff) / 255,
-			(state.pcrtcScanout.backgroundColor >>> 16 & 0xff) / 255,
-			(state.pcrtcScanout.backgroundColor >>> 24) / 255,
+			(scanout.backgroundColor & 0xff) / 255,
+			(scanout.backgroundColor >>> 8 & 0xff) / 255,
+			(scanout.backgroundColor >>> 16 & 0xff) / 255,
+			0,
 		);
 		gl.clear(gl.COLOR_BUFFER_BIT);
 	}
-	backend.setViewportRect(0, fieldOffset, width, fieldHeight);
-	gl.uniform4ui(gxGpuState.scanoutFieldInterlaceUniforms[compositionPath], fieldHeight, height, field, fieldOffset);
-	gl.drawArrays(gl.TRIANGLES, 0, 3);
-	if (invalid) {
-		gxGpuState.scanoutFieldsWidth = width;
-		gxGpuState.scanoutFieldsHeight = height;
-		gxGpuState.scanoutFieldsValid = true;
-		gxGpuState.scanoutFieldsVramReplacementSerial = state.vramReplacementSerial;
+	if (scanout.backgroundRequired !== 0 && !invalid) {
+		gl.enable(gl.SCISSOR_TEST);
+		gl.scissor(0, fieldOffset, width, fieldHeight);
+		gl.clearColor(
+			(scanout.backgroundColor & 0xff) / 255,
+			(scanout.backgroundColor >>> 8 & 0xff) / 255,
+			(scanout.backgroundColor >>> 16 & 0xff) / 255,
+			0,
+		);
+		gl.clear(gl.COLOR_BUFFER_BIT);
+	} else {
+		gl.enable(gl.SCISSOR_TEST);
 	}
+	drawGxGpuScanoutCircuit(state, 1, scanout.circuit2OutputPath, true, fieldHeight, fieldOffset);
+	drawGxGpuScanoutCircuit(state, 0, scanout.circuit1ColorPath, true, fieldHeight, fieldOffset);
+	drawGxGpuScanoutCircuit(state, 0, scanout.circuit1AlphaPath, true, fieldHeight, fieldOffset);
+	gxGpuState.scanoutFieldsWidth = width;
+	gxGpuState.scanoutFieldsHeight = height;
+	gxGpuState.scanoutFieldsValid = true;
+	gxGpuState.scanoutFieldsVramReplacementSerial = state.vramReplacementSerial;
 
 	gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
 	backend.setViewportRect(0, 0, width, height);
+	gl.disable(gl.SCISSOR_TEST);
+	backend.setBlendEnabled(false);
+	gl.colorMask(true, true, true, true);
 	backend.useProgram(gxGpuState.scanoutWeaveProgram);
 	gl.uniform1i(gxGpuState.scanoutWeaveVramUniform, GX_GPU_SCANOUT_FIELDS_TEXTURE_UNIT);
 	if (sizeChanged) {

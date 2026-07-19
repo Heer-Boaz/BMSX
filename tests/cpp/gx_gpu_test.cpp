@@ -3026,7 +3026,7 @@ void testSoftwarePcrtcComposesSourceAlphaTerminalCellsOverRetainedCircuitTwoPixe
 		0x00ff0000u,
 		0x8000ff00u,
 		0x800000ffu,
-	}, "GX-GPU PCRTC zero constant alpha keeps underlay RGB and publishes zero alpha");
+	}, "GX-GPU PCRTC zero constant alpha keeps underlay RGB and publishes circuit 1 alpha");
 
 	pcrtcWords[bmsx::GX_GPU_PCRTC_PMODE_LOW] |= bmsx::GX_GPU_PCRTC_PMODE_AMOD;
 	pcrtcTiming.update(pcrtcWords);

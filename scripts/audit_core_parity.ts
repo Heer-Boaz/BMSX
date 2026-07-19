@@ -1139,6 +1139,7 @@ function auditStrictRpuTableParity(manifest: Manifest): string[] {
 
 function canonicalRpuShaderText(file: string): string {
 	return fs.readFileSync(path.join(repoRoot, file), 'utf8')
+		.replace(/layout\s*\(\s*location\s*=\s*\d+\s*\)\s*/g, '')
 		.replace(/layout\(std140\)\s+uniform\s+FrameUniforms\s*\{[\s\S]*?\};/g, 'uniform vec2 u_logical_size;')
 		.replace(/\bu_logicalSize\b/g, 'u_logical_size')
 		.replace(/\bflat\s+(in|out)\s+uint\b/g, '$1 float')

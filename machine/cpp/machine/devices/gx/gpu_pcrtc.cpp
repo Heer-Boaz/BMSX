@@ -63,6 +63,25 @@ constexpr u32 framebufferStoragePath(u32 psm, u32 circuit) {
 	}
 }
 
+void updateFieldTraversal(GxGpuPcrtcCircuit& circuit, bool interlaced, u32 field, u32 outputRowStep) {
+	circuit.fieldDisplayY = interlaced
+		? circuit.displayY + ((circuit.displayY ^ field) & 1u)
+		: circuit.displayY;
+	circuit.fieldDisplayLineCount = circuit.fieldDisplayY < circuit.displayBottom
+		? ((circuit.displayBottom - circuit.fieldDisplayY - 1u) / outputRowStep) + 1u
+		: 0u;
+	const u32 relativeY = circuit.fieldDisplayY - circuit.displayY;
+	circuit.fieldSourceNumeratorY = circuit.sourcePhaseY + relativeY * circuit.sourceStepY;
+	circuit.fieldSourceNumeratorStepY = outputRowStep * circuit.sourceStepY;
+	circuit.fieldSourceDivisionMultiplierY = interlaced
+		? circuit.interlacedSourceDivisionMultiplierY
+		: circuit.sourceDivisionMultiplierY;
+	circuit.linearFieldSourceY = circuit.framebufferY + (interlaced
+		? (relativeY >> 1u) * circuit.fieldSourceStride + circuit.fieldSourcePhase
+		: relativeY);
+	circuit.linearFieldSourceRowStep = interlaced ? circuit.fieldSourceStride : 1u;
+}
+
 constexpr bool isBeamTimingWord(u32 index) {
 	return index == GX_GPU_PCRTC_SMODE1_LOW
 		|| index == GX_GPU_PCRTC_SMODE1_HIGH
@@ -139,8 +158,8 @@ void GxGpuPcrtcScanout::update(
 		circuit.framebufferBaseWord = (dispFbLow & 0x1ffu) << 12u;
 		circuit.framebufferWidth = ((dispFbLow >> 9u) & 0x3fu) * 64u;
 		circuit.framebufferPagesPerRow = (dispFbLow >> 9u) & 0x3fu;
-		circuit.framebufferPsm = (dispFbLow >> 15u) & 0x1fu;
-		circuit.framebufferStoragePath = framebufferStoragePath(circuit.framebufferPsm, index);
+		const u32 psm = (dispFbLow >> 15u) & 0x1fu;
+		circuit.framebufferStoragePath = framebufferStoragePath(psm, index);
 		circuit.framebufferX = dispFbHigh & 0x7ffu;
 		circuit.framebufferY = (dispFbHigh >> 11u) & 0x7ffu;
 		circuit.displaySignalX = displayLow & 0xfffu;
@@ -203,18 +222,13 @@ void GxGpuPcrtcScanout::update(
 	}
 	backgroundColor = words[GX_GPU_PCRTC_BGCOLOR_LOW] & 0x00ffffffu;
 	blendAlpha = (pmode >> GX_GPU_PCRTC_PMODE_ALP_SHIFT) & 0xffu;
-	blendAlphaFromRegister = (pmode >> GX_GPU_PCRTC_PMODE_MMOD_SHIFT) & 1u;
-	outputAlphaFromCircuit2 = (pmode >> GX_GPU_PCRTC_PMODE_AMOD_SHIFT) & 1u;
-	outputCircuit2AlphaMask = (0u - outputAlphaFromCircuit2) & 0xff000000u;
-	outputCircuit1AlphaMask = outputCircuit2AlphaMask ^ 0xff000000u;
-	rgbUnderlayFromCircuit2 = circuit2.enabled
-		* (((pmode >> GX_GPU_PCRTC_PMODE_SLBG_SHIFT) & 1u) ^ 1u);
-	circuit2SampleRequired = circuit2.enabled * (rgbUnderlayFromCircuit2 | outputAlphaFromCircuit2);
 	interlaced = (smode2 & GX_GPU_PCRTC_SMODE2_INT) != 0u;
 	frameMode = interlaced && (smode2 & GX_GPU_PCRTC_SMODE2_FFMD) != 0u;
+	outputRowStep = interlaced ? 2u : 1u;
 	for (GxGpuPcrtcCircuit& circuit : circuits) {
 		circuit.fieldSourceStride = interlaced && !frameMode ? 2u : 1u;
 		circuit.fieldSourcePhase = interlaced && !frameMode ? (circuit.displaySignalY ^ field) & 1u : 0u;
+		updateFieldTraversal(circuit, interlaced, field, outputRowStep);
 	}
 
 	outputWidth = circuit1.enabled ? circuit1.displayRight : circuit2.enabled ? circuit2.displayRight : 0u;
@@ -227,19 +241,59 @@ void GxGpuPcrtcScanout::update(
 		&& circuit1.displayY == 0u
 		&& circuit1.displayRight >= outputWidth
 		&& circuit1.displayBottom >= outputHeight;
-	circuit2CoversOutput = circuit2.displayX == 0u
+	const bool circuit2CoversOutput = circuit2.displayX == 0u
 		&& circuit2.displayY == 0u
 		&& circuit2.displayRight >= outputWidth
 		&& circuit2.displayBottom >= outputHeight;
+	const u32 mmod = (pmode >> GX_GPU_PCRTC_PMODE_MMOD_SHIFT) & 1u;
+	const u32 amod = (pmode >> GX_GPU_PCRTC_PMODE_AMOD_SHIFT) & 1u;
+	const u32 slbg = (pmode >> GX_GPU_PCRTC_PMODE_SLBG_SHIFT) & 1u;
+	circuit2OutputPath = GX_GPU_PCRTC_SCANOUT_DRAW_NONE;
+	if (circuit2.enabled != 0u) {
+		if (slbg == 0u) {
+			circuit2OutputPath = (amod == 0u
+				? GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGB
+				: GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGBA);
+		} else if (amod != 0u) {
+			circuit2OutputPath = GX_GPU_PCRTC_SCANOUT_DRAW_RAW_ALPHA;
+		}
+	}
+	circuit1ColorPath = GX_GPU_PCRTC_SCANOUT_DRAW_NONE;
+	circuit1AlphaPath = GX_GPU_PCRTC_SCANOUT_DRAW_NONE;
+	if (circuit1.enabled != 0u) {
+		if (mmod == 0u) {
+			circuit1ColorPath = GX_GPU_PCRTC_SCANOUT_DRAW_BLEND_SOURCE_RGB;
+		} else if (blendAlpha == 255u) {
+			circuit1ColorPath = (amod == 0u
+				? GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGBA
+				: GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGB);
+		} else if (blendAlpha != 0u) {
+			circuit1ColorPath = GX_GPU_PCRTC_SCANOUT_DRAW_BLEND_CONSTANT_RGB;
+		}
+		if (amod == 0u
+			&& circuit1ColorPath != GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGBA) {
+			circuit1AlphaPath = GX_GPU_PCRTC_SCANOUT_DRAW_RAW_ALPHA;
+		}
+	}
+	backgroundRequired = 1u;
+	if (circuit1CoversOutput
+		&& circuit1ColorPath == GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGBA) {
+		circuit2OutputPath = GX_GPU_PCRTC_SCANOUT_DRAW_NONE;
+		backgroundRequired = 0u;
+	} else if (circuit2CoversOutput
+		&& circuit2OutputPath == GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGBA) {
+		backgroundRequired = 0u;
+	}
+	const bool circuit1SampleRequired = circuit1ColorPath != GX_GPU_PCRTC_SCANOUT_DRAW_NONE
+		|| circuit1AlphaPath != GX_GPU_PCRTC_SCANOUT_DRAW_NONE;
+	const bool circuit2SampleRequired = circuit2OutputPath != GX_GPU_PCRTC_SCANOUT_DRAW_NONE;
 	if (circuit1.enabled
 		&& circuit1.linearSampling
 		&& circuit1.framebufferStoragePath == GX_GPU_PCRTC_STORAGE_GX16
-		&& blendAlphaFromRegister
-		&& blendAlpha == 255u
-		&& !outputAlphaFromCircuit2
+		&& circuit1ColorPath == GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGBA
 		&& circuit1CoversOutput) {
 		compositionPath = GX_GPU_PCRTC_COMPOSE_GX16_DIRECT_CIRCUIT1;
-	} else if ((!circuit1.enabled || (circuit1.linearSampling && circuit1.framebufferStoragePath == GX_GPU_PCRTC_STORAGE_GX16))
+	} else if ((!circuit1SampleRequired || (circuit1.linearSampling && circuit1.framebufferStoragePath == GX_GPU_PCRTC_STORAGE_GX16))
 		&& (!circuit2SampleRequired || (circuit2.linearSampling && circuit2.framebufferStoragePath == GX_GPU_PCRTC_STORAGE_GX16))) {
 		compositionPath = GX_GPU_PCRTC_COMPOSE_GX16;
 	} else {
@@ -254,6 +308,7 @@ void GxGpuPcrtcScanout::setField(u32 value) {
 		circuit.fieldSourcePhase = interlaced && !frameMode
 			? (circuit.displaySignalY ^ value) & 1u
 			: 0u;
+		updateFieldTraversal(circuit, interlaced, field, outputRowStep);
 	}
 }
 
