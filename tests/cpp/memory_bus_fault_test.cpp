@@ -44,9 +44,19 @@ void testFloatingMappedTransactionsKeepTheirBusWidth() {
 	requireBusFault(memory, bmsx::BUS_FAULT_ACCESS_WRITE | bmsx::BUS_FAULT_ACCESS_F64);
 }
 
+void testMappedWordBurstPreflightStopsWhenBurstCrossesPhysicalIoRegisterfileBoundary() {
+	std::array<bmsx::u8, 1> emptyRom{{0}};
+	bmsx::Memory memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, { emptyRom.data(), 0u } });
+	const uint32_t firstRamWordAfterIo = bmsx::IO_BASE + bmsx::IO_SLOT_COUNT * bmsx::IO_WORD_SIZE;
+	const uint32_t lastIoWord = firstRamWordAfterIo - bmsx::IO_WORD_SIZE;
+
+	require(memory.firstBlockedMappedWordWrite(lastIoWord, 2u) == bmsx::NO_BLOCKED_MAPPED_WRITE, "mapped burst preflight stops when crossing the physical IO registerfile boundary");
+}
+
 } // namespace
 
 int main() {
 	testFloatingMappedTransactionsKeepTheirBusWidth();
+	testMappedWordBurstPreflightStopsWhenBurstCrossesPhysicalIoRegisterfileBoundary();
 	return 0;
 }

@@ -120,6 +120,22 @@ bool Memory::mappedWriteReady(uint32_t addr) {
 	return binding.ready == nullptr || binding.ready(binding.context, addr);
 }
 
+u32 Memory::firstBlockedMappedWordWrite(uint32_t addr, uint32_t wordCount) {
+	if (wordCount == 0u) return NO_BLOCKED_MAPPED_WRITE;
+	const u64 lastAddress = static_cast<u64>(addr) + static_cast<u64>(wordCount - 1u) * IO_WORD_SIZE;
+	const u64 ioEnd = static_cast<u64>(IO_BASE) + IO_SLOT_COUNT * IO_WORD_SIZE;
+	if (lastAddress < IO_BASE || addr >= ioEnd) return NO_BLOCKED_MAPPED_WRITE;
+	u32 writeAddress = addr < IO_BASE ? IO_BASE : addr;
+	while (writeAddress <= lastAddress && writeAddress < ioEnd) {
+		IoWriteBinding& binding = m_ioWriteHandlers[static_cast<size_t>((writeAddress - IO_BASE) / IO_WORD_SIZE)];
+		if (binding.ready != nullptr && !binding.ready(binding.context, writeAddress)) {
+			return writeAddress;
+		}
+		writeAddress += IO_WORD_SIZE;
+	}
+	return NO_BLOCKED_MAPPED_WRITE;
+}
+
 void Memory::setProgramRom(const u8* data, size_t size, size_t textByteLength) {
 	m_programRom = { data, size };
 	m_programTextByteLength = textByteLength;

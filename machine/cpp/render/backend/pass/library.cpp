@@ -91,6 +91,7 @@ void writeGxGpuPipelineState(const RenderPassDef::RenderGraphPassContext& ctx, R
 	gxGpuState.displayModeWord = ctx.view->gxGpuDisplayModeWord;
 	gxGpuState.displayStartWord = ctx.view->gxGpuDisplayStartWord;
 	gxGpuState.vramYAddressExtensionWord = ctx.view->gxGpuVramYAddressExtensionWord;
+	gxGpuState.pcrtcScanout = ctx.view->gxGpuPcrtcScanout;
 	gxGpuState.vramSnapshotBytes = ctx.view->gxGpuVramSnapshotBytes;
 	gxGpuState.vramSnapshotSerial = ctx.view->gxGpuVramSnapshotSerial;
 }

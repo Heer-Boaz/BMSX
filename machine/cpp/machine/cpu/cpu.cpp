@@ -2215,6 +2215,7 @@ void CPU::blockMappedWrite(CallFrame& frame, uint32_t address) {
 	frame.pc = m_currentInstructionPc;
 	m_memoryWriteBlocked = true;
 	m_memoryWriteBlockedAddress = address;
+	m_yieldRequested = false;
 }
 
 void CPU::resumeMemoryWrite(uint32_t address) {

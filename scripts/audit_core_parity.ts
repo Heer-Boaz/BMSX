@@ -35,6 +35,7 @@ type StrictRuntimeNoHeapFunctionEntry = { file: string; functions: string[]; rea
 type StrictLuaNoHeapFunctionEntry = { file: string; functions: string[]; top_level_loops?: boolean; reason: string };
 type StrictRpuTableParityEntry = { ts: string; cpp: string; tables: string[]; reason: string };
 type StrictShaderParityEntry = { webgl: string; gles2: string; reason: string };
+type StrictShaderDatapathParityEntry = { webgl: string; gles2: string; functions: string[]; reason: string };
 type StrictFileLayoutEntry = { present?: string[]; absent?: string[]; reason: string };
 type StrictFilePairParityEntry = { ts: string; cpp: string[]; reason: string };
 type StrictSaveStateSchemaParityEntry = { ts: string; cpp: string; symbol: string; reason: string };
@@ -52,6 +53,7 @@ type Manifest = {
 	strict_lua_no_heap_functions?: StrictLuaNoHeapFunctionEntry[];
 	strict_rpu_table_parity?: StrictRpuTableParityEntry[];
 	strict_shader_parity?: StrictShaderParityEntry[];
+	strict_shader_datapath_parity?: StrictShaderDatapathParityEntry[];
 	strict_file_layout?: StrictFileLayoutEntry[];
 	strict_file_pair_parity?: StrictFilePairParityEntry[];
 	strict_save_state_schema_parity?: StrictSaveStateSchemaParityEntry[];
@@ -1171,6 +1173,54 @@ function auditStrictShaderParity(manifest: Manifest): string[] {
 	return errors;
 }
 
+function shaderInterfaceNames(source: string): string[] {
+	const names: string[] = [];
+	for (const line of source.split('\n')) {
+		const match = line.trim().match(/^(?:flat\s+)?(?:uniform|in|out|attribute|varying)\s+\w+\s+(\w+)/);
+		if (match !== null && match[1] !== 'outputColor') names.push(match[1]);
+	}
+	return names.sort();
+}
+
+function shaderMacroNames(source: string): string[] {
+	const names = new Set<string>();
+	for (const match of source.matchAll(/^#(?:if|ifdef|ifndef|elif).*?\b(GX_GPU_[A-Z0-9_]+)\b/gm)) names.add(match[1]);
+	return [...names].sort();
+}
+
+function shaderDefinesFunction(source: string, name: string): boolean {
+	return new RegExp(`\\b\\w+\\s+${name}\\s*\\([^)]*\\)\\s*\\{`).test(source);
+}
+
+function auditStrictShaderDatapathParity(manifest: Manifest): string[] {
+	const errors: string[] = [];
+	const forbiddenHotPathOperation = /\b(?:ceil|floor|round|rounded)\s*\(/;
+	const reversedVramRow = /\b1023\s*-/;
+	for (const entry of manifest.strict_shader_datapath_parity ?? []) {
+		if (path.basename(entry.webgl) !== path.basename(entry.gles2)) {
+			errors.push(`${entry.webgl}: shader basename differs from ${entry.gles2}`);
+			continue;
+		}
+		const webglSource = fs.readFileSync(path.join(repoRoot, entry.webgl), 'utf8');
+		const gles2Source = fs.readFileSync(path.join(repoRoot, entry.gles2), 'utf8');
+		if (shaderInterfaceNames(webglSource).join('\n') !== shaderInterfaceNames(gles2Source).join('\n')) {
+			errors.push(`${entry.webgl}: shader interface differs from ${entry.gles2}`);
+		}
+		if (shaderMacroNames(webglSource).join('\n') !== shaderMacroNames(gles2Source).join('\n')) {
+			errors.push(`${entry.webgl}: shader permutation macros differ from ${entry.gles2}`);
+		}
+		for (const functionName of entry.functions) {
+			if (!shaderDefinesFunction(webglSource, functionName)) errors.push(`${entry.webgl}: shader datapath function ${functionName} missing`);
+			if (!shaderDefinesFunction(gles2Source, functionName)) errors.push(`${entry.gles2}: shader datapath function ${functionName} missing`);
+		}
+		for (const [file, source] of [[entry.webgl, webglSource], [entry.gles2, gles2Source]] as const) {
+			if (forbiddenHotPathOperation.test(source)) errors.push(`${file}: shader datapath contains native rounding`);
+			if (reversedVramRow.test(source)) errors.push(`${file}: shader datapath reverses a VRAM row per invocation`);
+		}
+	}
+	return errors;
+}
+
 function auditStrictFileLayout(manifest: Manifest): string[] {
 	const errors: string[] = [];
 	for (const entry of manifest.strict_file_layout ?? []) {
@@ -1295,6 +1345,7 @@ function main(): void {
 	const strictLuaNoHeapFunctionErrors = auditStrictLuaNoHeapFunctions(manifest);
 	const strictRpuTableParityErrors = auditStrictRpuTableParity(manifest);
 	const strictShaderParityErrors = auditStrictShaderParity(manifest);
+	const strictShaderDatapathParityErrors = auditStrictShaderDatapathParity(manifest);
 	const strictFileLayoutErrors = auditStrictFileLayout(manifest);
 	const strictFilePairParityErrors = auditStrictFilePairParity(manifest);
 	const strictSaveStateSchemaParityErrors = auditStrictSaveStateSchemaParity(manifest);
@@ -1392,6 +1443,11 @@ function main(): void {
 		hasErrors = true;
 		console.error(`\nStrict shader parity errors (${strictShaderParityErrors.length}):`);
 		for (const item of strictShaderParityErrors) console.error(`  ${item}`);
+	}
+	if (strictShaderDatapathParityErrors.length > 0) {
+		hasErrors = true;
+		console.error(`\nStrict shader datapath parity errors (${strictShaderDatapathParityErrors.length}):`);
+		for (const item of strictShaderDatapathParityErrors) console.error(`  ${item}`);
 	}
 	if (strictFileLayoutErrors.length > 0) {
 		hasErrors = true;

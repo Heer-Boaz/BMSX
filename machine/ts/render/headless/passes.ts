@@ -41,6 +41,7 @@ function registerFramePasses(registry: RenderPassLibrary): void {
 }
 
 let headlessCompositePixels = new Uint8Array(0);
+let headlessCompositeWords = new Uint32Array(0);
 let headlessFrameWidth = 0;
 let headlessFrameHeight = 0;
 const headlessPresentedFrameBuffer: HeadlessPresentedFrameBuffer = {
@@ -52,7 +53,9 @@ const headlessPresentedFrameBuffer: HeadlessPresentedFrameBuffer = {
 function resizeHeadlessFrame(width: number, height: number): void {
 	const byteLength = width * height * 4;
 	if (headlessCompositePixels.byteLength !== byteLength) {
-		headlessCompositePixels = new Uint8Array(byteLength);
+		const buffer = new ArrayBuffer(byteLength);
+		headlessCompositePixels = new Uint8Array(buffer);
+		headlessCompositeWords = new Uint32Array(buffer);
 	}
 	headlessFrameWidth = width;
 	headlessFrameHeight = height;
@@ -68,6 +71,7 @@ function registerHeadlessGxGpuPass(registry: RenderPassLibrary): void {
 		displayModeWord: registry.view.gxGpuDisplayModeWord,
 		displayStartWord: registry.view.gxGpuDisplayStartWord,
 		vramYAddressExtensionWord: registry.view.gxGpuVramYAddressExtensionWord,
+		pcrtcScanout: registry.view.gxGpuPcrtcScanout,
 		vramSnapshotBytes: registry.view.gxGpuVramSnapshotBytes,
 		vramSnapshotSerial: registry.view.gxGpuVramSnapshotSerial,
 	};
@@ -88,12 +92,13 @@ function registerHeadlessGxGpuPass(registry: RenderPassLibrary): void {
 				gxGpuState.displayModeWord = view.gxGpuDisplayModeWord;
 				gxGpuState.displayStartWord = view.gxGpuDisplayStartWord;
 				gxGpuState.vramYAddressExtensionWord = view.gxGpuVramYAddressExtensionWord;
+				gxGpuState.pcrtcScanout = view.gxGpuPcrtcScanout;
 				gxGpuState.vramSnapshotBytes = view.gxGpuVramSnapshotBytes;
 				gxGpuState.vramSnapshotSerial = view.gxGpuVramSnapshotSerial;
 			},
 		},
 		exec: (_backend, _fbo, state) => {
-			renderGxGpuSoftwareFrame(state, headlessCompositePixels);
+			renderGxGpuSoftwareFrame(state, headlessCompositeWords);
 		},
 	});
 }
@@ -125,9 +130,6 @@ function registerHeadlessDeviceQuantizePass(registry: RenderPassLibrary): void {
 }
 
 function presentHeadlessFrame(view: GameView): void {
-	for (let offset = 3; offset < headlessCompositePixels.length; offset += 4) {
-		headlessCompositePixels[offset] = 255;
-	}
 	const host = view.host as unknown as HeadlessPresentHost;
 	headlessPresentedFrameBuffer.pixels = headlessCompositePixels;
 	headlessPresentedFrameBuffer.width = headlessFrameWidth;

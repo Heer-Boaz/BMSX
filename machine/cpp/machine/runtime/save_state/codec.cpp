@@ -543,7 +543,7 @@ BinValue encodeGxGpuCommandBufferState(const GxGpuCommandBufferState& state) {
 	object["commandDrawingAreaBottomRightWord"] = encodeVector(state.commandDrawingAreaBottomRightWord, encodeScalar<i64, u32>);
 	object["commandDrawingOffsetWord"] = encodeVector(state.commandDrawingOffsetWord, encodeScalar<i64, u32>);
 	object["commandMaskBitModeWord"] = encodeVector(state.commandMaskBitModeWord, encodeScalar<i64, u32>);
-	object["commandInterlacedRenderWord"] = encodeVector(state.commandInterlacedRenderWord, encodeScalar<i64, u8>);
+	object["commandSkippedLineParity"] = encodeVector(state.commandSkippedLineParity, encodeScalar<i64, u8>);
 	object["words"] = encodeVector(state.words, encodeScalar<i64, u32>);
 	object["readbackPhase"] = static_cast<i64>(state.readbackPhase);
 	object["readbackFenceCommandCount"] = static_cast<i64>(state.readbackFenceCommandCount);
@@ -575,7 +575,7 @@ GxGpuCommandBufferState decodeGxGpuCommandBufferState(const BinValue& value, con
 	state.commandDrawingAreaBottomRightWord = decodeU32VectorWithLength(requireField(object, "commandDrawingAreaBottomRightWord", label), "machine.gxGpu.commandBuffer.commandDrawingAreaBottomRightWord", state.commandCount);
 	state.commandDrawingOffsetWord = decodeU32VectorWithLength(requireField(object, "commandDrawingOffsetWord", label), "machine.gxGpu.commandBuffer.commandDrawingOffsetWord", state.commandCount);
 	state.commandMaskBitModeWord = decodeU32VectorWithLength(requireField(object, "commandMaskBitModeWord", label), "machine.gxGpu.commandBuffer.commandMaskBitModeWord", state.commandCount);
-	state.commandInterlacedRenderWord = decodeU8VectorWithLength(requireField(object, "commandInterlacedRenderWord", label), "machine.gxGpu.commandBuffer.commandInterlacedRenderWord", state.commandCount);
+	state.commandSkippedLineParity = decodeU8VectorWithLength(requireField(object, "commandSkippedLineParity", label), "machine.gxGpu.commandBuffer.commandSkippedLineParity", state.commandCount);
 	state.words = decodeU32VectorWithLength(requireField(object, "words", label), "machine.gxGpu.commandBuffer.words", state.wordCount);
 	state.readbackPhase = static_cast<u8>(requireBoundedU32(requireField(object, "readbackPhase", label), "machine.gxGpu.commandBuffer.readbackPhase", 0u, GX_GPU_READBACK_READY));
 	if (state.readbackPhase == GX_GPU_READBACK_SUBMITTED) {
@@ -586,7 +586,7 @@ GxGpuCommandBufferState decodeGxGpuCommandBufferState(const BinValue& value, con
 	state.readbackY = requireBoundedU32(requireField(object, "readbackY", label), "machine.gxGpu.commandBuffer.readbackY", 0u, GX_GPU_VRAM_Y_ADDRESS_PERIOD - 1u);
 	state.readbackVramYAddressExtensionWord = static_cast<u8>(requireBoundedU32(requireField(object, "readbackVramYAddressExtensionWord", label), "machine.gxGpu.commandBuffer.readbackVramYAddressExtensionWord", 0u, 1u));
 	state.readbackWidth = requireBoundedU32(requireField(object, "readbackWidth", label), "machine.gxGpu.commandBuffer.readbackWidth", 0u, GX_GPU_VRAM_WIDTH);
-	state.readbackHeight = requireBoundedU32(requireField(object, "readbackHeight", label), "machine.gxGpu.commandBuffer.readbackHeight", 0u, GX_GPU_VRAM_HEIGHT);
+	state.readbackHeight = requireBoundedU32(requireField(object, "readbackHeight", label), "machine.gxGpu.commandBuffer.readbackHeight", 0u, GX_GPU_TRANSFER_MAX_HEIGHT);
 	const size_t readbackPixelCount = static_cast<size_t>(state.readbackWidth) * static_cast<size_t>(state.readbackHeight);
 	state.readbackPixelCursor = requireBoundedU32(requireField(object, "readbackPixelCursor", label), "machine.gxGpu.commandBuffer.readbackPixelCursor", 0u, static_cast<u32>(readbackPixelCount));
 	state.readbackPixelBytes = requireBinaryWithLength(requireField(object, "readbackPixelBytes", label), "machine.gxGpu.commandBuffer.readbackPixelBytes", state.readbackPhase == GX_GPU_READBACK_READY ? readbackPixelCount * 2u : 0u);
@@ -619,6 +619,8 @@ BinValue encodeGxGpuRegisterContextState(const GxGpuRegisterContextState& state)
 	object["presentVramYAddressExtensionWord"] = static_cast<i64>(state.presentVramYAddressExtensionWord);
 	object["presentHorizontalDisplayRangeWord"] = static_cast<i64>(state.presentHorizontalDisplayRangeWord);
 	object["presentVerticalDisplayRangeWord"] = static_cast<i64>(state.presentVerticalDisplayRangeWord);
+	object["pcrtcRegisterWords"] = encodeFixedArray(state.pcrtcRegisterWords, encodeScalar<i64, u32>);
+	object["pcrtcPresentWords"] = encodeFixedArray(state.pcrtcPresentWords, encodeScalar<i64, u32>);
 	object["vramPresentationPending"] = state.vramPresentationPending;
 	return BinValue(std::move(object));
 }
@@ -650,7 +652,24 @@ GxGpuRegisterContextState decodeGxGpuRegisterContextState(const BinValue& value,
 	state.presentVramYAddressExtensionWord = requireBoundedU32(requireField(object, "presentVramYAddressExtensionWord", label), "machine.gxGpu.userContext.presentVramYAddressExtensionWord", 0u, 1u);
 	state.presentHorizontalDisplayRangeWord = requireU32(requireField(object, "presentHorizontalDisplayRangeWord", label), "machine.gxGpu.userContext.presentHorizontalDisplayRangeWord");
 	state.presentVerticalDisplayRangeWord = requireU32(requireField(object, "presentVerticalDisplayRangeWord", label), "machine.gxGpu.userContext.presentVerticalDisplayRangeWord");
+	state.pcrtcRegisterWords = decodeU32Array<GX_GPU_PCRTC_WORD_COUNT>(requireField(object, "pcrtcRegisterWords", label), "machine.gxGpu.userContext.pcrtcRegisterWords");
+	state.pcrtcPresentWords = decodeU32Array<GX_GPU_PCRTC_WORD_COUNT>(requireField(object, "pcrtcPresentWords", label), "machine.gxGpu.userContext.pcrtcPresentWords");
 	state.vramPresentationPending = requireBool(requireField(object, "vramPresentationPending", label), "machine.gxGpu.userContext.vramPresentationPending");
+	return state;
+}
+
+BinValue encodeGxGpuPcrtcState(const GxGpuPcrtcState& state) {
+	BinObject object;
+	object["registerWords"] = encodeFixedArray(state.registerWords, encodeScalar<i64, u32>);
+	object["presentWords"] = encodeFixedArray(state.presentWords, encodeScalar<i64, u32>);
+	return BinValue(std::move(object));
+}
+
+GxGpuPcrtcState decodeGxGpuPcrtcState(const BinValue& value, const char* label) {
+	const BinObject& object = requireObject(value, label);
+	GxGpuPcrtcState state;
+	state.registerWords = decodeU32Array<GX_GPU_PCRTC_WORD_COUNT>(requireField(object, "registerWords", label), "machine.gxGpu.pcrtc.registerWords");
+	state.presentWords = decodeU32Array<GX_GPU_PCRTC_WORD_COUNT>(requireField(object, "presentWords", label), "machine.gxGpu.pcrtc.presentWords");
 	return state;
 }
 
@@ -705,6 +724,7 @@ BinValue encodeGxGpuState(const GxGpuState& state) {
 	object["presentVramYAddressExtensionWord"] = static_cast<i64>(state.presentVramYAddressExtensionWord);
 	object["presentHorizontalDisplayRangeWord"] = static_cast<i64>(state.presentHorizontalDisplayRangeWord);
 	object["presentVerticalDisplayRangeWord"] = static_cast<i64>(state.presentVerticalDisplayRangeWord);
+	object["pcrtc"] = encodeGxGpuPcrtcState(state.pcrtc);
 	object["vramPresentationPending"] = state.vramPresentationPending;
 	object["supervisorQuiesceRequested"] = state.supervisorQuiesceRequested;
 	object["supervisorIngressStopped"] = state.supervisorIngressStopped;
@@ -767,6 +787,7 @@ GxGpuState decodeGxGpuState(const BinValue& value, const char* label) {
 	state.presentVramYAddressExtensionWord = requireBoundedU32(requireField(object, "presentVramYAddressExtensionWord", label), "machine.gxGpu.presentVramYAddressExtensionWord", 0u, 1u);
 	state.presentHorizontalDisplayRangeWord = requireU32(requireField(object, "presentHorizontalDisplayRangeWord", label), "machine.gxGpu.presentHorizontalDisplayRangeWord");
 	state.presentVerticalDisplayRangeWord = requireU32(requireField(object, "presentVerticalDisplayRangeWord", label), "machine.gxGpu.presentVerticalDisplayRangeWord");
+	state.pcrtc = decodeGxGpuPcrtcState(requireField(object, "pcrtc", label), "machine.gxGpu.pcrtc");
 	state.vramPresentationPending = requireBool(requireField(object, "vramPresentationPending", label), "machine.gxGpu.vramPresentationPending");
 	state.supervisorQuiesceRequested = requireBool(requireField(object, "supervisorQuiesceRequested", label), "machine.gxGpu.supervisorQuiesceRequested");
 	state.supervisorIngressStopped = requireBool(requireField(object, "supervisorIngressStopped", label), "machine.gxGpu.supervisorIngressStopped");
@@ -793,12 +814,18 @@ BinValue encodeGxGteState(const GxGteState& state) {
 	BinObject object;
 	object["dataRegisterWords"] = encodeFixedArray(state.dataRegisterWords, encodeScalar<i64, u32>);
 	object["controlRegisterWords"] = encodeFixedArray(state.controlRegisterWords, encodeScalar<i64, u32>);
+	object["plusRegisterWords"] = encodeFixedArray(state.plusRegisterWords, encodeScalar<i64, u32>);
 	object["mac0"] = static_cast<i64>(state.mac0);
 	object["mac1"] = static_cast<i64>(state.mac1);
 	object["mac2"] = static_cast<i64>(state.mac2);
 	object["mac3"] = static_cast<i64>(state.mac3);
 	object["currentSf"] = static_cast<i64>(state.currentSf);
 	object["lastCycles"] = static_cast<i64>(state.lastCycles);
+	object["plusPendingCycles"] = static_cast<i64>(state.plusPendingCycles);
+	object["plusInterlockArmed"] = state.plusInterlockArmed;
+	object["plusPendingResultXy"] = static_cast<i64>(state.plusPendingResultXy);
+	object["plusPendingResultZ"] = static_cast<i64>(state.plusPendingResultZ);
+	object["plusPendingFlag"] = static_cast<i64>(state.plusPendingFlag);
 	return BinValue(std::move(object));
 }
 
@@ -807,12 +834,18 @@ GxGteState decodeGxGteState(const BinValue& value, const char* label) {
 	GxGteState state;
 	state.dataRegisterWords = decodeU32Array<GX_GTE_DATA_REGISTER_COUNT>(requireField(object, "dataRegisterWords", label), "machine.gxGte.dataRegisterWords");
 	state.controlRegisterWords = decodeU32Array<GX_GTE_CONTROL_REGISTER_COUNT>(requireField(object, "controlRegisterWords", label), "machine.gxGte.controlRegisterWords");
+	state.plusRegisterWords = decodeU32Array<GX_GTE_PLUS_REGISTER_COUNT>(requireField(object, "plusRegisterWords", label), "machine.gxGte.plusRegisterWords");
 	state.mac0 = requireI64(requireField(object, "mac0", label), "machine.gxGte.mac0");
 	state.mac1 = requireI64(requireField(object, "mac1", label), "machine.gxGte.mac1");
 	state.mac2 = requireI64(requireField(object, "mac2", label), "machine.gxGte.mac2");
 	state.mac3 = requireI64(requireField(object, "mac3", label), "machine.gxGte.mac3");
 	state.currentSf = requireU32(requireField(object, "currentSf", label), "machine.gxGte.currentSf");
 	state.lastCycles = requireU32(requireField(object, "lastCycles", label), "machine.gxGte.lastCycles");
+	state.plusPendingCycles = requireU32(requireField(object, "plusPendingCycles", label), "machine.gxGte.plusPendingCycles");
+	state.plusInterlockArmed = requireBool(requireField(object, "plusInterlockArmed", label), "machine.gxGte.plusInterlockArmed");
+	state.plusPendingResultXy = requireU32(requireField(object, "plusPendingResultXy", label), "machine.gxGte.plusPendingResultXy");
+	state.plusPendingResultZ = requireU32(requireField(object, "plusPendingResultZ", label), "machine.gxGte.plusPendingResultZ");
+	state.plusPendingFlag = requireU32(requireField(object, "plusPendingFlag", label), "machine.gxGte.plusPendingFlag");
 	return state;
 }
 

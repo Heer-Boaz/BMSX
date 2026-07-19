@@ -1,6 +1,7 @@
 import { type color_arr, type TextureSource, type vec2 } from '../../rompack/format';
 import type { GxGpu } from '../../machine/devices/gx/gpu';
 import type { GxGpuCommandBufferView, GxGpuReadbackPortView } from '../../machine/devices/gx/gpu_command_buffer';
+import type { GxGpuPcrtcScanout } from '../../machine/devices/gx/gpu_pcrtc';
 import type { Host2DKind, Host2DRef, Host2DSubmission } from '../shared/submissions';
 import type { GameView } from '../gameview';
 import type { DeviceQuantizeMode } from '../post/device_quantize/mode';
@@ -270,6 +271,7 @@ export type GxGpuPipelineState = {
 	displayModeWord: number;
 	displayStartWord: number;
 	vramYAddressExtensionWord: number;
+	pcrtcScanout: GxGpuPcrtcScanout;
 	vramSnapshotBytes: Uint8Array;
 	vramSnapshotSerial: bigint;
 	targetColorTex?: TextureHandle;
@@ -311,6 +313,7 @@ export interface RenderContext {
 	gxGpuVramYAddressExtensionWord: number;
 	gxGpuHorizontalDisplayRangeWord: number;
 	gxGpuVerticalDisplayRangeWord: number;
+	gxGpuPcrtcScanout: GxGpuPcrtcScanout;
 	gxGpuVramSnapshotBytes: Uint8Array;
 	gxGpuVramSnapshotSerial: bigint;
 }

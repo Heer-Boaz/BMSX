@@ -4,6 +4,7 @@
 #include "machine/common/numeric.h"
 #include "machine/cpu/cpu.h"
 #include "machine/memory/memory.h"
+#include "machine/scheduler/device.h"
 
 #include <bit>
 
@@ -60,8 +61,10 @@ u32 countLeadingBits(u32 word) {
 
 } // namespace
 
-GxGte::GxGte(Memory& memory)
-	: m_memory(memory) {
+GxGte::GxGte(Memory& memory, CPU& cpu, DeviceScheduler& scheduler)
+	: m_memory(memory)
+	, m_cpu(cpu)
+	, m_scheduler(scheduler) {
 	for (u32 index = 0u; index < static_cast<u32>(IO_GX_GTE_DATA_REGISTER_COUNT); index += 1u) {
 		m_memory.mapIoRead(IO_GX_GTE_DATA0 + index * IO_WORD_SIZE, this, &GxGte::readDataRegisterThunk);
 		m_memory.mapIoWrite(IO_GX_GTE_DATA0 + index * IO_WORD_SIZE, this, &GxGte::writeDataRegisterThunk);
@@ -72,11 +75,20 @@ GxGte::GxGte(Memory& memory)
 	}
 	m_memory.mapIoWrite(IO_GX_GTE_COMMAND, this, &GxGte::writeCommandThunk);
 	m_memory.mapIoRead(IO_GX_GTE_CYCLES, this, &GxGte::readCyclesThunk);
+	for (u32 index = 0u; index < static_cast<u32>(IO_GX_GTE_PLUS_WORD_COUNT); index += 1u) {
+		m_memory.mapIoRead(IO_GX_GTE_PLUS_BASE + index * IO_WORD_SIZE, this, &GxGte::readPlusRegisterThunk);
+	}
+	for (u32 index = GX_GTE_PLUS_ADD_XY; index <= GX_GTE_PLUS_SCALAR; index += 1u) {
+		m_memory.mapIoWrite(IO_GX_GTE_PLUS_BASE + index * IO_WORD_SIZE, this, &GxGte::writePlusRegisterThunk);
+	}
+	m_memory.mapIoWrite(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_COMMAND * IO_WORD_SIZE, this, &GxGte::writePlusRegisterThunk);
+	m_memory.mapIoWriteReady(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_COMMAND * IO_WORD_SIZE, &GxGte::plusCommandWriteReadyThunk);
 }
 
 void GxGte::reset() {
 	m_dataRegisterWords.fill(0u);
 	m_controlRegisterWords.fill(0u);
+	m_plusRegisterWords.fill(0u);
 	m_mac0 = 0;
 	m_mac1 = 0;
 	m_mac2 = 0;
@@ -85,33 +97,89 @@ void GxGte::reset() {
 	m_accumPositiveOverflow = false;
 	m_accumNegativeOverflow = false;
 	m_lastCycles = 0u;
+	m_plusCompletionCycle = 0;
+	m_plusInterlockServiceScheduled = false;
+	m_plusPendingResultXy = 0u;
+	m_plusPendingResultZ = 0u;
+	m_plusPendingFlag = 0u;
+	m_scheduler.cancelDeviceService(DEVICE_SERVICE_GTE);
+	m_cpu.resumeMemoryWrite(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_COMMAND * IO_WORD_SIZE);
 	m_memory.writeIoValue(IO_GX_GTE_COMMAND, valueNumber(0.0));
 	m_memory.writeIoValue(IO_GX_GTE_CYCLES, valueNumber(0.0));
+	m_memory.writeIoValue(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_COMMAND * IO_WORD_SIZE, valueNumber(0.0));
+	m_memory.writeIoValue(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_CYCLES * IO_WORD_SIZE, valueNumber(0.0));
 	m_currentSf = 0u;
 }
 
-GxGteState GxGte::captureState() const {
+GxGteState GxGte::captureState() {
+	synchronizePlusCompletion();
 	GxGteState state;
 	state.dataRegisterWords = m_dataRegisterWords;
 	state.controlRegisterWords = m_controlRegisterWords;
+	state.plusRegisterWords = m_plusRegisterWords;
 	state.mac0 = m_mac0;
 	state.mac1 = m_mac1;
 	state.mac2 = m_mac2;
 	state.mac3 = m_mac3;
 	state.currentSf = m_currentSf;
 	state.lastCycles = m_lastCycles;
+	state.plusPendingCycles = m_plusCompletionCycle == 0
+		? 0u
+		: static_cast<u32>(m_plusCompletionCycle - m_scheduler.currentNowCycles());
+	state.plusInterlockArmed = m_plusInterlockServiceScheduled;
+	state.plusPendingResultXy = m_plusPendingResultXy;
+	state.plusPendingResultZ = m_plusPendingResultZ;
+	state.plusPendingFlag = m_plusPendingFlag;
 	return state;
 }
 
 void GxGte::restoreState(const GxGteState& state) {
+	m_scheduler.cancelDeviceService(DEVICE_SERVICE_GTE);
+	m_plusInterlockServiceScheduled = false;
 	m_dataRegisterWords = state.dataRegisterWords;
 	m_controlRegisterWords = state.controlRegisterWords;
+	m_plusRegisterWords = state.plusRegisterWords;
 	m_mac0 = state.mac0;
 	m_mac1 = state.mac1;
 	m_mac2 = state.mac2;
 	m_mac3 = state.mac3;
 	m_currentSf = state.currentSf;
 	m_lastCycles = state.lastCycles;
+	m_plusPendingResultXy = state.plusPendingResultXy;
+	m_plusPendingResultZ = state.plusPendingResultZ;
+	m_plusPendingFlag = state.plusPendingFlag;
+	m_plusCompletionCycle = state.plusPendingCycles == 0u
+		? 0
+		: m_scheduler.currentNowCycles() + state.plusPendingCycles;
+	if (state.plusInterlockArmed) {
+		m_scheduler.scheduleDeviceService(DEVICE_SERVICE_GTE, m_plusCompletionCycle);
+		m_plusInterlockServiceScheduled = true;
+	}
+}
+
+void GxGte::onService() {
+	m_plusInterlockServiceScheduled = false;
+	publishPlusCompletion();
+}
+
+void GxGte::synchronizePlusCompletion() {
+	if (m_plusCompletionCycle == 0 || m_scheduler.currentNowCycles() < m_plusCompletionCycle) {
+		return;
+	}
+	if (m_plusInterlockServiceScheduled) {
+		m_scheduler.cancelDeviceService(DEVICE_SERVICE_GTE);
+		m_plusInterlockServiceScheduled = false;
+	}
+	publishPlusCompletion();
+}
+
+void GxGte::publishPlusCompletion() {
+	m_plusRegisterWords[GX_GTE_PLUS_RESULT_XY] = m_plusPendingResultXy;
+	m_plusRegisterWords[GX_GTE_PLUS_RESULT_Z] = m_plusPendingResultZ;
+	m_plusRegisterWords[GX_GTE_PLUS_FLAG] = m_plusPendingFlag;
+	m_plusRegisterWords[GX_GTE_PLUS_CYCLES] &= ~GX_GTE_PLUS_CYCLES_BUSY;
+	m_plusCompletionCycle = 0;
+	m_cpu.resumeMemoryWrite(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_COMMAND * IO_WORD_SIZE);
 }
 
 
@@ -146,6 +214,83 @@ u64 GxGte::readCyclesThunk(void* context, u32 addr, MappedBusSignals) {
 	(void)addr;
 	GxGte& gte = *static_cast<GxGte*>(context);
 	return valueNumber(static_cast<double>(gte.m_lastCycles));
+}
+
+u64 GxGte::readPlusRegisterThunk(void* context, u32 addr, MappedBusSignals) {
+	GxGte& gte = *static_cast<GxGte*>(context);
+	gte.synchronizePlusCompletion();
+	return valueNumber(static_cast<double>(gte.m_plusRegisterWords[(addr - IO_GX_GTE_PLUS_BASE) / IO_WORD_SIZE]));
+}
+
+void GxGte::writePlusRegisterThunk(void* context, u32 addr, u64 value, MappedBusSignals busSignals) {
+	GxGte& gte = *static_cast<GxGte*>(context);
+	gte.synchronizePlusCompletion();
+	const u32 index = (addr - IO_GX_GTE_PLUS_BASE) / IO_WORD_SIZE;
+	const u32 word = toU32(value);
+	if (index == GX_GTE_PLUS_COMMAND) {
+		if ((busSignals & MAPPED_BUS_MASTER_DMA) != 0u || gte.m_plusCompletionCycle != 0) {
+			return;
+		}
+		gte.m_plusRegisterWords[index] = word;
+		gte.startPlusCommand(word);
+		return;
+	}
+	gte.m_plusRegisterWords[index] = word;
+}
+
+bool GxGte::plusCommandWriteReadyThunk(void* context, u32) {
+	GxGte& gte = *static_cast<GxGte*>(context);
+	gte.synchronizePlusCompletion();
+	if (gte.m_plusCompletionCycle == 0) {
+		return true;
+	}
+	if (!gte.m_plusInterlockServiceScheduled) {
+		gte.m_scheduler.scheduleDeviceService(DEVICE_SERVICE_GTE, gte.m_plusCompletionCycle);
+		gte.m_plusInterlockServiceScheduled = true;
+	}
+	return false;
+}
+
+void GxGte::startPlusCommand(u32 commandWord) {
+	u32 commandCycles;
+	if ((commandWord & 0xffu) == GX_GTE_PLUS_FN_VMAD3) {
+		m_plusPendingFlag = 0u;
+		const u32 addXy = m_plusRegisterWords[GX_GTE_PLUS_ADD_XY];
+		const u32 mulXy = m_plusRegisterWords[GX_GTE_PLUS_MUL_XY];
+		const i32 scalar = lowSignedHalfword(m_plusRegisterWords[GX_GTE_PLUS_SCALAR]);
+		const i32 resultX = executePlusVmadLane(lowSignedHalfword(addXy), lowSignedHalfword(mulXy), scalar, GX_GTE_PLUS_FLAG_X_POS, GX_GTE_PLUS_FLAG_X_NEG);
+		const i32 resultY = executePlusVmadLane(highSignedHalfword(addXy), highSignedHalfword(mulXy), scalar, GX_GTE_PLUS_FLAG_Y_POS, GX_GTE_PLUS_FLAG_Y_NEG);
+		const i32 resultZ = executePlusVmadLane(
+			lowSignedHalfword(m_plusRegisterWords[GX_GTE_PLUS_ADD_Z]),
+			lowSignedHalfword(m_plusRegisterWords[GX_GTE_PLUS_MUL_Z]),
+			scalar,
+			GX_GTE_PLUS_FLAG_Z_POS,
+			GX_GTE_PLUS_FLAG_Z_NEG
+		);
+		m_plusPendingResultXy = (static_cast<u32>(resultX) & 0xffffu) | ((static_cast<u32>(resultY) & 0xffffu) << 16u);
+		m_plusPendingResultZ = static_cast<u32>(resultZ) & 0xffffu;
+		commandCycles = GX_GTE_PLUS_CYCLES_VMAD3;
+	} else {
+		m_plusPendingResultXy = m_plusRegisterWords[GX_GTE_PLUS_RESULT_XY];
+		m_plusPendingResultZ = m_plusRegisterWords[GX_GTE_PLUS_RESULT_Z];
+		m_plusPendingFlag = GX_GTE_PLUS_FLAG_ERROR | GX_GTE_PLUS_FLAG_INVALID_COMMAND;
+		commandCycles = GX_GTE_PLUS_CYCLES_INVALID;
+	}
+	m_plusRegisterWords[GX_GTE_PLUS_CYCLES] = GX_GTE_PLUS_CYCLES_BUSY | commandCycles;
+	m_plusCompletionCycle = m_scheduler.currentNowCycles() + commandCycles;
+}
+
+i32 GxGte::executePlusVmadLane(i32 addend, i32 multiplicand, i32 scalar, u32 positiveFlag, u32 negativeFlag) {
+	const i32 shifted = (addend * 4096 + multiplicand * scalar) >> 12u;
+	if (shifted > 0x7fff) {
+		m_plusPendingFlag |= GX_GTE_PLUS_FLAG_ERROR | positiveFlag;
+		return 0x7fff;
+	}
+	if (shifted < -0x8000) {
+		m_plusPendingFlag |= GX_GTE_PLUS_FLAG_ERROR | negativeFlag;
+		return -0x8000;
+	}
+	return shifted;
 }
 
 u32 GxGte::readDataRegister(u32 index) const {

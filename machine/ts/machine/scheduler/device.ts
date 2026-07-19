@@ -10,8 +10,9 @@ export const DEVICE_SERVICE_APU = 3;
 export const DEVICE_SERVICE_GPU = 4;
 export const DEVICE_SERVICE_APU_TRANSFER = 5;
 export const DEVICE_SERVICE_SYSTEM = 6;
+export const DEVICE_SERVICE_GTE = 7;
 
-const DEVICE_SERVICE_KIND_COUNT = DEVICE_SERVICE_SYSTEM + 1;
+const DEVICE_SERVICE_KIND_COUNT = DEVICE_SERVICE_GTE + 1;
 const TIMER_EVENT_KIND_SHIFT = 8;
 
 function nextTimerGeneration(value: number): number {

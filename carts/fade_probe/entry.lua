@@ -1,5 +1,5 @@
 local gx_gpu<const> = require('system/gx_gpu')
-gx_gpu.reset_320x240_pal()
+gx_gpu.reset_320x240()
 require('cartlib/prelude')
 local frame = 0
 local irq_mask_register<const>: *word = 0x08000010

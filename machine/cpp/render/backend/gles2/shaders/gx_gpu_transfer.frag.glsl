@@ -1,58 +1,54 @@
 precision highp float;
+precision highp int;
 
 uniform sampler2D u_source;
 uniform sampler2D u_vram;
-uniform float u_checkMaskBit;
-uniform float u_setMaskBit;
-uniform float u_sourceReadMask;
+uniform int u_checkMaskBit;
+uniform int u_setMaskBit;
 varying vec2 v_sourceOffset;
 
-const vec2 VRAM_SIZE = vec2(1024.0, 512.0);
-
-float rawSourceLogicalWord(vec2 logicalCoord) {
-	vec2 wrapped = mod(logicalCoord, VRAM_SIZE);
-	vec2 storage = vec2(wrapped.x, VRAM_SIZE.y - 1.0 - wrapped.y);
-	vec4 rawPixel = texture2D(u_source, (storage + vec2(0.5)) / VRAM_SIZE);
-	float lowByte = floor(rawPixel.r * 255.0 + 0.5);
-	float highByte = floor(rawPixel.g * 255.0 + 0.5);
-	return lowByte + highByte * 256.0;
+int wrap1024(int value) {
+	int wrapped = value - (value / 1024) * 1024;
+	return wrapped < 0 ? wrapped + 1024 : wrapped;
 }
 
-float rawVramStorageWord(vec2 storageCoord) {
-	vec2 wrapped = mod(storageCoord, VRAM_SIZE);
-	vec4 rawPixel = texture2D(u_vram, (wrapped + vec2(0.5)) / VRAM_SIZE);
-	float lowByte = floor(rawPixel.r * 255.0 + 0.5);
-	float highByte = floor(rawPixel.g * 255.0 + 0.5);
-	return lowByte + highByte * 256.0;
+int rawSourceLogicalWord(ivec2 logicalCoord) {
+	ivec2 wrapped = ivec2(wrap1024(logicalCoord.x), wrap1024(logicalCoord.y));
+	vec4 rawPixel = texture2D(u_source, (vec2(wrapped) + vec2(0.5)) / 1024.0);
+	int lowByte = int(rawPixel.r * 255.0 + 0.5);
+	int highByte = int(rawPixel.g * 255.0 + 0.5);
+	return lowByte + highByte * 256;
 }
 
-vec3 decodeRgb555To5(float word) {
-	return vec3(
-		mod(word, 32.0),
-		mod(floor(word / 32.0), 32.0),
-		mod(floor(word / 1024.0), 32.0)
+int rawVramStorageWord(ivec2 storageCoord) {
+	vec4 rawPixel = texture2D(u_vram, (vec2(storageCoord) + vec2(0.5)) / 1024.0);
+	int lowByte = int(rawPixel.r * 255.0 + 0.5);
+	int highByte = int(rawPixel.g * 255.0 + 0.5);
+	return lowByte + highByte * 256;
+}
+
+ivec3 decodeRgb555To5(int word) {
+	return ivec3(
+		word - (word / 32) * 32,
+		(word / 32) - (word / 1024) * 32,
+		(word / 1024) - (word / 32768) * 32
 	);
 }
 
-float wordMaskBit(float word) {
-	return floor(word / 32768.0);
-}
-
-vec4 encodeRgb555(vec3 color5, float outputMaskBit) {
-	float lowByte = mod(color5.r + color5.g * 32.0, 256.0);
-	float highByte = floor(color5.g / 8.0) + color5.b * 4.0 + outputMaskBit * 128.0;
-	return vec4(lowByte / 255.0, highByte / 255.0, 0.0, 1.0);
+vec4 encodeRgb555(ivec3 color5, int outputMaskBit) {
+	int word = color5.x + color5.y * 32 + color5.z * 1024 + outputMaskBit * 32768;
+	int highByte = word / 256;
+	int lowByte = word - highByte * 256;
+	return vec4(float(lowByte) / 255.0, float(highByte) / 255.0, 0.0, 1.0);
 }
 
 void main() {
-	vec2 destinationLogical = vec2(floor(gl_FragCoord.x), floor(VRAM_SIZE.y - gl_FragCoord.y));
-	float sourceWord = rawSourceLogicalWord(destinationLogical + v_sourceOffset) * u_sourceReadMask;
-	if (u_checkMaskBit > 0.5) {
-		float dstWord = rawVramStorageWord(gl_FragCoord.xy - vec2(0.5));
-		if (wordMaskBit(dstWord) > 0.5) {
-			discard;
-		}
+	ivec2 storageCoord = ivec2(gl_FragCoord.xy);
+	ivec2 destinationLogical = storageCoord;
+	int sourceWord = rawSourceLogicalWord(destinationLogical + ivec2(v_sourceOffset));
+	if (u_checkMaskBit != 0 && rawVramStorageWord(storageCoord) / 32768 != 0) {
+		discard;
 	}
-	float outputMaskBit = u_setMaskBit > 0.5 ? 1.0 : wordMaskBit(sourceWord);
+	int outputMaskBit = u_setMaskBit != 0 ? 1 : sourceWord / 32768;
 	gl_FragColor = encodeRgb555(decodeRgb555To5(sourceWord), outputMaskBit);
 }

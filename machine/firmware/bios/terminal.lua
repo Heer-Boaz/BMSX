@@ -46,7 +46,7 @@ bss terminal_status_visible: word
 bss terminal_input_line: word
 bss terminal_input_column: word
 bss terminal_input_drawn_length: word
-bss terminal_command_words: word[terminal_columns * terminal_rows * 4 + 5]
+bss terminal_command_words: word[terminal_columns * terminal_rows * 6 + 8]
 
 local visible_first_line<const> = function()
 	return *terminal_line_count - terminal_rows - *terminal_view_offset
@@ -366,6 +366,7 @@ function terminal.flush()
 	local last_columns<const>: *word = terminal_dirty_last_columns
 	local command_words<const>: *word = terminal_command_words
 	local command_word_count = 0
+	command_word_count = gx_gpu.encode_mask_bit_mode(command_words, command_word_count, 0)
 	if dirty_rows == all_rows_dirty then
 		command_word_count = gx_gpu.encode_fill_rectangle(command_words, command_word_count, terminal_vram_x, terminal_vram_y, terminal_width, terminal_height, terminal_background_word)
 	elseif *terminal_scroll_rows ~= 0 then
@@ -373,7 +374,6 @@ function terminal.flush()
 		command_word_count = gx_gpu.encode_vram_copy(command_words, command_word_count, terminal_vram_x, terminal_vram_y + scroll_pixels, terminal_vram_x, terminal_vram_y, terminal_width, terminal_height - scroll_pixels)
 		command_word_count = gx_gpu.encode_fill_rectangle(command_words, command_word_count, terminal_vram_x, terminal_vram_y + terminal_height - scroll_pixels, terminal_width, scroll_pixels, terminal_background_word)
 	end
-	command_word_count = gx_gpu.encode_direct16_texture_page(command_words, command_word_count, terminal_glyphs[0x20] & 0xffff, terminal_glyphs[0x20] >> 16)
 	local cursor_row = -1
 	if *terminal_cursor_visible ~= 0 and *terminal_status_visible == 0 and *terminal_cursor_column < terminal_columns then
 		cursor_row = screen_row_for_line(*terminal_cursor_line)
@@ -386,6 +386,46 @@ function terminal.flush()
 			if dirty_rows ~= all_rows_dirty then
 				command_word_count = gx_gpu.encode_rectangle(command_words, command_word_count, first_column * glyph_width, target_y, (last_column - first_column) * glyph_width, glyph_height, terminal_background_word)
 			end
+		end
+	end
+	command_word_count = gx_gpu.encode_mask_bit_mode(command_words, command_word_count, 1)
+	for row = 0, terminal_rows - 1 do
+		if (dirty_rows & (1 << row)) ~= 0 then
+			local first_column<const> = first_columns[row]
+			local last_column<const> = last_columns[row]
+			local target_y<const> = row * glyph_height
+			local row_cells: *word = cells
+			local source = buffer_row_for_screen(row) * terminal_columns
+			if *terminal_status_visible ~= 0 and row == terminal_rows - 1 then
+				row_cells = status
+				source = 0
+			end
+			local background_first_column = -1
+			for column = first_column, last_column - 1 do
+				local cell = row_cells[source + column]
+				if row == cursor_row and column == *terminal_cursor_column then
+					cell = cursor_cell
+				end
+				if cell ~= 0 then
+					if background_first_column < 0 then
+						background_first_column = column
+					end
+				elseif background_first_column >= 0 then
+					command_word_count = gx_gpu.encode_rectangle(command_words, command_word_count, background_first_column * glyph_width, target_y, (column - background_first_column) * glyph_width, glyph_height, terminal_background_word)
+					background_first_column = -1
+				end
+			end
+			if background_first_column >= 0 then
+				command_word_count = gx_gpu.encode_rectangle(command_words, command_word_count, background_first_column * glyph_width, target_y, (last_column - background_first_column) * glyph_width, glyph_height, terminal_background_word)
+			end
+		end
+	end
+	command_word_count = gx_gpu.encode_direct16_texture_page(command_words, command_word_count, terminal_glyphs[0x20] & 0xffff, terminal_glyphs[0x20] >> 16)
+	for row = 0, terminal_rows - 1 do
+		if (dirty_rows & (1 << row)) ~= 0 then
+			local first_column<const> = first_columns[row]
+			local last_column<const> = last_columns[row]
+			local target_y<const> = row * glyph_height
 			local row_cells: *word = cells
 			local source = buffer_row_for_screen(row) * terminal_columns
 			if *terminal_status_visible ~= 0 and row == terminal_rows - 1 then
@@ -414,6 +454,7 @@ function terminal.flush()
 			end
 		end
 	end
+	command_word_count = gx_gpu.encode_mask_bit_mode(command_words, command_word_count, 0)
 	-- The fixed list is not rebuilt until this call returns: DMA has consumed
 	-- every RAM word and the final GP0 IRQ proves the GPU reached the list end.
 	gx_command_list.submit(command_words, command_word_count)

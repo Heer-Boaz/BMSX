@@ -1,83 +1,108 @@
 precision highp float;
+precision highp int;
 
 uniform sampler2D u_vram;
-uniform vec4 u_display;
-uniform vec4 u_interlace;
-uniform float u_vramYAddressExtensionWord;
+uniform ivec4 u_pcrtc[8];
+uniform ivec4 u_interlace;
 
-const vec2 VRAM_SIZE = vec2(1024.0, 512.0);
-
-float rawWordFromPixel(vec4 rawPixel) {
-	float lowByte = floor(rawPixel.r * 255.0 + 0.5);
-	float highByte = floor(rawPixel.g * 255.0 + 0.5);
-	return lowByte + highByte * 256.0;
+int wrapPowerOfTwo(int value, int period) {
+	int wrapped = value - (value / period) * period;
+	return wrapped < 0 ? wrapped + period : wrapped;
 }
 
-float rawWordAtLogical(float x, float y) {
-	float yPeriod = mix(VRAM_SIZE.y, VRAM_SIZE.y * 2.0, step(0.5, u_vramYAddressExtensionWord));
-	float logicalY = mod(y, yPeriod);
-	float installed = 1.0 - step(VRAM_SIZE.y, logicalY);
-	vec2 vramCoord = vec2(mod(x, VRAM_SIZE.x), mod(logicalY, VRAM_SIZE.y));
-	vec2 texcoord = vec2((vramCoord.x + 0.5) / VRAM_SIZE.x, 1.0 - (vramCoord.y + 0.5) / VRAM_SIZE.y);
-	return rawWordFromPixel(texture2D(u_vram, texcoord)) * installed;
+int rawWordAtAddress(int address) {
+	int wrappedAddress = wrapPowerOfTwo(address, 1048576);
+	int logicalX = wrappedAddress - (wrappedAddress / 1024) * 1024;
+	int logicalY = wrappedAddress / 1024;
+	vec2 texcoord = vec2((float(logicalX) + 0.5) / 1024.0, (float(logicalY) + 0.5) / 1024.0);
+	vec4 rawPixel = texture2D(u_vram, texcoord);
+	int lowByte = int(rawPixel.r * 255.0 + 0.5);
+	int highByte = int(rawPixel.g * 255.0 + 0.5);
+	return lowByte + highByte * 256;
 }
 
-vec3 rgb555ToRgb8(float word) {
-	float lowByte = mod(word, 256.0);
-	float highByte = floor(word / 256.0);
-	float r5 = mod(lowByte, 32.0);
-	float g5 = floor(lowByte / 32.0) + mod(highByte, 4.0) * 8.0;
-	float b5 = mod(floor(highByte / 4.0), 32.0);
-	vec3 color5 = vec3(r5, g5, b5);
-	return color5 * 8.0 + floor(color5 / 4.0);
+int rawByteAtAddress(int address) {
+	int wrappedAddress = wrapPowerOfTwo(address, 2097152);
+	int word = rawWordAtAddress(wrappedAddress / 2);
+	return wrappedAddress - (wrappedAddress / 2) * 2 == 0 ? word - (word / 256) * 256 : word / 256;
 }
 
-vec3 rgb888AtSourcePixel(float sourceX, float sourceY) {
-	float wordX = u_display.x + floor(sourceX * 1.5);
-	float word0 = rawWordAtLogical(wordX, sourceY);
-	float word1 = rawWordAtLogical(wordX + 1.0, sourceY);
-	float low0 = mod(word0, 256.0);
-	float high0 = floor(word0 / 256.0);
-	float low1 = mod(word1, 256.0);
-	float high1 = floor(word1 / 256.0);
-	if (mod(sourceX, 2.0) < 0.5) {
-		return vec3(low0, high0, low1);
+ivec4 rgb555Pixel(int word) {
+	ivec3 color5 = ivec3(
+		word - (word / 32) * 32,
+		(word / 32) - (word / 1024) * 32,
+		(word / 1024) - (word / 32768) * 32
+	);
+	ivec3 rgb8 = ivec3(
+		color5.x * 8 + color5.x / 4,
+		color5.y * 8 + color5.y / 4,
+		color5.z * 8 + color5.z / 4
+	);
+	return ivec4(rgb8, word / 32768 != 0 ? 128 : 0);
+}
+
+bool circuitContainsOutput(ivec4 display, ivec4 extent, int outputX, int outputY) {
+	return outputX >= display.y
+		&& outputY >= display.z
+		&& outputX < extent.y
+		&& outputY < extent.z;
+}
+
+ivec4 circuitPixel(ivec4 framebuffer, ivec4 display, ivec4 extent, int outputX, int outputY) {
+	int sourceX = framebuffer.w + (outputX - display.y) / display.w;
+	int sourceY = display.x + (outputY - display.z) / extent.x;
+	int pixelOffset = sourceY * framebuffer.y + sourceX;
+	if (framebuffer.z == 0 || framebuffer.z == 1) {
+		int address = framebuffer.x + pixelOffset * 2;
+		int low = rawWordAtAddress(address);
+		int high = rawWordAtAddress(address + 1);
+		int alpha = framebuffer.z == 0 ? high / 256 : 128;
+		return ivec4(low - (low / 256) * 256, low / 256, high - (high / 256) * 256, alpha);
 	}
-	return vec3(high0, low1, high1);
+	if (framebuffer.z == 18) {
+		int address = framebuffer.x * 2 + pixelOffset * 3;
+		return ivec4(rawByteAtAddress(address), rawByteAtAddress(address + 1), rawByteAtAddress(address + 2), 128);
+	}
+	return rgb555Pixel(rawWordAtAddress(framebuffer.x + pixelOffset));
+}
+
+ivec3 mergedPixel(int outputX, int outputY) {
+	ivec3 under = u_pcrtc[1].yzw;
+	if (u_pcrtc[0].y != 0 && circuitContainsOutput(u_pcrtc[6], u_pcrtc[7], outputX, outputY)) {
+		under = circuitPixel(u_pcrtc[5], u_pcrtc[6], u_pcrtc[7], outputX, outputY).rgb;
+	}
+	if (u_pcrtc[0].x == 0 || !circuitContainsOutput(u_pcrtc[3], u_pcrtc[4], outputX, outputY)) {
+		return under;
+	}
+	ivec4 circuit1 = circuitPixel(u_pcrtc[2], u_pcrtc[3], u_pcrtc[4], outputX, outputY);
+	int alpha = u_pcrtc[0].z != 0 ? u_pcrtc[1].x : (circuit1.a * 2 > 255 ? 255 : circuit1.a * 2);
+	int inverseAlpha = 255 - alpha;
+	return ivec3(
+		(circuit1.r * alpha + under.r * inverseAlpha + 127) / 255,
+		(circuit1.g * alpha + under.g * inverseAlpha + 127) / 255,
+		(circuit1.b * alpha + under.b * inverseAlpha + 127) / 255
+	);
+}
+
+vec4 outputPixel(int outputX, int outputY) {
+	return vec4(vec3(mergedPixel(outputX, outputY)) / 255.0, 1.0);
 }
 
 void main() {
 #if defined(GX_GPU_INTERLACED_WEAVE)
-	float fieldHeight = u_interlace.x;
-	float outputY = floor(u_interlace.y - gl_FragCoord.y);
-	float field = mod(outputY, 2.0);
-	float fieldLine = floor(outputY / 2.0);
-	float storedY = field * fieldHeight + fieldHeight - 1.0 - fieldLine;
-	gl_FragColor = texture2D(u_vram, vec2(gl_FragCoord.x / u_interlace.z, (storedY + 0.5) / u_interlace.y));
+	int outputY = u_interlace.y - 1 - int(gl_FragCoord.y);
+	int field = outputY - (outputY / 2) * 2;
+	int fieldLine = outputY / 2;
+	int storedY = field * u_interlace.x + u_interlace.x - 1 - fieldLine;
+	gl_FragColor = texture2D(u_vram, vec2(gl_FragCoord.x / float(u_interlace.z), (float(storedY) + 0.5) / float(u_interlace.y)));
 #elif defined(GX_GPU_INTERLACED_FIELD)
-	if (u_interlace.w > 0.5) {
-		gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
-		return;
-	}
-	float sourceX = floor(gl_FragCoord.x);
-	float fieldLine = floor(u_interlace.x - (gl_FragCoord.y - u_interlace.z * u_interlace.x));
-	float sourceY = u_display.y + u_interlace.z * (u_interlace.y - 1.0) + fieldLine * u_interlace.y;
-	vec3 rgb8;
-	if (u_display.w > 0.5) {
-		rgb8 = rgb888AtSourcePixel(sourceX, sourceY);
-	} else {
-		rgb8 = rgb555ToRgb8(rawWordAtLogical(u_display.x + sourceX, sourceY));
-	}
-	gl_FragColor = vec4(rgb8 / 255.0, 1.0);
+	int storageY = int(gl_FragCoord.y);
+	int localStorageY = storageY - u_interlace.z * u_interlace.x;
+	int fieldLine = u_interlace.x - 1 - localStorageY;
+	int outputY = u_interlace.z + fieldLine * 2;
+	gl_FragColor = outputPixel(int(gl_FragCoord.x), outputY);
 #else
-	float sourceX = floor(gl_FragCoord.x);
-	float sourceY = u_display.y + floor(u_display.z - gl_FragCoord.y);
-	vec3 rgb8;
-	if (u_display.w > 0.5) {
-		rgb8 = rgb888AtSourcePixel(sourceX, sourceY);
-	} else {
-		rgb8 = rgb555ToRgb8(rawWordAtLogical(u_display.x + sourceX, sourceY));
-	}
-	gl_FragColor = vec4(rgb8 / 255.0, 1.0);
+	int outputY = u_pcrtc[0].w - 1 - int(gl_FragCoord.y);
+	gl_FragColor = outputPixel(int(gl_FragCoord.x), outputY);
 #endif
 }

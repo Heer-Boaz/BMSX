@@ -1,9 +1,4 @@
-import {
-	GX_GPU_INTERLACED_RENDER_ACTIVE_LINE_LSB,
-	GX_GPU_INTERLACED_RENDER_ENABLE,
-} from '../../../machine/devices/gx/gpu_command_buffer';
 import { GX_GPU_VRAM_HEIGHT, GX_GPU_VRAM_WIDTH } from '../../../machine/devices/gx/vram_address';
-import { gxGpuMaskBitCheckBeforeDraw, gxGpuMaskBitSetWhileDrawing } from '../gx_gpu_render_rules';
 
 export const GX_GPU_SOFTWARE_VRAM_WORDS = GX_GPU_VRAM_WIDTH * GX_GPU_VRAM_HEIGHT;
 export const gxGpuSoftwareVram = new Uint16Array(GX_GPU_SOFTWARE_VRAM_WORDS);
@@ -43,12 +38,12 @@ export function gxGpuSoftwareTextureModulationChannel5(texture5: number, vertex8
 	return channel5 < 31 ? channel5 : 31;
 }
 
-export function gxGpuSoftwareWriteMaskedVramWord(index: number, word: number, maskBitModeWord: number): void {
+export function gxGpuSoftwareWriteMaskedVramWord(index: number, word: number, checkMaskBit: boolean, setMaskBit: boolean): void {
 	const dstWord = gxGpuSoftwareVram[index];
-	if (gxGpuMaskBitCheckBeforeDraw(maskBitModeWord) && (dstWord & 0x8000) !== 0) {
+	if (checkMaskBit && (dstWord & 0x8000) !== 0) {
 		return;
 	}
-	const maskBit = gxGpuMaskBitSetWhileDrawing(maskBitModeWord) ? 0x8000 : word & 0x8000;
+	const maskBit = setMaskBit ? 0x8000 : word & 0x8000;
 	gxGpuSoftwareVram[index] = (word & 0x7fff) | maskBit;
 }
 
@@ -101,10 +96,10 @@ function blendChannel5(src: number, dst: number, blendMode: number): number {
 	}
 }
 
-export function gxGpuSoftwareWriteRenderVramPixel5(x: number, y: number, r5: number, g5: number, b5: number, blendEnabled: boolean, blendMode: number, maskBitModeWord: number, outputMaskBit: number): void {
+export function gxGpuSoftwareWriteRenderVramPixel5(x: number, y: number, r5: number, g5: number, b5: number, blendEnabled: boolean, blendMode: number, checkMaskBit: boolean, setMaskBit: boolean, outputMaskBit: number): void {
 	const index = gxGpuSoftwareVramIndex(x, y);
 	const dstWord = gxGpuSoftwareVram[index];
-	if (gxGpuMaskBitCheckBeforeDraw(maskBitModeWord) && (dstWord & 0x8000) !== 0) {
+	if (checkMaskBit && (dstWord & 0x8000) !== 0) {
 		return;
 	}
 	let blendedR5 = r5;
@@ -115,11 +110,11 @@ export function gxGpuSoftwareWriteRenderVramPixel5(x: number, y: number, r5: num
 		blendedG5 = blendChannel5(blendedG5, (dstWord >>> 5) & 0x1f, blendMode);
 		blendedB5 = blendChannel5(blendedB5, (dstWord >>> 10) & 0x1f, blendMode);
 	}
-	const maskBit = gxGpuMaskBitSetWhileDrawing(maskBitModeWord) ? 0x8000 : outputMaskBit & 0x8000;
+	const maskBit = setMaskBit ? 0x8000 : outputMaskBit & 0x8000;
 	gxGpuSoftwareVram[index] = blendedR5 | (blendedG5 << 5) | (blendedB5 << 10) | maskBit;
 }
 
-export function gxGpuSoftwareWriteRenderVramPixel(x: number, y: number, r8: number, g8: number, b8: number, ditherEnabled: boolean, blendEnabled: boolean, blendMode: number, maskBitModeWord: number): void {
+export function gxGpuSoftwareWriteRenderVramPixel(x: number, y: number, r8: number, g8: number, b8: number, ditherEnabled: boolean, blendEnabled: boolean, blendMode: number, checkMaskBit: boolean, setMaskBit: boolean): void {
 	let r = r8;
 	let g = g8;
 	let b = b8;
@@ -129,10 +124,5 @@ export function gxGpuSoftwareWriteRenderVramPixel(x: number, y: number, r8: numb
 		g = ditheredByte(g, offset);
 		b = ditheredByte(b, offset);
 	}
-	gxGpuSoftwareWriteRenderVramPixel5(x, y, r >>> 3, g >>> 3, b >>> 3, blendEnabled, blendMode, maskBitModeWord, 0);
-}
-
-export function gxGpuSoftwareInterlacedSkipsLine(y: number, interlacedRenderWord: number): boolean {
-	return (interlacedRenderWord & GX_GPU_INTERLACED_RENDER_ENABLE) !== 0
-		&& (y & 1) === ((interlacedRenderWord & GX_GPU_INTERLACED_RENDER_ACTIVE_LINE_LSB) >>> 1);
+	gxGpuSoftwareWriteRenderVramPixel5(x, y, r >>> 3, g >>> 3, b >>> 3, blendEnabled, blendMode, checkMaskBit, setMaskBit, 0);
 }

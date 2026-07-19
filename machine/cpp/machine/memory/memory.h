@@ -28,6 +28,8 @@ struct MemoryInit {
 	RomSpan cartRom;
 };
 
+constexpr u32 NO_BLOCKED_MAPPED_WRITE = 0xffffffffu;
+
 class Memory {
 public:
 	using IoReadHandler = Value (*)(void* context, uint32_t addr, MappedBusSignals busSignals);
@@ -49,6 +51,7 @@ public:
 	}
 	void setProgramRom(const u8* data, size_t size, size_t textByteLength);
 	bool mappedWriteReady(uint32_t addr);
+	u32 firstBlockedMappedWordWrite(uint32_t addr, uint32_t wordCount);
 	uint32_t readBusFaultSequence() const { return m_busFaultSequence; }
 
 	Value readValue(uint32_t addr) const;

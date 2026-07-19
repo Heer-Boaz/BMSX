@@ -841,61 +841,73 @@
 		}
 	],
 	"strict_rpu_table_parity": [],
-	"strict_shader_parity": [
+	"strict_shader_datapath_parity": [
 		{
 			"webgl": "machine/ts/render/backend/webgl/shaders/gx_gpu_fill.vert.glsl",
 			"gles2": "machine/cpp/render/backend/gles2/shaders/gx_gpu_fill.vert.glsl",
+			"functions": ["main"],
 			"reason": "gx_gpu_solid_vertex_shader_contract"
 		},
 		{
 			"webgl": "machine/ts/render/backend/webgl/shaders/gx_gpu_fill.frag.glsl",
 			"gles2": "machine/cpp/render/backend/gles2/shaders/gx_gpu_fill.frag.glsl",
+			"functions": ["rawStorageVramWord", "decodeRgb555To5", "blendRgb5", "ditherOffset", "rgb8ToRgb5", "encodeRgb555", "main"],
 			"reason": "gx_gpu_raw_vram_encode_shader_contract"
 		},
 		{
 			"webgl": "machine/ts/render/backend/webgl/shaders/gx_gpu_line.vert.glsl",
 			"gles2": "machine/cpp/render/backend/gles2/shaders/gx_gpu_line.vert.glsl",
+			"functions": ["main"],
 			"reason": "gx_gpu_line_vertex_shader_contract"
 		},
 		{
 			"webgl": "machine/ts/render/backend/webgl/shaders/gx_gpu_line.frag.glsl",
 			"gles2": "machine/cpp/render/backend/gles2/shaders/gx_gpu_line.frag.glsl",
+			"functions": ["rawStorageVramWord", "decodeRgb555To5", "blendRgb5", "ditherOffset", "rgb8ToRgb5", "encodeRgb555", "main"],
 			"reason": "gx_gpu_line_raster_shader_contract"
 		},
 		{
 			"webgl": "machine/ts/render/backend/webgl/shaders/gx_gpu_textured.vert.glsl",
 			"gles2": "machine/cpp/render/backend/gles2/shaders/gx_gpu_textured.vert.glsl",
+			"functions": ["main"],
 			"reason": "gx_gpu_textured_vertex_shader_contract"
 		},
 		{
 			"webgl": "machine/ts/render/backend/webgl/shaders/gx_gpu_textured.frag.glsl",
 			"gles2": "machine/cpp/render/backend/gles2/shaders/gx_gpu_textured.frag.glsl",
+			"functions": ["rawVramWord", "rawStorageVramWord", "decodeRgb555To5", "textureColor", "samplePsxTexture", "blendRgb5", "ditherOffset", "modulatedTextureRgb5", "encodeRgb555", "main"],
 			"reason": "gx_gpu_textured_vram_sample_shader_contract"
 		},
 		{
 			"webgl": "machine/ts/render/backend/webgl/shaders/gx_gpu_transfer.vert.glsl",
 			"gles2": "machine/cpp/render/backend/gles2/shaders/gx_gpu_transfer.vert.glsl",
+			"functions": ["main"],
 			"reason": "gx_gpu_transfer_vertex_shader_contract"
 		},
 		{
 			"webgl": "machine/ts/render/backend/webgl/shaders/gx_gpu_transfer.frag.glsl",
 			"gles2": "machine/cpp/render/backend/gles2/shaders/gx_gpu_transfer.frag.glsl",
+			"functions": ["rawSourceLogicalWord", "rawVramStorageWord", "decodeRgb555To5", "encodeRgb555", "main"],
 			"reason": "gx_gpu_transfer_mask_shader_contract"
-		},
-		{
-			"webgl": "machine/ts/render/backend/webgl/shaders/gx_gpu_scanout.vert.glsl",
-			"gles2": "machine/cpp/render/backend/gles2/shaders/gx_gpu_scanout.vert.glsl",
-			"reason": "gx_gpu_scanout_vertex_shader_contract"
 		},
 		{
 			"webgl": "machine/ts/render/backend/webgl/shaders/gx_gpu_scanout.frag.glsl",
 			"gles2": "machine/cpp/render/backend/gles2/shaders/gx_gpu_scanout.frag.glsl",
+			"functions": ["rawWordAtAddress", "rawByteAtAddress", "rgb555Pixel", "circuitContainsOutput", "circuitPixel", "mergedPixel", "outputPixel", "main"],
 			"reason": "gx_gpu_raw_vram_decode_shader_contract"
 		},
 		{
 			"webgl": "machine/ts/render/backend/webgl/shaders/gx_gpu_readback.frag.glsl",
 			"gles2": "machine/cpp/render/backend/gles2/shaders/gx_gpu_readback.frag.glsl",
+			"functions": ["readRawPixel", "main"],
 			"reason": "gx_gpu_gp0_c0_packed_readback_shader_contract"
+		}
+	],
+	"strict_shader_parity": [
+		{
+			"webgl": "machine/ts/render/backend/webgl/shaders/gx_gpu_scanout.vert.glsl",
+			"gles2": "machine/cpp/render/backend/gles2/shaders/gx_gpu_scanout.vert.glsl",
+			"reason": "gx_gpu_scanout_vertex_shader_contract"
 		},
 		{
 			"webgl": "machine/ts/render/post/crt/webgl/shaders/present.frag.glsl",
@@ -1892,8 +1904,6 @@
 			"file": "machine/ts/render/backend/gx_gpu_render_rules.ts",
 			"functions": [
 				"gxGpuTriangleAttributePlane",
-				"gxGpuTriangleAttributePlaneInterpolants",
-				"gxGpuTriangleAttributePlaneInterpolantValue",
 				"gxGpuVramLogicalAreaOverlapsBounds"
 			],
 			"reason": "shared_gx_gpu_fixed_attributes_and_wrapped_dependency_rules_must_remain_gc_free"
@@ -1902,8 +1912,6 @@
 			"file": "machine/cpp/render/backend/gx_gpu_render_rules.h",
 			"functions": [
 				"gxGpuTriangleAttributePlane",
-				"gxGpuTriangleAttributePlaneInterpolants",
-				"gxGpuTriangleAttributePlaneInterpolantValue",
 				"gxGpuVramLogicalAreaOverlapsBounds"
 			],
 			"reason": "shared_gx_gpu_fixed_attributes_and_wrapped_dependency_rules_must_remain_heap_free"
@@ -1915,6 +1923,7 @@
 				"writeSolidColorVertex",
 				"appendSolidTriangle",
 				"appendSolidPrimitiveTriangle",
+				"writeFixedSolidVertex",
 				"appendFixedSolidPrimitiveTriangle",
 				"appendSolidQuad",
 				"appendFillRectangle",
@@ -1922,6 +1931,7 @@
 				"appendSolidRectangle",
 				"writeTexturedVertex",
 				"appendTexturedTriangle",
+				"writeFixedTexturedVertex",
 				"appendTexturedPrimitiveTriangle",
 				"appendTexturedPolygon",
 				"appendTexturedRectangle",
@@ -1929,7 +1939,7 @@
 				"uploadCpuToVram",
 				"copyVramToVramArea",
 				"copyVramToVram",
-				"drawGxGpuLogicalVramBands",
+				"drawGxGpuLogicalVramArea",
 				"resetGxGpuVramCopyRect",
 				"includeGxGpuVramCopyRect",
 				"includeGxGpuVramCopyVertex",
@@ -2014,6 +2024,7 @@
 				"writeSolidVertex",
 				"writeSolidColorVertex",
 				"appendSolidTriangle",
+				"writeFixedSolidVertex",
 				"appendSolidPrimitiveTriangle",
 				"appendSolidQuad",
 				"appendFillRectangle",
@@ -2021,6 +2032,7 @@
 				"appendSolidRectangle",
 				"writeTexturedVertex",
 				"appendTexturedTriangle",
+				"writeFixedTexturedVertex",
 				"appendTexturedPrimitiveTriangle",
 				"appendTexturedPolygon",
 				"appendTexturedRectangle",
@@ -2028,7 +2040,7 @@
 				"uploadCpuToVram",
 				"copyVramToVramArea",
 				"copyVramToVram",
-				"drawGxGpuLogicalVramBands",
+				"drawGxGpuLogicalVramArea",
 				"resetGxGpuVramCopyRect",
 				"includeGxGpuVramCopyRect",
 				"includeGxGpuVramCopyVertex",

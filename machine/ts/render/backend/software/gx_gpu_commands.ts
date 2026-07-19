@@ -6,6 +6,7 @@ import {
 	GX_GPU_COMMAND_DRAW_RECTANGLE,
 	GX_GPU_COMMAND_FILL_RECTANGLE,
 	GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
+	GX_GPU_TRANSFER_MAX_PIXEL_COUNT,
 	gxGpuTransferHeight,
 	gxGpuTransferWidth,
 	type GxGpuCommandBufferView,
@@ -22,6 +23,8 @@ import {
 	gxGpuFillHeight,
 	gxGpuFillWidth,
 	gxGpuFillX,
+	gxGpuMaskBitCheckBeforeDraw,
+	gxGpuMaskBitSetWhileDrawing,
 	gxGpuTransferEmittedPixelCount,
 	gxGpuTransferPixelWord,
 	gxGpuTransferX,
@@ -30,13 +33,8 @@ import {
 	gxGpuTextureV,
 	gxGpuVertexY,
 } from '../gx_gpu_render_rules';
+import { gxGpuVramYAddress } from '../../../machine/devices/gx/vram_address';
 import {
-	gxGpuVramYAddress,
-	gxGpuVramYBankInstalled,
-} from '../../../machine/devices/gx/vram_address';
-import {
-	GX_GPU_SOFTWARE_VRAM_WORDS,
-	gxGpuSoftwareInterlacedSkipsLine,
 	gxGpuSoftwareRgb888WordToRgb555,
 	gxGpuSoftwareVram,
 	gxGpuSoftwareVramIndex,
@@ -51,7 +49,7 @@ import {
 	drawGxGpuSoftwareTriangle,
 } from './gx_gpu_rasterizer';
 
-const gxGpuSoftwareCopyScratch = new Uint16Array(GX_GPU_SOFTWARE_VRAM_WORDS);
+const gxGpuSoftwareCopyScratch = new Uint16Array(GX_GPU_TRANSFER_MAX_PIXEL_COUNT);
 
 function executeFillRectangle(commandBuffer: GxGpuCommandBufferView, commandIndex: number): void {
 	const wordStart = commandBuffer.commandWordStart[commandIndex];
@@ -63,13 +61,10 @@ function executeFillRectangle(commandBuffer: GxGpuCommandBufferView, commandInde
 	const y = gxGpuTransferY(xyWord, vramYAddressExtensionWord);
 	const width = gxGpuFillWidth(sizeWord);
 	const height = gxGpuFillHeight(sizeWord);
-	const interlacedRenderWord = commandBuffer.commandInterlacedRenderWord[commandIndex];
+	const skippedLineParity = commandBuffer.commandSkippedLineParity[commandIndex];
 	for (let row = 0; row < height; row += 1) {
 		const targetY = gxGpuVramYAddress(y + row, vramYAddressExtensionWord);
-		if (!gxGpuVramYBankInstalled(targetY)) {
-			continue;
-		}
-		if (gxGpuSoftwareInterlacedSkipsLine(targetY, interlacedRenderWord)) {
+		if ((targetY & 1) === skippedLineParity) {
 			continue;
 		}
 		for (let column = 0; column < width; column += 1) {
@@ -90,32 +85,27 @@ function executeCpuToVram(commandBuffer: GxGpuCommandBufferView, commandIndex: n
 	const emittedPixels = gxGpuTransferEmittedPixelCount(width, height, commandBuffer.commandWordCount[commandIndex]);
 	const payloadWordStart = wordStart + 3;
 	const maskBitModeWord = commandBuffer.commandMaskBitModeWord[commandIndex];
+	const checkMaskBit = gxGpuMaskBitCheckBeforeDraw(maskBitModeWord);
+	const setMaskBit = gxGpuMaskBitSetWhileDrawing(maskBitModeWord);
 	let emittedPixel = 0;
 	for (let row = 0; row < height && emittedPixel < emittedPixels; row += 1) {
 		const rowRemaining = emittedPixels - emittedPixel;
 		const rowWidth = rowRemaining < width ? rowRemaining : width;
 		const targetY = gxGpuVramYAddress(y + row, vramYAddressExtensionWord);
-		if (!gxGpuVramYBankInstalled(targetY)) {
-			emittedPixel += rowWidth;
-			continue;
-		}
 		for (let column = 0; column < rowWidth; column += 1) {
 			const payloadWord = commandBuffer.words[payloadWordStart + (emittedPixel >>> 1)];
-			gxGpuSoftwareWriteMaskedVramWord(gxGpuSoftwareVramIndex(x + column, targetY), gxGpuTransferPixelWord(payloadWord, emittedPixel), maskBitModeWord);
+			gxGpuSoftwareWriteMaskedVramWord(gxGpuSoftwareVramIndex(x + column, targetY), gxGpuTransferPixelWord(payloadWord, emittedPixel), checkMaskBit, setMaskBit);
 			emittedPixel += 1;
 		}
 	}
 }
 
 function copyVramArea(sourceX: number, sourceY: number, targetX: number, targetY: number, width: number, height: number, maskBitModeWord: number, vramYAddressExtensionWord: number): void {
+	const checkMaskBit = gxGpuMaskBitCheckBeforeDraw(maskBitModeWord);
+	const setMaskBit = gxGpuMaskBitSetWhileDrawing(maskBitModeWord);
 	let scratchIndex = 0;
 	for (let row = 0; row < height; row += 1) {
 		const rowSourceY = gxGpuVramYAddress(sourceY + row, vramYAddressExtensionWord);
-		if (!gxGpuVramYBankInstalled(rowSourceY)) {
-			gxGpuSoftwareCopyScratch.fill(0, scratchIndex, scratchIndex + width);
-			scratchIndex += width;
-			continue;
-		}
 		for (let column = 0; column < width; column += 1) {
 			gxGpuSoftwareCopyScratch[scratchIndex] = gxGpuSoftwareVram[gxGpuSoftwareVramIndex(sourceX + column, rowSourceY)];
 			scratchIndex += 1;
@@ -124,12 +114,8 @@ function copyVramArea(sourceX: number, sourceY: number, targetX: number, targetY
 	scratchIndex = 0;
 	for (let row = 0; row < height; row += 1) {
 		const rowTargetY = gxGpuVramYAddress(targetY + row, vramYAddressExtensionWord);
-		if (!gxGpuVramYBankInstalled(rowTargetY)) {
-			scratchIndex += width;
-			continue;
-		}
 		for (let column = 0; column < width; column += 1) {
-			gxGpuSoftwareWriteMaskedVramWord(gxGpuSoftwareVramIndex(targetX + column, rowTargetY), gxGpuSoftwareCopyScratch[scratchIndex], maskBitModeWord);
+			gxGpuSoftwareWriteMaskedVramWord(gxGpuSoftwareVramIndex(targetX + column, rowTargetY), gxGpuSoftwareCopyScratch[scratchIndex], checkMaskBit, setMaskBit);
 			scratchIndex += 1;
 		}
 	}

@@ -1,4 +1,4 @@
-import type { Value } from '../../cpu/cpu';
+import type { CPU, Value } from '../../cpu/cpu';
 import {
 	IO_GX_GTE_COMMAND,
 	IO_GX_GTE_CONTROL0,
@@ -6,13 +6,43 @@ import {
 	IO_GX_GTE_CYCLES,
 	IO_GX_GTE_DATA0,
 	IO_GX_GTE_DATA_REGISTER_COUNT as IO_GX_GTE_DATA_WORDS,
+	IO_GX_GTE_PLUS_BASE,
+	IO_GX_GTE_PLUS_WORD_COUNT as IO_GX_GTE_PLUS_WORDS,
 } from '../../bus/io';
 import { IO_WORD_SIZE } from '../../memory/map';
 import type { Memory } from '../../memory/memory';
+import { MAPPED_BUS_MASTER_DMA, type MappedBusSignals } from '../../memory/bus_signals';
 import { highSignedHalfword, lowSignedHalfword, shiftRightSigned, wrapI32 } from '../../common/numeric';
+import { DEVICE_SERVICE_GTE, type DeviceScheduler } from '../../scheduler/device';
 
 export const GX_GTE_DATA_REGISTER_COUNT = 32;
 export const GX_GTE_CONTROL_REGISTER_COUNT = 32;
+export const GX_GTE_PLUS_REGISTER_COUNT = 10;
+
+export const GX_GTE_PLUS_ADD_XY = 0;
+export const GX_GTE_PLUS_ADD_Z = 1;
+export const GX_GTE_PLUS_MUL_XY = 2;
+export const GX_GTE_PLUS_MUL_Z = 3;
+export const GX_GTE_PLUS_SCALAR = 4;
+export const GX_GTE_PLUS_RESULT_XY = 5;
+export const GX_GTE_PLUS_RESULT_Z = 6;
+export const GX_GTE_PLUS_FLAG = 7;
+export const GX_GTE_PLUS_COMMAND = 8;
+export const GX_GTE_PLUS_CYCLES = 9;
+
+export const GX_GTE_PLUS_FN_VMAD3 = 0x01;
+export const GX_GTE_PLUS_CYCLES_INVALID = 1;
+export const GX_GTE_PLUS_CYCLES_VMAD3 = 5;
+export const GX_GTE_PLUS_CYCLES_BUSY = 0x80000000;
+
+export const GX_GTE_PLUS_FLAG_ERROR = 0x80000000;
+export const GX_GTE_PLUS_FLAG_X_POS = 0x40000000;
+export const GX_GTE_PLUS_FLAG_Y_POS = 0x20000000;
+export const GX_GTE_PLUS_FLAG_Z_POS = 0x10000000;
+export const GX_GTE_PLUS_FLAG_X_NEG = 0x08000000;
+export const GX_GTE_PLUS_FLAG_Y_NEG = 0x04000000;
+export const GX_GTE_PLUS_FLAG_Z_NEG = 0x02000000;
+export const GX_GTE_PLUS_FLAG_INVALID_COMMAND = 0x01000000;
 
 export const GX_GTE_FN_RTPS = 0x01;
 export const GX_GTE_FN_NCLIP = 0x06;
@@ -135,17 +165,24 @@ function countLeadingBits(word: number): number {
 export type GxGteState = {
 	dataRegisterWords: number[];
 	controlRegisterWords: number[];
+	plusRegisterWords: number[];
 	mac0: number;
 	mac1: number;
 	mac2: number;
 	mac3: number;
 	currentSf: number;
 	lastCycles: number;
+	plusPendingCycles: number;
+	plusInterlockArmed: boolean;
+	plusPendingResultXy: number;
+	plusPendingResultZ: number;
+	plusPendingFlag: number;
 };
 
 export class GxGte {
 	private readonly dataRegisterWords = new Uint32Array(GX_GTE_DATA_REGISTER_COUNT);
 	private readonly controlRegisterWords = new Uint32Array(GX_GTE_CONTROL_REGISTER_COUNT);
+	private readonly plusRegisterWords = new Uint32Array(GX_GTE_PLUS_REGISTER_COUNT);
 	private mac0 = 0;
 	private mac1 = 0;
 	private mac2 = 0;
@@ -154,8 +191,17 @@ export class GxGte {
 	private accumPositiveOverflow = false;
 	private accumNegativeOverflow = false;
 	private lastCycles = 0;
+	private plusCompletionCycle = 0;
+	private plusInterlockServiceScheduled = false;
+	private plusPendingResultXy = 0;
+	private plusPendingResultZ = 0;
+	private plusPendingFlag = 0;
 
-	public constructor(private readonly memory: Memory) {
+	public constructor(
+		private readonly memory: Memory,
+		private readonly cpu: CPU,
+		private readonly scheduler: DeviceScheduler,
+	) {
 		for (let index = 0; index < IO_GX_GTE_DATA_WORDS; index += 1) {
 			this.memory.mapIoRead(IO_GX_GTE_DATA0 + index * IO_WORD_SIZE, this, GxGte.readDataRegisterThunk);
 			this.memory.mapIoWrite(IO_GX_GTE_DATA0 + index * IO_WORD_SIZE, this, GxGte.writeDataRegisterThunk);
@@ -166,11 +212,20 @@ export class GxGte {
 		}
 		this.memory.mapIoWrite(IO_GX_GTE_COMMAND, this, GxGte.writeCommandThunk);
 		this.memory.mapIoRead(IO_GX_GTE_CYCLES, this, GxGte.readCyclesThunk);
+		for (let index = 0; index < IO_GX_GTE_PLUS_WORDS; index += 1) {
+			this.memory.mapIoRead(IO_GX_GTE_PLUS_BASE + index * IO_WORD_SIZE, this, GxGte.readPlusRegisterThunk);
+		}
+		for (let index = GX_GTE_PLUS_ADD_XY; index <= GX_GTE_PLUS_SCALAR; index += 1) {
+			this.memory.mapIoWrite(IO_GX_GTE_PLUS_BASE + index * IO_WORD_SIZE, this, GxGte.writePlusRegisterThunk);
+		}
+		this.memory.mapIoWrite(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_COMMAND * IO_WORD_SIZE, this, GxGte.writePlusRegisterThunk);
+		this.memory.mapIoWriteReady(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_COMMAND * IO_WORD_SIZE, GxGte.plusCommandWriteReadyThunk);
 	}
 
 	public reset(): void {
 		this.dataRegisterWords.fill(0);
 		this.controlRegisterWords.fill(0);
+		this.plusRegisterWords.fill(0);
 		this.mac0 = 0;
 		this.mac1 = 0;
 		this.mac2 = 0;
@@ -179,30 +234,52 @@ export class GxGte {
 		this.accumPositiveOverflow = false;
 		this.accumNegativeOverflow = false;
 		this.lastCycles = 0;
+		this.plusCompletionCycle = 0;
+		this.plusInterlockServiceScheduled = false;
+		this.plusPendingResultXy = 0;
+		this.plusPendingResultZ = 0;
+		this.plusPendingFlag = 0;
+		this.scheduler.cancelDeviceService(DEVICE_SERVICE_GTE);
+		this.cpu.resumeMemoryWrite(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_COMMAND * IO_WORD_SIZE);
 		this.memory.writeIoValue(IO_GX_GTE_COMMAND, 0);
 		this.memory.writeIoValue(IO_GX_GTE_CYCLES, 0);
+		this.memory.writeIoValue(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_COMMAND * IO_WORD_SIZE, 0);
+		this.memory.writeIoValue(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_CYCLES * IO_WORD_SIZE, 0);
 		this.currentSf = 0;
 	}
 
 	public captureState(): GxGteState {
+		this.synchronizePlusCompletion();
+		const nowCycles = this.scheduler.currentNowCycles();
 		return {
 			dataRegisterWords: Array.from(this.dataRegisterWords),
 			controlRegisterWords: Array.from(this.controlRegisterWords),
+			plusRegisterWords: Array.from(this.plusRegisterWords),
 			mac0: this.mac0,
 			mac1: this.mac1,
 			mac2: this.mac2,
 			mac3: this.mac3,
 			currentSf: this.currentSf,
 			lastCycles: this.lastCycles,
+			plusPendingCycles: this.plusCompletionCycle === 0 ? 0 : this.plusCompletionCycle - nowCycles,
+			plusInterlockArmed: this.plusInterlockServiceScheduled,
+			plusPendingResultXy: this.plusPendingResultXy,
+			plusPendingResultZ: this.plusPendingResultZ,
+			plusPendingFlag: this.plusPendingFlag,
 		};
 	}
 
 	public restoreState(state: GxGteState): void {
+		this.scheduler.cancelDeviceService(DEVICE_SERVICE_GTE);
+		this.plusInterlockServiceScheduled = false;
 		for (let index = 0; index < GX_GTE_DATA_REGISTER_COUNT; index += 1) {
 			this.dataRegisterWords[index] = state.dataRegisterWords[index]! >>> 0;
 		}
 		for (let index = 0; index < GX_GTE_CONTROL_REGISTER_COUNT; index += 1) {
 			this.controlRegisterWords[index] = state.controlRegisterWords[index]! >>> 0;
+		}
+		for (let index = 0; index < GX_GTE_PLUS_REGISTER_COUNT; index += 1) {
+			this.plusRegisterWords[index] = state.plusRegisterWords[index]! >>> 0;
 		}
 		this.mac0 = state.mac0;
 		this.mac1 = state.mac1;
@@ -210,6 +287,41 @@ export class GxGte {
 		this.mac3 = state.mac3;
 		this.currentSf = state.currentSf >>> 0;
 		this.lastCycles = state.lastCycles >>> 0;
+		this.plusPendingResultXy = state.plusPendingResultXy >>> 0;
+		this.plusPendingResultZ = state.plusPendingResultZ >>> 0;
+		this.plusPendingFlag = state.plusPendingFlag >>> 0;
+		this.plusCompletionCycle = state.plusPendingCycles === 0
+			? 0
+			: this.scheduler.currentNowCycles() + state.plusPendingCycles;
+		if (state.plusInterlockArmed) {
+			this.scheduler.scheduleDeviceService(DEVICE_SERVICE_GTE, this.plusCompletionCycle);
+			this.plusInterlockServiceScheduled = true;
+		}
+	}
+
+	public onService(): void {
+		this.plusInterlockServiceScheduled = false;
+		this.publishPlusCompletion();
+	}
+
+	private synchronizePlusCompletion(): void {
+		if (this.plusCompletionCycle === 0 || this.scheduler.currentNowCycles() < this.plusCompletionCycle) {
+			return;
+		}
+		if (this.plusInterlockServiceScheduled) {
+			this.scheduler.cancelDeviceService(DEVICE_SERVICE_GTE);
+			this.plusInterlockServiceScheduled = false;
+		}
+		this.publishPlusCompletion();
+	}
+
+	private publishPlusCompletion(): void {
+		this.plusRegisterWords[GX_GTE_PLUS_RESULT_XY] = this.plusPendingResultXy;
+		this.plusRegisterWords[GX_GTE_PLUS_RESULT_Z] = this.plusPendingResultZ;
+		this.plusRegisterWords[GX_GTE_PLUS_FLAG] = this.plusPendingFlag;
+		this.plusRegisterWords[GX_GTE_PLUS_CYCLES] &= ~GX_GTE_PLUS_CYCLES_BUSY;
+		this.plusCompletionCycle = 0;
+		this.cpu.resumeMemoryWrite(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_COMMAND * IO_WORD_SIZE);
 	}
 
 
@@ -236,6 +348,80 @@ export class GxGte {
 
 	private static readCyclesThunk(context: GxGte, _addr: number): Value {
 		return context.lastCycles;
+	}
+
+	private static readPlusRegisterThunk(context: GxGte, addr: number): Value {
+		context.synchronizePlusCompletion();
+		return context.plusRegisterWords[((addr - IO_GX_GTE_PLUS_BASE) / IO_WORD_SIZE) >>> 0];
+	}
+
+	private static writePlusRegisterThunk(context: GxGte, addr: number, value: Value, busSignals: MappedBusSignals): void {
+		context.synchronizePlusCompletion();
+		const index = ((addr - IO_GX_GTE_PLUS_BASE) / IO_WORD_SIZE) >>> 0;
+		const word = (value as number) >>> 0;
+		if (index === GX_GTE_PLUS_COMMAND) {
+			if ((busSignals & MAPPED_BUS_MASTER_DMA) !== 0 || context.plusCompletionCycle !== 0) {
+				return;
+			}
+			context.plusRegisterWords[index] = word;
+			context.startPlusCommand(word);
+			return;
+		}
+		context.plusRegisterWords[index] = word;
+	}
+
+	private static plusCommandWriteReadyThunk(context: GxGte): boolean {
+		context.synchronizePlusCompletion();
+		if (context.plusCompletionCycle === 0) {
+			return true;
+		}
+		if (!context.plusInterlockServiceScheduled) {
+			context.scheduler.scheduleDeviceService(DEVICE_SERVICE_GTE, context.plusCompletionCycle);
+			context.plusInterlockServiceScheduled = true;
+		}
+		return false;
+	}
+
+	private startPlusCommand(commandWord: number): void {
+		let commandCycles: number;
+		if ((commandWord & 0xff) === GX_GTE_PLUS_FN_VMAD3) {
+			this.plusPendingFlag = 0;
+			const addXy = this.plusRegisterWords[GX_GTE_PLUS_ADD_XY];
+			const mulXy = this.plusRegisterWords[GX_GTE_PLUS_MUL_XY];
+			const scalar = lowSignedHalfword(this.plusRegisterWords[GX_GTE_PLUS_SCALAR]);
+			const resultX = this.executePlusVmadLane(lowSignedHalfword(addXy), lowSignedHalfword(mulXy), scalar, GX_GTE_PLUS_FLAG_X_POS, GX_GTE_PLUS_FLAG_X_NEG);
+			const resultY = this.executePlusVmadLane(highSignedHalfword(addXy), highSignedHalfword(mulXy), scalar, GX_GTE_PLUS_FLAG_Y_POS, GX_GTE_PLUS_FLAG_Y_NEG);
+			const resultZ = this.executePlusVmadLane(
+				lowSignedHalfword(this.plusRegisterWords[GX_GTE_PLUS_ADD_Z]),
+				lowSignedHalfword(this.plusRegisterWords[GX_GTE_PLUS_MUL_Z]),
+				scalar,
+				GX_GTE_PLUS_FLAG_Z_POS,
+				GX_GTE_PLUS_FLAG_Z_NEG,
+			);
+			this.plusPendingResultXy = ((resultX & 0xffff) | ((resultY & 0xffff) << 16)) >>> 0;
+			this.plusPendingResultZ = resultZ & 0xffff;
+			commandCycles = GX_GTE_PLUS_CYCLES_VMAD3;
+		} else {
+			this.plusPendingResultXy = this.plusRegisterWords[GX_GTE_PLUS_RESULT_XY];
+			this.plusPendingResultZ = this.plusRegisterWords[GX_GTE_PLUS_RESULT_Z];
+			this.plusPendingFlag = (GX_GTE_PLUS_FLAG_ERROR | GX_GTE_PLUS_FLAG_INVALID_COMMAND) >>> 0;
+			commandCycles = GX_GTE_PLUS_CYCLES_INVALID;
+		}
+		this.plusRegisterWords[GX_GTE_PLUS_CYCLES] = (GX_GTE_PLUS_CYCLES_BUSY | commandCycles) >>> 0;
+		this.plusCompletionCycle = this.scheduler.currentNowCycles() + commandCycles;
+	}
+
+	private executePlusVmadLane(addend: number, multiplicand: number, scalar: number, positiveFlag: number, negativeFlag: number): number {
+		const shifted = (addend * 4096 + multiplicand * scalar) >> 12;
+		if (shifted > 0x7fff) {
+			this.plusPendingFlag = (this.plusPendingFlag | GX_GTE_PLUS_FLAG_ERROR | positiveFlag) >>> 0;
+			return 0x7fff;
+		}
+		if (shifted < -0x8000) {
+			this.plusPendingFlag = (this.plusPendingFlag | GX_GTE_PLUS_FLAG_ERROR | negativeFlag) >>> 0;
+			return -0x8000;
+		}
+		return shifted;
 	}
 
 	public readDataRegister(index: number): number {

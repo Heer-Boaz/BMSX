@@ -1,6 +1,6 @@
 # BMSX Architecture Contract
 
-Last checked: 2026-07-18.
+Last checked: 2026-07-19.
 
 This document is the current machine/host boundary contract. It is not a work
 log, a prompt, or a migration diary. If implementation changes land, this file
@@ -39,15 +39,81 @@ the [TS vectors](../tests/lua/gx_gte.test.ts), and the
 foundation regression to fix, not a reason to reinterpret the accepted raw
 words through a compatibility path.
 
-`BSX-GTE-01` is therefore an active hardware-design slice. GTE+ must extend the
-accepted PSX register/opcode model explicitly; it may not replace it with host
-geometry, material, morphing, or renderer objects, and an extension may not
-reinterpret an existing PSX opcode or register word. Native depth-buffered
-rendering, morphing, and other geometry or raster capabilities remain candidate
-BSX hardware rather than an ABI. Their first GPU-local-memory, register, packet,
-datapath, timing, flag, and save-state contract must be reviewed before any new
-word becomes cart-visible. The retired VDP/RPU ABI is not a design source or a
-compatibility route for that work.
+GTE+ extends that accepted register/opcode model explicitly; it does not replace
+it with host geometry, material, morphing, or renderer objects, and it never
+reinterprets an existing PSX opcode or register word. The first native extension
+is the three-lane fixed-point `VMAD3` datapath below. Native depth buffering,
+local geometry memory, packet emission and surface words remain separate future
+hardware slices rather than implied parts of this one. The retired VDP/RPU ABI
+is not a design source or a compatibility route for any of them.
+
+#### GTE+ VMAD3 datapath
+
+GTE+ revision 1 adds one raw ten-word MMIO register block at
+`IO_GX_GTE_PLUS_BASE` (`0x08010388`). It is adjacent machine hardware, not an
+alternate view of the 32 PSX data registers, 32 PSX control registers or the PSX
+command port.
+
+| Word | Name | Access | Raw layout |
+| ---: | --- | --- | --- |
+| 0 | `ADD_XY` | R/W | Signed 16-bit X in bits 0--15 and signed 16-bit Y in bits 16--31. |
+| 1 | `ADD_Z` | R/W | Signed 16-bit Z in bits 0--15; bits 16--31 are retained input bits. |
+| 2 | `MUL_XY` | R/W | Signed 16-bit X in bits 0--15 and signed 16-bit Y in bits 16--31. |
+| 3 | `MUL_Z` | R/W | Signed 16-bit Z in bits 0--15; bits 16--31 are retained input bits. |
+| 4 | `SCALAR` | R/W | Signed Q4.12 scalar in bits 0--15; bits 16--31 are retained input bits. |
+| 5 | `RESULT_XY` | R | Saturated signed 16-bit X/Y result halves. |
+| 6 | `RESULT_Z` | R | Saturated signed 16-bit Z in bits 0--15; bits 16--31 read zero. |
+| 7 | `FLAG` | R | Result flags defined below; all other bits read zero. |
+| 8 | `COMMAND` | CPU R/W | Complete retained command word; bits 0--7 select the function and bits 8--31 are ignored by revision 1. DMA writes have no effect. |
+| 9 | `CYCLES` | R | Bit 31 is `BUSY`; bits 0--30 retain the accepted command latency. |
+
+Function `0x01` is `VMAD3`. The GTE+ owner admits only a CPU-bus write while
+`BUSY` is clear; DMA command writes and direct writes presented while `BUSY`
+have no effect and cannot replace the retained command. A CPU store targeting a
+busy command port waits at the existing mapped-write readiness boundary. A
+multiword CPU store preflights every mapped destination before issuing any bus
+word, so a sequence that reaches `COMMAND` blocks at that exact address without
+committing an input prefix. An accepted write latches all five input words,
+publishes `BUSY | 5` through `CYCLES`, and then each lane computes the same
+integer pipeline in parallel:
+
+```
+accumulator = signed16(ADD) * 4096 + signed16(MUL) * signed16(SCALAR)
+shifted     = arithmetic_shift_right(accumulator, 12)
+result      = saturate_signed16(shifted)
+```
+
+The accumulator is a signed 32-bit datapath; the complete representable input
+range fits it without an intermediate overflow. Arithmetic shift is the normal
+two's-complement shift, including negative fractional results. While `BUSY` is
+set, result and `FLAG` reads expose their previous completed latches. Input words
+remain writable, but those writes cannot alter the accepted operation because
+its operands have already been latched. The three result lanes and `FLAG`
+publish atomically after five machine cycles; that completion edge clears
+`CYCLES.BUSY` and leaves the latency value `5`. The GTE+ owner retains one
+absolute completion tick. Normal commands do not allocate a generic scheduler
+event: GTE+ MMIO access or state capture materializes an elapsed tick exactly
+once. Only an actually blocked CPU store receives one scheduler wake at the
+retained tick. `FLAG` bit 31 is the aggregate error bit. Bits 30/29/28 report
+positive saturation for X/Y/Z and bits 27/26/25 report negative saturation for
+X/Y/Z. A `VMAD3` command replaces the previous flag word. An unknown function
+leaves all result words unchanged, publishes `BUSY | 1` immediately, then
+publishes `ERROR | INVALID_COMMAND` (`FLAG` bits 31 and 24) and clears `BUSY`
+one cycle later. Writes to `RESULT_XY`, `RESULT_Z`, `FLAG`, and `CYCLES` have no
+effect.
+
+Reset clears all ten words, cancels an outstanding CPU-interlock wake, discards
+the retained completion tick, and makes the command port ready. Save-state
+stores the ten raw words plus the in-flight pipeline's pending packed results,
+pending flag, remaining machine cycles and armed-interlock bit. Restore consumes
+those words directly and reconstructs the owner tick; an unblocked operation
+allocates no event, while an operation captured with a blocked CPU store rearms
+exactly that single wake. The central firmware utility waits on
+`CYCLES.BUSY`, so its returned vector has crossed the same hardware edge in TS
+and C++. `VMAD3` has no implicit GPU command, VRAM access, local memory, DMA or
+host handoff. Its packed results deliberately match the accepted PSX vector
+halfword layout, so cart code may explicitly write them to a PSX GTE input
+register or another machine destination without a compatibility facade.
 
 Host wall clocks, browser performance counters, UI timers, and process scheduling
 are host services. Cart-visible time is BMSX machine time derived from emulated
@@ -194,22 +260,21 @@ open slice by itself. Guest Lua does not receive a `machine_manifest`,
 machine registry are host/tooling input; cart-visible behavior is still
 programmed through CPU-visible ROM, RAM, MMIO, BIOS Lua, and link symbols.
 
-Display configuration is raw hardware register state. The implemented PSX
-foundation currently derives one output from GP1(05h)--GP1(08h): GP1(08h) owns
-native width, GP1(07h) the active line count, GP1(05h) the VRAM origin and
-GP1(06h) retained horizontal timing. GX identifies as the type-2 GPU through
-GP1(10h/07h), so GP1(08h) retains its complete low-byte input word but bit 7
-does not drive GPUSTAT bit 14 or reverse scanout. These exact semantics remain
-regression evidence while `GX-PCRTC-01` replaces the single-output path; they
-are not translated through a permanent GP1-to-PCRTC adapter.
+Display configuration is raw hardware register state. PCRTC is the implemented
+scanout authority: its VBlank-published words own both native read-output
+rectangles, their merge and the resulting output bounds. Software, WebGL2,
+WebGPU, and GLES2 scan out those native pixel coordinates directly. The PCRTC
+owner updates its retained output width and height only when the published words
+change; the presentation loop consumes those members directly instead of
+re-decoding both circuits every host frame. Host targets resize only when those
+bounds change, and physical 4:3 layout remains separate presentation policy.
 
-After that producer migration, the raw PCRTC registerfile owns both native
-read-output rectangles and their merge. Software, WebGL2, WebGPU, and GLES2
-scan out those native pixel coordinates directly. Presentation resizes retained
-host targets only when dimensions derived from the latched raw words change; it
-does not scale an active range over a fixed 320×240 target. Physical 4:3 display
-layout is separate host presentation policy and does not change the native
-buffer.
+GP1(05h)--GP1(08h) remain the PSX timing/status register contract rather than a
+parallel scanout path. GP1(08h) owns field timing, GP1(07h) the active line
+count, GP1(05h) the retained PSX origin word and GP1(06h) retained horizontal
+timing. GX identifies as the type-2 GPU through GP1(10h/07h), so GP1(08h)
+retains its complete low-byte input word but bit 7 does not drive GPUSTAT bit 14
+or reverse scanout. There is no permanent GP1-to-PCRTC adapter.
 
 GP1 display-mode bit 3 selects PAL (50 Hz, 313 total scanlines); a clear bit
 selects NTSC (59.940060 Hz, 262 total scanlines). The GPU publishes display mode
@@ -1097,6 +1162,12 @@ terminal surface with ordinary fill, VRAM-copy and textured-rectangle GP0
 commands. Software, WebGL2, WebGPU and GLES2 therefore execute the same command
 stream used by carts.
 
+The larger physical store does not widen the GP0 transfer fields. CPU upload,
+VRAM copy and GPUREAD retain their 1024x512-pixel maximum; their retained result
+buffer and software copy scratch are transfer-sized rather than full-VRAM
+mirrors. Full-VRAM snapshots and backend storage alone follow the 1024x1024
+capacity.
+
 The standard machine layout reserves the bottom-right 256x256 page at
 x=768..1023, y=768..1023. Its top 256x64 words hold the packed system texture;
 the lower 256x192 words hold the terminal surface at `(768,832)`. This is a
@@ -1130,32 +1201,46 @@ merge result. PCSX2's production merge owner demonstrates the same separation
 between the two read circuits, their source/destination rectangles and the
 [`PMODE` merge](https://github.com/PCSX2/pcsx2/blob/470e995c6c1404dfa76c9efff60d7f47acb63562/pcsx2/GS/Renderers/Common/GSRenderer.cpp#L82-L240).
 
-Once this slice lands, PCRTC is the sole GX scanout authority. BIOS, cartlib and
-cart producers migrate together; there is no permanent GP1-to-PCRTC adapter,
-legacy/native display selector or parallel presentation path. The complete raw
-MMIO map, supported PS2 framebuffer-format/address behavior, beam-edge latching,
-reset and save-state words must be reviewed before implementation rather than
-being replaced by custom 24-bit GP1 commands.
+Software scanout selects its composition datapath once from the published
+PCRTC state. The common RGB555, unit-magnification case clears the selected
+rows, writes circuit 2 as the opaque underlay, then runs either the source-mask
+or constant-alpha circuit-1 row kernel. Other framebuffer formats and
+magnification use the general circuit sampler. Circuit enable, format,
+magnification and merge mode are therefore not re-decoded for every output
+pixel. The TypeScript headless owner exposes one retained output allocation as
+both 32-bit scanout words and RGBA bytes; presentation does not repair alpha or
+copy the completed frame into a second buffer.
+
+PCRTC is the sole GX scanout authority. BIOS and cart producers program its raw
+MMIO words directly; there is no permanent GP1-to-PCRTC adapter, legacy/native
+display selector or parallel presentation path. The selected framebuffer-format
+and address behavior, VBlank publication, reset words, supervisor context and
+current-format save-state are owned by the mirrored TS/C++ registerfiles rather
+than custom 24-bit GP1 commands.
 
 Normal carts may use both read circuits. During resumable supervisor entry, the
-system controller retains the user's complete raw PCRTC context and keeps its
-VBlank-published circuit-1 game readout as the frozen base. Monitor firmware
-draws the terminal into the reserved VRAM page, programs circuit 2 and uses the
-exact `PMODE` merge above circuit 1. Leaving the supervisor restores the user
-context unchanged. A destructive fault has no resumable base and programs both
-terminal presentation and background through the active supervisor PCRTC
-context. No path copies the cart framebuffer or allocates terminal-only memory.
+system controller retains the user's complete raw PCRTC context, maps its
+VBlank-published circuit-1 game readout to supervisor circuit 2 as the frozen
+underlay, and leaves circuit 1 to monitor firmware as the terminal foreground.
+`PMODE` merges terminal source alpha over the retained game. Leaving the
+supervisor restores the user context unchanged. A destructive fault has no
+resumable base and programs terminal presentation and background through the
+active supervisor PCRTC context. No path copies the cart framebuffer or
+allocates terminal-only memory.
 
 The BIOS keeps a fixed 128-line cell scrollback, dirty ranges, line editor,
 history and GP0 command list in ordinary `.bss`. A packed ROM table maps each
 4x6 tiny-font codepoint one-to-one to its physical system-texture coordinates.
 The monitor's HID-to-console-ASCII producer emits uppercase alphabetic bytes;
-the ROM packer and glyph renderer do not reinterpret text. The initial frame is
-a full clear followed by textured glyph rectangles; later edits clear and
-redraw only dirty cell spans, and ordinary VRAM-to-VRAM copy scrolls the visible
-framebuffer. DMA consumes the retained command words before firmware may
-rebuild them, and the final GP0 IRQ fences GPU completion. No render-time Lua
-tables, strings or pixel buffers are allocated.
+the ROM packer and glyph renderer do not reinterpret text. A zero retained cell
+leaves its 4x6 terminal area transparent. Every nonzero cell, including an
+explicit space, first draws an opaque black 4x6 background and then draws its
+glyph when it has one. Dirty spans and newly exposed scroll bands clear back to
+transparent before their live cells are redrawn, while ordinary VRAM-to-VRAM
+copy moves the existing cell coverage during scrolling. DMA consumes the
+retained command words before firmware may rebuild them, and the final GP0 IRQ
+fences GPU completion. No render-time Lua tables, strings or pixel buffers are
+allocated.
 
 The firmware line editor supports insertion, deletion, cursor/home/end and
 word motion/deletion, a fixed history ring and command-name completion with a
@@ -1460,7 +1545,11 @@ Software and accelerated backends own one 1024x1024 raw-VRAM resource. They
 apply the captured Y9 gate before addressing that resource and split only for a
 real 1024-row wrap or command dependency; they do not split at row 512, create
 a zero-read mask or allocate a second image. Generated triangles remain in
-outer submission order. Dependent submissions synchronize the VRAM sample
+outer submission order. Software, WebGPU, WebGL2 and GLES2 all store logical
+row Y at resource row Y. Vertex conversion, fragment stores, texture sampling,
+transfers, readback and scanout therefore consume that row directly rather than
+reversing it per invocation or during CPU snapshot traversal. Dependent
+submissions synchronize the VRAM sample
 shadow between draws so blend, mask and texture feedback observe prior writes.
 Line and polyline segments keep their own order as well. Fill and image-transfer
 commands retain their separate VRAM datapaths.

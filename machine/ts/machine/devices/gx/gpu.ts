@@ -25,10 +25,11 @@ import {
 	GX_GPU_READBACK_PENDING,
 	GX_GPU_READBACK_READY,
 	GX_GPU_READBACK_SUBMITTED,
+	GX_GPU_DRAW_MODE_DRAW_TO_DISPLAYED_FIELD,
 	GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_HIGH,
+	GX_GPU_SKIPPED_LINE_NONE,
 	GxGpuCommandBuffer,
 	type GxGpuCommandBufferState,
-	gxGpuInterlacedRenderWord,
 	gxGpuPolygonDrawModeWord,
 	gxGpuPolygonTexturePageWordIndex,
 	gxGpuTextureAttribute,
@@ -51,6 +52,11 @@ import {
 	gxGpuDisplayStartY,
 } from './gpu_display';
 import { initializeGxGpuVramPowerOn } from './vram_power_on';
+import {
+	GX_GPU_PCRTC_WORD_COUNT,
+	GxGpuPcrtc,
+	type GxGpuPcrtcState,
+} from './gpu_pcrtc';
 
 let gxGpuNextVramSnapshotSerial = 0n;
 
@@ -162,6 +168,8 @@ export const GX_GPU_STATUS_RESET_WORD = GX_GPU_STATUS_INTERLACED_FIELD
 	| GX_GPU_STATUS_GPU_IDLE
 	| GX_GPU_STATUS_READY_TO_RECEIVE_DMA;
 export const GX_GPU_STATUS_SCANOUT_MASK = GX_GPU_STATUS_INTERLACED_FIELD | GX_GPU_STATUS_DISPLAY_LINE_LSB;
+const GX_GPU_STATUS_SKIP_ACTIVE_FIELD_MASK = GX_GPU_STATUS_VERTICAL_RESOLUTION | GX_GPU_STATUS_VERTICAL_INTERLACE | GX_GPU_DRAW_MODE_DRAW_TO_DISPLAYED_FIELD;
+const GX_GPU_STATUS_SKIP_ACTIVE_FIELD_WORD = GX_GPU_STATUS_VERTICAL_RESOLUTION | GX_GPU_STATUS_VERTICAL_INTERLACE;
 export const GX_GPU_STATUS_DISPLAY_MODE_MASK = GX_GPU_STATUS_REVERSE_FLAG
 	| GX_GPU_STATUS_HORIZONTAL_RESOLUTION_2
 	| (0x3 << GX_GPU_STATUS_HORIZONTAL_RESOLUTION_1_SHIFT)
@@ -195,6 +203,8 @@ export type GxGpuRegisterContextState = {
 	presentVramYAddressExtensionWord: number;
 	presentHorizontalDisplayRangeWord: number;
 	presentVerticalDisplayRangeWord: number;
+	pcrtcRegisterWords: number[];
+	pcrtcPresentWords: number[];
 	vramPresentationPending: boolean;
 };
 
@@ -243,6 +253,7 @@ export type GxGpuState = {
 	presentVramYAddressExtensionWord: number;
 	presentHorizontalDisplayRangeWord: number;
 	presentVerticalDisplayRangeWord: number;
+	pcrtc: GxGpuPcrtcState;
 	vramPresentationPending: boolean;
 	supervisorQuiesceRequested: boolean;
 	supervisorIngressStopped: boolean;
@@ -260,6 +271,7 @@ export class GxGpu {
 	private displayModeWord = GX_GPU_RESET_DISPLAY_MODE_WORD;
 	private statusWord = GX_GPU_STATUS_RESET_WORD;
 	private readonly commandBuffer: GxGpuCommandBuffer;
+	private readonly pcrtc: GxGpuPcrtc;
 	private readonly gp0CommandWords = new Uint32Array(GX_GPU_GP0_COMMAND_BUFFER_WORDS);
 	private readonly gp0Fifo = new GxGpuCommandFifo();
 	private gp0IngressPhase = GX_GPU_GP0_INGRESS_COMMAND;
@@ -300,6 +312,7 @@ export class GxGpu {
 	private scanoutInterlacedField = 0;
 	private scanoutInterlacedDisplayField = 0;
 	private scanoutActiveLineLsb = 0;
+	private skippedLineParity = GX_GPU_SKIPPED_LINE_NONE;
 	private scanoutFrameStartCycle = 0;
 	private scanoutCyclesPerFrame = 1;
 	private scanoutTotalScanlines = 313;
@@ -332,6 +345,8 @@ export class GxGpu {
 		presentVramYAddressExtensionWord: 0,
 		presentHorizontalDisplayRangeWord: GX_GPU_RESET_HORIZONTAL_DISPLAY_RANGE_WORD,
 		presentVerticalDisplayRangeWord: GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD,
+		pcrtcRegisterWords: new Array<number>(GX_GPU_PCRTC_WORD_COUNT).fill(0),
+		pcrtcPresentWords: new Array<number>(GX_GPU_PCRTC_WORD_COUNT).fill(0),
 		vramPresentationPending: false,
 	};
 	private readonly vramSnapshotBytes = new Uint8Array(GX_GPU_VRAM_BYTE_COUNT);
@@ -345,6 +360,7 @@ export class GxGpu {
 		private readonly dmaController: DmaController,
 	) {
 		this.commandBuffer = new GxGpuCommandBuffer(dmaController);
+		this.pcrtc = new GxGpuPcrtc(memory);
 		this.deviceOutput = {
 			commandBuffer: this.commandBuffer,
 			readbackPort: this.commandBuffer.readback,
@@ -354,6 +370,8 @@ export class GxGpu {
 			vramYAddressExtensionWord: 0,
 			horizontalDisplayRangeWord: GX_GPU_RESET_HORIZONTAL_DISPLAY_RANGE_WORD,
 			verticalDisplayRangeWord: GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD,
+			pcrtcWords: this.pcrtc.presentWords,
+			pcrtcScanout: this.pcrtc.scanout,
 			vramSnapshotBytes: this.vramSnapshotBytes,
 			vramSnapshotSerial: 0n,
 		};
@@ -366,6 +384,7 @@ export class GxGpu {
 	}
 
 	public reset(): void {
+		this.pcrtc.reset();
 		this.vramYAddressExtensionWord = 0;
 		this.gpuReadWord = 0;
 		this.commandBuffer.reset();
@@ -413,6 +432,8 @@ export class GxGpu {
 		context.presentVramYAddressExtensionWord = 0;
 		context.presentHorizontalDisplayRangeWord = GX_GPU_RESET_HORIZONTAL_DISPLAY_RANGE_WORD;
 		context.presentVerticalDisplayRangeWord = GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD;
+		context.pcrtcRegisterWords.fill(0);
+		context.pcrtcPresentWords.fill(0);
 		context.vramPresentationPending = false;
 	}
 
@@ -441,6 +462,10 @@ export class GxGpu {
 		target.presentVramYAddressExtensionWord = source.presentVramYAddressExtensionWord >>> 0;
 		target.presentHorizontalDisplayRangeWord = source.presentHorizontalDisplayRangeWord >>> 0;
 		target.presentVerticalDisplayRangeWord = source.presentVerticalDisplayRangeWord >>> 0;
+		for (let index = 0; index < target.pcrtcRegisterWords.length; index += 1) {
+			target.pcrtcRegisterWords[index] = source.pcrtcRegisterWords[index]! >>> 0;
+			target.pcrtcPresentWords[index] = source.pcrtcPresentWords[index]! >>> 0;
+		}
 		target.vramPresentationPending = source.vramPresentationPending;
 	}
 
@@ -469,6 +494,7 @@ export class GxGpu {
 		context.presentVramYAddressExtensionWord = this.presentVramYAddressExtensionWord;
 		context.presentHorizontalDisplayRangeWord = this.presentHorizontalDisplayRangeWord;
 		context.presentVerticalDisplayRangeWord = this.presentVerticalDisplayRangeWord;
+		this.pcrtc.captureContext(context.pcrtcRegisterWords, context.pcrtcPresentWords);
 		context.vramPresentationPending = this.vramPresentationPending;
 	}
 
@@ -497,15 +523,18 @@ export class GxGpu {
 		this.presentVramYAddressExtensionWord = context.presentVramYAddressExtensionWord;
 		this.presentHorizontalDisplayRangeWord = context.presentHorizontalDisplayRangeWord;
 		this.presentVerticalDisplayRangeWord = context.presentVerticalDisplayRangeWord;
+		this.pcrtc.restoreContext(context.pcrtcRegisterWords, context.pcrtcPresentWords);
 		this.vramPresentationPending = context.vramPresentationPending;
 		this.dmaController.setGxGpuDmaDirection(
 			(this.statusWord & GX_GPU_STATUS_DMA_DIRECTION_MASK) >>> GX_GPU_STATUS_DMA_DIRECTION_SHIFT,
 		);
+		this.updateSkippedLineParity();
 		this.memory.writeIoValue(IO_GX_GPU_GP0, this.gp0Word);
 		this.writeStatusIo();
 	}
 
 	private resetTransientContext(): void {
+		this.pcrtc.reset();
 		this.commandBuffer.reset();
 		this.clearGp0CommandState();
 		this.gpuReadWord = 0;
@@ -604,10 +633,15 @@ export class GxGpu {
 			presentVramYAddressExtensionWord: this.presentVramYAddressExtensionWord,
 			presentHorizontalDisplayRangeWord: this.presentHorizontalDisplayRangeWord,
 			presentVerticalDisplayRangeWord: this.presentVerticalDisplayRangeWord,
+			pcrtc: this.pcrtc.captureState(),
 			vramPresentationPending: this.vramPresentationPending,
 			supervisorQuiesceRequested: this.supervisorQuiesceRequested,
 			supervisorIngressStopped: this.supervisorIngressStopped,
-			userContext: { ...this.userContext },
+			userContext: {
+				...this.userContext,
+				pcrtcRegisterWords: this.userContext.pcrtcRegisterWords.slice(),
+				pcrtcPresentWords: this.userContext.pcrtcPresentWords.slice(),
+			},
 			commandBuffer: this.commandBuffer.captureState(),
 		};
 	}
@@ -665,6 +699,7 @@ export class GxGpu {
 		this.presentVramYAddressExtensionWord = state.presentVramYAddressExtensionWord >>> 0;
 		this.presentHorizontalDisplayRangeWord = state.presentHorizontalDisplayRangeWord >>> 0;
 		this.presentVerticalDisplayRangeWord = state.presentVerticalDisplayRangeWord >>> 0;
+		this.pcrtc.restoreState(state.pcrtc);
 		this.vramPresentationPending = state.vramPresentationPending;
 		this.supervisorQuiesceRequested = state.supervisorQuiesceRequested;
 		this.supervisorIngressStopped = state.supervisorIngressStopped;
@@ -674,6 +709,7 @@ export class GxGpu {
 		if (this.pendingCommandCompletionCycle !== 0) {
 			this.scheduler.scheduleDeviceService(DEVICE_SERVICE_GPU, this.pendingCommandCompletionCycle);
 		}
+		this.updateSkippedLineParity();
 		this.memory.writeIoValue(IO_GX_GPU_GP0, this.gp0Word);
 		this.writeStatusIo();
 	}
@@ -718,6 +754,7 @@ export class GxGpu {
 		this.supervisorQuiesceRequested = false;
 		this.supervisorIngressStopped = false;
 		this.resetTransientContext();
+		this.pcrtc.enterSupervisorContext(this.userContext.pcrtcPresentWords);
 	}
 
 	public enterSupervisorFaultContext(): void {
@@ -1059,6 +1096,7 @@ export class GxGpu {
 				break;
 			case GX_GPU_GP1_VRAM_Y_ADDRESS_EXTENSION:
 				this.vramYAddressExtensionWord = command & 0x1;
+				this.updateScanoutStatusBits();
 				this.writeStatusIo();
 				break;
 			case GX_GPU_GP1_GET_GPU_INFO:
@@ -1138,12 +1176,14 @@ export class GxGpu {
 		// A field edge exposes the other retained scanout field even when no GP0 work completed.
 		const visibleStatusMask = GX_GPU_STATUS_DISPLAY_DISABLE | GX_GPU_STATUS_INTERLACED_FIELD;
 		const visibleStatusWord = this.statusWord & visibleStatusMask;
+		const pcrtcChanged = this.pcrtc.latchPresentationWords();
 		const scanoutStateChanged = (this.presentStatusWord & visibleStatusMask) !== visibleStatusWord
 			|| this.presentDisplayModeWord !== this.displayModeWord
 			|| this.presentDisplayStartWord !== this.displayStartWord
 			|| this.presentVramYAddressExtensionWord !== this.vramYAddressExtensionWord
 			|| this.presentHorizontalDisplayRangeWord !== this.horizontalDisplayRangeWord
-			|| this.presentVerticalDisplayRangeWord !== this.verticalDisplayRangeWord;
+			|| this.presentVerticalDisplayRangeWord !== this.verticalDisplayRangeWord
+			|| pcrtcChanged;
 		this.latchPresentationRegisters();
 		this.commandBuffer.sealCommandsForPresentation();
 		this.m_lastFrameCommitted = this.vramPresentationPending
@@ -1392,7 +1432,6 @@ export class GxGpu {
 	}
 
 	private pushGpuCommand(kind: number, opcode: number, wordStart: number, commandWordCount: number, nowCycles: number): void {
-		const interlacedRenderWord = gxGpuInterlacedRenderWord(this.statusWord, this.scanoutActiveLineLsb);
 		this.commandBuffer.pushCommand(
 			kind,
 			opcode,
@@ -1405,7 +1444,7 @@ export class GxGpu {
 			this.drawingAreaBottomRightWord,
 			this.drawingOffsetWord,
 			this.maskBitModeWord,
-			interlacedRenderWord,
+			this.skippedLineParity,
 		);
 		this.startCommandTiming(
 			gxGpuCommandTicks(
@@ -1420,7 +1459,7 @@ export class GxGpu {
 				this.drawingAreaBottomRightWord,
 				this.drawingOffsetWord,
 				this.maskBitModeWord,
-				interlacedRenderWord,
+				this.skippedLineParity,
 			),
 			this.commandBuffer.commandCount,
 			nowCycles,
@@ -1450,6 +1489,7 @@ export class GxGpu {
 		this.statusWord = ((this.statusWord & ~(GX_GPU_DRAW_MODE_GPUSTAT_MASK | GX_GPU_STATUS_TEXTURE_PAGE_Y_HIGH))
 			| (this.drawModeWord & GX_GPU_DRAW_MODE_GPUSTAT_MASK)
 			| texturePageYHigh) >>> 0;
+		this.updateSkippedLineParity();
 	}
 
 	private writeMaskBitModeWord(word: number): void {
@@ -1596,6 +1636,13 @@ export class GxGpu {
 			scanoutBits |= GX_GPU_STATUS_INTERLACED_FIELD;
 		}
 		this.statusWord = ((this.statusWord & ~GX_GPU_STATUS_SCANOUT_MASK) | scanoutBits) >>> 0;
+		this.updateSkippedLineParity();
+	}
+
+	private updateSkippedLineParity(): void {
+		this.skippedLineParity = (this.statusWord & GX_GPU_STATUS_SKIP_ACTIVE_FIELD_MASK) === GX_GPU_STATUS_SKIP_ACTIVE_FIELD_WORD
+			? this.scanoutActiveLineLsb
+			: GX_GPU_SKIPPED_LINE_NONE;
 	}
 
 	private updateDisplayModeStatusBits(): void {

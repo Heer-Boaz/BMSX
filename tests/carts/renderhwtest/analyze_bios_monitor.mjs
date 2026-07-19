@@ -54,35 +54,70 @@ function assertText(png, row, column, value, foreground) {
 	}
 }
 
-function assertTerminalPalette(png) {
-	for (let y = 0; y < png.height; y += 1) {
-		for (let x = 0; x < png.width; x += 1) {
-			const color = rgbAt(png, x, y);
-			if (color !== black && color !== text && color !== accent) {
-				throw new Error(`non-terminal pixel 0x${color.toString(16)} at ${x},${y}`);
-			}
+function assertBlackCell(png, row, column) {
+	for (let y = 0; y < 6; y += 1) {
+		for (let x = 0; x < 4; x += 1) {
+			assert.equal(rgbAt(png, column * 4 + x, row * 6 + y), black);
 		}
 	}
+}
+
+function assertCellMatches(base, overlay, row, column) {
+	for (let y = 0; y < 6; y += 1) {
+		for (let x = 0; x < 4; x += 1) {
+			assert.equal(
+				rgbAt(overlay, column * 4 + x, row * 6 + y),
+				rgbAt(base, column * 4 + x, row * 6 + y),
+			);
+		}
+	}
+}
+
+function assertComposedOverGame(base, overlay) {
+	let retainedPixels = 0;
+	let terminalPixels = 0;
+	for (let y = 0; y < overlay.height; y += 1) {
+		for (let x = 0; x < overlay.width; x += 1) {
+			const baseColor = rgbAt(base, x, y);
+			const overlayColor = rgbAt(overlay, x, y);
+			if (overlayColor === baseColor) {
+				retainedPixels += 1;
+				continue;
+			}
+			assert.equal(x < 256 && y < 192, true, `terminal pixel outside circuit-one rectangle at ${x},${y}`);
+			assert.equal(
+				overlayColor === black || overlayColor === text || overlayColor === accent || overlayColor === error,
+				true,
+				`non-terminal overlay pixel 0x${overlayColor.toString(16)} at ${x},${y}`,
+			);
+			terminalPixels += 1;
+		}
+	}
+	assert.ok(retainedPixels > 0, 'PCRTC composition must retain game pixels');
+	assert.ok(terminalPixels > 0, 'PCRTC composition must add terminal pixels');
 }
 
 const game = frame('game');
 assert.equal(game.width, 320);
 assert.equal(game.height, 240);
 
-const cartCaptures = new Set(['game', 'resumedF2', 'resumedCont']);
+const destructiveFaultCaptures = new Set(['nestedFault', 'nestedFaultAfterF2', 'nonResumable']);
 for (const name of Object.keys(captures)) {
 	const output = frame(name);
-	if (cartCaptures.has(name)) {
-		assert.equal(output.width, 320, `${name} width`);
-		assert.equal(output.height, 240, `${name} height`);
-	} else {
+	if (destructiveFaultCaptures.has(name)) {
 		assert.equal(output.width, 256, `${name} width`);
 		assert.equal(output.height, 192, `${name} height`);
+	} else {
+		assert.equal(output.width, 320, `${name} width`);
+		assert.equal(output.height, 240, `${name} height`);
 	}
 }
 
-assertText(frame('entry'), 1, 0, 'EXCEPTION ', accent);
-assertText(frame('entry'), 1, 10, 'NMI  SUPERVISOR REQUEST', text);
+const entry = frame('entry');
+assertText(entry, 1, 0, 'EXCEPTION ', accent);
+assertText(entry, 1, 10, 'NMI  SUPERVISOR REQUEST', text);
+assertBlackCell(entry, 1, 9);
+assertCellMatches(game, entry, 10, 10);
 assertGlyph(frame('uppercaseInput'), 4, 2, 'H', text);
 assertText(frame('firstCandidate'), 31, 0, 'REBOOT', accent);
 assertText(frame('firstCandidate'), 31, 8, 'REGS', text);
@@ -93,15 +128,28 @@ assertText(frame('wordBackspace'), 4, 2, 'REGS TWO', text);
 assertText(frame('wordDelete'), 4, 2, 'REGS ', text);
 assertText(frame('historyRecall'), 0, 2, 'CLS', text);
 assertText(frame('historyExecuted'), 0, 0, '> ', accent);
-assertText(frame('historyExecuted'), 1, 0, ' ', text);
+assertCellMatches(game, frame('historyExecuted'), 1, 0);
 assertText(frame('scrolled'), 0, 0, 'HELP', accent);
 
 const pagerText = '-- MORE --  ENTER LINE  SPACE PAGE  UP/DOWN SCROLL  Q QUIT';
 assertText(frame('firstPage'), 31, 0, pagerText, accent);
 assertText(frame('secondPage'), 31, 0, pagerText, accent);
-assertTerminalPalette(frame('scrolled'));
-assertTerminalPalette(frame('firstPage'));
-assertTerminalPalette(frame('secondPage'));
+for (const name of [
+	'entry',
+	'uppercaseInput',
+	'firstCandidate',
+	'secondCandidate',
+	'acceptedCandidate',
+	'wordBackspace',
+	'wordDelete',
+	'historyRecall',
+	'historyExecuted',
+	'scrolled',
+	'firstPage',
+	'secondPage',
+]) {
+	assertComposedOverGame(game, frame(name));
+}
 assert.notEqual(Buffer.compare(game.data, frame('resumedF2').data), 0, 'F2 resume must advance cart rendering');
 assert.notEqual(Buffer.compare(frame('resumedF2').data, frame('resumedCont').data), 0, 'CONT resume must advance cart rendering');
 assertText(frame('nestedFault'), 1, 0, 'EXCEPTION ', accent);

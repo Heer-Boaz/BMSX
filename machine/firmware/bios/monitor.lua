@@ -419,10 +419,7 @@ function monitor.enter()
 		*monitor_saved_epc,
 		*monitor_saved_bad_address,
 		*monitor_saved_irq_mask)
-	gx_gpu.reset_256x192_pal()
-	gx_gpu.disable_display()
-	gx_gpu.display_origin(layout.vram_origin)
-	gx_gpu.draw_target(layout.vram_origin)
+	gx_gpu.prepare_supervisor_256x192(layout.vram_origin)
 	local system_texture<const> = romdir.resource('gx_system_texture')
 	dma_transfer.copy_to_gp0(system_texture.addr, system_texture.len >> 2)
 	terminal.open()

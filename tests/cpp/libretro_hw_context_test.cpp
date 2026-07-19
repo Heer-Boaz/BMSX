@@ -29,7 +29,8 @@ int main() {
 	bmsx::LibretroPlatform platform(
 		bmsx::BackendType::OpenGLES2,
 		avInfo,
-		supervisorRequestLineLow);
+		supervisorRequestLineLow,
+		false);
 	platform.setHwRenderCallbacks(frontendGetCurrentFramebuffer, frontendGetProcAddress);
 	auto* backend = static_cast<bmsx::OpenGLES2Backend*>(platform.machineManager()->view()->backend());
 	if (backend->resolveProcAddress("glTextureBarrierNV") != frontendGlProc) {

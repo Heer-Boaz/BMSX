@@ -20,8 +20,9 @@ import {
 import { GEOMETRY_CONTROLLER_PHASE_BUSY, GEOMETRY_CONTROLLER_REGISTER_COUNT } from '../../machine/ts/machine/devices/geometry/contracts';
 import { GX_GPU_GP0_INGRESS_POLYLINE_PAYLOAD } from '../../machine/ts/machine/devices/gx/gpu';
 import { GX_GPU_READBACK_READY, GX_GPU_READBACK_SUBMITTED } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
+import { GX_GPU_PCRTC_WORD_COUNT } from '../../machine/ts/machine/devices/gx/gpu_pcrtc';
 import { GX_GPU_VRAM_BYTE_COUNT } from '../../machine/ts/machine/devices/gx/vram_address';
-import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT } from '../../machine/ts/machine/devices/gx/gte';
+import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT, GX_GTE_PLUS_REGISTER_COUNT } from '../../machine/ts/machine/devices/gx/gte';
 import { INPUT_CONTROLLER_KEY_WORD_COUNT, INPUT_CONTROLLER_PAD_AXIS_COUNT, INPUT_CONTROLLER_PAD_COUNT } from '../../machine/ts/machine/devices/input/contracts';
 import { PSX_GPU_DISPLAY_MODE_PAL_WORD } from '../../machine/ts/machine/model_registry';
 
@@ -156,6 +157,10 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					presentHorizontalDisplayRangeWord: 0x00c60260,
 					presentVerticalDisplayRangeWord: 0x0003fc10,
 					presentVramYAddressExtensionWord: 1,
+					pcrtc: {
+						registerWords: numberedWords(GX_GPU_PCRTC_WORD_COUNT),
+						presentWords: numberedWords(GX_GPU_PCRTC_WORD_COUNT).reverse(),
+					},
 					vramPresentationPending: false,
 					supervisorQuiesceRequested: true,
 					supervisorIngressStopped: true,
@@ -184,6 +189,8 @@ function createRuntimeSaveState(): RuntimeSaveState {
 						presentVramYAddressExtensionWord: 1,
 						presentHorizontalDisplayRangeWord: 0x00c60260,
 						presentVerticalDisplayRangeWord: 0x0003fc10,
+						pcrtcRegisterWords: numberedWords(GX_GPU_PCRTC_WORD_COUNT),
+						pcrtcPresentWords: numberedWords(GX_GPU_PCRTC_WORD_COUNT).reverse(),
 						vramPresentationPending: true,
 					},
 					commandBuffer: {
@@ -202,7 +209,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 						commandDrawingAreaBottomRightWord: [0x00ef013f, 0x00ef013f],
 						commandDrawingOffsetWord: [0, 0],
 						commandMaskBitModeWord: [0, 0],
-						commandInterlacedRenderWord: [0, 1],
+						commandSkippedLineParity: [2, 1],
 						words: [0x200000ff, 0, 1, 2, 0x0200001f, 0, 0x00100010],
 						readbackPhase: 0,
 						readbackFenceCommandCount: 0,
@@ -219,12 +226,18 @@ function createRuntimeSaveState(): RuntimeSaveState {
 				gxGte: {
 					dataRegisterWords: numberedWords(GX_GTE_DATA_REGISTER_COUNT),
 					controlRegisterWords: numberedWords(GX_GTE_CONTROL_REGISTER_COUNT),
+					plusRegisterWords: numberedWords(GX_GTE_PLUS_REGISTER_COUNT),
 					mac0: 1,
 					mac1: -2,
 					mac2: 3,
 					mac3: -4,
 					currentSf: 1,
 					lastCycles: 8,
+					plusPendingCycles: 4,
+					plusInterlockArmed: true,
+					plusPendingResultXy: 0x000efff2,
+					plusPendingResultZ: 28,
+					plusPendingFlag: 0x84000000,
 				},
 				irq: {
 					mask: 0x00ff,

@@ -21,6 +21,9 @@ constexpr bool gxGpuGp0OpcodeIsNop(u32 opcode) {
 		|| (opcode >= 0xe7u && opcode <= 0xefu);
 }
 
+constexpr u32 GX_GPU_STATUS_SKIP_ACTIVE_FIELD_MASK = GX_GPU_STATUS_VERTICAL_RESOLUTION | GX_GPU_STATUS_VERTICAL_INTERLACE | GX_GPU_DRAW_MODE_DRAW_TO_DISPLAYED_FIELD;
+constexpr u32 GX_GPU_STATUS_SKIP_ACTIVE_FIELD_WORD = GX_GPU_STATUS_VERTICAL_RESOLUTION | GX_GPU_STATUS_VERTICAL_INTERLACE;
+
 } // namespace
 
 GxGpu::GxGpu(Memory& memory, IrqController& irq, DeviceScheduler& scheduler, DmaController& dmaController)
@@ -29,7 +32,9 @@ GxGpu::GxGpu(Memory& memory, IrqController& irq, DeviceScheduler& scheduler, Dma
 	, m_scheduler(scheduler)
 	, m_dmaController(dmaController)
 	, m_commandBuffer(dmaController)
-	, m_deviceOutput(m_commandBuffer, m_vramSnapshotBytes) {
+	, m_pcrtc(memory)
+	, m_vramSnapshotBytes(std::make_unique<std::array<u8, GX_GPU_VRAM_BYTE_COUNT>>())
+	, m_deviceOutput(m_commandBuffer, m_pcrtc.presentWords(), m_pcrtc.scanout, *m_vramSnapshotBytes) {
 	m_memory.mapIoRead(IO_GX_GPU_GP0, this, &GxGpu::readGp0Thunk);
 	m_memory.mapIoWrite(IO_GX_GPU_GP0, this, &GxGpu::writeGp0Thunk);
 	m_memory.mapIoWriteReady(IO_GX_GPU_GP0, &GxGpu::gp0WriteReadyThunk);
@@ -39,10 +44,11 @@ GxGpu::GxGpu(Memory& memory, IrqController& irq, DeviceScheduler& scheduler, Dma
 }
 
 void GxGpu::reset() {
+	m_pcrtc.reset();
 	m_vramYAddressExtensionWord = 0u;
 	m_gpuReadWord = 0u;
 	m_commandBuffer.reset();
-	initializeGxGpuVramPowerOn(m_vramSnapshotBytes.data());
+	initializeGxGpuVramPowerOn(m_vramSnapshotBytes->data());
 	publishVramSnapshotRevision();
 	clearGp0CommandState();
 	m_scanoutVblankActive = false;
@@ -90,6 +96,7 @@ void GxGpu::storeLiveRegisterContext(GxGpuRegisterContextState& context) const {
 	context.presentVramYAddressExtensionWord = m_presentVramYAddressExtensionWord;
 	context.presentHorizontalDisplayRangeWord = m_presentHorizontalDisplayRangeWord;
 	context.presentVerticalDisplayRangeWord = m_presentVerticalDisplayRangeWord;
+	m_pcrtc.captureContext(context.pcrtcRegisterWords, context.pcrtcPresentWords);
 	context.vramPresentationPending = m_vramPresentationPending;
 }
 
@@ -118,13 +125,16 @@ void GxGpu::loadLiveRegisterContext(const GxGpuRegisterContextState& context) {
 	m_presentVramYAddressExtensionWord = context.presentVramYAddressExtensionWord;
 	m_presentHorizontalDisplayRangeWord = context.presentHorizontalDisplayRangeWord;
 	m_presentVerticalDisplayRangeWord = context.presentVerticalDisplayRangeWord;
+	m_pcrtc.restoreContext(context.pcrtcRegisterWords, context.pcrtcPresentWords);
 	m_vramPresentationPending = context.vramPresentationPending;
 	m_dmaController.setGxGpuDmaDirection((m_statusWord & GX_GPU_STATUS_DMA_DIRECTION_MASK) >> GX_GPU_STATUS_DMA_DIRECTION_SHIFT);
+	updateSkippedLineParity();
 	m_memory.writeIoValue(IO_GX_GPU_GP0, valueNumber(static_cast<double>(m_gp0Word)));
 	writeStatusIo();
 }
 
 void GxGpu::resetTransientContext() {
+	m_pcrtc.reset();
 	m_commandBuffer.reset();
 	clearGp0CommandState();
 	m_gpuReadWord = 0u;
@@ -220,6 +230,7 @@ GxGpuState GxGpu::captureState() {
 	state.presentVramYAddressExtensionWord = m_presentVramYAddressExtensionWord;
 	state.presentHorizontalDisplayRangeWord = m_presentHorizontalDisplayRangeWord;
 	state.presentVerticalDisplayRangeWord = m_presentVerticalDisplayRangeWord;
+	state.pcrtc = m_pcrtc.captureState();
 	state.vramPresentationPending = m_vramPresentationPending;
 	state.supervisorQuiesceRequested = m_supervisorQuiesceRequested;
 	state.supervisorIngressStopped = m_supervisorIngressStopped;
@@ -277,6 +288,7 @@ void GxGpu::restoreState(const GxGpuState& state) {
 	m_presentVramYAddressExtensionWord = state.presentVramYAddressExtensionWord;
 	m_presentHorizontalDisplayRangeWord = state.presentHorizontalDisplayRangeWord;
 	m_presentVerticalDisplayRangeWord = state.presentVerticalDisplayRangeWord;
+	m_pcrtc.restoreState(state.pcrtc);
 	m_vramPresentationPending = state.vramPresentationPending;
 	m_supervisorQuiesceRequested = state.supervisorQuiesceRequested;
 	m_supervisorIngressStopped = state.supervisorIngressStopped;
@@ -290,6 +302,7 @@ void GxGpu::restoreState(const GxGpuState& state) {
 		m_scheduler.cancelDeviceService(DEVICE_SERVICE_GPU);
 	}
 	m_lastFrameCommitted = false;
+	updateSkippedLineParity();
 	m_memory.writeIoValue(IO_GX_GPU_GP0, valueNumber(static_cast<double>(m_gp0Word)));
 	writeStatusIo();
 }
@@ -334,6 +347,7 @@ void GxGpu::enterSupervisorContext() {
 	m_supervisorQuiesceRequested = false;
 	m_supervisorIngressStopped = false;
 	resetTransientContext();
+	m_pcrtc.enterSupervisorContext(m_userContext.pcrtcPresentWords);
 }
 
 void GxGpu::enterSupervisorFaultContext() {
@@ -354,7 +368,7 @@ void GxGpu::leaveSupervisorContext() {
 GxGpuSaveState GxGpu::captureSaveState() {
 	GxGpuSaveState state;
 	static_cast<GxGpuState&>(state) = captureState();
-	state.vramBytes.assign(m_vramSnapshotBytes.begin(), m_vramSnapshotBytes.end());
+	state.vramBytes.assign(m_vramSnapshotBytes->begin(), m_vramSnapshotBytes->end());
 	return state;
 }
 
@@ -364,13 +378,13 @@ void GxGpu::restoreSaveState(const GxGpuSaveState& state) {
 }
 
 void GxGpu::replaceVramSnapshotBytes(const u8* bytes) {
-	std::copy(bytes, bytes + GX_GPU_VRAM_BYTE_COUNT, m_vramSnapshotBytes.begin());
+	std::copy(bytes, bytes + GX_GPU_VRAM_BYTE_COUNT, m_vramSnapshotBytes->begin());
 	publishVramSnapshotRevision();
 	m_vramPresentationPending = true;
 }
 
 u64 GxGpu::commitRenderedVramSnapshotBytes(const u8* bytes, size_t renderedCommandCount) {
-	std::copy(bytes, bytes + GX_GPU_VRAM_BYTE_COUNT, m_vramSnapshotBytes.begin());
+	std::copy(bytes, bytes + GX_GPU_VRAM_BYTE_COUNT, m_vramSnapshotBytes->begin());
 	publishVramSnapshotRevision();
 	if (renderedCommandCount != 0u) {
 		retireCommandPrefix(renderedCommandCount);
@@ -670,6 +684,7 @@ u32 GxGpu::writeGp1(u32 word) {
 		break;
 	case GX_GPU_GP1_VRAM_Y_ADDRESS_EXTENSION:
 		m_vramYAddressExtensionWord = word & 0x1u;
+		updateScanoutStatusBits();
 		writeStatusIo();
 		break;
 	case GX_GPU_GP1_GET_GPU_INFO:
@@ -740,12 +755,14 @@ void GxGpu::presentReadyFrameOnVblankEdge() {
 	// A field edge exposes the other retained scanout field even when no GP0 work completed.
 	constexpr u32 visibleStatusMask = GX_GPU_STATUS_DISPLAY_DISABLE | GX_GPU_STATUS_INTERLACED_FIELD;
 	const u32 visibleStatusWord = m_statusWord & visibleStatusMask;
+	const bool pcrtcChanged = m_pcrtc.latchPresentationWords();
 	const bool scanoutStateChanged = (m_presentStatusWord & visibleStatusMask) != visibleStatusWord
 		|| m_presentDisplayModeWord != m_displayModeWord
 		|| m_presentDisplayStartWord != m_displayStartWord
 		|| m_presentVramYAddressExtensionWord != m_vramYAddressExtensionWord
 		|| m_presentHorizontalDisplayRangeWord != m_horizontalDisplayRangeWord
-		|| m_presentVerticalDisplayRangeWord != m_verticalDisplayRangeWord;
+		|| m_presentVerticalDisplayRangeWord != m_verticalDisplayRangeWord
+		|| pcrtcChanged;
 	latchPresentationRegisters();
 	m_commandBuffer.sealCommandsForPresentation();
 	m_lastFrameCommitted = m_vramPresentationPending
@@ -988,7 +1005,6 @@ void GxGpu::emitFixedGp0Command(u8 kind, u32 opcode, u32 commandWordCount, i64 c
 }
 
 void GxGpu::pushGpuCommand(u8 kind, u32 opcode, size_t wordStart, u32 commandWordCount, i64 commandStartCycle) {
-	const u8 interlacedRenderWord = gxGpuInterlacedRenderWord(m_statusWord, m_scanoutActiveLineLsb);
 	m_commandBuffer.pushCommand(
 		kind,
 		static_cast<u8>(opcode),
@@ -1001,7 +1017,7 @@ void GxGpu::pushGpuCommand(u8 kind, u32 opcode, size_t wordStart, u32 commandWor
 		m_drawingAreaBottomRightWord,
 		m_drawingOffsetWord,
 		m_maskBitModeWord,
-		interlacedRenderWord);
+		m_skippedLineParity);
 	beginCommandCompletion(
 		gxGpuCommandTicks(
 			kind,
@@ -1015,7 +1031,7 @@ void GxGpu::pushGpuCommand(u8 kind, u32 opcode, size_t wordStart, u32 commandWor
 			m_drawingAreaBottomRightWord,
 			m_drawingOffsetWord,
 			m_maskBitModeWord,
-			interlacedRenderWord),
+			m_skippedLineParity),
 		m_commandBuffer.commandCount,
 		commandStartCycle);
 }
@@ -1042,6 +1058,7 @@ void GxGpu::updateDrawModeStatusBits() {
 	m_statusWord = (m_statusWord & ~(GX_GPU_DRAW_MODE_GPUSTAT_MASK | GX_GPU_STATUS_TEXTURE_PAGE_Y_HIGH))
 		| (m_drawModeWord & GX_GPU_DRAW_MODE_GPUSTAT_MASK)
 		| texturePageYHigh;
+	updateSkippedLineParity();
 }
 
 void GxGpu::writeMaskBitModeWord(u32 word) {
@@ -1182,6 +1199,13 @@ void GxGpu::updateScanoutStatusBits() {
 		scanoutBits |= GX_GPU_STATUS_INTERLACED_FIELD;
 	}
 	m_statusWord = (m_statusWord & ~GX_GPU_STATUS_SCANOUT_MASK) | scanoutBits;
+	updateSkippedLineParity();
+}
+
+void GxGpu::updateSkippedLineParity() {
+	m_skippedLineParity = (m_statusWord & GX_GPU_STATUS_SKIP_ACTIVE_FIELD_MASK) == GX_GPU_STATUS_SKIP_ACTIVE_FIELD_WORD
+		? static_cast<u8>(m_scanoutActiveLineLsb)
+		: GX_GPU_SKIPPED_LINE_NONE;
 }
 
 void GxGpu::updateDisplayModeStatusBits() {

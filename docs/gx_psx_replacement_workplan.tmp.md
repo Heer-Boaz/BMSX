@@ -5,7 +5,7 @@ This is **not** a stable ABI contract and is **not** more authoritative than the
 live checkout. It is a temporary execution checklist so agents can see the
 current direction, completed slices, known blockers, and next work.
 
-Last refreshed: 2026-07-18
+Last refreshed: 2026-07-19
 Do not duplicate recent commit history here. Use `git log --oneline` for that.
 
 ## Source of truth
@@ -21,19 +21,21 @@ software-renderer requirement.
 
 Replace the current BMSX VDP/RPU direction with a PSX-style GX GPU/GTE machine.
 The PSX-GTE hardware foundation was formally accepted on 2026-07-18. Exact
-PSX-GPU behavior and live accelerated conformance remain ongoing parity work,
-but they no longer block design of the first native BSX GTE+ extension. The PSX
-GTE remains the deliberate base for GTE+, not a temporary implementation to
+PSX-GPU behavior and live accelerated conformance remain ongoing parity work.
+The first native BSX GTE+ `VMAD3` datapath was independently accepted on
+2026-07-19.
+The PSX GTE remains its deliberate base, not a temporary implementation to
 discard once fantasy extensions start.
 
 The long-term console identity is BSX: a fantasy descendant of the PlayStation
 architecture with the Lua CPU and its own native GTE+ and GPU. That end state is
-recorded in `docs/architecture.md`. The selected GPU-side foundation first
-installs the complete uniform 2 MiB VRAM address space (`GX-VRAM-02`) and then
-replaces single-output scanout with the exact PS2 PCRTC dual read-output/merge
-block (`GX-PCRTC-01`). `BSX-GTE-01` separately remains the active geometry
-contract slice; no new GTE opcode becomes implementation scope until its first
-datapath contract has been reviewed.
+recorded in `docs/architecture.md`. The selected GPU-side foundation now has
+the complete uniform 2 MiB VRAM address space (`GX-VRAM-02`) and the exact PS2
+PCRTC dual read-output/merge block (`GX-PCRTC-01`); only the latter's visible
+WebGL2/WebGPU acceptance remains open. `BSX-GTE-01` closes the separately
+addressed three-lane fixed-Q12 `VMAD3` implementation. Later depth,
+local-memory and packet-emission work remains separate rather than being
+implied by this first extension.
 
 The terminal remains BIOS firmware. Its later `CALL` extension path is supplied
 by a real second cartridge slot and a Lua developer cartridge, not by moving IDE
@@ -66,10 +68,9 @@ Completion means all of these are true:
 - Do not add defensive require/ensure/fallback/provider/adapter/injection
   patterns.
 - Do not keep adding features to the old VDP/RPU spectacle path.
-- Do not expose or implement BSX GTE+, depth, morphing, local-memory, or native
-  surface words before `BSX-GTE-01` has selected and reviewed one coherent raw
-  hardware slice. Those are candidate capabilities, not permission to grow a
-  speculative ABI in parallel.
+- Do not infer depth, local-memory, packet-emission or native surface words from
+  the first GTE+ `VMAD3` slice. Each later capability still needs one
+  coherent raw hardware contract instead of a speculative bundle.
 - Do not implement the rejected GP1(0Ah)--GP1(0Dh) composition plane, a
   terminal-only display circuit, or a permanent GP1-to-PCRTC compatibility
   adapter. All display producers migrate to the selected PCRTC contract.
@@ -181,7 +182,13 @@ Implemented or partially covered GX-GPU areas include:
 - TS/C++ software triangle coverage now owns the PSX integer top-left fill rule,
   half-open bounds, and single-owner quad seams through mirrored raw-VRAM
   vectors. WebGL2, GLES2, and WebGPU apply the matching half-pixel conversion at
-  their vertex-transform boundary; live accelerated conformance remains open.
+  their vertex-transform boundary. Accelerated GL VRAM now uses direct logical
+  row order like software and WebGPU, so vertex transforms, fragment stores,
+  texture reads, transfers, GPUREAD and scanout no longer reverse `1023-y` in
+  their hot paths. A dense 101-frame BIOS interval around the formerly drifting
+  thick-line endpoint and all twenty named monitor captures match C++ software
+  pixel-for-pixel on hidden GLES2/llvmpipe. Live WebGL2/WebGPU proof remains
+  open.
 - Polygon raster output now translates the one visible signed-11 coordinate
   bucket after E5 and primitive-size rejection in TS/C++ software, WebGL2,
   GLES2, and WebGPU. Mirrored vectors preserve the valid `+1024` exclusive edge
@@ -189,9 +196,10 @@ Implemented or partially covered GX-GPU areas include:
   drawing-area clipping without accelerated CPU rasterization.
 - Textured polygons now use the same 12-fraction-bit UV gradients, half-texel
   seed, and 20-bit accumulator wrap in TS/C++ software, WebGL2, GLES2, and
-  WebGPU. WebGPU consumes the raw plane with native unsigned arithmetic;
-  WebGL2/GLES2 interpolate bounded radix-16 digit planes and only resolve their
-  carry chain per fragment, removing the split multiply/mod fragment hot path.
+  WebGPU. WebGPU and WebGL2 consume native raw unsigned plane words. GLES2
+  carries those bounded raw words exactly in its available float attributes and
+  converts them directly at the integer datapath boundary; there is no
+  per-fragment rounding, radix stream or carry chain.
   The normal raw-UV vertex stream retains sample-cache bounds. Quads refresh
   read-VRAM between triangle draws when required; rectangles keep their lean
   direct integer UV path.
@@ -199,9 +207,9 @@ Implemented or partially covered GX-GPU areas include:
   before dither, RGB555 store, and texture modulation in TS/C++ software,
   WebGL2, GLES2, and WebGPU. Software steps one retained three-component plane
   instead of dividing three barycentric numerators per pixel and skips color
-  work for raw textures. WebGPU streams raw plane words; WebGL2/GLES2 use
-  retained radix-16 streams and shader permutations, with the fixed textured
-  layout staying within eight GLES2 vertex attributes. Representation changes
+  work for raw textures. WebGPU and WebGL2 stream raw plane words; GLES2 carries
+  the same bounded words exactly and consumes them directly, with the fixed
+  textured layout staying within eight GLES2 vertex attributes. Representation changes
   split batches, raw-textured Gouraud stays on the normal path, and quads build
   each triangle plane independently. Normal and fixed layouts share one
   retained CPU stream and GPU buffer per primitive family. Mirrored raw vectors
@@ -209,7 +217,9 @@ Implemented or partially covered GX-GPU areas include:
   accelerated live conformance remains open. The full frame-1,020
   `bare_metal_cart` timeline produces all 146 captures on GLES2/llvmpipe without
   shader/runtime errors, while the same captures match byte-for-byte between TS
-  headless and C++ software. Browser execution remains deferred.
+  headless and C++ software. Fresh hidden GLES2 captures also match TS software
+  for all 93 `2025` captures and the focused `pietious` scanout capture. Browser
+  execution remains deferred.
 - Mirrored raw software vectors now lock E2 bit replacement, direct16 page X/Y
   wrap, palette4 nibble selection across a page edge, and palette8 byte plus
   horizontal CLUT wrap. The matching accelerated live run remains open.
@@ -270,13 +280,13 @@ always emits one packet. The compact BIOS direct16 texture remains one fixed
 host UI renderresource, not cart residency.
 
 The `2025` cart deliberately replaced its pre-GX unlimited-atlas assumptions
-with the current implementation's explicit 1024x512 VRAM map. `GX-VRAM-02`
-migrates this producer layout to the uniform 1024x1024 resource and relocated
-system page without preserving the old half as an allocator class. Today, the
-top half contains the 320x240 framebuffer, Maya B, the fixed system page, and
-adjacent Maya A/V_S textures.
-The bottom half contains two 384x256 background banks and a separate monster
-bank. The common combat textures remain resident; a monster switch replaces
+with an explicit physical VRAM layout. `GX-VRAM-02` now gives that producer one
+uniform 1024x1024 resource and places the fixed system page at x=768..1023,
+y=768..1023 without preserving either 512-row half as an allocator class. The
+cart's existing working sets remain in rows 0..511 as a current placement
+choice: the 320x240 framebuffer and Maya textures occupy the first 256 rows,
+while two 384x256 background banks and a separate monster bank occupy rows
+256..511. The common combat textures remain resident; a monster switch replaces
 only the monster bank, while the opaque all-out image deliberately replaces the
 left background bank. None of these ranges overlaps the framebuffer or system
 page. Background preload is queued before the authored swap, submitted after
@@ -626,24 +636,35 @@ The target contract is fixed in
 mirrored storage/addressing migration, not a legacy lower bank plus an extension
 allocator.
 
-- [ ] Change the central TS/C++ GX VRAM owner to one 1024x1024-word,
+- [x] Change the central TS/C++ GX VRAM owner to one 1024x1024-word,
   2 MiB array. Remove open-bus constants, installed-bank predicates and
   512-row physical-band planning instead of leaving dead branches behind.
-- [ ] Resize deterministic power-on storage, raw snapshots, software VRAM/copy
-  scratch, accelerated resources and readback/capture staging at their owners.
-  Update current-format save-state capacity/schema directly; add no old reader.
-- [ ] Keep GP1(09h) as the captured Y9 address-decoder latch: closed aliases to
+- [x] Widen storage-sized owners: deterministic power-on contents, raw
+  snapshots, software VRAM, accelerated VRAM resources and full-VRAM capture
+  staging. Keep the GP0 transfer/readback port and software copy scratch at
+  their independent 1024x512 transfer maximum. The current-format codec
+  consumes the widened storage owner directly within its existing fixed wire
+  envelope; there is no old-format reader.
+- [x] Keep GP1(09h) as the captured Y9 address-decoder latch: closed aliases to
   rows 0--511, open reaches all installed rows. Apply it before addressing the
   same resource in transfers, raster, textures, CLUT, copies and GPUREAD.
-- [ ] Move the fixed 256x256 system reservation to x=768..1023,
+- [x] Move the fixed 256x256 system reservation to x=768..1023,
   y=768..1023. The system texture occupies y=768..831 and the terminal surface
   starts at `(768,832)`. Update firmware, producer constants, every cart layout
   and focused producer diagnostics together. The normal rompacker rejects
   overlap; bare-metal writes remain physically possible and unprotected.
-- [ ] Prove lower/upper-half draws, textures/CLUT independence, transfers,
+- [x] Prove lower/upper-half draws, textures/CLUT independence, transfers,
   copies, wrap, GPUREAD, reset and save-state in mirrored TS/C++ vectors, then
-  run software/headless parity and the accelerated backend conformance bundle.
-- [ ] Do not change texture-page dimensions or introduce a separate GTE+ VRAM
+  run software/headless parity and accelerated validation. The acceptance run
+  includes 58 TS vectors, the complete 16-target C++ test suite including
+  `bmsx_gx_gpu_tests` and `bmsx_libretro_save_state_tests`, 95 rompacker tests, core parity,
+  browser/headless/libretro builds, 146 pixel-exact TS/C++ software captures,
+  the bare-metal frame scan, and the complete BIOS-monitor scenario on both TS
+  software and hidden GLES2 from the relocated upper system page. All 18
+  captures taken while that system page is active match exactly; live WebGL2,
+  WebGPU and focused accelerated raw-vector coverage remains the separate
+  `GX-READ-01`/`GX-RASTER-01` acceptance boundary.
+- [x] Do not change texture-page dimensions or introduce a separate GTE+ VRAM
   addressing path in this slice. All installed words are the same cart resource.
 
 ### 4. GTE parity
@@ -673,16 +694,41 @@ to fix and never permission to route around the raw base contract.
 
 ### 4a. BSX GTE+ contract
 
-- [ ] Select one first native GTE+ datapath instead of designing depth,
-  morphing, local memory, surfaces, and packets as a speculative bundle.
-- [ ] Define its raw registers/opcodes, input and output word formats, pipeline
-  ordering, cycle timing, saturation/flag behavior, reset state, and save-state
-  latches without reinterpreting any accepted PSX word.
-- [ ] Define only the GX handoff and GPU-local-memory behavior required by that
-  datapath. Host geometry/material/renderer objects and the retired VDP/RPU ABI
-  are not design inputs.
-- [ ] Review the complete hardware contract before adding cart-visible words or
-  mirrored TS/C++ implementation.
+- [x] Select one first native GTE+ datapath instead of designing depth,
+  morphing, local memory, surfaces, and packets as a speculative bundle. The
+  selected `VMAD3` unit performs three parallel `ADD + MUL * signed-Q4.12`
+  lanes over the existing packed signed-vector word shape.
+- [x] Define and implement its separate ten-word MMIO registerfile, function
+  word, packed input/result formats, signed 32-bit accumulator, arithmetic
+  shift, signed-16 saturation, lane/error/invalid flags, five-cycle valid and
+  one-cycle invalid timing, reset state, and raw save-state latches. `CYCLES`
+  publishes a busy bit with the accepted latency. The GTE+ owner retains one
+  absolute completion tick and publishes result/FLAG once on MMIO access or
+  state capture after that tick; ordinary commands do not allocate scheduler
+  events. A genuinely blocked CPU store gets one wake event. Save-state retains
+  whether that interlock edge was armed, so an unblocked in-flight restore keeps
+  the owner tick event-free while a blocked restore rearms exactly one wake. The
+  owner accepts command writes
+  only from the CPU while idle, DMA command writes have no effect, and a
+  multiword CPU store preflights all mapped words before committing any prefix.
+  Existing PSX data/control registers and opcodes are untouched.
+- [x] Keep the first datapath independent of GPU packets, VRAM, DMA and local
+  memory. A cart may explicitly copy the packed result into an accepted PSX GTE
+  vector register; there is no implicit host or GPU handoff and no facade.
+- [x] Review the raw unit against PCSX2's production parallel VU MAC-lane and
+  flag ownership and DuckStation's production GTE register/saturation owner,
+  then implement it directly in mirrored TS/C++. Focused MMIO vectors cover
+  retained bits, a negative scalar, all three lanes' positive/negative
+  saturation, nonzero old result/FLAG latches while busy, read-only outputs,
+  invalid commands, CPU-only owner admission, pre-/at-completion timing inside
+  an active CPU slice, reset and both completed and in-flight save/restore. A
+  mirrored bytecode vector proves that a nine-word CPU burst blocks atomically
+  at `COMMAND`, survives save/restore, resumes once and retries the whole store.
+  `cartlib_test` executes that raw command interlock and the public
+  `system/gx_gte.vmad3()` utility in the actual Lua/CPU runtime. The TS
+  GTE/save-codec suites, C++ GTE/libretro save-state suites, runtime-cart parity,
+  core-parity audit and independent blocker review are the acceptance gate.
+  The second independent rereview returned no blockers on 2026-07-19.
 
 ### 5. Backend parity
 
@@ -897,6 +943,26 @@ to fix and never permission to route around the raw base contract.
   zero commands, calls, bytes and upload time. One logical packet is therefore
   already one physical host upload;
   cross-command coalescing has no measured justification.
+- [x] Profile the complete release TypeScript software/headless path before
+  changing PCRTC scanout. Over the same capture-free 1,101-frame
+  `bare_metal_cart_particle_soak` timeline, the first V8 CPU profile sampled
+  6,033.871 ms: the general per-pixel PCRTC merge consumed 952.897 ms self and
+  headless presentation spent another 110.997 ms repairing alpha that scanout
+  had already produced. The published PCRTC state now selects one RGB555 row
+  composition kernel per frame in both software runtimes; the general sampler
+  remains for other PSMs and magnification. TypeScript scanout writes retained
+  32-bit output words directly and the byte view is presented without an alpha
+  pass or second frame allocation. The first repeated profile sampled 4,978.015
+  ms. Independent review then found that the full-cover opaque circuit still
+  wrote a hidden background over the complete frame first; owner-level circuit
+  selection now skips that covered pass and preserves low-line source-row scale
+  as retained field state. The final repeated profile sampled 4,937.513 ms,
+  18.2% less total sampled CPU than baseline; the former general merge remains
+  absent and the replacement opaque row kernel fell from 171.806 to 111.751 ms
+  self.
+  All 146 `bare_metal_cart` TS/C++ parity captures remained byte-identical;
+  `bare_metal_cart`, `2025`, and `pietious` frame gates retained their exact
+  accepted metrics.
 - [ ] Keep WebGL2/GLES2 behavior synchronized for every new GX command.
 - [ ] Wire the existing TS/C++ software/headless renderer to the same GX/PSX
   contract as oracle/backend, not as a fallback inside GPU backends.
@@ -913,30 +979,36 @@ The earlier GP1(0Ah)--GP1(0Dh) A1 composition plane is rejected and must not be
 implemented. The selected output hardware follows the real PS2 read-circuit and
 merge model rather than a terminal-shaped approximation.
 
-- [ ] Review PS2SDK and PCSX2 and freeze the complete raw BSX mapping for
+- [x] Review PS2SDK and PCSX2 and freeze the complete raw BSX mapping for
   `PMODE`, `DISPFB1`, `DISPLAY1`, `DISPFB2`, `DISPLAY2`, and `BGCOLOR`, including
   framebuffer PSM/address semantics, magnification, rectangles, alpha/background
   merge, reset, beam-edge publication, IRQ/timing interaction and save-state.
   Do not substitute custom 24-bit GP1 words for an unresolved field.
-- [ ] Add the PCRTC registerfile and two read-output circuits to the mirrored
+- [x] Add the PCRTC registerfile and two read-output circuits to the mirrored
   TS/C++ device owners. PCRTC is the sole scanout authority after migration;
   move BIOS, cartlib and cart producers together and remove the old active GP1
   display path rather than retaining an adapter or runtime selector.
-- [ ] Integrate resumable supervisor ownership at the raw register boundary.
-  The retained user circuit-1 readout is the frozen game base, supervisor
-  circuit 2 reads the terminal surface, and `PMODE` performs the merge. Leaving
-  restores the user context unchanged; destructive faults have no resumable
-  base and program the active background/circuits explicitly.
-- [ ] Extend TS/C++ software oracles with both circuit rectangles, source
+- [x] Integrate resumable supervisor ownership at the raw register boundary.
+  Supervisor circuit 2 reads the retained user circuit-1 game output as its
+  frozen underlay, circuit 1 reads the terminal foreground, and `PMODE` performs
+  the merge. Leaving restores the user context unchanged; destructive faults
+  have no resumable base and program the active background/circuits explicitly.
+- [x] Extend TS/C++ software oracles with both circuit rectangles, source
   offsets, magnification, supported PSMs, constant/source alpha selection,
   background, overlap/clipping, interlace and context/save-state vectors.
-- [ ] Make WebGL2, WebGPU and GLES2 consume those same raw words and the one
+- [x] Make WebGL2, WebGPU and GLES2 consume those same raw words and the one
   1024x1024 VRAM resource. Do not allocate a composed machine image, copy a cart
   framebuffer or add a backend/host terminal texture.
-- [ ] Move monitor scanout to PCRTC circuit 2 over the circuit-1 cart frame and
-  prove byte-identical TS/C++ captures, accelerated conformance and the visible
-  `BIOS-TERM-LIVE-01` run. Normal cart code must exercise both circuits and the
-  same `PMODE` merge independently of supervisor mode.
+- [x] Move monitor scanout to PCRTC circuit 1 over the retained circuit-2 cart
+  frame and prove byte-identical TS/C++ captures plus hidden GLES2/llvmpipe
+  conformance. TS software proves the sparse
+  composition directly: nonzero cells including spaces are hard black behind
+  their glyphs, zero cells retain the game pixel-exactly, and no terminal pixel
+  escapes the 256x192 circuit rectangle. Normal cart code must exercise both
+  circuits and the same `PMODE` merge independently of supervisor mode.
+- [ ] Complete the visible `BIOS-TERM-LIVE-01` WebGL2/WebGPU acceptance run
+  outside the WSL black-swapchain environment. This is a live-backend proof,
+  not missing PCRTC machine or backend implementation.
 
 ### 6. VDP/RPU removal
 
@@ -962,9 +1034,9 @@ merge model rather than a terminal-shaped approximation.
 - [x] Remove old VDP/RPU and IMGDEC tests that only protected the failed
   renderer-descriptor and runtime decode ABIs.
 - [x] Record BSX with its own native GTE+/GPU as the long-term hardware goal.
-  The PSX-GTE foundation is now accepted; `BSX-GTE-01` must still select and
-  review the first coherent extension before depth, morphing, local-memory, or
-  surface words are exposed. Do not preserve the old VDP/RPU ABI.
+  The PSX-GTE foundation and the first `BSX-GTE-01` `VMAD3` extension are
+  accepted. Later depth, local-memory, packet or
+  surface words remain separate slices. Do not preserve the old VDP/RPU ABI.
 
 ### 7. Cart migration
 
@@ -1043,9 +1115,10 @@ merge model rather than a terminal-shaped approximation.
   programming. Cartlib/prelude no longer publishes the old VDP/RPU ABI, the
   seven Lua VDP/RPU firmware modules are removed, and carts consume GX-owned
   display metrics instead of retired VDP MMIO words.
-- [ ] Keep unselected BSX extensions behind reviewed hardware contracts. The
-  selected 2 MiB VRAM and PCRTC migrations proceed through their named slices,
-  not through a legacy/native runtime mode.
+- [x] Install the selected 2 MiB VRAM through `GX-VRAM-02`, without a
+  legacy/native runtime mode.
+- [x] Keep unselected BSX extensions behind reviewed hardware contracts. PCRTC
+  proceeded through `GX-PCRTC-01`, not through a compatibility display mode.
 
 ### 7a. Two cartridge slots and terminal `CALL`
 
@@ -1080,20 +1153,17 @@ terminal remains BIOS firmware throughout.
 
 Pick one vertical slice and finish it before committing:
 
-1. **Uniform 2 MiB VRAM (`GX-VRAM-02`)**: install the complete 1024x1024 array,
-   remove open-bus/band machinery, move the system reservation to the
-   bottom-right page and finish the mirrored storage/backend/producer tests.
-2. **Exact PS2 PCRTC (`GX-PCRTC-01`)**: after the VRAM slice, freeze the raw
-   register/PSM/timing contract and deliver both read circuits plus `PMODE`
-   merge through TS/C++ and every backend. Do not revive the custom GP1 plane.
-3. **Two-slot expansion bus (`CART-EXP-01`)**: specify and implement the physical
+`GX-VRAM-02`, the machine/backend portion of `GX-PCRTC-01`, and `BSX-GTE-01`
+are complete and are no longer selectable implementation slices.
+
+1. **Two-slot expansion bus (`CART-EXP-01`)**: specify and implement the physical
    slot/bus/save-state boundary before any terminal command extension.
-4. **Terminal extension and developer cart (`BIOS-TERM-EXT-01`)**: add the BIOS
+2. **Terminal extension and developer cart (`BIOS-TERM-EXT-01`)**: add the BIOS
    `CALL` dispatcher over the reviewed cartridge ABI, then move developer
    functionality into cart Lua backed by real extension hardware.
-5. **Visible GX migration regressions**: finish live host-UI and accelerated
+3. **Visible GX migration regressions**: finish live host-UI and accelerated
    browser scanout proof when a real browser is available.
-6. **Accelerated feedback performance**: run the frontend-resolved NV barrier
+4. **Accelerated feedback performance**: run the frontend-resolved NV barrier
    path in the real Windows RetroArch context. If that concrete context does not
    expose NV texture barrier, measure its actual extensions and ordering before
    choosing another GPU feedback mechanism; do not infer one from the GPU name

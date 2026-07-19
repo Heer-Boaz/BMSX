@@ -13,6 +13,7 @@ import type {
 } from '../platform';
 import type { GxGpu } from '../machine/devices/gx/gpu';
 import type { GxGpuCommandBufferView, GxGpuReadbackPortView } from '../machine/devices/gx/gpu_command_buffer';
+import type { GxGpuPcrtcScanout } from '../machine/devices/gx/gpu_pcrtc';
 import { renderGate } from '../common/taskgate';
 
 const PRESENTATION_PASS_IDS = ['gx_gpu', 'device_quantize', 'presentation_history_a', 'presentation_history_b', 'crt', 'host_overlay', 'host_menu'];
@@ -76,6 +77,7 @@ export class GameView implements RenderContext {
 	public gxGpuVramYAddressExtensionWord = 0;
 	public gxGpuHorizontalDisplayRangeWord = 0;
 	public gxGpuVerticalDisplayRangeWord = 0;
+	public gxGpuPcrtcScanout!: GxGpuPcrtcScanout;
 	public gxGpuVramSnapshotBytes!: Uint8Array;
 	public gxGpuVramSnapshotSerial = 0n;
 	public pipelineRegistry?: RenderPassLibrary;

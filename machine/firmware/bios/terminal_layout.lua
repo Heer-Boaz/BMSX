@@ -4,8 +4,8 @@ local columns<const> = 64
 local rows<const> = 32
 local scrollback_rows<const> = 128
 local history_capacity<const> = 16
-local vram_x<const> = 512
-local vram_y<const> = 64
+local vram_x<const> = 768
+local vram_y<const> = 832
 
 return {
 	columns = columns,

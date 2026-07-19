@@ -8,7 +8,6 @@ import {
 	gxGpuDrawingAreaTop,
 	gxGpuSigned11,
 } from '../../../machine/devices/gx/gpu_command_buffer';
-import { GX_GPU_VRAM_HEIGHT, gxGpuVramYBankInstalled } from '../../../machine/devices/gx/vram_address';
 import {
 	GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS,
 	GX_GPU_TRIANGLE_ATTRIBUTE_PLANE_PHASES,
@@ -21,6 +20,8 @@ import {
 	gxGpuDrawModeTextureRectangleXFlip,
 	gxGpuDrawModeTextureRectangleYFlip,
 	gxGpuDrawModeTransparencyMode,
+	gxGpuMaskBitCheckBeforeDraw,
+	gxGpuMaskBitSetWhileDrawing,
 	gxGpuSegmentExceedsPrimitiveSize,
 	gxGpuTextureClutBaseX,
 	gxGpuTextureClutBaseY,
@@ -37,7 +38,6 @@ import {
 } from '../gx_gpu_render_rules';
 import {
 	gxGpuSoftwareDitherOffset,
-	gxGpuSoftwareInterlacedSkipsLine,
 	gxGpuSoftwareVram,
 	gxGpuSoftwareVramIndex,
 	gxGpuSoftwareTextureModulationChannel5,
@@ -125,22 +125,20 @@ function sampleGxGpuSoftwareTextureWord(
 	textureWindowOrY: number,
 	clutBaseX: number,
 	clutBaseY: number,
-	pageReadMask: number,
-	clutReadMask: number,
 ): number {
 	const windowedU = textureWindowCoord(u, textureWindowAndX, textureWindowOrX);
 	const windowedV = textureWindowCoord(v, textureWindowAndY, textureWindowOrY);
 	if (textureMode === GX_GPU_TEXTURE_MODE_PALETTE4) {
-		const textureWord = gxGpuSoftwareVram[gxGpuSoftwareVramIndex(pageX + integerDivide(windowedU, 4), pageY + windowedV)] & pageReadMask;
+		const textureWord = gxGpuSoftwareVram[gxGpuSoftwareVramIndex(pageX + integerDivide(windowedU, 4), pageY + windowedV)];
 		const paletteIndex = (textureWord >>> ((windowedU & 3) << 2)) & 0x0f;
-		return gxGpuSoftwareVram[gxGpuSoftwareVramIndex(clutBaseX + paletteIndex, clutBaseY)] & clutReadMask;
+		return gxGpuSoftwareVram[gxGpuSoftwareVramIndex(clutBaseX + paletteIndex, clutBaseY)];
 	}
 	if (textureMode === GX_GPU_TEXTURE_MODE_PALETTE8) {
-		const textureWord = gxGpuSoftwareVram[gxGpuSoftwareVramIndex(pageX + integerDivide(windowedU, 2), pageY + windowedV)] & pageReadMask;
+		const textureWord = gxGpuSoftwareVram[gxGpuSoftwareVramIndex(pageX + integerDivide(windowedU, 2), pageY + windowedV)];
 		const paletteIndex = (textureWord >>> ((windowedU & 1) << 3)) & 0xff;
-		return gxGpuSoftwareVram[gxGpuSoftwareVramIndex(clutBaseX + paletteIndex, clutBaseY)] & clutReadMask;
+		return gxGpuSoftwareVram[gxGpuSoftwareVramIndex(clutBaseX + paletteIndex, clutBaseY)];
 	}
-	return gxGpuSoftwareVram[gxGpuSoftwareVramIndex(pageX + windowedU, pageY + windowedV)] & pageReadMask;
+	return gxGpuSoftwareVram[gxGpuSoftwareVramIndex(pageX + windowedU, pageY + windowedV)];
 }
 
 function writeGxGpuSoftwareTexturedPixel(
@@ -154,7 +152,8 @@ function writeGxGpuSoftwareTexturedPixel(
 	rawTextureEnabled: boolean,
 	semiTransparencyEnabled: boolean,
 	blendMode: number,
-	maskBitModeWord: number,
+	checkMaskBit: boolean,
+	setMaskBit: boolean,
 ): void {
 	if (sampleWord === 0) {
 		return;
@@ -170,7 +169,7 @@ function writeGxGpuSoftwareTexturedPixel(
 	}
 	const sampleMaskBit = sampleWord & 0x8000;
 	const blendEnabled = semiTransparencyEnabled && sampleMaskBit !== 0;
-	gxGpuSoftwareWriteRenderVramPixel5(x, y, r5, g5, b5, blendEnabled, blendMode, maskBitModeWord, sampleMaskBit);
+	gxGpuSoftwareWriteRenderVramPixel5(x, y, r5, g5, b5, blendEnabled, blendMode, checkMaskBit, setMaskBit, sampleMaskBit);
 }
 
 export function drawGxGpuSoftwareRectangle(commandBuffer: GxGpuCommandBufferView, commandIndex: number, x0: number, y0: number, width: number, height: number, colorWord: number): void {
@@ -180,8 +179,7 @@ export function drawGxGpuSoftwareRectangle(commandBuffer: GxGpuCommandBufferView
 	const areaLeft = gxGpuDrawingAreaLeft(topLeftWord, bottomRightWord);
 	const areaTop = gxGpuDrawingAreaTop(topLeftWord, bottomRightWord, vramYAddressExtensionWord);
 	const areaRight = gxGpuDrawingAreaRightExclusive(topLeftWord, bottomRightWord);
-	let areaBottom = gxGpuDrawingAreaBottomExclusive(topLeftWord, bottomRightWord, vramYAddressExtensionWord);
-	if (areaBottom > GX_GPU_VRAM_HEIGHT) areaBottom = GX_GPU_VRAM_HEIGHT;
+	const areaBottom = gxGpuDrawingAreaBottomExclusive(topLeftWord, bottomRightWord, vramYAddressExtensionWord);
 	const left = x0 > areaLeft ? x0 : areaLeft;
 	const top = y0 > areaTop ? y0 : areaTop;
 	const rectangleRight = x0 + width;
@@ -193,16 +191,18 @@ export function drawGxGpuSoftwareRectangle(commandBuffer: GxGpuCommandBufferView
 	const blendEnabled = gxGpuCommandSemiTransparencyEnabled(opcode);
 	const blendMode = gxGpuDrawModeTransparencyMode(drawModeWord);
 	const maskBitModeWord = commandBuffer.commandMaskBitModeWord[commandIndex];
-	const interlacedRenderWord = commandBuffer.commandInterlacedRenderWord[commandIndex];
+	const checkMaskBit = gxGpuMaskBitCheckBeforeDraw(maskBitModeWord);
+	const setMaskBit = gxGpuMaskBitSetWhileDrawing(maskBitModeWord);
+	const skippedLineParity = commandBuffer.commandSkippedLineParity[commandIndex];
 	const r8 = colorR8(colorWord);
 	const g8 = colorG8(colorWord);
 	const b8 = colorB8(colorWord);
 	for (let y = top; y < bottom; y += 1) {
-		if (gxGpuSoftwareInterlacedSkipsLine(y, interlacedRenderWord)) {
+		if ((y & 1) === skippedLineParity) {
 			continue;
 		}
 		for (let x = left; x < right; x += 1) {
-			gxGpuSoftwareWriteRenderVramPixel(x, y, r8, g8, b8, false, blendEnabled, blendMode, maskBitModeWord);
+			gxGpuSoftwareWriteRenderVramPixel(x, y, r8, g8, b8, false, blendEnabled, blendMode, checkMaskBit, setMaskBit);
 		}
 	}
 }
@@ -242,8 +242,7 @@ export function drawGxGpuSoftwareTriangle(
 	const areaLeft = gxGpuDrawingAreaLeft(topLeftWord, bottomRightWord);
 	const areaTop = gxGpuDrawingAreaTop(topLeftWord, bottomRightWord, vramYAddressExtensionWord);
 	const areaRight = gxGpuDrawingAreaRightExclusive(topLeftWord, bottomRightWord);
-	let areaBottom = gxGpuDrawingAreaBottomExclusive(topLeftWord, bottomRightWord, vramYAddressExtensionWord);
-	if (areaBottom > GX_GPU_VRAM_HEIGHT) areaBottom = GX_GPU_VRAM_HEIGHT;
+	const areaBottom = gxGpuDrawingAreaBottomExclusive(topLeftWord, bottomRightWord, vramYAddressExtensionWord);
 	const min12x = x1 < x2 ? x1 : x2;
 	const max12x = x1 > x2 ? x1 : x2;
 	const min12y = y1 < y2 ? y1 : y2;
@@ -275,7 +274,9 @@ export function drawGxGpuSoftwareTriangle(
 	const blendEnabled = gxGpuCommandSemiTransparencyEnabled(opcode);
 	const blendMode = gxGpuDrawModeTransparencyMode(drawModeWord);
 	const maskBitModeWord = commandBuffer.commandMaskBitModeWord[commandIndex];
-	const interlacedRenderWord = commandBuffer.commandInterlacedRenderWord[commandIndex];
+	const checkMaskBit = gxGpuMaskBitCheckBeforeDraw(maskBitModeWord);
+	const setMaskBit = gxGpuMaskBitSetWhileDrawing(maskBitModeWord);
+	const skippedLineParity = commandBuffer.commandSkippedLineParity[commandIndex];
 	const edgeSign = flip ? -1 : 1;
 	const edge0StepX = (y2 - y1) * edgeSign;
 	const edge1StepX = (y0 - y2) * edgeSign;
@@ -321,7 +322,7 @@ export function drawGxGpuSoftwareTriangle(
 	rowW1 -= gxGpuTriangleEdgeCoverageMinimum(edge1StepX, edge1StepY);
 	rowW2 -= gxGpuTriangleEdgeCoverageMinimum(edge2StepX, edge2StepY);
 	for (let y = top; y < bottomExclusive; y += 1) {
-		if (gxGpuSoftwareInterlacedSkipsLine(y, interlacedRenderWord)) {
+		if ((y & 1) === skippedLineParity) {
 			rowW0 += edge0StepY;
 			rowW1 += edge1StepY;
 			rowW2 += edge2StepY;
@@ -343,7 +344,7 @@ export function drawGxGpuSoftwareTriangle(
 				const r8 = sameColor ? r0 : (rFixed >>> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xff;
 				const g8 = sameColor ? g0 : (gFixed >>> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xff;
 				const b8 = sameColor ? b0 : (bFixed >>> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xff;
-				gxGpuSoftwareWriteRenderVramPixel(x, y, r8, g8, b8, ditherEnabled, blendEnabled, blendMode, maskBitModeWord);
+				gxGpuSoftwareWriteRenderVramPixel(x, y, r8, g8, b8, ditherEnabled, blendEnabled, blendMode, checkMaskBit, setMaskBit);
 			}
 			w0 += edge0StepX;
 			w1 += edge1StepX;
@@ -406,8 +407,7 @@ export function drawGxGpuSoftwareTexturedTriangle(
 	const areaLeft = gxGpuDrawingAreaLeft(topLeftWord, bottomRightWord);
 	const areaTop = gxGpuDrawingAreaTop(topLeftWord, bottomRightWord, vramYAddressExtensionWord);
 	const areaRight = gxGpuDrawingAreaRightExclusive(topLeftWord, bottomRightWord);
-	let areaBottom = gxGpuDrawingAreaBottomExclusive(topLeftWord, bottomRightWord, vramYAddressExtensionWord);
-	if (areaBottom > GX_GPU_VRAM_HEIGHT) areaBottom = GX_GPU_VRAM_HEIGHT;
+	const areaBottom = gxGpuDrawingAreaBottomExclusive(topLeftWord, bottomRightWord, vramYAddressExtensionWord);
 	const min12x = x1 < x2 ? x1 : x2;
 	const max12x = x1 > x2 ? x1 : x2;
 	const min12y = y1 < y2 ? y1 : y2;
@@ -447,14 +447,14 @@ export function drawGxGpuSoftwareTexturedTriangle(
 	const textureWindowOrY = gxGpuTextureWindowOrY(textureWindowWord);
 	const clutBaseX = gxGpuTextureClutBaseX(textureWord0);
 	const clutBaseY = gxGpuTextureClutBaseY(textureWord0, vramYAddressExtensionWord);
-	const pageReadMask = gxGpuVramYBankInstalled(pageY) ? 0xffff : 0;
-	const clutReadMask = gxGpuVramYBankInstalled(clutBaseY) ? 0xffff : 0;
 	const rawTextureEnabled = gxGpuCommandRawTextureEnabled(opcode);
 	const interpolatesColor = !sameColor && !rawTextureEnabled;
 	const semiTransparencyEnabled = gxGpuCommandSemiTransparencyEnabled(opcode);
 	const blendMode = gxGpuDrawModeTransparencyMode(drawModeWord);
 	const maskBitModeWord = commandBuffer.commandMaskBitModeWord[commandIndex];
-	const interlacedRenderWord = commandBuffer.commandInterlacedRenderWord[commandIndex];
+	const checkMaskBit = gxGpuMaskBitCheckBeforeDraw(maskBitModeWord);
+	const setMaskBit = gxGpuMaskBitSetWhileDrawing(maskBitModeWord);
+	const skippedLineParity = commandBuffer.commandSkippedLineParity[commandIndex];
 	const edgeSign = flip ? -1 : 1;
 	const edge0StepX = (y2 - y1) * edgeSign;
 	const edge1StepX = (y0 - y2) * edgeSign;
@@ -513,7 +513,7 @@ export function drawGxGpuSoftwareTexturedTriangle(
 	rowW1 -= gxGpuTriangleEdgeCoverageMinimum(edge1StepX, edge1StepY);
 	rowW2 -= gxGpuTriangleEdgeCoverageMinimum(edge2StepX, edge2StepY);
 	for (let y = top; y < bottomExclusive; y += 1) {
-		if (gxGpuSoftwareInterlacedSkipsLine(y, interlacedRenderWord)) {
+		if ((y & 1) === skippedLineParity) {
 			rowW0 += edge0StepY;
 			rowW1 += edge1StepY;
 			rowW2 += edge2StepY;
@@ -553,8 +553,6 @@ export function drawGxGpuSoftwareTexturedTriangle(
 					textureWindowOrY,
 					clutBaseX,
 					clutBaseY,
-					pageReadMask,
-					clutReadMask,
 				);
 				writeGxGpuSoftwareTexturedPixel(
 					x,
@@ -567,7 +565,8 @@ export function drawGxGpuSoftwareTexturedTriangle(
 					rawTextureEnabled,
 					semiTransparencyEnabled,
 					blendMode,
-					maskBitModeWord,
+					checkMaskBit,
+					setMaskBit,
 				);
 			}
 			w0 += edge0StepX;
@@ -601,8 +600,7 @@ export function drawGxGpuSoftwareTexturedRectangle(commandBuffer: GxGpuCommandBu
 	const areaLeft = gxGpuDrawingAreaLeft(topLeftWord, bottomRightWord);
 	const areaTop = gxGpuDrawingAreaTop(topLeftWord, bottomRightWord, vramYAddressExtensionWord);
 	const areaRight = gxGpuDrawingAreaRightExclusive(topLeftWord, bottomRightWord);
-	let areaBottom = gxGpuDrawingAreaBottomExclusive(topLeftWord, bottomRightWord, vramYAddressExtensionWord);
-	if (areaBottom > GX_GPU_VRAM_HEIGHT) areaBottom = GX_GPU_VRAM_HEIGHT;
+	const areaBottom = gxGpuDrawingAreaBottomExclusive(topLeftWord, bottomRightWord, vramYAddressExtensionWord);
 	const left = x0 > areaLeft ? x0 : areaLeft;
 	const top = y0 > areaTop ? y0 : areaTop;
 	const rectangleRight = x0 + width;
@@ -625,18 +623,18 @@ export function drawGxGpuSoftwareTexturedRectangle(commandBuffer: GxGpuCommandBu
 	const textureWindowOrY = gxGpuTextureWindowOrY(textureWindowWord);
 	const clutBaseX = gxGpuTextureClutBaseX(textureWord);
 	const clutBaseY = gxGpuTextureClutBaseY(textureWord, vramYAddressExtensionWord);
-	const pageReadMask = gxGpuVramYBankInstalled(pageY) ? 0xffff : 0;
-	const clutReadMask = gxGpuVramYBankInstalled(clutBaseY) ? 0xffff : 0;
 	const rawTextureEnabled = gxGpuCommandRawTextureEnabled(opcode);
 	const semiTransparencyEnabled = gxGpuCommandSemiTransparencyEnabled(opcode);
 	const blendMode = gxGpuDrawModeTransparencyMode(drawModeWord);
 	const maskBitModeWord = commandBuffer.commandMaskBitModeWord[commandIndex];
-	const interlacedRenderWord = commandBuffer.commandInterlacedRenderWord[commandIndex];
+	const checkMaskBit = gxGpuMaskBitCheckBeforeDraw(maskBitModeWord);
+	const setMaskBit = gxGpuMaskBitSetWhileDrawing(maskBitModeWord);
+	const skippedLineParity = commandBuffer.commandSkippedLineParity[commandIndex];
 	const r8 = colorR8(colorWord);
 	const g8 = colorG8(colorWord);
 	const b8 = colorB8(colorWord);
 	for (let y = top; y < bottom; y += 1) {
-		if (gxGpuSoftwareInterlacedSkipsLine(y, interlacedRenderWord)) {
+		if ((y & 1) === skippedLineParity) {
 			continue;
 		}
 		const textureY = y - y0;
@@ -656,8 +654,6 @@ export function drawGxGpuSoftwareTexturedRectangle(commandBuffer: GxGpuCommandBu
 				textureWindowOrY,
 				clutBaseX,
 				clutBaseY,
-				pageReadMask,
-				clutReadMask,
 			);
 			writeGxGpuSoftwareTexturedPixel(
 				x,
@@ -670,7 +666,8 @@ export function drawGxGpuSoftwareTexturedRectangle(commandBuffer: GxGpuCommandBu
 				rawTextureEnabled,
 				semiTransparencyEnabled,
 				blendMode,
-				maskBitModeWord,
+				checkMaskBit,
+				setMaskBit,
 			);
 		}
 	}
@@ -686,8 +683,7 @@ export function drawGxGpuSoftwareLineSegment(commandBuffer: GxGpuCommandBufferVi
 	const areaLeft = gxGpuDrawingAreaLeft(topLeftWord, bottomRightWord);
 	const areaTop = gxGpuDrawingAreaTop(topLeftWord, bottomRightWord, vramYAddressExtensionWord);
 	const areaRight = gxGpuDrawingAreaRightExclusive(topLeftWord, bottomRightWord);
-	let areaBottom = gxGpuDrawingAreaBottomExclusive(topLeftWord, bottomRightWord, vramYAddressExtensionWord);
-	if (areaBottom > GX_GPU_VRAM_HEIGHT) areaBottom = GX_GPU_VRAM_HEIGHT;
+	const areaBottom = gxGpuDrawingAreaBottomExclusive(topLeftWord, bottomRightWord, vramYAddressExtensionWord);
 	const absDx = absI32(x1 - x0);
 	const absDy = absI32(y1 - y0);
 	const steps = absDx >= absDy ? absDx : absDy;
@@ -708,7 +704,9 @@ export function drawGxGpuSoftwareLineSegment(commandBuffer: GxGpuCommandBufferVi
 	const blendMode = gxGpuDrawModeTransparencyMode(drawModeWord);
 	const ditherEnabled = gxGpuDrawModeDitherEnabled(drawModeWord);
 	const maskBitModeWord = commandBuffer.commandMaskBitModeWord[commandIndex];
-	const interlacedRenderWord = commandBuffer.commandInterlacedRenderWord[commandIndex];
+	const checkMaskBit = gxGpuMaskBitCheckBeforeDraw(maskBitModeWord);
+	const setMaskBit = gxGpuMaskBitSetWhileDrawing(maskBitModeWord);
+	const skippedLineParity = commandBuffer.commandSkippedLineParity[commandIndex];
 	let xStep = 0;
 	let yStep = 0;
 	let rStep = 0;
@@ -732,7 +730,7 @@ export function drawGxGpuSoftwareLineSegment(commandBuffer: GxGpuCommandBufferVi
 	for (let step = 0; step <= steps; step += 1) {
 		const x = gxGpuSigned11(lineFixedXYToCoord(currentX));
 		const y = gxGpuSigned11(lineFixedXYToCoord(currentY));
-		if (x >= areaLeft && y >= areaTop && x < areaRight && y < areaBottom && !gxGpuSoftwareInterlacedSkipsLine(y, interlacedRenderWord)) {
+		if (x >= areaLeft && y >= areaTop && x < areaRight && y < areaBottom && (y & 1) !== skippedLineParity) {
 			gxGpuSoftwareWriteRenderVramPixel(
 				x,
 				y,
@@ -742,7 +740,8 @@ export function drawGxGpuSoftwareLineSegment(commandBuffer: GxGpuCommandBufferVi
 				ditherEnabled,
 				blendEnabled,
 				blendMode,
-				maskBitModeWord,
+				checkMaskBit,
+				setMaskBit,
 			);
 		}
 		currentX += xStep;

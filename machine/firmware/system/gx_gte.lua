@@ -4,11 +4,24 @@ local data<const>: *word[32] = 0x08010248
 local control<const>: *word[32] = 0x080102c8
 local command<const>: *word = 0x08010348
 local cycles<const>: *word = 0x0801034c
+local plus<const>: *word[10] = 0x08010388
 
 local opcode_rtsf<const> = 0x00080000
 local opcode_rtps<const> = 0x00000001
 local opcode_nclip<const> = 0x00000006
 local opcode_rtpt<const> = 0x00000030
+local plus_opcode_vmad3<const> = 0x00000001
+
+local plus_add_xy<const> = 0
+local plus_add_z<const> = 1
+local plus_mul_xy<const> = 2
+local plus_mul_z<const> = 3
+local plus_scalar<const> = 4
+local plus_result_xy<const> = 5
+local plus_result_z<const> = 6
+local plus_command<const> = 8
+local plus_cycles<const> = 9
+local plus_cycles_busy<const> = 0x80000000
 
 local q12_one<const> = 0x00001000
 
@@ -75,14 +88,29 @@ function gx_gte.nclip()
 	return data[24]
 end
 
+function gx_gte.vmad3(add_x, add_y, add_z, mul_x, mul_y, mul_z, scalar_q12)
+	plus[plus_add_xy] = pack_i16_pair(add_x, add_y)
+	plus[plus_add_z] = add_z & 0x0000ffff
+	plus[plus_mul_xy] = pack_i16_pair(mul_x, mul_y)
+	plus[plus_mul_z] = mul_z & 0x0000ffff
+	plus[plus_scalar] = scalar_q12 & 0x0000ffff
+	plus[plus_command] = plus_opcode_vmad3
+	while (plus[plus_cycles] & plus_cycles_busy) ~= 0 do
+	end
+	local result_xy<const> = plus[plus_result_xy]
+	return sx(result_xy), sy(result_xy), sx(plus[plus_result_z])
+end
+
 gx_gte.data = data
 gx_gte.control = control
 gx_gte.command = command
 gx_gte.cycles = cycles
+gx_gte.plus = plus
 gx_gte.pack_i16_pair = pack_i16_pair
 gx_gte.opcode_rtsf = opcode_rtsf
 gx_gte.opcode_rtps = opcode_rtps
 gx_gte.opcode_nclip = opcode_nclip
 gx_gte.opcode_rtpt = opcode_rtpt
+gx_gte.plus_opcode_vmad3 = plus_opcode_vmad3
 
 return gx_gte

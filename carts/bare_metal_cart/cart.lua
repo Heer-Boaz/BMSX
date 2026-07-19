@@ -6,6 +6,11 @@ local inp_keys<const>: *word[8] = 0x08000074
 local inp_ctrl_register<const>: *word = 0x0800006c
 local gp0<const>: *word = 0x08010240
 local gp1<const>: *word = 0x08010244
+local pcrtc_pmode<const>: *word = 0x08010358
+local pcrtc_dispfb1_low<const>: *word = 0x08010360
+local pcrtc_dispfb1_high<const>: *word = 0x08010364
+local pcrtc_display1_low<const>: *word = 0x08010368
+local pcrtc_display1_high<const>: *word = 0x0801036c
 local gte_data<const>: *word[32] = 0x08010248
 local gte_control<const>: *word[32] = 0x080102c8
 local gte_command<const>: *word = 0x08010348
@@ -53,7 +58,7 @@ local gp1_horizontal_display_range<const> = 0x06c6e27e
 local gp1_vertical_display_range<const> = 0x07000000
 local gp1_display_mode<const> = 0x08000000
 local horizontal_resolution_320<const> = 0x00000001
-local video_standard_pal<const> = 0x00000008
+local display_mode_50hz<const> = 0x00000008
 local vertical_display_range_start<const> = 35
 
 local gp0_fill_rectangle<const> = 0x02000000
@@ -269,9 +274,9 @@ local gpu_drawing_offset<const> = function(x, y)
 	*gp0 = gp0_drawing_offset | (x & 0x000007ff) | ((y & 0x000007ff) << 11)
 end
 
-local gpu_reset_320x240_pal<const> = function()
+local gpu_reset_320x240<const> = function()
 	*gp1 = gp1_reset
-	*gp1 = gp1_display_mode | horizontal_resolution_320 | video_standard_pal
+	*gp1 = gp1_display_mode | horizontal_resolution_320 | display_mode_50hz
 	*gp1 = gp1_display_start
 	*gp1 = gp1_horizontal_display_range
 	*gp1 = gp1_vertical_display_range | vertical_display_range_start | ((vertical_display_range_start + screen_height) << 10)
@@ -281,6 +286,11 @@ local gpu_reset_320x240_pal<const> = function()
 	gpu_drawing_offset(0, 0)
 	*gp0 = gp0_mask_bit_mode
 	*gp1 = gp1_display_enable
+	*pcrtc_dispfb1_low = 0x00012000
+	*pcrtc_dispfb1_high = 0x00000000
+	*pcrtc_display1_low = 0x00000000
+	*pcrtc_display1_high = 0x000ef13f
+	*pcrtc_pmode = 0x0000ff21
 end
 
 local gpu_clear_rect<const> = function(x, y, width, height, color)
@@ -1218,7 +1228,7 @@ local advance_animation<const> = function()
 end
 
 *irq_mask_register = irq_dma_done | irq_vblank
-gpu_reset_320x240_pal()
+gpu_reset_320x240()
 build_angle_table()
 update_animation_vectors()
 build_texture()

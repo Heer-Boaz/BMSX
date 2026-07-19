@@ -11,6 +11,7 @@
 #include "../../graph/graph.h"
 #include "../../shared/submissions.h"
 #include "machine/devices/gx/gpu_command_buffer.h"
+#include "machine/devices/gx/gpu_pcrtc.h"
 #include "render/post/device_quantize/mode.h"
 #include <array>
 #include <string>
@@ -46,6 +47,7 @@ struct GxGpuPipelineState {
 	u32 displayModeWord = 0u;
 	u32 displayStartWord = 0u;
 	u32 vramYAddressExtensionWord = 0u;
+	const GxGpuPcrtcScanout* pcrtcScanout = nullptr;
 	const std::array<u8, GX_GPU_VRAM_BYTE_COUNT>* vramSnapshotBytes = nullptr;
 	u64 vramSnapshotSerial = 0u;
 };

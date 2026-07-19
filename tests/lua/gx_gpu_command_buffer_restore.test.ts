@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
 	GX_GPU_COMMAND_FILL_RECTANGLE,
+	GX_GPU_SKIPPED_LINE_NONE,
 	GxGpuCommandBuffer,
 } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
@@ -40,7 +41,7 @@ function pushFillCommand(commandBuffer: GxGpuCommandBuffer): void {
 		GX_GPU_SOFTWARE_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD,
 		0,
 		0,
-		0,
+		GX_GPU_SKIPPED_LINE_NONE,
 	);
 	commandBuffer.completeCommandExecution(commandBuffer.commandCount);
 	commandBuffer.sealCommandsForPresentation();

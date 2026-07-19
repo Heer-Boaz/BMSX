@@ -1,8 +1,7 @@
 #pragma once
 
 #include "common/primitives.h"
-#include "machine/devices/gx/gpu_command_buffer.h"
-#include "render/backend/gx_gpu_render_rules.h"
+#include "machine/devices/gx/vram_address.h"
 
 #include <array>
 #include <cstddef>
@@ -44,19 +43,19 @@ inline u32 gxGpuSoftwareTextureModulationChannel5(u32 texture5, u32 vertex8, i32
 	return channel5 < 31u ? channel5 : 31u;
 }
 
-inline void gxGpuSoftwareWriteMaskedVramWord(size_t index, u32 word, u32 maskBitModeWord) {
+inline void gxGpuSoftwareWriteMaskedVramWord(size_t index, u32 word, bool checkMaskBit, bool setMaskBit) {
 	const u16 dstWord = g_gxGpuSoftwareVram[index];
-	if (gxGpuMaskBitCheckBeforeDraw(maskBitModeWord) && (dstWord & 0x8000u) != 0u) {
+	if (checkMaskBit && (dstWord & 0x8000u) != 0u) {
 		return;
 	}
-	const u32 maskBit = gxGpuMaskBitSetWhileDrawing(maskBitModeWord) ? 0x8000u : word & 0x8000u;
+	const u32 maskBit = setMaskBit ? 0x8000u : word & 0x8000u;
 	g_gxGpuSoftwareVram[index] = static_cast<u16>((word & 0x7fffu) | maskBit);
 }
 
-inline void gxGpuSoftwareWriteRenderVramPixel5(i32 x, i32 y, u32 r5, u32 g5, u32 b5, bool blendEnabled, u32 blendMode, u32 maskBitModeWord, u32 outputMaskBit) {
+inline void gxGpuSoftwareWriteRenderVramPixel5(i32 x, i32 y, u32 r5, u32 g5, u32 b5, bool blendEnabled, u32 blendMode, bool checkMaskBit, bool setMaskBit, u32 outputMaskBit) {
 	const size_t index = gxGpuSoftwareVramIndex(x, y);
 	const u32 dstWord = g_gxGpuSoftwareVram[index];
-	if (gxGpuMaskBitCheckBeforeDraw(maskBitModeWord) && (dstWord & 0x8000u) != 0u) {
+	if (checkMaskBit && (dstWord & 0x8000u) != 0u) {
 		return;
 	}
 	u32 blendedR5 = r5;
@@ -98,7 +97,7 @@ inline void gxGpuSoftwareWriteRenderVramPixel5(i32 x, i32 y, u32 r5, u32 g5, u32
 			}
 		}
 	}
-	const u32 maskBit = gxGpuMaskBitSetWhileDrawing(maskBitModeWord) ? 0x8000u : outputMaskBit & 0x8000u;
+	const u32 maskBit = setMaskBit ? 0x8000u : outputMaskBit & 0x8000u;
 	g_gxGpuSoftwareVram[index] = static_cast<u16>(blendedR5 | (blendedG5 << 5u) | (blendedB5 << 10u) | maskBit);
 }
 
@@ -139,7 +138,7 @@ inline i32 gxGpuSoftwareDitherOffset(i32 x, i32 y) {
 	}
 }
 
-inline void gxGpuSoftwareWriteRenderVramPixel(i32 x, i32 y, u32 r8, u32 g8, u32 b8, bool ditherEnabled, bool blendEnabled, u32 blendMode, u32 maskBitModeWord) {
+inline void gxGpuSoftwareWriteRenderVramPixel(i32 x, i32 y, u32 r8, u32 g8, u32 b8, bool ditherEnabled, bool blendEnabled, u32 blendMode, bool checkMaskBit, bool setMaskBit) {
 	u32 r = r8;
 	u32 g = g8;
 	u32 b = b8;
@@ -152,12 +151,7 @@ inline void gxGpuSoftwareWriteRenderVramPixel(i32 x, i32 y, u32 r8, u32 g8, u32 
 		g = ditheredG < 0 ? 0u : (ditheredG > 255 ? 255u : static_cast<u32>(ditheredG));
 		b = ditheredB < 0 ? 0u : (ditheredB > 255 ? 255u : static_cast<u32>(ditheredB));
 	}
-	gxGpuSoftwareWriteRenderVramPixel5(x, y, r >> 3u, g >> 3u, b >> 3u, blendEnabled, blendMode, maskBitModeWord, 0u);
-}
-
-inline bool gxGpuSoftwareInterlacedSkipsLine(i32 y, u32 interlacedRenderWord) {
-	return (interlacedRenderWord & GX_GPU_INTERLACED_RENDER_ENABLE) != 0u
-		&& (static_cast<u32>(y) & 1u) == ((interlacedRenderWord & GX_GPU_INTERLACED_RENDER_ACTIVE_LINE_LSB) >> 1u);
+	gxGpuSoftwareWriteRenderVramPixel5(x, y, r >> 3u, g >> 3u, b >> 3u, blendEnabled, blendMode, checkMaskBit, setMaskBit, 0u);
 }
 
 } // namespace bmsx

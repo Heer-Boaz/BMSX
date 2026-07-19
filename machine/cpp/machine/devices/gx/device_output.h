@@ -2,6 +2,7 @@
 
 #include "common/primitives.h"
 #include "machine/devices/gx/gpu_command_buffer.h"
+#include "machine/devices/gx/gpu_pcrtc.h"
 
 #include <array>
 
@@ -10,9 +11,13 @@ namespace bmsx {
 struct GxGpuDeviceOutput {
 	GxGpuDeviceOutput(
 		GxGpuCommandBuffer& commandBufferOwner,
+		const std::array<u32, GX_GPU_PCRTC_WORD_COUNT>& pcrtcWordsOwner,
+		const GxGpuPcrtcScanout& pcrtcScanoutOwner,
 		const std::array<u8, GX_GPU_VRAM_BYTE_COUNT>& vramSnapshotOwner)
 		: commandBuffer(commandBufferOwner)
 		, readbackPort(commandBufferOwner.readback)
+		, pcrtcWords(pcrtcWordsOwner)
+		, pcrtcScanout(pcrtcScanoutOwner)
 		, vramSnapshotBytes(vramSnapshotOwner) {
 	}
 
@@ -24,6 +29,8 @@ struct GxGpuDeviceOutput {
 	u32 vramYAddressExtensionWord = 0u;
 	u32 horizontalDisplayRangeWord = 0u;
 	u32 verticalDisplayRangeWord = 0u;
+	const std::array<u32, GX_GPU_PCRTC_WORD_COUNT>& pcrtcWords;
+	const GxGpuPcrtcScanout& pcrtcScanout;
 	const std::array<u8, GX_GPU_VRAM_BYTE_COUNT>& vramSnapshotBytes;
 	u64 vramSnapshotSerial = 0u;
 };

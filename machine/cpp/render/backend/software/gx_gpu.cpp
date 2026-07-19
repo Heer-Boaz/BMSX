@@ -7,7 +7,6 @@
 #include "render/backend/software/gx_gpu_vram.h"
 #include "machine/devices/gx/gpu.h"
 
-#include <algorithm>
 #include <array>
 
 namespace bmsx {
@@ -40,11 +39,6 @@ void executeGxGpuSoftwareVramCommands(const GxGpuCommandBuffer& commandBuffer, G
 		size_t pixel = 0u;
 		for (u32 row = 0u; row < readback.height(); row += 1u) {
 			const u32 y = gxGpuVramYAddress(readback.y() + row, readback.vramYAddressExtensionWord());
-			if (!gxGpuVramYBankInstalled(y)) {
-				std::fill_n(readbackPixelBytes + pixel * 2u, readback.width() * 2u, static_cast<u8>(GX_GPU_VRAM_OPEN_BUS_WORD));
-				pixel += readback.width();
-				continue;
-			}
 			for (u32 column = 0u; column < readback.width(); column += 1u) {
 				const u32 x = (readback.x() + column) & (GX_GPU_VRAM_WIDTH - 1u);
 				const u16 word = g_gxGpuSoftwareVram[static_cast<size_t>(y) * GX_GPU_VRAM_WIDTH + x];

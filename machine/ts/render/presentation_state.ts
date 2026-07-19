@@ -2,7 +2,6 @@ import { machineManager } from '../core/machine_manager';
 import type { Runtime } from '../machine/runtime/runtime';
 import type { TickCompletion } from '../machine/scheduler/frame';
 import * as workbenchMode from '../ide/workbench/mode';
-import { gxGpuDisplayModeScreenWidth, gxGpuVerticalVisibleLines } from '../machine/devices/gx/gpu_display';
 import { commitGxGpuViewSnapshot } from './gx/view_snapshot';
 
 export type RenderPresentationMode = 'partial' | 'completed';
@@ -82,12 +81,12 @@ export class RenderPresentationState {
 		machineManager.deltatime = hostDeltaMs;
 		const view = machineManager.view;
 		const output = runtime.machine.gxGpu.readDeviceOutput();
-		const displayConfigurationChanged = view.gxGpuDisplayModeWord !== output.displayModeWord
-			|| view.gxGpuVerticalDisplayRangeWord !== output.verticalDisplayRangeWord;
+		const width = output.pcrtcScanout.outputWidth;
+		const height = output.pcrtcScanout.outputHeight;
+		const displayConfigurationChanged = view.offscreenCanvasSize.x !== width
+			|| view.offscreenCanvasSize.y !== height;
 		commitGxGpuViewSnapshot(view, output);
 		if (displayConfigurationChanged) {
-			const width = gxGpuDisplayModeScreenWidth(output.displayModeWord);
-			const height = gxGpuVerticalVisibleLines(output.verticalDisplayRangeWord, output.displayModeWord);
 			view.setRenderTargetSize(width, height);
 		}
 		view.configurePresentation(mode, commitFrame);

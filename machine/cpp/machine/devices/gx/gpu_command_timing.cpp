@@ -3,7 +3,7 @@
 namespace bmsx {
 namespace {
 
-i64 lineTicks(i32 x0, i32 y0, i32 x1, i32 y1, u32 drawingAreaTopLeftWord, u32 drawingAreaBottomRightWord, u32 vramYAddressExtensionWord, u8 interlacedRenderWord) {
+i64 lineTicks(i32 x0, i32 y0, i32 x1, i32 y1, u32 drawingAreaTopLeftWord, u32 drawingAreaBottomRightWord, u32 vramYAddressExtensionWord, u8 skippedLineParity) {
 	const i32 sourceLeft = x0 < x1 ? x0 : x1;
 	const i32 sourceRight = x0 > x1 ? x0 : x1;
 	const i32 sourceTop = y0 < y1 ? y0 : y1;
@@ -20,7 +20,7 @@ i64 lineTicks(i32 x0, i32 y0, i32 x1, i32 y1, u32 drawingAreaTopLeftWord, u32 dr
 	if (left >= right || top >= bottom) return 0;
 	const i32 width = right - left;
 	i32 height = bottom - top;
-	if ((interlacedRenderWord & GX_GPU_INTERLACED_RENDER_ENABLE) != 0u) {
+	if (skippedLineParity != GX_GPU_SKIPPED_LINE_NONE) {
 		height >>= 1;
 		if (height == 0) height = 1;
 	}
@@ -40,7 +40,7 @@ i64 triangleTicks(
 	u32 drawingAreaBottomRightWord,
 	u32 vramYAddressExtensionWord,
 	u32 maskBitModeWord,
-	u8 interlacedRenderWord) {
+	u8 skippedLineParity) {
 	const i32 min12X = x1 < x2 ? x1 : x2;
 	const i32 max12X = x1 > x2 ? x1 : x2;
 	const i32 min12Y = y1 < y2 ? y1 : y2;
@@ -69,7 +69,7 @@ i64 triangleTicks(
 	i64 pixels = doubleArea >> 1u;
 	if (textured) pixels += pixels;
 	if (semiTransparent || (maskBitModeWord & 0x02u) != 0u) pixels += (pixels + 1) >> 1u;
-	if ((interlacedRenderWord & GX_GPU_INTERLACED_RENDER_ENABLE) != 0u) pixels >>= 1u;
+	if (skippedLineParity != GX_GPU_SKIPPED_LINE_NONE) pixels >>= 1u;
 	return pixels;
 }
 
@@ -82,7 +82,7 @@ i64 polygonTicks(
 	u32 drawingAreaBottomRightWord,
 	u32 drawingOffsetWord,
 	u32 maskBitModeWord,
-	u8 interlacedRenderWord) {
+	u8 skippedLineParity) {
 	const bool packetTextured = (opcode & 0x04u) != 0u;
 	const bool textured = packetTextured;
 	const bool quad = (opcode & 0x08u) != 0u;
@@ -101,12 +101,12 @@ i64 polygonTicks(
 	const i32 x2 = gxGpuSigned11(vertex2) + offsetX;
 	const i32 y2 = gxGpuSigned11(vertex2 >> 16u) + offsetY;
 	const bool semiTransparent = (opcode & 0x02u) != 0u;
-	ticks += triangleTicks(x0, y0, x1, y1, x2, y2, textured, semiTransparent, drawingAreaTopLeftWord, drawingAreaBottomRightWord, vramYAddressExtensionWord, maskBitModeWord, interlacedRenderWord);
+	ticks += triangleTicks(x0, y0, x1, y1, x2, y2, textured, semiTransparent, drawingAreaTopLeftWord, drawingAreaBottomRightWord, vramYAddressExtensionWord, maskBitModeWord, skippedLineParity);
 	if (quad) {
 		const u32 vertex3 = words[wordStart + 1u + stride * 3u];
 		const i32 x3 = gxGpuSigned11(vertex3) + offsetX;
 		const i32 y3 = gxGpuSigned11(vertex3 >> 16u) + offsetY;
-		ticks += triangleTicks(x2, y2, x1, y1, x3, y3, textured, semiTransparent, drawingAreaTopLeftWord, drawingAreaBottomRightWord, vramYAddressExtensionWord, maskBitModeWord, interlacedRenderWord);
+		ticks += triangleTicks(x2, y2, x1, y1, x3, y3, textured, semiTransparent, drawingAreaTopLeftWord, drawingAreaBottomRightWord, vramYAddressExtensionWord, maskBitModeWord, skippedLineParity);
 	}
 	return ticks;
 }
@@ -122,7 +122,7 @@ i64 rectangleTicks(
 	u32 drawingAreaBottomRightWord,
 	u32 drawingOffsetWord,
 	u32 maskBitModeWord,
-	u8 interlacedRenderWord) {
+	u8 skippedLineParity) {
 	u32 width;
 	u32 height;
 	switch (opcode & 0x18u) {
@@ -179,7 +179,7 @@ i64 rectangleTicks(
 		}
 	}
 	if ((opcode & 0x02u) != 0u || (maskBitModeWord & 0x02u) != 0u) ticksPerRow += (drawnWidth + 1u) >> 1u;
-	if ((interlacedRenderWord & GX_GPU_INTERLACED_RENDER_ENABLE) != 0u) {
+	if (skippedLineParity != GX_GPU_SKIPPED_LINE_NONE) {
 		drawnHeight >>= 1u;
 		if (drawnHeight == 0u) drawnHeight = 1u;
 	}
@@ -195,7 +195,7 @@ i64 polylineTicks(
 	u32 drawingAreaBottomRightWord,
 	u32 vramYAddressExtensionWord,
 	u32 drawingOffsetWord,
-	u8 interlacedRenderWord) {
+	u8 skippedLineParity) {
 	const size_t stride = (opcode & 0x10u) != 0u ? 2u : 1u;
 	const i32 offsetX = gxGpuSigned11(drawingOffsetWord);
 	const i32 offsetY = gxGpuSigned11(drawingOffsetWord >> 11u);
@@ -209,7 +209,7 @@ i64 polylineTicks(
 		positionWord = words[positionIndex];
 		const i32 x1 = gxGpuSigned11(positionWord) + offsetX;
 		const i32 y1 = gxGpuSigned11(positionWord >> 16u) + offsetY;
-		ticks += lineTicks(x0, y0, x1, y1, drawingAreaTopLeftWord, drawingAreaBottomRightWord, vramYAddressExtensionWord, interlacedRenderWord);
+		ticks += lineTicks(x0, y0, x1, y1, drawingAreaTopLeftWord, drawingAreaBottomRightWord, vramYAddressExtensionWord, skippedLineParity);
 		x0 = x1;
 		y0 = y1;
 		positionIndex += stride;
@@ -231,21 +231,21 @@ i64 gxGpuCommandTicks(
 	u32 drawingAreaBottomRightWord,
 	u32 drawingOffsetWord,
 	u32 maskBitModeWord,
-	u8 interlacedRenderWord) {
+	u8 skippedLineParity) {
 	switch (kind) {
 		case GX_GPU_COMMAND_DRAW_POLYGON:
-			return polygonTicks(opcode, words, wordStart, vramYAddressExtensionWord, drawingAreaTopLeftWord, drawingAreaBottomRightWord, drawingOffsetWord, maskBitModeWord, interlacedRenderWord);
+			return polygonTicks(opcode, words, wordStart, vramYAddressExtensionWord, drawingAreaTopLeftWord, drawingAreaBottomRightWord, drawingOffsetWord, maskBitModeWord, skippedLineParity);
 		case GX_GPU_COMMAND_DRAW_LINE: {
 			const i32 offsetX = gxGpuSigned11(drawingOffsetWord);
 			const i32 offsetY = gxGpuSigned11(drawingOffsetWord >> 11u);
 			const u32 first = words[wordStart + 1u];
 			const u32 second = words[wordStart + ((opcode & 0x10u) != 0u ? 3u : 2u)];
-			return lineTicks(gxGpuSigned11(first) + offsetX, gxGpuSigned11(first >> 16u) + offsetY, gxGpuSigned11(second) + offsetX, gxGpuSigned11(second >> 16u) + offsetY, drawingAreaTopLeftWord, drawingAreaBottomRightWord, vramYAddressExtensionWord, interlacedRenderWord);
+			return lineTicks(gxGpuSigned11(first) + offsetX, gxGpuSigned11(first >> 16u) + offsetY, gxGpuSigned11(second) + offsetX, gxGpuSigned11(second >> 16u) + offsetY, drawingAreaTopLeftWord, drawingAreaBottomRightWord, vramYAddressExtensionWord, skippedLineParity);
 		}
 		case GX_GPU_COMMAND_DRAW_POLYLINE:
-			return polylineTicks(opcode, words, wordStart, wordCount, drawingAreaTopLeftWord, drawingAreaBottomRightWord, vramYAddressExtensionWord, drawingOffsetWord, interlacedRenderWord);
+			return polylineTicks(opcode, words, wordStart, wordCount, drawingAreaTopLeftWord, drawingAreaBottomRightWord, vramYAddressExtensionWord, drawingOffsetWord, skippedLineParity);
 		case GX_GPU_COMMAND_DRAW_RECTANGLE:
-			return rectangleTicks(opcode, words, wordStart, wordCount, drawModeWord, vramYAddressExtensionWord, drawingAreaTopLeftWord, drawingAreaBottomRightWord, drawingOffsetWord, maskBitModeWord, interlacedRenderWord);
+			return rectangleTicks(opcode, words, wordStart, wordCount, drawModeWord, vramYAddressExtensionWord, drawingAreaTopLeftWord, drawingAreaBottomRightWord, drawingOffsetWord, maskBitModeWord, skippedLineParity);
 		case GX_GPU_COMMAND_FILL_RECTANGLE: {
 			const u32 sizeWord = words[wordStart + 2u];
 			const u32 width = ((sizeWord & 0x3ffu) + 0x0fu) & ~0x0fu;

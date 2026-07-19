@@ -11,6 +11,7 @@
 #include "shared/submissions.h"
 #include "common/registry.h"
 #include "machine/devices/gx/gpu_command_buffer.h"
+#include "machine/devices/gx/gpu_pcrtc.h"
 #include "render/post/device_quantize/mode.h"
 #include "common/subscription.h"
 #include <array>
@@ -98,6 +99,7 @@ public:
 	u32 gxGpuVramYAddressExtensionWord = 0u;
 	u32 gxGpuHorizontalDisplayRangeWord = 0u;
 	u32 gxGpuVerticalDisplayRangeWord = 0u;
+	const GxGpuPcrtcScanout* gxGpuPcrtcScanout = nullptr;
 	const std::array<u8, GX_GPU_VRAM_BYTE_COUNT>* gxGpuVramSnapshotBytes = nullptr;
 	u64 gxGpuVramSnapshotSerial = 0u;
 

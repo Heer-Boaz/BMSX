@@ -21,6 +21,7 @@ import {
 	DEVICE_SERVICE_DMA,
 	DEVICE_SERVICE_GEO,
 	DEVICE_SERVICE_GPU,
+	DEVICE_SERVICE_GTE,
 	DEVICE_SERVICE_SYSTEM,
 	DeviceScheduler,
 } from './scheduler/device';
@@ -56,7 +57,7 @@ export class Machine {
 		this.audioController = new AudioController(this.memory, this.audioOutput, this.dmaController, this.irqController, this.scheduler);
 		this.geometryController = new GeometryController(this.memory, this.irqController, this.scheduler);
 		this.gxGpu = new GxGpu(this.memory, this.irqController, this.scheduler, this.dmaController);
-		this.gxGte = new GxGte(this.memory);
+		this.gxGte = new GxGte(this.memory, this.cpu, this.scheduler);
 		this.systemController = new SystemController(
 			this.memory,
 			this.cpu,
@@ -115,6 +116,9 @@ export class Machine {
 				return;
 			case DEVICE_SERVICE_GPU:
 				this.gxGpu.onService(nowCycles);
+				return;
+			case DEVICE_SERVICE_GTE:
+				this.gxGte.onService();
 				return;
 			case DEVICE_SERVICE_SYSTEM:
 				this.systemController.onService();

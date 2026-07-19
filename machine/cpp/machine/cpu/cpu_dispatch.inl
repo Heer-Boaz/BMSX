@@ -556,8 +556,9 @@ DISPATCH_LABEL(STORE_MEM_WORDS_D) {
 		enterSynchronousAddressException(FRAME, CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, addr);
 		DISPATCH_CONTINUE();
 	}
-	if (!m_memory.mappedWriteReady(addr)) {
-		blockMappedWrite(FRAME, addr);
+	const uint32_t blockedAddress = m_memory.firstBlockedMappedWordWrite(addr, c);
+	if (blockedAddress != NO_BLOCKED_MAPPED_WRITE) {
+		blockMappedWrite(FRAME, blockedAddress);
 		DISPATCH_BLOCKED();
 	}
 	CYCLES_ADD(ceilDiv4(c));
@@ -622,8 +623,9 @@ DISPATCH_LABEL(STORE_MEM_WORDS) {
 		enterSynchronousAddressException(FRAME, CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, addr);
 		DISPATCH_CONTINUE();
 	}
-	if (!m_memory.mappedWriteReady(addr)) {
-		blockMappedWrite(FRAME, addr);
+	const uint32_t blockedAddress = m_memory.firstBlockedMappedWordWrite(addr, c);
+	if (blockedAddress != NO_BLOCKED_MAPPED_WRITE) {
+		blockMappedWrite(FRAME, blockedAddress);
 		DISPATCH_BLOCKED();
 	}
 	CYCLES_ADD(ceilDiv4(c));

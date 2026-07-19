@@ -5,7 +5,13 @@ import { createCanvas } from 'canvas';
 
 import { collectRomAssetPayloadRanges } from '../../machine/ts/rompack/asset_layout';
 import type { ImgMeta } from '../../machine/ts/rompack/format';
-import { decodeGxTextureImage } from '../../scripts/rompacker/gx_texture';
+import {
+	decodeGxTextureImage,
+	GX_SYSTEM_VRAM_HEIGHT,
+	GX_SYSTEM_VRAM_WIDTH,
+	GX_SYSTEM_VRAM_X,
+	GX_SYSTEM_VRAM_Y,
+} from '../../scripts/rompacker/gx_texture';
 import { resolveTextureGroupId } from '../../scripts/rompacker/atlasbuilder';
 import { buildDirect16GxTexture, buildPalette4GxTexture } from '../../scripts/rompacker/gx_texture';
 import { validateGxTextureLayout, type GxTextureLayout } from '../../scripts/rompacker/gx_texture_layout';
@@ -15,6 +21,15 @@ import {
 	GX_CART_TEXTURE_GROUP_ID_LIMIT,
 	GX_SYSTEM_TEXTURE_GROUP_ID,
 } from '../../scripts/rompacker/texture_atlas_contract';
+
+const GX_SYSTEM_VRAM_RESERVATION = {
+	system: {
+		x: GX_SYSTEM_VRAM_X,
+		y: GX_SYSTEM_VRAM_Y,
+		width: GX_SYSTEM_VRAM_WIDTH,
+		height: GX_SYSTEM_VRAM_HEIGHT,
+	},
+};
 
 test('texture group 254 belongs exclusively to the system producer', () => {
 	assert.equal(resolveTextureGroupId('/workspace/system/font.png', ['/workspace/system']), GX_SYSTEM_TEXTURE_GROUP_ID);
@@ -111,7 +126,7 @@ test('palette4 production rejects a seventeenth RGB555 STP color', () => {
 
 test('GX layout validation rejects overlapping slots in one cart-authored working set', () => {
 	const layout: GxTextureLayout = {
-		reserved: {},
+		reserved: GX_SYSTEM_VRAM_RESERVATION,
 		slots: {
 			left: { texture: { x: 0, y: 256, width: 128, height: 128 } },
 			right: { texture: { x: 64, y: 256, width: 128, height: 128 } },
@@ -127,7 +142,7 @@ test('GX layout validation rejects overlapping slots in one cart-authored workin
 
 test('GX layout validation rejects texture storage outside physical VRAM', () => {
 	const layout: GxTextureLayout = {
-		reserved: {},
+		reserved: GX_SYSTEM_VRAM_RESERVATION,
 		slots: {
 		main: { texture: { x: 1024, y: 0, width: 1, height: 1 } },
 		},
@@ -136,13 +151,13 @@ test('GX layout validation rejects texture storage outside physical VRAM', () =>
 	};
 	assert.throws(
 		() => validateGxTextureLayout(layout),
-		/outside 1024x512 VRAM/,
+		/outside 1024x1024 VRAM/,
 	);
 });
 
 test('GX layout validation rejects a palette4 CLUT that cannot be encoded exactly', () => {
 	const layout: GxTextureLayout = {
-		reserved: {},
+		reserved: GX_SYSTEM_VRAM_RESERVATION,
 		slots: {
 			main: {
 				texture: { x: 512, y: 256, width: 128, height: 128 },
@@ -162,7 +177,7 @@ test('GX layout validation rejects a palette4 CLUT that cannot be encoded exactl
 
 test('GX layout validation reserves the system group id from cart manifests', () => {
 	const layout: GxTextureLayout = {
-		reserved: {},
+		reserved: GX_SYSTEM_VRAM_RESERVATION,
 		slots: {
 			main: { texture: { x: 0, y: 256, width: 256, height: 256 } },
 		},
@@ -179,7 +194,7 @@ test('GX layout validation reserves the system group id from cart manifests', ()
 
 test('GX layout validation rejects unknown texture modes at the manifest boundary', () => {
 	const layout = {
-		reserved: {},
+		reserved: GX_SYSTEM_VRAM_RESERVATION,
 		slots: {
 			main: { texture: { x: 0, y: 256, width: 256, height: 256 } },
 		},
@@ -219,7 +234,7 @@ test('producer groups share one native texture span without becoming a runtime a
 	};
 	const resources: Resource[] = [group, first, second];
 	const layout: GxTextureLayout = {
-		reserved: {},
+		reserved: GX_SYSTEM_VRAM_RESERVATION,
 		slots: {
 			main: { texture: { x: 0, y: 0, width: 256, height: 256 } },
 		},

@@ -6,7 +6,7 @@ const GX_GPU_VRAM_POWER_ON_BLOCK_WORDS = GX_GPU_VRAM_POWER_ON_BLOCK_BYTES >>> 2;
 // Fixed seeds make the hardware power-on state reproducible across mirrored runtimes and test runs.
 const GX_GPU_VRAM_POWER_ON_BIAS_SEED = 0x14040c15;
 const GX_GPU_VRAM_POWER_ON_BOOT_SEED = 0x20000000;
-// One MiB activates the 64 KiB macro octave: 15 * 127 maximum bias at 12%, 28%, and 48%.
+// The 64 KiB macro octave applies 15 * 127 maximum bias at 12%, 28%, and 48%.
 const GX_GPU_VRAM_POWER_ON_FORCE_THRESHOLD_0 = 228;
 const GX_GPU_VRAM_POWER_ON_FORCE_THRESHOLD_1 = 533;
 const GX_GPU_VRAM_POWER_ON_FORCE_THRESHOLD_2 = 914;

@@ -18,11 +18,11 @@ constexpr size_t GX_GPU_COMMAND_CAPACITY = 4096u;
 constexpr size_t GX_GPU_COMMAND_WORD_CAPACITY = 0x80000u;
 constexpr u32 GX_GPU_DRAW_MODE_POLYGON_TEXPAGE_MASK = 0x09ffu;
 constexpr u32 GX_GPU_DRAW_MODE_DITHER_ENABLED = 1u << 9u;
+constexpr u32 GX_GPU_DRAW_MODE_DRAW_TO_DISPLAYED_FIELD = 1u << 10u;
 constexpr u32 GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_HIGH = 1u << 11u;
 constexpr u32 GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP = 1u << 12u;
 constexpr u32 GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP = 1u << 13u;
-constexpr u8 GX_GPU_INTERLACED_RENDER_ENABLE = 0x01u;
-constexpr u8 GX_GPU_INTERLACED_RENDER_ACTIVE_LINE_LSB = 0x02u;
+constexpr u8 GX_GPU_SKIPPED_LINE_NONE = 2u;
 constexpr u32 GX_GPU_TEXTURE_MODE_PALETTE4 = 0u;
 constexpr u32 GX_GPU_TEXTURE_MODE_PALETTE8 = 1u;
 constexpr u32 GX_GPU_TEXTURE_MODE_DIRECT16 = 2u;
@@ -43,6 +43,10 @@ constexpr u8 GX_GPU_READBACK_IDLE = 0u;
 constexpr u8 GX_GPU_READBACK_PENDING = 1u;
 constexpr u8 GX_GPU_READBACK_SUBMITTED = 2u;
 constexpr u8 GX_GPU_READBACK_READY = 3u;
+constexpr u32 GX_GPU_TRANSFER_MAX_WIDTH = 1024u;
+constexpr u32 GX_GPU_TRANSFER_MAX_HEIGHT = 512u;
+constexpr size_t GX_GPU_TRANSFER_MAX_PIXEL_COUNT = static_cast<size_t>(GX_GPU_TRANSFER_MAX_WIDTH) * static_cast<size_t>(GX_GPU_TRANSFER_MAX_HEIGHT);
+constexpr size_t GX_GPU_TRANSFER_MAX_BYTE_COUNT = GX_GPU_TRANSFER_MAX_PIXEL_COUNT * 2u;
 
 inline i32 gxGpuSigned11(u32 value) {
 	const i32 raw = static_cast<i32>(value & 0x7ffu);
@@ -73,24 +77,12 @@ inline u32 gxGpuDrawingAreaBottomExclusive(u32 topLeftWord, u32 bottomRightWord,
 	return top <= bottom ? bottom + 1u : 0u;
 }
 
-inline bool gxGpuSkipDrawingToActiveField(u32 statusWord) {
-	constexpr u32 mask = (1u << 19u) | (1u << 22u) | (1u << 10u);
-	constexpr u32 active = (1u << 19u) | (1u << 22u);
-	return (statusWord & mask) == active;
-}
-
-inline u8 gxGpuInterlacedRenderWord(u32 statusWord, u32 activeLineLsb) {
-	return gxGpuSkipDrawingToActiveField(statusWord)
-		? static_cast<u8>(GX_GPU_INTERLACED_RENDER_ENABLE | ((activeLineLsb & 1u) << 1u))
-		: 0u;
-}
-
 inline u32 gxGpuTransferWidth(u32 sizeWord) {
-	return (((sizeWord & 0xffffu) - 1u) & 0x3ffu) + 1u;
+	return (((sizeWord & 0xffffu) - 1u) & (GX_GPU_TRANSFER_MAX_WIDTH - 1u)) + 1u;
 }
 
 inline u32 gxGpuTransferHeight(u32 sizeWord) {
-	return ((((sizeWord >> 16u) & 0xffffu) - 1u) & 0x1ffu) + 1u;
+	return ((((sizeWord >> 16u) & 0xffffu) - 1u) & (GX_GPU_TRANSFER_MAX_HEIGHT - 1u)) + 1u;
 }
 
 inline u32 gxGpuTextureAttribute(u32 textureWord) {
@@ -121,7 +113,7 @@ struct GxGpuCommandBufferState {
 	std::vector<u32> commandDrawingAreaBottomRightWord;
 	std::vector<u32> commandDrawingOffsetWord;
 	std::vector<u32> commandMaskBitModeWord;
-	std::vector<u8> commandInterlacedRenderWord;
+	std::vector<u8> commandSkippedLineParity;
 	std::vector<u32> words;
 	u8 readbackPhase = GX_GPU_READBACK_IDLE;
 	size_t readbackFenceCommandCount = 0u;
@@ -229,7 +221,7 @@ private:
 	u32 m_width = 0u;
 	u32 m_height = 0u;
 	u32 m_pixelCursor = 0u;
-	std::unique_ptr<u8[]> m_pixelBytes = std::make_unique<u8[]>(GX_GPU_VRAM_BYTE_COUNT);
+	std::unique_ptr<u8[]> m_pixelBytes = std::make_unique<u8[]>(GX_GPU_TRANSFER_MAX_BYTE_COUNT);
 	u32 m_token = 0u;
 	DmaController& m_dmaController;
 };
@@ -277,7 +269,7 @@ public:
 	std::array<u32, GX_GPU_COMMAND_CAPACITY> commandDrawingAreaBottomRightWord{};
 	std::array<u32, GX_GPU_COMMAND_CAPACITY> commandDrawingOffsetWord{};
 	std::array<u32, GX_GPU_COMMAND_CAPACITY> commandMaskBitModeWord{};
-	std::array<u8, GX_GPU_COMMAND_CAPACITY> commandInterlacedRenderWord{};
+	std::array<u8, GX_GPU_COMMAND_CAPACITY> commandSkippedLineParity{};
 	std::array<u32, GX_GPU_COMMAND_WORD_CAPACITY> words{};
 	GxGpuReadbackPort readback;
 
@@ -333,7 +325,7 @@ public:
 		state.commandDrawingAreaBottomRightWord.assign(commandDrawingAreaBottomRightWord.begin(), commandDrawingAreaBottomRightWord.begin() + static_cast<std::ptrdiff_t>(commandCount));
 		state.commandDrawingOffsetWord.assign(commandDrawingOffsetWord.begin(), commandDrawingOffsetWord.begin() + static_cast<std::ptrdiff_t>(commandCount));
 		state.commandMaskBitModeWord.assign(commandMaskBitModeWord.begin(), commandMaskBitModeWord.begin() + static_cast<std::ptrdiff_t>(commandCount));
-		state.commandInterlacedRenderWord.assign(commandInterlacedRenderWord.begin(), commandInterlacedRenderWord.begin() + static_cast<std::ptrdiff_t>(commandCount));
+		state.commandSkippedLineParity.assign(commandSkippedLineParity.begin(), commandSkippedLineParity.begin() + static_cast<std::ptrdiff_t>(commandCount));
 		state.words.assign(words.begin(), words.begin() + static_cast<std::ptrdiff_t>(wordCount));
 		state.readbackPhase = readback.m_phase == GX_GPU_READBACK_SUBMITTED ? GX_GPU_READBACK_PENDING : readback.m_phase;
 		state.readbackFenceCommandCount = readback.m_fenceCommandCount;
@@ -368,7 +360,7 @@ public:
 			commandDrawingAreaBottomRightWord[index] = state.commandDrawingAreaBottomRightWord[index];
 			commandDrawingOffsetWord[index] = state.commandDrawingOffsetWord[index];
 			commandMaskBitModeWord[index] = state.commandMaskBitModeWord[index];
-			commandInterlacedRenderWord[index] = state.commandInterlacedRenderWord[index];
+			commandSkippedLineParity[index] = state.commandSkippedLineParity[index];
 		}
 		for (size_t index = 0u; index < wordCount; index += 1u) {
 			words[index] = state.words[index];
@@ -409,7 +401,7 @@ public:
 			commandDrawingAreaBottomRightWord[commandIndex] = commandDrawingAreaBottomRightWord[sourceIndex];
 			commandDrawingOffsetWord[commandIndex] = commandDrawingOffsetWord[sourceIndex];
 			commandMaskBitModeWord[commandIndex] = commandMaskBitModeWord[sourceIndex];
-			commandInterlacedRenderWord[commandIndex] = commandInterlacedRenderWord[sourceIndex];
+			commandSkippedLineParity[commandIndex] = commandSkippedLineParity[sourceIndex];
 		}
 		for (size_t wordIndex = 0u; wordIndex < remainingWords; wordIndex += 1u) {
 			words[wordIndex] = words[retiredWords + wordIndex];
@@ -472,7 +464,7 @@ public:
 		u32 drawingAreaBottomRightWord,
 		u32 drawingOffsetWord,
 		u32 maskBitModeWord,
-		u8 interlacedRenderWord) {
+		u8 skippedLineParity) {
 		const size_t commandIndex = commandCount;
 		commandKind[commandIndex] = kind;
 		commandOpcode[commandIndex] = opcode;
@@ -485,7 +477,7 @@ public:
 		commandDrawingAreaBottomRightWord[commandIndex] = drawingAreaBottomRightWord;
 		commandDrawingOffsetWord[commandIndex] = drawingOffsetWord;
 		commandMaskBitModeWord[commandIndex] = maskBitModeWord;
-		commandInterlacedRenderWord[commandIndex] = interlacedRenderWord;
+		commandSkippedLineParity[commandIndex] = skippedLineParity;
 		commandCount = commandIndex + 1u;
 	}
 };

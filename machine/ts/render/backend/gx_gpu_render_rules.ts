@@ -6,7 +6,6 @@ import {
 	gxGpuTextureAttribute,
 } from '../../machine/devices/gx/gpu_command_buffer';
 import {
-	GX_GPU_VRAM_HEIGHT,
 	GX_GPU_VRAM_WIDTH,
 	gxGpuVramYAddress,
 	gxGpuVramYAddressMask,
@@ -19,8 +18,6 @@ export const GX_GPU_TRIANGLE_ATTRIBUTE_PLANE_PHASES = 3;
 export const GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS = 12;
 export const GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE = 1 << GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS;
 export const GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK = 0xfffff;
-export const GX_GPU_TRIANGLE_ATTRIBUTE_RADIX_BITS = 4;
-export const GX_GPU_TRIANGLE_ATTRIBUTE_RADIX_DIGITS = 5;
 export const GX_GPU_TEXTURE_SOURCE_COMMAND_OVERLAP = 1;
 export const GX_GPU_TEXTURE_SOURCE_BATCH_OVERLAP = 2;
 
@@ -67,52 +64,6 @@ export function gxGpuTriangleAttributePlane(
 		out[outOffset + componentCount + component] = stepXRaw;
 		out[outOffset + componentCount * 2 + component] = stepYRaw;
 	}
-}
-
-export function gxGpuTriangleAttributePlaneInterpolants(
-	out: Float32Array,
-	outOffset: number,
-	vertexFloatStride: number,
-	plane: Float64Array,
-	componentCount: number,
-	x0: number,
-	y0: number,
-	x1: number,
-	y1: number,
-	x2: number,
-	y2: number,
-): void {
-	for (let component = 0; component < componentCount; component += 1) {
-		const stepX = plane[componentCount + component];
-		const stepY = plane[componentCount * 2 + component];
-		const origin = (plane[component] + (x0 * stepX) + (y0 * stepY)) & GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK;
-		for (let vertex = 0; vertex < 3; vertex += 1) {
-			const x = vertex === 0 ? x0 : (vertex === 1 ? x1 : x2);
-			const y = vertex === 0 ? y0 : (vertex === 1 ? y1 : y2);
-			const localX = x - x0;
-			const localY = y - y0;
-			const offset = outOffset + vertex * vertexFloatStride + component;
-			for (let digit = 0; digit < GX_GPU_TRIANGLE_ATTRIBUTE_RADIX_DIGITS; digit += 1) {
-				const shift = digit * GX_GPU_TRIANGLE_ATTRIBUTE_RADIX_BITS;
-				out[offset + digit * componentCount] = ((origin >>> shift) & 0x0f) + ((stepX >>> shift) & 0x0f) * localX + ((stepY >>> shift) & 0x0f) * localY;
-			}
-		}
-	}
-}
-
-export function gxGpuTriangleAttributePlaneInterpolantValue(
-	interpolants: Float32Array,
-	offset: number,
-	componentCount: number,
-): number {
-	let carry = 0;
-	let value = 0;
-	for (let digit = 0; digit < GX_GPU_TRIANGLE_ATTRIBUTE_RADIX_DIGITS; digit += 1) {
-		const sum = interpolants[offset + digit * componentCount] + carry;
-		value |= (sum & 0x0f) << (digit * GX_GPU_TRIANGLE_ATTRIBUTE_RADIX_BITS);
-		carry = sum >> GX_GPU_TRIANGLE_ATTRIBUTE_RADIX_BITS;
-	}
-	return value & GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK;
 }
 
 export function gxGpuVertexY(word: number): number {
@@ -188,7 +139,7 @@ export function gxGpuVramWrappedWidth(x: number, width: number): number {
 
 export function gxGpuVramWrappedHeight(y: number, height: number, vramYAddressExtensionWord: number): number {
 	const logicalY = gxGpuVramYAddress(y, vramYAddressExtensionWord);
-	const edgeHeight = GX_GPU_VRAM_HEIGHT - (logicalY & (GX_GPU_VRAM_HEIGHT - 1));
+	const edgeHeight = gxGpuVramYAddressMask(vramYAddressExtensionWord) + 1 - logicalY;
 	return height <= edgeHeight ? height : edgeHeight;
 }
 

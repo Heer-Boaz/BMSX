@@ -1,5 +1,5 @@
 import { StringPool, type StringId } from './string_pool';
-import type { Memory } from '../memory/memory';
+import { NO_BLOCKED_MAPPED_WRITE, type Memory } from '../memory/memory';
 import type { IrqController } from '../devices/irq/controller';
 import {
 	addTrackedLuaHeapBytes,
@@ -2206,6 +2206,7 @@ export class CPU {
 		frame.pc = this.currentInstructionPc;
 		this.memoryWriteBlocked = true;
 		this.memoryWriteBlockedAddress = address;
+		this.yieldRequested = false;
 	}
 
 
@@ -3018,16 +3019,21 @@ export class CPU {
 						);
 						return;
 					}
-					if (op !== OpCode.LOAD_MEM_D && !this.memory.mappedWriteReady(addr)) {
-						this.blockMappedWrite(frame, addr);
-						return;
-					}
 					if (op === OpCode.STORE_MEM_WORDS_D) {
+						const blockedAddress = this.memory.firstBlockedMappedWordWrite(addr, c);
+						if (blockedAddress !== NO_BLOCKED_MAPPED_WRITE) {
+							this.blockMappedWrite(frame, blockedAddress);
+							return;
+						}
 						this.charge(ceilDiv4(c));
 						this.writeMappedWordSequence(frame, addr, a, c);
 						return;
 					}
 					if (op === OpCode.STORE_MEM_D) {
+						if (!this.memory.mappedWriteReady(addr)) {
+							this.blockMappedWrite(frame, addr);
+							return;
+						}
 						const value = registers.get(a);
 						const faultSequence = this.memory.readBusFaultSequence();
 						switch (c) {
@@ -3162,8 +3168,9 @@ export class CPU {
 						this.enterSynchronousAddressException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, addr);
 						return;
 					}
-					if (!this.memory.mappedWriteReady(addr)) {
-						this.blockMappedWrite(frame, addr);
+					const blockedAddress = this.memory.firstBlockedMappedWordWrite(addr, c);
+					if (blockedAddress !== NO_BLOCKED_MAPPED_WRITE) {
+						this.blockMappedWrite(frame, blockedAddress);
 						return;
 					}
 					this.charge(ceilDiv4(c));

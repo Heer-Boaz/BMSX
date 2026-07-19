@@ -1,61 +1,43 @@
 #version 300 es
 precision highp float;
+precision highp int;
 
 #ifndef GX_GPU_FIXED_COLOR_PLANE
 #define GX_GPU_FIXED_COLOR_PLANE 0
 #endif
 
 in vec2 a_position;
-uniform float u_rasterRowOrigin;
+in uvec2 a_uvPlaneBase;
+in uvec2 a_uvPlaneStepX;
+in uvec2 a_uvPlaneStepY;
 uniform float u_rasterPhase;
+flat out uvec2 v_uvPlaneBase;
+flat out uvec2 v_uvPlaneStepX;
+flat out uvec2 v_uvPlaneStepY;
 #if GX_GPU_FIXED_COLOR_PLANE
-in vec4 a_uvPlane01;
-in vec4 a_uvPlane23;
-in vec2 a_uvPlane4;
-in vec4 a_colorPlane0;
-in vec4 a_colorPlane1;
-in vec4 a_colorPlane2;
-in vec3 a_colorPlane3;
-out vec4 v_uvPlane01;
-out vec4 v_uvPlane23;
-out vec2 v_uvPlane4;
-out vec4 v_colorPlane0;
-out vec4 v_colorPlane1;
-out vec4 v_colorPlane2;
-out vec3 v_colorPlane3;
+in uvec3 a_colorPlaneBase;
+in uvec3 a_colorPlaneStepX;
+in uvec3 a_colorPlaneStepY;
+flat out uvec3 v_colorPlaneBase;
+flat out uvec3 v_colorPlaneStepX;
+flat out uvec3 v_colorPlaneStepY;
 #else
-in vec4 a_color;
-in vec2 a_texcoord;
-in float a_uvPlaneEnable;
-in vec4 a_uvPlane01;
-in vec4 a_uvPlane23;
-in vec2 a_uvPlane4;
-out vec4 v_color;
-out vec2 v_texcoord;
-out float v_uvPlaneEnable;
-out vec4 v_uvPlane01;
-out vec4 v_uvPlane23;
-out vec2 v_uvPlane4;
+in vec3 a_color;
+out vec3 v_color;
 #endif
 
 void main() {
-	vec2 rasterPosition = vec2(a_position.x, a_position.y - u_rasterRowOrigin) + vec2(u_rasterPhase);
-	vec2 clip = vec2((rasterPosition.x / 512.0) - 1.0, 1.0 - (rasterPosition.y / 256.0));
+	vec2 rasterPosition = a_position + vec2(u_rasterPhase);
+	vec2 clip = vec2((rasterPosition.x / 512.0) - 1.0, (rasterPosition.y / 512.0) - 1.0);
 	gl_Position = vec4(clip, 0.0, 1.0);
+	v_uvPlaneBase = a_uvPlaneBase;
+	v_uvPlaneStepX = a_uvPlaneStepX;
+	v_uvPlaneStepY = a_uvPlaneStepY;
 #if GX_GPU_FIXED_COLOR_PLANE
-	v_uvPlane01 = a_uvPlane01;
-	v_uvPlane23 = a_uvPlane23;
-	v_uvPlane4 = a_uvPlane4;
-	v_colorPlane0 = a_colorPlane0;
-	v_colorPlane1 = a_colorPlane1;
-	v_colorPlane2 = a_colorPlane2;
-	v_colorPlane3 = a_colorPlane3;
+	v_colorPlaneBase = a_colorPlaneBase;
+	v_colorPlaneStepX = a_colorPlaneStepX;
+	v_colorPlaneStepY = a_colorPlaneStepY;
 #else
 	v_color = a_color;
-	v_texcoord = a_texcoord;
-	v_uvPlaneEnable = a_uvPlaneEnable;
-	v_uvPlane01 = a_uvPlane01;
-	v_uvPlane23 = a_uvPlane23;
-	v_uvPlane4 = a_uvPlane4;
 #endif
 }

@@ -3,6 +3,11 @@ local gx_gpu<const> = {}
 
 local gp0<const>: *word = 0x08010240
 local gp1<const>: *word = 0x08010244
+local pcrtc_pmode<const>: *word = 0x08010358
+local pcrtc_dispfb1_low<const>: *word = 0x08010360
+local pcrtc_dispfb1_high<const>: *word = 0x08010364
+local pcrtc_display1_low<const>: *word = 0x08010368
+local pcrtc_display1_high<const>: *word = 0x0801036c
 
 local gp1_reset<const> = 0x00000000
 local gp1_ack_irq<const> = 0x02000000
@@ -13,10 +18,17 @@ local gp1_display_start<const> = 0x05000000
 local gp1_horizontal_display_range<const> = 0x06c60260
 local gp1_vertical_display_range<const> = 0x07000000
 local gp1_display_mode<const> = 0x08000000
+local gp1_vram_y_address_extension<const> = 0x09000001
 local horizontal_resolution_256<const> = 0x00000000
 local horizontal_resolution_320<const> = 0x00000001
-local video_standard_pal<const> = 0x00000008
+local display_mode_50hz<const> = 0x00000008
 local vertical_display_range_start<const> = 35
+local pcrtc_framebuffer_width_1024<const> = 16 << 9
+local pcrtc_psmct16<const> = 2 << 15
+local pcrtc_enable_circuit1<const> = 1
+local pcrtc_enable_circuit2<const> = 2
+local pcrtc_constant_alpha<const> = 1 << 5
+local pcrtc_alpha_opaque<const> = 0xff << 8
 
 local gp0_fill_rectangle<const> = 0x02000000
 local gp0_draw_rectangle<const> = 0x60000000
@@ -56,6 +68,7 @@ local sqrt<const> = require('bios/math').sqrt
 local current_draw_mode = 0
 local current_display_size_word = 0
 local current_draw_origin_word = 0
+local current_pcrtc_enable_word = 0
 
 local argb_to_gp0_rgb<const> = function(color)
 	return ((color & 0x00ff0000) >> 16) | (color & 0x0000ff00) | ((color & 0x000000ff) << 16)
@@ -92,16 +105,16 @@ local rgba8888_to_direct16<const> = function(color)
 end
 
 local draw_mode_for_texture_page<const> = function(source_x, source_y)
-	return draw_mode_texture_direct16 | (current_draw_mode & 0x00000060) | (((source_x >> 8) & 0x00000003) << 2) | ((source_y & 0x00000100) >> 4)
+	return draw_mode_texture_direct16 | (current_draw_mode & 0x00000060) | (((source_x >> 8) & 0x00000003) << 2) | ((source_y & 0x00000100) >> 4) | ((source_y & 0x00000200) << 2)
 end
 
 local draw_mode_for_palette4_page<const> = function(texture_x, source_x, source_y)
 	local page_x<const> = texture_x + ((source_x >> 8) << 6)
-	return draw_mode_texture_palette4 | (current_draw_mode & 0x00000060) | ((page_x >> 6) & 0x0000000f) | ((source_y & 0x00000100) >> 4)
+	return draw_mode_texture_palette4 | (current_draw_mode & 0x00000060) | ((page_x >> 6) & 0x0000000f) | ((source_y & 0x00000100) >> 4) | ((source_y & 0x00000200) << 2)
 end
 
 local uv_clut<const> = function(u, v, clut_x, clut_y)
-	return uv(u, v) | ((((clut_x >> 4) & 0x0000003f) | ((clut_y & 0x000001ff) << 6)) << 16)
+	return uv(u, v) | ((((clut_x >> 4) & 0x0000003f) | ((clut_y & 0x000003ff) << 6)) << 16)
 end
 
 function gx_gpu.draw_target(origin_word)
@@ -119,13 +132,24 @@ function gx_gpu.display_origin(origin_word)
 	local x<const> = origin_word & 0x0000ffff
 	local y<const> = origin_word >> 16
 	*gp1 = gp1_display_start | x | (y << 10)
+	local framebuffer_address<const> = (y << 10) + x
+	local framebuffer_offset<const> = framebuffer_address & 0x00000fff
+	*pcrtc_dispfb1_low = (framebuffer_address >> 12) | pcrtc_framebuffer_width_1024 | pcrtc_psmct16
+	*pcrtc_dispfb1_high = (framebuffer_offset & 0x000003ff) | ((framebuffer_offset >> 10) << 11)
+end
+
+local program_pcrtc_circuit1<const> = function(width, height)
+	*pcrtc_display1_low = 0
+	*pcrtc_display1_high = (width - 1) | ((height - 1) << 12)
 end
 
 local program_display<const> = function(horizontal_resolution, video_standard, vertical_start, width, height)
 	*gp1 = gp1_reset
+	*gp1 = gp1_vram_y_address_extension
 	*gp1 = gp1_display_mode | horizontal_resolution | video_standard
 	current_display_size_word = width | (height << 16)
 	gx_gpu.display_origin(0)
+	program_pcrtc_circuit1(width, height)
 	*gp1 = gp1_horizontal_display_range
 	*gp1 = gp1_vertical_display_range | vertical_start | ((vertical_start + height) << 10)
 	*gp1 = gp1_dma_direction_cpu_to_gp0
@@ -134,18 +158,36 @@ local program_display<const> = function(horizontal_resolution, video_standard, v
 	gx_gpu.draw_target(0)
 	*gp0 = gp0_mask_bit_mode
 	*gp1 = gp1_display_enable
+	current_pcrtc_enable_word = pcrtc_enable_circuit1 | pcrtc_constant_alpha | pcrtc_alpha_opaque
+	*pcrtc_pmode = current_pcrtc_enable_word
 end
 
-function gx_gpu.reset_320x240_pal()
-	program_display(horizontal_resolution_320, video_standard_pal, vertical_display_range_start, 320, 240)
+function gx_gpu.reset_320x240()
+	program_display(horizontal_resolution_320, display_mode_50hz, vertical_display_range_start, 320, 240)
 end
 
-function gx_gpu.reset_256x192_pal()
-	program_display(horizontal_resolution_256, video_standard_pal, vertical_display_range_start, 256, 192)
+function gx_gpu.reset_256x192()
+	program_display(horizontal_resolution_256, display_mode_50hz, vertical_display_range_start, 256, 192)
 end
 
-function gx_gpu.reset_256x212_pal()
-	program_display(horizontal_resolution_256, video_standard_pal, vertical_display_range_start, 256, 212)
+function gx_gpu.reset_256x212()
+	program_display(horizontal_resolution_256, display_mode_50hz, vertical_display_range_start, 256, 212)
+end
+
+function gx_gpu.prepare_supervisor_256x192(origin_word)
+	*gp1 = gp1_vram_y_address_extension
+	current_display_size_word = 256 | (192 << 16)
+	gx_gpu.display_origin(origin_word)
+	program_pcrtc_circuit1(256, 192)
+	*gp1 = gp1_horizontal_display_range
+	*gp1 = gp1_vertical_display_range | vertical_display_range_start | ((vertical_display_range_start + 192) << 10)
+	*gp1 = gp1_dma_direction_cpu_to_gp0
+	current_draw_mode = draw_mode_blend_half
+	*gp0 = gp0_draw_mode | current_draw_mode
+	gx_gpu.draw_target(origin_word)
+	*gp0 = gp0_mask_bit_mode
+	*gp1 = gp1_display_enable
+	current_pcrtc_enable_word = (*pcrtc_pmode & pcrtc_enable_circuit2) | pcrtc_enable_circuit1
 end
 
 function gx_gpu.display_size()
@@ -154,10 +196,12 @@ end
 
 function gx_gpu.enable_display()
 	*gp1 = gp1_display_enable
+	*pcrtc_pmode = current_pcrtc_enable_word
 end
 
 function gx_gpu.disable_display()
 	*gp1 = gp1_display_disable
+	*pcrtc_pmode = 0
 end
 
 function gx_gpu.ack_irq()
@@ -207,6 +251,12 @@ end
 function gx_gpu.encode_irq_request(words, index)
 	local target<const>: *word = words
 	target[index] = gp0_irq_request
+	return index + 1
+end
+
+function gx_gpu.encode_mask_bit_mode(words, index, mode_word)
+	local target<const>: *word = words
+	target[index] = gp0_mask_bit_mode | mode_word
 	return index + 1
 end
 

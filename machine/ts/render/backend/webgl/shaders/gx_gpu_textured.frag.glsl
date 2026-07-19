@@ -1,283 +1,150 @@
 #version 300 es
 precision highp float;
+precision highp int;
 
 #ifndef GX_GPU_FIXED_COLOR_PLANE
 #define GX_GPU_FIXED_COLOR_PLANE 0
 #endif
 
 uniform sampler2D u_vram;
-uniform vec2 u_texPageBase;
-uniform vec2 u_clutBase;
-uniform float u_texturePageReadMask;
-uniform float u_clutReadMask;
-uniform vec2 u_textureWindowAnd;
-uniform vec2 u_textureWindowOr;
-uniform float u_textureMode;
-uniform float u_rawTexture;
-uniform float u_blendEnable;
-uniform float u_blendMode;
-uniform float u_checkMaskBit;
-uniform float u_setMaskBit;
-uniform float u_ditherEnable;
-uniform float u_interlacedRenderWord;
-uniform float u_rasterRowOrigin;
+uniform uvec2 u_texPageBase;
+uniform uvec2 u_clutBase;
+uniform uvec2 u_textureWindowAnd;
+uniform uvec2 u_textureWindowOr;
+uniform uint u_textureMode;
+uniform uint u_rawTexture;
+uniform uint u_blendEnable;
+uniform uint u_blendMode;
+uniform uint u_checkMaskBit;
+uniform uint u_setMaskBit;
+uniform uint u_ditherEnable;
+uniform uint u_skippedLineParity;
+flat in uvec2 v_uvPlaneBase;
+flat in uvec2 v_uvPlaneStepX;
+flat in uvec2 v_uvPlaneStepY;
 #if GX_GPU_FIXED_COLOR_PLANE
-in vec4 v_uvPlane01;
-in vec4 v_uvPlane23;
-in vec2 v_uvPlane4;
-in vec4 v_colorPlane0;
-in vec4 v_colorPlane1;
-in vec4 v_colorPlane2;
-in vec3 v_colorPlane3;
+flat in uvec3 v_colorPlaneBase;
+flat in uvec3 v_colorPlaneStepX;
+flat in uvec3 v_colorPlaneStepY;
 #else
-in vec4 v_color;
-in vec2 v_texcoord;
-in float v_uvPlaneEnable;
-in vec4 v_uvPlane01;
-in vec4 v_uvPlane23;
-in vec2 v_uvPlane4;
+in vec3 v_color;
 #endif
 out vec4 outputColor;
 
-const vec2 VRAM_SIZE = vec2(1024.0, 512.0);
+struct TextureColor {
+	uvec3 rgb5;
+	uint maskBit;
+	bool transparent;
+};
 
-float bitAnd8(float a, float b) {
-	float result = 0.0;
-	float bit = 1.0;
-	for (int index = 0; index < 8; index += 1) {
-		float abit = mod(floor(a / bit), 2.0);
-		float bbit = mod(floor(b / bit), 2.0);
-		result += bit * floor(abit * bbit + 0.5);
-		bit *= 2.0;
-	}
-	return result;
+uint rawVramWord(uvec2 logicalCoord) {
+	uvec2 wrapped = logicalCoord & uvec2(1023u);
+	vec4 rawPixel = texelFetch(u_vram, ivec2(wrapped), 0);
+	uvec2 bytes = uvec2(rawPixel.rg * 255.0 + 0.5);
+	return bytes.x | (bytes.y << 8u);
 }
 
-vec2 applyTextureWindow(vec2 texcoord) {
-	vec2 coord = floor(texcoord);
-	return vec2(
-		bitAnd8(coord.x, u_textureWindowAnd.x) + u_textureWindowOr.x,
-		bitAnd8(coord.y, u_textureWindowAnd.y) + u_textureWindowOr.y
-	);
+uint rawStorageVramWord(ivec2 storageCoord) {
+	vec4 rawPixel = texelFetch(u_vram, storageCoord & ivec2(1023), 0);
+	uvec2 bytes = uvec2(rawPixel.rg * 255.0 + 0.5);
+	return bytes.x | (bytes.y << 8u);
 }
 
-float rawVramWord(vec2 coord) {
-	vec2 wrapped = mod(coord, VRAM_SIZE);
-	vec2 storageCoord = vec2(wrapped.x, VRAM_SIZE.y - 1.0 - wrapped.y);
-	vec4 rawPixel = texture(u_vram, (storageCoord + vec2(0.5)) / VRAM_SIZE);
-	float lowByte = floor(rawPixel.r * 255.0 + 0.5);
-	float highByte = floor(rawPixel.g * 255.0 + 0.5);
-	return lowByte + highByte * 256.0;
+uvec3 decodeRgb555To5(uint word) {
+	return uvec3(word & 0x1fu, (word >> 5u) & 0x1fu, (word >> 10u) & 0x1fu);
 }
 
-float rawStorageVramWord(vec2 storageCoord) {
-	vec2 wrapped = mod(storageCoord, VRAM_SIZE);
-	vec4 rawPixel = texture(u_vram, (wrapped + vec2(0.5)) / VRAM_SIZE);
-	float lowByte = floor(rawPixel.r * 255.0 + 0.5);
-	float highByte = floor(rawPixel.g * 255.0 + 0.5);
-	return lowByte + highByte * 256.0;
+TextureColor textureColor(uint word) {
+	return TextureColor(decodeRgb555To5(word), word >> 15u, word == 0u);
 }
 
-vec3 decodeRgb555To5(float word) {
-	return vec3(
-		mod(word, 32.0),
-		mod(floor(word / 32.0), 32.0),
-		mod(floor(word / 1024.0), 32.0)
-	);
+TextureColor samplePsxTexture(uvec2 sampleCoord) {
+	uvec2 windowed = (sampleCoord & u_textureWindowAnd) | u_textureWindowOr;
+	if (u_textureMode == 0u) {
+		uint textureWord = rawVramWord(uvec2(u_texPageBase.x + (windowed.x >> 2u), u_texPageBase.y + windowed.y));
+		uint paletteIndex = (textureWord >> ((windowed.x & 3u) << 2u)) & 0x0fu;
+		return textureColor(rawVramWord(uvec2(u_clutBase.x + paletteIndex, u_clutBase.y)));
+	}
+	if (u_textureMode == 1u) {
+		uint textureWord = rawVramWord(uvec2(u_texPageBase.x + (windowed.x >> 1u), u_texPageBase.y + windowed.y));
+		uint paletteIndex = (textureWord >> ((windowed.x & 1u) << 3u)) & 0xffu;
+		return textureColor(rawVramWord(uvec2(u_clutBase.x + paletteIndex, u_clutBase.y)));
+	}
+	return textureColor(rawVramWord(u_texPageBase + windowed));
 }
 
-float wordMaskBit(float word) {
-	return floor(word / 32768.0);
+uvec3 blendRgb5(uvec3 src5, uvec3 dst5) {
+	switch (u_blendMode) {
+		case 0u: return (src5 + dst5) >> uvec3(1u);
+		case 1u: return min(src5 + dst5, uvec3(31u));
+		case 2u: return uvec3(max(ivec3(dst5) - ivec3(src5), ivec3(0)));
+		default: return min(dst5 + (src5 >> uvec3(2u)), uvec3(31u));
+	}
 }
 
-float palette4Index(float word, float u) {
-	float subpixel = mod(u, 4.0);
-	return mod(floor(word / exp2(subpixel * 4.0)), 16.0);
+int ditherOffset(ivec2 coord) {
+	switch (((coord.y & 3) << 2) | (coord.x & 3)) {
+		case 0: return -4;
+		case 1: return 0;
+		case 2: return -3;
+		case 3: return 1;
+		case 4: return 2;
+		case 5: return -2;
+		case 6: return 3;
+		case 7: return -1;
+		case 8: return -3;
+		case 9: return 1;
+		case 10: return -4;
+		case 11: return 0;
+		case 12: return 3;
+		case 13: return -1;
+		case 14: return 2;
+		default: return -2;
+	}
 }
 
-float palette8Index(float word, float u) {
-	float subpixel = mod(u, 2.0);
-	return mod(floor(word / exp2(subpixel * 8.0)), 256.0);
+uvec3 modulatedTextureRgb5(uvec3 texture5, uvec3 vertex8, ivec2 logicalCoord) {
+	ivec3 preDither = ivec3((texture5 * vertex8) >> uvec3(4u));
+	if (u_ditherEnable != 0u) {
+		preDither += ivec3(ditherOffset(logicalCoord));
+	}
+	return uvec3(clamp(preDither >> ivec3(3), ivec3(0), ivec3(31)));
 }
 
-vec4 samplePsxTexture() {
-#if GX_GPU_FIXED_COLOR_PLANE
-	vec4 plane01 = floor(v_uvPlane01 + 0.5);
-	vec4 plane23 = floor(v_uvPlane23 + 0.5);
-	vec2 plane4 = floor(v_uvPlane4 + 0.5);
-	vec2 carry = floor(plane01.xy / 16.0);
-	carry = floor((plane01.zw + carry) / 16.0);
-	carry = floor((plane23.xy + carry) / 16.0);
-	vec2 digit3 = plane23.zw + carry;
-	carry = floor(digit3 / 16.0);
-	vec2 digit4 = plane4 + carry;
-	vec2 sampleCoord = mod(digit3, 16.0) + mod(digit4, 16.0) * 16.0;
-#else
-	vec2 sampleCoord = v_texcoord;
-	if (v_uvPlaneEnable > 0.5) {
-		vec4 plane01 = floor(v_uvPlane01 + 0.5);
-		vec4 plane23 = floor(v_uvPlane23 + 0.5);
-		vec2 plane4 = floor(v_uvPlane4 + 0.5);
-		vec2 carry = floor(plane01.xy / 16.0);
-		carry = floor((plane01.zw + carry) / 16.0);
-		carry = floor((plane23.xy + carry) / 16.0);
-		vec2 digit3 = plane23.zw + carry;
-		carry = floor(digit3 / 16.0);
-		vec2 digit4 = plane4 + carry;
-		sampleCoord = mod(digit3, 16.0) + mod(digit4, 16.0) * 16.0;
-	}
-#endif
-	vec2 windowed = applyTextureWindow(sampleCoord);
-	float textureWord;
-	if (u_textureMode < 0.5) {
-		vec2 wordCoord = vec2(u_texPageBase.x + floor(windowed.x / 4.0), u_texPageBase.y + windowed.y);
-		textureWord = rawVramWord(wordCoord) * u_texturePageReadMask;
-		float paletteIndex = palette4Index(textureWord, windowed.x);
-		float paletteWord = rawVramWord(vec2(u_clutBase.x + paletteIndex, u_clutBase.y)) * u_clutReadMask;
-		return vec4(decodeRgb555To5(paletteWord), paletteWord == 0.0 ? -1.0 : wordMaskBit(paletteWord));
-	}
-	if (u_textureMode < 1.5) {
-		vec2 wordCoord = vec2(u_texPageBase.x + floor(windowed.x / 2.0), u_texPageBase.y + windowed.y);
-		textureWord = rawVramWord(wordCoord) * u_texturePageReadMask;
-		float paletteIndex = palette8Index(textureWord, windowed.x);
-		float paletteWord = rawVramWord(vec2(u_clutBase.x + paletteIndex, u_clutBase.y)) * u_clutReadMask;
-		return vec4(decodeRgb555To5(paletteWord), paletteWord == 0.0 ? -1.0 : wordMaskBit(paletteWord));
-	}
-	textureWord = rawVramWord(u_texPageBase + windowed) * u_texturePageReadMask;
-	return vec4(decodeRgb555To5(textureWord), textureWord == 0.0 ? -1.0 : wordMaskBit(textureWord));
-}
-
-vec3 blendRgb5(vec3 src5, vec3 dst5) {
-	if (u_blendMode < 0.5) {
-		return floor((src5 + dst5) * 0.5);
-	}
-	if (u_blendMode < 1.5) {
-		return min(src5 + dst5, vec3(31.0));
-	}
-	if (u_blendMode < 2.5) {
-		return max(dst5 - src5, vec3(0.0));
-	}
-	return min(dst5 + floor(src5 * 0.25), vec3(31.0));
-}
-
-float ditherOffset() {
-	vec2 pixelCoord = floor(vec2(gl_FragCoord.x - 0.5, VRAM_SIZE.y - gl_FragCoord.y - 0.5 + u_rasterRowOrigin));
-	float x = mod(pixelCoord.x, 4.0);
-	float y = mod(pixelCoord.y, 4.0);
-	if (y < 0.5) {
-		if (x < 0.5) {
-			return -4.0;
-		}
-		if (x < 1.5) {
-			return 0.0;
-		}
-		if (x < 2.5) {
-			return -3.0;
-		}
-		return 1.0;
-	}
-	if (y < 1.5) {
-		if (x < 0.5) {
-			return 2.0;
-		}
-		if (x < 1.5) {
-			return -2.0;
-		}
-		if (x < 2.5) {
-			return 3.0;
-		}
-		return -1.0;
-	}
-	if (y < 2.5) {
-		if (x < 0.5) {
-			return -3.0;
-		}
-		if (x < 1.5) {
-			return 1.0;
-		}
-		if (x < 2.5) {
-			return -4.0;
-		}
-		return 0.0;
-	}
-	if (x < 0.5) {
-		return 3.0;
-	}
-	if (x < 1.5) {
-		return -1.0;
-	}
-	if (x < 2.5) {
-		return 2.0;
-	}
-	return -2.0;
-}
-
-#if GX_GPU_FIXED_COLOR_PLANE
-vec3 fixedColor8() {
-	vec4 plane0 = floor(v_colorPlane0 + 0.5);
-	vec4 plane1 = floor(v_colorPlane1 + 0.5);
-	vec4 plane2 = floor(v_colorPlane2 + 0.5);
-	vec3 plane3 = floor(v_colorPlane3 + 0.5);
-	vec3 digit0 = plane0.xyz;
-	vec3 digit1 = vec3(plane0.w, plane1.xy) + floor(digit0 / 16.0);
-	vec3 digit2 = vec3(plane1.zw, plane2.x) + floor(digit1 / 16.0);
-	vec3 digit3 = plane2.yzw + floor(digit2 / 16.0);
-	vec3 digit4 = plane3 + floor(digit3 / 16.0);
-	return mod(digit3, 16.0) + mod(digit4, 16.0) * 16.0;
-}
-#endif
-
-vec3 modulatedTextureRgb5(vec3 texture5) {
-#if GX_GPU_FIXED_COLOR_PLANE
-	vec3 vertex8 = fixedColor8();
-#else
-	vec3 vertex8 = floor(v_color.rgb * 255.0);
-#endif
-	vec3 preDither = floor((texture5 * vertex8) / 16.0);
-	if (u_ditherEnable > 0.5) {
-		preDither += vec3(ditherOffset());
-	}
-	return clamp(floor(preDither / 8.0), vec3(0.0), vec3(31.0));
-}
-
-vec4 encodeRgb555(vec3 color5, float outputMaskBit) {
-	float lowByte = mod(color5.r + color5.g * 32.0, 256.0);
-	float highByte = floor(color5.g / 8.0) + color5.b * 4.0 + outputMaskBit * 128.0;
-	return vec4(lowByte / 255.0, highByte / 255.0, 0.0, 1.0);
-}
-
-
-void discardActiveInterlacedLine() {
-	if (mod(u_interlacedRenderWord, 2.0) < 0.5) {
-		return;
-	}
-	float activeLineLsb = mod(floor(u_interlacedRenderWord * 0.5), 2.0);
-	float vramY = floor(VRAM_SIZE.y - gl_FragCoord.y + u_rasterRowOrigin);
-	if (mod(vramY, 2.0) == activeLineLsb) {
-		discard;
-	}
+vec4 encodeRgb555(uvec3 color5, uint outputMaskBit) {
+	uint word = color5.r | (color5.g << 5u) | (color5.b << 10u) | (outputMaskBit << 15u);
+	return vec4(float(word & 0xffu) / 255.0, float(word >> 8u) / 255.0, 0.0, 1.0);
 }
 
 void main() {
-	discardActiveInterlacedLine();
-	vec4 textureColor = samplePsxTexture();
-	if (textureColor.a < -0.5) {
+	ivec2 storageCoord = ivec2(gl_FragCoord.xy);
+	ivec2 logicalCoord = storageCoord;
+	if (uint(logicalCoord.y & 1) == u_skippedLineParity) {
 		discard;
 	}
-	vec3 src5 = textureColor.rgb;
-	if (u_rawTexture < 0.5) {
-		src5 = modulatedTextureRgb5(textureColor.rgb);
+	uvec2 uvAccumulator = v_uvPlaneBase + v_uvPlaneStepX * uint(logicalCoord.x) + v_uvPlaneStepY * uint(logicalCoord.y);
+	TextureColor sampled = samplePsxTexture((uvAccumulator >> uvec2(12u)) & uvec2(0xffu));
+	if (sampled.transparent) {
+		discard;
 	}
-	float dstWord = 0.0;
-	if (u_checkMaskBit > 0.5 || u_blendEnable > 0.5) {
-		dstWord = rawStorageVramWord(gl_FragCoord.xy - vec2(0.5));
-		if (u_checkMaskBit > 0.5 && wordMaskBit(dstWord) > 0.5) {
+	uvec3 src5 = sampled.rgb5;
+	if (u_rawTexture == 0u) {
+#if GX_GPU_FIXED_COLOR_PLANE
+		uvec3 colorAccumulator = v_colorPlaneBase + v_colorPlaneStepX * uint(logicalCoord.x) + v_colorPlaneStepY * uint(logicalCoord.y);
+		src5 = modulatedTextureRgb5(src5, (colorAccumulator >> uvec3(12u)) & uvec3(0xffu), logicalCoord);
+#else
+		src5 = modulatedTextureRgb5(src5, uvec3(v_color * 255.0), logicalCoord);
+#endif
+	}
+	if (u_checkMaskBit != 0u || u_blendEnable != 0u) {
+		uint dstWord = rawStorageVramWord(storageCoord);
+		if (u_checkMaskBit != 0u && (dstWord & 0x8000u) != 0u) {
 			discard;
 		}
-		if (u_blendEnable > 0.5 && textureColor.a > 0.5) {
+		if (u_blendEnable != 0u && sampled.maskBit != 0u) {
 			src5 = blendRgb5(src5, decodeRgb555To5(dstWord));
 		}
 	}
-	float outputMaskBit = u_setMaskBit > 0.5 ? 1.0 : textureColor.a;
+	uint outputMaskBit = u_setMaskBit != 0u ? 1u : sampled.maskBit;
 	outputColor = encodeRgb555(src5, outputMaskBit);
 }

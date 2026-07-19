@@ -5,13 +5,12 @@
 #include "render/backend/software/gx_gpu_rasterizer.h"
 #include "render/backend/software/gx_gpu_vram.h"
 
-#include <algorithm>
 #include <array>
 
 namespace bmsx {
 namespace {
 
-std::array<u16, kGxGpuSoftwareVramWords> g_gxGpuSoftwareCopyScratch{};
+std::array<u16, GX_GPU_TRANSFER_MAX_PIXEL_COUNT> g_gxGpuSoftwareCopyScratch{};
 
 void executeFillRectangle(const GxGpuCommandBuffer& commandBuffer, size_t commandIndex) {
 	const u32 wordStart = commandBuffer.commandWordStart[commandIndex];
@@ -23,13 +22,10 @@ void executeFillRectangle(const GxGpuCommandBuffer& commandBuffer, size_t comman
 	const u32 y = gxGpuTransferY(xyWord, vramYAddressExtensionWord);
 	const i32 width = static_cast<i32>(gxGpuFillWidth(sizeWord));
 	const i32 height = static_cast<i32>(gxGpuFillHeight(sizeWord));
-	const u32 interlacedRenderWord = commandBuffer.commandInterlacedRenderWord[commandIndex];
+	const i32 skippedLineParity = static_cast<i32>(commandBuffer.commandSkippedLineParity[commandIndex]);
 	for (i32 row = 0; row < height; row += 1) {
 		const u32 targetY = gxGpuVramYAddress(y + static_cast<u32>(row), vramYAddressExtensionWord);
-		if (!gxGpuVramYBankInstalled(targetY)) {
-			continue;
-		}
-		if (gxGpuSoftwareInterlacedSkipsLine(static_cast<i32>(targetY), interlacedRenderWord)) {
+		if (static_cast<i32>(targetY & 1u) == skippedLineParity) {
 			continue;
 		}
 		for (i32 column = 0; column < width; column += 1) {
@@ -50,32 +46,27 @@ void executeCpuToVram(const GxGpuCommandBuffer& commandBuffer, size_t commandInd
 	const u32 emittedPixels = gxGpuTransferEmittedPixelCount(width, height, commandBuffer.commandWordCount[commandIndex]);
 	const u32 payloadWordStart = wordStart + 3u;
 	const u32 maskBitModeWord = commandBuffer.commandMaskBitModeWord[commandIndex];
+	const bool checkMaskBit = gxGpuMaskBitCheckBeforeDraw(maskBitModeWord);
+	const bool setMaskBit = gxGpuMaskBitSetWhileDrawing(maskBitModeWord);
 	u32 emittedPixel = 0u;
 	for (u32 row = 0u; row < height && emittedPixel < emittedPixels; row += 1u) {
 		const u32 rowRemaining = emittedPixels - emittedPixel;
 		const u32 rowWidth = rowRemaining < width ? rowRemaining : width;
 		const u32 targetY = gxGpuVramYAddress(y + row, vramYAddressExtensionWord);
-		if (!gxGpuVramYBankInstalled(targetY)) {
-			emittedPixel += rowWidth;
-			continue;
-		}
 		for (u32 column = 0u; column < rowWidth; column += 1u) {
 			const u32 payloadWord = commandBuffer.words[payloadWordStart + (emittedPixel >> 1u)];
-			gxGpuSoftwareWriteMaskedVramWord(gxGpuSoftwareVramIndex(x + static_cast<i32>(column), static_cast<i32>(targetY)), gxGpuTransferPixelWord(payloadWord, emittedPixel), maskBitModeWord);
+			gxGpuSoftwareWriteMaskedVramWord(gxGpuSoftwareVramIndex(x + static_cast<i32>(column), static_cast<i32>(targetY)), gxGpuTransferPixelWord(payloadWord, emittedPixel), checkMaskBit, setMaskBit);
 			emittedPixel += 1u;
 		}
 	}
 }
 
 void copyVramArea(i32 sourceX, u32 sourceY, i32 targetX, u32 targetY, u32 width, u32 height, u32 maskBitModeWord, u32 vramYAddressExtensionWord) {
+	const bool checkMaskBit = gxGpuMaskBitCheckBeforeDraw(maskBitModeWord);
+	const bool setMaskBit = gxGpuMaskBitSetWhileDrawing(maskBitModeWord);
 	size_t scratchIndex = 0u;
 	for (u32 row = 0u; row < height; row += 1u) {
 		const u32 rowSourceY = gxGpuVramYAddress(sourceY + row, vramYAddressExtensionWord);
-		if (!gxGpuVramYBankInstalled(rowSourceY)) {
-			std::fill_n(g_gxGpuSoftwareCopyScratch.begin() + static_cast<std::ptrdiff_t>(scratchIndex), width, static_cast<u16>(GX_GPU_VRAM_OPEN_BUS_WORD));
-			scratchIndex += width;
-			continue;
-		}
 		for (u32 column = 0u; column < width; column += 1u) {
 			g_gxGpuSoftwareCopyScratch[scratchIndex] = g_gxGpuSoftwareVram[gxGpuSoftwareVramIndex(sourceX + static_cast<i32>(column), static_cast<i32>(rowSourceY))];
 			scratchIndex += 1u;
@@ -84,12 +75,8 @@ void copyVramArea(i32 sourceX, u32 sourceY, i32 targetX, u32 targetY, u32 width,
 	scratchIndex = 0u;
 	for (u32 row = 0u; row < height; row += 1u) {
 		const u32 rowTargetY = gxGpuVramYAddress(targetY + row, vramYAddressExtensionWord);
-		if (!gxGpuVramYBankInstalled(rowTargetY)) {
-			scratchIndex += width;
-			continue;
-		}
 		for (u32 column = 0u; column < width; column += 1u) {
-			gxGpuSoftwareWriteMaskedVramWord(gxGpuSoftwareVramIndex(targetX + static_cast<i32>(column), static_cast<i32>(rowTargetY)), g_gxGpuSoftwareCopyScratch[scratchIndex], maskBitModeWord);
+			gxGpuSoftwareWriteMaskedVramWord(gxGpuSoftwareVramIndex(targetX + static_cast<i32>(column), static_cast<i32>(rowTargetY)), g_gxGpuSoftwareCopyScratch[scratchIndex], checkMaskBit, setMaskBit);
 			scratchIndex += 1u;
 		}
 	}

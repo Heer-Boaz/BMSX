@@ -1,11 +1,20 @@
 #include "machine/devices/gx/gte.h"
 #include "machine/bus/io.h"
 #include "machine/cpu/cpu.h"
+#include "machine/cpu/instruction_format.h"
+#include "machine/devices/irq/controller.h"
+#include "machine/memory/bus_signals.h"
 #include "machine/memory/memory.h"
+#include "machine/scheduler/device.h"
 
 #include <array>
 #include <cstdint>
+#include <limits>
+#include <span>
 #include <stdexcept>
+#include <string>
+#include <unordered_map>
+#include <utility>
 
 namespace {
 
@@ -15,11 +24,17 @@ constexpr uint32_t GTE_SF = 1u << 19u;
 struct GteHarness {
 	std::array<uint8_t, 1> emptyRom{{0}};
 	bmsx::Memory memory;
+	bmsx::IrqController irq;
+	bmsx::CPU cpu;
+	bmsx::DeviceScheduler scheduler;
 	bmsx::GxGte gte;
 
 	GteHarness()
 		: memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, { emptyRom.data(), 0u } })
-		, gte(memory) {
+		, irq(memory)
+		, cpu(memory, irq)
+		, scheduler(cpu)
+		, gte(memory, cpu, scheduler) {
 	}
 };
 
@@ -35,6 +50,54 @@ void require(bool condition, const char* message) {
 	if (!condition) {
 		throw std::runtime_error(message);
 	}
+}
+
+void completeGtePlus(GteHarness& harness, bmsx::i64 cycles) {
+	harness.scheduler.advanceTo(harness.scheduler.nowCycles() + cycles);
+	require(!harness.scheduler.hasDueTimer(), "GTE+ normal completion has no scheduler timer");
+	harness.memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_CYCLES * bmsx::IO_WORD_SIZE);
+}
+
+void serviceScheduledGtePlus(GteHarness& harness, bmsx::i64 cycles) {
+	harness.scheduler.advanceTo(harness.scheduler.nowCycles() + cycles);
+	require(harness.scheduler.hasDueTimer(), "GTE+ completion timer due");
+	require(
+		harness.scheduler.popDueTimer() == static_cast<uint16_t>((bmsx::TIMER_KIND_DEVICE_SERVICE << 8u) | bmsx::DEVICE_SERVICE_GTE),
+		"GTE+ completion service kind"
+	);
+	harness.gte.onService();
+}
+
+void installGtePlusBurstProgram(
+	GteHarness& harness,
+	bmsx::Program& program,
+	bmsx::ProgramRuntimeSymbols& runtimeSymbols,
+	const std::array<uint32_t, 9>& words
+) {
+	constexpr int instructionCount = 12;
+	program.programRom.resize(instructionCount * bmsx::INSTRUCTION_BYTES);
+	program.programRomTextByteLength = program.programRom.size();
+	std::span<bmsx::u8> code(program.programRom);
+	bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 0);
+	for (uint32_t index = 0u; index < words.size(); index += 1u) {
+		bmsx::writeInstruction(code, static_cast<int>(index + 1u), static_cast<bmsx::u8>(bmsx::OpCode::LOADK), static_cast<bmsx::u8>(index + 1u), 0, static_cast<bmsx::u8>(index + 1u));
+	}
+	bmsx::writeInstruction(code, 10, static_cast<bmsx::u8>(bmsx::OpCode::STORE_MEM_WORDS_D), 1, 0, static_cast<bmsx::u8>(words.size()));
+	bmsx::writeInstruction(code, 11, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
+	program.constPool.reserve(words.size() + 1u);
+	program.constPool.push_back(bmsx::valueNumber(static_cast<double>(bmsx::IO_GX_GTE_PLUS_BASE)));
+	for (uint32_t word : words) {
+		program.constPool.push_back(bmsx::valueNumber(static_cast<double>(word)));
+	}
+	program.constPoolStringPool = &program.stringPool;
+	bmsx::Proto proto;
+	proto.entryPC = 0;
+	proto.codeLen = static_cast<int>(program.programRomTextByteLength);
+	proto.maxStack = static_cast<int>(words.size() + 1u);
+	proto.staticClosure = true;
+	program.protos.push_back(std::move(proto));
+	runtimeSymbols.protoIds.push_back("gte_plus_burst");
+	harness.cpu.setProgram(&program, runtimeSymbols, nullptr, 0, 0, 0);
 }
 
 void setupIdentityProjection(bmsx::GxGte& gte) {
@@ -120,6 +183,264 @@ void testMmioExecution() {
 	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_DATA0 + 11u * bmsx::IO_WORD_SIZE) == 256u, "MMIO GTE IR3");
 	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_DATA0 + 14u * bmsx::IO_WORD_SIZE) == pack16(161u, 122u), "MMIO GTE SXY2");
 	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_CONTROL0 + 31u * bmsx::IO_WORD_SIZE) == 0u, "MMIO GTE FLAG");
+}
+
+void testPlusVmad3Mmio() {
+	GteHarness harness;
+	bmsx::Memory& memory = harness.memory;
+	const uint32_t commandAddress = bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_COMMAND * bmsx::IO_WORD_SIZE;
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_ADD_XY * bmsx::IO_WORD_SIZE, pack16(10u, static_cast<uint32_t>(-20)));
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_ADD_Z * bmsx::IO_WORD_SIZE, 0xa5a5001eu);
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_MUL_XY * bmsx::IO_WORD_SIZE, pack16(8u, 12u));
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_MUL_Z * bmsx::IO_WORD_SIZE, 0x5a5afffcu);
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_SCALAR * bmsx::IO_WORD_SIZE, 0xbeef0800u);
+	require(memory.mappedWriteReady(commandAddress), "GTE+ command ready before issue");
+	memory.writeMappedU32LE(commandAddress, 0xdeadbe01u);
+
+	require(!harness.scheduler.hasDueTimer(), "GTE+ command issue does not allocate a completion timer");
+	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_RESULT_XY * bmsx::IO_WORD_SIZE) == 0u, "GTE+ VMAD3 XY retained before completion");
+	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_RESULT_Z * bmsx::IO_WORD_SIZE) == 0u, "GTE+ VMAD3 Z retained before completion");
+	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_FLAG * bmsx::IO_WORD_SIZE) == 0u, "GTE+ VMAD3 FLAG");
+	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_COMMAND * bmsx::IO_WORD_SIZE) == 0xdeadbe01u, "GTE+ VMAD3 command latch");
+	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_CYCLES * bmsx::IO_WORD_SIZE) == (bmsx::GX_GTE_PLUS_CYCLES_BUSY | bmsx::GX_GTE_PLUS_CYCLES_VMAD3), "GTE+ VMAD3 busy cycles");
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_ADD_XY * bmsx::IO_WORD_SIZE, pack16(100u, 100u));
+	harness.scheduler.advanceTo(4);
+	require(!harness.scheduler.hasDueTimer(), "GTE+ result cannot complete before cycle five");
+	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_RESULT_XY * bmsx::IO_WORD_SIZE) == 0u, "GTE+ result retained before cycle five");
+	completeGtePlus(harness, 1);
+
+	require(memory.mappedWriteReady(commandAddress), "GTE+ command ready after completion");
+	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_RESULT_XY * bmsx::IO_WORD_SIZE) == pack16(14u, static_cast<uint32_t>(-14)), "GTE+ VMAD3 XY");
+	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_RESULT_Z * bmsx::IO_WORD_SIZE) == 28u, "GTE+ VMAD3 Z");
+	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_FLAG * bmsx::IO_WORD_SIZE) == 0u, "GTE+ VMAD3 completion FLAG");
+	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_CYCLES * bmsx::IO_WORD_SIZE) == bmsx::GX_GTE_PLUS_CYCLES_VMAD3, "GTE+ VMAD3 cycles");
+	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_ADD_Z * bmsx::IO_WORD_SIZE) == 0xa5a5001eu, "GTE+ ADD_Z retained bits");
+	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_SCALAR * bmsx::IO_WORD_SIZE) == 0xbeef0800u, "GTE+ SCALAR retained bits");
+}
+
+void testPlusVmad3ShiftAndSaturation() {
+	GteHarness harness;
+	bmsx::Memory& memory = harness.memory;
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_ADD_XY * bmsx::IO_WORD_SIZE, pack16(10u, static_cast<uint32_t>(-20)));
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_ADD_Z * bmsx::IO_WORD_SIZE, 30u);
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_MUL_XY * bmsx::IO_WORD_SIZE, pack16(8u, 12u));
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_MUL_Z * bmsx::IO_WORD_SIZE, static_cast<uint32_t>(-4));
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_SCALAR * bmsx::IO_WORD_SIZE, static_cast<uint32_t>(-0x0800));
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_COMMAND * bmsx::IO_WORD_SIZE, bmsx::GX_GTE_PLUS_FN_VMAD3);
+	completeGtePlus(harness, bmsx::GX_GTE_PLUS_CYCLES_VMAD3);
+	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_RESULT_XY * bmsx::IO_WORD_SIZE) == pack16(6u, static_cast<uint32_t>(-26)), "GTE+ negative scalar");
+	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_RESULT_Z * bmsx::IO_WORD_SIZE) == 32u, "GTE+ negative scalar Z");
+	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_FLAG * bmsx::IO_WORD_SIZE) == 0u, "GTE+ arithmetic shift FLAG");
+
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_ADD_XY * bmsx::IO_WORD_SIZE, pack16(0x7fffu, 0x8000u));
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_ADD_Z * bmsx::IO_WORD_SIZE, 0x7fffu);
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_MUL_XY * bmsx::IO_WORD_SIZE, pack16(0x7fffu, 0x8000u));
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_MUL_Z * bmsx::IO_WORD_SIZE, 0x7fffu);
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_SCALAR * bmsx::IO_WORD_SIZE, 0x1000u);
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_COMMAND * bmsx::IO_WORD_SIZE, bmsx::GX_GTE_PLUS_FN_VMAD3);
+	completeGtePlus(harness, bmsx::GX_GTE_PLUS_CYCLES_VMAD3);
+	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_RESULT_XY * bmsx::IO_WORD_SIZE) == pack16(0x7fffu, 0x8000u), "GTE+ saturation results");
+	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_RESULT_Z * bmsx::IO_WORD_SIZE) == 0x7fffu, "GTE+ positive Z saturation result");
+	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_FLAG * bmsx::IO_WORD_SIZE) == (bmsx::GX_GTE_PLUS_FLAG_ERROR | bmsx::GX_GTE_PLUS_FLAG_X_POS | bmsx::GX_GTE_PLUS_FLAG_Y_NEG | bmsx::GX_GTE_PLUS_FLAG_Z_POS), "GTE+ positive Z saturation FLAG");
+
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_ADD_XY * bmsx::IO_WORD_SIZE, 0u);
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_ADD_Z * bmsx::IO_WORD_SIZE, static_cast<uint32_t>(-0x8000));
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_MUL_XY * bmsx::IO_WORD_SIZE, 0u);
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_MUL_Z * bmsx::IO_WORD_SIZE, static_cast<uint32_t>(-0x8000));
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_COMMAND * bmsx::IO_WORD_SIZE, bmsx::GX_GTE_PLUS_FN_VMAD3);
+	completeGtePlus(harness, bmsx::GX_GTE_PLUS_CYCLES_VMAD3);
+	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_RESULT_Z * bmsx::IO_WORD_SIZE) == 0x8000u, "GTE+ negative Z saturation result");
+	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_FLAG * bmsx::IO_WORD_SIZE) == (bmsx::GX_GTE_PLUS_FLAG_ERROR | bmsx::GX_GTE_PLUS_FLAG_Z_NEG), "GTE+ negative Z saturation FLAG");
+
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_ADD_XY * bmsx::IO_WORD_SIZE, pack16(static_cast<uint32_t>(-0x8000), 0x7fffu));
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_ADD_Z * bmsx::IO_WORD_SIZE, 0u);
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_MUL_XY * bmsx::IO_WORD_SIZE, pack16(static_cast<uint32_t>(-0x8000), 0x7fffu));
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_MUL_Z * bmsx::IO_WORD_SIZE, 0u);
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_COMMAND * bmsx::IO_WORD_SIZE, bmsx::GX_GTE_PLUS_FN_VMAD3);
+	completeGtePlus(harness, bmsx::GX_GTE_PLUS_CYCLES_VMAD3);
+	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_RESULT_XY * bmsx::IO_WORD_SIZE) == pack16(static_cast<uint32_t>(-0x8000), 0x7fffu), "GTE+ negative X and positive Y saturation results");
+	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_FLAG * bmsx::IO_WORD_SIZE) == (bmsx::GX_GTE_PLUS_FLAG_ERROR | bmsx::GX_GTE_PLUS_FLAG_X_NEG | bmsx::GX_GTE_PLUS_FLAG_Y_POS), "GTE+ negative X and positive Y saturation FLAG");
+}
+
+void testPlusUnknownCommand() {
+	GteHarness harness;
+	bmsx::Memory& memory = harness.memory;
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_ADD_XY * bmsx::IO_WORD_SIZE, pack16(1u, 2u));
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_COMMAND * bmsx::IO_WORD_SIZE, bmsx::GX_GTE_PLUS_FN_VMAD3);
+	completeGtePlus(harness, bmsx::GX_GTE_PLUS_CYCLES_VMAD3);
+	const uint32_t result = memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_RESULT_XY * bmsx::IO_WORD_SIZE);
+
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_COMMAND * bmsx::IO_WORD_SIZE, 0xcafe0002u);
+
+	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_RESULT_XY * bmsx::IO_WORD_SIZE) == result, "GTE+ unknown command result latch");
+	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_FLAG * bmsx::IO_WORD_SIZE) == 0u, "GTE+ unknown command pending FLAG");
+	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_CYCLES * bmsx::IO_WORD_SIZE) == (bmsx::GX_GTE_PLUS_CYCLES_BUSY | bmsx::GX_GTE_PLUS_CYCLES_INVALID), "GTE+ unknown command busy cycles");
+	completeGtePlus(harness, bmsx::GX_GTE_PLUS_CYCLES_INVALID);
+	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_RESULT_XY * bmsx::IO_WORD_SIZE) == result, "GTE+ unknown command completed result latch");
+	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_FLAG * bmsx::IO_WORD_SIZE) == (bmsx::GX_GTE_PLUS_FLAG_ERROR | bmsx::GX_GTE_PLUS_FLAG_INVALID_COMMAND), "GTE+ unknown command FLAG");
+	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_CYCLES * bmsx::IO_WORD_SIZE) == bmsx::GX_GTE_PLUS_CYCLES_INVALID, "GTE+ unknown command cycles");
+	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_COMMAND * bmsx::IO_WORD_SIZE) == 0xcafe0002u, "GTE+ unknown command latch");
+}
+
+void testPlusReadOnlyLatchesAndReset() {
+	GteHarness harness;
+	bmsx::Memory& memory = harness.memory;
+	const uint32_t resultXyAddress = bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_RESULT_XY * bmsx::IO_WORD_SIZE;
+	const uint32_t resultZAddress = bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_RESULT_Z * bmsx::IO_WORD_SIZE;
+	const uint32_t flagAddress = bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_FLAG * bmsx::IO_WORD_SIZE;
+	const uint32_t cyclesAddress = bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_CYCLES * bmsx::IO_WORD_SIZE;
+	const uint32_t commandAddress = bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_COMMAND * bmsx::IO_WORD_SIZE;
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_ADD_XY * bmsx::IO_WORD_SIZE, pack16(1u, 2u));
+	memory.writeMappedU32LE(commandAddress, bmsx::GX_GTE_PLUS_FN_VMAD3);
+	completeGtePlus(harness, bmsx::GX_GTE_PLUS_CYCLES_VMAD3);
+	memory.writeMappedU32LE(resultXyAddress, 0xffffffffu);
+	memory.writeMappedU32LE(resultZAddress, 0xffffffffu);
+	memory.writeMappedU32LE(flagAddress, 0xffffffffu);
+	memory.writeMappedU32LE(cyclesAddress, 0xffffffffu);
+	require(memory.readMappedU32LE(resultXyAddress) == pack16(1u, 2u), "GTE+ RESULT_XY is read-only");
+	require(memory.readMappedU32LE(resultZAddress) == 0u, "GTE+ RESULT_Z is read-only");
+	require(memory.readMappedU32LE(flagAddress) == 0u, "GTE+ FLAG is read-only");
+	require(memory.readMappedU32LE(cyclesAddress) == bmsx::GX_GTE_PLUS_CYCLES_VMAD3, "GTE+ CYCLES is read-only");
+
+	memory.writeMappedU32LE(commandAddress, bmsx::GX_GTE_PLUS_FN_VMAD3);
+	harness.gte.reset();
+	for (uint32_t index = 0u; index < bmsx::GX_GTE_PLUS_REGISTER_COUNT; index += 1u) {
+		require(memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + index * bmsx::IO_WORD_SIZE) == 0u, "GTE+ reset raw word");
+	}
+	require(memory.mappedWriteReady(commandAddress), "GTE+ command ready after reset");
+	require(!harness.scheduler.hasDueTimer(), "GTE+ reset cancels completion timer");
+}
+
+void testPlusRetainsOldLatchesUntilCompletion() {
+	GteHarness harness;
+	bmsx::Memory& memory = harness.memory;
+	const uint32_t commandAddress = bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_COMMAND * bmsx::IO_WORD_SIZE;
+	const uint32_t resultAddress = bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_RESULT_XY * bmsx::IO_WORD_SIZE;
+	const uint32_t flagAddress = bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_FLAG * bmsx::IO_WORD_SIZE;
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_ADD_XY * bmsx::IO_WORD_SIZE, pack16(0x7fffu, 3u));
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_MUL_XY * bmsx::IO_WORD_SIZE, pack16(0x7fffu, 4u));
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_SCALAR * bmsx::IO_WORD_SIZE, 0x1000u);
+	memory.writeMappedU32LE(commandAddress, bmsx::GX_GTE_PLUS_FN_VMAD3);
+	completeGtePlus(harness, bmsx::GX_GTE_PLUS_CYCLES_VMAD3);
+	require(memory.readMappedU32LE(resultAddress) == pack16(0x7fffu, 7u), "GTE+ first result latch");
+	require(memory.readMappedU32LE(flagAddress) == (bmsx::GX_GTE_PLUS_FLAG_ERROR | bmsx::GX_GTE_PLUS_FLAG_X_POS), "GTE+ first FLAG latch");
+
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_ADD_XY * bmsx::IO_WORD_SIZE, pack16(5u, 6u));
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_MUL_XY * bmsx::IO_WORD_SIZE, 0u);
+	memory.writeMappedU32LE(commandAddress, bmsx::GX_GTE_PLUS_FN_VMAD3);
+	require(memory.readMappedU32LE(resultAddress) == pack16(0x7fffu, 7u), "GTE+ old result retained while BUSY");
+	require(memory.readMappedU32LE(flagAddress) == (bmsx::GX_GTE_PLUS_FLAG_ERROR | bmsx::GX_GTE_PLUS_FLAG_X_POS), "GTE+ old FLAG retained while BUSY");
+	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_CYCLES * bmsx::IO_WORD_SIZE) == (bmsx::GX_GTE_PLUS_CYCLES_BUSY | bmsx::GX_GTE_PLUS_CYCLES_VMAD3), "GTE+ second command BUSY");
+	completeGtePlus(harness, bmsx::GX_GTE_PLUS_CYCLES_VMAD3);
+	require(memory.readMappedU32LE(resultAddress) == pack16(5u, 6u), "GTE+ second result published");
+	require(memory.readMappedU32LE(flagAddress) == 0u, "GTE+ second FLAG published");
+}
+
+void testPlusCommandAdmission() {
+	GteHarness harness;
+	bmsx::Memory& memory = harness.memory;
+	const uint32_t commandAddress = bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_COMMAND * bmsx::IO_WORD_SIZE;
+	memory.writeMappedDmaU32LE(commandAddress, 0xcafe0002u, bmsx::MAPPED_BUS_MASTER_DMA);
+	require(memory.readMappedU32LE(commandAddress) == 0u, "GTE+ DMA command is ignored while idle");
+	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_CYCLES * bmsx::IO_WORD_SIZE) == 0u, "GTE+ DMA command does not start work");
+
+	memory.writeMappedU32LE(commandAddress, 0xdeadbe01u);
+	memory.writeMappedU32LE(commandAddress, 0xcafe0002u);
+	memory.writeMappedDmaU32LE(commandAddress, 0xabcd0002u, bmsx::MAPPED_BUS_MASTER_DMA);
+	require(memory.readMappedU32LE(commandAddress) == 0xdeadbe01u, "GTE+ active command cannot be overwritten");
+	require(!harness.scheduler.hasDueTimer(), "GTE+ rejected commands allocate no timer");
+	completeGtePlus(harness, bmsx::GX_GTE_PLUS_CYCLES_VMAD3);
+	require(memory.readMappedU32LE(commandAddress) == 0xdeadbe01u, "GTE+ admitted command remains latched");
+}
+
+void testPlusActiveCpuSliceCompletionEdge() {
+	GteHarness harness;
+	bmsx::Memory& memory = harness.memory;
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_ADD_XY * bmsx::IO_WORD_SIZE, pack16(9u, static_cast<uint32_t>(-7)));
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_COMMAND * bmsx::IO_WORD_SIZE, bmsx::GX_GTE_PLUS_FN_VMAD3);
+	harness.cpu.instructionBudgetRemaining = 10;
+	harness.scheduler.beginCpuSlice(10);
+	harness.cpu.instructionBudgetRemaining = 6;
+	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_RESULT_XY * bmsx::IO_WORD_SIZE) == 0u, "GTE+ cycle four retains result");
+	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_CYCLES * bmsx::IO_WORD_SIZE) == (bmsx::GX_GTE_PLUS_CYCLES_BUSY | bmsx::GX_GTE_PLUS_CYCLES_VMAD3), "GTE+ cycle four remains BUSY");
+	harness.cpu.instructionBudgetRemaining = 5;
+	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_CYCLES * bmsx::IO_WORD_SIZE) == bmsx::GX_GTE_PLUS_CYCLES_VMAD3, "GTE+ cycle five clears BUSY");
+	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_RESULT_XY * bmsx::IO_WORD_SIZE) == pack16(9u, static_cast<uint32_t>(-7)), "GTE+ cycle five publishes result");
+	harness.scheduler.endCpuSlice();
+	require(!harness.scheduler.hasDueTimer(), "GTE+ active-slice completion has no timer");
+}
+
+void testPlusCpuBurstSaveRestoreInterlock() {
+	GteHarness first;
+	const uint32_t commandAddress = bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_COMMAND * bmsx::IO_WORD_SIZE;
+	const uint32_t firstAddXy = pack16(1u, 2u);
+	first.memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_ADD_XY * bmsx::IO_WORD_SIZE, firstAddXy);
+	const std::array<uint32_t, 9> burstWords{{
+		pack16(10u, static_cast<uint32_t>(-20)),
+		30u,
+		pack16(8u, 12u),
+		static_cast<uint32_t>(-4),
+		0x0800u,
+		0u,
+		0u,
+		0u,
+		bmsx::GX_GTE_PLUS_FN_VMAD3,
+	}};
+	bmsx::Program firstProgram;
+	bmsx::ProgramRuntimeSymbols firstRuntimeSymbols;
+	installGtePlusBurstProgram(first, firstProgram, firstRuntimeSymbols, burstWords);
+	first.cpu.start(0);
+	for (size_t index = 0u; index < burstWords.size() + 1u; index += 1u) {
+		first.cpu.step();
+	}
+	first.memory.writeMappedU32LE(commandAddress, bmsx::GX_GTE_PLUS_FN_VMAD3);
+	first.scheduler.beginCpuSlice(10);
+	require(first.cpu.run(10) == bmsx::RunResult::Halted, "GTE+ burst blocks the CPU");
+	first.scheduler.endCpuSlice();
+	require(first.cpu.isMemoryWriteBlocked(), "GTE+ burst records CPU interlock");
+	const std::unordered_map<std::string, bmsx::Value> emptyModuleCache;
+	const bmsx::CpuRuntimeState blockedCpuState = first.cpu.captureRuntimeState(emptyModuleCache);
+	require(blockedCpuState.memoryWriteBlockedAddress == commandAddress, "GTE+ burst blocks at command word");
+	require(!blockedCpuState.yieldRequested, "GTE+ mapped-store block supersedes scheduler yield");
+	require(first.memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_ADD_XY * bmsx::IO_WORD_SIZE) == firstAddXy, "GTE+ blocked burst commits no leading words");
+	require(first.scheduler.nextDeadline() == bmsx::GX_GTE_PLUS_CYCLES_VMAD3, "GTE+ blocked burst schedules one wake edge");
+
+	first.scheduler.advanceTo(2);
+	const bmsx::GxGteState gteState = first.gte.captureState();
+	const bmsx::CpuRuntimeState cpuState = first.cpu.captureRuntimeState(emptyModuleCache);
+	require(gteState.plusPendingCycles == 3u, "GTE+ blocked save retains remaining cycles");
+	require(gteState.plusInterlockArmed, "GTE+ blocked save retains its armed interlock edge");
+
+	GteHarness restored;
+	bmsx::Program restoredProgram;
+	bmsx::ProgramRuntimeSymbols restoredRuntimeSymbols;
+	installGtePlusBurstProgram(restored, restoredProgram, restoredRuntimeSymbols, burstWords);
+	restored.scheduler.setNowCycles(100);
+	restored.gte.restoreState(gteState);
+	std::unordered_map<std::string, bmsx::Value> restoredModuleCache;
+	restored.cpu.restoreRuntimeState(cpuState, restoredModuleCache);
+	require(restored.scheduler.nextDeadline() == 103, "GTE+ blocked restore rearms its interlock edge");
+	restored.scheduler.advanceTo(102);
+	require(restored.cpu.run(100) == bmsx::RunResult::Halted, "GTE+ restored CPU remains blocked before edge");
+	require(restored.cpu.isMemoryWriteBlocked(), "GTE+ restored interlock remains asserted");
+	require(restored.memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_ADD_XY * bmsx::IO_WORD_SIZE) == firstAddXy, "GTE+ restored blocked burst remains atomic");
+	serviceScheduledGtePlus(restored, 1);
+	require(!restored.cpu.isMemoryWriteBlocked(), "GTE+ completion releases restored CPU store");
+	restored.scheduler.beginCpuSlice(100);
+	require(restored.cpu.run(100) == bmsx::RunResult::Halted, "GTE+ resumed burst reaches return");
+	const int retryCycles = 100 - restored.cpu.instructionBudgetRemaining;
+	restored.scheduler.endCpuSlice();
+	restored.scheduler.advanceTo(restored.scheduler.nowCycles() + retryCycles);
+	require(!restored.cpu.isMemoryWriteBlocked(), "GTE+ resumed burst is admitted");
+	require(restored.memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_ADD_XY * bmsx::IO_WORD_SIZE) == burstWords[0], "GTE+ resumed burst commits leading inputs");
+	require(restored.memory.readMappedU32LE(commandAddress) == bmsx::GX_GTE_PLUS_FN_VMAD3, "GTE+ resumed burst commits command");
+	require(!restored.scheduler.hasDueTimer(), "GTE+ admitted retry allocates no timer");
+	const bmsx::GxGteState resumedState = restored.gte.captureState();
+	require(resumedState.plusPendingCycles == 3u, "GTE+ resumed command retains three cycles after return");
+	require(!resumedState.plusInterlockArmed, "GTE+ resumed command has no interlock event");
+	completeGtePlus(restored, 3);
+	require(restored.memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_RESULT_XY * bmsx::IO_WORD_SIZE) == pack16(14u, static_cast<uint32_t>(-14)), "GTE+ resumed burst XY result");
+	require(restored.memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_RESULT_Z * bmsx::IO_WORD_SIZE) == 28u, "GTE+ resumed burst Z result");
 }
 
 void testNclip() {
@@ -795,10 +1116,17 @@ void testSaveStatePreservesRawRegisterWords() {
 	gte.writeDataRegister(30u, 0x80000000u);
 	gte.writeControlRegister(24u, 160u << 16u);
 	memory.writeMappedU32LE(bmsx::IO_GX_GTE_COMMAND, bmsx::GX_GTE_FN_DPCS);
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_ADD_XY * bmsx::IO_WORD_SIZE, pack16(11u, static_cast<uint32_t>(-13)));
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_MUL_XY * bmsx::IO_WORD_SIZE, pack16(4u, 6u));
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_SCALAR * bmsx::IO_WORD_SIZE, 0x0800u);
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_COMMAND * bmsx::IO_WORD_SIZE, bmsx::GX_GTE_PLUS_FN_VMAD3);
+	completeGtePlus(harness, bmsx::GX_GTE_PLUS_CYCLES_VMAD3);
 	gte.writeControlRegister(31u, bmsx::GX_GTE_FLAG_DIV_OVERFLOW);
 	const bmsx::GxGteState state = gte.captureState();
 
 	gte.reset();
+	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_RESULT_XY * bmsx::IO_WORD_SIZE) == 0u, "GTE+ reset result latch");
+	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_CYCLES * bmsx::IO_WORD_SIZE) == 0u, "GTE+ reset cycles latch");
 	gte.restoreState(state);
 
 	require(gte.readDataRegister(30u) == 0x80000000u, "GTE save LZCS");
@@ -807,6 +1135,44 @@ void testSaveStatePreservesRawRegisterWords() {
 	require(gte.readControlRegister(31u) == (bmsx::GX_GTE_FLAG_ERROR | bmsx::GX_GTE_FLAG_DIV_OVERFLOW), "GTE save FLAG");
 	require(gte.captureState().mac3 == state.mac3, "GTE save hidden MAC3");
 	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_CYCLES) == bmsx::GX_GTE_CYCLES_DPCS, "GTE save cycles latch");
+	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_RESULT_XY * bmsx::IO_WORD_SIZE) == pack16(13u, static_cast<uint32_t>(-10)), "GTE+ save result latch");
+	require(memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_CYCLES * bmsx::IO_WORD_SIZE) == bmsx::GX_GTE_PLUS_CYCLES_VMAD3, "GTE+ save cycles latch");
+}
+
+void testPlusInFlightSaveState() {
+	GteHarness harness;
+	bmsx::Memory& memory = harness.memory;
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_ADD_XY * bmsx::IO_WORD_SIZE, pack16(10u, static_cast<uint32_t>(-20)));
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_ADD_Z * bmsx::IO_WORD_SIZE, 30u);
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_MUL_XY * bmsx::IO_WORD_SIZE, pack16(8u, 12u));
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_MUL_Z * bmsx::IO_WORD_SIZE, static_cast<uint32_t>(-4));
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_SCALAR * bmsx::IO_WORD_SIZE, static_cast<uint32_t>(-0x0800));
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_COMMAND * bmsx::IO_WORD_SIZE, bmsx::GX_GTE_PLUS_FN_VMAD3);
+	memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_ADD_XY * bmsx::IO_WORD_SIZE, 0u);
+	harness.scheduler.advanceTo(2);
+	const bmsx::GxGteState state = harness.gte.captureState();
+	require(state.plusPendingCycles == 3u, "GTE+ save remaining cycles");
+	require(!state.plusInterlockArmed, "GTE+ unblocked save retains no interlock event");
+
+	GteHarness restored;
+	restored.scheduler.setNowCycles(100);
+	restored.gte.restoreState(state);
+	const uint32_t commandAddress = bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_COMMAND * bmsx::IO_WORD_SIZE;
+	require(restored.scheduler.nextDeadline() == std::numeric_limits<bmsx::i64>::max(), "GTE+ unblocked restore allocates no timer");
+	require(restored.memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_RESULT_XY * bmsx::IO_WORD_SIZE) == 0u, "GTE+ restored result retained");
+	require(restored.memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_CYCLES * bmsx::IO_WORD_SIZE) == (bmsx::GX_GTE_PLUS_CYCLES_BUSY | bmsx::GX_GTE_PLUS_CYCLES_VMAD3), "GTE+ restored busy cycles");
+	restored.scheduler.advanceTo(102);
+	require(!restored.scheduler.hasDueTimer(), "GTE+ restored command not early");
+	require(restored.scheduler.nextDeadline() == std::numeric_limits<bmsx::i64>::max(), "GTE+ unblocked restore retains no deadline");
+	restored.scheduler.advanceTo(103);
+	require(!restored.scheduler.hasDueTimer(), "GTE+ unblocked completion has no timer");
+	require(restored.memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_CYCLES * bmsx::IO_WORD_SIZE) == bmsx::GX_GTE_PLUS_CYCLES_VMAD3, "GTE+ unblocked restore publishes on observation at completion");
+	require(restored.memory.mappedWriteReady(commandAddress), "GTE+ restored command ready at completion");
+	require(restored.memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_RESULT_XY * bmsx::IO_WORD_SIZE) == pack16(6u, static_cast<uint32_t>(-26)), "GTE+ restored XY result");
+	require(restored.memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_RESULT_Z * bmsx::IO_WORD_SIZE) == 32u, "GTE+ restored Z result");
+	const bmsx::GxGteState completedState = restored.gte.captureState();
+	require(completedState.plusPendingCycles == 0u, "GTE+ completion clears pending cycles");
+	require(!completedState.plusInterlockArmed, "GTE+ completion clears interlock state");
 }
 
 void testRtpsDivideOverflow() {
@@ -842,6 +1208,14 @@ void testRtpsUnrResultSaturatesWithoutDivideOverflow() {
 int main() {
 	testRtpsIdentityProjection();
 	testMmioExecution();
+	testPlusVmad3Mmio();
+	testPlusVmad3ShiftAndSaturation();
+	testPlusUnknownCommand();
+	testPlusReadOnlyLatchesAndReset();
+	testPlusRetainsOldLatchesUntilCompletion();
+	testPlusCommandAdmission();
+	testPlusActiveCpuSliceCompletionEdge();
+	testPlusCpuBurstSaveRestoreInterlock();
 	testNclip();
 	testOp();
 	testMvmva();
@@ -872,6 +1246,7 @@ int main() {
 	testUnknownFunctionCodeIsDeterministicNoop();
 	testOpcodeZeroIsNotRtpsAlias();
 	testSaveStatePreservesRawRegisterWords();
+	testPlusInFlightSaveState();
 	testRtpsDivideOverflow();
 	testRtpsUnrResultSaturatesWithoutDivideOverflow();
 	return 0;

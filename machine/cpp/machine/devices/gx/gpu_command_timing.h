@@ -18,6 +18,6 @@ i64 gxGpuCommandTicks(
 	u32 drawingAreaBottomRightWord,
 	u32 drawingOffsetWord,
 	u32 maskBitModeWord,
-	u8 interlacedRenderWord);
+	u8 skippedLineParity);
 
 } // namespace bmsx

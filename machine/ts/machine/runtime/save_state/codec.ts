@@ -32,16 +32,16 @@ import {
 	type GxGpuSaveState,
 	type GxGpuState,
 } from '../../devices/gx/gpu';
-import { GX_GPU_COMMAND_CAPACITY, GX_GPU_COMMAND_WORD_CAPACITY, GX_GPU_READBACK_READY, GX_GPU_READBACK_SUBMITTED, type GxGpuCommandBufferState } from '../../devices/gx/gpu_command_buffer';
+import { GX_GPU_COMMAND_CAPACITY, GX_GPU_COMMAND_WORD_CAPACITY, GX_GPU_READBACK_READY, GX_GPU_READBACK_SUBMITTED, GX_GPU_TRANSFER_MAX_HEIGHT, type GxGpuCommandBufferState } from '../../devices/gx/gpu_command_buffer';
 import {
 	GX_GPU_VRAM_BYTE_COUNT,
-	GX_GPU_VRAM_HEIGHT,
 	GX_GPU_VRAM_WIDTH,
 	GX_GPU_VRAM_Y_ADDRESS_PERIOD,
 } from '../../devices/gx/vram_address';
 import { GX_GPU_COMMAND_FIFO_STORAGE_WORD_CAPACITY } from '../../devices/gx/gpu_command_fifo';
+import { GX_GPU_PCRTC_WORD_COUNT, type GxGpuPcrtcState } from '../../devices/gx/gpu_pcrtc';
 import type { GxGteState } from '../../devices/gx/gte';
-import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT } from '../../devices/gx/gte';
+import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT, GX_GTE_PLUS_REGISTER_COUNT } from '../../devices/gx/gte';
 import type { GeometryJobState } from '../../devices/geometry/job';
 import type { GeometryControllerState } from '../../devices/geometry/save_state';
 import type { MemorySaveState } from '../../memory/memory';
@@ -470,7 +470,7 @@ function encodeGxGpuCommandBufferState(state: GxGpuCommandBufferState): GxGpuCom
 		commandDrawingAreaBottomRightWord: encodeVector(state.commandDrawingAreaBottomRightWord, (word) => word >>> 0),
 		commandDrawingOffsetWord: encodeVector(state.commandDrawingOffsetWord, (word) => word >>> 0),
 		commandMaskBitModeWord: encodeVector(state.commandMaskBitModeWord, (word) => word >>> 0),
-		commandInterlacedRenderWord: encodeVector(state.commandInterlacedRenderWord, (word) => word >>> 0),
+		commandSkippedLineParity: encodeVector(state.commandSkippedLineParity, (word) => word >>> 0),
 		words: encodeVector(state.words, (word) => word >>> 0),
 		readbackPhase: state.readbackPhase,
 		readbackFenceCommandCount: state.readbackFenceCommandCount,
@@ -491,7 +491,7 @@ function decodeGxGpuCommandBufferState(value: unknown, label: string): GxGpuComm
 	const presentCommandCount = requireBoundedU32(requireObjectKey(object, 'presentCommandCount', label, `${label}.presentCommandCount`), `${label}.presentCommandCount`, 0, executedCommandCount);
 	const wordCount = requireBoundedU32(requireObjectKey(object, 'wordCount', label, `${label}.wordCount`), `${label}.wordCount`, 0, GX_GPU_COMMAND_WORD_CAPACITY);
 	const readbackWidth = requireBoundedU32(requireObjectKey(object, 'readbackWidth', label, `${label}.readbackWidth`), `${label}.readbackWidth`, 0, GX_GPU_VRAM_WIDTH);
-	const readbackHeight = requireBoundedU32(requireObjectKey(object, 'readbackHeight', label, `${label}.readbackHeight`), `${label}.readbackHeight`, 0, GX_GPU_VRAM_HEIGHT);
+	const readbackHeight = requireBoundedU32(requireObjectKey(object, 'readbackHeight', label, `${label}.readbackHeight`), `${label}.readbackHeight`, 0, GX_GPU_TRANSFER_MAX_HEIGHT);
 	const readbackPixelCount = readbackWidth * readbackHeight;
 	const readbackPhase = requireBoundedU32(requireObjectKey(object, 'readbackPhase', label, `${label}.readbackPhase`), `${label}.readbackPhase`, 0, GX_GPU_READBACK_READY);
 	if (readbackPhase === GX_GPU_READBACK_SUBMITTED) {
@@ -513,7 +513,7 @@ function decodeGxGpuCommandBufferState(value: unknown, label: string): GxGpuComm
 		commandDrawingAreaBottomRightWord: decodeU32FixedArray(requireObjectKey(object, 'commandDrawingAreaBottomRightWord', label, `${label}.commandDrawingAreaBottomRightWord`), `${label}.commandDrawingAreaBottomRightWord`, commandCount),
 		commandDrawingOffsetWord: decodeU32FixedArray(requireObjectKey(object, 'commandDrawingOffsetWord', label, `${label}.commandDrawingOffsetWord`), `${label}.commandDrawingOffsetWord`, commandCount),
 		commandMaskBitModeWord: decodeU32FixedArray(requireObjectKey(object, 'commandMaskBitModeWord', label, `${label}.commandMaskBitModeWord`), `${label}.commandMaskBitModeWord`, commandCount),
-		commandInterlacedRenderWord: decodeU8FixedArray(requireObjectKey(object, 'commandInterlacedRenderWord', label, `${label}.commandInterlacedRenderWord`), `${label}.commandInterlacedRenderWord`, commandCount),
+		commandSkippedLineParity: decodeU8FixedArray(requireObjectKey(object, 'commandSkippedLineParity', label, `${label}.commandSkippedLineParity`), `${label}.commandSkippedLineParity`, commandCount),
 		words: decodeU32FixedArray(requireObjectKey(object, 'words', label, `${label}.words`), `${label}.words`, wordCount),
 		readbackPhase,
 		readbackFenceCommandCount: requireBoundedU32(requireObjectKey(object, 'readbackFenceCommandCount', label, `${label}.readbackFenceCommandCount`), `${label}.readbackFenceCommandCount`, 0, commandCount),
@@ -553,6 +553,8 @@ function encodeGxGpuRegisterContextState(state: GxGpuRegisterContextState): GxGp
 		presentVramYAddressExtensionWord: state.presentVramYAddressExtensionWord >>> 0,
 		presentHorizontalDisplayRangeWord: state.presentHorizontalDisplayRangeWord >>> 0,
 		presentVerticalDisplayRangeWord: state.presentVerticalDisplayRangeWord >>> 0,
+		pcrtcRegisterWords: encodeVector(state.pcrtcRegisterWords, (word) => word >>> 0),
+		pcrtcPresentWords: encodeVector(state.pcrtcPresentWords, (word) => word >>> 0),
 		vramPresentationPending: state.vramPresentationPending,
 	};
 }
@@ -584,7 +586,24 @@ function decodeGxGpuRegisterContextState(value: unknown, label: string): GxGpuRe
 		presentVramYAddressExtensionWord: requireBoundedU32(requireObjectKey(object, 'presentVramYAddressExtensionWord', label, `${label}.presentVramYAddressExtensionWord`), `${label}.presentVramYAddressExtensionWord`, 0, 1),
 		presentHorizontalDisplayRangeWord: requireBoundedU32(requireObjectKey(object, 'presentHorizontalDisplayRangeWord', label, `${label}.presentHorizontalDisplayRangeWord`), `${label}.presentHorizontalDisplayRangeWord`, 0, 0xffffffff),
 		presentVerticalDisplayRangeWord: requireBoundedU32(requireObjectKey(object, 'presentVerticalDisplayRangeWord', label, `${label}.presentVerticalDisplayRangeWord`), `${label}.presentVerticalDisplayRangeWord`, 0, 0xffffffff),
+		pcrtcRegisterWords: decodeU32FixedArray(requireObjectKey(object, 'pcrtcRegisterWords', label, `${label}.pcrtcRegisterWords`), `${label}.pcrtcRegisterWords`, GX_GPU_PCRTC_WORD_COUNT),
+		pcrtcPresentWords: decodeU32FixedArray(requireObjectKey(object, 'pcrtcPresentWords', label, `${label}.pcrtcPresentWords`), `${label}.pcrtcPresentWords`, GX_GPU_PCRTC_WORD_COUNT),
 		vramPresentationPending: requireBooleanValue(requireObjectKey(object, 'vramPresentationPending', label, `${label}.vramPresentationPending`), `${label}.vramPresentationPending`),
+	};
+}
+
+function encodeGxGpuPcrtcState(state: GxGpuPcrtcState): GxGpuPcrtcState {
+	return {
+		registerWords: encodeVector(state.registerWords, (word) => word >>> 0),
+		presentWords: encodeVector(state.presentWords, (word) => word >>> 0),
+	};
+}
+
+function decodeGxGpuPcrtcState(value: unknown, label: string): GxGpuPcrtcState {
+	const object = requireObject(value, label);
+	return {
+		registerWords: decodeU32FixedArray(requireObjectKey(object, 'registerWords', label, `${label}.registerWords`), `${label}.registerWords`, GX_GPU_PCRTC_WORD_COUNT),
+		presentWords: decodeU32FixedArray(requireObjectKey(object, 'presentWords', label, `${label}.presentWords`), `${label}.presentWords`, GX_GPU_PCRTC_WORD_COUNT),
 	};
 }
 
@@ -634,6 +653,7 @@ function encodeGxGpuState(state: GxGpuState): GxGpuState {
 		presentVramYAddressExtensionWord: state.presentVramYAddressExtensionWord >>> 0,
 		presentHorizontalDisplayRangeWord: state.presentHorizontalDisplayRangeWord >>> 0,
 		presentVerticalDisplayRangeWord: state.presentVerticalDisplayRangeWord >>> 0,
+		pcrtc: encodeGxGpuPcrtcState(state.pcrtc),
 		vramPresentationPending: state.vramPresentationPending,
 		supervisorQuiesceRequested: state.supervisorQuiesceRequested,
 		supervisorIngressStopped: state.supervisorIngressStopped,
@@ -692,6 +712,7 @@ function decodeGxGpuState(value: unknown, label: string): GxGpuState {
 		presentVramYAddressExtensionWord: requireBoundedU32(requireObjectKey(object, 'presentVramYAddressExtensionWord', label, `${label}.presentVramYAddressExtensionWord`), `${label}.presentVramYAddressExtensionWord`, 0, 1),
 		presentHorizontalDisplayRangeWord: requireBoundedU32(requireObjectKey(object, 'presentHorizontalDisplayRangeWord', label, `${label}.presentHorizontalDisplayRangeWord`), `${label}.presentHorizontalDisplayRangeWord`, 0, 0xffffffff),
 		presentVerticalDisplayRangeWord: requireBoundedU32(requireObjectKey(object, 'presentVerticalDisplayRangeWord', label, `${label}.presentVerticalDisplayRangeWord`), `${label}.presentVerticalDisplayRangeWord`, 0, 0xffffffff),
+		pcrtc: decodeGxGpuPcrtcState(requireObjectKey(object, 'pcrtc', label, `${label}.pcrtc`), `${label}.pcrtc`),
 		vramPresentationPending: requireBooleanValue(requireObjectKey(object, 'vramPresentationPending', label, `${label}.vramPresentationPending`), `${label}.vramPresentationPending`),
 		supervisorQuiesceRequested: requireBooleanValue(requireObjectKey(object, 'supervisorQuiesceRequested', label, `${label}.supervisorQuiesceRequested`), `${label}.supervisorQuiesceRequested`),
 		supervisorIngressStopped: requireBooleanValue(requireObjectKey(object, 'supervisorIngressStopped', label, `${label}.supervisorIngressStopped`), `${label}.supervisorIngressStopped`),
@@ -719,12 +740,18 @@ function encodeGxGteState(state: GxGteState): GxGteState {
 	return {
 		dataRegisterWords: encodeVector(state.dataRegisterWords, (word) => word >>> 0),
 		controlRegisterWords: encodeVector(state.controlRegisterWords, (word) => word >>> 0),
+		plusRegisterWords: encodeVector(state.plusRegisterWords, (word) => word >>> 0),
 		mac0: state.mac0,
 		mac1: state.mac1,
 		mac2: state.mac2,
 		mac3: state.mac3,
 		currentSf: state.currentSf >>> 0,
 		lastCycles: state.lastCycles >>> 0,
+		plusPendingCycles: state.plusPendingCycles >>> 0,
+		plusInterlockArmed: state.plusInterlockArmed,
+		plusPendingResultXy: state.plusPendingResultXy >>> 0,
+		plusPendingResultZ: state.plusPendingResultZ >>> 0,
+		plusPendingFlag: state.plusPendingFlag >>> 0,
 	};
 }
 
@@ -733,12 +760,18 @@ function decodeGxGteState(value: unknown, label: string): GxGteState {
 	return {
 		dataRegisterWords: decodeU32FixedArray(requireObjectKey(object, 'dataRegisterWords', label, `${label}.dataRegisterWords`), `${label}.dataRegisterWords`, GX_GTE_DATA_REGISTER_COUNT),
 		controlRegisterWords: decodeU32FixedArray(requireObjectKey(object, 'controlRegisterWords', label, `${label}.controlRegisterWords`), `${label}.controlRegisterWords`, GX_GTE_CONTROL_REGISTER_COUNT),
+		plusRegisterWords: decodeU32FixedArray(requireObjectKey(object, 'plusRegisterWords', label, `${label}.plusRegisterWords`), `${label}.plusRegisterWords`, GX_GTE_PLUS_REGISTER_COUNT),
 		mac0: requireI64(requireObjectKey(object, 'mac0', label, `${label}.mac0`), `${label}.mac0`),
 		mac1: requireI64(requireObjectKey(object, 'mac1', label, `${label}.mac1`), `${label}.mac1`),
 		mac2: requireI64(requireObjectKey(object, 'mac2', label, `${label}.mac2`), `${label}.mac2`),
 		mac3: requireI64(requireObjectKey(object, 'mac3', label, `${label}.mac3`), `${label}.mac3`),
 		currentSf: requireBoundedU32(requireObjectKey(object, 'currentSf', label, `${label}.currentSf`), `${label}.currentSf`, 0, 0xffffffff),
 		lastCycles: requireBoundedU32(requireObjectKey(object, 'lastCycles', label, `${label}.lastCycles`), `${label}.lastCycles`, 0, 0xffffffff),
+		plusPendingCycles: requireBoundedU32(requireObjectKey(object, 'plusPendingCycles', label, `${label}.plusPendingCycles`), `${label}.plusPendingCycles`, 0, 0xffffffff),
+		plusInterlockArmed: requireBooleanValue(requireObjectKey(object, 'plusInterlockArmed', label, `${label}.plusInterlockArmed`), `${label}.plusInterlockArmed`),
+		plusPendingResultXy: requireBoundedU32(requireObjectKey(object, 'plusPendingResultXy', label, `${label}.plusPendingResultXy`), `${label}.plusPendingResultXy`, 0, 0xffffffff),
+		plusPendingResultZ: requireBoundedU32(requireObjectKey(object, 'plusPendingResultZ', label, `${label}.plusPendingResultZ`), `${label}.plusPendingResultZ`, 0, 0xffffffff),
+		plusPendingFlag: requireBoundedU32(requireObjectKey(object, 'plusPendingFlag', label, `${label}.plusPendingFlag`), `${label}.plusPendingFlag`, 0, 0xffffffff),
 	};
 }
 

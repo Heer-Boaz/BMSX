@@ -6,9 +6,19 @@ import {
 	IO_GX_GTE_CONTROL0,
 	IO_GX_GTE_CYCLES,
 	IO_GX_GTE_DATA0,
+	IO_GX_GTE_PLUS_BASE,
 } from '../../machine/ts/machine/bus/io';
 import { IO_WORD_SIZE } from '../../machine/ts/machine/memory/map';
 import { Memory } from '../../machine/ts/machine/memory/memory';
+import { MAPPED_BUS_MASTER_DMA } from '../../machine/ts/machine/memory/bus_signals';
+import { CPU, OpCode, RunResult, type Program, type ProgramMetadata, type Proto } from '../../machine/ts/machine/cpu/cpu';
+import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/machine/cpu/instruction_format';
+import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
+import {
+	DEVICE_SERVICE_GTE,
+	DeviceScheduler,
+	TIMER_KIND_DEVICE_SERVICE,
+} from '../../machine/ts/machine/scheduler/device';
 
 import {
 	GX_GTE_CYCLES_AVSZ3,
@@ -65,14 +75,94 @@ import {
 	GX_GTE_FN_RTPS,
 	GX_GTE_FN_RTPT,
 	GX_GTE_FN_SQR,
+	GX_GTE_PLUS_ADD_XY,
+	GX_GTE_PLUS_ADD_Z,
+	GX_GTE_PLUS_COMMAND,
+	GX_GTE_PLUS_CYCLES,
+	GX_GTE_PLUS_CYCLES_BUSY,
+	GX_GTE_PLUS_CYCLES_INVALID,
+	GX_GTE_PLUS_CYCLES_VMAD3,
+	GX_GTE_PLUS_FLAG,
+	GX_GTE_PLUS_FLAG_ERROR,
+	GX_GTE_PLUS_FLAG_INVALID_COMMAND,
+	GX_GTE_PLUS_FLAG_X_NEG,
+	GX_GTE_PLUS_FLAG_X_POS,
+	GX_GTE_PLUS_FLAG_Y_POS,
+	GX_GTE_PLUS_FLAG_Y_NEG,
+	GX_GTE_PLUS_FLAG_Z_NEG,
+	GX_GTE_PLUS_FLAG_Z_POS,
+	GX_GTE_PLUS_FN_VMAD3,
+	GX_GTE_PLUS_MUL_XY,
+	GX_GTE_PLUS_MUL_Z,
+	GX_GTE_PLUS_RESULT_XY,
+	GX_GTE_PLUS_RESULT_Z,
+	GX_GTE_PLUS_SCALAR,
 	GxGte,
 } from '../../machine/ts/machine/devices/gx/gte';
 
 const GTE_SF = 1 << 19;
 
-function createGte(): { memory: Memory; gte: GxGte } {
+function createGte(): { memory: Memory; cpu: CPU; gte: GxGte; scheduler: DeviceScheduler } {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
-	return { memory, gte: new GxGte(memory) };
+	const irq = new IrqController(memory);
+	const cpu = new CPU(memory, irq);
+	const scheduler = new DeviceScheduler(cpu);
+	return { memory, cpu, gte: new GxGte(memory, cpu, scheduler), scheduler };
+}
+
+function completeGtePlus(memory: Memory, scheduler: DeviceScheduler, cycles: number): void {
+	scheduler.advanceTo(scheduler.nowCycles + cycles);
+	assert.equal(scheduler.hasDueTimer(), false);
+	memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_CYCLES * IO_WORD_SIZE);
+}
+
+function serviceScheduledGtePlus(gte: GxGte, scheduler: DeviceScheduler, cycles: number): void {
+	scheduler.advanceTo(scheduler.nowCycles + cycles);
+	assert.equal(scheduler.hasDueTimer(), true);
+	assert.equal(scheduler.popDueTimer(), (TIMER_KIND_DEVICE_SERVICE << 8) | DEVICE_SERVICE_GTE);
+	gte.onService();
+}
+
+function installGtePlusBurstProgram(cpu: CPU, words: readonly number[]): void {
+	const instructionCount = words.length + 3;
+	const code = new Uint8Array(instructionCount * INSTRUCTION_BYTES);
+	writeInstruction(code, 0, OpCode.LOADK, 0, 0, 0, 0);
+	for (let index = 0; index < words.length; index += 1) {
+		writeInstruction(code, index + 1, OpCode.LOADK, index + 1, 0, index + 1, 0);
+	}
+	writeInstruction(code, words.length + 1, OpCode.STORE_MEM_WORDS_D, 1, 0, words.length, 0);
+	writeInstruction(code, words.length + 2, OpCode.RET, 0, 0, 0, 0);
+	const proto: Proto = {
+		entryPC: 0,
+		codeLen: code.byteLength,
+		numParams: 0,
+		isVararg: false,
+		maxStack: words.length + 1,
+		upvalueDescs: [],
+		staticClosure: true,
+	};
+	const program: Program = {
+		code,
+		programRom: code,
+		programRomTextByteLength: code.byteLength,
+		constPool: [IO_GX_GTE_PLUS_BASE, ...words],
+		protos: [proto],
+		moduleProtos: [],
+		moduleExports: [],
+		moduleProtoMap: new Map(),
+		stringPool: cpu.stringPool,
+		constPoolStringPool: cpu.stringPool,
+	};
+	const metadata: ProgramMetadata = {
+		debugRanges: [null],
+		protoIds: ['gte_plus_burst'],
+		localSlotsByProto: [[]],
+		upvalueNamesByProto: [[]],
+		globalNames: [],
+		systemGlobalNames: [],
+		exportProtoIdBySlot: {},
+	};
+	cpu.setProgram(program, metadata, metadata, 0, 0, 0);
 }
 
 function pack16(low: number, high: number): number {
@@ -164,6 +254,261 @@ test('GX-GTE MMIO exposes PSX COP2 data/control registers and command execution'
 	assert.equal(memory.readMappedU32LE(IO_GX_GTE_DATA0 + 11 * IO_WORD_SIZE), 256);
 	assert.equal(memory.readMappedU32LE(IO_GX_GTE_DATA0 + 14 * IO_WORD_SIZE), pack16(161, 122));
 	assert.equal(memory.readMappedU32LE(IO_GX_GTE_CONTROL0 + 31 * IO_WORD_SIZE), 0);
+});
+
+test('GX-GTE+ VMAD3 executes three signed Q4.12 lanes through raw MMIO words', () => {
+	const { memory, gte, scheduler } = createGte();
+	const commandAddress = IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_COMMAND * IO_WORD_SIZE;
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_ADD_XY * IO_WORD_SIZE, pack16(10, -20));
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_ADD_Z * IO_WORD_SIZE, 0xa5a5001e);
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_MUL_XY * IO_WORD_SIZE, pack16(8, 12));
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_MUL_Z * IO_WORD_SIZE, 0x5a5afffc);
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_SCALAR * IO_WORD_SIZE, 0xbeef0800);
+	assert.equal(memory.mappedWriteReady(commandAddress), true);
+	memory.writeMappedU32LE(commandAddress, 0xdeadbe01);
+
+	assert.equal(scheduler.hasDueTimer(), false);
+	assert.equal(memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_RESULT_XY * IO_WORD_SIZE), 0);
+	assert.equal(memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_RESULT_Z * IO_WORD_SIZE), 0);
+	assert.equal(memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_FLAG * IO_WORD_SIZE), 0);
+	assert.equal(memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_COMMAND * IO_WORD_SIZE), 0xdeadbe01);
+	assert.equal(memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_CYCLES * IO_WORD_SIZE), (GX_GTE_PLUS_CYCLES_BUSY | GX_GTE_PLUS_CYCLES_VMAD3) >>> 0);
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_ADD_XY * IO_WORD_SIZE, pack16(100, 100));
+	scheduler.advanceTo(4);
+	assert.equal(scheduler.hasDueTimer(), false);
+	assert.equal(memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_RESULT_XY * IO_WORD_SIZE), 0);
+	completeGtePlus(memory, scheduler, 1);
+
+	assert.equal(memory.mappedWriteReady(commandAddress), true);
+	assert.equal(memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_RESULT_XY * IO_WORD_SIZE), pack16(14, -14));
+	assert.equal(memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_RESULT_Z * IO_WORD_SIZE), 28);
+	assert.equal(memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_FLAG * IO_WORD_SIZE), 0);
+	assert.equal(memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_CYCLES * IO_WORD_SIZE), GX_GTE_PLUS_CYCLES_VMAD3);
+	assert.equal(memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_ADD_Z * IO_WORD_SIZE), 0xa5a5001e);
+	assert.equal(memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_SCALAR * IO_WORD_SIZE), 0xbeef0800);
+});
+
+test('GX-GTE+ VMAD3 uses signed scalars, arithmetic shift and all lane saturation flags', () => {
+	const { memory, gte, scheduler } = createGte();
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_ADD_XY * IO_WORD_SIZE, pack16(10, -20));
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_ADD_Z * IO_WORD_SIZE, 30);
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_MUL_XY * IO_WORD_SIZE, pack16(8, 12));
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_MUL_Z * IO_WORD_SIZE, -4);
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_SCALAR * IO_WORD_SIZE, -0x0800);
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_COMMAND * IO_WORD_SIZE, GX_GTE_PLUS_FN_VMAD3);
+	completeGtePlus(memory, scheduler, GX_GTE_PLUS_CYCLES_VMAD3);
+	assert.equal(memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_RESULT_XY * IO_WORD_SIZE), pack16(6, -26));
+	assert.equal(memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_RESULT_Z * IO_WORD_SIZE), 32);
+	assert.equal(memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_FLAG * IO_WORD_SIZE), 0);
+
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_ADD_XY * IO_WORD_SIZE, pack16(0x7fff, -0x8000));
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_ADD_Z * IO_WORD_SIZE, 0x7fff);
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_MUL_XY * IO_WORD_SIZE, pack16(0x7fff, -0x8000));
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_MUL_Z * IO_WORD_SIZE, 0x7fff);
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_SCALAR * IO_WORD_SIZE, 0x1000);
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_COMMAND * IO_WORD_SIZE, GX_GTE_PLUS_FN_VMAD3);
+	completeGtePlus(memory, scheduler, GX_GTE_PLUS_CYCLES_VMAD3);
+	assert.equal(memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_RESULT_XY * IO_WORD_SIZE), pack16(0x7fff, -0x8000));
+	assert.equal(memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_RESULT_Z * IO_WORD_SIZE), 0x7fff);
+	assert.equal(
+		memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_FLAG * IO_WORD_SIZE),
+		(GX_GTE_PLUS_FLAG_ERROR | GX_GTE_PLUS_FLAG_X_POS | GX_GTE_PLUS_FLAG_Y_NEG | GX_GTE_PLUS_FLAG_Z_POS) >>> 0,
+	);
+
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_ADD_XY * IO_WORD_SIZE, 0);
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_ADD_Z * IO_WORD_SIZE, -0x8000);
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_MUL_XY * IO_WORD_SIZE, 0);
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_MUL_Z * IO_WORD_SIZE, -0x8000);
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_COMMAND * IO_WORD_SIZE, GX_GTE_PLUS_FN_VMAD3);
+	completeGtePlus(memory, scheduler, GX_GTE_PLUS_CYCLES_VMAD3);
+	assert.equal(memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_RESULT_Z * IO_WORD_SIZE), 0x8000);
+	assert.equal(
+		memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_FLAG * IO_WORD_SIZE),
+		(GX_GTE_PLUS_FLAG_ERROR | GX_GTE_PLUS_FLAG_Z_NEG) >>> 0,
+	);
+
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_ADD_XY * IO_WORD_SIZE, pack16(-0x8000, 0x7fff));
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_ADD_Z * IO_WORD_SIZE, 0);
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_MUL_XY * IO_WORD_SIZE, pack16(-0x8000, 0x7fff));
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_MUL_Z * IO_WORD_SIZE, 0);
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_COMMAND * IO_WORD_SIZE, GX_GTE_PLUS_FN_VMAD3);
+	completeGtePlus(memory, scheduler, GX_GTE_PLUS_CYCLES_VMAD3);
+	assert.equal(memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_RESULT_XY * IO_WORD_SIZE), pack16(-0x8000, 0x7fff));
+	assert.equal(
+		memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_FLAG * IO_WORD_SIZE),
+		(GX_GTE_PLUS_FLAG_ERROR | GX_GTE_PLUS_FLAG_X_NEG | GX_GTE_PLUS_FLAG_Y_POS) >>> 0,
+	);
+});
+
+test('GX-GTE+ unknown command retains results and publishes an invalid-command latch', () => {
+	const { memory, gte, scheduler } = createGte();
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_ADD_XY * IO_WORD_SIZE, pack16(1, 2));
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_COMMAND * IO_WORD_SIZE, GX_GTE_PLUS_FN_VMAD3);
+	completeGtePlus(memory, scheduler, GX_GTE_PLUS_CYCLES_VMAD3);
+	const result = memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_RESULT_XY * IO_WORD_SIZE);
+
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_COMMAND * IO_WORD_SIZE, 0xcafe0002);
+
+	assert.equal(memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_RESULT_XY * IO_WORD_SIZE), result);
+	assert.equal(memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_FLAG * IO_WORD_SIZE), 0);
+	assert.equal(memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_CYCLES * IO_WORD_SIZE), (GX_GTE_PLUS_CYCLES_BUSY | GX_GTE_PLUS_CYCLES_INVALID) >>> 0);
+	completeGtePlus(memory, scheduler, GX_GTE_PLUS_CYCLES_INVALID);
+
+	assert.equal(memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_RESULT_XY * IO_WORD_SIZE), result);
+	assert.equal(memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_FLAG * IO_WORD_SIZE), (GX_GTE_PLUS_FLAG_ERROR | GX_GTE_PLUS_FLAG_INVALID_COMMAND) >>> 0);
+	assert.equal(memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_CYCLES * IO_WORD_SIZE), GX_GTE_PLUS_CYCLES_INVALID);
+	assert.equal(memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_COMMAND * IO_WORD_SIZE), 0xcafe0002);
+});
+
+test('GX-GTE+ read-only latches ignore writes and reset cancels an in-flight command', () => {
+	const { memory, gte, scheduler } = createGte();
+	const resultXyAddress = IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_RESULT_XY * IO_WORD_SIZE;
+	const resultZAddress = IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_RESULT_Z * IO_WORD_SIZE;
+	const flagAddress = IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_FLAG * IO_WORD_SIZE;
+	const cyclesAddress = IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_CYCLES * IO_WORD_SIZE;
+	const commandAddress = IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_COMMAND * IO_WORD_SIZE;
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_ADD_XY * IO_WORD_SIZE, pack16(1, 2));
+	memory.writeMappedU32LE(commandAddress, GX_GTE_PLUS_FN_VMAD3);
+	completeGtePlus(memory, scheduler, GX_GTE_PLUS_CYCLES_VMAD3);
+	memory.writeMappedU32LE(resultXyAddress, 0xffffffff);
+	memory.writeMappedU32LE(resultZAddress, 0xffffffff);
+	memory.writeMappedU32LE(flagAddress, 0xffffffff);
+	memory.writeMappedU32LE(cyclesAddress, 0xffffffff);
+	assert.equal(memory.readMappedU32LE(resultXyAddress), pack16(1, 2));
+	assert.equal(memory.readMappedU32LE(resultZAddress), 0);
+	assert.equal(memory.readMappedU32LE(flagAddress), 0);
+	assert.equal(memory.readMappedU32LE(cyclesAddress), GX_GTE_PLUS_CYCLES_VMAD3);
+
+	memory.writeMappedU32LE(commandAddress, GX_GTE_PLUS_FN_VMAD3);
+	gte.reset();
+	for (let index = 0; index < 10; index += 1) {
+		assert.equal(memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + index * IO_WORD_SIZE), 0);
+	}
+	assert.equal(memory.mappedWriteReady(commandAddress), true);
+	assert.equal(scheduler.hasDueTimer(), false);
+});
+
+test('GX-GTE+ retains old result and FLAG latches until the retained completion tick', () => {
+	const { memory, scheduler } = createGte();
+	const commandAddress = IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_COMMAND * IO_WORD_SIZE;
+	const resultAddress = IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_RESULT_XY * IO_WORD_SIZE;
+	const flagAddress = IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_FLAG * IO_WORD_SIZE;
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_ADD_XY * IO_WORD_SIZE, pack16(0x7fff, 3));
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_MUL_XY * IO_WORD_SIZE, pack16(0x7fff, 4));
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_SCALAR * IO_WORD_SIZE, 0x1000);
+	memory.writeMappedU32LE(commandAddress, GX_GTE_PLUS_FN_VMAD3);
+	completeGtePlus(memory, scheduler, GX_GTE_PLUS_CYCLES_VMAD3);
+	assert.equal(memory.readMappedU32LE(resultAddress), pack16(0x7fff, 7));
+	assert.equal(memory.readMappedU32LE(flagAddress), (GX_GTE_PLUS_FLAG_ERROR | GX_GTE_PLUS_FLAG_X_POS) >>> 0);
+
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_ADD_XY * IO_WORD_SIZE, pack16(5, 6));
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_MUL_XY * IO_WORD_SIZE, pack16(0, 0));
+	memory.writeMappedU32LE(commandAddress, GX_GTE_PLUS_FN_VMAD3);
+	assert.equal(memory.readMappedU32LE(resultAddress), pack16(0x7fff, 7));
+	assert.equal(memory.readMappedU32LE(flagAddress), (GX_GTE_PLUS_FLAG_ERROR | GX_GTE_PLUS_FLAG_X_POS) >>> 0);
+	assert.equal(memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_CYCLES * IO_WORD_SIZE), (GX_GTE_PLUS_CYCLES_BUSY | GX_GTE_PLUS_CYCLES_VMAD3) >>> 0);
+	completeGtePlus(memory, scheduler, GX_GTE_PLUS_CYCLES_VMAD3);
+	assert.equal(memory.readMappedU32LE(resultAddress), pack16(5, 6));
+	assert.equal(memory.readMappedU32LE(flagAddress), 0);
+});
+
+test('GX-GTE+ command admission is CPU-only and cannot overwrite an active command', () => {
+	const { memory, scheduler } = createGte();
+	const commandAddress = IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_COMMAND * IO_WORD_SIZE;
+	memory.writeMappedDmaU32LE(commandAddress, 0xcafe0002, MAPPED_BUS_MASTER_DMA);
+	assert.equal(memory.readMappedU32LE(commandAddress), 0);
+	assert.equal(memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_CYCLES * IO_WORD_SIZE), 0);
+
+	memory.writeMappedU32LE(commandAddress, 0xdeadbe01);
+	memory.writeMappedU32LE(commandAddress, 0xcafe0002);
+	memory.writeMappedDmaU32LE(commandAddress, 0xabcd0002, MAPPED_BUS_MASTER_DMA);
+	assert.equal(memory.readMappedU32LE(commandAddress), 0xdeadbe01);
+	assert.equal(scheduler.hasDueTimer(), false);
+	completeGtePlus(memory, scheduler, GX_GTE_PLUS_CYCLES_VMAD3);
+	assert.equal(memory.readMappedU32LE(commandAddress), 0xdeadbe01);
+});
+
+test('GX-GTE+ publishes exactly on cycle five inside an active CPU slice', () => {
+	const { memory, cpu, scheduler } = createGte();
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_ADD_XY * IO_WORD_SIZE, pack16(9, -7));
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_COMMAND * IO_WORD_SIZE, GX_GTE_PLUS_FN_VMAD3);
+	cpu.instructionBudgetRemaining = 10;
+	scheduler.beginCpuSlice(10);
+	cpu.instructionBudgetRemaining = 6;
+	assert.equal(memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_RESULT_XY * IO_WORD_SIZE), 0);
+	assert.equal(memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_CYCLES * IO_WORD_SIZE), (GX_GTE_PLUS_CYCLES_BUSY | GX_GTE_PLUS_CYCLES_VMAD3) >>> 0);
+	cpu.instructionBudgetRemaining = 5;
+	assert.equal(memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_CYCLES * IO_WORD_SIZE), GX_GTE_PLUS_CYCLES_VMAD3);
+	assert.equal(memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_RESULT_XY * IO_WORD_SIZE), pack16(9, -7));
+	scheduler.endCpuSlice();
+	assert.equal(scheduler.hasDueTimer(), false);
+});
+
+test('GX-GTE+ CPU burst interlock is atomic across save, restore and command resume', () => {
+	const first = createGte();
+	const commandAddress = IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_COMMAND * IO_WORD_SIZE;
+	const firstAddXy = pack16(1, 2);
+	first.memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_ADD_XY * IO_WORD_SIZE, firstAddXy);
+	const burstWords = [
+		pack16(10, -20),
+		30,
+		pack16(8, 12),
+		-4,
+		0x0800,
+		0,
+		0,
+		0,
+		GX_GTE_PLUS_FN_VMAD3,
+	];
+	installGtePlusBurstProgram(first.cpu, burstWords);
+	first.cpu.start(0);
+	for (let index = 0; index < burstWords.length + 1; index += 1) {
+		first.cpu.step();
+	}
+	first.memory.writeMappedU32LE(commandAddress, GX_GTE_PLUS_FN_VMAD3);
+	first.scheduler.beginCpuSlice(10);
+	assert.equal(first.cpu.runUntilDepth(0, 10), RunResult.Halted);
+	first.scheduler.endCpuSlice();
+	assert.equal(first.cpu.isMemoryWriteBlocked(), true);
+	const blockedCpuState = first.cpu.captureRuntimeState(new Map());
+	assert.equal(blockedCpuState.memoryWriteBlockedAddress, commandAddress);
+	assert.equal(blockedCpuState.yieldRequested, false);
+	assert.equal(first.memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_ADD_XY * IO_WORD_SIZE), firstAddXy);
+	assert.equal(first.scheduler.nextDeadline(), GX_GTE_PLUS_CYCLES_VMAD3);
+
+	first.scheduler.advanceTo(2);
+	const gteState = first.gte.captureState();
+	const cpuState = first.cpu.captureRuntimeState(new Map());
+	assert.equal(gteState.plusPendingCycles, 3);
+	assert.equal(gteState.plusInterlockArmed, true);
+
+	const restored = createGte();
+	installGtePlusBurstProgram(restored.cpu, burstWords);
+	restored.scheduler.setNowCycles(100);
+	restored.gte.restoreState(gteState);
+	restored.cpu.restoreRuntimeState(cpuState, new Map());
+	assert.equal(restored.scheduler.nextDeadline(), 103);
+	restored.scheduler.advanceTo(102);
+	assert.equal(restored.cpu.runUntilDepth(0, 100), RunResult.Halted);
+	assert.equal(restored.cpu.isMemoryWriteBlocked(), true);
+	assert.equal(restored.memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_ADD_XY * IO_WORD_SIZE), firstAddXy);
+	serviceScheduledGtePlus(restored.gte, restored.scheduler, 1);
+	assert.equal(restored.cpu.isMemoryWriteBlocked(), false);
+	restored.scheduler.beginCpuSlice(100);
+	assert.equal(restored.cpu.runUntilDepth(0, 100), RunResult.Halted);
+	const retryCycles = 100 - restored.cpu.instructionBudgetRemaining;
+	restored.scheduler.endCpuSlice();
+	restored.scheduler.advanceTo(restored.scheduler.nowCycles + retryCycles);
+	assert.equal(restored.cpu.isMemoryWriteBlocked(), false);
+	assert.equal(restored.memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_ADD_XY * IO_WORD_SIZE), burstWords[0]!);
+	assert.equal(restored.memory.readMappedU32LE(commandAddress), GX_GTE_PLUS_FN_VMAD3);
+	assert.equal(restored.scheduler.hasDueTimer(), false);
+	const resumedState = restored.gte.captureState();
+	assert.equal(resumedState.plusPendingCycles, 3);
+	assert.equal(resumedState.plusInterlockArmed, false);
+	completeGtePlus(restored.memory, restored.scheduler, 3);
+	assert.equal(restored.memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_RESULT_XY * IO_WORD_SIZE), pack16(14, -14));
+	assert.equal(restored.memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_RESULT_Z * IO_WORD_SIZE), 28);
 });
 
 test('GX-GTE NCLIP writes the PSX screen-space signed area into MAC0', () => {
@@ -798,15 +1143,22 @@ test('GX-GTE unknown PSX function code is deterministic no-op hardware, not a ho
 });
 
 test('GX-GTE save state preserves raw PSX COP2 register words', () => {
-	const { memory, gte } = createGte();
+	const { memory, gte, scheduler } = createGte();
 	gte.execute(GX_GTE_FN_RTPS);
 	gte.writeDataRegister(30, 0x80000000);
 	gte.writeControlRegister(24, 160 << 16);
 	memory.writeMappedU32LE(IO_GX_GTE_COMMAND, GX_GTE_FN_DPCS);
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_ADD_XY * IO_WORD_SIZE, pack16(11, -13));
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_MUL_XY * IO_WORD_SIZE, pack16(4, 6));
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_SCALAR * IO_WORD_SIZE, 0x0800);
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_COMMAND * IO_WORD_SIZE, GX_GTE_PLUS_FN_VMAD3);
+	completeGtePlus(memory, scheduler, GX_GTE_PLUS_CYCLES_VMAD3);
 	gte.writeControlRegister(31, GX_GTE_FLAG_DIV_OVERFLOW);
 	const state = gte.captureState();
 
 	gte.reset();
+	assert.equal(memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_RESULT_XY * IO_WORD_SIZE), 0);
+	assert.equal(memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_CYCLES * IO_WORD_SIZE), 0);
 	gte.restoreState(state);
 
 	assert.equal(gte.readDataRegister(30), 0x80000000);
@@ -815,6 +1167,43 @@ test('GX-GTE save state preserves raw PSX COP2 register words', () => {
 	assert.equal(gte.readControlRegister(31), (GX_GTE_FLAG_ERROR | GX_GTE_FLAG_DIV_OVERFLOW) >>> 0);
 	assert.equal(gte.captureState().mac3, state.mac3);
 	assert.equal(memory.readMappedU32LE(IO_GX_GTE_CYCLES), GX_GTE_CYCLES_DPCS);
+	assert.equal(memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_RESULT_XY * IO_WORD_SIZE), pack16(13, -10));
+	assert.equal(memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_CYCLES * IO_WORD_SIZE), GX_GTE_PLUS_CYCLES_VMAD3);
+});
+
+test('GX-GTE+ save state restores an in-flight command at the remaining-cycle edge', () => {
+	const { memory, gte, scheduler } = createGte();
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_ADD_XY * IO_WORD_SIZE, pack16(10, -20));
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_ADD_Z * IO_WORD_SIZE, 30);
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_MUL_XY * IO_WORD_SIZE, pack16(8, 12));
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_MUL_Z * IO_WORD_SIZE, -4);
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_SCALAR * IO_WORD_SIZE, -0x0800);
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_COMMAND * IO_WORD_SIZE, GX_GTE_PLUS_FN_VMAD3);
+	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_ADD_XY * IO_WORD_SIZE, 0);
+	scheduler.advanceTo(2);
+	const state = gte.captureState();
+	assert.equal(state.plusPendingCycles, 3);
+	assert.equal(state.plusInterlockArmed, false);
+
+	const restored = createGte();
+	restored.scheduler.setNowCycles(100);
+	restored.gte.restoreState(state);
+	const commandAddress = IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_COMMAND * IO_WORD_SIZE;
+	assert.equal(restored.scheduler.nextDeadline(), Number.MAX_SAFE_INTEGER);
+	assert.equal(restored.memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_RESULT_XY * IO_WORD_SIZE), 0);
+	assert.equal(restored.memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_CYCLES * IO_WORD_SIZE), (GX_GTE_PLUS_CYCLES_BUSY | GX_GTE_PLUS_CYCLES_VMAD3) >>> 0);
+	restored.scheduler.advanceTo(102);
+	assert.equal(restored.scheduler.hasDueTimer(), false);
+	assert.equal(restored.scheduler.nextDeadline(), Number.MAX_SAFE_INTEGER);
+	restored.scheduler.advanceTo(103);
+	assert.equal(restored.scheduler.hasDueTimer(), false);
+	assert.equal(restored.memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_CYCLES * IO_WORD_SIZE), GX_GTE_PLUS_CYCLES_VMAD3);
+	assert.equal(restored.memory.mappedWriteReady(commandAddress), true);
+	assert.equal(restored.memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_RESULT_XY * IO_WORD_SIZE), pack16(6, -26));
+	assert.equal(restored.memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_RESULT_Z * IO_WORD_SIZE), 32);
+	const completedState = restored.gte.captureState();
+	assert.equal(completedState.plusPendingCycles, 0);
+	assert.equal(completedState.plusInterlockArmed, false);
 });
 
 test('GX-GTE RTPS exposes PSX divide overflow as FLAG bits instead of falling back', () => {

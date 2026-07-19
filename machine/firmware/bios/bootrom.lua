@@ -60,7 +60,7 @@ local initialize_boot_output<const> = function()
 	terminal.write_at(4, 4, 'SYSTEM', terminal.palette_accent)
 	terminal.write_at(5, 4, 'CPU       LUA32', terminal.palette_text)
 	terminal.write_at(6, 4, 'RAM       4096 KB', terminal.palette_text)
-	terminal.write_at(7, 4, 'VRAM      1024 KB', terminal.palette_text)
+	terminal.write_at(7, 4, 'VRAM      2048 KB', terminal.palette_text)
 	terminal.write_at(8, 4, 'VIDEO     256x192 50HZ', terminal.palette_text)
 	terminal.write_at(10, 4, 'CARTRIDGE', terminal.palette_accent)
 	terminal.write_at(11, 4, 'ROM       ', terminal.palette_text)
@@ -111,7 +111,7 @@ end
 
 function init()
 	*irq_mask = irq_dma_done | irq_gpu
-	gx_gpu.reset_256x192_pal()
+	gx_gpu.reset_256x192()
 	gx_gpu.display_origin(terminal_layout.vram_origin)
 	gx_gpu.draw_target(terminal_layout.vram_origin)
 	gx_gpu.clear_color(boot_background)

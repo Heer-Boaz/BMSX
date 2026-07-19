@@ -15,7 +15,7 @@ Machine::Machine(Memory& memoryRef, InputControllerInputSource& input)
 	, audioController(memory, audioOutput, dmaController, irqController, scheduler)
 	, geometryController(memory, irqController, scheduler)
 	, gxGpu(memory, irqController, scheduler, dmaController)
-	, gxGte(memory)
+	, gxGte(memory, cpu, scheduler)
 	, systemController(memory, cpu, scheduler, irqController, dmaController, geometryController, gxGpu)
 	, inputController(memory, input, systemController)
 {
@@ -67,6 +67,9 @@ void Machine::runDeviceService(uint8_t deviceKind) {
 			return;
 		case DEVICE_SERVICE_GPU:
 			gxGpu.onService(nowCycles);
+			return;
+		case DEVICE_SERVICE_GTE:
+			gxGte.onService();
 			return;
 		case DEVICE_SERVICE_SYSTEM:
 			systemController.onService();

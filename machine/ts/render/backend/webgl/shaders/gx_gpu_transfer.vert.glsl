@@ -1,12 +1,13 @@
 #version 300 es
 precision highp float;
+precision highp int;
 
 in vec2 a_position;
 in vec2 a_sourceOffset;
-out vec2 v_sourceOffset;
+flat out ivec2 v_sourceOffset;
 
 void main() {
-	vec2 clip = vec2((a_position.x / 512.0) - 1.0, 1.0 - (a_position.y / 256.0));
+	vec2 clip = vec2((a_position.x / 512.0) - 1.0, (a_position.y / 512.0) - 1.0);
 	gl_Position = vec4(clip, 0.0, 1.0);
-	v_sourceOffset = a_sourceOffset;
+	v_sourceOffset = ivec2(a_sourceOffset);
 }

@@ -328,6 +328,7 @@ add_library(bmsx_core STATIC
 	machine/memory/memory.cpp
 	machine/memory/map.cpp
 	machine/devices/gx/gpu.cpp
+	machine/devices/gx/gpu_pcrtc.cpp
 	machine/devices/gx/gpu_command_timing.cpp
 	machine/devices/gx/vram_power_on.cpp
 	machine/devices/gx/gte.cpp

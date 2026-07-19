@@ -1,5 +1,5 @@
 local gx_gpu<const> = require('system/gx_gpu')
-gx_gpu.reset_320x240_pal()
+gx_gpu.reset_320x240()
 require('cartlib/prelude')
 local pietsona_font<const> = require('pietsona_font')
 pietsona_font.register_fonts()

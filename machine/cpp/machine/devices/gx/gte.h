@@ -8,9 +8,37 @@
 namespace bmsx {
 
 class Memory;
+class CPU;
+class DeviceScheduler;
 
 constexpr size_t GX_GTE_DATA_REGISTER_COUNT = 32;
 constexpr size_t GX_GTE_CONTROL_REGISTER_COUNT = 32;
+constexpr size_t GX_GTE_PLUS_REGISTER_COUNT = 10;
+
+constexpr u32 GX_GTE_PLUS_ADD_XY = 0u;
+constexpr u32 GX_GTE_PLUS_ADD_Z = 1u;
+constexpr u32 GX_GTE_PLUS_MUL_XY = 2u;
+constexpr u32 GX_GTE_PLUS_MUL_Z = 3u;
+constexpr u32 GX_GTE_PLUS_SCALAR = 4u;
+constexpr u32 GX_GTE_PLUS_RESULT_XY = 5u;
+constexpr u32 GX_GTE_PLUS_RESULT_Z = 6u;
+constexpr u32 GX_GTE_PLUS_FLAG = 7u;
+constexpr u32 GX_GTE_PLUS_COMMAND = 8u;
+constexpr u32 GX_GTE_PLUS_CYCLES = 9u;
+
+constexpr u32 GX_GTE_PLUS_FN_VMAD3 = 0x01u;
+constexpr u32 GX_GTE_PLUS_CYCLES_INVALID = 1u;
+constexpr u32 GX_GTE_PLUS_CYCLES_VMAD3 = 5u;
+constexpr u32 GX_GTE_PLUS_CYCLES_BUSY = 0x80000000u;
+
+constexpr u32 GX_GTE_PLUS_FLAG_ERROR = 0x80000000u;
+constexpr u32 GX_GTE_PLUS_FLAG_X_POS = 0x40000000u;
+constexpr u32 GX_GTE_PLUS_FLAG_Y_POS = 0x20000000u;
+constexpr u32 GX_GTE_PLUS_FLAG_Z_POS = 0x10000000u;
+constexpr u32 GX_GTE_PLUS_FLAG_X_NEG = 0x08000000u;
+constexpr u32 GX_GTE_PLUS_FLAG_Y_NEG = 0x04000000u;
+constexpr u32 GX_GTE_PLUS_FLAG_Z_NEG = 0x02000000u;
+constexpr u32 GX_GTE_PLUS_FLAG_INVALID_COMMAND = 0x01000000u;
 
 constexpr u32 GX_GTE_FN_RTPS = 0x01u;
 constexpr u32 GX_GTE_FN_NCLIP = 0x06u;
@@ -84,29 +112,37 @@ constexpr u32 GX_GTE_FLAG_ERROR_MASK = 0x7f87e000u;
 struct GxGteState {
 	std::array<u32, GX_GTE_DATA_REGISTER_COUNT> dataRegisterWords{};
 	std::array<u32, GX_GTE_CONTROL_REGISTER_COUNT> controlRegisterWords{};
+	std::array<u32, GX_GTE_PLUS_REGISTER_COUNT> plusRegisterWords{};
 	i64 mac0 = 0;
 	i64 mac1 = 0;
 	i64 mac2 = 0;
 	i64 mac3 = 0;
 	u32 currentSf = 0;
 	u32 lastCycles = 0;
+	u32 plusPendingCycles = 0;
+	bool plusInterlockArmed = false;
+	u32 plusPendingResultXy = 0;
+	u32 plusPendingResultZ = 0;
+	u32 plusPendingFlag = 0;
 };
 
 class GxGte {
 public:
-	explicit GxGte(Memory& memory);
+	GxGte(Memory& memory, CPU& cpu, DeviceScheduler& scheduler);
 	void reset();
+	void onService();
 	u32 readDataRegister(u32 index) const;
 	void writeDataRegister(u32 index, u32 value);
 	u32 readControlRegister(u32 index) const;
 	void writeControlRegister(u32 index, u32 value);
 	u32 execute(u32 opcode);
-	GxGteState captureState() const;
+	GxGteState captureState();
 	void restoreState(const GxGteState& state);
 
 private:
 	std::array<u32, GX_GTE_DATA_REGISTER_COUNT> m_dataRegisterWords{};
 	std::array<u32, GX_GTE_CONTROL_REGISTER_COUNT> m_controlRegisterWords{};
+	std::array<u32, GX_GTE_PLUS_REGISTER_COUNT> m_plusRegisterWords{};
 	i64 m_mac0 = 0;
 	i64 m_mac1 = 0;
 	i64 m_mac2 = 0;
@@ -115,8 +151,15 @@ private:
 	bool m_accumPositiveOverflow = false;
 	bool m_accumNegativeOverflow = false;
 	Memory& m_memory;
+	CPU& m_cpu;
+	DeviceScheduler& m_scheduler;
 	u32 m_currentSf = 0;
 	u32 m_lastCycles = 0;
+	i64 m_plusCompletionCycle = 0;
+	bool m_plusInterlockServiceScheduled = false;
+	u32 m_plusPendingResultXy = 0;
+	u32 m_plusPendingResultZ = 0;
+	u32 m_plusPendingFlag = 0;
 
 	void setFlag(u32 flag);
 	static u32 withFlagError(u32 flag);
@@ -200,6 +243,13 @@ private:
 	static void writeControlRegisterThunk(void* context, u32 addr, u64 value, MappedBusSignals busSignals);
 	static void writeCommandThunk(void* context, u32 addr, u64 value, MappedBusSignals busSignals);
 	static u64 readCyclesThunk(void* context, u32 addr, MappedBusSignals busSignals);
+	static u64 readPlusRegisterThunk(void* context, u32 addr, MappedBusSignals busSignals);
+	static void writePlusRegisterThunk(void* context, u32 addr, u64 value, MappedBusSignals busSignals);
+	static bool plusCommandWriteReadyThunk(void* context, u32 addr);
+	void synchronizePlusCompletion();
+	void publishPlusCompletion();
+	void startPlusCommand(u32 commandWord);
+	i32 executePlusVmadLane(i32 addend, i32 multiplicand, i32 scalar, u32 positiveFlag, u32 negativeFlag);
 };
 
 } // namespace bmsx

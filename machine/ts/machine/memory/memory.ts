@@ -97,6 +97,8 @@ export type MemoryInit = {
 	cartRom: Uint8Array;
 };
 
+export const NO_BLOCKED_MAPPED_WRITE = 0xffffffff;
+
 export class Memory {
 	private readonly systemRom: Uint8Array;
 	private readonly cartRom: Uint8Array;
@@ -168,6 +170,23 @@ export class Memory {
 		if (slot < 0) return true;
 		const handler = this.ioWriteReadyHandlers[slot];
 		return handler === null || handler(this.ioWriteContexts[slot], addr);
+	}
+
+	public firstBlockedMappedWordWrite(addr: number, wordCount: number): number {
+		if (wordCount === 0) return NO_BLOCKED_MAPPED_WRITE;
+		const lastAddress = addr + (wordCount - 1) * IO_WORD_SIZE;
+		const ioEnd = IO_BASE + this.ioByteLength;
+		if (lastAddress < IO_BASE || addr >= ioEnd) return NO_BLOCKED_MAPPED_WRITE;
+		let writeAddress = addr < IO_BASE ? IO_BASE : addr;
+		while (writeAddress <= lastAddress && writeAddress < ioEnd) {
+			const slot = (writeAddress - IO_BASE) / IO_WORD_SIZE;
+			const handler = this.ioWriteReadyHandlers[slot];
+			if (handler !== null && !handler(this.ioWriteContexts[slot], writeAddress)) {
+				return writeAddress;
+			}
+			writeAddress += IO_WORD_SIZE;
+		}
+		return NO_BLOCKED_MAPPED_WRITE;
 	}
 
 	public readBusFaultSequence(): number {

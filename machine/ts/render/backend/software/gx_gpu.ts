@@ -1,7 +1,7 @@
 import type { GxGpuPipelineState } from '../backend';
 import type { GxGpu } from '../../../machine/devices/gx/gpu';
 import type { GxGpuCommandBufferView, GxGpuReadbackPortView } from '../../../machine/devices/gx/gpu_command_buffer';
-import { GX_GPU_VRAM_WIDTH, gxGpuVramYAddress, gxGpuVramYBankInstalled } from '../../../machine/devices/gx/vram_address';
+import { GX_GPU_VRAM_WIDTH, gxGpuVramYAddress } from '../../../machine/devices/gx/vram_address';
 import { executeGxGpuSoftwareCommands } from './gx_gpu_commands';
 import { scanoutGxGpuSoftwareVram } from './gx_gpu_scanout';
 import { GX_GPU_SOFTWARE_VRAM_WORDS, gxGpuSoftwareVram, loadGxGpuSoftwareVramBytes } from './gx_gpu_vram';
@@ -36,11 +36,6 @@ export function executeGxGpuSoftwareVramCommands(source: GxGpuSoftwareVramSource
 		let pixel = 0;
 		for (let row = 0; row < readback.height; row += 1) {
 			const y = gxGpuVramYAddress(readback.y + row, readback.vramYAddressExtensionWord);
-			if (!gxGpuVramYBankInstalled(y)) {
-				readback.pixelBytes.fill(0, pixel * 2, (pixel + readback.width) * 2);
-				pixel += readback.width;
-				continue;
-			}
 			for (let column = 0; column < readback.width; column += 1) {
 				const x = (readback.x + column) & (GX_GPU_VRAM_WIDTH - 1);
 				const word = gxGpuSoftwareVram[y * GX_GPU_VRAM_WIDTH + x]!;
@@ -53,7 +48,7 @@ export function executeGxGpuSoftwareVramCommands(source: GxGpuSoftwareVramSource
 	}
 }
 
-export function renderGxGpuSoftwareFrame(state: GxGpuPipelineState, target: Uint8Array): void {
+export function renderGxGpuSoftwareFrame(state: GxGpuPipelineState, target: Uint32Array): void {
 	executeGxGpuSoftwareVramCommands(state, state.commandBuffer.presentCommandCount);
 	scanoutGxGpuSoftwareVram(state, target);
 }
