@@ -21,12 +21,6 @@ fn rawWordAtAddress(address: u32) -> u32 {
 	return lowByte | (highByte << 8u);
 }
 
-fn rawByteAtAddress(address: u32) -> u32 {
-	let wrappedAddress = address & 0x1fffffu;
-	let word = rawWordAtAddress(wrappedAddress >> 1u);
-	return select(word & 0xffu, word >> 8u, (wrappedAddress & 1u) != 0u);
-}
-
 fn rgb555Pixel(word: u32) -> vec4<u32> {
 	let color5 = vec3<u32>(word & 0x1fu, (word >> 5u) & 0x1fu, (word >> 10u) & 0x1fu);
 	let rgb8 = color5 * vec3<u32>(8u) + color5 / vec3<u32>(4u);
@@ -82,10 +76,8 @@ fn localMemoryAddress16(baseWord: u32, pagesPerRow: u32, x: u32, y: u32, signedB
 	return (baseWord + (page << 12u) + (block << 7u) + localMemoryColumn16(pageX, pageY)) & 0xfffffu;
 }
 
-fn localMemoryByteAddressGpu24(baseWord: u32, pagesPerRow: u32, pixelX: u32, y: u32, channel: u32) -> u32 {
-	let logicalByte = pixelX * 3u + channel;
-	let wordAddress = localMemoryAddress16(baseWord, pagesPerRow, logicalByte >> 1u, y, false);
-	return ((wordAddress << 1u) | (logicalByte & 1u)) & 0x1fffffu;
+fn localMemoryAddressGpu24(baseWord: u32, pagesPerRow: u32, pixelX: u32, y: u32, word: u32) -> u32 {
+	return localMemoryAddress16(baseWord, pagesPerRow, ((pixelX * 3u) >> 1u) + word, y, false);
 }
 
 fn circuitContainsOutput(display: vec4<u32>, extent: vec4<u32>, outputX: u32, outputY: u32) -> bool {
@@ -117,18 +109,20 @@ fn circuitPixel(
 		let alpha = select(128u, high >> 8u, framebuffer.z == 0u);
 		return vec4<u32>(low & 0xffu, low >> 8u, high & 0xffu, alpha);
 	}
-	if (framebuffer.z == 2u || framebuffer.z == 10u) {
-		let address = localMemoryAddress16(framebuffer.x, pagesPerRow, sourceX, sourceY, framebuffer.z == 10u);
+	if (framebuffer.z == 2u || framebuffer.z == 3u) {
+		let address = localMemoryAddress16(framebuffer.x, pagesPerRow, sourceX, sourceY, framebuffer.z == 3u);
 		return rgb555Pixel(rawWordAtAddress(address));
 	}
-	if (framebuffer.z == 18u) {
-		return vec4<u32>(
-			rawByteAtAddress(localMemoryByteAddressGpu24(framebuffer.x, pagesPerRow, sourceX, sourceY, 0u)),
-			rawByteAtAddress(localMemoryByteAddressGpu24(framebuffer.x, pagesPerRow, sourceX, sourceY, 1u)),
-			rawByteAtAddress(localMemoryByteAddressGpu24(framebuffer.x, pagesPerRow, sourceX, sourceY, 2u)),
-			128u);
+	if (framebuffer.z == 4u) {
+		let first = rawWordAtAddress(localMemoryAddressGpu24(framebuffer.x, pagesPerRow, sourceX, sourceY, 0u));
+		let second = rawWordAtAddress(localMemoryAddressGpu24(framebuffer.x, pagesPerRow, sourceX, sourceY, 1u));
+		let rgb = select(
+			first | ((second & 0xffu) << 16u),
+			(first >> 8u) | (second << 8u),
+			(sourceX & 1u) != 0u);
+		return vec4<u32>(rgb & 0xffu, (rgb >> 8u) & 0xffu, (rgb >> 16u) & 0xffu, 128u);
 	}
-	if (framebuffer.z == 31u) {
+	if (framebuffer.z == 5u) {
 		return rgb555Pixel(rawWordAtAddress(framebuffer.x + sourceY * framebuffer.y + sourceX));
 	}
 	return vec4<u32>(0u);
@@ -151,11 +145,17 @@ fn circuitPixelGx16(
 }
 
 fn mergedPixel(outputX: u32, outputY: u32) -> vec4<u32> {
-	var under = vec4<u32>(u.pcrtc[1].yzw, u.pcrtc[2].z);
+	var under = vec4<u32>(u.pcrtc[1].yzw, 0u);
 	let circuit2ContainsOutput = u.pcrtc[0].y != 0u
 		&& circuitContainsOutput(u.pcrtc[8], u.pcrtc[9], outputX, outputY);
 	if (circuit2ContainsOutput) {
-		under = circuitPixel(u.pcrtc[7], u.pcrtc[8], u.pcrtc[9], u.pcrtc[10], outputX, outputY);
+		let circuit2 = circuitPixel(u.pcrtc[7], u.pcrtc[8], u.pcrtc[9], u.pcrtc[10], outputX, outputY);
+		if (u.pcrtc[2].y != 0u) {
+			under = vec4<u32>(circuit2.rgb, under.a);
+		}
+		if (u.pcrtc[0].w != 0u) {
+			under.a = circuit2.a;
+		}
 	}
 	if (u.pcrtc[0].x == 0u || !circuitContainsOutput(u.pcrtc[4], u.pcrtc[5], outputX, outputY)) {
 		return under;
@@ -167,7 +167,7 @@ fn mergedPixel(outputX: u32, outputY: u32) -> vec4<u32> {
 	}
 	let inverseAlpha = 255u - alpha;
 	let rgb = (circuit1.rgb * vec3<u32>(alpha) + under.rgb * vec3<u32>(inverseAlpha) + vec3<u32>(127u)) / vec3<u32>(255u);
-	return vec4<u32>(rgb, select(alpha, under.a, u.pcrtc[0].w != 0u));
+	return vec4<u32>(rgb, select(circuit1.a, under.a, u.pcrtc[0].w != 0u));
 }
 
 fn outputPixel(outputX: u32, outputY: u32) -> vec4<f32> {
@@ -175,11 +175,17 @@ fn outputPixel(outputX: u32, outputY: u32) -> vec4<f32> {
 }
 
 fn mergedPixelGx16(outputX: u32, outputY: u32, sourceRowShift: u32) -> vec4<u32> {
-	var under = vec4<u32>(u.pcrtc[1].yzw, u.pcrtc[2].z);
+	var under = vec4<u32>(u.pcrtc[1].yzw, 0u);
 	let circuit2ContainsOutput = u.pcrtc[0].y != 0u
 		&& circuitContainsOutput(u.pcrtc[8], u.pcrtc[9], outputX, outputY);
 	if (circuit2ContainsOutput) {
-		under = circuitPixelGx16(u.pcrtc[7], u.pcrtc[8], u.pcrtc[9], u.pcrtc[10], outputX, outputY, sourceRowShift);
+		let circuit2 = circuitPixelGx16(u.pcrtc[7], u.pcrtc[8], u.pcrtc[9], u.pcrtc[10], outputX, outputY, sourceRowShift);
+		if (u.pcrtc[2].y != 0u) {
+			under = vec4<u32>(circuit2.rgb, under.a);
+		}
+		if (u.pcrtc[0].w != 0u) {
+			under.a = circuit2.a;
+		}
 	}
 	if (u.pcrtc[0].x == 0u || !circuitContainsOutput(u.pcrtc[4], u.pcrtc[5], outputX, outputY)) {
 		return under;
@@ -191,7 +197,7 @@ fn mergedPixelGx16(outputX: u32, outputY: u32, sourceRowShift: u32) -> vec4<u32>
 	}
 	let inverseAlpha = 255u - alpha;
 	let rgb = (circuit1.rgb * vec3<u32>(alpha) + under.rgb * vec3<u32>(inverseAlpha) + vec3<u32>(127u)) / vec3<u32>(255u);
-	return vec4<u32>(rgb, select(alpha, under.a, u.pcrtc[0].w != 0u));
+	return vec4<u32>(rgb, select(circuit1.a, under.a, u.pcrtc[0].w != 0u));
 }
 
 fn outputPixelGx16(outputX: u32, outputY: u32, sourceRowShift: u32) -> vec4<f32> {
@@ -199,8 +205,7 @@ fn outputPixelGx16(outputX: u32, outputY: u32, sourceRowShift: u32) -> vec4<f32>
 }
 
 fn outputPixelGx16Direct(outputX: u32, outputY: u32, sourceRowShift: u32) -> vec4<f32> {
-	let circuit1 = circuitPixelGx16(u.pcrtc[3], u.pcrtc[4], u.pcrtc[5], u.pcrtc[6], outputX, outputY, sourceRowShift);
-	return vec4<f32>(vec4<u32>(circuit1.rgb, 255u)) / 255.0;
+	return vec4<f32>(circuitPixelGx16(u.pcrtc[3], u.pcrtc[4], u.pcrtc[5], u.pcrtc[6], outputX, outputY, sourceRowShift)) / 255.0;
 }
 
 @fragment

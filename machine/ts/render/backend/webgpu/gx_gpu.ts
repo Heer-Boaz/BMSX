@@ -2119,24 +2119,24 @@ function completeGxGpuReadback(): void {
 }
 
 function writeGxGpuScanoutUniforms(scanout: GxGpuPcrtcScanout): void {
-	scanoutUniformScratch[0] = scanout.circuits[0].enabled ? 1 : 0;
-	scanoutUniformScratch[1] = scanout.circuit2SampleRequired ? 1 : 0;
-	scanoutUniformScratch[2] = scanout.blendAlphaFromRegister ? 1 : 0;
-	scanoutUniformScratch[3] = scanout.preserveUnderlayAlpha ? 1 : 0;
+	scanoutUniformScratch[0] = scanout.circuits[0].enabled;
+	scanoutUniformScratch[1] = scanout.circuit2SampleRequired;
+	scanoutUniformScratch[2] = scanout.blendAlphaFromRegister;
+	scanoutUniformScratch[3] = scanout.outputAlphaFromCircuit2;
 	scanoutUniformScratch[4] = scanout.outputHeight;
 	scanoutUniformScratch[5] = scanout.backgroundColor & 0xff;
 	scanoutUniformScratch[6] = scanout.backgroundColor >>> 8 & 0xff;
 	scanoutUniformScratch[7] = scanout.backgroundColor >>> 16 & 0xff;
 	scanoutUniformScratch[8] = scanout.blendAlpha;
-	scanoutUniformScratch[9] = 0;
-	scanoutUniformScratch[10] = scanout.backgroundColor >>> 24;
+	scanoutUniformScratch[9] = scanout.rgbUnderlayFromCircuit2;
+	scanoutUniformScratch[10] = 0;
 	scanoutUniformScratch[11] = 0;
 	for (let circuit = 0; circuit < 2; circuit += 1) {
 		const offset = 12 + circuit * 16;
 		const scanoutCircuit = scanout.circuits[circuit]!;
 		scanoutUniformScratch[offset] = scanoutCircuit.framebufferBaseWord;
 		scanoutUniformScratch[offset + 1] = scanoutCircuit.framebufferWidth;
-		scanoutUniformScratch[offset + 2] = scanoutCircuit.framebufferPsm;
+		scanoutUniformScratch[offset + 2] = scanoutCircuit.framebufferStoragePath;
 		scanoutUniformScratch[offset + 3] = scanoutCircuit.framebufferX;
 		scanoutUniformScratch[offset + 4] = scanoutCircuit.framebufferY;
 		scanoutUniformScratch[offset + 5] = scanoutCircuit.displayX;

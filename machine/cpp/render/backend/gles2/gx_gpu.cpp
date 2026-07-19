@@ -3076,24 +3076,24 @@ size_t flushTexturedCommands(const GxGpuCommandBuffer& commandBuffer, size_t ver
 }
 
 void writeGxGpuScanoutPcrtcUniforms(const GxGpuPcrtcScanout& scanout) {
-	g_scanoutPcrtcUniforms[0] = scanout.circuits[0u].enabled ? 1 : 0;
-	g_scanoutPcrtcUniforms[1] = scanout.circuit2SampleRequired ? 1 : 0;
-	g_scanoutPcrtcUniforms[2] = scanout.blendAlphaFromRegister ? 1 : 0;
-	g_scanoutPcrtcUniforms[3] = scanout.preserveUnderlayAlpha ? 1 : 0;
+	g_scanoutPcrtcUniforms[0] = static_cast<GLint>(scanout.circuits[0u].enabled);
+	g_scanoutPcrtcUniforms[1] = static_cast<GLint>(scanout.circuit2SampleRequired);
+	g_scanoutPcrtcUniforms[2] = static_cast<GLint>(scanout.blendAlphaFromRegister);
+	g_scanoutPcrtcUniforms[3] = static_cast<GLint>(scanout.outputAlphaFromCircuit2);
 	g_scanoutPcrtcUniforms[4] = static_cast<GLint>(scanout.outputHeight);
 	g_scanoutPcrtcUniforms[5] = static_cast<GLint>(scanout.backgroundColor & 0xffu);
 	g_scanoutPcrtcUniforms[6] = static_cast<GLint>((scanout.backgroundColor >> 8u) & 0xffu);
 	g_scanoutPcrtcUniforms[7] = static_cast<GLint>((scanout.backgroundColor >> 16u) & 0xffu);
 	g_scanoutPcrtcUniforms[8] = static_cast<GLint>(scanout.blendAlpha);
-	g_scanoutPcrtcUniforms[9] = 0;
-	g_scanoutPcrtcUniforms[10] = static_cast<GLint>(scanout.backgroundColor >> 24u);
+	g_scanoutPcrtcUniforms[9] = static_cast<GLint>(scanout.rgbUnderlayFromCircuit2);
+	g_scanoutPcrtcUniforms[10] = 0;
 	g_scanoutPcrtcUniforms[11] = 0;
 	for (u32 circuit = 0u; circuit < 2u; circuit += 1u) {
 		const size_t offset = 12u + static_cast<size_t>(circuit) * 16u;
 		const GxGpuPcrtcCircuit& scanoutCircuit = scanout.circuits[circuit];
 		g_scanoutPcrtcUniforms[offset] = static_cast<GLint>(scanoutCircuit.framebufferBaseWord);
 		g_scanoutPcrtcUniforms[offset + 1u] = static_cast<GLint>(scanoutCircuit.framebufferWidth);
-		g_scanoutPcrtcUniforms[offset + 2u] = static_cast<GLint>(scanoutCircuit.framebufferPsm);
+		g_scanoutPcrtcUniforms[offset + 2u] = static_cast<GLint>(scanoutCircuit.framebufferStoragePath);
 		g_scanoutPcrtcUniforms[offset + 3u] = static_cast<GLint>(scanoutCircuit.framebufferX);
 		g_scanoutPcrtcUniforms[offset + 4u] = static_cast<GLint>(scanoutCircuit.framebufferY);
 		g_scanoutPcrtcUniforms[offset + 5u] = static_cast<GLint>(scanoutCircuit.displayX);

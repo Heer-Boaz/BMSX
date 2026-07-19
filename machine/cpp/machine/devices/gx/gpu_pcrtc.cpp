@@ -51,6 +51,18 @@ constexpr u32 sourceDivisionMultiplier(u32 divisor) {
 	return (PCRTC_SOURCE_DIVISION_SCALE + divisor - 1u) / divisor;
 }
 
+constexpr u32 framebufferStoragePath(u32 psm, u32 circuit) {
+	switch (psm) {
+	case GX_GPU_PSMCT32: return GX_GPU_PCRTC_STORAGE_CT32;
+	case GX_GPU_PSMCT24: return GX_GPU_PCRTC_STORAGE_CT24;
+	case GX_GPU_PSMCT16: return GX_GPU_PCRTC_STORAGE_CT16;
+	case GX_GPU_PSMCT16S: return GX_GPU_PCRTC_STORAGE_CT16S;
+	case GX_GPU_PSGPU24: return circuit == 0u ? GX_GPU_PCRTC_STORAGE_GPU24 : GX_GPU_PCRTC_STORAGE_ZERO;
+	case GX_GPU_PSMGX16: return GX_GPU_PCRTC_STORAGE_GX16;
+	default: return GX_GPU_PCRTC_STORAGE_ZERO;
+	}
+}
+
 constexpr bool isBeamTimingWord(u32 index) {
 	return index == GX_GPU_PCRTC_SMODE1_LOW
 		|| index == GX_GPU_PCRTC_SMODE1_HIGH
@@ -123,11 +135,12 @@ void GxGpuPcrtcScanout::update(
 		const u32 dispFbLow = words[dispFbLowIndex];
 		const u32 dispFbHigh = words[dispFbLowIndex + 1u];
 		const u32 displayLow = words[displayLowIndex];
-		circuit.enabled = (pmode & (1u << index)) != 0u;
+		circuit.enabled = (pmode >> index) & 1u;
 		circuit.framebufferBaseWord = (dispFbLow & 0x1ffu) << 12u;
 		circuit.framebufferWidth = ((dispFbLow >> 9u) & 0x3fu) * 64u;
 		circuit.framebufferPagesPerRow = (dispFbLow >> 9u) & 0x3fu;
 		circuit.framebufferPsm = (dispFbLow >> 15u) & 0x1fu;
+		circuit.framebufferStoragePath = framebufferStoragePath(circuit.framebufferPsm, index);
 		circuit.framebufferX = dispFbHigh & 0x7ffu;
 		circuit.framebufferY = (dispFbHigh >> 11u) & 0x7ffu;
 		circuit.displaySignalX = displayLow & 0xfffu;
@@ -188,11 +201,15 @@ void GxGpuPcrtcScanout::update(
 			&& signalStepX == circuit.magnificationX
 			&& circuit.magnificationY == 1u;
 	}
+	backgroundColor = words[GX_GPU_PCRTC_BGCOLOR_LOW] & 0x00ffffffu;
 	blendAlpha = (pmode >> GX_GPU_PCRTC_PMODE_ALP_SHIFT) & 0xffu;
-	backgroundColor = (words[GX_GPU_PCRTC_BGCOLOR_LOW] & 0x00ffffffu) | (blendAlpha << 24u);
-	blendAlphaFromRegister = (pmode & GX_GPU_PCRTC_PMODE_MMOD) != 0u;
-	preserveUnderlayAlpha = (pmode & GX_GPU_PCRTC_PMODE_AMOD) != 0u;
-	circuit2SampleRequired = circuit2.enabled && (pmode & GX_GPU_PCRTC_PMODE_SLBG) == 0u;
+	blendAlphaFromRegister = (pmode >> GX_GPU_PCRTC_PMODE_MMOD_SHIFT) & 1u;
+	outputAlphaFromCircuit2 = (pmode >> GX_GPU_PCRTC_PMODE_AMOD_SHIFT) & 1u;
+	outputCircuit2AlphaMask = (0u - outputAlphaFromCircuit2) & 0xff000000u;
+	outputCircuit1AlphaMask = outputCircuit2AlphaMask ^ 0xff000000u;
+	rgbUnderlayFromCircuit2 = circuit2.enabled
+		* (((pmode >> GX_GPU_PCRTC_PMODE_SLBG_SHIFT) & 1u) ^ 1u);
+	circuit2SampleRequired = circuit2.enabled * (rgbUnderlayFromCircuit2 | outputAlphaFromCircuit2);
 	interlaced = (smode2 & GX_GPU_PCRTC_SMODE2_INT) != 0u;
 	frameMode = interlaced && (smode2 & GX_GPU_PCRTC_SMODE2_FFMD) != 0u;
 	for (GxGpuPcrtcCircuit& circuit : circuits) {
@@ -216,14 +233,14 @@ void GxGpuPcrtcScanout::update(
 		&& circuit2.displayBottom >= outputHeight;
 	if (circuit1.enabled
 		&& circuit1.linearSampling
-		&& circuit1.framebufferPsm == GX_GPU_PSMGX16
+		&& circuit1.framebufferStoragePath == GX_GPU_PCRTC_STORAGE_GX16
 		&& blendAlphaFromRegister
 		&& blendAlpha == 255u
-		&& !preserveUnderlayAlpha
+		&& !outputAlphaFromCircuit2
 		&& circuit1CoversOutput) {
 		compositionPath = GX_GPU_PCRTC_COMPOSE_GX16_DIRECT_CIRCUIT1;
-	} else if ((!circuit1.enabled || (circuit1.linearSampling && circuit1.framebufferPsm == GX_GPU_PSMGX16))
-		&& (!circuit2SampleRequired || (circuit2.linearSampling && circuit2.framebufferPsm == GX_GPU_PSMGX16))) {
+	} else if ((!circuit1.enabled || (circuit1.linearSampling && circuit1.framebufferStoragePath == GX_GPU_PCRTC_STORAGE_GX16))
+		&& (!circuit2SampleRequired || (circuit2.linearSampling && circuit2.framebufferStoragePath == GX_GPU_PCRTC_STORAGE_GX16))) {
 		compositionPath = GX_GPU_PCRTC_COMPOSE_GX16;
 	} else {
 		compositionPath = GX_GPU_PCRTC_COMPOSE_GENERIC;

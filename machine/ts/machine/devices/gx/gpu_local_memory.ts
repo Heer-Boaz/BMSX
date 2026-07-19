@@ -1,4 +1,4 @@
-import { GX_GPU_VRAM_BYTE_COUNT, GX_GPU_VRAM_WORD_COUNT } from './vram_address';
+import { GX_GPU_VRAM_WORD_COUNT } from './vram_address';
 
 export const GX_GPU_PSMCT32 = 0;
 export const GX_GPU_PSMCT24 = 1;
@@ -8,7 +8,6 @@ export const GX_GPU_PSGPU24 = 18;
 export const GX_GPU_PSMGX16 = 31;
 
 const GX_GPU_VRAM_WORD_MASK = GX_GPU_VRAM_WORD_COUNT - 1;
-const GX_GPU_VRAM_BYTE_MASK = GX_GPU_VRAM_BYTE_COUNT - 1;
 
 export function gxGpuLocalMemoryAddress32(
 	baseWord: number,
@@ -90,14 +89,12 @@ export function gxGpuLocalMemoryAddressGx16(
 	return (baseWord + y * framebufferWidth + x) & GX_GPU_VRAM_WORD_MASK;
 }
 
-export function gxGpuLocalMemoryByteAddressGpu24(
+export function gxGpuLocalMemoryAddressGpu24(
 	baseWord: number,
 	pagesPerRow: number,
 	pixelX: number,
 	y: number,
-	channel: number,
+	word: number,
 ): number {
-	const logicalByte = pixelX * 3 + channel;
-	const wordAddress = gxGpuLocalMemoryAddress16(baseWord, pagesPerRow, logicalByte >>> 1, y);
-	return ((wordAddress << 1) | (logicalByte & 1)) & GX_GPU_VRAM_BYTE_MASK;
+	return gxGpuLocalMemoryAddress16(baseWord, pagesPerRow, (pixelX * 3 >>> 1) + word, y);
 }

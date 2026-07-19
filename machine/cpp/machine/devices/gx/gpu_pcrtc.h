@@ -39,9 +39,12 @@ constexpr u32 GX_GPU_PCRTC_IMR_HIGH = 25u;
 
 constexpr u32 GX_GPU_PCRTC_PMODE_EN1 = 1u << 0u;
 constexpr u32 GX_GPU_PCRTC_PMODE_EN2 = 1u << 1u;
-constexpr u32 GX_GPU_PCRTC_PMODE_MMOD = 1u << 5u;
-constexpr u32 GX_GPU_PCRTC_PMODE_AMOD = 1u << 6u;
-constexpr u32 GX_GPU_PCRTC_PMODE_SLBG = 1u << 7u;
+constexpr u32 GX_GPU_PCRTC_PMODE_MMOD_SHIFT = 5u;
+constexpr u32 GX_GPU_PCRTC_PMODE_AMOD_SHIFT = 6u;
+constexpr u32 GX_GPU_PCRTC_PMODE_SLBG_SHIFT = 7u;
+constexpr u32 GX_GPU_PCRTC_PMODE_MMOD = 1u << GX_GPU_PCRTC_PMODE_MMOD_SHIFT;
+constexpr u32 GX_GPU_PCRTC_PMODE_AMOD = 1u << GX_GPU_PCRTC_PMODE_AMOD_SHIFT;
+constexpr u32 GX_GPU_PCRTC_PMODE_SLBG = 1u << GX_GPU_PCRTC_PMODE_SLBG_SHIFT;
 constexpr u32 GX_GPU_PCRTC_PMODE_ALP_SHIFT = 8u;
 constexpr u32 GX_GPU_PCRTC_SMODE1_PRST = 1u << 16u;
 constexpr u32 GX_GPU_PCRTC_SMODE1_SINT = 1u << 17u;
@@ -63,6 +66,15 @@ constexpr u32 GX_GPU_PCRTC_IMR_FIXED_BITS = 0x6000u;
 constexpr u32 GX_GPU_PCRTC_COMPOSE_GENERIC = 0u;
 constexpr u32 GX_GPU_PCRTC_COMPOSE_GX16 = 1u;
 constexpr u32 GX_GPU_PCRTC_COMPOSE_GX16_DIRECT_CIRCUIT1 = 2u;
+
+constexpr u32 GX_GPU_PCRTC_STORAGE_CT32 = 0u;
+constexpr u32 GX_GPU_PCRTC_STORAGE_CT24 = 1u;
+constexpr u32 GX_GPU_PCRTC_STORAGE_CT16 = 2u;
+constexpr u32 GX_GPU_PCRTC_STORAGE_CT16S = 3u;
+constexpr u32 GX_GPU_PCRTC_STORAGE_GPU24 = 4u;
+constexpr u32 GX_GPU_PCRTC_STORAGE_GX16 = 5u;
+constexpr u32 GX_GPU_PCRTC_STORAGE_ZERO = 6u;
+constexpr u32 GX_GPU_PCRTC_STORAGE_COUNT = 7u;
 
 constexpr u32 GX_GPU_PCRTC_RESET_DISPFB_LOW = (16u << 9u) | (GX_GPU_PSMGX16 << 15u);
 constexpr u32 GX_GPU_PCRTC_RESET_DISPLAY_LOW = 0x018252a8u;
@@ -96,11 +108,12 @@ struct GxGpuPcrtcState {
 };
 
 struct GxGpuPcrtcCircuit {
-	bool enabled = false;
+	u32 enabled = 0u;
 	u32 framebufferBaseWord = 0u;
 	u32 framebufferWidth = 0u;
 	u32 framebufferPagesPerRow = 0u;
 	u32 framebufferPsm = 0u;
+	u32 framebufferStoragePath = GX_GPU_PCRTC_STORAGE_CT32;
 	u32 framebufferX = 0u;
 	u32 framebufferY = 0u;
 	u32 displayX = 0u;
@@ -147,9 +160,12 @@ struct GxGpuPcrtcScanout {
 	std::array<GxGpuPcrtcCircuit, 2u> circuits{};
 	u32 backgroundColor = 0u;
 	u32 blendAlpha = 0u;
-	bool blendAlphaFromRegister = false;
-	bool preserveUnderlayAlpha = false;
-	bool circuit2SampleRequired = false;
+	u32 blendAlphaFromRegister = 0u;
+	u32 outputAlphaFromCircuit2 = 0u;
+	u32 outputCircuit1AlphaMask = 0xff000000u;
+	u32 outputCircuit2AlphaMask = 0u;
+	u32 rgbUnderlayFromCircuit2 = 0u;
+	u32 circuit2SampleRequired = 0u;
 	bool circuit2CoversOutput = false;
 	bool interlaced = false;
 	bool frameMode = false;

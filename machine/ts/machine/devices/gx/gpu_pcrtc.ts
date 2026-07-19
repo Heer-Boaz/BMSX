@@ -6,7 +6,14 @@ import {
 } from '../../bus/io';
 import { multiplyHighU32 } from '../../common/numeric';
 import { IO_WORD_SIZE } from '../../memory/map';
-import { GX_GPU_PSMGX16 } from './gpu_local_memory';
+import {
+	GX_GPU_PSGPU24,
+	GX_GPU_PSMCT16,
+	GX_GPU_PSMCT16S,
+	GX_GPU_PSMCT24,
+	GX_GPU_PSMCT32,
+	GX_GPU_PSMGX16,
+} from './gpu_local_memory';
 
 export const GX_GPU_PCRTC_WORD_COUNT = IO_GX_PCRTC_WORD_COUNT + IO_GX_PCRTC_TIMING_WORD_COUNT;
 export const GX_GPU_PCRTC_CONFIG_WORD_COUNT = 22;
@@ -40,9 +47,12 @@ export const GX_GPU_PCRTC_IMR_HIGH = 25;
 
 export const GX_GPU_PCRTC_PMODE_EN1 = 1 << 0;
 export const GX_GPU_PCRTC_PMODE_EN2 = 1 << 1;
-export const GX_GPU_PCRTC_PMODE_MMOD = 1 << 5;
-export const GX_GPU_PCRTC_PMODE_AMOD = 1 << 6;
-export const GX_GPU_PCRTC_PMODE_SLBG = 1 << 7;
+export const GX_GPU_PCRTC_PMODE_MMOD_SHIFT = 5;
+export const GX_GPU_PCRTC_PMODE_AMOD_SHIFT = 6;
+export const GX_GPU_PCRTC_PMODE_SLBG_SHIFT = 7;
+export const GX_GPU_PCRTC_PMODE_MMOD = 1 << GX_GPU_PCRTC_PMODE_MMOD_SHIFT;
+export const GX_GPU_PCRTC_PMODE_AMOD = 1 << GX_GPU_PCRTC_PMODE_AMOD_SHIFT;
+export const GX_GPU_PCRTC_PMODE_SLBG = 1 << GX_GPU_PCRTC_PMODE_SLBG_SHIFT;
 export const GX_GPU_PCRTC_PMODE_ALP_SHIFT = 8;
 export const GX_GPU_PCRTC_SMODE1_PRST = 1 << 16;
 export const GX_GPU_PCRTC_SMODE1_SINT = 1 << 17;
@@ -64,6 +74,15 @@ export const GX_GPU_PCRTC_IMR_FIXED_BITS = 0x6000;
 export const GX_GPU_PCRTC_COMPOSE_GENERIC = 0;
 export const GX_GPU_PCRTC_COMPOSE_GX16 = 1;
 export const GX_GPU_PCRTC_COMPOSE_GX16_DIRECT_CIRCUIT1 = 2;
+
+export const GX_GPU_PCRTC_STORAGE_CT32 = 0;
+export const GX_GPU_PCRTC_STORAGE_CT24 = 1;
+export const GX_GPU_PCRTC_STORAGE_CT16 = 2;
+export const GX_GPU_PCRTC_STORAGE_CT16S = 3;
+export const GX_GPU_PCRTC_STORAGE_GPU24 = 4;
+export const GX_GPU_PCRTC_STORAGE_GX16 = 5;
+export const GX_GPU_PCRTC_STORAGE_ZERO = 6;
+export const GX_GPU_PCRTC_STORAGE_COUNT = 7;
 
 export const GX_GPU_PCRTC_RESET_DISPFB_LOW = (16 << 9) | (GX_GPU_PSMGX16 << 15);
 export const GX_GPU_PCRTC_RESET_DISPLAY_LOW = 0x018252a8;
@@ -110,11 +129,12 @@ export type GxGpuPcrtcState = {
 };
 
 export type GxGpuPcrtcCircuit = {
-	enabled: boolean;
+	enabled: number;
 	framebufferBaseWord: number;
 	framebufferWidth: number;
 	framebufferPagesPerRow: number;
 	framebufferPsm: number;
+	framebufferStoragePath: number;
 	framebufferX: number;
 	framebufferY: number;
 	displayX: number;
@@ -174,13 +194,26 @@ function circuitDisplayLowIndex(circuit: number): number {
 	return circuit === 0 ? GX_GPU_PCRTC_DISPLAY1_LOW : GX_GPU_PCRTC_DISPLAY2_LOW;
 }
 
+function framebufferStoragePath(psm: number, circuit: number): number {
+	switch (psm) {
+		case GX_GPU_PSMCT32: return GX_GPU_PCRTC_STORAGE_CT32;
+		case GX_GPU_PSMCT24: return GX_GPU_PCRTC_STORAGE_CT24;
+		case GX_GPU_PSMCT16: return GX_GPU_PCRTC_STORAGE_CT16;
+		case GX_GPU_PSMCT16S: return GX_GPU_PCRTC_STORAGE_CT16S;
+		case GX_GPU_PSGPU24: return circuit === 0 ? GX_GPU_PCRTC_STORAGE_GPU24 : GX_GPU_PCRTC_STORAGE_ZERO;
+		case GX_GPU_PSMGX16: return GX_GPU_PCRTC_STORAGE_GX16;
+		default: return GX_GPU_PCRTC_STORAGE_ZERO;
+	}
+}
+
 function createCircuit(): GxGpuPcrtcCircuit {
 	return {
-		enabled: false,
+		enabled: 0,
 		framebufferBaseWord: 0,
 		framebufferWidth: 0,
 		framebufferPagesPerRow: 0,
 		framebufferPsm: 0,
+		framebufferStoragePath: GX_GPU_PCRTC_STORAGE_CT32,
 		framebufferX: 0,
 		framebufferY: 0,
 		displayX: 0,
@@ -284,9 +317,12 @@ export class GxGpuPcrtcScanout {
 	public readonly circuits: [GxGpuPcrtcCircuit, GxGpuPcrtcCircuit] = [createCircuit(), createCircuit()];
 	public backgroundColor = 0;
 	public blendAlpha = 0;
-	public blendAlphaFromRegister = false;
-	public preserveUnderlayAlpha = false;
-	public circuit2SampleRequired = false;
+	public blendAlphaFromRegister = 0;
+	public outputAlphaFromCircuit2 = 0;
+	public outputCircuit1AlphaMask = 0xff000000;
+	public outputCircuit2AlphaMask = 0;
+	public rgbUnderlayFromCircuit2 = 0;
+	public circuit2SampleRequired = 0;
 	public circuit2CoversOutput = false;
 	public interlaced = false;
 	public frameMode = false;
@@ -317,11 +353,12 @@ export class GxGpuPcrtcScanout {
 			const dispFbLow = words[dispFbLowIndex]!;
 			const dispFbHigh = words[dispFbLowIndex + 1]!;
 			const displayLow = words[displayLowIndex]!;
-			circuit.enabled = (pmode & (1 << index)) !== 0;
+			circuit.enabled = pmode >>> index & 1;
 			circuit.framebufferBaseWord = (dispFbLow & 0x1ff) << 12;
 			circuit.framebufferWidth = ((dispFbLow >>> 9) & 0x3f) * 64;
 			circuit.framebufferPagesPerRow = (dispFbLow >>> 9) & 0x3f;
 			circuit.framebufferPsm = (dispFbLow >>> 15) & 0x1f;
+			circuit.framebufferStoragePath = framebufferStoragePath(circuit.framebufferPsm, index);
 			circuit.framebufferX = dispFbHigh & 0x7ff;
 			circuit.framebufferY = (dispFbHigh >>> 11) & 0x7ff;
 			circuit.displaySignalX = displayLow & 0xfff;
@@ -387,12 +424,16 @@ export class GxGpuPcrtcScanout {
 				&& signalStepX === circuit.magnificationX
 				&& circuit.magnificationY === 1;
 		}
+		this.backgroundColor = words[GX_GPU_PCRTC_BGCOLOR_LOW]! & 0x00ffffff;
 		this.blendAlpha = (pmode >>> GX_GPU_PCRTC_PMODE_ALP_SHIFT) & 0xff;
-		this.backgroundColor = (words[GX_GPU_PCRTC_BGCOLOR_LOW]! & 0x00ffffff)
-			| (this.blendAlpha << 24);
-		this.blendAlphaFromRegister = (pmode & GX_GPU_PCRTC_PMODE_MMOD) !== 0;
-		this.preserveUnderlayAlpha = (pmode & GX_GPU_PCRTC_PMODE_AMOD) !== 0;
-		this.circuit2SampleRequired = circuit2.enabled && (pmode & GX_GPU_PCRTC_PMODE_SLBG) === 0;
+		this.blendAlphaFromRegister = pmode >>> GX_GPU_PCRTC_PMODE_MMOD_SHIFT & 1;
+		this.outputAlphaFromCircuit2 = pmode >>> GX_GPU_PCRTC_PMODE_AMOD_SHIFT & 1;
+		this.outputCircuit2AlphaMask = ((0 - this.outputAlphaFromCircuit2) & 0xff000000) >>> 0;
+		this.outputCircuit1AlphaMask = (this.outputCircuit2AlphaMask ^ 0xff000000) >>> 0;
+		this.rgbUnderlayFromCircuit2 = circuit2.enabled
+			* ((pmode >>> GX_GPU_PCRTC_PMODE_SLBG_SHIFT & 1) ^ 1);
+		this.circuit2SampleRequired = circuit2.enabled
+			* (this.rgbUnderlayFromCircuit2 | this.outputAlphaFromCircuit2);
 		this.interlaced = (smode2 & GX_GPU_PCRTC_SMODE2_INT) !== 0;
 		this.frameMode = this.interlaced && (smode2 & GX_GPU_PCRTC_SMODE2_FFMD) !== 0;
 		for (const circuit of this.circuits) {
@@ -418,14 +459,14 @@ export class GxGpuPcrtcScanout {
 			&& circuit2.displayBottom >= this.outputHeight;
 		if (circuit1.enabled
 			&& circuit1.linearSampling
-			&& circuit1.framebufferPsm === GX_GPU_PSMGX16
+			&& circuit1.framebufferStoragePath === GX_GPU_PCRTC_STORAGE_GX16
 			&& this.blendAlphaFromRegister
 			&& this.blendAlpha === 255
-			&& !this.preserveUnderlayAlpha
+			&& !this.outputAlphaFromCircuit2
 			&& circuit1CoversOutput) {
 			this.compositionPath = GX_GPU_PCRTC_COMPOSE_GX16_DIRECT_CIRCUIT1;
-		} else if ((!circuit1.enabled || circuit1.linearSampling && circuit1.framebufferPsm === GX_GPU_PSMGX16)
-			&& (!this.circuit2SampleRequired || circuit2.linearSampling && circuit2.framebufferPsm === GX_GPU_PSMGX16)) {
+		} else if ((!circuit1.enabled || circuit1.linearSampling && circuit1.framebufferStoragePath === GX_GPU_PCRTC_STORAGE_GX16)
+			&& (!this.circuit2SampleRequired || circuit2.linearSampling && circuit2.framebufferStoragePath === GX_GPU_PCRTC_STORAGE_GX16)) {
 			this.compositionPath = GX_GPU_PCRTC_COMPOSE_GX16;
 		} else {
 			this.compositionPath = GX_GPU_PCRTC_COMPOSE_GENERIC;

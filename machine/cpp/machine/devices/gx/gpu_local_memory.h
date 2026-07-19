@@ -13,7 +13,6 @@ constexpr u32 GX_GPU_PSMGX16 = 31u;
 
 namespace detail {
 constexpr u32 GX_GPU_VRAM_WORD_MASK = static_cast<u32>(GX_GPU_VRAM_WORD_COUNT - 1u);
-constexpr u32 GX_GPU_VRAM_BYTE_MASK = static_cast<u32>(GX_GPU_VRAM_BYTE_COUNT - 1u);
 } // namespace detail
 
 inline u32 gxGpuLocalMemoryAddress32(u32 baseWord, u32 pagesPerRow, u32 x, u32 y) {
@@ -80,10 +79,8 @@ inline u32 gxGpuLocalMemoryAddressGx16(u32 baseWord, u32 framebufferWidth, u32 x
 	return (baseWord + y * framebufferWidth + x) & detail::GX_GPU_VRAM_WORD_MASK;
 }
 
-inline u32 gxGpuLocalMemoryByteAddressGpu24(u32 baseWord, u32 pagesPerRow, u32 pixelX, u32 y, u32 channel) {
-	const u32 logicalByte = pixelX * 3u + channel;
-	const u32 wordAddress = gxGpuLocalMemoryAddress16(baseWord, pagesPerRow, logicalByte >> 1u, y);
-	return ((wordAddress << 1u) | (logicalByte & 1u)) & detail::GX_GPU_VRAM_BYTE_MASK;
+inline u32 gxGpuLocalMemoryAddressGpu24(u32 baseWord, u32 pagesPerRow, u32 pixelX, u32 y, u32 word) {
+	return gxGpuLocalMemoryAddress16(baseWord, pagesPerRow, ((pixelX * 3u) >> 1u) + word, y);
 }
 
 } // namespace bmsx

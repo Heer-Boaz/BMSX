@@ -2571,24 +2571,24 @@ function flushTexturedCommands(commandBuffer: GxGpuCommandBufferView, vertexFloa
 }
 
 function writeGxGpuScanoutPcrtcUniforms(scanout: GxGpuPcrtcScanout): void {
-	gxGpuScanoutPcrtcUniforms[0] = scanout.circuits[0].enabled ? 1 : 0;
-	gxGpuScanoutPcrtcUniforms[1] = scanout.circuit2SampleRequired ? 1 : 0;
-	gxGpuScanoutPcrtcUniforms[2] = scanout.blendAlphaFromRegister ? 1 : 0;
-	gxGpuScanoutPcrtcUniforms[3] = scanout.preserveUnderlayAlpha ? 1 : 0;
+	gxGpuScanoutPcrtcUniforms[0] = scanout.circuits[0].enabled;
+	gxGpuScanoutPcrtcUniforms[1] = scanout.circuit2SampleRequired;
+	gxGpuScanoutPcrtcUniforms[2] = scanout.blendAlphaFromRegister;
+	gxGpuScanoutPcrtcUniforms[3] = scanout.outputAlphaFromCircuit2;
 	gxGpuScanoutPcrtcUniforms[4] = scanout.outputHeight;
 	gxGpuScanoutPcrtcUniforms[5] = scanout.backgroundColor & 0xff;
 	gxGpuScanoutPcrtcUniforms[6] = scanout.backgroundColor >>> 8 & 0xff;
 	gxGpuScanoutPcrtcUniforms[7] = scanout.backgroundColor >>> 16 & 0xff;
 	gxGpuScanoutPcrtcUniforms[8] = scanout.blendAlpha;
-	gxGpuScanoutPcrtcUniforms[9] = 0;
-	gxGpuScanoutPcrtcUniforms[10] = scanout.backgroundColor >>> 24;
+	gxGpuScanoutPcrtcUniforms[9] = scanout.rgbUnderlayFromCircuit2;
+	gxGpuScanoutPcrtcUniforms[10] = 0;
 	gxGpuScanoutPcrtcUniforms[11] = 0;
 	for (let circuit = 0; circuit < 2; circuit += 1) {
 		const offset = 12 + circuit * 16;
 		const scanoutCircuit = scanout.circuits[circuit]!;
 		gxGpuScanoutPcrtcUniforms[offset] = scanoutCircuit.framebufferBaseWord;
 		gxGpuScanoutPcrtcUniforms[offset + 1] = scanoutCircuit.framebufferWidth;
-		gxGpuScanoutPcrtcUniforms[offset + 2] = scanoutCircuit.framebufferPsm;
+		gxGpuScanoutPcrtcUniforms[offset + 2] = scanoutCircuit.framebufferStoragePath;
 		gxGpuScanoutPcrtcUniforms[offset + 3] = scanoutCircuit.framebufferX;
 		gxGpuScanoutPcrtcUniforms[offset + 4] = scanoutCircuit.framebufferY;
 		gxGpuScanoutPcrtcUniforms[offset + 5] = scanoutCircuit.displayX;
