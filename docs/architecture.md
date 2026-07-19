@@ -2221,8 +2221,9 @@ Render-visible GX changes keep TS headless and C++ software/headless execution
 green, run the same raw conformance vectors against both software owners, and
 keep WebGL2/GLES2 command behavior synchronized. Live accelerated proof is a
 separate gate: browser or frontend captures must exercise consecutive frames
-through the real backend and cannot be replaced by software parity, a black WSL
-swapchain, sparse screenshots or a hidden compositor window.
+through the real backend and cannot be replaced by software parity, a WSL
+browser without a usable WebGL2/WebGPU context, sparse screenshots or a hidden
+compositor window.
 
 Performance attribution uses fixed, allocation-free owner probes and external
 heap traces, not timing or stack anecdotes. Comparative runs keep the ROMs,

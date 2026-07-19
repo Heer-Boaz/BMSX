@@ -32,8 +32,9 @@ architecture with the Lua CPU and its own native GTE+ and GPU. That end state is
 recorded in `docs/architecture.md`. The selected GPU-side foundation now has
 the complete uniform 2 MiB VRAM address space (`GX-VRAM-02`) and the exact PS2
 PCRTC dual read-output/merge block (`GX-PCRTC-01`). Its physical beam,
-independent machine clock and context ownership are implemented; renewed broad
-runtime gates and visible WebGL2/WebGPU acceptance remain open. Packed
+independent machine clock and context ownership are implemented; the renewed
+local runtime gates are accepted, two bounded accelerated-state review findings
+remain, and visible WebGL2/WebGPU proof is a separate deferred host gate. Packed
 `PSGPU24` now follows the GS PSMCT16 swizzle rather than a fabricated linear
 row stride. `BSX-GTE-01` closes the separately
 addressed three-lane fixed-Q12 `VMAD3` implementation. Later depth, local-memory
@@ -964,8 +965,26 @@ to fix and never permission to route around the raw base contract.
   absent and the replacement opaque row kernel fell from 171.806 to 111.751 ms
   self.
   All 146 `bare_metal_cart` TS/C++ parity captures remained byte-identical;
-  `bare_metal_cart`, `2025`, and `pietious` frame gates retained their exact
-  accepted metrics.
+  the current `bare_metal_cart` and `pietious` gates remain green and the `2025`
+  transition sequence remains green. Its separate visual-fades analyzer rejects
+  capture 2 identically on parent `35e7485cc`, so that existing failure is not
+  attributed to this slice.
+- [x] Retain device-quantization data at the presentation owner. Generated TS/C++
+  lookup words replace repeated per-pixel quantization arithmetic, accelerated
+  backends retain their LUT resources and sampler bindings for the pipeline
+  lifetime, and mode changes select already-produced state instead of rebuilding
+  it. The mirrored LUT/lifecycle vectors, software/headless output, real GLES2,
+  C++ suite and independent fixed-commit review are green.
+- [x] Collapse the nearest-sampled CRT kernel without changing its image. The
+  exact half-pixel 5x5 binomial footprint has only nine unique source texels, so
+  both software owners and all three shader sources now use its phase-selected
+  3x3 weights and reuse the center sample. The normal shader path falls from 29
+  to 11 texture fetches per fragment and software from 28 to 11 samples per
+  pixel; source texel state, scanline parity and noise-line state are retained at
+  their owners instead of recomputed per sample. Before/after TS-software and
+  real GLES2 captures are byte-identical, the focused/broad runtime gates retain
+  their accepted output, and independent review of commit `a8de26b6e` found no
+  correctness or performance blocker.
 - [ ] Keep WebGL2/GLES2 behavior synchronized for every new GX command.
 - [ ] Wire the existing TS/C++ software/headless renderer to the same GX/PSX
   contract as oracle/backend, not as a fallback inside GPU backends.
@@ -1032,9 +1051,17 @@ merge model rather than a terminal-shaped approximation.
   escapes the 256x192 circuit rectangle. Mirrored raw hardware vectors exercise
   both circuits and the same `PMODE` merge independently of supervisor mode;
   ordinary firmware carts follow the circuit-2 reservation.
+- [ ] Close the two bounded findings from the final accelerated-state rereview.
+  GLES2 must retain distinct uploaded circuit words when both circuits select
+  the same scanout sample program, and WebGL2/GLES2 must publish the PCRTC blend
+  constant only when their real backend-state owner requires it rather than on
+  every matching draw. This is performance cleanup; current terminal pixels and
+  machine behavior are already exact.
 - [ ] Complete the visible `BIOS-TERM-LIVE-01` WebGL2/WebGPU acceptance run
-  outside the WSL black-swapchain environment. This is a live-backend proof,
-  not missing PCRTC machine or backend implementation.
+  on a host that exposes both browser GPU APIs. Edge in the current WSL
+  environment exposes neither usable WebGL2 nor WebGPU and is not a validation
+  route. This is a deferred live-backend proof, not missing PCRTC machine or
+  backend implementation.
 
 ### 6. VDP/RPU removal
 
@@ -1131,10 +1158,11 @@ merge model rather than a terminal-shaped approximation.
 - [x] Fixed WebGPU GX backend command-encoder resource ownership so each
   recorded VRAM render pass reads the vertex/uniform slice it was recorded
   with. The WebGPU backend no longer overwrites one shared uniform/vertex buffer
-  slot repeatedly before submitting the encoder for a frame. WebGL fallback
-  browser captures for `bare_metal_cart` and `2025` are coherent; WSL/headless
-  Edge cannot visually validate WebGPU because its swapchain/shared-image path
-  returns black frames, so live WebGPU still needs a real browser check.
+  slot repeatedly before submitting the encoder for a frame. Build, shader
+  parity and non-browser backend proof do not constitute a browser run. Edge in
+  the current WSL environment exposes neither a usable WebGL2 nor WebGPU context,
+  so it is not a live validation route; both browser backends still need a real
+  browser/GPU host.
 - [x] Keep the current raw GX/GTE carousel as the `bare_metal_cart` coverage
   owner. Do not recreate the rejected historical free-fly/side-camera behavior.
 - [x] Replace remaining cart graphics programming with PSX-style GPU/GTE
@@ -1180,21 +1208,25 @@ terminal remains BIOS firmware throughout.
 Pick one vertical slice and finish it before committing:
 
 `GX-VRAM-02` and `BSX-GTE-01` are complete and are no longer selectable
-implementation slices. Finish the active `GX-PCRTC-01` address/parity gates
-before selecting another graphics design slice.
+implementation slices. `GX-PCRTC-01` has completed its machine, terminal and
+local runtime gates, but remains open for the two bounded backend-state findings
+above. The unavailable WSL browser contexts do not keep PCRTC machine work open;
+visible browser proof remains in the separate deferred live slices.
 
-1. **Finish `GX-PCRTC-01`**: rerun TS/C++ plus `bare_metal_cart`, `2025`,
-   `pietious` and BIOS monitor conformance, and obtain the mandatory independent
-   whole-diff review. Visible browser proof remains deferred when no real
-   accelerated session exists.
-2. **Two-slot expansion bus (`CART-EXP-01`)**: specify and implement the physical
+1. **Finish the `GX-PCRTC-01` state-cache rereview findings** without changing
+   pixels, machine state or the accepted terminal contract.
+2. **Continue `PERF-RUNTIME-01` by measured owner**: select one bounded hot-path
+   owner from a profile or direct repeated-work audit, correct it in all mirrored
+   consumers, prove exact output, review the immutable commit, then freeze it
+   before selecting the next owner.
+3. **Two-slot expansion bus (`CART-EXP-01`)**: specify and implement the physical
    slot/bus/save-state boundary before any terminal command extension.
-3. **Terminal extension and developer cart (`BIOS-TERM-EXT-01`)**: add the BIOS
+4. **Terminal extension and developer cart (`BIOS-TERM-EXT-01`)**: add the BIOS
    `CALL` dispatcher over the reviewed cartridge ABI, then move developer
    functionality into cart Lua backed by real extension hardware.
-4. **Visible GX migration regressions**: finish live host-UI and accelerated
+5. **Visible GX migration regressions**: finish live host-UI and accelerated
    browser scanout proof when a real browser is available.
-5. **Accelerated feedback performance**: run the frontend-resolved NV barrier
+6. **Accelerated feedback performance**: run the frontend-resolved NV barrier
    path in the real Windows RetroArch context. If that concrete context does not
    expose NV texture barrier, measure its actual extensions and ordering before
    choosing another GPU feedback mechanism; do not infer one from the GPU name
