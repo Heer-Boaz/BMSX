@@ -1273,8 +1273,8 @@ size_t appendTexturedRectangle(const GxGpuCommandBuffer& commandBuffer, u32 comm
 	const u32 drawModeWord = commandBuffer.commandDrawModeWord[commandIndex];
 	const bool xFlip = gxGpuDrawModeTextureRectangleXFlip(drawModeWord);
 	const bool yFlip = gxGpuDrawModeTextureRectangleYFlip(drawModeWord);
-	const i32 u0 = static_cast<i32>(gxGpuTextureU(textureWord)) + (xFlip ? 1 : 0);
-	const i32 v0 = static_cast<i32>(gxGpuTextureV(textureWord)) + (yFlip ? 1 : 0);
+	const i32 u0 = static_cast<i32>(gxGpuTextureU(textureWord));
+	const i32 v0 = static_cast<i32>(gxGpuTextureV(textureWord));
 	const i32 u1 = u0 + (xFlip ? -static_cast<i32>(rect.width) : static_cast<i32>(rect.width));
 	const i32 v1 = v0 + (yFlip ? -static_cast<i32>(rect.height) : static_cast<i32>(rect.height));
 	const i64 determinant = static_cast<i64>(rect.width) * static_cast<i64>(rect.height);

@@ -1259,8 +1259,8 @@ function appendTexturedRectangle(commandBuffer: GxGpuCommandBufferView, commandI
 	const drawModeWord = commandBuffer.commandDrawModeWord[commandIndex];
 	const xFlip = gxGpuDrawModeTextureRectangleXFlip(drawModeWord);
 	const yFlip = gxGpuDrawModeTextureRectangleYFlip(drawModeWord);
-	const u0 = gxGpuTextureU(textureWord) + (xFlip ? 1 : 0);
-	const v0 = gxGpuTextureV(textureWord) + (yFlip ? 1 : 0);
+	const u0 = gxGpuTextureU(textureWord);
+	const v0 = gxGpuTextureV(textureWord);
 	const u1 = u0 + (xFlip ? -rect.width : rect.width);
 	const v1 = v0 + (yFlip ? -rect.height : rect.height);
 	const determinant = rect.width * rect.height;
