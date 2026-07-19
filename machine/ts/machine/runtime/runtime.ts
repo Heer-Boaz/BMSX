@@ -5,6 +5,7 @@ import type { RuntimeOptions } from './options';
 import { addTrackedLuaHeapBytes, configureLuaHeapUsage, getTrackedLuaHeapBytes, resetTrackedLuaHeapBytes } from '../memory/lua_heap_usage';
 import { FrameLoopState } from './frame/loop';
 import { FrameSchedulerState } from '../scheduler/frame';
+import { DEVICE_SERVICE_GPU } from '../scheduler/device';
 import { TimingState } from './timing/state';
 import { VblankState } from './vblank';
 import { advanceRuntimeTime, CpuExecutionState, runDueRuntimeTimers } from './cpu_executor';
@@ -12,11 +13,9 @@ import { HostFaultState } from './host_fault';
 import { LuaScratchState } from '../program/scratch';
 import type { ProgramImage, ProgramVectorTable } from '../program/loader';
 import { inflateExecutableProgramImage, type LinkedBootProgramImage } from '../program/linker';
-import { getPsxGpuDisplayModeTimingForWord } from '../model_registry';
 import { refreshDeviceTimings } from './timing/config';
 import { HZ_SCALE } from './timing/constants';
-import { calcCyclesPerFrameScaled, resolveVblankCycles } from './timing';
-import { GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD, gxGpuVerticalVisibleLines } from '../devices/gx/gpu_display';
+import type { GxGpuPcrtcTiming } from '../devices/gx/gpu_pcrtc';
 import { GX_GPU_VRAM_BYTE_COUNT } from '../devices/gx/vram_address';
 import { IO_GX_GPU_GP1, IO_SYS_CYCLES_PER_FRAME, IO_SYS_FRAME_MS, IO_SYS_PRINT_CHAR, IO_SYS_PRINT_FLUSH, IO_SYS_TIME_MS } from '../bus/io';
 import { Machine } from '../machine';
@@ -138,6 +137,8 @@ export class Runtime {
 		this.machine.resetDevices();
 		this.vblank.reset();
 		refreshDeviceTimings(this, this.machine.scheduler.nowCycles);
+		this.machine.runDeviceService(DEVICE_SERVICE_GPU);
+		this.applyPublishedGxGpuPcrtcTiming(this.machine.gxGpu.readDeviceOutput().pcrtcTiming);
 	}
 
 	public resetRuntimeForProgramReload(): void {
@@ -357,16 +358,15 @@ export class Runtime {
 		this.cpuExecution = new CpuExecutionState(this);
 		this.hostFault = new HostFaultState(this);
 		this.timing = new TimingState(
+			options.pcrtcRunning,
 			options.ufpsScaled,
 			options.cpuHz,
 			options.cycleBudgetPerFrame,
-			options.psxGpuDisplayModeWord,
-			GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD,
-			getPsxGpuDisplayModeTimingForWord(options.psxGpuDisplayModeWord).totalScanlines,
+			options.totalHalfLines,
+			options.activeDisplayHalfLines,
 			options.dmaWordsPerSec,
 			options.geoWorkUnitsPerSec,
 		);
-		this.input.setRuntimeInputFrameDurationMs(this.timing.frameDurationMs);
 		this.machine = new Machine(
 			options.memory,
 			input,
@@ -380,10 +380,10 @@ export class Runtime {
 		this.machine.memory.mapIoWrite(IO_SYS_PRINT_FLUSH, this, Runtime.onLuaOutputFlushWriteThunk);
 		this.machine.initializeSystemIo();
 		this.machine.resetDevices();
-		this.machine.gxGpu.writeDisplayModeWord(this.timing.gpuDisplayModeWord);
-		configureLuaHeapUsage(this, Runtime.getBaseRamUsedBytesThunk, Runtime.collectTrackedHeapBytesThunk);
 		refreshDeviceTimings(this, this.machine.scheduler.currentNowCycles());
-		this.vblank.setVblankCycles(options.vblankCycles);
+		this.machine.runDeviceService(DEVICE_SERVICE_GPU);
+		this.applyPublishedGxGpuPcrtcTiming(this.machine.gxGpu.readDeviceOutput().pcrtcTiming);
+		configureLuaHeapUsage(this, Runtime.getBaseRamUsedBytesThunk, Runtime.collectTrackedHeapBytesThunk);
 	}
 
 	public machineTimeMs(): number {
@@ -474,25 +474,30 @@ export class Runtime {
 		this.input.setRuntimeInputFrameDurationMs(timing.frameDurationMs);
 	}
 
-	public applyPublishedPsxGpuDisplayTiming(displayModeWord: number, verticalDisplayRangeWord: number): void {
+	public applyPublishedGxGpuPcrtcTiming(pcrtcTiming: GxGpuPcrtcTiming): void {
 		const timing = this.timing;
-		if (timing.gpuDisplayModeWord === displayModeWord
-			&& timing.gpuVerticalDisplayRangeWord === verticalDisplayRangeWord) {
+		if (timing.pcrtcRevision === pcrtcTiming.revision
+			&& timing.pcrtcRunning === pcrtcTiming.running
+			&& timing.ufpsScaled === pcrtcTiming.refreshUfpsScaled
+			&& timing.cycleBudgetPerFrame === pcrtcTiming.nextVblankCycleBudget
+			&& timing.totalHalfLines === pcrtcTiming.totalHalfLines
+			&& timing.activeDisplayHalfLines === pcrtcTiming.activeDisplayHalfLines) {
 			return;
 		}
-		const displayModeTiming = getPsxGpuDisplayModeTimingForWord(displayModeWord);
-		const refreshUfpsScaled = displayModeTiming.refreshUfpsScaled;
-		const cycleBudgetPerFrame = calcCyclesPerFrameScaled(timing.cpuHz, refreshUfpsScaled);
-		const activeDisplayLines = gxGpuVerticalVisibleLines(verticalDisplayRangeWord, displayModeWord);
-		timing.gpuDisplayModeWord = displayModeWord;
-		timing.gpuVerticalDisplayRangeWord = verticalDisplayRangeWord;
-		timing.totalScanlines = displayModeTiming.totalScanlines;
-		timing.cycleBudgetPerFrame = cycleBudgetPerFrame;
-		this.applyUfpsScaled(refreshUfpsScaled);
-		this.vblank.setNextFrameTiming(
-			cycleBudgetPerFrame,
-			resolveVblankCycles(timing.cpuHz, refreshUfpsScaled, displayModeTiming.totalScanlines, activeDisplayLines),
-		);
+		timing.pcrtcRevision = pcrtcTiming.revision;
+		timing.pcrtcRunning = pcrtcTiming.running;
+		timing.totalHalfLines = pcrtcTiming.totalHalfLines;
+		timing.activeDisplayHalfLines = pcrtcTiming.activeDisplayHalfLines;
+		if (!pcrtcTiming.running) {
+			timing.ufpsScaled = 0;
+			timing.ufps = 0;
+			timing.frameDurationMs = 0;
+			timing.cycleBudgetPerFrame = 0;
+			this.input.setRuntimeInputFrameDurationMs(0);
+			return;
+		}
+		timing.cycleBudgetPerFrame = pcrtcTiming.nextVblankCycleBudget;
+		this.applyUfpsScaled(pcrtcTiming.refreshUfpsScaled);
 	}
 
 	// disable-next-line single_line_method_pattern -- runtime string interning is the public CPU string-pool boundary.

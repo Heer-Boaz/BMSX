@@ -5,10 +5,10 @@ namespace bmsx {
 struct FrameState {
 	bool updateExecuted = false;
 	bool luaFaulted = false;
-	int cycleBudgetRemaining = 0;
-	int cycleBudgetGranted = 0;
-	int cycleCarryGranted = 0;
-	int activeCpuUsedCycles = 0;
+	i64 cycleBudgetRemaining = 0;
+	i64 cycleBudgetGranted = 0;
+	i64 cycleCarryGranted = 0;
+	i64 activeCpuUsedCycles = 0;
 };
 
 } // namespace bmsx

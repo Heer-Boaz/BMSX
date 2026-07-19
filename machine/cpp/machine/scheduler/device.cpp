@@ -31,8 +31,6 @@ void DeviceScheduler::reset() {
 	m_activeSliceBaseCycle = 0;
 	m_activeSliceBudgetCycles = 0;
 	m_activeSliceTargetCycle = 0;
-	m_vblankEnterTimerGeneration = 0;
-	m_vblankEndTimerGeneration = 0;
 	m_deviceServiceTimerGeneration.fill(0);
 }
 
@@ -78,19 +76,6 @@ uint16_t DeviceScheduler::popDueTimer() {
 	return static_cast<uint16_t>((static_cast<uint16_t>(kind) << timerEventKindShift) | payload);
 }
 
-void DeviceScheduler::scheduleVblankTimer(uint8_t timerKind, i64 deadlineCycles) {
-	uint32_t generation;
-	if (timerKind == TIMER_KIND_VBLANK_BEGIN) {
-		generation = nextTimerGeneration(m_vblankEnterTimerGeneration);
-		m_vblankEnterTimerGeneration = generation;
-	} else {
-		generation = nextTimerGeneration(m_vblankEndTimerGeneration);
-		m_vblankEndTimerGeneration = generation;
-	}
-	pushTimer(deadlineCycles, timerKind, 0u, generation);
-	requestYieldForEarlierDeadline(deadlineCycles);
-}
-
 void DeviceScheduler::scheduleDeviceService(uint8_t deviceKind, i64 deadlineCycles) {
 	const uint32_t generation = nextTimerGeneration(m_deviceServiceTimerGeneration[deviceKind]);
 	m_deviceServiceTimerGeneration[deviceKind] = generation;
@@ -101,11 +86,6 @@ void DeviceScheduler::scheduleDeviceService(uint8_t deviceKind, i64 deadlineCycl
 void DeviceScheduler::cancelDeviceService(uint8_t deviceKind) {
 	uint32_t& generation = m_deviceServiceTimerGeneration[deviceKind];
 	generation = nextTimerGeneration(generation);
-}
-
-void DeviceScheduler::cancelVblankTimers() {
-	m_vblankEnterTimerGeneration = nextTimerGeneration(m_vblankEnterTimerGeneration);
-	m_vblankEndTimerGeneration = nextTimerGeneration(m_vblankEndTimerGeneration);
 }
 
 void DeviceScheduler::clearTimerHeap() {
@@ -180,10 +160,6 @@ void DeviceScheduler::removeTopTimer() {
 
 bool DeviceScheduler::isTimerCurrent(uint8_t kind, uint8_t payload, uint32_t generation) const {
 	switch (kind) {
-		case TIMER_KIND_VBLANK_BEGIN:
-			return generation == m_vblankEnterTimerGeneration;
-		case TIMER_KIND_VBLANK_END:
-			return generation == m_vblankEndTimerGeneration;
 		case TIMER_KIND_DEVICE_SERVICE:
 			return generation == m_deviceServiceTimerGeneration[payload];
 		default:

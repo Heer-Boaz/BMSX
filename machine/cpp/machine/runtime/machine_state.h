@@ -2,7 +2,6 @@
 
 #include "machine/save_state.h"
 #include "machine/scheduler/frame.h"
-#include "machine/runtime/vblank.h"
 #include <cstdint>
 
 namespace bmsx {
@@ -10,10 +9,9 @@ namespace bmsx {
 class Runtime;
 
 struct RuntimeMachineState {
-	uint32_t psxGpuDisplayModeWord;
 	MachineState machine;
 	FrameSchedulerStateSnapshot frameScheduler;
-	RuntimeVblankSnapshot vblank;
+	i64 schedulerNowCycles = 0;
 };
 
 RuntimeMachineState captureRuntimeMachineState(Runtime& runtime);

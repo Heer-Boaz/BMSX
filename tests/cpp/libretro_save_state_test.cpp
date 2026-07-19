@@ -188,7 +188,7 @@ void testLibretroSaveStateRoundTrip() {
 	require(std::equal(expectedVram.begin(), expectedVram.end(), restoredVram.begin()), "libretro loadState should restore GX-owned raw VRAM");
 	require(runtime.machine.gxGpu.readDisplayModeWord() == 0u, "libretro loadState should restore GX-GPU display mode word");
 	require((runtime.machine.gxGpu.readStatus() & bmsx::GX_GPU_STATUS_PAL_MODE) == 0u, "libretro loadState should restore GX-GPU GPUSTAT PAL bit");
-	require(runtime.timing.gpuDisplayModeWord == bmsx::GX_GPU_RESET_DISPLAY_MODE_WORD, "libretro loadState should derive runtime timing from the restored published GPU mode");
+	require(runtime.timing.pcrtcRevision == runtime.machine.gxGpu.readDeviceOutput().pcrtcTiming.revision, "libretro loadState should restore runtime timing from the physical PCRTC owner");
 	require(runtime.machine.irqController.hasAssertedMaskableInterruptLine(), "libretro loadState should restore asserted IRQ line state");
 	require((memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_VBLANK) != 0u, "libretro loadState should restore cart-visible IRQ flags");
 	require(memory.readIoU32(bmsx::IO_IRQ_MASK) == bmsx::IRQ_VBLANK, "libretro loadState should restore IRQ_MASK");
@@ -453,8 +453,8 @@ void testLibretroTracksPublishedNativeOutputGeometry() {
 	const uint32_t range212 = ((35u + 212u) << 10u) | 35u;
 	gpu.writeGp1((bmsx::GX_GPU_GP1_DISPLAY_MODE << 24u) | bmsx::PSX_GPU_DISPLAY_MODE_PAL_WORD);
 	gpu.writeGp1((bmsx::GX_GPU_GP1_VERTICAL_DISPLAY_RANGE << 24u) | range192);
-	memory.writeMappedU32LE(bmsx::IO_GX_PCRTC_BASE + bmsx::GX_GPU_PCRTC_DISPLAY1_HIGH * bmsx::IO_WORD_SIZE, 255u | (191u << 12u));
-	memory.writeMappedU32LE(bmsx::IO_GX_PCRTC_BASE + bmsx::GX_GPU_PCRTC_PMODE_LOW * bmsx::IO_WORD_SIZE, 0x0000ff21u);
+	memory.writeMappedU32LE(bmsx::gxGpuPcrtcRegisterAddress(bmsx::GX_GPU_PCRTC_DISPLAY1_HIGH), 1023u | (191u << 12u));
+	memory.writeMappedU32LE(bmsx::gxGpuPcrtcRegisterAddress(bmsx::GX_GPU_PCRTC_PMODE_LOW), 0x0000ff21u);
 	gpu.presentReadyFrameOnVblankEdge();
 	require(platform.runFrame(), "libretro paused frame should present the published 192-line output");
 	require(geometryChangeCount == 1u, "libretro should publish one geometry transition for 256x192");
@@ -477,10 +477,10 @@ void testLibretroTracksPublishedNativeOutputGeometry() {
 	require(platform.getFramebuffer().width == 256u && platform.getFramebuffer().height == 192u, "horizontal timing range must not resize the native framebuffer");
 
 	gpu.writeGp1((bmsx::GX_GPU_GP1_VERTICAL_DISPLAY_RANGE << 24u) | range212);
-	memory.writeMappedU32LE(bmsx::IO_GX_PCRTC_BASE + bmsx::GX_GPU_PCRTC_DISPLAY1_HIGH * bmsx::IO_WORD_SIZE, 255u | (211u << 12u));
+	memory.writeMappedU32LE(bmsx::gxGpuPcrtcRegisterAddress(bmsx::GX_GPU_PCRTC_DISPLAY1_HIGH), 1023u | (211u << 12u));
 	require(gpu.readVerticalDisplayRangeWord() == range212, "GX-GPU live vertical range should retain the pending 212-line write");
 	require(gpu.readDeviceOutput().verticalDisplayRangeWord == range192, "GX-GPU published output should retain 192 lines until the next vblank latch");
-	require(gpu.readDeviceOutput().pcrtcWords[bmsx::GX_GPU_PCRTC_DISPLAY1_HIGH] == (255u | (191u << 12u)), "GX-GPU published PCRTC output should retain 192 lines until the next vblank latch");
+	require(gpu.readDeviceOutput().pcrtcWords[bmsx::GX_GPU_PCRTC_DISPLAY1_HIGH] == (1023u | (191u << 12u)), "GX-GPU published PCRTC output should retain 192 lines until the next vblank latch");
 	const size_t stateSize = platform.getStateSize();
 	std::vector<bmsx::u8> saved(stateSize);
 	require(platform.saveState(saved.data(), saved.size()), "libretro should save pending live 212-line state with published 192-line output");
@@ -493,25 +493,16 @@ void testLibretroTracksPublishedNativeOutputGeometry() {
 	require(platform.loadState(saved.data(), saved.size()), "libretro should restore the published 192-line output state");
 	require(gpu.readVerticalDisplayRangeWord() == range212, "libretro state restore should preserve the pending live 212-line range");
 	require(gpu.readDeviceOutput().verticalDisplayRangeWord == range192, "libretro state restore should preserve the published 192-line range");
-	require(memory.readMappedU32LE(bmsx::IO_GX_PCRTC_BASE + bmsx::GX_GPU_PCRTC_DISPLAY1_HIGH * bmsx::IO_WORD_SIZE) == (255u | (211u << 12u)), "libretro state restore should preserve pending live PCRTC geometry");
-	require(gpu.readDeviceOutput().pcrtcWords[bmsx::GX_GPU_PCRTC_DISPLAY1_HIGH] == (255u | (191u << 12u)), "libretro state restore should preserve published PCRTC geometry");
-	require(runtime.timing.gpuVerticalDisplayRangeWord == range192, "libretro state restore should derive runtime timing from the restored published vertical range");
+	require(memory.readMappedU32LE(bmsx::gxGpuPcrtcRegisterAddress(bmsx::GX_GPU_PCRTC_DISPLAY1_HIGH)) == (1023u | (211u << 12u)), "libretro state restore should preserve pending live PCRTC geometry");
+	require(gpu.readDeviceOutput().pcrtcWords[bmsx::GX_GPU_PCRTC_DISPLAY1_HIGH] == (1023u | (191u << 12u)), "libretro state restore should preserve published PCRTC geometry");
+	require(runtime.timing.pcrtcRevision == gpu.readDeviceOutput().pcrtcTiming.revision, "libretro state restore should restore the physical PCRTC timing revision");
 	require(platform.runFrame(), "libretro paused frame should present restored 192-line output");
 	require(geometryChangeCount == 3u, "libretro restore should publish one transition to restored 256x192 geometry");
 	require(platform.getFramebuffer().width == 256u && platform.getFramebuffer().height == 192u, "libretro restore should resize the framebuffer to restored native geometry");
 	require(avInfo.geometry.base_width == 256u && avInfo.geometry.base_height == 192u, "libretro AV cache should track restored native geometry");
 }
 
-void testPublishedDisplayTimingAppliesAtFrameEnd() {
-	const bmsx::ResolvedRuntimeTiming pal240 = bmsx::resolveRuntimeTiming(5000000, bmsx::GX_GPU_RESET_DISPLAY_MODE_WORD);
-	const bmsx::ResolvedRuntimeTiming ntsc240 = bmsx::resolveRuntimeTiming(5000000, bmsx::GX_GPU_RESET_DISPLAY_MODE_WORD & ~bmsx::PSX_GPU_DISPLAY_MODE_PAL_BIT);
-	require(pal240.vblankCycles == 23323, "PAL 240-line mode should expose 23323 vblank cycles at 5MHz");
-	require(ntsc240.vblankCycles == 7005, "NTSC 240-line mode should expose 7005 vblank cycles at 5MHz");
-	require(bmsx::resolveVblankCycles(5000000, bmsx::PAL_REFRESH_UFPS_SCALED, bmsx::PAL_TOTAL_SCANLINES, 212) == 32269, "PAL 212-line mode should expose 32269 vblank cycles at 5MHz");
-	require(bmsx::resolveVblankCycles(5000000, bmsx::NTSC_REFRESH_UFPS_SCALED, bmsx::NTSC_TOTAL_SCANLINES, 212) == 15920, "NTSC 212-line mode should expose 15920 vblank cycles at 5MHz");
-	require(bmsx::resolveVblankCycles(5000000, bmsx::PAL_REFRESH_UFPS_SCALED, bmsx::PAL_TOTAL_SCANLINES, 192) == 38659, "PAL 192-line mode should expose 38659 vblank cycles at 5MHz");
-	require(bmsx::resolveVblankCycles(5000000, bmsx::NTSC_REFRESH_UFPS_SCALED, bmsx::NTSC_TOTAL_SCANLINES, 192) == 22287, "NTSC 192-line mode should expose 22287 vblank cycles at 5MHz");
-
+void testPhysicalPcrtcTimingPublishesAtServiceAndPresentationAtVblank() {
 	retro_system_av_info avInfo{};
 	bmsx::LibretroPlatform platform(
 		bmsx::BackendType::Software,
@@ -519,59 +510,43 @@ void testPublishedDisplayTimingAppliesAtFrameEnd() {
 		readSupervisorRequestLine,
 		false);
 	platform.setLogCallback(discardRetroLog);
-	require(platform.machineManager()->loadSystemRomOwned(bmsx::test::makeMinimalProgramRom(bmsx::ProgramBootTarget::System)), "libretro should load the system program ROM for published timing validation");
+	require(platform.machineManager()->loadSystemRomOwned(bmsx::test::makeMinimalProgramRom(bmsx::ProgramBootTarget::System)), "libretro should load the system program ROM for physical PCRTC timing validation");
 	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalProgramRom(bmsx::ProgramBootTarget::Cart);
-	require(platform.loadRom(rom.data(), rom.size()), "libretro should load a program cart ROM for published timing validation");
+	require(platform.loadRom(rom.data(), rom.size()), "libretro should load a program cart ROM for physical PCRTC timing validation");
+
 	bmsx::Runtime& runtime = platform.machineManager()->runtime();
-	bmsx::applyRuntimeTiming(runtime, pal240);
 	bmsx::GxGpu& gpu = runtime.machine.gxGpu;
-	const uint32_t range192 = ((35u + 192u) << 10u) | 35u;
-	const uint32_t range212 = ((35u + 212u) << 10u) | 35u;
-	bmsx::i64 frameEndCycle = runtime.timing.cycleBudgetPerFrame;
-
-	gpu.writeGp1((bmsx::GX_GPU_GP1_VERTICAL_DISPLAY_RANGE << 24u) | range192);
-	require(runtime.timing.gpuVerticalDisplayRangeWord == bmsx::GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD, "GP1 vertical range write should not change runtime timing before publication");
-	runtime.vblank.handleBeginTimer(runtime);
-	require(gpu.readDeviceOutput().verticalDisplayRangeWord == range192, "vblank begin should latch the live 192-line range for presentation");
-	require(runtime.timing.gpuVerticalDisplayRangeWord == bmsx::GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD, "vblank begin should not change current-frame timing");
-	runtime.machine.scheduler.setNowCycles(frameEndCycle + 1);
-	runtime.vblank.handleEndTimer(runtime);
-	require(runtime.timing.gpuVerticalDisplayRangeWord == range192, "vblank end should apply the published 192-line range to next-frame timing");
+	bmsx::DeviceScheduler& scheduler = runtime.machine.scheduler;
 	runtime.machine.scheduler.cancelDeviceService(bmsx::DEVICE_SERVICE_APU);
-	require(runtime.machine.scheduler.nextDeadline() == frameEndCycle + 61341, "late frame-end service must not shift PAL 192-line scanout timing");
+	runtime.machine.scheduler.cancelDeviceService(bmsx::DEVICE_SERVICE_APU_TRANSFER);
+	constexpr bmsx::u32 slowSynch2Word = 0x004f84bcu;
+	const bmsx::u32 synch2Address = bmsx::gxGpuPcrtcRegisterAddress(bmsx::GX_GPU_PCRTC_SYNCH2_LOW);
 
-	frameEndCycle += runtime.timing.cycleBudgetPerFrame;
-	gpu.writeGp1((bmsx::GX_GPU_GP1_VERTICAL_DISPLAY_RANGE << 24u) | range212);
-	require(runtime.timing.gpuVerticalDisplayRangeWord == range192, "pending 212-line GP1 write should leave 192-line timing active");
-	runtime.vblank.handleBeginTimer(runtime);
-	require(runtime.timing.gpuVerticalDisplayRangeWord == range192, "212-line range latch should wait until frame end before changing timing");
-	runtime.machine.scheduler.setNowCycles(frameEndCycle);
-	runtime.vblank.handleEndTimer(runtime);
-	require(runtime.timing.gpuVerticalDisplayRangeWord == range212, "frame end should activate published PAL 212-line timing");
-	runtime.machine.scheduler.cancelDeviceService(bmsx::DEVICE_SERVICE_APU);
-	require(runtime.machine.scheduler.nextDeadline() == frameEndCycle + 67731, "PAL 212-line frame scheduling should start vblank after 67731 active cycles");
+	runtime.machine.memory.writeMappedU32LE(synch2Address, slowSynch2Word);
+	require(runtime.timing.ufpsScaled == bmsx::GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED, "PCRTC timing writes wait for the scheduled hardware service");
+	bmsx::runDueRuntimeTimers(runtime);
+	require(runtime.timing.ufpsScaled == 39'808'917, "runtime timing follows the live physical PCRTC clock");
+	const bmsx::i64 slowCycleBudget = bmsx::calcCyclesPerFrameScaled(runtime.timing.cpuHz, 39'808'917);
+	require(runtime.timing.cycleBudgetPerFrame == slowCycleBudget, "runtime frame telemetry follows the next physical PCRTC VBlank budget");
+	bmsx::GxGpuState gpuState = gpu.captureState();
+	require(gpuState.pcrtc.registerWords[bmsx::GX_GPU_PCRTC_SYNCH2_LOW] == slowSynch2Word, "PCRTC live timing word publishes at device service");
+	require(gpuState.pcrtc.presentWords[bmsx::GX_GPU_PCRTC_SYNCH2_LOW] != slowSynch2Word, "PCRTC presentation timing waits for VBlank");
 
-	frameEndCycle += runtime.timing.cycleBudgetPerFrame;
+	for (int edge = 0; edge < 2; edge += 1) {
+		const bmsx::i64 deadline = scheduler.nextDeadline();
+		scheduler.advanceTo(deadline);
+		bmsx::runDueRuntimeTimers(runtime);
+	}
+	gpuState = gpu.captureState();
+	require(gpuState.pcrtc.presentWords[bmsx::GX_GPU_PCRTC_SYNCH2_LOW] == slowSynch2Word, "PCRTC presentation timing latches at the physical VBlank edge");
+
+	const bmsx::i64 nextDeadline = scheduler.nextDeadline();
+	const bmsx::u32 timingRevision = gpu.readDeviceOutput().pcrtcTiming.revision;
 	gpu.writeGp1(bmsx::GX_GPU_GP1_DISPLAY_MODE << 24u);
-	gpu.writeGp1((bmsx::GX_GPU_GP1_VERTICAL_DISPLAY_RANGE << 24u) | range192);
-	require(runtime.timing.gpuDisplayModeWord == bmsx::GX_GPU_RESET_DISPLAY_MODE_WORD, "GP1 display-mode write should not change runtime timing before publication");
-	runtime.vblank.handleBeginTimer(runtime);
-	require(runtime.timing.gpuDisplayModeWord == bmsx::GX_GPU_RESET_DISPLAY_MODE_WORD, "NTSC display-mode latch should wait until frame end before changing timing");
-	runtime.machine.scheduler.setNowCycles(frameEndCycle);
-	runtime.vblank.handleEndTimer(runtime);
-	require(runtime.timing.gpuDisplayModeWord == bmsx::PSX_GPU_DISPLAY_MODE_NTSC_WORD, "frame end should activate published NTSC timing");
-	require(runtime.timing.gpuVerticalDisplayRangeWord == range192, "frame end should activate published NTSC 192-line timing");
-	runtime.machine.scheduler.cancelDeviceService(bmsx::DEVICE_SERVICE_APU);
-	require(runtime.machine.scheduler.nextDeadline() == frameEndCycle + 61129, "NTSC 192-line mode should expose 22287 vblank cycles at 5MHz");
-
-	frameEndCycle += runtime.timing.cycleBudgetPerFrame;
-	gpu.writeGp1((bmsx::GX_GPU_GP1_VERTICAL_DISPLAY_RANGE << 24u) | range212);
-	runtime.vblank.handleBeginTimer(runtime);
-	runtime.machine.scheduler.setNowCycles(frameEndCycle);
-	runtime.vblank.handleEndTimer(runtime);
-	require(runtime.timing.gpuVerticalDisplayRangeWord == range212, "frame end should activate published NTSC 212-line timing");
-	runtime.machine.scheduler.cancelDeviceService(bmsx::DEVICE_SERVICE_APU);
-	require(runtime.machine.scheduler.nextDeadline() == frameEndCycle + 67496, "NTSC 212-line frame scheduling should start vblank after 67496 active cycles");
+	gpu.writeGp1((bmsx::GX_GPU_GP1_VERTICAL_DISPLAY_RANGE << 24u) | 0x00038020u);
+	require(gpu.readDeviceOutput().pcrtcTiming.revision == timingRevision, "legacy GP1 display words cannot alter the physical PCRTC clock");
+	require(scheduler.nextDeadline() == nextDeadline, "legacy GP1 display words cannot reschedule the physical PCRTC beam");
+	require(runtime.timing.cycleBudgetPerFrame == slowCycleBudget, "legacy GP1 display words cannot alter the runtime PCRTC budget");
 }
 
 } // namespace
@@ -583,6 +558,6 @@ int main() {
 	testInputSnapshotReflectsHeldKey();
 	testLibretroSupervisorRequestIsSeparateFromGameplay();
 	testLibretroTracksPublishedNativeOutputGeometry();
-	testPublishedDisplayTimingAppliesAtFrameEnd();
+	testPhysicalPcrtcTimingPublishesAtServiceAndPresentationAtVblank();
 	return 0;
 }

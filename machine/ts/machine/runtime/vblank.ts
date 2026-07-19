@@ -1,20 +1,14 @@
 import { IRQ_VBLANK } from '../bus/io';
+import {
+	GX_GPU_PCRTC_RUNTIME_EDGE_VBLANK_BEGIN,
+	GX_GPU_PCRTC_RUNTIME_EDGE_VBLANK_END,
+} from '../devices/gx/gpu_pcrtc';
 import type { FrameState } from './frame/state';
 import { Runtime } from './runtime';
-import { TIMER_KIND_VBLANK_BEGIN, TIMER_KIND_VBLANK_END } from '../scheduler/device';
-
-export type RuntimeVblankSnapshot = {
-	nowCycles: number;
-	cyclesIntoFrame: number;
-};
 
 export class VblankState {
 	private vblankSequence = 0;
 	private lastCompletedVblankSequence = 0;
-	private vblankCycles = 0;
-	private vblankStartCycle = 0;
-	private vblankActive = false;
-	private frameStartCycle = 0;
 	private activeTickCompleted = false;
 
 	constructor(private readonly runtime: Runtime) {
@@ -24,79 +18,19 @@ export class VblankState {
 		return this.activeTickCompleted;
 	}
 
-	public configureCycleBudget(): void {
-		if (this.vblankCycles <= 0) {
-			return;
-		}
-		const runtime = this.runtime;
-		const cycleBudgetPerFrame = runtime.timing.cycleBudgetPerFrame;
-		if (this.vblankCycles > cycleBudgetPerFrame) {
-			throw new Error('Runtime fault: vblank_cycles must be less than or equal to cycles_per_frame.');
-		}
-		this.vblankStartCycle = cycleBudgetPerFrame - this.vblankCycles;
-		this.reset();
-	}
-
-	public setVblankCycles(cycles: number): void {
-		if (cycles <= 0) {
-			throw new Error('Runtime fault: vblank_cycles must be greater than 0.');
-		}
-		const runtime = this.runtime;
-		const cycleBudgetPerFrame = runtime.timing.cycleBudgetPerFrame;
-		if (cycles > cycleBudgetPerFrame) {
-			throw new Error('Runtime fault: vblank_cycles must be less than or equal to cycles_per_frame.');
-		}
-		this.vblankCycles = cycles;
-		this.vblankStartCycle = cycleBudgetPerFrame - this.vblankCycles;
-		this.reset();
-	}
-
-	public setNextFrameTiming(cycleBudgetPerFrame: number, vblankCycles: number): void {
-		this.vblankCycles = vblankCycles;
-		this.vblankStartCycle = cycleBudgetPerFrame - vblankCycles;
-	}
-
-	public getCyclesIntoFrame(): number {
-		const runtime = this.runtime;
-		return runtime.machine.scheduler.nowCycles - this.frameStartCycle;
-	}
-
 	public reset(): void {
 		const runtime = this.runtime;
-		const scheduler = runtime.machine.scheduler;
-		scheduler.cancelVblankTimers();
-		this.frameStartCycle = scheduler.currentNowCycles();
-		this.vblankActive = false;
-		this.vblankSequence = 0;
-		this.lastCompletedVblankSequence = 0;
-		runtime.machine.inputController.cancelSampleArm();
-		runtime.machine.irqController.postLoad();
-		if (this.vblankStartCycle === 0) {
-			this.publishVblankTiming(true);
-		}
-		this.scheduleCurrentFrameTimers();
-	}
-
-	public capture(): RuntimeVblankSnapshot {
-		const nowCycles = this.runtime.machine.scheduler.currentNowCycles();
-		return {
-			nowCycles,
-			cyclesIntoFrame: nowCycles - this.frameStartCycle,
-		};
-	}
-
-	public restore(state: RuntimeVblankSnapshot): void {
-		const runtime = this.runtime;
-		runtime.frameScheduler.reset();
-		runtime.frameLoop.reset();
-		runtime.machine.scheduler.reset();
-		runtime.machine.scheduler.setNowCycles(state.nowCycles);
-		this.frameStartCycle = state.nowCycles - state.cyclesIntoFrame;
 		this.vblankSequence = 0;
 		this.lastCompletedVblankSequence = 0;
 		this.activeTickCompleted = false;
-		this.publishVblankTiming(this.vblankStartCycle === 0 || this.getCyclesIntoFrame() >= this.vblankStartCycle);
-		this.scheduleCurrentFrameTimers();
+		runtime.machine.inputController.cancelSampleArm();
+		runtime.machine.irqController.postLoad();
+	}
+
+	public prepareRestore(): void {
+		this.vblankSequence = 0;
+		this.lastCompletedVblankSequence = 0;
+		this.activeTickCompleted = false;
 	}
 
 	public beginTick(): void {
@@ -107,44 +41,14 @@ export class VblankState {
 		this.activeTickCompleted = false;
 	}
 
-	public handleBeginTimer(): void {
-		if (!this.vblankActive) {
-			this.enterVblank();
-		}
-	}
-
-	public handleEndTimer(): void {
-		const runtime = this.runtime;
-		// CPU instructions are atomic and may service this timer after its deadline. Advance from
-		// the scheduled boundary: anchoring to nowCycles accumulates the lateness into scanout phase.
-		// Do not compensate by changing VBlank-edge tick completion or cart first-tick semantics.
-		this.frameStartCycle += runtime.timing.cycleBudgetPerFrame;
-		const output = runtime.machine.gxGpu.readDeviceOutput();
-		runtime.applyPublishedPsxGpuDisplayTiming(output.displayModeWord, output.verticalDisplayRangeWord);
-		if (this.vblankStartCycle === 0) {
-			this.scheduleCurrentFrameTimers();
+	public handleGpuRuntimeEdge(edge: number): void {
+		if (edge === GX_GPU_PCRTC_RUNTIME_EDGE_VBLANK_BEGIN) {
 			this.enterVblank();
 			return;
 		}
-		if (this.vblankActive) {
-			this.publishVblankTiming(false);
+		if (edge === GX_GPU_PCRTC_RUNTIME_EDGE_VBLANK_END) {
+			return;
 		}
-		this.scheduleCurrentFrameTimers();
-	}
-
-	private scheduleCurrentFrameTimers(): void {
-		const runtime = this.runtime;
-		runtime.machine.scheduler.scheduleVblankTimer(TIMER_KIND_VBLANK_END, this.frameStartCycle + runtime.timing.cycleBudgetPerFrame);
-		if (this.vblankStartCycle > 0 && this.getCyclesIntoFrame() < this.vblankStartCycle) {
-			runtime.machine.scheduler.scheduleVblankTimer(TIMER_KIND_VBLANK_BEGIN, this.frameStartCycle + this.vblankStartCycle);
-		}
-	}
-
-	private publishVblankTiming(active: boolean): void {
-		const runtime = this.runtime;
-		this.vblankActive = active;
-		const cyclesIntoFrame = this.getCyclesIntoFrame();
-		runtime.machine.gxGpu.setScanoutTiming(active, cyclesIntoFrame, runtime.timing.cycleBudgetPerFrame, runtime.timing.totalScanlines);
 	}
 
 	private enterVblank(): void {
@@ -152,7 +56,6 @@ export class VblankState {
 		this.vblankSequence += 1;
 		runtime.machine.gxGpu.presentReadyFrameOnVblankEdge();
 		runtime.machine.inputController.onVblankEdge(runtime.machineElapsedMs(), runtime.machine.scheduler.nowCycles);
-		this.publishVblankTiming(true);
 		runtime.machine.irqController.raise(IRQ_VBLANK);
 		if (runtime.frameLoop.frameActive) {
 			this.completeTickIfPending(runtime.frameLoop.frameState, this.vblankSequence);
@@ -160,9 +63,7 @@ export class VblankState {
 	}
 
 	private completeTickIfPending(frameState: FrameState, vblankSequence: number): void {
-		if (this.lastCompletedVblankSequence === vblankSequence) {
-			return;
-		}
+		if (this.lastCompletedVblankSequence === vblankSequence) return;
 		this.activeTickCompleted = true;
 		const runtime = this.runtime;
 		runtime.frameScheduler.enqueueTickCompletion(frameState);

@@ -39,14 +39,14 @@ import {
 	GX_GPU_VRAM_Y_ADDRESS_PERIOD,
 } from '../../devices/gx/vram_address';
 import { GX_GPU_COMMAND_FIFO_STORAGE_WORD_CAPACITY } from '../../devices/gx/gpu_command_fifo';
-import { GX_GPU_PCRTC_WORD_COUNT, type GxGpuPcrtcState } from '../../devices/gx/gpu_pcrtc';
+import { GX_GPU_PCRTC_COMPOSITION_WORD_COUNT, GX_GPU_PCRTC_CONFIG_WORD_COUNT, type GxGpuPcrtcState } from '../../devices/gx/gpu_pcrtc';
 import type { GxGteState } from '../../devices/gx/gte';
 import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT, GX_GTE_PLUS_REGISTER_COUNT } from '../../devices/gx/gte';
 import type { GeometryJobState } from '../../devices/geometry/job';
 import type { GeometryControllerState } from '../../devices/geometry/save_state';
 import type { MemorySaveState } from '../../memory/memory';
 import { RAM_BASE, RAM_END } from '../../memory/map';
-import type { FrameSchedulerStateSnapshot, TickCompletion } from '../../scheduler/frame';
+import type { FrameSchedulerStateSnapshot } from '../../scheduler/frame';
 import type { RuntimeSaveMachineState } from '../save_machine_state';
 import type { RuntimeSaveState } from '../save_state';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../save_state';
@@ -176,32 +176,13 @@ function requireBooleanValue(value: unknown, label: string): boolean {
 	throw new Error(`${label} must be a boolean.`);
 }
 
-function decodeNumberObjectField(value: unknown, label: string, key: string, keyLabel: string): number {
-	const object = requireObject(value, label);
-	return requireObjectKey(object, key, label, keyLabel) as number;
-}
-
-function encodeTickCompletion(state: TickCompletion): TickCompletion {
-	return {
-		sequence: state.sequence,
-		remaining: state.remaining,
-		visualCommitted: state.visualCommitted,
-	};
-}
-
-function decodeTickCompletion(value: unknown, label: string): TickCompletion {
-	const object = requireObject(value, label);
-	return {
-		sequence: requireObjectKey(object, 'sequence', label, 'tickCompletion.sequence') as number,
-		remaining: requireObjectKey(object, 'remaining', label, 'tickCompletion.remaining') as number,
-		visualCommitted: requireObjectKey(object, 'visualCommitted', label, 'tickCompletion.visualCommitted') as boolean,
-	};
-}
-
 function encodeFrameSchedulerState(state: FrameSchedulerStateSnapshot): FrameSchedulerStateSnapshot {
 	return {
 		accumulatedHostTimeMs: state.accumulatedHostTimeMs,
-		queuedTickCompletions: encodeVector(state.queuedTickCompletions, encodeTickCompletion),
+		cycleGrantRemainder: state.cycleGrantRemainder,
+		carriedCycleBudget: state.carriedCycleBudget,
+		tickCompletionPending: state.tickCompletionPending,
+		tickCompletionVisualCommitted: state.tickCompletionVisualCommitted,
 		lastTickSequence: state.lastTickSequence,
 		lastTickBudgetGranted: state.lastTickBudgetGranted,
 		lastTickCpuBudgetGranted: state.lastTickCpuBudgetGranted,
@@ -217,33 +198,18 @@ function decodeFrameSchedulerState(value: unknown, label: string): FrameSchedule
 	const object = requireObject(value, label);
 	return {
 		accumulatedHostTimeMs: requireObjectKey(object, 'accumulatedHostTimeMs', label, 'frameScheduler.accumulatedHostTimeMs') as number,
-		queuedTickCompletions: decodeVector(
-			requireObjectKey(object, 'queuedTickCompletions', label, 'frameScheduler.queuedTickCompletions'),
-			'frameScheduler.queuedTickCompletions',
-			(entry) => decodeTickCompletion(entry, 'frameScheduler.queuedTickCompletions[]'),
-		),
-		lastTickSequence: requireObjectKey(object, 'lastTickSequence', label, 'frameScheduler.lastTickSequence') as number,
-		lastTickBudgetGranted: requireObjectKey(object, 'lastTickBudgetGranted', label, 'frameScheduler.lastTickBudgetGranted') as number,
-		lastTickCpuBudgetGranted: requireObjectKey(object, 'lastTickCpuBudgetGranted', label, 'frameScheduler.lastTickCpuBudgetGranted') as number,
-		lastTickCpuUsedCycles: requireObjectKey(object, 'lastTickCpuUsedCycles', label, 'frameScheduler.lastTickCpuUsedCycles') as number,
-		lastTickBudgetRemaining: requireObjectKey(object, 'lastTickBudgetRemaining', label, 'frameScheduler.lastTickBudgetRemaining') as number,
+		cycleGrantRemainder: requireI64(requireObjectKey(object, 'cycleGrantRemainder', label, 'frameScheduler.cycleGrantRemainder'), 'frameScheduler.cycleGrantRemainder'),
+		carriedCycleBudget: requireI64(requireObjectKey(object, 'carriedCycleBudget', label, 'frameScheduler.carriedCycleBudget'), 'frameScheduler.carriedCycleBudget'),
+		tickCompletionPending: requireBooleanValue(requireObjectKey(object, 'tickCompletionPending', label, 'frameScheduler.tickCompletionPending'), 'frameScheduler.tickCompletionPending'),
+		tickCompletionVisualCommitted: requireBooleanValue(requireObjectKey(object, 'tickCompletionVisualCommitted', label, 'frameScheduler.tickCompletionVisualCommitted'), 'frameScheduler.tickCompletionVisualCommitted'),
+		lastTickSequence: requireI64(requireObjectKey(object, 'lastTickSequence', label, 'frameScheduler.lastTickSequence'), 'frameScheduler.lastTickSequence'),
+		lastTickBudgetGranted: requireI64(requireObjectKey(object, 'lastTickBudgetGranted', label, 'frameScheduler.lastTickBudgetGranted'), 'frameScheduler.lastTickBudgetGranted'),
+		lastTickCpuBudgetGranted: requireI64(requireObjectKey(object, 'lastTickCpuBudgetGranted', label, 'frameScheduler.lastTickCpuBudgetGranted'), 'frameScheduler.lastTickCpuBudgetGranted'),
+		lastTickCpuUsedCycles: requireI64(requireObjectKey(object, 'lastTickCpuUsedCycles', label, 'frameScheduler.lastTickCpuUsedCycles'), 'frameScheduler.lastTickCpuUsedCycles'),
+		lastTickBudgetRemaining: requireI64(requireObjectKey(object, 'lastTickBudgetRemaining', label, 'frameScheduler.lastTickBudgetRemaining'), 'frameScheduler.lastTickBudgetRemaining'),
 		lastTickVisualFrameCommitted: requireObjectKey(object, 'lastTickVisualFrameCommitted', label, 'frameScheduler.lastTickVisualFrameCommitted') as boolean,
 		lastTickCompleted: requireObjectKey(object, 'lastTickCompleted', label, 'frameScheduler.lastTickCompleted') as boolean,
-		lastTickConsumedSequence: requireObjectKey(object, 'lastTickConsumedSequence', label, 'frameScheduler.lastTickConsumedSequence') as number,
-	};
-}
-
-function encodeRuntimeVblankState(state: RuntimeSaveMachineState['vblank']): RuntimeSaveMachineState['vblank'] {
-	return {
-		nowCycles: state.nowCycles,
-		cyclesIntoFrame: state.cyclesIntoFrame,
-	};
-}
-
-function decodeRuntimeVblankState(value: unknown, label: string): RuntimeSaveMachineState['vblank'] {
-	return {
-		nowCycles: requireI64(decodeNumberObjectField(value, label, 'nowCycles', 'vblank.nowCycles'), 'vblank.nowCycles'),
-		cyclesIntoFrame: decodeNumberObjectField(value, label, 'cyclesIntoFrame', 'vblank.cyclesIntoFrame'),
+		lastTickConsumedSequence: requireI64(requireObjectKey(object, 'lastTickConsumedSequence', label, 'frameScheduler.lastTickConsumedSequence'), 'frameScheduler.lastTickConsumedSequence'),
 	};
 }
 
@@ -544,9 +510,6 @@ function encodeGxGpuRegisterContextState(state: GxGpuRegisterContextState): GxGp
 		horizontalDisplayRangeWord: state.horizontalDisplayRangeWord >>> 0,
 		verticalDisplayRangeWord: state.verticalDisplayRangeWord >>> 0,
 		vramYAddressExtensionWord: state.vramYAddressExtensionWord >>> 0,
-		scanoutInterlacedField: state.scanoutInterlacedField >>> 0,
-		scanoutInterlacedDisplayField: state.scanoutInterlacedDisplayField >>> 0,
-		scanoutActiveLineLsb: state.scanoutActiveLineLsb >>> 0,
 		presentStatusWord: state.presentStatusWord >>> 0,
 		presentDisplayModeWord: state.presentDisplayModeWord >>> 0,
 		presentDisplayStartWord: state.presentDisplayStartWord >>> 0,
@@ -577,17 +540,14 @@ function decodeGxGpuRegisterContextState(value: unknown, label: string): GxGpuRe
 		horizontalDisplayRangeWord: requireBoundedU32(requireObjectKey(object, 'horizontalDisplayRangeWord', label, `${label}.horizontalDisplayRangeWord`), `${label}.horizontalDisplayRangeWord`, 0, 0xffffffff),
 		verticalDisplayRangeWord: requireBoundedU32(requireObjectKey(object, 'verticalDisplayRangeWord', label, `${label}.verticalDisplayRangeWord`), `${label}.verticalDisplayRangeWord`, 0, 0xffffffff),
 		vramYAddressExtensionWord: requireBoundedU32(requireObjectKey(object, 'vramYAddressExtensionWord', label, `${label}.vramYAddressExtensionWord`), `${label}.vramYAddressExtensionWord`, 0, 1),
-		scanoutInterlacedField: requireBoundedU32(requireObjectKey(object, 'scanoutInterlacedField', label, `${label}.scanoutInterlacedField`), `${label}.scanoutInterlacedField`, 0, 1),
-		scanoutInterlacedDisplayField: requireBoundedU32(requireObjectKey(object, 'scanoutInterlacedDisplayField', label, `${label}.scanoutInterlacedDisplayField`), `${label}.scanoutInterlacedDisplayField`, 0, 1),
-		scanoutActiveLineLsb: requireBoundedU32(requireObjectKey(object, 'scanoutActiveLineLsb', label, `${label}.scanoutActiveLineLsb`), `${label}.scanoutActiveLineLsb`, 0, 1),
 		presentStatusWord: requireBoundedU32(requireObjectKey(object, 'presentStatusWord', label, `${label}.presentStatusWord`), `${label}.presentStatusWord`, 0, 0xffffffff),
 		presentDisplayModeWord: requireBoundedU32(requireObjectKey(object, 'presentDisplayModeWord', label, `${label}.presentDisplayModeWord`), `${label}.presentDisplayModeWord`, 0, 0xffffffff),
 		presentDisplayStartWord: requireBoundedU32(requireObjectKey(object, 'presentDisplayStartWord', label, `${label}.presentDisplayStartWord`), `${label}.presentDisplayStartWord`, 0, 0xffffffff),
 		presentVramYAddressExtensionWord: requireBoundedU32(requireObjectKey(object, 'presentVramYAddressExtensionWord', label, `${label}.presentVramYAddressExtensionWord`), `${label}.presentVramYAddressExtensionWord`, 0, 1),
 		presentHorizontalDisplayRangeWord: requireBoundedU32(requireObjectKey(object, 'presentHorizontalDisplayRangeWord', label, `${label}.presentHorizontalDisplayRangeWord`), `${label}.presentHorizontalDisplayRangeWord`, 0, 0xffffffff),
 		presentVerticalDisplayRangeWord: requireBoundedU32(requireObjectKey(object, 'presentVerticalDisplayRangeWord', label, `${label}.presentVerticalDisplayRangeWord`), `${label}.presentVerticalDisplayRangeWord`, 0, 0xffffffff),
-		pcrtcRegisterWords: decodeU32FixedArray(requireObjectKey(object, 'pcrtcRegisterWords', label, `${label}.pcrtcRegisterWords`), `${label}.pcrtcRegisterWords`, GX_GPU_PCRTC_WORD_COUNT),
-		pcrtcPresentWords: decodeU32FixedArray(requireObjectKey(object, 'pcrtcPresentWords', label, `${label}.pcrtcPresentWords`), `${label}.pcrtcPresentWords`, GX_GPU_PCRTC_WORD_COUNT),
+		pcrtcRegisterWords: decodeU32FixedArray(requireObjectKey(object, 'pcrtcRegisterWords', label, `${label}.pcrtcRegisterWords`), `${label}.pcrtcRegisterWords`, GX_GPU_PCRTC_COMPOSITION_WORD_COUNT),
+		pcrtcPresentWords: decodeU32FixedArray(requireObjectKey(object, 'pcrtcPresentWords', label, `${label}.pcrtcPresentWords`), `${label}.pcrtcPresentWords`, GX_GPU_PCRTC_COMPOSITION_WORD_COUNT),
 		vramPresentationPending: requireBooleanValue(requireObjectKey(object, 'vramPresentationPending', label, `${label}.vramPresentationPending`), `${label}.vramPresentationPending`),
 	};
 }
@@ -596,14 +556,30 @@ function encodeGxGpuPcrtcState(state: GxGpuPcrtcState): GxGpuPcrtcState {
 	return {
 		registerWords: encodeVector(state.registerWords, (word) => word >>> 0),
 		presentWords: encodeVector(state.presentWords, (word) => word >>> 0),
+		csrWord: state.csrWord >>> 0,
+		imrWord: state.imrWord >>> 0,
+		beamCycleOffset: state.beamCycleOffset,
+		beamRemainder: state.beamRemainder,
+		beamHalfLine: state.beamHalfLine,
+		nextHsyncHalfLine: state.nextHsyncHalfLine,
+		verticalStage: state.verticalStage,
+		vblankActive: state.vblankActive,
 	};
 }
 
 function decodeGxGpuPcrtcState(value: unknown, label: string): GxGpuPcrtcState {
 	const object = requireObject(value, label);
 	return {
-		registerWords: decodeU32FixedArray(requireObjectKey(object, 'registerWords', label, `${label}.registerWords`), `${label}.registerWords`, GX_GPU_PCRTC_WORD_COUNT),
-		presentWords: decodeU32FixedArray(requireObjectKey(object, 'presentWords', label, `${label}.presentWords`), `${label}.presentWords`, GX_GPU_PCRTC_WORD_COUNT),
+		registerWords: decodeU32FixedArray(requireObjectKey(object, 'registerWords', label, `${label}.registerWords`), `${label}.registerWords`, GX_GPU_PCRTC_CONFIG_WORD_COUNT),
+		presentWords: decodeU32FixedArray(requireObjectKey(object, 'presentWords', label, `${label}.presentWords`), `${label}.presentWords`, GX_GPU_PCRTC_CONFIG_WORD_COUNT),
+		csrWord: requireBoundedU32(requireObjectKey(object, 'csrWord', label, `${label}.csrWord`), `${label}.csrWord`, 0, 0xffffffff),
+		imrWord: requireBoundedU32(requireObjectKey(object, 'imrWord', label, `${label}.imrWord`), `${label}.imrWord`, 0, 0xffffffff),
+		beamCycleOffset: requireI64(requireObjectKey(object, 'beamCycleOffset', label, `${label}.beamCycleOffset`), `${label}.beamCycleOffset`),
+		beamRemainder: requireBoundedU32(requireObjectKey(object, 'beamRemainder', label, `${label}.beamRemainder`), `${label}.beamRemainder`, 0, 0xffffffff),
+		beamHalfLine: requireBoundedU32(requireObjectKey(object, 'beamHalfLine', label, `${label}.beamHalfLine`), `${label}.beamHalfLine`, 0, 0xffffffff),
+		nextHsyncHalfLine: requireBoundedU32(requireObjectKey(object, 'nextHsyncHalfLine', label, `${label}.nextHsyncHalfLine`), `${label}.nextHsyncHalfLine`, 0, 0xffffffff),
+		verticalStage: requireBoundedU32(requireObjectKey(object, 'verticalStage', label, `${label}.verticalStage`), `${label}.verticalStage`, 0, 2),
+		vblankActive: requireBooleanValue(requireObjectKey(object, 'vblankActive', label, `${label}.vblankActive`), `${label}.vblankActive`),
 	};
 }
 
@@ -644,9 +620,6 @@ function encodeGxGpuState(state: GxGpuState): GxGpuState {
 		horizontalDisplayRangeWord: state.horizontalDisplayRangeWord >>> 0,
 		verticalDisplayRangeWord: state.verticalDisplayRangeWord >>> 0,
 		vramYAddressExtensionWord: state.vramYAddressExtensionWord >>> 0,
-		scanoutInterlacedField: state.scanoutInterlacedField >>> 0,
-		scanoutInterlacedDisplayField: state.scanoutInterlacedDisplayField >>> 0,
-		scanoutActiveLineLsb: state.scanoutActiveLineLsb >>> 0,
 		presentStatusWord: state.presentStatusWord >>> 0,
 		presentDisplayModeWord: state.presentDisplayModeWord >>> 0,
 		presentDisplayStartWord: state.presentDisplayStartWord >>> 0,
@@ -654,6 +627,7 @@ function encodeGxGpuState(state: GxGpuState): GxGpuState {
 		presentHorizontalDisplayRangeWord: state.presentHorizontalDisplayRangeWord >>> 0,
 		presentVerticalDisplayRangeWord: state.presentVerticalDisplayRangeWord >>> 0,
 		pcrtc: encodeGxGpuPcrtcState(state.pcrtc),
+		pcrtcPresentationPending: state.pcrtcPresentationPending,
 		vramPresentationPending: state.vramPresentationPending,
 		supervisorQuiesceRequested: state.supervisorQuiesceRequested,
 		supervisorIngressStopped: state.supervisorIngressStopped,
@@ -703,9 +677,6 @@ function decodeGxGpuState(value: unknown, label: string): GxGpuState {
 		horizontalDisplayRangeWord: requireBoundedU32(requireObjectKey(object, 'horizontalDisplayRangeWord', label, `${label}.horizontalDisplayRangeWord`), `${label}.horizontalDisplayRangeWord`, 0, 0xffffffff),
 		verticalDisplayRangeWord: requireBoundedU32(requireObjectKey(object, 'verticalDisplayRangeWord', label, `${label}.verticalDisplayRangeWord`), `${label}.verticalDisplayRangeWord`, 0, 0xffffffff),
 		vramYAddressExtensionWord: requireBoundedU32(requireObjectKey(object, 'vramYAddressExtensionWord', label, `${label}.vramYAddressExtensionWord`), `${label}.vramYAddressExtensionWord`, 0, 0xffffffff),
-		scanoutInterlacedField: requireBoundedU32(requireObjectKey(object, 'scanoutInterlacedField', label, `${label}.scanoutInterlacedField`), `${label}.scanoutInterlacedField`, 0, 1),
-		scanoutInterlacedDisplayField: requireBoundedU32(requireObjectKey(object, 'scanoutInterlacedDisplayField', label, `${label}.scanoutInterlacedDisplayField`), `${label}.scanoutInterlacedDisplayField`, 0, 1),
-		scanoutActiveLineLsb: requireBoundedU32(requireObjectKey(object, 'scanoutActiveLineLsb', label, `${label}.scanoutActiveLineLsb`), `${label}.scanoutActiveLineLsb`, 0, 1),
 		presentStatusWord: requireBoundedU32(requireObjectKey(object, 'presentStatusWord', label, `${label}.presentStatusWord`), `${label}.presentStatusWord`, 0, 0xffffffff),
 		presentDisplayModeWord: requireBoundedU32(requireObjectKey(object, 'presentDisplayModeWord', label, `${label}.presentDisplayModeWord`), `${label}.presentDisplayModeWord`, 0, 0xffffffff),
 		presentDisplayStartWord: requireBoundedU32(requireObjectKey(object, 'presentDisplayStartWord', label, `${label}.presentDisplayStartWord`), `${label}.presentDisplayStartWord`, 0, 0xffffffff),
@@ -713,6 +684,7 @@ function decodeGxGpuState(value: unknown, label: string): GxGpuState {
 		presentHorizontalDisplayRangeWord: requireBoundedU32(requireObjectKey(object, 'presentHorizontalDisplayRangeWord', label, `${label}.presentHorizontalDisplayRangeWord`), `${label}.presentHorizontalDisplayRangeWord`, 0, 0xffffffff),
 		presentVerticalDisplayRangeWord: requireBoundedU32(requireObjectKey(object, 'presentVerticalDisplayRangeWord', label, `${label}.presentVerticalDisplayRangeWord`), `${label}.presentVerticalDisplayRangeWord`, 0, 0xffffffff),
 		pcrtc: decodeGxGpuPcrtcState(requireObjectKey(object, 'pcrtc', label, `${label}.pcrtc`), `${label}.pcrtc`),
+		pcrtcPresentationPending: requireBooleanValue(requireObjectKey(object, 'pcrtcPresentationPending', label, `${label}.pcrtcPresentationPending`), `${label}.pcrtcPresentationPending`),
 		vramPresentationPending: requireBooleanValue(requireObjectKey(object, 'vramPresentationPending', label, `${label}.vramPresentationPending`), `${label}.vramPresentationPending`),
 		supervisorQuiesceRequested: requireBooleanValue(requireObjectKey(object, 'supervisorQuiesceRequested', label, `${label}.supervisorQuiesceRequested`), `${label}.supervisorQuiesceRequested`),
 		supervisorIngressStopped: requireBooleanValue(requireObjectKey(object, 'supervisorIngressStopped', label, `${label}.supervisorIngressStopped`), `${label}.supervisorIngressStopped`),
@@ -1073,20 +1045,18 @@ function decodeMachineSaveState(value: unknown, label: string): MachineSaveState
 
 function encodeRuntimeSaveMachineState(state: RuntimeSaveMachineState): RuntimeSaveMachineState {
 	return {
-		psxGpuDisplayModeWord: state.psxGpuDisplayModeWord,
 		machine: encodeMachineSaveState(state.machine),
 		frameScheduler: encodeFrameSchedulerState(state.frameScheduler),
-		vblank: encodeRuntimeVblankState(state.vblank),
+		schedulerNowCycles: state.schedulerNowCycles,
 	};
 }
 
 function decodeRuntimeSaveMachineState(value: unknown, label: string): RuntimeSaveMachineState {
 	const object = requireObject(value, label);
 	return {
-		psxGpuDisplayModeWord: requireObjectKey(object, 'psxGpuDisplayModeWord', label, 'machineState.psxGpuDisplayModeWord') as number,
 		machine: decodeMachineSaveState(requireObjectKey(object, 'machine', label, 'machineState.machine'), 'machineState.machine'),
 		frameScheduler: decodeFrameSchedulerState(requireObjectKey(object, 'frameScheduler', label, 'machineState.frameScheduler'), 'machineState.frameScheduler'),
-		vblank: decodeRuntimeVblankState(requireObjectKey(object, 'vblank', label, 'machineState.vblank'), 'machineState.vblank'),
+		schedulerNowCycles: requireI64(requireObjectKey(object, 'schedulerNowCycles', label, 'machineState.schedulerNowCycles'), 'machineState.schedulerNowCycles'),
 	};
 }
 

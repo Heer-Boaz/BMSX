@@ -11,7 +11,7 @@ class FrameLoopState {
 public:
 	void reset();
 	void resetFrameState(Runtime& runtime);
-	void beginFrameState(Runtime& runtime);
+	void beginFrameState(Runtime& runtime, i64 budget, i64 carry);
 	bool tickUpdate(Runtime& runtime);
 	void abandonFrameState(Runtime& runtime);
 

@@ -341,22 +341,22 @@ bool MachineManager::bootSystemStartupProgram(const MachineManifest& runtimeMach
 
 	activateSystemRom();
 	setMachineManifest(runtimeMachine);
-	const ResolvedRuntimeTiming timing = resolveRuntimeTiming(PSX_MACHINE_SPEC.cpuFreqHz, GX_GPU_RESET_DISPLAY_MODE_WORD);
+	const ResolvedRuntimeTiming timing = resolveRuntimeTiming(PSX_MACHINE_SPEC.cpuFreqHz);
 	configureRuntimeMemoryMap();
 	configureViewForGpuReset();
 
 	Runtime& rt = ensureRuntime(RuntimeOptions{
 		{ m_system_rom_data, m_system_rom_size },
 		{ m_cart_rom_data, m_cart_rom_size },
-		timing.gpuDisplayModeWord,
+		timing.pcrtcRunning,
 		timing.ufpsScaled,
 		timing.cpuHz,
 		timing.cycleBudgetPerFrame,
-		timing.vblankCycles,
+		timing.totalHalfLines,
+		timing.activeDisplayHalfLines,
 		timing.dmaWordsPerSec,
 		timing.geoWorkUnitsPerSec,
 	});
-	applyRuntimeTiming(rt, timing);
 	syncAudioTiming();
 	rt.resetRuntimeForProgramReload();
 	m_screen.reset();

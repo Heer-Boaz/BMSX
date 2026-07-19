@@ -19,17 +19,15 @@ export function setCycleBudgetPerFrame(runtime: Runtime, value: number): void {
 		return;
 	}
 	timing.cycleBudgetPerFrame = value;
-	runtime.vblank.configureCycleBudget();
 }
 
-export function setFrameTiming(runtime: Runtime, cpuHz: number, cycleBudgetPerFrame: number, vblankCycles: number): void {
+export function setFrameTiming(runtime: Runtime, cpuHz: number, cycleBudgetPerFrame: number): void {
 	const timing = runtime.timing;
 	timing.cpuHz = cpuHz;
 	if (cycleBudgetPerFrame !== timing.cycleBudgetPerFrame) {
 		timing.cycleBudgetPerFrame = cycleBudgetPerFrame;
 	}
 	refreshDeviceTimings(runtime, runtime.machine.scheduler.currentNowCycles());
-	runtime.vblank.setVblankCycles(vblankCycles);
 }
 
 export function setTransferRates(runtime: Runtime, rates: RuntimeTransferRates): void {

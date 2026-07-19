@@ -10,17 +10,20 @@
 namespace bmsx {
 namespace {
 
+constexpr i64 MAX_CPU_SLICE_CYCLES = std::numeric_limits<int>::max();
+
 void dispatchRuntimeTimer(Runtime& runtime, uint8_t kind, uint8_t payload) {
 	switch (kind) {
-		case TIMER_KIND_VBLANK_BEGIN:
-			runtime.vblank.handleBeginTimer(runtime);
+		case TIMER_KIND_DEVICE_SERVICE: {
+			const u32 serviceResult = runtime.machine.runDeviceService(payload);
+			if (payload == DEVICE_SERVICE_GPU) {
+				if ((serviceResult & GX_GPU_SERVICE_TIMING_PUBLISHED) != 0u) {
+					runtime.applyPublishedGxGpuPcrtcTiming(runtime.machine.gxGpu.readDeviceOutput().pcrtcTiming);
+				}
+				runtime.vblank.handleGpuRuntimeEdge(runtime, serviceResult & GX_GPU_SERVICE_RUNTIME_EDGE_MASK);
+			}
 			return;
-		case TIMER_KIND_VBLANK_END:
-			runtime.vblank.handleEndTimer(runtime);
-			return;
-		case TIMER_KIND_DEVICE_SERVICE:
-			runtime.machine.runDeviceService(payload);
-			return;
+		}
 		default:
 			throw BMSX_RUNTIME_ERROR("unknown timer kind " + std::to_string(kind) + ".");
 	}
@@ -32,7 +35,7 @@ bool CpuExecutionState::runStoppedCpu(Runtime& runtime, FrameState& frameState) 
 	auto& cpu = runtime.machine.cpu;
 	auto& gxGpu = runtime.machine.gxGpu;
 	auto& system = runtime.machine.systemController;
-	int& cycleBudgetRemaining = frameState.cycleBudgetRemaining;
+	i64& cycleBudgetRemaining = frameState.cycleBudgetRemaining;
 	bool tickCompleted = runDueRuntimeTimers(runtime);
 	if (gxGpu.backendReadbackBlocksMachine()) {
 		return tickCompleted;
@@ -68,7 +71,9 @@ bool CpuExecutionState::runStoppedCpu(Runtime& runtime, FrameState& frameState) 
 				}
 				continue;
 			}
-			const int idleCycles = static_cast<int>(std::min<i64>(cycleBudgetRemaining, cyclesToTarget));
+			i64 idleBudget = cyclesToTarget < cycleBudgetRemaining ? cyclesToTarget : cycleBudgetRemaining;
+			if (idleBudget > MAX_CPU_SLICE_CYCLES) idleBudget = MAX_CPU_SLICE_CYCLES;
+			const int idleCycles = static_cast<int>(idleBudget);
 			cycleBudgetRemaining -= idleCycles;
 			frameState.cycleBudgetRemaining = cycleBudgetRemaining;
 			tickCompleted = advanceRuntimeTime(runtime, idleCycles);
@@ -85,7 +90,7 @@ RunResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState& frameSt
 	auto& machine = runtime.machine;
 	auto& scheduler = machine.scheduler;
 	auto& cpu = machine.cpu;
-	int remaining = frameState.cycleBudgetRemaining;
+	i64 remaining = frameState.cycleBudgetRemaining;
 	RunResult result = RunResult::Yielded;
 	bool tickCompleted = runDueRuntimeTimers(runtime);
 	while (remaining > 0
@@ -101,13 +106,17 @@ RunResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState& frameSt
 			}
 			// Device-ready edges release blocked MMIO stores. Advance to scheduled
 			// hardware events here; never poll readiness or retry the instruction.
-			const int waitCycles = static_cast<int>(std::min<i64>(deadlineBudget, remaining));
+			i64 waitBudget = deadlineBudget < remaining ? deadlineBudget : remaining;
+			if (waitBudget > MAX_CPU_SLICE_CYCLES) waitBudget = MAX_CPU_SLICE_CYCLES;
+			const int waitCycles = static_cast<int>(waitBudget);
 			remaining -= waitCycles;
 			frameState.activeCpuUsedCycles += waitCycles;
 			tickCompleted = advanceRuntimeTime(runtime, waitCycles);
 			continue;
 		}
-		int sliceBudget = remaining;
+		int sliceBudget = static_cast<int>(remaining > MAX_CPU_SLICE_CYCLES
+			? MAX_CPU_SLICE_CYCLES
+			: remaining);
 		const i64 nextDeadline = scheduler.nextDeadline();
 		if (nextDeadline != std::numeric_limits<i64>::max()) {
 			const i64 deadlineBudget = nextDeadline - scheduler.nowCycles();

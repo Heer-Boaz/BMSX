@@ -241,29 +241,13 @@ std::array<i64, N> decodeI64Array(const BinValue& value, const char* label) {
 BinValue encodeCpuValueState(const CpuValueState& state);
 CpuValueState decodeCpuValueState(const BinValue& value, const char* label);
 
-BinValue encodeTickCompletion(const TickCompletion& state) {
-	BinObject object;
-	object["sequence"] = static_cast<i64>(state.sequence);
-	object["remaining"] = static_cast<i64>(state.remaining);
-	object["visualCommitted"] = state.visualCommitted;
-	return BinValue(std::move(object));
-}
-
-TickCompletion decodeTickCompletion(const BinValue& value, const char* label) {
-	const BinObject& object = requireObject(value, label);
-	TickCompletion state;
-	state.sequence = requireI64(requireField(object, "sequence", label), "tickCompletion.sequence");
-	state.remaining = requireI32(requireField(object, "remaining", label), "tickCompletion.remaining");
-	state.visualCommitted = requireBool(requireField(object, "visualCommitted", label), "tickCompletion.visualCommitted");
-	return state;
-}
-
 BinValue encodeFrameSchedulerState(const FrameSchedulerStateSnapshot& state) {
 	BinObject object;
 	object["accumulatedHostTimeMs"] = state.accumulatedHostTimeMs;
-	object["queuedTickCompletions"] = encodeVector(state.queuedTickCompletions, [](const TickCompletion& completion) {
-		return encodeTickCompletion(completion);
-	});
+	object["cycleGrantRemainder"] = state.cycleGrantRemainder;
+	object["carriedCycleBudget"] = state.carriedCycleBudget;
+	object["tickCompletionPending"] = state.tickCompletionPending;
+	object["tickCompletionVisualCommitted"] = state.tickCompletionVisualCommitted;
 	object["lastTickSequence"] = static_cast<i64>(state.lastTickSequence);
 	object["lastTickBudgetGranted"] = static_cast<i64>(state.lastTickBudgetGranted);
 	object["lastTickCpuBudgetGranted"] = static_cast<i64>(state.lastTickCpuBudgetGranted);
@@ -279,33 +263,18 @@ FrameSchedulerStateSnapshot decodeFrameSchedulerState(const BinValue& value, con
 	const BinObject& object = requireObject(value, label);
 	FrameSchedulerStateSnapshot state;
 	state.accumulatedHostTimeMs = requireNumber(requireField(object, "accumulatedHostTimeMs", label), "frameScheduler.accumulatedHostTimeMs");
-	state.queuedTickCompletions = decodeVector<TickCompletion>(requireField(object, "queuedTickCompletions", label), "frameScheduler.queuedTickCompletions",
-		[](const BinValue& entryValue, size_t) {
-			return decodeTickCompletion(entryValue, "frameScheduler.queuedTickCompletions[]");
-		});
+	state.cycleGrantRemainder = requireI64(requireField(object, "cycleGrantRemainder", label), "frameScheduler.cycleGrantRemainder");
+	state.carriedCycleBudget = requireI64(requireField(object, "carriedCycleBudget", label), "frameScheduler.carriedCycleBudget");
+	state.tickCompletionPending = requireBool(requireField(object, "tickCompletionPending", label), "frameScheduler.tickCompletionPending");
+	state.tickCompletionVisualCommitted = requireBool(requireField(object, "tickCompletionVisualCommitted", label), "frameScheduler.tickCompletionVisualCommitted");
 	state.lastTickSequence = requireI64(requireField(object, "lastTickSequence", label), "frameScheduler.lastTickSequence");
-	state.lastTickBudgetGranted = requireI32(requireField(object, "lastTickBudgetGranted", label), "frameScheduler.lastTickBudgetGranted");
-	state.lastTickCpuBudgetGranted = requireI32(requireField(object, "lastTickCpuBudgetGranted", label), "frameScheduler.lastTickCpuBudgetGranted");
-	state.lastTickCpuUsedCycles = requireI32(requireField(object, "lastTickCpuUsedCycles", label), "frameScheduler.lastTickCpuUsedCycles");
-	state.lastTickBudgetRemaining = requireI32(requireField(object, "lastTickBudgetRemaining", label), "frameScheduler.lastTickBudgetRemaining");
+	state.lastTickBudgetGranted = requireI64(requireField(object, "lastTickBudgetGranted", label), "frameScheduler.lastTickBudgetGranted");
+	state.lastTickCpuBudgetGranted = requireI64(requireField(object, "lastTickCpuBudgetGranted", label), "frameScheduler.lastTickCpuBudgetGranted");
+	state.lastTickCpuUsedCycles = requireI64(requireField(object, "lastTickCpuUsedCycles", label), "frameScheduler.lastTickCpuUsedCycles");
+	state.lastTickBudgetRemaining = requireI64(requireField(object, "lastTickBudgetRemaining", label), "frameScheduler.lastTickBudgetRemaining");
 	state.lastTickVisualFrameCommitted = requireBool(requireField(object, "lastTickVisualFrameCommitted", label), "frameScheduler.lastTickVisualFrameCommitted");
 	state.lastTickCompleted = requireBool(requireField(object, "lastTickCompleted", label), "frameScheduler.lastTickCompleted");
 	state.lastTickConsumedSequence = requireI64(requireField(object, "lastTickConsumedSequence", label), "frameScheduler.lastTickConsumedSequence");
-	return state;
-}
-
-BinValue encodeRuntimeVblankState(const RuntimeVblankSnapshot& state) {
-	BinObject object;
-	object["nowCycles"] = static_cast<i64>(state.nowCycles);
-	object["cyclesIntoFrame"] = static_cast<i64>(state.cyclesIntoFrame);
-	return BinValue(std::move(object));
-}
-
-RuntimeVblankSnapshot decodeRuntimeVblankState(const BinValue& value, const char* label) {
-	const BinObject& object = requireObject(value, label);
-	RuntimeVblankSnapshot state;
-	state.nowCycles = requireI64(requireField(object, "nowCycles", label), "vblank.nowCycles");
-	state.cyclesIntoFrame = requireI32(requireField(object, "cyclesIntoFrame", label), "vblank.cyclesIntoFrame");
 	return state;
 }
 
@@ -610,9 +579,6 @@ BinValue encodeGxGpuRegisterContextState(const GxGpuRegisterContextState& state)
 	object["horizontalDisplayRangeWord"] = static_cast<i64>(state.horizontalDisplayRangeWord);
 	object["verticalDisplayRangeWord"] = static_cast<i64>(state.verticalDisplayRangeWord);
 	object["vramYAddressExtensionWord"] = static_cast<i64>(state.vramYAddressExtensionWord);
-	object["scanoutInterlacedField"] = static_cast<i64>(state.scanoutInterlacedField);
-	object["scanoutInterlacedDisplayField"] = static_cast<i64>(state.scanoutInterlacedDisplayField);
-	object["scanoutActiveLineLsb"] = static_cast<i64>(state.scanoutActiveLineLsb);
 	object["presentStatusWord"] = static_cast<i64>(state.presentStatusWord);
 	object["presentDisplayModeWord"] = static_cast<i64>(state.presentDisplayModeWord);
 	object["presentDisplayStartWord"] = static_cast<i64>(state.presentDisplayStartWord);
@@ -643,17 +609,14 @@ GxGpuRegisterContextState decodeGxGpuRegisterContextState(const BinValue& value,
 	state.horizontalDisplayRangeWord = requireU32(requireField(object, "horizontalDisplayRangeWord", label), "machine.gxGpu.userContext.horizontalDisplayRangeWord");
 	state.verticalDisplayRangeWord = requireU32(requireField(object, "verticalDisplayRangeWord", label), "machine.gxGpu.userContext.verticalDisplayRangeWord");
 	state.vramYAddressExtensionWord = requireU32(requireField(object, "vramYAddressExtensionWord", label), "machine.gxGpu.userContext.vramYAddressExtensionWord");
-	state.scanoutInterlacedField = requireBoundedU32(requireField(object, "scanoutInterlacedField", label), "machine.gxGpu.userContext.scanoutInterlacedField", 0u, 1u);
-	state.scanoutInterlacedDisplayField = requireBoundedU32(requireField(object, "scanoutInterlacedDisplayField", label), "machine.gxGpu.userContext.scanoutInterlacedDisplayField", 0u, 1u);
-	state.scanoutActiveLineLsb = requireBoundedU32(requireField(object, "scanoutActiveLineLsb", label), "machine.gxGpu.userContext.scanoutActiveLineLsb", 0u, 1u);
 	state.presentStatusWord = requireU32(requireField(object, "presentStatusWord", label), "machine.gxGpu.userContext.presentStatusWord");
 	state.presentDisplayModeWord = requireU32(requireField(object, "presentDisplayModeWord", label), "machine.gxGpu.userContext.presentDisplayModeWord");
 	state.presentDisplayStartWord = requireU32(requireField(object, "presentDisplayStartWord", label), "machine.gxGpu.userContext.presentDisplayStartWord");
 	state.presentVramYAddressExtensionWord = requireBoundedU32(requireField(object, "presentVramYAddressExtensionWord", label), "machine.gxGpu.userContext.presentVramYAddressExtensionWord", 0u, 1u);
 	state.presentHorizontalDisplayRangeWord = requireU32(requireField(object, "presentHorizontalDisplayRangeWord", label), "machine.gxGpu.userContext.presentHorizontalDisplayRangeWord");
 	state.presentVerticalDisplayRangeWord = requireU32(requireField(object, "presentVerticalDisplayRangeWord", label), "machine.gxGpu.userContext.presentVerticalDisplayRangeWord");
-	state.pcrtcRegisterWords = decodeU32Array<GX_GPU_PCRTC_WORD_COUNT>(requireField(object, "pcrtcRegisterWords", label), "machine.gxGpu.userContext.pcrtcRegisterWords");
-	state.pcrtcPresentWords = decodeU32Array<GX_GPU_PCRTC_WORD_COUNT>(requireField(object, "pcrtcPresentWords", label), "machine.gxGpu.userContext.pcrtcPresentWords");
+	state.pcrtcRegisterWords = decodeU32Array<GX_GPU_PCRTC_COMPOSITION_WORD_COUNT>(requireField(object, "pcrtcRegisterWords", label), "machine.gxGpu.userContext.pcrtcRegisterWords");
+	state.pcrtcPresentWords = decodeU32Array<GX_GPU_PCRTC_COMPOSITION_WORD_COUNT>(requireField(object, "pcrtcPresentWords", label), "machine.gxGpu.userContext.pcrtcPresentWords");
 	state.vramPresentationPending = requireBool(requireField(object, "vramPresentationPending", label), "machine.gxGpu.userContext.vramPresentationPending");
 	return state;
 }
@@ -662,14 +625,30 @@ BinValue encodeGxGpuPcrtcState(const GxGpuPcrtcState& state) {
 	BinObject object;
 	object["registerWords"] = encodeFixedArray(state.registerWords, encodeScalar<i64, u32>);
 	object["presentWords"] = encodeFixedArray(state.presentWords, encodeScalar<i64, u32>);
+	object["csrWord"] = static_cast<i64>(state.csrWord);
+	object["imrWord"] = static_cast<i64>(state.imrWord);
+	object["beamCycleOffset"] = state.beamCycleOffset;
+	object["beamRemainder"] = static_cast<i64>(state.beamRemainder);
+	object["beamHalfLine"] = static_cast<i64>(state.beamHalfLine);
+	object["nextHsyncHalfLine"] = static_cast<i64>(state.nextHsyncHalfLine);
+	object["verticalStage"] = static_cast<i64>(state.verticalStage);
+	object["vblankActive"] = state.vblankActive;
 	return BinValue(std::move(object));
 }
 
 GxGpuPcrtcState decodeGxGpuPcrtcState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
 	GxGpuPcrtcState state;
-	state.registerWords = decodeU32Array<GX_GPU_PCRTC_WORD_COUNT>(requireField(object, "registerWords", label), "machine.gxGpu.pcrtc.registerWords");
-	state.presentWords = decodeU32Array<GX_GPU_PCRTC_WORD_COUNT>(requireField(object, "presentWords", label), "machine.gxGpu.pcrtc.presentWords");
+	state.registerWords = decodeU32Array<GX_GPU_PCRTC_CONFIG_WORD_COUNT>(requireField(object, "registerWords", label), "machine.gxGpu.pcrtc.registerWords");
+	state.presentWords = decodeU32Array<GX_GPU_PCRTC_CONFIG_WORD_COUNT>(requireField(object, "presentWords", label), "machine.gxGpu.pcrtc.presentWords");
+	state.csrWord = requireU32(requireField(object, "csrWord", label), "machine.gxGpu.pcrtc.csrWord");
+	state.imrWord = requireU32(requireField(object, "imrWord", label), "machine.gxGpu.pcrtc.imrWord");
+	state.beamCycleOffset = requireI64(requireField(object, "beamCycleOffset", label), "machine.gxGpu.pcrtc.beamCycleOffset");
+	state.beamRemainder = requireU32(requireField(object, "beamRemainder", label), "machine.gxGpu.pcrtc.beamRemainder");
+	state.beamHalfLine = requireU32(requireField(object, "beamHalfLine", label), "machine.gxGpu.pcrtc.beamHalfLine");
+	state.nextHsyncHalfLine = requireU32(requireField(object, "nextHsyncHalfLine", label), "machine.gxGpu.pcrtc.nextHsyncHalfLine");
+	state.verticalStage = requireBoundedU32(requireField(object, "verticalStage", label), "machine.gxGpu.pcrtc.verticalStage", 0u, 2u);
+	state.vblankActive = requireBool(requireField(object, "vblankActive", label), "machine.gxGpu.pcrtc.vblankActive");
 	return state;
 }
 
@@ -715,9 +694,6 @@ BinValue encodeGxGpuState(const GxGpuState& state) {
 	object["horizontalDisplayRangeWord"] = static_cast<i64>(state.horizontalDisplayRangeWord);
 	object["verticalDisplayRangeWord"] = static_cast<i64>(state.verticalDisplayRangeWord);
 	object["vramYAddressExtensionWord"] = static_cast<i64>(state.vramYAddressExtensionWord);
-	object["scanoutInterlacedField"] = static_cast<i64>(state.scanoutInterlacedField);
-	object["scanoutInterlacedDisplayField"] = static_cast<i64>(state.scanoutInterlacedDisplayField);
-	object["scanoutActiveLineLsb"] = static_cast<i64>(state.scanoutActiveLineLsb);
 	object["presentStatusWord"] = static_cast<i64>(state.presentStatusWord);
 	object["presentDisplayModeWord"] = static_cast<i64>(state.presentDisplayModeWord);
 	object["presentDisplayStartWord"] = static_cast<i64>(state.presentDisplayStartWord);
@@ -725,6 +701,7 @@ BinValue encodeGxGpuState(const GxGpuState& state) {
 	object["presentHorizontalDisplayRangeWord"] = static_cast<i64>(state.presentHorizontalDisplayRangeWord);
 	object["presentVerticalDisplayRangeWord"] = static_cast<i64>(state.presentVerticalDisplayRangeWord);
 	object["pcrtc"] = encodeGxGpuPcrtcState(state.pcrtc);
+	object["pcrtcPresentationPending"] = state.pcrtcPresentationPending;
 	object["vramPresentationPending"] = state.vramPresentationPending;
 	object["supervisorQuiesceRequested"] = state.supervisorQuiesceRequested;
 	object["supervisorIngressStopped"] = state.supervisorIngressStopped;
@@ -778,9 +755,6 @@ GxGpuState decodeGxGpuState(const BinValue& value, const char* label) {
 	state.horizontalDisplayRangeWord = requireU32(requireField(object, "horizontalDisplayRangeWord", label), "machine.gxGpu.horizontalDisplayRangeWord");
 	state.verticalDisplayRangeWord = requireU32(requireField(object, "verticalDisplayRangeWord", label), "machine.gxGpu.verticalDisplayRangeWord");
 	state.vramYAddressExtensionWord = requireU32(requireField(object, "vramYAddressExtensionWord", label), "machine.gxGpu.vramYAddressExtensionWord");
-	state.scanoutInterlacedField = requireBoundedU32(requireField(object, "scanoutInterlacedField", label), "machine.gxGpu.scanoutInterlacedField", 0u, 1u);
-	state.scanoutInterlacedDisplayField = requireBoundedU32(requireField(object, "scanoutInterlacedDisplayField", label), "machine.gxGpu.scanoutInterlacedDisplayField", 0u, 1u);
-	state.scanoutActiveLineLsb = requireBoundedU32(requireField(object, "scanoutActiveLineLsb", label), "machine.gxGpu.scanoutActiveLineLsb", 0u, 1u);
 	state.presentStatusWord = requireU32(requireField(object, "presentStatusWord", label), "machine.gxGpu.presentStatusWord");
 	state.presentDisplayModeWord = requireU32(requireField(object, "presentDisplayModeWord", label), "machine.gxGpu.presentDisplayModeWord");
 	state.presentDisplayStartWord = requireU32(requireField(object, "presentDisplayStartWord", label), "machine.gxGpu.presentDisplayStartWord");
@@ -788,6 +762,7 @@ GxGpuState decodeGxGpuState(const BinValue& value, const char* label) {
 	state.presentHorizontalDisplayRangeWord = requireU32(requireField(object, "presentHorizontalDisplayRangeWord", label), "machine.gxGpu.presentHorizontalDisplayRangeWord");
 	state.presentVerticalDisplayRangeWord = requireU32(requireField(object, "presentVerticalDisplayRangeWord", label), "machine.gxGpu.presentVerticalDisplayRangeWord");
 	state.pcrtc = decodeGxGpuPcrtcState(requireField(object, "pcrtc", label), "machine.gxGpu.pcrtc");
+	state.pcrtcPresentationPending = requireBool(requireField(object, "pcrtcPresentationPending", label), "machine.gxGpu.pcrtcPresentationPending");
 	state.vramPresentationPending = requireBool(requireField(object, "vramPresentationPending", label), "machine.gxGpu.vramPresentationPending");
 	state.supervisorQuiesceRequested = requireBool(requireField(object, "supervisorQuiesceRequested", label), "machine.gxGpu.supervisorQuiesceRequested");
 	state.supervisorIngressStopped = requireBool(requireField(object, "supervisorIngressStopped", label), "machine.gxGpu.supervisorIngressStopped");
@@ -1146,20 +1121,18 @@ MachineSaveState decodeMachineSaveState(const BinValue& value, const char* label
 
 BinValue encodeRuntimeSaveMachineState(const RuntimeSaveMachineState& state) {
 	BinObject object;
-	object["psxGpuDisplayModeWord"] = static_cast<i64>(state.psxGpuDisplayModeWord);
 	object["machine"] = encodeMachineSaveState(state.machine);
 	object["frameScheduler"] = encodeFrameSchedulerState(state.frameScheduler);
-	object["vblank"] = encodeRuntimeVblankState(state.vblank);
+	object["schedulerNowCycles"] = state.schedulerNowCycles;
 	return BinValue(std::move(object));
 }
 
 RuntimeSaveMachineState decodeRuntimeSaveMachineState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
 	RuntimeSaveMachineState state;
-	state.psxGpuDisplayModeWord = requireU32(requireField(object, "psxGpuDisplayModeWord", label), "machineState.psxGpuDisplayModeWord");
 	state.machine = decodeMachineSaveState(requireField(object, "machine", label), "machineState.machine");
 	state.frameScheduler = decodeFrameSchedulerState(requireField(object, "frameScheduler", label), "machineState.frameScheduler");
-	state.vblank = decodeRuntimeVblankState(requireField(object, "vblank", label), "machineState.vblank");
+	state.schedulerNowCycles = requireI64(requireField(object, "schedulerNowCycles", label), "machineState.schedulerNowCycles");
 	return state;
 }
 

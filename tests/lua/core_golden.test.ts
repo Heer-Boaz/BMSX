@@ -134,14 +134,19 @@ test('core golden: runtime VBlank end publishes scanout at the new frame origin'
 	const inputSampleEdges: Array<{ currentTimeMs: number; nowCycles: number }> = [];
 	let raisedIrq = 0;
 	let gxPresentCount = 0;
-	let appliedDisplayModeWord = 0;
-	let appliedVerticalDisplayRangeWord = 0;
+	let appliedPcrtcRevision = 0;
 	const gpuOutput = {
-		displayModeWord: 0x09,
-		verticalDisplayRangeWord: 0x00044c23,
+		pcrtcTiming: {
+			revision: 7,
+			running: true,
+			refreshUfpsScaled: 50_000_000,
+			totalScanlines: 10,
+			activeDisplayLines: 8,
+		},
 	};
 	const runtime = {
 		timing: {
+			pcrtcRunning: true,
 			cpuHz: 5000,
 			cycleBudgetPerFrame: 100,
 			totalScanlines: 10,
@@ -169,7 +174,8 @@ test('core golden: runtime VBlank end publishes scanout at the new frame origin'
 				presentReadyFrameOnVblankEdge() {
 					gxPresentCount += 1;
 				},
-				setScanoutTiming(active: boolean, cyclesIntoFrame: number, cyclesPerFrame: number, totalScanlines: number) {
+				setScanoutTiming(running: boolean, active: boolean, cyclesIntoFrame: number, cyclesPerFrame: number, totalScanlines: number) {
+					void running;
 					gxScanoutCalls.push({ active, cyclesIntoFrame, cyclesPerFrame, totalScanlines });
 				},
 			},
@@ -181,9 +187,8 @@ test('core golden: runtime VBlank end publishes scanout at the new frame origin'
 		machineElapsedMs() {
 			return scheduler.currentNowCycles() * 1000 / 5000;
 		},
-		applyPublishedPsxGpuDisplayTiming(displayModeWord: number, verticalDisplayRangeWord: number) {
-			appliedDisplayModeWord = displayModeWord;
-			appliedVerticalDisplayRangeWord = verticalDisplayRangeWord;
+		applyPublishedGxGpuPcrtcTiming(pcrtcTiming: { revision: number }) {
+			appliedPcrtcRevision = pcrtcTiming.revision;
 		},
 	} as unknown as Runtime;
 	const vblank = new VblankState(runtime);
@@ -198,8 +203,7 @@ test('core golden: runtime VBlank end publishes scanout at the new frame origin'
 
 	scheduler.setNowCycles(100);
 	vblank.handleEndTimer();
-	assert.equal(appliedDisplayModeWord, gpuOutput.displayModeWord);
-	assert.equal(appliedVerticalDisplayRangeWord, gpuOutput.verticalDisplayRangeWord);
+	assert.equal(appliedPcrtcRevision, gpuOutput.pcrtcTiming.revision);
 	assert.deepEqual(gxScanoutCalls[1], { active: false, cyclesIntoFrame: 0, cyclesPerFrame: 100, totalScanlines: 10 });
 
 	gxScanoutCalls.length = 0;

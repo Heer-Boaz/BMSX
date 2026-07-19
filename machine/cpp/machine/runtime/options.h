@@ -16,11 +16,12 @@ struct RuntimeOptions {
 
 	RomSpan systemRomBytes;
 	RomSpan cartRomBytes;
-	uint32_t psxGpuDisplayModeWord;
+	bool pcrtcRunning;
 	i64 ufpsScaled;
 	i64 cpuHz;
-	int cycleBudgetPerFrame;
-	int vblankCycles;
+	i64 cycleBudgetPerFrame;
+	i64 totalHalfLines;
+	i64 activeDisplayHalfLines;
 	i64 dmaWordsPerSec;
 	int geoWorkUnitsPerSec;
 };

@@ -91,6 +91,7 @@ export class Machine {
 		this.dmaController.setTiming(timing.cpuHz, timing.dmaWordsPerSec, nowCycles);
 		this.geometryController.setTiming(timing.cpuHz, timing.geoWorkUnitsPerSec, nowCycles);
 		this.audioController.setTiming(timing.cpuHz, nowCycles);
+		this.gxGpu.setTiming(timing.cpuHz, nowCycles);
 	}
 
 	public advanceDevices(cycles: number): void {
@@ -99,30 +100,29 @@ export class Machine {
 		this.scheduler.advanceTo(nextNow);
 	}
 
-	public runDeviceService(deviceKind: number): void {
+	public runDeviceService(deviceKind: number): number {
 		const nowCycles = this.scheduler.nowCycles;
 		switch (deviceKind) {
 			case DEVICE_SERVICE_GEO:
 				this.geometryController.onService(nowCycles);
-				return;
+				return 0;
 			case DEVICE_SERVICE_DMA:
 				this.dmaController.onService(nowCycles);
-				return;
+				return 0;
 			case DEVICE_SERVICE_APU:
 				this.audioController.onService(nowCycles);
-				return;
+				return 0;
 			case DEVICE_SERVICE_APU_TRANSFER:
 				this.audioController.onTransferService(nowCycles);
-				return;
+				return 0;
 			case DEVICE_SERVICE_GPU:
-				this.gxGpu.onService(nowCycles);
-				return;
+				return this.gxGpu.onService(nowCycles);
 			case DEVICE_SERVICE_GTE:
 				this.gxGte.onService();
-				return;
+				return 0;
 			case DEVICE_SERVICE_SYSTEM:
 				this.systemController.onService();
-				return;
+				return 0;
 			default:
 				throw new Error(`Runtime fault: unknown device service kind ${deviceKind}.`);
 		}

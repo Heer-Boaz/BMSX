@@ -44,19 +44,18 @@ export class FrameLoopState {
 		runtime.frameScheduler.resetTickTelemetry();
 	}
 
-	public beginFrameState(): FrameState {
+	public beginFrameState(budget: number, carry: number): FrameState {
 		if (this.frameActive) {
 			throw new Error('attempted to begin a new frame while another frame is active.');
 		}
 		const runtime = this.runtime;
 		this.frameDeltaMs = runtime.timing.frameDurationMs;
-		const budget = runtime.timing.cycleBudgetPerFrame;
 		const state = this.frameState;
 		state.updateExecuted = false;
 		state.luaFaulted = runtime.luaRuntimeFailed;
 		state.cycleBudgetRemaining = budget;
 		state.cycleBudgetGranted = budget;
-		state.cycleCarryGranted = 0;
+		state.cycleCarryGranted = carry;
 		state.activeCpuUsedCycles = 0;
 		runtime.vblank.beginTick();
 		this.frameActive = true;

@@ -6,20 +6,16 @@ namespace bmsx {
 
 class Runtime;
 struct ResolvedRuntimeTiming {
-	uint32_t gpuDisplayModeWord;
+	bool pcrtcRunning;
 	i64 ufpsScaled;
-	i64 totalScanlines;
+	i64 totalHalfLines;
+	i64 activeDisplayHalfLines;
 	i64 cpuHz;
 	i64 dmaWordsPerSec;
 	int geoWorkUnitsPerSec;
-	int cycleBudgetPerFrame;
-	int vblankCycles;
+	i64 cycleBudgetPerFrame;
 };
 
-ResolvedRuntimeTiming resolveRuntimeTiming(
-	i64 cpuHz,
-	uint32_t gpuDisplayModeWord
-);
-void applyRuntimeTiming(Runtime& runtime, const ResolvedRuntimeTiming& timing);
+ResolvedRuntimeTiming resolveRuntimeTiming(i64 cpuHz);
 
 } // namespace bmsx

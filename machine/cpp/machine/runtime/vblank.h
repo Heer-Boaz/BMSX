@@ -7,38 +7,21 @@ namespace bmsx {
 
 class Runtime;
 
-struct RuntimeVblankSnapshot {
-	i64 nowCycles = 0;
-	int cyclesIntoFrame = 0;
-};
-
 class VblankState {
 public:
 	bool tickCompleted() const { return m_activeTickCompleted; }
-	void configureCycleBudget(Runtime& runtime);
-	void setVblankCycles(Runtime& runtime, int cycles);
-	void setNextFrameTiming(int cycleBudgetPerFrame, int vblankCycles);
-	int getCyclesIntoFrame(const Runtime& runtime) const;
 	void reset(Runtime& runtime);
-	RuntimeVblankSnapshot capture(const Runtime& runtime) const;
-	void restore(Runtime& runtime, const RuntimeVblankSnapshot& state);
+	void prepareRestore();
 	void beginTick();
 	void abandonTick();
-	void handleBeginTimer(Runtime& runtime);
-	void handleEndTimer(Runtime& runtime);
+	void handleGpuRuntimeEdge(Runtime& runtime, u32 edge);
 
 private:
-	void scheduleCurrentFrameTimers(Runtime& runtime);
-	void publishVblankTiming(Runtime& runtime, bool active);
 	void enterVblank(Runtime& runtime);
-	void completeTickIfPending(Runtime& runtime, FrameState& frameState, uint64_t vblankSequence);
+	void completeTickIfPending(Runtime& runtime, FrameState& frameState, u64 vblankSequence);
 
-	uint64_t m_vblankSequence = 0;
-	uint64_t m_lastCompletedVblankSequence = 0;
-	int m_vblankCycles = 0;
-	int m_vblankStartCycle = 0;
-	bool m_vblankActive = false;
-	i64 m_frameStartCycle = 0;
+	u64 m_vblankSequence = 0;
+	u64 m_lastCompletedVblankSequence = 0;
 	bool m_activeTickCompleted = false;
 };
 

@@ -1,28 +1,28 @@
 import { captureMachineSaveState, restoreMachineSaveState, type MachineSaveState } from '../save_state';
 import type { FrameSchedulerStateSnapshot } from '../scheduler/frame';
-import type { RuntimeVblankSnapshot } from './vblank';
 import type { Runtime } from './runtime';
 
 export type RuntimeSaveMachineState = {
-	psxGpuDisplayModeWord: number;
 	machine: MachineSaveState;
 	frameScheduler: FrameSchedulerStateSnapshot;
-	vblank: RuntimeVblankSnapshot;
+	schedulerNowCycles: number;
 };
 
 export function captureRuntimeSaveMachineState(runtime: Runtime): RuntimeSaveMachineState {
-	const gpuOutput = runtime.machine.gxGpu.readDeviceOutput();
 	return {
-		psxGpuDisplayModeWord: gpuOutput.displayModeWord,
 		machine: captureMachineSaveState(runtime.machine),
 		frameScheduler: runtime.frameScheduler.captureState(),
-		vblank: runtime.vblank.capture(),
+		schedulerNowCycles: runtime.machine.scheduler.currentNowCycles(),
 	};
 }
 
 export function applyRuntimeSaveMachineState(runtime: Runtime, state: RuntimeSaveMachineState): void {
-	runtime.applyPublishedPsxGpuDisplayTiming(state.machine.gxGpu.presentDisplayModeWord, state.machine.gxGpu.presentVerticalDisplayRangeWord);
-	runtime.vblank.restore(state.vblank);
+	runtime.frameScheduler.reset();
+	runtime.frameLoop.reset();
+	runtime.machine.scheduler.reset();
+	runtime.machine.scheduler.setNowCycles(state.schedulerNowCycles);
+	runtime.vblank.prepareRestore();
 	restoreMachineSaveState(runtime.machine, state.machine);
+	runtime.applyPublishedGxGpuPcrtcTiming(runtime.machine.gxGpu.readDeviceOutput().pcrtcTiming);
 	runtime.frameScheduler.restoreState(state.frameScheduler);
 }

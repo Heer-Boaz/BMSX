@@ -261,42 +261,48 @@ machine registry are host/tooling input; cart-visible behavior is still
 programmed through CPU-visible ROM, RAM, MMIO, BIOS Lua, and link symbols.
 
 Display configuration is raw hardware register state. PCRTC is the implemented
-scanout authority: its VBlank-published words own both native read-output
-rectangles, their merge and the resulting output bounds. Software, WebGL2,
-WebGPU, and GLES2 scan out those native pixel coordinates directly. The PCRTC
-owner updates its retained output width and height only when the published words
-change; the presentation loop consumes those members directly instead of
-re-decoding both circuits every host frame. Host targets resize only when those
-bounds change, and physical 4:3 layout remains separate presentation policy.
+scanout authority. Its live timing bank owns the physical beam; its
+VBlank-published bank owns both native read-output rectangles, their merge and
+the resulting output bounds. Software, WebGL2, WebGPU, and GLES2 scan out those
+native pixel coordinates directly. The PCRTC owner updates its retained output
+width, height and selected merge datapath only when published words change; the
+presentation loop consumes those members directly instead of re-decoding both
+circuits every host frame. Host targets resize only when those bounds change,
+and physical 4:3 layout remains separate presentation policy.
 
-GP1(05h)--GP1(08h) remain the PSX timing/status register contract rather than a
-parallel scanout path. GP1(08h) owns field timing, GP1(07h) the active line
-count, GP1(05h) the retained PSX origin word and GP1(06h) retained horizontal
-timing. GX identifies as the type-2 GPU through GP1(10h/07h), so GP1(08h)
-retains its complete low-byte input word but bit 7 does not drive GPUSTAT bit 14
-or reverse scanout. There is no permanent GP1-to-PCRTC adapter.
+GP1(05h)--GP1(08h) are retained PSX GPU register/status words, not a second
+clock or scanout owner. They retain the PSX origin, horizontal range, vertical
+range and display-mode bits used by GP0/GPUSTAT behavior. A write to any of
+them cannot change a PCRTC timing revision, beam deadline or output rectangle.
+GX identifies as the type-2 GPU through GP1(10h/07h), so GP1(08h) retains its
+complete low-byte input word but bit 7 does not drive GPUSTAT bit 14 or reverse
+scanout. There is no permanent GP1-to-PCRTC adapter.
 
-GP1 display-mode bit 3 selects PAL (50 Hz, 313 total scanlines); a clear bit
-selects NTSC (59.940060 Hz, 262 total scanlines). The GPU publishes display mode
-and vertical range at VBlank; runtime timing consumes that publication before
-scheduling the next frame, using the active line count for the VBlank boundary.
-Cycle budget, audio mixer pacing, libretro AV publication, and current-format
-save-state restore consume the same raw GPU state. There is no VDP mode register,
-host-inferred region state, cart-name mode map, or asset-size proxy.
+`SMODE1`, `SYNCH1`, `SYNCH2` and `SYNCV` own the raw beam clock and horizontal
+and vertical periods. Their MMIO writes publish live timing at the scheduled
+GPU service and start a new beam epoch at that machine cycle. `SMODE1.SINT` or
+`PRST` stops only the beam; it does not stop CPU, DMA, APU or other machine
+time. `CSR` retains FIELD and event latches, `IMR` controls the separate PCRTC
+IRQ source, and write-one-to-clear events do not fabricate a new edge. All
+configuration words also have a presentation shadow that latches at VBlank so
+a mid-field timing or composition write never tears the current scanout.
 
-The GPU owns its interlaced field, displayed-field, and active-line parity
-latches. Current-format save-state preserves those three raw latches so a
-restored GPUSTAT read and the next interlaced draw continue the captured field.
-VBlank phase and frame-cycle timing remain runtime-scheduler state and are
-republished to the GPU during restore rather than duplicated in the device
-record.
+The PCRTC retains the beam epoch, rational half-line remainder, absolute
+half-line, HSync cadence, vertical stage, VBlank level, FIELD, CSR and IMR.
+GPUSTAT field/line bits and interlaced command parity are projected from that
+physical state plus the retained GP1 words. Current-format save-state stores
+the PCRTC state directly and restores its next deadline relative to the restored
+machine cycle; it does not reconstruct the beam from legacy display words.
 
-Frame deadlines advance from the preceding scheduled frame boundary, not from
-the scheduler time at which an overdue deadline is serviced. A CPU instruction
-is atomic and may cross that deadline, but such lateness must not accumulate
-into scanout-phase drift or duplicate a host frame. One runtime tick completes
-at the VBlank edge; the first tick after boot remains a real timeline tick and
-is not consumed as host warm-up.
+The host frame scheduler grants the CPU/device timeline exact rational machine
+cycles in fixed 60 Hz service quanta, independently of PCRTC state. Unused
+cycles carry across a VBlank rather than disappearing. A VBlank-begin edge
+completes a logical runtime tick and publishes at most one host presentation
+completion; a stopped beam therefore stops video edges but not machine
+execution. If weird but representable timing produces multiple fields inside
+one machine cycle, PCRTC advances every physical FIELD/event transition in
+constant time and coalesces only the host-facing presentation edge. Absolute
+cycle zero remains a valid hardware deadline.
 
 ## Runtime container vocabulary
 
@@ -656,10 +662,16 @@ rompacker, TOC and host do not maintain a second module-name or attribute list.
   inside an executing instruction. Scheduler-aware external execution owns its
   own ordinary CPU slices and device deadlines instead of crossing an APU,
   GPU, DMA, or IRQ edge on a nested host stack.
-- The frame scheduler owns CPU/device advancement and IRQ/VBlank timing. The
-  host frame pump may request work; it does not own device state transitions.
-- VBlank is a machine edge. Devices with VBlank behavior expose explicit edge
-  methods and latch/commit their own state there.
+- The frame scheduler owns CPU/device advancement. Host service quanta grant
+  exact rational CPU cycles and retain both the fractional remainder and unused
+  whole-cycle carry; PCRTC frequency or `SINT` never becomes a CPU wall clock.
+  The host frame pump may request work, but it does not own device transitions.
+- PCRTC owns HSync, VSync, FIELD and VBlank timing. VBlank is a machine edge,
+  not a timer invented by the runtime. Devices with VBlank behavior expose
+  explicit edge methods and latch/commit their own state there.
+- Device deadlines may be absolute cycle zero. An overdue PCRTC service batches
+  repeated periodic beam events arithmetically instead of looping per half-line,
+  but every retained latch reaches the same deterministic final state.
 
 The static cart ABI uses words, registers, addresses, sections, memory, and
 symbols as the primary representation. Static storage crosses module boundaries
@@ -755,11 +767,13 @@ Save-state captures deterministic machine state, not host conveniences.
 Saved:
 
 - CPU registers, stack/frame/root runtime values, string pool ownership, RAM/IO
-  state, scheduler/VBlank state, device registerfiles/latches/FIFOs/buffers, and
-  device-visible memory.
+  state, the monotonic scheduler cycle, rational host-cycle grant remainder,
+  unused whole-cycle carry, the coalesced pending tick-completion latch, device
+  registerfiles/latches/FIFOs/buffers, and device-visible memory.
 - GX GPU raw register words, GP0 packet assembly, retained command-buffer state,
-  raw 2 MiB VRAM, transfer/readback latches, PCRTC state, and display timing that
-  determines future output.
+  raw 2 MiB VRAM, transfer/readback latches, PCRTC active and presentation words,
+  CSR/IMR, beam offset/remainder/half-line/stage/VBlank state, and the pending
+  presentation latch that determines future output.
 - APU command/source/output state that determines future audio output,
   including the command FIFO ring, queued parameter latch words, active AOUT
   voice cursor/remainder, signed-Q12 gain/fade datapath, filter history, and
@@ -1201,15 +1215,31 @@ merge result. PCSX2's production merge owner demonstrates the same separation
 between the two read circuits, their source/destination rectangles and the
 [`PMODE` merge](https://github.com/PCSX2/pcsx2/blob/470e995c6c1404dfa76c9efff60d7f47acb63562/pcsx2/GS/Renderers/Common/GSRenderer.cpp#L82-L240).
 
+`DISPLAY.DW+1` is a horizontal video-clock extent and `DISPLAY.DH+1` is an
+output-line extent. The PCRTC owner converts signal X and `DW` once to native
+output columns through the `SMODE1` signal step. `MAGH+1` and `MAGV+1` control
+how the scanout datapath advances or repeats source samples from the
+`DISPFB.DBX/DBY` origin; they are not a second host-frame bounds calculation.
+`DISPFB.FBP` remains an 8 KiB base unit, `FBW` remains a 64-pixel unit, and the
+selected `PSMCT32`, `PSMCT24`, `PSMCT16`, `PSMCT16S`, and packed `PSGPU24`
+datapaths address the same uniform raw-word VRAM with word/byte wrap at its
+physical boundary. The selected packed-24 datapath addresses byte channel `c`
+of source pixel `(x, y)` as
+`((FBP_words << 1) + (y * FBW_pixels + x) * 3 + c) & VRAM_byte_mask`; it does
+not reinterpret the pixel row stride as a 16-bit page count.
+
 Software scanout selects its composition datapath once from the published
-PCRTC state. The common RGB555, unit-magnification case clears the selected
-rows, writes circuit 2 as the opaque underlay, then runs either the source-mask
-or constant-alpha circuit-1 row kernel. Other framebuffer formats and
-magnification use the general circuit sampler. Circuit enable, format,
-magnification and merge mode are therefore not re-decoded for every output
-pixel. The TypeScript headless owner exposes one retained output allocation as
-both 32-bit scanout words and RGBA bytes; presentation does not repair alpha or
-copy the completed frame into a second buffer.
+PCRTC state. The common RGB555 case clears the selected rows, writes circuit 2
+with its raw STP-derived alpha, then runs the selected source- or
+constant-alpha circuit-1 row kernel. `PMODE.AMOD` selects whether that kernel
+publishes its merge alpha or preserves circuit-2/background alpha; zero-alpha
+and opaque-alpha paths have dedicated row datapaths instead of a per-pixel
+mode branch. Other framebuffer formats use the general circuit sampler.
+Circuit enable, format, magnification, output bounds and merge mode are
+therefore decoded when the published register words change, not again every
+host frame. The TypeScript headless owner exposes one retained output
+allocation as both 32-bit scanout words and RGBA bytes; presentation does not
+repair alpha or copy the completed frame into a second buffer.
 
 PCRTC is the sole GX scanout authority. BIOS and cart producers program its raw
 MMIO words directly; there is no permanent GP1-to-PCRTC adapter, legacy/native
@@ -1218,15 +1248,23 @@ and address behavior, VBlank publication, reset words, supervisor context and
 current-format save-state are owned by the mirrored TS/C++ registerfiles rather
 than custom 24-bit GP1 commands.
 
-Normal carts may use both read circuits. During resumable supervisor entry, the
-system controller retains the user's complete raw PCRTC context, maps its
-VBlank-published circuit-1 game readout to supervisor circuit 2 as the frozen
-underlay, and leaves circuit 1 to monitor firmware as the terminal foreground.
-`PMODE` merges terminal source alpha over the retained game. Leaving the
-supervisor restores the user context unchanged. A destructive fault has no
-resumable base and programs terminal presentation and background through the
-active supervisor PCRTC context. No path copies the cart framebuffer or
-allocates terminal-only memory.
+Both read circuits remain raw hardware and bare-metal code can program either
+one. The standard BSX firmware/cart ABI, however, assigns cart presentation to
+circuit 1 and reserves circuit 2 for supervisor composition. This is an
+ownership convention, not MMIO protection: a bare-metal cart that also uses
+circuit 2 gets deterministic dual-circuit output and accepts that resumable
+supervisor entry can preserve only its published circuit-1 readout as the
+supervisor's circuit-2 underlay. The system controller retains the complete raw
+twelve-word user composition context, including circuit 2, and restores its
+active and published banks unchanged on exit. `SMODE1/2`, `SYNCH1/2`, `SYNCV`,
+`CSR`, `IMR` and the physical beam remain one global PCRTC rather than hidden
+per-context clocks; supervisor writes to those words therefore persist after
+exit. Entry and exit replace the composition banks atomically and arm one
+presentation-pending latch. Supervisor circuit 1 belongs to monitor firmware
+and `PMODE` merges its terminal source alpha over the frozen underlay. A
+destructive fault has no resumable base and programs terminal presentation and
+background through the active supervisor composition context. No path copies
+the cart framebuffer or allocates terminal-only memory.
 
 The BIOS keeps a fixed 128-line cell scrollback, dirty ranges, line editor,
 history and GP0 command list in ordinary `.bss`. A packed ROM table maps each

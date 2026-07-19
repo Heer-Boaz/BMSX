@@ -72,20 +72,18 @@ void testResetCommandLatch() {
 
 void testRuntimeSystemRebootBoundary() {
 	std::array<bmsx::u8, 1> emptyRom{{0}};
-	const bmsx::ResolvedRuntimeTiming timing = bmsx::resolveRuntimeTiming(
-		bmsx::PSX_MACHINE_SPEC.cpuFreqHz,
-		bmsx::GX_GPU_RESET_DISPLAY_MODE_WORD
-	);
+	const bmsx::ResolvedRuntimeTiming timing = bmsx::resolveRuntimeTiming(bmsx::PSX_MACHINE_SPEC.cpuFreqHz);
 	SystemResetInputSource input;
 	bmsx::Runtime runtime(
 		bmsx::RuntimeOptions{
 			{ emptyRom.data(), 0u },
 			{ emptyRom.data(), 0u },
-			timing.gpuDisplayModeWord,
+			timing.pcrtcRunning,
 			timing.ufpsScaled,
 			timing.cpuHz,
 			timing.cycleBudgetPerFrame,
-			timing.vblankCycles,
+			timing.totalHalfLines,
+			timing.activeDisplayHalfLines,
 			timing.dmaWordsPerSec,
 			timing.geoWorkUnitsPerSec,
 		},

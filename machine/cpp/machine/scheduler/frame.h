@@ -2,8 +2,6 @@
 
 #include "common/primitives.h"
 #include "machine/runtime/frame/state.h"
-#include <array>
-#include <vector>
 
 namespace bmsx {
 
@@ -11,29 +9,30 @@ class Runtime;
 
 struct TickCompletion {
 	i64 sequence = 0;
-	int remaining = 0;
+	i64 remaining = 0;
 	bool visualCommitted = true;
 };
 
 struct FrameSchedulerStateSnapshot {
 	f64 accumulatedHostTimeMs = 0.0;
-	std::vector<TickCompletion> queuedTickCompletions;
+	i64 cycleGrantRemainder = 0;
+	i64 carriedCycleBudget = 0;
+	bool tickCompletionPending = false;
+	bool tickCompletionVisualCommitted = false;
 	i64 lastTickSequence = 0;
-	int lastTickBudgetGranted = 0;
-	int lastTickCpuBudgetGranted = 0;
-	int lastTickCpuUsedCycles = 0;
-	int lastTickBudgetRemaining = 0;
+	i64 lastTickBudgetGranted = 0;
+	i64 lastTickCpuBudgetGranted = 0;
+	i64 lastTickCpuUsedCycles = 0;
+	i64 lastTickBudgetRemaining = 0;
 	bool lastTickVisualFrameCommitted = true;
 	bool lastTickCompleted = false;
 	i64 lastTickConsumedSequence = 0;
 };
 
-constexpr size_t TICK_COMPLETION_QUEUE_CAPACITY = 16;
-
 class FrameSchedulerState {
 public:
 	void clearQueuedTime();
-	void clearTickCompletionQueue();
+	void clearPendingTickCompletion();
 	void reset();
 	void resetTickTelemetry();
 	FrameSchedulerStateSnapshot captureState() const;
@@ -45,25 +44,25 @@ public:
 	void run(Runtime& runtime, f64 hostDeltaMs);
 
 	i64 lastTickSequence = 0;
-	int lastTickBudgetGranted = 0;
-	int lastTickCpuBudgetGranted = 0;
-	int lastTickCpuUsedCycles = 0;
-	int lastTickBudgetRemaining = 0;
+	i64 lastTickBudgetGranted = 0;
+	i64 lastTickCpuBudgetGranted = 0;
+	i64 lastTickCpuUsedCycles = 0;
+	i64 lastTickBudgetRemaining = 0;
 	bool lastTickVisualFrameCommitted = true;
 	bool lastTickCompleted = false;
 	i64 lastTickConsumedSequence = 0;
 
 private:
-	void accumulateHostTime(const Runtime& runtime, f64 deltaMs);
+	void accumulateHostTime(f64 deltaMs);
 	bool canRunScheduledUpdate(const Runtime& runtime) const;
-	bool hasScheduledFrame(const Runtime& runtime) const;
-	bool consumeScheduledFrame(const Runtime& runtime);
+	bool hasScheduledSlice() const;
+	i64 takeScheduledCycleBudget(const Runtime& runtime);
 
 	f64 m_accumulatedHostTimeMs = 0.0;
-	std::array<TickCompletion, TICK_COMPLETION_QUEUE_CAPACITY> m_tickCompletionQueue{};
-	size_t m_tickCompletionReadIndex = 0;
-	size_t m_tickCompletionWriteIndex = 0;
-	size_t m_tickCompletionCount = 0;
+	i64 m_cycleGrantRemainder = 0;
+	i64 m_carriedCycleBudget = 0;
+	bool m_tickCompletionPending = false;
+	bool m_tickCompletionVisualCommitted = false;
 	bool m_backendServiceSuspended = false;
 };
 

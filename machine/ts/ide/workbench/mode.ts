@@ -237,7 +237,7 @@ function beginOverlayUpdateFrame(runtime: Runtime, state: RuntimeIdeState): bool
 	if (runtime.frameLoop.frameActive || state.overlayDrawFrameOwner !== null) {
 		return false;
 	}
-	runtime.frameLoop.beginFrameState();
+	runtime.frameLoop.beginFrameState(0, 0);
 	return true;
 }
 

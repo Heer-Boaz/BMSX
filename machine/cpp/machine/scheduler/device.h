@@ -10,9 +10,7 @@ namespace bmsx {
 
 class CPU;
 
-constexpr uint8_t TIMER_KIND_VBLANK_BEGIN = 1;
-constexpr uint8_t TIMER_KIND_VBLANK_END = 2;
-constexpr uint8_t TIMER_KIND_DEVICE_SERVICE = 3;
+constexpr uint8_t TIMER_KIND_DEVICE_SERVICE = 1;
 
 constexpr uint8_t DEVICE_SERVICE_GEO = 1;
 constexpr uint8_t DEVICE_SERVICE_DMA = 2;
@@ -38,10 +36,8 @@ public:
 	i64 nextDeadline();
 	bool hasDueTimer();
 	uint16_t popDueTimer();
-	void scheduleVblankTimer(uint8_t timerKind, i64 deadlineCycles);
 	void scheduleDeviceService(uint8_t deviceKind, i64 deadlineCycles);
 	void cancelDeviceService(uint8_t deviceKind);
-	void cancelVblankTimers();
 
 private:
 	static uint32_t nextTimerGeneration(uint32_t value);
@@ -64,8 +60,6 @@ private:
 	std::vector<uint8_t> m_timerPayloads;
 	std::vector<uint32_t> m_timerGenerations;
 	size_t m_timerCount = 0;
-	uint32_t m_vblankEnterTimerGeneration = 0;
-	uint32_t m_vblankEndTimerGeneration = 0;
 	std::array<uint32_t, static_cast<size_t>(DeviceServiceKindCount)> m_deviceServiceTimerGeneration{};
 };
 

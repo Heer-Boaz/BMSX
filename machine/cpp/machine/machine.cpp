@@ -42,6 +42,7 @@ void Machine::refreshDeviceTimings(const MachineTiming& timing, i64 nowCycles) {
 	dmaController.setTiming(timing.cpuHz, timing.dmaWordsPerSec, nowCycles);
 	geometryController.setTiming(timing.cpuHz, timing.geoWorkUnitsPerSec, nowCycles);
 	audioController.setTiming(timing.cpuHz, nowCycles);
+	gxGpu.setTiming(timing.cpuHz, nowCycles);
 }
 
 void Machine::advanceDevices(int cycles) {
@@ -50,30 +51,29 @@ void Machine::advanceDevices(int cycles) {
 	scheduler.advanceTo(nextNow);
 }
 
-void Machine::runDeviceService(uint8_t deviceKind) {
+u32 Machine::runDeviceService(uint8_t deviceKind) {
 	const i64 nowCycles = scheduler.nowCycles();
 	switch (deviceKind) {
 		case DEVICE_SERVICE_GEO:
-			geometryController.onService(nowCycles);
-			return;
+		geometryController.onService(nowCycles);
+			return 0u;
 		case DEVICE_SERVICE_DMA:
 			dmaController.onService(nowCycles);
-			return;
+			return 0u;
 		case DEVICE_SERVICE_APU:
 			audioController.onService(nowCycles);
-			return;
+			return 0u;
 		case DEVICE_SERVICE_APU_TRANSFER:
 			audioController.onTransferService(nowCycles);
-			return;
+			return 0u;
 		case DEVICE_SERVICE_GPU:
-			gxGpu.onService(nowCycles);
-			return;
+			return gxGpu.onService(nowCycles);
 		case DEVICE_SERVICE_GTE:
 			gxGte.onService();
-			return;
+			return 0u;
 		case DEVICE_SERVICE_SYSTEM:
 			systemController.onService();
-			return;
+			return 0u;
 		default:
 			throw BMSX_RUNTIME_ERROR("unknown device service kind " + std::to_string(deviceKind) + ".");
 	}

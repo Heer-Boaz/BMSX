@@ -31,11 +31,13 @@ The long-term console identity is BSX: a fantasy descendant of the PlayStation
 architecture with the Lua CPU and its own native GTE+ and GPU. That end state is
 recorded in `docs/architecture.md`. The selected GPU-side foundation now has
 the complete uniform 2 MiB VRAM address space (`GX-VRAM-02`) and the exact PS2
-PCRTC dual read-output/merge block (`GX-PCRTC-01`); only the latter's visible
-WebGL2/WebGPU acceptance remains open. `BSX-GTE-01` closes the separately
-addressed three-lane fixed-Q12 `VMAD3` implementation. Later depth,
-local-memory and packet-emission work remains separate rather than being
-implied by this first extension.
+PCRTC dual read-output/merge block (`GX-PCRTC-01`). Its physical beam,
+independent machine clock and context ownership are implemented; the packed
+`PSGPU24` row-stride correction, renewed broad runtime gates and visible
+WebGL2/WebGPU acceptance remain open. `BSX-GTE-01` closes the separately
+addressed three-lane fixed-Q12 `VMAD3` implementation. Later depth, local-memory
+and packet-emission work remains separate rather than being implied by this
+first extension.
 
 The terminal remains BIOS firmware. Its later `CALL` extension path is supplied
 by a real second cartridge slot and a Lua developer cartridge, not by moving IDE
@@ -988,24 +990,45 @@ merge model rather than a terminal-shaped approximation.
   TS/C++ device owners. PCRTC is the sole scanout authority after migration;
   move BIOS, cartlib and cart producers together and remove the old active GP1
   display path rather than retaining an adapter or runtime selector.
+- [x] Make PCRTC the physical timing owner. `SMODE1`, `SYNCH1`, `SYNCH2` and
+  `SYNCV` drive one retained rational beam with absolute cycle-zero deadlines,
+  HSync/VSync/VBlank/FIELD events, `CSR`/`IMR`, 64-bit frame budgets and exact
+  save/restore phase. Same-cycle fields advance in constant time and coalesce
+  only the host-facing presentation edge. Legacy GP1 display words cannot
+  alter the beam or runtime timing.
+- [x] Keep machine time independent of video. The host frame scheduler grants
+  exact rational CPU cycles in fixed 60 Hz service quanta, carries unused
+  cycles across VBlank and continues CPU/devices while `SINT` stops only PCRTC.
+  Save-state retains the grant remainder, whole-cycle carry and one coalesced
+  pending tick-completion latch instead of an allocating fixed-capacity queue.
 - [x] Integrate resumable supervisor ownership at the raw register boundary.
-  Supervisor circuit 2 reads the retained user circuit-1 game output as its
-  frozen underlay, circuit 1 reads the terminal foreground, and `PMODE` performs
-  the merge. Leaving restores the user context unchanged; destructive faults
-  have no resumable base and program the active background/circuits explicitly.
+  The standard firmware ABI reserves circuit 2 while bare-metal code retains raw
+  access to both circuits. Supervisor circuit 2 reads the retained user
+  circuit-1 game output as its frozen underlay, circuit 1 reads the terminal
+  foreground, and `PMODE` performs the merge. Leaving restores the complete raw
+  twelve-word composition context, including circuit 2. Timing, `CSR`, `IMR`
+  and beam stay physically global; destructive faults have no resumable base
+  and program the active background/circuits explicitly.
 - [x] Extend TS/C++ software oracles with both circuit rectangles, source
   offsets, magnification, supported PSMs, constant/source alpha selection,
   background, overlap/clipping, interlace and context/save-state vectors.
 - [x] Make WebGL2, WebGPU and GLES2 consume those same raw words and the one
   1024x1024 VRAM resource. Do not allocate a composed machine image, copy a cart
   framebuffer or add a backend/host terminal texture.
+- [x] Correct packed `PSGPU24` addressing at the central local-memory owner and
+  every software/shader consumer. Row stride is `framebufferWidth * 3` bytes,
+  not page-count-based; mirrored vectors must cover an in-row sample, row 64
+  and physical byte wrap before this PSM can be called exact. TS/C++ and all
+  three scanout shaders now use the same byte-address equation and mirrored
+  vectors cover those boundaries.
 - [x] Move monitor scanout to PCRTC circuit 1 over the retained circuit-2 cart
   frame and prove byte-identical TS/C++ captures plus hidden GLES2/llvmpipe
   conformance. TS software proves the sparse
   composition directly: nonzero cells including spaces are hard black behind
   their glyphs, zero cells retain the game pixel-exactly, and no terminal pixel
-  escapes the 256x192 circuit rectangle. Normal cart code must exercise both
-  circuits and the same `PMODE` merge independently of supervisor mode.
+  escapes the 256x192 circuit rectangle. Mirrored raw hardware vectors exercise
+  both circuits and the same `PMODE` merge independently of supervisor mode;
+  ordinary firmware carts follow the circuit-2 reservation.
 - [ ] Complete the visible `BIOS-TERM-LIVE-01` WebGL2/WebGPU acceptance run
   outside the WSL black-swapchain environment. This is a live-backend proof,
   not missing PCRTC machine or backend implementation.
@@ -1153,17 +1176,22 @@ terminal remains BIOS firmware throughout.
 
 Pick one vertical slice and finish it before committing:
 
-`GX-VRAM-02`, the machine/backend portion of `GX-PCRTC-01`, and `BSX-GTE-01`
-are complete and are no longer selectable implementation slices.
+`GX-VRAM-02` and `BSX-GTE-01` are complete and are no longer selectable
+implementation slices. Finish the active `GX-PCRTC-01` address/parity gates
+before selecting another graphics design slice.
 
-1. **Two-slot expansion bus (`CART-EXP-01`)**: specify and implement the physical
+1. **Finish `GX-PCRTC-01`**: rerun TS/C++ plus `bare_metal_cart`, `2025`,
+   `pietious` and BIOS monitor conformance, and obtain the mandatory independent
+   whole-diff review. Visible browser proof remains deferred when no real
+   accelerated session exists.
+2. **Two-slot expansion bus (`CART-EXP-01`)**: specify and implement the physical
    slot/bus/save-state boundary before any terminal command extension.
-2. **Terminal extension and developer cart (`BIOS-TERM-EXT-01`)**: add the BIOS
+3. **Terminal extension and developer cart (`BIOS-TERM-EXT-01`)**: add the BIOS
    `CALL` dispatcher over the reviewed cartridge ABI, then move developer
    functionality into cart Lua backed by real extension hardware.
-3. **Visible GX migration regressions**: finish live host-UI and accelerated
+4. **Visible GX migration regressions**: finish live host-UI and accelerated
    browser scanout proof when a real browser is available.
-4. **Accelerated feedback performance**: run the frontend-resolved NV barrier
+5. **Accelerated feedback performance**: run the frontend-resolved NV barrier
    path in the real Windows RetroArch context. If that concrete context does not
    expose NV texture barrier, measure its actual extensions and ordering before
    choosing another GPU feedback mechanism; do not infer one from the GPU name

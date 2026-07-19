@@ -1,12 +1,11 @@
 #include "machine/runtime/runtime.h"
 #include "common/utf8.h"
 #include "machine/bus/io.h"
-#include "machine/devices/gx/gpu_display.h"
 #include "machine/memory/lua_heap_usage.h"
 #include "machine/memory/map.h"
-#include "machine/model_registry.h"
 #include "machine/program/linker.h"
 #include "machine/runtime/input.h"
+#include "machine/scheduler/device.h"
 #include "machine/runtime/timing/config.h"
 #include <iostream>
 #include <limits>
@@ -20,12 +19,12 @@ Runtime::Runtime(
 	RuntimeInputSource& input
 	)
 	: timing(
+		options.pcrtcRunning,
 		options.ufpsScaled,
 		options.cpuHz,
 		options.cycleBudgetPerFrame,
-		options.psxGpuDisplayModeWord,
-		GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD,
-		getPsxGpuDisplayModeTimingForWord(options.psxGpuDisplayModeWord).totalScanlines,
+		options.totalHalfLines,
+		options.activeDisplayHalfLines,
 		options.dmaWordsPerSec,
 		options.geoWorkUnitsPerSec
 	)
@@ -39,7 +38,6 @@ Runtime::Runtime(
 {
 	resetLuaHeapUsageHooks();
 	resetTrackedLuaHeapBytes();
-	input.setRuntimeInputFrameDurationMs(timing.frameDurationMs);
 	machine.memory.clearIoSlots();
 	machine.memory.mapIoRead(IO_SYS_TIME_MS, this, &Runtime::onTimeMsReadThunk);
 	machine.memory.mapIoRead(IO_SYS_FRAME_MS, this, &Runtime::onFrameMsReadThunk);
@@ -49,9 +47,9 @@ Runtime::Runtime(
 	machine.memory.mapIoWrite(IO_SYS_PRINT_FLUSH, this, &Runtime::onLuaOutputFlushWriteThunk);
 	machine.initializeSystemIo();
 	machine.resetDevices();
-	machine.gxGpu.writeDisplayModeWord(timing.gpuDisplayModeWord);
-	vblank.setVblankCycles(*this, options.vblankCycles);
 	refreshDeviceTimings(*this, machine.scheduler.currentNowCycles());
+	machine.runDeviceService(DEVICE_SERVICE_GPU);
+	applyPublishedGxGpuPcrtcTiming(machine.gxGpu.readDeviceOutput().pcrtcTiming);
 	machine.cpu.setExternalRootMarker([this](GcHeap& heap) {
 		for (const auto& entry : m_moduleCache) {
 			heap.markValue(entry.second);
@@ -133,24 +131,29 @@ void Runtime::applyUfpsScaled(i64 ufpsScaled) {
 	m_input.setRuntimeInputFrameDurationMs(timing.frameDurationMs);
 }
 
-void Runtime::applyPublishedPsxGpuDisplayTiming(u32 displayModeWord, u32 verticalDisplayRangeWord) {
-	if (displayModeWord == timing.gpuDisplayModeWord && verticalDisplayRangeWord == timing.gpuVerticalDisplayRangeWord) {
+void Runtime::applyPublishedGxGpuPcrtcTiming(const GxGpuPcrtcTiming& pcrtcTiming) {
+	if (timing.pcrtcRevision == pcrtcTiming.revision
+		&& timing.pcrtcRunning == pcrtcTiming.running
+		&& timing.ufpsScaled == pcrtcTiming.refreshUfpsScaled
+		&& timing.cycleBudgetPerFrame == pcrtcTiming.nextVblankCycleBudget
+		&& timing.totalHalfLines == pcrtcTiming.totalHalfLines
+		&& timing.activeDisplayHalfLines == pcrtcTiming.activeDisplayHalfLines) {
 		return;
 	}
-	const PsxGpuDisplayModeTiming displayModeTiming = getPsxGpuDisplayModeTimingForWord(displayModeWord);
-	const int cycleBudgetPerFrame = static_cast<int>(calcCyclesPerFrameScaled(timing.cpuHz, displayModeTiming.refreshUfpsScaled));
-	const int vblankCycles = static_cast<int>(resolveVblankCycles(
-		timing.cpuHz,
-		displayModeTiming.refreshUfpsScaled,
-		displayModeTiming.totalScanlines,
-		gxGpuVerticalVisibleLines(verticalDisplayRangeWord, displayModeWord)
-	));
-	timing.gpuDisplayModeWord = displayModeWord;
-	timing.gpuVerticalDisplayRangeWord = verticalDisplayRangeWord;
-	timing.totalScanlines = displayModeTiming.totalScanlines;
-	applyUfpsScaled(displayModeTiming.refreshUfpsScaled);
-	timing.cycleBudgetPerFrame = cycleBudgetPerFrame;
-	vblank.setNextFrameTiming(cycleBudgetPerFrame, vblankCycles);
+	timing.pcrtcRevision = pcrtcTiming.revision;
+	timing.pcrtcRunning = pcrtcTiming.running;
+	timing.totalHalfLines = pcrtcTiming.totalHalfLines;
+	timing.activeDisplayHalfLines = pcrtcTiming.activeDisplayHalfLines;
+	if (!pcrtcTiming.running) {
+		timing.ufpsScaled = 0;
+		timing.ufps = 0.0;
+		timing.frameDurationMs = 0.0;
+		timing.cycleBudgetPerFrame = 0;
+		m_input.setRuntimeInputFrameDurationMs(0.0);
+		return;
+	}
+	timing.cycleBudgetPerFrame = pcrtcTiming.nextVblankCycleBudget;
+	applyUfpsScaled(pcrtcTiming.refreshUfpsScaled);
 }
 
 uint32_t Runtime::baseRamUsedBytes() const {
@@ -414,6 +417,8 @@ void Runtime::resetHardwareState() {
 	machine.resetDevices();
 	vblank.reset(*this);
 	refreshDeviceTimings(*this, machine.scheduler.nowCycles());
+	machine.runDeviceService(DEVICE_SERVICE_GPU);
+	applyPublishedGxGpuPcrtcTiming(machine.gxGpu.readDeviceOutput().pcrtcTiming);
 }
 
 } // namespace bmsx

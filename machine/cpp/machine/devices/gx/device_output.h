@@ -11,12 +11,14 @@ namespace bmsx {
 struct GxGpuDeviceOutput {
 	GxGpuDeviceOutput(
 		GxGpuCommandBuffer& commandBufferOwner,
-		const std::array<u32, GX_GPU_PCRTC_WORD_COUNT>& pcrtcWordsOwner,
+		const std::array<u32, GX_GPU_PCRTC_CONFIG_WORD_COUNT>& pcrtcWordsOwner,
+		const GxGpuPcrtcTiming& pcrtcTimingOwner,
 		const GxGpuPcrtcScanout& pcrtcScanoutOwner,
 		const std::array<u8, GX_GPU_VRAM_BYTE_COUNT>& vramSnapshotOwner)
 		: commandBuffer(commandBufferOwner)
 		, readbackPort(commandBufferOwner.readback)
 		, pcrtcWords(pcrtcWordsOwner)
+		, pcrtcTiming(pcrtcTimingOwner)
 		, pcrtcScanout(pcrtcScanoutOwner)
 		, vramSnapshotBytes(vramSnapshotOwner) {
 	}
@@ -29,7 +31,8 @@ struct GxGpuDeviceOutput {
 	u32 vramYAddressExtensionWord = 0u;
 	u32 horizontalDisplayRangeWord = 0u;
 	u32 verticalDisplayRangeWord = 0u;
-	const std::array<u32, GX_GPU_PCRTC_WORD_COUNT>& pcrtcWords;
+	const std::array<u32, GX_GPU_PCRTC_CONFIG_WORD_COUNT>& pcrtcWords;
+	const GxGpuPcrtcTiming& pcrtcTiming;
 	const GxGpuPcrtcScanout& pcrtcScanout;
 	const std::array<u8, GX_GPU_VRAM_BYTE_COUNT>& vramSnapshotBytes;
 	u64 vramSnapshotSerial = 0u;

@@ -2,11 +2,12 @@ import type { Memory } from '../memory/memory';
 
 export type RuntimeOptions = {
 	memory: Memory;
-	psxGpuDisplayModeWord: number;
+	pcrtcRunning: boolean;
 	ufpsScaled: number;
 	cpuHz: number;
 	cycleBudgetPerFrame: number;
-	vblankCycles: number;
+	totalHalfLines: number;
+	activeDisplayHalfLines: number;
 	dmaWordsPerSec: number;
 	geoWorkUnitsPerSec: number;
 };

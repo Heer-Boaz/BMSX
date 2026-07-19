@@ -2211,7 +2211,7 @@
 				"vramUsedBytes",
 				"vramTotalBytes",
 				"applyUfpsScaled",
-				"applyPublishedPsxGpuDisplayTiming",
+				"applyPublishedGxGpuPcrtcTiming",
 				"internString",
 				"setGlobal"
 			],

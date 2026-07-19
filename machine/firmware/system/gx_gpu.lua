@@ -8,6 +8,16 @@ local pcrtc_dispfb1_low<const>: *word = 0x08010360
 local pcrtc_dispfb1_high<const>: *word = 0x08010364
 local pcrtc_display1_low<const>: *word = 0x08010368
 local pcrtc_display1_high<const>: *word = 0x0801036c
+local pcrtc_smode1_low<const>: *word = 0x080103b0
+local pcrtc_smode1_high<const>: *word = 0x080103b4
+local pcrtc_smode2_low<const>: *word = 0x080103b8
+local pcrtc_smode2_high<const>: *word = 0x080103bc
+local pcrtc_synch1_low<const>: *word = 0x080103c0
+local pcrtc_synch1_high<const>: *word = 0x080103c4
+local pcrtc_synch2_low<const>: *word = 0x080103c8
+local pcrtc_synch2_high<const>: *word = 0x080103cc
+local pcrtc_syncv_low<const>: *word = 0x080103d0
+local pcrtc_syncv_high<const>: *word = 0x080103d4
 
 local gp1_reset<const> = 0x00000000
 local gp1_ack_irq<const> = 0x02000000
@@ -24,7 +34,10 @@ local horizontal_resolution_320<const> = 0x00000001
 local display_mode_50hz<const> = 0x00000008
 local vertical_display_range_start<const> = 35
 local pcrtc_framebuffer_width_1024<const> = 16 << 9
-local pcrtc_psmct16<const> = 2 << 15
+local pcrtc_psmgx16<const> = 31 << 15
+local pcrtc_signal_x<const> = 680
+local pcrtc_signal_y<const> = 37
+local pcrtc_signal_step_x<const> = 4
 local pcrtc_enable_circuit1<const> = 1
 local pcrtc_enable_circuit2<const> = 2
 local pcrtc_constant_alpha<const> = 1 << 5
@@ -134,13 +147,27 @@ function gx_gpu.display_origin(origin_word)
 	*gp1 = gp1_display_start | x | (y << 10)
 	local framebuffer_address<const> = (y << 10) + x
 	local framebuffer_offset<const> = framebuffer_address & 0x00000fff
-	*pcrtc_dispfb1_low = (framebuffer_address >> 12) | pcrtc_framebuffer_width_1024 | pcrtc_psmct16
+	*pcrtc_dispfb1_low = (framebuffer_address >> 12) | pcrtc_framebuffer_width_1024 | pcrtc_psmgx16
 	*pcrtc_dispfb1_high = (framebuffer_offset & 0x000003ff) | ((framebuffer_offset >> 10) << 11)
 end
 
 local program_pcrtc_circuit1<const> = function(width, height)
-	*pcrtc_display1_low = 0
-	*pcrtc_display1_high = (width - 1) | ((height - 1) << 12)
+	*pcrtc_display1_low = pcrtc_signal_x | (pcrtc_signal_y << 12) | ((pcrtc_signal_step_x - 1) << 23)
+	*pcrtc_display1_high = ((width << 2) - 1) | ((height - 1) << 12)
+end
+
+local program_pcrtc_timing<const> = function()
+	*pcrtc_smode1_low = 0x40836504
+	*pcrtc_smode1_high = 0x00000007
+	*pcrtc_synch1_low = 0x1fc83030
+	*pcrtc_synch1_high = 0x0007f5c2
+	*pcrtc_synch2_low = 0x003484bc
+	*pcrtc_synch2_high = 0
+	*pcrtc_syncv_low = 0x02101404
+	*pcrtc_syncv_high = 0x00a90005
+	*pcrtc_smode2_low = 0
+	*pcrtc_smode2_high = 0
+	*pcrtc_smode1_low = 0x40806504
 end
 
 local program_display<const> = function(horizontal_resolution, video_standard, vertical_start, width, height)
@@ -148,6 +175,7 @@ local program_display<const> = function(horizontal_resolution, video_standard, v
 	*gp1 = gp1_vram_y_address_extension
 	*gp1 = gp1_display_mode | horizontal_resolution | video_standard
 	current_display_size_word = width | (height << 16)
+	program_pcrtc_timing()
 	gx_gpu.display_origin(0)
 	program_pcrtc_circuit1(width, height)
 	*gp1 = gp1_horizontal_display_range

@@ -286,10 +286,10 @@ local gpu_reset_320x240<const> = function()
 	gpu_drawing_offset(0, 0)
 	*gp0 = gp0_mask_bit_mode
 	*gp1 = gp1_display_enable
-	*pcrtc_dispfb1_low = 0x00012000
+	*pcrtc_dispfb1_low = 0x000fa000
 	*pcrtc_dispfb1_high = 0x00000000
-	*pcrtc_display1_low = 0x00000000
-	*pcrtc_display1_high = 0x000ef13f
+	*pcrtc_display1_low = 0x018252a8
+	*pcrtc_display1_high = 0x000ef4ff
 	*pcrtc_pmode = 0x0000ff21
 end
 

@@ -1,11 +1,13 @@
 import { RunResult } from '../cpu/cpu';
+import { GX_GPU_SERVICE_RUNTIME_EDGE_MASK, GX_GPU_SERVICE_TIMING_PUBLISHED } from '../devices/gx/gpu';
 import {
+	DEVICE_SERVICE_GPU,
 	TIMER_KIND_DEVICE_SERVICE,
-	TIMER_KIND_VBLANK_BEGIN,
-	TIMER_KIND_VBLANK_END,
 } from '../scheduler/device';
 import type { FrameState } from './frame/state';
 import { Runtime } from './runtime';
+
+const MAX_CPU_SLICE_CYCLES = 0x7fffffff;
 
 export class CpuExecutionState {
 	constructor(private readonly runtime: Runtime) {
@@ -52,7 +54,8 @@ export class CpuExecutionState {
 					}
 					continue;
 				}
-				const idleCycles = cyclesToTarget < cycleBudgetRemaining ? cyclesToTarget : cycleBudgetRemaining;
+				let idleCycles = cyclesToTarget < cycleBudgetRemaining ? cyclesToTarget : cycleBudgetRemaining;
+				if (idleCycles > MAX_CPU_SLICE_CYCLES) idleCycles = MAX_CPU_SLICE_CYCLES;
 				cycleBudgetRemaining -= idleCycles;
 				state.cycleBudgetRemaining = cycleBudgetRemaining;
 				tickCompleted = advanceRuntimeTime(runtime, idleCycles);
@@ -86,13 +89,14 @@ export class CpuExecutionState {
 				}
 				// Device-ready edges release blocked MMIO stores. Advance to scheduled
 				// hardware events here; never poll readiness or retry the instruction.
-				const waitCycles = Math.min(deadlineBudget, remaining);
+				let waitCycles = deadlineBudget < remaining ? deadlineBudget : remaining;
+				if (waitCycles > MAX_CPU_SLICE_CYCLES) waitCycles = MAX_CPU_SLICE_CYCLES;
 				remaining -= waitCycles;
 				state.activeCpuUsedCycles += waitCycles;
 				tickCompleted = advanceRuntimeTime(runtime, waitCycles);
 				continue;
 			}
-			let sliceBudget = remaining;
+			let sliceBudget = remaining > MAX_CPU_SLICE_CYCLES ? MAX_CPU_SLICE_CYCLES : remaining;
 			const nextDeadline = scheduler.nextDeadline();
 			if (nextDeadline !== Number.MAX_SAFE_INTEGER) {
 				const deadlineBudget = nextDeadline - scheduler.nowCycles;
@@ -149,15 +153,16 @@ export function runDueRuntimeTimers(runtime: Runtime): boolean {
 
 function dispatchRuntimeTimer(runtime: Runtime, kind: number, payload: number): void {
 	switch (kind) {
-		case TIMER_KIND_VBLANK_BEGIN:
-			runtime.vblank.handleBeginTimer();
+		case TIMER_KIND_DEVICE_SERVICE: {
+			const serviceResult = runtime.machine.runDeviceService(payload);
+			if (payload === DEVICE_SERVICE_GPU) {
+				if ((serviceResult & GX_GPU_SERVICE_TIMING_PUBLISHED) !== 0) {
+					runtime.applyPublishedGxGpuPcrtcTiming(runtime.machine.gxGpu.readDeviceOutput().pcrtcTiming);
+				}
+				runtime.vblank.handleGpuRuntimeEdge(serviceResult & GX_GPU_SERVICE_RUNTIME_EDGE_MASK);
+			}
 			return;
-		case TIMER_KIND_VBLANK_END:
-			runtime.vblank.handleEndTimer();
-			return;
-		case TIMER_KIND_DEVICE_SERVICE:
-			runtime.machine.runDeviceService(payload);
-			return;
+		}
 		default:
 			throw new Error(`unknown timer kind ${kind}.`);
 	}

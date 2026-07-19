@@ -16,7 +16,7 @@ import { applyInitialWorkspaceOverrides, prepareRebootToBootRom, startPreparedRu
 import { Runtime } from '../machine/runtime/runtime';
 import { Memory } from '../machine/memory/memory';
 import { configureRuntimeMemoryMap } from '../machine/memory/specs';
-import { applyRuntimeTiming, resolveRuntimeTiming } from '../machine/runtime/boot_timing';
+import { resolveRuntimeTiming } from '../machine/runtime/boot_timing';
 import { bootActiveProgram } from '../ide/runtime/lua_pipeline';
 import { handleLuaError } from '../ide/workbench/runtime_errors';
 import { createRuntimeSourceState, type RuntimeSourceState } from '../ide/runtime/sources';
@@ -25,7 +25,7 @@ import { clearOverlayFrame } from '../render/host_overlay/overlay_queue';
 import { RenderPresentationState } from '../render/presentation_state';
 import { runMachineHostFrame } from './host_frame';
 import { captureRuntimeSaveStateBytes } from '../machine/runtime/save_state/codec';
-import { GX_GPU_RESET_DISPLAY_MODE_WORD, gxGpuDisplayModeScreenWidth, gxGpuVerticalVisibleLines } from '../machine/devices/gx/gpu_display';
+import { gxGpuDisplayModeScreenWidth, gxGpuVerticalVisibleLines } from '../machine/devices/gx/gpu_display';
 import { commitGxGpuViewSnapshot } from '../render/gx/view_snapshot';
 
 const globalScope: any = typeof window !== 'undefined' ? window : globalThis;
@@ -168,21 +168,21 @@ export class MachineManager {
 
 		this.sourceState = createRuntimeSourceState(systemLayer, cartLayer);
 		configureRuntimeMemoryMap();
-		const timing = resolveRuntimeTiming(PSX_MACHINE_SPEC.cpuFreqHz, GX_GPU_RESET_DISPLAY_MODE_WORD);
+		const timing = resolveRuntimeTiming(PSX_MACHINE_SPEC.cpuFreqHz);
 		const runtime = new Runtime({
 			memory: new Memory({
 				systemRom: systemLayer.payload,
 				cartRom: cartLayer ? cartLayer.payload : new Uint8Array(0),
 			}),
-			psxGpuDisplayModeWord: timing.gpuDisplayModeWord,
+			pcrtcRunning: timing.pcrtcRunning,
 			ufpsScaled: timing.ufpsScaled,
 			cpuHz: timing.cpuHz,
 			cycleBudgetPerFrame: timing.cycleBudgetPerFrame,
-			vblankCycles: timing.vblankCycles,
+			totalHalfLines: timing.totalHalfLines,
+			activeDisplayHalfLines: timing.activeDisplayHalfLines,
 			dmaWordsPerSec: timing.dmaWordsPerSec,
 			geoWorkUnitsPerSec: timing.geoWorkUnitsPerSec,
 		}, Input.instance);
-		applyRuntimeTiming(runtime, timing);
 		this._runtime = runtime;
 		const gpuOutput = runtime.machine.gxGpu.readDeviceOutput();
 		const viewportSize = {

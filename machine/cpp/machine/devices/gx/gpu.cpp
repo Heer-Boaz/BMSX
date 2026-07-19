@@ -32,39 +32,43 @@ GxGpu::GxGpu(Memory& memory, IrqController& irq, DeviceScheduler& scheduler, Dma
 	, m_scheduler(scheduler)
 	, m_dmaController(dmaController)
 	, m_commandBuffer(dmaController)
-	, m_pcrtc(memory)
 	, m_vramSnapshotBytes(std::make_unique<std::array<u8, GX_GPU_VRAM_BYTE_COUNT>>())
-	, m_deviceOutput(m_commandBuffer, m_pcrtc.presentWords(), m_pcrtc.scanout, *m_vramSnapshotBytes) {
+	, m_deviceOutput(m_commandBuffer, m_pcrtc.presentWords(), m_pcrtc.timing, m_pcrtc.scanout, *m_vramSnapshotBytes) {
 	m_memory.mapIoRead(IO_GX_GPU_GP0, this, &GxGpu::readGp0Thunk);
 	m_memory.mapIoWrite(IO_GX_GPU_GP0, this, &GxGpu::writeGp0Thunk);
 	m_memory.mapIoWriteReady(IO_GX_GPU_GP0, &GxGpu::gp0WriteReadyThunk);
 	m_memory.mapIoRead(IO_GX_GPU_GP1, this, &GxGpu::readStatusThunk);
 	m_memory.mapIoWrite(IO_GX_GPU_GP1, this, &GxGpu::writeGp1Thunk);
 	m_memory.mapIoWriteReady(IO_GX_GPU_GP1, &GxGpu::gp1WriteReadyThunk);
+	for (u32 index = 0u; index < GX_GPU_PCRTC_WORD_COUNT; index += 1u) {
+		const u32 address = gxGpuPcrtcRegisterAddress(index);
+		m_memory.mapIoRead(address, this, &GxGpu::readPcrtcThunk);
+		m_memory.mapIoWrite(address, this, &GxGpu::writePcrtcThunk);
+	}
 }
 
 void GxGpu::reset() {
-	m_pcrtc.reset();
+	m_deviceServiceDeadlineCycle = -1;
+	m_pcrtc.reset(m_scheduler.currentNowCycles());
+	m_pcrtcTimingPublicationPending = true;
 	m_vramYAddressExtensionWord = 0u;
 	m_gpuReadWord = 0u;
 	m_commandBuffer.reset();
 	initializeGxGpuVramPowerOn(m_vramSnapshotBytes->data());
 	publishVramSnapshotRevision();
 	clearGp0CommandState();
-	m_scanoutVblankActive = false;
 	m_scanoutInterlacedField = 0u;
 	m_scanoutInterlacedDisplayField = 0u;
 	m_scanoutActiveLineLsb = 0u;
-	m_scanoutFrameStartCycle = 0;
-	m_scanoutCyclesPerFrame = 1;
-	m_scanoutTotalScanlines = 313;
 	resetGpuRegisters();
 	latchPresentationRegisters();
+	m_pcrtcPresentationPending = true;
 	m_lastFrameCommitted = false;
 	m_vramPresentationPending = false;
 	m_supervisorQuiesceRequested = false;
 	m_supervisorIngressStopped = false;
 	clearRegisterContext(m_userContext);
+	rescheduleDeviceService(true);
 }
 
 void GxGpu::clearRegisterContext(GxGpuRegisterContextState& context) {
@@ -87,9 +91,6 @@ void GxGpu::storeLiveRegisterContext(GxGpuRegisterContextState& context) const {
 	context.horizontalDisplayRangeWord = m_horizontalDisplayRangeWord;
 	context.verticalDisplayRangeWord = m_verticalDisplayRangeWord;
 	context.vramYAddressExtensionWord = m_vramYAddressExtensionWord;
-	context.scanoutInterlacedField = m_scanoutInterlacedField;
-	context.scanoutInterlacedDisplayField = m_scanoutInterlacedDisplayField;
-	context.scanoutActiveLineLsb = m_scanoutActiveLineLsb;
 	context.presentStatusWord = m_presentStatusWord;
 	context.presentDisplayModeWord = m_presentDisplayModeWord;
 	context.presentDisplayStartWord = m_presentDisplayStartWord;
@@ -116,25 +117,23 @@ void GxGpu::loadLiveRegisterContext(const GxGpuRegisterContextState& context) {
 	m_horizontalDisplayRangeWord = context.horizontalDisplayRangeWord;
 	m_verticalDisplayRangeWord = context.verticalDisplayRangeWord;
 	m_vramYAddressExtensionWord = context.vramYAddressExtensionWord;
-	m_scanoutInterlacedField = context.scanoutInterlacedField;
-	m_scanoutInterlacedDisplayField = context.scanoutInterlacedDisplayField;
-	m_scanoutActiveLineLsb = context.scanoutActiveLineLsb;
 	m_presentStatusWord = context.presentStatusWord;
 	m_presentDisplayModeWord = context.presentDisplayModeWord;
 	m_presentDisplayStartWord = context.presentDisplayStartWord;
 	m_presentVramYAddressExtensionWord = context.presentVramYAddressExtensionWord;
 	m_presentHorizontalDisplayRangeWord = context.presentHorizontalDisplayRangeWord;
 	m_presentVerticalDisplayRangeWord = context.presentVerticalDisplayRangeWord;
-	m_pcrtc.restoreContext(context.pcrtcRegisterWords, context.pcrtcPresentWords);
+	m_pcrtc.restoreContext(
+		context.pcrtcRegisterWords,
+		context.pcrtcPresentWords);
 	m_vramPresentationPending = context.vramPresentationPending;
 	m_dmaController.setGxGpuDmaDirection((m_statusWord & GX_GPU_STATUS_DMA_DIRECTION_MASK) >> GX_GPU_STATUS_DMA_DIRECTION_SHIFT);
-	updateSkippedLineParity();
+	updateScanoutStatusBits();
 	m_memory.writeIoValue(IO_GX_GPU_GP0, valueNumber(static_cast<double>(m_gp0Word)));
 	writeStatusIo();
 }
 
 void GxGpu::resetTransientContext() {
-	m_pcrtc.reset();
 	m_commandBuffer.reset();
 	clearGp0CommandState();
 	m_gpuReadWord = 0u;
@@ -221,16 +220,14 @@ GxGpuState GxGpu::captureState() {
 	state.horizontalDisplayRangeWord = m_horizontalDisplayRangeWord;
 	state.verticalDisplayRangeWord = m_verticalDisplayRangeWord;
 	state.vramYAddressExtensionWord = m_vramYAddressExtensionWord;
-	state.scanoutInterlacedField = m_scanoutInterlacedField;
-	state.scanoutInterlacedDisplayField = m_scanoutInterlacedDisplayField;
-	state.scanoutActiveLineLsb = m_scanoutActiveLineLsb;
 	state.presentStatusWord = m_presentStatusWord;
 	state.presentDisplayModeWord = m_presentDisplayModeWord;
 	state.presentDisplayStartWord = m_presentDisplayStartWord;
 	state.presentVramYAddressExtensionWord = m_presentVramYAddressExtensionWord;
 	state.presentHorizontalDisplayRangeWord = m_presentHorizontalDisplayRangeWord;
 	state.presentVerticalDisplayRangeWord = m_presentVerticalDisplayRangeWord;
-	state.pcrtc = m_pcrtc.captureState();
+	state.pcrtc = m_pcrtc.captureState(nowCycles);
+	state.pcrtcPresentationPending = m_pcrtcPresentationPending;
 	state.vramPresentationPending = m_vramPresentationPending;
 	state.supervisorQuiesceRequested = m_supervisorQuiesceRequested;
 	state.supervisorIngressStopped = m_supervisorIngressStopped;
@@ -279,16 +276,14 @@ void GxGpu::restoreState(const GxGpuState& state) {
 	m_horizontalDisplayRangeWord = state.horizontalDisplayRangeWord;
 	m_verticalDisplayRangeWord = state.verticalDisplayRangeWord;
 	m_vramYAddressExtensionWord = state.vramYAddressExtensionWord;
-	m_scanoutInterlacedField = state.scanoutInterlacedField;
-	m_scanoutInterlacedDisplayField = state.scanoutInterlacedDisplayField;
-	m_scanoutActiveLineLsb = state.scanoutActiveLineLsb;
 	m_presentStatusWord = state.presentStatusWord;
 	m_presentDisplayModeWord = state.presentDisplayModeWord;
 	m_presentDisplayStartWord = state.presentDisplayStartWord;
 	m_presentVramYAddressExtensionWord = state.presentVramYAddressExtensionWord;
 	m_presentHorizontalDisplayRangeWord = state.presentHorizontalDisplayRangeWord;
 	m_presentVerticalDisplayRangeWord = state.presentVerticalDisplayRangeWord;
-	m_pcrtc.restoreState(state.pcrtc);
+	m_pcrtc.restoreState(state.pcrtc, m_scheduler.currentNowCycles());
+	m_pcrtcPresentationPending = state.pcrtcPresentationPending;
 	m_vramPresentationPending = state.vramPresentationPending;
 	m_supervisorQuiesceRequested = state.supervisorQuiesceRequested;
 	m_supervisorIngressStopped = state.supervisorIngressStopped;
@@ -296,13 +291,12 @@ void GxGpu::restoreState(const GxGpuState& state) {
 	m_commandBuffer.restoreState(state.commandBuffer);
 	if (state.pendingCommandCycles != 0) {
 		m_pendingCommandCompletionCycle = m_scheduler.currentNowCycles() + state.pendingCommandCycles;
-		m_scheduler.scheduleDeviceService(DEVICE_SERVICE_GPU, m_pendingCommandCompletionCycle);
 	} else {
 		m_pendingCommandCompletionCycle = 0;
-		m_scheduler.cancelDeviceService(DEVICE_SERVICE_GPU);
 	}
+	rescheduleDeviceService(true);
 	m_lastFrameCommitted = false;
-	updateSkippedLineParity();
+	updateScanoutStatusBits();
 	m_memory.writeIoValue(IO_GX_GPU_GP0, valueNumber(static_cast<double>(m_gp0Word)));
 	writeStatusIo();
 }
@@ -348,12 +342,17 @@ void GxGpu::enterSupervisorContext() {
 	m_supervisorIngressStopped = false;
 	resetTransientContext();
 	m_pcrtc.enterSupervisorContext(m_userContext.pcrtcPresentWords);
+	m_pcrtcPresentationPending = true;
 }
 
 void GxGpu::enterSupervisorFaultContext() {
 	m_supervisorQuiesceRequested = false;
 	m_supervisorIngressStopped = false;
 	resetTransientContext();
+	m_pcrtc.reset(m_scheduler.currentNowCycles());
+	m_pcrtcTimingPublicationPending = true;
+	m_pcrtcPresentationPending = true;
+	rescheduleDeviceService(true);
 	clearRegisterContext(m_userContext);
 }
 
@@ -362,6 +361,7 @@ void GxGpu::leaveSupervisorContext() {
 	m_supervisorIngressStopped = false;
 	resetTransientContext();
 	loadLiveRegisterContext(m_userContext);
+	m_pcrtcPresentationPending = true;
 	clearRegisterContext(m_userContext);
 }
 
@@ -514,9 +514,23 @@ void GxGpu::acceptGp0Word(u32 word) {
 	}
 }
 
-void GxGpu::onService(i64 nowCycles) {
+u32 GxGpu::onService(i64 nowCycles) {
+	m_scheduler.cancelDeviceService(DEVICE_SERVICE_GPU);
+	m_deviceServiceDeadlineCycle = -1;
+	bool timingPublished = m_pcrtcTimingPublicationPending;
+	m_pcrtcTimingPublicationPending = false;
 	synchronizeCommandExecution(nowCycles);
+	u32 runtimeEdge = GX_GPU_PCRTC_RUNTIME_EDGE_NONE;
+	const i64 pcrtcDeadline = m_pcrtc.nextDeadlineCycle();
+	if (pcrtcDeadline >= 0 && pcrtcDeadline <= nowCycles) {
+		const u32 serviceResult = m_pcrtc.service(nowCycles);
+		if ((serviceResult & GX_GPU_PCRTC_SERVICE_IRQ) != 0u) m_irq.raise(IRQ_GX_PCRTC);
+		runtimeEdge = serviceResult & GX_GPU_PCRTC_SERVICE_RUNTIME_EDGE_MASK;
+	}
+	rescheduleDeviceService();
 	writeStatusIo();
+	if (runtimeEdge == GX_GPU_PCRTC_RUNTIME_EDGE_VBLANK_BEGIN) timingPublished = true;
+	return runtimeEdge | (timingPublished ? GX_GPU_SERVICE_TIMING_PUBLISHED : 0u);
 }
 
 void GxGpu::synchronizeCommandExecution(i64 nowCycles) {
@@ -526,7 +540,6 @@ void GxGpu::synchronizeCommandExecution(i64 nowCycles) {
 		const size_t completedCommandCount = m_pendingCommandTargetCount;
 		m_pendingCommandCompletionCycle = 0;
 		m_pendingCommandTargetCount = 0u;
-		m_scheduler.cancelDeviceService(DEVICE_SERVICE_GPU);
 		if (completedCommandCount > m_commandBuffer.executedCommandCount) {
 			m_commandBuffer.completeCommandExecution(completedCommandCount);
 		}
@@ -536,8 +549,25 @@ void GxGpu::synchronizeCommandExecution(i64 nowCycles) {
 		completed = true;
 	}
 	if (completed) {
+		rescheduleDeviceService();
 		notifySupervisorBoundary();
 	}
+}
+
+void GxGpu::rescheduleDeviceService(bool force) {
+	i64 deadline = m_pendingCommandCompletionCycle == 0 ? -1 : m_pendingCommandCompletionCycle;
+	if (m_pcrtcTimingPublicationPending) {
+		deadline = m_scheduler.currentNowCycles();
+	} else {
+		const i64 pcrtcDeadline = m_pcrtc.nextDeadlineCycle();
+		if (pcrtcDeadline >= 0 && (deadline < 0 || pcrtcDeadline < deadline)) {
+			deadline = pcrtcDeadline;
+		}
+	}
+	if (!force && deadline == m_deviceServiceDeadlineCycle) return;
+	m_scheduler.cancelDeviceService(DEVICE_SERVICE_GPU);
+	m_deviceServiceDeadlineCycle = deadline;
+	if (deadline >= 0) m_scheduler.scheduleDeviceService(DEVICE_SERVICE_GPU, deadline);
 }
 
 void GxGpu::consumeGp0Fifo(i64 commandStartCycle) {
@@ -575,7 +605,7 @@ void GxGpu::beginCommandCompletion(i64 commandTicks, size_t targetCommandCount, 
 	}
 	m_pendingCommandTargetCount = targetCommandCount;
 	m_pendingCommandCompletionCycle = commandStartCycle + ((commandTicks + 1) >> 1u);
-	m_scheduler.scheduleDeviceService(DEVICE_SERVICE_GPU, m_pendingCommandCompletionCycle);
+	rescheduleDeviceService();
 }
 
 void GxGpu::executeGp0Command(i64 commandStartCycle) {
@@ -701,6 +731,34 @@ u32 GxGpu::writeGp1(u32 word) {
 	return opcode;
 }
 
+void GxGpu::writePcrtcRegister(u32 index, u32 word) {
+	const i64 nowCycles = m_scheduler.currentNowCycles();
+	if (index < GX_GPU_PCRTC_CONFIG_WORD_COUNT) {
+		if (m_pcrtc.writeConfigWord(index, word, nowCycles)) {
+			m_pcrtcTimingPublicationPending = true;
+			rescheduleDeviceService(true);
+		}
+		return;
+	}
+	if (index == GX_GPU_PCRTC_CSR_LOW) {
+		const u32 actions = m_pcrtc.writeCsr(word, nowCycles);
+		if ((actions & GX_GPU_PCRTC_CSR_RESET) != 0u) {
+			clearGp0Fifo(nowCycles);
+			resetGpuRegisters();
+			m_pcrtc.reset(nowCycles);
+			m_pcrtcTimingPublicationPending = true;
+			latchPresentationRegisters();
+		} else if ((actions & GX_GPU_PCRTC_CSR_FLUSH) != 0u) {
+			clearGp0Fifo(nowCycles);
+		}
+		rescheduleDeviceService(true);
+		return;
+	}
+	if (index == GX_GPU_PCRTC_IMR_LOW && m_pcrtc.writeImr(word)) {
+		m_irq.raise(IRQ_GX_PCRTC);
+	}
+}
+
 u32 GxGpu::readDisplayModeWord() const {
 	return m_displayModeWord;
 }
@@ -711,21 +769,10 @@ void GxGpu::writeDisplayModeWord(u32 word) {
 	writeStatusIo();
 }
 
-void GxGpu::setScanoutTiming(bool vblankActive, int cyclesIntoFrame, int cyclesPerFrame, int totalScanlines) {
-	if (!m_scanoutVblankActive && vblankActive) {
-		m_scanoutInterlacedDisplayField = gpuStatInInterleaved480iMode() ? (m_scanoutInterlacedField ^ 1u) : 0u;
-	}
-	if (m_scanoutVblankActive && !vblankActive) {
-		if ((m_statusWord & GX_GPU_STATUS_VERTICAL_INTERLACE) != 0u) {
-			m_scanoutInterlacedField ^= 1u;
-		} else {
-			m_scanoutInterlacedField = 0u;
-		}
-	}
-	m_scanoutVblankActive = vblankActive;
-	m_scanoutFrameStartCycle = m_scheduler.currentNowCycles() - static_cast<i64>(cyclesIntoFrame);
-	m_scanoutCyclesPerFrame = cyclesPerFrame;
-	m_scanoutTotalScanlines = totalScanlines;
+void GxGpu::setTiming(i64 cpuHz, i64 nowCycles) {
+	if (!m_pcrtc.setCpuHz(cpuHz, nowCycles)) return;
+	m_pcrtcTimingPublicationPending = true;
+	rescheduleDeviceService(true);
 	updateScanoutStatusBits();
 	writeStatusIo();
 }
@@ -762,12 +809,14 @@ void GxGpu::presentReadyFrameOnVblankEdge() {
 		|| m_presentVramYAddressExtensionWord != m_vramYAddressExtensionWord
 		|| m_presentHorizontalDisplayRangeWord != m_horizontalDisplayRangeWord
 		|| m_presentVerticalDisplayRangeWord != m_verticalDisplayRangeWord
-		|| pcrtcChanged;
+		|| pcrtcChanged
+		|| m_pcrtcPresentationPending;
 	latchPresentationRegisters();
 	m_commandBuffer.sealCommandsForPresentation();
 	m_lastFrameCommitted = m_vramPresentationPending
 		|| m_commandBuffer.hasUnretiredPresentCommands()
 		|| scanoutStateChanged;
+	m_pcrtcPresentationPending = false;
 }
 
 void GxGpu::retirePresentedCommands() {
@@ -842,7 +891,6 @@ void GxGpu::writeDisplayDisableWord(u32 word) {
 }
 
 void GxGpu::clearGp0CommandState() {
-	m_scheduler.cancelDeviceService(DEVICE_SERVICE_GPU);
 	m_gp0Fifo.reset();
 	clearGp0IngressState();
 	m_pendingCommandCompletionCycle = 0;
@@ -852,6 +900,7 @@ void GxGpu::clearGp0CommandState() {
 	m_gp0CommandTargetWordCount = 0u;
 	clearImageLoadState();
 	clearPolylineState();
+	rescheduleDeviceService();
 }
 
 void GxGpu::clearGp0Fifo(i64 nowCycles) {
@@ -867,7 +916,6 @@ void GxGpu::clearGp0Fifo(i64 nowCycles) {
 		&& m_pendingCommandTargetCount <= m_commandBuffer.commandCount) {
 		m_commandBuffer.completeCommandExecution(m_pendingCommandTargetCount);
 	}
-	m_scheduler.cancelDeviceService(DEVICE_SERVICE_GPU);
 	m_pendingCommandCompletionCycle = 0;
 	m_pendingCommandTargetCount = 0u;
 	m_gp0CommandWords.fill(0u);
@@ -875,6 +923,7 @@ void GxGpu::clearGp0Fifo(i64 nowCycles) {
 	m_gp0CommandTargetWordCount = 0u;
 	clearImageLoadState();
 	clearPolylineState();
+	rescheduleDeviceService();
 }
 
 void GxGpu::clearGp0IngressState() {
@@ -1175,17 +1224,21 @@ bool GxGpu::gpuStatInInterleaved480iMode() const {
 }
 
 int GxGpu::scanoutLine() const {
-	const int cyclesIntoFrame = static_cast<int>((m_scheduler.currentNowCycles() - m_scanoutFrameStartCycle) % static_cast<i64>(m_scanoutCyclesPerFrame));
-	const int numerator = cyclesIntoFrame * m_scanoutTotalScanlines;
-	return (numerator - numerator % m_scanoutCyclesPerFrame) / m_scanoutCyclesPerFrame;
+	return static_cast<int>(m_pcrtc.currentHalfLine(m_scheduler.currentNowCycles()) / 2u);
 }
 
 void GxGpu::updateScanoutStatusBits() {
+	if (!m_pcrtc.timing.running) {
+		updateSkippedLineParity();
+		return;
+	}
+	m_scanoutInterlacedField = m_pcrtc.field();
+	m_scanoutInterlacedDisplayField = m_scanoutInterlacedField;
 	u32 scanoutBits = 0u;
 	const u32 displayStartY = gxGpuDisplayStartY(m_displayStartWord, m_vramYAddressExtensionWord);
 	if (gpuStatInInterleaved480iMode()) {
 		m_scanoutActiveLineLsb = (displayStartY + m_scanoutInterlacedDisplayField) & 1u;
-		const u32 displayedField = m_scanoutVblankActive ? 0u : m_scanoutInterlacedDisplayField;
+		const u32 displayedField = m_pcrtc.vblankActive() ? 0u : m_scanoutInterlacedDisplayField;
 		if (((displayStartY + displayedField) & 1u) != 0u) {
 			scanoutBits |= GX_GPU_STATUS_DISPLAY_LINE_LSB;
 		}
@@ -1269,6 +1322,20 @@ void GxGpu::writeGp1Thunk(void* context, u32 addr, u64 value, MappedBusSignals) 
 	(void)addr;
 	GxGpu& gpu = *static_cast<GxGpu*>(context);
 	gpu.writeGp1(toU32(value));
+}
+
+u64 GxGpu::readPcrtcThunk(void* context, u32 address, MappedBusSignals) {
+	const u32 index = address < IO_GX_PCRTC_TIMING_BASE
+		? (address - IO_GX_PCRTC_BASE) / IO_WORD_SIZE
+		: IO_GX_PCRTC_WORD_COUNT + (address - IO_GX_PCRTC_TIMING_BASE) / IO_WORD_SIZE;
+	return valueNumber(static_cast<double>(static_cast<GxGpu*>(context)->m_pcrtc.readRegisterWord(index)));
+}
+
+void GxGpu::writePcrtcThunk(void* context, u32 address, u64 value, MappedBusSignals) {
+	const u32 index = address < IO_GX_PCRTC_TIMING_BASE
+		? (address - IO_GX_PCRTC_BASE) / IO_WORD_SIZE
+		: IO_GX_PCRTC_WORD_COUNT + (address - IO_GX_PCRTC_TIMING_BASE) / IO_WORD_SIZE;
+	static_cast<GxGpu*>(context)->writePcrtcRegister(index, toU32(value));
 }
 
 } // namespace bmsx

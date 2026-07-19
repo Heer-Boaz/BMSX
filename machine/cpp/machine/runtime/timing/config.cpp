@@ -13,21 +13,19 @@ void refreshDeviceTimings(Runtime& runtime, i64 nowCycles) {
 	runtime.machine.refreshDeviceTimings(machineTiming, nowCycles);
 }
 
-void setCycleBudgetPerFrame(Runtime& runtime, int value) {
+void setCycleBudgetPerFrame(Runtime& runtime, i64 value) {
 	if (value == runtime.timing.cycleBudgetPerFrame) {
 		return;
 	}
 	runtime.timing.cycleBudgetPerFrame = value;
-	runtime.vblank.configureCycleBudget(runtime);
 }
 
-void setFrameTiming(Runtime& runtime, i64 cpuHz, int cycleBudgetPerFrame, int vblankCycles) {
+void setFrameTiming(Runtime& runtime, i64 cpuHz, i64 cycleBudgetPerFrame) {
 	runtime.timing.cpuHz = cpuHz;
 	if (cycleBudgetPerFrame != runtime.timing.cycleBudgetPerFrame) {
 		runtime.timing.cycleBudgetPerFrame = cycleBudgetPerFrame;
 	}
 	refreshDeviceTimings(runtime, runtime.machine.scheduler.currentNowCycles());
-	runtime.vblank.setVblankCycles(runtime, vblankCycles);
 }
 
 void setTransferRates(Runtime& runtime, const RuntimeTransferRates& rates) {

@@ -5,21 +5,21 @@
 namespace bmsx {
 
 TimingState::TimingState(
+	bool pcrtcRunning,
 	i64 ufpsScaled,
 	i64 cpuHz,
-	int cycleBudgetPerFrame,
-	uint32_t gpuDisplayModeWord,
-	uint32_t gpuVerticalDisplayRangeWord,
-	i64 totalScanlines,
+	i64 cycleBudgetPerFrame,
+	i64 totalHalfLines,
+	i64 activeDisplayHalfLines,
 	i64 dmaWordsPerSec,
 	int geoWorkUnitsPerSec
 )
 	: ufpsScaled(ufpsScaled)
 	, ufps(static_cast<f64>(ufpsScaled) / static_cast<f64>(HZ_SCALE))
 	, frameDurationMs(1000.0 / ufps)
-	, gpuDisplayModeWord(gpuDisplayModeWord)
-	, gpuVerticalDisplayRangeWord(gpuVerticalDisplayRangeWord)
-	, totalScanlines(totalScanlines)
+	, pcrtcRunning(pcrtcRunning)
+	, totalHalfLines(totalHalfLines)
+	, activeDisplayHalfLines(activeDisplayHalfLines)
 	, cpuHz(cpuHz)
 	, cycleBudgetPerFrame(cycleBudgetPerFrame)
 	, geoWorkUnitsPerSec(geoWorkUnitsPerSec)

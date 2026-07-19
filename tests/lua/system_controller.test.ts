@@ -9,7 +9,6 @@ import { linkBootProgramImages } from '../../machine/ts/machine/program/linker';
 import { resolveRuntimeTiming } from '../../machine/ts/machine/runtime/boot_timing';
 import type { RuntimeInputSource } from '../../machine/ts/machine/runtime/input';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import { GX_GPU_RESET_DISPLAY_MODE_WORD } from '../../machine/ts/machine/devices/gx/gpu_display';
 import { compileLuaChunkToProgram, encodeCompiledProgramImage } from '../../machine/ts/lua/compiler';
 import { parseLuaChunk } from './cpu_test_harness';
 
@@ -29,13 +28,15 @@ class SystemResetInputSource implements RuntimeInputSource {
 }
 
 function createRuntime(): Runtime {
-	const timing = resolveRuntimeTiming(5_000_000, GX_GPU_RESET_DISPLAY_MODE_WORD);
+	const timing = resolveRuntimeTiming(5_000_000);
 	return new Runtime({
 		memory: new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) }),
-		psxGpuDisplayModeWord: timing.gpuDisplayModeWord,
+		pcrtcRunning: timing.pcrtcRunning,
 		ufpsScaled: timing.ufpsScaled,
 		cpuHz: timing.cpuHz,
 		cycleBudgetPerFrame: timing.cycleBudgetPerFrame,
+		totalScanlines: timing.totalScanlines,
+		activeDisplayLines: timing.activeDisplayLines,
 		vblankCycles: timing.vblankCycles,
 		dmaWordsPerSec: timing.dmaWordsPerSec,
 		geoWorkUnitsPerSec: timing.geoWorkUnitsPerSec,

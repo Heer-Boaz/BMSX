@@ -80,6 +80,9 @@ struct AudioMachineHarness {
 		, machine(memory, input) {
 		machine.initializeSystemIo();
 		machine.resetDevices();
+		const bmsx::u32 smode1Address = bmsx::gxGpuPcrtcRegisterAddress(bmsx::GX_GPU_PCRTC_SMODE1_LOW);
+		memory.writeMappedU32LE(smode1Address, memory.readMappedU32LE(smode1Address) | bmsx::GX_GPU_PCRTC_SMODE1_SINT);
+		machine.gxGpu.onService(0);
 		machine.audioController.setTiming(cpuHz, 0);
 	}
 };
@@ -540,17 +543,18 @@ void testSampleTransferWrongDirectionBlock() {
 
 void testRuntimeClockResetAndRestorePreserveApuTimebase() {
 	std::array<bmsx::u8, 1> emptyRom{{0}};
-	const bmsx::ResolvedRuntimeTiming timing = bmsx::resolveRuntimeTiming(5'000'000, bmsx::GX_GPU_RESET_DISPLAY_MODE_WORD);
+	const bmsx::ResolvedRuntimeTiming timing = bmsx::resolveRuntimeTiming(5'000'000);
 	SilentInputSource input;
 	bmsx::Runtime runtime(
 		bmsx::RuntimeOptions{
 			{emptyRom.data(), 0u},
 			{emptyRom.data(), 0u},
-			timing.gpuDisplayModeWord,
+			timing.pcrtcRunning,
 			timing.ufpsScaled,
 			timing.cpuHz,
 			timing.cycleBudgetPerFrame,
-			timing.vblankCycles,
+			timing.totalHalfLines,
+			timing.activeDisplayHalfLines,
 			timing.dmaWordsPerSec,
 			timing.geoWorkUnitsPerSec,
 		},

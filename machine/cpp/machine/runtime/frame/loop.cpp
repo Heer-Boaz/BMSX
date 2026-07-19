@@ -21,13 +21,13 @@ void FrameLoopState::resetFrameState(Runtime& runtime) {
 	runtime.frameScheduler.resetTickTelemetry();
 }
 
-void FrameLoopState::beginFrameState(Runtime& runtime) {
+void FrameLoopState::beginFrameState(Runtime& runtime, i64 budget, i64 carry) {
 	frameActive = true;
 	runtime.vblank.beginTick();
 	frameState = FrameState{};
-	frameState.cycleBudgetRemaining = runtime.timing.cycleBudgetPerFrame;
-	frameState.cycleBudgetGranted = runtime.timing.cycleBudgetPerFrame;
-	frameState.cycleCarryGranted = 0;
+	frameState.cycleBudgetRemaining = budget;
+	frameState.cycleBudgetGranted = budget;
+	frameState.cycleCarryGranted = carry;
 	frameDeltaMs = runtime.timing.frameDurationMs;
 }
 
@@ -110,7 +110,7 @@ bool FrameLoopState::tickUpdate(Runtime& runtime) {
 
 
 	const bool previousFrameActive = frameActive;
-	const int previousRemaining = previousFrameActive ? frameState.cycleBudgetRemaining : -1;
+	const i64 previousRemaining = previousFrameActive ? frameState.cycleBudgetRemaining : -1;
 	const bool previousPending = runtime.m_pendingCall == PendingCall::Entry;
 	const i64 previousSequence = runtime.frameScheduler.lastTickSequence;
 	const bool startedFrame = !frameActive;

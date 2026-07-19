@@ -6,12 +6,12 @@ namespace bmsx {
 
 struct TimingState {
 	TimingState(
+		bool pcrtcRunning,
 		i64 ufpsScaled,
 		i64 cpuHz,
-		int cycleBudgetPerFrame,
-		uint32_t gpuDisplayModeWord,
-		uint32_t gpuVerticalDisplayRangeWord,
-		i64 totalScanlines,
+		i64 cycleBudgetPerFrame,
+		i64 totalHalfLines,
+		i64 activeDisplayHalfLines,
 		i64 dmaWordsPerSec,
 		int geoWorkUnitsPerSec
 	);
@@ -19,11 +19,12 @@ struct TimingState {
 	i64 ufpsScaled;
 	f64 ufps;
 	f64 frameDurationMs;
-	uint32_t gpuDisplayModeWord;
-	uint32_t gpuVerticalDisplayRangeWord;
-	i64 totalScanlines;
+	u32 pcrtcRevision = 0u;
+	bool pcrtcRunning;
+	i64 totalHalfLines;
+	i64 activeDisplayHalfLines;
 	i64 cpuHz;
-	int cycleBudgetPerFrame;
+	i64 cycleBudgetPerFrame;
 	int geoWorkUnitsPerSec;
 	i64 dmaWordsPerSec;
 };

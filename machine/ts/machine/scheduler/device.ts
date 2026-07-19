@@ -1,8 +1,6 @@
 import type { CPU } from '../cpu/cpu';
 
-export const TIMER_KIND_VBLANK_BEGIN = 1;
-export const TIMER_KIND_VBLANK_END = 2;
-export const TIMER_KIND_DEVICE_SERVICE = 3;
+export const TIMER_KIND_DEVICE_SERVICE = 1;
 
 export const DEVICE_SERVICE_GEO = 1;
 export const DEVICE_SERVICE_DMA = 2;
@@ -31,8 +29,6 @@ export class DeviceScheduler {
 	private readonly timerPayloads: number[] = [];
 	private readonly timerGenerations: number[] = [];
 	private timerCount = 0;
-	private vblankEnterTimerGeneration = 0;
-	private vblankEndTimerGeneration = 0;
 	private readonly deviceServiceTimerGeneration = new Uint32Array(DEVICE_SERVICE_KIND_COUNT);
 
 	public constructor(private readonly cpu: CPU) {
@@ -53,8 +49,6 @@ export class DeviceScheduler {
 		this.activeSliceBaseCycle = 0;
 		this.activeSliceBudgetCycles = 0;
 		this.activeSliceTargetCycle = 0;
-		this.vblankEnterTimerGeneration = 0;
-		this.vblankEndTimerGeneration = 0;
 		this.deviceServiceTimerGeneration.fill(0);
 	}
 
@@ -104,19 +98,6 @@ export class DeviceScheduler {
 		return (kind << TIMER_EVENT_KIND_SHIFT) | payload;
 	}
 
-	public scheduleVblankTimer(timerKind: number, deadlineCycles: number): void {
-		let generation: number;
-		if (timerKind === TIMER_KIND_VBLANK_BEGIN) {
-			generation = nextTimerGeneration(this.vblankEnterTimerGeneration);
-			this.vblankEnterTimerGeneration = generation;
-		} else {
-			generation = nextTimerGeneration(this.vblankEndTimerGeneration);
-			this.vblankEndTimerGeneration = generation;
-		}
-		this.pushTimer(deadlineCycles, timerKind, 0, generation);
-		this.requestYieldForEarlierDeadline(deadlineCycles);
-	}
-
 	public scheduleDeviceService(deviceKind: number, deadlineCycles: number): void {
 		const generation = nextTimerGeneration(this.deviceServiceTimerGeneration[deviceKind]!);
 		this.deviceServiceTimerGeneration[deviceKind] = generation;
@@ -126,11 +107,6 @@ export class DeviceScheduler {
 
 	public cancelDeviceService(deviceKind: number): void {
 		this.deviceServiceTimerGeneration[deviceKind] = nextTimerGeneration(this.deviceServiceTimerGeneration[deviceKind]!);
-	}
-
-	public cancelVblankTimers(): void {
-		this.vblankEnterTimerGeneration = nextTimerGeneration(this.vblankEnterTimerGeneration);
-		this.vblankEndTimerGeneration = nextTimerGeneration(this.vblankEndTimerGeneration);
 	}
 
 	private clearTimerHeap(): void {
@@ -207,10 +183,6 @@ export class DeviceScheduler {
 
 	private isTimerCurrent(kind: number, payload: number, generation: number): boolean {
 		switch (kind) {
-			case TIMER_KIND_VBLANK_BEGIN:
-				return generation === this.vblankEnterTimerGeneration;
-			case TIMER_KIND_VBLANK_END:
-				return generation === this.vblankEndTimerGeneration;
 			case TIMER_KIND_DEVICE_SERVICE:
 				return generation === this.deviceServiceTimerGeneration[payload];
 			default:

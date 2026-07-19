@@ -40,6 +40,7 @@ namespace bmsx {
 // Forward declarations
 struct ProgramImage;
 struct LinkedBootProgramImage;
+struct GxGpuPcrtcTiming;
 
 /**
  * Runtime owns the live machine and full runtime save-state boundaries.
@@ -92,7 +93,7 @@ public:
 	auto machineTimeMs() const -> uint32_t;
 	auto machineElapsedMs() const -> f64;
 	void applyUfpsScaled(i64 ufpsScaled);
-	void applyPublishedPsxGpuDisplayTiming(u32 displayModeWord, u32 verticalDisplayRangeWord);
+	void applyPublishedGxGpuPcrtcTiming(const GxGpuPcrtcTiming& pcrtcTiming);
 	auto baseRamUsedBytes() const -> uint32_t;
 	auto ramUsedBytes() const -> uint32_t;
 	auto ramTotalBytes() const -> uint32_t;
@@ -115,12 +116,12 @@ public:
 
 	void resetHardwareState();
 	void resetRuntimeForProgramReload();
-	auto cpuUsageCyclesUsed() const -> int {
+	auto cpuUsageCyclesUsed() const -> i64 {
 		return frameLoop.frameActive
 			? frameLoop.frameState.activeCpuUsedCycles
 			: frameScheduler.lastTickCpuUsedCycles;
 	}
-	auto cpuUsageCyclesGranted() const -> int {
+	auto cpuUsageCyclesGranted() const -> i64 {
 		return frameLoop.frameActive
 			? frameLoop.frameState.cycleBudgetGranted
 			: (frameScheduler.lastTickSequence == 0 ? timing.cycleBudgetPerFrame : frameScheduler.lastTickCpuBudgetGranted);

@@ -20,7 +20,7 @@ import {
 import { GEOMETRY_CONTROLLER_PHASE_BUSY, GEOMETRY_CONTROLLER_REGISTER_COUNT } from '../../machine/ts/machine/devices/geometry/contracts';
 import { GX_GPU_GP0_INGRESS_POLYLINE_PAYLOAD } from '../../machine/ts/machine/devices/gx/gpu';
 import { GX_GPU_READBACK_READY, GX_GPU_READBACK_SUBMITTED } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
-import { GX_GPU_PCRTC_WORD_COUNT } from '../../machine/ts/machine/devices/gx/gpu_pcrtc';
+import { GX_GPU_PCRTC_COMPOSITION_WORD_COUNT, GX_GPU_PCRTC_CONFIG_WORD_COUNT } from '../../machine/ts/machine/devices/gx/gpu_pcrtc';
 import { GX_GPU_VRAM_BYTE_COUNT } from '../../machine/ts/machine/devices/gx/vram_address';
 import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT, GX_GTE_PLUS_REGISTER_COUNT } from '../../machine/ts/machine/devices/gx/gte';
 import { INPUT_CONTROLLER_KEY_WORD_COUNT, INPUT_CONTROLLER_PAD_AXIS_COUNT, INPUT_CONTROLLER_PAD_COUNT } from '../../machine/ts/machine/devices/input/contracts';
@@ -62,7 +62,6 @@ function createRuntimeSaveState(): RuntimeSaveState {
 	audioSampleRam.set([9, 8, 7, 6], 0x20);
 	return {
 		machineState: {
-			psxGpuDisplayModeWord: PSX_GPU_DISPLAY_MODE_PAL_WORD,
 			machine: {
 				memory: {
 					ram,
@@ -148,9 +147,6 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					horizontalDisplayRangeWord: 0x00c60260,
 					verticalDisplayRangeWord: 0x0003fc10,
 					vramYAddressExtensionWord: 1,
-					scanoutInterlacedField: 1,
-					scanoutInterlacedDisplayField: 1,
-					scanoutActiveLineLsb: 0,
 					presentStatusWord: 0x1c100001,
 					presentDisplayModeWord: PSX_GPU_DISPLAY_MODE_PAL_WORD,
 					presentDisplayStartWord: 0x00011844,
@@ -158,9 +154,18 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					presentVerticalDisplayRangeWord: 0x0003fc10,
 					presentVramYAddressExtensionWord: 1,
 					pcrtc: {
-						registerWords: numberedWords(GX_GPU_PCRTC_WORD_COUNT),
-						presentWords: numberedWords(GX_GPU_PCRTC_WORD_COUNT).reverse(),
+						registerWords: numberedWords(GX_GPU_PCRTC_CONFIG_WORD_COUNT),
+						presentWords: numberedWords(GX_GPU_PCRTC_CONFIG_WORD_COUNT).reverse(),
+						csrWord: 0x551b6008,
+						imrWord: 0x00006f00,
+						beamCycleOffset: -17,
+						beamRemainder: 23,
+						beamHalfLine: 29,
+						nextHsyncHalfLine: 31,
+						verticalStage: 1,
+						vblankActive: true,
 					},
+					pcrtcPresentationPending: true,
 					vramPresentationPending: false,
 					supervisorQuiesceRequested: true,
 					supervisorIngressStopped: true,
@@ -180,17 +185,14 @@ function createRuntimeSaveState(): RuntimeSaveState {
 						horizontalDisplayRangeWord: 0x00c60260,
 						verticalDisplayRangeWord: 0x0003fc10,
 						vramYAddressExtensionWord: 1,
-						scanoutInterlacedField: 1,
-						scanoutInterlacedDisplayField: 0,
-						scanoutActiveLineLsb: 1,
 						presentStatusWord: 0x1c100001,
 						presentDisplayModeWord: PSX_GPU_DISPLAY_MODE_PAL_WORD,
 						presentDisplayStartWord: 0x00011844,
 						presentVramYAddressExtensionWord: 1,
 						presentHorizontalDisplayRangeWord: 0x00c60260,
 						presentVerticalDisplayRangeWord: 0x0003fc10,
-						pcrtcRegisterWords: numberedWords(GX_GPU_PCRTC_WORD_COUNT),
-						pcrtcPresentWords: numberedWords(GX_GPU_PCRTC_WORD_COUNT).reverse(),
+						pcrtcRegisterWords: numberedWords(GX_GPU_PCRTC_COMPOSITION_WORD_COUNT),
+						pcrtcPresentWords: numberedWords(GX_GPU_PCRTC_COMPOSITION_WORD_COUNT).reverse(),
 						vramPresentationPending: true,
 					},
 					commandBuffer: {
@@ -353,13 +355,10 @@ function createRuntimeSaveState(): RuntimeSaveState {
 			},
 			frameScheduler: {
 				accumulatedHostTimeMs: 1.5,
-				queuedTickCompletions: [
-					{
-						sequence: 11,
-						remaining: 22,
-						visualCommitted: true,
-					},
-				],
+				cycleGrantRemainder: 5,
+				carriedCycleBudget: 22,
+				tickCompletionPending: true,
+				tickCompletionVisualCommitted: true,
 				lastTickSequence: 44,
 				lastTickBudgetGranted: 55,
 				lastTickCpuBudgetGranted: 66,
@@ -369,7 +368,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 				lastTickCompleted: true,
 				lastTickConsumedSequence: 111,
 			},
-			vblank: { nowCycles: 0, cyclesIntoFrame: 0 },
+			schedulerNowCycles: 1234,
 		},
 		cpuState: {
 			systemGlobals: [
@@ -421,7 +420,6 @@ test('runtime save-state codec preserves string pool ROM/runtime ownership', () 
 
 	const decoded = decodeRuntimeSaveState(encodeRuntimeSaveState(state));
 
-	assert.equal(decoded.machineState.psxGpuDisplayModeWord, state.machineState.psxGpuDisplayModeWord);
 	assert.deepEqual(decoded.machineState.machine.stringPool.entries, state.machineState.machine.stringPool.entries);
 	assert.deepEqual(decoded.machineState.machine.irq, state.machineState.machine.irq);
 	assert.deepEqual(decoded.machineState.machine.dma, state.machineState.machine.dma);

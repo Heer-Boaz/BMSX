@@ -1,15 +1,6 @@
-import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { test } from 'node:test';
 
-import { HZ_SCALE } from '../../machine/ts/machine/runtime/timing/constants';
-import { PSX_GPU_DISPLAY_MODE_NTSC_WORD, PSX_GPU_DISPLAY_MODE_PAL_WORD, NTSC_REFRESH_UFPS_SCALED, getPsxGpuDisplayModeTimingForWord } from '../../machine/ts/machine/model_registry';
-import { resolveVblankCycles } from '../../machine/ts/machine/runtime/timing';
-import { resolveRuntimeTiming } from '../../machine/ts/machine/runtime/boot_timing';
-import { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import { Memory } from '../../machine/ts/machine/memory/memory';
-import type { RuntimeInputSource } from '../../machine/ts/machine/runtime/input';
-import { GX_GPU_GP1_RESET, GX_GPU_GP1_DISPLAY_MODE, GX_GPU_GP1_VERTICAL_DISPLAY_RANGE, GX_GPU_STATUS_PAL_MODE } from '../../machine/ts/machine/devices/gx/gpu';
-import { GX_GPU_RESET_DISPLAY_MODE_WORD, GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD } from '../../machine/ts/machine/devices/gx/gpu_display';
 import {
 	IO_APU_CMD,
 	IO_APU_GAIN_Q12,
@@ -23,17 +14,48 @@ import {
 	IO_APU_SOURCE_SAMPLE_RATE_HZ,
 	IO_GX_GPU_GP1,
 } from '../../machine/ts/machine/bus/io';
-import { applyRuntimeMachineState, captureRuntimeMachineState } from '../../machine/ts/machine/runtime/machine_state';
-import { DEVICE_SERVICE_APU } from '../../machine/ts/machine/scheduler/device';
 import {
 	APU_CMD_PLAY,
 	APU_GAIN_Q12_ONE,
 	APU_GENERATOR_SQUARE,
 	APU_RATE_STEP_Q16_ONE,
 } from '../../machine/ts/machine/devices/audio/contracts';
+import {
+	GX_GPU_GP1_DISPLAY_MODE,
+	GX_GPU_GP1_VERTICAL_DISPLAY_RANGE,
+} from '../../machine/ts/machine/devices/gx/gpu';
+import {
+	GX_GPU_PCRTC_CSR_HSINT,
+	GX_GPU_PCRTC_RESET_ACTIVE_DISPLAY_HALF_LINES,
+	GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED,
+	GX_GPU_PCRTC_RESET_TOTAL_HALF_LINES,
+	GX_GPU_PCRTC_RUNTIME_EDGE_VBLANK_BEGIN,
+	GX_GPU_PCRTC_SMODE1_HIGH,
+	GX_GPU_PCRTC_SMODE1_LOW,
+	GX_GPU_PCRTC_SMODE1_SINT,
+	GX_GPU_PCRTC_SYNCH1_HIGH,
+	GX_GPU_PCRTC_SYNCH1_LOW,
+	GX_GPU_PCRTC_SYNCH2_HIGH,
+	GX_GPU_PCRTC_SYNCH2_LOW,
+	GX_GPU_PCRTC_SYNCV_HIGH,
+	GX_GPU_PCRTC_SYNCV_LOW,
+	GxGpuPcrtc,
+	gxGpuPcrtcRegisterAddress,
+} from '../../machine/ts/machine/devices/gx/gpu_pcrtc';
+import { Memory } from '../../machine/ts/machine/memory/memory';
+import { resolveRuntimeTiming } from '../../machine/ts/machine/runtime/boot_timing';
+import { runDueRuntimeTimers } from '../../machine/ts/machine/runtime/cpu_executor';
+import type { RuntimeInputSource } from '../../machine/ts/machine/runtime/input';
+import { applyRuntimeMachineState, captureRuntimeMachineState } from '../../machine/ts/machine/runtime/machine_state';
+import { Runtime } from '../../machine/ts/machine/runtime/runtime';
+import {
+	DEVICE_SERVICE_APU,
+	DEVICE_SERVICE_APU_TRANSFER,
+} from '../../machine/ts/machine/scheduler/device';
+import { FrameSchedulerState } from '../../machine/ts/machine/scheduler/frame';
 
-const GX_GPU_VERTICAL_DISPLAY_RANGE_192_WORD = ((35 + 192) << 10) | 35;
-const GX_GPU_VERTICAL_DISPLAY_RANGE_212_WORD = ((35 + 212) << 10) | 35;
+const PCRTC_SYNCH2_SLOW_WORD = 0x004f84bc;
+const PCRTC_SYNCV_192_LINE_FIELD_WORD = 0x00a60005;
 
 class TimingInputSource implements RuntimeInputSource {
 	public frameDurationMs = 0;
@@ -53,158 +75,225 @@ class TimingInputSource implements RuntimeInputSource {
 	}
 }
 
-function createTimingRuntime(): Runtime {
-	const timing = resolveRuntimeTiming(5_000_000, GX_GPU_RESET_DISPLAY_MODE_WORD);
+function createTimingRuntime(cpuHz = 5_000_000): Runtime {
+	const timing = resolveRuntimeTiming(cpuHz);
 	return new Runtime({
 		memory: new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) }),
-		psxGpuDisplayModeWord: timing.gpuDisplayModeWord,
+		pcrtcRunning: timing.pcrtcRunning,
 		ufpsScaled: timing.ufpsScaled,
 		cpuHz: timing.cpuHz,
 		cycleBudgetPerFrame: timing.cycleBudgetPerFrame,
-		vblankCycles: timing.vblankCycles,
+		totalHalfLines: timing.totalHalfLines,
+		activeDisplayHalfLines: timing.activeDisplayHalfLines,
 		dmaWordsPerSec: timing.dmaWordsPerSec,
 		geoWorkUnitsPerSec: timing.geoWorkUnitsPerSec,
 	}, new TimingInputSource());
 }
 
-test('VBLANK cycles use PSX PAL display-mode scanlines', () => {
-	const timing = getPsxGpuDisplayModeTimingForWord(PSX_GPU_DISPLAY_MODE_PAL_WORD);
-	assert.equal(timing.totalScanlines, 313);
-	assert.equal(resolveVblankCycles(5_000_000, 50 * HZ_SCALE, timing.totalScanlines, 192), 38659);
-});
+function cancelAudioServices(runtime: Runtime): void {
+	runtime.machine.scheduler.cancelDeviceService(DEVICE_SERVICE_APU);
+	runtime.machine.scheduler.cancelDeviceService(DEVICE_SERVICE_APU_TRANSFER);
+}
 
-test('VBLANK cycles use PSX NTSC display-mode scanlines', () => {
-	const timing = getPsxGpuDisplayModeTimingForWord(PSX_GPU_DISPLAY_MODE_NTSC_WORD);
-	assert.equal(timing.totalScanlines, 262);
-	assert.equal(resolveVblankCycles(5_000_000, NTSC_REFRESH_UFPS_SCALED, timing.totalScanlines, 192), 22287);
-});
+function runDueAt(runtime: Runtime, cycle: number): boolean {
+	runtime.machine.scheduler.advanceTo(cycle);
+	return runDueRuntimeTimers(runtime);
+}
 
-test('runtime timing resolves from the PSX GPU display mode word', () => {
-	const pal = resolveRuntimeTiming(5_000_000, PSX_GPU_DISPLAY_MODE_PAL_WORD);
-	const ntsc = resolveRuntimeTiming(5_000_000, PSX_GPU_DISPLAY_MODE_NTSC_WORD);
+function configureOneHalfLineField(pcrtc: GxGpuPcrtc, syncvHigh: number): void {
+	pcrtc.reset(0);
+	pcrtc.writeConfigWord(GX_GPU_PCRTC_SMODE1_LOW, 0x00000009, 0);
+	pcrtc.writeConfigWord(GX_GPU_PCRTC_SMODE1_HIGH, 0, 0);
+	pcrtc.writeConfigWord(GX_GPU_PCRTC_SYNCH1_LOW, 1, 0);
+	pcrtc.writeConfigWord(GX_GPU_PCRTC_SYNCH1_HIGH, 0, 0);
+	pcrtc.writeConfigWord(GX_GPU_PCRTC_SYNCH2_LOW, 0, 0);
+	pcrtc.writeConfigWord(GX_GPU_PCRTC_SYNCH2_HIGH, 0, 0);
+	pcrtc.writeConfigWord(GX_GPU_PCRTC_SYNCV_LOW, 0, 0);
+	pcrtc.writeConfigWord(GX_GPU_PCRTC_SYNCV_HIGH, syncvHigh, 0);
+	pcrtc.setCpuHz(5_000_000, 0);
+}
 
-	assert.equal(pal.gpuDisplayModeWord, PSX_GPU_DISPLAY_MODE_PAL_WORD);
-	assert.equal(pal.ufpsScaled, 50 * HZ_SCALE);
-	assert.equal(pal.totalScanlines, 313);
-	assert.equal(pal.vblankCycles, 23323);
-	assert.equal(ntsc.gpuDisplayModeWord, PSX_GPU_DISPLAY_MODE_NTSC_WORD);
-	assert.equal(ntsc.ufpsScaled, NTSC_REFRESH_UFPS_SCALED);
-	assert.equal(ntsc.totalScanlines, 262);
-	assert.equal(ntsc.vblankCycles, 7005);
-	assert.equal(resolveVblankCycles(5_000_000, 50 * HZ_SCALE, 313, 212), 32269);
-	assert.equal(resolveVblankCycles(5_000_000, NTSC_REFRESH_UFPS_SCALED, 262, 212), 15920);
-});
-
-test('runtime timing consumes published PSX GP1 display mode without shifting a late-serviced frame boundary', () => {
+test('runtime boot timing is decoded from the exact PCRTC reset mode', () => {
+	const timing = resolveRuntimeTiming(5_000_000);
 	const runtime = createTimingRuntime();
-	const frameEndCycle = runtime.timing.cycleBudgetPerFrame;
+	cancelAudioServices(runtime);
+
+	assert.equal(timing.pcrtcRunning, true);
+	assert.equal(timing.ufpsScaled, GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED);
+	assert.equal(timing.totalHalfLines, GX_GPU_PCRTC_RESET_TOTAL_HALF_LINES);
+	assert.equal(timing.activeDisplayHalfLines, GX_GPU_PCRTC_RESET_ACTIVE_DISPLAY_HALF_LINES);
+	assert.equal(timing.cycleBudgetPerFrame, 100_480);
+	assert.equal(runtime.timing.cycleBudgetPerFrame, 100_480);
+	assert.equal(runtime.machine.scheduler.nextDeadline(), 320);
+});
+
+test('PCRTC SINT stops only the beam and release starts a fresh line epoch', () => {
+	const pcrtc = new GxGpuPcrtc();
+	pcrtc.reset(0);
+	pcrtc.setCpuHz(5_000_000, 0);
+	const runningSMode1 = pcrtc.readRegisterWord(GX_GPU_PCRTC_SMODE1_LOW);
+
+	assert.equal(pcrtc.nextDeadlineCycle(), 320);
+	pcrtc.service(320);
+	assert.notEqual(pcrtc.readCsr() & GX_GPU_PCRTC_CSR_HSINT, 0);
+	pcrtc.writeConfigWord(GX_GPU_PCRTC_SMODE1_LOW, runningSMode1 | GX_GPU_PCRTC_SMODE1_SINT, 320);
+	pcrtc.writeCsr(GX_GPU_PCRTC_CSR_HSINT, 320);
+	assert.equal(pcrtc.nextDeadlineCycle(), -1);
+
+	pcrtc.writeConfigWord(GX_GPU_PCRTC_SMODE1_LOW, runningSMode1, 500);
+	assert.equal(pcrtc.nextDeadlineCycle(), 820);
+});
+
+test('PCRTC accepts cycle zero and coalesces sub-cycle fields into one runtime edge', () => {
+	const pcrtc = new GxGpuPcrtc();
+	configureOneHalfLineField(pcrtc, 1 << 21);
+
+	assert.equal(pcrtc.timing.totalHalfLines, 1);
+	assert.equal(pcrtc.timing.activeDisplayHalfLines, 0);
+	assert.equal(pcrtc.nextDeadlineCycle(), 0);
+	assert.equal(pcrtc.service(0) & GX_GPU_PCRTC_RUNTIME_EDGE_VBLANK_BEGIN, GX_GPU_PCRTC_RUNTIME_EDGE_VBLANK_BEGIN);
+	assert.equal(pcrtc.nextDeadlineCycle(), 1);
+	assert.equal(pcrtc.service(1) & GX_GPU_PCRTC_RUNTIME_EDGE_VBLANK_BEGIN, GX_GPU_PCRTC_RUNTIME_EDGE_VBLANK_BEGIN);
+	assert.equal(pcrtc.nextDeadlineCycle(), 2);
+	assert.equal(pcrtc.field(), 1);
+});
+
+test('runtime publishes live PCRTC timing immediately and latches presentation words at VBlank', () => {
+	const runtime = createTimingRuntime();
+	cancelAudioServices(runtime);
+	const address = gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_SYNCH2_LOW);
+
+	runtime.machine.memory.writeMappedU32LE(address, PCRTC_SYNCH2_SLOW_WORD);
+	assert.equal(runtime.timing.ufpsScaled, GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED);
+	runDueRuntimeTimers(runtime);
+	assert.equal(runtime.timing.ufpsScaled, 39_808_917);
+	assert.equal(runtime.timing.cycleBudgetPerFrame, 125_600);
+	let pcrtcState = captureRuntimeMachineState(runtime).machine.gxGpu.pcrtc;
+	assert.equal(pcrtcState.registerWords[GX_GPU_PCRTC_SYNCH2_LOW], PCRTC_SYNCH2_SLOW_WORD);
+	assert.notEqual(pcrtcState.presentWords[GX_GPU_PCRTC_SYNCH2_LOW], PCRTC_SYNCH2_SLOW_WORD);
+
+	runDueAt(runtime, runtime.machine.scheduler.nextDeadline());
+	runDueAt(runtime, runtime.machine.scheduler.nextDeadline());
+	pcrtcState = captureRuntimeMachineState(runtime).machine.gxGpu.pcrtc;
+	assert.equal(pcrtcState.presentWords[GX_GPU_PCRTC_SYNCH2_LOW], PCRTC_SYNCH2_SLOW_WORD);
+});
+
+test('legacy GP1 display words cannot drive the PCRTC clock', () => {
+	const runtime = createTimingRuntime();
+	cancelAudioServices(runtime);
+	const deadline = runtime.machine.scheduler.nextDeadline();
+	const revision = runtime.machine.gxGpu.readDeviceOutput().pcrtcTiming.revision;
 
 	runtime.machine.memory.writeMappedU32LE(IO_GX_GPU_GP1, GX_GPU_GP1_DISPLAY_MODE << 24);
+	runtime.machine.memory.writeMappedU32LE(
+		IO_GX_GPU_GP1,
+		(GX_GPU_GP1_VERTICAL_DISPLAY_RANGE << 24) | 0x00038020,
+	);
 
-	assert.equal(runtime.machine.gxGpu.readDisplayModeWord(), PSX_GPU_DISPLAY_MODE_NTSC_WORD);
-	assert.equal((runtime.machine.gxGpu.readStatus() & GX_GPU_STATUS_PAL_MODE) >>> 0, 0);
-	assert.equal(runtime.machine.gxGpu.readDeviceOutput().displayModeWord, GX_GPU_RESET_DISPLAY_MODE_WORD);
-	assert.equal(runtime.timing.gpuDisplayModeWord, GX_GPU_RESET_DISPLAY_MODE_WORD);
-
-	runtime.vblank.handleBeginTimer();
-	assert.equal(runtime.machine.gxGpu.readDeviceOutput().displayModeWord, PSX_GPU_DISPLAY_MODE_NTSC_WORD);
-	assert.equal(runtime.timing.gpuDisplayModeWord, GX_GPU_RESET_DISPLAY_MODE_WORD);
-	runtime.machine.scheduler.setNowCycles(frameEndCycle + 1);
-	runtime.vblank.handleEndTimer();
-
-	assert.equal(runtime.timing.gpuDisplayModeWord, PSX_GPU_DISPLAY_MODE_NTSC_WORD);
-	assert.equal(runtime.timing.ufpsScaled, NTSC_REFRESH_UFPS_SCALED);
-	assert.equal(runtime.timing.totalScanlines, 262);
-	runtime.machine.scheduler.cancelDeviceService(DEVICE_SERVICE_APU);
-	assert.equal(runtime.machine.scheduler.nextDeadline(), frameEndCycle + 76411);
+	assert.equal(runtime.machine.gxGpu.readDisplayModeWord(), 0);
+	assert.equal(runtime.machine.gxGpu.readVerticalDisplayRangeWord(), 0x00038020);
+	assert.equal(runtime.machine.gxGpu.readDeviceOutput().pcrtcTiming.revision, revision);
+	assert.equal(runtime.machine.scheduler.nextDeadline(), deadline);
+	assert.equal(runtime.timing.cycleBudgetPerFrame, 100_480);
 });
 
-test('runtime timing consumes PSX GP1 reset back to PAL at the next frame boundary', () => {
+test('runtime restore preserves physical beam phase and a pending presentation timing write', () => {
 	const runtime = createTimingRuntime();
-	let frameEndCycle = runtime.timing.cycleBudgetPerFrame;
+	cancelAudioServices(runtime);
+	const address = gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_SYNCV_HIGH);
+	runtime.machine.memory.writeMappedU32LE(address, PCRTC_SYNCV_192_LINE_FIELD_WORD);
+	runDueRuntimeTimers(runtime);
+	assert.equal(runtime.timing.activeDisplayHalfLines, 384);
+	const pendingState = captureRuntimeMachineState(runtime);
+	const pendingDeadline = runtime.machine.scheduler.nextDeadline();
 
-	runtime.machine.memory.writeMappedU32LE(IO_GX_GPU_GP1, GX_GPU_GP1_DISPLAY_MODE << 24);
-	runtime.vblank.handleBeginTimer();
-	runtime.machine.scheduler.setNowCycles(frameEndCycle);
-	runtime.vblank.handleEndTimer();
-	frameEndCycle += runtime.timing.cycleBudgetPerFrame;
-	runtime.machine.memory.writeMappedU32LE(IO_GX_GPU_GP1, GX_GPU_GP1_RESET << 24);
+	runDueAt(runtime, pendingDeadline);
+	runDueAt(runtime, runtime.machine.scheduler.nextDeadline());
+	assert.equal(
+		captureRuntimeMachineState(runtime).machine.gxGpu.pcrtc.presentWords[GX_GPU_PCRTC_SYNCV_HIGH],
+		PCRTC_SYNCV_192_LINE_FIELD_WORD,
+	);
 
-	assert.equal(runtime.machine.gxGpu.readDisplayModeWord(), GX_GPU_RESET_DISPLAY_MODE_WORD);
-	assert.equal((runtime.machine.gxGpu.readStatus() & GX_GPU_STATUS_PAL_MODE) >>> 0, GX_GPU_STATUS_PAL_MODE);
-	assert.equal(runtime.timing.gpuDisplayModeWord, PSX_GPU_DISPLAY_MODE_NTSC_WORD);
-	runtime.vblank.handleBeginTimer();
-	assert.equal(runtime.timing.gpuDisplayModeWord, PSX_GPU_DISPLAY_MODE_NTSC_WORD);
-	runtime.machine.scheduler.setNowCycles(frameEndCycle);
-	runtime.vblank.handleEndTimer();
-	assert.equal(runtime.timing.gpuDisplayModeWord, GX_GPU_RESET_DISPLAY_MODE_WORD);
-	assert.equal(runtime.timing.ufpsScaled, 50 * HZ_SCALE);
-	assert.equal(runtime.timing.totalScanlines, 313);
+	applyRuntimeMachineState(runtime, pendingState);
+	const restoredPcrtc = captureRuntimeMachineState(runtime).machine.gxGpu.pcrtc;
+	assert.equal(restoredPcrtc.registerWords[GX_GPU_PCRTC_SYNCV_HIGH], PCRTC_SYNCV_192_LINE_FIELD_WORD);
+	assert.notEqual(restoredPcrtc.presentWords[GX_GPU_PCRTC_SYNCV_HIGH], PCRTC_SYNCV_192_LINE_FIELD_WORD);
+	assert.equal(runtime.timing.activeDisplayHalfLines, 384);
+	assert.equal(runtime.machine.scheduler.nextDeadline(), pendingDeadline);
 });
 
-test('runtime timing switches 240, 192, and 212 native display ranges only after publication', () => {
+test('host machine-cycle grants remain exact while PCRTC is stopped', () => {
+	const grants: number[] = [];
+	let scheduler!: FrameSchedulerState;
+	const frameState = {
+		cycleBudgetRemaining: 0,
+		cycleBudgetGranted: 0,
+		cycleCarryGranted: 0,
+		activeCpuUsedCycles: 0,
+	};
+	const frameLoop = {
+		frameActive: false,
+		frameState,
+		beginFrameState(budget: number, carry: number): void {
+			this.frameActive = true;
+			frameState.cycleBudgetRemaining = budget;
+			frameState.cycleBudgetGranted = budget;
+			frameState.cycleCarryGranted = carry;
+		},
+		tickUpdate(): boolean {
+			if (!this.frameActive && !scheduler.startScheduledFrame()) return false;
+			grants.push(frameState.cycleBudgetRemaining);
+			this.frameActive = false;
+			return true;
+		},
+	};
+	const runtime = {
+		timing: { cpuHz: 5_000_000, pcrtcRunning: false },
+		luaInitialized: true,
+		luaRuntimeFailed: false,
+		machine: {
+			gxGpu: {
+				backendReadbackBlocksMachine: () => false,
+				lastFrameCommitted: () => false,
+			},
+		},
+		frameLoop,
+	} as unknown as Runtime;
+	scheduler = new FrameSchedulerState(runtime);
+	(runtime as unknown as { frameScheduler: FrameSchedulerState }).frameScheduler = scheduler;
+
+	scheduler.run(50);
+	assert.deepEqual(grants, [83_333, 83_333, 83_334]);
+	assert.equal(grants[0]! + grants[1]! + grants[2]!, 250_000);
+});
+
+test('stopped PCRTC has no video deadline and hardware reset restores the exact beam', () => {
 	const runtime = createTimingRuntime();
-	let frameEndCycle = runtime.timing.cycleBudgetPerFrame;
+	cancelAudioServices(runtime);
+	const address = gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_SMODE1_LOW);
+	const runningWord = runtime.machine.memory.readMappedU32LE(address);
+	runtime.machine.memory.writeMappedU32LE(address, runningWord | GX_GPU_PCRTC_SMODE1_SINT);
+	runDueRuntimeTimers(runtime);
 
-	runtime.machine.memory.writeMappedU32LE(IO_GX_GPU_GP1, (GX_GPU_GP1_VERTICAL_DISPLAY_RANGE << 24) | GX_GPU_VERTICAL_DISPLAY_RANGE_192_WORD);
-	assert.equal(runtime.machine.gxGpu.readVerticalDisplayRangeWord(), GX_GPU_VERTICAL_DISPLAY_RANGE_192_WORD);
-	assert.equal(runtime.machine.gxGpu.readDeviceOutput().verticalDisplayRangeWord, GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD);
-	assert.equal(runtime.timing.gpuVerticalDisplayRangeWord, GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD);
-	runtime.vblank.handleBeginTimer();
-	assert.equal(runtime.machine.gxGpu.readDeviceOutput().verticalDisplayRangeWord, GX_GPU_VERTICAL_DISPLAY_RANGE_192_WORD);
-	assert.equal(runtime.timing.gpuVerticalDisplayRangeWord, GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD);
-	runtime.machine.scheduler.setNowCycles(frameEndCycle);
-	runtime.vblank.handleEndTimer();
-	assert.equal(runtime.timing.gpuVerticalDisplayRangeWord, GX_GPU_VERTICAL_DISPLAY_RANGE_192_WORD);
-	runtime.machine.scheduler.cancelDeviceService(DEVICE_SERVICE_APU);
-	assert.equal(runtime.machine.scheduler.nextDeadline(), frameEndCycle + 61341);
+	assert.equal(runtime.timing.pcrtcRunning, false);
+	assert.equal(runtime.timing.cycleBudgetPerFrame, 0);
+	assert.equal(runtime.machine.scheduler.nextDeadline(), Number.MAX_SAFE_INTEGER);
 
-	frameEndCycle += runtime.timing.cycleBudgetPerFrame;
-	runtime.machine.memory.writeMappedU32LE(IO_GX_GPU_GP1, (GX_GPU_GP1_VERTICAL_DISPLAY_RANGE << 24) | GX_GPU_VERTICAL_DISPLAY_RANGE_212_WORD);
-	runtime.vblank.handleBeginTimer();
-	assert.equal(runtime.timing.gpuVerticalDisplayRangeWord, GX_GPU_VERTICAL_DISPLAY_RANGE_192_WORD);
-	runtime.machine.scheduler.setNowCycles(frameEndCycle);
-	runtime.vblank.handleEndTimer();
-	assert.equal(runtime.timing.gpuVerticalDisplayRangeWord, GX_GPU_VERTICAL_DISPLAY_RANGE_212_WORD);
-	runtime.machine.scheduler.cancelDeviceService(DEVICE_SERVICE_APU);
-	assert.equal(runtime.machine.scheduler.nextDeadline(), frameEndCycle + 67731);
-
-	frameEndCycle += runtime.timing.cycleBudgetPerFrame;
-	runtime.machine.memory.writeMappedU32LE(IO_GX_GPU_GP1, (GX_GPU_GP1_VERTICAL_DISPLAY_RANGE << 24) | GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD);
-	runtime.vblank.handleBeginTimer();
-	runtime.machine.scheduler.setNowCycles(frameEndCycle);
-	runtime.vblank.handleEndTimer();
-	assert.equal(runtime.timing.gpuVerticalDisplayRangeWord, GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD);
-	runtime.machine.scheduler.cancelDeviceService(DEVICE_SERVICE_APU);
-	assert.equal(runtime.machine.scheduler.nextDeadline(), frameEndCycle + 76677);
+	runtime.resetHardwareState();
+	cancelAudioServices(runtime);
+	assert.equal(runtime.timing.pcrtcRunning, true);
+	assert.equal(runtime.timing.cycleBudgetPerFrame, 100_480);
+	assert.equal(runtime.machine.scheduler.nextDeadline(), 320);
 });
 
-test('runtime restore derives timing from published display raw while preserving a pending range write', () => {
-	const runtime = createTimingRuntime();
-	let frameEndCycle = runtime.timing.cycleBudgetPerFrame;
-	runtime.machine.memory.writeMappedU32LE(IO_GX_GPU_GP1, (GX_GPU_GP1_VERTICAL_DISPLAY_RANGE << 24) | GX_GPU_VERTICAL_DISPLAY_RANGE_192_WORD);
-	runtime.vblank.handleBeginTimer();
-	runtime.machine.scheduler.setNowCycles(frameEndCycle);
-	runtime.vblank.handleEndTimer();
-	runtime.machine.memory.writeMappedU32LE(IO_GX_GPU_GP1, (GX_GPU_GP1_VERTICAL_DISPLAY_RANGE << 24) | GX_GPU_VERTICAL_DISPLAY_RANGE_212_WORD);
-	const state = captureRuntimeMachineState(runtime);
-
-	frameEndCycle += runtime.timing.cycleBudgetPerFrame;
-	runtime.vblank.handleBeginTimer();
-	runtime.machine.scheduler.setNowCycles(frameEndCycle);
-	runtime.vblank.handleEndTimer();
-	assert.equal(runtime.timing.gpuVerticalDisplayRangeWord, GX_GPU_VERTICAL_DISPLAY_RANGE_212_WORD);
-	applyRuntimeMachineState(runtime, state);
-
-	assert.equal(state.psxGpuDisplayModeWord, GX_GPU_RESET_DISPLAY_MODE_WORD);
-	assert.equal(runtime.machine.gxGpu.readVerticalDisplayRangeWord(), GX_GPU_VERTICAL_DISPLAY_RANGE_212_WORD);
-	assert.equal(runtime.machine.gxGpu.readDeviceOutput().verticalDisplayRangeWord, GX_GPU_VERTICAL_DISPLAY_RANGE_192_WORD);
-	assert.equal(runtime.timing.gpuVerticalDisplayRangeWord, GX_GPU_VERTICAL_DISPLAY_RANGE_192_WORD);
-	runtime.machine.scheduler.cancelDeviceService(DEVICE_SERVICE_APU);
-	assert.equal(runtime.machine.scheduler.nextDeadline(), state.vblank.nowCycles + 61341);
+test('PCRTC retains frame cycle budgets above a signed 32-bit CPU slice', () => {
+	const pcrtc = new GxGpuPcrtc();
+	pcrtc.reset(0);
+	pcrtc.setCpuHz(110_000_000_000, 0);
+	assert.ok(pcrtc.timing.nextVblankCycleBudget > 0x7fffffff);
 });
 
-test('VBLANK reset and runtime restore preserve the active APU clock domain', () => {
+test('VBlank reset and runtime restore preserve the active APU clock domain', () => {
 	const runtime = createTimingRuntime();
 	const memory = runtime.machine.memory;
 	memory.writeMappedU32LE(IO_APU_SOURCE_SAMPLE_RATE_HZ, runtime.timing.cpuHz);

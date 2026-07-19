@@ -14,6 +14,9 @@
 
 namespace bmsx {
 
+constexpr u32 GX_GPU_SERVICE_RUNTIME_EDGE_MASK = 0x3u;
+constexpr u32 GX_GPU_SERVICE_TIMING_PUBLISHED = 1u << 2u;
+
 class Memory;
 class DeviceScheduler;
 class IrqController;
@@ -136,17 +139,14 @@ struct GxGpuRegisterContextState {
 	u32 horizontalDisplayRangeWord = GX_GPU_RESET_HORIZONTAL_DISPLAY_RANGE_WORD;
 	u32 verticalDisplayRangeWord = GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD;
 	u32 vramYAddressExtensionWord = 0;
-	u32 scanoutInterlacedField = 0;
-	u32 scanoutInterlacedDisplayField = 0;
-	u32 scanoutActiveLineLsb = 0;
 	u32 presentStatusWord = GX_GPU_STATUS_RESET_WORD;
 	u32 presentDisplayModeWord = GX_GPU_RESET_DISPLAY_MODE_WORD;
 	u32 presentDisplayStartWord = 0;
 	u32 presentVramYAddressExtensionWord = 0;
 	u32 presentHorizontalDisplayRangeWord = GX_GPU_RESET_HORIZONTAL_DISPLAY_RANGE_WORD;
 	u32 presentVerticalDisplayRangeWord = GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD;
-	std::array<u32, GX_GPU_PCRTC_WORD_COUNT> pcrtcRegisterWords{};
-	std::array<u32, GX_GPU_PCRTC_WORD_COUNT> pcrtcPresentWords{};
+	std::array<u32, GX_GPU_PCRTC_COMPOSITION_WORD_COUNT> pcrtcRegisterWords{};
+	std::array<u32, GX_GPU_PCRTC_COMPOSITION_WORD_COUNT> pcrtcPresentWords{};
 	bool vramPresentationPending = false;
 };
 
@@ -186,9 +186,6 @@ struct GxGpuState {
 	u32 horizontalDisplayRangeWord = 0;
 	u32 verticalDisplayRangeWord = 0;
 	u32 vramYAddressExtensionWord = 0;
-	u32 scanoutInterlacedField = 0;
-	u32 scanoutInterlacedDisplayField = 0;
-	u32 scanoutActiveLineLsb = 0;
 	u32 presentStatusWord = 0;
 	u32 presentDisplayModeWord = 0;
 	u32 presentDisplayStartWord = 0;
@@ -196,6 +193,7 @@ struct GxGpuState {
 	u32 presentHorizontalDisplayRangeWord = 0;
 	u32 presentVerticalDisplayRangeWord = 0;
 	GxGpuPcrtcState pcrtc;
+	bool pcrtcPresentationPending = false;
 	bool vramPresentationPending = false;
 	bool supervisorQuiesceRequested = false;
 	bool supervisorIngressStopped = false;
@@ -223,10 +221,10 @@ public:
 	void writeGp0(u32 word, MappedBusSignals busSignals = MAPPED_BUS_MASTER_CPU);
 	u32 readStatus();
 	u32 writeGp1(u32 word);
-	void onService(i64 nowCycles);
+	u32 onService(i64 nowCycles);
 	u32 readDisplayModeWord() const;
 	void writeDisplayModeWord(u32 word);
-	void setScanoutTiming(bool vblankActive, int cyclesIntoFrame, int cyclesPerFrame, int totalScanlines);
+	void setTiming(i64 cpuHz, i64 nowCycles);
 	u32 readGpuReadWord() const;
 	const GxGpuDeviceOutput& readDeviceOutput();
 	bool backendReadbackPending() const { return m_commandBuffer.readback.phase() == GX_GPU_READBACK_PENDING; }
@@ -269,6 +267,7 @@ private:
 	u32 m_gp0IngressPolylinePayloadPhase = 0u;
 	i64 m_pendingCommandCompletionCycle = 0;
 	size_t m_pendingCommandTargetCount = 0u;
+	i64 m_deviceServiceDeadlineCycle = -1;
 	GxGpuCommandBuffer m_commandBuffer;
 	GxGpuPcrtc m_pcrtc;
 	std::array<u32, GX_GPU_GP0_COMMAND_BUFFER_WORDS> m_gp0CommandWords{};
@@ -305,14 +304,12 @@ private:
 	bool m_supervisorQuiesceRequested = false;
 	bool m_supervisorIngressStopped = false;
 	GxGpuRegisterContextState m_userContext;
-	bool m_scanoutVblankActive = false;
 	u32 m_scanoutInterlacedField = 0u;
 	u32 m_scanoutInterlacedDisplayField = 0u;
 	u32 m_scanoutActiveLineLsb = 0u;
 	u8 m_skippedLineParity = GX_GPU_SKIPPED_LINE_NONE;
-	i64 m_scanoutFrameStartCycle = 0;
-	int m_scanoutCyclesPerFrame = 1;
-	int m_scanoutTotalScanlines = 313;
+	bool m_pcrtcTimingPublicationPending = false;
+	bool m_pcrtcPresentationPending = false;
 	std::unique_ptr<std::array<u8, GX_GPU_VRAM_BYTE_COUNT>> m_vramSnapshotBytes;
 	u64 m_vramSnapshotSerial = 0u;
 	mutable GxGpuDeviceOutput m_deviceOutput;
@@ -329,6 +326,7 @@ private:
 	void resetGpuRegisters();
 	void latchPresentationRegisters();
 	void writeDisplayDisableWord(u32 word);
+	void writePcrtcRegister(u32 index, u32 word);
 	void clearGp0CommandState();
 	void clearGp0Fifo(i64 nowCycles);
 	void clearGp0IngressState();
@@ -342,6 +340,7 @@ private:
 	void acceptGp0Word(u32 word);
 	void consumeGp0Fifo(i64 commandStartCycle);
 	void synchronizeCommandExecution(i64 nowCycles);
+	void rescheduleDeviceService(bool force = false);
 	void beginCommandCompletion(i64 commandTicks, size_t targetCommandCount, i64 commandStartCycle);
 	void executeGp0Command(i64 commandStartCycle);
 	u32 gp0CommandWordCountForOpcode(u32 opcode) const;
@@ -372,6 +371,8 @@ private:
 	static bool gp1WriteReadyThunk(void* context, u32 addr);
 	static u64 readStatusThunk(void* context, u32 addr, MappedBusSignals busSignals);
 	static void writeGp1Thunk(void* context, u32 addr, u64 value, MappedBusSignals busSignals);
+	static u64 readPcrtcThunk(void* context, u32 addr, MappedBusSignals busSignals);
+	static void writePcrtcThunk(void* context, u32 addr, u64 value, MappedBusSignals busSignals);
 };
 
 } // namespace bmsx

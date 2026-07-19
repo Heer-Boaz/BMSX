@@ -43,6 +43,9 @@ struct DmaGpuHarness {
 		gpu.reset();
 		irq.reset();
 		dma.setTiming(1, 16, 0);
+		const bmsx::u32 smode1Address = bmsx::gxGpuPcrtcRegisterAddress(bmsx::GX_GPU_PCRTC_SMODE1_LOW);
+		memory.writeMappedU32LE(smode1Address, memory.readMappedU32LE(smode1Address) | bmsx::GX_GPU_PCRTC_SMODE1_SINT);
+		gpu.onService(0);
 	}
 };
 
