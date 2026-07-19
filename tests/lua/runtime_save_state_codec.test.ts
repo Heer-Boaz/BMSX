@@ -446,6 +446,16 @@ test('runtime save-state codec preserves string pool ROM/runtime ownership', () 
 	assert.deepEqual(decoded.cpuState.systemGlobals, state.cpuState.systemGlobals);
 });
 
+test('runtime save-state codec rejects a nonnumeric scheduler grant remainder', () => {
+	const state = createRuntimeSaveState();
+	(state.machineState.frameScheduler as unknown as { cycleGrantRemainder: string }).cycleGrantRemainder = '0.5';
+
+	assert.throws(
+		() => decodeRuntimeSaveState(encodeRuntimeSaveState(state)),
+		/frameScheduler\.cycleGrantRemainder must be a numeric value/,
+	);
+});
+
 test('runtime save-state codec stores READY GPUREAD bytes and rejects backend-only phases', () => {
 	const ready = createRuntimeSaveState();
 	const readyReadback = ready.machineState.machine.gxGpu.commandBuffer;

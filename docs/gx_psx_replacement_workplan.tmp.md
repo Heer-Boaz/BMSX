@@ -998,8 +998,9 @@ merge model rather than a terminal-shaped approximation.
   only the host-facing presentation edge. Legacy GP1 display words cannot
   alter the beam or runtime timing.
 - [x] Keep machine time independent of video. The host frame scheduler grants
-  exact rational CPU cycles in fixed 60 Hz service quanta, carries unused
-  cycles across VBlank and continues CPU/devices while `SINT` stops only PCRTC.
+  each accepted host delta once as exact rational CPU cycles, retains the
+  fractional remainder, carries unused whole cycles across VBlank and continues
+  CPU/devices while `SINT` stops only PCRTC.
   Save-state retains the grant remainder, whole-cycle carry and one coalesced
   pending tick-completion latch instead of an allocating fixed-capacity queue.
 - [x] Integrate resumable supervisor ownership at the raw register boundary.

@@ -294,9 +294,10 @@ physical state plus the retained GP1 words. Current-format save-state stores
 the PCRTC state directly and restores its next deadline relative to the restored
 machine cycle; it does not reconstruct the beam from legacy display words.
 
-The host frame scheduler grants the CPU/device timeline exact rational machine
-cycles in fixed 60 Hz service quanta, independently of PCRTC state. Unused
-cycles carry across a VBlank rather than disappearing. A VBlank-begin edge
+The host frame scheduler consumes each accepted host delta exactly once and
+grants the CPU/device timeline its exact rational machine cycles, independently
+of PCRTC state. It retains the fractional cycle remainder between grants; unused
+whole cycles carry across a VBlank rather than disappearing. A VBlank-begin edge
 completes a logical runtime tick and publishes at most one host presentation
 completion; a stopped beam therefore stops video edges but not machine
 execution. If weird but representable timing produces multiple fields inside
@@ -662,9 +663,10 @@ rompacker, TOC and host do not maintain a second module-name or attribute list.
   inside an executing instruction. Scheduler-aware external execution owns its
   own ordinary CPU slices and device deadlines instead of crossing an APU,
   GPU, DMA, or IRQ edge on a nested host stack.
-- The frame scheduler owns CPU/device advancement. Host service quanta grant
-  exact rational CPU cycles and retain both the fractional remainder and unused
-  whole-cycle carry; PCRTC frequency or `SINT` never becomes a CPU wall clock.
+- The frame scheduler owns CPU/device advancement. Each accepted host delta is
+  granted once as exact rational CPU cycles, with both the fractional remainder
+  and unused whole-cycle carry retained; PCRTC frequency or `SINT` never becomes
+  a CPU wall clock.
   The host frame pump may request work, but it does not own device transitions.
 - PCRTC owns HSync, VSync, FIELD and VBlank timing. VBlank is a machine edge,
   not a timer invented by the runtime. Devices with VBlank behavior expose

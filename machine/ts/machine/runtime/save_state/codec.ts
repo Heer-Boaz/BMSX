@@ -167,6 +167,14 @@ function requireI64(value: unknown, label: string): number {
 	return word;
 }
 
+function requireNumberValue(value: unknown, label: string): number {
+	const number = value as number;
+	if (!Object.is(number, +number)) {
+		throw new Error(`${label} must be a numeric value.`);
+	}
+	return number;
+}
+
 function requireBooleanValue(value: unknown, label: string): boolean {
 	if (Object.is(value, true)) {
 		return true;
@@ -198,8 +206,8 @@ function encodeFrameSchedulerState(state: FrameSchedulerStateSnapshot): FrameSch
 function decodeFrameSchedulerState(value: unknown, label: string): FrameSchedulerStateSnapshot {
 	const object = requireObject(value, label);
 	return {
-		accumulatedHostTimeMs: requireObjectKey(object, 'accumulatedHostTimeMs', label, 'frameScheduler.accumulatedHostTimeMs') as number,
-		cycleGrantRemainder: requireObjectKey(object, 'cycleGrantRemainder', label, 'frameScheduler.cycleGrantRemainder') as number,
+		accumulatedHostTimeMs: requireNumberValue(requireObjectKey(object, 'accumulatedHostTimeMs', label, 'frameScheduler.accumulatedHostTimeMs'), 'frameScheduler.accumulatedHostTimeMs'),
+		cycleGrantRemainder: requireNumberValue(requireObjectKey(object, 'cycleGrantRemainder', label, 'frameScheduler.cycleGrantRemainder'), 'frameScheduler.cycleGrantRemainder'),
 		carriedCycleBudget: requireI64(requireObjectKey(object, 'carriedCycleBudget', label, 'frameScheduler.carriedCycleBudget'), 'frameScheduler.carriedCycleBudget'),
 		tickCompletionPending: requireBooleanValue(requireObjectKey(object, 'tickCompletionPending', label, 'frameScheduler.tickCompletionPending'), 'frameScheduler.tickCompletionPending'),
 		tickCompletionVisualCommitted: requireBooleanValue(requireObjectKey(object, 'tickCompletionVisualCommitted', label, 'frameScheduler.tickCompletionVisualCommitted'), 'frameScheduler.tickCompletionVisualCommitted'),
