@@ -5,6 +5,9 @@ uniform sampler2D u_source;
 uniform sampler2D u_vram;
 uniform int u_checkMaskBit;
 uniform int u_setMaskBit;
+#ifdef GX_GPU_CPU_UPLOAD_SOURCE
+uniform ivec4 u_upload;
+#endif
 varying vec2 v_sourceOffset;
 
 int wrap1024(int value) {
@@ -13,10 +16,23 @@ int wrap1024(int value) {
 }
 
 int rawSourceLogicalWord(ivec2 logicalCoord) {
+#ifdef GX_GPU_CPU_UPLOAD_SOURCE
+	int logicalX = wrap1024(logicalCoord.x - u_upload.x);
+	int logicalY = logicalCoord.y - u_upload.y;
+	logicalY = logicalY - (logicalY / u_upload.w) * u_upload.w;
+	if (logicalY < 0) logicalY += u_upload.w;
+	int pixelIndex = logicalY * u_upload.z + logicalX;
+	ivec2 wrapped = ivec2(wrap1024(pixelIndex), pixelIndex / 1024);
+#else
 	ivec2 wrapped = ivec2(wrap1024(logicalCoord.x), wrap1024(logicalCoord.y));
+#endif
 	vec4 rawPixel = texture2D(u_source, (vec2(wrapped) + vec2(0.5)) / 1024.0);
 	int lowByte = int(rawPixel.r * 255.0 + 0.5);
+#ifdef GX_GPU_CPU_UPLOAD_SOURCE
+	int highByte = int(rawPixel.a * 255.0 + 0.5);
+#else
 	int highByte = int(rawPixel.g * 255.0 + 0.5);
+#endif
 	return lowByte + highByte * 256;
 }
 

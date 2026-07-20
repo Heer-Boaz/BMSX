@@ -6,11 +6,21 @@ uniform sampler2D u_source;
 uniform sampler2D u_vram;
 uniform uint u_checkMaskBit;
 uniform uint u_setMaskBit;
+#ifdef GX_GPU_CPU_UPLOAD_SOURCE
+uniform uvec4 u_upload;
+#endif
 flat in ivec2 v_sourceOffset;
 out vec4 outputColor;
 
 uint rawSourceLogicalWord(ivec2 logicalCoord) {
+#ifdef GX_GPU_CPU_UPLOAD_SOURCE
+	uint logicalX = uint(logicalCoord.x - int(u_upload.x)) & 1023u;
+	uint logicalY = uint(logicalCoord.y - int(u_upload.y)) & (u_upload.w - 1u);
+	uint pixelIndex = logicalY * u_upload.z + logicalX;
+	ivec2 wrapped = ivec2(int(pixelIndex & 1023u), int(pixelIndex >> 10u));
+#else
 	ivec2 wrapped = logicalCoord & ivec2(1023);
+#endif
 	vec4 rawPixel = texelFetch(u_source, wrapped, 0);
 	uvec2 bytes = uvec2(rawPixel.rg * 255.0 + 0.5);
 	return bytes.x | (bytes.y << 8u);

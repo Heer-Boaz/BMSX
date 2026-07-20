@@ -938,15 +938,18 @@ to fix and never permission to route around the raw base contract.
   A0 packet, submits it through the ordinary DMA controller each VBlank, and
   sleeps on the DMA IRQ rather than polling. The opt-in direct-host profile times
   the complete accelerated upload route and separately counts logical direct16
-  bytes and actual RGBA host calls/bytes; standard frontends decline that private
-  interface and execute no timing path. After a 300-frame warmup, 900 measured
-  320x240 uploads produced 900 host calls, 138,240,000 logical bytes and
-  276,480,000 host bytes. One recorded WSL llvmpipe run used 68.460 ms upload
-  CPU time total, 0.076 ms mean and 0.707 ms maximum per command. Its full
-  `retro_run` mean/p95/p99/max was 4.289/5/5/6.446 ms. A no-upload run reported
-  zero commands, calls, bytes and upload time. One logical packet is therefore
-  already one physical host upload;
-  cross-command coalescing has no measured justification.
+  bytes and actual host calls/bytes; standard frontends decline that private
+  interface and execute no timing path. The original retained RGBA-expansion
+  baseline produced 900 host calls, 138,240,000 logical bytes and 276,480,000
+  host bytes. The corrected accelerated route uploads the command owner's raw
+  direct16 bytes into a retained GPU staging texture and performs GX conversion
+  in the transfer shader. Its 2026-07-21 WSL llvmpipe rerun produced the same
+  900 commands and calls, 138,240,000 logical bytes and exactly 138,240,000 host
+  bytes, with 0.272 ms mean CPU submission time per command. Accelerated GLES2
+  and software captures matched exactly across all 45 `bare_metal_cart` demo
+  screenshots and an upload-soak capture. Cross-command coalescing still lacks
+  measured justification; the remaining target question is the real SNES Mini
+  driver cost, not CPU-side pixel repacking.
 - [x] Profile the complete release TypeScript software/headless path before
   changing PCRTC scanout. Over the same capture-free 1,101-frame
   `bare_metal_cart_particle_soak` timeline, the first V8 CPU profile sampled

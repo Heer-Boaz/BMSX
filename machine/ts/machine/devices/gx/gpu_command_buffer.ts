@@ -134,7 +134,8 @@ export type GxGpuCommandBufferView = {
 	readonly commandDrawingOffsetWord: ArrayLike<number>;
 	readonly commandMaskBitModeWord: ArrayLike<number>;
 	readonly commandSkippedLineParity: ArrayLike<number>;
-	readonly words: ArrayLike<number>;
+	readonly words: Uint32Array;
+	readonly wordBytes: Uint8Array;
 };
 
 export type GxGpuReadbackView = {
@@ -279,6 +280,7 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 	public readonly commandMaskBitModeWord = new Uint32Array(GX_GPU_COMMAND_CAPACITY);
 	public readonly commandSkippedLineParity = new Uint8Array(GX_GPU_COMMAND_CAPACITY);
 	public readonly words = new Uint32Array(GX_GPU_COMMAND_WORD_CAPACITY);
+	public readonly wordBytes = new Uint8Array(this.words.buffer);
 	public readonly readback: GxGpuReadbackPort;
 
 	public constructor(dmaController: DmaController) {

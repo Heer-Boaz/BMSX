@@ -1,6 +1,6 @@
 # BMSX Architecture Contract
 
-Last checked: 2026-07-19.
+Last checked: 2026-07-21.
 
 This document is the current machine/host boundary contract. It is not a work
 log, a prompt, or a migration diary. If implementation changes land, this file
@@ -1766,24 +1766,22 @@ only after a representative workload demonstrates that the scan, rather than
 command execution or the driver, is the bottleneck. Planning, overlap checks
 and layer emission perform no heap work in the steady path.
 
-CPU-to-VRAM packets remain discrete GX commands. Accelerated owners unpack their
-direct16 payload into one retained host-format staging buffer and issue one host
-texture upload for each contiguous physical wrap rectangle. They do not build a
-second command representation or coalesce unrelated packets. The direct
-libretro host can opt into fixed-scalar profiling through a private versioned
-interface. The core then publishes a monotonically numbered completed-render
-sample containing semantic command/byte counts, actual host call/byte counts,
-and CPU duration. This profile is host observation only: ordinary frontends
-decline the interface, and the disabled upload path performs one command-level
-choice without clocks or counters inside its transfer loops.
+CPU-to-VRAM packets remain discrete GX commands. Accelerated owners expose the
+command owner's retained word storage as bytes and upload those direct16 bytes
+unchanged into one retained two-channel GPU staging texture. A transfer draw
+then consumes the raw 16-bit words and applies GX mask-bit semantics on the GPU.
+There is no CPU pixel loop, RGB555 conversion or 16-to-32-bit host expansion in
+the accelerated upload path. The linear staging layout uses 1024-pixel rows, so
+one packet requires one host texture upload when its pixel count is a multiple
+of 1024 and otherwise two; destination wrapping only emits bounded retained
+transfer geometry and does not repack pixels.
 
-The accepted upload-heavy reference streams one retained 320x240 direct16 image
-through DMA each VBlank. Its 900 measured GLES2 packets produced exactly 900
-host texture uploads, 138,240,000 logical bytes and 276,480,000 host-format
-bytes. The complete CPU upload route averaged 0.076 ms per packet and peaked at
-0.707 ms on the recorded WSL llvmpipe run. A no-upload run reported zero for all
-upload counters. This evidence rejects cross-command coalescing unless a future
-target profile identifies a different bottleneck.
+The direct libretro host can opt into fixed-scalar profiling through a private
+versioned interface. The core publishes a monotonically numbered
+completed-render sample containing semantic command/byte counts, actual host
+call/byte counts, and CPU duration. This profile is host observation only:
+ordinary frontends decline the interface, and the disabled profiling path adds
+no clocks or counters inside its transfer loops.
 
 Pixel parity is a machine contract at GX VRAM scanout. For the same ROM,
 timeline, model profile, and GX display registers, the TypeScript headless
