@@ -328,6 +328,7 @@ add_library(bmsx_core STATIC
 	machine/memory/access_kind.cpp
 	machine/memory/memory.cpp
 	machine/memory/map.cpp
+	machine/memory/region.cpp
 	machine/devices/gx/gpu.cpp
 	machine/devices/gx/gpu_pcrtc.cpp
 	machine/devices/gx/gpu_command_timing.cpp

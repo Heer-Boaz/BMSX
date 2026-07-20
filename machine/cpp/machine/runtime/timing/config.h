@@ -8,6 +8,8 @@ class Runtime;
 
 struct RuntimeTransferRates {
 	i64 dmaWordsPerSec;
+	i64 dmaRamRowReopenCycles;
+	i64 dmaRomWaitCyclesPerWord;
 	int geoWorkUnitsPerSec;
 };
 

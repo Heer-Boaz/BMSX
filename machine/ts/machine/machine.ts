@@ -29,6 +29,8 @@ import {
 export type MachineTiming = {
 	cpuHz: number;
 	dmaWordsPerSec: number;
+	dmaRamRowReopenCycles: number;
+	dmaRomWaitCyclesPerWord: number;
 	geoWorkUnitsPerSec: number;
 };
 
@@ -88,7 +90,7 @@ export class Machine {
 	}
 
 	public refreshDeviceTimings(timing: MachineTiming, nowCycles: number): void {
-		this.dmaController.setTiming(timing.cpuHz, timing.dmaWordsPerSec, nowCycles);
+		this.dmaController.setTiming(timing.cpuHz, timing.dmaWordsPerSec, timing.dmaRamRowReopenCycles, timing.dmaRomWaitCyclesPerWord, nowCycles);
 		this.geometryController.setTiming(timing.cpuHz, timing.geoWorkUnitsPerSec, nowCycles);
 		this.audioController.setTiming(timing.cpuHz, nowCycles);
 		this.gxGpu.setTiming(timing.cpuHz, nowCycles);

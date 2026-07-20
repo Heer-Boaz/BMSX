@@ -35,10 +35,11 @@ function createRuntime(): Runtime {
 		ufpsScaled: timing.ufpsScaled,
 		cpuHz: timing.cpuHz,
 		cycleBudgetPerFrame: timing.cycleBudgetPerFrame,
-		totalScanlines: timing.totalScanlines,
-		activeDisplayLines: timing.activeDisplayLines,
-		vblankCycles: timing.vblankCycles,
+		totalHalfLines: timing.totalHalfLines,
+		activeDisplayHalfLines: timing.activeDisplayHalfLines,
 		dmaWordsPerSec: timing.dmaWordsPerSec,
+		dmaRamRowReopenCycles: timing.dmaRamRowReopenCycles,
+		dmaRomWaitCyclesPerWord: timing.dmaRomWaitCyclesPerWord,
 		geoWorkUnitsPerSec: timing.geoWorkUnitsPerSec,
 	}, new SystemResetInputSource());
 }

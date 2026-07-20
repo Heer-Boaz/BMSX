@@ -22,22 +22,26 @@ import {
 	IO_GX_GPU_GP0,
 	IRQ_DMA_DONE,
 } from '../../bus/io';
-import { IO_WORD_SIZE } from '../../memory/map';
+import { IO_WORD_SIZE, RAM_BASE } from '../../memory/map';
 import { Memory } from '../../memory/memory';
 import {
 	MAPPED_BUS_MASTER_DMA,
 	MAPPED_BUS_DMA_BLOCK_END,
 	type MappedBusSignals,
 } from '../../memory/bus_signals';
+import { classifyMemoryRegion, MEMORY_REGION_OTHER, MEMORY_REGION_RAM, type MemoryRegionKind } from '../../memory/region';
+import { PSX_DMA_RAM_ROW_WORDS } from '../../model_registry';
 import type { CPU, Value } from '../../cpu/cpu';
 import type { IrqController } from '../irq/controller';
-import { cyclesUntilBudgetUnits } from '../../scheduler/budget';
+import { cyclesForBudgetUnitsNoFloor } from '../../scheduler/budget';
 import { DEVICE_SERVICE_DMA, DEVICE_SERVICE_SYSTEM, type DeviceScheduler } from '../../scheduler/device';
 import {
 	GX_GPU_DMA_DIRECTION_CPU_TO_GP0,
 	GX_GPU_DMA_DIRECTION_FIFO,
 	GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU,
 } from '../gx/gpu';
+
+export const DMA_RAM_ROW_NONE = 0xffffffff;
 
 export type DmaControllerState = {
 	readAddressWord: number;
@@ -55,12 +59,18 @@ export type DmaControllerState = {
 	userControlWord: number;
 	userStatusWord: number;
 	userTimingCarry: number;
+	lastRamRowRead: number;
+	lastRamRowWrite: number;
 };
 
 export class DmaController {
 	private cpuHz = 1;
-	private wordsPerSec = 1;
+	private ramWordsPerSec = 1;
+	private ramRowReopenCycles = 0;
+	private romWaitCyclesPerWord = 0;
 	private timingCarry = 0;
+	private lastRamRowRead = DMA_RAM_ROW_NONE;
+	private lastRamRowWrite = DMA_RAM_ROW_NONE;
 	private scheduledBlockWords = 0;
 	private serviceDeadline = 0;
 	private gxGpuReadReady = false;
@@ -123,12 +133,17 @@ export class DmaController {
 		}
 	}
 
-	public setTiming(cpuHz: number, wordsPerSec: number, nowCycles: number): void {
-		if (this.cpuHz === cpuHz && this.wordsPerSec === wordsPerSec) {
+	public setTiming(cpuHz: number, ramWordsPerSec: number, ramRowReopenCycles: number, romWaitCyclesPerWord: number, nowCycles: number): void {
+		if (this.cpuHz === cpuHz
+			&& this.ramWordsPerSec === ramWordsPerSec
+			&& this.ramRowReopenCycles === ramRowReopenCycles
+			&& this.romWaitCyclesPerWord === romWaitCyclesPerWord) {
 			return;
 		}
 		this.cpuHz = cpuHz;
-		this.wordsPerSec = wordsPerSec;
+		this.ramWordsPerSec = ramWordsPerSec;
+		this.ramRowReopenCycles = ramRowReopenCycles;
+		this.romWaitCyclesPerWord = romWaitCyclesPerWord;
 		this.timingCarry = 0;
 		// Admission latches the current block's completion edge. New timing starts
 		// with the next block rather than replaying elapsed bus time.
@@ -222,6 +237,8 @@ export class DmaController {
 		this.userControlWord = 0;
 		this.userStatusWord = 0;
 		this.userTimingCarry = 0;
+		this.lastRamRowRead = DMA_RAM_ROW_NONE;
+		this.lastRamRowWrite = DMA_RAM_ROW_NONE;
 		this.memory.writeIoValue(IO_DMA_READ_ADDR, 0);
 		this.memory.writeIoValue(IO_DMA_WRITE_ADDR, 0);
 		this.memory.writeIoValue(IO_DMA_TRANSFER_COUNT, 0);
@@ -320,6 +337,8 @@ export class DmaController {
 			userControlWord: this.userControlWord,
 			userStatusWord: this.userStatusWord,
 			userTimingCarry: this.userTimingCarry,
+			lastRamRowRead: this.lastRamRowRead,
+			lastRamRowWrite: this.lastRamRowWrite,
 		};
 	}
 
@@ -343,6 +362,8 @@ export class DmaController {
 		this.userControlWord = state.userControlWord >>> 0;
 		this.userStatusWord = state.userStatusWord >>> 0;
 		this.userTimingCarry = state.userTimingCarry;
+		this.lastRamRowRead = state.lastRamRowRead >>> 0;
+		this.lastRamRowWrite = state.lastRamRowWrite >>> 0;
 	}
 
 	public postLoad(): void {
@@ -436,11 +457,70 @@ export class DmaController {
 	}
 
 	private scheduleAdmittedBlock(anchorCycle: number, blockWords: number): void {
-		const blockCycles = cyclesUntilBudgetUnits(this.cpuHz, this.wordsPerSec, this.timingCarry, blockWords);
-		this.timingCarry = (this.wordsPerSec * blockCycles + this.timingCarry) % this.cpuHz;
+		const control = this.memory.readIoU32(IO_DMA_CONTROL);
+		const readStep = (control & DMA_CONTROL_READ_INCREMENT) !== 0 ? IO_WORD_SIZE : 0;
+		const writeStep = (control & DMA_CONTROL_WRITE_INCREMENT) !== 0 ? IO_WORD_SIZE : 0;
+
+		// The RAM rate accrual below must land on the exact same total as one
+		// bulk cyclesUntilBudgetUnits(..., N) call would for a side's whole RAM
+		// word count -- calling it once per word with targetUnits=1 would pay its
+		// "at least one cycle" scheduling floor on every single word instead of
+		// once per batch, inflating fast-relative-to-cpuHz rates. carryAtBlockStart
+		// and ramUnitsSoFar (shared by both sides, in program order) let each RAM
+		// word's cost be recovered as a delta of cumulative cost via
+		// cyclesForBudgetUnitsNoFloor, which telescopes back to the bulk total.
+		const carryAtBlockStart = this.timingCarry;
+		const ramUnitsSoFar = { count: 0 };
+
+		let blockCycles = 0;
+		let readAddr = this.memory.readIoU32(IO_DMA_READ_ADDR);
+		let writeAddr = this.memory.readIoU32(IO_DMA_WRITE_ADDR);
+		for (let word = 0; word < blockWords; word += 1) {
+			const readKind = classifyMemoryRegion(readAddr);
+			const writeKind = classifyMemoryRegion(writeAddr);
+			// Fly-by transfer: read and write share one bus slot, so the slower side
+			// gates the word. The one exception is RAM<->RAM: a single-ported RAM
+			// chip cannot serve two different addresses in the same cycle, so that
+			// combination is the sum of two real bus cycles, not one shared slot.
+			const readCost = this.sideWordCycles(readAddr, readKind, true, carryAtBlockStart, ramUnitsSoFar);
+			const writeCost = this.sideWordCycles(writeAddr, writeKind, false, carryAtBlockStart, ramUnitsSoFar);
+			blockCycles += (readKind === MEMORY_REGION_RAM && writeKind === MEMORY_REGION_RAM)
+				? (readCost + writeCost)
+				: Math.max(readCost, writeCost);
+			readAddr = (readAddr + readStep) >>> 0;
+			writeAddr = (writeAddr + writeStep) >>> 0;
+		}
+		blockCycles = blockCycles <= 0 ? 1 : blockCycles;
+		this.timingCarry = (this.ramWordsPerSec * cyclesForBudgetUnitsNoFloor(this.cpuHz, this.ramWordsPerSec, carryAtBlockStart, ramUnitsSoFar.count) + carryAtBlockStart) % this.cpuHz;
+
 		this.scheduledBlockWords = blockWords;
 		this.serviceDeadline = anchorCycle + blockCycles;
 		this.scheduler.scheduleDeviceService(DEVICE_SERVICE_DMA, this.serviceDeadline);
+	}
+
+	private ramBaseWordCycles(carryAtBlockStart: number, ramUnitsSoFar: { count: number }): number {
+		const prevCumulative = cyclesForBudgetUnitsNoFloor(this.cpuHz, this.ramWordsPerSec, carryAtBlockStart, ramUnitsSoFar.count);
+		ramUnitsSoFar.count += 1;
+		const cumulative = cyclesForBudgetUnitsNoFloor(this.cpuHz, this.ramWordsPerSec, carryAtBlockStart, ramUnitsSoFar.count);
+		return cumulative - prevCumulative;
+	}
+
+	private sideWordCycles(address: number, kind: MemoryRegionKind, isReadSide: boolean, carryAtBlockStart: number, ramUnitsSoFar: { count: number }): number {
+		if (kind !== MEMORY_REGION_RAM) {
+			return kind === MEMORY_REGION_OTHER ? 0 : this.romWaitCyclesPerWord;
+		}
+		let cycles = this.ramBaseWordCycles(carryAtBlockStart, ramUnitsSoFar);
+		const row = Math.floor((address - RAM_BASE) / (PSX_DMA_RAM_ROW_WORDS * IO_WORD_SIZE));
+		const lastRow = isReadSide ? this.lastRamRowRead : this.lastRamRowWrite;
+		if (row !== lastRow) {
+			cycles += this.ramRowReopenCycles;
+			if (isReadSide) {
+				this.lastRamRowRead = row;
+			} else {
+				this.lastRamRowWrite = row;
+			}
+		}
+		return cycles;
 	}
 
 	private requestInputChanged(): void {

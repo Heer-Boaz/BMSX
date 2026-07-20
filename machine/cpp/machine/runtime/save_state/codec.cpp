@@ -1085,6 +1085,8 @@ BinValue encodeDmaControllerState(const DmaControllerState& state) {
 	object["userControlWord"] = encodeScalar<f64>(state.userControlWord);
 	object["userStatusWord"] = encodeScalar<f64>(state.userStatusWord);
 	object["userTimingCarry"] = encodeScalar<f64>(state.userTimingCarry);
+	object["lastRamRowRead"] = encodeScalar<f64>(state.lastRamRowRead);
+	object["lastRamRowWrite"] = encodeScalar<f64>(state.lastRamRowWrite);
 	return BinValue(std::move(object));
 }
 
@@ -1106,6 +1108,8 @@ DmaControllerState decodeDmaControllerState(const BinValue& value, const char* l
 	state.userControlWord = requireU32(requireField(object, "userControlWord", label), "machine.dma.userControlWord");
 	state.userStatusWord = requireU32(requireField(object, "userStatusWord", label), "machine.dma.userStatusWord");
 	state.userTimingCarry = requireI64(requireField(object, "userTimingCarry", label), "machine.dma.userTimingCarry");
+	state.lastRamRowRead = requireU32(requireField(object, "lastRamRowRead", label), "machine.dma.lastRamRowRead");
+	state.lastRamRowWrite = requireU32(requireField(object, "lastRamRowWrite", label), "machine.dma.lastRamRowWrite");
 	return state;
 }
 

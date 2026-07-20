@@ -39,7 +39,7 @@ void Machine::resetDevices() {
 }
 
 void Machine::refreshDeviceTimings(const MachineTiming& timing, i64 nowCycles) {
-	dmaController.setTiming(timing.cpuHz, timing.dmaWordsPerSec, nowCycles);
+	dmaController.setTiming(timing.cpuHz, timing.dmaWordsPerSec, timing.dmaRamRowReopenCycles, timing.dmaRomWaitCyclesPerWord, nowCycles);
 	geometryController.setTiming(timing.cpuHz, timing.geoWorkUnitsPerSec, nowCycles);
 	audioController.setTiming(timing.cpuHz, nowCycles);
 	gxGpu.setTiming(timing.cpuHz, nowCycles);

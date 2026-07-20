@@ -11,9 +11,12 @@ namespace bmsx {
 enum class MachineVdpClass { Psx };
 enum class PsxGpuVideoStandard { Pal, Ntsc };
 
-constexpr i64 PSX_CPU_FREQ_HZ = 50000000;
-constexpr i64 PSX_DMA_CPU_CYCLES_PER_WORD = 8;
-constexpr i64 PSX_DMA_WORDS_PER_SEC = PSX_CPU_FREQ_HZ / PSX_DMA_CPU_CYCLES_PER_WORD;
+constexpr i64 PSX_CPU_FREQ_HZ = 33868800; // 44100 * 768, the real PS1 CPU clock
+constexpr i64 PSX_DMA_RAM_BASE_CYCLES_PER_WORD = 4;
+constexpr i64 PSX_DMA_WORDS_PER_SEC = PSX_CPU_FREQ_HZ / PSX_DMA_RAM_BASE_CYCLES_PER_WORD;
+constexpr i64 PSX_DMA_RAM_ROW_WORDS = 16;
+constexpr i64 PSX_DMA_RAM_ROW_REOPEN_CYCLES = 12;
+constexpr i64 PSX_DMA_ROM_WAIT_CYCLES_PER_WORD = 10;
 constexpr i64 PSX_RAM_BYTES = 0x00400000;
 constexpr i32 GX_GPU_DISPLAY_ASPECT_WIDTH = 4;
 constexpr i32 GX_GPU_DISPLAY_ASPECT_HEIGHT = 3;
@@ -31,6 +34,8 @@ constexpr uint32_t PSX_GPU_DISPLAY_MODE_PAL_WORD = PSX_GPU_DISPLAY_MODE_PAL_BIT;
 struct MachineModelSpec {
 	i64 cpuFreqHz;
 	i64 dmaWordsPerSec;
+	i64 dmaRamRowReopenCycles;
+	i64 dmaRomWaitCyclesPerWord;
 	i64 ramBytes;
 	i64 geoWorkUnitsPerSec;
 };
@@ -44,6 +49,8 @@ struct PsxGpuDisplayModeTiming {
 inline constexpr MachineModelSpec PSX_MACHINE_SPEC = {
 	PSX_CPU_FREQ_HZ,
 	PSX_DMA_WORDS_PER_SEC,
+	PSX_DMA_RAM_ROW_REOPEN_CYCLES,
+	PSX_DMA_ROM_WAIT_CYCLES_PER_WORD,
 	PSX_RAM_BYTES,
 	PSX_GEO_WORK_UNITS_PER_SEC,
 };

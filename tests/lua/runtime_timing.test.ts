@@ -87,6 +87,8 @@ function createTimingRuntime(cpuHz = 5_000_000): Runtime {
 		totalHalfLines: timing.totalHalfLines,
 		activeDisplayHalfLines: timing.activeDisplayHalfLines,
 		dmaWordsPerSec: timing.dmaWordsPerSec,
+		dmaRamRowReopenCycles: timing.dmaRamRowReopenCycles,
+		dmaRomWaitCyclesPerWord: timing.dmaRomWaitCyclesPerWord,
 		geoWorkUnitsPerSec: timing.geoWorkUnitsPerSec,
 	}, new TimingInputSource());
 }

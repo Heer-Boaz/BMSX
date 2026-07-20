@@ -26,6 +26,8 @@ Runtime::Runtime(
 		options.totalHalfLines,
 		options.activeDisplayHalfLines,
 		options.dmaWordsPerSec,
+		options.dmaRamRowReopenCycles,
+		options.dmaRomWaitCyclesPerWord,
 		options.geoWorkUnitsPerSec
 	)
 	, m_input(input)

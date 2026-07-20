@@ -26,7 +26,7 @@ import {
 	IRQ_DMA_DONE,
 } from '../../machine/ts/machine/bus/io';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
-import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
+import { DmaController, type DmaControllerState } from '../../machine/ts/machine/devices/dma/controller';
 import {
 	GX_GPU_COMMAND_FILL_RECTANGLE,
 	GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
@@ -81,14 +81,24 @@ function createDmaGpuFixture(): DmaGpuFixture {
 	dma.reset();
 	gpu.reset();
 	irq.reset();
-	dma.setTiming(1, 16, 0);
+	dma.setTiming(1, 16, 0, 0, 0);
 	const smode1Address = gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_SMODE1_LOW);
 	memory.writeMappedU32LE(smode1Address, memory.readMappedU32LE(smode1Address) | GX_GPU_PCRTC_SMODE1_SINT);
 	gpu.onService(0);
 	return { memory, dma, gpu, scheduler };
 }
 
-test('standard DMA cadence is eight cycles per word for RAM and cartridge ROM', () => {
+function setStandardTiming(dma: DmaController, scheduler: DeviceScheduler): void {
+	dma.setTiming(
+		PSX_MACHINE_SPEC.cpuFreqHz,
+		PSX_MACHINE_SPEC.dmaWordsPerSec,
+		PSX_MACHINE_SPEC.dmaRamRowReopenCycles,
+		PSX_MACHINE_SPEC.dmaRomWaitCyclesPerWord,
+		scheduler.nowCycles,
+	);
+}
+
+test('fly-by combines RAM row cost and ROM wait-state cost per word', () => {
 	const fixture = createDmaGpuFixture();
 	const { memory, dma, scheduler } = fixture;
 	const ramSource = PROGRAM_STATIC_RAM_BASE + 0x80;
@@ -96,19 +106,110 @@ test('standard DMA cadence is eight cycles per word for RAM and cartridge ROM', 
 	const romDestination = PROGRAM_STATIC_RAM_BASE + 0xc0;
 	memory.writeMappedU32LE(ramSource, 0x99aabbcc);
 	memory.writeMappedU32LE(ramSource + 4, 0xddeeff00);
-	dma.setTiming(PSX_MACHINE_SPEC.cpuFreqHz, PSX_MACHINE_SPEC.dmaWordsPerSec, scheduler.nowCycles);
+	setStandardTiming(dma, scheduler);
 
+	// RAM<->RAM is the one fly-by exception: a single-ported chip can't serve
+	// both addresses in one cycle, so the two sides' costs sum instead of
+	// taking the slower one. Word 0 is a cold row on both sides (4 base + 12
+	// reopen each = 32); word 1 stays in the same row on both sides (4 + 4 = 8).
 	programTransfer(memory, ramSource, ramDestination, 2, RAM_COPY_CONTROL);
-	assert.equal(scheduler.nextDeadline(), 16);
+	assert.equal(scheduler.nextDeadline(), 40, 'RAM<->RAM sums both sides\' row-aware cost');
 	runNextDmaService(fixture);
 	assert.equal(memory.readMappedU32LE(ramDestination), 0x99aabbcc);
 	assert.equal(memory.readMappedU32LE(ramDestination + 4), 0xddeeff00);
 
+	// Cartridge ROM has no row locality (flat 10 cycles/word). The RAM write
+	// side starts a fresh row here, so word 0's cold RAM cost (16) beats the
+	// flat ROM cost (10); word 1's warm RAM cost (4) loses to ROM's flat 10.
+	// Fly-by takes the slower side each time: max(10,16)=16, max(10,4)=10.
 	programTransfer(memory, CART_ROM_BASE, romDestination, 2, RAM_COPY_CONTROL);
-	assert.equal(scheduler.nextDeadline(), 32);
+	assert.equal(scheduler.nextDeadline(), 66, 'cartridge-ROM source is fly-by combined with the RAM destination\'s row cost');
 	runNextDmaService(fixture);
 	assert.equal(memory.readMappedU32LE(romDestination), 0x11223344);
 	assert.equal(memory.readMappedU32LE(romDestination + 4), 0x55667788);
+});
+
+test('a RAM row hit is cheaper than a reopen', () => {
+	const fixture = createDmaGpuFixture();
+	const { memory, dma, scheduler } = fixture;
+	const readAddr = PROGRAM_STATIC_RAM_BASE + 0x2000;
+	const writeAddr = PROGRAM_STATIC_RAM_BASE + 0x2100;
+	setStandardTiming(dma, scheduler);
+
+	programTransfer(memory, readAddr, writeAddr, 1, RAM_COPY_CONTROL);
+	assert.equal(scheduler.nextDeadline(), 32, 'first touch of a fresh row on both sides pays the reopen tax twice');
+	runNextDmaService(fixture);
+
+	programTransfer(memory, readAddr, writeAddr, 1, RAM_COPY_CONTROL);
+	assert.equal(scheduler.nextDeadline(), 40, 'revisiting the same row on both sides is a hit: only the base cost is charged');
+});
+
+test('a RAM row jump repays the reopen tax', () => {
+	const fixture = createDmaGpuFixture();
+	const { memory, dma, scheduler } = fixture;
+	const readAddr = PROGRAM_STATIC_RAM_BASE + 0x2000;
+	const writeAddr = PROGRAM_STATIC_RAM_BASE + 0x2100;
+	const nextRowReadAddr = readAddr + 0x40; // one PSX_DMA_RAM_ROW_WORDS row further
+	setStandardTiming(dma, scheduler);
+
+	programTransfer(memory, readAddr, writeAddr, 1, RAM_COPY_CONTROL);
+	assert.equal(scheduler.nextDeadline(), 32, 'first touch of a fresh row on both sides pays the reopen tax twice');
+	runNextDmaService(fixture);
+
+	// Read side jumps to a new row (cold again: 16); write side repeats the
+	// same address as before (still warm: 4).
+	programTransfer(memory, nextRowReadAddr, writeAddr, 1, RAM_COPY_CONTROL);
+	assert.equal(scheduler.nextDeadline(), 52, 'a row jump on one side repays its reopen tax even while the other side stays warm');
+});
+
+test('a fixed MMIO port adds no wait cost beside the RAM side', () => {
+	const fixture = createDmaGpuFixture();
+	const { memory, dma, gpu, scheduler } = fixture;
+	const source = PROGRAM_STATIC_RAM_BASE + 0x3000;
+	memory.writeMappedU32LE(source, 0x01020304);
+	memory.writeMappedU32LE(source + 4, 0x05060708);
+	setStandardTiming(dma, scheduler);
+
+	programTransfer(memory, source, IO_GX_GPU_GP0, 2, GP0_WRITE_CONTROL);
+	gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_FIFO);
+	// A fixed GX FIFO port classifies as neither RAM nor ROM and contributes
+	// zero wait cost of its own; fly-by leaves only the RAM read side's cost:
+	// word 0 cold (16), word 1 warm (4).
+	assert.equal(scheduler.nextDeadline(), 20, 'a fixed MMIO port never adds its own wait cost beside the RAM side');
+});
+
+test('ROM and RAM sides each win the fly-by on different words', () => {
+	const fixture = createDmaGpuFixture();
+	const { memory, dma, scheduler } = fixture;
+	const destination = PROGRAM_STATIC_RAM_BASE + 0x4000;
+	setStandardTiming(dma, scheduler);
+
+	programTransfer(memory, CART_ROM_BASE, destination, 2, RAM_COPY_CONTROL);
+	// word 0: cold RAM (16) beats flat ROM (10) -- RAM gates the word.
+	// word 1: warm RAM (4) loses to flat ROM (10) -- ROM gates the word.
+	// This proves the combine is a genuine per-word max(), not "source wins"
+	// or "destination wins" or a flat sum (10+16=26 for word 0 alone would
+	// already differ from the correct max of 16).
+	assert.equal(scheduler.nextDeadline(), 26, 'fly-by lets either side gate a given word depending on which is slower');
+});
+
+test('RAM row memory survives a save/restore round-trip', () => {
+	const sourceFixture = createDmaGpuFixture();
+	const readAddr = PROGRAM_STATIC_RAM_BASE + 0x5000;
+	const writeAddr = PROGRAM_STATIC_RAM_BASE + 0x5100;
+	setStandardTiming(sourceFixture.dma, sourceFixture.scheduler);
+	programTransfer(sourceFixture.memory, readAddr, writeAddr, 1, RAM_COPY_CONTROL);
+	assert.equal(sourceFixture.scheduler.nextDeadline(), 32, 'first touch of a fresh row on both sides pays the reopen tax twice');
+	runNextDmaService(sourceFixture);
+	const state: DmaControllerState = sourceFixture.dma.captureState();
+
+	const restoredFixture = createDmaGpuFixture();
+	setStandardTiming(restoredFixture.dma, restoredFixture.scheduler);
+	restoredFixture.dma.restoreState(state, restoredFixture.scheduler.nowCycles);
+	restoredFixture.dma.postLoad();
+
+	programTransfer(restoredFixture.memory, readAddr, writeAddr, 1, RAM_COPY_CONTROL);
+	assert.equal(restoredFixture.scheduler.nextDeadline(), 8, 'restored row memory turns the next same-row access into a hit, not a cold reopen');
 });
 
 function programTransfer(memory: Memory, readAddress: number, writeAddress: number, wordCount: number, control: number): void {
@@ -207,13 +308,13 @@ test('an admitted DMA block survives DREQ drop, timing changes, and restore', ()
 	const source = PROGRAM_STATIC_RAM_BASE + 0x400;
 	memory.writeMappedU32LE(source, 0xe1000000);
 	memory.writeMappedU32LE(source + 4, 0xe1000001);
-	dma.setTiming(4, 1, 0);
+	dma.setTiming(4, 1, 0, 0, 0);
 	gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
 	programTransfer(memory, source, IO_GX_GPU_GP0, 2, GP0_WRITE_CONTROL);
 	assert.equal(scheduler.nextDeadline(), 8);
 
 	scheduler.advanceTo(3);
-	dma.setTiming(8, 1, 3);
+	dma.setTiming(8, 1, 0, 0, 3);
 	assert.equal(scheduler.nextDeadline(), 8);
 	gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_OFF);
 	assert.equal(scheduler.nextDeadline(), 8);

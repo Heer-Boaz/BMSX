@@ -1374,23 +1374,37 @@ forced, GX write, GX read, disabled, APU write or APU read; selector words 6 and
 DMA-direction register. APU requests are the sample-transfer FIFO's empty/write
 and full/read lines.
 
-The standard 50 MHz machine charges eight CPU cycles for each 32-bit DMA bus
-transfer. Its payload rate is therefore 6,250,000 words or 25,000,000 bytes per
-second (23.84 MiB/s). This is a controller throughput, not a property copied
-from the source memory. The cartridge interface supplies a word as two 16-bit
-ROM beats inside that eight-cycle slot; internal RAM can settle earlier but the
-DMA datapath has no separate RAM burst mode. RAM, system ROM, program ROM and
-cartridge ROM consequently use the same transfer cadence. The selected mapped
-read and mapped write together constitute one charged DMA transfer; source and
-destination types do not multiply or replace its cost. Device DREQ may insert
-idle time between admitted blocks, so 25,000,000 bytes per second is the
-sustained payload ceiling rather than guaranteed progress.
+The standard machine runs its CPU at 33.8688 MHz (44100 × 768, the real PS1
+clock), and DMA cost is region-dependent rather than a single flat controller
+rate. RAM behaves like DRAM with one open row per transfer side (read and
+write track their own last-opened row independently, since the two sides
+usually address unrelated memory): a word inside the side's currently-open
+16-word (64-byte) row costs four cycles; a word that opens a different row
+additionally charges twelve cycles. The tracked row is a property of the RAM
+chip, not of any one transfer — it survives DREQ drops, block boundaries and
+save/load, and only a machine reset invalidates it. System ROM, cartridge ROM
+and program ROM instead charge a flat ten cycles per word with no row
+locality; real ROM has no DRAM-style open-page benefit.
+
+The selected mapped read and mapped write are still charged and admitted
+together as one DMA transfer: it is a fly-by transfer, so the slower side
+gates the word and source/destination types do not multiply the cost. The one
+exception is RAM↔RAM: a single-ported RAM chip cannot serve two different
+addresses in the same cycle, so that specific combination sums both sides'
+cost instead of taking the slower one. A side addressing a fixed MMIO port (a
+GPU FIFO write, an APU FIFO write) contributes no memory-wait cost of its own.
+At best-case open-row RAM cadence the ceiling is 8,467,200 words
+(33,868,800 bytes, 32.30 MiB/s) per second; actual throughput depends on row
+locality and region mix, and device DREQ may still insert idle time between
+admitted blocks, so this is a sustained-progress ceiling, not a guarantee.
 
 The timing belongs to the bus/DMA owner rather than GX, APU, firmware or a ROM
 texture helper. This follows the same ownership shape as DuckStation's
-[DMA RAM tick owner](https://github.com/stenzek/duckstation/blob/4730d795bba1d11353efef01be513886fb8867c7/src/core/bus.h#L194-L202),
-while the uniform mapped-memory contract retains the MSX principle represented
-by openMSX's common device-facing
+[DMA RAM tick owner](https://github.com/stenzek/duckstation/blob/4730d795bba1d11353efef01be513886fb8867c7/src/core/bus.h#L194-L202) —
+the sixteen-word row granularity above directly reuses that function's
+row-reload amortization window — while the uniform mapped-memory contract
+(one controller, one mapped-read/mapped-write interface for every device)
+retains the MSX principle represented by openMSX's common device-facing
 [memory read path](https://github.com/openMSX/openMSX/blob/6a71ac3f14a9367934daef4d90138823fdabd1a2/src/cpu/MSXCPUInterface.cc#L190-L213).
 No cart, firmware module or device endpoint may add a second payload-rate
 budget around the central channel.

@@ -360,6 +360,8 @@ const std::vector<std::string> RUNTIME_SAVE_STATE_PROP_NAMES = {
 	"userControlWord",
 	"userStatusWord",
 	"userTimingCarry",
+	"lastRamRowRead",
+	"lastRamRowWrite",
 };
 
 } // namespace bmsx

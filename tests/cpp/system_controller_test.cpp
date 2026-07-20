@@ -88,6 +88,8 @@ struct SystemRuntimeFixture {
 				timing.totalHalfLines,
 				timing.activeDisplayHalfLines,
 				timing.dmaWordsPerSec,
+				timing.dmaRamRowReopenCycles,
+				timing.dmaRomWaitCyclesPerWord,
 				timing.geoWorkUnitsPerSec,
 			},
 			input
@@ -177,8 +179,11 @@ void testHostDeltaGrantsOneFractionallyRetainedMachineBudget() {
 	runtime.frameScheduler.run(runtime, 50.03125);
 
 	require(runtime.frameLoop.frameActive, "host delta starts one in-flight machine budget while PCRTC is stopped");
-	require(runtime.frameLoop.frameState.cycleBudgetGranted == 2'501'562, "host delta grants its complete machine-cycle budget once");
-	require(runtime.frameScheduler.captureState().cycleGrantRemainder == 0.5, "host delta retains its fractional machine cycle");
+	require(runtime.frameLoop.frameState.cycleBudgetGranted == 1'694'498, "host delta grants its complete machine-cycle budget once");
+	// 33,868,800 Hz doesn't divide 1000 as cleanly as the old 50,000,000 Hz did,
+	// so the exact remainder carries floating-point noise past a few decimal
+	// digits; 0x1.9999999cp-2 is the precise double this computation lands on.
+	require(runtime.frameScheduler.captureState().cycleGrantRemainder == 0x1.9999999cp-2, "host delta retains its fractional machine cycle");
 }
 
 void testRuntimeRestorePreservesInFlightFrameBudgetAndResetsHostClock() {

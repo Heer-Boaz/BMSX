@@ -14,6 +14,8 @@ ResolvedRuntimeTiming resolveRuntimeTiming(i64 cpuHz) {
 		GX_GPU_PCRTC_RESET_ACTIVE_DISPLAY_HALF_LINES,
 		cpuHz,
 		PSX_MACHINE_SPEC.dmaWordsPerSec,
+		PSX_MACHINE_SPEC.dmaRamRowReopenCycles,
+		PSX_MACHINE_SPEC.dmaRomWaitCyclesPerWord,
 		static_cast<int>(PSX_MACHINE_SPEC.geoWorkUnitsPerSec),
 		calcCyclesPerFrameScaled(cpuHz, GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED),
 	};

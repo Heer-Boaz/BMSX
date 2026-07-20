@@ -9,5 +9,7 @@ export type RuntimeOptions = {
 	totalHalfLines: number;
 	activeDisplayHalfLines: number;
 	dmaWordsPerSec: number;
+	dmaRamRowReopenCycles: number;
+	dmaRomWaitCyclesPerWord: number;
 	geoWorkUnitsPerSec: number;
 };

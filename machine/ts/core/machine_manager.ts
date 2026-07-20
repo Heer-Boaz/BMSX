@@ -181,6 +181,8 @@ export class MachineManager {
 			totalHalfLines: timing.totalHalfLines,
 			activeDisplayHalfLines: timing.activeDisplayHalfLines,
 			dmaWordsPerSec: timing.dmaWordsPerSec,
+			dmaRamRowReopenCycles: timing.dmaRamRowReopenCycles,
+			dmaRomWaitCyclesPerWord: timing.dmaRomWaitCyclesPerWord,
 			geoWorkUnitsPerSec: timing.geoWorkUnitsPerSec,
 		}, Input.instance);
 		this._runtime = runtime;

@@ -1010,6 +1010,8 @@ function encodeDmaControllerState(state: DmaControllerState): DmaControllerState
 		userControlWord: state.userControlWord,
 		userStatusWord: state.userStatusWord,
 		userTimingCarry: state.userTimingCarry,
+		lastRamRowRead: state.lastRamRowRead,
+		lastRamRowWrite: state.lastRamRowWrite,
 	};
 }
 
@@ -1031,6 +1033,8 @@ function decodeDmaControllerState(value: unknown, label: string): DmaControllerS
 		userControlWord: requireBoundedU32(requireObjectKey(object, 'userControlWord', label, `${label}.userControlWord`), `${label}.userControlWord`, 0, 0xffffffff),
 		userStatusWord: requireBoundedU32(requireObjectKey(object, 'userStatusWord', label, `${label}.userStatusWord`), `${label}.userStatusWord`, 0, 0xffffffff),
 		userTimingCarry: requireI64(requireObjectKey(object, 'userTimingCarry', label, `${label}.userTimingCarry`), `${label}.userTimingCarry`),
+		lastRamRowRead: requireBoundedU32(requireObjectKey(object, 'lastRamRowRead', label, `${label}.lastRamRowRead`), `${label}.lastRamRowRead`, 0, 0xffffffff),
+		lastRamRowWrite: requireBoundedU32(requireObjectKey(object, 'lastRamRowWrite', label, `${label}.lastRamRowWrite`), `${label}.lastRamRowWrite`, 0, 0xffffffff),
 	};
 }
 

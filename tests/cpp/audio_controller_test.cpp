@@ -48,7 +48,7 @@ struct AudioHarness {
 		irq.reset();
 		dma.reset();
 		audio.reset();
-		dma.setTiming(bmsx::APU_TRANSFER_WORDS_PER_SECOND, bmsx::APU_TRANSFER_WORDS_PER_SECOND, 0);
+		dma.setTiming(bmsx::APU_TRANSFER_WORDS_PER_SECOND, bmsx::APU_TRANSFER_WORDS_PER_SECOND, 0, 0, 0);
 		audio.setTiming(bmsx::APU_SAMPLE_RATE_HZ, 0);
 	}
 };
@@ -501,7 +501,7 @@ void testSampleBusDmaAndMidTransferRestore() {
 
 void testSampleTransferWrongDirectionBlock() {
 	AudioHarness harness;
-	harness.dma.setTiming(bmsx::APU_TRANSFER_WORDS_PER_SECOND, bmsx::APU_TRANSFER_WORDS_PER_SECOND * 2, 0);
+	harness.dma.setTiming(bmsx::APU_TRANSFER_WORDS_PER_SECOND, bmsx::APU_TRANSFER_WORDS_PER_SECOND * 2, 0, 0, 0);
 	harness.audio.setTiming(bmsx::APU_TRANSFER_WORDS_PER_SECOND, 0);
 	const bmsx::u32 source = bmsx::PROGRAM_STATIC_RAM_BASE + 0x500u;
 	const bmsx::u32 target = bmsx::PROGRAM_STATIC_RAM_BASE + 0x600u;
@@ -556,6 +556,8 @@ void testRuntimeClockResetAndRestorePreserveApuTimebase() {
 			timing.totalHalfLines,
 			timing.activeDisplayHalfLines,
 			timing.dmaWordsPerSec,
+			timing.dmaRamRowReopenCycles,
+			timing.dmaRomWaitCyclesPerWord,
 			timing.geoWorkUnitsPerSec,
 		},
 		input
@@ -905,7 +907,7 @@ void testResamplerDropsOverwrittenInterpolationEndpoints() {
 }
 
 void testOutputPresentationReachesPalHostAfterOneIdleSecond() {
-	constexpr bmsx::i64 cpuHz = 50'000'000;
+	constexpr bmsx::i64 cpuHz = 33'868'800;
 	constexpr bmsx::i32 hostSampleRate = 48000;
 	constexpr size_t hostFramesPerPalFrame = 960u;
 	AudioMachineHarness harness(cpuHz);
@@ -920,7 +922,7 @@ void testOutputPresentationReachesPalHostAfterOneIdleSecond() {
 	const bmsx::i64 playCycle = primeCycle + cpuHz;
 	harness.machine.scheduler.advanceTo(playCycle);
 	harness.machine.audioController.onService(playCycle);
-	require(harness.machine.audioController.captureState().sampleSequence == bmsx::APU_SAMPLE_RATE_HZ + 2, "50 MHz APU clock should produce exactly one idle second after resampler priming");
+	require(harness.machine.audioController.captureState().sampleSequence == bmsx::APU_SAMPLE_RATE_HZ + 2, "33.8688 MHz APU clock should produce exactly one idle second after resampler priming");
 	require(harness.machine.audioOutput.outputRing.queuedFrames() == bmsx::APU_OUTPUT_RING_CAPACITY_FRAMES, "presentation history should remain bounded during idle output");
 
 	harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_SAMPLE_RATE_HZ, bmsx::APU_SAMPLE_RATE_HZ / 4u);

@@ -85,6 +85,8 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					userControlWord: 4,
 					userStatusWord: DMA_STATUS_BUSY,
 					userTimingCarry: 54321,
+					lastRamRowRead: 42,
+					lastRamRowWrite: 99,
 				},
 				geometry: {
 					phase: GEOMETRY_CONTROLLER_PHASE_BUSY,

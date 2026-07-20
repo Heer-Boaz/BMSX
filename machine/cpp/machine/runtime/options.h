@@ -23,6 +23,8 @@ struct RuntimeOptions {
 	i64 totalHalfLines;
 	i64 activeDisplayHalfLines;
 	i64 dmaWordsPerSec;
+	i64 dmaRamRowReopenCycles;
+	i64 dmaRomWaitCyclesPerWord;
 	int geoWorkUnitsPerSec;
 };
 

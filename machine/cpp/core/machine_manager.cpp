@@ -355,6 +355,8 @@ bool MachineManager::bootSystemStartupProgram(const MachineManifest& runtimeMach
 		timing.totalHalfLines,
 		timing.activeDisplayHalfLines,
 		timing.dmaWordsPerSec,
+		timing.dmaRamRowReopenCycles,
+		timing.dmaRomWaitCyclesPerWord,
 		timing.geoWorkUnitsPerSec,
 	});
 	syncAudioTiming();
