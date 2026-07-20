@@ -7,6 +7,7 @@
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/map.h"
 #include "machine/memory/memory.h"
+#include "machine/model_registry.h"
 #include "machine/scheduler/device.h"
 
 #include <array>
@@ -25,6 +26,7 @@ constexpr uint32_t GP0_READ_CONTROL = bmsx::DMA_CONTROL_WRITE_INCREMENT | bmsx::
 
 struct DmaGpuHarness {
 	std::array<uint8_t, 1> emptyRom{{0}};
+	std::array<uint8_t, 8> cartRom{{0x44u, 0x33u, 0x22u, 0x11u, 0x88u, 0x77u, 0x66u, 0x55u}};
 	bmsx::Memory memory;
 	bmsx::IrqController irq;
 	bmsx::CPU cpu;
@@ -33,7 +35,7 @@ struct DmaGpuHarness {
 	bmsx::GxGpu gpu;
 
 	DmaGpuHarness()
-		: memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, { emptyRom.data(), 0u } })
+		: memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, { cartRom.data(), cartRom.size() } })
 		, irq(memory)
 		, cpu(memory, irq)
 		, scheduler(cpu)
@@ -68,6 +70,29 @@ void runNextDmaService(DmaGpuHarness& harness) {
 	require(deadline != std::numeric_limits<int64_t>::max(), "DMA service must have a deadline");
 	harness.scheduler.advanceTo(deadline);
 	harness.dma.onService(deadline);
+}
+
+void testStandardCadenceForRamAndCartridgeRom() {
+	DmaGpuHarness harness;
+	bmsx::Memory& memory = harness.memory;
+	const uint32_t ramSource = bmsx::PROGRAM_STATIC_RAM_BASE + 0x80u;
+	const uint32_t ramDestination = bmsx::PROGRAM_STATIC_RAM_BASE + 0xa0u;
+	const uint32_t romDestination = bmsx::PROGRAM_STATIC_RAM_BASE + 0xc0u;
+	memory.writeMappedU32LE(ramSource, 0x99aabbccu);
+	memory.writeMappedU32LE(ramSource + 4u, 0xddeeff00u);
+	harness.dma.setTiming(bmsx::PSX_MACHINE_SPEC.cpuFreqHz, bmsx::PSX_MACHINE_SPEC.dmaWordsPerSec, harness.scheduler.currentNowCycles());
+
+	programTransfer(memory, ramSource, ramDestination, 2u, RAM_COPY_CONTROL);
+	require(harness.scheduler.nextDeadline() == 16, "standard RAM DMA charges eight cycles per word");
+	runNextDmaService(harness);
+	require(memory.readMappedU32LE(ramDestination) == 0x99aabbccu, "standard RAM DMA copies word 0");
+	require(memory.readMappedU32LE(ramDestination + 4u) == 0xddeeff00u, "standard RAM DMA copies word 1");
+
+	programTransfer(memory, bmsx::CART_ROM_BASE, romDestination, 2u, RAM_COPY_CONTROL);
+	require(harness.scheduler.nextDeadline() == 32, "standard cartridge-ROM DMA uses the RAM cadence");
+	runNextDmaService(harness);
+	require(memory.readMappedU32LE(romDestination) == 0x11223344u, "standard cartridge-ROM DMA copies word 0");
+	require(memory.readMappedU32LE(romDestination + 4u) == 0x55667788u, "standard cartridge-ROM DMA copies word 1");
 }
 
 void testLiveRegisterChannel() {
@@ -278,6 +303,7 @@ void testZeroCountTrigger() {
 } // namespace
 
 int main() {
+	testStandardCadenceForRamAndCartridgeRom();
 	testLiveRegisterChannel();
 	testGxWriteRequestAndPortOwnership();
 	testCpuToGp0ImagePayloadCrossesBlocks();

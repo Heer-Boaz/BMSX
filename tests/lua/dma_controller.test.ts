@@ -43,9 +43,15 @@ import {
 	GX_GPU_STATUS_READY_TO_RECEIVE_DMA,
 	GxGpu,
 } from '../../machine/ts/machine/devices/gx/gpu';
+import {
+	GX_GPU_PCRTC_SMODE1_LOW,
+	GX_GPU_PCRTC_SMODE1_SINT,
+	gxGpuPcrtcRegisterAddress,
+} from '../../machine/ts/machine/devices/gx/gpu_pcrtc';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
-import { PROGRAM_STATIC_RAM_BASE, RAM_END } from '../../machine/ts/machine/memory/map';
+import { CART_ROM_BASE, PROGRAM_STATIC_RAM_BASE, RAM_END } from '../../machine/ts/machine/memory/map';
+import { PSX_MACHINE_SPEC } from '../../machine/ts/machine/model_registry';
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 
 type DmaGpuFixture = {
@@ -63,7 +69,10 @@ const GP0_WRITE_CONTROL = DMA_CONTROL_READ_INCREMENT | DMA_CONTROL_REQUEST_GX_WR
 const GP0_READ_CONTROL = DMA_CONTROL_WRITE_INCREMENT | DMA_CONTROL_REQUEST_GX_READ;
 
 function createDmaGpuFixture(): DmaGpuFixture {
-	const memory = new Memory({ systemRom: new Uint8Array(), cartRom: new Uint8Array() });
+	const memory = new Memory({
+		systemRom: new Uint8Array(),
+		cartRom: new Uint8Array([0x44, 0x33, 0x22, 0x11, 0x88, 0x77, 0x66, 0x55]),
+	});
 	const irq = new IrqController(memory);
 	const cpu = new CPU(memory, irq);
 	const scheduler = new DeviceScheduler(cpu);
@@ -73,8 +82,34 @@ function createDmaGpuFixture(): DmaGpuFixture {
 	gpu.reset();
 	irq.reset();
 	dma.setTiming(1, 16, 0);
+	const smode1Address = gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_SMODE1_LOW);
+	memory.writeMappedU32LE(smode1Address, memory.readMappedU32LE(smode1Address) | GX_GPU_PCRTC_SMODE1_SINT);
+	gpu.onService(0);
 	return { memory, dma, gpu, scheduler };
 }
+
+test('standard DMA cadence is eight cycles per word for RAM and cartridge ROM', () => {
+	const fixture = createDmaGpuFixture();
+	const { memory, dma, scheduler } = fixture;
+	const ramSource = PROGRAM_STATIC_RAM_BASE + 0x80;
+	const ramDestination = PROGRAM_STATIC_RAM_BASE + 0xa0;
+	const romDestination = PROGRAM_STATIC_RAM_BASE + 0xc0;
+	memory.writeMappedU32LE(ramSource, 0x99aabbcc);
+	memory.writeMappedU32LE(ramSource + 4, 0xddeeff00);
+	dma.setTiming(PSX_MACHINE_SPEC.cpuFreqHz, PSX_MACHINE_SPEC.dmaWordsPerSec, scheduler.nowCycles);
+
+	programTransfer(memory, ramSource, ramDestination, 2, RAM_COPY_CONTROL);
+	assert.equal(scheduler.nextDeadline(), 16);
+	runNextDmaService(fixture);
+	assert.equal(memory.readMappedU32LE(ramDestination), 0x99aabbcc);
+	assert.equal(memory.readMappedU32LE(ramDestination + 4), 0xddeeff00);
+
+	programTransfer(memory, CART_ROM_BASE, romDestination, 2, RAM_COPY_CONTROL);
+	assert.equal(scheduler.nextDeadline(), 32);
+	runNextDmaService(fixture);
+	assert.equal(memory.readMappedU32LE(romDestination), 0x11223344);
+	assert.equal(memory.readMappedU32LE(romDestination + 4), 0x55667788);
+});
 
 function programTransfer(memory: Memory, readAddress: number, writeAddress: number, wordCount: number, control: number): void {
 	memory.writeMappedU32LE(IO_DMA_READ_ADDR, readAddress);

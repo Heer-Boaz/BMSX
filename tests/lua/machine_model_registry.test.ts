@@ -7,6 +7,7 @@ import {
 	PSX_GPU_DISPLAY_MODE_NTSC_WORD,
 	PSX_GPU_DISPLAY_MODE_PAL_WORD,
 	NTSC_REFRESH_UFPS_SCALED,
+	PSX_DMA_CPU_CYCLES_PER_WORD,
 	PSX_MACHINE_SPEC,
 } from '../../machine/ts/machine/model_registry';
 import { HZ_SCALE } from '../../machine/ts/machine/runtime/timing/constants';
@@ -14,10 +15,11 @@ import { HZ_SCALE } from '../../machine/ts/machine/runtime/timing/constants';
 test('machine registry exposes the psx fixed hardware model', () => {
 	assert.deepEqual(PSX_MACHINE_SPEC, {
 		cpuFreqHz: 50_000_000,
-		dmaWordsPerSec: 6_553_600,
+		dmaWordsPerSec: 6_250_000,
 		ramBytes: 0x00400000,
 		geoWorkUnitsPerSec: 16_384_000,
 	});
+	assert.equal(PSX_MACHINE_SPEC.cpuFreqHz / PSX_MACHINE_SPEC.dmaWordsPerSec, PSX_DMA_CPU_CYCLES_PER_WORD);
 });
 
 test('PSX GPU display mode bit 3 selects PAL and clear bit 3 selects 60000/1001 NTSC timing', () => {

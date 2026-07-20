@@ -7,7 +7,8 @@ export type MachineVdpClass = 'psx';
 export type PsxGpuVideoStandard = 'pal' | 'ntsc';
 
 export const PSX_CPU_FREQ_HZ = 50_000_000;
-export const PSX_DMA_WORDS_PER_SEC = 6_553_600;
+export const PSX_DMA_CPU_CYCLES_PER_WORD = 8;
+export const PSX_DMA_WORDS_PER_SEC = PSX_CPU_FREQ_HZ / PSX_DMA_CPU_CYCLES_PER_WORD;
 export const PSX_RAM_BYTES = 0x00400000;
 export const GX_GPU_DISPLAY_ASPECT_WIDTH = 4;
 export const GX_GPU_DISPLAY_ASPECT_HEIGHT = 3;

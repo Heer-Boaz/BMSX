@@ -1374,6 +1374,27 @@ forced, GX write, GX read, disabled, APU write or APU read; selector words 6 and
 DMA-direction register. APU requests are the sample-transfer FIFO's empty/write
 and full/read lines.
 
+The standard 50 MHz machine charges eight CPU cycles for each 32-bit DMA bus
+transfer. Its payload rate is therefore 6,250,000 words or 25,000,000 bytes per
+second (23.84 MiB/s). This is a controller throughput, not a property copied
+from the source memory. The cartridge interface supplies a word as two 16-bit
+ROM beats inside that eight-cycle slot; internal RAM can settle earlier but the
+DMA datapath has no separate RAM burst mode. RAM, system ROM, program ROM and
+cartridge ROM consequently use the same transfer cadence. The selected mapped
+read and mapped write together constitute one charged DMA transfer; source and
+destination types do not multiply or replace its cost. Device DREQ may insert
+idle time between admitted blocks, so 25,000,000 bytes per second is the
+sustained payload ceiling rather than guaranteed progress.
+
+The timing belongs to the bus/DMA owner rather than GX, APU, firmware or a ROM
+texture helper. This follows the same ownership shape as DuckStation's
+[DMA RAM tick owner](https://github.com/stenzek/duckstation/blob/4730d795bba1d11353efef01be513886fb8867c7/src/core/bus.h#L194-L202),
+while the uniform mapped-memory contract retains the MSX principle represented
+by openMSX's common device-facing
+[memory read path](https://github.com/openMSX/openMSX/blob/6a71ac3f14a9367934daef4d90138823fdabd1a2/src/cpu/MSXCPUInterface.cc#L190-L213).
+No cart, firmware module or device endpoint may add a second payload-rate
+budget around the central channel.
+
 A high request admits one hardware block of the programmed size, shortened only
 by the live final transfer count. Block length is latched at admission. A later
 DREQ-low edge or save/load cannot revoke that block; device-timing changes

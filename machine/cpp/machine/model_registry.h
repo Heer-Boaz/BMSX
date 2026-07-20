@@ -12,7 +12,8 @@ enum class MachineVdpClass { Psx };
 enum class PsxGpuVideoStandard { Pal, Ntsc };
 
 constexpr i64 PSX_CPU_FREQ_HZ = 50000000;
-constexpr i64 PSX_DMA_WORDS_PER_SEC = 6553600;
+constexpr i64 PSX_DMA_CPU_CYCLES_PER_WORD = 8;
+constexpr i64 PSX_DMA_WORDS_PER_SEC = PSX_CPU_FREQ_HZ / PSX_DMA_CPU_CYCLES_PER_WORD;
 constexpr i64 PSX_RAM_BYTES = 0x00400000;
 constexpr i32 GX_GPU_DISPLAY_ASPECT_WIDTH = 4;
 constexpr i32 GX_GPU_DISPLAY_ASPECT_HEIGHT = 3;
