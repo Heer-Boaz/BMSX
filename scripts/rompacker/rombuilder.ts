@@ -1,15 +1,14 @@
 import { glsl } from "esbuild-plugin-glsl";
 // @ts-ignore
 import type { Stats } from 'fs';
-import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES, CART_ROM_WORD_ALIGNMENT, CART_VDP_CLASS_PSX, PROGRAM_BOOT_HEADER_VERSION } from '../../machine/ts/rompack/format';
+import { CART_ROM_HEADER_SIZE, CART_ROM_WORD_ALIGNMENT, PROGRAM_BOOT_HEADER_VERSION } from '../../machine/ts/rompack/format';
 import { assertRomAssetSymbolsMatchToc, type RomAssetSymbol } from '../../machine/ts/rompack/asset_symbols';
 import type { asset_type, AudioMeta, BoundingBoxPrecalc, CartridgeLayerId, GLTFMesh, HitPolygonsPrecalc, ImgMeta, Polygon, ProgramBootHeader, RectBounds, RomAsset, RomManifest, vec2arr } from '../../machine/ts/rompack/format';
-import { collectRomAssetPayloadRanges } from '../../machine/ts/rompack/asset_layout';
-import { SYSTEM_BOOT_ENTRY_PATH } from '../../machine/ts/core/system';
+import { alignRomAssetOffset, layoutRomAssetPayloads } from '../../machine/ts/rompack/asset_layout';
+import { writeCartRomHeader } from '../../machine/ts/rompack/tooling/header_encode';
 import { encodeRomToc } from '../../machine/ts/rompack/tooling/toc_encode';
-import type { LuaChunk } from '../../machine/ts/lua/syntax/ast';
-import type { ProgramCompileDomain } from '../../machine/ts/lua/compiler';
 import { encodeAudioAssetToAdpcm } from './adpcm';
+import { buildProgramImage, type GeneratedProgramModule } from './program_image_builder';
 import { createTextureAtlas, resolveTextureGroupId } from './atlasbuilder';
 import {
 	GX_CART_TEXTURE_GROUP_ID_LIMIT,
@@ -39,6 +38,8 @@ import { collectGLTFExternalBufferFileSet, loadGLTFModel } from './gltfloader';
 import type { TextureAtlasResource, ImageResource, Resource, resourcetype, RomPackerTarget } from './rompacker.rompack';
 import { collectSourceFiles } from '../analysis/file_scan';
 import { collectCartSourceFiles } from './cart_source_files';
+import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/machine/memory/map';
+import type { ProgramImage, ProgramSymbolsImage } from '../../machine/ts/machine/program/loader';
 // @ts-ignore
 const { build } = require('esbuild');
 // @ts-ignore
@@ -56,7 +57,7 @@ const { finished } = require('stream/promises');
 // Import encodeBinary from the public API surface
 // Use direct path to avoid pulling the machine runtime via public alias during Node execution.
 // @ts-ignore
-const { encodeBinary, decodeBinary } = require('../../machine/ts/common/serializer/binencoder');
+const { encodeBinary } = require('../../machine/ts/common/serializer/binencoder');
 // @ts-ignore
 const { buildRomMetadataSection } = require('../../machine/ts/rompack/tooling/metadata_encode');
 // @ts-ignore
@@ -66,11 +67,12 @@ const { LuaParser } = require('../../machine/ts/lua/syntax/parser');
 // @ts-ignore
 const { splitText } = require('../../machine/ts/common/text_lines');
 // @ts-ignore
-const { compileLuaChunkToProgram, encodeCompiledProgramImage, isLuaCompileError } = require('../../machine/ts/lua/compiler');
+const { isLuaCompileError } = require('../../machine/ts/lua/compiler');
 // @ts-ignore
 const {
 	PROGRAM_IMAGE_ID,
 	PROGRAM_SYMBOLS_IMAGE_ID,
+	encodeProgramImage,
 	toLuaModulePath,
 } = require('../../machine/ts/machine/program/loader');
 // @ts-ignore
@@ -1210,7 +1212,6 @@ export async function getResourcesList(resMetaList: Resource[]): Promise<Resourc
 
 	// Parallelize buffer and image loading
 	const resourcePromises = resMetaList.map(async (meta): Promise<Resource> => {
-		const metaObject = meta as Record<string, unknown>;
 		const buffer = meta.filepath ? await readFile(meta.filepath) : undefined;
 		switch (meta.type) {
 			case 'image': {
@@ -1219,10 +1220,10 @@ export async function getResourcesList(resMetaList: Resource[]): Promise<Resourc
 				}
 				const img = await getImageFromBuffer(buffer);
 				return {
-					...metaObject,
+					...meta,
 					buffer,
 					img,
-				} as Resource;
+				};
 			}
 			case 'audio':
 			case 'data':
@@ -1232,17 +1233,17 @@ export async function getResourcesList(resMetaList: Resource[]): Promise<Resourc
 			case 'atlas':
 			case 'bin':
 				return {
-					...metaObject,
+					...meta,
 					buffer,
-				} as Resource;
+				};
 			case 'lua': {
 				if (!buffer) {
 					throw new Error(`[RomPacker] Lua resource "${meta.name}" is missing its source file payload.`);
 				}
 				return {
-					...metaObject,
+					...meta,
 					buffer,
-				} as Resource;
+				};
 			}
 		}
 	});
@@ -1462,133 +1463,58 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 	return romAssets;
 }
 
+type AppendProgramImageOptions = {
+	externalLuaAssets: RomAsset[];
+	generatedLuaModules: GeneratedProgramModule[];
+	includeLuaAssets: boolean;
+	includeSymbols: boolean;
+	optLevel: 0 | 1 | 2 | 3;
+} & (
+	| { programDomain: 'system' }
+	| {
+		programDomain: 'cart';
+		systemProgram: { image: ProgramImage; metadata: ProgramSymbolsImage | null };
+	}
+);
+
 export function appendProgramImage(
 	assetList: RomAsset[],
-	entryPath: string = SYSTEM_BOOT_ENTRY_PATH,
-	options: {
-	extraLuaAssets?: RomAsset[];
-	externalLuaAssets?: RomAsset[];
-	generatedLuaModules?: Array<{ path: string; source: string }>;
-	includeSymbols?: boolean;
-	optLevel?: 0 | 1 | 2 | 3;
-	programDomain?: ProgramCompileDomain;
-	} = {},
+	entryPath: string,
+	options: AppendProgramImageOptions,
 ): ProgramBootHeader {
-	const hasProgramImage = assetList.some(asset => asset.resid === PROGRAM_IMAGE_ID);
-	const hasSymbolsAsset = assetList.some(asset => asset.resid === PROGRAM_SYMBOLS_IMAGE_ID);
-	const includeSymbols = options.includeSymbols;
-	if (hasProgramImage || hasSymbolsAsset) {
-		throw new Error('[RomPacker] appendProgramImage() expects a fresh asset list without prebuilt program images.');
-	}
-	const baseLuaAssets = assetList.filter(asset => asset.type === 'lua');
-	const luaAssets = baseLuaAssets.slice();
-	const extraLuaAssets = options.extraLuaAssets;
-	if (extraLuaAssets && extraLuaAssets.length > 0) {
-		const seenPaths = new Set<string>();
-		for (const asset of baseLuaAssets) {
-			const path = toLuaModulePath(asset.source_path);
-			seenPaths.add(path);
-		}
-		for (const asset of extraLuaAssets) {
-			const path = toLuaModulePath(asset.source_path);
-			if (seenPaths.has(path)) {
-				continue;
-			}
-			seenPaths.add(path);
-			luaAssets.push(asset);
-		}
-	}
-	if (luaAssets.length === 0) {
-		throw new Error('[RomPacker] Cannot build program header without Lua assets.');
-	}
-	const entryModulePath = toLuaModulePath(entryPath);
-	const entryAsset = luaAssets.find(asset => toLuaModulePath(asset.source_path) === entryModulePath);
-	if (!entryAsset) {
-		throw new Error(`[RomPacker] Lua entry '${entryPath}' not found in asset list.`);
-	}
-
-	const chunksByPath = new Map<string, LuaChunk>();
-	let entryChunk: LuaChunk = null;
-	for (const asset of luaAssets) {
-		const path = toLuaModulePath(asset.source_path);
-		if (chunksByPath.has(path)) {
-			throw new Error(`[RomPacker] ROM Lua module '${path}' is defined more than once.`);
-		}
-		if (!asset.compiled_buffer || asset.compiled_buffer.length === 0) {
-			throw new Error(`[RomPacker] Lua asset '${asset.resid}' is missing its compiled buffer.`);
-		}
-		let decoded: LuaChunk;
-		try {
-			decoded = decodeBinary(new Uint8Array(asset.compiled_buffer)) as LuaChunk;
-		} catch (error) {
-			const bufferPreview = Buffer.from(asset.compiled_buffer).subarray(0, 24);
-			const previewHex = Array.from(bufferPreview, byte => byte.toString(16).padStart(2, '0')).join(' ');
-			const pathLabel = asset.source_path ?? asset.resid;
-			throw new Error(`[RomPacker] Failed to decode compiled Lua chunk for "${pathLabel}". First bytes: ${previewHex}. ${error?.message ?? error}`);
-		}
-		chunksByPath.set(path, decoded);
-		if (asset === entryAsset) {
-			entryChunk = decoded;
-		}
-	}
-
-	const modules: Array<{ path: string; chunk: LuaChunk; source: string }> = [];
-	for (const asset of luaAssets) {
-		if (asset === entryAsset) {
-			continue;
-		}
-		const path = toLuaModulePath(asset.source_path);
-		const chunk = chunksByPath.get(path);
-		modules.push({ path, chunk, source: asset.buffer.toString('utf8') });
-	}
-	if (options.generatedLuaModules) {
-		for (const generated of options.generatedLuaModules) {
-			if (chunksByPath.has(generated.path)) {
-				throw new Error(`[RomPacker] Generated Lua module '${generated.path}' conflicts with a ROM Lua asset.`);
-			}
-			const lexer = new LuaLexer(generated.source, `${generated.path}.lua`);
-			const tokens = lexer.scanTokens();
-			const parser = new LuaParser(tokens, `${generated.path}.lua`, splitText(generated.source));
-			const chunk = parser.parseChunk();
-			chunksByPath.set(generated.path, chunk);
-			modules.push({ path: generated.path, chunk, source: generated.source });
-		}
-	}
-	const externalModules: Array<{ path: string; chunk: LuaChunk; source: string }> = [];
-	if (options.externalLuaAssets) {
-		for (const asset of options.externalLuaAssets) {
-			if (!asset.compiled_buffer || asset.compiled_buffer.length === 0) {
-				throw new Error(`[RomPacker] External Lua asset '${asset.resid}' is missing its compiled buffer.`);
-			}
-			const path = toLuaModulePath(asset.source_path);
-			if (!path || chunksByPath.has(path)) {
-				continue;
-			}
-			const chunk = decodeBinary(new Uint8Array(asset.compiled_buffer)) as LuaChunk;
-			externalModules.push({ path, chunk, source: asset.buffer.toString('utf8') });
-		}
-	}
-
-	const optLevel = options.optLevel ?? 3;
-
-	const compiled = compileLuaChunkToProgram(entryChunk, modules, {
-		optLevel,
-		entrySource: entryAsset.buffer.toString('utf8'),
-		externalModules,
-		programDomain: options.programDomain,
+	const luaAssets = assetList.filter(asset => asset.type === 'lua');
+	const programOffset = layoutRomAssetPayloads(assetList, options.includeLuaAssets).nextOffset;
+	const programAddress = (options.programDomain === 'cart' ? CART_ROM_BASE : SYSTEM_ROM_BASE) + programOffset;
+	const linked = buildProgramImage(options.programDomain === 'cart' ? {
+		luaAssets,
+		externalLuaAssets: options.externalLuaAssets,
+		generatedLuaModules: options.generatedLuaModules,
+		entryPath,
+		loadAddress: programAddress,
+		optLevel: options.optLevel,
+		programDomain: 'cart',
+		systemProgram: options.systemProgram,
+	} : {
+		luaAssets,
+		externalLuaAssets: options.externalLuaAssets,
+		generatedLuaModules: options.generatedLuaModules,
+		entryPath,
+		loadAddress: programAddress,
+		optLevel: options.optLevel,
+		programDomain: 'system',
 	});
-	const programImage = encodeCompiledProgramImage(compiled);
-
-	const buffer = Buffer.from(encodeBinary(programImage));
+	const programImage = linked.image;
+	const encoded = encodeProgramImage(programImage);
 	assetList.push({
 		resid: PROGRAM_IMAGE_ID,
 		type: 'code',
-		buffer,
+		buffer: Buffer.from(encoded.sections),
+		compiled_buffer: Buffer.from(encoded.descriptor),
 		source_path: PROGRAM_IMAGE_ID,
 	});
-	if (includeSymbols) {
+	if (options.includeSymbols) {
 		const symbolsAsset = {
-			metadata: compiled.metadata,
+			metadata: linked.metadata,
 		};
 		const symbolsBuffer = Buffer.from(encodeBinary(symbolsAsset));
 		assetList.push({
@@ -1605,7 +1531,7 @@ export function appendProgramImage(
 		codeByteCount: programImage.sections.text.code.length,
 		constPoolCount: programImage.sections.rodata.constPool.length,
 		protoCount: programImage.sections.text.protos.length,
-		constRelocCount: programImage.link.constRelocs.length,
+		constRelocCount: 0,
 	};
 }
 
@@ -1779,7 +1705,7 @@ export async function finalizeRompack(
 			}
 		};
 		const alignRomWordSection = async () => {
-			const paddingLength = (-offset) & (CART_ROM_WORD_ALIGNMENT - 1);
+			const paddingLength = alignRomAssetOffset(offset) - offset;
 			if (paddingLength !== 0) {
 				await writeBuffer(wordPaddingByLength[paddingLength]);
 			}
@@ -1788,7 +1714,7 @@ export async function finalizeRompack(
 		try {
 			await writeBuffer(Buffer.alloc(CART_ROM_HEADER_SIZE));
 			const dataOffset = offset;
-			const payloadRanges = collectRomAssetPayloadRanges(assetList, true);
+			const payloadRanges = layoutRomAssetPayloads(assetList, true).ranges;
 			let payloadRangeIndex = 0;
 			for (const asset of assetList) {
 				status?.(`pack ${asset.type}:${asset.resid}`);
@@ -1891,25 +1817,26 @@ export async function finalizeRompack(
 			await writeBuffer(tocBuffer);
 
 			headerBuffer = Buffer.alloc(CART_ROM_HEADER_SIZE);
-			Buffer.from(CART_ROM_MAGIC_BYTES).copy(headerBuffer, 0);
-			headerBuffer.writeUInt32LE(CART_ROM_HEADER_SIZE, 4);
-			headerBuffer.writeUInt32LE(manifestOffset, 8);
-			headerBuffer.writeUInt32LE(manifestLength, 12);
-			headerBuffer.writeUInt32LE(tocOffset, 16);
-			headerBuffer.writeUInt32LE(tocLength, 20);
-			headerBuffer.writeUInt32LE(dataOffset, 24);
-			headerBuffer.writeUInt32LE(dataLength, 28);
-			headerBuffer.writeUInt32LE(options.programBoot.version, 32);
-			headerBuffer.writeUInt32LE(options.programBoot.flags, 36);
-			headerBuffer.writeUInt32LE(options.programBoot.resetProtoIndex, 40);
-			headerBuffer.writeUInt32LE(options.programBoot.codeByteCount, 44);
-			headerBuffer.writeUInt32LE(options.programBoot.constPoolCount, 48);
-			headerBuffer.writeUInt32LE(options.programBoot.protoCount, 52);
-			headerBuffer.writeUInt32LE(0, 56);
-			headerBuffer.writeUInt32LE(options.programBoot.constRelocCount, 60);
-			headerBuffer.writeUInt32LE(metadataOffset, 64);
-			headerBuffer.writeUInt32LE(metadataLength, 68);
-			headerBuffer.writeUInt32LE(CART_VDP_CLASS_PSX, 72);
+			writeCartRomHeader(headerBuffer, {
+				headerSize: CART_ROM_HEADER_SIZE,
+				manifestOffset,
+				manifestLength,
+				tocOffset,
+				tocLength,
+				dataOffset,
+				dataLength,
+				programBootVersion: options.programBoot.version,
+				programBootFlags: options.programBoot.flags,
+				programEntryProtoIndex: options.programBoot.resetProtoIndex,
+				programCodeByteCount: options.programBoot.codeByteCount,
+				programConstPoolCount: options.programBoot.constPoolCount,
+				programProtoCount: options.programBoot.protoCount,
+				programReserved0: 0,
+				programConstRelocCount: options.programBoot.constRelocCount,
+				metadataOffset,
+				metadataLength,
+				vdpClass: 'psx',
+			});
 		} finally {
 			writer.end();
 		}

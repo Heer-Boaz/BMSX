@@ -36,14 +36,14 @@ import { captureMachineSaveState, captureMachineState, restoreMachineSaveState, 
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { MemoryAccessKind } from '../../machine/ts/machine/memory/access_kind';
 import { IO_WORD_SIZE, PROGRAM_STATIC_RAM_BASE } from '../../machine/ts/machine/memory/map';
-import { compileLuaChunkToProgram, encodeCompiledProgramImage } from '../../machine/ts/lua/compiler';
+import { compileLuaChunkToProgram } from '../../machine/ts/lua/compiler';
 import type { OptimizationLevel } from '../../machine/ts/lua/compiler/optimizer';
 import { callClosureIntoWithScheduler } from '../../machine/ts/ide/runtime/closure_executor';
-import { inflateExecutableProgramImage, linkProgramImages } from '../../machine/ts/machine/program/linker';
-import { CpuExecutionState } from '../../machine/ts/machine/runtime/cpu_executor';
+import { CpuExecutionState, runDueRuntimeTimers } from '../../machine/ts/machine/runtime/cpu_executor';
 import { FrameLoopState } from '../../machine/ts/machine/runtime/frame/loop';
 import { FrameSchedulerState } from '../../machine/ts/machine/scheduler/frame';
 import { Runtime, type FrameState } from '../../machine/ts/machine/runtime/runtime';
+import { createTestSystemCpu, finalizeTestProgramPair, finalizeTestSystemProgram } from '../helpers/program_image';
 import { parseLuaChunk } from './cpu_test_harness';
 
 function makeProto(codeLen: number): Proto {
@@ -78,8 +78,6 @@ function makeProgram(cpu: CPU): Program {
 	const pool = cpu.stringPool;
 	return {
 		code,
-		programRom: code,
-		programRomTextByteLength: code.byteLength,
 		constPool: [],
 		protos: [
 			makeProto(INSTRUCTION_BYTES),
@@ -110,8 +108,6 @@ function makeThrowingNativeProgram(cpu: CPU, nativeFunction: Value): Program {
 	const pool = cpu.stringPool;
 	return {
 		code,
-		programRom: code,
-		programRomTextByteLength: code.byteLength,
 		constPool: [nativeFunction],
 		protos: [makeProto(3 * INSTRUCTION_BYTES), { ...makeProto(INSTRUCTION_BYTES), entryPC: 3 * INSTRUCTION_BYTES }],
 		stringPool: pool,
@@ -227,8 +223,7 @@ function makeHaltFrameRuntime(): Runtime {
 			tickCompleted: false,
 			beginTick: () => {},
 			abandonTick: () => {},
-			handleBeginTimer: () => {},
-			handleEndTimer: () => {},
+			handleGpuRuntimeEdge: () => {},
 		},
 		frameScheduler: null as never,
 		frameLoop: null as never,
@@ -256,7 +251,7 @@ function makeHaltFrameRuntime(): Runtime {
 	runtime.frameScheduler = {
 		lastTickSequence: 0,
 		startScheduledFrame: () => {
-			runtime.frameLoop.beginFrameState();
+			runtime.frameLoop.beginFrameState(runtime.timing.cycleBudgetPerFrame, 0);
 			return true;
 		},
 		refillFrameBudget: () => true,
@@ -266,18 +261,9 @@ function makeHaltFrameRuntime(): Runtime {
 
 function makeCompiledIrqRuntime(source: string): { cpu: CPU; irqController: IrqController; cpuExecution: CpuExecutionState; state: FrameState } {
 	const compiled = compileLuaChunkToProgram(parseLuaChunk(source, 'irq_vector.lua'), [], { entrySource: source });
-	const image = encodeCompiledProgramImage(compiled);
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
-	const irqController = new IrqController(memory);
-	const cpu = new CPU(memory, irqController);
-	cpu.setProgram(
-		inflateExecutableProgramImage(image),
-		image.link.symbols,
-		compiled.metadata,
-		image.vectors.irqProtoIndex,
-		image.vectors.irqProtoIndex,
-		image.vectors.exceptionProtoIndex,
-	);
+	const finalized = finalizeTestSystemProgram(compiled);
+	const image = finalized.image;
+	const { cpu, memory, irqController } = createTestSystemCpu(finalized);
 	cpu.start(image.vectors.resetProtoIndex);
 	const scheduler = {
 		nowCycles: 0,
@@ -296,7 +282,7 @@ function makeCompiledIrqRuntime(source: string): { cpu: CPU; irqController: IrqC
 			scheduler,
 			advanceDevices: (cycles: number) => { scheduler.nowCycles += cycles; },
 		},
-		vblank: { tickCompleted: false, beginTick: () => {}, abandonTick: () => {}, handleBeginTimer: () => {}, handleEndTimer: () => {} },
+		vblank: { tickCompleted: false, beginTick: () => {}, abandonTick: () => {}, handleGpuRuntimeEdge: () => {} },
 		programVectors: image.vectors,
 	} as unknown as Runtime;
 	return {
@@ -307,20 +293,11 @@ function makeCompiledIrqRuntime(source: string): { cpu: CPU; irqController: IrqC
 	};
 }
 
-function makeCompiledCpu(source: string, optLevel: OptimizationLevel = 0): { cpu: CPU; irqController: IrqController; image: ReturnType<typeof encodeCompiledProgramImage> } {
+function makeCompiledCpu(source: string, optLevel: OptimizationLevel = 0): { cpu: CPU; irqController: IrqController; image: ReturnType<typeof finalizeTestSystemProgram>['image'] } {
 	const compiled = compileLuaChunkToProgram(parseLuaChunk(source, 'supervisor_vector.lua'), [], { entrySource: source, optLevel });
-	const image = encodeCompiledProgramImage(compiled);
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
-	const irqController = new IrqController(memory);
-	const cpu = new CPU(memory, irqController);
-	cpu.setProgram(
-		inflateExecutableProgramImage(image),
-		image.link.symbols,
-		compiled.metadata,
-		image.vectors.irqProtoIndex,
-		image.vectors.irqProtoIndex,
-		image.vectors.exceptionProtoIndex,
-	);
+	const finalized = finalizeTestSystemProgram(compiled);
+	const image = finalized.image;
+	const { cpu, irqController } = createTestSystemCpu(finalized);
 	cpu.start(image.vectors.resetProtoIndex);
 	return { cpu, irqController, image };
 }
@@ -717,26 +694,21 @@ end
 		entrySource: cartSource,
 		programDomain: 'cart',
 	});
-	const linked = linkProgramImages(
-		encodeCompiledProgramImage(system),
-		system.metadata,
-		encodeCompiledProgramImage(cart),
-		cart.metadata,
-	);
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+	const linked = finalizeTestProgramPair(system, cart);
+	const memory = new Memory({ systemRom: linked.systemRomBytes, cartRom: linked.cartRomBytes });
 	const irqController = new IrqController(memory);
 	const cpu = new CPU(memory, irqController);
 	cpu.setProgram(
-		inflateExecutableProgramImage(linked.programImage),
-		linked.programImage.link.symbols,
-		linked.metadata,
-		linked.systemVectors.irqProtoIndex,
-		linked.cartVectors.irqProtoIndex,
-		linked.systemVectors.exceptionProtoIndex,
+		linked.program,
+		linked.cartImage.symbols,
+		linked.cartMetadata,
+		linked.systemImage.vectors.irqProtoIndex,
+		linked.cartImage.vectors.irqProtoIndex,
+		linked.systemImage.vectors.exceptionProtoIndex,
 	);
-	cpu.start(linked.systemVectors.resetProtoIndex, EMPTY_CALL_ARGS, CPU_STATUS_SYSTEM_ENTRY);
+	cpu.start(linked.systemImage.vectors.resetProtoIndex, EMPTY_CALL_ARGS, CPU_STATUS_SYSTEM_ENTRY);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
-	cpu.start(linked.cartVectors.resetProtoIndex, EMPTY_CALL_ARGS, CPU_STATUS_CART_ENTRY);
+	cpu.start(linked.cartImage.vectors.resetProtoIndex, EMPTY_CALL_ARGS, CPU_STATUS_CART_ENTRY);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	const moduleCache = new Map<string, Value>();
 	const saved = cpu.captureRuntimeState(moduleCache);
@@ -958,8 +930,6 @@ test('CPU mapped bus errors enter the system exception vector without committing
 	const cpu = new CPU(memory, irqController);
 	const program: Program = {
 		code,
-		programRom: code,
-		programRomTextByteLength: code.byteLength,
 		constPool: [unmappedAddress, IO_SYS_BUS_FAULT_CODE - IO_WORD_SIZE],
 		protos: [
 			{ ...makeProto(4 * INSTRUCTION_BYTES), maxStack: 2 },
@@ -1016,8 +986,6 @@ test('CPU mapped memory accepts byte addresses and four-byte-aligned f64 address
 	const cpu = new CPU(memory, irqController);
 	const program: Program = {
 		code,
-		programRom: code,
-		programRomTextByteLength: code.byteLength,
 		constPool: [byteAddress, f64Address],
 		protos: [
 			{ ...makeProto(5 * INSTRUCTION_BYTES), maxStack: 3 },
@@ -1065,8 +1033,6 @@ test('CPU address errors vector before any mapped-memory bus cycle or destinatio
 		const cpu = new CPU(memory, irqController);
 		const program: Program = {
 			code,
-			programRom: code,
-			programRomTextByteLength: code.byteLength,
 			constPool: [faultAddress],
 			protos: [
 				makeProto(INSTRUCTION_BYTES),
@@ -1170,8 +1136,6 @@ test('CPU execution stops at the device deadline that activates GPUREAD', () => 
 	writeInstruction(code, instructionCount, OpCode.RET, 0, 0, 0, 0);
 	const program: Program = {
 		code,
-		programRom: code,
-		programRomTextByteLength: code.byteLength,
 		constPool: [],
 		protos: [makeProto(code.byteLength)],
 		stringPool: cpu.stringPool,
@@ -1183,15 +1147,16 @@ test('CPU execution stops at the device deadline that activates GPUREAD', () => 
 	machine.gxGpu.writeGp0(GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24);
 	machine.gxGpu.writeGp0(0);
 	machine.gxGpu.writeGp0((1 << 16) | 1);
-	const readbackDeadline = machine.scheduler.nextDeadline();
 	const runtime = {
 		machine,
 		vblank: {
 			tickCompleted: false,
-			handleBeginTimer: () => {},
-			handleEndTimer: () => {},
+			handleGpuRuntimeEdge: () => {},
 		},
+		applyPublishedGxGpuPcrtcTiming: () => {},
 	} as unknown as Runtime;
+	runDueRuntimeTimers(runtime);
+	const readbackDeadline = machine.scheduler.nextDeadline();
 	const state = makeFrameState();
 	state.cycleBudgetRemaining = 100;
 	state.cycleBudgetGranted = 100;

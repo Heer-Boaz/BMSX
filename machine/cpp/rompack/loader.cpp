@@ -1107,31 +1107,27 @@ static void decodeCartridgeMetadata(const u8* romData, const CartRomHeader& head
 	}
 	const auto& manifestObj = manifestValue.asObject();
 	CartManifest cartManifest{};
-	if (manifestObj.count("name")) cartManifest.name = manifestObj.at("name").asString();
 	if (manifestObj.count("title")) cartManifest.title = manifestObj.at("title").asString();
 	if (manifestObj.count("short_name")) cartManifest.shortName = manifestObj.at("short_name").asString();
 	if (manifestObj.count("rom_name")) cartManifest.romName = manifestObj.at("rom_name").asString();
-	if (manifestObj.count("version")) cartManifest.version = manifestObj.at("version").asString();
-	if (manifestObj.count("author")) cartManifest.author = manifestObj.at("author").asString();
-	if (manifestObj.count("description")) cartManifest.description = manifestObj.at("description").asString();
-	romPackage.cartManifest = cartManifest;
 
 	const auto machineIt = manifestObj.find("machine");
 	if (machineIt == manifestObj.end() || !machineIt->second.isObject()) {
 		throw BMSX_RUNTIME_ERROR("ROM manifest payload is missing machine object.");
 	}
 	const auto& machineObj = machineIt->second.asObject();
-	if (machineObj.count("namespace")) romPackage.machine.namespaceName = machineObj.at("namespace").asString();
+	romPackage.machine.namespaceName = machineObj.at("namespace").asString();
 	const MachineVdpClass manifestVdpClass = parseMachineVdpClass(machineObj);
 	if (manifestVdpClass != header.vdpClass) {
 		throw std::runtime_error("[RuntimeRomPackage] ROM header VDP class does not match manifest machine.vdp_class.");
 	}
 	romPackage.machine.vdpClass = header.vdpClass;
+	cartManifest.machine = romPackage.machine;
 
-	if (manifestObj.count("lua") && manifestObj.at("lua").isObject()) {
-		const auto& luaObj = manifestObj.at("lua").asObject();
-		if (luaObj.count("entry_path")) romPackage.entryPoint = luaObj.at("entry_path").asString();
-	}
+	const auto& luaObj = manifestObj.at("lua").asObject();
+	cartManifest.entryPath = luaObj.at("entry_path").asString();
+	romPackage.entryPoint = cartManifest.entryPath;
+	romPackage.cartManifest = std::move(cartManifest);
 }
 
 static bool loadRomAssetPayloadInternal(const u8* romData,

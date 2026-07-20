@@ -5,12 +5,12 @@ import { IO_SYS_CONTROL, SYS_CONTROL_RESET } from '../../machine/ts/machine/bus/
 import { Machine } from '../../machine/ts/machine/machine';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { PROGRAM_STATIC_RAM_BASE } from '../../machine/ts/machine/memory/map';
-import { linkBootProgramImages } from '../../machine/ts/machine/program/linker';
 import { resolveRuntimeTiming } from '../../machine/ts/machine/runtime/boot_timing';
 import type { RuntimeInputSource } from '../../machine/ts/machine/runtime/input';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import { compileLuaChunkToProgram, encodeCompiledProgramImage } from '../../machine/ts/lua/compiler';
+import { compileLuaChunkToProgram } from '../../machine/ts/lua/compiler';
 import { parseLuaChunk } from './cpu_test_harness';
+import { finalizeTestProgramPair } from '../helpers/program_image';
 
 class SystemResetInputSource implements RuntimeInputSource {
 	public setRuntimeInputFrameDurationMs(): void {
@@ -27,10 +27,10 @@ class SystemResetInputSource implements RuntimeInputSource {
 	}
 }
 
-function createRuntime(): Runtime {
+function createSystemResetRuntime(systemRom: Uint8Array, cartRom: Uint8Array): Runtime {
 	const timing = resolveRuntimeTiming(5_000_000);
 	return new Runtime({
-		memory: new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) }),
+		memory: new Memory({ systemRom, cartRom }),
 		pcrtcRunning: timing.pcrtcRunning,
 		ufpsScaled: timing.ufpsScaled,
 		cpuHz: timing.cpuHz,
@@ -39,14 +39,6 @@ function createRuntime(): Runtime {
 		activeDisplayHalfLines: timing.activeDisplayHalfLines,
 		geoWorkUnitsPerSec: timing.geoWorkUnitsPerSec,
 	}, new SystemResetInputSource());
-}
-
-function compileProgram(source: string, path: string, programDomain: 'cart' | 'system') {
-	const compiled = compileLuaChunkToProgram(parseLuaChunk(source, path), [], { entrySource: source, programDomain });
-	return {
-		image: encodeCompiledProgramImage(compiled),
-		metadata: compiled.metadata,
-	};
 }
 
 test('system control reset command is write-only, self-clearing, and save-state visible', () => {
@@ -67,19 +59,22 @@ test('system control reset command is write-only, self-clearing, and save-state 
 });
 
 test('runtime reset boundary restarts the loaded system program and preserves cart entry', () => {
-	const system = compileProgram(`
+	const systemSource = `
 data marker: word = 41
 *marker = *marker + 1
 return
-`, 'system_reset_system.lua', 'system');
-	const cart = compileProgram(`
+`;
+	const system = compileLuaChunkToProgram(parseLuaChunk(systemSource, 'system_reset_system.lua'), [], { entrySource: systemSource, programDomain: 'system' });
+	const cartSource = `
 mem[${PROGRAM_STATIC_RAM_BASE}] = 99
 mem[${IO_SYS_CONTROL}] = ${SYS_CONTROL_RESET}
 return
-`, 'system_reset_cart.lua', 'cart');
-	const runtime = createRuntime();
+`;
+	const cart = compileLuaChunkToProgram(parseLuaChunk(cartSource, 'system_reset_cart.lua'), [], { entrySource: cartSource, programDomain: 'cart' });
+	const images = finalizeTestProgramPair(system, cart);
+	const runtime = createSystemResetRuntime(images.systemRomBytes, images.cartRomBytes);
 	runtime.enterSystemFirmware();
-	runtime.bootLinkedProgramImage(linkBootProgramImages(system.image, system.metadata, cart.image, cart.metadata, 'system'));
+	runtime.boot(images.systemImage, images.systemMetadata, images.cartImage, images.cartMetadata, 'system');
 
 	assert.equal(runtime.machine.memory.readMappedU32LE(PROGRAM_STATIC_RAM_BASE), 41);
 	runtime.frameScheduler.run(runtime.timing.frameDurationMs);

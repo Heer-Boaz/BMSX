@@ -4,13 +4,14 @@ import * as fs from 'node:fs/promises';
 import { createCanvas, Image, loadImage } from 'canvas';
 
 import { type MachineBootOptions } from '../../../machine/ts/core/machine_manager';
-import { HeadlessPlatformServices } from '../../../hosts/node/headless/platform_headless';
+import { HEADLESS_DEFAULT_FRAME_INTERVAL_MS, HeadlessPlatformServices } from '../../../hosts/node/headless/platform_headless';
 import { CLIPlatformServices } from '../../../hosts/node/cli/platform_cli';
 import type { Platform, InputEvt } from 'bmsx/platform';
 import { HeadlessGameViewHost, type HeadlessPresentedFrame } from '../../../machine/ts/render/headless/view';
 import { HeadlessCaptureCoordinator, deriveHeadlessCaptureOutputDir, type ScheduledHeadlessCapture, type ScheduledHeadlessFrameCapture } from './headless_capture';
 import { printHeadlessCpuProfile } from './cpu_profile_report';
 import { runHostTest } from './hostrunner/host_test_runner';
+import { buildHostTestProgram, HOST_TEST_API_PATH } from './hostrunner/host_test_program';
 import { runIdeTest } from './hostrunner/ide_test_runner';
 
 declare const __BOOTROM_TARGET__: 'cli' | 'headless';
@@ -305,7 +306,7 @@ function printHelp(): void {
 	console.log('');
 	console.log('Options:');
 	console.log('  --rom, -r <path>         Override ROM file location.');
-	console.log('  --frame-interval <ms>    Override frame loop interval in milliseconds (default 20).');
+	console.log('  --frame-interval <ms>    Override frame loop interval in milliseconds (default: PCRTC reset cadence).');
 	console.log('  --debug                  Force debug mode.');
 	console.log('  --no-debug               Force non-debug mode.');
 	console.log('  --ttl <seconds>          Auto-terminate after the given number of seconds (default 10).');
@@ -343,7 +344,7 @@ function parseArgs(argv: string[]): LaunchOptions {
 				throw new Error('Expected number after --frame-interval.');
 			}
 			const parsed = Number(next);
-			if (!Number.isFinite(parsed) || parsed <= 0) {
+			if (!(parsed > 0 && parsed < Infinity)) {
 				throw new Error(`Invalid frame interval value: ${next}`);
 			}
 			options.frameIntervalMs = parsed;
@@ -595,16 +596,6 @@ function resolveRomPath(options: LaunchOptions, debugFlag: boolean): string {
 		return path.resolve('dist', `${options.romFolder}${suffix}.rom`);
 	}
 	throw new Error('ROM path is required. Pass --rom <path> or supply a romFolder.');
-}
-
-async function resolveCartRoot(romFolder: string): Promise<string> {
-	const candidate = path.resolve('carts', romFolder);
-	try {
-		await fs.access(candidate);
-		return candidate;
-	} catch {
-		throw new Error(`Cart folder "${romFolder}" not found under carts.`);
-	}
 }
 
 async function fileExists(filePath: string): Promise<boolean> {
@@ -930,12 +921,10 @@ function createHeadlessCaptureScheduler(
 
 function createPlatform(frameIntervalMs: number): Platform {
 	if (__BOOTROM_TARGET__ === 'headless') {
-		const options = frameIntervalMs ? { frameIntervalMs, unpaced: true } : { unpaced: true };
-		return new HeadlessPlatformServices(options);
+		return new HeadlessPlatformServices({ frameIntervalMs, unpaced: true });
 	}
 	if (__BOOTROM_TARGET__ === 'cli') {
-		const options = frameIntervalMs ? { frameIntervalMs } : {};
-		return new CLIPlatformServices(options);
+		return new CLIPlatformServices({ frameIntervalMs });
 	}
 	throw new Error(`Unsupported boot platform: ${__BOOTROM_TARGET__}`);
 }
@@ -959,14 +948,11 @@ async function prepareRuntime(cliOptions: LaunchOptions, romPath: string, debugF
 async function main(): Promise<void> {
 	const cliOptions = parseArgs(process.argv.slice(2));
 	let debugFlag = __BOOTROM_DEBUG__;
-	if (typeof cliOptions.debugOverride === 'boolean') {
+	if (cliOptions.debugOverride !== undefined) {
 		debugFlag = cliOptions.debugOverride;
 	}
 	const romPath = resolveRomPath(cliOptions, debugFlag);
-	let frameInterval = 20;
-	if (typeof cliOptions.frameIntervalMs === 'number') {
-		frameInterval = cliOptions.frameIntervalMs;
-	}
+	const frameInterval = cliOptions.frameIntervalMs ?? HEADLESS_DEFAULT_FRAME_INTERVAL_MS;
 
 	console.log(`[bootrom:${__BOOTROM_TARGET__}] Loading ROM: ${romPath}`);
 	const machineRuntime = await prepareRuntime(cliOptions, romPath, debugFlag);
@@ -980,7 +966,12 @@ async function main(): Promise<void> {
 	console.log(`[bootrom:${__BOOTROM_TARGET__}] Loading system ROM: ${systemRomPath}`);
 	const systemRomBuffer = await readRomFile(systemRomPath);
 
-	const buffer = await readRomFile(romPath);
+	let buffer = await readRomFile(romPath);
+	if (cliOptions.testPath) {
+		const apiSource = await fs.readFile(path.resolve(HOST_TEST_API_PATH), 'utf8');
+		const testSource = await fs.readFile(path.resolve(cliOptions.testPath), 'utf8');
+		buffer = await buildHostTestProgram(systemRomBuffer, buffer, `${apiSource}\n${testSource}`);
+	}
 	installWorkspaceFetchBridge(workspaceRoot);
 
 	const platform = createPlatform(frameInterval);
@@ -1009,7 +1000,6 @@ async function main(): Promise<void> {
 	const selectedTimelinePath = cliOptions.inputTimelinePath || autoTimelinePath;
 	const inputTimelineSelected = !cliOptions.ideTestPath && !cliOptions.testPath && !!selectedTimelinePath;
 	const deferStartForTimeline = __BOOTROM_TARGET__ === 'headless' && inputTimelineSelected;
-	let cartRoot: string | null = null;
 	let hostTestRunState: HostTestRunState | null = null;
 	let captureScheduler: TimelineCaptureSink | null = null;
 	let timelineAutoExitArmed = false;
@@ -1069,9 +1059,6 @@ async function main(): Promise<void> {
 	const canCaptureImmediately = (): boolean => {
 		return captureCoordinator ? captureCoordinator.canCaptureNow() : !!headlessHost?.getPresentedFrameSnapshot();
 	};
-	if (romFolder) {
-		cartRoot = await resolveCartRoot(romFolder);
-	}
 	const bootArgs: MachineBootOptions = {
 		cartridge: buffer,
 		systemRom: systemRomBuffer,
@@ -1100,7 +1087,6 @@ async function main(): Promise<void> {
 		cpuProfileActive = true;
 		console.log(`[bootrom:${__BOOTROM_TARGET__}] Fantasy CPU profiler enabled.`);
 	}
-	const isCartProgramActive = (): boolean => runtime.cartProgramStarted && runtime.isInitialized;
 	const createTimelineFrameClock = (): TimelineFrameClock | null => {
 		return headlessHost ? new HeadlessPresentationTimelineFrameClock(headlessHost, frameInterval) : null;
 	};
@@ -1114,7 +1100,6 @@ async function main(): Promise<void> {
 			testPath: cliOptions.ideTestPath,
 			frameIntervalMs: frameInterval,
 			ide,
-			evaluateLua: (source) => ide.evaluateLua(source),
 			logger: inputLogger,
 			scheduleOnce: (delayMs, cb) => scheduler.scheduleOnce(delayMs, () => cb()),
 			requestExit,
@@ -1126,17 +1111,11 @@ async function main(): Promise<void> {
 			assertCount: 0,
 			finished: false,
 		};
-		const ide = machineRuntime.ide;
-		if (!ide) {
-			throw new Error('Machine runtime did not expose the IDE harness (bmsx.ide).');
-		}
-		await runHostTest({
+		runHostTest({
 			testPath: cliOptions.testPath,
 			frameIntervalMs: frameInterval,
 			logger: inputLogger,
-			isCartProgramActive,
-			evaluateLua: (source) => ide.evaluateLua(source),
-			installNativeGlobal: (name, value) => ide.installNativeGlobal(name, value),
+			runtime,
 			postInput,
 			requestExit,
 			scheduler,

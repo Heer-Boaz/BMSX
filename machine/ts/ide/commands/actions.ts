@@ -1,11 +1,9 @@
 import { machineManager } from '../../core/machine_manager';
 import { editorRuntimeState } from '../editor/common/runtime_state';
 import { scheduleRuntimeTask } from '../common/background_tasks';
-import { applyWorkspaceOverridesToCart, applyWorkspaceOverridesToRegistry } from '../workspace/workspace';
+import { applyWorkspaceOverridesToRegistry } from '../workspace/workspace';
 import type { Runtime } from '../../machine/runtime/runtime';
-import { captureRuntimeResumeSnapshot } from '../runtime/resume_snapshot';
-import { resumeFromSnapshot } from '../runtime/hot_resume';
-import * as workbenchMode from '../workbench/mode';
+import { hotResume } from '../runtime/hot_resume';
 import { deactivateEditor } from '../workbench/overlay_modes';
 import { handleLuaError } from '../workbench/runtime_errors';
 import type { ActionPromptAction } from '../common/models';
@@ -13,7 +11,6 @@ import { clearExecutionStopHighlights } from '../runtime_error/navigation';
 import * as constants from '../common/constants';
 import { setEditorCaseInsensitivity } from '../editor/render/text_renderer';
 import { editorDocumentState } from '../editor/editing/document_state';
-import { getCodeTabContexts } from '../workbench/ui/code_tab/contexts';
 import { editorViewState } from '../editor/ui/view/state';
 
 export function performEditorAction(runtime: Runtime, action: ActionPromptAction): boolean {
@@ -33,25 +30,6 @@ export function performEditorAction(runtime: Runtime, action: ActionPromptAction
 	}
 }
 
-function hasPendingSystemModuleReload(): boolean {
-	const sources = machineManager.sourceState;
-	if (!sources.cartLuaSources) {
-		return false;
-	}
-	for (const context of getCodeTabContexts()) {
-		if (context.mode !== 'lua') {
-			continue;
-		}
-		if (context.saveGeneration <= context.appliedGeneration) {
-			continue;
-		}
-		if (sources.systemLuaSources.path2lua[context.descriptor.path]) {
-			return true;
-		}
-	}
-	return false;
-}
-
 export function performHotResume(runtime: Runtime): boolean {
 	const targetGeneration = editorDocumentState.saveGeneration;
 	const shouldUpdateGeneration = hasPendingRuntimeReload();
@@ -61,35 +39,29 @@ export function performHotResume(runtime: Runtime): boolean {
 	scheduleRuntimeTask(async () => {
 		const sources = machineManager.sourceState;
 		if (sources.cartLuaSources) {
-			await applyWorkspaceOverridesToCart({
-				cart: sources.cartLuaSources,
+			await applyWorkspaceOverridesToRegistry({
+				registry: sources.cartLuaSources,
 				storage: machineManager.platform.storage,
 				includeServer: true,
-				projectRootPath: sources.cartProjectRootPath,
+				projectRootPath: sources.cartProjectRootPath!,
 			});
 		}
-		const engineChanged = await applyWorkspaceOverridesToRegistry({
+		await applyWorkspaceOverridesToRegistry({
 			registry: sources.systemLuaSources,
 			storage: machineManager.platform.storage,
 			includeServer: true,
 			projectRootPath: sources.systemProjectRootPath,
 		});
-		const preserveSystemModules =
-			runtime.cartProgramStarted
-			&& engineChanged.size === 0
-			&& !hasPendingSystemModuleReload();
-		const snapshot = captureRuntimeResumeSnapshot(runtime);
-		workbenchMode.clearFaultState(runtime);
-		await resumeFromSnapshot(runtime, snapshot, preserveSystemModules);
+		hotResume(runtime, sources.systemProgramMediaDirty, sources.cartProgramMediaDirty);
 		if (shouldUpdateGeneration) {
 			editorDocumentState.appliedGeneration = targetGeneration;
 		}
 		machineManager.paused = false;
-		}, (error) => {
-			console.error(error);
-			handleLuaError(runtime, error);
-			machineManager.ideState.editor.handleRuntimeTaskError(error, 'Failed to resume game');
-		});
+	}, (error) => {
+		console.error(error);
+		handleLuaError(runtime, error);
+		machineManager.ideState.editor.handleRuntimeTaskError(error, 'Failed to resume game');
+	});
 	return true;
 }
 

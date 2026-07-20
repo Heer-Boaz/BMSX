@@ -19,6 +19,13 @@ import {
 	ROM_ASSET_SYMBOL_MODULE_PATH,
 } from '../../machine/ts/rompack/format';
 import { LuaError } from '../../machine/ts/lua/errors';
+import { loadRomAssetList } from '../../machine/ts/rompack/loader';
+import {
+	decodeProgramImage,
+	decodeProgramSymbolsImage,
+	PROGRAM_IMAGE_ID,
+	PROGRAM_SYMBOLS_IMAGE_ID,
+} from '../../machine/ts/machine/program/loader';
 
 import { join } from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
@@ -389,6 +396,9 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 	validateAudioEventReferences(BIOSResources);
 	const BIOSRomAssets = await runBIOSStep(TASK.ROM_ASSETS, () => generateRomAssets(BIOSResources, message => progress?.setDetail(message)));
 	const BIOSProgramBoot = appendProgramImage(BIOSRomAssets, SYSTEM_BOOT_ENTRY_PATH, {
+		externalLuaAssets: [],
+		generatedLuaModules: [],
+		includeLuaAssets: debug,
 		includeSymbols: debug,
 		optLevel,
 		programDomain: 'system',
@@ -481,10 +491,10 @@ async function main() {
 		logBullet('Lua case', pc.green('lower-case identifiers required'));
 		logBullet('Build', debug ? pc.cyan('DEBUG') : pc.blue('NON-DEBUG'));
 		logBullet('Opt level', pc.white(`-O${optLevel}`));
+		const systemRomPath = join(outputDirectory, `${SYSTEM_ROM_NAME}${romPackDebug ? '.debug' : ''}.rom`);
 		if (!isBIOSMode) {
-			const BIOSRomPath = join(outputDirectory, `${SYSTEM_ROM_NAME}${romPackDebug ? '.debug' : ''}.rom`);
-			if (!existsSync(BIOSRomPath)) {
-				throw new Error(`BIOS ROM not found at "${BIOSRomPath}". Build the bios ROM first.`);
+			if (!existsSync(systemRomPath)) {
+				throw new Error(`BIOS ROM not found at "${systemRomPath}". Build the bios ROM first.`);
 			}
 		}
 
@@ -566,12 +576,27 @@ async function main() {
 				});
 			}
 			const biosProgramContextAssets = await buildLuaProgramContextAssets([biosLuaPath, systemLuaPath], '');
+			const systemRom = new Uint8Array(readFileSync(systemRomPath));
+			const systemIndex = await loadRomAssetList(systemRom);
+			const systemProgramEntry = systemIndex.entries.find(entry => entry.resid === PROGRAM_IMAGE_ID)!;
+			const systemProgramSymbolsEntry = systemIndex.entries.find(entry => entry.resid === PROGRAM_SYMBOLS_IMAGE_ID);
+			const systemProgram = {
+				image: decodeProgramImage(
+					systemRom.subarray(systemProgramEntry.start, systemProgramEntry.end),
+					systemRom.subarray(systemProgramEntry.compiled_start, systemProgramEntry.compiled_end),
+				),
+				metadata: systemProgramSymbolsEntry
+					? decodeProgramSymbolsImage(systemRom.subarray(systemProgramSymbolsEntry.start, systemProgramSymbolsEntry.end))
+					: null,
+			};
 			const assetSymbols = collectRomAssetSymbols(romAssets, romPackDebug, 'cart');
 			const assetSymbolModuleSource = buildRomAssetSymbolModuleSourceFromSymbols(assetSymbols);
 			const programBoot = appendProgramImage(romAssets, romManifest.lua.entry_path, {
+				includeLuaAssets: romPackDebug,
 				includeSymbols: romPackDebug,
 				optLevel,
 				programDomain: 'cart',
+				systemProgram,
 				externalLuaAssets: biosProgramContextAssets,
 				generatedLuaModules: [{ path: ROM_ASSET_SYMBOL_MODULE_PATH, source: assetSymbolModuleSource }],
 			});
@@ -581,7 +606,7 @@ async function main() {
 				const cartLuaRoots = Array.from(extraLuaPathSet);
 				const cartlibLuaRoots = Array.from(libraryLuaPathSet);
 				const systemRomLuaRoots = [normalizePathKey(biosLuaPath), normalizePathKey(systemLuaPath)];
-				await progress.runWithDetail('Lint cart + cartlib + system-ROM Lua', async () => {
+				await progress.runWithDetail('Lint cart + cartlib + firmware Lua', async () => {
 					await lintCartSources({ roots: cartLuaRoots, profile: 'cart' });
 					await lintCartSources({ roots: cartlibLuaRoots, profile: 'bios' });
 					await lintCartSources({ roots: systemRomLuaRoots, profile: 'bios' });

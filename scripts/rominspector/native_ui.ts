@@ -1,4 +1,5 @@
 import type { RomAsset } from '../../machine/ts/rompack/format';
+import type { ProgramImage } from '../../machine/ts/machine/program/loader';
 import { PROGRAM_IMAGE_ID, PROGRAM_SYMBOLS_IMAGE_ID } from '../../machine/ts/machine/program/loader';
 import { parseCartHeader } from '../../machine/ts/rompack/loader';
 import { parseRomMetadataSection } from '../../machine/ts/rompack/metadata';
@@ -43,6 +44,7 @@ type NativeUiContext = {
 	assets: RomAsset[];
 	manifest: any;
 	projectRootPath: string | null;
+	systemProgramImage: ProgramImage | null;
 	formatByteSize(size: number): string;
 	formatNumberAsHex(n: number, width?: number): string;
 };
@@ -1603,6 +1605,7 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 			assetList: ctx.assets,
 			manifest: ctx.manifest,
 			projectRootPath: ctx.projectRootPath,
+			systemProgramImage: ctx.systemProgramImage,
 			formatByteSize: ctx.formatByteSize,
 			modalWidth: Math.max(20, Math.floor(screen.width() * 0.8) - 4),
 			modalHeight: Math.max(8, Math.floor(screen.height() * 0.8) - 8),

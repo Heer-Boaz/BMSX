@@ -1,49 +1,18 @@
 import { machineManager } from '../../core/machine_manager';
 import type { Runtime } from '../../machine/runtime/runtime';
-import { applyWorkspaceOverridesToCart, applyWorkspaceOverridesToRegistry } from '../workspace/workspace';
+import { applyWorkspaceOverridesToRegistry } from '../workspace/workspace';
 import * as workbenchMode from '../workbench/mode';
 import { deactivateEditor } from '../workbench/overlay_modes';
 import { handleLuaError } from '../workbench/runtime_errors';
 import { clearRuntimeFault } from './fault_state';
-import { bootActiveProgram, invalidateModuleLookups } from './lua_pipeline';
+import { bootActiveProgram } from './lua_pipeline';
 import { enterSystemSources } from './sources';
 
-export async function applyInitialWorkspaceOverrides(): Promise<void> {
-	const sources = machineManager.sourceState;
-	if (!sources.cartLuaSources || !sources.cartProjectRootPath) {
-		return;
-	}
-	await applyWorkspaceOverridesToCart({
-		cart: sources.cartLuaSources,
-		storage: machineManager.platform.storage,
-		includeServer: true,
-		projectRootPath: sources.cartProjectRootPath,
-	});
-}
-
-export async function startPreparedRuntime(runtime: Runtime): Promise<void> {
-	const sources = machineManager.sourceState;
-	await applyWorkspaceOverridesToRegistry({
-		registry: sources.systemLuaSources,
-		storage: machineManager.platform.storage,
-		includeServer: true,
-		projectRootPath: sources.systemProjectRootPath,
-	});
-	const viewport = machineManager.view.viewportSize;
-	workbenchMode.initializeIdeFeatures(runtime, { width: viewport.x, height: viewport.y });
-	runtime.enterSystemFirmware();
-	enterSystemSources(sources);
-	await bootPreparedRuntimeProgram(runtime);
-}
-
-export async function prepareRebootToBootRom(runtime: Runtime): Promise<void> {
-	clearBootFaults(runtime);
-	deactivateEditor();
-	clearLuaBootState(runtime);
+async function applyProgramMediaOverrides(): Promise<boolean> {
 	const sources = machineManager.sourceState;
 	if (sources.cartLuaSources && sources.cartProjectRootPath) {
-		await applyWorkspaceOverridesToCart({
-			cart: sources.cartLuaSources,
+		await applyWorkspaceOverridesToRegistry({
+			registry: sources.cartLuaSources,
 			storage: machineManager.platform.storage,
 			includeServer: true,
 			projectRootPath: sources.cartProjectRootPath,
@@ -55,17 +24,37 @@ export async function prepareRebootToBootRom(runtime: Runtime): Promise<void> {
 		includeServer: true,
 		projectRootPath: sources.systemProjectRootPath,
 	});
-	runtime.enterSystemFirmware();
-	enterSystemSources(sources);
+	return sources.systemProgramMediaDirty || sources.cartProgramMediaDirty;
 }
 
-async function bootPreparedRuntimeProgram(runtime: Runtime): Promise<void> {
+export async function startPreparedRuntime(runtime: Runtime): Promise<void> {
+	const rebuildProgramMedia = await applyProgramMediaOverrides();
+	const sources = machineManager.sourceState;
+	const viewport = machineManager.view.viewportSize;
+	workbenchMode.initializeIdeFeatures(runtime, { width: viewport.x, height: viewport.y });
+	runtime.enterSystemFirmware();
+	enterSystemSources(sources);
+	await bootPreparedRuntimeProgram(runtime, rebuildProgramMedia);
+}
+
+export async function prepareRebootToBootRom(runtime: Runtime): Promise<boolean> {
+	clearBootFaults(runtime);
+	deactivateEditor();
+	clearLuaBootState(runtime);
+	const rebuildProgramMedia = await applyProgramMediaOverrides();
+	const sources = machineManager.sourceState;
+	runtime.enterSystemFirmware();
+	enterSystemSources(sources);
+	return rebuildProgramMedia;
+}
+
+async function bootPreparedRuntimeProgram(runtime: Runtime, rebuildProgramMedia: boolean): Promise<void> {
 	const gateToken = machineManager.ideState.luaGate.begin({ blocking: true, tag: 'boot' });
 	try {
 		runtime.hostFault.clear();
 		clearBootFaults(runtime);
 		clearLuaBootState(runtime);
-		bootActiveProgram(runtime);
+		bootActiveProgram(runtime, rebuildProgramMedia);
 	}
 	catch (error) {
 		handleLuaError(runtime, error);
@@ -83,8 +72,6 @@ function clearBootFaults(runtime: Runtime): void {
 
 function clearLuaBootState(runtime: Runtime): void {
 	runtime.luaInitialized = false;
-	invalidateModuleLookups();
 	machineManager.sourceState.luaChunkEnvironmentsByPath.clear();
-	machineManager.sourceState.luaGenericChunksExecuted.clear();
 	machineManager.ideState.editor.clearRuntimeErrorOverlay();
 }

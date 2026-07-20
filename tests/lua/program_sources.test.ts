@@ -66,6 +66,12 @@ class TestRomSource implements RawRomSource {
 		return textEncoder.encode(source);
 	}
 
+	public getCompiledBytesView(entry: RomAsset): Uint8Array {
+		const source = this.sources[entry.resid];
+		assert.notEqual(source, undefined);
+		return textEncoder.encode(source);
+	}
+
 	public list(type?: string): RomAsset[] {
 		if (type === undefined) {
 			return this.entries;
@@ -122,6 +128,16 @@ test('buildLuaSources registers real Lua assets in one pass', () => {
 	assert.equal(registry.module2lua[ROM_ASSET_SYMBOL_MODULE_PATH].generated, true);
 	assert.equal(registry.module2lua.cart, record);
 	assert.equal(registry.path2lua['bios/system.lua'], undefined);
+});
+
+test('release program images do not synthesize editable Lua source records', () => {
+	const programEntry: RomAsset = { resid: PROGRAM_IMAGE_ID, type: 'code', payload_id: 'system' };
+	const source = new TestRomSource([programEntry], {});
+	const registry = buildLuaSources(source, source, makeIndex('bios/bootrom.lua', [programEntry]), ['system']);
+
+	assert.equal(registry.can_boot_from_source, false);
+	assert.deepEqual(registry.records, []);
+	assert.equal(registry.path2lua['bios/bootrom.lua'], undefined);
 });
 
 test('debug package source boot resolves the persisted GX texture layout module', async () => {

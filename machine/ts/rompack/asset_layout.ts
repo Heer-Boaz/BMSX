@@ -11,15 +11,23 @@ export type RomAssetPayloadRange = {
 	sharedAssets?: RomAsset[];
 };
 
-export function collectRomAssetPayloadRanges(assetList: ReadonlyArray<RomAsset>, includeLuaAssets: boolean): RomAssetPayloadRange[] {
+export type RomAssetPayloadLayout = {
+	ranges: RomAssetPayloadRange[];
+	nextOffset: number;
+};
+
+export function alignRomAssetOffset(offset: number): number {
+	return (offset + CART_ROM_WORD_ALIGNMENT - 1) & ~(CART_ROM_WORD_ALIGNMENT - 1);
+}
+
+export function layoutRomAssetPayloads(assetList: ReadonlyArray<RomAsset>, includeLuaAssets: boolean): RomAssetPayloadLayout {
 	const ranges: RomAssetPayloadRange[] = [];
 	const textureSharedAssets = new Map<Buffer, RomAsset[]>();
 	let offset = CART_ROM_HEADER_SIZE;
 	const appendPayloadRange = (asset: RomAsset, kind: RomAssetPayloadKind, buffer: Buffer, sharedAssets?: RomAsset[]) => {
-		offset += (-offset) & (CART_ROM_WORD_ALIGNMENT - 1);
-		const start = offset;
-		offset += buffer.length;
-		const range: RomAssetPayloadRange = { asset, kind, start, end: offset, buffer };
+		offset = alignRomAssetOffset(offset);
+		const range: RomAssetPayloadRange = { asset, kind, start: offset, end: offset + buffer.length, buffer };
+		offset = range.end;
 		if (sharedAssets) {
 			range.sharedAssets = sharedAssets;
 		}
@@ -54,5 +62,8 @@ export function collectRomAssetPayloadRanges(assetList: ReadonlyArray<RomAsset>,
 			appendPayloadRange(asset, 'collision_bin', collisionBinBuffer);
 		}
 	}
-	return ranges;
+	return {
+		ranges,
+		nextOffset: alignRomAssetOffset(offset),
+	};
 }

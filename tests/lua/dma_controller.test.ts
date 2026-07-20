@@ -50,7 +50,7 @@ import {
 } from '../../machine/ts/machine/devices/gx/gpu_pcrtc';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
-import { CART_ROM_BASE, PROGRAM_STATIC_RAM_BASE, RAM_END } from '../../machine/ts/machine/memory/map';
+import { CART_ROM_BASE, PROGRAM_STATIC_RAM_BASE, RAM_END, SYSTEM_ROM_BASE } from '../../machine/ts/machine/memory/map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/machine/model_registry';
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 
@@ -70,7 +70,7 @@ const GP0_READ_CONTROL = DMA_CONTROL_WRITE_INCREMENT | DMA_CONTROL_REQUEST_GX_RE
 
 function createDmaGpuFixture(): DmaGpuFixture {
 	const memory = new Memory({
-		systemRom: new Uint8Array(),
+		systemRom: new Uint8Array([0x04, 0x03, 0x02, 0x01, 0x08, 0x07, 0x06, 0x05]),
 		cartRom: new Uint8Array([0x44, 0x33, 0x22, 0x11, 0x88, 0x77, 0x66, 0x55]),
 	});
 	const irq = new IrqController(memory);
@@ -81,7 +81,7 @@ function createDmaGpuFixture(): DmaGpuFixture {
 	dma.reset();
 	gpu.reset();
 	irq.reset();
-	dma.setTiming(0, 1, 0, 0);
+	dma.setTiming(0, 1, 0, 0, 0);
 	const smode1Address = gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_SMODE1_LOW);
 	memory.writeMappedU32LE(smode1Address, memory.readMappedU32LE(smode1Address) | GX_GPU_PCRTC_SMODE1_SINT);
 	gpu.onService(0);
@@ -99,7 +99,8 @@ test('region-aware DMA charges one RAM burst setup and combines both block sides
 	dma.setTiming(
 		PSX_MACHINE_SPEC.dmaRamCyclesPerWord,
 		PSX_MACHINE_SPEC.dmaRamBurstSetupCycles,
-		PSX_MACHINE_SPEC.dmaRomCyclesPerWord,
+		PSX_MACHINE_SPEC.dmaSystemRomCyclesPerWord,
+		PSX_MACHINE_SPEC.dmaCartRomCyclesPerWord,
 		scheduler.nowCycles,
 	);
 
@@ -110,10 +111,29 @@ test('region-aware DMA charges one RAM burst setup and combines both block sides
 	assert.equal(memory.readMappedU32LE(ramDestination + 4), 0xddeeff00);
 
 	programTransfer(memory, CART_ROM_BASE, romDestination, 2, RAM_COPY_CONTROL);
-	assert.equal(scheduler.nextDeadline(), 56, 'the 50-cycle external-ROM side gates the RAM burst');
+	assert.equal(scheduler.nextDeadline(), 56, 'the 50-cycle cartridge side gates the RAM burst');
 	runNextDmaService(fixture);
 	assert.equal(memory.readMappedU32LE(romDestination), 0x11223344);
 	assert.equal(memory.readMappedU32LE(romDestination + 4), 0x55667788);
+});
+
+test('system firmware ROM uses its internal bus timing instead of cartridge timing', () => {
+	const fixture = createDmaGpuFixture();
+	const { memory, dma, scheduler } = fixture;
+	const firmwareDestination = PROGRAM_STATIC_RAM_BASE + 0x1000;
+	dma.setTiming(
+		PSX_MACHINE_SPEC.dmaRamCyclesPerWord,
+		PSX_MACHINE_SPEC.dmaRamBurstSetupCycles,
+		PSX_MACHINE_SPEC.dmaSystemRomCyclesPerWord,
+		PSX_MACHINE_SPEC.dmaCartRomCyclesPerWord,
+		scheduler.nowCycles,
+	);
+
+	programTransfer(memory, SYSTEM_ROM_BASE, firmwareDestination, 2, RAM_COPY_CONTROL);
+	assert.equal(scheduler.nextDeadline(), 3, 'the RAM destination gates a two-cycle local firmware read');
+	runNextDmaService(fixture);
+	assert.equal(memory.readMappedU32LE(firmwareDestination), 0x01020304);
+	assert.equal(memory.readMappedU32LE(firmwareDestination + 4), 0x05060708);
 });
 
 test('RAM burst setup is block-local rather than persistent address state', () => {
@@ -124,7 +144,8 @@ test('RAM burst setup is block-local rather than persistent address state', () =
 	dma.setTiming(
 		PSX_MACHINE_SPEC.dmaRamCyclesPerWord,
 		PSX_MACHINE_SPEC.dmaRamBurstSetupCycles,
-		PSX_MACHINE_SPEC.dmaRomCyclesPerWord,
+		PSX_MACHINE_SPEC.dmaSystemRomCyclesPerWord,
+		PSX_MACHINE_SPEC.dmaCartRomCyclesPerWord,
 		scheduler.nowCycles,
 	);
 
@@ -145,7 +166,8 @@ test('a fixed MMIO port adds no memory wait beside its RAM block side', () => {
 	dma.setTiming(
 		PSX_MACHINE_SPEC.dmaRamCyclesPerWord,
 		PSX_MACHINE_SPEC.dmaRamBurstSetupCycles,
-		PSX_MACHINE_SPEC.dmaRomCyclesPerWord,
+		PSX_MACHINE_SPEC.dmaSystemRomCyclesPerWord,
+		PSX_MACHINE_SPEC.dmaCartRomCyclesPerWord,
 		scheduler.nowCycles,
 	);
 
@@ -257,13 +279,13 @@ test('an admitted DMA block survives DREQ drop, timing changes, and restore', ()
 	const source = PROGRAM_STATIC_RAM_BASE + 0x400;
 	memory.writeMappedU32LE(source, 0xe1000000);
 	memory.writeMappedU32LE(source + 4, 0xe1000001);
-	dma.setTiming(4, 0, 0, 0);
+	dma.setTiming(4, 0, 4, 0, 0);
 	gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
 	programTransfer(memory, source, IO_GX_GPU_GP0, 2, GP0_WRITE_CONTROL);
 	assert.equal(scheduler.nextDeadline(), 8);
 
 	scheduler.advanceTo(3);
-	dma.setTiming(8, 0, 0, 3);
+	dma.setTiming(8, 0, 8, 0, 3);
 	assert.equal(scheduler.nextDeadline(), 8);
 	gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_OFF);
 	assert.equal(scheduler.nextDeadline(), 8);

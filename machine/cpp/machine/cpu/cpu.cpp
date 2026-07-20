@@ -1022,6 +1022,7 @@ Closure* CPU::createTrackedClosure(int protoIndex, size_t upvalueCount) {
 }
 
 void CPU::setProgram(Program* program, const ProgramRuntimeSymbols& runtimeSymbols, ProgramMetadata* metadata, int systemIrqProtoIndex, int cartIrqProtoIndex, int systemExceptionProtoIndex) {
+	const bool programChanged = m_program != program;
 	std::unordered_map<StringId, Value> previousSystemGlobals;
 	previousSystemGlobals.reserve(m_systemGlobalNames.size());
 	for (size_t index = 0; index < m_systemGlobalNames.size(); ++index) {
@@ -1035,11 +1036,6 @@ void CPU::setProgram(Program* program, const ProgramRuntimeSymbols& runtimeSymbo
 	m_cartIrqProtoIndex = cartIrqProtoIndex;
 	m_systemExceptionProtoIndex = systemExceptionProtoIndex;
 	m_hardHalted = false;
-	if (m_program) {
-		m_memory.setProgramRom(m_program->programRom.data(), m_program->programRom.size(), m_program->programRomTextByteLength);
-	} else {
-		m_memory.setProgramRom(nullptr, 0, 0);
-	}
 	m_metadata = metadata;
 	if (!m_program) {
 		m_staticClosures.clear();
@@ -1065,10 +1061,13 @@ void CPU::setProgram(Program* program, const ProgramRuntimeSymbols& runtimeSymbo
 	} else if (m_program->constPoolStringPool != &m_stringPool) {
 		throw BMSX_RUNTIME_ERROR("[CPU] Program const pool is canonicalized for a different string pool.");
 	}
-	m_indexKey = valueString(m_stringPool.intern("__index"));
-	materializeStaticClosures();
+	if (programChanged) {
+		materializeStaticClosures();
+	}
 	initializeGlobalSlots(runtimeSymbols, previousSystemGlobals);
-	decodeProgram();
+	if (programChanged) {
+		decodeProgram();
+	}
 }
 
 void CPU::initializeGlobalSlots(const ProgramRuntimeSymbols& runtimeSymbols, const std::unordered_map<StringId, Value>& previousSystemGlobals) {
@@ -1150,7 +1149,7 @@ void CPU::decodeProgram() {
 		m_decodedWordCount = 0;
 		return;
 	}
-	std::span<const uint8_t> code = m_program->code();
+	std::span<const uint8_t> code = m_program->codeBytes;
 	m_decodedWordCount = code.size() / INSTRUCTION_BYTES;
 	const size_t pageCount = (m_decodedWordCount + DECODED_PAGE_WORDS - 1u) >> DECODED_PAGE_SHIFT;
 	m_decodedPages.resize(pageCount);
@@ -1222,10 +1221,6 @@ void CPU::decodeProgram() {
 
 DecodedInstruction& CPU::decodedSlotForWrite(size_t wordIndex) {
 	return m_decodedPages[wordIndex >> DECODED_PAGE_SHIFT].words[wordIndex & DECODED_PAGE_MASK];
-}
-
-const DecodedInstruction& CPU::decodedAtWordIndex(int wordIndex) const {
-	return m_decodedPages[static_cast<size_t>(wordIndex) >> DECODED_PAGE_SHIFT].words[static_cast<size_t>(wordIndex) & DECODED_PAGE_MASK];
 }
 
 void CPU::skipNextInstruction(CallFrame& frame) {
@@ -2019,6 +2014,9 @@ void CPU::runBuiltinNextValue(Value target, Value key, NativeResults& out) {
 		out.push_back(entry->second);
 		return;
 	}
+	if (!valueIsNativeObject(target)) {
+		throw LuaExecutionError("Attempted to iterate a non-table value.");
+	}
 	auto* obj = asNativeObject(target);
 	auto entry = obj->nextEntry(key);
 	if (!entry.has_value()) {
@@ -2260,7 +2258,6 @@ RunResult CPU::run(int instructionBudget) {
 #endif
 	for (;;) {
 		try {
-			runHousekeeping();
 dispatch_loop_check:
 	if (frames.empty()) {
 		return RunResult::Halted;
@@ -2345,7 +2342,6 @@ dispatch_continue:
 #undef CYCLES_ADD
 #undef REG
 #undef FRAME
-	tickHotLoopHousekeeping();
 	goto dispatch_loop_check;
 
 #if BMSX_USE_COMPUTED_GOTO
@@ -2417,7 +2413,6 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget) {
 #endif
 	for (;;) {
 		try {
-			runHousekeeping();
 dispatch_loop_check:
 	if (static_cast<int>(frames.size()) <= targetDepth) {
 		return RunResult::Halted;
@@ -2502,7 +2497,6 @@ dispatch_continue:
 #undef CYCLES_ADD
 #undef REG
 #undef FRAME
-	tickHotLoopHousekeeping();
 	goto dispatch_loop_check;
 
 #if BMSX_USE_COMPUTED_GOTO
@@ -2583,20 +2577,11 @@ void CPU::runHousekeeping() {
 	if (m_heap.needsCollection()) {
 		m_heap.collect();
 	}
-	m_hotLoopHousekeepingCountdown = HOT_LOOP_HOUSEKEEPING_STRIDE;
-}
-
-void CPU::tickHotLoopHousekeeping() {
-	m_hotLoopHousekeepingCountdown -= 1;
-	if (m_hotLoopHousekeepingCountdown <= 0) {
-		runHousekeeping();
-	}
 }
 
 void CPU::step() {
 	if (m_frames.empty()) return;
 	if (m_hardHalted || m_haltedUntilIrq || m_memoryWriteBlocked) return;
-	runHousekeeping();
 	CallFrame& frame = *m_frames.back();
 	int pc = frame.pc;
 	int wordIndex = pc / INSTRUCTION_BYTES;

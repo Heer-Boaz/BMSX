@@ -80,7 +80,7 @@ export function lintBinaryExpressionForCodeQuality(
 			(leftBoolean !== null || rightBoolean !== null)
 			&& !(leftBoolean !== null && rightBoolean !== null)
 			&& !isExplicitNonJsTruthinessPair(node)
-			&& isBooleanLiteralComparisonSmell(node, leftBoolean, rightBoolean)
+			&& isBooleanLiteralComparisonSmell(node, leftBoolean)
 		) {
 			pushLintIssue(
 				issues,

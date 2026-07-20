@@ -1,11 +1,11 @@
 #pragma once
 
 #include "common/primitives.h"
-#include "machine/program/linker.h"
+#include "machine/program/loader.h"
 #include <vector>
 
 namespace bmsx::test {
 
-std::vector<u8> makeMinimalProgramRom(ProgramBootTarget target);
+std::vector<u8> makeMinimalBootRom(ProgramBootTarget target);
 
 } // namespace bmsx::test

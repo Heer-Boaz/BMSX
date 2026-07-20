@@ -5,7 +5,7 @@ import { test } from 'node:test';
 
 import { CART_ROM_BASE } from '../../machine/ts/machine/memory/map';
 import { assertRomAssetSymbolsMatchToc, buildRomAssetSymbolModuleSource, collectRomAssetSymbols } from '../../machine/ts/rompack/asset_symbols';
-import { collectRomAssetPayloadRanges } from '../../machine/ts/rompack/asset_layout';
+import { layoutRomAssetPayloads } from '../../machine/ts/rompack/asset_layout';
 import { CART_ROM_HEADER_SIZE, CART_ROM_WORD_ALIGNMENT, PROGRAM_BOOT_HEADER_VERSION, type RomAsset } from '../../machine/ts/rompack/format';
 import { finalizeRompack, getResMetaList } from '../../scripts/rompacker/rombuilder';
 
@@ -57,7 +57,7 @@ test('ROM asset layout is shared by symbols and writer verification', () => {
 		{ type: 'lua', resid: 'cart', compiled_buffer: Buffer.from([0xaa, 0xbb]) },
 		{ type: 'data', resid: 'stage-1', buffer: Buffer.from([1, 2, 3]), compiled_buffer: Buffer.from([4]) },
 	];
-	const ranges = collectRomAssetPayloadRanges(assets, true);
+	const ranges = layoutRomAssetPayloads(assets, true).ranges;
 	assert.deepEqual(ranges.map(range => [range.asset.resid, range.kind, range.start, range.end]), [
 		['cart', 'compiled', CART_ROM_HEADER_SIZE, CART_ROM_HEADER_SIZE + 2],
 		['stage-1', 'buffer', CART_ROM_HEADER_SIZE + 4, CART_ROM_HEADER_SIZE + 7],
@@ -87,7 +87,7 @@ test('ROM writer materializes word-aligned payload ranges', async () => {
 			{ type: 'data', resid: 'odd', buffer: Buffer.from([0x11]) },
 			{ type: 'image', resid: 'sprite', texture_buffer: Buffer.from([0x22, 0x33]), collision_bin_buffer: Buffer.from([0x44, 0x55, 0x66, 0x77]) },
 		];
-		const ranges = collectRomAssetPayloadRanges(assets, true);
+		const ranges = layoutRomAssetPayloads(assets, true).ranges;
 		await finalizeRompack(assets, 'aligned', {
 			zipRom: false,
 			debug: false,

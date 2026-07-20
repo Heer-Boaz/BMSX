@@ -45,7 +45,7 @@ import type { RenderPassLibrary } from './pass/library';
  *   GPUBackend vertex-layout API; attribute packing and pointer setup belong to
  *   concrete pass code.
  * - C++-only public symbols in backend.h are C++/libretro backend storage
- *   and ownership: BackendType, FrameStats, SoftwareTexture, DitherParams,
+ *   and ownership: BackendType, FrameStats, SoftwareTexture,
  *   SoftwareBackend, readyForTextureUpload(), and native render-target
  *   activation for the C++ render graph.
  * - TS synchronous texture readback is concrete-backend owned; headless keeps

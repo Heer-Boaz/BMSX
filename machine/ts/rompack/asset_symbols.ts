@@ -1,6 +1,6 @@
 import { type CartridgeLayerId, type RomAsset } from './format';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../machine/memory/map';
-import { collectRomAssetPayloadRanges } from './asset_layout';
+import { layoutRomAssetPayloads } from './asset_layout';
 
 export type RomAssetSymbol = {
 	name: string;
@@ -47,7 +47,7 @@ export function collectRomAssetSymbols(
 ): RomAssetSymbol[] {
 	const symbols: RomAssetSymbol[] = [];
 	const mainRanges = new Map<RomAsset, { start: number; end: number }>();
-	const ranges = collectRomAssetPayloadRanges(assetList, includeLuaAssets);
+	const ranges = layoutRomAssetPayloads(assetList, includeLuaAssets).ranges;
 	for (let index = 0; index < ranges.length; index += 1) {
 		const range = ranges[index];
 		if (range.kind === 'buffer') {

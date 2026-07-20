@@ -6,6 +6,13 @@ import { APU_SAMPLE_RATE_HZ } from '../../machine/devices/audio/contracts';
 // but it is not the machine audio device or a host-side shortcut around MMIO.
 export type StructuredTextDocumentFormat = 'yaml' | 'json';
 
+export function aemDocumentFormat(path: string): StructuredTextDocumentFormat {
+	if (path.endsWith('.json')) {
+		return 'json';
+	}
+	return 'yaml';
+}
+
 type AudioAction = {
 	audio_id?: string;
 	modulation_preset?: string;

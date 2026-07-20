@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import { splitText } from '../../machine/ts/common/text_lines';
 import { LuaLexer } from '../../machine/ts/lua/syntax/lexer';
 import { LuaParser } from '../../machine/ts/lua/syntax/parser';
-import { compileLuaChunkToProgram, encodeCompiledProgramImage } from '../../machine/ts/lua/compiler';
+import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../machine/ts/lua/compiler';
 
 function parseSource(source: string, path: string) {
 	const lexer = new LuaLexer(source, path);
@@ -28,7 +28,7 @@ test('bios math RNG state is initialized guest RAM owned by the math module', ()
 		};
 	});
 	const compiled = compileLuaChunkToProgram(parseSource(entrySource, 'entry.lua'), modules, { entrySource });
-	const image = encodeCompiledProgramImage(compiled);
+	const image = encodeCompiledProgramObject(compiled);
 	assert.equal(compiled.moduleProtoMap.has('bios/math'), true);
 	assert.deepEqual(Array.from(image.sections.data.bytes.slice(0, 4)), [0x78, 0x56, 0x34, 0x12]);
 	assert.equal(image.sections.data.symbols.some(symbol => symbol.name === 'module:bios/math/data:rng_state'), true);

@@ -1,10 +1,8 @@
 import { machineManager } from '../../core/machine_manager';
-import { getTrackedLuaHeapBytes } from '../../machine/memory/lua_heap_usage';
-import { captureRuntimeResumeSnapshot } from '../runtime/resume_snapshot';
-import { resumeFromSnapshot } from '../runtime/hot_resume';
+import { collectTrackedLuaHeapBytes, getTrackedLuaHeapBytes } from '../../machine/memory/lua_heap_usage';
+import { hotResume } from '../runtime/hot_resume';
 import { performHotResume } from '../commands/actions';
 import type { Runtime } from '../../machine/runtime/runtime';
-import { installNativeGlobal, runHostEvalChunkToNative } from '../runtime/host_eval';
 
 /**
  * Host-side test surface for the IDE/runtime, exposed through the `bmsx` global so
@@ -21,15 +19,11 @@ export type HeadlessIdeHarness = {
 	isCartActive(): boolean;
 	getTrackedLuaHeapBytes(): number;
 	/**
-	 * Core hot-resume: capture a runtime snapshot and resume from it. This is the
-	 * exact churn path (snapshot serialize/restore + entry recompile + module
-	 * reload) that the IDE's hot-resume runs, minus the workspace-override I/O.
+	 * Rebuild the physical program tail and link it into the live Lua state.
 	 */
-	hotResumeCore(preserveSystemModules?: boolean): Promise<void>;
+	hotResumeCore(): void;
 	/** Full IDE hot-resume action (fire-and-forget; settle by advancing frames). */
 	performHotResume(): void;
-	evaluateLua(source: string): unknown[];
-	installNativeGlobal(name: string, value: unknown): void;
 	/** Diagnostic breakdown of tracked-heap contributors, for leak hunting. */
 	debugStats(): HeadlessIdeHeapStats;
 };
@@ -42,6 +36,7 @@ export type HeadlessIdeHeapStats = {
 	moduleProtos: number;
 	protos: number;
 	constPool: number;
+	codeBytes: number;
 	globals: number;
 };
 
@@ -60,20 +55,19 @@ export const headlessIdeHarness: HeadlessIdeHarness = {
 		return !!runtime && runtime.cartProgramStarted && runtime.isInitialized;
 	},
 	getTrackedLuaHeapBytes,
-	hotResumeCore: async (preserveSystemModules) => {
+	hotResumeCore: () => {
 		const runtime = requireRuntime();
-		const snapshot = captureRuntimeResumeSnapshot(runtime);
-		await resumeFromSnapshot(runtime, snapshot, preserveSystemModules);
+		const cartProgramStarted = runtime.cartProgramStarted;
+		hotResume(runtime, !cartProgramStarted, cartProgramStarted);
 	},
 	performHotResume: () => {
 		performHotResume(requireRuntime());
 	},
-	evaluateLua: (source) => runHostEvalChunkToNative(requireRuntime(), source),
-	installNativeGlobal: (name, value) => installNativeGlobal(requireRuntime(), name, value),
 	debugStats: () => {
 		const runtime = requireRuntime();
 		const cpu = runtime.machine.cpu;
 		const program = cpu.program;
+		collectTrackedLuaHeapBytes();
 		const tracked = getTrackedLuaHeapBytes();
 		const stringBytes = cpu.stringPool.trackedLuaHeapBytes();
 		let globals = 0;
@@ -83,9 +77,10 @@ export const headlessIdeHarness: HeadlessIdeHarness = {
 			stringBytes,
 			objectBytes: tracked - stringBytes,
 			moduleCache: runtime.moduleCache.size,
-			moduleProtos: program ? program.moduleProtos.length : 0,
-			protos: program ? program.protos.length : 0,
-			constPool: program ? program.constPool.length : 0,
+			moduleProtos: program.moduleProtos.length,
+			protos: program.protos.length,
+			constPool: program.constPool.length,
+			codeBytes: program.code.byteLength,
 			globals,
 		};
 	},

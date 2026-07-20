@@ -180,9 +180,6 @@ const buildModuleCompileInfo = (
 		}
 	}
 	if (constModule && !staticStorage) {
-		if (staticFunctionExportByPathKey.size !== 0) {
-			throw new Error(`Const module '${modulePath}' exports function call targets but is not compiled as a source module.`);
-		}
 		assertExternalConstModuleDeclaresNoStaticStorage(modulePath, staticStorageDeclarations);
 	}
 	const exportConstValueByPathKey = compileTimeModule

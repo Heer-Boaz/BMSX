@@ -35,8 +35,11 @@ import {
 	createSubscriptionHandle,
 } from 'bmsx/platform';
 import { HZ_SCALE } from 'bmsx/machine/runtime/timing/constants';
+import { GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED } from 'bmsx/machine/devices/gx/gpu_pcrtc';
 import { HeadlessGameViewHost } from 'bmsx/render/headless/view';
 import { SilentAudioService } from '../common/silent_audio';
+
+export const HEADLESS_DEFAULT_FRAME_INTERVAL_MS = 1000 * HZ_SCALE / GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED;
 
 class RealtimeHeadlessHostClock implements HostClock {
 	private readonly origin = performance.now();
@@ -395,8 +398,10 @@ export class HeadlessPlatformServices implements Platform {
 	readonly gameviewHost: HeadlessGameViewHost;
 
 	constructor(options: HeadlessPlatformOptions = {}) {
-		const step = options.frameIntervalMs ?? 20;
-		this.ufpsScaled = Math.round((1000 / step) * HZ_SCALE);
+		const step = options.frameIntervalMs ?? HEADLESS_DEFAULT_FRAME_INTERVAL_MS;
+		this.ufpsScaled = options.frameIntervalMs === undefined
+			? GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED
+			: Math.round(1000 * HZ_SCALE / step);
 		if (options.unpaced) {
 			const clock = new VirtualHeadlessHostClock();
 			this.clock = clock;

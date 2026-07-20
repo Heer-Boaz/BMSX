@@ -47,11 +47,7 @@ export function isLikelyBooleanExpression(node: ts.Expression): boolean {
 	return false;
 }
 
-export function isBooleanLiteralComparisonSmell(node: ts.BinaryExpression, leftBoolean: boolean | null, rightBoolean: boolean | null): boolean {
-	const booleanValue = leftBoolean !== null ? leftBoolean : rightBoolean;
-	if (booleanValue !== false) {
-		return true;
-	}
+export function isBooleanLiteralComparisonSmell(node: ts.BinaryExpression, leftBoolean: boolean | null): boolean {
 	const subject = leftBoolean !== null ? node.right : node.left;
 	return isLikelyBooleanExpression(subject);
 }

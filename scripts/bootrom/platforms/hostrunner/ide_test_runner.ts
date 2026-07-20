@@ -8,7 +8,6 @@ export interface IdeTestRunnerOptions {
 	testPath: string;
 	frameIntervalMs: number;
 	ide: HeadlessIdeHarness;
-	evaluateLua: (source: string) => unknown[];
 	logger: (msg: string) => void;
 	scheduleOnce: (delayMs: number, cb: () => void) => void;
 	requestExit: (code: number) => void;
@@ -18,7 +17,7 @@ export interface IdeTestRunnerOptions {
  * Drives a host-side IDE test scenario against the live runtime. The scenario is a
  * plain JS script (no imports) executed with a single `t` context object. IDE actions
  * run between frames: `t.frames(n)` suspends the scenario for n frames while the
- * headless frame loop keeps ticking, so async work (hot-resume, storage I/O) settles.
+ * headless frame loop keeps ticking, so async work (program rebuild, storage I/O) settles.
  */
 export async function runIdeTest(options: IdeTestRunnerOptions): Promise<void> {
 	const label = path.basename(options.testPath);
@@ -62,11 +61,10 @@ export async function runIdeTest(options: IdeTestRunnerOptions): Promise<void> {
 		runtime: () => options.ide.getRuntime(),
 		heapBytes: () => options.ide.getTrackedLuaHeapBytes(),
 		debugStats: () => options.ide.debugStats(),
-		evaluateLua: (source: string) => options.evaluateLua(source),
 		isCartActive: () => options.ide.isCartActive(),
 		waitForCart,
 		frames: waitFrames,
-		hotResume: (preserveSystemModules?: boolean) => options.ide.hotResumeCore(preserveSystemModules),
+		hotResume: () => options.ide.hotResumeCore(),
 		performHotResume: () => options.ide.performHotResume(),
 	};
 

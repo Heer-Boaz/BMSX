@@ -39,8 +39,6 @@ local definitions<const> = {}
 local subsystem_definitions<const> = {}
 local component_definitions<const> = {}
 local cart_irq_handlers<const> = {}
-mem[0x0800000c] = 0xffffffff
-mem[0x08000010] = 0xffffffff
 
 local excluded_class_keys<const> = {
 	def_id = true,

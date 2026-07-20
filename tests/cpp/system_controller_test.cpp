@@ -7,7 +7,6 @@
 #include "machine/machine.h"
 #include "machine/memory/memory.h"
 #include "machine/model_registry.h"
-#include "machine/program/linker.h"
 #include "machine/program/loader.h"
 #include "machine/runtime/boot_timing.h"
 #include "machine/runtime/input.h"
@@ -18,6 +17,7 @@
 #include <array>
 #include <span>
 #include <stdexcept>
+#include <vector>
 
 namespace {
 
@@ -35,11 +35,19 @@ public:
 	void applyInputControllerVibrationEffect(bmsx::i32, bmsx::f64, bmsx::f32) override {}
 };
 
-bmsx::ProgramImage makeProgramImageWithResetInstruction(bmsx::OpCode opcode) {
+struct ProgramImageFixture {
+	std::vector<bmsx::u8> code;
 	bmsx::ProgramImage image;
-	image.sections.text.code.resize(bmsx::INSTRUCTION_BYTES * 2u);
+};
+
+ProgramImageFixture makeProgramImageWithResetInstruction(bmsx::OpCode opcode) {
+	ProgramImageFixture fixture;
+	bmsx::ProgramImage& image = fixture.image;
+	image.placement.dataBaseAddress = bmsx::PROGRAM_STATIC_RAM_BASE;
+	image.placement.bssBaseAddress = bmsx::PROGRAM_STATIC_RAM_BASE;
+	fixture.code.resize(bmsx::INSTRUCTION_BYTES * 2u);
 	bmsx::writeInstruction(
-		std::span<bmsx::u8>(image.sections.text.code),
+		std::span<bmsx::u8>(fixture.code),
 		0,
 		static_cast<bmsx::u8>(bmsx::OpCode::RET),
 		0,
@@ -47,7 +55,7 @@ bmsx::ProgramImage makeProgramImageWithResetInstruction(bmsx::OpCode opcode) {
 		0
 	);
 	bmsx::writeInstruction(
-		std::span<bmsx::u8>(image.sections.text.code),
+		std::span<bmsx::u8>(fixture.code),
 		1,
 		static_cast<bmsx::u8>(opcode),
 		0,
@@ -64,9 +72,30 @@ bmsx::ProgramImage makeProgramImageWithResetInstruction(bmsx::OpCode opcode) {
 	reset.codeLen = bmsx::INSTRUCTION_BYTES;
 	reset.maxStack = 1;
 	image.sections.text.protos.push_back(reset);
+	image.sections.text.code = fixture.code;
 	image.vectors.sectionInitProtoIndex = 0;
 	image.vectors.resetProtoIndex = 1;
-	return image;
+	return fixture;
+}
+
+ProgramImageFixture makeCartProgramImageWithResetInstruction(const bmsx::ProgramImage& systemImage, bmsx::OpCode opcode) {
+	ProgramImageFixture fixture = makeProgramImageWithResetInstruction(opcode);
+	bmsx::ProgramImage& image = fixture.image;
+	image.placement.textBasePc = static_cast<int>(systemImage.sections.text.code.size());
+	const int protoBaseIndex = static_cast<int>(systemImage.sections.text.protos.size());
+	image.placement.protoBaseIndex = protoBaseIndex;
+	image.placement.constBaseIndex = static_cast<int>(systemImage.sections.rodata.constPool.size());
+	image.placement.dataBaseAddress = systemImage.placement.bssBaseAddress + static_cast<bmsx::u32>(systemImage.sections.bss.byteCount);
+	image.placement.bssBaseAddress = image.placement.dataBaseAddress;
+	for (bmsx::Proto& proto : image.sections.text.protos) {
+		proto.entryPC += image.placement.textBasePc;
+	}
+	image.vectors.resetProtoIndex += protoBaseIndex;
+	image.vectors.sectionInitProtoIndex += protoBaseIndex;
+	image.vectors.irqProtoIndex += protoBaseIndex;
+	image.vectors.exceptionProtoIndex += protoBaseIndex;
+	image.symbols = systemImage.symbols;
+	return fixture;
 }
 
 struct SystemRuntimeFixture {
@@ -118,18 +147,20 @@ void testRuntimeSystemRebootBoundary() {
 	bmsx::Runtime& runtime = fixture.runtime;
 	runtime.resetRuntimeForProgramReload();
 	runtime.enterSystemFirmware();
-	bmsx::ProgramImage systemImage = makeProgramImageWithResetInstruction(bmsx::OpCode::RET);
+	ProgramImageFixture systemFixture = makeProgramImageWithResetInstruction(bmsx::OpCode::RET);
+	bmsx::ProgramImage& systemImage = systemFixture.image;
 	for (const bmsx::LuaBootPrimitive& primitive : bmsx::LUA_BOOT_PRIMITIVES) {
-		systemImage.link.symbols.systemGlobalNames.emplace_back(primitive.name);
+		systemImage.symbols.systemGlobalNames.emplace_back(primitive.name);
 	}
-	const bmsx::ProgramImage cartImage = makeProgramImageWithResetInstruction(bmsx::OpCode::RET);
-	runtime.bootLinkedProgramImage(bmsx::linkBootProgramImages(
+	ProgramImageFixture cartFixture = makeCartProgramImageWithResetInstruction(systemImage, bmsx::OpCode::RET);
+	const bmsx::ProgramImage& cartImage = cartFixture.image;
+	runtime.boot(
 		systemImage,
-		nullptr,
-		cartImage,
-		nullptr,
+		{},
+		&cartImage,
+		{},
 		bmsx::ProgramBootTarget::System
-	));
+	);
 
 	require(runtime.isInitialized(), "linked system program initializes before the first frame");
 	require(!runtime.cartProgramStarted, "linked boot begins in system firmware");
@@ -154,18 +185,20 @@ void testHostDeltaGrantsOneFractionallyRetainedMachineBudget() {
 	bmsx::Runtime& runtime = fixture.runtime;
 	runtime.resetRuntimeForProgramReload();
 	runtime.enterSystemFirmware();
-	bmsx::ProgramImage systemImage = makeProgramImageWithResetInstruction(bmsx::OpCode::HALT);
+	ProgramImageFixture systemFixture = makeProgramImageWithResetInstruction(bmsx::OpCode::HALT);
+	bmsx::ProgramImage& systemImage = systemFixture.image;
 	for (const bmsx::LuaBootPrimitive& primitive : bmsx::LUA_BOOT_PRIMITIVES) {
-		systemImage.link.symbols.systemGlobalNames.emplace_back(primitive.name);
+		systemImage.symbols.systemGlobalNames.emplace_back(primitive.name);
 	}
-	const bmsx::ProgramImage cartImage = makeProgramImageWithResetInstruction(bmsx::OpCode::HALT);
-	runtime.bootLinkedProgramImage(bmsx::linkBootProgramImages(
+	ProgramImageFixture cartFixture = makeCartProgramImageWithResetInstruction(systemImage, bmsx::OpCode::HALT);
+	const bmsx::ProgramImage& cartImage = cartFixture.image;
+	runtime.boot(
 		systemImage,
-		nullptr,
-		cartImage,
-		nullptr,
+		{},
+		&cartImage,
+		{},
 		bmsx::ProgramBootTarget::System
-	));
+	);
 	const bmsx::u32 smode1Address = bmsx::gxGpuPcrtcRegisterAddress(bmsx::GX_GPU_PCRTC_SMODE1_LOW);
 	const bmsx::u32 smode1 = runtime.machine.memory.readMappedU32LE(smode1Address);
 	runtime.machine.memory.writeMappedU32LE(smode1Address, smode1 | bmsx::GX_GPU_PCRTC_SMODE1_SINT);

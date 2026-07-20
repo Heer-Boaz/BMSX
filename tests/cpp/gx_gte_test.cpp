@@ -75,9 +75,8 @@ void installGtePlusBurstProgram(
 	const std::array<uint32_t, 9>& words
 ) {
 	constexpr int instructionCount = 12;
-	program.programRom.resize(instructionCount * bmsx::INSTRUCTION_BYTES);
-	program.programRomTextByteLength = program.programRom.size();
-	std::span<bmsx::u8> code(program.programRom);
+	program.codeBytes.resize(instructionCount * bmsx::INSTRUCTION_BYTES);
+		std::span<bmsx::u8> code(program.codeBytes);
 	bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 0);
 	for (uint32_t index = 0u; index < words.size(); index += 1u) {
 		bmsx::writeInstruction(code, static_cast<int>(index + 1u), static_cast<bmsx::u8>(bmsx::OpCode::LOADK), static_cast<bmsx::u8>(index + 1u), 0, static_cast<bmsx::u8>(index + 1u));
@@ -92,7 +91,7 @@ void installGtePlusBurstProgram(
 	program.constPoolStringPool = &program.stringPool;
 	bmsx::Proto proto;
 	proto.entryPC = 0;
-	proto.codeLen = static_cast<int>(program.programRomTextByteLength);
+	proto.codeLen = static_cast<int>(program.codeBytes.size());
 	proto.maxStack = static_cast<int>(words.size() + 1u);
 	proto.staticClosure = true;
 	program.protos.push_back(std::move(proto));

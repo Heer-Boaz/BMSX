@@ -39,9 +39,7 @@ public:
 	std::optional<RomSourceEntry> getEntry(std::string_view id) const;
 	std::optional<RomSourceEntry> getEntryByPath(std::string_view path) const;
 	std::vector<RomSourceEntry> list(std::optional<std::string_view> type = std::nullopt) const;
-	std::vector<u8> getBytes(const RomSourceEntry& entry) const;
 	std::vector<u8> getBytes(const RomAssetInfo& entry) const;
-	std::span<const u8> getBytesView(const RomSourceEntry& entry) const;
 	std::span<const u8> getBytesView(const RomAssetInfo& entry) const;
 
 private:

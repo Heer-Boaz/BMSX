@@ -29,9 +29,13 @@ import {
 } from '../../machine/ts/machine/bus/io';
 import { transformFixed16 } from '../../machine/ts/machine/common/numeric';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
+import {
+	GX_GPU_PCRTC_RUNTIME_EDGE_VBLANK_BEGIN,
+	GX_GPU_PCRTC_RUNTIME_EDGE_VBLANK_END,
+} from '../../machine/ts/machine/devices/gx/gpu_pcrtc';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
-import { GEO_SCRATCH_BASE, PROGRAM_ROM_BASE, PROGRAM_ROM_SIZE, RAM_BASE, RAM_END, SYSTEM_ROM_BASE } from '../../machine/ts/machine/memory/map';
+import { CART_ROM_BASE, CART_ROM_SIZE, GEO_SCRATCH_BASE, RAM_BASE, RAM_END, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE } from '../../machine/ts/machine/memory/map';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { VblankState } from '../../machine/ts/machine/runtime/vblank';
 import { cyclesUntilBudgetUnits } from '../../machine/ts/machine/scheduler/budget';
@@ -87,18 +91,21 @@ test('core golden: memory RAM, ROM, and numeric I/O words stay observable', () =
 	}
 });
 
-test('core golden: program ROM window zero-fills consistently across memory paths', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
-	memory.setProgramRom(new Uint8Array([0x11, 0x22, 0x33, 0x44, 0x55, 0x66]), 4);
+test('core golden: physical ROM windows zero-fill consistently across memory paths', () => {
+	const systemRom = new Uint8Array([0x11, 0x22, 0x33, 0x44, 0x55, 0x66]);
+	const cartRom = new Uint8Array([0x71, 0x72, 0x73, 0x74, 0x75, 0x76]);
+	const memory = new Memory({ systemRom, cartRom });
 	const tailBytes = new Uint8Array(4);
 
-	assert.equal(memory.readValue(PROGRAM_ROM_BASE), 0x11223344);
-	assert.equal(memory.readMappedU32LE(PROGRAM_ROM_BASE), 0x44332211);
-	assert.equal(memory.readMappedU32LE(PROGRAM_ROM_BASE + 4), 0x00006655);
-	assert.equal(memory.readU8(PROGRAM_ROM_BASE + PROGRAM_ROM_SIZE - 1), 0);
-	memory.readBytesInto(PROGRAM_ROM_BASE + 4, tailBytes, tailBytes.byteLength);
+	assert.equal(memory.readValue(SYSTEM_ROM_BASE), 0x44332211);
+	assert.equal(memory.readMappedU32LE(SYSTEM_ROM_BASE), 0x44332211);
+	assert.equal(memory.readMappedU32LE(SYSTEM_ROM_BASE + 4), 0x00006655);
+	assert.equal(memory.readU8(SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE - 1), 0);
+	memory.readBytesInto(SYSTEM_ROM_BASE + 4, tailBytes, tailBytes.byteLength);
 	assert.deepEqual([...tailBytes], [0x55, 0x66, 0, 0]);
-	assert.equal(memory.readMappedU32LE(PROGRAM_ROM_BASE + PROGRAM_ROM_SIZE - 4), 0);
+	assert.equal(memory.readMappedU32LE(SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE - 4), 0);
+	assert.equal(memory.readMappedU32LE(CART_ROM_BASE), 0x74737271);
+	assert.equal(memory.readU8(CART_ROM_BASE + CART_ROM_SIZE - 1), 0);
 	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_NONE);
 });
 
@@ -127,31 +134,22 @@ test('core golden: budget and fixed16 datapaths match native integer semantics',
 	}
 });
 
-test('core golden: runtime VBlank end publishes scanout at the new frame origin', () => {
+test('core golden: the GPU VBlank edge presents and completes the active runtime tick', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(), cartRom: new Uint8Array(0) });
 	const scheduler = new DeviceScheduler(new CPU(memory, new IrqController(memory)));
-	const gxScanoutCalls: Array<{ active: boolean; cyclesIntoFrame: number; cyclesPerFrame: number; totalScanlines: number }> = [];
 	const inputSampleEdges: Array<{ currentTimeMs: number; nowCycles: number }> = [];
+	const completedFrames: unknown[] = [];
 	let raisedIrq = 0;
 	let gxPresentCount = 0;
-	let appliedPcrtcRevision = 0;
-	const gpuOutput = {
-		pcrtcTiming: {
-			revision: 7,
-			running: true,
-			refreshUfpsScaled: 50_000_000,
-			totalScanlines: 10,
-			activeDisplayLines: 8,
-		},
+	const frameState = {
+		updateExecuted: false,
+		luaFaulted: false,
+		cycleBudgetRemaining: 20,
+		cycleBudgetGranted: 100,
+		cycleCarryGranted: 0,
+		activeCpuUsedCycles: 80,
 	};
 	const runtime = {
-		timing: {
-			pcrtcRunning: true,
-			cpuHz: 5000,
-			cycleBudgetPerFrame: 100,
-			totalScanlines: 10,
-			geoWorkUnitsPerSec: 0,
-		},
 		machine: {
 			scheduler,
 			inputController: {
@@ -167,51 +165,37 @@ test('core golden: runtime VBlank end publishes scanout at the new frame origin'
 				},
 			},
 			gxGpu: {
-				readDeviceOutput() {
-					return gpuOutput;
-				},
 				presentReadyFrameOnVblankEdge() {
 					gxPresentCount += 1;
 				},
-				setScanoutTiming(running: boolean, active: boolean, cyclesIntoFrame: number, cyclesPerFrame: number, totalScanlines: number) {
-					void running;
-					gxScanoutCalls.push({ active, cyclesIntoFrame, cyclesPerFrame, totalScanlines });
-				},
 			},
-			refreshDeviceTimings() { },
 		},
 		frameLoop: {
-			currentFrameState: null,
+			frameActive: true,
+			frameState,
+		},
+		frameScheduler: {
+			enqueueTickCompletion(completed: unknown) {
+				completedFrames.push(completed);
+			},
 		},
 		machineElapsedMs() {
 			return scheduler.currentNowCycles() * 1000 / 5000;
 		},
-		applyPublishedGxGpuPcrtcTiming(pcrtcTiming: { revision: number }) {
-			appliedPcrtcRevision = pcrtcTiming.revision;
-		},
 	} as unknown as Runtime;
 	const vblank = new VblankState(runtime);
-	vblank.setVblankCycles(20);
-
+	vblank.beginTick();
 	scheduler.setNowCycles(80);
-	vblank.handleBeginTimer();
+	vblank.handleGpuRuntimeEdge(GX_GPU_PCRTC_RUNTIME_EDGE_VBLANK_BEGIN);
 	assert.equal(raisedIrq, IRQ_VBLANK);
 	assert.equal(gxPresentCount, 1);
 	assert.deepEqual(inputSampleEdges[0], { currentTimeMs: 16, nowCycles: 80 });
-	assert.deepEqual(gxScanoutCalls[0], { active: true, cyclesIntoFrame: 80, cyclesPerFrame: 100, totalScanlines: 10 });
+	assert.equal(vblank.tickCompleted, true);
+	assert.deepEqual(completedFrames, [frameState]);
 
-	scheduler.setNowCycles(100);
-	vblank.handleEndTimer();
-	assert.equal(appliedPcrtcRevision, gpuOutput.pcrtcTiming.revision);
-	assert.deepEqual(gxScanoutCalls[1], { active: false, cyclesIntoFrame: 0, cyclesPerFrame: 100, totalScanlines: 10 });
-
-	gxScanoutCalls.length = 0;
-	scheduler.setNowCycles(0);
-	vblank.setVblankCycles(100);
-	assert.deepEqual(gxScanoutCalls[0], { active: true, cyclesIntoFrame: 0, cyclesPerFrame: 100, totalScanlines: 10 });
-	scheduler.setNowCycles(100);
-	vblank.handleEndTimer();
-	assert.deepEqual(gxScanoutCalls[1], { active: true, cyclesIntoFrame: 0, cyclesPerFrame: 100, totalScanlines: 10 });
+	vblank.handleGpuRuntimeEdge(GX_GPU_PCRTC_RUNTIME_EDGE_VBLANK_END);
+	assert.equal(gxPresentCount, 1);
+	assert.deepEqual(completedFrames, [frameState]);
 });
 
 test('core golden: texture keys use the canonical direct string format', () => {

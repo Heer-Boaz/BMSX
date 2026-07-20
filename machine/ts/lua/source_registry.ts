@@ -10,7 +10,7 @@ import {
 } from '../rompack/format';
 import { utf8FatalDecoder } from '../common/serializer/binencoder';
 import { buildRomAssetSymbolModuleSource } from '../rompack/asset_symbols';
-import { PROGRAM_IMAGE_ID, toLuaModulePath } from '../machine/program/loader';
+import { toLuaModulePath } from '../machine/program/loader';
 
 export const DEFAULT_SYSTEM_PROJECT_ROOT_PATH = 'machine/ts';
 
@@ -55,15 +55,6 @@ export function resolveLuaSourceRecord(registry: LuaSourceRegistry, path: string
 	return null;
 }
 
-function isAllowedPayloadId(payloadId: CartridgeLayerId, allowedPayloadIds: readonly CartridgeLayerId[]): boolean {
-	for (let index = 0; index < allowedPayloadIds.length; index += 1) {
-		if (allowedPayloadIds[index] === payloadId) {
-			return true;
-		}
-	}
-	return false;
-}
-
 export function buildLuaSources(cartSource: RawRomSource, romSource: RawRomSource, index: CartridgeIndex, allowedPayloadIds: readonly CartridgeLayerId[]): LuaSourceRegistry {
 	const registry: LuaSourceRegistry = {
 		records: [],
@@ -76,14 +67,9 @@ export function buildLuaSources(cartSource: RawRomSource, romSource: RawRomSourc
 	};
 
 	let sourceCount = 0;
-	let emitAssetSymbolModule = false;
-	for (let index = 0; index < allowedPayloadIds.length; index += 1) {
-		if (allowedPayloadIds[index] !== 'system') {
-			emitAssetSymbolModule = true;
-		}
-	}
+	const emitAssetSymbolModule = allowedPayloadIds.includes('cart');
 	for (const entry of romSource.list('lua') as PackedLuaSourceAsset[]) {
-		if (!isAllowedPayloadId(entry.payload_id, allowedPayloadIds)) {
+		if (!allowedPayloadIds.includes(entry.payload_id)) {
 			continue;
 		}
 		sourceCount += 1;
@@ -105,7 +91,7 @@ export function buildLuaSources(cartSource: RawRomSource, romSource: RawRomSourc
 		const entries = romSource.list();
 		for (let index = 0; index < entries.length; index += 1) {
 			const entry = entries[index];
-			if (isAllowedPayloadId(entry.payload_id, allowedPayloadIds)) {
+			if (allowedPayloadIds.includes(entry.payload_id)) {
 				assetEntries.push(entry);
 			}
 		}
@@ -122,25 +108,6 @@ export function buildLuaSources(cartSource: RawRomSource, romSource: RawRomSourc
 			generated: true,
 		};
 		registerLuaSourceRecord(registry, assetSymbols);
-	}
-
-	if (sourceCount === 0) {
-		const entryPath = registry.entry_path;
-		const hasPackedProgram = index.entries.some(entry => entry.resid === PROGRAM_IMAGE_ID);
-		if (hasPackedProgram) {
-			const stub: LuaSourceRecord = {
-				resid: entryPath,
-				type: 'lua',
-				src: '',
-				base_src: '',
-				base_update_timestamp: 0,
-				source_path: entryPath,
-				module_path: toLuaModulePath(entryPath),
-				update_timestamp: 0,
-				generated: false,
-			};
-			registerLuaSourceRecord(registry, stub);
-		}
 	}
 
 	return registry;

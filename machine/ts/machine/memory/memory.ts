@@ -4,8 +4,6 @@ import {
 	CART_ROM_SIZE,
 	IO_BASE,
 	IO_WORD_SIZE,
-	PROGRAM_ROM_BASE,
-	PROGRAM_ROM_SIZE,
 	RAM_BASE,
 	RAM_END,
 	SYSTEM_ROM_BASE,
@@ -59,7 +57,7 @@ import {
 	type MappedBusSignals,
 } from './bus_signals';
 
-export const enum MemoryRegionKind { Ram, Rom, Other }
+export const enum MemoryRegionKind { Ram, SystemRom, CartRom, Other }
 
 const BUS_ACCESS_READ_WORD = BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_WORD;
 const BUS_ACCESS_WRITE_WORD = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_WORD;
@@ -102,8 +100,8 @@ export type MemoryInit = {
 export const NO_BLOCKED_MAPPED_WRITE = 0xffffffff;
 
 export class Memory {
-	private readonly systemRom: Uint8Array;
-	private readonly cartRom: Uint8Array;
+	public systemRom: Uint8Array;
+	public cartRom: Uint8Array;
 	private readonly ram: Uint8Array;
 	private readonly ioSlots: Value[];
 	private readonly ioReadContexts: unknown[];
@@ -116,8 +114,6 @@ export class Memory {
 	private readonly busFaultAddrSlot = (IO_SYS_BUS_FAULT_ADDR - IO_BASE) / IO_WORD_SIZE;
 	private readonly busFaultAccessSlot = (IO_SYS_BUS_FAULT_ACCESS - IO_BASE) / IO_WORD_SIZE;
 	private readonly busFaultAckSlot = (IO_SYS_BUS_FAULT_ACK - IO_BASE) / IO_WORD_SIZE;
-	private programRom: Uint8Array = new Uint8Array(0);
-	private programTextByteLength = 0;
 	private readonly mappedFloatBuffer = new ArrayBuffer(8);
 	private readonly mappedFloatView = new DataView(this.mappedFloatBuffer);
 	private busFaultCode = BUS_FAULT_NONE;
@@ -195,12 +191,6 @@ export class Memory {
 		return this.busFaultSequence;
 	}
 
-	public setProgramRom(rom: Uint8Array, textByteLength: number): void {
-		this.programRom = rom;
-		this.programTextByteLength = textByteLength;
-	}
-
-
 	public captureSaveState(): MemorySaveState {
 		return {
 			ram: this.ram.slice(),
@@ -265,10 +255,6 @@ export class Memory {
 	}
 
 	private readMainMemoryU8(addr: number, faultAccess: number): number {
-		if (this.isProgramRomReadableRange(addr, 1)) {
-			const offset = addr - PROGRAM_ROM_BASE;
-			return offset < this.programRom.byteLength ? this.programRom[offset]! : 0;
-		}
 		if (addr >= SYSTEM_ROM_BASE && addr < SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE) {
 			const offset = addr - SYSTEM_ROM_BASE;
 			return offset < this.systemRom.byteLength ? this.systemRom[offset]! : 0;
@@ -351,9 +337,6 @@ export class Memory {
 		if (slot >= 0) {
 			return this.readIoSlotValue(slot, addr, MAPPED_BUS_MASTER_CPU);
 		}
-		if (addr >= PROGRAM_ROM_BASE && addr + 4 <= PROGRAM_ROM_BASE + PROGRAM_ROM_SIZE) {
-			return this.readProgramRomWord(addr);
-		}
 		if (addr < RAM_BASE) {
 			return this.readSystemOrCartRomU32(addr);
 		}
@@ -368,9 +351,6 @@ export class Memory {
 		if (this.isIoRegionRange(addr, 4)) {
 			this.raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_ACCESS_READ_WORD);
 			return 0;
-		}
-		if (addr >= PROGRAM_ROM_BASE && addr + 4 <= PROGRAM_ROM_BASE + PROGRAM_ROM_SIZE) {
-			return this.readProgramRomWord(addr);
 		}
 		if (this.isRangeWithinRegion(addr, 4, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE)) {
 			return this.readRomWindowU32LE(this.systemRom, addr - SYSTEM_ROM_BASE);
@@ -468,9 +448,6 @@ export class Memory {
 	}
 
 	public readU32(addr: number): number {
-		if (addr >= PROGRAM_ROM_BASE && addr + 4 <= PROGRAM_ROM_BASE + PROGRAM_ROM_SIZE) {
-			return this.readProgramRomWord(addr);
-		}
 		if (addr < RAM_BASE) {
 			return this.readSystemOrCartRomU32(addr);
 		}
@@ -500,10 +477,7 @@ export class Memory {
 			this.raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_ACCESS_READ_U16);
 			return 0;
 		}
-		if (this.isProgramRomReadableRange(addr, 2)) {
-			return this.readRomWindowU16LE(this.programRom, addr - PROGRAM_ROM_BASE);
-		}
-		else if (this.isRangeWithinRegion(addr, 2, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE)) {
+		if (this.isRangeWithinRegion(addr, 2, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE)) {
 			return this.readRomWindowU16LE(this.systemRom, addr - SYSTEM_ROM_BASE);
 		}
 		else if (this.isRangeWithinRegion(addr, 2, CART_ROM_BASE, CART_ROM_SIZE)) {
@@ -532,10 +506,7 @@ export class Memory {
 			this.raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, faultAccess);
 			return 0;
 		}
-		if (this.isProgramRomReadableRange(addr, 4)) {
-			return this.readRomWindowU32LE(this.programRom, addr - PROGRAM_ROM_BASE);
-		}
-		else if (this.isRangeWithinRegion(addr, 4, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE)) {
+		if (this.isRangeWithinRegion(addr, 4, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE)) {
 			return this.readRomWindowU32LE(this.systemRom, addr - SYSTEM_ROM_BASE);
 		}
 		else if (this.isRangeWithinRegion(addr, 4, CART_ROM_BASE, CART_ROM_SIZE)) {
@@ -649,11 +620,7 @@ export class Memory {
 	}
 
 	public readBytesInto(addr: number, out: Uint8Array, length: number, dstOffset = 0): void {
-		if (this.isProgramRomReadableRange(addr, length)) {
-			this.copyRomWindowInto(this.programRom, addr - PROGRAM_ROM_BASE, out, dstOffset, length);
-			return;
-		}
-		else if (this.isRangeWithinRegion(addr, length, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE)) {
+		if (this.isRangeWithinRegion(addr, length, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE)) {
 			this.copyRomWindowInto(this.systemRom, addr - SYSTEM_ROM_BASE, out, dstOffset, length);
 			return;
 		}
@@ -677,8 +644,7 @@ export class Memory {
 	}
 
 	public isReadableMainMemoryRange(addr: number, length: number): boolean {
-		return this.isProgramRomReadableRange(addr, length)
-			|| this.isRangeWithinRegion(addr, length, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE)
+		return this.isRangeWithinRegion(addr, length, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE)
 			|| this.isRangeWithinRegion(addr, length, CART_ROM_BASE, CART_ROM_SIZE)
 			|| (addr >= RAM_BASE && addr - RAM_BASE + length <= this.ram.byteLength);
 	}
@@ -707,10 +673,11 @@ export class Memory {
 		if (this.isIoRegionRange(addr, IO_WORD_SIZE)) {
 			return MemoryRegionKind.Other;
 		}
-		if (this.isProgramRomReadableRange(addr, IO_WORD_SIZE)
-			|| this.isRangeWithinRegion(addr, IO_WORD_SIZE, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE)
-			|| this.isRangeWithinRegion(addr, IO_WORD_SIZE, CART_ROM_BASE, CART_ROM_SIZE)) {
-			return MemoryRegionKind.Rom;
+		if (this.isRangeWithinRegion(addr, IO_WORD_SIZE, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE)) {
+			return MemoryRegionKind.SystemRom;
+		}
+		if (this.isRangeWithinRegion(addr, IO_WORD_SIZE, CART_ROM_BASE, CART_ROM_SIZE)) {
+			return MemoryRegionKind.CartRom;
 		}
 		return this.isRamRange(addr, IO_WORD_SIZE) ? MemoryRegionKind.Ram : MemoryRegionKind.Other;
 	}
@@ -813,29 +780,6 @@ export class Memory {
 			default:
 				return false;
 		}
-	}
-
-	private isProgramRomReadableRange(addr: number, length: number): boolean {
-		return addr >= PROGRAM_ROM_BASE
-			&& addr + length <= PROGRAM_ROM_BASE + PROGRAM_ROM_SIZE;
-	}
-
-	private readProgramRomWord(addr: number): number {
-		const offset = addr - PROGRAM_ROM_BASE;
-		if (offset >= this.programRom.byteLength) {
-			return 0;
-		}
-		if (offset >= this.programTextByteLength) {
-			return this.readRomWindowU32LE(this.programRom, offset);
-		}
-		const code = this.programRom;
-		const byteLength = code.byteLength;
-		return (
-			((offset < byteLength ? code[offset]! : 0) << 24)
-			| ((offset + 1 < byteLength ? code[offset + 1]! : 0) << 16)
-			| ((offset + 2 < byteLength ? code[offset + 2]! : 0) << 8)
-			| (offset + 3 < byteLength ? code[offset + 3]! : 0)
-		) >>> 0;
 	}
 
 }

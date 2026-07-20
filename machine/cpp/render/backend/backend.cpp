@@ -3,7 +3,6 @@
  */
 
 #include "backend.h"
-#include "common/clamp.h"
 #include "render/shared/software_pixels.h"
 #include "render/backend/pass/library.h"
 #include "render/backend/software/gx_gpu.h"
@@ -16,44 +15,6 @@
 #include <cmath>
 
 namespace bmsx {
-namespace {
-
-constexpr i32 kDitherLevels = 31;
-constexpr f32 kDitherGuardEdge0 = 1.0f / static_cast<f32>(kDitherLevels);
-constexpr f32 kDitherGuardEdge1 = 3.0f / static_cast<f32>(kDitherLevels);
-constexpr u8 kBayerThreshold[16] = {
-	8, 135, 39, 167,
-	199, 71, 231, 103,
-	55, 183, 23, 151,
-	247, 119, 215, 87,
-};
-
-inline u8 expand5to8(i32 v5) {
-	return static_cast<u8>((v5 << 3) | (v5 >> 2));
-}
-
-inline u8 quantize5Bit(i32 c8, i32 threshold) {
-	i32 q5 = (c8 * kDitherLevels + threshold) / 255;
-	if (q5 < 0) q5 = 0;
-	if (q5 > kDitherLevels) q5 = kDitherLevels;
-	return expand5to8(q5);
-}
-
-static std::array<u8, 256> buildDitherGuardLut() {
-	std::array<u8, 256> lut{};
-	for (i32 i = 0; i < 256; ++i) {
-		const f32 lum = static_cast<f32>(i) / 255.0f;
-		f32 t = (lum - kDitherGuardEdge0) / (kDitherGuardEdge1 - kDitherGuardEdge0);
-		t = clamp(t, 0.0f, 1.0f);
-		const f32 smooth = t * t * (3.0f - 2.0f * t);
-		lut[i] = static_cast<u8>(smooth * 255.0f + 0.5f);
-	}
-	return lut;
-}
-
-static const std::array<u8, 256> kDitherGuardLut = buildDitherGuardLut();
-
-} // namespace
 
 std::array<u8, 256> buildSrgbToLinearLut() {
 	std::array<u8, 256> lut{};
@@ -140,74 +101,6 @@ static void uploadRgba8ToSoftwareTexture(SoftwareTexture& texture, const u8* dat
 	}
 }
 
-inline i32 clampBlitByte(i32 value) {
-	if (value < 0) return 0;
-	if (value > 255) return 255;
-	return value;
-}
-
-inline void ditherBlitRgb(i32& r, i32& g, i32& b, i32 ditherRow, i32 x, i32 ditherJitter, i32 ditherIntensity) {
-	const i32 lum = (r * 77 + g * 150 + b * 29) >> 8;
-	const i32 guard = (static_cast<i32>(kDitherGuardLut[lum]) * ditherIntensity + 127) / 255;
-	const i32 threshold = (static_cast<i32>(kBayerThreshold[ditherRow | ((x + ditherJitter) & 3)]) * guard + 127) / 255;
-	r = quantize5Bit(r, threshold);
-	g = quantize5Bit(g, threshold);
-	b = quantize5Bit(b, threshold);
-}
-
-inline u32 blendBlitRgb(u32 dst, i32 r, i32 g, i32 b, i32 a) {
-	const u32 invA = 255 - static_cast<u32>(a);
-	const u32 dr = (dst >> 16) & 0xFF;
-	const u32 dg = (dst >> 8) & 0xFF;
-	const u32 db = dst & 0xFF;
-	const u32 outR = (static_cast<u32>(r) * a + dr * invA + 127) / 255;
-	const u32 outG = (static_cast<u32>(g) * a + dg * invA + 127) / 255;
-	const u32 outB = (static_cast<u32>(b) * a + db * invA + 127) / 255;
-	return 0xFF000000 | (outR << 16) | (outG << 8) | outB;
-}
-
-inline bool shadeBlitPixel(u32 srcPixel,
-							u32 dstPixel,
-							i32 tintR,
-							i32 tintG,
-							i32 tintB,
-							i32 tintA,
-							bool applyDither,
-							i32 ditherRow,
-							i32 x,
-							i32 ditherJitter,
-							i32 ditherIntensity,
-							u32& outPixel) {
-	const i32 srcA = (srcPixel >> 24) & 0xFF;
-	if (srcA == 0) return false;
-
-	i32 r = (((srcPixel >> 16) & 0xFF) * tintR + 127) / 255;
-	i32 g = (((srcPixel >> 8) & 0xFF) * tintG + 127) / 255;
-	i32 b = ((srcPixel & 0xFF) * tintB + 127) / 255;
-	i32 a = (srcA * tintA + 127) / 255;
-
-	r = clampBlitByte(r);
-	g = clampBlitByte(g);
-	b = clampBlitByte(b);
-	if (a <= 0) return false;
-	a = clampBlitByte(a);
-
-	if (applyDither) {
-		ditherBlitRgb(r, g, b, ditherRow, x, ditherJitter, ditherIntensity);
-	}
-
-	if (a >= 255) {
-		outPixel = 0xFF000000 |
-					(static_cast<u32>(r) << 16) |
-					(static_cast<u32>(g) << 8) |
-					static_cast<u32>(b);
-		return true;
-	}
-
-	outPixel = blendBlitRgb(dstPixel, r, g, b, a);
-	return true;
-}
-
 template<bool EncodeSrgb>
 static void readSoftwareTextureRegionPixels(const SoftwareTexture& texture, u8* out, i32 width, i32 height, i32 x, i32 y, const std::array<u8, 256>* lut) {
 	const size_t rowStride = static_cast<size_t>(width) * 4u;
@@ -248,7 +141,6 @@ SoftwareBackend::SoftwareBackend(u32* framebuffer, i32 width, i32 height, i32 pi
 	, m_width(width)
 	, m_height(height)
 	, m_pitch(pitch) {
-	m_depthBuffer.resize(width * height, 1.0f);
 }
 
 SoftwareBackend::~SoftwareBackend() = default;
@@ -262,14 +154,10 @@ void SoftwareBackend::registerBuiltinPasses(RenderPassLibrary& registry) {
 }
 
 void SoftwareBackend::applyFramebufferTarget(u32* fb, i32 width, i32 height, i32 pitch) {
-	const bool depthSizeChanged = m_width != width || m_height != height;
 	m_framebuffer = fb;
 	m_width = width;
 	m_height = height;
 	m_pitch = pitch;
-	if (depthSizeChanged) {
-		m_depthBuffer.resize(width * height, 1.0f);
-	}
 }
 
 void SoftwareBackend::setFramebuffer(u32* fb, i32 width, i32 height, i32 pitch) {
@@ -423,9 +311,7 @@ void SoftwareBackend::clear(const std::array<f32, 4>* color, const f32* depth) {
 		}
 	}
 
-	if (depth) {
-		std::fill(m_depthBuffer.begin(), m_depthBuffer.end(), *depth);
-	}
+	(void)depth;
 }
 
 PassEncoder SoftwareBackend::beginRenderPass(const RenderPassDesc& desc) {
@@ -589,103 +475,35 @@ void SoftwareBackend::drawRect(i32 x, i32 y, i32 w, i32 h, u32 color) {
 	drawLine(x + w - 1, y, x + w - 1, y + h - 1, color);
 }
 
-void SoftwareBackend::blitTexture(TextureHandle tex, i32 srcX, i32 srcY, i32 srcW, i32 srcH,
-									i32 dstX, i32 dstY, i32 dstW, i32 dstH, f32 depth,
-									u32 tint, bool flipH, bool flipV,
-									const DitherParams& dither, bool useDepth) {
-	auto* softTex = static_cast<SoftwareTexture*>(tex);
-	if (!softTex || softTex->data.empty()) return;
-
-	const i32 pixelsPerRow = m_pitch / sizeof(u32);
-	const bool applyDither = dither.enabled && dither.intensity != 0.0f;
-	const i32 ditherIntensity = static_cast<i32>(dither.intensity * 255.0f + 0.5f);
-	const i32 ditherJitter = dither.jitter;
-
-	// Clipping
-	i32 clipX0 = std::max(0, dstX);
-	i32 clipY0 = std::max(0, dstY);
-	i32 clipX1 = std::min(m_width, dstX + dstW);
-	i32 clipY1 = std::min(m_height, dstY + dstH);
-
-	if (clipX0 >= clipX1 || clipY0 >= clipY1) return;
-
-	const i32 stepX = (srcW << 16) / dstW;
-	const i32 stepY = (srcH << 16) / dstH;
-
-	const i32 startRelX = clipX0 - dstX;
-	const i32 startRelY = clipY0 - dstY;
-	const i32 baseX = flipH ? (dstW - 1 - startRelX) : startRelX;
-	const i32 baseY = flipV ? (dstH - 1 - startRelY) : startRelY;
-	const i32 xStep = flipH ? -stepX : stepX;
-	const i32 yStep = flipV ? -stepY : stepY;
-
-	const i32 sx_fp_start = (srcX << 16) + baseX * stepX;
-
-	const SoftwareColorBytes tintBytes{
-		static_cast<u8>((tint >> 16u) & 0xffu),
-		static_cast<u8>((tint >> 8u) & 0xffu),
-		static_cast<u8>(tint & 0xffu),
-		static_cast<u8>((tint >> 24u) & 0xffu),
-	};
-	const i32 tintR = tintBytes.r;
-	const i32 tintG = tintBytes.g;
-	const i32 tintB = tintBytes.b;
-	const i32 tintA = tintBytes.a;
-
-	const u32* srcData = softTex->data.data();
-	const i32 texWidth = softTex->width;
-
-	i32 sy_fp = (srcY << 16) + baseY * stepY;
-
-	// start repeated-sequence-acceptable -- Software blit is a per-pixel hot path; depth/no-depth loops stay direct instead of dispatching through a callback.
-	if (useDepth) {
-		for (i32 dy = clipY0; dy < clipY1; ++dy) {
-			const i32 sy = sy_fp >> 16;
-			const u32* srcRow = srcData + sy * texWidth;
-			u32* dstRow = m_framebuffer + dy * pixelsPerRow;
-			const i32 depthRow = dy * m_width;
-			const i32 ditherRow = ((dy + ditherJitter) & 3) << 2;
-
-			i32 sx_fp = sx_fp_start;
-			for (i32 dx = clipX0; dx < clipX1; ++dx) {
-				const i32 depthIndex = depthRow + dx;
-				if (depth > m_depthBuffer[depthIndex]) {
-					sx_fp += xStep;
-					continue;
-				}
-
-				const i32 sx = sx_fp >> 16;
-				sx_fp += xStep;
-
-				u32 outPixel = 0;
-				if (!shadeBlitPixel(srcRow[sx], dstRow[dx], tintR, tintG, tintB, tintA, applyDither, ditherRow, dx, ditherJitter, ditherIntensity, outPixel)) continue;
-				dstRow[dx] = outPixel;
-
-				m_depthBuffer[depthIndex] = depth;
+void SoftwareBackend::presentTexture(TextureHandle texture) {
+	const auto& source = *static_cast<SoftwareTexture*>(texture);
+	const u32* const sourcePixels = source.data.data();
+	const i32 targetPixelsPerRow = m_pitch / static_cast<i32>(sizeof(u32));
+	if (source.width == m_width && source.height == m_height) {
+		for (i32 y = 0; y < m_height; y += 1) {
+			const u32* sourceRow = sourcePixels + static_cast<size_t>(y) * static_cast<size_t>(source.width);
+			u32* targetRow = m_framebuffer + static_cast<size_t>(y) * static_cast<size_t>(targetPixelsPerRow);
+			for (i32 x = 0; x < m_width; x += 1) {
+				targetRow[x] = sourceRow[x] | 0xff000000u;
 			}
-			sy_fp += yStep;
 		}
 		return;
 	}
 
-	for (i32 dy = clipY0; dy < clipY1; ++dy) {
-		const i32 sy = sy_fp >> 16;
-		const u32* srcRow = srcData + sy * texWidth;
-		u32* dstRow = m_framebuffer + dy * pixelsPerRow;
-		const i32 ditherRow = ((dy + ditherJitter) & 3) << 2;
-
-		i32 sx_fp = sx_fp_start;
-		for (i32 dx = clipX0; dx < clipX1; ++dx) {
-			const i32 sx = sx_fp >> 16;
-			sx_fp += xStep;
-
-			u32 outPixel = 0;
-			if (!shadeBlitPixel(srcRow[sx], dstRow[dx], tintR, tintG, tintB, tintA, applyDither, ditherRow, dx, ditherJitter, ditherIntensity, outPixel)) continue;
-			dstRow[dx] = outPixel;
+	const u32 sourceStepX = (static_cast<u32>(source.width) << 16u) / static_cast<u32>(m_width);
+	const u32 sourceStepY = (static_cast<u32>(source.height) << 16u) / static_cast<u32>(m_height);
+	u32 sourceY = 0u;
+	for (i32 y = 0; y < m_height; y += 1) {
+		const u32* sourceRow = sourcePixels
+			+ static_cast<size_t>(sourceY >> 16u) * static_cast<size_t>(source.width);
+		u32* targetRow = m_framebuffer + static_cast<size_t>(y) * static_cast<size_t>(targetPixelsPerRow);
+		u32 sourceX = 0u;
+		for (i32 x = 0; x < m_width; x += 1) {
+			targetRow[x] = sourceRow[sourceX >> 16u] | 0xff000000u;
+			sourceX += sourceStepX;
 		}
-		sy_fp += yStep;
+		sourceY += sourceStepY;
 	}
-	// end repeated-sequence-acceptable
 }
 
 } // namespace bmsx

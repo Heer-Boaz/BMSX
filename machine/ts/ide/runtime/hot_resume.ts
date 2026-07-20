@@ -1,145 +1,114 @@
-import { convertToError } from '../../lua/value';
-import { clearOverlayFrame } from '../../render/host_overlay/overlay_queue';
-import { compileLuaChunkToProgram, encodeCompiledProgramImage } from '../../lua/compiler';
-import { inflateExecutableProgramImage } from '../../machine/program/linker';
-import { callClosureIntoSuspended } from './closure_executor';
-import type { Closure } from '../../machine/cpu/cpu';
-import type { RuntimeResumeSnapshot } from './resume_snapshot';
-import { restoreRuntimeLuaSnapshot } from './resume_snapshot';
-import { applyRuntimeMachineState } from '../../machine/runtime/machine_state';
 import { machineManager } from '../../core/machine_manager';
+import { convertToError } from '../../lua/value';
+import { EMPTY_CALL_ARGS, type Closure } from '../../machine/cpu/cpu';
+import type { ProgramImage } from '../../machine/program/loader';
+import type { Runtime } from '../../machine/runtime/runtime';
+import { clearOverlayFrame } from '../../render/host_overlay/overlay_queue';
+import { linkProgramRevision, type LinkedProgramRevision } from '../../rompack/tooling/program_linker';
+import { callClosureIntoSuspended } from './closure_executor';
 import { clearRuntimeDebuggerPause } from './debug_pause';
 import { clearFaultSnapshot, resetHandledLuaErrors } from './fault_state';
-import { toLuaModulePath } from '../../machine/program/loader';
-import { resolveRuntimeLuaSource } from './sources';
 import {
-	buildModuleChunks,
-	refreshLuaHandlersForChunk,
-	resourceSourceForChunk,
+	buildProgramMedia,
+	installProgramMedia,
+	loadProgramImagesForSource,
+	type RebuiltProgramMedia,
 } from './lua_pipeline';
-import type { Runtime } from '../../machine/runtime/runtime';
 
-/**
- * Hot-resume orchestration.
- *
- * Owns the IDE-side flow that swaps a running program's code underneath the live
- * world: the game keeps its state while closures are repatched in place (true
- * edit-and-continue). The machine primitives this builds on (compilation,
- * module/proto installation) stay in `lua_pipeline`; keeping the orchestration
- * here matches the lean C++ runtime split, where edit-and-continue is a host/IDE
- * concern, not a machine concern.
- *
- * A cold reboot is a separate, unrelated path (machineManager.rebootToBootRom).
- */
-
-export async function resumeFromSnapshot(runtime: Runtime, state: RuntimeResumeSnapshot, preserveSystemModules?: boolean): Promise<void> {
-	clearRuntimeDebuggerPause(runtime);
-	if (!state) {
-		runtime.luaRuntimeFailed = false;
-		throw new Error('cannot resume from invalid state snapshot.');
-	}
-	const snapshot: RuntimeResumeSnapshot = { ...state, luaRuntimeFailed: false };
-	machineManager.ideState.nativeBridge.luaInterpreter.clearLastFaultEnvironment();
-	clearFaultSnapshot();
-
-	resetHandledLuaErrors();
-	runtime.luaRuntimeFailed = false;
-	clearOverlayFrame();
-	applyRuntimeMachineState(runtime, snapshot.machineState);
-	machineManager.sndmaster.resetPlaybackState();
-	resumeLuaProgramState(runtime, snapshot, preserveSystemModules);
-}
-
-export function resumeLuaProgramState(runtime: Runtime, snapshot: RuntimeResumeSnapshot, preserveSystemModules?: boolean): void {
-	const binding = snapshot.luaPath;
-	try {
-		const source = resourceSourceForChunk(binding);
-		machineManager.sourceState.currentPath = binding;
-		hotResumeProgramEntry(runtime, {
-			path: binding,
-			source,
-			preserveSystemModules: preserveSystemModules ?? runtime.cartProgramStarted,
-		});
-		restoreRuntimeLuaSnapshot(snapshot);
-		refreshLuaModulesOnResume(binding);
-		machineManager.ideState.editor.clearNativeMemberCompletionCache();
-		runHotResumeInit(runtime);
-	}
-	catch (error) {
-		throw convertToError(error);
+function assertLiveStorageLayoutUnchanged(previous: ProgramImage, rebuilt: ProgramImage): void {
+	if (rebuilt.staticLayoutToken.lo !== previous.staticLayoutToken.lo
+		|| rebuilt.staticLayoutToken.hi !== previous.staticLayoutToken.hi) {
+		throw new Error('Hot resume cannot change the static storage layout.');
 	}
 }
 
-export function hotResumeProgramEntry(runtime: Runtime, params: { path: string; source: string; preserveSystemModules?: boolean }): void {
-	const preserveRuntimeFailure = runtime.luaRuntimeFailed || (machineManager.ideState.debugger.pauseCoordinator.hasSuspension() && machineManager.ideState.debugger.pauseCoordinator.getPendingException() !== null);
-	const { path: binding, source } = params;
-	const baseMetadata = runtime.programMetadata;
-	if (!baseMetadata) {
-		throw new Error('hot reload requires program symbols.');
-	}
+/** Rebuilds changed physical ROM tails and links their protos into the live Lua state. */
+export function hotResume(
+	runtime: Runtime,
+	rebuildSystem: boolean,
+	rebuildCart: boolean,
+): void {
 	const interpreter = machineManager.ideState.nativeBridge.luaInterpreter;
-	interpreter.clearLastFaultEnvironment();
-	const chunk = interpreter.compileChunk(source, binding);
-	const { modules } = buildModuleChunks(
-		toLuaModulePath(binding),
-		params.preserveSystemModules ? [machineManager.sourceState.activeLuaSources] : undefined,
-	);
-	const baseProgram = runtime.machine.cpu.program;
-	if (!baseProgram) {
-		throw new Error('hot reload requires active program.');
-	}
-	const sourceMatch = resolveRuntimeLuaSource(machineManager.sourceState, toLuaModulePath(binding));
-	if (sourceMatch === null) {
-		throw new Error(`hot reload source '${binding}' is not registered.`);
-	}
-	const compiled = compileLuaChunkToProgram(chunk, modules, {
-		baseProgram,
-		baseMetadata,
-		optLevel: machineManager.sourceState.realtimeCompileOptLevel,
-		entrySource: source,
-		programDomain: sourceMatch.registry === machineManager.sourceState.systemLuaSources ? 'system' : 'cart',
-	});
-	const programImage = encodeCompiledProgramImage(compiled);
-	const program = inflateExecutableProgramImage(programImage, runtime.programDataBaseAddress, runtime.programBssBaseAddress);
-	if (!params.preserveSystemModules) {
-		runtime.moduleCache.clear();
-	}
-	// True hot-resume: keep every live module object. Closures reference their
-	// proto by index, and compiling against baseProgram replaces those protos in
-	// place, so already-loaded modules run the new code without being re-required.
-	// Re-requiring would build a redundant second module generation (the heap
-	// doubling that pushed resume over the RAM budget) and discard live state.
-	runtime.machine.cpu.setProgram(
-		program,
-		programImage.link.symbols,
-		compiled.metadata,
-		runtime.systemVectors.irqProtoIndex,
-		runtime.cartVectors.irqProtoIndex,
-		runtime.systemVectors.exceptionProtoIndex,
-	);
-	runtime.luaRuntimeFailed = preserveRuntimeFailure;
-	machineManager.sourceState.currentPath = binding;
-	runtime.programRuntimeSymbols = programImage.link.symbols;
-	runtime.programMetadata = compiled.metadata;
-}
-
-function runHotResumeInit(runtime: Runtime): void {
-	const initClosure = runtime.machine.cpu.getGlobalByKey(runtime.internString('init')) as Closure;
-	const results = runtime.luaScratch.values.acquire();
 	try {
-		callClosureIntoSuspended(runtime, initClosure, [], results);
-	} finally {
-		runtime.luaScratch.values.release(results);
-	}
-}
+		let rebuilt: RebuiltProgramMedia | null = null;
+		let revision: LinkedProgramRevision | null = null;
+		let systemVectors = runtime.systemVectors;
+		let cartVectors = runtime.cartVectors;
+		if (rebuildSystem || rebuildCart) {
+			rebuilt = buildProgramMedia(
+				interpreter,
+				rebuildSystem,
+				rebuildCart,
+			);
+			if (rebuilt.system !== null) {
+				assertLiveStorageLayoutUnchanged(loadProgramImagesForSource('system').program, rebuilt.system.image);
+			}
+			if (rebuilt.cart !== null) {
+				assertLiveStorageLayoutUnchanged(loadProgramImagesForSource('cart').program, rebuilt.cart.image);
+			}
 
-function refreshLuaModulesOnResume(resumeModuleId: string): void {
-	const records = machineManager.sourceState.activeLuaSources.records;
-	for (let index = 0; index < records.length; index += 1) {
-		const moduleId = records[index].source_path;
-		if (moduleId === resumeModuleId) {
-			continue;
+			revision = {
+				program: runtime.machine.cpu.program,
+				metadata: runtime.programMetadata!,
+				vectors: runtime.cartProgramStarted ? runtime.cartVectors : runtime.systemVectors,
+			};
+			if (rebuilt.system !== null) {
+				revision = linkProgramRevision(
+					revision.program,
+					revision.metadata,
+					rebuilt.system.object,
+					rebuilt.system.metadata,
+					rebuilt.system.image,
+					rebuilt.system.programAddress,
+				);
+				systemVectors = revision.vectors;
+			}
+			if (rebuilt.cart !== null) {
+				revision = linkProgramRevision(
+					revision.program,
+					revision.metadata,
+					rebuilt.cart.object,
+					rebuilt.cart.metadata,
+					rebuilt.cart.image,
+					rebuilt.cart.programAddress,
+				);
+				cartVectors = revision.vectors;
+			}
 		}
-		refreshLuaHandlersForChunk(moduleId);
+
+		clearRuntimeDebuggerPause(runtime);
+		interpreter.clearLastFaultEnvironment();
+		clearFaultSnapshot();
+		resetHandledLuaErrors();
+		runtime.luaRuntimeFailed = false;
+		clearOverlayFrame();
+		machineManager.sndmaster.resetPlaybackState();
+
+		if (rebuilt !== null) {
+			const linkedRevision = revision!;
+			installProgramMedia(runtime, rebuilt);
+			runtime.systemVectors = systemVectors;
+			runtime.cartVectors = cartVectors;
+			runtime.machine.cpu.setProgram(
+				linkedRevision.program,
+				linkedRevision.metadata,
+				linkedRevision.metadata,
+				systemVectors.irqProtoIndex,
+				cartVectors.irqProtoIndex,
+				systemVectors.exceptionProtoIndex,
+			);
+			runtime.programRuntimeSymbols = linkedRevision.metadata;
+			runtime.programMetadata = linkedRevision.metadata;
+			machineManager.ideState.editor.clearNativeMemberCompletionCache();
+		}
+		const initClosure = runtime.machine.cpu.getGlobalByKey(runtime.internString('init')) as Closure;
+		const results = runtime.luaScratch.values.acquire();
+		try {
+			callClosureIntoSuspended(runtime, initClosure, EMPTY_CALL_ARGS, results);
+		} finally {
+			runtime.luaScratch.values.release(results);
+		}
+	} catch (error) {
+		throw convertToError(error);
 	}
 }

@@ -23,7 +23,8 @@ Machine::Machine(Memory& memoryRef, InputControllerInputSource& input)
 	dmaController.setTiming(
 		PSX_MACHINE_SPEC.dmaRamCyclesPerWord,
 		PSX_MACHINE_SPEC.dmaRamBurstSetupCycles,
-		PSX_MACHINE_SPEC.dmaRomCyclesPerWord,
+		PSX_MACHINE_SPEC.dmaSystemRomCyclesPerWord,
+		PSX_MACHINE_SPEC.dmaCartRomCyclesPerWord,
 		scheduler.currentNowCycles()
 	);
 }

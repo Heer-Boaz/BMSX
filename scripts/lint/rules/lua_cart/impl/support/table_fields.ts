@@ -7,7 +7,6 @@ import { lintInlineStaticLookupTableExpression } from '../../inline_static_looku
 import { lintTickFlagPollingPattern } from '../../tick_flag_polling_pattern';
 import { lintTickInputCheckPattern } from '../../tick_input_check_pattern';
 import { isPrimitiveLiteralExpression } from './conditions';
-import { pushIssue } from './lint_context';
 
 export function getTableFieldKey(field: TableField): string {
 	if (field.kind === TableFieldKind.IdentifierKey) {

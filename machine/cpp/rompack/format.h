@@ -9,6 +9,7 @@
 #include "machine/model_registry.h"
 #include <array>
 #include <cstddef>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -65,17 +66,15 @@ struct MachineManifest {
  * ============================================================================ */
 
 struct CartManifest {
-	std::string name;
-	std::string title;
-	std::string shortName;
-	std::string romName;
-	std::string version;
-	std::string author;
-	std::string description;
+	std::optional<std::string> title;
+	std::optional<std::string> shortName;
+	std::optional<std::string> romName;
+	MachineManifest machine;
+	std::string entryPath;
 };
 
-std::vector<u8> encodeCartManifest(const CartManifest& cart, const MachineManifest& machine);
-std::vector<u8> encodeProgramCartRom(const CartManifest& cart, const MachineManifest& machine, const ProgramImage& program);
+std::vector<u8> encodeCartManifest(const CartManifest& cart);
+std::vector<u8> encodeProgramCartRom(const CartManifest& cart, const ProgramImage& program);
 
 } // namespace bmsx
 

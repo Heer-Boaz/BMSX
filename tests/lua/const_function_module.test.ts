@@ -10,10 +10,9 @@ import { CPU, RunResult, type ProgramMetadata } from '../../machine/ts/machine/c
 import { disassembleProto } from '../../machine/ts/machine/cpu/disassembler';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
-import { appendLuaChunkToProgram, compileLuaChunkToProgram, encodeCompiledProgramImage, type CompiledProgram } from '../../machine/ts/lua/compiler';
-import type { ProgramImage } from '../../machine/ts/machine/program/loader';
-import { inflateExecutableProgramImage, linkProgramImages, resolveRuntimeProgramRelocations } from '../../machine/ts/machine/program/linker';
+import { compileLuaChunkToProgram, encodeCompiledProgramObject, type CompiledProgram } from '../../machine/ts/lua/compiler';
 import type { OptimizationLevel } from '../../machine/ts/lua/compiler/optimizer';
+import { finalizeTestProgramPair, runTestSystemProgram } from '../helpers/program_image';
 
 const BOOL01_PATH = 'bios/util/bool01';
 const DIV_TOWARD_ZERO_PATH = 'bios/util/div_toward_zero';
@@ -46,20 +45,21 @@ function compileWithModule(entrySource: string, modulePath: string, moduleSource
 	);
 }
 
-function runColdImage(image: ProgramImage, metadata: ProgramMetadata | null) {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
-	const cpu = new CPU(memory, new IrqController(memory));
-	cpu.setProgram(inflateExecutableProgramImage(image), image.link.symbols, metadata, 0, 0, 0);
-	cpu.start(image.vectors.sectionInitProtoIndex);
-	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
-	cpu.start(image.vectors.resetProtoIndex);
-	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+function runColdCompiled(compiled: CompiledProgram) {
+	const cpu = runTestSystemProgram(compiled, 100000);
 	return Array.from(cpu.lastReturnValues);
 }
 
-function runColdCompiled(compiled: CompiledProgram) {
-	const image = encodeCompiledProgramImage(compiled);
-	return runColdImage(image, compiled.metadata);
+function runColdPair(systemCompiled: CompiledProgram, cartCompiled: CompiledProgram) {
+	const finalized = finalizeTestProgramPair(systemCompiled, cartCompiled);
+	const memory = new Memory({ systemRom: finalized.systemRomBytes, cartRom: finalized.cartRomBytes });
+	const cpu = new CPU(memory, new IrqController(memory));
+	cpu.setProgram(finalized.program, finalized.cartImage.symbols, finalized.cartMetadata, 0, 0, 0);
+	cpu.start(finalized.cartImage.vectors.sectionInitProtoIndex);
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	cpu.start(finalized.cartImage.vectors.resetProtoIndex);
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	return Array.from(cpu.lastReturnValues);
 }
 
 function disassembleConstExport(compiled: CompiledProgram, slotName: string): string {
@@ -169,7 +169,7 @@ local sn45<const>, cn45<const> = require("${SINCOS_TURN32_PATH}")(-536870912)
 return s0, c0, s90, c90, s180, c180, s270, c270, s360, c360, s45, c45, sn45, cn45
 `;
 	const compiled = compileWithModule(entrySource, SINCOS_TURN32_PATH, moduleSource);
-	const image = encodeCompiledProgramImage(compiled);
+	const image = encodeCompiledProgramObject(compiled);
 	const slotName = 'bios__util__sincos_turn32';
 	assert.equal(compiled.moduleProtoMap.has(SINCOS_TURN32_PATH), false);
 	assert.equal(compiled.metadata.exportProtoIdBySlot[slotName]?.includes('/static:'), true);
@@ -187,7 +187,7 @@ return s0, c0, s90, c90, s180, c180, s270, c270, s360, c360, s45, c45, sn45, cn4
 	}
 	const disasm = disassembleConstExport(compiled, slotName);
 	assert.doesNotMatch(disasm, STATIC_FORBIDDEN_OPCODE_PATTERN);
-	assert.deepEqual(runColdImage(image, compiled.metadata), [
+	assert.deepEqual(runColdCompiled(compiled), [
 		0, 65536,
 		65536, 0,
 		0, -65536,
@@ -269,13 +269,7 @@ return rect_overlaps(2, 2, 4, 4, 5, 5, 2, 2)
 		[],
 		{ entrySource: cartSource, externalModules: [module] },
 	);
-	const linked = linkProgramImages(
-		encodeCompiledProgramImage(systemCompiled),
-		systemCompiled.metadata,
-		encodeCompiledProgramImage(cartCompiled),
-		cartCompiled.metadata,
-	);
-	assert.deepEqual(runColdImage(linked.programImage, linked.metadata), [true]);
+	assert.deepEqual(runColdPair(systemCompiled, cartCompiled), [true]);
 });
 
 test('installed const-function modules stay call targets without Lua value materialization', () => {
@@ -284,29 +278,29 @@ test('installed const-function modules stay call targets without Lua value mater
 	const systemCompiled = compileLuaChunkToProgram(
 		parseSource('return nil', 'system.lua'),
 		[module],
-		{ entrySource: 'return nil' },
+		{ entrySource: 'return nil', programDomain: 'system' },
 	);
-	const systemImage = encodeCompiledProgramImage(systemCompiled);
-	const baseProgram = inflateExecutableProgramImage(systemImage);
 	const source = `
 local clamp<const> = require("${CLAMP_PATH}")
 return clamp(12, 0, 10)
 `;
-	const appended = appendLuaChunkToProgram(baseProgram, systemCompiled.metadata, parseSource(source, 'cart.lua'), { entrySource: source });
-	resolveRuntimeProgramRelocations(appended.program, appended.metadata, appended.constRelocs);
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
-	const cpu = new CPU(memory, new IrqController(memory));
-	cpu.setProgram(appended.program, appended.metadata, appended.metadata, 0, 0, 0);
-	cpu.start(appended.entryProtoIndex);
-	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
-	assert.deepEqual(Array.from(cpu.lastReturnValues), [10]);
+	const cartCompiled = compileLuaChunkToProgram(
+		parseSource(source, 'cart.lua'),
+		[],
+		{ entrySource: source, externalModules: [module], programDomain: 'cart' },
+	);
+	assert.deepEqual(runColdPair(systemCompiled, cartCompiled), [10]);
 	const dynamicSource = `
 local clamp<const> = require("${CLAMP_PATH}")
 local dynamic = clamp
 return dynamic(12, 0, 10)
 `;
 	assert.throws(
-		() => appendLuaChunkToProgram(baseProgram, systemCompiled.metadata, parseSource(dynamicSource, 'cart.lua'), { entrySource: dynamicSource }),
+		() => compileLuaChunkToProgram(
+			parseSource(dynamicSource, 'cart.lua'),
+			[],
+			{ entrySource: dynamicSource, externalModules: [module], programDomain: 'cart' },
+		),
 		/call target, not a Lua runtime value/,
 	);
 });
@@ -326,23 +320,25 @@ return { math = { clamp = clamp } }
 	const systemCompiled = compileLuaChunkToProgram(
 		parseSource('return nil', 'system.lua'),
 		[module],
-		{ entrySource: 'return nil' },
+		{ entrySource: 'return nil', programDomain: 'system' },
 	);
-	const baseProgram = inflateExecutableProgramImage(encodeCompiledProgramImage(systemCompiled));
 	const callSource = `
 local api<const> = require("${modulePath}")
 return api.math.clamp(12, 0, 10)
 `;
-	const appended = appendLuaChunkToProgram(baseProgram, systemCompiled.metadata, parseSource(callSource, 'cart.lua'), { entrySource: callSource });
-	resolveRuntimeProgramRelocations(appended.program, appended.metadata, appended.constRelocs);
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
-	const cpu = new CPU(memory, new IrqController(memory));
-	cpu.setProgram(appended.program, appended.metadata, appended.metadata, 0, 0, 0);
-	cpu.start(appended.entryProtoIndex);
-	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
-	assert.deepEqual(Array.from(cpu.lastReturnValues), [10]);
+	const cartCompiled = compileLuaChunkToProgram(
+		parseSource(callSource, 'cart.lua'),
+		[],
+		{ entrySource: callSource, externalModules: [module], programDomain: 'cart' },
+	);
+	assert.deepEqual(runColdPair(systemCompiled, cartCompiled), [10]);
+	const rootSource = `return require("${modulePath}")`;
 	assert.throws(
-		() => appendLuaChunkToProgram(baseProgram, systemCompiled.metadata, parseSource(`return require("${modulePath}")`, 'cart.lua'), { entrySource: `return require("${modulePath}")` }),
+		() => compileLuaChunkToProgram(
+			parseSource(rootSource, 'cart.lua'),
+			[],
+			{ entrySource: rootSource, externalModules: [module], programDomain: 'cart' },
+		),
 		/Module 'bios\/util\/nested_clamp' root is compile-time only/,
 	);
 	const aliasSource = `
@@ -351,7 +347,11 @@ local dynamic = api
 return dynamic
 `;
 	assert.throws(
-		() => appendLuaChunkToProgram(baseProgram, systemCompiled.metadata, parseSource(aliasSource, 'cart.lua'), { entrySource: aliasSource }),
+		() => compileLuaChunkToProgram(
+			parseSource(aliasSource, 'cart.lua'),
+			[],
+			{ entrySource: aliasSource, externalModules: [module], programDomain: 'cart' },
+		),
 		/Module 'bios\/util\/nested_clamp' root is compile-time only/,
 	);
 });

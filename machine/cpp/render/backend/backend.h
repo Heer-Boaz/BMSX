@@ -38,8 +38,8 @@
  *   GPUBackend vertex-layout API; attribute packing and pointer setup belong to
  *   concrete pass code.
  * - C++-only public symbols here are C++/libretro backend storage and
- *   ownership: BackendType, FrameStats, SoftwareTexture, DitherParams,
- *   SoftwareBackend, readyForTextureUpload(), and native render-target
+ *   ownership: BackendType, FrameStats, SoftwareTexture, SoftwareBackend,
+ *   readyForTextureUpload(), and native render-target
  *   activation for the C++ render graph.
  * - C++ keeps synchronous readTextureRegion on GPUBackend because native
  *   software/GLES2 readback is synchronous; TS keeps synchronous readback on
@@ -112,12 +112,6 @@ struct SoftwareTexture {
 	std::vector<u32> data;  // ARGB32 pixels
 	i32 width = 0;
 	i32 height = 0;
-};
-
-struct DitherParams {
-	bool enabled = false;
-	f32 intensity = 1.0f;
-	i32 jitter = 0;
 };
 
 /* ============================================================================
@@ -270,10 +264,7 @@ class SoftwareBackend : public GPUBackend {
 	void drawLine(i32 x0, i32 y0, i32 x1, i32 y1, u32 color);
 	void fillRect(i32 x, i32 y, i32 w, i32 h, u32 color);
 	void drawRect(i32 x, i32 y, i32 w, i32 h, u32 color);
-	void blitTexture(TextureHandle tex, i32 srcX, i32 srcY, i32 srcW, i32 srcH,
-						i32 dstX, i32 dstY, i32 dstW, i32 dstH, f32 depth,
-						u32 tint, bool flipH, bool flipV,
-						const DitherParams& dither, bool useDepth);
+	void presentTexture(TextureHandle texture);
 
 	// Framebuffer access
 	u32* framebuffer() { return m_framebuffer; }
@@ -299,13 +290,10 @@ class SoftwareBackend : public GPUBackend {
 	// Texture storage
 	std::vector<std::unique_ptr<SoftwareTexture>> m_textures;
 
-	// Depth buffer (optional)
-	std::vector<f32> m_depthBuffer;
-
-		// Helpers
-		void applyFramebufferTarget(u32* fb, i32 width, i32 height, i32 pitch);
-		void blendPixel(i32 x, i32 y, u32 color);
-	};
+	// Helpers
+	void applyFramebufferTarget(u32* fb, i32 width, i32 height, i32 pitch);
+	void blendPixel(i32 x, i32 y, u32 color);
+};
 
 } // namespace bmsx
 

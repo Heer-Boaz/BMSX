@@ -576,16 +576,7 @@ struct ProgramModuleExport {
 };
 
 struct Program {
-	std::vector<uint8_t> programRom;
-	size_t programRomTextByteLength = 0;
-
-	std::span<uint8_t> code() {
-		return std::span<uint8_t>(programRom.data(), programRomTextByteLength);
-	}
-
-	std::span<const uint8_t> code() const {
-		return std::span<const uint8_t>(programRom.data(), programRomTextByteLength);
-	}
+	std::vector<uint8_t> codeBytes;
 	std::vector<Value> constPool;
 	StringPool stringPool;
 	StringPool* constPoolStringPool = nullptr;
@@ -1071,7 +1062,6 @@ private:
 	void finishProtectedContinuation(size_t continuationIndex, int resultCount);
 	bool handleProtectedCallError(Value errorValue);
 	void runHousekeeping();
-	void tickHotLoopHousekeeping();
 	void initializeGlobalSlots(const ProgramRuntimeSymbols& runtimeSymbols, const std::unordered_map<StringId, Value>& previousSystemGlobals);
 	void materializeStaticClosures();
 	CallFrame* pushFrame(CallFrame& caller, Closure* closure, int argBase, int argCount,
@@ -1115,7 +1105,10 @@ private:
 
 	void decodeProgram();
 	DecodedInstruction& decodedSlotForWrite(size_t wordIndex);
-	const DecodedInstruction& decodedAtWordIndex(int wordIndex) const;
+	const DecodedInstruction& decodedAtWordIndex(int wordIndex) const {
+		return m_decodedPages[static_cast<size_t>(wordIndex) >> DECODED_PAGE_SHIFT]
+			.words[static_cast<size_t>(wordIndex) & DECODED_PAGE_MASK];
+	}
 	void skipNextInstruction(CallFrame& frame);
 	void clearHaltAfterAcceptedInterrupt();
 	void enterAsynchronousException(int protoIndex, u32 causeWord);
@@ -1169,7 +1162,6 @@ private:
 	static constexpr int MAX_POOLED_FRAMES = 32;
 	std::vector<Value> m_stack;
 	int m_stackTop = 0;
-	static constexpr int HOT_LOOP_HOUSEKEEPING_STRIDE = 16;
 	static constexpr size_t DECODED_PAGE_SHIFT = 8;
 	static constexpr size_t DECODED_PAGE_WORDS = 1u << DECODED_PAGE_SHIFT;
 	static constexpr size_t DECODED_PAGE_MASK = DECODED_PAGE_WORDS - 1u;
@@ -1189,7 +1181,6 @@ private:
 	std::vector<Value> m_globalValues;
 	std::unordered_map<StringId, size_t> m_globalSlotByKey;
 	Table* m_stringIndexTable;
-	int m_hotLoopHousekeepingCountdown = HOT_LOOP_HOUSEKEEPING_STRIDE;
 };
 
 std::string valueToString(const Value& v, const StringPool& stringPool);

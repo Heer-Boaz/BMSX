@@ -8,10 +8,10 @@ import { CPU, RunResult, type Value } from '../../machine/ts/machine/cpu/cpu';
 import { disassembleProgram } from '../../machine/ts/machine/cpu/disassembler';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
-import { PROGRAM_STATIC_RAM_BASE, PROGRAM_ROM_BASE } from '../../machine/ts/machine/memory/map';
-import { compileLuaChunkToProgram, encodeCompiledProgramImage, type CompiledProgram } from '../../machine/ts/lua/compiler';
-import { inflateExecutableProgramImage, linkProgramImages } from '../../machine/ts/machine/program/linker';
+import { CART_ROM_BASE, PROGRAM_STATIC_RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/machine/memory/map';
+import { compileLuaChunkToProgram, encodeCompiledProgramObject, type CompiledProgram } from '../../machine/ts/lua/compiler';
 import { readLE32 } from '../../machine/ts/common/endian';
+import { finalizeTestProgramPair, finalizeTestSystemProgram } from '../helpers/program_image';
 
 function parseSource(source: string, path: string) {
 	const lexer = new LuaLexer(source, path);
@@ -45,9 +45,11 @@ function disassembleProgramWithoutIrqVector(compiled: CompiledProgram): string {
 }
 
 function runColdCompiled(compiled: CompiledProgram, memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) })): { memory: Memory; values: Value[] } {
-	const image = encodeCompiledProgramImage(compiled);
+	const finalized = finalizeTestSystemProgram(compiled);
+	const image = finalized.image;
+	memory.systemRom = finalized.romBytes;
 	const cpu = new CPU(memory, new IrqController(memory));
-	cpu.setProgram(inflateExecutableProgramImage(image), image.link.symbols, compiled.metadata, 0, 0, 0);
+	cpu.setProgram(finalized.program, image.symbols, finalized.metadata, 0, 0, 0);
 	cpu.start(image.vectors.sectionInitProtoIndex);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	cpu.start(image.vectors.resetProtoIndex);
@@ -65,7 +67,7 @@ bss counter: word
 return *counter, &counter
 `;
 	const compiled = compileSource(source);
-	const image = encodeCompiledProgramImage(compiled);
+	const image = encodeCompiledProgramObject(compiled);
 	assert.equal(image.sections.bss.byteCount, 4);
 	assert.deepEqual(image.sections.bss.symbols, [{
 		name: 'module:section_bss.lua/bss:counter',
@@ -109,7 +111,7 @@ local counter<const>: *word = state.counter
 return *counter, state.counter
 `;
 	const compiled = compileWithConstModule(entrySource, 'state', moduleSource);
-	const image = encodeCompiledProgramImage(compiled);
+	const image = encodeCompiledProgramObject(compiled);
 	assert.equal(compiled.moduleProtoMap.has('state'), false);
 	assert.equal(compiled.staticModulePaths.includes('state'), false);
 	assert.deepEqual(image.sections.bss.symbols, [{
@@ -145,7 +147,7 @@ local counter<const>: *word = state.counter
 return state.read()
 `;
 	const compiled = compileWithConstModule(entrySource, 'state', moduleSource);
-	const image = encodeCompiledProgramImage(compiled);
+	const image = encodeCompiledProgramObject(compiled);
 	assert.equal(compiled.moduleProtoMap.has('state'), false);
 	assert.equal(compiled.staticModulePaths.includes('state'), false);
 	assert.match(compiled.metadata.exportProtoIdBySlot.state__read, /\/static:/);
@@ -229,7 +231,7 @@ local counter<const>: *word = state.counter
 return state.read_next()
 `;
 	const compiled = compileWithConstModule(entrySource, 'state', moduleSource);
-	const image = encodeCompiledProgramImage(compiled);
+	const image = encodeCompiledProgramObject(compiled);
 	assert.equal(image.link.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'state__increment'), true);
 	assert.deepEqual(runColdCompiled(compiled).values, [41]);
 });
@@ -369,19 +371,17 @@ return { count = count }
 	);
 });
 
-test('external const modules cannot export function call targets', () => {
+test('external const-module function exports remain pack-time link targets', () => {
 	const moduleSource = 'local function read() return 1 end\nreturn { read = read }';
-	assert.throws(
-		() => compileLuaChunkToProgram(
-			parseSource('return require("state").read()', 'entry.lua'),
-			[],
-			{
-				entrySource: 'return require("state").read()',
-				externalModules: [constModule('state', moduleSource)],
-			},
-		),
-		/Const module 'state' exports function call targets but is not compiled as a source module/,
+	const compiled = compileLuaChunkToProgram(
+		parseSource('return require("state").read()', 'entry.lua'),
+		[],
+		{
+			entrySource: 'return require("state").read()',
+			externalModules: [constModule('state', moduleSource)],
+		},
 	);
+	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'state__read'), true);
 });
 
 test('multiple const modules reserve distinct .bss storage symbols in one program', () => {
@@ -402,7 +402,7 @@ return *ap, *bp, a.counter, b.counter
 		],
 		{ entrySource },
 	);
-	const image = encodeCompiledProgramImage(compiled);
+	const image = encodeCompiledProgramObject(compiled);
 	assert.deepEqual(image.sections.bss.symbols, [
 		{ name: 'module:state_a/bss:counter', offset: 0, byteCount: 4, alignment: 4 },
 		{ name: 'module:state_b/bss:counter', offset: 4, byteCount: 4, alignment: 4 },
@@ -416,7 +416,7 @@ test('linked system and cart const-module .bss symbols resolve against their own
 	const systemCompiled = compileLuaChunkToProgram(
 		parseSource(systemSource, 'system.lua'),
 		[constModule('sys_state', 'bss counter: word\nreturn { counter = counter }')],
-		{ entrySource: systemSource },
+		{ entrySource: systemSource, programDomain: 'system' },
 	);
 	const cartSource = 'local s<const> = require("cart_state")\nreturn s.counter';
 	const cartCompiled = compileLuaChunkToProgram(
@@ -424,22 +424,19 @@ test('linked system and cart const-module .bss symbols resolve against their own
 		[constModule('cart_state', 'bss counter: word\nreturn { counter = counter }')],
 		{ entrySource: cartSource },
 	);
-	const linked = linkProgramImages(
-		encodeCompiledProgramImage(systemCompiled),
-		systemCompiled.metadata,
-		encodeCompiledProgramImage(cartCompiled),
-		cartCompiled.metadata,
-	);
-	assert.equal(linked.systemBssBaseAddress, PROGRAM_STATIC_RAM_BASE);
-	assert.equal(linked.cartBssBaseAddress, PROGRAM_STATIC_RAM_BASE + 4);
-	assert.equal(linked.programImage.sections.bss.byteCount, 8);
-	assert.deepEqual(linked.programImage.sections.bss.symbols, [
+	const finalized = finalizeTestProgramPair(systemCompiled, cartCompiled);
+	assert.equal(finalized.systemImage.placement.bssBaseAddress, PROGRAM_STATIC_RAM_BASE);
+	assert.equal(finalized.cartImage.placement.bssBaseAddress, PROGRAM_STATIC_RAM_BASE + 4);
+	assert.equal(finalized.systemImage.sections.bss.byteCount, 4);
+	assert.equal(finalized.cartImage.sections.bss.byteCount, 4);
+	assert.deepEqual(encodeCompiledProgramObject(systemCompiled).sections.bss.symbols, [
 		{ name: 'module:sys_state/bss:counter', offset: 0, byteCount: 4, alignment: 4 },
-		{ name: 'module:cart_state/bss:counter', offset: 4, byteCount: 4, alignment: 4 },
 	]);
-	assert.equal(linked.programImage.sections.rodata.constPool.includes(PROGRAM_STATIC_RAM_BASE), true);
-	assert.equal(linked.programImage.sections.rodata.constPool.includes(PROGRAM_STATIC_RAM_BASE + 4), true);
-	assert.deepEqual(linked.programImage.link.constValueRelocs, []);
+	assert.deepEqual(encodeCompiledProgramObject(cartCompiled).sections.bss.symbols, [
+		{ name: 'module:cart_state/bss:counter', offset: 0, byteCount: 4, alignment: 4 },
+	]);
+	assert.equal(finalized.systemImage.sections.rodata.constPool.includes(PROGRAM_STATIC_RAM_BASE), true);
+	assert.equal(finalized.cartImage.sections.rodata.constPool.includes(PROGRAM_STATIC_RAM_BASE + 4), true);
 });
 
 test('external const modules cannot declare .bss storage', () => {
@@ -465,7 +462,7 @@ data counter: word = 17
 return *counter, &counter
 `;
 	const compiled = compileSource(source, 'section_data.lua');
-	const image = encodeCompiledProgramImage(compiled);
+	const image = encodeCompiledProgramObject(compiled);
 	assert.deepEqual(Array.from(image.sections.data.bytes), [17, 0, 0, 0]);
 	assert.deepEqual(image.sections.data.symbols, [{
 		name: 'module:section_data.lua/data:counter',
@@ -524,7 +521,7 @@ local before = *counter
 return before, *counter, state.counter
 `;
 	const compiled = compileWithConstModule(entrySource, 'state', moduleSource);
-	const image = encodeCompiledProgramImage(compiled);
+	const image = encodeCompiledProgramObject(compiled);
 	assert.equal(compiled.moduleProtoMap.has('state'), false);
 	assert.equal(compiled.staticModulePaths.includes('state'), false);
 	assert.deepEqual(image.sections.data.symbols, [{
@@ -545,7 +542,7 @@ test('linked system and cart const-module .data symbols resolve VMA and LMA rang
 	const systemCompiled = compileLuaChunkToProgram(
 		parseSource(systemSource, 'system.lua'),
 		[constModule('sys_data', 'data value: word = 10\nreturn { value = value }')],
-		{ entrySource: systemSource },
+		{ entrySource: systemSource, programDomain: 'system' },
 	);
 	const cartSource = 'local s<const> = require("cart_data")\nreturn s.value';
 	const cartCompiled = compileLuaChunkToProgram(
@@ -553,27 +550,24 @@ test('linked system and cart const-module .data symbols resolve VMA and LMA rang
 		[constModule('cart_data', 'data value: word = 20\nreturn { value = value }')],
 		{ entrySource: cartSource },
 	);
-	const linked = linkProgramImages(
-		encodeCompiledProgramImage(systemCompiled),
-		systemCompiled.metadata,
-		encodeCompiledProgramImage(cartCompiled),
-		cartCompiled.metadata,
-	);
-	const systemDataLma = PROGRAM_ROM_BASE + linked.programImage.sections.text.code.byteLength + linked.programImage.sections.rodata.bytes.byteLength;
-	const cartDataLma = systemDataLma + 4;
-	assert.equal(linked.systemDataBaseAddress, PROGRAM_STATIC_RAM_BASE);
-	assert.equal(linked.cartDataBaseAddress, PROGRAM_STATIC_RAM_BASE + 4);
-	assert.equal(linked.systemBssBaseAddress, PROGRAM_STATIC_RAM_BASE + 8);
-	assert.deepEqual(Array.from(linked.programImage.sections.data.bytes), [10, 0, 0, 0, 20, 0, 0, 0]);
-	assert.deepEqual(linked.programImage.sections.data.symbols, [
+	const finalized = finalizeTestProgramPair(systemCompiled, cartCompiled);
+	const systemDataLma = SYSTEM_ROM_BASE + finalized.systemImage.sections.rodata.bytes.byteLength;
+	const cartDataLma = CART_ROM_BASE + finalized.cartImage.sections.rodata.bytes.byteLength;
+	assert.equal(finalized.systemImage.placement.dataBaseAddress, PROGRAM_STATIC_RAM_BASE);
+	assert.equal(finalized.cartImage.placement.dataBaseAddress, PROGRAM_STATIC_RAM_BASE + 4);
+	assert.equal(finalized.cartImage.placement.bssBaseAddress, PROGRAM_STATIC_RAM_BASE + 8);
+	assert.deepEqual(Array.from(finalized.systemImage.sections.data.bytes), [10, 0, 0, 0]);
+	assert.deepEqual(Array.from(finalized.cartImage.sections.data.bytes), [20, 0, 0, 0]);
+	assert.deepEqual(encodeCompiledProgramObject(systemCompiled).sections.data.symbols, [
 		{ name: 'module:sys_data/data:value', offset: 0, byteCount: 4, alignment: 4 },
-		{ name: 'module:cart_data/data:value', offset: 4, byteCount: 4, alignment: 4 },
 	]);
-	assert.equal(linked.programImage.sections.rodata.constPool.includes(PROGRAM_STATIC_RAM_BASE), true);
-	assert.equal(linked.programImage.sections.rodata.constPool.includes(PROGRAM_STATIC_RAM_BASE + 4), true);
-	assert.equal(linked.programImage.sections.rodata.constPool.includes(systemDataLma), true);
-	assert.equal(linked.programImage.sections.rodata.constPool.includes(cartDataLma), true);
-	assert.deepEqual(linked.programImage.link.constValueRelocs, []);
+	assert.deepEqual(encodeCompiledProgramObject(cartCompiled).sections.data.symbols, [
+		{ name: 'module:cart_data/data:value', offset: 0, byteCount: 4, alignment: 4 },
+	]);
+	assert.equal(finalized.systemImage.sections.rodata.constPool.includes(PROGRAM_STATIC_RAM_BASE), true);
+	assert.equal(finalized.cartImage.sections.rodata.constPool.includes(PROGRAM_STATIC_RAM_BASE + 4), true);
+	assert.equal(finalized.systemImage.sections.rodata.constPool.includes(systemDataLma), true);
+	assert.equal(finalized.cartImage.sections.rodata.constPool.includes(cartDataLma), true);
 });
 
 test('external const modules cannot declare .data storage', () => {
@@ -597,8 +591,8 @@ rodata values: word[3] = { 11, 22, 33 }
 return values[0], values[1], values[2], values
 `;
 	const compiled = compileSource(source, 'section_rodata.lua');
-	const image = encodeCompiledProgramImage(compiled);
-	const rodataAddr = PROGRAM_ROM_BASE + image.sections.text.code.byteLength;
+	const image = encodeCompiledProgramObject(compiled);
+	const rodataAddr = SYSTEM_ROM_BASE;
 	assert.deepEqual(image.sections.rodata.symbols, [{
 		name: 'module:section_rodata.lua/rodata:values',
 		offset: 0,
@@ -617,8 +611,8 @@ rodata halves: u16[2] = { 258, 772 }
 return bytes[0], bytes[1], bytes[2], halves[0], halves[1], bytes, halves
 `;
 	const compiled = compileSource(source, 'section_rodata_widths.lua');
-	const image = encodeCompiledProgramImage(compiled);
-	const bytesAddr = PROGRAM_ROM_BASE + image.sections.text.code.byteLength;
+	const image = encodeCompiledProgramObject(compiled);
+	const bytesAddr = SYSTEM_ROM_BASE;
 	const halvesAddr = bytesAddr + 4;
 	assert.deepEqual(Array.from(image.sections.rodata.bytes), [1, 2, 3, 0, 2, 1, 4, 3]);
 	assert.deepEqual(image.sections.rodata.symbols, [
@@ -665,7 +659,7 @@ rodata commands: monitor_command[] = {
 return #commands, commands[0].name == 'CLS', #commands[1].usage, commands[1].kind, sizeof(monitor_command)
 `;
 	const compiled = compileSource(source, 'rodata_records.lua');
-	const image = encodeCompiledProgramImage(compiled);
+	const image = encodeCompiledProgramObject(compiled);
 	assert.deepEqual(image.link.rodataConstRelocs, [
 		{ byteOffset: 0, constIndex: readLE32(image.sections.rodata.bytes, 0) },
 		{ byteOffset: 4, constIndex: readLE32(image.sections.rodata.bytes, 4) },
@@ -678,7 +672,7 @@ return #commands, commands[0].name == 'CLS', #commands[1].usage, commands[1].kin
 	assert.deepEqual(runColdCompiled(compiled).values, [2, true, 25, 2, 12]);
 });
 
-test('program linking remaps const references stored in cart .rodata records', () => {
+test('cart linking remaps const references stored in physical cart .rodata', () => {
 	const compileRecord = (text: string, path: string): CompiledProgram => compileSource(`
 struct label
 	text: string
@@ -688,17 +682,14 @@ return labels[0].text
 `, path);
 	const system = compileRecord('SYSTEM', 'system_rodata_record.lua');
 	const cart = compileRecord('CART', 'cart_rodata_record.lua');
-	const linked = linkProgramImages(
-		encodeCompiledProgramImage(system),
-		system.metadata,
-		encodeCompiledProgramImage(cart),
-		cart.metadata,
+	const finalized = finalizeTestProgramPair(system, cart);
+	const systemConstIndex = readLE32(finalized.systemImage.sections.rodata.bytes, 0);
+	assert.equal(finalized.systemImage.sections.rodata.constPool[systemConstIndex], 'SYSTEM');
+	const cartConstIndex = readLE32(finalized.cartImage.sections.rodata.bytes, 0);
+	assert.equal(
+		finalized.cartImage.sections.rodata.constPool[cartConstIndex - finalized.cartImage.placement.constBaseIndex],
+		'CART',
 	);
-	const constPool = linked.programImage.sections.rodata.constPool;
-	const bytes = linked.programImage.sections.rodata.bytes;
-	assert.equal(constPool[readLE32(bytes, 0)], 'SYSTEM');
-	assert.equal(constPool[readLE32(bytes, 4)], 'CART');
-	assert.deepEqual(linked.programImage.link.rodataConstRelocs, []);
 });
 
 test('const modules export .rodata storage symbols without runtime module state', () => {
@@ -712,8 +703,8 @@ local values<const>: *word = data.values
 return values[0], values[1], data.values
 `;
 	const compiled = compileWithConstModule(entrySource, 'data', moduleSource);
-	const image = encodeCompiledProgramImage(compiled);
-	const rodataAddr = PROGRAM_ROM_BASE + image.sections.text.code.byteLength;
+	const image = encodeCompiledProgramObject(compiled);
+	const rodataAddr = SYSTEM_ROM_BASE;
 	assert.equal(compiled.moduleProtoMap.has('data'), false);
 	assert.equal(compiled.staticModulePaths.includes('data'), false);
 	assert.deepEqual(image.sections.rodata.symbols, [{
@@ -734,7 +725,7 @@ test('linked system and cart const-module .rodata symbols resolve against their 
 	const systemCompiled = compileLuaChunkToProgram(
 		parseSource(systemSource, 'system.lua'),
 		[constModule('sys_data', 'rodata values: word[1] = { 10 }\nreturn { values = values }')],
-		{ entrySource: systemSource },
+		{ entrySource: systemSource, programDomain: 'system' },
 	);
 	const cartSource = 'local s<const> = require("cart_data")\nreturn s.values';
 	const cartCompiled = compileLuaChunkToProgram(
@@ -742,22 +733,19 @@ test('linked system and cart const-module .rodata symbols resolve against their 
 		[constModule('cart_data', 'rodata values: word[1] = { 20 }\nreturn { values = values }')],
 		{ entrySource: cartSource },
 	);
-	const linked = linkProgramImages(
-		encodeCompiledProgramImage(systemCompiled),
-		systemCompiled.metadata,
-		encodeCompiledProgramImage(cartCompiled),
-		cartCompiled.metadata,
-	);
-	const systemRodataAddr = PROGRAM_ROM_BASE + linked.programImage.sections.text.code.byteLength;
-	const cartRodataAddr = systemRodataAddr + 4;
-	assert.deepEqual(Array.from(linked.programImage.sections.rodata.bytes), [10, 0, 0, 0, 20, 0, 0, 0]);
-	assert.deepEqual(linked.programImage.sections.rodata.symbols, [
+	const finalized = finalizeTestProgramPair(systemCompiled, cartCompiled);
+	const systemRodataAddr = SYSTEM_ROM_BASE;
+	const cartRodataAddr = CART_ROM_BASE;
+	assert.deepEqual(Array.from(finalized.systemImage.sections.rodata.bytes), [10, 0, 0, 0]);
+	assert.deepEqual(Array.from(finalized.cartImage.sections.rodata.bytes), [20, 0, 0, 0]);
+	assert.deepEqual(encodeCompiledProgramObject(systemCompiled).sections.rodata.symbols, [
 		{ name: 'module:sys_data/rodata:values', offset: 0, byteCount: 4, alignment: 4 },
-		{ name: 'module:cart_data/rodata:values', offset: 4, byteCount: 4, alignment: 4 },
 	]);
-	assert.equal(linked.programImage.sections.rodata.constPool.includes(systemRodataAddr), true);
-	assert.equal(linked.programImage.sections.rodata.constPool.includes(cartRodataAddr), true);
-	assert.deepEqual(linked.programImage.link.constValueRelocs, []);
+	assert.deepEqual(encodeCompiledProgramObject(cartCompiled).sections.rodata.symbols, [
+		{ name: 'module:cart_data/rodata:values', offset: 0, byteCount: 4, alignment: 4 },
+	]);
+	assert.equal(finalized.systemImage.sections.rodata.constPool.includes(systemRodataAddr), true);
+	assert.equal(finalized.cartImage.sections.rodata.constPool.includes(cartRodataAddr), true);
 });
 
 test('external const modules cannot declare .rodata storage', () => {

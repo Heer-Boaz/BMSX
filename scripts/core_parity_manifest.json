@@ -300,7 +300,6 @@
 		"machine/ts/rompack/host_system_atlas.generated.ts",
 		"machine/ts/rompack/host_system_atlas.ts",
 		"machine/ts/rompack/loader.ts",
-		"machine/ts/machine/program/linker.ts",
 		"machine/ts/machine/program/loader.ts",
 		"machine/ts/render/shared/submissions.ts",
 		"machine/ts/render/shared/solid_pixels.ts",
@@ -622,13 +621,6 @@
 				"machine/cpp/machine/devices/geometry/projection.h"
 			],
 			"reason": "geometry_projection_contract"
-		},
-		{
-			"ts": "machine/ts/machine/program/layout.ts",
-			"cpp": [
-				"machine/cpp/machine/program/layout.h"
-			],
-			"reason": "program_memory_layout_contract"
 		},
 		{
 			"ts": "machine/ts/machine/scheduler/budget.ts",
@@ -1111,17 +1103,20 @@
 		{
 			"present": [
 				"machine/ts/lua/compiler.ts",
+				"machine/ts/lua/compiler/program_object.ts",
 				"machine/ts/lua/compiler/passes",
 				"machine/ts/lua/compiler/optimizer",
 				"machine/ts/lua/source_registry.ts",
-				"machine/ts/ide/runtime/host_eval.ts",
 				"machine/ts/ide/runtime/native_bridge.ts",
-				"machine/ts/ide/runtime/resume_snapshot.ts",
-				"machine/ts/ide/runtime/sources.ts"
+				"machine/ts/ide/runtime/sources.ts",
+				"machine/ts/rompack/tooling/program_linker.ts",
+				"machine/ts/rompack/tooling/program_tail.ts"
 			],
 			"absent": [
 				"machine/ts/machine/program/compiler.ts",
 				"machine/ts/machine/program/compiler",
+				"machine/ts/machine/program/layout.ts",
+				"machine/ts/machine/program/linker.ts",
 				"machine/ts/machine/program/optimizer",
 				"machine/ts/machine/program/compile_value_flow.ts",
 				"machine/ts/machine/program/control_flow.ts",
@@ -1139,7 +1134,7 @@
 				"machine/ts/machine/runtime/host/native_bridge.ts",
 				"machine/ts/machine/runtime/resume_snapshot.ts"
 			],
-			"reason": "source_compiler_ide_bridge_and_hot_resume_must_stay_outside_machine_runtime_core"
+			"reason": "source_compiler_and_pack_time_linker_must_stay_outside_machine_runtime_core"
 		}
 	],
 	"strict_file_pair_parity": [
@@ -1298,6 +1293,11 @@
 				},
 				{
 					"side": "ts",
+					"symbol": "RawRomSource.getCompiledBytesView",
+					"reason": "TS IDE and Hot Resume tooling borrow the compiled descriptor range through the layered source contract; native runtime loading receives that descriptor span directly at MachineManager and must not add an unused source-stack facade."
+				},
+				{
+					"side": "ts",
 					"symbol": "RawRomSource.getEntry",
 					"reason": "TS exposes RawRomSource as a structural TypeScript input contract; C++ keeps the concrete RomSourceStack public API instead of adding a virtual facade."
 				},
@@ -1325,6 +1325,11 @@
 					"side": "cpp",
 					"symbol": "RomSourceEntry",
 					"reason": "C++ source.h owns these source-stack record carriers because they embed C++ RomAssetInfo; TS owns the same wire-format types in rompack/format.ts."
+				},
+				{
+					"side": "ts",
+					"symbol": "RomSourceStack.getCompiledBytesView",
+					"reason": "TS IDE and Hot Resume tooling borrow the compiled descriptor range through the layered source stack; native final-image loading already receives that descriptor span at MachineManager and has no matching source-stack consumer."
 				}
 			],
 			"shape_exclude": [
@@ -1352,34 +1357,6 @@
 				{
 					"symbol": "RomSourceStack.list",
 					"reason": "TS source stack lists RomAsset records and accepts optional asset_type; C++ lists RomSourceEntry records and accepts optional string_view at the native boundary."
-				}
-			]
-		},
-		{
-			"ts": "machine/ts/machine/program/layout.ts",
-			"cpp": [
-				"machine/cpp/machine/program/layout.h"
-			]
-		},
-		{
-			"ts": "machine/ts/machine/program/linker.ts",
-			"cpp": [
-				"machine/cpp/machine/program/linker.h"
-			],
-			"shape_exclude": [
-				{
-					"symbol": "LinkedProgramImage",
-					"field": "programImage",
-					"reason": "TS linked images own the ProgramImage object directly; C++ owns the same linked image through unique_ptr at the native ownership boundary."
-				},
-				{
-					"symbol": "LinkedProgramImage",
-					"field": "metadata",
-					"reason": "TS uses null for absent program metadata; C++ owns the same optional metadata through unique_ptr at the native ownership boundary."
-				},
-				{
-					"symbol": "linkProgramImages",
-					"reason": "TS passes nullable ProgramSymbolsImage references; C++ passes the same optional metadata as native pointers at the linker ABI boundary."
 				}
 			]
 		},
@@ -1435,21 +1412,14 @@
 			"cpp": [
 				"machine/cpp/machine/program/loader.h"
 			],
-			"exclude": [
-				{
-					"side": "ts",
-					"symbol": "encodeProgramObjectSections",
-					"reason": "TS compiler emits object-image sections; C++ runtime consumes linked images and has no compiler producer surface."
-				}
-			],
 			"shape_exclude": [
 				{
 					"symbol": "decodeProgramImage",
-					"reason": "TS passes a Uint8Array byte view as one value; C++ receives the same program-image byte span as pointer plus size at the native ABI boundary."
+					"reason": "TS passes the section and descriptor as Uint8Array views; C++ receives the same two borrowed byte ranges as spans."
 				},
 				{
 					"symbol": "decodeProgramSymbolsImage",
-					"reason": "TS passes a Uint8Array byte view as one value; C++ receives the same program-symbol byte span as pointer plus size at the native ABI boundary."
+					"reason": "TS passes a Uint8Array view; C++ receives the same borrowed program-symbol byte range as a span."
 				},
 				{
 					"symbol": "EncodedValue",
@@ -1462,7 +1432,7 @@
 				{
 					"symbol": "ProgramDataSection",
 					"field": "bytes",
-					"reason": "TS object-image data bytes are Uint8Array; C++ stores the same bytes in std::vector<u8>."
+					"reason": "TS retains a Uint8Array view into physical ROM; C++ retains the same borrowed data-load-image bytes as a span."
 				},
 				{
 					"symbol": "ProgramRodataSection",
@@ -1472,11 +1442,11 @@
 				{
 					"symbol": "ProgramTextSection",
 					"field": "code",
-					"reason": "TS text section code bytes are Uint8Array; C++ stores the same instruction bytes in std::vector<u8>."
+					"reason": "TS retains a Uint8Array view into physical ROM; C++ retains the same borrowed instruction bytes as a span."
 				},
 				{
-					"symbol": "inflateProgram",
-					"reason": "TS returns the owned Program object directly; C++ returns the same Program owner through unique_ptr at the native ownership boundary."
+					"symbol": "assembleProgramImages",
+					"reason": "TS returns Program directly and uses null for an absent cart image; C++ returns the same owner through unique_ptr and accepts the optional cart image as a pointer."
 				}
 			]
 		},
@@ -2252,8 +2222,6 @@
 			],
 			"methods": [
 				"boot",
-				"bootLinkedProgramImage",
-				"clearLinkedCartProgram",
 				"enterSystemFirmware",
 				"enterCartProgram",
 				"startCartProgram",

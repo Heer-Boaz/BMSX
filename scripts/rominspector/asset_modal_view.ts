@@ -1,7 +1,7 @@
 import { type GLTFModel, type RomAsset, type RomManifest } from '../../machine/ts/rompack/format';
 import { decodeBinary } from '../../machine/ts/common/serializer/binencoder';
 import { loadModelFromBuffer as loadGLTFModelFromBuffer } from '../../machine/ts/rompack/loader';
-import { PROGRAM_IMAGE_ID, PROGRAM_SYMBOLS_IMAGE_ID, ProgramSymbolsImage } from '../../machine/ts/machine/program/loader';
+import { decodeProgramSymbolsImage, PROGRAM_IMAGE_ID, PROGRAM_SYMBOLS_IMAGE_ID, type ProgramImage } from '../../machine/ts/machine/program/loader';
 import { asciiWaveBraille, generateBrailleAsciiArt, generatePixelPerfectAsciiArt, renderBufferBar } from './asciiart';
 import { decodeAudioPreviewToPcm } from './audio_preview';
 import { decodeGxTextureImage, GX_SYSTEM_TEXTURE_ASSET_ID } from '../rompacker/gx_texture';
@@ -41,6 +41,7 @@ type BuildAssetModalViewContext = {
 	assetList: RomAsset[];
 	manifest: RomManifest | null;
 	projectRootPath: string | null;
+	systemProgramImage: ProgramImage | null;
 	formatByteSize(size: number): string;
 	modalWidth: number;
 	modalHeight: number;
@@ -281,7 +282,7 @@ export async function buildAssetModalView(selected: RomAsset, ctx: BuildAssetMod
 			break;
 		case 'code':
 			if (selected.resid === PROGRAM_IMAGE_ID) {
-				const { programImage, program, metadata, sourceTextForPath, missingSourcePaths } = loadProgramFromAssets(ctx.rombin, ctx.assetList);
+				const { programImage, program, metadata, sourceTextForPath, missingSourcePaths } = loadProgramFromAssets(ctx.rombin, ctx.assetList, ctx.systemProgramImage);
 				disassembly = disassembleProgramImage(program, metadata, sourceTextForPath);
 				metadataLines.push(`Program reset vector proto: ${programImage.vectors.resetProtoIndex}`);
 				metadataLines.push(`Program protos: ${program.protos.length}`);
@@ -292,9 +293,9 @@ export async function buildAssetModalView(selected: RomAsset, ctx: BuildAssetMod
 				}
 				preview = '[Program asset: open Details tab for disassembly]';
 			} else if (selected.resid === PROGRAM_SYMBOLS_IMAGE_ID) {
-				const symbols = decodeBinary(new Uint8Array(ctx.rombin.slice(selected.start, selected.end))) as ProgramSymbolsImage;
-				metadataLines.push(`Program symbols protos: ${symbols.metadata.protoIds.length}`);
-				preview = JSON.stringify(symbols.metadata, null, 2);
+				const symbols = decodeProgramSymbolsImage(ctx.rombin.subarray(selected.start, selected.end));
+				metadataLines.push(`Program symbols protos: ${symbols.protoIds.length}`);
+				preview = JSON.stringify(symbols, null, 2);
 			} else {
 				throw new Error(`Unsupported code asset '${selected.resid}'.`);
 			}

@@ -9,7 +9,8 @@ export type PsxGpuVideoStandard = 'pal' | 'ntsc';
 export const PSX_CPU_FREQ_HZ = 33_868_800; // 44100 * 768, the real PS1 CPU clock
 export const PSX_DMA_RAM_CYCLES_PER_WORD = 1;
 export const PSX_DMA_RAM_BURST_SETUP_CYCLES = 1;
-export const PSX_DMA_ROM_CYCLES_PER_WORD = 25;
+export const PSX_DMA_SYSTEM_ROM_CYCLES_PER_WORD = 1;
+export const PSX_DMA_CART_ROM_CYCLES_PER_WORD = 25;
 export const PSX_RAM_BYTES = 0x00400000;
 export const GX_GPU_DISPLAY_ASPECT_WIDTH = 4;
 export const GX_GPU_DISPLAY_ASPECT_HEIGHT = 3;
@@ -28,7 +29,8 @@ export type MachineModelSpec = {
 	cpuFreqHz: number;
 	dmaRamCyclesPerWord: number;
 	dmaRamBurstSetupCycles: number;
-	dmaRomCyclesPerWord: number;
+	dmaSystemRomCyclesPerWord: number;
+	dmaCartRomCyclesPerWord: number;
 	ramBytes: number;
 	geoWorkUnitsPerSec: number;
 };
@@ -43,7 +45,8 @@ export const PSX_MACHINE_SPEC: MachineModelSpec = {
 	cpuFreqHz: PSX_CPU_FREQ_HZ,
 	dmaRamCyclesPerWord: PSX_DMA_RAM_CYCLES_PER_WORD,
 	dmaRamBurstSetupCycles: PSX_DMA_RAM_BURST_SETUP_CYCLES,
-	dmaRomCyclesPerWord: PSX_DMA_ROM_CYCLES_PER_WORD,
+	dmaSystemRomCyclesPerWord: PSX_DMA_SYSTEM_ROM_CYCLES_PER_WORD,
+	dmaCartRomCyclesPerWord: PSX_DMA_CART_ROM_CYCLES_PER_WORD,
 	ramBytes: PSX_RAM_BYTES,
 	geoWorkUnitsPerSec: PSX_GEO_WORK_UNITS_PER_SEC,
 };

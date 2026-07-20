@@ -143,8 +143,6 @@ function installGtePlusBurstProgram(cpu: CPU, words: readonly number[]): void {
 	};
 	const program: Program = {
 		code,
-		programRom: code,
-		programRomTextByteLength: code.byteLength,
 		constPool: [IO_GX_GTE_PLUS_BASE, ...words],
 		protos: [proto],
 		moduleProtos: [],

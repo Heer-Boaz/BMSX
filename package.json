@@ -24,7 +24,7 @@
 		"string-width": "*",
 		"ts-morph": "*",
 		"tsx": "*",
-		"typescript": "*"
+		"typescript": "^6.0.3"
 	},
 	"scripts": {
 		"headless:game": "node dist/host_headless.debug.js --machine-runtime dist/libbmsx.debug.js --system-rom dist/bmsx-bios.debug.rom",

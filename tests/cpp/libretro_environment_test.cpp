@@ -3,7 +3,7 @@
 #include "input/manager.h"
 #include "machine/devices/gx/gpu_pcrtc.h"
 #include "machine/runtime/save_state/codec.h"
-#include "support/program_rom_fixture.h"
+#include "support/boot_rom_fixture.h"
 
 #include <cstring>
 #include <filesystem>
@@ -132,14 +132,14 @@ int main() {
 		std::filesystem::temp_directory_path() / "bmsx_libretro_environment_test";
 	std::filesystem::create_directories(testDirectory);
 	const std::vector<bmsx::u8> system =
-		bmsx::test::makeMinimalProgramRom(bmsx::ProgramBootTarget::System);
+		bmsx::test::makeMinimalBootRom(bmsx::ProgramBootTarget::System);
 	std::ofstream systemRom(testDirectory / "bmsx-bios.rom", std::ios::binary);
 	systemRom.write(
 		reinterpret_cast<const char*>(system.data()),
 		static_cast<std::streamsize>(system.size()));
 	systemRom.close();
 	const std::vector<bmsx::u8> cart =
-		bmsx::test::makeMinimalProgramRom(bmsx::ProgramBootTarget::Cart);
+		bmsx::test::makeMinimalBootRom(bmsx::ProgramBootTarget::Cart);
 	const std::string gamePath = (testDirectory / "test.rom").string();
 	const retro_game_info game{
 		.path = gamePath.c_str(),

@@ -37,7 +37,14 @@ test('program image rejects a cart Lua module that collides with the persisted G
 	];
 
 	assert.throws(
-		() => appendProgramImage(assets, 'cart.lua'),
+		() => appendProgramImage(assets, 'cart.lua', {
+			externalLuaAssets: [],
+			generatedLuaModules: [],
+			includeLuaAssets: true,
+			includeSymbols: true,
+			optLevel: 3,
+			programDomain: 'system',
+		}),
 		/ROM Lua module 'bmsx\/gx_texture_layout' is defined more than once/,
 	);
 });

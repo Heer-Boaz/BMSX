@@ -101,6 +101,7 @@ type RenderRuntimeFaultOverlayOptions = {
 
 export type CartEditor = {
 	readonly blocksRuntimePipeline: true;
+	readonly isAvailable: boolean;
 	readonly completion: EditorCompletionController;
 	readonly resourcePanel: ResourcePanelController;
 	readonly search: EditorSearchController;
@@ -146,6 +147,7 @@ export function getSourceForChunk(path: string): string {
 
 class RuntimeCartEditor implements CartEditor {
 	public readonly blocksRuntimePipeline = true;
+	public readonly isAvailable: boolean;
 	public readonly completion: EditorCompletionController;
 	public readonly resourcePanel: ResourcePanelController;
 	public readonly search: EditorSearchController;
@@ -171,6 +173,9 @@ class RuntimeCartEditor implements CartEditor {
 
 	public constructor(runtime: Runtime, viewport: Viewport, fontVariant: Parameters<typeof setFontVariant>[0]) {
 		this.runtime = runtime;
+		const sourceState = machineManager.sourceState;
+		this.isAvailable = sourceState.systemLuaSources.can_boot_from_source
+			&& (sourceState.cartLuaSources === null || sourceState.cartLuaSources.can_boot_from_source);
 		this.commands = new IdeCommandController(runtime);
 		this.navigation = new EditorNavigationController(runtime);
 		this.completion = new EditorCompletionController(runtime);
@@ -184,7 +189,7 @@ class RuntimeCartEditor implements CartEditor {
 
 	public activate(): void {
 		const runtime = this.runtime;
-		if (!runtime.programMetadata) {
+		if (!this.isAvailable || !runtime.programMetadata) {
 			return;
 		}
 		editorInput.applyOverrides(true, captureKeys);
@@ -348,7 +353,9 @@ class RuntimeCartEditor implements CartEditor {
 		this.debugger.dispose();
 		this.completion.dispose();
 		clearExecutionStopHighlights();
-		storeActiveCodeTabContext();
+		if (this.isAvailable) {
+			storeActiveCodeTabContext();
+		}
 		editorInput.applyOverrides(false, captureKeys);
 		if (editorViewState.dimCrtInEditor) {
 			this.restoreCrtPostprocessingFromEditor();
@@ -385,10 +392,15 @@ class RuntimeCartEditor implements CartEditor {
 		closeBlockingWorkbenchModal();
 		machineManager.ideState.editor.resourcePanel.hide();
 		editorChromeState.resourcePanelResizing = false;
-		activateCodeTab();
+		if (this.isAvailable) {
+			activateCodeTab();
+		}
 	}
 
 	public setFontVariant(variant: Parameters<typeof setFontVariant>[0]): void {
+		if (!this.isAvailable) {
+			return;
+		}
 		const activeContext = getActiveCodeTabContext();
 		let activeCodeTabMode: CodeTabMode | null = null;
 		if (activeContext) {
@@ -499,6 +511,13 @@ class RuntimeCartEditor implements CartEditor {
 			resourceVertical: editorViewState.scrollbars.resourceVertical,
 			resourceHorizontal: editorViewState.scrollbars.resourceHorizontal,
 		});
+		if (!this.isAvailable) {
+			configureFontVariant(editorViewState.fontVariant, null);
+			resourcePanel.setFontMetrics(editorViewState.lineHeight, editorViewState.charAdvance);
+			initializeWorkspaceStorage(runtime, null);
+			editorRuntimeState.initialized = false;
+			return resourcePanel;
+		}
 		initializeWorkspaceStorage(runtime, machineManager.sourceState.cartProjectRootPath ?? machineManager.sourceState.systemProjectRootPath);
 		const initialContext = createEntryTabContext();
 		configureFontVariant(editorViewState.fontVariant, initialContext.mode);

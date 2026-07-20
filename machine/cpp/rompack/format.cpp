@@ -127,26 +127,30 @@ CartRomHeader parseCartHeader(const u8* data, size_t size) {
 	return header;
 }
 
-std::vector<u8> encodeCartManifest(const CartManifest& cart, const MachineManifest& machine) {
+std::vector<u8> encodeCartManifest(const CartManifest& cart) {
 	BinObject machineObject;
-	machineObject["namespace"] = BinValue(machine.namespaceName);
+	machineObject["namespace"] = BinValue(cart.machine.namespaceName);
 	machineObject["vdp_class"] = BinValue(std::string("psx"));
+	BinObject luaObject;
+	luaObject["entry_path"] = BinValue(cart.entryPath);
 
 	BinObject manifest;
-	if (!cart.name.empty()) manifest["name"] = BinValue(cart.name);
-	if (!cart.title.empty()) manifest["title"] = BinValue(cart.title);
-	if (!cart.shortName.empty()) manifest["short_name"] = BinValue(cart.shortName);
-	if (!cart.romName.empty()) manifest["rom_name"] = BinValue(cart.romName);
-	if (!cart.version.empty()) manifest["version"] = BinValue(cart.version);
-	if (!cart.author.empty()) manifest["author"] = BinValue(cart.author);
-	if (!cart.description.empty()) manifest["description"] = BinValue(cart.description);
+	if (cart.title) manifest["title"] = BinValue(*cart.title);
+	if (cart.shortName) manifest["short_name"] = BinValue(*cart.shortName);
+	if (cart.romName) manifest["rom_name"] = BinValue(*cart.romName);
 	manifest["machine"] = BinValue(std::move(machineObject));
+	manifest["lua"] = BinValue(std::move(luaObject));
 	return encodeBinary(BinValue(std::move(manifest)));
 }
 
-std::vector<u8> encodeProgramCartRom(const CartManifest& cart, const MachineManifest& machine, const ProgramImage& image) {
-	const std::vector<u8> program = encodeProgramImage(image);
-	const std::vector<u8> manifest = encodeCartManifest(cart, machine);
+std::vector<u8> encodeProgramCartRom(const CartManifest& cart, const ProgramImage& image) {
+	const EncodedProgramImage encodedProgram = encodeProgramImage(image);
+	const size_t sectionByteCount = encodedProgram.sections.size();
+	std::vector<u8> program;
+	program.reserve(sectionByteCount + encodedProgram.descriptor.size());
+	program.insert(program.end(), encodedProgram.sections.begin(), encodedProgram.sections.end());
+	program.insert(program.end(), encodedProgram.descriptor.begin(), encodedProgram.descriptor.end());
+	const std::vector<u8> manifest = encodeCartManifest(cart);
 
 	CartRomHeader header{};
 	header.headerSize = CART_ROM_HEADER_SIZE;
@@ -161,20 +165,24 @@ std::vector<u8> encodeProgramCartRom(const CartManifest& cart, const MachineMani
 	header.programCodeByteCount = static_cast<u32>(image.sections.text.code.size());
 	header.programConstPoolCount = static_cast<u32>(image.sections.rodata.constPool.size());
 	header.programProtoCount = static_cast<u32>(image.sections.text.protos.size());
-	header.programConstRelocCount = static_cast<u32>(image.link.constRelocs.size());
-	header.vdpClass = machine.vdpClass;
+	header.programConstRelocCount = 0;
+	header.vdpClass = cart.machine.vdpClass;
 
 	RomSourceEntry programEntry;
 	programEntry.resid = PROGRAM_IMAGE_ID;
 	programEntry.rom.type = "code";
 	programEntry.rom.start = static_cast<i32>(header.dataOffset);
-	programEntry.rom.end = static_cast<i32>(header.dataOffset + header.dataLength);
+	programEntry.rom.end = static_cast<i32>(header.dataOffset + sectionByteCount);
+	programEntry.rom.compiledStart = programEntry.rom.end;
+	programEntry.rom.compiledEnd = static_cast<i32>(header.dataOffset + header.dataLength);
 
 	const std::vector<u8> toc = encodeRomToc(RomTocPayload{{programEntry}, std::nullopt});
 	header.tocLength = static_cast<u32>(toc.size());
 	header.dataOffset = alignCartRomWordSection(header.tocOffset + header.tocLength);
 	programEntry.rom.start = static_cast<i32>(header.dataOffset);
-	programEntry.rom.end = static_cast<i32>(header.dataOffset + header.dataLength);
+	programEntry.rom.end = static_cast<i32>(header.dataOffset + encodedProgram.sections.size());
+	programEntry.rom.compiledStart = programEntry.rom.end;
+	programEntry.rom.compiledEnd = static_cast<i32>(header.dataOffset + header.dataLength);
 	const std::vector<u8> finalToc = encodeRomToc(RomTocPayload{{programEntry}, std::nullopt});
 	header.tocLength = static_cast<u32>(finalToc.size());
 	return encodeCartRom(header, manifest, finalToc, program);

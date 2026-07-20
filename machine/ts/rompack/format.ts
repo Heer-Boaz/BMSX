@@ -352,8 +352,8 @@ export interface ImgMeta {
 	gx_texture_word_width: number; // Width of the texture upload in native VRAM words.
 	gx_texture_height: number; // Height of the texture upload in native VRAM rows.
 	gx_clut_offset?: number; // Byte offset of palette words within the texture payload.
-	gx_source_x?: number; // Fixed resident source X for system-ROM images.
-	gx_source_y?: number; // Fixed resident source Y for system-ROM images.
+	gx_source_x?: number; // Fixed resident source X for firmware-ROM images.
+	gx_source_y?: number; // Fixed resident source Y for firmware-ROM images.
 	gx_page_tiles?: GxTexturePageTile[]; // Producer-sliced page-local rectangles for an explicitly tiled image.
 	boundingbox?: BoundingBoxPrecalc; // The bounding box of the image. Used for collision detection.
 	centerpoint?: vec2arr; // The center point of the image, based on the bounding box.

@@ -7,7 +7,7 @@ import { saveLuaResourceSource } from '../../../workspace/workspace';
 import { loadWorkspaceSourceFile, persistWorkspaceSourceFile } from '../../../workspace/files';
 import { buildDirtyFilePath } from '../../workspace/io';
 import { workspaceSourceCache } from '../../../workspace/cache';
-import { applyAemSourceToRuntime } from '../../../language/aem/editor';
+import { applyAemSourceToRuntime } from '../../../runtime/aem';
 import { extractErrorMessage } from '../../../../lua/value';
 import type { Runtime } from '../../../../machine/runtime/runtime';
 import { computeResourceTabTitle } from '../tab/titles';

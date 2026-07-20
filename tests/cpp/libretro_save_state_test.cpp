@@ -17,7 +17,7 @@
 #include "machine/runtime/save_state/codec.h"
 #include "machine/runtime/timing/index.h"
 #include "platform.h"
-#include "support/program_rom_fixture.h"
+#include "support/boot_rom_fixture.h"
 
 #include <algorithm>
 #include <array>
@@ -82,15 +82,16 @@ void testLibretroSaveStateRoundTrip() {
 		false);
 	platform.setLogCallback(discardRetroLog);
 	require(platform.getStateSize() == 0u, "libretro state size should be zero before a ROM is loaded");
-	require(platform.machineManager()->loadSystemRomOwned(bmsx::test::makeMinimalProgramRom(bmsx::ProgramBootTarget::System)), "libretro should load the system program ROM");
+	require(platform.machineManager()->loadSystemRomOwned(bmsx::test::makeMinimalBootRom(bmsx::ProgramBootTarget::System)), "libretro should load the system firmware ROM");
 
-	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalProgramRom(bmsx::ProgramBootTarget::Cart);
+	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalBootRom(bmsx::ProgramBootTarget::Cart);
 	require(platform.loadRom(rom.data(), rom.size()), "libretro should load and boot a program cart ROM");
 	require(platform.machineManager()->romLoaded(), "MachineManager should mark the cart ROM loaded");
 	require(platform.machineManager()->hasRuntime(), "MachineManager should own a runtime after cart boot");
 
 	bmsx::Runtime& runtime = platform.machineManager()->runtime();
 	require(runtime.isInitialized(), "cart program boot should initialize the runtime");
+	auto& scheduler = runtime.machine.scheduler;
 	const size_t stateSize = platform.getStateSize();
 	require(stateSize > 0u, "libretro state size should come from initialized runtime state");
 
@@ -131,15 +132,15 @@ void testLibretroSaveStateRoundTrip() {
 	for (size_t index = 0; index < dmaWords.size(); index += 1u) {
 		memory.writeMappedU32LE(dmaSource + static_cast<uint32_t>(index * 4u), dmaWords[index]);
 	}
-	runtime.machine.dmaController.setTiming(0, 1, 0, runtime.machine.scheduler.currentNowCycles());
+	runtime.machine.dmaController.setTiming(0, 1, 0, 0, scheduler.currentNowCycles());
 	runtime.machine.gxGpu.writeGp1((bmsx::GX_GPU_GP1_DMA_DIRECTION << 24u) | bmsx::GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
 	memory.writeMappedU32LE(bmsx::IO_DMA_READ_ADDR, dmaSource);
 	memory.writeMappedU32LE(bmsx::IO_DMA_WRITE_ADDR, bmsx::IO_GX_GPU_GP0);
 	memory.writeMappedU32LE(bmsx::IO_DMA_TRANSFER_COUNT, static_cast<uint32_t>(dmaWords.size()));
 	memory.writeMappedU32LE(bmsx::IO_DMA_CONTROL, bmsx::DMA_CONTROL_READ_INCREMENT | bmsx::DMA_CONTROL_REQUEST_GX_WRITE | bmsx::DMA_CONTROL_BLOCK_WORDS_16);
 	memory.writeMappedU32LE(bmsx::IO_DMA_TRIGGER, bmsx::DMA_TRIGGER_START);
-	const bmsx::i64 firstDmaServiceCycle = runtime.machine.scheduler.currentNowCycles() + 1;
-	runtime.machine.scheduler.advanceTo(firstDmaServiceCycle);
+	const bmsx::i64 firstDmaServiceCycle = scheduler.currentNowCycles() + 1;
+	scheduler.advanceTo(firstDmaServiceCycle);
 	runtime.machine.dmaController.onService(firstDmaServiceCycle);
 	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == bmsx::DMA_STATUS_BUSY, "DMA should remain in flight at saveState");
 	require(memory.readIoU32(bmsx::IO_DMA_TRANSFER_COUNT) == 4u, "DMA should save with four live word transfers remaining");
@@ -158,8 +159,8 @@ void testLibretroSaveStateRoundTrip() {
 	std::memcpy(saved.data() + 8u, blockedPayload.data(), blockedPayload.size());
 	std::memset(saved.data() + 8u + blockedPayload.size(), 0, saved.size() - 8u - blockedPayload.size());
 	const bmsx::DmaControllerState mutatingDmaState = runtime.machine.dmaController.captureState();
-	const bmsx::i64 dmaMutationCycle = runtime.machine.scheduler.currentNowCycles() + mutatingDmaState.scheduledBlockCycles;
-	runtime.machine.scheduler.advanceTo(dmaMutationCycle);
+	const bmsx::i64 dmaMutationCycle = scheduler.currentNowCycles() + mutatingDmaState.scheduledBlockCycles;
+	scheduler.advanceTo(dmaMutationCycle);
 	runtime.machine.dmaController.onService(dmaMutationCycle);
 	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == bmsx::DMA_STATUS_DONE, "DMA mutation should complete before loadState");
 	require(memory.readIoU32(bmsx::IO_DMA_TRANSFER_COUNT) == 0u, "DMA mutation should consume the live word count");
@@ -205,8 +206,8 @@ void testLibretroSaveStateRoundTrip() {
 	require(!memory.mappedWriteReady(bmsx::IO_GX_GPU_GP0), "restored DMA should retain GP0 ownership");
 	require(runtime.machine.cpu.isMemoryWriteBlocked(), "restored GP0 store should remain blocked while DMA owns the port");
 	const bmsx::DmaControllerState restoredDmaState = runtime.machine.dmaController.captureState();
-	const int64_t dmaResumeCycle = runtime.machine.scheduler.currentNowCycles() + restoredDmaState.scheduledBlockCycles;
-	runtime.machine.scheduler.advanceTo(dmaResumeCycle);
+	const int64_t dmaResumeCycle = scheduler.currentNowCycles() + restoredDmaState.scheduledBlockCycles;
+	scheduler.advanceTo(dmaResumeCycle);
 	runtime.machine.dmaController.onService(dmaResumeCycle);
 	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == bmsx::DMA_STATUS_DONE, "restored DMA should complete the GP0 packet");
 	require(memory.readIoU32(bmsx::IO_DMA_TRANSFER_COUNT) == 0u, "restored DMA should consume its retained word count");
@@ -224,8 +225,8 @@ void testGpureadCodecStoresReadyBytesAndRejectsBackendPhase() {
 		readSupervisorRequestLine,
 		false);
 	platform.setLogCallback(discardRetroLog);
-	require(platform.machineManager()->loadSystemRomOwned(bmsx::test::makeMinimalProgramRom(bmsx::ProgramBootTarget::System)), "libretro should load the system program ROM for GPUREAD codec validation");
-	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalProgramRom(bmsx::ProgramBootTarget::Cart);
+	require(platform.machineManager()->loadSystemRomOwned(bmsx::test::makeMinimalBootRom(bmsx::ProgramBootTarget::System)), "libretro should load the system firmware ROM for GPUREAD codec validation");
+	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalBootRom(bmsx::ProgramBootTarget::Cart);
 	require(platform.loadRom(rom.data(), rom.size()), "libretro should load a program cart ROM for GPUREAD codec validation");
 	bmsx::RuntimeSaveState ready = bmsx::captureRuntimeSaveState(platform.machineManager()->runtime());
 	bmsx::GxGpuCommandBufferState& readyReadback = ready.machineState.machine.gxGpu.commandBuffer;
@@ -300,8 +301,8 @@ void testLibretroStateEnvelopeSupportsMaximumGpuread() {
 		readSupervisorRequestLine,
 		false);
 	platform.setLogCallback(discardRetroLog);
-	require(platform.machineManager()->loadSystemRomOwned(bmsx::test::makeMinimalProgramRom(bmsx::ProgramBootTarget::System)), "libretro should load the system program ROM for GPUREAD envelope validation");
-	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalProgramRom(bmsx::ProgramBootTarget::Cart);
+	require(platform.machineManager()->loadSystemRomOwned(bmsx::test::makeMinimalBootRom(bmsx::ProgramBootTarget::System)), "libretro should load the system firmware ROM for GPUREAD envelope validation");
+	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalBootRom(bmsx::ProgramBootTarget::Cart);
 	require(platform.loadRom(rom.data(), rom.size()), "libretro should load a program cart ROM for GPUREAD envelope validation");
 	const size_t stateSize = platform.getStateSize();
 	bmsx::GxGpu& gpu = platform.machineManager()->runtime().machine.gxGpu;
@@ -442,8 +443,8 @@ void testLibretroTracksPublishedNativeOutputGeometry() {
 	platform.setLogCallback(discardRetroLog);
 	platform.setInputPollCallback(discardInputPoll);
 	platform.setInputStateCallback(discardInputState);
-	require(platform.machineManager()->loadSystemRomOwned(bmsx::test::makeMinimalProgramRom(bmsx::ProgramBootTarget::System)), "libretro should load the system program ROM for native geometry validation");
-	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalProgramRom(bmsx::ProgramBootTarget::Cart);
+	require(platform.machineManager()->loadSystemRomOwned(bmsx::test::makeMinimalBootRom(bmsx::ProgramBootTarget::System)), "libretro should load the system firmware ROM for native geometry validation");
+	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalBootRom(bmsx::ProgramBootTarget::Cart);
 	require(platform.loadRom(rom.data(), rom.size()), "libretro should load a program cart ROM for native geometry validation");
 	platform.machineManager()->start();
 	platform.setPlatformPaused(true);
@@ -524,8 +525,8 @@ void testPhysicalPcrtcTimingPublishesAtServiceAndPresentationAtVblank() {
 		readSupervisorRequestLine,
 		false);
 	platform.setLogCallback(discardRetroLog);
-	require(platform.machineManager()->loadSystemRomOwned(bmsx::test::makeMinimalProgramRom(bmsx::ProgramBootTarget::System)), "libretro should load the system program ROM for physical PCRTC timing validation");
-	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalProgramRom(bmsx::ProgramBootTarget::Cart);
+	require(platform.machineManager()->loadSystemRomOwned(bmsx::test::makeMinimalBootRom(bmsx::ProgramBootTarget::System)), "libretro should load the system firmware ROM for physical PCRTC timing validation");
+	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalBootRom(bmsx::ProgramBootTarget::Cart);
 	require(platform.loadRom(rom.data(), rom.size()), "libretro should load a program cart ROM for physical PCRTC timing validation");
 
 	bmsx::Runtime& runtime = platform.machineManager()->runtime();

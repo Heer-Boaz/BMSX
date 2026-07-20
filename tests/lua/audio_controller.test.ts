@@ -123,7 +123,7 @@ import type { AudioControllerState, ApuOutputState, ApuOutputVoiceState } from '
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
-import { CART_ROM_BASE, PROGRAM_ROM_BASE, PROGRAM_STATIC_RAM_BASE, RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/machine/memory/map';
+import { CART_ROM_BASE, PROGRAM_STATIC_RAM_BASE, RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/machine/memory/map';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 import { cyclesUntilBudgetUnits } from '../../machine/ts/machine/scheduler/budget';
@@ -366,10 +366,6 @@ test('APU sample bus binds ROM directly, owns sample RAM, and rejects CPU memory
 	assert.deepEqual(Array.from(view.bytes.subarray(view.byteOffset, view.byteOffset + view.byteLength)), [0x55, 0x66, 0x77, 0x88]);
 	memory.writeU32(RAM_BASE, 0xccbbaa99);
 	assert.equal(sampleMemory.bindSource(RAM_BASE, 4, view), false);
-	memory.setProgramRom(new Uint8Array([0xc1, 0xc2, 0xc3, 0xc4]), 4);
-	assert.equal(memory.readMappedU32LE(PROGRAM_ROM_BASE), 0xc4c3c2c1);
-	assert.equal(sampleMemory.bindSource(PROGRAM_ROM_BASE, 4, view), true);
-	assert.deepEqual(Array.from(view.bytes.subarray(view.byteOffset, view.byteOffset + view.byteLength)), [0x55, 0x66, 0x77, 0x88]);
 });
 
 function writeSampleRamBytes(memory: Memory, bytes: Uint8Array): void {
@@ -447,7 +443,7 @@ function finishDmaWriteToSampleRam(harness: ReturnType<typeof createAudioHarness
 function createTransferEdgeHarness(): ReturnType<typeof createAudioControllerHarness> & { audioOutput: ApuOutputMixer } {
 	const audioOutput = new ApuOutputMixer();
 	const harness = createAudioControllerHarness(audioOutput);
-	harness.dma.setTiming(1, 0, 0, 0);
+	harness.dma.setTiming(1, 0, 1, 0, 0);
 	harness.audio.setTiming(APU_TRANSFER_WORDS_PER_SECOND, 0);
 	writeSampleRamBytes(harness.memory, new Uint8Array([0x40, 0x40, 0x40, 0x40]));
 	writePcmSourceRegisters(harness.memory, APU_SAMPLE_RAM_BASE, 4);
@@ -516,7 +512,7 @@ test('APU manual RAM writes precede a same-cycle DAC sample', () => {
 
 test('APU DMA round-trip obeys FIFO timing, RAM wrap, and mid-transfer restore', () => {
 	const live = createAudioHarness();
-	live.dma.setTiming(1, 0, 0, 0);
+	live.dma.setTiming(1, 0, 1, 0, 0);
 	live.audio.setTiming(APU_TRANSFER_WORDS_PER_SECOND, 0);
 	const source = PROGRAM_STATIC_RAM_BASE + 0x100;
 	const target = PROGRAM_STATIC_RAM_BASE + 0x200;
@@ -547,7 +543,7 @@ test('APU DMA round-trip obeys FIFO timing, RAM wrap, and mid-transfer restore',
 	assert.equal(savedAudio.sampleTransfer.scheduledWords, 16);
 
 	const restored = createAudioHarness();
-	restored.dma.setTiming(1, 0, 0, 0);
+	restored.dma.setTiming(1, 0, 1, 0, 0);
 	restored.audio.setTiming(APU_TRANSFER_WORDS_PER_SECOND, 0);
 	restored.scheduler.advanceTo(savedNow);
 	restored.memory.restoreSaveState(savedMemory);
@@ -595,7 +591,7 @@ test('APU DMA round-trip obeys FIFO timing, RAM wrap, and mid-transfer restore',
 
 test('APU transfer FIFO is not consumed by a forced wrong-direction DMA block', () => {
 	const harness = createAudioHarness();
-	harness.dma.setTiming(0, 8, 0, 0);
+	harness.dma.setTiming(0, 8, 0, 0, 0);
 	harness.audio.setTiming(APU_TRANSFER_WORDS_PER_SECOND, 0);
 	const source = PROGRAM_STATIC_RAM_BASE + 0x500;
 	const target = PROGRAM_STATIC_RAM_BASE + 0x600;

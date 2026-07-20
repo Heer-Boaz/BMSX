@@ -3,7 +3,6 @@
 #include "machine/bus/io.h"
 #include "machine/memory/lua_heap_usage.h"
 #include "machine/memory/map.h"
-#include "machine/program/linker.h"
 #include "machine/runtime/input.h"
 #include "machine/scheduler/device.h"
 #include "machine/runtime/timing/config.h"
@@ -185,25 +184,6 @@ uint32_t Runtime::vramTotalBytes() const {
 	return static_cast<uint32_t>(GX_GPU_VRAM_BYTE_COUNT);
 }
 
-void Runtime::setLinkedCartProgram(ProgramVectorTable vectors, uint32_t programDataBaseAddress, uint32_t programBssBaseAddress, uint32_t cartDataBaseAddress, uint32_t cartBssBaseAddress, std::vector<std::string> staticModulePaths) {
-	m_cartVectors = vectors;
-	m_programDataBaseAddress = programDataBaseAddress;
-	m_programBssBaseAddress = programBssBaseAddress;
-	m_cartDataBaseAddress = cartDataBaseAddress;
-	m_cartBssBaseAddress = cartBssBaseAddress;
-	m_cartStaticModulePaths = std::move(staticModulePaths);
-	cartEntryAvailable = true;
-}
-
-void Runtime::clearLinkedCartProgram(uint32_t dataByteLength) {
-	cartEntryAvailable = false;
-	m_cartDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
-	m_cartBssBaseAddress = PROGRAM_STATIC_RAM_BASE;
-	m_programDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
-	m_programBssBaseAddress = PROGRAM_STATIC_RAM_BASE + dataByteLength;
-	m_cartStaticModulePaths.clear();
-}
-
 void Runtime::enterSystemFirmware() {
 	cartProgramStarted = false;
 }
@@ -213,27 +193,36 @@ void Runtime::enterCartProgram() {
 }
 
 void Runtime::startCartProgram() {
-	m_programDataBaseAddress = m_cartDataBaseAddress;
-	m_programBssBaseAddress = m_cartBssBaseAddress;
 	enterCartProgram();
 	startLoadedProgram(m_cartVectors, std::span<const std::string>{}, m_cartStaticModulePaths);
 }
 
-void Runtime::boot(const ProgramImage& image, std::unique_ptr<ProgramMetadata> metadata, ProgramVectorTable vectors, ProgramVectorTable systemVectors, ProgramVectorTable cartVectors, uint32_t dataBaseAddress, uint32_t bssBaseAddress, uint32_t systemDataBaseAddress, uint32_t systemBssBaseAddress, std::span<const std::string> systemStaticModulePaths, std::span<const std::string> cartStaticModulePaths) {
+void Runtime::boot(
+	const ProgramImage& systemImage,
+	std::unique_ptr<ProgramMetadata> systemMetadata,
+	const ProgramImage* cartImage,
+	std::unique_ptr<ProgramMetadata> cartMetadata,
+	ProgramBootTarget bootTarget
+) {
 	m_moduleCache.clear();
-	m_programDataBaseAddress = dataBaseAddress;
-	m_programBssBaseAddress = bssBaseAddress;
-	m_systemDataBaseAddress = systemDataBaseAddress;
-	m_systemBssBaseAddress = systemBssBaseAddress;
-	m_systemStaticModulePaths.assign(systemStaticModulePaths.begin(), systemStaticModulePaths.end());
-	m_programStorage = inflateExecutableProgramImage(image, m_programDataBaseAddress, m_programBssBaseAddress);
+	const ProgramImage& activeImage = bootTarget == ProgramBootTarget::Cart ? *cartImage : systemImage;
+	const ProgramImage& runtimeImage = cartImage ? *cartImage : systemImage;
+	m_systemVectors = systemImage.vectors;
+	m_systemStaticModulePaths = systemImage.sections.rodata.staticModulePaths;
+	cartEntryAvailable = cartImage != nullptr;
+	m_cartVectors = cartImage ? cartImage->vectors : systemImage.vectors;
+	if (cartImage) {
+		m_cartStaticModulePaths = cartImage->sections.rodata.staticModulePaths;
+	} else {
+		m_cartStaticModulePaths.clear();
+	}
+	cartProgramStarted = bootTarget == ProgramBootTarget::Cart;
+	m_programStorage = assembleProgramImages(systemImage, cartImage);
 	try {
 		m_program = m_programStorage.get();
-		m_programRuntimeSymbols = image.link.symbols;
-		m_programMetadataStorage = std::move(metadata);
+		m_programRuntimeSymbols = runtimeImage.symbols;
+		m_programMetadataStorage = cartImage ? std::move(cartMetadata) : std::move(systemMetadata);
 		m_programMetadata = m_programMetadataStorage.get();
-		m_systemVectors = systemVectors;
-		m_cartVectors = cartVectors;
 		machine.cpu.setProgram(
 			m_program,
 			m_programRuntimeSymbols,
@@ -244,30 +233,14 @@ void Runtime::boot(const ProgramImage& image, std::unique_ptr<ProgramMetadata> m
 		);
 		setupBuiltins();
 		enforceLuaHeapBudget();
-		startLoadedProgram(vectors, systemStaticModulePaths, cartStaticModulePaths);
+		startLoadedProgram(
+			activeImage.vectors,
+			m_systemStaticModulePaths,
+			cartProgramStarted ? std::span<const std::string>{ m_cartStaticModulePaths } : std::span<const std::string>{}
+		);
 	} catch (const std::exception& e) {
 		handleLuaError(e.what());
 	}
-}
-
-void Runtime::bootLinkedProgramImage(LinkedBootProgramImage&& linked) {
-	setLinkedCartProgram(linked.cartVectors, linked.dataBaseAddress, linked.bssBaseAddress, linked.cartDataBaseAddress, linked.cartBssBaseAddress, std::move(linked.cartStaticModulePaths));
-	std::span<const std::string> cartStaticModulePaths = cartProgramStarted
-		? std::span<const std::string>{ m_cartStaticModulePaths }
-		: std::span<const std::string>{};
-	boot(
-		*linked.programImage,
-		std::move(linked.metadata),
-		linked.vectors,
-		linked.systemVectors,
-		linked.cartVectors,
-		linked.dataBaseAddress,
-		linked.bssBaseAddress,
-		linked.systemDataBaseAddress,
-		linked.systemBssBaseAddress,
-		linked.systemStaticModulePaths,
-		cartStaticModulePaths
-	);
 }
 
 void Runtime::startLoadedProgram(ProgramVectorTable vectors, std::span<const std::string> systemStaticModulePaths, std::span<const std::string> cartStaticModulePaths) {
@@ -299,8 +272,6 @@ void Runtime::rebootSystemProgram() {
 	machine.memory.clearIoSlots();
 	machine.initializeSystemIo();
 	resetHardwareState();
-	m_programDataBaseAddress = m_systemDataBaseAddress;
-	m_programBssBaseAddress = m_systemBssBaseAddress;
 	machine.cpu.setProgram(
 		m_program,
 		m_programRuntimeSymbols,
@@ -395,7 +366,8 @@ void Runtime::resetRuntimeForProgramReload() {
 	m_luaInitialized = false;
 	m_pendingCall = PendingCall::None;
 	programVectors = nullptr;
-	clearLinkedCartProgram(0);
+	cartEntryAvailable = false;
+	m_cartStaticModulePaths.clear();
 	luaOutputLineBuffer.clear();
 	hostFault.clear();
 	m_moduleCache.clear();

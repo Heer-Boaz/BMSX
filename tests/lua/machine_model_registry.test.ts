@@ -9,7 +9,8 @@ import {
 	NTSC_REFRESH_UFPS_SCALED,
 	PSX_DMA_RAM_CYCLES_PER_WORD,
 	PSX_DMA_RAM_BURST_SETUP_CYCLES,
-	PSX_DMA_ROM_CYCLES_PER_WORD,
+	PSX_DMA_SYSTEM_ROM_CYCLES_PER_WORD,
+	PSX_DMA_CART_ROM_CYCLES_PER_WORD,
 	PSX_MACHINE_SPEC,
 } from '../../machine/ts/machine/model_registry';
 import { HZ_SCALE } from '../../machine/ts/machine/runtime/timing/constants';
@@ -19,13 +20,15 @@ test('machine registry exposes the psx fixed hardware model', () => {
 		cpuFreqHz: 33_868_800,
 		dmaRamCyclesPerWord: 1,
 		dmaRamBurstSetupCycles: 1,
-		dmaRomCyclesPerWord: 25,
+		dmaSystemRomCyclesPerWord: 1,
+		dmaCartRomCyclesPerWord: 25,
 		ramBytes: 0x00400000,
 		geoWorkUnitsPerSec: 16_384_000,
 	});
 	assert.equal(PSX_MACHINE_SPEC.dmaRamCyclesPerWord, PSX_DMA_RAM_CYCLES_PER_WORD);
 	assert.equal(PSX_MACHINE_SPEC.dmaRamBurstSetupCycles, PSX_DMA_RAM_BURST_SETUP_CYCLES);
-	assert.equal(PSX_MACHINE_SPEC.dmaRomCyclesPerWord, PSX_DMA_ROM_CYCLES_PER_WORD);
+	assert.equal(PSX_MACHINE_SPEC.dmaSystemRomCyclesPerWord, PSX_DMA_SYSTEM_ROM_CYCLES_PER_WORD);
+	assert.equal(PSX_MACHINE_SPEC.dmaCartRomCyclesPerWord, PSX_DMA_CART_ROM_CYCLES_PER_WORD);
 });
 
 test('PSX GPU display mode bit 3 selects PAL and clear bit 3 selects 60000/1001 NTSC timing', () => {

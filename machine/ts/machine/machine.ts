@@ -71,7 +71,8 @@ export class Machine {
 		this.dmaController.setTiming(
 			PSX_MACHINE_SPEC.dmaRamCyclesPerWord,
 			PSX_MACHINE_SPEC.dmaRamBurstSetupCycles,
-			PSX_MACHINE_SPEC.dmaRomCyclesPerWord,
+			PSX_MACHINE_SPEC.dmaSystemRomCyclesPerWord,
+			PSX_MACHINE_SPEC.dmaCartRomCyclesPerWord,
 			this.scheduler.currentNowCycles(),
 		);
 	}

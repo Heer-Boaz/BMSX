@@ -31,11 +31,16 @@ export function initializeIdeFeatures(runtime: Runtime, viewport: Viewport): voi
 	constants.setIdeThemeVariant(constants.DEFAULT_THEME);
 	machineManager.ideState = createRuntimeIdeState(runtime, viewport);
 	machineManager.faultState = createRuntimeFaultState();
-	Input.instance.setKeyboardCapture(EDITOR_TOGGLE_KEY, true);
 	seedDefaultLuaBuiltins();
-	registerRuntimeShortcuts(runtime);
 	machineManager.ideState.debugger.controller.setBreakpoints(editorDebuggerState.breakpoints);
 	updateGamePipelineExts();
+	const editorAvailable = machineManager.ideState.editor.isAvailable;
+	Input.instance.setKeyboardCapture(EDITOR_TOGGLE_KEY, editorAvailable);
+	if (!editorAvailable) {
+		disposeShortcutHandlers();
+		return;
+	}
+	registerRuntimeShortcuts(runtime);
 }
 
 export function setActiveIdeFontVariant(variant: FontVariant): void {

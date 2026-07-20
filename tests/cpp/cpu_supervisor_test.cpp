@@ -57,14 +57,13 @@ struct CpuSupervisorHarness {
 		: memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, { emptyRom.data(), 0u } })
 		, irq(memory)
 		, cpu(memory, irq) {
-		program.programRom.resize(PROGRAM_INSTRUCTION_COUNT * bmsx::INSTRUCTION_BYTES);
-		program.programRomTextByteLength = program.programRom.size();
+		program.codeBytes.resize(PROGRAM_INSTRUCTION_COUNT * bmsx::INSTRUCTION_BYTES);
 		program.constPoolStringPool = &program.stringPool;
 		program.constPool = {
 			bmsx::valueNumber(static_cast<double>(UNMAPPED_ADDRESS)),
 			bmsx::valueNumber(static_cast<double>(bmsx::IO_SYS_BUS_FAULT_CODE - bmsx::IO_WORD_SIZE)),
 		};
-		std::span<bmsx::u8> code(program.programRom);
+		std::span<bmsx::u8> code(program.codeBytes);
 
 		bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::HALT), 0, 0, 0);
 		bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::K1), 0, 0, 0);
@@ -222,14 +221,13 @@ void testMappedMemoryAlignmentContract() {
 	bmsx::IrqController irq(memory);
 	bmsx::CPU cpu(memory, irq);
 	bmsx::Program program;
-	program.programRom.resize(6u * bmsx::INSTRUCTION_BYTES);
-	program.programRomTextByteLength = program.programRom.size();
+	program.codeBytes.resize(6u * bmsx::INSTRUCTION_BYTES);
 	program.constPoolStringPool = &program.stringPool;
 	program.constPool = {
 		bmsx::valueNumber(static_cast<double>(BYTE_ADDRESS)),
 		bmsx::valueNumber(static_cast<double>(F64_ADDRESS)),
 	};
-	std::span<bmsx::u8> code(program.programRom);
+	std::span<bmsx::u8> code(program.codeBytes);
 	bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 0);
 	bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::LOAD_MEM), 1, 0, static_cast<bmsx::u8>(bmsx::MemoryAccessKind::U8));
 	bmsx::writeInstruction(code, 2, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 1);
@@ -277,11 +275,10 @@ void testAddressErrorsPrecedeMappedMemoryBusCycles() {
 		bmsx::IrqController irq(memory);
 		bmsx::CPU cpu(memory, irq);
 		bmsx::Program program;
-		program.programRom.resize(static_cast<size_t>(instructionCount) * bmsx::INSTRUCTION_BYTES);
-		program.programRomTextByteLength = program.programRom.size();
+		program.codeBytes.resize(static_cast<size_t>(instructionCount) * bmsx::INSTRUCTION_BYTES);
 		program.constPoolStringPool = &program.stringPool;
 		program.constPool = { bmsx::valueNumber(static_cast<double>(FAULT_ADDRESS)) };
-		std::span<bmsx::u8> code(program.programRom);
+		std::span<bmsx::u8> code(program.codeBytes);
 		bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::HALT), 0, 0, 0);
 		bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 0);
 		for (int value = 0; value < testCase.valueCount; ++value) {
@@ -321,8 +318,7 @@ void testProtectedCallMicrocodePreemptsSavesAndHandlesLuaErrors() {
 	bmsx::IrqController irq(memory);
 	bmsx::CPU cpu(memory, irq);
 	bmsx::Program program;
-	program.programRom.resize(34u * bmsx::INSTRUCTION_BYTES);
-	program.programRomTextByteLength = program.programRom.size();
+	program.codeBytes.resize(34u * bmsx::INSTRUCTION_BYTES);
 	program.constPoolStringPool = &program.stringPool;
 	program.constPool = {
 		cpu.createBuiltinFunction(bmsx::BuiltinFunctionId::PCall),
@@ -332,7 +328,7 @@ void testProtectedCallMicrocodePreemptsSavesAndHandlesLuaErrors() {
 		bmsx::valueNumber(4.0),
 		bmsx::valueNumber(42.0),
 	};
-	std::span<bmsx::u8> code(program.programRom);
+	std::span<bmsx::u8> code(program.codeBytes);
 	bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 0);
 	bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 1, 0, 1);
 	bmsx::writeInstruction(code, 2, static_cast<bmsx::u8>(bmsx::OpCode::CALL), 0, bmsx::encodeFixedCallArgCount(1), 3);

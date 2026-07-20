@@ -39,7 +39,6 @@ namespace bmsx {
 
 // Forward declarations
 struct ProgramImage;
-struct LinkedBootProgramImage;
 struct GxGpuPcrtcTiming;
 
 /**
@@ -70,8 +69,13 @@ public:
 	/**
 	 * Boot the runtime with a compiled program.
 	 */
-	void boot(const ProgramImage& image, std::unique_ptr<ProgramMetadata> metadata, ProgramVectorTable vectors, ProgramVectorTable systemVectors, ProgramVectorTable cartVectors, uint32_t dataBaseAddress, uint32_t bssBaseAddress, uint32_t systemDataBaseAddress, uint32_t systemBssBaseAddress, std::span<const std::string> systemStaticModulePaths, std::span<const std::string> cartStaticModulePaths);
-	void bootLinkedProgramImage(LinkedBootProgramImage&& linked);
+	void boot(
+		const ProgramImage& systemImage,
+		std::unique_ptr<ProgramMetadata> systemMetadata,
+		const ProgramImage* cartImage,
+		std::unique_ptr<ProgramMetadata> cartMetadata,
+		ProgramBootTarget bootTarget
+	);
 	void handleLuaError(const std::string& message);
 
 	/**
@@ -84,7 +88,6 @@ public:
 	 */
 	auto hasRuntimeFailed() const -> bool { return m_runtimeFailed; }
 
-	void clearLinkedCartProgram(uint32_t dataByteLength);
 	void enterSystemFirmware();
 	void enterCartProgram();
 	void startCartProgram();
@@ -143,7 +146,6 @@ private:
 	};
 	void setupBuiltins();
 	void clearLuaBootPrimitives();
-	void setLinkedCartProgram(ProgramVectorTable vectors, uint32_t programDataBaseAddress, uint32_t programBssBaseAddress, uint32_t cartDataBaseAddress, uint32_t cartBssBaseAddress, std::vector<std::string> staticModulePaths);
 	void runStaticModuleInitializers(std::span<const std::string> paths);
 	void runSectionInitializer(int protoIndex, u32 statusWord);
 	void runStaticModuleInitializer(const std::string& path);
@@ -172,13 +174,7 @@ private:
 
 	ProgramVectorTable m_systemVectors;
 	ProgramVectorTable m_cartVectors;
-	uint32_t m_systemDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
-	uint32_t m_systemBssBaseAddress = PROGRAM_STATIC_RAM_BASE;
 	std::vector<std::string> m_systemStaticModulePaths;
-	uint32_t m_programDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
-	uint32_t m_programBssBaseAddress = PROGRAM_STATIC_RAM_BASE;
-	uint32_t m_cartDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
-	uint32_t m_cartBssBaseAddress = PROGRAM_STATIC_RAM_BASE;
 	ProgramVectorTable m_programVectorsStorage;
 	std::vector<std::string> m_cartStaticModulePaths;
 

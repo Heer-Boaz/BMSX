@@ -124,7 +124,7 @@ export function callClosureIntoSuspended(runtime: Runtime, fn: Closure, args: Re
 		cpu.clearHaltUntilIrq();
 	}
 	try {
-		runtime.callClosureInto(fn, args, out);
+		callClosureIntoWithScheduler(runtime, fn, args, out);
 	} finally {
 		if (restoreHalt) {
 			cpu.haltUntilIrq();

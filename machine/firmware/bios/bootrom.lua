@@ -22,8 +22,6 @@ local irq_mask<const>: *word = 0x08000010
 local input_control<const>: *word = 0x0800006c
 
 local cart_rom_base<const> = 0x01000000
-local cart_program_start_addr<const> = 0x10080000
-local cart_program_vector_addr<const> = cart_program_start_addr - 4
 local cart_rom_magic<const> = 0x58534d42
 local cart_rom_base_header_size<const> = 32
 local irq_vblank<const> = 0x0004
@@ -97,8 +95,7 @@ end
 
 local update_boot_screen<const> = function()
 	local cart_present<const> = cart_header_present()
-	local cart_ready<const> = cart_present and mem[cart_program_vector_addr] == cart_program_start_addr
-	if cart_ready then
+	if cart_present then
 		-- Runtime starts the cart only after this system root returns. Keep the
 		-- handoff after the first VBlank; the cart then programs primary scanout.
 		*irq_mask = 0

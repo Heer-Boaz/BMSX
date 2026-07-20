@@ -16,16 +16,12 @@ const std::vector<u8>& payloadForEntry(const std::unordered_map<std::string, con
 	return *it->second;
 }
 
-const char* cartridgeLayerIdName(CartridgeLayerId id) {
+std::string cartridgeLayerIdString(CartridgeLayerId id) {
 	switch (id) {
 		case CartridgeLayerId::System: return "system";
 		case CartridgeLayerId::Cart: return "cart";
 	}
 	std::abort();
-}
-
-std::string cartridgeLayerIdString(CartridgeLayerId id) {
-	return cartridgeLayerIdName(id);
 }
 
 } // namespace
@@ -99,17 +95,9 @@ std::vector<RomSourceEntry> RomSourceStack::list(std::optional<std::string_view>
 	return out;
 }
 
-std::vector<u8> RomSourceStack::getBytes(const RomSourceEntry& entry) const {
-	return getBytes(entry.rom);
-}
-
 std::vector<u8> RomSourceStack::getBytes(const RomAssetInfo& entry) const {
 	std::span<const u8> view = getBytesView(entry);
 	return std::vector<u8>(view.begin(), view.end());
-}
-
-std::span<const u8> RomSourceStack::getBytesView(const RomSourceEntry& entry) const {
-	return getBytesView(entry.rom);
 }
 
 std::span<const u8> RomSourceStack::getBytesView(const RomAssetInfo& entry) const {

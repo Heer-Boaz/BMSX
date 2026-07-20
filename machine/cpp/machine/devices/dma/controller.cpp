@@ -8,8 +8,6 @@
 #include "machine/memory/memory.h"
 #include "machine/scheduler/device.h"
 
-#include <algorithm>
-
 namespace bmsx {
 
 DmaController::DmaController(Memory& memory, CPU& cpu, IrqController& irq, DeviceScheduler& scheduler)
@@ -57,15 +55,17 @@ void DmaController::onTriggerWrite(u32 value) {
 	}
 }
 
-void DmaController::setTiming(i64 ramCyclesPerWord, i64 ramBurstSetupCycles, i64 romCyclesPerWord, i64 nowCycles) {
+void DmaController::setTiming(i64 ramCyclesPerWord, i64 ramBurstSetupCycles, i64 systemRomCyclesPerWord, i64 cartRomCyclesPerWord, i64 nowCycles) {
 	if (m_ramCyclesPerWord == ramCyclesPerWord
 		&& m_ramBurstSetupCycles == ramBurstSetupCycles
-		&& m_romCyclesPerWord == romCyclesPerWord) {
+		&& m_systemRomCyclesPerWord == systemRomCyclesPerWord
+		&& m_cartRomCyclesPerWord == cartRomCyclesPerWord) {
 		return;
 	}
 	m_ramCyclesPerWord = ramCyclesPerWord;
 	m_ramBurstSetupCycles = ramBurstSetupCycles;
-	m_romCyclesPerWord = romCyclesPerWord;
+	m_systemRomCyclesPerWord = systemRomCyclesPerWord;
+	m_cartRomCyclesPerWord = cartRomCyclesPerWord;
 	// Admission latches the current block's completion edge. New timing starts
 	// with the next block rather than replaying elapsed bus time.
 	if (m_scheduledBlockWords != 0u) {
@@ -353,18 +353,25 @@ void DmaController::admitBlock(i64 anchorCycle) {
 	const u32 writeAddress = m_memory.readIoU32(IO_DMA_WRITE_ADDR);
 	const MemoryRegionKind readRegion = m_memory.mappedRegion(readAddress);
 	const MemoryRegionKind writeRegion = m_memory.mappedRegion(writeAddress);
-	const i64 ramBlockCycles = static_cast<i64>(blockWords) * m_ramCyclesPerWord + m_ramBurstSetupCycles;
-	const i64 romBlockCycles = static_cast<i64>(blockWords) * m_romCyclesPerWord;
-	i64 blockCycles = readRegion == MemoryRegionKind::Ram && writeRegion == MemoryRegionKind::Ram
-		? ramBlockCycles * 2
-		: std::max(
-			readRegion == MemoryRegionKind::Ram
-				? ramBlockCycles
-				: readRegion == MemoryRegionKind::Other ? 0 : romBlockCycles,
-			writeRegion == MemoryRegionKind::Ram
-				? ramBlockCycles
-				: writeRegion == MemoryRegionKind::Other ? 0 : romBlockCycles
-		);
+	i64 blockCycles;
+	if (readRegion == MemoryRegionKind::Ram && writeRegion == MemoryRegionKind::Ram) {
+		blockCycles = 2 * (static_cast<i64>(blockWords) * m_ramCyclesPerWord + m_ramBurstSetupCycles);
+	} else {
+		const i64 ramBlockCycles = readRegion == MemoryRegionKind::Ram || writeRegion == MemoryRegionKind::Ram
+			? static_cast<i64>(blockWords) * m_ramCyclesPerWord + m_ramBurstSetupCycles
+			: 0;
+		const i64 readCycles = readRegion == MemoryRegionKind::Ram
+			? ramBlockCycles
+			: readRegion == MemoryRegionKind::SystemRom
+				? static_cast<i64>(blockWords) * m_systemRomCyclesPerWord
+				: readRegion == MemoryRegionKind::CartRom ? static_cast<i64>(blockWords) * m_cartRomCyclesPerWord : 0;
+		const i64 writeCycles = writeRegion == MemoryRegionKind::Ram
+			? ramBlockCycles
+			: writeRegion == MemoryRegionKind::SystemRom
+				? static_cast<i64>(blockWords) * m_systemRomCyclesPerWord
+				: writeRegion == MemoryRegionKind::CartRom ? static_cast<i64>(blockWords) * m_cartRomCyclesPerWord : 0;
+		blockCycles = readCycles > writeCycles ? readCycles : writeCycles;
+	}
 	if (blockCycles == 0) {
 		blockCycles = 1;
 	}

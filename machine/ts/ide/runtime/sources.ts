@@ -30,8 +30,9 @@ export type RuntimeSourceState = {
 	currentPath: string;
 	cartProgramStarted: boolean;
 	realtimeCompileOptLevel: 0 | 1 | 2 | 3;
+	systemProgramMediaDirty: boolean;
+	cartProgramMediaDirty: boolean;
 	luaChunkEnvironmentsByPath: Map<string, LuaEnvironment>;
-	luaGenericChunksExecuted: Set<string>;
 };
 
 export function createRuntimeSourceState(systemLayer: RuntimeRomLayer, cartLayer: RuntimeRomLayer | null): RuntimeSourceState {
@@ -40,6 +41,7 @@ export function createRuntimeSourceState(systemLayer: RuntimeRomLayer, cartLayer
 	const luaSourceRegistries: LuaSourceRegistry[] = [];
 	const luaSourceSearchRegistries: LuaSourceRegistry[] = [];
 	const moduleCompileLuaSources: LuaSourceRegistry[] = [];
+	const systemProjectRootPath = systemLuaSources.projectRootPath || DEFAULT_SYSTEM_PROJECT_ROOT_PATH;
 	if (cartLayer) {
 		const activeSourceLayers: RomSourceLayer[] = [
 			{ id: cartLayer.id, index: cartLayer.index, payload: cartLayer.payload },
@@ -62,13 +64,14 @@ export function createRuntimeSourceState(systemLayer: RuntimeRomLayer, cartLayer
 			systemRomSource: systemSource,
 			cartRomSource,
 			activeRomSource: systemSource,
-			systemProjectRootPath: systemLuaSources.projectRootPath || DEFAULT_SYSTEM_PROJECT_ROOT_PATH,
+			systemProjectRootPath,
 			cartProjectRootPath: cartLayer.index.projectRootPath,
 			currentPath: systemLuaSources.entry_path,
 			cartProgramStarted: false,
 			realtimeCompileOptLevel: 3,
+			systemProgramMediaDirty: false,
+			cartProgramMediaDirty: false,
 			luaChunkEnvironmentsByPath: new Map(),
-			luaGenericChunksExecuted: new Set(),
 		};
 		enterSystemSources(state);
 		return state;
@@ -88,13 +91,14 @@ export function createRuntimeSourceState(systemLayer: RuntimeRomLayer, cartLayer
 		systemRomSource: systemSource,
 		cartRomSource: null,
 		activeRomSource: systemSource,
-		systemProjectRootPath: systemLuaSources.projectRootPath || DEFAULT_SYSTEM_PROJECT_ROOT_PATH,
+		systemProjectRootPath,
 		cartProjectRootPath: null,
 		currentPath: systemLuaSources.entry_path,
 		cartProgramStarted: false,
 		realtimeCompileOptLevel: 3,
+		systemProgramMediaDirty: false,
+		cartProgramMediaDirty: false,
 		luaChunkEnvironmentsByPath: new Map(),
-		luaGenericChunksExecuted: new Set(),
 	};
 	enterSystemSources(state);
 	return state;
@@ -127,6 +131,32 @@ export function syncRuntimeSourceActivity(state: RuntimeSourceState, cartProgram
 		return;
 	}
 	enterSystemSources(state);
+}
+
+export function installRuntimeRomLayers(
+	state: RuntimeSourceState,
+	systemLayer: RomSourceLayer | null,
+	cartLayer: RomSourceLayer | null,
+): void {
+	if (systemLayer !== null) {
+		state.systemRom.index = systemLayer.index;
+		state.systemRom.payload = systemLayer.payload;
+		state.systemRomSource = new RomSourceStack([{
+			id: systemLayer.id,
+			index: systemLayer.index,
+			payload: systemLayer.payload,
+		}]);
+	}
+	if (cartLayer !== null) {
+		state.cartRom!.index = cartLayer.index;
+		state.cartRom!.payload = cartLayer.payload;
+		state.cartRomSource = new RomSourceStack([{
+			id: cartLayer.id,
+			index: cartLayer.index,
+			payload: cartLayer.payload,
+		}]);
+	}
+	state.activeRomSource = state.cartProgramStarted ? state.cartRomSource! : state.systemRomSource;
 }
 
 export function resolveRuntimeLuaSource(state: RuntimeSourceState, path: string): LuaSourceMatch | null {

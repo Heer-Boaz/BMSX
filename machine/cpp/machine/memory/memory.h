@@ -12,7 +12,7 @@
 
 namespace bmsx {
 
-enum class MemoryRegionKind { Ram, Rom, Other };
+enum class MemoryRegionKind { Ram, SystemRom, CartRom, Other };
 
 struct MemorySaveState {
 	std::vector<u8> ram;
@@ -51,7 +51,6 @@ public:
 	void mapIoWrite(uint32_t addr, TObject& object) {
 		m_ioWriteHandlers[static_cast<size_t>((addr - IO_BASE) / IO_WORD_SIZE)] = { &object, &writeMember<Method, TObject> };
 	}
-	void setProgramRom(const u8* data, size_t size, size_t textByteLength);
 	bool mappedWriteReady(uint32_t addr);
 	u32 firstBlockedMappedWordWrite(uint32_t addr, uint32_t wordCount);
 	uint32_t readBusFaultSequence() const { return m_busFaultSequence; }
@@ -111,8 +110,6 @@ private:
 	};
 	RomSpan m_systemRom;
 	RomSpan m_cartRom;
-	RomSpan m_programRom;
-	size_t m_programTextByteLength = 0;
 	std::vector<u8> m_ram;
 	mutable std::vector<Value> m_ioSlots;
 	std::vector<IoReadBinding> m_ioReadHandlers;
@@ -130,10 +127,7 @@ private:
 		}
 		return static_cast<int>(delta / IO_WORD_SIZE);
 	}
-	bool isProgramRomReadableRange(uint32_t addr, size_t length) const;
-	uint32_t readProgramRomWord(uint32_t addr) const;
 	uint32_t readSystemOrCartRomU32(uint32_t addr) const;
-	bool isRangeWithinRegion(uint32_t addr, size_t length, uint32_t base, uint32_t size) const;
 	bool isLuaReadOnlyIoAddress(uint32_t addr) const;
 	Value readIoSlotValue(int slot, uint32_t addr, MappedBusSignals busSignals) const;
 	void writeIoSlotValue(int slot, uint32_t addr, Value value, MappedBusSignals busSignals);

@@ -2,9 +2,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
-import { compileLuaChunkToProgram, encodeCompiledProgramImage } from '../../machine/ts/lua/compiler';
+import { compileLuaChunkToProgram } from '../../machine/ts/lua/compiler';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import {
 	GX_GPU_PCRTC_CONFIG_WORD_COUNT,
 	GX_GPU_PCRTC_DISPLAY1_LOW,
@@ -16,8 +15,8 @@ import {
 	gxGpuPcrtcRegisterAddress,
 } from '../../machine/ts/machine/devices/gx/gpu_pcrtc';
 import { Memory } from '../../machine/ts/machine/memory/memory';
-import { inflateExecutableProgramImage } from '../../machine/ts/machine/program/linker';
 import { parseLuaChunk } from './cpu_test_harness';
+import { createInitializedTestSystemCpu, finalizeTestSystemProgram } from '../helpers/program_image';
 
 const MODE_SELECTOR_ADDRESS = 0x08040000;
 const ENTRY_SOURCE = `
@@ -62,7 +61,8 @@ const modules = MODULE_FILES.map(([path, file]) => {
 	return { path, chunk: parseLuaChunk(source, `${path}.lua`), source };
 });
 const compiled = compileLuaChunkToProgram(parseLuaChunk(ENTRY_SOURCE, 'entry.lua'), modules, { entrySource: ENTRY_SOURCE, optLevel: 3 });
-const image = encodeCompiledProgramImage(compiled);
+const finalized = finalizeTestSystemProgram(compiled);
+const image = finalized.image;
 
 type FirmwareMode = {
 	width: number;
@@ -83,17 +83,7 @@ const FIRMWARE_MODES: readonly FirmwareMode[] = [
 ];
 
 function runFirmwareMode(modeIndex: number): { memory: Memory; cpu: CPU } {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
-	const cpu = new CPU(memory, new IrqController(memory));
-	cpu.setProgram(inflateExecutableProgramImage(image), image.link.symbols, compiled.metadata, 0, 0, 0);
-	cpu.start(image.vectors.sectionInitProtoIndex);
-	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
-	for (const path of compiled.staticModulePaths) {
-		const targetDepth = cpu.getFrameDepth();
-		cpu.call(cpu.rootClosure(compiled.moduleProtoMap.get(path)!));
-		assert.equal(cpu.runUntilDepth(targetDepth, 10_000_000), RunResult.Halted);
-	}
-	cpu.syncGlobalSlotsToTable();
+	const { memory, cpu } = createInitializedTestSystemCpu(finalized, 10_000_000);
 	memory.writeMappedU32LE(MODE_SELECTOR_ADDRESS, modeIndex);
 	cpu.start(image.vectors.resetProtoIndex);
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);

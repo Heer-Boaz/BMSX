@@ -235,7 +235,7 @@ Forbidden cart-visible shapes:
 
 Host code may load files, build ROMs, display frames, play samples, edit source,
 and inject input events. It must not be the owner of cart-observable semantics.
-Debugger pause, source activity, IDE overlays, hot-eval source text, and editor
+Debugger pause, source activity, IDE overlays, media-build source text, and editor
 diagnostics are host/IDE state; the machine scheduler and runtime frame loop do
 not carry those flags as emulated state.
 
@@ -249,7 +249,8 @@ The active machine model is `psx`. The model owns fixed hardware facts:
 33.8688 MHz CPU clock, 4 MB RAM, region-aware DMA bus timing, a 16,384,000
 work-unit/s geometry unit, and a PSX-style GPU with 2 MiB of raw VRAM. The DMA
 timing is expressed in CPU cycles: one per RAM word plus one cycle of RAM-burst
-setup, and twenty-five per 32-bit external-ROM word. Machine reset initializes
+setup, one per firmware-ROM word, and twenty-five per 32-bit cartridge word.
+Machine reset initializes
 VRAM with the fixed GX power-on bit pattern. GPU reset starts from a 320×240 PAL display
 configuration; that is a reset register state, not a fixed host scanout size.
 
@@ -445,7 +446,7 @@ resources. If cart source moves during a package split, it should move toward a
 top-level `carts/` collection, not under `machine`.
 
 The exception is firmware/source material that ships with the machine runtime:
-BIOS, system-ROM helpers, and default boot/source assets belong under the
+BIOS, firmware helpers, and default boot/source assets belong under the
 machine firmware owner. That is not a general cart collection.
 
 ## Mirrored core contract
@@ -478,11 +479,16 @@ Owners:
   `machine/cpp/rompack/toc.h/.cpp`.
 - Layered ROM lookup: `machine/ts/rompack/source.ts` and
   `machine/cpp/rompack/source.h/.cpp`.
-- Program image layout/loading/linking:
+- Final program-image layout/loading:
   `machine/ts/machine/program/*` and `machine/cpp/machine/program/*`.
 - Build-time Lua source compilation and Lua source registries:
   `machine/ts/lua/compiler.ts`, `machine/ts/lua/compiler/*`, and
   `machine/ts/lua/source_registry.ts`.
+- Program-object linking and ROM-tail writing:
+  `machine/ts/rompack/tooling/program_linker.ts` and
+  `machine/ts/rompack/tooling/program_tail.ts`.
+- ROM-header serialization shared by the packer and tail rebuilder:
+  `machine/ts/rompack/tooling/header_encode.ts`.
 
 The ROM package and program image use the current wire records only. There is no
 old-format reader and no decode path for obsolete records.
@@ -507,27 +513,35 @@ once for lifetime safety. Node headless consumes the `fs.readFile` buffer
 directly. Guest code moves bytes from ROM to RAM/VRAM/APU through the machine;
 the Lua engine must not cache asset payload copies behind the cart's back.
 
-Compiled Lua/YAML is source/program material, not mutable machine state.
-`__program__` is a linked object image. `__program_symbols__` is debug metadata
-and never counts as RAM.
+Compiled Lua/YAML is source/program material, not mutable machine state. The
+compiler emits a tooling-owned program object with relocations. The ROM packer
+resolves those relocations at the actual physical `SYSTEM_ROM` or `CART_ROM`
+address and emits a final program image; neither runtime owns a linker.
 
-The emulator core consumes program images; it does not own source compilation.
-TypeScript source builds, hot-eval compilation, and source registries live in the
-Lua/tooling side and feed compiled program images into the same runtime boundary
-that native uses. `machine/ts/machine/program/*` stays the executable image,
-linker, loader, scratch, and closure-call machine boundary mirrored by C++.
+`__program__` begins the deliberately final program tail in each ROM. Its
+ordinary TOC range contains the raw `[rodata | data-load-image | text]` bytes in
+that physical ROM, while its compiled range contains the final descriptor:
+placement, vectors, protos, const values, module records, section lengths, and
+resolved runtime slot symbols. The descriptor also carries a two-word static
+layout token over the absolute section bases, section lengths, and each storage
+symbol's name, offset, size, and alignment. Static physical sections precede text so an
+ordinary code-only Hot Resume cannot move retained ROM pointers merely because
+the instruction count changed. `__program_symbols__`, when present, follows it
+and contains debug metadata only. Keeping this tail last lets the IDE rebuild
+program bytes without repacking unchanged asset payloads.
 
-Runtime link symbols belong to `__program__`, not `__program_symbols__`.
-The program-image `link.symbols` record carries proto ids, global slot names,
-system-global slot names, and export-proto mappings required to resolve
-relocations and install CPU global slots. Stripping `__program_symbols__`
-removes source ranges, local-slot names, and upvalue names only; it must not
-change executable linking, boot, or restore behavior.
+The emulator core consumes only final images. It decodes the system and cart
+descriptors, retains views of their raw physical section bytes, and assembles the
+CPU's instruction/const/proto state as derived runtime data. TypeScript source
+builds and source registries stay on the compiler/rompack side and enter the
+machine through the same final-image boundary as native. Stripping
+`__program_symbols__` removes source ranges, local-slot names, and upvalue names;
+it does not change physical ROM bytes, boot, global slots, or restore behavior.
 
 CPU decode state is derived runtime infrastructure. The CPU decodes executable
 proto ranges into sparse pages and allocates table-load inline caches only for
-actual table-load opcodes. It must not allocate decode/cache state for address
-holes in the linked text layout or for every possible program-ROM word.
+actual table-load opcodes. It must not allocate decode/cache state for gaps in
+the assembled text layout or for unused words in either physical ROM window.
 
 ROM asset symbols are a compile/link contract, not a runtime registry. The
 rompack owner emits the generated const module `bmsx/assets`; the compiler
@@ -567,23 +581,38 @@ does not mandate fixed binary layouts for every map, room, timeline, registry,
 or asset record. Fixed layouts become a machine/tooling contract only when a
 concrete asset producer and hot/runtime consumer require that contract.
 
-Program images are object images until linked. Symbolic relocs remain linker
-metadata; `module`, `export_proto`, section-address, and const-value relocs must
-not leak as placeholder runtime strings into executable const-pools or Lua
-values. The program/linker owner resolves object images to executable program
-state before CPU install.
+Program objects exist only between the compiler and ROM-building/Hot-Resume
+tooling. Symbolic `module`, `export_proto`, section-address, const-value, and
+indexed-operand relocations are resolved before the final image is serialized;
+Hot Resume resolves the same object once more into derived live CPU state. They
+never become placeholder Lua values or mutable machine state. System text starts
+at PC zero. Cart text follows it directly, while the cart descriptor records its
+final text, const, proto, `.data`, and `.bss` bases.
 
-Program images carry a vector table: reset, section-init, and IRQ. Cold boot
-runs section-init, then static module initialization, then the reset vector.
-Hot-resume installs the same linked image shape but does not re-run section-init
-against live cart RAM.
+Final images carry reset, section-init, IRQ, and exception vectors. A cold boot
+runs section-init, then static module initialization, then the reset vector. Hot
+Resume compiles each source-backed medium once, replaces its physical final
+program tail, and links that same program object into the live derived CPU
+program. Existing heap objects, globals, closures, frames, module state, RAM,
+and device state remain live. Proto indices stay stable; code for a changed proto
+is appended to the derived instruction buffer so an already-active frame can
+finish its old code, while later calls through the same closure use the new proto
+entry. Unchanged proto code is retained without another copy. Hot Resume does not
+call `Runtime.boot`, run section-init, initialize static modules, enter the
+firmware reset vector, or run `new_game`; rebuilding the physical tail is not a
+reboot. It reruns `init` so registration-owned handlers publish the changed
+module code. A revision that changes captured-upvalue layouts, retained
+`.rodata`/`.data`/`.bss` symbol layout, or any absolute static-storage placement
+is rejected as Hot-Resume-incompatible; Hot Resume never turns that rejection
+into an implicit cold reboot.
 
-BLua sections are machine storage, not runtime metadata. `.rodata` is immutable
-CPU-readable PROGRAM_ROM storage; `.data` is RAM storage with a PROGRAM_ROM
-load image; `.bss` is zeroed RAM storage. BLua declarations create typed storage
-symbols and startup code copies `.data` and zeros `.bss` with ordinary CPU
-memory operations. Runtime and rompacker do not parse sections to initialize
-cart data on behalf of the game.
+BLua sections are machine storage, not runtime metadata. Firmware `.rodata` and
+`.data` load bytes live in `SYSTEM_ROM`; cartridge `.rodata` and `.data` load
+bytes live in `CART_ROM`. `.data` has its writable VMA in RAM and `.bss` is
+zeroed RAM storage. BLua declarations create typed storage symbols and startup
+code copies `.data` from its physical ROM LMA and zeros `.bss` with ordinary CPU
+memory operations. Runtime and rompacker do not initialize those RAM sections
+on behalf of guest code.
 Initialized `.rodata` and `.data` arrays may infer their outer count from one
 exact initializer, and initialized records use the declared struct layout
 directly. Immutable `string` fields are `.rodata` const-pool references: the
@@ -733,27 +762,18 @@ TypeScript uses a pooled borrowed view with `get(index)`, not a `Proxy`-backed
 array facade. Both views expose Lua's nil-filled argument lane for reads beyond
 the supplied argument count without materializing an argument array per call.
 
-Executable program text is part of the memory-mapped program ROM image. The
-runtime program text view points at the text window in that ROM buffer, so
-runtime relocations patch the executable text that the CPU decodes and the bytes
-that the bus exposes at the program-ROM address range. Host-eval append code is
-the explicit exception: it extends the CPU-visible bytecode stream while
-preserving the already-installed program-ROM mapping for guest memory reads.
-Executable const-pool relocation is an inflate-time value rewrite; it must not
-clone the full object sections just to replace the const-pool image.
-Release program installs retain one CPU-visible program-ROM backing for text,
-rodata, and data load image bytes. The executable code view aliases that backing
-instead of owning a second byte buffer; debug/source metadata is a debug-symbol
-asset, not release runtime residency. Runtime const-pool values, protos, module
-export records, and the CPU decode cache are their own owner data structures and
-must not keep duplicate rodata/debug payload copies.
-Program-ROM size/fit is owned by the linker/producer. `Memory` maps the retained
-program-ROM backing into the fixed CPU window and the window itself determines
-which bytes are observable; the memory device does not revalidate producer size
-or throw during install.
+System firmware and cartridge program bytes live in their ordinary physical ROM
+assets. Guest loads observe the raw `__program__` section bytes through
+`SYSTEM_ROM` or `CART_ROM`, including `.rodata` and `.data` load images. There is
+no third executable address window and no runtime relocation write into either
+ROM. The CPU consumes an assembled instruction buffer because its PC space joins
+system and cart text into one derived execution namespace; that buffer is a
+decode input/cache, not guest-visible storage. Runtime const values, protos,
+module records, global-slot symbols, and CPU decode pages are likewise derived
+owner data. Debug/source metadata remains a separate optional asset.
 
-System ROM and the boot-selected executable cartridge ROM are fixed CPU-visible
-address windows. Two cartridge slots do not create overlapping generic ROM
+System ROM and cartridge ROM are fixed CPU-visible address windows. Two
+cartridge slots do not create overlapping generic ROM
 facades: `CART-EXP-01` must assign each slot's physical ROM/device chip selects
 and arbitration before the expansion slot is implemented. For every mapped ROM
 window, the backing payload may be shorter than the window or absent; bytes
@@ -922,11 +942,11 @@ instruction boundary after its mask bit is written, with no delayed-EI extra
 instruction.
 
 The compiler-generated IRQ vector reads `IRQ_FLAGS` and calls the program's
-`irq(flags)` handler when bits are pending. System-ROM compilation binds the
+`irq(flags)` handler when bits are pending. Firmware compilation binds the
 BIOS `irq` and `exception` handlers through `SETSYS`/`GETSYS`; cart compilation
 binds the same source names through ordinary `SETGL`/`GETGL`. The compile domain
-is explicit at every BIOS, cart, hot-resume and host-eval producer. Existing
-linked metadata cannot grant a cart access to a system slot.
+is explicit at every firmware, cartridge, and IDE media-build producer. Existing
+final-image metadata cannot grant a cart access to a system slot.
 
 The CPU stores system and ordinary global slots in distinct registerfiles.
 Ordinary slots synchronize with the Lua globals table; system slots do not.
@@ -965,7 +985,7 @@ discarded by the emulator.
 ### Supervisor exceptions and BIOS terminal
 
 The CPU supervisor exception path and BIOS terminal are machine-owned. The
-terminal is system-ROM firmware, not a host overlay. This first hardware version
+terminal is firmware-ROM code, not a host overlay. This first hardware version
 deliberately uses a compact R3000-style exception model without an MMU, MPU,
 protected heap, or supervisor-only RAM.
 
@@ -1085,7 +1105,7 @@ Privilege gates system vectors, CP0 writes, exception return, and other
 explicitly privileged CPU/system-control operations; it does not make ordinary
 RAM inaccessible to carts.
 
-The BIOS monitor code lives in system program ROM. Its line buffer, fixed-size
+The BIOS monitor code lives in `SYSTEM_ROM`. Its line buffer, fixed-size
 output/history rings, and other mutable state use reserved ordinary `.bss`/RAM.
 A cart can therefore corrupt that workspace, and a heap-corruption or
 out-of-memory fault need not leave a working monitor. That is an explicit
@@ -1376,27 +1396,33 @@ DMA-direction register. APU requests are the sample-transfer FIFO's empty/write
 and full/read lines.
 
 The standard machine runs its CPU at 33.8688 MHz (44100 × 768, the PS1 CPU
-clock). DMA timing is region-dependent and block-based. For a block of `N`
-words, a side starting in RAM costs `1 + N` cycles: one cycle establishes a
-sixteen-word hyper-page burst and each word costs one more. The setup is paid again for every
+clock). Its two loaded ROM packages are the firmware/BIOS package in the
+`SYSTEM_ROM` window and the inserted cartridge package in the `CART_ROM`
+window. Firmware code and firmware assets share the first physical package;
+cartridge code and cartridge assets share the second. CPU execution state is
+derived from the two final program descriptors and is not a third memory-mapped
+ROM.
+
+DMA timing is region-dependent and block-based. For a block of `N` words, a
+side starting in RAM costs `1 + N` cycles: one cycle establishes a sixteen-word
+hyper-page burst and each word costs one more. The setup is paid again for every
 admitted block, including a block at the same or a fixed address. It is not a
 persistent open-row cache, does not depend on where RAM happens to sit in the
-memory map, and creates no row id or row state to serialize. A side starting in
-system ROM, cartridge ROM or program ROM costs `25N` cycles, matching a 32-bit
-read over the PS1 memory controller's default eight-bit expansion-ROM timing.
-That calculation is one bus cycle plus twenty-four wait ticks; CPU emulators
-usually account for the first cycle separately, while the DMA scheduler charges
-the complete transaction. A fixed MMIO or other mapped side contributes no
-memory wait of its own.
+memory map, and creates no row id or row state to serialize. `SYSTEM_ROM` uses
+the internal 32-bit path and costs `N` cycles. `CART_ROM` uses the external
+cartridge port and costs `25N` cycles. A fixed MMIO or other mapped side
+contributes no memory wait of its own; the DMA datapath still needs one cycle to
+complete a block when neither side contributes a memory wait.
 
 Admission classifies the two starting addresses through `Memory`, the owner of
 the mapped address decoder, and latches those timing classes for the block. The
 read and write sides form one fly-by block, so their block costs overlap and the
 slower side determines its completion edge. RAM↔RAM is the only exception: RAM
 is single-ported, so its read and write block costs add. With continuous DREQ
-and full sixteen-word blocks this yields about 127.51 MB/s for RAM→MMIO,
-5.42 MB/s for ROM→RAM or ROM→MMIO, and 63.75 MB/s for RAM→RAM. Short blocks
-pay setup more often, and DREQ can add idle time between blocks.
+and full sixteen-word blocks this yields about 135.48 MB/s for
+`SYSTEM_ROM`→MMIO, 127.51 MB/s for RAM→MMIO or `SYSTEM_ROM`→RAM,
+5.42 MB/s for `CART_ROM`→RAM/MMIO, and 63.75 MB/s for RAM→RAM. Short RAM
+blocks pay setup more often, and DREQ can add idle time between blocks.
 
 The timing belongs to the bus/DMA owner rather than GX, APU, firmware or a ROM
 texture helper. The machine model supplies these fixed raw-cycle constants to
@@ -1404,11 +1430,17 @@ the DMA controller once; PCRTC/CPU timing refresh does not carry or reapply
 them. This follows the same ownership shape as DuckStation's
 [DMA RAM tick owner](https://github.com/stenzek/duckstation/blob/4730d795bba1d11353efef01be513886fb8867c7/src/core/bus.h#L194-L202): RAM cost
 is calculated once for a transferred batch, not by simulating another per-word
-memory stream before the real transfer. The external-ROM cost follows the same
-emulator's [PS1 memory-control reset words](https://github.com/stenzek/duckstation/blob/4730d795bba1d11353efef01be513886fb8867c7/src/core/bus.cpp#L413-L421)
-and [access-time calculation](https://github.com/stenzek/duckstation/blob/4730d795bba1d11353efef01be513886fb8867c7/src/core/bus.cpp#L472-L503).
-BMSX extends those bus timings to one generic mapped channel; it does not claim
-that the original PS1 DMA could source expansion ROM directly. The uniform
+memory stream before the real transfer. The cartridge rate is a BMSX hardware
+choice rather than a PS1 expansion-ROM inference. Its 5.42 MB/s sustained ideal
+rate sits beside Nintendo's documented N64 Game Pak figure of about
+[5 MB/s typical and 50 MB/s peak](https://ultra64.ca/files/documentation/online-manuals/man/kantan/step1/2-6.html).
+The different physical-bus ownership also follows production emulators: mGBA
+keeps separate [internal and Game Pak wait-state tables](https://github.com/mgba-emu/mgba/blob/bae93155b2076d7de6bdfa25499b62084144b22a/src/gba/memory.c#L35-L40)
+and [charges DMA's first non-sequential and later sequential accesses](https://github.com/mgba-emu/mgba/blob/bae93155b2076d7de6bdfa25499b62084144b22a/src/gba/dma.c#L259-L285)
+through those tables, while melonDS makes the eight-bit cartridge port itself
+publish a 32-bit word every [20 or 32 system cycles](https://github.com/melonDS-emu/melonDS/blob/82fdbc78483f43b310e920e21acc47787cb43564/src/NDSCart.cpp#L806-L893),
+about 6.70 or 4.19 MB/s before command gaps. BMSX keeps one fixed cartridge
+profile instead of adding programmable wait-state registers. The uniform
 mapped-memory contract retains the MSX principle represented by openMSX's
 common device-facing
 [memory read path](https://github.com/openMSX/openMSX/blob/6a71ac3f14a9367934daef4d90138823fdabd1a2/src/cpu/MSXCPUInterface.cc#L190-L213).
@@ -1879,8 +1911,8 @@ CPU bus. Three physical chip selects live on that bus:
 - 512 KiB of internal sample-RAM at `0x10000000`.
 
 The two ROM chip selects make large cartridge music directly addressable, as
-on a ROM-fed sample chip; they are not generic main-memory views. Program ROM
-and CPU RAM are absent from the sample bus. A voice range must fit wholly in one
+on a ROM-fed sample chip; they are not generic main-memory views. CPU instruction
+storage and main RAM are absent from the sample bus. A voice range must fit wholly in one
 physical window and never wraps. Internal RAM remains a single retained backing
 store, so DMA writes become visible to every active voice at the transfer
 datapath's hardware completion edge. PLAY, source replacement, and sample
@@ -2090,8 +2122,8 @@ is restored with the registerfile but is not gameplay state.
 
 ## Firmware and Lua layer
 
-`machine/firmware/bios` is the system ROM entry layer: `bootrom.lua`,
-`system.lua`, and shared common/util helpers. Device-facing system-ROM Lua
+`machine/firmware/bios` is the firmware-ROM entry layer: `bootrom.lua`,
+`system.lua`, and shared common/util helpers. Device-facing firmware Lua
 helpers that are also useful to cart libraries live in `machine/firmware/system`
 instead of pretending to be BIOS entry points. They remain firmware code: helpers emit RAM/MMIO words and do not own
 host renderer/audio state.

@@ -15,7 +15,6 @@
 #include "machine/memory/map.h"
 #include "machine/memory/specs.h"
 #include "machine/runtime/boot_timing.h"
-#include "machine/program/linker.h"
 #include "render/shared/bmsx_font.h"
 #include "rompack/format.h"
 #include <cstdio>
@@ -23,6 +22,7 @@
 #include <chrono>
 #include <cstdarg>
 #include <iostream>
+#include <span>
 #include <stdexcept>
 #include <utility>
 
@@ -308,15 +308,21 @@ MachineManager::LoadedProgramImages MachineManager::loadProgramImagesFromRom(con
 	const RomAssetInfo& imageRecord = *romPackage.programImageRom;
 	LoadedProgramImages images;
 	images.image = decodeProgramImage(
-		romData + static_cast<size_t>(*imageRecord.start),
-		static_cast<size_t>(*imageRecord.end - *imageRecord.start)
+		std::span<const u8>(
+			romData + static_cast<size_t>(*imageRecord.start),
+			static_cast<size_t>(*imageRecord.end - *imageRecord.start)
+		),
+		std::span<const u8>(
+			romData + static_cast<size_t>(*imageRecord.compiledStart),
+			static_cast<size_t>(*imageRecord.compiledEnd - *imageRecord.compiledStart)
+		)
 	);
 	if (romPackage.programSymbolsRom) {
 		const RomAssetInfo& symbolsRecord = *romPackage.programSymbolsRom;
-		images.metadata = decodeProgramSymbolsImage(
+		images.metadata = decodeProgramSymbolsImage(std::span<const u8>(
 			romData + static_cast<size_t>(*symbolsRecord.start),
 			static_cast<size_t>(*symbolsRecord.end - *symbolsRecord.start)
-		);
+		));
 	}
 	return images;
 }
@@ -362,32 +368,20 @@ bool MachineManager::bootSystemStartupProgram(const MachineManifest& runtimeMach
 	rt.enterSystemFirmware();
 	refreshRenderSurfaces();
 	LoadedProgramImages systemImages = loadProgramImagesFromRom(m_system_rom, m_system_rom_data);
+	std::unique_ptr<ProgramImage> cartImage;
+	std::unique_ptr<ProgramMetadata> cartMetadata;
 	if (m_cart_rom_size > 0 && m_cart_rom.hasProgram()) {
 		LoadedProgramImages cartImages = loadProgramImagesFromRom(m_cart_rom, m_cart_rom_data);
-		auto linked = linkBootProgramImages(
-			*systemImages.image,
-			systemImages.metadata.get(),
-			*cartImages.image,
-			cartImages.metadata.get(),
-			ProgramBootTarget::System
-		);
-		rt.bootLinkedProgramImage(std::move(linked));
-	} else {
-		const uint32_t systemBssBaseAddress = PROGRAM_STATIC_RAM_BASE + static_cast<uint32_t>(systemImages.image->sections.data.bytes.size());
-		rt.boot(
-			*systemImages.image,
-			std::move(systemImages.metadata),
-			systemImages.image->vectors,
-			systemImages.image->vectors,
-			systemImages.image->vectors,
-			PROGRAM_STATIC_RAM_BASE,
-			systemBssBaseAddress,
-			PROGRAM_STATIC_RAM_BASE,
-			systemBssBaseAddress,
-			systemImages.image->sections.rodata.staticModulePaths,
-			std::span<const std::string>{}
-		);
+		cartImage = std::move(cartImages.image);
+		cartMetadata = std::move(cartImages.metadata);
 	}
+	rt.boot(
+		*systemImages.image,
+		std::move(systemImages.metadata),
+		cartImage.get(),
+		std::move(cartMetadata),
+		ProgramBootTarget::System
+	);
 	flushRuntimeLuaOutput(rt);
 	return true;
 }

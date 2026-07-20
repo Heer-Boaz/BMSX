@@ -336,7 +336,6 @@ add_library(bmsx_core STATIC
 	machine/common/hash.cpp
 	machine/cpu/string_pool.cpp
 	machine/program/loader.cpp
-	machine/program/linker.cpp
 )
 
 
@@ -595,7 +594,7 @@ if(BMSX_BUILD_TESTS)
 
 	add_executable(bmsx_libretro_save_state_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_save_state_test.cpp
-		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/support/program_rom_fixture.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/support/boot_rom_fixture.cpp
 		${BMSX_LIBRETRO_DIR}/platform.cpp
 	)
 	target_link_libraries(bmsx_libretro_save_state_tests PRIVATE bmsx_core)
@@ -606,7 +605,7 @@ if(BMSX_BUILD_TESTS)
 
 	add_executable(bmsx_libretro_environment_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_environment_test.cpp
-		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/support/program_rom_fixture.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/support/boot_rom_fixture.cpp
 		${BMSX_LIBRETRO_DIR}/entry.cpp
 		${BMSX_LIBRETRO_DIR}/platform.cpp
 	)

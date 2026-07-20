@@ -9,6 +9,7 @@ import {
 	type TokenStatementSequenceInfo,
 } from '../../scripts/lint/rules/common/repeated_statement_sequence_pattern';
 import { isSingleLineWrapperCandidate } from '../../scripts/lint/rules/ts/support/declarations';
+import { isBooleanLiteralComparisonSmell } from '../../scripts/lint/rules/ts/support/conditions';
 import { collectFunctionDefinitions } from '../../scripts/lint/language/cpp/syntax/declarations';
 import { buildPairMap, tokenize } from '../../scripts/lint/language/cpp/syntax/tokens';
 
@@ -17,6 +18,21 @@ function parseFirstFunction(source: string): ts.FunctionDeclaration {
 	const declaration = sourceFile.statements.find(ts.isFunctionDeclaration);
 	assert.ok(declaration, 'expected function declaration');
 	return declaration;
+}
+
+function parseFirstBinaryExpression(source: string): ts.BinaryExpression {
+	const declaration = parseFirstFunction(source);
+	let expression: ts.BinaryExpression | null = null;
+	const visit = (node: ts.Node): void => {
+		if (expression === null && ts.isBinaryExpression(node)) {
+			expression = node;
+			return;
+		}
+		ts.forEachChild(node, visit);
+	};
+	visit(declaration);
+	assert.ok(expression, 'expected binary expression');
+	return expression;
 }
 
 function repeatedCppStatementIssues(source: string): LintIssue[] {
@@ -48,6 +64,24 @@ test('single-line wrapper rule catches awaited statement delegation', () => {
 		}
 	`);
 	assert.equal(isSingleLineWrapperCandidate(declaration, declaration.getSourceFile()), true);
+});
+
+test('explicit boolean comparison rule catches boolean-shaped expressions', () => {
+	const expression = parseFirstBinaryExpression(`
+		function sample(isReady: boolean): boolean {
+			return isReady === true;
+		}
+	`);
+	assert.equal(isBooleanLiteralComparisonSmell(expression, null), true);
+});
+
+test('explicit boolean comparison rule permits exact foreign-value tags', () => {
+	const expression = parseFirstBinaryExpression(`
+		function sample(value: LuaValue): boolean {
+			return value === true;
+		}
+	`);
+	assert.equal(isBooleanLiteralComparisonSmell(expression, null), false);
 });
 
 test('C++ repeated statement sequences preserve distinct guard topology', () => {

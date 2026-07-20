@@ -12,7 +12,7 @@ import { PAL_REFRESH_UFPS_SCALED, PSX_MACHINE_SPEC } from '../machine/model_regi
 import { HZ_SCALE } from '../machine/runtime/timing/constants';
 import { RomBootManager } from './rom_boot_manager';
 import { renderGate, runGate } from '../common/taskgate';
-import { applyInitialWorkspaceOverrides, prepareRebootToBootRom, startPreparedRuntime } from '../ide/runtime/program_boot';
+import { prepareRebootToBootRom, startPreparedRuntime } from '../ide/runtime/program_boot';
 import { Runtime } from '../machine/runtime/runtime';
 import { Memory } from '../machine/memory/memory';
 import { configureRuntimeMemoryMap } from '../machine/memory/specs';
@@ -194,7 +194,6 @@ export class MachineManager {
 		});
 		this._view = gview;
 		commitGxGpuViewSnapshot(gview, gpuOutput);
-		await applyInitialWorkspaceOverrides();
 		this.syncAudioTiming();
 		const gpuBackend = await resolvedViewHost.createBackend() as GPUBackend;
 		gview.backend = gpuBackend;
@@ -234,11 +233,11 @@ export class MachineManager {
 		const gateToken = this.ideState.luaGate.begin({ blocking: true, tag: 'reboot_bootrom' });
 		try {
 			await this.resetRuntime();
-			await prepareRebootToBootRom(this.runtime);
+			const rebuildProgramMedia = await prepareRebootToBootRom(this.runtime);
 			await this.refreshRenderSurfaces();
 			this.bootstrapStartupAudio();
 			try {
-				bootActiveProgram(this.runtime);
+				bootActiveProgram(this.runtime, rebuildProgramMedia);
 			}
 			catch (error) {
 				handleLuaError(this.runtime, error);

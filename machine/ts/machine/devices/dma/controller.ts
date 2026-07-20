@@ -61,7 +61,8 @@ export type DmaControllerState = {
 export class DmaController {
 	private ramCyclesPerWord = 1;
 	private ramBurstSetupCycles = 0;
-	private romCyclesPerWord = 0;
+	private systemRomCyclesPerWord = 1;
+	private cartRomCyclesPerWord = 0;
 	private scheduledBlockWords = 0;
 	private scheduledReadAddressWord = 0;
 	private scheduledWriteAddressWord = 0;
@@ -125,15 +126,17 @@ export class DmaController {
 		}
 	}
 
-	public setTiming(ramCyclesPerWord: number, ramBurstSetupCycles: number, romCyclesPerWord: number, nowCycles: number): void {
+	public setTiming(ramCyclesPerWord: number, ramBurstSetupCycles: number, systemRomCyclesPerWord: number, cartRomCyclesPerWord: number, nowCycles: number): void {
 		if (this.ramCyclesPerWord === ramCyclesPerWord
 			&& this.ramBurstSetupCycles === ramBurstSetupCycles
-			&& this.romCyclesPerWord === romCyclesPerWord) {
+			&& this.systemRomCyclesPerWord === systemRomCyclesPerWord
+			&& this.cartRomCyclesPerWord === cartRomCyclesPerWord) {
 			return;
 		}
 		this.ramCyclesPerWord = ramCyclesPerWord;
 		this.ramBurstSetupCycles = ramBurstSetupCycles;
-		this.romCyclesPerWord = romCyclesPerWord;
+		this.systemRomCyclesPerWord = systemRomCyclesPerWord;
+		this.cartRomCyclesPerWord = cartRomCyclesPerWord;
 		// Admission latches the current block's completion edge. New timing starts
 		// with the next block rather than replaying elapsed bus time.
 		if (this.scheduledBlockWords !== 0) {
@@ -427,18 +430,25 @@ export class DmaController {
 		const writeAddress = this.memory.readIoU32(IO_DMA_WRITE_ADDR);
 		const readRegion = this.memory.mappedRegion(readAddress);
 		const writeRegion = this.memory.mappedRegion(writeAddress);
-		const ramBlockCycles = blockWords * this.ramCyclesPerWord + this.ramBurstSetupCycles;
-		const romBlockCycles = blockWords * this.romCyclesPerWord;
-		let blockCycles = readRegion === MemoryRegionKind.Ram && writeRegion === MemoryRegionKind.Ram
-			? ramBlockCycles * 2
-			: Math.max(
-				readRegion === MemoryRegionKind.Ram
-					? ramBlockCycles
-					: readRegion === MemoryRegionKind.Other ? 0 : romBlockCycles,
-				writeRegion === MemoryRegionKind.Ram
-					? ramBlockCycles
-					: writeRegion === MemoryRegionKind.Other ? 0 : romBlockCycles,
-			);
+		let blockCycles: number;
+		if (readRegion === MemoryRegionKind.Ram && writeRegion === MemoryRegionKind.Ram) {
+			blockCycles = 2 * (blockWords * this.ramCyclesPerWord + this.ramBurstSetupCycles);
+		} else {
+			const ramBlockCycles = readRegion === MemoryRegionKind.Ram || writeRegion === MemoryRegionKind.Ram
+				? blockWords * this.ramCyclesPerWord + this.ramBurstSetupCycles
+				: 0;
+			const readCycles = readRegion === MemoryRegionKind.Ram
+				? ramBlockCycles
+				: readRegion === MemoryRegionKind.SystemRom
+					? blockWords * this.systemRomCyclesPerWord
+					: readRegion === MemoryRegionKind.CartRom ? blockWords * this.cartRomCyclesPerWord : 0;
+			const writeCycles = writeRegion === MemoryRegionKind.Ram
+				? ramBlockCycles
+				: writeRegion === MemoryRegionKind.SystemRom
+					? blockWords * this.systemRomCyclesPerWord
+					: writeRegion === MemoryRegionKind.CartRom ? blockWords * this.cartRomCyclesPerWord : 0;
+			blockCycles = readCycles > writeCycles ? readCycles : writeCycles;
+		}
 		if (blockCycles === 0) {
 			blockCycles = 1;
 		}

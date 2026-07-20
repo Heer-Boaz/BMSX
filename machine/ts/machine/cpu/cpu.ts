@@ -396,8 +396,6 @@ export const enum AcceptedInterruptKind {
 
 export type Program = {
 	code: Uint8Array<ArrayBuffer>;
-	programRom: Uint8Array<ArrayBuffer>;
-	programRomTextByteLength: number;
 	constPool: Value[];
 	protos: Proto[];
 	moduleProtos: ProgramModuleProto[];
@@ -1932,6 +1930,8 @@ export class CPU {
 		for (let slot = 0; slot < this.systemGlobalNames.length; slot += 1) {
 			previousSystemGlobals.set(this.systemGlobalNames[slot], this.systemGlobalValues[slot]);
 		}
+		const codeChanged = this.program === null || this.program.code !== program.code;
+		const protosChanged = this.program === null || this.program.protos !== program.protos;
 		// Ordinary globals remain Lua-table-visible across program replacement. System globals
 		// are a distinct CPU registerfile and are carried by slot name above instead.
 		this.syncGlobalSlotsToTable();
@@ -1940,21 +1940,25 @@ export class CPU {
 		this.cartIrqProtoIndex = cartIrqProtoIndex;
 		this.systemExceptionProtoIndex = systemExceptionProtoIndex;
 		this.hardHalted = false;
-		this.memory.setProgramRom(program.programRom, program.programRomTextByteLength);
 		this.metadata = metadata;
 		const constPool = program.constPool;
 		const programPool = program.constPoolStringPool;
-		for (let index = 0; index < constPool.length; index += 1) {
-			const value = constPool[index];
-			if (valueIsString(value)) {
-				constPool[index] = StringValue.get(this.stringPool.intern(programPool.toString(asStringId(value)), false));
+		if (programPool !== this.stringPool) {
+			for (let index = 0; index < constPool.length; index += 1) {
+				const value = constPool[index];
+				if (valueIsString(value)) {
+					constPool[index] = StringValue.get(this.stringPool.intern(programPool.toString(asStringId(value)), false));
+				}
 			}
+			program.constPoolStringPool = this.stringPool;
 		}
-		program.constPoolStringPool = this.stringPool;
-		this.indexKey = StringValue.get(this.stringPool.intern('__index'));
-		this.materializeStaticClosures(program);
+		if (protosChanged) {
+			this.materializeStaticClosures(program);
+		}
 		this.initializeGlobalSlots(runtimeSymbols, previousSystemGlobals);
-		this.decodeProgram(program);
+		if (codeChanged) {
+			this.decodeProgram(program);
+		}
 		this.profilerRuntimeSymbols = runtimeSymbols;
 		this.profilerConfigured = false;
 		if (this.profilerEnabled) {
@@ -1979,12 +1983,6 @@ export class CPU {
 			const closure = new Closure(index, EMPTY_CLOSURE_UPVALUES, 0);
 			closure.hashId = this.allocateObjectHashId();
 			closures[index] = closure;
-		}
-		for (let index = 0; index < protos.length; index += 1) {
-			const closure = closures[index];
-			closure.protoIndex = index;
-			closure.upvalues = EMPTY_CLOSURE_UPVALUES;
-			closure.heapBytes = 0;
 		}
 	}
 
@@ -3777,7 +3775,10 @@ export class CPU {
 			out.push(entry[0], entry[1]);
 			return;
 		}
-		const entry = (target as NativeObject).nextEntry(keyValue);
+		if (!isNativeObject(target)) {
+			throw new LuaExecutionError('Attempted to iterate a non-table value.');
+		}
+		const entry = target.nextEntry(keyValue);
 		if (entry === null) {
 			out.push(null);
 			return;

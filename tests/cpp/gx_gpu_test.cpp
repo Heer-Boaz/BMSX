@@ -2958,6 +2958,24 @@ void testSoftwareScanoutConsumesTransfersAndFill() {
 	requireArgbPixel(frame.framebuffer, 16u, 1u, 0x00000000u, "GX-GPU software scanout fill stops at rounded edge");
 }
 
+void testSoftwarePresentationCopiesRgbAsOpaquePixels() {
+	std::array<uint32_t, 8u> framebuffer{};
+	bmsx::SoftwareBackend backend(framebuffer.data(), 4, 2, 4 * static_cast<int32_t>(sizeof(uint32_t)));
+	bmsx::TextureHandle texture = backend.createColorTexture(2, 1, nullptr);
+	auto* source = static_cast<bmsx::SoftwareTexture*>(texture);
+	source->data[0u] = 0x00112233u;
+	source->data[1u] = 0x80445566u;
+
+	backend.presentTexture(texture);
+
+	const std::array<uint32_t, 8u> expected{
+		0xff112233u, 0xff112233u, 0xff445566u, 0xff445566u,
+		0xff112233u, 0xff112233u, 0xff445566u, 0xff445566u,
+	};
+	require(framebuffer == expected, "Software presentation copies RGB without compositing source alpha");
+	backend.destroyTexture(texture);
+}
+
 void testSoftwareScanoutUsesNativeOutputDimensions() {
 	std::array<uint32_t, 256u * 212u> framebuffer{};
 	bmsx::SoftwareBackend backend(framebuffer.data(), 256, 192, 256 * static_cast<int32_t>(sizeof(uint32_t)));
@@ -4352,6 +4370,7 @@ int main() {
 	testSoftwareDrawingAreaOffsetClippingAndRectangleCoordinateWrap();
 	testSoftwareFillBypassesDrawingAreaAndMaskBitDrawingState();
 	testSoftwareScanoutConsumesTransfersAndFill();
+	testSoftwarePresentationCopiesRgbAsOpaquePixels();
 	testSoftwareScanoutUsesNativeOutputDimensions();
 	testSoftwarePcrtcComposesSourceAlphaTerminalCellsOverRetainedCircuitTwoPixels();
 	testPcrtcProjectsDisplaySignalsAndSamplesMagnifiedSource();

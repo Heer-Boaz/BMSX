@@ -456,6 +456,15 @@ test('active source capture only trusts the editor buffer while the code tab is 
 test('explicit lua save promotes canonical source and removes dirty entry', async (t) => {
 	const storage = new MockStorage();
 	installOfflineWorkspace(t, storage);
+	const systemRegistry: LuaSourceRegistry = {
+		records: [],
+		path2lua: {},
+		module2lua: {},
+		entry_path: 'bios/bootrom.lua',
+		namespace: 'system',
+		projectRootPath: 'machine/ts',
+		can_boot_from_source: true,
+	};
 	const registry: LuaSourceRegistry = {
 		records: [],
 		path2lua: {},
@@ -494,12 +503,13 @@ test('explicit lua save promotes canonical source and removes dirty entry', asyn
 	};
 	(machineManager as any).sourceState = {
 		cartLuaSources: registry,
-		systemLuaSources: registry,
+		systemLuaSources: systemRegistry,
 		activeLuaSources: registry,
 		currentPath: registry.entry_path,
 		cartProjectRootPath: 'offline-cart',
 		systemProjectRootPath: 'machine/ts',
-		luaGenericChunksExecuted: new Set<string>(),
+		systemProgramMediaDirty: false,
+		cartProgramMediaDirty: false,
 	};
 
 	await saveLuaResourceSource('src/foo.lua', '-- saved source');
@@ -511,6 +521,8 @@ test('explicit lua save promotes canonical source and removes dirty entry', asyn
 	assert.equal(storage.getItem(buildWorkspaceStorageKey('offline-cart', dirtyPath)), null);
 	assert.equal(workspaceSourceCache.get(dirtyPath), undefined);
 	assert.equal(workspaceSourceCache.get('src/foo.lua'), '-- saved source');
+	assert.equal((machineManager as any).sourceState.systemProgramMediaDirty, false);
+	assert.equal((machineManager as any).sourceState.cartProgramMediaDirty, true);
 	assert.deepEqual(requests, [
 		{ method: 'POST', path: 'src/foo.lua' },
 		{ method: 'DELETE', path: dirtyPath },

@@ -41,7 +41,13 @@ function encodePng(width: number, height: number, pixels: Uint8Array): Buffer {
 		throw new Error(`[headless:capture] Pixel byte length mismatch (${pixels.byteLength} != ${expectedByteLength}).`);
 	}
 	const png = new PNG({ width, height });
-	png.data = Buffer.from(pixels.buffer, pixels.byteOffset, pixels.byteLength);
+	const output = png.data;
+	for (let offset = 0; offset < expectedByteLength; offset += 4) {
+		output[offset] = pixels[offset];
+		output[offset + 1] = pixels[offset + 1];
+		output[offset + 2] = pixels[offset + 2];
+		output[offset + 3] = 255;
+	}
 	return PNG.sync.write(png);
 }
 

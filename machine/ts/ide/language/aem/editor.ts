@@ -1,33 +1,7 @@
-import { extractErrorMessage } from '../../../lua/value';
-import { assertValidAemDocument, buildAemValidationLookup, parseStructuredTextDocument, type StructuredTextDocumentFormat } from '../../../rompack/tooling/aem';
+import { aemDocumentFormat, parseStructuredTextDocument } from '../../../rompack/tooling/aem';
 import type { ResourceDescriptor } from '../../../rompack/tooling/resource';
 import { formatAemYamlDocument } from './yaml_formatter';
-import type { Runtime } from '../../../machine/runtime/runtime';
-import { runHostEvalChunkToNative } from '../../runtime/host_eval';
 import { machineManager } from '../../../core/machine_manager';
-
-function resolveAemSourceFormat(path: string): StructuredTextDocumentFormat {
-	return path.endsWith('.json') ? 'json' : 'yaml';
-}
-
-function buildRuntimeAemValidationLookup() {
-	const activePackage = machineManager.sourceState.activePackage;
-	const audioIds = Object.keys(activePackage.audio);
-	const dataRecordNames = Object.keys(activePackage.data);
-	const dataRecords: Array<{ name: string; value: unknown }> = [];
-	for (let index = 0; index < dataRecordNames.length; index += 1) {
-		const name = dataRecordNames[index]!;
-		dataRecords.push({ name, value: activePackage.data[name] });
-	}
-	return buildAemValidationLookup({
-		audioIds,
-		dataRecords,
-	});
-}
-
-function reloadAem(runtime: Runtime): void {
-	runHostEvalChunkToNative(runtime, `rget('aem'):reload()`);
-}
 
 export function listAemResourceDescriptors(): ResourceDescriptor[] {
 	const romSource = machineManager.sourceState.activeRomSource;
@@ -52,7 +26,7 @@ export function formatAemDocument(source: string, path: string, lines: readonly 
 	if (source.length === 0) {
 		return '';
 	}
-	const format = resolveAemSourceFormat(path);
+	const format = aemDocumentFormat(path);
 	if (format === 'yaml') {
 		try {
 			parseStructuredTextDocument(source, format, `AEM file '${path}'`);
@@ -73,27 +47,4 @@ export function formatAemDocument(source: string, path: string, lines: readonly 
 		return formatted.slice(0, formatted.length - 1);
 	}
 	return formatted;
-}
-
-export function applyAemSourceToRuntime(runtime: Runtime, descriptor: ResourceDescriptor, source: string): void {
-	const assetId = descriptor.asset_id;
-	if (!assetId) {
-		throw new Error(`AEM resource '${descriptor.path}' is missing an asset id.`);
-	}
-	const doc = parseStructuredTextDocument(source, resolveAemSourceFormat(descriptor.path), `AEM file '${descriptor.path}'`);
-	assertValidAemDocument(doc, buildRuntimeAemValidationLookup(), descriptor.path);
-	const activePackage = machineManager.sourceState.activePackage;
-	const previousDoc = activePackage.audioevents[assetId];
-	try {
-		activePackage.audioevents[assetId] = doc as Record<string, unknown>;
-		reloadAem(runtime);
-	} catch (error) {
-		activePackage.audioevents[assetId] = previousDoc;
-		try {
-			reloadAem(runtime);
-		} catch (restoreError) {
-			throw new Error(`${extractErrorMessage(error)}; rollback failed: ${extractErrorMessage(restoreError)}`);
-		}
-		throw error;
-	}
 }

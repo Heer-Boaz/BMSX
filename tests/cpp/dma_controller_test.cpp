@@ -25,7 +25,7 @@ constexpr uint32_t GP0_WRITE_CONTROL = bmsx::DMA_CONTROL_READ_INCREMENT | bmsx::
 constexpr uint32_t GP0_READ_CONTROL = bmsx::DMA_CONTROL_WRITE_INCREMENT | bmsx::DMA_CONTROL_REQUEST_GX_READ;
 
 struct DmaGpuHarness {
-	std::array<uint8_t, 1> emptyRom{{0}};
+	std::array<uint8_t, 8> systemRom{{0x04u, 0x03u, 0x02u, 0x01u, 0x08u, 0x07u, 0x06u, 0x05u}};
 	std::array<uint8_t, 8> cartRom{{0x44u, 0x33u, 0x22u, 0x11u, 0x88u, 0x77u, 0x66u, 0x55u}};
 	bmsx::Memory memory;
 	bmsx::IrqController irq;
@@ -35,7 +35,7 @@ struct DmaGpuHarness {
 	bmsx::GxGpu gpu;
 
 	DmaGpuHarness()
-		: memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, { cartRom.data(), cartRom.size() } })
+		: memory(bmsx::MemoryInit{ { systemRom.data(), systemRom.size() }, { cartRom.data(), cartRom.size() } })
 		, irq(memory)
 		, cpu(memory, irq)
 		, scheduler(cpu)
@@ -44,7 +44,7 @@ struct DmaGpuHarness {
 		dma.reset();
 		gpu.reset();
 		irq.reset();
-		dma.setTiming(0, 1, 0, 0);
+		dma.setTiming(0, 1, 0, 0, 0);
 		const bmsx::u32 smode1Address = bmsx::gxGpuPcrtcRegisterAddress(bmsx::GX_GPU_PCRTC_SMODE1_LOW);
 		memory.writeMappedU32LE(smode1Address, memory.readMappedU32LE(smode1Address) | bmsx::GX_GPU_PCRTC_SMODE1_SINT);
 		gpu.onService(0);
@@ -83,7 +83,8 @@ void testRegionAwareBlockTiming() {
 	harness.dma.setTiming(
 		bmsx::PSX_MACHINE_SPEC.dmaRamCyclesPerWord,
 		bmsx::PSX_MACHINE_SPEC.dmaRamBurstSetupCycles,
-		bmsx::PSX_MACHINE_SPEC.dmaRomCyclesPerWord,
+		bmsx::PSX_MACHINE_SPEC.dmaSystemRomCyclesPerWord,
+		bmsx::PSX_MACHINE_SPEC.dmaCartRomCyclesPerWord,
 		harness.scheduler.currentNowCycles());
 
 	programTransfer(memory, ramSource, ramDestination, 2u, RAM_COPY_CONTROL);
@@ -93,10 +94,28 @@ void testRegionAwareBlockTiming() {
 	require(memory.readMappedU32LE(ramDestination + 4u) == 0xddeeff00u, "RAM copy transfers word 1");
 
 	programTransfer(memory, bmsx::CART_ROM_BASE, romDestination, 2u, RAM_COPY_CONTROL);
-	require(harness.scheduler.nextDeadline() == 56, "the 50-cycle external-ROM side gates the RAM burst");
+	require(harness.scheduler.nextDeadline() == 56, "the 50-cycle cartridge side gates the RAM burst");
 	runNextDmaService(harness);
 	require(memory.readMappedU32LE(romDestination) == 0x11223344u, "cartridge ROM DMA transfers word 0");
 	require(memory.readMappedU32LE(romDestination + 4u) == 0x55667788u, "cartridge ROM DMA transfers word 1");
+}
+
+void testSystemRomTiming() {
+	DmaGpuHarness harness;
+	bmsx::Memory& memory = harness.memory;
+	const uint32_t firmwareDestination = bmsx::PROGRAM_STATIC_RAM_BASE + 0x1000u;
+	harness.dma.setTiming(
+		bmsx::PSX_MACHINE_SPEC.dmaRamCyclesPerWord,
+		bmsx::PSX_MACHINE_SPEC.dmaRamBurstSetupCycles,
+		bmsx::PSX_MACHINE_SPEC.dmaSystemRomCyclesPerWord,
+		bmsx::PSX_MACHINE_SPEC.dmaCartRomCyclesPerWord,
+		harness.scheduler.currentNowCycles());
+
+	programTransfer(memory, bmsx::SYSTEM_ROM_BASE, firmwareDestination, 2u, RAM_COPY_CONTROL);
+	require(harness.scheduler.nextDeadline() == 3, "the RAM destination gates a two-cycle local firmware read");
+	runNextDmaService(harness);
+	require(memory.readMappedU32LE(firmwareDestination) == 0x01020304u, "firmware DMA transfers word 0");
+	require(memory.readMappedU32LE(firmwareDestination + 4u) == 0x05060708u, "firmware DMA transfers word 1");
 }
 
 void testRamBurstSetupIsBlockLocal() {
@@ -106,7 +125,8 @@ void testRamBurstSetupIsBlockLocal() {
 	harness.dma.setTiming(
 		bmsx::PSX_MACHINE_SPEC.dmaRamCyclesPerWord,
 		bmsx::PSX_MACHINE_SPEC.dmaRamBurstSetupCycles,
-		bmsx::PSX_MACHINE_SPEC.dmaRomCyclesPerWord,
+		bmsx::PSX_MACHINE_SPEC.dmaSystemRomCyclesPerWord,
+		bmsx::PSX_MACHINE_SPEC.dmaCartRomCyclesPerWord,
 		harness.scheduler.currentNowCycles());
 
 	programTransfer(harness.memory, source, destination, 1u, RAM_COPY_CONTROL);
@@ -126,7 +146,8 @@ void testPortSideAddsNoMemoryWait() {
 	harness.dma.setTiming(
 		bmsx::PSX_MACHINE_SPEC.dmaRamCyclesPerWord,
 		bmsx::PSX_MACHINE_SPEC.dmaRamBurstSetupCycles,
-		bmsx::PSX_MACHINE_SPEC.dmaRomCyclesPerWord,
+		bmsx::PSX_MACHINE_SPEC.dmaSystemRomCyclesPerWord,
+		bmsx::PSX_MACHINE_SPEC.dmaCartRomCyclesPerWord,
 		harness.scheduler.currentNowCycles());
 
 	programTransfer(memory, source, bmsx::IO_GX_GPU_GP0, 2u, GP0_WRITE_CONTROL);
@@ -222,13 +243,13 @@ void testAdmittedBlockSurvivesRequestDropAndRestore() {
 	const uint32_t source = bmsx::PROGRAM_STATIC_RAM_BASE + 0x400u;
 	memory.writeMappedU32LE(source, 0xe1000000u);
 	memory.writeMappedU32LE(source + 4u, 0xe1000001u);
-	harness.dma.setTiming(4, 0, 0, 0);
+	harness.dma.setTiming(4, 0, 4, 0, 0);
 	harness.gpu.writeGp1((bmsx::GX_GPU_GP1_DMA_DIRECTION << 24u) | bmsx::GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
 	programTransfer(memory, source, bmsx::IO_GX_GPU_GP0, 2u, GP0_WRITE_CONTROL);
 	require(harness.scheduler.nextDeadline() == 8, "DMA blocks two words after eight cycles");
 
 	harness.scheduler.advanceTo(3);
-	harness.dma.setTiming(8, 0, 0, 3);
+	harness.dma.setTiming(8, 0, 8, 0, 3);
 	require(harness.scheduler.nextDeadline() == 8, "timing changes apply after the admitted block completion edge");
 	harness.gpu.writeGp1((bmsx::GX_GPU_GP1_DMA_DIRECTION << 24u) | bmsx::GX_GPU_DMA_DIRECTION_OFF);
 	require(harness.scheduler.nextDeadline() == 8, "DREQ low does not cancel an admitted block");
@@ -351,6 +372,7 @@ void testZeroCountTrigger() {
 
 int main() {
 	testRegionAwareBlockTiming();
+	testSystemRomTiming();
 	testRamBurstSetupIsBlockLocal();
 	testPortSideAddsNoMemoryWait();
 	testAdmittedRegisterState();

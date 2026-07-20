@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import { createCanvas } from 'canvas';
 
-import { collectRomAssetPayloadRanges } from '../../machine/ts/rompack/asset_layout';
+import { layoutRomAssetPayloads } from '../../machine/ts/rompack/asset_layout';
 import type { ImgMeta } from '../../machine/ts/rompack/format';
 import {
 	decodeGxTextureImage,
@@ -254,5 +254,5 @@ test('producer groups share one native texture span without becoming a runtime a
 	const assets = await generateRomAssets(resources);
 	assert.deepEqual(assets.map(asset => asset.resid), ['first', 'second']);
 	assert.equal(assets[0].texture_buffer, assets[1].texture_buffer);
-	assert.equal(collectRomAssetPayloadRanges(assets, true).filter(range => range.kind === 'texture').length, 1);
+	assert.equal(layoutRomAssetPayloads(assets, true).ranges.filter(range => range.kind === 'texture').length, 1);
 });

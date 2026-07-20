@@ -3,10 +3,11 @@
 // Usage: npx tsx scripts/rominspector.ts <romfile> [--ui] [--list-assets] [--manifest] [--program-asm]
 
 import * as fs from 'fs/promises';
+import { parseArgs } from 'node:util';
 import * as pako from 'pako';
 import type { RomAsset, CartRomHeader, RomManifest } from '../../machine/ts/rompack/format';
 import { collectRomAssetSymbols } from '../../machine/ts/rompack/asset_symbols';
-import { PROGRAM_IMAGE_ID } from '../../machine/ts/machine/program/loader';
+import type { ProgramImage } from '../../machine/ts/machine/program/loader';
 import { getZippedRomAndRomLabelFromBlob, loadRomAssetList, parseCartridgeIndex, parseCartHeader } from '../../machine/ts/rompack/loader';
 import {
 	buildManifestAsset,
@@ -25,39 +26,16 @@ let romManifest: RomManifest | null = null;
 let romProjectRootPath: string | null = null;
 
 const PROGRAM_ASM_BIAS_FLAG = '--program-asm-bias';
-function parseProgramAsmBias(args: string[]): number | null {
-	for (const arg of args) {
-		if (arg.startsWith(`${PROGRAM_ASM_BIAS_FLAG}=`)) {
-			return parseBiasValue(arg.slice(PROGRAM_ASM_BIAS_FLAG.length + 1));
-		}
-	}
-	const index = args.indexOf(PROGRAM_ASM_BIAS_FLAG);
-	if (index < 0) {
-		return null;
-	}
-	const raw = args[index + 1];
-	if (!raw) {
-		throw new Error(`[RomInspector] ${PROGRAM_ASM_BIAS_FLAG} requires a value.`);
-	}
-	return parseBiasValue(raw);
-}
-
 function parseBiasValue(raw: string): number {
-	let valueText = raw.trim();
-	let radix = 10;
-	if (valueText.startsWith('0x') || valueText.startsWith('0X')) {
-		radix = 16;
-		valueText = valueText.slice(2);
+	const valueText = raw.trim();
+	const hexadecimal = /^(?:0x([0-9a-f]+)|([0-9a-f]+)h)$/i.exec(valueText);
+	if (hexadecimal !== null) {
+		return Number.parseInt(hexadecimal[1] || hexadecimal[2], 16);
 	}
-	if (valueText.endsWith('h') || valueText.endsWith('H')) {
-		radix = 16;
-		valueText = valueText.slice(0, -1);
+	if (/^[0-9]+$/.test(valueText)) {
+		return Number.parseInt(valueText, 10);
 	}
-	const parsed = Number.parseInt(valueText, radix);
-	if (Number.isNaN(parsed)) {
-		throw new Error(`[RomInspector] Invalid ${PROGRAM_ASM_BIAS_FLAG} value: "${raw}".`);
-	}
-	return parsed;
+	throw new Error(`[RomInspector] Invalid ${PROGRAM_ASM_BIAS_FLAG} value: "${raw}".`);
 }
 async function loadAssets(
 	rombin: Uint8Array,
@@ -280,46 +258,36 @@ function printManifest(manifest: RomManifest | null, projectRootPath: string | n
 	console.log(JSON.stringify(payload, null, 2));
 }
 
-function printProgramLinkInfo(rombin: Uint8Array, assets: RomAsset[]): void {
-	const programAsset = assets.find(asset => asset.resid === PROGRAM_IMAGE_ID);
-	if (!programAsset || programAsset.start === undefined || programAsset.end === undefined) {
-		throw new Error(`[RomInspector] Program asset '${PROGRAM_IMAGE_ID}' is missing or has no buffer range.`);
-	}
-	const { programImage } = loadProgramFromAssets(rombin, assets);
-	const constPool = programImage.sections.rodata.constPool;
-	const constRelocs = programImage.link.constRelocs;
-	console.log(`Program asset: start=${programAsset.start} end=${programAsset.end} size=${programAsset.end - programAsset.start}`);
-	console.log(`constPool length: ${constPool.length}`);
-	console.log(`constRelocs length: ${constRelocs.length}`);
-	let symbolicRelocCount = 0;
-	for (let index = 0; index < constRelocs.length; index += 1) {
-		const reloc = constRelocs[index];
-		if (reloc.kind === 'module' || reloc.kind === 'export_proto') {
-			console.log(`reloc[${index}] wordIndex=${reloc.wordIndex} kind=${reloc.kind} symbol=${reloc.symbol}`);
-			symbolicRelocCount += 1;
-		}
-	}
-	if (symbolicRelocCount === 0) {
-		console.log('symbolic relocs: <none>');
-	}
-}
-
 async function main() {
-	const args = process.argv.slice(2);
-	const argSet = new Set(args);
-	const uiFlag = argSet.has('--ui');
-	const nativeUiFlag = argSet.has('--ui-native');
-	const listAssetsFlag = argSet.has('--list-assets');
-	const assetSymbolsFlag = argSet.has('--asset-symbols');
-	const manifestFlag = argSet.has('--manifest');
-	const programAsmFlag = argSet.has('--program-asm');
-	const programLinkInfoFlag = argSet.has('--program-link-info');
-	const cycleCostFlag = argSet.has('--cycle-cost');
-	const programAsmBias = parseProgramAsmBias(args);
-	const romfile = args.find(arg => !arg.startsWith('--'));
+	const { values, positionals } = parseArgs({
+		allowPositionals: true,
+		options: {
+			ui: { type: 'boolean' },
+			'ui-native': { type: 'boolean' },
+			'list-assets': { type: 'boolean' },
+			'asset-symbols': { type: 'boolean' },
+			manifest: { type: 'boolean' },
+			'program-asm': { type: 'boolean' },
+			'program-asm-bias': { type: 'string' },
+			'cycle-cost': { type: 'boolean' },
+			'system-rom': { type: 'string' },
+		},
+	});
+	const uiFlag = values.ui === true;
+	const nativeUiFlag = values['ui-native'] === true;
+	const listAssetsFlag = values['list-assets'] === true;
+	const assetSymbolsFlag = values['asset-symbols'] === true;
+	const manifestFlag = values.manifest === true;
+	const programAsmFlag = values['program-asm'] === true;
+	const cycleCostFlag = values['cycle-cost'] === true;
+	const programAsmBias = values['program-asm-bias'] === undefined
+		? null
+		: parseBiasValue(values['program-asm-bias']);
+	const systemRomFile = values['system-rom'];
+	const romfile = positionals[0];
 
 	if (!romfile) {
-		console.error('Usage: npx tsx scripts/rominspector.ts <romfile> [--ui] [--ui-native] [--list-assets] [--asset-symbols] [--program-asm] [--program-asm-bias <value>] [--program-link-info] [--cycle-cost]');
+		console.error('Usage: npx tsx scripts/rominspector.ts <romfile> [--system-rom <firmware-rom>] [--ui] [--ui-native] [--list-assets] [--asset-symbols] [--program-asm] [--program-asm-bias <value>] [--cycle-cost]');
 		console.error('Options:');
 		console.error('  --ui            Open the native interactive UI');
 		console.error('  --ui-native     Alias for the native interactive UI');
@@ -328,8 +296,8 @@ async function main() {
 		console.error('  --manifest      Print cart manifest details to stdout');
 		console.error('  --cycle-cost    Print fantasy CPU cycle cost analysis');
 		console.error('  --program-asm   Print program disassembly and exit');
+		console.error('  --system-rom    Firmware ROM required when inspecting a cartridge program');
 		console.error('  --program-asm-bias  Base PC to add (e.g. 0x80000 or 80000h)');
-		console.error('  --program-link-info  Print program const-pool module slots and module relocations');
 		process.exit(1);
 	}
 
@@ -359,9 +327,15 @@ async function main() {
 	if (header.manifestLength > 0 && !assetList.some(asset => asset.resid === ROM_MANIFEST_ASSET_ID)) {
 		assetList.unshift(buildManifestAsset(header));
 	}
+	let systemProgramImage: ProgramImage | null = null;
+	if (systemRomFile) {
+		const systemRom = await loadRompackFromFile(systemRomFile);
+		const systemIndex = await loadRomAssetList(systemRom);
+		systemProgramImage = loadProgramFromAssets(systemRom, systemIndex.entries).programImage;
+	}
 
 	if (programAsmFlag) {
-		const { program, metadata, sourceTextForPath, missingSourcePaths } = loadProgramFromAssets(rombin, assetList);
+		const { program, metadata, sourceTextForPath, missingSourcePaths } = loadProgramFromAssets(rombin, assetList, systemProgramImage);
 		const pcBias = programAsmBias === null ? undefined : programAsmBias;
 		if (missingSourcePaths.length > 0) {
 			console.warn(`[RomInspector] Source comments unavailable for ${missingSourcePaths.length} Lua path(s); ROM is stripped or partial.`);
@@ -370,13 +344,8 @@ async function main() {
 		process.exit(0);
 	}
 
-	if (programLinkInfoFlag) {
-		printProgramLinkInfo(rombin, assetList);
-		process.exit(0);
-	}
-
 	if (cycleCostFlag) {
-		const { program, metadata } = loadProgramFromAssets(rombin, assetList);
+		const { program, metadata } = loadProgramFromAssets(rombin, assetList, systemProgramImage);
 		console.log(generateCycleCostReport(program, metadata));
 		process.exit(0);
 	}
@@ -408,6 +377,7 @@ async function main() {
 			assets: assetList,
 			manifest: romManifest,
 			projectRootPath: romProjectRootPath,
+			systemProgramImage,
 			formatByteSize,
 			formatNumberAsHex,
 		});

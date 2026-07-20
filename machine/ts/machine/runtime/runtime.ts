@@ -11,8 +11,7 @@ import { VblankState } from './vblank';
 import { advanceRuntimeTime, CpuExecutionState, runDueRuntimeTimers } from './cpu_executor';
 import { HostFaultState } from './host_fault';
 import { LuaScratchState } from '../program/scratch';
-import type { ProgramImage, ProgramVectorTable } from '../program/loader';
-import { inflateExecutableProgramImage, type LinkedBootProgramImage } from '../program/linker';
+import { assembleProgramImages, type ProgramBootTarget, type ProgramImage, type ProgramVectorTable } from '../program/loader';
 import { refreshDeviceTimings } from './timing/config';
 import { HZ_SCALE } from './timing/constants';
 import type { GxGpuPcrtcTiming } from '../devices/gx/gpu_pcrtc';
@@ -22,7 +21,6 @@ import { Machine } from '../machine';
 import type { RuntimeInputSource } from './input';
 import {
 	BASE_RAM_USED_SIZE,
-	PROGRAM_STATIC_RAM_BASE,
 	RAM_SIZE,
 } from '../memory/map';
 
@@ -94,13 +92,7 @@ export class Runtime {
 	public programVectors: ProgramVectorTable | null = null;
 	public systemVectors!: ProgramVectorTable;
 	public cartVectors!: ProgramVectorTable;
-	private systemDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
-	private systemBssBaseAddress = PROGRAM_STATIC_RAM_BASE;
 	private systemStaticModulePaths: ReadonlyArray<string> = EMPTY_STATIC_MODULE_PATHS;
-	public programDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
-	public programBssBaseAddress = PROGRAM_STATIC_RAM_BASE;
-	public cartDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
-	public cartBssBaseAddress = PROGRAM_STATIC_RAM_BASE;
 	public cartStaticModulePaths: ReadonlyArray<string> = [];
 	public readonly vblank: VblankState;
 	public readonly cpuExecution: CpuExecutionState;
@@ -111,25 +103,6 @@ export class Runtime {
 	public cartEntryAvailable = false;
 	public readonly hostFault: HostFaultState;
 	public readonly machine: Machine;
-
-	private setLinkedCartProgram(vectors: ProgramVectorTable, programDataBaseAddress: number, programBssBaseAddress: number, cartDataBaseAddress: number, cartBssBaseAddress: number, staticModulePaths: ReadonlyArray<string>): void {
-		this.cartVectors = vectors;
-		this.programDataBaseAddress = programDataBaseAddress;
-		this.programBssBaseAddress = programBssBaseAddress;
-		this.cartDataBaseAddress = cartDataBaseAddress;
-		this.cartBssBaseAddress = cartBssBaseAddress;
-		this.cartStaticModulePaths = staticModulePaths;
-		this.cartEntryAvailable = true;
-	}
-
-	public clearLinkedCartProgram(dataByteLength: number): void {
-		this.cartEntryAvailable = false;
-		this.cartDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
-		this.cartBssBaseAddress = PROGRAM_STATIC_RAM_BASE;
-		this.programDataBaseAddress = PROGRAM_STATIC_RAM_BASE;
-		this.programBssBaseAddress = PROGRAM_STATIC_RAM_BASE + dataByteLength;
-		this.cartStaticModulePaths = EMPTY_STATIC_MODULE_PATHS;
-	}
 
 	public resetHardwareState(): void {
 		this.luaOutputLineBuffer = '';
@@ -147,7 +120,8 @@ export class Runtime {
 		this.luaInitialized = false;
 		this.pendingCall = null;
 		this.programVectors = null;
-		this.clearLinkedCartProgram(0);
+		this.cartEntryAvailable = false;
+		this.cartStaticModulePaths = EMPTY_STATIC_MODULE_PATHS;
 		this.luaOutputLineBuffer = '';
 		this.hostFault.clear();
 		this.moduleCache.clear();
@@ -160,54 +134,37 @@ export class Runtime {
 	}
 
 	public boot(
-		image: ProgramImage,
-		metadata: ProgramMetadata | null,
-		vectors: ProgramVectorTable,
-		systemVectors: ProgramVectorTable,
-		cartVectors: ProgramVectorTable,
-		dataBaseAddress: number,
-		bssBaseAddress: number,
-		systemDataBaseAddress: number,
-		systemBssBaseAddress: number,
-		systemStaticModulePaths: ReadonlyArray<string>,
-		cartStaticModulePaths: ReadonlyArray<string>,
+		systemImage: ProgramImage,
+		systemMetadata: ProgramMetadata | null,
+		cartImage: ProgramImage | null,
+		cartMetadata: ProgramMetadata | null,
+		bootTarget: ProgramBootTarget,
 	): void {
-		this.programDataBaseAddress = dataBaseAddress;
-		this.programBssBaseAddress = bssBaseAddress;
-		this.systemDataBaseAddress = systemDataBaseAddress;
-		this.systemBssBaseAddress = systemBssBaseAddress;
-		this.systemStaticModulePaths = systemStaticModulePaths;
-		const program = inflateExecutableProgramImage(image, dataBaseAddress, bssBaseAddress);
-		this.systemVectors = systemVectors;
-		this.cartVectors = cartVectors;
+		const activeImage = bootTarget === 'cart' ? cartImage! : systemImage;
+		const runtimeImage = cartImage ?? systemImage;
+		const metadata = cartImage ? cartMetadata : systemMetadata;
+		this.systemVectors = systemImage.vectors;
+		this.systemStaticModulePaths = systemImage.sections.rodata.staticModulePaths;
+		this.cartEntryAvailable = cartImage !== null;
+		this.cartVectors = cartImage ? cartImage.vectors : systemImage.vectors;
+		this.cartStaticModulePaths = cartImage ? cartImage.sections.rodata.staticModulePaths : EMPTY_STATIC_MODULE_PATHS;
+		this.cartProgramStarted = bootTarget === 'cart';
+		const program = assembleProgramImages(systemImage, cartImage);
 		this.machine.cpu.setProgram(
 			program,
-			image.link.symbols,
+			runtimeImage.symbols,
 			metadata,
-			systemVectors.irqProtoIndex,
-			cartVectors.irqProtoIndex,
-			systemVectors.exceptionProtoIndex,
+			this.systemVectors.irqProtoIndex,
+			this.cartVectors.irqProtoIndex,
+			this.systemVectors.exceptionProtoIndex,
 		);
 		seedLuaGlobals(this);
-		this.programRuntimeSymbols = image.link.symbols;
+		this.programRuntimeSymbols = runtimeImage.symbols;
 		this.programMetadata = metadata;
-		this.startLoadedProgram(vectors, systemStaticModulePaths, cartStaticModulePaths);
-	}
-
-	public bootLinkedProgramImage(linked: LinkedBootProgramImage): void {
-		this.setLinkedCartProgram(linked.cartVectors, linked.dataBaseAddress, linked.bssBaseAddress, linked.cartDataBaseAddress, linked.cartBssBaseAddress, linked.cartStaticModulePaths);
-		this.boot(
-			linked.programImage,
-			linked.metadata,
-			linked.vectors,
-			linked.systemVectors,
-			linked.cartVectors,
-			linked.dataBaseAddress,
-			linked.bssBaseAddress,
-			linked.systemDataBaseAddress,
-			linked.systemBssBaseAddress,
-			linked.systemStaticModulePaths,
-			this.cartProgramStarted ? linked.cartStaticModulePaths : EMPTY_STATIC_MODULE_PATHS,
+		this.startLoadedProgram(
+			activeImage.vectors,
+			this.systemStaticModulePaths,
+			this.cartProgramStarted ? this.cartStaticModulePaths : EMPTY_STATIC_MODULE_PATHS,
 		);
 	}
 
@@ -220,8 +177,6 @@ export class Runtime {
 	}
 
 	public startCartProgram(): void {
-		this.programDataBaseAddress = this.cartDataBaseAddress;
-		this.programBssBaseAddress = this.cartBssBaseAddress;
 		this.enterCartProgram();
 		this.startLoadedProgram(this.cartVectors, EMPTY_STATIC_MODULE_PATHS, this.cartStaticModulePaths);
 	}
@@ -241,8 +196,6 @@ export class Runtime {
 		this.resetHardwareState();
 		resetTrackedLuaHeapBytes();
 		addTrackedLuaHeapBytes(this.machine.cpu.globals.getTrackedHeapBytes());
-		this.programDataBaseAddress = this.systemDataBaseAddress;
-		this.programBssBaseAddress = this.systemBssBaseAddress;
 		this.machine.cpu.setProgram(
 			this.machine.cpu.program,
 			this.programRuntimeSymbols,

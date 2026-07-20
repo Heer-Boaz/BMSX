@@ -1,14 +1,8 @@
 // Headless IDE test: hot-resume tracked-heap behaviour.
 // Run: npm run ide:test -- <gameromname> tests/ide/hot_resume_heap.idetest.js
 //
-// Findings (pietious): normal play keeps globals lean (~642) and loads modules
-// lazily. The first hot-resume promotes every module-export slot into cpu.globals
-// (globals -> ~2472) and re-runs init, rebuilding the full module graph; old and
-// new graphs coexist transiently (~+1.2 MB peak) which can trip the 4 MB budget.
-// The level then oscillates and stabilises (no unbounded leak).
-
 function fmt(s) {
-	return `tracked=${s.tracked} obj=${s.objectBytes} str=${s.stringBytes} modCache=${s.moduleCache} globals=${s.globals}`;
+	return `tracked=${s.tracked} obj=${s.objectBytes} str=${s.stringBytes} code=${s.codeBytes} protos=${s.protos} consts=${s.constPool} modCache=${s.moduleCache} globals=${s.globals}`;
 }
 
 await t.waitForCart();
@@ -18,20 +12,21 @@ const warm = t.debugStats();
 t.log(`warm ${fmt(warm)}`);
 
 const RESUMES = 8;
-let maxTracked = warm.tracked;
-let lastTracked = warm.tracked;
+let baseline;
 for (let i = 0; i < RESUMES; i += 1) {
 	await t.hotResume();
 	await t.frames(8);
 	const s = t.debugStats();
-	if (s.tracked > maxTracked) maxTracked = s.tracked;
-	lastTracked = s.tracked;
 	t.log(`resume ${i + 1}/${RESUMES}: ${fmt(s)}`);
+	if (i === 0) {
+		t.assert(s.codeBytes === warm.codeBytes, `first no-op hot-resume grew code from ${warm.codeBytes} to ${s.codeBytes}`);
+		t.assert(s.protos === warm.protos, `first no-op hot-resume grew protos from ${warm.protos} to ${s.protos}`);
+		t.assert(s.constPool === warm.constPool, `first no-op hot-resume grew constants from ${warm.constPool} to ${s.constPool}`);
+		baseline = s;
+		continue;
+	}
+	t.assert(s.codeBytes === baseline.codeBytes, `no-op hot-resume grew code from ${baseline.codeBytes} to ${s.codeBytes}`);
+	t.assert(s.protos === baseline.protos, `no-op hot-resume grew protos from ${baseline.protos} to ${s.protos}`);
+	t.assert(s.constPool === baseline.constPool, `no-op hot-resume grew constants from ${baseline.constPool} to ${s.constPool}`);
+	t.assert(s.tracked === baseline.tracked, `no-op hot-resume changed live heap from ${baseline.tracked} to ${s.tracked}`);
 }
-
-t.log(`peak tracked over resumes = ${maxTracked} (warm ${warm.tracked})`);
-
-// Regression guard: repeated hot-resume must not grow the heap without bound.
-// (This passes today because the level stabilises; it would catch a true leak.)
-const drift = lastTracked - maxTracked; // <= 0 once stabilised
-t.assert(drift <= 256 * 1024, `tracked heap still trending up after ${RESUMES} resumes (drift ${drift})`);

@@ -19,21 +19,7 @@ void renderPresentSoftware(GPUBackend* backend, GameView*, void* fbo, RenderPass
 		software.activateRenderTarget(fbo, target->width, target->height);
 	}
 	const PresentPipelineState& present = state.present;
-	software.blitTexture(present.colorTex,
-		0,
-		0,
-		present.srcWidth,
-		present.srcHeight,
-		0,
-		0,
-		software.width(),
-		software.height(),
-		0.0f,
-		0xffffffffu,
-		false,
-		false,
-		DitherParams{},
-		false);
+	software.presentTexture(present.colorTex);
 }
 
 } // namespace

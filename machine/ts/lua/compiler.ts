@@ -54,20 +54,19 @@ import { appendModuleExportPathKey } from './compiler/passes/module_names';
 import { collectStaticStorageDeclarations, type StaticStorageDeclaration } from './compiler/passes/static_storage';
 import { collectStaticFunctionExports } from './compiler/passes/static_functions';
 import { assertStaticFunctionInstructionSet, staticLaneForbiddenOpcodeReason } from './compiler/passes/static_proto_contract';
+import { toLuaModulePath } from '../machine/program/loader';
 import {
-	buildProgramRomImage,
 	encodeProgramObjectSections,
-	toLuaModulePath,
 	type ProgramConstReloc,
 	type ProgramConstValueReloc,
 	type ProgramRodataConstReloc,
-	type ProgramDataSection,
+	type ProgramObjectDataSection,
 	type ProgramDataSymbol,
-	type ProgramBssSection,
+	type ProgramObjectBssSection,
 	type ProgramBssSymbol,
 	type ProgramRodataSymbol,
-	type ProgramImage,
-} from '../machine/program/loader';
+	type ProgramObjectImage,
+} from './compiler/program_object';
 import { StringPool } from '../machine/cpu/string_pool';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_EXT_CONST, MAX_EXT_REGISTER_BC, MAX_OPERAND_BITS, MAX_SIGNED_BX, MIN_SIGNED_BX, writeInstruction } from '../machine/cpu/instruction_format';
 import { buildLuaSemanticFrontend, type LuaBoundReference, type LuaSemanticFrontend, type LuaSemanticFrontendFile } from './semantic/frontend';
@@ -104,27 +103,13 @@ export type CompiledProgram = {
 	constRelocs: ProgramConstReloc[];
 	constValueRelocs: ProgramConstValueReloc[];
 	rodataConstRelocs: ProgramRodataConstReloc[];
-	data: ProgramDataSection;
-	bss: ProgramBssSection;
+	data: ProgramObjectDataSection;
+	bss: ProgramObjectBssSection;
 	rodataBytes: Uint8Array;
 	rodataSymbols: ProgramRodataSymbol[];
 };
 
-export type AppendedProgram = {
-	program: Program;
-	metadata: ProgramMetadata;
-	entryProtoIndex: number;
-	sectionInitProtoIndex: number;
-	constRelocs: ProgramConstReloc[];
-	constValueRelocs: ProgramConstValueReloc[];
-	rodataConstRelocs: ProgramRodataConstReloc[];
-	data: ProgramDataSection;
-	bss: ProgramBssSection;
-	rodataBytes: Uint8Array;
-	rodataSymbols: ProgramRodataSymbol[];
-};
-
-export function encodeCompiledProgramImage(compiled: CompiledProgram): ProgramImage {
+export function encodeCompiledProgramObject(compiled: CompiledProgram): ProgramObjectImage {
 	return {
 		vectors: {
 			resetProtoIndex: compiled.entryProtoIndex,
@@ -173,8 +158,6 @@ export const isLuaCompileError = (value: unknown): value is LuaCompileError =>
 export type ProgramCompileDomain = 'cart' | 'system';
 
 type CompileOptions = {
-	baseProgram?: Program;
-	baseMetadata?: ProgramMetadata;
 	optLevel?: OptimizationLevel;
 	entrySource?: string;
 	externalModules?: ReadonlyArray<ProgramModule>;
@@ -182,8 +165,6 @@ type CompileOptions = {
 };
 
 const EMPTY_PROGRAM_MODULES: ReadonlyArray<ProgramModule> = [];
-const EMPTY_PROGRAM_MODULE_PROTOS: ReadonlyArray<ProgramModuleProto> = [];
-const EMPTY_PROGRAM_MODULE_EXPORTS: ReadonlyArray<ProgramModuleExport> = [];
 
 type LoopContext = {
 	breakJumps: number[];
@@ -385,7 +366,6 @@ class ProgramBuilder {
 	public readonly stringPool: StringPool;
 	public readonly optLevel: OptimizationLevel;
 	private readonly constSlotByKey: Map<string, number>;
-	private readonly baseCode: Uint8Array | null;
 	private readonly systemGlobalNameSet: Set<string>;
 	private readonly systemGlobalNames: string[] = [];
 	private readonly systemGlobalSlotByName: Map<string, number> = new Map();
@@ -398,7 +378,6 @@ class ProgramBuilder {
 	public readonly protoLocalSlots: ReadonlyArray<LocalSlotDebug>[] = [];
 	public readonly protoUpvalueNames: ReadonlyArray<string>[] = [];
 	public readonly protoInstructionSets: Array<InstructionSet | null> = [];
-	public readonly protoFixedEntryPC: boolean[] = [];
 	public readonly protoIds: string[] = [];
 	private readonly exportProtoIdBySlot: { [slotName: string]: string } = {};
 	private readonly structDeclarationMap = new Map<string, LuaStructDeclarationStatement>();
@@ -416,7 +395,6 @@ class ProgramBuilder {
 	private dataBytes = new Uint8Array(0);
 	private rodataByteCount = 0;
 	private rodataBytes = new Uint8Array(0);
-	private readonly protoSlotById: Map<string, number> = new Map();
 	private readonly assignedProtoIds: Set<string> = new Set();
 	private readonly moduleProtoEntries: ProgramModuleProto[] = [];
 	private readonly moduleProtoEntrySlotByPath = new Map<string, number>();
@@ -427,80 +405,22 @@ class ProgramBuilder {
 	private readonly modulePathSet = new Set<string>();
 	private readonly staticModulePaths: string[] = [];
 	private readonly staticModulePathSet: Set<string> = new Set();
-	private readonly baseProgramRom: Uint8Array<ArrayBuffer> | null;
-	private readonly baseProgramRomTextByteLength: number;
-	private readonly canDeclareStaticStorage: boolean;
 	private readonly programDomain: ProgramCompileDomain;
 
 	public constructor(
-		baseConstPool: ReadonlyArray<Value> | null = null,
-		stringPool: StringPool | null = null,
-		optLevel: OptimizationLevel = 0,
-		programDomain: ProgramCompileDomain = 'cart',
-		baseMetadata: ProgramMetadata | null = null,
-		baseCode: Uint8Array | null = null,
-		baseProgramRom: Uint8Array<ArrayBuffer> | null = null,
-		baseProgramRomTextByteLength = 0,
-		canDeclareStaticStorage = true,
-		baseModuleProtos: ReadonlyArray<ProgramModuleProto> = EMPTY_PROGRAM_MODULE_PROTOS,
-		baseModuleExports: ReadonlyArray<ProgramModuleExport> = EMPTY_PROGRAM_MODULE_EXPORTS,
+		optLevel: OptimizationLevel,
+		programDomain: ProgramCompileDomain,
 	) {
 		this.constPool = [];
-		if (baseConstPool) {
-			for (let index = 0; index < baseConstPool.length; index += 1) {
-				this.constPool.push(baseConstPool[index]);
-			}
-		}
-		this.stringPool = stringPool ?? new StringPool();
+		this.stringPool = new StringPool();
 		this.optLevel = optLevel;
-		if (baseCode !== null && baseCode.byteLength % INSTRUCTION_BYTES !== 0) {
-			throw new Error(`[ProgramBuilder] Base program code size must align to ${INSTRUCTION_BYTES}-byte words.`);
-		}
-		this.baseCode = baseCode;
-		this.baseProgramRom = baseProgramRom;
-		this.baseProgramRomTextByteLength = baseProgramRomTextByteLength;
-		this.canDeclareStaticStorage = canDeclareStaticStorage;
 		this.programDomain = programDomain;
 		this.constSlotByKey = new Map<string, number>();
 		this.systemGlobalNameSet = new Set(SYSTEM_ROM_BOOT_SYMBOL_NAME_SET);
-		for (let index = 0; index < baseModuleProtos.length; index += 1) {
-			const entry = baseModuleProtos[index];
-			this.recordModuleProto(entry.path, entry.protoIndex);
-		}
-		for (let index = 0; index < baseModuleExports.length; index += 1) {
-			const entry = baseModuleExports[index];
-			this.recordModuleExport(entry.path, entry.exportPathKey, entry.slotName);
-		}
-		for (let index = 0; index < this.constPool.length; index += 1) {
-			const value = this.constPool[index];
-			this.constSlotByKey.set(this.makeConstKey(value), index + 1);
-		}
-		this.seedGlobalSlots(baseMetadata);
 		if (programDomain === 'system') {
 			for (let index = 0; index < SYSTEM_ROM_BOOT_PRIMITIVE_NAMES.length; index += 1) {
 				this.resolveSystemGlobalSlot(SYSTEM_ROM_BOOT_PRIMITIVE_NAMES[index]);
 			}
-		}
-	}
-
-	private seedGlobalSlots(metadata: ProgramMetadata | null): void {
-		if (!metadata) {
-			return;
-		}
-		const systemNames = metadata.systemGlobalNames;
-		for (let index = 0; index < systemNames.length; index += 1) {
-			const name = systemNames[index];
-			this.systemGlobalNames.push(name);
-			this.systemGlobalSlotByName.set(name, index + 1);
-		}
-		const globalNames = metadata.globalNames;
-		for (let index = 0; index < globalNames.length; index += 1) {
-			const name = globalNames[index];
-			this.globalNames.push(name);
-			this.globalSlotByName.set(name, index + 1);
-		}
-		for (const slotName in metadata.exportProtoIdBySlot) {
-			this.exportProtoIdBySlot[slotName] = metadata.exportProtoIdBySlot[slotName];
 		}
 	}
 
@@ -558,7 +478,6 @@ class ProgramBuilder {
 	}
 
 	public recordBss(symbolHandle: string, moduleId: string, name: string, type: StructResolvedType): BssBinding {
-		this.assertStaticStorageAllowed('bss');
 		const existing = this.bssBindingsBySymbolHandle.get(symbolHandle);
 		if (existing) {
 			return existing;
@@ -579,7 +498,6 @@ class ProgramBuilder {
 	}
 
 	public recordData(symbolHandle: string, moduleId: string, name: string, type: StructResolvedType, bytes: Uint8Array): DataBinding {
-		this.assertStaticStorageAllowed('data');
 		const existing = this.dataBindingsBySymbolHandle.get(symbolHandle);
 		if (existing) {
 			return existing;
@@ -605,7 +523,6 @@ class ProgramBuilder {
 	}
 
 	public recordRodata(symbolHandle: string, moduleId: string, name: string, type: StructResolvedType, initializer: StaticStorageInitializer): RodataBinding {
-		this.assertStaticStorageAllowed('rodata');
 		const existing = this.rodataBindingsBySymbolHandle.get(symbolHandle);
 		if (existing) {
 			return existing;
@@ -647,7 +564,7 @@ class ProgramBuilder {
 		return symbols;
 	}
 
-	public buildDataSection(): ProgramDataSection {
+	public buildDataSection(): ProgramObjectDataSection {
 		const symbols: ProgramDataSymbol[] = [];
 		for (const binding of this.dataBindingsBySymbolHandle.values()) {
 			symbols.push({
@@ -663,7 +580,7 @@ class ProgramBuilder {
 		};
 	}
 
-	public buildBssSection(): ProgramBssSection {
+	public buildBssSection(): ProgramObjectBssSection {
 		const symbols: ProgramBssSymbol[] = [];
 		for (const binding of this.bssBindingsBySymbolHandle.values()) {
 			symbols.push({
@@ -703,12 +620,6 @@ class ProgramBuilder {
 
 	private alignStorageOffset(offset: number, alignment: number): number {
 		return (offset + alignment - 1) & ~(alignment - 1);
-	}
-
-	private assertStaticStorageAllowed(kind: 'bss' | 'data' | 'rodata'): void {
-		if (!this.canDeclareStaticStorage) {
-			throw new Error(`Host-eval append cannot declare .${kind} storage; static storage belongs to full object builds.`);
-		}
 	}
 
 	public registerStructDeclaration(statement: LuaStructDeclarationStatement): void {
@@ -756,20 +667,6 @@ class ProgramBuilder {
 			throw new Error(`[ProgramBuilder] Duplicate proto id '${protoId}'.`);
 		}
 		this.assignedProtoIds.add(protoId);
-		const existingSlot = this.protoSlotById.get(protoId);
-		if (existingSlot) {
-			const existing = existingSlot - 1;
-			this.protos[existing] = proto;
-			this.protoCode[existing] = code;
-			this.protoRanges[existing] = ranges;
-			this.protoConstRelocs[existing] = constRelocs;
-			this.protoLocalSlots[existing] = localSlots;
-			this.protoUpvalueNames[existing] = upvalueNames;
-			this.protoInstructionSets[existing] = instructionSet;
-			this.protoFixedEntryPC[existing] = false;
-			this.protoIds[existing] = protoId;
-			return existing;
-		}
 		const index = this.protos.length;
 		this.protos.push(proto);
 		this.protoCode.push(code);
@@ -778,9 +675,7 @@ class ProgramBuilder {
 		this.protoLocalSlots.push(localSlots);
 		this.protoUpvalueNames.push(upvalueNames);
 		this.protoInstructionSets.push(instructionSet);
-		this.protoFixedEntryPC.push(false);
 		this.protoIds.push(protoId);
-		this.protoSlotById.set(protoId, index + 1);
 		return index;
 	}
 
@@ -896,52 +791,20 @@ class ProgramBuilder {
 		return slotName in this.exportProtoIdBySlot;
 	}
 
-	public seedProto(
-		proto: Proto,
-		code: Uint8Array,
-		ranges: ReadonlyArray<SourceRange | null>,
-		constRelocs: ReadonlyArray<ProgramConstReloc>,
-		localSlots: ReadonlyArray<LocalSlotDebug>,
-		upvalueNames: ReadonlyArray<string>,
-		protoId: string,
-	): void {
-		const index = this.protos.length;
-		this.protos.push(proto);
-		this.protoCode.push(code);
-		this.protoRanges.push(ranges);
-		this.protoConstRelocs.push(constRelocs);
-		this.protoLocalSlots.push(localSlots);
-		this.protoUpvalueNames.push(upvalueNames);
-		this.protoInstructionSets.push(null);
-		this.protoFixedEntryPC.push(true);
-		this.protoIds.push(protoId);
-		this.protoSlotById.set(protoId, index + 1);
-	}
-
-	public buildProgram(): { program: Program; metadata: ProgramMetadata; constRelocs: ProgramConstReloc[]; constValueRelocs: ProgramConstValueReloc[]; rodataConstRelocs: ProgramRodataConstReloc[]; data: ProgramDataSection; bss: ProgramBssSection; rodataBytes: Uint8Array; rodataSymbols: ProgramRodataSymbol[]; staticModulePaths: string[] } {
-		let fixedEndBytes = this.baseCode ? this.baseCode.byteLength : 0;
-		let appendedBytes = 0;
+	public buildProgram(): { program: Program; metadata: ProgramMetadata; constRelocs: ProgramConstReloc[]; constValueRelocs: ProgramConstValueReloc[]; rodataConstRelocs: ProgramRodataConstReloc[]; data: ProgramObjectDataSection; bss: ProgramObjectBssSection; rodataBytes: Uint8Array; rodataSymbols: ProgramRodataSymbol[]; staticModulePaths: string[] } {
+		let totalBytes = 0;
 		for (let i = 0; i < this.protoCode.length; i += 1) {
-			const proto = this.protos[i];
-			if (this.protoFixedEntryPC[i]) {
-				fixedEndBytes = Math.max(fixedEndBytes, proto.entryPC + proto.codeLen);
-			} else {
-				appendedBytes += proto.codeLen;
-			}
+			totalBytes += this.protos[i].codeLen;
 		}
-		const totalBytes = fixedEndBytes + appendedBytes;
 		if (totalBytes % INSTRUCTION_BYTES !== 0) {
 			throw new Error(`[ProgramBuilder] Program code size must align to ${INSTRUCTION_BYTES}-byte words.`);
 		}
 		const totalWords = totalBytes / INSTRUCTION_BYTES;
 		const fullCode = new Uint8Array(totalBytes);
-		if (this.baseCode) {
-			fullCode.set(this.baseCode, 0);
-		}
 		const protos: Proto[] = new Array(this.protos.length);
 		const fullRanges: Array<SourceRange | null> = new Array(totalWords).fill(null);
 		const fullConstRelocs: ProgramConstReloc[] = [];
-		let appendOffsetBytes = fixedEndBytes;
+		let appendOffsetBytes = 0;
 		for (let i = 0; i < this.protoCode.length; i += 1) {
 			const chunk = this.protoCode[i];
 			if (!chunk) {
@@ -949,7 +812,7 @@ class ProgramBuilder {
 			}
 			const proto = this.protos[i];
 			const ranges = this.protoRanges[i];
-			const targetOffsetBytes = this.protoFixedEntryPC[i] ? proto.entryPC : appendOffsetBytes;
+			const targetOffsetBytes = appendOffsetBytes;
 			if (targetOffsetBytes % INSTRUCTION_BYTES !== 0) {
 				throw new Error(`[ProgramBuilder] Proto ${i} entry PC must align to ${INSTRUCTION_BYTES}-byte words.`);
 			}
@@ -988,9 +851,7 @@ class ProgramBuilder {
 						continue;
 				}
 			}
-			if (!this.protoFixedEntryPC[i]) {
-				appendOffsetBytes += chunk.length;
-			}
+			appendOffsetBytes += chunk.length;
 		}
 		const metadata: ProgramMetadata = {
 			debugRanges: fullRanges,
@@ -1006,19 +867,9 @@ class ProgramBuilder {
 			const entry = this.moduleProtoEntries[index];
 			moduleProtoMap.set(entry.path, entry.protoIndex);
 		}
-		let programCode = fullCode;
-		let programRom = this.baseProgramRom;
-		let programRomTextByteLength = this.baseProgramRomTextByteLength;
-		if (programRom === null) {
-			programRom = buildProgramRomImage(fullCode, this.rodataBytes, this.dataBytes);
-			programRomTextByteLength = fullCode.byteLength;
-			programCode = programRom.subarray(0, programRomTextByteLength);
-		}
 		return {
 			program: {
-				code: programCode,
-				programRom,
-				programRomTextByteLength,
+				code: fullCode,
 				constPool: this.constPool,
 				protos,
 				moduleProtos: this.moduleProtoEntries,
@@ -5217,6 +5068,8 @@ function canonicalizeProgramModules(modules: ReadonlyArray<ProgramModule>, label
 	}
 	const seenPaths = new Set<string>();
 	let canonicalModules: ProgramModule[] | null = null;
+	let sorted = true;
+	let previousPath = '';
 	for (let index = 0; index < modules.length; index += 1) {
 		const module = modules[index];
 		const path = toLuaModulePath(module.path);
@@ -5224,6 +5077,10 @@ function canonicalizeProgramModules(modules: ReadonlyArray<ProgramModule>, label
 			throw new Error(`[ProgramCompiler] Duplicate ${label} module path '${path}'.`);
 		}
 		seenPaths.add(path);
+		if (index !== 0 && path < previousPath) {
+			sorted = false;
+		}
+		previousPath = path;
 		if (path === module.path) {
 			if (canonicalModules !== null) {
 				canonicalModules.push(module);
@@ -5242,7 +5099,11 @@ function canonicalizeProgramModules(modules: ReadonlyArray<ProgramModule>, label
 		}
 		canonicalModules.push(canonicalModule);
 	}
-	return canonicalModules ?? modules;
+	const canonical = canonicalModules ?? modules;
+	if (sorted) {
+		return canonical;
+	}
+	return canonical.slice().sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0);
 }
 
 function buildCompilerSemanticFrontend(
@@ -5251,20 +5112,6 @@ function buildCompilerSemanticFrontend(
 	externalModules: ReadonlyArray<ProgramModule>,
 	options: CompileOptions,
 ): LuaSemanticFrontend {
-	let extraGlobalNames: ReadonlyArray<string> = SYSTEM_ROM_BOOT_SYMBOL_NAMES;
-	if (options.baseMetadata) {
-		const mergedGlobalNames: string[] = [];
-		for (const name of SYSTEM_ROM_BOOT_SYMBOL_NAMES) {
-			mergedGlobalNames.push(name);
-		}
-		for (const name of options.baseMetadata.systemGlobalNames) {
-			mergedGlobalNames.push(name);
-		}
-		for (const name of options.baseMetadata.globalNames) {
-			mergedGlobalNames.push(name);
-		}
-		extraGlobalNames = mergedGlobalNames;
-	}
 	const sources = [{
 		path: entryChunk.range.path,
 		source: requireEntrySource(options, entryChunk.range.path),
@@ -5289,7 +5136,7 @@ function buildCompilerSemanticFrontend(
 		});
 	}
 	return buildLuaSemanticFrontend(sources, {
-		extraGlobalNames,
+		extraGlobalNames: SYSTEM_ROM_BOOT_SYMBOL_NAMES,
 	});
 }
 
@@ -5422,48 +5269,6 @@ function compileExceptionProto(
 	return protoIndex;
 }
 
-function createProgramBuilderFromProgram(
-	base: Program,
-	metadata: ProgramMetadata,
-	optLevel: OptimizationLevel,
-	preserveProgramRom: boolean,
-	programDomain: ProgramCompileDomain,
-): ProgramBuilder {
-	const builder = new ProgramBuilder(
-		base.constPool,
-		base.constPoolStringPool,
-		optLevel,
-		programDomain,
-		metadata,
-		base.code,
-		preserveProgramRom ? base.programRom : null,
-		preserveProgramRom ? base.programRomTextByteLength : 0,
-		!preserveProgramRom,
-		base.moduleProtos,
-		base.moduleExports,
-	);
-	const protoIds = metadata.protoIds;
-	if (!protoIds || protoIds.length !== base.protos.length) {
-		throw new Error('[ProgramBuilder] Base program proto ids missing or mismatched.');
-	}
-	for (let index = 0; index < base.protos.length; index += 1) {
-		const proto = base.protos[index];
-		const start = proto.entryPC;
-		const end = start + proto.codeLen;
-		const code = base.code.subarray(start, end);
-		const startWord = start / INSTRUCTION_BYTES;
-		const endWord = end / INSTRUCTION_BYTES;
-		const ranges: Array<SourceRange | null> = new Array(endWord - startWord);
-		for (let rangeIndex = startWord; rangeIndex < endWord; rangeIndex += 1) {
-			ranges[rangeIndex - startWord] = metadata.debugRanges[rangeIndex];
-		}
-		const localSlots = metadata.localSlotsByProto[index];
-		const upvalueNames = metadata.upvalueNamesByProto[index];
-		builder.seedProto(proto, code, ranges, [], localSlots, upvalueNames, protoIds[index]);
-	}
-	return builder;
-}
-
 export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray<ProgramModule> = EMPTY_PROGRAM_MODULES, options: CompileOptions = {}): CompiledProgram {
 	const optLevel = options.optLevel ?? 0;
 	const canonicalModules = canonicalizeProgramModules(modules, 'program');
@@ -5475,15 +5280,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 		throw new Error(buildCompileFailureMessage(semanticErrors));
 	}
 	const compileErrors: CompileError[] = [];
-	let programBuilder: ProgramBuilder;
-	if (options.baseProgram) {
-		if (!options.baseMetadata) {
-			throw new Error('[ProgramBuilder] Base program metadata is required.');
-		}
-		programBuilder = createProgramBuilderFromProgram(options.baseProgram, options.baseMetadata, optLevel, false, options.programDomain ?? 'cart');
-	} else {
-		programBuilder = new ProgramBuilder(null, null, optLevel, options.programDomain ?? 'cart');
-	}
+	const programBuilder = new ProgramBuilder(optLevel, options.programDomain ?? 'cart');
 	for (let index = 0; index < canonicalModules.length; index += 1) {
 		const module = canonicalModules[index];
 		const info = moduleCompileContext.modulesByPath.get(module.path);
@@ -5643,14 +5440,14 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 	const { program, metadata, constRelocs, constValueRelocs, rodataConstRelocs, data, bss, rodataBytes, rodataSymbols, staticModulePaths } = programBuilder.buildProgram();
 	return {
 		program,
-			metadata,
-			entryProtoIndex,
-			sectionInitProtoIndex,
-			irqProtoIndex,
-			exceptionProtoIndex,
-			moduleProtoMap: program.moduleProtoMap,
-			staticModulePaths,
-			constRelocs,
+		metadata,
+		entryProtoIndex,
+		sectionInitProtoIndex,
+		irqProtoIndex,
+		exceptionProtoIndex,
+		moduleProtoMap: program.moduleProtoMap,
+		staticModulePaths,
+		constRelocs,
 		constValueRelocs,
 		rodataConstRelocs,
 		data,
@@ -5658,65 +5455,6 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 		rodataBytes,
 		rodataSymbols,
 	};
-}
-
-export function appendLuaChunkToProgram(base: Program, programMetadata: ProgramMetadata, chunk: LuaChunk, options: CompileOptions = {}): AppendedProgram {
-	const optLevel = options.optLevel;
-	const externalModules = canonicalizeProgramModules(options.externalModules ?? EMPTY_PROGRAM_MODULES, 'external');
-	const frontend = buildCompilerSemanticFrontend(chunk, EMPTY_PROGRAM_MODULES, externalModules, {
-		baseProgram: options.baseProgram,
-		baseMetadata: programMetadata,
-		optLevel: options.optLevel,
-		entrySource: options.entrySource,
-	});
-	const moduleCompileContext = buildModuleCompileContext(EMPTY_PROGRAM_MODULES, externalModules, frontend);
-	const semanticErrors = collectSemanticCompileErrors(frontend, chunk.range.path);
-	if (semanticErrors.length > 0) {
-		throw new Error(buildCompileFailureMessage(semanticErrors));
-	}
-	const programBuilder = createProgramBuilderFromProgram(base, programMetadata, optLevel, true, options.programDomain ?? 'cart');
-	const compileErrors: CompileError[] = [];
-	const moduleId = chunk.range.path;
-	const entryProtoId = buildEntryProtoId(moduleId);
-	let entryProtoIndex = -1;
-	let sectionInitProtoIndex = -1;
-	const entryBuilder = new FunctionBuilder(programBuilder, null, {
-		moduleId,
-		protoId: entryProtoId,
-		semantics: frontend.getFile(chunk.range.path),
-		frontend,
-		moduleCompileContext,
-	});
-	try {
-		entryBuilder.compileChunk(chunk);
-		const entryCode = entryBuilder.getCode();
-		const entryRanges = entryBuilder.getRanges();
-		const entryConstRelocs = entryBuilder.getConstRelocs();
-		const entryLocalSlots = entryBuilder.getLocalDebugSlots();
-		const entryInstructionSet = entryBuilder.getInstructionSet();
-		entryProtoIndex = programBuilder.addProto({
-			entryPC: 0,
-			codeLen: entryRanges.length * INSTRUCTION_BYTES,
-			numParams: 0,
-				isVararg: false,
-				maxStack: entryBuilder.getMaxStack(),
-				upvalueDescs: entryBuilder.getUpvalueDescs(),
-				staticClosure: false,
-			}, entryCode, entryRanges, entryConstRelocs, entryLocalSlots, entryBuilder.getUpvalueNames(), entryProtoId, entryInstructionSet);
-	} catch (error) {
-		compileErrors.push({
-			path: chunk.range.path,
-			stage: 'entry',
-			message: extractCompileErrorMessage(error, chunk.range.path),
-		});
-	}
-	if (compileErrors.length > 0) {
-		throw new Error(buildCompileFailureMessage(compileErrors));
-	}
-	sectionInitProtoIndex = compileSectionInitProto(programBuilder, moduleId, chunk.range, frontend.getFile(chunk.range.path), frontend);
-	recordModuleExportContracts(programBuilder, moduleCompileContext);
-	const { program, metadata, constRelocs, constValueRelocs, rodataConstRelocs, data, bss, rodataBytes, rodataSymbols } = programBuilder.buildProgram();
-	return { program, metadata, entryProtoIndex, sectionInitProtoIndex, constRelocs, constValueRelocs, rodataConstRelocs, data, bss, rodataBytes, rodataSymbols };
 }
 // end normalized-body-acceptable
 // end repeated-sequence-acceptable

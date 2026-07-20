@@ -1,12 +1,26 @@
-import { decodeBinary, requireObject, requireObjectKey } from '../../common/serializer/binencoder';
-import { StringValue, asStringId, valueIsString, type Program, type ProgramMetadata, type ProgramModuleExport, type ProgramModuleProto, type ProgramRuntimeSymbols, type Proto, type Value } from '../cpu/cpu';
+import { decodeBinary, encodeBinary } from '../../common/serializer/binencoder';
+import { StringValue, type Program, type ProgramMetadata, type ProgramModuleExport, type ProgramModuleProto, type ProgramRuntimeSymbols, type Proto, type Value } from '../cpu/cpu';
 import { StringPool } from '../cpu/string_pool';
 
 // disable-next-line legacy_sentinel_string_pattern -- Program image id is a TS/C++/bootrom binary contract, not an alias fallback.
 export const PROGRAM_IMAGE_ID = '__program__';
 // disable-next-line legacy_sentinel_string_pattern -- Program symbols image id is a TS/C++/bootrom binary contract, not an alias fallback.
 export const PROGRAM_SYMBOLS_IMAGE_ID = '__program_symbols__';
+
 export type EncodedValue = null | boolean | number | string;
+
+export type ProgramPlacement = {
+	textBasePc: number;
+	constBaseIndex: number;
+	protoBaseIndex: number;
+	dataBaseAddress: number;
+	bssBaseAddress: number;
+};
+
+export type ProgramStaticLayoutToken = {
+	lo: number;
+	hi: number;
+};
 
 export type ProgramTextSection = {
 	code: Uint8Array;
@@ -19,31 +33,22 @@ export type ProgramRodataSection = {
 	moduleExports: ProgramModuleExport[];
 	staticModulePaths: string[];
 	bytes: Uint8Array;
-	symbols: ProgramRodataSymbol[];
 };
-
-export type ProgramStorageSymbol = {
-	name: string;
-	offset: number;
-	byteCount: number;
-	alignment: number;
-};
-
-export type ProgramRodataSymbol = ProgramStorageSymbol;
 
 export type ProgramDataSection = {
 	bytes: Uint8Array;
-	symbols: ProgramDataSymbol[];
 };
-
-export type ProgramDataSymbol = ProgramStorageSymbol;
 
 export type ProgramBssSection = {
 	byteCount: number;
-	symbols: ProgramBssSymbol[];
 };
 
-export type ProgramBssSymbol = ProgramStorageSymbol;
+export type ProgramSections = {
+	text: ProgramTextSection;
+	rodata: ProgramRodataSection;
+	data: ProgramDataSection;
+	bss: ProgramBssSection;
+};
 
 export type ProgramVectorTable = {
 	resetProtoIndex: number;
@@ -52,316 +57,165 @@ export type ProgramVectorTable = {
 	exceptionProtoIndex: number;
 };
 
-export type ProgramObjectSections = {
-	text: ProgramTextSection;
-	rodata: ProgramRodataSection;
-	data: ProgramDataSection;
-	bss: ProgramBssSection;
-};
-
-// 'module' and 'export_proto' carry symbolic export-slot names directly in the
-// relocation record. The instruction operand is scratch storage until the linker
-// resolves it to the final slot or proto index.
-export type ProgramIndexedConstRelocKind = 'bx' | 'rk_b' | 'rk_c' | 'const_b' | 'const_c' | 'gl' | 'sys';
-export type ProgramSymbolicConstRelocKind = 'module' | 'export_proto';
-
-export type ProgramConstReloc =
-	| {
-		wordIndex: number;
-		kind: ProgramIndexedConstRelocKind;
-		constIndex: number;
-	}
-	| {
-		wordIndex: number;
-		kind: ProgramSymbolicConstRelocKind;
-		symbol: string;
-	};
-
-export type ProgramConstValueReloc = {
-	constIndex: number;
-	kind: 'bss_addr' | 'data_addr' | 'data_lma_addr' | 'rodata_addr';
-	symbol: string;
-	addend: number;
-};
-
-export type ProgramRodataConstReloc = {
-	byteOffset: number;
-	constIndex: number;
-};
-
-export type ProgramLink = {
-	constRelocs: ProgramConstReloc[];
-	constValueRelocs: ProgramConstValueReloc[];
-	rodataConstRelocs: ProgramRodataConstReloc[];
-	symbols: ProgramRuntimeSymbols;
-};
+export type ProgramBootTarget = 'system' | 'cart';
 
 export type ProgramImage = {
+	placement: ProgramPlacement;
+	staticLayoutToken: ProgramStaticLayoutToken;
 	vectors: ProgramVectorTable;
-	sections: ProgramObjectSections;
-	link: ProgramLink;
+	sections: ProgramSections;
+	symbols: ProgramRuntimeSymbols;
 };
 
 export type ProgramSymbolsImage = ProgramMetadata;
 
-function encodeProgramRodataConstPool(program: Program): EncodedValue[] {
-	const constPool: EncodedValue[] = new Array(program.constPool.length);
-	for (let index = 0; index < program.constPool.length; index += 1) {
-		const value = program.constPool[index];
-		if (value === null || typeof value === 'number' || typeof value === 'boolean') {
-			constPool[index] = value as EncodedValue;
-			continue;
-		}
-		if (valueIsString(value)) {
-			constPool[index] = program.constPoolStringPool.toString(asStringId(value));
-			continue;
-		}
-		throw new Error(`encodeProgram: unsupported constPool value at index ${index}`);
-	}
-	return constPool;
-}
+export type EncodedProgramImage = {
+	sections: Uint8Array<ArrayBuffer>;
+	descriptor: Uint8Array;
+};
 
-export function encodeProgramObjectSections(
-	program: Program,
-	staticModulePaths: string[],
-	data: ProgramDataSection,
-	bss: ProgramBssSection,
-	rodataBytes: Uint8Array,
-	rodataSymbols: ProgramRodataSymbol[],
-): ProgramObjectSections {
-	return {
-		text: {
-			code: program.code,
-			protos: program.protos,
-		},
+type ProgramImageDescriptor = {
+	placement: ProgramPlacement;
+	staticLayoutToken: ProgramStaticLayoutToken;
+	vectors: ProgramVectorTable;
+	sections: {
+		text: { byteCount: number; protos: Proto[] };
 		rodata: {
-			constPool: encodeProgramRodataConstPool(program),
-			moduleProtos: program.moduleProtos,
-			moduleExports: program.moduleExports,
-			staticModulePaths,
-			bytes: rodataBytes,
-			symbols: rodataSymbols,
+			byteCount: number;
+			constPool: EncodedValue[];
+			moduleProtos: ProgramModuleProto[];
+			moduleExports: ProgramModuleExport[];
+			staticModulePaths: string[];
+		};
+		data: { byteCount: number };
+		bss: ProgramBssSection;
+	};
+	symbols: ProgramRuntimeSymbols;
+};
+
+export function encodeProgramImage(programImage: ProgramImage): EncodedProgramImage {
+	const text = programImage.sections.text.code;
+	const rodata = programImage.sections.rodata.bytes;
+	const data = programImage.sections.data.bytes;
+	const sections = new Uint8Array(text.byteLength + rodata.byteLength + data.byteLength);
+	sections.set(rodata, 0);
+	sections.set(data, rodata.byteLength);
+	sections.set(text, rodata.byteLength + data.byteLength);
+	const descriptor = encodeBinary({
+		placement: programImage.placement,
+		staticLayoutToken: programImage.staticLayoutToken,
+		vectors: programImage.vectors,
+		sections: {
+			text: { byteCount: text.byteLength, protos: programImage.sections.text.protos },
+			rodata: {
+				byteCount: rodata.byteLength,
+				constPool: programImage.sections.rodata.constPool,
+				moduleProtos: programImage.sections.rodata.moduleProtos,
+				moduleExports: programImage.sections.rodata.moduleExports,
+				staticModulePaths: programImage.sections.rodata.staticModulePaths,
+			},
+			data: { byteCount: data.byteLength },
+			bss: programImage.sections.bss,
 		},
-		data,
-		bss,
-	};
+		symbols: programImage.symbols,
+	} satisfies ProgramImageDescriptor);
+	return { sections, descriptor };
 }
 
-export function buildProgramRomImage(textCode: Uint8Array, rodataBytes: Uint8Array, dataBytes: Uint8Array): Uint8Array<ArrayBuffer> {
-	const programRom = new Uint8Array(textCode.byteLength + rodataBytes.byteLength + dataBytes.byteLength);
-	programRom.set(textCode, 0);
-	programRom.set(rodataBytes, textCode.byteLength);
-	programRom.set(dataBytes, textCode.byteLength + rodataBytes.byteLength);
-	return programRom;
-}
-
-export function decodeProgramImage(bytes: Uint8Array): ProgramImage {
-	const root = requireObject(decodeBinary(bytes), 'ProgramImage');
-	const vectors = decodeProgramVectorTable(requireObjectKey(root, 'vectors', 'ProgramImage', 'ProgramImage.vectors'));
-	const sections = decodeProgramObjectSections(requireObjectKey(root, 'sections', 'ProgramImage', 'ProgramImage.sections'));
-	const link = decodeProgramLink(requireObjectKey(root, 'link', 'ProgramImage'));
+export function decodeProgramImage(sectionBytes: Uint8Array, descriptorBytes: Uint8Array): ProgramImage {
+	const descriptor = decodeBinary(descriptorBytes) as ProgramImageDescriptor;
+	const rodataEnd = descriptor.sections.rodata.byteCount;
+	const dataEnd = rodataEnd + descriptor.sections.data.byteCount;
+	const textEnd = dataEnd + descriptor.sections.text.byteCount;
 	return {
-		vectors,
-		sections,
-		link,
-	};
-}
-
-function decodeProgramVectorTable(value: unknown): ProgramVectorTable {
-	const vectors = requireObject(value, 'ProgramImage.vectors');
-	return {
-		resetProtoIndex: requireObjectKey(vectors, 'resetProtoIndex', 'ProgramImage.vectors', 'ProgramImage.vectors.resetProtoIndex') as number,
-		sectionInitProtoIndex: requireObjectKey(vectors, 'sectionInitProtoIndex', 'ProgramImage.vectors', 'ProgramImage.vectors.sectionInitProtoIndex') as number,
-		irqProtoIndex: requireObjectKey(vectors, 'irqProtoIndex', 'ProgramImage.vectors', 'ProgramImage.vectors.irqProtoIndex') as number,
-		exceptionProtoIndex: requireObjectKey(vectors, 'exceptionProtoIndex', 'ProgramImage.vectors', 'ProgramImage.vectors.exceptionProtoIndex') as number,
+		placement: descriptor.placement,
+		staticLayoutToken: descriptor.staticLayoutToken,
+		vectors: descriptor.vectors,
+		sections: {
+			text: {
+				code: sectionBytes.subarray(dataEnd, textEnd),
+				protos: descriptor.sections.text.protos,
+			},
+			rodata: {
+				constPool: descriptor.sections.rodata.constPool,
+				moduleProtos: descriptor.sections.rodata.moduleProtos,
+				moduleExports: descriptor.sections.rodata.moduleExports,
+				staticModulePaths: descriptor.sections.rodata.staticModulePaths,
+				bytes: sectionBytes.subarray(0, rodataEnd),
+			},
+			data: { bytes: sectionBytes.subarray(rodataEnd, dataEnd) },
+			bss: descriptor.sections.bss,
+		},
+		symbols: descriptor.symbols,
 	};
 }
 
 export function decodeProgramSymbolsImage(bytes: Uint8Array): ProgramSymbolsImage {
-	const root = requireObject(decodeBinary(bytes), 'ProgramSymbolsImage');
-	const metadata = requireObject(requireObjectKey(root, 'metadata', 'ProgramSymbolsImage', 'ProgramSymbolsImage.metadata'), 'ProgramSymbolsImage.metadata');
-	requireObjectKey(metadata, 'debugRanges', 'ProgramSymbolsImage.metadata', 'ProgramSymbolsImage.metadata.debugRanges');
-	requireObjectKey(metadata, 'protoIds', 'ProgramSymbolsImage.metadata', 'ProgramSymbolsImage.metadata.protoIds');
-	requireObjectKey(metadata, 'localSlotsByProto', 'ProgramSymbolsImage.metadata', 'ProgramSymbolsImage.metadata.localSlotsByProto');
-	requireObjectKey(metadata, 'upvalueNamesByProto', 'ProgramSymbolsImage.metadata', 'ProgramSymbolsImage.metadata.upvalueNamesByProto');
-	requireObjectKey(metadata, 'globalNames', 'ProgramSymbolsImage.metadata', 'ProgramSymbolsImage.metadata.globalNames');
-	requireObjectKey(metadata, 'systemGlobalNames', 'ProgramSymbolsImage.metadata', 'ProgramSymbolsImage.metadata.systemGlobalNames');
-	requireObject(requireObjectKey(metadata, 'exportProtoIdBySlot', 'ProgramSymbolsImage.metadata', 'ProgramSymbolsImage.metadata.exportProtoIdBySlot'), 'ProgramSymbolsImage.metadata.exportProtoIdBySlot');
-	return metadata as ProgramMetadata;
+	return (decodeBinary(bytes) as { metadata: ProgramMetadata }).metadata;
 }
 
-function decodeProgramObjectSections(value: unknown): ProgramObjectSections {
-	const obj = requireObject(value, 'ProgramImage.sections');
-	const text = requireObject(requireObjectKey(obj, 'text', 'ProgramImage.sections', 'ProgramImage.sections.text'), 'ProgramImage.sections.text');
-	const rodata = requireObject(requireObjectKey(obj, 'rodata', 'ProgramImage.sections', 'ProgramImage.sections.rodata'), 'ProgramImage.sections.rodata');
-	const data = requireObject(requireObjectKey(obj, 'data', 'ProgramImage.sections', 'ProgramImage.sections.data'), 'ProgramImage.sections.data');
-	const bss = requireObject(requireObjectKey(obj, 'bss', 'ProgramImage.sections', 'ProgramImage.sections.bss'), 'ProgramImage.sections.bss');
-	return {
-		text: {
-			code: requireObjectKey(text, 'code', 'ProgramImage.sections.text', 'ProgramImage.sections.text.code') as Uint8Array,
-			protos: requireObjectKey(text, 'protos', 'ProgramImage.sections.text', 'ProgramImage.sections.text.protos') as Proto[],
-		},
-		rodata: {
-			constPool: requireObjectKey(rodata, 'constPool', 'ProgramImage.sections.rodata', 'ProgramImage.sections.rodata.constPool') as EncodedValue[],
-			moduleProtos: decodeModuleProtos(requireObjectKey(rodata, 'moduleProtos', 'ProgramImage.sections.rodata')),
-			moduleExports: decodeModuleExports(requireObjectKey(rodata, 'moduleExports', 'ProgramImage.sections.rodata')),
-			staticModulePaths: requireObjectKey(rodata, 'staticModulePaths', 'ProgramImage.sections.rodata', 'ProgramImage.sections.rodata.staticModulePaths') as string[],
-			bytes: requireObjectKey(rodata, 'bytes', 'ProgramImage.sections.rodata', 'ProgramImage.sections.rodata.bytes') as Uint8Array,
-				symbols: decodeStorageSymbols(requireObjectKey(rodata, 'symbols', 'ProgramImage.sections.rodata'), 'rodata'),
-		},
-		data: {
-			bytes: requireObjectKey(data, 'bytes', 'ProgramImage.sections.data', 'ProgramImage.sections.data.bytes') as Uint8Array,
-				symbols: decodeStorageSymbols(requireObjectKey(data, 'symbols', 'ProgramImage.sections.data'), 'data'),
-		},
-		bss: {
-			byteCount: requireObjectKey(bss, 'byteCount', 'ProgramImage.sections.bss', 'ProgramImage.sections.bss.byteCount') as number,
-				symbols: decodeStorageSymbols(requireObjectKey(bss, 'symbols', 'ProgramImage.sections.bss'), 'bss'),
-		},
-	};
-}
-
-function decodeStorageSymbols(value: unknown, sectionName: 'bss' | 'data' | 'rodata'): ProgramStorageSymbol[] {
-	const array = value as [];
-	const out: ProgramBssSymbol[] = new Array(array.length);
-	for (let index = 0; index < array.length; index += 1) {
-		const entryLabel = `ProgramImage.sections.${sectionName}.symbols[${index}]`;
-		const entry = requireObject(array[index], entryLabel);
-		out[index] = {
-			name: requireObjectKey(entry, 'name', entryLabel, `${entryLabel}.name`) as string,
-			offset: requireObjectKey(entry, 'offset', entryLabel, `${entryLabel}.offset`) as number,
-			byteCount: requireObjectKey(entry, 'byteCount', entryLabel, `${entryLabel}.byteCount`) as number,
-			alignment: requireObjectKey(entry, 'alignment', entryLabel, `${entryLabel}.alignment`) as number,
-		};
+function decodeProgramConst(value: EncodedValue, stringPool: StringPool): Value {
+	if (typeof value === 'string') {
+		return StringValue.get(stringPool.intern(value));
 	}
-	return out;
+	return value;
 }
 
-function decodeModuleProtos(value: unknown): ProgramModuleProto[] {
-	const array = value as [];
-	const out: ProgramModuleProto[] = new Array(array.length);
-	for (let index = 0; index < array.length; index += 1) {
-		const entryLabel = `ProgramImage.sections.rodata.moduleProtos[${index}]`;
-		const entry = requireObject(array[index], entryLabel);
-		out[index] = {
-			path: requireObjectKey(entry, 'path', entryLabel, `${entryLabel}.path`) as string,
-			protoIndex: requireObjectKey(entry, 'protoIndex', entryLabel, `${entryLabel}.protoIndex`) as number,
-		};
+export function assembleProgramImages(systemImage: ProgramImage, cartImage: ProgramImage | null): Program {
+	const codeByteLength = cartImage
+		? cartImage.placement.textBasePc + cartImage.sections.text.code.byteLength
+		: systemImage.sections.text.code.byteLength;
+	const code = new Uint8Array(codeByteLength);
+	code.set(systemImage.sections.text.code, systemImage.placement.textBasePc);
+	if (cartImage) {
+		code.set(cartImage.sections.text.code, cartImage.placement.textBasePc);
 	}
-	return out;
-}
 
-function decodeModuleExports(value: unknown): ProgramModuleExport[] {
-	const array = value as [];
-	const out: ProgramModuleExport[] = new Array(array.length);
-	for (let index = 0; index < array.length; index += 1) {
-		const entryLabel = `ProgramImage.sections.rodata.moduleExports[${index}]`;
-		const entry = requireObject(array[index], entryLabel);
-		out[index] = {
-			path: requireObjectKey(entry, 'path', entryLabel, `${entryLabel}.path`) as string,
-			exportPathKey: requireObjectKey(entry, 'exportPathKey', entryLabel, `${entryLabel}.exportPathKey`) as string,
-			slotName: requireObjectKey(entry, 'slotName', entryLabel, `${entryLabel}.slotName`) as string,
-		};
-	}
-	return out;
-}
-
-function decodeProgramLink(value: unknown): ProgramLink {
-	const link = requireObject(value, 'ProgramImage.link');
-	const relocValues = requireObjectKey(link, 'constRelocs', 'ProgramImage.link') as [];
-	const constRelocs: ProgramConstReloc[] = new Array(relocValues.length);
-	for (let index = 0; index < relocValues.length; index += 1) {
-		const entry = requireObject(relocValues[index], `ProgramImage.link.constRelocs[${index}]`);
-		const kind = requireObjectKey(entry, 'kind', `ProgramImage.link.constRelocs[${index}]`, `ProgramImage.link.constRelocs[${index}].kind`) as string;
-		if (kind !== 'bx' && kind !== 'rk_b' && kind !== 'rk_c' && kind !== 'const_b' && kind !== 'const_c' && kind !== 'gl' && kind !== 'sys' && kind !== 'module' && kind !== 'export_proto') {
-			throw new Error(`ProgramImage.link.constRelocs[${index}].kind must be 'bx', 'rk_b', 'rk_c', 'const_b', 'const_c', 'gl', 'sys', 'module' or 'export_proto'.`);
-		}
-		const wordIndex = requireObjectKey(entry, 'wordIndex', `ProgramImage.link.constRelocs[${index}]`, `ProgramImage.link.constRelocs[${index}].wordIndex`) as number;
-		if (kind === 'module' || kind === 'export_proto') {
-			constRelocs[index] = {
-				wordIndex,
-				kind,
-				symbol: requireObjectKey(entry, 'symbol', `ProgramImage.link.constRelocs[${index}]`, `ProgramImage.link.constRelocs[${index}].symbol`) as string,
-			};
-			continue;
-		}
-		constRelocs[index] = {
-			wordIndex,
-			kind,
-			constIndex: requireObjectKey(entry, 'constIndex', `ProgramImage.link.constRelocs[${index}]`, `ProgramImage.link.constRelocs[${index}].constIndex`) as number,
-		};
-	}
-	const constValueRelocValues = requireObjectKey(link, 'constValueRelocs', 'ProgramImage.link') as [];
-	const constValueRelocs: ProgramConstValueReloc[] = new Array(constValueRelocValues.length);
-	for (let index = 0; index < constValueRelocValues.length; index += 1) {
-		const entryLabel = `ProgramImage.link.constValueRelocs[${index}]`;
-		const entry = requireObject(constValueRelocValues[index], entryLabel);
-		const kind = requireObjectKey(entry, 'kind', entryLabel, `${entryLabel}.kind`) as string;
-		if (kind !== 'bss_addr' && kind !== 'data_addr' && kind !== 'data_lma_addr' && kind !== 'rodata_addr') {
-			throw new Error(`${entryLabel}.kind must be 'bss_addr', 'data_addr', 'data_lma_addr' or 'rodata_addr'.`);
-		}
-		constValueRelocs[index] = {
-			constIndex: requireObjectKey(entry, 'constIndex', entryLabel, `${entryLabel}.constIndex`) as number,
-			kind,
-			symbol: requireObjectKey(entry, 'symbol', entryLabel, `${entryLabel}.symbol`) as string,
-			addend: requireObjectKey(entry, 'addend', entryLabel, `${entryLabel}.addend`) as number,
-		};
-	}
-	const rodataConstRelocValues = requireObjectKey(link, 'rodataConstRelocs', 'ProgramImage.link') as [];
-	const rodataConstRelocs: ProgramRodataConstReloc[] = new Array(rodataConstRelocValues.length);
-	for (let index = 0; index < rodataConstRelocValues.length; index += 1) {
-		const entryLabel = `ProgramImage.link.rodataConstRelocs[${index}]`;
-		const entry = requireObject(rodataConstRelocValues[index], entryLabel);
-		rodataConstRelocs[index] = {
-			byteOffset: requireObjectKey(entry, 'byteOffset', entryLabel, `${entryLabel}.byteOffset`) as number,
-			constIndex: requireObjectKey(entry, 'constIndex', entryLabel, `${entryLabel}.constIndex`) as number,
-		};
-	}
-	return {
-		constRelocs,
-		constValueRelocs,
-		rodataConstRelocs,
-		symbols: decodeProgramRuntimeSymbols(requireObjectKey(link, 'symbols', 'ProgramImage.link')),
-	};
-}
-
-function decodeProgramRuntimeSymbols(value: unknown): ProgramRuntimeSymbols {
-	const symbols = requireObject(value, 'ProgramImage.link.symbols');
-	const exportProtoIdBySlot = requireObject(requireObjectKey(symbols, 'exportProtoIdBySlot', 'ProgramImage.link.symbols', 'ProgramImage.link.symbols.exportProtoIdBySlot'), 'ProgramImage.link.symbols.exportProtoIdBySlot') as ProgramRuntimeSymbols['exportProtoIdBySlot'];
-	return {
-		protoIds: requireObjectKey(symbols, 'protoIds', 'ProgramImage.link.symbols', 'ProgramImage.link.symbols.protoIds') as string[],
-		globalNames: requireObjectKey(symbols, 'globalNames', 'ProgramImage.link.symbols', 'ProgramImage.link.symbols.globalNames') as string[],
-		systemGlobalNames: requireObjectKey(symbols, 'systemGlobalNames', 'ProgramImage.link.symbols', 'ProgramImage.link.symbols.systemGlobalNames') as string[],
-		exportProtoIdBySlot,
-	};
-}
-
-export function inflateProgram(sections: ProgramObjectSections, executableConstPool: ReadonlyArray<EncodedValue>): Program {
 	const stringPool = new StringPool();
-	const constPool: Value[] = new Array(executableConstPool.length);
-	for (let index = 0; index < executableConstPool.length; index += 1) {
-		const value = executableConstPool[index];
-		if (typeof value === 'string') {
-			constPool[index] = StringValue.get(stringPool.intern(value));
-			continue;
-		}
-		constPool[index] = value;
+	const constPool: Value[] = cartImage
+		? new Array(cartImage.placement.constBaseIndex + cartImage.sections.rodata.constPool.length)
+		: new Array(systemImage.sections.rodata.constPool.length);
+	for (let index = 0; index < systemImage.sections.rodata.constPool.length; index += 1) {
+		constPool[index] = decodeProgramConst(systemImage.sections.rodata.constPool[index], stringPool);
 	}
-	const moduleProtos = sections.rodata.moduleProtos;
+	if (cartImage) {
+		for (let index = 0; index < cartImage.sections.rodata.constPool.length; index += 1) {
+			constPool[cartImage.placement.constBaseIndex + index] = decodeProgramConst(
+				cartImage.sections.rodata.constPool[index],
+				stringPool,
+			);
+		}
+	}
+
+	const protos: Proto[] = cartImage
+		? new Array(cartImage.placement.protoBaseIndex + cartImage.sections.text.protos.length)
+		: new Array(systemImage.sections.text.protos.length);
+	for (let index = 0; index < systemImage.sections.text.protos.length; index += 1) {
+		protos[index] = systemImage.sections.text.protos[index];
+	}
+	if (cartImage) {
+		for (let index = 0; index < cartImage.sections.text.protos.length; index += 1) {
+			protos[cartImage.placement.protoBaseIndex + index] = cartImage.sections.text.protos[index];
+		}
+	}
+
+	const moduleProtos = cartImage
+		? systemImage.sections.rodata.moduleProtos.concat(cartImage.sections.rodata.moduleProtos)
+		: systemImage.sections.rodata.moduleProtos;
+	const moduleExports = cartImage
+		? systemImage.sections.rodata.moduleExports.concat(cartImage.sections.rodata.moduleExports)
+		: systemImage.sections.rodata.moduleExports;
 	const moduleProtoMap = new Map<string, number>();
 	for (let index = 0; index < moduleProtos.length; index += 1) {
 		const entry = moduleProtos[index];
 		moduleProtoMap.set(entry.path, entry.protoIndex);
 	}
-	const programRom = buildProgramRomImage(sections.text.code, sections.rodata.bytes, sections.data.bytes);
-	const programRomTextByteLength = sections.text.code.byteLength;
 	return {
-		code: programRom.subarray(0, programRomTextByteLength),
-		programRom,
-		programRomTextByteLength,
+		code,
 		constPool,
-		protos: sections.text.protos,
+		protos,
 		moduleProtos,
-		moduleExports: sections.rodata.moduleExports,
+		moduleExports,
 		moduleProtoMap,
 		stringPool,
 		constPoolStringPool: stringPool,
