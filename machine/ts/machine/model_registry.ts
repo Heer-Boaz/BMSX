@@ -10,7 +10,8 @@ export const PSX_CPU_FREQ_HZ = 33_868_800; // 44100 * 768, the real PS1 CPU cloc
 export const PSX_DMA_RAM_CYCLES_PER_WORD = 1;
 export const PSX_DMA_RAM_BURST_SETUP_CYCLES = 1;
 export const PSX_DMA_SYSTEM_ROM_CYCLES_PER_WORD = 1;
-export const PSX_DMA_CART_ROM_CYCLES_PER_WORD = 25;
+export const PSX_DMA_CART_ROM_CYCLES_PER_WORD = 8;
+export const PSX_DMA_CART_ROM_BURST_SETUP_CYCLES = 4;
 export const PSX_RAM_BYTES = 0x00400000;
 export const GX_GPU_DISPLAY_ASPECT_WIDTH = 4;
 export const GX_GPU_DISPLAY_ASPECT_HEIGHT = 3;
@@ -31,6 +32,7 @@ export type MachineModelSpec = {
 	dmaRamBurstSetupCycles: number;
 	dmaSystemRomCyclesPerWord: number;
 	dmaCartRomCyclesPerWord: number;
+	dmaCartRomBurstSetupCycles: number;
 	ramBytes: number;
 	geoWorkUnitsPerSec: number;
 };
@@ -47,6 +49,7 @@ export const PSX_MACHINE_SPEC: MachineModelSpec = {
 	dmaRamBurstSetupCycles: PSX_DMA_RAM_BURST_SETUP_CYCLES,
 	dmaSystemRomCyclesPerWord: PSX_DMA_SYSTEM_ROM_CYCLES_PER_WORD,
 	dmaCartRomCyclesPerWord: PSX_DMA_CART_ROM_CYCLES_PER_WORD,
+	dmaCartRomBurstSetupCycles: PSX_DMA_CART_ROM_BURST_SETUP_CYCLES,
 	ramBytes: PSX_RAM_BYTES,
 	geoWorkUnitsPerSec: PSX_GEO_WORK_UNITS_PER_SEC,
 };

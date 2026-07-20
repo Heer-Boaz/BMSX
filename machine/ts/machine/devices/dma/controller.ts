@@ -63,6 +63,7 @@ export class DmaController {
 	private ramBurstSetupCycles = 0;
 	private systemRomCyclesPerWord = 1;
 	private cartRomCyclesPerWord = 0;
+	private cartRomBurstSetupCycles = 0;
 	private scheduledBlockWords = 0;
 	private scheduledReadAddressWord = 0;
 	private scheduledWriteAddressWord = 0;
@@ -126,17 +127,19 @@ export class DmaController {
 		}
 	}
 
-	public setTiming(ramCyclesPerWord: number, ramBurstSetupCycles: number, systemRomCyclesPerWord: number, cartRomCyclesPerWord: number, nowCycles: number): void {
+	public setTiming(ramCyclesPerWord: number, ramBurstSetupCycles: number, systemRomCyclesPerWord: number, cartRomCyclesPerWord: number, cartRomBurstSetupCycles: number, nowCycles: number): void {
 		if (this.ramCyclesPerWord === ramCyclesPerWord
 			&& this.ramBurstSetupCycles === ramBurstSetupCycles
 			&& this.systemRomCyclesPerWord === systemRomCyclesPerWord
-			&& this.cartRomCyclesPerWord === cartRomCyclesPerWord) {
+			&& this.cartRomCyclesPerWord === cartRomCyclesPerWord
+			&& this.cartRomBurstSetupCycles === cartRomBurstSetupCycles) {
 			return;
 		}
 		this.ramCyclesPerWord = ramCyclesPerWord;
 		this.ramBurstSetupCycles = ramBurstSetupCycles;
 		this.systemRomCyclesPerWord = systemRomCyclesPerWord;
 		this.cartRomCyclesPerWord = cartRomCyclesPerWord;
+		this.cartRomBurstSetupCycles = cartRomBurstSetupCycles;
 		// Admission latches the current block's completion edge. New timing starts
 		// with the next block rather than replaying elapsed bus time.
 		if (this.scheduledBlockWords !== 0) {
@@ -437,16 +440,19 @@ export class DmaController {
 			const ramBlockCycles = readRegion === MemoryRegionKind.Ram || writeRegion === MemoryRegionKind.Ram
 				? blockWords * this.ramCyclesPerWord + this.ramBurstSetupCycles
 				: 0;
+			const cartRomBlockCycles = readRegion === MemoryRegionKind.CartRom || writeRegion === MemoryRegionKind.CartRom
+				? blockWords * this.cartRomCyclesPerWord + this.cartRomBurstSetupCycles
+				: 0;
 			const readCycles = readRegion === MemoryRegionKind.Ram
 				? ramBlockCycles
 				: readRegion === MemoryRegionKind.SystemRom
 					? blockWords * this.systemRomCyclesPerWord
-					: readRegion === MemoryRegionKind.CartRom ? blockWords * this.cartRomCyclesPerWord : 0;
+					: readRegion === MemoryRegionKind.CartRom ? cartRomBlockCycles : 0;
 			const writeCycles = writeRegion === MemoryRegionKind.Ram
 				? ramBlockCycles
 				: writeRegion === MemoryRegionKind.SystemRom
 					? blockWords * this.systemRomCyclesPerWord
-					: writeRegion === MemoryRegionKind.CartRom ? blockWords * this.cartRomCyclesPerWord : 0;
+					: writeRegion === MemoryRegionKind.CartRom ? cartRomBlockCycles : 0;
 			blockCycles = readCycles > writeCycles ? readCycles : writeCycles;
 		}
 		if (blockCycles === 0) {

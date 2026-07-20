@@ -132,7 +132,7 @@ void testLibretroSaveStateRoundTrip() {
 	for (size_t index = 0; index < dmaWords.size(); index += 1u) {
 		memory.writeMappedU32LE(dmaSource + static_cast<uint32_t>(index * 4u), dmaWords[index]);
 	}
-	runtime.machine.dmaController.setTiming(0, 1, 0, 0, scheduler.currentNowCycles());
+	runtime.machine.dmaController.setTiming(0, 1, 0, 0, 0, scheduler.currentNowCycles());
 	runtime.machine.gxGpu.writeGp1((bmsx::GX_GPU_GP1_DMA_DIRECTION << 24u) | bmsx::GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
 	memory.writeMappedU32LE(bmsx::IO_DMA_READ_ADDR, dmaSource);
 	memory.writeMappedU32LE(bmsx::IO_DMA_WRITE_ADDR, bmsx::IO_GX_GPU_GP0);

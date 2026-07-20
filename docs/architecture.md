@@ -1409,8 +1409,11 @@ hyper-page burst and each word costs one more. The setup is paid again for every
 admitted block, including a block at the same or a fixed address. It is not a
 persistent open-row cache, does not depend on where RAM happens to sit in the
 memory map, and creates no row id or row state to serialize. `SYSTEM_ROM` uses
-the internal 32-bit path and costs `N` cycles. `CART_ROM` uses the external
-cartridge port and costs `25N` cycles. A fixed MMIO or other mapped side
+the internal 32-bit path and costs `N` cycles. `CART_ROM` uses a 16-bit external
+cartridge datapath: a block pays four address/arbitration setup cycles, then each
+32-bit DMA word takes two 16-bit transfers of four CPU cycles each. Its block
+cost is therefore `4 + 8N` cycles. Setup is paid again at every admitted block;
+there is no persistent cartridge page latch. A fixed MMIO or other mapped side
 contributes no memory wait of its own; the DMA datapath still needs one cycle to
 complete a block when neither side contributes a memory wait.
 
@@ -1421,8 +1424,10 @@ slower side determines its completion edge. RAM↔RAM is the only exception: RAM
 is single-ported, so its read and write block costs add. With continuous DREQ
 and full sixteen-word blocks this yields about 135.48 MB/s for
 `SYSTEM_ROM`→MMIO, 127.51 MB/s for RAM→MMIO or `SYSTEM_ROM`→RAM,
-5.42 MB/s for `CART_ROM`→RAM/MMIO, and 63.75 MB/s for RAM→RAM. Short RAM
-blocks pay setup more often, and DREQ can add idle time between blocks.
+16.42 MB/s for `CART_ROM`→RAM/MMIO, and 63.75 MB/s for RAM→RAM. Short RAM
+and cartridge blocks pay setup more often, and DREQ can add idle time between
+blocks. The cartridge path approaches 16.93 MB/s only as blocks grow; the
+architectural sixteen-word maximum is the quoted 16.42 MB/s.
 
 The timing belongs to the bus/DMA owner rather than GX, APU, firmware or a ROM
 texture helper. The machine model supplies these fixed raw-cycle constants to
@@ -1431,11 +1436,14 @@ them. This follows the same ownership shape as DuckStation's
 [DMA RAM tick owner](https://github.com/stenzek/duckstation/blob/4730d795bba1d11353efef01be513886fb8867c7/src/core/bus.h#L194-L202): RAM cost
 is calculated once for a transferred batch, not by simulating another per-word
 memory stream before the real transfer. The cartridge rate is a BMSX hardware
-choice rather than a PS1 expansion-ROM inference. Its 5.42 MB/s sustained ideal
-rate sits beside Nintendo's documented N64 Game Pak figure of about
-[5 MB/s typical and 50 MB/s peak](https://ultra64.ca/files/documentation/online-manuals/man/kantan/step1/2-6.html).
-The different physical-bus ownership also follows production emulators: mGBA
-keeps separate [internal and Game Pak wait-state tables](https://github.com/mgba-emu/mgba/blob/bae93155b2076d7de6bdfa25499b62084144b22a/src/gba/memory.c#L35-L40)
+choice rather than a PS1 expansion-ROM inference. The standard profile does not
+pretend that Nintendo's documented N64 Game Pak
+[50 MB/s page-mode peak](https://ultra64.ca/files/documentation/online-manuals/man/kantan/step1/2-6.html)
+is a universally sustainable cartridge rate, nor does it copy that platform's
+roughly 5 MB/s typical baseline. It specifies its own fixed 16-bit path between
+those endpoints and deliberately forgets sequential state at every DMA block.
+The different physical-bus ownership follows production emulators: mGBA keeps
+separate [internal and Game Pak wait-state tables](https://github.com/mgba-emu/mgba/blob/bae93155b2076d7de6bdfa25499b62084144b22a/src/gba/memory.c#L35-L40)
 and [charges DMA's first non-sequential and later sequential accesses](https://github.com/mgba-emu/mgba/blob/bae93155b2076d7de6bdfa25499b62084144b22a/src/gba/dma.c#L259-L285)
 through those tables, while melonDS makes the eight-bit cartridge port itself
 publish a 32-bit word every [20 or 32 system cycles](https://github.com/melonDS-emu/melonDS/blob/82fdbc78483f43b310e920e21acc47787cb43564/src/NDSCart.cpp#L806-L893),

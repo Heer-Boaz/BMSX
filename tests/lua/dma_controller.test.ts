@@ -81,7 +81,7 @@ function createDmaGpuFixture(): DmaGpuFixture {
 	dma.reset();
 	gpu.reset();
 	irq.reset();
-	dma.setTiming(0, 1, 0, 0, 0);
+	dma.setTiming(0, 1, 0, 0, 0, 0);
 	const smode1Address = gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_SMODE1_LOW);
 	memory.writeMappedU32LE(smode1Address, memory.readMappedU32LE(smode1Address) | GX_GPU_PCRTC_SMODE1_SINT);
 	gpu.onService(0);
@@ -101,6 +101,7 @@ test('region-aware DMA charges one RAM burst setup and combines both block sides
 		PSX_MACHINE_SPEC.dmaRamBurstSetupCycles,
 		PSX_MACHINE_SPEC.dmaSystemRomCyclesPerWord,
 		PSX_MACHINE_SPEC.dmaCartRomCyclesPerWord,
+		PSX_MACHINE_SPEC.dmaCartRomBurstSetupCycles,
 		scheduler.nowCycles,
 	);
 
@@ -111,7 +112,7 @@ test('region-aware DMA charges one RAM burst setup and combines both block sides
 	assert.equal(memory.readMappedU32LE(ramDestination + 4), 0xddeeff00);
 
 	programTransfer(memory, CART_ROM_BASE, romDestination, 2, RAM_COPY_CONTROL);
-	assert.equal(scheduler.nextDeadline(), 56, 'the 50-cycle cartridge side gates the RAM burst');
+	assert.equal(scheduler.nextDeadline(), 26, 'the 20-cycle cartridge side gates the RAM burst');
 	runNextDmaService(fixture);
 	assert.equal(memory.readMappedU32LE(romDestination), 0x11223344);
 	assert.equal(memory.readMappedU32LE(romDestination + 4), 0x55667788);
@@ -126,6 +127,7 @@ test('system firmware ROM uses its internal bus timing instead of cartridge timi
 		PSX_MACHINE_SPEC.dmaRamBurstSetupCycles,
 		PSX_MACHINE_SPEC.dmaSystemRomCyclesPerWord,
 		PSX_MACHINE_SPEC.dmaCartRomCyclesPerWord,
+		PSX_MACHINE_SPEC.dmaCartRomBurstSetupCycles,
 		scheduler.nowCycles,
 	);
 
@@ -134,6 +136,25 @@ test('system firmware ROM uses its internal bus timing instead of cartridge timi
 	runNextDmaService(fixture);
 	assert.equal(memory.readMappedU32LE(firmwareDestination), 0x01020304);
 	assert.equal(memory.readMappedU32LE(firmwareDestination + 4), 0x05060708);
+});
+
+test('cartridge ROM pays one setup per admitted block', () => {
+	const fixture = createDmaGpuFixture();
+	const { memory, dma, scheduler } = fixture;
+	const destination = PROGRAM_STATIC_RAM_BASE + 0x1800;
+	dma.setTiming(
+		PSX_MACHINE_SPEC.dmaRamCyclesPerWord,
+		PSX_MACHINE_SPEC.dmaRamBurstSetupCycles,
+		PSX_MACHINE_SPEC.dmaSystemRomCyclesPerWord,
+		PSX_MACHINE_SPEC.dmaCartRomCyclesPerWord,
+		PSX_MACHINE_SPEC.dmaCartRomBurstSetupCycles,
+		scheduler.nowCycles,
+	);
+
+	programTransfer(memory, CART_ROM_BASE, destination, 17, RAM_COPY_CONTROL);
+	assert.equal(scheduler.nextDeadline(), 132, 'sixteen words cost four setup cycles plus eight cycles per word');
+	runNextDmaService(fixture);
+	assert.equal(scheduler.nextDeadline(), 144, 'the final one-word block pays a new four-cycle setup');
 });
 
 test('RAM burst setup is block-local rather than persistent address state', () => {
@@ -146,6 +167,7 @@ test('RAM burst setup is block-local rather than persistent address state', () =
 		PSX_MACHINE_SPEC.dmaRamBurstSetupCycles,
 		PSX_MACHINE_SPEC.dmaSystemRomCyclesPerWord,
 		PSX_MACHINE_SPEC.dmaCartRomCyclesPerWord,
+		PSX_MACHINE_SPEC.dmaCartRomBurstSetupCycles,
 		scheduler.nowCycles,
 	);
 
@@ -168,6 +190,7 @@ test('a fixed MMIO port adds no memory wait beside its RAM block side', () => {
 		PSX_MACHINE_SPEC.dmaRamBurstSetupCycles,
 		PSX_MACHINE_SPEC.dmaSystemRomCyclesPerWord,
 		PSX_MACHINE_SPEC.dmaCartRomCyclesPerWord,
+		PSX_MACHINE_SPEC.dmaCartRomBurstSetupCycles,
 		scheduler.nowCycles,
 	);
 
@@ -279,13 +302,13 @@ test('an admitted DMA block survives DREQ drop, timing changes, and restore', ()
 	const source = PROGRAM_STATIC_RAM_BASE + 0x400;
 	memory.writeMappedU32LE(source, 0xe1000000);
 	memory.writeMappedU32LE(source + 4, 0xe1000001);
-	dma.setTiming(4, 0, 4, 0, 0);
+	dma.setTiming(4, 0, 4, 0, 0, 0);
 	gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
 	programTransfer(memory, source, IO_GX_GPU_GP0, 2, GP0_WRITE_CONTROL);
 	assert.equal(scheduler.nextDeadline(), 8);
 
 	scheduler.advanceTo(3);
-	dma.setTiming(8, 0, 8, 0, 3);
+	dma.setTiming(8, 0, 8, 0, 0, 3);
 	assert.equal(scheduler.nextDeadline(), 8);
 	gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_OFF);
 	assert.equal(scheduler.nextDeadline(), 8);

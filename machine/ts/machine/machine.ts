@@ -73,6 +73,7 @@ export class Machine {
 			PSX_MACHINE_SPEC.dmaRamBurstSetupCycles,
 			PSX_MACHINE_SPEC.dmaSystemRomCyclesPerWord,
 			PSX_MACHINE_SPEC.dmaCartRomCyclesPerWord,
+			PSX_MACHINE_SPEC.dmaCartRomBurstSetupCycles,
 			this.scheduler.currentNowCycles(),
 		);
 	}

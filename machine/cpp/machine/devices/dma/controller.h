@@ -34,7 +34,7 @@ class DmaController {
 public:
 	DmaController(Memory& memory, CPU& cpu, IrqController& irq, DeviceScheduler& scheduler);
 
-	void setTiming(i64 ramCyclesPerWord, i64 ramBurstSetupCycles, i64 systemRomCyclesPerWord, i64 cartRomCyclesPerWord, i64 nowCycles);
+	void setTiming(i64 ramCyclesPerWord, i64 ramBurstSetupCycles, i64 systemRomCyclesPerWord, i64 cartRomCyclesPerWord, i64 cartRomBurstSetupCycles, i64 nowCycles);
 	void setGxGpuReadReady(bool ready);
 	void setGxGpuDmaWriteReady(bool ready);
 	void setGxGpuCpuWriteReady(bool ready);
@@ -77,6 +77,7 @@ private:
 	i64 m_ramBurstSetupCycles = 0;
 	i64 m_systemRomCyclesPerWord = 1;
 	i64 m_cartRomCyclesPerWord = 0;
+	i64 m_cartRomBurstSetupCycles = 0;
 	u32 m_scheduledBlockWords = 0;
 	u32 m_scheduledReadAddressWord = 0;
 	u32 m_scheduledWriteAddressWord = 0;

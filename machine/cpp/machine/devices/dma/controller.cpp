@@ -55,17 +55,19 @@ void DmaController::onTriggerWrite(u32 value) {
 	}
 }
 
-void DmaController::setTiming(i64 ramCyclesPerWord, i64 ramBurstSetupCycles, i64 systemRomCyclesPerWord, i64 cartRomCyclesPerWord, i64 nowCycles) {
+void DmaController::setTiming(i64 ramCyclesPerWord, i64 ramBurstSetupCycles, i64 systemRomCyclesPerWord, i64 cartRomCyclesPerWord, i64 cartRomBurstSetupCycles, i64 nowCycles) {
 	if (m_ramCyclesPerWord == ramCyclesPerWord
 		&& m_ramBurstSetupCycles == ramBurstSetupCycles
 		&& m_systemRomCyclesPerWord == systemRomCyclesPerWord
-		&& m_cartRomCyclesPerWord == cartRomCyclesPerWord) {
+		&& m_cartRomCyclesPerWord == cartRomCyclesPerWord
+		&& m_cartRomBurstSetupCycles == cartRomBurstSetupCycles) {
 		return;
 	}
 	m_ramCyclesPerWord = ramCyclesPerWord;
 	m_ramBurstSetupCycles = ramBurstSetupCycles;
 	m_systemRomCyclesPerWord = systemRomCyclesPerWord;
 	m_cartRomCyclesPerWord = cartRomCyclesPerWord;
+	m_cartRomBurstSetupCycles = cartRomBurstSetupCycles;
 	// Admission latches the current block's completion edge. New timing starts
 	// with the next block rather than replaying elapsed bus time.
 	if (m_scheduledBlockWords != 0u) {
@@ -360,16 +362,19 @@ void DmaController::admitBlock(i64 anchorCycle) {
 		const i64 ramBlockCycles = readRegion == MemoryRegionKind::Ram || writeRegion == MemoryRegionKind::Ram
 			? static_cast<i64>(blockWords) * m_ramCyclesPerWord + m_ramBurstSetupCycles
 			: 0;
+		const i64 cartRomBlockCycles = readRegion == MemoryRegionKind::CartRom || writeRegion == MemoryRegionKind::CartRom
+			? static_cast<i64>(blockWords) * m_cartRomCyclesPerWord + m_cartRomBurstSetupCycles
+			: 0;
 		const i64 readCycles = readRegion == MemoryRegionKind::Ram
 			? ramBlockCycles
 			: readRegion == MemoryRegionKind::SystemRom
 				? static_cast<i64>(blockWords) * m_systemRomCyclesPerWord
-				: readRegion == MemoryRegionKind::CartRom ? static_cast<i64>(blockWords) * m_cartRomCyclesPerWord : 0;
+				: readRegion == MemoryRegionKind::CartRom ? cartRomBlockCycles : 0;
 		const i64 writeCycles = writeRegion == MemoryRegionKind::Ram
 			? ramBlockCycles
 			: writeRegion == MemoryRegionKind::SystemRom
 				? static_cast<i64>(blockWords) * m_systemRomCyclesPerWord
-				: writeRegion == MemoryRegionKind::CartRom ? static_cast<i64>(blockWords) * m_cartRomCyclesPerWord : 0;
+				: writeRegion == MemoryRegionKind::CartRom ? cartRomBlockCycles : 0;
 		blockCycles = readCycles > writeCycles ? readCycles : writeCycles;
 	}
 	if (blockCycles == 0) {

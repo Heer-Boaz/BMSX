@@ -48,7 +48,7 @@ struct AudioHarness {
 		irq.reset();
 		dma.reset();
 		audio.reset();
-		dma.setTiming(1, 0, 1, 0, 0);
+		dma.setTiming(1, 0, 1, 0, 0, 0);
 		audio.setTiming(bmsx::APU_SAMPLE_RATE_HZ, 0);
 	}
 };
@@ -501,7 +501,7 @@ void testSampleBusDmaAndMidTransferRestore() {
 
 void testSampleTransferWrongDirectionBlock() {
 	AudioHarness harness;
-	harness.dma.setTiming(0, 8, 0, 0, 0);
+	harness.dma.setTiming(0, 8, 0, 0, 0, 0);
 	harness.audio.setTiming(bmsx::APU_TRANSFER_WORDS_PER_SECOND, 0);
 	const bmsx::u32 source = bmsx::PROGRAM_STATIC_RAM_BASE + 0x500u;
 	const bmsx::u32 target = bmsx::PROGRAM_STATIC_RAM_BASE + 0x600u;
