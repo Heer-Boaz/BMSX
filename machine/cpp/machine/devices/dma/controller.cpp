@@ -6,9 +6,6 @@
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/map.h"
 #include "machine/memory/memory.h"
-#include "machine/memory/region.h"
-#include "machine/model_registry.h"
-#include "machine/scheduler/budget.h"
 #include "machine/scheduler/device.h"
 
 #include <algorithm>
@@ -49,9 +46,7 @@ void DmaController::onTriggerWrite(u32 value) {
 		return;
 	}
 	m_scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
-	m_scheduledBlockWords = 0u;
-	m_serviceDeadline = 0;
-	m_timingCarry = 0;
+	clearAdmittedBlock();
 	m_memory.writeIoValue(IO_DMA_STATUS, valueNumber(static_cast<f64>(DMA_STATUS_BUSY)));
 	if (m_memory.readIoU32(IO_DMA_TRANSFER_COUNT) == 0u) {
 		finishTransfer();
@@ -62,18 +57,15 @@ void DmaController::onTriggerWrite(u32 value) {
 	}
 }
 
-void DmaController::setTiming(i64 cpuHz, i64 ramWordsPerSec, i64 ramRowReopenCycles, i64 romWaitCyclesPerWord, i64 nowCycles) {
-	if (m_cpuHz == cpuHz
-		&& m_ramWordsPerSec == ramWordsPerSec
-		&& m_ramRowReopenCycles == ramRowReopenCycles
-		&& m_romWaitCyclesPerWord == romWaitCyclesPerWord) {
+void DmaController::setTiming(i64 ramCyclesPerWord, i64 ramBurstSetupCycles, i64 romCyclesPerWord, i64 nowCycles) {
+	if (m_ramCyclesPerWord == ramCyclesPerWord
+		&& m_ramBurstSetupCycles == ramBurstSetupCycles
+		&& m_romCyclesPerWord == romCyclesPerWord) {
 		return;
 	}
-	m_cpuHz = cpuHz;
-	m_ramWordsPerSec = ramWordsPerSec;
-	m_ramRowReopenCycles = ramRowReopenCycles;
-	m_romWaitCyclesPerWord = romWaitCyclesPerWord;
-	m_timingCarry = 0;
+	m_ramCyclesPerWord = ramCyclesPerWord;
+	m_ramBurstSetupCycles = ramBurstSetupCycles;
+	m_romCyclesPerWord = romCyclesPerWord;
 	// Admission latches the current block's completion edge. New timing starts
 	// with the next block rather than replaying elapsed bus time.
 	if (m_scheduledBlockWords != 0u) {
@@ -141,106 +133,83 @@ bool DmaController::isGxGpuCpuPortWriteReady() const {
 }
 
 bool DmaController::ownsApuDataPort() const {
+	if (m_scheduledBlockWords != 0u) {
+		return m_scheduledReadAddressWord == IO_APU_TRANSFER_DATA
+			|| m_scheduledWriteAddressWord == IO_APU_TRANSFER_DATA;
+	}
 	return busy()
 		&& (m_memory.readIoU32(IO_DMA_READ_ADDR) == IO_APU_TRANSFER_DATA
 			|| m_memory.readIoU32(IO_DMA_WRITE_ADDR) == IO_APU_TRANSFER_DATA);
 }
 
 void DmaController::reset() {
-	m_scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
-	m_timingCarry = 0;
-	m_scheduledBlockWords = 0u;
-	m_serviceDeadline = 0;
+	clearLiveTransfer();
 	m_gxGpuReadReady = false;
 	m_gxGpuDmaWriteReady = false;
 	m_gxGpuCpuWriteReady = false;
 	m_gxGpuDmaDirection = 0u;
 	m_apuDmaReadReady = false;
 	m_apuDmaWriteReady = false;
-	m_serviceActive = false;
-	m_restorePending = false;
 	m_supervisorQuiesceRequested = false;
 	m_userReadAddressWord = 0u;
 	m_userWriteAddressWord = 0u;
 	m_userTransferCountWord = 0u;
 	m_userControlWord = 0u;
 	m_userStatusWord = 0u;
-	m_userTimingCarry = 0;
-	m_lastRamRowRead = DMA_RAM_ROW_NONE;
-	m_lastRamRowWrite = DMA_RAM_ROW_NONE;
-	m_memory.writeIoValue(IO_DMA_READ_ADDR, valueNumber(0.0));
-	m_memory.writeIoValue(IO_DMA_WRITE_ADDR, valueNumber(0.0));
-	m_memory.writeIoValue(IO_DMA_TRANSFER_COUNT, valueNumber(0.0));
-	m_memory.writeIoValue(IO_DMA_CONTROL, valueNumber(0.0));
-	m_memory.writeIoValue(IO_DMA_STATUS, valueNumber(0.0));
-	m_memory.writeIoValue(IO_DMA_TRIGGER, valueNumber(0.0));
 }
 
 void DmaController::onService(i64) {
-	const u32 admittedBlockWords = m_scheduledBlockWords;
+	const u32 blockWords = m_scheduledBlockWords;
+	u32 readAddress = m_scheduledReadAddressWord;
+	u32 writeAddress = m_scheduledWriteAddressWord;
+	u32 transferCount = m_scheduledTransferCountWord;
+	const u32 control = m_scheduledControlWord;
+	const u32 readStep = (control & DMA_CONTROL_READ_INCREMENT) != 0u ? IO_WORD_SIZE : 0u;
+	const u32 writeStep = (control & DMA_CONTROL_WRITE_INCREMENT) != 0u ? IO_WORD_SIZE : 0u;
 	const i64 blockDeadline = m_serviceDeadline;
 	m_scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
-	m_scheduledBlockWords = 0u;
-	m_serviceDeadline = 0;
 	m_serviceActive = true;
-	const u32 remainingAtService = m_memory.readIoU32(IO_DMA_TRANSFER_COUNT);
-	const u32 blockWords = admittedBlockWords < remainingAtService ? admittedBlockWords : remainingAtService;
-	for (u32 slot = 0u;
-		slot < blockWords
-			&& busy()
-			&& m_memory.readIoU32(IO_DMA_TRANSFER_COUNT) != 0u;
-		slot += 1u) {
-		const u32 transferCount = m_memory.readIoU32(IO_DMA_TRANSFER_COUNT);
+	for (u32 slot = 0u; slot < blockWords; slot += 1u) {
 		const MappedBusSignals busSignals = MAPPED_BUS_MASTER_DMA
 			| (slot + 1u == blockWords ? MAPPED_BUS_DMA_BLOCK_END : 0u);
-		transferWord(transferCount, busSignals);
+		const u32 nextReadAddress = readAddress + readStep;
+		const u32 nextWriteAddress = writeAddress + writeStep;
+		const u32 nextTransferCount = transferCount - 1u;
+		const u32 word = m_memory.readMappedDmaU32LE(readAddress, busSignals);
+		m_memory.writeMappedDmaU32LE(writeAddress, word, busSignals);
+		m_memory.writeIoValue(IO_DMA_READ_ADDR, valueNumber(static_cast<f64>(nextReadAddress)));
+		m_memory.writeIoValue(IO_DMA_WRITE_ADDR, valueNumber(static_cast<f64>(nextWriteAddress)));
+		m_memory.writeIoValue(IO_DMA_TRANSFER_COUNT, valueNumber(static_cast<f64>(nextTransferCount)));
+		const bool writePortAdvanced = writeStep != 0u
+			&& (writeAddress == IO_GX_GPU_GP0 || writeAddress == IO_APU_TRANSFER_DATA);
+		const bool readPortAdvanced = readStep != 0u && readAddress == IO_APU_TRANSFER_DATA;
+		if (writePortAdvanced) {
+			m_scheduledWriteAddressWord = nextWriteAddress;
+		}
+		if (readPortAdvanced) {
+			m_scheduledReadAddressWord = nextReadAddress;
+		}
+		if (writePortAdvanced || readPortAdvanced) {
+			resumeCpuPortWrites();
+		}
+		readAddress = nextReadAddress;
+		writeAddress = nextWriteAddress;
+		transferCount = nextTransferCount;
 	}
 	m_serviceActive = false;
-	if (!busy()) {
-		notifySupervisorBoundary();
-		return;
-	}
-	if (m_memory.readIoU32(IO_DMA_TRANSFER_COUNT) == 0u) {
+	clearAdmittedBlock();
+	if (transferCount == 0u) {
 		finishTransfer();
 		return;
 	}
 	if (!requestAsserted()) {
-		if (!m_supervisorQuiesceRequested) {
-			m_timingCarry = 0;
-		}
 		notifySupervisorBoundary();
 		return;
 	}
 	admitBlock(blockDeadline);
 }
 
-void DmaController::transferWord(u32 transferCount, MappedBusSignals busSignals) {
-	const u32 readAddress = m_memory.readIoU32(IO_DMA_READ_ADDR);
-	const u32 writeAddress = m_memory.readIoU32(IO_DMA_WRITE_ADDR);
-	const u32 control = m_memory.readIoU32(IO_DMA_CONTROL);
-	const u32 word = m_memory.readMappedDmaU32LE(readAddress, busSignals);
-	m_memory.writeMappedDmaU32LE(writeAddress, word, busSignals);
-	m_memory.writeIoValue(
-		IO_DMA_READ_ADDR,
-		valueNumber(static_cast<f64>((control & DMA_CONTROL_READ_INCREMENT) != 0u ? readAddress + IO_WORD_SIZE : readAddress))
-	);
-	m_memory.writeIoValue(
-		IO_DMA_WRITE_ADDR,
-		valueNumber(static_cast<f64>((control & DMA_CONTROL_WRITE_INCREMENT) != 0u ? writeAddress + IO_WORD_SIZE : writeAddress))
-	);
-	m_memory.writeIoValue(IO_DMA_TRANSFER_COUNT, valueNumber(static_cast<f64>(transferCount - 1u)));
-	if (((writeAddress == IO_GX_GPU_GP0 || writeAddress == IO_APU_TRANSFER_DATA)
-			&& (control & DMA_CONTROL_WRITE_INCREMENT) != 0u)
-		|| (readAddress == IO_APU_TRANSFER_DATA && (control & DMA_CONTROL_READ_INCREMENT) != 0u)) {
-		resumeCpuPortWrites();
-	}
-}
-
 void DmaController::finishTransfer() {
-	m_scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
-	m_scheduledBlockWords = 0u;
-	m_serviceDeadline = 0;
-	m_timingCarry = 0;
 	m_memory.writeIoValue(IO_DMA_STATUS, valueNumber(static_cast<f64>(DMA_STATUS_DONE)));
 	m_irq.raise(IRQ_DMA_DONE);
 	resumeCpuPortWrites();
@@ -254,18 +223,18 @@ DmaControllerState DmaController::captureState() const {
 	state.transferCountWord = m_memory.readIoU32(IO_DMA_TRANSFER_COUNT);
 	state.controlWord = m_memory.readIoU32(IO_DMA_CONTROL);
 	state.statusWord = m_memory.readIoU32(IO_DMA_STATUS);
-	state.timingCarry = m_timingCarry;
 	state.scheduledBlockWords = m_scheduledBlockWords;
 	state.scheduledBlockCycles = m_scheduledBlockWords == 0u ? 0 : m_serviceDeadline - m_scheduler.currentNowCycles();
+	state.scheduledReadAddressWord = m_scheduledReadAddressWord;
+	state.scheduledWriteAddressWord = m_scheduledWriteAddressWord;
+	state.scheduledTransferCountWord = m_scheduledTransferCountWord;
+	state.scheduledControlWord = m_scheduledControlWord;
 	state.supervisorQuiesceRequested = m_supervisorQuiesceRequested;
 	state.userReadAddressWord = m_userReadAddressWord;
 	state.userWriteAddressWord = m_userWriteAddressWord;
 	state.userTransferCountWord = m_userTransferCountWord;
 	state.userControlWord = m_userControlWord;
 	state.userStatusWord = m_userStatusWord;
-	state.userTimingCarry = m_userTimingCarry;
-	state.lastRamRowRead = m_lastRamRowRead;
-	state.lastRamRowWrite = m_lastRamRowWrite;
 	return state;
 }
 
@@ -277,8 +246,11 @@ void DmaController::restoreState(const DmaControllerState& state, i64 nowCycles)
 	m_memory.writeIoValue(IO_DMA_CONTROL, valueNumber(static_cast<f64>(state.controlWord)));
 	m_memory.writeIoValue(IO_DMA_STATUS, valueNumber(static_cast<f64>(state.statusWord)));
 	m_memory.writeIoValue(IO_DMA_TRIGGER, valueNumber(0.0));
-	m_timingCarry = state.timingCarry;
 	m_scheduledBlockWords = state.scheduledBlockWords;
+	m_scheduledReadAddressWord = state.scheduledReadAddressWord;
+	m_scheduledWriteAddressWord = state.scheduledWriteAddressWord;
+	m_scheduledTransferCountWord = state.scheduledTransferCountWord;
+	m_scheduledControlWord = state.scheduledControlWord;
 	m_serviceDeadline = nowCycles + state.scheduledBlockCycles;
 	m_serviceActive = false;
 	m_restorePending = true;
@@ -288,9 +260,6 @@ void DmaController::restoreState(const DmaControllerState& state, i64 nowCycles)
 	m_userTransferCountWord = state.userTransferCountWord;
 	m_userControlWord = state.userControlWord;
 	m_userStatusWord = state.userStatusWord;
-	m_userTimingCarry = state.userTimingCarry;
-	m_lastRamRowRead = state.lastRamRowRead;
-	m_lastRamRowWrite = state.lastRamRowWrite;
 }
 
 void DmaController::postLoad() {
@@ -317,7 +286,6 @@ void DmaController::enterSupervisorContext() {
 	m_userTransferCountWord = m_memory.readIoU32(IO_DMA_TRANSFER_COUNT);
 	m_userControlWord = m_memory.readIoU32(IO_DMA_CONTROL);
 	m_userStatusWord = m_memory.readIoU32(IO_DMA_STATUS);
-	m_userTimingCarry = m_timingCarry;
 	clearLiveTransfer();
 	m_supervisorQuiesceRequested = false;
 }
@@ -329,7 +297,6 @@ void DmaController::enterSupervisorFaultContext() {
 	m_userTransferCountWord = 0u;
 	m_userControlWord = 0u;
 	m_userStatusWord = 0u;
-	m_userTimingCarry = 0;
 	m_supervisorQuiesceRequested = false;
 }
 
@@ -340,22 +307,18 @@ void DmaController::leaveSupervisorContext() {
 	m_memory.writeIoValue(IO_DMA_TRANSFER_COUNT, valueNumber(static_cast<f64>(m_userTransferCountWord)));
 	m_memory.writeIoValue(IO_DMA_CONTROL, valueNumber(static_cast<f64>(m_userControlWord)));
 	m_memory.writeIoValue(IO_DMA_STATUS, valueNumber(static_cast<f64>(m_userStatusWord)));
-	m_timingCarry = m_userTimingCarry;
 	m_supervisorQuiesceRequested = false;
 	m_userReadAddressWord = 0u;
 	m_userWriteAddressWord = 0u;
 	m_userTransferCountWord = 0u;
 	m_userControlWord = 0u;
 	m_userStatusWord = 0u;
-	m_userTimingCarry = 0;
 	requestInputChanged();
 }
 
 void DmaController::clearLiveTransfer() {
 	m_scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
-	m_timingCarry = 0;
-	m_scheduledBlockWords = 0u;
-	m_serviceDeadline = 0;
+	clearAdmittedBlock();
 	m_serviceActive = false;
 	m_restorePending = false;
 	m_memory.writeIoValue(IO_DMA_READ_ADDR, valueNumber(0.0));
@@ -364,6 +327,15 @@ void DmaController::clearLiveTransfer() {
 	m_memory.writeIoValue(IO_DMA_CONTROL, valueNumber(0.0));
 	m_memory.writeIoValue(IO_DMA_STATUS, valueNumber(0.0));
 	m_memory.writeIoValue(IO_DMA_TRIGGER, valueNumber(0.0));
+}
+
+void DmaController::clearAdmittedBlock() {
+	m_scheduledBlockWords = 0u;
+	m_scheduledReadAddressWord = 0u;
+	m_scheduledWriteAddressWord = 0u;
+	m_scheduledTransferCountWord = 0u;
+	m_scheduledControlWord = 0u;
+	m_serviceDeadline = 0;
 }
 
 void DmaController::notifySupervisorBoundary() {
@@ -376,93 +348,47 @@ void DmaController::admitBlock(i64 anchorCycle) {
 	const u32 remaining = m_memory.readIoU32(IO_DMA_TRANSFER_COUNT);
 	const u32 control = m_memory.readIoU32(IO_DMA_CONTROL);
 	const u32 programmedBlockWords = ((control & DMA_CONTROL_BLOCK_WORDS_MASK) >> DMA_CONTROL_BLOCK_WORDS_SHIFT) + 1u;
-	scheduleAdmittedBlock(anchorCycle, remaining < programmedBlockWords ? remaining : programmedBlockWords);
-}
-
-void DmaController::scheduleAdmittedBlock(i64 anchorCycle, u32 blockWords) {
-	const u32 control = m_memory.readIoU32(IO_DMA_CONTROL);
-	const u32 readStep = (control & DMA_CONTROL_READ_INCREMENT) != 0u ? IO_WORD_SIZE : 0u;
-	const u32 writeStep = (control & DMA_CONTROL_WRITE_INCREMENT) != 0u ? IO_WORD_SIZE : 0u;
-
-	// The RAM rate accrual below must land on the exact same total as one
-	// bulk cyclesUntilBudgetUnits(..., N) call would for a side's whole RAM
-	// word count -- calling it once per word with targetUnits=1 would pay its
-	// "at least one cycle" scheduling floor on every single word instead of
-	// once per batch, inflating fast-relative-to-cpuHz rates. carryAtBlockStart
-	// and ramUnitsSoFar (shared by both sides, in program order) let each RAM
-	// word's cost be recovered as a delta of cumulative cost via
-	// cyclesForBudgetUnitsNoFloor, which telescopes back to the bulk total.
-	const i64 carryAtBlockStart = m_timingCarry;
-	i64 ramUnitsSoFar = 0;
-
-	i64 blockCycles = 0;
-	u32 readAddr = m_memory.readIoU32(IO_DMA_READ_ADDR);
-	u32 writeAddr = m_memory.readIoU32(IO_DMA_WRITE_ADDR);
-	for (u32 word = 0u; word < blockWords; word += 1u) {
-		const MemoryRegionKind readKind = classifyMemoryRegion(readAddr);
-		const MemoryRegionKind writeKind = classifyMemoryRegion(writeAddr);
-		// Fly-by transfer: read and write share one bus slot, so the slower side
-		// gates the word. The one exception is RAM<->RAM: a single-ported RAM
-		// chip cannot serve two different addresses in the same cycle, so that
-		// combination is the sum of two real bus cycles, not one shared slot.
-		const i64 readCost = sideWordCycles(readAddr, readKind, m_lastRamRowRead, carryAtBlockStart, ramUnitsSoFar);
-		const i64 writeCost = sideWordCycles(writeAddr, writeKind, m_lastRamRowWrite, carryAtBlockStart, ramUnitsSoFar);
-		blockCycles += (readKind == MemoryRegionKind::Ram && writeKind == MemoryRegionKind::Ram)
-			? (readCost + writeCost)
-			: std::max(readCost, writeCost);
-		readAddr += readStep;
-		writeAddr += writeStep;
+	const u32 blockWords = remaining < programmedBlockWords ? remaining : programmedBlockWords;
+	const u32 readAddress = m_memory.readIoU32(IO_DMA_READ_ADDR);
+	const u32 writeAddress = m_memory.readIoU32(IO_DMA_WRITE_ADDR);
+	const MemoryRegionKind readRegion = m_memory.mappedRegion(readAddress);
+	const MemoryRegionKind writeRegion = m_memory.mappedRegion(writeAddress);
+	const i64 ramBlockCycles = static_cast<i64>(blockWords) * m_ramCyclesPerWord + m_ramBurstSetupCycles;
+	const i64 romBlockCycles = static_cast<i64>(blockWords) * m_romCyclesPerWord;
+	i64 blockCycles = readRegion == MemoryRegionKind::Ram && writeRegion == MemoryRegionKind::Ram
+		? ramBlockCycles * 2
+		: std::max(
+			readRegion == MemoryRegionKind::Ram
+				? ramBlockCycles
+				: readRegion == MemoryRegionKind::Other ? 0 : romBlockCycles,
+			writeRegion == MemoryRegionKind::Ram
+				? ramBlockCycles
+				: writeRegion == MemoryRegionKind::Other ? 0 : romBlockCycles
+		);
+	if (blockCycles == 0) {
+		blockCycles = 1;
 	}
-	blockCycles = blockCycles <= 0 ? 1 : blockCycles;
-	m_timingCarry = (m_ramWordsPerSec * cyclesForBudgetUnitsNoFloor(m_cpuHz, m_ramWordsPerSec, carryAtBlockStart, ramUnitsSoFar) + carryAtBlockStart) % m_cpuHz;
-
 	m_scheduledBlockWords = blockWords;
+	m_scheduledReadAddressWord = readAddress;
+	m_scheduledWriteAddressWord = writeAddress;
+	m_scheduledTransferCountWord = remaining;
+	m_scheduledControlWord = control;
 	m_serviceDeadline = anchorCycle + blockCycles;
 	m_scheduler.scheduleDeviceService(DEVICE_SERVICE_DMA, m_serviceDeadline);
-}
-
-i64 DmaController::ramBaseWordCycles(i64 carryAtBlockStart, i64& ramUnitsSoFar) {
-	const i64 prevCumulative = cyclesForBudgetUnitsNoFloor(m_cpuHz, m_ramWordsPerSec, carryAtBlockStart, ramUnitsSoFar);
-	ramUnitsSoFar += 1;
-	const i64 cumulative = cyclesForBudgetUnitsNoFloor(m_cpuHz, m_ramWordsPerSec, carryAtBlockStart, ramUnitsSoFar);
-	return cumulative - prevCumulative;
-}
-
-i64 DmaController::sideWordCycles(u32 address, MemoryRegionKind kind, u32& lastRow, i64 carryAtBlockStart, i64& ramUnitsSoFar) {
-	switch (kind) {
-	case MemoryRegionKind::Ram: {
-		i64 cycles = ramBaseWordCycles(carryAtBlockStart, ramUnitsSoFar);
-		const u32 row = (address - RAM_BASE) / (PSX_DMA_RAM_ROW_WORDS * IO_WORD_SIZE);
-		if (row != lastRow) {
-			cycles += m_ramRowReopenCycles;
-			lastRow = row;
-		}
-		return cycles;
-	}
-	case MemoryRegionKind::SystemRom:
-	case MemoryRegionKind::CartRom:
-	case MemoryRegionKind::ProgramRom:
-		return m_romWaitCyclesPerWord;
-	default:
-		return 0;
-	}
 }
 
 void DmaController::requestInputChanged() {
 	if (m_restorePending || m_serviceActive || !busy()) {
 		return;
 	}
+	if (m_scheduledBlockWords != 0u) {
+		return;
+	}
 	if (m_memory.readIoU32(IO_DMA_TRANSFER_COUNT) == 0u) {
 		finishTransfer();
 		return;
 	}
-	if (m_scheduledBlockWords != 0u) {
-		return;
-	}
 	if (!requestAsserted()) {
-		if (!m_supervisorQuiesceRequested) {
-			m_timingCarry = 0;
-		}
 		notifySupervisorBoundary();
 		return;
 	}
@@ -499,6 +425,9 @@ bool DmaController::busy() const {
 }
 
 bool DmaController::ownsGxGpuWritePort() const {
+	if (m_scheduledBlockWords != 0u) {
+		return m_scheduledWriteAddressWord == IO_GX_GPU_GP0;
+	}
 	return busy() && m_memory.readIoU32(IO_DMA_WRITE_ADDR) == IO_GX_GPU_GP0;
 }
 

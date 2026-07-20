@@ -246,11 +246,12 @@ frontend executable. It never owns cart-observable machine semantics.
 ## Console model and timing
 
 The active machine model is `psx`. The model owns fixed hardware facts:
-50 MHz CPU clock, 4 MB RAM, a 6,553,600 word/s DMA datapath, a 16,384,000
-work-unit/s geometry unit, and a PSX-style GPU with 2 MiB of raw VRAM. Machine
-reset initializes that VRAM with the fixed GX power-on bit pattern. GPU reset
-starts from a 320×240 PAL display configuration; that is a reset register state,
-not a fixed host scanout size.
+33.8688 MHz CPU clock, 4 MB RAM, region-aware DMA bus timing, a 16,384,000
+work-unit/s geometry unit, and a PSX-style GPU with 2 MiB of raw VRAM. The DMA
+timing is expressed in CPU cycles: one per RAM word plus one cycle of RAM-burst
+setup, and twenty-five per 32-bit external-ROM word. Machine reset initializes
+VRAM with the fixed GX power-on bit pattern. GPU reset starts from a 320×240 PAL display
+configuration; that is a reset register state, not a fixed host scanout size.
 
 The cart ROM still carries a `psx` VDP-class marker in its package header. This
 is a ROM format marker, not a live VDP device or graphics ABI. A second GPU/APU or
@@ -1364,62 +1365,72 @@ registerfiles, FIFOs and in-flight device state are machine/save-state data.
 ### DMA
 
 DMA is one register channel. `READ_ADDR`, `WRITE_ADDR`, `TRANSFER_COUNT` and
-`CONTROL` remain live while `STATUS.BUSY` is set; `TRIGGER` is a write-only,
-self-clearing start strobe. The count is expressed in 32-bit bus transfers.
-Control selects read/write address incrementing, one request input and a
-four-bit `block_words_minus_one` field. Every raw block field therefore denotes
-one through sixteen words without a special zero case. Request selectors are
-forced, GX write, GX read, disabled, APU write or APU read; selector words 6 and
-7 have no asserted input. GX requests are GPU-owned lines gated by the GP1
+`CONTROL` stay CPU-visible and writable while `STATUS.BUSY` is set; `TRIGGER` is
+a write-only, self-clearing start strobe. The count is expressed in 32-bit bus
+transfers. Control selects read/write address incrementing, one request input
+and a four-bit `block_words_minus_one` field. Every raw block field therefore
+denotes one through sixteen words without a special zero case. Request selectors
+are forced, GX write, GX read, disabled, APU write or APU read; selector words 6
+and 7 have no asserted input. GX requests are GPU-owned lines gated by the GP1
 DMA-direction register. APU requests are the sample-transfer FIFO's empty/write
 and full/read lines.
 
-The standard machine runs its CPU at 33.8688 MHz (44100 × 768, the real PS1
-clock), and DMA cost is region-dependent rather than a single flat controller
-rate. RAM behaves like DRAM with one open row per transfer side (read and
-write track their own last-opened row independently, since the two sides
-usually address unrelated memory): a word inside the side's currently-open
-16-word (64-byte) row costs four cycles; a word that opens a different row
-additionally charges twelve cycles. The tracked row is a property of the RAM
-chip, not of any one transfer — it survives DREQ drops, block boundaries and
-save/load, and only a machine reset invalidates it. System ROM, cartridge ROM
-and program ROM instead charge a flat ten cycles per word with no row
-locality; real ROM has no DRAM-style open-page benefit.
+The standard machine runs its CPU at 33.8688 MHz (44100 × 768, the PS1 CPU
+clock). DMA timing is region-dependent and block-based. For a block of `N`
+words, a side starting in RAM costs `1 + N` cycles: one cycle establishes a
+sixteen-word hyper-page burst and each word costs one more. The setup is paid again for every
+admitted block, including a block at the same or a fixed address. It is not a
+persistent open-row cache, does not depend on where RAM happens to sit in the
+memory map, and creates no row id or row state to serialize. A side starting in
+system ROM, cartridge ROM or program ROM costs `25N` cycles, matching a 32-bit
+read over the PS1 memory controller's default eight-bit expansion-ROM timing.
+That calculation is one bus cycle plus twenty-four wait ticks; CPU emulators
+usually account for the first cycle separately, while the DMA scheduler charges
+the complete transaction. A fixed MMIO or other mapped side contributes no
+memory wait of its own.
 
-The selected mapped read and mapped write are still charged and admitted
-together as one DMA transfer: it is a fly-by transfer, so the slower side
-gates the word and source/destination types do not multiply the cost. The one
-exception is RAM↔RAM: a single-ported RAM chip cannot serve two different
-addresses in the same cycle, so that specific combination sums both sides'
-cost instead of taking the slower one. A side addressing a fixed MMIO port (a
-GPU FIFO write, an APU FIFO write) contributes no memory-wait cost of its own.
-At best-case open-row RAM cadence the ceiling is 8,467,200 words
-(33,868,800 bytes, 32.30 MiB/s) per second; actual throughput depends on row
-locality and region mix, and device DREQ may still insert idle time between
-admitted blocks, so this is a sustained-progress ceiling, not a guarantee.
+Admission classifies the two starting addresses through `Memory`, the owner of
+the mapped address decoder, and latches those timing classes for the block. The
+read and write sides form one fly-by block, so their block costs overlap and the
+slower side determines its completion edge. RAM↔RAM is the only exception: RAM
+is single-ported, so its read and write block costs add. With continuous DREQ
+and full sixteen-word blocks this yields about 127.51 MB/s for RAM→MMIO,
+5.42 MB/s for ROM→RAM or ROM→MMIO, and 63.75 MB/s for RAM→RAM. Short blocks
+pay setup more often, and DREQ can add idle time between blocks.
 
 The timing belongs to the bus/DMA owner rather than GX, APU, firmware or a ROM
-texture helper. This follows the same ownership shape as DuckStation's
-[DMA RAM tick owner](https://github.com/stenzek/duckstation/blob/4730d795bba1d11353efef01be513886fb8867c7/src/core/bus.h#L194-L202) —
-the sixteen-word row granularity above directly reuses that function's
-row-reload amortization window — while the uniform mapped-memory contract
-(one controller, one mapped-read/mapped-write interface for every device)
-retains the MSX principle represented by openMSX's common device-facing
+texture helper. The machine model supplies these fixed raw-cycle constants to
+the DMA controller once; PCRTC/CPU timing refresh does not carry or reapply
+them. This follows the same ownership shape as DuckStation's
+[DMA RAM tick owner](https://github.com/stenzek/duckstation/blob/4730d795bba1d11353efef01be513886fb8867c7/src/core/bus.h#L194-L202): RAM cost
+is calculated once for a transferred batch, not by simulating another per-word
+memory stream before the real transfer. The external-ROM cost follows the same
+emulator's [PS1 memory-control reset words](https://github.com/stenzek/duckstation/blob/4730d795bba1d11353efef01be513886fb8867c7/src/core/bus.cpp#L413-L421)
+and [access-time calculation](https://github.com/stenzek/duckstation/blob/4730d795bba1d11353efef01be513886fb8867c7/src/core/bus.cpp#L472-L503).
+BMSX extends those bus timings to one generic mapped channel; it does not claim
+that the original PS1 DMA could source expansion ROM directly. The uniform
+mapped-memory contract retains the MSX principle represented by openMSX's
+common device-facing
 [memory read path](https://github.com/openMSX/openMSX/blob/6a71ac3f14a9367934daef4d90138823fdabd1a2/src/cpu/MSXCPUInterface.cc#L190-L213).
 No cart, firmware module or device endpoint may add a second payload-rate
 budget around the central channel.
 
 A high request admits one hardware block of the programmed size, shortened only
-by the live final transfer count. Block length is latched at admission. A later
-DREQ-low edge or save/load cannot revoke that block; device-timing changes
-apply only when the next block is admitted and cannot move its completion edge.
-DREQ is sampled again only before admitting the next block. Every admitted word
-is a mapped bus read followed by a mapped bus write and then live address/count
-writeback. The final actually transferred word also drives `BLOCK_END` on that
-mapped transaction. Devices which consume a block as one batch use this bus
-edge directly; there is no device-specific callback from the DMA controller. A
-control write made by DMA itself can change incrementing within the current
-block, but its request selector and block size govern only the next admission.
+by the current final transfer count. Admission latches the block length, read
+address, write address, transfer count and raw control word together with the
+completion edge. A later DREQ-low edge, register write, timing change or
+save/load cannot alter that admitted block. DREQ and the visible control word are
+sampled again only before the next admission.
+
+At service time every admitted word is a mapped bus read followed by a mapped
+bus write using the latched cursors and control bits. Address/count writeback is
+still published after every word; that hardware writeback wins over a concurrent
+CPU or self-DMA write to those registers. A self-DMA write to `CONTROL` is
+visible immediately but affects only the next admission. The final admitted
+word drives `BLOCK_END` on its mapped transaction. Devices which consume a block
+as one batch use this bus edge directly; there is no device-specific callback
+from the DMA controller. Save state retains the admitted register latches and
+remaining completion cycles, not predicted row or decoded-address cache state.
 
 The system DMA firmware programs sixteen-word bulk blocks. The APU FIFO is also
 sixteen words: its first accepted word may lower the level DREQ, while the

@@ -331,6 +331,10 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'timingCarry',
 	'scheduledBlockWords',
 	'scheduledBlockCycles',
+	'scheduledReadAddressWord',
+	'scheduledWriteAddressWord',
+	'scheduledTransferCountWord',
+	'scheduledControlWord',
 	'readbackPhase',
 	'readbackFenceCommandCount',
 	'readbackX',
@@ -354,7 +358,4 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'userTransferCountWord',
 	'userControlWord',
 	'userStatusWord',
-	'userTimingCarry',
-	'lastRamRowRead',
-	'lastRamRowWrite',
 ] as const;

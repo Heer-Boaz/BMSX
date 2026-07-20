@@ -12,9 +12,6 @@ export type ResolvedRuntimeTiming = {
 	totalHalfLines: number;
 	activeDisplayHalfLines: number;
 	cpuHz: number;
-	dmaWordsPerSec: number;
-	dmaRamRowReopenCycles: number;
-	dmaRomWaitCyclesPerWord: number;
 	geoWorkUnitsPerSec: number;
 	cycleBudgetPerFrame: number;
 };
@@ -26,9 +23,6 @@ export function resolveRuntimeTiming(cpuHz: number): ResolvedRuntimeTiming {
 		totalHalfLines: GX_GPU_PCRTC_RESET_TOTAL_HALF_LINES,
 		activeDisplayHalfLines: GX_GPU_PCRTC_RESET_ACTIVE_DISPLAY_HALF_LINES,
 		cpuHz,
-		dmaWordsPerSec: PSX_MACHINE_SPEC.dmaWordsPerSec,
-		dmaRamRowReopenCycles: PSX_MACHINE_SPEC.dmaRamRowReopenCycles,
-		dmaRomWaitCyclesPerWord: PSX_MACHINE_SPEC.dmaRomWaitCyclesPerWord,
 		geoWorkUnitsPerSec: PSX_MACHINE_SPEC.geoWorkUnitsPerSec,
 		cycleBudgetPerFrame: calcCyclesPerFrameScaled(cpuHz, GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED),
 	};

@@ -447,7 +447,7 @@ function finishDmaWriteToSampleRam(harness: ReturnType<typeof createAudioHarness
 function createTransferEdgeHarness(): ReturnType<typeof createAudioControllerHarness> & { audioOutput: ApuOutputMixer } {
 	const audioOutput = new ApuOutputMixer();
 	const harness = createAudioControllerHarness(audioOutput);
-	harness.dma.setTiming(APU_TRANSFER_WORDS_PER_SECOND, APU_TRANSFER_WORDS_PER_SECOND, 0, 0, 0);
+	harness.dma.setTiming(1, 0, 0, 0);
 	harness.audio.setTiming(APU_TRANSFER_WORDS_PER_SECOND, 0);
 	writeSampleRamBytes(harness.memory, new Uint8Array([0x40, 0x40, 0x40, 0x40]));
 	writePcmSourceRegisters(harness.memory, APU_SAMPLE_RAM_BASE, 4);
@@ -516,7 +516,7 @@ test('APU manual RAM writes precede a same-cycle DAC sample', () => {
 
 test('APU DMA round-trip obeys FIFO timing, RAM wrap, and mid-transfer restore', () => {
 	const live = createAudioHarness();
-	live.dma.setTiming(APU_TRANSFER_WORDS_PER_SECOND, APU_TRANSFER_WORDS_PER_SECOND, 0, 0, 0);
+	live.dma.setTiming(1, 0, 0, 0);
 	live.audio.setTiming(APU_TRANSFER_WORDS_PER_SECOND, 0);
 	const source = PROGRAM_STATIC_RAM_BASE + 0x100;
 	const target = PROGRAM_STATIC_RAM_BASE + 0x200;
@@ -547,7 +547,7 @@ test('APU DMA round-trip obeys FIFO timing, RAM wrap, and mid-transfer restore',
 	assert.equal(savedAudio.sampleTransfer.scheduledWords, 16);
 
 	const restored = createAudioHarness();
-	restored.dma.setTiming(APU_TRANSFER_WORDS_PER_SECOND, APU_TRANSFER_WORDS_PER_SECOND, 0, 0, 0);
+	restored.dma.setTiming(1, 0, 0, 0);
 	restored.audio.setTiming(APU_TRANSFER_WORDS_PER_SECOND, 0);
 	restored.scheduler.advanceTo(savedNow);
 	restored.memory.restoreSaveState(savedMemory);
@@ -595,7 +595,7 @@ test('APU DMA round-trip obeys FIFO timing, RAM wrap, and mid-transfer restore',
 
 test('APU transfer FIFO is not consumed by a forced wrong-direction DMA block', () => {
 	const harness = createAudioHarness();
-	harness.dma.setTiming(APU_TRANSFER_WORDS_PER_SECOND, APU_TRANSFER_WORDS_PER_SECOND * 2, 0, 0, 0);
+	harness.dma.setTiming(0, 8, 0, 0);
 	harness.audio.setTiming(APU_TRANSFER_WORDS_PER_SECOND, 0);
 	const source = PROGRAM_STATIC_RAM_BASE + 0x500;
 	const target = PROGRAM_STATIC_RAM_BASE + 0x600;

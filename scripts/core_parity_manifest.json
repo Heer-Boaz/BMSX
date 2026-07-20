@@ -2140,9 +2140,8 @@
 				"setApuDmaReadReady",
 				"setApuDmaWriteReady",
 				"onService",
-				"transferWord",
 				"admitBlock",
-				"scheduleAdmittedBlock",
+				"clearAdmittedBlock",
 				"requestInputChanged",
 				"resumeCpuPortWrites"
 			],
@@ -2158,9 +2157,8 @@
 				"setApuDmaReadReady",
 				"setApuDmaWriteReady",
 				"onService",
-				"transferWord",
 				"admitBlock",
-				"scheduleAdmittedBlock",
+				"clearAdmittedBlock",
 				"requestInputChanged",
 				"resumeCpuPortWrites"
 			],

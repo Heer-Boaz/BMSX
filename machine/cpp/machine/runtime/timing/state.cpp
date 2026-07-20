@@ -11,9 +11,6 @@ TimingState::TimingState(
 	i64 cycleBudgetPerFrame,
 	i64 totalHalfLines,
 	i64 activeDisplayHalfLines,
-	i64 dmaWordsPerSec,
-	i64 dmaRamRowReopenCycles,
-	i64 dmaRomWaitCyclesPerWord,
 	int geoWorkUnitsPerSec
 )
 	: ufpsScaled(ufpsScaled)
@@ -25,10 +22,7 @@ TimingState::TimingState(
 	, cpuHz(cpuHz)
 	, cpuCyclesPerMillisecond(static_cast<f64>(cpuHz) / 1000.0)
 	, cycleBudgetPerFrame(cycleBudgetPerFrame)
-	, geoWorkUnitsPerSec(geoWorkUnitsPerSec)
-	, dmaWordsPerSec(dmaWordsPerSec)
-	, dmaRamRowReopenCycles(dmaRamRowReopenCycles)
-	, dmaRomWaitCyclesPerWord(dmaRomWaitCyclesPerWord) {
+	, geoWorkUnitsPerSec(geoWorkUnitsPerSec) {
 }
 
 } // namespace bmsx

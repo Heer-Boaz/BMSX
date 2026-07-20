@@ -609,6 +609,18 @@ bool Memory::isRamRange(uint32_t addr, size_t length) const {
 		&& static_cast<size_t>(addr - RAM_BASE) <= m_ram.size() - length;
 }
 
+MemoryRegionKind Memory::mappedRegion(uint32_t addr) const {
+	if (isIoRegionRange(addr, IO_WORD_SIZE)) {
+		return MemoryRegionKind::Other;
+	}
+	if (isProgramRomReadableRange(addr, IO_WORD_SIZE)
+		|| isRangeWithinRegion(addr, IO_WORD_SIZE, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE)
+		|| isRangeWithinRegion(addr, IO_WORD_SIZE, CART_ROM_BASE, CART_ROM_SIZE)) {
+		return MemoryRegionKind::Rom;
+	}
+	return isRamRange(addr, IO_WORD_SIZE) ? MemoryRegionKind::Ram : MemoryRegionKind::Other;
+}
+
 void Memory::onBusFaultAckWriteThunk(void* context, uint32_t addr, Value value, MappedBusSignals) {
 	Memory* memory = static_cast<Memory*>(context);
 	memory->onBusFaultAckWrite(addr, value);

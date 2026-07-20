@@ -1075,18 +1075,18 @@ BinValue encodeDmaControllerState(const DmaControllerState& state) {
 	object["transferCountWord"] = encodeScalar<f64>(state.transferCountWord);
 	object["controlWord"] = encodeScalar<f64>(state.controlWord);
 	object["statusWord"] = encodeScalar<f64>(state.statusWord);
-	object["timingCarry"] = encodeScalar<f64>(state.timingCarry);
 	object["scheduledBlockWords"] = encodeScalar<f64>(state.scheduledBlockWords);
 	object["scheduledBlockCycles"] = encodeScalar<f64>(state.scheduledBlockCycles);
+	object["scheduledReadAddressWord"] = encodeScalar<f64>(state.scheduledReadAddressWord);
+	object["scheduledWriteAddressWord"] = encodeScalar<f64>(state.scheduledWriteAddressWord);
+	object["scheduledTransferCountWord"] = encodeScalar<f64>(state.scheduledTransferCountWord);
+	object["scheduledControlWord"] = encodeScalar<f64>(state.scheduledControlWord);
 	object["supervisorQuiesceRequested"] = state.supervisorQuiesceRequested;
 	object["userReadAddressWord"] = encodeScalar<f64>(state.userReadAddressWord);
 	object["userWriteAddressWord"] = encodeScalar<f64>(state.userWriteAddressWord);
 	object["userTransferCountWord"] = encodeScalar<f64>(state.userTransferCountWord);
 	object["userControlWord"] = encodeScalar<f64>(state.userControlWord);
 	object["userStatusWord"] = encodeScalar<f64>(state.userStatusWord);
-	object["userTimingCarry"] = encodeScalar<f64>(state.userTimingCarry);
-	object["lastRamRowRead"] = encodeScalar<f64>(state.lastRamRowRead);
-	object["lastRamRowWrite"] = encodeScalar<f64>(state.lastRamRowWrite);
 	return BinValue(std::move(object));
 }
 
@@ -1098,18 +1098,18 @@ DmaControllerState decodeDmaControllerState(const BinValue& value, const char* l
 	state.transferCountWord = requireU32(requireField(object, "transferCountWord", label), "machine.dma.transferCountWord");
 	state.controlWord = requireU32(requireField(object, "controlWord", label), "machine.dma.controlWord");
 	state.statusWord = requireU32(requireField(object, "statusWord", label), "machine.dma.statusWord");
-	state.timingCarry = requireI64(requireField(object, "timingCarry", label), "machine.dma.timingCarry");
 	state.scheduledBlockWords = requireBoundedU32(requireField(object, "scheduledBlockWords", label), "machine.dma.scheduledBlockWords", 0u, 16u);
 	state.scheduledBlockCycles = requireI64(requireField(object, "scheduledBlockCycles", label), "machine.dma.scheduledBlockCycles");
+	state.scheduledReadAddressWord = requireU32(requireField(object, "scheduledReadAddressWord", label), "machine.dma.scheduledReadAddressWord");
+	state.scheduledWriteAddressWord = requireU32(requireField(object, "scheduledWriteAddressWord", label), "machine.dma.scheduledWriteAddressWord");
+	state.scheduledTransferCountWord = requireU32(requireField(object, "scheduledTransferCountWord", label), "machine.dma.scheduledTransferCountWord");
+	state.scheduledControlWord = requireU32(requireField(object, "scheduledControlWord", label), "machine.dma.scheduledControlWord");
 	state.supervisorQuiesceRequested = requireBool(requireField(object, "supervisorQuiesceRequested", label), "machine.dma.supervisorQuiesceRequested");
 	state.userReadAddressWord = requireU32(requireField(object, "userReadAddressWord", label), "machine.dma.userReadAddressWord");
 	state.userWriteAddressWord = requireU32(requireField(object, "userWriteAddressWord", label), "machine.dma.userWriteAddressWord");
 	state.userTransferCountWord = requireU32(requireField(object, "userTransferCountWord", label), "machine.dma.userTransferCountWord");
 	state.userControlWord = requireU32(requireField(object, "userControlWord", label), "machine.dma.userControlWord");
 	state.userStatusWord = requireU32(requireField(object, "userStatusWord", label), "machine.dma.userStatusWord");
-	state.userTimingCarry = requireI64(requireField(object, "userTimingCarry", label), "machine.dma.userTimingCarry");
-	state.lastRamRowRead = requireU32(requireField(object, "lastRamRowRead", label), "machine.dma.lastRamRowRead");
-	state.lastRamRowWrite = requireU32(requireField(object, "lastRamRowWrite", label), "machine.dma.lastRamRowWrite");
 	return state;
 }
 

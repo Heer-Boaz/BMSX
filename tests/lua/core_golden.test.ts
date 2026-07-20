@@ -150,9 +150,6 @@ test('core golden: runtime VBlank end publishes scanout at the new frame origin'
 			cpuHz: 5000,
 			cycleBudgetPerFrame: 100,
 			totalScanlines: 10,
-			dmaWordsPerSec: 0,
-			dmaRamRowReopenCycles: 0,
-			dmaRomWaitCyclesPerWord: 0,
 			geoWorkUnitsPerSec: 0,
 		},
 		machine: {

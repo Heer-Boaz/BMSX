@@ -44,7 +44,7 @@ struct DmaGpuHarness {
 		dma.reset();
 		gpu.reset();
 		irq.reset();
-		dma.setTiming(1, 16, 0, 0, 0);
+		dma.setTiming(0, 1, 0, 0);
 		const bmsx::u32 smode1Address = bmsx::gxGpuPcrtcRegisterAddress(bmsx::GX_GPU_PCRTC_SMODE1_LOW);
 		memory.writeMappedU32LE(smode1Address, memory.readMappedU32LE(smode1Address) | bmsx::GX_GPU_PCRTC_SMODE1_SINT);
 		gpu.onService(0);
@@ -72,16 +72,7 @@ void runNextDmaService(DmaGpuHarness& harness) {
 	harness.dma.onService(deadline);
 }
 
-void setStandardTiming(bmsx::DmaController& dma, bmsx::DeviceScheduler& scheduler) {
-	dma.setTiming(
-		bmsx::PSX_MACHINE_SPEC.cpuFreqHz,
-		bmsx::PSX_MACHINE_SPEC.dmaWordsPerSec,
-		bmsx::PSX_MACHINE_SPEC.dmaRamRowReopenCycles,
-		bmsx::PSX_MACHINE_SPEC.dmaRomWaitCyclesPerWord,
-		scheduler.currentNowCycles());
-}
-
-void testFlyByCombinesRamRowsAndRomWaitStates() {
+void testRegionAwareBlockTiming() {
 	DmaGpuHarness harness;
 	bmsx::Memory& memory = harness.memory;
 	const uint32_t ramSource = bmsx::PROGRAM_STATIC_RAM_BASE + 0x80u;
@@ -89,114 +80,66 @@ void testFlyByCombinesRamRowsAndRomWaitStates() {
 	const uint32_t romDestination = bmsx::PROGRAM_STATIC_RAM_BASE + 0xc0u;
 	memory.writeMappedU32LE(ramSource, 0x99aabbccu);
 	memory.writeMappedU32LE(ramSource + 4u, 0xddeeff00u);
-	setStandardTiming(harness.dma, harness.scheduler);
+	harness.dma.setTiming(
+		bmsx::PSX_MACHINE_SPEC.dmaRamCyclesPerWord,
+		bmsx::PSX_MACHINE_SPEC.dmaRamBurstSetupCycles,
+		bmsx::PSX_MACHINE_SPEC.dmaRomCyclesPerWord,
+		harness.scheduler.currentNowCycles());
 
-	// RAM<->RAM is the one fly-by exception: a single-ported chip can't serve
-	// both addresses in one cycle, so the two sides' costs sum instead of
-	// taking the slower one. Word 0 is a cold row on both sides (4 base + 12
-	// reopen each = 32); word 1 stays in the same row on both sides (4 + 4 = 8).
 	programTransfer(memory, ramSource, ramDestination, 2u, RAM_COPY_CONTROL);
-	require(harness.scheduler.nextDeadline() == 40, "RAM<->RAM sums both sides' row-aware cost");
+	require(harness.scheduler.nextDeadline() == 6, "single-ported RAM copy sums two 3-cycle block sides");
 	runNextDmaService(harness);
-	require(memory.readMappedU32LE(ramDestination) == 0x99aabbccu, "RAM<->RAM DMA copies word 0");
-	require(memory.readMappedU32LE(ramDestination + 4u) == 0xddeeff00u, "RAM<->RAM DMA copies word 1");
+	require(memory.readMappedU32LE(ramDestination) == 0x99aabbccu, "RAM copy transfers word 0");
+	require(memory.readMappedU32LE(ramDestination + 4u) == 0xddeeff00u, "RAM copy transfers word 1");
 
-	// Cartridge ROM has no row locality (flat 10 cycles/word). The RAM write
-	// side starts a fresh row here, so word 0's cold RAM cost (16) beats the
-	// flat ROM cost (10); word 1's warm RAM cost (4) loses to ROM's flat 10.
-	// Fly-by takes the slower side each time: max(10,16)=16, max(10,4)=10.
 	programTransfer(memory, bmsx::CART_ROM_BASE, romDestination, 2u, RAM_COPY_CONTROL);
-	require(harness.scheduler.nextDeadline() == 66, "cartridge-ROM source is fly-by combined with the RAM destination's row cost");
+	require(harness.scheduler.nextDeadline() == 56, "the 50-cycle external-ROM side gates the RAM burst");
 	runNextDmaService(harness);
-	require(memory.readMappedU32LE(romDestination) == 0x11223344u, "cartridge-ROM DMA copies word 0");
-	require(memory.readMappedU32LE(romDestination + 4u) == 0x55667788u, "cartridge-ROM DMA copies word 1");
+	require(memory.readMappedU32LE(romDestination) == 0x11223344u, "cartridge ROM DMA transfers word 0");
+	require(memory.readMappedU32LE(romDestination + 4u) == 0x55667788u, "cartridge ROM DMA transfers word 1");
 }
 
-void testRamRowHitIsCheaperThanReopen() {
+void testRamBurstSetupIsBlockLocal() {
 	DmaGpuHarness harness;
-	const uint32_t readAddr = bmsx::PROGRAM_STATIC_RAM_BASE + 0x2000u;
-	const uint32_t writeAddr = bmsx::PROGRAM_STATIC_RAM_BASE + 0x2100u;
-	setStandardTiming(harness.dma, harness.scheduler);
+	const uint32_t source = bmsx::PROGRAM_STATIC_RAM_BASE + 0x2000u;
+	const uint32_t destination = bmsx::PROGRAM_STATIC_RAM_BASE + 0x2100u;
+	harness.dma.setTiming(
+		bmsx::PSX_MACHINE_SPEC.dmaRamCyclesPerWord,
+		bmsx::PSX_MACHINE_SPEC.dmaRamBurstSetupCycles,
+		bmsx::PSX_MACHINE_SPEC.dmaRomCyclesPerWord,
+		harness.scheduler.currentNowCycles());
 
-	programTransfer(harness.memory, readAddr, writeAddr, 1u, RAM_COPY_CONTROL);
-	require(harness.scheduler.nextDeadline() == 32, "first touch of a fresh row on both sides pays the reopen tax twice");
+	programTransfer(harness.memory, source, destination, 1u, RAM_COPY_CONTROL);
+	require(harness.scheduler.nextDeadline() == 4, "one-word RAM copy pays two block setups");
 	runNextDmaService(harness);
 
-	programTransfer(harness.memory, readAddr, writeAddr, 1u, RAM_COPY_CONTROL);
-	require(harness.scheduler.nextDeadline() == 40, "revisiting the same row on both sides is a hit: only the base cost is charged");
+	programTransfer(harness.memory, source, destination, 1u, RAM_COPY_CONTROL);
+	require(harness.scheduler.nextDeadline() == 8, "a later block pays its own setup at identical addresses");
 }
 
-void testRamRowJumpRepaysReopenTax() {
-	DmaGpuHarness harness;
-	const uint32_t readAddr = bmsx::PROGRAM_STATIC_RAM_BASE + 0x2000u;
-	const uint32_t writeAddr = bmsx::PROGRAM_STATIC_RAM_BASE + 0x2100u;
-	const uint32_t nextRowReadAddr = readAddr + 0x40u; // one PSX_DMA_RAM_ROW_WORDS row further
-	setStandardTiming(harness.dma, harness.scheduler);
-
-	programTransfer(harness.memory, readAddr, writeAddr, 1u, RAM_COPY_CONTROL);
-	require(harness.scheduler.nextDeadline() == 32, "first touch of a fresh row on both sides pays the reopen tax twice");
-	runNextDmaService(harness);
-
-	// Read side jumps to a new row (cold again: 16); write side repeats the
-	// same address as before (still warm: 4).
-	programTransfer(harness.memory, nextRowReadAddr, writeAddr, 1u, RAM_COPY_CONTROL);
-	require(harness.scheduler.nextDeadline() == 52, "a row jump on one side repays its reopen tax even while the other side stays warm");
-}
-
-void testPortSideAddsNoWaitCostBesideRam() {
+void testPortSideAddsNoMemoryWait() {
 	DmaGpuHarness harness;
 	bmsx::Memory& memory = harness.memory;
 	const uint32_t source = bmsx::PROGRAM_STATIC_RAM_BASE + 0x3000u;
 	memory.writeMappedU32LE(source, 0x01020304u);
 	memory.writeMappedU32LE(source + 4u, 0x05060708u);
-	setStandardTiming(harness.dma, harness.scheduler);
+	harness.dma.setTiming(
+		bmsx::PSX_MACHINE_SPEC.dmaRamCyclesPerWord,
+		bmsx::PSX_MACHINE_SPEC.dmaRamBurstSetupCycles,
+		bmsx::PSX_MACHINE_SPEC.dmaRomCyclesPerWord,
+		harness.scheduler.currentNowCycles());
 
 	programTransfer(memory, source, bmsx::IO_GX_GPU_GP0, 2u, GP0_WRITE_CONTROL);
 	harness.gpu.writeGp1((bmsx::GX_GPU_GP1_DMA_DIRECTION << 24u) | bmsx::GX_GPU_DMA_DIRECTION_FIFO);
-	// A fixed GX FIFO port classifies as neither RAM nor ROM and contributes
-	// zero wait cost of its own; fly-by leaves only the RAM read side's cost:
-	// word 0 cold (16), word 1 warm (4).
-	require(harness.scheduler.nextDeadline() == 20, "a fixed MMIO port never adds its own wait cost beside the RAM side");
+	require(harness.scheduler.nextDeadline() == 3, "fixed MMIO contributes no memory wait beside RAM");
 }
 
-void testRomAndRamSidesEachWinTheFlyByOnDifferentWords() {
-	DmaGpuHarness harness;
-	const uint32_t destination = bmsx::PROGRAM_STATIC_RAM_BASE + 0x4000u;
-	setStandardTiming(harness.dma, harness.scheduler);
-
-	programTransfer(harness.memory, bmsx::CART_ROM_BASE, destination, 2u, RAM_COPY_CONTROL);
-	// word 0: cold RAM (16) beats flat ROM (10) -- RAM gates the word.
-	// word 1: warm RAM (4) loses to flat ROM (10) -- ROM gates the word.
-	// This proves the combine is a genuine per-word max(), not "source wins"
-	// or "destination wins" or a flat sum (10+16=26 for word 0 alone would
-	// already differ from the correct max of 16).
-	require(harness.scheduler.nextDeadline() == 26, "fly-by lets either side gate a given word depending on which is slower");
-}
-
-void testRowMemorySurvivesSaveRestore() {
-	DmaGpuHarness sourceHarness;
-	const uint32_t readAddr = bmsx::PROGRAM_STATIC_RAM_BASE + 0x5000u;
-	const uint32_t writeAddr = bmsx::PROGRAM_STATIC_RAM_BASE + 0x5100u;
-	setStandardTiming(sourceHarness.dma, sourceHarness.scheduler);
-	programTransfer(sourceHarness.memory, readAddr, writeAddr, 1u, RAM_COPY_CONTROL);
-	require(sourceHarness.scheduler.nextDeadline() == 32, "first touch of a fresh row on both sides pays the reopen tax twice");
-	runNextDmaService(sourceHarness);
-	const bmsx::DmaControllerState state = sourceHarness.dma.captureState();
-
-	DmaGpuHarness restoredHarness;
-	setStandardTiming(restoredHarness.dma, restoredHarness.scheduler);
-	restoredHarness.dma.restoreState(state, restoredHarness.scheduler.currentNowCycles());
-	restoredHarness.dma.postLoad();
-
-	programTransfer(restoredHarness.memory, readAddr, writeAddr, 1u, RAM_COPY_CONTROL);
-	require(restoredHarness.scheduler.nextDeadline() == 8, "restored row memory turns the next same-row access into a hit, not a cold reopen");
-}
-
-void testLiveRegisterChannel() {
+void testAdmittedRegisterState() {
 	DmaGpuHarness harness;
 	bmsx::Memory& memory = harness.memory;
 	const uint32_t source = bmsx::PROGRAM_STATIC_RAM_BASE + 0x100u;
 	const uint32_t destination = bmsx::PROGRAM_STATIC_RAM_BASE + 0x200u;
+	const uint32_t replacementDestination = bmsx::PROGRAM_STATIC_RAM_BASE + 0x240u;
 	memory.writeMappedU32LE(source, 0x11223344u);
 	memory.writeMappedU32LE(source + 4u, 0x55667788u);
 	memory.writeMappedU32LE(source + 8u, 0x99aabbccu);
@@ -204,14 +147,20 @@ void testLiveRegisterChannel() {
 	programTransfer(memory, source, destination, 3u, RAM_COPY_CONTROL);
 	require(memory.readIoU32(bmsx::IO_DMA_TRIGGER) == 0u, "DMA trigger self-clears");
 	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == bmsx::DMA_STATUS_BUSY, "DMA trigger sets BUSY");
+	memory.writeMappedU32LE(bmsx::IO_DMA_READ_ADDR, bmsx::CART_ROM_BASE);
+	memory.writeMappedU32LE(bmsx::IO_DMA_WRITE_ADDR, replacementDestination);
+	memory.writeMappedU32LE(bmsx::IO_DMA_TRANSFER_COUNT, 0u);
+	memory.writeMappedU32LE(bmsx::IO_DMA_CONTROL, bmsx::DMA_CONTROL_REQUEST_DISABLED);
 	runNextDmaService(harness);
 
 	require(memory.readMappedU32LE(destination) == 0x11223344u, "DMA copies word 0");
 	require(memory.readMappedU32LE(destination + 4u) == 0x55667788u, "DMA copies word 1");
 	require(memory.readMappedU32LE(destination + 8u) == 0x99aabbccu, "DMA copies word 2");
+	require(memory.readMappedU32LE(replacementDestination) == 0u, "live address writes do not redirect the admitted block");
 	require(memory.readIoU32(bmsx::IO_DMA_READ_ADDR) == source + 12u, "DMA advances read address");
 	require(memory.readIoU32(bmsx::IO_DMA_WRITE_ADDR) == destination + 12u, "DMA advances write address");
 	require(memory.readIoU32(bmsx::IO_DMA_TRANSFER_COUNT) == 0u, "DMA decrements transfer count");
+	require(memory.readIoU32(bmsx::IO_DMA_CONTROL) == bmsx::DMA_CONTROL_REQUEST_DISABLED, "live control writes program only the next admission");
 	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == bmsx::DMA_STATUS_DONE, "DMA completes");
 	require((memory.readIoU32(bmsx::IO_IRQ_FLAGS) & bmsx::IRQ_DMA_DONE) != 0u, "DMA raises completion IRQ");
 }
@@ -273,17 +222,21 @@ void testAdmittedBlockSurvivesRequestDropAndRestore() {
 	const uint32_t source = bmsx::PROGRAM_STATIC_RAM_BASE + 0x400u;
 	memory.writeMappedU32LE(source, 0xe1000000u);
 	memory.writeMappedU32LE(source + 4u, 0xe1000001u);
-	harness.dma.setTiming(4, 1, 0, 0, 0);
+	harness.dma.setTiming(4, 0, 0, 0);
 	harness.gpu.writeGp1((bmsx::GX_GPU_GP1_DMA_DIRECTION << 24u) | bmsx::GX_GPU_DMA_DIRECTION_CPU_TO_GP0);
 	programTransfer(memory, source, bmsx::IO_GX_GPU_GP0, 2u, GP0_WRITE_CONTROL);
 	require(harness.scheduler.nextDeadline() == 8, "DMA blocks two words after eight cycles");
 
 	harness.scheduler.advanceTo(3);
-	harness.dma.setTiming(8, 1, 0, 0, 3);
+	harness.dma.setTiming(8, 0, 0, 3);
 	require(harness.scheduler.nextDeadline() == 8, "timing changes apply after the admitted block completion edge");
 	harness.gpu.writeGp1((bmsx::GX_GPU_GP1_DMA_DIRECTION << 24u) | bmsx::GX_GPU_DMA_DIRECTION_OFF);
 	require(harness.scheduler.nextDeadline() == 8, "DREQ low does not cancel an admitted block");
 	const bmsx::DmaControllerState state = harness.dma.captureState();
+	require(state.scheduledReadAddressWord == source, "save state retains the admitted read address");
+	require(state.scheduledWriteAddressWord == bmsx::IO_GX_GPU_GP0, "save state retains the admitted write address");
+	require(state.scheduledTransferCountWord == 2u, "save state retains the admitted transfer count");
+	require(state.scheduledControlWord == GP0_WRITE_CONTROL, "save state retains the admitted control word");
 	harness.dma.restoreState(state, harness.scheduler.nowCycles());
 	harness.dma.postLoad();
 	require(harness.scheduler.nextDeadline() == 8, "restore preserves an admitted block while DREQ is low");
@@ -367,26 +320,23 @@ void testBusFaultProgress() {
 	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == bmsx::DMA_STATUS_DONE, "faulting DMA completes normally");
 }
 
-void testSelfDmaWritebackOrder() {
+void testSelfDmaControlAffectsNextAdmission() {
 	DmaGpuHarness harness;
 	bmsx::Memory& memory = harness.memory;
 	const uint32_t source = bmsx::PROGRAM_STATIC_RAM_BASE + 0x700u;
-	const uint32_t runningControl = bmsx::DMA_CONTROL_READ_INCREMENT | bmsx::DMA_CONTROL_REQUEST_FORCE;
+	const uint32_t runningControl = bmsx::DMA_CONTROL_READ_INCREMENT
+		| bmsx::DMA_CONTROL_REQUEST_FORCE
+		| bmsx::DMA_CONTROL_BLOCK_WORDS_16;
 	memory.writeMappedU32LE(source, bmsx::DMA_CONTROL_REQUEST_DISABLED);
 	memory.writeMappedU32LE(source + 4u, runningControl);
 	programTransfer(memory, source, bmsx::IO_DMA_CONTROL, 2u, runningControl);
 	runNextDmaService(harness);
 
-	require(memory.readIoU32(bmsx::IO_DMA_CONTROL) == bmsx::DMA_CONTROL_REQUEST_DISABLED, "self-DMA control write takes effect");
-	require(memory.readIoU32(bmsx::IO_DMA_READ_ADDR) == source + 4u, "channel writes back the latched read address");
-	require(memory.readIoU32(bmsx::IO_DMA_TRANSFER_COUNT) == 1u, "channel writes back the latched count");
-	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == bmsx::DMA_STATUS_BUSY, "disabled request leaves channel busy");
-	require(harness.scheduler.nextDeadline() == std::numeric_limits<int64_t>::max(), "disabled request has no service deadline");
-
-	memory.writeMappedU32LE(bmsx::IO_DMA_CONTROL, runningControl);
-	runNextDmaService(harness);
-	require(memory.readIoU32(bmsx::IO_DMA_TRANSFER_COUNT) == 0u, "re-enabled self-DMA consumes the second word");
+	require(memory.readIoU32(bmsx::IO_DMA_CONTROL) == runningControl, "both self-DMA control writes execute inside the admitted block");
+	require(memory.readIoU32(bmsx::IO_DMA_READ_ADDR) == source + 8u, "channel writes back the admitted read address");
+	require(memory.readIoU32(bmsx::IO_DMA_TRANSFER_COUNT) == 0u, "the admitted block consumes both words");
 	require(memory.readIoU32(bmsx::IO_DMA_STATUS) == bmsx::DMA_STATUS_DONE, "self-DMA completes");
+	require(harness.scheduler.nextDeadline() == std::numeric_limits<int64_t>::max(), "completed self-DMA has no service deadline");
 }
 
 void testZeroCountTrigger() {
@@ -400,19 +350,16 @@ void testZeroCountTrigger() {
 } // namespace
 
 int main() {
-	testFlyByCombinesRamRowsAndRomWaitStates();
-	testRamRowHitIsCheaperThanReopen();
-	testRamRowJumpRepaysReopenTax();
-	testPortSideAddsNoWaitCostBesideRam();
-	testRomAndRamSidesEachWinTheFlyByOnDifferentWords();
-	testRowMemorySurvivesSaveRestore();
-	testLiveRegisterChannel();
+	testRegionAwareBlockTiming();
+	testRamBurstSetupIsBlockLocal();
+	testPortSideAddsNoMemoryWait();
+	testAdmittedRegisterState();
 	testGxWriteRequestAndPortOwnership();
 	testCpuToGp0ImagePayloadCrossesBlocks();
 	testAdmittedBlockSurvivesRequestDropAndRestore();
 	testFiniteGxReadRequest();
 	testBusFaultProgress();
-	testSelfDmaWritebackOrder();
+	testSelfDmaControlAffectsNextAdmission();
 	testZeroCountTrigger();
 	return 0;
 }

@@ -12,6 +12,8 @@
 
 namespace bmsx {
 
+enum class MemoryRegionKind { Ram, Rom, Other };
+
 struct MemorySaveState {
 	std::vector<u8> ram;
 	uint32_t busFaultCode = BUS_FAULT_NONE;
@@ -85,6 +87,7 @@ public:
 	bool isReadableMainMemoryRange(uint32_t addr, size_t length) const;
 	bool bindRomByteView(uint32_t addr, size_t length, Span<const u8>& out) const;
 	bool isRamRange(uint32_t addr, size_t length) const;
+	MemoryRegionKind mappedRegion(uint32_t addr) const;
 
 	MemorySaveState captureSaveState() const;
 	void restoreSaveState(const MemorySaveState& state);

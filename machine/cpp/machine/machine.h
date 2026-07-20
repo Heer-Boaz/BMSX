@@ -19,9 +19,6 @@ class InputControllerInputSource;
 
 struct MachineTiming {
 	i64 cpuHz;
-	i64 dmaWordsPerSec;
-	i64 dmaRamRowReopenCycles;
-	i64 dmaRomWaitCyclesPerWord;
 	int geoWorkUnitsPerSec;
 };
 

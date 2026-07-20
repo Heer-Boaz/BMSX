@@ -364,9 +364,6 @@ export class Runtime {
 			options.cycleBudgetPerFrame,
 			options.totalHalfLines,
 			options.activeDisplayHalfLines,
-			options.dmaWordsPerSec,
-			options.dmaRamRowReopenCycles,
-			options.dmaRomWaitCyclesPerWord,
 			options.geoWorkUnitsPerSec,
 		);
 		this.machine = new Machine(

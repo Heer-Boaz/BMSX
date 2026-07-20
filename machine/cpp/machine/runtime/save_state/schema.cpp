@@ -336,6 +336,10 @@ const std::vector<std::string> RUNTIME_SAVE_STATE_PROP_NAMES = {
 	"timingCarry",
 	"scheduledBlockWords",
 	"scheduledBlockCycles",
+	"scheduledReadAddressWord",
+	"scheduledWriteAddressWord",
+	"scheduledTransferCountWord",
+	"scheduledControlWord",
 	"readbackPhase",
 	"readbackFenceCommandCount",
 	"readbackX",
@@ -359,9 +363,6 @@ const std::vector<std::string> RUNTIME_SAVE_STATE_PROP_NAMES = {
 	"userTransferCountWord",
 	"userControlWord",
 	"userStatusWord",
-	"userTimingCarry",
-	"lastRamRowRead",
-	"lastRamRowWrite",
 };
 
 } // namespace bmsx

@@ -13,9 +13,6 @@ export class TimingState {
 		public cycleBudgetPerFrame: number,
 		public totalHalfLines: number,
 		public activeDisplayHalfLines: number,
-		public dmaWordsPerSec: number,
-		public dmaRamRowReopenCycles: number,
-		public dmaRomWaitCyclesPerWord: number,
 		public geoWorkUnitsPerSec: number,
 	) {
 		this.ufps = ufpsScaled / HZ_SCALE;

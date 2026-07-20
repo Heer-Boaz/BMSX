@@ -1,5 +1,6 @@
 #include "machine/machine.h"
 
+#include "machine/model_registry.h"
 #include "rompack/format.h"
 
 #include <stdexcept>
@@ -19,6 +20,12 @@ Machine::Machine(Memory& memoryRef, InputControllerInputSource& input)
 	, systemController(memory, cpu, scheduler, irqController, dmaController, geometryController, gxGpu)
 	, inputController(memory, input, systemController)
 {
+	dmaController.setTiming(
+		PSX_MACHINE_SPEC.dmaRamCyclesPerWord,
+		PSX_MACHINE_SPEC.dmaRamBurstSetupCycles,
+		PSX_MACHINE_SPEC.dmaRomCyclesPerWord,
+		scheduler.currentNowCycles()
+	);
 }
 
 void Machine::initializeSystemIo() {
@@ -39,7 +46,6 @@ void Machine::resetDevices() {
 }
 
 void Machine::refreshDeviceTimings(const MachineTiming& timing, i64 nowCycles) {
-	dmaController.setTiming(timing.cpuHz, timing.dmaWordsPerSec, timing.dmaRamRowReopenCycles, timing.dmaRomWaitCyclesPerWord, nowCycles);
 	geometryController.setTiming(timing.cpuHz, timing.geoWorkUnitsPerSec, nowCycles);
 	audioController.setTiming(timing.cpuHz, nowCycles);
 	gxGpu.setTiming(timing.cpuHz, nowCycles);

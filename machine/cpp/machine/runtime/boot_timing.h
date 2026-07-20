@@ -11,9 +11,6 @@ struct ResolvedRuntimeTiming {
 	i64 totalHalfLines;
 	i64 activeDisplayHalfLines;
 	i64 cpuHz;
-	i64 dmaWordsPerSec;
-	i64 dmaRamRowReopenCycles;
-	i64 dmaRomWaitCyclesPerWord;
 	int geoWorkUnitsPerSec;
 	i64 cycleBudgetPerFrame;
 };

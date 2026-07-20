@@ -8,8 +8,5 @@ export type RuntimeOptions = {
 	cycleBudgetPerFrame: number;
 	totalHalfLines: number;
 	activeDisplayHalfLines: number;
-	dmaWordsPerSec: number;
-	dmaRamRowReopenCycles: number;
-	dmaRomWaitCyclesPerWord: number;
 	geoWorkUnitsPerSec: number;
 };

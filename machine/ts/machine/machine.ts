@@ -15,6 +15,7 @@ import type { InputControllerInputSource } from './devices/input/contracts';
 import { IrqController } from './devices/irq/controller';
 import { SystemController } from './devices/system/controller';
 import { Memory } from './memory/memory';
+import { PSX_MACHINE_SPEC } from './model_registry';
 import {
 	DEVICE_SERVICE_APU,
 	DEVICE_SERVICE_APU_TRANSFER,
@@ -28,9 +29,6 @@ import {
 
 export type MachineTiming = {
 	cpuHz: number;
-	dmaWordsPerSec: number;
-	dmaRamRowReopenCycles: number;
-	dmaRomWaitCyclesPerWord: number;
 	geoWorkUnitsPerSec: number;
 };
 
@@ -70,6 +68,12 @@ export class Machine {
 			this.gxGpu,
 		);
 		this.inputController = new InputController(this.memory, input, this.systemController);
+		this.dmaController.setTiming(
+			PSX_MACHINE_SPEC.dmaRamCyclesPerWord,
+			PSX_MACHINE_SPEC.dmaRamBurstSetupCycles,
+			PSX_MACHINE_SPEC.dmaRomCyclesPerWord,
+			this.scheduler.currentNowCycles(),
+		);
 	}
 
 	public initializeSystemIo(): void {
@@ -90,7 +94,6 @@ export class Machine {
 	}
 
 	public refreshDeviceTimings(timing: MachineTiming, nowCycles: number): void {
-		this.dmaController.setTiming(timing.cpuHz, timing.dmaWordsPerSec, timing.dmaRamRowReopenCycles, timing.dmaRomWaitCyclesPerWord, nowCycles);
 		this.geometryController.setTiming(timing.cpuHz, timing.geoWorkUnitsPerSec, nowCycles);
 		this.audioController.setTiming(timing.cpuHz, nowCycles);
 		this.gxGpu.setTiming(timing.cpuHz, nowCycles);

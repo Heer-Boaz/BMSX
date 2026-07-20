@@ -22,18 +22,15 @@ import {
 	IO_GX_GPU_GP0,
 	IRQ_DMA_DONE,
 } from '../../bus/io';
-import { IO_WORD_SIZE, RAM_BASE } from '../../memory/map';
-import { Memory } from '../../memory/memory';
+import { IO_WORD_SIZE } from '../../memory/map';
+import { Memory, MemoryRegionKind } from '../../memory/memory';
 import {
 	MAPPED_BUS_MASTER_DMA,
 	MAPPED_BUS_DMA_BLOCK_END,
 	type MappedBusSignals,
 } from '../../memory/bus_signals';
-import { classifyMemoryRegion, MEMORY_REGION_OTHER, MEMORY_REGION_RAM, type MemoryRegionKind } from '../../memory/region';
-import { PSX_DMA_RAM_ROW_WORDS } from '../../model_registry';
 import type { CPU, Value } from '../../cpu/cpu';
 import type { IrqController } from '../irq/controller';
-import { cyclesForBudgetUnitsNoFloor } from '../../scheduler/budget';
 import { DEVICE_SERVICE_DMA, DEVICE_SERVICE_SYSTEM, type DeviceScheduler } from '../../scheduler/device';
 import {
 	GX_GPU_DMA_DIRECTION_CPU_TO_GP0,
@@ -41,37 +38,35 @@ import {
 	GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU,
 } from '../gx/gpu';
 
-export const DMA_RAM_ROW_NONE = 0xffffffff;
-
 export type DmaControllerState = {
 	readAddressWord: number;
 	writeAddressWord: number;
 	transferCountWord: number;
 	controlWord: number;
 	statusWord: number;
-	timingCarry: number;
 	scheduledBlockWords: number;
 	scheduledBlockCycles: number;
+	scheduledReadAddressWord: number;
+	scheduledWriteAddressWord: number;
+	scheduledTransferCountWord: number;
+	scheduledControlWord: number;
 	supervisorQuiesceRequested: boolean;
 	userReadAddressWord: number;
 	userWriteAddressWord: number;
 	userTransferCountWord: number;
 	userControlWord: number;
 	userStatusWord: number;
-	userTimingCarry: number;
-	lastRamRowRead: number;
-	lastRamRowWrite: number;
 };
 
 export class DmaController {
-	private cpuHz = 1;
-	private ramWordsPerSec = 1;
-	private ramRowReopenCycles = 0;
-	private romWaitCyclesPerWord = 0;
-	private timingCarry = 0;
-	private lastRamRowRead = DMA_RAM_ROW_NONE;
-	private lastRamRowWrite = DMA_RAM_ROW_NONE;
+	private ramCyclesPerWord = 1;
+	private ramBurstSetupCycles = 0;
+	private romCyclesPerWord = 0;
 	private scheduledBlockWords = 0;
+	private scheduledReadAddressWord = 0;
+	private scheduledWriteAddressWord = 0;
+	private scheduledTransferCountWord = 0;
+	private scheduledControlWord = 0;
 	private serviceDeadline = 0;
 	private gxGpuReadReady = false;
 	private gxGpuDmaWriteReady = false;
@@ -87,7 +82,6 @@ export class DmaController {
 	private userTransferCountWord = 0;
 	private userControlWord = 0;
 	private userStatusWord = 0;
-	private userTimingCarry = 0;
 
 	public constructor(
 		private readonly memory: Memory,
@@ -120,9 +114,7 @@ export class DmaController {
 			return;
 		}
 		context.scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
-		context.scheduledBlockWords = 0;
-		context.serviceDeadline = 0;
-		context.timingCarry = 0;
+		context.clearAdmittedBlock();
 		context.memory.writeIoValue(IO_DMA_STATUS, DMA_STATUS_BUSY);
 		if (context.memory.readIoU32(IO_DMA_TRANSFER_COUNT) === 0) {
 			context.finishTransfer();
@@ -133,18 +125,15 @@ export class DmaController {
 		}
 	}
 
-	public setTiming(cpuHz: number, ramWordsPerSec: number, ramRowReopenCycles: number, romWaitCyclesPerWord: number, nowCycles: number): void {
-		if (this.cpuHz === cpuHz
-			&& this.ramWordsPerSec === ramWordsPerSec
-			&& this.ramRowReopenCycles === ramRowReopenCycles
-			&& this.romWaitCyclesPerWord === romWaitCyclesPerWord) {
+	public setTiming(ramCyclesPerWord: number, ramBurstSetupCycles: number, romCyclesPerWord: number, nowCycles: number): void {
+		if (this.ramCyclesPerWord === ramCyclesPerWord
+			&& this.ramBurstSetupCycles === ramBurstSetupCycles
+			&& this.romCyclesPerWord === romCyclesPerWord) {
 			return;
 		}
-		this.cpuHz = cpuHz;
-		this.ramWordsPerSec = ramWordsPerSec;
-		this.ramRowReopenCycles = ramRowReopenCycles;
-		this.romWaitCyclesPerWord = romWaitCyclesPerWord;
-		this.timingCarry = 0;
+		this.ramCyclesPerWord = ramCyclesPerWord;
+		this.ramBurstSetupCycles = ramBurstSetupCycles;
+		this.romCyclesPerWord = romCyclesPerWord;
 		// Admission latches the current block's completion edge. New timing starts
 		// with the next block rather than replaying elapsed bus time.
 		if (this.scheduledBlockWords !== 0) {
@@ -212,106 +201,83 @@ export class DmaController {
 	}
 
 	public ownsApuDataPort(): boolean {
+		if (this.scheduledBlockWords !== 0) {
+			return this.scheduledReadAddressWord === IO_APU_TRANSFER_DATA
+				|| this.scheduledWriteAddressWord === IO_APU_TRANSFER_DATA;
+		}
 		return this.busy()
 			&& (this.memory.readIoU32(IO_DMA_READ_ADDR) === IO_APU_TRANSFER_DATA
 				|| this.memory.readIoU32(IO_DMA_WRITE_ADDR) === IO_APU_TRANSFER_DATA);
 	}
 
 	public reset(): void {
-		this.scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
-		this.timingCarry = 0;
-		this.scheduledBlockWords = 0;
-		this.serviceDeadline = 0;
+		this.clearLiveTransfer();
 		this.gxGpuReadReady = false;
 		this.gxGpuDmaWriteReady = false;
 		this.gxGpuCpuWriteReady = false;
 		this.gxGpuDmaDirection = 0;
 		this.apuDmaReadReady = false;
 		this.apuDmaWriteReady = false;
-		this.serviceActive = false;
-		this.restorePending = false;
 		this.supervisorQuiesceRequested = false;
 		this.userReadAddressWord = 0;
 		this.userWriteAddressWord = 0;
 		this.userTransferCountWord = 0;
 		this.userControlWord = 0;
 		this.userStatusWord = 0;
-		this.userTimingCarry = 0;
-		this.lastRamRowRead = DMA_RAM_ROW_NONE;
-		this.lastRamRowWrite = DMA_RAM_ROW_NONE;
-		this.memory.writeIoValue(IO_DMA_READ_ADDR, 0);
-		this.memory.writeIoValue(IO_DMA_WRITE_ADDR, 0);
-		this.memory.writeIoValue(IO_DMA_TRANSFER_COUNT, 0);
-		this.memory.writeIoValue(IO_DMA_CONTROL, 0);
-		this.memory.writeIoValue(IO_DMA_STATUS, 0);
-		this.memory.writeIoValue(IO_DMA_TRIGGER, 0);
 	}
 
 	public onService(_nowCycles: number): void {
-		const admittedBlockWords = this.scheduledBlockWords;
+		const blockWords = this.scheduledBlockWords;
+		let readAddress = this.scheduledReadAddressWord;
+		let writeAddress = this.scheduledWriteAddressWord;
+		let transferCount = this.scheduledTransferCountWord;
+		const control = this.scheduledControlWord;
+		const readStep = (control & DMA_CONTROL_READ_INCREMENT) !== 0 ? IO_WORD_SIZE : 0;
+		const writeStep = (control & DMA_CONTROL_WRITE_INCREMENT) !== 0 ? IO_WORD_SIZE : 0;
 		const blockDeadline = this.serviceDeadline;
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
-		this.scheduledBlockWords = 0;
-		this.serviceDeadline = 0;
 		this.serviceActive = true;
-		const remainingAtService = this.memory.readIoU32(IO_DMA_TRANSFER_COUNT);
-		const blockWords = admittedBlockWords < remainingAtService ? admittedBlockWords : remainingAtService;
-		let slot = 0;
-		while (slot < blockWords
-			&& this.busy()
-			&& this.memory.readIoU32(IO_DMA_TRANSFER_COUNT) !== 0) {
-			const transferCount = this.memory.readIoU32(IO_DMA_TRANSFER_COUNT);
+		for (let slot = 0; slot < blockWords; slot += 1) {
 			const busSignals: MappedBusSignals = MAPPED_BUS_MASTER_DMA
 				| (slot + 1 === blockWords ? MAPPED_BUS_DMA_BLOCK_END : 0);
-			this.transferWord(transferCount, busSignals);
-			slot += 1;
+			const nextReadAddress = (readAddress + readStep) >>> 0;
+			const nextWriteAddress = (writeAddress + writeStep) >>> 0;
+			const nextTransferCount = (transferCount - 1) >>> 0;
+			const word = this.memory.readMappedDmaU32LE(readAddress, busSignals);
+			this.memory.writeMappedDmaU32LE(writeAddress, word, busSignals);
+			this.memory.writeIoValue(IO_DMA_READ_ADDR, nextReadAddress);
+			this.memory.writeIoValue(IO_DMA_WRITE_ADDR, nextWriteAddress);
+			this.memory.writeIoValue(IO_DMA_TRANSFER_COUNT, nextTransferCount);
+			const writePortAdvanced = writeStep !== 0
+				&& (writeAddress === IO_GX_GPU_GP0 || writeAddress === IO_APU_TRANSFER_DATA);
+			const readPortAdvanced = readStep !== 0 && readAddress === IO_APU_TRANSFER_DATA;
+			if (writePortAdvanced) {
+				this.scheduledWriteAddressWord = nextWriteAddress;
+			}
+			if (readPortAdvanced) {
+				this.scheduledReadAddressWord = nextReadAddress;
+			}
+			if (writePortAdvanced || readPortAdvanced) {
+				this.resumeCpuPortWrites();
+			}
+			readAddress = nextReadAddress;
+			writeAddress = nextWriteAddress;
+			transferCount = nextTransferCount;
 		}
 		this.serviceActive = false;
-		if (!this.busy()) {
-			this.notifySupervisorBoundary();
-			return;
-		}
-		if (this.memory.readIoU32(IO_DMA_TRANSFER_COUNT) === 0) {
+		this.clearAdmittedBlock();
+		if (transferCount === 0) {
 			this.finishTransfer();
 			return;
 		}
 		if (!this.requestAsserted()) {
-			if (!this.supervisorQuiesceRequested) {
-				this.timingCarry = 0;
-			}
 			this.notifySupervisorBoundary();
 			return;
 		}
 		this.admitBlock(blockDeadline);
 	}
 
-	private transferWord(transferCount: number, busSignals: MappedBusSignals): void {
-		const readAddress = this.memory.readIoU32(IO_DMA_READ_ADDR);
-		const writeAddress = this.memory.readIoU32(IO_DMA_WRITE_ADDR);
-		const control = this.memory.readIoU32(IO_DMA_CONTROL);
-		const word = this.memory.readMappedDmaU32LE(readAddress, busSignals);
-		this.memory.writeMappedDmaU32LE(writeAddress, word, busSignals);
-		this.memory.writeIoValue(
-			IO_DMA_READ_ADDR,
-			(control & DMA_CONTROL_READ_INCREMENT) !== 0 ? (readAddress + IO_WORD_SIZE) >>> 0 : readAddress,
-		);
-		this.memory.writeIoValue(
-			IO_DMA_WRITE_ADDR,
-			(control & DMA_CONTROL_WRITE_INCREMENT) !== 0 ? (writeAddress + IO_WORD_SIZE) >>> 0 : writeAddress,
-		);
-		this.memory.writeIoValue(IO_DMA_TRANSFER_COUNT, (transferCount - 1) >>> 0);
-		if (((writeAddress === IO_GX_GPU_GP0 || writeAddress === IO_APU_TRANSFER_DATA)
-				&& (control & DMA_CONTROL_WRITE_INCREMENT) !== 0)
-			|| (readAddress === IO_APU_TRANSFER_DATA && (control & DMA_CONTROL_READ_INCREMENT) !== 0)) {
-			this.resumeCpuPortWrites();
-		}
-	}
-
 	private finishTransfer(): void {
-		this.scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
-		this.scheduledBlockWords = 0;
-		this.serviceDeadline = 0;
-		this.timingCarry = 0;
 		this.memory.writeIoValue(IO_DMA_STATUS, DMA_STATUS_DONE);
 		this.irq.raise(IRQ_DMA_DONE);
 		this.resumeCpuPortWrites();
@@ -325,20 +291,20 @@ export class DmaController {
 			transferCountWord: this.memory.readIoU32(IO_DMA_TRANSFER_COUNT),
 			controlWord: this.memory.readIoU32(IO_DMA_CONTROL),
 			statusWord: this.memory.readIoU32(IO_DMA_STATUS),
-			timingCarry: this.timingCarry,
 			scheduledBlockWords: this.scheduledBlockWords,
 			scheduledBlockCycles: this.scheduledBlockWords === 0
 				? 0
 				: this.serviceDeadline - this.scheduler.currentNowCycles(),
+			scheduledReadAddressWord: this.scheduledReadAddressWord,
+			scheduledWriteAddressWord: this.scheduledWriteAddressWord,
+			scheduledTransferCountWord: this.scheduledTransferCountWord,
+			scheduledControlWord: this.scheduledControlWord,
 			supervisorQuiesceRequested: this.supervisorQuiesceRequested,
 			userReadAddressWord: this.userReadAddressWord,
 			userWriteAddressWord: this.userWriteAddressWord,
 			userTransferCountWord: this.userTransferCountWord,
 			userControlWord: this.userControlWord,
 			userStatusWord: this.userStatusWord,
-			userTimingCarry: this.userTimingCarry,
-			lastRamRowRead: this.lastRamRowRead,
-			lastRamRowWrite: this.lastRamRowWrite,
 		};
 	}
 
@@ -350,8 +316,11 @@ export class DmaController {
 		this.memory.writeIoValue(IO_DMA_CONTROL, state.controlWord);
 		this.memory.writeIoValue(IO_DMA_STATUS, state.statusWord);
 		this.memory.writeIoValue(IO_DMA_TRIGGER, 0);
-		this.timingCarry = state.timingCarry;
 		this.scheduledBlockWords = state.scheduledBlockWords;
+		this.scheduledReadAddressWord = state.scheduledReadAddressWord >>> 0;
+		this.scheduledWriteAddressWord = state.scheduledWriteAddressWord >>> 0;
+		this.scheduledTransferCountWord = state.scheduledTransferCountWord >>> 0;
+		this.scheduledControlWord = state.scheduledControlWord >>> 0;
 		this.serviceDeadline = nowCycles + state.scheduledBlockCycles;
 		this.serviceActive = false;
 		this.restorePending = true;
@@ -361,9 +330,6 @@ export class DmaController {
 		this.userTransferCountWord = state.userTransferCountWord >>> 0;
 		this.userControlWord = state.userControlWord >>> 0;
 		this.userStatusWord = state.userStatusWord >>> 0;
-		this.userTimingCarry = state.userTimingCarry;
-		this.lastRamRowRead = state.lastRamRowRead >>> 0;
-		this.lastRamRowWrite = state.lastRamRowWrite >>> 0;
 	}
 
 	public postLoad(): void {
@@ -394,7 +360,6 @@ export class DmaController {
 		this.userTransferCountWord = this.memory.readIoU32(IO_DMA_TRANSFER_COUNT);
 		this.userControlWord = this.memory.readIoU32(IO_DMA_CONTROL);
 		this.userStatusWord = this.memory.readIoU32(IO_DMA_STATUS);
-		this.userTimingCarry = this.timingCarry;
 		this.clearLiveTransfer();
 		this.supervisorQuiesceRequested = false;
 	}
@@ -406,7 +371,6 @@ export class DmaController {
 		this.userTransferCountWord = 0;
 		this.userControlWord = 0;
 		this.userStatusWord = 0;
-		this.userTimingCarry = 0;
 		this.supervisorQuiesceRequested = false;
 	}
 
@@ -417,22 +381,18 @@ export class DmaController {
 		this.memory.writeIoValue(IO_DMA_TRANSFER_COUNT, this.userTransferCountWord);
 		this.memory.writeIoValue(IO_DMA_CONTROL, this.userControlWord);
 		this.memory.writeIoValue(IO_DMA_STATUS, this.userStatusWord);
-		this.timingCarry = this.userTimingCarry;
 		this.supervisorQuiesceRequested = false;
 		this.userReadAddressWord = 0;
 		this.userWriteAddressWord = 0;
 		this.userTransferCountWord = 0;
 		this.userControlWord = 0;
 		this.userStatusWord = 0;
-		this.userTimingCarry = 0;
 		this.requestInputChanged();
 	}
 
 	private clearLiveTransfer(): void {
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
-		this.timingCarry = 0;
-		this.scheduledBlockWords = 0;
-		this.serviceDeadline = 0;
+		this.clearAdmittedBlock();
 		this.serviceActive = false;
 		this.restorePending = false;
 		this.memory.writeIoValue(IO_DMA_READ_ADDR, 0);
@@ -441,6 +401,15 @@ export class DmaController {
 		this.memory.writeIoValue(IO_DMA_CONTROL, 0);
 		this.memory.writeIoValue(IO_DMA_STATUS, 0);
 		this.memory.writeIoValue(IO_DMA_TRIGGER, 0);
+	}
+
+	private clearAdmittedBlock(): void {
+		this.scheduledBlockWords = 0;
+		this.scheduledReadAddressWord = 0;
+		this.scheduledWriteAddressWord = 0;
+		this.scheduledTransferCountWord = 0;
+		this.scheduledControlWord = 0;
+		this.serviceDeadline = 0;
 	}
 
 	private notifySupervisorBoundary(): void {
@@ -453,91 +422,47 @@ export class DmaController {
 		const remaining = this.memory.readIoU32(IO_DMA_TRANSFER_COUNT);
 		const control = this.memory.readIoU32(IO_DMA_CONTROL);
 		const programmedBlockWords = ((control & DMA_CONTROL_BLOCK_WORDS_MASK) >>> DMA_CONTROL_BLOCK_WORDS_SHIFT) + 1;
-		this.scheduleAdmittedBlock(anchorCycle, remaining < programmedBlockWords ? remaining : programmedBlockWords);
-	}
-
-	private scheduleAdmittedBlock(anchorCycle: number, blockWords: number): void {
-		const control = this.memory.readIoU32(IO_DMA_CONTROL);
-		const readStep = (control & DMA_CONTROL_READ_INCREMENT) !== 0 ? IO_WORD_SIZE : 0;
-		const writeStep = (control & DMA_CONTROL_WRITE_INCREMENT) !== 0 ? IO_WORD_SIZE : 0;
-
-		// The RAM rate accrual below must land on the exact same total as one
-		// bulk cyclesUntilBudgetUnits(..., N) call would for a side's whole RAM
-		// word count -- calling it once per word with targetUnits=1 would pay its
-		// "at least one cycle" scheduling floor on every single word instead of
-		// once per batch, inflating fast-relative-to-cpuHz rates. carryAtBlockStart
-		// and ramUnitsSoFar (shared by both sides, in program order) let each RAM
-		// word's cost be recovered as a delta of cumulative cost via
-		// cyclesForBudgetUnitsNoFloor, which telescopes back to the bulk total.
-		const carryAtBlockStart = this.timingCarry;
-		const ramUnitsSoFar = { count: 0 };
-
-		let blockCycles = 0;
-		let readAddr = this.memory.readIoU32(IO_DMA_READ_ADDR);
-		let writeAddr = this.memory.readIoU32(IO_DMA_WRITE_ADDR);
-		for (let word = 0; word < blockWords; word += 1) {
-			const readKind = classifyMemoryRegion(readAddr);
-			const writeKind = classifyMemoryRegion(writeAddr);
-			// Fly-by transfer: read and write share one bus slot, so the slower side
-			// gates the word. The one exception is RAM<->RAM: a single-ported RAM
-			// chip cannot serve two different addresses in the same cycle, so that
-			// combination is the sum of two real bus cycles, not one shared slot.
-			const readCost = this.sideWordCycles(readAddr, readKind, true, carryAtBlockStart, ramUnitsSoFar);
-			const writeCost = this.sideWordCycles(writeAddr, writeKind, false, carryAtBlockStart, ramUnitsSoFar);
-			blockCycles += (readKind === MEMORY_REGION_RAM && writeKind === MEMORY_REGION_RAM)
-				? (readCost + writeCost)
-				: Math.max(readCost, writeCost);
-			readAddr = (readAddr + readStep) >>> 0;
-			writeAddr = (writeAddr + writeStep) >>> 0;
+		const blockWords = remaining < programmedBlockWords ? remaining : programmedBlockWords;
+		const readAddress = this.memory.readIoU32(IO_DMA_READ_ADDR);
+		const writeAddress = this.memory.readIoU32(IO_DMA_WRITE_ADDR);
+		const readRegion = this.memory.mappedRegion(readAddress);
+		const writeRegion = this.memory.mappedRegion(writeAddress);
+		const ramBlockCycles = blockWords * this.ramCyclesPerWord + this.ramBurstSetupCycles;
+		const romBlockCycles = blockWords * this.romCyclesPerWord;
+		let blockCycles = readRegion === MemoryRegionKind.Ram && writeRegion === MemoryRegionKind.Ram
+			? ramBlockCycles * 2
+			: Math.max(
+				readRegion === MemoryRegionKind.Ram
+					? ramBlockCycles
+					: readRegion === MemoryRegionKind.Other ? 0 : romBlockCycles,
+				writeRegion === MemoryRegionKind.Ram
+					? ramBlockCycles
+					: writeRegion === MemoryRegionKind.Other ? 0 : romBlockCycles,
+			);
+		if (blockCycles === 0) {
+			blockCycles = 1;
 		}
-		blockCycles = blockCycles <= 0 ? 1 : blockCycles;
-		this.timingCarry = (this.ramWordsPerSec * cyclesForBudgetUnitsNoFloor(this.cpuHz, this.ramWordsPerSec, carryAtBlockStart, ramUnitsSoFar.count) + carryAtBlockStart) % this.cpuHz;
-
 		this.scheduledBlockWords = blockWords;
+		this.scheduledReadAddressWord = readAddress;
+		this.scheduledWriteAddressWord = writeAddress;
+		this.scheduledTransferCountWord = remaining;
+		this.scheduledControlWord = control;
 		this.serviceDeadline = anchorCycle + blockCycles;
 		this.scheduler.scheduleDeviceService(DEVICE_SERVICE_DMA, this.serviceDeadline);
-	}
-
-	private ramBaseWordCycles(carryAtBlockStart: number, ramUnitsSoFar: { count: number }): number {
-		const prevCumulative = cyclesForBudgetUnitsNoFloor(this.cpuHz, this.ramWordsPerSec, carryAtBlockStart, ramUnitsSoFar.count);
-		ramUnitsSoFar.count += 1;
-		const cumulative = cyclesForBudgetUnitsNoFloor(this.cpuHz, this.ramWordsPerSec, carryAtBlockStart, ramUnitsSoFar.count);
-		return cumulative - prevCumulative;
-	}
-
-	private sideWordCycles(address: number, kind: MemoryRegionKind, isReadSide: boolean, carryAtBlockStart: number, ramUnitsSoFar: { count: number }): number {
-		if (kind !== MEMORY_REGION_RAM) {
-			return kind === MEMORY_REGION_OTHER ? 0 : this.romWaitCyclesPerWord;
-		}
-		let cycles = this.ramBaseWordCycles(carryAtBlockStart, ramUnitsSoFar);
-		const row = Math.floor((address - RAM_BASE) / (PSX_DMA_RAM_ROW_WORDS * IO_WORD_SIZE));
-		const lastRow = isReadSide ? this.lastRamRowRead : this.lastRamRowWrite;
-		if (row !== lastRow) {
-			cycles += this.ramRowReopenCycles;
-			if (isReadSide) {
-				this.lastRamRowRead = row;
-			} else {
-				this.lastRamRowWrite = row;
-			}
-		}
-		return cycles;
 	}
 
 	private requestInputChanged(): void {
 		if (this.restorePending || this.serviceActive || !this.busy()) {
 			return;
 		}
+		if (this.scheduledBlockWords !== 0) {
+			return;
+		}
 		if (this.memory.readIoU32(IO_DMA_TRANSFER_COUNT) === 0) {
 			this.finishTransfer();
 			return;
 		}
-		if (this.scheduledBlockWords !== 0) {
-			return;
-		}
 		if (!this.requestAsserted()) {
-			if (!this.supervisorQuiesceRequested) {
-				this.timingCarry = 0;
-			}
 			this.notifySupervisorBoundary();
 			return;
 		}
@@ -574,6 +499,9 @@ export class DmaController {
 	}
 
 	private ownsGxGpuWritePort(): boolean {
+		if (this.scheduledBlockWords !== 0) {
+			return this.scheduledWriteAddressWord === IO_GX_GPU_GP0;
+		}
 		return this.busy() && this.memory.readIoU32(IO_DMA_WRITE_ADDR) === IO_GX_GPU_GP0;
 	}
 

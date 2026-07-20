@@ -7,9 +7,6 @@ namespace bmsx {
 void refreshDeviceTimings(Runtime& runtime, i64 nowCycles) {
 	const MachineTiming machineTiming{
 		runtime.timing.cpuHz,
-		runtime.timing.dmaWordsPerSec,
-		runtime.timing.dmaRamRowReopenCycles,
-		runtime.timing.dmaRomWaitCyclesPerWord,
 		runtime.timing.geoWorkUnitsPerSec,
 	};
 	runtime.machine.refreshDeviceTimings(machineTiming, nowCycles);
@@ -28,14 +25,6 @@ void setFrameTiming(Runtime& runtime, i64 cpuHz, i64 cycleBudgetPerFrame) {
 	if (cycleBudgetPerFrame != runtime.timing.cycleBudgetPerFrame) {
 		runtime.timing.cycleBudgetPerFrame = cycleBudgetPerFrame;
 	}
-	refreshDeviceTimings(runtime, runtime.machine.scheduler.currentNowCycles());
-}
-
-void setTransferRates(Runtime& runtime, const RuntimeTransferRates& rates) {
-	runtime.timing.dmaWordsPerSec = rates.dmaWordsPerSec;
-	runtime.timing.dmaRamRowReopenCycles = rates.dmaRamRowReopenCycles;
-	runtime.timing.dmaRomWaitCyclesPerWord = rates.dmaRomWaitCyclesPerWord;
-	runtime.timing.geoWorkUnitsPerSec = rates.geoWorkUnitsPerSec;
 	refreshDeviceTimings(runtime, runtime.machine.scheduler.currentNowCycles());
 }
 

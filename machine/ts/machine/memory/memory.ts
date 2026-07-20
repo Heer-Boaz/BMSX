@@ -59,6 +59,8 @@ import {
 	type MappedBusSignals,
 } from './bus_signals';
 
+export const enum MemoryRegionKind { Ram, Rom, Other }
+
 const BUS_ACCESS_READ_WORD = BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_WORD;
 const BUS_ACCESS_WRITE_WORD = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_WORD;
 const BUS_ACCESS_READ_U8 = BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U8;
@@ -699,6 +701,18 @@ export class Memory {
 
 	public isRamRange(addr: number, length: number): boolean {
 		return addr >= RAM_BASE && addr - RAM_BASE + length <= this.ram.byteLength;
+	}
+
+	public mappedRegion(addr: number): MemoryRegionKind {
+		if (this.isIoRegionRange(addr, IO_WORD_SIZE)) {
+			return MemoryRegionKind.Other;
+		}
+		if (this.isProgramRomReadableRange(addr, IO_WORD_SIZE)
+			|| this.isRangeWithinRegion(addr, IO_WORD_SIZE, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE)
+			|| this.isRangeWithinRegion(addr, IO_WORD_SIZE, CART_ROM_BASE, CART_ROM_SIZE)) {
+			return MemoryRegionKind.Rom;
+		}
+		return this.isRamRange(addr, IO_WORD_SIZE) ? MemoryRegionKind.Ram : MemoryRegionKind.Other;
 	}
 
 	public writeBytes(addr: number, bytes: Uint8Array): void {
