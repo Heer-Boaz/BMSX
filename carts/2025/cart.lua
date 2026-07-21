@@ -398,6 +398,7 @@ while true do
 	wait_vblank()
 
 	update_world()
+	wait_vblank() -- Additional wait to make the game run at 30fps instead of 60fps
 	gx_clear_color(0xff000000)
 	draw_world()
 	texture_residency.submit_pending_background()
