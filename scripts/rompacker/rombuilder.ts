@@ -26,6 +26,8 @@ import {
 	GX_SYSTEM_TEXTURE_WIDTH,
 	GX_SYSTEM_TEXTURE_X,
 	GX_SYSTEM_TEXTURE_Y,
+	type ImgDecGxTexture,
+	type RawGxTexture,
 } from './gx_texture';
 import { BIOS_TERMINAL_GLYPHS_ASSET_ID, buildBiosTerminalGlyphTable } from './bios_terminal_font';
 import {
@@ -1252,7 +1254,7 @@ export async function getResourcesList(resMetaList: Resource[]): Promise<Resourc
  *
  * This function processes each loaded resource, extracting relevant metadata and buffer data,
  * and constructs a RomAsset for each. Producer-only image packing groups are omitted;
- * image records reference their shared native texture payload directly.
+ * image records reference their shared compressed IMGDEC texture stream directly.
  * The resulting RomAsset array is used for ROM packing and serialization.
  *
  * @param resources - The array of resources to process.
@@ -1264,7 +1266,7 @@ export async function getResourcesList(resMetaList: Resource[]): Promise<Resourc
 export async function generateRomAssets(resources: Resource[], reportProgress?: ProgressNote) {
 	const romAssets: RomAsset[] = [];
 	const compileErrors: string[] = [];
-	const systemTextureGroup = resources.find((resource): resource is TextureAtlasResource => (
+	const systemTextureGroup = resources.find((resource): resource is TextureAtlasResource & { gxTexture: RawGxTexture } => (
 		resource.type === 'atlas' && resource.atlasId === GX_SYSTEM_TEXTURE_GROUP_ID
 	));
 	if (systemTextureGroup) {
@@ -1304,7 +1306,7 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 					source_path: sourcePath,
 				};
 				if (res.targetAtlasId !== GX_SYSTEM_TEXTURE_GROUP_ID) {
-					baseAsset.texture_buffer = res.gxTexture!.payload;
+					baseAsset.texture_buffer = (res.gxTexture as ImgDecGxTexture).stream;
 				}
 				baseAsset.collision_bin_buffer = collision.collisionbin;
 				romAssets.push(baseAsset);
@@ -1627,9 +1629,10 @@ export async function createTextureAtlases(
 		});
 		atlas.img = canvas;
 		const rgba = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+		const storage = atlas.atlasId === GX_SYSTEM_TEXTURE_GROUP_ID ? 'gx-words' : 'imgdec-stream';
 		atlas.gxTexture = build.group.mode === 'palette4'
-			? buildPalette4GxTexture(canvas.width, canvas.height, rgba)
-			: buildDirect16GxTexture(canvas.width, canvas.height, rgba);
+			? buildPalette4GxTexture(canvas.width, canvas.height, rgba, storage)
+			: buildDirect16GxTexture(canvas.width, canvas.height, rgba, storage);
 		for (let imageIndex = 0; imageIndex < groupImages.length; imageIndex += 1) {
 			groupImages[imageIndex].gxTexture = atlas.gxTexture;
 		}

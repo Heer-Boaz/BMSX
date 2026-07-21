@@ -19,6 +19,10 @@ export class GxGpuCommandFifo {
 		this.wordCount = 0;
 	}
 
+	public retainPrefix(wordCount: number): void {
+		this.wordCount = wordCount;
+	}
+
 	public push(word: number): void {
 		this.words[(this.readIndex + this.wordCount) & (GX_GPU_COMMAND_FIFO_STORAGE_WORD_CAPACITY - 1)] = word;
 		this.wordCount += 1;

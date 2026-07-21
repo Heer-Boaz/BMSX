@@ -7,6 +7,7 @@ import {
 	DMA_CONTROL_REQUEST_FORCE,
 	DMA_CONTROL_REQUEST_GX_READ,
 	DMA_CONTROL_REQUEST_GX_WRITE,
+	DMA_CONTROL_REQUEST_IMGDEC_WRITE,
 	DMA_CONTROL_REQUEST_MASK,
 	DMA_CONTROL_WRITE_INCREMENT,
 	DMA_STATUS_BUSY,
@@ -20,6 +21,7 @@ import {
 	IO_DMA_WRITE_ADDR,
 	IO_APU_TRANSFER_DATA,
 	IO_GX_GPU_GP0,
+	IO_IMGDEC_DATA,
 	IRQ_DMA_DONE,
 } from '../../bus/io';
 import { IO_WORD_SIZE } from '../../memory/map';
@@ -27,6 +29,7 @@ import { Memory, MemoryRegionKind } from '../../memory/memory';
 import {
 	MAPPED_BUS_MASTER_DMA,
 	MAPPED_BUS_DMA_BLOCK_END,
+	MAPPED_BUS_DMA_TRANSFER_END,
 	type MappedBusSignals,
 } from '../../memory/bus_signals';
 import type { CPU, Value } from '../../cpu/cpu';
@@ -50,12 +53,14 @@ export type DmaControllerState = {
 	scheduledWriteAddressWord: number;
 	scheduledTransferCountWord: number;
 	scheduledControlWord: number;
+	transferStarted: boolean;
 	supervisorQuiesceRequested: boolean;
 	userReadAddressWord: number;
 	userWriteAddressWord: number;
 	userTransferCountWord: number;
 	userControlWord: number;
 	userStatusWord: number;
+	userTransferStarted: boolean;
 };
 
 export class DmaController {
@@ -76,7 +81,9 @@ export class DmaController {
 	private gxGpuDmaDirection = 0;
 	private apuDmaReadReady = false;
 	private apuDmaWriteReady = false;
+	private imgDecDmaWriteReady = false;
 	private serviceActive = false;
+	private transferStarted = false;
 	private restorePending = false;
 	private supervisorQuiesceRequested = false;
 	private userReadAddressWord = 0;
@@ -84,6 +91,7 @@ export class DmaController {
 	private userTransferCountWord = 0;
 	private userControlWord = 0;
 	private userStatusWord = 0;
+	private userTransferStarted = false;
 
 	public constructor(
 		private readonly memory: Memory,
@@ -99,7 +107,7 @@ export class DmaController {
 	}
 
 	private static triggerWriteReadyThunk(context: DmaController): boolean {
-		return !context.supervisorQuiesceRequested;
+		return !context.supervisorQuiesceRequested || context.imgDecQuiesceContinuationReady();
 	}
 
 	private static controlWriteThunk(context: DmaController): void {
@@ -117,6 +125,7 @@ export class DmaController {
 		}
 		context.scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
 		context.clearAdmittedBlock();
+		context.transferStarted = false;
 		context.memory.writeIoValue(IO_DMA_STATUS, DMA_STATUS_BUSY);
 		if (context.memory.readIoU32(IO_DMA_TRANSFER_COUNT) === 0) {
 			context.finishTransfer();
@@ -202,6 +211,17 @@ export class DmaController {
 		this.requestInputChanged();
 	}
 
+	public setImgDecDmaWriteReady(ready: boolean): void {
+		if (this.imgDecDmaWriteReady === ready) {
+			return;
+		}
+		this.imgDecDmaWriteReady = ready;
+		this.requestInputChanged();
+		if (ready && this.supervisorQuiesceRequested && this.imgDecQuiesceContinuationReady()) {
+			this.cpu.resumeMemoryWrite(IO_DMA_TRIGGER);
+		}
+	}
+
 	public isGxGpuCpuPortWriteReady(): boolean {
 		return this.gxGpuCpuWriteReady && !this.ownsGxGpuWritePort();
 	}
@@ -211,9 +231,19 @@ export class DmaController {
 			return this.scheduledReadAddressWord === IO_APU_TRANSFER_DATA
 				|| this.scheduledWriteAddressWord === IO_APU_TRANSFER_DATA;
 		}
-		return this.busy()
+		return this.transferStarted
+			&& this.busy()
 			&& (this.memory.readIoU32(IO_DMA_READ_ADDR) === IO_APU_TRANSFER_DATA
 				|| this.memory.readIoU32(IO_DMA_WRITE_ADDR) === IO_APU_TRANSFER_DATA);
+	}
+
+	public ownsImgDecDataPort(): boolean {
+		if (this.scheduledBlockWords !== 0) {
+			return this.scheduledWriteAddressWord === IO_IMGDEC_DATA;
+		}
+		return this.transferStarted
+			&& this.busy()
+			&& this.memory.readIoU32(IO_DMA_WRITE_ADDR) === IO_IMGDEC_DATA;
 	}
 
 	public reset(): void {
@@ -224,12 +254,14 @@ export class DmaController {
 		this.gxGpuDmaDirection = 0;
 		this.apuDmaReadReady = false;
 		this.apuDmaWriteReady = false;
+		this.imgDecDmaWriteReady = false;
 		this.supervisorQuiesceRequested = false;
 		this.userReadAddressWord = 0;
 		this.userWriteAddressWord = 0;
 		this.userTransferCountWord = 0;
 		this.userControlWord = 0;
 		this.userStatusWord = 0;
+		this.userTransferStarted = false;
 	}
 
 	public onService(_nowCycles: number): void {
@@ -245,7 +277,8 @@ export class DmaController {
 		this.serviceActive = true;
 		for (let slot = 0; slot < blockWords; slot += 1) {
 			const busSignals: MappedBusSignals = MAPPED_BUS_MASTER_DMA
-				| (slot + 1 === blockWords ? MAPPED_BUS_DMA_BLOCK_END : 0);
+				| (slot + 1 === blockWords ? MAPPED_BUS_DMA_BLOCK_END : 0)
+				| (transferCount === 1 ? MAPPED_BUS_DMA_TRANSFER_END : 0);
 			const nextReadAddress = (readAddress + readStep) >>> 0;
 			const nextWriteAddress = (writeAddress + writeStep) >>> 0;
 			const nextTransferCount = (transferCount - 1) >>> 0;
@@ -284,6 +317,7 @@ export class DmaController {
 	}
 
 	private finishTransfer(): void {
+		this.transferStarted = false;
 		this.memory.writeIoValue(IO_DMA_STATUS, DMA_STATUS_DONE);
 		this.irq.raise(IRQ_DMA_DONE);
 		this.resumeCpuPortWrites();
@@ -305,12 +339,14 @@ export class DmaController {
 			scheduledWriteAddressWord: this.scheduledWriteAddressWord,
 			scheduledTransferCountWord: this.scheduledTransferCountWord,
 			scheduledControlWord: this.scheduledControlWord,
+			transferStarted: this.transferStarted,
 			supervisorQuiesceRequested: this.supervisorQuiesceRequested,
 			userReadAddressWord: this.userReadAddressWord,
 			userWriteAddressWord: this.userWriteAddressWord,
 			userTransferCountWord: this.userTransferCountWord,
 			userControlWord: this.userControlWord,
 			userStatusWord: this.userStatusWord,
+			userTransferStarted: this.userTransferStarted,
 		};
 	}
 
@@ -327,6 +363,7 @@ export class DmaController {
 		this.scheduledWriteAddressWord = state.scheduledWriteAddressWord >>> 0;
 		this.scheduledTransferCountWord = state.scheduledTransferCountWord >>> 0;
 		this.scheduledControlWord = state.scheduledControlWord >>> 0;
+		this.transferStarted = state.transferStarted;
 		this.serviceDeadline = nowCycles + state.scheduledBlockCycles;
 		this.serviceActive = false;
 		this.restorePending = true;
@@ -336,6 +373,7 @@ export class DmaController {
 		this.userTransferCountWord = state.userTransferCountWord >>> 0;
 		this.userControlWord = state.userControlWord >>> 0;
 		this.userStatusWord = state.userStatusWord >>> 0;
+		this.userTransferStarted = state.userTransferStarted;
 	}
 
 	public postLoad(): void {
@@ -360,12 +398,22 @@ export class DmaController {
 		return this.scheduledBlockWords !== 0 && this.ownsGxGpuWritePort();
 	}
 
+	public ownsGxGpuWritePort(): boolean {
+		if (this.scheduledBlockWords !== 0) {
+			return this.scheduledWriteAddressWord === IO_GX_GPU_GP0;
+		}
+		return this.transferStarted
+			&& this.busy()
+			&& this.memory.readIoU32(IO_DMA_WRITE_ADDR) === IO_GX_GPU_GP0;
+	}
+
 	public enterSupervisorContext(): void {
 		this.userReadAddressWord = this.memory.readIoU32(IO_DMA_READ_ADDR);
 		this.userWriteAddressWord = this.memory.readIoU32(IO_DMA_WRITE_ADDR);
 		this.userTransferCountWord = this.memory.readIoU32(IO_DMA_TRANSFER_COUNT);
 		this.userControlWord = this.memory.readIoU32(IO_DMA_CONTROL);
 		this.userStatusWord = this.memory.readIoU32(IO_DMA_STATUS);
+		this.userTransferStarted = this.transferStarted;
 		this.clearLiveTransfer();
 		this.supervisorQuiesceRequested = false;
 	}
@@ -377,6 +425,7 @@ export class DmaController {
 		this.userTransferCountWord = 0;
 		this.userControlWord = 0;
 		this.userStatusWord = 0;
+		this.userTransferStarted = false;
 		this.supervisorQuiesceRequested = false;
 	}
 
@@ -387,12 +436,14 @@ export class DmaController {
 		this.memory.writeIoValue(IO_DMA_TRANSFER_COUNT, this.userTransferCountWord);
 		this.memory.writeIoValue(IO_DMA_CONTROL, this.userControlWord);
 		this.memory.writeIoValue(IO_DMA_STATUS, this.userStatusWord);
+		this.transferStarted = this.userTransferStarted;
 		this.supervisorQuiesceRequested = false;
 		this.userReadAddressWord = 0;
 		this.userWriteAddressWord = 0;
 		this.userTransferCountWord = 0;
 		this.userControlWord = 0;
 		this.userStatusWord = 0;
+		this.userTransferStarted = false;
 		this.requestInputChanged();
 	}
 
@@ -400,6 +451,7 @@ export class DmaController {
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
 		this.clearAdmittedBlock();
 		this.serviceActive = false;
+		this.transferStarted = false;
 		this.restorePending = false;
 		this.memory.writeIoValue(IO_DMA_READ_ADDR, 0);
 		this.memory.writeIoValue(IO_DMA_WRITE_ADDR, 0);
@@ -424,7 +476,13 @@ export class DmaController {
 		}
 	}
 
+	private imgDecQuiesceContinuationReady(): boolean {
+		return this.imgDecDmaWriteReady
+			&& (this.memory.readIoU32(IO_DMA_CONTROL) & DMA_CONTROL_REQUEST_MASK) === DMA_CONTROL_REQUEST_IMGDEC_WRITE;
+	}
+
 	private admitBlock(anchorCycle: number): void {
+		this.transferStarted = true;
 		const remaining = this.memory.readIoU32(IO_DMA_TRANSFER_COUNT);
 		const control = this.memory.readIoU32(IO_DMA_CONTROL);
 		const programmedBlockWords = ((control & DMA_CONTROL_BLOCK_WORDS_MASK) >>> DMA_CONTROL_BLOCK_WORDS_SHIFT) + 1;
@@ -489,7 +547,8 @@ export class DmaController {
 		const request = this.memory.readIoU32(IO_DMA_CONTROL) & DMA_CONTROL_REQUEST_MASK;
 		if (this.supervisorQuiesceRequested
 			&& request !== DMA_CONTROL_REQUEST_GX_WRITE
-			&& request !== DMA_CONTROL_REQUEST_GX_READ) {
+			&& request !== DMA_CONTROL_REQUEST_GX_READ
+			&& request !== DMA_CONTROL_REQUEST_IMGDEC_WRITE) {
 			return false;
 		}
 		switch (request) {
@@ -505,6 +564,8 @@ export class DmaController {
 				return this.apuDmaWriteReady;
 			case DMA_CONTROL_REQUEST_APU_READ:
 				return this.apuDmaReadReady;
+			case DMA_CONTROL_REQUEST_IMGDEC_WRITE:
+				return this.imgDecDmaWriteReady;
 			default:
 				return false;
 		}
@@ -514,19 +575,15 @@ export class DmaController {
 		return (this.memory.readIoU32(IO_DMA_STATUS) & DMA_STATUS_BUSY) !== 0;
 	}
 
-	private ownsGxGpuWritePort(): boolean {
-		if (this.scheduledBlockWords !== 0) {
-			return this.scheduledWriteAddressWord === IO_GX_GPU_GP0;
-		}
-		return this.busy() && this.memory.readIoU32(IO_DMA_WRITE_ADDR) === IO_GX_GPU_GP0;
-	}
-
 	private resumeCpuPortWrites(): void {
 		if (this.gxGpuCpuWriteReady && !this.ownsGxGpuWritePort()) {
 			this.cpu.resumeMemoryWrite(IO_GX_GPU_GP0);
 		}
 		if (!this.ownsApuDataPort()) {
 			this.cpu.resumeMemoryWrite(IO_APU_TRANSFER_DATA);
+		}
+		if (!this.ownsImgDecDataPort()) {
+			this.cpu.resumeMemoryWrite(IO_IMGDEC_DATA);
 		}
 	}
 }

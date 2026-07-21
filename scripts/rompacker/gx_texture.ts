@@ -5,6 +5,7 @@ import {
 import { GX_GPU_GP0_CPU_TO_VRAM_FIRST } from '../../machine/ts/machine/devices/gx/gpu';
 import { GX_GPU_VRAM_HEIGHT, GX_GPU_VRAM_WIDTH } from '../../machine/ts/machine/devices/gx/vram_address';
 import type { ImgMeta } from '../../machine/ts/rompack/format';
+import { encodeImgDecStream } from './imgdec';
 
 export const GX_SYSTEM_TEXTURE_ASSET_ID = 'gx_system_texture';
 export const GX_SYSTEM_VRAM_WIDTH = 256;
@@ -15,17 +16,30 @@ export const GX_SYSTEM_TEXTURE_X = GX_SYSTEM_VRAM_X;
 export const GX_SYSTEM_TEXTURE_Y = GX_SYSTEM_VRAM_Y;
 export const GX_SYSTEM_TEXTURE_WIDTH = 256;
 export const GX_SYSTEM_TEXTURE_HEIGHT = 64;
+export const GX_GPU_CPU_TO_VRAM_HEADER_BYTES = 12;
 const GX_PALETTE4_PIXELS_PER_WORD = 4;
 export const GX_PALETTE4_CLUT_WORDS = 16;
 
-export type GxTexture = {
+type GxTextureShape = {
 	mode: typeof GX_GPU_TEXTURE_MODE_DIRECT16 | typeof GX_GPU_TEXTURE_MODE_PALETTE4;
 	pixelWidth: number;
 	wordWidth: number;
 	height: number;
-	payload: Buffer;
 	clutOffset?: number;
 };
+
+export type RawGxTexture = GxTextureShape & {
+	storage: 'gx-words';
+	words: Buffer;
+};
+
+export type ImgDecGxTexture = GxTextureShape & {
+	storage: 'imgdec-stream';
+	stream: Buffer;
+};
+
+export type GxTexture = RawGxTexture | ImgDecGxTexture;
+export type GxTextureStorage = GxTexture['storage'];
 
 export type GxDecodedImage = {
 	rgba: Uint8Array;
@@ -75,15 +89,49 @@ function writeDirect16Pixels(
 	return streamOffset;
 }
 
-export function buildDirect16GxTexture(width: number, height: number, rgba: Uint8ClampedArray): GxTexture {
+export function buildDirect16GxTexture(
+	width: number,
+	height: number,
+	rgba: Uint8ClampedArray,
+	storage: 'gx-words',
+): RawGxTexture;
+export function buildDirect16GxTexture(
+	width: number,
+	height: number,
+	rgba: Uint8ClampedArray,
+	storage: 'imgdec-stream',
+): ImgDecGxTexture;
+export function buildDirect16GxTexture(
+	width: number,
+	height: number,
+	rgba: Uint8ClampedArray,
+	storage: GxTextureStorage,
+): GxTexture;
+export function buildDirect16GxTexture(
+	width: number,
+	height: number,
+	rgba: Uint8ClampedArray,
+	storage: GxTextureStorage,
+): GxTexture {
 	const payload = Buffer.alloc(((width * height + 1) >> 1) * 4);
 	writeDirect16Pixels(payload, 0, rgba, 0, 0, width, width, height);
+	if (storage === 'imgdec-stream') {
+		return {
+			mode: GX_GPU_TEXTURE_MODE_DIRECT16,
+			pixelWidth: width,
+			wordWidth: width,
+			height,
+			storage,
+			stream: encodeImgDecStream(payload, payload.length >> 2, 0),
+		};
+	}
 	return {
 		mode: GX_GPU_TEXTURE_MODE_DIRECT16,
 		pixelWidth: width,
 		wordWidth: width,
 		height,
-		payload,
+		storage,
+		words: payload,
 	};
 }
 
@@ -109,7 +157,30 @@ function collectPalette4Indices(rgba: Uint8ClampedArray): { indices: Uint8Array;
 	return { indices, palette };
 }
 
-export function buildPalette4GxTexture(width: number, height: number, rgba: Uint8ClampedArray): GxTexture {
+export function buildPalette4GxTexture(
+	width: number,
+	height: number,
+	rgba: Uint8ClampedArray,
+	storage: 'gx-words',
+): RawGxTexture;
+export function buildPalette4GxTexture(
+	width: number,
+	height: number,
+	rgba: Uint8ClampedArray,
+	storage: 'imgdec-stream',
+): ImgDecGxTexture;
+export function buildPalette4GxTexture(
+	width: number,
+	height: number,
+	rgba: Uint8ClampedArray,
+	storage: GxTextureStorage,
+): GxTexture;
+export function buildPalette4GxTexture(
+	width: number,
+	height: number,
+	rgba: Uint8ClampedArray,
+	storage: GxTextureStorage,
+): GxTexture {
 	const palette4 = collectPalette4Indices(rgba);
 	const wordWidth = (width + GX_PALETTE4_PIXELS_PER_WORD - 1) >> 2;
 	const textureWordCount = wordWidth * height;
@@ -150,22 +221,34 @@ export function buildPalette4GxTexture(width: number, height: number, rgba: Uint
 		const high = palette4.palette[index + 1];
 		payload.writeUInt32LE((low | (high << 16)) >>> 0, textureByteLength + index * 2);
 	}
+	if (storage === 'imgdec-stream') {
+		return {
+			mode: GX_GPU_TEXTURE_MODE_PALETTE4,
+			pixelWidth: width,
+			wordWidth,
+			height,
+			clutOffset: textureByteLength,
+			storage,
+			stream: encodeImgDecStream(payload, textureByteLength >> 2, GX_PALETTE4_CLUT_WORDS >> 1),
+		};
+	}
 	return {
 		mode: GX_GPU_TEXTURE_MODE_PALETTE4,
 		pixelWidth: width,
 		wordWidth,
 		height,
-		payload,
 		clutOffset: textureByteLength,
+		storage,
+		words: payload,
 	};
 }
 
-export function buildFixedDirect16Upload(texture: GxTexture, x: number, y: number): Buffer {
-	const stream = Buffer.alloc(12 + texture.payload.length);
+export function buildFixedDirect16Upload(texture: RawGxTexture, x: number, y: number): Buffer {
+	const stream = Buffer.alloc(GX_GPU_CPU_TO_VRAM_HEADER_BYTES + texture.words.length);
 	stream.writeUInt32LE((GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24) >>> 0, 0);
 	stream.writeUInt32LE((x | (y << 16)) >>> 0, 4);
 	stream.writeUInt32LE((texture.wordWidth | (texture.height << 16)) >>> 0, 8);
-	texture.payload.copy(stream, 12);
+	texture.words.copy(stream, GX_GPU_CPU_TO_VRAM_HEADER_BYTES);
 	return stream;
 }
 

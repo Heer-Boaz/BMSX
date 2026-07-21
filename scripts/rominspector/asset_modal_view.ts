@@ -4,7 +4,12 @@ import { loadModelFromBuffer as loadGLTFModelFromBuffer } from '../../machine/ts
 import { decodeProgramSymbolsImage, PROGRAM_IMAGE_ID, PROGRAM_SYMBOLS_IMAGE_ID, type ProgramImage } from '../../machine/ts/machine/program/loader';
 import { asciiWaveBraille, generateBrailleAsciiArt, generatePixelPerfectAsciiArt, renderBufferBar } from './asciiart';
 import { decodeAudioPreviewToPcm } from './audio_preview';
-import { decodeGxTextureImage, GX_SYSTEM_TEXTURE_ASSET_ID } from '../rompacker/gx_texture';
+import {
+	decodeGxTextureImage,
+	GX_GPU_CPU_TO_VRAM_HEADER_BYTES,
+	GX_SYSTEM_TEXTURE_ASSET_ID,
+} from '../rompacker/gx_texture';
+import { decodeImgDecStream } from '../rompacker/imgdec';
 import {
 	disassembleProgramImage,
 	loadProgramFromAssets,
@@ -247,10 +252,18 @@ export async function buildAssetModalView(selected: RomAsset, ctx: BuildAssetMod
 
 	switch (selected.type) {
 	case 'image': {
-			const textureStart = imgmeta.gx_source_x
-				? ctx.assetList.find(asset => asset.resid === GX_SYSTEM_TEXTURE_ASSET_ID)!.start! + 12
-				: selected.texture_start!;
-			const imagePreview = decodeGxTextureImage(ctx.rombin, textureStart, imgmeta);
+			const imagePreview = imgmeta.gx_source_x
+				? decodeGxTextureImage(
+					ctx.rombin,
+					ctx.assetList.find(asset => asset.resid === GX_SYSTEM_TEXTURE_ASSET_ID)!.start!
+						+ GX_GPU_CPU_TO_VRAM_HEADER_BYTES,
+					imgmeta,
+				)
+				: decodeGxTextureImage(decodeImgDecStream(
+					ctx.rombin,
+					selected.texture_start!,
+					selected.texture_end! - selected.texture_start!,
+				).payload, 0, imgmeta);
 			previewSections.push(buildPreviewSection('', imagePreview.rgba, imagePreview.width, imagePreview.height, ctx.previewZoom));
 			previewFixedLines.push(previewFixedLine(imagePreview.width, imagePreview.height, ctx.previewZoom));
 			if (imgmeta.hitpolygons?.original && imgmeta.width && imgmeta.height) {

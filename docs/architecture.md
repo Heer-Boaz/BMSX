@@ -249,7 +249,8 @@ The active machine model is `psx`. The model owns fixed hardware facts:
 33.8688 MHz CPU clock, 4 MB RAM, region-aware DMA bus timing, a 16,384,000
 work-unit/s geometry unit, and a PSX-style GPU with 2 MiB of raw VRAM. The DMA
 timing is expressed in CPU cycles: one per RAM word plus one cycle of RAM-burst
-setup, one per firmware-ROM word, and twenty-five per 32-bit cartridge word.
+setup, one per firmware-ROM word, and eight per cartridge word plus four cycles
+of cartridge-burst setup.
 Machine reset initializes
 VRAM with the fixed GX power-on bit pattern. GPU reset starts from a 320×240 PAL display
 configuration; that is a reset register state, not a fixed host scanout size.
@@ -1001,12 +1002,13 @@ discarded by the emulator.
 | Name | Value | Meaning |
 | --- | ---: | --- |
 | `IRQ_DMA_DONE` | `0x0001` | DMA completion. |
-| `IRQ_RESERVED_1` | `0x0002` | Reserved; later IRQ bits retain their ABI positions. |
+| `IRQ_GX_PCRTC` | `0x0002` | GX PCRTC HSync/VSync/VBlank event. |
 | `IRQ_VBLANK` | `0x0004` | VBLANK entry. |
 | `IRQ_GEO_DONE` | `0x0008` | Geometry command completion. |
 | `IRQ_GEO_ERROR` | `0x0010` | Geometry command error. |
 | `IRQ_APU` | `0x0020` | APU voice event. |
 | `IRQ_GPU` | `0x0040` | Rising edge of the GX-GPU GP0 interrupt-request source. |
+| `IRQ_IMGDEC` | `0x0080` | IMGDEC accepted the final output word, latched a format fault or observed a GX output abort. |
 
 ### Supervisor exceptions and BIOS terminal
 
@@ -1207,11 +1209,12 @@ System control is a small privileged registerfile rather than a host callback:
 | `SYS_STATUS` | `0x08010354` | Read-only raw bits: supervisor transition/context active `0x1`, exit requested `0x2`, context resumable `0x4`. |
 
 A supervisor-request edge in user mode starts `ENTRY_QUIESCE`. Hardware closes
-new GP1 writes, DMA triggers and geometry doorbells, while an admitted DMA
-block, the currently open GP0 packet, GPU execution and an active geometry job
-reach their normal hardware boundaries. The GPU, DMA and geometry owners each
-publish their completion edge; the system service never polls a renderer,
-busy-waits, or repeatedly schedules itself at the current cycle. At the common
+new GP1 writes, DMA triggers, IMGDEC `START` strobes and geometry doorbells,
+while an admitted DMA block, the currently open GP0 packet, an active IMGDEC
+stream, GPU execution and an active geometry job reach their normal hardware
+boundaries. The GPU, DMA, IMGDEC and geometry owners each publish their
+completion edge; the system service never polls a renderer, busy-waits, or
+repeatedly schedules itself at the current cycle. At the common
 fence the controller aborts any still-waiting CPU mapped-store handshake, raises
 NMI and enters `ENTRY_VECTOR`. A blocked store has not issued a bus cycle and
 its PC already names the complete instruction, so `EPC` retains it for retry
@@ -1230,8 +1233,8 @@ new raw register words republish CPU-port readiness and DREQ, so no transition
 exposes lines derived from the previous owner. Geometry remains quiescent with its completed registerfile
 resident. A synchronous cart or monitor fault cannot wait for an unfinished
 producer: `SYS_CONTROL.FAULT` cancels a pending entry NMI, destructively discards
-transient GPU, DMA and geometry work, preserves VRAM, clears every retained user
-context bank and marks the monitor non-resumable. A nested monitor fault can
+transient GPU, DMA, IMGDEC and geometry work, preserves VRAM, clears every
+retained user context bank and marks the monitor non-resumable. A nested monitor fault can
 therefore never resume through stale state from the earlier monitor entry.
 
 The APU is autonomous and continues playing while the monitor is active. Its
@@ -1386,7 +1389,7 @@ Monitor exit is the reverse hardware boundary. A new supervisor-request edge
 sets `SYS_STATUS.EXIT_REQUESTED`; firmware observes it on VBlank and writes
 `SYS_CONTROL.LEAVE`. `CONT` additionally clears the monitor-owned saved fault
 record before issuing the same leave command. `LEAVING` holds CPU execution
-while supervisor GPU/DMA/geometry work reaches the same completion fence, then
+while supervisor GPU/DMA/IMGDEC/geometry work reaches the same completion fence, then
 restores the raw user banks and releases the existing exception root. The saved
 post-exception `STATUS` keeps maskable entry disabled until compiler-emitted
 `RFE` atomically restores user privilege/interrupt state and resumes at `EPC`.
@@ -1443,10 +1446,11 @@ a write-only, self-clearing start strobe. The count is expressed in 32-bit bus
 transfers. Control selects read/write address incrementing, one request input
 and a four-bit `block_words_minus_one` field. Every raw block field therefore
 denotes one through sixteen words without a special zero case. Request selectors
-are forced, GX write, GX read, disabled, APU write or APU read; selector words 6
-and 7 have no asserted input. GX requests are GPU-owned lines gated by the GP1
-DMA-direction register. APU requests are the sample-transfer FIFO's empty/write
-and full/read lines.
+are forced, GX write, GX read, disabled, APU write, APU read or IMGDEC write;
+selector word 7 has no asserted input. GX requests are GPU-owned lines gated by
+the GP1 DMA-direction register. APU requests are the sample-transfer FIFO's
+empty/write and full/read lines. IMGDEC write is the decoder input FIFO's
+block-admission line.
 
 The standard machine runs its CPU at 33.8688 MHz (44100 × 768, the PS1 CPU
 clock). Its two loaded ROM packages are the firmware/BIOS package in the
@@ -1509,21 +1513,27 @@ No cart, firmware module or device endpoint may add a second payload-rate
 budget around the central channel.
 
 A high request admits one hardware block of the programmed size, shortened only
-by the current final transfer count. Admission latches the block length, read
-address, write address, transfer count and raw control word together with the
-completion edge. A later DREQ-low edge, register write, timing change or
-save/load cannot alter that admitted block. DREQ and the visible control word are
-sampled again only before the next admission.
+by the current final transfer count. `TRIGGER` sets `BUSY`, but an armed channel
+does not own either endpoint before its first admission. That admission raises a
+retained transfer-started latch and captures the block length, read address,
+write address, transfer count and raw control word together with the completion
+edge. Endpoint ownership then survives DREQ gaps and later blocks until the
+programmed transfer completes. A later DREQ-low edge, register write, timing
+change or save/load cannot alter an admitted block. DREQ and the visible control
+word are sampled again only before the next admission.
 
 At service time every admitted word is a mapped bus read followed by a mapped
 bus write using the latched cursors and control bits. Address/count writeback is
 still published after every word; that hardware writeback wins over a concurrent
 CPU or self-DMA write to those registers. A self-DMA write to `CONTROL` is
 visible immediately but affects only the next admission. The final admitted
-word drives `BLOCK_END` on its mapped transaction. Devices which consume a block
-as one batch use this bus edge directly; there is no device-specific callback
-from the DMA controller. Save state retains the admitted register latches and
-remaining completion cycles, not predicted row or decoded-address cache state.
+word drives `BLOCK_END` on its mapped transaction; the final programmed
+transfer word additionally drives `TRANSFER_END`. Devices consume these raw bus
+edges directly; there is no device-specific callback from the DMA controller.
+Save state and the supervisor register bank retain transfer-started ownership,
+while normal save state also retains admitted register latches and remaining
+completion cycles. Neither retains predicted row or decoded-address cache
+state.
 
 The system DMA firmware programs sixteen-word bulk blocks. The APU FIFO is also
 sixteen words: its first accepted word may lower the level DREQ, while the
@@ -1535,8 +1545,9 @@ forced request mode. Packet alignment is command-list ownership, not a hidden
 repair in `system/dma.lua`.
 Memory remains the sole bus-fault owner; a fault does not invent a DMA error
 state or abort the channel. Completion clears `BUSY`, sets `DONE` and raises
-`IRQ_DMA_DONE`. The ROM texture producer emits native RGB555/STP GP0 streams;
-there is no runtime IMGDEC, mapped RGBA staging aperture, descriptor queue or
+`IRQ_DMA_DONE`. Raw native GP0 streams remain valid DMA payloads. Compressed
+cart textures instead select IMGDEC write and target the fixed decoder data
+port; there is still no mapped RGBA staging aperture, descriptor queue or
 image-copy DMA channel.
 
 GX-read DREQ is the readback port's ready-to-send line, not a polled GPUSTAT
@@ -1545,6 +1556,110 @@ current machine cycle; consuming the final available GPUREAD word lowers it.
 A longer transfer therefore remains `BUSY` when the GPU has no word available
 and resumes on a later readback completion without a timer, copied readiness
 latch, or software retry loop.
+
+### IMGDEC
+
+IMGDEC is a streaming word decompressor between the cartridge bus and GX GP0
+ingress. It is not a host image loader and it never produces PNG, RGBA or a
+backend texture. The ROM producer first converts a cart atlas to native GX
+direct16 or palette4 words and then emits the BMSX `IMD1` word stream. DMA reads
+that compressed stream from `CART_ROM` into `IMGDEC_DATA`; the decoder expands
+it through fixed FIFOs and submits ordinary GP0 CPU-to-VRAM packets. The same
+GX command/local-memory path therefore orders decoded uploads with fills,
+copies and draws on every software and accelerated backend.
+
+The registerfile starts at `080103E8h` and contains, in order,
+`INPUT_WORD_COUNT`, `TEXTURE_DESTINATION`, `TEXTURE_SIZE`,
+`CLUT_DESTINATION`, `CONTROL`, `STATUS`, `DATA`,
+`INPUT_WORDS_RECEIVED` and `DECODED_WORD_COUNT`. `CONTROL.START` is a
+self-clearing start strobe. Configuration writes wait only while the decoder is
+busy, so successive firmware uploads serialize without a software polling
+loop. `STATUS` exposes `BUSY`, `DONE`, `INPUT_REQUEST`, `FORMAT_FAULT`,
+`OUTPUT_BLOCKED` and `OUTPUT_ABORTED`; completion, a format fault or a GX output
+abort raises `IRQ_IMGDEC` (bit 7). The two progress words and status are
+read-only to Lua. `DATA` accepts exactly the programmed compressed word count
+from either CPU stores or DMA request selector 6.
+
+The input FIFO contains 32 words and asserts DREQ only when it can admit the
+next complete sixteen-word DMA block, shortened for the final block. Decode is
+scheduled in fixed batches of at most sixteen output words. A batch becomes
+visible in the 64-word output FIFO, chronological history and decoded-word
+counter only on its cumulative decode deadline; the decoder never pre-fills
+untimed output and then charges the GP0 drain.
+Forced DMA still drives the physical DATA port when the input FIFO is full: the
+bus transfer advances `INPUT_WORDS_RECEIVED`, while the full FIFO drops that
+word. Normal CPU stores and selector-6 DMA instead wait on the FIFO-owned ready
+line.
+
+`START` requests GP0 rather than stealing it. On that request edge the GX
+ingress arbiter samples whether a GX-write DMA transfer already owns GP0. Only
+that already-started transfer may continue across later admitted blocks until a
+common packet and admitted-block boundary; if it ends mid-packet,
+`TRANSFER_END` revokes that continuation. A DMA channel triggered after the
+request cannot inherit continuation merely by becoming `BUSY`. A partial CPU
+packet therefore finishes first; the sampled raw-DMA transfer continues only to
+the first packet-plus-block boundary. If that transfer ends mid-packet, CPU GP0
+stores may finish the incomplete packet before IMGDEC is granted. After the grant, CPU GP0
+stores and GX-write DMA requests wait until IMGDEC releases ingress. The decoder
+transfers each ready output block through an owner-direct GX FIFO datapath with
+one command/status publication per block, not one full GP0 transaction per
+word. It consumes physical FIFO capacity, not the GPU's block-DMA packet
+classifier. FIFO-full, pending GPUREAD and pre-grant waits resume on a GX
+readiness edge; neither device polls or schedules a zero-cycle retry. `DONE`
+means the last decoded word was accepted by GX, not that a render backend has
+presented the resulting VRAM upload.
+
+A format fault truncates only the decoder-owned incomplete GP0 packet at its
+last committed packet boundary before releasing ingress. Complete commands
+already ahead of that boundary remain ordered, while the next CPU, DMA or
+IMGDEC packet starts in command phase rather than being consumed as abandoned
+image payload. GP1 reset/command-buffer clear and PCRTC `CSR.RESET`/`CSR.FLUSH`
+retain their normal GX semantics for work already accepted by the GPU, revoke
+an active decoder grant and publish an output-abort edge to IMGDEC. The decoder
+stops, latches `OUTPUT_ABORTED`, raises `IRQ_IMGDEC` and never submits a later
+payload word as a new GP0 opcode.
+
+Supervisor entry closes IMGDEC's `START` gate and waits for an already active
+stream to release GX ingress. If `START` committed before that edge, DMA may
+still accept the matching selector-6 trigger while IMGDEC's existing DREQ is
+high; this continues admitted device work rather than starting new decoder
+work. Completion, a format fault or a GX output abort publishes the IMGDEC
+boundary back to the system controller. Normal supervisor leave reopens the
+registerfile, while a non-resumable supervisor fault resets the decoder
+datapath. Normal save/load retains decoder registers, FIFOs, history, decode
+deadline, the GX request/grant/continuation/abort latches and DMA transfer
+ownership, so restore cannot manufacture a new ingress epoch.
+
+An `IMD1` stream begins with magic word `31444D49h`, decoded texture-payload
+word count and decoded CLUT-payload word count. Each token uses its top two bits:
+
+- `00`: literal run; low 30 bits are `count - 1`, followed by `count` words;
+- `01`: repeated-word run; low 30 bits are `count - 1`, followed by one word;
+- `10`: back-reference; low 12 bits are `distance - 1` and bits 12--29 are
+  `length - 3`;
+- `11`: zero run; low 30 bits are `count - 1`.
+
+The retained 4096-word history permits overlapping back-references. Texture
+and CLUT counts are 32-bit GP0 payload-word counts; a palette4 stream emits a
+second fixed 16-by-1 CLUT upload to `CLUT_DESTINATION`. Destination and size
+registers remain raw GP0 words and are not decoded into a host-side descriptor.
+Every token run must end within the declared combined payload and the programmed
+input span must end on the token that produces its final word; unavailable
+history, truncated runs and trailing words latch `FORMAT_FAULT`. The ROM
+inspector gives the same tooling decoder the exact TOC texture span and enforces
+those rules before previewing a cart image. Firmware-resident system textures
+remain deliberately uncompressed raw GP0 uploads.
+
+The fixed decoder rate is two CPU cycles per emitted 32-bit word, including the
+synthesized GP0 upload headers: a 67.74 MB/s no-stall GP0 ceiling at 33.8688
+MHz. `DECODED_WORD_COUNT` counts payload rather than those headers. This is not
+the end-to-end cart rate: a transfer is also bounded by the compressed
+`CART_ROM` DMA rate, its actual compression ratio and GX FIFO backpressure.
+Stream-header and token parsing do not create a second bus-rate budget. Save
+state retains every register, phase/run latch, FIFO word, chronological history
+word, scheduled decode deadline, supervisor-quiesce latch, GX arbiter grant and
+last committed IMGDEC packet boundary; restore resumes the same pending or
+granted ingress relationship.
 
 ### GX GPU/GTE
 
@@ -1569,10 +1684,12 @@ executed by host render backends. The old cart-visible VDP/RPU firmware ABI and
 the WebGL, GLES2, and software/headless RPU presentation executors are removed.
 Backend-local shader programs, buffers, textures, render targets, and draw-call
 issue remain concrete GX backend ownership; there is no presentation facade
-between GX command buffers and those backends. The mirrored VDP/RPU and IMGDEC
-device trees, mapped apertures, scheduler services, VBlank hooks, MMIO words,
-readback state and save-state fields are removed. The ROM package marker is the
-only remaining `vdp_class` name and must not be used as a compatibility route.
+between GX command buffers and those backends. The mirrored VDP/RPU device trees
+and the former host-PNG/RGBA IMGDEC path, mapped apertures, VBlank hooks and
+descriptor state are removed. The current streaming IMGDEC is a separate raw
+register/FIFO datapath feeding this GP0 owner, not a presentation route. The ROM
+package marker is the only remaining `vdp_class` name and must not be used as a
+compatibility route.
 
 The GP0 command processor has an ingress sequencer, one fixed sixteen-word FIFO,
 and one integer execution clock running at two GPU ticks per CPU cycle. Packet
@@ -1768,8 +1885,9 @@ command set and are added only after the affected PSX-style behavior is fixed.
 
 #### Texture production and VRAM residency
 
-The ROM producer encodes images as native direct16 or palette payloads plus
-integer texture-local coordinates, mode and optional CLUT offset. A filename
+The ROM producer encodes images as native direct16 or palette payloads, wraps
+cart payloads in the compressed `IMD1` stream, and retains integer texture-local
+coordinates, mode and optional decoded-payload CLUT offset. A filename
 `@atlas=N` suffix is only a producer packing-group directive: its numeric value
 is not serialized into the image ABI and is not visible to BIOS, cartlib, GPU or
 DMA. Images packed together share one ROM texture span; runtime code consumes
@@ -1779,15 +1897,17 @@ coordinates or looking up an atlas object.
 Each cart declares physical VRAM destinations, reserved regions and simultaneous
 working sets in `gx_texture_layout`. The producer validates the complete layout
 and emits only each packed texture/CLUT slot's physical destination words. The
-cart decides when a raw texture payload is transferred and which region it
-replaces. Firmware only emits the GP0 transfer packet and DMA moves its ROM
-words. Ordinary sprite/tile images stay within one hardware texture page; the
+cart decides when a compressed texture payload is transferred and which region
+it replaces. Firmware programs IMGDEC's raw destination words and DMA moves the
+compressed ROM words; IMGDEC emits the GP0 transfer packets. A cart may still
+DMA a deliberately uncompressed native GP0 stream as the direct bypass.
+Ordinary sprite/tile images stay within one hardware texture page; the
 rectangle primitive therefore emits exactly one native packet. Explicit large
 image groups are producer-partitioned into retained page-local records and use
 the cartlib surface component's single linear submission pass. Firmware never
 discovers or splits image pages at draw time. There is no runtime semantic slot
-manager, atlas cache, scene-aware firmware policy, runtime image decoder or
-mapped RGBA staging aperture.
+manager, atlas cache, scene-aware firmware policy, host image decoder or mapped
+RGBA staging aperture.
 
 #### Accelerated backend execution
 

@@ -68,6 +68,12 @@ void GxGpu::reset() {
 	m_vramPresentationPending = false;
 	m_supervisorQuiesceRequested = false;
 	m_supervisorIngressStopped = false;
+	m_imgDecGp0Requested = false;
+	m_imgDecGp0Active = false;
+	m_imgDecGp0AbortPending = false;
+	m_imgDecGp0DmaContinuation = false;
+	m_imgDecGp0WakeArmed = false;
+	m_imgDecGp0CommittedFifoWordCount = 0u;
 	clearRegisterContext(m_userContext);
 	rescheduleDeviceService(true);
 }
@@ -232,12 +238,23 @@ GxGpuState GxGpu::captureState() {
 	state.vramPresentationPending = m_vramPresentationPending;
 	state.supervisorQuiesceRequested = m_supervisorQuiesceRequested;
 	state.supervisorIngressStopped = m_supervisorIngressStopped;
+	state.imgDecGp0Requested = m_imgDecGp0Requested;
+	state.imgDecGp0Active = m_imgDecGp0Active;
+	state.imgDecGp0AbortPending = m_imgDecGp0AbortPending;
+	state.imgDecGp0DmaContinuation = m_imgDecGp0DmaContinuation;
+	state.imgDecGp0CommittedFifoWordCount = static_cast<u32>(m_imgDecGp0CommittedFifoWordCount);
 	state.userContext = m_userContext;
 	state.commandBuffer = m_commandBuffer.captureState();
 	return state;
 }
 
 void GxGpu::restoreState(const GxGpuState& state) {
+	m_imgDecGp0Requested = state.imgDecGp0Requested;
+	m_imgDecGp0Active = state.imgDecGp0Active;
+	m_imgDecGp0AbortPending = state.imgDecGp0AbortPending;
+	m_imgDecGp0DmaContinuation = state.imgDecGp0DmaContinuation;
+	m_imgDecGp0WakeArmed = false;
+	m_imgDecGp0CommittedFifoWordCount = state.imgDecGp0CommittedFifoWordCount;
 	m_gp0Word = state.gp0Word;
 	m_gp1Word = state.gp1Word;
 	m_displayModeWord = state.displayModeWord;
@@ -305,7 +322,9 @@ void GxGpu::restoreState(const GxGpuState& state) {
 void GxGpu::beginSupervisorQuiesce() {
 	m_supervisorQuiesceRequested = true;
 	if (m_gp0IngressPhase == GX_GPU_GP0_INGRESS_COMMAND
-		&& !m_dmaController.hasAdmittedGxGpuWriteBlock()) {
+		&& !m_dmaController.hasAdmittedGxGpuWriteBlock()
+		&& !m_imgDecGp0Requested
+		&& !m_imgDecGp0Active) {
 		m_supervisorIngressStopped = true;
 	}
 	updateDynamicStatusBits();
@@ -320,6 +339,8 @@ bool GxGpu::supervisorQuiescent() {
 bool GxGpu::supervisorFenceReady() const {
 	return m_supervisorQuiesceRequested
 		&& m_supervisorIngressStopped
+		&& !m_imgDecGp0Requested
+		&& !m_imgDecGp0Active
 		&& m_pendingCommandCompletionCycle == 0
 		&& m_gp0Fifo.empty()
 		&& m_gp0IngressPhase == GX_GPU_GP0_INGRESS_COMMAND
@@ -364,6 +385,103 @@ void GxGpu::leaveSupervisorContext() {
 	loadLiveRegisterContext(m_userContext);
 	m_pcrtcPresentationPending = true;
 	clearRegisterContext(m_userContext);
+}
+
+void GxGpu::setImgDecGp0Request(bool active) {
+	if (active && !m_imgDecGp0Requested) {
+		m_imgDecGp0DmaContinuation = m_dmaController.ownsGxGpuWritePort();
+	}
+	m_imgDecGp0Requested = active;
+	if (active) {
+		grantImgDecGp0AtBoundary(!m_dmaController.hasAdmittedGxGpuWriteBlock());
+	} else {
+		m_imgDecGp0Active = false;
+		m_imgDecGp0AbortPending = false;
+		m_imgDecGp0DmaContinuation = false;
+		m_imgDecGp0WakeArmed = false;
+		m_imgDecGp0CommittedFifoWordCount = 0u;
+	}
+	if (!m_imgDecGp0Active
+		&& !m_imgDecGp0Requested
+		&& m_supervisorQuiesceRequested
+		&& m_gp0IngressPhase == GX_GPU_GP0_INGRESS_COMMAND
+		&& !m_dmaController.hasAdmittedGxGpuWriteBlock()) {
+		m_supervisorIngressStopped = true;
+	}
+	updateDynamicStatusBits();
+	notifySupervisorBoundary();
+}
+
+u32 GxGpu::imgDecGp0WritableWordCount(i64 nowCycles) {
+	m_imgDecGp0WakeArmed = false;
+	synchronizeCommandExecution(nowCycles);
+	const size_t fifoWordCount = m_gp0Fifo.count();
+	return m_imgDecGp0Active
+		&& !m_supervisorIngressStopped
+		&& fifoWordCount < GX_GPU_COMMAND_FIFO_WORD_CAPACITY
+		? static_cast<u32>(GX_GPU_COMMAND_FIFO_WORD_CAPACITY - fifoWordCount)
+		: 0u;
+}
+
+void GxGpu::writeImgDecGp0BlockWord(u32 word, bool blockEnd, i64 nowCycles) {
+	m_gp0Word = word;
+	acceptGp0Word(word);
+	if (m_gp0IngressPhase == GX_GPU_GP0_INGRESS_COMMAND) {
+		m_imgDecGp0CommittedFifoWordCount = m_gp0Fifo.count();
+	}
+	if (!blockEnd) {
+		return;
+	}
+	m_memory.writeIoValue(IO_GX_GPU_GP0, valueNumber(static_cast<double>(m_gp0Word)));
+	consumeGp0Fifo(nowCycles);
+	updateDynamicStatusBits();
+	notifySupervisorBoundary();
+}
+
+void GxGpu::abortImgDecGp0Packet() {
+	if (!m_imgDecGp0Active) {
+		return;
+	}
+	m_gp0Fifo.retainPrefix(m_imgDecGp0CommittedFifoWordCount);
+	clearGp0IngressState();
+	if (m_gp0ImageLoadWordsRemaining != 0u) {
+		m_commandBuffer.wordCount = m_gp0ImageLoadCommandWordStart;
+		clearImageLoadState();
+	}
+	m_gp0CommandWords.fill(0u);
+	m_gp0CommandWordCount = 0u;
+	m_gp0CommandTargetWordCount = 0u;
+}
+
+bool GxGpu::armImgDecGp0WritableWake() {
+	const bool ready = m_imgDecGp0Active
+		&& !m_supervisorIngressStopped
+		&& m_gp0Fifo.count() < GX_GPU_COMMAND_FIFO_WORD_CAPACITY;
+	m_imgDecGp0WakeArmed = !ready;
+	return ready;
+}
+
+void GxGpu::grantImgDecGp0AtBoundary(bool producerBoundary) {
+	if (m_imgDecGp0Requested
+		&& !m_imgDecGp0Active
+		&& !m_imgDecGp0AbortPending
+		&& producerBoundary
+		&& m_gp0IngressPhase == GX_GPU_GP0_INGRESS_COMMAND) {
+		m_imgDecGp0Active = true;
+		m_imgDecGp0DmaContinuation = false;
+		m_imgDecGp0CommittedFifoWordCount = m_gp0Fifo.count();
+		wakeImgDecGp0Writer();
+	}
+}
+
+void GxGpu::wakeImgDecGp0Writer() {
+	if (m_imgDecGp0WakeArmed
+		&& m_imgDecGp0Active
+		&& !m_supervisorIngressStopped
+		&& m_gp0Fifo.count() < GX_GPU_COMMAND_FIFO_WORD_CAPACITY) {
+		m_imgDecGp0WakeArmed = false;
+		m_scheduler.scheduleDeviceService(DEVICE_SERVICE_IMGDEC, m_scheduler.currentNowCycles());
+	}
 }
 
 GxGpuSaveState GxGpu::captureSaveState() {
@@ -414,6 +532,7 @@ u32 GxGpu::readGp0() {
 		consumeGp0Fifo(nowCycles);
 		m_memory.writeIoValue(IO_GX_GPU_GP0, valueNumber(static_cast<double>(m_gpuReadWord)));
 	}
+	wakeImgDecGp0Writer();
 	updateDynamicStatusBits();
 	notifySupervisorBoundary();
 	return m_gpuReadWord;
@@ -426,8 +545,17 @@ void GxGpu::writeGp0(u32 word, MappedBusSignals busSignals) {
 	m_memory.writeIoValue(IO_GX_GPU_GP0, valueNumber(static_cast<double>(m_gp0Word)));
 	acceptGp0Word(word);
 	consumeGp0Fifo(nowCycles);
+	grantImgDecGp0AtBoundary(
+		(busSignals & MAPPED_BUS_MASTER_DMA) != 0u
+			? (busSignals & MAPPED_BUS_DMA_BLOCK_END) != 0u
+			: !m_dmaController.hasAdmittedGxGpuWriteBlock()
+	);
+	if ((busSignals & MAPPED_BUS_DMA_TRANSFER_END) != 0u) {
+		m_imgDecGp0DmaContinuation = false;
+	}
 	if (m_supervisorQuiesceRequested
 		&& m_gp0IngressPhase == GX_GPU_GP0_INGRESS_COMMAND
+		&& !m_imgDecGp0Active
 		&& ((busSignals & MAPPED_BUS_MASTER_DMA) == 0u
 			|| (busSignals & MAPPED_BUS_DMA_BLOCK_END) != 0u)) {
 		m_supervisorIngressStopped = true;
@@ -557,6 +685,7 @@ void GxGpu::synchronizeCommandExecution(i64 nowCycles) {
 	}
 	if (completed) {
 		rescheduleDeviceService();
+		wakeImgDecGp0Writer();
 		notifySupervisorBoundary();
 	}
 }
@@ -578,6 +707,7 @@ void GxGpu::rescheduleDeviceService(bool force) {
 }
 
 void GxGpu::consumeGp0Fifo(i64 commandStartCycle) {
+	const size_t initialFifoWordCount = m_gp0Fifo.count();
 	while (m_pendingCommandCompletionCycle == 0
 		&& m_commandBuffer.readback.phase() == GX_GPU_READBACK_IDLE
 		&& !m_gp0Fifo.empty()) {
@@ -597,9 +727,15 @@ void GxGpu::consumeGp0Fifo(i64 commandStartCycle) {
 			m_gp0CommandWordCount += 1u;
 		}
 		if (m_gp0CommandWordCount != m_gp0CommandTargetWordCount) {
-			return;
+			break;
 		}
 		executeGp0Command(commandStartCycle);
+	}
+	if (m_imgDecGp0CommittedFifoWordCount != 0u) {
+		const size_t consumedWordCount = initialFifoWordCount - m_gp0Fifo.count();
+		m_imgDecGp0CommittedFifoWordCount = consumedWordCount < m_imgDecGp0CommittedFifoWordCount
+			? m_imgDecGp0CommittedFifoWordCount - consumedWordCount
+			: 0u;
 	}
 }
 
@@ -901,6 +1037,7 @@ void GxGpu::writeDisplayDisableWord(u32 word) {
 
 void GxGpu::clearGp0CommandState() {
 	m_gp0Fifo.reset();
+	m_imgDecGp0CommittedFifoWordCount = 0u;
 	clearGp0IngressState();
 	m_pendingCommandCompletionCycle = 0;
 	m_pendingCommandTargetCount = 0u;
@@ -913,7 +1050,9 @@ void GxGpu::clearGp0CommandState() {
 }
 
 void GxGpu::clearGp0Fifo(i64 nowCycles) {
+	const bool abortImgDec = m_imgDecGp0Active;
 	m_gp0Fifo.reset();
+	m_imgDecGp0CommittedFifoWordCount = 0u;
 	clearGp0IngressState();
 	flushImageLoadToVram(nowCycles);
 	if (m_gp0PolylineCommandWordCount != 0u) {
@@ -933,6 +1072,15 @@ void GxGpu::clearGp0Fifo(i64 nowCycles) {
 	clearImageLoadState();
 	clearPolylineState();
 	rescheduleDeviceService();
+	if (abortImgDec) {
+		m_imgDecGp0Active = false;
+		m_imgDecGp0AbortPending = true;
+		m_imgDecGp0WakeArmed = false;
+		m_scheduler.scheduleDeviceService(DEVICE_SERVICE_IMGDEC, nowCycles);
+	} else {
+		grantImgDecGp0AtBoundary(!m_dmaController.hasAdmittedGxGpuWriteBlock());
+		wakeImgDecGp0Writer();
+	}
 }
 
 void GxGpu::clearGp0IngressState() {
@@ -1195,7 +1343,7 @@ void GxGpu::updateCommandStatusBits() {
 	// CPU stores need one physical FIFO slot; DMA packet acceptance is a
 	// separate, stricter GPUSTAT line while a command is being assembled.
 	m_dmaController.setGxGpuCpuWriteReady(
-		!m_supervisorIngressStopped && m_gp0Fifo.count() < GX_GPU_COMMAND_FIFO_WORD_CAPACITY);
+		!m_supervisorIngressStopped && !m_imgDecGp0Active && m_gp0Fifo.count() < GX_GPU_COMMAND_FIFO_WORD_CAPACITY);
 }
 
 void GxGpu::updateDynamicStatusBits() {
@@ -1208,7 +1356,10 @@ void GxGpu::updateDmaRequestStatusBit() {
 	u32 dmaRequest = 0u;
 	if (dmaDirection == GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU) {
 		dmaRequest = m_statusWord & GX_GPU_STATUS_READY_TO_SEND_VRAM;
-	} else if (!m_supervisorIngressStopped) {
+	} else if (!m_supervisorIngressStopped
+		&& !m_imgDecGp0Active
+		&& (!m_imgDecGp0Requested
+			|| (m_imgDecGp0DmaContinuation && m_dmaController.ownsGxGpuWritePort()))) {
 		switch (dmaDirection) {
 		case GX_GPU_DMA_DIRECTION_FIFO:
 			dmaRequest = m_gp0Fifo.count() < GX_GPU_COMMAND_FIFO_WORD_CAPACITY ? GX_GPU_STATUS_DMA_DATA_REQUEST : 0u;

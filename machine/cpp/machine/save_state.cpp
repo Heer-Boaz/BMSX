@@ -21,7 +21,7 @@ void restoreSharedDeviceState(
 }
 
 void finishDeviceRestore(Machine& machine, const SystemControllerState& systemControl) {
-	// GPU/APU restore their request lines while DMA admission is held. Publish
+	// GPU/APU/IMGDEC restore their request lines while DMA admission is held. Publish
 	// those lines once, then restore the system phase that owns their fences.
 	machine.dmaController.postLoad();
 	machine.systemController.restoreState(systemControl);
@@ -43,6 +43,7 @@ MachineState captureMachineState(Machine& machine) {
 	state.gxGte = machine.gxGte.captureState();
 	state.irq = machine.irqController.captureState();
 	state.input = machine.inputController.captureState();
+	state.imgDec = machine.imgDecController.captureState();
 	state.systemControl = machine.systemController.captureState();
 	return state;
 }
@@ -50,6 +51,7 @@ MachineState captureMachineState(Machine& machine) {
 void restoreMachineState(Machine& machine, const MachineState& state) {
 	restoreSharedDeviceState(machine, state.dma, state.geometry, state.irq, state.audio, state.input);
 	machine.gxGpu.restoreState(state.gxGpu);
+	machine.imgDecController.restoreState(state.imgDec);
 	machine.gxGte.restoreState(state.gxGte);
 	finishDeviceRestore(machine, state.systemControl);
 }
@@ -66,6 +68,7 @@ MachineSaveState captureMachineSaveState(Machine& machine) {
 	state.irq = machine.irqController.captureState();
 	state.stringPool = machine.cpu.stringPool().captureState();
 	state.input = machine.inputController.captureState();
+	state.imgDec = machine.imgDecController.captureState();
 	state.systemControl = machine.systemController.captureState();
 	return state;
 }
@@ -75,6 +78,7 @@ void restoreMachineSaveState(Machine& machine, const MachineSaveState& state) {
 	machine.cpu.stringPool().restoreState(state.stringPool);
 	restoreSharedDeviceState(machine, state.dma, state.geometry, state.irq, state.audio, state.input);
 	machine.gxGpu.restoreSaveState(state.gxGpu);
+	machine.imgDecController.restoreState(state.imgDec);
 	machine.gxGte.restoreState(state.gxGte);
 	finishDeviceRestore(machine, state.systemControl);
 }

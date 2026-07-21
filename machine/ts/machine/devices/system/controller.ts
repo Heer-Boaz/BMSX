@@ -18,6 +18,7 @@ import type { DmaController } from '../dma/controller';
 import type { GeometryController } from '../geometry/controller';
 import type { GxGpu } from '../gx/gpu';
 import type { IrqController } from '../irq/controller';
+import type { ImgDecController } from '../imgdec/controller';
 import { Memory } from '../../memory/memory';
 import { DEVICE_SERVICE_SYSTEM, type DeviceScheduler } from '../../scheduler/device';
 
@@ -62,6 +63,7 @@ export class SystemController {
 		private readonly dma: DmaController,
 		private readonly geometry: GeometryController,
 		private readonly gpu: GxGpu,
+		private readonly imgdec: ImgDecController,
 	) {
 		memory.mapIoWrite(IO_SYS_CONTROL, this, SystemController.writeControl);
 		memory.mapIoRead(IO_SYS_STATUS, this, SystemController.readStatus);
@@ -197,6 +199,7 @@ export class SystemController {
 			this.gpu.beginSupervisorQuiesce();
 			this.dma.beginSupervisorQuiesce();
 			this.geometry.beginSupervisorQuiesce();
+			this.imgdec.beginSupervisorQuiesce();
 			this.writeStatusIo();
 			this.scheduler.scheduleDeviceService(DEVICE_SERVICE_SYSTEM, this.scheduler.currentNowCycles());
 			return;
@@ -211,7 +214,8 @@ export class SystemController {
 		if (this.supervisorPhase === SYSTEM_SUPERVISOR_PHASE_ENTRY_QUIESCE) {
 			if (!this.gpu.supervisorQuiescent()
 				|| !this.dma.supervisorQuiescent()
-				|| !this.geometry.supervisorQuiescent()) {
+				|| !this.geometry.supervisorQuiescent()
+				|| !this.imgdec.supervisorQuiescent()) {
 				return;
 			}
 			this.supervisorPhase = SYSTEM_SUPERVISOR_PHASE_ENTRY_VECTOR;
@@ -223,12 +227,14 @@ export class SystemController {
 		if (this.supervisorPhase === SYSTEM_SUPERVISOR_PHASE_LEAVING) {
 			if (!this.gpu.supervisorQuiescent()
 				|| !this.dma.supervisorQuiescent()
-				|| !this.geometry.supervisorQuiescent()) {
+				|| !this.geometry.supervisorQuiescent()
+				|| !this.imgdec.supervisorQuiescent()) {
 				return;
 			}
 			this.gpu.leaveSupervisorContext();
 			this.dma.leaveSupervisorContext();
 			this.geometry.leaveSupervisorContext();
+			this.imgdec.leaveSupervisorContext();
 			this.irq.leaveSupervisorContext();
 			this.supervisorPhase = SYSTEM_SUPERVISOR_PHASE_USER;
 			this.supervisorResumable = false;
@@ -258,6 +264,7 @@ export class SystemController {
 		}
 		this.cpu.cancelNonMaskableInterrupt();
 		this.dma.enterSupervisorFaultContext();
+		this.imgdec.enterSupervisorFaultContext();
 		this.gpu.enterSupervisorFaultContext();
 		this.geometry.enterSupervisorFaultContext();
 		this.irq.enterSupervisorFaultContext();
@@ -276,6 +283,7 @@ export class SystemController {
 		this.gpu.beginSupervisorQuiesce();
 		this.dma.beginSupervisorQuiesce();
 		this.geometry.beginSupervisorQuiesce();
+		this.imgdec.beginSupervisorQuiesce();
 		this.writeStatusIo();
 		this.scheduler.scheduleDeviceService(DEVICE_SERVICE_SYSTEM, this.scheduler.currentNowCycles());
 	}

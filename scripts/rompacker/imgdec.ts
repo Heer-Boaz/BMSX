@@ -1,0 +1,228 @@
+import {
+	IMGDEC_HISTORY_WORD_CAPACITY,
+	IMGDEC_STREAM_HEADER_WORDS,
+	IMGDEC_STREAM_MAGIC,
+	IMGDEC_TOKEN_BACK_REFERENCE_DISTANCE_MASK,
+	IMGDEC_TOKEN_BACK_REFERENCE_LENGTH_MASK,
+	IMGDEC_TOKEN_BACK_REFERENCE_LENGTH_SHIFT,
+	IMGDEC_TOKEN_BACK_REFERENCE_MIN_LENGTH,
+	IMGDEC_TOKEN_KIND_BACK_REFERENCE,
+	IMGDEC_TOKEN_KIND_LITERAL,
+	IMGDEC_TOKEN_KIND_REPEAT,
+	IMGDEC_TOKEN_KIND_SHIFT,
+	IMGDEC_TOKEN_KIND_ZERO,
+	IMGDEC_TOKEN_RUN_LENGTH_MASK,
+} from '../../machine/ts/machine/devices/imgdec/contracts';
+
+export type DecodedImgDecStream = {
+	payload: Buffer;
+	textureWordCount: number;
+	clutWordCount: number;
+	consumedWordCount: number;
+};
+
+const MATCH_HASH_BITS = 16;
+const MATCH_HASH_SIZE = 1 << MATCH_HASH_BITS;
+const MATCH_CHAIN_LIMIT = 64;
+
+function payloadWord(payload: Buffer, index: number): number {
+	return payload.readUInt32LE(index << 2);
+}
+
+function matchHash(payload: Buffer, index: number): number {
+	const first = payloadWord(payload, index);
+	const second = payloadWord(payload, index + 1);
+	const third = payloadWord(payload, index + 2);
+	const mixed = Math.imul(first ^ ((second << 11) | (second >>> 21)) ^ ((third << 22) | (third >>> 10)), 0x9e3779b1);
+	return mixed >>> (32 - MATCH_HASH_BITS);
+}
+
+function appendLiteralRun(encoded: number[], payload: Buffer, start: number, end: number): void {
+	let cursor = start;
+	while (cursor < end) {
+		const runLength = end - cursor > IMGDEC_TOKEN_RUN_LENGTH_MASK + 1
+			? IMGDEC_TOKEN_RUN_LENGTH_MASK + 1
+			: end - cursor;
+		encoded.push((IMGDEC_TOKEN_KIND_LITERAL << IMGDEC_TOKEN_KIND_SHIFT) | (runLength - 1));
+		for (let index = 0; index < runLength; index += 1) {
+			encoded.push(payloadWord(payload, cursor + index));
+		}
+		cursor += runLength;
+	}
+}
+
+function appendMatchPositions(
+	payload: Buffer,
+	previous: Int32Array,
+	head: Int32Array,
+	start: number,
+	end: number,
+	wordCount: number,
+): void {
+	for (let index = start; index < end && index + 2 < wordCount; index += 1) {
+		const hash = matchHash(payload, index);
+		previous[index] = head[hash]!;
+		head[hash] = index;
+	}
+}
+
+export function encodeImgDecStream(payload: Buffer, textureWordCount: number, clutWordCount: number): Buffer {
+	const wordCount = textureWordCount + clutWordCount;
+	const encoded: number[] = [IMGDEC_STREAM_MAGIC, textureWordCount, clutWordCount];
+	const head = new Int32Array(MATCH_HASH_SIZE);
+	const previous = new Int32Array(wordCount);
+	head.fill(-1);
+	previous.fill(-1);
+	let literalStart = 0;
+	let cursor = 0;
+
+	while (cursor < wordCount) {
+		const word = payloadWord(payload, cursor);
+		if (word === 0) {
+			let runEnd = cursor + 1;
+			while (runEnd < wordCount && payloadWord(payload, runEnd) === 0) {
+				runEnd += 1;
+			}
+			appendLiteralRun(encoded, payload, literalStart, cursor);
+			encoded.push((IMGDEC_TOKEN_KIND_ZERO << IMGDEC_TOKEN_KIND_SHIFT) | (runEnd - cursor - 1));
+			appendMatchPositions(payload, previous, head, cursor, runEnd, wordCount);
+			cursor = runEnd;
+			literalStart = cursor;
+			continue;
+		}
+
+		let bestLength = 0;
+		let bestDistance = 0;
+		if (cursor + 2 < wordCount) {
+			let candidate = head[matchHash(payload, cursor)]!;
+			let chain = 0;
+			const maxLength = wordCount - cursor > IMGDEC_TOKEN_BACK_REFERENCE_LENGTH_MASK + IMGDEC_TOKEN_BACK_REFERENCE_MIN_LENGTH
+				? IMGDEC_TOKEN_BACK_REFERENCE_LENGTH_MASK + IMGDEC_TOKEN_BACK_REFERENCE_MIN_LENGTH
+				: wordCount - cursor;
+			while (candidate >= 0 && cursor - candidate <= IMGDEC_HISTORY_WORD_CAPACITY && chain < MATCH_CHAIN_LIMIT) {
+				let length = 0;
+				while (length < maxLength && payloadWord(payload, candidate + length) === payloadWord(payload, cursor + length)) {
+					length += 1;
+				}
+				if (length > bestLength) {
+					bestLength = length;
+					bestDistance = cursor - candidate;
+					if (length === maxLength) break;
+				}
+				candidate = previous[candidate]!;
+				chain += 1;
+			}
+		}
+
+		if (bestLength >= IMGDEC_TOKEN_BACK_REFERENCE_MIN_LENGTH) {
+			appendLiteralRun(encoded, payload, literalStart, cursor);
+			encoded.push((IMGDEC_TOKEN_KIND_BACK_REFERENCE << IMGDEC_TOKEN_KIND_SHIFT)
+				| ((bestLength - IMGDEC_TOKEN_BACK_REFERENCE_MIN_LENGTH) << IMGDEC_TOKEN_BACK_REFERENCE_LENGTH_SHIFT)
+				| (bestDistance - 1));
+			appendMatchPositions(payload, previous, head, cursor, cursor + bestLength, wordCount);
+			cursor += bestLength;
+			literalStart = cursor;
+			continue;
+		}
+
+		let repeatEnd = cursor + 1;
+		while (repeatEnd < wordCount && payloadWord(payload, repeatEnd) === word) {
+			repeatEnd += 1;
+		}
+		if (repeatEnd - cursor >= 2) {
+			appendLiteralRun(encoded, payload, literalStart, cursor);
+			encoded.push((IMGDEC_TOKEN_KIND_REPEAT << IMGDEC_TOKEN_KIND_SHIFT) | (repeatEnd - cursor - 1));
+			encoded.push(word);
+			appendMatchPositions(payload, previous, head, cursor, repeatEnd, wordCount);
+			cursor = repeatEnd;
+			literalStart = cursor;
+			continue;
+		}
+
+		appendMatchPositions(payload, previous, head, cursor, cursor + 1, wordCount);
+		cursor += 1;
+	}
+
+	appendLiteralRun(encoded, payload, literalStart, wordCount);
+	const output = Buffer.alloc(encoded.length << 2);
+	for (let index = 0; index < encoded.length; index += 1) {
+		output.writeUInt32LE(encoded[index]! >>> 0, index << 2);
+	}
+	return output;
+}
+
+export function decodeImgDecStream(
+	source: Uint8Array,
+	byteOffset = 0,
+	byteLength = source.byteLength - byteOffset,
+): DecodedImgDecStream {
+	const view = new DataView(source.buffer, source.byteOffset + byteOffset, byteLength);
+	let inputWord = 0;
+	if (view.getUint32(inputWord << 2, true) !== IMGDEC_STREAM_MAGIC) {
+		throw new Error('Compressed image stream has an unsupported format.');
+	}
+	const textureWordCount = view.getUint32((inputWord + 1) << 2, true);
+	const clutWordCount = view.getUint32((inputWord + 2) << 2, true);
+	inputWord += IMGDEC_STREAM_HEADER_WORDS;
+	const outputWordCount = textureWordCount + clutWordCount;
+	const payload = Buffer.alloc(outputWordCount << 2);
+	let outputWord = 0;
+
+	while (outputWord < outputWordCount) {
+		const token = view.getUint32(inputWord << 2, true);
+		const tokenKind = token >>> IMGDEC_TOKEN_KIND_SHIFT;
+		const runLength = tokenKind === IMGDEC_TOKEN_KIND_BACK_REFERENCE
+			? ((token >>> IMGDEC_TOKEN_BACK_REFERENCE_LENGTH_SHIFT) & IMGDEC_TOKEN_BACK_REFERENCE_LENGTH_MASK)
+				+ IMGDEC_TOKEN_BACK_REFERENCE_MIN_LENGTH
+			: (token & IMGDEC_TOKEN_RUN_LENGTH_MASK) + 1;
+		inputWord += 1;
+		if (runLength > outputWordCount - outputWord) {
+			throw new Error('Compressed image stream run exceeds its declared payload.');
+		}
+		switch (tokenKind) {
+			case IMGDEC_TOKEN_KIND_LITERAL: {
+				for (let index = 0; index < runLength; index += 1) {
+					payload.writeUInt32LE(view.getUint32(inputWord << 2, true), outputWord << 2);
+					inputWord += 1;
+					outputWord += 1;
+				}
+				break;
+			}
+			case IMGDEC_TOKEN_KIND_REPEAT: {
+				const word = view.getUint32(inputWord << 2, true);
+				inputWord += 1;
+				for (let index = 0; index < runLength; index += 1) {
+					payload.writeUInt32LE(word, outputWord << 2);
+					outputWord += 1;
+				}
+				break;
+			}
+			case IMGDEC_TOKEN_KIND_BACK_REFERENCE: {
+				const distance = (token & IMGDEC_TOKEN_BACK_REFERENCE_DISTANCE_MASK) + 1;
+				if (distance > outputWord) {
+					throw new Error('Compressed image stream references unavailable history.');
+				}
+				for (let index = 0; index < runLength; index += 1) {
+					const word = payload.readUInt32LE((outputWord - distance) << 2);
+					payload.writeUInt32LE(word, outputWord << 2);
+					outputWord += 1;
+				}
+				break;
+			}
+			case IMGDEC_TOKEN_KIND_ZERO: {
+				outputWord += runLength;
+				break;
+			}
+		}
+	}
+	if (inputWord !== (byteLength >> 2)) {
+		throw new Error('Compressed image stream has trailing words.');
+	}
+
+	return {
+		payload,
+		textureWordCount,
+		clutWordCount,
+		consumedWordCount: inputWord,
+	};
+}

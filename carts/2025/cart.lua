@@ -10,7 +10,7 @@ local start_node<const> = 'title'
 -- local start_node<const> = 'combat_wekker'
 local irq_mask_register<const>: *word = 0x08000010
 local input_control_register<const>: *word = 0x0800006c
-local irq_dma_done<const> = 0x0001
+local irq_imgdec<const> = 0x0080
 local irq_vblank<const> = 0x0004
 local irq_apu<const> = 0x0020
 local vblank_count = 0
@@ -285,11 +285,11 @@ local register_director<const> = function()
 end
 
 function init()
-	on_irq(irq_dma_done, texture_residency.complete_upload)
+	on_irq(irq_imgdec, texture_residency.complete_upload)
 	on_irq(irq_vblank, function()
 		vblank_count = vblank_count + 1
 	end)
-	*irq_mask_register = irq_dma_done | irq_vblank | irq_apu
+	*irq_mask_register = irq_imgdec | irq_vblank | irq_apu
 	gx_clear_color(0xff000000)
 	texture_residency.load_font('msx_6b_font_space')
 	combat_module.define_fsm()

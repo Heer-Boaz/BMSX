@@ -12,6 +12,7 @@ import { GxGpu } from './devices/gx/gpu';
 import { GxGte } from './devices/gx/gte';
 import { InputController } from './devices/input/controller';
 import type { InputControllerInputSource } from './devices/input/contracts';
+import { ImgDecController } from './devices/imgdec/controller';
 import { IrqController } from './devices/irq/controller';
 import { SystemController } from './devices/system/controller';
 import { Memory } from './memory/memory';
@@ -23,6 +24,7 @@ import {
 	DEVICE_SERVICE_GEO,
 	DEVICE_SERVICE_GPU,
 	DEVICE_SERVICE_GTE,
+	DEVICE_SERVICE_IMGDEC,
 	DEVICE_SERVICE_SYSTEM,
 	DeviceScheduler,
 } from './scheduler/device';
@@ -41,6 +43,7 @@ export class Machine {
 	public readonly geometryController: GeometryController;
 	public readonly gxGpu: GxGpu;
 	public readonly gxGte: GxGte;
+	public readonly imgDecController: ImgDecController;
 	public readonly inputController: InputController;
 	public readonly audioOutput: ApuOutputMixer;
 	public readonly audioController: AudioController;
@@ -57,6 +60,15 @@ export class Machine {
 		this.audioController = new AudioController(this.memory, this.audioOutput, this.dmaController, this.irqController, this.scheduler);
 		this.geometryController = new GeometryController(this.memory, this.irqController, this.scheduler);
 		this.gxGpu = new GxGpu(this.memory, this.irqController, this.scheduler, this.dmaController);
+		this.imgDecController = new ImgDecController(
+			this.memory,
+			this.cpu,
+			this.irqController,
+			this.scheduler,
+			this.dmaController,
+			this.gxGpu,
+			PSX_MACHINE_SPEC.imgDecCyclesPerOutputWord,
+		);
 		this.gxGte = new GxGte(this.memory, this.cpu, this.scheduler);
 		this.systemController = new SystemController(
 			this.memory,
@@ -66,6 +78,7 @@ export class Machine {
 			this.dmaController,
 			this.geometryController,
 			this.gxGpu,
+			this.imgDecController,
 		);
 		this.inputController = new InputController(this.memory, input, this.systemController);
 		this.dmaController.setTiming(
@@ -90,6 +103,7 @@ export class Machine {
 		this.dmaController.reset();
 		this.geometryController.reset();
 		this.gxGpu.reset();
+		this.imgDecController.reset();
 		this.gxGte.reset();
 		this.audioController.reset();
 		this.systemController.reset();
@@ -126,6 +140,9 @@ export class Machine {
 				return this.gxGpu.onService(nowCycles);
 			case DEVICE_SERVICE_GTE:
 				this.gxGte.onService();
+				return 0;
+			case DEVICE_SERVICE_IMGDEC:
+				this.imgDecController.onService(nowCycles);
 				return 0;
 			case DEVICE_SERVICE_SYSTEM:
 				this.systemController.onService();

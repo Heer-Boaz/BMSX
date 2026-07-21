@@ -12,12 +12,13 @@ import type { Memory } from '../../memory/memory';
 import { IO_WORD_SIZE } from '../../memory/map';
 import {
 	MAPPED_BUS_DMA_BLOCK_END,
+	MAPPED_BUS_DMA_TRANSFER_END,
 	MAPPED_BUS_MASTER_CPU,
 	MAPPED_BUS_MASTER_DMA,
 	type MappedBusSignals,
 } from '../../memory/bus_signals';
 import type { DeviceScheduler } from '../../scheduler/device';
-import { DEVICE_SERVICE_GPU, DEVICE_SERVICE_SYSTEM } from '../../scheduler/device';
+import { DEVICE_SERVICE_GPU, DEVICE_SERVICE_IMGDEC, DEVICE_SERVICE_SYSTEM } from '../../scheduler/device';
 import type { DmaController } from '../dma/controller';
 import type { IrqController } from '../irq/controller';
 import type { GxGpuDeviceOutput } from './device_output';
@@ -276,6 +277,11 @@ export type GxGpuState = {
 	vramPresentationPending: boolean;
 	supervisorQuiesceRequested: boolean;
 	supervisorIngressStopped: boolean;
+	imgDecGp0Requested: boolean;
+	imgDecGp0Active: boolean;
+	imgDecGp0AbortPending: boolean;
+	imgDecGp0DmaContinuation: boolean;
+	imgDecGp0CommittedFifoWordCount: number;
 	userContext: GxGpuRegisterContextState;
 	commandBuffer: GxGpuCommandBufferState;
 };
@@ -338,6 +344,12 @@ export class GxGpu {
 	private vramPresentationPending = false;
 	private supervisorQuiesceRequested = false;
 	private supervisorIngressStopped = false;
+	private imgDecGp0Requested = false;
+	private imgDecGp0Active = false;
+	private imgDecGp0AbortLatched = false;
+	private imgDecGp0DmaContinuation = false;
+	private imgDecGp0WakeArmed = false;
+	private imgDecGp0CommittedFifoWordCount = 0;
 	private readonly userContext: GxGpuRegisterContextState = {
 		gp0Word: 0,
 		gp1Word: 0,
@@ -427,6 +439,12 @@ export class GxGpu {
 		this.vramPresentationPending = false;
 		this.supervisorQuiesceRequested = false;
 		this.supervisorIngressStopped = false;
+		this.imgDecGp0Requested = false;
+		this.imgDecGp0Active = false;
+		this.imgDecGp0AbortLatched = false;
+		this.imgDecGp0DmaContinuation = false;
+		this.imgDecGp0WakeArmed = false;
+		this.imgDecGp0CommittedFifoWordCount = 0;
 		this.clearRegisterContext(this.userContext);
 		this.rescheduleDeviceService(true);
 	}
@@ -649,6 +667,11 @@ export class GxGpu {
 			vramPresentationPending: this.vramPresentationPending,
 			supervisorQuiesceRequested: this.supervisorQuiesceRequested,
 			supervisorIngressStopped: this.supervisorIngressStopped,
+			imgDecGp0Requested: this.imgDecGp0Requested,
+			imgDecGp0Active: this.imgDecGp0Active,
+			imgDecGp0AbortPending: this.imgDecGp0AbortLatched,
+			imgDecGp0DmaContinuation: this.imgDecGp0DmaContinuation,
+			imgDecGp0CommittedFifoWordCount: this.imgDecGp0CommittedFifoWordCount,
 			userContext: {
 				...this.userContext,
 				pcrtcRegisterWords: this.userContext.pcrtcRegisterWords.slice(),
@@ -659,6 +682,12 @@ export class GxGpu {
 	}
 
 	public restoreState(state: GxGpuState): void {
+		this.imgDecGp0Requested = state.imgDecGp0Requested;
+		this.imgDecGp0Active = state.imgDecGp0Active;
+		this.imgDecGp0AbortLatched = state.imgDecGp0AbortPending;
+		this.imgDecGp0DmaContinuation = state.imgDecGp0DmaContinuation;
+		this.imgDecGp0WakeArmed = false;
+		this.imgDecGp0CommittedFifoWordCount = state.imgDecGp0CommittedFifoWordCount;
 		this.gp0Word = state.gp0Word >>> 0;
 		this.gp1Word = state.gp1Word >>> 0;
 		this.displayModeWord = state.displayModeWord >>> 0;
@@ -724,7 +753,9 @@ export class GxGpu {
 	public beginSupervisorQuiesce(): void {
 		this.supervisorQuiesceRequested = true;
 		if (this.gp0IngressPhase === GX_GPU_GP0_INGRESS_COMMAND
-			&& !this.dmaController.hasAdmittedGxGpuWriteBlock()) {
+			&& !this.dmaController.hasAdmittedGxGpuWriteBlock()
+			&& !this.imgDecGp0Requested
+			&& !this.imgDecGp0Active) {
 			this.supervisorIngressStopped = true;
 		}
 		this.updateDynamicStatusBits();
@@ -739,6 +770,8 @@ export class GxGpu {
 	private supervisorFenceReady(): boolean {
 		return this.supervisorQuiesceRequested
 			&& this.supervisorIngressStopped
+			&& !this.imgDecGp0Requested
+			&& !this.imgDecGp0Active
 			&& this.pendingCommandCompletionCycle === 0
 			&& this.gp0Fifo.empty()
 			&& this.gp0IngressPhase === GX_GPU_GP0_INGRESS_COMMAND
@@ -783,6 +816,107 @@ export class GxGpu {
 		this.loadLiveRegisterContext(this.userContext);
 		this.pcrtcPresentationPending = true;
 		this.clearRegisterContext(this.userContext);
+	}
+
+	public setImgDecGp0Request(active: boolean): void {
+		if (active && !this.imgDecGp0Requested) {
+			this.imgDecGp0DmaContinuation = this.dmaController.ownsGxGpuWritePort();
+		}
+		this.imgDecGp0Requested = active;
+		if (active) {
+			this.grantImgDecGp0AtBoundary(!this.dmaController.hasAdmittedGxGpuWriteBlock());
+		} else {
+			this.imgDecGp0Active = false;
+			this.imgDecGp0AbortLatched = false;
+			this.imgDecGp0DmaContinuation = false;
+			this.imgDecGp0WakeArmed = false;
+			this.imgDecGp0CommittedFifoWordCount = 0;
+		}
+		if (!this.imgDecGp0Active
+			&& !this.imgDecGp0Requested
+			&& this.supervisorQuiesceRequested
+			&& this.gp0IngressPhase === GX_GPU_GP0_INGRESS_COMMAND
+			&& !this.dmaController.hasAdmittedGxGpuWriteBlock()) {
+			this.supervisorIngressStopped = true;
+		}
+		this.updateDynamicStatusBits();
+		this.notifySupervisorBoundary();
+	}
+
+	public imgDecGp0AbortPending(): boolean {
+		return this.imgDecGp0AbortLatched;
+	}
+
+	public imgDecGp0WritableWordCount(nowCycles: number): number {
+		this.imgDecGp0WakeArmed = false;
+		this.synchronizeCommandTiming(nowCycles);
+		const fifoWordCount = this.gp0Fifo.count();
+		return this.imgDecGp0Active
+			&& !this.supervisorIngressStopped
+			&& fifoWordCount < GX_GPU_COMMAND_FIFO_WORD_CAPACITY
+			? GX_GPU_COMMAND_FIFO_WORD_CAPACITY - fifoWordCount
+			: 0;
+	}
+
+	public writeImgDecGp0BlockWord(word: number, blockEnd: boolean, nowCycles: number): void {
+		this.gp0Word = word >>> 0;
+		this.acceptGp0Word(this.gp0Word);
+		if (this.gp0IngressPhase === GX_GPU_GP0_INGRESS_COMMAND) {
+			this.imgDecGp0CommittedFifoWordCount = this.gp0Fifo.count();
+		}
+		if (!blockEnd) {
+			return;
+		}
+		this.memory.writeIoValue(IO_GX_GPU_GP0, this.gp0Word);
+		this.processGp0Fifo(nowCycles);
+		this.updateDynamicStatusBits();
+		this.notifySupervisorBoundary();
+	}
+
+	public abortImgDecGp0Packet(): void {
+		if (!this.imgDecGp0Active) {
+			return;
+		}
+		this.gp0Fifo.retainPrefix(this.imgDecGp0CommittedFifoWordCount);
+		this.clearGp0IngressState();
+		if (this.gp0ImageLoadWordsRemaining !== 0) {
+			this.commandBuffer.wordCount = this.gp0ImageLoadCommandWordStart;
+			this.clearImageLoadState();
+		}
+		this.gp0CommandWords.fill(0);
+		this.gp0CommandWordCount = 0;
+		this.gp0CommandTargetWordCount = 0;
+	}
+
+	public armImgDecGp0WritableWake(): boolean {
+		const ready = this.imgDecGp0Active
+			&& !this.supervisorIngressStopped
+			&& this.gp0Fifo.count() < GX_GPU_COMMAND_FIFO_WORD_CAPACITY;
+		this.imgDecGp0WakeArmed = !ready;
+		return ready;
+	}
+
+	private grantImgDecGp0AtBoundary(producerBoundary: boolean): void {
+		if (this.imgDecGp0Requested
+			&& !this.imgDecGp0Active
+			&& !this.imgDecGp0AbortLatched
+			&& producerBoundary
+			&& this.gp0IngressPhase === GX_GPU_GP0_INGRESS_COMMAND) {
+			this.imgDecGp0Active = true;
+			this.imgDecGp0DmaContinuation = false;
+			this.imgDecGp0CommittedFifoWordCount = this.gp0Fifo.count();
+			this.wakeImgDecGp0Writer();
+		}
+	}
+
+	private wakeImgDecGp0Writer(): void {
+		if (this.imgDecGp0WakeArmed
+			&& this.imgDecGp0Active
+			&& !this.supervisorIngressStopped
+			&& this.gp0Fifo.count() < GX_GPU_COMMAND_FIFO_WORD_CAPACITY) {
+			this.imgDecGp0WakeArmed = false;
+			this.scheduler.scheduleDeviceService(DEVICE_SERVICE_IMGDEC, this.scheduler.currentNowCycles());
+		}
 	}
 
 	public captureSaveState(): GxGpuSaveState {
@@ -845,6 +979,7 @@ export class GxGpu {
 			this.processGp0Fifo(nowCycles);
 			this.memory.writeIoValue(IO_GX_GPU_GP0, this.gpuReadWord);
 		}
+		this.wakeImgDecGp0Writer();
 		this.updateDynamicStatusBits();
 		this.notifySupervisorBoundary();
 		return this.gpuReadWord;
@@ -857,8 +992,17 @@ export class GxGpu {
 		this.memory.writeIoValue(IO_GX_GPU_GP0, this.gp0Word);
 		this.acceptGp0Word(this.gp0Word);
 		this.processGp0Fifo(nowCycles);
+		this.grantImgDecGp0AtBoundary(
+			(busSignals & MAPPED_BUS_MASTER_DMA) !== 0
+				? (busSignals & MAPPED_BUS_DMA_BLOCK_END) !== 0
+				: !this.dmaController.hasAdmittedGxGpuWriteBlock(),
+		);
+		if ((busSignals & MAPPED_BUS_DMA_TRANSFER_END) !== 0) {
+			this.imgDecGp0DmaContinuation = false;
+		}
 		if (this.supervisorQuiesceRequested
 			&& this.gp0IngressPhase === GX_GPU_GP0_INGRESS_COMMAND
+			&& !this.imgDecGp0Active
 			&& ((busSignals & MAPPED_BUS_MASTER_DMA) === 0
 				|| (busSignals & MAPPED_BUS_DMA_BLOCK_END) !== 0)) {
 			this.supervisorIngressStopped = true;
@@ -953,6 +1097,7 @@ export class GxGpu {
 	}
 
 	private processGp0Fifo(nowCycles: number): void {
+		const initialFifoWordCount = this.gp0Fifo.count();
 		while (this.pendingCommandCompletionCycle === 0
 			&& this.commandBuffer.readback.phase === GX_GPU_READBACK_IDLE
 			&& !this.gp0Fifo.empty()) {
@@ -972,9 +1117,15 @@ export class GxGpu {
 				this.gp0CommandWordCount += 1;
 			}
 			if (this.gp0CommandWordCount !== this.gp0CommandTargetWordCount) {
-				return;
+				break;
 			}
 			this.executeGp0Command(nowCycles);
+		}
+		if (this.imgDecGp0CommittedFifoWordCount !== 0) {
+			const consumedWordCount = initialFifoWordCount - this.gp0Fifo.count();
+			this.imgDecGp0CommittedFifoWordCount = consumedWordCount < this.imgDecGp0CommittedFifoWordCount
+				? this.imgDecGp0CommittedFifoWordCount - consumedWordCount
+				: 0;
 		}
 	}
 
@@ -1059,6 +1210,7 @@ export class GxGpu {
 		}
 		if (completed) {
 			this.rescheduleDeviceService();
+			this.wakeImgDecGp0Writer();
 			this.notifySupervisorBoundary();
 		}
 	}
@@ -1342,6 +1494,7 @@ export class GxGpu {
 
 	private clearGp0CommandState(): void {
 		this.gp0Fifo.reset();
+		this.imgDecGp0CommittedFifoWordCount = 0;
 		this.clearGp0IngressState();
 		this.pendingCommandCompletionCycle = 0;
 		this.pendingCommandTargetCount = 0;
@@ -1354,7 +1507,9 @@ export class GxGpu {
 	}
 
 	private clearGp0Fifo(nowCycles: number): void {
+		const abortImgDec = this.imgDecGp0Active;
 		this.gp0Fifo.reset();
+		this.imgDecGp0CommittedFifoWordCount = 0;
 		this.clearGp0IngressState();
 		this.flushImageLoadToVram(nowCycles);
 		if (this.gp0PolylineCommandWordCount !== 0) {
@@ -1374,6 +1529,15 @@ export class GxGpu {
 		this.clearImageLoadState();
 		this.clearPolylineState();
 		this.rescheduleDeviceService();
+		if (abortImgDec) {
+			this.imgDecGp0Active = false;
+			this.imgDecGp0AbortLatched = true;
+			this.imgDecGp0WakeArmed = false;
+			this.scheduler.scheduleDeviceService(DEVICE_SERVICE_IMGDEC, nowCycles);
+		} else {
+			this.grantImgDecGp0AtBoundary(!this.dmaController.hasAdmittedGxGpuWriteBlock());
+			this.wakeImgDecGp0Writer();
+		}
 	}
 
 	private clearGp0IngressState(): void {
@@ -1644,7 +1808,7 @@ export class GxGpu {
 		// CPU stores need one physical FIFO slot; DMA packet acceptance is a
 		// separate, stricter GPUSTAT line while a command is being assembled.
 		this.dmaController.setGxGpuCpuWriteReady(
-			!this.supervisorIngressStopped && fifoWordCount < GX_GPU_COMMAND_FIFO_WORD_CAPACITY,
+			!this.supervisorIngressStopped && !this.imgDecGp0Active && fifoWordCount < GX_GPU_COMMAND_FIFO_WORD_CAPACITY,
 		);
 	}
 
@@ -1658,7 +1822,10 @@ export class GxGpu {
 		let dmaRequest = 0;
 		if (dmaDirection === GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU) {
 			dmaRequest = this.statusWord & GX_GPU_STATUS_READY_TO_SEND_VRAM;
-		} else if (!this.supervisorIngressStopped) {
+		} else if (!this.supervisorIngressStopped
+			&& !this.imgDecGp0Active
+			&& (!this.imgDecGp0Requested
+				|| (this.imgDecGp0DmaContinuation && this.dmaController.ownsGxGpuWritePort()))) {
 			switch (dmaDirection) {
 				case GX_GPU_DMA_DIRECTION_FIFO:
 					dmaRequest = this.gp0Fifo.count() < GX_GPU_COMMAND_FIFO_WORD_CAPACITY

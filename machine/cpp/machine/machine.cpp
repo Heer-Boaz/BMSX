@@ -16,8 +16,9 @@ Machine::Machine(Memory& memoryRef, InputControllerInputSource& input)
 	, audioController(memory, audioOutput, dmaController, irqController, scheduler)
 	, geometryController(memory, irqController, scheduler)
 	, gxGpu(memory, irqController, scheduler, dmaController)
+	, imgDecController(memory, cpu, irqController, scheduler, dmaController, gxGpu, PSX_MACHINE_SPEC.imgDecCyclesPerOutputWord)
 	, gxGte(memory, cpu, scheduler)
-	, systemController(memory, cpu, scheduler, irqController, dmaController, geometryController, gxGpu)
+	, systemController(memory, cpu, scheduler, irqController, dmaController, geometryController, gxGpu, imgDecController)
 	, inputController(memory, input, systemController)
 {
 	dmaController.setTiming(
@@ -42,6 +43,7 @@ void Machine::resetDevices() {
 	dmaController.reset();
 	geometryController.reset();
 	gxGpu.reset();
+	imgDecController.reset();
 	gxGte.reset();
 	audioController.reset();
 	systemController.reset();
@@ -78,6 +80,9 @@ u32 Machine::runDeviceService(uint8_t deviceKind) {
 			return gxGpu.onService(nowCycles);
 		case DEVICE_SERVICE_GTE:
 			gxGte.onService();
+			return 0u;
+		case DEVICE_SERVICE_IMGDEC:
+			imgDecController.onService(nowCycles);
 			return 0u;
 		case DEVICE_SERVICE_SYSTEM:
 			systemController.onService();

@@ -16,6 +16,13 @@ import type { ApuSampleTransferState } from '../../devices/audio/save_state';
 import { APU_COMMAND_FIFO_CAPACITY, APU_COMMAND_FIFO_REGISTER_WORD_COUNT, APU_PARAMETER_REGISTER_COUNT, APU_SAMPLE_RAM_ADDRESS_MASK, APU_SAMPLE_RAM_BYTES, APU_SLOT_COUNT, APU_SLOT_REGISTER_WORD_COUNT, APU_TRANSFER_FIFO_WORD_CAPACITY } from '../../devices/audio/contracts';
 import type { StringPoolState, StringPoolStateEntry } from '../../cpu/string_pool';
 import type { InputControllerState } from '../../devices/input/save_state';
+import type { ImgDecControllerState } from '../../devices/imgdec/controller';
+import {
+	IMGDEC_HISTORY_WORD_CAPACITY,
+	IMGDEC_INPUT_FIFO_WORD_CAPACITY,
+	IMGDEC_OUTPUT_FIFO_WORD_CAPACITY,
+	IMGDEC_DECODE_BATCH_WORDS,
+} from '../../devices/imgdec/contracts';
 import { INPUT_CONTROLLER_KEY_WORD_COUNT, INPUT_CONTROLLER_PAD_AXIS_COUNT, INPUT_CONTROLLER_PAD_COUNT } from '../../devices/input/contracts';
 import {
 	SYSTEM_SUPERVISOR_PHASE_LEAVING,
@@ -97,6 +104,14 @@ function decodeU32FixedArray(value: unknown, label: string, length: number): num
 		out[index] = word >>> 0;
 	}
 	return out;
+}
+
+function decodeU32VectorWithMaxLength(value: unknown, label: string, maxLength: number): number[] {
+	const entries = requireArray(value, label);
+	if (entries.length > maxLength) {
+		throw new Error(`${label} must contain at most ${maxLength} u32 values.`);
+	}
+	return decodeVector(entries, label, (word, index) => requireBoundedU32(word, `${label}[${index}]`, 0, 0xffffffff));
 }
 
 function decodeU8FixedArray(value: unknown, label: string, length: number): number[] {
@@ -673,6 +688,11 @@ function encodeGxGpuState(state: GxGpuState): GxGpuState {
 		vramPresentationPending: state.vramPresentationPending,
 		supervisorQuiesceRequested: state.supervisorQuiesceRequested,
 		supervisorIngressStopped: state.supervisorIngressStopped,
+		imgDecGp0Requested: state.imgDecGp0Requested,
+		imgDecGp0Active: state.imgDecGp0Active,
+		imgDecGp0AbortPending: state.imgDecGp0AbortPending,
+		imgDecGp0DmaContinuation: state.imgDecGp0DmaContinuation,
+		imgDecGp0CommittedFifoWordCount: state.imgDecGp0CommittedFifoWordCount >>> 0,
 		userContext: encodeGxGpuRegisterContextState(state.userContext),
 		commandBuffer: encodeGxGpuCommandBufferState(state.commandBuffer),
 	};
@@ -730,6 +750,11 @@ function decodeGxGpuState(value: unknown, label: string): GxGpuState {
 		vramPresentationPending: requireBooleanValue(requireObjectKey(object, 'vramPresentationPending', label, `${label}.vramPresentationPending`), `${label}.vramPresentationPending`),
 		supervisorQuiesceRequested: requireBooleanValue(requireObjectKey(object, 'supervisorQuiesceRequested', label, `${label}.supervisorQuiesceRequested`), `${label}.supervisorQuiesceRequested`),
 		supervisorIngressStopped: requireBooleanValue(requireObjectKey(object, 'supervisorIngressStopped', label, `${label}.supervisorIngressStopped`), `${label}.supervisorIngressStopped`),
+		imgDecGp0Requested: requireBooleanValue(requireObjectKey(object, 'imgDecGp0Requested', label, `${label}.imgDecGp0Requested`), `${label}.imgDecGp0Requested`),
+		imgDecGp0Active: requireBooleanValue(requireObjectKey(object, 'imgDecGp0Active', label, `${label}.imgDecGp0Active`), `${label}.imgDecGp0Active`),
+		imgDecGp0AbortPending: requireBooleanValue(requireObjectKey(object, 'imgDecGp0AbortPending', label, `${label}.imgDecGp0AbortPending`), `${label}.imgDecGp0AbortPending`),
+		imgDecGp0DmaContinuation: requireBooleanValue(requireObjectKey(object, 'imgDecGp0DmaContinuation', label, `${label}.imgDecGp0DmaContinuation`), `${label}.imgDecGp0DmaContinuation`),
+		imgDecGp0CommittedFifoWordCount: requireBoundedU32(requireObjectKey(object, 'imgDecGp0CommittedFifoWordCount', label, `${label}.imgDecGp0CommittedFifoWordCount`), `${label}.imgDecGp0CommittedFifoWordCount`, 0, GX_GPU_COMMAND_FIFO_STORAGE_WORD_CAPACITY),
 		userContext: decodeGxGpuRegisterContextState(requireObjectKey(object, 'userContext', label, `${label}.userContext`), `${label}.userContext`),
 		commandBuffer,
 	};
@@ -1007,12 +1032,14 @@ function encodeDmaControllerState(state: DmaControllerState): DmaControllerState
 		scheduledWriteAddressWord: state.scheduledWriteAddressWord,
 		scheduledTransferCountWord: state.scheduledTransferCountWord,
 		scheduledControlWord: state.scheduledControlWord,
+		transferStarted: state.transferStarted,
 		supervisorQuiesceRequested: state.supervisorQuiesceRequested,
 		userReadAddressWord: state.userReadAddressWord,
 		userWriteAddressWord: state.userWriteAddressWord,
 		userTransferCountWord: state.userTransferCountWord,
 		userControlWord: state.userControlWord,
 		userStatusWord: state.userStatusWord,
+		userTransferStarted: state.userTransferStarted,
 	};
 }
 
@@ -1030,12 +1057,69 @@ function decodeDmaControllerState(value: unknown, label: string): DmaControllerS
 		scheduledWriteAddressWord: requireBoundedU32(requireObjectKey(object, 'scheduledWriteAddressWord', label, `${label}.scheduledWriteAddressWord`), `${label}.scheduledWriteAddressWord`, 0, 0xffffffff),
 		scheduledTransferCountWord: requireBoundedU32(requireObjectKey(object, 'scheduledTransferCountWord', label, `${label}.scheduledTransferCountWord`), `${label}.scheduledTransferCountWord`, 0, 0xffffffff),
 		scheduledControlWord: requireBoundedU32(requireObjectKey(object, 'scheduledControlWord', label, `${label}.scheduledControlWord`), `${label}.scheduledControlWord`, 0, 0xffffffff),
+		transferStarted: requireBooleanValue(requireObjectKey(object, 'transferStarted', label, `${label}.transferStarted`), `${label}.transferStarted`),
 		supervisorQuiesceRequested: requireBooleanValue(requireObjectKey(object, 'supervisorQuiesceRequested', label, `${label}.supervisorQuiesceRequested`), `${label}.supervisorQuiesceRequested`),
 		userReadAddressWord: requireBoundedU32(requireObjectKey(object, 'userReadAddressWord', label, `${label}.userReadAddressWord`), `${label}.userReadAddressWord`, 0, 0xffffffff),
 		userWriteAddressWord: requireBoundedU32(requireObjectKey(object, 'userWriteAddressWord', label, `${label}.userWriteAddressWord`), `${label}.userWriteAddressWord`, 0, 0xffffffff),
 		userTransferCountWord: requireBoundedU32(requireObjectKey(object, 'userTransferCountWord', label, `${label}.userTransferCountWord`), `${label}.userTransferCountWord`, 0, 0xffffffff),
 		userControlWord: requireBoundedU32(requireObjectKey(object, 'userControlWord', label, `${label}.userControlWord`), `${label}.userControlWord`, 0, 0xffffffff),
 		userStatusWord: requireBoundedU32(requireObjectKey(object, 'userStatusWord', label, `${label}.userStatusWord`), `${label}.userStatusWord`, 0, 0xffffffff),
+		userTransferStarted: requireBooleanValue(requireObjectKey(object, 'userTransferStarted', label, `${label}.userTransferStarted`), `${label}.userTransferStarted`),
+	};
+}
+
+function encodeImgDecControllerState(state: ImgDecControllerState): ImgDecControllerState {
+	return {
+		inputWordCountWord: state.inputWordCountWord,
+		textureDestinationWord: state.textureDestinationWord,
+		textureSizeWord: state.textureSizeWord,
+		clutDestinationWord: state.clutDestinationWord,
+		controlWord: state.controlWord,
+		statusWord: state.statusWord,
+		dataWord: state.dataWord,
+		inputWordsReceived: state.inputWordsReceived,
+		decodedWordCount: state.decodedWordCount,
+		textureWordCount: state.textureWordCount,
+		clutWordCount: state.clutWordCount,
+		decodePhase: state.decodePhase,
+		outputStage: state.outputStage,
+		runWordsRemaining: state.runWordsRemaining,
+		repeatWord: state.repeatWord,
+		backReferenceDistance: state.backReferenceDistance,
+		supervisorQuiesceRequested: state.supervisorQuiesceRequested,
+		inputWords: encodeVector(state.inputWords, (word) => word >>> 0),
+		outputWords: encodeVector(state.outputWords, (word) => word >>> 0),
+		historyWords: encodeVector(state.historyWords, (word) => word >>> 0),
+		scheduledDecodeWords: state.scheduledDecodeWords,
+		scheduledDecodeCycles: state.scheduledDecodeCycles,
+	};
+}
+
+function decodeImgDecControllerState(value: unknown, label: string): ImgDecControllerState {
+	const object = requireObject(value, label);
+	return {
+		inputWordCountWord: requireBoundedU32(requireObjectKey(object, 'inputWordCountWord', label, `${label}.inputWordCountWord`), `${label}.inputWordCountWord`, 0, 0xffffffff),
+		textureDestinationWord: requireBoundedU32(requireObjectKey(object, 'textureDestinationWord', label, `${label}.textureDestinationWord`), `${label}.textureDestinationWord`, 0, 0xffffffff),
+		textureSizeWord: requireBoundedU32(requireObjectKey(object, 'textureSizeWord', label, `${label}.textureSizeWord`), `${label}.textureSizeWord`, 0, 0xffffffff),
+		clutDestinationWord: requireBoundedU32(requireObjectKey(object, 'clutDestinationWord', label, `${label}.clutDestinationWord`), `${label}.clutDestinationWord`, 0, 0xffffffff),
+		controlWord: requireBoundedU32(requireObjectKey(object, 'controlWord', label, `${label}.controlWord`), `${label}.controlWord`, 0, 0xffffffff),
+		statusWord: requireBoundedU32(requireObjectKey(object, 'statusWord', label, `${label}.statusWord`), `${label}.statusWord`, 0, 0xffffffff),
+		dataWord: requireBoundedU32(requireObjectKey(object, 'dataWord', label, `${label}.dataWord`), `${label}.dataWord`, 0, 0xffffffff),
+		inputWordsReceived: requireBoundedU32(requireObjectKey(object, 'inputWordsReceived', label, `${label}.inputWordsReceived`), `${label}.inputWordsReceived`, 0, 0xffffffff),
+		decodedWordCount: requireBoundedU32(requireObjectKey(object, 'decodedWordCount', label, `${label}.decodedWordCount`), `${label}.decodedWordCount`, 0, 0xffffffff),
+		textureWordCount: requireBoundedU32(requireObjectKey(object, 'textureWordCount', label, `${label}.textureWordCount`), `${label}.textureWordCount`, 0, 0xffffffff),
+		clutWordCount: requireBoundedU32(requireObjectKey(object, 'clutWordCount', label, `${label}.clutWordCount`), `${label}.clutWordCount`, 0, 0xffffffff),
+		decodePhase: requireBoundedU32(requireObjectKey(object, 'decodePhase', label, `${label}.decodePhase`), `${label}.decodePhase`, 0, 8),
+		outputStage: requireBoundedU32(requireObjectKey(object, 'outputStage', label, `${label}.outputStage`), `${label}.outputStage`, 0, 4),
+		runWordsRemaining: requireBoundedU32(requireObjectKey(object, 'runWordsRemaining', label, `${label}.runWordsRemaining`), `${label}.runWordsRemaining`, 0, 0xffffffff),
+		repeatWord: requireBoundedU32(requireObjectKey(object, 'repeatWord', label, `${label}.repeatWord`), `${label}.repeatWord`, 0, 0xffffffff),
+		backReferenceDistance: requireBoundedU32(requireObjectKey(object, 'backReferenceDistance', label, `${label}.backReferenceDistance`), `${label}.backReferenceDistance`, 0, IMGDEC_HISTORY_WORD_CAPACITY),
+		supervisorQuiesceRequested: requireBooleanValue(requireObjectKey(object, 'supervisorQuiesceRequested', label, `${label}.supervisorQuiesceRequested`), `${label}.supervisorQuiesceRequested`),
+		inputWords: decodeU32VectorWithMaxLength(requireObjectKey(object, 'inputWords', label, `${label}.inputWords`), `${label}.inputWords`, IMGDEC_INPUT_FIFO_WORD_CAPACITY),
+		outputWords: decodeU32VectorWithMaxLength(requireObjectKey(object, 'outputWords', label, `${label}.outputWords`), `${label}.outputWords`, IMGDEC_OUTPUT_FIFO_WORD_CAPACITY),
+		historyWords: decodeU32VectorWithMaxLength(requireObjectKey(object, 'historyWords', label, `${label}.historyWords`), `${label}.historyWords`, IMGDEC_HISTORY_WORD_CAPACITY),
+		scheduledDecodeWords: requireBoundedU32(requireObjectKey(object, 'scheduledDecodeWords', label, `${label}.scheduledDecodeWords`), `${label}.scheduledDecodeWords`, 0, IMGDEC_DECODE_BATCH_WORDS),
+		scheduledDecodeCycles: requireI64(requireObjectKey(object, 'scheduledDecodeCycles', label, `${label}.scheduledDecodeCycles`), `${label}.scheduledDecodeCycles`),
 	};
 }
 
@@ -1075,6 +1159,7 @@ function encodeMachineSaveState(state: MachineSaveState): MachineSaveState {
 		audio: encodeAudioControllerState(state.audio),
 		stringPool: encodeStringPoolState(state.stringPool),
 		input: encodeInputControllerState(state.input),
+		imgDec: encodeImgDecControllerState(state.imgDec),
 		systemControl: encodeSystemControllerState(state.systemControl),
 	};
 }
@@ -1091,6 +1176,7 @@ function decodeMachineSaveState(value: unknown, label: string): MachineSaveState
 		audio: decodeAudioControllerState(requireObjectKey(object, 'audio', label, 'machineState.machine.audio'), 'machineState.machine.audio'),
 		stringPool: decodeStringPoolState(requireObjectKey(object, 'stringPool', label, 'machineState.machine.stringPool'), 'machineState.machine.stringPool'),
 		input: decodeInputControllerState(requireObjectKey(object, 'input', label, 'machineState.machine.input'), 'machineState.machine.input'),
+		imgDec: decodeImgDecControllerState(requireObjectKey(object, 'imgDec', label, 'machineState.machine.imgDec'), 'machineState.machine.imgDec'),
 		systemControl: decodeSystemControllerState(requireObjectKey(object, 'systemControl', label, 'machineState.machine.systemControl'), 'machineState.machine.systemControl'),
 	};
 }

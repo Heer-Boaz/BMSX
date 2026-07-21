@@ -494,9 +494,8 @@ void testSampleBusDmaAndMidTransferRestore() {
 	live.memory.writeMappedU32LE(bmsx::IO_DMA_TRANSFER_COUNT, 1u);
 	live.memory.writeMappedU32LE(bmsx::IO_DMA_CONTROL, bmsx::DMA_CONTROL_REQUEST_DISABLED);
 	live.memory.writeMappedU32LE(bmsx::IO_DMA_TRIGGER, bmsx::DMA_TRIGGER_START);
-	require(!live.memory.mappedWriteReady(bmsx::IO_APU_TRANSFER_DATA), "a busy disabled channel should retain its programmed APU port ownership");
-	live.memory.writeMappedU32LE(bmsx::IO_DMA_READ_ADDR, source);
-	require(live.memory.mappedWriteReady(bmsx::IO_APU_TRANSFER_DATA), "reprogramming a busy DMA address away from APU data should release the CPU port");
+	require(live.memory.mappedWriteReady(bmsx::IO_APU_TRANSFER_DATA),
+		"an armed but unadmitted DMA channel must not own the APU data port");
 }
 
 void testSampleTransferWrongDirectionBlock() {

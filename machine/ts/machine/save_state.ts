@@ -5,6 +5,7 @@ import type { GxGpuSaveState, GxGpuState } from './devices/gx/gpu';
 import type { GxGteState } from './devices/gx/gte';
 import type { InputControllerState } from './devices/input/save_state';
 import type { IrqControllerState } from './devices/irq/save_state';
+import type { ImgDecControllerState } from './devices/imgdec/controller';
 import type { SystemControllerState } from './devices/system/controller';
 import type { MemorySaveState } from './memory/memory';
 import type { StringPoolState } from './cpu/string_pool';
@@ -18,6 +19,7 @@ export type MachineState = {
 	irq: IrqControllerState;
 	audio: AudioControllerState;
 	input: InputControllerState;
+	imgDec: ImgDecControllerState;
 	systemControl: SystemControllerState;
 };
 
@@ -31,6 +33,7 @@ export type MachineSaveState = {
 	audio: AudioControllerState;
 	stringPool: StringPoolState;
 	input: InputControllerState;
+	imgDec: ImgDecControllerState;
 	systemControl: SystemControllerState;
 };
 
@@ -49,6 +52,7 @@ export function captureMachineState(machine: Machine): MachineState {
 		irq: machine.irqController.captureState(),
 		audio,
 		input: machine.inputController.captureState(),
+		imgDec: machine.imgDecController.captureState(),
 		systemControl: machine.systemController.captureState(),
 	};
 }
@@ -56,6 +60,7 @@ export function captureMachineState(machine: Machine): MachineState {
 export function restoreMachineState(machine: Machine, state: MachineState): void {
 	restoreSharedDeviceState(machine, state);
 	machine.gxGpu.restoreState(state.gxGpu);
+	machine.imgDecController.restoreState(state.imgDec);
 	machine.gxGte.restoreState(state.gxGte);
 	finishDeviceRestore(machine, state.systemControl);
 }
@@ -74,6 +79,7 @@ export function captureMachineSaveState(machine: Machine): MachineSaveState {
 		audio,
 		stringPool: machine.cpu.stringPool.captureState(),
 		input: machine.inputController.captureState(),
+		imgDec: machine.imgDecController.captureState(),
 		systemControl: machine.systemController.captureState(),
 	};
 }
@@ -83,6 +89,7 @@ export function restoreMachineSaveState(machine: Machine, state: MachineSaveStat
 	machine.cpu.stringPool.restoreState(state.stringPool);
 	restoreSharedDeviceState(machine, state);
 	machine.gxGpu.restoreSaveState(state.gxGpu);
+	machine.imgDecController.restoreState(state.imgDec);
 	machine.gxGte.restoreState(state.gxGte);
 	finishDeviceRestore(machine, state.systemControl);
 }
@@ -96,7 +103,7 @@ function restoreSharedDeviceState(machine: Machine, state: Pick<MachineState, 'd
 }
 
 function finishDeviceRestore(machine: Machine, systemControl: SystemControllerState): void {
-	// GPU/APU restore their request lines while DMA admission is held. Publish
+	// GPU/APU/IMGDEC restore their request lines while DMA admission is held. Publish
 	// those lines once, then restore the system phase that owns their fences.
 	machine.dmaController.postLoad();
 	machine.systemController.restoreState(systemControl);

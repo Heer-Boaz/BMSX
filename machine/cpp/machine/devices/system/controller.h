@@ -13,6 +13,7 @@ class DmaController;
 class GeometryController;
 class GxGpu;
 class IrqController;
+class ImgDecController;
 
 constexpr u8 SYSTEM_SUPERVISOR_PHASE_USER = 0u;
 constexpr u8 SYSTEM_SUPERVISOR_PHASE_ENTRY_QUIESCE = 1u;
@@ -39,7 +40,8 @@ public:
 		IrqController& irq,
 		DmaController& dma,
 		GeometryController& geometry,
-		GxGpu& gpu);
+		GxGpu& gpu,
+		ImgDecController& imgDec);
 	void reset();
 	void requestSupervisorLineEdge();
 	void onService();
@@ -75,6 +77,7 @@ private:
 	DmaController& m_dma;
 	GeometryController& m_geometry;
 	GxGpu& m_gpu;
+	ImgDecController& m_imgDec;
 	bool m_resetRequested = false;
 	u8 m_supervisorPhase = SYSTEM_SUPERVISOR_PHASE_USER;
 	bool m_supervisorResumable = false;

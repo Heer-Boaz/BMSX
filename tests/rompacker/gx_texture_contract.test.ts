@@ -15,6 +15,7 @@ import {
 import { resolveTextureGroupId } from '../../scripts/rompacker/atlasbuilder';
 import { buildDirect16GxTexture, buildPalette4GxTexture } from '../../scripts/rompacker/gx_texture';
 import { validateGxTextureLayout, type GxTextureLayout } from '../../scripts/rompacker/gx_texture_layout';
+import { decodeImgDecStream } from '../../scripts/rompacker/imgdec';
 import { createTextureAtlases, generateRomAssets } from '../../scripts/rompacker/rombuilder';
 import type { ImageResource, Resource, TextureAtlasResource } from '../../scripts/rompacker/rompacker.rompack';
 import {
@@ -46,11 +47,11 @@ test('direct16 production emits destination-free RGB555 STP words', () => {
 		0xff, 0x00, 0x00, 0xff,
 		0xff, 0xff, 0xff, 0x00,
 		0x00, 0x00, 0xff, 0xff,
-	]));
+	]), 'gx-words');
 
 	assert.equal(texture.wordWidth, 3);
 	assert.equal(texture.height, 1);
-	assert.deepEqual(Array.from(texture.payload), [
+	assert.deepEqual(Array.from(texture.words), [
 		0x1f, 0x80, 0x00, 0x00,
 		0x00, 0xfc, 0x00, 0x00,
 	]);
@@ -62,19 +63,20 @@ test('palette4 production keeps packed texels and the CLUT in one destination-fr
 		0xff, 0x00, 0x00, 0xff,
 		0x00, 0xff, 0x00, 0xff,
 		0x00, 0x00, 0xff, 0xff,
-	]));
+	]), 'gx-words');
 
 	assert.equal(texture.wordWidth, 1);
 	assert.equal(texture.clutOffset, 4);
-	assert.deepEqual(Array.from(texture.payload.subarray(0, 12)), [
+	assert.deepEqual(Array.from(texture.words.subarray(0, 12)), [
 		0x10, 0x32, 0x00, 0x00,
 		0x00, 0x00, 0x1f, 0x80,
 		0xe0, 0x83, 0x00, 0xfc,
 	]);
 });
 
-test('ROM inspection decodes image rectangles directly from native texture payloads', () => {
-	const direct = buildDirect16GxTexture(1, 1, new Uint8ClampedArray([0xff, 0x00, 0x00, 0xff]));
+test('ROM inspection decodes raw system textures and decompressed cart texture streams', () => {
+	const direct = buildDirect16GxTexture(1, 1, new Uint8ClampedArray([0xff, 0x00, 0x00, 0xff]), 'gx-words');
+	const directImgDec = buildDirect16GxTexture(1, 1, new Uint8ClampedArray([0xff, 0x00, 0x00, 0xff]), 'imgdec-stream');
 	const directMeta: ImgMeta = {
 		width: 1,
 		height: 1,
@@ -85,7 +87,11 @@ test('ROM inspection decodes image rectangles directly from native texture paylo
 		gx_texture_height: direct.height,
 	};
 	assert.deepEqual(
-		Array.from(decodeGxTextureImage(direct.payload, 0, directMeta).rgba),
+		Array.from(decodeGxTextureImage(direct.words, 0, directMeta).rgba),
+		[255, 0, 0, 255],
+	);
+	assert.deepEqual(
+		Array.from(decodeGxTextureImage(decodeImgDecStream(directImgDec.stream).payload, 0, directMeta).rgba),
 		[255, 0, 0, 255],
 	);
 
@@ -94,7 +100,7 @@ test('ROM inspection decodes image rectangles directly from native texture paylo
 		0xff, 0x00, 0x00, 0xff,
 		0x00, 0xff, 0x00, 0xff,
 		0x00, 0x00, 0xff, 0xff,
-	]));
+	]), 'imgdec-stream');
 	const paletteMeta: ImgMeta = {
 		width: 1,
 		height: 1,
@@ -106,7 +112,7 @@ test('ROM inspection decodes image rectangles directly from native texture paylo
 		gx_clut_offset: palette.clutOffset,
 	};
 	assert.deepEqual(
-		Array.from(decodeGxTextureImage(palette.payload, 0, paletteMeta).rgba),
+		Array.from(decodeGxTextureImage(decodeImgDecStream(palette.stream).payload, 0, paletteMeta).rgba),
 		[0, 255, 0, 255],
 	);
 });
@@ -119,7 +125,7 @@ test('palette4 production rejects a seventeenth RGB555 STP color', () => {
 		rgba[offset + 3] = 0xff;
 	}
 	assert.throws(
-		() => buildPalette4GxTexture(17, 1, rgba),
+		() => buildPalette4GxTexture(17, 1, rgba, 'gx-words'),
 		/more than 16 RGB555\/STP colors/,
 	);
 });
@@ -209,7 +215,7 @@ test('GX layout validation rejects unknown texture modes at the manifest boundar
 	);
 });
 
-test('producer groups share one native texture span without becoming a runtime asset', async () => {
+test('producer groups share one compressed IMGDEC texture span without becoming a runtime asset', async () => {
 	const group: TextureAtlasResource = {
 		type: 'atlas',
 		name: '_atlas_00',

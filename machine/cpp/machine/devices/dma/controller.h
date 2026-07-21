@@ -22,12 +22,14 @@ struct DmaControllerState {
 	u32 scheduledWriteAddressWord = 0;
 	u32 scheduledTransferCountWord = 0;
 	u32 scheduledControlWord = 0;
+	bool transferStarted = false;
 	bool supervisorQuiesceRequested = false;
 	u32 userReadAddressWord = 0;
 	u32 userWriteAddressWord = 0;
 	u32 userTransferCountWord = 0;
 	u32 userControlWord = 0;
 	u32 userStatusWord = 0;
+	bool userTransferStarted = false;
 };
 
 class DmaController {
@@ -41,8 +43,10 @@ public:
 	void setGxGpuDmaDirection(u32 direction);
 	void setApuDmaReadReady(bool ready);
 	void setApuDmaWriteReady(bool ready);
+	void setImgDecDmaWriteReady(bool ready);
 	bool isGxGpuCpuPortWriteReady() const;
 	bool ownsApuDataPort() const;
+	bool ownsImgDecDataPort() const;
 	void onService(i64 nowCycles);
 	void reset();
 	DmaControllerState captureState() const;
@@ -51,6 +55,7 @@ public:
 	void beginSupervisorQuiesce();
 	bool supervisorQuiescent() const { return m_scheduledBlockWords == 0u && !m_serviceActive; }
 	bool hasAdmittedGxGpuWriteBlock() const;
+	bool ownsGxGpuWritePort() const;
 	void enterSupervisorContext();
 	void enterSupervisorFaultContext();
 	void leaveSupervisorContext();
@@ -67,11 +72,11 @@ private:
 	void requestInputChanged();
 	bool requestAsserted() const;
 	bool busy() const;
-	bool ownsGxGpuWritePort() const;
 	void resumeCpuPortWrites();
 	void clearLiveTransfer();
 	void clearAdmittedBlock();
 	void notifySupervisorBoundary();
+	bool imgDecQuiesceContinuationReady() const;
 
 	i64 m_ramCyclesPerWord = 1;
 	i64 m_ramBurstSetupCycles = 0;
@@ -90,7 +95,9 @@ private:
 	u32 m_gxGpuDmaDirection = 0;
 	bool m_apuDmaReadReady = false;
 	bool m_apuDmaWriteReady = false;
+	bool m_imgDecDmaWriteReady = false;
 	bool m_serviceActive = false;
+	bool m_transferStarted = false;
 	bool m_restorePending = false;
 	bool m_supervisorQuiesceRequested = false;
 	u32 m_userReadAddressWord = 0;
@@ -98,6 +105,7 @@ private:
 	u32 m_userTransferCountWord = 0;
 	u32 m_userControlWord = 0;
 	u32 m_userStatusWord = 0;
+	bool m_userTransferStarted = false;
 	Memory& m_memory;
 	CPU& m_cpu;
 	IrqController& m_irq;

@@ -7,6 +7,7 @@
 #include "machine/devices/geometry/controller.h"
 #include "machine/devices/gx/gpu.h"
 #include "machine/devices/irq/controller.h"
+#include "machine/devices/imgdec/controller.h"
 #include "machine/scheduler/device.h"
 
 namespace bmsx {
@@ -18,14 +19,16 @@ SystemController::SystemController(
 	IrqController& irq,
 	DmaController& dma,
 	GeometryController& geometry,
-	GxGpu& gpu)
+	GxGpu& gpu,
+	ImgDecController& imgDec)
 	: m_memory(memory)
 	, m_cpu(cpu)
 	, m_scheduler(scheduler)
 	, m_irq(irq)
 	, m_dma(dma)
 	, m_geometry(geometry)
-	, m_gpu(gpu) {
+	, m_gpu(gpu)
+	, m_imgDec(imgDec) {
 	memory.mapIoWrite<&SystemController::writeControl>(IO_SYS_CONTROL, *this);
 	memory.mapIoRead<&SystemController::readStatus>(IO_SYS_STATUS, *this);
 	memory.mapIoRead<&SystemController::readPrintChar>(IO_SYS_PRINT_CHAR, *this);
@@ -156,6 +159,7 @@ void SystemController::requestSupervisorLineEdge() {
 		m_gpu.beginSupervisorQuiesce();
 		m_dma.beginSupervisorQuiesce();
 		m_geometry.beginSupervisorQuiesce();
+		m_imgDec.beginSupervisorQuiesce();
 		writeStatusIo();
 		m_scheduler.scheduleDeviceService(DEVICE_SERVICE_SYSTEM, m_scheduler.currentNowCycles());
 		return;
@@ -170,7 +174,8 @@ void SystemController::onService() {
 	if (m_supervisorPhase == SYSTEM_SUPERVISOR_PHASE_ENTRY_QUIESCE) {
 		if (!m_gpu.supervisorQuiescent()
 			|| !m_dma.supervisorQuiescent()
-			|| !m_geometry.supervisorQuiescent()) {
+			|| !m_geometry.supervisorQuiescent()
+			|| !m_imgDec.supervisorQuiescent()) {
 			return;
 		}
 		m_supervisorPhase = SYSTEM_SUPERVISOR_PHASE_ENTRY_VECTOR;
@@ -182,12 +187,14 @@ void SystemController::onService() {
 	if (m_supervisorPhase == SYSTEM_SUPERVISOR_PHASE_LEAVING) {
 		if (!m_gpu.supervisorQuiescent()
 			|| !m_dma.supervisorQuiescent()
-			|| !m_geometry.supervisorQuiescent()) {
+			|| !m_geometry.supervisorQuiescent()
+			|| !m_imgDec.supervisorQuiescent()) {
 			return;
 		}
 		m_gpu.leaveSupervisorContext();
 		m_dma.leaveSupervisorContext();
 		m_geometry.leaveSupervisorContext();
+		m_imgDec.leaveSupervisorContext();
 		m_irq.leaveSupervisorContext();
 		m_supervisorPhase = SYSTEM_SUPERVISOR_PHASE_USER;
 		m_supervisorResumable = false;
@@ -217,6 +224,7 @@ void SystemController::enterSupervisorFault() {
 	}
 	m_cpu.cancelNonMaskableInterrupt();
 	m_dma.enterSupervisorFaultContext();
+	m_imgDec.enterSupervisorFaultContext();
 	m_gpu.enterSupervisorFaultContext();
 	m_geometry.enterSupervisorFaultContext();
 	m_irq.enterSupervisorFaultContext();
@@ -235,6 +243,7 @@ void SystemController::beginSupervisorLeave() {
 	m_gpu.beginSupervisorQuiesce();
 	m_dma.beginSupervisorQuiesce();
 	m_geometry.beginSupervisorQuiesce();
+	m_imgDec.beginSupervisorQuiesce();
 	writeStatusIo();
 	m_scheduler.scheduleDeviceService(DEVICE_SERVICE_SYSTEM, m_scheduler.currentNowCycles());
 }

@@ -5,7 +5,7 @@ This is **not** a stable ABI contract and is **not** more authoritative than the
 live checkout. It is a temporary execution checklist so agents can see the
 current direction, completed slices, known blockers, and next work.
 
-Last refreshed: 2026-07-19
+Last refreshed: 2026-07-21
 Do not duplicate recent commit history here. Use `git log --oneline` for that.
 
 ## Source of truth
@@ -101,6 +101,9 @@ GX owners:
 - C++ software backend: `machine/cpp/render/backend/software/gx_gpu*.cpp`
 - Raw GX/DMA firmware: `machine/firmware/system/gx_gpu.lua`,
   `machine/firmware/system/dma.lua`
+- Streaming IMGDEC owners: `machine/ts/machine/devices/imgdec`,
+  `machine/cpp/machine/devices/imgdec`, `machine/firmware/system/imgdec.lua`,
+  `scripts/rompacker/imgdec.ts`
 - Cart image-layout owner: `cartlib/gx/image.lua`
 - ROM image-placement producer: `scripts/rompacker/atlasbuilder.ts`,
   `scripts/rompacker/rombuilder.ts`
@@ -110,7 +113,10 @@ GX owners:
   `machine/firmware/bios/monitor_commands.lua`,
   `machine/firmware/bios/terminal.lua`
 
-Residual VDP/IMGDEC machine ownership has been removed from both runtimes.
+Residual VDP ownership and the old host-PNG/RGBA IMGDEC path have been removed
+from both runtimes. A later closed slice introduced a new raw streaming IMGDEC
+which expands BMSX `IMD1` cart words directly into GX GP0 ingress; it shares no
+runtime contract with the deleted decoder.
 The ROM `vdp_class: psx` field remains a package-format compatibility marker;
 it is not a live VDP device contract.
 
@@ -118,8 +124,9 @@ it is not a live VDP device contract.
 
 GTE is relatively far along. GPU is in the middle of the replacement work. GX
 is the only cart graphics route executed by host backends. GPU parity and
-accelerated conformance remain open; the old VDP/RPU and IMGDEC machine paths
-are no longer blockers.
+accelerated conformance remain open; the old VDP/RPU and host-image IMGDEC paths
+are no longer blockers. Streaming IMGDEC is an upstream GP0 producer rather
+than a backend graphics route.
 
 Implemented or partially covered GX-GPU areas include:
 
@@ -1090,12 +1097,14 @@ merge model rather than a terminal-shaped approximation.
   overlay lanes remain transparent outside their content; the mirrored
   framebuffer texture/pass plumbing is removed.
 - [x] Remove mapped VDP memory and its timing/register/readback/save-state
-  ownership, then delete the mirrored VDP and IMGDEC devices without a facade.
+  ownership, then delete the mirrored VDP and old host-image IMGDEC devices
+  without a facade.
 - [x] Retire old VDP/RPU firmware/system paths after cart migration planning.
   The cart-visible Lua firmware path and its prelude exports are removed; the
   residual machine implementation is removed.
 - [x] Remove old VDP/RPU and IMGDEC tests that only protected the failed
-  renderer-descriptor and runtime decode ABIs.
+  renderer-descriptor and host-image decode ABIs. The later `IMD1` streaming
+  device has separate mirrored hardware vectors.
 - [x] Record BSX with its own native GTE+/GPU as the long-term hardware goal.
   The PSX-GTE foundation and the first `BSX-GTE-01` `VMAD3` extension are
   accepted. Later depth, local-memory, packet or

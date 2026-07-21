@@ -19,6 +19,10 @@ public:
 		m_wordCount = 0u;
 	}
 
+	void retainPrefix(size_t wordCount) {
+		m_wordCount = wordCount;
+	}
+
 	void push(u32 word) {
 		m_words[(m_readIndex + m_wordCount) & (GX_GPU_COMMAND_FIFO_STORAGE_WORD_CAPACITY - 1u)] = word;
 		m_wordCount += 1u;

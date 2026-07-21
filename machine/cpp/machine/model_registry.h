@@ -17,6 +17,7 @@ constexpr i64 PSX_DMA_RAM_BURST_SETUP_CYCLES = 1;
 constexpr i64 PSX_DMA_SYSTEM_ROM_CYCLES_PER_WORD = 1;
 constexpr i64 PSX_DMA_CART_ROM_CYCLES_PER_WORD = 8;
 constexpr i64 PSX_DMA_CART_ROM_BURST_SETUP_CYCLES = 4;
+constexpr i64 PSX_IMGDEC_CYCLES_PER_OUTPUT_WORD = 2;
 constexpr i64 PSX_RAM_BYTES = 0x00400000;
 constexpr i32 GX_GPU_DISPLAY_ASPECT_WIDTH = 4;
 constexpr i32 GX_GPU_DISPLAY_ASPECT_HEIGHT = 3;
@@ -38,6 +39,7 @@ struct MachineModelSpec {
 	i64 dmaSystemRomCyclesPerWord;
 	i64 dmaCartRomCyclesPerWord;
 	i64 dmaCartRomBurstSetupCycles;
+	i64 imgDecCyclesPerOutputWord;
 	i64 ramBytes;
 	i64 geoWorkUnitsPerSec;
 };
@@ -55,6 +57,7 @@ inline constexpr MachineModelSpec PSX_MACHINE_SPEC = {
 	PSX_DMA_SYSTEM_ROM_CYCLES_PER_WORD,
 	PSX_DMA_CART_ROM_CYCLES_PER_WORD,
 	PSX_DMA_CART_ROM_BURST_SETUP_CYCLES,
+	PSX_IMGDEC_CYCLES_PER_OUTPUT_WORD,
 	PSX_RAM_BYTES,
 	PSX_GEO_WORK_UNITS_PER_SEC,
 };

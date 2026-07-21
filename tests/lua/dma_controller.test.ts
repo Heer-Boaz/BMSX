@@ -245,7 +245,7 @@ test('DMA executes the register state latched when its block was admitted', () =
 	assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_DMA_DONE, IRQ_DMA_DONE);
 });
 
-test('GX FIFO DREQ feeds GP0 and owns the shared port while BUSY', () => {
+test('GX FIFO DREQ acquires GP0 only when the DMA transfer is admitted', () => {
 	const fixture = createDmaGpuFixture();
 	const { memory, gpu, scheduler } = fixture;
 	const source = PROGRAM_STATIC_RAM_BASE + 0x300;
@@ -256,11 +256,12 @@ test('GX FIFO DREQ feeds GP0 and owns the shared port while BUSY', () => {
 
 	programTransfer(memory, source, IO_GX_GPU_GP0, 3, GP0_WRITE_CONTROL);
 	assert.equal(scheduler.nextDeadline(), Number.MAX_SAFE_INTEGER);
-	assert.equal(memory.mappedWriteReady(IO_GX_GPU_GP0), false);
+	assert.equal(memory.mappedWriteReady(IO_GX_GPU_GP0), true);
 	memory.writeMappedU32LE(IO_DMA_TRIGGER, DMA_TRIGGER_START);
 	assert.equal(memory.readIoU32(IO_DMA_STATUS), DMA_STATUS_BUSY);
 
 	gpu.writeGp1((GX_GPU_GP1_DMA_DIRECTION << 24) | GX_GPU_DMA_DIRECTION_FIFO);
+	assert.equal(memory.mappedWriteReady(IO_GX_GPU_GP0), false);
 	runNextDmaService(fixture);
 
 	const commands = gpu.readDeviceOutput().commandBuffer;

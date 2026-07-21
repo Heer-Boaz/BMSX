@@ -197,6 +197,11 @@ struct GxGpuState {
 	bool vramPresentationPending = false;
 	bool supervisorQuiesceRequested = false;
 	bool supervisorIngressStopped = false;
+	bool imgDecGp0Requested = false;
+	bool imgDecGp0Active = false;
+	bool imgDecGp0AbortPending = false;
+	bool imgDecGp0DmaContinuation = false;
+	u32 imgDecGp0CommittedFifoWordCount = 0u;
 	GxGpuRegisterContextState userContext;
 	GxGpuCommandBufferState commandBuffer;
 };
@@ -251,6 +256,12 @@ public:
 	void enterSupervisorContext();
 	void enterSupervisorFaultContext();
 	void leaveSupervisorContext();
+	void setImgDecGp0Request(bool active);
+	bool imgDecGp0AbortPending() const { return m_imgDecGp0AbortPending; }
+	u32 imgDecGp0WritableWordCount(i64 nowCycles);
+	void writeImgDecGp0BlockWord(u32 word, bool blockEnd, i64 nowCycles);
+	void abortImgDecGp0Packet();
+	bool armImgDecGp0WritableWake();
 
 private:
 	Memory& m_memory;
@@ -304,6 +315,12 @@ private:
 	bool m_vramPresentationPending = false;
 	bool m_supervisorQuiesceRequested = false;
 	bool m_supervisorIngressStopped = false;
+	bool m_imgDecGp0Requested = false;
+	bool m_imgDecGp0Active = false;
+	bool m_imgDecGp0AbortPending = false;
+	bool m_imgDecGp0DmaContinuation = false;
+	bool m_imgDecGp0WakeArmed = false;
+	size_t m_imgDecGp0CommittedFifoWordCount = 0u;
 	GxGpuRegisterContextState m_userContext;
 	u32 m_scanoutInterlacedField = 0u;
 	u32 m_scanoutInterlacedDisplayField = 0u;
@@ -326,6 +343,8 @@ private:
 	void resetTransientContext();
 	bool supervisorFenceReady() const;
 	void notifySupervisorBoundary();
+	void grantImgDecGp0AtBoundary(bool producerBoundary);
+	void wakeImgDecGp0Writer();
 	void retireCommandPrefix(size_t retiredCommands);
 	void resetGpuRegisters();
 	void latchPresentationRegisters();

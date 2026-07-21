@@ -23,7 +23,8 @@ DmaController::DmaController(Memory& memory, CPU& cpu, IrqController& irq, Devic
 }
 
 bool DmaController::triggerWriteReadyThunk(void* context, u32) {
-	return !static_cast<DmaController*>(context)->m_supervisorQuiesceRequested;
+	auto& controller = *static_cast<DmaController*>(context);
+	return !controller.m_supervisorQuiesceRequested || controller.imgDecQuiesceContinuationReady();
 }
 
 void DmaController::onControlWriteThunk(void* context, u32, Value, MappedBusSignals) {
@@ -45,6 +46,7 @@ void DmaController::onTriggerWrite(u32 value) {
 	}
 	m_scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
 	clearAdmittedBlock();
+	m_transferStarted = false;
 	m_memory.writeIoValue(IO_DMA_STATUS, valueNumber(static_cast<f64>(DMA_STATUS_BUSY)));
 	if (m_memory.readIoU32(IO_DMA_TRANSFER_COUNT) == 0u) {
 		finishTransfer();
@@ -130,6 +132,17 @@ void DmaController::setApuDmaWriteReady(bool ready) {
 	requestInputChanged();
 }
 
+void DmaController::setImgDecDmaWriteReady(bool ready) {
+	if (m_imgDecDmaWriteReady == ready) {
+		return;
+	}
+	m_imgDecDmaWriteReady = ready;
+	requestInputChanged();
+	if (ready && m_supervisorQuiesceRequested && imgDecQuiesceContinuationReady()) {
+		m_cpu.resumeMemoryWrite(IO_DMA_TRIGGER);
+	}
+}
+
 bool DmaController::isGxGpuCpuPortWriteReady() const {
 	return m_gxGpuCpuWriteReady && !ownsGxGpuWritePort();
 }
@@ -139,9 +152,19 @@ bool DmaController::ownsApuDataPort() const {
 		return m_scheduledReadAddressWord == IO_APU_TRANSFER_DATA
 			|| m_scheduledWriteAddressWord == IO_APU_TRANSFER_DATA;
 	}
-	return busy()
+	return m_transferStarted
+		&& busy()
 		&& (m_memory.readIoU32(IO_DMA_READ_ADDR) == IO_APU_TRANSFER_DATA
 			|| m_memory.readIoU32(IO_DMA_WRITE_ADDR) == IO_APU_TRANSFER_DATA);
+}
+
+bool DmaController::ownsImgDecDataPort() const {
+	if (m_scheduledBlockWords != 0u) {
+		return m_scheduledWriteAddressWord == IO_IMGDEC_DATA;
+	}
+	return m_transferStarted
+		&& busy()
+		&& m_memory.readIoU32(IO_DMA_WRITE_ADDR) == IO_IMGDEC_DATA;
 }
 
 void DmaController::reset() {
@@ -152,12 +175,14 @@ void DmaController::reset() {
 	m_gxGpuDmaDirection = 0u;
 	m_apuDmaReadReady = false;
 	m_apuDmaWriteReady = false;
+	m_imgDecDmaWriteReady = false;
 	m_supervisorQuiesceRequested = false;
 	m_userReadAddressWord = 0u;
 	m_userWriteAddressWord = 0u;
 	m_userTransferCountWord = 0u;
 	m_userControlWord = 0u;
 	m_userStatusWord = 0u;
+	m_userTransferStarted = false;
 }
 
 void DmaController::onService(i64) {
@@ -173,7 +198,8 @@ void DmaController::onService(i64) {
 	m_serviceActive = true;
 	for (u32 slot = 0u; slot < blockWords; slot += 1u) {
 		const MappedBusSignals busSignals = MAPPED_BUS_MASTER_DMA
-			| (slot + 1u == blockWords ? MAPPED_BUS_DMA_BLOCK_END : 0u);
+			| (slot + 1u == blockWords ? MAPPED_BUS_DMA_BLOCK_END : 0u)
+			| (transferCount == 1u ? MAPPED_BUS_DMA_TRANSFER_END : 0u);
 		const u32 nextReadAddress = readAddress + readStep;
 		const u32 nextWriteAddress = writeAddress + writeStep;
 		const u32 nextTransferCount = transferCount - 1u;
@@ -212,6 +238,7 @@ void DmaController::onService(i64) {
 }
 
 void DmaController::finishTransfer() {
+	m_transferStarted = false;
 	m_memory.writeIoValue(IO_DMA_STATUS, valueNumber(static_cast<f64>(DMA_STATUS_DONE)));
 	m_irq.raise(IRQ_DMA_DONE);
 	resumeCpuPortWrites();
@@ -231,12 +258,14 @@ DmaControllerState DmaController::captureState() const {
 	state.scheduledWriteAddressWord = m_scheduledWriteAddressWord;
 	state.scheduledTransferCountWord = m_scheduledTransferCountWord;
 	state.scheduledControlWord = m_scheduledControlWord;
+	state.transferStarted = m_transferStarted;
 	state.supervisorQuiesceRequested = m_supervisorQuiesceRequested;
 	state.userReadAddressWord = m_userReadAddressWord;
 	state.userWriteAddressWord = m_userWriteAddressWord;
 	state.userTransferCountWord = m_userTransferCountWord;
 	state.userControlWord = m_userControlWord;
 	state.userStatusWord = m_userStatusWord;
+	state.userTransferStarted = m_userTransferStarted;
 	return state;
 }
 
@@ -253,6 +282,7 @@ void DmaController::restoreState(const DmaControllerState& state, i64 nowCycles)
 	m_scheduledWriteAddressWord = state.scheduledWriteAddressWord;
 	m_scheduledTransferCountWord = state.scheduledTransferCountWord;
 	m_scheduledControlWord = state.scheduledControlWord;
+	m_transferStarted = state.transferStarted;
 	m_serviceDeadline = nowCycles + state.scheduledBlockCycles;
 	m_serviceActive = false;
 	m_restorePending = true;
@@ -262,6 +292,7 @@ void DmaController::restoreState(const DmaControllerState& state, i64 nowCycles)
 	m_userTransferCountWord = state.userTransferCountWord;
 	m_userControlWord = state.userControlWord;
 	m_userStatusWord = state.userStatusWord;
+	m_userTransferStarted = state.userTransferStarted;
 }
 
 void DmaController::postLoad() {
@@ -288,6 +319,7 @@ void DmaController::enterSupervisorContext() {
 	m_userTransferCountWord = m_memory.readIoU32(IO_DMA_TRANSFER_COUNT);
 	m_userControlWord = m_memory.readIoU32(IO_DMA_CONTROL);
 	m_userStatusWord = m_memory.readIoU32(IO_DMA_STATUS);
+	m_userTransferStarted = m_transferStarted;
 	clearLiveTransfer();
 	m_supervisorQuiesceRequested = false;
 }
@@ -299,6 +331,7 @@ void DmaController::enterSupervisorFaultContext() {
 	m_userTransferCountWord = 0u;
 	m_userControlWord = 0u;
 	m_userStatusWord = 0u;
+	m_userTransferStarted = false;
 	m_supervisorQuiesceRequested = false;
 }
 
@@ -309,12 +342,14 @@ void DmaController::leaveSupervisorContext() {
 	m_memory.writeIoValue(IO_DMA_TRANSFER_COUNT, valueNumber(static_cast<f64>(m_userTransferCountWord)));
 	m_memory.writeIoValue(IO_DMA_CONTROL, valueNumber(static_cast<f64>(m_userControlWord)));
 	m_memory.writeIoValue(IO_DMA_STATUS, valueNumber(static_cast<f64>(m_userStatusWord)));
+	m_transferStarted = m_userTransferStarted;
 	m_supervisorQuiesceRequested = false;
 	m_userReadAddressWord = 0u;
 	m_userWriteAddressWord = 0u;
 	m_userTransferCountWord = 0u;
 	m_userControlWord = 0u;
 	m_userStatusWord = 0u;
+	m_userTransferStarted = false;
 	requestInputChanged();
 }
 
@@ -322,6 +357,7 @@ void DmaController::clearLiveTransfer() {
 	m_scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
 	clearAdmittedBlock();
 	m_serviceActive = false;
+	m_transferStarted = false;
 	m_restorePending = false;
 	m_memory.writeIoValue(IO_DMA_READ_ADDR, valueNumber(0.0));
 	m_memory.writeIoValue(IO_DMA_WRITE_ADDR, valueNumber(0.0));
@@ -346,7 +382,13 @@ void DmaController::notifySupervisorBoundary() {
 	}
 }
 
+bool DmaController::imgDecQuiesceContinuationReady() const {
+	return m_imgDecDmaWriteReady
+		&& (m_memory.readIoU32(IO_DMA_CONTROL) & DMA_CONTROL_REQUEST_MASK) == DMA_CONTROL_REQUEST_IMGDEC_WRITE;
+}
+
 void DmaController::admitBlock(i64 anchorCycle) {
+	m_transferStarted = true;
 	const u32 remaining = m_memory.readIoU32(IO_DMA_TRANSFER_COUNT);
 	const u32 control = m_memory.readIoU32(IO_DMA_CONTROL);
 	const u32 programmedBlockWords = ((control & DMA_CONTROL_BLOCK_WORDS_MASK) >> DMA_CONTROL_BLOCK_WORDS_SHIFT) + 1u;
@@ -411,7 +453,8 @@ bool DmaController::requestAsserted() const {
 	const u32 request = m_memory.readIoU32(IO_DMA_CONTROL) & DMA_CONTROL_REQUEST_MASK;
 	if (m_supervisorQuiesceRequested
 		&& request != DMA_CONTROL_REQUEST_GX_WRITE
-		&& request != DMA_CONTROL_REQUEST_GX_READ) {
+		&& request != DMA_CONTROL_REQUEST_GX_READ
+		&& request != DMA_CONTROL_REQUEST_IMGDEC_WRITE) {
 		return false;
 	}
 	switch (request) {
@@ -427,6 +470,8 @@ bool DmaController::requestAsserted() const {
 		return m_apuDmaWriteReady;
 	case DMA_CONTROL_REQUEST_APU_READ:
 		return m_apuDmaReadReady;
+	case DMA_CONTROL_REQUEST_IMGDEC_WRITE:
+		return m_imgDecDmaWriteReady;
 	default:
 		return false;
 	}
@@ -440,7 +485,9 @@ bool DmaController::ownsGxGpuWritePort() const {
 	if (m_scheduledBlockWords != 0u) {
 		return m_scheduledWriteAddressWord == IO_GX_GPU_GP0;
 	}
-	return busy() && m_memory.readIoU32(IO_DMA_WRITE_ADDR) == IO_GX_GPU_GP0;
+	return m_transferStarted
+		&& busy()
+		&& m_memory.readIoU32(IO_DMA_WRITE_ADDR) == IO_GX_GPU_GP0;
 }
 
 void DmaController::resumeCpuPortWrites() {
@@ -449,6 +496,9 @@ void DmaController::resumeCpuPortWrites() {
 	}
 	if (!ownsApuDataPort()) {
 		m_cpu.resumeMemoryWrite(IO_APU_TRANSFER_DATA);
+	}
+	if (!ownsImgDecDataPort()) {
+		m_cpu.resumeMemoryWrite(IO_IMGDEC_DATA);
 	}
 }
 

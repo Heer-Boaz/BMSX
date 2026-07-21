@@ -83,12 +83,38 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					scheduledWriteAddressWord: 0x08010240,
 					scheduledTransferCountWord: 5,
 					scheduledControlWord: 5,
+					transferStarted: true,
 					supervisorQuiesceRequested: true,
 					userReadAddressWord: 0x01002020,
 					userWriteAddressWord: 0x08010240,
 					userTransferCountWord: 9,
 					userControlWord: 4,
 					userStatusWord: DMA_STATUS_BUSY,
+					userTransferStarted: true,
+				},
+				imgDec: {
+					inputWordCountWord: 37,
+					textureDestinationWord: 0x00200040,
+					textureSizeWord: 0x00010040,
+					clutDestinationWord: 0x00400100,
+					controlWord: 0,
+					statusWord: 0x00000001,
+					dataWord: 0x12345678,
+					inputWordsReceived: 32,
+					decodedWordCount: 24,
+					textureWordCount: 40,
+					clutWordCount: 8,
+					decodePhase: 7,
+					outputStage: 1,
+					runWordsRemaining: 16,
+					repeatWord: 0x87654321,
+					backReferenceDistance: 8,
+					supervisorQuiesceRequested: true,
+					inputWords: [0x11111111, 0x22222222],
+					outputWords: [0x33333333, 0x44444444],
+					historyWords: [1, 2, 3, 4, 5, 6, 7, 8],
+					scheduledDecodeWords: 2,
+					scheduledDecodeCycles: 4,
 				},
 				geometry: {
 					phase: GEOMETRY_CONTROLLER_PHASE_BUSY,
@@ -173,6 +199,11 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					vramPresentationPending: false,
 					supervisorQuiesceRequested: true,
 					supervisorIngressStopped: true,
+					imgDecGp0Requested: true,
+					imgDecGp0Active: true,
+					imgDecGp0AbortPending: false,
+					imgDecGp0DmaContinuation: false,
+					imgDecGp0CommittedFifoWordCount: 7,
 					userContext: {
 						gp0Word: 0x87654321,
 						gp1Word: 0x05011844,
@@ -442,6 +473,7 @@ test('runtime save-state codec preserves string pool ROM/runtime ownership', () 
 	assert.deepEqual(decoded.machineState.machine.stringPool.entries, state.machineState.machine.stringPool.entries);
 	assert.deepEqual(decoded.machineState.machine.irq, state.machineState.machine.irq);
 	assert.deepEqual(decoded.machineState.machine.dma, state.machineState.machine.dma);
+	assert.deepEqual(decoded.machineState.machine.imgDec, state.machineState.machine.imgDec);
 	assert.deepEqual(decoded.machineState.machine.geometry, state.machineState.machine.geometry);
 	assert.deepEqual(decoded.machineState.machine.gxGpu, state.machineState.machine.gxGpu);
 	assert.deepEqual(decoded.machineState.machine.gxGte, state.machineState.machine.gxGte);

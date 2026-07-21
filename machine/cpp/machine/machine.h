@@ -8,6 +8,7 @@
 #include "machine/devices/gx/gpu.h"
 #include "machine/devices/gx/gte.h"
 #include "machine/devices/input/controller.h"
+#include "machine/devices/imgdec/controller.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/devices/system/controller.h"
 #include "machine/memory/memory.h"
@@ -35,6 +36,7 @@ public:
 	AudioController audioController;
 	GeometryController geometryController;
 	GxGpu gxGpu;
+	ImgDecController imgDecController;
 	GxGte gxGte;
 	SystemController systemController;
 	InputController inputController;

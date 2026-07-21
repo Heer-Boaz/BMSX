@@ -200,6 +200,19 @@ std::vector<u32> decodeU32VectorWithLength(const BinValue& value, const char* la
 	return out;
 }
 
+std::vector<u32> decodeU32VectorWithMaxLength(const BinValue& value, const char* label, size_t maxCount) {
+	const BinArray& array = requireArray(value, label);
+	if (array.size() > maxCount) {
+		throw BMSX_RUNTIME_ERROR(std::string(label) + " must have at most " + std::to_string(maxCount) + " entries.");
+	}
+	std::vector<u32> out;
+	out.reserve(array.size());
+	for (const BinValue& word : array) {
+		out.push_back(requireU32(word, label));
+	}
+	return out;
+}
+
 std::vector<u8> decodeU8VectorWithLength(const BinValue& value, const char* label, size_t count) {
 	const BinArray& array = requireArray(value, label);
 	if (array.size() != count) {
@@ -746,6 +759,11 @@ BinValue encodeGxGpuState(const GxGpuState& state) {
 	object["vramPresentationPending"] = state.vramPresentationPending;
 	object["supervisorQuiesceRequested"] = state.supervisorQuiesceRequested;
 	object["supervisorIngressStopped"] = state.supervisorIngressStopped;
+	object["imgDecGp0Requested"] = state.imgDecGp0Requested;
+	object["imgDecGp0Active"] = state.imgDecGp0Active;
+	object["imgDecGp0AbortPending"] = state.imgDecGp0AbortPending;
+	object["imgDecGp0DmaContinuation"] = state.imgDecGp0DmaContinuation;
+	object["imgDecGp0CommittedFifoWordCount"] = static_cast<i64>(state.imgDecGp0CommittedFifoWordCount);
 	object["userContext"] = encodeGxGpuRegisterContextState(state.userContext);
 	object["commandBuffer"] = encodeGxGpuCommandBufferState(state.commandBuffer);
 	return BinValue(std::move(object));
@@ -807,6 +825,11 @@ GxGpuState decodeGxGpuState(const BinValue& value, const char* label) {
 	state.vramPresentationPending = requireBool(requireField(object, "vramPresentationPending", label), "machine.gxGpu.vramPresentationPending");
 	state.supervisorQuiesceRequested = requireBool(requireField(object, "supervisorQuiesceRequested", label), "machine.gxGpu.supervisorQuiesceRequested");
 	state.supervisorIngressStopped = requireBool(requireField(object, "supervisorIngressStopped", label), "machine.gxGpu.supervisorIngressStopped");
+	state.imgDecGp0Requested = requireBool(requireField(object, "imgDecGp0Requested", label), "machine.gxGpu.imgDecGp0Requested");
+	state.imgDecGp0Active = requireBool(requireField(object, "imgDecGp0Active", label), "machine.gxGpu.imgDecGp0Active");
+	state.imgDecGp0AbortPending = requireBool(requireField(object, "imgDecGp0AbortPending", label), "machine.gxGpu.imgDecGp0AbortPending");
+	state.imgDecGp0DmaContinuation = requireBool(requireField(object, "imgDecGp0DmaContinuation", label), "machine.gxGpu.imgDecGp0DmaContinuation");
+	state.imgDecGp0CommittedFifoWordCount = requireBoundedU32(requireField(object, "imgDecGp0CommittedFifoWordCount", label), "machine.gxGpu.imgDecGp0CommittedFifoWordCount", 0u, GX_GPU_COMMAND_FIFO_STORAGE_WORD_CAPACITY);
 	state.userContext = decodeGxGpuRegisterContextState(requireField(object, "userContext", label), "machine.gxGpu.userContext");
 	return state;
 }
@@ -1082,12 +1105,14 @@ BinValue encodeDmaControllerState(const DmaControllerState& state) {
 	object["scheduledWriteAddressWord"] = encodeScalar<f64>(state.scheduledWriteAddressWord);
 	object["scheduledTransferCountWord"] = encodeScalar<f64>(state.scheduledTransferCountWord);
 	object["scheduledControlWord"] = encodeScalar<f64>(state.scheduledControlWord);
+	object["transferStarted"] = state.transferStarted;
 	object["supervisorQuiesceRequested"] = state.supervisorQuiesceRequested;
 	object["userReadAddressWord"] = encodeScalar<f64>(state.userReadAddressWord);
 	object["userWriteAddressWord"] = encodeScalar<f64>(state.userWriteAddressWord);
 	object["userTransferCountWord"] = encodeScalar<f64>(state.userTransferCountWord);
 	object["userControlWord"] = encodeScalar<f64>(state.userControlWord);
 	object["userStatusWord"] = encodeScalar<f64>(state.userStatusWord);
+	object["userTransferStarted"] = state.userTransferStarted;
 	return BinValue(std::move(object));
 }
 
@@ -1105,12 +1130,69 @@ DmaControllerState decodeDmaControllerState(const BinValue& value, const char* l
 	state.scheduledWriteAddressWord = requireU32(requireField(object, "scheduledWriteAddressWord", label), "machine.dma.scheduledWriteAddressWord");
 	state.scheduledTransferCountWord = requireU32(requireField(object, "scheduledTransferCountWord", label), "machine.dma.scheduledTransferCountWord");
 	state.scheduledControlWord = requireU32(requireField(object, "scheduledControlWord", label), "machine.dma.scheduledControlWord");
+	state.transferStarted = requireBool(requireField(object, "transferStarted", label), "machine.dma.transferStarted");
 	state.supervisorQuiesceRequested = requireBool(requireField(object, "supervisorQuiesceRequested", label), "machine.dma.supervisorQuiesceRequested");
 	state.userReadAddressWord = requireU32(requireField(object, "userReadAddressWord", label), "machine.dma.userReadAddressWord");
 	state.userWriteAddressWord = requireU32(requireField(object, "userWriteAddressWord", label), "machine.dma.userWriteAddressWord");
 	state.userTransferCountWord = requireU32(requireField(object, "userTransferCountWord", label), "machine.dma.userTransferCountWord");
 	state.userControlWord = requireU32(requireField(object, "userControlWord", label), "machine.dma.userControlWord");
 	state.userStatusWord = requireU32(requireField(object, "userStatusWord", label), "machine.dma.userStatusWord");
+	state.userTransferStarted = requireBool(requireField(object, "userTransferStarted", label), "machine.dma.userTransferStarted");
+	return state;
+}
+
+BinValue encodeImgDecControllerState(const ImgDecControllerState& state) {
+	BinObject object;
+	object["inputWordCountWord"] = encodeScalar<f64>(state.inputWordCountWord);
+	object["textureDestinationWord"] = encodeScalar<f64>(state.textureDestinationWord);
+	object["textureSizeWord"] = encodeScalar<f64>(state.textureSizeWord);
+	object["clutDestinationWord"] = encodeScalar<f64>(state.clutDestinationWord);
+	object["controlWord"] = encodeScalar<f64>(state.controlWord);
+	object["statusWord"] = encodeScalar<f64>(state.statusWord);
+	object["dataWord"] = encodeScalar<f64>(state.dataWord);
+	object["inputWordsReceived"] = encodeScalar<f64>(state.inputWordsReceived);
+	object["decodedWordCount"] = encodeScalar<f64>(state.decodedWordCount);
+	object["textureWordCount"] = encodeScalar<f64>(state.textureWordCount);
+	object["clutWordCount"] = encodeScalar<f64>(state.clutWordCount);
+	object["decodePhase"] = encodeScalar<f64>(state.decodePhase);
+	object["outputStage"] = encodeScalar<f64>(state.outputStage);
+	object["runWordsRemaining"] = encodeScalar<f64>(state.runWordsRemaining);
+	object["repeatWord"] = encodeScalar<f64>(state.repeatWord);
+	object["backReferenceDistance"] = encodeScalar<f64>(state.backReferenceDistance);
+	object["supervisorQuiesceRequested"] = state.supervisorQuiesceRequested;
+	object["inputWords"] = encodeVector(state.inputWords, encodeScalar<i64, u32>);
+	object["outputWords"] = encodeVector(state.outputWords, encodeScalar<i64, u32>);
+	object["historyWords"] = encodeVector(state.historyWords, encodeScalar<i64, u32>);
+	object["scheduledDecodeWords"] = encodeScalar<f64>(state.scheduledDecodeWords);
+	object["scheduledDecodeCycles"] = encodeScalar<f64>(state.scheduledDecodeCycles);
+	return BinValue(std::move(object));
+}
+
+ImgDecControllerState decodeImgDecControllerState(const BinValue& value, const char* label) {
+	const BinObject& object = requireObject(value, label);
+	ImgDecControllerState state;
+	state.inputWordCountWord = requireU32(requireField(object, "inputWordCountWord", label), "machine.imgDec.inputWordCountWord");
+	state.textureDestinationWord = requireU32(requireField(object, "textureDestinationWord", label), "machine.imgDec.textureDestinationWord");
+	state.textureSizeWord = requireU32(requireField(object, "textureSizeWord", label), "machine.imgDec.textureSizeWord");
+	state.clutDestinationWord = requireU32(requireField(object, "clutDestinationWord", label), "machine.imgDec.clutDestinationWord");
+	state.controlWord = requireU32(requireField(object, "controlWord", label), "machine.imgDec.controlWord");
+	state.statusWord = requireU32(requireField(object, "statusWord", label), "machine.imgDec.statusWord");
+	state.dataWord = requireU32(requireField(object, "dataWord", label), "machine.imgDec.dataWord");
+	state.inputWordsReceived = requireU32(requireField(object, "inputWordsReceived", label), "machine.imgDec.inputWordsReceived");
+	state.decodedWordCount = requireU32(requireField(object, "decodedWordCount", label), "machine.imgDec.decodedWordCount");
+	state.textureWordCount = requireU32(requireField(object, "textureWordCount", label), "machine.imgDec.textureWordCount");
+	state.clutWordCount = requireU32(requireField(object, "clutWordCount", label), "machine.imgDec.clutWordCount");
+	state.decodePhase = requireBoundedU32(requireField(object, "decodePhase", label), "machine.imgDec.decodePhase", 0u, 8u);
+	state.outputStage = requireBoundedU32(requireField(object, "outputStage", label), "machine.imgDec.outputStage", 0u, 4u);
+	state.runWordsRemaining = requireU32(requireField(object, "runWordsRemaining", label), "machine.imgDec.runWordsRemaining");
+	state.repeatWord = requireU32(requireField(object, "repeatWord", label), "machine.imgDec.repeatWord");
+	state.backReferenceDistance = requireBoundedU32(requireField(object, "backReferenceDistance", label), "machine.imgDec.backReferenceDistance", 0u, IMGDEC_HISTORY_WORD_CAPACITY);
+	state.supervisorQuiesceRequested = requireBool(requireField(object, "supervisorQuiesceRequested", label), "machine.imgDec.supervisorQuiesceRequested");
+	state.inputWords = decodeU32VectorWithMaxLength(requireField(object, "inputWords", label), "machine.imgDec.inputWords", IMGDEC_INPUT_FIFO_WORD_CAPACITY);
+	state.outputWords = decodeU32VectorWithMaxLength(requireField(object, "outputWords", label), "machine.imgDec.outputWords", IMGDEC_OUTPUT_FIFO_WORD_CAPACITY);
+	state.historyWords = decodeU32VectorWithMaxLength(requireField(object, "historyWords", label), "machine.imgDec.historyWords", IMGDEC_HISTORY_WORD_CAPACITY);
+	state.scheduledDecodeWords = requireBoundedU32(requireField(object, "scheduledDecodeWords", label), "machine.imgDec.scheduledDecodeWords", 0u, IMGDEC_DECODE_BATCH_WORDS);
+	state.scheduledDecodeCycles = requireI64(requireField(object, "scheduledDecodeCycles", label), "machine.imgDec.scheduledDecodeCycles");
 	return state;
 }
 
@@ -1151,6 +1233,7 @@ BinValue encodeMachineSaveState(const MachineSaveState& state) {
 	object["audio"] = encodeAudioControllerState(state.audio);
 	object["stringPool"] = encodeStringPoolState(state.stringPool);
 	object["input"] = encodeInputControllerState(state.input);
+	object["imgDec"] = encodeImgDecControllerState(state.imgDec);
 	object["systemControl"] = encodeSystemControllerState(state.systemControl);
 	return BinValue(std::move(object));
 }
@@ -1167,6 +1250,7 @@ MachineSaveState decodeMachineSaveState(const BinValue& value, const char* label
 	state.audio = decodeAudioControllerState(requireField(object, "audio", label), "machineState.machine.audio");
 	state.stringPool = decodeStringPoolState(requireField(object, "stringPool", label), "machineState.machine.stringPool");
 	state.input = decodeInputControllerState(requireField(object, "input", label), "machineState.machine.input");
+	state.imgDec = decodeImgDecControllerState(requireField(object, "imgDec", label), "machineState.machine.imgDec");
 	state.systemControl = decodeSystemControllerState(requireField(object, "systemControl", label), "machineState.machine.systemControl");
 	return state;
 }

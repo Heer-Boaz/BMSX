@@ -8,9 +8,11 @@ local status<const>: *word = 0x08000024
 local trigger<const>: *word = 0x08000028
 local gx_gp0_addr<const> = 0x08010240
 local apu_transfer_data_addr<const> = 0x080001f4
+local imgdec_data_addr<const> = 0x08010400
 local control_read_increment_gx_write<const> = 0x000001e5
 local control_read_increment_apu_write<const> = 0x000001f1
 local control_write_increment_apu_read<const> = 0x000001f6
+local control_read_increment_imgdec_write<const> = 0x000001f9
 local control_request_force<const> = 0x00000000
 local status_busy<const> = 0x00000001
 local trigger_start<const> = 0x00000001
@@ -36,6 +38,14 @@ function dma.copy_from_apu(target, word_count)
 	*write_addr = target
 	*transfer_count = word_count
 	*control = control_write_increment_apu_read
+	*trigger = trigger_start
+end
+
+function dma.copy_to_imgdec(source, word_count)
+	*read_addr = source
+	*write_addr = imgdec_data_addr
+	*transfer_count = word_count
+	*control = control_read_increment_imgdec_write
 	*trigger = trigger_start
 end
 

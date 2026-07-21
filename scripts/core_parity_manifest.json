@@ -939,7 +939,6 @@
 				"docs/vdp_rpu_resume_handoff.md",
 				"docs/vdp_rpu_abi_draft.md",
 				"docs/lua_struct_support_plan.md",
-				"machine/firmware/system/imgdec.lua",
 				"machine/firmware/system/vdp_image.lua",
 				"machine/firmware/system/vdp_jtu.lua",
 				"machine/firmware/system/vdp_lpu.lua",
@@ -949,8 +948,6 @@
 				"machine/firmware/system/vdp_xf.lua",
 				"machine/ts/machine/devices/vdp",
 				"machine/cpp/machine/devices/vdp",
-				"machine/ts/machine/devices/imgdec",
-				"machine/cpp/machine/devices/imgdec",
 				"machine/ts/machine/devices/dma/image_copy.ts",
 				"machine/cpp/machine/devices/dma/image_copy.h",
 				"machine/ts/common/image_decode.ts",
@@ -966,7 +963,18 @@
 				"docs/runtime_bench_report.md",
 				"scripts/lint/rules/lua_cart/forbidden_render_layer_string_pattern.ts"
 			],
-			"reason": "retired_vdp_rpu_image_decoder_and_runtime_atlas_decode_paths_must_not_return"
+			"reason": "retired_vdp_rpu_host_image_decode_and_runtime_atlas_decode_paths_must_not_return"
+		},
+		{
+			"present": [
+				"machine/firmware/system/imgdec.lua",
+				"machine/ts/machine/devices/imgdec/controller.ts",
+				"machine/ts/machine/devices/imgdec/contracts.ts",
+				"machine/cpp/machine/devices/imgdec/controller.h",
+				"machine/cpp/machine/devices/imgdec/controller.cpp",
+				"machine/cpp/machine/devices/imgdec/contracts.h"
+			],
+			"reason": "streaming_imgdec_register_fifo_and_gp0_datapath_must_remain_installed"
 		},
 		{
 			"present": [
@@ -1716,6 +1724,62 @@
 		}
 	],
 	"strict_runtime_no_heap_functions": [
+		{
+			"file": "machine/ts/machine/devices/imgdec/controller.ts",
+			"functions": [
+				"onService",
+				"writeDataThunk",
+				"advanceOutputStage",
+				"prepareDecodeRun",
+				"scheduleDecode",
+				"decodeScheduledWords",
+				"drainOutput",
+				"emitPayloadWord",
+				"completeRunWord",
+				"updateInputRequest"
+			],
+			"reason": "imgdec_streaming_datapath_must_remain_gc_free"
+		},
+		{
+			"file": "machine/cpp/machine/devices/imgdec/controller.cpp",
+			"functions": [
+				"onService",
+				"writeDataThunk",
+				"advanceOutputStage",
+				"prepareDecodeRun",
+				"scheduleDecode",
+				"decodeScheduledWords",
+				"drainOutput",
+				"emitPayloadWord",
+				"completeRunWord",
+				"updateInputRequest"
+			],
+			"reason": "imgdec_streaming_datapath_must_remain_heap_free"
+		},
+		{
+			"file": "machine/ts/machine/devices/gx/gpu.ts",
+			"functions": [
+				"setImgDecGp0Request",
+				"imgDecGp0WritableWordCount",
+				"writeImgDecGp0BlockWord",
+				"armImgDecGp0WritableWake",
+				"grantImgDecGp0AtBoundary",
+				"wakeImgDecGp0Writer"
+			],
+			"reason": "imgdec_gp0_arbiter_and_block_ingress_must_remain_gc_free"
+		},
+		{
+			"file": "machine/cpp/machine/devices/gx/gpu.cpp",
+			"functions": [
+				"setImgDecGp0Request",
+				"imgDecGp0WritableWordCount",
+				"writeImgDecGp0BlockWord",
+				"armImgDecGp0WritableWake",
+				"grantImgDecGp0AtBoundary",
+				"wakeImgDecGp0Writer"
+			],
+			"reason": "imgdec_gp0_arbiter_and_block_ingress_must_remain_heap_free"
+		},
 		{
 			"file": "machine/ts/machine/devices/audio/service_clock.ts",
 			"functions": [
