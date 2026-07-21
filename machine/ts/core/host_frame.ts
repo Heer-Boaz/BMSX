@@ -61,6 +61,6 @@ export function runMachineHostFrame(runtime: Runtime, currentTime: number, runRe
 	} catch (error) {
 		workbenchMode.surfaceHostFrameError(runtime, error, hostDeltaMs, screen);
 	}
-	manager.flushRuntimeLuaOutput(runtime);
+	manager.flushSystemOutput(runtime);
 	screen.flushDebugReport(currentTime, runtime);
 }

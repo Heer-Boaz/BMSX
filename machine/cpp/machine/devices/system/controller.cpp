@@ -1,5 +1,6 @@
 #include "machine/devices/system/controller.h"
 
+#include "common/utf8.h"
 #include "machine/bus/io.h"
 #include "machine/cpu/cpu.h"
 #include "machine/devices/dma/controller.h"
@@ -27,6 +28,10 @@ SystemController::SystemController(
 	, m_gpu(gpu) {
 	memory.mapIoWrite<&SystemController::writeControl>(IO_SYS_CONTROL, *this);
 	memory.mapIoRead<&SystemController::readStatus>(IO_SYS_STATUS, *this);
+	memory.mapIoRead<&SystemController::readPrintChar>(IO_SYS_PRINT_CHAR, *this);
+	memory.mapIoWrite<&SystemController::writePrintChar>(IO_SYS_PRINT_CHAR, *this);
+	memory.mapIoRead<&SystemController::readPrintByteCount>(IO_SYS_PRINT_FLUSH, *this);
+	memory.mapIoWrite<&SystemController::flushPrintLine>(IO_SYS_PRINT_FLUSH, *this);
 }
 
 void SystemController::reset() {
@@ -35,12 +40,92 @@ void SystemController::reset() {
 	m_supervisorPhase = SYSTEM_SUPERVISOR_PHASE_USER;
 	m_supervisorResumable = false;
 	m_supervisorExitRequested = false;
+	m_printBuffer.fill(0u);
+	m_printReadIndex = 0u;
+	m_printByteCount = 0u;
+	clearHostOutput();
 	m_memory.writeIoValue(IO_SYS_CONTROL, valueNumber(0.0));
 	writeStatusIo();
 }
 
 Value SystemController::readStatus([[maybe_unused]] u32 address) {
 	return valueNumber(static_cast<f64>(statusWord()));
+}
+
+Value SystemController::readPrintChar([[maybe_unused]] u32 address) {
+	if (m_printByteCount == 0u) {
+		return valueNumber(0.0);
+	}
+	const u8 value = m_printBuffer[m_printReadIndex];
+	m_printReadIndex = (m_printReadIndex + 1u) & (SYS_PRINT_BUFFER_BYTES - 1u);
+	m_printByteCount -= 1u;
+	return valueNumber(static_cast<f64>(value));
+}
+
+Value SystemController::readPrintByteCount([[maybe_unused]] u32 address) const {
+	return valueNumber(static_cast<f64>(m_printByteCount));
+}
+
+void SystemController::writePrintChar([[maybe_unused]] u32 address, Value value) {
+	const u32 codepoint = toU32(value);
+	const u32 byteCount = encodeUtf8Codepoint(codepoint, m_printEncodingBytes);
+	appendRingByte(static_cast<u8>(codepoint <= 0xFFu ? codepoint : static_cast<u32>('?')));
+	if (!reserveHostOutputBytes(byteCount)) {
+		return;
+	}
+	for (u32 index = 0u; index < byteCount; ++index) {
+		appendHostOutputByte(m_printEncodingBytes[index]);
+	}
+}
+
+void SystemController::flushPrintLine([[maybe_unused]] u32 address, [[maybe_unused]] Value value) {
+	appendRingByte(static_cast<u8>('\n'));
+	if (reserveHostOutputBytes(1u)) {
+		appendHostOutputByte(static_cast<u8>('\n'));
+		m_hostOutputCompleteByteCount = m_hostOutputByteCount;
+	}
+	m_hostOutputLineOverflowed = false;
+}
+
+bool SystemController::reserveHostOutputBytes(u32 byteCount) {
+	if (m_hostOutputLineOverflowed) {
+		return false;
+	}
+	if (m_hostOutputByteCount + byteCount <= SYS_PRINT_BUFFER_BYTES) {
+		return true;
+	}
+	m_hostOutputByteCount = m_hostOutputCompleteByteCount;
+	m_hostOutputLineOverflowed = true;
+	return false;
+}
+
+void SystemController::clearHostOutput() {
+	m_hostOutputReadIndex = 0u;
+	m_hostOutputByteCount = 0u;
+	m_hostOutputCompleteByteCount = 0u;
+	m_hostOutputLineOverflowed = false;
+}
+
+void SystemController::appendHostOutputByte(u8 value) {
+	m_hostOutputBuffer[(m_hostOutputReadIndex + m_hostOutputByteCount) & (SYS_PRINT_BUFFER_BYTES - 1u)] = value;
+	m_hostOutputByteCount += 1u;
+}
+
+u8 SystemController::readHostOutputByte() {
+	const u8 value = m_hostOutputBuffer[m_hostOutputReadIndex];
+	m_hostOutputReadIndex = (m_hostOutputReadIndex + 1u) & (SYS_PRINT_BUFFER_BYTES - 1u);
+	m_hostOutputByteCount -= 1u;
+	m_hostOutputCompleteByteCount -= 1u;
+	return value;
+}
+
+void SystemController::appendRingByte(u8 value) {
+	if (m_printByteCount == SYS_PRINT_BUFFER_BYTES) {
+		m_printReadIndex = (m_printReadIndex + 1u) & (SYS_PRINT_BUFFER_BYTES - 1u);
+		m_printByteCount -= 1u;
+	}
+	m_printBuffer[(m_printReadIndex + m_printByteCount) & (SYS_PRINT_BUFFER_BYTES - 1u)] = value;
+	m_printByteCount += 1u;
 }
 
 void SystemController::writeControl([[maybe_unused]] u32 address, Value value) {
@@ -161,12 +246,15 @@ bool SystemController::takeResetRequest() {
 }
 
 SystemControllerState SystemController::captureState() const {
-	return {
-		m_resetRequested,
-		m_supervisorPhase,
-		m_supervisorResumable,
-		m_supervisorExitRequested,
-	};
+	SystemControllerState state;
+	state.resetRequested = m_resetRequested;
+	state.supervisorPhase = m_supervisorPhase;
+	state.supervisorResumable = m_supervisorResumable;
+	state.supervisorExitRequested = m_supervisorExitRequested;
+	state.printBuffer = m_printBuffer;
+	state.printReadIndex = m_printReadIndex;
+	state.printByteCount = m_printByteCount;
+	return state;
 }
 
 void SystemController::restoreState(const SystemControllerState& state) {
@@ -174,6 +262,10 @@ void SystemController::restoreState(const SystemControllerState& state) {
 	m_supervisorPhase = state.supervisorPhase;
 	m_supervisorResumable = state.supervisorResumable;
 	m_supervisorExitRequested = state.supervisorExitRequested;
+	m_printBuffer = state.printBuffer;
+	m_printReadIndex = state.printReadIndex;
+	m_printByteCount = state.printByteCount;
+	clearHostOutput();
 	m_memory.writeIoValue(IO_SYS_CONTROL, valueNumber(0.0));
 	writeStatusIo();
 }

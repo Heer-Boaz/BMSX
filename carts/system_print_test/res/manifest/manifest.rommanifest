@@ -1,0 +1,8 @@
+title: System Print Test
+short_name: 'system_print_test'
+rom_name: 'system_print_test'
+machine:
+    namespace: 'system_print_test'
+    vdp_class: psx
+lua:
+    entry_path: entry.lua

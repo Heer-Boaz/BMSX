@@ -1015,6 +1015,33 @@ terminal is firmware-ROM code, not a host overlay. This first hardware version
 deliberately uses a compact R3000-style exception model without an MMU, MPU,
 protected heap, or supervisor-only RAM.
 
+Cart and firmware `print()` use the system debug-output register pair. A write
+to `SYS_PRINT_CHAR` supplies one Unicode codepoint. The system controller maps
+`0..255` directly into an 8192-byte circular BIOS-glyph history and maps wider
+or invalid raw words to `?`; independently it UTF-8-encodes the codepoint for
+the host transport. A write to `SYS_PRINT_FLUSH` appends a newline
+and completes the host log line. Reading `SYS_PRINT_FLUSH` returns the retained
+glyph count and reading `SYS_PRINT_CHAR` removes the oldest glyph byte. When
+full, the hardware history overwrites its oldest byte, so output never stalls
+the CPU. The byte history and its read cursor are machine state and survive
+save/load.
+
+The independent host-output transport is also a fixed 8192-byte ring. MMIO
+writes therefore allocate nothing and cannot grow host memory. The host drains
+only newline-complete bytes and performs UTF-8-to-host-string conversion at the
+platform boundary. Complete pending lines retain FIFO priority. If the current
+uncommitted line exceeds the remaining capacity, the controller discards that
+whole line through its flush instead of replacing already completed output. The
+guest-visible hardware history keeps its normal circular overwrite behavior.
+Host transport cursors and bytes are presentation state and are not serialized.
+
+On supervisor entry the BIOS drains this hardware history into the retained
+firmware terminal before producing monitor command output. The host log sink
+receives the same completed lines independently through the platform log sink;
+the browser platform therefore emits them through its normal developer console.
+Neither host path owns terminal cells, GX state, or a second guest-visible
+output ABI.
+
 The CPU owns a compact coprocessor-0 registerfile. Guest code addresses the
 registers with CPU instructions rather than MMIO or host builtins:
 

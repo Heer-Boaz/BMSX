@@ -22,7 +22,7 @@ import { Memory } from '../../machine/ts/machine/memory/memory';
 import { PROGRAM_IMAGE_ID, toLuaModulePath } from '../../machine/ts/machine/program/loader';
 import { parseCartridgeIndex } from '../../machine/ts/rompack/loader';
 import { SYSTEM_BOOT_ENTRY_PATH } from '../../machine/ts/core/system';
-import { decodeRomToc } from '../../machine/ts/rompack/toc';
+import { decodeRomToc, ROM_TOC_HEADER_SIZE, ROM_TOC_INVALID_U32 } from '../../machine/ts/rompack/toc';
 import { encodeRomToc } from '../../machine/ts/rompack/tooling/toc_encode';
 import { buildGxTextureLayoutModuleSource, type GxTextureLayout } from '../../scripts/rompacker/gx_texture_layout';
 import { parseLuaChunk } from './cpu_test_harness';
@@ -236,6 +236,19 @@ test('ROM TOC decode gives Lua assets an explicit zero update timestamp', () => 
 
 	assert.equal(decoded.entries[0].update_timestamp, 0);
 	assert.equal(decoded.entries[1].update_timestamp, undefined);
+});
+
+test('ROM TOC decode rejects incomplete payload ranges', () => {
+	const toc = encodeRomToc({
+		entries: [{ resid: 'raw', type: 'bin', start: 0x100, end: 0x120 }],
+	});
+	new DataView(toc.buffer, toc.byteOffset, toc.byteLength).setUint32(
+		ROM_TOC_HEADER_SIZE + 44,
+		ROM_TOC_INVALID_U32,
+		true,
+	);
+
+	assert.throws(() => decodeRomToc(toc), /incomplete payload range/);
 });
 
 test('toLuaModulePath normalizes source paths through the loader contract', () => {

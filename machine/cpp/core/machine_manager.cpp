@@ -382,7 +382,7 @@ bool MachineManager::bootSystemStartupProgram(const MachineManifest& runtimeMach
 		std::move(cartMetadata),
 		ProgramBootTarget::System
 	);
-	flushRuntimeLuaOutput(rt);
+	flushSystemOutput(rt);
 	return true;
 }
 

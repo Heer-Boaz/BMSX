@@ -170,6 +170,13 @@ export function decodeRomToc(buffer: Uint8Array): RomTocPayload {
 		const collisionBinEnd = view.getUint32(base + 76, true);
 		const updateLo = view.getUint32(base + 80, true);
 		const updateHi = view.getUint32(base + 84, true);
+		if ((start === ROM_TOC_INVALID_U32) !== (end === ROM_TOC_INVALID_U32)
+			|| (compiledStart === ROM_TOC_INVALID_U32) !== (compiledEnd === ROM_TOC_INVALID_U32)
+			|| (metaStart === ROM_TOC_INVALID_U32) !== (metaEnd === ROM_TOC_INVALID_U32)
+			|| (textureStart === ROM_TOC_INVALID_U32) !== (textureEnd === ROM_TOC_INVALID_U32)
+			|| (collisionBinStart === ROM_TOC_INVALID_U32) !== (collisionBinEnd === ROM_TOC_INVALID_U32)) {
+			throw new Error('ROM TOC entry has an incomplete payload range.');
+		}
 
 		const resid = decodeString(stringTable, residOffset, residLength, utf8Decoder);
 		if (!resid) {
@@ -189,16 +196,26 @@ export function decodeRomToc(buffer: Uint8Array): RomTocPayload {
 		if (sourcePath) entry.source_path = sourcePath;
 		if (normalizedSourcePath) entry.normalized_source_path = normalizedSourcePath;
 
-		if (start !== ROM_TOC_INVALID_U32) entry.start = start;
-		if (end !== ROM_TOC_INVALID_U32) entry.end = end;
-		if (compiledStart !== ROM_TOC_INVALID_U32) entry.compiled_start = compiledStart;
-		if (compiledEnd !== ROM_TOC_INVALID_U32) entry.compiled_end = compiledEnd;
-		if (metaStart !== ROM_TOC_INVALID_U32) entry.metabuffer_start = metaStart;
-		if (metaEnd !== ROM_TOC_INVALID_U32) entry.metabuffer_end = metaEnd;
-		if (textureStart !== ROM_TOC_INVALID_U32) entry.texture_start = textureStart;
-		if (textureEnd !== ROM_TOC_INVALID_U32) entry.texture_end = textureEnd;
-		if (collisionBinStart !== ROM_TOC_INVALID_U32) entry.collision_bin_start = collisionBinStart;
-		if (collisionBinEnd !== ROM_TOC_INVALID_U32) entry.collision_bin_end = collisionBinEnd;
+		if (start !== ROM_TOC_INVALID_U32) {
+			entry.start = start;
+			entry.end = end;
+		}
+		if (compiledStart !== ROM_TOC_INVALID_U32) {
+			entry.compiled_start = compiledStart;
+			entry.compiled_end = compiledEnd;
+		}
+		if (metaStart !== ROM_TOC_INVALID_U32) {
+			entry.metabuffer_start = metaStart;
+			entry.metabuffer_end = metaEnd;
+		}
+		if (textureStart !== ROM_TOC_INVALID_U32) {
+			entry.texture_start = textureStart;
+			entry.texture_end = textureEnd;
+		}
+		if (collisionBinStart !== ROM_TOC_INVALID_U32) {
+			entry.collision_bin_start = collisionBinStart;
+			entry.collision_bin_end = collisionBinEnd;
+		}
 
 		const updateTimestamp = (updateHi * 0x100000000) + updateLo;
 		if (entry.type === 'lua' || updateTimestamp > 0) {

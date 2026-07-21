@@ -4,6 +4,7 @@
 
 #include <string>
 #include <string_view>
+#include <span>
 
 namespace bmsx {
 
@@ -111,6 +112,33 @@ inline void appendUtf8Codepoint(std::string& out, u32 codepoint) {
 	}
 	out.push_back(static_cast<char>(0xF0u | ((codepoint >> 18u) & 0x07u)));
 	appendUtf8TailBytes(out, codepoint, 3);
+}
+
+inline u32 encodeUtf8Codepoint(u32 codepoint, std::span<u8> output) {
+	if (codepoint <= 0x7Fu) {
+		output[0] = static_cast<u8>(codepoint);
+		return 1u;
+	}
+	if (codepoint <= 0x7FFu) {
+		output[0] = static_cast<u8>(0xC0u | (codepoint >> 6u));
+		output[1] = static_cast<u8>(0x80u | (codepoint & 0x3Fu));
+		return 2u;
+	}
+	if ((codepoint >= 0xD800u && codepoint <= 0xDFFFu) || codepoint > 0x10FFFFu) {
+		output[0] = static_cast<u8>('?');
+		return 1u;
+	}
+	if (codepoint <= 0xFFFFu) {
+		output[0] = static_cast<u8>(0xE0u | (codepoint >> 12u));
+		output[1] = static_cast<u8>(0x80u | ((codepoint >> 6u) & 0x3Fu));
+		output[2] = static_cast<u8>(0x80u | (codepoint & 0x3Fu));
+		return 3u;
+	}
+	output[0] = static_cast<u8>(0xF0u | (codepoint >> 18u));
+	output[1] = static_cast<u8>(0x80u | ((codepoint >> 12u) & 0x3Fu));
+	output[2] = static_cast<u8>(0x80u | ((codepoint >> 6u) & 0x3Fu));
+	output[3] = static_cast<u8>(0x80u | (codepoint & 0x3Fu));
+	return 4u;
 }
 
 } // namespace bmsx

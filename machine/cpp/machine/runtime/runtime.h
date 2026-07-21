@@ -136,9 +136,6 @@ public:
 	FrameLoopState frameLoop;
 	VblankState vblank;
 	LuaScratchState luaScratch;
-	std::vector<std::string> luaOutputLines;
-	std::string luaOutputLineBuffer;
-
 private:
 	enum class PendingCall {
 		None,
@@ -190,10 +187,6 @@ private:
 	static Value onCyclesPerFrameReadThunk(void* context, uint32_t addr, MappedBusSignals busSignals);
 	Value onCyclesPerFrameRead(uint32_t addr) const;
 	static void onGxGpuGp1WriteThunk(void* context, uint32_t addr, Value value, MappedBusSignals busSignals);
-	static void onLuaOutputCodepointWriteThunk(void* context, uint32_t addr, Value value, MappedBusSignals busSignals);
-	static void onLuaOutputFlushWriteThunk(void* context, uint32_t addr, Value value, MappedBusSignals busSignals);
-	void onLuaOutputFlushWrite(uint32_t addr, Value value);
-
 	PendingCall m_pendingCall = PendingCall::None;
 
 	std::unordered_map<std::string, Value> m_moduleCache;

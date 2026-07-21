@@ -32,7 +32,7 @@ import { decodeBinaryWithPropTable } from '../../machine/ts/common/serializer/bi
 import { RUNTIME_SAVE_STATE_PROP_NAMES } from '../../machine/ts/machine/runtime/save_state/schema';
 import { BuiltinFunctionId, ProtectedCallKind } from '../../machine/ts/machine/cpu/cpu';
 import { CPU_STATUS_CART_ENTRY } from '../../machine/ts/machine/cpu/cop0';
-import { DMA_STATUS_BUSY } from '../../machine/ts/machine/bus/io';
+import { DMA_STATUS_BUSY, SYS_PRINT_BUFFER_BYTES } from '../../machine/ts/machine/bus/io';
 import { RAM_BASE, RAM_END } from '../../machine/ts/machine/memory/map';
 
 const codecTestGxVram = new Uint8Array(GX_GPU_VRAM_BYTE_COUNT);
@@ -60,6 +60,8 @@ function createRuntimeSaveState(): RuntimeSaveState {
 	audioSlotRegisterWords[apuSlotRegisterWordIndex(2, APU_PARAMETER_SOURCE_ADDR_INDEX)] = 0x3000;
 	const audioSampleRam = new Uint8Array(APU_SAMPLE_RAM_BYTES);
 	audioSampleRam.set([9, 8, 7, 6], 0x20);
+	const printBuffer = new Uint8Array(SYS_PRINT_BUFFER_BYTES);
+	printBuffer.set([0x68, 0x69, 0x0a], 17);
 	return {
 		machineState: {
 			machine: {
@@ -353,6 +355,9 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					supervisorPhase: 3,
 					supervisorResumable: true,
 					supervisorExitRequested: false,
+					printBuffer,
+					printReadIndex: 17,
+					printByteCount: 3,
 				},
 			},
 			frameScheduler: {

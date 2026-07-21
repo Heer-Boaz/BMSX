@@ -94,8 +94,8 @@ export async function save(runtime: Runtime): Promise<void> {
 		}
 		commitActiveCodeTabSave(context, source);
 		if (context.mode === 'lua') {
-			setContextRuntimeSyncState(context, 'restart_pending', null);
-			showEditorMessage(`${context.title} saved (restart pending)`, constants.COLOR_STATUS_SUCCESS, 2.5);
+			setContextRuntimeSyncState(context, 'runtime_update_pending', null);
+			showEditorMessage(`${context.title} saved (runtime update pending)`, constants.COLOR_STATUS_SUCCESS, 2.5);
 			return;
 		}
 		try {

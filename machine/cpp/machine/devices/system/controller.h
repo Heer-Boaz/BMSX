@@ -1,6 +1,9 @@
 #pragma once
 
+#include "machine/bus/io.h"
 #include "machine/memory/memory.h"
+
+#include <array>
 
 namespace bmsx {
 
@@ -22,6 +25,9 @@ struct SystemControllerState {
 	u8 supervisorPhase = SYSTEM_SUPERVISOR_PHASE_USER;
 	bool supervisorResumable = false;
 	bool supervisorExitRequested = false;
+	std::array<u8, SYS_PRINT_BUFFER_BYTES> printBuffer{};
+	u32 printReadIndex = 0u;
+	u32 printByteCount = 0u;
 };
 
 class SystemController {
@@ -42,10 +48,20 @@ public:
 	SystemControllerState captureState() const;
 	void restoreState(const SystemControllerState& state);
 	void postLoad();
+	u32 hostOutputAvailableByteCount() const { return m_hostOutputCompleteByteCount; }
+	u8 readHostOutputByte();
 
 private:
 	Value readStatus(u32 address);
+	Value readPrintChar(u32 address);
+	Value readPrintByteCount(u32 address) const;
 	void writeControl(u32 address, Value value);
+	void writePrintChar(u32 address, Value value);
+	void flushPrintLine(u32 address, Value value);
+	bool reserveHostOutputBytes(u32 byteCount);
+	void clearHostOutput();
+	void appendHostOutputByte(u8 value);
+	void appendRingByte(u8 value);
 	void enterSupervisor();
 	void enterSupervisorFault();
 	void beginSupervisorLeave();
@@ -63,6 +79,15 @@ private:
 	u8 m_supervisorPhase = SYSTEM_SUPERVISOR_PHASE_USER;
 	bool m_supervisorResumable = false;
 	bool m_supervisorExitRequested = false;
+	std::array<u8, SYS_PRINT_BUFFER_BYTES> m_printBuffer{};
+	u32 m_printReadIndex = 0u;
+	u32 m_printByteCount = 0u;
+	std::array<u8, SYS_PRINT_BUFFER_BYTES> m_hostOutputBuffer{};
+	u32 m_hostOutputReadIndex = 0u;
+	u32 m_hostOutputByteCount = 0u;
+	u32 m_hostOutputCompleteByteCount = 0u;
+	bool m_hostOutputLineOverflowed = false;
+	std::array<u8, 4> m_printEncodingBytes{};
 };
 
 } // namespace bmsx

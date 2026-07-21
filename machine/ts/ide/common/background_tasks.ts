@@ -5,6 +5,9 @@ export type BackgroundTask = () => boolean;
 
 const backgroundTasks: BackgroundTask[] = [];
 let backgroundTaskHandle: TimerHandle = null;
+let runtimeTaskTail = Promise.resolve();
+let pendingRuntimeTasks = 0;
+let runtimeTaskQueueFailed = false;
 const backgroundTaskBudgetMs = 2.0;
 
 export function enqueueBackgroundTask(task: BackgroundTask): void {
@@ -51,11 +54,26 @@ export function scheduleIdeOnce(delayMs: number, cb: () => void): TimerHandle {
 }
 
 export function scheduleRuntimeTask(task: () => void | Promise<void>, onError: (error: unknown) => void): void {
+	if (pendingRuntimeTasks === 0) {
+		runtimeTaskQueueFailed = false;
+	}
+	pendingRuntimeTasks += 1;
+	machineManager.paused = true;
 	scheduleMicrotask(() => {
-		try {
-			Promise.resolve(task()).catch(onError);
-		} catch (error) {
-			onError(error);
-		}
+		runtimeTaskTail = runtimeTaskTail.then(async () => {
+			let succeeded = false;
+			try {
+				await task();
+				succeeded = true;
+			} catch (error) {
+				runtimeTaskQueueFailed = true;
+				onError(error);
+			} finally {
+				pendingRuntimeTasks -= 1;
+				if (succeeded && !runtimeTaskQueueFailed && pendingRuntimeTasks === 0) {
+					machineManager.paused = false;
+				}
+			}
+		});
 	});
 }

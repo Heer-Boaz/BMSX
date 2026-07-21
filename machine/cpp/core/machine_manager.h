@@ -200,7 +200,7 @@ private:
 	bool loadSystemRomInternal(const u8* data, size_t size);
 	bool loadRomInternal(const u8* data, size_t size);
 	bool bootSystemStartupProgram(const MachineManifest& runtimeMachine);
-	void flushRuntimeLuaOutput(Runtime& runtime);
+	void flushSystemOutput(Runtime& runtime);
 
 	MachineManagerState m_state = MachineManagerState::Uninitialized;
 

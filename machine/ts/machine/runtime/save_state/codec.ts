@@ -1,4 +1,5 @@
 import { decodeBinaryWithPropTable, encodeBinaryWithPropTable, requireObject, requireObjectKey } from '../../../common/serializer/binencoder';
+import { SYS_PRINT_BUFFER_BYTES } from '../../bus/io';
 import type { MachineSaveState } from '../../save_state';
 import type { BuiltinFunctionId, CpuFrameState, CpuObjectState, CpuProtectedCallState, CpuRootValueState, CpuRuntimeState, CpuValueState } from '../../cpu/cpu';
 import type { IrqControllerState } from '../../devices/irq/save_state';
@@ -1044,6 +1045,9 @@ function encodeSystemControllerState(state: SystemControllerState): SystemContro
 		supervisorPhase: state.supervisorPhase,
 		supervisorResumable: state.supervisorResumable,
 		supervisorExitRequested: state.supervisorExitRequested,
+		printBuffer: state.printBuffer,
+		printReadIndex: state.printReadIndex,
+		printByteCount: state.printByteCount,
 	};
 }
 
@@ -1054,6 +1058,9 @@ function decodeSystemControllerState(value: unknown, label: string): SystemContr
 		supervisorPhase: requireBoundedU32(requireObjectKey(object, 'supervisorPhase', label, `${label}.supervisorPhase`), `${label}.supervisorPhase`, 0, SYSTEM_SUPERVISOR_PHASE_LEAVING),
 		supervisorResumable: requireBooleanValue(requireObjectKey(object, 'supervisorResumable', label, `${label}.supervisorResumable`), `${label}.supervisorResumable`),
 		supervisorExitRequested: requireBooleanValue(requireObjectKey(object, 'supervisorExitRequested', label, `${label}.supervisorExitRequested`), `${label}.supervisorExitRequested`),
+		printBuffer: requireBinaryFixedLength(requireObjectKey(object, 'printBuffer', label, `${label}.printBuffer`), `${label}.printBuffer`, SYS_PRINT_BUFFER_BYTES),
+		printReadIndex: requireBoundedU32(requireObjectKey(object, 'printReadIndex', label, `${label}.printReadIndex`), `${label}.printReadIndex`, 0, SYS_PRINT_BUFFER_BYTES - 1),
+		printByteCount: requireBoundedU32(requireObjectKey(object, 'printByteCount', label, `${label}.printByteCount`), `${label}.printByteCount`, 0, SYS_PRINT_BUFFER_BYTES),
 	};
 }
 

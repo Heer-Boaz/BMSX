@@ -27,9 +27,11 @@ import { runMachineHostFrame } from './host_frame';
 import { captureRuntimeSaveStateBytes } from '../machine/runtime/save_state/codec';
 import { gxGpuDisplayModeScreenWidth, gxGpuVerticalVisibleLines } from '../machine/devices/gx/gpu_display';
 import { commitGxGpuViewSnapshot } from '../render/gx/view_snapshot';
+import { SYS_PRINT_BUFFER_BYTES } from '../machine/bus/io';
 
 const globalScope: any = typeof window !== 'undefined' ? window : globalThis;
 global = globalScope; // Ensure global is defined
+const systemOutputDecoder = new TextDecoder('utf-8', { fatal: true });
 
 export interface MachineBootOptions {
 	systemRom: Uint8Array;
@@ -65,6 +67,7 @@ export class MachineManager {
 	public host_show_fps = false;
 	public host_fps = 0;
 	private audioUfpsScaled = PAL_REFRESH_UFPS_SCALED;
+	private readonly systemOutputBytes = new Uint8Array(SYS_PRINT_BUFFER_BYTES);
 
 	/**
 	 * The ID of the animation frame request.
@@ -121,11 +124,22 @@ export class MachineManager {
 		this.audioUfpsScaled = ufpsScaled;
 	}
 
-	public flushRuntimeLuaOutput(runtime: Runtime): void {
-		for (let index = 0; index < runtime.luaOutputLines.length; index += 1) {
-			this.platform.log(LogLevel.Info, runtime.luaOutputLines[index]);
+	public flushSystemOutput(runtime: Runtime): void {
+		const output = runtime.machine.systemController;
+		const byteCount = output.hostOutputAvailableByteCount();
+		if (byteCount === 0) {
+			return;
 		}
-		runtime.luaOutputLines.length = 0;
+		for (let index = 0; index < byteCount; index += 1) {
+			this.systemOutputBytes[index] = output.readHostOutputByte();
+		}
+		let lineStart = 0;
+		for (let index = 0; index < byteCount; index += 1) {
+			if (this.systemOutputBytes[index] === 10) {
+				this.platform.log(LogLevel.Info, systemOutputDecoder.decode(this.systemOutputBytes.subarray(lineStart, index)));
+				lineStart = index + 1;
+			}
+		}
 	}
 
 	public syncRuntimeAudioTiming(): void {
@@ -216,7 +230,7 @@ export class MachineManager {
 		await gview.initializeDefaultTextures();
 		this.view.default_font = new Font();
 		await startPreparedRuntime(runtime);
-		this.flushRuntimeLuaOutput(runtime);
+		this.flushSystemOutput(runtime);
 
 		if (this.debug) {
 			Input.instance.enableDebugMode(this.view.surface);
@@ -243,7 +257,7 @@ export class MachineManager {
 				handleLuaError(this.runtime, error);
 				throw error;
 			}
-			this.flushRuntimeLuaOutput(this.runtime);
+			this.flushSystemOutput(this.runtime);
 		}
 		finally {
 			this.ideState.luaGate.end(gateToken);

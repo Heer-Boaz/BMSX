@@ -3,6 +3,11 @@ import { collectTrackedLuaHeapBytes, getTrackedLuaHeapBytes } from '../../machin
 import { hotResume } from '../runtime/hot_resume';
 import { performHotResume } from '../commands/actions';
 import type { Runtime } from '../../machine/runtime/runtime';
+import { openLuaCodeTab } from '../workbench/ui/code_tab/io';
+import { editorDocumentState } from '../editor/editing/document_state';
+import { activateEditor } from '../workbench/overlay_modes';
+import { selectAllSingleCursor } from '../editor/editing/cursor/state';
+import { insertText } from '../editor/editing/text_editing_and_selection';
 
 /**
  * Host-side test surface for the IDE/runtime, exposed through the `bmsx` global so
@@ -24,6 +29,8 @@ export type HeadlessIdeHarness = {
 	hotResumeCore(): void;
 	/** Full IDE hot-resume action (fire-and-forget; settle by advancing frames). */
 	performHotResume(): void;
+	openLuaSource(path: string): void;
+	replaceActiveCodeSource(source: string): void;
 	/** Diagnostic breakdown of tracked-heap contributors, for leak hunting. */
 	debugStats(): HeadlessIdeHeapStats;
 };
@@ -62,6 +69,20 @@ export const headlessIdeHarness: HeadlessIdeHarness = {
 	},
 	performHotResume: () => {
 		performHotResume(requireRuntime());
+	},
+	openLuaSource: (path: string) => {
+		activateEditor(requireRuntime());
+		openLuaCodeTab({ path, type: 'lua' });
+	},
+	replaceActiveCodeSource: (source: string) => {
+		const buffer = editorDocumentState.buffer;
+		const lastRow = buffer.getLineCount() - 1;
+		selectAllSingleCursor(
+			editorDocumentState,
+			lastRow,
+			buffer.getLineEndOffset(lastRow) - buffer.getLineStartOffset(lastRow),
+		);
+		insertText(source);
 	},
 	debugStats: () => {
 		const runtime = requireRuntime();

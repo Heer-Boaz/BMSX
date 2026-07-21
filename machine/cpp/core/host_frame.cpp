@@ -5,6 +5,7 @@
 #include "input/manager.h"
 #include "machine/runtime/runtime.h"
 
+#include <array>
 #include <chrono>
 
 namespace bmsx {
@@ -12,11 +13,23 @@ namespace {
 constexpr double MAX_FRAME_DELTA_MS = 250.0;
 }
 
-void MachineManager::flushRuntimeLuaOutput(Runtime& runtime) {
-	for (const std::string& line : runtime.luaOutputLines) {
-		log(LogLevel::Info, "%s", line.c_str());
+void MachineManager::flushSystemOutput(Runtime& runtime) {
+	SystemController& output = runtime.machine.systemController;
+	const u32 byteCount = output.hostOutputAvailableByteCount();
+	if (byteCount == 0u) {
+		return;
 	}
-	runtime.luaOutputLines.clear();
+	std::array<char, SYS_PRINT_BUFFER_BYTES> bytes;
+	for (u32 index = 0u; index < byteCount; ++index) {
+		bytes[index] = static_cast<char>(output.readHostOutputByte());
+	}
+	size_t lineStart = 0u;
+	for (u32 index = 0u; index < byteCount; ++index) {
+		if (bytes[index] == '\n') {
+			m_platform->log(LogLevel::Info, std::string_view(bytes.data() + lineStart, static_cast<size_t>(index) - lineStart));
+			lineStart = static_cast<size_t>(index) + 1u;
+		}
+	}
 }
 
 bool MachineManager::runHostFrame(
@@ -91,7 +104,7 @@ bool MachineManager::runHostFrame(
 		runtime.frameLoop.abandonFrameState(runtime);
 		runtime.handleLuaError("Unhandled host frame exception.");
 	}
-	flushRuntimeLuaOutput(runtime);
+	flushSystemOutput(runtime);
 	return rendered;
 }
 

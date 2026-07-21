@@ -9,6 +9,7 @@
 #include "machine/memory/map.h"
 #include "machine/runtime/runtime.h"
 #include "machine/runtime/save_state/schema.h"
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <string>
@@ -62,7 +63,7 @@ const BinBinary& requireBinary(const BinValue& value, const char* label) {
 	return value.asBinary();
 }
 
-std::vector<u8> requireBinaryWithLength(const BinValue& value, const char* label, size_t byteLength) {
+const BinBinary& requireBinaryWithLength(const BinValue& value, const char* label, size_t byteLength) {
 	const BinBinary& bytes = requireBinary(value, label);
 	if (bytes.size() != byteLength) {
 		throw BMSX_RUNTIME_ERROR(std::string(label) + " must contain " + std::to_string(byteLength) + " bytes.");
@@ -1119,6 +1120,9 @@ BinValue encodeSystemControllerState(const SystemControllerState& state) {
 	object["supervisorPhase"] = static_cast<i64>(state.supervisorPhase);
 	object["supervisorResumable"] = state.supervisorResumable;
 	object["supervisorExitRequested"] = state.supervisorExitRequested;
+	object["printBuffer"] = BinValue(BinBinary(state.printBuffer.begin(), state.printBuffer.end()));
+	object["printReadIndex"] = static_cast<i64>(state.printReadIndex);
+	object["printByteCount"] = static_cast<i64>(state.printByteCount);
 	return BinValue(std::move(object));
 }
 
@@ -1129,6 +1133,10 @@ SystemControllerState decodeSystemControllerState(const BinValue& value, const c
 	state.supervisorPhase = static_cast<u8>(requireBoundedU32(requireField(object, "supervisorPhase", label), "machineState.machine.systemControl.supervisorPhase", SYSTEM_SUPERVISOR_PHASE_USER, SYSTEM_SUPERVISOR_PHASE_LEAVING));
 	state.supervisorResumable = requireBool(requireField(object, "supervisorResumable", label), "machineState.machine.systemControl.supervisorResumable");
 	state.supervisorExitRequested = requireBool(requireField(object, "supervisorExitRequested", label), "machineState.machine.systemControl.supervisorExitRequested");
+	const BinBinary& printBuffer = requireBinaryWithLength(requireField(object, "printBuffer", label), "machineState.machine.systemControl.printBuffer", SYS_PRINT_BUFFER_BYTES);
+	std::copy(printBuffer.begin(), printBuffer.end(), state.printBuffer.begin());
+	state.printReadIndex = requireBoundedU32(requireField(object, "printReadIndex", label), "machineState.machine.systemControl.printReadIndex", 0u, SYS_PRINT_BUFFER_BYTES - 1u);
+	state.printByteCount = requireBoundedU32(requireField(object, "printByteCount", label), "machineState.machine.systemControl.printByteCount", 0u, SYS_PRINT_BUFFER_BYTES);
 	return state;
 }
 

@@ -363,4 +363,6 @@ constexpr uint32_t SYS_STATUS_SUPERVISOR_ACTIVE = 1u;
 constexpr uint32_t SYS_STATUS_SUPERVISOR_EXIT_REQUESTED = 1u << 1u;
 constexpr uint32_t SYS_STATUS_SUPERVISOR_RESUMABLE = 1u << 2u;
 
+constexpr uint32_t SYS_PRINT_BUFFER_BYTES = 8192u;
+
 } // namespace bmsx

@@ -1,7 +1,7 @@
 import { machineManager } from '../../core/machine_manager';
 import { editorRuntimeState } from '../editor/common/runtime_state';
 import { scheduleRuntimeTask } from '../common/background_tasks';
-import { applyWorkspaceOverridesToRegistry } from '../workspace/workspace';
+import { applyLuaCodeTabSources, applyWorkspaceOverridesToRegistry } from '../workspace/workspace';
 import type { Runtime } from '../../machine/runtime/runtime';
 import { hotResume } from '../runtime/hot_resume';
 import { deactivateEditor } from '../workbench/overlay_modes';
@@ -10,8 +10,8 @@ import type { ActionPromptAction } from '../common/models';
 import { clearExecutionStopHighlights } from '../runtime_error/navigation';
 import * as constants from '../common/constants';
 import { setEditorCaseInsensitivity } from '../editor/render/text_renderer';
-import { editorDocumentState } from '../editor/editing/document_state';
 import { editorViewState } from '../editor/ui/view/state';
+import { capturePendingLuaCodeTabSources, markLuaCodeTabsAppliedToRuntime } from '../workbench/ui/code_tab/activation';
 
 export function performEditorAction(runtime: Runtime, action: ActionPromptAction): boolean {
 	switch (action) {
@@ -31,11 +31,10 @@ export function performEditorAction(runtime: Runtime, action: ActionPromptAction
 }
 
 export function performHotResume(runtime: Runtime): boolean {
-	const targetGeneration = editorDocumentState.saveGeneration;
-	const shouldUpdateGeneration = hasPendingRuntimeReload();
 	clearExecutionStopHighlights();
 	deactivateEditor();
-	console.log('[IDE] Performing hot-resume');
+	console.log('Performing hot resume.');
+	const pendingSources = capturePendingLuaCodeTabSources();
 	scheduleRuntimeTask(async () => {
 		const sources = machineManager.sourceState;
 		if (sources.cartLuaSources) {
@@ -52,11 +51,9 @@ export function performHotResume(runtime: Runtime): boolean {
 			includeServer: true,
 			projectRootPath: sources.systemProjectRootPath,
 		});
+		applyLuaCodeTabSources(pendingSources);
 		hotResume(runtime, sources.systemProgramMediaDirty, sources.cartProgramMediaDirty);
-		if (shouldUpdateGeneration) {
-			editorDocumentState.appliedGeneration = targetGeneration;
-		}
-		machineManager.paused = false;
+		markLuaCodeTabsAppliedToRuntime(pendingSources);
 	}, (error) => {
 		console.error(error);
 		handleLuaError(runtime, error);
@@ -66,22 +63,18 @@ export function performHotResume(runtime: Runtime): boolean {
 }
 
 export function performReboot(): boolean {
-	const targetGeneration = editorDocumentState.saveGeneration;
 	clearExecutionStopHighlights();
 	deactivateEditor();
+	const pendingSources = capturePendingLuaCodeTabSources();
 	scheduleRuntimeTask(async () => {
 		console.info('[IDE] Performing cold reboot through bootrom');
+		applyLuaCodeTabSources(pendingSources);
 		await machineManager.rebootToBootRom();
-		editorDocumentState.appliedGeneration = targetGeneration;
-		machineManager.paused = false;
+		markLuaCodeTabsAppliedToRuntime(pendingSources);
 	}, (error) => {
 		machineManager.ideState.editor.handleRuntimeTaskError(error, 'Failed to reboot game');
 	});
 	return true;
-}
-
-export function hasPendingRuntimeReload(): boolean {
-	return editorDocumentState.saveGeneration > editorDocumentState.appliedGeneration;
 }
 
 function toggleThemeMode(): void {

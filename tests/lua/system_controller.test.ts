@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { IO_SYS_CONTROL, SYS_CONTROL_RESET } from '../../machine/ts/machine/bus/io';
+import {
+	IO_SYS_CONTROL,
+	IO_SYS_PRINT_CHAR,
+	IO_SYS_PRINT_FLUSH,
+	SYS_CONTROL_RESET,
+	SYS_PRINT_BUFFER_BYTES,
+} from '../../machine/ts/machine/bus/io';
 import { Machine } from '../../machine/ts/machine/machine';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { PROGRAM_STATIC_RAM_BASE } from '../../machine/ts/machine/memory/map';
@@ -56,6 +62,71 @@ test('system control reset command is write-only, self-clearing, and save-state 
 	controller.restoreState(state);
 	assert.equal(controller.takeResetRequest(), true);
 	assert.equal(controller.takeResetRequest(), false);
+});
+
+test('system print registers retain firmware output and publish complete host lines', () => {
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+	const machine = new Machine(memory, new SystemResetInputSource());
+	machine.resetDevices();
+	const controller = machine.systemController;
+
+	memory.writeMappedU32LE(IO_SYS_PRINT_CHAR, 0x68);
+	memory.writeMappedU32LE(IO_SYS_PRINT_CHAR, 0x69);
+	memory.writeMappedU32LE(IO_SYS_PRINT_FLUSH, 1);
+	assert.equal(controller.hostOutputAvailableByteCount(), 3);
+	assert.deepEqual([
+		controller.readHostOutputByte(),
+		controller.readHostOutputByte(),
+		controller.readHostOutputByte(),
+	], [0x68, 0x69, 0x0a]);
+	assert.equal(memory.readMappedU32LE(IO_SYS_PRINT_FLUSH), 3);
+	assert.equal(memory.readMappedU32LE(IO_SYS_PRINT_CHAR), 0x68);
+
+	const state = controller.captureState();
+	controller.reset();
+	controller.restoreState(state);
+	assert.equal(memory.readMappedU32LE(IO_SYS_PRINT_CHAR), 0x69);
+	assert.equal(memory.readMappedU32LE(IO_SYS_PRINT_CHAR), 0x0a);
+	assert.equal(memory.readMappedU32LE(IO_SYS_PRINT_FLUSH), 0);
+
+	memory.writeMappedU32LE(IO_SYS_PRINT_CHAR, 0x20ac);
+	memory.writeMappedU32LE(IO_SYS_PRINT_FLUSH, 1);
+	assert.equal(controller.hostOutputAvailableByteCount(), 4);
+	assert.deepEqual([
+		controller.readHostOutputByte(),
+		controller.readHostOutputByte(),
+		controller.readHostOutputByte(),
+		controller.readHostOutputByte(),
+	], [0xe2, 0x82, 0xac, 0x0a]);
+	assert.equal(memory.readMappedU32LE(IO_SYS_PRINT_CHAR), 0x3f);
+	assert.equal(memory.readMappedU32LE(IO_SYS_PRINT_CHAR), 0x0a);
+
+	controller.reset();
+	memory.writeMappedU32LE(IO_SYS_PRINT_CHAR, 0x6f);
+	memory.writeMappedU32LE(IO_SYS_PRINT_CHAR, 0x6b);
+	memory.writeMappedU32LE(IO_SYS_PRINT_FLUSH, 1);
+	for (let index = 0; index < SYS_PRINT_BUFFER_BYTES; index += 1) {
+		memory.writeMappedU32LE(IO_SYS_PRINT_CHAR, 0x78);
+	}
+	memory.writeMappedU32LE(IO_SYS_PRINT_FLUSH, 1);
+	assert.equal(controller.hostOutputAvailableByteCount(), 3);
+	assert.deepEqual([
+		controller.readHostOutputByte(),
+		controller.readHostOutputByte(),
+		controller.readHostOutputByte(),
+	], [0x6f, 0x6b, 0x0a]);
+	memory.writeMappedU32LE(IO_SYS_PRINT_CHAR, 0x79);
+	memory.writeMappedU32LE(IO_SYS_PRINT_FLUSH, 1);
+	assert.equal(controller.hostOutputAvailableByteCount(), 2);
+	assert.equal(controller.readHostOutputByte(), 0x79);
+	assert.equal(controller.readHostOutputByte(), 0x0a);
+
+	controller.reset();
+	for (let index = 0; index < SYS_PRINT_BUFFER_BYTES + 2; index += 1) {
+		memory.writeMappedU32LE(IO_SYS_PRINT_CHAR, index);
+	}
+	assert.equal(memory.readMappedU32LE(IO_SYS_PRINT_FLUSH), SYS_PRINT_BUFFER_BYTES);
+	assert.equal(memory.readMappedU32LE(IO_SYS_PRINT_CHAR), 2);
 });
 
 test('runtime reset boundary restarts the loaded system program and preserves cart entry', () => {

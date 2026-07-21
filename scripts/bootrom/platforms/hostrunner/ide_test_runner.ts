@@ -66,6 +66,8 @@ export async function runIdeTest(options: IdeTestRunnerOptions): Promise<void> {
 		frames: waitFrames,
 		hotResume: () => options.ide.hotResumeCore(),
 		performHotResume: () => options.ide.performHotResume(),
+		openLuaSource: (path: string) => options.ide.openLuaSource(path),
+		replaceActiveCodeSource: (source: string) => options.ide.replaceActiveCodeSource(source),
 	};
 
 	log('starting');

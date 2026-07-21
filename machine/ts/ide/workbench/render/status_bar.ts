@@ -112,8 +112,8 @@ export function renderStatusBar(runtime: Runtime): void {
 		if (context.runtimeSyncState === 'diverged') {
 			detail = 'SAVED, RUNTIME NOT APPLIED';
 			detailColor = constants.COLOR_STATUS_WARNING;
-		} else if (context.runtimeSyncState === 'restart_pending') {
-			detail = 'RESTART PENDING';
+		} else if (context.runtimeSyncState === 'runtime_update_pending') {
+			detail = 'RUNTIME UPDATE PENDING';
 		}
 		if (detail.length > 0) {
 			drawEditorText(editorViewState.font, detail, editorViewState.viewportWidth - measureText(detail) - 4, statusTop + 2, 0, detailColor);

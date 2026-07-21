@@ -32,3 +32,30 @@ export function utf8ByteLength(text: string): number {
 	}
 	return bytes;
 }
+
+export function encodeUtf8Codepoint(codepoint: number, output: Uint8Array): number {
+	if (codepoint <= 0x7f) {
+		output[0] = codepoint;
+		return 1;
+	}
+	if (codepoint <= 0x7ff) {
+		output[0] = 0xc0 | (codepoint >> 6);
+		output[1] = 0x80 | (codepoint & 0x3f);
+		return 2;
+	}
+	if ((codepoint >= 0xd800 && codepoint <= 0xdfff) || codepoint > 0x10ffff) {
+		output[0] = 0x3f;
+		return 1;
+	}
+	if (codepoint <= 0xffff) {
+		output[0] = 0xe0 | (codepoint >> 12);
+		output[1] = 0x80 | ((codepoint >> 6) & 0x3f);
+		output[2] = 0x80 | (codepoint & 0x3f);
+		return 3;
+	}
+	output[0] = 0xf0 | (codepoint >> 18);
+	output[1] = 0x80 | ((codepoint >> 12) & 0x3f);
+	output[2] = 0x80 | ((codepoint >> 6) & 0x3f);
+	output[3] = 0x80 | (codepoint & 0x3f);
+	return 4;
+}

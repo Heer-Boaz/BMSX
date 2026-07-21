@@ -458,6 +458,7 @@ export async function applyWorkspaceSourceOverrides(params: { registry: LuaSourc
 			workspaceSourceCache.set(dirtyPath, nextSource);
 			workspaceSourceCache.delete(filePath);
 		} else {
+			asset.base_src = nextSource;
 			asset.base_update_timestamp = updatedAt;
 			const canonicalRecord: WorkspaceOverrideRecord = { ...winner.record, path: filePath, cartPath: filePath, updatedAt };
 			persistWorkspaceOverridesToLocalStorage(storage, root, new Map([[filePath, canonicalRecord]]), params.timestampNow);

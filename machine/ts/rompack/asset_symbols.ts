@@ -35,8 +35,11 @@ function buildAssetSymbolName(asset: RomAsset): string {
 	return `${sanitizeAssetSymbolSegment(asset.type)}_${sanitizeAssetSymbolSegment(asset.resid)}`;
 }
 
-function assetHasPublicRomSymbol(asset: RomAsset): boolean {
-	return asset.type !== 'lua' && asset.type !== 'code' && asset.type !== 'romlabel';
+function assetIsPublicRomPayload(asset: RomAsset): asset is RomAsset & { start: number; end: number } {
+	return asset.start !== undefined
+		&& asset.type !== 'lua'
+		&& asset.type !== 'code'
+		&& asset.type !== 'romlabel';
 }
 
 export function collectRomAssetSymbols(
@@ -46,7 +49,7 @@ export function collectRomAssetSymbols(
 	const symbols: RomAssetSymbol[] = [];
 	for (let index = 0; index < assetList.length; index += 1) {
 		const asset = assetList[index];
-		if (!assetHasPublicRomSymbol(asset) || asset.start === undefined || asset.end === undefined) {
+		if (!assetIsPublicRomPayload(asset)) {
 			continue;
 		}
 		const payloadId = asset.payload_id === undefined ? defaultPayloadId : asset.payload_id;

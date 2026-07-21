@@ -13,6 +13,8 @@ local monitor<const> = {}
 local irq_mask<const>: *word = 0x08000010
 local input_control<const>: *word = 0x0800006c
 local input_keys<const>: *word[8] = 0x08000074
+local system_print_data<const>: *word = 0x08010234
+local system_print_count<const>: *word = 0x08010238
 local system_control<const>: *word = 0x08010350
 local system_status<const>: *word = 0x08010354
 
@@ -424,6 +426,9 @@ function monitor.enter()
 	dma_transfer.copy_to_gp0(system_texture.addr, system_texture.len >> 2)
 	terminal.open()
 	terminal.write('BMSX BIOS MONITOR\n', palette_prompt)
+	while *system_print_count ~= 0 do
+		terminal.write_code(*system_print_data, palette_text)
+	end
 	monitor_commands.start_fault()
 	pump_output(terminal.page_rows)
 	terminal.flush()

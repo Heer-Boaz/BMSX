@@ -33,11 +33,11 @@ import {
 	writeWorkspaceStateFile,
 } from '../../machine/ts/ide/workbench/workspace/io';
 import { hydrateDirtyFiles } from '../../machine/ts/ide/workbench/workspace/restore';
-import { captureActiveCodeTabSource } from '../../machine/ts/ide/workbench/ui/code_tab/activation';
+import { captureActiveCodeTabSource, capturePendingLuaCodeTabSources, markLuaCodeTabsAppliedToRuntime } from '../../machine/ts/ide/workbench/ui/code_tab/activation';
 import { captureContextText } from '../../machine/ts/ide/workbench/workspace/context_snapshot';
 import { editorDocumentState } from '../../machine/ts/ide/editor/editing/document_state';
 import { registerLuaSourceRecord, type LuaSourceRegistry } from '../../machine/ts/lua/source_registry';
-import { saveLuaResourceSource } from '../../machine/ts/ide/workspace/workspace';
+import { applyWorkspaceOverridesToRegistry, saveLuaResourceSource } from '../../machine/ts/ide/workspace/workspace';
 
 class MockStorage implements StorageService {
 	private readonly store = new Map<string, string>();
@@ -346,8 +346,20 @@ test('workspace override application keeps dirty and canonical in separate names
 	});
 
 	assert.equal(asset.src, '-- saved source');
+	assert.equal(asset.base_src, '-- saved source');
+	assert.equal(asset.base_update_timestamp, 25);
 	assert.equal(workspaceSourceCache.get(dirtyPath), undefined);
 	assert.equal(workspaceSourceCache.get('src/foo.lua'), '-- saved source');
+
+	await applyWorkspaceSourceOverrides({
+		registry,
+		storage,
+		includeServer: false,
+		projectRootPath: 'offline-cart',
+		timestampNow: 32,
+	});
+
+	assert.equal(asset.src, '-- saved source');
 });
 
 test('generated compiler sources ignore workspace state', async () => {
@@ -453,6 +465,101 @@ test('active source capture only trusts the editor buffer while the code tab is 
 	assert.equal(captureActiveCodeTabSource(), '-- tab buffer');
 });
 
+test('runtime source capture detects changed code when editor epochs collide', (t) => {
+	const storage = new MockStorage();
+	installOfflineWorkspace(t, storage);
+	const context = installCodeContext('src/foo.lua', '-- revision 2');
+	context.saveGeneration = 4;
+	context.appliedGeneration = 4;
+	const registry: LuaSourceRegistry = {
+		records: [],
+		path2lua: {},
+		module2lua: {},
+		entry_path: 'src/foo.lua',
+		namespace: 'test',
+		projectRootPath: 'offline-cart',
+		can_boot_from_source: true,
+	};
+	registerLuaSourceRecord(registry, {
+		resid: 'foo',
+		type: 'lua',
+		src: '-- revision 2',
+		base_src: '-- revision 2',
+		base_update_timestamp: 2,
+		source_path: 'src/foo.lua',
+		module_path: 'src.foo',
+		update_timestamp: 2,
+		generated: false,
+	});
+	(machineManager as any).sourceState = {
+		cartLuaSources: registry,
+		systemLuaSources: { records: [], path2lua: {}, module2lua: {} },
+		activeLuaSources: registry,
+		luaSourceSearchRegistries: [registry],
+		cartProgramSources: new Map([['src.foo', '-- revision 1']]),
+		systemProgramSources: new Map(),
+	};
+
+	assert.deepEqual(capturePendingLuaCodeTabSources(), [{
+		contextId: context.id,
+		generation: 4,
+		path: 'src/foo.lua',
+		source: '-- revision 2',
+	}]);
+});
+
+test('successful runtime update applies only captured Lua generations without touching AEM state', async (t) => {
+	const storage = new MockStorage();
+	installOfflineWorkspace(t, storage);
+	const activeLua = installCodeContext('src/foo.lua', '-- saved source');
+	activeLua.saveGeneration = 3;
+	activeLua.appliedGeneration = 2;
+	activeLua.runtimeSyncState = 'runtime_update_pending';
+	const backgroundLua: CodeTabContext = {
+		...activeLua,
+		id: 'code:src/bar.lua',
+		title: 'src/bar.lua',
+		descriptor: { path: 'src/bar.lua', type: 'lua' },
+		saveGeneration: 5,
+		appliedGeneration: 4,
+	};
+	const aem: CodeTabContext = {
+		...activeLua,
+		id: 'code:audio.aem',
+		title: 'audio.aem',
+		descriptor: { path: 'audio.aem', type: 'aem' },
+		mode: 'aem',
+		saveGeneration: 7,
+		appliedGeneration: 6,
+	};
+	codeTabSessionState.contexts.set(backgroundLua.id, backgroundLua);
+	codeTabSessionState.contexts.set(aem.id, aem);
+	tabSessionState.tabs.push(
+		{ id: backgroundLua.id, kind: 'code_editor', title: backgroundLua.title, closable: true, dirty: false, runtimeSyncState: 'runtime_update_pending' },
+		{ id: aem.id, kind: 'code_editor', title: aem.title, closable: true, dirty: false, runtimeSyncState: 'runtime_update_pending' },
+	);
+	codeTabSessionState.activeContextId = activeLua.id;
+	editorDocumentState.appliedGeneration = 2;
+
+	const appliedSnapshots = [
+		{ contextId: activeLua.id, generation: 3, path: activeLua.descriptor.path, source: '-- saved source' },
+		{ contextId: backgroundLua.id, generation: 5, path: backgroundLua.descriptor.path, source: '-- saved source' },
+	];
+	backgroundLua.saveGeneration = 6;
+	markLuaCodeTabsAppliedToRuntime(appliedSnapshots);
+
+	assert.equal(activeLua.appliedGeneration, 3);
+	assert.equal(activeLua.runtimeSyncState, 'synced');
+	assert.equal(backgroundLua.appliedGeneration, 5);
+	assert.equal(backgroundLua.runtimeSyncState, 'runtime_update_pending');
+	assert.equal(aem.appliedGeneration, 6);
+	assert.equal(aem.runtimeSyncState, 'runtime_update_pending');
+	assert.equal(tabSessionState.tabs[0].runtimeSyncState, 'synced');
+	assert.equal(tabSessionState.tabs[1].runtimeSyncState, 'runtime_update_pending');
+	assert.equal(tabSessionState.tabs[2].runtimeSyncState, 'runtime_update_pending');
+	assert.equal(editorDocumentState.appliedGeneration, 3);
+});
+
 test('explicit lua save promotes canonical source and removes dirty entry', async (t) => {
 	const storage = new MockStorage();
 	installOfflineWorkspace(t, storage);
@@ -497,7 +604,7 @@ test('explicit lua save promotes canonical source and removes dirty entry', asyn
 		const request = new Request(rawUrl.startsWith('http') ? rawUrl : `http://workspace.local${rawUrl}`, init);
 		const path = request.method === 'POST'
 			? JSON.parse(await request.text()).path
-			: new URL(request.url, 'http://workspace.local').searchParams.get('path') ?? '';
+			: new URL(request.url, 'http://workspace.local').searchParams.get('path')!;
 		requests.push({ method: request.method, path });
 		return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
 	};
@@ -515,6 +622,7 @@ test('explicit lua save promotes canonical source and removes dirty entry', asyn
 	await saveLuaResourceSource('src/foo.lua', '-- saved source');
 
 	assert.equal(asset.src, '-- saved source');
+	assert.equal(asset.base_src, '-- saved source');
 	assert.equal(asset.base_update_timestamp, 42);
 	assert.equal(asset.update_timestamp, 42);
 	assert.equal(JSON.parse(storage.getItem(buildWorkspaceStorageKey('offline-cart', 'src/foo.lua'))).contents, '-- saved source');
@@ -523,6 +631,13 @@ test('explicit lua save promotes canonical source and removes dirty entry', asyn
 	assert.equal(workspaceSourceCache.get('src/foo.lua'), '-- saved source');
 	assert.equal((machineManager as any).sourceState.systemProgramMediaDirty, false);
 	assert.equal((machineManager as any).sourceState.cartProgramMediaDirty, true);
+	await applyWorkspaceOverridesToRegistry({
+		registry,
+		storage,
+		includeServer: false,
+		projectRootPath: 'offline-cart',
+	});
+	assert.equal(asset.src, '-- saved source');
 	assert.deepEqual(requests, [
 		{ method: 'POST', path: 'src/foo.lua' },
 		{ method: 'DELETE', path: dirtyPath },

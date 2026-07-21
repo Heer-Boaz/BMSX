@@ -38,23 +38,38 @@ function markLuaSourceRegistryChanged(registry: LuaSourceRegistry): void {
 	runtimeSemanticCache.clear();
 }
 
-export async function saveLuaResourceSource(path: string, source: string): Promise<void> {
+function resolveEditableLuaSource(path: string): { registry: LuaSourceRegistry; asset: LuaSourceRecord } {
 	const sources = machineManager.sourceState;
-	let registry = sources.systemLuaSources;
-	let asset: LuaSourceRecord | null = null;
 	const cartRegistry = sources.cartLuaSources;
 	if (cartRegistry) {
-		asset = resolveLuaSourceRecord(cartRegistry, path);
-		if (asset) {
-			registry = cartRegistry;
+		const cartAsset = resolveLuaSourceRecord(cartRegistry, path);
+		if (cartAsset) {
+			return { registry: cartRegistry, asset: cartAsset };
 		}
 	}
-	if (!asset) {
-		asset = resolveLuaSourceRecord(registry, path);
-	}
+	const asset = resolveLuaSourceRecord(sources.systemLuaSources, path);
 	if (!asset) {
 		throw new Error(`Missing Lua source registry for '${path}'.`);
 	}
+	return { registry: sources.systemLuaSources, asset };
+}
+
+export function applyLuaCodeTabSources(snapshots: ReadonlyArray<{ path: string; source: string }>): void {
+	for (let index = 0; index < snapshots.length; index += 1) {
+		const snapshot = snapshots[index];
+		const target = resolveEditableLuaSource(snapshot.path);
+		workspaceSourceCache.set(
+			buildWorkspaceDirtyEntryPath(target.registry.projectRootPath, target.asset.source_path),
+			snapshot.source,
+		);
+		markLuaSourceRegistryChanged(target.registry);
+	}
+}
+
+export async function saveLuaResourceSource(path: string, source: string): Promise<void> {
+	const target = resolveEditableLuaSource(path);
+	const registry = target.registry;
+	const asset = target.asset;
 	if (asset.generated) {
 		throw new Error(`Generated Lua source '${path}' is read-only.`);
 	}
@@ -63,6 +78,7 @@ export async function saveLuaResourceSource(path: string, source: string): Promi
 	await persistWorkspaceSourceFile(sourcePath, source, projectRootPath);
 	const updatedAt = machineManager.platform.clock.dateNow();
 	asset.src = source;
+	asset.base_src = source;
 	asset.base_update_timestamp = updatedAt;
 	asset.update_timestamp = updatedAt;
 	registerLuaSourceRecord(registry, asset);

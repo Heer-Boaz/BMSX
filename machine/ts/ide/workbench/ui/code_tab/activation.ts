@@ -21,10 +21,13 @@ import { setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../.
 import { beginNavigationCapture, completeNavigation } from '../../../navigation/navigation_history';
 import { showEditorMessage } from '../../../common/feedback_state';
 import * as constants from '../../../common/constants';
+import { machineManager } from '../../../../core/machine_manager';
+import { resolveRuntimeLuaSource } from '../../../runtime/sources';
 import { focusChunkSource } from '../../contrib/resources/navigation';
 import {
 	findCodeTabContext,
 	getActiveCodeTabContext,
+	setContextRuntimeSyncState,
 	setTabDirty,
 	setTabRuntimeSyncState,
 	updateActiveContextDirtyFlag,
@@ -36,6 +39,13 @@ export type CodeTabSelection = {
 	row: number;
 	startColumn: number;
 	endColumn: number;
+};
+
+export type LuaCodeTabSourceSnapshot = {
+	contextId: string;
+	generation: number;
+	path: string;
+	source: string;
 };
 
 function setCodeTabDiagnosticsState(): void {
@@ -79,6 +89,32 @@ export function captureActiveCodeTabSource(): string {
 	return getTextSnapshot(context.buffer);
 }
 
+export function capturePendingLuaCodeTabSources(): LuaCodeTabSourceSnapshot[] {
+	const snapshots: LuaCodeTabSourceSnapshot[] = [];
+	const sources = machineManager.sourceState;
+	for (const context of codeTabSessionState.contexts.values()) {
+		if (context.mode !== 'lua') {
+			continue;
+		}
+		const source = getTextSnapshot(context.buffer);
+		const match = resolveRuntimeLuaSource(sources, context.descriptor.path)!;
+		const installedSources = match.registry === sources.systemLuaSources
+			? sources.systemProgramSources
+			: sources.cartProgramSources!;
+		if (context.saveGeneration === context.appliedGeneration
+			&& source === installedSources.get(match.record.module_path)) {
+			continue;
+		}
+		snapshots.push({
+			contextId: context.id,
+			generation: context.saveGeneration,
+			path: context.descriptor.path,
+			source,
+		});
+	}
+	return snapshots;
+}
+
 export function commitActiveCodeTabSave(context: CodeTabContext, source: string): void {
 	editorDocumentState.dirty = false;
 	editorDocumentState.savePointDepth = editorDocumentState.undoStack.length;
@@ -94,6 +130,26 @@ export function commitActiveCodeTabSave(context: CodeTabContext, source: string)
 export function setActiveCodeTabAppliedGeneration(context: CodeTabContext, appliedGeneration: number): void {
 	editorDocumentState.appliedGeneration = appliedGeneration;
 	context.appliedGeneration = appliedGeneration;
+}
+
+export function markLuaCodeTabsAppliedToRuntime(snapshots: ReadonlyArray<LuaCodeTabSourceSnapshot>): void {
+	for (let index = 0; index < snapshots.length; index += 1) {
+		const snapshot = snapshots[index];
+		const context = codeTabSessionState.contexts.get(snapshot.contextId);
+		if (!context) {
+			continue;
+		}
+		context.appliedGeneration = snapshot.generation;
+		setContextRuntimeSyncState(
+			context,
+			context.saveGeneration === snapshot.generation ? 'synced' : 'runtime_update_pending',
+			null,
+		);
+	}
+	const activeContext = codeTabSessionState.contexts.get(codeTabSessionState.activeContextId);
+	if (activeContext?.mode === 'lua') {
+		editorDocumentState.appliedGeneration = activeContext.appliedGeneration;
+	}
 }
 
 export function applyActiveCodeTabSelection(selection: CodeTabSelection): void {

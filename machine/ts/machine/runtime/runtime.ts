@@ -16,7 +16,7 @@ import { refreshDeviceTimings } from './timing/config';
 import { HZ_SCALE } from './timing/constants';
 import type { GxGpuPcrtcTiming } from '../devices/gx/gpu_pcrtc';
 import { GX_GPU_VRAM_BYTE_COUNT } from '../devices/gx/vram_address';
-import { IO_GX_GPU_GP1, IO_SYS_CYCLES_PER_FRAME, IO_SYS_FRAME_MS, IO_SYS_PRINT_CHAR, IO_SYS_PRINT_FLUSH, IO_SYS_TIME_MS } from '../bus/io';
+import { IO_GX_GPU_GP1, IO_SYS_CYCLES_PER_FRAME, IO_SYS_FRAME_MS, IO_SYS_TIME_MS } from '../bus/io';
 import { Machine } from '../machine';
 import type { RuntimeInputSource } from './input';
 import {
@@ -96,8 +96,6 @@ export class Runtime {
 	public cartStaticModulePaths: ReadonlyArray<string> = [];
 	public readonly vblank: VblankState;
 	public readonly cpuExecution: CpuExecutionState;
-	public readonly luaOutputLines: string[] = [];
-	private luaOutputLineBuffer = '';
 	public readonly luaScratch = new LuaScratchState();
 	public readonly moduleCache = new Map<string, Value>();
 	public cartEntryAvailable = false;
@@ -105,7 +103,6 @@ export class Runtime {
 	public readonly machine: Machine;
 
 	public resetHardwareState(): void {
-		this.luaOutputLineBuffer = '';
 		this.machine.scheduler.reset();
 		this.machine.resetDevices();
 		this.vblank.reset();
@@ -122,7 +119,6 @@ export class Runtime {
 		this.programVectors = null;
 		this.cartEntryAvailable = false;
 		this.cartStaticModulePaths = EMPTY_STATIC_MODULE_PATHS;
-		this.luaOutputLineBuffer = '';
 		this.hostFault.clear();
 		this.moduleCache.clear();
 		this.machine.cpu.clearProgramEnvironment();
@@ -187,7 +183,6 @@ export class Runtime {
 		this.luaInitialized = false;
 		this.pendingCall = null;
 		this.programVectors = null;
-		this.luaOutputLineBuffer = '';
 		this.hostFault.clear();
 		this.moduleCache.clear();
 		this.machine.cpu.clearProgramEnvironment();
@@ -328,8 +323,6 @@ export class Runtime {
 		this.machine.memory.mapIoRead(IO_SYS_FRAME_MS, this, Runtime.onFrameMsReadThunk);
 		this.machine.memory.mapIoRead(IO_SYS_CYCLES_PER_FRAME, this, Runtime.onCyclesPerFrameReadThunk);
 		this.machine.memory.mapIoWrite(IO_GX_GPU_GP1, this, Runtime.onGxGpuGp1WriteThunk);
-		this.machine.memory.mapIoWrite(IO_SYS_PRINT_CHAR, this, Runtime.onLuaOutputCodepointWriteThunk);
-		this.machine.memory.mapIoWrite(IO_SYS_PRINT_FLUSH, this, Runtime.onLuaOutputFlushWriteThunk);
 		this.machine.initializeSystemIo();
 		this.machine.resetDevices();
 		refreshDeviceTimings(this, this.machine.scheduler.currentNowCycles());
@@ -364,20 +357,6 @@ export class Runtime {
 	private static onGxGpuGp1WriteThunk(context: Runtime, addr: number, value: Value): void {
 		void addr;
 		context.machine.gxGpu.writeGp1(value as number);
-	}
-
-	private static onLuaOutputCodepointWriteThunk(context: Runtime, addr: number, value: Value): void {
-		void addr;
-		context.writeLuaOutputCodepoint((value as number) >>> 0);
-	}
-
-	private static onLuaOutputFlushWriteThunk(context: Runtime): void {
-		context.luaOutputLines.push(context.luaOutputLineBuffer);
-		context.luaOutputLineBuffer = '';
-	}
-
-	private writeLuaOutputCodepoint(codepoint: number): void {
-		this.luaOutputLineBuffer += String.fromCodePoint(codepoint);
 	}
 
 	public baseRamUsedBytes(): number {

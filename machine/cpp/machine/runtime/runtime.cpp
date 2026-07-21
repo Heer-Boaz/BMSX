@@ -1,5 +1,4 @@
 #include "machine/runtime/runtime.h"
-#include "common/utf8.h"
 #include "machine/bus/io.h"
 #include "machine/memory/lua_heap_usage.h"
 #include "machine/memory/map.h"
@@ -41,8 +40,6 @@ Runtime::Runtime(
 	machine.memory.mapIoRead(IO_SYS_FRAME_MS, this, &Runtime::onFrameMsReadThunk);
 	machine.memory.mapIoRead(IO_SYS_CYCLES_PER_FRAME, this, &Runtime::onCyclesPerFrameReadThunk);
 	machine.memory.mapIoWrite(IO_GX_GPU_GP1, this, &Runtime::onGxGpuGp1WriteThunk);
-	machine.memory.mapIoWrite(IO_SYS_PRINT_CHAR, this, &Runtime::onLuaOutputCodepointWriteThunk);
-	machine.memory.mapIoWrite(IO_SYS_PRINT_FLUSH, this, &Runtime::onLuaOutputFlushWriteThunk);
 	machine.initializeSystemIo();
 	machine.resetDevices();
 	refreshDeviceTimings(*this, machine.scheduler.currentNowCycles());
@@ -104,22 +101,6 @@ void Runtime::onGxGpuGp1WriteThunk(void* context, uint32_t addr, Value value, Ma
 	auto* runtime = static_cast<Runtime*>(context);
 	(void)addr;
 	runtime->machine.gxGpu.writeGp1(toU32(value));
-}
-
-void Runtime::onLuaOutputCodepointWriteThunk(void* context, uint32_t addr, Value value, MappedBusSignals) {
-	auto* runtime = static_cast<Runtime*>(context);
-	(void)addr;
-	appendUtf8Codepoint(runtime->luaOutputLineBuffer, toU32(value));
-}
-
-void Runtime::onLuaOutputFlushWriteThunk(void* context, uint32_t addr, Value value, MappedBusSignals) {
-	auto* runtime = static_cast<Runtime*>(context);
-	runtime->onLuaOutputFlushWrite(addr, value);
-}
-
-void Runtime::onLuaOutputFlushWrite([[maybe_unused]] uint32_t addr, [[maybe_unused]] Value value) {
-	luaOutputLines.push_back(luaOutputLineBuffer);
-	luaOutputLineBuffer.clear();
 }
 
 void Runtime::applyUfpsScaled(i64 ufpsScaled) {
@@ -265,7 +246,6 @@ void Runtime::rebootSystemProgram() {
 	m_luaInitialized = false;
 	m_pendingCall = PendingCall::None;
 	programVectors = nullptr;
-	luaOutputLineBuffer.clear();
 	hostFault.clear();
 	m_moduleCache.clear();
 	machine.cpu.clearProgramEnvironment();
@@ -368,7 +348,6 @@ void Runtime::resetRuntimeForProgramReload() {
 	programVectors = nullptr;
 	cartEntryAvailable = false;
 	m_cartStaticModulePaths.clear();
-	luaOutputLineBuffer.clear();
 	hostFault.clear();
 	m_moduleCache.clear();
 	machine.cpu.clearProgramEnvironment();
@@ -383,7 +362,6 @@ void Runtime::setGlobal(std::string_view name, const Value& value) {
 }
 
 void Runtime::resetHardwareState() {
-	luaOutputLineBuffer.clear();
 	machine.scheduler.reset();
 	machine.resetDevices();
 	vblank.reset(*this);

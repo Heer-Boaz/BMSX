@@ -1,6 +1,9 @@
 import {
 	IO_SYS_CONTROL,
+	IO_SYS_PRINT_CHAR,
+	IO_SYS_PRINT_FLUSH,
 	IO_SYS_STATUS,
+	SYS_PRINT_BUFFER_BYTES,
 	SYS_CONTROL_RESET,
 	SYS_CONTROL_SUPERVISOR_ENTER,
 	SYS_CONTROL_SUPERVISOR_FAULT,
@@ -10,6 +13,7 @@ import {
 	SYS_STATUS_SUPERVISOR_RESUMABLE,
 } from '../../bus/io';
 import type { CPU, Value } from '../../cpu/cpu';
+import { encodeUtf8Codepoint } from '../../../common/utf8';
 import type { DmaController } from '../dma/controller';
 import type { GeometryController } from '../geometry/controller';
 import type { GxGpu } from '../gx/gpu';
@@ -28,13 +32,27 @@ export type SystemControllerState = {
 	supervisorPhase: number;
 	supervisorResumable: boolean;
 	supervisorExitRequested: boolean;
+	printBuffer: Uint8Array;
+	printReadIndex: number;
+	printByteCount: number;
 };
+
+const ASCII_NEWLINE = 10;
 
 export class SystemController {
 	private resetRequested = false;
 	private supervisorPhase = SYSTEM_SUPERVISOR_PHASE_USER;
 	private supervisorResumable = false;
 	private supervisorExitRequested = false;
+	private readonly printBuffer = new Uint8Array(SYS_PRINT_BUFFER_BYTES);
+	private printReadIndex = 0;
+	private printByteCount = 0;
+	private readonly hostOutputBuffer = new Uint8Array(SYS_PRINT_BUFFER_BYTES);
+	private hostOutputReadIndex = 0;
+	private hostOutputByteCount = 0;
+	private hostOutputCompleteByteCount = 0;
+	private hostOutputLineOverflowed = false;
+	private readonly printEncodingBytes = new Uint8Array(4);
 
 	public constructor(
 		private readonly memory: Memory,
@@ -47,6 +65,10 @@ export class SystemController {
 	) {
 		memory.mapIoWrite(IO_SYS_CONTROL, this, SystemController.writeControl);
 		memory.mapIoRead(IO_SYS_STATUS, this, SystemController.readStatus);
+		memory.mapIoRead(IO_SYS_PRINT_CHAR, this, SystemController.readPrintChar);
+		memory.mapIoWrite(IO_SYS_PRINT_CHAR, this, SystemController.writePrintChar);
+		memory.mapIoRead(IO_SYS_PRINT_FLUSH, this, SystemController.readPrintByteCount);
+		memory.mapIoWrite(IO_SYS_PRINT_FLUSH, this, SystemController.flushPrintLine);
 	}
 
 	public reset(): void {
@@ -55,12 +77,96 @@ export class SystemController {
 		this.supervisorPhase = SYSTEM_SUPERVISOR_PHASE_USER;
 		this.supervisorResumable = false;
 		this.supervisorExitRequested = false;
+		this.printBuffer.fill(0);
+		this.printReadIndex = 0;
+		this.printByteCount = 0;
+		this.clearHostOutput();
 		this.memory.writeIoValue(IO_SYS_CONTROL, 0);
 		this.writeStatusIo();
 	}
 
 	private static readStatus(context: SystemController): Value {
 		return context.statusWord();
+	}
+
+	private static readPrintChar(context: SystemController): Value {
+		if (context.printByteCount === 0) {
+			return 0;
+		}
+		const value = context.printBuffer[context.printReadIndex];
+		context.printReadIndex = (context.printReadIndex + 1) & (SYS_PRINT_BUFFER_BYTES - 1);
+		context.printByteCount -= 1;
+		return value;
+	}
+
+	private static readPrintByteCount(context: SystemController): Value {
+		return context.printByteCount;
+	}
+
+	private static writePrintChar(context: SystemController, _address: number, value: Value): void {
+		const codepoint = (value as number) >>> 0;
+		const byteCount = encodeUtf8Codepoint(codepoint, context.printEncodingBytes);
+		context.appendRingByte(codepoint <= 0xff ? codepoint : 0x3f);
+		if (!context.reserveHostOutputBytes(byteCount)) {
+			return;
+		}
+		for (let index = 0; index < byteCount; index += 1) {
+			context.appendHostOutputByte(context.printEncodingBytes[index]);
+		}
+	}
+
+	private static flushPrintLine(context: SystemController): void {
+		context.appendRingByte(ASCII_NEWLINE);
+		if (context.reserveHostOutputBytes(1)) {
+			context.appendHostOutputByte(ASCII_NEWLINE);
+			context.hostOutputCompleteByteCount = context.hostOutputByteCount;
+		}
+		context.hostOutputLineOverflowed = false;
+	}
+
+	private reserveHostOutputBytes(byteCount: number): boolean {
+		if (this.hostOutputLineOverflowed) {
+			return false;
+		}
+		if (this.hostOutputByteCount + byteCount <= SYS_PRINT_BUFFER_BYTES) {
+			return true;
+		}
+		this.hostOutputByteCount = this.hostOutputCompleteByteCount;
+		this.hostOutputLineOverflowed = true;
+		return false;
+	}
+
+	private clearHostOutput(): void {
+		this.hostOutputReadIndex = 0;
+		this.hostOutputByteCount = 0;
+		this.hostOutputCompleteByteCount = 0;
+		this.hostOutputLineOverflowed = false;
+	}
+
+	private appendHostOutputByte(value: number): void {
+		this.hostOutputBuffer[(this.hostOutputReadIndex + this.hostOutputByteCount) & (SYS_PRINT_BUFFER_BYTES - 1)] = value;
+		this.hostOutputByteCount += 1;
+	}
+
+	public hostOutputAvailableByteCount(): number {
+		return this.hostOutputCompleteByteCount;
+	}
+
+	public readHostOutputByte(): number {
+		const value = this.hostOutputBuffer[this.hostOutputReadIndex];
+		this.hostOutputReadIndex = (this.hostOutputReadIndex + 1) & (SYS_PRINT_BUFFER_BYTES - 1);
+		this.hostOutputByteCount -= 1;
+		this.hostOutputCompleteByteCount -= 1;
+		return value;
+	}
+
+	private appendRingByte(value: number): void {
+		if (this.printByteCount === SYS_PRINT_BUFFER_BYTES) {
+			this.printReadIndex = (this.printReadIndex + 1) & (SYS_PRINT_BUFFER_BYTES - 1);
+			this.printByteCount -= 1;
+		}
+		this.printBuffer[(this.printReadIndex + this.printByteCount) & (SYS_PRINT_BUFFER_BYTES - 1)] = value;
+		this.printByteCount += 1;
 	}
 
 	private static writeControl(context: SystemController, _address: number, value: Value): void {
@@ -190,6 +296,9 @@ export class SystemController {
 			supervisorPhase: this.supervisorPhase,
 			supervisorResumable: this.supervisorResumable,
 			supervisorExitRequested: this.supervisorExitRequested,
+			printBuffer: this.printBuffer.slice(),
+			printReadIndex: this.printReadIndex,
+			printByteCount: this.printByteCount,
 		};
 	}
 
@@ -198,6 +307,10 @@ export class SystemController {
 		this.supervisorPhase = state.supervisorPhase;
 		this.supervisorResumable = state.supervisorResumable;
 		this.supervisorExitRequested = state.supervisorExitRequested;
+		this.printBuffer.set(state.printBuffer);
+		this.printReadIndex = state.printReadIndex;
+		this.printByteCount = state.printByteCount;
+		this.clearHostOutput();
 		this.memory.writeIoValue(IO_SYS_CONTROL, 0);
 		this.writeStatusIo();
 	}

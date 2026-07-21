@@ -217,7 +217,7 @@ export type CodeTabMode = 'lua' | 'aem';
 
 export type EditorTabId = `resource:${string}` | `code:${string}`;
 export type EditorTabKind = 'resource_view' | 'code_editor';
-export type EditorRuntimeSyncState = 'synced' | 'restart_pending' | 'diverged';
+export type EditorRuntimeSyncState = 'synced' | 'runtime_update_pending' | 'diverged';
 
 export type ScrollbarKind = 'codeVertical' | 'codeHorizontal' | 'resourceVertical' | 'resourceHorizontal' | 'viewerVertical';
 
