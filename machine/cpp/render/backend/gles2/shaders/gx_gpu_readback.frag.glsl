@@ -10,7 +10,8 @@ vec2 readRawPixel(ivec2 transferCoord) {
 	int yPeriod = u_vramYAddressExtensionWord != 0 ? 1024 : 512;
 	int logicalY = (u_readback.y + transferCoord.y) - ((u_readback.y + transferCoord.y) / yPeriod) * yPeriod;
 	vec2 texcoord = vec2((float(x) + 0.5) / 1024.0, (float(logicalY) + 0.5) / 1024.0);
-	return texture2D(u_vram, texcoord).rg;
+	ivec4 nibbles = ivec4(texture2D(u_vram, texcoord) * 15.0 + 0.5);
+	return vec2(nibbles.b * 16 + nibbles.a, nibbles.r * 16 + nibbles.g) / 255.0;
 }
 
 void main() {

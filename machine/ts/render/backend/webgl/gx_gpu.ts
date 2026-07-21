@@ -1495,7 +1495,10 @@ function copyVramToVramArea(
 		runTargetY = gxGpuVramYAddress(runTargetY + runHeight, vramYAddressExtensionWord);
 		remainingHeight -= runHeight;
 	}
-	if (transferVertexFloatCount !== 0) renderTransferCommands(transferVertexFloatCount, gxGpuState.vramSampleTexture, GX_GPU_TEXTURE_SAMPLE_UNIT, maskBitModeWord, gxGpuState.transferProgram);
+	if (transferVertexFloatCount !== 0) {
+		gxGpuState.backend.useProgram(gxGpuState.transferProgram.program);
+		renderTransferCommands(transferVertexFloatCount, gxGpuState.vramSampleTexture, GX_GPU_TEXTURE_SAMPLE_UNIT, maskBitModeWord, gxGpuState.transferProgram);
+	}
 	markGxGpuSampleTextureDirtyLogicalArea(targetX, targetY, width, height, vramYAddressExtensionWord);
 }
 
@@ -2459,7 +2462,6 @@ function renderTransferCommands(
 	gl.bufferSubData(gl.ARRAY_BUFFER, 0, gxGpuTransferVertices, 0, vertexFloatCount);
 	beginGxGpuVramRenderTarget();
 	gl.disable(gl.SCISSOR_TEST);
-	backend.useProgram(program.program);
 	writeTransferUniforms(program, sourceTextureUnit, maskBitModeWord);
 	backend.setActiveTexture(sourceTextureUnit);
 	backend.bindTexture2D(sourceTexture);

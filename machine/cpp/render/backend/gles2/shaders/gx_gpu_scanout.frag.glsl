@@ -16,9 +16,8 @@ int rawWordAtAddress(int address) {
 	int logicalY = wrappedAddress / 1024;
 	vec2 texcoord = vec2((float(logicalX) + 0.5) / 1024.0, (float(logicalY) + 0.5) / 1024.0);
 	vec4 rawPixel = texture2D(u_vram, texcoord);
-	int lowByte = int(rawPixel.r * 255.0 + 0.5);
-	int highByte = int(rawPixel.g * 255.0 + 0.5);
-	return lowByte + highByte * 256;
+	ivec4 nibbles = ivec4(rawPixel * 15.0 + 0.5);
+	return nibbles.r * 4096 + nibbles.g * 256 + nibbles.b * 16 + nibbles.a;
 }
 
 int rawGx16WordAtAddress(int address) {
@@ -27,9 +26,8 @@ int rawGx16WordAtAddress(int address) {
 	int logicalX = wrappedAddress - logicalY * 1024;
 	vec2 texcoord = vec2((float(logicalX) + 0.5) / 1024.0, (float(logicalY) + 0.5) / 1024.0);
 	vec4 rawPixel = texture2D(u_vram, texcoord);
-	int lowByte = int(rawPixel.r * 255.0 + 0.5);
-	int highByte = int(rawPixel.g * 255.0 + 0.5);
-	return lowByte + highByte * 256;
+	ivec4 nibbles = ivec4(rawPixel * 15.0 + 0.5);
+	return nibbles.r * 4096 + nibbles.g * 256 + nibbles.b * 16 + nibbles.a;
 }
 
 ivec4 rgb555Pixel(int word) {

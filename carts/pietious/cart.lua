@@ -214,6 +214,7 @@ wait_vblank_after(vblank_sequence)
 
 while true do
 	update_world()
+	print('test')
 
 	wait_vblank_after(vblank_sequence)
 	gx_clear_color(0xff000000)

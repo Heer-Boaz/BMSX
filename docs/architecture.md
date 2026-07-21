@@ -1767,14 +1767,19 @@ command execution or the driver, is the bottleneck. Planning, overlap checks
 and layer emission perform no heap work in the steady path.
 
 CPU-to-VRAM packets remain discrete GX commands. Accelerated owners expose the
-command owner's retained word storage as bytes and upload those direct16 bytes
-unchanged into one retained two-channel GPU staging texture. A transfer draw
-then consumes the raw 16-bit words and applies GX mask-bit semantics on the GPU.
-There is no CPU pixel loop, RGB555 conversion or 16-to-32-bit host expansion in
-the accelerated upload path. The linear staging layout uses 1024-pixel rows, so
-one packet requires one host texture upload when its pixel count is a multiple
-of 1024 and otherwise two; destination wrapping only emits bounded retained
-transfer geometry and does not repack pixels.
+command owner's retained word storage as bytes and submit those direct16 bytes
+without a CPU pixel loop, RGB555 conversion or 16-to-32-bit host expansion.
+WebGL2 and WebGPU upload into one retained two-channel staging texture and apply
+GX mask-bit semantics in a transfer draw. GLES2 stores each raw GX word across
+the four nibbles of its RGBA texture representation: complete, unmasked,
+nonwrapping rectangles upload directly with the core
+`GL_UNSIGNED_SHORT_4_4_4_4` type, while masked, wrapping or partial commands use
+the retained two-channel staging texture and the same GPU transfer semantics.
+The linear staging layout uses 1024-pixel rows, so a packet uses one host texture
+upload when it fits in one staging row or ends on a staging-row boundary, and
+two only when it contains complete rows plus a final partial row. Destination
+wrapping only emits bounded retained transfer geometry and does not repack
+pixels. The GLES2 path uses only core GLES2 formats and entry points.
 
 The direct libretro host can opt into fixed-scalar profiling through a private
 versioned interface. The core publishes a monotonically numbered

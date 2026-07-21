@@ -936,8 +936,9 @@ static void request_hw_context_for_backend(bmsx::BackendType backend) {
 }
 
 void retro_set_environment(retro_environment_t cb) {
+	// RetroArch may reinstall this callback inside one core session. AV publication
+	// validity follows retro_init/retro_deinit, not the callback function address.
 	environ_cb = cb;
-	g_frontend_av_info_valid = false;
 #if BMSX_ENABLE_GLES2
 	BmsxGxUploadProfileInterfaceV1 gxUploadProfileInterface{
 		read_gx_upload_profile_frame,
@@ -1087,15 +1088,6 @@ void retro_init(void) {
 		}
 	}
 
-	// Set pixel format
-	enum retro_pixel_format fmt = RETRO_PIXEL_FORMAT_XRGB8888;
-	if (!environ_cb(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &fmt)) {
-	logging.log(RETRO_LOG_WARN,
-				"[BMSX] XRGB8888 not supported, trying RGB565\n");
-	fmt = RETRO_PIXEL_FORMAT_RGB565;
-	environ_cb(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &fmt);
-	}
-
 	// Create platform instance
 	initialize_default_av_info(g_cached_av_info);
 	g_cached_av_info_valid = true;
@@ -1191,6 +1183,11 @@ void retro_set_controller_port_device(unsigned port, unsigned device) {
 bool retro_load_game(const struct retro_game_info* game) {
 	if (!g_backend_error.empty()) {
 		logging.log(RETRO_LOG_ERROR, "%s\n", g_backend_error.c_str());
+		return false;
+	}
+	enum retro_pixel_format pixelFormat = RETRO_PIXEL_FORMAT_XRGB8888;
+	if (!environ_cb(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &pixelFormat)) {
+		logging.log(RETRO_LOG_ERROR, "[BMSX] XRGB8888 output is not supported by the frontend\n");
 		return false;
 	}
 	bool loaded_ok = false;

@@ -940,16 +940,23 @@ to fix and never permission to route around the raw base contract.
   the complete accelerated upload route and separately counts logical direct16
   bytes and actual host calls/bytes; standard frontends decline that private
   interface and execute no timing path. The original retained RGBA-expansion
-  baseline produced 900 host calls, 138,240,000 logical bytes and 276,480,000
-  host bytes. The corrected accelerated route uploads the command owner's raw
-  direct16 bytes into a retained GPU staging texture and performs GX conversion
-  in the transfer shader. Its 2026-07-21 WSL llvmpipe rerun produced the same
-  900 commands and calls, 138,240,000 logical bytes and exactly 138,240,000 host
-  bytes, with 0.272 ms mean CPU submission time per command. Accelerated GLES2
-  and software captures matched exactly across all 45 `bare_metal_cart` demo
-  screenshots and an upload-soak capture. Cross-command coalescing still lacks
-  measured justification; the remaining target question is the real SNES Mini
-  driver cost, not CPU-side pixel repacking.
+  baseline produced 900 host calls, 138,240,000 logical bytes, 276,480,000 host
+  bytes and 0.064 ms mean CPU submission time per command in the same checkout
+  and WSL environment. WebGL2 and WebGPU now upload the command owner's raw
+  direct16 bytes into a retained two-channel staging texture and perform GX
+  conversion in the transfer shader. Core GLES2 retains the raw GX word across
+  the four nibbles of its RGBA texture representation, so the soak's complete,
+  unmasked, nonwrapping packets upload directly as
+  `GL_UNSIGNED_SHORT_4_4_4_4`; commands requiring mask semantics, wrapping or a
+  partial rectangle retain the staging-transfer route. The 2026-07-21 WSL
+  llvmpipe rerun produced the same 900 commands and calls, 138,240,000 logical
+  bytes and exactly 138,240,000 host bytes, with 0.022 ms mean CPU submission
+  time per command. The raw route has therefore removed the forbidden CPU
+  repack, halved host traffic and reduced measured submission cost below the
+  retained-expansion baseline without an extension dependency. All 146
+  deterministic `bare_metal_cart` demo captures and the upload-soak capture
+  match the software backend exactly. Real SNES Mini driver cost remains a
+  target measurement rather than an excuse for CPU-side conversion.
 - [x] Profile the complete release TypeScript software/headless path before
   changing PCRTC scanout. Over the same capture-free 1,101-frame
   `bare_metal_cart_particle_soak` timeline, the first V8 CPU profile sampled

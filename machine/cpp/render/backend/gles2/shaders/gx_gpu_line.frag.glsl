@@ -27,9 +27,8 @@ int clampColor5(int value) {
 
 int rawStorageVramWord(ivec2 storageCoord) {
 	vec4 rawPixel = texture2D(u_vram, (vec2(storageCoord) + vec2(0.5)) / 1024.0);
-	int lowByte = int(rawPixel.r * 255.0 + 0.5);
-	int highByte = int(rawPixel.g * 255.0 + 0.5);
-	return lowByte + highByte * 256;
+	ivec4 nibbles = ivec4(rawPixel * 15.0 + 0.5);
+	return nibbles.r * 4096 + nibbles.g * 256 + nibbles.b * 16 + nibbles.a;
 }
 
 ivec3 decodeRgb555To5(int word) {
@@ -90,9 +89,11 @@ ivec3 rgb8ToRgb5(ivec3 rgb8, ivec2 logicalCoord) {
 
 vec4 encodeRgb555(ivec3 color5, int outputMaskBit) {
 	int word = color5.x + color5.y * 32 + color5.z * 1024 + outputMaskBit * 32768;
-	int highByte = word / 256;
-	int lowByte = word - highByte * 256;
-	return vec4(float(lowByte) / 255.0, float(highByte) / 255.0, 0.0, 1.0);
+	int highNibble = word / 4096;
+	int midHighNibble = (word / 256) - highNibble * 16;
+	int midLowNibble = (word / 16) - (word / 256) * 16;
+	int lowNibble = word - (word / 16) * 16;
+	return vec4(highNibble, midHighNibble, midLowNibble, lowNibble) / 15.0;
 }
 
 void main() {

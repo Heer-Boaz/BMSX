@@ -22,7 +22,6 @@
 enum {
 	kAlsaPeriodFrames = 1024,
 	kAlsaPeriodCount = 4,
-	kAlsaPrimePeriods = 4,
 	kSdlBufferFrames = 1024,
 	kSampleBufferFrames = 512,
 	kAudioThreadPriority = 20,
@@ -108,16 +107,12 @@ static void set_audio_thread_realtime(void) {
 static void* audio_thread_main(void* argument) {
 	(void)argument;
 	set_audio_thread_realtime();
-	const size_t prime_frames = g_audio.period_frames * kAlsaPrimePeriods;
-	bool primed = false;
 	for (;;) {
-		const size_t minimum_frames = primed ? g_audio.period_frames : prime_frames;
 		const size_t frames = bmsx_audio_queue_pop_wait(&g_audio.queue, g_audio.thread_buffer,
-				g_audio.thread_buffer_frames, minimum_frames);
+				g_audio.thread_buffer_frames, g_audio.period_frames);
 		if (frames == 0) {
 			break;
 		}
-		primed = true;
 		write_alsa_frames(g_audio.thread_buffer, frames);
 	}
 	if (ioctl(g_audio.fd, SNDRV_PCM_IOCTL_DRAIN) != 0) {
@@ -241,7 +236,6 @@ static void open_sdl_audio(int sample_rate) {
 	g_audio.sample_buffer_frames = 0;
 	bmsx_audio_queue_init(&g_audio.queue, (size_t)obtained.samples * 2u, kAudioChannels,
 			g_audio.track_high_water);
-	bmsx_audio_queue_prime_silence(&g_audio.queue);
 	g_audio.sdl_underrun_frames = 0;
 	SDL_PauseAudioDevice(g_audio.sdl_device, 0);
 	fprintf(stderr, "[libretro-host] audio: sdl rate=%d ch=%u samples=%u\n",

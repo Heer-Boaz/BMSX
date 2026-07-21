@@ -54,12 +54,6 @@ void bmsx_audio_queue_stop(BmsxAudioQueue* queue) {
 	pthread_mutex_unlock(&queue->mutex);
 }
 
-void bmsx_audio_queue_prime_silence(BmsxAudioQueue* queue) {
-	memset(queue->data, 0, queue->capacity_frames * queue->channels * sizeof(int16_t));
-	queue->used_frames = queue->capacity_frames;
-	queue->high_water_frames = queue->capacity_frames;
-}
-
 void bmsx_audio_queue_push(BmsxAudioQueue* queue, const int16_t* data, size_t frames) {
 	while (frames > 0u) {
 		pthread_mutex_lock(&queue->mutex);

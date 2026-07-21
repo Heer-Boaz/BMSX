@@ -18,6 +18,8 @@ unsigned gxUploadProfileOffers = 0u;
 bool defaultRequestLineWasLow = false;
 bool gxUploadProfileReaderWasOffered = false;
 bool acceptPrivateInterfaces = true;
+bool acceptXrgb8888 = true;
+unsigned pixelFormatRequests = 0u;
 unsigned requestLineReads = 0u;
 unsigned inputPolls = 0u;
 unsigned geometryNotifications = 0u;
@@ -60,6 +62,11 @@ int16_t discardInputState(unsigned, unsigned, unsigned, unsigned) {
 }
 
 bool softwareFrontendEnvironment(unsigned command, void* data) {
+	if (command == RETRO_ENVIRONMENT_SET_PIXEL_FORMAT) {
+		pixelFormatRequests += 1u;
+		return acceptXrgb8888
+			&& *static_cast<retro_pixel_format*>(data) == RETRO_PIXEL_FORMAT_XRGB8888;
+	}
 	if (command == RETRO_ENVIRONMENT_SET_GEOMETRY) {
 		lastGeometry = *static_cast<retro_game_geometry*>(data);
 		geometryNotifications += 1u;
@@ -163,8 +170,15 @@ int main() {
 	retro_system_av_info initialAvInfo{};
 	retro_get_system_av_info(&initialAvInfo);
 	require(initialAvInfo.geometry.max_width == 1920u && initialAvInfo.geometry.max_height == 1080u, "libretro should advertise the standard PS2 output envelope");
+	retro_set_environment(softwareFrontendEnvironment);
+	retro_set_environment(frontendEnvironment);
+	require(supervisorInterfaceQueries == 2u, "reinstalling the frontend environment should renegotiate the supervisor interface");
+#if BMSX_ENABLE_GLES2
+	require(gxUploadProfileOffers == 2u, "reinstalling the frontend environment should re-offer the GX upload profile interface");
+#endif
 	retro_init();
 	require(retro_load_game(&game), "the core should load the minimal cart for supervisor negotiation validation");
+	require(pixelFormatRequests == 1u, "content load should negotiate the XRGB8888 framebuffer contract once");
 	insideRetroRun = true;
 	retro_run();
 	insideRetroRun = false;
@@ -215,22 +229,31 @@ int main() {
 	acceptPrivateInterfaces = false;
 	retro_set_environment(frontendEnvironment);
 #if BMSX_ENABLE_GLES2
-	require(gxUploadProfileOffers == 2u, "a replacement frontend should receive one fresh GX upload profile offer");
+	require(gxUploadProfileOffers == 3u, "a replacement frontend should receive one fresh GX upload profile offer");
 	require(gxUploadProfileReaderWasOffered, "a rejected GX upload profile offer should still carry the core reader");
 #else
 	require(gxUploadProfileOffers == 0u, "a replacement frontend must not receive an unavailable GX upload profile interface");
 #endif
-	require(supervisorInterfaceQueries == 2u, "a replacement frontend should receive one fresh supervisor interface probe");
+	require(supervisorInterfaceQueries == 3u, "a replacement frontend should receive one fresh supervisor interface probe");
 	require(defaultRequestLineWasLow, "an unsupported frontend should inherit a fresh callable low line");
 	retro_get_system_av_info(&initialAvInfo);
 	retro_init();
 	require(retro_load_game(&game), "the core should reload the minimal cart with the rejected supervisor interface");
+	require(pixelFormatRequests == 2u, "replacement content load should renegotiate the XRGB8888 framebuffer contract once");
 	insideRetroRun = true;
 	retro_run();
 	insideRetroRun = false;
 	require(inputPolls == 1u, "the rejected core should still poll the platform input owner once during the frame");
 	require(requestLineReads == 0u, "a frontend callback written while rejecting the private command must never be retained");
 	require(!bmsx::Input::instance().supervisorRequestLineHigh(), "a rejected private interface must leave the supervisor-request line low");
+	retro_deinit();
+
+	acceptXrgb8888 = false;
+	retro_set_environment(frontendEnvironment);
+	retro_get_system_av_info(&initialAvInfo);
+	retro_init();
+	require(!retro_load_game(&game), "the core must reject a frontend that cannot consume its XRGB8888 framebuffer");
+	require(pixelFormatRequests == 3u, "an unsupported frontend should receive one XRGB8888 negotiation request");
 	retro_deinit();
 	std::filesystem::remove_all(testDirectory);
 
