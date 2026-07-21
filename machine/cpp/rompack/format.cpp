@@ -146,19 +146,15 @@ std::vector<u8> encodeCartManifest(const CartManifest& cart) {
 std::vector<u8> encodeProgramCartRom(const CartManifest& cart, const ProgramImage& image) {
 	const EncodedProgramImage encodedProgram = encodeProgramImage(image);
 	const size_t sectionByteCount = encodedProgram.sections.size();
-	std::vector<u8> program;
-	program.reserve(sectionByteCount + encodedProgram.descriptor.size());
-	program.insert(program.end(), encodedProgram.sections.begin(), encodedProgram.sections.end());
-	program.insert(program.end(), encodedProgram.descriptor.begin(), encodedProgram.descriptor.end());
 	const std::vector<u8> manifest = encodeCartManifest(cart);
 
 	CartRomHeader header{};
 	header.headerSize = CART_ROM_HEADER_SIZE;
 	header.manifestOffset = CART_ROM_HEADER_SIZE;
 	header.manifestLength = static_cast<u32>(manifest.size());
-	header.tocOffset = alignCartRomWordSection(header.manifestOffset + header.manifestLength);
-	header.dataOffset = header.tocOffset;
-	header.dataLength = static_cast<u32>(program.size());
+	header.dataOffset = alignCartRomWordSection(header.manifestOffset + header.manifestLength);
+	const size_t descriptorOffset = alignCartRomWordSection(static_cast<u32>(sectionByteCount));
+	header.dataLength = static_cast<u32>(descriptorOffset + encodedProgram.descriptor.size());
 	header.programBootVersion = PROGRAM_BOOT_HEADER_VERSION;
 	header.programBootFlags = 0;
 	header.programEntryProtoIndex = static_cast<u32>(image.vectors.resetProtoIndex);
@@ -173,19 +169,16 @@ std::vector<u8> encodeProgramCartRom(const CartManifest& cart, const ProgramImag
 	programEntry.rom.type = "code";
 	programEntry.rom.start = static_cast<i32>(header.dataOffset);
 	programEntry.rom.end = static_cast<i32>(header.dataOffset + sectionByteCount);
-	programEntry.rom.compiledStart = programEntry.rom.end;
+	programEntry.rom.compiledStart = static_cast<i32>(header.dataOffset + descriptorOffset);
 	programEntry.rom.compiledEnd = static_cast<i32>(header.dataOffset + header.dataLength);
 
+	std::vector<u8> program(header.dataLength);
+	std::copy(encodedProgram.sections.begin(), encodedProgram.sections.end(), program.begin());
+	std::copy(encodedProgram.descriptor.begin(), encodedProgram.descriptor.end(), program.begin() + descriptorOffset);
+	header.tocOffset = alignCartRomWordSection(header.dataOffset + header.dataLength);
 	const std::vector<u8> toc = encodeRomToc(RomTocPayload{{programEntry}, std::nullopt});
 	header.tocLength = static_cast<u32>(toc.size());
-	header.dataOffset = alignCartRomWordSection(header.tocOffset + header.tocLength);
-	programEntry.rom.start = static_cast<i32>(header.dataOffset);
-	programEntry.rom.end = static_cast<i32>(header.dataOffset + encodedProgram.sections.size());
-	programEntry.rom.compiledStart = programEntry.rom.end;
-	programEntry.rom.compiledEnd = static_cast<i32>(header.dataOffset + header.dataLength);
-	const std::vector<u8> finalToc = encodeRomToc(RomTocPayload{{programEntry}, std::nullopt});
-	header.tocLength = static_cast<u32>(finalToc.size());
-	return encodeCartRom(header, manifest, finalToc, program);
+	return encodeCartRom(header, manifest, toc, program);
 }
 
 } // namespace bmsx

@@ -40,6 +40,27 @@ std::vector<std::string> decodeStringArray(const BinValue& value) {
 	return strings;
 }
 
+std::vector<int> decodeIntArray(const BinValue& value) {
+	const BinArray& values = value.asArray();
+	std::vector<int> integers;
+	integers.reserve(values.size());
+	for (const BinValue& entry : values) {
+		integers.push_back(entry.toI32());
+	}
+	return integers;
+}
+
+ProgramResumePoint decodeProgramResumePoint(const BinValue& value) {
+	ProgramResumePoint point;
+	point.wordOffset = value.require("wordOffset").toI32();
+	point.range = decodeSourceRange(value.require("range"));
+	point.op = value.require("op").toI32();
+	point.liveRegisters = decodeIntArray(value.require("liveRegisters"));
+	point.uses = decodeIntArray(value.require("uses"));
+	point.defs = decodeIntArray(value.require("defs"));
+	return point;
+}
+
 EncodedValue decodeEncodedValue(const BinValue& value) {
 	if (value.isNull()) return nullptr;
 	if (value.isBool()) return value.asBool();
@@ -153,6 +174,16 @@ std::unique_ptr<ProgramMetadata> decodeProgramMetadata(const BinValue& value) {
 			metadata->debugRanges.push_back(std::nullopt);
 		} else {
 			metadata->debugRanges.push_back(decodeSourceRange(range));
+		}
+	}
+	const BinArray& resumePointsByProto = value.require("resumePointsByProto").asArray();
+	metadata->resumePointsByProto.resize(resumePointsByProto.size());
+	for (size_t protoIndex = 0; protoIndex < resumePointsByProto.size(); ++protoIndex) {
+		const BinArray& points = resumePointsByProto[protoIndex].asArray();
+		auto& decodedPoints = metadata->resumePointsByProto[protoIndex];
+		decodedPoints.reserve(points.size());
+		for (const BinValue& point : points) {
+			decodedPoints.push_back(decodeProgramResumePoint(point));
 		}
 	}
 	const BinArray& slotsByProto = value.require("localSlotsByProto").asArray();

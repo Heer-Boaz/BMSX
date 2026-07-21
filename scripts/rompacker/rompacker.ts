@@ -7,11 +7,10 @@ import { findExistingDirectory, getParamOrEnv, normalizePathKey, parseArgsVector
 import { createCliUi } from './display';
 import { validateAudioEventReferences } from './audioeventvalidator';
 import { lintCartSources } from './cart_lua_linter_runtime';
-import { appendProgramImage, biosLuaPath, buildLuaProgramContextAssets, commonResPath, cartlibLuaPath, systemLuaPath, compileLuaChunkBuffer, createTextureAtlases, finalizeRompack, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired } from './rombuilder';
+import { biosLuaPath, buildLuaProgramContextAssets, buildRomProgramTail, commonResPath, cartlibLuaPath, systemLuaPath, compileLuaChunkBuffer, createTextureAtlases, finalizeRompack, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired } from './rombuilder';
 import { buildGxTextureLayoutModuleSource } from './gx_texture_layout';
 import type { TaskProgressReporter as ProgressReporter } from './progress';
 import type { RomPackerOptions } from './rompacker.rompack';
-import type { RomAsset } from '../../machine/ts/rompack/format';
 import { buildRomAssetSymbolModuleSourceFromSymbols, collectRomAssetSymbols } from '../../machine/ts/rompack/asset_symbols';
 import {
 	GX_TEXTURE_LAYOUT_MODULE_PATH,
@@ -20,6 +19,7 @@ import {
 } from '../../machine/ts/rompack/format';
 import { LuaError } from '../../machine/ts/lua/errors';
 import { loadRomAssetList } from '../../machine/ts/rompack/loader';
+import { layoutRomProgramPrefix } from '../../machine/ts/rompack/tooling/rom_layout';
 import {
 	decodeProgramImage,
 	decodeProgramSymbolsImage,
@@ -92,17 +92,6 @@ const taskList: TaskName[] = [
 	TASK.ROM_FINALIZE,
 	TASK.DONE,
 ];
-
-function stripLuaAssets(assets: RomAsset[], debug: boolean): void {
-	if (debug) {
-		return;
-	}
-	for (let index = assets.length - 1; index >= 0; index -= 1) {
-		if (assets[index].type === 'lua') {
-			assets.splice(index, 1);
-		}
-	}
-}
 
 // --- Individual lists that allow us to easily remove tasks from the main task list (visualisation only!) ---
 const romBuildTasks: TaskName[] = taskList.slice(1, -1);
@@ -395,21 +384,21 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 	await runBIOSStep(TASK.TEXTURE_BUILD, () => createTextureAtlases(BIOSResources));
 	validateAudioEventReferences(BIOSResources);
 	const BIOSRomAssets = await runBIOSStep(TASK.ROM_ASSETS, () => generateRomAssets(BIOSResources, message => progress?.setDetail(message)));
-	const BIOSProgramBoot = appendProgramImage(BIOSRomAssets, SYSTEM_BOOT_ENTRY_PATH, {
+	const BIOSLayout = layoutRomProgramPrefix(BIOSRomAssets, debug, null);
+	const BIOSProgram = buildRomProgramTail(BIOSRomAssets, SYSTEM_BOOT_ENTRY_PATH, {
 		externalLuaAssets: [],
 		generatedLuaModules: [],
-		includeLuaAssets: debug,
 		includeSymbols: debug,
 		optLevel,
+		programOffset: BIOSLayout.programOffset,
 		programDomain: 'system',
 	});
-	stripLuaAssets(BIOSRomAssets, debug);
-	await runBIOSStep(TASK.BIOS_FINALIZE, () => finalizeRompack(BIOSRomAssets, BIOSRomName, {
+	await runBIOSStep(TASK.BIOS_FINALIZE, () => finalizeRompack(BIOSRomName, {
 		projectRootPath: '',
-		manifest: null,
 		zipRom: false,
 		debug,
-		programBoot: BIOSProgramBoot,
+		program: BIOSProgram,
+		layout: BIOSLayout,
 		outputDirectory,
 	}));
 	if (progress) {
@@ -589,18 +578,18 @@ async function main() {
 					? decodeProgramSymbolsImage(systemRom.subarray(systemProgramSymbolsEntry.start, systemProgramSymbolsEntry.end))
 					: null,
 			};
-			const assetSymbols = collectRomAssetSymbols(romAssets, romPackDebug, 'cart');
+			const romLayout = layoutRomProgramPrefix(romAssets, romPackDebug, runtimeRomManifest);
+			const assetSymbols = collectRomAssetSymbols(romLayout.entries, 'cart');
 			const assetSymbolModuleSource = buildRomAssetSymbolModuleSourceFromSymbols(assetSymbols);
-			const programBoot = appendProgramImage(romAssets, romManifest.lua.entry_path, {
-				includeLuaAssets: romPackDebug,
+			const program = buildRomProgramTail(romAssets, romManifest.lua.entry_path, {
 				includeSymbols: romPackDebug,
 				optLevel,
+				programOffset: romLayout.programOffset,
 				programDomain: 'cart',
 				systemProgram,
 				externalLuaAssets: biosProgramContextAssets,
 				generatedLuaModules: [{ path: ROM_ASSET_SYMBOL_MODULE_PATH, source: assetSymbolModuleSource }],
 			});
-			stripLuaAssets(romAssets, romPackDebug);
 			await progress.taskCompleted();
 			if (!isBIOSMode) {
 				const cartLuaRoots = Array.from(extraLuaPathSet);
@@ -614,19 +603,14 @@ async function main() {
 				await progress.taskCompleted();
 			}
 
-			await progress.runWithDetail('Finalize ROM pack', () => finalizeRompack(romAssets, rom_name, {
+			await progress.runWithDetail('Finalize ROM pack', () => finalizeRompack(rom_name, {
 				projectRootPath,
-				manifest: runtimeRomManifest,
 				status: message => progress.setDetail(message),
 				debug: romPackDebug,
 				zipRom: false,
-				programBoot,
+				program,
+				layout: romLayout,
 				outputDirectory,
-				assetSymbolVerification: {
-					expected: assetSymbols,
-					includeLuaAssets: romPackDebug,
-					defaultPayloadId: 'cart',
-				},
 			}));
 			await progress.taskCompleted();
 		}

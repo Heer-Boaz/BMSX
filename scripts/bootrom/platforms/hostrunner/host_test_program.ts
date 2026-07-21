@@ -51,7 +51,7 @@ export async function buildHostTestProgram(
 		luaAssets: collectLuaAssets(cartridge, cartIndex.entries),
 		externalLuaAssets: collectLuaAssets(systemRom, systemIndex.entries),
 		generatedLuaModules: [
-			{ path: ROM_ASSET_SYMBOL_MODULE_PATH, source: buildRomAssetSymbolModuleSource(cartIndex.entries, true) },
+			{ path: ROM_ASSET_SYMBOL_MODULE_PATH, source: buildRomAssetSymbolModuleSource(cartIndex.entries) },
 			{ path: HOST_TEST_MODULE_PATH, source: testSource },
 		],
 		entryPath: cartIndex.entry_path,

@@ -6,7 +6,8 @@ import {
 	GX_TEXTURE_LAYOUT_SOURCE_PATH,
 	type RomAsset,
 } from '../../machine/ts/rompack/format';
-import { appendProgramImage, compileLuaChunkBuffer } from '../../scripts/rompacker/rombuilder';
+import { layoutRomProgramPrefix } from '../../machine/ts/rompack/tooling/rom_layout';
+import { buildRomProgramTail, compileLuaChunkBuffer } from '../../scripts/rompacker/rombuilder';
 
 test('program image rejects a cart Lua module that collides with the persisted GX layout', () => {
 	const entrySource = 'return true';
@@ -35,14 +36,15 @@ test('program image rejects a cart Lua module that collides with the persisted G
 			source_path: GX_TEXTURE_LAYOUT_SOURCE_PATH,
 		},
 	];
+	const layout = layoutRomProgramPrefix(assets, true, null);
 
 	assert.throws(
-		() => appendProgramImage(assets, 'cart.lua', {
+		() => buildRomProgramTail(assets, 'cart.lua', {
 			externalLuaAssets: [],
 			generatedLuaModules: [],
-			includeLuaAssets: true,
 			includeSymbols: true,
 			optLevel: 3,
+			programOffset: layout.programOffset,
 			programDomain: 'system',
 		}),
 		/ROM Lua module 'bmsx\/gx_texture_layout' is defined more than once/,

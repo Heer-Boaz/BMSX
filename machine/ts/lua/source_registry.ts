@@ -95,7 +95,7 @@ export function buildLuaSources(cartSource: RawRomSource, romSource: RawRomSourc
 				assetEntries.push(entry);
 			}
 		}
-		const source = buildRomAssetSymbolModuleSource(assetEntries, false);
+		const source = buildRomAssetSymbolModuleSource(assetEntries);
 		const assetSymbols: LuaSourceRecord = {
 			resid: ROM_ASSET_SYMBOL_MODULE_PATH,
 			type: 'lua',

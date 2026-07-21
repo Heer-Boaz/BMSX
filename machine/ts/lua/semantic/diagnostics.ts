@@ -296,7 +296,7 @@ function pushRangeDiagnostic(
 ): void {
 	const row = range.start.line - 1;
 	const startColumn = range.start.column - 1;
-	const endColumn = range.end.column > range.start.column ? range.end.column - 1 : startColumn + 1;
+	const endColumn = range.end.column > range.start.column ? range.end.column : startColumn + 1;
 	pushDiagnostic(diagnostics, row, startColumn, endColumn, message, severity);
 }
 

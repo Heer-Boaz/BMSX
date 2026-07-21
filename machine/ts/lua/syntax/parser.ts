@@ -443,15 +443,15 @@ export class LuaParser {
 		const names: LuaIdentifierExpression[] = [];
 		const attributes: (LuaLocalAttribute | null)[] = [];
 		const pointerTypeRefs: (LuaTypeReference | null)[] = [];
-		let endPosition = this.positionFromToken(localToken);
+		let endPosition = this.endPositionFromToken(localToken);
 		do {
 			const nameToken = this.consume(LuaTokenType.Identifier, 'Expected local variable name.');
 			names.push(this.createIdentifierExpression(nameToken));
-			endPosition = this.positionFromToken(nameToken);
+			endPosition = this.endPositionFromToken(nameToken);
 			const attribute = this.parseLocalAttribute();
 			attributes.push(attribute);
 			if (attribute !== null) {
-				endPosition = this.positionFromToken(this.previous());
+				endPosition = this.endPositionFromToken(this.previous());
 			}
 			const pointerTypeRef = this.parseLocalPointerTypeReference();
 			pointerTypeRefs.push(pointerTypeRef);
@@ -581,12 +581,12 @@ export class LuaParser {
 				expressions.push(this.parseExpression());
 			}
 		}
-		let endPosition: LuaSourcePosition = this.positionFromToken(returnToken);
+		let endPosition: LuaSourcePosition = this.endPositionFromToken(returnToken);
 		if (expressions.length > 0) {
 			endPosition = expressions[expressions.length - 1].range.end;
 		}
 		if (this.match(LuaTokenType.Semicolon)) {
-			endPosition = this.positionFromToken(this.previous());
+			endPosition = this.endPositionFromToken(this.previous());
 		}
 		return {
 			kind: LuaSyntaxKind.ReturnStatement,
@@ -606,7 +606,7 @@ export class LuaParser {
 		return {
 			path: this.path,
 			start: this.positionFromToken(firstToken),
-			end: this.positionFromToken(this.previous()),
+			end: this.endPositionFromToken(this.previous()),
 		};
 	}
 
@@ -776,7 +776,7 @@ export class LuaParser {
 			values = [expression];
 		}
 		const startPosition = targets[0].range.start;
-		const endPosition = values.length > 0 ? values[values.length - 1].range.end : this.positionFromToken(this.previous());
+		const endPosition = values.length > 0 ? values[values.length - 1].range.end : this.endPositionFromToken(this.previous());
 		return {
 			kind: LuaSyntaxKind.AssignmentStatement,
 			range: {
@@ -1157,11 +1157,11 @@ export class LuaParser {
 	private parseTypeReference(): LuaTypeReference {
 		const nameToken = this.consume(LuaTokenType.Identifier, 'Expected type name.');
 		const arrayLengths: Array<LuaExpression | null> = [];
-		let end = this.positionFromToken(nameToken);
+		let end = this.endPositionFromToken(nameToken);
 		while (this.match(LuaTokenType.LeftBracket)) {
 			arrayLengths.push(this.check(LuaTokenType.RightBracket) ? null : this.parseExpression());
 			const rightBracket = this.consume(LuaTokenType.RightBracket, 'Expected "]" after type array length.');
-			end = this.positionFromToken(rightBracket);
+			end = this.endPositionFromToken(rightBracket);
 		}
 		return {
 			name: nameToken.lexeme,
@@ -1382,15 +1382,12 @@ export class LuaParser {
 			if (target.kind === LuaSyntaxKind.MemberExpression) {
 				const member = target as LuaMemberExpression;
 				const identifierLength = member.identifier.length;
-				const start = member.range.end;
-				const adjustedEndColumn = identifierLength > 0 ? start.column + Math.max(0, identifierLength - 1) : start.column;
+				const end = member.range.end;
+				const startColumn = end.column - Math.max(0, identifierLength - 1);
 				return {
 					path: baseRange.path,
-					start,
-					end: {
-						line: start.line,
-						column: adjustedEndColumn,
-					},
+					start: { line: end.line, column: startColumn },
+					end,
 				};
 			}
 			if (target.kind === LuaSyntaxKind.IndexExpression) {
@@ -1765,7 +1762,7 @@ export class LuaParser {
 		return {
 			path: this.path,
 			start: this.positionFromToken(startToken),
-			end: this.positionFromToken(endToken),
+			end: this.endPositionFromToken(endToken),
 		};
 	}
 
@@ -1781,7 +1778,7 @@ export class LuaParser {
 		return {
 			path: this.path,
 			start: node.range.start,
-			end: this.positionFromToken(endToken),
+			end: this.endPositionFromToken(endToken),
 		};
 	}
 
@@ -1789,12 +1786,16 @@ export class LuaParser {
 		return {
 			path: this.path,
 			start: block.range.start,
-			end: this.positionFromToken(endToken),
+			end: this.endPositionFromToken(endToken),
 		};
 	}
 
 	private positionFromToken(token: LuaToken): LuaSourcePosition {
 		return { line: token.line, column: token.column };
+	}
+
+	private endPositionFromToken(token: LuaToken): LuaSourcePosition {
+		return { line: token.endLine, column: token.endColumn };
 	}
 
 	private error(token: LuaToken, message: string): LuaSyntaxError {
@@ -1826,7 +1827,7 @@ export class LuaParser {
 		}
 		const line = this.sourceLines[lineIndex];
 		const startIndex = Math.max(range.start.column - 1, 0);
-		let endIndex = Math.max(range.end.column - 1, startIndex + 1);
+		let endIndex = Math.max(range.end.column, startIndex + 1);
 		endIndex = Math.min(endIndex, line.length);
 		return line.slice(startIndex, endIndex);
 	}

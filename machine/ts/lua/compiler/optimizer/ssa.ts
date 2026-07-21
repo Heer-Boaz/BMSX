@@ -1,12 +1,12 @@
 // start repeated-sequence-acceptable -- SSA optimizer keeps instruction rewrites inline for compile-time throughput and readable opcode cases.
 // start normalized-body-acceptable -- SSA value rewrites intentionally mirror non-SSA rewrites without sharing mutable pass internals.
 import { OpCode, type SourceRange, type Value } from '../../../machine/cpu/cpu';
-import { decodeCallArgCount } from '../../../machine/cpu/opcode_info';
 import { MAX_EXT_CONST } from '../../../machine/cpu/instruction_format';
 import { valueIsString } from '../../../machine/cpu/cpu';
 import { buildBasicBlocks, buildBlockGraph, getJumpTarget, isJump, remapInstructions, type Block } from '../control_flow';
 import type { Instruction, InstructionSet, OptimizationContext } from './index';
-import { cloneInstruction, computeMaxRegister, isPureInstruction, isRegisterOperand, pushRegister, pushRegisterRange } from './instructions';
+import { cloneInstruction, computeMaxRegister, isPureInstruction } from './instructions';
+import { collectInstructionDefs, collectInstructionUses, computeBlockLiveOut } from './liveness';
 import {
 	evaluateBinary,
 	evaluateComparison,
@@ -768,187 +768,6 @@ const collectUsesForSsa = (instruction: Instruction): UseOperand[] => {
 	return uses;
 };
 
-const collectUsesForLiveness = (instruction: Instruction, maxRegister: number): number[] => {
-	const uses: number[] = [];
-	switch (instruction.op) {
-		case OpCode.MOV:
-		case OpCode.UNM:
-		case OpCode.NOT:
-		case OpCode.LEN:
-		case OpCode.BNOT:
-			pushRegister(uses, instruction.b);
-			break;
-		case OpCode.SETSYS:
-		case OpCode.SETGL:
-		case OpCode.SETUP:
-		case OpCode.JMPIF:
-		case OpCode.JMPIFNOT:
-		case OpCode.MTC0:
-			pushRegister(uses, instruction.a);
-			break;
-		case OpCode.LOADKR:
-			pushRegister(uses, instruction.b);
-			break;
-		case OpCode.LOAD_MEM_D:
-			pushRegister(uses, instruction.b);
-			break;
-		case OpCode.STORE_MEM_D:
-			pushRegister(uses, instruction.a);
-			pushRegister(uses, instruction.b);
-			break;
-		case OpCode.STORE_MEM_WORDS_D:
-			pushRegisterRange(uses, instruction.a, instruction.c);
-			pushRegister(uses, instruction.b);
-			break;
-		case OpCode.GETI:
-		case OpCode.GETFIELD:
-		case OpCode.SELF:
-			pushRegister(uses, instruction.b);
-			break;
-		case OpCode.GETT:
-			pushRegister(uses, instruction.b);
-			if (isRegisterOperand(instruction, RK_C, instruction.c)) {
-				pushRegister(uses, instruction.c);
-			}
-			break;
-		case OpCode.SETI:
-		case OpCode.SETFIELD:
-			pushRegister(uses, instruction.a);
-			if (isRegisterOperand(instruction, RK_C, instruction.c)) {
-				pushRegister(uses, instruction.c);
-			}
-			break;
-		case OpCode.SETT:
-			pushRegister(uses, instruction.a);
-			if (isRegisterOperand(instruction, RK_B, instruction.b)) {
-				pushRegister(uses, instruction.b);
-			}
-			if (isRegisterOperand(instruction, RK_C, instruction.c)) {
-				pushRegister(uses, instruction.c);
-			}
-			break;
-		case OpCode.ADD:
-		case OpCode.SUB:
-		case OpCode.MUL:
-		case OpCode.DIV:
-		case OpCode.MOD:
-		case OpCode.FLOORDIV:
-		case OpCode.POW:
-		case OpCode.BAND:
-		case OpCode.BOR:
-		case OpCode.BXOR:
-		case OpCode.SHL:
-		case OpCode.SHR:
-		case OpCode.CONCAT:
-		case OpCode.EQ:
-		case OpCode.LT:
-		case OpCode.LE:
-			if (isRegisterOperand(instruction, RK_B, instruction.b)) {
-				pushRegister(uses, instruction.b);
-			}
-			if (isRegisterOperand(instruction, RK_C, instruction.c)) {
-				pushRegister(uses, instruction.c);
-			}
-			break;
-		case OpCode.CONCATN:
-			pushRegisterRange(uses, instruction.b, instruction.c);
-			break;
-		case OpCode.LOAD_MEM:
-			pushRegister(uses, instruction.b);
-			break;
-		case OpCode.STORE_MEM:
-			pushRegister(uses, instruction.a);
-			pushRegister(uses, instruction.b);
-			break;
-		case OpCode.STORE_MEM_WORDS:
-			pushRegisterRange(uses, instruction.a, instruction.c);
-			pushRegister(uses, instruction.b);
-			break;
-		case OpCode.CALL: {
-			const countValue = decodeCallArgCount(instruction.b, maxRegister - instruction.a);
-			pushRegisterRange(uses, instruction.a, countValue + 1);
-			break;
-		}
-		case OpCode.RET: {
-			const countValue = instruction.b === 0 ? maxRegister - instruction.a + 1 : instruction.b;
-			pushRegisterRange(uses, instruction.a, countValue);
-			break;
-		}
-		default:
-			break;
-	}
-	return uses;
-};
-
-const collectDefs = (instruction: Instruction, maxRegister: number): number[] => {
-	const defs: number[] = [];
-	switch (instruction.op) {
-		case OpCode.MOV:
-		case OpCode.KNIL:
-		case OpCode.KFALSE:
-		case OpCode.KTRUE:
-		case OpCode.K0:
-		case OpCode.K1:
-		case OpCode.KM1:
-		case OpCode.KSMI:
-		case OpCode.LOADK:
-		case OpCode.LOADKR:
-		case OpCode.GETSYS:
-		case OpCode.GETGL:
-		case OpCode.GETI:
-		case OpCode.GETFIELD:
-		case OpCode.GETT:
-		case OpCode.NEWT:
-		case OpCode.ADD:
-		case OpCode.SUB:
-		case OpCode.MUL:
-		case OpCode.DIV:
-		case OpCode.MOD:
-		case OpCode.FLOORDIV:
-		case OpCode.POW:
-		case OpCode.BAND:
-		case OpCode.BOR:
-		case OpCode.BXOR:
-		case OpCode.SHL:
-		case OpCode.SHR:
-		case OpCode.CONCAT:
-		case OpCode.CONCATN:
-		case OpCode.UNM:
-		case OpCode.NOT:
-		case OpCode.LEN:
-		case OpCode.BNOT:
-		case OpCode.CLOSURE:
-		case OpCode.GETUP:
-		case OpCode.LOAD_MEM:
-		case OpCode.LOAD_MEM_D:
-		case OpCode.MFC0:
-			pushRegister(defs, instruction.a);
-			break;
-		case OpCode.SELF:
-			pushRegisterRange(defs, instruction.a, 2);
-			break;
-		case OpCode.SETI:
-		case OpCode.SETFIELD:
-			break;
-		case OpCode.LOADNIL:
-			pushRegisterRange(defs, instruction.a, instruction.b);
-			break;
-		case OpCode.VARARG: {
-			const countValue = instruction.b === 0 ? maxRegister - instruction.a + 1 : instruction.b;
-			pushRegisterRange(defs, instruction.a, countValue);
-			break;
-		}
-		case OpCode.CALL: {
-			const countValue = instruction.c === 0 ? maxRegister - instruction.a + 1 : instruction.c;
-			pushRegisterRange(defs, instruction.a, countValue);
-			break;
-		}
-		default:
-			break;
-	}
-	return defs;
-};
-
 const computeValueNumbers = (
 	instructions: Instruction[],
 	instrUses: UseSlot[][],
@@ -1413,79 +1232,6 @@ const computeDominators = (
 	return { rpo, rpoIndex, idom };
 };
 
-const computeLiveOut = (
-	instructions: Instruction[],
-	blocks: Block[],
-	successors: number[][],
-	maxRegister: number,
-): Uint8Array[] => {
-	const registerCount = maxRegister + 1;
-	const blockUse: Uint8Array[] = new Array(blocks.length);
-	const blockDef: Uint8Array[] = new Array(blocks.length);
-	const liveIn: Uint8Array[] = new Array(blocks.length);
-	const liveOut: Uint8Array[] = new Array(blocks.length);
-
-	for (let blockIndex = 0; blockIndex < blocks.length; blockIndex += 1) {
-		blockUse[blockIndex] = new Uint8Array(registerCount);
-		blockDef[blockIndex] = new Uint8Array(registerCount);
-		liveIn[blockIndex] = new Uint8Array(registerCount);
-		liveOut[blockIndex] = new Uint8Array(registerCount);
-		const block = blocks[blockIndex];
-		const use = blockUse[blockIndex];
-		const def = blockDef[blockIndex];
-		for (let i = block.start; i < block.end; i += 1) {
-			const instruction = instructions[i];
-			const uses = collectUsesForLiveness(instruction, maxRegister);
-			for (let u = 0; u < uses.length; u += 1) {
-				const reg = uses[u];
-				if (def[reg] === 0) {
-					use[reg] = 1;
-				}
-			}
-			const defs = collectDefs(instruction, maxRegister);
-			for (let d = 0; d < defs.length; d += 1) {
-				def[defs[d]] = 1;
-			}
-		}
-	}
-
-	let changed = true;
-	while (changed) {
-		changed = false;
-		for (let blockIndex = blocks.length - 1; blockIndex >= 0; blockIndex -= 1) {
-			const out = liveOut[blockIndex];
-			const nextOut = new Uint8Array(registerCount);
-			const succs = successors[blockIndex];
-			for (let s = 0; s < succs.length; s += 1) {
-				const succIn = liveIn[succs[s]];
-				for (let r = 0; r < registerCount; r += 1) {
-					if (succIn[r] !== 0) {
-						nextOut[r] = 1;
-					}
-				}
-			}
-			for (let r = 0; r < registerCount; r += 1) {
-				if (out[r] !== nextOut[r]) {
-					out[r] = nextOut[r];
-					changed = true;
-				}
-			}
-			const use = blockUse[blockIndex];
-			const def = blockDef[blockIndex];
-			const inSet = liveIn[blockIndex];
-			for (let r = 0; r < registerCount; r += 1) {
-				const nextIn = use[r] !== 0 || (out[r] !== 0 && def[r] === 0) ? 1 : 0;
-				if (inSet[r] !== nextIn) {
-					inSet[r] = nextIn;
-					changed = true;
-				}
-			}
-		}
-	}
-
-	return liveOut;
-};
-
 const applyLoopInvariantCodeMotion = (set: InstructionSet, context: OptimizationContext): InstructionSet => {
 	const { instructions, ranges } = set;
 	if (instructions.length === 0) {
@@ -1498,7 +1244,7 @@ const applyLoopInvariantCodeMotion = (set: InstructionSet, context: Optimization
 	}
 	const { predecessors, successors } = buildBlockGraph(instructions, blocks);
 	const { idom } = computeDominators(blocks, predecessors, successors);
-	const liveOut = computeLiveOut(instructions, blocks, successors, maxRegister);
+	const liveOut = computeBlockLiveOut(instructions, blocks, successors, maxRegister);
 	const pinnedTargets = new Set<number>();
 	for (let i = 0; i < instructions.length; i += 1) {
 		const instruction = instructions[i];
@@ -1608,11 +1354,11 @@ const applyLoopInvariantCodeMotion = (set: InstructionSet, context: Optimization
 			const block = blocks[blockIndex];
 			for (let i = block.start; i < block.end; i += 1) {
 				const instruction = instructions[i];
-				const defs = collectDefs(instruction, maxRegister);
+				const defs = collectInstructionDefs(instruction, maxRegister);
 				for (let d = 0; d < defs.length; d += 1) {
 					defCount[defs[d]] += 1;
 				}
-				const uses = collectUsesForLiveness(instruction, maxRegister);
+				const uses = collectInstructionUses(instruction, maxRegister);
 				for (let u = 0; u < uses.length; u += 1) {
 					useBlocksByReg[uses[u]].add(blockIndex);
 				}
@@ -1670,7 +1416,7 @@ const applyLoopInvariantCodeMotion = (set: InstructionSet, context: Optimization
 				if (pinnedTargets.has(i)) {
 					continue;
 				}
-				const defs = collectDefs(instruction, maxRegister);
+				const defs = collectInstructionDefs(instruction, maxRegister);
 				if (defs.length !== 1) {
 					continue;
 				}
@@ -1684,7 +1430,7 @@ const applyLoopInvariantCodeMotion = (set: InstructionSet, context: Optimization
 				if (loopLiveOut.has(dest)) {
 					continue;
 				}
-				const uses = collectUsesForLiveness(instruction, maxRegister);
+				const uses = collectInstructionUses(instruction, maxRegister);
 				let invariant = true;
 				for (let u = 0; u < uses.length; u += 1) {
 					if (context.closureWrittenRegisters.has(uses[u]) || defCount[uses[u]] > 0) {
@@ -1876,7 +1622,7 @@ const unrollNumericForLoops = (set: InstructionSet, context: OptimizationContext
 			}
 			let mutatesLoopRegs = false;
 			for (let i = bodyStart; i <= bodyEnd; i += 1) {
-				const defs = collectDefs(instructions[i], maxRegister);
+				const defs = collectInstructionDefs(instructions[i], maxRegister);
 				for (let d = 0; d < defs.length; d += 1) {
 					const reg = defs[d];
 					if (reg === indexReg || reg === limitReg || reg === stepReg) {
@@ -1898,7 +1644,7 @@ const unrollNumericForLoops = (set: InstructionSet, context: OptimizationContext
 					if (isControlFlowInstruction(instr)) {
 						return null;
 					}
-					const defs = collectDefs(instr, maxRegister);
+					const defs = collectInstructionDefs(instr, maxRegister);
 					for (let d = 0; d < defs.length; d += 1) {
 						if (defs[d] !== reg) {
 							continue;
@@ -2071,68 +1817,7 @@ const eliminateDeadStoresGlobal = (set: InstructionSet, context: OptimizationCon
 			captured[desc.index] = 1;
 		}
 	}
-	const blockUse: Uint8Array[] = new Array(blocks.length);
-	const blockDef: Uint8Array[] = new Array(blocks.length);
-	const liveIn: Uint8Array[] = new Array(blocks.length);
-	const liveOut: Uint8Array[] = new Array(blocks.length);
-
-	for (let blockIndex = 0; blockIndex < blocks.length; blockIndex += 1) {
-		blockUse[blockIndex] = new Uint8Array(registerCount);
-		blockDef[blockIndex] = new Uint8Array(registerCount);
-		liveIn[blockIndex] = new Uint8Array(registerCount);
-		liveOut[blockIndex] = new Uint8Array(registerCount);
-		const block = blocks[blockIndex];
-		const use = blockUse[blockIndex];
-		const def = blockDef[blockIndex];
-		for (let i = block.start; i < block.end; i += 1) {
-			const instruction = instructions[i];
-			const uses = collectUsesForLiveness(instruction, maxRegister);
-			for (let u = 0; u < uses.length; u += 1) {
-				const reg = uses[u];
-				if (def[reg] === 0) {
-					use[reg] = 1;
-				}
-			}
-			const defs = collectDefs(instruction, maxRegister);
-			for (let d = 0; d < defs.length; d += 1) {
-				def[defs[d]] = 1;
-			}
-		}
-	}
-
-	let changed = true;
-	while (changed) {
-		changed = false;
-		for (let blockIndex = blocks.length - 1; blockIndex >= 0; blockIndex -= 1) {
-			const out = liveOut[blockIndex];
-			const nextOut = new Uint8Array(registerCount);
-			const succs = successors[blockIndex];
-			for (let s = 0; s < succs.length; s += 1) {
-				const succIn = liveIn[succs[s]];
-				for (let r = 0; r < registerCount; r += 1) {
-					if (succIn[r] !== 0) {
-						nextOut[r] = 1;
-					}
-				}
-			}
-			for (let r = 0; r < registerCount; r += 1) {
-				if (out[r] !== nextOut[r]) {
-					out[r] = nextOut[r];
-					changed = true;
-				}
-			}
-			const use = blockUse[blockIndex];
-			const def = blockDef[blockIndex];
-			const inSet = liveIn[blockIndex];
-			for (let r = 0; r < registerCount; r += 1) {
-				const nextIn = use[r] !== 0 || (out[r] !== 0 && def[r] === 0) ? 1 : 0;
-				if (inSet[r] !== nextIn) {
-					inSet[r] = nextIn;
-					changed = true;
-				}
-			}
-		}
-	}
+	const liveOut = computeBlockLiveOut(instructions, blocks, successors, maxRegister);
 
 	const keep = new Array<boolean>(count).fill(true);
 	let removed = 0;
@@ -2141,7 +1826,7 @@ const eliminateDeadStoresGlobal = (set: InstructionSet, context: OptimizationCon
 		const live = liveOut[blockIndex].slice();
 		for (let i = block.end - 1; i >= block.start; i -= 1) {
 			const instruction = instructions[i];
-			const defs = collectDefs(instruction, maxRegister);
+			const defs = collectInstructionDefs(instruction, maxRegister);
 			let hasLive = false;
 			for (let d = 0; d < defs.length; d += 1) {
 				if (live[defs[d]] !== 0) {
@@ -2165,7 +1850,7 @@ const eliminateDeadStoresGlobal = (set: InstructionSet, context: OptimizationCon
 			for (let d = 0; d < defs.length; d += 1) {
 				live[defs[d]] = 0;
 			}
-			const uses = collectUsesForLiveness(instruction, maxRegister);
+			const uses = collectInstructionUses(instruction, maxRegister);
 			for (let u = 0; u < uses.length; u += 1) {
 				live[uses[u]] = 1;
 			}
@@ -2295,7 +1980,7 @@ export const applyGlobalOptimizations = (
 	for (let blockIndex = 0; blockIndex < blocks.length; blockIndex += 1) {
 		const block = blocks[blockIndex];
 		for (let i = block.start; i < block.end; i += 1) {
-			const defs = collectDefs(instructions[i], maxRegister);
+			const defs = collectInstructionDefs(instructions[i], maxRegister);
 			for (let d = 0; d < defs.length; d += 1) {
 				defBlocksByReg[defs[d]].add(blockIndex);
 			}
@@ -2413,7 +2098,7 @@ export const applyGlobalOptimizations = (
 				}
 				addUseSlot(i, { ...operand, valueId });
 			}
-			const defs = collectDefs(instruction, maxRegister);
+			const defs = collectInstructionDefs(instruction, maxRegister);
 			if (defs.length > 0) {
 				const slots: DefSlot[] = [];
 				for (let d = 0; d < defs.length; d += 1) {

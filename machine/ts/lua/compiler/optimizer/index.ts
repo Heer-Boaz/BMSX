@@ -3,8 +3,9 @@ import { decodeCallArgCount } from '../../../machine/cpu/opcode_info';
 import { MAX_EXT_CONST } from '../../../machine/cpu/instruction_format';
 import type { StringPool } from '../../../machine/cpu/string_pool';
 import { buildBasicBlocks, buildBlockGraph, getJumpTarget, isJump, remapInstructions, type Block } from '../control_flow';
-import { cloneInstruction, computeMaxRegister, isPureInstruction, isRegisterOperand, pushRegister, pushRegisterRange } from './instructions';
+import { cloneInstruction, computeMaxRegister, isPureInstruction } from './instructions';
 import { applyGlobalOptimizations } from './ssa';
+import { collectInstructionDefs, collectInstructionUses, computeBlockLiveOut } from './liveness';
 import {
 	evaluateBinary,
 	evaluateComparison,
@@ -32,6 +33,7 @@ export type Instruction = {
 	target: number | null;
 	callProtoIndex?: number | null;
 	symbolicReloc?: { kind: 'module' | 'export_proto'; symbol: string };
+	resumeRange?: SourceRange;
 };
 
 export type OptimizationLevel = 0 | 1 | 2 | 3;
@@ -1062,266 +1064,7 @@ const eliminateDeadStores = (set: InstructionSet, context: OptimizationContext):
 	}
 	const captured = new Uint8Array(registerCount);
 	markCapturedClosureRegisters(captured, instructions, context, registerCount);
-	const blockUse: Uint8Array[] = new Array(blocks.length);
-	const blockDef: Uint8Array[] = new Array(blocks.length);
-	const liveIn: Uint8Array[] = new Array(blocks.length);
-	const liveOut: Uint8Array[] = new Array(blocks.length);
-
-		const collectUsesForLiveness = (instruction: Instruction): number[] => {
-			const uses: number[] = [];
-			switch (instruction.op) {
-			case OpCode.KNIL:
-			case OpCode.KFALSE:
-			case OpCode.KTRUE:
-			case OpCode.K0:
-			case OpCode.K1:
-			case OpCode.KM1:
-			case OpCode.KSMI:
-			case OpCode.MOV:
-			case OpCode.UNM:
-			case OpCode.NOT:
-			case OpCode.LEN:
-			case OpCode.BNOT:
-					pushRegister(uses, instruction.b);
-					break;
-			case OpCode.SETSYS:
-			case OpCode.SETGL:
-			case OpCode.SETUP:
-			case OpCode.MTC0:
-			case OpCode.JMPIF:
-			case OpCode.JMPIFNOT:
-					pushRegister(uses, instruction.a);
-					break;
-			case OpCode.LOADKR:
-				pushRegister(uses, instruction.b);
-				break;
-			case OpCode.LOAD_MEM_D:
-			case OpCode.STORE_MEM_D:
-			case OpCode.STORE_MEM_WORDS_D:
-					pushRegister(uses, instruction.b);
-					if (instruction.op === OpCode.STORE_MEM_D) {
-						pushRegister(uses, instruction.a);
-					}
-					if (instruction.op === OpCode.STORE_MEM_WORDS_D) {
-						pushRegisterRange(uses, instruction.a, instruction.c);
-					}
-					break;
-			case OpCode.GETI:
-			case OpCode.GETFIELD:
-			case OpCode.SELF:
-					pushRegister(uses, instruction.b);
-					break;
-				case OpCode.GETT:
-					pushRegister(uses, instruction.b);
-					if (isRegisterOperand(instruction, RK_C, instruction.c)) {
-						pushRegister(uses, instruction.c);
-					}
-					break;
-				case OpCode.SETI:
-				case OpCode.SETFIELD:
-					pushRegister(uses, instruction.a);
-					if (isRegisterOperand(instruction, RK_C, instruction.c)) {
-						pushRegister(uses, instruction.c);
-					}
-					break;
-				case OpCode.SETT:
-					pushRegister(uses, instruction.a);
-					if (isRegisterOperand(instruction, RK_B, instruction.b)) {
-						pushRegister(uses, instruction.b);
-					}
-					if (isRegisterOperand(instruction, RK_C, instruction.c)) {
-						pushRegister(uses, instruction.c);
-					}
-					break;
-			case OpCode.ADD:
-			case OpCode.SUB:
-			case OpCode.MUL:
-			case OpCode.DIV:
-			case OpCode.MOD:
-			case OpCode.FLOORDIV:
-			case OpCode.POW:
-			case OpCode.BAND:
-			case OpCode.BOR:
-			case OpCode.BXOR:
-			case OpCode.SHL:
-			case OpCode.SHR:
-			case OpCode.CONCAT:
-			case OpCode.EQ:
-			case OpCode.LT:
-			case OpCode.LE:
-					if (isRegisterOperand(instruction, RK_B, instruction.b)) {
-						pushRegister(uses, instruction.b);
-					}
-					if (isRegisterOperand(instruction, RK_C, instruction.c)) {
-						pushRegister(uses, instruction.c);
-					}
-					break;
-				case OpCode.CONCATN:
-					pushRegisterRange(uses, instruction.b, instruction.c);
-					break;
-				case OpCode.LOAD_MEM:
-					if (isRegisterOperand(instruction, RK_B, instruction.b)) {
-						pushRegister(uses, instruction.b);
-					}
-					break;
-				case OpCode.STORE_MEM:
-					pushRegister(uses, instruction.a);
-					if (isRegisterOperand(instruction, RK_B, instruction.b)) {
-						pushRegister(uses, instruction.b);
-					}
-					break;
-				case OpCode.STORE_MEM_WORDS:
-					pushRegisterRange(uses, instruction.a, instruction.c);
-					if (isRegisterOperand(instruction, RK_B, instruction.b)) {
-						pushRegister(uses, instruction.b);
-					}
-					break;
-				case OpCode.CALL: {
-					const countValue = decodeCallArgCount(instruction.b, maxRegister - instruction.a);
-					pushRegisterRange(uses, instruction.a, countValue + 1);
-					break;
-				}
-				case OpCode.RET: {
-					const countValue = instruction.b === 0 ? maxRegister - instruction.a + 1 : instruction.b;
-					pushRegisterRange(uses, instruction.a, countValue);
-					break;
-				}
-			default:
-				break;
-		}
-		return uses;
-	};
-
-		const collectDefs = (instruction: Instruction): number[] => {
-			const defs: number[] = [];
-			switch (instruction.op) {
-			case OpCode.MOV:
-			case OpCode.KNIL:
-			case OpCode.KFALSE:
-			case OpCode.KTRUE:
-			case OpCode.K0:
-			case OpCode.K1:
-			case OpCode.KM1:
-			case OpCode.KSMI:
-			case OpCode.LOADK:
-			case OpCode.LOADKR:
-			case OpCode.GETSYS:
-			case OpCode.GETGL:
-			case OpCode.GETI:
-			case OpCode.GETFIELD:
-			case OpCode.GETT:
-			case OpCode.NEWT:
-			case OpCode.ADD:
-			case OpCode.SUB:
-			case OpCode.MUL:
-			case OpCode.DIV:
-			case OpCode.MOD:
-			case OpCode.FLOORDIV:
-			case OpCode.POW:
-			case OpCode.BAND:
-			case OpCode.BOR:
-			case OpCode.BXOR:
-			case OpCode.SHL:
-			case OpCode.SHR:
-			case OpCode.CONCAT:
-			case OpCode.CONCATN:
-			case OpCode.UNM:
-			case OpCode.NOT:
-			case OpCode.LEN:
-			case OpCode.BNOT:
-			case OpCode.CLOSURE:
-			case OpCode.GETUP:
-			case OpCode.LOAD_MEM:
-			case OpCode.LOAD_MEM_D:
-			case OpCode.MFC0:
-					pushRegister(defs, instruction.a);
-					break;
-				case OpCode.SELF:
-					pushRegisterRange(defs, instruction.a, 2);
-					break;
-			case OpCode.SETI:
-			case OpCode.SETFIELD:
-				break;
-				case OpCode.LOADNIL:
-					pushRegisterRange(defs, instruction.a, instruction.b);
-					break;
-				case OpCode.VARARG: {
-					const countValue = instruction.b === 0 ? maxRegister - instruction.a + 1 : instruction.b;
-					pushRegisterRange(defs, instruction.a, countValue);
-					break;
-				}
-				case OpCode.CALL: {
-					const countValue = instruction.c === 0 ? maxRegister - instruction.a + 1 : instruction.c;
-					pushRegisterRange(defs, instruction.a, countValue);
-					break;
-				}
-			default:
-				break;
-		}
-		return defs;
-	};
-
-	for (let blockIndex = 0; blockIndex < blocks.length; blockIndex += 1) {
-		blockUse[blockIndex] = new Uint8Array(registerCount);
-		blockDef[blockIndex] = new Uint8Array(registerCount);
-		liveIn[blockIndex] = new Uint8Array(registerCount);
-		liveOut[blockIndex] = new Uint8Array(registerCount);
-
-		const block = blocks[blockIndex];
-		const use = blockUse[blockIndex];
-		const def = blockDef[blockIndex];
-		for (let i = block.start; i < block.end; i += 1) {
-			const instruction = instructions[i];
-			const uses = collectUsesForLiveness(instruction);
-			for (let u = 0; u < uses.length; u += 1) {
-				const reg = uses[u];
-				if (reg < registerCount && def[reg] === 0) {
-					use[reg] = 1;
-				}
-			}
-			const defs = collectDefs(instruction);
-			for (let d = 0; d < defs.length; d += 1) {
-				const reg = defs[d];
-				if (reg < registerCount) {
-					def[reg] = 1;
-				}
-			}
-		}
-	}
-
-	let changed = true;
-	while (changed) {
-		changed = false;
-		for (let blockIndex = blocks.length - 1; blockIndex >= 0; blockIndex -= 1) {
-			const out = liveOut[blockIndex];
-			const nextOut = new Uint8Array(registerCount);
-			const succs = successors[blockIndex];
-			for (let s = 0; s < succs.length; s += 1) {
-				const succIn = liveIn[succs[s]];
-				for (let r = 0; r < registerCount; r += 1) {
-					if (succIn[r] !== 0) {
-						nextOut[r] = 1;
-					}
-				}
-			}
-			for (let r = 0; r < registerCount; r += 1) {
-				if (out[r] !== nextOut[r]) {
-					out[r] = nextOut[r];
-					changed = true;
-				}
-			}
-			const use = blockUse[blockIndex];
-			const def = blockDef[blockIndex];
-			const inSet = liveIn[blockIndex];
-			for (let r = 0; r < registerCount; r += 1) {
-				const nextIn = use[r] !== 0 || (out[r] !== 0 && def[r] === 0) ? 1 : 0;
-				if (inSet[r] !== nextIn) {
-					inSet[r] = nextIn;
-					changed = true;
-				}
-			}
-		}
-	}
+	const liveOut = computeBlockLiveOut(instructions, blocks, successors, maxRegister);
 
 	const keep = new Array<boolean>(count).fill(true);
 	let removed = 0;
@@ -1330,7 +1073,7 @@ const eliminateDeadStores = (set: InstructionSet, context: OptimizationContext):
 		const live = liveOut[blockIndex].slice();
 		for (let i = block.end - 1; i >= block.start; i -= 1) {
 			const instruction = instructions[i];
-			const defs = collectDefs(instruction);
+			const defs = collectInstructionDefs(instruction, maxRegister);
 			let hasLive = false;
 			for (let d = 0; d < defs.length; d += 1) {
 				const reg = defs[d];
@@ -1358,7 +1101,7 @@ const eliminateDeadStores = (set: InstructionSet, context: OptimizationContext):
 					live[reg] = 0;
 				}
 			}
-			const uses = collectUsesForLiveness(instruction);
+			const uses = collectInstructionUses(instruction, maxRegister);
 			for (let u = 0; u < uses.length; u += 1) {
 				const reg = uses[u];
 				if (reg < registerCount) {
@@ -1807,6 +1550,7 @@ const buildInlineExpansion = (
 		}
 
 		const mapped = cloneInstruction(instruction);
+		delete mapped.resumeRange;
 		switch (mapped.op) {
 			case OpCode.MOV:
 			case OpCode.LOADKR:

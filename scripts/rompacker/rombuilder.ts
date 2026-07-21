@@ -1,11 +1,12 @@
 import { glsl } from "esbuild-plugin-glsl";
 // @ts-ignore
 import type { Stats } from 'fs';
+import { encodeBinary } from '../../machine/ts/common/serializer/binencoder';
 import { CART_ROM_HEADER_SIZE, CART_ROM_WORD_ALIGNMENT, PROGRAM_BOOT_HEADER_VERSION } from '../../machine/ts/rompack/format';
-import { assertRomAssetSymbolsMatchToc, type RomAssetSymbol } from '../../machine/ts/rompack/asset_symbols';
-import type { asset_type, AudioMeta, BoundingBoxPrecalc, CartridgeLayerId, GLTFMesh, HitPolygonsPrecalc, ImgMeta, Polygon, ProgramBootHeader, RectBounds, RomAsset, RomManifest, vec2arr } from '../../machine/ts/rompack/format';
-import { alignRomAssetOffset, layoutRomAssetPayloads } from '../../machine/ts/rompack/asset_layout';
+import type { asset_type, AudioMeta, BoundingBoxPrecalc, GLTFMesh, HitPolygonsPrecalc, ImgMeta, Polygon, ProgramBootHeader, RectBounds, RomAsset, RomManifest, vec2arr } from '../../machine/ts/rompack/format';
+import { alignRomAssetOffset, layoutRomAssetPayloads, type RomAssetPayloadLayout, type RomAssetPayloadRange } from '../../machine/ts/rompack/asset_layout';
 import { writeCartRomHeader } from '../../machine/ts/rompack/tooling/header_encode';
+import type { RomProgramPrefixLayout } from '../../machine/ts/rompack/tooling/rom_layout';
 import { encodeRomToc } from '../../machine/ts/rompack/tooling/toc_encode';
 import { encodeAudioAssetToAdpcm } from './adpcm';
 import { buildProgramImage, type GeneratedProgramModule } from './program_image_builder';
@@ -53,13 +54,6 @@ const { createWriteStream, readFileSync, statSync } = require('fs');
 const { once } = require('events');
 // @ts-ignore
 const { finished } = require('stream/promises');
-// @ts-ignore
-// Import encodeBinary from the public API surface
-// Use direct path to avoid pulling the machine runtime via public alias during Node execution.
-// @ts-ignore
-const { encodeBinary } = require('../../machine/ts/common/serializer/binencoder');
-// @ts-ignore
-const { buildRomMetadataSection } = require('../../machine/ts/rompack/tooling/metadata_encode');
 // @ts-ignore
 const { LuaLexer } = require('../../machine/ts/lua/syntax/lexer');
 // @ts-ignore
@@ -1463,12 +1457,12 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 	return romAssets;
 }
 
-type AppendProgramImageOptions = {
+type BuildRomProgramTailOptions = {
 	externalLuaAssets: RomAsset[];
 	generatedLuaModules: GeneratedProgramModule[];
-	includeLuaAssets: boolean;
 	includeSymbols: boolean;
 	optLevel: 0 | 1 | 2 | 3;
+	programOffset: number;
 } & (
 	| { programDomain: 'system' }
 	| {
@@ -1477,14 +1471,18 @@ type AppendProgramImageOptions = {
 	}
 );
 
-export function appendProgramImage(
-	assetList: RomAsset[],
+export type RomProgramTail = {
+	boot: ProgramBootHeader;
+	layout: RomAssetPayloadLayout;
+};
+
+export function buildRomProgramTail(
+	assetList: ReadonlyArray<RomAsset>,
 	entryPath: string,
-	options: AppendProgramImageOptions,
-): ProgramBootHeader {
+	options: BuildRomProgramTailOptions,
+): RomProgramTail {
 	const luaAssets = assetList.filter(asset => asset.type === 'lua');
-	const programOffset = layoutRomAssetPayloads(assetList, options.includeLuaAssets).nextOffset;
-	const programAddress = (options.programDomain === 'cart' ? CART_ROM_BASE : SYSTEM_ROM_BASE) + programOffset;
+	const programAddress = (options.programDomain === 'cart' ? CART_ROM_BASE : SYSTEM_ROM_BASE) + options.programOffset;
 	const linked = buildProgramImage(options.programDomain === 'cart' ? {
 		luaAssets,
 		externalLuaAssets: options.externalLuaAssets,
@@ -1505,19 +1503,19 @@ export function appendProgramImage(
 	});
 	const programImage = linked.image;
 	const encoded = encodeProgramImage(programImage);
-	assetList.push({
+	const programAssets: RomAsset[] = [{
 		resid: PROGRAM_IMAGE_ID,
 		type: 'code',
 		buffer: Buffer.from(encoded.sections),
 		compiled_buffer: Buffer.from(encoded.descriptor),
 		source_path: PROGRAM_IMAGE_ID,
-	});
+	}];
 	if (options.includeSymbols) {
 		const symbolsAsset = {
 			metadata: linked.metadata,
 		};
 		const symbolsBuffer = Buffer.from(encodeBinary(symbolsAsset));
-		assetList.push({
+		programAssets.push({
 			resid: PROGRAM_SYMBOLS_IMAGE_ID,
 			type: 'code',
 			buffer: symbolsBuffer,
@@ -1525,13 +1523,16 @@ export function appendProgramImage(
 		});
 	}
 	return {
-		version: PROGRAM_BOOT_HEADER_VERSION,
-		flags: 0,
-		resetProtoIndex: programImage.vectors.resetProtoIndex,
-		codeByteCount: programImage.sections.text.code.length,
-		constPoolCount: programImage.sections.rodata.constPool.length,
-		protoCount: programImage.sections.text.protos.length,
-		constRelocCount: 0,
+		boot: {
+			version: PROGRAM_BOOT_HEADER_VERSION,
+			flags: 0,
+			resetProtoIndex: programImage.vectors.resetProtoIndex,
+			codeByteCount: programImage.sections.text.code.length,
+			constPoolCount: programImage.sections.rodata.constPool.length,
+			protoCount: programImage.sections.text.protos.length,
+			constRelocCount: 0,
+		},
+		layout: layoutRomAssetPayloads(programAssets, true, options.programOffset),
 	};
 }
 
@@ -1643,33 +1644,17 @@ export async function createTextureAtlases(
 	}
 }
 
-/**
- * Finalizes the ROM pack by concatenating all asset buffers, encoding metadata, and writing the packed ROM file.
- *
- * This function processes the provided asset list, removes per-asset metadata and buffers,
- * encodes the global asset metadata, and writes the final ROM file to disk. If a "romlabel" image is present,
- * it is prepended to the ROM file to allow the ROM to be recognized as a PNG image.
- *
- * @param assetList - The list of ROM assets to include in the pack.
- * @param rom_name - The name of the ROM, used for output file naming.
- * @returns A Promise that resolves when the complete ROM has been atomically published.
- */
+/** Writes a completed ROM layout to its atomically published file. */
 export async function finalizeRompack(
-	assetList: RomAsset[],
 	rom_name: string,
 	options: {
 		projectRootPath?: string,
 		status?: ProgressNote,
-		manifest?: RomManifest | null,
 		zipRom: boolean,
 		debug: boolean,
-		programBoot: ProgramBootHeader,
+		program: RomProgramTail,
+		layout: RomProgramPrefixLayout,
 		outputDirectory: string,
-		assetSymbolVerification?: {
-			expected: ReadonlyArray<RomAssetSymbol>,
-			includeLuaAssets: boolean,
-			defaultPayloadId: CartridgeLayerId,
-		},
 	}
 ) {
 	const outfileBasename = `${rom_name}${options.debug ? '.debug' : ''}.rom`;
@@ -1678,14 +1663,7 @@ export async function finalizeRompack(
 
 	await mkdir(options.outputDirectory, { recursive: true });
 
-	let romlabelBuffer: Buffer | undefined;
-	const romlabelIndex = assetList.findIndex(asset => asset.type === 'romlabel');
-	if (romlabelIndex >= 0) {
-		const [romlabel] = assetList.splice(romlabelIndex, 1);
-		if (romlabel?.buffer && romlabel.buffer.length > 0) {
-			romlabelBuffer = Buffer.from(romlabel.buffer);
-		}
-	}
+	const romlabelBuffer = options.layout.romLabel;
 
 	const tempDirectory = await mkdtemp(join(options.outputDirectory, '.rompack-'));
 	const tempFile = join(tempDirectory, outfileBasename);
@@ -1693,148 +1671,87 @@ export async function finalizeRompack(
 		const writer = createWriteStream(tempFile);
 		let offset = 0;
 		let headerBuffer: Buffer;
-		const metadataEntries: Array<{ asset: RomAsset; meta: ImgMeta | AudioMeta }> = [];
 		const wordPaddingByLength = Array.from({ length: CART_ROM_WORD_ALIGNMENT }, (_, length) => Buffer.alloc(length));
 
-		const writeBuffer = async (payload: Buffer) => {
-			if (!payload || payload.length === 0) return;
+		const writeBuffer = async (payload: Uint8Array) => {
+			if (payload.byteLength === 0) return;
 			const ok = writer.write(payload);
-			offset += payload.length;
+			offset += payload.byteLength;
 			if (!ok) {
 				await once(writer, 'drain');
 			}
 		};
-		const alignRomWordSection = async () => {
-			const paddingLength = alignRomAssetOffset(offset) - offset;
+		const writePaddingTo = async (targetOffset: number) => {
+			const paddingLength = targetOffset - offset;
 			if (paddingLength !== 0) {
 				await writeBuffer(wordPaddingByLength[paddingLength]);
+			}
+		};
+		const writePayloadRanges = async (ranges: ReadonlyArray<RomAssetPayloadRange>) => {
+			for (let rangeIndex = 0; rangeIndex < ranges.length; rangeIndex += 1) {
+				const range = ranges[rangeIndex];
+				await writePaddingTo(range.start);
+				await writeBuffer(range.buffer);
 			}
 		};
 
 		try {
 			await writeBuffer(Buffer.alloc(CART_ROM_HEADER_SIZE));
-			const dataOffset = offset;
-			const payloadRanges = layoutRomAssetPayloads(assetList, true).ranges;
-			let payloadRangeIndex = 0;
-			for (const asset of assetList) {
-				status?.(`pack ${asset.type}:${asset.resid}`);
-				while (payloadRangeIndex < payloadRanges.length && payloadRanges[payloadRangeIndex].asset === asset) {
-					const range = payloadRanges[payloadRangeIndex];
-					const paddingLength = range.start - offset;
-					if (paddingLength !== 0) {
-						await writeBuffer(wordPaddingByLength[paddingLength]);
-					}
-					if (range.start !== offset) {
-						throw new Error(`[RomPacker] ROM payload layout mismatch at ${asset.type}:${asset.resid}:${range.kind}; expected offset ${range.start}, writer offset ${offset}.`);
-					}
-					switch (range.kind) {
-						case 'buffer':
-							asset.start = range.start;
-							asset.end = range.end;
-							break;
-						case 'compiled':
-							asset.compiled_start = range.start;
-							asset.compiled_end = range.end;
-							break;
-						case 'texture':
-							asset.texture_start = range.start;
-							asset.texture_end = range.end;
-							if (range.sharedAssets) {
-								for (let sharedIndex = 0; sharedIndex < range.sharedAssets.length; sharedIndex += 1) {
-									const sharedAsset = range.sharedAssets[sharedIndex];
-									sharedAsset.texture_start = range.start;
-									sharedAsset.texture_end = range.end;
-								}
-							}
-							break;
-						case 'collision_bin':
-							asset.collision_bin_start = range.start;
-							asset.collision_bin_end = range.end;
-							break;
-					}
-					await writeBuffer(Buffer.from(range.buffer));
-					payloadRangeIndex += 1;
+			status?.('write asset payloads');
+			await writePayloadRanges(options.layout.assetRanges);
+
+			if (options.layout.metadataHeader.byteLength !== 0) {
+				status?.('write shared metadata');
+				await writePaddingTo(options.layout.metadataOffset);
+				await writeBuffer(options.layout.metadataHeader);
+				for (let index = 0; index < options.layout.metadataPayloads.length; index += 1) {
+					const asset = options.layout.metadataAssets[index];
+					status?.(`meta ${asset.type}:${asset.resid}`);
+					await writeBuffer(options.layout.metadataPayloads[index]);
 				}
-				const perMeta = asset.imgmeta ?? asset.audiometa;
-				if (perMeta) {
-					metadataEntries.push({ asset, meta: perMeta });
-				}
-				delete asset.imgmeta;
-				delete asset.audiometa;
-				delete asset.buffer;
-				delete asset.compiled_buffer;
-				delete asset.texture_buffer;
-				delete asset.collision_bin_buffer;
+			}
+			if (options.layout.manifest.byteLength !== 0) {
+				status?.('write rom manifest');
+				await writePaddingTo(options.layout.manifestOffset);
+				await writeBuffer(options.layout.manifest);
 			}
 
-			const dataLength = offset - dataOffset;
-			const assetSymbolVerification = options.assetSymbolVerification;
-			if (assetSymbolVerification) {
-				assertRomAssetSymbolsMatchToc(
-					assetSymbolVerification.expected,
-					assetList,
-					assetSymbolVerification.includeLuaAssets,
-					assetSymbolVerification.defaultPayloadId,
-				);
-			}
-			let metadataOffset = 0;
-			let metadataLength = 0;
-			if (metadataEntries.length > 0) {
-				status?.('encode shared metadata');
-				const { header, payloads } = buildRomMetadataSection(metadataEntries.map(entry => entry.meta));
-				await alignRomWordSection();
-				metadataOffset = offset;
-				await writeBuffer(Buffer.from(header));
-				for (let index = 0; index < metadataEntries.length; index += 1) {
-					const entry = metadataEntries[index];
-					const encoded = Buffer.from(payloads[index]);
-					status?.(`meta ${entry.asset.type}:${entry.asset.resid}`);
-					entry.asset.metabuffer_start = offset;
-					entry.asset.metabuffer_end = offset + encoded.length;
-					await writeBuffer(encoded);
-				}
-				metadataLength = offset - metadataOffset;
-			}
-			let manifestOffset = 0;
-			let manifestLength = 0;
-			if (options.manifest) {
-				status?.('encode rom manifest');
-				const manifestBuffer = Buffer.from(encodeBinary(options.manifest));
-				await alignRomWordSection();
-				manifestOffset = offset;
-				manifestLength = manifestBuffer.length;
-				await writeBuffer(manifestBuffer);
-			}
+			await writePayloadRanges(options.program.layout.ranges);
+			const dataOffset = options.layout.assetRanges.length === 0
+				? options.program.layout.ranges[0].start
+				: options.layout.assetRanges[0].start;
+			const dataEnd = options.program.layout.ranges[options.program.layout.ranges.length - 1].end;
 
 			status?.('encode toc');
+			const entries = options.layout.entries.concat(options.program.layout.entries);
 			const tocBuffer = Buffer.from(encodeRomToc({
-				entries: assetList,
+				entries,
 				projectRootPath: options.projectRootPath,
 			}));
-			await alignRomWordSection();
-			const tocOffset = offset;
+			const tocOffset = alignRomAssetOffset(offset);
+			await writePaddingTo(tocOffset);
 			const tocLength = tocBuffer.length;
 			await writeBuffer(tocBuffer);
 
 			headerBuffer = Buffer.alloc(CART_ROM_HEADER_SIZE);
 			writeCartRomHeader(headerBuffer, {
 				headerSize: CART_ROM_HEADER_SIZE,
-				manifestOffset,
-				manifestLength,
+				manifestOffset: options.layout.manifestOffset,
+				manifestLength: options.layout.manifest.byteLength,
 				tocOffset,
 				tocLength,
 				dataOffset,
-				dataLength,
-				programBootVersion: options.programBoot.version,
-				programBootFlags: options.programBoot.flags,
-				programEntryProtoIndex: options.programBoot.resetProtoIndex,
-				programCodeByteCount: options.programBoot.codeByteCount,
-				programConstPoolCount: options.programBoot.constPoolCount,
-				programProtoCount: options.programBoot.protoCount,
+				dataLength: dataEnd - dataOffset,
+				programBootVersion: options.program.boot.version,
+				programBootFlags: options.program.boot.flags,
+				programEntryProtoIndex: options.program.boot.resetProtoIndex,
+				programCodeByteCount: options.program.boot.codeByteCount,
+				programConstPoolCount: options.program.boot.constPoolCount,
+				programProtoCount: options.program.boot.protoCount,
 				programReserved0: 0,
-				programConstRelocCount: options.programBoot.constRelocCount,
-				metadataOffset,
-				metadataLength,
+				programConstRelocCount: options.program.boot.constRelocCount,
+				metadataOffset: options.layout.metadataOffset,
+				metadataLength: options.layout.metadataLength,
 				vdpClass: 'psx',
 			});
 		} finally {

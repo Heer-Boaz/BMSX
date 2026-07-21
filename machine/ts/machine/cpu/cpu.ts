@@ -285,8 +285,18 @@ export type ProgramRuntimeSymbols = {
 	exportProtoIdBySlot: { [slotName: string]: string };
 };
 
+export type ProgramResumePoint = {
+	wordOffset: number;
+	range: SourceRange;
+	op: OpCode;
+	liveRegisters: number[];
+	uses: number[];
+	defs: number[];
+};
+
 export type ProgramMetadata = ProgramRuntimeSymbols & {
 	debugRanges: ReadonlyArray<SourceRange | null>;
+	resumePointsByProto: ReadonlyArray<ReadonlyArray<ProgramResumePoint>>;
 	localSlotsByProto: ReadonlyArray<ReadonlyArray<LocalSlotDebug>>;
 	upvalueNamesByProto: ReadonlyArray<ReadonlyArray<string>>;
 };
@@ -1963,6 +1973,17 @@ export class CPU {
 		this.profilerConfigured = false;
 		if (this.profilerEnabled) {
 			this.configureProfiler();
+		}
+	}
+
+	public relocateActiveFrames(programCounterRelocations: Int32Array): void {
+		for (let index = 0; index < this.frames.length; index += 1) {
+			const frame = this.frames[index];
+			frame.pc = programCounterRelocations[frame.pc / INSTRUCTION_BYTES];
+			const maxStack = this.program.protos[frame.protoIndex].maxStack;
+			if (maxStack > frame.stackCapacity) {
+				this.ensureRegisterCapacity(frame, maxStack - 1);
+			}
 		}
 	}
 

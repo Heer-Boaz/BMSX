@@ -2415,7 +2415,8 @@ function buildIdentifierRange(identifier: LuaIdentifierExpression, tokenMap: Map
 }
 
 function buildPropertyRange(member: LuaMemberExpression, tokenMap: Map<string, TokenInfo>, path: string): LuaSourceRange {
-	const start = member.range.end;
+	const end = member.range.end;
+	const start = { line: end.line, column: end.column - Math.max(0, member.identifier.length - 1) };
 	const info = tokenMap.get(tokenKey(start.line, start.column));
 	const length = info ? info.token.lexeme.length : member.identifier.length;
 	return buildRangeFromPosition(start, length, path);

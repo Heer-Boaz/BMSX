@@ -594,6 +594,15 @@ struct LocalSlotDebug {
 	SourceRange scope;
 };
 
+struct ProgramResumePoint {
+	int wordOffset = 0;
+	SourceRange range;
+	int op = 0;
+	std::vector<int> liveRegisters;
+	std::vector<int> uses;
+	std::vector<int> defs;
+};
+
 struct ProgramRuntimeSymbols {
 	std::vector<std::string> protoIds;
 	std::vector<std::string> globalNames;
@@ -603,6 +612,7 @@ struct ProgramRuntimeSymbols {
 
 struct ProgramMetadata : ProgramRuntimeSymbols {
 	std::vector<std::optional<SourceRange>> debugRanges;
+	std::vector<std::vector<ProgramResumePoint>> resumePointsByProto;
 	std::vector<std::vector<LocalSlotDebug>> localSlotsByProto;
 	std::vector<std::vector<std::string>> upvalueNamesByProto;
 };
@@ -950,6 +960,7 @@ public:
 	CPU(Memory& memory, IrqController& irqController);
 
 	void setProgram(Program* program, const ProgramRuntimeSymbols& runtimeSymbols, ProgramMetadata* metadata, int systemIrqProtoIndex, int cartIrqProtoIndex, int systemExceptionProtoIndex);
+	void relocateActiveFrames(std::span<const int> programCounterRelocations);
 	void clearProgramEnvironment();
 	Program* getProgram() const { return m_program; }
 	StringPool& stringPool() { return m_stringPool; }

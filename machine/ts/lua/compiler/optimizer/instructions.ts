@@ -19,6 +19,7 @@ export const cloneInstruction = (instruction: Instruction): Instruction => ({
 	target: instruction.target,
 	callProtoIndex: instruction.callProtoIndex,
 	symbolicReloc: instruction.symbolicReloc,
+	resumeRange: instruction.resumeRange,
 });
 
 export const computeMaxRegister = (instructions: Instruction[]): number => {

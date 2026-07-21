@@ -402,9 +402,10 @@ function callExpressionMatchesReference(call: LuaCallExpression, ref: Ref): bool
 		return ref.name === call.methodName && sourcePositionInRange(ref.range.start.line, ref.range.start.column, call.range);
 	}
 	if (call.callee.kind === LuaSyntaxKind.MemberExpression) {
+		const identifierStartColumn = call.callee.range.end.column - Math.max(0, call.callee.identifier.length - 1);
 		return ref.name === call.callee.identifier
 			&& ref.range.start.line === call.callee.range.end.line
-			&& ref.range.start.column === call.callee.range.end.column;
+			&& ref.range.start.column === identifierStartColumn;
 	}
 	if (call.callee.kind === LuaSyntaxKind.IdentifierExpression) {
 		return ref.name === call.callee.name

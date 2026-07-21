@@ -487,6 +487,9 @@ Owners:
 - Program-object linking and ROM-tail writing:
   `machine/ts/rompack/tooling/program_linker.ts` and
   `machine/ts/rompack/tooling/program_tail.ts`.
+- Pack-time payload spans, final TOC records, and immutable program-prefix
+  layout: `machine/ts/rompack/asset_layout.ts` and
+  `machine/ts/rompack/tooling/rom_layout.ts`.
 - ROM-header serialization shared by the packer and tail rebuilder:
   `machine/ts/rompack/tooling/header_encode.ts`.
 
@@ -518,7 +521,14 @@ compiler emits a tooling-owned program object with relocations. The ROM packer
 resolves those relocations at the actual physical `SYSTEM_ROM` or `CART_ROM`
 address and emits a final program image; neither runtime owns a linker.
 
-`__program__` begins the deliberately final program tail in each ROM. Its
+The packer emits one immutable prefix: ordinary asset payload spans, shared
+per-asset metadata, and the manifest. It derives final TOC records from that
+layout without using build-input assets as mutable offset storage. Shared
+texture buffers produce one physical span and multiple TOC records referring
+to that span. The file writer consumes completed spans; it does not interpret
+payload kinds or publish TOC fields while performing I/O.
+
+`__program__` begins the deliberately mutable program tail after that prefix. Its
 ordinary TOC range contains the raw `[rodata | data-load-image | text]` bytes in
 that physical ROM, while its compiled range contains the final descriptor:
 placement, vectors, protos, const values, module records, section lengths, and
@@ -527,8 +537,9 @@ layout token over the absolute section bases, section lengths, and each storage
 symbol's name, offset, size, and alignment. Static physical sections precede text so an
 ordinary code-only Hot Resume cannot move retained ROM pointers merely because
 the instruction count changed. `__program_symbols__`, when present, follows it
-and contains debug metadata only. Keeping this tail last lets the IDE rebuild
-program bytes without repacking unchanged asset payloads.
+and contains debug metadata only. The movable TOC follows the program tail.
+Hot Resume therefore replaces only the ROM header, program bytes, symbols, and
+the TOC; asset, metadata, and manifest addresses remain unchanged.
 
 The emulator core consumes only final images. It decodes the system and cart
 descriptors, retains views of their raw physical section bytes, and assembles the
@@ -559,11 +570,11 @@ sanitising non-alphanumeric characters to underscores and prefixing a leading
 digit with an underscore. Public symbols are generated for ROM-backed asset
 records except Lua/code records and the ROM label. Address values are absolute
 CPU-visible ROM addresses: `SYSTEM_ROM_BASE` or `CART_ROM_BASE` plus the record
-offset in the corresponding ROM payload. For
-pack-time cart assets that do not yet have a TOC range, the address is computed
-from `CART_ROM_BASE + CART_ROM_HEADER_SIZE` plus the same packed-byte order the
-ROM writer uses, and the build verifies those generated addresses against the
-final TOC ranges before accepting the ROM. Length values are byte counts.
+offset in the corresponding ROM payload. The pack layout produces the final
+TOC records before program compilation; `bmsx/assets` consumes those same
+records, and the TOC encoder later serializes them without recomputing offsets.
+There is no parallel writer-owned layout or duplicate verification pass. Length
+values are byte counts.
 `rominspector.ts
 --asset-symbols` prints the generated symbol table so the ROM address ABI can be
 checked without disassembling program code.
@@ -595,16 +606,31 @@ Resume compiles each source-backed medium once, replaces its physical final
 program tail, and links that same program object into the live derived CPU
 program. Existing heap objects, globals, closures, frames, module state, RAM,
 and device state remain live. Proto indices stay stable; code for a changed proto
-is appended to the derived instruction buffer so an already-active frame can
-finish its old code, while later calls through the same closure use the new proto
-entry. Unchanged proto code is retained without another copy. Hot Resume does not
-call `Runtime.boot`, run section-init, initialize static modules, enter the
-firmware reset vector, or run `new_game`; rebuilding the physical tail is not a
-reboot. It reruns `init` so registration-owned handlers publish the changed
-module code. A revision that changes captured-upvalue layouts, retained
-`.rodata`/`.data`/`.bss` symbol layout, or any absolute static-storage placement
-is rejected as Hot-Resume-incompatible; Hot Resume never turns that rejection
-into an implicit cold reboot.
+is appended to the derived instruction buffer and later calls through an existing
+closure use the new entry. The TypeScript source owner retains the source text
+that produced the installed program separately from the mutable workspace text.
+The linker maps unchanged full lexical statement ranges from that installed revision to
+the appended proto and admits a sequence point only where the live local-name/register
+layout and instruction execution shape are unchanged. Sequence points name
+logical instruction starts, including a `WIDE` prefix; raw per-word debug ranges
+are not relocation keys. After installing the revised program,
+`CPU.relocateActiveFrames` consumes the complete relocation table directly,
+moves matching active-frame continuations to the new code, and grows an active
+frame's existing register backing when the new proto needs more slots.
+An unmatched continuation remains in the retained old code; debugger PCs and
+raw exception-return registers are not rewritten.
+This is authoring-time on-stack replacement: it adds no branch, lookup, or
+allocation to instruction execution. Unchanged proto code is retained without
+another copy, and source-revision maps are tooling state rather than savestate or
+machine state.
+
+Hot Resume does not call `Runtime.boot`, run section-init, initialize static
+modules, enter the firmware reset vector, or run `new_game`; rebuilding the
+physical tail is not a reboot. It reruns `init` so registration-owned handlers
+publish the changed module code. A revision is rejected as Hot-Resume-incompatible
+when captured-upvalue layouts changed, or retained `.rodata`/`.data`/`.bss`
+symbol layout or absolute static-storage placement moved.
+Hot Resume never turns that rejection into an implicit cold reboot.
 
 BLua sections are machine storage, not runtime metadata. Firmware `.rodata` and
 `.data` load bytes live in `SYSTEM_ROM`; cartridge `.rodata` and `.data` load

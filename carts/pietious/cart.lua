@@ -140,7 +140,6 @@ function new_game()
 end
 
 function init()
-	mem[irq_mask_addr] = 0
 	on_irq(irq_vblank, function()
 		vblank_sequence = vblank_sequence + 1
 	end)
@@ -205,6 +204,7 @@ end
 -- VBLANK that samples it, game logic runs during the following visible frame,
 -- GP0 submission happens in the next VBLANK, and the extra wait keeps the game
 -- tick at half the display refresh rate.
+mem[irq_mask_addr] = 0
 init()
 gx_texture.upload(gx_image.rect('pietolon_stand_r').texture, texture_layout.gameplay, texture_layout.gameplay_clut)
 mem[irq_mask_addr] = irq_vblank | irq_geo_done_error | irq_apu | irq_gpu
@@ -214,7 +214,6 @@ wait_vblank_after(vblank_sequence)
 
 while true do
 	update_world()
-	print('test')
 
 	wait_vblank_after(vblank_sequence)
 	gx_clear_color(0xff000000)

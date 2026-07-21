@@ -1070,6 +1070,17 @@ void CPU::setProgram(Program* program, const ProgramRuntimeSymbols& runtimeSymbo
 	}
 }
 
+void CPU::relocateActiveFrames(std::span<const int> programCounterRelocations) {
+	for (size_t index = 0; index < m_frames.size(); ++index) {
+		CallFrame& frame = *m_frames[index];
+		frame.pc = programCounterRelocations[static_cast<size_t>(frame.pc / INSTRUCTION_BYTES)];
+		const int maxStack = m_program->protos[static_cast<size_t>(frame.protoIndex)].maxStack;
+		if (maxStack > frame.stackCapacity) {
+			ensureRegisterCapacity(frame, maxStack - 1);
+		}
+	}
+}
+
 void CPU::initializeGlobalSlots(const ProgramRuntimeSymbols& runtimeSymbols, const std::unordered_map<StringId, Value>& previousSystemGlobals) {
 	clearGlobalSlots();
 	m_systemGlobalNames.resize(runtimeSymbols.systemGlobalNames.size());

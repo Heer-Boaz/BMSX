@@ -1,0 +1,8 @@
+title: Hot Resume Test
+short_name: 'hot_resume_test'
+rom_name: 'hot_resume_test'
+machine:
+    namespace: 'hot_resume_test'
+    vdp_class: psx
+lua:
+    entry_path: entry.lua

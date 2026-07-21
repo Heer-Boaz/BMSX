@@ -254,5 +254,8 @@ test('producer groups share one native texture span without becoming a runtime a
 	const assets = await generateRomAssets(resources);
 	assert.deepEqual(assets.map(asset => asset.resid), ['first', 'second']);
 	assert.equal(assets[0].texture_buffer, assets[1].texture_buffer);
-	assert.equal(layoutRomAssetPayloads(assets, true).ranges.filter(range => range.kind === 'texture').length, 1);
+	const payloadLayout = layoutRomAssetPayloads(assets, true);
+	assert.equal(payloadLayout.ranges.filter(range => range.buffer === assets[0].texture_buffer).length, 1);
+	assert.equal(payloadLayout.entries[0].texture_start, payloadLayout.entries[1].texture_start);
+	assert.equal(payloadLayout.entries[0].texture_end, payloadLayout.entries[1].texture_end);
 });

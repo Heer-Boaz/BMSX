@@ -4,9 +4,12 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 
 import { CART_ROM_BASE } from '../../machine/ts/machine/memory/map';
-import { assertRomAssetSymbolsMatchToc, buildRomAssetSymbolModuleSource, collectRomAssetSymbols } from '../../machine/ts/rompack/asset_symbols';
+import { buildRomAssetSymbolModuleSource, collectRomAssetSymbols } from '../../machine/ts/rompack/asset_symbols';
 import { layoutRomAssetPayloads } from '../../machine/ts/rompack/asset_layout';
 import { CART_ROM_HEADER_SIZE, CART_ROM_WORD_ALIGNMENT, PROGRAM_BOOT_HEADER_VERSION, type RomAsset } from '../../machine/ts/rompack/format';
+import { loadRomAssetList } from '../../machine/ts/rompack/loader';
+import { layoutRomProgramPrefix } from '../../machine/ts/rompack/tooling/rom_layout';
+import { PROGRAM_IMAGE_ID } from '../../machine/ts/machine/program/loader';
 import { finalizeRompack, getResMetaList } from '../../scripts/rompacker/rombuilder';
 
 const ROOT = join(process.cwd(), 'tmp', 'rompacker-bin-scan-test');
@@ -35,48 +38,42 @@ test('ROM asset symbols expose concrete memory addresses without runtime lookup'
 	const assets: RomAsset[] = [
 		{ type: 'lua', resid: 'cart', compiled_buffer: Buffer.from([0xaa, 0xbb]) },
 		{ type: 'data', resid: 'stage-1', buffer: Buffer.from([1, 2, 3]) },
-		{ type: 'bin', resid: 'raw.bin', start: 0x200, end: 0x208, payload_id: 'cart' },
 		{ type: 'romlabel', resid: 'label', buffer: Buffer.from([9, 9, 9, 9]) },
 	];
-	const symbols = collectRomAssetSymbols(assets, true, 'cart');
+	const entries = layoutRomAssetPayloads(assets, true).entries;
+	entries.push({ type: 'bin', resid: 'raw.bin', start: 0x200, end: 0x208, payload_id: 'cart' });
+	const symbols = collectRomAssetSymbols(entries, 'cart');
 
 	assert.deepEqual(symbols.map(symbol => [symbol.name, symbol.address, symbol.byteLength]), [
 		['data_stage_1', CART_ROM_BASE + CART_ROM_HEADER_SIZE + 4, 3],
 		['bin_raw_bin', CART_ROM_BASE + 0x200, 8],
 	]);
 
-	const source = buildRomAssetSymbolModuleSource(assets, true);
+	const source = buildRomAssetSymbolModuleSource(entries);
 	assert.match(source, new RegExp(`local data_stage_1_addr <const> = ${CART_ROM_BASE + CART_ROM_HEADER_SIZE + 4}`));
 	assert.match(source, /local data_stage_1_len <const> = 3/);
 	assert.match(source, /local bin_raw_bin_addr <const> = 16777728/);
 	assert.doesNotMatch(source, /romlabel/);
 });
 
-test('ROM asset layout is shared by symbols and writer verification', () => {
+test('ROM asset layout produces the final TOC entries consumed by symbols', () => {
 	const assets: RomAsset[] = [
 		{ type: 'lua', resid: 'cart', compiled_buffer: Buffer.from([0xaa, 0xbb]) },
 		{ type: 'data', resid: 'stage-1', buffer: Buffer.from([1, 2, 3]), compiled_buffer: Buffer.from([4]) },
 	];
-	const ranges = layoutRomAssetPayloads(assets, true).ranges;
-	assert.deepEqual(ranges.map(range => [range.asset.resid, range.kind, range.start, range.end]), [
-		['cart', 'compiled', CART_ROM_HEADER_SIZE, CART_ROM_HEADER_SIZE + 2],
-		['stage-1', 'buffer', CART_ROM_HEADER_SIZE + 4, CART_ROM_HEADER_SIZE + 7],
-		['stage-1', 'compiled', CART_ROM_HEADER_SIZE + 8, CART_ROM_HEADER_SIZE + 9],
+	const layout = layoutRomAssetPayloads(assets, true);
+	assert.deepEqual(layout.ranges.map(range => [range.start, range.end]), [
+		[CART_ROM_HEADER_SIZE, CART_ROM_HEADER_SIZE + 2],
+		[CART_ROM_HEADER_SIZE + 4, CART_ROM_HEADER_SIZE + 7],
+		[CART_ROM_HEADER_SIZE + 8, CART_ROM_HEADER_SIZE + 9],
 	]);
-
-	const expected = collectRomAssetSymbols(assets, true, 'cart');
-	assert.doesNotThrow(() => assertRomAssetSymbolsMatchToc(expected, [
+	assert.deepEqual(layout.entries, [
 		{ type: 'lua', resid: 'cart', compiled_start: CART_ROM_HEADER_SIZE, compiled_end: CART_ROM_HEADER_SIZE + 2 },
 		{ type: 'data', resid: 'stage-1', start: CART_ROM_HEADER_SIZE + 4, end: CART_ROM_HEADER_SIZE + 7, compiled_start: CART_ROM_HEADER_SIZE + 8, compiled_end: CART_ROM_HEADER_SIZE + 9 },
-	], true, 'cart'));
-	const finalAssets: RomAsset[] = [
-		{ type: 'lua', resid: 'cart', compiled_start: CART_ROM_HEADER_SIZE, compiled_end: CART_ROM_HEADER_SIZE + 2 },
-		{ type: 'data', resid: 'stage-1', start: CART_ROM_HEADER_SIZE + 3, end: CART_ROM_HEADER_SIZE + 6, compiled_start: CART_ROM_HEADER_SIZE + 6, compiled_end: CART_ROM_HEADER_SIZE + 7 },
-	];
-	assert.throws(
-		() => assertRomAssetSymbolsMatchToc(expected, finalAssets, true, 'cart'),
-		/Generated symbol 'data_stage_1' does not match final TOC symbol 'data_stage_1'/,
-	);
+	]);
+	assert.deepEqual(collectRomAssetSymbols(layout.entries, 'cart').map(symbol => symbol.address), [
+		CART_ROM_BASE + CART_ROM_HEADER_SIZE + 4,
+	]);
 });
 
 test('ROM writer materializes word-aligned payload ranges', async () => {
@@ -87,26 +84,36 @@ test('ROM writer materializes word-aligned payload ranges', async () => {
 			{ type: 'data', resid: 'odd', buffer: Buffer.from([0x11]) },
 			{ type: 'image', resid: 'sprite', texture_buffer: Buffer.from([0x22, 0x33]), collision_bin_buffer: Buffer.from([0x44, 0x55, 0x66, 0x77]) },
 		];
-		const ranges = layoutRomAssetPayloads(assets, true).ranges;
-		await finalizeRompack(assets, 'aligned', {
+		const layout = layoutRomProgramPrefix(assets, true, null);
+		const ranges = layout.assetRanges;
+		const programAssets: RomAsset[] = [
+			{ type: 'code', resid: PROGRAM_IMAGE_ID, buffer: Buffer.from([0x88]), compiled_buffer: Buffer.from([0x99]) },
+		];
+		await finalizeRompack('aligned', {
 			zipRom: false,
 			debug: false,
-			programBoot: {
-				version: PROGRAM_BOOT_HEADER_VERSION,
-				flags: 0,
-				resetProtoIndex: 0,
-				codeByteCount: 0,
-				constPoolCount: 0,
-				protoCount: 0,
-				constRelocCount: 0,
+			program: {
+				boot: {
+					version: PROGRAM_BOOT_HEADER_VERSION,
+					flags: 0,
+					resetProtoIndex: 0,
+					codeByteCount: 0,
+					constPoolCount: 0,
+					protoCount: 0,
+					constRelocCount: 0,
+				},
+				layout: layoutRomAssetPayloads(programAssets, true, layout.programOffset),
 			},
+			layout,
 			outputDirectory,
 		});
-		assert.equal(assets[1].texture_start, ranges[1].start);
-		assert.equal(assets[1].texture_end, ranges[1].end);
-		assert.equal(assets[1].collision_bin_start, ranges[2].start);
-		assert.equal(assets[1].collision_bin_end, ranges[2].end);
 		const rom = await readFile(join(outputDirectory, 'aligned.rom'));
+		const index = await loadRomAssetList(rom);
+		const sprite = index.entries.find(entry => entry.resid === 'sprite')!;
+		assert.equal(sprite.texture_start, ranges[1].start);
+		assert.equal(sprite.texture_end, ranges[1].end);
+		assert.equal(sprite.collision_bin_start, ranges[2].start);
+		assert.equal(sprite.collision_bin_end, ranges[2].end);
 		for (let index = 0; index < ranges.length; index += 1) {
 			const range = ranges[index];
 			assert.equal(range.start & (CART_ROM_WORD_ALIGNMENT - 1), 0);

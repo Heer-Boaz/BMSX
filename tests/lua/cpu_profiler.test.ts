@@ -44,6 +44,7 @@ function makeMetadata(): ProgramMetadata {
 			{ path: 'manual.lua', start: { line: 4, column: 1 }, end: { line: 4, column: 10 } },
 		],
 		protoIds: ['main'],
+		resumePointsByProto: [[]],
 		localSlotsByProto: [[]],
 		upvalueNamesByProto: [[]],
 		globalNames: [],

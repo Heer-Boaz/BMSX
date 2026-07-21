@@ -230,7 +230,7 @@ function printAssetList(assets: RomAsset[], romByteLength: number): void {
 }
 
 function printAssetSymbols(assets: RomAsset[]): void {
-	const symbols = collectRomAssetSymbols(assets, false, 'cart');
+	const symbols = collectRomAssetSymbols(assets, 'cart');
 	let addressHexWidth = 1;
 	for (let index = 0; index < symbols.length; index += 1) {
 		const endAddressWidth = (symbols[index].address + symbols[index].byteLength).toString(16).length;

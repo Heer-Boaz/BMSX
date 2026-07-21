@@ -62,6 +62,7 @@ function makeMetadata(protoCount = 2): ProgramMetadata {
 	return {
 		debugRanges: new Array(protoCount).fill(null),
 		protoIds: new Array(protoCount).fill(null).map((_, index) => `proto_${index}`),
+		resumePointsByProto: new Array(protoCount).fill(null).map(() => []),
 		localSlotsByProto: new Array(protoCount).fill(null).map(() => []),
 		upvalueNamesByProto: new Array(protoCount).fill(null).map(() => []),
 		globalNames: [],

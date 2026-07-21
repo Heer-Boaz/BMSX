@@ -33,7 +33,18 @@ export type RuntimeSourceState = {
 	systemProgramMediaDirty: boolean;
 	cartProgramMediaDirty: boolean;
 	luaChunkEnvironmentsByPath: Map<string, LuaEnvironment>;
+	systemProgramSources: ReadonlyMap<string, string>;
+	cartProgramSources: ReadonlyMap<string, string> | null;
 };
+
+function indexProgramSources(registry: LuaSourceRegistry): Map<string, string> {
+	const sourceByPath = new Map<string, string>();
+	for (let index = 0; index < registry.records.length; index += 1) {
+		const record = registry.records[index];
+		sourceByPath.set(record.module_path, record.src);
+	}
+	return sourceByPath;
+}
 
 export function createRuntimeSourceState(systemLayer: RuntimeRomLayer, cartLayer: RuntimeRomLayer | null): RuntimeSourceState {
 	const systemSource = new RomSourceStack([{ id: systemLayer.id, index: systemLayer.index, payload: systemLayer.payload }]);
@@ -49,6 +60,7 @@ export function createRuntimeSourceState(systemLayer: RuntimeRomLayer, cartLayer
 		];
 		const activeRomSource = new RomSourceStack(activeSourceLayers);
 		const cartRomSource = new RomSourceStack([{ id: cartLayer.id, index: cartLayer.index, payload: cartLayer.payload }]);
+		const cartLuaSources = buildLuaSources(cartRomSource, activeRomSource, cartLayer.index, ['cart']);
 		const state: RuntimeSourceState = {
 			systemRom: systemLayer,
 			cartRom: cartLayer,
@@ -56,7 +68,7 @@ export function createRuntimeSourceState(systemLayer: RuntimeRomLayer, cartLayer
 			cartPackage: cartLayer.package,
 			activePackage: systemLayer.package,
 			systemLuaSources,
-			cartLuaSources: buildLuaSources(cartRomSource, activeRomSource, cartLayer.index, ['cart']),
+			cartLuaSources,
 			activeLuaSources: systemLuaSources,
 			luaSourceRegistries,
 			luaSourceSearchRegistries,
@@ -72,6 +84,8 @@ export function createRuntimeSourceState(systemLayer: RuntimeRomLayer, cartLayer
 			systemProgramMediaDirty: false,
 			cartProgramMediaDirty: false,
 			luaChunkEnvironmentsByPath: new Map(),
+			systemProgramSources: indexProgramSources(systemLuaSources),
+			cartProgramSources: indexProgramSources(cartLuaSources),
 		};
 		enterSystemSources(state);
 		return state;
@@ -99,6 +113,8 @@ export function createRuntimeSourceState(systemLayer: RuntimeRomLayer, cartLayer
 		systemProgramMediaDirty: false,
 		cartProgramMediaDirty: false,
 		luaChunkEnvironmentsByPath: new Map(),
+		systemProgramSources: indexProgramSources(systemLuaSources),
+		cartProgramSources: null,
 	};
 	enterSystemSources(state);
 	return state;

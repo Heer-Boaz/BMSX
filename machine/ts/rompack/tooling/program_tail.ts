@@ -51,29 +51,6 @@ export function buildProgramTail(
 	symbolsEntry.end = offset;
 	const dataEnd = offset;
 
-	let metadataOffset = 0;
-	if (header.metadataLength !== 0) {
-		offset = alignRomAssetOffset(offset);
-		metadataOffset = offset;
-		const metadataDelta = metadataOffset - header.metadataOffset;
-		for (let index = 0; index < entries.length; index += 1) {
-			const entry = entries[index];
-			if (entry.metabuffer_start !== undefined) {
-				entry.metabuffer_start += metadataDelta;
-				entry.metabuffer_end! += metadataDelta;
-			}
-		}
-		offset += header.metadataLength;
-	}
-
-	let manifestOffset = 0;
-	const hasManifest = header.manifestLength !== 0;
-	if (hasManifest) {
-		offset = alignRomAssetOffset(offset);
-		manifestOffset = offset;
-		offset += header.manifestLength;
-	}
-
 	const toc = encodeRomToc({
 		entries,
 		projectRootPath: layer.index.projectRootPath,
@@ -82,43 +59,23 @@ export function buildProgramTail(
 	const tocOffset = offset;
 	offset += toc.byteLength;
 
-	let auxiliaryStart = 0;
-	let auxiliaryEnd = 0;
-	let rebuiltAuxiliaryStart = 0;
-	if (header.metadataLength !== 0) {
-		auxiliaryStart = header.metadataOffset;
-		auxiliaryEnd = hasManifest
-			? header.manifestOffset + header.manifestLength
-			: header.metadataOffset + header.metadataLength;
-		rebuiltAuxiliaryStart = metadataOffset;
-	} else if (hasManifest) {
-		auxiliaryStart = header.manifestOffset;
-		auxiliaryEnd = header.manifestOffset + header.manifestLength;
-		rebuiltAuxiliaryStart = manifestOffset;
-	}
-
 	const sourcePayload = layer.payload;
 	const payload = offset <= sourcePayload.byteLength ? sourcePayload : new Uint8Array(offset);
 	if (payload !== sourcePayload) {
 		payload.set(sourcePayload.subarray(0, programEntry.start), 0);
 	}
-	if (auxiliaryEnd !== 0) {
-		if (payload === sourcePayload) {
-			payload.copyWithin(rebuiltAuxiliaryStart, auxiliaryStart, auxiliaryEnd);
-		} else {
-			payload.set(sourcePayload.subarray(auxiliaryStart, auxiliaryEnd), rebuiltAuxiliaryStart);
-		}
-	}
 	payload.set(encoded.sections, programEntry.start);
+	payload.fill(0, programEntry.end, programEntry.compiled_start);
 	payload.set(encoded.descriptor, programEntry.compiled_start);
+	payload.fill(0, programEntry.compiled_end, symbolsEntry.start);
 	payload.set(symbols, symbolsEntry.start);
+	payload.fill(0, symbolsEntry.end, tocOffset);
 	payload.set(toc, tocOffset);
 	if (offset < payload.byteLength) {
 		payload.fill(0, offset);
 	}
 
 	header.headerSize = CART_ROM_HEADER_SIZE;
-	header.manifestOffset = manifestOffset;
 	header.tocOffset = tocOffset;
 	header.tocLength = toc.byteLength;
 	header.dataLength = dataEnd - header.dataOffset;
@@ -130,7 +87,6 @@ export function buildProgramTail(
 	header.programProtoCount = image.sections.text.protos.length;
 	header.programReserved0 = 0;
 	header.programConstRelocCount = 0;
-	header.metadataOffset = metadataOffset;
 	writeCartRomHeader(payload, header);
 	layer.payload = payload;
 	return layer;

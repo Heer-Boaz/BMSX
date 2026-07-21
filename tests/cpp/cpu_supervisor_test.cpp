@@ -182,6 +182,43 @@ void testSystemAndOrdinaryGlobalRegisterfilesStayDistinct() {
 	require(bmsx::asNumber(harness.cpu.getGlobalByKey(irqKey)) == 22.0, "save-state restores the ordinary global independently");
 }
 
+void testProgramReplacementRelocatesActiveFrame() {
+	std::array<bmsx::u8, 1> emptyRom{{0}};
+	bmsx::Memory memory(bmsx::MemoryInit{{emptyRom.data(), 0u}, {emptyRom.data(), 0u}});
+	bmsx::IrqController irq(memory);
+	bmsx::CPU cpu(memory, irq);
+	bmsx::Program initial;
+	initial.codeBytes.resize(3u * bmsx::INSTRUCTION_BYTES);
+	initial.constPoolStringPool = &initial.stringPool;
+	std::span<bmsx::u8> initialCode(initial.codeBytes);
+	bmsx::writeInstruction(initialCode, 0, static_cast<bmsx::u8>(bmsx::OpCode::K1), 0, 0, 0);
+	bmsx::writeInstruction(initialCode, 1, static_cast<bmsx::u8>(bmsx::OpCode::K1), 1, 0, 0);
+	bmsx::writeInstruction(initialCode, 2, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 2, 0);
+	initial.protos.push_back(makeProto(0, 3, 2));
+
+	bmsx::ProgramRuntimeSymbols runtimeSymbols;
+	cpu.setProgram(&initial, runtimeSymbols, nullptr, 0, 0, 0);
+	cpu.start(0);
+	require(cpu.run(1) == bmsx::RunResult::Yielded, "program replacement test suspends an active frame");
+
+	bmsx::Program revision;
+	revision.codeBytes.resize(5u * bmsx::INSTRUCTION_BYTES);
+	revision.constPoolStringPool = &revision.stringPool;
+	std::span<bmsx::u8> revisionCode(revision.codeBytes);
+	std::copy(initial.codeBytes.begin(), initial.codeBytes.end(), revision.codeBytes.begin());
+	bmsx::writeInstruction(revisionCode, 3, static_cast<bmsx::u8>(bmsx::OpCode::K1), 8, 0, 0);
+	bmsx::writeInstruction(revisionCode, 4, static_cast<bmsx::u8>(bmsx::OpCode::RET), 8, 1, 0);
+	revision.protos.push_back(makeProto(3 * bmsx::INSTRUCTION_BYTES, 2, 9));
+	const std::array<int, 3> relocations{{0, 3 * bmsx::INSTRUCTION_BYTES, 2 * bmsx::INSTRUCTION_BYTES}};
+	cpu.setProgram(&revision, runtimeSymbols, nullptr, 0, 0, 0);
+	cpu.relocateActiveFrames(relocations);
+
+	std::unordered_map<std::string, bmsx::Value> moduleCache;
+	require(cpu.captureRuntimeState(moduleCache).frames.back().pc == 3 * bmsx::INSTRUCTION_BYTES, "program replacement relocates the active continuation");
+	require(cpu.run(100) == bmsx::RunResult::Halted, "relocated active frame completes in replacement code");
+	require(cpu.lastReturnValues.size() == 1u && bmsx::asNumber(cpu.lastReturnValues[0]) == 1.0, "replacement grows the active frame register backing");
+}
+
 void testMappedBusErrorsEnterTheSystemExceptionVector() {
 	CpuSupervisorHarness harness;
 	harness.cpu.start(USER_BUS_LOAD_PROTO);
@@ -420,6 +457,7 @@ int main() {
 	testManualNmiAndSaveStateReturn();
 	testPrivilegeVectorRoutingAndCp0Fault();
 	testSystemAndOrdinaryGlobalRegisterfilesStayDistinct();
+	testProgramReplacementRelocatesActiveFrame();
 	testMappedBusErrorsEnterTheSystemExceptionVector();
 	testMappedMemoryAlignmentContract();
 	testAddressErrorsPrecedeMappedMemoryBusCycles();

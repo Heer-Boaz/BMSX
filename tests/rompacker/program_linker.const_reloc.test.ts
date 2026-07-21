@@ -20,6 +20,8 @@ type EncodedWord = {
 	ext?: number;
 };
 
+const NO_PROGRAM_SOURCES = new Map<string, string>();
+
 function buildCode(words: ReadonlyArray<EncodedWord>): Uint8Array {
 	const code = new Uint8Array(words.length * INSTRUCTION_BYTES);
 	for (let index = 0; index < words.length; index += 1) {
@@ -94,6 +96,7 @@ function makeMetadata(protoId: string, instructionCount: number): ProgramMetadat
 	return {
 		debugRanges: new Array(instructionCount).fill(null),
 		protoIds: [protoId],
+		resumePointsByProto: [[]],
 		localSlotsByProto: [[]],
 		upvalueNamesByProto: [[]],
 		globalNames: [],
@@ -414,6 +417,8 @@ test('hot resume appends changed proto code once and keeps old frame code addres
 		initialMetadata,
 		initialImage,
 		SYSTEM_ROM_BASE,
+		NO_PROGRAM_SOURCES,
+		NO_PROGRAM_SOURCES,
 	);
 	assert.equal(unchanged.program, initialProgram);
 	assert.equal(unchanged.program.code, initialProgram.code);
@@ -439,6 +444,8 @@ test('hot resume appends changed proto code once and keeps old frame code addres
 		changedMetadata,
 		changedImage.image,
 		SYSTEM_ROM_BASE,
+		NO_PROGRAM_SOURCES,
+		NO_PROGRAM_SOURCES,
 	);
 
 	assert.deepEqual(
@@ -456,12 +463,169 @@ test('hot resume appends changed proto code once and keeps old frame code addres
 		changedMetadata,
 		changedImage.image,
 		SYSTEM_ROM_BASE,
+		NO_PROGRAM_SOURCES,
+		NO_PROGRAM_SOURCES,
 	);
 	assert.equal(repeated.program, changed.program);
 	assert.equal(repeated.program.code, changed.program.code);
 	assert.equal(repeated.program.protos, changed.program.protos);
 	assert.equal(repeated.program.constPool, changed.program.constPool);
 	assert.equal(repeated.program.constPoolStringPool, changed.program.constPoolStringPool);
+});
+
+test('hot resume maps unchanged source sequence points into appended proto code', () => {
+	const firstRange = { path: 'entry', start: { line: 1, column: 1 }, end: { line: 1, column: 5 } };
+	const oldResumeRange = { path: 'entry', start: { line: 2, column: 1 }, end: { line: 2, column: 6 } };
+	const initialObject = makeProgramObject([
+		{ op: OpCode.K0, a: 0, b: 0, c: 0 },
+		{ op: OpCode.RET, a: 0, b: 1, c: 0 },
+	], [], []);
+	initialObject.link.symbols.protoIds = ['entry'];
+	const initialMetadata = makeMetadata('entry', 2);
+	initialMetadata.debugRanges = [
+		firstRange,
+		oldResumeRange,
+	];
+	initialMetadata.resumePointsByProto = [[
+		{ wordOffset: 0, range: firstRange, op: OpCode.K0, liveRegisters: [], uses: [], defs: [0] },
+		{ wordOffset: 1, range: oldResumeRange, op: OpCode.RET, liveRegisters: [0], uses: [0], defs: [] },
+	]];
+	const initialImage = linkSystemProgramImage(initialObject, initialMetadata, SYSTEM_ROM_BASE);
+	const initialProgram = assembleProgramImages(initialImage.image, null);
+
+	const freshObject = makeProgramObject([
+		{ op: OpCode.K0, a: 0, b: 0, c: 0 },
+		{ op: OpCode.K1, a: 0, b: 0, c: 0 },
+		{ op: OpCode.RET, a: 0, b: 1, c: 0 },
+	], [], []);
+	freshObject.link.symbols.protoIds = ['entry'];
+	const freshMetadata = makeMetadata('entry', 3);
+	const freshResumeRange = { path: 'entry', start: { line: 3, column: 1 }, end: { line: 3, column: 6 } };
+	freshMetadata.debugRanges = [
+		firstRange,
+		{ path: 'entry', start: { line: 2, column: 1 }, end: { line: 2, column: 8 } },
+		freshResumeRange,
+	];
+	freshMetadata.resumePointsByProto = [[
+		{ wordOffset: 0, range: firstRange, op: OpCode.K0, liveRegisters: [], uses: [], defs: [0] },
+		{ wordOffset: 2, range: freshResumeRange, op: OpCode.RET, liveRegisters: [0], uses: [0], defs: [] },
+	]];
+	const freshImage = linkSystemProgramImage(freshObject, freshMetadata, SYSTEM_ROM_BASE);
+	const previousSources = new Map([['entry', 'first\nresume\n']]);
+	const sources = new Map([['entry', 'first\ninserted\nresume\n']]);
+	const revision = linkProgramRevision(
+		initialProgram,
+		initialMetadata,
+		freshObject,
+		freshMetadata,
+		freshImage.image,
+		SYSTEM_ROM_BASE,
+		previousSources,
+		sources,
+	);
+
+	const entryPC = initialProgram.code.byteLength;
+	assert.equal(revision.pcRelocations[0], entryPC);
+	assert.equal(revision.pcRelocations[1], entryPC + 2 * INSTRUCTION_BYTES);
+});
+
+test('hot resume does not map a sequence point whose statement crosses an edit', () => {
+	const oldRange = { path: 'entry', start: { line: 1, column: 1 }, end: { line: 3, column: 4 } };
+	const initialObject = makeProgramObject([
+		{ op: OpCode.K0, a: 0, b: 0, c: 0 },
+		{ op: OpCode.RET, a: 0, b: 1, c: 0 },
+	], [], []);
+	initialObject.link.symbols.protoIds = ['entry'];
+	const initialMetadata = makeMetadata('entry', 2);
+	initialMetadata.debugRanges = [oldRange, oldRange];
+	initialMetadata.resumePointsByProto = [[
+		{ wordOffset: 0, range: oldRange, op: OpCode.K0, liveRegisters: [], uses: [], defs: [0] },
+	]];
+	const initialImage = linkSystemProgramImage(initialObject, initialMetadata, SYSTEM_ROM_BASE);
+	const initialProgram = assembleProgramImages(initialImage.image, null);
+
+	const freshRange = { path: 'entry', start: { line: 1, column: 1 }, end: { line: 4, column: 4 } };
+	const freshObject = makeProgramObject([
+		{ op: OpCode.K0, a: 0, b: 0, c: 0 },
+		{ op: OpCode.K1, a: 0, b: 0, c: 0 },
+		{ op: OpCode.RET, a: 0, b: 1, c: 0 },
+	], [], []);
+	freshObject.link.symbols.protoIds = ['entry'];
+	const freshMetadata = makeMetadata('entry', 3);
+	freshMetadata.debugRanges = [freshRange, freshRange, freshRange];
+	freshMetadata.resumePointsByProto = [[
+		{ wordOffset: 0, range: freshRange, op: OpCode.K0, liveRegisters: [], uses: [], defs: [0] },
+	]];
+	const freshImage = linkSystemProgramImage(freshObject, freshMetadata, SYSTEM_ROM_BASE);
+	const revision = linkProgramRevision(
+		initialProgram,
+		initialMetadata,
+		freshObject,
+		freshMetadata,
+		freshImage.image,
+		SYSTEM_ROM_BASE,
+		new Map([['entry', 'start\nbody\nend']]),
+		new Map([['entry', 'start\ninserted\nbody\nend']]),
+	);
+
+	assert.equal(revision.pcRelocations[0], 0);
+});
+
+test('hot resume does not map a compiler sequence point edited inside its final token', () => {
+	const previousSource = 'left_value = 1\nnext_value = 2\nreturn left_value';
+	const source = 'left_value = 1\nnext_value = 2\nreturn next_value';
+	const initialCompiled = compileLuaChunkToProgram(parseLuaChunk(previousSource, 'entry'), [], {
+		entrySource: previousSource,
+		optLevel: 0,
+		programDomain: 'system',
+	});
+	const initialObject = encodeCompiledProgramObject(initialCompiled);
+	const initialImage = linkSystemProgramImage(initialObject, initialCompiled.metadata, SYSTEM_ROM_BASE);
+	const initialProgram = assembleProgramImages(initialImage.image, null);
+	const freshCompiled = compileLuaChunkToProgram(parseLuaChunk(source, 'entry'), [], {
+		entrySource: source,
+		optLevel: 0,
+		programDomain: 'system',
+	});
+	const freshObject = encodeCompiledProgramObject(freshCompiled);
+	const freshImage = linkSystemProgramImage(freshObject, freshCompiled.metadata, SYSTEM_ROM_BASE);
+	const initialPoint = initialCompiled.metadata.resumePointsByProto[initialCompiled.entryProtoIndex]
+		.find(point => point.range.start.line === 3)!;
+	const initialProto = initialProgram.protos[initialCompiled.entryProtoIndex];
+	const initialWord = (initialProto.entryPC / INSTRUCTION_BYTES) + initialPoint.wordOffset;
+	const revision = linkProgramRevision(
+		initialProgram,
+		initialCompiled.metadata,
+		freshObject,
+		freshCompiled.metadata,
+		freshImage.image,
+		SYSTEM_ROM_BASE,
+		new Map([['entry', previousSource]]),
+		new Map([['entry', source]]),
+	);
+
+	assert.equal(initialPoint.range.end.column, 17);
+	assert.equal(revision.pcRelocations[initialWord], initialWord * INSTRUCTION_BYTES);
+});
+
+test('compiler resume points address the WIDE prefix of a logical instruction', () => {
+	const lines: string[] = [];
+	for (let index = 0; index < 520; index += 1) {
+		lines.push(`local value_${index} = 0`);
+	}
+	lines.push('return value_0');
+	const source = lines.join('\n');
+	const compiled = compileLuaChunkToProgram(parseLuaChunk(source, 'wide_resume.lua'), [], {
+		entrySource: source,
+		optLevel: 0,
+	});
+	const points = compiled.metadata.resumePointsByProto[compiled.entryProtoIndex];
+	const point = points.find(candidate => candidate.range.start.line > 512)!;
+	const proto = compiled.program.protos[compiled.entryProtoIndex];
+	const wordIndex = (proto.entryPC / INSTRUCTION_BYTES) + point.wordOffset;
+
+	assert.equal((readInstructionWord(compiled.program.code, wordIndex) >>> 18) & 0x3f, OpCode.WIDE);
+	assert.equal((readInstructionWord(compiled.program.code, wordIndex + 1) >>> 18) & 0x3f, point.op);
 });
 
 test('hot resume keeps physical rodata addresses stable across text-only edits', () => {
@@ -492,6 +656,8 @@ test('hot resume keeps physical rodata addresses stable across text-only edits',
 		changedMetadata,
 		changedImage.image,
 		programAddress,
+		NO_PROGRAM_SOURCES,
+		NO_PROGRAM_SOURCES,
 	);
 
 	assert.equal(initialImage.image.sections.rodata.constPool[0], programAddress);
@@ -516,6 +682,7 @@ test('hot resume keeps existing proto slots and relocates new closures to append
 	initialObject.link.symbols.protoIds = ['entry', 'retained'];
 	const initialMetadata = makeMetadata('entry', 2);
 	initialMetadata.protoIds = ['entry', 'retained'];
+	initialMetadata.resumePointsByProto = [[], []];
 	initialMetadata.localSlotsByProto = [[], []];
 	initialMetadata.upvalueNamesByProto = [[], []];
 	const initialImage = linkSystemProgramImage(initialObject, initialMetadata, SYSTEM_ROM_BASE);
@@ -537,6 +704,7 @@ test('hot resume keeps existing proto slots and relocates new closures to append
 	freshObject.link.symbols.protoIds = ['entry', 'added'];
 	const freshMetadata = makeMetadata('entry', 3);
 	freshMetadata.protoIds = ['entry', 'added'];
+	freshMetadata.resumePointsByProto = [[], []];
 	freshMetadata.localSlotsByProto = [[], []];
 	freshMetadata.upvalueNamesByProto = [[], []];
 	const freshImage = linkSystemProgramImage(freshObject, freshMetadata, SYSTEM_ROM_BASE);
@@ -547,6 +715,8 @@ test('hot resume keeps existing proto slots and relocates new closures to append
 		freshMetadata,
 		freshImage.image,
 		SYSTEM_ROM_BASE,
+		NO_PROGRAM_SOURCES,
+		NO_PROGRAM_SOURCES,
 	);
 
 	assert.deepEqual(revision.metadata.protoIds, ['entry', 'retained', 'added']);
@@ -580,6 +750,8 @@ test('hot resume rejects a captured-upvalue layout change instead of corrupting 
 			changedMetadata,
 			changedImage.image,
 			SYSTEM_ROM_BASE,
+			NO_PROGRAM_SOURCES,
+			NO_PROGRAM_SOURCES,
 		),
 		/Hot resume cannot change captured upvalues for proto 'entry'/,
 	);
@@ -613,8 +785,10 @@ test('a rejected hot revision does not intern constants into the live CPU string
 			initialMetadata,
 			changedObject,
 			changedMetadata,
-				initialImage,
+			initialImage,
 			SYSTEM_ROM_BASE,
+			NO_PROGRAM_SOURCES,
+			NO_PROGRAM_SOURCES,
 		),
 		/Unable to resolve module export slot 'missing__export'/,
 	);

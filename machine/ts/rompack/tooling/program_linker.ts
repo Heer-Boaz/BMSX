@@ -44,6 +44,7 @@ import { PROGRAM_STATIC_RAM_BASE, RAM_END } from '../../machine/memory/map';
 import { writeLE32 } from '../../common/endian';
 import { fmix32 } from '../../machine/common/hash';
 import { hashAssetId } from '../tokens';
+import { mapChangedProtoProgramCounters, prepareProgramSourceRevisions } from './program_revision';
 
 export type LinkedProgramImage = {
 	image: ProgramImage;
@@ -54,6 +55,7 @@ export type LinkedProgramRevision = {
 	program: Program;
 	metadata: ProgramMetadata;
 	vectors: ProgramVectorTable;
+	pcRelocations: Int32Array;
 };
 
 const linkCartConstPool = (
@@ -583,11 +585,13 @@ const mergeMetadata = (
 	for (let index = 0; index < cartInstructionCount; index += 1) {
 		debugRanges[cartBaseWord + index] = cartMetadata.debugRanges[index];
 	}
+	const resumePointsByProto = system.resumePointsByProto.concat(cartMetadata.resumePointsByProto);
 	const localSlotsByProto = system.localSlotsByProto.concat(cartMetadata.localSlotsByProto);
 	const upvalueNamesByProto = system.upvalueNamesByProto.concat(cartMetadata.upvalueNamesByProto);
 	return {
 		debugRanges,
 		protoIds: runtimeSymbols.protoIds,
+		resumePointsByProto,
 		localSlotsByProto,
 		upvalueNamesByProto,
 		systemGlobalNames: runtimeSymbols.systemGlobalNames,
@@ -737,6 +741,8 @@ export function linkProgramRevision(
 	objectMetadata: ProgramMetadata,
 	finalImage: ProgramImage,
 	programAddress: number,
+	previousSources: ReadonlyMap<string, string>,
+	sources: ReadonlyMap<string, string>,
 ): LinkedProgramRevision {
 	const text = object.sections.text;
 	const rodata = object.sections.rodata;
@@ -821,6 +827,11 @@ export function linkProgramRevision(
 			appendedByteCount += text.protos[index].codeLen;
 		}
 	}
+	const pcRelocations = new Int32Array(baseProgram.code.byteLength / INSTRUCTION_BYTES);
+	for (let word = 0; word < pcRelocations.length; word += 1) {
+		pcRelocations[word] = word * INSTRUCTION_BYTES;
+	}
+	const preparedSourceRevisions = prepareProgramSourceRevisions(previousSources, sources);
 
 	const code = appendedByteCount === 0
 		? baseProgram.code
@@ -838,6 +849,8 @@ export function linkProgramRevision(
 	}
 	const localSlotsByProto = baseMetadata.localSlotsByProto.slice();
 	localSlotsByProto.length = protoIds.length;
+	const resumePointsByProto = baseMetadata.resumePointsByProto.slice();
+	resumePointsByProto.length = protoIds.length;
 	const upvalueNamesByProto = baseMetadata.upvalueNamesByProto.slice();
 	upvalueNamesByProto.length = protoIds.length;
 	let appendOffset = baseProgram.code.byteLength;
@@ -861,6 +874,18 @@ export function linkProgramRevision(
 				upvalueDescs: freshProto.upvalueDescs,
 				staticClosure: freshProto.staticClosure,
 			};
+			if (liveIndex < baseProgram.protos.length) {
+				mapChangedProtoProgramCounters(
+					pcRelocations,
+					baseProgram,
+					baseMetadata,
+					liveIndex,
+					objectMetadata,
+					index,
+					entryPC,
+					preparedSourceRevisions,
+				);
+			}
 		} else {
 			entryPC = protos[liveIndex].entryPC;
 		}
@@ -870,6 +895,7 @@ export function linkProgramRevision(
 		for (let word = 0; word < wordCount; word += 1) {
 			debugRanges[targetWord + word] = objectMetadata.debugRanges[sourceWord + word];
 		}
+		resumePointsByProto[liveIndex] = objectMetadata.resumePointsByProto[index];
 		localSlotsByProto[liveIndex] = objectMetadata.localSlotsByProto[index];
 		upvalueNamesByProto[liveIndex] = objectMetadata.upvalueNamesByProto[index];
 	}
@@ -900,6 +926,7 @@ export function linkProgramRevision(
 	const metadata: ProgramMetadata = {
 		debugRanges,
 		protoIds,
+		resumePointsByProto,
 		localSlotsByProto,
 		upvalueNamesByProto,
 		systemGlobalNames: mergedSystemGlobals.names,
@@ -925,6 +952,7 @@ export function linkProgramRevision(
 	return {
 		program,
 		metadata,
+		pcRelocations,
 		vectors: {
 			resetProtoIndex: protoRemap[object.vectors.resetProtoIndex],
 			sectionInitProtoIndex: protoRemap[object.vectors.sectionInitProtoIndex],

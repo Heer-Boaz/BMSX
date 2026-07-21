@@ -29,9 +29,11 @@ import type { RomSourceLayer } from '../../rompack/source';
 
 export type RebuiltProgram = {
 	object: ReturnType<typeof encodeCompiledProgramObject>;
-	metadata: ProgramSymbolsImage;
+	objectMetadata: ProgramSymbolsImage;
 	image: ProgramImage;
+	mediaMetadata: ProgramSymbolsImage;
 	programAddress: number;
+	sources: ReadonlyMap<string, string>;
 };
 
 export type RebuiltProgramMedia = {
@@ -186,7 +188,7 @@ function compileRegistryProgramObject(
 	interpreter: LuaInterpreter,
 	programDomain: ProgramCompileDomain,
 	externalModules: ReadonlyArray<{ path: string; chunk: LuaChunk; source: string }>,
-): { object: ReturnType<typeof encodeCompiledProgramObject>; metadata: ProgramSymbolsImage; modules: Array<{ path: string; chunk: LuaChunk; source: string }> } {
+): { object: ReturnType<typeof encodeCompiledProgramObject>; metadata: ProgramSymbolsImage; modules: Array<{ path: string; chunk: LuaChunk; source: string }>; sources: ReadonlyMap<string, string> } {
 	const entryRecord = resolveLuaSourceRecord(registry, registry.entry_path);
 	if (entryRecord === null) {
 		throw new Error(`cannot compile boot program: entry Lua source '${registry.entry_path}' is missing.`);
@@ -195,6 +197,11 @@ function compileRegistryProgramObject(
 	const entrySource = readWorkspaceLuaSourceText(registry, entryRecord);
 	const entryChunk = interpreter.compileChunk(entrySource, entryPath);
 	const modules = buildModuleChunks(entryPath, [registry], interpreter);
+	const sources = new Map<string, string>();
+	sources.set(entryPath, entrySource);
+	for (let index = 0; index < modules.length; index += 1) {
+		sources.set(modules[index].path, modules[index].source);
+	}
 	const compiled = compileLuaChunkToProgram(entryChunk, modules, {
 		optLevel: machineManager.sourceState.realtimeCompileOptLevel,
 		entrySource,
@@ -205,6 +212,7 @@ function compileRegistryProgramObject(
 		object: encodeCompiledProgramObject(compiled),
 		metadata: compiled.metadata,
 		modules,
+		sources,
 	};
 }
 
@@ -233,9 +241,11 @@ export function buildProgramMedia(
 		system = { program: linkedSystem.image, symbols: linkedSystem.metadata };
 		rebuiltSystem = {
 			object: compiledSystem.object,
-			metadata: compiledSystem.metadata,
+			objectMetadata: compiledSystem.metadata,
 			image: linkedSystem.image,
+			mediaMetadata: linkedSystem.metadata!,
 			programAddress,
+			sources: compiledSystem.sources,
 		};
 		systemModules = compiledSystem.modules;
 	} else {
@@ -259,9 +269,11 @@ export function buildProgramMedia(
 		);
 		rebuiltCart = {
 			object: compiledCart.object,
-			metadata: compiledCart.metadata,
+			objectMetadata: compiledCart.metadata,
 			image: linkedCart.image,
+			mediaMetadata: linkedCart.metadata!,
 			programAddress,
+			sources: compiledCart.sources,
 		};
 	}
 	return { system: rebuiltSystem, cart: rebuiltCart };
@@ -272,10 +284,10 @@ export function installProgramMedia(runtime: Runtime, rebuilt: RebuiltProgramMed
 	let systemLayer: RomSourceLayer | null = null;
 	let cartLayer: RomSourceLayer | null = null;
 	if (rebuilt.system !== null) {
-		systemLayer = buildProgramTail(sources.systemRom, rebuilt.system.image, rebuilt.system.metadata);
+		systemLayer = buildProgramTail(sources.systemRom, rebuilt.system.image, rebuilt.system.mediaMetadata);
 	}
 	if (rebuilt.cart !== null) {
-		cartLayer = buildProgramTail(sources.cartRom!, rebuilt.cart.image, rebuilt.cart.metadata);
+		cartLayer = buildProgramTail(sources.cartRom!, rebuilt.cart.image, rebuilt.cart.mediaMetadata);
 	}
 	installRuntimeRomLayers(
 		sources,
@@ -284,10 +296,12 @@ export function installProgramMedia(runtime: Runtime, rebuilt: RebuiltProgramMed
 	);
 	if (systemLayer !== null) {
 		runtime.machine.memory.systemRom = systemLayer.payload;
+		sources.systemProgramSources = rebuilt.system!.sources;
 		sources.systemProgramMediaDirty = false;
 	}
 	if (cartLayer !== null) {
 		runtime.machine.memory.cartRom = cartLayer.payload;
+		sources.cartProgramSources = rebuilt.cart!.sources;
 		sources.cartProgramMediaDirty = false;
 	}
 }

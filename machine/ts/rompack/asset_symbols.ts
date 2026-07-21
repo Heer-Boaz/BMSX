@@ -1,6 +1,5 @@
 import { type CartridgeLayerId, type RomAsset } from './format';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../machine/memory/map';
-import { layoutRomAssetPayloads } from './asset_layout';
 
 export type RomAssetSymbol = {
 	name: string;
@@ -42,78 +41,25 @@ function assetHasPublicRomSymbol(asset: RomAsset): boolean {
 
 export function collectRomAssetSymbols(
 	assetList: ReadonlyArray<RomAsset>,
-	includeLuaAssets: boolean,
 	defaultPayloadId: CartridgeLayerId,
 ): RomAssetSymbol[] {
 	const symbols: RomAssetSymbol[] = [];
-	const mainRanges = new Map<RomAsset, { start: number; end: number }>();
-	const ranges = layoutRomAssetPayloads(assetList, includeLuaAssets).ranges;
-	for (let index = 0; index < ranges.length; index += 1) {
-		const range = ranges[index];
-		if (range.kind === 'buffer') {
-			mainRanges.set(range.asset, { start: range.start, end: range.end });
-		}
-	}
 	for (let index = 0; index < assetList.length; index += 1) {
 		const asset = assetList[index];
-		const includeInLayout = asset.type !== 'lua' || includeLuaAssets;
-		if (!includeInLayout) {
+		if (!assetHasPublicRomSymbol(asset) || asset.start === undefined || asset.end === undefined) {
 			continue;
 		}
-		const exportSymbol = assetHasPublicRomSymbol(asset);
-		if (asset.start !== undefined) {
-			const end = asset.end;
-			if (end === undefined) {
-				throw new Error(`[RomAssetSymbols] ROM asset '${asset.type}:${asset.resid}' has a start offset without an end offset.`);
-			}
-			if (exportSymbol) {
-				const payloadId = asset.payload_id === undefined ? defaultPayloadId : asset.payload_id;
-				symbols.push({
-					name: buildAssetSymbolName(asset),
-					assetId: asset.resid,
-					assetType: asset.type,
-					payloadId,
-					address: romBaseByPayloadId[payloadId] + asset.start,
-					byteLength: end - asset.start,
-				});
-			}
-			continue;
-		}
-		const mainRange = mainRanges.get(asset);
-		if (mainRange !== undefined && exportSymbol) {
-			symbols.push({
-				name: buildAssetSymbolName(asset),
-				assetId: asset.resid,
-				assetType: asset.type,
-				payloadId: 'cart',
-				address: CART_ROM_BASE + mainRange.start,
-				byteLength: mainRange.end - mainRange.start,
-			});
-		}
+		const payloadId = asset.payload_id === undefined ? defaultPayloadId : asset.payload_id;
+		symbols.push({
+			name: buildAssetSymbolName(asset),
+			assetId: asset.resid,
+			assetType: asset.type,
+			payloadId,
+			address: romBaseByPayloadId[payloadId] + asset.start,
+			byteLength: asset.end - asset.start,
+		});
 	}
 	return symbols;
-}
-
-export function assertRomAssetSymbolsMatchToc(
-	expected: ReadonlyArray<RomAssetSymbol>,
-	assetList: ReadonlyArray<RomAsset>,
-	includeLuaAssets: boolean,
-	defaultPayloadId: CartridgeLayerId,
-): void {
-	const actual = collectRomAssetSymbols(assetList, includeLuaAssets, defaultPayloadId);
-	if (actual.length !== expected.length) {
-		throw new Error(`[RomAssetSymbols] Generated symbol count ${expected.length} does not match final TOC symbol count ${actual.length}.`);
-	}
-	for (let index = 0; index < expected.length; index += 1) {
-		const expectedSymbol = expected[index];
-		const actualSymbol = actual[index];
-		if (actualSymbol.name !== expectedSymbol.name
-			|| actualSymbol.payloadId !== expectedSymbol.payloadId
-			|| actualSymbol.address !== expectedSymbol.address
-			|| actualSymbol.byteLength !== expectedSymbol.byteLength) {
-			throw new Error(`[RomAssetSymbols] Generated symbol '${expectedSymbol.name}' does not match final TOC symbol '${actualSymbol.name}' (${expectedSymbol.payloadId}:${expectedSymbol.address}+${expectedSymbol.byteLength} vs ${actualSymbol.payloadId}:${actualSymbol.address}+${actualSymbol.byteLength}).`);
-		}
-	}
 }
 
 export function buildRomAssetSymbolModuleSourceFromSymbols(symbols: ReadonlyArray<RomAssetSymbol>): string {
@@ -148,7 +94,7 @@ export function buildRomAssetSymbolModuleSourceFromSymbols(symbols: ReadonlyArra
 		`assets.<symbol>` read is inlined to the constant value at its use site, so the module
 		emits no proto, no global slots, no `require` call and no runtime table construction.
 */
-export function buildRomAssetSymbolModuleSource(assetList: ReadonlyArray<RomAsset>, includeLuaAssets: boolean): string {
-	const symbols = collectRomAssetSymbols(assetList, includeLuaAssets, 'cart');
+export function buildRomAssetSymbolModuleSource(assetList: ReadonlyArray<RomAsset>): string {
+	const symbols = collectRomAssetSymbols(assetList, 'cart');
 	return buildRomAssetSymbolModuleSourceFromSymbols(symbols);
 }

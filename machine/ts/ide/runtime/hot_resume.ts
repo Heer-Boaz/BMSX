@@ -5,6 +5,7 @@ import type { ProgramImage } from '../../machine/program/loader';
 import type { Runtime } from '../../machine/runtime/runtime';
 import { clearOverlayFrame } from '../../render/host_overlay/overlay_queue';
 import { linkProgramRevision, type LinkedProgramRevision } from '../../rompack/tooling/program_linker';
+import { composeProgramCounterRelocations } from '../../rompack/tooling/program_revision';
 import { callClosureIntoSuspended } from './closure_executor';
 import { clearRuntimeDebuggerPause } from './debug_pause';
 import { clearFaultSnapshot, resetHandledLuaErrors } from './fault_state';
@@ -35,6 +36,7 @@ export function hotResume(
 		let systemVectors = runtime.systemVectors;
 		let cartVectors = runtime.cartVectors;
 		if (rebuildSystem || rebuildCart) {
+			const sourceState = machineManager.sourceState;
 			rebuilt = buildProgramMedia(
 				interpreter,
 				rebuildSystem,
@@ -47,31 +49,37 @@ export function hotResume(
 				assertLiveStorageLayoutUnchanged(loadProgramImagesForSource('cart').program, rebuilt.cart.image);
 			}
 
-			revision = {
-				program: runtime.machine.cpu.program,
-				metadata: runtime.programMetadata!,
-				vectors: runtime.cartProgramStarted ? runtime.cartVectors : runtime.systemVectors,
-			};
 			if (rebuilt.system !== null) {
 				revision = linkProgramRevision(
-					revision.program,
-					revision.metadata,
+					runtime.machine.cpu.program,
+					runtime.programMetadata!,
 					rebuilt.system.object,
-					rebuilt.system.metadata,
+					rebuilt.system.objectMetadata,
 					rebuilt.system.image,
 					rebuilt.system.programAddress,
+					sourceState.systemProgramSources,
+					rebuilt.system.sources,
 				);
 				systemVectors = revision.vectors;
 			}
 			if (rebuilt.cart !== null) {
-				revision = linkProgramRevision(
-					revision.program,
-					revision.metadata,
+				const baseProgram = revision === null ? runtime.machine.cpu.program : revision.program;
+				const baseMetadata = revision === null ? runtime.programMetadata! : revision.metadata;
+				const next = linkProgramRevision(
+					baseProgram,
+					baseMetadata,
 					rebuilt.cart.object,
-					rebuilt.cart.metadata,
+					rebuilt.cart.objectMetadata,
 					rebuilt.cart.image,
 					rebuilt.cart.programAddress,
+					sourceState.cartProgramSources!,
+					rebuilt.cart.sources,
 				);
+				if (revision !== null) {
+					composeProgramCounterRelocations(revision.pcRelocations, next.pcRelocations);
+					next.pcRelocations = revision.pcRelocations;
+				}
+				revision = next;
 				cartVectors = revision.vectors;
 			}
 		}
@@ -86,9 +94,6 @@ export function hotResume(
 
 		if (rebuilt !== null) {
 			const linkedRevision = revision!;
-			installProgramMedia(runtime, rebuilt);
-			runtime.systemVectors = systemVectors;
-			runtime.cartVectors = cartVectors;
 			runtime.machine.cpu.setProgram(
 				linkedRevision.program,
 				linkedRevision.metadata,
@@ -97,8 +102,12 @@ export function hotResume(
 				cartVectors.irqProtoIndex,
 				systemVectors.exceptionProtoIndex,
 			);
+			runtime.machine.cpu.relocateActiveFrames(linkedRevision.pcRelocations);
+			runtime.systemVectors = systemVectors;
+			runtime.cartVectors = cartVectors;
 			runtime.programRuntimeSymbols = linkedRevision.metadata;
 			runtime.programMetadata = linkedRevision.metadata;
+			installProgramMedia(runtime, rebuilt);
 			machineManager.ideState.editor.clearNativeMemberCompletionCache();
 		}
 		const initClosure = runtime.machine.cpu.getGlobalByKey(runtime.internString('init')) as Closure;

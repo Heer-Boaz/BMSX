@@ -154,6 +154,7 @@ function installGtePlusBurstProgram(cpu: CPU, words: readonly number[]): void {
 	const metadata: ProgramMetadata = {
 		debugRanges: [null],
 		protoIds: ['gte_plus_burst'],
+		resumePointsByProto: [[]],
 		localSlotsByProto: [[]],
 		upvalueNamesByProto: [[]],
 		globalNames: [],
