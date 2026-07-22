@@ -1,7 +1,10 @@
 #pragma once
 
 #include "common/primitives.h"
+#include "machine/bus/io.h"
 #include "machine/memory/bus_signals.h"
+
+#include <array>
 
 namespace bmsx {
 
@@ -9,27 +12,30 @@ class CPU;
 class DeviceScheduler;
 class IrqController;
 class Memory;
+enum class MemoryRegionKind;
 
-struct DmaControllerState {
+struct DmaChannelState {
 	u32 readAddressWord = 0;
 	u32 writeAddressWord = 0;
 	u32 transferCountWord = 0;
 	u32 controlWord = 0;
 	u32 statusWord = 0;
+};
+
+struct DmaControllerState {
+	std::array<DmaChannelState, IO_DMA_CHANNEL_COUNT> channels{};
+	u32 activeChannel = IO_DMA_CHANNEL_COUNT;
+	u32 nextChannel = 0;
 	u32 scheduledBlockWords = 0;
 	i64 scheduledBlockCycles = 0;
 	u32 scheduledReadAddressWord = 0;
 	u32 scheduledWriteAddressWord = 0;
 	u32 scheduledTransferCountWord = 0;
 	u32 scheduledControlWord = 0;
-	bool transferStarted = false;
 	bool supervisorQuiesceRequested = false;
-	u32 userReadAddressWord = 0;
-	u32 userWriteAddressWord = 0;
-	u32 userTransferCountWord = 0;
-	u32 userControlWord = 0;
-	u32 userStatusWord = 0;
-	bool userTransferStarted = false;
+	bool supervisorAdmissionQuiesceRequested = false;
+	std::array<DmaChannelState, IO_DMA_CHANNEL_COUNT> userChannels{};
+	u32 userNextChannel = 0;
 };
 
 class DmaController {
@@ -37,25 +43,18 @@ public:
 	DmaController(Memory& memory, CPU& cpu, IrqController& irq, DeviceScheduler& scheduler);
 
 	void setTiming(i64 ramCyclesPerWord, i64 ramBurstSetupCycles, i64 systemRomCyclesPerWord, i64 cartRomCyclesPerWord, i64 cartRomBurstSetupCycles, i64 nowCycles);
-	void setGxGpuReadReady(bool ready);
-	void setGxGpuDmaWriteReady(bool ready);
-	void setGxGpuCpuWriteReady(bool ready);
-	void setGxGpuDmaDirection(u32 direction);
-	void setApuDmaReadReady(bool ready);
-	void setApuDmaWriteReady(bool ready);
-	void setImgDecDmaWriteReady(bool ready);
-	bool isGxGpuCpuPortWriteReady() const;
-	bool ownsApuDataPort() const;
-	bool ownsImgDecDataPort() const;
+	void setRequestLines(u32 mask, u32 asserted);
+	bool ownsReadPort(u32 address) const;
+	bool ownsWritePort(u32 address) const;
+	bool hasAdmittedWriteBlock(u32 address) const;
 	void onService(i64 nowCycles);
 	void reset();
 	DmaControllerState captureState() const;
 	void restoreState(const DmaControllerState& state, i64 nowCycles);
 	void postLoad();
+	void beginSupervisorControlQuiesce();
 	void beginSupervisorQuiesce();
-	bool supervisorQuiescent() const { return m_scheduledBlockWords == 0u && !m_serviceActive; }
-	bool hasAdmittedGxGpuWriteBlock() const;
-	bool ownsGxGpuWritePort() const;
+	bool supervisorQuiescent() const { return m_supervisorAdmissionQuiesceRequested && m_activeChannel == IO_DMA_CHANNEL_COUNT && !m_serviceActive; }
 	void enterSupervisorContext();
 	void enterSupervisorFaultContext();
 	void leaveSupervisorContext();
@@ -63,49 +62,48 @@ public:
 private:
 	static void onControlWriteThunk(void* context, u32 addr, u64 value, MappedBusSignals busSignals);
 	static void onAddressWriteThunk(void* context, u32 addr, u64 value, MappedBusSignals busSignals);
+	static void onTransferCountWriteThunk(void* context, u32 addr, u64 value, MappedBusSignals busSignals);
 	static void onTriggerWriteThunk(void* context, u32 addr, u64 value, MappedBusSignals busSignals);
-	static bool triggerWriteReadyThunk(void* context, u32 addr);
+	static bool triggerWriteReadyThunk(void* context, u32 addr, MappedBusSignals busSignals);
 
-	void onTriggerWrite(u32 value);
-	void finishTransfer();
-	void admitBlock(i64 anchorCycle);
-	void requestInputChanged();
-	bool requestAsserted() const;
-	bool busy() const;
-	void resumeCpuPortWrites();
+	void onTriggerWrite(u32 channel, u32 value);
+	void arbitrate(i64 anchorCycle);
+	void admitBlock(u32 channel, i64 anchorCycle);
+	i64 regionSpanCycles(MemoryRegionKind region, u32 wordCount, bool regionStart) const;
+	void finishChannel(u32 channel);
+	void resumeCpuWriteIfPortReleased(u32 address);
+	bool requestAsserted(u32 channel) const;
+	bool requestLineAsserted(u32 request) const;
+	bool busy(u32 channel) const;
+	u32 channelReadAddress(u32 channel) const;
+	u32 channelWriteAddress(u32 channel) const;
+	DmaChannelState captureChannel(u32 channel) const;
+	void restoreChannel(u32 channel, const DmaChannelState& state);
 	void clearLiveTransfer();
+	void clearUserContext();
 	void clearAdmittedBlock();
 	void notifySupervisorBoundary();
-	bool imgDecQuiesceContinuationReady() const;
 
 	i64 m_ramCyclesPerWord = 1;
 	i64 m_ramBurstSetupCycles = 0;
 	i64 m_systemRomCyclesPerWord = 1;
 	i64 m_cartRomCyclesPerWord = 0;
 	i64 m_cartRomBurstSetupCycles = 0;
+	u32 m_activeChannel = IO_DMA_CHANNEL_COUNT;
+	u32 m_nextChannel = 0;
 	u32 m_scheduledBlockWords = 0;
 	u32 m_scheduledReadAddressWord = 0;
 	u32 m_scheduledWriteAddressWord = 0;
 	u32 m_scheduledTransferCountWord = 0;
 	u32 m_scheduledControlWord = 0;
 	i64 m_serviceDeadline = 0;
-	bool m_gxGpuReadReady = false;
-	bool m_gxGpuDmaWriteReady = false;
-	bool m_gxGpuCpuWriteReady = false;
-	u32 m_gxGpuDmaDirection = 0;
-	bool m_apuDmaReadReady = false;
-	bool m_apuDmaWriteReady = false;
-	bool m_imgDecDmaWriteReady = false;
+	u32 m_requestLines = 0;
 	bool m_serviceActive = false;
-	bool m_transferStarted = false;
 	bool m_restorePending = false;
 	bool m_supervisorQuiesceRequested = false;
-	u32 m_userReadAddressWord = 0;
-	u32 m_userWriteAddressWord = 0;
-	u32 m_userTransferCountWord = 0;
-	u32 m_userControlWord = 0;
-	u32 m_userStatusWord = 0;
-	bool m_userTransferStarted = false;
+	bool m_supervisorAdmissionQuiesceRequested = false;
+	std::array<DmaChannelState, IO_DMA_CHANNEL_COUNT> m_userChannels{};
+	u32 m_userNextChannel = 0;
 	Memory& m_memory;
 	CPU& m_cpu;
 	IrqController& m_irq;

@@ -1,5 +1,5 @@
 import type { ImageResource, Resource } from './rompacker.rompack';
-import { GX_SYSTEM_TEXTURE_X, GX_SYSTEM_TEXTURE_Y } from './gx_texture';
+import { GX_SYSTEM_TEXTURE_X, GX_SYSTEM_TEXTURE_Y } from './system_texture';
 
 export const BIOS_TERMINAL_GLYPHS_ASSET_ID = 'bios_terminal_glyphs';
 

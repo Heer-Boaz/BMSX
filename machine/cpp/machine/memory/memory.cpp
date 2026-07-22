@@ -115,7 +115,7 @@ bool Memory::mappedWriteReady(uint32_t addr) {
 	const int slot = ioAlignedSlot(addr);
 	if (slot < 0) return true;
 	IoWriteBinding& binding = m_ioWriteHandlers[static_cast<size_t>(slot)];
-	return binding.ready == nullptr || binding.ready(binding.context, addr);
+	return binding.ready == nullptr || binding.ready(binding.context, addr, MAPPED_BUS_MASTER_CPU);
 }
 
 u32 Memory::firstBlockedMappedWordWrite(uint32_t addr, uint32_t wordCount) {
@@ -126,7 +126,7 @@ u32 Memory::firstBlockedMappedWordWrite(uint32_t addr, uint32_t wordCount) {
 	u32 writeAddress = addr < IO_BASE ? IO_BASE : addr;
 	while (writeAddress <= lastAddress && writeAddress < ioEnd) {
 		IoWriteBinding& binding = m_ioWriteHandlers[static_cast<size_t>((writeAddress - IO_BASE) / IO_WORD_SIZE)];
-		if (binding.ready != nullptr && !binding.ready(binding.context, writeAddress)) {
+		if (binding.ready != nullptr && !binding.ready(binding.context, writeAddress, MAPPED_BUS_MASTER_CPU)) {
 			return writeAddress;
 		}
 		writeAddress += IO_WORD_SIZE;
@@ -289,7 +289,7 @@ void Memory::writeIoValue(uint32_t addr, Value value) {
 void Memory::writeMappedValue(uint32_t addr, Value value) {
 	const int slot = ioAlignedSlot(addr);
 	if (slot >= 0) {
-		if (isLuaReadOnlyIoAddress(addr)) {
+		if (isReadOnlyIoAddress(addr)) {
 			raiseBusFault(BUS_FAULT_READ_ONLY, addr, BUS_ACCESS_WRITE_WORD);
 			return;
 		}
@@ -482,8 +482,14 @@ void Memory::writeMappedDmaU32LE(uint32_t addr, uint32_t value, MappedBusSignals
 void Memory::writeMappedBusU32LE(uint32_t addr, uint32_t value, uint32_t faultAccess, MappedBusSignals busSignals) {
 	const int slot = ioAlignedSlot(addr);
 	if (slot >= 0) {
-		if (isLuaReadOnlyIoAddress(addr)) {
+		if (isReadOnlyIoAddress(addr)) {
 			raiseBusFault(BUS_FAULT_READ_ONLY, addr, faultAccess);
+			return;
+		}
+		const IoWriteBinding& binding = m_ioWriteHandlers[static_cast<size_t>(slot)];
+		if ((busSignals & MAPPED_BUS_MASTER_DMA) != 0u
+			&& binding.ready != nullptr
+			&& !binding.ready(binding.context, addr, busSignals)) {
 			return;
 		}
 		const Value word = valueNumber(static_cast<double>(value));
@@ -582,7 +588,7 @@ bool Memory::isRamRange(uint32_t addr, size_t length) const {
 
 MemoryRegionKind Memory::mappedRegion(uint32_t addr) const {
 	if (isIoRegionRange(addr, IO_WORD_SIZE)) {
-		return MemoryRegionKind::Other;
+		return MemoryRegionKind::Io;
 	}
 	if (addressRangeWithin(addr, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE, IO_WORD_SIZE)) {
 		return MemoryRegionKind::SystemRom;
@@ -591,6 +597,43 @@ MemoryRegionKind Memory::mappedRegion(uint32_t addr) const {
 		return MemoryRegionKind::CartRom;
 	}
 	return isRamRange(addr, IO_WORD_SIZE) ? MemoryRegionKind::Ram : MemoryRegionKind::Other;
+}
+
+u32 Memory::mappedRegionWordSpan(u32 addr, u32 wordLimit, MemoryRegionKind region) const {
+	constexpr u64 systemRomEnd = static_cast<u64>(SYSTEM_ROM_BASE) + SYSTEM_ROM_SIZE;
+	constexpr u64 cartRomEnd = static_cast<u64>(CART_ROM_BASE) + CART_ROM_SIZE;
+	const u64 ioEnd = static_cast<u64>(IO_BASE) + IO_SLOT_COUNT * IO_WORD_SIZE;
+	const u64 ramEnd = static_cast<u64>(RAM_BASE) + m_ram.size();
+	u64 boundary;
+	switch (region) {
+	case MemoryRegionKind::SystemRom:
+		boundary = systemRomEnd;
+		break;
+	case MemoryRegionKind::CartRom:
+		boundary = cartRomEnd;
+		break;
+	case MemoryRegionKind::Io:
+		boundary = ioEnd;
+		break;
+	case MemoryRegionKind::Ram:
+		boundary = ramEnd;
+		break;
+	case MemoryRegionKind::Other:
+		boundary = addr < systemRomEnd
+			? systemRomEnd
+			: addr < cartRomEnd
+				? cartRomEnd
+				: addr < IO_BASE
+					? IO_BASE
+					: addr < ioEnd
+						? ioEnd
+						: addr < ramEnd ? ramEnd : (u64{1} << ADDRESS_BITS);
+		break;
+	default:
+		__builtin_unreachable();
+	}
+	const u64 regionWords = (boundary - addr + (IO_WORD_SIZE - 1u)) / IO_WORD_SIZE;
+	return regionWords < wordLimit ? static_cast<u32>(regionWords) : wordLimit;
 }
 
 void Memory::onBusFaultAckWriteThunk(void* context, uint32_t addr, Value value, MappedBusSignals) {
@@ -627,7 +670,7 @@ bool Memory::isIoRegionRange(uint32_t addr, size_t length) const {
 	return addressRangeWithin(addr, IO_BASE, m_ioSlots.size() * IO_WORD_SIZE, length);
 }
 
-bool Memory::isLuaReadOnlyIoAddress(uint32_t addr) const {
+bool Memory::isReadOnlyIoAddress(uint32_t addr) const {
 	if (addr >= IO_INP_KEYS && addr < IO_INP_OUTPUT_PORT) {
 		return true; // latched keyboard/pointer/pad snapshot words
 	}
@@ -641,7 +684,8 @@ bool Memory::isLuaReadOnlyIoAddress(uint32_t addr) const {
 		case IO_SYS_FRAME_MS:
 		case IO_SYS_CYCLES_PER_FRAME:
 		case IO_IRQ_FLAGS:
-		case IO_DMA_STATUS:
+		case IO_DMA0_STATUS:
+		case IO_DMA1_STATUS:
 		case IO_IMGDEC_STATUS:
 		case IO_IMGDEC_INPUT_WORDS_RECEIVED:
 		case IO_IMGDEC_DECODED_WORD_COUNT:

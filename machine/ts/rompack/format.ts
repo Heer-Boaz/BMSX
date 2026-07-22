@@ -67,7 +67,7 @@ export interface RuntimeRomPackage {
 	entry_path: string; // Entry Lua path for this program.
 }
 
-export type asset_type = 'image' | 'audio' | 'data' | 'bin' | 'romlabel' | 'model' | 'aem' | 'lua' | 'code';
+export type asset_type = 'image' | 'texture' | 'audio' | 'data' | 'bin' | 'romlabel' | 'model' | 'aem' | 'lua' | 'code';
 export type asset_id = string;
 
 /**
@@ -87,21 +87,19 @@ export interface RomAsset {
 	metabuffer_end?: number; // Optional end offset of binary-encoded per-entry metadata in the buffer
 	buffer?: Buffer; // Raw buffer owned by this ROM entry at pack time.
 	compiled_buffer?: Buffer; // Compiled Lua chunk buffer for Lua source records.
-	texture_buffer?: Buffer; // Optional buffer holding packed textures for model records.
+	model_texture_buffer?: Buffer; // Optional packed image payload owned by a model record.
 	collision_bin_buffer?: Buffer; // Optional auxiliary collision binary owned by an image record.
 	imgmeta?: ImgMeta; // Metadata when this record is an image.
+	texturemeta?: TextureMeta; // Metadata when this record is a GX texture stream.
 	audiometa?: AudioMeta; // Metadata when this record is audio.
-	texture_start?: number; // Start offset of the texture buffer within the ROM
-	texture_end?: number;   // End offset of the texture buffer within the ROM
+	model_texture_start?: number; // Start offset of a model-owned packed image payload.
+	model_texture_end?: number; // End offset of a model-owned packed image payload.
 	collision_bin_start?: number; // Start offset of the image-owned collision binary within the ROM
 	collision_bin_end?: number;   // End offset of the image-owned collision binary within the ROM
 	source_path?: string; // Relative filesystem path for this record when applicable (e.g., Lua source files).
 	normalized_source_path?: string; // Normalized absolute-ish source path for this record.
 	update_timestamp?: number; // Last update timestamp for dev hot-resume.
 	payload_id?: CartridgeLayerId; // Cartridge layer backing this record's raw bytes.
-}
-
-export interface RomImgAsset extends RomAsset {
 }
 
 export type RomLuaAsset = RomAsset & {
@@ -111,7 +109,7 @@ export type RomLuaAsset = RomAsset & {
 }
 
 export type id2res = Record<asset_id, RomAsset>;
-export type id2imgres = Record<asset_id, RomImgAsset>;
+export type id2imgres = Record<asset_id, RomAsset>;
 export type id2model = Record<asset_id, GLTFModel>;
 export type id2data = Record<asset_id, any>;
 export type AudioEventMapEntry = Record<string, unknown>;
@@ -348,16 +346,21 @@ export interface ImgMeta {
 	height: number; // The height of the image.
 	texture_u: number; // Image X within its packed texture, in source pixels.
 	texture_v: number; // Image Y within its packed texture, in source pixels.
-	gx_texture_mode: number; // PSX GPU texture mode for the image-owned texture payload.
-	gx_texture_word_width: number; // Width of the texture upload in native VRAM words.
-	gx_texture_height: number; // Height of the texture upload in native VRAM rows.
-	gx_clut_offset?: number; // Byte offset of palette words within the decoded native texture payload.
+	gx_texture_resid?: asset_id; // Cart texture resource; system images use fixed resident coordinates.
 	gx_source_x?: number; // Fixed resident source X for firmware-ROM images.
 	gx_source_y?: number; // Fixed resident source Y for firmware-ROM images.
 	gx_page_tiles?: GxTexturePageTile[]; // Producer-sliced page-local rectangles for an explicitly tiled image.
 	boundingbox?: BoundingBoxPrecalc; // The bounding box of the image. Used for collision detection.
 	centerpoint?: vec2arr; // The center point of the image, based on the bounding box.
 	hitpolygons?: HitPolygonsPrecalc; // The concave hull polygons for collision detection, with flipped variants.
+}
+
+export interface TextureMeta {
+	mode: number;
+	word_width: number;
+	height: number;
+	texture_word_count: number;
+	clut_word_count: number;
 }
 
 export interface GxTexturePageTile {

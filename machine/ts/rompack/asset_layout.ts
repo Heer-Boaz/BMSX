@@ -27,7 +27,6 @@ export function layoutRomAssetPayloads(
 ): RomAssetPayloadLayout {
 	const entries: RomAsset[] = [];
 	const ranges: RomAssetPayloadRange[] = [];
-	const textureRanges = new Map<Buffer, RomAssetPayloadRange>();
 	let offset = initialOffset;
 	const appendPayload = (buffer: Buffer): RomAssetPayloadRange => {
 		offset = alignRomAssetOffset(offset);
@@ -63,14 +62,10 @@ export function layoutRomAssetPayloads(
 			entry.compiled_start = range.start;
 			entry.compiled_end = range.end;
 		}
-		if (source.texture_buffer && source.texture_buffer.length !== 0) {
-			let range = textureRanges.get(source.texture_buffer);
-			if (range === undefined) {
-				range = appendPayload(source.texture_buffer);
-				textureRanges.set(source.texture_buffer, range);
-			}
-			entry.texture_start = range.start;
-			entry.texture_end = range.end;
+		if (source.model_texture_buffer && source.model_texture_buffer.length !== 0) {
+			const range = appendPayload(source.model_texture_buffer);
+			entry.model_texture_start = range.start;
+			entry.model_texture_end = range.end;
 		}
 		if (source.collision_bin_buffer && source.collision_bin_buffer.length !== 0) {
 			const range = appendPayload(source.collision_bin_buffer);

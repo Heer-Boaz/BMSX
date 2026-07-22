@@ -1,6 +1,10 @@
 import type { GxGpu } from '../../../machine/devices/gx/gpu';
 import type { GxGpuDeviceOutput } from '../../../machine/devices/gx/device_output';
 import {
+	GX_GPU_CLUT_4BIT_WORDS,
+	GX_GPU_CLUT_8BIT_WORDS,
+} from '../../../machine/devices/gx/gp0';
+import {
 	GX_GPU_COMMAND_CAPACITY,
 	GX_GPU_COMMAND_COPY_VRAM_TO_VRAM,
 	GX_GPU_COMMAND_DRAW_LINE,
@@ -135,8 +139,6 @@ const GX_GPU_TEXTURED_FLOAT_CAPACITY = GX_GPU_COMMAND_CAPACITY * GX_GPU_POLYGON_
 const GX_GPU_TEXTURE_PAGE_COORD_SIZE = 256;
 const GX_GPU_TEXTURE_PAGE_4BIT_WIDTH_WORDS = 64;
 const GX_GPU_TEXTURE_PAGE_8BIT_WIDTH_WORDS = 128;
-const GX_GPU_CLUT_4BIT_WORDS = 16;
-const GX_GPU_CLUT_8BIT_WORDS = 256;
 const GX_GPU_TRANSFER_VERTEX_FLOATS = 4;
 const GX_GPU_TRANSFER_VERTICES_PER_SEGMENT = 6;
 const GX_GPU_TRANSFER_SEGMENTS_PER_ROW = 3;

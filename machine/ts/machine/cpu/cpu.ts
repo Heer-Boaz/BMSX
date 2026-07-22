@@ -2207,6 +2207,10 @@ export class CPU {
 		return this.memoryWriteBlocked;
 	}
 
+	public stalledMemoryWriteAddress(): number {
+		return this.memoryWriteBlockedAddress;
+	}
+
 	public resumeMemoryWrite(address: number): void {
 		// A device-ready edge releases only the instruction stalled on that raw MMIO target.
 		if (this.memoryWriteBlocked && this.memoryWriteBlockedAddress === address) {
@@ -2215,9 +2219,6 @@ export class CPU {
 	}
 
 	public abortStalledMemoryWrite(): void {
-		// A stalled mapped store has issued no bus cycle and blockMappedWrite()
-		// already rewound its PC. Supervisor entry can therefore abort the wait;
-		// RFE retries the complete instruction at EPC in the restored user context.
 		this.memoryWriteBlocked = false;
 	}
 

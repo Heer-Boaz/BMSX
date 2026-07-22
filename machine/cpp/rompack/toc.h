@@ -24,6 +24,7 @@ constexpr u32 ROM_TOC_ASSET_TYPE_MODEL = 7;
 constexpr u32 ROM_TOC_ASSET_TYPE_AEM = 8;
 constexpr u32 ROM_TOC_ASSET_TYPE_LUA = 9;
 constexpr u32 ROM_TOC_ASSET_TYPE_CODE = 10;
+constexpr u32 ROM_TOC_ASSET_TYPE_TEXTURE = 11;
 
 struct RomTocPayload {
 	std::vector<RomSourceEntry> entries;
@@ -32,6 +33,7 @@ struct RomTocPayload {
 
 enum class AssetTypeKind {
 	Image,
+	Texture,
 	Audio,
 	Model,
 	Aem,

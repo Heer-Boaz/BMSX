@@ -103,10 +103,19 @@ GX owners:
   `machine/firmware/system/dma.lua`
 - Streaming IMGDEC owners: `machine/ts/machine/devices/imgdec`,
   `machine/cpp/machine/devices/imgdec`, `machine/firmware/system/imgdec.lua`,
-  `scripts/rompacker/imgdec.ts`
-- Cart image-layout owner: `cartlib/gx/image.lua`
-- ROM image-placement producer: `scripts/rompacker/atlasbuilder.ts`,
+  `machine/ts/rompack/tooling/imgdec_codec.ts`
+- Native GX texture wire-codec owner:
+  `machine/ts/rompack/tooling/gx_texture_codec.ts`; GP0 upload serialization is
+  owned by `machine/ts/rompack/tooling/gp0_encode.ts`, while the mirrored raw
+  GP0/CLUT constants remain in `machine/ts/machine/devices/gx/gp0.ts` and
+  `machine/cpp/machine/devices/gx/gp0.h`
+- Guest texture-resource owners: `machine/firmware/system/romdir.lua`,
+  `cartlib/gx/texture.lua`, and `cartlib/gx/image.lua`
+- ROM image-placement and explicit texture-TOC producers:
+  `scripts/rompacker/atlasbuilder.ts`,
+  `scripts/rompacker/gx_texture_layout.ts`,
   `scripts/rompacker/rombuilder.ts`
+- Fixed system-texture serializer: `scripts/rompacker/system_texture.ts`
 - BIOS fixed system-texture consumers: `machine/firmware/bios/bootrom.lua`,
   `machine/firmware/system/font.lua`
 - BIOS monitor/terminal owners: `machine/firmware/bios/monitor.lua`,
@@ -114,9 +123,10 @@ GX owners:
   `machine/firmware/bios/terminal.lua`
 
 Residual VDP ownership and the old host-PNG/RGBA IMGDEC path have been removed
-from both runtimes. A later closed slice introduced a new raw streaming IMGDEC
-which expands BMSX `IMD1` cart words directly into GX GP0 ingress; it shares no
-runtime contract with the deleted decoder.
+from both runtimes. The current raw streaming IMGDEC expands BMSX `IMD1`
+cart words into ordinary GP0 packets through two normal DMA channels on one
+shared bus; it has no GX-private ingress and shares no runtime contract with the
+deleted decoder.
 The ROM `vdp_class: psx` field remains a package-format compatibility marker;
 it is not a live VDP device contract.
 
@@ -125,8 +135,9 @@ it is not a live VDP device contract.
 GTE is relatively far along. GPU is in the middle of the replacement work. GX
 is the only cart graphics route executed by host backends. GPU parity and
 accelerated conformance remain open; the old VDP/RPU and host-image IMGDEC paths
-are no longer blockers. Streaming IMGDEC is an upstream GP0 producer rather
-than a backend graphics route.
+are no longer blockers. Streaming IMGDEC is an upstream producer whose output
+reaches the same mapped GP0 port through DMA rather than a backend graphics
+route.
 
 Implemented or partially covered GX-GPU areas include:
 
@@ -267,15 +278,20 @@ WebGL2, GLES2, and WebGPU. Only live accelerated conformance remains deferred.
 
 Cart texture residency is independent of the active GP1 display dimensions,
 and the GTE does not participate in texture or atlas handling. The ROM packer
-emits one fixed system GP0 stream and destination-free cart texture payloads.
-Direct16 payloads are row-major RGB555/STP words; palette4 payloads contain raw
-packed texels followed by their CLUT. Every runtime image points directly at
-the shared ROM span plus integer-local `texture_u`/`texture_v` metadata. The cart
-chooses the physical VRAM rectangle. `system/gx_gpu.lua` emits the raw A0 packet
-and `system/dma.lua` streams the payload directly from ROM to GP0. Neither
-firmware owner, cartlib nor a cart knows the producer's numeric packing-group
-ID. Runtime PNG decode and mapped RGBA texture staging are not part of texture
-residency; generated PNGs remain tooling previews only.
+emits one fixed raw system GP0 stream. For each cart packing group it emits one
+explicit `texture` TOC resource whose ordinary range owns a compressed `IMD1`
+payload and whose metadata owns the native mode, word width, height and exact
+texture/CLUT word counts. Direct16 decoded payloads are row-major RGB555/STP
+words; palette4 decoded payloads contain raw packed texels followed by their
+CLUT. Every image keeps only integer-local `texture_u`/`texture_v` metadata and
+a stable `gx_texture_resid` reference. Cartlib resolves that resource through
+the firmware ROM directory, caches it by resource id and programs the cart's
+physical VRAM rectangle. Firmware uses IMGDEC plus two ordinary DMA channels to
+move the compressed ROM stream through the mapped GP0 port. Neither firmware,
+cartlib nor a cart knows the producer's numeric packing-group ID or infers
+identity from shared physical offsets. Runtime PNG decode and mapped RGBA
+texture staging are not part of texture residency; generated PNGs remain
+tooling previews only.
 
 Each cart declares reserved VRAM, physical texture/CLUT slots, possible group
 destinations and simultaneous working sets in `gx_texture_layout`. The producer
@@ -315,8 +331,9 @@ same device edge rather than polling. The long `2025` black-box capture now
 starts the real `combat_wekker` flow and crosses the first common-plus-monster
 upload before checking Maya B, the clock scene and the choice prompt.
 
-`pietious` now uses a manifest-required, destination-free native PSX 4-bpp
-texture plus CLUT in one cart-owned slot. It has no CPU texture-staging
+`pietious` now uses a manifest-required explicit compressed texture resource
+whose decoded native payload is PSX 4-bpp texture plus CLUT in one cart-owned
+slot. It has no CPU texture-staging
 allocation, whole-texture RGBA decode or VDP tile stream. The legacy header's
 eight permanently off-screen black columns are removed, so every Pietious image
 fits one hardware sampling page and every blit remains one primitive.
@@ -1117,8 +1134,9 @@ merge model rather than a terminal-shaped approximation.
 - [x] Migrate `fade_probe` to GX blend primitives.
 - [x] Migrate `vblanktest` to GX/GPUSTAT-visible behavior.
 - [x] Migrate `nemesis_s` boot, texture upload, clear, and sprite/tile draws to
-  GX/PSX. Its cart programs the VRAM destination and the ROM carries one shared
-  raw direct16 texture span; runtime atlas identity and decode are removed.
+  GX/PSX. Its cart programs the VRAM destination and its explicit ROM texture
+  resource owns the `IMD1` stream for one native direct16 payload; runtime atlas
+  identity and host decode are removed.
 - [x] Migrate `renderhwtest` to direct GX primitive programming, including a
   cart-visible raw PSX textured affine quad smoke.
 - [x] Migrate `2025` engine/cart rendering to GX, including cart-owned

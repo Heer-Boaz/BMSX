@@ -41,6 +41,7 @@ void SystemController::reset() {
 	m_scheduler.cancelDeviceService(DEVICE_SERVICE_SYSTEM);
 	m_resetRequested = false;
 	m_supervisorPhase = SYSTEM_SUPERVISOR_PHASE_USER;
+	m_supervisorTransitionTarget = SYSTEM_SUPERVISOR_TARGET_USER;
 	m_supervisorResumable = false;
 	m_supervisorExitRequested = false;
 	m_printBuffer.fill(0u);
@@ -153,11 +154,12 @@ void SystemController::writeControl([[maybe_unused]] u32 address, Value value) {
 
 void SystemController::requestSupervisorLineEdge() {
 	if (m_supervisorPhase == SYSTEM_SUPERVISOR_PHASE_USER) {
-		m_supervisorPhase = SYSTEM_SUPERVISOR_PHASE_ENTRY_QUIESCE;
+		m_supervisorPhase = SYSTEM_SUPERVISOR_PHASE_ENTRY_PRODUCER_QUIESCE;
+		m_supervisorTransitionTarget = SYSTEM_SUPERVISOR_TARGET_SUPERVISOR;
 		m_supervisorResumable = true;
 		m_supervisorExitRequested = false;
-		m_gpu.beginSupervisorQuiesce();
-		m_dma.beginSupervisorQuiesce();
+		m_gpu.beginSupervisorControlQuiesce();
+		m_dma.beginSupervisorControlQuiesce();
 		m_geometry.beginSupervisorQuiesce();
 		m_imgDec.beginSupervisorQuiesce();
 		writeStatusIo();
@@ -171,32 +173,41 @@ void SystemController::requestSupervisorLineEdge() {
 }
 
 void SystemController::onService() {
-	if (m_supervisorPhase == SYSTEM_SUPERVISOR_PHASE_ENTRY_QUIESCE) {
-		if (!m_gpu.supervisorQuiescent()
-			|| !m_dma.supervisorQuiescent()
-			|| !m_geometry.supervisorQuiescent()
+	if (m_supervisorPhase == SYSTEM_SUPERVISOR_PHASE_ENTRY_PRODUCER_QUIESCE) {
+		if (!m_geometry.supervisorQuiescent()
 			|| !m_imgDec.supervisorQuiescent()) {
 			return;
 		}
-		m_supervisorPhase = SYSTEM_SUPERVISOR_PHASE_ENTRY_VECTOR;
-		m_cpu.abortStalledMemoryWrite();
-		m_cpu.requestNonMaskableInterrupt();
+		m_dma.beginSupervisorQuiesce();
+		m_supervisorPhase = SYSTEM_SUPERVISOR_PHASE_BUS_QUIESCE;
 		writeStatusIo();
-		return;
 	}
-	if (m_supervisorPhase == SYSTEM_SUPERVISOR_PHASE_LEAVING) {
-		if (!m_gpu.supervisorQuiescent()
-			|| !m_dma.supervisorQuiescent()
-			|| !m_geometry.supervisorQuiescent()
-			|| !m_imgDec.supervisorQuiescent()) {
+	if (m_supervisorPhase == SYSTEM_SUPERVISOR_PHASE_BUS_QUIESCE) {
+		if (!m_dma.supervisorQuiescent()) {
 			return;
 		}
-		m_gpu.leaveSupervisorContext();
+		m_supervisorPhase = SYSTEM_SUPERVISOR_PHASE_GPU_QUIESCE;
+		m_gpu.beginSupervisorQuiesce();
+		writeStatusIo();
+	}
+	if (m_supervisorPhase == SYSTEM_SUPERVISOR_PHASE_GPU_QUIESCE) {
+		if (!m_gpu.supervisorQuiescent()) {
+			return;
+		}
+		if (m_supervisorTransitionTarget == SYSTEM_SUPERVISOR_TARGET_SUPERVISOR) {
+			m_supervisorPhase = SYSTEM_SUPERVISOR_PHASE_ENTRY_VECTOR;
+			m_cpu.abortStalledMemoryWrite();
+			m_cpu.requestNonMaskableInterrupt();
+			writeStatusIo();
+			return;
+		}
 		m_dma.leaveSupervisorContext();
+		m_gpu.leaveSupervisorContext();
 		m_geometry.leaveSupervisorContext();
 		m_imgDec.leaveSupervisorContext();
 		m_irq.leaveSupervisorContext();
 		m_supervisorPhase = SYSTEM_SUPERVISOR_PHASE_USER;
+		m_supervisorTransitionTarget = SYSTEM_SUPERVISOR_TARGET_USER;
 		m_supervisorResumable = false;
 		m_supervisorExitRequested = false;
 		writeStatusIo();
@@ -214,12 +225,15 @@ void SystemController::enterSupervisor() {
 	m_gpu.enterSupervisorContext();
 	m_supervisorResumable = true;
 	m_supervisorPhase = SYSTEM_SUPERVISOR_PHASE_ACTIVE;
+	m_supervisorTransitionTarget = SYSTEM_SUPERVISOR_TARGET_SUPERVISOR;
 	m_supervisorExitRequested = false;
 	writeStatusIo();
 }
 
 void SystemController::enterSupervisorFault() {
-	if (m_supervisorPhase == SYSTEM_SUPERVISOR_PHASE_LEAVING) {
+	if (m_supervisorTransitionTarget == SYSTEM_SUPERVISOR_TARGET_USER
+		&& (m_supervisorPhase == SYSTEM_SUPERVISOR_PHASE_BUS_QUIESCE
+			|| m_supervisorPhase == SYSTEM_SUPERVISOR_PHASE_GPU_QUIESCE)) {
 		return;
 	}
 	m_cpu.cancelNonMaskableInterrupt();
@@ -229,6 +243,7 @@ void SystemController::enterSupervisorFault() {
 	m_geometry.enterSupervisorFaultContext();
 	m_irq.enterSupervisorFaultContext();
 	m_supervisorPhase = SYSTEM_SUPERVISOR_PHASE_ACTIVE;
+	m_supervisorTransitionTarget = SYSTEM_SUPERVISOR_TARGET_SUPERVISOR;
 	m_supervisorResumable = false;
 	m_supervisorExitRequested = false;
 	writeStatusIo();
@@ -238,12 +253,12 @@ void SystemController::beginSupervisorLeave() {
 	if (m_supervisorPhase != SYSTEM_SUPERVISOR_PHASE_ACTIVE || !m_supervisorResumable) {
 		return;
 	}
-	m_supervisorPhase = SYSTEM_SUPERVISOR_PHASE_LEAVING;
+	m_supervisorPhase = SYSTEM_SUPERVISOR_PHASE_BUS_QUIESCE;
+	m_supervisorTransitionTarget = SYSTEM_SUPERVISOR_TARGET_USER;
 	m_supervisorExitRequested = false;
-	m_gpu.beginSupervisorQuiesce();
+	m_gpu.beginSupervisorControlQuiesce();
+	m_dma.beginSupervisorControlQuiesce();
 	m_dma.beginSupervisorQuiesce();
-	m_geometry.beginSupervisorQuiesce();
-	m_imgDec.beginSupervisorQuiesce();
 	writeStatusIo();
 	m_scheduler.scheduleDeviceService(DEVICE_SERVICE_SYSTEM, m_scheduler.currentNowCycles());
 }
@@ -258,6 +273,7 @@ SystemControllerState SystemController::captureState() const {
 	SystemControllerState state;
 	state.resetRequested = m_resetRequested;
 	state.supervisorPhase = m_supervisorPhase;
+	state.supervisorTransitionTarget = m_supervisorTransitionTarget;
 	state.supervisorResumable = m_supervisorResumable;
 	state.supervisorExitRequested = m_supervisorExitRequested;
 	state.printBuffer = m_printBuffer;
@@ -269,6 +285,7 @@ SystemControllerState SystemController::captureState() const {
 void SystemController::restoreState(const SystemControllerState& state) {
 	m_resetRequested = state.resetRequested;
 	m_supervisorPhase = state.supervisorPhase;
+	m_supervisorTransitionTarget = state.supervisorTransitionTarget;
 	m_supervisorResumable = state.supervisorResumable;
 	m_supervisorExitRequested = state.supervisorExitRequested;
 	m_printBuffer = state.printBuffer;
@@ -280,8 +297,9 @@ void SystemController::restoreState(const SystemControllerState& state) {
 }
 
 void SystemController::postLoad() {
-	if (m_supervisorPhase == SYSTEM_SUPERVISOR_PHASE_ENTRY_QUIESCE
-		|| m_supervisorPhase == SYSTEM_SUPERVISOR_PHASE_LEAVING) {
+	if (m_supervisorPhase == SYSTEM_SUPERVISOR_PHASE_ENTRY_PRODUCER_QUIESCE
+		|| m_supervisorPhase == SYSTEM_SUPERVISOR_PHASE_BUS_QUIESCE
+		|| m_supervisorPhase == SYSTEM_SUPERVISOR_PHASE_GPU_QUIESCE) {
 		m_scheduler.scheduleDeviceService(DEVICE_SERVICE_SYSTEM, m_scheduler.currentNowCycles());
 	}
 }

@@ -93,8 +93,8 @@ export function encodeRomToc(params: { entries: RomAsset[]; projectRootPath?: st
 		writeU32(entryView, base + 52, asU32(entry.compiled_end));
 		writeU32(entryView, base + 56, asU32(entry.metabuffer_start));
 		writeU32(entryView, base + 60, asU32(entry.metabuffer_end));
-		writeU32(entryView, base + 64, asU32(entry.texture_start));
-		writeU32(entryView, base + 68, asU32(entry.texture_end));
+		writeU32(entryView, base + 64, asU32(entry.model_texture_start));
+		writeU32(entryView, base + 68, asU32(entry.model_texture_end));
 		writeU32(entryView, base + 72, asU32(entry.collision_bin_start));
 		writeU32(entryView, base + 76, asU32(entry.collision_bin_end));
 		writeU32(entryView, base + 80, updateLo);

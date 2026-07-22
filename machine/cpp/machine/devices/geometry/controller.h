@@ -41,7 +41,7 @@ public:
 
 private:
 	static void onCommandWriteThunk(void* context, uint32_t addr, Value value, MappedBusSignals busSignals);
-	static bool commandWriteReadyThunk(void* context, uint32_t addr);
+	static bool commandWriteReadyThunk(void* context, uint32_t addr, MappedBusSignals busSignals);
 	static void onCtrlWriteThunk(void* context, uint32_t addr, Value value, MappedBusSignals busSignals);
 	static void onFaultAckWriteThunk(void* context, uint32_t addr, Value value, MappedBusSignals busSignals);
 

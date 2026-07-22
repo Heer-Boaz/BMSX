@@ -47,7 +47,7 @@ private:
 	static u64 readTransferDataThunk(void* context, u32 addr, MappedBusSignals busSignals);
 	static void writeTransferAddressThunk(void* context, u32 addr, u64 value, MappedBusSignals busSignals);
 	static void writeTransferDataThunk(void* context, u32 addr, u64 value, MappedBusSignals busSignals);
-	static bool transferDataWriteReadyThunk(void* context, u32 addr);
+	static bool transferDataWriteReadyThunk(void* context, u32 addr, MappedBusSignals busSignals);
 	static void writeTransferControlThunk(void* context, u32 addr, u64 value, MappedBusSignals busSignals);
 
 	void synchronizeBeforeTransferAccess(i64 nowCycles);

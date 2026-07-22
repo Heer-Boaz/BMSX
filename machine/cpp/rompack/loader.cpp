@@ -1174,8 +1174,8 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 		const i32 bufEnd = romInfo.end ? *romInfo.end : -1;
 		const i32 metaBufStart = romInfo.metabufferStart ? *romInfo.metabufferStart : -1;
 		const i32 metaBufEnd = romInfo.metabufferEnd ? *romInfo.metabufferEnd : -1;
-		const i32 textureBufStart = romInfo.textureStart ? *romInfo.textureStart : -1;
-		const i32 textureBufEnd = romInfo.textureEnd ? *romInfo.textureEnd : -1;
+		const i32 modelTextureBufStart = romInfo.modelTextureStart ? *romInfo.modelTextureStart : -1;
+		const i32 modelTextureBufEnd = romInfo.modelTextureEnd ? *romInfo.modelTextureEnd : -1;
 		const bool useSharedMetadata =
 			hasSharedMetadata &&
 			metaBufStart >= 0 &&
@@ -1200,11 +1200,8 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 						imgAsset.meta.height = imgMeta.count("height") ? imgMeta.at("height").toI32() : 0;
 						imgAsset.meta.textureU = imgMeta.at("texture_u").toI32();
 						imgAsset.meta.textureV = imgMeta.at("texture_v").toI32();
-						imgAsset.meta.gxTextureMode = imgMeta.at("gx_texture_mode").toI32();
-						imgAsset.meta.gxTextureWordWidth = imgMeta.at("gx_texture_word_width").toI32();
-						imgAsset.meta.gxTextureHeight = imgMeta.at("gx_texture_height").toI32();
-						if (imgMeta.count("gx_clut_offset")) {
-							imgAsset.meta.gxClutOffset = imgMeta.at("gx_clut_offset").toI32();
+						if (imgMeta.count("gx_texture_resid")) {
+							imgAsset.meta.gxTextureResid = imgMeta.at("gx_texture_resid").asString();
 						}
 						if (imgMeta.count("gx_source_x")) {
 							imgAsset.meta.gxSourceX = imgMeta.at("gx_source_x").toI32();
@@ -1259,6 +1256,8 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 				romPackage.img[assetToken] = std::move(imgAsset);
 				break;
 			}
+			case AssetTypeKind::Texture:
+				break;
 			case AssetTypeKind::Audio: {
 				AudioAsset audioAsset;
 				audioAsset.id = assetId;
@@ -1310,9 +1309,9 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 				BinValue modelValue = decodeBinary(modelData, modelSize);
 				const u8* textureData = nullptr;
 				size_t textureSize = 0;
-				if (textureBufStart >= 0 && textureBufEnd > textureBufStart) {
-					textureData = romData + textureBufStart;
-					textureSize = static_cast<size_t>(textureBufEnd - textureBufStart);
+				if (modelTextureBufStart >= 0 && modelTextureBufEnd > modelTextureBufStart) {
+					textureData = romData + modelTextureBufStart;
+					textureSize = static_cast<size_t>(modelTextureBufEnd - modelTextureBufStart);
 				}
 				ModelAsset modelAsset = parseModelAsset(assetId, modelValue, textureData, textureSize);
 				modelAsset.rom = romInfo;

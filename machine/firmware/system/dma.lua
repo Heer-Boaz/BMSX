@@ -1,61 +1,63 @@
 local dma<const> = {}
 
-local read_addr<const>: *word = 0x08000014
-local write_addr<const>: *word = 0x08000018
-local transfer_count<const>: *word = 0x0800001c
-local control<const>: *word = 0x08000020
-local status<const>: *word = 0x08000024
-local trigger<const>: *word = 0x08000028
+local dma0_read_addr<const>: *word = 0x08000014
+local dma0_write_addr<const>: *word = 0x08000018
+local dma0_transfer_count<const>: *word = 0x0800001c
+local dma0_control<const>: *word = 0x08000020
+local dma0_trigger<const>: *word = 0x08000028
+local dma1_read_addr<const>: *word = 0x080103e8
+local dma1_write_addr<const>: *word = 0x080103ec
+local dma1_transfer_count<const>: *word = 0x080103f0
+local dma1_control<const>: *word = 0x080103f4
+local dma1_trigger<const>: *word = 0x080103fc
 local gx_gp0_addr<const> = 0x08010240
 local apu_transfer_data_addr<const> = 0x080001f4
-local imgdec_data_addr<const> = 0x08010400
-local control_read_increment_gx_write<const> = 0x000001e5
-local control_read_increment_apu_write<const> = 0x000001f1
-local control_write_increment_apu_read<const> = 0x000001f6
-local control_read_increment_imgdec_write<const> = 0x000001f9
-local control_request_force<const> = 0x00000000
-local status_busy<const> = 0x00000001
+local imgdec_data_addr<const> = 0x08010418
+local control_read_increment_gx_write<const> = 0x00003c41
+local control_read_increment_apu_write<const> = 0x00003cc1
+local control_write_increment_apu_read<const> = 0x00003c12
+local control_read_increment_imgdec_write<const> = 0x00003d41
+local control_imgdec_read_gx_write<const> = 0x00003c58
 local trigger_start<const> = 0x00000001
 
 function dma.copy_to_gp0(source, word_count)
-	*read_addr = source
-	*write_addr = gx_gp0_addr
-	*transfer_count = word_count
-	*control = control_read_increment_gx_write
-	*trigger = trigger_start
+	*dma0_read_addr = source
+	*dma0_write_addr = gx_gp0_addr
+	*dma0_transfer_count = word_count
+	*dma0_control = control_read_increment_gx_write
+	*dma0_trigger = trigger_start
 end
 
 function dma.copy_to_apu(source, word_count)
-	*read_addr = source
-	*write_addr = apu_transfer_data_addr
-	*transfer_count = word_count
-	*control = control_read_increment_apu_write
-	*trigger = trigger_start
+	*dma0_read_addr = source
+	*dma0_write_addr = apu_transfer_data_addr
+	*dma0_transfer_count = word_count
+	*dma0_control = control_read_increment_apu_write
+	*dma0_trigger = trigger_start
 end
 
 function dma.copy_from_apu(target, word_count)
-	*read_addr = apu_transfer_data_addr
-	*write_addr = target
-	*transfer_count = word_count
-	*control = control_write_increment_apu_read
-	*trigger = trigger_start
+	*dma0_read_addr = apu_transfer_data_addr
+	*dma0_write_addr = target
+	*dma0_transfer_count = word_count
+	*dma0_control = control_write_increment_apu_read
+	*dma0_trigger = trigger_start
 end
 
 function dma.copy_to_imgdec(source, word_count)
-	*read_addr = source
-	*write_addr = imgdec_data_addr
-	*transfer_count = word_count
-	*control = control_read_increment_imgdec_write
-	*trigger = trigger_start
+	*dma0_read_addr = source
+	*dma0_write_addr = imgdec_data_addr
+	*dma0_transfer_count = word_count
+	*dma0_control = control_read_increment_imgdec_write
+	*dma0_trigger = trigger_start
 end
 
-function dma.abort()
-	local busy<const> = (*status & status_busy) ~= 0
-	-- Count and request mode are live channel registers. A forced request makes
-	-- the controller observe the zero remaining count and retire the transfer.
-	*transfer_count = 0
-	*control = control_request_force
-	return busy
+function dma.copy_from_imgdec_to_gp0(word_count)
+	*dma1_read_addr = imgdec_data_addr
+	*dma1_write_addr = gx_gp0_addr
+	*dma1_transfer_count = word_count
+	*dma1_control = control_imgdec_read_gx_write
+	*dma1_trigger = trigger_start
 end
 
 return dma

@@ -1,27 +1,48 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { readFile, rm } from 'node:fs/promises';
+import { join } from 'node:path';
 import { test } from 'node:test';
 
 import { createCanvas } from 'canvas';
 
+import { compileLuaChunkToProgram } from '../../machine/ts/lua/compiler';
+import { CPU, RunResult, StringValue, createBuiltinFunction } from '../../machine/ts/machine/cpu/cpu';
+import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
+import { LUA_BOOT_PRIMITIVES } from '../../machine/ts/machine/firmware/boot_primitives';
+import { Memory } from '../../machine/ts/machine/memory/memory';
+import { CART_ROM_BASE } from '../../machine/ts/machine/memory/map';
+import { PROGRAM_IMAGE_ID } from '../../machine/ts/machine/program/loader';
 import { layoutRomAssetPayloads } from '../../machine/ts/rompack/asset_layout';
-import type { ImgMeta } from '../../machine/ts/rompack/format';
+import { PROGRAM_BOOT_HEADER_VERSION, type RomAsset } from '../../machine/ts/rompack/format';
+import { loadRomAssetList } from '../../machine/ts/rompack/loader';
 import {
 	decodeGxTextureImage,
-	GX_SYSTEM_VRAM_HEIGHT,
-	GX_SYSTEM_VRAM_WIDTH,
-	GX_SYSTEM_VRAM_X,
-	GX_SYSTEM_VRAM_Y,
-} from '../../scripts/rompacker/gx_texture';
+	encodeDirect16GxTexture,
+	encodePalette4GxTexture,
+} from '../../machine/ts/rompack/tooling/gx_texture_codec';
+import { layoutRomProgramPrefix } from '../../machine/ts/rompack/tooling/rom_layout';
+import { buildAssetModalView } from '../../scripts/rominspector/asset_modal_view';
 import { resolveTextureGroupId } from '../../scripts/rompacker/atlasbuilder';
-import { buildDirect16GxTexture, buildPalette4GxTexture } from '../../scripts/rompacker/gx_texture';
 import { validateGxTextureLayout, type GxTextureLayout } from '../../scripts/rompacker/gx_texture_layout';
-import { decodeImgDecStream } from '../../scripts/rompacker/imgdec';
-import { createTextureAtlases, generateRomAssets } from '../../scripts/rompacker/rombuilder';
+import { decodeImgDecStream, encodeImgDecStream } from '../../machine/ts/rompack/tooling/imgdec_codec';
+import { createTextureAtlases, finalizeRompack, generateRomAssets } from '../../scripts/rompacker/rombuilder';
 import type { ImageResource, Resource, TextureAtlasResource } from '../../scripts/rompacker/rompacker.rompack';
 import {
 	GX_CART_TEXTURE_GROUP_ID_LIMIT,
 	GX_SYSTEM_TEXTURE_GROUP_ID,
+	textureGroupResourceName,
 } from '../../scripts/rompacker/texture_atlas_contract';
+import {
+	GX_SYSTEM_VRAM_HEIGHT,
+	GX_SYSTEM_VRAM_WIDTH,
+	GX_SYSTEM_VRAM_X,
+	GX_SYSTEM_VRAM_Y,
+} from '../../scripts/rompacker/system_texture';
+import { finalizeTestSystemProgram } from '../helpers/program_image';
+import { parseLuaChunk } from '../lua/cpu_test_harness';
+
+const PACKED_TEXTURE_ROM_ROOT = join(process.cwd(), 'tmp', 'gx-texture-rom-contract-test');
 
 const GX_SYSTEM_VRAM_RESERVATION = {
 	system: {
@@ -43,11 +64,11 @@ test('texture group 254 belongs exclusively to the system producer', () => {
 });
 
 test('direct16 production emits destination-free RGB555 STP words', () => {
-	const texture = buildDirect16GxTexture(3, 1, new Uint8ClampedArray([
+	const texture = encodeDirect16GxTexture(3, 1, new Uint8ClampedArray([
 		0xff, 0x00, 0x00, 0xff,
 		0xff, 0xff, 0xff, 0x00,
 		0x00, 0x00, 0xff, 0xff,
-	]), 'gx-words');
+	]));
 
 	assert.equal(texture.wordWidth, 3);
 	assert.equal(texture.height, 1);
@@ -58,15 +79,14 @@ test('direct16 production emits destination-free RGB555 STP words', () => {
 });
 
 test('palette4 production keeps packed texels and the CLUT in one destination-free payload', () => {
-	const texture = buildPalette4GxTexture(4, 1, new Uint8ClampedArray([
+	const texture = encodePalette4GxTexture(4, 1, new Uint8ClampedArray([
 		0x00, 0x00, 0x00, 0x00,
 		0xff, 0x00, 0x00, 0xff,
 		0x00, 0xff, 0x00, 0xff,
 		0x00, 0x00, 0xff, 0xff,
-	]), 'gx-words');
+	]));
 
 	assert.equal(texture.wordWidth, 1);
-	assert.equal(texture.clutOffset, 4);
 	assert.deepEqual(Array.from(texture.words.subarray(0, 12)), [
 		0x10, 0x32, 0x00, 0x00,
 		0x00, 0x00, 0x1f, 0x80,
@@ -75,44 +95,38 @@ test('palette4 production keeps packed texels and the CLUT in one destination-fr
 });
 
 test('ROM inspection decodes raw system textures and decompressed cart texture streams', () => {
-	const direct = buildDirect16GxTexture(1, 1, new Uint8ClampedArray([0xff, 0x00, 0x00, 0xff]), 'gx-words');
-	const directImgDec = buildDirect16GxTexture(1, 1, new Uint8ClampedArray([0xff, 0x00, 0x00, 0xff]), 'imgdec-stream');
-	const directMeta: ImgMeta = {
+	const direct = encodeDirect16GxTexture(1, 1, new Uint8ClampedArray([0xff, 0x00, 0x00, 0xff]));
+	const directImgDec = encodeImgDecStream(direct.words, direct.textureWordCount, direct.clutWordCount);
+	const directMeta = {
 		width: 1,
 		height: 1,
-		texture_u: 0,
-		texture_v: 0,
-		gx_texture_mode: direct.mode,
-		gx_texture_word_width: direct.wordWidth,
-		gx_texture_height: direct.height,
+		textureU: 0,
+		textureV: 0,
 	};
 	assert.deepEqual(
-		Array.from(decodeGxTextureImage(direct.words, 0, directMeta).rgba),
+		Array.from(decodeGxTextureImage(direct.words, direct, directMeta).rgba),
 		[255, 0, 0, 255],
 	);
 	assert.deepEqual(
-		Array.from(decodeGxTextureImage(decodeImgDecStream(directImgDec.stream).payload, 0, directMeta).rgba),
+		Array.from(decodeGxTextureImage(decodeImgDecStream(directImgDec).payload, direct, directMeta).rgba),
 		[255, 0, 0, 255],
 	);
 
-	const palette = buildPalette4GxTexture(4, 1, new Uint8ClampedArray([
+	const palette = encodePalette4GxTexture(4, 1, new Uint8ClampedArray([
 		0x00, 0x00, 0x00, 0x00,
 		0xff, 0x00, 0x00, 0xff,
 		0x00, 0xff, 0x00, 0xff,
 		0x00, 0x00, 0xff, 0xff,
-	]), 'imgdec-stream');
-	const paletteMeta: ImgMeta = {
+	]));
+	const paletteImgDec = encodeImgDecStream(palette.words, palette.textureWordCount, palette.clutWordCount);
+	const paletteMeta = {
 		width: 1,
 		height: 1,
-		texture_u: 2,
-		texture_v: 0,
-		gx_texture_mode: palette.mode,
-		gx_texture_word_width: palette.wordWidth,
-		gx_texture_height: palette.height,
-		gx_clut_offset: palette.clutOffset,
+		textureU: 2,
+		textureV: 0,
 	};
 	assert.deepEqual(
-		Array.from(decodeGxTextureImage(decodeImgDecStream(palette.stream).payload, 0, paletteMeta).rgba),
+		Array.from(decodeGxTextureImage(decodeImgDecStream(paletteImgDec).payload, palette, paletteMeta).rgba),
 		[0, 255, 0, 255],
 	);
 });
@@ -125,7 +139,7 @@ test('palette4 production rejects a seventeenth RGB555 STP color', () => {
 		rgba[offset + 3] = 0xff;
 	}
 	assert.throws(
-		() => buildPalette4GxTexture(17, 1, rgba, 'gx-words'),
+		() => encodePalette4GxTexture(17, 1, rgba),
 		/more than 16 RGB555\/STP colors/,
 	);
 });
@@ -215,7 +229,15 @@ test('GX layout validation rejects unknown texture modes at the manifest boundar
 	);
 });
 
-test('producer groups share one compressed IMGDEC texture span without becoming a runtime asset', async () => {
+test('a packed cart texture resolves through the ROM loader, inspector, firmware directory, and cartlib', async () => {
+	const firstCanvas = createCanvas(16, 16);
+	const firstContext = firstCanvas.getContext('2d');
+	firstContext.fillStyle = '#ff0000';
+	firstContext.fillRect(0, 0, 16, 16);
+	const secondCanvas = createCanvas(16, 16);
+	const secondContext = secondCanvas.getContext('2d');
+	secondContext.fillStyle = '#00ff00';
+	secondContext.fillRect(0, 0, 16, 16);
 	const group: TextureAtlasResource = {
 		type: 'atlas',
 		name: '_atlas_00',
@@ -228,7 +250,7 @@ test('producer groups share one compressed IMGDEC texture span without becoming 
 		id: 2,
 		collisionType: 'aabb',
 		targetAtlasId: 0,
-		img: createCanvas(16, 16) as unknown as ImageResource['img'],
+		img: firstCanvas as unknown as ImageResource['img'],
 	};
 	const second: ImageResource = {
 		type: 'image',
@@ -236,7 +258,7 @@ test('producer groups share one compressed IMGDEC texture span without becoming 
 		id: 3,
 		collisionType: 'aabb',
 		targetAtlasId: 0,
-		img: createCanvas(16, 16) as unknown as ImageResource['img'],
+		img: secondCanvas as unknown as ImageResource['img'],
 	};
 	const resources: Resource[] = [group, first, second];
 	const layout: GxTextureLayout = {
@@ -253,15 +275,179 @@ test('producer groups share one compressed IMGDEC texture span without becoming 
 	};
 
 	await createTextureAtlases(resources, layout);
-	assert.equal(first.gxTexture, second.gxTexture);
+	assert.ok(group.gxTexture);
 	assert.deepEqual([first.textureU, first.textureV], [0, 0]);
 	assert.deepEqual([second.textureU, second.textureV], [16, 0]);
 
 	const assets = await generateRomAssets(resources);
-	assert.deepEqual(assets.map(asset => asset.resid), ['first', 'second']);
-	assert.equal(assets[0].texture_buffer, assets[1].texture_buffer);
+	const textureId = textureGroupResourceName(0);
+	assert.deepEqual(assets.map(asset => asset.resid), [textureId, 'first', 'second']);
+	const texture = assets[0];
+	assert.equal(texture.type, 'texture');
+	assert.deepEqual(texture.texturemeta, {
+		mode: group.gxTexture.mode,
+		word_width: group.gxTexture.wordWidth,
+		height: group.gxTexture.height,
+		texture_word_count: group.gxTexture.textureWordCount,
+		clut_word_count: group.gxTexture.clutWordCount,
+	});
+	assert.equal(assets[1].imgmeta!.gx_texture_resid, textureId);
+	assert.equal(assets[2].imgmeta!.gx_texture_resid, textureId);
 	const payloadLayout = layoutRomAssetPayloads(assets, true);
-	assert.equal(payloadLayout.ranges.filter(range => range.buffer === assets[0].texture_buffer).length, 1);
-	assert.equal(payloadLayout.entries[0].texture_start, payloadLayout.entries[1].texture_start);
-	assert.equal(payloadLayout.entries[0].texture_end, payloadLayout.entries[1].texture_end);
+	assert.equal(payloadLayout.entries[0].start, payloadLayout.ranges[0].start);
+	assert.equal(payloadLayout.entries[0].end, payloadLayout.ranges[0].end);
+	assert.equal(payloadLayout.entries[1].model_texture_start, undefined);
+	assert.equal(payloadLayout.entries[2].model_texture_start, undefined);
+
+	await rm(PACKED_TEXTURE_ROM_ROOT, { recursive: true, force: true });
+	try {
+		const prefix = layoutRomProgramPrefix(assets, true, null);
+		const programAssets: RomAsset[] = [{
+			type: 'code',
+			resid: PROGRAM_IMAGE_ID,
+			buffer: Buffer.from([0]),
+			compiled_buffer: Buffer.from([0]),
+		}];
+		await finalizeRompack('texture-contract', {
+			zipRom: false,
+			debug: false,
+			program: {
+				boot: {
+					version: PROGRAM_BOOT_HEADER_VERSION,
+					flags: 0,
+					resetProtoIndex: 0,
+					codeByteCount: 0,
+					constPoolCount: 0,
+					protoCount: 0,
+					constRelocCount: 0,
+				},
+				layout: layoutRomAssetPayloads(programAssets, true, prefix.programOffset),
+			},
+			layout: prefix,
+			outputDirectory: PACKED_TEXTURE_ROM_ROOT,
+		});
+		const rom = await readFile(join(PACKED_TEXTURE_ROM_ROOT, 'texture-contract.rom'));
+		const loaded = await loadRomAssetList(rom);
+		const loadedTexture = loaded.entries.find(asset => asset.type === 'texture')!;
+		const loadedFirst = loaded.entries.find(asset => asset.resid === first.name)!;
+		const loadedSecond = loaded.entries.find(asset => asset.resid === second.name)!;
+		assert.equal(loadedTexture.resid, textureId);
+		assert.deepEqual(loadedTexture.texturemeta, texture.texturemeta);
+		assert.equal(loadedFirst.imgmeta!.gx_texture_resid, textureId);
+		assert.equal(loadedSecond.imgmeta!.gx_texture_resid, textureId);
+
+		const decodedTexture = {};
+		const modalContext = {
+			rombin: rom,
+			assetList: loaded.entries,
+			decodedTexture,
+			manifest: null,
+			projectRootPath: null,
+			systemProgramImage: null,
+			formatByteSize: (size: number) => `${size} bytes`,
+			modalWidth: 80,
+			modalHeight: 24,
+			previewZoom: 1,
+		};
+		const firstView = await buildAssetModalView(loadedFirst, modalContext);
+		const secondView = await buildAssetModalView(loadedSecond, modalContext);
+		assert.deepEqual(Array.from(firstView.previewSections[0].rgba.subarray(0, 4)), [255, 0, 0, 255]);
+		assert.deepEqual(Array.from(secondView.previewSections[0].rgba.subarray(0, 4)), [0, 255, 0, 255]);
+
+		const entrySource = `
+require('bios/base')
+require('bios/table')
+require('bios/string_base')
+local romdir<const> = require('system/romdir')
+local texture<const> = require('cartlib/gx/texture')
+local imgdec<const> = require('system/imgdec')
+local first_texture<const> = texture.from_image(romdir.image('first'))
+local second_texture<const> = texture.from_image(romdir.image('second'))
+texture.upload(first_texture, 0x00200040, 0)
+return first_texture == second_texture and 1 or 0, imgdec.last_upload()
+`;
+		const moduleSources = [
+			['bios/base', readFileSync('machine/firmware/bios/base.lua', 'utf8')],
+			['bios/table', readFileSync('machine/firmware/bios/table.lua', 'utf8')],
+			['bios/string_base', readFileSync('machine/firmware/bios/string_base.lua', 'utf8')],
+			['bios/common/endian', readFileSync('machine/firmware/bios/common/endian.lua', 'utf8')],
+			['bios/common/float_bits', readFileSync('machine/firmware/bios/common/float_bits.lua', 'utf8')],
+			['system/bin', readFileSync('machine/firmware/system/bin.lua', 'utf8')],
+			['system/romdir', readFileSync('machine/firmware/system/romdir.lua', 'utf8')],
+			['system/gx_gpu', 'return { texture_mode_palette4 = 0 }'],
+			['system/imgdec', `
+local imgdec<const> = {}
+local source_addr, source_word_count, texture_word_count, clut_word_count, destination, size, clut_destination = 0, 0, 0, 0, 0, 0, 0
+function imgdec.upload(source, source_words, texture_words, clut_words, target, target_size, clut_target)
+	source_addr = source
+	source_word_count = source_words
+	texture_word_count = texture_words
+	clut_word_count = clut_words
+	destination = target
+	size = target_size
+	clut_destination = clut_target
+end
+function imgdec.last_upload()
+	return source_addr, source_word_count, texture_word_count, clut_word_count, destination, size, clut_destination
+end
+return imgdec
+`],
+			['cartlib/gx/texture', readFileSync('cartlib/gx/texture.lua', 'utf8')],
+		] as const;
+		const modules = moduleSources.map(([path, source]) => ({
+			path,
+			source,
+			chunk: parseLuaChunk(source, `${path}.lua`),
+		}));
+		const compiled = compileLuaChunkToProgram(parseLuaChunk(entrySource, 'entry.lua'), modules, {
+			entrySource,
+			optLevel: 3,
+		});
+		const finalized = finalizeTestSystemProgram(compiled);
+		const memory = new Memory({ systemRom: rom, cartRom: rom });
+		const cpu = new CPU(memory, new IrqController(memory));
+		const vectors = finalized.image.vectors;
+		cpu.setProgram(
+			finalized.program,
+			finalized.image.symbols,
+			finalized.metadata,
+			vectors.irqProtoIndex,
+			vectors.irqProtoIndex,
+			vectors.exceptionProtoIndex,
+		);
+		for (let index = 0; index < LUA_BOOT_PRIMITIVES.length; index += 1) {
+			const primitive = LUA_BOOT_PRIMITIVES[index];
+			cpu.setSystemGlobalByKey(
+				StringValue.get(cpu.stringPool.intern(primitive.name)),
+				createBuiltinFunction(primitive.id),
+			);
+		}
+		const stringTable = cpu.createTable(0, 0);
+		const tableTable = cpu.createTable(0, 0);
+		cpu.stringIndexTable = stringTable;
+		cpu.setGlobalByKey(StringValue.get(cpu.stringPool.intern('string')), stringTable);
+		cpu.setGlobalByKey(StringValue.get(cpu.stringPool.intern('table')), tableTable);
+		cpu.start(vectors.sectionInitProtoIndex);
+		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+		for (const path of finalized.image.sections.rodata.staticModulePaths) {
+			const targetDepth = cpu.getFrameDepth();
+			cpu.call(cpu.rootClosure(finalized.program.moduleProtoMap.get(path)!));
+			assert.equal(cpu.runUntilDepth(targetDepth, 10_000_000), RunResult.Halted);
+		}
+		cpu.syncGlobalSlotsToTable();
+		cpu.start(vectors.resetProtoIndex);
+		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+		assert.deepEqual(Array.from(cpu.lastReturnValues, value => (value as number) >>> 0), [
+			1,
+			CART_ROM_BASE + loadedTexture.start!,
+			(loadedTexture.end! - loadedTexture.start!) >> 2,
+			loadedTexture.texturemeta!.texture_word_count,
+			loadedTexture.texturemeta!.clut_word_count,
+			0x00200040,
+			loadedTexture.texturemeta!.word_width | (loadedTexture.texturemeta!.height << 16),
+			0,
+		]);
+	} finally {
+		await rm(PACKED_TEXTURE_ROM_ROOT, { recursive: true, force: true });
+	}
 });

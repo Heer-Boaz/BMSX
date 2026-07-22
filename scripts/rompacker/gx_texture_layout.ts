@@ -3,12 +3,12 @@ import {
 	GX_GPU_VRAM_WIDTH,
 } from '../../machine/ts/machine/devices/gx/vram_address';
 import {
-	GX_PALETTE4_CLUT_WORDS,
 	GX_SYSTEM_VRAM_HEIGHT,
 	GX_SYSTEM_VRAM_WIDTH,
 	GX_SYSTEM_VRAM_X,
 	GX_SYSTEM_VRAM_Y,
-} from './gx_texture';
+} from './system_texture';
+import { GX_GPU_CLUT_4BIT_WORDS } from '../../machine/ts/machine/devices/gx/gp0';
 import { GX_CART_TEXTURE_GROUP_ID_LIMIT } from './texture_atlas_contract';
 
 export type GxTextureBuildMode = 'direct16' | 'palette4';
@@ -125,7 +125,7 @@ export function validateGxTextureLayout(layout: GxTextureLayout): void {
 				if (!clut) {
 					throw new Error(`[RomPacker] GX palette4 texture group ${groupId} requires a CLUT rectangle in slot '${slotName}'.`);
 				}
-				if ((slot.texture.x & 0x3f) !== 0 || (clut.x & 0x0f) !== 0 || clut.width < GX_PALETTE4_CLUT_WORDS || clut.height < 1) {
+				if ((slot.texture.x & 0x3f) !== 0 || (clut.x & 0x0f) !== 0 || clut.width < GX_GPU_CLUT_4BIT_WORDS || clut.height < 1) {
 					throw new Error(`[RomPacker] GX palette4 slot '${slotName}' is not aligned for a PSX texture page and 16-word CLUT.`);
 				}
 			}

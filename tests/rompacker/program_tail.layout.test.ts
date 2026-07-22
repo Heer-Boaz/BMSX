@@ -45,9 +45,7 @@ test('program-tail rebuild preserves immutable asset metadata addresses and byte
 					height: 1,
 					texture_u: 0,
 					texture_v: 0,
-					gx_texture_mode: 2,
-					gx_texture_word_width: 1,
-					gx_texture_height: 1,
+					gx_texture_resid: 'texture',
 				},
 			},
 		];

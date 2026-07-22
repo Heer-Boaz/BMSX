@@ -1,4 +1,6 @@
 import {
+	DMA_REQUEST_APU_READ,
+	DMA_REQUEST_APU_WRITE,
 	IO_APU_TRANSFER_ADDRESS,
 	IO_APU_TRANSFER_CONTROL,
 	IO_APU_TRANSFER_DATA,
@@ -63,8 +65,7 @@ export class ApuSampleTransfer {
 
 	public dispose(): void {
 		this.cancelBatch();
-		this.dma.setApuDmaWriteReady(false);
-		this.dma.setApuDmaReadReady(false);
+		this.dma.setRequestLines((1 << DMA_REQUEST_APU_WRITE) | (1 << DMA_REQUEST_APU_READ), 0);
 	}
 
 	public setTiming(cpuHz: number, nowCycles: number): void {
@@ -250,7 +251,9 @@ export class ApuSampleTransfer {
 	}
 
 	private updateDmaRequests(): void {
-		this.dma.setApuDmaWriteReady(this.mode === APU_TRANSFER_MODE_DMA_WRITE && this.fifoCount === 0);
-		this.dma.setApuDmaReadReady(this.mode === APU_TRANSFER_MODE_DMA_READ && this.fifoCount === APU_TRANSFER_FIFO_WORD_CAPACITY);
+		const requestMask = (1 << DMA_REQUEST_APU_WRITE) | (1 << DMA_REQUEST_APU_READ);
+		const assertedRequests = (this.mode === APU_TRANSFER_MODE_DMA_WRITE && this.fifoCount === 0 ? 1 << DMA_REQUEST_APU_WRITE : 0)
+			| (this.mode === APU_TRANSFER_MODE_DMA_READ && this.fifoCount === APU_TRANSFER_FIFO_WORD_CAPACITY ? 1 << DMA_REQUEST_APU_READ : 0);
+		this.dma.setRequestLines(requestMask, assertedRequests);
 	}
 }

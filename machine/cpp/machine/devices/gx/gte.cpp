@@ -222,13 +222,13 @@ u64 GxGte::readPlusRegisterThunk(void* context, u32 addr, MappedBusSignals) {
 	return valueNumber(static_cast<double>(gte.m_plusRegisterWords[(addr - IO_GX_GTE_PLUS_BASE) / IO_WORD_SIZE]));
 }
 
-void GxGte::writePlusRegisterThunk(void* context, u32 addr, u64 value, MappedBusSignals busSignals) {
+void GxGte::writePlusRegisterThunk(void* context, u32 addr, u64 value, MappedBusSignals) {
 	GxGte& gte = *static_cast<GxGte*>(context);
 	gte.synchronizePlusCompletion();
 	const u32 index = (addr - IO_GX_GTE_PLUS_BASE) / IO_WORD_SIZE;
 	const u32 word = toU32(value);
 	if (index == GX_GTE_PLUS_COMMAND) {
-		if ((busSignals & MAPPED_BUS_MASTER_DMA) != 0u || gte.m_plusCompletionCycle != 0) {
+		if (gte.m_plusCompletionCycle != 0) {
 			return;
 		}
 		gte.m_plusRegisterWords[index] = word;
@@ -238,7 +238,10 @@ void GxGte::writePlusRegisterThunk(void* context, u32 addr, u64 value, MappedBus
 	gte.m_plusRegisterWords[index] = word;
 }
 
-bool GxGte::plusCommandWriteReadyThunk(void* context, u32) {
+bool GxGte::plusCommandWriteReadyThunk(void* context, u32, MappedBusSignals busSignals) {
+	if ((busSignals & MAPPED_BUS_MASTER_DMA) != 0u) {
+		return false;
+	}
 	GxGte& gte = *static_cast<GxGte*>(context);
 	gte.synchronizePlusCompletion();
 	if (gte.m_plusCompletionCycle == 0) {

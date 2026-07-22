@@ -1,5 +1,4 @@
 #include "machine/devices/gx/gpu.h"
-#include "machine/devices/gx/gpu_command_fifo.h"
 #include "machine/devices/gx/gpu_pcrtc.h"
 #include "machine/devices/dma/controller.h"
 #include "machine/devices/irq/controller.h"
@@ -21,6 +20,7 @@
 #include <limits>
 #include <memory>
 #include <stdexcept>
+#include <vector>
 
 namespace {
 
@@ -39,7 +39,7 @@ struct GpuHarness {
 		, cpu(memory, irq)
 		, scheduler(cpu)
 		, dma(memory, cpu, irq, scheduler)
-		, gpu(memory, irq, scheduler, dma) {
+		, gpu(memory, cpu, irq, scheduler, dma) {
 		dma.reset();
 		gpu.reset();
 		irq.reset();
@@ -835,7 +835,7 @@ void testGp0IngressBypassesPhysicalFifoOnlyAtCommandBoundaries() {
 	harness.gpu.writeGp0((bmsx::GX_GPU_GP0_DRAWING_AREA_TOP_LEFT << 24u) | 0x00012345u);
 	harness.gpu.writeGp0((1u << 16u) | 1u);
 	require(harness.gpu.readDrawingAreaTopLeftWord() == 0u, "GX-GPU fixed payload remains opaque to ingress sideband decode");
-	require(harness.gpu.captureState().gp0FifoWordCount == 3u, "GX-GPU stores the queued fixed packet");
+	require(harness.gpu.captureState().gp0FifoWords.size() == 3u, "GX-GPU stores the queued fixed packet");
 	for (size_t index = 0u; index < bmsx::GX_GPU_COMMAND_FIFO_WORD_CAPACITY * 2u; index += 1u) {
 		harness.gpu.writeGp0(0u);
 	}
@@ -848,7 +848,7 @@ void testGp0IngressBypassesPhysicalFifoOnlyAtCommandBoundaries() {
 	harness.gpu.writeGp0((bmsx::GX_GPU_GP0_DRAWING_AREA_BOTTOM_RIGHT << 24u) | 0x00023456u);
 	harness.gpu.writeGp0((bmsx::GX_GPU_GP0_DRAWING_OFFSET << 24u) | 0x00345678u);
 	const bmsx::GxGpuState bypassedState = harness.gpu.captureState();
-	require(bypassedState.gp0FifoWordCount == 3u, "GX-GPU NOP and drawing-register sidebands do not occupy FIFO slots");
+	require(bypassedState.gp0FifoWords.size() == 3u, "GX-GPU NOP and drawing-register sidebands do not occupy FIFO slots");
 	require(harness.gpu.readDrawingAreaTopLeftWord() == (0x00054321u & bmsx::GX_GPU_DRAWING_AREA_MASK), "GX-GPU E3 overtakes queued raster packets");
 	require(harness.gpu.readDrawingAreaBottomRightWord() == (0x00023456u & bmsx::GX_GPU_DRAWING_AREA_MASK), "GX-GPU E4 overtakes queued raster packets");
 	require(harness.gpu.readDrawingOffsetWord() == (0x00345678u & bmsx::GX_GPU_DRAWING_OFFSET_MASK), "GX-GPU E5 overtakes queued raster packets");
@@ -1190,6 +1190,51 @@ void testGp0CpuToVramImagePayloadConsumption() {
 	require(gpu.readDrawModeWord() == 0x0007ffu, "GX-GPU GP0 command processing resumes after image transfer");
 }
 
+void testSupervisorContextPreservesPartialCpuToVramPacket() {
+	GpuHarness harness;
+	bmsx::GxGpu& gpu = harness.gpu;
+	constexpr bmsx::u32 commandWord = bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24u;
+	constexpr bmsx::u32 destinationWord = 0x00010002u;
+	constexpr bmsx::u32 sizeWord = 4u | (1u << 16u);
+	constexpr bmsx::u32 firstPayloadWord = 0x22221111u;
+	constexpr bmsx::u32 finalPayloadWord = 0x44443333u;
+	gpu.writeGp0(commandWord);
+	gpu.writeGp0(destinationWord);
+	gpu.writeGp0(sizeWord);
+	gpu.writeGp0(firstPayloadWord);
+	const bmsx::GxGpuState partial = gpu.captureState();
+	require(partial.gp0ImageLoadWordsRemaining == 1u, "GX-GPU partial upload retains one payload word");
+	require(partial.commandBuffer.commandCount == 0u, "GX-GPU partial upload has no committed command");
+	require(partial.commandBuffer.words == std::vector<bmsx::u32>{commandWord, destinationWord, sizeWord, firstPayloadWord}, "GX-GPU partial upload retains its exact words");
+
+	gpu.beginSupervisorControlQuiesce();
+	gpu.beginSupervisorQuiesce();
+	require(gpu.supervisorQuiescent(), "GX-GPU partial upload reaches the supervisor fence");
+	gpu.enterSupervisorContext();
+	require(gpu.captureState().commandBuffer.wordCount == 0u, "GX-GPU supervisor gets an empty ingress context");
+	gpu.leaveSupervisorContext();
+
+	const bmsx::GxGpuState restored = gpu.captureState();
+	require(restored.gp0IngressPhase == partial.gp0IngressPhase, "GX-GPU restores the partial upload ingress phase");
+	require(restored.gp0ImageLoadWordsRemaining == partial.gp0ImageLoadWordsRemaining, "GX-GPU restores the partial upload word count");
+	require(restored.gp0ImageLoadCommandWordStart == partial.gp0ImageLoadCommandWordStart, "GX-GPU restores the partial upload command start");
+	require(restored.gp0ImageLoadCommandWordCount == partial.gp0ImageLoadCommandWordCount, "GX-GPU restores the partial upload command word count");
+	require(restored.gp0ImageLoadCommandOpcode == partial.gp0ImageLoadCommandOpcode, "GX-GPU restores the partial upload opcode");
+	require(restored.commandBuffer.words == partial.commandBuffer.words, "GX-GPU restores the partial upload words");
+
+	gpu.writeGp0(finalPayloadWord);
+	const bmsx::GxGpuCommandBuffer& commands = gpu.readDeviceOutput().commandBuffer;
+	require(commands.commandCount == 1u, "GX-GPU completes the restored upload");
+	require(commands.commandKind[0] == bmsx::GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM, "GX-GPU restored upload keeps its command kind");
+	require(commands.commandWordCount[0] == 5u, "GX-GPU restored upload keeps its word count");
+	const size_t start = commands.commandWordStart[0];
+	require(commands.words[start] == commandWord, "GX-GPU restored upload keeps its command word");
+	require(commands.words[start + 1u] == destinationWord, "GX-GPU restored upload keeps its destination");
+	require(commands.words[start + 2u] == sizeWord, "GX-GPU restored upload keeps its dimensions");
+	require(commands.words[start + 3u] == firstPayloadWord, "GX-GPU restored upload keeps its first payload word");
+	require(commands.words[start + 4u] == finalPayloadWord, "GX-GPU restored upload accepts its final payload word");
+}
+
 void testGp0PolylineConsumesPayloadUntilTerminator() {
 	GpuHarness harness;
 	bmsx::GxGpu& gpu = harness.gpu;
@@ -1324,7 +1369,7 @@ void testSaveStateRestoresCommandTimeAndFifoSuffixRelativeToSchedulerTime() {
 	harness.gpu.writeGp0((bmsx::GX_GPU_GP0_DRAW_MODE << 24u) | 0x000123u);
 	harness.scheduler.advanceTo(10);
 	const bmsx::GxGpuState state = harness.gpu.captureState();
-	require(state.gp0FifoWordCount == 1u, "GX-GPU save-state captures the queued FIFO suffix count");
+	require(state.gp0FifoWords.size() == 1u, "GX-GPU save-state captures the queued FIFO suffix count");
 	require(state.gp0FifoWords[0] == ((bmsx::GX_GPU_GP0_DRAW_MODE << 24u) | 0x000123u), "GX-GPU save-state captures the queued FIFO suffix word");
 	require(state.pendingCommandCycles == 19, "GX-GPU save-state captures remaining command cycles");
 	require(state.commandBuffer.executedCommandCount == 0u, "GX-GPU save-state preserves the pending execution frontier");
@@ -1391,7 +1436,7 @@ void testGp1ClearCompletesAcceptedDrawsAndCutsC0AtExecutionFrontier() {
 	const bmsx::GxGpuCommandBuffer& queuedCommands = queued.gpu.readDeviceOutput().commandBuffer;
 	require(queuedCommands.commandCount == 1u, "GX-GPU GP1 clear preserves an active fill");
 	require(queuedCommands.executedCommandCount == 1u, "GX-GPU GP1 clear completes its accepted fill frontier");
-	require(queued.gpu.captureState().gp0FifoWordCount == 0u, "GX-GPU GP1 clear discards C0 still queued behind a draw");
+	require(queued.gpu.captureState().gp0FifoWords.size() == 0u, "GX-GPU GP1 clear discards C0 still queued behind a draw");
 	require(queued.scheduler.nextDeadline() == std::numeric_limits<bmsx::i64>::max(), "GX-GPU GP1 clear cancels its prior draw deadline");
 	require(queuedCommands.readback.phase() == bmsx::GX_GPU_READBACK_IDLE, "GX-GPU queued C0 never activates after GP1 clear");
 	require((queued.gpu.readStatus() & bmsx::GX_GPU_STATUS_GPU_IDLE) != 0u, "GX-GPU GP1 clear becomes idle at its accepted fill frontier");
@@ -4339,6 +4384,7 @@ int main() {
 	testGp0EnvironmentRegistersAndGpuInfoQueries();
 	testGp0FixedLengthRenderAndBlitPacketAssembly();
 	testGp0CpuToVramImagePayloadConsumption();
+	testSupervisorContextPreservesPartialCpuToVramPacket();
 	testGp0PolylineConsumesPayloadUntilTerminator();
 	testSaveStateRestoresPartialFixedGp0Command();
 	testSaveStateRestoresPartialCpuToVramUpload();

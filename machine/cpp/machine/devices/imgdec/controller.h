@@ -2,7 +2,7 @@
 
 #include "common/primitives.h"
 #include "machine/devices/imgdec/contracts.h"
-#include "machine/devices/imgdec/word_fifo.h"
+#include "machine/devices/word_fifo.h"
 #include "machine/memory/bus_signals.h"
 
 #include <array>
@@ -13,7 +13,6 @@ namespace bmsx {
 class CPU;
 class DeviceScheduler;
 class DmaController;
-class GxGpu;
 class IrqController;
 class Memory;
 
@@ -29,6 +28,7 @@ struct ImgDecControllerState {
 	u32 decodedWordCount = 0u;
 	u32 textureWordCount = 0u;
 	u32 clutWordCount = 0u;
+	u32 outputWordsRead = 0u;
 	u32 decodePhase = 0u;
 	u32 outputStage = 0u;
 	u32 runWordsRemaining = 0u;
@@ -50,7 +50,6 @@ public:
 		IrqController& irq,
 		DeviceScheduler& scheduler,
 		DmaController& dma,
-		GxGpu& gpu,
 		i64 cyclesPerOutputWord
 	);
 
@@ -59,7 +58,7 @@ public:
 	void restoreState(const ImgDecControllerState& state);
 	void onService(i64 nowCycles);
 	void beginSupervisorQuiesce();
-	[[nodiscard]] auto supervisorQuiescent() const -> bool { return !m_active; }
+	[[nodiscard]] auto supervisorQuiescent() const -> bool { return m_supervisorQuiesceRequested && m_scheduledDecodeWords == 0u; }
 	void enterSupervisorFaultContext();
 	void leaveSupervisorContext();
 
@@ -70,33 +69,29 @@ private:
 	void prepareDecodeRun();
 	auto scheduleDecode(i64 anchorCycle) -> bool;
 	void decodeScheduledWords();
-	void drainOutput(i64 nowCycles);
 	void emitPayloadWord(u32 word);
-	void completeRunWord();
-	void updateInputRequest();
+	void updateDmaRequests();
 	[[nodiscard]] auto streamComplete() const -> bool;
 	void failIfInputExhausted();
-	void finish();
-	void fail(u32 statusWord);
-	void setStatusBit(u32 bit, bool set);
+	void stop(u32 statusWord);
 	void resumeConfigWrites();
 	void notifySupervisorBoundary();
 
 	static u64 readProgressThunk(void* context, u32 address, MappedBusSignals busSignals);
 	static void writeConfigThunk(void* context, u32 address, u64 value, MappedBusSignals busSignals);
-	static bool configWriteReadyThunk(void* context, u32 address);
+	static bool configWriteReadyThunk(void* context, u32 address, MappedBusSignals busSignals);
+	static u64 readDataThunk(void* context, u32 address, MappedBusSignals busSignals);
 	static void writeDataThunk(void* context, u32 address, u64 value, MappedBusSignals busSignals);
-	static bool dataWriteReadyThunk(void* context, u32 address);
+	static bool dataWriteReadyThunk(void* context, u32 address, MappedBusSignals busSignals);
 
 	Memory& m_memory;
 	CPU& m_cpu;
 	IrqController& m_irq;
 	DeviceScheduler& m_scheduler;
 	DmaController& m_dma;
-	GxGpu& m_gpu;
 	i64 m_cyclesPerOutputWord;
-	ImgDecWordFifo<IMGDEC_INPUT_FIFO_WORD_CAPACITY> m_inputFifo;
-	ImgDecWordFifo<IMGDEC_OUTPUT_FIFO_WORD_CAPACITY> m_outputFifo;
+	WordFifo<IMGDEC_INPUT_FIFO_WORD_CAPACITY> m_inputFifo;
+	WordFifo<IMGDEC_OUTPUT_FIFO_WORD_CAPACITY> m_outputFifo;
 	std::array<u32, IMGDEC_HISTORY_WORD_CAPACITY> m_history{};
 	size_t m_historyWriteIndex = 0u;
 	size_t m_historyWordCount = 0u;
@@ -105,6 +100,9 @@ private:
 	u32 m_decodedWordCount = 0u;
 	u32 m_textureWordCount = 0u;
 	u32 m_clutWordCount = 0u;
+	u32 m_outputWordCount = 0u;
+	u32 m_outputWordsRead = 0u;
+	u32 m_dataWord = 0u;
 	u32 m_decodePhase = 0u;
 	u32 m_outputStage = 0u;
 	u32 m_runWordsRemaining = 0u;

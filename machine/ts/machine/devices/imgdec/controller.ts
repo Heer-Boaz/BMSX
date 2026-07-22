@@ -1,4 +1,6 @@
 import {
+	DMA_REQUEST_IMGDEC_READ,
+	DMA_REQUEST_IMGDEC_WRITE,
 	IO_IMGDEC_CLUT_DESTINATION,
 	IO_IMGDEC_CONFIG_ADDRS,
 	IO_IMGDEC_CONTROL,
@@ -20,7 +22,11 @@ import {
 import type { Memory } from '../../memory/memory';
 import { DEVICE_SERVICE_IMGDEC, DEVICE_SERVICE_SYSTEM, type DeviceScheduler } from '../../scheduler/device';
 import type { DmaController } from '../dma/controller';
-import { GX_GPU_GP0_CPU_TO_VRAM_FIRST, type GxGpu } from '../gx/gpu';
+import { WordFifo } from '../word_fifo';
+import {
+	GX_GPU_CLUT_4BIT_SIZE_WORD,
+	GX_GPU_GP0_CPU_TO_VRAM_FIRST,
+} from '../gx/gp0';
 import type { IrqController } from '../irq/controller';
 import {
 	IMGDEC_CONTROL_START,
@@ -34,8 +40,7 @@ import {
 	IMGDEC_STATUS_DONE,
 	IMGDEC_STATUS_FORMAT_FAULT,
 	IMGDEC_STATUS_INPUT_REQUEST,
-	IMGDEC_STATUS_OUTPUT_ABORTED,
-	IMGDEC_STATUS_OUTPUT_BLOCKED,
+	IMGDEC_STATUS_OUTPUT_REQUEST,
 	IMGDEC_STREAM_MAGIC,
 	IMGDEC_TOKEN_BACK_REFERENCE_DISTANCE_MASK,
 	IMGDEC_TOKEN_BACK_REFERENCE_LENGTH_MASK,
@@ -48,7 +53,6 @@ import {
 	IMGDEC_TOKEN_KIND_ZERO,
 	IMGDEC_TOKEN_RUN_LENGTH_MASK,
 } from './contracts';
-import { ImgDecWordFifo } from './word_fifo';
 
 const DECODE_MAGIC = 0;
 const DECODE_TEXTURE_WORD_COUNT = 1;
@@ -66,8 +70,6 @@ const OUTPUT_CLUT_HEADER = 2;
 const OUTPUT_CLUT_PAYLOAD = 3;
 const OUTPUT_COMPLETE = 4;
 
-const CLUT_SIZE_WORD = 16 | (1 << 16);
-
 export type ImgDecControllerState = {
 	inputWordCountWord: number;
 	textureDestinationWord: number;
@@ -80,6 +82,7 @@ export type ImgDecControllerState = {
 	decodedWordCount: number;
 	textureWordCount: number;
 	clutWordCount: number;
+	outputWordsRead: number;
 	decodePhase: number;
 	outputStage: number;
 	runWordsRemaining: number;
@@ -94,8 +97,8 @@ export type ImgDecControllerState = {
 };
 
 export class ImgDecController {
-	private readonly inputFifo = new ImgDecWordFifo(IMGDEC_INPUT_FIFO_WORD_CAPACITY);
-	private readonly outputFifo = new ImgDecWordFifo(IMGDEC_OUTPUT_FIFO_WORD_CAPACITY);
+	private readonly inputFifo = new WordFifo(IMGDEC_INPUT_FIFO_WORD_CAPACITY);
+	private readonly outputFifo = new WordFifo(IMGDEC_OUTPUT_FIFO_WORD_CAPACITY);
 	private readonly history = new Uint32Array(IMGDEC_HISTORY_WORD_CAPACITY);
 	private historyWriteIndex = 0;
 	private historyWordCount = 0;
@@ -104,6 +107,9 @@ export class ImgDecController {
 	private decodedWordCount = 0;
 	private textureWordCount = 0;
 	private clutWordCount = 0;
+	private outputWordCount = 0;
+	private outputWordsRead = 0;
+	private dataWord = 0;
 	private decodePhase = DECODE_MAGIC;
 	private outputStage = OUTPUT_TEXTURE_HEADER;
 	private runWordsRemaining = 0;
@@ -119,7 +125,6 @@ export class ImgDecController {
 		private readonly irq: IrqController,
 		private readonly scheduler: DeviceScheduler,
 		private readonly dma: DmaController,
-		private readonly gpu: GxGpu,
 		private readonly cyclesPerOutputWord: number,
 	) {
 		this.memory.mapIoRead(IO_IMGDEC_INPUT_WORDS_RECEIVED, this, ImgDecController.readProgressThunk);
@@ -129,14 +134,14 @@ export class ImgDecController {
 			this.memory.mapIoWrite(address, this, ImgDecController.writeConfigThunk);
 			this.memory.mapIoWriteReady(address, ImgDecController.configWriteReadyThunk);
 		}
+		this.memory.mapIoRead(IO_IMGDEC_DATA, this, ImgDecController.readDataThunk);
 		this.memory.mapIoWrite(IO_IMGDEC_DATA, this, ImgDecController.writeDataThunk);
 		this.memory.mapIoWriteReady(IO_IMGDEC_DATA, ImgDecController.dataWriteReadyThunk);
 	}
 
 	public reset(): void {
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_IMGDEC);
-		this.gpu.setImgDecGp0Request(false);
-		this.dma.setImgDecDmaWriteReady(false);
+		this.dma.setRequestLines((1 << DMA_REQUEST_IMGDEC_WRITE) | (1 << DMA_REQUEST_IMGDEC_READ), 0);
 		this.resetStreamState();
 		this.supervisorQuiesceRequested = false;
 		this.memory.writeIoValue(IO_IMGDEC_INPUT_WORD_COUNT, 0);
@@ -158,6 +163,9 @@ export class ImgDecController {
 		this.decodedWordCount = 0;
 		this.textureWordCount = 0;
 		this.clutWordCount = 0;
+		this.outputWordCount = 0;
+		this.outputWordsRead = 0;
+		this.dataWord = 0;
 		this.decodePhase = DECODE_MAGIC;
 		this.outputStage = OUTPUT_TEXTURE_HEADER;
 		this.runWordsRemaining = 0;
@@ -180,11 +188,12 @@ export class ImgDecController {
 			clutDestinationWord: this.memory.readIoU32(IO_IMGDEC_CLUT_DESTINATION),
 			controlWord: this.memory.readIoU32(IO_IMGDEC_CONTROL),
 			statusWord: this.memory.readIoU32(IO_IMGDEC_STATUS),
-			dataWord: this.memory.readIoU32(IO_IMGDEC_DATA),
+			dataWord: this.dataWord,
 			inputWordsReceived: this.inputWordsReceived,
 			decodedWordCount: this.decodedWordCount,
 			textureWordCount: this.textureWordCount,
 			clutWordCount: this.clutWordCount,
+			outputWordsRead: this.outputWordsRead,
 			decodePhase: this.decodePhase,
 			outputStage: this.outputStage,
 			runWordsRemaining: this.runWordsRemaining,
@@ -214,6 +223,11 @@ export class ImgDecController {
 		this.decodedWordCount = state.decodedWordCount;
 		this.textureWordCount = state.textureWordCount;
 		this.clutWordCount = state.clutWordCount;
+		this.outputWordCount = state.decodePhase <= DECODE_CLUT_WORD_COUNT
+			? 0
+			: (state.textureWordCount + 3 + (state.clutWordCount === 0 ? 0 : state.clutWordCount + 3)) >>> 0;
+		this.outputWordsRead = state.outputWordsRead;
+		this.dataWord = state.dataWord >>> 0;
 		this.decodePhase = state.decodePhase;
 		this.outputStage = state.outputStage;
 		this.runWordsRemaining = state.runWordsRemaining;
@@ -232,25 +246,20 @@ export class ImgDecController {
 			? -1
 			: this.scheduler.currentNowCycles() + state.scheduledDecodeCycles;
 		this.active = (state.statusWord & IMGDEC_STATUS_BUSY) !== 0;
-		this.gpu.setImgDecGp0Request(this.active);
-		this.updateInputRequest();
-		if (this.gpu.imgDecGp0AbortPending()) {
-			this.scheduler.scheduleDeviceService(DEVICE_SERVICE_IMGDEC, this.scheduler.currentNowCycles());
-		} else if ((state.statusWord & IMGDEC_STATUS_OUTPUT_BLOCKED) !== 0
-			&& this.gpu.armImgDecGp0WritableWake()) {
-			this.scheduler.scheduleDeviceService(DEVICE_SERVICE_IMGDEC, this.scheduler.currentNowCycles());
-		} else if (this.scheduledDecodeWords !== 0) {
+		this.updateDmaRequests();
+		if (this.scheduledDecodeWords !== 0) {
 			this.scheduler.scheduleDeviceService(DEVICE_SERVICE_IMGDEC, this.decodeDeadline);
 		}
 	}
 
 	public beginSupervisorQuiesce(): void {
 		this.supervisorQuiesceRequested = true;
+		this.updateDmaRequests();
 		this.notifySupervisorBoundary();
 	}
 
 	public supervisorQuiescent(): boolean {
-		return !this.active;
+		return this.supervisorQuiesceRequested && this.scheduledDecodeWords === 0;
 	}
 
 	public enterSupervisorFaultContext(): void {
@@ -260,23 +269,23 @@ export class ImgDecController {
 
 	public leaveSupervisorContext(): void {
 		this.supervisorQuiesceRequested = false;
+		if (this.scheduleDecode(this.scheduler.currentNowCycles())) {
+			this.scheduler.scheduleDeviceService(DEVICE_SERVICE_IMGDEC, this.decodeDeadline);
+		}
+		this.updateDmaRequests();
 		this.resumeConfigWrites();
 	}
 
 	public onService(nowCycles: number): void {
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_IMGDEC);
-		if (this.gpu.imgDecGp0AbortPending()) {
-			this.fail(IMGDEC_STATUS_OUTPUT_ABORTED);
-			return;
-		}
 		if (this.scheduledDecodeWords !== 0 && nowCycles >= this.decodeDeadline) {
 			this.decodeScheduledWords();
 		}
-		this.drainOutput(nowCycles);
-		if (this.active) {
+		if (this.active && !this.supervisorQuiesceRequested) {
 			this.scheduleDecode(nowCycles);
 		}
-		this.updateInputRequest();
+		this.updateDmaRequests();
+		this.notifySupervisorBoundary();
 		if (this.scheduledDecodeWords !== 0) {
 			this.scheduler.scheduleDeviceService(DEVICE_SERVICE_IMGDEC, this.decodeDeadline);
 		}
@@ -285,11 +294,13 @@ export class ImgDecController {
 	private start(): void {
 		this.resetStreamState();
 		this.active = true;
-		this.memory.writeIoValue(IO_IMGDEC_CONTROL, 0);
+		this.memory.writeIoValue(
+			IO_IMGDEC_CONTROL,
+			this.memory.readIoU32(IO_IMGDEC_CONTROL) & ~IMGDEC_CONTROL_START,
+		);
 		this.memory.writeIoValue(IO_IMGDEC_STATUS, IMGDEC_STATUS_BUSY);
-		this.gpu.setImgDecGp0Request(true);
 		this.scheduleDecode(this.scheduler.currentNowCycles());
-		this.updateInputRequest();
+		this.updateDmaRequests();
 	}
 
 	private advanceOutputStage(): void {
@@ -327,7 +338,7 @@ export class ImgDecController {
 						& IMGDEC_TOKEN_BACK_REFERENCE_LENGTH_MASK) + IMGDEC_TOKEN_BACK_REFERENCE_MIN_LENGTH;
 					this.backReferenceDistance = (token & IMGDEC_TOKEN_BACK_REFERENCE_DISTANCE_MASK) + 1;
 					if (this.backReferenceDistance > this.historyWordCount) {
-						this.fail(IMGDEC_STATUS_FORMAT_FAULT);
+						this.stop(IMGDEC_STATUS_FORMAT_FAULT);
 						return;
 					}
 					this.decodePhase = DECODE_BACK_REFERENCE;
@@ -340,14 +351,14 @@ export class ImgDecController {
 	}
 
 	private scheduleDecode(anchorCycle: number): boolean {
-		if (!this.active || this.scheduledDecodeWords !== 0) {
+		if (!this.active || this.supervisorQuiesceRequested || this.scheduledDecodeWords !== 0) {
 			return false;
 		}
 		while (this.decodePhase <= DECODE_CLUT_WORD_COUNT && !this.inputFifo.empty()) {
 			const word = this.inputFifo.pop();
 			if (this.decodePhase === DECODE_MAGIC) {
 				if (word !== IMGDEC_STREAM_MAGIC) {
-					this.fail(IMGDEC_STATUS_FORMAT_FAULT);
+					this.stop(IMGDEC_STATUS_FORMAT_FAULT);
 					return false;
 				}
 				this.decodePhase = DECODE_TEXTURE_WORD_COUNT;
@@ -356,6 +367,8 @@ export class ImgDecController {
 				this.decodePhase = DECODE_CLUT_WORD_COUNT;
 			} else {
 				this.clutWordCount = word;
+				this.outputWordCount = (this.textureWordCount + 3
+					+ (this.clutWordCount === 0 ? 0 : this.clutWordCount + 3)) >>> 0;
 				this.decodePhase = DECODE_TOKEN;
 			}
 		}
@@ -376,7 +389,7 @@ export class ImgDecController {
 		} else if (this.outputStage === OUTPUT_COMPLETE) {
 			if (!this.streamComplete()) {
 				if (!this.inputFifo.empty() || this.decodePhase !== DECODE_TOKEN) {
-					this.fail(IMGDEC_STATUS_FORMAT_FAULT);
+					this.stop(IMGDEC_STATUS_FORMAT_FAULT);
 				} else {
 					this.failIfInputExhausted();
 				}
@@ -423,55 +436,37 @@ export class ImgDecController {
 		if (this.outputStage === OUTPUT_CLUT_HEADER) {
 			this.outputFifo.writeWord(GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24);
 			this.outputFifo.writeWord(this.memory.readIoU32(IO_IMGDEC_CLUT_DESTINATION));
-			this.outputFifo.writeWord(CLUT_SIZE_WORD);
+			this.outputFifo.writeWord(GX_GPU_CLUT_4BIT_SIZE_WORD);
 			this.outputStage = OUTPUT_CLUT_PAYLOAD;
 			return;
 		}
-		for (let index = 0; index < decodeWords; index += 1) {
-			switch (this.decodePhase) {
-				case DECODE_LITERAL:
+		switch (this.decodePhase) {
+			case DECODE_LITERAL:
+				for (let index = 0; index < decodeWords; index += 1) {
 					this.emitPayloadWord(this.inputFifo.pop());
-					break;
-				case DECODE_REPEAT:
+				}
+				break;
+			case DECODE_REPEAT:
+				for (let index = 0; index < decodeWords; index += 1) {
 					this.emitPayloadWord(this.repeatWord);
-					break;
-				case DECODE_BACK_REFERENCE:
+				}
+				break;
+			case DECODE_BACK_REFERENCE:
+				for (let index = 0; index < decodeWords; index += 1) {
 					this.emitPayloadWord(this.history[(this.historyWriteIndex - this.backReferenceDistance) & IMGDEC_HISTORY_WORD_MASK]!);
-					break;
-				case DECODE_ZERO:
+				}
+				break;
+			case DECODE_ZERO:
+				for (let index = 0; index < decodeWords; index += 1) {
 					this.emitPayloadWord(0);
-					break;
-			}
-			this.completeRunWord();
+				}
+				break;
+		}
+		this.runWordsRemaining -= decodeWords;
+		if (this.runWordsRemaining === 0) {
+			this.decodePhase = DECODE_TOKEN;
 		}
 		this.advanceOutputStage();
-	}
-
-	private drainOutput(nowCycles: number): void {
-		while (this.active && !this.outputFifo.empty()) {
-			const writableWords = this.gpu.imgDecGp0WritableWordCount(nowCycles);
-			if (writableWords === 0) {
-				this.setStatusBit(IMGDEC_STATUS_OUTPUT_BLOCKED, true);
-				this.gpu.armImgDecGp0WritableWake();
-				return;
-			}
-			const outputWords = this.outputFifo.count() < writableWords
-				? this.outputFifo.count()
-				: writableWords;
-			for (let index = 0; index < outputWords; index += 1) {
-				const finalWord = this.outputFifo.count() === 1 && this.streamComplete();
-				this.gpu.writeImgDecGp0BlockWord(
-					this.outputFifo.pop(),
-					index + 1 === outputWords,
-					nowCycles,
-				);
-				if (finalWord) {
-					this.finish();
-					return;
-				}
-			}
-		}
-		this.setStatusBit(IMGDEC_STATUS_OUTPUT_BLOCKED, false);
 	}
 
 	private emitPayloadWord(word: number): void {
@@ -484,21 +479,28 @@ export class ImgDecController {
 		this.decodedWordCount = (this.decodedWordCount + 1) >>> 0;
 	}
 
-	private completeRunWord(): void {
-		this.runWordsRemaining -= 1;
-		if (this.runWordsRemaining === 0) {
-			this.decodePhase = DECODE_TOKEN;
-		}
-	}
-
-	private updateInputRequest(): void {
+	private updateDmaRequests(): void {
 		const inputWordCount = this.memory.readIoU32(IO_IMGDEC_INPUT_WORD_COUNT);
-		const remaining = (inputWordCount - this.inputWordsReceived) >>> 0;
-		const blockWords = remaining < IMGDEC_DMA_BLOCK_WORDS ? remaining : IMGDEC_DMA_BLOCK_WORDS;
-		const ready = this.active && remaining !== 0 && this.inputFifo.free() >= blockWords;
-		this.dma.setImgDecDmaWriteReady(ready);
-		this.setStatusBit(IMGDEC_STATUS_INPUT_REQUEST, ready);
-		if (ready && !this.dma.ownsImgDecDataPort()) {
+		const inputRemaining = (inputWordCount - this.inputWordsReceived) >>> 0;
+		const inputBlockWords = inputRemaining < IMGDEC_DMA_BLOCK_WORDS ? inputRemaining : IMGDEC_DMA_BLOCK_WORDS;
+		const inputReady = !this.supervisorQuiesceRequested
+			&& this.active && inputRemaining !== 0 && this.inputFifo.free() >= inputBlockWords;
+		const outputRemaining = (this.outputWordCount - this.outputWordsRead) >>> 0;
+		const outputBlockWords = outputRemaining < IMGDEC_DMA_BLOCK_WORDS ? outputRemaining : IMGDEC_DMA_BLOCK_WORDS;
+		const outputReady = !this.supervisorQuiesceRequested
+			&& this.active && outputRemaining !== 0 && this.outputFifo.count() >= outputBlockWords;
+		const requestMask = (1 << DMA_REQUEST_IMGDEC_WRITE) | (1 << DMA_REQUEST_IMGDEC_READ);
+		const assertedRequests = (inputReady ? 1 << DMA_REQUEST_IMGDEC_WRITE : 0)
+			| (outputReady ? 1 << DMA_REQUEST_IMGDEC_READ : 0);
+		this.dma.setRequestLines(requestMask, assertedRequests);
+		const status = this.memory.readIoU32(IO_IMGDEC_STATUS);
+		const nextStatus = ((status & ~(IMGDEC_STATUS_INPUT_REQUEST | IMGDEC_STATUS_OUTPUT_REQUEST))
+			| (inputReady ? IMGDEC_STATUS_INPUT_REQUEST : 0)
+			| (outputReady ? IMGDEC_STATUS_OUTPUT_REQUEST : 0)) >>> 0;
+		if (nextStatus !== status) {
+			this.memory.writeIoValue(IO_IMGDEC_STATUS, nextStatus);
+		}
+		if (inputReady && !this.dma.ownsWritePort(IO_IMGDEC_DATA)) {
 			this.cpu.resumeMemoryWrite(IO_IMGDEC_DATA);
 		}
 	}
@@ -512,42 +514,20 @@ export class ImgDecController {
 
 	private failIfInputExhausted(): void {
 		if (this.inputWordsReceived === this.memory.readIoU32(IO_IMGDEC_INPUT_WORD_COUNT)) {
-			this.fail(IMGDEC_STATUS_FORMAT_FAULT);
+			this.stop(IMGDEC_STATUS_FORMAT_FAULT);
 		}
 	}
 
-	private finish(): void {
-		this.active = false;
-		this.scheduledDecodeWords = 0;
-		this.decodeDeadline = -1;
-		this.dma.setImgDecDmaWriteReady(false);
-		this.gpu.setImgDecGp0Request(false);
-		this.memory.writeIoValue(IO_IMGDEC_STATUS, IMGDEC_STATUS_DONE);
-		this.resumeConfigWrites();
-		this.irq.raise(IRQ_IMGDEC);
-		this.notifySupervisorBoundary();
-	}
-
-	private fail(statusWord: number): void {
+	private stop(statusWord: number): void {
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_IMGDEC);
 		this.active = false;
 		this.scheduledDecodeWords = 0;
 		this.decodeDeadline = -1;
-		this.dma.setImgDecDmaWriteReady(false);
-		this.gpu.abortImgDecGp0Packet();
-		this.gpu.setImgDecGp0Request(false);
+		this.dma.setRequestLines((1 << DMA_REQUEST_IMGDEC_WRITE) | (1 << DMA_REQUEST_IMGDEC_READ), 0);
 		this.memory.writeIoValue(IO_IMGDEC_STATUS, statusWord);
 		this.resumeConfigWrites();
 		this.irq.raise(IRQ_IMGDEC);
 		this.notifySupervisorBoundary();
-	}
-
-	private setStatusBit(bit: number, set: boolean): void {
-		const status = this.memory.readIoU32(IO_IMGDEC_STATUS);
-		const nextStatus = set ? (status | bit) >>> 0 : (status & ~bit) >>> 0;
-		if (nextStatus !== status) {
-			this.memory.writeIoValue(IO_IMGDEC_STATUS, nextStatus);
-		}
 	}
 
 	private resumeConfigWrites(): void {
@@ -557,7 +537,7 @@ export class ImgDecController {
 	}
 
 	private notifySupervisorBoundary(): void {
-		if (this.supervisorQuiesceRequested && !this.active) {
+		if (this.supervisorQuiescent()) {
 			this.scheduler.scheduleDeviceService(DEVICE_SERVICE_SYSTEM, this.scheduler.currentNowCycles());
 		}
 	}
@@ -578,13 +558,41 @@ export class ImgDecController {
 		return !context.active && !context.supervisorQuiesceRequested;
 	}
 
+	private static readDataThunk(context: ImgDecController, _address: number, busSignals: MappedBusSignals): Value {
+		const dmaRead = (busSignals & MAPPED_BUS_MASTER_DMA) !== 0;
+		if (!dmaRead && context.dma.ownsReadPort(IO_IMGDEC_DATA)) {
+			return context.dataWord;
+		}
+		if (!context.outputFifo.empty()) {
+			context.dataWord = context.outputFifo.pop();
+			context.memory.writeIoValue(IO_IMGDEC_DATA, context.dataWord);
+			context.outputWordsRead = (context.outputWordsRead + 1) >>> 0;
+		}
+		if (dmaRead
+			&& (busSignals & MAPPED_BUS_DMA_BLOCK_END) === 0) {
+			return context.dataWord;
+		}
+		if (context.outputWordsRead === context.outputWordCount && context.streamComplete()) {
+			context.stop(IMGDEC_STATUS_DONE);
+			return context.dataWord;
+		}
+		if (context.scheduleDecode(context.scheduler.currentNowCycles())) {
+			context.scheduler.scheduleDeviceService(DEVICE_SERVICE_IMGDEC, context.decodeDeadline);
+		}
+		context.updateDmaRequests();
+		return context.dataWord;
+	}
+
 	private static writeDataThunk(
 		context: ImgDecController,
 		_address: number,
 		value: Value,
 		busSignals: MappedBusSignals,
 	): void {
-		context.inputFifo.writeBusWord(value as number);
+		context.dataWord = (value as number) >>> 0;
+		if (!context.inputFifo.full()) {
+			context.inputFifo.writeWord(context.dataWord);
+		}
 		context.inputWordsReceived = (context.inputWordsReceived + 1) >>> 0;
 		if ((busSignals & MAPPED_BUS_MASTER_DMA) !== 0
 			&& (busSignals & MAPPED_BUS_DMA_BLOCK_END) === 0) {
@@ -593,13 +601,21 @@ export class ImgDecController {
 		if (context.scheduleDecode(context.scheduler.currentNowCycles())) {
 			context.scheduler.scheduleDeviceService(DEVICE_SERVICE_IMGDEC, context.decodeDeadline);
 		}
-		context.updateInputRequest();
+		context.updateDmaRequests();
 	}
 
-	private static dataWriteReadyThunk(context: ImgDecController): boolean {
+	private static dataWriteReadyThunk(
+		context: ImgDecController,
+		_addr: number,
+		busSignals: MappedBusSignals,
+	): boolean {
+		if ((busSignals & MAPPED_BUS_MASTER_DMA) !== 0) {
+			return true;
+		}
 		return context.active
+			&& !context.supervisorQuiesceRequested
 			&& context.inputWordsReceived < context.memory.readIoU32(IO_IMGDEC_INPUT_WORD_COUNT)
 			&& context.inputFifo.free() !== 0
-			&& !context.dma.ownsImgDecDataPort();
+			&& !context.dma.ownsWritePort(IO_IMGDEC_DATA);
 	}
 }

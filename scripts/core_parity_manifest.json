@@ -337,6 +337,13 @@
 			"reason": "gx_gpu_raw_display_register_decode_contract"
 		},
 		{
+			"ts": "machine/ts/machine/devices/gx/gp0.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/gx/gp0.h"
+			],
+			"reason": "gx_gp0_protocol_contract"
+		},
+		{
 			"ts": "machine/ts/machine/devices/gx/gte.ts",
 			"cpp": [
 				"machine/cpp/machine/devices/gx/gte.h",
@@ -970,11 +977,19 @@
 				"machine/firmware/system/imgdec.lua",
 				"machine/ts/machine/devices/imgdec/controller.ts",
 				"machine/ts/machine/devices/imgdec/contracts.ts",
+				"machine/ts/machine/devices/gx/gp0.ts",
+				"machine/ts/rompack/tooling/gx_texture_codec.ts",
+				"machine/ts/rompack/tooling/imgdec_codec.ts",
 				"machine/cpp/machine/devices/imgdec/controller.h",
 				"machine/cpp/machine/devices/imgdec/controller.cpp",
-				"machine/cpp/machine/devices/imgdec/contracts.h"
+				"machine/cpp/machine/devices/imgdec/contracts.h",
+				"machine/cpp/machine/devices/gx/gp0.h"
 			],
-			"reason": "streaming_imgdec_register_fifo_and_gp0_datapath_must_remain_installed"
+			"absent": [
+				"scripts/rompacker/gx_texture.ts",
+				"scripts/rompacker/imgdec.ts"
+			],
+			"reason": "streaming_imgdec_dual_dma_fifo_and_normal_gp0_datapath_must_remain_installed"
 		},
 		{
 			"present": [
@@ -1728,15 +1743,15 @@
 			"file": "machine/ts/machine/devices/imgdec/controller.ts",
 			"functions": [
 				"onService",
+				"readDataThunk",
 				"writeDataThunk",
 				"advanceOutputStage",
 				"prepareDecodeRun",
 				"scheduleDecode",
 				"decodeScheduledWords",
-				"drainOutput",
 				"emitPayloadWord",
-				"completeRunWord",
-				"updateInputRequest"
+				"updateDmaRequests",
+				"stop"
 			],
 			"reason": "imgdec_streaming_datapath_must_remain_gc_free"
 		},
@@ -1744,41 +1759,39 @@
 			"file": "machine/cpp/machine/devices/imgdec/controller.cpp",
 			"functions": [
 				"onService",
+				"readDataThunk",
 				"writeDataThunk",
 				"advanceOutputStage",
 				"prepareDecodeRun",
 				"scheduleDecode",
 				"decodeScheduledWords",
-				"drainOutput",
 				"emitPayloadWord",
-				"completeRunWord",
-				"updateInputRequest"
+				"updateDmaRequests",
+				"stop"
 			],
 			"reason": "imgdec_streaming_datapath_must_remain_heap_free"
 		},
 		{
 			"file": "machine/ts/machine/devices/gx/gpu.ts",
 			"functions": [
-				"setImgDecGp0Request",
-				"imgDecGp0WritableWordCount",
-				"writeImgDecGp0BlockWord",
-				"armImgDecGp0WritableWake",
-				"grantImgDecGp0AtBoundary",
-				"wakeImgDecGp0Writer"
+				"storeLiveIngressContext",
+				"loadLiveIngressContext",
+				"enterSupervisorContext",
+				"enterSupervisorFaultContext",
+				"leaveSupervisorContext"
 			],
-			"reason": "imgdec_gp0_arbiter_and_block_ingress_must_remain_gc_free"
+			"reason": "gx_gpu_supervisor_context_switch_must_remain_gc_free"
 		},
 		{
 			"file": "machine/cpp/machine/devices/gx/gpu.cpp",
 			"functions": [
-				"setImgDecGp0Request",
-				"imgDecGp0WritableWordCount",
-				"writeImgDecGp0BlockWord",
-				"armImgDecGp0WritableWake",
-				"grantImgDecGp0AtBoundary",
-				"wakeImgDecGp0Writer"
+				"storeLiveIngressContext",
+				"loadLiveIngressContext",
+				"enterSupervisorContext",
+				"enterSupervisorFaultContext",
+				"leaveSupervisorContext"
 			],
-			"reason": "imgdec_gp0_arbiter_and_block_ingress_must_remain_heap_free"
+			"reason": "gx_gpu_supervisor_context_switch_must_remain_heap_free"
 		},
 		{
 			"file": "machine/ts/machine/devices/audio/service_clock.ts",
@@ -2169,39 +2182,56 @@
 			"file": "machine/ts/machine/devices/dma/controller.ts",
 			"functions": [
 				"triggerWriteThunk",
-				"setGxGpuReadReady",
-				"setGxGpuDmaWriteReady",
-				"setGxGpuDmaDirection",
-				"setApuDmaReadReady",
-				"setApuDmaWriteReady",
+				"setRequestLines",
+				"hasAdmittedWriteBlock",
 				"onService",
+				"arbitrate",
 				"admitBlock",
+				"regionSpanCycles",
 				"clearAdmittedBlock",
-				"requestInputChanged",
-				"resumeCpuPortWrites"
+				"requestAsserted",
+				"requestLineAsserted"
 			],
 			"reason": "dma_live_channel_service_and_request_lines_must_remain_heap_free"
 		},
 		{
 			"file": "machine/cpp/machine/devices/dma/controller.cpp",
 			"functions": [
+				"onTriggerWriteThunk",
 				"onTriggerWrite",
-				"setGxGpuReadReady",
-				"setGxGpuDmaWriteReady",
-				"setGxGpuDmaDirection",
-				"setApuDmaReadReady",
-				"setApuDmaWriteReady",
+				"setRequestLines",
+				"hasAdmittedWriteBlock",
 				"onService",
+				"arbitrate",
 				"admitBlock",
+				"regionSpanCycles",
 				"clearAdmittedBlock",
-				"requestInputChanged",
-				"resumeCpuPortWrites"
+				"requestAsserted",
+				"requestLineAsserted"
 			],
 			"reason": "dma_live_channel_service_and_request_lines_must_remain_heap_free"
 		},
 		{
+			"file": "machine/ts/machine/memory/memory.ts",
+			"functions": [
+				"mappedRegion",
+				"mappedRegionWordSpan"
+			],
+			"reason": "dma_memory_region_admission_must_remain_gc_free"
+		},
+		{
+			"file": "machine/cpp/machine/memory/memory.cpp",
+			"functions": [
+				"mappedRegion",
+				"mappedRegionWordSpan"
+			],
+			"reason": "dma_memory_region_admission_must_remain_heap_free"
+		},
+		{
 			"file": "machine/ts/machine/devices/gx/gpu_command_buffer.ts",
 			"functions": [
+				"setDmaReadEnabled",
+				"updateDmaRequest",
 				"completeReadback",
 				"readWord"
 			],
@@ -2210,6 +2240,8 @@
 		{
 			"file": "machine/cpp/machine/devices/gx/gpu_command_buffer.h",
 			"functions": [
+				"setDmaReadEnabled",
+				"updateDmaRequest",
 				"completeReadback",
 				"readWord"
 			],

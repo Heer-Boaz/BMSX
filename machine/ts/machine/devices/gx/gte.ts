@@ -355,12 +355,12 @@ export class GxGte {
 		return context.plusRegisterWords[((addr - IO_GX_GTE_PLUS_BASE) / IO_WORD_SIZE) >>> 0];
 	}
 
-	private static writePlusRegisterThunk(context: GxGte, addr: number, value: Value, busSignals: MappedBusSignals): void {
+	private static writePlusRegisterThunk(context: GxGte, addr: number, value: Value): void {
 		context.synchronizePlusCompletion();
 		const index = ((addr - IO_GX_GTE_PLUS_BASE) / IO_WORD_SIZE) >>> 0;
 		const word = (value as number) >>> 0;
 		if (index === GX_GTE_PLUS_COMMAND) {
-			if ((busSignals & MAPPED_BUS_MASTER_DMA) !== 0 || context.plusCompletionCycle !== 0) {
+			if (context.plusCompletionCycle !== 0) {
 				return;
 			}
 			context.plusRegisterWords[index] = word;
@@ -370,7 +370,14 @@ export class GxGte {
 		context.plusRegisterWords[index] = word;
 	}
 
-	private static plusCommandWriteReadyThunk(context: GxGte): boolean {
+	private static plusCommandWriteReadyThunk(
+		context: GxGte,
+		_addr: number,
+		busSignals: MappedBusSignals,
+	): boolean {
+		if ((busSignals & MAPPED_BUS_MASTER_DMA) !== 0) {
+			return false;
+		}
 		context.synchronizePlusCompletion();
 		if (context.plusCompletionCycle === 0) {
 			return true;

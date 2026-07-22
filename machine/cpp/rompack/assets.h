@@ -25,8 +25,8 @@ struct RomAssetInfo {
 	std::optional<i32> compiledEnd;
 	std::optional<i32> metabufferStart;
 	std::optional<i32> metabufferEnd;
-	std::optional<i32> textureStart;
-	std::optional<i32> textureEnd;
+	std::optional<i32> modelTextureStart;
+	std::optional<i32> modelTextureEnd;
 	std::optional<i32> collisionBinStart;
 	std::optional<i32> collisionBinEnd;
 	std::optional<std::string> sourcePath;
@@ -44,10 +44,7 @@ struct ImgMeta {
 	i32 height = 0;
 	i32 textureU = 0;
 	i32 textureV = 0;
-	i32 gxTextureMode = 0;
-	i32 gxTextureWordWidth = 0;
-	i32 gxTextureHeight = 0;
-	std::optional<i32> gxClutOffset;
+	std::optional<std::string> gxTextureResid;
 	std::optional<i32> gxSourceX;
 	std::optional<i32> gxSourceY;
 

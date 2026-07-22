@@ -1,4 +1,4 @@
-export class ImgDecWordFifo {
+export class WordFifo {
 	private readonly words: Uint32Array;
 	private readonly indexMask: number;
 	private readIndex = 0;
@@ -21,6 +21,10 @@ export class ImgDecWordFifo {
 		return this.wordCount === 0;
 	}
 
+	public full(): boolean {
+		return this.wordCount === this.capacity;
+	}
+
 	public reset(): void {
 		this.readIndex = 0;
 		this.wordCount = 0;
@@ -31,11 +35,8 @@ export class ImgDecWordFifo {
 		this.wordCount += 1;
 	}
 
-	public writeBusWord(word: number): void {
-		if (this.wordCount === this.capacity) {
-			return;
-		}
-		this.writeWord(word);
+	public peek(index = 0): number {
+		return this.words[(this.readIndex + index) & this.indexMask]!;
 	}
 
 	public pop(): number {
@@ -48,7 +49,7 @@ export class ImgDecWordFifo {
 	public captureWords(): number[] {
 		const words = new Array<number>(this.wordCount);
 		for (let index = 0; index < this.wordCount; index += 1) {
-			words[index] = this.words[(this.readIndex + index) & this.indexMask]!;
+			words[index] = this.peek(index);
 		}
 		return words;
 	}

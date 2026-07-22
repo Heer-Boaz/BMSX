@@ -8,11 +8,12 @@
 namespace bmsx {
 
 template <size_t Capacity>
-class ImgDecWordFifo {
+class WordFifo {
 public:
 	size_t count() const { return m_wordCount; }
 	size_t free() const { return Capacity - m_wordCount; }
 	bool empty() const { return m_wordCount == 0u; }
+	bool full() const { return m_wordCount == Capacity; }
 
 	void reset() {
 		m_readIndex = 0u;
@@ -24,11 +25,8 @@ public:
 		m_wordCount += 1u;
 	}
 
-	void writeBusWord(u32 word) {
-		if (m_wordCount == Capacity) {
-			return;
-		}
-		writeWord(word);
+	u32 peek(size_t index = 0u) const {
+		return m_words[(m_readIndex + index) & (Capacity - 1u)];
 	}
 
 	u32 pop() {
@@ -41,7 +39,7 @@ public:
 	std::vector<u32> captureWords() const {
 		std::vector<u32> words(m_wordCount);
 		for (size_t index = 0u; index < m_wordCount; index += 1u) {
-			words[index] = m_words[(m_readIndex + index) & (Capacity - 1u)];
+			words[index] = peek(index);
 		}
 		return words;
 	}

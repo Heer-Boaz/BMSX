@@ -37,8 +37,7 @@ void ApuSampleTransfer::reset() {
 
 void ApuSampleTransfer::dispose() {
 	cancelBatch();
-	m_dma.setApuDmaWriteReady(false);
-	m_dma.setApuDmaReadReady(false);
+	m_dma.setRequestLines((1u << DMA_REQUEST_APU_WRITE) | (1u << DMA_REQUEST_APU_READ), 0u);
 }
 
 void ApuSampleTransfer::setTiming(i64 cpuHz, i64 nowCycles) {
@@ -238,9 +237,10 @@ void ApuSampleTransfer::cancelBatch() {
 }
 
 void ApuSampleTransfer::updateDmaRequests() {
-	m_dma.setApuDmaReadReady(m_mode == APU_TRANSFER_MODE_DMA_READ
-		&& m_fifoCount == APU_TRANSFER_FIFO_WORD_CAPACITY);
-	m_dma.setApuDmaWriteReady(m_mode == APU_TRANSFER_MODE_DMA_WRITE && m_fifoCount == 0u);
+	const u32 requestMask = (1u << DMA_REQUEST_APU_WRITE) | (1u << DMA_REQUEST_APU_READ);
+	const u32 assertedRequests = (m_mode == APU_TRANSFER_MODE_DMA_WRITE && m_fifoCount == 0u ? 1u << DMA_REQUEST_APU_WRITE : 0u)
+		| (m_mode == APU_TRANSFER_MODE_DMA_READ && m_fifoCount == APU_TRANSFER_FIFO_WORD_CAPACITY ? 1u << DMA_REQUEST_APU_READ : 0u);
+	m_dma.setRequestLines(requestMask, assertedRequests);
 }
 
 } // namespace bmsx

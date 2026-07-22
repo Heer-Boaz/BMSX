@@ -142,8 +142,16 @@ export class ApuServiceClock {
 		context.advanceVoicesTo(nowCycles);
 	}
 
-	private static transferDataWriteReadyThunk(context: ApuServiceClock): boolean {
-		return !context.dma.ownsApuDataPort();
+	private static transferDataWriteReadyThunk(
+		context: ApuServiceClock,
+		_addr: number,
+		busSignals: MappedBusSignals,
+	): boolean {
+		if ((busSignals & MAPPED_BUS_MASTER_DMA) !== 0) {
+			return true;
+		}
+		return !context.dma.ownsReadPort(IO_APU_TRANSFER_DATA)
+			&& !context.dma.ownsWritePort(IO_APU_TRANSFER_DATA);
 	}
 
 	private static transferControlWriteThunk(context: ApuServiceClock, _addr: number, value: Value): void {

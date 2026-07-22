@@ -5,7 +5,14 @@ import { parseCartHeader } from '../../machine/ts/rompack/loader';
 import { parseRomMetadataSection } from '../../machine/ts/rompack/metadata';
 import { clamp } from '../../machine/ts/common/clamp';
 import { bufferSegmentGlyph, buildBufferBarModel, type BufferBarCell, type BufferBarModel, type BufferHitRegion, type BufferLegendEntry, type BufferRegion } from './asciiart';
-import { buildAssetModalView, renderPreviewSectionWindow, type AssetModalView, type AssetPreviewSection } from './asset_modal_view';
+import {
+	buildAssetModalView,
+	renderPreviewSectionWindow,
+	setAssetModalPreviewZoom,
+	type AssetModalView,
+	type AssetPreviewSection,
+	type TextureDecodeCache,
+} from './asset_modal_view';
 import { TuiInput, type TuiMouseEvent } from './tui_input';
 import { TuiScreen, TUI_COLORS, type TuiStyle } from './tui_screen';
 
@@ -109,6 +116,7 @@ type ModalLayout = {
 type UiLayout = {
 	width: number;
 	height: number;
+	summaryLineCount: number;
 	tableTop: number;
 	rowsTop: number;
 	visibleRows: number;
@@ -311,8 +319,8 @@ function assetRanges(asset: RomAsset): Array<[number, number]> {
 	if (typeof compiledStart === 'number' && typeof compiledEnd === 'number' && compiledEnd > compiledStart) {
 		ranges.push([compiledStart, compiledEnd]);
 	}
-	const textureStart = asset.texture_start;
-	const textureEnd = asset.texture_end;
+	const textureStart = asset.model_texture_start;
+	const textureEnd = asset.model_texture_end;
 	if (typeof textureStart === 'number' && typeof textureEnd === 'number' && textureEnd > textureStart) {
 		ranges.push([textureStart, textureEnd]);
 	}
@@ -713,7 +721,6 @@ function buildSummaryMetrics(ctx: NativeUiContext): SummaryMetrics {
 		metadataSize: header.tocLength + header.manifestLength + metadataHeaderSize,
 		regions: [],
 	};
-	const textureStarts = new Set<number>();
 	for (const asset of ctx.assets) {
 		const size = assetSize(asset);
 		if (asset.type === 'image') {
@@ -728,15 +735,16 @@ function buildSummaryMetrics(ctx: NativeUiContext): SummaryMetrics {
 		} else if (asset.type === 'model') {
 			metrics.modelCount += 1;
 			metrics.modelSize += size;
+		} else if (asset.type === 'texture') {
+			metrics.textureSize += size;
 		}
 		const label = makeRegionLabel(asset);
 		pushSummaryRegion(metrics.regions, asset.start, asset.end, label);
 		pushSummaryRegion(metrics.regions, asset.compiled_start, asset.compiled_end, label);
 		pushSummaryRegion(metrics.regions, asset.metabuffer_start, asset.metabuffer_end, label);
-		if (asset.texture_start && asset.texture_end && !textureStarts.has(asset.texture_start)) {
-			textureStarts.add(asset.texture_start);
-			metrics.textureSize += asset.texture_end - asset.texture_start;
-			pushSummaryRegion(metrics.regions, asset.texture_start, asset.texture_end, 'texture');
+		if (asset.model_texture_start) {
+			metrics.textureSize += asset.model_texture_end! - asset.model_texture_start;
+			pushSummaryRegion(metrics.regions, asset.model_texture_start, asset.model_texture_end!, 'model texture');
 		}
 	}
 	if (header.manifestLength > 0) {
@@ -1213,7 +1221,8 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 	let modalTab = 0;
 	let modalScroll = 0;
 	let modalScrollX = 0;
-	let modalContentByTab: ModalTabContent[] = [];
+	const modalContentByTab: ModalTabContent[] = [];
+	const decodedTexture: TextureDecodeCache = {};
 	let modalPreviewZoom = 1;
 	let loadingModal = false;
 	let lastLayout: UiLayout | null = null;
@@ -1395,10 +1404,10 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 			};
 			modalContentByTab[tabIndex] = content;
 			return content;
-			}
-			const activeText = tabIndex === 0 ? modalView.preview : tabIndex === 1 ? modalView.details : modalView.hex;
-			// disable-next-line newline_normalization_pattern -- rominspector modal text is rendered as LF-delimited terminal rows.
-			const lines = activeText.split('\n');
+		}
+		const activeText = tabIndex === 0 ? modalView.preview : tabIndex === 1 ? modalView.details : modalView.hex;
+		// disable-next-line newline_normalization_pattern -- rominspector modal text is rendered as LF-delimited terminal rows.
+		const lines = activeText.split('\n');
 		let maxWidth = 0;
 		for (const line of lines) {
 			maxWidth = Math.max(maxWidth, screen.taggedTextWidth(line));
@@ -1480,7 +1489,7 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 			const maxScrollX = Math.max(0, modalContent.maxWidth - visibleContentColumns);
 			modal = { frame, tabs, previewFixedLines: previewFixedLines.slice(0, fixedPreviewLineCount), content, verticalScrollbar, horizontalScrollbar, maxScrollY, maxScrollX, visibleContentLines, visibleContentColumns, infoLineCount };
 		}
-		return { width, height, tableTop, rowsTop, visibleRows, tableContentWidth, tableColumns, tableScrollbar, modal };
+		return { width, height, summaryLineCount, tableTop, rowsTop, visibleRows, tableContentWidth, tableColumns, tableScrollbar, modal };
 	};
 
 	const render = () => {
@@ -1603,6 +1612,7 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 		modalView = await buildAssetModalView(filteredAssets[selectedIndex], {
 			rombin: ctx.rombin,
 			assetList: ctx.assets,
+			decodedTexture,
 			manifest: ctx.manifest,
 			projectRootPath: ctx.projectRootPath,
 			systemProgramImage: ctx.systemProgramImage,
@@ -1611,7 +1621,7 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 			modalHeight: Math.max(8, Math.floor(screen.height() * 0.8) - 8),
 			previewZoom: modalPreviewZoom,
 		});
-		modalContentByTab = [];
+		modalContentByTab.length = 0;
 	};
 
 	const modalPreviewFocus = (layout: ModalLayout, event?: TuiMouseEvent) => {
@@ -1659,7 +1669,7 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 		}
 	};
 
-	const changePreviewZoom = async (direction: number, event?: TuiMouseEvent) => {
+	const changePreviewZoom = (direction: number, event?: TuiMouseEvent) => {
 		if (!imagePreviewActive() || !lastLayout || !lastLayout.modal) {
 			return false;
 		}
@@ -1677,28 +1687,23 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 		const focusRatioX = previousAbsoluteX / previousWidth;
 		const focusRatioY = previousAbsoluteY / previousHeight;
 		modalPreviewZoom = nextZoom;
-		loadingModal = true;
-		render();
-		try {
-			await rebuildModalView();
-			const nextSummaryView = buildSummaryView(screen.width());
-			const nextLayout = computeLayout(screen.width(), screen.height(), nextSummaryView.lineCount);
-			const nextContent = getModalContent();
-			const nextModal = nextLayout.modal;
-			if (nextModal) {
-				const nextAbsoluteX = focusRatioX * Math.max(1, nextContent.maxWidth);
-				const nextAbsoluteY = focusRatioY * Math.max(1, nextContent.lineCount);
-				modalScrollX = clamp(Math.round(nextAbsoluteX - focus.localX - focus.subX), 0, nextModal.maxScrollX);
-				modalScroll = clamp(Math.round(nextAbsoluteY - focus.localY - focus.subY), 0, nextModal.maxScrollY);
-			}
-			statusLine = `Preview zoom: ${formatZoom(modalPreviewZoom)}x`;
-		} finally {
-			loadingModal = false;
+		setAssetModalPreviewZoom(modalView, modalPreviewZoom);
+		previousContent.maxWidth = previewSectionsMaxWidth(modalView.previewSections);
+		previousContent.lineCount = previewSectionsLineCount(modalView.previewSections);
+		const nextLayout = computeLayout(lastLayout.width, lastLayout.height, lastLayout.summaryLineCount);
+		const nextContent = previousContent;
+		const nextModal = nextLayout.modal;
+		if (nextModal) {
+			const nextAbsoluteX = focusRatioX * Math.max(1, nextContent.maxWidth);
+			const nextAbsoluteY = focusRatioY * Math.max(1, nextContent.lineCount);
+			modalScrollX = clamp(Math.round(nextAbsoluteX - focus.localX - focus.subX), 0, nextModal.maxScrollX);
+			modalScroll = clamp(Math.round(nextAbsoluteY - focus.localY - focus.subY), 0, nextModal.maxScrollY);
 		}
+		statusLine = `Preview zoom: ${formatZoom(modalPreviewZoom)}x`;
 		return true;
 	};
 
-	const handleModalMouse = async (event: TuiMouseEvent): Promise<boolean> => {
+	const handleModalMouse = (event: TuiMouseEvent): boolean => {
 		if (!lastLayout || !lastLayout.modal || !modalView) {
 			return false;
 		}
@@ -1744,7 +1749,7 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 					modalView = null;
 					modalScroll = 0;
 					modalScrollX = 0;
-					modalContentByTab = [];
+					modalContentByTab.length = 0;
 					modalPreviewZoom = 1;
 					previewDrag = null;
 					return true;
@@ -1831,7 +1836,7 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 				mouseY = event.y;
 				mouseSubX = event.subX;
 				mouseSubY = event.subY;
-				const handled = modalView ? await handleModalMouse(event) : await handleListMouse(event);
+				const handled = modalView ? handleModalMouse(event) : await handleListMouse(event);
 				if (handled || hoverChanged || event.action === 'move') {
 					render();
 				}
@@ -1871,13 +1876,13 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 				switch (key.name) {
 					case '+':
 					case '=':
-						if (await changePreviewZoom(1)) {
+						if (changePreviewZoom(1)) {
 							render();
 							continue;
 						}
 						break;
 					case '-':
-						if (await changePreviewZoom(-1)) {
+						if (changePreviewZoom(-1)) {
 							render();
 							continue;
 						}
@@ -1888,7 +1893,7 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 						modalView = null;
 						modalScroll = 0;
 						modalScrollX = 0;
-						modalContentByTab = [];
+						modalContentByTab.length = 0;
 						modalPreviewZoom = 1;
 						previewDrag = null;
 						render();

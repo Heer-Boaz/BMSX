@@ -12,7 +12,7 @@
 
 namespace bmsx {
 
-enum class MemoryRegionKind { Ram, SystemRom, CartRom, Other };
+enum class MemoryRegionKind { Ram, SystemRom, CartRom, Io, Other };
 
 struct MemorySaveState {
 	std::vector<u8> ram;
@@ -36,7 +36,7 @@ class Memory {
 public:
 	using IoReadHandler = Value (*)(void* context, uint32_t addr, MappedBusSignals busSignals);
 	using IoWriteHandler = void (*)(void* context, uint32_t addr, Value value, MappedBusSignals busSignals);
-	using IoWriteReadyHandler = bool (*)(void* context, uint32_t addr);
+	using IoWriteReadyHandler = bool (*)(void* context, uint32_t addr, MappedBusSignals busSignals);
 
 	explicit Memory(const MemoryInit& init);
 
@@ -87,6 +87,7 @@ public:
 	bool bindRomByteView(uint32_t addr, size_t length, Span<const u8>& out) const;
 	bool isRamRange(uint32_t addr, size_t length) const;
 	MemoryRegionKind mappedRegion(uint32_t addr) const;
+	u32 mappedRegionWordSpan(u32 addr, u32 wordLimit, MemoryRegionKind region) const;
 
 	MemorySaveState captureSaveState() const;
 	void restoreSaveState(const MemorySaveState& state);
@@ -128,7 +129,7 @@ private:
 		return static_cast<int>(delta / IO_WORD_SIZE);
 	}
 	uint32_t readSystemOrCartRomU32(uint32_t addr) const;
-	bool isLuaReadOnlyIoAddress(uint32_t addr) const;
+	bool isReadOnlyIoAddress(uint32_t addr) const;
 	Value readIoSlotValue(int slot, uint32_t addr, MappedBusSignals busSignals) const;
 	void writeIoSlotValue(int slot, uint32_t addr, Value value, MappedBusSignals busSignals);
 	uint32_t readMappedBusU32LE(uint32_t addr, uint32_t faultAccess, MappedBusSignals busSignals) const;

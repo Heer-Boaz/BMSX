@@ -296,11 +296,11 @@ void testSampleTransferEdgeOrdering() {
 		harness.scheduler.advanceTo(46);
 		harness.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_ADDRESS, 0u);
 		harness.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_CONTROL, bmsx::APU_TRANSFER_MODE_DMA_WRITE);
-		harness.memory.writeMappedU32LE(bmsx::IO_DMA_READ_ADDR, dmaSource);
-		harness.memory.writeMappedU32LE(bmsx::IO_DMA_WRITE_ADDR, bmsx::IO_APU_TRANSFER_DATA);
-		harness.memory.writeMappedU32LE(bmsx::IO_DMA_TRANSFER_COUNT, 1u);
-		harness.memory.writeMappedU32LE(bmsx::IO_DMA_CONTROL, bmsx::DMA_CONTROL_REQUEST_APU_WRITE);
-		harness.memory.writeMappedU32LE(bmsx::IO_DMA_TRIGGER, bmsx::DMA_TRIGGER_START);
+		harness.memory.writeMappedU32LE(bmsx::IO_DMA0_READ_ADDR, dmaSource);
+		harness.memory.writeMappedU32LE(bmsx::IO_DMA0_WRITE_ADDR, bmsx::IO_APU_TRANSFER_DATA);
+		harness.memory.writeMappedU32LE(bmsx::IO_DMA0_TRANSFER_COUNT, 1u);
+		harness.memory.writeMappedU32LE(bmsx::IO_DMA0_CONTROL, 0x000000c0u);
+		harness.memory.writeMappedU32LE(bmsx::IO_DMA0_TRIGGER, bmsx::DMA_TRIGGER_START);
 		const bmsx::i64 dmaDeadline = harness.scheduler.nextDeadline();
 		require(dmaDeadline == 47, "single-word APU DMA block should reach its deadline on cycle 47");
 		harness.scheduler.advanceTo(dmaDeadline);
@@ -421,11 +421,11 @@ void testSampleBusDmaAndMidTransferRestore() {
 
 	live.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_ADDRESS, transferAddress);
 	live.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_CONTROL, bmsx::APU_TRANSFER_MODE_DMA_WRITE);
-	live.memory.writeMappedU32LE(bmsx::IO_DMA_READ_ADDR, source);
-	live.memory.writeMappedU32LE(bmsx::IO_DMA_WRITE_ADDR, bmsx::IO_APU_TRANSFER_DATA);
-	live.memory.writeMappedU32LE(bmsx::IO_DMA_TRANSFER_COUNT, 32u);
-	live.memory.writeMappedU32LE(bmsx::IO_DMA_CONTROL, bmsx::DMA_CONTROL_READ_INCREMENT | bmsx::DMA_CONTROL_REQUEST_APU_WRITE | bmsx::DMA_CONTROL_BLOCK_WORDS_16);
-	live.memory.writeMappedU32LE(bmsx::IO_DMA_TRIGGER, bmsx::DMA_TRIGGER_START);
+	live.memory.writeMappedU32LE(bmsx::IO_DMA0_READ_ADDR, source);
+	live.memory.writeMappedU32LE(bmsx::IO_DMA0_WRITE_ADDR, bmsx::IO_APU_TRANSFER_DATA);
+	live.memory.writeMappedU32LE(bmsx::IO_DMA0_TRANSFER_COUNT, 32u);
+	live.memory.writeMappedU32LE(bmsx::IO_DMA0_CONTROL, 0x00003cc1u);
+	live.memory.writeMappedU32LE(bmsx::IO_DMA0_TRIGGER, bmsx::DMA_TRIGGER_START);
 	require(!live.memory.mappedWriteReady(bmsx::IO_APU_TRANSFER_DATA), "BUSY DMA should own the shared APU data port");
 	serviceDma(live);
 
@@ -454,8 +454,8 @@ void testSampleBusDmaAndMidTransferRestore() {
 
 	const bmsx::AudioControllerState liveCompleted = live.audio.captureState();
 	const bmsx::AudioControllerState restoredCompleted = restored.audio.captureState();
-	require(live.memory.readIoU32(bmsx::IO_DMA_STATUS) == bmsx::DMA_STATUS_DONE, "APU DMA write should complete");
-	require(restored.memory.readIoU32(bmsx::IO_DMA_STATUS) == bmsx::DMA_STATUS_DONE, "restored APU DMA write should complete");
+	require(live.memory.readIoU32(bmsx::IO_DMA0_STATUS) == bmsx::DMA_STATUS_DONE, "APU DMA write should complete");
+	require(restored.memory.readIoU32(bmsx::IO_DMA0_STATUS) == bmsx::DMA_STATUS_DONE, "restored APU DMA write should complete");
 	require(restoredCompleted.sampleRam == liveCompleted.sampleRam, "mid-transfer restore should produce identical APU sample RAM");
 	require(restoredCompleted.sampleTransfer.currentAddress == liveCompleted.sampleTransfer.currentAddress, "mid-transfer restore should preserve the transfer address phase");
 	require(restoredCompleted.sampleTransfer.fifoCount == 0u && restoredCompleted.sampleTransfer.scheduledWords == 0u, "completed DMA write should leave the transfer datapath idle");
@@ -466,11 +466,11 @@ void testSampleBusDmaAndMidTransferRestore() {
 
 	live.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_ADDRESS, transferAddress);
 	live.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_CONTROL, bmsx::APU_TRANSFER_MODE_DMA_READ);
-	live.memory.writeMappedU32LE(bmsx::IO_DMA_READ_ADDR, bmsx::IO_APU_TRANSFER_DATA);
-	live.memory.writeMappedU32LE(bmsx::IO_DMA_WRITE_ADDR, target);
-	live.memory.writeMappedU32LE(bmsx::IO_DMA_TRANSFER_COUNT, 32u);
-	live.memory.writeMappedU32LE(bmsx::IO_DMA_CONTROL, bmsx::DMA_CONTROL_WRITE_INCREMENT | bmsx::DMA_CONTROL_REQUEST_APU_READ | bmsx::DMA_CONTROL_BLOCK_WORDS_16);
-	live.memory.writeMappedU32LE(bmsx::IO_DMA_TRIGGER, bmsx::DMA_TRIGGER_START);
+	live.memory.writeMappedU32LE(bmsx::IO_DMA0_READ_ADDR, bmsx::IO_APU_TRANSFER_DATA);
+	live.memory.writeMappedU32LE(bmsx::IO_DMA0_WRITE_ADDR, target);
+	live.memory.writeMappedU32LE(bmsx::IO_DMA0_TRANSFER_COUNT, 32u);
+	live.memory.writeMappedU32LE(bmsx::IO_DMA0_CONTROL, 0x00003c12u);
+	live.memory.writeMappedU32LE(bmsx::IO_DMA0_TRIGGER, bmsx::DMA_TRIGGER_START);
 	serviceTransfer(live);
 	const bmsx::AudioControllerState beforeCpuRead = live.audio.captureState();
 	const bmsx::u32 cpuReadLatch = live.memory.readMappedU32LE(bmsx::IO_APU_TRANSFER_DATA);
@@ -483,19 +483,19 @@ void testSampleBusDmaAndMidTransferRestore() {
 	serviceTransfer(live);
 	serviceDma(live);
 	live.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_CONTROL, bmsx::APU_TRANSFER_MODE_STOP);
-	require(live.memory.readIoU32(bmsx::IO_DMA_STATUS) == bmsx::DMA_STATUS_DONE, "APU DMA read should complete");
+	require(live.memory.readIoU32(bmsx::IO_DMA0_STATUS) == bmsx::DMA_STATUS_DONE, "APU DMA read should complete");
 	for (bmsx::u32 index = 0u; index < 32u; index += 1u) {
 		require(live.memory.readMappedU32LE(target + index * bmsx::IO_WORD_SIZE) == (0x5a000000u | index), "APU DMA read should round-trip wrapped sample RAM words");
 	}
 	require(live.memory.mappedWriteReady(bmsx::IO_APU_TRANSFER_DATA), "DMA completion should release the shared APU data port");
 
-	live.memory.writeMappedU32LE(bmsx::IO_DMA_READ_ADDR, bmsx::IO_APU_TRANSFER_DATA);
-	live.memory.writeMappedU32LE(bmsx::IO_DMA_WRITE_ADDR, target);
-	live.memory.writeMappedU32LE(bmsx::IO_DMA_TRANSFER_COUNT, 1u);
-	live.memory.writeMappedU32LE(bmsx::IO_DMA_CONTROL, bmsx::DMA_CONTROL_REQUEST_DISABLED);
-	live.memory.writeMappedU32LE(bmsx::IO_DMA_TRIGGER, bmsx::DMA_TRIGGER_START);
-	require(live.memory.mappedWriteReady(bmsx::IO_APU_TRANSFER_DATA),
-		"an armed but unadmitted DMA channel must not own the APU data port");
+	live.memory.writeMappedU32LE(bmsx::IO_DMA0_READ_ADDR, bmsx::IO_APU_TRANSFER_DATA);
+	live.memory.writeMappedU32LE(bmsx::IO_DMA0_WRITE_ADDR, target);
+	live.memory.writeMappedU32LE(bmsx::IO_DMA0_TRANSFER_COUNT, 1u);
+	live.memory.writeMappedU32LE(bmsx::IO_DMA0_CONTROL, 0x000003fcu);
+	live.memory.writeMappedU32LE(bmsx::IO_DMA0_TRIGGER, bmsx::DMA_TRIGGER_START);
+	require(!live.memory.mappedWriteReady(bmsx::IO_APU_TRANSFER_DATA),
+		"a busy DMA channel must reserve its mapped APU data port while waiting for DREQ");
 }
 
 void testSampleTransferWrongDirectionBlock() {
@@ -509,11 +509,11 @@ void testSampleTransferWrongDirectionBlock() {
 	}
 
 	harness.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_CONTROL, bmsx::APU_TRANSFER_MODE_DMA_WRITE);
-	harness.memory.writeMappedU32LE(bmsx::IO_DMA_READ_ADDR, source);
-	harness.memory.writeMappedU32LE(bmsx::IO_DMA_WRITE_ADDR, bmsx::IO_APU_TRANSFER_DATA);
-	harness.memory.writeMappedU32LE(bmsx::IO_DMA_TRANSFER_COUNT, 32u);
-	harness.memory.writeMappedU32LE(bmsx::IO_DMA_CONTROL, bmsx::DMA_CONTROL_READ_INCREMENT | bmsx::DMA_CONTROL_REQUEST_APU_WRITE | bmsx::DMA_CONTROL_BLOCK_WORDS_16);
-	harness.memory.writeMappedU32LE(bmsx::IO_DMA_TRIGGER, bmsx::DMA_TRIGGER_START);
+	harness.memory.writeMappedU32LE(bmsx::IO_DMA0_READ_ADDR, source);
+	harness.memory.writeMappedU32LE(bmsx::IO_DMA0_WRITE_ADDR, bmsx::IO_APU_TRANSFER_DATA);
+	harness.memory.writeMappedU32LE(bmsx::IO_DMA0_TRANSFER_COUNT, 32u);
+	harness.memory.writeMappedU32LE(bmsx::IO_DMA0_CONTROL, 0x00003cc1u);
+	harness.memory.writeMappedU32LE(bmsx::IO_DMA0_TRIGGER, bmsx::DMA_TRIGGER_START);
 	auto serviceDma = [](AudioHarness& fixture) {
 		const bmsx::i64 deadline = fixture.scheduler.nextDeadline();
 		fixture.scheduler.advanceTo(deadline);
@@ -524,9 +524,9 @@ void testSampleTransferWrongDirectionBlock() {
 	require(before.fifoCount == bmsx::APU_TRANSFER_FIFO_WORD_CAPACITY, "one APU-write block should fill the transfer FIFO");
 	require(before.scheduledWords == bmsx::APU_TRANSFER_FIFO_WORD_CAPACITY, "one APU-write block should schedule one FIFO batch");
 
-	harness.memory.writeMappedU32LE(bmsx::IO_DMA_READ_ADDR, bmsx::IO_APU_TRANSFER_DATA);
-	harness.memory.writeMappedU32LE(bmsx::IO_DMA_WRITE_ADDR, target);
-	harness.memory.writeMappedU32LE(bmsx::IO_DMA_CONTROL, bmsx::DMA_CONTROL_WRITE_INCREMENT | bmsx::DMA_CONTROL_REQUEST_FORCE | bmsx::DMA_CONTROL_BLOCK_WORDS_16);
+	harness.memory.writeMappedU32LE(bmsx::IO_DMA0_READ_ADDR, bmsx::IO_APU_TRANSFER_DATA);
+	harness.memory.writeMappedU32LE(bmsx::IO_DMA0_WRITE_ADDR, target);
+	harness.memory.writeMappedU32LE(bmsx::IO_DMA0_CONTROL, 0x00003c02u);
 	serviceDma(harness);
 	const bmsx::ApuSampleTransferState afterReverseBlock = harness.audio.captureState().sampleTransfer;
 	require(afterReverseBlock.fifoCount == bmsx::APU_TRANSFER_FIFO_WORD_CAPACITY, "wrong-direction DMA reads must not consume the APU-write FIFO");

@@ -67,8 +67,13 @@ void ApuServiceClock::writeTransferDataThunk(void* context, u32, u64 value, Mapp
 	clock.advanceVoicesTo(nowCycles);
 }
 
-bool ApuServiceClock::transferDataWriteReadyThunk(void* context, u32) {
-	return !static_cast<ApuServiceClock*>(context)->m_dma.ownsApuDataPort();
+bool ApuServiceClock::transferDataWriteReadyThunk(void* context, u32, MappedBusSignals busSignals) {
+	if ((busSignals & MAPPED_BUS_MASTER_DMA) != 0u) {
+		return true;
+	}
+	auto& clock = *static_cast<ApuServiceClock*>(context);
+	return !clock.m_dma.ownsReadPort(IO_APU_TRANSFER_DATA)
+		&& !clock.m_dma.ownsWritePort(IO_APU_TRANSFER_DATA);
 }
 
 void ApuServiceClock::writeTransferControlThunk(void* context, u32, u64 value, MappedBusSignals) {

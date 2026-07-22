@@ -20,6 +20,7 @@ local kind_model<const> = 7
 local kind_aem<const> = 8
 local kind_lua<const> = 9
 local kind_code<const> = 10
+local kind_texture<const> = 11
 
 local rom_system<const> = 1
 local rom_cart<const> = 2
@@ -38,6 +39,7 @@ local kind_name_by_id<const> = {
 	[kind_aem] = 'aem',
 	[kind_lua] = 'lua',
 	[kind_code] = 'code',
+	[kind_texture] = 'texture',
 }
 
 local assert_range<const> = function(offset, length, limit, label)
@@ -184,7 +186,7 @@ local parse_rom<const> = function(header, rom_id)
 		local payload_start<const>, payload_end<const>, payload_addr<const>, payload_len<const> = entry_span(header, header.data_off, header.data_len, mem[entry_base + 40], mem[entry_base + 44], header.label .. ' payload')
 		local compiled_start<const>, compiled_end<const>, compiled_addr<const>, compiled_len<const> = entry_span(header, header.data_off, header.data_len, mem[entry_base + 48], mem[entry_base + 52], header.label .. ' compiled payload')
 		local meta_start<const>, meta_end<const>, meta_addr<const>, meta_len<const> = entry_span(header, header.metadata_off, header.metadata_len, mem[entry_base + 56], mem[entry_base + 60], header.label .. ' metadata')
-		local texture_start<const>, texture_end<const>, texture_addr<const>, texture_len<const> = entry_span(header, header.data_off, header.data_len, mem[entry_base + 64], mem[entry_base + 68], header.label .. ' texture')
+		local model_texture_start<const>, model_texture_end<const>, model_texture_addr<const>, model_texture_len<const> = entry_span(header, header.data_off, header.data_len, mem[entry_base + 64], mem[entry_base + 68], header.label .. ' model texture')
 		local collision_start<const>, collision_end<const>, collision_addr<const>, collision_len<const> = entry_span(header, header.data_off, header.data_len, mem[entry_base + 72], mem[entry_base + 76], header.label .. ' collision')
 		local id<const> = read_toc_string(toc_base, string_table_offset, string_table_length, mem[entry_base + 16], mem[entry_base + 20], header.label .. ' resid')
 		if not id or #id == 0 then
@@ -215,10 +217,10 @@ local parse_rom<const> = function(header, rom_id)
 			meta_finish = meta_end,
 			meta_addr = meta_addr,
 			meta_len = meta_len,
-			texture_start = texture_start,
-			texture_finish = texture_end,
-			texture_addr = texture_addr,
-			texture_len = texture_len,
+			model_texture_start = model_texture_start,
+			model_texture_finish = model_texture_end,
+			model_texture_addr = model_texture_addr,
+			model_texture_len = model_texture_len,
 			collision_start = collision_start,
 			collision_finish = collision_end,
 			collision_addr = collision_addr,
@@ -339,10 +341,10 @@ local record_for_entry<const> = function(entry)
 	set_if_present(out, 'metabuffer_end', entry.meta_finish)
 	set_if_present(out, 'metabuffer_addr', entry.meta_addr)
 	set_if_present(out, 'metabuffer_len', entry.meta_len)
-	set_if_present(out, 'texture_start', entry.texture_start)
-	set_if_present(out, 'texture_end', entry.texture_finish)
-	set_if_present(out, 'texture_addr', entry.texture_addr)
-	set_if_present(out, 'texture_len', entry.texture_len)
+	set_if_present(out, 'model_texture_start', entry.model_texture_start)
+	set_if_present(out, 'model_texture_end', entry.model_texture_finish)
+	set_if_present(out, 'model_texture_addr', entry.model_texture_addr)
+	set_if_present(out, 'model_texture_len', entry.model_texture_len)
 	set_if_present(out, 'collision_bin_start', entry.collision_start)
 	set_if_present(out, 'collision_bin_end', entry.collision_finish)
 	set_if_present(out, 'collision_addr', entry.collision_addr)
@@ -354,6 +356,8 @@ local record_for_entry<const> = function(entry)
 	set_if_present(out, 'meta', meta)
 	if entry.kind == kind_image then
 		out.imgmeta = meta
+	elseif entry.kind == kind_texture then
+		out.texturemeta = meta
 	elseif entry.kind == kind_audio then
 		out.audiometa = meta
 	end
@@ -422,6 +426,14 @@ end
 
 function romdir.image(id)
 	local entry<const> = find_in_roms(active_plus_system_roms, id, kind_image)
+	if entry == nil then
+		return nil
+	end
+	return record_for_entry(entry)
+end
+
+function romdir.texture(id)
+	local entry<const> = find_in_roms(active_plus_system_roms, id, kind_texture)
 	if entry == nil then
 		return nil
 	end

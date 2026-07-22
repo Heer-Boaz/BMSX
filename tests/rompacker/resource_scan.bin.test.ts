@@ -82,7 +82,8 @@ test('ROM writer materializes word-aligned payload ranges', async () => {
 	try {
 		const assets: RomAsset[] = [
 			{ type: 'data', resid: 'odd', buffer: Buffer.from([0x11]) },
-			{ type: 'image', resid: 'sprite', texture_buffer: Buffer.from([0x22, 0x33]), collision_bin_buffer: Buffer.from([0x44, 0x55, 0x66, 0x77]) },
+			{ type: 'model', resid: 'model', model_texture_buffer: Buffer.from([0x22, 0x33]) },
+			{ type: 'image', resid: 'sprite', collision_bin_buffer: Buffer.from([0x44, 0x55, 0x66, 0x77]) },
 		];
 		const layout = layoutRomProgramPrefix(assets, true, null);
 		const ranges = layout.assetRanges;
@@ -109,9 +110,10 @@ test('ROM writer materializes word-aligned payload ranges', async () => {
 		});
 		const rom = await readFile(join(outputDirectory, 'aligned.rom'));
 		const index = await loadRomAssetList(rom);
+		const model = index.entries.find(entry => entry.resid === 'model')!;
 		const sprite = index.entries.find(entry => entry.resid === 'sprite')!;
-		assert.equal(sprite.texture_start, ranges[1].start);
-		assert.equal(sprite.texture_end, ranges[1].end);
+		assert.equal(model.model_texture_start, ranges[1].start);
+		assert.equal(model.model_texture_end, ranges[1].end);
 		assert.equal(sprite.collision_bin_start, ranges[2].start);
 		assert.equal(sprite.collision_bin_end, ranges[2].end);
 		for (let index = 0; index < ranges.length; index += 1) {

@@ -8,7 +8,7 @@ import {
 } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
-import { GX_GPU_GP0_FILL_RECTANGLE } from '../../machine/ts/machine/devices/gx/gpu';
+import { GX_GPU_GP0_FILL_RECTANGLE } from '../../machine/ts/machine/devices/gx/gp0';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';

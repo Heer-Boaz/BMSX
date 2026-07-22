@@ -2,65 +2,57 @@ import {
 	DMA_CONTROL_BLOCK_WORDS_MASK,
 	DMA_CONTROL_BLOCK_WORDS_SHIFT,
 	DMA_CONTROL_READ_INCREMENT,
-	DMA_CONTROL_REQUEST_APU_READ,
-	DMA_CONTROL_REQUEST_APU_WRITE,
-	DMA_CONTROL_REQUEST_FORCE,
-	DMA_CONTROL_REQUEST_GX_READ,
-	DMA_CONTROL_REQUEST_GX_WRITE,
-	DMA_CONTROL_REQUEST_IMGDEC_WRITE,
-	DMA_CONTROL_REQUEST_MASK,
+	DMA_CONTROL_READ_REQUEST_MASK,
+	DMA_CONTROL_READ_REQUEST_SHIFT,
 	DMA_CONTROL_WRITE_INCREMENT,
+	DMA_CONTROL_WRITE_REQUEST_MASK,
+	DMA_CONTROL_WRITE_REQUEST_SHIFT,
+	DMA_REQUEST_DISABLED,
+	DMA_REQUEST_FORCE,
 	DMA_STATUS_BUSY,
 	DMA_STATUS_DONE,
 	DMA_TRIGGER_START,
-	IO_DMA_CONTROL,
-	IO_DMA_READ_ADDR,
-	IO_DMA_STATUS,
-	IO_DMA_TRANSFER_COUNT,
-	IO_DMA_TRIGGER,
-	IO_DMA_WRITE_ADDR,
-	IO_APU_TRANSFER_DATA,
-	IO_GX_GPU_GP0,
-	IO_IMGDEC_DATA,
-	IRQ_DMA_DONE,
+	IO_DMA_CHANNEL_COUNT,
+	IO_DMA_CONTROLS,
+	IO_DMA_READ_ADDRS,
+	IO_DMA_STATUSES,
+	IO_DMA_TRANSFER_COUNTS,
+	IO_DMA_TRIGGERS,
+	IO_DMA_WRITE_ADDRS,
+	IRQ_DMA0_DONE,
+	IRQ_DMA1_DONE,
 } from '../../bus/io';
-import { IO_WORD_SIZE } from '../../memory/map';
-import { Memory, MemoryRegionKind } from '../../memory/memory';
-import {
-	MAPPED_BUS_MASTER_DMA,
-	MAPPED_BUS_DMA_BLOCK_END,
-	MAPPED_BUS_DMA_TRANSFER_END,
-	type MappedBusSignals,
-} from '../../memory/bus_signals';
 import type { CPU, Value } from '../../cpu/cpu';
-import type { IrqController } from '../irq/controller';
+import { IO_WORD_SIZE } from '../../memory/map';
+import { MAPPED_BUS_DMA_BLOCK_END, MAPPED_BUS_MASTER_DMA, type MappedBusSignals } from '../../memory/bus_signals';
+import { Memory, MemoryRegionKind } from '../../memory/memory';
 import { DEVICE_SERVICE_DMA, DEVICE_SERVICE_SYSTEM, type DeviceScheduler } from '../../scheduler/device';
-import {
-	GX_GPU_DMA_DIRECTION_CPU_TO_GP0,
-	GX_GPU_DMA_DIRECTION_FIFO,
-	GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU,
-} from '../gx/gpu';
+import type { IrqController } from '../irq/controller';
 
-export type DmaControllerState = {
+const DMA_CHANNEL_NONE = IO_DMA_CHANNEL_COUNT;
+
+export type DmaChannelState = {
 	readAddressWord: number;
 	writeAddressWord: number;
 	transferCountWord: number;
 	controlWord: number;
 	statusWord: number;
+};
+
+export type DmaControllerState = {
+	channels: [DmaChannelState, DmaChannelState];
+	activeChannel: number;
+	nextChannel: number;
 	scheduledBlockWords: number;
 	scheduledBlockCycles: number;
 	scheduledReadAddressWord: number;
 	scheduledWriteAddressWord: number;
 	scheduledTransferCountWord: number;
 	scheduledControlWord: number;
-	transferStarted: boolean;
 	supervisorQuiesceRequested: boolean;
-	userReadAddressWord: number;
-	userWriteAddressWord: number;
-	userTransferCountWord: number;
-	userControlWord: number;
-	userStatusWord: number;
-	userTransferStarted: boolean;
+	supervisorAdmissionQuiesceRequested: boolean;
+	userChannels: [DmaChannelState, DmaChannelState];
+	userNextChannel: number;
 };
 
 export class DmaController {
@@ -69,29 +61,24 @@ export class DmaController {
 	private systemRomCyclesPerWord = 1;
 	private cartRomCyclesPerWord = 0;
 	private cartRomBurstSetupCycles = 0;
+	private activeChannel = DMA_CHANNEL_NONE;
+	private nextChannel = 0;
 	private scheduledBlockWords = 0;
 	private scheduledReadAddressWord = 0;
 	private scheduledWriteAddressWord = 0;
 	private scheduledTransferCountWord = 0;
 	private scheduledControlWord = 0;
 	private serviceDeadline = 0;
-	private gxGpuReadReady = false;
-	private gxGpuDmaWriteReady = false;
-	private gxGpuCpuWriteReady = false;
-	private gxGpuDmaDirection = 0;
-	private apuDmaReadReady = false;
-	private apuDmaWriteReady = false;
-	private imgDecDmaWriteReady = false;
+	private requestLines = 0;
 	private serviceActive = false;
-	private transferStarted = false;
 	private restorePending = false;
 	private supervisorQuiesceRequested = false;
-	private userReadAddressWord = 0;
-	private userWriteAddressWord = 0;
-	private userTransferCountWord = 0;
-	private userControlWord = 0;
-	private userStatusWord = 0;
-	private userTransferStarted = false;
+	private supervisorAdmissionQuiesceRequested = false;
+	private readonly userChannels: [DmaChannelState, DmaChannelState] = [
+		{ readAddressWord: 0, writeAddressWord: 0, transferCountWord: 0, controlWord: 0, statusWord: 0 },
+		{ readAddressWord: 0, writeAddressWord: 0, transferCountWord: 0, controlWord: 0, statusWord: 0 },
+	];
+	private userNextChannel = 0;
 
 	public constructor(
 		private readonly memory: Memory,
@@ -99,44 +86,56 @@ export class DmaController {
 		private readonly irq: IrqController,
 		private readonly scheduler: DeviceScheduler,
 	) {
-		this.memory.mapIoWrite(IO_DMA_CONTROL, this, DmaController.controlWriteThunk);
-		this.memory.mapIoWrite(IO_DMA_READ_ADDR, this, DmaController.portAddressWriteThunk);
-		this.memory.mapIoWrite(IO_DMA_WRITE_ADDR, this, DmaController.portAddressWriteThunk);
-		this.memory.mapIoWrite(IO_DMA_TRIGGER, this, DmaController.triggerWriteThunk);
-		this.memory.mapIoWriteReady(IO_DMA_TRIGGER, DmaController.triggerWriteReadyThunk);
+		for (let channel = 0; channel < IO_DMA_CHANNEL_COUNT; channel += 1) {
+			this.memory.mapIoWrite(IO_DMA_CONTROLS[channel]!, this, DmaController.controlWriteThunk);
+			this.memory.mapIoWrite(IO_DMA_READ_ADDRS[channel]!, this, DmaController.addressWriteThunk);
+			this.memory.mapIoWrite(IO_DMA_WRITE_ADDRS[channel]!, this, DmaController.addressWriteThunk);
+			this.memory.mapIoWrite(IO_DMA_TRANSFER_COUNTS[channel]!, this, DmaController.transferCountWriteThunk);
+			this.memory.mapIoWrite(IO_DMA_TRIGGERS[channel]!, this, DmaController.triggerWriteThunk);
+			this.memory.mapIoWriteReady(IO_DMA_TRIGGERS[channel]!, DmaController.triggerWriteReadyThunk);
+		}
 	}
 
 	private static triggerWriteReadyThunk(context: DmaController): boolean {
-		return !context.supervisorQuiesceRequested || context.imgDecQuiesceContinuationReady();
+		return !context.supervisorQuiesceRequested;
 	}
 
 	private static controlWriteThunk(context: DmaController): void {
-		context.requestInputChanged();
+		context.arbitrate(context.scheduler.currentNowCycles());
 	}
 
-	private static portAddressWriteThunk(context: DmaController): void {
-		context.resumeCpuPortWrites();
-	}
-
-	private static triggerWriteThunk(context: DmaController, _addr: number, value: Value): void {
-		context.memory.writeIoValue(IO_DMA_TRIGGER, 0);
-		if (((value as number) & DMA_TRIGGER_START) === 0 || context.busy()) {
+	private static addressWriteThunk(context: DmaController): void {
+		if (!context.cpu.isMemoryWriteBlocked()) {
 			return;
 		}
-		context.scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
-		context.clearAdmittedBlock();
-		context.transferStarted = false;
-		context.memory.writeIoValue(IO_DMA_STATUS, DMA_STATUS_BUSY);
-		if (context.memory.readIoU32(IO_DMA_TRANSFER_COUNT) === 0) {
-			context.finishTransfer();
-			return;
-		}
-		if (context.requestAsserted()) {
-			context.admitBlock(context.scheduler.currentNowCycles());
-		}
+		context.resumeCpuWriteIfPortReleased(context.cpu.stalledMemoryWriteAddress());
 	}
 
-	public setTiming(ramCyclesPerWord: number, ramBurstSetupCycles: number, systemRomCyclesPerWord: number, cartRomCyclesPerWord: number, cartRomBurstSetupCycles: number, nowCycles: number): void {
+	private static transferCountWriteThunk(context: DmaController): void {
+		context.arbitrate(context.scheduler.currentNowCycles());
+	}
+
+	private static triggerWriteThunk(context: DmaController, address: number, value: Value): void {
+		const channel = address === IO_DMA_TRIGGERS[1] ? 1 : 0;
+		context.memory.writeIoValue(IO_DMA_TRIGGERS[channel]!, 0);
+		if (((value as number) & DMA_TRIGGER_START) === 0 || context.busy(channel)) {
+			return;
+		}
+		context.memory.writeIoValue(IO_DMA_STATUSES[channel]!, DMA_STATUS_BUSY);
+		if (context.memory.readIoU32(IO_DMA_TRANSFER_COUNTS[channel]!) === 0) {
+			context.finishChannel(channel);
+		}
+		context.arbitrate(context.scheduler.currentNowCycles());
+	}
+
+	public setTiming(
+		ramCyclesPerWord: number,
+		ramBurstSetupCycles: number,
+		systemRomCyclesPerWord: number,
+		cartRomCyclesPerWord: number,
+		cartRomBurstSetupCycles: number,
+		nowCycles: number,
+	): void {
 		if (this.ramCyclesPerWord === ramCyclesPerWord
 			&& this.ramBurstSetupCycles === ramBurstSetupCycles
 			&& this.systemRomCyclesPerWord === systemRomCyclesPerWord
@@ -149,125 +148,58 @@ export class DmaController {
 		this.systemRomCyclesPerWord = systemRomCyclesPerWord;
 		this.cartRomCyclesPerWord = cartRomCyclesPerWord;
 		this.cartRomBurstSetupCycles = cartRomBurstSetupCycles;
-		// Admission latches the current block's completion edge. New timing starts
-		// with the next block rather than replaying elapsed bus time.
-		if (this.scheduledBlockWords !== 0) {
+		if (this.activeChannel === DMA_CHANNEL_NONE) {
+			this.arbitrate(nowCycles);
+		}
+	}
+
+	public setRequestLines(mask: number, asserted: number): void {
+		const next = (this.requestLines & ~mask) | (asserted & mask);
+		if (next === this.requestLines) {
 			return;
 		}
-		if (this.busy() && this.requestAsserted()) {
-			if (this.memory.readIoU32(IO_DMA_TRANSFER_COUNT) === 0) {
-				this.finishTransfer();
-			} else {
-				this.admitBlock(nowCycles);
+		this.requestLines = next;
+		this.arbitrate(this.scheduler.currentNowCycles());
+	}
+
+	public ownsReadPort(address: number): boolean {
+		for (let channel = 0; channel < IO_DMA_CHANNEL_COUNT; channel += 1) {
+			if (this.busy(channel) && this.channelReadAddress(channel) === address) {
+				return true;
 			}
 		}
+		return false;
 	}
 
-	public setGxGpuReadReady(ready: boolean): void {
-		if (this.gxGpuReadReady === ready) {
-			return;
+	public ownsWritePort(address: number): boolean {
+		for (let channel = 0; channel < IO_DMA_CHANNEL_COUNT; channel += 1) {
+			if (this.busy(channel) && this.channelWriteAddress(channel) === address) {
+				return true;
+			}
 		}
-		this.gxGpuReadReady = ready;
-		this.requestInputChanged();
+		return false;
 	}
 
-	public setGxGpuDmaWriteReady(ready: boolean): void {
-		if (this.gxGpuDmaWriteReady === ready) {
-			return;
-		}
-		this.gxGpuDmaWriteReady = ready;
-		this.requestInputChanged();
-	}
-
-	public setGxGpuCpuWriteReady(ready: boolean): void {
-		if (this.gxGpuCpuWriteReady === ready) {
-			return;
-		}
-		this.gxGpuCpuWriteReady = ready;
-		this.resumeCpuPortWrites();
-	}
-
-	public setGxGpuDmaDirection(direction: number): void {
-		if (this.gxGpuDmaDirection === direction) {
-			return;
-		}
-		this.gxGpuDmaDirection = direction;
-		this.requestInputChanged();
-	}
-
-	public setApuDmaReadReady(ready: boolean): void {
-		if (this.apuDmaReadReady === ready) {
-			return;
-		}
-		this.apuDmaReadReady = ready;
-		this.requestInputChanged();
-	}
-
-	public setApuDmaWriteReady(ready: boolean): void {
-		if (this.apuDmaWriteReady === ready) {
-			return;
-		}
-		this.apuDmaWriteReady = ready;
-		this.requestInputChanged();
-	}
-
-	public setImgDecDmaWriteReady(ready: boolean): void {
-		if (this.imgDecDmaWriteReady === ready) {
-			return;
-		}
-		this.imgDecDmaWriteReady = ready;
-		this.requestInputChanged();
-		if (ready && this.supervisorQuiesceRequested && this.imgDecQuiesceContinuationReady()) {
-			this.cpu.resumeMemoryWrite(IO_DMA_TRIGGER);
-		}
-	}
-
-	public isGxGpuCpuPortWriteReady(): boolean {
-		return this.gxGpuCpuWriteReady && !this.ownsGxGpuWritePort();
-	}
-
-	public ownsApuDataPort(): boolean {
-		if (this.scheduledBlockWords !== 0) {
-			return this.scheduledReadAddressWord === IO_APU_TRANSFER_DATA
-				|| this.scheduledWriteAddressWord === IO_APU_TRANSFER_DATA;
-		}
-		return this.transferStarted
-			&& this.busy()
-			&& (this.memory.readIoU32(IO_DMA_READ_ADDR) === IO_APU_TRANSFER_DATA
-				|| this.memory.readIoU32(IO_DMA_WRITE_ADDR) === IO_APU_TRANSFER_DATA);
-	}
-
-	public ownsImgDecDataPort(): boolean {
-		if (this.scheduledBlockWords !== 0) {
-			return this.scheduledWriteAddressWord === IO_IMGDEC_DATA;
-		}
-		return this.transferStarted
-			&& this.busy()
-			&& this.memory.readIoU32(IO_DMA_WRITE_ADDR) === IO_IMGDEC_DATA;
+	public hasAdmittedWriteBlock(address: number): boolean {
+		return this.activeChannel !== DMA_CHANNEL_NONE
+			&& this.scheduledWriteAddressWord === address;
 	}
 
 	public reset(): void {
 		this.clearLiveTransfer();
-		this.gxGpuReadReady = false;
-		this.gxGpuDmaWriteReady = false;
-		this.gxGpuCpuWriteReady = false;
-		this.gxGpuDmaDirection = 0;
-		this.apuDmaReadReady = false;
-		this.apuDmaWriteReady = false;
-		this.imgDecDmaWriteReady = false;
+		this.requestLines = 0;
 		this.supervisorQuiesceRequested = false;
-		this.userReadAddressWord = 0;
-		this.userWriteAddressWord = 0;
-		this.userTransferCountWord = 0;
-		this.userControlWord = 0;
-		this.userStatusWord = 0;
-		this.userTransferStarted = false;
+		this.supervisorAdmissionQuiesceRequested = false;
+		this.clearUserContext();
 	}
 
 	public onService(_nowCycles: number): void {
+		const channel = this.activeChannel;
 		const blockWords = this.scheduledBlockWords;
 		let readAddress = this.scheduledReadAddressWord;
 		let writeAddress = this.scheduledWriteAddressWord;
+		const releasedReadAddress = readAddress;
+		const releasedWriteAddress = writeAddress;
 		let transferCount = this.scheduledTransferCountWord;
 		const control = this.scheduledControlWord;
 		const readStep = (control & DMA_CONTROL_READ_INCREMENT) !== 0 ? IO_WORD_SIZE : 0;
@@ -277,60 +209,33 @@ export class DmaController {
 		this.serviceActive = true;
 		for (let slot = 0; slot < blockWords; slot += 1) {
 			const busSignals: MappedBusSignals = MAPPED_BUS_MASTER_DMA
-				| (slot + 1 === blockWords ? MAPPED_BUS_DMA_BLOCK_END : 0)
-				| (transferCount === 1 ? MAPPED_BUS_DMA_TRANSFER_END : 0);
-			const nextReadAddress = (readAddress + readStep) >>> 0;
-			const nextWriteAddress = (writeAddress + writeStep) >>> 0;
-			const nextTransferCount = (transferCount - 1) >>> 0;
+				| (slot + 1 === blockWords ? MAPPED_BUS_DMA_BLOCK_END : 0);
 			const word = this.memory.readMappedDmaU32LE(readAddress, busSignals);
 			this.memory.writeMappedDmaU32LE(writeAddress, word, busSignals);
-			this.memory.writeIoValue(IO_DMA_READ_ADDR, nextReadAddress);
-			this.memory.writeIoValue(IO_DMA_WRITE_ADDR, nextWriteAddress);
-			this.memory.writeIoValue(IO_DMA_TRANSFER_COUNT, nextTransferCount);
-			const writePortAdvanced = writeStep !== 0
-				&& (writeAddress === IO_GX_GPU_GP0 || writeAddress === IO_APU_TRANSFER_DATA);
-			const readPortAdvanced = readStep !== 0 && readAddress === IO_APU_TRANSFER_DATA;
-			if (writePortAdvanced) {
-				this.scheduledWriteAddressWord = nextWriteAddress;
-			}
-			if (readPortAdvanced) {
-				this.scheduledReadAddressWord = nextReadAddress;
-			}
-			if (writePortAdvanced || readPortAdvanced) {
-				this.resumeCpuPortWrites();
-			}
-			readAddress = nextReadAddress;
-			writeAddress = nextWriteAddress;
-			transferCount = nextTransferCount;
+			readAddress = (readAddress + readStep) >>> 0;
+			writeAddress = (writeAddress + writeStep) >>> 0;
+			transferCount = (transferCount - 1) >>> 0;
 		}
+		this.memory.writeIoValue(IO_DMA_READ_ADDRS[channel]!, readAddress);
+		this.memory.writeIoValue(IO_DMA_WRITE_ADDRS[channel]!, writeAddress);
+		this.memory.writeIoValue(IO_DMA_TRANSFER_COUNTS[channel]!, transferCount);
 		this.serviceActive = false;
 		this.clearAdmittedBlock();
+		this.resumeCpuWriteIfPortReleased(releasedReadAddress);
+		if (releasedWriteAddress !== releasedReadAddress) {
+			this.resumeCpuWriteIfPortReleased(releasedWriteAddress);
+		}
 		if (transferCount === 0) {
-			this.finishTransfer();
-			return;
+			this.finishChannel(channel);
 		}
-		if (!this.requestAsserted()) {
-			this.notifySupervisorBoundary();
-			return;
-		}
-		this.admitBlock(blockDeadline);
-	}
-
-	private finishTransfer(): void {
-		this.transferStarted = false;
-		this.memory.writeIoValue(IO_DMA_STATUS, DMA_STATUS_DONE);
-		this.irq.raise(IRQ_DMA_DONE);
-		this.resumeCpuPortWrites();
-		this.notifySupervisorBoundary();
+		this.arbitrate(blockDeadline);
 	}
 
 	public captureState(): DmaControllerState {
 		return {
-			readAddressWord: this.memory.readIoU32(IO_DMA_READ_ADDR),
-			writeAddressWord: this.memory.readIoU32(IO_DMA_WRITE_ADDR),
-			transferCountWord: this.memory.readIoU32(IO_DMA_TRANSFER_COUNT),
-			controlWord: this.memory.readIoU32(IO_DMA_CONTROL),
-			statusWord: this.memory.readIoU32(IO_DMA_STATUS),
+			channels: [this.captureChannel(0), this.captureChannel(1)],
+			activeChannel: this.activeChannel,
+			nextChannel: this.nextChannel,
 			scheduledBlockWords: this.scheduledBlockWords,
 			scheduledBlockCycles: this.scheduledBlockWords === 0
 				? 0
@@ -339,129 +244,152 @@ export class DmaController {
 			scheduledWriteAddressWord: this.scheduledWriteAddressWord,
 			scheduledTransferCountWord: this.scheduledTransferCountWord,
 			scheduledControlWord: this.scheduledControlWord,
-			transferStarted: this.transferStarted,
 			supervisorQuiesceRequested: this.supervisorQuiesceRequested,
-			userReadAddressWord: this.userReadAddressWord,
-			userWriteAddressWord: this.userWriteAddressWord,
-			userTransferCountWord: this.userTransferCountWord,
-			userControlWord: this.userControlWord,
-			userStatusWord: this.userStatusWord,
-			userTransferStarted: this.userTransferStarted,
+			supervisorAdmissionQuiesceRequested: this.supervisorAdmissionQuiesceRequested,
+			userChannels: [
+				{ ...this.userChannels[0] },
+				{ ...this.userChannels[1] },
+			],
+			userNextChannel: this.userNextChannel,
 		};
 	}
 
 	public restoreState(state: DmaControllerState, nowCycles: number): void {
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
-		this.memory.writeIoValue(IO_DMA_READ_ADDR, state.readAddressWord);
-		this.memory.writeIoValue(IO_DMA_WRITE_ADDR, state.writeAddressWord);
-		this.memory.writeIoValue(IO_DMA_TRANSFER_COUNT, state.transferCountWord);
-		this.memory.writeIoValue(IO_DMA_CONTROL, state.controlWord);
-		this.memory.writeIoValue(IO_DMA_STATUS, state.statusWord);
-		this.memory.writeIoValue(IO_DMA_TRIGGER, 0);
+		this.restoreChannel(0, state.channels[0]);
+		this.restoreChannel(1, state.channels[1]);
+		this.activeChannel = state.activeChannel;
+		this.nextChannel = state.nextChannel;
 		this.scheduledBlockWords = state.scheduledBlockWords;
 		this.scheduledReadAddressWord = state.scheduledReadAddressWord >>> 0;
 		this.scheduledWriteAddressWord = state.scheduledWriteAddressWord >>> 0;
 		this.scheduledTransferCountWord = state.scheduledTransferCountWord >>> 0;
 		this.scheduledControlWord = state.scheduledControlWord >>> 0;
-		this.transferStarted = state.transferStarted;
 		this.serviceDeadline = nowCycles + state.scheduledBlockCycles;
 		this.serviceActive = false;
 		this.restorePending = true;
 		this.supervisorQuiesceRequested = state.supervisorQuiesceRequested;
-		this.userReadAddressWord = state.userReadAddressWord >>> 0;
-		this.userWriteAddressWord = state.userWriteAddressWord >>> 0;
-		this.userTransferCountWord = state.userTransferCountWord >>> 0;
-		this.userControlWord = state.userControlWord >>> 0;
-		this.userStatusWord = state.userStatusWord >>> 0;
-		this.userTransferStarted = state.userTransferStarted;
+		this.supervisorAdmissionQuiesceRequested = state.supervisorAdmissionQuiesceRequested;
+		for (let channel = 0; channel < IO_DMA_CHANNEL_COUNT; channel += 1) {
+			const source = state.userChannels[channel]!;
+			const target = this.userChannels[channel]!;
+			target.readAddressWord = source.readAddressWord >>> 0;
+			target.writeAddressWord = source.writeAddressWord >>> 0;
+			target.transferCountWord = source.transferCountWord >>> 0;
+			target.controlWord = source.controlWord >>> 0;
+			target.statusWord = source.statusWord >>> 0;
+		}
+		this.userNextChannel = state.userNextChannel;
 	}
 
 	public postLoad(): void {
 		this.restorePending = false;
-		if (this.scheduledBlockWords !== 0) {
+		if (this.activeChannel !== DMA_CHANNEL_NONE) {
 			this.scheduler.scheduleDeviceService(DEVICE_SERVICE_DMA, this.serviceDeadline);
+		} else {
+			this.arbitrate(this.scheduler.currentNowCycles());
 		}
-		this.resumeCpuPortWrites();
+	}
+
+	public beginSupervisorControlQuiesce(): void {
+		this.supervisorQuiesceRequested = true;
 	}
 
 	public beginSupervisorQuiesce(): void {
 		this.supervisorQuiesceRequested = true;
-		this.requestInputChanged();
+		this.supervisorAdmissionQuiesceRequested = true;
 		this.notifySupervisorBoundary();
 	}
 
 	public supervisorQuiescent(): boolean {
-		return this.scheduledBlockWords === 0 && !this.serviceActive;
-	}
-
-	public hasAdmittedGxGpuWriteBlock(): boolean {
-		return this.scheduledBlockWords !== 0 && this.ownsGxGpuWritePort();
-	}
-
-	public ownsGxGpuWritePort(): boolean {
-		if (this.scheduledBlockWords !== 0) {
-			return this.scheduledWriteAddressWord === IO_GX_GPU_GP0;
-		}
-		return this.transferStarted
-			&& this.busy()
-			&& this.memory.readIoU32(IO_DMA_WRITE_ADDR) === IO_GX_GPU_GP0;
+		return this.supervisorAdmissionQuiesceRequested
+			&& this.activeChannel === DMA_CHANNEL_NONE
+			&& !this.serviceActive;
 	}
 
 	public enterSupervisorContext(): void {
-		this.userReadAddressWord = this.memory.readIoU32(IO_DMA_READ_ADDR);
-		this.userWriteAddressWord = this.memory.readIoU32(IO_DMA_WRITE_ADDR);
-		this.userTransferCountWord = this.memory.readIoU32(IO_DMA_TRANSFER_COUNT);
-		this.userControlWord = this.memory.readIoU32(IO_DMA_CONTROL);
-		this.userStatusWord = this.memory.readIoU32(IO_DMA_STATUS);
-		this.userTransferStarted = this.transferStarted;
+		for (let channel = 0; channel < IO_DMA_CHANNEL_COUNT; channel += 1) {
+			const userChannel = this.userChannels[channel]!;
+			userChannel.readAddressWord = this.memory.readIoU32(IO_DMA_READ_ADDRS[channel]!);
+			userChannel.writeAddressWord = this.memory.readIoU32(IO_DMA_WRITE_ADDRS[channel]!);
+			userChannel.transferCountWord = this.memory.readIoU32(IO_DMA_TRANSFER_COUNTS[channel]!);
+			userChannel.controlWord = this.memory.readIoU32(IO_DMA_CONTROLS[channel]!);
+			userChannel.statusWord = this.memory.readIoU32(IO_DMA_STATUSES[channel]!);
+		}
+		this.userNextChannel = this.nextChannel;
 		this.clearLiveTransfer();
 		this.supervisorQuiesceRequested = false;
+		this.supervisorAdmissionQuiesceRequested = false;
 	}
 
 	public enterSupervisorFaultContext(): void {
 		this.clearLiveTransfer();
-		this.userReadAddressWord = 0;
-		this.userWriteAddressWord = 0;
-		this.userTransferCountWord = 0;
-		this.userControlWord = 0;
-		this.userStatusWord = 0;
-		this.userTransferStarted = false;
+		this.clearUserContext();
 		this.supervisorQuiesceRequested = false;
+		this.supervisorAdmissionQuiesceRequested = false;
 	}
 
 	public leaveSupervisorContext(): void {
 		this.clearLiveTransfer();
-		this.memory.writeIoValue(IO_DMA_READ_ADDR, this.userReadAddressWord);
-		this.memory.writeIoValue(IO_DMA_WRITE_ADDR, this.userWriteAddressWord);
-		this.memory.writeIoValue(IO_DMA_TRANSFER_COUNT, this.userTransferCountWord);
-		this.memory.writeIoValue(IO_DMA_CONTROL, this.userControlWord);
-		this.memory.writeIoValue(IO_DMA_STATUS, this.userStatusWord);
-		this.transferStarted = this.userTransferStarted;
+		for (let channel = 0; channel < IO_DMA_CHANNEL_COUNT; channel += 1) {
+			this.restoreChannel(channel, this.userChannels[channel]!);
+		}
+		this.nextChannel = this.userNextChannel;
 		this.supervisorQuiesceRequested = false;
-		this.userReadAddressWord = 0;
-		this.userWriteAddressWord = 0;
-		this.userTransferCountWord = 0;
-		this.userControlWord = 0;
-		this.userStatusWord = 0;
-		this.userTransferStarted = false;
-		this.requestInputChanged();
+		this.supervisorAdmissionQuiesceRequested = false;
+		this.clearUserContext();
+		this.arbitrate(this.scheduler.currentNowCycles());
+	}
+
+	private captureChannel(channel: number): DmaChannelState {
+		return {
+			readAddressWord: this.memory.readIoU32(IO_DMA_READ_ADDRS[channel]!),
+			writeAddressWord: this.memory.readIoU32(IO_DMA_WRITE_ADDRS[channel]!),
+			transferCountWord: this.memory.readIoU32(IO_DMA_TRANSFER_COUNTS[channel]!),
+			controlWord: this.memory.readIoU32(IO_DMA_CONTROLS[channel]!),
+			statusWord: this.memory.readIoU32(IO_DMA_STATUSES[channel]!),
+		};
+	}
+
+	private restoreChannel(channel: number, state: DmaChannelState): void {
+		this.memory.writeIoValue(IO_DMA_READ_ADDRS[channel]!, state.readAddressWord);
+		this.memory.writeIoValue(IO_DMA_WRITE_ADDRS[channel]!, state.writeAddressWord);
+		this.memory.writeIoValue(IO_DMA_TRANSFER_COUNTS[channel]!, state.transferCountWord);
+		this.memory.writeIoValue(IO_DMA_CONTROLS[channel]!, state.controlWord);
+		this.memory.writeIoValue(IO_DMA_STATUSES[channel]!, state.statusWord);
+		this.memory.writeIoValue(IO_DMA_TRIGGERS[channel]!, 0);
 	}
 
 	private clearLiveTransfer(): void {
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
 		this.clearAdmittedBlock();
+		this.nextChannel = 0;
 		this.serviceActive = false;
-		this.transferStarted = false;
 		this.restorePending = false;
-		this.memory.writeIoValue(IO_DMA_READ_ADDR, 0);
-		this.memory.writeIoValue(IO_DMA_WRITE_ADDR, 0);
-		this.memory.writeIoValue(IO_DMA_TRANSFER_COUNT, 0);
-		this.memory.writeIoValue(IO_DMA_CONTROL, 0);
-		this.memory.writeIoValue(IO_DMA_STATUS, 0);
-		this.memory.writeIoValue(IO_DMA_TRIGGER, 0);
+		for (let channel = 0; channel < IO_DMA_CHANNEL_COUNT; channel += 1) {
+			this.memory.writeIoValue(IO_DMA_READ_ADDRS[channel]!, 0);
+			this.memory.writeIoValue(IO_DMA_WRITE_ADDRS[channel]!, 0);
+			this.memory.writeIoValue(IO_DMA_TRANSFER_COUNTS[channel]!, 0);
+			this.memory.writeIoValue(IO_DMA_CONTROLS[channel]!, 0);
+			this.memory.writeIoValue(IO_DMA_STATUSES[channel]!, 0);
+			this.memory.writeIoValue(IO_DMA_TRIGGERS[channel]!, 0);
+		}
+	}
+
+	private clearUserContext(): void {
+		for (let channel = 0; channel < IO_DMA_CHANNEL_COUNT; channel += 1) {
+			const userChannel = this.userChannels[channel]!;
+			userChannel.readAddressWord = 0;
+			userChannel.writeAddressWord = 0;
+			userChannel.transferCountWord = 0;
+			userChannel.controlWord = 0;
+			userChannel.statusWord = 0;
+		}
+		this.userNextChannel = 0;
 	}
 
 	private clearAdmittedBlock(): void {
+		this.activeChannel = DMA_CHANNEL_NONE;
 		this.scheduledBlockWords = 0;
 		this.scheduledReadAddressWord = 0;
 		this.scheduledWriteAddressWord = 0;
@@ -470,120 +398,163 @@ export class DmaController {
 		this.serviceDeadline = 0;
 	}
 
-	private notifySupervisorBoundary(): void {
-		if (this.supervisorQuiesceRequested && this.supervisorQuiescent()) {
-			this.scheduler.scheduleDeviceService(DEVICE_SERVICE_SYSTEM, this.scheduler.currentNowCycles());
+	private finishChannel(channel: number): void {
+		const readAddress = this.channelReadAddress(channel);
+		const writeAddress = this.channelWriteAddress(channel);
+		this.memory.writeIoValue(IO_DMA_STATUSES[channel]!, DMA_STATUS_DONE);
+		this.irq.raise(channel === 0 ? IRQ_DMA0_DONE : IRQ_DMA1_DONE);
+		this.resumeCpuWriteIfPortReleased(readAddress);
+		if (writeAddress !== readAddress) {
+			this.resumeCpuWriteIfPortReleased(writeAddress);
 		}
 	}
 
-	private imgDecQuiesceContinuationReady(): boolean {
-		return this.imgDecDmaWriteReady
-			&& (this.memory.readIoU32(IO_DMA_CONTROL) & DMA_CONTROL_REQUEST_MASK) === DMA_CONTROL_REQUEST_IMGDEC_WRITE;
+	private resumeCpuWriteIfPortReleased(address: number): void {
+		if (this.cpu.isMemoryWriteBlocked()
+			&& this.cpu.stalledMemoryWriteAddress() === address
+			&& !this.ownsReadPort(address)
+			&& !this.ownsWritePort(address)) {
+			this.cpu.resumeMemoryWrite(address);
+		}
 	}
 
-	private admitBlock(anchorCycle: number): void {
-		this.transferStarted = true;
-		const remaining = this.memory.readIoU32(IO_DMA_TRANSFER_COUNT);
-		const control = this.memory.readIoU32(IO_DMA_CONTROL);
+	private arbitrate(anchorCycle: number): void {
+		if (this.restorePending || this.serviceActive || this.activeChannel !== DMA_CHANNEL_NONE) {
+			return;
+		}
+		if (this.supervisorAdmissionQuiesceRequested) {
+			this.notifySupervisorBoundary();
+			return;
+		}
+		for (let offset = 0; offset < IO_DMA_CHANNEL_COUNT; offset += 1) {
+			const channel = (this.nextChannel + offset) % IO_DMA_CHANNEL_COUNT;
+			if (!this.busy(channel)) {
+				continue;
+			}
+			if (this.memory.readIoU32(IO_DMA_TRANSFER_COUNTS[channel]!) === 0) {
+				this.finishChannel(channel);
+				continue;
+			}
+			if (this.requestAsserted(channel)) {
+				this.admitBlock(channel, anchorCycle);
+				this.nextChannel = (channel + 1) % IO_DMA_CHANNEL_COUNT;
+				return;
+			}
+		}
+		this.notifySupervisorBoundary();
+	}
+
+	private admitBlock(channel: number, anchorCycle: number): void {
+		const remaining = this.memory.readIoU32(IO_DMA_TRANSFER_COUNTS[channel]!);
+		const control = this.memory.readIoU32(IO_DMA_CONTROLS[channel]!);
 		const programmedBlockWords = ((control & DMA_CONTROL_BLOCK_WORDS_MASK) >>> DMA_CONTROL_BLOCK_WORDS_SHIFT) + 1;
 		const blockWords = remaining < programmedBlockWords ? remaining : programmedBlockWords;
-		const readAddress = this.memory.readIoU32(IO_DMA_READ_ADDR);
-		const writeAddress = this.memory.readIoU32(IO_DMA_WRITE_ADDR);
-		const readRegion = this.memory.mappedRegion(readAddress);
-		const writeRegion = this.memory.mappedRegion(writeAddress);
-		let blockCycles: number;
-		if (readRegion === MemoryRegionKind.Ram && writeRegion === MemoryRegionKind.Ram) {
-			blockCycles = 2 * (blockWords * this.ramCyclesPerWord + this.ramBurstSetupCycles);
-		} else {
-			const ramBlockCycles = readRegion === MemoryRegionKind.Ram || writeRegion === MemoryRegionKind.Ram
-				? blockWords * this.ramCyclesPerWord + this.ramBurstSetupCycles
-				: 0;
-			const cartRomBlockCycles = readRegion === MemoryRegionKind.CartRom || writeRegion === MemoryRegionKind.CartRom
-				? blockWords * this.cartRomCyclesPerWord + this.cartRomBurstSetupCycles
-				: 0;
-			const readCycles = readRegion === MemoryRegionKind.Ram
-				? ramBlockCycles
-				: readRegion === MemoryRegionKind.SystemRom
-					? blockWords * this.systemRomCyclesPerWord
-					: readRegion === MemoryRegionKind.CartRom ? cartRomBlockCycles : 0;
-			const writeCycles = writeRegion === MemoryRegionKind.Ram
-				? ramBlockCycles
-				: writeRegion === MemoryRegionKind.SystemRom
-					? blockWords * this.systemRomCyclesPerWord
-					: writeRegion === MemoryRegionKind.CartRom ? cartRomBlockCycles : 0;
-			blockCycles = readCycles > writeCycles ? readCycles : writeCycles;
+		const readStep = (control & DMA_CONTROL_READ_INCREMENT) !== 0 ? IO_WORD_SIZE : 0;
+		const writeStep = (control & DMA_CONTROL_WRITE_INCREMENT) !== 0 ? IO_WORD_SIZE : 0;
+		let readAddress = this.memory.readIoU32(IO_DMA_READ_ADDRS[channel]!);
+		let writeAddress = this.memory.readIoU32(IO_DMA_WRITE_ADDRS[channel]!);
+		const scheduledReadAddress = readAddress;
+		const scheduledWriteAddress = writeAddress;
+		let readRegion = this.memory.mappedRegion(readAddress);
+		let writeRegion = this.memory.mappedRegion(writeAddress);
+		let readRegionWords = readStep === 0
+			? blockWords
+			: this.memory.mappedRegionWordSpan(readAddress, blockWords, readRegion);
+		let writeRegionWords = writeStep === 0
+			? blockWords
+			: this.memory.mappedRegionWordSpan(writeAddress, blockWords, writeRegion);
+		let readRegionStart = true;
+		let writeRegionStart = true;
+		let wordsRemaining = blockWords;
+		let blockCycles = 0;
+		while (wordsRemaining !== 0) {
+			const spanWords = readRegionWords < writeRegionWords ? readRegionWords : writeRegionWords;
+			const readCycles = this.regionSpanCycles(readRegion, spanWords, readRegionStart);
+			const writeCycles = this.regionSpanCycles(writeRegion, spanWords, writeRegionStart);
+			blockCycles += readRegion === MemoryRegionKind.Ram && writeRegion === MemoryRegionKind.Ram
+				? readCycles + writeCycles
+				: readCycles > writeCycles ? readCycles : writeCycles;
+			wordsRemaining -= spanWords;
+			readRegionWords -= spanWords;
+			writeRegionWords -= spanWords;
+			readRegionStart = false;
+			writeRegionStart = false;
+			readAddress = (readAddress + spanWords * readStep) >>> 0;
+			writeAddress = (writeAddress + spanWords * writeStep) >>> 0;
+			if (wordsRemaining !== 0 && readRegionWords === 0) {
+				readRegion = this.memory.mappedRegion(readAddress);
+				readRegionWords = this.memory.mappedRegionWordSpan(readAddress, wordsRemaining, readRegion);
+				readRegionStart = true;
+			}
+			if (wordsRemaining !== 0 && writeRegionWords === 0) {
+				writeRegion = this.memory.mappedRegion(writeAddress);
+				writeRegionWords = this.memory.mappedRegionWordSpan(writeAddress, wordsRemaining, writeRegion);
+				writeRegionStart = true;
+			}
 		}
 		if (blockCycles === 0) {
 			blockCycles = 1;
 		}
+		this.activeChannel = channel;
 		this.scheduledBlockWords = blockWords;
-		this.scheduledReadAddressWord = readAddress;
-		this.scheduledWriteAddressWord = writeAddress;
+		this.scheduledReadAddressWord = scheduledReadAddress;
+		this.scheduledWriteAddressWord = scheduledWriteAddress;
 		this.scheduledTransferCountWord = remaining;
 		this.scheduledControlWord = control;
 		this.serviceDeadline = anchorCycle + blockCycles;
 		this.scheduler.scheduleDeviceService(DEVICE_SERVICE_DMA, this.serviceDeadline);
 	}
 
-	private requestInputChanged(): void {
-		if (this.restorePending || this.serviceActive || !this.busy()) {
-			return;
+	private regionSpanCycles(region: MemoryRegionKind, wordCount: number, regionStart: boolean): number {
+		switch (region) {
+			case MemoryRegionKind.Ram:
+				return wordCount * this.ramCyclesPerWord + (regionStart ? this.ramBurstSetupCycles : 0);
+			case MemoryRegionKind.SystemRom:
+				return wordCount * this.systemRomCyclesPerWord;
+			case MemoryRegionKind.CartRom:
+				return wordCount * this.cartRomCyclesPerWord + (regionStart ? this.cartRomBurstSetupCycles : 0);
+			case MemoryRegionKind.Io:
+			case MemoryRegionKind.Other:
+				return 0;
 		}
-		if (this.scheduledBlockWords !== 0) {
-			return;
-		}
-		if (this.memory.readIoU32(IO_DMA_TRANSFER_COUNT) === 0) {
-			this.finishTransfer();
-			return;
-		}
-		if (!this.requestAsserted()) {
-			this.notifySupervisorBoundary();
-			return;
-		}
-		this.admitBlock(this.scheduler.currentNowCycles());
 	}
 
-	private requestAsserted(): boolean {
-		const request = this.memory.readIoU32(IO_DMA_CONTROL) & DMA_CONTROL_REQUEST_MASK;
-		if (this.supervisorQuiesceRequested
-			&& request !== DMA_CONTROL_REQUEST_GX_WRITE
-			&& request !== DMA_CONTROL_REQUEST_GX_READ
-			&& request !== DMA_CONTROL_REQUEST_IMGDEC_WRITE) {
+	private requestAsserted(channel: number): boolean {
+		const control = this.memory.readIoU32(IO_DMA_CONTROLS[channel]!);
+		const readRequest = (control & DMA_CONTROL_READ_REQUEST_MASK) >>> DMA_CONTROL_READ_REQUEST_SHIFT;
+		const writeRequest = (control & DMA_CONTROL_WRITE_REQUEST_MASK) >>> DMA_CONTROL_WRITE_REQUEST_SHIFT;
+		return this.requestLineAsserted(readRequest) && this.requestLineAsserted(writeRequest);
+	}
+
+	private requestLineAsserted(request: number): boolean {
+		if (request === DMA_REQUEST_FORCE) {
+			return true;
+		}
+		if (request === DMA_REQUEST_DISABLED) {
 			return false;
 		}
-		switch (request) {
-			case DMA_CONTROL_REQUEST_FORCE:
-				return true;
-			case DMA_CONTROL_REQUEST_GX_WRITE:
-				return (this.gxGpuDmaDirection === GX_GPU_DMA_DIRECTION_CPU_TO_GP0
-					|| this.gxGpuDmaDirection === GX_GPU_DMA_DIRECTION_FIFO)
-					&& this.gxGpuDmaWriteReady;
-			case DMA_CONTROL_REQUEST_GX_READ:
-				return this.gxGpuDmaDirection === GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU && this.gxGpuReadReady;
-			case DMA_CONTROL_REQUEST_APU_WRITE:
-				return this.apuDmaWriteReady;
-			case DMA_CONTROL_REQUEST_APU_READ:
-				return this.apuDmaReadReady;
-			case DMA_CONTROL_REQUEST_IMGDEC_WRITE:
-				return this.imgDecDmaWriteReady;
-			default:
-				return false;
-		}
+		return (this.requestLines & (1 << request)) !== 0;
 	}
 
-	private busy(): boolean {
-		return (this.memory.readIoU32(IO_DMA_STATUS) & DMA_STATUS_BUSY) !== 0;
+	private busy(channel: number): boolean {
+		return (this.memory.readIoU32(IO_DMA_STATUSES[channel]!) & DMA_STATUS_BUSY) !== 0;
 	}
 
-	private resumeCpuPortWrites(): void {
-		if (this.gxGpuCpuWriteReady && !this.ownsGxGpuWritePort()) {
-			this.cpu.resumeMemoryWrite(IO_GX_GPU_GP0);
-		}
-		if (!this.ownsApuDataPort()) {
-			this.cpu.resumeMemoryWrite(IO_APU_TRANSFER_DATA);
-		}
-		if (!this.ownsImgDecDataPort()) {
-			this.cpu.resumeMemoryWrite(IO_IMGDEC_DATA);
+	private channelReadAddress(channel: number): number {
+		return channel === this.activeChannel
+			? this.scheduledReadAddressWord
+			: this.memory.readIoU32(IO_DMA_READ_ADDRS[channel]!);
+	}
+
+	private channelWriteAddress(channel: number): number {
+		return channel === this.activeChannel
+			? this.scheduledWriteAddressWord
+			: this.memory.readIoU32(IO_DMA_WRITE_ADDRS[channel]!);
+	}
+
+	private notifySupervisorBoundary(): void {
+		if (this.supervisorQuiesceRequested && this.supervisorQuiescent()) {
+			this.scheduler.scheduleDeviceService(DEVICE_SERVICE_SYSTEM, this.scheduler.currentNowCycles());
 		}
 	}
 }

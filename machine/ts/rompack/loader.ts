@@ -6,7 +6,6 @@ import type {
 	ImgMeta,
 	Polygon,
 	RomAsset,
-	RomImgAsset,
 	CartManifest,
 	MachineManifest,
 	RuntimeRomPackage,
@@ -14,6 +13,7 @@ import type {
 	CartridgeLayerId,
 	color_arr,
 	CartRomHeader,
+	TextureMeta,
 } from './format';
 import { decodeBinary, decodeBinaryWithPropTable, toF32, typedArrayFromBytes } from '../common/serializer/binencoder';
 import { parseRomMetadataSection } from './metadata';
@@ -316,6 +316,9 @@ async function loadRomAssetListFromHeader(rom: Uint8Array, header: CartRomHeader
 						}
 					}
 					break;
+				case 'texture':
+					asset.texturemeta = decodedMeta as TextureMeta;
+					break;
 				case 'audio':
 					asset.audiometa = decodedMeta as AudioMeta;
 					break;
@@ -489,12 +492,11 @@ async function load(source: RawRomSource, res: RomAsset, romPackage: RuntimeRomP
 	const assetKey = baseAsset.resid;
 	switch (res.type) {
 		case 'image': {
-			const imgAsset = {
-				...baseAsset,
-			} as RomImgAsset;
-			romPackage.img[assetKey] = imgAsset;
+			romPackage.img[assetKey] = baseAsset;
 			break;
 		}
+		case 'texture':
+			break;
 		case 'audio':
 			if (opts && opts.loadAudioFromBuffer) {
 				romPackage.audio[assetKey] = await opts.loadAudioFromBuffer(source.getBytes(baseAsset));
@@ -503,8 +505,8 @@ async function load(source: RawRomSource, res: RomAsset, romPackage: RuntimeRomP
 			}
 			break;
 		case 'model': {
-			const texBuf = (baseAsset.texture_start != null && baseAsset.texture_end != null)
-				? source.getBytes({ ...baseAsset, start: baseAsset.texture_start, end: baseAsset.texture_end })
+			const texBuf = baseAsset.model_texture_start
+				? source.getBytes({ ...baseAsset, start: baseAsset.model_texture_start, end: baseAsset.model_texture_end! })
 				: undefined;
 			let model: GLTFModel;
 			if (opts && opts.loadModelFromBuffer) {

@@ -245,7 +245,7 @@ private:
 	static u64 readCyclesThunk(void* context, u32 addr, MappedBusSignals busSignals);
 	static u64 readPlusRegisterThunk(void* context, u32 addr, MappedBusSignals busSignals);
 	static void writePlusRegisterThunk(void* context, u32 addr, u64 value, MappedBusSignals busSignals);
-	static bool plusCommandWriteReadyThunk(void* context, u32 addr);
+	static bool plusCommandWriteReadyThunk(void* context, u32 addr, MappedBusSignals busSignals);
 	void synchronizePlusCompletion();
 	void publishPlusCompletion();
 	void startPlusCommand(u32 commandWord);

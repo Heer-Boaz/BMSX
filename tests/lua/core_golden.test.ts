@@ -11,8 +11,8 @@ import {
 	BUS_FAULT_READ_ONLY,
 	BUS_FAULT_UNALIGNED_IO,
 	BUS_FAULT_UNMAPPED,
-	IO_DMA_CONTROL,
-	IO_DMA_STATUS,
+	IO_DMA0_CONTROL,
+	IO_DMA0_STATUS,
 	IO_INP_KEYS,
 	IO_INP_OUTPUT_STATUS,
 	IO_INP_PADS,
@@ -73,16 +73,16 @@ test('core golden: memory RAM, ROM, and numeric I/O words stay observable', () =
 	assert.equal(memory.readMappedU32LE(GEO_SCRATCH_BASE), 0x89abcdef);
 	memory.writeMappedU16LE(GEO_SCRATCH_BASE + 4, 0xf00d);
 	assert.equal(memory.readMappedU16LE(GEO_SCRATCH_BASE + 4), 0xf00d);
-	memory.writeValue(IO_DMA_STATUS, 0xfeedcafe);
-	assert.equal(memory.readIoU32(IO_DMA_STATUS), 0xfeedcafe);
-	assert.equal(memory.readMappedU32LE(IO_DMA_STATUS), 0xfeedcafe);
-	memory.writeMappedU32LE(IO_DMA_CONTROL, 0x13572468);
-	assert.equal(memory.readIoU32(IO_DMA_CONTROL), 0x13572468);
-	assert.equal(memory.readMappedU16LE(IO_DMA_STATUS), 0);
-	assertBusFault(memory, BUS_FAULT_UNALIGNED_IO, IO_DMA_STATUS, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U16);
+	memory.writeValue(IO_DMA0_STATUS, 0xfeedcafe);
+	assert.equal(memory.readIoU32(IO_DMA0_STATUS), 0xfeedcafe);
+	assert.equal(memory.readMappedU32LE(IO_DMA0_STATUS), 0xfeedcafe);
+	memory.writeMappedU32LE(IO_DMA0_CONTROL, 0x13572468);
+	assert.equal(memory.readIoU32(IO_DMA0_CONTROL), 0x13572468);
+	assert.equal(memory.readMappedU16LE(IO_DMA0_STATUS), 0);
+	assertBusFault(memory, BUS_FAULT_UNALIGNED_IO, IO_DMA0_STATUS, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U16);
 	clearBusFault(memory);
-	memory.writeMappedU32LE(IO_DMA_STATUS, 0);
-	assertBusFault(memory, BUS_FAULT_READ_ONLY, IO_DMA_STATUS, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32);
+	memory.writeMappedU32LE(IO_DMA0_STATUS, 0);
+	assertBusFault(memory, BUS_FAULT_READ_ONLY, IO_DMA0_STATUS, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32);
 	clearBusFault(memory);
 	for (const readOnlyIcuRegister of [IO_INP_STATUS, IO_INP_KEYS, IO_INP_POINTER_BUTTONS, IO_INP_POINTER_X, IO_INP_POINTER_Y, IO_INP_POINTER_WHEEL, IO_INP_PADS, IO_INP_OUTPUT_STATUS]) {
 		memory.writeMappedU32LE(readOnlyIcuRegister, 0);

@@ -1,3 +1,4 @@
+import { DMA_REQUEST_GX_READ } from '../../bus/io';
 import type { DmaController } from '../dma/controller';
 import {
 	GX_GPU_VRAM_WIDTH,
@@ -167,8 +168,14 @@ class GxGpuReadbackPort implements GxGpuReadbackPortView {
 	public pixelCursor = 0;
 	public readonly pixelBytes = new Uint8Array(GX_GPU_TRANSFER_MAX_BYTE_COUNT);
 	public token = 0;
+	private dmaReadEnabled = false;
 
-	public constructor(public readonly dmaController: DmaController) {
+	public constructor(private readonly dmaController: DmaController) {
+	}
+
+	public setDmaReadEnabled(enabled: boolean): void {
+		this.dmaReadEnabled = enabled;
+		this.updateDmaRequest();
 	}
 
 	/** @internal Command-buffer owner transition; excluded from GxGpuReadbackPortView. */
@@ -182,7 +189,7 @@ class GxGpuReadbackPort implements GxGpuReadbackPortView {
 		this.fenceCommandCount = fenceCommandCount;
 		this.token = (this.token + 1) >>> 0;
 		this.phase = GX_GPU_READBACK_PENDING;
-		this.dmaController.setGxGpuReadReady(false);
+		this.updateDmaRequest();
 	}
 
 	/** @internal Command-buffer owner transition; excluded from GxGpuReadbackPortView. */
@@ -196,7 +203,7 @@ class GxGpuReadbackPort implements GxGpuReadbackPortView {
 		this.height = 0;
 		this.pixelCursor = 0;
 		this.token = (this.token + 1) >>> 0;
-		this.dmaController.setGxGpuReadReady(false);
+		this.updateDmaRequest();
 	}
 
 	public claimReadback(executedCommandCount: number): boolean {
@@ -210,7 +217,7 @@ class GxGpuReadbackPort implements GxGpuReadbackPortView {
 	public completeReadback(token: number): void {
 		if (this.phase === GX_GPU_READBACK_SUBMITTED && this.token === token) {
 			this.phase = GX_GPU_READBACK_READY;
-			this.dmaController.setGxGpuReadReady(true);
+			this.updateDmaRequest();
 		}
 	}
 
@@ -234,9 +241,17 @@ class GxGpuReadbackPort implements GxGpuReadbackPortView {
 			this.width = 0;
 			this.height = 0;
 			this.pixelCursor = 0;
-			this.dmaController.setGxGpuReadReady(false);
+			this.updateDmaRequest();
 		}
 		return word >>> 0;
+	}
+
+	private updateDmaRequest(): void {
+		const requestBit = 1 << DMA_REQUEST_GX_READ;
+		this.dmaController.setRequestLines(
+			requestBit,
+			this.dmaReadEnabled && this.phase === GX_GPU_READBACK_READY ? requestBit : 0,
+		);
 	}
 }
 
@@ -386,7 +401,6 @@ export class GxGpuCommandBuffer implements GxGpuCommandBufferView {
 		this.readback.pixelCursor = state.readbackPixelCursor;
 		this.readback.pixelBytes.set(state.readbackPixelBytes, 0);
 		this.readback.token = (this.readback.token + 1) >>> 0;
-		this.readback.dmaController.setGxGpuReadReady(this.readback.phase === GX_GPU_READBACK_READY);
 	}
 
 	public retireCommandsPreservingVram(retiredCommands: number): number {

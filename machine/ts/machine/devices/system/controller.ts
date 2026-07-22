@@ -23,14 +23,19 @@ import { Memory } from '../../memory/memory';
 import { DEVICE_SERVICE_SYSTEM, type DeviceScheduler } from '../../scheduler/device';
 
 export const SYSTEM_SUPERVISOR_PHASE_USER = 0;
-export const SYSTEM_SUPERVISOR_PHASE_ENTRY_QUIESCE = 1;
+export const SYSTEM_SUPERVISOR_PHASE_ENTRY_PRODUCER_QUIESCE = 1;
 export const SYSTEM_SUPERVISOR_PHASE_ENTRY_VECTOR = 2;
 export const SYSTEM_SUPERVISOR_PHASE_ACTIVE = 3;
-export const SYSTEM_SUPERVISOR_PHASE_LEAVING = 4;
+export const SYSTEM_SUPERVISOR_PHASE_BUS_QUIESCE = 4;
+export const SYSTEM_SUPERVISOR_PHASE_GPU_QUIESCE = 5;
+
+export const SYSTEM_SUPERVISOR_TARGET_USER = 0;
+export const SYSTEM_SUPERVISOR_TARGET_SUPERVISOR = 1;
 
 export type SystemControllerState = {
 	resetRequested: boolean;
 	supervisorPhase: number;
+	supervisorTransitionTarget: number;
 	supervisorResumable: boolean;
 	supervisorExitRequested: boolean;
 	printBuffer: Uint8Array;
@@ -43,6 +48,7 @@ const ASCII_NEWLINE = 10;
 export class SystemController {
 	private resetRequested = false;
 	private supervisorPhase = SYSTEM_SUPERVISOR_PHASE_USER;
+	private supervisorTransitionTarget = SYSTEM_SUPERVISOR_TARGET_USER;
 	private supervisorResumable = false;
 	private supervisorExitRequested = false;
 	private readonly printBuffer = new Uint8Array(SYS_PRINT_BUFFER_BYTES);
@@ -77,6 +83,7 @@ export class SystemController {
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_SYSTEM);
 		this.resetRequested = false;
 		this.supervisorPhase = SYSTEM_SUPERVISOR_PHASE_USER;
+		this.supervisorTransitionTarget = SYSTEM_SUPERVISOR_TARGET_USER;
 		this.supervisorResumable = false;
 		this.supervisorExitRequested = false;
 		this.printBuffer.fill(0);
@@ -193,11 +200,12 @@ export class SystemController {
 
 	public requestSupervisorLineEdge(): void {
 		if (this.supervisorPhase === SYSTEM_SUPERVISOR_PHASE_USER) {
-			this.supervisorPhase = SYSTEM_SUPERVISOR_PHASE_ENTRY_QUIESCE;
+			this.supervisorPhase = SYSTEM_SUPERVISOR_PHASE_ENTRY_PRODUCER_QUIESCE;
+			this.supervisorTransitionTarget = SYSTEM_SUPERVISOR_TARGET_SUPERVISOR;
 			this.supervisorResumable = true;
 			this.supervisorExitRequested = false;
-			this.gpu.beginSupervisorQuiesce();
-			this.dma.beginSupervisorQuiesce();
+			this.gpu.beginSupervisorControlQuiesce();
+			this.dma.beginSupervisorControlQuiesce();
 			this.geometry.beginSupervisorQuiesce();
 			this.imgdec.beginSupervisorQuiesce();
 			this.writeStatusIo();
@@ -211,32 +219,41 @@ export class SystemController {
 	}
 
 	public onService(): void {
-		if (this.supervisorPhase === SYSTEM_SUPERVISOR_PHASE_ENTRY_QUIESCE) {
-			if (!this.gpu.supervisorQuiescent()
-				|| !this.dma.supervisorQuiescent()
-				|| !this.geometry.supervisorQuiescent()
+		if (this.supervisorPhase === SYSTEM_SUPERVISOR_PHASE_ENTRY_PRODUCER_QUIESCE) {
+			if (!this.geometry.supervisorQuiescent()
 				|| !this.imgdec.supervisorQuiescent()) {
 				return;
 			}
-			this.supervisorPhase = SYSTEM_SUPERVISOR_PHASE_ENTRY_VECTOR;
-			this.cpu.abortStalledMemoryWrite();
-			this.cpu.requestNonMaskableInterrupt();
+			this.dma.beginSupervisorQuiesce();
+			this.supervisorPhase = SYSTEM_SUPERVISOR_PHASE_BUS_QUIESCE;
 			this.writeStatusIo();
-			return;
 		}
-		if (this.supervisorPhase === SYSTEM_SUPERVISOR_PHASE_LEAVING) {
-			if (!this.gpu.supervisorQuiescent()
-				|| !this.dma.supervisorQuiescent()
-				|| !this.geometry.supervisorQuiescent()
-				|| !this.imgdec.supervisorQuiescent()) {
+		if (this.supervisorPhase === SYSTEM_SUPERVISOR_PHASE_BUS_QUIESCE) {
+			if (!this.dma.supervisorQuiescent()) {
 				return;
 			}
-			this.gpu.leaveSupervisorContext();
+			this.supervisorPhase = SYSTEM_SUPERVISOR_PHASE_GPU_QUIESCE;
+			this.gpu.beginSupervisorQuiesce();
+			this.writeStatusIo();
+		}
+		if (this.supervisorPhase === SYSTEM_SUPERVISOR_PHASE_GPU_QUIESCE) {
+			if (!this.gpu.supervisorQuiescent()) {
+				return;
+			}
+			if (this.supervisorTransitionTarget === SYSTEM_SUPERVISOR_TARGET_SUPERVISOR) {
+				this.supervisorPhase = SYSTEM_SUPERVISOR_PHASE_ENTRY_VECTOR;
+				this.cpu.abortStalledMemoryWrite();
+				this.cpu.requestNonMaskableInterrupt();
+				this.writeStatusIo();
+				return;
+			}
 			this.dma.leaveSupervisorContext();
+			this.gpu.leaveSupervisorContext();
 			this.geometry.leaveSupervisorContext();
 			this.imgdec.leaveSupervisorContext();
 			this.irq.leaveSupervisorContext();
 			this.supervisorPhase = SYSTEM_SUPERVISOR_PHASE_USER;
+			this.supervisorTransitionTarget = SYSTEM_SUPERVISOR_TARGET_USER;
 			this.supervisorResumable = false;
 			this.supervisorExitRequested = false;
 			this.writeStatusIo();
@@ -254,12 +271,15 @@ export class SystemController {
 		this.gpu.enterSupervisorContext();
 		this.supervisorResumable = true;
 		this.supervisorPhase = SYSTEM_SUPERVISOR_PHASE_ACTIVE;
+		this.supervisorTransitionTarget = SYSTEM_SUPERVISOR_TARGET_SUPERVISOR;
 		this.supervisorExitRequested = false;
 		this.writeStatusIo();
 	}
 
 	private enterSupervisorFault(): void {
-		if (this.supervisorPhase === SYSTEM_SUPERVISOR_PHASE_LEAVING) {
+		if (this.supervisorTransitionTarget === SYSTEM_SUPERVISOR_TARGET_USER
+			&& (this.supervisorPhase === SYSTEM_SUPERVISOR_PHASE_BUS_QUIESCE
+				|| this.supervisorPhase === SYSTEM_SUPERVISOR_PHASE_GPU_QUIESCE)) {
 			return;
 		}
 		this.cpu.cancelNonMaskableInterrupt();
@@ -269,6 +289,7 @@ export class SystemController {
 		this.geometry.enterSupervisorFaultContext();
 		this.irq.enterSupervisorFaultContext();
 		this.supervisorPhase = SYSTEM_SUPERVISOR_PHASE_ACTIVE;
+		this.supervisorTransitionTarget = SYSTEM_SUPERVISOR_TARGET_SUPERVISOR;
 		this.supervisorResumable = false;
 		this.supervisorExitRequested = false;
 		this.writeStatusIo();
@@ -278,18 +299,20 @@ export class SystemController {
 		if (this.supervisorPhase !== SYSTEM_SUPERVISOR_PHASE_ACTIVE || !this.supervisorResumable) {
 			return;
 		}
-		this.supervisorPhase = SYSTEM_SUPERVISOR_PHASE_LEAVING;
+		this.supervisorPhase = SYSTEM_SUPERVISOR_PHASE_BUS_QUIESCE;
+		this.supervisorTransitionTarget = SYSTEM_SUPERVISOR_TARGET_USER;
 		this.supervisorExitRequested = false;
-		this.gpu.beginSupervisorQuiesce();
+		this.gpu.beginSupervisorControlQuiesce();
+		this.dma.beginSupervisorControlQuiesce();
 		this.dma.beginSupervisorQuiesce();
-		this.geometry.beginSupervisorQuiesce();
-		this.imgdec.beginSupervisorQuiesce();
 		this.writeStatusIo();
 		this.scheduler.scheduleDeviceService(DEVICE_SERVICE_SYSTEM, this.scheduler.currentNowCycles());
 	}
 
 	public cpuHeld(): boolean {
-		return this.supervisorPhase === SYSTEM_SUPERVISOR_PHASE_LEAVING;
+		return this.supervisorTransitionTarget === SYSTEM_SUPERVISOR_TARGET_USER
+			&& (this.supervisorPhase === SYSTEM_SUPERVISOR_PHASE_BUS_QUIESCE
+				|| this.supervisorPhase === SYSTEM_SUPERVISOR_PHASE_GPU_QUIESCE);
 	}
 
 	public takeResetRequest(): boolean {
@@ -302,6 +325,7 @@ export class SystemController {
 		return {
 			resetRequested: this.resetRequested,
 			supervisorPhase: this.supervisorPhase,
+			supervisorTransitionTarget: this.supervisorTransitionTarget,
 			supervisorResumable: this.supervisorResumable,
 			supervisorExitRequested: this.supervisorExitRequested,
 			printBuffer: this.printBuffer.slice(),
@@ -313,6 +337,7 @@ export class SystemController {
 	public restoreState(state: SystemControllerState): void {
 		this.resetRequested = state.resetRequested;
 		this.supervisorPhase = state.supervisorPhase;
+		this.supervisorTransitionTarget = state.supervisorTransitionTarget;
 		this.supervisorResumable = state.supervisorResumable;
 		this.supervisorExitRequested = state.supervisorExitRequested;
 		this.printBuffer.set(state.printBuffer);
@@ -324,8 +349,9 @@ export class SystemController {
 	}
 
 	public postLoad(): void {
-		if (this.supervisorPhase === SYSTEM_SUPERVISOR_PHASE_ENTRY_QUIESCE
-			|| this.supervisorPhase === SYSTEM_SUPERVISOR_PHASE_LEAVING) {
+		if (this.supervisorPhase === SYSTEM_SUPERVISOR_PHASE_ENTRY_PRODUCER_QUIESCE
+			|| this.supervisorPhase === SYSTEM_SUPERVISOR_PHASE_BUS_QUIESCE
+			|| this.supervisorPhase === SYSTEM_SUPERVISOR_PHASE_GPU_QUIESCE) {
 			this.scheduler.scheduleDeviceService(DEVICE_SERVICE_SYSTEM, this.scheduler.currentNowCycles());
 		}
 	}

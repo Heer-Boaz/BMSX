@@ -59,14 +59,13 @@ export class Machine {
 		this.dmaController = new DmaController(this.memory, this.cpu, this.irqController, this.scheduler);
 		this.audioController = new AudioController(this.memory, this.audioOutput, this.dmaController, this.irqController, this.scheduler);
 		this.geometryController = new GeometryController(this.memory, this.irqController, this.scheduler);
-		this.gxGpu = new GxGpu(this.memory, this.irqController, this.scheduler, this.dmaController);
+		this.gxGpu = new GxGpu(this.memory, this.cpu, this.irqController, this.scheduler, this.dmaController);
 		this.imgDecController = new ImgDecController(
 			this.memory,
 			this.cpu,
 			this.irqController,
 			this.scheduler,
 			this.dmaController,
-			this.gxGpu,
 			PSX_MACHINE_SPEC.imgDecCyclesPerOutputWord,
 		);
 		this.gxGte = new GxGte(this.memory, this.cpu, this.scheduler);

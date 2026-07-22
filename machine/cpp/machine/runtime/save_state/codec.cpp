@@ -675,6 +675,49 @@ GxGpuRegisterContextState decodeGxGpuRegisterContextState(const BinValue& value,
 	return state;
 }
 
+BinValue encodeGxGpuIngressContextState(const GxGpuIngressContextState& state) {
+	BinObject object;
+	object["gp0CommandTargetWordCount"] = static_cast<i64>(state.gp0CommandTargetWordCount);
+	object["gp0CommandWords"] = encodeVector(state.gp0CommandWords, encodeScalar<i64, u32>);
+	object["gp0IngressPhase"] = static_cast<i64>(state.gp0IngressPhase);
+	object["gp0IngressWordsRemaining"] = static_cast<i64>(state.gp0IngressWordsRemaining);
+	object["gp0IngressPolylineWordsPerVertex"] = static_cast<i64>(state.gp0IngressPolylineWordsPerVertex);
+	object["gp0IngressPolylinePayloadPhase"] = static_cast<i64>(state.gp0IngressPolylinePayloadPhase);
+	object["gp0ImageLoadWordsRemaining"] = static_cast<i64>(state.gp0ImageLoadWordsRemaining);
+	object["gp0ImageLoadCommandWordStart"] = static_cast<i64>(state.gp0ImageLoadCommandWordStart);
+	object["gp0ImageLoadCommandWordCount"] = static_cast<i64>(state.gp0ImageLoadCommandWordCount);
+	object["gp0ImageLoadCommandOpcode"] = static_cast<i64>(state.gp0ImageLoadCommandOpcode);
+	object["gp0PolylineWordsPerVertex"] = static_cast<i64>(state.gp0PolylineWordsPerVertex);
+	object["gp0PolylinePayloadPhase"] = static_cast<i64>(state.gp0PolylinePayloadPhase);
+	object["gp0PolylineCommandWordStart"] = static_cast<i64>(state.gp0PolylineCommandWordStart);
+	object["gp0PolylineCommandWordCount"] = static_cast<i64>(state.gp0PolylineCommandWordCount);
+	object["gp0PolylineCommandOpcode"] = static_cast<i64>(state.gp0PolylineCommandOpcode);
+	object["commandBufferWords"] = encodeVector(state.commandBufferWords, encodeScalar<i64, u32>);
+	return BinValue(std::move(object));
+}
+
+GxGpuIngressContextState decodeGxGpuIngressContextState(const BinValue& value, const char* label) {
+	const BinObject& object = requireObject(value, label);
+	GxGpuIngressContextState state;
+	state.gp0CommandTargetWordCount = requireBoundedU32(requireField(object, "gp0CommandTargetWordCount", label), "machine.gxGpu.userIngressContext.gp0CommandTargetWordCount", 0u, GX_GPU_GP0_COMMAND_BUFFER_WORDS);
+	state.gp0CommandWords = decodeU32VectorWithMaxLength(requireField(object, "gp0CommandWords", label), "machine.gxGpu.userIngressContext.gp0CommandWords", GX_GPU_GP0_COMMAND_BUFFER_WORDS);
+	state.gp0IngressPhase = requireBoundedU32(requireField(object, "gp0IngressPhase", label), "machine.gxGpu.userIngressContext.gp0IngressPhase", 0u, GX_GPU_GP0_INGRESS_POLYLINE_PAYLOAD);
+	state.gp0IngressWordsRemaining = requireBoundedU32(requireField(object, "gp0IngressWordsRemaining", label), "machine.gxGpu.userIngressContext.gp0IngressWordsRemaining", 0u, GX_GPU_COMMAND_WORD_CAPACITY);
+	state.gp0IngressPolylineWordsPerVertex = requireBoundedU32(requireField(object, "gp0IngressPolylineWordsPerVertex", label), "machine.gxGpu.userIngressContext.gp0IngressPolylineWordsPerVertex", 0u, 2u);
+	state.gp0IngressPolylinePayloadPhase = requireBoundedU32(requireField(object, "gp0IngressPolylinePayloadPhase", label), "machine.gxGpu.userIngressContext.gp0IngressPolylinePayloadPhase", 0u, 1u);
+	state.gp0ImageLoadWordsRemaining = requireBoundedU32(requireField(object, "gp0ImageLoadWordsRemaining", label), "machine.gxGpu.userIngressContext.gp0ImageLoadWordsRemaining", 0u, GX_GPU_COMMAND_WORD_CAPACITY);
+	state.gp0ImageLoadCommandWordStart = requireBoundedU32(requireField(object, "gp0ImageLoadCommandWordStart", label), "machine.gxGpu.userIngressContext.gp0ImageLoadCommandWordStart", 0u, GX_GPU_COMMAND_WORD_CAPACITY);
+	state.gp0ImageLoadCommandWordCount = requireBoundedU32(requireField(object, "gp0ImageLoadCommandWordCount", label), "machine.gxGpu.userIngressContext.gp0ImageLoadCommandWordCount", 0u, GX_GPU_COMMAND_WORD_CAPACITY);
+	state.gp0ImageLoadCommandOpcode = static_cast<u8>(requireBoundedU32(requireField(object, "gp0ImageLoadCommandOpcode", label), "machine.gxGpu.userIngressContext.gp0ImageLoadCommandOpcode", 0u, 0xffu));
+	state.gp0PolylineWordsPerVertex = requireBoundedU32(requireField(object, "gp0PolylineWordsPerVertex", label), "machine.gxGpu.userIngressContext.gp0PolylineWordsPerVertex", 0u, GX_GPU_GP0_COMMAND_BUFFER_WORDS);
+	state.gp0PolylinePayloadPhase = requireBoundedU32(requireField(object, "gp0PolylinePayloadPhase", label), "machine.gxGpu.userIngressContext.gp0PolylinePayloadPhase", 0u, GX_GPU_GP0_COMMAND_BUFFER_WORDS);
+	state.gp0PolylineCommandWordStart = requireBoundedU32(requireField(object, "gp0PolylineCommandWordStart", label), "machine.gxGpu.userIngressContext.gp0PolylineCommandWordStart", 0u, GX_GPU_COMMAND_WORD_CAPACITY);
+	state.gp0PolylineCommandWordCount = requireBoundedU32(requireField(object, "gp0PolylineCommandWordCount", label), "machine.gxGpu.userIngressContext.gp0PolylineCommandWordCount", 0u, GX_GPU_COMMAND_WORD_CAPACITY);
+	state.gp0PolylineCommandOpcode = static_cast<u8>(requireBoundedU32(requireField(object, "gp0PolylineCommandOpcode", label), "machine.gxGpu.userIngressContext.gp0PolylineCommandOpcode", 0u, 0xffu));
+	state.commandBufferWords = decodeU32VectorWithMaxLength(requireField(object, "commandBufferWords", label), "machine.gxGpu.userIngressContext.commandBufferWords", GX_GPU_COMMAND_WORD_CAPACITY);
+	return state;
+}
+
 BinValue encodeGxGpuPcrtcState(const GxGpuPcrtcState& state) {
 	BinObject object;
 	object["registerWords"] = encodeFixedArray(state.registerWords, encodeScalar<i64, u32>);
@@ -708,11 +751,6 @@ GxGpuPcrtcState decodeGxGpuPcrtcState(const BinValue& value, const char* label) 
 
 BinValue encodeGxGpuState(const GxGpuState& state) {
 	BinObject object;
-	BinArray gp0FifoWords;
-	gp0FifoWords.reserve(state.gp0FifoWordCount);
-	for (size_t index = 0u; index < state.gp0FifoWordCount; index += 1u) {
-		gp0FifoWords.emplace_back(static_cast<i64>(state.gp0FifoWords[index]));
-	}
 	object["gp0Word"] = static_cast<i64>(state.gp0Word);
 	object["gp1Word"] = static_cast<i64>(state.gp1Word);
 	object["displayModeWord"] = static_cast<i64>(state.displayModeWord);
@@ -720,8 +758,8 @@ BinValue encodeGxGpuState(const GxGpuState& state) {
 	object["gp0CommandWordCount"] = static_cast<i64>(state.gp0CommandWordCount);
 	object["gp0CommandTargetWordCount"] = static_cast<i64>(state.gp0CommandTargetWordCount);
 	object["gp0CommandWords"] = encodeVector(state.gp0CommandWords, encodeScalar<i64, u32>);
-	object["gp0FifoWordCount"] = static_cast<i64>(state.gp0FifoWordCount);
-	object["gp0FifoWords"] = BinValue(std::move(gp0FifoWords));
+	object["gp0FifoWords"] = encodeVector(state.gp0FifoWords, encodeScalar<i64, u32>);
+	object["gp0DmaIngressWords"] = encodeVector(state.gp0DmaIngressWords, encodeScalar<i64, u32>);
 	object["gp0IngressPhase"] = static_cast<i64>(state.gp0IngressPhase);
 	object["gp0IngressWordsRemaining"] = static_cast<i64>(state.gp0IngressWordsRemaining);
 	object["gp0IngressPolylineWordsPerVertex"] = static_cast<i64>(state.gp0IngressPolylineWordsPerVertex);
@@ -758,13 +796,10 @@ BinValue encodeGxGpuState(const GxGpuState& state) {
 	object["pcrtcPresentationPending"] = state.pcrtcPresentationPending;
 	object["vramPresentationPending"] = state.vramPresentationPending;
 	object["supervisorQuiesceRequested"] = state.supervisorQuiesceRequested;
+	object["supervisorIngressQuiesceRequested"] = state.supervisorIngressQuiesceRequested;
 	object["supervisorIngressStopped"] = state.supervisorIngressStopped;
-	object["imgDecGp0Requested"] = state.imgDecGp0Requested;
-	object["imgDecGp0Active"] = state.imgDecGp0Active;
-	object["imgDecGp0AbortPending"] = state.imgDecGp0AbortPending;
-	object["imgDecGp0DmaContinuation"] = state.imgDecGp0DmaContinuation;
-	object["imgDecGp0CommittedFifoWordCount"] = static_cast<i64>(state.imgDecGp0CommittedFifoWordCount);
 	object["userContext"] = encodeGxGpuRegisterContextState(state.userContext);
+	object["userIngressContext"] = encodeGxGpuIngressContextState(state.userIngressContext);
 	object["commandBuffer"] = encodeGxGpuCommandBufferState(state.commandBuffer);
 	return BinValue(std::move(object));
 }
@@ -780,14 +815,8 @@ GxGpuState decodeGxGpuState(const BinValue& value, const char* label) {
 	state.gp0CommandWordCount = requireBoundedU32(requireField(object, "gp0CommandWordCount", label), "machine.gxGpu.gp0CommandWordCount", 0u, GX_GPU_GP0_COMMAND_BUFFER_WORDS);
 	state.gp0CommandTargetWordCount = requireBoundedU32(requireField(object, "gp0CommandTargetWordCount", label), "machine.gxGpu.gp0CommandTargetWordCount", 0u, GX_GPU_GP0_COMMAND_BUFFER_WORDS);
 	state.gp0CommandWords = decodeU32VectorWithLength(requireField(object, "gp0CommandWords", label), "machine.gxGpu.gp0CommandWords", state.gp0CommandWordCount);
-	state.gp0FifoWordCount = requireBoundedU32(requireField(object, "gp0FifoWordCount", label), "machine.gxGpu.gp0FifoWordCount", 0u, GX_GPU_COMMAND_FIFO_STORAGE_WORD_CAPACITY);
-	const BinArray& gp0FifoWords = requireArray(requireField(object, "gp0FifoWords", label), "machine.gxGpu.gp0FifoWords");
-	if (gp0FifoWords.size() != state.gp0FifoWordCount) {
-		throw BMSX_RUNTIME_ERROR("machine.gxGpu.gp0FifoWords length does not match gp0FifoWordCount.");
-	}
-	for (size_t index = 0u; index < state.gp0FifoWordCount; index += 1u) {
-		state.gp0FifoWords[index] = requireU32(gp0FifoWords[index], "machine.gxGpu.gp0FifoWords[]");
-	}
+	state.gp0FifoWords = decodeU32VectorWithMaxLength(requireField(object, "gp0FifoWords", label), "machine.gxGpu.gp0FifoWords", GX_GPU_COMMAND_FIFO_WORD_CAPACITY);
+	state.gp0DmaIngressWords = decodeU32VectorWithMaxLength(requireField(object, "gp0DmaIngressWords", label), "machine.gxGpu.gp0DmaIngressWords", GX_GPU_DMA_INGRESS_WORD_CAPACITY);
 	state.gp0IngressPhase = requireBoundedU32(requireField(object, "gp0IngressPhase", label), "machine.gxGpu.gp0IngressPhase", 0u, GX_GPU_GP0_INGRESS_POLYLINE_PAYLOAD);
 	state.gp0IngressWordsRemaining = requireBoundedU32(requireField(object, "gp0IngressWordsRemaining", label), "machine.gxGpu.gp0IngressWordsRemaining", 0u, GX_GPU_COMMAND_WORD_CAPACITY);
 	state.gp0IngressPolylineWordsPerVertex = requireBoundedU32(requireField(object, "gp0IngressPolylineWordsPerVertex", label), "machine.gxGpu.gp0IngressPolylineWordsPerVertex", 0u, 2u);
@@ -824,13 +853,10 @@ GxGpuState decodeGxGpuState(const BinValue& value, const char* label) {
 	state.pcrtcPresentationPending = requireBool(requireField(object, "pcrtcPresentationPending", label), "machine.gxGpu.pcrtcPresentationPending");
 	state.vramPresentationPending = requireBool(requireField(object, "vramPresentationPending", label), "machine.gxGpu.vramPresentationPending");
 	state.supervisorQuiesceRequested = requireBool(requireField(object, "supervisorQuiesceRequested", label), "machine.gxGpu.supervisorQuiesceRequested");
+	state.supervisorIngressQuiesceRequested = requireBool(requireField(object, "supervisorIngressQuiesceRequested", label), "machine.gxGpu.supervisorIngressQuiesceRequested");
 	state.supervisorIngressStopped = requireBool(requireField(object, "supervisorIngressStopped", label), "machine.gxGpu.supervisorIngressStopped");
-	state.imgDecGp0Requested = requireBool(requireField(object, "imgDecGp0Requested", label), "machine.gxGpu.imgDecGp0Requested");
-	state.imgDecGp0Active = requireBool(requireField(object, "imgDecGp0Active", label), "machine.gxGpu.imgDecGp0Active");
-	state.imgDecGp0AbortPending = requireBool(requireField(object, "imgDecGp0AbortPending", label), "machine.gxGpu.imgDecGp0AbortPending");
-	state.imgDecGp0DmaContinuation = requireBool(requireField(object, "imgDecGp0DmaContinuation", label), "machine.gxGpu.imgDecGp0DmaContinuation");
-	state.imgDecGp0CommittedFifoWordCount = requireBoundedU32(requireField(object, "imgDecGp0CommittedFifoWordCount", label), "machine.gxGpu.imgDecGp0CommittedFifoWordCount", 0u, GX_GPU_COMMAND_FIFO_STORAGE_WORD_CAPACITY);
 	state.userContext = decodeGxGpuRegisterContextState(requireField(object, "userContext", label), "machine.gxGpu.userContext");
+	state.userIngressContext = decodeGxGpuIngressContextState(requireField(object, "userIngressContext", label), "machine.gxGpu.userIngressContext");
 	return state;
 }
 
@@ -1092,52 +1118,68 @@ AudioControllerState decodeAudioControllerState(const BinValue& value, const cha
 	return state;
 }
 
-BinValue encodeDmaControllerState(const DmaControllerState& state) {
+BinValue encodeDmaChannelState(const DmaChannelState& state) {
 	BinObject object;
 	object["readAddressWord"] = encodeScalar<f64>(state.readAddressWord);
 	object["writeAddressWord"] = encodeScalar<f64>(state.writeAddressWord);
 	object["transferCountWord"] = encodeScalar<f64>(state.transferCountWord);
 	object["controlWord"] = encodeScalar<f64>(state.controlWord);
 	object["statusWord"] = encodeScalar<f64>(state.statusWord);
+	return BinValue(std::move(object));
+}
+
+DmaChannelState decodeDmaChannelState(const BinValue& value, const char* label) {
+	const BinObject& object = requireObject(value, label);
+	DmaChannelState state;
+	state.readAddressWord = requireU32(requireField(object, "readAddressWord", label), label);
+	state.writeAddressWord = requireU32(requireField(object, "writeAddressWord", label), label);
+	state.transferCountWord = requireU32(requireField(object, "transferCountWord", label), label);
+	state.controlWord = requireU32(requireField(object, "controlWord", label), label);
+	state.statusWord = requireU32(requireField(object, "statusWord", label), label);
+	return state;
+}
+
+BinValue encodeDmaControllerState(const DmaControllerState& state) {
+	BinObject object;
+	object["channels"] = encodeFixedArray(state.channels, encodeDmaChannelState);
+	object["activeChannel"] = encodeScalar<f64>(state.activeChannel);
+	object["nextChannel"] = encodeScalar<f64>(state.nextChannel);
 	object["scheduledBlockWords"] = encodeScalar<f64>(state.scheduledBlockWords);
 	object["scheduledBlockCycles"] = encodeScalar<f64>(state.scheduledBlockCycles);
 	object["scheduledReadAddressWord"] = encodeScalar<f64>(state.scheduledReadAddressWord);
 	object["scheduledWriteAddressWord"] = encodeScalar<f64>(state.scheduledWriteAddressWord);
 	object["scheduledTransferCountWord"] = encodeScalar<f64>(state.scheduledTransferCountWord);
 	object["scheduledControlWord"] = encodeScalar<f64>(state.scheduledControlWord);
-	object["transferStarted"] = state.transferStarted;
 	object["supervisorQuiesceRequested"] = state.supervisorQuiesceRequested;
-	object["userReadAddressWord"] = encodeScalar<f64>(state.userReadAddressWord);
-	object["userWriteAddressWord"] = encodeScalar<f64>(state.userWriteAddressWord);
-	object["userTransferCountWord"] = encodeScalar<f64>(state.userTransferCountWord);
-	object["userControlWord"] = encodeScalar<f64>(state.userControlWord);
-	object["userStatusWord"] = encodeScalar<f64>(state.userStatusWord);
-	object["userTransferStarted"] = state.userTransferStarted;
+	object["supervisorAdmissionQuiesceRequested"] = state.supervisorAdmissionQuiesceRequested;
+	object["userChannels"] = encodeFixedArray(state.userChannels, encodeDmaChannelState);
+	object["userNextChannel"] = encodeScalar<f64>(state.userNextChannel);
 	return BinValue(std::move(object));
 }
 
 DmaControllerState decodeDmaControllerState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
+	const BinArray& channels = requireArray(requireField(object, "channels", label), "machine.dma.channels");
+	const BinArray& userChannels = requireArray(requireField(object, "userChannels", label), "machine.dma.userChannels");
+	if (channels.size() != IO_DMA_CHANNEL_COUNT || userChannels.size() != IO_DMA_CHANNEL_COUNT) {
+		throw BMSX_RUNTIME_ERROR("machine.dma must contain two DMA channels.");
+	}
 	DmaControllerState state;
-	state.readAddressWord = requireU32(requireField(object, "readAddressWord", label), "machine.dma.readAddressWord");
-	state.writeAddressWord = requireU32(requireField(object, "writeAddressWord", label), "machine.dma.writeAddressWord");
-	state.transferCountWord = requireU32(requireField(object, "transferCountWord", label), "machine.dma.transferCountWord");
-	state.controlWord = requireU32(requireField(object, "controlWord", label), "machine.dma.controlWord");
-	state.statusWord = requireU32(requireField(object, "statusWord", label), "machine.dma.statusWord");
+	for (u32 channel = 0u; channel < IO_DMA_CHANNEL_COUNT; channel += 1u) {
+		state.channels[channel] = decodeDmaChannelState(channels[channel], "machine.dma.channels[]");
+		state.userChannels[channel] = decodeDmaChannelState(userChannels[channel], "machine.dma.userChannels[]");
+	}
+	state.activeChannel = requireBoundedU32(requireField(object, "activeChannel", label), "machine.dma.activeChannel", 0u, IO_DMA_CHANNEL_COUNT);
+	state.nextChannel = requireBoundedU32(requireField(object, "nextChannel", label), "machine.dma.nextChannel", 0u, IO_DMA_CHANNEL_COUNT - 1u);
 	state.scheduledBlockWords = requireBoundedU32(requireField(object, "scheduledBlockWords", label), "machine.dma.scheduledBlockWords", 0u, 16u);
 	state.scheduledBlockCycles = requireI64(requireField(object, "scheduledBlockCycles", label), "machine.dma.scheduledBlockCycles");
 	state.scheduledReadAddressWord = requireU32(requireField(object, "scheduledReadAddressWord", label), "machine.dma.scheduledReadAddressWord");
 	state.scheduledWriteAddressWord = requireU32(requireField(object, "scheduledWriteAddressWord", label), "machine.dma.scheduledWriteAddressWord");
 	state.scheduledTransferCountWord = requireU32(requireField(object, "scheduledTransferCountWord", label), "machine.dma.scheduledTransferCountWord");
 	state.scheduledControlWord = requireU32(requireField(object, "scheduledControlWord", label), "machine.dma.scheduledControlWord");
-	state.transferStarted = requireBool(requireField(object, "transferStarted", label), "machine.dma.transferStarted");
 	state.supervisorQuiesceRequested = requireBool(requireField(object, "supervisorQuiesceRequested", label), "machine.dma.supervisorQuiesceRequested");
-	state.userReadAddressWord = requireU32(requireField(object, "userReadAddressWord", label), "machine.dma.userReadAddressWord");
-	state.userWriteAddressWord = requireU32(requireField(object, "userWriteAddressWord", label), "machine.dma.userWriteAddressWord");
-	state.userTransferCountWord = requireU32(requireField(object, "userTransferCountWord", label), "machine.dma.userTransferCountWord");
-	state.userControlWord = requireU32(requireField(object, "userControlWord", label), "machine.dma.userControlWord");
-	state.userStatusWord = requireU32(requireField(object, "userStatusWord", label), "machine.dma.userStatusWord");
-	state.userTransferStarted = requireBool(requireField(object, "userTransferStarted", label), "machine.dma.userTransferStarted");
+	state.supervisorAdmissionQuiesceRequested = requireBool(requireField(object, "supervisorAdmissionQuiesceRequested", label), "machine.dma.supervisorAdmissionQuiesceRequested");
+	state.userNextChannel = requireBoundedU32(requireField(object, "userNextChannel", label), "machine.dma.userNextChannel", 0u, IO_DMA_CHANNEL_COUNT - 1u);
 	return state;
 }
 
@@ -1154,6 +1196,7 @@ BinValue encodeImgDecControllerState(const ImgDecControllerState& state) {
 	object["decodedWordCount"] = encodeScalar<f64>(state.decodedWordCount);
 	object["textureWordCount"] = encodeScalar<f64>(state.textureWordCount);
 	object["clutWordCount"] = encodeScalar<f64>(state.clutWordCount);
+	object["outputWordsRead"] = encodeScalar<f64>(state.outputWordsRead);
 	object["decodePhase"] = encodeScalar<f64>(state.decodePhase);
 	object["outputStage"] = encodeScalar<f64>(state.outputStage);
 	object["runWordsRemaining"] = encodeScalar<f64>(state.runWordsRemaining);
@@ -1182,6 +1225,7 @@ ImgDecControllerState decodeImgDecControllerState(const BinValue& value, const c
 	state.decodedWordCount = requireU32(requireField(object, "decodedWordCount", label), "machine.imgDec.decodedWordCount");
 	state.textureWordCount = requireU32(requireField(object, "textureWordCount", label), "machine.imgDec.textureWordCount");
 	state.clutWordCount = requireU32(requireField(object, "clutWordCount", label), "machine.imgDec.clutWordCount");
+	state.outputWordsRead = requireU32(requireField(object, "outputWordsRead", label), "machine.imgDec.outputWordsRead");
 	state.decodePhase = requireBoundedU32(requireField(object, "decodePhase", label), "machine.imgDec.decodePhase", 0u, 8u);
 	state.outputStage = requireBoundedU32(requireField(object, "outputStage", label), "machine.imgDec.outputStage", 0u, 4u);
 	state.runWordsRemaining = requireU32(requireField(object, "runWordsRemaining", label), "machine.imgDec.runWordsRemaining");
@@ -1200,6 +1244,7 @@ BinValue encodeSystemControllerState(const SystemControllerState& state) {
 	BinObject object;
 	object["resetRequested"] = state.resetRequested;
 	object["supervisorPhase"] = static_cast<i64>(state.supervisorPhase);
+	object["supervisorTransitionTarget"] = static_cast<i64>(state.supervisorTransitionTarget);
 	object["supervisorResumable"] = state.supervisorResumable;
 	object["supervisorExitRequested"] = state.supervisorExitRequested;
 	object["printBuffer"] = BinValue(BinBinary(state.printBuffer.begin(), state.printBuffer.end()));
@@ -1212,7 +1257,8 @@ SystemControllerState decodeSystemControllerState(const BinValue& value, const c
 	const BinObject& object = requireObject(value, label);
 	SystemControllerState state;
 	state.resetRequested = requireBool(requireField(object, "resetRequested", label), "machineState.machine.systemControl.resetRequested");
-	state.supervisorPhase = static_cast<u8>(requireBoundedU32(requireField(object, "supervisorPhase", label), "machineState.machine.systemControl.supervisorPhase", SYSTEM_SUPERVISOR_PHASE_USER, SYSTEM_SUPERVISOR_PHASE_LEAVING));
+	state.supervisorPhase = static_cast<u8>(requireBoundedU32(requireField(object, "supervisorPhase", label), "machineState.machine.systemControl.supervisorPhase", SYSTEM_SUPERVISOR_PHASE_USER, SYSTEM_SUPERVISOR_PHASE_GPU_QUIESCE));
+	state.supervisorTransitionTarget = static_cast<u8>(requireBoundedU32(requireField(object, "supervisorTransitionTarget", label), "machineState.machine.systemControl.supervisorTransitionTarget", SYSTEM_SUPERVISOR_TARGET_USER, SYSTEM_SUPERVISOR_TARGET_SUPERVISOR));
 	state.supervisorResumable = requireBool(requireField(object, "supervisorResumable", label), "machineState.machine.systemControl.supervisorResumable");
 	state.supervisorExitRequested = requireBool(requireField(object, "supervisorExitRequested", label), "machineState.machine.systemControl.supervisorExitRequested");
 	const BinBinary& printBuffer = requireBinaryWithLength(requireField(object, "printBuffer", label), "machineState.machine.systemControl.printBuffer", SYS_PRINT_BUFFER_BYTES);

@@ -16,14 +16,19 @@ class IrqController;
 class ImgDecController;
 
 constexpr u8 SYSTEM_SUPERVISOR_PHASE_USER = 0u;
-constexpr u8 SYSTEM_SUPERVISOR_PHASE_ENTRY_QUIESCE = 1u;
+constexpr u8 SYSTEM_SUPERVISOR_PHASE_ENTRY_PRODUCER_QUIESCE = 1u;
 constexpr u8 SYSTEM_SUPERVISOR_PHASE_ENTRY_VECTOR = 2u;
 constexpr u8 SYSTEM_SUPERVISOR_PHASE_ACTIVE = 3u;
-constexpr u8 SYSTEM_SUPERVISOR_PHASE_LEAVING = 4u;
+constexpr u8 SYSTEM_SUPERVISOR_PHASE_BUS_QUIESCE = 4u;
+constexpr u8 SYSTEM_SUPERVISOR_PHASE_GPU_QUIESCE = 5u;
+
+constexpr u8 SYSTEM_SUPERVISOR_TARGET_USER = 0u;
+constexpr u8 SYSTEM_SUPERVISOR_TARGET_SUPERVISOR = 1u;
 
 struct SystemControllerState {
 	bool resetRequested = false;
 	u8 supervisorPhase = SYSTEM_SUPERVISOR_PHASE_USER;
+	u8 supervisorTransitionTarget = SYSTEM_SUPERVISOR_TARGET_USER;
 	bool supervisorResumable = false;
 	bool supervisorExitRequested = false;
 	std::array<u8, SYS_PRINT_BUFFER_BYTES> printBuffer{};
@@ -45,7 +50,11 @@ public:
 	void reset();
 	void requestSupervisorLineEdge();
 	void onService();
-	bool cpuHeld() const { return m_supervisorPhase == SYSTEM_SUPERVISOR_PHASE_LEAVING; }
+	bool cpuHeld() const {
+		return m_supervisorTransitionTarget == SYSTEM_SUPERVISOR_TARGET_USER
+			&& (m_supervisorPhase == SYSTEM_SUPERVISOR_PHASE_BUS_QUIESCE
+				|| m_supervisorPhase == SYSTEM_SUPERVISOR_PHASE_GPU_QUIESCE);
+	}
 	bool takeResetRequest();
 	SystemControllerState captureState() const;
 	void restoreState(const SystemControllerState& state);
@@ -80,6 +89,7 @@ private:
 	ImgDecController& m_imgDec;
 	bool m_resetRequested = false;
 	u8 m_supervisorPhase = SYSTEM_SUPERVISOR_PHASE_USER;
+	u8 m_supervisorTransitionTarget = SYSTEM_SUPERVISOR_TARGET_USER;
 	bool m_supervisorResumable = false;
 	bool m_supervisorExitRequested = false;
 	std::array<u8, SYS_PRINT_BUFFER_BYTES> m_printBuffer{};

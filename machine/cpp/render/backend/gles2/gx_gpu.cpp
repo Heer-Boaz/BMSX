@@ -2,6 +2,7 @@
 
 #include "machine/devices/gx/gpu.h"
 #include "machine/devices/gx/gpu_command_buffer.h"
+#include "machine/devices/gx/gp0.h"
 #include "machine/devices/gx/gpu_pcrtc.h"
 #include "render/backend/gx_gpu_render_rules.h"
 #include "render/backend/gles2/backend.h"
@@ -43,8 +44,6 @@ constexpr size_t kGxGpuTexturedFloatCapacity = GX_GPU_COMMAND_CAPACITY * kGxGpuP
 constexpr u32 kGxGpuTexturePageCoordSize = 256u;
 constexpr u32 kGxGpuTexturePage4BitWidthWords = 64u;
 constexpr u32 kGxGpuTexturePage8BitWidthWords = 128u;
-constexpr u32 kGxGpuClut4BitWords = 16u;
-constexpr u32 kGxGpuClut8BitWords = 256u;
 constexpr size_t kGxGpuTransferVertexFloats = 4u;
 constexpr size_t kGxGpuTransferVerticesPerSegment = 6u;
 constexpr size_t kGxGpuTransferSegmentsPerRow = 3u;
@@ -2100,7 +2099,7 @@ u32 syncGxGpuTexturedSourceTexture(
 	if (textureMode < 2u) {
 		const u32 clutX = gxGpuTextureClutBaseX(textureWord);
 		const u32 clutY = gxGpuTextureClutBaseY(textureWord, vramYAddressExtensionWord);
-		const u32 clutWidth = textureMode == 0u ? kGxGpuClut4BitWords : kGxGpuClut8BitWords;
+		const u32 clutWidth = textureMode == 0u ? GX_GPU_CLUT_4BIT_WORDS : GX_GPU_CLUT_8BIT_WORDS;
 		if (gxGpuVramLogicalAreaOverlapsBounds(clutX, clutY, clutWidth, 1u, commandRect.left, commandRect.top, commandRect.right, commandRect.bottom, vramYAddressExtensionWord)) overlaps |= GX_GPU_TEXTURE_SOURCE_COMMAND_OVERLAP;
 		if (gxGpuVramLogicalAreaOverlapsBounds(clutX, clutY, clutWidth, 1u, batchRect.left, batchRect.top, batchRect.right, batchRect.bottom, vramYAddressExtensionWord)) overlaps |= GX_GPU_TEXTURE_SOURCE_BATCH_OVERLAP;
 		syncGxGpuSampleTextureLogicalArea(clutX, clutY, clutWidth, 1u, vramYAddressExtensionWord);

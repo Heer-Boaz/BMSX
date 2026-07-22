@@ -5,7 +5,7 @@ import {
 	romAssetIsPacked,
 	type RomAssetPayloadRange,
 } from '../asset_layout';
-import type { AudioMeta, ImgMeta, RomAsset, RomManifest } from '../format';
+import type { AudioMeta, ImgMeta, RomAsset, RomManifest, TextureMeta } from '../format';
 import { buildRomMetadataSection } from './metadata_encode';
 
 const EMPTY_BYTES = new Uint8Array(0);
@@ -39,14 +39,14 @@ export function layoutRomProgramPrefix(
 	}
 	const assetLayout = layoutRomAssetPayloads(assetList, includeLuaAssets);
 	const metadataAssets: RomAsset[] = [];
-	const metadataValues: Array<ImgMeta | AudioMeta> = [];
+	const metadataValues: Array<ImgMeta | TextureMeta | AudioMeta> = [];
 	let entryIndex = 0;
 	for (let index = 0; index < assetList.length; index += 1) {
 		const source = assetList[index];
 		if (!romAssetIsPacked(source, includeLuaAssets)) {
 			continue;
 		}
-		const metadata = source.imgmeta !== undefined ? source.imgmeta : source.audiometa;
+		const metadata = source.imgmeta || source.texturemeta || source.audiometa;
 		if (metadata !== undefined) {
 			metadataAssets.push(assetLayout.entries[entryIndex]);
 			metadataValues.push(metadata);

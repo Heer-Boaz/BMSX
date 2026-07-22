@@ -2234,13 +2234,6 @@ void CPU::resumeMemoryWrite(uint32_t address) {
 	}
 }
 
-void CPU::abortStalledMemoryWrite() {
-	// A stalled mapped store has issued no bus cycle and blockMappedWrite()
-	// already rewound its PC. Supervisor entry can therefore abort the wait;
-	// RFE retries the complete instruction at EPC in the restored user context.
-	m_memoryWriteBlocked = false;
-}
-
 RunResult CPU::run(int instructionBudget) {
 	instructionBudgetRemaining = instructionBudget;
 	auto& frames = m_frames;

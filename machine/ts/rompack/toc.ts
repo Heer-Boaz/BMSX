@@ -15,6 +15,7 @@ export const ROM_TOC_ASSET_TYPE_MODEL = 7;
 export const ROM_TOC_ASSET_TYPE_AEM = 8;
 export const ROM_TOC_ASSET_TYPE_LUA = 9;
 export const ROM_TOC_ASSET_TYPE_CODE = 10;
+export const ROM_TOC_ASSET_TYPE_TEXTURE = 11;
 const utf8Decoder = new TextDecoder();
 
 export type RomTocPayload = {
@@ -24,6 +25,7 @@ export type RomTocPayload = {
 
 export enum AssetTypeKind {
 	Image,
+	Texture,
 	Audio,
 	Model,
 	Aem,
@@ -37,6 +39,7 @@ export enum AssetTypeKind {
 
 const ASSET_TYPE_IDS: Record<asset_type, number> = {
 	image: ROM_TOC_ASSET_TYPE_IMAGE,
+	texture: ROM_TOC_ASSET_TYPE_TEXTURE,
 	audio: ROM_TOC_ASSET_TYPE_AUDIO,
 	data: ROM_TOC_ASSET_TYPE_DATA,
 	bin: ROM_TOC_ASSET_TYPE_BIN,
@@ -58,6 +61,7 @@ export function assetTypeToId(type: asset_type): number {
 export function assetTypeFromId(id: number): asset_type {
 	switch (id) {
 		case ROM_TOC_ASSET_TYPE_IMAGE: return 'image';
+		case ROM_TOC_ASSET_TYPE_TEXTURE: return 'texture';
 		case ROM_TOC_ASSET_TYPE_AUDIO: return 'audio';
 		case ROM_TOC_ASSET_TYPE_DATA: return 'data';
 		case ROM_TOC_ASSET_TYPE_BIN: return 'bin';
@@ -75,6 +79,9 @@ export function resolveAssetTypeKind(assetType: asset_type): AssetTypeKind {
 	switch (assetType[0]) {
 		case 'i':
 			if (assetType === 'image') return AssetTypeKind.Image;
+			break;
+		case 't':
+			if (assetType === 'texture') return AssetTypeKind.Texture;
 			break;
 		case 'a':
 			if (assetType === 'audio') return AssetTypeKind.Audio;
@@ -164,8 +171,8 @@ export function decodeRomToc(buffer: Uint8Array): RomTocPayload {
 		const compiledEnd = view.getUint32(base + 52, true);
 		const metaStart = view.getUint32(base + 56, true);
 		const metaEnd = view.getUint32(base + 60, true);
-		const textureStart = view.getUint32(base + 64, true);
-		const textureEnd = view.getUint32(base + 68, true);
+		const modelTextureStart = view.getUint32(base + 64, true);
+		const modelTextureEnd = view.getUint32(base + 68, true);
 		const collisionBinStart = view.getUint32(base + 72, true);
 		const collisionBinEnd = view.getUint32(base + 76, true);
 		const updateLo = view.getUint32(base + 80, true);
@@ -173,7 +180,7 @@ export function decodeRomToc(buffer: Uint8Array): RomTocPayload {
 		if ((start === ROM_TOC_INVALID_U32) !== (end === ROM_TOC_INVALID_U32)
 			|| (compiledStart === ROM_TOC_INVALID_U32) !== (compiledEnd === ROM_TOC_INVALID_U32)
 			|| (metaStart === ROM_TOC_INVALID_U32) !== (metaEnd === ROM_TOC_INVALID_U32)
-			|| (textureStart === ROM_TOC_INVALID_U32) !== (textureEnd === ROM_TOC_INVALID_U32)
+			|| (modelTextureStart === ROM_TOC_INVALID_U32) !== (modelTextureEnd === ROM_TOC_INVALID_U32)
 			|| (collisionBinStart === ROM_TOC_INVALID_U32) !== (collisionBinEnd === ROM_TOC_INVALID_U32)) {
 			throw new Error('ROM TOC entry has an incomplete payload range.');
 		}
@@ -208,9 +215,9 @@ export function decodeRomToc(buffer: Uint8Array): RomTocPayload {
 			entry.metabuffer_start = metaStart;
 			entry.metabuffer_end = metaEnd;
 		}
-		if (textureStart !== ROM_TOC_INVALID_U32) {
-			entry.texture_start = textureStart;
-			entry.texture_end = textureEnd;
+		if (modelTextureStart !== ROM_TOC_INVALID_U32) {
+			entry.model_texture_start = modelTextureStart;
+			entry.model_texture_end = modelTextureEnd;
 		}
 		if (collisionBinStart !== ROM_TOC_INVALID_U32) {
 			entry.collision_bin_start = collisionBinStart;

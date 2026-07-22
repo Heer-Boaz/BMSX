@@ -1,9 +1,9 @@
 /**
- * Type definitions shared between the rompacker CLI and the machine runtime.
+ * Rombuilder producer types.
  */
 import { Buffer } from 'buffer';
 import type { Canvas, Image as NodeCanvasImage } from 'canvas';
-import type { GxTexture } from './gx_texture';
+import type { NativeGxTexture } from '../../machine/ts/rompack/tooling/gx_texture_codec';
 import type { asset_type, GxTexturePageTile } from '../../machine/ts/rompack/format';
 
 export type RomPackerTarget = 'browser' | 'cli' | 'headless' | 'libretro-wsl' | 'libretro-win' | 'libretro-snesmini';
@@ -29,7 +29,7 @@ export interface RomPackerOptions {
 	libraryLuaRoots: string[];
 }
 
-export type resourcetype = asset_type | 'atlas';
+export type resourcetype = Exclude<asset_type, 'texture'> | 'atlas';
 export type collisiontype = 'concave' | 'convex' | 'aabb';
 export type datatype = 'json' | 'yaml' | 'bin';
 
@@ -50,15 +50,14 @@ export interface ImageResource extends BaseResource<'image'> {
 	img?: NodeCanvasImage;
 	textureU?: number;
 	textureV?: number;
-	gxTexture?: GxTexture;
 	gxPageTiles?: GxTexturePageTile[];
 }
 
-// Rombuilder-only packing group. It is never serialized as a ROM resource.
+// Rombuilder-only packing group. Its canonical texture becomes one generated ROM resource.
 export interface TextureAtlasResource extends BaseResource<'atlas'> {
 	id: number;
 	atlasId: number;
-	gxTexture?: GxTexture;
+	gxTexture?: NativeGxTexture;
 	img?: Canvas;
 }
 

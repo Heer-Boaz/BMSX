@@ -82,6 +82,7 @@ TocStringSlice internTocString(std::vector<u8>& table, std::unordered_map<std::s
 std::string assetTypeFromId(u32 id) {
 	switch (id) {
 		case ROM_TOC_ASSET_TYPE_IMAGE: return "image";
+		case ROM_TOC_ASSET_TYPE_TEXTURE: return "texture";
 		case ROM_TOC_ASSET_TYPE_AUDIO: return "audio";
 		case ROM_TOC_ASSET_TYPE_DATA: return "data";
 		case ROM_TOC_ASSET_TYPE_BIN: return "bin";
@@ -97,6 +98,7 @@ std::string assetTypeFromId(u32 id) {
 
 u32 assetTypeToId(std::string_view type) {
 	if (type == "image") return ROM_TOC_ASSET_TYPE_IMAGE;
+	if (type == "texture") return ROM_TOC_ASSET_TYPE_TEXTURE;
 	if (type == "audio") return ROM_TOC_ASSET_TYPE_AUDIO;
 	if (type == "data") return ROM_TOC_ASSET_TYPE_DATA;
 	if (type == "bin") return ROM_TOC_ASSET_TYPE_BIN;
@@ -115,6 +117,9 @@ AssetTypeKind resolveAssetTypeKind(std::string_view assetType) {
 	switch (assetType[0]) {
 		case 'i':
 			if (assetType == "image") return AssetTypeKind::Image;
+			break;
+		case 't':
+			if (assetType == "texture") return AssetTypeKind::Texture;
 			break;
 		case 'a':
 			if (assetType == "audio") return AssetTypeKind::Audio;
@@ -218,8 +223,8 @@ RomTocPayload decodeRomToc(const u8* data, size_t size) {
 		romInfo.compiledEnd = optionalI32FromU32(readLE32(entry + 52));
 		romInfo.metabufferStart = optionalI32FromU32(readLE32(entry + 56));
 		romInfo.metabufferEnd = optionalI32FromU32(readLE32(entry + 60));
-		romInfo.textureStart = optionalI32FromU32(readLE32(entry + 64));
-		romInfo.textureEnd = optionalI32FromU32(readLE32(entry + 68));
+		romInfo.modelTextureStart = optionalI32FromU32(readLE32(entry + 64));
+		romInfo.modelTextureEnd = optionalI32FromU32(readLE32(entry + 68));
 		romInfo.collisionBinStart = optionalI32FromU32(readLE32(entry + 72));
 		romInfo.collisionBinEnd = optionalI32FromU32(readLE32(entry + 76));
 		romInfo.sourcePath = decodeTocString(stringTable, stringTableSize, sourceOffset, sourceLength);
@@ -282,8 +287,8 @@ std::vector<u8> encodeRomToc(const RomTocPayload& payload) {
 		writeLE32(entry + 52, tocFieldValue(source.rom.compiledEnd));
 		writeLE32(entry + 56, tocFieldValue(source.rom.metabufferStart));
 		writeLE32(entry + 60, tocFieldValue(source.rom.metabufferEnd));
-		writeLE32(entry + 64, tocFieldValue(source.rom.textureStart));
-		writeLE32(entry + 68, tocFieldValue(source.rom.textureEnd));
+		writeLE32(entry + 64, tocFieldValue(source.rom.modelTextureStart));
+		writeLE32(entry + 68, tocFieldValue(source.rom.modelTextureEnd));
 		writeLE32(entry + 72, tocFieldValue(source.rom.collisionBinStart));
 		writeLE32(entry + 76, tocFieldValue(source.rom.collisionBinEnd));
 		writeLE32(entry + 80, tocUpdateLo(source.rom.updateTimestamp));

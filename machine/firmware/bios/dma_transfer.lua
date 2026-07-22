@@ -22,11 +22,4 @@ function dma_transfer.copy_to_gp0(source, word_count)
 	wait_for_completion(sequence)
 end
 
-function dma_transfer.abort()
-	local sequence<const> = *bios_dma_completion_sequence
-	if dma.abort() then
-		wait_for_completion(sequence)
-	end
-end
-
 return dma_transfer

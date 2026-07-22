@@ -6,7 +6,7 @@ import {
 	IMGDEC_TOKEN_KIND_SHIFT,
 	IMGDEC_TOKEN_KIND_ZERO,
 } from '../../machine/ts/machine/devices/imgdec/contracts';
-import { decodeImgDecStream, encodeImgDecStream } from '../../scripts/rompacker/imgdec';
+import { decodeImgDecStream, encodeImgDecStream } from '../../machine/ts/rompack/tooling/imgdec_codec';
 
 test('IMGDEC word stream round-trips literal, repeat, zero, and overlapping back-reference runs', () => {
 	const textureWordCount = 5000;
@@ -32,7 +32,6 @@ test('IMGDEC word stream round-trips literal, repeat, zero, and overlapping back
 	const decoded = decodeImgDecStream(encoded);
 	assert.equal(decoded.textureWordCount, textureWordCount);
 	assert.equal(decoded.clutWordCount, clutWordCount);
-	assert.equal(decoded.consumedWordCount, encoded.byteLength >> 2);
 	assert.deepEqual(decoded.payload, payload);
 	assert.ok(encoded.byteLength < payload.byteLength / 3);
 });

@@ -1000,8 +1000,9 @@ public:
 	void clearHaltUntilIrq();
 	bool isHaltedUntilIrq() const { return m_haltedUntilIrq; }
 	bool isMemoryWriteBlocked() const { return m_memoryWriteBlocked; }
+	uint32_t stalledMemoryWriteAddress() const { return m_memoryWriteBlockedAddress; }
 	void resumeMemoryWrite(uint32_t address);
-	void abortStalledMemoryWrite();
+	void abortStalledMemoryWrite() { m_memoryWriteBlocked = false; }
 	bool isUserMode() const { return (m_statusWord & CPU_STATUS_USER_MODE_CURRENT) != 0u; }
 	void requestNonMaskableInterrupt();
 	void cancelNonMaskableInterrupt() { m_nonMaskableInterruptPending = false; }

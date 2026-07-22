@@ -34,7 +34,7 @@ GeometryController::GeometryController(
 	m_memory.mapIoWrite(IO_GEO_FAULT_ACK, this, &GeometryController::onFaultAckWriteThunk);
 }
 
-bool GeometryController::commandWriteReadyThunk(void* context, uint32_t) {
+bool GeometryController::commandWriteReadyThunk(void* context, uint32_t, MappedBusSignals) {
 	return !static_cast<GeometryController*>(context)->m_supervisorQuiesceRequested;
 }
 

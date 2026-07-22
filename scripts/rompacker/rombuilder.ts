@@ -3,9 +3,17 @@ import { glsl } from "esbuild-plugin-glsl";
 import type { Stats } from 'fs';
 import { encodeBinary } from '../../machine/ts/common/serializer/binencoder';
 import { CART_ROM_HEADER_SIZE, CART_ROM_WORD_ALIGNMENT, PROGRAM_BOOT_HEADER_VERSION } from '../../machine/ts/rompack/format';
-import type { asset_type, AudioMeta, BoundingBoxPrecalc, GLTFMesh, HitPolygonsPrecalc, ImgMeta, Polygon, ProgramBootHeader, RectBounds, RomAsset, RomManifest, vec2arr } from '../../machine/ts/rompack/format';
+import type { AudioMeta, BoundingBoxPrecalc, GLTFMesh, HitPolygonsPrecalc, ImgMeta, Polygon, ProgramBootHeader, RectBounds, RomAsset, RomManifest, TextureMeta, vec2arr } from '../../machine/ts/rompack/format';
 import { alignRomAssetOffset, layoutRomAssetPayloads, type RomAssetPayloadLayout, type RomAssetPayloadRange } from '../../machine/ts/rompack/asset_layout';
 import { writeCartRomHeader } from '../../machine/ts/rompack/tooling/header_encode';
+import {
+	encodeDirect16GxTexture,
+	encodePalette4GxTexture,
+	type Direct16GxTexture,
+	type NativeGxTexture,
+} from '../../machine/ts/rompack/tooling/gx_texture_codec';
+import { encodeDirect16GxUpload } from '../../machine/ts/rompack/tooling/gp0_encode';
+import { encodeImgDecStream } from '../../machine/ts/rompack/tooling/imgdec_codec';
 import type { RomProgramPrefixLayout } from '../../machine/ts/rompack/tooling/rom_layout';
 import { encodeRomToc } from '../../machine/ts/rompack/tooling/toc_encode';
 import { encodeAudioAssetToAdpcm } from './adpcm';
@@ -17,19 +25,14 @@ import {
 	GX_TEXTURE_PAGE_PIXELS,
 	textureGroupResourceName,
 } from './texture_atlas_contract';
+import { BIOS_TERMINAL_GLYPHS_ASSET_ID, buildBiosTerminalGlyphTable } from './bios_terminal_font';
 import {
-	buildDirect16GxTexture,
-	buildFixedDirect16Upload,
-	buildPalette4GxTexture,
 	GX_SYSTEM_TEXTURE_ASSET_ID,
 	GX_SYSTEM_TEXTURE_HEIGHT,
 	GX_SYSTEM_TEXTURE_WIDTH,
 	GX_SYSTEM_TEXTURE_X,
 	GX_SYSTEM_TEXTURE_Y,
-	type ImgDecGxTexture,
-	type RawGxTexture,
-} from './gx_texture';
-import { BIOS_TERMINAL_GLYPHS_ASSET_ID, buildBiosTerminalGlyphTable } from './bios_terminal_font';
+} from './system_texture';
 import {
 	type GxTextureGroupLayout,
 	type GxTextureLayout,
@@ -736,25 +739,20 @@ function buildImgMetaFromCollisionBuild(res: ImageResource, collision: ImageColl
 	if (!img) {
 		throw new Error(`Image resource "${res.name}" is missing its decoded image data.`);
 	}
-	const texture = res.gxTexture!;
 	const imgmeta: ImgMeta = {
 		width: img.width,
 		height: img.height,
 		texture_u: res.textureU!,
 		texture_v: res.textureV!,
-		gx_texture_mode: texture.mode,
-		gx_texture_word_width: texture.wordWidth,
-		gx_texture_height: texture.height,
 		boundingbox: collision.boundingbox,
 		centerpoint: collision.centerpoint,
 		hitpolygons: collision.hitpolygons,
 	};
-	if (texture.clutOffset) {
-		imgmeta.gx_clut_offset = texture.clutOffset;
-	}
 	if (res.targetAtlasId === GX_SYSTEM_TEXTURE_GROUP_ID) {
 		imgmeta.gx_source_x = GX_SYSTEM_TEXTURE_X + res.textureU!;
 		imgmeta.gx_source_y = GX_SYSTEM_TEXTURE_Y + res.textureV!;
+	} else {
+		imgmeta.gx_texture_resid = textureGroupResourceName(res.targetAtlasId);
 	}
 	if (res.gxPageTiles) {
 		imgmeta.gx_page_tiles = res.gxPageTiles;
@@ -832,7 +830,7 @@ export function getResMetaByFilename(filepath: string): { name: string, ext: str
 	let datatype: 'json' | 'yaml' | 'bin' = undefined;
 	let update_timestamp: number = undefined;
 
-	const getDataSubtype = (currentName: string): asset_type => {
+	const getDataSubtype = (currentName: string): 'aem' | 'data' => {
 		if (currentName.includes('.aem')) return 'aem';
 		return 'data';
 	};
@@ -1194,18 +1192,6 @@ export async function getResMetaList(respaths: string[], _romname?: string, opti
 export async function getResourcesList(resMetaList: Resource[]): Promise<Resource[]> {
 	let resources: Array<Resource> = [];
 
-	/**
-	 * Loads an image from the specified resource object.
-	 * @param _meta The resource object containing information about the image to load.
-	 * @returns A Promise that resolves with the loaded image.
-	 */
-	// @ts-ignore
-	async function getImageFromBuffer(buffer: Buffer) {
-		const base64Encoded = buffer.toString('base64');
-		const dataURL = `data:images/png;base64,${base64Encoded}`;
-		return await loadImage(dataURL);
-	}
-
 	// Parallelize buffer and image loading
 	const resourcePromises = resMetaList.map(async (meta): Promise<Resource> => {
 		const buffer = meta.filepath ? await readFile(meta.filepath) : undefined;
@@ -1214,7 +1200,7 @@ export async function getResourcesList(resMetaList: Resource[]): Promise<Resourc
 				if (!buffer) {
 					throw new Error(`Image resource "${meta.name}" is missing its binary payload.`);
 				}
-				const img = await getImageFromBuffer(buffer);
+				const img = await loadImage(buffer);
 				return {
 					...meta,
 					buffer,
@@ -1254,7 +1240,7 @@ export async function getResourcesList(resMetaList: Resource[]): Promise<Resourc
  *
  * This function processes each loaded resource, extracting relevant metadata and buffer data,
  * and constructs a RomAsset for each. Producer-only image packing groups are omitted;
- * image records reference their shared compressed IMGDEC texture stream directly.
+ * each cart texture group becomes an explicit texture resource and image records refer to it by id.
  * The resulting RomAsset array is used for ROM packing and serialization.
  *
  * @param resources - The array of resources to process.
@@ -1263,17 +1249,20 @@ export async function getResourcesList(resMetaList: Resource[]): Promise<Resourc
  * - `romlabel_buffer` - The buffer data for the "romlabel.png" resource if present.
  */
 
-export async function generateRomAssets(resources: Resource[], reportProgress?: ProgressNote) {
+export async function generateRomAssets(
+	resources: Resource[],
+	reportProgress?: ProgressNote,
+) {
 	const romAssets: RomAsset[] = [];
 	const compileErrors: string[] = [];
-	const systemTextureGroup = resources.find((resource): resource is TextureAtlasResource & { gxTexture: RawGxTexture } => (
-		resource.type === 'atlas' && resource.atlasId === GX_SYSTEM_TEXTURE_GROUP_ID
-	));
-	if (systemTextureGroup) {
+	const systemAtlas = resources.find((resource): resource is TextureAtlasResource =>
+		resource.type === 'atlas' && resource.atlasId === GX_SYSTEM_TEXTURE_GROUP_ID);
+	if (systemAtlas) {
+		const systemTexture = systemAtlas.gxTexture as Direct16GxTexture;
 		romAssets.push({
 			resid: GX_SYSTEM_TEXTURE_ASSET_ID,
 			type: 'bin',
-			buffer: buildFixedDirect16Upload(systemTextureGroup.gxTexture!, GX_SYSTEM_TEXTURE_X, GX_SYSTEM_TEXTURE_Y),
+			buffer: encodeDirect16GxUpload(systemTexture, GX_SYSTEM_TEXTURE_X, GX_SYSTEM_TEXTURE_Y),
 		});
 		romAssets.push({
 			resid: BIOS_TERMINAL_GLYPHS_ASSET_ID,
@@ -1305,9 +1294,6 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 					imgmeta,
 					source_path: sourcePath,
 				};
-				if (res.targetAtlasId !== GX_SYSTEM_TEXTURE_GROUP_ID) {
-					baseAsset.texture_buffer = (res.gxTexture as ImgDecGxTexture).stream;
-				}
 				baseAsset.collision_bin_buffer = collision.collisionbin;
 				romAssets.push(baseAsset);
 			}
@@ -1445,11 +1431,28 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 				// @ts-ignore
 				buffer = Buffer.from(encodedObj);
 				// @ts-ignore
-				const texture_buffer = Buffer.concat(texBuffers);
-				romAssets.push({ resid, type, buffer, texture_buffer, source_path: sourcePath });
+				const model_texture_buffer = Buffer.concat(texBuffers);
+				romAssets.push({ resid, type, buffer, model_texture_buffer, source_path: sourcePath });
 			}
 				break;
-			case 'atlas':
+			case 'atlas': {
+				if (res.atlasId !== GX_SYSTEM_TEXTURE_GROUP_ID) {
+					const texture = res.gxTexture!;
+					const texturemeta: TextureMeta = {
+						mode: texture.mode,
+						word_width: texture.wordWidth,
+						height: texture.height,
+						texture_word_count: texture.textureWordCount,
+						clut_word_count: texture.clutWordCount,
+					};
+					romAssets.push({
+						resid: res.name,
+						type: 'texture',
+						buffer: encodeImgDecStream(texture.words, texture.textureWordCount, texture.clutWordCount),
+						texturemeta,
+					});
+				}
+			}
 				break;
 		}
 	}
@@ -1580,9 +1583,9 @@ function assertTextureFitsSlots(
 	groupId: number,
 	group: GxTextureGroupLayout,
 	slots: GxTextureSlot[],
+	texture: NativeGxTexture,
 	images: ImageResource[],
 ): void {
-	const texture = images[0].gxTexture!;
 	for (let slotIndex = 0; slotIndex < slots.length; slotIndex += 1) {
 		const slot = slots[slotIndex];
 		if (texture.wordWidth > slot.texture.width || texture.height > slot.texture.height) {
@@ -1629,14 +1632,16 @@ export async function createTextureAtlases(
 		});
 		atlas.img = canvas;
 		const rgba = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
-		const storage = atlas.atlasId === GX_SYSTEM_TEXTURE_GROUP_ID ? 'gx-words' : 'imgdec-stream';
-		atlas.gxTexture = build.group.mode === 'palette4'
-			? buildPalette4GxTexture(canvas.width, canvas.height, rgba, storage)
-			: buildDirect16GxTexture(canvas.width, canvas.height, rgba, storage);
-		for (let imageIndex = 0; imageIndex < groupImages.length; imageIndex += 1) {
-			groupImages[imageIndex].gxTexture = atlas.gxTexture;
+		let texture: NativeGxTexture;
+		if (atlas.atlasId === GX_SYSTEM_TEXTURE_GROUP_ID) {
+			texture = encodeDirect16GxTexture(canvas.width, canvas.height, rgba);
+		} else {
+			texture = build.group.mode === 'palette4'
+				? encodePalette4GxTexture(canvas.width, canvas.height, rgba)
+				: encodeDirect16GxTexture(canvas.width, canvas.height, rgba);
 		}
-		assertTextureFitsSlots(atlas.atlasId, build.group, build.slots, groupImages);
+		atlas.gxTexture = texture;
+		assertTextureFitsSlots(atlas.atlasId, build.group, build.slots, texture, groupImages);
 	}
 	if (layout) {
 		for (const groupId of Object.keys(layout.groups)) {

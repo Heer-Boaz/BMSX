@@ -6,10 +6,12 @@ import { asciiWaveBraille, generateBrailleAsciiArt, generatePixelPerfectAsciiArt
 import { decodeAudioPreviewToPcm } from './audio_preview';
 import {
 	decodeGxTextureImage,
-	GX_GPU_CPU_TO_VRAM_HEADER_BYTES,
-	GX_SYSTEM_TEXTURE_ASSET_ID,
-} from '../rompacker/gx_texture';
-import { decodeImgDecStream } from '../rompacker/imgdec';
+	type GxDecodedImage,
+} from '../../machine/ts/rompack/tooling/gx_texture_codec';
+import { GX_GPU_CPU_TO_VRAM_HEADER_BYTES } from '../../machine/ts/rompack/tooling/gp0_encode';
+import { GX_GPU_TEXTURE_MODE_DIRECT16 } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
+import { decodeImgDecStream } from '../../machine/ts/rompack/tooling/imgdec_codec';
+import { GX_SYSTEM_TEXTURE_ASSET_ID } from '../rompacker/system_texture';
 import {
 	disassembleProgramImage,
 	loadProgramFromAssets,
@@ -41,9 +43,17 @@ export type AssetModalView = {
 	hex: string;
 };
 
+export type TextureDecodeCache = {
+	current?: {
+		resid: string;
+		payload: Buffer;
+	};
+};
+
 type BuildAssetModalViewContext = {
 	rombin: Uint8Array;
 	assetList: RomAsset[];
+	decodedTexture: TextureDecodeCache;
 	manifest: RomManifest | null;
 	projectRootPath: string | null;
 	systemProgramImage: ProgramImage | null;
@@ -52,10 +62,6 @@ type BuildAssetModalViewContext = {
 	modalHeight: number;
 	previewZoom: number;
 };
-
-function getRomSliceView(rombin: Uint8Array, start: number, end: number): Uint8Array {
-	return rombin.subarray(start, end);
-}
 
 function formatHexDumpLine(buf: Uint8Array, byteOffset: number): string {
 	const slice = buf.subarray(byteOffset, byteOffset + HEX_BYTES_PER_LINE);
@@ -80,10 +86,6 @@ function asciiHexDump(buf: Uint8Array, maxBytes = HEX_PREVIEW_MAX_BYTES): string
 
 function renderHexDumpSectionPreview(title: string, start: number, end: number, buf: Uint8Array, formatByteSize: (size: number) => string): string {
 	return `${title}: [${start} - ${end}] (${formatByteSize(buf.byteLength)})\n${asciiHexDump(buf)}`;
-}
-
-async function loadDataFromBuffer(buf: Uint8Array): Promise<any> {
-	return decodeBinary(new Uint8Array(buf.slice(0)));
 }
 
 function buildOverlayBuffer(imgW: number, imgH: number, polys: number[][]): Uint8Array {
@@ -136,22 +138,6 @@ function scaleImageNearest(data: Uint8Array, width: number, height: number, zoom
 	return { data: scaledData, width: scaledWidth, height: scaledHeight };
 }
 
-function previewOutputMetrics(width: number, height: number, zoom: number) {
-	const pixelPerfect = width <= PER_PIXEL_RENDERING_THRESHOLD && height <= PER_PIXEL_RENDERING_THRESHOLD;
-	if (pixelPerfect) {
-		return {
-			pixelPerfect: true,
-			outputWidth: Math.max(1, Math.round(width * zoom)),
-			outputHeight: Math.max(1, Math.round(height * zoom)),
-		};
-	}
-	return {
-		pixelPerfect: false,
-		outputWidth: Math.max(1, Math.floor(width * zoom / 2)),
-		outputHeight: Math.max(1, Math.ceil(height * zoom / 4)),
-	};
-}
-
 function formatZoom(zoom: number): string {
 	return Number.isInteger(zoom) ? zoom.toFixed(1) : zoom.toString();
 }
@@ -161,17 +147,37 @@ function previewFixedLine(width: number, height: number, zoom: number): string {
 }
 
 function buildPreviewSection(titleLine: string, rgba: Uint8Array, width: number, height: number, zoom: number): AssetPreviewSection {
-	const metrics = previewOutputMetrics(width, height, zoom);
-	return {
+	const section: AssetPreviewSection = {
 		titleLine,
 		rgba,
 		width,
 		height,
-		zoom,
-		pixelPerfect: metrics.pixelPerfect,
-		outputWidth: metrics.outputWidth,
-		outputHeight: metrics.outputHeight,
+		zoom: 1,
+		pixelPerfect: false,
+		outputWidth: width,
+		outputHeight: height,
 	};
+	setPreviewSectionZoom(section, zoom);
+	return section;
+}
+
+function setPreviewSectionZoom(section: AssetPreviewSection, zoom: number): void {
+	section.zoom = zoom;
+	section.pixelPerfect = section.width <= PER_PIXEL_RENDERING_THRESHOLD && section.height <= PER_PIXEL_RENDERING_THRESHOLD;
+	section.outputWidth = section.pixelPerfect
+		? Math.max(1, Math.round(section.width * zoom))
+		: Math.max(1, Math.floor(section.width * zoom / 2));
+	section.outputHeight = section.pixelPerfect
+		? Math.max(1, Math.round(section.height * zoom))
+		: Math.max(1, Math.ceil(section.height * zoom / 4));
+}
+
+export function setAssetModalPreviewZoom(view: AssetModalView, zoom: number): void {
+	for (let sectionIndex = 0; sectionIndex < view.previewSections.length; sectionIndex += 1) {
+		setPreviewSectionZoom(view.previewSections[sectionIndex], zoom);
+	}
+	const image = view.previewSections[0];
+	view.previewFixedLines[0] = previewFixedLine(image.width, image.height, zoom);
 }
 
 function cropRgba(data: Uint8Array, width: number, startX: number, startY: number, endX: number, endY: number): Uint8Array {
@@ -252,18 +258,56 @@ export async function buildAssetModalView(selected: RomAsset, ctx: BuildAssetMod
 
 	switch (selected.type) {
 	case 'image': {
-			const imagePreview = imgmeta.gx_source_x
-				? decodeGxTextureImage(
-					ctx.rombin,
-					ctx.assetList.find(asset => asset.resid === GX_SYSTEM_TEXTURE_ASSET_ID)!.start!
-						+ GX_GPU_CPU_TO_VRAM_HEADER_BYTES,
-					imgmeta,
-				)
-				: decodeGxTextureImage(decodeImgDecStream(
-					ctx.rombin,
-					selected.texture_start!,
-					selected.texture_end! - selected.texture_start!,
-				).payload, 0, imgmeta);
+			let imagePreview: GxDecodedImage;
+			if (imgmeta.gx_texture_resid) {
+				const textureAsset = ctx.assetList.find(asset =>
+					asset.type === 'texture' && asset.resid === imgmeta.gx_texture_resid)!;
+				let decodedTexture = ctx.decodedTexture.current;
+				if (!decodedTexture || decodedTexture.resid !== textureAsset.resid) {
+					decodedTexture = {
+						resid: textureAsset.resid,
+						payload: decodeImgDecStream(
+							ctx.rombin,
+							textureAsset.start!,
+							textureAsset.end! - textureAsset.start!,
+						).payload,
+					};
+					ctx.decodedTexture.current = decodedTexture;
+				}
+				const texturemeta = textureAsset.texturemeta!;
+				imagePreview = decodeGxTextureImage(decodedTexture.payload, {
+					mode: texturemeta.mode,
+					wordWidth: texturemeta.word_width,
+					height: texturemeta.height,
+				}, {
+					width: imgmeta.width,
+					height: imgmeta.height,
+					textureU: imgmeta.texture_u,
+					textureV: imgmeta.texture_v,
+				});
+			} else {
+				const systemTexture = ctx.assetList.find(asset => asset.resid === GX_SYSTEM_TEXTURE_ASSET_ID)!;
+				const uploadStart = systemTexture.start!;
+				const uploadSize = new DataView(
+					ctx.rombin.buffer,
+					ctx.rombin.byteOffset + uploadStart + 8,
+					4,
+				).getUint32(0, true);
+				imagePreview = decodeGxTextureImage(
+					ctx.rombin.subarray(uploadStart + GX_GPU_CPU_TO_VRAM_HEADER_BYTES, systemTexture.end),
+					{
+						mode: GX_GPU_TEXTURE_MODE_DIRECT16,
+						wordWidth: uploadSize & 0xffff,
+						height: uploadSize >>> 16,
+					},
+					{
+						width: imgmeta.width,
+						height: imgmeta.height,
+						textureU: imgmeta.texture_u,
+						textureV: imgmeta.texture_v,
+					},
+				);
+			}
 			previewSections.push(buildPreviewSection('', imagePreview.rgba, imagePreview.width, imagePreview.height, ctx.previewZoom));
 			previewFixedLines.push(previewFixedLine(imagePreview.width, imagePreview.height, ctx.previewZoom));
 			if (imgmeta.hitpolygons?.original && imgmeta.width && imgmeta.height) {
@@ -281,7 +325,7 @@ export async function buildAssetModalView(selected: RomAsset, ctx: BuildAssetMod
 			}
 			metadataLines.push(`Priority: ${audiometa.priority === undefined ? 'Unset!' : audiometa.priority}`);
 			if (!selected.buffer || selected.buffer.byteLength === 0) {
-				selected.buffer = Buffer.from(getRomSliceView(ctx.rombin, selected.start, selected.end));
+				selected.buffer = Buffer.from(ctx.rombin.subarray(selected.start, selected.end));
 			}
 			{
 				const decoded = decodeAudioPreviewToPcm(selected.buffer);
@@ -319,7 +363,7 @@ export async function buildAssetModalView(selected: RomAsset, ctx: BuildAssetMod
 				preview = JSON.stringify(payload, null, 2);
 			} else {
 				if (!selected.buffer) {
-					selected.buffer = await loadDataFromBuffer(new Uint8Array(ctx.rombin.slice(selected.start, selected.end)));
+					selected.buffer = decodeBinary(ctx.rombin.subarray(selected.start, selected.end));
 				}
 				metadataLines.push(`Data size: ${ctx.formatByteSize(selected.end - selected.start)}`);
 				preview = JSON.stringify(selected.buffer, null, 2);
@@ -330,9 +374,9 @@ export async function buildAssetModalView(selected: RomAsset, ctx: BuildAssetMod
 				? selected.buffer
 				: await loadGLTFModelFromBuffer(
 					String(selected.resid),
-					ctx.rombin.slice(selected.start, selected.end),
-					selected.texture_start !== undefined && selected.texture_end !== undefined
-						? ctx.rombin.slice(selected.texture_start, selected.texture_end)
+					ctx.rombin.subarray(selected.start, selected.end),
+					selected.model_texture_start
+						? ctx.rombin.subarray(selected.model_texture_start, selected.model_texture_end!)
 						: undefined,
 				);
 			if (!isGLTFModel(modelData)) {
@@ -389,11 +433,11 @@ export async function buildAssetModalView(selected: RomAsset, ctx: BuildAssetMod
 
 	let hex = '';
 	if (typeof selected.start === 'number' && typeof selected.end === 'number') {
-		const assetBuf = selected.buffer instanceof Uint8Array ? selected.buffer : getRomSliceView(ctx.rombin, selected.start, selected.end);
+		const assetBuf = selected.buffer instanceof Uint8Array ? selected.buffer : ctx.rombin.subarray(selected.start, selected.end);
 		hex += renderHexDumpSectionPreview('Buffer', selected.start, selected.end, assetBuf, ctx.formatByteSize);
 	}
 	if (typeof selected.metabuffer_start === 'number' && typeof selected.metabuffer_end === 'number' && selected.metabuffer_end > selected.metabuffer_start) {
-		const metaBuf = getRomSliceView(ctx.rombin, selected.metabuffer_start, selected.metabuffer_end);
+		const metaBuf = ctx.rombin.subarray(selected.metabuffer_start, selected.metabuffer_end);
 		hex += `${hex ? '\n\n' : ''}${renderHexDumpSectionPreview('Metabuffer', selected.metabuffer_start, selected.metabuffer_end, metaBuf, ctx.formatByteSize)}`;
 	}
 

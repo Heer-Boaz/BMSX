@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/primitives.h"
+#include "machine/bus/io.h"
 #include "machine/devices/dma/controller.h"
 #include "machine/devices/gx/vram_address.h"
 
@@ -143,6 +144,10 @@ public:
 	u32 token() const { return m_token; }
 	u8* pixelBytes() { return m_pixelBytes.get(); }
 	const u8* pixelBytes() const { return m_pixelBytes.get(); }
+	void setDmaReadEnabled(bool enabled) {
+		m_dmaReadEnabled = enabled;
+		updateDmaRequest();
+	}
 
 	bool claimReadback(size_t executedCommandCount) {
 		if (m_phase != GX_GPU_READBACK_PENDING || executedCommandCount != m_fenceCommandCount) {
@@ -155,7 +160,7 @@ public:
 	void completeReadback(u32 token) {
 		if (m_phase == GX_GPU_READBACK_SUBMITTED && m_token == token) {
 			m_phase = GX_GPU_READBACK_READY;
-			m_dmaController.setGxGpuReadReady(true);
+			updateDmaRequest();
 		}
 	}
 
@@ -182,7 +187,7 @@ private:
 			m_width = 0u;
 			m_height = 0u;
 			m_pixelCursor = 0u;
-			m_dmaController.setGxGpuReadReady(false);
+			updateDmaRequest();
 		}
 		return word;
 	}
@@ -197,7 +202,7 @@ private:
 		m_fenceCommandCount = fenceCommandCount;
 		m_token += 1u;
 		m_phase = GX_GPU_READBACK_PENDING;
-		m_dmaController.setGxGpuReadReady(false);
+		updateDmaRequest();
 	}
 
 	void reset() {
@@ -210,7 +215,12 @@ private:
 		m_height = 0u;
 		m_pixelCursor = 0u;
 		m_token += 1u;
-		m_dmaController.setGxGpuReadReady(false);
+		updateDmaRequest();
+	}
+
+	void updateDmaRequest() {
+		const u32 requestBit = 1u << DMA_REQUEST_GX_READ;
+		m_dmaController.setRequestLines(requestBit, m_dmaReadEnabled && m_phase == GX_GPU_READBACK_READY ? requestBit : 0u);
 	}
 
 	u8 m_phase = GX_GPU_READBACK_IDLE;
@@ -223,6 +233,7 @@ private:
 	u32 m_pixelCursor = 0u;
 	std::unique_ptr<u8[]> m_pixelBytes = std::make_unique<u8[]>(GX_GPU_TRANSFER_MAX_BYTE_COUNT);
 	u32 m_token = 0u;
+	bool m_dmaReadEnabled = false;
 	DmaController& m_dmaController;
 };
 
@@ -375,7 +386,6 @@ public:
 		readback.m_pixelCursor = state.readbackPixelCursor;
 		std::copy(state.readbackPixelBytes.begin(), state.readbackPixelBytes.end(), readback.m_pixelBytes.get());
 		readback.m_token += 1u;
-		readback.m_dmaController.setGxGpuReadReady(readback.m_phase == GX_GPU_READBACK_READY);
 	}
 
 	size_t retireCommandsPreservingVram(size_t retiredCommands) {

@@ -31,7 +31,8 @@ import {
 	IO_APU_FAULT_CODE,
 	IO_APU_FAULT_DETAIL,
 	IO_APU_STATUS,
-	IO_DMA_STATUS,
+	IO_DMA0_STATUS,
+	IO_DMA1_STATUS,
 	IO_GEO_FAULT,
 	IO_GEO_PROCESSED,
 	IO_GEO_STATUS,
@@ -57,10 +58,11 @@ import {
 import { readLE16, readLE32, writeLE16, writeLE32 } from '../../common/endian';
 import {
 	MAPPED_BUS_MASTER_CPU,
+	MAPPED_BUS_MASTER_DMA,
 	type MappedBusSignals,
 } from './bus_signals';
 
-export const enum MemoryRegionKind { Ram, SystemRom, CartRom, Other }
+export const enum MemoryRegionKind { Ram, SystemRom, CartRom, Io, Other }
 
 const BUS_ACCESS_READ_WORD = BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_WORD;
 const BUS_ACCESS_WRITE_WORD = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_WORD;
@@ -77,10 +79,18 @@ const BUS_ACCESS_WRITE_F64 = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_F64;
 
 export type IoReadHandler<TContext> = (context: TContext, addr: number, busSignals: MappedBusSignals) => Value;
 export type IoWriteHandler<TContext> = (context: TContext, addr: number, value: Value, busSignals: MappedBusSignals) => void;
-export type IoWriteReadyHandler<TContext> = (context: TContext, addr: number) => boolean;
+export type IoWriteReadyHandler<TContext> = (
+	context: TContext,
+	addr: number,
+	busSignals: MappedBusSignals,
+) => boolean;
 type StoredIoReadHandler = (context: unknown, addr: number, busSignals: MappedBusSignals) => Value;
 type StoredIoWriteHandler = (context: unknown, addr: number, value: Value, busSignals: MappedBusSignals) => void;
-type StoredIoWriteReadyHandler = (context: unknown, addr: number) => boolean;
+type StoredIoWriteReadyHandler = (
+	context: unknown,
+	addr: number,
+	busSignals: MappedBusSignals,
+) => boolean;
 
 export type MemorySaveState = {
 	ram: Uint8Array;
@@ -170,7 +180,7 @@ export class Memory {
 		const slot = this.ioAlignedSlot(addr);
 		if (slot < 0) return true;
 		const handler = this.ioWriteReadyHandlers[slot];
-		return handler === null || handler(this.ioWriteContexts[slot], addr);
+		return handler === null || handler(this.ioWriteContexts[slot], addr, MAPPED_BUS_MASTER_CPU);
 	}
 
 	public firstBlockedMappedWordWrite(addr: number, wordCount: number): number {
@@ -182,7 +192,7 @@ export class Memory {
 		while (writeAddress <= lastAddress && writeAddress < ioEnd) {
 			const slot = (writeAddress - IO_BASE) / IO_WORD_SIZE;
 			const handler = this.ioWriteReadyHandlers[slot];
-			if (handler !== null && !handler(this.ioWriteContexts[slot], writeAddress)) {
+			if (handler !== null && !handler(this.ioWriteContexts[slot], writeAddress, MAPPED_BUS_MASTER_CPU)) {
 				return writeAddress;
 			}
 			writeAddress += IO_WORD_SIZE;
@@ -391,7 +401,7 @@ export class Memory {
 	public writeMappedValue(addr: number, value: Value): void {
 		const slot = this.ioAlignedSlot(addr);
 		if (slot >= 0) {
-			if (this.isLuaReadOnlyIoAddress(addr)) {
+			if (this.isReadOnlyIoAddress(addr)) {
 				this.raiseBusFault(BUS_FAULT_READ_ONLY, addr, BUS_ACCESS_WRITE_WORD);
 				return;
 			}
@@ -501,9 +511,17 @@ export class Memory {
 	}
 
 	public readMappedU32LE(addr: number, faultAccess = BUS_ACCESS_READ_U32): number {
+		return this.readMappedBusU32LE(addr, faultAccess, MAPPED_BUS_MASTER_CPU);
+	}
+
+	public readMappedDmaU32LE(addr: number, busSignals: MappedBusSignals): number {
+		return this.readMappedBusU32LE(addr, BUS_ACCESS_READ_U32, busSignals);
+	}
+
+	private readMappedBusU32LE(addr: number, faultAccess: number, busSignals: MappedBusSignals): number {
 		const slot = this.ioAlignedSlot(addr);
 		if (slot >= 0) {
-			return (this.readIoSlotValue(slot, addr, MAPPED_BUS_MASTER_CPU) as number) >>> 0;
+			return (this.readIoSlotValue(slot, addr, busSignals) as number) >>> 0;
 		}
 		if (this.isIoRegionRange(addr, 4)) {
 			this.raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, faultAccess);
@@ -527,14 +545,6 @@ export class Memory {
 			this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, faultAccess);
 			return 0;
 		}
-	}
-
-	public readMappedDmaU32LE(addr: number, busSignals: MappedBusSignals): number {
-		const slot = this.ioAlignedSlot(addr);
-		if (slot >= 0) {
-			return (this.readIoSlotValue(slot, addr, busSignals) as number) >>> 0;
-		}
-		return this.readMappedU32LE(addr);
 	}
 
 	public readMappedF32LE(addr: number): number {
@@ -574,14 +584,28 @@ export class Memory {
 	}
 
 	public writeMappedU32LE(addr: number, value: number, faultAccess = BUS_ACCESS_WRITE_U32): void {
+		this.writeMappedBusU32LE(addr, value, faultAccess, MAPPED_BUS_MASTER_CPU);
+	}
+
+	public writeMappedDmaU32LE(addr: number, value: number, busSignals: MappedBusSignals): void {
+		this.writeMappedBusU32LE(addr, value, BUS_ACCESS_WRITE_U32, busSignals);
+	}
+
+	private writeMappedBusU32LE(addr: number, value: number, faultAccess: number, busSignals: MappedBusSignals): void {
 		const slot = this.ioAlignedSlot(addr);
 		if (slot >= 0) {
-			if (this.isLuaReadOnlyIoAddress(addr)) {
+			if (this.isReadOnlyIoAddress(addr)) {
 				this.raiseBusFault(BUS_FAULT_READ_ONLY, addr, faultAccess);
 				return;
 			}
 			const word = value >>> 0;
-			this.writeIoSlotValue(slot, addr, word, MAPPED_BUS_MASTER_CPU);
+			const writeReady = this.ioWriteReadyHandlers[slot];
+			if ((busSignals & MAPPED_BUS_MASTER_DMA) !== 0
+				&& writeReady !== null
+				&& !writeReady(this.ioWriteContexts[slot], addr, busSignals)) {
+				return;
+			}
+			this.writeIoSlotValue(slot, addr, word, busSignals);
 			return;
 		}
 		if (this.isIoRegionRange(addr, 4)) {
@@ -592,19 +616,6 @@ export class Memory {
 			return;
 		}
 		this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, faultAccess);
-	}
-
-	public writeMappedDmaU32LE(addr: number, value: number, busSignals: MappedBusSignals): void {
-		const slot = this.ioAlignedSlot(addr);
-		if (slot >= 0) {
-			if (this.isLuaReadOnlyIoAddress(addr)) {
-				this.raiseBusFault(BUS_FAULT_READ_ONLY, addr, BUS_ACCESS_WRITE_U32);
-				return;
-			}
-			this.writeIoSlotValue(slot, addr, value >>> 0, busSignals);
-			return;
-		}
-		this.writeMappedU32LE(addr, value);
 	}
 
 	public writeMappedF32LE(addr: number, value: number): void {
@@ -674,7 +685,7 @@ export class Memory {
 
 	public mappedRegion(addr: number): MemoryRegionKind {
 		if (this.isIoRegionRange(addr, IO_WORD_SIZE)) {
-			return MemoryRegionKind.Other;
+			return MemoryRegionKind.Io;
 		}
 		if (this.isRangeWithinRegion(addr, IO_WORD_SIZE, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE)) {
 			return MemoryRegionKind.SystemRom;
@@ -683,6 +694,42 @@ export class Memory {
 			return MemoryRegionKind.CartRom;
 		}
 		return this.isRamRange(addr, IO_WORD_SIZE) ? MemoryRegionKind.Ram : MemoryRegionKind.Other;
+	}
+
+	public mappedRegionWordSpan(addr: number, wordLimit: number, region: MemoryRegionKind): number {
+		const systemRomEnd = SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE;
+		const cartRomEnd = CART_ROM_BASE + CART_ROM_SIZE;
+		const ioEnd = IO_BASE + this.ioByteLength;
+		const ramEnd = RAM_BASE + this.ram.byteLength;
+		let boundary: number;
+		switch (region) {
+			case MemoryRegionKind.SystemRom:
+				boundary = systemRomEnd;
+				break;
+			case MemoryRegionKind.CartRom:
+				boundary = cartRomEnd;
+				break;
+			case MemoryRegionKind.Io:
+				boundary = ioEnd;
+				break;
+			case MemoryRegionKind.Ram:
+				boundary = ramEnd;
+				break;
+			case MemoryRegionKind.Other:
+				boundary = addr < systemRomEnd
+					? systemRomEnd
+					: addr < cartRomEnd
+						? cartRomEnd
+						: addr < IO_BASE
+							? IO_BASE
+							: addr < ioEnd
+								? ioEnd
+								: addr < ramEnd ? ramEnd : 0x100000000;
+				break;
+		}
+		const roundedByteSpan = boundary - addr + (IO_WORD_SIZE - 1);
+		const regionWords = (roundedByteSpan - (roundedByteSpan & (IO_WORD_SIZE - 1))) / IO_WORD_SIZE;
+		return regionWords < wordLimit ? regionWords : wordLimit;
 	}
 
 	public writeBytes(addr: number, bytes: Uint8Array): void {
@@ -750,7 +797,7 @@ export class Memory {
 		return addr >= base && addr + length <= base + size;
 	}
 
-	private isLuaReadOnlyIoAddress(addr: number): boolean {
+	private isReadOnlyIoAddress(addr: number): boolean {
 		if (addr >= IO_INP_KEYS && addr < IO_INP_OUTPUT_PORT) {
 			return true; // latched keyboard/pointer/pad snapshot words
 		}
@@ -764,7 +811,8 @@ export class Memory {
 			case IO_SYS_FRAME_MS:
 			case IO_SYS_CYCLES_PER_FRAME:
 			case IO_IRQ_FLAGS:
-			case IO_DMA_STATUS:
+			case IO_DMA0_STATUS:
+			case IO_DMA1_STATUS:
 			case IO_IMGDEC_STATUS:
 			case IO_IMGDEC_INPUT_WORDS_RECEIVED:
 			case IO_IMGDEC_DECODED_WORD_COUNT:

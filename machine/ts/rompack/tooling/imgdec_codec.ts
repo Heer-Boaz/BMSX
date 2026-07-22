@@ -12,13 +12,12 @@ import {
 	IMGDEC_TOKEN_KIND_SHIFT,
 	IMGDEC_TOKEN_KIND_ZERO,
 	IMGDEC_TOKEN_RUN_LENGTH_MASK,
-} from '../../machine/ts/machine/devices/imgdec/contracts';
+} from '../../machine/devices/imgdec/contracts';
 
 export type DecodedImgDecStream = {
 	payload: Buffer;
 	textureWordCount: number;
 	clutWordCount: number;
-	consumedWordCount: number;
 };
 
 const MATCH_HASH_BITS = 16;
@@ -37,18 +36,17 @@ function matchHash(payload: Buffer, index: number): number {
 	return mixed >>> (32 - MATCH_HASH_BITS);
 }
 
-function appendLiteralRun(encoded: number[], payload: Buffer, start: number, end: number): void {
-	let cursor = start;
-	while (cursor < end) {
-		const runLength = end - cursor > IMGDEC_TOKEN_RUN_LENGTH_MASK + 1
+function appendLiteralTokens(tokens: Uint32Array, tokenCount: number, start: number, end: number): number {
+	let literalStart = start;
+	while (literalStart < end) {
+		const runLength = end - literalStart > IMGDEC_TOKEN_RUN_LENGTH_MASK + 1
 			? IMGDEC_TOKEN_RUN_LENGTH_MASK + 1
-			: end - cursor;
-		encoded.push((IMGDEC_TOKEN_KIND_LITERAL << IMGDEC_TOKEN_KIND_SHIFT) | (runLength - 1));
-		for (let index = 0; index < runLength; index += 1) {
-			encoded.push(payloadWord(payload, cursor + index));
-		}
-		cursor += runLength;
+			: end - literalStart;
+		tokens[tokenCount] = (IMGDEC_TOKEN_KIND_LITERAL << IMGDEC_TOKEN_KIND_SHIFT) | (runLength - 1);
+		tokenCount += 1;
+		literalStart += runLength;
 	}
+	return tokenCount;
 }
 
 function appendMatchPositions(
@@ -68,11 +66,12 @@ function appendMatchPositions(
 
 export function encodeImgDecStream(payload: Buffer, textureWordCount: number, clutWordCount: number): Buffer {
 	const wordCount = textureWordCount + clutWordCount;
-	const encoded: number[] = [IMGDEC_STREAM_MAGIC, textureWordCount, clutWordCount];
+	const tokens = new Uint32Array(wordCount);
 	const head = new Int32Array(MATCH_HASH_SIZE);
 	const previous = new Int32Array(wordCount);
 	head.fill(-1);
 	previous.fill(-1);
+	let tokenCount = 0;
 	let literalStart = 0;
 	let cursor = 0;
 
@@ -83,8 +82,9 @@ export function encodeImgDecStream(payload: Buffer, textureWordCount: number, cl
 			while (runEnd < wordCount && payloadWord(payload, runEnd) === 0) {
 				runEnd += 1;
 			}
-			appendLiteralRun(encoded, payload, literalStart, cursor);
-			encoded.push((IMGDEC_TOKEN_KIND_ZERO << IMGDEC_TOKEN_KIND_SHIFT) | (runEnd - cursor - 1));
+			tokenCount = appendLiteralTokens(tokens, tokenCount, literalStart, cursor);
+			tokens[tokenCount] = (IMGDEC_TOKEN_KIND_ZERO << IMGDEC_TOKEN_KIND_SHIFT) | (runEnd - cursor - 1);
+			tokenCount += 1;
 			appendMatchPositions(payload, previous, head, cursor, runEnd, wordCount);
 			cursor = runEnd;
 			literalStart = cursor;
@@ -115,10 +115,11 @@ export function encodeImgDecStream(payload: Buffer, textureWordCount: number, cl
 		}
 
 		if (bestLength >= IMGDEC_TOKEN_BACK_REFERENCE_MIN_LENGTH) {
-			appendLiteralRun(encoded, payload, literalStart, cursor);
-			encoded.push((IMGDEC_TOKEN_KIND_BACK_REFERENCE << IMGDEC_TOKEN_KIND_SHIFT)
+			tokenCount = appendLiteralTokens(tokens, tokenCount, literalStart, cursor);
+			tokens[tokenCount] = (IMGDEC_TOKEN_KIND_BACK_REFERENCE << IMGDEC_TOKEN_KIND_SHIFT)
 				| ((bestLength - IMGDEC_TOKEN_BACK_REFERENCE_MIN_LENGTH) << IMGDEC_TOKEN_BACK_REFERENCE_LENGTH_SHIFT)
-				| (bestDistance - 1));
+				| (bestDistance - 1);
+			tokenCount += 1;
 			appendMatchPositions(payload, previous, head, cursor, cursor + bestLength, wordCount);
 			cursor += bestLength;
 			literalStart = cursor;
@@ -130,9 +131,9 @@ export function encodeImgDecStream(payload: Buffer, textureWordCount: number, cl
 			repeatEnd += 1;
 		}
 		if (repeatEnd - cursor >= 2) {
-			appendLiteralRun(encoded, payload, literalStart, cursor);
-			encoded.push((IMGDEC_TOKEN_KIND_REPEAT << IMGDEC_TOKEN_KIND_SHIFT) | (repeatEnd - cursor - 1));
-			encoded.push(word);
+			tokenCount = appendLiteralTokens(tokens, tokenCount, literalStart, cursor);
+			tokens[tokenCount] = (IMGDEC_TOKEN_KIND_REPEAT << IMGDEC_TOKEN_KIND_SHIFT) | (repeatEnd - cursor - 1);
+			tokenCount += 1;
 			appendMatchPositions(payload, previous, head, cursor, repeatEnd, wordCount);
 			cursor = repeatEnd;
 			literalStart = cursor;
@@ -143,10 +144,41 @@ export function encodeImgDecStream(payload: Buffer, textureWordCount: number, cl
 		cursor += 1;
 	}
 
-	appendLiteralRun(encoded, payload, literalStart, wordCount);
-	const output = Buffer.alloc(encoded.length << 2);
-	for (let index = 0; index < encoded.length; index += 1) {
-		output.writeUInt32LE(encoded[index]! >>> 0, index << 2);
+	tokenCount = appendLiteralTokens(tokens, tokenCount, literalStart, wordCount);
+	let encodedWordCount = IMGDEC_STREAM_HEADER_WORDS;
+	for (let index = 0; index < tokenCount; index += 1) {
+		const token = tokens[index]!;
+		const tokenKind = token >>> IMGDEC_TOKEN_KIND_SHIFT;
+		encodedWordCount += 1;
+		if (tokenKind === IMGDEC_TOKEN_KIND_LITERAL) {
+			encodedWordCount += (token & IMGDEC_TOKEN_RUN_LENGTH_MASK) + 1;
+		} else if (tokenKind === IMGDEC_TOKEN_KIND_REPEAT) {
+			encodedWordCount += 1;
+		}
+	}
+	const output = Buffer.allocUnsafe(encodedWordCount << 2);
+	output.writeUInt32LE(IMGDEC_STREAM_MAGIC, 0);
+	output.writeUInt32LE(textureWordCount, 4);
+	output.writeUInt32LE(clutWordCount, 8);
+	let outputWord = IMGDEC_STREAM_HEADER_WORDS;
+	let payloadCursor = 0;
+	for (let index = 0; index < tokenCount; index += 1) {
+		const token = tokens[index]!;
+		const tokenKind = token >>> IMGDEC_TOKEN_KIND_SHIFT;
+		const runLength = tokenKind === IMGDEC_TOKEN_KIND_BACK_REFERENCE
+			? ((token >>> IMGDEC_TOKEN_BACK_REFERENCE_LENGTH_SHIFT) & IMGDEC_TOKEN_BACK_REFERENCE_LENGTH_MASK)
+				+ IMGDEC_TOKEN_BACK_REFERENCE_MIN_LENGTH
+			: (token & IMGDEC_TOKEN_RUN_LENGTH_MASK) + 1;
+		output.writeUInt32LE(token, outputWord << 2);
+		outputWord += 1;
+		if (tokenKind === IMGDEC_TOKEN_KIND_LITERAL) {
+			payload.copy(output, outputWord << 2, payloadCursor << 2, (payloadCursor + runLength) << 2);
+			outputWord += runLength;
+		} else if (tokenKind === IMGDEC_TOKEN_KIND_REPEAT) {
+			output.writeUInt32LE(payloadWord(payload, payloadCursor), outputWord << 2);
+			outputWord += 1;
+		}
+		payloadCursor += runLength;
 	}
 	return output;
 }
@@ -156,6 +188,9 @@ export function decodeImgDecStream(
 	byteOffset = 0,
 	byteLength = source.byteLength - byteOffset,
 ): DecodedImgDecStream {
+	if ((byteLength & 3) !== 0) {
+		throw new Error('Compressed image stream must contain whole words.');
+	}
 	const view = new DataView(source.buffer, source.byteOffset + byteOffset, byteLength);
 	let inputWord = 0;
 	if (view.getUint32(inputWord << 2, true) !== IMGDEC_STREAM_MAGIC) {
@@ -223,6 +258,5 @@ export function decodeImgDecStream(
 		payload,
 		textureWordCount,
 		clutWordCount,
-		consumedWordCount: inputWord,
 	};
 }
