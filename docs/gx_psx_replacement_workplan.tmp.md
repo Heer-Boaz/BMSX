@@ -5,7 +5,7 @@ This is **not** a stable ABI contract and is **not** more authoritative than the
 live checkout. It is a temporary execution checklist so agents can see the
 current direction, completed slices, known blockers, and next work.
 
-Last refreshed: 2026-07-21
+Last refreshed: 2026-07-23
 Do not duplicate recent commit history here. Use `git log --oneline` for that.
 
 ## Source of truth
@@ -33,8 +33,8 @@ recorded in `docs/architecture.md`. The selected GPU-side foundation now has
 the complete uniform 2 MiB VRAM address space (`GX-VRAM-02`) and the exact PS2
 PCRTC dual read-output/merge block (`GX-PCRTC-01`). Its physical beam,
 independent machine clock and context ownership are implemented; the renewed
-local runtime gates are accepted, two bounded accelerated-state review findings
-remain, and visible WebGL2/WebGPU proof is a separate deferred host gate. Packed
+local runtime gates and bounded accelerated-state review findings are accepted,
+and visible WebGL2/WebGPU proof is a separate deferred host gate. Packed
 `PSGPU24` now follows the GS PSMCT16 swizzle rather than a fabricated linear
 row stride. `BSX-GTE-01` closes the separately
 addressed three-lane fixed-Q12 `VMAD3` implementation. Later depth, local-memory
@@ -772,8 +772,26 @@ to fix and never permission to route around the raw base contract.
   maximum frames were 9.779 ms, 10.695 ms, 12.219 ms and 9.691 ms against the
   20 ms PAL budget. The temporary host timing probe was reverted. DuckStation,
   Mednafen and MAME confirm specialization and scanline spans as the mature next
-  steps if target-hardware profiling later proves a problem, but this desktop
-  measurement does not justify a speculative rasterizer rewrite now.
+  steps if target-hardware profiling later proves a problem. This short initial
+  run was only the admission gate; the longer command-level particle profile
+  below subsequently identified a concrete raster owner.
+- [x] Specialize and scan-convert the measured C++ software raster hot path.
+  A temporary 10,000-frame command probe found polygons consuming 56.266 billion
+  cycles, 93.7% of software command time, in the particle soak. Texture depth,
+  raw/semi-transparent mode, interpolation and dithering are now selected once
+  per primitive; exact affine edge steppers emit covered scanline spans without
+  bounding-box pixel rejection or per-row division; twenty-bit attribute words
+  stay `u32`/`Uint32Array`; and both VRAM owners use the same packed RGB555 blend
+  arithmetic. The same
+  probe now records 38.240 billion polygon cycles, 32.0% lower, while the
+  `pietious` rectangle path falls from 2.386 to 1.042 billion cycles. Three
+  pinned, uninstrumented 5,000-frame particle runs reduce median user CPU from
+  10.56 to 8.24 seconds (22.0%). An ARMv7 release A/B under QEMU favors the
+  32-bit attribute datapath 3.79 to 3.98 seconds over 1,000 frames and the
+  disassembly contains no scanline-loop `__aeabi_ldivmod`; this is codegen
+  evidence, not a real-SNES-Mini throughput claim. Focused pixel tests, 149 exact
+  backend captures, the complete 20-test native suite and the 16-frame
+  target-loader smoke pass as acceptance gates.
 - [x] Profile the full 1,100-frame libretro/GLES2 `bare_metal_cart` timeline,
   including the scenes missed by the earlier short run. Baseline measured
   2.85 ms with five framebuffer copies/frame; Tera-Flare 12.24 ms with 70
@@ -799,18 +817,49 @@ to fix and never permission to route around the raw base contract.
   RTX 5070 Ti requests `glTextureBarrierNV` through that callback, passes all
   146 slowdown-timeline captures exactly, and completes three capture-free
   1,020-frame runs in 6.48--6.83 seconds wall time.
+- [x] Add native ARM GLES2 framebuffer fetch as a destination-feedback route.
+  Fill, line and textured shaders read the attached raw word directly; page and
+  CLUT reads keep using the retained sample texture. The existing dependency
+  layers and triangle splits keep overlapping destination readers in separate
+  draws. `GL_EXT_shader_framebuffer_fetch` is deliberately absent: no supported
+  BMSX target that requires GLES2 provides it, and the earlier forced llvmpipe
+  experiment was neither target evidence nor valid pixel evidence. When ARM
+  fetch is absent, GLES2 retains the resolved NV barrier or the exact
+  dependency-copy route.
 - [ ] Run that resolved NV path in the actual Windows RetroArch frontend before
-  closing the reported RTX slowdown. `GL_EXT_shader_framebuffer_fetch` remains
-  deliberately unimplemented: Mesa 25.2.8 llvmpipe has a confirmed zero-output
-  color-fbfetch bug, while ANGLE documents that its advertised coherent
-  emulation may order only between draw calls. Do not add a driver blacklist,
-  runtime capability probe, or shader fallback in lieu of live proof.
+  closing the reported RTX slowdown. On the actual SNES Mini, record the live
+  extension set and measure whichever existing exact route the context selects:
+  ARM fetch when exposed, otherwise dependency copy. Do not add a driver
+  blacklist, speculative capability or inexact shader path in lieu of those
+  live proofs.
 - [x] Route native GLES2 textured draws through the same barrier only when the
   physical page/CLUT coverage is disjoint from the clipped destination. Aliased
   texture sources retain the explicit sampletexture path. Tera-Flare drops from
   62.75 average/65 maximum copies to exactly one per frame; all 146 deterministic
   captures remain pixel-identical to both forced-copy mode and the preceding
   retained-dirty implementation.
+- [x] Move texture-page and CLUT bases from textured draw uniforms into one
+  packed `uint16x4` vertex attribute in GLES2, WebGL2 and WebGPU. The retained
+  batch key now contains only draw-mode bits still consumed as uniforms; page
+  selection and rectangle flips no longer split otherwise compatible commands.
+  On the 700-frame `pietious_scanout_demo` with every feedback extension hidden,
+  each 739-rectangle gameplay submission drops from 340 textured API draws to
+  one. The GX textured caller keeps the same 1,046,928 submitted vertices while
+  its calls drop from 80,324 to 316 including boot, and total `glDrawArrays`
+  calls drop from 82,462 to 2,454. Six alternating 3,000-frame Release runs on
+  Mesa llvmpipe, excluding the first 700 frames, reduce median
+  core-without-present time from 2.644 to 2.058 ms and full `retro_run` time from
+  3.535 to 2.918 ms; this is local host evidence, not SNES Mini proof. This is
+  retained-state batching, not a cart cache, reorder pass or extension route.
+- [x] Correct SNES Mini release code generation before interpreting low-end
+  renderer profiles. The accepted target had still been compiled as generic
+  ARMv7-A/VFPv3-D16 despite running exclusively on a Cortex-A7. Its toolchain
+  now selects Cortex-A7, NEON/VFPv4 and hard-float directly, while Release core
+  and direct-host builds use the existing LTO contract. The final ELF advertises
+  NEON/VFPv4, contains generated vector code, and reduces core text from
+  1,685,540 to 1,610,809 bytes in the same checkout. Full ABI audits and the
+  16-frame target-loader/software smoke pass; speed remains a real-device
+  measurement rather than a QEMU claim.
 - [x] Replace the accelerated last-source rect/hash/tile cache with retained
   raw-to-sample dirty coverage in GLES2, WebGL2 and WebGPU. Raw writes mark
   clipped bounds after their draw; page/CLUT/destination reads copy and clear
@@ -1019,6 +1068,22 @@ to fix and never permission to route around the raw base contract.
   real GLES2 captures are byte-identical, the focused/broad runtime gates retain
   their accepted output, and independent review of commit `a8de26b6e` found no
   correctness or performance blocker.
+- [x] Remove repeated integer-scale work from the direct-host software
+  presenter. RetroArch's production fixed-scale filters keep format-specific
+  row kernels and use NEON only inside those kernels; MyMinUI's per-call
+  allocation and gather staging were explicitly not copied. The layout owner
+  now publishes its exact integer scale, the BMSX host accepts only the
+  XRGB8888 format its core emits, and a dedicated allocation-free blitter loads
+  and converts each source pixel once before writing its complete output block.
+  This also removes the old 16.16 truncation error that made a nominal 3x row
+  repeat its first source pixel four times and its last only twice.
+  A native screening benchmark for 256x192 to 768x576 reduced the 32-bit path
+  from 0.121 ms to 0.027 ms and the XRGB8888-to-RGB565 path from 0.147 ms to
+  0.018 ms. Those figures select the algorithm; they are not SNES Mini timing
+  claims. The accepted Cortex-A7 release contains the compiler-generated NEON
+  `vst2`/`vst3`/`vst4` kernels for both 16- and 32-bit output; no runtime SIMD
+  dispatch or handwritten target fork was added. The real-target 50 Hz gate
+  remains open.
 - [ ] Keep WebGL2/GLES2 behavior synchronized for every new GX command.
 - [ ] Wire the existing TS/C++ software/headless renderer to the same GX/PSX
   contract as oracle/backend, not as a fallback inside GPU backends.
@@ -1085,17 +1150,16 @@ merge model rather than a terminal-shaped approximation.
   escapes the 256x192 circuit rectangle. Mirrored raw hardware vectors exercise
   both circuits and the same `PMODE` merge independently of supervisor mode;
   ordinary firmware carts follow the circuit-2 reservation.
-- [ ] Close the two bounded findings from the final accelerated-state rereview.
-  GLES2 must retain distinct uploaded circuit words when both circuits select
-  the same scanout sample program, and WebGL2/GLES2 must publish the PCRTC blend
-  constant only when their real backend-state owner requires it rather than on
-  every matching draw. This is performance cleanup; current terminal pixels and
-  machine behavior are already exact.
-- [ ] Complete the visible `BIOS-TERM-LIVE-01` WebGL2/WebGPU acceptance run
-  on a host that exposes both browser GPU APIs. Edge in the current WSL
-  environment exposes neither usable WebGL2 nor WebGPU and is not a validation
-  route. This is a deferred live-backend proof, not missing PCRTC machine or
-  backend implementation.
+- [x] Close the two bounded findings from the final accelerated-state rereview.
+  WebGL2 retains both circuit ranges. GLES2 retains the active program payload
+  and republishes it on a real circuit/revision/field change; it does not trade
+  one small uniform update for circuit selection in every fragment. Both
+  backends publish the PCRTC blend constant only when their context owner
+  requires it. The acceptance gate generates the same
+  `renderhwtest` and `bare_metal_cart` frames through TS software, C++ software,
+  and an actual offscreen GLES2 context and compares every RGBA byte. Shader
+  helper lists and source-normalization checks are deliberately not parity
+  evidence.
 
 ### 6. VDP/RPU removal
 
@@ -1195,7 +1259,7 @@ merge model rather than a terminal-shaped approximation.
 - [x] Fixed WebGPU GX backend command-encoder resource ownership so each
   recorded VRAM render pass reads the vertex/uniform slice it was recorded
   with. The WebGPU backend no longer overwrites one shared uniform/vertex buffer
-  slot repeatedly before submitting the encoder for a frame. Build, shader
+  slot repeatedly before submitting the encoder for a frame. Builds, software
   parity and non-browser backend proof do not constitute a browser run. Edge in
   the current WSL environment exposes neither a usable WebGL2 nor WebGPU context,
   so it is not a live validation route; both browser backends still need a real
@@ -1244,26 +1308,23 @@ terminal remains BIOS firmware throughout.
 
 Pick one vertical slice and finish it before committing:
 
-`GX-VRAM-02` and `BSX-GTE-01` are complete and are no longer selectable
-implementation slices. `GX-PCRTC-01` has completed its machine, terminal and
-local runtime gates, but remains open for the two bounded backend-state findings
-above. The unavailable WSL browser contexts do not keep PCRTC machine work open;
-visible browser proof remains in the separate deferred live slices.
+`GX-VRAM-02`, `BSX-GTE-01` and `GX-PCRTC-01` are complete and are no longer
+selectable implementation slices. The unavailable WSL browser contexts do not
+keep PCRTC machine work open; visible browser proof remains in the separate
+deferred live slices.
 
-1. **Finish the `GX-PCRTC-01` state-cache rereview findings** without changing
-   pixels, machine state or the accepted terminal contract.
-2. **Continue `PERF-RUNTIME-01` by measured owner**: select one bounded hot-path
+1. **Continue `PERF-RUNTIME-01` by measured owner**: select one bounded hot-path
    owner from a profile or direct repeated-work audit, correct it in all mirrored
    consumers, prove exact output, review the immutable commit, then freeze it
    before selecting the next owner.
-3. **Two-slot expansion bus (`CART-EXP-01`)**: specify and implement the physical
+2. **Two-slot expansion bus (`CART-EXP-01`)**: specify and implement the physical
    slot/bus/save-state boundary before any terminal command extension.
-4. **Terminal extension and developer cart (`BIOS-TERM-EXT-01`)**: add the BIOS
+3. **Terminal extension and developer cart (`BIOS-TERM-EXT-01`)**: add the BIOS
    `CALL` dispatcher over the reviewed cartridge ABI, then move developer
    functionality into cart Lua backed by real extension hardware.
-5. **Visible GX migration regressions**: finish live host-UI and accelerated
+4. **Visible GX migration regressions**: finish live host-UI and accelerated
    browser scanout proof when a real browser is available.
-6. **Accelerated feedback performance**: run the frontend-resolved NV barrier
+5. **Accelerated feedback performance**: run the frontend-resolved NV barrier
    path in the real Windows RetroArch context. If that concrete context does not
    expose NV texture barrier, measure its actual extensions and ordering before
    choosing another GPU feedback mechanism; do not infer one from the GPU name

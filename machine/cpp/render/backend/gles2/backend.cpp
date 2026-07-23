@@ -503,6 +503,7 @@ void OpenGLES2Backend::drawIndexed(PassEncoder& pass, i32 indexCount,
 
 void OpenGLES2Backend::beginFrame() {
 	m_stats = FrameStats{};
+	m_blend_color_valid = false;
 	if (m_profile_gx_uploads) {
 		const u64 renderFrameSerial =
 			m_gx_cpu_to_vram_profile_frame.renderFrameSerial + 1u;
@@ -610,12 +611,14 @@ void OpenGLES2Backend::onContextReset() {
 	m_readback_fbo = 0;
 	*m_post_pipelines = OpenGLES2PostPipelines{};
 	m_touched_texture_units = 0u;
+	m_blend_color_valid = false;
 	invalidateTextureBindingCache();
 	glDisable(GL_DITHER);
 	const char* extensions = reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS));
 	m_supports_srgb_textures = hasExtensionToken(extensions, "GL_EXT_sRGB");
 	m_supports_uint_indices = hasExtensionToken(extensions, "GL_OES_element_index_uint");
-	m_texture_barrier = hasExtensionToken(extensions, "GL_NV_texture_barrier")
+	m_arm_framebuffer_fetch_available = hasExtensionToken(extensions, "GL_ARM_shader_framebuffer_fetch");
+	m_texture_barrier = !m_arm_framebuffer_fetch_available && hasExtensionToken(extensions, "GL_NV_texture_barrier")
 		? resolveProcAddress("glTextureBarrierNV")
 		: nullptr;
 	glGenFramebuffers(1, &m_readback_fbo);
@@ -623,9 +626,10 @@ void OpenGLES2Backend::onContextReset() {
 	CRTPipeline::initPresentGLES2(*this, m_post_pipelines->present);
 	CRTPipeline::initCRTGLES2(*this, m_post_pipelines->crt);
 	if (kGLES2VerboseLog) {
-		std::fprintf(stderr, "[BMSX][GLES2] EXT_sRGB=%d OES_element_index_uint=%d NV_texture_barrier=%d\n",
+		std::fprintf(stderr, "[BMSX][GLES2] EXT_sRGB=%d OES_element_index_uint=%d ARM_framebuffer_fetch=%d NV_texture_barrier=%d\n",
 			m_supports_srgb_textures ? 1 : 0,
 			m_supports_uint_indices ? 1 : 0,
+			m_arm_framebuffer_fetch_available ? 1 : 0,
 			m_texture_barrier != nullptr ? 1 : 0);
 	}
 }
@@ -651,9 +655,11 @@ void OpenGLES2Backend::onContextLost() {
 	m_readback_fbo = 0;
 	*m_post_pipelines = OpenGLES2PostPipelines{};
 	m_touched_texture_units = 0u;
+	m_blend_color_valid = false;
 	invalidateTextureBindingCache();
 	m_supports_srgb_textures = false;
 	m_supports_uint_indices = false;
+	m_arm_framebuffer_fetch_available = false;
 	m_texture_barrier = nullptr;
 }
 
@@ -670,6 +676,22 @@ void OpenGLES2Backend::setActiveTextureUnit(i32 unit) {
 	if (kGLES2VerboseLog) {
 	std::fprintf(stderr, "[BMSX][GLES2] activeTexture unit=%d\n", unit);
 	}
+}
+
+void OpenGLES2Backend::setBlendColor(GLfloat red, GLfloat green, GLfloat blue, GLfloat alpha) {
+	if (m_blend_color_valid
+		&& m_blend_red == red
+		&& m_blend_green == green
+		&& m_blend_blue == blue
+		&& m_blend_alpha == alpha) {
+		return;
+	}
+	glBlendColor(red, green, blue, alpha);
+	m_blend_red = red;
+	m_blend_green = green;
+	m_blend_blue = blue;
+	m_blend_alpha = alpha;
+	m_blend_color_valid = true;
 }
 
 void OpenGLES2Backend::bindTexture2D(TextureHandle tex) {

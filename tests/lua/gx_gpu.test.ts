@@ -155,6 +155,7 @@ import {
 	gxGpuDrawModeTextureRectangleXFlip,
 	gxGpuDrawModeTextureRectangleYFlip,
 	gxGpuDrawModeTransparencyMode,
+	gxGpuTexturedBatchDrawModeWord,
 	gxGpuMaskBitCheckBeforeDraw,
 	gxGpuMaskBitSetWhileDrawing,
 	gxGpuSegmentExceedsPrimitiveSize,
@@ -251,6 +252,7 @@ import { executeGxGpuSoftwareCommands } from '../../machine/ts/render/backend/so
 import { scanoutGxGpuSoftwareVram } from '../../machine/ts/render/backend/software/gx_gpu_scanout';
 import { HeadlessGPUBackend } from '../../machine/ts/render/headless/backend';
 import {
+	gxGpuSoftwareBlendRgb555,
 	gxGpuSoftwareTextureModulationChannel5,
 	gxGpuSoftwareTextureModulationPreDither,
 	gxGpuSoftwareVram,
@@ -671,7 +673,7 @@ test('GX-GPU decodes PSX GP0 signed vertex and rectangle size words', () => {
 	assert.equal(gxGpuVramCopyNeedsChunking(10, 20, 50, 24, 32, 16), false);
 	assert.equal(gxGpuVramCopyNeedsChunking(10, 20, 12, 40, 32, 16), false);
 	assert.equal(gxGpuVramCopyChunkHeight(20, 80, 16), 16);
-	const uvPlane = new Float64Array(2 * GX_GPU_TRIANGLE_ATTRIBUTE_PLANE_PHASES);
+	const uvPlane = new Uint32Array(2 * GX_GPU_TRIANGLE_ATTRIBUTE_PLANE_PHASES);
 	uvPlane.set([1, 2, 17, 2, 1, 18]);
 	gxGpuTriangleAttributePlane(uvPlane, 0, 2, 256, 0, 0, 16, 0, 0, 16);
 	assert.deepEqual([...uvPlane], [6144, 10240, 4096, 0, 0, 4096]);
@@ -740,6 +742,8 @@ test('GX-GPU decodes PSX GP0 signed vertex and rectangle size words', () => {
 	assert.equal(gxGpuDrawModeTexturePageBaseY(0x0810, 0), 256);
 	assert.equal(gxGpuDrawModeTextureMode(0x0100), GX_GPU_TEXTURE_MODE_DIRECT16);
 	assert.equal(gxGpuDrawModeTransparencyMode(0x0060), 3);
+	assert.equal(gxGpuTexturedBatchDrawModeWord(0x3b83, false), 0x0180);
+	assert.equal(gxGpuTexturedBatchDrawModeWord(0x3be3, true), 0x01e0);
 	assert.equal(gxGpuPolygonTexturePageWordIndex(0x24), 4);
 	assert.equal(gxGpuPolygonTexturePageWordIndex(0x34), 5);
 	assert.equal(gxGpuPolygonDrawModeWord(0x1fff, 0x0000), 0x1600);
@@ -2051,6 +2055,54 @@ test('GX-GPU software backend owns texture modulation math', () => {
 	assert.equal(gxGpuSoftwareTextureModulationChannel5(31, 255, 3), 31);
 	assert.equal(gxGpuSoftwareTextureModulationChannel5(1, 16, -4), 0);
 	assert.equal(gxGpuSoftwareTextureModulationChannel5(12, 96, 0), 9);
+});
+
+test('GX-GPU software backend packed RGB555 blend matches channel arithmetic', () => {
+	const destinationWords = new Uint16Array([
+		0x0000,
+		0x0001,
+		0x001f,
+		0x03e0,
+		0x7c00,
+		0x7fff,
+		0x8000,
+		0xffff,
+	]);
+	for (let source = 0; source < 0x8000; source += 1) {
+		for (let destinationIndex = 0; destinationIndex <= destinationWords.length; destinationIndex += 1) {
+			const destination = destinationIndex < destinationWords.length
+				? destinationWords[destinationIndex]
+				: ((source * 1103515245 + 12345) >>> 8) & 0xffff;
+			for (let mode = 0; mode < 4; mode += 1) {
+				let expected = 0;
+				for (let shift = 0; shift <= 10; shift += 5) {
+					const sourceChannel = (source >>> shift) & 0x1f;
+					const destinationChannel = (destination >>> shift) & 0x1f;
+					let channel: number;
+					switch (mode) {
+						case 0:
+							channel = (sourceChannel + destinationChannel) >>> 1;
+							break;
+						case 1: {
+							const sum = sourceChannel + destinationChannel;
+							channel = sum < 31 ? sum : 31;
+							break;
+						}
+						case 2:
+							channel = destinationChannel > sourceChannel ? destinationChannel - sourceChannel : 0;
+							break;
+						default: {
+							const sum = destinationChannel + (sourceChannel >>> 2);
+							channel = sum < 31 ? sum : 31;
+							break;
+						}
+					}
+					expected |= channel << shift;
+				}
+				assert.equal(gxGpuSoftwareBlendRgb555(source, destination, mode), expected);
+			}
+		}
+	}
 });
 
 test('GX-GPU software backend consumes only presentable commands', () => {

@@ -453,6 +453,7 @@ if(BMSX_BUILD_LIBRETRO_HOST)
 		${BMSX_LIBRETRO_HOST_DIR}/input_timeline.c
 		${BMSX_LIBRETRO_HOST_DIR}/keyboard_input.c
 		${BMSX_LIBRETRO_HOST_DIR}/screenshot.c
+		${BMSX_LIBRETRO_HOST_DIR}/software_frame_blitter.c
 		${BMSX_LIBRETRO_HOST_DIR}/supervisor_chord.c
 		${BMSX_LIBRETRO_HOST_DIR}/video_context.c
 		${BMSX_LIBRETRO_HOST_DIR}/video_presenter.c
@@ -523,6 +524,19 @@ if(BMSX_BUILD_TESTS)
 		${BMSX_LIBRETRO_DIR}
 	)
 	add_test(NAME bmsx_libretro_host_supervisor_chord_tests COMMAND bmsx_libretro_host_supervisor_chord_tests)
+
+	add_executable(bmsx_libretro_host_software_frame_blitter_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_host_software_frame_blitter_test.c
+		${BMSX_LIBRETRO_HOST_DIR}/host_fatal.c
+		${BMSX_LIBRETRO_HOST_DIR}/software_frame_blitter.c
+	)
+	target_include_directories(bmsx_libretro_host_software_frame_blitter_tests PRIVATE
+		${BMSX_LIBRETRO_HOST_DIR}
+	)
+	add_test(
+		NAME bmsx_libretro_host_software_frame_blitter_tests
+		COMMAND bmsx_libretro_host_software_frame_blitter_tests
+	)
 
 	if(UNIX AND NOT APPLE)
 		add_executable(bmsx_libretro_host_audio_queue_tests

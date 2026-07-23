@@ -1,3 +1,7 @@
+#ifdef GX_GPU_FRAMEBUFFER_FETCH_ARM
+#extension GL_ARM_shader_framebuffer_fetch : require
+#endif
+
 precision highp float;
 precision highp int;
 
@@ -6,8 +10,6 @@ precision highp int;
 #endif
 
 uniform sampler2D u_vram;
-uniform ivec2 u_texPageBase;
-uniform ivec2 u_clutBase;
 uniform ivec2 u_textureWindowAnd;
 uniform ivec2 u_textureWindowOr;
 uniform int u_textureMode;
@@ -21,6 +23,7 @@ uniform int u_skippedLineParity;
 varying vec2 v_uvPlaneBase;
 varying vec2 v_uvPlaneStepX;
 varying vec2 v_uvPlaneStepY;
+varying vec4 v_textureSource;
 #if GX_GPU_FIXED_COLOR_PLANE
 varying vec3 v_colorPlaneBase;
 varying vec3 v_colorPlaneStepX;
@@ -70,7 +73,11 @@ int rawVramWord(ivec2 logicalCoord) {
 }
 
 int rawStorageVramWord(ivec2 storageCoord) {
+#ifdef GX_GPU_FRAMEBUFFER_FETCH_ARM
+	vec4 rawPixel = gl_LastFragColorARM;
+#else
 	vec4 rawPixel = texture2D(u_vram, (vec2(storageCoord) + vec2(0.5)) / 1024.0);
+#endif
 	ivec4 nibbles = ivec4(rawPixel * 15.0 + 0.5);
 	return nibbles.r * 4096 + nibbles.g * 256 + nibbles.b * 16 + nibbles.a;
 }
@@ -94,23 +101,25 @@ ivec4 textureColor(int word) {
 }
 
 ivec4 samplePsxTexture(ivec2 sampleCoord) {
+	ivec2 texPageBase = ivec2(v_textureSource.xy);
+	ivec2 clutBase = ivec2(v_textureSource.zw);
 	ivec2 windowed = ivec2(
 		applyTextureWindowAxis(sampleCoord.x, u_textureWindowAnd.x, u_textureWindowOr.x),
 		applyTextureWindowAxis(sampleCoord.y, u_textureWindowAnd.y, u_textureWindowOr.y)
 	);
 	if (u_textureMode == 0) {
-		int textureWord = rawVramWord(ivec2(u_texPageBase.x + windowed.x / 4, u_texPageBase.y + windowed.y));
+		int textureWord = rawVramWord(ivec2(texPageBase.x + windowed.x / 4, texPageBase.y + windowed.y));
 		int subpixel = windowed.x - (windowed.x / 4) * 4;
 		int shifted = subpixel == 0 ? textureWord : (subpixel == 1 ? textureWord / 16 : (subpixel == 2 ? textureWord / 256 : textureWord / 4096));
 		int paletteIndex = shifted - (shifted / 16) * 16;
-		return textureColor(rawVramWord(ivec2(u_clutBase.x + paletteIndex, u_clutBase.y)));
+		return textureColor(rawVramWord(ivec2(clutBase.x + paletteIndex, clutBase.y)));
 	}
 	if (u_textureMode == 1) {
-		int textureWord = rawVramWord(ivec2(u_texPageBase.x + windowed.x / 2, u_texPageBase.y + windowed.y));
+		int textureWord = rawVramWord(ivec2(texPageBase.x + windowed.x / 2, texPageBase.y + windowed.y));
 		int paletteIndex = windowed.x - (windowed.x / 2) * 2 == 0 ? textureWord - (textureWord / 256) * 256 : textureWord / 256;
-		return textureColor(rawVramWord(ivec2(u_clutBase.x + paletteIndex, u_clutBase.y)));
+		return textureColor(rawVramWord(ivec2(clutBase.x + paletteIndex, clutBase.y)));
 	}
-	return textureColor(rawVramWord(u_texPageBase + windowed));
+	return textureColor(rawVramWord(texPageBase + windowed));
 }
 
 ivec3 blendRgb5(ivec3 src5, ivec3 dst5) {

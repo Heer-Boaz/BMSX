@@ -233,9 +233,9 @@ void testGp0RawDrawWordDecoders() {
 	require(!bmsx::gxGpuVramCopyNeedsChunking(10u, 20u, 50u, 24u, 32u, 16u), "GX-GPU separated X copy is not chunked");
 	require(!bmsx::gxGpuVramCopyNeedsChunking(10u, 20u, 12u, 40u, 32u, 16u), "GX-GPU separated Y copy is not chunked");
 	require(bmsx::gxGpuVramCopyChunkHeight(20u, 80u, 16u) == 16u, "GX-GPU non-overlapping row distance clamps to height");
-	std::array<bmsx::i64, 2u * bmsx::GX_GPU_TRIANGLE_ATTRIBUTE_PLANE_PHASES> uvPlane{1, 2, 17, 2, 1, 18};
+	std::array<bmsx::u32, 2u * bmsx::GX_GPU_TRIANGLE_ATTRIBUTE_PLANE_PHASES> uvPlane{1, 2, 17, 2, 1, 18};
 	bmsx::gxGpuTriangleAttributePlane(uvPlane.data(), 0u, 2u, 256, 0, 0, 16, 0, 0, 16);
-	require(uvPlane == std::array<bmsx::i64, 6u>{6144, 10240, 4096, 0, 0, 4096}, "GX-GPU attribute plane retains raw base and step words");
+	require(uvPlane == std::array<bmsx::u32, 6u>{6144, 10240, 4096, 0, 0, 4096}, "GX-GPU attribute plane retains raw base and step words");
 	require(((uvPlane[0] & bmsx::GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK) >> bmsx::GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) == 1, "GX-GPU fixed attribute first vertex decode");
 	require((((uvPlane[0] + uvPlane[2] * 16) & bmsx::GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK) >> bmsx::GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) == 17, "GX-GPU fixed attribute second vertex decode");
 	require((((uvPlane[1] + uvPlane[5] * 16) & bmsx::GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK) >> bmsx::GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) == 18, "GX-GPU fixed attribute third vertex decode");
@@ -301,6 +301,8 @@ void testGp0RawDrawWordDecoders() {
 	require(bmsx::gxGpuDrawModeTexturePageBaseY(0x0810u, 0u) == 256u, "GX-GPU closed Y gate suppresses the high texture-page bank bit");
 	require(bmsx::gxGpuDrawModeTextureMode(0x0100u) == bmsx::GX_GPU_TEXTURE_MODE_DIRECT16, "GX-GPU texture mode decode");
 	require(bmsx::gxGpuDrawModeTransparencyMode(0x0060u) == 3u, "GX-GPU transparency mode decode");
+	require(bmsx::gxGpuTexturedBatchDrawModeWord(0x3b83u, false) == 0x0180u, "GX-GPU textured batch state excludes retained page, flip and inactive blend bits");
+	require(bmsx::gxGpuTexturedBatchDrawModeWord(0x3be3u, true) == 0x01e0u, "GX-GPU textured batch state retains active texture and blend modes");
 	require(bmsx::gxGpuPolygonTexturePageWordIndex(0x24u) == 4u, "GX-GPU flat textured polygon texpage word index");
 	require(bmsx::gxGpuPolygonTexturePageWordIndex(0x34u) == 5u, "GX-GPU Gouraud textured polygon texpage word index");
 	require(bmsx::gxGpuPolygonDrawModeWord(0x1fffu, 0x0000u) == 0x1600u, "GX-GPU polygon texpage preserves non-texpage draw bits");
@@ -1719,6 +1721,54 @@ void testSoftwareTextureModulationMath() {
 	require(bmsx::gxGpuSoftwareTextureModulationChannel5(31u, 255u, 3) == 31u, "GX-GPU software texture modulation saturates high dither");
 	require(bmsx::gxGpuSoftwareTextureModulationChannel5(1u, 16u, -4) == 0u, "GX-GPU software texture modulation clamps low dither");
 	require(bmsx::gxGpuSoftwareTextureModulationChannel5(12u, 96u, 0) == 9u, "GX-GPU software texture modulation divides by 128");
+}
+
+void testSoftwarePackedRgb555BlendMath() {
+	constexpr std::array<bmsx::u32, 8> destinationWords{
+		0x0000u,
+		0x0001u,
+		0x001fu,
+		0x03e0u,
+		0x7c00u,
+		0x7fffu,
+		0x8000u,
+		0xffffu,
+	};
+	for (bmsx::u32 source = 0u; source < 0x8000u; source += 1u) {
+		for (size_t destinationIndex = 0u; destinationIndex <= destinationWords.size(); destinationIndex += 1u) {
+			const bmsx::u32 destination = destinationIndex < destinationWords.size()
+				? destinationWords[destinationIndex]
+				: ((source * 1103515245u + 12345u) >> 8u) & 0xffffu;
+			for (bmsx::u32 mode = 0u; mode < 4u; mode += 1u) {
+				bmsx::u32 expected = 0u;
+				for (bmsx::u32 shift = 0u; shift <= 10u; shift += 5u) {
+					const bmsx::u32 sourceChannel = (source >> shift) & 0x1fu;
+					const bmsx::u32 destinationChannel = (destination >> shift) & 0x1fu;
+					bmsx::u32 channel;
+					switch (mode) {
+						case 0u:
+							channel = (sourceChannel + destinationChannel) >> 1u;
+							break;
+						case 1u: {
+							const bmsx::u32 sum = sourceChannel + destinationChannel;
+							channel = sum < 31u ? sum : 31u;
+							break;
+						}
+						case 2u:
+							channel = destinationChannel > sourceChannel ? destinationChannel - sourceChannel : 0u;
+							break;
+						default: {
+							const bmsx::u32 sum = destinationChannel + (sourceChannel >> 2u);
+							channel = sum < 31u ? sum : 31u;
+							break;
+						}
+					}
+					expected |= channel << shift;
+				}
+				require(bmsx::gxGpuSoftwareBlendRgb555(source, destination, mode) == expected, "GX-GPU packed RGB555 blend matches independent channel arithmetic");
+			}
+		}
+	}
 }
 
 void testGpureadFencesBackendWorkAndPacksWrappedOddPixels() {
@@ -4395,6 +4445,7 @@ int main() {
 	testGp1ResetCancelsRestoredActiveC0Deadline();
 	testGp1ClearFifoClearsPartialGp0PacketsAndFlushesPartialCpuToVramUploads();
 	testSoftwareTextureModulationMath();
+	testSoftwarePackedRgb555BlendMath();
 	testGpureadFencesBackendWorkAndPacksWrappedOddPixels();
 	testGpureadPreservesRowMajorOrderAcrossXAndYWrap();
 	testOpenYGateExposesInstalledUpperVramStorage();

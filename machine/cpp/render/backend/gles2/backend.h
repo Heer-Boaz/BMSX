@@ -94,6 +94,7 @@ public:
 	void setActiveTextureUnit(i32 unit);
 	void bindTexture2D(TextureHandle tex);
 	void invalidateTextureBindingCache();
+	void setBlendColor(GLfloat red, GLfloat green, GLfloat blue, GLfloat alpha);
 	GLuint framebufferName(void* target) const;
 	void setRenderTarget(GLuint fbo, i32 width, i32 height);
 	GLuint compileShader(
@@ -124,6 +125,7 @@ public:
 	ProcAddress resolveProcAddress(const char* name) const;
 	ProcAddress resolveProcAddress(const char* coreName, const char* angleName, const char* extName) const;
 	bool supportsUintIndices() const { return m_supports_uint_indices; }
+	bool armFramebufferFetchAvailable() const { return m_arm_framebuffer_fetch_available; }
 	bool textureBarrierAvailable() const { return m_texture_barrier != nullptr; }
 	void textureBarrier() const { m_texture_barrier(); }
 	GLuint backbuffer() const { return m_backbuffer_fbo; }
@@ -151,12 +153,18 @@ private:
 	i32 m_active_texture_unit = -1;
 	std::array<GLuint, kTrackedTextureUnits> m_bound_texture_2d_by_unit{};
 	u32 m_touched_texture_units = 0u;
+	GLfloat m_blend_red = 0.0f;
+	GLfloat m_blend_green = 0.0f;
+	GLfloat m_blend_blue = 0.0f;
+	GLfloat m_blend_alpha = 0.0f;
+	bool m_blend_color_valid = false;
 	std::unique_ptr<OpenGLES2PostPipelines> m_post_pipelines;
 	GLuint m_readback_fbo = 0;
 	u32 m_context_generation = 0;
 	bool m_context_ready = false;
 	bool m_supports_srgb_textures = false;
 	bool m_supports_uint_indices = false;
+	bool m_arm_framebuffer_fetch_available = false;
 	ProcAddress m_texture_barrier = nullptr;
 };
 

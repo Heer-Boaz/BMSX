@@ -33,7 +33,7 @@ export function gxGpuTriangleRasterShift(coord0: number, coord1: number, coord2:
 }
 
 export function gxGpuTriangleAttributePlane(
-	out: Float64Array,
+	out: Uint32Array,
 	outOffset: number,
 	componentCount: number,
 	determinant: number,
@@ -282,6 +282,12 @@ export function gxGpuDrawModeTextureMode(drawModeWord: number): number {
 
 export function gxGpuDrawModeTransparencyMode(drawModeWord: number): number {
 	return (drawModeWord >>> 5) & 0x03;
+}
+
+export function gxGpuTexturedBatchDrawModeWord(drawModeWord: number, blendEnabled: boolean): number {
+	const textureModeMask = 0x03 << 7;
+	const transparencyModeMask = 0x03 << 5;
+	return drawModeWord & (textureModeMask | (blendEnabled ? transparencyModeMask : 0));
 }
 
 export function gxGpuTextureWindowAndX(textureWindowWord: number): number {

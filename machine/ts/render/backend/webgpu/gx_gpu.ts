@@ -67,6 +67,7 @@ import {
 	gxGpuDrawModeTextureRectangleXFlip,
 	gxGpuDrawModeTextureRectangleYFlip,
 	gxGpuDrawModeTransparencyMode,
+	gxGpuTexturedBatchDrawModeWord,
 	gxGpuFillHeight,
 	gxGpuFillWidth,
 	gxGpuFillX,
@@ -126,8 +127,11 @@ const GX_GPU_LINE_SEGMENT_CAPACITY = 4096;
 const GX_GPU_LINE_FLOAT_CAPACITY = GX_GPU_LINE_SEGMENT_CAPACITY * GX_GPU_LINE_SEGMENT_FLOATS;
 const GX_GPU_TEXTURED_UV_COMPONENTS = 2;
 const GX_GPU_COLOR_COMPONENTS = 3;
-const GX_GPU_TEXTURED_VERTEX_FLOATS = 11;
-const GX_GPU_FIXED_TEXTURED_VERTEX_FLOATS = 17;
+const GX_GPU_TEXTURE_SOURCE_FLOATS = 2;
+const GX_GPU_TEXTURED_VERTEX_FLOATS = 13;
+const GX_GPU_FIXED_TEXTURED_VERTEX_FLOATS = 19;
+const GX_GPU_TEXTURED_TEXTURE_SOURCE_FLOAT_OFFSET = GX_GPU_TEXTURED_VERTEX_FLOATS - GX_GPU_TEXTURE_SOURCE_FLOATS;
+const GX_GPU_FIXED_TEXTURED_TEXTURE_SOURCE_FLOAT_OFFSET = GX_GPU_FIXED_TEXTURED_VERTEX_FLOATS - GX_GPU_TEXTURE_SOURCE_FLOATS;
 const GX_GPU_TEXTURED_FLOAT_CAPACITY = GX_GPU_COMMAND_CAPACITY * GX_GPU_POLYGON_VERTICES_PER_COMMAND * GX_GPU_FIXED_TEXTURED_VERTEX_FLOATS;
 const GX_GPU_TEXTURE_PAGE_COORD_SIZE = 256;
 const GX_GPU_TEXTURE_PAGE_4BIT_WIDTH_WORDS = 64;
@@ -159,14 +163,16 @@ const gxGpuSolidVertexWords = new Uint32Array(gxGpuSolidVertices.buffer);
 const gxGpuLineVertices = new Float32Array(GX_GPU_LINE_FLOAT_CAPACITY);
 const gxGpuTexturedVertices = new Float32Array(GX_GPU_TEXTURED_FLOAT_CAPACITY);
 const gxGpuTexturedVertexWords = new Uint32Array(gxGpuTexturedVertices.buffer);
-const gxGpuTexturedUvPlane = new Float64Array(GX_GPU_TEXTURED_UV_COMPONENTS * GX_GPU_TRIANGLE_ATTRIBUTE_PLANE_PHASES);
-const gxGpuColorPlane = new Float64Array(GX_GPU_COLOR_COMPONENTS * GX_GPU_TRIANGLE_ATTRIBUTE_PLANE_PHASES);
+const gxGpuTexturedVertexHalfWords = new Uint16Array(gxGpuTexturedVertices.buffer);
+const gxGpuTexturedUvPlane = new Uint32Array(GX_GPU_TEXTURED_UV_COMPONENTS * GX_GPU_TRIANGLE_ATTRIBUTE_PLANE_PHASES);
+const gxGpuColorPlane = new Uint32Array(GX_GPU_COLOR_COMPONENTS * GX_GPU_TRIANGLE_ATTRIBUTE_PLANE_PHASES);
+const gxGpuTexturedTextureSource = new Uint16Array(4);
 const gxGpuTransferVertices = new Float32Array(GX_GPU_TRANSFER_FLOAT_CAPACITY);
 const gxGpuVramSnapshotUpload = new Uint8Array(GX_GPU_RAW_VRAM_UPLOAD_BYTES);
 const gxGpuVramSnapshotScratch = new Uint8Array(GX_GPU_VRAM_BYTE_COUNT);
 const primitiveUniformScratch = new Uint32Array(8);
 const primitiveUniformFloatScratch = new Float32Array(primitiveUniformScratch.buffer);
-const texturedUniformScratch = new Uint32Array(20);
+const texturedUniformScratch = new Uint32Array(16);
 const texturedUniformFloatScratch = new Float32Array(texturedUniformScratch.buffer);
 const transferUniformScratch = new Uint32Array(8);
 const scanoutUniformScratch = new Uint32Array(GX_GPU_SCANOUT_UNIFORM_BUFFER_BYTES >> 2);
@@ -509,6 +515,7 @@ function bootstrapGxGpuPass(backend: WebGPUBackend): void {
 			{ shaderLocation: 2, offset: 5 * 4, format: 'uint32x2' },
 			{ shaderLocation: 3, offset: 7 * 4, format: 'uint32x2' },
 			{ shaderLocation: 4, offset: 9 * 4, format: 'uint32x2' },
+			{ shaderLocation: 5, offset: GX_GPU_TEXTURED_TEXTURE_SOURCE_FLOAT_OFFSET * 4, format: 'uint16x4' },
 		],
 	}, 'rgba8unorm', 'vs_main', 'fs_main');
 	const fixedTexturedPipeline = createPipeline(device, 'gx_gpu_fixed_textured', texturedModule, primitiveLayout, {
@@ -521,6 +528,7 @@ function bootstrapGxGpuPass(backend: WebGPUBackend): void {
 			{ shaderLocation: 4, offset: 8 * 4, format: 'uint32x3' },
 			{ shaderLocation: 5, offset: 11 * 4, format: 'uint32x3' },
 			{ shaderLocation: 6, offset: 14 * 4, format: 'uint32x3' },
+			{ shaderLocation: 7, offset: GX_GPU_FIXED_TEXTURED_TEXTURE_SOURCE_FLOAT_OFFSET * 4, format: 'uint16x4' },
 		],
 	}, 'rgba8unorm', 'vs_fixed', 'fs_fixed');
 	const transferPipeline = createPipeline(device, 'gx_gpu_transfer', transferModule, transferLayout, {
@@ -953,12 +961,21 @@ function appendLineSegment(vertexFloatCount: number, x0: number, y0: number, col
 	return offset;
 }
 
+function writeTexturedTextureSource(floatOffset: number): void {
+	const halfWordOffset = floatOffset << 1;
+	gxGpuTexturedVertexHalfWords[halfWordOffset] = gxGpuTexturedTextureSource[0];
+	gxGpuTexturedVertexHalfWords[halfWordOffset + 1] = gxGpuTexturedTextureSource[1];
+	gxGpuTexturedVertexHalfWords[halfWordOffset + 2] = gxGpuTexturedTextureSource[2];
+	gxGpuTexturedVertexHalfWords[halfWordOffset + 3] = gxGpuTexturedTextureSource[3];
+}
+
 function writeTexturedVertex(offset: number, x: number, y: number, colorWord: number): number {
 	gxGpuTexturedVertices[offset] = x;
 	gxGpuTexturedVertices[offset + 1] = y;
 	gxGpuTexturedVertices[offset + 2] = (colorWord & 0xff) / 255;
 	gxGpuTexturedVertices[offset + 3] = ((colorWord >>> 8) & 0xff) / 255;
 	gxGpuTexturedVertices[offset + 4] = ((colorWord >>> 16) & 0xff) / 255;
+	writeTexturedTextureSource(offset + GX_GPU_TEXTURED_TEXTURE_SOURCE_FLOAT_OFFSET);
 	return offset + GX_GPU_TEXTURED_VERTEX_FLOATS;
 }
 
@@ -1002,6 +1019,7 @@ function writeFixedTexturedVertex(offset: number, x: number, y: number): number 
 		gxGpuTexturedVertexWords[offset + 11 + component] = gxGpuColorPlane[GX_GPU_COLOR_COMPONENTS + component];
 		gxGpuTexturedVertexWords[offset + 14 + component] = gxGpuColorPlane[GX_GPU_COLOR_COMPONENTS * 2 + component];
 	}
+	writeTexturedTextureSource(offset + GX_GPU_FIXED_TEXTURED_TEXTURE_SOURCE_FLOAT_OFFSET);
 	return offset + GX_GPU_FIXED_TEXTURED_VERTEX_FLOATS;
 }
 
@@ -1516,32 +1534,31 @@ function renderLineVertices(vertexFloatCount: number, uniformByteOffset: number,
 function writeTexturedUniforms(commandBuffer: GxGpuCommandBufferView, commandIndex: number): void {
 	const opcode = commandBuffer.commandOpcode[commandIndex];
 	const drawModeWord = commandBuffer.commandDrawModeWord[commandIndex];
-	const textureWord = commandBuffer.words[commandBuffer.commandWordStart[commandIndex] + 2];
 	const textureWindowWord = commandBuffer.commandTextureWindowWord[commandIndex];
 	const maskBitModeWord = commandBuffer.commandMaskBitModeWord[commandIndex];
-	const vramYAddressExtensionWord = commandBuffer.commandVramYAddressExtensionWord[commandIndex];
-	const texturePageY = gxGpuDrawModeTexturePageBaseY(drawModeWord, vramYAddressExtensionWord);
-	const clutY = gxGpuTextureClutBaseY(textureWord, vramYAddressExtensionWord);
-	texturedUniformScratch[0] = gxGpuDrawModeTexturePageBaseX(drawModeWord);
-	texturedUniformScratch[1] = texturePageY;
-	texturedUniformScratch[2] = gxGpuTextureClutBaseX(textureWord);
-	texturedUniformScratch[3] = clutY;
-	texturedUniformScratch[4] = gxGpuTextureWindowAndX(textureWindowWord);
-	texturedUniformScratch[5] = gxGpuTextureWindowAndY(textureWindowWord);
-	texturedUniformScratch[6] = gxGpuTextureWindowOrX(textureWindowWord);
-	texturedUniformScratch[7] = gxGpuTextureWindowOrY(textureWindowWord);
-	texturedUniformScratch[8] = gxGpuDrawModeTextureMode(drawModeWord);
-	texturedUniformScratch[9] = gxGpuCommandRawTextureEnabled(opcode) ? 1 : 0;
-	texturedUniformScratch[10] = gxGpuCommandSemiTransparencyEnabled(opcode) ? 1 : 0;
-	texturedUniformScratch[11] = gxGpuDrawModeTransparencyMode(drawModeWord);
-	texturedUniformScratch[12] = gxGpuMaskBitCheckBeforeDraw(maskBitModeWord) ? 1 : 0;
-	texturedUniformScratch[13] = gxGpuMaskBitSetWhileDrawing(maskBitModeWord) ? 1 : 0;
-	texturedUniformScratch[14] = commandBuffer.commandKind[commandIndex] === GX_GPU_COMMAND_DRAW_POLYGON && gxGpuDitheredPolygon(drawModeWord, opcode) ? 1 : 0;
-	texturedUniformScratch[15] = commandBuffer.commandSkippedLineParity[commandIndex];
-	texturedUniformFloatScratch[16] = commandBuffer.commandKind[commandIndex] === GX_GPU_COMMAND_DRAW_POLYGON ? 0.5 : 0;
+	texturedUniformScratch[0] = gxGpuTextureWindowAndX(textureWindowWord);
+	texturedUniformScratch[1] = gxGpuTextureWindowAndY(textureWindowWord);
+	texturedUniformScratch[2] = gxGpuTextureWindowOrX(textureWindowWord);
+	texturedUniformScratch[3] = gxGpuTextureWindowOrY(textureWindowWord);
+	texturedUniformScratch[4] = gxGpuDrawModeTextureMode(drawModeWord);
+	texturedUniformScratch[5] = gxGpuCommandRawTextureEnabled(opcode) ? 1 : 0;
+	texturedUniformScratch[6] = gxGpuCommandSemiTransparencyEnabled(opcode) ? 1 : 0;
+	texturedUniformScratch[7] = gxGpuDrawModeTransparencyMode(drawModeWord);
+	texturedUniformScratch[8] = gxGpuMaskBitCheckBeforeDraw(maskBitModeWord) ? 1 : 0;
+	texturedUniformScratch[9] = gxGpuMaskBitSetWhileDrawing(maskBitModeWord) ? 1 : 0;
+	texturedUniformScratch[10] = commandBuffer.commandKind[commandIndex] === GX_GPU_COMMAND_DRAW_POLYGON && gxGpuDitheredPolygon(drawModeWord, opcode) ? 1 : 0;
+	texturedUniformScratch[11] = commandBuffer.commandSkippedLineParity[commandIndex];
+	texturedUniformFloatScratch[12] = commandBuffer.commandKind[commandIndex] === GX_GPU_COMMAND_DRAW_POLYGON ? 0.5 : 0;
 }
 
 function appendTexturedCommandVertices(commandBuffer: GxGpuCommandBufferView, commandIndex: number, vertexFloatCount: number): number {
+	const drawModeWord = commandBuffer.commandDrawModeWord[commandIndex];
+	const textureWord = commandBuffer.words[commandBuffer.commandWordStart[commandIndex] + 2];
+	const vramYAddressExtensionWord = commandBuffer.commandVramYAddressExtensionWord[commandIndex];
+	gxGpuTexturedTextureSource[0] = gxGpuDrawModeTexturePageBaseX(drawModeWord);
+	gxGpuTexturedTextureSource[1] = gxGpuDrawModeTexturePageBaseY(drawModeWord, vramYAddressExtensionWord);
+	gxGpuTexturedTextureSource[2] = gxGpuTextureClutBaseX(textureWord);
+	gxGpuTexturedTextureSource[3] = gxGpuTextureClutBaseY(textureWord, vramYAddressExtensionWord);
 	return commandBuffer.commandKind[commandIndex] === GX_GPU_COMMAND_DRAW_POLYGON
 		? appendTexturedPolygon(commandBuffer, commandIndex, vertexFloatCount)
 		: appendTexturedRectangle(commandBuffer, commandIndex, vertexFloatCount);
@@ -1932,13 +1949,13 @@ function executeNewGxGpuCommands(
 						&& !gxGpuCommandRawTextureEnabled(opcode);
 					if (solidVertexFloatCount !== 0) solidVertexFloatCount = flushSolidCommands(solidVertexFloatCount);
 					const maskBitModeWord = commandBuffer.commandMaskBitModeWord[commandIndex];
-					const textureWord = commandBuffer.words[commandBuffer.commandWordStart[commandIndex] + 2];
 					const ditherEnabled = commandKind === GX_GPU_COMMAND_DRAW_POLYGON && gxGpuDitheredPolygon(drawModeWord, opcode);
+					const blendEnabled = gxGpuCommandSemiTransparencyEnabled(opcode);
 					const skippedLineParity = commandBuffer.commandSkippedLineParity[commandIndex];
 					if (texturedVertexFloatCount !== 0) {
 						const batchDrawModeWord = commandBuffer.commandDrawModeWord[texturedBatchCommandIndex];
 						const batchOpcode = commandBuffer.commandOpcode[texturedBatchCommandIndex];
-						const batchTextureWord = commandBuffer.words[commandBuffer.commandWordStart[texturedBatchCommandIndex] + 2];
+						const batchBlendEnabled = gxGpuCommandSemiTransparencyEnabled(batchOpcode);
 						const batchDitherEnabled = commandBuffer.commandKind[texturedBatchCommandIndex] === GX_GPU_COMMAND_DRAW_POLYGON && gxGpuDitheredPolygon(batchDrawModeWord, batchOpcode);
 						const batchFixedColor = commandBuffer.commandKind[texturedBatchCommandIndex] === GX_GPU_COMMAND_DRAW_POLYGON
 							&& gxGpuCommandGouraud(batchOpcode)
@@ -1947,14 +1964,13 @@ function executeNewGxGpuCommands(
 							|| bottomRightWord !== commandBuffer.commandDrawingAreaBottomRightWord[texturedBatchCommandIndex]
 							|| vramYAddressExtensionWord !== commandBuffer.commandVramYAddressExtensionWord[texturedBatchCommandIndex]
 							|| commandKind !== commandBuffer.commandKind[texturedBatchCommandIndex]
-							|| drawModeWord !== batchDrawModeWord
+							|| gxGpuTexturedBatchDrawModeWord(drawModeWord, blendEnabled) !== gxGpuTexturedBatchDrawModeWord(batchDrawModeWord, batchBlendEnabled)
 							|| commandBuffer.commandTextureWindowWord[commandIndex] !== commandBuffer.commandTextureWindowWord[texturedBatchCommandIndex]
 							|| maskBitModeWord !== commandBuffer.commandMaskBitModeWord[texturedBatchCommandIndex]
 							|| skippedLineParity !== commandBuffer.commandSkippedLineParity[texturedBatchCommandIndex]
-							|| (textureWord >>> 16) !== (batchTextureWord >>> 16)
 							|| gxGpuCommandRawTextureEnabled(opcode) !== gxGpuCommandRawTextureEnabled(batchOpcode)
 							|| fixedColor !== batchFixedColor
-							|| gxGpuCommandSemiTransparencyEnabled(opcode) !== gxGpuCommandSemiTransparencyEnabled(batchOpcode)
+							|| blendEnabled !== batchBlendEnabled
 							|| ditherEnabled !== batchDitherEnabled;
 						if (batchStateChanged) texturedVertexFloatCount = flushTexturedCommands(commandBuffer, texturedVertexFloatCount, texturedBatchCommandIndex);
 					}

@@ -48,6 +48,11 @@ export class WebGLBackend implements GPUBackend {
 	private cachedBlendDstRgb = -1;
 	private cachedBlendSrcAlpha = -1;
 	private cachedBlendDstAlpha = -1;
+	private cachedBlendRed = 0;
+	private cachedBlendGreen = 0;
+	private cachedBlendBlue = 0;
+	private cachedBlendAlpha = 0;
+	private cachedBlendColorValid = false;
 	private currentActiveTexUnit = 0;
 	private boundTex2D: (WebGLTexture | null)[] = [];
 	private boundTexCube: (WebGLTexture | null)[] = [];
@@ -888,5 +893,18 @@ export class WebGLBackend implements GPUBackend {
 		this.cachedBlendDstRgb = dstRgb;
 		this.cachedBlendSrcAlpha = srcAlpha;
 		this.cachedBlendDstAlpha = dstAlpha;
+	}
+	setBlendColor(red: number, green: number, blue: number, alpha: number): void {
+		if (this.cachedBlendColorValid
+			&& this.cachedBlendRed === red
+			&& this.cachedBlendGreen === green
+			&& this.cachedBlendBlue === blue
+			&& this.cachedBlendAlpha === alpha) return;
+		this.gl.blendColor(red, green, blue, alpha);
+		this.cachedBlendRed = red;
+		this.cachedBlendGreen = green;
+		this.cachedBlendBlue = blue;
+		this.cachedBlendAlpha = alpha;
+		this.cachedBlendColorValid = true;
 	}
 }

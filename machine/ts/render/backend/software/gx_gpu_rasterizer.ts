@@ -53,6 +53,81 @@ function edgeValue(ax: number, ay: number, bx: number, by: number, cx: number, c
 	return (cx - ax) * (by - ay) - (cy - ay) * (bx - ax);
 }
 
+function floorQuotient(numerator: number, denominator: number): number {
+	const quotient = integerDivide(numerator, denominator);
+	return numerator - quotient * denominator < 0 ? quotient - 1 : quotient;
+}
+
+class TriangleEdgeSpan {
+	rowValue = 0;
+	rowStep = 0;
+	boundary = 0;
+	boundaryStep = 0;
+	remainder = 0;
+	remainderStep = 0;
+	denominator = 0;
+	boundaryKind = 0;
+
+	initialize(initialRowValue: number, stepX: number, stepY: number): void {
+		this.rowValue = initialRowValue;
+		this.rowStep = stepY;
+		this.boundary = 0;
+		this.boundaryStep = 0;
+		this.remainder = 0;
+		this.remainderStep = 0;
+		this.denominator = 0;
+		this.boundaryKind = 0;
+		let numerator: number;
+		let numeratorStep: number;
+		if (stepX > 0) {
+			this.denominator = stepX;
+			numerator = -this.rowValue + this.denominator - 1;
+			numeratorStep = -this.rowStep;
+			this.boundaryKind = 1;
+		} else if (stepX < 0) {
+			this.denominator = -stepX;
+			numerator = this.rowValue;
+			numeratorStep = this.rowStep;
+			this.boundaryKind = -1;
+		} else {
+			return;
+		}
+		this.boundary = floorQuotient(numerator, this.denominator);
+		this.remainder = numerator - this.boundary * this.denominator;
+		this.boundaryStep = floorQuotient(numeratorStep, this.denominator);
+		this.remainderStep = numeratorStep - this.boundaryStep * this.denominator;
+	}
+
+	intersect(bounds: Int32Array): boolean {
+		if (this.boundaryKind > 0) {
+			if (this.boundary > bounds[0]) {
+				bounds[0] = this.boundary;
+			}
+			return bounds[0] <= bounds[1];
+		}
+		if (this.boundaryKind < 0) {
+			if (this.boundary < bounds[1]) {
+				bounds[1] = this.boundary;
+			}
+			return bounds[0] <= bounds[1];
+		}
+		return this.rowValue >= 0;
+	}
+
+	advance(): void {
+		if (this.boundaryKind === 0) {
+			this.rowValue += this.rowStep;
+			return;
+		}
+		this.boundary += this.boundaryStep;
+		this.remainder += this.remainderStep;
+		if (this.remainder >= this.denominator) {
+			this.remainder -= this.denominator;
+			this.boundary += 1;
+		}
+	}
+}
+
 function colorR8(colorWord: number): number {
 	return colorWord & 0xff;
 }
@@ -80,8 +155,12 @@ const GX_GPU_SOFTWARE_LINE_RGB_SCALE = 0x1000;
 const GX_GPU_SOFTWARE_LINE_RGB_HALF = 0x800;
 const GX_GPU_TRIANGLE_UV_COMPONENTS = 2;
 const GX_GPU_TRIANGLE_COLOR_COMPONENTS = 3;
-const gxGpuTriangleUvPlaneScratch = new Float64Array(GX_GPU_TRIANGLE_UV_COMPONENTS * GX_GPU_TRIANGLE_ATTRIBUTE_PLANE_PHASES);
-const gxGpuTriangleColorPlaneScratch = new Float64Array(GX_GPU_TRIANGLE_COLOR_COMPONENTS * GX_GPU_TRIANGLE_ATTRIBUTE_PLANE_PHASES);
+const gxGpuTriangleUvPlaneScratch = new Uint32Array(GX_GPU_TRIANGLE_UV_COMPONENTS * GX_GPU_TRIANGLE_ATTRIBUTE_PLANE_PHASES);
+const gxGpuTriangleColorPlaneScratch = new Uint32Array(GX_GPU_TRIANGLE_COLOR_COMPONENTS * GX_GPU_TRIANGLE_ATTRIBUTE_PLANE_PHASES);
+const gxGpuTriangleEdge0 = new TriangleEdgeSpan();
+const gxGpuTriangleEdge1 = new TriangleEdgeSpan();
+const gxGpuTriangleEdge2 = new TriangleEdgeSpan();
+const gxGpuTriangleSpanBounds = new Int32Array(2);
 
 function lineMakeFixedXY(value: number): number {
 	return value * GX_GPU_SOFTWARE_LINE_XY_SCALE + GX_GPU_SOFTWARE_LINE_XY_HALF;
@@ -321,43 +400,37 @@ export function drawGxGpuSoftwareTriangle(
 	rowW0 -= gxGpuTriangleEdgeCoverageMinimum(edge0StepX, edge0StepY);
 	rowW1 -= gxGpuTriangleEdgeCoverageMinimum(edge1StepX, edge1StepY);
 	rowW2 -= gxGpuTriangleEdgeCoverageMinimum(edge2StepX, edge2StepY);
+	gxGpuTriangleEdge0.initialize(rowW0, edge0StepX, edge0StepY);
+	gxGpuTriangleEdge1.initialize(rowW1, edge1StepX, edge1StepY);
+	gxGpuTriangleEdge2.initialize(rowW2, edge2StepX, edge2StepY);
 	for (let y = top; y < bottomExclusive; y += 1) {
-		if ((y & 1) === skippedLineParity) {
-			rowW0 += edge0StepY;
-			rowW1 += edge1StepY;
-			rowW2 += edge2StepY;
-			if (!sameColor) {
-				rowR += rStepY;
-				rowG += gStepY;
-				rowB += bStepY;
-			}
-			continue;
-		}
-		let w0 = rowW0;
-		let w1 = rowW1;
-		let w2 = rowW2;
-		let rFixed = rowR;
-		let gFixed = rowG;
-		let bFixed = rowB;
-		for (let x = left; x < rightExclusive; x += 1) {
-			if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
-				const r8 = sameColor ? r0 : (rFixed >>> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xff;
-				const g8 = sameColor ? g0 : (gFixed >>> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xff;
-				const b8 = sameColor ? b0 : (bFixed >>> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xff;
-				gxGpuSoftwareWriteRenderVramPixel(x, y, r8, g8, b8, ditherEnabled, blendEnabled, blendMode, checkMaskBit, setMaskBit);
-			}
-			w0 += edge0StepX;
-			w1 += edge1StepX;
-			w2 += edge2StepX;
-			if (!sameColor) {
-				rFixed += rStepX;
-				gFixed += gStepX;
-				bFixed += bStepX;
+		if ((y & 1) !== skippedLineParity) {
+			gxGpuTriangleSpanBounds[0] = 0;
+			gxGpuTriangleSpanBounds[1] = rightExclusive - left - 1;
+			if (gxGpuTriangleEdge0.intersect(gxGpuTriangleSpanBounds)
+				&& gxGpuTriangleEdge1.intersect(gxGpuTriangleSpanBounds)
+				&& gxGpuTriangleEdge2.intersect(gxGpuTriangleSpanBounds)) {
+				const firstOffset = gxGpuTriangleSpanBounds[0];
+				let rFixed = rowR + (firstOffset * rStepX);
+				let gFixed = rowG + (firstOffset * gStepX);
+				let bFixed = rowB + (firstOffset * bStepX);
+				const spanEnd = left + gxGpuTriangleSpanBounds[1];
+				for (let x = left + firstOffset; x <= spanEnd; x += 1) {
+					const r8 = sameColor ? r0 : (rFixed >>> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xff;
+					const g8 = sameColor ? g0 : (gFixed >>> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xff;
+					const b8 = sameColor ? b0 : (bFixed >>> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xff;
+					gxGpuSoftwareWriteRenderVramPixel(x, y, r8, g8, b8, ditherEnabled, blendEnabled, blendMode, checkMaskBit, setMaskBit);
+					if (!sameColor) {
+						rFixed += rStepX;
+						gFixed += gStepX;
+						bFixed += bStepX;
+					}
+				}
 			}
 		}
-		rowW0 += edge0StepY;
-		rowW1 += edge1StepY;
-		rowW2 += edge2StepY;
+		gxGpuTriangleEdge0.advance();
+		gxGpuTriangleEdge1.advance();
+		gxGpuTriangleEdge2.advance();
 		if (!sameColor) {
 			rowR += rStepY;
 			rowG += gStepY;
@@ -512,77 +585,69 @@ export function drawGxGpuSoftwareTexturedTriangle(
 	rowW0 -= gxGpuTriangleEdgeCoverageMinimum(edge0StepX, edge0StepY);
 	rowW1 -= gxGpuTriangleEdgeCoverageMinimum(edge1StepX, edge1StepY);
 	rowW2 -= gxGpuTriangleEdgeCoverageMinimum(edge2StepX, edge2StepY);
+	gxGpuTriangleEdge0.initialize(rowW0, edge0StepX, edge0StepY);
+	gxGpuTriangleEdge1.initialize(rowW1, edge1StepX, edge1StepY);
+	gxGpuTriangleEdge2.initialize(rowW2, edge2StepX, edge2StepY);
 	for (let y = top; y < bottomExclusive; y += 1) {
-		if ((y & 1) === skippedLineParity) {
-			rowW0 += edge0StepY;
-			rowW1 += edge1StepY;
-			rowW2 += edge2StepY;
-			if (interpolatesColor) {
-				rowR += rStepY;
-				rowG += gStepY;
-				rowB += bStepY;
+		if ((y & 1) !== skippedLineParity) {
+			gxGpuTriangleSpanBounds[0] = 0;
+			gxGpuTriangleSpanBounds[1] = rightExclusive - left - 1;
+			if (gxGpuTriangleEdge0.intersect(gxGpuTriangleSpanBounds)
+				&& gxGpuTriangleEdge1.intersect(gxGpuTriangleSpanBounds)
+				&& gxGpuTriangleEdge2.intersect(gxGpuTriangleSpanBounds)) {
+				const firstOffset = gxGpuTriangleSpanBounds[0];
+				let rFixed = rowR + (firstOffset * rStepX);
+				let gFixed = rowG + (firstOffset * gStepX);
+				let bFixed = rowB + (firstOffset * bStepX);
+				let uFixed = rowU + (firstOffset * uStepX);
+				let vFixed = rowV + (firstOffset * vStepX);
+				const spanEnd = left + gxGpuTriangleSpanBounds[1];
+				for (let x = left + firstOffset; x <= spanEnd; x += 1) {
+					const r8 = interpolatesColor ? (rFixed >>> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xff : r0;
+					const g8 = interpolatesColor ? (gFixed >>> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xff : g0;
+					const b8 = interpolatesColor ? (bFixed >>> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xff : b0;
+					const u = (uFixed >>> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xff;
+					const v = (vFixed >>> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xff;
+					const sampleWord = sampleGxGpuSoftwareTextureWord(
+						u,
+						v,
+						pageX,
+						pageY,
+						textureMode,
+						textureWindowAndX,
+						textureWindowAndY,
+						textureWindowOrX,
+						textureWindowOrY,
+						clutBaseX,
+						clutBaseY,
+					);
+					writeGxGpuSoftwareTexturedPixel(
+						x,
+						y,
+						r8,
+						g8,
+						b8,
+						sampleWord,
+						ditherEnabled,
+						rawTextureEnabled,
+						semiTransparencyEnabled,
+						blendMode,
+						checkMaskBit,
+						setMaskBit,
+					);
+					if (interpolatesColor) {
+						rFixed += rStepX;
+						gFixed += gStepX;
+						bFixed += bStepX;
+					}
+					uFixed += uStepX;
+					vFixed += vStepX;
+				}
 			}
-			rowU += uStepY;
-			rowV += vStepY;
-			continue;
 		}
-		let w0 = rowW0;
-		let w1 = rowW1;
-		let w2 = rowW2;
-		let rFixed = rowR;
-		let gFixed = rowG;
-		let bFixed = rowB;
-		let uFixed = rowU;
-		let vFixed = rowV;
-		for (let x = left; x < rightExclusive; x += 1) {
-			if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
-				const r8 = interpolatesColor ? (rFixed >>> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xff : r0;
-				const g8 = interpolatesColor ? (gFixed >>> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xff : g0;
-				const b8 = interpolatesColor ? (bFixed >>> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xff : b0;
-				const u = (uFixed >>> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xff;
-				const v = (vFixed >>> GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS) & 0xff;
-				const sampleWord = sampleGxGpuSoftwareTextureWord(
-					u,
-					v,
-					pageX,
-					pageY,
-					textureMode,
-					textureWindowAndX,
-					textureWindowAndY,
-					textureWindowOrX,
-					textureWindowOrY,
-					clutBaseX,
-					clutBaseY,
-				);
-				writeGxGpuSoftwareTexturedPixel(
-					x,
-					y,
-					r8,
-					g8,
-					b8,
-					sampleWord,
-					ditherEnabled,
-					rawTextureEnabled,
-					semiTransparencyEnabled,
-					blendMode,
-					checkMaskBit,
-					setMaskBit,
-				);
-			}
-			w0 += edge0StepX;
-			w1 += edge1StepX;
-			w2 += edge2StepX;
-			if (interpolatesColor) {
-				rFixed += rStepX;
-				gFixed += gStepX;
-				bFixed += bStepX;
-			}
-			uFixed += uStepX;
-			vFixed += vStepX;
-		}
-		rowW0 += edge0StepY;
-		rowW1 += edge1StepY;
-		rowW2 += edge2StepY;
+		gxGpuTriangleEdge0.advance();
+		gxGpuTriangleEdge1.advance();
+		gxGpuTriangleEdge2.advance();
 		if (interpolatesColor) {
 			rowR += rStepY;
 			rowG += gStepY;
@@ -633,15 +698,16 @@ export function drawGxGpuSoftwareTexturedRectangle(commandBuffer: GxGpuCommandBu
 	const r8 = colorR8(colorWord);
 	const g8 = colorG8(colorWord);
 	const b8 = colorB8(colorWord);
-	for (let y = top; y < bottom; y += 1) {
+	const uStep = xFlip ? -1 : 1;
+	const vStep = yFlip ? -1 : 1;
+	const firstU = baseU + ((left - x0) * uStep);
+	let v = baseV + ((top - y0) * vStep);
+	for (let y = top; y < bottom; y += 1, v += vStep) {
 		if ((y & 1) === skippedLineParity) {
 			continue;
 		}
-		const textureY = y - y0;
-		const v = yFlip ? baseV - textureY : baseV + textureY;
-		for (let x = left; x < right; x += 1) {
-			const textureX = x - x0;
-			const u = xFlip ? baseU - textureX : baseU + textureX;
+		let u = firstU;
+		for (let x = left; x < right; x += 1, u += uStep) {
 			const sampleWord = sampleGxGpuSoftwareTextureWord(
 				u,
 				v,

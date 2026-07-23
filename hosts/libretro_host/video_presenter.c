@@ -10,6 +10,8 @@
 #include "host_fatal.h"
 #include "input_timeline.h"
 #include "screenshot.h"
+#include "software_frame_blitter.h"
+#include "video_pixels.h"
 
 #ifndef GL_APIENTRYP
 #define GL_APIENTRYP GL_APIENTRY *
@@ -44,7 +46,6 @@ typedef struct VideoMessage {
 typedef struct VideoPresenter {
 	BmsxVideoSurface* surface;
 	BmsxFrameTimingState* frame_timing;
-	enum retro_pixel_format pixel_format;
 	struct retro_hw_render_callback hw_render;
 	bool uses_hw_render;
 	bool core_context_pending_reset;
@@ -58,11 +59,14 @@ typedef struct VideoPresenter {
 	int destination_y;
 	int destination_width;
 	int destination_height;
+	unsigned integer_scale;
 	bool layout_dirty;
 	bool drop_presentation;
 	bool presented_frame;
 	uint64_t presentation_count;
 	double target_fps;
+	uint8_t* software_row;
+	size_t software_row_capacity;
 	uint8_t* capture_pixels;
 	size_t capture_pixel_capacity;
 	GLuint hw_framebuffer;
@@ -127,7 +131,6 @@ typedef GLenum (GL_APIENTRYP PFNGLCHECKFRAMEBUFFERSTATUSPROC)(GLenum target);
 typedef void (GL_APIENTRYP BmsxGlReadPixelsProc)(GLint x, GLint y, GLsizei width, GLsizei height, GLenum format, GLenum type, void* pixels);
 
 static VideoPresenter g_presenter = {
-	.pixel_format = RETRO_PIXEL_FORMAT_0RGB1555,
 	.blit_position_attribute = -1,
 	.blit_texcoord_attribute = -1,
 	.blit_texture_uniform = -1,
@@ -190,39 +193,19 @@ static uint64_t presenter_monotonic_ns(void) {
 	return (uint64_t)time.tv_sec * 1000000000ull + (uint64_t)time.tv_nsec;
 }
 
-static inline uint16_t rgb888_to_rgb565(uint8_t red, uint8_t green, uint8_t blue) {
-	return (uint16_t)(((red & 0xF8) << 8) | ((green & 0xFC) << 3) | (blue >> 3));
-}
-
-static inline uint32_t rgb565_to_xrgb8888(uint16_t pixel) {
-	const uint8_t red5 = (uint8_t)((pixel >> 11) & 0x1F);
-	const uint8_t green6 = (uint8_t)((pixel >> 5) & 0x3F);
-	const uint8_t blue5 = (uint8_t)(pixel & 0x1F);
-	const uint8_t red = (uint8_t)((red5 << 3) | (red5 >> 2));
-	const uint8_t green = (uint8_t)((green6 << 2) | (green6 >> 4));
-	const uint8_t blue = (uint8_t)((blue5 << 3) | (blue5 >> 2));
-	return (uint32_t)((red << 16) | (green << 8) | blue);
-}
-
-static inline uint16_t rgb1555_to_rgb565(uint16_t pixel) {
-	const uint16_t red5 = (pixel >> 10) & 0x1F;
-	const uint16_t green5 = (pixel >> 5) & 0x1F;
-	const uint16_t blue5 = pixel & 0x1F;
-	return (uint16_t)(
-			(red5 << 11) |
-			(green5 << 6) |
-			((green5 >> 4) << 5) |
-			blue5);
-}
-
-static inline uint32_t rgb1555_to_xrgb8888(uint16_t pixel) {
-	const uint8_t red5 = (uint8_t)((pixel >> 10) & 0x1F);
-	const uint8_t green5 = (uint8_t)((pixel >> 5) & 0x1F);
-	const uint8_t blue5 = (uint8_t)(pixel & 0x1F);
-	const uint8_t red = (uint8_t)((red5 << 3) | (red5 >> 2));
-	const uint8_t green = (uint8_t)((green5 << 3) | (green5 >> 2));
-	const uint8_t blue = (uint8_t)((blue5 << 3) | (blue5 >> 2));
-	return (uint32_t)((red << 16) | (green << 8) | blue);
+static void presenter_resize_software_row(void) {
+	VideoPresenter* presenter = &g_presenter;
+	const size_t required_bytes =
+			(size_t)presenter->surface->width * sizeof(uint32_t);
+	if (required_bytes <= presenter->software_row_capacity) {
+		return;
+	}
+	uint8_t* row = (uint8_t*)realloc(presenter->software_row, required_bytes);
+	if (!row) {
+		host_fatal("Software presentation row allocation failed for %zu bytes", required_bytes);
+	}
+	presenter->software_row = row;
+	presenter->software_row_capacity = required_bytes;
 }
 
 static void presenter_update_layout(void) {
@@ -234,6 +217,7 @@ static void presenter_update_layout(void) {
 	const double aspect = presenter->geometry_aspect;
 	int destination_width = surface_width;
 	int destination_height = (int)((double)surface_width / aspect + 0.5);
+	presenter->integer_scale = 0;
 	if (destination_height > surface_height) {
 		destination_height = surface_height;
 		destination_width = (int)((double)surface_height * aspect + 0.5);
@@ -249,6 +233,7 @@ static void presenter_update_layout(void) {
 			if (snapped_width <= surface_width && snapped_height <= surface_height) {
 				destination_width = snapped_width;
 				destination_height = snapped_height;
+				presenter->integer_scale = (unsigned)integer_scale;
 			}
 		}
 	}
@@ -661,13 +646,13 @@ static inline uint16_t blend_rgba_over_rgb565(
 		uint8_t blue,
 		uint8_t alpha) {
 	if (alpha == 255) {
-		return rgb888_to_rgb565(red, green, blue);
+		return bmsx_xrgb8888_to_rgb565(pack_xrgb8888(red, green, blue));
 	}
-	const uint32_t expanded = rgb565_to_xrgb8888(target);
-	return rgb888_to_rgb565(
+	const uint32_t expanded = bmsx_rgb565_to_xrgb8888(target);
+	return bmsx_xrgb8888_to_rgb565(pack_xrgb8888(
 			blend_channel_u8(red, (uint8_t)((expanded >> 16) & 0xFF), alpha),
 			blend_channel_u8(green, (uint8_t)((expanded >> 8) & 0xFF), alpha),
-			blend_channel_u8(blue, (uint8_t)(expanded & 0xFF), alpha));
+			blend_channel_u8(blue, (uint8_t)(expanded & 0xFF), alpha)));
 }
 
 static void blit_rgba_line_xrgb8888(uint32_t* target, const uint8_t* source, int width) {
@@ -1080,7 +1065,7 @@ static void copy_surface_row_to_rgba(uint8_t* target, const uint8_t* source, int
 			for (int x = 0; x < width; ++x) {
 				write_xrgb8888_as_rgba(
 						target + (size_t)x * 4u,
-						rgb565_to_xrgb8888(pixels[x]));
+						bmsx_rgb565_to_xrgb8888(pixels[x]));
 			}
 			break;
 		}
@@ -1219,176 +1204,12 @@ static bool present_hardware_frame(void) {
 	return true;
 }
 
-static void copy_software_frame(
-		const void* data,
-		unsigned width,
-		unsigned height,
-		size_t pitch) {
-	VideoPresenter* presenter = &g_presenter;
-	BmsxVideoSurface* surface = presenter->surface;
-	if (presenter->layout_dirty) {
-		presenter_update_layout();
-	}
-	const int destination_x = presenter->destination_x;
-	const int destination_y = presenter->destination_y;
-	const int destination_width = presenter->destination_width;
-	const int destination_height = presenter->destination_height;
-	unsigned copy_width = width;
-	unsigned copy_height = height;
-	if ((int)copy_width > surface->width - destination_x) {
-		copy_width = (unsigned)(surface->width - destination_x);
-	}
-	if ((int)copy_height > surface->height - destination_y) {
-		copy_height = (unsigned)(surface->height - destination_y);
-	}
-	if (surface->bits_per_pixel == 16) {
-		if (destination_width == (int)width && destination_height == (int)height) {
-				for (unsigned y = 0; y < copy_height; ++y) {
-					uint16_t* target = (uint16_t*)(
-							surface->pixels +
-							(size_t)(destination_y + (int)y) *
-								(size_t)surface->stride +
-						(size_t)destination_x * 2u);
-				const uint8_t* source = (const uint8_t*)data + (size_t)y * pitch;
-				if (presenter->pixel_format == RETRO_PIXEL_FORMAT_RGB565) {
-					memcpy(target, source, copy_width * 2u);
-				} else if (presenter->pixel_format == RETRO_PIXEL_FORMAT_XRGB8888) {
-					const uint32_t* pixels = (const uint32_t*)source;
-					for (unsigned x = 0; x < copy_width; ++x) {
-						const uint32_t pixel = pixels[x];
-						target[x] = rgb888_to_rgb565(
-								(uint8_t)((pixel >> 16) & 0xFF),
-								(uint8_t)((pixel >> 8) & 0xFF),
-								(uint8_t)(pixel & 0xFF));
-					}
-				} else {
-					const uint16_t* pixels = (const uint16_t*)source;
-					for (unsigned x = 0; x < copy_width; ++x) {
-						target[x] = rgb1555_to_rgb565(pixels[x]);
-					}
-				}
-			}
-		} else {
-			const uint32_t step_x =
-					(uint32_t)(((uint64_t)width << 16) /
-						(uint32_t)destination_width);
-			const uint32_t step_y =
-					(uint32_t)(((uint64_t)height << 16) /
-						(uint32_t)destination_height);
-			for (int y = 0; y < destination_height; ++y) {
-				const uint32_t source_y =
-						(uint32_t)(((uint64_t)y * step_y) >> 16);
-				uint16_t* target = (uint16_t*)(
-						surface->pixels +
-						(size_t)(destination_y + y) *
-							(size_t)surface->stride +
-						(size_t)destination_x * 2u);
-				const uint8_t* source =
-						(const uint8_t*)data + (size_t)source_y * pitch;
-				uint32_t source_x = 0;
-				if (presenter->pixel_format == RETRO_PIXEL_FORMAT_RGB565) {
-					const uint16_t* pixels = (const uint16_t*)source;
-					for (int x = 0; x < destination_width; ++x) {
-						target[x] = pixels[source_x >> 16];
-						source_x += step_x;
-					}
-				} else if (presenter->pixel_format == RETRO_PIXEL_FORMAT_XRGB8888) {
-					const uint32_t* pixels = (const uint32_t*)source;
-					for (int x = 0; x < destination_width; ++x) {
-						const uint32_t pixel = pixels[source_x >> 16];
-						target[x] = rgb888_to_rgb565(
-								(uint8_t)((pixel >> 16) & 0xFF),
-								(uint8_t)((pixel >> 8) & 0xFF),
-								(uint8_t)(pixel & 0xFF));
-						source_x += step_x;
-					}
-				} else {
-					const uint16_t* pixels = (const uint16_t*)source;
-					for (int x = 0; x < destination_width; ++x) {
-						target[x] = rgb1555_to_rgb565(pixels[source_x >> 16]);
-						source_x += step_x;
-					}
-				}
-			}
-		}
-		return;
-	}
-	if (surface->bits_per_pixel == 32) {
-		if (destination_width == (int)width && destination_height == (int)height) {
-				for (unsigned y = 0; y < copy_height; ++y) {
-					uint32_t* target = (uint32_t*)(
-							surface->pixels +
-							(size_t)(destination_y + (int)y) *
-								(size_t)surface->stride +
-						(size_t)destination_x * 4u);
-				const uint8_t* source = (const uint8_t*)data + (size_t)y * pitch;
-				if (presenter->pixel_format == RETRO_PIXEL_FORMAT_XRGB8888) {
-					memcpy(target, source, copy_width * 4u);
-				} else if (presenter->pixel_format == RETRO_PIXEL_FORMAT_RGB565) {
-					const uint16_t* pixels = (const uint16_t*)source;
-					for (unsigned x = 0; x < copy_width; ++x) {
-						target[x] = rgb565_to_xrgb8888(pixels[x]);
-					}
-				} else {
-					const uint16_t* pixels = (const uint16_t*)source;
-					for (unsigned x = 0; x < copy_width; ++x) {
-						target[x] = rgb1555_to_xrgb8888(pixels[x]);
-					}
-				}
-			}
-		} else {
-			const uint32_t step_x =
-					(uint32_t)(((uint64_t)width << 16) /
-						(uint32_t)destination_width);
-			const uint32_t step_y =
-					(uint32_t)(((uint64_t)height << 16) /
-						(uint32_t)destination_height);
-			for (int y = 0; y < destination_height; ++y) {
-				const uint32_t source_y =
-						(uint32_t)(((uint64_t)y * step_y) >> 16);
-				uint32_t* target = (uint32_t*)(
-						surface->pixels +
-						(size_t)(destination_y + y) *
-							(size_t)surface->stride +
-						(size_t)destination_x * 4u);
-				const uint8_t* source =
-						(const uint8_t*)data + (size_t)source_y * pitch;
-				uint32_t source_x = 0;
-				if (presenter->pixel_format == RETRO_PIXEL_FORMAT_XRGB8888) {
-					const uint32_t* pixels = (const uint32_t*)source;
-					for (int x = 0; x < destination_width; ++x) {
-						target[x] = pixels[source_x >> 16];
-						source_x += step_x;
-					}
-				} else if (presenter->pixel_format == RETRO_PIXEL_FORMAT_RGB565) {
-					const uint16_t* pixels = (const uint16_t*)source;
-					for (int x = 0; x < destination_width; ++x) {
-						target[x] = rgb565_to_xrgb8888(pixels[source_x >> 16]);
-						source_x += step_x;
-					}
-				} else {
-					const uint16_t* pixels = (const uint16_t*)source;
-					for (int x = 0; x < destination_width; ++x) {
-						target[x] = rgb1555_to_xrgb8888(pixels[source_x >> 16]);
-						source_x += step_x;
-					}
-				}
-			}
-		}
-		return;
-	}
-	host_fatal(
-			"Unsupported video surface bpp: %d",
-			surface->bits_per_pixel);
-}
-
 void video_presenter_open(
 		BmsxVideoSurface* surface,
 		BmsxFrameTimingState* frame_timing) {
 	g_presenter = (VideoPresenter){
 		.surface = surface,
 		.frame_timing = frame_timing,
-		.pixel_format = RETRO_PIXEL_FORMAT_0RGB1555,
 		.source_width = 320,
 		.source_height = 240,
 		.geometry_aspect = 4.0f / 3.0f,
@@ -1398,6 +1219,7 @@ void video_presenter_open(
 		.blit_texture_uniform = -1,
 		.blit_flip_uniform = -1,
 	};
+	presenter_resize_software_row();
 	presenter_update_layout();
 }
 
@@ -1418,6 +1240,7 @@ void video_presenter_close(void) {
 		glDeleteProgram_ptr(presenter->blit_program);
 	}
 	free(presenter->message.surface);
+	free(presenter->software_row);
 	free(presenter->capture_pixels);
 	memset(presenter, 0, sizeof(*presenter));
 }
@@ -1447,15 +1270,7 @@ void video_presenter_update_av_info(const struct retro_system_av_info* av_info) 
 }
 
 bool video_presenter_accept_pixel_format(enum retro_pixel_format pixel_format) {
-	switch (pixel_format) {
-		case RETRO_PIXEL_FORMAT_0RGB1555:
-		case RETRO_PIXEL_FORMAT_XRGB8888:
-		case RETRO_PIXEL_FORMAT_RGB565:
-			g_presenter.pixel_format = pixel_format;
-			return true;
-		default:
-			return false;
-	}
+	return pixel_format == RETRO_PIXEL_FORMAT_XRGB8888;
 }
 
 bool video_presenter_negotiate_hw_render(
@@ -1510,6 +1325,7 @@ void video_presenter_post_message(const struct retro_message* message) {
 }
 
 void video_presenter_surface_changed(void) {
+	presenter_resize_software_row();
 	g_presenter.layout_dirty = true;
 	message_mark_dirty();
 }
@@ -1565,7 +1381,21 @@ void video_presenter_refresh(
 	if (!data || !width || !height) {
 		return;
 	}
-	copy_software_frame(data, width, height, pitch);
+	if (presenter->layout_dirty) {
+		presenter_update_layout();
+	}
+	bmsx_software_frame_blit_xrgb8888(
+			presenter->surface,
+			presenter->destination_x,
+			presenter->destination_y,
+			presenter->destination_width,
+			presenter->destination_height,
+			presenter->integer_scale,
+			presenter->software_row,
+			data,
+			width,
+			height,
+			pitch);
 	capture_software_frame();
 	message_render_software();
 	presenter->presented_frame = true;

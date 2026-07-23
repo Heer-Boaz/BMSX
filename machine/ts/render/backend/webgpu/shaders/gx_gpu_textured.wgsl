@@ -1,5 +1,4 @@
 struct TexturedUniforms {
-	texPageClut: vec4<u32>,
 	textureWindow: vec4<u32>,
 	params0: vec4<u32>,
 	params1: vec4<u32>,
@@ -19,6 +18,7 @@ struct VSIn {
 	@location(2) uvPlaneBase: vec2<u32>,
 	@location(3) uvPlaneStepX: vec2<u32>,
 	@location(4) uvPlaneStepY: vec2<u32>,
+	@location(5) textureSource: vec4<u32>,
 };
 
 struct VSOut {
@@ -27,6 +27,7 @@ struct VSOut {
 	@location(1) @interpolate(flat) uvPlaneBase: vec2<u32>,
 	@location(2) @interpolate(flat) uvPlaneStepX: vec2<u32>,
 	@location(3) @interpolate(flat) uvPlaneStepY: vec2<u32>,
+	@location(4) @interpolate(flat) textureSource: vec4<u32>,
 };
 
 struct FixedVSIn {
@@ -37,6 +38,7 @@ struct FixedVSIn {
 	@location(4) colorPlaneBase: vec3<u32>,
 	@location(5) colorPlaneStepX: vec3<u32>,
 	@location(6) colorPlaneStepY: vec3<u32>,
+	@location(7) textureSource: vec4<u32>,
 };
 
 struct FixedVSOut {
@@ -47,6 +49,7 @@ struct FixedVSOut {
 	@location(3) @interpolate(flat) colorPlaneBase: vec3<u32>,
 	@location(4) @interpolate(flat) colorPlaneStepX: vec3<u32>,
 	@location(5) @interpolate(flat) colorPlaneStepY: vec3<u32>,
+	@location(6) @interpolate(flat) textureSource: vec4<u32>,
 };
 
 struct TextureColor {
@@ -65,6 +68,7 @@ fn vs_main(input: VSIn) -> VSOut {
 	out.uvPlaneBase = input.uvPlaneBase;
 	out.uvPlaneStepX = input.uvPlaneStepX;
 	out.uvPlaneStepY = input.uvPlaneStepY;
+	out.textureSource = input.textureSource;
 	return out;
 }
 
@@ -80,6 +84,7 @@ fn vs_fixed(input: FixedVSIn) -> FixedVSOut {
 	out.colorPlaneBase = input.colorPlaneBase;
 	out.colorPlaneStepX = input.colorPlaneStepX;
 	out.colorPlaneStepY = input.colorPlaneStepY;
+	out.textureSource = input.textureSource;
 	return out;
 }
 
@@ -98,10 +103,10 @@ fn polygonTexcoord(fragCoord: vec2<u32>, uvPlaneBase: vec2<u32>, uvPlaneStepX: v
 	return (accumulator >> vec2<u32>(12u)) & vec2<u32>(0xffu);
 }
 
-fn samplePsxTexture(sampleCoord: vec2<u32>) -> TextureColor {
+fn samplePsxTexture(sampleCoord: vec2<u32>, textureSource: vec4<u32>) -> TextureColor {
 	let windowed = (sampleCoord & u.textureWindow.xy) | u.textureWindow.zw;
-	let pageBase = u.texPageClut.xy;
-	let clutBase = u.texPageClut.zw;
+	let pageBase = textureSource.xy;
+	let clutBase = textureSource.zw;
 	var textureWord: u32;
 	if (u.params0.x == 0u) {
 		textureWord = rawVramWord(vec2<u32>(pageBase.x + (windowed.x >> 2u), pageBase.y + windowed.y));
@@ -160,9 +165,9 @@ fn encodeRgb555(color5: vec3<u32>, outputMaskBit: u32) -> vec4<f32> {
 	return vec4<f32>(f32(word & 0xffu) / 255.0, f32(word >> 8u) / 255.0, 0.0, 1.0);
 }
 
-fn shadeTextured(vertex8: vec3<u32>, fragCoord: vec2<u32>, texcoord: vec2<u32>) -> vec4<f32> {
+fn shadeTextured(vertex8: vec3<u32>, fragCoord: vec2<u32>, texcoord: vec2<u32>, textureSource: vec4<u32>) -> vec4<f32> {
 	if ((fragCoord.y & 1u) == u.params1.w) { discard; }
-	let textureColor = samplePsxTexture(texcoord);
+	let textureColor = samplePsxTexture(texcoord, textureSource);
 	if (textureColor.transparent) { discard; }
 	var src5 = textureColor.rgb5;
 	if (u.params0.y == 0u) { src5 = modulatedTextureRgb5(src5, vertex8, fragCoord); }
@@ -179,7 +184,7 @@ fn shadeTextured(vertex8: vec3<u32>, fragCoord: vec2<u32>, texcoord: vec2<u32>) 
 fn fs_main(input: VSOut) -> @location(0) vec4<f32> {
 	let fragCoord = vec2<u32>(input.position.xy);
 	let texcoord = polygonTexcoord(fragCoord, input.uvPlaneBase, input.uvPlaneStepX, input.uvPlaneStepY);
-	return shadeTextured(vec3<u32>(input.color * vec3<f32>(255.0)), fragCoord, texcoord);
+	return shadeTextured(vec3<u32>(input.color * vec3<f32>(255.0)), fragCoord, texcoord, input.textureSource);
 }
 
 @fragment
@@ -189,5 +194,5 @@ fn fs_fixed(input: FixedVSOut) -> @location(0) vec4<f32> {
 	let uvAccumulator = input.uvPlaneBase + input.uvPlaneStepX * fragCoord.x + input.uvPlaneStepY * fragCoord.y;
 	let color8 = (colorAccumulator >> vec3<u32>(12u)) & vec3<u32>(0xffu);
 	let texcoord = (uvAccumulator >> vec2<u32>(12u)) & vec2<u32>(0xffu);
-	return shadeTextured(color8, fragCoord, texcoord);
+	return shadeTextured(color8, fragCoord, texcoord, input.textureSource);
 }

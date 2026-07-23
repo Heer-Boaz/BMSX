@@ -372,6 +372,11 @@ the target-built libstdc++ and libgcc statically. Missing target symbols are
 build failures; the target does not receive compatibility stubs, dummy symbols,
 or per-symbol shims.
 
+SNES Mini code generation targets its Cortex-A7 directly with the hard-float
+ABI and NEON/VFPv4 instruction set. Release core and direct-host builds enable
+link-time optimization; debug builds do not. This is a fixed target-toolchain
+contract, not runtime CPU detection or a second renderer profile.
+
 Every produced ARM artifact is audited against the imported runtime root. The
 audit verifies ELF32 ARM hard-float, the program interpreter, the complete
 transitive `DT_NEEDED` closure, every strong dynamic-symbol reference and its
@@ -1365,6 +1370,17 @@ host frame. The TypeScript headless owner exposes one retained output
 allocation as both 32-bit scanout words and RGBA bytes; presentation does not
 repair alpha or copy the completed frame into a second buffer.
 
+Accelerated scanout retains both circuit payloads by PCRTC revision and field.
+WebGL2 stores them in separate aligned ranges of one uniform buffer. GLES2
+retains the payload currently owned by each linked sample program and republishes
+it only when that program's circuit, revision or field changes. Distinct circuits
+that share one GLES2 program therefore pay the required uniform update instead
+of adding circuit selection to every fragment. A GLES2 scanout invocation also
+retains its bound sample program so adjacent passes do not repeat the same bind.
+Blend color is backend-owned state:
+WebGL2 retains it for the exclusive browser context, while GLES2 invalidates its
+cache at frame entry because the libretro frontend shares that context.
+
 PCRTC is the sole GX scanout authority. BIOS and cart producers program its raw
 MMIO words directly; there is no permanent GP1-to-PCRTC adapter, legacy/native
 display selector or parallel presentation path. The selected framebuffer-format
@@ -1959,6 +1975,20 @@ packed palette texels, CLUT addressing, STP, mask bits, four five-bit blend
 modes, dithering and RGB555 storage remain raw datapath stages rather than host
 float/color corrections.
 
+Both software rasterizers intersect the three affine triangle edges into one
+exact inclusive span per scanline. Each edge divides only while its
+quotient/remainder stepper is initialized; scanlines advance that stepper with
+integer additions, so bounding-box rejection does not occur in the pixel loop
+and division does not occur in the scanline loop. Their fixed-gradient producer
+emits raw twenty-bit accumulator words as `u32`/`Uint32Array`; software UV and
+color steppers retain and consume those words in that representation. Their
+VRAM store owner performs the four RGB555 blend modes with packed five-bit lane
+arithmetic before applying STP and mask-bit store state. C++ additionally
+selects texture depth, raw/modulated texturing, semi-transparency, color
+interpolation and dithering once per primitive through compiled specializations.
+These are shared software-datapath rules, not host-specific SIMD paths or
+alternate renderers.
+
 GX selects the type-2/208-pin drawing-area contract: GP0(E3h/E4h) retains all
 ten Y bits. GP1(09h).0 gates address bit Y9 at the existing GP0 raster/transfer
 VRAM decoder for drawing-area bounds, texture pages, CLUTs, transfers, copies,
@@ -2042,15 +2072,43 @@ RGBA staging aperture.
 The accelerated raw-VRAM texture is authoritative. CPU uploads, GPU draws,
 fills and VRAM copies enter one ordered backend command stream. A retained dirty
 coverage record tells a sample texture which raw-VRAM region must be copied
-before a source or destination read. A backend may use an attached-texture
-barrier only when the live context exposes the required procedure and the
-source/destination coverage satisfies that API's ordering rules; otherwise the
-concrete dependency-copy path remains the owner. Capability choice never leaks
-into cart or firmware code.
+before a source or destination read. The GLES2 backend uses framebuffer fetch
+only through `GL_ARM_shader_framebuffer_fetch`, the native path relevant to an
+ARM GLES2 target. It deliberately does not compile or select
+`GL_EXT_shader_framebuffer_fetch`: no supported BMSX target that requires the
+GLES2 backend provides that route, so carrying a second shader ABI and
+capability branch would be targetless complexity rather than an optimization.
+
+Framebuffer fetch reads the previous raw destination word from the active
+color attachment and removes destination sample copies and explicit texture
+barriers. Dependency batches still keep overlapping read-modify-write
+primitives in separate API draws; one draw may contain only mutually
+non-overlapping destination readers. Framebuffer fetch does not replace
+arbitrary texture-page or CLUT reads: those continue to use the retained sample
+texture, and a source that aliases its destination remains an ordering boundary.
+Without ARM framebuffer fetch, GLES2 uses the resolved `GL_NV_texture_barrier`
+procedure when its ordering rules permit it; otherwise the exact dependency-copy
+path remains the owner. Capability choice is fixed at backend context creation
+and never leaks into cart or firmware code. Backends do not silently weaken GX
+blend, mask or ordering semantics for a slower host.
 
 Compatible solid, line and textured commands append to backend-owned retained
 arenas until render state, capacity or a real VRAM dependency forces submission.
 Mixed command order is retained and read-modify-write triangles remain ordered.
+Texture-page and CLUT bases are primitive sampling data, not pipeline state.
+GLES2, WebGL2 and WebGPU decode them once at the command-to-vertex boundary and
+store the four coordinates in one packed `uint16x4` vertex attribute. The
+vertex shader carries that value unchanged to the fragment datapath. Page and
+CLUT changes therefore neither publish uniforms nor end a compatible batch;
+texture mode, texture window, raw/modulated mode, active blend mode, mask state,
+dither state, field parity and actual VRAM dependencies remain batch boundaries.
+Rectangle flips are already resolved into the retained UV plane. This follows
+the same production design used by
+[DuckStation's per-vertex texture page](https://github.com/stenzek/duckstation/blob/42bf523e891fad7959a4d9dd171929a65ea25988/src/core/gpu_hw.h#L120-L134)
+and [Beetle PSX HW's per-vertex page/CLUT inputs](https://github.com/libretro/beetle-psx-libretro/blob/59e43186cacee4c656a56a4c505b8c16ade90506/rhi/rhi_lib_gl.c#L468-L478).
+It does not reorder primitives, cache cart imagery or depend on a framebuffer
+extension.
+
 GLES2 additionally uses one driver stream whose cursor survives frame boundaries
 and whose storage is orphaned only at capacity wrap; WebGL2 and WebGPU keep
 their own concrete upload lifecycles. CPU arenas, bounds, transfer staging,
@@ -2091,11 +2149,21 @@ no clocks or counters inside its transfer loops.
 
 Pixel parity is a machine contract at GX VRAM scanout. For the same ROM,
 timeline, model profile, and GX display registers, the TypeScript headless
-renderer and C++ libretro/software renderer must emit byte-identical RGBA
-screenshots before host presentation effects. Nonblank screenshots or
-boot-screen parity are not render-parity evidence. `npm run test:render-parity`
-captures the same timeline through both runtimes and compares dimensions and raw
-RGBA bytes.
+software reference, C++ libretro/software renderer, and accelerated GLES2
+renderer must emit byte-identical RGBA screenshots before host presentation
+effects. Nonblank screenshots or boot-screen parity are not render-parity
+evidence. `npm run test:render-parity` first force-builds the exact headless
+runtime, libretro core, direct host, BIOS and cart images consumed by the gate.
+It then generates fresh captures from the purpose-built `renderhwtest` and
+`bare_metal_cart` scenes through all three paths and compares dimensions and
+every RGBA byte. It does not preserve game screenshots as goldens.
+
+Shader source layout, helper names, uniform spelling, and textual normalization
+are not parity contracts. Backend implementations may differ where their GPU
+APIs require it; their own compiler and linker validate the concrete shader
+interface, while rendered output validates behavior. WebGL2 and WebGPU require
+the same capture comparison in a real browser before accelerated parity is
+claimed for those backends.
 
 CRT postprocessing and RGB565/MSX10 output quantization are host presentation,
 not runtime or machine state. Parity captures disable these effects, including
@@ -2498,9 +2566,11 @@ drawable extent and physical window-to-surface mapping. It initializes and
 quits only the SDL video subsystem. Game-controller subsystem state remains with
 input; audio owns the SDL audio subsystem independently.
 
-`video_presenter` owns the libretro pixel format and hardware-context callback,
-native game geometry, destination rectangle, accepted-presentation ordinal,
-software conversion, GLES final blit, frontend messages and screenshot capture.
+The BMSX libretro core publishes software frames as XRGB8888; the direct host
+accepts that one producer-owned format instead of carrying conversion branches
+for formats its core never emits. `video_presenter` owns the hardware-context
+callback, native game geometry, destination rectangle, accepted-presentation
+ordinal, GLES final blit, frontend messages and screenshot capture.
 It borrows one stable surface record from `video_context`; the context may grow
 or replace that record's pixel storage but not the record itself. The presenter
 therefore translates surface points through its retained destination rectangle
@@ -2510,6 +2580,18 @@ ordinary frames do not allocate, message geometry uploads only when it changes,
 and repeated captures reuse capacity. SDL software storage changes only when
 the machine geometry changes, and GLES drawable extent is refreshed on SDL
 window events rather than polled during every presentation.
+
+When layout selects an exact integer scale, `video_presenter` retains that
+scale beside the destination rectangle. The `software_frame_blitter` consumes
+it directly: each XRGB8888 source pixel is loaded once, converted once when the
+physical surface is RGB565, and written to its complete integer pixel block.
+It neither evaluates fixed-point source coordinates nor allocates during
+steady-state frames. One retained expansion row is allocated when the presenter
+opens or its physical surface grows, then reused for every integer-scaled row.
+Non-integer presentation remains a separate nearest-neighbour kernel. Shared
+XRGB8888/RGB565 word conversion lives in
+`video_pixels`; neither presenter messages nor the frame blitter carries a
+private duplicate.
 
 The direct host's `input_devices` owner contains evdev descriptors and sampled
 axes, the SDL game-controller subsystem and controller handle, physical

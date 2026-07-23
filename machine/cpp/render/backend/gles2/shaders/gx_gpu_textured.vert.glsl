@@ -8,10 +8,12 @@ attribute vec2 a_position;
 attribute vec2 a_uvPlaneBase;
 attribute vec2 a_uvPlaneStepX;
 attribute vec2 a_uvPlaneStepY;
+attribute vec4 a_textureSource;
 uniform float u_rasterPhase;
 varying vec2 v_uvPlaneBase;
 varying vec2 v_uvPlaneStepX;
 varying vec2 v_uvPlaneStepY;
+varying vec4 v_textureSource;
 #if GX_GPU_FIXED_COLOR_PLANE
 attribute vec3 a_colorPlaneBase;
 attribute vec3 a_colorPlaneStepX;
@@ -31,6 +33,7 @@ void main() {
 	v_uvPlaneBase = a_uvPlaneBase;
 	v_uvPlaneStepX = a_uvPlaneStepX;
 	v_uvPlaneStepY = a_uvPlaneStepY;
+	v_textureSource = a_textureSource;
 #if GX_GPU_FIXED_COLOR_PLANE
 	v_colorPlaneBase = a_colorPlaneBase;
 	v_colorPlaneStepX = a_colorPlaneStepX;

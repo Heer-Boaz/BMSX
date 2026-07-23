@@ -7,8 +7,6 @@ precision highp int;
 #endif
 
 uniform sampler2D u_vram;
-uniform uvec2 u_texPageBase;
-uniform uvec2 u_clutBase;
 uniform uvec2 u_textureWindowAnd;
 uniform uvec2 u_textureWindowOr;
 uniform uint u_textureMode;
@@ -22,6 +20,7 @@ uniform uint u_skippedLineParity;
 flat in uvec2 v_uvPlaneBase;
 flat in uvec2 v_uvPlaneStepX;
 flat in uvec2 v_uvPlaneStepY;
+flat in uvec4 v_textureSource;
 #if GX_GPU_FIXED_COLOR_PLANE
 flat in uvec3 v_colorPlaneBase;
 flat in uvec3 v_colorPlaneStepX;
@@ -59,18 +58,20 @@ TextureColor textureColor(uint word) {
 }
 
 TextureColor samplePsxTexture(uvec2 sampleCoord) {
+	uvec2 texPageBase = v_textureSource.xy;
+	uvec2 clutBase = v_textureSource.zw;
 	uvec2 windowed = (sampleCoord & u_textureWindowAnd) | u_textureWindowOr;
 	if (u_textureMode == 0u) {
-		uint textureWord = rawVramWord(uvec2(u_texPageBase.x + (windowed.x >> 2u), u_texPageBase.y + windowed.y));
+		uint textureWord = rawVramWord(uvec2(texPageBase.x + (windowed.x >> 2u), texPageBase.y + windowed.y));
 		uint paletteIndex = (textureWord >> ((windowed.x & 3u) << 2u)) & 0x0fu;
-		return textureColor(rawVramWord(uvec2(u_clutBase.x + paletteIndex, u_clutBase.y)));
+		return textureColor(rawVramWord(uvec2(clutBase.x + paletteIndex, clutBase.y)));
 	}
 	if (u_textureMode == 1u) {
-		uint textureWord = rawVramWord(uvec2(u_texPageBase.x + (windowed.x >> 1u), u_texPageBase.y + windowed.y));
+		uint textureWord = rawVramWord(uvec2(texPageBase.x + (windowed.x >> 1u), texPageBase.y + windowed.y));
 		uint paletteIndex = (textureWord >> ((windowed.x & 1u) << 3u)) & 0xffu;
-		return textureColor(rawVramWord(uvec2(u_clutBase.x + paletteIndex, u_clutBase.y)));
+		return textureColor(rawVramWord(uvec2(clutBase.x + paletteIndex, clutBase.y)));
 	}
-	return textureColor(rawVramWord(u_texPageBase + windowed));
+	return textureColor(rawVramWord(texPageBase + windowed));
 }
 
 uvec3 blendRgb5(uvec3 src5, uvec3 dst5) {

@@ -12,7 +12,7 @@ constexpr i32 GX_GPU_VERTEX_COORD_PERIOD = 0x800;
 constexpr size_t GX_GPU_TRIANGLE_ATTRIBUTE_PLANE_PHASES = 3u;
 constexpr i32 GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS = 12;
 constexpr i64 GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE = 1 << GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS;
-constexpr i64 GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK = 0xfffff;
+constexpr u32 GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK = 0xfffffu;
 constexpr u32 GX_GPU_TEXTURE_SOURCE_COMMAND_OVERLAP = 1u;
 constexpr u32 GX_GPU_TEXTURE_SOURCE_BATCH_OVERLAP = 2u;
 
@@ -28,7 +28,7 @@ inline i32 gxGpuTriangleRasterShift(i32 coord0, i32 coord1, i32 coord2) {
 }
 
 inline void gxGpuTriangleAttributePlane(
-	i64* out,
+	u32* out,
 	size_t outOffset,
 	size_t componentCount,
 	i64 determinant,
@@ -47,12 +47,12 @@ inline void gxGpuTriangleAttributePlane(
 		const i64 value2 = out[outOffset + componentCount * 2u + component];
 		const i64 stepXQuotient = ((value1 - value0) * static_cast<i64>(y2 - y1) - (value2 - value1) * static_cast<i64>(y1 - y0)) * GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE / determinant;
 		const i64 stepYQuotient = (static_cast<i64>(x1 - x0) * (value2 - value1) - static_cast<i64>(x2 - x1) * (value1 - value0)) * GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE / determinant;
-		const i64 stepXRaw = stepXQuotient & GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK;
-		const i64 stepYRaw = stepYQuotient & GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK;
-		const i64 stepX = (stepXRaw & 0x80000ll) != 0 ? stepXRaw - 0x100000ll : stepXRaw;
-		const i64 stepY = (stepYRaw & 0x80000ll) != 0 ? stepYRaw - 0x100000ll : stepYRaw;
+		const u32 stepXRaw = static_cast<u32>(stepXQuotient) & GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK;
+		const u32 stepYRaw = static_cast<u32>(stepYQuotient) & GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK;
+		const i32 stepX = (stepXRaw & 0x80000u) != 0u ? static_cast<i32>(stepXRaw) - 0x100000 : static_cast<i32>(stepXRaw);
+		const i32 stepY = (stepYRaw & 0x80000u) != 0u ? static_cast<i32>(stepYRaw) - 0x100000 : static_cast<i32>(stepYRaw);
 		const i64 anchorValue = anchor == 0 ? value0 : (anchor == 1 ? value1 : value2);
-		out[outOffset + component] = (anchorValue * GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE + (GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE >> 1u) - static_cast<i64>(anchorX) * stepX - static_cast<i64>(anchorY) * stepY) & GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK;
+		out[outOffset + component] = static_cast<u32>(anchorValue * GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE + (GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_SCALE >> 1u) - static_cast<i64>(anchorX) * stepX - static_cast<i64>(anchorY) * stepY) & GX_GPU_TRIANGLE_ATTRIBUTE_ACCUMULATOR_MASK;
 		out[outOffset + componentCount + component] = stepXRaw;
 		out[outOffset + componentCount * 2u + component] = stepYRaw;
 	}
@@ -274,6 +274,12 @@ inline u32 gxGpuDrawModeTextureMode(u32 drawModeWord) {
 
 inline u32 gxGpuDrawModeTransparencyMode(u32 drawModeWord) {
 	return (drawModeWord >> 5u) & 0x03u;
+}
+
+inline u32 gxGpuTexturedBatchDrawModeWord(u32 drawModeWord, bool blendEnabled) {
+	constexpr u32 textureModeMask = 0x03u << 7u;
+	constexpr u32 transparencyModeMask = 0x03u << 5u;
+	return drawModeWord & (textureModeMask | (blendEnabled ? transparencyModeMask : 0u));
 }
 
 inline u32 gxGpuTextureWindowAndX(u32 textureWindowWord) {

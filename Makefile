@@ -6,6 +6,7 @@ SNESMINI_BUILD_DIR = $(SNESMINI_BUILD_ROOT)/core
 SNESMINI_BUILD_DIR_HOST = $(SNESMINI_BUILD_ROOT)/host
 SNESMINI_BUILD_DIR_SMOKE = $(SNESMINI_BUILD_ROOT)/smoke
 SNESMINI_BUILD_TYPE ?= Debug
+SNESMINI_ENABLE_LTO := $(if $(filter Release,$(SNESMINI_BUILD_TYPE)),ON,OFF)
 SNESMINI_TOOLCHAIN_FILE := $(CURDIR)/machine/cpp/cmake/toolchains/snesmini.cmake
 SNESMINI_LIBRETRO_ENTRY := $(CURDIR)/hosts/libretro/entry.cpp
 SNESMINI_DIST_DIR := $(CURDIR)/dist
@@ -21,6 +22,9 @@ SNESMINI_CMAKE_COMMON_ARGS = \
 	-DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
 	-DCMAKE_C_COMPILER_LAUNCHER=ccache \
 	-DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+SNESMINI_MACHINE_CMAKE_ARGS = \
+	$(SNESMINI_CMAKE_COMMON_ARGS) \
+	-DBMSX_ENABLE_LTO="$(SNESMINI_ENABLE_LTO)"
 
 .PHONY: libretro-snesmini-debug
 libretro-snesmini-debug:
@@ -54,7 +58,7 @@ snesmini-sysroot:
 .PHONY: libretro-snesmini-build-inner
 libretro-snesmini-build-inner:
 	cmake -S machine/cpp -B "$(SNESMINI_BUILD_DIR)" \
-		$(SNESMINI_CMAKE_COMMON_ARGS) \
+		$(SNESMINI_MACHINE_CMAKE_ARGS) \
 		-DBMSX_BUILD_LIBRETRO=ON \
 		-DBMSX_BUILD_LIBRETRO_HOST=OFF \
 		-DBMSX_ENABLE_GLES2=ON \
@@ -65,7 +69,7 @@ libretro-snesmini-build-inner:
 .PHONY: libretro-host-snesmini-build-inner
 libretro-host-snesmini-build-inner:
 	cmake -S machine/cpp -B "$(SNESMINI_BUILD_DIR_HOST)" \
-		$(SNESMINI_CMAKE_COMMON_ARGS) \
+		$(SNESMINI_MACHINE_CMAKE_ARGS) \
 		-DBMSX_BUILD_LIBRETRO=OFF \
 		-DBMSX_BUILD_LIBRETRO_HOST=ON \
 		-DBMSX_ENABLE_GLES2=OFF \

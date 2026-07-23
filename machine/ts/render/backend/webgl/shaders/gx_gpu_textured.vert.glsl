@@ -10,10 +10,12 @@ in vec2 a_position;
 in uvec2 a_uvPlaneBase;
 in uvec2 a_uvPlaneStepX;
 in uvec2 a_uvPlaneStepY;
+in uvec4 a_textureSource;
 uniform float u_rasterPhase;
 flat out uvec2 v_uvPlaneBase;
 flat out uvec2 v_uvPlaneStepX;
 flat out uvec2 v_uvPlaneStepY;
+flat out uvec4 v_textureSource;
 #if GX_GPU_FIXED_COLOR_PLANE
 in uvec3 a_colorPlaneBase;
 in uvec3 a_colorPlaneStepX;
@@ -33,6 +35,7 @@ void main() {
 	v_uvPlaneBase = a_uvPlaneBase;
 	v_uvPlaneStepX = a_uvPlaneStepX;
 	v_uvPlaneStepY = a_uvPlaneStepY;
+	v_textureSource = a_textureSource;
 #if GX_GPU_FIXED_COLOR_PLANE
 	v_colorPlaneBase = a_colorPlaneBase;
 	v_colorPlaneStepX = a_colorPlaneStepX;

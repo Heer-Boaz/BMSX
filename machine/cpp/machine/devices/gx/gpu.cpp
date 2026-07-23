@@ -35,7 +35,7 @@ GxGpu::GxGpu(Memory& memory, CPU& cpu, IrqController& irq, DeviceScheduler& sche
 	, m_commandBuffer(dmaController)
 	, m_vramSnapshotBytes(std::make_unique<std::array<u8, GX_GPU_VRAM_BYTE_COUNT>>())
 	, m_deviceOutput(m_commandBuffer, m_pcrtc.presentWords(), m_pcrtc.timing, m_pcrtc.scanout, *m_vramSnapshotBytes) {
-	m_userIngressContext.commandBufferWords = std::make_unique_for_overwrite<std::array<u32, GX_GPU_COMMAND_WORD_CAPACITY>>();
+	m_userIngressContext.commandBufferWords.reset(new std::array<u32, GX_GPU_COMMAND_WORD_CAPACITY>);
 	m_memory.mapIoRead(IO_GX_GPU_GP0, this, &GxGpu::readGp0Thunk);
 	m_memory.mapIoWrite(IO_GX_GPU_GP0, this, &GxGpu::writeGp0Thunk);
 	m_memory.mapIoWriteReady(IO_GX_GPU_GP0, &GxGpu::gp0WriteReadyThunk);

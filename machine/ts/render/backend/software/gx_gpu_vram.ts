@@ -47,6 +47,42 @@ export function gxGpuSoftwareWriteMaskedVramWord(index: number, word: number, ch
 	gxGpuSoftwareVram[index] = (word & 0x7fff) | maskBit;
 }
 
+export function gxGpuSoftwareBlendRgb555(sourceWord: number, destinationWord: number, blendMode: number): number {
+	let source = sourceWord | 0x8000;
+	let destination = destinationWord;
+	let color: number;
+	switch (blendMode) {
+		case 0:
+			destination |= 0x8000;
+			color = ((source + destination) - ((source ^ destination) & 0x0421)) >>> 1;
+			break;
+		case 1: {
+			destination &= 0x7fff;
+			const sum = source + destination;
+			const carry = (sum - ((source ^ destination) & 0x8421)) & 0x8420;
+			color = (sum - carry) | (carry - (carry >>> 5));
+			break;
+		}
+		case 2: {
+			destination |= 0x8000;
+			source &= 0x7fff;
+			const difference = destination - source + 0x108420;
+			const borrow = (difference - ((destination ^ source) & 0x108420)) & 0x108420;
+			color = (difference - borrow) & (borrow - (borrow >>> 5));
+			break;
+		}
+		default: {
+			destination &= 0x7fff;
+			source = ((source >>> 2) & 0x1ce7) | 0x8000;
+			const sum = source + destination;
+			const carry = (sum - ((source ^ destination) & 0x8421)) & 0x8420;
+			color = (sum - carry) | (carry - (carry >>> 5));
+			break;
+		}
+	}
+	return color & 0x7fff;
+}
+
 export function gxGpuSoftwareDitherOffset(x: number, y: number): number {
 	switch (((y & 3) << 2) | (x & 3)) {
 		case 0: return -4;
@@ -79,39 +115,18 @@ function ditheredByte(byte: number, offset: number): number {
 	return value;
 }
 
-function blendChannel5(src: number, dst: number, blendMode: number): number {
-	switch (blendMode) {
-		case 0:
-			return (src + dst) >>> 1;
-		case 1: {
-			const sum = src + dst;
-			return sum < 31 ? sum : 31;
-		}
-		case 2:
-			return dst > src ? dst - src : 0;
-		default: {
-			const sum = dst + (src >>> 2);
-			return sum < 31 ? sum : 31;
-		}
-	}
-}
-
 export function gxGpuSoftwareWriteRenderVramPixel5(x: number, y: number, r5: number, g5: number, b5: number, blendEnabled: boolean, blendMode: number, checkMaskBit: boolean, setMaskBit: boolean, outputMaskBit: number): void {
 	const index = gxGpuSoftwareVramIndex(x, y);
 	const dstWord = gxGpuSoftwareVram[index];
 	if (checkMaskBit && (dstWord & 0x8000) !== 0) {
 		return;
 	}
-	let blendedR5 = r5;
-	let blendedG5 = g5;
-	let blendedB5 = b5;
+	let color = r5 | (g5 << 5) | (b5 << 10);
 	if (blendEnabled) {
-		blendedR5 = blendChannel5(blendedR5, dstWord & 0x1f, blendMode);
-		blendedG5 = blendChannel5(blendedG5, (dstWord >>> 5) & 0x1f, blendMode);
-		blendedB5 = blendChannel5(blendedB5, (dstWord >>> 10) & 0x1f, blendMode);
+		color = gxGpuSoftwareBlendRgb555(color, dstWord, blendMode);
 	}
 	const maskBit = setMaskBit ? 0x8000 : outputMaskBit & 0x8000;
-	gxGpuSoftwareVram[index] = blendedR5 | (blendedG5 << 5) | (blendedB5 << 10) | maskBit;
+	gxGpuSoftwareVram[index] = color | maskBit;
 }
 
 export function gxGpuSoftwareWriteRenderVramPixel(x: number, y: number, r8: number, g8: number, b8: number, ditherEnabled: boolean, blendEnabled: boolean, blendMode: number, checkMaskBit: boolean, setMaskBit: boolean): void {

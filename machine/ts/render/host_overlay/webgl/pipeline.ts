@@ -85,7 +85,7 @@ function createRuntime(backend: WebGLBackend, program: WebGLProgram): HostOverla
 	gl.vertexAttribDivisor(textureKindLocation, 1);
 	backend.bindVertexArray(null);
 	backend.bindArrayBuffer(null);
-	gl.useProgram(program);
+	backend.useProgram(program);
 	gl.uniform1i(gl.getUniformLocation(program, 'u_texture0'), HOST_OVERLAY_TEXTURE_UNIT);
 
 	return {
@@ -121,7 +121,7 @@ function bootstrapRuntime(backend: WebGLBackend): void {
 function bindPassState(backend: WebGLBackend, state: HostOverlayRuntime, passState: Host2DPipelineState): void {
 	const gl = backend.gl as WebGL2RenderingContext;
 	gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-	gl.useProgram(state.program);
+	backend.useProgram(state.program);
 	updateAndBindFrameUniforms(backend, passState.width, passState.height, passState.overlayWidth, passState.overlayHeight, passState.time, passState.delta);
 	backend.setUniformBlockBinding('FrameUniforms', FRAME_UNIFORM_BINDING);
 	backend.setViewportRect(0, 0, passState.width, passState.height);

@@ -1,3 +1,7 @@
+#ifdef GX_GPU_FRAMEBUFFER_FETCH_ARM
+#extension GL_ARM_shader_framebuffer_fetch : require
+#endif
+
 precision highp float;
 precision highp int;
 
@@ -26,7 +30,11 @@ int clampColor5(int value) {
 }
 
 int rawStorageVramWord(ivec2 storageCoord) {
+#ifdef GX_GPU_FRAMEBUFFER_FETCH_ARM
+	vec4 rawPixel = gl_LastFragColorARM;
+#else
 	vec4 rawPixel = texture2D(u_vram, (vec2(storageCoord) + vec2(0.5)) / 1024.0);
+#endif
 	ivec4 nibbles = ivec4(rawPixel * 15.0 + 0.5);
 	return nibbles.r * 4096 + nibbles.g * 256 + nibbles.b * 16 + nibbles.a;
 }

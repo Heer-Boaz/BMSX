@@ -52,53 +52,54 @@ inline void gxGpuSoftwareWriteMaskedVramWord(size_t index, u32 word, bool checkM
 	g_gxGpuSoftwareVram[index] = static_cast<u16>((word & 0x7fffu) | maskBit);
 }
 
+inline u32 gxGpuSoftwareBlendRgb555(u32 sourceWord, u32 destinationWord, u32 blendMode) {
+	u32 source = sourceWord | 0x8000u;
+	u32 destination = destinationWord;
+	u32 color;
+	switch (blendMode) {
+		case 0u:
+			destination |= 0x8000u;
+			color = ((source + destination) - ((source ^ destination) & 0x0421u)) >> 1u;
+			break;
+		case 1u: {
+			destination &= 0x7fffu;
+			const u32 sum = source + destination;
+			const u32 carry = (sum - ((source ^ destination) & 0x8421u)) & 0x8420u;
+			color = (sum - carry) | (carry - (carry >> 5u));
+			break;
+		}
+		case 2u: {
+			destination |= 0x8000u;
+			source &= 0x7fffu;
+			const u32 difference = destination - source + 0x108420u;
+			const u32 borrow = (difference - ((destination ^ source) & 0x108420u)) & 0x108420u;
+			color = (difference - borrow) & (borrow - (borrow >> 5u));
+			break;
+		}
+		default: {
+			destination &= 0x7fffu;
+			source = ((source >> 2u) & 0x1ce7u) | 0x8000u;
+			const u32 sum = source + destination;
+			const u32 carry = (sum - ((source ^ destination) & 0x8421u)) & 0x8420u;
+			color = (sum - carry) | (carry - (carry >> 5u));
+			break;
+		}
+	}
+	return color & 0x7fffu;
+}
+
 inline void gxGpuSoftwareWriteRenderVramPixel5(i32 x, i32 y, u32 r5, u32 g5, u32 b5, bool blendEnabled, u32 blendMode, bool checkMaskBit, bool setMaskBit, u32 outputMaskBit) {
 	const size_t index = gxGpuSoftwareVramIndex(x, y);
 	const u32 dstWord = g_gxGpuSoftwareVram[index];
 	if (checkMaskBit && (dstWord & 0x8000u) != 0u) {
 		return;
 	}
-	u32 blendedR5 = r5;
-	u32 blendedG5 = g5;
-	u32 blendedB5 = b5;
+	u32 color = r5 | (g5 << 5u) | (b5 << 10u);
 	if (blendEnabled) {
-		switch (blendMode) {
-			case 0u:
-				blendedR5 = (blendedR5 + (dstWord & 0x1fu)) >> 1u;
-				blendedG5 = (blendedG5 + ((dstWord >> 5u) & 0x1fu)) >> 1u;
-				blendedB5 = (blendedB5 + ((dstWord >> 10u) & 0x1fu)) >> 1u;
-				break;
-			case 1u: {
-				const u32 sumR = blendedR5 + (dstWord & 0x1fu);
-				const u32 sumG = blendedG5 + ((dstWord >> 5u) & 0x1fu);
-				const u32 sumB = blendedB5 + ((dstWord >> 10u) & 0x1fu);
-				blendedR5 = sumR < 31u ? sumR : 31u;
-				blendedG5 = sumG < 31u ? sumG : 31u;
-				blendedB5 = sumB < 31u ? sumB : 31u;
-				break;
-			}
-			case 2u: {
-				const u32 dstR = dstWord & 0x1fu;
-				const u32 dstG = (dstWord >> 5u) & 0x1fu;
-				const u32 dstB = (dstWord >> 10u) & 0x1fu;
-				blendedR5 = dstR > blendedR5 ? dstR - blendedR5 : 0u;
-				blendedG5 = dstG > blendedG5 ? dstG - blendedG5 : 0u;
-				blendedB5 = dstB > blendedB5 ? dstB - blendedB5 : 0u;
-				break;
-			}
-			default: {
-				const u32 sumR = (dstWord & 0x1fu) + (blendedR5 >> 2u);
-				const u32 sumG = ((dstWord >> 5u) & 0x1fu) + (blendedG5 >> 2u);
-				const u32 sumB = ((dstWord >> 10u) & 0x1fu) + (blendedB5 >> 2u);
-				blendedR5 = sumR < 31u ? sumR : 31u;
-				blendedG5 = sumG < 31u ? sumG : 31u;
-				blendedB5 = sumB < 31u ? sumB : 31u;
-				break;
-			}
-		}
+		color = gxGpuSoftwareBlendRgb555(color, dstWord, blendMode);
 	}
 	const u32 maskBit = setMaskBit ? 0x8000u : outputMaskBit & 0x8000u;
-	g_gxGpuSoftwareVram[index] = static_cast<u16>(blendedR5 | (blendedG5 << 5u) | (blendedB5 << 10u) | maskBit);
+	g_gxGpuSoftwareVram[index] = static_cast<u16>(color | maskBit);
 }
 
 inline i32 gxGpuSoftwareDitherOffset(i32 x, i32 y) {
