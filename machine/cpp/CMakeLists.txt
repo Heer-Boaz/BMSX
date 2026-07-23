@@ -565,6 +565,12 @@ if(BMSX_BUILD_TESTS)
 	target_link_libraries(bmsx_device_quantize_tests PRIVATE bmsx_core)
 	add_test(NAME bmsx_device_quantize_tests COMMAND bmsx_device_quantize_tests)
 
+	add_executable(bmsx_host_system_atlas_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/host_system_atlas_test.cpp
+	)
+	target_link_libraries(bmsx_host_system_atlas_tests PRIVATE bmsx_core)
+	add_test(NAME bmsx_host_system_atlas_tests COMMAND bmsx_host_system_atlas_tests)
+
 	add_executable(bmsx_dma_controller_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/dma_controller_test.cpp
 	)

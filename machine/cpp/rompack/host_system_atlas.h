@@ -1,18 +1,31 @@
 #pragma once
 
-#include "common/primitives.h"
-#include "rompack/host_system_atlas.generated.h"
+#include "common/types.h"
 
-#include <cstdint>
+#include <span>
 #include <string_view>
-#include <vector>
 
 namespace bmsx {
 
-std::uint32_t hostSystemAtlasWidth();
-std::uint32_t hostSystemAtlasHeight();
+struct HostSystemAtlasImage {
+	std::string_view id;
+	i32 width;
+	i32 height;
+	u32 u;
+	u32 v;
+	u32 w;
+	u32 h;
+};
 
-const std::vector<u8>& hostSystemAtlasPixels();
-const HostSystemAtlasGeneratedImage& hostSystemAtlasImage(std::string_view id);
+struct HostSystemAtlas {
+	u32 width;
+	u32 height;
+	std::span<const u8> pixels;
+	std::span<const HostSystemAtlasImage> images;
+};
+
+extern const HostSystemAtlas HOST_SYSTEM_ATLAS;
+
+const HostSystemAtlasImage& hostSystemAtlasImage(std::string_view id);
 
 } // namespace bmsx

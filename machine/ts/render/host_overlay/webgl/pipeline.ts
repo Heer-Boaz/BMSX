@@ -17,11 +17,7 @@ import {
 } from '../quad_stream';
 import { hasPendingHostMenuFrame, hasPendingOverlayFrame } from '../overlay_queue';
 import { createHostMenuState, createHostOverlayState, writeHostMenuState, writeHostOverlayState } from '../pipeline';
-import {
-	HOST_SYSTEM_ATLAS_HEIGHT,
-	HOST_SYSTEM_ATLAS_WIDTH,
-	hostSystemAtlasPixels,
-} from '../../../rompack/host_system_atlas';
+import { HOST_SYSTEM_ATLAS } from '../../../rompack/host_system_atlas';
 import vertexShaderCode from './shaders/host_overlay.vert.glsl';
 import fragmentShaderCode from './shaders/host_overlay.frag.glsl';
 
@@ -64,7 +60,7 @@ function createRuntime(backend: WebGLBackend, program: WebGLProgram): HostOverla
 	const cornerBuffer = backend.createVertexBuffer(UNIT_QUAD_CORNERS, 'static') as WebGLBuffer;
 	const instanceFloatBuffer = backend.createVertexBuffer(stream.floatData, 'dynamic') as WebGLBuffer;
 	const instanceTextureKindBuffer = backend.createVertexBuffer(stream.textureKinds, 'dynamic') as WebGLBuffer;
-	const hostAtlasTexture = backend.createTexture(hostSystemAtlasPixels(), HOST_SYSTEM_ATLAS_WIDTH, HOST_SYSTEM_ATLAS_HEIGHT, RGBA8_SRGB_TEXTURE_PARAMS) as WebGLTexture;
+	const hostAtlasTexture = backend.createTexture(HOST_SYSTEM_ATLAS.pixels, HOST_SYSTEM_ATLAS.width, HOST_SYSTEM_ATLAS.height, RGBA8_SRGB_TEXTURE_PARAMS) as WebGLTexture;
 
 	backend.bindVertexArray(vao);
 	backend.bindArrayBuffer(cornerBuffer);

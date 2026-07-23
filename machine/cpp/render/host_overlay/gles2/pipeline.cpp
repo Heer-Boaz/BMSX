@@ -116,11 +116,11 @@ void drawPolyGLES2(OpenGLES2Backend& backend, const PolyRenderSubmission& comman
 }
 
 void drawHostAtlasImageGLES2(OpenGLES2Backend& backend, std::string_view imgid, f32 x, f32 y, f32 scaleX, f32 scaleY, const FlipOptions& flip, u32 color) {
-	const HostSystemAtlasGeneratedImage& source = hostSystemAtlasImage(imgid);
-	f32 u0 = static_cast<f32>(source.u) / static_cast<f32>(hostSystemAtlasWidth());
-	f32 v0 = static_cast<f32>(source.v) / static_cast<f32>(hostSystemAtlasHeight());
-	f32 u1 = static_cast<f32>(source.u + source.w) / static_cast<f32>(hostSystemAtlasWidth());
-	f32 v1 = static_cast<f32>(source.v + source.h) / static_cast<f32>(hostSystemAtlasHeight());
+	const HostSystemAtlasImage& source = hostSystemAtlasImage(imgid);
+	f32 u0 = static_cast<f32>(source.u) / static_cast<f32>(HOST_SYSTEM_ATLAS.width);
+	f32 v0 = static_cast<f32>(source.v) / static_cast<f32>(HOST_SYSTEM_ATLAS.height);
+	f32 u1 = static_cast<f32>(source.u + source.w) / static_cast<f32>(HOST_SYSTEM_ATLAS.width);
+	f32 v1 = static_cast<f32>(source.v + source.h) / static_cast<f32>(HOST_SYSTEM_ATLAS.height);
 	if (flip.flip_h) {
 		const f32 swap = u0;
 		u0 = u1;
@@ -148,8 +148,8 @@ void drawHostAtlasImageGLES2(OpenGLES2Backend& backend, std::string_view imgid, 
 
 void drawGlyphImageGLES2(OpenGLES2Backend& backend, const FontGlyph& item, f32 imageX, f32 imageY, u32 color) {
 	const ImageAtlasRect& rect = item.rect;
-	const f32 atlasWidth = static_cast<f32>(hostSystemAtlasWidth());
-	const f32 atlasHeight = static_cast<f32>(hostSystemAtlasHeight());
+	const f32 atlasWidth = static_cast<f32>(HOST_SYSTEM_ATLAS.width);
+	const f32 atlasHeight = static_cast<f32>(HOST_SYSTEM_ATLAS.height);
 	drawQuadGLES2(
 		backend,
 		g_gles2.hostAtlasTexture,
@@ -204,7 +204,7 @@ void bootstrapHostOverlayGLES2(OpenGLES2Backend& backend) {
 	const TextureParams& params = RGBA8_LINEAR_TEXTURE_PARAMS;
 	const u8 whitePixel[4] = {255u, 255u, 255u, 255u};
 	g_gles2.whiteTexture = backend.createTexture(whitePixel, 1, 1, params);
-	g_gles2.hostAtlasTexture = backend.createTexture(hostSystemAtlasPixels().data(), static_cast<i32>(hostSystemAtlasWidth()), static_cast<i32>(hostSystemAtlasHeight()), params);
+	g_gles2.hostAtlasTexture = backend.createTexture(HOST_SYSTEM_ATLAS.pixels.data(), static_cast<i32>(HOST_SYSTEM_ATLAS.width), static_cast<i32>(HOST_SYSTEM_ATLAS.height), params);
 }
 
 void shutdownHostOverlayGLES2(OpenGLES2Backend& backend) {

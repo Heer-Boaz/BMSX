@@ -1,7 +1,6 @@
 import {
-	HOST_SYSTEM_ATLAS_WIDTH,
+	HOST_SYSTEM_ATLAS,
 	hostSystemAtlasImage,
-	hostSystemAtlasPixels,
 } from '../../rompack/host_system_atlas';
 import { forEachBatchBlitGlyph } from '../shared/glyph_runs';
 import type {
@@ -225,7 +224,7 @@ function drawHostAtlasRect(target: Uint8Array,
 	flipH: boolean,
 	flipV: boolean,
 	colorValue: color): void {
-	const atlas = hostSystemAtlasPixels();
+	const atlas = HOST_SYSTEM_ATLAS.pixels;
 	const colorR = (colorValue >>> 16) & 0xff, colorG = (colorValue >>> 8) & 0xff, colorB = colorValue & 0xff, colorA = (colorValue >>> 24) & 0xff;
 	const dstXi = dstX;
 	const dstYi = dstY;
@@ -247,7 +246,7 @@ function drawHostAtlasRect(target: Uint8Array,
 			const relX = x - dstXi;
 			const sampleX = flipH ? (dstWi - 1 - relX) : relX;
 			const srcX = sourceX + ((sampleX * sourceW / dstWi) | 0);
-			const srcOffset = (srcY * HOST_SYSTEM_ATLAS_WIDTH + srcX) * 4;
+			const srcOffset = (srcY * HOST_SYSTEM_ATLAS.width + srcX) * 4;
 			const sourceAlpha = (atlas[srcOffset + 3] * colorA + 127) / 255;
 			blendPixel(
 				target,

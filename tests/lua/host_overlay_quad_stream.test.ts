@@ -6,7 +6,7 @@ import {
 	HOST_OVERLAY_TEXTURE_SOLID,
 	HostOverlayQuadStream,
 } from '../../machine/ts/render/host_overlay/quad_stream';
-import { HOST_SYSTEM_ATLAS_HEIGHT, HOST_SYSTEM_ATLAS_WIDTH } from '../../machine/ts/rompack/host_system_atlas';
+import { HOST_SYSTEM_ATLAS } from '../../machine/ts/rompack/host_system_atlas';
 import { Font } from '../../machine/ts/render/shared/bmsx_font';
 import { LAYER_2D_IDE } from '../../machine/ts/render/shared/layers';
 import {
@@ -104,10 +104,10 @@ test('host overlay quad stream emits glyph backgrounds before atlas glyphs with 
 		10, 20, firstGlyph.width, 0, 0, firstGlyph.height,
 	]);
 	assert.deepEqual(Array.from(stream.floatData.subarray(firstGlyphBase + 6, firstGlyphBase + 10)), [
-		Math.fround(firstGlyph.rect.u / HOST_SYSTEM_ATLAS_WIDTH),
-		Math.fround(firstGlyph.rect.v / HOST_SYSTEM_ATLAS_HEIGHT),
-		Math.fround((firstGlyph.rect.u + firstGlyph.rect.w) / HOST_SYSTEM_ATLAS_WIDTH),
-		Math.fround((firstGlyph.rect.v + firstGlyph.rect.h) / HOST_SYSTEM_ATLAS_HEIGHT),
+		Math.fround(firstGlyph.rect.u / HOST_SYSTEM_ATLAS.width),
+		Math.fround(firstGlyph.rect.v / HOST_SYSTEM_ATLAS.height),
+		Math.fround((firstGlyph.rect.u + firstGlyph.rect.w) / HOST_SYSTEM_ATLAS.width),
+		Math.fround((firstGlyph.rect.v + firstGlyph.rect.h) / HOST_SYSTEM_ATLAS.height),
 	]);
 	assert.equal(stream.floatData[secondGlyphBase], 10 + firstGlyph.advance);
 	assert.equal(stream.floatData[secondGlyphBase + 2], secondGlyph.width);

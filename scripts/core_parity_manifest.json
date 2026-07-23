@@ -703,6 +703,17 @@
 	],
 	"strict_runtime_shape_parity": [
 		{
+			"ts": "machine/ts/rompack/host_system_atlas.ts",
+			"cpp": [
+				"machine/cpp/rompack/host_system_atlas.h"
+			],
+			"symbols": [
+				"HostSystemAtlasImage",
+				"HostSystemAtlas"
+			],
+			"reason": "host_system_atlas_native_descriptor_contract"
+		},
+		{
 			"ts": "machine/ts/render/backend/backend.ts",
 			"cpp": [
 				"machine/cpp/render/backend/pass/library.h"
@@ -863,6 +874,7 @@
 				"machine/cpp/common/image_decode.h",
 				"machine/cpp/vendor/stb_image.h",
 				"machine/cpp/vendor/stb_impl.c",
+				"machine/cpp/rompack/host_system_atlas.generated.h",
 				"tests/lua/vdp_ingress.test.ts",
 				"tests/cpp/vdp_ingress_test.cpp",
 				"tests/lua/image_decode.test.ts",

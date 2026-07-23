@@ -59,7 +59,7 @@ void drawPolySoftware(SoftwareBackend& backend, const PolyRenderSubmission& comm
 }
 
 void drawAtlasPixelsSoftware(SoftwareBackend& backend,
-							const std::vector<u8>& atlasPixels,
+							std::span<const u8> atlasPixels,
 							i32 atlasWidth,
 							u32 sourceU,
 							u32 sourceV,
@@ -103,12 +103,12 @@ void drawAtlasPixelsSoftware(SoftwareBackend& backend,
 }
 
 void drawImageSoftware(SoftwareBackend& backend, const HostImageRenderSubmission& command) {
-	const HostSystemAtlasGeneratedImage& source = hostSystemAtlasImage(command.imgid);
+	const HostSystemAtlasImage& source = hostSystemAtlasImage(command.imgid);
 	const Vec2& scale = command.scale;
 	drawAtlasPixelsSoftware(
 		backend,
-		hostSystemAtlasPixels(),
-		static_cast<i32>(hostSystemAtlasWidth()),
+		HOST_SYSTEM_ATLAS.pixels,
+		static_cast<i32>(HOST_SYSTEM_ATLAS.width),
 		source.u,
 		source.v,
 		source.w,
@@ -123,12 +123,12 @@ void drawImageSoftware(SoftwareBackend& backend, const HostImageRenderSubmission
 	);
 }
 
-void drawGlyphImageSoftware(SoftwareBackend& backend, const std::vector<u8>& atlasPixels, i32 atlasWidth, const FontGlyph& item, f32 imageX, f32 imageY, u32 color) {
+void drawGlyphImageSoftware(SoftwareBackend& backend, const HostSystemAtlas& atlas, const FontGlyph& item, f32 imageX, f32 imageY, u32 color) {
 	const ImageAtlasRect& rect = item.rect;
 	drawAtlasPixelsSoftware(
 		backend,
-		atlasPixels,
-		atlasWidth,
+		atlas.pixels,
+		static_cast<i32>(atlas.width),
 		rect.u,
 		rect.v,
 		rect.w,
@@ -144,8 +144,6 @@ void drawGlyphImageSoftware(SoftwareBackend& backend, const std::vector<u8>& atl
 }
 
 void drawGlyphsSoftware(SoftwareBackend& backend, const GlyphRenderSubmission& command) {
-	const std::vector<u8>& atlasPixels = hostSystemAtlasPixels();
-	const i32 atlasWidth = static_cast<i32>(hostSystemAtlasWidth());
 	if (command.has_background_color) {
 		const i32 lineHeight = command.font->lineHeight();
 		forEachBatchBlitGlyph(command, [&](const FontGlyph& item, f32 imageX, f32 imageY, f32, u32) {
@@ -159,7 +157,7 @@ void drawGlyphsSoftware(SoftwareBackend& backend, const GlyphRenderSubmission& c
 		});
 	}
 	forEachBatchBlitGlyph(command, [&](const FontGlyph& item, f32 imageX, f32 imageY, f32, u32 color) {
-		drawGlyphImageSoftware(backend, atlasPixels, atlasWidth, item, imageX, imageY, color);
+		drawGlyphImageSoftware(backend, HOST_SYSTEM_ATLAS, item, imageX, imageY, color);
 	});
 }
 

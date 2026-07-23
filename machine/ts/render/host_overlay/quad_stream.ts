@@ -1,6 +1,5 @@
 import {
-	HOST_SYSTEM_ATLAS_HEIGHT,
-	HOST_SYSTEM_ATLAS_WIDTH,
+	HOST_SYSTEM_ATLAS,
 	hostSystemAtlasImage,
 } from '../../rompack/host_system_atlas';
 import { forEachBatchBlitGlyph } from '../shared/glyph_runs';
@@ -23,8 +22,8 @@ export const HOST_OVERLAY_TEXTURE_SOLID = 0;
 export const HOST_OVERLAY_TEXTURE_ATLAS = 1;
 
 const INITIAL_INSTANCE_CAPACITY = 4096;
-const HOST_ATLAS_U_SCALE = 1 / HOST_SYSTEM_ATLAS_WIDTH;
-const HOST_ATLAS_V_SCALE = 1 / HOST_SYSTEM_ATLAS_HEIGHT;
+const HOST_ATLAS_U_SCALE = 1 / HOST_SYSTEM_ATLAS.width;
+const HOST_ATLAS_V_SCALE = 1 / HOST_SYSTEM_ATLAS.height;
 
 export class HostOverlayQuadStream {
 	public floatData = new Float32Array(INITIAL_INSTANCE_CAPACITY * HOST_OVERLAY_INSTANCE_FLOATS);

@@ -17,11 +17,7 @@ import {
 } from '../quad_stream';
 import { hasPendingHostMenuFrame, hasPendingOverlayFrame } from '../overlay_queue';
 import { createHostMenuState, createHostOverlayState, writeHostMenuState, writeHostOverlayState } from '../pipeline';
-import {
-	HOST_SYSTEM_ATLAS_HEIGHT,
-	HOST_SYSTEM_ATLAS_WIDTH,
-	hostSystemAtlasPixels,
-} from '../../../rompack/host_system_atlas';
+import { HOST_SYSTEM_ATLAS } from '../../../rompack/host_system_atlas';
 import vertexShaderCode from './shaders/host_overlay.vert.wgsl';
 import fragmentShaderCode from './shaders/host_overlay.frag.wgsl';
 
@@ -110,7 +106,7 @@ function createRuntime(backend: WebGPUBackend): HostOverlayRuntime {
 		size: OVERLAY_UNIFORM_FLOATS * Float32Array.BYTES_PER_ELEMENT,
 		usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
 	});
-	const hostAtlasTexture = backend.createTexture(hostSystemAtlasPixels(), HOST_SYSTEM_ATLAS_WIDTH, HOST_SYSTEM_ATLAS_HEIGHT, RGBA8_SRGB_TEXTURE_PARAMS) as GPUTexture;
+	const hostAtlasTexture = backend.createTexture(HOST_SYSTEM_ATLAS.pixels, HOST_SYSTEM_ATLAS.width, HOST_SYSTEM_ATLAS.height, RGBA8_SRGB_TEXTURE_PARAMS) as GPUTexture;
 	const hostSampler = device.createSampler({
 		magFilter: 'nearest',
 		minFilter: 'nearest',

@@ -2551,6 +2551,18 @@ WebGPU is the default accelerated browser backend and WebGL2 is its fallback;
 host validation failures do not reverse that ownership or introduce a second
 presentation facade.
 
+The platform atlas producer is the sole owner of the host-UI atlas layout. It
+emits the RGBA bytes and the image descriptors as native generated data for
+both runtimes. The shared descriptor order is `width`, `height`, `pixels`,
+`images`; every image record carries `id`, source dimensions and atlas bounds.
+TypeScript retains one `Uint8Array`, while C++ exposes spans over static byte
+and descriptor arrays. Image IDs are sorted by the producer and both runtimes
+use binary lookup, so no runtime builds a second index. Backends upload or
+sample that one pixel backing directly. Base64, runtime decoding, lazy pixel
+caches and intermediate pixel copies are not part of this host-resource
+boundary. This atlas remains a host presentation resource, not cart ROM, GX
+local memory or an IMGDEC stream.
+
 One libretro `retro_run()` advances exactly one machine-timed frame. Frontend
 wall time is not fed back into the machine scheduler. A direct host may skip an
 overdue host presentation while catching up, but it still advances machine and

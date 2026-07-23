@@ -24,12 +24,11 @@ type HostAtlasImage = {
 type HostAtlasBuild = {
 	width: number;
 	height: number;
-	rgbaBase64: string;
+	pixels: Uint8ClampedArray;
 	images: HostAtlasImage[];
 };
 
 export const HOST_SYSTEM_ATLAS_TS_PATH = join(process.cwd(), 'machine', 'ts', 'rompack', 'host_system_atlas.generated.ts');
-export const HOST_SYSTEM_ATLAS_CPP_HEADER_PATH = join(process.cwd(), 'machine', 'cpp', 'rompack', 'host_system_atlas.generated.h');
 export const HOST_SYSTEM_ATLAS_CPP_SOURCE_PATH = join(process.cwd(), 'machine', 'cpp', 'rompack', 'host_system_atlas.generated.cpp');
 const HOST_RESOURCE_PATH = './hosts/res';
 
@@ -59,104 +58,77 @@ function buildHostAtlasFromResources(resources: readonly Resource[]): HostAtlasB
 			});
 		}
 	}
-	images.sort((a, b) => a.id.localeCompare(b.id));
+	images.sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 	if (images.length === 0) {
 		throw new Error('[HostSystemAtlas] No system-atlas images were generated.');
 	}
 	return {
 		width: atlas.img!.width,
 		height: atlas.img!.height,
-		rgbaBase64: Buffer.from(rgba.buffer, rgba.byteOffset, rgba.byteLength).toString('base64'),
+		pixels: rgba,
 		images,
 	};
 }
 
-function splitBase64Literal(value: string, indent: string): string {
-	const chunks: string[] = [];
-	for (let index = 0; index < value.length; index += 120) {
-		chunks.push(`${indent}"${value.slice(index, index + 120)}"`);
+function renderByteRows(bytes: Uint8ClampedArray, indent: string): string[] {
+	const rows: string[] = [];
+	for (let start = 0; start < bytes.length; start += 32) {
+		const values: string[] = [];
+		const end = start + 32 < bytes.length ? start + 32 : bytes.length;
+		for (let index = start; index < end; index += 1) {
+			values.push(String(bytes[index]));
+		}
+		rows.push(`${indent}${values.join(', ')},`);
 	}
-	return chunks.join('\n');
+	return rows;
 }
 
 function renderTypeScriptArtifact(build: HostAtlasBuild): string {
 	const imageEntries = build.images.map(image => (
-		`\t\t${JSON.stringify(image.id)}: { width: ${image.width}, height: ${image.height}, u: ${image.u}, v: ${image.v}, w: ${image.w}, h: ${image.h} },`
+		`\t\t{ id: ${JSON.stringify(image.id)}, width: ${image.width}, height: ${image.height}, u: ${image.u}, v: ${image.v}, w: ${image.w}, h: ${image.h} },`
 	));
 	return GENERATED_FILE_HEADER + [
-		'export const HOST_SYSTEM_ATLAS_ARTIFACT = {',
+		"import type { HostSystemAtlas } from './host_system_atlas';",
+		'',
+		'export const HOST_SYSTEM_ATLAS: HostSystemAtlas = {',
 		`\twidth: ${build.width},`,
 		`\theight: ${build.height},`,
-		`\trgbaBase64: ${JSON.stringify(build.rgbaBase64)},`,
-		'\timages: {',
+		'\tpixels: new Uint8Array([',
+		...renderByteRows(build.pixels, '\t\t'),
+		'\t]),',
+		'\timages: [',
 		...imageEntries,
-		'\t},',
-		'} as const;',
-		'',
-	].join('\n');
-}
-
-function renderCppHeader(): string {
-	return GENERATED_FILE_HEADER + [
-		'#pragma once',
-		'',
-		'#include <cstddef>',
-		'#include <cstdint>',
-		'#include <string_view>',
-		'',
-		'namespace bmsx {',
-		'',
-		'struct HostSystemAtlasGeneratedImage {',
-		'\tstd::string_view id;',
-		'\tstd::int32_t width = 0;',
-		'\tstd::int32_t height = 0;',
-		'\tstd::uint32_t u = 0;',
-		'\tstd::uint32_t v = 0;',
-		'\tstd::uint32_t w = 0;',
-		'\tstd::uint32_t h = 0;',
+		'\t],',
 		'};',
-		'',
-		'std::int32_t generatedHostSystemAtlasWidth();',
-		'std::int32_t generatedHostSystemAtlasHeight();',
-		'std::string_view generatedHostSystemAtlasRgbaBase64();',
-		'const HostSystemAtlasGeneratedImage* generatedHostSystemAtlasImages();',
-		'std::size_t generatedHostSystemAtlasImageCount();',
-		'',
-		'} // namespace bmsx',
 		'',
 	].join('\n');
 }
 
 function renderCppSource(build: HostAtlasBuild): string {
 	const imageEntries = build.images.map(image => (
-		`\tHostSystemAtlasGeneratedImage{std::string_view("${image.id}", ${image.id.length}), ${image.width}, ${image.height}, ${image.u}u, ${image.v}u, ${image.w}u, ${image.h}u},`
+		`\tHostSystemAtlasImage{std::string_view(${JSON.stringify(image.id)}), ${image.width}, ${image.height}, ${image.u}u, ${image.v}u, ${image.w}u, ${image.h}u},`
 	));
 	return GENERATED_FILE_HEADER + [
-		'#include "rompack/host_system_atlas.generated.h"',
+		'#include "rompack/host_system_atlas.h"',
 		'',
 		'namespace bmsx {',
 		'namespace {',
 		'',
-		`constexpr std::int32_t HOST_SYSTEM_ATLAS_WIDTH = ${build.width};`,
-		`constexpr std::int32_t HOST_SYSTEM_ATLAS_HEIGHT = ${build.height};`,
-		'constexpr char HOST_SYSTEM_ATLAS_RGBA_BASE64[] =',
-		splitBase64Literal(build.rgbaBase64, '\t'),
-		';',
-		'constexpr HostSystemAtlasGeneratedImage HOST_SYSTEM_ATLAS_IMAGES[] = {',
+		'constexpr u8 HOST_SYSTEM_ATLAS_PIXELS[] = {',
+		...renderByteRows(build.pixels, '\t'),
+		'};',
+		'constexpr HostSystemAtlasImage HOST_SYSTEM_ATLAS_IMAGES[] = {',
 		...imageEntries,
 		'};',
 		'',
 		'} // namespace',
 		'',
-		'std::int32_t generatedHostSystemAtlasWidth() { return HOST_SYSTEM_ATLAS_WIDTH; }',
-		'std::int32_t generatedHostSystemAtlasHeight() { return HOST_SYSTEM_ATLAS_HEIGHT; }',
-		'std::string_view generatedHostSystemAtlasRgbaBase64() {',
-		'\treturn std::string_view(HOST_SYSTEM_ATLAS_RGBA_BASE64, sizeof(HOST_SYSTEM_ATLAS_RGBA_BASE64) - 1u);',
-		'}',
-		'const HostSystemAtlasGeneratedImage* generatedHostSystemAtlasImages() { return HOST_SYSTEM_ATLAS_IMAGES; }',
-		'std::size_t generatedHostSystemAtlasImageCount() {',
-		'\treturn sizeof(HOST_SYSTEM_ATLAS_IMAGES) / sizeof(HOST_SYSTEM_ATLAS_IMAGES[0]);',
-		'}',
+		'const HostSystemAtlas HOST_SYSTEM_ATLAS{',
+		`\t${build.width}u,`,
+		`\t${build.height}u,`,
+		'\tHOST_SYSTEM_ATLAS_PIXELS,',
+		'\tHOST_SYSTEM_ATLAS_IMAGES,',
+		'};',
 		'',
 		'} // namespace bmsx',
 		'',
@@ -183,7 +155,6 @@ async function writeIfChanged(path: string, contents: string): Promise<boolean> 
 async function writeHostSystemAtlasArtifacts(build: HostAtlasBuild): Promise<boolean> {
 	const writes = await Promise.all([
 		writeIfChanged(HOST_SYSTEM_ATLAS_TS_PATH, renderTypeScriptArtifact(build)),
-		writeIfChanged(HOST_SYSTEM_ATLAS_CPP_HEADER_PATH, renderCppHeader()),
 		writeIfChanged(HOST_SYSTEM_ATLAS_CPP_SOURCE_PATH, renderCppSource(build)),
 	]);
 	return writes.some(Boolean);
@@ -205,4 +176,11 @@ export async function ensureHostSystemAtlasArtifacts(): Promise<boolean> {
 	const resources = await getResourcesList(resMeta);
 	await createTextureAtlases(resources);
 	return generateHostSystemAtlasArtifactsFromResources(resources);
+}
+
+if (require.main === module) {
+	ensureHostSystemAtlasArtifacts().catch(error => {
+		console.error(error);
+		process.exitCode = 1;
+	});
 }

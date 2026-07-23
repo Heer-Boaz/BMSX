@@ -8,7 +8,6 @@ horen niet in deze lijst.
 
 | ID | Nog te doen | Klaar wanneer | Afhankelijk van |
 | --- | --- | --- | --- |
-| `HOST-ATLAS-01` | Laat de platformbuild één native host-UI-atlas maken in plaats van base64 die TS en C++ tijdens runtime afzonderlijk decoderen. | Beide runtimes gebruiken dezelfde descriptorvorm zonder runtime-decoder, lazy cache of extra pixelkopie. | Geen; owners: [producer](../scripts/rompacker/host_system_atlas.ts), [TS](../machine/ts/rompack/host_system_atlas.ts), [C++](../machine/cpp/rompack/host_system_atlas.cpp). |
 | `CART-EXP-01` | Specificeer en implementeer twee fysieke cartridgeslots met eigen chip selects, busarbitrage, bootkeuze, IRQ/DMA, reset en save-state. | Alle hosts laden dezelfde twee slotinputs en ROM-, RAM- en minimale MMIO/IRQ-carts bewijzen de bus. | Eerst het [slotcontract](architecture.md#cartridge-expansion-and-terminal-call) reviewen. |
 | `BIOS-TERM-EXT-01` | Voeg BIOS-commando `CALL <name> [arguments]` toe voor Lua-extensies uit een cartridge; developer-tools blijven cartcode. | Descriptor-, argument-, resultaat-, timing-, completion- en pager-ABI zijn vastgelegd en één developer-cart werkt zonder hostcallbacks. | `CART-EXP-01`. |
 

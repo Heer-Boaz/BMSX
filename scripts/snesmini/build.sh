@@ -23,6 +23,13 @@ if ! docker info >/dev/null 2>&1; then
 	exit 1
 fi
 
+if [ "$MODE" = "build" ]; then
+	(
+		cd "$ROOT_DIR"
+		npm run build:host-system-atlas
+	)
+fi
+
 mkdir -p "$ROOT_DIR/.snesmini" "$ROOT_DIR/dist"
 
 BUILD_TYPE="${SNESMINI_BUILD_TYPE:-Debug}"
