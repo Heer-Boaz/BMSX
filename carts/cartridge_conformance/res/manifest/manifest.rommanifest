@@ -1,0 +1,11 @@
+title: Cartridge Hardware Conformance
+short_name: 'cartridge_conformance'
+rom_name: 'cartridge_conformance'
+machine:
+    namespace: 'cartridge_conformance'
+    vdp_class: psx
+lua:
+    entry_path: entry.lua
+cartridge:
+    board: ram_mailbox
+    ram_bytes: 256

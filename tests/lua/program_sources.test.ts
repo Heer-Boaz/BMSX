@@ -1,3 +1,4 @@
+import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -214,7 +215,7 @@ test('debug package source boot resolves the persisted GX texture layout module'
 			optLevel: 3,
 		},
 	);
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: payload });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots(payload) });
 	const cpu = new CPU(memory, new IrqController(memory));
 	cpu.setProgram(compiled.program, compiled.metadata, compiled.metadata, 0, 0, 0);
 	cpu.start(compiled.entryProtoIndex);

@@ -4,6 +4,7 @@
 #include "input/hid_keys.h"
 #include "input/manager.h"
 #include "machine/bus/io.h"
+#include "machine/devices/cartridge/contracts.h"
 #include "machine/devices/input/contracts.h"
 #include "machine/devices/gx/gpu.h"
 #include "machine/devices/gx/gpu_display.h"
@@ -84,7 +85,10 @@ void testLibretroSaveStateRoundTrip() {
 	require(platform.getStateSize() == 0u, "libretro state size should be zero before a ROM is loaded");
 	require(platform.machineManager()->loadSystemRomOwned(bmsx::test::makeMinimalBootRom(bmsx::ProgramBootTarget::System)), "libretro should load the system firmware ROM");
 
-	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalBootRom(bmsx::ProgramBootTarget::Cart);
+	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalBootRom(
+		bmsx::ProgramBootTarget::Cart,
+		bmsx::CARTRIDGE_BOARD_RAM,
+		16u);
 	require(platform.loadRom(rom.data(), rom.size()), "libretro should load and boot a program cart ROM");
 	require(platform.machineManager()->romLoaded(), "MachineManager should mark the cart ROM loaded");
 	require(platform.machineManager()->hasRuntime(), "MachineManager should own a runtime after cart boot");
@@ -93,9 +97,12 @@ void testLibretroSaveStateRoundTrip() {
 	require(runtime.isInitialized(), "cart program boot should initialize the runtime");
 	auto& scheduler = runtime.machine.scheduler;
 	const size_t stateSize = platform.getStateSize();
-	require(stateSize > 0u, "libretro state size should come from initialized runtime state");
+	require(
+		stateSize == 8u + bmsx::runtimeSaveStateWireCapacity(16u),
+		"libretro state size should include the inserted cartridge RAM capacity");
 
 	bmsx::Memory& memory = runtime.machine.memory;
+	memory.writeMappedU32LE(bmsx::CART_RAM_BASE, 0x89abcdefu);
 	memory.writeMappedU32LE(bmsx::GEO_SCRATCH_BASE, 0x11223344u);
 	memory.writeMappedU32LE(bmsx::IO_IRQ_MASK, bmsx::IRQ_VBLANK);
 	runtime.machine.irqController.raise(bmsx::IRQ_VBLANK);
@@ -151,7 +158,10 @@ void testLibretroSaveStateRoundTrip() {
 	std::vector<bmsx::u8> saved(gpuStateSize);
 	require(platform.saveState(saved.data(), saved.size()), "libretro saveState should serialize initialized runtime state");
 	const size_t savedPayloadBytes = bmsx::readLE32(saved.data() + 4u);
-	bmsx::RuntimeSaveState savedState = bmsx::decodeRuntimeSaveState(saved.data() + 8u, savedPayloadBytes);
+	bmsx::RuntimeSaveState savedState = bmsx::decodeRuntimeSaveState(
+		saved.data() + 8u,
+		savedPayloadBytes,
+		runtime.machine.cartridgeController.ramByteCount());
 	savedState.cpuState.memoryWriteBlocked = true;
 	savedState.cpuState.memoryWriteBlockedAddress = bmsx::IO_GX_GPU_GP0;
 	const std::vector<bmsx::u8> blockedPayload = bmsx::encodeRuntimeSaveState(savedState);
@@ -166,6 +176,7 @@ void testLibretroSaveStateRoundTrip() {
 	require(memory.readIoU32(bmsx::IO_DMA0_TRANSFER_COUNT) == 0u, "DMA mutation should consume the live word count");
 
 	memory.writeMappedU32LE(bmsx::GEO_SCRATCH_BASE, 0xaabbccddu);
+	memory.writeMappedU32LE(bmsx::CART_RAM_BASE, 0u);
 	memory.writeMappedU32LE(bmsx::IO_GX_GPU_GP1, bmsx::GX_GPU_GP1_RESET << 24u);
 	memory.writeMappedU32LE(bmsx::IO_GX_GPU_GP0, (bmsx::GX_GPU_GP0_DRAW_MODE << 24u) | 0x456u);
 	runtime.machine.gxGpu.onService(std::numeric_limits<bmsx::i64>::max() >> 1u);
@@ -185,6 +196,7 @@ void testLibretroSaveStateRoundTrip() {
 
 	require(platform.loadState(saved.data(), saved.size()), "libretro loadState should apply runtime state bytes");
 	require(memory.readMappedU32LE(bmsx::GEO_SCRATCH_BASE) == 0x11223344u, "libretro loadState should restore RAM through Runtime save state");
+	require(memory.readMappedU32LE(bmsx::CART_RAM_BASE) == 0x89abcdefu, "libretro loadState should restore physical cartridge RAM");
 	require(runtime.machine.gxGpu.captureState().gp0Word == savedGp0Latch, "libretro loadState should restore GX-GPU GP0 word");
 	require(runtime.machine.gxGpu.readDrawModeWord() == 0x123u, "libretro loadState should restore GX-GPU raw draw-mode state");
 	const auto& restoredVram = runtime.machine.gxGpu.readVramSnapshotBytes();
@@ -228,6 +240,8 @@ void testGpureadCodecStoresReadyBytesAndRejectsBackendPhase() {
 	require(platform.machineManager()->loadSystemRomOwned(bmsx::test::makeMinimalBootRom(bmsx::ProgramBootTarget::System)), "libretro should load the system firmware ROM for GPUREAD codec validation");
 	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalBootRom(bmsx::ProgramBootTarget::Cart);
 	require(platform.loadRom(rom.data(), rom.size()), "libretro should load a program cart ROM for GPUREAD codec validation");
+	const size_t cartridgeRamByteCount =
+		platform.machineManager()->runtime().machine.cartridgeController.ramByteCount();
 	bmsx::RuntimeSaveState ready = bmsx::captureRuntimeSaveState(platform.machineManager()->runtime());
 	bmsx::GxGpuCommandBufferState& readyReadback = ready.machineState.machine.gxGpu.commandBuffer;
 	bmsx::CpuProtectedCallState protectedCall;
@@ -246,7 +260,9 @@ void testGpureadCodecStoresReadyBytesAndRejectsBackendPhase() {
 	readyReadback.readbackHeight = 1u;
 	readyReadback.readbackPixelCursor = 1u;
 	readyReadback.readbackPixelBytes = { 0x11u, 0x11u, 0x22u, 0x22u, 0x33u, 0x33u };
-	const bmsx::RuntimeSaveState decodedReady = bmsx::decodeRuntimeSaveState(bmsx::encodeRuntimeSaveState(ready));
+	const bmsx::RuntimeSaveState decodedReady = bmsx::decodeRuntimeSaveState(
+		bmsx::encodeRuntimeSaveState(ready),
+		cartridgeRamByteCount);
 	const bmsx::CpuProtectedCallState& decodedProtectedCall = decodedReady.cpuState.protectedCalls[0];
 	require(decodedProtectedCall.kind == bmsx::ProtectedCallKind::XPCallHandler, "native codec preserves protected-call phase");
 	require(decodedProtectedCall.callerFrameIndex == 2 && decodedProtectedCall.targetFrameIndex == -1, "native codec preserves protected-call frame references");
@@ -264,7 +280,9 @@ void testGpureadCodecStoresReadyBytesAndRejectsBackendPhase() {
 	submittedReadback.readbackPixelBytes.clear();
 	bool rejected = false;
 	try {
-		(void)bmsx::decodeRuntimeSaveState(bmsx::encodeRuntimeSaveState(submitted));
+		(void)bmsx::decodeRuntimeSaveState(
+			bmsx::encodeRuntimeSaveState(submitted),
+			cartridgeRamByteCount);
 	}
 	catch (const std::exception&) {
 		rejected = true;
@@ -272,7 +290,8 @@ void testGpureadCodecStoresReadyBytesAndRejectsBackendPhase() {
 	require(rejected, "native codec rejects backend-only SUBMITTED GPUREAD phase");
 
 	bmsx::RuntimeSaveState oversized = bmsx::captureRuntimeSaveState(platform.machineManager()->runtime());
-	oversized.machineState.machine.gxGpu.vramBytes.resize(bmsx::RUNTIME_SAVE_STATE_WIRE_CAPACITY);
+	const size_t wireCapacity = bmsx::runtimeSaveStateWireCapacity(cartridgeRamByteCount);
+	oversized.machineState.machine.gxGpu.vramBytes.resize(wireCapacity);
 	rejected = false;
 	try {
 		(void)bmsx::encodeRuntimeSaveState(oversized);
@@ -282,10 +301,10 @@ void testGpureadCodecStoresReadyBytesAndRejectsBackendPhase() {
 	}
 	require(rejected, "native codec rejects payloads beyond the current-format wire capacity");
 	oversized.machineState.machine.gxGpu.vramBytes.clear();
-	std::vector<bmsx::u8> oversizedWire(bmsx::RUNTIME_SAVE_STATE_WIRE_CAPACITY + 1u);
+	std::vector<bmsx::u8> oversizedWire(wireCapacity + 1u);
 	rejected = false;
 	try {
-		(void)bmsx::decodeRuntimeSaveState(oversizedWire);
+		(void)bmsx::decodeRuntimeSaveState(oversizedWire, cartridgeRamByteCount);
 	}
 	catch (const std::exception&) {
 		rejected = true;

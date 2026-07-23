@@ -1,3 +1,4 @@
+import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -91,7 +92,7 @@ function makeProgram(cpu: CPU): Program {
 }
 
 function makeCpuWithProgram(programForCpu: (cpu: CPU) => Program): { memory: Memory; cpu: CPU; irqController: IrqController } {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
 	const irqController = new IrqController(memory);
 	const cpu = new CPU(memory, irqController);
 	const program = programForCpu(cpu);
@@ -173,7 +174,7 @@ const INLINE_MICROTASKS: MicrotaskQueue = {
 };
 
 function makeMachine(): Machine {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
 	const input = {
 		getPlayerInput: () => ({
 			checkActionTriggered: () => false,
@@ -190,7 +191,7 @@ function makeMachine(): Machine {
 }
 
 function makeHaltFrameRuntime(): Runtime {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
 	const irqController = new IrqController(memory);
 	const cpu = new CPU(memory, irqController);
 	const program = makeProgram(cpu);
@@ -445,7 +446,7 @@ test('host external closure calls wake from pending IRQ without vectoring', () =
 });
 
 test('IRQ mask starts closed and gates pending maskable IRQs', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
 	const irq = new IrqController(memory);
 	const cpu = new CPU(memory, irq);
 	const metadata = makeMetadata();
@@ -466,7 +467,7 @@ test('IRQ mask starts closed and gates pending maskable IRQs', () => {
 });
 
 test('CPU closure calls continue after scheduler yield requests', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
 	const irqController = new IrqController(memory);
 	const cpu = new CPU(memory, irqController);
 	const nativeCost = 7;
@@ -490,7 +491,7 @@ test('CPU closure calls continue after scheduler yield requests', () => {
 });
 
 test('CPU external closure calls that throw after executing preserve spent budget', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
 	const irqController = new IrqController(memory);
 	const cpu = new CPU(memory, irqController);
 	const nativeCost = 7;
@@ -526,7 +527,7 @@ test('CPU external closure calls that throw after executing preserve spent budge
 });
 
 test('CPU frame executor rejects native Lua re-entry and closes the scheduler slice', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
 	const irqController = new IrqController(memory);
 	const cpu = new CPU(memory, irqController);
 	let runtime!: Runtime;
@@ -696,7 +697,7 @@ end
 		programDomain: 'cart',
 	});
 	const linked = finalizeTestProgramPair(system, cart);
-	const memory = new Memory({ systemRom: linked.systemRomBytes, cartRom: linked.cartRomBytes });
+	const memory = new Memory({ systemRom: linked.systemRomBytes, cartridgeSlots: cartridgeSlots(linked.cartRomBytes) });
 	const irqController = new IrqController(memory);
 	const cpu = new CPU(memory, irqController);
 	cpu.setProgram(
@@ -926,7 +927,7 @@ test('CPU mapped bus errors enter the system exception vector without committing
 	writeInstruction(code, 12, OpCode.STORE_MEM_WORDS_D, 1, 0, 5, 0);
 	writeInstruction(code, 13, OpCode.RET, 0, 0, 0, 0);
 
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
 	const irqController = new IrqController(memory);
 	const cpu = new CPU(memory, irqController);
 	const program: Program = {
@@ -982,7 +983,7 @@ test('CPU mapped memory accepts byte addresses and four-byte-aligned f64 address
 	writeInstruction(code, 4, OpCode.RET, 1, 2, 0, 0);
 	writeInstruction(code, 5, OpCode.HALT, 0, 0, 0, 0);
 
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
 	const irqController = new IrqController(memory);
 	const cpu = new CPU(memory, irqController);
 	const program: Program = {
@@ -1029,7 +1030,7 @@ test('CPU address errors vector before any mapped-memory bus cycle or destinatio
 		writeInstruction(code, memoryInstruction, testCase.op, 1, 0, testCase.operandC, 0);
 		writeInstruction(code, memoryInstruction + 1, OpCode.RET, 0, 0, 0, 0);
 
-		const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+		const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
 		const irqController = new IrqController(memory);
 		const cpu = new CPU(memory, irqController);
 		const program: Program = {
@@ -1171,7 +1172,7 @@ test('CPU execution stops at the device deadline that activates GPUREAD', () => 
 });
 
 test('IRQ state restore preserves asserted line and cart-visible flags', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
 	const irq = new IrqController(memory);
 
 	memory.writeValue(IO_IRQ_MASK, IRQ_VBLANK);

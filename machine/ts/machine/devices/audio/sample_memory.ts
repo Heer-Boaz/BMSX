@@ -17,20 +17,22 @@ export class ApuSampleMemory {
 		this.ram.fill(0);
 	}
 
-	public bindSource(addr: number, byteLength: number, out: ApuSourceByteView): boolean {
+	public bindSource(addr: number, byteLength: number, cartridgeSlot: number, out: ApuSourceByteView): boolean {
 		if (byteLength !== 0 && addr >= APU_SAMPLE_RAM_BASE) {
 			const offset = addr - APU_SAMPLE_RAM_BASE;
 			if (offset + byteLength <= APU_SAMPLE_RAM_BYTES) {
 				out.bytes = this.ram;
 				out.byteOffset = offset;
 				out.byteLength = byteLength;
+				out.cartridgeSlot = cartridgeSlot;
 				return true;
 			}
 		}
-		if (this.memory.bindRomByteView(addr, byteLength, this.romView)) {
+		if (this.memory.bindRomByteView(addr, byteLength, cartridgeSlot, this.romView)) {
 			out.bytes = this.romView.bytes;
 			out.byteOffset = this.romView.byteOffset;
 			out.byteLength = this.romView.byteLength;
+			out.cartridgeSlot = cartridgeSlot;
 			return true;
 		}
 		return false;

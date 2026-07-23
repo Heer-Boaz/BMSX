@@ -2,6 +2,7 @@
 
 #include "common/primitives.h"
 #include "machine/devices/audio/contracts.h"
+#include "machine/devices/audio/source.h"
 
 #include <array>
 #include <vector>
@@ -15,7 +16,7 @@ public:
 	explicit ApuSampleMemory(const Memory& memory);
 
 	void reset();
-	bool bindSource(u32 address, u32 byteLength, Span<const u8>& out) const;
+	bool bindSource(u32 address, u32 byteLength, u32 cartridgeSlot, ApuSourceByteView& out) const;
 	[[nodiscard]] auto readWord(u32 address) const -> u32;
 	void writeWord(u32 address, u32 word);
 	[[nodiscard]] auto captureState() const -> std::vector<u8>;

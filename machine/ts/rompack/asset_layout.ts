@@ -17,7 +17,7 @@ export function alignRomAssetOffset(offset: number): number {
 }
 
 export function romAssetIsPacked(asset: RomAsset, includeLuaAssets: boolean): boolean {
-	return asset.type !== 'romlabel' && (asset.type !== 'lua' || includeLuaAssets);
+	return asset.type !== 'lua' || includeLuaAssets;
 }
 
 export function layoutRomAssetPayloads(

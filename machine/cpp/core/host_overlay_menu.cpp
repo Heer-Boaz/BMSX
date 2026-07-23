@@ -2,7 +2,6 @@
 
 #include "core/machine_manager.h"
 #include "render/shared/bitmap_font.h"
-#include "core/rom_boot_manager.h"
 #include "input/hid_keys.h"
 #include "input/manager.h"
 #include "machine/runtime/runtime.h"

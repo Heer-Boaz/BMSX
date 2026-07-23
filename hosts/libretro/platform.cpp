@@ -6,7 +6,6 @@
 #include "core/machine_manager.h"
 #include "common/endian.h"
 #include "common/primitives.h"
-#include "core/rom_boot_manager.h"
 #include "input/gamepad_buttons.h"
 #include "input/hid_keys.h"
 #include "input/pointer_controls.h"
@@ -41,7 +40,11 @@ constexpr const char* kDebugSystemRomName = "bmsx-bios.debug.rom";
 constexpr const char* kDebugRomSuffix = ".debug.rom";
 constexpr u32 kSaveStateMagic = 0x31534d42u;
 constexpr size_t kSaveStateHeaderBytes = 8u;
-constexpr size_t kSaveStateEnvelopeBytes = kSaveStateHeaderBytes + RUNTIME_SAVE_STATE_WIRE_CAPACITY;
+
+size_t saveStateEnvelopeBytes(const Runtime& runtime) {
+	return kSaveStateHeaderBytes
+		+ runtimeSaveStateWireCapacity(runtime.machine.cartridgeController.ramByteCount());
+}
 
 constexpr std::array<i16, RETROK_LAST> makeRetroKeyHidUsages() {
 	std::array<i16, RETROK_LAST> usages{};
@@ -380,14 +383,18 @@ void LibretroPlatform::setControllerDevice(unsigned port, unsigned device) {
 }
 
 bool LibretroPlatform::loadRom(const uint8_t* data, size_t size) {
-	std::vector<uint8_t> owned(size);
-	std::memcpy(owned.data(), data, size);
-	return loadRomOwned(std::move(owned));
+	std::array<std::vector<uint8_t>, CARTRIDGE_SLOT_COUNT> slots;
+	slots[0].resize(size);
+	std::memcpy(slots[0].data(), data, size);
+	return loadCartridgeSlotsOwned(std::move(slots));
 }
 
-bool LibretroPlatform::loadRomOwned(std::vector<uint8_t>&& data) {
+bool LibretroPlatform::loadCartridgeSlotsOwned(std::array<std::vector<uint8_t>, CARTRIDGE_SLOT_COUNT>&& data) {
 	unloadRom();
-	const size_t size = data.size();
+	size_t totalSize = 0;
+	for (const std::vector<uint8_t>& slot : data) {
+		totalSize += slot.size();
+	}
 	{
 		const std::string line = memSnapshotLine("libretro:before_loadRom");
 		if (!line.empty()) {
@@ -395,8 +402,8 @@ bool LibretroPlatform::loadRomOwned(std::vector<uint8_t>&& data) {
 		}
 	}
 
-	if (!m_machine_manager->loadRomOwned(std::move(data))) {
-		log(RETRO_LOG_ERROR, "[BMSX] Failed to load ROM\n");
+	if (!m_machine_manager->loadCartridgeSlotsOwned(std::move(data))) {
+		log(RETRO_LOG_ERROR, "Failed to load cartridge slots\n");
 		return false;
 	}
 	setDeviceQuantizeMode(m_device_quantize_mode);
@@ -411,7 +418,7 @@ bool LibretroPlatform::loadRomOwned(std::vector<uint8_t>&& data) {
 	}
 
 	m_rom_loaded = true;
-	log(RETRO_LOG_INFO, "[BMSX] ROM loaded (%zu bytes)\n", size);
+	log(RETRO_LOG_INFO, "Cartridge slots loaded (%zu bytes)\n", totalSize);
 	return true;
 }
 
@@ -440,9 +447,16 @@ void LibretroPlatform::loadSystemRom(const char* romPath) {
 }
 
 bool LibretroPlatform::loadRomFromPath(const char* path) {
-	// Load system ROM first (if available in same directory)
-	loadSystemRom(path);
+	return loadCartridgeSlotsFromPaths({ std::string(path), std::string{} });
+}
 
+bool LibretroPlatform::loadCartridgeSlotsFromPaths(const std::array<std::string, CARTRIDGE_SLOT_COUNT>& paths) {
+	for (const std::string& path : paths) {
+		if (!path.empty()) {
+			loadSystemRom(path.c_str());
+			break;
+		}
+	}
 	unloadRom();
 	{
 		const std::string line = memSnapshotLine("libretro:before_loadRom");
@@ -451,8 +465,8 @@ bool LibretroPlatform::loadRomFromPath(const char* path) {
 		}
 	}
 
-	if (!m_machine_manager->loadRomFile(path)) {
-		log(RETRO_LOG_ERROR, "[BMSX] Failed to load ROM file: %s\n", path);
+	if (!m_machine_manager->loadCartridgeSlotFiles(paths)) {
+		log(RETRO_LOG_ERROR, "Failed to load cartridge slots\n");
 		return false;
 	}
 	setDeviceQuantizeMode(m_device_quantize_mode);
@@ -467,7 +481,7 @@ bool LibretroPlatform::loadRomFromPath(const char* path) {
 	}
 
 	m_rom_loaded = true;
-	log(RETRO_LOG_INFO, "[BMSX] ROM loaded from file: %s\n", path);
+	log(RETRO_LOG_INFO, "Cartridge slot files loaded\n");
 	return true;
 }
 
@@ -632,7 +646,7 @@ size_t LibretroPlatform::getStateSize() const {
 	if (!runtime.isInitialized()) {
 		return 0;
 	}
-	return kSaveStateEnvelopeBytes;
+	return saveStateEnvelopeBytes(runtime);
 }
 
 // start fallible-boundary -- libretro serialization callbacks report failure as false after logging.
@@ -644,7 +658,8 @@ bool LibretroPlatform::saveState(void* data, size_t size) {
 	if (!runtime.isInitialized()) {
 		return false;
 	}
-	if (size < kSaveStateEnvelopeBytes) {
+	const size_t envelopeBytes = saveStateEnvelopeBytes(runtime);
+	if (size < envelopeBytes) {
 		return false;
 	}
 	try {
@@ -654,7 +669,7 @@ bool LibretroPlatform::saveState(void* data, size_t size) {
 		writeLE32(envelope, kSaveStateMagic);
 		writeLE32(envelope + 4u, static_cast<u32>(state.size()));
 		std::memcpy(envelope + kSaveStateHeaderBytes, state.data(), state.size());
-		std::memset(envelope + kSaveStateHeaderBytes + state.size(), 0, RUNTIME_SAVE_STATE_WIRE_CAPACITY - state.size());
+		std::memset(envelope + kSaveStateHeaderBytes + state.size(), 0, envelopeBytes - kSaveStateHeaderBytes - state.size());
 		return true;
 	}
 	catch (const std::exception& error) {
@@ -672,7 +687,7 @@ bool LibretroPlatform::loadState(const void* data, size_t size) {
 		return false;
 	}
 	try {
-		if (size < kSaveStateEnvelopeBytes) {
+		if (size < saveStateEnvelopeBytes(runtime)) {
 			return false;
 		}
 		const u8* const envelope = static_cast<const u8*>(data);
@@ -680,7 +695,7 @@ bool LibretroPlatform::loadState(const void* data, size_t size) {
 			return false;
 		}
 		const size_t payloadBytes = readLE32(envelope + 4u);
-		if (payloadBytes > size - kSaveStateHeaderBytes) {
+		if (payloadBytes > runtimeSaveStateWireCapacity(runtime.machine.cartridgeController.ramByteCount())) {
 			return false;
 		}
 		applyRuntimeSaveStateBytes(runtime, envelope + kSaveStateHeaderBytes, payloadBytes);

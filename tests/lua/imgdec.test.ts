@@ -1,3 +1,4 @@
+import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -91,7 +92,7 @@ type ImgDecFixture = {
 };
 
 function createFixture(cartRom: Uint8Array): ImgDecFixture {
-	const memory = new Memory({ systemRom: new Uint8Array(), cartRom });
+	const memory = new Memory({ systemRom: new Uint8Array(), cartridgeSlots: cartridgeSlots(cartRom) });
 	const machine = new Machine(memory, INPUT_SOURCE);
 	machine.resetDevices();
 	const gpu = machine.gxGpu;

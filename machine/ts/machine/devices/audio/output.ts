@@ -80,6 +80,7 @@ export class ApuOutputMixer {
 			this.voices[slot] = {
 				active: false,
 				slot,
+				sourceCartridgeSlot: 0,
 				channels: 0,
 				bitsPerSample: 0,
 				sourceBytes: EMPTY_SOURCE_BYTES,
@@ -438,6 +439,7 @@ export class ApuOutputMixer {
 		phaseRemainder: number,
 	): void {
 		record.active = true;
+		record.sourceCartridgeSlot = sourceBytes.cartridgeSlot;
 		record.channels = source.channels;
 		record.bitsPerSample = source.bitsPerSample;
 		record.sourceBytes = sourceBytes.bytes;

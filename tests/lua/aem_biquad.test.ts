@@ -11,6 +11,7 @@ const MODULE_FILES = [
 	['bios/common/endian', 'machine/firmware/bios/common/endian.lua'],
 	['bios/util/sincos_turn32', 'machine/firmware/bios/util/sincos_turn32.lua'],
 	['bios/math', 'machine/firmware/bios/math.lua'],
+	['system/cartridge', 'machine/firmware/system/cartridge.lua'],
 	['system/dma', 'machine/firmware/system/dma.lua'],
 	['system/apu', 'machine/firmware/system/apu.lua'],
 	['cartlib/aem_biquad', 'cartlib/aem_biquad.lua'],

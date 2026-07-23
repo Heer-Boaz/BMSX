@@ -42,6 +42,7 @@ export type ApuBadpDecoderSaveState = {
 
 export type ApuOutputVoiceState = {
 	slot: ApuAudioSlot;
+	sourceCartridgeSlot: number;
 	cursorQ16: number;
 	phaseRemainder: number;
 	gainQ12: number;
@@ -92,6 +93,7 @@ export type ApuOutputVoiceStateAccess = Omit<ApuOutputVoiceState, 'filter' | 'ba
 export function captureApuOutputVoiceState(record: ApuOutputVoiceStateAccess): ApuOutputVoiceState {
 	return {
 		slot: record.slot,
+		sourceCartridgeSlot: record.sourceCartridgeSlot,
 		cursorQ16: record.cursorQ16,
 		phaseRemainder: record.phaseRemainder,
 		gainQ12: record.gainQ12,
@@ -126,6 +128,7 @@ export function captureApuOutputVoiceState(record: ApuOutputVoiceStateAccess): A
 }
 
 export function restoreApuOutputVoiceState(record: ApuOutputVoiceStateAccess, state: ApuOutputVoiceState): void {
+	record.sourceCartridgeSlot = state.sourceCartridgeSlot;
 	record.cursorQ16 = state.cursorQ16;
 	record.phaseRemainder = state.phaseRemainder;
 	record.gainQ12 = state.gainQ12;

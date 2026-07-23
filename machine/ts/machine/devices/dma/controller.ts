@@ -9,6 +9,10 @@ import {
 	DMA_CONTROL_WRITE_REQUEST_SHIFT,
 	DMA_REQUEST_DISABLED,
 	DMA_REQUEST_FORCE,
+	DMA_REQUEST_CARTRIDGE_SLOT0_READ,
+	DMA_REQUEST_CARTRIDGE_SLOT0_WRITE,
+	DMA_REQUEST_CARTRIDGE_SLOT1_READ,
+	DMA_REQUEST_CARTRIDGE_SLOT1_WRITE,
 	DMA_STATUS_BUSY,
 	DMA_STATUS_DONE,
 	DMA_TRIGGER_START,
@@ -24,7 +28,13 @@ import {
 } from '../../bus/io';
 import type { CPU, Value } from '../../cpu/cpu';
 import { IO_WORD_SIZE } from '../../memory/map';
-import { MAPPED_BUS_DMA_BLOCK_END, MAPPED_BUS_MASTER_DMA, type MappedBusSignals } from '../../memory/bus_signals';
+import {
+	MAPPED_BUS_CARTRIDGE_SLOT1,
+	MAPPED_BUS_CARTRIDGE_SLOT_OVERRIDE,
+	MAPPED_BUS_DMA_BLOCK_END,
+	MAPPED_BUS_MASTER_DMA,
+	type MappedBusSignals,
+} from '../../memory/bus_signals';
 import { Memory, MemoryRegionKind } from '../../memory/memory';
 import { DEVICE_SERVICE_DMA, DEVICE_SERVICE_SYSTEM, type DeviceScheduler } from '../../scheduler/device';
 import type { IrqController } from '../irq/controller';
@@ -204,14 +214,17 @@ export class DmaController {
 		const control = this.scheduledControlWord;
 		const readStep = (control & DMA_CONTROL_READ_INCREMENT) !== 0 ? IO_WORD_SIZE : 0;
 		const writeStep = (control & DMA_CONTROL_WRITE_INCREMENT) !== 0 ? IO_WORD_SIZE : 0;
+		const readRequest = (control & DMA_CONTROL_READ_REQUEST_MASK) >>> DMA_CONTROL_READ_REQUEST_SHIFT;
+		const writeRequest = (control & DMA_CONTROL_WRITE_REQUEST_MASK) >>> DMA_CONTROL_WRITE_REQUEST_SHIFT;
+		const readBusSignals = MAPPED_BUS_MASTER_DMA | this.cartridgeSlotSignals(readRequest);
+		const writeBusSignals = MAPPED_BUS_MASTER_DMA | this.cartridgeSlotSignals(writeRequest);
 		const blockDeadline = this.serviceDeadline;
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
 		this.serviceActive = true;
 		for (let slot = 0; slot < blockWords; slot += 1) {
-			const busSignals: MappedBusSignals = MAPPED_BUS_MASTER_DMA
-				| (slot + 1 === blockWords ? MAPPED_BUS_DMA_BLOCK_END : 0);
-			const word = this.memory.readMappedDmaU32LE(readAddress, busSignals);
-			this.memory.writeMappedDmaU32LE(writeAddress, word, busSignals);
+			const blockEnd = slot + 1 === blockWords ? MAPPED_BUS_DMA_BLOCK_END : 0;
+			const word = this.memory.readMappedDmaU32LE(readAddress, readBusSignals | blockEnd);
+			this.memory.writeMappedDmaU32LE(writeAddress, word, writeBusSignals | blockEnd);
 			readAddress = (readAddress + readStep) >>> 0;
 			writeAddress = (writeAddress + writeStep) >>> 0;
 			transferCount = (transferCount - 1) >>> 0;
@@ -471,7 +484,8 @@ export class DmaController {
 			const spanWords = readRegionWords < writeRegionWords ? readRegionWords : writeRegionWords;
 			const readCycles = this.regionSpanCycles(readRegion, spanWords, readRegionStart);
 			const writeCycles = this.regionSpanCycles(writeRegion, spanWords, writeRegionStart);
-			blockCycles += readRegion === MemoryRegionKind.Ram && writeRegion === MemoryRegionKind.Ram
+			blockCycles += readRegion === writeRegion
+				&& (readRegion === MemoryRegionKind.Ram || readRegion === MemoryRegionKind.Cartridge)
 				? readCycles + writeCycles
 				: readCycles > writeCycles ? readCycles : writeCycles;
 			wordsRemaining -= spanWords;
@@ -511,7 +525,7 @@ export class DmaController {
 				return wordCount * this.ramCyclesPerWord + (regionStart ? this.ramBurstSetupCycles : 0);
 			case MemoryRegionKind.SystemRom:
 				return wordCount * this.systemRomCyclesPerWord;
-			case MemoryRegionKind.CartRom:
+			case MemoryRegionKind.Cartridge:
 				return wordCount * this.cartRomCyclesPerWord + (regionStart ? this.cartRomBurstSetupCycles : 0);
 			case MemoryRegionKind.Io:
 			case MemoryRegionKind.Other:
@@ -534,6 +548,19 @@ export class DmaController {
 			return false;
 		}
 		return (this.requestLines & (1 << request)) !== 0;
+	}
+
+	private cartridgeSlotSignals(request: number): MappedBusSignals {
+		switch (request) {
+			case DMA_REQUEST_CARTRIDGE_SLOT0_READ:
+			case DMA_REQUEST_CARTRIDGE_SLOT0_WRITE:
+				return MAPPED_BUS_CARTRIDGE_SLOT_OVERRIDE;
+			case DMA_REQUEST_CARTRIDGE_SLOT1_READ:
+			case DMA_REQUEST_CARTRIDGE_SLOT1_WRITE:
+				return MAPPED_BUS_CARTRIDGE_SLOT_OVERRIDE | MAPPED_BUS_CARTRIDGE_SLOT1;
+			default:
+				return 0;
+		}
 	}
 
 	private busy(channel: number): boolean {

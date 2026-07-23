@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import { CART_ROM_BASE } from '../../machine/ts/machine/memory/map';
 import { buildRomAssetSymbolModuleSource, collectRomAssetSymbols } from '../../machine/ts/rompack/asset_symbols';
 import { layoutRomAssetPayloads } from '../../machine/ts/rompack/asset_layout';
-import { CART_ROM_HEADER_SIZE, CART_ROM_WORD_ALIGNMENT, PROGRAM_BOOT_HEADER_VERSION, type RomAsset } from '../../machine/ts/rompack/format';
+import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES, CART_ROM_WORD_ALIGNMENT, PROGRAM_BOOT_HEADER_VERSION, type RomAsset } from '../../machine/ts/rompack/format';
 import { loadRomAssetList } from '../../machine/ts/rompack/loader';
 import { layoutRomProgramPrefix } from '../../machine/ts/rompack/tooling/rom_layout';
 import { PROGRAM_IMAGE_ID } from '../../machine/ts/machine/program/loader';
@@ -52,7 +52,7 @@ test('ROM asset symbols expose concrete memory addresses without runtime lookup'
 	const source = buildRomAssetSymbolModuleSource(entries);
 	assert.match(source, new RegExp(`local data_stage_1_addr <const> = ${CART_ROM_BASE + CART_ROM_HEADER_SIZE + 4}`));
 	assert.match(source, /local data_stage_1_len <const> = 3/);
-	assert.match(source, /local bin_raw_bin_addr <const> = 16777728/);
+	assert.match(source, new RegExp(`local bin_raw_bin_addr <const> = ${CART_ROM_BASE + 0x200}`));
 	assert.doesNotMatch(source, /romlabel/);
 });
 
@@ -84,6 +84,7 @@ test('ROM writer materializes word-aligned payload ranges', async () => {
 			{ type: 'data', resid: 'odd', buffer: Buffer.from([0x11]) },
 			{ type: 'model', resid: 'model', model_texture_buffer: Buffer.from([0x22, 0x33]) },
 			{ type: 'image', resid: 'sprite', collision_bin_buffer: Buffer.from([0x44, 0x55, 0x66, 0x77]) },
+			{ type: 'romlabel', resid: 'label', buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47]) },
 		];
 		const layout = layoutRomProgramPrefix(assets, true, null);
 		const ranges = layout.assetRanges;
@@ -91,9 +92,11 @@ test('ROM writer materializes word-aligned payload ranges', async () => {
 			{ type: 'code', resid: PROGRAM_IMAGE_ID, buffer: Buffer.from([0x88]), compiled_buffer: Buffer.from([0x99]) },
 		];
 		await finalizeRompack('aligned', {
-			zipRom: false,
 			debug: false,
+			cartridgeBoardWord: 0,
+			cartridgeRamByteCount: 0,
 			program: {
+				domain: 'cart',
 				boot: {
 					version: PROGRAM_BOOT_HEADER_VERSION,
 					flags: 0,
@@ -112,10 +115,14 @@ test('ROM writer materializes word-aligned payload ranges', async () => {
 		const index = await loadRomAssetList(rom);
 		const model = index.entries.find(entry => entry.resid === 'model')!;
 		const sprite = index.entries.find(entry => entry.resid === 'sprite')!;
+		const label = index.entries.find(entry => entry.resid === 'label')!;
 		assert.equal(model.model_texture_start, ranges[1].start);
 		assert.equal(model.model_texture_end, ranges[1].end);
 		assert.equal(sprite.collision_bin_start, ranges[2].start);
 		assert.equal(sprite.collision_bin_end, ranges[2].end);
+		assert.equal(label.start, ranges[3].start);
+		assert.equal(label.end, ranges[3].end);
+		assert.deepEqual(rom.subarray(0, CART_ROM_MAGIC_BYTES.byteLength), Buffer.from(CART_ROM_MAGIC_BYTES));
 		for (let index = 0; index < ranges.length; index += 1) {
 			const range = ranges[index];
 			assert.equal(range.start & (CART_ROM_WORD_ALIGNMENT - 1), 0);

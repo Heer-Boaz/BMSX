@@ -3,6 +3,7 @@
 #include "machine/bus/io.h"
 #include "machine/cpu/cpu.h"
 #include "machine/devices/audio/controller.h"
+#include "machine/devices/cartridge/controller.h"
 #include "machine/devices/dma/controller.h"
 #include "machine/devices/geometry/controller.h"
 #include "machine/devices/gx/gpu.h"
@@ -28,6 +29,7 @@ public:
 	Machine(Memory& memoryRef, InputControllerInputSource& input);
 
 	Memory& memory;
+	CartridgeController& cartridgeController;
 	IrqController irqController;
 	CPU cpu;
 	DeviceScheduler scheduler;

@@ -1,3 +1,4 @@
+import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -113,7 +114,7 @@ const INLINE_MICROTASKS: MicrotaskQueue = {
 };
 
 function makeMachine(): Machine {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
 	const input = {
 		getPlayerInput: () => ({
 			checkActionTriggered: () => false,

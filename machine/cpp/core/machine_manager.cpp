@@ -5,7 +5,6 @@
 #include "machine_manager.h"
 #include "host_overlay_menu.h"
 #include "render/shared/bitmap_font.h"
-#include "rom_boot_manager.h"
 #include "system.h"
 #include "input/manager.h"
 #include "render/texture_manager.h"
@@ -30,12 +29,16 @@ namespace bmsx {
 
 MachineManager* MachineManager::s_instance = nullptr;
 
+void MachineManager::LoadedCartridgeSlot::clear() {
+	image = {};
+	file.close();
+	owned = std::vector<u8>();
+}
+
 MachineManager::MachineManager()
 	: m_audio_ufps_scaled(PAL_REFRESH_UFPS_SCALED) {
 	s_instance = this;
 	machine_manifest = &defaultSystemMachineManifest();
-	m_active_rom = &m_system_rom;
-	m_rom_boot_manager = std::make_unique<RomBootManager>();
 }
 
 MachineManager::~MachineManager() {
@@ -282,16 +285,8 @@ Runtime& MachineManager::ensureRuntime(const RuntimeOptions& options) {
 }
 
 // ============================================================================
-// ROM loading and boot orchestration (moved from RomBootManager)
+// ROM loading and boot orchestration
 // ============================================================================
-
-void MachineManager::activateSystemRom() {
-	m_active_rom = &m_system_rom;
-}
-
-void MachineManager::activateCartRom() {
-	m_active_rom = &m_cart_rom;
-}
 
 void MachineManager::setMachineManifest(const MachineManifest& manifest) {
 	machine_manifest = &manifest;
@@ -304,8 +299,9 @@ void MachineManager::configureViewForGpuReset() {
 	);
 }
 
-MachineManager::LoadedProgramImages MachineManager::loadProgramImagesFromRom(const RuntimeRomPackage& romPackage, const u8* romData) const {
+MachineManager::LoadedProgramImages MachineManager::loadProgramImagesFromRom(const RuntimeRomPackage& romPackage, const RomImage& image) const {
 	const RomAssetInfo& imageRecord = *romPackage.programImageRom;
+	const u8* romData = image.bytes.data();
 	LoadedProgramImages images;
 	images.image = decodeProgramImage(
 		std::span<const u8>(
@@ -331,9 +327,10 @@ bool MachineManager::loadSystemRomInternal(const u8* data, size_t size) {
 	if (m_texture_manager) {
 		m_texture_manager->setBackend(m_view ? m_view->backend() : nullptr);
 	}
-	auto plan = m_rom_boot_manager->buildBootPlan(data, size, nullptr, 0);
-	if (!plan) return false;
-	m_system_rom = std::move(plan->systemLayer);
+	m_system_rom_image = parseRomImage(data, size, RomImageDomain::System);
+	loadSystemRomPackage(m_system_rom_image, m_system_rom);
+	m_system_rom.machine = defaultSystemMachineManifest();
+	m_system_rom.entryPoint = systemBootEntryPath();
 	m_system_rom_loaded = true;
 	machine_manifest = &m_system_rom.machine;
 	m_default_font = std::make_unique<Font>();
@@ -341,19 +338,17 @@ bool MachineManager::loadSystemRomInternal(const u8* data, size_t size) {
 	return true;
 }
 
-bool MachineManager::bootSystemStartupProgram(const MachineManifest& runtimeMachine) {
+bool MachineManager::bootSystemStartupProgram() {
 	if (!m_system_rom_loaded) return false;
 	if (!m_system_rom.hasProgram()) return false;
 
-	activateSystemRom();
-	setMachineManifest(runtimeMachine);
 	const ResolvedRuntimeTiming timing = resolveRuntimeTiming(PSX_MACHINE_SPEC.cpuFreqHz);
 	configureRuntimeMemoryMap();
 	configureViewForGpuReset();
 
 	Runtime& rt = ensureRuntime(RuntimeOptions{
-		{ m_system_rom_data, m_system_rom_size },
-		{ m_cart_rom_data, m_cart_rom_size },
+		m_system_rom_image.bytes,
+		m_cartridge_media,
 		timing.pcrtcRunning,
 		timing.ufpsScaled,
 		timing.cpuHz,
@@ -362,16 +357,17 @@ bool MachineManager::bootSystemStartupProgram(const MachineManifest& runtimeMach
 		timing.activeDisplayHalfLines,
 		timing.geoWorkUnitsPerSec,
 	});
+	setMachineManifest(m_cart_rom.hasProgram() ? m_cart_rom.machine : m_system_rom.machine);
 	syncAudioTiming();
 	rt.resetRuntimeForProgramReload();
 	m_screen.reset();
 	rt.enterSystemFirmware();
 	refreshRenderSurfaces();
-	LoadedProgramImages systemImages = loadProgramImagesFromRom(m_system_rom, m_system_rom_data);
+	LoadedProgramImages systemImages = loadProgramImagesFromRom(m_system_rom, m_system_rom_image);
 	std::unique_ptr<ProgramImage> cartImage;
 	std::unique_ptr<ProgramMetadata> cartMetadata;
-	if (m_cart_rom_size > 0 && m_cart_rom.hasProgram()) {
-		LoadedProgramImages cartImages = loadProgramImagesFromRom(m_cart_rom, m_cart_rom_data);
+	if (m_cart_rom.hasProgram()) {
+		LoadedProgramImages cartImages = loadProgramImagesFromRom(m_cart_rom, m_cartridge_slots[m_boot_cartridge_slot].image);
 		cartImage = std::move(cartImages.image);
 		cartMetadata = std::move(cartImages.metadata);
 	}
@@ -386,23 +382,32 @@ bool MachineManager::bootSystemStartupProgram(const MachineManifest& runtimeMach
 	return true;
 }
 
-bool MachineManager::loadRomInternal(const u8* data, size_t size) {
+bool MachineManager::bootLoadedCartridgeSlots() {
 	if (m_texture_manager) {
 		m_texture_manager->setBackend(m_view ? m_view->backend() : nullptr);
 	}
-	m_cart_rom.clear();
-	if (!loadCartRomPackageFromRom(data, size, m_cart_rom, nullptr, "cart")) {
-		return false;
+	for (u32 slotIndex = 0; slotIndex < CARTRIDGE_SLOT_COUNT; ++slotIndex) {
+		const LoadedCartridgeSlot& slot = m_cartridge_slots[slotIndex];
+		if (slot.image.bytes.empty()) continue;
+		const CartRomHeader& header = slot.image.header;
+		m_cartridge_media[slotIndex] = CartridgeSlotMedia{
+			slot.image.bytes,
+			header.cartridgeBoardWord,
+			header.cartridgeRamByteCount,
+			true,
+			header.programBootVersion != 0u,
+		};
 	}
-	m_loaded_cart_has_program = m_cart_rom.hasProgram();
-
-	const MachineManifest& cartMachine = m_cart_rom.machine;
-	configureViewForGpuReset();
+	m_boot_cartridge_slot = cartridgeBootSlot(m_cartridge_media);
+	m_cart_rom.clear();
+	if (m_cartridge_media[m_boot_cartridge_slot].programPresent) {
+		loadCartRomPackage(m_cartridge_slots[m_boot_cartridge_slot].image, m_cart_rom);
+	}
 
 	if (!m_system_rom_loaded || !m_system_rom.hasProgram()) {
 		return false;
 	}
-	if (!bootSystemStartupProgram(cartMachine)) {
+	if (!bootSystemStartupProgram()) {
 		return false;
 	}
 
@@ -414,9 +419,7 @@ bool MachineManager::loadSystemRomOwned(std::vector<u8>&& data) {
 	m_runtime.reset();
 	m_system_rom_file.close();
 	m_system_rom_owned = std::move(data);
-	m_system_rom_data = m_system_rom_owned.data();
-	m_system_rom_size = m_system_rom_owned.size();
-	return loadSystemRomInternal(m_system_rom_data, m_system_rom_size);
+	return loadSystemRomInternal(m_system_rom_owned.data(), m_system_rom_owned.size());
 }
 
 bool MachineManager::loadSystemRomFile(const std::string& path) {
@@ -427,67 +430,54 @@ bool MachineManager::loadSystemRomFile(const std::string& path) {
 	m_runtime.reset();
 	m_system_rom_owned = std::vector<u8>();
 	m_system_rom_file = std::move(mapped);
-	m_system_rom_data = m_system_rom_file.data();
-	m_system_rom_size = m_system_rom_file.size();
-	return loadSystemRomInternal(m_system_rom_data, m_system_rom_size);
+	return loadSystemRomInternal(m_system_rom_file.data(), m_system_rom_file.size());
 }
 
-bool MachineManager::loadRom(const u8* data, size_t size) {
+bool MachineManager::loadCartridgeSlotsOwned(std::array<std::vector<u8>, CARTRIDGE_SLOT_COUNT>&& data) {
 	unloadRom();
-	m_runtime.reset();
-	m_cart_rom_file.close();
-	m_cart_rom_owned = std::vector<u8>();
-	m_cart_rom_data = data;
-	m_cart_rom_size = size;
-	return loadRomInternal(data, size);
-}
-
-bool MachineManager::loadRomOwned(std::vector<u8>&& data) {
-	unloadRom();
-	m_runtime.reset();
-	m_cart_rom_file.close();
-	m_cart_rom_owned = std::move(data);
-	m_cart_rom_data = m_cart_rom_owned.data();
-	m_cart_rom_size = m_cart_rom_owned.size();
-	return loadRomInternal(m_cart_rom_data, m_cart_rom_size);
-}
-
-bool MachineManager::loadRomFile(const std::string& path) {
-	unloadRom();
-	m_runtime.reset();
-	m_cart_rom_file.close();
-	m_cart_rom_owned = std::vector<u8>();
-	m_cart_rom_data = nullptr;
-	m_cart_rom_size = 0;
-	MmapFile mapped;
-	if (!mapped.open(path)) {
-		return false;
+	for (u32 slotIndex = 0; slotIndex < CARTRIDGE_SLOT_COUNT; ++slotIndex) {
+		LoadedCartridgeSlot& slot = m_cartridge_slots[slotIndex];
+		slot.owned = std::move(data[slotIndex]);
+		if (!slot.owned.empty()) {
+			slot.image = parseRomImage(slot.owned.data(), slot.owned.size(), RomImageDomain::Cartridge);
+		}
 	}
-	m_cart_rom_file = std::move(mapped);
-	m_cart_rom_data = m_cart_rom_file.data();
-	m_cart_rom_size = m_cart_rom_file.size();
-	return loadRomInternal(m_cart_rom_data, m_cart_rom_size);
+	return bootLoadedCartridgeSlots();
+}
+
+bool MachineManager::loadCartridgeSlotFiles(const std::array<std::string, CARTRIDGE_SLOT_COUNT>& paths) {
+	unloadRom();
+	for (u32 slotIndex = 0; slotIndex < CARTRIDGE_SLOT_COUNT; ++slotIndex) {
+		if (paths[slotIndex].empty()) {
+			continue;
+		}
+		LoadedCartridgeSlot& slot = m_cartridge_slots[slotIndex];
+		if (!slot.file.open(paths[slotIndex])) {
+			return false;
+		}
+		slot.image = parseRomImage(slot.file.data(), slot.file.size(), RomImageDomain::Cartridge);
+	}
+	return bootLoadedCartridgeSlots();
 }
 
 void MachineManager::unloadRom() {
 	if (m_rom_loaded) {
 		Input::instance().resetInputState();
 		hostOverlayMenu().resetInputState();
-		m_runtime.reset();
-		m_active_rom = &m_system_rom;
-		machine_manifest = &m_system_rom.machine;
-		m_cart_rom.clear();
-		m_cart_rom_owned = std::vector<u8>();
-		m_cart_rom_file.close();
-		m_cart_rom_data = nullptr;
-		m_cart_rom_size = 0;
 		if (m_texture_manager) {
 			m_texture_manager->clear();
 		}
 		registry().clear();
-		m_rom_loaded = false;
-		m_loaded_cart_has_program = false;
 	}
+	m_runtime.reset();
+	machine_manifest = &m_system_rom.machine;
+	m_cart_rom.clear();
+	m_cartridge_media = {};
+	for (LoadedCartridgeSlot& slot : m_cartridge_slots) {
+		slot.clear();
+	}
+	m_boot_cartridge_slot = 0;
+	m_rom_loaded = false;
 }
 
 bool MachineManager::rebootLoadedRom() {
@@ -498,11 +488,7 @@ bool MachineManager::rebootLoadedRom() {
 		m_view->initializeDefaultTextures();
 	}
 
-	const MachineManifest* runtimeMachine = &m_system_rom.machine;
-	if (m_cart_rom_size > 0 && m_cart_rom.hasProgram()) {
-		runtimeMachine = &m_cart_rom.machine;
-	}
-	return bootSystemStartupProgram(*runtimeMachine);
+	return bootSystemStartupProgram();
 }
 
 bool MachineManager::bootWithoutCart() {
@@ -513,7 +499,7 @@ bool MachineManager::bootWithoutCart() {
 		throw std::runtime_error("[BMSX] bootWithoutCart: no program in system ROM");
 	}
 	std::cout << "[BMSX] bootWithoutCart: program found, booting..." << std::endl;
-	if (!bootSystemStartupProgram(m_system_rom.machine)) {
+	if (!bootSystemStartupProgram()) {
 		return false;
 	}
 	m_rom_loaded = true;

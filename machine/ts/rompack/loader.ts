@@ -15,13 +15,12 @@ import type {
 	CartRomHeader,
 	TextureMeta,
 } from './format';
+import { parseCartHeader } from './format';
 import { decodeBinary, decodeBinaryWithPropTable, toF32, typedArrayFromBytes } from '../common/serializer/binencoder';
 import { parseRomMetadataSection } from './metadata';
-import { CART_ROM_BASE_HEADER_SIZE, CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES, CART_VDP_CLASS_PSX } from './format';
-import { inflate } from 'pako';
 import { RomSourceStack, type RawRomSource } from './source';
 import { decodeRomToc } from './toc';
-import { formatNumberAsHex } from '../common/byte_hex_string';
+import { CART_ROM_SIZE, SYSTEM_ROM_SIZE } from '../machine/memory/map';
 
 const utf8Decoder = new TextDecoder();
 
@@ -31,166 +30,20 @@ export type RomLoadOptions = {
 	loadModelFromBuffer?: (buffer: Uint8Array, textures?: Uint8Array) => Promise<any>;
 };
 
-function hasCartHeader(buffer: Uint8Array): boolean {
-	if (buffer.byteLength < CART_ROM_BASE_HEADER_SIZE) {
-		return false;
-	}
-	const headerView = buffer.subarray(0, CART_ROM_MAGIC_BYTES.length);
-	for (let index = 0; index < CART_ROM_MAGIC_BYTES.length; index += 1) {
-		if (headerView[index] !== CART_ROM_MAGIC_BYTES[index]) {
-			return false;
-		}
-	}
-	const dv = new DataView(buffer.buffer, buffer.byteOffset, CART_ROM_BASE_HEADER_SIZE);
-	const headerSize = dv.getUint32(4, true);
-	return headerSize >= CART_ROM_BASE_HEADER_SIZE && headerSize <= buffer.byteLength;
-}
+export type RomImage = {
+	payload: Uint8Array;
+	header: CartRomHeader;
+};
 
-function assertSectionRange(offset: number, length: number, total: number, label: string): void {
-	if (offset + length > total) {
-		throw new Error(`Invalid ROM ${label} range: offset=${formatNumberAsHex(offset)} len=${formatNumberAsHex(length)} total=${formatNumberAsHex(total)}.`);
+export function parseRomImage(
+	blob: Uint8Array,
+	id: CartridgeLayerId,
+): RomImage {
+	const capacity = id === 'system' ? SYSTEM_ROM_SIZE : CART_ROM_SIZE;
+	if (blob.byteLength > capacity) {
+		throw new Error(`${id === 'system' ? 'System' : 'Cartridge'} ROM payload exceeds its ${capacity}-byte address window.`);
 	}
-}
-
-export function parseCartHeader(payload: Uint8Array): CartRomHeader {
-	if (payload.byteLength < CART_ROM_BASE_HEADER_SIZE) {
-		throw new Error('ROM payload is too small for cart header.');
-	}
-	const headerView = payload.subarray(0, CART_ROM_MAGIC_BYTES.length);
-	for (let index = 0; index < CART_ROM_MAGIC_BYTES.length; index += 1) {
-		if (headerView[index] !== CART_ROM_MAGIC_BYTES[index]) {
-			throw new Error('Invalid ROM cart header.');
-		}
-	}
-	const dv = new DataView(payload.buffer, payload.byteOffset, Math.min(payload.byteLength, CART_ROM_HEADER_SIZE));
-	const headerSize = dv.getUint32(4, true);
-	if (headerSize < CART_ROM_HEADER_SIZE) {
-		throw new Error(`ROM header size is too small: ${headerSize}.`);
-	}
-	if (headerSize > payload.byteLength) {
-		throw new Error(`ROM header size exceeds payload length: ${headerSize}.`);
-	}
-	const manifestOffset = dv.getUint32(8, true);
-	const manifestLength = dv.getUint32(12, true);
-	const tocOffset = dv.getUint32(16, true);
-	const tocLength = dv.getUint32(20, true);
-	const dataOffset = dv.getUint32(24, true);
-	const dataLength = dv.getUint32(28, true);
-	const programBootVersion = dv.getUint32(32, true);
-	const programBootFlags = dv.getUint32(36, true);
-	const programEntryProtoIndex = dv.getUint32(40, true);
-	const programCodeByteCount = dv.getUint32(44, true);
-	const programConstPoolCount = dv.getUint32(48, true);
-	const programProtoCount = dv.getUint32(52, true);
-	const programReserved0 = dv.getUint32(56, true);
-	const programConstRelocCount = dv.getUint32(60, true);
-	const metadataOffset = dv.getUint32(64, true);
-	const metadataLength = dv.getUint32(68, true);
-	const vdpClassWord = dv.getUint32(72, true);
-	if (vdpClassWord !== CART_VDP_CLASS_PSX) {
-		throw new Error(`Unsupported ROM VDP class marker: ${vdpClassWord}.`);
-	}
-	const vdpClass = 'psx';
-
-	assertSectionRange(manifestOffset, manifestLength, payload.byteLength, 'manifest');
-	assertSectionRange(tocOffset, tocLength, payload.byteLength, 'toc');
-	assertSectionRange(dataOffset, dataLength, payload.byteLength, 'data');
-	if (metadataLength > 0) {
-		assertSectionRange(metadataOffset, metadataLength, payload.byteLength, 'metadata');
-	}
-
-	return {
-		headerSize,
-		manifestOffset,
-		manifestLength,
-		tocOffset,
-		tocLength,
-		dataOffset,
-		dataLength,
-		programBootVersion,
-		programBootFlags,
-		programEntryProtoIndex,
-		programCodeByteCount,
-		programConstPoolCount,
-		programProtoCount,
-		programReserved0,
-		programConstRelocCount,
-		metadataOffset,
-		metadataLength,
-		vdpClass,
-	};
-}
-
-// TODO: DUPLICATE CODE WITH `bootrom.ts`!!!
-function readU32BE(blob: Uint8Array, offset: number): number {
-	return (blob[offset] << 24) | (blob[offset + 1] << 16) | (blob[offset + 2] << 8) | blob[offset + 3];
-}
-
-function splitPng(blob: Uint8Array): { png?: Uint8Array; rest: Uint8Array } {
-	if (
-		blob[0] !== 0x89 || blob[1] !== 0x50 || blob[2] !== 0x4E || blob[3] !== 0x47 ||
-		blob[4] !== 0x0D || blob[5] !== 0x0A || blob[6] !== 0x1A || blob[7] !== 0x0A
-	) {
-		return { rest: blob };
-	}
-	let p = 8;
-	while (p + 8 <= blob.length) {
-		const len = readU32BE(blob, p);
-		p += 4;
-		const type = readU32BE(blob, p);
-		p += 4;
-		const end = p + len + 4;
-		if (type === 0x49454E44) {
-			const png = blob.slice(0, end);
-			const rest = blob.slice(end);
-			return { png, rest };
-		}
-		p = end;
-	}
-	throw new Error('PNG IEND chunk not found');
-}
-
-function looksPakoCompressed(buffer: Uint8Array): boolean {
-	const u8 = new Uint8Array(buffer);
-	if (u8.length < 2) {
-		return false;
-	}
-	// Gzip header: 1F 8B
-	if (u8[0] === 0x1F && u8[1] === 0x8B) {
-		return true;
-	}
-	// Zlib header starts with 0x78 and must have a valid CMF/FLG checksum.
-	if (u8[0] === 0x78) {
-		const cmf = u8[0];
-		const flg = u8[1];
-		return ((cmf << 8) + flg) % 31 === 0;
-	}
-	return false;
-}
-
-export function getZippedRomAndRomLabelFromBlob(blob_buffer: Uint8Array): { zipped_rom: Uint8Array, romlabel?: Uint8Array } {
-	const { png, rest } = splitPng(blob_buffer);
-	if (png) {
-		// Only treat the leading PNG as a romlabel if the remaining payload looks like a ROM.
-		if (hasCartHeader(rest) || looksPakoCompressed(rest)) {
-			return { zipped_rom: rest, romlabel: png };
-		}
-	}
-	return { zipped_rom: blob_buffer, romlabel: undefined };
-}
-
-export function normalizeCartridgeBlob(blob: Uint8Array): { payload: Uint8Array; romlabel?: Uint8Array } {
-	const { zipped_rom, romlabel } = getZippedRomAndRomLabelFromBlob(blob);
-	let payload: Uint8Array;
-	if (hasCartHeader(zipped_rom)) {
-		payload = zipped_rom;
-	} else if (looksPakoCompressed(zipped_rom)) {
-		payload = inflate(new Uint8Array(zipped_rom));
-	} else {
-		throw new Error('ROM payload is missing cart header.');
-	}
-	parseCartHeader(payload);
-	return { payload, romlabel };
+	return { payload: blob, header: parseCartHeader(blob) };
 }
 
 type RomAssetList = {
@@ -345,6 +198,10 @@ export async function loadRomAssetList(rom: Uint8Array): Promise<RomAssetList> {
 
 export async function parseCartridgeIndex(payload: Uint8Array): Promise<CartridgeIndex> {
 	const header = parseCartHeader(payload);
+	return parseCartridgeIndexFromHeader(payload, header);
+}
+
+async function parseCartridgeIndexFromHeader(payload: Uint8Array, header: CartRomHeader): Promise<CartridgeIndex> {
 	const { entries, projectRootPath } = await loadRomAssetListFromHeader(payload, header);
 	const { cart_manifest, machine, entry_path } = decodeCartridgeMetadata(payload, header);
 	return {
@@ -546,6 +403,7 @@ async function load(source: RawRomSource, res: RomAsset, romPackage: RuntimeRomP
 
 export type RuntimeRomLayer = {
 	id: CartridgeLayerId;
+	header: CartRomHeader;
 	index: CartridgeIndex;
 	payload: Uint8Array;
 	package: RuntimeRomPackage;
@@ -570,27 +428,28 @@ async function loadRuntimeRomPackageFromSource(source: RawRomSource, index: Cart
 }
 
 export async function loadRuntimeRomPackageFromBuffer(rom: Uint8Array, opts?: RomLoadOptions, payloadId: CartridgeLayerId = 'cart'): Promise<RuntimeRomPackage> {
-	const index = await parseCartridgeIndex(rom);
-	const source = new RomSourceStack([{ id: payloadId, index, payload: rom }]);
+	const image = parseRomImage(rom, payloadId);
+	const index = await parseCartridgeIndexFromHeader(image.payload, image.header);
+	const source = new RomSourceStack([{ id: payloadId, index, payload: image.payload }]);
 	return loadRuntimeRomPackageFromSource(source, index, opts);
 }
 
-export async function buildRuntimeRomLayer(params: { blob: Uint8Array; id: CartridgeLayerId; opts?: RomLoadOptions }): Promise<RuntimeRomLayer> {
-	const normalized = normalizeCartridgeBlob(params.blob);
-	const index = await parseCartridgeIndex(normalized.payload);
-	const source = new RomSourceStack([{ id: params.id, index, payload: normalized.payload }]);
+export async function buildRuntimeRomLayer(params: { image: RomImage; id: CartridgeLayerId; opts?: RomLoadOptions }): Promise<RuntimeRomLayer> {
+	const { image } = params;
+	const index = await parseCartridgeIndexFromHeader(image.payload, image.header);
+	const source = new RomSourceStack([{ id: params.id, index, payload: image.payload }]);
 	const runtimePackage = await loadRuntimeRomPackageFromSource(source, index, params.opts);
-	return { id: params.id, index, payload: normalized.payload, package: runtimePackage };
+	return { id: params.id, header: image.header, index, payload: image.payload, package: runtimePackage };
 }
 
 export async function buildSystemRuntimeRomLayer(params: {
-	blob: Uint8Array;
+	image: RomImage;
 	machine: MachineManifest;
 	entry_path: string;
 	opts?: RomLoadOptions;
 }): Promise<RuntimeRomLayer> {
-	const normalized = normalizeCartridgeBlob(params.blob);
-	const { entries } = await loadRomAssetList(normalized.payload);
+	const { image } = params;
+	const { entries } = await loadRomAssetListFromHeader(image.payload, image.header);
 	const index: CartridgeIndex = {
 		entries,
 		projectRootPath: '',
@@ -598,7 +457,7 @@ export async function buildSystemRuntimeRomLayer(params: {
 		machine: params.machine,
 		entry_path: params.entry_path,
 	};
-	const source = new RomSourceStack([{ id: 'system', index, payload: normalized.payload }]);
+	const source = new RomSourceStack([{ id: 'system', index, payload: image.payload }]);
 	const runtimePackage = await loadRuntimeRomPackageFromSource(source, index, params.opts);
-	return { id: 'system', index, payload: normalized.payload, package: runtimePackage };
+	return { id: 'system', header: image.header, index, payload: image.payload, package: runtimePackage };
 }

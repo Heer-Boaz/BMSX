@@ -1,3 +1,4 @@
+import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -54,7 +55,7 @@ function makeMetadata(): ProgramMetadata {
 }
 
 test('CPU profiler records opcode and PC execution counts', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
 	const cpu = new CPU(memory, new IrqController(memory));
 	const metadata = makeMetadata();
 	cpu.setProgram(makeProgram(cpu), metadata, metadata, 0, 0, 0);
@@ -76,7 +77,7 @@ test('CPU profiler records opcode and PC execution counts', () => {
 });
 
 test('CPU profiler report resolves hot PCs back to opcode and source location', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
 	const cpu = new CPU(memory, new IrqController(memory));
 	const metadata = makeMetadata();
 	cpu.setProgram(makeProgram(cpu), metadata, metadata, 0, 0, 0);

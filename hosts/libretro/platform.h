@@ -10,6 +10,7 @@
 #define BMSX_LIBRETRO_PLATFORM_H
 
 #include "bmsx_libretro.h"
+#include "machine/devices/cartridge/contracts.h"
 #include "platform/platform.h"
 #include "render/backend/backend.h"
 #include "render/post/device_quantize/mode.h"
@@ -173,6 +174,8 @@ public:
 	// ROM management
 	bool loadRom(const uint8_t* data, size_t size);
 	bool loadRomFromPath(const char* path);
+	bool loadCartridgeSlotsOwned(std::array<std::vector<uint8_t>, CARTRIDGE_SLOT_COUNT>&& data);
+	bool loadCartridgeSlotsFromPaths(const std::array<std::string, CARTRIDGE_SLOT_COUNT>& paths);
 	bool loadEmptyCart();
 	void unloadRom();
 	void loadSystemRom(const char* romPath);
@@ -217,7 +220,6 @@ private:
 	void pollInput();
 	void log(retro_log_level level, const char* fmt, ...);
 	bool loadSystemRomFromFile(const std::string& path);
-	bool loadRomOwned(std::vector<uint8_t>&& data);
 
 	// Libretro callbacks
 	retro_environment_t m_environ_cb = nullptr;

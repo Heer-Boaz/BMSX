@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 namespace bmsx {
@@ -9,15 +10,23 @@ constexpr uint32_t ADDRESS_BITS = 32;
 constexpr uint32_t SYSTEM_ROM_BASE = 0x00000000u;
 constexpr uint32_t SYSTEM_ROM_SIZE = 0x01000000u; // 16 MB
 
-constexpr uint32_t CART_ROM_BASE = 0x01000000u;
-constexpr uint32_t CART_ROM_SIZE = 0x05000000u; // 80 MB
-constexpr uint32_t CART_ROM_MAGIC_OFFSET = 0x00000000u;
-constexpr uint32_t CART_ROM_MAGIC_ADDR = CART_ROM_BASE + CART_ROM_MAGIC_OFFSET;
-
-
 constexpr uint32_t RAM_BASE = 0x08000000u;
 constexpr uint32_t MAX_RAM_SIZE = 0x08000000u; // 128 MB address window
 constexpr uint32_t DEFAULT_RAM_SIZE = 0x00400000u; // 4 MB
+
+constexpr uint32_t CART_ROM_BASE = RAM_BASE + MAX_RAM_SIZE;
+constexpr uint32_t CART_ROM_SIZE = 0x20000000u; // 512 MB address window
+constexpr uint32_t CART_ROM_END = CART_ROM_BASE + CART_ROM_SIZE;
+constexpr uint32_t CART_ROM_MAGIC_OFFSET = 0x00000000u;
+constexpr uint32_t CART_ROM_MAGIC_ADDR = CART_ROM_BASE + CART_ROM_MAGIC_OFFSET;
+
+constexpr uint32_t CART_RAM_BASE = CART_ROM_END;
+constexpr uint32_t CART_RAM_SIZE = 0x00f00000u; // 15 MB
+constexpr uint32_t CART_RAM_END = CART_RAM_BASE + CART_RAM_SIZE;
+constexpr uint32_t CART_MMIO_BASE = CART_RAM_BASE + CART_RAM_SIZE;
+constexpr uint32_t CART_MMIO_SIZE = 0x00100000u; // 1 MB
+constexpr uint32_t CART_MMIO_END = CART_MMIO_BASE + CART_MMIO_SIZE;
+constexpr uint32_t CART_BUS_END = CART_MMIO_END;
 
 constexpr uint32_t IO_WORD_SIZE = 4;
 

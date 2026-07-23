@@ -14,18 +14,20 @@ void ApuSampleMemory::reset() {
 	m_ram.fill(0u);
 }
 
-bool ApuSampleMemory::bindSource(u32 address, u32 byteLength, Span<const u8>& out) const {
+bool ApuSampleMemory::bindSource(u32 address, u32 byteLength, u32 cartridgeSlot, ApuSourceByteView& out) const {
 	if (address >= APU_SAMPLE_RAM_BASE) {
 		const u32 offset = address - APU_SAMPLE_RAM_BASE;
 		if (byteLength != 0u
 			&& byteLength <= APU_SAMPLE_RAM_BYTES
 			&& offset <= APU_SAMPLE_RAM_BYTES - byteLength) {
-			out = {m_ram.data() + offset, byteLength};
+			out.bytes = {m_ram.data() + offset, byteLength};
+			out.cartridgeSlot = cartridgeSlot;
 			return true;
 		}
 		return false;
 	}
-	return m_memory.bindRomByteView(address, byteLength, out);
+	out.cartridgeSlot = cartridgeSlot;
+	return m_memory.bindRomByteView(address, byteLength, cartridgeSlot, out.bytes);
 }
 
 auto ApuSampleMemory::readWord(u32 address) const -> u32 {

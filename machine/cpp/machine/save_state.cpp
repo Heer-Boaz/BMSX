@@ -7,6 +7,7 @@ namespace {
 
 void restoreSharedDeviceState(
 	Machine& machine,
+	const CartridgeControllerState& cartridge,
 	const DmaControllerState& dma,
 	const GeometryControllerState& geometry,
 	const IrqControllerState& irq,
@@ -15,6 +16,7 @@ void restoreSharedDeviceState(
 ) {
 	machine.dmaController.restoreState(dma, machine.scheduler.nowCycles());
 	machine.geometryController.restoreState(geometry, machine.scheduler.nowCycles());
+	machine.cartridgeController.restoreState(cartridge);
 	machine.irqController.restoreState(irq);
 	machine.audioController.restoreState(audio, machine.scheduler.nowCycles());
 	machine.inputController.restoreState(input);
@@ -38,6 +40,7 @@ MachineState captureMachineState(Machine& machine) {
 	// sample-accurate END edges before the dependent DMA and IRQ state.
 	state.gxGpu = machine.gxGpu.captureState();
 	state.audio = machine.audioController.captureState();
+	state.cartridge = machine.cartridgeController.captureState();
 	state.dma = machine.dmaController.captureState();
 	state.geometry = machine.geometryController.captureState();
 	state.gxGte = machine.gxGte.captureState();
@@ -49,7 +52,7 @@ MachineState captureMachineState(Machine& machine) {
 }
 
 void restoreMachineState(Machine& machine, const MachineState& state) {
-	restoreSharedDeviceState(machine, state.dma, state.geometry, state.irq, state.audio, state.input);
+	restoreSharedDeviceState(machine, state.cartridge, state.dma, state.geometry, state.irq, state.audio, state.input);
 	machine.gxGpu.restoreState(state.gxGpu);
 	machine.imgDecController.restoreState(state.imgDec);
 	machine.gxGte.restoreState(state.gxGte);
@@ -61,6 +64,7 @@ MachineSaveState captureMachineSaveState(Machine& machine) {
 	// See captureMachineState: GPU and APU command time own their request-line edges.
 	state.gxGpu = machine.gxGpu.captureSaveState();
 	state.audio = machine.audioController.captureState();
+	state.cartridge = machine.cartridgeController.captureState();
 	state.memory = machine.memory.captureSaveState();
 	state.dma = machine.dmaController.captureState();
 	state.geometry = machine.geometryController.captureState();
@@ -76,7 +80,7 @@ MachineSaveState captureMachineSaveState(Machine& machine) {
 void restoreMachineSaveState(Machine& machine, const MachineSaveState& state) {
 	machine.memory.restoreSaveState(state.memory);
 	machine.cpu.stringPool().restoreState(state.stringPool);
-	restoreSharedDeviceState(machine, state.dma, state.geometry, state.irq, state.audio, state.input);
+	restoreSharedDeviceState(machine, state.cartridge, state.dma, state.geometry, state.irq, state.audio, state.input);
 	machine.gxGpu.restoreSaveState(state.gxGpu);
 	machine.imgDecController.restoreState(state.imgDec);
 	machine.gxGte.restoreState(state.gxGte);

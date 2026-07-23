@@ -1,8 +1,14 @@
 #pragma once
 
+#include "common/primitives.h"
 #include "machine/devices/audio/contracts.h"
 
 namespace bmsx {
+
+struct ApuSourceByteView {
+	Span<const u8> bytes;
+	u32 cartridgeSlot = 0;
+};
 
 void loadApuAudioSource(ApuAudioSource& out, const ApuParameterRegisterWords& registerWords);
 constexpr bool apuAudioSourceUsesGenerator(const ApuAudioSource& source) {

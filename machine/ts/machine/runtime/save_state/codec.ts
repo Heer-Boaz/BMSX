@@ -4,6 +4,11 @@ import type { MachineSaveState } from '../../save_state';
 import type { BuiltinFunctionId, CpuFrameState, CpuObjectState, CpuProtectedCallState, CpuRootValueState, CpuRuntimeState, CpuValueState } from '../../cpu/cpu';
 import type { IrqControllerState } from '../../devices/irq/save_state';
 import type { AudioControllerState } from '../../devices/audio/save_state';
+import type {
+	CartridgeControllerState,
+	CartridgeSlotState,
+} from '../../devices/cartridge/contracts';
+import { CARTRIDGE_SLOT_COUNT } from '../../devices/cartridge/contracts';
 import type { DmaChannelState, DmaControllerState } from '../../devices/dma/controller';
 import type {
 	ApuBadpDecoderSaveState,
@@ -67,7 +72,11 @@ import { applyRuntimeSaveState, captureRuntimeSaveState } from '../save_state';
 import { RUNTIME_SAVE_STATE_PROP_NAMES } from './schema';
 import type { Runtime } from '../runtime';
 
-export const RUNTIME_SAVE_STATE_WIRE_CAPACITY = 0x01000000;
+export const RUNTIME_SAVE_STATE_BASE_WIRE_CAPACITY = 0x01000000;
+
+export function runtimeSaveStateWireCapacity(cartridgeRamByteCount: number): number {
+	return RUNTIME_SAVE_STATE_BASE_WIRE_CAPACITY + cartridgeRamByteCount;
+}
 
 type CpuTableHashNodeState = Extract<CpuObjectState, { kind: 'table' }>['hash'][number];
 
@@ -272,6 +281,50 @@ function decodeFrameLoopState(value: unknown, label: string): FrameLoopStateSnap
 		},
 		frameActive: requireBooleanValue(requireObjectKey(object, 'frameActive', label, `${label}.frameActive`), `${label}.frameActive`),
 		frameDeltaMs: requireObjectKey(object, 'frameDeltaMs', label, `${label}.frameDeltaMs`) as number,
+	};
+}
+
+function encodeCartridgeSlotState(state: CartridgeSlotState): CartridgeSlotState {
+	return {
+		ram: state.ram,
+		mailboxDataWord: state.mailboxDataWord >>> 0,
+		mailboxControlWord: state.mailboxControlWord >>> 0,
+		mailboxIrqPending: state.mailboxIrqPending,
+	};
+}
+
+function decodeCartridgeSlotState(value: unknown, label: string): CartridgeSlotState {
+	const object = requireObject(value, label);
+	return {
+		ram: requireBinaryValue(requireObjectKey(object, 'ram', label, `${label}.ram`), `${label}.ram`),
+		mailboxDataWord: requireBoundedU32(requireObjectKey(object, 'mailboxDataWord', label, `${label}.mailboxDataWord`), `${label}.mailboxDataWord`, 0, 0xffffffff),
+		mailboxControlWord: requireBoundedU32(requireObjectKey(object, 'mailboxControlWord', label, `${label}.mailboxControlWord`), `${label}.mailboxControlWord`, 0, 0xffffffff),
+		mailboxIrqPending: requireBooleanValue(requireObjectKey(object, 'mailboxIrqPending', label, `${label}.mailboxIrqPending`), `${label}.mailboxIrqPending`),
+	};
+}
+
+function encodeCartridgeControllerState(state: CartridgeControllerState): CartridgeControllerState {
+	return {
+		selectionWord: state.selectionWord >>> 0,
+		slots: [
+			encodeCartridgeSlotState(state.slots[0]),
+			encodeCartridgeSlotState(state.slots[1]),
+		],
+	};
+}
+
+function decodeCartridgeControllerState(value: unknown, label: string): CartridgeControllerState {
+	const object = requireObject(value, label);
+	const slots = requireArray(requireObjectKey(object, 'slots', label, `${label}.slots`), `${label}.slots`);
+	if (slots.length !== CARTRIDGE_SLOT_COUNT) {
+		throw new Error(`${label}.slots must contain ${CARTRIDGE_SLOT_COUNT} cartridge slot states.`);
+	}
+	return {
+		selectionWord: requireBoundedU32(requireObjectKey(object, 'selectionWord', label, `${label}.selectionWord`), `${label}.selectionWord`, 0, 0xffffffff),
+		slots: [
+			decodeCartridgeSlotState(slots[0], `${label}.slots[0]`),
+			decodeCartridgeSlotState(slots[1], `${label}.slots[1]`),
+		],
 	};
 }
 
@@ -916,6 +969,7 @@ function decodeApuBadpDecoderState(value: unknown, label: string): ApuBadpDecode
 function encodeApuOutputVoiceState(state: ApuOutputVoiceState): ApuOutputVoiceState {
 	return {
 		slot: state.slot,
+		sourceCartridgeSlot: state.sourceCartridgeSlot,
 		cursorQ16: state.cursorQ16,
 		phaseRemainder: state.phaseRemainder,
 		gainQ12: state.gainQ12,
@@ -933,6 +987,12 @@ function decodeApuOutputVoiceState(value: unknown, label: string): ApuOutputVoic
 	const object = requireObject(value, label);
 	return {
 		slot: requireBoundedU32(requireObjectKey(object, 'slot', label, `${label}.slot`), `${label}.slot`, 0, APU_SLOT_COUNT - 1),
+		sourceCartridgeSlot: requireBoundedU32(
+			requireObjectKey(object, 'sourceCartridgeSlot', label, `${label}.sourceCartridgeSlot`),
+			`${label}.sourceCartridgeSlot`,
+			0,
+			CARTRIDGE_SLOT_COUNT - 1,
+		),
 		cursorQ16: requireI64(requireObjectKey(object, 'cursorQ16', label, `${label}.cursorQ16`), `${label}.cursorQ16`),
 		phaseRemainder: requireI32(requireObjectKey(object, 'phaseRemainder', label, `${label}.phaseRemainder`), `${label}.phaseRemainder`),
 		gainQ12: requireI32(requireObjectKey(object, 'gainQ12', label, `${label}.gainQ12`), `${label}.gainQ12`),
@@ -1210,6 +1270,7 @@ function decodeSystemControllerState(value: unknown, label: string): SystemContr
 function encodeMachineSaveState(state: MachineSaveState): MachineSaveState {
 	return {
 		memory: encodeMemorySaveState(state.memory),
+		cartridge: encodeCartridgeControllerState(state.cartridge),
 		dma: encodeDmaControllerState(state.dma),
 		geometry: encodeGeometryControllerState(state.geometry),
 		gxGpu: encodeGxGpuSaveState(state.gxGpu),
@@ -1227,6 +1288,7 @@ function decodeMachineSaveState(value: unknown, label: string): MachineSaveState
 	const object = requireObject(value, label);
 	return {
 		memory: decodeMemorySaveState(requireObjectKey(object, 'memory', label, 'machineState.machine.memory'), 'machineState.machine.memory'),
+		cartridge: decodeCartridgeControllerState(requireObjectKey(object, 'cartridge', label, 'machineState.machine.cartridge'), 'machineState.machine.cartridge'),
 		dma: decodeDmaControllerState(requireObjectKey(object, 'dma', label, 'machineState.machine.dma'), 'machineState.machine.dma'),
 		geometry: decodeGeometryControllerState(requireObjectKey(object, 'geometry', label, 'machineState.machine.geometry'), 'machineState.machine.geometry'),
 		gxGpu: decodeGxGpuSaveState(requireObjectKey(object, 'gxGpu', label, 'machineState.machine.gxGpu'), 'machineState.machine.gxGpu'),
@@ -1589,14 +1651,18 @@ function decodeRuntimeSaveStateValue(value: unknown, label: string): RuntimeSave
 
 export function encodeRuntimeSaveState(state: RuntimeSaveState): Uint8Array {
 	const bytes = encodeBinaryWithPropTable(encodeRuntimeSaveStateValue(state), RUNTIME_SAVE_STATE_PROP_NAMES);
-	if (bytes.byteLength > RUNTIME_SAVE_STATE_WIRE_CAPACITY) {
+	let cartridgeRamByteCount = 0;
+	for (let slotIndex = 0; slotIndex < CARTRIDGE_SLOT_COUNT; slotIndex += 1) {
+		cartridgeRamByteCount += state.machineState.machine.cartridge.slots[slotIndex].ram.byteLength;
+	}
+	if (bytes.byteLength > runtimeSaveStateWireCapacity(cartridgeRamByteCount)) {
 		throw new Error('Runtime save-state payload exceeds the current-format wire capacity.');
 	}
 	return bytes;
 }
 
-export function decodeRuntimeSaveState(bytes: Uint8Array): RuntimeSaveState {
-	if (bytes.byteLength > RUNTIME_SAVE_STATE_WIRE_CAPACITY) {
+export function decodeRuntimeSaveState(bytes: Uint8Array, cartridgeRamByteCount: number): RuntimeSaveState {
+	if (bytes.byteLength > runtimeSaveStateWireCapacity(cartridgeRamByteCount)) {
 		throw new Error('Runtime save-state payload exceeds the current-format wire capacity.');
 	}
 	return decodeRuntimeSaveStateValue(
@@ -1610,5 +1676,8 @@ export function captureRuntimeSaveStateBytes(runtime: Runtime): Uint8Array {
 }
 
 export function applyRuntimeSaveStateBytes(runtime: Runtime, bytes: Uint8Array): void {
-	applyRuntimeSaveState(runtime, decodeRuntimeSaveState(bytes));
+	applyRuntimeSaveState(
+		runtime,
+		decodeRuntimeSaveState(bytes, runtime.machine.cartridgeController.ramByteCount()),
+	);
 }

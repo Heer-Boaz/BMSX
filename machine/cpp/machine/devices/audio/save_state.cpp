@@ -10,6 +10,7 @@ namespace bmsx {
 ApuOutputVoiceState captureApuOutputVoiceState(const ApuOutputMixer::VoiceRecord& record) {
 	ApuOutputVoiceState voice;
 	voice.slot = record.slot;
+	voice.sourceCartridgeSlot = record.sourceCartridgeSlot;
 	voice.cursorQ16 = record.cursorQ16;
 	voice.phaseRemainder = record.phaseRemainder;
 	voice.gainQ12 = record.gainQ12;
@@ -42,6 +43,7 @@ ApuOutputVoiceState captureApuOutputVoiceState(const ApuOutputMixer::VoiceRecord
 }
 
 void restoreApuOutputVoiceState(ApuOutputMixer::VoiceRecord& record, const ApuOutputVoiceState& state) {
+	record.sourceCartridgeSlot = state.sourceCartridgeSlot;
 	record.cursorQ16 = state.cursorQ16;
 	record.phaseRemainder = state.phaseRemainder;
 	record.gainQ12 = state.gainQ12;

@@ -1,3 +1,4 @@
+import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -44,7 +45,7 @@ function disassembleProgramWithoutIrqVector(compiled: CompiledProgram): string {
 		.join('\\n\\n');
 }
 
-function runColdCompiled(compiled: CompiledProgram, memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) })): { memory: Memory; values: Value[] } {
+function runColdCompiled(compiled: CompiledProgram, memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() })): { memory: Memory; values: Value[] } {
 	const finalized = finalizeTestSystemProgram(compiled);
 	const image = finalized.image;
 	memory.systemRom = finalized.romBytes;
@@ -57,7 +58,7 @@ function runColdCompiled(compiled: CompiledProgram, memory = new Memory({ system
 	return { memory, values: Array.from(cpu.lastReturnValues) };
 }
 
-function runCold(source: string, memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) })): { memory: Memory; values: Value[] } {
+function runCold(source: string, memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() })): { memory: Memory; values: Value[] } {
 	return runColdCompiled(compileSource(source), memory);
 }
 
@@ -77,7 +78,7 @@ return *counter, &counter
 	}]);
 	assert.equal(image.link.constValueRelocs.every(reloc => reloc.kind === 'bss_addr'), true);
 
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
 	memory.writeMappedU32LE(PROGRAM_STATIC_RAM_BASE, 0x11223344);
 	const result = runCold(source, memory);
 	assert.equal(result.memory.readMappedU32LE(PROGRAM_STATIC_RAM_BASE), 0);
@@ -125,7 +126,7 @@ return *counter, state.counter
 	assert.doesNotMatch(disasm, /\bCALL\b/);
 	assert.doesNotMatch(disasm, /\bNEWT\b/);
 
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
 	memory.writeMappedU32LE(PROGRAM_STATIC_RAM_BASE, 0x11223344);
 	const result = runColdCompiled(compiled, memory);
 	assert.deepEqual(result.values, [77, PROGRAM_STATIC_RAM_BASE]);
@@ -473,7 +474,7 @@ return *counter, &counter
 	assert.equal(image.link.constValueRelocs.some(reloc => reloc.kind === 'data_addr' && reloc.symbol === 'module:section_data.lua/data:counter'), true);
 	assert.equal(image.link.constValueRelocs.some(reloc => reloc.kind === 'data_lma_addr' && reloc.symbol === 'module:section_data.lua/data:counter'), true);
 
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
 	memory.writeMappedU32LE(PROGRAM_STATIC_RAM_BASE, 0x11223344);
 	const result = runColdCompiled(compiled, memory);
 	assert.deepEqual(result.values, [17, PROGRAM_STATIC_RAM_BASE]);
@@ -491,7 +492,7 @@ bss[0] = bss[0] + 1
 data[0] = data[0] + 1
 rodata[0] = rodata[0] + 1
 return struct[0], bss[0], data[0], rodata[0]
-`, new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) }));
+`, new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }));
 	assert.deepEqual(result.values, [2, 3, 2, 5]);
 });
 

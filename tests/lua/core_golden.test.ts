@@ -1,3 +1,4 @@
+import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -65,7 +66,7 @@ function clearBusFault(memory: Memory): void {
 }
 
 test('core golden: memory RAM, ROM, and numeric I/O words stay observable', () => {
-	const memory = new Memory({ systemRom: new Uint8Array([0x11, 0x22, 0x33, 0x44]), cartRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array([0x11, 0x22, 0x33, 0x44]), cartridgeSlots: cartridgeSlots() });
 	assert.equal(memory.readU8(SYSTEM_ROM_BASE), 0x11);
 	memory.writeU32(RAM_BASE, 0x12345678);
 	assert.equal(memory.readU32(RAM_BASE), 0x12345678);
@@ -94,7 +95,7 @@ test('core golden: memory RAM, ROM, and numeric I/O words stay observable', () =
 test('core golden: physical ROM windows zero-fill consistently across memory paths', () => {
 	const systemRom = new Uint8Array([0x11, 0x22, 0x33, 0x44, 0x55, 0x66]);
 	const cartRom = new Uint8Array([0x71, 0x72, 0x73, 0x74, 0x75, 0x76]);
-	const memory = new Memory({ systemRom, cartRom });
+	const memory = new Memory({ systemRom, cartridgeSlots: cartridgeSlots(cartRom) });
 	const tailBytes = new Uint8Array(4);
 
 	assert.equal(memory.readValue(SYSTEM_ROM_BASE), 0x44332211);
@@ -110,7 +111,7 @@ test('core golden: physical ROM windows zero-fill consistently across memory pat
 });
 
 test('core golden: raw memory byte paths latch bus faults instead of throwing', () => {
-	const memory = new Memory({ systemRom: new Uint8Array([0x11, 0x22, 0x33, 0x44]), cartRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array([0x11, 0x22, 0x33, 0x44]), cartridgeSlots: cartridgeSlots() });
 	assert.equal(memory.readU8(0xffff_ffff), 0);
 	assertBusFault(memory, BUS_FAULT_UNMAPPED, 0xffff_ffff, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U8);
 	clearBusFault(memory);
@@ -135,7 +136,7 @@ test('core golden: budget and fixed16 datapaths match native integer semantics',
 });
 
 test('core golden: the GPU VBlank edge presents and completes the active runtime tick', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(), cartRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(), cartridgeSlots: cartridgeSlots() });
 	const scheduler = new DeviceScheduler(new CPU(memory, new IrqController(memory)));
 	const inputSampleEdges: Array<{ currentTimeMs: number; nowCycles: number }> = [];
 	const completedFrames: unknown[] = [];

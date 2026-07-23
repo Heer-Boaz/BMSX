@@ -1,4 +1,5 @@
 import type { AudioControllerState } from './devices/audio/save_state';
+import type { CartridgeControllerState } from './devices/cartridge/contracts';
 import type { DmaControllerState } from './devices/dma/controller';
 import type { GeometryControllerState } from './devices/geometry/save_state';
 import type { GxGpuSaveState, GxGpuState } from './devices/gx/gpu';
@@ -12,6 +13,7 @@ import type { StringPoolState } from './cpu/string_pool';
 import type { Machine } from './machine';
 
 export type MachineState = {
+	cartridge: CartridgeControllerState;
 	dma: DmaControllerState;
 	geometry: GeometryControllerState;
 	gxGpu: GxGpuState;
@@ -25,6 +27,7 @@ export type MachineState = {
 
 export type MachineSaveState = {
 	memory: MemorySaveState;
+	cartridge: CartridgeControllerState;
 	dma: DmaControllerState;
 	geometry: GeometryControllerState;
 	gxGpu: GxGpuSaveState;
@@ -44,7 +47,9 @@ export function captureMachineState(machine: Machine): MachineState {
 	// sample-accurate END edges before the dependent DMA and IRQ state.
 	const gxGpu = machine.gxGpu.captureState();
 	const audio = machine.audioController.captureState();
+	const cartridge = machine.cartridgeController.captureState();
 	return {
+		cartridge,
 		dma: machine.dmaController.captureState(),
 		geometry: machine.geometryController.captureState(),
 		gxGpu,
@@ -69,8 +74,10 @@ export function captureMachineSaveState(machine: Machine): MachineSaveState {
 	// See captureMachineState: GPU and APU command time own their request-line edges.
 	const gxGpu = machine.gxGpu.captureSaveState();
 	const audio = machine.audioController.captureState();
+	const cartridge = machine.cartridgeController.captureState();
 	return {
 		memory: machine.memory.captureSaveState(),
+		cartridge,
 		dma: machine.dmaController.captureState(),
 		geometry: machine.geometryController.captureState(),
 		gxGpu,
@@ -94,9 +101,10 @@ export function restoreMachineSaveState(machine: Machine, state: MachineSaveStat
 	finishDeviceRestore(machine, state.systemControl);
 }
 
-function restoreSharedDeviceState(machine: Machine, state: Pick<MachineState, 'dma' | 'geometry' | 'irq' | 'audio' | 'input'>): void {
+function restoreSharedDeviceState(machine: Machine, state: Pick<MachineState, 'cartridge' | 'dma' | 'geometry' | 'irq' | 'audio' | 'input'>): void {
 	machine.dmaController.restoreState(state.dma, machine.scheduler.nowCycles);
 	machine.geometryController.restoreState(state.geometry, machine.scheduler.nowCycles);
+	machine.cartridgeController.restoreState(state.cartridge);
 	machine.irqController.restoreState(state.irq);
 	machine.audioController.restoreState(state.audio, machine.scheduler.nowCycles);
 	machine.inputController.restoreState(state.input);

@@ -1,5 +1,6 @@
 import type { RuntimeRomPackage } from '../../rompack/format';
 import type { RuntimeRomLayer } from '../../rompack/loader';
+import type { CartridgeSlotMedia } from '../../machine/devices/cartridge/contracts';
 import { RomSourceStack, type RawRomSource, type RomSourceLayer } from '../../rompack/source';
 import type { LuaEnvironment } from '../../lua/environment';
 import {
@@ -13,6 +14,7 @@ import {
 export type RuntimeSourceState = {
 	systemRom: RuntimeRomLayer;
 	cartRom: RuntimeRomLayer | null;
+	cartSlotMedia: CartridgeSlotMedia | null;
 	systemPackage: RuntimeRomPackage;
 	cartPackage: RuntimeRomPackage | null;
 	activePackage: RuntimeRomPackage;
@@ -46,7 +48,11 @@ function indexProgramSources(registry: LuaSourceRegistry): Map<string, string> {
 	return sourceByPath;
 }
 
-export function createRuntimeSourceState(systemLayer: RuntimeRomLayer, cartLayer: RuntimeRomLayer | null): RuntimeSourceState {
+export function createRuntimeSourceState(
+	systemLayer: RuntimeRomLayer,
+	cartLayer: RuntimeRomLayer | null,
+	cartSlotMedia: CartridgeSlotMedia | null,
+): RuntimeSourceState {
 	const systemSource = new RomSourceStack([{ id: systemLayer.id, index: systemLayer.index, payload: systemLayer.payload }]);
 	const systemLuaSources = buildLuaSources(systemSource, systemSource, systemLayer.index, ['system']);
 	const luaSourceRegistries: LuaSourceRegistry[] = [];
@@ -64,6 +70,7 @@ export function createRuntimeSourceState(systemLayer: RuntimeRomLayer, cartLayer
 		const state: RuntimeSourceState = {
 			systemRom: systemLayer,
 			cartRom: cartLayer,
+			cartSlotMedia,
 			systemPackage: systemLayer.package,
 			cartPackage: cartLayer.package,
 			activePackage: systemLayer.package,
@@ -93,6 +100,7 @@ export function createRuntimeSourceState(systemLayer: RuntimeRomLayer, cartLayer
 	const state: RuntimeSourceState = {
 		systemRom: systemLayer,
 		cartRom: null,
+		cartSlotMedia: null,
 		systemPackage: systemLayer.package,
 		cartPackage: null,
 		activePackage: systemLayer.package,
@@ -166,6 +174,7 @@ export function installRuntimeRomLayers(
 	if (cartLayer !== null) {
 		state.cartRom!.index = cartLayer.index;
 		state.cartRom!.payload = cartLayer.payload;
+		state.cartSlotMedia!.rom = cartLayer.payload;
 		state.cartRomSource = new RomSourceStack([{
 			id: cartLayer.id,
 			index: cartLayer.index,

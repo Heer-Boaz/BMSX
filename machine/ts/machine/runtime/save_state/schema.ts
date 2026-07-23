@@ -164,6 +164,7 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'scheduledCycles',
 	'output',
 	'voices',
+	'sourceCartridgeSlot',
 	'cursorQ16',
 	'phaseRemainder',
 	'gainQ12',
@@ -387,4 +388,10 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'printBuffer',
 	'printReadIndex',
 	'printByteCount',
+	'cartridge',
+	'selectionWord',
+	'slots',
+	'mailboxDataWord',
+	'mailboxControlWord',
+	'mailboxIrqPending',
 ] as const;

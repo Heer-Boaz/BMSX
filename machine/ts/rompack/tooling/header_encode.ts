@@ -26,4 +26,6 @@ export function writeCartRomHeader(target: Uint8Array, header: CartRomHeader): v
 	view.setUint32(64, header.metadataOffset, true);
 	view.setUint32(68, header.metadataLength, true);
 	view.setUint32(72, CART_VDP_CLASS_PSX, true);
+	view.setUint32(76, header.cartridgeBoardWord, true);
+	view.setUint32(80, header.cartridgeRamByteCount, true);
 }

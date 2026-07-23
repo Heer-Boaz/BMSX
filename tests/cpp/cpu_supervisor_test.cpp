@@ -7,6 +7,7 @@
 #include "machine/memory/access_kind.h"
 #include "machine/memory/map.h"
 #include "machine/memory/memory.h"
+#include "support/cartridge_fixture.h"
 
 #include <array>
 #include <span>
@@ -54,7 +55,7 @@ struct CpuSupervisorHarness {
 	std::unordered_map<std::string, bmsx::Value> moduleCache;
 
 	CpuSupervisorHarness()
-		: memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, { emptyRom.data(), 0u } })
+		: memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, bmsx::test::cartridgeSlots() })
 		, irq(memory)
 		, cpu(memory, irq) {
 		program.codeBytes.resize(PROGRAM_INSTRUCTION_COUNT * bmsx::INSTRUCTION_BYTES);
@@ -184,7 +185,7 @@ void testSystemAndOrdinaryGlobalRegisterfilesStayDistinct() {
 
 void testProgramReplacementRelocatesActiveFrame() {
 	std::array<bmsx::u8, 1> emptyRom{{0}};
-	bmsx::Memory memory(bmsx::MemoryInit{{emptyRom.data(), 0u}, {emptyRom.data(), 0u}});
+	bmsx::Memory memory(bmsx::MemoryInit{{emptyRom.data(), 0u}, bmsx::test::cartridgeSlots()});
 	bmsx::IrqController irq(memory);
 	bmsx::CPU cpu(memory, irq);
 	bmsx::Program initial;
@@ -254,7 +255,7 @@ void testMappedMemoryAlignmentContract() {
 	constexpr uint32_t F64_ADDRESS = bmsx::PROGRAM_STATIC_RAM_BASE + 0x104u;
 	constexpr double F64_VALUE = 3.141592653589793;
 	std::array<bmsx::u8, 1> emptyRom{{0}};
-	bmsx::Memory memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, { emptyRom.data(), 0u } });
+	bmsx::Memory memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, bmsx::test::cartridgeSlots() });
 	bmsx::IrqController irq(memory);
 	bmsx::CPU cpu(memory, irq);
 	bmsx::Program program;
@@ -308,7 +309,7 @@ void testAddressErrorsPrecedeMappedMemoryBusCycles() {
 		const int memoryInstruction = 2 + testCase.valueCount;
 		const int instructionCount = memoryInstruction + 2;
 		std::array<bmsx::u8, 1> emptyRom{{0}};
-		bmsx::Memory memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, { emptyRom.data(), 0u } });
+		bmsx::Memory memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, bmsx::test::cartridgeSlots() });
 		bmsx::IrqController irq(memory);
 		bmsx::CPU cpu(memory, irq);
 		bmsx::Program program;
@@ -351,7 +352,7 @@ void testAddressErrorsPrecedeMappedMemoryBusCycles() {
 
 void testProtectedCallMicrocodePreemptsSavesAndHandlesLuaErrors() {
 	std::array<bmsx::u8, 1> emptyRom{{0}};
-	bmsx::Memory memory(bmsx::MemoryInit{{emptyRom.data(), 0u}, {emptyRom.data(), 0u}});
+	bmsx::Memory memory(bmsx::MemoryInit{{emptyRom.data(), 0u}, bmsx::test::cartridgeSlots()});
 	bmsx::IrqController irq(memory);
 	bmsx::CPU cpu(memory, irq);
 	bmsx::Program program;

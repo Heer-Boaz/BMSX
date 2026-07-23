@@ -1,3 +1,4 @@
+import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -52,7 +53,7 @@ function runColdCompiled(compiled: CompiledProgram) {
 
 function runColdPair(systemCompiled: CompiledProgram, cartCompiled: CompiledProgram) {
 	const finalized = finalizeTestProgramPair(systemCompiled, cartCompiled);
-	const memory = new Memory({ systemRom: finalized.systemRomBytes, cartRom: finalized.cartRomBytes });
+	const memory = new Memory({ systemRom: finalized.systemRomBytes, cartridgeSlots: cartridgeSlots(finalized.cartRomBytes) });
 	const cpu = new CPU(memory, new IrqController(memory));
 	cpu.setProgram(finalized.program, finalized.cartImage.symbols, finalized.cartMetadata, 0, 0, 0);
 	cpu.start(finalized.cartImage.vectors.sectionInitProtoIndex);

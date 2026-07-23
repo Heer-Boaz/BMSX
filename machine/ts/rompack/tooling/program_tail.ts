@@ -9,13 +9,14 @@ import {
 import {
 	CART_ROM_HEADER_SIZE,
 	PROGRAM_BOOT_HEADER_VERSION,
+	parseCartHeader,
 	type RomAsset,
 } from '../format';
 import { alignRomAssetOffset } from '../asset_layout';
-import { parseCartHeader } from '../loader';
 import type { RomSourceLayer } from '../source';
 import { writeCartRomHeader } from './header_encode';
 import { encodeRomToc } from './toc_encode';
+import { CART_ROM_SIZE, SYSTEM_ROM_SIZE } from '../../machine/memory/map';
 
 export function buildProgramTail(
 	layer: RomSourceLayer,
@@ -58,6 +59,10 @@ export function buildProgramTail(
 	offset = alignRomAssetOffset(offset);
 	const tocOffset = offset;
 	offset += toc.byteLength;
+	const romCapacity = layer.id === 'system' ? SYSTEM_ROM_SIZE : CART_ROM_SIZE;
+	if (offset > romCapacity) {
+		throw new Error(`ROM payload exceeds the ${romCapacity}-byte ${layer.id} ROM window.`);
+	}
 
 	const sourcePayload = layer.payload;
 	const payload = offset <= sourcePayload.byteLength ? sourcePayload : new Uint8Array(offset);

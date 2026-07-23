@@ -1,3 +1,4 @@
+import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
@@ -16,7 +17,7 @@ import { executeGxGpuSoftwareCommands } from '../../machine/ts/render/backend/so
 import { gxGpuSoftwareVram, gxGpuSoftwareVramIndex } from '../../machine/ts/render/backend/software/gx_gpu_vram';
 
 const GX_GPU_SOFTWARE_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD = 1023 | (511 << 10);
-const commandBufferMemory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+const commandBufferMemory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
 const commandBufferIrq = new IrqController(commandBufferMemory);
 const commandBufferCpu = new CPU(commandBufferMemory, commandBufferIrq);
 const commandBufferScheduler = new DeviceScheduler(commandBufferCpu);

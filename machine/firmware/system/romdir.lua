@@ -1,4 +1,5 @@
 local bin<const> = require('system/bin')
+local cartridge<const> = require('system/cartridge')
 
 local romdir<const> = {}
 
@@ -384,7 +385,7 @@ local list_entries<const> = function(roms, kind)
 end
 
 local system_rom<const> = parse_rom(read_header(0x00000000, 'system', true), rom_system)
-local cart_header<const> = read_header(0x01000000, 'cart', false)
+local cart_header<const> = read_header(cartridge.rom_base, 'cart', false)
 local cart_rom = nil
 if cart_header ~= nil then
 	cart_rom = parse_rom(cart_header, rom_cart)

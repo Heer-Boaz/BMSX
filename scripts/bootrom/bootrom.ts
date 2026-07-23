@@ -1,5 +1,7 @@
 // IMPORTANT: IMPORTS TO `bmsx/blabla` ARE NOT ALLOWED!!!!!! THIS WILL CAUSE PROBLEMS WITH .GLSL FILES BEING INCLUDED AND THE ROMPACKER CANNOT HANDLE THIS!!!!!
 import type { MachineBootOptions } from '../../machine/ts/core/machine_manager';
+import { parseCartHeader } from '../../machine/ts/rompack/format';
+import { decodeRomToc } from '../../machine/ts/rompack/toc';
 import { createAudioContext, startAudioOnIos } from './bootaudio';
 
 const HAS_DOM_ENVIRONMENT = typeof document !== 'undefined' && document !== null;
@@ -11,10 +13,10 @@ type BMSX = {
 
 declare global {
 	interface Window {
-		getRomFromUrlParameter: () => string;
+		getRomFromUrlParameter: (slot?: 0 | 1) => string | null;
 		getRomNameFromUrlParameter: () => string;
 		bootrom: {
-			cartridge: Uint8Array;
+			cartridgeSlots: [Uint8Array | null, Uint8Array | null];
 			systemRom: Uint8Array;
 			debug: boolean;
 			sndcontext: AudioContext;
@@ -23,7 +25,7 @@ declare global {
 			theshowsover: boolean;
 			startingGamepadIndex: number;
 			enableOnscreenGamepad: boolean;
-			loadCart: (url: string) => Promise<Uint8Array>;
+			loadCart: (url: string, slot?: 0 | 1) => Promise<Uint8Array | null>;
 			loadSystemRom: (url: string) => Promise<Uint8Array>;
 			start: () => Promise<void>;
 			outputError: (errormsg: string) => void;
@@ -33,7 +35,7 @@ declare global {
 	}
 
 	// Add globalThis augmentation so `globalThis.bootrom = ...` type checks
-	var getRomFromUrlParameter: () => string;
+	var getRomFromUrlParameter: (slot?: 0 | 1) => string | null;
 	var getRomNameFromUrlParameter: () => string;
 	var bootrom: Object;
 	var bmsx: BMSX;
@@ -47,7 +49,7 @@ export const bootrom = {
 	/**
 	 * This section of code defines the boot ROM object and its properties and methods.
 	 *
-	 * @property {Uint8Array} cartridge - The cart ROM blob.
+	 * @property {[Uint8Array | null, Uint8Array | null]} cartridgeSlots - The two physical cartridge inputs.
 	 * @property {Uint8Array} systemRom - The system ROM blob.
 	 * @property {boolean} debug - A flag indicating whether debug mode is enabled.
 	 * @property {AudioContext} sndcontext - The audio context for the boot ROM.
@@ -57,7 +59,7 @@ export const bootrom = {
 	 *
 	 * @function loadCart - Asynchronously loads a cart ROM blob from the specified URL.
 	 * @param {string} url - The URL of the ROM pack to load.
-	 * @returns {Promise<Uint8Array>} A Promise that resolves to the loaded ROM blob, or null if the loading failed.
+	 * @returns {Promise<Uint8Array | null>} A Promise that resolves to the loaded ROM blob, or null if the loading failed.
 	 *
 	 * @function loadSystemRom - Asynchronously loads the system ROM blob.
 	 * @param {string} url - The URL of the system ROM to load.
@@ -68,7 +70,7 @@ export const bootrom = {
 	 *
 	 * @var {boolean} snd_unlocked - A flag indicating whether the audio has been unlocked.
 	 */
-	cartridge: null as Uint8Array,
+	cartridgeSlots: [null, null] as [Uint8Array | null, Uint8Array | null],
 	systemRom: null as Uint8Array,
 	debug: false,
 	sndcontext: null as AudioContext,
@@ -84,78 +86,72 @@ export const bootrom = {
 	 * Starts the game.
 	 * @returns A Promise that resolves when startup finishes.
 	 */
-	start(): Promise<void> {
-		try {
-			const remove = (selector: string) => {
-				if (!HAS_DOM_ENVIRONMENT) return;
-				const element = document.querySelector(selector);
-				if (!element) return;
-				const parent = element.parentElement;
-				if (!parent) return;
-				parent.removeChild(element);
-			};
+	async start(): Promise<void> {
+		const remove = (selector: string) => {
+			if (!HAS_DOM_ENVIRONMENT) return;
+			const element = document.querySelector(selector);
+			if (!element) return;
+			const parent = element.parentElement;
+			if (!parent) return;
+			parent.removeChild(element);
+		};
 
-			const wrapup = () => {
-				if (!HAS_DOM_ENVIRONMENT) return;
-				const loadingElement = document.querySelector('#loading') as HTMLElement;
-				if (loadingElement) loadingElement.hidden = true;
-				window.removeEventListener('resize', bootrom.resizeHandler);
-				remove('#msx');
-				remove('#hidor');
-				remove('#bootrom');
-				remove('#loading');
-				remove('#extra-message');
-				remove('#pacojs');
-				remove('#bload-script');
-				document.body.classList.add('game-started'); // Change background color of body
-			};
+		const wrapup = () => {
+			if (!HAS_DOM_ENVIRONMENT) return;
+			const loadingElement = document.querySelector('#loading') as HTMLElement;
+			if (loadingElement) loadingElement.hidden = true;
+			window.removeEventListener('resize', bootrom.resizeHandler);
+			remove('#msx');
+			remove('#hidor');
+			remove('#bootrom');
+			remove('#loading');
+			remove('#extra-message');
+			remove('#bload-script');
+			document.body.classList.add('game-started'); // Change background color of body
+		};
 
-			const machineManager = globalThis.bmsx.machineManager;
-			if (HAS_DOM_ENVIRONMENT) {
-				createAudioContext(bootrom);
-				const gamescreen = document.getElementById('gamescreen');
-				if (!(gamescreen instanceof HTMLElement)) {
-					throw new Error('#gamescreen element not found; cannot bootstrap platform.');
-				}
-				gamescreen.hidden = false;
-				gamescreen.style.display = 'block';
-				if (!(gamescreen instanceof HTMLCanvasElement)) {
-					throw new Error('#gamescreen must be a <canvas> to construct a Platform.');
-				}
-				const platform = globalThis.bmsx.constructPlatformFromViewHostHandle(gamescreen, { audioContext: bootrom.sndcontext, debug: this.debug });
-				bootrom.platform = platform;
-				bootrom.viewHost = platform.gameviewHost;
+		const machineManager = globalThis.bmsx.machineManager;
+		if (HAS_DOM_ENVIRONMENT) {
+			createAudioContext(bootrom);
+			const gamescreen = document.getElementById('gamescreen');
+			if (!(gamescreen instanceof HTMLElement)) {
+				throw new Error('#gamescreen element not found; cannot bootstrap platform.');
 			}
-
-			if (typeof window !== 'undefined') {
-				// Remove the global error handler to prevent useless stack traces
-				window.onunhandledrejection = null;
-				// Remove the global error handler to prevent useless stack traces
-				window.onerror = null;
+			gamescreen.hidden = false;
+			gamescreen.style.display = 'block';
+			if (!(gamescreen instanceof HTMLCanvasElement)) {
+				throw new Error('#gamescreen must be a <canvas> to construct a Platform.');
 			}
-
-			const platform = bootrom.platform;
-			if (!platform) {
-				throw new Error('[bootrom] Platform not initialized before starting the game.');
-			}
-			return Promise.resolve(machineManager.boot({
-				cartridge: bootrom.cartridge,
-				systemRom: bootrom.systemRom,
-				sndcontext: bootrom.sndcontext,
-				gainnode: bootrom.gainnode,
-				debug: this.debug,
-				startingGamepadIndex: bootrom.startingGamepadIndex,
-				enableOnscreenGamepad: bootrom.enableOnscreenGamepad,
-				platform,
-				viewHost: bootrom.viewHost,
-			} as MachineBootOptions)).then(() => {
-				wrapup();
-				bootrom.cartridge = undefined;
-				delete bootrom.cartridge;
-			});
-		} catch (err) {
-			throw err;
+			const platform = globalThis.bmsx.constructPlatformFromViewHostHandle(gamescreen, { audioContext: bootrom.sndcontext, debug: this.debug });
+			bootrom.platform = platform;
+			bootrom.viewHost = platform.gameviewHost;
 		}
+
+		if (typeof window !== 'undefined') {
+			// Remove the global error handler to prevent useless stack traces
+			window.onunhandledrejection = null;
+			// Remove the global error handler to prevent useless stack traces
+			window.onerror = null;
+		}
+
+		const platform = bootrom.platform;
+		if (!platform) {
+			throw new Error('Platform not initialized before starting the game.');
+		}
+		await machineManager.boot({
+			cartridgeSlots: bootrom.cartridgeSlots,
+			systemRom: bootrom.systemRom,
+			sndcontext: bootrom.sndcontext,
+			gainnode: bootrom.gainnode,
+			debug: this.debug,
+			startingGamepadIndex: bootrom.startingGamepadIndex,
+			enableOnscreenGamepad: bootrom.enableOnscreenGamepad,
+			platform,
+			viewHost: bootrom.viewHost,
+		} as MachineBootOptions);
+		wrapup();
+		bootrom.cartridgeSlots[0] = null;
+		bootrom.cartridgeSlots[1] = null;
 	},
 
 	/**
@@ -163,7 +159,7 @@ export const bootrom = {
 	 * @param url - The URL of the ROM pack to load.
 	 * @returns A Promise that resolves to the loaded ROM pack, or null if the loading failed.
 	 */
-	async loadCart(url: string): Promise<Uint8Array> {
+	async loadCart(url: string, slot: 0 | 1 = 0): Promise<Uint8Array | null> {
 		if (typeof window !== 'undefined') {
 			window.onunhandledrejection = (event: PromiseRejectionEvent) => {
 				event.preventDefault();
@@ -179,7 +175,10 @@ export const bootrom = {
 			createAudioContext(bootrom);
 		}
 
-		if (HAS_DOM_ENVIRONMENT && typeof window !== 'undefined' && !window.matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches) {
+		if (slot === 0
+				&& HAS_DOM_ENVIRONMENT
+				&& typeof window !== 'undefined'
+				&& !window.matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches) {
 			const extraMessageElement = document.querySelector<HTMLElement>('#extra-message');
 			const loadingElement = document.getElementById('loading');
 
@@ -195,69 +194,42 @@ export const bootrom = {
 			window.addEventListener('resize', bootrom.resizeHandler);
 		}
 
-		const fetchRom = () => {
-			return fetchBuffer(url).catch(err => {
-				console.error(`Error while fetching ROM: "${err.message}"`);
-				// We do not reject here, allowing the machine runtime to handle the missing cartridge by itself (showing a blank screen, like a retro-style computer with no cart inserted).
-			});
-		};
-
-		return new Promise((resolve, reject) => {
-			let loadedRomBlob: Uint8Array = null;
-			let romlabel_bloburl: string = null;
-
-			function replaceBMSXImgWithRomLabel() {
-				if (!HAS_DOM_ENVIRONMENT || !romlabel_bloburl) return;
-				const msx = document.querySelector('#msx') as HTMLImageElement;
-				msx.src = romlabel_bloburl;
-
-				// Unhide the image if it is hidden
-				// msx.hidden = false;
-
-				// Remove any previous animationend handler
-				// msx.onanimationend = null;
-
-				// Otherwise, fade out, then swap image and fade in while
-				// keeping the image positioned off-screen via the 'hidden'
-				// class to avoid a flash before the boot animation starts.
-				// msx.onanimationend = (ev: AnimationEvent) => {
-				// 	const img = ev.target as HTMLImageElement;
-				// 	img.src = romlabel_bloburl;
-				// 	img.classList.add('fade-in');
-				// 	// img.onanimationend = null; // Clean up
-				// };
-			}
-
-				fetchRom()
-					.then((response_array: Uint8Array) => {
-						if (response_array) {
-							const split = splitRomLabel(response_array);
-						if (split.romlabel) {
-							romlabel_bloburl = getImageUrlFromBuffer(split.romlabel);
-							replaceBMSXImgWithRomLabel();
-						}
-						loadedRomBlob = response_array;
-						bootrom.cartridge = loadedRomBlob;
-					} else {
-						bootrom.cartridge = null;
-					}
-						return awaitBootComplete().then(() => {
-							replaceBMSXImgWithRomLabel();
-						});
-					})
-					.then(() => {
-						if (bootrom.debug) {
-							startAudioOnIos(bootrom);
-							return;
-						}
-						setLoaderText('Press any key, button or touch screen to start...');
-						return awaitPressedAnyKeyPromise();
-					})
-					.then(() => resolve(loadedRomBlob))
-				.catch(err => {
-					reject(err);
-				});
+		const loadedRomBlob = await fetchBuffer(url).catch(err => {
+			console.error(`Error while fetching ROM: "${err.message}"`);
+			return null;
 		});
+		let romLabelUrl: string | null = null;
+		if (loadedRomBlob !== null && slot === 0) {
+			const header = parseCartHeader(loadedRomBlob);
+			const toc = decodeRomToc(loadedRomBlob.subarray(header.tocOffset, header.tocOffset + header.tocLength));
+			for (let index = 0; index < toc.entries.length; index += 1) {
+				const entry = toc.entries[index];
+				if (entry.type === 'romlabel') {
+					romLabelUrl = getImageUrlFromBuffer(loadedRomBlob.subarray(entry.start!, entry.end!));
+					break;
+				}
+			}
+		}
+		bootrom.cartridgeSlots[slot] = loadedRomBlob;
+		if (slot === 1) {
+			return loadedRomBlob;
+		}
+
+		const replaceBmsxImageWithRomLabel = () => {
+			if (!HAS_DOM_ENVIRONMENT || romLabelUrl === null) return;
+			const msx = document.querySelector('#msx') as HTMLImageElement;
+			msx.src = romLabelUrl;
+		};
+		replaceBmsxImageWithRomLabel();
+		await awaitBootComplete();
+		replaceBmsxImageWithRomLabel();
+		if (bootrom.debug) {
+			startAudioOnIos(bootrom);
+			return loadedRomBlob;
+		}
+		setLoaderText('Press any key, button or touch screen to start...');
+		await awaitPressedAnyKeyPromise();
+		return loadedRomBlob;
 	},
 
 	async loadSystemRom(url: string): Promise<Uint8Array> {
@@ -295,8 +267,8 @@ export const bootrom = {
 
 if (typeof globalThis !== 'undefined') {
 	globalThis.bootrom = bootrom as typeof bootrom;
-	globalThis.getRomFromUrlParameter = (): string => {
-		const rom = getParameterByName('rom');
+	globalThis.getRomFromUrlParameter = (slot: 0 | 1 = 0): string | null => {
+		const rom = getParameterByName(slot === 0 ? 'rom' : 'slot1');
 		return rom && rom !== '' ? rom : null;
 	}
 	globalThis.getRomNameFromUrlParameter = (): string => {
@@ -323,39 +295,6 @@ function getParameterByName(name: string, url: string = window.location.href) {
 	if (!results) return null;
 	if (!results[2]) return '';
 	return decodeURIComponent(results[2].replace(/\+/g, ' '));
-}
-
-// TODO: DUPLICATE CODE WITH `loader.ts`!!!
-function splitPng(blob: Uint8Array): { png?: Uint8Array; rest: Uint8Array } {
-	if (
-		blob[0] !== 0x89 || blob[1] !== 0x50 || blob[2] !== 0x4E || blob[3] !== 0x47 ||
-		blob[4] !== 0x0D || blob[5] !== 0x0A || blob[6] !== 0x1A || blob[7] !== 0x0A
-	) {
-		return { rest: blob };
-	}
-	let p = 8;
-	while (p + 8 <= blob.length) {
-		const len = (blob[p] << 24) | (blob[p + 1] << 16) | (blob[p + 2] << 8) | blob[p + 3];
-		p += 4;
-		const type = (blob[p] << 24) | (blob[p + 1] << 16) | (blob[p + 2] << 8) | blob[p + 3];
-		p += 4;
-		const end = p + len + 4;
-		if (type === 0x49454E44) {
-			const png = blob.slice(0, end);
-			const rest = blob.slice(end);
-			return { png, rest };
-		}
-		p = end;
-	}
-	throw new Error('PNG IEND chunk not found');
-}
-
-function splitRomLabel(blob: Uint8Array): { zipped_rom: Uint8Array; romlabel?: Uint8Array } {
-	const { png, rest } = splitPng(blob);
-	if (png) {
-		return { zipped_rom: rest, romlabel: png };
-	}
-	return { zipped_rom: blob, romlabel: undefined };
 }
 
 function getImageUrlFromBuffer(buffer: Uint8Array): string {

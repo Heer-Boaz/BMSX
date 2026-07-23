@@ -16,6 +16,7 @@
 #include "machine/memory/memory.h"
 #include "machine/model_registry.h"
 #include "machine/scheduler/device.h"
+#include "support/cartridge_fixture.h"
 
 #include <array>
 #include <cstdint>
@@ -47,7 +48,7 @@ struct ImgDecHarness {
 	bmsx::SystemController system;
 
 	ImgDecHarness()
-		: memory(bmsx::MemoryInit{ { nullptr, 0u }, { cartRom.data(), cartRom.size() } })
+		: memory(bmsx::MemoryInit{ {}, bmsx::test::cartridgeSlots(cartRom) })
 		, irq(memory)
 		, cpu(memory, irq)
 		, scheduler(cpu)
@@ -56,7 +57,9 @@ struct ImgDecHarness {
 		, gpu(memory, cpu, irq, scheduler, dma)
 		, imgDec(memory, cpu, irq, scheduler, dma, bmsx::PSX_MACHINE_SPEC.imgDecCyclesPerOutputWord)
 		, system(memory, cpu, scheduler, irq, dma, geometry, gpu, imgDec) {
+		memory.cartridgeController().connect(memory, irq, dma);
 		dma.reset();
+		memory.cartridgeController().reset();
 		geometry.reset();
 		gpu.reset();
 		imgDec.reset();

@@ -16,6 +16,7 @@ import {
 	GX_TEXTURE_LAYOUT_MODULE_PATH,
 	GX_TEXTURE_LAYOUT_SOURCE_PATH,
 	ROM_ASSET_SYMBOL_MODULE_PATH,
+	resolveCartridgeHeaderWords,
 } from '../../machine/ts/rompack/format';
 import { LuaError } from '../../machine/ts/lua/errors';
 import { loadRomAssetList } from '../../machine/ts/rompack/loader';
@@ -395,11 +396,12 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 	});
 	await runBIOSStep(TASK.BIOS_FINALIZE, () => finalizeRompack(BIOSRomName, {
 		projectRootPath: '',
-		zipRom: false,
 		debug,
 		program: BIOSProgram,
 		layout: BIOSLayout,
 		outputDirectory,
+		cartridgeBoardWord: 0,
+		cartridgeRamByteCount: 0,
 	}));
 	if (progress) {
 		await progress.showDone();
@@ -590,6 +592,7 @@ async function main() {
 				externalLuaAssets: biosProgramContextAssets,
 				generatedLuaModules: [{ path: ROM_ASSET_SYMBOL_MODULE_PATH, source: assetSymbolModuleSource }],
 			});
+			const cartridgeHeaderWords = resolveCartridgeHeaderWords(romManifest);
 			await progress.taskCompleted();
 			if (!isBIOSMode) {
 				const cartLuaRoots = Array.from(extraLuaPathSet);
@@ -607,10 +610,11 @@ async function main() {
 				projectRootPath,
 				status: message => progress.setDetail(message),
 				debug: romPackDebug,
-				zipRom: false,
 				program,
 				layout: romLayout,
 				outputDirectory,
+				cartridgeBoardWord: cartridgeHeaderWords.cartridgeBoardWord,
+				cartridgeRamByteCount: cartridgeHeaderWords.cartridgeRamByteCount,
 			}));
 			await progress.taskCompleted();
 		}

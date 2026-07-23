@@ -1,3 +1,4 @@
+import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -84,7 +85,7 @@ function runStaticModuleInitializers(cpu: CPU, compiled: CompiledProgram): void 
 
 function createCpu(compiled: CompiledProgram): { cpu: CPU; image: ReturnType<typeof finalizeTestSystemProgram>['image'] } {
 	const finalized = finalizeTestSystemProgram(compiled);
-	const memory = new Memory({ systemRom: finalized.romBytes, cartRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: finalized.romBytes, cartridgeSlots: cartridgeSlots() });
 	const cpu = new CPU(memory, new IrqController(memory));
 	cpu.setProgram(finalized.program, finalized.image.symbols, finalized.metadata, 0, 0, 0);
 	return { cpu, image: finalized.image };

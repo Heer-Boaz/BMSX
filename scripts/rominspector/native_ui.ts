@@ -1,7 +1,7 @@
 import type { RomAsset } from '../../machine/ts/rompack/format';
 import type { ProgramImage } from '../../machine/ts/machine/program/loader';
 import { PROGRAM_IMAGE_ID, PROGRAM_SYMBOLS_IMAGE_ID } from '../../machine/ts/machine/program/loader';
-import { parseCartHeader } from '../../machine/ts/rompack/loader';
+import { parseCartHeader } from '../../machine/ts/rompack/format';
 import { parseRomMetadataSection } from '../../machine/ts/rompack/metadata';
 import { clamp } from '../../machine/ts/common/clamp';
 import { bufferSegmentGlyph, buildBufferBarModel, type BufferBarCell, type BufferBarModel, type BufferHitRegion, type BufferLegendEntry, type BufferRegion } from './asciiart';

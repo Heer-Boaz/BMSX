@@ -48,7 +48,7 @@ void ApuCommandExecutor::restoreOutputVoice(const ApuOutputVoiceState& state) {
 	const ApuAudioSlot slot = state.slot;
 	m_slots.loadRegisterWords(slot, m_slotRegisterDispatchWords);
 	loadApuAudioSource(m_source, m_slotRegisterDispatchWords);
-	bindSource(m_source);
+	bindSource(m_source, state.sourceCartridgeSlot);
 	m_audioOutput.restoreVoice(
 		slot,
 		m_source,
@@ -100,7 +100,7 @@ void ApuCommandExecutor::play(const ApuParameterRegisterWords& registerWords) {
 }
 
 void ApuCommandExecutor::startPlay(const ApuAudioSource& source, ApuAudioSlot slot, const ApuParameterRegisterWords& registerWords) {
-	if (!bindSource(source)) {
+	if (!bindSource(source, m_memory.cartridgeController().selectedSlot())) {
 		m_fault.raise(APU_FAULT_SOURCE_RANGE, source.sourceAddr);
 		return;
 	}
@@ -136,7 +136,7 @@ void ApuCommandExecutor::writeSlotRegisterWord(ApuAudioSlot slot, u32 parameterI
 		m_slots.loadRegisterWords(slot, m_slotRegisterDispatchWords);
 		loadApuAudioSource(m_source, m_slotRegisterDispatchWords);
 		if (apuParameterProgramsSourceBuffer(parameterIndex)) {
-			if (!bindSource(m_source)) {
+			if (!bindSource(m_source, m_memory.cartridgeController().selectedSlot())) {
 				m_audioOutput.stopSlot(slot);
 				m_activeSlots.deactivate(slot);
 				m_fault.raise(APU_FAULT_SOURCE_RANGE, m_source.sourceAddr);
@@ -155,12 +155,13 @@ void ApuCommandExecutor::writeSlotRegisterWord(ApuAudioSlot slot, u32 parameterI
 	m_selectedSlotLatch.refresh();
 }
 
-bool ApuCommandExecutor::bindSource(const ApuAudioSource& source) {
+bool ApuCommandExecutor::bindSource(const ApuAudioSource& source, u32 cartridgeSlot) {
 	if (apuAudioSourceUsesGenerator(source)) {
-		m_sourceView = {};
+		m_sourceView.bytes = {};
+		m_sourceView.cartridgeSlot = cartridgeSlot;
 		return true;
 	}
-	return m_sampleMemory.bindSource(source.sourceAddr, source.sourceBytes, m_sourceView);
+	return m_sampleMemory.bindSource(source.sourceAddr, source.sourceBytes, cartridgeSlot, m_sourceView);
 }
 
 } // namespace bmsx

@@ -2,6 +2,7 @@
 
 #include "machine/cpu/string_pool.h"
 #include "machine/devices/audio/save_state.h"
+#include "machine/devices/cartridge/contracts.h"
 #include "machine/devices/dma/controller.h"
 #include "machine/devices/geometry/save_state.h"
 #include "machine/devices/gx/gpu.h"
@@ -17,6 +18,7 @@ namespace bmsx {
 class Machine;
 
 struct MachineState {
+	CartridgeControllerState cartridge;
 	DmaControllerState dma;
 	GeometryControllerState geometry;
 	GxGpuState gxGpu;
@@ -30,6 +32,7 @@ struct MachineState {
 
 struct MachineSaveState {
 	MemorySaveState memory;
+	CartridgeControllerState cartridge;
 	DmaControllerState dma;
 	GeometryControllerState geometry;
 	GxGpuSaveState gxGpu;

@@ -13,6 +13,7 @@
 #include "machine/runtime/machine_state.h"
 #include "machine/runtime/runtime.h"
 #include "machine/scheduler/device.h"
+#include "support/cartridge_fixture.h"
 
 #include <array>
 #include <span>
@@ -109,7 +110,7 @@ struct SystemRuntimeFixture {
 		, runtime(
 			bmsx::RuntimeOptions{
 				{ emptyRom.data(), 0u },
-				{ emptyRom.data(), 0u },
+				bmsx::test::cartridgeSlots(),
 				timing.pcrtcRunning,
 				timing.ufpsScaled,
 				timing.cpuHz,
@@ -125,7 +126,7 @@ struct SystemRuntimeFixture {
 
 void testResetCommandLatch() {
 	std::array<bmsx::u8, 1> emptyRom{{0}};
-	bmsx::Memory memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, { emptyRom.data(), 0u } });
+	bmsx::Memory memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, bmsx::test::cartridgeSlots() });
 	SystemResetInputSource input;
 	bmsx::Machine machine(memory, input);
 	machine.resetDevices();
@@ -144,7 +145,7 @@ void testResetCommandLatch() {
 
 void testSystemPrintRegisters() {
 	std::array<bmsx::u8, 1> emptyRom{{0}};
-	bmsx::Memory memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, { emptyRom.data(), 0u } });
+	bmsx::Memory memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, bmsx::test::cartridgeSlots() });
 	SystemResetInputSource input;
 	bmsx::Machine machine(memory, input);
 	machine.resetDevices();

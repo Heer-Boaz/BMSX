@@ -19,6 +19,7 @@
 #include "machine/save_state.h"
 #include "machine/scheduler/budget.h"
 #include "machine/scheduler/device.h"
+#include "support/cartridge_fixture.h"
 
 #include <array>
 #include <cstdint>
@@ -29,6 +30,7 @@ namespace {
 struct AudioHarness {
 	std::array<bmsx::u8, 4> systemRom{{0xc0u, 0x80u, 0x80u, 0x80u}};
 	std::array<bmsx::u8, 4> cartRom{{0x40u, 0x80u, 0x80u, 0x80u}};
+	std::array<bmsx::u8, 4> auxiliaryCartRom{{0xffu, 0xffu, 0xffu, 0xffu}};
 	bmsx::Memory memory;
 	bmsx::IrqController irq;
 	bmsx::CPU cpu;
@@ -37,16 +39,31 @@ struct AudioHarness {
 	bmsx::DmaController dma;
 	bmsx::AudioController audio;
 
-	AudioHarness()
-		: memory(bmsx::MemoryInit{{systemRom.data(), systemRom.size()}, {cartRom.data(), cartRom.size()}})
+	explicit AudioHarness(bool auxiliaryCartridge = false)
+		: memory(bmsx::MemoryInit{
+			{systemRom.data(), systemRom.size()},
+			auxiliaryCartridge
+				? bmsx::CartridgeSlotMediaPair{{
+					{
+						.rom = cartRom,
+						.present = true,
+					},
+					{
+						.rom = auxiliaryCartRom,
+						.present = true,
+					},
+				}}
+				: bmsx::test::cartridgeSlots(cartRom)})
 		, irq(memory)
 		, cpu(memory, irq)
 		, scheduler(cpu)
 		, output()
 		, dma(memory, cpu, irq, scheduler)
 		, audio(memory, output, dma, irq, scheduler) {
+		memory.cartridgeController().connect(memory, irq, dma);
 		irq.reset();
 		dma.reset();
+		memory.cartridgeController().reset();
 		audio.reset();
 		dma.setTiming(1, 0, 1, 0, 0, 0);
 		audio.setTiming(bmsx::APU_SAMPLE_RATE_HZ, 0);
@@ -76,7 +93,7 @@ struct AudioMachineHarness {
 	bmsx::Machine machine;
 
 	explicit AudioMachineHarness(bmsx::i64 cpuHz = bmsx::APU_SAMPLE_RATE_HZ)
-		: memory(bmsx::MemoryInit{{emptyRom.data(), 0u}, {emptyRom.data(), 0u}})
+		: memory(bmsx::MemoryInit{{emptyRom.data(), 0u}, bmsx::test::cartridgeSlots()})
 		, machine(memory, input) {
 		machine.initializeSystemIo();
 		machine.resetDevices();
@@ -345,39 +362,53 @@ void testSampleTransferEdgeOrdering() {
 	require(static_cast<bmsx::i16>(manualRing.readFramePacked() & 0xffffu) > 0, "manual RAM write should precede a DAC sample on the same cycle");
 }
 
+void programPcmVoice(AudioHarness& harness, bmsx::u32 sourceAddress) {
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_ADDR, sourceAddress);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_BYTES, 4u);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_SAMPLE_RATE_HZ, bmsx::APU_SAMPLE_RATE_HZ);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_CHANNELS, 1u);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_BITS_PER_SAMPLE, 8u);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_FRAME_COUNT, 4u);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_DATA_OFFSET, 0u);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_DATA_BYTES, 4u);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_RATE_STEP_Q16, bmsx::APU_RATE_STEP_Q16_ONE);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_GAIN_Q12, bmsx::APU_GAIN_Q12_ONE);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_SLOT, 1u);
+	harness.memory.writeMappedU32LE(bmsx::IO_APU_CMD, bmsx::APU_CMD_PLAY);
+	harness.audio.onService(harness.scheduler.nowCycles());
+}
+
+void testApuVoiceLatchesCartridgeSocketAcrossRestore() {
+	AudioHarness harness(true);
+	harness.memory.writeMappedU32LE(bmsx::IO_CART_SELECT, 1u);
+	programPcmVoice(harness, bmsx::CART_ROM_BASE);
+	const bmsx::AudioControllerState saved = harness.audio.captureState();
+	require(saved.output.voices[0].sourceCartridgeSlot == 1u, "PLAY should latch the selected cartridge socket into the voice");
+
+	harness.memory.writeMappedU32LE(bmsx::IO_CART_SELECT, 0u);
+	harness.audio.restoreState(saved, 0);
+	harness.scheduler.advanceTo(1);
+	harness.audio.onService(1);
+	require(harness.output.outputRing.readFramePacked() == 0x7f007f00u, "restored playback should remain bound to the latched cartridge socket");
+}
+
 void testSampleBusDmaAndMidTransferRestore() {
 	{
 		AudioHarness harness;
-		auto programPcm = [&](bmsx::u32 sourceAddress) {
-			harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_ADDR, sourceAddress);
-			harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_BYTES, 4u);
-			harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_SAMPLE_RATE_HZ, bmsx::APU_SAMPLE_RATE_HZ);
-			harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_CHANNELS, 1u);
-			harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_BITS_PER_SAMPLE, 8u);
-			harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_FRAME_COUNT, 4u);
-			harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_DATA_OFFSET, 0u);
-			harness.memory.writeMappedU32LE(bmsx::IO_APU_SOURCE_DATA_BYTES, 4u);
-			harness.memory.writeMappedU32LE(bmsx::IO_APU_RATE_STEP_Q16, bmsx::APU_RATE_STEP_Q16_ONE);
-			harness.memory.writeMappedU32LE(bmsx::IO_APU_GAIN_Q12, bmsx::APU_GAIN_Q12_ONE);
-			harness.memory.writeMappedU32LE(bmsx::IO_APU_SLOT, 1u);
-			harness.memory.writeMappedU32LE(bmsx::IO_APU_CMD, bmsx::APU_CMD_PLAY);
-			harness.audio.onService(harness.scheduler.nowCycles());
-		};
-
-		programPcm(bmsx::SYSTEM_ROM_BASE);
+		programPcmVoice(harness, bmsx::SYSTEM_ROM_BASE);
 		harness.scheduler.advanceTo(1);
 		harness.audio.onService(1);
 		const auto systemSample = static_cast<bmsx::i16>(harness.output.outputRing.readFramePacked() & 0xffffu);
 		require(systemSample > 0, "APU should fetch PCM from the system ROM chip select");
 
-		programPcm(bmsx::CART_ROM_BASE);
+		programPcmVoice(harness, bmsx::CART_ROM_BASE);
 		harness.scheduler.advanceTo(2);
 		harness.audio.onService(2);
 		const auto cartSample = static_cast<bmsx::i16>(harness.output.outputRing.readFramePacked() & 0xffffu);
 		require(cartSample < 0, "APU should fetch PCM from the cart ROM chip select");
 
 		harness.memory.writeMappedU32LE(bmsx::PROGRAM_STATIC_RAM_BASE, 0x11223344u);
-		programPcm(bmsx::PROGRAM_STATIC_RAM_BASE);
+		programPcmVoice(harness, bmsx::PROGRAM_STATIC_RAM_BASE);
 		const bmsx::AudioControllerState rejected = harness.audio.captureState();
 		require(harness.memory.readIoU32(bmsx::IO_APU_FAULT_CODE) == bmsx::APU_FAULT_SOURCE_RANGE, "CPU RAM should fault on the APU sample bus");
 		require(harness.memory.readIoU32(bmsx::IO_APU_FAULT_DETAIL) == bmsx::PROGRAM_STATIC_RAM_BASE, "source-range fault should latch the rejected CPU address");
@@ -389,7 +420,7 @@ void testSampleBusDmaAndMidTransferRestore() {
 		harness.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_ADDRESS, 0u);
 		harness.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_CONTROL, bmsx::APU_TRANSFER_MODE_MANUAL_WRITE);
 		harness.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_DATA, 0x808080c0u);
-		programPcm(bmsx::APU_SAMPLE_RAM_BASE);
+		programPcmVoice(harness, bmsx::APU_SAMPLE_RAM_BASE);
 		harness.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_ADDRESS, 0u);
 		harness.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_DATA, 0x80808040u);
 		harness.scheduler.advanceTo(3);
@@ -547,7 +578,7 @@ void testRuntimeClockResetAndRestorePreserveApuTimebase() {
 	bmsx::Runtime runtime(
 		bmsx::RuntimeOptions{
 			{emptyRom.data(), 0u},
-			{emptyRom.data(), 0u},
+			bmsx::test::cartridgeSlots(),
 			timing.pcrtcRunning,
 			timing.ufpsScaled,
 			timing.cpuHz,
@@ -965,6 +996,7 @@ int main() {
 	testHostSynchronizationExposesEveryElapsedPalSample();
 	testBadpInterpolationWindowAndRestore();
 	testSampleTransferEdgeOrdering();
+	testApuVoiceLatchesCartridgeSocketAcrossRestore();
 	testSampleBusDmaAndMidTransferRestore();
 	testSampleTransferWrongDirectionBlock();
 	testRuntimeClockResetAndRestorePreserveApuTimebase();

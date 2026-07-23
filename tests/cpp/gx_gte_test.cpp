@@ -6,6 +6,7 @@
 #include "machine/memory/bus_signals.h"
 #include "machine/memory/memory.h"
 #include "machine/scheduler/device.h"
+#include "support/cartridge_fixture.h"
 
 #include <array>
 #include <cstdint>
@@ -30,7 +31,7 @@ struct GteHarness {
 	bmsx::GxGte gte;
 
 	GteHarness()
-		: memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, { emptyRom.data(), 0u } })
+		: memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, bmsx::test::cartridgeSlots() })
 		, irq(memory)
 		, cpu(memory, irq)
 		, scheduler(cpu)

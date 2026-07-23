@@ -1,11 +1,10 @@
 import fs from 'fs';
 import { decodeProgramSymbolsImage } from '../machine/ts/machine/program/loader';
-import { normalizeCartridgeBlob, parseCartHeader } from '../machine/ts/rompack/loader';
+import { parseRomImage } from '../machine/ts/rompack/loader';
 import { decodeRomToc } from '../machine/ts/rompack/toc';
 
 function dump(romPath: string) {
-	const { payload } = normalizeCartridgeBlob(fs.readFileSync(romPath));
-	const header = parseCartHeader(payload);
+	const { payload, header } = parseRomImage(fs.readFileSync(romPath), 'cart');
 	const assets = decodeRomToc(payload.subarray(header.tocOffset, header.tocOffset + header.tocLength)).entries;
 	const symbolsAssets = assets.filter(a => a.resid === '__program_symbols__');
 	if (symbolsAssets.length === 0) {

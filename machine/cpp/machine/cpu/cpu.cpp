@@ -1510,6 +1510,8 @@ CpuRuntimeState CPU::captureRuntimeState(const std::unordered_map<std::string, V
 }
 
 void CPU::restoreRuntimeState(const CpuRuntimeState& state, std::unordered_map<std::string, Value>& moduleCache) {
+	m_heap.suspendCollection();
+
 	struct RestoredObject {
 		Table* table = nullptr;
 		Closure* closure = nullptr;
@@ -1728,6 +1730,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state, std::unordered_map<s
 	m_nonMaskableInterruptPending = state.nonMaskableInterruptPending;
 	m_yieldRequested = state.yieldRequested;
 	collectHeap();
+	m_heap.resumeCollection();
 }
 
 void CPU::requestYield() {

@@ -10,7 +10,6 @@ import { LogLevel, setMicrotaskQueue } from '../platform';
 import type { GameViewHost, Platform } from '../platform';
 import { PAL_REFRESH_UFPS_SCALED, PSX_MACHINE_SPEC } from '../machine/model_registry';
 import { HZ_SCALE } from '../machine/runtime/timing/constants';
-import { RomBootManager } from './rom_boot_manager';
 import { renderGate, runGate } from '../common/taskgate';
 import { prepareRebootToBootRom, startPreparedRuntime } from '../ide/runtime/program_boot';
 import { Runtime } from '../machine/runtime/runtime';
@@ -28,14 +27,25 @@ import { captureRuntimeSaveStateBytes } from '../machine/runtime/save_state/code
 import { gxGpuDisplayModeScreenWidth, gxGpuVerticalVisibleLines } from '../machine/devices/gx/gpu_display';
 import { commitGxGpuViewSnapshot } from '../render/gx/view_snapshot';
 import { SYS_PRINT_BUFFER_BYTES } from '../machine/bus/io';
+import {
+	buildRuntimeRomLayer,
+	buildSystemRuntimeRomLayer,
+	parseRomImage,
+} from '../rompack/loader';
+import {
+	cartridgeBootSlot,
+	type CartridgeSlotMediaPair,
+} from '../machine/devices/cartridge/contracts';
+import { SYSTEM_BOOT_ENTRY_PATH, SYSTEM_MACHINE_MANIFEST } from './system';
 
 const globalScope: any = typeof window !== 'undefined' ? window : globalThis;
 global = globalScope; // Ensure global is defined
 const systemOutputDecoder = new TextDecoder('utf-8', { fatal: true });
+const EMPTY_CARTRIDGE_ROM = new Uint8Array(0);
 
 export interface MachineBootOptions {
 	systemRom: Uint8Array;
-	cartridge?: Uint8Array;
+	cartridgeSlots: [Uint8Array | null, Uint8Array | null];
 	sndcontext?: AudioContext;
 	gainnode?: GainNode;
 	debug?: boolean;
@@ -50,7 +60,6 @@ const DEFAULT_MASTER_VOLUME = 1;
 
 export class MachineManager {
 	private initialized = false;
-	private readonly romBootManager = new RomBootManager();
 
 	/**
 	 * Indicates whether debug mode is enabled.
@@ -156,8 +165,57 @@ export class MachineManager {
 		this.sndmaster.bootstrapRuntimeAudio(this.runtime.timing.ufpsScaled, DEFAULT_MASTER_VOLUME);
 	}
 
+	private async buildBootPlan(
+		systemRom: Uint8Array,
+		cartridgeSlots: [Uint8Array | null, Uint8Array | null],
+	) {
+		const systemImage = parseRomImage(systemRom, 'system');
+		const cartridgeImages = [
+			cartridgeSlots[0] ? parseRomImage(cartridgeSlots[0], 'cart') : null,
+			cartridgeSlots[1] ? parseRomImage(cartridgeSlots[1], 'cart') : null,
+		] as const;
+		const cartridgeMedia: CartridgeSlotMediaPair = [
+			{
+				rom: EMPTY_CARTRIDGE_ROM,
+				boardWord: 0,
+				ramByteCount: 0,
+				present: false,
+				programPresent: false,
+			},
+			{
+				rom: EMPTY_CARTRIDGE_ROM,
+				boardWord: 0,
+				ramByteCount: 0,
+				present: false,
+				programPresent: false,
+			},
+		];
+		for (let slotIndex = 0; slotIndex < cartridgeImages.length; slotIndex += 1) {
+			const image = cartridgeImages[slotIndex];
+			if (!image) continue;
+			cartridgeMedia[slotIndex] = {
+				rom: image.payload,
+				boardWord: image.header.cartridgeBoardWord,
+				ramByteCount: image.header.cartridgeRamByteCount,
+				present: true,
+				programPresent: image.header.programBootVersion !== 0,
+			};
+		}
+		const bootSlot = cartridgeBootSlot(cartridgeMedia);
+		const bootImage = cartridgeMedia[bootSlot].programPresent ? cartridgeImages[bootSlot] : null;
+		const [systemLayer, cartLayer] = await Promise.all([
+			buildSystemRuntimeRomLayer({
+				image: systemImage,
+				machine: SYSTEM_MACHINE_MANIFEST,
+				entry_path: SYSTEM_BOOT_ENTRY_PATH,
+			}),
+			bootImage ? buildRuntimeRomLayer({ image: bootImage, id: 'cart' }) : null,
+		]);
+		return { systemLayer, cartLayer, cartridgeMedia, bootSlot };
+	}
+
 	public async boot(options: MachineBootOptions): Promise<Runtime> {
-		const { systemRom, cartridge, debug = false, autoStart = true, startingGamepadIndex = null, enableOnscreenGamepad = false, platform, viewHost } = options;
+		const { systemRom, cartridgeSlots, debug = false, autoStart = true, startingGamepadIndex = null, enableOnscreenGamepad = false, platform, viewHost } = options;
 		if (!platform) {
 			throw new Error('[MachineManager] Platform services not provided.');
 		}
@@ -165,8 +223,13 @@ export class MachineManager {
 		if (!resolvedViewHost) {
 			throw new Error('[MachineManager] Platform did not expose a GameViewHost.');
 		}
-		const bootPlan = await this.romBootManager.buildBootPlan({ systemRom, cartridge });
-		const { systemLayer, cartLayer } = bootPlan;
+		const bootPlan = await this.buildBootPlan(systemRom, cartridgeSlots);
+		const { systemLayer, cartLayer, cartridgeMedia, bootSlot } = bootPlan;
+		configureRuntimeMemoryMap();
+		const memory = new Memory({
+			systemRom: systemLayer.payload,
+			cartridgeSlots: cartridgeMedia,
+		});
 		platform.gameviewHost = resolvedViewHost;
 		this._platform = platform;
 		setMicrotaskQueue(platform.microtasks);
@@ -180,14 +243,14 @@ export class MachineManager {
 			this.input.enableOnscreenGamepad();
 		}
 
-		this.sourceState = createRuntimeSourceState(systemLayer, cartLayer);
-		configureRuntimeMemoryMap();
+		this.sourceState = createRuntimeSourceState(
+			systemLayer,
+			cartLayer,
+			cartLayer ? cartridgeMedia[bootSlot] : null,
+		);
 		const timing = resolveRuntimeTiming(PSX_MACHINE_SPEC.cpuFreqHz);
 		const runtime = new Runtime({
-			memory: new Memory({
-				systemRom: systemLayer.payload,
-				cartRom: cartLayer ? cartLayer.payload : new Uint8Array(0),
-			}),
+			memory,
 			pcrtcRunning: timing.pcrtcRunning,
 			ufpsScaled: timing.ufpsScaled,
 			cpuHz: timing.cpuHz,

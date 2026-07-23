@@ -20,6 +20,7 @@ export type ApuSourceByteView = {
 	bytes: Uint8Array;
 	byteOffset: number;
 	byteLength: number;
+	cartridgeSlot: number;
 };
 
 export function loadApuAudioSource(out: ApuAudioSource, registerWords: ApuParameterRegisterWords): void {

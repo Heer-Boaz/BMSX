@@ -446,6 +446,29 @@ struct retro_game_info {
 	const char *meta;
 };
 
+struct retro_subsystem_memory_info {
+	const char *extension;
+	unsigned type;
+};
+
+struct retro_subsystem_rom_info {
+	const char *desc;
+	const char *valid_extensions;
+	bool need_fullpath;
+	bool block_extract;
+	bool required;
+	const struct retro_subsystem_memory_info *memory;
+	unsigned num_memory;
+};
+
+struct retro_subsystem_info {
+	const char *desc;
+	const char *ident;
+	const struct retro_subsystem_rom_info *roms;
+	unsigned num_roms;
+	unsigned id;
+};
+
 struct retro_input_descriptor {
 	unsigned port;
 	unsigned device;

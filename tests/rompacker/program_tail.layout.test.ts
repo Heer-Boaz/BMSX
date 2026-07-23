@@ -5,8 +5,8 @@ import { test } from 'node:test';
 
 import { SYSTEM_ROM_BASE } from '../../machine/ts/machine/memory/map';
 import { PROGRAM_IMAGE_ID, PROGRAM_SYMBOLS_IMAGE_ID } from '../../machine/ts/machine/program/loader';
-import { CART_ROM_HEADER_SIZE, type RomAsset, type RomManifest } from '../../machine/ts/rompack/format';
-import { parseCartridgeIndex, parseCartHeader } from '../../machine/ts/rompack/loader';
+import { CART_ROM_HEADER_SIZE, parseCartHeader, type RomAsset, type RomManifest } from '../../machine/ts/rompack/format';
+import { parseCartridgeIndex } from '../../machine/ts/rompack/loader';
 import { buildProgramTail } from '../../machine/ts/rompack/tooling/program_tail';
 import { layoutRomProgramPrefix } from '../../machine/ts/rompack/tooling/rom_layout';
 import { buildRomProgramTail, compileLuaChunkBuffer, finalizeRompack } from '../../scripts/rompacker/rombuilder';
@@ -60,10 +60,11 @@ test('program-tail rebuild preserves immutable asset metadata addresses and byte
 		});
 		await finalizeRompack('tail', {
 			debug: true,
+			cartridgeBoardWord: 0,
+			cartridgeRamByteCount: 0,
 			layout,
 			outputDirectory: ROOT,
 			program,
-			zipRom: false,
 		});
 
 		const initialPayload = new Uint8Array(await readFile(join(ROOT, 'tail.debug.rom')));

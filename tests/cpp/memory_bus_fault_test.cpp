@@ -1,5 +1,6 @@
 #include "machine/bus/io.h"
 #include "machine/memory/memory.h"
+#include "support/cartridge_fixture.h"
 
 #include <array>
 #include <stdexcept>
@@ -22,7 +23,7 @@ void requireBusFault(const bmsx::Memory& memory, uint32_t access) {
 
 void testFloatingMappedTransactionsKeepTheirBusWidth() {
 	std::array<bmsx::u8, 1> emptyRom{{0}};
-	bmsx::Memory memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, { emptyRom.data(), 0u } });
+	bmsx::Memory memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, bmsx::test::cartridgeSlots() });
 
 	memory.readMappedF32LE(UNMAPPED_ADDRESS);
 	requireBusFault(memory, bmsx::BUS_FAULT_ACCESS_READ | bmsx::BUS_FAULT_ACCESS_F32);
@@ -46,7 +47,7 @@ void testFloatingMappedTransactionsKeepTheirBusWidth() {
 
 void testMappedWordBurstPreflightStopsWhenBurstCrossesPhysicalIoRegisterfileBoundary() {
 	std::array<bmsx::u8, 1> emptyRom{{0}};
-	bmsx::Memory memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, { emptyRom.data(), 0u } });
+	bmsx::Memory memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, bmsx::test::cartridgeSlots() });
 	const uint32_t firstRamWordAfterIo = bmsx::IO_BASE + bmsx::IO_SLOT_COUNT * bmsx::IO_WORD_SIZE;
 	const uint32_t lastIoWord = firstRamWordAfterIo - bmsx::IO_WORD_SIZE;
 

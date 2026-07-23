@@ -18,12 +18,16 @@ namespace bmsx {
 
 struct ProgramImage;
 
+enum class RomImageDomain {
+	System,
+	Cartridge,
+};
+
 constexpr u32 CART_ROM_MAGIC = 0x58534D42u;
 constexpr std::array<u8, 4> CART_ROM_MAGIC_BYTES = { 0x42, 0x4d, 0x53, 0x58 };
-constexpr size_t CART_ROM_BASE_HEADER_SIZE = 32;
 constexpr size_t CART_ROM_PROGRAM_HEADER_SIZE = 64;
 constexpr size_t CART_ROM_METADATA_HEADER_SIZE = 72;
-constexpr size_t CART_ROM_HEADER_SIZE = 76;
+constexpr size_t CART_ROM_HEADER_SIZE = 84;
 constexpr size_t CART_ROM_WORD_ALIGNMENT = 4;
 constexpr u32 CART_VDP_CLASS_PSX = 1;
 constexpr u32 PROGRAM_BOOT_HEADER_VERSION = 1;
@@ -47,9 +51,11 @@ struct CartRomHeader {
 	u32 metadataOffset = 0;
 	u32 metadataLength = 0;
 	MachineVdpClass vdpClass = MachineVdpClass::Psx;
+	u32 cartridgeBoardWord = 0;
+	u32 cartridgeRamByteCount = 0;
 };
 
-bool hasCartHeader(const u8* data, size_t size);
+void writeCartRomHeader(u8* data, const CartRomHeader& header);
 CartRomHeader parseCartHeader(const u8* data, size_t size);
 
 /* ============================================================================
@@ -71,10 +77,12 @@ struct CartManifest {
 	std::optional<std::string> romName;
 	MachineManifest machine;
 	std::string entryPath;
+	u32 cartridgeBoardWord = 0;
+	u32 cartridgeRamByteCount = 0;
 };
 
 std::vector<u8> encodeCartManifest(const CartManifest& cart);
-std::vector<u8> encodeProgramCartRom(const CartManifest& cart, const ProgramImage& program);
+std::vector<u8> encodeProgramRom(const CartManifest& cart, const ProgramImage& program, RomImageDomain domain);
 
 } // namespace bmsx
 

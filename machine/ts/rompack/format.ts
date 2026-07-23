@@ -1,11 +1,16 @@
 import type { MachineVdpClass } from '../machine/model_registry';
+import {
+	CARTRIDGE_BOARD_MAILBOX,
+	CARTRIDGE_BOARD_RAM,
+} from '../machine/devices/cartridge/contracts';
+import { CART_RAM_SIZE } from '../machine/memory/map';
+import { formatNumberAsHex } from '../common/byte_hex_string';
 
 export const CART_ROM_MAGIC = 0x58534D42;
 export const CART_ROM_MAGIC_BYTES = new Uint8Array([0x42, 0x4d, 0x53, 0x58]);
-export const CART_ROM_BASE_HEADER_SIZE = 32;
 export const CART_ROM_PROGRAM_HEADER_SIZE = 64;
 export const CART_ROM_METADATA_HEADER_SIZE = 72;
-export const CART_ROM_HEADER_SIZE = 76;
+export const CART_ROM_HEADER_SIZE = 84;
 export const CART_ROM_WORD_ALIGNMENT = 4;
 export const CART_VDP_CLASS_PSX = 1;
 export const PROGRAM_BOOT_HEADER_VERSION = 1;
@@ -37,7 +42,92 @@ export type CartRomHeader = {
 	metadataOffset: number;
 	metadataLength: number;
 	vdpClass: MachineVdpClass;
+	cartridgeBoardWord: number;
+	cartridgeRamByteCount: number;
 };
+
+function assertRomSectionRange(offset: number, length: number, total: number, label: string): void {
+	if (offset + length > total) {
+		throw new Error(`Invalid ROM ${label} range: offset=${formatNumberAsHex(offset)} len=${formatNumberAsHex(length)} total=${formatNumberAsHex(total)}.`);
+	}
+}
+
+export function parseCartHeader(payload: Uint8Array): CartRomHeader {
+	if (payload.byteLength < CART_ROM_HEADER_SIZE) {
+		throw new Error('ROM payload is too small for cart header.');
+	}
+	for (let index = 0; index < CART_ROM_MAGIC_BYTES.length; index += 1) {
+		if (payload[index] !== CART_ROM_MAGIC_BYTES[index]) {
+			throw new Error('Invalid ROM cart header.');
+		}
+	}
+	const view = new DataView(payload.buffer, payload.byteOffset, CART_ROM_HEADER_SIZE);
+	const headerSize = view.getUint32(4, true);
+	if (headerSize < CART_ROM_HEADER_SIZE) {
+		throw new Error(`ROM header size is too small: ${headerSize}.`);
+	}
+	if (headerSize > payload.byteLength) {
+		throw new Error(`ROM header size exceeds payload length: ${headerSize}.`);
+	}
+	const manifestOffset = view.getUint32(8, true);
+	const manifestLength = view.getUint32(12, true);
+	const tocOffset = view.getUint32(16, true);
+	const tocLength = view.getUint32(20, true);
+	const dataOffset = view.getUint32(24, true);
+	const dataLength = view.getUint32(28, true);
+	const programBootVersion = view.getUint32(32, true);
+	if (programBootVersion !== 0 && programBootVersion !== PROGRAM_BOOT_HEADER_VERSION) {
+		throw new Error(`Unsupported ROM program boot version: ${programBootVersion}.`);
+	}
+	const programBootFlags = view.getUint32(36, true);
+	const programEntryProtoIndex = view.getUint32(40, true);
+	const programCodeByteCount = view.getUint32(44, true);
+	const programConstPoolCount = view.getUint32(48, true);
+	const programProtoCount = view.getUint32(52, true);
+	const programReserved0 = view.getUint32(56, true);
+	const programConstRelocCount = view.getUint32(60, true);
+	const metadataOffset = view.getUint32(64, true);
+	const metadataLength = view.getUint32(68, true);
+	const vdpClassWord = view.getUint32(72, true);
+	if (vdpClassWord !== CART_VDP_CLASS_PSX) {
+		throw new Error(`Unsupported ROM VDP class marker: ${vdpClassWord}.`);
+	}
+	const cartridgeBoardWord = view.getUint32(76, true);
+	const cartridgeRamByteCount = view.getUint32(80, true);
+	if (cartridgeRamByteCount > CART_RAM_SIZE) {
+		throw new Error(`Cartridge RAM byte count exceeds the ${CART_RAM_SIZE}-byte socket aperture.`);
+	}
+
+	assertRomSectionRange(manifestOffset, manifestLength, payload.byteLength, 'manifest');
+	assertRomSectionRange(tocOffset, tocLength, payload.byteLength, 'toc');
+	assertRomSectionRange(dataOffset, dataLength, payload.byteLength, 'data');
+	if (metadataLength > 0) {
+		assertRomSectionRange(metadataOffset, metadataLength, payload.byteLength, 'metadata');
+	}
+
+	return {
+		headerSize,
+		manifestOffset,
+		manifestLength,
+		tocOffset,
+		tocLength,
+		dataOffset,
+		dataLength,
+		programBootVersion,
+		programBootFlags,
+		programEntryProtoIndex,
+		programCodeByteCount,
+		programConstPoolCount,
+		programProtoCount,
+		programReserved0,
+		programConstRelocCount,
+		metadataOffset,
+		metadataLength,
+		vdpClass: 'psx',
+		cartridgeBoardWord,
+		cartridgeRamByteCount,
+	};
+}
 
 export type ProgramBootHeader = {
 	version: number;
@@ -387,6 +477,45 @@ export type CartManifest = {
 	lua: {
 		entry_path: string;
 	};
+	cartridge?: {
+		board: 'rom' | 'ram' | 'mailbox' | 'ram_mailbox';
+		ram_bytes?: number;
+	};
 };
 
 export type RomManifest = CartManifest;
+
+export function resolveCartridgeHeaderWords(manifest: CartManifest | null): {
+	cartridgeBoardWord: number;
+	cartridgeRamByteCount: number;
+} {
+	const board = manifest?.cartridge?.board;
+	let cartridgeBoardWord: number;
+	switch (board) {
+		case undefined:
+		case 'rom':
+			cartridgeBoardWord = 0;
+			break;
+		case 'ram':
+			cartridgeBoardWord = CARTRIDGE_BOARD_RAM;
+			break;
+		case 'mailbox':
+			cartridgeBoardWord = CARTRIDGE_BOARD_MAILBOX;
+			break;
+		case 'ram_mailbox':
+			cartridgeBoardWord = CARTRIDGE_BOARD_RAM | CARTRIDGE_BOARD_MAILBOX;
+			break;
+		default:
+			throw new Error(`Unknown cartridge board "${String(board)}".`);
+	}
+	const cartridgeRamByteCount = manifest?.cartridge?.ram_bytes ?? 0;
+	if (!Number.isInteger(cartridgeRamByteCount)
+			|| cartridgeRamByteCount < 0
+			|| cartridgeRamByteCount > CART_RAM_SIZE) {
+		throw new Error(`Cartridge RAM byte count must be an integer from 0 through ${CART_RAM_SIZE}.`);
+	}
+	if ((cartridgeBoardWord & CARTRIDGE_BOARD_RAM) === 0 && cartridgeRamByteCount !== 0) {
+		throw new Error('Cartridge RAM bytes require a RAM board.');
+	}
+	return { cartridgeBoardWord, cartridgeRamByteCount };
+}

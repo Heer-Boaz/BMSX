@@ -11,7 +11,6 @@ import { buildRomMetadataSection } from './metadata_encode';
 const EMPTY_BYTES = new Uint8Array(0);
 
 export type RomProgramPrefixLayout = {
-	romLabel: Buffer | undefined;
 	entries: RomAsset[];
 	assetRanges: RomAssetPayloadRange[];
 	metadataAssets: RomAsset[];
@@ -29,14 +28,6 @@ export function layoutRomProgramPrefix(
 	includeLuaAssets: boolean,
 	manifest: RomManifest | null,
 ): RomProgramPrefixLayout {
-	let romLabel: Buffer | undefined;
-	for (let index = 0; index < assetList.length; index += 1) {
-		const asset = assetList[index];
-		if (asset.type === 'romlabel' && asset.buffer !== undefined && asset.buffer.length !== 0) {
-			romLabel = asset.buffer;
-			break;
-		}
-	}
 	const assetLayout = layoutRomAssetPayloads(assetList, includeLuaAssets);
 	const metadataAssets: RomAsset[] = [];
 	const metadataValues: Array<ImgMeta | TextureMeta | AudioMeta> = [];
@@ -85,7 +76,6 @@ export function layoutRomProgramPrefix(
 	}
 
 	return {
-		romLabel,
 		entries: assetLayout.entries,
 		assetRanges: assetLayout.ranges,
 		metadataAssets,

@@ -2,9 +2,11 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <vector>
 
 #include "machine/cpu/cpu.h"
+#include "machine/devices/cartridge/controller.h"
 #include "machine/memory/bus_signals.h"
 #include "machine/memory/map.h"
 #include "machine/bus/io.h"
@@ -12,7 +14,7 @@
 
 namespace bmsx {
 
-enum class MemoryRegionKind { Ram, SystemRom, CartRom, Io, Other };
+enum class MemoryRegionKind { Ram, SystemRom, Cartridge, Io, Other };
 
 struct MemorySaveState {
 	std::vector<u8> ram;
@@ -22,12 +24,8 @@ struct MemorySaveState {
 };
 
 struct MemoryInit {
-	struct RomSpan {
-		const u8* data;
-		size_t size;
-	};
-	RomSpan systemRom;
-	RomSpan cartRom;
+	std::span<const u8> systemRom;
+	CartridgeSlotMediaPair cartridgeSlots;
 };
 
 constexpr u32 NO_BLOCKED_MAPPED_WRITE = 0xffffffffu;
@@ -40,6 +38,8 @@ public:
 
 	explicit Memory(const MemoryInit& init);
 
+	CartridgeController& cartridgeController() { return m_cartridgeController; }
+	const CartridgeController& cartridgeController() const { return m_cartridgeController; }
 	void mapIoRead(uint32_t addr, void* context, IoReadHandler handler);
 	template <auto Method, typename TObject>
 	void mapIoRead(uint32_t addr, TObject& object) {
@@ -84,7 +84,7 @@ public:
 	void writeBytes(uint32_t addr, const u8* data, size_t length);
 	void readBytes(uint32_t addr, u8* out, size_t length) const;
 	bool isReadableMainMemoryRange(uint32_t addr, size_t length) const;
-	bool bindRomByteView(uint32_t addr, size_t length, Span<const u8>& out) const;
+	bool bindRomByteView(uint32_t addr, size_t length, u32 cartridgeSlot, Span<const u8>& out) const;
 	bool isRamRange(uint32_t addr, size_t length) const;
 	MemoryRegionKind mappedRegion(uint32_t addr) const;
 	u32 mappedRegionWordSpan(u32 addr, u32 wordLimit, MemoryRegionKind region) const;
@@ -96,10 +96,6 @@ public:
 	void markRoots(GcHeap& heap) const;
 
 private:
-	struct RomSpan {
-		const u8* data;
-		size_t size;
-	};
 	struct IoReadBinding {
 		void* context = nullptr;
 		IoReadHandler handler = nullptr;
@@ -109,8 +105,8 @@ private:
 		IoWriteHandler handler = nullptr;
 		IoWriteReadyHandler ready = nullptr;
 	};
-	RomSpan m_systemRom;
-	RomSpan m_cartRom;
+	std::span<const u8> m_systemRom;
+	CartridgeController m_cartridgeController;
 	std::vector<u8> m_ram;
 	mutable std::vector<Value> m_ioSlots;
 	std::vector<IoReadBinding> m_ioReadHandlers;
@@ -128,7 +124,6 @@ private:
 		}
 		return static_cast<int>(delta / IO_WORD_SIZE);
 	}
-	uint32_t readSystemOrCartRomU32(uint32_t addr) const;
 	bool isReadOnlyIoAddress(uint32_t addr) const;
 	Value readIoSlotValue(int slot, uint32_t addr, MappedBusSignals busSignals) const;
 	void writeIoSlotValue(int slot, uint32_t addr, Value value, MappedBusSignals busSignals);

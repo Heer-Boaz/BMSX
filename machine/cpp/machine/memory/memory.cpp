@@ -1,5 +1,6 @@
 #include "machine/memory/memory.h"
 #include "common/endian.h"
+#include "machine/devices/cartridge/controller.h"
 
 #include <cstring>
 
@@ -86,8 +87,8 @@ inline void readRomWindowBytes(const u8* data, size_t size, size_t offset, u8* o
 } // namespace
 
 Memory::Memory(const MemoryInit& init)
-	: m_systemRom{ init.systemRom.data, init.systemRom.size }
-	, m_cartRom{ init.cartRom.data, init.cartRom.size }
+	: m_systemRom(init.systemRom)
+	, m_cartridgeController(init.cartridgeSlots)
 	, m_ram(RAM_END - RAM_BASE)
 	, m_ioSlots(IO_SLOT_COUNT, valueNil())
 	, m_ioReadHandlers(IO_SLOT_COUNT)
@@ -152,19 +153,17 @@ void Memory::restoreSaveState(const MemorySaveState& state) {
 }
 
 u8 Memory::readMainMemoryU8(uint32_t addr, uint32_t faultAccess) const {
-	if (addr >= SYSTEM_ROM_BASE && addr < SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE) {
-		const size_t offset = static_cast<size_t>(addr - SYSTEM_ROM_BASE);
-		return offset < m_systemRom.size ? m_systemRom.data[offset] : 0u;
-	}
-	if (addr >= CART_ROM_BASE && addr < CART_ROM_BASE + CART_ROM_SIZE) {
-		const size_t offset = static_cast<size_t>(addr - CART_ROM_BASE);
-		return offset < m_cartRom.size ? m_cartRom.data[offset] : 0u;
-	}
-	if (addr >= RAM_BASE) {
+	if (addr < RAM_BASE) {
+		if (addr < SYSTEM_ROM_SIZE) {
+			return addr < m_systemRom.size() ? m_systemRom[addr] : 0u;
+		}
+	} else if (addr < CART_ROM_BASE) {
 		const size_t offset = static_cast<size_t>(addr - RAM_BASE);
 		if (offset < m_ram.size()) {
 			return m_ram[offset];
 		}
+	} else if (addr < CART_BUS_END) {
+		return m_cartridgeController.readU8(addr, MAPPED_BUS_MASTER_CPU);
 	}
 	raiseBusFault(BUS_FAULT_UNMAPPED, addr, faultAccess);
 	return 0;
@@ -240,9 +239,6 @@ Value Memory::readValue(uint32_t addr) const {
 	if (slot >= 0) {
 		return readIoSlotValue(slot, addr, MAPPED_BUS_MASTER_CPU);
 	}
-	if (addr < RAM_BASE) {
-		return valueFromNumber(static_cast<double>(readSystemOrCartRomU32(addr)));
-	}
 	return valueFromNumber(static_cast<double>(readU32(addr)));
 }
 
@@ -255,22 +251,20 @@ Value Memory::readMappedValue(uint32_t addr) const {
 		raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_ACCESS_READ_WORD);
 		return valueNumber(0.0);
 	}
-	size_t offset = 0;
-	if (addressRangeOffset(addr, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE, 4, offset)) {
-		return valueNumber(static_cast<double>(readRomWindowU32LE(m_systemRom.data, m_systemRom.size, offset)));
-	} else if (addressRangeOffset(addr, CART_ROM_BASE, CART_ROM_SIZE, 4, offset)) {
-		return valueNumber(static_cast<double>(readRomWindowU32LE(m_cartRom.data, m_cartRom.size, offset)));
-	} else if (addr >= RAM_BASE) {
-		offset = static_cast<size_t>(addr - RAM_BASE);
-		if (offset + 4 > m_ram.size()) {
-			raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_READ_WORD);
-			return valueNumber(0.0);
+	if (addr < RAM_BASE) {
+		if (addr <= SYSTEM_ROM_SIZE - 4u) {
+			return valueNumber(static_cast<double>(readRomWindowU32LE(m_systemRom.data(), m_systemRom.size(), addr)));
 		}
-		return valueNumber(static_cast<double>(readLE32(m_ram.data() + offset)));
-	} else {
-		raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_READ_WORD);
-		return valueNumber(0.0);
+	} else if (addr < CART_ROM_BASE) {
+		const size_t offset = static_cast<size_t>(addr - RAM_BASE);
+		if (offset + 4u <= m_ram.size()) {
+			return valueNumber(static_cast<double>(readLE32(m_ram.data() + offset)));
+		}
+	} else if (addr <= CART_BUS_END - 4u) {
+		return valueNumber(static_cast<double>(m_cartridgeController.readU32(addr, MAPPED_BUS_MASTER_CPU)));
 	}
+	raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_READ_WORD);
+	return valueNumber(0.0);
 }
 
 void Memory::writeValue(uint32_t addr, Value value) {
@@ -300,7 +294,12 @@ void Memory::writeMappedValue(uint32_t addr, Value value) {
 		raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_ACCESS_WRITE_WORD);
 		return;
 	}
-	if (writeRamWordLE(addr, 4, toU32(value))) {
+	if (addr < CART_ROM_BASE) {
+		if (writeRamWordLE(addr, 4, toU32(value))) {
+			return;
+		}
+	} else if (addr <= CART_BUS_END - 4u) {
+		m_cartridgeController.writeU32(addr, toU32(value), MAPPED_BUS_MASTER_CPU);
 		return;
 	}
 	raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_WRITE_WORD);
@@ -323,7 +322,12 @@ u8 Memory::readMappedU8(uint32_t addr) const {
 }
 
 void Memory::writeU8(uint32_t addr, u8 value) {
-	if (writeRamU8(addr, value)) {
+	if (addr < CART_ROM_BASE) {
+		if (writeRamU8(addr, value)) {
+			return;
+		}
+	} else if (addr < CART_BUS_END) {
+		m_cartridgeController.writeU8(addr, value, MAPPED_BUS_MASTER_CPU);
 		return;
 	}
 	raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_WRITE_U8);
@@ -334,7 +338,12 @@ void Memory::writeMappedU8(uint32_t addr, u8 value) {
 		raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_ACCESS_WRITE_U8);
 		return;
 	}
-	if (writeRamU8(addr, value)) {
+	if (addr < CART_ROM_BASE) {
+		if (writeRamU8(addr, value)) {
+			return;
+		}
+	} else if (addr < CART_BUS_END) {
+		m_cartridgeController.writeU8(addr, value, MAPPED_BUS_MASTER_CPU);
 		return;
 	}
 	raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_WRITE_U8);
@@ -350,26 +359,19 @@ int32_t Memory::readIoI32(uint32_t addr) const {
 
 uint32_t Memory::readU32(uint32_t addr) const {
 	if (addr < RAM_BASE) {
-		return readSystemOrCartRomU32(addr);
+		if (addr <= SYSTEM_ROM_SIZE - 4u) {
+			return readRomWindowU32LE(m_systemRom.data(), m_systemRom.size(), addr);
+		}
+	} else if (addr < CART_ROM_BASE) {
+		const size_t offset = static_cast<size_t>(addr - RAM_BASE);
+		if (offset + sizeof(uint32_t) <= m_ram.size()) {
+			return readLE32(m_ram.data() + offset);
+		}
+	} else if (addr <= CART_BUS_END - 4u) {
+		return m_cartridgeController.readU32(addr, MAPPED_BUS_MASTER_CPU);
 	}
-	const size_t offset = static_cast<size_t>(addr - RAM_BASE);
-	if (offset + sizeof(uint32_t) > m_ram.size()) {
-		raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_READ_U32);
-		return 0;
-	}
-	return readLE32(m_ram.data() + offset);
-}
-
-uint32_t Memory::readSystemOrCartRomU32(uint32_t addr) const {
-	size_t offset = 0;
-	if (addressRangeOffset(addr, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE, 4, offset)) {
-		return readRomWindowU32LE(m_systemRom.data, m_systemRom.size, offset);
-	} else if (addressRangeOffset(addr, CART_ROM_BASE, CART_ROM_SIZE, 4, offset)) {
-		return readRomWindowU32LE(m_cartRom.data, m_cartRom.size, offset);
-	} else {
-		raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_READ_U32);
-		return 0;
-	}
+	raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_READ_U32);
+	return 0;
 }
 
 uint32_t Memory::readMappedU16LE(uint32_t addr) const {
@@ -377,22 +379,20 @@ uint32_t Memory::readMappedU16LE(uint32_t addr) const {
 		raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_ACCESS_READ_U16);
 		return 0;
 	}
-	size_t offset = 0;
-	if (addressRangeOffset(addr, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE, 2, offset)) {
-		return readRomWindowU16LE(m_systemRom.data, m_systemRom.size, offset);
-	} else if (addressRangeOffset(addr, CART_ROM_BASE, CART_ROM_SIZE, 2, offset)) {
-		return readRomWindowU16LE(m_cartRom.data, m_cartRom.size, offset);
-	} else if (addr >= RAM_BASE) {
-		offset = static_cast<size_t>(addr - RAM_BASE);
-		if (offset + 2 > m_ram.size()) {
-			raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_READ_U16);
-			return 0;
+	if (addr < RAM_BASE) {
+		if (addr <= SYSTEM_ROM_SIZE - 2u) {
+			return readRomWindowU16LE(m_systemRom.data(), m_systemRom.size(), addr);
 		}
-		return readLE16(m_ram.data() + offset);
-	} else {
-		raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_READ_U16);
-		return 0;
+	} else if (addr < CART_ROM_BASE) {
+		const size_t offset = static_cast<size_t>(addr - RAM_BASE);
+		if (offset + 2u <= m_ram.size()) {
+			return readLE16(m_ram.data() + offset);
+		}
+	} else if (addr <= CART_BUS_END - 2u) {
+		return m_cartridgeController.readU16(addr, MAPPED_BUS_MASTER_CPU);
 	}
+	raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_READ_U16);
+	return 0;
 }
 
 uint32_t Memory::readMappedU32LE(uint32_t addr, uint32_t faultAccess) const {
@@ -412,22 +412,20 @@ uint32_t Memory::readMappedBusU32LE(uint32_t addr, uint32_t faultAccess, MappedB
 		raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, faultAccess);
 		return 0;
 	}
-	size_t offset = 0;
-	if (addressRangeOffset(addr, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE, 4, offset)) {
-		return readRomWindowU32LE(m_systemRom.data, m_systemRom.size, offset);
-	} else if (addressRangeOffset(addr, CART_ROM_BASE, CART_ROM_SIZE, 4, offset)) {
-		return readRomWindowU32LE(m_cartRom.data, m_cartRom.size, offset);
-	} else if (addr >= RAM_BASE) {
-		offset = static_cast<size_t>(addr - RAM_BASE);
-		if (offset + 4 > m_ram.size()) {
-			raiseBusFault(BUS_FAULT_UNMAPPED, addr, faultAccess);
-			return 0;
+	if (addr < RAM_BASE) {
+		if (addr <= SYSTEM_ROM_SIZE - 4u) {
+			return readRomWindowU32LE(m_systemRom.data(), m_systemRom.size(), addr);
 		}
-		return readLE32(m_ram.data() + offset);
-	} else {
-		raiseBusFault(BUS_FAULT_UNMAPPED, addr, faultAccess);
-		return 0;
+	} else if (addr < CART_ROM_BASE) {
+		const size_t offset = static_cast<size_t>(addr - RAM_BASE);
+		if (offset + 4u <= m_ram.size()) {
+			return readLE32(m_ram.data() + offset);
+		}
+	} else if (addr <= CART_BUS_END - 4u) {
+		return m_cartridgeController.readU32(addr, busSignals);
 	}
+	raiseBusFault(BUS_FAULT_UNMAPPED, addr, faultAccess);
+	return 0;
 }
 
 float Memory::readMappedF32LE(uint32_t addr) const {
@@ -454,10 +452,15 @@ double Memory::readMappedF64LE(uint32_t addr) const {
 }
 
 void Memory::writeU32(uint32_t addr, uint32_t value) {
-	if (!writeRamWordLE(addr, 4, value)) {
-		raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_WRITE_U32);
+	if (addr < CART_ROM_BASE) {
+		if (writeRamWordLE(addr, 4, value)) {
+			return;
+		}
+	} else if (addr <= CART_BUS_END - 4u) {
+		m_cartridgeController.writeU32(addr, value, MAPPED_BUS_MASTER_CPU);
 		return;
 	}
+	raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_WRITE_U32);
 }
 
 void Memory::writeMappedU16LE(uint32_t addr, uint32_t value) {
@@ -465,7 +468,12 @@ void Memory::writeMappedU16LE(uint32_t addr, uint32_t value) {
 		raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_ACCESS_WRITE_U16);
 		return;
 	}
-	if (writeRamWordLE(addr, 2, value)) {
+	if (addr < CART_ROM_BASE) {
+		if (writeRamWordLE(addr, 2, value)) {
+			return;
+		}
+	} else if (addr <= CART_BUS_END - 2u) {
+		m_cartridgeController.writeU16(addr, value, MAPPED_BUS_MASTER_CPU);
 		return;
 	}
 	raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_WRITE_U16);
@@ -500,7 +508,12 @@ void Memory::writeMappedBusU32LE(uint32_t addr, uint32_t value, uint32_t faultAc
 		raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, faultAccess);
 		return;
 	}
-	if (writeRamWordLE(addr, 4, value)) {
+	if (addr < CART_ROM_BASE) {
+		if (writeRamWordLE(addr, 4, value)) {
+			return;
+		}
+	} else if (addr <= CART_BUS_END - 4u) {
+		m_cartridgeController.writeU32(addr, value, busSignals);
 		return;
 	}
 	raiseBusFault(BUS_FAULT_UNMAPPED, addr, faultAccess);
@@ -536,46 +549,49 @@ void Memory::writeBytes(uint32_t addr, const u8* data, size_t length) {
 }
 
 void Memory::readBytes(uint32_t addr, u8* out, size_t length) const {
-	size_t offset = 0;
-	if (addressRangeOffset(addr, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE, length, offset)) {
-		readRomWindowBytes(m_systemRom.data, m_systemRom.size, offset, out, length);
-		return;
-	}
-	if (addressRangeOffset(addr, CART_ROM_BASE, CART_ROM_SIZE, length, offset)) {
-		readRomWindowBytes(m_cartRom.data, m_cartRom.size, offset, out, length);
-		return;
-	}
-	if (addr >= RAM_BASE) {
-		offset = static_cast<size_t>(addr - RAM_BASE);
-		if (offset + length <= m_ram.size()) {
+	if (addr < RAM_BASE) {
+		if (length <= SYSTEM_ROM_SIZE && addr <= SYSTEM_ROM_SIZE - length) {
+			readRomWindowBytes(m_systemRom.data(), m_systemRom.size(), addr, out, length);
+			return;
+		}
+	} else if (addr < CART_ROM_BASE) {
+		const size_t offset = static_cast<size_t>(addr - RAM_BASE);
+		if (length <= m_ram.size() && offset <= m_ram.size() - length) {
 			std::memcpy(out, m_ram.data() + offset, length);
 			return;
 		}
+	} else if (
+		length <= CART_BUS_END - CART_ROM_BASE
+		&& static_cast<size_t>(addr - CART_ROM_BASE) <= CART_BUS_END - CART_ROM_BASE - length
+	) {
+		m_cartridgeController.readBytes(addr, out, length);
+		return;
 	}
 	std::memset(out, 0, length);
 	raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U8);
 }
 
 bool Memory::isReadableMainMemoryRange(uint32_t addr, size_t length) const {
-	const bool isReadableRam = addr >= RAM_BASE
-		&& length <= m_ram.size()
-		&& static_cast<size_t>(addr - RAM_BASE) <= m_ram.size() - length;
-	return addressRangeWithin(addr, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE, length)
-		|| addressRangeWithin(addr, CART_ROM_BASE, CART_ROM_SIZE, length)
-		|| isReadableRam;
+	if (addr < RAM_BASE) {
+		return length <= SYSTEM_ROM_SIZE && addr <= SYSTEM_ROM_SIZE - length;
+	}
+	if (addr < CART_ROM_BASE) {
+		return length <= m_ram.size()
+			&& static_cast<size_t>(addr - RAM_BASE) <= m_ram.size() - length;
+	}
+	return length <= CART_BUS_END - CART_ROM_BASE
+		&& static_cast<size_t>(addr - CART_ROM_BASE) <= CART_BUS_END - CART_ROM_BASE - length;
 }
 
-bool Memory::bindRomByteView(uint32_t addr, size_t length, Span<const u8>& out) const {
+bool Memory::bindRomByteView(uint32_t addr, size_t length, u32 cartridgeSlot, Span<const u8>& out) const {
 	size_t offset = 0;
-	if (length > 0u && addressRangeOffset(addr, SYSTEM_ROM_BASE, m_systemRom.size, length, offset)) {
-		out.data_ = m_systemRom.data + offset;
+	if (length > 0u && addressRangeOffset(addr, SYSTEM_ROM_BASE, m_systemRom.size(), length, offset)) {
+		out.data_ = m_systemRom.data() + offset;
 		out.size_ = length;
 		return true;
 	}
-	if (length > 0u && addressRangeOffset(addr, CART_ROM_BASE, m_cartRom.size, length, offset)) {
-		out.data_ = m_cartRom.data + offset;
-		out.size_ = length;
-		return true;
+	if (addressRangeWithin(addr, CART_ROM_BASE, CART_ROM_SIZE, length)) {
+		return m_cartridgeController.bindRomByteView(cartridgeSlot, addr, length, out);
 	}
 	return false;
 }
@@ -590,18 +606,17 @@ MemoryRegionKind Memory::mappedRegion(uint32_t addr) const {
 	if (isIoRegionRange(addr, IO_WORD_SIZE)) {
 		return MemoryRegionKind::Io;
 	}
-	if (addressRangeWithin(addr, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE, IO_WORD_SIZE)) {
-		return MemoryRegionKind::SystemRom;
+	if (addr < RAM_BASE) {
+		return addr <= SYSTEM_ROM_SIZE - IO_WORD_SIZE ? MemoryRegionKind::SystemRom : MemoryRegionKind::Other;
 	}
-	if (addressRangeWithin(addr, CART_ROM_BASE, CART_ROM_SIZE, IO_WORD_SIZE)) {
-		return MemoryRegionKind::CartRom;
+	if (addr < CART_ROM_BASE) {
+		return isRamRange(addr, IO_WORD_SIZE) ? MemoryRegionKind::Ram : MemoryRegionKind::Other;
 	}
-	return isRamRange(addr, IO_WORD_SIZE) ? MemoryRegionKind::Ram : MemoryRegionKind::Other;
+	return addr <= CART_BUS_END - IO_WORD_SIZE ? MemoryRegionKind::Cartridge : MemoryRegionKind::Other;
 }
 
 u32 Memory::mappedRegionWordSpan(u32 addr, u32 wordLimit, MemoryRegionKind region) const {
 	constexpr u64 systemRomEnd = static_cast<u64>(SYSTEM_ROM_BASE) + SYSTEM_ROM_SIZE;
-	constexpr u64 cartRomEnd = static_cast<u64>(CART_ROM_BASE) + CART_ROM_SIZE;
 	const u64 ioEnd = static_cast<u64>(IO_BASE) + IO_SLOT_COUNT * IO_WORD_SIZE;
 	const u64 ramEnd = static_cast<u64>(RAM_BASE) + m_ram.size();
 	u64 boundary;
@@ -609,8 +624,10 @@ u32 Memory::mappedRegionWordSpan(u32 addr, u32 wordLimit, MemoryRegionKind regio
 	case MemoryRegionKind::SystemRom:
 		boundary = systemRomEnd;
 		break;
-	case MemoryRegionKind::CartRom:
-		boundary = cartRomEnd;
+	case MemoryRegionKind::Cartridge:
+		boundary = addr < CART_ROM_END
+			? CART_ROM_END
+			: addr < CART_RAM_END ? CART_RAM_END : CART_MMIO_END;
 		break;
 	case MemoryRegionKind::Io:
 		boundary = ioEnd;
@@ -621,13 +638,15 @@ u32 Memory::mappedRegionWordSpan(u32 addr, u32 wordLimit, MemoryRegionKind regio
 	case MemoryRegionKind::Other:
 		boundary = addr < systemRomEnd
 			? systemRomEnd
-			: addr < cartRomEnd
-				? cartRomEnd
-				: addr < IO_BASE
-					? IO_BASE
-					: addr < ioEnd
-						? ioEnd
-						: addr < ramEnd ? ramEnd : (u64{1} << ADDRESS_BITS);
+			: addr < IO_BASE
+				? IO_BASE
+				: addr < ioEnd
+					? ioEnd
+					: addr < ramEnd
+						? ramEnd
+						: addr < CART_ROM_BASE
+							? CART_ROM_BASE
+							: addr < CART_BUS_END ? CART_BUS_END : (u64{1} << ADDRESS_BITS);
 		break;
 	default:
 		__builtin_unreachable();
@@ -703,6 +722,11 @@ bool Memory::isReadOnlyIoAddress(uint32_t addr) const {
 		case IO_APU_EVENT_SEQ:
 		case IO_APU_SELECTED_SOURCE_ADDR:
 		case IO_APU_ACTIVE_MASK:
+		case IO_CART_STATUS:
+		case IO_CART_SLOT0_BOARD:
+		case IO_CART_SLOT0_RAM_BYTES:
+		case IO_CART_SLOT1_BOARD:
+		case IO_CART_SLOT1_RAM_BYTES:
 			return true;
 		default:
 			return false;

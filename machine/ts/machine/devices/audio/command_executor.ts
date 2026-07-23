@@ -53,7 +53,12 @@ export class ApuCommandExecutor {
 		generatorKind: 0,
 		generatorDutyQ12: 0,
 	};
-	private readonly sourceView: ApuSourceByteView = { bytes: EMPTY_APU_SOURCE_BYTES, byteOffset: 0, byteLength: 0 };
+	private readonly sourceView: ApuSourceByteView = {
+		bytes: EMPTY_APU_SOURCE_BYTES,
+		byteOffset: 0,
+		byteLength: 0,
+		cartridgeSlot: 0,
+	};
 
 	public constructor(
 		private readonly memory: Memory,
@@ -80,7 +85,7 @@ export class ApuCommandExecutor {
 		const registerWords = this.slotRegisterDispatchWords;
 		this.slots.loadRegisterWords(slot, registerWords);
 		loadApuAudioSource(this.source, registerWords);
-		this.bindSource(this.source);
+		this.bindSource(this.source, state.sourceCartridgeSlot);
 		this.audioOutput.restoreVoice(
 			slot,
 			this.source,
@@ -130,7 +135,7 @@ export class ApuCommandExecutor {
 	}
 
 	private startPlay(source: ApuAudioSource, slot: ApuAudioSlot, registerWords: ApuParameterRegisterWords): void {
-		if (!this.bindSource(source)) {
+		if (!this.bindSource(source, this.memory.cartridgeController.selectedSlot())) {
 			this.fault.raise(APU_FAULT_SOURCE_RANGE, source.sourceAddr);
 			return;
 		}
@@ -166,7 +171,7 @@ export class ApuCommandExecutor {
 			this.slots.loadRegisterWords(slot, this.slotRegisterDispatchWords);
 			loadApuAudioSource(this.source, this.slotRegisterDispatchWords);
 			if (apuParameterProgramsSourceBuffer(parameterIndex)) {
-				if (!this.bindSource(this.source)) {
+				if (!this.bindSource(this.source, this.memory.cartridgeController.selectedSlot())) {
 					this.audioOutput.stopSlot(slot);
 					this.activeSlots.deactivate(slot);
 					this.fault.raise(APU_FAULT_SOURCE_RANGE, this.source.sourceAddr);
@@ -185,14 +190,15 @@ export class ApuCommandExecutor {
 		this.selectedSlotLatch.refresh();
 	}
 
-	private bindSource(source: ApuAudioSource): boolean {
+	private bindSource(source: ApuAudioSource, cartridgeSlot: number): boolean {
 		if (apuAudioSourceUsesGenerator(source)) {
 			this.sourceView.bytes = EMPTY_APU_SOURCE_BYTES;
 			this.sourceView.byteOffset = 0;
 			this.sourceView.byteLength = 0;
+			this.sourceView.cartridgeSlot = cartridgeSlot;
 			return true;
 		}
-		return this.sampleMemory.bindSource(source.sourceAddr, source.sourceBytes, this.sourceView);
+		return this.sampleMemory.bindSource(source.sourceAddr, source.sourceBytes, cartridgeSlot, this.sourceView);
 	}
 
 }

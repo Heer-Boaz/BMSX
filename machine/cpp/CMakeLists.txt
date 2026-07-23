@@ -16,14 +16,14 @@ option(BMSX_BUILD_LIBRETRO_HOST "Build libretro host executable" OFF)
 option(BMSX_BUILD_SDL "Build SDL standalone executable" OFF)
 option(BMSX_BUILD_TESTS "Build unit tests" OFF)
 option(BMSX_ENABLE_LTO "Enable Link Time Optimization" OFF)
-option(BMSX_ENABLE_ZLIB "Enable zlib-based ROM decompression" ON)
+option(BMSX_ENABLE_ZLIB "Enable PNG screenshot output" ON)
 set(BMSX_ENABLE_GLES2_DEFAULT ON)
 # Previously GLES2 was disabled by default on Windows; enable by default on all platforms
 message(STATUS "BMSX: Default BMSX_ENABLE_GLES2=${BMSX_ENABLE_GLES2_DEFAULT}")
 option(BMSX_ENABLE_GLES2 "Enable OpenGLES2 backend" ${BMSX_ENABLE_GLES2_DEFAULT})
 
 # =============================================================================
-# Find zlib (for ROM decompression)
+# Find zlib for PNG screenshot output.
 # =============================================================================
 
 if(BMSX_ENABLE_ZLIB)
@@ -203,7 +203,6 @@ add_library(bmsx_core STATIC
 	# Core systems
 	common/vector.cpp
 	core/machine_manager.cpp
-	core/rom_boot_manager.cpp
 	core/host_frame.cpp
 	core/host_overlay_menu.cpp
 	core/system.cpp
@@ -281,6 +280,7 @@ add_library(bmsx_core STATIC
 	machine/cpu/source_text.cpp
 	lua/syntax/lexer.cpp
 	lua/syntax/parser.cpp
+	machine/devices/cartridge/controller.cpp
 	machine/devices/dma/controller.cpp
 	machine/devices/imgdec/controller.cpp
 	machine/devices/device_status.cpp
@@ -577,6 +577,18 @@ if(BMSX_BUILD_TESTS)
 	target_link_libraries(bmsx_dma_controller_tests PRIVATE bmsx_core)
 	add_test(NAME bmsx_dma_controller_tests COMMAND bmsx_dma_controller_tests)
 
+	add_executable(bmsx_cartridge_controller_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/cartridge_controller_test.cpp
+	)
+	target_link_libraries(bmsx_cartridge_controller_tests PRIVATE bmsx_core)
+	add_test(NAME bmsx_cartridge_controller_tests COMMAND bmsx_cartridge_controller_tests)
+
+	add_executable(bmsx_rompack_format_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/rompack_format_test.cpp
+	)
+	target_link_libraries(bmsx_rompack_format_tests PRIVATE bmsx_core)
+	add_test(NAME bmsx_rompack_format_tests COMMAND bmsx_rompack_format_tests)
+
 	add_executable(bmsx_imgdec_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/imgdec_test.cpp
 	)
@@ -641,6 +653,15 @@ if(BMSX_BUILD_TESTS)
 		${BMSX_LIBRETRO_DIR}
 	)
 	add_test(NAME bmsx_libretro_environment_tests COMMAND bmsx_libretro_environment_tests)
+
+	add_executable(bmsx_cartridge_conformance_runner
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/cartridge_conformance_runner.cpp
+		${BMSX_LIBRETRO_DIR}/platform.cpp
+	)
+	target_link_libraries(bmsx_cartridge_conformance_runner PRIVATE bmsx_core)
+	target_include_directories(bmsx_cartridge_conformance_runner PRIVATE
+		${BMSX_LIBRETRO_DIR}
+	)
 
 	if(BMSX_ENABLE_GLES2)
 		add_executable(bmsx_libretro_hw_context_tests

@@ -1,3 +1,4 @@
+import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -71,7 +72,7 @@ function makeDisplacedMemoryProgram(cpu: CPU): Program {
 }
 
 test('CPU executes displaced memory load/store opcodes', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
 	const cpu = new CPU(memory, new IrqController(memory));
 	const metadata = makeMetadata(10);
 	cpu.setProgram(makeDisplacedMemoryProgram(cpu), metadata, metadata, 0, 0, 0);

@@ -1,3 +1,4 @@
+import { cartridgeSlots } from './cartridge';
 import assert from 'node:assert/strict';
 import { encodeCompiledProgramObject, type CompiledProgram } from '../../machine/ts/lua/compiler';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/machine/memory/map';
@@ -74,7 +75,7 @@ export function finalizeTestProgramPair(
 export function createTestSystemCpu(
 	finalized: FinalizedTestProgram,
 ): { cpu: CPU; memory: Memory; irqController: IrqController } {
-	const memory = new Memory({ systemRom: finalized.romBytes, cartRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: finalized.romBytes, cartridgeSlots: cartridgeSlots() });
 	const irqController = new IrqController(memory);
 	const cpu = new CPU(memory, irqController);
 	const vectors = finalized.image.vectors;

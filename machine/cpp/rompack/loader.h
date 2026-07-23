@@ -41,6 +41,8 @@ public:
 
 	std::optional<RomAssetInfo> programImageRom;
 	std::optional<RomAssetInfo> programSymbolsRom;
+	u32 cartridgeBoardWord = 0;
+	u32 cartridgeRamByteCount = 0;
 
 	// Project metadata
 	std::string projectRootPath;
@@ -97,27 +99,28 @@ struct AssetLoadCallbacks {
 					i32 height)> onImageDecoded;
 };
 
+struct RomImage {
+	std::span<const u8> bytes;
+	CartRomHeader header;
+};
+
 /* ============================================================================
  * ROM loader functions
  * ============================================================================ */
 
-// Load a cart ROM into RuntimeRomPackage, including cart metadata, machine spec, and entry point.
-bool loadCartRomPackageFromRom(const u8* buffer,
-				size_t size,
-				RuntimeRomPackage& romPackage,
-				const AssetLoadCallbacks* callbacks = nullptr,
-				const char* payloadId = "cart");
+RomImage parseRomImage(const u8* buffer, size_t size, RomImageDomain domain);
+
+// Load a cart image into RuntimeRomPackage, including cart metadata, machine spec, and entry point.
+void loadCartRomPackage(const RomImage& image,
+					RuntimeRomPackage& romPackage,
+					const AssetLoadCallbacks* callbacks = nullptr,
+					const char* payloadId = "cart");
 
 // Load only the ROM package/program payload into RuntimeRomPackage. Does not decode cart metadata.
-bool loadSystemRomPackageFromRom(const u8* buffer,
-				size_t size,
-				RuntimeRomPackage& romPackage,
-				const AssetLoadCallbacks* callbacks = nullptr,
-				const char* payloadId = "system");
-
-// Parse only the cart manifest (machine specs, viewport size) without loading assets.
-// Equivalent to TypeScript's parseCartridgeIndex — lightweight, no asset allocation.
-MachineManifest peekCartMachineManifest(const u8* buffer, size_t size);
+void loadSystemRomPackage(const RomImage& image,
+					RuntimeRomPackage& romPackage,
+					const AssetLoadCallbacks* callbacks = nullptr,
+					const char* payloadId = "system");
 
 } // namespace bmsx
 

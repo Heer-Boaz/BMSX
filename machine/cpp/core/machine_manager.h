@@ -2,7 +2,7 @@
  * machine_manager.h - BMSX machine manager
  *
  * Owns libretro-facing platform state and runtime boot handoff.
- * ROM loading and boot orchestration live here; RomBootManager is a stateless plan builder.
+ * ROM loading and boot orchestration live here.
  * Cart-visible hardware belongs under machine.
  */
 
@@ -12,12 +12,14 @@
 #include "common/mmap_file.h"
 #include "common/primitives.h"
 #include "common/registry.h"
+#include "machine/devices/cartridge/contracts.h"
 #include "rompack/format.h"
 #include "rompack/loader.h"
 #include "platform/platform.h"
 #include "render/gameview.h"
 #include "render/presentation_state.h"
 #include "audio/soundmaster.h"
+#include <array>
 #include <chrono>
 #include <memory>
 #include <string>
@@ -27,7 +29,6 @@ namespace bmsx {
 
 class BFont;
 class MachineManager;
-class RomBootManager;
 class TextureManager;
 class Runtime;
 struct RuntimeOptions;
@@ -115,26 +116,16 @@ public:
 	HostClock* clock() { return m_platform->clock(); }
 	SoundMaster* soundMaster() { return m_sound_master.get(); }
 	TextureManager* texmanager() { return m_texture_manager.get(); }
-	RomBootManager& romBootManager() { return *m_rom_boot_manager; }
-
 	// ROM loading and boot orchestration
 	bool loadSystemRomOwned(std::vector<u8>&& data);
 	bool loadSystemRomFile(const std::string& path);
-	bool loadRom(const u8* data, size_t size);
-	bool loadRomOwned(std::vector<u8>&& data);
-	bool loadRomFile(const std::string& path);
+	bool loadCartridgeSlotsOwned(std::array<std::vector<u8>, CARTRIDGE_SLOT_COUNT>&& data);
+	bool loadCartridgeSlotFiles(const std::array<std::string, CARTRIDGE_SLOT_COUNT>& paths);
 	void unloadRom();
 	bool rebootLoadedRom();
 	bool bootWithoutCart();
 	bool romLoaded() const { return m_rom_loaded; }
 	bool systemRomLoaded() const { return m_system_rom_loaded; }
-	bool hasLoadedCartProgram() const { return m_loaded_cart_has_program; }
-	RuntimeRomPackage& activeRom() { return *m_active_rom; }
-	const RuntimeRomPackage& activeRom() const { return *m_active_rom; }
-	RuntimeRomPackage& systemRom() { return m_system_rom; }
-	const RuntimeRomPackage& systemRom() const { return m_system_rom; }
-	RuntimeRomPackage& cartRom() { return m_cart_rom; }
-	const RuntimeRomPackage& cartRom() const { return m_cart_rom; }
 
 	// Time
 	f64 totalTime() const { return m_total_time; }
@@ -166,40 +157,39 @@ private:
 		std::unique_ptr<ProgramImage> image;
 		std::unique_ptr<ProgramMetadata> metadata;
 	};
+	struct LoadedCartridgeSlot {
+		MmapFile file;
+		std::vector<u8> owned;
+		RomImage image;
+
+		void clear();
+	};
 
 	Platform* m_platform = nullptr;
 	std::unique_ptr<GameView> m_view;
 	std::unique_ptr<BFont> m_default_font;
 	std::unique_ptr<SoundMaster> m_sound_master;
 	std::unique_ptr<TextureManager> m_texture_manager;
-	std::unique_ptr<RomBootManager> m_rom_boot_manager;
 	std::unique_ptr<Runtime> m_runtime;
 
-	// ROM state (orchestration moved from RomBootManager)
+	// ROM state
 	RuntimeRomPackage m_system_rom;
 	RuntimeRomPackage m_cart_rom;
-	RuntimeRomPackage* m_active_rom = nullptr;
+	RomImage m_system_rom_image;
+	std::array<LoadedCartridgeSlot, CARTRIDGE_SLOT_COUNT> m_cartridge_slots;
+	CartridgeSlotMediaPair m_cartridge_media{};
+	u32 m_boot_cartridge_slot = 0;
 	MmapFile m_system_rom_file;
 	std::vector<u8> m_system_rom_owned;
-	const u8* m_system_rom_data = nullptr;
-	size_t m_system_rom_size = 0;
-	MmapFile m_cart_rom_file;
-	std::vector<u8> m_cart_rom_owned;
-	const u8* m_cart_rom_data = nullptr;
-	size_t m_cart_rom_size = 0;
 	bool m_rom_loaded = false;
-	bool m_loaded_cart_has_program = false;
 	bool m_system_rom_loaded = false;
 
-	// Boot helpers (moved from RomBootManager)
-	void activateSystemRom();
-	void activateCartRom();
 	void setMachineManifest(const MachineManifest& manifest);
 	void configureViewForGpuReset();
-	LoadedProgramImages loadProgramImagesFromRom(const RuntimeRomPackage& romPackage, const u8* romData) const;
+	LoadedProgramImages loadProgramImagesFromRom(const RuntimeRomPackage& romPackage, const RomImage& image) const;
 	bool loadSystemRomInternal(const u8* data, size_t size);
-	bool loadRomInternal(const u8* data, size_t size);
-	bool bootSystemStartupProgram(const MachineManifest& runtimeMachine);
+	bool bootLoadedCartridgeSlots();
+	bool bootSystemStartupProgram();
 	void flushSystemOutput(Runtime& runtime);
 
 	MachineManagerState m_state = MachineManagerState::Uninitialized;

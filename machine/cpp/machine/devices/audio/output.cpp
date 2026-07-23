@@ -38,7 +38,7 @@ void ApuOutputMixer::resetPlaybackState() {
 void ApuOutputMixer::playVoice(
 	ApuAudioSlot slot,
 	const ApuAudioSource& source,
-	const Span<const u8>& sourceBytes,
+	const ApuSourceByteView& sourceBytes,
 	const ApuParameterRegisterWords& registerWords
 ) {
 	VoiceRecord& record = m_voices[slot];
@@ -63,7 +63,7 @@ void ApuOutputMixer::playVoice(
 void ApuOutputMixer::replaceVoiceSource(
 	ApuAudioSlot slot,
 	const ApuAudioSource& source,
-	const Span<const u8>& sourceBytes,
+	const ApuSourceByteView& sourceBytes,
 	const ApuParameterRegisterWords& registerWords
 ) {
 	VoiceRecord& record = m_voices[slot];
@@ -81,7 +81,7 @@ void ApuOutputMixer::replaceVoiceSource(
 void ApuOutputMixer::restoreVoice(
 	ApuAudioSlot slot,
 	const ApuAudioSource& source,
-	const Span<const u8>& sourceBytes,
+	const ApuSourceByteView& sourceBytes,
 	const ApuParameterRegisterWords& registerWords,
 	const ApuOutputVoiceState& state
 ) {
@@ -356,23 +356,24 @@ u32 ApuOutputMixer::renderMachineBatch(size_t frameCount, i64 startSequence) {
 void ApuOutputMixer::buildVoiceFromData(
 	VoiceRecord& record,
 	const ApuAudioSource& source,
-	const Span<const u8>& sourceBytes,
+	const ApuSourceByteView& sourceBytes,
 	u32 rateStepQ16Word,
 	i64 cursorQ16,
 	i32 phaseRemainder
 ) {
 	const bool usesBadp = !apuAudioSourceUsesGenerator(source) && source.bitsPerSample == 4u;
 	if (usesBadp) {
-		loadApuBadpSeekTable(record.badpSeekTable, sourceBytes.data(), 0u);
+		loadApuBadpSeekTable(record.badpSeekTable, sourceBytes.bytes.data(), 0u);
 	} else {
 		record.badpSeekTable.bytes = nullptr;
 		record.badpSeekTable.byteOffset = 0u;
 		record.badpSeekTable.entryCount = 0u;
 	}
 	record.active = true;
+	record.sourceCartridgeSlot = sourceBytes.cartridgeSlot;
 	record.channels = source.channels;
 	record.bitsPerSample = source.bitsPerSample;
-	record.sourceBytes = sourceBytes.data();
+	record.sourceBytes = sourceBytes.bytes.data();
 	record.dataOffset = source.dataOffset;
 	record.frames = source.frameCount;
 	record.generatorKind = source.generatorKind;

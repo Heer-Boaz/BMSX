@@ -6,6 +6,7 @@ import {
 } from './bus/io';
 import { CPU } from './cpu/cpu';
 import { AudioController } from './devices/audio/controller';
+import type { CartridgeController } from './devices/cartridge/controller';
 import { DmaController } from './devices/dma/controller';
 import { GeometryController } from './devices/geometry/controller';
 import { GxGpu } from './devices/gx/gpu';
@@ -39,6 +40,7 @@ export class Machine {
 	public readonly scheduler: DeviceScheduler;
 	public readonly irqController: IrqController;
 	public readonly systemController: SystemController;
+	public readonly cartridgeController: CartridgeController;
 	public readonly dmaController: DmaController;
 	public readonly geometryController: GeometryController;
 	public readonly gxGpu: GxGpu;
@@ -52,11 +54,13 @@ export class Machine {
 		public readonly memory: Memory,
 		input: InputControllerInputSource,
 	) {
+		this.cartridgeController = this.memory.cartridgeController;
 		this.irqController = new IrqController(this.memory);
 		this.cpu = new CPU(this.memory, this.irqController);
 		this.scheduler = new DeviceScheduler(this.cpu);
 		this.audioOutput = new ApuOutputMixer();
 		this.dmaController = new DmaController(this.memory, this.cpu, this.irqController, this.scheduler);
+		this.cartridgeController.connect(this.memory, this.irqController, this.dmaController);
 		this.audioController = new AudioController(this.memory, this.audioOutput, this.dmaController, this.irqController, this.scheduler);
 		this.geometryController = new GeometryController(this.memory, this.irqController, this.scheduler);
 		this.gxGpu = new GxGpu(this.memory, this.cpu, this.irqController, this.scheduler, this.dmaController);
@@ -100,6 +104,7 @@ export class Machine {
 		this.irqController.reset();
 		this.inputController.reset();
 		this.dmaController.reset();
+		this.cartridgeController.reset();
 		this.geometryController.reset();
 		this.gxGpu.reset();
 		this.imgDecController.reset();

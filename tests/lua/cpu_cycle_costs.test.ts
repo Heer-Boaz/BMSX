@@ -1,3 +1,4 @@
+import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -6,7 +7,7 @@ import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 
 test('native functions use flat default cost', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
 	const cpu = new CPU(memory, new IrqController(memory));
 	assert.deepEqual(cpu.createNativeFunction('require', () => {}).cost, { base: 1, perArg: 0, perRet: 0 });
 	assert.deepEqual(cpu.createNativeFunction('loadstring', () => {}).cost, { base: 1, perArg: 0, perRet: 0 });
@@ -24,7 +25,7 @@ test('builtin cost resolution keeps VM primitives off the native callback path',
 
 test('native functions still allow explicit cost', () => {
 	const cost = { base: 9, perArg: 3, perRet: 2 };
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
 	const cpu = new CPU(memory, new IrqController(memory));
 	assert.deepEqual(cpu.createNativeFunction('unknown_native', () => {}, cost).cost, cost);
 });

@@ -44,19 +44,47 @@ ProgramImage makeMinimalProgramImage(ProgramBootTarget target, std::span<const u
 	return image;
 }
 
-CartManifest makeMinimalCartManifest() {
+CartManifest makeMinimalCartManifest(u32 cartridgeBoardWord, u32 cartridgeRamByteCount) {
 	CartManifest manifest;
 	manifest.machine.namespaceName = "test";
 	manifest.machine.vdpClass = MachineVdpClass::Psx;
 	manifest.entryPath = "boot";
+	manifest.cartridgeBoardWord = cartridgeBoardWord;
+	manifest.cartridgeRamByteCount = cartridgeRamByteCount;
 	return manifest;
 }
 
 } // namespace
 
-std::vector<u8> makeMinimalBootRom(ProgramBootTarget target) {
+std::vector<u8> makeMinimalBootRom(
+	ProgramBootTarget target,
+	u32 cartridgeBoardWord,
+	u32 cartridgeRamByteCount) {
 	const std::vector<u8> code = makeMinimalProgramCode();
-	return encodeProgramCartRom(makeMinimalCartManifest(), makeMinimalProgramImage(target, code));
+	return encodeProgramRom(
+		makeMinimalCartManifest(cartridgeBoardWord, cartridgeRamByteCount),
+		makeMinimalProgramImage(target, code),
+		target == ProgramBootTarget::System ? RomImageDomain::System : RomImageDomain::Cartridge);
+}
+
+std::vector<u8> makeMinimalDataRom(
+	u32 cartridgeBoardWord,
+	u32 cartridgeRamByteCount) {
+	std::vector<u8> rom = makeMinimalBootRom(
+		ProgramBootTarget::Cart,
+		cartridgeBoardWord,
+		cartridgeRamByteCount);
+	CartRomHeader header = parseCartHeader(rom.data(), rom.size());
+	header.programBootVersion = 0u;
+	header.programBootFlags = 0u;
+	header.programEntryProtoIndex = 0u;
+	header.programCodeByteCount = 0u;
+	header.programConstPoolCount = 0u;
+	header.programProtoCount = 0u;
+	header.programReserved0 = 0u;
+	header.programConstRelocCount = 0u;
+	writeCartRomHeader(rom.data(), header);
+	return rom;
 }
 
 } // namespace bmsx::test

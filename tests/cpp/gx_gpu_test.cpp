@@ -14,6 +14,7 @@
 #include "render/backend/software/gx_gpu_scanout.h"
 #include "render/backend/software/gx_gpu_commands.h"
 #include "render/backend/software/gx_gpu_vram.h"
+#include "support/cartridge_fixture.h"
 
 #include <array>
 #include <cstdint>
@@ -34,13 +35,15 @@ struct GpuHarness {
 	bmsx::GxGpu gpu;
 
 	GpuHarness()
-		: memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, { emptyRom.data(), 0u } })
+		: memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, bmsx::test::cartridgeSlots() })
 		, irq(memory)
 		, cpu(memory, irq)
 		, scheduler(cpu)
 		, dma(memory, cpu, irq, scheduler)
 		, gpu(memory, cpu, irq, scheduler, dma) {
+		memory.cartridgeController().connect(memory, irq, dma);
 		dma.reset();
+		memory.cartridgeController().reset();
 		gpu.reset();
 		irq.reset();
 	}
@@ -55,12 +58,14 @@ struct CommandBufferDmaHarness {
 	bmsx::DmaController dma;
 
 	CommandBufferDmaHarness()
-		: memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, { emptyRom.data(), 0u } })
+		: memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, bmsx::test::cartridgeSlots() })
 		, irq(memory)
 		, cpu(memory, irq)
 		, scheduler(cpu)
 		, dma(memory, cpu, irq, scheduler) {
+		memory.cartridgeController().connect(memory, irq, dma);
 		dma.reset();
+		memory.cartridgeController().reset();
 		irq.reset();
 	}
 };

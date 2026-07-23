@@ -74,6 +74,7 @@ private:
 	void resumeCpuWriteIfPortReleased(u32 address);
 	bool requestAsserted(u32 channel) const;
 	bool requestLineAsserted(u32 request) const;
+	static MappedBusSignals cartridgeSlotSignals(u32 request);
 	bool busy(u32 channel) const;
 	u32 channelReadAddress(u32 channel) const;
 	u32 channelWriteAddress(u32 channel) const;

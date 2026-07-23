@@ -2,6 +2,7 @@
 #include "machine/machine.h"
 #include "machine/memory/map.h"
 #include "machine/memory/memory.h"
+#include "support/cartridge_fixture.h"
 
 #include <array>
 #include <stdexcept>
@@ -50,7 +51,7 @@ struct InputControllerHarness {
 	bmsx::Machine machine;
 
 	InputControllerHarness()
-		: memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, { emptyRom.data(), 0u } })
+		: memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, bmsx::test::cartridgeSlots() })
 		, machine(memory, input) {
 		machine.resetDevices();
 	}

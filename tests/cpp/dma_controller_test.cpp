@@ -10,6 +10,7 @@
 #include "machine/memory/memory.h"
 #include "machine/model_registry.h"
 #include "machine/scheduler/device.h"
+#include "support/cartridge_fixture.h"
 
 #include <array>
 #include <cstdint>
@@ -39,13 +40,15 @@ struct DmaGpuHarness {
 	bmsx::GxGpu gpu;
 
 	DmaGpuHarness()
-		: memory(bmsx::MemoryInit{ { systemRom.data(), systemRom.size() }, { cartRom.data(), cartRom.size() } })
+		: memory(bmsx::MemoryInit{ { systemRom.data(), systemRom.size() }, bmsx::test::cartridgeSlots(cartRom) })
 		, irq(memory)
 		, cpu(memory, irq)
 		, scheduler(cpu)
 		, dma(memory, cpu, irq, scheduler)
 		, gpu(memory, cpu, irq, scheduler, dma) {
+		memory.cartridgeController().connect(memory, irq, dma);
 		dma.reset();
+		memory.cartridgeController().reset();
 		gpu.reset();
 		irq.reset();
 		dma.setTiming(0, 1, 0, 0, 0, 0);
@@ -125,17 +128,29 @@ void testSystemRomTiming() {
 }
 
 void testTimingAcrossMemoryRegionBoundaries() {
-	DmaGpuHarness systemToCart;
-	systemToCart.dma.setTiming(5, 7, 2, 11, 13, 0);
+	DmaGpuHarness cartRomToRam;
+	cartRomToRam.dma.setTiming(5, 7, 2, 11, 13, 0);
 	programTransfer(
-		systemToCart.memory,
-		bmsx::CART_ROM_BASE - 4u,
+		cartRomToRam.memory,
+		bmsx::CART_ROM_END - bmsx::IO_WORD_SIZE,
 		bmsx::IO_GX_GPU_GP0,
 		2u,
 		ForcedGp0WriteControl);
 	require(
-		systemToCart.scheduler.nextDeadline() == 26,
-		"one system-ROM word and a new cartridge burst retain their own physical timing");
+		cartRomToRam.scheduler.nextDeadline() == 48,
+		"cartridge ROM and RAM each pay their physical bus setup and word timing");
+
+	DmaGpuHarness cartRamToMmio;
+	cartRamToMmio.dma.setTiming(5, 7, 2, 11, 13, 0);
+	programTransfer(
+		cartRamToMmio.memory,
+		bmsx::CART_RAM_END - bmsx::IO_WORD_SIZE,
+		bmsx::IO_GX_GPU_GP0,
+		2u,
+		ForcedGp0WriteControl);
+	require(
+		cartRamToMmio.scheduler.nextDeadline() == 48,
+		"cartridge RAM and MMIO each begin a physical bus transaction");
 
 	DmaGpuHarness ioToRam;
 	ioToRam.dma.setTiming(5, 7, 2, 11, 13, 0);

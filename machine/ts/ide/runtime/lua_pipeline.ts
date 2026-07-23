@@ -300,7 +300,6 @@ export function installProgramMedia(runtime: Runtime, rebuilt: RebuiltProgramMed
 		sources.systemProgramMediaDirty = false;
 	}
 	if (cartLayer !== null) {
-		runtime.machine.memory.cartRom = cartLayer.payload;
 		sources.cartProgramSources = rebuilt.cart!.sources;
 		sources.cartProgramMediaDirty = false;
 	}

@@ -1,3 +1,4 @@
+import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -96,6 +97,7 @@ import {
 	IO_APU_TRANSFER_CONTROL,
 	IO_APU_TRANSFER_DATA,
 	IO_ARG_STRIDE,
+	IO_CART_SELECT,
 	IO_DMA0_CONTROL,
 	IO_DMA0_READ_ADDR,
 	IO_DMA0_STATUS,
@@ -131,6 +133,7 @@ type FakeVoiceInfo = { slot: number; sourceAddr: number; registerWords: readonly
 function createFakeOutputVoiceState(voice: FakeVoiceInfo): ApuOutputVoiceState {
 	return {
 		slot: voice.slot,
+		sourceCartridgeSlot: 0,
 		cursorQ16: voice.playbackCursorQ16,
 		phaseRemainder: 0,
 		gainQ12: 0x1000,
@@ -166,14 +169,16 @@ function createFakeOutputVoiceState(voice: FakeVoiceInfo): ApuOutputVoiceState {
 
 function createAudioControllerHarness(
 	audioOutput: object,
-	memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) }),
+	memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }),
 ): { memory: Memory; audio: AudioController; dma: DmaController; scheduler: DeviceScheduler } {
 	const irq = new IrqController(memory);
 	const cpu = new CPU(memory, irq);
 	const scheduler = new DeviceScheduler(cpu);
 	const dma = new DmaController(memory, cpu, irq, scheduler);
+	memory.cartridgeController.connect(memory, irq, dma);
 	const audio = new AudioController(memory, audioOutput as ApuOutputMixer, dma, irq, scheduler);
 	dma.reset();
+	memory.cartridgeController.reset();
 	audio.reset();
 	audio.setTiming(APU_SAMPLE_RATE_HZ, 0);
 	return { memory, audio, dma, scheduler };
@@ -195,9 +200,11 @@ function createAudioHarness(): { memory: Memory; audio: AudioController; dma: Dm
 	return createAudioControllerHarness(audioOutput);
 }
 
-function createRealAudioHarness(): { memory: Memory; audio: AudioController; dma: DmaController; scheduler: DeviceScheduler; audioOutput: ApuOutputMixer; hostOutput: AudioOutputResampler } {
+function createRealAudioHarness(
+	memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }),
+): { memory: Memory; audio: AudioController; dma: DmaController; scheduler: DeviceScheduler; audioOutput: ApuOutputMixer; hostOutput: AudioOutputResampler } {
 	const audioOutput = new ApuOutputMixer();
-	return { ...createAudioControllerHarness(audioOutput), audioOutput, hostOutput: new AudioOutputResampler() };
+	return { ...createAudioControllerHarness(audioOutput, memory), audioOutput, hostOutput: new AudioOutputResampler() };
 }
 
 const SILENT_INPUT_SOURCE: InputControllerInputSource = {
@@ -207,7 +214,7 @@ const SILENT_INPUT_SOURCE: InputControllerInputSource = {
 };
 
 function createAudioMachine(): Machine {
-	const machine = new Machine(new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) }), SILENT_INPUT_SOURCE);
+	const machine = new Machine(new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }), SILENT_INPUT_SOURCE);
 	machine.initializeSystemIo();
 	machine.resetDevices();
 	machine.audioController.setTiming(APU_SAMPLE_RATE_HZ, 0);
@@ -342,24 +349,29 @@ test('APU raw Q14 biquad has exact signed decode, wrap, saturation, and retained
 test('APU sample bus binds ROM directly, owns sample RAM, and rejects CPU memory', () => {
 	const systemRom = new Uint8Array([0xa1, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6]);
 	const cartRom = new Uint8Array([0xb1, 0xb2, 0xb3, 0xb4, 0xb5, 0xb6, 0xb7, 0xb8]);
-	const memory = new Memory({ systemRom, cartRom });
+	const memory = new Memory({ systemRom, cartridgeSlots: cartridgeSlots(cartRom) });
 	const sampleMemory = new ApuSampleMemory(memory);
-	const view: ApuSourceByteView = { bytes: new Uint8Array(0), byteOffset: 0, byteLength: 0 };
+	const view: ApuSourceByteView = {
+		bytes: new Uint8Array(0),
+		byteOffset: 0,
+		byteLength: 0,
+		cartridgeSlot: 0,
+	};
 
-	assert.equal(sampleMemory.bindSource(SYSTEM_ROM_BASE + 1, 4, view), true);
+	assert.equal(sampleMemory.bindSource(SYSTEM_ROM_BASE + 1, 4, 0, view), true);
 	assert.equal(view.bytes, systemRom);
 	assert.deepEqual(Array.from(view.bytes.subarray(view.byteOffset, view.byteOffset + view.byteLength)), [0xa2, 0xa3, 0xa4, 0xa5]);
-	assert.equal(sampleMemory.bindSource(CART_ROM_BASE + 2, 4, view), true);
+	assert.equal(sampleMemory.bindSource(CART_ROM_BASE + 2, 4, 0, view), true);
 	assert.equal(view.bytes, cartRom);
 	assert.deepEqual(Array.from(view.bytes.subarray(view.byteOffset, view.byteOffset + view.byteLength)), [0xb3, 0xb4, 0xb5, 0xb6]);
 
 	sampleMemory.writeWord(0, 0x44332211);
-	assert.equal(sampleMemory.bindSource(APU_SAMPLE_RAM_BASE, 4, view), true);
+	assert.equal(sampleMemory.bindSource(APU_SAMPLE_RAM_BASE, 4, 0, view), true);
 	assert.deepEqual(Array.from(view.bytes.subarray(view.byteOffset, view.byteOffset + view.byteLength)), [0x11, 0x22, 0x33, 0x44]);
 	sampleMemory.writeWord(0, 0x88776655);
 	assert.deepEqual(Array.from(view.bytes.subarray(view.byteOffset, view.byteOffset + view.byteLength)), [0x55, 0x66, 0x77, 0x88]);
 	memory.writeU32(RAM_BASE, 0xccbbaa99);
-	assert.equal(sampleMemory.bindSource(RAM_BASE, 4, view), false);
+	assert.equal(sampleMemory.bindSource(RAM_BASE, 4, 0, view), false);
 });
 
 function writeSampleRamBytes(memory: Memory, bytes: Uint8Array): void {
@@ -390,7 +402,7 @@ function writeValidSourceRegisters(memory: Memory): void {
 test('APU voices read cart sample ROM directly and reject CPU RAM addresses', () => {
 	const cartMemory = new Memory({
 		systemRom: new Uint8Array(0),
-		cartRom: new Uint8Array([0x44, 0x33, 0x22, 0x11]),
+		cartridgeSlots: cartridgeSlots(new Uint8Array([0x44, 0x33, 0x22, 0x11])),
 	});
 	const cartHarness = createAudioControllerHarness(new ApuOutputMixer(), cartMemory);
 	writePcmSourceRegisters(cartMemory, CART_ROM_BASE, 4);
@@ -410,6 +422,42 @@ test('APU voices read cart sample ROM directly and reject CPU RAM addresses', ()
 	cpuHarness.audio.onService(0);
 	assertApuFaultLatch(cpuHarness.memory, APU_FAULT_SOURCE_RANGE);
 	assert.equal(cpuHarness.memory.readIoU32(IO_APU_ACTIVE_MASK), 0);
+});
+
+test('APU voices latch their cartridge socket across CPU selection changes and restore', () => {
+	const memory = new Memory({
+		systemRom: new Uint8Array(0),
+		cartridgeSlots: [
+			{
+				rom: new Uint8Array([0x00, 0x00, 0x00, 0x00]),
+				boardWord: 0,
+				ramByteCount: 0,
+				present: true,
+				programPresent: false,
+			},
+			{
+				rom: new Uint8Array([0xff, 0xff, 0xff, 0xff]),
+				boardWord: 0,
+				ramByteCount: 0,
+				present: true,
+				programPresent: false,
+			},
+		],
+	});
+	const harness = createRealAudioHarness(memory);
+	memory.writeMappedU32LE(IO_CART_SELECT, 1);
+	writePcmSourceRegisters(memory, CART_ROM_BASE, 4);
+	memory.writeValue(IO_APU_RATE_STEP_Q16, APU_RATE_STEP_Q16_ONE);
+	memory.writeValue(IO_APU_GAIN_Q12, APU_GAIN_Q12_ONE);
+	memory.writeValue(IO_APU_SLOT, 1);
+	writeApuCommand(memory, harness.audio, APU_CMD_PLAY);
+	const saved = harness.audio.captureState();
+	assert.equal(saved.output.voices[0]!.sourceCartridgeSlot, 1);
+
+	memory.writeMappedU32LE(IO_CART_SELECT, 0);
+	harness.audio.restoreState(saved, 0);
+	advanceRealApu(harness, 1);
+	assert.equal(harness.audioOutput.outputRing.readFramePacked(), 0x7f00_7f00);
 });
 
 function serviceScheduledDmaBlock(harness: ReturnType<typeof createAudioHarness>): void {

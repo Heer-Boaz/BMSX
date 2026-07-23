@@ -7,7 +7,7 @@
 namespace bmsx {
 
 constexpr uint32_t APU_SAMPLE_RATE_HZ = 44100U;
-constexpr uint32_t APU_SAMPLE_RAM_BASE = 0x10000000U;
+constexpr uint32_t APU_SAMPLE_RAM_BASE = 0x40000000U;
 constexpr uint32_t APU_SAMPLE_RAM_BYTES = 512U * 1024U;
 constexpr uint32_t APU_SAMPLE_RAM_ADDRESS_MASK = APU_SAMPLE_RAM_BYTES - 1U;
 constexpr uint32_t APU_TRANSFER_FIFO_WORD_CAPACITY = 16U;

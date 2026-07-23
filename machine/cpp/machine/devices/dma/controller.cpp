@@ -138,14 +138,17 @@ void DmaController::onService(i64) {
 	const u32 control = m_scheduledControlWord;
 	const u32 readStep = (control & DMA_CONTROL_READ_INCREMENT) != 0u ? IO_WORD_SIZE : 0u;
 	const u32 writeStep = (control & DMA_CONTROL_WRITE_INCREMENT) != 0u ? IO_WORD_SIZE : 0u;
+	const u32 readRequest = (control & DMA_CONTROL_READ_REQUEST_MASK) >> DMA_CONTROL_READ_REQUEST_SHIFT;
+	const u32 writeRequest = (control & DMA_CONTROL_WRITE_REQUEST_MASK) >> DMA_CONTROL_WRITE_REQUEST_SHIFT;
+	const MappedBusSignals readBusSignals = MAPPED_BUS_MASTER_DMA | cartridgeSlotSignals(readRequest);
+	const MappedBusSignals writeBusSignals = MAPPED_BUS_MASTER_DMA | cartridgeSlotSignals(writeRequest);
 	const i64 blockDeadline = m_serviceDeadline;
 	m_scheduler.cancelDeviceService(DEVICE_SERVICE_DMA);
 	m_serviceActive = true;
 	for (u32 slot = 0u; slot < blockWords; slot += 1u) {
-		const MappedBusSignals busSignals = MAPPED_BUS_MASTER_DMA
-			| (slot + 1u == blockWords ? MAPPED_BUS_DMA_BLOCK_END : 0u);
-		const u32 word = m_memory.readMappedDmaU32LE(readAddress, busSignals);
-		m_memory.writeMappedDmaU32LE(writeAddress, word, busSignals);
+		const MappedBusSignals blockEnd = slot + 1u == blockWords ? MAPPED_BUS_DMA_BLOCK_END : 0u;
+		const u32 word = m_memory.readMappedDmaU32LE(readAddress, readBusSignals | blockEnd);
+		m_memory.writeMappedDmaU32LE(writeAddress, word, writeBusSignals | blockEnd);
 		readAddress += readStep;
 		writeAddress += writeStep;
 		transferCount -= 1u;
@@ -379,7 +382,8 @@ void DmaController::admitBlock(u32 channel, i64 anchorCycle) {
 		const u32 spanWords = readRegionWords < writeRegionWords ? readRegionWords : writeRegionWords;
 		const i64 readCycles = regionSpanCycles(readRegion, spanWords, readRegionStart);
 		const i64 writeCycles = regionSpanCycles(writeRegion, spanWords, writeRegionStart);
-		blockCycles += readRegion == MemoryRegionKind::Ram && writeRegion == MemoryRegionKind::Ram
+		blockCycles += readRegion == writeRegion
+			&& (readRegion == MemoryRegionKind::Ram || readRegion == MemoryRegionKind::Cartridge)
 			? readCycles + writeCycles
 			: readCycles > writeCycles ? readCycles : writeCycles;
 		wordsRemaining -= spanWords;
@@ -419,7 +423,7 @@ i64 DmaController::regionSpanCycles(MemoryRegionKind region, u32 wordCount, bool
 		return static_cast<i64>(wordCount) * m_ramCyclesPerWord + (regionStart ? m_ramBurstSetupCycles : 0);
 	case MemoryRegionKind::SystemRom:
 		return static_cast<i64>(wordCount) * m_systemRomCyclesPerWord;
-	case MemoryRegionKind::CartRom:
+	case MemoryRegionKind::Cartridge:
 		return static_cast<i64>(wordCount) * m_cartRomCyclesPerWord + (regionStart ? m_cartRomBurstSetupCycles : 0);
 	case MemoryRegionKind::Io:
 	case MemoryRegionKind::Other:
@@ -443,6 +447,19 @@ bool DmaController::requestLineAsserted(u32 request) const {
 		return false;
 	}
 	return (m_requestLines & (1u << request)) != 0u;
+}
+
+MappedBusSignals DmaController::cartridgeSlotSignals(u32 request) {
+	switch (request) {
+	case DMA_REQUEST_CARTRIDGE_SLOT0_READ:
+	case DMA_REQUEST_CARTRIDGE_SLOT0_WRITE:
+		return MAPPED_BUS_CARTRIDGE_SLOT_OVERRIDE;
+	case DMA_REQUEST_CARTRIDGE_SLOT1_READ:
+	case DMA_REQUEST_CARTRIDGE_SLOT1_WRITE:
+		return MAPPED_BUS_CARTRIDGE_SLOT_OVERRIDE | MAPPED_BUS_CARTRIDGE_SLOT1;
+	default:
+		return 0u;
+	}
 }
 
 bool DmaController::busy(u32 channel) const {

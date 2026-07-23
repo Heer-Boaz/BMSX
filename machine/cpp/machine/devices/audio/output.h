@@ -8,6 +8,7 @@
 #include "machine/devices/audio/output_ring.h"
 #include "machine/devices/audio/playback.h"
 #include "machine/devices/audio/save_state.h"
+#include "machine/devices/audio/source.h"
 
 #include <array>
 
@@ -24,19 +25,19 @@ public:
 	void playVoice(
 		ApuAudioSlot slot,
 		const ApuAudioSource& source,
-		const Span<const u8>& sourceBytes,
+		const ApuSourceByteView& sourceBytes,
 		const ApuParameterRegisterWords& registerWords
 	);
 	void replaceVoiceSource(
 		ApuAudioSlot slot,
 		const ApuAudioSource& source,
-		const Span<const u8>& sourceBytes,
+		const ApuSourceByteView& sourceBytes,
 		const ApuParameterRegisterWords& registerWords
 	);
 	void restoreVoice(
 		ApuAudioSlot slot,
 		const ApuAudioSource& source,
-		const Span<const u8>& sourceBytes,
+		const ApuSourceByteView& sourceBytes,
 		const ApuParameterRegisterWords& registerWords,
 		const ApuOutputVoiceState& state
 	);
@@ -57,6 +58,7 @@ private:
 	struct VoiceRecord {
 		bool active = false;
 		ApuAudioSlot slot = 0;
+		u32 sourceCartridgeSlot = 0;
 		u32 channels = 0;
 		u32 bitsPerSample = 0;
 		const u8* sourceBytes = nullptr;
@@ -89,7 +91,7 @@ private:
 	void buildVoiceFromData(
 		VoiceRecord& record,
 		const ApuAudioSource& source,
-		const Span<const u8>& sourceBytes,
+		const ApuSourceByteView& sourceBytes,
 		u32 rateStepQ16Word,
 		i64 cursorQ16,
 		i32 phaseRemainder

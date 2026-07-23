@@ -1,3 +1,4 @@
+import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -18,7 +19,7 @@ function runStructRead(packedWords: number[], snippet: string): Value[] {
 	const lexer = new LuaLexer(snippet, 'bin_struct.lua');
 	const parser = new LuaParser(lexer.scanTokens(), 'bin_struct.lua', splitText(snippet));
 	const compiled = compileLuaChunkToProgram(parser.parseChunk(), [], { entrySource: snippet });
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
 	for (let index = 0; index < packedWords.length; index += 1) {
 		memory.writeMappedU32LE(BIN_ADDR + index * 4, packedWords[index] >>> 0);
 	}

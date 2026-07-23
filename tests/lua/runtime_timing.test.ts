@@ -1,3 +1,4 @@
+import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -79,7 +80,7 @@ class TimingInputSource implements RuntimeInputSource {
 function createTimingRuntime(cpuHz = 5_000_000): Runtime {
 	const timing = resolveRuntimeTiming(cpuHz);
 	return new Runtime({
-		memory: new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) }),
+		memory: new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }),
 		pcrtcRunning: timing.pcrtcRunning,
 		ufpsScaled: timing.ufpsScaled,
 		cpuHz: timing.cpuHz,

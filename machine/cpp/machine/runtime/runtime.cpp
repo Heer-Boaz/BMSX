@@ -27,8 +27,8 @@ Runtime::Runtime(
 	)
 	, m_input(input)
 	, m_memory(MemoryInit{
-		{ options.systemRomBytes.data, options.systemRomBytes.size },
-		{ options.cartRomBytes.data, options.cartRomBytes.size }
+		options.systemRomBytes,
+		options.cartridgeSlots
 	})
 	, machine(m_memory, input)
 	, hostFault(*this)

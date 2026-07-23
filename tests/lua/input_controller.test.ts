@@ -1,3 +1,4 @@
+import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -68,7 +69,7 @@ function createHarness(): {
 	setKey: (usage: number, down: boolean) => void;
 	setSupervisorRequestLine: (high: boolean) => void;
 } {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
 	const vibrations: FakeVibration[] = [];
 	const keyWords = new Uint32Array(INPUT_CONTROLLER_KEY_WORD_COUNT);
 	keyWords[HID_KEY_X >>> 5] = 1 << (HID_KEY_X & 31);

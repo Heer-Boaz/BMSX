@@ -3,15 +3,23 @@ export const ADDRESS_BITS = 32;
 export const SYSTEM_ROM_BASE = 0x00000000;
 export const SYSTEM_ROM_SIZE = 0x01000000; // 16 MB
 
-export const CART_ROM_BASE = 0x01000000;
-export const CART_ROM_SIZE = 0x05000000; // 80 MB
-export const CART_ROM_MAGIC_OFFSET = 0x00000000;
-export const CART_ROM_MAGIC_ADDR = CART_ROM_BASE + CART_ROM_MAGIC_OFFSET;
-
-
 export const RAM_BASE = 0x08000000;
 export const MAX_RAM_SIZE = 0x08000000; // 128 MB address window
 export const DEFAULT_RAM_SIZE = 0x00400000; // 4 MB
+
+export const CART_ROM_BASE = RAM_BASE + MAX_RAM_SIZE;
+export const CART_ROM_SIZE = 0x20000000; // 512 MB address window
+export const CART_ROM_END = CART_ROM_BASE + CART_ROM_SIZE;
+export const CART_ROM_MAGIC_OFFSET = 0x00000000;
+export const CART_ROM_MAGIC_ADDR = CART_ROM_BASE + CART_ROM_MAGIC_OFFSET;
+
+export const CART_RAM_BASE = CART_ROM_END;
+export const CART_RAM_SIZE = 0x00f00000; // 15 MB
+export const CART_RAM_END = CART_RAM_BASE + CART_RAM_SIZE;
+export const CART_MMIO_BASE = CART_RAM_BASE + CART_RAM_SIZE;
+export const CART_MMIO_SIZE = 0x00100000; // 1 MB
+export const CART_MMIO_END = CART_MMIO_BASE + CART_MMIO_SIZE;
+export const CART_BUS_END = CART_MMIO_END;
 
 export const IO_WORD_SIZE = 4;
 

@@ -134,10 +134,20 @@ void core_session_open(
 void core_session_load_content(
 		BmsxCoreSession* session,
 		bool no_game,
-		const char* game_path) {
+		const char* game_path,
+		const char* slot1_path) {
 	bool loaded;
 	if (no_game) {
 		loaded = session->api.retro_load_game(NULL);
+	} else if (slot1_path) {
+		const struct retro_game_info game_info[2] = {
+			{ .path = game_path },
+			{ .path = slot1_path },
+		};
+		loaded = session->api.retro_load_game_special(
+				BMSX_SUBSYSTEM_DUAL_CARTRIDGE,
+				game_info,
+				2u);
 	} else if (session->system_info.need_fullpath) {
 		const struct retro_game_info game_info = {
 			.path = game_path,
@@ -195,6 +205,7 @@ bool core_session_environment(unsigned command, void* data) {
 			return true;
 		}
 		case RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME:
+		case RETRO_ENVIRONMENT_SET_SUBSYSTEM_INFO:
 			return true;
 		case RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY: {
 			const char** directory = (const char**)data;

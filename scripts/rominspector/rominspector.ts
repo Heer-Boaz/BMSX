@@ -4,11 +4,10 @@
 
 import * as fs from 'fs/promises';
 import { parseArgs } from 'node:util';
-import * as pako from 'pako';
-import type { RomAsset, CartRomHeader, RomManifest } from '../../machine/ts/rompack/format';
+import { parseCartHeader, type RomAsset, type CartRomHeader, type RomManifest } from '../../machine/ts/rompack/format';
 import { collectRomAssetSymbols } from '../../machine/ts/rompack/asset_symbols';
 import type { ProgramImage } from '../../machine/ts/machine/program/loader';
-import { getZippedRomAndRomLabelFromBlob, loadRomAssetList, parseCartridgeIndex, parseCartHeader } from '../../machine/ts/rompack/loader';
+import { loadRomAssetList, parseCartridgeIndex } from '../../machine/ts/rompack/loader';
 import {
 	buildManifestAsset,
 	disassembleProgramImage,
@@ -110,75 +109,10 @@ function getTocBuffer(rombin: Buffer | Uint8Array, header: CartRomHeader) {
 }
 
 async function loadRompackFromFile(romfile: string): Promise<Uint8Array> {
-	let raw: Buffer
-	let error: any;
-	let rawSize = 0;
-	let deflatedSize = 0;
-	try {
-		console.log(`Reading ROM file from "${romfile}"...`);
-		raw = await fs.readFile(romfile);
-		rawSize = raw.byteLength;
-		console.log(`Read ${formatByteSize(rawSize)} from ROM file.`);
-	}
-	catch (e: any) {
-		error = e;
-	}
-	// Check whether the file exists
-	if (!raw) {
-		throw new Error(`Failed to read ROM file at "${romfile}": ${error?.message || 'Unknown error'}`);
-	}
-
-	const { zipped_rom, romlabel } = await getZippedRomAndRomLabelFromBlob(
-		// @ts-ignore
-		raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength)
-	);
-	if (!zipped_rom || zipped_rom.byteLength === 0) {
-		throw new Error(`ROM file "${romfile}" is empty or invalid.`);
-	}
-	const labelInfo = romlabel ? `${formatByteSize(romlabel.byteLength)} PNG label` : 'No label';
-	console.log(`Loaded ROM file "${romfile}" with label: ${labelInfo}`);
-
-	function isPakoCompressed(raw: Uint8Array): boolean {
-		// Gzip: 1F 8B
-		if (raw && raw.length >= 2 && raw[0] === 0x1F && raw[1] === 0x8B) {
-			return true;
-		}
-		// Zlib: 78 01 / 78 9C / 78 DA (common), but also check CMF/FLG validity
-		if (raw && raw.length >= 2 && raw[0] === 0x78) {
-			const cmf = raw[0], flg = raw[1];
-			if ((cmf * 256 + flg) % 31 === 0) {
-				return true;
-			}
-		}
-		return false;
-	}
-
-	const zippedView = new Uint8Array(zipped_rom);
-	const isCompressed = isPakoCompressed(zippedView);
-	let rombin: Uint8Array | null = null;
-	if (isCompressed) {
-		console.log('ROM is compressed, decompressing...');
-		let decompressed: Uint8Array | null = null;
-		try {
-			decompressed = pako.inflate(zippedView);
-		} catch (e: any) {
-			const msg = e && typeof e.message === 'string' ? e.message : String(e);
-			console.error(`Failed to decompress ROM: ${msg}`);
-			console.error(e?.stack ?? 'No stack trace available');
-			decompressed = null; // fallback to null if decompression fails
-		}
-		rombin = decompressed ?? raw; // Use decompressed data if available, otherwise fallback to raw
-		deflatedSize = rombin.byteLength;
-		console.log(`Decompressed ROM size: ${formatByteSize(deflatedSize)}`);
-		console.log(`Compressed size vs uncompressed size (lower is better): ${((rawSize / deflatedSize) * 100).toFixed(2)}%`);
-	} else {
-		console.log('ROM is uncompressed, using as-is.');
-		rombin = raw;
-	}
-	if (!rombin) {
-		throw new Error('ROM pack is empty or invalid after decompression.');
-	}
-	return rombin;
+	console.log(`Reading ROM file from "${romfile}"...`);
+	const raw = await fs.readFile(romfile);
+	console.log(`Read ${formatByteSize(raw.byteLength)} from ROM file.`);
+	return raw;
 }
 
 /**

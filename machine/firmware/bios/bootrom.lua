@@ -10,6 +10,7 @@ math = require('bios/math')
 easing = require('bios/easing')
 
 local dma_transfer<const> = require('bios/dma_transfer')
+local cartridge<const> = require('system/cartridge')
 local gx_gpu<const> = require('system/gx_gpu')
 local romdir<const> = require('system/romdir')
 local monitor<const> = require('bios/monitor')
@@ -21,7 +22,6 @@ local vblank<const> = require('bios/vblank')
 local irq_mask<const>: *word = 0x08000010
 local input_control<const>: *word = 0x0800006c
 
-local cart_rom_base<const> = 0x01000000
 local cart_rom_magic<const> = 0x58534d42
 local cart_rom_base_header_size<const> = 32
 local irq_vblank<const> = 0x0004
@@ -46,10 +46,10 @@ function exception()
 end
 
 local cart_header_present<const> = function()
-	if mem[cart_rom_base] ~= cart_rom_magic then
+	if mem[cartridge.rom_base] ~= cart_rom_magic then
 		return false
 	end
-	return mem[cart_rom_base + 4] >= cart_rom_base_header_size
+	return mem[cartridge.rom_base + 4] >= cart_rom_base_header_size
 end
 
 local initialize_boot_output<const> = function()
@@ -95,7 +95,7 @@ end
 
 local update_boot_screen<const> = function()
 	local cart_present<const> = cart_header_present()
-	if cart_present then
+	if cart_present and cartridge.selected_program_present() then
 		-- Runtime starts the cart only after this system root returns. Keep the
 		-- handoff after the first VBlank; the cart then programs primary scanout.
 		*irq_mask = 0

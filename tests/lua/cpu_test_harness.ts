@@ -1,3 +1,4 @@
+import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 
 import { splitText } from '../../machine/ts/common/text_lines';
@@ -21,7 +22,7 @@ export function compileLuaSource(source: string, path = 'test.lua', optLevel: Op
 
 export function runCompiledLua(source: string, path = 'test.lua', optLevel: OptimizationLevel = 0): Value[] {
 	const compiled = compileLuaSource(source, path, optLevel);
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
 	const cpu = new CPU(memory, new IrqController(memory));
 	cpu.setProgram(compiled.program, compiled.metadata, compiled.metadata, 0, 0, 0);
 	cpu.start(compiled.entryProtoIndex);

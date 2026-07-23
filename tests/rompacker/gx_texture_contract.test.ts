@@ -1,3 +1,4 @@
+import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { readFile, rm } from 'node:fs/promises';
@@ -309,9 +310,11 @@ test('a packed cart texture resolves through the ROM loader, inspector, firmware
 			compiled_buffer: Buffer.from([0]),
 		}];
 		await finalizeRompack('texture-contract', {
-			zipRom: false,
 			debug: false,
+			cartridgeBoardWord: 0,
+			cartridgeRamByteCount: 0,
 			program: {
+				domain: 'cart',
 				boot: {
 					version: PROGRAM_BOOT_HEADER_VERSION,
 					flags: 0,
@@ -373,6 +376,7 @@ return first_texture == second_texture and 1 or 0, imgdec.last_upload()
 			['bios/common/endian', readFileSync('machine/firmware/bios/common/endian.lua', 'utf8')],
 			['bios/common/float_bits', readFileSync('machine/firmware/bios/common/float_bits.lua', 'utf8')],
 			['system/bin', readFileSync('machine/firmware/system/bin.lua', 'utf8')],
+			['system/cartridge', readFileSync('machine/firmware/system/cartridge.lua', 'utf8')],
 			['system/romdir', readFileSync('machine/firmware/system/romdir.lua', 'utf8')],
 			['system/gx_gpu', 'return { texture_mode_palette4 = 0 }'],
 			['system/imgdec', `
@@ -404,7 +408,7 @@ return imgdec
 			optLevel: 3,
 		});
 		const finalized = finalizeTestSystemProgram(compiled);
-		const memory = new Memory({ systemRom: rom, cartRom: rom });
+		const memory = new Memory({ systemRom: rom, cartridgeSlots: cartridgeSlots(rom) });
 		const cpu = new CPU(memory, new IrqController(memory));
 		const vectors = finalized.image.vectors;
 		cpu.setProgram(

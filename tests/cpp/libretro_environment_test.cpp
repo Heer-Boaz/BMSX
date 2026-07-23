@@ -1,6 +1,7 @@
 #include "bmsx_libretro.h"
 #include "common/endian.h"
 #include "input/manager.h"
+#include "machine/devices/cartridge/contracts.h"
 #include "machine/devices/gx/gpu_pcrtc.h"
 #include "machine/runtime/save_state/codec.h"
 #include "support/boot_rom_fixture.h"
@@ -24,6 +25,7 @@ unsigned requestLineReads = 0u;
 unsigned inputPolls = 0u;
 unsigned geometryNotifications = 0u;
 unsigned systemAvNotifications = 0u;
+unsigned subsystemInfoOffers = 0u;
 unsigned callbackSequence = 0u;
 unsigned lastGeometryNotificationSequence = 0u;
 unsigned lastSystemAvNotificationSequence = 0u;
@@ -85,6 +87,15 @@ bool softwareFrontendEnvironment(unsigned command, void* data) {
 		static_cast<retro_log_callback*>(data)->log = discardLog;
 		return true;
 	}
+	if (command == RETRO_ENVIRONMENT_SET_SUBSYSTEM_INFO) {
+		const auto* subsystems = static_cast<const retro_subsystem_info*>(data);
+		require(std::strcmp(subsystems[0].ident, "dualcart") == 0, "the core should register the dual-cartridge subsystem identifier");
+		require(subsystems[0].id == BMSX_SUBSYSTEM_DUAL_CARTRIDGE, "the dual-cartridge subsystem should publish its stable public id");
+		require(subsystems[0].num_roms == 2u, "the dual-cartridge subsystem should expose both physical sockets");
+		require(subsystems[0].roms[0].required && !subsystems[0].roms[1].required, "slot 0 should be required while slot 1 remains optional");
+		subsystemInfoOffers += 1u;
+		return true;
+	}
 	if (command == RETRO_ENVIRONMENT_GET_VARIABLE) {
 		auto& variable = *static_cast<retro_variable*>(data);
 		if (std::strcmp(variable.key, "bmsx_render_backend") == 0) {
@@ -95,11 +106,14 @@ bool softwareFrontendEnvironment(unsigned command, void* data) {
 	return false;
 }
 
-std::vector<bmsx::u8> makeExpandedPcrtcState() {
+std::vector<bmsx::u8> makeExpandedPcrtcState(size_t cartridgeRamByteCount) {
 	std::vector<bmsx::u8> envelope(retro_serialize_size());
 	require(retro_serialize(envelope.data(), envelope.size()), "the core should serialize a state for libretro AV notification validation");
 	const bmsx::u32 payloadBytes = bmsx::readLE32(envelope.data() + 4u);
-	bmsx::RuntimeSaveState state = bmsx::decodeRuntimeSaveState(envelope.data() + 8u, payloadBytes);
+	bmsx::RuntimeSaveState state = bmsx::decodeRuntimeSaveState(
+		envelope.data() + 8u,
+		payloadBytes,
+		cartridgeRamByteCount);
 	auto& pcrtc = state.machineState.machine.gxGpu.pcrtc;
 	pcrtc.registerWords[bmsx::GX_GPU_PCRTC_PMODE_LOW] = 0x0000ff21u;
 	pcrtc.presentWords[bmsx::GX_GPU_PCRTC_PMODE_LOW] = 0x0000ff21u;
@@ -135,6 +149,10 @@ bool frontendEnvironment(unsigned command, void* data) {
 } // namespace
 
 int main() {
+	constexpr bmsx::u32 primaryCartRamBytes = 16u;
+	constexpr bmsx::u32 auxiliaryCartRamBytes = 24u;
+	constexpr size_t cartridgeRamByteCount =
+		static_cast<size_t>(primaryCartRamBytes) + auxiliaryCartRamBytes;
 	const std::filesystem::path testDirectory =
 		std::filesystem::temp_directory_path() / "bmsx_libretro_environment_test";
 	std::filesystem::create_directories(testDirectory);
@@ -146,8 +164,26 @@ int main() {
 		static_cast<std::streamsize>(system.size()));
 	systemRom.close();
 	const std::vector<bmsx::u8> cart =
-		bmsx::test::makeMinimalBootRom(bmsx::ProgramBootTarget::Cart);
+		bmsx::test::makeMinimalDataRom(
+			bmsx::CARTRIDGE_BOARD_RAM,
+			primaryCartRamBytes);
+	const std::vector<bmsx::u8> auxiliaryCart =
+		bmsx::test::makeMinimalBootRom(
+			bmsx::ProgramBootTarget::Cart,
+			bmsx::CARTRIDGE_BOARD_RAM | bmsx::CARTRIDGE_BOARD_MAILBOX,
+			auxiliaryCartRamBytes);
 	const std::string gamePath = (testDirectory / "test.rom").string();
+	const std::string auxiliaryPath = (testDirectory / "auxiliary.rom").string();
+	std::ofstream gameRom(gamePath, std::ios::binary);
+	gameRom.write(
+		reinterpret_cast<const char*>(cart.data()),
+		static_cast<std::streamsize>(cart.size()));
+	gameRom.close();
+	std::ofstream auxiliaryRom(auxiliaryPath, std::ios::binary);
+	auxiliaryRom.write(
+		reinterpret_cast<const char*>(auxiliaryCart.data()),
+		static_cast<std::streamsize>(auxiliaryCart.size()));
+	auxiliaryRom.close();
 	const retro_game_info game{
 		.path = gamePath.c_str(),
 		.data = cart.data(),
@@ -159,6 +195,7 @@ int main() {
 	retro_set_input_state(discardInputState);
 
 	retro_set_environment(frontendEnvironment);
+	require(subsystemInfoOffers == 1u, "installing an environment should publish the cartridge subsystem once");
 #if BMSX_ENABLE_GLES2
 	require(gxUploadProfileOffers == 1u, "the core should offer the GX upload profile interface exactly once");
 	require(gxUploadProfileReaderWasOffered, "the GX upload profile interface should contain a reader callback");
@@ -177,8 +214,36 @@ int main() {
 	require(gxUploadProfileOffers == 2u, "reinstalling the frontend environment should re-offer the GX upload profile interface");
 #endif
 	retro_init();
-	require(retro_load_game(&game), "the core should load the minimal cart for supervisor negotiation validation");
+	const retro_game_info cartridgeSlots[2] = {
+		{
+			.path = gamePath.c_str(),
+			.data = nullptr,
+			.size = 0u,
+			.meta = nullptr,
+		},
+		{
+			.path = auxiliaryPath.c_str(),
+			.data = nullptr,
+			.size = 0u,
+			.meta = nullptr,
+		},
+	};
+	require(
+		retro_load_game_special(BMSX_SUBSYSTEM_DUAL_CARTRIDGE, cartridgeSlots, 2u),
+		"the core should load both physical cartridge sockets through the libretro subsystem");
 	require(pixelFormatRequests == 1u, "content load should negotiate the XRGB8888 framebuffer contract once");
+	std::vector<bmsx::u8> cartridgeState(retro_serialize_size());
+	require(retro_serialize(cartridgeState.data(), cartridgeState.size()), "the dual-cartridge core should serialize both socket states");
+	const bmsx::u32 cartridgeStateBytes = bmsx::readLE32(cartridgeState.data() + 4u);
+	const bmsx::RuntimeSaveState cartridgeRuntimeState =
+		bmsx::decodeRuntimeSaveState(
+			cartridgeState.data() + 8u,
+			cartridgeStateBytes,
+			cartridgeRamByteCount);
+	const auto& cartridgeControllerState = cartridgeRuntimeState.machineState.machine.cartridge;
+	require(cartridgeControllerState.selectionWord == 1u, "the executable slot 1 cartridge should boot ahead of a data-only slot 0 cartridge");
+	require(cartridgeControllerState.slots[0].ram.size() == 16u, "slot 0 cartridge RAM should come from its physical cartridge header");
+	require(cartridgeControllerState.slots[1].ram.size() == 24u, "slot 1 cartridge RAM should come from its physical cartridge header");
 	insideRetroRun = true;
 	retro_run();
 	insideRetroRun = false;
@@ -187,7 +252,7 @@ int main() {
 	require(bmsx::Input::instance().supervisorRequestLineHigh(), "an accepted high frontend line must reach the machine input owner");
 	require(geometryNotifications == 0u && systemAvNotifications == 0u, "unchanged startup AV state should not be republished");
 
-	const std::vector<bmsx::u8> expandedState = makeExpandedPcrtcState();
+	const std::vector<bmsx::u8> expandedState = makeExpandedPcrtcState(cartridgeRamByteCount);
 	require(retro_unserialize(expandedState.data(), expandedState.size()), "the core should restore the expanded PCRTC state");
 	require(geometryNotifications == 0u && systemAvNotifications == 0u, "retro_unserialize must not call libretro video environment commands");
 	insideRetroRun = true;

@@ -1,3 +1,4 @@
+import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -103,7 +104,7 @@ import {
 const GTE_SF = 1 << 19;
 
 function createGte(): { memory: Memory; cpu: CPU; gte: GxGte; scheduler: DeviceScheduler } {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
 	const irq = new IrqController(memory);
 	const cpu = new CPU(memory, irq);
 	const scheduler = new DeviceScheduler(cpu);

@@ -1,3 +1,4 @@
+import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -36,7 +37,7 @@ class SystemResetInputSource implements RuntimeInputSource {
 function createSystemResetRuntime(systemRom: Uint8Array, cartRom: Uint8Array): Runtime {
 	const timing = resolveRuntimeTiming(5_000_000);
 	return new Runtime({
-		memory: new Memory({ systemRom, cartRom }),
+		memory: new Memory({ systemRom, cartridgeSlots: cartridgeSlots(cartRom) }),
 		pcrtcRunning: timing.pcrtcRunning,
 		ufpsScaled: timing.ufpsScaled,
 		cpuHz: timing.cpuHz,
@@ -48,7 +49,7 @@ function createSystemResetRuntime(systemRom: Uint8Array, cartRom: Uint8Array): R
 }
 
 test('system control reset command is write-only, self-clearing, and save-state visible', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
 	const machine = new Machine(memory, new SystemResetInputSource());
 	machine.resetDevices();
 	const controller = machine.systemController;
@@ -65,7 +66,7 @@ test('system control reset command is write-only, self-clearing, and save-state 
 });
 
 test('system print registers retain firmware output and publish complete host lines', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartRom: new Uint8Array(0) });
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
 	const machine = new Machine(memory, new SystemResetInputSource());
 	machine.resetDevices();
 	const controller = machine.systemController;

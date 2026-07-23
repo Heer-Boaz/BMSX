@@ -8,8 +8,7 @@ horen niet in deze lijst.
 
 | ID | Nog te doen | Klaar wanneer | Afhankelijk van |
 | --- | --- | --- | --- |
-| `CART-EXP-01` | Specificeer en implementeer twee fysieke cartridgeslots met eigen chip selects, busarbitrage, bootkeuze, IRQ/DMA, reset en save-state. | Alle hosts laden dezelfde twee slotinputs en ROM-, RAM- en minimale MMIO/IRQ-carts bewijzen de bus. | Eerst het [slotcontract](architecture.md#cartridge-expansion-and-terminal-call) reviewen. |
-| `BIOS-TERM-EXT-01` | Voeg BIOS-commando `CALL <name> [arguments]` toe voor Lua-extensies uit een cartridge; developer-tools blijven cartcode. | Descriptor-, argument-, resultaat-, timing-, completion- en pager-ABI zijn vastgelegd en één developer-cart werkt zonder hostcallbacks. | `CART-EXP-01`. |
+| `BIOS-TERM-EXT-01` | Voeg BIOS-commando `CALL <name> [arguments]` toe voor Lua-extensies uit een cartridge; developer-tools blijven cartcode. | Descriptor-, argument-, resultaat-, timing-, completion- en pager-ABI zijn vastgelegd en één developer-cart werkt zonder hostcallbacks. | Afgerond [slotcontract](architecture.md#cartridge-expansion-and-terminal-call). |
 
 ## Doorlopende performance-audit
 

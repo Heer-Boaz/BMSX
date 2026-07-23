@@ -35,6 +35,7 @@ struct ApuBadpDecoderSaveState {
 
 struct ApuOutputVoiceState {
 	ApuAudioSlot slot = 0;
+	u32 sourceCartridgeSlot = 0;
 	i64 cursorQ16 = 0;
 	i32 phaseRemainder = 0;
 	i32 gainQ12 = APU_GAIN_Q12_ONE;

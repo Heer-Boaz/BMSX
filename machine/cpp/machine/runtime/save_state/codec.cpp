@@ -332,6 +332,54 @@ FrameLoopStateSnapshot decodeFrameLoopState(const BinValue& value, const char* l
 	return state;
 }
 
+BinValue encodeCartridgeSlotState(const CartridgeSlotState& state) {
+	BinObject object;
+	object["ram"] = BinValue(BinBinary(state.ram.begin(), state.ram.end()));
+	object["mailboxDataWord"] = static_cast<f64>(state.mailboxDataWord);
+	object["mailboxControlWord"] = static_cast<f64>(state.mailboxControlWord);
+	object["mailboxIrqPending"] = state.mailboxIrqPending;
+	return BinValue(std::move(object));
+}
+
+CartridgeSlotState decodeCartridgeSlotState(const BinValue& value, const char* label) {
+	const BinObject& object = requireObject(value, label);
+	CartridgeSlotState state;
+	state.ram = requireBinary(requireField(object, "ram", label), "machine.cartridge.slots[].ram");
+	state.mailboxDataWord = requireU32(requireField(object, "mailboxDataWord", label), "machine.cartridge.slots[].mailboxDataWord");
+	state.mailboxControlWord = requireU32(requireField(object, "mailboxControlWord", label), "machine.cartridge.slots[].mailboxControlWord");
+	state.mailboxIrqPending = requireBool(requireField(object, "mailboxIrqPending", label), "machine.cartridge.slots[].mailboxIrqPending");
+	return state;
+}
+
+BinValue encodeCartridgeControllerState(const CartridgeControllerState& state) {
+	BinObject object;
+	object["selectionWord"] = static_cast<f64>(state.selectionWord);
+	BinArray slots;
+	slots.reserve(CARTRIDGE_SLOT_COUNT);
+	for (const CartridgeSlotState& slot : state.slots) {
+		slots.push_back(encodeCartridgeSlotState(slot));
+	}
+	object["slots"] = BinValue(std::move(slots));
+	return BinValue(std::move(object));
+}
+
+CartridgeControllerState decodeCartridgeControllerState(const BinValue& value, const char* label) {
+	const BinObject& object = requireObject(value, label);
+	const BinArray& slots = requireArray(requireField(object, "slots", label), "machine.cartridge.slots");
+	if (slots.size() != CARTRIDGE_SLOT_COUNT) {
+		throw BMSX_RUNTIME_ERROR(
+			"machine.cartridge.slots must contain "
+			+ std::to_string(CARTRIDGE_SLOT_COUNT)
+			+ " cartridge slot states.");
+	}
+	CartridgeControllerState state;
+	state.selectionWord = requireU32(requireField(object, "selectionWord", label), "machine.cartridge.selectionWord");
+	for (u32 slotIndex = 0; slotIndex < CARTRIDGE_SLOT_COUNT; ++slotIndex) {
+		state.slots[slotIndex] = decodeCartridgeSlotState(slots[slotIndex], "machine.cartridge.slots[]");
+	}
+	return state;
+}
+
 BinValue encodeMemorySaveState(const MemorySaveState& state) {
 	BinObject object;
 	object["ram"] = BinValue(BinBinary(state.ram.begin(), state.ram.end()));
@@ -975,6 +1023,7 @@ ApuBadpDecoderSaveState decodeApuBadpDecoderState(const BinValue& value, const c
 BinValue encodeApuOutputVoiceState(const ApuOutputVoiceState& state) {
 	BinObject object;
 	object["slot"] = encodeScalar<f64>(state.slot);
+	object["sourceCartridgeSlot"] = encodeScalar<f64>(state.sourceCartridgeSlot);
 	object["cursorQ16"] = encodeScalar<f64>(state.cursorQ16);
 	object["phaseRemainder"] = encodeScalar<f64>(state.phaseRemainder);
 	object["gainQ12"] = encodeScalar<f64>(state.gainQ12);
@@ -992,6 +1041,11 @@ ApuOutputVoiceState decodeApuOutputVoiceState(const BinValue& value, const char*
 	const BinObject& object = requireObject(value, label);
 	ApuOutputVoiceState state;
 	state.slot = requireBoundedU32(requireField(object, "slot", label), "machine.audio.output.voices.slot", 0u, APU_SLOT_COUNT - 1u);
+	state.sourceCartridgeSlot = requireBoundedU32(
+		requireField(object, "sourceCartridgeSlot", label),
+		"machine.audio.output.voices.sourceCartridgeSlot",
+		0u,
+		CARTRIDGE_SLOT_COUNT - 1u);
 	state.cursorQ16 = requireI64(requireField(object, "cursorQ16", label), "machine.audio.output.voices.cursorQ16");
 	state.phaseRemainder = requireI32(requireField(object, "phaseRemainder", label), "machine.audio.output.voices.phaseRemainder");
 	state.gainQ12 = requireI32(requireField(object, "gainQ12", label), "machine.audio.output.voices.gainQ12");
@@ -1271,6 +1325,7 @@ SystemControllerState decodeSystemControllerState(const BinValue& value, const c
 BinValue encodeMachineSaveState(const MachineSaveState& state) {
 	BinObject object;
 	object["memory"] = encodeMemorySaveState(state.memory);
+	object["cartridge"] = encodeCartridgeControllerState(state.cartridge);
 	object["dma"] = encodeDmaControllerState(state.dma);
 	object["geometry"] = encodeGeometryControllerState(state.geometry);
 	object["gxGpu"] = encodeGxGpuSaveState(state.gxGpu);
@@ -1288,6 +1343,7 @@ MachineSaveState decodeMachineSaveState(const BinValue& value, const char* label
 	const BinObject& object = requireObject(value, label);
 	MachineSaveState state;
 	state.memory = decodeMemorySaveState(requireField(object, "memory", label), "machineState.machine.memory");
+	state.cartridge = decodeCartridgeControllerState(requireField(object, "cartridge", label), "machineState.machine.cartridge");
 	state.dma = decodeDmaControllerState(requireField(object, "dma", label), "machineState.machine.dma");
 	state.geometry = decodeGeometryControllerState(requireField(object, "geometry", label), "machineState.machine.geometry");
 	state.gxGpu = decodeGxGpuSaveState(requireField(object, "gxGpu", label), "machineState.machine.gxGpu");
@@ -1687,14 +1743,18 @@ RuntimeSaveState decodeRuntimeSaveStateValue(const BinValue& value, const char* 
 
 std::vector<u8> encodeRuntimeSaveState(const RuntimeSaveState& state) {
 	std::vector<u8> bytes = encodeBinaryWithPropTable(encodeRuntimeSaveStateValue(state), RUNTIME_SAVE_STATE_PROP_NAMES);
-	if (bytes.size() > RUNTIME_SAVE_STATE_WIRE_CAPACITY) {
+	size_t cartridgeRamByteCount = 0u;
+	for (const CartridgeSlotState& slot : state.machineState.machine.cartridge.slots) {
+		cartridgeRamByteCount += slot.ram.size();
+	}
+	if (bytes.size() > runtimeSaveStateWireCapacity(cartridgeRamByteCount)) {
 		throw BMSX_RUNTIME_ERROR("Runtime save-state payload exceeds the current-format wire capacity.");
 	}
 	return bytes;
 }
 
-RuntimeSaveState decodeRuntimeSaveState(const u8* data, size_t size) {
-	if (size > RUNTIME_SAVE_STATE_WIRE_CAPACITY) {
+RuntimeSaveState decodeRuntimeSaveState(const u8* data, size_t size, size_t cartridgeRamByteCount) {
+	if (size > runtimeSaveStateWireCapacity(cartridgeRamByteCount)) {
 		throw BMSX_RUNTIME_ERROR("Runtime save-state payload exceeds the current-format wire capacity.");
 	}
 	return decodeRuntimeSaveStateValue(
@@ -1702,8 +1762,8 @@ RuntimeSaveState decodeRuntimeSaveState(const u8* data, size_t size) {
 		"runtimeSaveState");
 }
 
-RuntimeSaveState decodeRuntimeSaveState(const std::vector<u8>& data) {
-	return decodeRuntimeSaveState(data.data(), data.size());
+RuntimeSaveState decodeRuntimeSaveState(const std::vector<u8>& data, size_t cartridgeRamByteCount) {
+	return decodeRuntimeSaveState(data.data(), data.size(), cartridgeRamByteCount);
 }
 
 // disable-next-line single_line_method_pattern -- byte save-state API composes capture and binary encoding at the public boundary.
@@ -1713,7 +1773,9 @@ std::vector<u8> captureRuntimeSaveStateBytes(Runtime& runtime) {
 
 // disable-next-line single_line_method_pattern -- byte save-state API composes binary decoding and runtime restore at the public boundary.
 void applyRuntimeSaveStateBytes(Runtime& runtime, const u8* data, size_t size) {
-	applyRuntimeSaveState(runtime, decodeRuntimeSaveState(data, size));
+	applyRuntimeSaveState(
+		runtime,
+		decodeRuntimeSaveState(data, size, runtime.machine.cartridgeController.ramByteCount()));
 }
 
 // disable-next-line single_line_method_pattern -- vector save-state input is the public owner overload for byte payload callers.

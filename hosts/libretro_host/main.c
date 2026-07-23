@@ -77,7 +77,7 @@ static void usage(const char* argv0) {
 	fprintf(stderr,
 			"Usage:\n"
 			"  %s --core ./libretro_bmsx.so --no-game [--backend software|gles2] [--video fb|sdl] [--hidden-window] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--input-timeline FILE] [--paced-timeline] [--auto-timeline] [--no-audio] [--max-frames N] [--gles2-timing-report] [--timing-warmup N] [--crt-postprocessing on|off] [--crt-noise on|off] [--dither off|rgb565|msx10]\n"
-			"  %s --core ./libretro_bmsx.so GAME.rom [--backend software|gles2] [--video fb|sdl] [--hidden-window] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--input-timeline FILE] [--paced-timeline] [--auto-timeline] [--no-audio] [--max-frames N] [--gles2-timing-report] [--timing-warmup N] [--crt-postprocessing on|off] [--crt-noise on|off] [--dither off|rgb565|msx10]\n",
+			"  %s --core ./libretro_bmsx.so GAME.rom [--slot1 AUX.rom] [--backend software|gles2] [--video fb|sdl] [--hidden-window] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--input-timeline FILE] [--paced-timeline] [--auto-timeline] [--no-audio] [--max-frames N] [--gles2-timing-report] [--timing-warmup N] [--crt-postprocessing on|off] [--crt-noise on|off] [--dither off|rgb565|msx10]\n",
 			argv0, argv0);
 	exit(2);
 }
@@ -106,6 +106,7 @@ int main(int argc, char** argv) {
 	install_crash_handlers();
 	const char* core_path = "./libretro_bmsx.so";
 	const char* game_path = NULL;
+	const char* slot1_path = NULL;
 	bool no_game = false;
 	const char* system_dir = NULL;
 	const char* save_dir = NULL;
@@ -140,6 +141,10 @@ int main(int argc, char** argv) {
 		}
 		if (strcmp(argv[i], "--system-dir") == 0) {
 			system_dir = required_arg(argc, argv, &i);
+			continue;
+		}
+		if (strcmp(argv[i], "--slot1") == 0) {
+			slot1_path = required_arg(argc, argv, &i);
 			continue;
 		}
 		if (strcmp(argv[i], "--save-dir") == 0) {
@@ -228,6 +233,9 @@ int main(int argc, char** argv) {
 	if (!no_game && !game_path) {
 		usage(argv[0]);
 	}
+	if (no_game && slot1_path) {
+		usage(argv[0]);
+	}
 	if (strcmp(backend, "software") != 0 && strcmp(backend, "gles2") != 0) {
 		host_fatal("Invalid --backend %s (expected software|gles2)", backend);
 	}
@@ -305,7 +313,7 @@ int main(int argc, char** argv) {
 			session.system_info.need_fullpath ? "true" : "false");
 
 	core->retro_set_controller_port_device(0, RETRO_DEVICE_JOYPAD);
-	core_session_load_content(&session, no_game, game_path);
+	core_session_load_content(&session, no_game, game_path, slot1_path);
 	video_presenter_reset_presentation_timeline();
 
 	struct retro_system_av_info av = {0};

@@ -521,6 +521,12 @@ files for that backing; memory-buffer frontends provide data that the core owns
 once for lifetime safety. Node headless consumes the `fs.readFile` buffer
 directly. Guest code moves bytes from ROM to RAM/VRAM/APU through the machine;
 the Lua engine must not cache asset payload copies behind the cart's back.
+Every ROM file starts with the current BMSX header at byte zero and remains its
+exact raw file length in memory. There is no prepended ROM-label PNG, whole-ROM
+compression, normalize/decompress stage, or allocation sized to the address
+aperture. The ROM label is an ordinary TOC asset. Texture streams use IMGDEC's
+`IMD1` format and audio uses its own codec where applicable; those asset
+datapaths do not turn the complete cartridge into a compressed container.
 
 Compiled Lua/YAML is source/program material, not mutable machine state. The
 compiler emits a tooling-owned program object with relocations. The ROM packer
@@ -812,16 +818,18 @@ decode input/cache, not guest-visible storage. Runtime const values, protos,
 module records, global-slot symbols, and CPU decode pages are likewise derived
 owner data. Debug/source metadata remains a separate optional asset.
 
-System ROM and cartridge ROM are fixed CPU-visible address windows. Two
-cartridge slots do not create overlapping generic ROM
-facades: `CART-EXP-01` must assign each slot's physical ROM/device chip selects
-and arbitration before the expansion slot is implemented. For every mapped ROM
-window, the backing payload may be shorter than the window or absent; bytes
-beyond the backing read as zero through the bus. The memory owner exposes
-immutable ROM residency by binding caller-owned retained byte views for ranges
-that are fully backed by the selected ROM payload. It must not allocate or
-return fresh view/span objects on device load paths, and an empty or zero-filled
-window tail is not immutable backing.
+System ROM has its own CPU-visible window. The two cartridge sockets share one
+external address/data bus and therefore one CPU aperture; `CART_SELECT.bit0`
+drives `/CS0` or `/CS1` rather than selecting a host-side ROM facade. For every
+mapped ROM window, the selected backing payload may be shorter than the window
+or absent; bytes beyond the backing read as zero through the bus. A cartridge
+payload larger than its physical 512 MiB ROM window is rejected at the ROM
+loader and producer boundaries rather than aliasing into cartridge RAM or
+MMIO. The memory owner exposes immutable ROM residency by binding
+caller-owned retained byte views only for ranges fully backed by the addressed
+system-ROM or explicitly selected cartridge-socket payload. It does not
+allocate or return fresh view/span objects on device load paths, and an empty
+or zero-filled window tail is not immutable backing.
 
 ## Save-state contract
 
@@ -860,10 +868,11 @@ dedicated `machine/devices/irq/save_state` and
 `machine/devices/input/save_state` files on both runtimes; C++ keeps those
 capture/restore bodies in the matching save-state translation units.
 
-TS and C++ codecs share a fixed 16 MiB wire capacity and reject an oversized
-current-format payload on encode or decode. Libretro exposes one fixed header
-plus that capacity, captures and encodes once, writes directly into the frontend
-buffer and clears its unused suffix; it does not retain another 16 MiB envelope.
+TS and C++ codecs share a 16 MiB base wire capacity plus the exact installed
+cartridge-RAM byte count, and reject an oversized current-format payload on
+encode or decode. Libretro exposes one fixed header plus that calculated
+capacity, captures and encodes once, writes directly into the frontend buffer
+and clears its unused suffix; it does not retain another envelope.
 An asynchronous accelerated readback submission is backend infrastructure, not
 a wire phase: capture publishes only the corresponding machine request or its
 completed retained pixel bytes, and a completion from an older generation
@@ -1456,18 +1465,86 @@ host terminal's appearance.
 
 #### Cartridge expansion and terminal `CALL`
 
-BSX has two physical cartridge slots. A slot may contribute ROM and executable
-Lua as well as decoded RAM, MMIO registerfiles, IRQ/DMA sources, audio hardware,
-storage or another concrete peripheral. This follows the MSX principle that a
-cartridge can extend the machine rather than merely supply one software image;
-openMSX models the same distinction with external-slot ownership and extensions
-that install real memory or devices, for example its
+BMSX has two physical cartridge sockets on one 16-bit external
+address/data bus. Both sockets receive the same address and bus strobes; distinct
+`/CS0` and `/CS1` lines decide which board responds. The CPU sees one 528 MiB
+cartridge aperture, not two relocated ROMs:
+
+| CPU range | Selected-board decode |
+| --- | --- |
+| `10000000h`--`2FFFFFFFh` | 512 MiB immutable ROM window. |
+| `30000000h`--`30EFFFFFh` | 15 MiB cartridge-RAM window. |
+| `30F00000h`--`30FFFFFFh` | 1 MiB cartridge-MMIO window. |
+
+`CART_SELECT` at `08010424h` is a raw retained word; bit 0 selects socket 1
+when set and socket 0 when clear. `CART_STATUS` at `08010428h` reports socket
+presence in bits 0--1, executable program presence in bits 8--9 and the decoded
+selection in bit 16. The four read-only words that follow expose each socket's
+raw board word and physical RAM byte count. Unknown board bits remain readable
+and have no current datapath effect.
+
+The ROM header owns the board declaration. Its word at byte 76 has
+`RAM=bit0` and `MAILBOX=bit1`; the word at byte 80 is the socket-local RAM
+capacity and cannot exceed the 15 MiB aperture. A board without `RAM` returns
+zero and ignores writes in the RAM window. A shorter ROM or RAM backing returns
+zero beyond its physical end. The complete header, sections and TOC must fit
+the 512 MiB ROM window; loaders and ROM producers reject a larger physical
+image. Reset retains cartridge RAM, resets the CPU
+selection to the boot socket and clears mailbox data, control, DREQ and local
+IRQ state. At the source boundary the ROM packer maps
+`cartridge.board = rom|ram|mailbox|ram_mailbox` and optional
+`cartridge.ram_bytes` into those two raw header words.
+
+The minimal device board decodes four aligned 32-bit mailbox registers at the
+start of cartridge MMIO:
+
+| Offset | Register | Datapath |
+| ---: | --- | --- |
+| `00h` | `DATA` | Raw read/write word. |
+| `04h` | `CONTROL` | Bit 0 is an IRQ-trigger strobe; retained bits 1 and 2 assert read- and write-side DREQ. |
+| `08h` | `STATUS` | Bit 0 reports the socket-local IRQ source latch. |
+| `0Ch` | `IRQ_ACK` | A nonzero word clears that local source latch. |
+
+Socket 0 and socket 1 raise IRQ bits 9 and 10 respectively. Their four DREQ
+lines are separate. DMA request selectors 7--10 drive a socket chip-select
+override independently on the read and write sides, so a block can transfer
+slot-1 ROM into slot-0 RAM while the CPU selection remains unchanged. The
+DMAC decodes each request selector into retained read/write bus signals once
+per admitted block; only `BLOCK_END` changes per transferred word.
+The mailbox trigger raises the central IRQ only on a clear-to-set transition of
+the socket-local source latch. A central `IRQ_ACK` clears the IRQ-controller
+flag but does not retrigger a still-pending mailbox; firmware must write the
+mailbox's own `IRQ_ACK` before a later trigger can create another edge.
+
+Boot selection is deterministic: executable slot 0, executable slot 1,
+present slot 0, present slot 1, then empty slot 0. System firmware always
+supplies the reset program. Only the chosen executable cartridge contributes
+the cartridge half of the derived CPU program image; the other socket remains
+fully bus-visible as ROM, RAM and MMIO. A cartridge image is position-invariant
+and can be inserted in either socket without relinking. Both socket headers are
+decoded to publish physical media words, but only the chosen executable
+cartridge is decoded into an active runtime package; data-only and unselected
+cartridges remain raw bus backings.
+
+Save-state stores the raw CPU selection word and, per socket, RAM, mailbox data,
+retained control and the local IRQ source latch. Immutable ROM bytes, board
+words and capacities remain properties of the inserted media. Browser hosts
+accept `rom` and optional `slot1` URL parameters, the Node host accepts
+`--slot0`/`--rom` and `--slot1`, and ordinary libretro content maps to slot 0.
+Libretro additionally publishes the `dualcart` subsystem with required slot 0
+and optional slot 1. All hosts pass the same two physical media inputs into the
+machine owner; none maps a second cart through an alternate address or copies
+it into RAM.
+
+This follows the MSX principle that a cartridge can extend the machine rather
+than merely supply one software image; openMSX models the same distinction with
+external-slot ownership and extensions that install real memory or devices, for
+example its
 [cartridge-slot manager](https://github.com/openMSX/openMSX/blob/d1b8f2c81b3fcafde528e91e6133a7278a732e04/src/CartridgeSlotManager.cc#L120-L180),
 [2 MiB RAM cartridge](https://github.com/openMSX/openMSX/blob/d1b8f2c81b3fcafde528e91e6133a7278a732e04/share/extensions/ram2mb.xml), and
 [GFX9000 device cartridge](https://github.com/openMSX/openMSX/blob/d1b8f2c81b3fcafde528e91e6133a7278a732e04/share/extensions/gfx9000.xml).
-BSX does not copy MSX slot paging; `CART-EXP-01` must define its own raw slot
-identity, bus decode/arbitration, boot selection, discovery, reset, interrupt,
-DMA and save-state contract before a second cart becomes observable.
+BMSX deliberately does not copy MSX slot paging: the raw chip-select mux,
+external-bus aperture and per-board decode above are the complete base contract.
 
 The BIOS terminal remains the terminal. Its retained cells, editor, input,
 completion, pager and GX rendering stay in system firmware. A built-in
@@ -1520,6 +1597,10 @@ by that device owner.
 | 4 | `APU_READ` | APU sample-transfer output. |
 | 5 | `IMGDEC_WRITE` | IMGDEC compressed-input FIFO. |
 | 6 | `IMGDEC_READ` | IMGDEC GP0-output FIFO. |
+| 7 | `CART0_WRITE` | Socket-0 board write-side DREQ and `/CS0` override. |
+| 8 | `CART0_READ` | Socket-0 board read-side DREQ and `/CS0` override. |
+| 9 | `CART1_WRITE` | Socket-1 board write-side DREQ and `/CS1` override. |
+| 10 | `CART1_READ` | Socket-1 board read-side DREQ and `/CS1` override. |
 | 15 | `DISABLED` | Permanently deasserted. |
 
 GX translates its raw GP1 DMA direction and retained port readiness into the
@@ -1533,12 +1614,13 @@ the old and new directional requests asserted together, without moving either
 request latch into the DMA controller.
 
 The standard machine runs its CPU at 33.8688 MHz (44100 × 768, the PS1 CPU
-clock). Its two loaded ROM packages are the firmware/BIOS package in the
-`SYSTEM_ROM` window and the inserted cartridge package in the `CART_ROM`
-window. Firmware code and firmware assets share the first physical package;
-cartridge code and cartridge assets share the second. CPU execution state is
-derived from the two final program descriptors and is not a third memory-mapped
-ROM.
+clock). The firmware/BIOS package occupies `SYSTEM_ROM`; up to two inserted
+cartridge packages sit behind the shared cartridge aperture and its socket
+chip-selects. Firmware code and assets share the first physical package. Only
+the boot-selected executable cartridge contributes the cartridge program
+descriptor, while both cartridge packages remain bus-visible. CPU execution
+state is derived from the selected system/cart program descriptors and is not a
+third memory-mapped ROM.
 
 DMA timing is region-dependent and block-based. For a block of `N` words, a
 side starting in RAM costs `1 + N` cycles: one cycle establishes a sixteen-word
@@ -1549,18 +1631,26 @@ memory map, and creates no row id or row state to serialize. `SYSTEM_ROM` uses
 the internal 32-bit path and costs `N` cycles. `CART_ROM` uses a 16-bit external
 cartridge datapath: a block pays four address/arbitration setup cycles, then each
 32-bit DMA word takes two 16-bit transfers of four CPU cycles each. Its block
-cost is therefore `4 + 8N` cycles. Setup is paid again at every admitted block;
-there is no persistent cartridge page latch. A fixed MMIO or other mapped side
-contributes no memory wait of its own; the DMA datapath still needs one cycle to
-complete a block when neither side contributes a memory wait.
+cost is therefore `4 + 8N` cycles for cartridge ROM, cartridge RAM and
+cartridge MMIO alike: all three remain behind the external socket bus. Setup is
+paid again at every admitted block; there is no persistent cartridge page
+latch. A fixed internal MMIO or other non-cartridge mapped side contributes no
+memory wait of its own; the DMA datapath still needs one cycle to complete a
+block when neither side contributes a memory wait.
 
 Admission asks `Memory`, the mapped-address owner, for consecutive word spans in
 each actual physical region. An incrementing side is split only where its
 address crosses such a boundary; a fixed-address side remains one run. Every
 RAM or cartridge run pays its setup once, including the run containing the
-block's first word. For each pair of simultaneous spans the read and write costs
-overlap and the slower side wins. RAM↔RAM is the only exception: RAM is
-single-ported, so those two costs add. Segment costs accumulate in transfer
+block's first word. `CART_ROM`, cartridge RAM and cartridge MMIO are distinct
+physical runs even though they share one timing class and one external bus, so
+crossing either selected-board decode boundary starts and charges a new bus
+transaction. For each pair of simultaneous spans the read and write costs
+overlap and the slower side wins when the sides have distinct bus owners.
+RAM↔RAM costs add because internal RAM is single-ported. Cartridge↔cartridge
+costs likewise add because both sockets and all three selected-board windows
+share one half-duplex external address/data bus; separate socket chip selects
+do not create a second datapath. Segment costs accumulate in transfer
 order, so a later region crossing cannot retroactively overlap an earlier beat.
 The timing therefore depends on decoded physical ownership, never on accidental
 adjacency in the numeric memory map, cached row ids, or a first-word guess for
@@ -1569,8 +1659,10 @@ inside one region this yields about 135.48 MB/s for
 `SYSTEM_ROM`→MMIO, 127.51 MB/s for RAM→MMIO or `SYSTEM_ROM`→RAM,
 16.42 MB/s for `CART_ROM`→RAM/MMIO, and 63.75 MB/s for RAM→RAM. Short RAM
 and cartridge blocks pay setup more often, and DREQ can add idle time between
-blocks. The cartridge path approaches 16.93 MB/s only as blocks grow; the
-architectural sixteen-word maximum is the quoted 16.42 MB/s.
+blocks. A cartridge↔cartridge transfer reaches about 8.21 MB/s for full
+sixteen-word blocks. The one-sided cartridge path approaches 16.93 MB/s only
+as blocks grow; the architectural sixteen-word maximum is the quoted
+16.42 MB/s.
 
 The timing belongs to the bus/DMA owner rather than GX, APU, firmware or a ROM
 texture helper. The machine model supplies these fixed raw-cycle constants to
@@ -2238,6 +2330,13 @@ PCM mixing uses retained fixed-capacity scratch buffers. Sample generation, host
 pull, PLAY, and live source replacement perform no allocation. Only save-state
 capture may allocate serialized state outside the realtime datapath.
 
+When PLAY or a live source-register write binds cartridge ROM, the command
+datapath samples the currently decoded cartridge socket and the voice retains
+that socket alongside its direct ROM view. Later `CART_SELECT` writes therefore
+do not retarget an active voice. Save-state retains the socket latch and restore
+rebinds the immutable source through it; no cartridge selection occurs in the
+per-sample loop.
+
 The mixer writes the continuous 44.1-kHz machine timeline, including silent
 intervals, to the 3072-frame AOUT presentation ring. Each batch carries its
 absolute DAC sequence and the ring retains the sequence of its oldest frame.
@@ -2284,13 +2383,15 @@ event, selected-slot, status, and fault responsibilities remain in their
 corresponding dedicated audio/device owner files.
 
 The APU owns a separate 32-bit sample address space. It is not an alias of the
-CPU bus. Three physical chip selects live on that bus:
+CPU bus. Four physical chip selects live on that bus:
 
 - the immutable system sample-ROM at `0x00000000`;
-- the immutable cartridge sample-ROM at `0x01000000`;
-- 512 KiB of internal sample-RAM at `0x10000000`.
+- the immutable socket-0 cartridge sample-ROM at `0x10000000`;
+- the immutable socket-1 cartridge sample-ROM at the same address, selected by
+  the voice's retained cartridge-socket latch;
+- 512 KiB of internal sample-RAM at `0x40000000`.
 
-The two ROM chip selects make large cartridge music directly addressable, as
+The three ROM chip selects make large cartridge music directly addressable, as
 on a ROM-fed sample chip; they are not generic main-memory views. CPU instruction
 storage and main RAM are absent from the sample bus. A voice range must fit wholly in one
 physical window and never wraps. Internal RAM remains a single retained backing

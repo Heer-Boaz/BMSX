@@ -146,18 +146,22 @@
 		<script src="#machineruntimejs"></script>
 		<script src="#browserhostjs"></script>
 		<script id="bootrom">//#bootromjs</script>
-		<script id="pacojs" distributedby="http://nodeca.github.io/pako/">//#zipjs</script>
 		<script id="bload-script">
 			//#debug
 			window.onload = async function () {
 				try {
-					const romurl = getRomFromUrlParameter() ?? '__DEFAULT_ROM__';
-					if (!romurl || romurl.length === 0) {
+					const romurl = getRomFromUrlParameter() || '__DEFAULT_ROM__';
+					if (!romurl) {
 						throw new Error('Missing required URL parameter: ?rom=<path-to-rom>');
 					}
 					const systemRomPath = '#biospath';
+					const slot1url = getRomFromUrlParameter(1);
 					await bootrom.loadSystemRom(systemRomPath);
+					const slot1Load = slot1url && bootrom.loadCart(`./${slot1url}`, 1);
 					await bootrom.loadCart(`./${romurl}`);
+					if (slot1Load) {
+						await slot1Load;
+					}
 					await bootrom.start();
 				} catch (err) {
 					const detail = err instanceof Error ? (err.stack || err.message) : String(err);

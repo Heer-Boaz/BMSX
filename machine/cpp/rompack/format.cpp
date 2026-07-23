@@ -5,6 +5,7 @@
 #include "format.h"
 #include "common/endian.h"
 #include "common/serializer/binencoder.h"
+#include "machine/memory/map.h"
 #include "machine/program/loader.h"
 #include "rompack/toc.h"
 #include <algorithm>
@@ -15,7 +16,7 @@ namespace bmsx {
 namespace {
 
 void assertSectionRange(size_t offset, size_t length, size_t total, const char* label) {
-	if (offset + length > total) {
+	if (offset > total || length > total - offset) {
 		throw BMSX_RUNTIME_ERROR(std::string("Invalid ROM ") + label + " range.");
 	}
 }
@@ -24,6 +25,8 @@ constexpr u32 alignCartRomWordSection(u32 offset) {
 	return (offset + static_cast<u32>(CART_ROM_WORD_ALIGNMENT - 1u))
 		& ~static_cast<u32>(CART_ROM_WORD_ALIGNMENT - 1u);
 }
+
+} // namespace
 
 void writeCartRomHeader(u8* data, const CartRomHeader& header) {
 	std::copy(CART_ROM_MAGIC_BYTES.begin(), CART_ROM_MAGIC_BYTES.end(), data);
@@ -49,17 +52,26 @@ void writeCartRomHeader(u8* data, const CartRomHeader& header) {
 		writeLE32(data + 72, CART_VDP_CLASS_PSX);
 		break;
 	}
+	writeLE32(data + 76, header.cartridgeBoardWord);
+	writeLE32(data + 80, header.cartridgeRamByteCount);
 }
+
+namespace {
 
 std::vector<u8> encodeCartRom(const CartRomHeader& header,
 	std::span<const u8> manifest,
 	std::span<const u8> toc,
-	std::span<const u8> data) {
+	std::span<const u8> data,
+	RomImageDomain domain) {
 	const size_t size = std::max({
 		static_cast<size_t>(header.manifestOffset) + manifest.size(),
 		static_cast<size_t>(header.tocOffset) + toc.size(),
 		static_cast<size_t>(header.dataOffset) + data.size(),
 	});
+	const size_t capacity = domain == RomImageDomain::System ? SYSTEM_ROM_SIZE : CART_ROM_SIZE;
+	if (size > capacity) {
+		throw BMSX_RUNTIME_ERROR("ROM payload exceeds its address window.");
+	}
 	std::vector<u8> rom(size);
 	writeCartRomHeader(rom.data(), header);
 	std::copy(manifest.begin(), manifest.end(), rom.begin() + header.manifestOffset);
@@ -70,19 +82,8 @@ std::vector<u8> encodeCartRom(const CartRomHeader& header,
 
 } // namespace
 
-bool hasCartHeader(const u8* data, size_t size) {
-	if (size < CART_ROM_BASE_HEADER_SIZE) {
-		return false;
-	}
-	if (std::memcmp(data, CART_ROM_MAGIC_BYTES.data(), CART_ROM_MAGIC_BYTES.size()) != 0) {
-		return false;
-	}
-	const u32 headerSize = readLE32(data + 4);
-	return headerSize >= CART_ROM_BASE_HEADER_SIZE && headerSize <= size;
-}
-
 CartRomHeader parseCartHeader(const u8* data, size_t size) {
-	if (size < CART_ROM_BASE_HEADER_SIZE) {
+	if (size < CART_ROM_HEADER_SIZE) {
 		throw BMSX_RUNTIME_ERROR("ROM payload is too small for cart header.");
 	}
 	if (std::memcmp(data, CART_ROM_MAGIC_BYTES.data(), CART_ROM_MAGIC_BYTES.size()) != 0) {
@@ -103,6 +104,10 @@ CartRomHeader parseCartHeader(const u8* data, size_t size) {
 	header.dataOffset = readLE32(data + 24);
 	header.dataLength = readLE32(data + 28);
 	header.programBootVersion = readLE32(data + 32);
+	if (header.programBootVersion != 0u
+			&& header.programBootVersion != PROGRAM_BOOT_HEADER_VERSION) {
+		throw BMSX_RUNTIME_ERROR("Unsupported ROM program boot version.");
+	}
 	header.programBootFlags = readLE32(data + 36);
 	header.programEntryProtoIndex = readLE32(data + 40);
 	header.programCodeByteCount = readLE32(data + 44);
@@ -117,6 +122,11 @@ CartRomHeader parseCartHeader(const u8* data, size_t size) {
 		throw BMSX_RUNTIME_ERROR("Unsupported ROM VDP class marker.");
 	}
 	header.vdpClass = MachineVdpClass::Psx;
+	header.cartridgeBoardWord = readLE32(data + 76);
+	header.cartridgeRamByteCount = readLE32(data + 80);
+	if (header.cartridgeRamByteCount > CART_RAM_SIZE) {
+		throw BMSX_RUNTIME_ERROR("Cartridge RAM byte count exceeds the socket aperture.");
+	}
 
 	assertSectionRange(static_cast<size_t>(header.manifestOffset), static_cast<size_t>(header.manifestLength), size, "manifest");
 	assertSectionRange(static_cast<size_t>(header.tocOffset), static_cast<size_t>(header.tocLength), size, "toc");
@@ -143,7 +153,7 @@ std::vector<u8> encodeCartManifest(const CartManifest& cart) {
 	return encodeBinary(BinValue(std::move(manifest)));
 }
 
-std::vector<u8> encodeProgramCartRom(const CartManifest& cart, const ProgramImage& image) {
+std::vector<u8> encodeProgramRom(const CartManifest& cart, const ProgramImage& image, RomImageDomain domain) {
 	const EncodedProgramImage encodedProgram = encodeProgramImage(image);
 	const size_t sectionByteCount = encodedProgram.sections.size();
 	const std::vector<u8> manifest = encodeCartManifest(cart);
@@ -163,6 +173,8 @@ std::vector<u8> encodeProgramCartRom(const CartManifest& cart, const ProgramImag
 	header.programProtoCount = static_cast<u32>(image.sections.text.protos.size());
 	header.programConstRelocCount = 0;
 	header.vdpClass = cart.machine.vdpClass;
+	header.cartridgeBoardWord = cart.cartridgeBoardWord;
+	header.cartridgeRamByteCount = cart.cartridgeRamByteCount;
 
 	RomSourceEntry programEntry;
 	programEntry.resid = PROGRAM_IMAGE_ID;
@@ -178,7 +190,7 @@ std::vector<u8> encodeProgramCartRom(const CartManifest& cart, const ProgramImag
 	header.tocOffset = alignCartRomWordSection(header.dataOffset + header.dataLength);
 	const std::vector<u8> toc = encodeRomToc(RomTocPayload{{programEntry}, std::nullopt});
 	header.tocLength = static_cast<u32>(toc.size());
-	return encodeCartRom(header, manifest, toc, program);
+	return encodeCartRom(header, manifest, toc, program, domain);
 }
 
 } // namespace bmsx

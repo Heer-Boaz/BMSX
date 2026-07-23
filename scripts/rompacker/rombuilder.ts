@@ -44,7 +44,7 @@ import { collectGLTFExternalBufferFileSet, loadGLTFModel } from './gltfloader';
 import type { TextureAtlasResource, ImageResource, Resource, resourcetype, RomPackerTarget } from './rompacker.rompack';
 import { collectSourceFiles } from '../analysis/file_scan';
 import { collectCartSourceFiles } from './cart_source_files';
-import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/machine/memory/map';
+import { CART_ROM_BASE, CART_ROM_SIZE, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE } from '../../machine/ts/machine/memory/map';
 import type { ProgramImage, ProgramSymbolsImage } from '../../machine/ts/machine/program/loader';
 // @ts-ignore
 const { build } = require('esbuild');
@@ -74,8 +74,6 @@ const {
 	encodeProgramImage,
 	toLuaModulePath,
 } = require('../../machine/ts/machine/program/loader');
-// @ts-ignore
-const pako = require('pako');
 // @ts-ignore
 const { minify } = require('@node-minify/core');
 // @ts-ignore
@@ -447,7 +445,6 @@ export async function buildGameHtmlAndManifest(rom_name: string, title: string, 
 		const defaultRom = deploy ? `${rom_name}.${debug ? 'debug.' : ''}rom` : '';
 		const replacements = {
 			'//#bootromjs': romjs,
-			'//#zipjs': zipjs,
 			'/*#css*/': cssMinified,
 			'#title': title,
 			'#machineruntimejs': getMachineRuntimeFilename(debug),
@@ -470,11 +467,10 @@ export async function buildGameHtmlAndManifest(rom_name: string, title: string, 
 		return applyStringReplacements(htmlToTransform, replacements);
 	}
 
-	let html: string, romjs: string, zipjs: string;
+	let html: string, romjs: string;
 	try {
 		html = await readFile("./gamebase.html", 'utf8');
 		romjs = await readFile(`./rom/${BOOTROM_JS_FILENAME}`, 'utf8');
-		zipjs = await readFile("./scripts/pako_inflate.min.js", 'utf8');
 	} catch (error) {
 		throw new Error(`Error reading files while building HTML and Manifest files: ${error.message}`);
 	}
@@ -758,18 +754,6 @@ function buildImgMetaFromCollisionBuild(res: ImageResource, collision: ImageColl
 		imgmeta.gx_page_tiles = res.gxPageTiles;
 	}
 	return imgmeta;
-}
-
-/**
- * Compresses the given content using the zip algorithm and returns the compressed  content as a Uint8Array.
- *
- * @param content - The content to be compressed.
- * @returns The compressed content as a Uint8Array.
- */
-// @ts-ignore
-export function zip(content: Buffer): Uint8Array {
-	const toCompress = new Uint8Array(content);
-	return pako.deflate(toCompress, { level: 9 });
 }
 
 function formatLuaCompileError(error: { path: string; message: string; line: number; column: number }, source: string): string {
@@ -1244,9 +1228,7 @@ export async function getResourcesList(resMetaList: Resource[]): Promise<Resourc
  * The resulting RomAsset array is used for ROM packing and serialization.
  *
  * @param resources - The array of resources to process.
- * @returns An object with three properties:
- * - `assetList` - The array of generated asset metadata objects (to be binary-encoded).
- * - `romlabel_buffer` - The buffer data for the "romlabel.png" resource if present.
+ * @returns The generated ROM asset records.
  */
 
 export async function generateRomAssets(
@@ -1270,20 +1252,16 @@ export async function generateRomAssets(
 			buffer: buildBiosTerminalGlyphTable(resources),
 		});
 	}
-	// @ts-ignore
-	let romlabel_buffer: Buffer;
-
 	for (const res of resources) {
 		const type = res.type;
 		const sourcePath = res.sourcePath || (res.filepath && toWorkspaceRelativePath(res.filepath));
 		let resid = res.name;
-		let buffer = res.buffer; // NOTE that we will remove the buffer during the finalization of the ROM pack. To do proper finalization, we need to store the buffer here right now. N.B. the bootrom will also add the buffer to the RomAsset, so that's why the property is relevant in the first place and we are now using it to temporarily hold the buffer per asset.
+		let buffer = res.buffer;
 		reportProgress?.(`asset ${res.type}:${resid}`);
 
-		switch (type) {
+			switch (type) {
 			case 'romlabel':
-				romlabel_buffer = res.buffer;
-				romAssets.push({ resid, type, buffer: romlabel_buffer, source_path: sourcePath });
+				romAssets.push({ resid, type, buffer, source_path: sourcePath });
 				break;
 			case 'image': {
 				const collision = buildImageCollisionBuild(res);
@@ -1477,6 +1455,7 @@ type BuildRomProgramTailOptions = {
 );
 
 export type RomProgramTail = {
+	domain: 'system' | 'cart';
 	boot: ProgramBootHeader;
 	layout: RomAssetPayloadLayout;
 };
@@ -1528,6 +1507,7 @@ export function buildRomProgramTail(
 		});
 	}
 	return {
+		domain: options.programDomain,
 		boot: {
 			version: PROGRAM_BOOT_HEADER_VERSION,
 			flags: 0,
@@ -1658,11 +1638,12 @@ export async function finalizeRompack(
 	options: {
 		projectRootPath?: string,
 		status?: ProgressNote,
-		zipRom: boolean,
 		debug: boolean,
 		program: RomProgramTail,
 		layout: RomProgramPrefixLayout,
 		outputDirectory: string,
+		cartridgeBoardWord: number,
+		cartridgeRamByteCount: number,
 	}
 ) {
 	const outfileBasename = `${rom_name}${options.debug ? '.debug' : ''}.rom`;
@@ -1670,8 +1651,6 @@ export async function finalizeRompack(
 	const status = options.status;
 
 	await mkdir(options.outputDirectory, { recursive: true });
-
-	const romlabelBuffer = options.layout.romLabel;
 
 	const tempDirectory = await mkdtemp(join(options.outputDirectory, '.rompack-'));
 	const tempFile = join(tempDirectory, outfileBasename);
@@ -1737,6 +1716,10 @@ export async function finalizeRompack(
 				projectRootPath: options.projectRootPath,
 			}));
 			const tocOffset = alignRomAssetOffset(offset);
+			const romCapacity = options.program.domain === 'system' ? SYSTEM_ROM_SIZE : CART_ROM_SIZE;
+			if (tocOffset + tocBuffer.byteLength > romCapacity) {
+				throw new Error(`ROM payload exceeds the ${romCapacity}-byte ${options.program.domain} ROM window.`);
+			}
 			await writePaddingTo(tocOffset);
 			const tocLength = tocBuffer.length;
 			await writeBuffer(tocBuffer);
@@ -1761,6 +1744,8 @@ export async function finalizeRompack(
 				metadataOffset: options.layout.metadataOffset,
 				metadataLength: options.layout.metadataLength,
 				vdpClass: 'psx',
+				cartridgeBoardWord: options.cartridgeBoardWord,
+				cartridgeRamByteCount: options.cartridgeRamByteCount,
 			});
 		} finally {
 			writer.end();
@@ -1772,12 +1757,6 @@ export async function finalizeRompack(
 			await file.write(headerBuffer, 0, headerBuffer.length, 0);
 		} finally {
 			await file.close();
-		}
-		if (options.zipRom || romlabelBuffer) {
-			const romBinary = await readFile(tempFile);
-			const payload = options.zipRom ? Buffer.from(zip(romBinary)) : romBinary;
-			const finalPayload = romlabelBuffer ? Buffer.concat([romlabelBuffer, payload]) : payload;
-			await writeFile(tempFile, finalPayload);
 		}
 		await rename(tempFile, outputPath);
 	} finally {

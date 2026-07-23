@@ -19,6 +19,7 @@ declare const __BOOTROM_DEBUG__: boolean;
 
 interface LaunchOptions {
 	romPath?: string;
+	slot1Path?: string;
 	romFolder?: string;
 	frameIntervalMs?: number;
 	debugOverride?: boolean;
@@ -305,7 +306,8 @@ function printHelp(): void {
 	console.log('Usage: node <bundle>.js [options] [romFolder]');
 	console.log('');
 	console.log('Options:');
-	console.log('  --rom, -r <path>         Override ROM file location.');
+	console.log('  --rom, --slot0, -r <path>  Cartridge slot 0 ROM.');
+	console.log('  --slot1 <path>              Cartridge slot 1 ROM.');
 	console.log('  --frame-interval <ms>    Override frame loop interval in milliseconds (default: PCRTC reset cadence).');
 	console.log('  --debug                  Force debug mode.');
 	console.log('  --no-debug               Force non-debug mode.');
@@ -329,12 +331,25 @@ function parseArgs(argv: string[]): LaunchOptions {
 	let index = 0;
 	while (index < argv.length) {
 		const arg = argv[index];
-		if (arg === '--rom' || arg === '-r') {
+		switch (arg) {
+			case '--rom':
+			case '--slot0':
+			case '-r': {
+				const next = argv[index + 1];
+				if (!next) {
+					throw new Error(`Expected ROM path after ${arg}.`);
+				}
+				options.romPath = next;
+				index += 2;
+				continue;
+			}
+		}
+		if (arg === '--slot1') {
 			const next = argv[index + 1];
 			if (!next) {
-				throw new Error('Expected ROM path after --rom.');
+				throw new Error('Expected ROM path after --slot1.');
 			}
-			options.romPath = next;
+			options.slot1Path = next;
 			index += 2;
 			continue;
 		}
@@ -967,6 +982,9 @@ async function main(): Promise<void> {
 	const systemRomBuffer = await readRomFile(systemRomPath);
 
 	let buffer = await readRomFile(romPath);
+	const slot1Buffer = cliOptions.slot1Path
+		? await readRomFile(path.resolve(cliOptions.slot1Path))
+		: null;
 	if (cliOptions.testPath) {
 		const apiSource = await fs.readFile(path.resolve(HOST_TEST_API_PATH), 'utf8');
 		const testSource = await fs.readFile(path.resolve(cliOptions.testPath), 'utf8');
@@ -1060,7 +1078,7 @@ async function main(): Promise<void> {
 		return captureCoordinator ? captureCoordinator.canCaptureNow() : !!headlessHost?.getPresentedFrameSnapshot();
 	};
 	const bootArgs: MachineBootOptions = {
-		cartridge: buffer,
+		cartridgeSlots: [buffer, slot1Buffer],
 		systemRom: systemRomBuffer,
 		platform,
 		viewHost: platform.gameviewHost,

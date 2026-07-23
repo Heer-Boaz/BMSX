@@ -14,6 +14,7 @@
 #include <stdexcept>
 #include <string>
 #include <cctype>
+#include <array>
 
 #include "bmsx_libretro.h"
 #include "platform.h"
@@ -29,6 +30,20 @@
 static constexpr const char* CORE_NAME = "BMSX";
 static constexpr const char* CORE_VERSION = "1.0.0";
 static constexpr const char* VALID_EXTENSIONS = "rom|bmsx";
+static retro_subsystem_rom_info CARTRIDGE_SUBSYSTEM_ROMS[] = {
+	{ "Cartridge slot 0", VALID_EXTENSIONS, true, false, true, nullptr, 0 },
+	{ "Cartridge slot 1", VALID_EXTENSIONS, true, false, false, nullptr, 0 },
+};
+static retro_subsystem_info CARTRIDGE_SUBSYSTEMS[] = {
+	{
+		"BMSX Dual Cartridge",
+		"dualcart",
+		CARTRIDGE_SUBSYSTEM_ROMS,
+		bmsx::CARTRIDGE_SLOT_COUNT,
+		BMSX_SUBSYSTEM_DUAL_CARTRIDGE,
+	},
+	{},
+};
 
 // Libretro callbacks
 static retro_environment_t environ_cb = nullptr;
@@ -968,6 +983,7 @@ void retro_set_environment(retro_environment_t cb) {
 	// We don't need a game to run (for testing empty cart)
 	bool no_game = true;
 	cb(RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME, &no_game);
+	cb(RETRO_ENVIRONMENT_SET_SUBSYSTEM_INFO, CARTRIDGE_SUBSYSTEMS);
 
 	uint64_t serialization_quirks = RETRO_SERIALIZATION_QUIRK_MUST_INITIALIZE;
 	cb(RETRO_ENVIRONMENT_SET_SERIALIZATION_QUIRKS, &serialization_quirks);
@@ -1150,7 +1166,7 @@ void retro_get_system_info(struct retro_system_info* info) {
 	info->library_version = CORE_VERSION;
 	info->valid_extensions = VALID_EXTENSIONS;
 	info->need_fullpath = true;  // Load ROM from path to avoid duplicate in-memory copy
-	info->block_extract = false;  // We can handle zipped files ourselves
+	info->block_extract = false;  // Allow the frontend to extract archived content.
 }
 
 void retro_get_system_av_info(struct retro_system_av_info* info) {
@@ -1180,14 +1196,27 @@ void retro_set_controller_port_device(unsigned port, unsigned device) {
  * ============================================================================
  */
 
-bool retro_load_game(const struct retro_game_info* game) {
+static bool begin_content_load() {
 	if (!g_backend_error.empty()) {
 		logging.log(RETRO_LOG_ERROR, "%s\n", g_backend_error.c_str());
 		return false;
 	}
 	enum retro_pixel_format pixelFormat = RETRO_PIXEL_FORMAT_XRGB8888;
 	if (!environ_cb(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &pixelFormat)) {
-		logging.log(RETRO_LOG_ERROR, "[BMSX] XRGB8888 output is not supported by the frontend\n");
+		logging.log(RETRO_LOG_ERROR, "XRGB8888 output is not supported by the frontend\n");
+		return false;
+	}
+	return true;
+}
+
+static void complete_content_load() {
+	sync_current_av_info(g_platform->machineManager()->runtime().timing.ufpsScaled);
+	retro_keyboard_callback keyboardCallback = { keyboard_event };
+	environ_cb(RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK, &keyboardCallback);
+}
+
+bool retro_load_game(const struct retro_game_info* game) {
+	if (!begin_content_load()) {
 		return false;
 	}
 	bool loaded_ok = false;
@@ -1216,21 +1245,33 @@ bool retro_load_game(const struct retro_game_info* game) {
 		return false;
 	}
 
-	sync_current_av_info(g_platform->machineManager()->runtime().timing.ufpsScaled);
-	retro_keyboard_callback keyboardCallback = { keyboard_event };
-	environ_cb(RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK, &keyboardCallback);
-
+	complete_content_load();
 	return true;
 }
 
 bool retro_load_game_special(unsigned game_type,
 								const struct retro_game_info* info,
 								size_t num_info) {
-	// We don't support special game loading
-	(void)game_type;
-	(void)info;
-	(void)num_info;
-	return false;
+	if (game_type != BMSX_SUBSYSTEM_DUAL_CARTRIDGE
+			|| !info
+			|| num_info != bmsx::CARTRIDGE_SLOT_COUNT) {
+		return false;
+	}
+	if (!begin_content_load()) {
+		return false;
+	}
+	if (!info[0].path) {
+		return false;
+	}
+	const std::array<std::string, bmsx::CARTRIDGE_SLOT_COUNT> paths{
+		info[0].path,
+		info[1].path ? info[1].path : "",
+	};
+	if (!g_platform->loadCartridgeSlotsFromPaths(paths)) {
+		return false;
+	}
+	complete_content_load();
+	return true;
 }
 
 void retro_unload_game(void) {

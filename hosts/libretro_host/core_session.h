@@ -67,7 +67,8 @@ void core_session_open(
 void core_session_load_content(
 		BmsxCoreSession* session,
 		bool no_game,
-		const char* game_path);
+		const char* game_path,
+		const char* slot1_path);
 void core_session_update_timing(
 		BmsxCoreSession* session,
 		const struct retro_system_timing* timing);

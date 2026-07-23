@@ -1,4 +1,4 @@
-import { normalizeCartridgeBlob, parseCartridgeIndex } from '../../machine/ts/rompack/loader';
+import { parseRomImage, parseCartridgeIndex } from '../../machine/ts/rompack/loader';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -10,7 +10,7 @@ async function main(): Promise<void> {
 	}
 	const absoluteRomPath = path.resolve(romPath);
 	const romBuffer = await readFile(absoluteRomPath);
-	const { payload } = normalizeCartridgeBlob(romBuffer);
+	const { payload } = parseRomImage(romBuffer, 'cart');
 	const { entries, projectRootPath } = await parseCartridgeIndex(payload);
 
 	console.log(`ROM: ${absoluteRomPath}`);

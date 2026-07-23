@@ -3,6 +3,7 @@
 #include "common/primitives.h"
 #include "machine/cpu/cpu.h"
 #include "machine/devices/audio/contracts.h"
+#include "machine/devices/audio/source.h"
 #include "machine/memory/bus_signals.h"
 
 namespace bmsx {
@@ -51,7 +52,7 @@ private:
 	ApuParameterRegisterWords m_commandDispatchRegisterWords{};
 	ApuParameterRegisterWords m_slotRegisterDispatchWords{};
 	ApuAudioSource m_source{};
-	Span<const u8> m_sourceView;
+	ApuSourceByteView m_sourceView;
 
 	void executeCommand(u32 command, const ApuParameterRegisterWords& registerWords);
 	void play(const ApuParameterRegisterWords& registerWords);
@@ -59,7 +60,7 @@ private:
 	void stopSlot(const ApuParameterRegisterWords& registerWords);
 	void setSlotGain(const ApuParameterRegisterWords& registerWords);
 	void writeSlotRegisterWord(ApuAudioSlot slot, u32 parameterIndex, u32 word);
-	bool bindSource(const ApuAudioSource& source);
+	bool bindSource(const ApuAudioSource& source, u32 cartridgeSlot);
 };
 
 } // namespace bmsx

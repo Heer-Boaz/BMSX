@@ -8,6 +8,7 @@
 namespace bmsx {
 Machine::Machine(Memory& memoryRef, InputControllerInputSource& input)
 	: memory(memoryRef)
+	, cartridgeController(memoryRef.cartridgeController())
 	, irqController(memory)
 	, cpu(memory, irqController)
 	, scheduler(cpu)
@@ -21,6 +22,7 @@ Machine::Machine(Memory& memoryRef, InputControllerInputSource& input)
 	, systemController(memory, cpu, scheduler, irqController, dmaController, geometryController, gxGpu, imgDecController)
 	, inputController(memory, input, systemController)
 {
+	cartridgeController.connect(memory, irqController, dmaController);
 	dmaController.setTiming(
 		PSX_MACHINE_SPEC.dmaRamCyclesPerWord,
 		PSX_MACHINE_SPEC.dmaRamBurstSetupCycles,
@@ -41,6 +43,7 @@ void Machine::resetDevices() {
 	irqController.reset();
 	inputController.reset();
 	dmaController.reset();
+	cartridgeController.reset();
 	geometryController.reset();
 	gxGpu.reset();
 	imgDecController.reset();

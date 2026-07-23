@@ -3,6 +3,7 @@
 local endian<const> = require("bios/common/endian")
 local read_u16le<const> = endian.read_u16le
 local read_u32le<const> = endian.read_u32le
+local cartridge<const> = require("system/cartridge")
 local dma<const> = require("system/dma")
 
 struct apu_command_registers
@@ -41,7 +42,7 @@ local transfer_mode_stop<const> = 0x00000000
 local transfer_mode_dma_write<const> = 0x00000002
 local transfer_mode_dma_read<const> = 0x00000003
 
-apu.sample_ram_base = 0x10000000
+apu.sample_ram_base = 0x40000000
 apu.sample_ram_bytes = 0x00080000
 apu.output_sample_rate_hz = output_sample_rate_hz
 apu.filter_control_enable = 0x00000001
@@ -73,7 +74,7 @@ local rom_base_for_payload<const> = function(payload_id)
 	if payload_id == 'system' then
 		return 0x00000000
 	end
-	return 0x01000000
+	return cartridge.rom_base
 end
 local read_badp_source<const> = function(addr, source_bytes)
 	local channels<const> = read_u16le(addr + 6)

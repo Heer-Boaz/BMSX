@@ -27,7 +27,11 @@ import { INPUT_CONTROLLER_KEY_WORD_COUNT, INPUT_CONTROLLER_PAD_AXIS_COUNT, INPUT
 import { PSX_GPU_DISPLAY_MODE_PAL_WORD } from '../../machine/ts/machine/model_registry';
 
 import type { RuntimeSaveState } from '../../machine/ts/machine/runtime/save_state';
-import { RUNTIME_SAVE_STATE_WIRE_CAPACITY, decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state/codec';
+import {
+	decodeRuntimeSaveState,
+	encodeRuntimeSaveState,
+	runtimeSaveStateWireCapacity,
+} from '../../machine/ts/machine/runtime/save_state/codec';
 import { decodeBinaryWithPropTable } from '../../machine/ts/common/serializer/binencoder';
 import { RUNTIME_SAVE_STATE_PROP_NAMES } from '../../machine/ts/machine/runtime/save_state/schema';
 import { BuiltinFunctionId, ProtectedCallKind } from '../../machine/ts/machine/cpu/cpu';
@@ -70,6 +74,23 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					busFaultCode: 2,
 					busFaultAddr: 0x12345678,
 					busFaultAccess: 0x400,
+				},
+				cartridge: {
+					selectionWord: 0xa5a50001,
+					slots: [
+						{
+							ram: new Uint8Array([1, 3, 5, 7]),
+							mailboxDataWord: 0x11223344,
+							mailboxControlWord: 2,
+							mailboxIrqPending: true,
+						},
+						{
+							ram: new Uint8Array([2, 4, 6, 8, 10, 12]),
+							mailboxDataWord: 0xaabbccdd,
+							mailboxControlWord: 4,
+							mailboxIrqPending: false,
+						},
+					],
 				},
 				dma: {
 					channels: [
@@ -355,6 +376,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 						voices: [
 							{
 								slot: 1,
+								sourceCartridgeSlot: 1,
 								cursorQ16: 2 * APU_RATE_STEP_Q16_ONE,
 								phaseRemainder: 22050,
 								gainQ12: 1954,
@@ -505,12 +527,21 @@ function createRuntimeSaveState(): RuntimeSaveState {
 	} as unknown as RuntimeSaveState;
 }
 
+function cartridgeRamByteCount(state: RuntimeSaveState): number {
+	let byteCount = 0;
+	for (const slot of state.machineState.machine.cartridge.slots) {
+		byteCount += slot.ram.byteLength;
+	}
+	return byteCount;
+}
+
 test('runtime save-state codec preserves string pool ROM/runtime ownership', () => {
 	const state = createRuntimeSaveState();
 
-	const decoded = decodeRuntimeSaveState(encodeRuntimeSaveState(state));
+	const decoded = decodeRuntimeSaveState(encodeRuntimeSaveState(state), cartridgeRamByteCount(state));
 
 	assert.deepEqual(decoded.machineState.machine.stringPool.entries, state.machineState.machine.stringPool.entries);
+	assert.deepEqual(decoded.machineState.machine.cartridge, state.machineState.machine.cartridge);
 	assert.deepEqual(decoded.machineState.machine.irq, state.machineState.machine.irq);
 	assert.deepEqual(decoded.machineState.machine.dma, state.machineState.machine.dma);
 	assert.deepEqual(decoded.machineState.machine.imgDec, state.machineState.machine.imgDec);
@@ -530,7 +561,7 @@ test('runtime save-state codec rejects a nonnumeric scheduler grant remainder', 
 	(state.machineState.frameScheduler as unknown as { cycleGrantRemainder: string }).cycleGrantRemainder = '0.5';
 
 	assert.throws(
-		() => decodeRuntimeSaveState(encodeRuntimeSaveState(state)),
+		() => decodeRuntimeSaveState(encodeRuntimeSaveState(state), cartridgeRamByteCount(state)),
 		/frameScheduler\.cycleGrantRemainder must be a numeric value/,
 	);
 });
@@ -545,7 +576,10 @@ test('runtime save-state codec stores READY GPUREAD bytes and rejects backend-on
 	readyReadback.readbackHeight = 1;
 	readyReadback.readbackPixelCursor = 1;
 	readyReadback.readbackPixelBytes = new Uint8Array([0x11, 0x11, 0x22, 0x22, 0x33, 0x33]);
-	const decodedReady = decodeRuntimeSaveState(encodeRuntimeSaveState(ready)).machineState.machine.gxGpu.commandBuffer;
+	const decodedReady = decodeRuntimeSaveState(
+		encodeRuntimeSaveState(ready),
+		cartridgeRamByteCount(ready),
+	).machineState.machine.gxGpu.commandBuffer;
 	assert.equal(decodedReady.readbackPhase, GX_GPU_READBACK_READY);
 	assert.equal(decodedReady.readbackPixelCursor, 1);
 	assert.deepEqual(decodedReady.readbackPixelBytes, readyReadback.readbackPixelBytes);
@@ -557,18 +591,19 @@ test('runtime save-state codec stores READY GPUREAD bytes and rejects backend-on
 	submittedReadback.readbackHeight = 512;
 	submittedReadback.readbackPixelBytes = new Uint8Array(0);
 	assert.throws(
-		() => decodeRuntimeSaveState(encodeRuntimeSaveState(submitted)),
+		() => decodeRuntimeSaveState(encodeRuntimeSaveState(submitted), cartridgeRamByteCount(submitted)),
 		/backend-submitted phase/,
 	);
 
 	const oversized = createRuntimeSaveState();
-	oversized.machineState.machine.gxGpu.vramBytes = new Uint8Array(RUNTIME_SAVE_STATE_WIRE_CAPACITY);
+	const wireCapacity = runtimeSaveStateWireCapacity(cartridgeRamByteCount(oversized));
+	oversized.machineState.machine.gxGpu.vramBytes = new Uint8Array(wireCapacity);
 	assert.throws(
 		() => encodeRuntimeSaveState(oversized),
 		/current-format wire capacity/,
 	);
 	assert.throws(
-		() => decodeRuntimeSaveState(new Uint8Array(RUNTIME_SAVE_STATE_WIRE_CAPACITY + 1)),
+		() => decodeRuntimeSaveState(new Uint8Array(wireCapacity + 1), cartridgeRamByteCount(oversized)),
 		/current-format wire capacity/,
 	);
 });
@@ -590,7 +625,7 @@ test('runtime save-state codec preserves exception frame metadata', () => {
 		isNonMaskableExceptionFrame: true,
 	}];
 
-	const decoded = decodeRuntimeSaveState(encodeRuntimeSaveState(state));
+	const decoded = decodeRuntimeSaveState(encodeRuntimeSaveState(state), cartridgeRamByteCount(state));
 
 	assert.deepEqual(decoded.cpuState.frames, state.cpuState.frames);
 });
@@ -604,7 +639,7 @@ test('runtime save-state codec preserves builtin VM primitive ids', () => {
 		{ tag: 'builtin', id: BuiltinFunctionId.StringChar },
 	];
 
-	const decoded = decodeRuntimeSaveState(encodeRuntimeSaveState(state));
+	const decoded = decodeRuntimeSaveState(encodeRuntimeSaveState(state), cartridgeRamByteCount(state));
 
 	assert.deepEqual(decoded.cpuState.globals, state.cpuState.globals);
 	assert.deepEqual(decoded.cpuState.lastReturnValues, state.cpuState.lastReturnValues);

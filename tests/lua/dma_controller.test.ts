@@ -58,9 +58,19 @@ import {
 } from '../../machine/ts/machine/devices/gx/gpu_pcrtc';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
-import { CART_ROM_BASE, IO_BASE, IO_WORD_SIZE, PROGRAM_STATIC_RAM_BASE, RAM_END, SYSTEM_ROM_BASE } from '../../machine/ts/machine/memory/map';
+import {
+	CART_RAM_END,
+	CART_ROM_BASE,
+	CART_ROM_END,
+	IO_BASE,
+	IO_WORD_SIZE,
+	PROGRAM_STATIC_RAM_BASE,
+	RAM_END,
+	SYSTEM_ROM_BASE,
+} from '../../machine/ts/machine/memory/map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/machine/model_registry';
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
+import { cartridgeSlots } from '../helpers/cartridge';
 import { finalizeTestSystemProgram } from '../helpers/program_image';
 import { compileLuaSource } from './cpu_test_harness';
 
@@ -85,7 +95,7 @@ const SELF_DMA_TRIGGER_CONTROL = 0x00000001;
 function createDmaGpuFixture(): DmaGpuFixture {
 	const memory = new Memory({
 		systemRom: new Uint8Array([0x04, 0x03, 0x02, 0x01, 0x08, 0x07, 0x06, 0x05]),
-		cartRom: new Uint8Array([0x44, 0x33, 0x22, 0x11, 0x88, 0x77, 0x66, 0x55]),
+		cartridgeSlots: cartridgeSlots(new Uint8Array([0x44, 0x33, 0x22, 0x11, 0x88, 0x77, 0x66, 0x55])),
 	});
 	const irq = new IrqController(memory);
 	const cpu = new CPU(memory, irq);
@@ -153,19 +163,34 @@ test('system firmware ROM uses its internal bus timing instead of cartridge timi
 });
 
 test('incrementing DMA timing follows memory regions across physical map boundaries', () => {
-	const systemToCart = createDmaGpuFixture();
-	systemToCart.dma.setTiming(5, 7, 2, 11, 13, 0);
+	const cartRomToRam = createDmaGpuFixture();
+	cartRomToRam.dma.setTiming(5, 7, 2, 11, 13, 0);
 	programTransfer(
-		systemToCart.memory,
-		CART_ROM_BASE - 4,
+		cartRomToRam.memory,
+		CART_ROM_END - IO_WORD_SIZE,
 		IO_GX_GPU_GP0,
 		2,
 		FORCED_GP0_WRITE_CONTROL,
 	);
 	assert.equal(
-		systemToCart.scheduler.nextDeadline(),
-		26,
-		'one system-ROM word and a new cartridge burst retain their own physical timing',
+		cartRomToRam.scheduler.nextDeadline(),
+		48,
+		'cartridge ROM and RAM each pay their physical bus setup and word timing',
+	);
+
+	const cartRamToMmio = createDmaGpuFixture();
+	cartRamToMmio.dma.setTiming(5, 7, 2, 11, 13, 0);
+	programTransfer(
+		cartRamToMmio.memory,
+		CART_RAM_END - IO_WORD_SIZE,
+		IO_GX_GPU_GP0,
+		2,
+		FORCED_GP0_WRITE_CONTROL,
+	);
+	assert.equal(
+		cartRamToMmio.scheduler.nextDeadline(),
+		48,
+		'cartridge RAM and MMIO each begin a physical bus transaction',
 	);
 
 	const ioToRam = createDmaGpuFixture();

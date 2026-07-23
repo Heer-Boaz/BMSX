@@ -1,6 +1,5 @@
 #include "render/presentation_state.h"
 #include "core/machine_manager.h"
-#include "core/rom_boot_manager.h"
 #include "common/time.h"
 #include "machine/runtime/runtime.h"
 #include "render/backend/pass/library.h"

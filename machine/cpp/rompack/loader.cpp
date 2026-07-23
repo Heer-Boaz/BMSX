@@ -7,15 +7,13 @@
 #include "../machine/program/loader.h"
 #include "common/endian.h"
 #include "common/mem_snapshot.h"
+#include "machine/memory/map.h"
 #include "rompack/format.h"
 #include "rompack/metadata.h"
 #include "rompack/toc.h"
 #include <cstring>
 #include <stdexcept>
 #include <utility>
-#if BMSX_ENABLE_ZLIB
-#include <zlib.h>
-#endif
 #include <iostream>
 
 namespace bmsx {
@@ -874,6 +872,8 @@ void RuntimeRomPackage::clear() {
 	audioevents.clear();
 	programImageRom.reset();
 	programSymbolsRom.reset();
+	cartridgeBoardWord = 0;
+	cartridgeRamByteCount = 0;
 	projectRootPath.clear();
 	cartManifest.reset();
 	machine = MachineManifest{};
@@ -883,46 +883,6 @@ void RuntimeRomPackage::clear() {
 /* ============================================================================
  * ROM loading
  * ============================================================================ */
-
-// Check if buffer has PNG signature
-static bool isPNG(const u8* data, size_t size) {
-	if (size < 8) return false;
-	return data[0] == 0x89 && data[1] == 0x50 && data[2] == 0x4E && data[3] == 0x47 &&
-			data[4] == 0x0D && data[5] == 0x0A && data[6] == 0x1A && data[7] == 0x0A;
-}
-
-// Find end of PNG file (returns size of PNG, or 0 if not valid)
-static size_t findPNGEnd(const u8* data, size_t size) {
-	if (!isPNG(data, size)) return 0;
-
-	size_t pos = 8;
-	while (pos + 8 <= size) {
-		u32 len = (data[pos] << 24) | (data[pos+1] << 16) | (data[pos+2] << 8) | data[pos+3];
-		pos += 4;
-		u32 type = (data[pos] << 24) | (data[pos+1] << 16) | (data[pos+2] << 8) | data[pos+3];
-		pos += 4;
-		size_t chunkEnd = pos + len + 4;  // +4 for CRC
-		if (chunkEnd > size) return 0;
-		if (type == 0x49454E44) {  // IEND
-			return chunkEnd;
-		}
-		pos = chunkEnd;
-	}
-	return 0;
-}
-
-static bool looksZlibCompressed(const u8* data, size_t size) {
-	if (size < 2) return false;
-	if (data[0] == 0x1F && data[1] == 0x8B) {
-		return true;
-	}
-	if (data[0] == 0x78) {
-		const u32 cmf = data[0];
-		const u32 flg = data[1];
-		return ((cmf << 8) + flg) % 31 == 0;
-	}
-	return false;
-}
 
 static constexpr size_t BADP_HEADER_SIZE = 48;
 static constexpr u16 BADP_VERSION = 1;
@@ -1028,73 +988,15 @@ static BadpMetadata parseBadpMetadata(const u8* data, size_t size) {
 	return metadata;
 }
 
-// Decompress zlib data
-#if BMSX_ENABLE_ZLIB
-static std::vector<u8> zlibDecompress(const u8* data, size_t size) {
-	// Start with estimate of 4x compression ratio
-	std::vector<u8> output(size * 4);
-	uLongf outputLen = output.size();
-
-	while (true) {
-		int result = uncompress(output.data(), &outputLen, data, static_cast<uLong>(size));
-		if (result == Z_OK) {
-			output.resize(outputLen);
-			return output;
-		}
-		if (result == Z_BUF_ERROR) {
-			// Need more space
-			output.resize(output.size() * 2);
-			outputLen = output.size();
-		} else {
-			throw BMSX_RUNTIME_ERROR("zlib decompression failed");
-		}
+RomImage parseRomImage(const u8* buffer, size_t size, RomImageDomain domain) {
+	const size_t capacity = domain == RomImageDomain::System ? SYSTEM_ROM_SIZE : CART_ROM_SIZE;
+	if (size > capacity) {
+		throw BMSX_RUNTIME_ERROR(
+			domain == RomImageDomain::System
+				? "System ROM payload exceeds its address window."
+				: "Cartridge ROM payload exceeds its address window.");
 	}
-}
-#endif
-
-static void normalizeRomPayload(const u8* buffer, size_t size, const u8*& romData, size_t& romSize, std::vector<u8>& decompressed) {
-	romData = buffer;
-	romSize = size;
-	size_t pngEnd = findPNGEnd(buffer, size);
-	if (pngEnd > 0) {
-		const u8* candidate = buffer + pngEnd;
-		const size_t candidateSize = size - pngEnd;
-		if (hasCartHeader(candidate, candidateSize) || looksZlibCompressed(candidate, candidateSize)) {
-			romData = candidate;
-			romSize = candidateSize;
-		}
-	}
-
-	if (!hasCartHeader(romData, romSize)) {
-		#if BMSX_ENABLE_ZLIB
-		if (!looksZlibCompressed(romData, romSize)) {
-			throw BMSX_RUNTIME_ERROR("ROM payload is missing cart header.");
-		}
-		decompressed = zlibDecompress(romData, romSize);
-		#else
-		throw BMSX_RUNTIME_ERROR("ROM payload is compressed but zlib support is disabled.");
-		#endif
-		romData = decompressed.data();
-		romSize = decompressed.size();
-
-		if (!hasCartHeader(romData, romSize)) {
-			throw BMSX_RUNTIME_ERROR("Invalid ROM payload after decompression.");
-		}
-	}
-}
-
-struct NormalizedRomPayload {
-	const u8* data = nullptr;
-	size_t size = 0;
-	std::vector<u8> decompressed;
-	CartRomHeader header;
-};
-
-static NormalizedRomPayload readNormalizedRomPayload(const u8* buffer, size_t size) {
-	NormalizedRomPayload payload;
-	normalizeRomPayload(buffer, size, payload.data, payload.size, payload.decompressed);
-	payload.header = parseCartHeader(payload.data, payload.size);
-	return payload;
+	return RomImage{std::span<const u8>(buffer, size), parseCartHeader(buffer, size)};
 }
 
 static void decodeCartridgeMetadata(const u8* romData, const CartRomHeader& header, RuntimeRomPackage& romPackage) {
@@ -1130,7 +1032,7 @@ static void decodeCartridgeMetadata(const u8* romData, const CartRomHeader& head
 	romPackage.cartManifest = std::move(cartManifest);
 }
 
-static bool loadRomAssetPayloadInternal(const u8* romData,
+static void loadRomAssetPayloadInternal(const u8* romData,
 						size_t,
 						const CartRomHeader& header,
 						RuntimeRomPackage& romPackage,
@@ -1155,7 +1057,7 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 	// Step 5: Load ROM TOC records.
 	const size_t entryCount = toc.entries.size();
 	if (entryCount == 0) {
-		return true;
+		return;
 	}
 
 	logMemSnapshot("rom-package:begin");
@@ -1389,45 +1291,35 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 	}
 
 	logMemSnapshot("rom-package:end");
-	return true;
 }
 
-static bool loadRomPackageFromPayload(const u8* buffer,
-							size_t size,
+static void loadRomPackageFromImage(const RomImage& image,
 							RuntimeRomPackage& romPackage,
 							const AssetLoadCallbacks* callbacks,
 							const char* payloadId,
-	bool decodeMetadata,
-	bool cartPayload) {
+		bool decodeMetadata,
+		bool cartPayload) {
 	romPackage.clear();
-	NormalizedRomPayload payload = readNormalizedRomPayload(buffer, size);
+	romPackage.cartridgeBoardWord = image.header.cartridgeBoardWord;
+	romPackage.cartridgeRamByteCount = image.header.cartridgeRamByteCount;
 	if (decodeMetadata) {
-		decodeCartridgeMetadata(payload.data, payload.header, romPackage);
+		decodeCartridgeMetadata(image.bytes.data(), image.header, romPackage);
 	}
-	return loadRomAssetPayloadInternal(payload.data, payload.size, payload.header, romPackage, callbacks, payloadId, cartPayload);
+	loadRomAssetPayloadInternal(image.bytes.data(), image.bytes.size(), image.header, romPackage, callbacks, payloadId, cartPayload);
 }
 
-bool loadCartRomPackageFromRom(const u8* buffer,
-							size_t size,
+void loadCartRomPackage(const RomImage& image,
 							RuntimeRomPackage& romPackage,
 							const AssetLoadCallbacks* callbacks,
 							const char* payloadId) {
-	return loadRomPackageFromPayload(buffer, size, romPackage, callbacks, payloadId, true, true);
+	loadRomPackageFromImage(image, romPackage, callbacks, payloadId, true, true);
 }
 
-bool loadSystemRomPackageFromRom(const u8* buffer,
-							size_t size,
+void loadSystemRomPackage(const RomImage& image,
 							RuntimeRomPackage& romPackage,
 							const AssetLoadCallbacks* callbacks,
 							const char* payloadId) {
-	return loadRomPackageFromPayload(buffer, size, romPackage, callbacks, payloadId, false, false);
-}
-
-MachineManifest peekCartMachineManifest(const u8* buffer, size_t size) {
-	NormalizedRomPayload payload = readNormalizedRomPayload(buffer, size);
-	RuntimeRomPackage pkg;
-	decodeCartridgeMetadata(payload.data, payload.header, pkg);
-	return pkg.machine;
+	loadRomPackageFromImage(image, romPackage, callbacks, payloadId, false, false);
 }
 
 } // namespace bmsx
