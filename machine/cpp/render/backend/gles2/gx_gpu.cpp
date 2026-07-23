@@ -223,6 +223,7 @@ GxGpuVramCopyRect g_solidCommandRect{};
 GxGpuVramCopyRect g_lineBatchRect{};
 GxGpuVramCopyRect g_texturedBatchRect{};
 GxGpuVramCopyRect g_texturedCommandRect{};
+GxGpuVramCopyRect g_texturedDependencyBatchRect{};
 GxGpuVramCopyRect g_sampleDirtyRect{};
 GxGpuRectangle g_rectangleScratch{};
 GxGpuPreparedRasterPrimitive g_linePreparedScratch{};
@@ -561,6 +562,11 @@ void initGxGpu(OpenGLES2Backend& backend) {
 	g_gxGpu.texturedRasterPhaseUniform = glGetUniformLocation(g_gxGpu.texturedProgram, "u_rasterPhase");
 	glUseProgram(g_gxGpu.texturedProgram);
 	glUniform1i(glGetUniformLocation(g_gxGpu.texturedProgram, "u_vram"), GLES2_TEXTURE_UNIT_GX_SAMPLE);
+	if (!g_gxGpu.framebufferFetch) {
+		glUniform1i(
+			glGetUniformLocation(g_gxGpu.texturedProgram, "u_destination"),
+			g_gxGpu.textureBarrier ? GLES2_TEXTURE_UNIT_GX_DESTINATION : GLES2_TEXTURE_UNIT_GX_SAMPLE);
+	}
 	g_gxGpu.fixedTexturedPositionAttrib = glGetAttribLocation(g_gxGpu.fixedTexturedProgram, "a_position");
 	g_gxGpu.fixedTexturedUvPlaneBaseAttrib = glGetAttribLocation(g_gxGpu.fixedTexturedProgram, "a_uvPlaneBase");
 	g_gxGpu.fixedTexturedUvPlaneStepXAttrib = glGetAttribLocation(g_gxGpu.fixedTexturedProgram, "a_uvPlaneStepX");
@@ -582,6 +588,11 @@ void initGxGpu(OpenGLES2Backend& backend) {
 	g_gxGpu.fixedTexturedRasterPhaseUniform = glGetUniformLocation(g_gxGpu.fixedTexturedProgram, "u_rasterPhase");
 	glUseProgram(g_gxGpu.fixedTexturedProgram);
 	glUniform1i(glGetUniformLocation(g_gxGpu.fixedTexturedProgram, "u_vram"), GLES2_TEXTURE_UNIT_GX_SAMPLE);
+	if (!g_gxGpu.framebufferFetch) {
+		glUniform1i(
+			glGetUniformLocation(g_gxGpu.fixedTexturedProgram, "u_destination"),
+			g_gxGpu.textureBarrier ? GLES2_TEXTURE_UNIT_GX_DESTINATION : GLES2_TEXTURE_UNIT_GX_SAMPLE);
+	}
 	const std::array<GxGpuTransferProgram*, 2u> transferPrograms{
 		&g_gxGpu.transferProgram,
 		&g_gxGpu.cpuUploadProgram,
@@ -3043,7 +3054,11 @@ void renderTexturedVertices(
 	glUseProgram(fixedColor ? g_gxGpu.fixedTexturedProgram : g_gxGpu.texturedProgram);
 	writeTexturedUniforms(commandBuffer, commandIndex, fixedColor);
 	g_gxGpu.backend->setActiveTextureUnit(GLES2_TEXTURE_UNIT_GX_SAMPLE);
-	g_gxGpu.backend->bindTexture2D(textureBarrier ? &g_gxGpu.vramTexture : &g_gxGpu.vramSampleTexture);
+	g_gxGpu.backend->bindTexture2D(&g_gxGpu.vramSampleTexture);
+	if (textureBarrier) {
+		g_gxGpu.backend->setActiveTextureUnit(GLES2_TEXTURE_UNIT_GX_DESTINATION);
+		g_gxGpu.backend->bindTexture2D(&g_gxGpu.vramTexture);
+	}
 	glBindBuffer(GL_ARRAY_BUFFER, g_gxGpu.vertexStream.buffer);
 	if (fixedColor) {
 		glEnableVertexAttribArray(static_cast<GLuint>(g_gxGpu.fixedTexturedPositionAttrib));
@@ -3085,27 +3100,66 @@ void renderTexturedVertices(
 			vramYAddressExtensionWord);
 	} else {
 		const u32 maskBitModeWord = commandBuffer.commandMaskBitModeWord[commandIndex];
-		const bool samplesDestination = !g_gxGpu.framebufferFetch
-			&& (gxGpuCommandSemiTransparencyEnabled(opcode) || gxGpuMaskBitCheckBeforeDraw(maskBitModeWord));
+		const bool readsVram = gxGpuCommandSemiTransparencyEnabled(opcode) || gxGpuMaskBitCheckBeforeDraw(maskBitModeWord);
 		const size_t triangleFloatCount = 3u * vertexFloatStride;
-		for (size_t vertexFloatStart = 0u; vertexFloatStart < vertexFloatCount; vertexFloatStart += triangleFloatCount) {
-			if (vertexFloatStart != 0u && syncSourceBetweenTriangles && !textureBarrier) {
-				syncGxGpuTexturedSourceTexture(commandBuffer, commandIndex, 0u, vertexFloatCount, g_texturedCommandRect, g_texturedBatchRect, fixedColor);
+		if (!syncSourceBetweenTriangles && !readsVram) {
+			drawGxGpuLogicalVramArea(
+				g_texturedCommandRect,
+				0,
+				static_cast<GLsizei>(vertexFloatCount / vertexFloatStride),
+				false,
+				vramYAddressExtensionWord);
+		} else {
+			const bool samplesDestination = !g_gxGpu.framebufferFetch && !textureBarrier && readsVram;
+			size_t dependencyBatchFloatStart = 0u;
+			resetGxGpuVramCopyRect(g_texturedDependencyBatchRect);
+			for (size_t vertexFloatStart = 0u; vertexFloatStart < vertexFloatCount; vertexFloatStart += triangleFloatCount) {
+				const size_t vertexFloatEnd = vertexFloatStart + triangleFloatCount;
+				setGxGpuVertexBoundsRect(g_vramCopyRectScratch, g_texturedVertices.data(), vertexFloatStart, vertexFloatEnd, vertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
+				if (vertexFloatStart != dependencyBatchFloatStart
+					&& (syncSourceBetweenTriangles
+						|| gxGpuVramCopyRectsOverlap(g_texturedDependencyBatchRect, g_vramCopyRectScratch, vramYAddressExtensionWord))) {
+					if (dependencyBatchFloatStart != 0u) {
+						if (syncSourceBetweenTriangles) {
+							syncGxGpuTexturedSourceTexture(commandBuffer, commandIndex, 0u, vertexFloatCount, g_texturedCommandRect, g_texturedBatchRect, fixedColor);
+						}
+						if (samplesDestination) {
+							syncGxGpuSampleTextureLogicalArea(
+								static_cast<u32>(g_texturedDependencyBatchRect.left),
+								static_cast<u32>(g_texturedDependencyBatchRect.top),
+								static_cast<u32>(g_texturedDependencyBatchRect.right - g_texturedDependencyBatchRect.left),
+								static_cast<u32>(g_texturedDependencyBatchRect.bottom - g_texturedDependencyBatchRect.top),
+								vramYAddressExtensionWord);
+						}
+					}
+					drawGxGpuLogicalVramArea(
+						g_texturedDependencyBatchRect,
+						static_cast<GLint>(dependencyBatchFloatStart / vertexFloatStride),
+						static_cast<GLsizei>((vertexFloatStart - dependencyBatchFloatStart) / vertexFloatStride),
+						textureBarrier,
+						vramYAddressExtensionWord);
+					dependencyBatchFloatStart = vertexFloatStart;
+					resetGxGpuVramCopyRect(g_texturedDependencyBatchRect);
+				}
+				includeGxGpuVramCopyRect(g_texturedDependencyBatchRect, g_vramCopyRectScratch);
 			}
-			const size_t vertexFloatEnd = vertexFloatStart + triangleFloatCount;
-			setGxGpuVertexBoundsRect(g_vramCopyRectScratch, g_texturedVertices.data(), vertexFloatStart, vertexFloatEnd, vertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
-			if (samplesDestination && vertexFloatStart != 0u && !textureBarrier) {
-				syncGxGpuSampleTextureLogicalArea(
-					static_cast<u32>(g_vramCopyRectScratch.left),
-					static_cast<u32>(g_vramCopyRectScratch.top),
-					static_cast<u32>(g_vramCopyRectScratch.right - g_vramCopyRectScratch.left),
-					static_cast<u32>(g_vramCopyRectScratch.bottom - g_vramCopyRectScratch.top),
-					vramYAddressExtensionWord);
+			if (dependencyBatchFloatStart != 0u) {
+				if (syncSourceBetweenTriangles) {
+					syncGxGpuTexturedSourceTexture(commandBuffer, commandIndex, 0u, vertexFloatCount, g_texturedCommandRect, g_texturedBatchRect, fixedColor);
+				}
+				if (samplesDestination) {
+					syncGxGpuSampleTextureLogicalArea(
+						static_cast<u32>(g_texturedDependencyBatchRect.left),
+						static_cast<u32>(g_texturedDependencyBatchRect.top),
+						static_cast<u32>(g_texturedDependencyBatchRect.right - g_texturedDependencyBatchRect.left),
+						static_cast<u32>(g_texturedDependencyBatchRect.bottom - g_texturedDependencyBatchRect.top),
+						vramYAddressExtensionWord);
+				}
 			}
 			drawGxGpuLogicalVramArea(
-				g_vramCopyRectScratch,
-				static_cast<GLint>(vertexFloatStart / vertexFloatStride),
-				3,
+				g_texturedDependencyBatchRect,
+				static_cast<GLint>(dependencyBatchFloatStart / vertexFloatStride),
+				static_cast<GLsizei>((vertexFloatCount - dependencyBatchFloatStart) / vertexFloatStride),
 				textureBarrier,
 				vramYAddressExtensionWord);
 		}
@@ -3140,7 +3194,7 @@ void renderTexturedCommand(
 	const bool readsVram = gxGpuCommandSemiTransparencyEnabled(opcode) || gxGpuMaskBitCheckBeforeDraw(maskBitModeWord);
 	const u32 sourceOverlaps = syncGxGpuTexturedSourceTexture(commandBuffer, commandIndex, 0u, vertexFloatCount, g_texturedCommandRect, g_texturedBatchRect, fixedColor);
 	const bool sourceOverlapsDestination = (sourceOverlaps & GX_GPU_TEXTURE_SOURCE_COMMAND_OVERLAP) != 0u;
-	const bool textureBarrier = g_gxGpu.textureBarrier && !sourceOverlapsDestination;
+	const bool textureBarrier = readsVram && g_gxGpu.textureBarrier;
 	if (readsVram && !g_gxGpu.framebufferFetch && !textureBarrier) {
 		syncGxGpuSampleTextureLogicalArea(
 			static_cast<u32>(g_texturedCommandRect.left),

@@ -2174,15 +2174,30 @@ capability branch would be targetless complexity rather than an optimization.
 Framebuffer fetch reads the previous raw destination word from the active
 color attachment and removes destination sample copies and explicit texture
 barriers. Dependency batches still keep overlapping read-modify-write
-primitives in separate API draws; one draw may contain only mutually
-non-overlapping destination readers. Framebuffer fetch does not replace
-arbitrary texture-page or CLUT reads: those continue to use the retained sample
-texture, and a source that aliases its destination remains an ordering boundary.
-Without ARM framebuffer fetch, GLES2 uses the resolved `GL_NV_texture_barrier`
-procedure when its ordering rules permit it; otherwise the exact dependency-copy
-path remains the owner. Capability choice is fixed at backend context creation
-and never leaks into cart or firmware code. Backends do not silently weaken GX
-blend, mask or ordering semantics for a slower host.
+primitives in separate API draws. GLES2, WebGL2 and WebGPU walk their retained
+triangle stream once in submission order and extend the current dependency draw
+only while the next clipped destination bounds do not intersect its accumulated
+bounds. The first intersection ends that draw. This is the bounding-box batching
+model specified by
+[`GL_NV_texture_barrier`](https://registry.khronos.org/OpenGL/extensions/NV/NV_texture_barrier.txt):
+one draw contains only mutually non-overlapping destination readers, and
+primitives are never reordered. Texture-source aliasing remains a per-triangle
+boundary. On the NV route, texture-page and CLUT reads use the stable sample
+texture while a separate sampler reads only the attached destination; the
+bounding box is therefore the complete live feedback read/write set. The NV
+route issues one barrier per dependency draw; the dependency-copy routes
+synchronize the retained sample texture once before each subsequent draw; ARM
+framebuffer fetch uses the same draw ordering without those copies or barriers.
+The scan uses retained rectangles and performs no heap work.
+
+Framebuffer fetch does not replace arbitrary texture-page or CLUT reads: those
+continue to use the retained sample texture, and a source that aliases its
+destination remains an ordering boundary. Without ARM framebuffer fetch, GLES2
+uses the resolved `GL_NV_texture_barrier` procedure when its ordering rules
+permit it; otherwise the exact dependency-copy path remains the owner.
+Capability choice is fixed at backend context creation and never leaks into
+cart or firmware code. Backends do not silently weaken GX blend, mask or
+ordering semantics for a slower host.
 
 Compatible solid, line and textured commands append to backend-owned retained
 arenas until render state, capacity or a real VRAM dependency forces submission.

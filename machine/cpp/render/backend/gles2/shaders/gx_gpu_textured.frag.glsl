@@ -10,6 +10,9 @@ precision highp int;
 #endif
 
 uniform sampler2D u_vram;
+#ifndef GX_GPU_FRAMEBUFFER_FETCH_ARM
+uniform sampler2D u_destination;
+#endif
 uniform ivec2 u_textureWindowAnd;
 uniform ivec2 u_textureWindowOr;
 uniform int u_textureMode;
@@ -76,7 +79,7 @@ int rawStorageVramWord(ivec2 storageCoord) {
 #ifdef GX_GPU_FRAMEBUFFER_FETCH_ARM
 	vec4 rawPixel = gl_LastFragColorARM;
 #else
-	vec4 rawPixel = texture2D(u_vram, (vec2(storageCoord) + vec2(0.5)) / 1024.0);
+	vec4 rawPixel = texture2D(u_destination, (vec2(storageCoord) + vec2(0.5)) / 1024.0);
 #endif
 	ivec4 nibbles = ivec4(rawPixel * 15.0 + 0.5);
 	return nibbles.r * 4096 + nibbles.g * 256 + nibbles.b * 16 + nibbles.a;

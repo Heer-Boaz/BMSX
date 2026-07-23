@@ -244,6 +244,12 @@ const gxGpuTexturedCommandRect: GxGpuVramCopyRect = {
 	right: 0,
 	bottom: 0,
 };
+const gxGpuTexturedDependencyBatchRect: GxGpuVramCopyRect = {
+	left: 0,
+	top: 0,
+	right: 0,
+	bottom: 0,
+};
 const gxGpuTexturedBatchRect: GxGpuVramCopyRect = {
 	left: 0,
 	top: 0,
@@ -2566,21 +2572,57 @@ function renderTexturedVertices(
 		const maskBitModeWord = commandBuffer.commandMaskBitModeWord[commandIndex];
 		const readsVram = gxGpuCommandSemiTransparencyEnabled(opcode) || gxGpuMaskBitCheckBeforeDraw(maskBitModeWord);
 		const triangleFloatCount = 3 * vertexFloatStride;
-		for (let vertexFloatStart = 0; vertexFloatStart < vertexFloatCount; vertexFloatStart += triangleFloatCount) {
-			if (vertexFloatStart !== 0 && syncSourceBetweenTriangles) syncGxGpuTexturedSourceTexture(commandBuffer, commandIndex, 0, vertexFloatCount, gxGpuTexturedCommandRect, gxGpuTexturedBatchRect, fixedColor);
-			const vertexFloatEnd = vertexFloatStart + triangleFloatCount;
-			setGxGpuVertexBoundsRect(gxGpuVramCopyRectScratch, vertices, vertexFloatStart, vertexFloatEnd, vertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
-			if (readsVram && vertexFloatStart !== 0) syncGxGpuSampleTextureLogicalArea(
-				gxGpuVramCopyRectScratch.left,
-				gxGpuVramCopyRectScratch.top,
-				gxGpuVramCopyRectScratch.right - gxGpuVramCopyRectScratch.left,
-				gxGpuVramCopyRectScratch.bottom - gxGpuVramCopyRectScratch.top,
+		if (!syncSourceBetweenTriangles && !readsVram) {
+			drawGxGpuLogicalVramArea(
+				gxGpuTexturedCommandRect,
+				0,
+				vertexFloatCount / vertexFloatStride,
 				vramYAddressExtensionWord,
 			);
+		} else {
+			let dependencyBatchFloatStart = 0;
+			resetGxGpuVramCopyRect(gxGpuTexturedDependencyBatchRect);
+			for (let vertexFloatStart = 0; vertexFloatStart < vertexFloatCount; vertexFloatStart += triangleFloatCount) {
+				const vertexFloatEnd = vertexFloatStart + triangleFloatCount;
+				setGxGpuVertexBoundsRect(gxGpuVramCopyRectScratch, vertices, vertexFloatStart, vertexFloatEnd, vertexFloatStride, topLeftWord, bottomRightWord, vramYAddressExtensionWord);
+				if (vertexFloatStart !== dependencyBatchFloatStart
+					&& (syncSourceBetweenTriangles
+						|| gxGpuVramCopyRectsOverlap(gxGpuTexturedDependencyBatchRect, gxGpuVramCopyRectScratch, vramYAddressExtensionWord))) {
+					if (dependencyBatchFloatStart !== 0) {
+						if (syncSourceBetweenTriangles) syncGxGpuTexturedSourceTexture(commandBuffer, commandIndex, 0, vertexFloatCount, gxGpuTexturedCommandRect, gxGpuTexturedBatchRect, fixedColor);
+						if (readsVram) syncGxGpuSampleTextureLogicalArea(
+							gxGpuTexturedDependencyBatchRect.left,
+							gxGpuTexturedDependencyBatchRect.top,
+							gxGpuTexturedDependencyBatchRect.right - gxGpuTexturedDependencyBatchRect.left,
+							gxGpuTexturedDependencyBatchRect.bottom - gxGpuTexturedDependencyBatchRect.top,
+							vramYAddressExtensionWord,
+						);
+					}
+					drawGxGpuLogicalVramArea(
+						gxGpuTexturedDependencyBatchRect,
+						dependencyBatchFloatStart / vertexFloatStride,
+						(vertexFloatStart - dependencyBatchFloatStart) / vertexFloatStride,
+						vramYAddressExtensionWord,
+					);
+					dependencyBatchFloatStart = vertexFloatStart;
+					resetGxGpuVramCopyRect(gxGpuTexturedDependencyBatchRect);
+				}
+				includeGxGpuVramCopyRect(gxGpuTexturedDependencyBatchRect, gxGpuVramCopyRectScratch);
+			}
+			if (dependencyBatchFloatStart !== 0) {
+				if (syncSourceBetweenTriangles) syncGxGpuTexturedSourceTexture(commandBuffer, commandIndex, 0, vertexFloatCount, gxGpuTexturedCommandRect, gxGpuTexturedBatchRect, fixedColor);
+				if (readsVram) syncGxGpuSampleTextureLogicalArea(
+					gxGpuTexturedDependencyBatchRect.left,
+					gxGpuTexturedDependencyBatchRect.top,
+					gxGpuTexturedDependencyBatchRect.right - gxGpuTexturedDependencyBatchRect.left,
+					gxGpuTexturedDependencyBatchRect.bottom - gxGpuTexturedDependencyBatchRect.top,
+					vramYAddressExtensionWord,
+				);
+			}
 			drawGxGpuLogicalVramArea(
-				gxGpuVramCopyRectScratch,
-				vertexFloatStart / vertexFloatStride,
-				3,
+				gxGpuTexturedDependencyBatchRect,
+				dependencyBatchFloatStart / vertexFloatStride,
+				(vertexFloatCount - dependencyBatchFloatStart) / vertexFloatStride,
 				vramYAddressExtensionWord,
 			);
 		}
