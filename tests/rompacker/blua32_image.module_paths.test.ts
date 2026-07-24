@@ -6,10 +6,10 @@ import {
 	GX_TEXTURE_LAYOUT_SOURCE_PATH,
 	type RomAsset,
 } from '../../machine/ts/rompack/format';
-import { layoutRomProgramPrefix } from '../../machine/ts/rompack/tooling/rom_layout';
-import { buildRomProgramTail, compileLuaChunkBuffer } from '../../scripts/rompacker/rombuilder';
+import { layoutRomPrefix } from '../../machine/ts/rompack/tooling/rom_prefix_layout';
+import { buildRomBlua32Tail, compileLuaChunkBuffer } from '../../scripts/rompacker/rombuilder';
 
-test('program image rejects a cart Lua module that collides with the persisted GX layout', () => {
+test('BLua32 image rejects a cart Lua module that collides with the persisted GX layout', () => {
 	const entrySource = 'return true';
 	const cartLayoutSource = 'return { scene = 1 }';
 	const generatedLayoutSource = 'return { scene = 2 }';
@@ -36,16 +36,16 @@ test('program image rejects a cart Lua module that collides with the persisted G
 			source_path: GX_TEXTURE_LAYOUT_SOURCE_PATH,
 		},
 	];
-	const layout = layoutRomProgramPrefix(assets, true, null);
+	const layout = layoutRomPrefix(assets, true, null);
 
 	assert.throws(
-		() => buildRomProgramTail(assets, 'cart.lua', {
+		() => buildRomBlua32Tail(assets, 'cart.lua', {
 			externalLuaAssets: [],
 			generatedLuaModules: [],
 			includeSymbols: true,
 			optLevel: 3,
-			programOffset: layout.programOffset,
-			programDomain: 'system',
+			imageOffset: layout.blua32Offset,
+			domain: 'system',
 		}),
 		/ROM Lua module 'bmsx\/gx_texture_layout' is defined more than once/,
 	);

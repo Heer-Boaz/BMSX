@@ -13,14 +13,13 @@ async function main(): Promise<void> {
 	const header = parseCartHeader(rom);
 	writeCartRomHeader(rom, {
 		...header,
-		programBootVersion: 0,
-		programBootFlags: 0,
-		programEntryProtoIndex: 0,
-		programCodeByteCount: 0,
-		programConstPoolCount: 0,
-		programProtoCount: 0,
-		programReserved0: 0,
-		programConstRelocCount: 0,
+		blua32ImageOffset: 0,
+		blua32ImageByteCount: 0,
+		blua32StartupFunctionAddress: 0,
+		blua32IrqFunctionAddress: 0,
+		blua32ExceptionFunctionAddress: 0,
+		blua32StaticLayoutTokenLo: 0,
+		blua32StaticLayoutTokenHi: 0,
 	});
 	await writeFile(outputPath, rom);
 }

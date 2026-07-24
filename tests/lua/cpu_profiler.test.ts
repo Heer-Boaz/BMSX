@@ -1,66 +1,35 @@
-import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { CPU, OpCode, RunResult, type Program, type ProgramMetadata, type Proto } from '../../machine/ts/machine/cpu/cpu';
+import { OpCode, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { collectCpuProfilerHotPcs } from '../../machine/ts/machine/cpu/profiler';
 import { writeInstruction, INSTRUCTION_BYTES } from '../../machine/ts/machine/cpu/instruction_format';
-import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
-import { Memory } from '../../machine/ts/machine/memory/memory';
+import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 
-function makeProto(codeLen: number): Proto {
-	return {
-		entryPC: 0,
-		codeLen,
-		numParams: 0,
-		isVararg: false,
-		maxStack: 3,
-		upvalueDescs: [],
-		staticClosure: false,
-	};
-}
-
-function makeProgram(cpu: CPU): Program {
+function makeProfilerImage() {
 	const code = new Uint8Array(4 * INSTRUCTION_BYTES);
 	writeInstruction(code, 0, OpCode.K1, 0, 0, 0, 0);
 	writeInstruction(code, 1, OpCode.K1, 1, 0, 0, 0);
 	writeInstruction(code, 2, OpCode.ADD, 2, 0, 1, 0);
 	writeInstruction(code, 3, OpCode.RET, 2, 1, 0, 0);
-	const pool = cpu.stringPool;
-	return {
-		code,
-		constPool: [],
-		protos: [makeProto(code.length)],
-		stringPool: pool,
-		constPoolStringPool: pool,
-	};
-}
-
-function makeMetadata(): ProgramMetadata {
-	return {
+	return linkRawTestSystemBlua32({
+		text: code,
+		functions: [{ firstWord: 0, wordCount: 4, maxStack: 3 }],
 		debugRanges: [
 			{ path: 'manual.lua', start: { line: 1, column: 1 }, end: { line: 1, column: 10 } },
 			{ path: 'manual.lua', start: { line: 2, column: 1 }, end: { line: 2, column: 10 } },
 			{ path: 'manual.lua', start: { line: 3, column: 1 }, end: { line: 3, column: 10 } },
 			{ path: 'manual.lua', start: { line: 4, column: 1 }, end: { line: 4, column: 10 } },
 		],
-		protoIds: ['main'],
-		resumePointsByProto: [[]],
-		localSlotsByProto: [[]],
-		upvalueNamesByProto: [[]],
-		globalNames: [],
-		systemGlobalNames: [],
-		exportProtoIdBySlot: {},
-	};
+		functionIds: ['main'],
+	});
 }
 
 test('CPU profiler records opcode and PC execution counts', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
-	const cpu = new CPU(memory, new IrqController(memory));
-	const metadata = makeMetadata();
-	cpu.setProgram(makeProgram(cpu), metadata, metadata, 0, 0, 0);
+	const image = makeProfilerImage();
+	const cpu = createTestSystemCpu(image).cpu;
 	cpu.setProfilerEnabled(true);
-	cpu.start(0);
+	cpu.start(image.vectors.startupFunctionAddress);
 
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 
@@ -77,12 +46,10 @@ test('CPU profiler records opcode and PC execution counts', () => {
 });
 
 test('CPU profiler report resolves hot PCs back to opcode and source location', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
-	const cpu = new CPU(memory, new IrqController(memory));
-	const metadata = makeMetadata();
-	cpu.setProgram(makeProgram(cpu), metadata, metadata, 0, 0, 0);
+	const image = makeProfilerImage();
+	const cpu = createTestSystemCpu(image).cpu;
 	cpu.setProfilerEnabled(true);
-	cpu.start(0);
+	cpu.start(image.vectors.startupFunctionAddress);
 
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 
@@ -90,25 +57,25 @@ test('CPU profiler report resolves hot PCs back to opcode and source location', 
 	const hotAdd = collectCpuProfilerHotPcs(snapshot, 8, OpCode.ADD);
 	assert.equal(hotAdd.length, 1);
 	assert.equal(hotAdd[0].opcodeName, 'ADD');
-	assert.equal(hotAdd[0].protoId, 'main');
+	assert.equal(hotAdd[0].functionId, 'main');
 	assert.equal(hotAdd[0].range?.path, 'manual.lua');
 	assert.equal(hotAdd[0].range?.start.line, 3);
 
-	const report = cpu.formatProfilerReport({ topPaths: 8, topProtos: 8, topOpcodes: 8, topPcs: 8 });
+	const report = cpu.formatProfilerReport({ topPaths: 8, topFunctions: 8, topOpcodes: 8, topPcs: 8 });
 	assert.match(report, /Fantasy CPU Runtime Profile/);
 	assert.match(report, /Estimated base cycles: 5/);
 	assert.match(report, /Top Paths/);
 	assert.match(report, /manual\.lua instr=4/);
-	assert.match(report, /Top Protos/);
+	assert.match(report, /Top Functions/);
 	assert.match(report, /main instr=4/);
 	assert.match(report, /Category Pressure/);
 	assert.match(report, /Path Opcode Pressure/);
 	assert.match(report, /K1=2x1=2/);
-	assert.match(report, /Proto Opcode Pressure/);
-	assert.match(report, /Call\/Return Heavy Protos/);
+	assert.match(report, /Function Opcode Pressure/);
+	assert.match(report, /Call\/Return Heavy Functions/);
 	assert.match(report, /main call_ops=1 cycles=2/);
 	assert.match(report, /Opcode Mix/);
 	assert.match(report, /ADD count=1 share=25\.00% cost=1 cycles=1/);
 	assert.match(report, /manual\.lua:3:1/);
-	assert.match(report, /proto=main/);
+	assert.match(report, /function=main/);
 });

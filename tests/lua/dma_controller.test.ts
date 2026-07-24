@@ -64,14 +64,14 @@ import {
 	CART_ROM_END,
 	IO_BASE,
 	IO_WORD_SIZE,
-	PROGRAM_STATIC_RAM_BASE,
+	DYNAMIC_RAM_BASE,
 	RAM_END,
 	SYSTEM_ROM_BASE,
 } from '../../machine/ts/machine/memory/map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/machine/model_registry';
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 import { cartridgeSlots } from '../helpers/cartridge';
-import { finalizeTestSystemProgram } from '../helpers/program_image';
+import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { compileLuaSource } from './cpu_test_harness';
 
 type DmaGpuFixture = {
@@ -115,9 +115,9 @@ function createDmaGpuFixture(): DmaGpuFixture {
 test('region-aware DMA charges one RAM burst setup and combines both block sides once', () => {
 	const fixture = createDmaGpuFixture();
 	const { memory, dma, scheduler } = fixture;
-	const ramSource = PROGRAM_STATIC_RAM_BASE + 0x80;
-	const ramDestination = PROGRAM_STATIC_RAM_BASE + 0xa0;
-	const romDestination = PROGRAM_STATIC_RAM_BASE + 0xc0;
+	const ramSource = DYNAMIC_RAM_BASE + 0x80;
+	const ramDestination = DYNAMIC_RAM_BASE + 0xa0;
+	const romDestination = DYNAMIC_RAM_BASE + 0xc0;
 	memory.writeMappedU32LE(ramSource, 0x99aabbcc);
 	memory.writeMappedU32LE(ramSource + 4, 0xddeeff00);
 	dma.setTiming(
@@ -145,7 +145,7 @@ test('region-aware DMA charges one RAM burst setup and combines both block sides
 test('system firmware ROM uses its internal bus timing instead of cartridge timing', () => {
 	const fixture = createDmaGpuFixture();
 	const { memory, dma, scheduler } = fixture;
-	const firmwareDestination = PROGRAM_STATIC_RAM_BASE + 0x1000;
+	const firmwareDestination = DYNAMIC_RAM_BASE + 0x1000;
 	dma.setTiming(
 		PSX_MACHINE_SPEC.dmaRamCyclesPerWord,
 		PSX_MACHINE_SPEC.dmaRamBurstSetupCycles,
@@ -212,7 +212,7 @@ test('incrementing DMA timing follows memory regions across physical map boundar
 test('cartridge ROM pays one setup per admitted block', () => {
 	const fixture = createDmaGpuFixture();
 	const { memory, dma, scheduler } = fixture;
-	const destination = PROGRAM_STATIC_RAM_BASE + 0x1800;
+	const destination = DYNAMIC_RAM_BASE + 0x1800;
 	dma.setTiming(
 		PSX_MACHINE_SPEC.dmaRamCyclesPerWord,
 		PSX_MACHINE_SPEC.dmaRamBurstSetupCycles,
@@ -231,8 +231,8 @@ test('cartridge ROM pays one setup per admitted block', () => {
 test('RAM burst setup is block-local rather than persistent address state', () => {
 	const fixture = createDmaGpuFixture();
 	const { memory, dma, scheduler } = fixture;
-	const source = PROGRAM_STATIC_RAM_BASE + 0x2000;
-	const destination = PROGRAM_STATIC_RAM_BASE + 0x2100;
+	const source = DYNAMIC_RAM_BASE + 0x2000;
+	const destination = DYNAMIC_RAM_BASE + 0x2100;
 	dma.setTiming(
 		PSX_MACHINE_SPEC.dmaRamCyclesPerWord,
 		PSX_MACHINE_SPEC.dmaRamBurstSetupCycles,
@@ -253,7 +253,7 @@ test('RAM burst setup is block-local rather than persistent address state', () =
 test('a fixed MMIO port adds no memory wait beside its RAM block side', () => {
 	const fixture = createDmaGpuFixture();
 	const { memory, dma, gpu, scheduler } = fixture;
-	const source = PROGRAM_STATIC_RAM_BASE + 0x3000;
+	const source = DYNAMIC_RAM_BASE + 0x3000;
 	memory.writeMappedU32LE(source, 0x01020304);
 	memory.writeMappedU32LE(source + 4, 0x05060708);
 	dma.setTiming(
@@ -288,9 +288,9 @@ function runNextDmaService(fixture: DmaGpuFixture): void {
 test('DMA executes the register state latched when its block was admitted', () => {
 	const fixture = createDmaGpuFixture();
 	const { memory } = fixture;
-	const source = PROGRAM_STATIC_RAM_BASE + 0x100;
-	const destination = PROGRAM_STATIC_RAM_BASE + 0x200;
-	const replacementDestination = PROGRAM_STATIC_RAM_BASE + 0x240;
+	const source = DYNAMIC_RAM_BASE + 0x100;
+	const destination = DYNAMIC_RAM_BASE + 0x200;
+	const replacementDestination = DYNAMIC_RAM_BASE + 0x240;
 	memory.writeMappedU32LE(source, 0x11223344);
 	memory.writeMappedU32LE(source + 4, 0x55667788);
 	memory.writeMappedU32LE(source + 8, 0x99aabbcc);
@@ -319,7 +319,7 @@ test('DMA executes the register state latched when its block was admitted', () =
 test('an armed GX DMA channel reserves GP0 and waits for the GPU DREQ', () => {
 	const fixture = createDmaGpuFixture();
 	const { memory, gpu, scheduler } = fixture;
-	const source = PROGRAM_STATIC_RAM_BASE + 0x300;
+	const source = DYNAMIC_RAM_BASE + 0x300;
 	const command0 = (GX_GPU_GP0_FILL_RECTANGLE << 24) | 0x3f;
 	memory.writeMappedU32LE(source, command0);
 	memory.writeMappedU32LE(source + 4, 0x00020010);
@@ -345,7 +345,7 @@ test('an armed GX DMA channel reserves GP0 and waits for the GPU DREQ', () => {
 test('supervisor entry banks a GX DMA channel that has not admitted a block', () => {
 	const fixture = createDmaGpuFixture();
 	const { memory, dma, gpu } = fixture;
-	const source = PROGRAM_STATIC_RAM_BASE + 0x340;
+	const source = DYNAMIC_RAM_BASE + 0x340;
 	const command0 = (GX_GPU_GP0_FILL_RECTANGLE << 24) | 0x3f;
 	memory.writeMappedU32LE(source, command0);
 	memory.writeMappedU32LE(source + 4, 0x00020010);
@@ -376,8 +376,8 @@ test('supervisor entry banks a GX DMA channel that has not admitted a block', ()
 test('supervisor closes DMA triggers before closing block admission', () => {
 	const fixture = createDmaGpuFixture();
 	const { memory, dma, scheduler } = fixture;
-	const source = PROGRAM_STATIC_RAM_BASE + 0x360;
-	const destination = PROGRAM_STATIC_RAM_BASE + 0x460;
+	const source = DYNAMIC_RAM_BASE + 0x360;
+	const destination = DYNAMIC_RAM_BASE + 0x460;
 	for (let index = 0; index < 17; index += 1) {
 		memory.writeMappedU32LE(source + index * 4, index + 1);
 	}
@@ -401,10 +401,10 @@ test('supervisor closes DMA triggers before closing block admission', () => {
 test('an admitted self-DMA write cannot reopen a trigger after the supervisor control gate closes', () => {
 	const fixture = createDmaGpuFixture();
 	const { memory, dma } = fixture;
-	const source = PROGRAM_STATIC_RAM_BASE + 0x370;
+	const source = DYNAMIC_RAM_BASE + 0x370;
 	memory.writeMappedU32LE(source, DMA_TRIGGER_START);
 	memory.writeMappedU32LE(IO_DMA1_READ_ADDR, source);
-	memory.writeMappedU32LE(IO_DMA1_WRITE_ADDR, PROGRAM_STATIC_RAM_BASE + 0x470);
+	memory.writeMappedU32LE(IO_DMA1_WRITE_ADDR, DYNAMIC_RAM_BASE + 0x470);
 	memory.writeMappedU32LE(IO_DMA1_TRANSFER_COUNT, 1);
 	memory.writeMappedU32LE(IO_DMA1_CONTROL, RAM_COPY_CONTROL);
 
@@ -422,7 +422,7 @@ test('an admitted self-DMA write cannot reopen a trigger after the supervisor co
 test('CPU-to-GP0 DMA streams an A0 payload across programmed blocks', () => {
 	const fixture = createDmaGpuFixture();
 	const { memory, gpu } = fixture;
-	const source = PROGRAM_STATIC_RAM_BASE + 0x380;
+	const source = DYNAMIC_RAM_BASE + 0x380;
 	memory.writeMappedU32LE(source, GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24);
 	memory.writeMappedU32LE(source + 4, 0);
 	memory.writeMappedU32LE(source + 8, (1 << 16) | 34);
@@ -447,7 +447,7 @@ test('CPU-to-GP0 DMA streams an A0 payload across programmed blocks', () => {
 test('forced GP0 DMA saturates the physical command and ingress FIFOs', () => {
 	const fixture = createDmaGpuFixture();
 	const { memory, gpu } = fixture;
-	const source = PROGRAM_STATIC_RAM_BASE + 0x1000;
+	const source = DYNAMIC_RAM_BASE + 0x1000;
 	gpu.writeGp0((GX_GPU_GP0_FILL_RECTANGLE << 24) | 0x0000ff);
 	gpu.writeGp0(0);
 	gpu.writeGp0((511 << 16) | 0x03f1);
@@ -476,7 +476,7 @@ test('forced GP0 DMA saturates the physical command and ingress FIFOs', () => {
 test('an admitted DMA block survives DREQ drop, timing changes, and restore', () => {
 	const fixture = createDmaGpuFixture();
 	const { memory, dma, gpu, scheduler } = fixture;
-	const source = PROGRAM_STATIC_RAM_BASE + 0x400;
+	const source = DYNAMIC_RAM_BASE + 0x400;
 	memory.writeMappedU32LE(source, 0xe1000000);
 	memory.writeMappedU32LE(source + 4, 0xe1000001);
 	dma.setTiming(4, 0, 4, 0, 0, 0);
@@ -505,7 +505,7 @@ test('an admitted DMA block survives DREQ drop, timing changes, and restore', ()
 test('DMA resamples finite GX read DREQ between words and resumes on a later readback', () => {
 	const fixture = createDmaGpuFixture();
 	const { memory, gpu, scheduler } = fixture;
-	const destination = PROGRAM_STATIC_RAM_BASE + 0x500;
+	const destination = DYNAMIC_RAM_BASE + 0x500;
 	const sentinel = 0xa5a5a5a5;
 	memory.writeMappedU32LE(destination, sentinel);
 	memory.writeMappedU32LE(destination + 4, sentinel);
@@ -565,9 +565,9 @@ test('DMA resamples finite GX read DREQ between words and resumes on a later rea
 test('GX direction switches break before make without admitting a crossed DREQ pair', () => {
 	const fixture = createDmaGpuFixture();
 	const { memory, dma, gpu, scheduler } = fixture;
-	const source = PROGRAM_STATIC_RAM_BASE + 0x580;
-	const crossDestination = PROGRAM_STATIC_RAM_BASE + 0x5c0;
-	const readDestination = PROGRAM_STATIC_RAM_BASE + 0x600;
+	const source = DYNAMIC_RAM_BASE + 0x580;
+	const crossDestination = DYNAMIC_RAM_BASE + 0x5c0;
+	const readDestination = DYNAMIC_RAM_BASE + 0x600;
 	memory.writeMappedU32LE(source, 0x12345678);
 
 	gpu.writeGp0(GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24);
@@ -605,7 +605,7 @@ test('GX direction switches break before make without admitting a crossed DREQ p
 test('DMA bus faults remain Memory-owned and do not abort channel progress', () => {
 	const fixture = createDmaGpuFixture();
 	const { memory } = fixture;
-	const destination = PROGRAM_STATIC_RAM_BASE + 0x600;
+	const destination = DYNAMIC_RAM_BASE + 0x600;
 	memory.writeMappedU32LE(destination, 0xdeadbeef);
 
 	programTransfer(memory, RAM_END - 2, destination, 1, RAM_COPY_CONTROL);
@@ -623,7 +623,7 @@ test('DMA bus faults remain Memory-owned and do not abort channel progress', () 
 test('self-DMA control writes affect the next admission, not the admitted block', () => {
 	const fixture = createDmaGpuFixture();
 	const { memory, scheduler } = fixture;
-	const source = PROGRAM_STATIC_RAM_BASE + 0x700;
+	const source = DYNAMIC_RAM_BASE + 0x700;
 	const runningControl = 0x00003c01;
 	memory.writeMappedU32LE(source, DMA_DISABLED_CONTROL);
 	memory.writeMappedU32LE(source + 4, runningControl);
@@ -661,7 +661,7 @@ test('clearing the transfer count completes a channel waiting for DREQ', () => {
 test('advancing a DMA port address releases blocked CPU writes after the block', () => {
 	const fixture = createDmaGpuFixture();
 	const { memory } = fixture;
-	const source = PROGRAM_STATIC_RAM_BASE + 0x780;
+	const source = DYNAMIC_RAM_BASE + 0x780;
 	memory.writeMappedU32LE(source, 0);
 	memory.writeMappedU32LE(source + 4, 0);
 	programTransfer(memory, source, IO_GX_GPU_GP0, 2, PORT_ADVANCE_CONTROL);
@@ -677,24 +677,17 @@ test('advancing a DMA port address releases blocked CPU writes after the block',
 test('a DMA address write wakes only the CPU store whose endpoint reservation was released', () => {
 	const fixture = createDmaGpuFixture();
 	const { memory, cpu } = fixture;
-	const source = PROGRAM_STATIC_RAM_BASE + 0x7c0;
-	const replacementReadAddress = PROGRAM_STATIC_RAM_BASE + 0x8c0;
-	const replacementWriteAddress = PROGRAM_STATIC_RAM_BASE + 0x9c0;
+	const source = DYNAMIC_RAM_BASE + 0x7c0;
+	const replacementReadAddress = DYNAMIC_RAM_BASE + 0x8c0;
+	const replacementWriteAddress = DYNAMIC_RAM_BASE + 0x9c0;
 	const compiled = compileLuaSource(`
 local gp0<const>: *word = ${IO_GX_GPU_GP0}
 *gp0 = 0
-`);
-	const finalized = finalizeTestSystemProgram(compiled);
-	const vectors = finalized.image.vectors;
-	cpu.setProgram(
-		finalized.program,
-		finalized.image.symbols,
-		finalized.metadata,
-		vectors.irqProtoIndex,
-		vectors.irqProtoIndex,
-		vectors.exceptionProtoIndex,
-	);
-	cpu.start(vectors.resetProtoIndex);
+	`);
+	const finalized = linkTestSystemBlua32(compiled);
+	memory.installSystemRom(finalized.romBytes);
+	cpu.mountExecutableMedia({ system: finalized.symbols, cartridgeSlots: [null, null] });
+	cpu.start(finalized.vectors.startupFunctionAddress);
 
 	programTransfer(memory, source, IO_GX_GPU_GP0, 1, DMA_DISABLED_CONTROL);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
@@ -733,8 +726,8 @@ local gp0<const>: *word = ${IO_GX_GPU_GP0}
 test('both directional request lines must assert before a channel can acquire the bus', () => {
 	const fixture = createDmaGpuFixture();
 	const { memory, dma, scheduler } = fixture;
-	const source = PROGRAM_STATIC_RAM_BASE + 0x800;
-	const destination = PROGRAM_STATIC_RAM_BASE + 0x900;
+	const source = DYNAMIC_RAM_BASE + 0x800;
+	const destination = DYNAMIC_RAM_BASE + 0x900;
 	memory.writeMappedU32LE(source, 0x12345678);
 	memory.writeMappedU32LE(IO_DMA0_READ_ADDR, source);
 	memory.writeMappedU32LE(IO_DMA0_WRITE_ADDR, destination);
@@ -754,10 +747,10 @@ test('both directional request lines must assert before a channel can acquire th
 test('the two channels share one bus and arbitrate blocks round-robin', () => {
 	const fixture = createDmaGpuFixture();
 	const { memory } = fixture;
-	const source0 = PROGRAM_STATIC_RAM_BASE + 0xa00;
-	const destination0 = PROGRAM_STATIC_RAM_BASE + 0xb00;
-	const source1 = PROGRAM_STATIC_RAM_BASE + 0xc00;
-	const destination1 = PROGRAM_STATIC_RAM_BASE + 0xd00;
+	const source0 = DYNAMIC_RAM_BASE + 0xa00;
+	const destination0 = DYNAMIC_RAM_BASE + 0xb00;
+	const source1 = DYNAMIC_RAM_BASE + 0xc00;
+	const destination1 = DYNAMIC_RAM_BASE + 0xd00;
 	for (let index = 0; index < 17; index += 1) {
 		memory.writeMappedU32LE(source0 + index * 4, index + 1);
 	}

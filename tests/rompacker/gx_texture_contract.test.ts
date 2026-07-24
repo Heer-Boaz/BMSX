@@ -7,27 +7,38 @@ import { test } from 'node:test';
 
 import { createCanvas } from 'canvas';
 
-import { compileLuaChunkToProgram } from '../../machine/ts/lua/compiler';
 import { CPU, RunResult, StringValue, createBuiltinFunction } from '../../machine/ts/machine/cpu/cpu';
+import { CPU_STATUS_SYSTEM_ENTRY } from '../../machine/ts/machine/cpu/cop0';
+import {
+	BLUA32_IMAGE_ID,
+	BLUA32_SYMBOLS_IMAGE_ID,
+	decodeBlua32Image,
+} from '../../machine/ts/machine/cpu/blua32_image';
+import { decodeBlua32SymbolsImage } from '../../machine/ts/machine/cpu/blua32_symbols';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { LUA_BOOT_PRIMITIVES } from '../../machine/ts/machine/firmware/boot_primitives';
 import { Memory } from '../../machine/ts/machine/memory/memory';
-import { CART_ROM_BASE } from '../../machine/ts/machine/memory/map';
-import { PROGRAM_IMAGE_ID } from '../../machine/ts/machine/program/loader';
+import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/machine/memory/map';
 import { layoutRomAssetPayloads } from '../../machine/ts/rompack/asset_layout';
-import { PROGRAM_BOOT_HEADER_VERSION, type RomAsset } from '../../machine/ts/rompack/format';
+import { parseCartHeader, type RomAsset } from '../../machine/ts/rompack/format';
 import { loadRomAssetList } from '../../machine/ts/rompack/loader';
 import {
 	decodeGxTextureImage,
 	encodeDirect16GxTexture,
 	encodePalette4GxTexture,
 } from '../../machine/ts/rompack/tooling/gx_texture_codec';
-import { layoutRomProgramPrefix } from '../../machine/ts/rompack/tooling/rom_layout';
+import { layoutRomPrefix } from '../../machine/ts/rompack/tooling/rom_prefix_layout';
 import { buildAssetModalView } from '../../scripts/rominspector/asset_modal_view';
 import { resolveTextureGroupId } from '../../scripts/rompacker/atlasbuilder';
 import { validateGxTextureLayout, type GxTextureLayout } from '../../scripts/rompacker/gx_texture_layout';
 import { decodeImgDecStream, encodeImgDecStream } from '../../machine/ts/rompack/tooling/imgdec_codec';
-import { createTextureAtlases, finalizeRompack, generateRomAssets } from '../../scripts/rompacker/rombuilder';
+import {
+	buildRomBlua32Tail,
+	compileLuaChunkBuffer,
+	createTextureAtlases,
+	finalizeRompack,
+	generateRomAssets,
+} from '../../scripts/rompacker/rombuilder';
 import type { ImageResource, Resource, TextureAtlasResource } from '../../scripts/rompacker/rompacker.rompack';
 import {
 	GX_CART_TEXTURE_GROUP_ID_LIMIT,
@@ -40,8 +51,6 @@ import {
 	GX_SYSTEM_VRAM_X,
 	GX_SYSTEM_VRAM_Y,
 } from '../../scripts/rompacker/system_texture';
-import { finalizeTestSystemProgram } from '../helpers/program_image';
-import { parseLuaChunk } from '../lua/cpu_test_harness';
 
 const PACKED_TEXTURE_ROM_ROOT = join(process.cwd(), 'tmp', 'gx-texture-rom-contract-test');
 
@@ -302,61 +311,7 @@ test('a packed cart texture resolves through the ROM loader, inspector, firmware
 
 	await rm(PACKED_TEXTURE_ROM_ROOT, { recursive: true, force: true });
 	try {
-		const prefix = layoutRomProgramPrefix(assets, true, null);
-		const programAssets: RomAsset[] = [{
-			type: 'code',
-			resid: PROGRAM_IMAGE_ID,
-			buffer: Buffer.from([0]),
-			compiled_buffer: Buffer.from([0]),
-		}];
-		await finalizeRompack('texture-contract', {
-			debug: false,
-			cartridgeBoardWord: 0,
-			cartridgeRamByteCount: 0,
-			program: {
-				domain: 'cart',
-				boot: {
-					version: PROGRAM_BOOT_HEADER_VERSION,
-					flags: 0,
-					resetProtoIndex: 0,
-					codeByteCount: 0,
-					constPoolCount: 0,
-					protoCount: 0,
-					constRelocCount: 0,
-				},
-				layout: layoutRomAssetPayloads(programAssets, true, prefix.programOffset),
-			},
-			layout: prefix,
-			outputDirectory: PACKED_TEXTURE_ROM_ROOT,
-		});
-		const rom = await readFile(join(PACKED_TEXTURE_ROM_ROOT, 'texture-contract.rom'));
-		const loaded = await loadRomAssetList(rom);
-		const loadedTexture = loaded.entries.find(asset => asset.type === 'texture')!;
-		const loadedFirst = loaded.entries.find(asset => asset.resid === first.name)!;
-		const loadedSecond = loaded.entries.find(asset => asset.resid === second.name)!;
-		assert.equal(loadedTexture.resid, textureId);
-		assert.deepEqual(loadedTexture.texturemeta, texture.texturemeta);
-		assert.equal(loadedFirst.imgmeta!.gx_texture_resid, textureId);
-		assert.equal(loadedSecond.imgmeta!.gx_texture_resid, textureId);
-
-		const decodedTexture = {};
-		const modalContext = {
-			rombin: rom,
-			assetList: loaded.entries,
-			decodedTexture,
-			manifest: null,
-			projectRootPath: null,
-			systemProgramImage: null,
-			formatByteSize: (size: number) => `${size} bytes`,
-			modalWidth: 80,
-			modalHeight: 24,
-			previewZoom: 1,
-		};
-		const firstView = await buildAssetModalView(loadedFirst, modalContext);
-		const secondView = await buildAssetModalView(loadedSecond, modalContext);
-		assert.deepEqual(Array.from(firstView.previewSections[0].rgba.subarray(0, 4)), [255, 0, 0, 255]);
-		assert.deepEqual(Array.from(secondView.previewSections[0].rgba.subarray(0, 4)), [0, 255, 0, 255]);
-
+		const cartPrefix = layoutRomPrefix(assets, true, null);
 		const entrySource = `
 require('bios/base')
 require('bios/table')
@@ -364,6 +319,7 @@ require('bios/string_base')
 local romdir<const> = require('system/romdir')
 local texture<const> = require('cartlib/gx/texture')
 local imgdec<const> = require('system/imgdec')
+romdir.mount_selected_cartridge()
 local first_texture<const> = texture.from_image(romdir.image('first'))
 local second_texture<const> = texture.from_image(romdir.image('second'))
 texture.upload(first_texture, 0x00200040, 0)
@@ -398,27 +354,108 @@ return imgdec
 `],
 			['cartlib/gx/texture', readFileSync('cartlib/gx/texture.lua', 'utf8')],
 		] as const;
-		const modules = moduleSources.map(([path, source]) => ({
-			path,
-			source,
-			chunk: parseLuaChunk(source, `${path}.lua`),
-		}));
-		const compiled = compileLuaChunkToProgram(parseLuaChunk(entrySource, 'entry.lua'), modules, {
-			entrySource,
+		const executableSources: RomAsset[] = [{
+			type: 'lua',
+			resid: 'entry',
+			buffer: Buffer.from(entrySource),
+			compiled_buffer: compileLuaChunkBuffer(entrySource, 'entry.lua'),
+			source_path: 'entry.lua',
+		}];
+		for (let index = 0; index < moduleSources.length; index += 1) {
+			const [path, source] = moduleSources[index];
+			executableSources.push({
+				type: 'lua',
+				resid: path,
+				buffer: Buffer.from(source),
+				compiled_buffer: compileLuaChunkBuffer(source, `${path}.lua`),
+				source_path: `${path}.lua`,
+			});
+		}
+		const systemPrefix = layoutRomPrefix([], false, null);
+		const systemBlua32 = buildRomBlua32Tail(executableSources, 'entry.lua', {
+			externalLuaAssets: [],
+			generatedLuaModules: [],
+			includeSymbols: true,
 			optLevel: 3,
+			imageOffset: systemPrefix.blua32Offset,
+			domain: 'system',
 		});
-		const finalized = finalizeTestSystemProgram(compiled);
-		const memory = new Memory({ systemRom: rom, cartridgeSlots: cartridgeSlots(rom) });
-		const cpu = new CPU(memory, new IrqController(memory));
-		const vectors = finalized.image.vectors;
-		cpu.setProgram(
-			finalized.program,
-			finalized.image.symbols,
-			finalized.metadata,
-			vectors.irqProtoIndex,
-			vectors.irqProtoIndex,
-			vectors.exceptionProtoIndex,
+		await finalizeRompack('texture-contract-system', {
+			debug: false,
+			cartridgeBoardWord: 0,
+			cartridgeRamByteCount: 0,
+			blua32: systemBlua32,
+			layout: systemPrefix,
+			outputDirectory: PACKED_TEXTURE_ROM_ROOT,
+		});
+		const systemRom = await readFile(join(PACKED_TEXTURE_ROM_ROOT, 'texture-contract-system.rom'));
+		const systemIndex = await loadRomAssetList(systemRom);
+		const systemImageEntry = systemIndex.entries.find(asset => asset.resid === BLUA32_IMAGE_ID)!;
+		const systemSymbolsEntry = systemIndex.entries.find(asset => asset.resid === BLUA32_SYMBOLS_IMAGE_ID)!;
+		const systemSymbols = decodeBlua32SymbolsImage(
+			systemRom.subarray(systemSymbolsEntry.start, systemSymbolsEntry.end),
 		);
+		const systemImage = decodeBlua32Image(
+			systemRom.subarray(systemImageEntry.start, systemImageEntry.end),
+			SYSTEM_ROM_BASE + systemImageEntry.start!,
+		);
+		const cartEntrySource = 'return 0';
+		const cartBlua32 = buildRomBlua32Tail([{
+			type: 'lua',
+			resid: 'cart',
+			buffer: Buffer.from(cartEntrySource),
+			compiled_buffer: compileLuaChunkBuffer(cartEntrySource, 'cart.lua'),
+			source_path: 'cart.lua',
+		}], 'cart.lua', {
+			externalLuaAssets: [],
+			generatedLuaModules: [],
+			includeSymbols: true,
+			optLevel: 3,
+			imageOffset: cartPrefix.blua32Offset,
+			domain: 'cart',
+			systemImage,
+			systemSymbols,
+		});
+		await finalizeRompack('texture-contract', {
+			debug: false,
+			cartridgeBoardWord: 0,
+			cartridgeRamByteCount: 0,
+			blua32: cartBlua32,
+			layout: cartPrefix,
+			outputDirectory: PACKED_TEXTURE_ROM_ROOT,
+		});
+		const rom = await readFile(join(PACKED_TEXTURE_ROM_ROOT, 'texture-contract.rom'));
+		const loaded = await loadRomAssetList(rom);
+		const loadedTexture = loaded.entries.find(asset => asset.type === 'texture')!;
+		const loadedFirst = loaded.entries.find(asset => asset.resid === first.name)!;
+		const loadedSecond = loaded.entries.find(asset => asset.resid === second.name)!;
+		assert.equal(loadedTexture.resid, textureId);
+		assert.deepEqual(loadedTexture.texturemeta, texture.texturemeta);
+		assert.equal(loadedFirst.imgmeta!.gx_texture_resid, textureId);
+		assert.equal(loadedSecond.imgmeta!.gx_texture_resid, textureId);
+
+		const decodedTexture = {};
+		const modalContext = {
+			rombin: rom,
+			assetList: loaded.entries,
+			decodedTexture,
+			manifest: null,
+			projectRootPath: null,
+			formatByteSize: (size: number) => `${size} bytes`,
+			modalWidth: 80,
+			modalHeight: 24,
+			previewZoom: 1,
+		};
+		const firstView = await buildAssetModalView(loadedFirst, modalContext);
+		const secondView = await buildAssetModalView(loadedSecond, modalContext);
+		assert.deepEqual(Array.from(firstView.previewSections[0].rgba.subarray(0, 4)), [255, 0, 0, 255]);
+		assert.deepEqual(Array.from(secondView.previewSections[0].rgba.subarray(0, 4)), [0, 255, 0, 255]);
+
+		const memory = new Memory({ systemRom, cartridgeSlots: cartridgeSlots(rom) });
+		const cpu = new CPU(memory, new IrqController(memory));
+		const cartSymbolsEntry = loaded.entries.find(asset => asset.resid === BLUA32_SYMBOLS_IMAGE_ID)!;
+		const cartSymbols = decodeBlua32SymbolsImage(rom.subarray(cartSymbolsEntry.start, cartSymbolsEntry.end));
+		cpu.mountExecutableMedia({ system: systemSymbols, cartridgeSlots: [cartSymbols, null] });
 		for (let index = 0; index < LUA_BOOT_PRIMITIVES.length; index += 1) {
 			const primitive = LUA_BOOT_PRIMITIVES[index];
 			cpu.setSystemGlobalByKey(
@@ -431,15 +468,11 @@ return imgdec
 		cpu.stringIndexTable = stringTable;
 		cpu.setGlobalByKey(StringValue.get(cpu.stringPool.intern('string')), stringTable);
 		cpu.setGlobalByKey(StringValue.get(cpu.stringPool.intern('table')), tableTable);
-		cpu.start(vectors.sectionInitProtoIndex);
-		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
-		for (const path of finalized.image.sections.rodata.staticModulePaths) {
-			const targetDepth = cpu.getFrameDepth();
-			cpu.call(cpu.rootClosure(finalized.program.moduleProtoMap.get(path)!));
-			assert.equal(cpu.runUntilDepth(targetDepth, 10_000_000), RunResult.Halted);
-		}
-		cpu.syncGlobalSlotsToTable();
-		cpu.start(vectors.resetProtoIndex);
+		cpu.start(
+			parseCartHeader(systemRom).blua32StartupFunctionAddress,
+			[],
+			CPU_STATUS_SYSTEM_ENTRY,
+		);
 		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 		assert.deepEqual(Array.from(cpu.lastReturnValues, value => (value as number) >>> 0), [
 			1,

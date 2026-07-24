@@ -157,7 +157,7 @@ int main() {
 		std::filesystem::temp_directory_path() / "bmsx_libretro_environment_test";
 	std::filesystem::create_directories(testDirectory);
 	const std::vector<bmsx::u8> system =
-		bmsx::test::makeMinimalBootRom(bmsx::ProgramBootTarget::System);
+		bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::System);
 	std::ofstream systemRom(testDirectory / "bmsx-bios.rom", std::ios::binary);
 	systemRom.write(
 		reinterpret_cast<const char*>(system.data()),
@@ -169,7 +169,7 @@ int main() {
 			primaryCartRamBytes);
 	const std::vector<bmsx::u8> auxiliaryCart =
 		bmsx::test::makeMinimalBootRom(
-			bmsx::ProgramBootTarget::Cart,
+			bmsx::RomImageDomain::Cartridge,
 			bmsx::CARTRIDGE_BOARD_RAM | bmsx::CARTRIDGE_BOARD_MAILBOX,
 			auxiliaryCartRamBytes);
 	const std::string gamePath = (testDirectory / "test.rom").string();
@@ -241,7 +241,7 @@ int main() {
 			cartridgeStateBytes,
 			cartridgeRamByteCount);
 	const auto& cartridgeControllerState = cartridgeRuntimeState.machineState.machine.cartridge;
-	require(cartridgeControllerState.selectionWord == 1u, "the executable slot 1 cartridge should boot ahead of a data-only slot 0 cartridge");
+	require(cartridgeControllerState.selectionWord == 0u, "the cartridge controller should reset to socket 0 without host-side executable inspection");
 	require(cartridgeControllerState.slots[0].ram.size() == 16u, "slot 0 cartridge RAM should come from its physical cartridge header");
 	require(cartridgeControllerState.slots[1].ram.size() == 24u, "slot 1 cartridge RAM should come from its physical cartridge header");
 	insideRetroRun = true;

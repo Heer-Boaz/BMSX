@@ -1,4 +1,5 @@
-import { OpCode, type SourceRange } from '../../machine/cpu/cpu';
+import { OpCode } from '../../machine/cpu/cpu';
+import type { SourceRange } from '../../machine/cpu/blua32_symbols';
 import type { Instruction, InstructionSet } from './optimizer';
 
 export type Block = {

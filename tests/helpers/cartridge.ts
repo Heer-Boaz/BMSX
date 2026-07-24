@@ -12,14 +12,12 @@ export function cartridgeSlots(
 			boardWord: 0,
 			ramByteCount: 0,
 			present: slot0Rom.byteLength !== 0,
-			programPresent: false,
 		},
 		{
 			rom: slot1Rom,
 			boardWord: 0,
 			ramByteCount: 0,
 			present: slot1Rom.byteLength !== 0,
-			programPresent: false,
 		},
 	];
 }

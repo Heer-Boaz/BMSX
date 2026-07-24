@@ -1,5 +1,3 @@
-// End-to-end IDE test for the dedicated hot_resume_test fixture.
-
 await t.waitForCart();
 await t.frames(20);
 
@@ -8,94 +6,79 @@ const revisionSource = (record, revision) => record.base_src.replace(
 	'\t-- hot-resume-edit-point\n',
 	`\thot_resume_entry_edit_probe = ${revision}\n\tif hot_resume_print_revision ~= ${revision} then\n\t\thot_resume_print_revision = ${revision}\n\t\tprint('hot-resume-revision-${revision}')\n\tend\n`,
 );
-const moduleRevisionSource = (record, revision) => record.base_src.replace(
-	'\t-- hot-resume-module-edit-point\n\treturn 0\n',
-	`\treturn ${revision}\n`,
-);
+const moduleRevisionSource = (record, revision) => record.base_src
+	.replace(
+		'local get<const> = function()\n',
+		`local inserted_before_get<const> = function()\n\treturn -${revision}\nend\n\nlocal get<const> = function()\n`,
+	)
+	.replace(
+		'\t-- hot-resume-module-edit-point\n\treturn 0\n',
+		`\treturn ${revision}\n`,
+	)
+	.replace(
+		'\tget = get,\n',
+		'\tget = get,\n\tinserted_before_get = inserted_before_get,\n',
+	);
 const systemRevisionSource = (record, revision) => record.base_src.replace(
 	'function gx_gpu.clear_color(color)\n',
 	`function gx_gpu.clear_color(color)\n\thot_resume_system_probe = ${revision}\n`,
 );
 const runtime = t.runtime();
 const cpu = runtime.machine.cpu;
-const mathTable = cpu.getGlobalByKey(runtime.internString('math'));
+const liveMathTable = cpu.getGlobalByKey(runtime.internString('math'));
 const liveStateProbeKey = runtime.internString('__hot_resume_live_state_probe');
-cpu.setGlobalByKey(liveStateProbeKey, mathTable);
-const systemProtoIndex = runtime.programMetadata.protoIds.indexOf('module:system/gx_gpu/module/decl:gx_gpu.clear_color');
-const cartProtoIndex = runtime.programMetadata.protoIds.indexOf('module:entry/entry');
-let systemResumePoints = runtime.programMetadata.resumePointsByProto[systemProtoIndex];
-let cartResumePoints = runtime.programMetadata.resumePointsByProto[cartProtoIndex];
-let systemResumePc = cpu.program.protos[systemProtoIndex].entryPC
-	+ systemResumePoints[systemResumePoints.length - 1].wordOffset * 4;
-let cartResumePc = cpu.program.protos[cartProtoIndex].entryPC + cartResumePoints[0].wordOffset * 4;
-// Observe the complete relocation table at its real consumer so both rebuild stages
-// must survive the production composition path.
-const relocateActiveFrames = cpu.relocateActiveFrames;
-let appliedPcRelocations = null;
-cpu.relocateActiveFrames = (relocations) => {
-	appliedPcRelocations = relocations;
-	relocateActiveFrames.call(cpu, relocations);
-};
-const entryRecord = machineManager.sourceState.cartLuaSources.path2lua['entry.lua'];
-const valueRecord = machineManager.sourceState.cartLuaSources.path2lua['value.lua'];
+cpu.setGlobalByKey(liveStateProbeKey, liveMathTable);
+const cartridge = machineManager.sourceState.cartridgeSlots[cpu.activeCartridgeSlot()];
+const entryRecord = cartridge.luaSources.path2lua['entry.lua'];
+const valueRecord = cartridge.luaSources.path2lua['value.lua'];
 const gxGpuRecord = machineManager.sourceState.systemLuaSources.path2lua['system/gx_gpu.lua'];
-t.openLuaSource('entry.lua');
-t.replaceActiveCodeSource(revisionSource(entryRecord, 1));
-t.openLuaSource('value.lua');
-t.replaceActiveCodeSource(moduleRevisionSource(valueRecord, 1));
-t.openLuaSource('system/gx_gpu.lua');
-t.replaceActiveCodeSource(systemRevisionSource(gxGpuRecord, 1));
+const initialSystemMediaRevision = runtime.machine.memory.systemRomRevision();
+const initialCartMediaRevision = runtime.machine.memory.cartridgeController.romRevision(cpu.activeCartridgeSlot());
+const dataOnlySlot = cpu.activeCartridgeSlot() === 0 ? 1 : 0;
+const dataOnlyCartridge = machineManager.sourceState.cartridgeSlots[dataOnlySlot];
+const initialDataOnlyMediaRevision = runtime.machine.memory.cartridgeController.romRevision(dataOnlySlot);
+t.assert(dataOnlyCartridge !== null, 'second cartridge is not installed');
+t.assert(dataOnlyCartridge.rom.header.blua32ImageOffset === 0, 'second cartridge unexpectedly contains executable BLua32');
 
-t.performHotResume();
+const installRevision = (revision) => {
+	t.openLuaSource('entry.lua');
+	t.replaceActiveCodeSource(revisionSource(entryRecord, revision));
+	t.openLuaSource('value.lua');
+	t.replaceActiveCodeSource(moduleRevisionSource(valueRecord, revision));
+	t.openLuaSource('system/gx_gpu.lua');
+	t.replaceActiveCodeSource(systemRevisionSource(gxGpuRecord, revision));
+	t.performHotResume();
+};
+
+installRevision(1);
 await t.frames(60);
 
-t.assert(t.runtime() === runtime, 'hot resume replaced the live runtime');
-t.assert(runtime.machine.cpu === cpu, 'hot resume replaced the live CPU');
-t.assert(cpu.getGlobalByKey(liveStateProbeKey) === mathTable, 'hot resume replaced a live heap object');
-let relocatedSystemPc = appliedPcRelocations[systemResumePc / 4];
-let relocatedCartPc = appliedPcRelocations[cartResumePc / 4];
-let linkedProto = cpu.program.protos[systemProtoIndex];
-t.assert(relocatedSystemPc >= linkedProto.entryPC && relocatedSystemPc < linkedProto.entryPC + linkedProto.codeLen, 'combined rebuild dropped the system program-counter relocation');
-linkedProto = cpu.program.protos[cartProtoIndex];
-t.assert(relocatedCartPc >= linkedProto.entryPC && relocatedCartPc < linkedProto.entryPC + linkedProto.codeLen, 'combined rebuild dropped the cart program-counter relocation');
-t.assert(cpu.getGlobalByKey(runtime.internString('hot_resume_entry_edit_probe')) === 1, 'changed editor entry-loop code did not execute');
-t.assert(cpu.getGlobalByKey(runtime.internString('hot_resume_module_probe')) === 1, 'changed editor module did not execute through init');
-t.assert(cpu.getGlobalByKey(runtime.internString('hot_resume_system_probe')) === 1, 'combined system and cart rebuild did not execute changed system code');
-t.assert(cpu.getGlobalByKey(runtime.internString('hot_resume_init_count')) === 2, 'hot resume did not rerun init exactly once');
-t.assert(cpu.getGlobalByKey(runtime.internString('hot_resume_new_game_count')) === 1, 'hot resume reran new_game');
+t.assert(t.runtime() === runtime, 'first Hot Resume replaced the live runtime');
+t.assert(runtime.machine.cpu === cpu, 'first Hot Resume replaced the live CPU');
+t.assert(cpu.getGlobalByKey(liveStateProbeKey) === liveMathTable, 'first Hot Resume replaced a live heap object');
+t.assert(cpu.getGlobalByKey(runtime.internString('hot_resume_entry_edit_probe')) === 1, 'first entry edit did not execute');
+t.assert(cpu.getGlobalByKey(runtime.internString('hot_resume_module_probe')) === 1, 'first module edit did not execute through init');
+t.assert(cpu.getGlobalByKey(runtime.internString('hot_resume_system_probe')) === 1, 'first system-ROM edit did not execute');
+t.assert(cpu.getGlobalByKey(runtime.internString('hot_resume_init_count')) === 2, 'first Hot Resume did not rerun init exactly once');
+t.assert(cpu.getGlobalByKey(runtime.internString('hot_resume_new_game_count')) === 1, 'first Hot Resume reran new_game');
+t.assert(runtime.machine.memory.systemRomRevision() === initialSystemMediaRevision + 1, 'first system-ROM revision was not installed');
+t.assert(runtime.machine.memory.cartridgeController.romRevision(cpu.activeCartridgeSlot()) === initialCartMediaRevision + 1, 'first cartridge-ROM revision was not installed');
+t.assert(runtime.machine.memory.cartridgeController.romRevision(dataOnlySlot) === initialDataOnlyMediaRevision, 'first Hot Resume replaced the data-only cartridge');
 
-systemResumePoints = runtime.programMetadata.resumePointsByProto[systemProtoIndex];
-cartResumePoints = runtime.programMetadata.resumePointsByProto[cartProtoIndex];
-systemResumePc = cpu.program.protos[systemProtoIndex].entryPC
-	+ systemResumePoints[systemResumePoints.length - 1].wordOffset * 4;
-cartResumePc = cpu.program.protos[cartProtoIndex].entryPC + cartResumePoints[0].wordOffset * 4;
-appliedPcRelocations = null;
-
-t.openLuaSource('entry.lua');
-t.replaceActiveCodeSource(revisionSource(entryRecord, 2));
-t.openLuaSource('value.lua');
-t.replaceActiveCodeSource(moduleRevisionSource(valueRecord, 2));
-t.openLuaSource('system/gx_gpu.lua');
-t.replaceActiveCodeSource(systemRevisionSource(gxGpuRecord, 2));
-
-t.performHotResume();
+installRevision(2);
 await t.frames(60);
 
-t.assert(t.runtime() === runtime, 'second hot resume replaced the live runtime');
-t.assert(runtime.machine.cpu === cpu, 'second hot resume replaced the live CPU');
-t.assert(cpu.getGlobalByKey(liveStateProbeKey) === mathTable, 'second hot resume replaced a live heap object');
-relocatedSystemPc = appliedPcRelocations[systemResumePc / 4];
-relocatedCartPc = appliedPcRelocations[cartResumePc / 4];
-linkedProto = cpu.program.protos[systemProtoIndex];
-t.assert(relocatedSystemPc >= linkedProto.entryPC && relocatedSystemPc < linkedProto.entryPC + linkedProto.codeLen, 'consecutive combined rebuild dropped the system program-counter relocation');
-linkedProto = cpu.program.protos[cartProtoIndex];
-t.assert(relocatedCartPc >= linkedProto.entryPC && relocatedCartPc < linkedProto.entryPC + linkedProto.codeLen, 'consecutive combined rebuild dropped the cart program-counter relocation');
-t.assert(cpu.getGlobalByKey(runtime.internString('hot_resume_entry_edit_probe')) === 2, 'consecutive editor entry-loop edit did not execute');
-t.assert(cpu.getGlobalByKey(runtime.internString('hot_resume_module_probe')) === 2, 'consecutive editor module edit did not execute through init');
-t.assert(cpu.getGlobalByKey(runtime.internString('hot_resume_system_probe')) === 2, 'consecutive combined rebuild did not execute changed system code');
-t.assert(cpu.getGlobalByKey(runtime.internString('hot_resume_init_count')) === 3, 'second consecutive hot resume did not rerun init exactly once');
-t.assert(cpu.getGlobalByKey(runtime.internString('hot_resume_new_game_count')) === 1, 'second consecutive hot resume reran new_game');
-cpu.relocateActiveFrames = relocateActiveFrames;
+t.assert(t.runtime() === runtime, 'second Hot Resume replaced the live runtime');
+t.assert(runtime.machine.cpu === cpu, 'second Hot Resume replaced the live CPU');
+t.assert(cpu.getGlobalByKey(liveStateProbeKey) === liveMathTable, 'second Hot Resume replaced a live heap object');
+t.assert(cpu.getGlobalByKey(runtime.internString('hot_resume_entry_edit_probe')) === 2, 'second consecutive entry edit did not execute');
+t.assert(cpu.getGlobalByKey(runtime.internString('hot_resume_module_probe')) === 2, 'second consecutive module edit did not execute through init');
+t.assert(cpu.getGlobalByKey(runtime.internString('hot_resume_system_probe')) === 2, 'second consecutive system-ROM edit did not execute');
+t.assert(cpu.getGlobalByKey(runtime.internString('hot_resume_init_count')) === 3, 'second Hot Resume did not rerun init exactly once');
+t.assert(cpu.getGlobalByKey(runtime.internString('hot_resume_new_game_count')) === 1, 'second Hot Resume reran new_game');
+t.assert(runtime.machine.memory.systemRomRevision() === initialSystemMediaRevision + 2, 'second system-ROM revision was not installed');
+t.assert(runtime.machine.memory.cartridgeController.romRevision(cpu.activeCartridgeSlot()) === initialCartMediaRevision + 2, 'second cartridge-ROM revision was not installed');
+t.assert(runtime.machine.memory.cartridgeController.romRevision(dataOnlySlot) === initialDataOnlyMediaRevision, 'second Hot Resume replaced the data-only cartridge');
 
 await machineManager.rebootToBootRom();
 await t.waitForCart();
@@ -103,5 +86,6 @@ await t.frames(20);
 
 const rebootedRuntime = t.runtime();
 const rebootedCpu = rebootedRuntime.machine.cpu;
-t.assert(rebootedCpu.getGlobalByKey(rebootedRuntime.internString('hot_resume_entry_edit_probe')) === 2, 'reboot did not retain the second consecutive editor-built program tail');
-t.assert(rebootedCpu.getGlobalByKey(rebootedRuntime.internString('hot_resume_system_probe')) === 2, 'reboot did not retain the rebuilt system program tail');
+t.assert(rebootedCpu.getGlobalByKey(rebootedRuntime.internString('hot_resume_entry_edit_probe')) === 2, 'cold boot did not execute the second cartridge-ROM revision');
+t.assert(rebootedCpu.getGlobalByKey(rebootedRuntime.internString('hot_resume_module_probe')) === 2, 'cold boot did not execute the second module revision');
+t.assert(rebootedCpu.getGlobalByKey(rebootedRuntime.internString('hot_resume_system_probe')) === 2, 'cold boot did not execute the second system-ROM revision');

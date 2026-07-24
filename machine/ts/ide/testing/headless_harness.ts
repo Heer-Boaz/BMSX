@@ -8,6 +8,8 @@ import { editorDocumentState } from '../editor/editing/document_state';
 import { activateEditor } from '../workbench/overlay_modes';
 import { selectAllSingleCursor } from '../editor/editing/cursor/state';
 import { insertText } from '../editor/editing/text_editing_and_selection';
+import { loadBlua32Image } from '../runtime/lua_pipeline';
+import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/memory/map';
 
 /**
  * Host-side test surface for the IDE/runtime, exposed through the `bmsx` global so
@@ -24,7 +26,7 @@ export type HeadlessIdeHarness = {
 	isCartActive(): boolean;
 	getTrackedLuaHeapBytes(): number;
 	/**
-	 * Rebuild the physical program tail and link it into the live Lua state.
+	 * Rebuild the physical BLua32 cartridge image and apply it to the live CPU state.
 	 */
 	hotResumeCore(): void;
 	/** Full IDE hot-resume action (fire-and-forget; settle by advancing frames). */
@@ -39,10 +41,9 @@ export type HeadlessIdeHeapStats = {
 	tracked: number;
 	stringBytes: number;
 	objectBytes: number;
-	moduleCache: number;
-	moduleProtos: number;
-	protos: number;
-	constPool: number;
+	moduleFunctions: number;
+	functions: number;
+	constants: number;
 	codeBytes: number;
 	globals: number;
 };
@@ -50,7 +51,7 @@ export type HeadlessIdeHeapStats = {
 function requireRuntime(): Runtime {
 	const runtime = machineManager.runtime;
 	if (!runtime) {
-		throw new Error('[HeadlessIdeHarness] Runtime is not booted yet.');
+		throw new Error('Runtime is not booted yet.');
 	}
 	return runtime;
 }
@@ -59,13 +60,13 @@ export const headlessIdeHarness: HeadlessIdeHarness = {
 	getRuntime: requireRuntime,
 	isCartActive: () => {
 		const runtime = machineManager.runtime;
-		return !!runtime && runtime.cartProgramStarted && runtime.isInitialized;
+		return !!runtime && runtime.machine.cpu.isCartridgeExecutionActive() && runtime.isInitialized;
 	},
 	getTrackedLuaHeapBytes,
 	hotResumeCore: () => {
 		const runtime = requireRuntime();
-		const cartProgramStarted = runtime.cartProgramStarted;
-		hotResume(runtime, !cartProgramStarted, cartProgramStarted);
+		const slot = runtime.machine.cpu.activeCartridgeSlot();
+		hotResume(runtime, slot < 0, [slot === 0, slot === 1]);
 	},
 	performHotResume: () => {
 		performHotResume(requireRuntime());
@@ -87,7 +88,19 @@ export const headlessIdeHarness: HeadlessIdeHarness = {
 	debugStats: () => {
 		const runtime = requireRuntime();
 		const cpu = runtime.machine.cpu;
-		const program = cpu.program;
+		const slot = cpu.activeCartridgeSlot();
+		const sourceState = machineManager.sourceState;
+		const layer = slot < 0
+			? sourceState.systemRom
+			: sourceState.cartridgeSlots[slot]!.rom;
+		const source = slot < 0
+			? sourceState.systemRomSource
+			: sourceState.cartridgeSlots[slot]!.romSource;
+		const executable = loadBlua32Image(
+			source,
+			slot < 0 ? SYSTEM_ROM_BASE : CART_ROM_BASE,
+			layer.header.blua32ImageOffset,
+		);
 		collectTrackedLuaHeapBytes();
 		const tracked = getTrackedLuaHeapBytes();
 		const stringBytes = cpu.stringPool.trackedLuaHeapBytes();
@@ -97,11 +110,10 @@ export const headlessIdeHarness: HeadlessIdeHarness = {
 			tracked,
 			stringBytes,
 			objectBytes: tracked - stringBytes,
-			moduleCache: runtime.moduleCache.size,
-			moduleProtos: program.moduleProtos.length,
-			protos: program.protos.length,
-			constPool: program.constPool.length,
-			codeBytes: program.code.byteLength,
+			moduleFunctions: executable.symbols!.moduleFunctions.length,
+			functions: executable.image.functions.length,
+			constants: executable.image.constants.length,
+			codeBytes: executable.image.header.textByteCount,
 			globals,
 		};
 	},

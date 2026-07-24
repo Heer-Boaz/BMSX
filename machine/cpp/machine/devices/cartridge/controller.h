@@ -59,7 +59,6 @@ private:
 	static void restoreSlot(Slot& slot, const CartridgeSlotState& state);
 
 	std::array<Slot, CARTRIDGE_SLOT_COUNT> m_slots;
-	u32 m_bootSlotIndex = 0;
 	u32 m_selectionWord = 0;
 	IrqController* m_irq;
 	DmaController* m_dma;

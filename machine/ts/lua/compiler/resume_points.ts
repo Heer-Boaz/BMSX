@@ -1,4 +1,5 @@
-import type { LocalSlotDebug, ProgramResumePoint, SourceRange } from '../../machine/cpu/cpu';
+import type { SourceRange } from '../../machine/cpu/blua32_symbols';
+import type { LocalSlotDebug, ProgramResumePoint } from './program';
 import { sourcePositionInRange } from '../semantic/source_range';
 import type { Instruction } from './optimizer';
 import {
@@ -19,7 +20,7 @@ function collectNamedLiveRegisters(
 	for (let index = 0; index < localSlots.length; index += 1) {
 		const slot = localSlots[index];
 		if (slot.scope.path === path && sourcePositionInRange(line, column, slot.scope)) {
-			named[slot.register] = 1;
+			named[slot.registerIndex] = 1;
 		}
 	}
 	const registers: number[] = [];

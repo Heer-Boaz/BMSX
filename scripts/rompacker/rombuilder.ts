@@ -2,8 +2,8 @@ import { glsl } from "esbuild-plugin-glsl";
 // @ts-ignore
 import type { Stats } from 'fs';
 import { encodeBinary } from '../../machine/ts/common/serializer/binencoder';
-import { CART_ROM_HEADER_SIZE, CART_ROM_WORD_ALIGNMENT, PROGRAM_BOOT_HEADER_VERSION } from '../../machine/ts/rompack/format';
-import type { AudioMeta, BoundingBoxPrecalc, GLTFMesh, HitPolygonsPrecalc, ImgMeta, Polygon, ProgramBootHeader, RectBounds, RomAsset, RomManifest, TextureMeta, vec2arr } from '../../machine/ts/rompack/format';
+import { CART_ROM_HEADER_SIZE, CART_ROM_WORD_ALIGNMENT } from '../../machine/ts/rompack/format';
+import type { AudioMeta, BoundingBoxPrecalc, GLTFMesh, HitPolygonsPrecalc, ImgMeta, Polygon, RectBounds, RomAsset, RomManifest, TextureMeta, vec2arr } from '../../machine/ts/rompack/format';
 import { alignRomAssetOffset, layoutRomAssetPayloads, type RomAssetPayloadLayout, type RomAssetPayloadRange } from '../../machine/ts/rompack/asset_layout';
 import { writeCartRomHeader } from '../../machine/ts/rompack/tooling/header_encode';
 import {
@@ -14,10 +14,10 @@ import {
 } from '../../machine/ts/rompack/tooling/gx_texture_codec';
 import { encodeDirect16GxUpload } from '../../machine/ts/rompack/tooling/gp0_encode';
 import { encodeImgDecStream } from '../../machine/ts/rompack/tooling/imgdec_codec';
-import type { RomProgramPrefixLayout } from '../../machine/ts/rompack/tooling/rom_layout';
+import type { RomPrefixLayout } from '../../machine/ts/rompack/tooling/rom_prefix_layout';
 import { encodeRomToc } from '../../machine/ts/rompack/tooling/toc_encode';
 import { encodeAudioAssetToAdpcm } from './adpcm';
-import { buildProgramImage, type GeneratedProgramModule } from './program_image_builder';
+import { buildBlua32Image, type GeneratedLuaModule } from './blua32_image_builder';
 import { createTextureAtlas, resolveTextureGroupId } from './atlasbuilder';
 import {
 	GX_CART_TEXTURE_GROUP_ID_LIMIT,
@@ -45,7 +45,16 @@ import type { TextureAtlasResource, ImageResource, Resource, resourcetype, RomPa
 import { collectSourceFiles } from '../analysis/file_scan';
 import { collectCartSourceFiles } from './cart_source_files';
 import { CART_ROM_BASE, CART_ROM_SIZE, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE } from '../../machine/ts/machine/memory/map';
-import type { ProgramImage, ProgramSymbolsImage } from '../../machine/ts/machine/program/loader';
+import {
+	BLUA32_IMAGE_ID,
+	BLUA32_SYMBOLS_IMAGE_ID,
+	type Blua32BootHeader,
+	type Blua32ImageLayout,
+} from '../../machine/ts/machine/cpu/blua32_image';
+import {
+	encodeBlua32SymbolsImage,
+	type Blua32SymbolsImage,
+} from '../../machine/ts/machine/cpu/blua32_symbols';
 // @ts-ignore
 const { build } = require('esbuild');
 // @ts-ignore
@@ -69,11 +78,8 @@ const { splitText } = require('../../machine/ts/common/text_lines');
 const { isLuaCompileError } = require('../../machine/ts/lua/compiler');
 // @ts-ignore
 const {
-	PROGRAM_IMAGE_ID,
-	PROGRAM_SYMBOLS_IMAGE_ID,
-	encodeProgramImage,
 	toLuaModulePath,
-} = require('../../machine/ts/machine/program/loader');
+} = require('../../machine/ts/lua/module_path');
 // @ts-ignore
 const { minify } = require('@node-minify/core');
 // @ts-ignore
@@ -82,6 +88,8 @@ const { cleanCss: cleanCSS } = require('@node-minify/clean-css');
 const { loadImage } = require('canvas');
 // @ts-ignore
 const yaml = require('js-yaml');
+
+export const BLUA32_SYMBOLS_SIDECAR_SUFFIX = '.blua32-symbols';
 // @ts-ignore
 const { createHash } = require('crypto');
 
@@ -774,7 +782,7 @@ export function compileLuaChunkBuffer(source: string, path: string): Buffer {
 	return Buffer.from(encoded);
 }
 
-export async function buildLuaProgramContextAssets(luaRoots: readonly string[], virtualRoot: string): Promise<RomAsset[]> {
+export async function buildBluaSourceContextAssets(luaRoots: readonly string[], virtualRoot: string): Promise<RomAsset[]> {
 	const files: string[] = [];
 	for (let index = 0; index < luaRoots.length; index += 1) {
 		files.push(...await getFiles(luaRoots[index], [], '.lua'));
@@ -787,7 +795,7 @@ export async function buildLuaProgramContextAssets(luaRoots: readonly string[], 
 		const buffer = await readFile(file);
 		const source = buffer.toString('utf8');
 		assets.push({
-			resid: `__program_context__/${sourcePath}`,
+			resid: `__blua_source_context__/${sourcePath}`,
 			type: 'lua',
 			buffer,
 			compiled_buffer: compileLuaChunkBuffer(source, modulePath),
@@ -1440,84 +1448,106 @@ export async function generateRomAssets(
 	return romAssets;
 }
 
-type BuildRomProgramTailOptions = {
+type BuildRomBlua32TailOptions = {
 	externalLuaAssets: RomAsset[];
-	generatedLuaModules: GeneratedProgramModule[];
+	generatedLuaModules: GeneratedLuaModule[];
 	includeSymbols: boolean;
 	optLevel: 0 | 1 | 2 | 3;
-	programOffset: number;
+	imageOffset: number;
 } & (
-	| { programDomain: 'system' }
+	| { domain: 'system' }
 	| {
-		programDomain: 'cart';
-		systemProgram: { image: ProgramImage; metadata: ProgramSymbolsImage | null };
+		domain: 'cart';
+		systemImage: Blua32ImageLayout;
+		systemSymbols: Blua32SymbolsImage;
 	}
 );
 
-export type RomProgramTail = {
-	domain: 'system' | 'cart';
-	boot: ProgramBootHeader;
+type RomBlua32TailCommon = {
+	boot: Blua32BootHeader;
 	layout: RomAssetPayloadLayout;
 };
 
-export function buildRomProgramTail(
+export type RomBlua32Tail = RomBlua32TailCommon & (
+	| {
+		domain: 'system';
+		symbolsPayload: Uint8Array;
+	}
+	| {
+		domain: 'cart';
+	}
+);
+
+export function buildRomBlua32Tail(
 	assetList: ReadonlyArray<RomAsset>,
 	entryPath: string,
-	options: BuildRomProgramTailOptions,
-): RomProgramTail {
+	options: BuildRomBlua32TailOptions,
+): RomBlua32Tail {
 	const luaAssets = assetList.filter(asset => asset.type === 'lua');
-	const programAddress = (options.programDomain === 'cart' ? CART_ROM_BASE : SYSTEM_ROM_BASE) + options.programOffset;
-	const linked = buildProgramImage(options.programDomain === 'cart' ? {
+	const imageAddress = (options.domain === 'cart' ? CART_ROM_BASE : SYSTEM_ROM_BASE) + options.imageOffset;
+	const linked = buildBlua32Image(options.domain === 'cart' ? {
 		luaAssets,
 		externalLuaAssets: options.externalLuaAssets,
 		generatedLuaModules: options.generatedLuaModules,
 		entryPath,
-		loadAddress: programAddress,
+		loadAddress: imageAddress,
 		optLevel: options.optLevel,
-		programDomain: 'cart',
-		systemProgram: options.systemProgram,
+		domain: 'cart',
+		systemImage: options.systemImage,
+		systemSymbols: options.systemSymbols,
 	} : {
 		luaAssets,
 		externalLuaAssets: options.externalLuaAssets,
 		generatedLuaModules: options.generatedLuaModules,
 		entryPath,
-		loadAddress: programAddress,
+		loadAddress: imageAddress,
 		optLevel: options.optLevel,
-		programDomain: 'system',
+		domain: 'system',
 	});
-	const programImage = linked.image;
-	const encoded = encodeProgramImage(programImage);
-	const programAssets: RomAsset[] = [{
-		resid: PROGRAM_IMAGE_ID,
+	const executableAssets: RomAsset[] = [{
+		resid: BLUA32_IMAGE_ID,
 		type: 'code',
-		buffer: Buffer.from(encoded.sections),
-		compiled_buffer: Buffer.from(encoded.descriptor),
-		source_path: PROGRAM_IMAGE_ID,
+		buffer: Buffer.from(linked.bytes),
+		source_path: BLUA32_IMAGE_ID,
 	}];
-	if (options.includeSymbols) {
-		const symbolsAsset = {
-			metadata: linked.metadata,
+	const boot = {
+		imageOffset: options.imageOffset,
+		imageByteCount: linked.bytes.byteLength,
+		startupFunctionAddress: linked.startupFunctionAddress,
+		irqFunctionAddress: linked.irqFunctionAddress,
+		exceptionFunctionAddress: linked.exceptionFunctionAddress,
+		staticLayoutTokenLo: linked.symbols.staticLayoutToken.lo,
+		staticLayoutTokenHi: linked.symbols.staticLayoutToken.hi,
+	};
+	if (options.domain === 'system') {
+		const symbolsPayload = encodeBlua32SymbolsImage(linked.symbols);
+		if (options.includeSymbols) {
+			executableAssets.push({
+				resid: BLUA32_SYMBOLS_IMAGE_ID,
+				type: 'code',
+				buffer: Buffer.from(symbolsPayload),
+				source_path: BLUA32_SYMBOLS_IMAGE_ID,
+			});
+		}
+		return {
+			domain: 'system',
+			boot,
+			layout: layoutRomAssetPayloads(executableAssets, true, options.imageOffset),
+			symbolsPayload,
 		};
-		const symbolsBuffer = Buffer.from(encodeBinary(symbolsAsset));
-		programAssets.push({
-			resid: PROGRAM_SYMBOLS_IMAGE_ID,
+	}
+	if (options.includeSymbols) {
+		executableAssets.push({
+			resid: BLUA32_SYMBOLS_IMAGE_ID,
 			type: 'code',
-			buffer: symbolsBuffer,
-			source_path: PROGRAM_SYMBOLS_IMAGE_ID,
+			buffer: Buffer.from(encodeBlua32SymbolsImage(linked.symbols)),
+			source_path: BLUA32_SYMBOLS_IMAGE_ID,
 		});
 	}
 	return {
-		domain: options.programDomain,
-		boot: {
-			version: PROGRAM_BOOT_HEADER_VERSION,
-			flags: 0,
-			resetProtoIndex: programImage.vectors.resetProtoIndex,
-			codeByteCount: programImage.sections.text.code.length,
-			constPoolCount: programImage.sections.rodata.constPool.length,
-			protoCount: programImage.sections.text.protos.length,
-			constRelocCount: 0,
-		},
-		layout: layoutRomAssetPayloads(programAssets, true, options.programOffset),
+		domain: 'cart',
+		boot,
+		layout: layoutRomAssetPayloads(executableAssets, true, options.imageOffset),
 	};
 }
 
@@ -1639,8 +1669,8 @@ export async function finalizeRompack(
 		projectRootPath?: string,
 		status?: ProgressNote,
 		debug: boolean,
-		program: RomProgramTail,
-		layout: RomProgramPrefixLayout,
+		blua32: RomBlua32Tail,
+		layout: RomPrefixLayout,
 		outputDirectory: string,
 		cartridgeBoardWord: number,
 		cartridgeRamByteCount: number,
@@ -1654,6 +1684,7 @@ export async function finalizeRompack(
 
 	const tempDirectory = await mkdtemp(join(options.outputDirectory, '.rompack-'));
 	const tempFile = join(tempDirectory, outfileBasename);
+	const symbolsTempFile = join(tempDirectory, `${outfileBasename}${BLUA32_SYMBOLS_SIDECAR_SUFFIX}`);
 	try {
 		const writer = createWriteStream(tempFile);
 		let offset = 0;
@@ -1703,22 +1734,22 @@ export async function finalizeRompack(
 				await writeBuffer(options.layout.manifest);
 			}
 
-			await writePayloadRanges(options.program.layout.ranges);
+			await writePayloadRanges(options.blua32.layout.ranges);
 			const dataOffset = options.layout.assetRanges.length === 0
-				? options.program.layout.ranges[0].start
+				? options.blua32.layout.ranges[0].start
 				: options.layout.assetRanges[0].start;
-			const dataEnd = options.program.layout.ranges[options.program.layout.ranges.length - 1].end;
+			const dataEnd = options.blua32.layout.ranges[options.blua32.layout.ranges.length - 1].end;
 
 			status?.('encode toc');
-			const entries = options.layout.entries.concat(options.program.layout.entries);
+			const entries = options.layout.entries.concat(options.blua32.layout.entries);
 			const tocBuffer = Buffer.from(encodeRomToc({
 				entries,
 				projectRootPath: options.projectRootPath,
 			}));
 			const tocOffset = alignRomAssetOffset(offset);
-			const romCapacity = options.program.domain === 'system' ? SYSTEM_ROM_SIZE : CART_ROM_SIZE;
+			const romCapacity = options.blua32.domain === 'system' ? SYSTEM_ROM_SIZE : CART_ROM_SIZE;
 			if (tocOffset + tocBuffer.byteLength > romCapacity) {
-				throw new Error(`ROM payload exceeds the ${romCapacity}-byte ${options.program.domain} ROM window.`);
+				throw new Error(`ROM payload exceeds the ${romCapacity}-byte ${options.blua32.domain} ROM window.`);
 			}
 			await writePaddingTo(tocOffset);
 			const tocLength = tocBuffer.length;
@@ -1733,14 +1764,13 @@ export async function finalizeRompack(
 				tocLength,
 				dataOffset,
 				dataLength: dataEnd - dataOffset,
-				programBootVersion: options.program.boot.version,
-				programBootFlags: options.program.boot.flags,
-				programEntryProtoIndex: options.program.boot.resetProtoIndex,
-				programCodeByteCount: options.program.boot.codeByteCount,
-				programConstPoolCount: options.program.boot.constPoolCount,
-				programProtoCount: options.program.boot.protoCount,
-				programReserved0: 0,
-				programConstRelocCount: options.program.boot.constRelocCount,
+				blua32ImageOffset: options.blua32.boot.imageOffset,
+				blua32ImageByteCount: options.blua32.boot.imageByteCount,
+				blua32StartupFunctionAddress: options.blua32.boot.startupFunctionAddress,
+				blua32IrqFunctionAddress: options.blua32.boot.irqFunctionAddress,
+				blua32ExceptionFunctionAddress: options.blua32.boot.exceptionFunctionAddress,
+				blua32StaticLayoutTokenLo: options.blua32.boot.staticLayoutTokenLo,
+				blua32StaticLayoutTokenHi: options.blua32.boot.staticLayoutTokenHi,
 				metadataOffset: options.layout.metadataOffset,
 				metadataLength: options.layout.metadataLength,
 				vdpClass: 'psx',
@@ -1757,6 +1787,10 @@ export async function finalizeRompack(
 			await file.write(headerBuffer, 0, headerBuffer.length, 0);
 		} finally {
 			await file.close();
+		}
+		if (options.blua32.domain === 'system') {
+			await writeFile(symbolsTempFile, options.blua32.symbolsPayload);
+			await rename(symbolsTempFile, `${outputPath}${BLUA32_SYMBOLS_SIDECAR_SUFFIX}`);
 		}
 		await rename(tempFile, outputPath);
 	} finally {

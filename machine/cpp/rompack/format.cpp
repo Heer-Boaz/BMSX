@@ -4,13 +4,9 @@
 
 #include "format.h"
 #include "common/endian.h"
-#include "common/serializer/binencoder.h"
 #include "machine/memory/map.h"
-#include "machine/program/loader.h"
-#include "rompack/toc.h"
 #include <algorithm>
 #include <cstring>
-#include <utility>
 
 namespace bmsx {
 namespace {
@@ -19,11 +15,6 @@ void assertSectionRange(size_t offset, size_t length, size_t total, const char* 
 	if (offset > total || length > total - offset) {
 		throw BMSX_RUNTIME_ERROR(std::string("Invalid ROM ") + label + " range.");
 	}
-}
-
-constexpr u32 alignCartRomWordSection(u32 offset) {
-	return (offset + static_cast<u32>(CART_ROM_WORD_ALIGNMENT - 1u))
-		& ~static_cast<u32>(CART_ROM_WORD_ALIGNMENT - 1u);
 }
 
 } // namespace
@@ -37,14 +28,14 @@ void writeCartRomHeader(u8* data, const CartRomHeader& header) {
 	writeLE32(data + 20, header.tocLength);
 	writeLE32(data + 24, header.dataOffset);
 	writeLE32(data + 28, header.dataLength);
-	writeLE32(data + 32, header.programBootVersion);
-	writeLE32(data + 36, header.programBootFlags);
-	writeLE32(data + 40, header.programEntryProtoIndex);
-	writeLE32(data + 44, header.programCodeByteCount);
-	writeLE32(data + 48, header.programConstPoolCount);
-	writeLE32(data + 52, header.programProtoCount);
-	writeLE32(data + 56, header.programReserved0);
-	writeLE32(data + 60, header.programConstRelocCount);
+	writeLE32(data + 32, header.blua32ImageOffset);
+	writeLE32(data + 36, header.blua32ImageByteCount);
+	writeLE32(data + 40, header.blua32StartupFunctionAddress);
+	writeLE32(data + 44, header.blua32IrqFunctionAddress);
+	writeLE32(data + 48, header.blua32ExceptionFunctionAddress);
+	writeLE32(data + 52, header.blua32StaticLayoutTokenLo);
+	writeLE32(data + 56, header.blua32StaticLayoutTokenHi);
+	writeLE32(data + 60, 0u);
 	writeLE32(data + 64, header.metadataOffset);
 	writeLE32(data + 68, header.metadataLength);
 	switch (header.vdpClass) {
@@ -55,32 +46,6 @@ void writeCartRomHeader(u8* data, const CartRomHeader& header) {
 	writeLE32(data + 76, header.cartridgeBoardWord);
 	writeLE32(data + 80, header.cartridgeRamByteCount);
 }
-
-namespace {
-
-std::vector<u8> encodeCartRom(const CartRomHeader& header,
-	std::span<const u8> manifest,
-	std::span<const u8> toc,
-	std::span<const u8> data,
-	RomImageDomain domain) {
-	const size_t size = std::max({
-		static_cast<size_t>(header.manifestOffset) + manifest.size(),
-		static_cast<size_t>(header.tocOffset) + toc.size(),
-		static_cast<size_t>(header.dataOffset) + data.size(),
-	});
-	const size_t capacity = domain == RomImageDomain::System ? SYSTEM_ROM_SIZE : CART_ROM_SIZE;
-	if (size > capacity) {
-		throw BMSX_RUNTIME_ERROR("ROM payload exceeds its address window.");
-	}
-	std::vector<u8> rom(size);
-	writeCartRomHeader(rom.data(), header);
-	std::copy(manifest.begin(), manifest.end(), rom.begin() + header.manifestOffset);
-	std::copy(toc.begin(), toc.end(), rom.begin() + header.tocOffset);
-	std::copy(data.begin(), data.end(), rom.begin() + header.dataOffset);
-	return rom;
-}
-
-} // namespace
 
 CartRomHeader parseCartHeader(const u8* data, size_t size) {
 	if (size < CART_ROM_HEADER_SIZE) {
@@ -103,18 +68,13 @@ CartRomHeader parseCartHeader(const u8* data, size_t size) {
 	header.tocLength = readLE32(data + 20);
 	header.dataOffset = readLE32(data + 24);
 	header.dataLength = readLE32(data + 28);
-	header.programBootVersion = readLE32(data + 32);
-	if (header.programBootVersion != 0u
-			&& header.programBootVersion != PROGRAM_BOOT_HEADER_VERSION) {
-		throw BMSX_RUNTIME_ERROR("Unsupported ROM program boot version.");
-	}
-	header.programBootFlags = readLE32(data + 36);
-	header.programEntryProtoIndex = readLE32(data + 40);
-	header.programCodeByteCount = readLE32(data + 44);
-	header.programConstPoolCount = readLE32(data + 48);
-	header.programProtoCount = readLE32(data + 52);
-	header.programReserved0 = readLE32(data + 56);
-	header.programConstRelocCount = readLE32(data + 60);
+	header.blua32ImageOffset = readLE32(data + 32);
+	header.blua32ImageByteCount = readLE32(data + 36);
+	header.blua32StartupFunctionAddress = readLE32(data + 40);
+	header.blua32IrqFunctionAddress = readLE32(data + 44);
+	header.blua32ExceptionFunctionAddress = readLE32(data + 48);
+	header.blua32StaticLayoutTokenLo = readLE32(data + 52);
+	header.blua32StaticLayoutTokenHi = readLE32(data + 56);
 	header.metadataOffset = readLE32(data + 64);
 	header.metadataLength = readLE32(data + 68);
 	const u32 vdpClassWord = readLE32(data + 72);
@@ -135,62 +95,6 @@ CartRomHeader parseCartHeader(const u8* data, size_t size) {
 		assertSectionRange(static_cast<size_t>(header.metadataOffset), static_cast<size_t>(header.metadataLength), size, "metadata");
 	}
 	return header;
-}
-
-std::vector<u8> encodeCartManifest(const CartManifest& cart) {
-	BinObject machineObject;
-	machineObject["namespace"] = BinValue(cart.machine.namespaceName);
-	machineObject["vdp_class"] = BinValue(std::string("psx"));
-	BinObject luaObject;
-	luaObject["entry_path"] = BinValue(cart.entryPath);
-
-	BinObject manifest;
-	if (cart.title) manifest["title"] = BinValue(*cart.title);
-	if (cart.shortName) manifest["short_name"] = BinValue(*cart.shortName);
-	if (cart.romName) manifest["rom_name"] = BinValue(*cart.romName);
-	manifest["machine"] = BinValue(std::move(machineObject));
-	manifest["lua"] = BinValue(std::move(luaObject));
-	return encodeBinary(BinValue(std::move(manifest)));
-}
-
-std::vector<u8> encodeProgramRom(const CartManifest& cart, const ProgramImage& image, RomImageDomain domain) {
-	const EncodedProgramImage encodedProgram = encodeProgramImage(image);
-	const size_t sectionByteCount = encodedProgram.sections.size();
-	const std::vector<u8> manifest = encodeCartManifest(cart);
-
-	CartRomHeader header{};
-	header.headerSize = CART_ROM_HEADER_SIZE;
-	header.manifestOffset = CART_ROM_HEADER_SIZE;
-	header.manifestLength = static_cast<u32>(manifest.size());
-	header.dataOffset = alignCartRomWordSection(header.manifestOffset + header.manifestLength);
-	const size_t descriptorOffset = alignCartRomWordSection(static_cast<u32>(sectionByteCount));
-	header.dataLength = static_cast<u32>(descriptorOffset + encodedProgram.descriptor.size());
-	header.programBootVersion = PROGRAM_BOOT_HEADER_VERSION;
-	header.programBootFlags = 0;
-	header.programEntryProtoIndex = static_cast<u32>(image.vectors.resetProtoIndex);
-	header.programCodeByteCount = static_cast<u32>(image.sections.text.code.size());
-	header.programConstPoolCount = static_cast<u32>(image.sections.rodata.constPool.size());
-	header.programProtoCount = static_cast<u32>(image.sections.text.protos.size());
-	header.programConstRelocCount = 0;
-	header.vdpClass = cart.machine.vdpClass;
-	header.cartridgeBoardWord = cart.cartridgeBoardWord;
-	header.cartridgeRamByteCount = cart.cartridgeRamByteCount;
-
-	RomSourceEntry programEntry;
-	programEntry.resid = PROGRAM_IMAGE_ID;
-	programEntry.rom.type = "code";
-	programEntry.rom.start = static_cast<i32>(header.dataOffset);
-	programEntry.rom.end = static_cast<i32>(header.dataOffset + sectionByteCount);
-	programEntry.rom.compiledStart = static_cast<i32>(header.dataOffset + descriptorOffset);
-	programEntry.rom.compiledEnd = static_cast<i32>(header.dataOffset + header.dataLength);
-
-	std::vector<u8> program(header.dataLength);
-	std::copy(encodedProgram.sections.begin(), encodedProgram.sections.end(), program.begin());
-	std::copy(encodedProgram.descriptor.begin(), encodedProgram.descriptor.end(), program.begin() + descriptorOffset);
-	header.tocOffset = alignCartRomWordSection(header.dataOffset + header.dataLength);
-	const std::vector<u8> toc = encodeRomToc(RomTocPayload{{programEntry}, std::nullopt});
-	header.tocLength = static_cast<u32>(toc.size());
-	return encodeCartRom(header, manifest, toc, program, domain);
 }
 
 } // namespace bmsx

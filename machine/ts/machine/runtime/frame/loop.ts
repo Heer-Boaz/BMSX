@@ -143,8 +143,7 @@ export class FrameLoopState {
 		if (!runtime.machine.systemController.takeResetRequest()) {
 			return false;
 		}
-		this.resetFrameState();
-		runtime.rebootSystemProgram();
+		runtime.rebootSystem();
 		return true;
 	}
 
@@ -193,12 +192,12 @@ export class FrameLoopState {
 				if (this.consumeSystemReset()) {
 					return;
 				}
-				if (result === RunResult.Halted && cpu.getFrameDepth() === 0 && !runtime.cartProgramStarted) {
-					runtime.frameScheduler.clearQueuedTime();
-					this.abandonFrameState();
-					runtime.startCartProgram();
-					return;
-				}
+					if (result === RunResult.Halted && cpu.getFrameDepth() === 0) {
+						runtime.pendingCall = null;
+						runtime.frameScheduler.clearQueuedTime();
+						this.abandonFrameState();
+						return;
+					}
 				if (cpu.isHaltedUntilIrq()) {
 					return;
 				}

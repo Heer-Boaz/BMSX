@@ -1469,7 +1469,8 @@ BinValue encodeCpuObjectState(const CpuObjectState& state) {
 			break;
 		case CpuObjectState::Kind::Closure:
 			object["kind"] = "closure";
-			object["protoIndex"] = static_cast<i64>(state.protoIndex);
+			object["functionAddress"] = static_cast<i64>(state.functionAddress);
+			object["canonical"] = state.closureCanonical;
 			object["upvalues"] = encodeVector(state.upvalues, [](int index) {
 				return BinValue(static_cast<i64>(index));
 			});
@@ -1513,7 +1514,14 @@ CpuObjectState decodeCpuObjectState(const BinValue& value, const char* label) {
 	if (kind == "closure") {
 		state.kind = CpuObjectState::Kind::Closure;
 		state.hashId = requireU32(requireField(object, "hashId", label), "cpuObjectState.hashId");
-		state.protoIndex = requireI32(requireField(object, "protoIndex", label), "cpuObjectState.protoIndex");
+		state.functionAddress = requireU32(
+			requireField(object, "functionAddress", label),
+			"cpuObjectState.functionAddress"
+		);
+		state.closureCanonical = requireBool(
+			requireField(object, "canonical", label),
+			"cpuObjectState.canonical"
+		);
 		state.upvalues = decodeVector<int>(requireField(object, "upvalues", label), "cpuObjectState.upvalues",
 			[](const BinValue& entryValue, size_t) {
 				return requireI32(entryValue, "cpuObjectState.upvalues[]");
@@ -1534,7 +1542,7 @@ CpuObjectState decodeCpuObjectState(const BinValue& value, const char* label) {
 
 BinValue encodeCpuFrameState(const CpuFrameState& state) {
 	BinObject object;
-	object["protoIndex"] = static_cast<i64>(state.protoIndex);
+	object["functionAddress"] = static_cast<i64>(state.functionAddress);
 	object["pc"] = static_cast<i64>(state.pc);
 	object["closureRef"] = static_cast<i64>(state.closureRef);
 	object["registers"] = encodeVector(state.registers, [](const CpuValueState& value) {
@@ -1556,8 +1564,11 @@ BinValue encodeCpuFrameState(const CpuFrameState& state) {
 CpuFrameState decodeCpuFrameState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
 	CpuFrameState state;
-	state.protoIndex = requireI32(requireField(object, "protoIndex", label), "cpuFrameState.protoIndex");
-	state.pc = requireI32(requireField(object, "pc", label), "cpuFrameState.pc");
+	state.functionAddress = requireU32(
+		requireField(object, "functionAddress", label),
+		"cpuFrameState.functionAddress"
+	);
+	state.pc = requireU32(requireField(object, "pc", label), "cpuFrameState.pc");
 	state.closureRef = requireI32(requireField(object, "closureRef", label), "cpuFrameState.closureRef");
 	state.registers = decodeVector<CpuValueState>(requireField(object, "registers", label), "cpuFrameState.registers",
 		[](const BinValue& entryValue, size_t) {
@@ -1571,7 +1582,7 @@ CpuFrameState decodeCpuFrameState(const BinValue& value, const char* label) {
 	state.returnCount = requireI32(requireField(object, "returnCount", label), "cpuFrameState.returnCount");
 	state.top = requireI32(requireField(object, "top", label), "cpuFrameState.top");
 	state.captureReturns = requireBool(requireField(object, "captureReturns", label), "cpuFrameState.captureReturns");
-	state.callSitePc = requireI32(requireField(object, "callSitePc", label), "cpuFrameState.callSitePc");
+	state.callSitePc = requireU32(requireField(object, "callSitePc", label), "cpuFrameState.callSitePc");
 	state.isExceptionFrame = requireBool(requireField(object, "isExceptionFrame", label), "cpuFrameState.isExceptionFrame");
 	state.isNonMaskableExceptionFrame = requireBool(requireField(object, "isNonMaskableExceptionFrame", label), "cpuFrameState.isNonMaskableExceptionFrame");
 	return state;
@@ -1619,13 +1630,11 @@ CpuRootValueState decodeCpuRootValueState(const BinValue& value, const char* lab
 
 BinValue encodeCpuRuntimeState(const CpuRuntimeState& state) {
 	BinObject object;
+	object["executionCartridgeSlot"] = static_cast<i64>(state.executionCartridgeSlot);
 	object["systemGlobals"] = encodeVector(state.systemGlobals, [](const CpuRootValueState& value) {
 		return encodeCpuRootValueState(value);
 	});
 	object["globals"] = encodeVector(state.globals, [](const CpuRootValueState& value) {
-		return encodeCpuRootValueState(value);
-	});
-	object["moduleCache"] = encodeVector(state.moduleCache, [](const CpuRootValueState& value) {
 		return encodeCpuRootValueState(value);
 	});
 	object["frames"] = encodeVector(state.frames, [](const CpuFrameState& value) {
@@ -1665,6 +1674,10 @@ BinValue encodeCpuRuntimeState(const CpuRuntimeState& state) {
 CpuRuntimeState decodeCpuRuntimeState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
 	CpuRuntimeState state;
+	state.executionCartridgeSlot = requireI32(
+		requireField(object, "executionCartridgeSlot", label),
+		"cpuState.executionCartridgeSlot"
+	);
 	state.systemGlobals = decodeVector<CpuRootValueState>(requireField(object, "systemGlobals", label), "cpuState.systemGlobals",
 		[](const BinValue& entryValue, size_t) {
 			return decodeCpuRootValueState(entryValue, "cpuState.systemGlobals[]");
@@ -1672,10 +1685,6 @@ CpuRuntimeState decodeCpuRuntimeState(const BinValue& value, const char* label) 
 	state.globals = decodeVector<CpuRootValueState>(requireField(object, "globals", label), "cpuState.globals",
 		[](const BinValue& entryValue, size_t) {
 			return decodeCpuRootValueState(entryValue, "cpuState.globals[]");
-		});
-	state.moduleCache = decodeVector<CpuRootValueState>(requireField(object, "moduleCache", label), "cpuState.moduleCache",
-		[](const BinValue& entryValue, size_t) {
-			return decodeCpuRootValueState(entryValue, "cpuState.moduleCache[]");
 		});
 	state.frames = decodeVector<CpuFrameState>(requireField(object, "frames", label), "cpuState.frames",
 		[](const BinValue& entryValue, size_t) {
@@ -1697,7 +1706,7 @@ CpuRuntimeState decodeCpuRuntimeState(const BinValue& value, const char* label) 
 		[](const BinValue& entryValue, size_t) {
 			return requireI32(entryValue, "cpuState.openUpvalues[]");
 		});
-	state.lastPc = requireI32(requireField(object, "lastPc", label), "cpuState.lastPc");
+	state.lastPc = requireU32(requireField(object, "lastPc", label), "cpuState.lastPc");
 	state.lastInstruction = requireU32(requireField(object, "lastInstruction", label), "cpuState.lastInstruction");
 	state.instructionBudgetRemaining = requireI32(requireField(object, "instructionBudgetRemaining", label), "cpuState.instructionBudgetRemaining");
 	state.haltedUntilIrq = requireBool(requireField(object, "haltedUntilIrq", label), "cpuState.haltedUntilIrq");
@@ -1720,7 +1729,6 @@ BinValue encodeRuntimeSaveStateValue(const RuntimeSaveState& state) {
 	BinObject object;
 	object["machineState"] = encodeRuntimeSaveMachineState(state.machineState);
 	object["cpuState"] = encodeCpuRuntimeState(state.cpuState);
-	object["systemProgramActive"] = state.systemProgramActive;
 	object["luaInitialized"] = state.luaInitialized;
 	object["luaRuntimeFailed"] = state.luaRuntimeFailed;
 	object["pendingEntryCall"] = state.pendingEntryCall;
@@ -1732,7 +1740,6 @@ RuntimeSaveState decodeRuntimeSaveStateValue(const BinValue& value, const char* 
 	RuntimeSaveState state;
 	state.machineState = decodeRuntimeSaveMachineState(requireField(object, "machineState", label), "runtimeSaveState.machineState");
 	state.cpuState = decodeCpuRuntimeState(requireField(object, "cpuState", label), "runtimeSaveState.cpuState");
-	state.systemProgramActive = requireBool(requireField(object, "systemProgramActive", label), "runtimeSaveState.systemProgramActive");
 	state.luaInitialized = requireBool(requireField(object, "luaInitialized", label), "runtimeSaveState.luaInitialized");
 	state.luaRuntimeFailed = requireBool(requireField(object, "luaRuntimeFailed", label), "runtimeSaveState.luaRuntimeFailed");
 	state.pendingEntryCall = requireBool(requireField(object, "pendingEntryCall", label), "runtimeSaveState.pendingEntryCall");

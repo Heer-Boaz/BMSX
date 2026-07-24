@@ -1,4 +1,4 @@
-import { toLuaModulePath } from '../../../machine/program/loader';
+import { toLuaModulePath } from '../../module_path';
 
 export const buildModuleExportPathKey = (path: ReadonlyArray<string>): string =>
 	path.join('.');

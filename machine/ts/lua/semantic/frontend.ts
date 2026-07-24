@@ -10,7 +10,7 @@ import {
 	type Ref,
 	type SymbolID,
 } from './model';
-import { toLuaModulePath } from '../../machine/program/loader';
+import { toLuaModulePath } from '../module_path';
 import {
 	computeLuaDiagnosticsFromAnalysis,
 	getDefaultLuaBuiltinDescriptors,

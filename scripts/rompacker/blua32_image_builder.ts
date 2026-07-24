@@ -3,31 +3,38 @@ import { decodeBinary } from '../../machine/ts/common/serializer/binencoder';
 import { parseLuaChunk } from '../../machine/ts/lua/analysis/parse';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../machine/ts/lua/compiler';
 import type { LuaChunk } from '../../machine/ts/lua/syntax/ast';
-import { toLuaModulePath, type ProgramImage, type ProgramSymbolsImage } from '../../machine/ts/machine/program/loader';
+import { toLuaModulePath } from '../../machine/ts/lua/module_path';
+import type { Blua32ImageLayout } from '../../machine/ts/machine/cpu/blua32_image';
+import type { Blua32SymbolsImage } from '../../machine/ts/machine/cpu/blua32_symbols';
 import type { RomAsset } from '../../machine/ts/rompack/format';
-import { linkCartProgramImage, linkSystemProgramImage, type LinkedProgramImage } from '../../machine/ts/rompack/tooling/program_linker';
+import {
+	linkCartBlua32Image,
+	linkSystemBlua32Image,
+	type LinkedBlua32Image,
+} from '../../machine/ts/rompack/tooling/blua32_linker';
 
-export type GeneratedProgramModule = {
+export type GeneratedLuaModule = {
 	path: string;
 	source: string;
 };
 
-type ProgramImageBuildOptions = {
+type Blua32ImageBuildOptions = {
 	luaAssets: ReadonlyArray<RomAsset>;
 	externalLuaAssets: ReadonlyArray<RomAsset>;
-	generatedLuaModules: ReadonlyArray<GeneratedProgramModule>;
+	generatedLuaModules: ReadonlyArray<GeneratedLuaModule>;
 	entryPath: string;
 	loadAddress: number;
 	optLevel: 0 | 1 | 2 | 3;
 } & (
-	| { programDomain: 'system' }
+	| { domain: 'system' }
 	| {
-		programDomain: 'cart';
-		systemProgram: { image: ProgramImage; metadata: ProgramSymbolsImage | null };
+		domain: 'cart';
+		systemImage: Blua32ImageLayout;
+		systemSymbols: Blua32SymbolsImage;
 	}
 );
 
-export function buildProgramImage(options: ProgramImageBuildOptions): LinkedProgramImage {
+export function buildBlua32Image(options: Blua32ImageBuildOptions): LinkedBlua32Image {
 	const entryModulePath = toLuaModulePath(options.entryPath);
 	const modulePaths = new Set<string>();
 	const modules: Array<{ path: string; chunk: LuaChunk; source: string }> = [];
@@ -36,7 +43,7 @@ export function buildProgramImage(options: ProgramImageBuildOptions): LinkedProg
 		const asset = options.luaAssets[index];
 		const modulePath = toLuaModulePath(asset.source_path);
 		if (modulePaths.has(modulePath)) {
-			throw new Error(`[RomPacker] ROM Lua module '${modulePath}' is defined more than once.`);
+			throw new Error(`ROM Lua module '${modulePath}' is defined more than once.`);
 		}
 		const chunk = decodeBinary(asset.compiled_buffer!) as LuaChunk;
 		modulePaths.add(modulePath);
@@ -52,12 +59,12 @@ export function buildProgramImage(options: ProgramImageBuildOptions): LinkedProg
 		});
 	}
 	if (entry === null) {
-		throw new Error(`[RomPacker] Lua entry '${options.entryPath}' not found in asset list.`);
+		throw new Error(`Lua entry '${options.entryPath}' not found in asset list.`);
 	}
 	for (let index = 0; index < options.generatedLuaModules.length; index += 1) {
 		const generated = options.generatedLuaModules[index];
 		if (modulePaths.has(generated.path)) {
-			throw new Error(`[RomPacker] Generated Lua module '${generated.path}' conflicts with a ROM Lua asset.`);
+			throw new Error(`Generated Lua module '${generated.path}' conflicts with a ROM Lua asset.`);
 		}
 		const sourcePath = `${generated.path}.lua`;
 		const chunk = parseLuaChunk(generated.source, sourcePath, splitText(generated.source)).chunk!;
@@ -83,10 +90,16 @@ export function buildProgramImage(options: ProgramImageBuildOptions): LinkedProg
 		optLevel: options.optLevel,
 		entrySource: entry.source,
 		externalModules,
-		programDomain: options.programDomain,
+		programDomain: options.domain,
 	});
 	const object = encodeCompiledProgramObject(compiled);
-	return options.programDomain === 'cart'
-		? linkCartProgramImage(options.systemProgram.image, options.systemProgram.metadata, object, compiled.metadata, options.loadAddress)
-		: linkSystemProgramImage(object, compiled.metadata, options.loadAddress);
+	return options.domain === 'cart'
+		? linkCartBlua32Image(
+			options.systemImage,
+			options.systemSymbols,
+			object,
+			compiled.metadata,
+			options.loadAddress,
+		)
+		: linkSystemBlua32Image(object, compiled.metadata, options.loadAddress);
 }

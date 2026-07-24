@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 import { compileLuaChunkToProgram } from '../../machine/ts/lua/compiler';
-import { runTestSystemProgram } from '../helpers/program_image';
+import { runCompiledTestSystem } from '../helpers/blua32';
 import { parseLuaChunk } from './cpu_test_harness';
 
 const MODULE_FILES = [
@@ -34,7 +34,7 @@ return control, b0_b1, b2_a1, a2, numeric.encode_signed_q14(-3), numeric.encode_
 		return { path, chunk: parseLuaChunk(source, `${path}.lua`), source };
 	});
 	const compiled = compileLuaChunkToProgram(parseLuaChunk(entrySource, 'entry.lua'), modules, { entrySource, optLevel: 3 });
-	const cpu = runTestSystemProgram(compiled, 100000);
+	const cpu = runCompiledTestSystem(compiled, 100000);
 	assert.deepEqual(Array.from(cpu.lastReturnValues, value => (value as number) >>> 0), [
 		0x00000001,
 		0x0097004c,

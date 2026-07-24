@@ -98,9 +98,16 @@ export function capturePendingLuaCodeTabSources(): LuaCodeTabSourceSnapshot[] {
 		}
 		const source = getTextSnapshot(context.buffer);
 		const match = resolveRuntimeLuaSource(sources, context.descriptor.path)!;
-		const installedSources = match.registry === sources.systemLuaSources
-			? sources.systemProgramSources
-			: sources.cartProgramSources!;
+		let installedSources = sources.systemInstalledBlua32Sources;
+		if (match.registry !== sources.systemLuaSources) {
+			for (let slot = 0; slot < sources.cartridgeSlots.length; slot += 1) {
+				const cartridge = sources.cartridgeSlots[slot];
+				if (cartridge !== null && match.registry === cartridge.luaSources) {
+					installedSources = cartridge.installedBlua32Sources;
+					break;
+				}
+			}
+		}
 		if (context.saveGeneration === context.appliedGeneration
 			&& source === installedSources.get(match.record.module_path)) {
 			continue;

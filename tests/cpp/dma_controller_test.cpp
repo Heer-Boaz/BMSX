@@ -82,9 +82,9 @@ void runNextDmaService(DmaGpuHarness& harness) {
 void testRegionAwareBlockTiming() {
 	DmaGpuHarness harness;
 	bmsx::Memory& memory = harness.memory;
-	const uint32_t ramSource = bmsx::PROGRAM_STATIC_RAM_BASE + 0x80u;
-	const uint32_t ramDestination = bmsx::PROGRAM_STATIC_RAM_BASE + 0xa0u;
-	const uint32_t romDestination = bmsx::PROGRAM_STATIC_RAM_BASE + 0xc0u;
+	const uint32_t ramSource = bmsx::DYNAMIC_RAM_BASE + 0x80u;
+	const uint32_t ramDestination = bmsx::DYNAMIC_RAM_BASE + 0xa0u;
+	const uint32_t romDestination = bmsx::DYNAMIC_RAM_BASE + 0xc0u;
 	memory.writeMappedU32LE(ramSource, 0x99aabbccu);
 	memory.writeMappedU32LE(ramSource + 4u, 0xddeeff00u);
 	harness.dma.setTiming(
@@ -111,7 +111,7 @@ void testRegionAwareBlockTiming() {
 void testSystemRomTiming() {
 	DmaGpuHarness harness;
 	bmsx::Memory& memory = harness.memory;
-	const uint32_t firmwareDestination = bmsx::PROGRAM_STATIC_RAM_BASE + 0x1000u;
+	const uint32_t firmwareDestination = bmsx::DYNAMIC_RAM_BASE + 0x1000u;
 	harness.dma.setTiming(
 		bmsx::PSX_MACHINE_SPEC.dmaRamCyclesPerWord,
 		bmsx::PSX_MACHINE_SPEC.dmaRamBurstSetupCycles,
@@ -167,7 +167,7 @@ void testTimingAcrossMemoryRegionBoundaries() {
 
 void testCartRomBurstSetupIsBlockLocal() {
 	DmaGpuHarness harness;
-	const uint32_t destination = bmsx::PROGRAM_STATIC_RAM_BASE + 0x1800u;
+	const uint32_t destination = bmsx::DYNAMIC_RAM_BASE + 0x1800u;
 	harness.dma.setTiming(
 		bmsx::PSX_MACHINE_SPEC.dmaRamCyclesPerWord,
 		bmsx::PSX_MACHINE_SPEC.dmaRamBurstSetupCycles,
@@ -184,8 +184,8 @@ void testCartRomBurstSetupIsBlockLocal() {
 
 void testRamBurstSetupIsBlockLocal() {
 	DmaGpuHarness harness;
-	const uint32_t source = bmsx::PROGRAM_STATIC_RAM_BASE + 0x2000u;
-	const uint32_t destination = bmsx::PROGRAM_STATIC_RAM_BASE + 0x2100u;
+	const uint32_t source = bmsx::DYNAMIC_RAM_BASE + 0x2000u;
+	const uint32_t destination = bmsx::DYNAMIC_RAM_BASE + 0x2100u;
 	harness.dma.setTiming(
 		bmsx::PSX_MACHINE_SPEC.dmaRamCyclesPerWord,
 		bmsx::PSX_MACHINE_SPEC.dmaRamBurstSetupCycles,
@@ -205,7 +205,7 @@ void testRamBurstSetupIsBlockLocal() {
 void testPortSideAddsNoMemoryWait() {
 	DmaGpuHarness harness;
 	bmsx::Memory& memory = harness.memory;
-	const uint32_t source = bmsx::PROGRAM_STATIC_RAM_BASE + 0x3000u;
+	const uint32_t source = bmsx::DYNAMIC_RAM_BASE + 0x3000u;
 	memory.writeMappedU32LE(source, 0x01020304u);
 	memory.writeMappedU32LE(source + 4u, 0x05060708u);
 	harness.dma.setTiming(
@@ -224,9 +224,9 @@ void testPortSideAddsNoMemoryWait() {
 void testAdmittedRegisterState() {
 	DmaGpuHarness harness;
 	bmsx::Memory& memory = harness.memory;
-	const uint32_t source = bmsx::PROGRAM_STATIC_RAM_BASE + 0x100u;
-	const uint32_t destination = bmsx::PROGRAM_STATIC_RAM_BASE + 0x200u;
-	const uint32_t replacementDestination = bmsx::PROGRAM_STATIC_RAM_BASE + 0x240u;
+	const uint32_t source = bmsx::DYNAMIC_RAM_BASE + 0x100u;
+	const uint32_t destination = bmsx::DYNAMIC_RAM_BASE + 0x200u;
+	const uint32_t replacementDestination = bmsx::DYNAMIC_RAM_BASE + 0x240u;
 	memory.writeMappedU32LE(source, 0x11223344u);
 	memory.writeMappedU32LE(source + 4u, 0x55667788u);
 	memory.writeMappedU32LE(source + 8u, 0x99aabbccu);
@@ -255,7 +255,7 @@ void testAdmittedRegisterState() {
 void testGxWriteRequestAndPortOwnership() {
 	DmaGpuHarness harness;
 	bmsx::Memory& memory = harness.memory;
-	const uint32_t source = bmsx::PROGRAM_STATIC_RAM_BASE + 0x300u;
+	const uint32_t source = bmsx::DYNAMIC_RAM_BASE + 0x300u;
 	const uint32_t command0 = (bmsx::GX_GPU_GP0_FILL_RECTANGLE << 24u) | 0x3fu;
 	memory.writeMappedU32LE(source, command0);
 	memory.writeMappedU32LE(source + 4u, 0x00020010u);
@@ -281,7 +281,7 @@ void testGxWriteRequestAndPortOwnership() {
 void testSupervisorBanksUnadmittedGxDma() {
 	DmaGpuHarness harness;
 	bmsx::Memory& memory = harness.memory;
-	const uint32_t source = bmsx::PROGRAM_STATIC_RAM_BASE + 0x340u;
+	const uint32_t source = bmsx::DYNAMIC_RAM_BASE + 0x340u;
 	const uint32_t command0 = (bmsx::GX_GPU_GP0_FILL_RECTANGLE << 24u) | 0x3fu;
 	memory.writeMappedU32LE(source, command0);
 	memory.writeMappedU32LE(source + 4u, 0x00020010u);
@@ -312,8 +312,8 @@ void testSupervisorBanksUnadmittedGxDma() {
 void testSupervisorClosesDmaAdmissionAfterControl() {
 	DmaGpuHarness harness;
 	bmsx::Memory& memory = harness.memory;
-	const uint32_t source = bmsx::PROGRAM_STATIC_RAM_BASE + 0x360u;
-	const uint32_t destination = bmsx::PROGRAM_STATIC_RAM_BASE + 0x460u;
+	const uint32_t source = bmsx::DYNAMIC_RAM_BASE + 0x360u;
+	const uint32_t destination = bmsx::DYNAMIC_RAM_BASE + 0x460u;
 	for (uint32_t index = 0u; index < 17u; index += 1u) {
 		memory.writeMappedU32LE(source + index * 4u, index + 1u);
 	}
@@ -337,10 +337,10 @@ void testSupervisorClosesDmaAdmissionAfterControl() {
 void testSupervisorControlGateRejectsAdmittedSelfDmaTrigger() {
 	DmaGpuHarness harness;
 	bmsx::Memory& memory = harness.memory;
-	const uint32_t source = bmsx::PROGRAM_STATIC_RAM_BASE + 0x370u;
+	const uint32_t source = bmsx::DYNAMIC_RAM_BASE + 0x370u;
 	memory.writeMappedU32LE(source, bmsx::DMA_TRIGGER_START);
 	memory.writeMappedU32LE(bmsx::IO_DMA1_READ_ADDR, source);
-	memory.writeMappedU32LE(bmsx::IO_DMA1_WRITE_ADDR, bmsx::PROGRAM_STATIC_RAM_BASE + 0x470u);
+	memory.writeMappedU32LE(bmsx::IO_DMA1_WRITE_ADDR, bmsx::DYNAMIC_RAM_BASE + 0x470u);
 	memory.writeMappedU32LE(bmsx::IO_DMA1_TRANSFER_COUNT, 1u);
 	memory.writeMappedU32LE(bmsx::IO_DMA1_CONTROL, RAM_COPY_CONTROL);
 
@@ -358,7 +358,7 @@ void testSupervisorControlGateRejectsAdmittedSelfDmaTrigger() {
 void testCpuToGp0ImagePayloadCrossesBlocks() {
 	DmaGpuHarness harness;
 	bmsx::Memory& memory = harness.memory;
-	const uint32_t source = bmsx::PROGRAM_STATIC_RAM_BASE + 0x380u;
+	const uint32_t source = bmsx::DYNAMIC_RAM_BASE + 0x380u;
 	memory.writeMappedU32LE(source, bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24u);
 	memory.writeMappedU32LE(source + 4u, 0u);
 	memory.writeMappedU32LE(source + 8u, (1u << 16u) | 34u);
@@ -383,7 +383,7 @@ void testCpuToGp0ImagePayloadCrossesBlocks() {
 void testForcedGp0DmaSaturatesPhysicalFifos() {
 	DmaGpuHarness harness;
 	bmsx::Memory& memory = harness.memory;
-	const uint32_t source = bmsx::PROGRAM_STATIC_RAM_BASE + 0x1000u;
+	const uint32_t source = bmsx::DYNAMIC_RAM_BASE + 0x1000u;
 	harness.gpu.writeGp0((bmsx::GX_GPU_GP0_FILL_RECTANGLE << 24u) | 0x0000ffu);
 	harness.gpu.writeGp0(0u);
 	harness.gpu.writeGp0((511u << 16u) | 0x03f1u);
@@ -412,7 +412,7 @@ void testForcedGp0DmaSaturatesPhysicalFifos() {
 void testAdmittedBlockSurvivesRequestDropAndRestore() {
 	DmaGpuHarness harness;
 	bmsx::Memory& memory = harness.memory;
-	const uint32_t source = bmsx::PROGRAM_STATIC_RAM_BASE + 0x400u;
+	const uint32_t source = bmsx::DYNAMIC_RAM_BASE + 0x400u;
 	memory.writeMappedU32LE(source, 0xe1000000u);
 	memory.writeMappedU32LE(source + 4u, 0xe1000001u);
 	harness.dma.setTiming(4, 0, 4, 0, 0, 0);
@@ -441,7 +441,7 @@ void testFiniteGxReadRequest() {
 	DmaGpuHarness harness;
 	bmsx::Memory& memory = harness.memory;
 	bmsx::GxGpu& gpu = harness.gpu;
-	const uint32_t destination = bmsx::PROGRAM_STATIC_RAM_BASE + 0x500u;
+	const uint32_t destination = bmsx::DYNAMIC_RAM_BASE + 0x500u;
 	constexpr uint32_t sentinel = 0xa5a5a5a5u;
 	memory.writeMappedU32LE(destination, sentinel);
 	memory.writeMappedU32LE(destination + 4u, sentinel);
@@ -501,9 +501,9 @@ void testGxDirectionPublishesOneRequestEdge() {
 	DmaGpuHarness harness;
 	bmsx::Memory& memory = harness.memory;
 	bmsx::GxGpu& gpu = harness.gpu;
-	const uint32_t source = bmsx::PROGRAM_STATIC_RAM_BASE + 0x580u;
-	const uint32_t crossDestination = bmsx::PROGRAM_STATIC_RAM_BASE + 0x5c0u;
-	const uint32_t readDestination = bmsx::PROGRAM_STATIC_RAM_BASE + 0x600u;
+	const uint32_t source = bmsx::DYNAMIC_RAM_BASE + 0x580u;
+	const uint32_t crossDestination = bmsx::DYNAMIC_RAM_BASE + 0x5c0u;
+	const uint32_t readDestination = bmsx::DYNAMIC_RAM_BASE + 0x600u;
 	memory.writeMappedU32LE(source, 0x12345678u);
 
 	gpu.writeGp0(bmsx::GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24u);
@@ -541,7 +541,7 @@ void testGxDirectionPublishesOneRequestEdge() {
 void testBusFaultProgress() {
 	DmaGpuHarness harness;
 	bmsx::Memory& memory = harness.memory;
-	const uint32_t destination = bmsx::PROGRAM_STATIC_RAM_BASE + 0x600u;
+	const uint32_t destination = bmsx::DYNAMIC_RAM_BASE + 0x600u;
 	memory.writeMappedU32LE(destination, 0xdeadbeefu);
 	programTransfer(memory, bmsx::RAM_END - 2u, destination, 1u, RAM_COPY_CONTROL);
 	runNextDmaService(harness);
@@ -558,7 +558,7 @@ void testBusFaultProgress() {
 void testSelfDmaControlAffectsNextAdmission() {
 	DmaGpuHarness harness;
 	bmsx::Memory& memory = harness.memory;
-	const uint32_t source = bmsx::PROGRAM_STATIC_RAM_BASE + 0x700u;
+	const uint32_t source = bmsx::DYNAMIC_RAM_BASE + 0x700u;
 	const uint32_t runningControl = 0x00003c01u;
 	memory.writeMappedU32LE(source, DmaDisabledControl);
 	memory.writeMappedU32LE(source + 4u, runningControl);
@@ -595,7 +595,7 @@ void testClearingCountCompletesWaitingChannel() {
 
 void testPortAddressAdvanceReleasesCpuWrite() {
 	DmaGpuHarness harness;
-	const uint32_t source = bmsx::PROGRAM_STATIC_RAM_BASE + 0x780u;
+	const uint32_t source = bmsx::DYNAMIC_RAM_BASE + 0x780u;
 	harness.memory.writeMappedU32LE(source, 0u);
 	harness.memory.writeMappedU32LE(source + 4u, 0u);
 	programTransfer(harness.memory, source, bmsx::IO_GX_GPU_GP0, 2u, PortAdvanceControl);
@@ -610,8 +610,8 @@ void testPortAddressAdvanceReleasesCpuWrite() {
 
 void testDirectionalRequestsGateAdmission() {
 	DmaGpuHarness harness;
-	const uint32_t source = bmsx::PROGRAM_STATIC_RAM_BASE + 0x800u;
-	const uint32_t destination = bmsx::PROGRAM_STATIC_RAM_BASE + 0x900u;
+	const uint32_t source = bmsx::DYNAMIC_RAM_BASE + 0x800u;
+	const uint32_t destination = bmsx::DYNAMIC_RAM_BASE + 0x900u;
 	harness.memory.writeMappedU32LE(source, 0x12345678u);
 	harness.memory.writeMappedU32LE(bmsx::IO_DMA0_READ_ADDR, source);
 	harness.memory.writeMappedU32LE(bmsx::IO_DMA0_WRITE_ADDR, destination);
@@ -630,10 +630,10 @@ void testDirectionalRequestsGateAdmission() {
 
 void testChannelsArbitrateBlocksRoundRobin() {
 	DmaGpuHarness harness;
-	const uint32_t source0 = bmsx::PROGRAM_STATIC_RAM_BASE + 0xa00u;
-	const uint32_t destination0 = bmsx::PROGRAM_STATIC_RAM_BASE + 0xb00u;
-	const uint32_t source1 = bmsx::PROGRAM_STATIC_RAM_BASE + 0xc00u;
-	const uint32_t destination1 = bmsx::PROGRAM_STATIC_RAM_BASE + 0xd00u;
+	const uint32_t source0 = bmsx::DYNAMIC_RAM_BASE + 0xa00u;
+	const uint32_t destination0 = bmsx::DYNAMIC_RAM_BASE + 0xb00u;
+	const uint32_t source1 = bmsx::DYNAMIC_RAM_BASE + 0xc00u;
+	const uint32_t destination1 = bmsx::DYNAMIC_RAM_BASE + 0xd00u;
 	for (uint32_t index = 0u; index < 17u; index += 1u) {
 		harness.memory.writeMappedU32LE(source0 + index * 4u, index + 1u);
 	}

@@ -50,15 +50,16 @@ export function resetHandledLuaErrors(): void {
 
 function resolveEditorSourceWorkspacePath(source: string): string {
 	const sources = machineManager.sourceState;
-	const cart = sources.cartLuaSources;
-	if (cart && cart.path2lua[source]) {
-		return resolveWorkspacePath(source, sources.cartProjectRootPath);
+	for (let slot = 0; slot < sources.cartridgeSlots.length; slot += 1) {
+		const cartridge = sources.cartridgeSlots[slot];
+		if (cartridge !== null && cartridge.luaSources.path2lua[source]) {
+			return resolveWorkspacePath(source, cartridge.projectRootPath);
+		}
 	}
-	const systemSources = sources.systemLuaSources;
-	if (systemSources && systemSources.path2lua[source]) {
+	if (sources.systemLuaSources.path2lua[source]) {
 		return resolveWorkspacePath(source, sources.systemProjectRootPath);
 	}
-	return resolveWorkspacePath(source, sources.cartProjectRootPath);
+	return source;
 }
 
 function luaErrorSourcePath(error: LuaError): string {

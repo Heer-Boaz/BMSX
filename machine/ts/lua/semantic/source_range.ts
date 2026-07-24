@@ -1,17 +1,10 @@
-export type SourcePosition = {
-	readonly line: number;
-	readonly column: number;
-};
+import type { SourcePosition, SourceRange } from '../../machine/cpu/blua32_symbols';
+
+export type { SourcePosition, SourceRange } from '../../machine/cpu/blua32_symbols';
 
 export type SourceLocation = {
 	readonly path: string;
 } & SourcePosition;
-
-export type SourceRange = {
-	readonly path: string;
-	readonly start: SourcePosition;
-	readonly end: SourcePosition;
-};
 
 export function sourceRangeStartKey(range: SourceRange): string {
 	return `${range.start.line}:${range.start.column}`;

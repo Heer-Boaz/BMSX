@@ -35,7 +35,7 @@ import { sourcePositionInRange, type SourcePosition } from './source_range';
 import { semanticNamePathMatches, type SemanticSymbolKind } from './symbols';
 import type { SemanticAnnotations, SemanticRole } from './tokens';
 import { methodPathToPropertyPath } from './common';
-import { toLuaModulePath } from '../../machine/program/loader';
+import { toLuaModulePath } from '../module_path';
 
 export type SymbolID = string;
 

@@ -17,7 +17,7 @@ export interface IdeTestRunnerOptions {
  * Drives a host-side IDE test scenario against the live runtime. The scenario is a
  * plain JS script (no imports) executed with a single `t` context object. IDE actions
  * run between frames: `t.frames(n)` suspends the scenario for n frames while the
- * headless frame loop keeps ticking, so async work (program rebuild, storage I/O) settles.
+ * headless frame loop keeps ticking, so async work (BLua32 rebuild, storage I/O) settles.
  */
 export async function runIdeTest(options: IdeTestRunnerOptions): Promise<void> {
 	const label = path.basename(options.testPath);
@@ -44,7 +44,7 @@ export async function runIdeTest(options: IdeTestRunnerOptions): Promise<void> {
 			}
 			await waitFrames(1);
 		}
-		throw new Error('cart program never became active');
+		throw new Error('cartridge execution never became active');
 	};
 
 	let assertCount = 0;

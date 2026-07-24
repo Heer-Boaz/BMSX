@@ -3,17 +3,18 @@ import {
 	CARTRIDGE_BOARD_MAILBOX,
 	CARTRIDGE_BOARD_RAM,
 } from '../machine/devices/cartridge/contracts';
+import {
+	decodeBlua32BootHeader,
+} from '../machine/cpu/blua32_image';
 import { CART_RAM_SIZE } from '../machine/memory/map';
 import { formatNumberAsHex } from '../common/byte_hex_string';
 
 export const CART_ROM_MAGIC = 0x58534D42;
 export const CART_ROM_MAGIC_BYTES = new Uint8Array([0x42, 0x4d, 0x53, 0x58]);
-export const CART_ROM_PROGRAM_HEADER_SIZE = 64;
 export const CART_ROM_METADATA_HEADER_SIZE = 72;
 export const CART_ROM_HEADER_SIZE = 84;
 export const CART_ROM_WORD_ALIGNMENT = 4;
 export const CART_VDP_CLASS_PSX = 1;
-export const PROGRAM_BOOT_HEADER_VERSION = 1;
 export const ROM_ASSET_SYMBOL_MODULE_PATH = 'bmsx/assets';
 export const ROM_ASSET_SYMBOL_SOURCE_PATH = `${ROM_ASSET_SYMBOL_MODULE_PATH}.lua`;
 export const GX_TEXTURE_LAYOUT_MODULE_PATH = 'bmsx/gx_texture_layout';
@@ -31,14 +32,13 @@ export type CartRomHeader = {
 	tocLength: number;
 	dataOffset: number;
 	dataLength: number;
-	programBootVersion: number;
-	programBootFlags: number;
-	programEntryProtoIndex: number;
-	programCodeByteCount: number;
-	programConstPoolCount: number;
-	programProtoCount: number;
-	programReserved0: number;
-	programConstRelocCount: number;
+	blua32ImageOffset: number;
+	blua32ImageByteCount: number;
+	blua32StartupFunctionAddress: number;
+	blua32IrqFunctionAddress: number;
+	blua32ExceptionFunctionAddress: number;
+	blua32StaticLayoutTokenLo: number;
+	blua32StaticLayoutTokenHi: number;
 	metadataOffset: number;
 	metadataLength: number;
 	vdpClass: MachineVdpClass;
@@ -75,17 +75,7 @@ export function parseCartHeader(payload: Uint8Array): CartRomHeader {
 	const tocLength = view.getUint32(20, true);
 	const dataOffset = view.getUint32(24, true);
 	const dataLength = view.getUint32(28, true);
-	const programBootVersion = view.getUint32(32, true);
-	if (programBootVersion !== 0 && programBootVersion !== PROGRAM_BOOT_HEADER_VERSION) {
-		throw new Error(`Unsupported ROM program boot version: ${programBootVersion}.`);
-	}
-	const programBootFlags = view.getUint32(36, true);
-	const programEntryProtoIndex = view.getUint32(40, true);
-	const programCodeByteCount = view.getUint32(44, true);
-	const programConstPoolCount = view.getUint32(48, true);
-	const programProtoCount = view.getUint32(52, true);
-	const programReserved0 = view.getUint32(56, true);
-	const programConstRelocCount = view.getUint32(60, true);
+	const blua32 = decodeBlua32BootHeader(payload);
 	const metadataOffset = view.getUint32(64, true);
 	const metadataLength = view.getUint32(68, true);
 	const vdpClassWord = view.getUint32(72, true);
@@ -113,14 +103,13 @@ export function parseCartHeader(payload: Uint8Array): CartRomHeader {
 		tocLength,
 		dataOffset,
 		dataLength,
-		programBootVersion,
-		programBootFlags,
-		programEntryProtoIndex,
-		programCodeByteCount,
-		programConstPoolCount,
-		programProtoCount,
-		programReserved0,
-		programConstRelocCount,
+		blua32ImageOffset: blua32.imageOffset,
+		blua32ImageByteCount: blua32.imageByteCount,
+		blua32StartupFunctionAddress: blua32.startupFunctionAddress,
+		blua32IrqFunctionAddress: blua32.irqFunctionAddress,
+		blua32ExceptionFunctionAddress: blua32.exceptionFunctionAddress,
+		blua32StaticLayoutTokenLo: blua32.staticLayoutTokenLo,
+		blua32StaticLayoutTokenHi: blua32.staticLayoutTokenHi,
 		metadataOffset,
 		metadataLength,
 		vdpClass: 'psx',
@@ -128,16 +117,6 @@ export function parseCartHeader(payload: Uint8Array): CartRomHeader {
 		cartridgeRamByteCount,
 	};
 }
-
-export type ProgramBootHeader = {
-	version: number;
-	flags: number;
-	resetProtoIndex: number;
-	codeByteCount: number;
-	constPoolCount: number;
-	protoCount: number;
-	constRelocCount: number;
-};
 
 export type CartridgeLayerId = 'system' | 'cart';
 
@@ -152,9 +131,9 @@ export interface RuntimeRomPackage {
 	bin: id2res;
 	audioevents: id2audioevent;
 	project_root_path: string; // Workspace-relative cart root path for resolving filesystem writes.
-	cart_manifest: CartManifest | null; // Cart metadata for the active program, absent for system ROM packages.
+	cart_manifest: CartManifest | null; // Cart metadata for the active cartridge, absent for system ROM packages.
 	machine: MachineManifest; // Effective machine spec for this ROM package.
-	entry_path: string; // Entry Lua path for this program.
+	entry_path: string; // Entry BLua source path for this ROM package.
 }
 
 export type asset_type = 'image' | 'texture' | 'audio' | 'data' | 'bin' | 'romlabel' | 'model' | 'aem' | 'lua' | 'code';

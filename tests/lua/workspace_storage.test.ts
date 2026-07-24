@@ -491,13 +491,16 @@ test('runtime source capture detects changed code when editor epochs collide', (
 		update_timestamp: 2,
 		generated: false,
 	});
+	const systemRegistry = { records: [], path2lua: {}, module2lua: {} };
 	(machineManager as any).sourceState = {
-		cartLuaSources: registry,
-		systemLuaSources: { records: [], path2lua: {}, module2lua: {} },
+		cartridgeSlots: [{
+			luaSources: registry,
+			installedBlua32Sources: new Map([['src.foo', '-- revision 1']]),
+		}, null],
+		systemLuaSources: systemRegistry,
 		activeLuaSources: registry,
 		luaSourceSearchRegistries: [registry],
-		cartProgramSources: new Map([['src.foo', '-- revision 1']]),
-		systemProgramSources: new Map(),
+		systemInstalledBlua32Sources: new Map(),
 	};
 
 	assert.deepEqual(capturePendingLuaCodeTabSources(), [{
@@ -609,14 +612,15 @@ test('explicit lua save promotes canonical source and removes dirty entry', asyn
 		return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
 	};
 	(machineManager as any).sourceState = {
-		cartLuaSources: registry,
+		cartridgeSlots: [{ luaSources: registry }, null],
 		systemLuaSources: systemRegistry,
 		activeLuaSources: registry,
+		luaSourceSearchRegistries: [registry, systemRegistry],
+		activeCartridgeSlot: 0,
 		currentPath: registry.entry_path,
-		cartProjectRootPath: 'offline-cart',
 		systemProjectRootPath: 'machine/ts',
-		systemProgramMediaDirty: false,
-		cartProgramMediaDirty: false,
+		systemBlua32MediaDirty: false,
+		cartridgeBlua32MediaDirty: [false, false],
 	};
 
 	await saveLuaResourceSource('src/foo.lua', '-- saved source');
@@ -629,8 +633,8 @@ test('explicit lua save promotes canonical source and removes dirty entry', asyn
 	assert.equal(storage.getItem(buildWorkspaceStorageKey('offline-cart', dirtyPath)), null);
 	assert.equal(workspaceSourceCache.get(dirtyPath), undefined);
 	assert.equal(workspaceSourceCache.get('src/foo.lua'), '-- saved source');
-	assert.equal((machineManager as any).sourceState.systemProgramMediaDirty, false);
-	assert.equal((machineManager as any).sourceState.cartProgramMediaDirty, true);
+	assert.equal((machineManager as any).sourceState.systemBlua32MediaDirty, false);
+	assert.equal((machineManager as any).sourceState.cartridgeBlua32MediaDirty[0], true);
 	await applyWorkspaceOverridesToRegistry({
 		registry,
 		storage,

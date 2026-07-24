@@ -1,14 +1,32 @@
-import type { RomAsset, CartRomHeader } from '../../machine/ts/rompack/format';
-import { disassembleProgram } from '../../machine/ts/machine/cpu/disassembler';
-import type { Program, ProgramMetadata } from '../../machine/ts/machine/cpu/cpu';
+import { OpCode } from '../../machine/ts/machine/cpu/cpu';
 import {
-	assembleProgramImages,
-	decodeProgramImage,
-	decodeProgramSymbolsImage,
-	PROGRAM_IMAGE_ID,
-	PROGRAM_SYMBOLS_IMAGE_ID,
-	type ProgramImage,
-} from '../../machine/ts/machine/program/loader';
+	BLUA32_IMAGE_ID,
+	BLUA32_SYMBOLS_IMAGE_ID,
+	decodeBlua32Image,
+	type Blua32ImageLayout,
+} from '../../machine/ts/machine/cpu/blua32_image';
+import {
+	decodeBlua32SymbolsImage,
+	type Blua32SymbolsImage,
+} from '../../machine/ts/machine/cpu/blua32_symbols';
+import {
+	describeBlua32InstructionAtPc,
+	formatSourceSnippet,
+} from '../../machine/ts/machine/cpu/disassembler';
+import {
+	INSTRUCTION_BYTES,
+	readInstructionWord,
+} from '../../machine/ts/machine/cpu/instruction_format';
+import { toLuaModulePath } from '../../machine/ts/lua/module_path';
+import {
+	CART_ROM_BASE,
+	SYSTEM_ROM_BASE,
+} from '../../machine/ts/machine/memory/map';
+import {
+	parseCartHeader,
+	type CartRomHeader,
+	type RomAsset,
+} from '../../machine/ts/rompack/format';
 
 export const ROM_MANIFEST_ASSET_ID = '__rom_manifest__';
 export const ROM_MANIFEST_SOURCE_PATH = 'manifest.rommanifest';
@@ -55,89 +73,119 @@ export function buildLuaSourceLookup(rombin: Uint8Array, assets: RomAsset[]): Ma
 		if (asset.type !== 'lua') {
 			continue;
 		}
-		const path = asset.normalized_source_path ?? asset.source_path;
-		if (!path) {
-			throw new Error(`[RomInspector] Lua asset '${asset.resid}' is missing its source path.`);
+		if (!asset.source_path) {
+			throw new Error(`Lua asset '${asset.resid}' is missing its source path.`);
 		}
+		const path = toLuaModulePath(asset.source_path);
 		if (asset.start === undefined || asset.end === undefined) {
-			throw new Error(`[RomInspector] Lua asset '${asset.resid}' is missing buffer range.`);
+			throw new Error(`Lua asset '${asset.resid}' is missing its buffer range.`);
 		}
 		if (sources.has(path)) {
-			throw new Error(`[RomInspector] Duplicate lua source path '${path}'.`);
+			throw new Error(`Duplicate Lua source path '${path}'.`);
 		}
-		sources.set(path, Buffer.from(rombin.slice(asset.start, asset.end)).toString('utf8'));
+		sources.set(path, Buffer.from(rombin.subarray(asset.start, asset.end)).toString('utf8'));
 	}
 	return sources;
 }
 
-export function loadProgramFromAssets(rombin: Uint8Array, assets: RomAsset[], systemProgramImage: ProgramImage | null = null) {
-	const programImageEntry = assets.find(asset => asset.resid === PROGRAM_IMAGE_ID);
-	if (!programImageEntry) {
-		throw new Error('[RomInspector] Program asset not found.');
+export type InspectedBlua32Image = {
+	image: Blua32ImageLayout;
+	symbols: Blua32SymbolsImage | null;
+	sourceTextByPath: ReadonlyMap<string, string> | null;
+	missingSourcePaths: string[];
+};
+
+export function loadBlua32ImageFromAssets(rombin: Uint8Array, assets: RomAsset[]): InspectedBlua32Image {
+	const header = parseCartHeader(rombin);
+	if (header.blua32ImageByteCount === 0) {
+		throw new Error('ROM has no BLua32 executable image.');
 	}
-	if (programImageEntry.start === undefined || programImageEntry.end === undefined) {
-		throw new Error(`[RomInspector] Program asset '${programImageEntry.resid}' is missing buffer range.`);
-	}
-	const programImage = decodeProgramImage(
-		rombin.subarray(programImageEntry.start, programImageEntry.end),
-		rombin.subarray(programImageEntry.compiled_start!, programImageEntry.compiled_end!),
+	const romBaseAddress = header.blua32StartupFunctionAddress < CART_ROM_BASE
+		? SYSTEM_ROM_BASE
+		: CART_ROM_BASE;
+	const imageAddress = romBaseAddress + header.blua32ImageOffset;
+	const image = decodeBlua32Image(
+		rombin.subarray(
+			header.blua32ImageOffset,
+			header.blua32ImageOffset + header.blua32ImageByteCount,
+		),
+		imageAddress,
 	);
-	if (programImage.placement.textBasePc !== 0 && systemProgramImage === null) {
-		throw new Error('[RomInspector] Cartridge program inspection requires --system-rom <firmware-rom>.');
-	}
-	const program = programImage.placement.textBasePc === 0
-		? assembleProgramImages(programImage, null)
-		: assembleProgramImages(systemProgramImage!, programImage);
-	const symbolsAsset = assets.find(asset => asset.resid === PROGRAM_SYMBOLS_IMAGE_ID);
-	let metadata: ProgramMetadata | null = null;
-	if (symbolsAsset) {
-		if (symbolsAsset.start === undefined || symbolsAsset.end === undefined) {
-			throw new Error(`[RomInspector] Program symbols asset '${symbolsAsset.resid}' is missing buffer range.`);
-		}
-		metadata = decodeProgramSymbolsImage(rombin.subarray(symbolsAsset.start, symbolsAsset.end));
-	}
-	const sourceMap = metadata ? buildLuaSourceLookup(rombin, assets) : null;
+	const symbolsAsset = assets.find(asset => asset.resid === BLUA32_SYMBOLS_IMAGE_ID);
+	const symbols = symbolsAsset
+		? decodeBlua32SymbolsImage(rombin.subarray(symbolsAsset.start, symbolsAsset.end))
+		: null;
+	const sourceMap = symbols ? buildLuaSourceLookup(rombin, assets) : null;
 	const missingSourcePaths = new Set<string>();
-	if (metadata && sourceMap && sourceMap.size > 0) {
-		for (const range of metadata.debugRanges) {
+	if (symbols && sourceMap && sourceMap.size > 0) {
+		for (const range of symbols.metadata.debugRanges) {
 			if (range !== null && !sourceMap.has(range.path)) {
 				missingSourcePaths.add(range.path);
 			}
 		}
 	}
-	const sourceTextForPath = metadata && sourceMap && sourceMap.size > 0 && missingSourcePaths.size === 0
-		? (path: string) => {
-			const text = sourceMap.get(path);
-			if (text === undefined) {
-				throw new Error(`[RomInspector] Lua source '${path}' not found in ROM pack.`);
-			}
-			return text;
-		}
-		: null;
 	return {
-		programImage,
-		program,
-		metadata,
-		sourceTextForPath,
+		image,
+		symbols,
+		sourceTextByPath: sourceMap,
 		missingSourcePaths: Array.from(missingSourcePaths.values()).sort(),
 	};
 }
 
-export function disassembleProgramImage(
-	program: Program,
-	metadata: ProgramMetadata | null,
-	sourceTextForPath: ((path: string) => string) | null,
-	options: { assembly?: boolean; pcBias?: number } = {},
+export function disassembleBlua32Image(
+	image: Blua32ImageLayout,
+	symbols: Blua32SymbolsImage | null,
+	sourceTextByPath: ReadonlyMap<string, string> | null,
+	options: { assembly?: boolean } = {},
 ): string {
 	const assembly = options.assembly === true;
-	return disassembleProgram(program, metadata, {
-		showPc: !assembly,
-		pcRadix: 16,
-		pcFormatter: assembly ? undefined : (pc, width) => formatNumberAsHex(pc, width),
-		pcSuffix: assembly ? 'h' : '',
-		protoAddressOp: assembly ? '.ORG' : undefined,
-		pcBias: options.pcBias,
-		showSourceComments: metadata !== null && sourceTextForPath !== null,
-		sourceTextForPath: sourceTextForPath !== null ? sourceTextForPath : undefined,
-	});
+	const lines: string[] = [];
+	for (let functionIndex = 0; functionIndex < image.functions.length; functionIndex += 1) {
+		const fn = image.functions[functionIndex];
+		const id = symbols ? ` id=${symbols.metadata.functionIds[functionIndex]}` : '';
+		lines.push(
+			`; function=${formatNumberAsHex(fn.address, 8)}${id}` +
+			` entry=${formatNumberAsHex(fn.codeAddress, 8)}` +
+			` len=${fn.codeByteCount}` +
+			` params=${fn.numParams}` +
+			` vararg=${fn.isVararg ? 1 : 0}` +
+			` stack=${fn.maxStack}` +
+			` upvalues=${fn.upvalues.length}`,
+		);
+		if (assembly) {
+			lines.push(`.ORG ${formatNumberAsHex(fn.codeAddress, 8)}`);
+		}
+		let pc = fn.codeAddress;
+		let lastRangeKey: string | null = null;
+		while (pc < fn.codeAddress + fn.codeByteCount) {
+			const wordIndex = (pc - image.header.textAddress) / INSTRUCTION_BYTES;
+			const word = readInstructionWord(image.textBytes, wordIndex);
+			const instruction = describeBlua32InstructionAtPc(image, symbols, pc, {
+				pcRadix: 16,
+				pcSuffix: 'h',
+			});
+			const prefix = assembly ? '' : `${instruction.pcText}: `;
+			let sourceComment = '';
+			if (sourceTextByPath !== null && instruction.sourceRange !== null) {
+				const range = instruction.sourceRange;
+				const rangeKey = `${range.path}:${range.start.line}`;
+				const sourceText = sourceTextByPath.get(range.path);
+				if (rangeKey !== lastRangeKey) {
+					if (sourceText !== undefined) {
+						sourceComment = ` ; ${formatSourceSnippet(range, sourceText)}`;
+					}
+					lastRangeKey = rangeKey;
+				}
+			}
+			lines.push(`${prefix}${instruction.instructionText}${sourceComment}`);
+			const opcode = (word >>> 18) & 0x3f;
+			pc += opcode === OpCode.WIDE ? INSTRUCTION_BYTES * 2 : INSTRUCTION_BYTES;
+		}
+		if (functionIndex < image.functions.length - 1) {
+			lines.push('');
+		}
+	}
+	return lines.join('\n');
 }
+
+export { BLUA32_IMAGE_ID, BLUA32_SYMBOLS_IMAGE_ID };

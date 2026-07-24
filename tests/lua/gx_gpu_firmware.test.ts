@@ -16,7 +16,7 @@ import {
 } from '../../machine/ts/machine/devices/gx/gpu_pcrtc';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { parseLuaChunk } from './cpu_test_harness';
-import { createInitializedTestSystemCpu, finalizeTestSystemProgram } from '../helpers/program_image';
+import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 
 const MODE_SELECTOR_ADDRESS = 0x08040000;
 const ENTRY_SOURCE = `
@@ -61,7 +61,7 @@ const modules = MODULE_FILES.map(([path, file]) => {
 	return { path, chunk: parseLuaChunk(source, `${path}.lua`), source };
 });
 const compiled = compileLuaChunkToProgram(parseLuaChunk(ENTRY_SOURCE, 'entry.lua'), modules, { entrySource: ENTRY_SOURCE, optLevel: 3 });
-const finalized = finalizeTestSystemProgram(compiled);
+const finalized = linkTestSystemBlua32(compiled);
 const image = finalized.image;
 
 type FirmwareMode = {
@@ -83,9 +83,9 @@ const FIRMWARE_MODES: readonly FirmwareMode[] = [
 ];
 
 function runFirmwareMode(modeIndex: number): { memory: Memory; cpu: CPU } {
-	const { memory, cpu } = createInitializedTestSystemCpu(finalized, 10_000_000);
+	const { memory, cpu } = createTestSystemCpu(finalized);
 	memory.writeMappedU32LE(MODE_SELECTOR_ADDRESS, modeIndex);
-	cpu.start(image.vectors.resetProtoIndex);
+	cpu.start(finalized.vectors.startupFunctionAddress);
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 	return { memory, cpu };
 }

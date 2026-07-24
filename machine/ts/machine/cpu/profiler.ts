@@ -12,21 +12,22 @@ export type CpuProfilerSourceRange = {
 	end: CpuProfilerSourcePosition;
 };
 
-export type CpuProfilerProto = {
-	entryPC: number;
-	codeLen: number;
-};
-
-export type CpuProfilerProgram = {
-	protos: ReadonlyArray<CpuProfilerProto>;
+export type CpuProfilerFunction = {
+	address: number;
+	codeAddress: number;
+	codeByteCount: number;
 };
 
 export type CpuProfilerMetadata = {
 	debugRanges: ReadonlyArray<CpuProfilerSourceRange | null>;
 };
 
-export type CpuProfilerRuntimeSymbols = {
-	protoIds: ReadonlyArray<string>;
+export type CpuProfilerImage = {
+	textAddress: number;
+	functions: ReadonlyArray<CpuProfilerFunction>;
+	functionIds: ReadonlyArray<string>;
+	metadata: CpuProfilerMetadata | null;
+	opcodeByWord: Uint8Array;
 };
 
 export type CpuProfilerSnapshot = {
@@ -34,9 +35,10 @@ export type CpuProfilerSnapshot = {
 	totalBaseCycles: number;
 	opcodeCounts: Uint32Array;
 	pcCounts: Uint32Array;
+	pcByWord: Uint32Array;
 	opcodeByWord: Uint8Array;
-	protoByWord: Int32Array;
-	protoIds: string[];
+	functionByWord: Int32Array;
+	functionIds: string[];
 	debugRanges: Array<CpuProfilerSourceRange | null>;
 };
 
@@ -59,9 +61,9 @@ export type CpuProfilerHotPath = {
 	cyclePercent: number;
 };
 
-export type CpuProfilerHotProto = {
-	protoIndex: number;
-	protoId: string;
+export type CpuProfilerHotFunction = {
+	functionIndex: number;
+	functionId: string;
 	path: string;
 	count: number;
 	percent: number;
@@ -87,15 +89,15 @@ export type CpuProfilerCategoryPressure = {
 	avgCost: number;
 };
 
-export type CpuProfilerOpcodeGroupProto = {
-	protoIndex: number;
-	protoId: string;
+export type CpuProfilerOpcodeGroupFunction = {
+	functionIndex: number;
+	functionId: string;
 	path: string;
 	groupCount: number;
 	groupCycles: number;
 	totalCycles: number;
 	cyclePercent: number;
-	ofProtoCyclePercent: number;
+	ofFunctionCyclePercent: number;
 };
 
 export type CpuProfilerHotPc = {
@@ -105,14 +107,14 @@ export type CpuProfilerHotPc = {
 	opcodeName: string;
 	count: number;
 	percent: number;
-	protoIndex: number;
-	protoId: string;
+	functionIndex: number;
+	functionId: string;
 	range: CpuProfilerSourceRange | null;
 };
 
 export type CpuProfilerReportOptions = {
 	topPaths?: number;
-	topProtos?: number;
+	topFunctions?: number;
 	topOpcodes?: number;
 	topPcs?: number;
 };
@@ -125,23 +127,23 @@ function percent(count: number, total: number): number {
 	return total === 0 ? 0 : ((count / total) * 100);
 }
 
-function visitCountedProtoWords(snapshot: CpuProfilerSnapshot, visit: (wordIndex: number, protoIndex: number, count: number) => void): void {
+function visitCountedFunctionWords(snapshot: CpuProfilerSnapshot, visit: (wordIndex: number, functionIndex: number, count: number) => void): void {
 	for (let wordIndex = 0; wordIndex < snapshot.pcCounts.length; wordIndex += 1) {
 		const count = snapshot.pcCounts[wordIndex];
 		if (count === 0) {
 			continue;
 		}
-		const protoIndex = snapshot.protoByWord[wordIndex];
-		if (protoIndex < 0) {
+		const functionIndex = snapshot.functionByWord[wordIndex];
+		if (functionIndex < 0) {
 			continue;
 		}
-		visit(wordIndex, protoIndex, count);
+		visit(wordIndex, functionIndex, count);
 	}
 }
 
-function formatLocation(range: CpuProfilerSourceRange | null, protoId: string, pc: number): string {
+function formatLocation(range: CpuProfilerSourceRange | null, functionId: string, pc: number): string {
 	if (range === null) {
-		return `${protoId} @ pc=${pc}`;
+		return `${functionId} @ pc=${pc}`;
 	}
 	return `${range.path}:${range.start.line}:${range.start.column}`;
 }
@@ -203,36 +205,56 @@ export class CpuExecutionProfiler {
 	private totalInstructions = 0;
 	private opcodeCounts = new Uint32Array(OPCODE_COUNT);
 	private pcCounts = EMPTY_U32;
+	private pcByWord = EMPTY_U32;
 	private opcodeByWord = EMPTY_U8;
-	private protoByWord = EMPTY_I32;
-	private protoIds: string[] = [];
+	private functionByWord = EMPTY_I32;
+	private functionIds: string[] = [];
 	private debugRanges: Array<CpuProfilerSourceRange | null> = [];
+	private imageWordOffsets = EMPTY_I32;
 
-	public configureProgram(program: CpuProfilerProgram, runtimeSymbols: CpuProfilerRuntimeSymbols, metadata: CpuProfilerMetadata | null, decodedOps: Uint8Array): void {
-		const instructionCount = decodedOps.length;
+	public configureImages(images: ReadonlyArray<CpuProfilerImage>): void {
+		let instructionCount = 0;
+		let functionCount = 0;
+		for (let imageIndex = 0; imageIndex < images.length; imageIndex += 1) {
+			instructionCount += images[imageIndex].opcodeByWord.length;
+			functionCount += images[imageIndex].functions.length;
+		}
 		if (this.pcCounts.length !== instructionCount) {
 			this.pcCounts = new Uint32Array(instructionCount);
+			this.pcByWord = new Uint32Array(instructionCount);
 			this.opcodeByWord = new Uint8Array(instructionCount);
-			this.protoByWord = new Int32Array(instructionCount);
+			this.functionByWord = new Int32Array(instructionCount);
+		}
+		if (this.imageWordOffsets.length !== images.length) {
+			this.imageWordOffsets = new Int32Array(images.length);
 		}
 		this.reset();
-		this.opcodeByWord.set(decodedOps);
-		this.protoByWord.fill(-1);
-		for (let protoIndex = 0; protoIndex < program.protos.length; protoIndex += 1) {
-			const proto = program.protos[protoIndex];
-			const startWord = proto.entryPC / INSTRUCTION_BYTES;
-			const endWord = (proto.entryPC + proto.codeLen) / INSTRUCTION_BYTES;
-			for (let wordIndex = startWord; wordIndex < endWord; wordIndex += 1) {
-				this.protoByWord[wordIndex] = protoIndex;
-			}
-		}
-		this.protoIds = new Array(program.protos.length);
-		for (let protoIndex = 0; protoIndex < program.protos.length; protoIndex += 1) {
-			this.protoIds[protoIndex] = runtimeSymbols.protoIds[protoIndex];
-		}
+		this.functionByWord.fill(-1);
+		this.functionIds = new Array(functionCount);
 		this.debugRanges = new Array<CpuProfilerSourceRange | null>(instructionCount);
-		for (let wordIndex = 0; wordIndex < instructionCount; wordIndex += 1) {
-			this.debugRanges[wordIndex] = metadata !== null ? metadata.debugRanges[wordIndex] : null;
+		let wordBase = 0;
+		let functionBase = 0;
+		for (let imageIndex = 0; imageIndex < images.length; imageIndex += 1) {
+			const image = images[imageIndex];
+			this.imageWordOffsets[imageIndex] = wordBase;
+			this.opcodeByWord.set(image.opcodeByWord, wordBase);
+			for (let functionIndex = 0; functionIndex < image.functions.length; functionIndex += 1) {
+				const fn = image.functions[functionIndex];
+				const startWord = wordBase + (fn.codeAddress - image.textAddress) / INSTRUCTION_BYTES;
+				const endWord = startWord + fn.codeByteCount / INSTRUCTION_BYTES;
+				for (let wordIndex = startWord; wordIndex < endWord; wordIndex += 1) {
+					this.functionByWord[wordIndex] = functionBase + functionIndex;
+				}
+				this.functionIds[functionBase + functionIndex] = image.functionIds[functionIndex];
+			}
+			for (let localWord = 0; localWord < image.opcodeByWord.length; localWord += 1) {
+				this.pcByWord[wordBase + localWord] = image.textAddress + localWord * INSTRUCTION_BYTES;
+				this.debugRanges[wordBase + localWord] = image.metadata !== null
+					? image.metadata.debugRanges[localWord]
+					: null;
+			}
+			wordBase += image.opcodeByWord.length;
+			functionBase += image.functions.length;
 		}
 	}
 
@@ -242,10 +264,10 @@ export class CpuExecutionProfiler {
 		this.pcCounts.fill(0);
 	}
 
-	public record(wordIndex: number, opcode: number): void {
+	public record(imageIndex: number, wordIndex: number, opcode: number): void {
 		this.totalInstructions += 1;
 		this.opcodeCounts[opcode] += 1;
-		this.pcCounts[wordIndex] += 1;
+		this.pcCounts[this.imageWordOffsets[imageIndex] + wordIndex] += 1;
 	}
 
 	public snapshot(): CpuProfilerSnapshot {
@@ -255,9 +277,10 @@ export class CpuExecutionProfiler {
 			totalBaseCycles,
 			opcodeCounts: this.opcodeCounts.slice(),
 			pcCounts: this.pcCounts.slice(),
+			pcByWord: this.pcByWord.slice(),
 			opcodeByWord: this.opcodeByWord.slice(),
-			protoByWord: this.protoByWord.slice(),
-			protoIds: this.protoIds.slice(),
+			functionByWord: this.functionByWord.slice(),
+			functionIds: this.functionIds.slice(),
 			debugRanges: this.debugRanges.slice(),
 		};
 	}
@@ -303,35 +326,35 @@ export function collectCpuProfilerHotPaths(snapshot: CpuProfilerSnapshot, limit 
 	return rows.slice(0, limit);
 }
 
-export function collectCpuProfilerHotProtos(snapshot: CpuProfilerSnapshot, limit = 16): CpuProfilerHotProto[] {
-	const protoCount = snapshot.protoIds.length;
-	const counts = new Int32Array(protoCount);
-	const cycles = new Int32Array(protoCount);
-	const paths = new Array<string>(protoCount).fill('<unknown>');
-	visitCountedProtoWords(snapshot, (wordIndex, protoIndex, count) => {
-		counts[protoIndex] += count;
-		cycles[protoIndex] += count * BASE_CYCLES[snapshot.opcodeByWord[wordIndex]];
-		if (paths[protoIndex] === '<unknown>') {
+export function collectCpuProfilerHotFunctions(snapshot: CpuProfilerSnapshot, limit = 16): CpuProfilerHotFunction[] {
+	const functionCount = snapshot.functionIds.length;
+	const counts = new Int32Array(functionCount);
+	const cycles = new Int32Array(functionCount);
+	const paths = new Array<string>(functionCount).fill('<unknown>');
+	visitCountedFunctionWords(snapshot, (wordIndex, functionIndex, count) => {
+		counts[functionIndex] += count;
+		cycles[functionIndex] += count * BASE_CYCLES[snapshot.opcodeByWord[wordIndex]];
+		if (paths[functionIndex] === '<unknown>') {
 			const range = snapshot.debugRanges[wordIndex];
 			if (range !== null) {
-				paths[protoIndex] = range.path;
+				paths[functionIndex] = range.path;
 			}
 		}
 	});
-	const rows: CpuProfilerHotProto[] = [];
-	for (let protoIndex = 0; protoIndex < counts.length; protoIndex += 1) {
-		const count = counts[protoIndex];
+	const rows: CpuProfilerHotFunction[] = [];
+	for (let functionIndex = 0; functionIndex < counts.length; functionIndex += 1) {
+		const count = counts[functionIndex];
 		if (count === 0) {
 			continue;
 		}
 		rows.push({
-			protoIndex,
-			protoId: snapshot.protoIds[protoIndex],
-			path: paths[protoIndex],
+			functionIndex,
+			functionId: snapshot.functionIds[functionIndex],
+			path: paths[functionIndex],
 			count,
 			percent: percent(count, snapshot.totalInstructions),
-			cycles: cycles[protoIndex],
-			cyclePercent: percent(cycles[protoIndex], snapshot.totalBaseCycles),
+			cycles: cycles[functionIndex],
+			cyclePercent: percent(cycles[functionIndex], snapshot.totalBaseCycles),
 		});
 	}
 	rows.sort((left, right) => {
@@ -341,7 +364,7 @@ export function collectCpuProfilerHotProtos(snapshot: CpuProfilerSnapshot, limit
 		if (right.count !== left.count) {
 			return right.count - left.count;
 		}
-		return left.protoId.localeCompare(right.protoId);
+		return left.functionId.localeCompare(right.functionId);
 	});
 	return rows.slice(0, limit);
 }
@@ -394,16 +417,16 @@ export function collectCpuProfilerHotPcs(snapshot: CpuProfilerSnapshot, limit = 
 		if (opcodeFilter >= 0 && opcode !== opcodeFilter) {
 			continue;
 		}
-		const protoIndex = snapshot.protoByWord[wordIndex];
+		const functionIndex = snapshot.functionByWord[wordIndex];
 		rows.push({
 			wordIndex,
-			pc: wordIndex * INSTRUCTION_BYTES,
+			pc: snapshot.pcByWord[wordIndex],
 			opcode,
 				opcodeName: getOpcodeName(opcode as OpCode),
 			count,
 			percent: percent(count, snapshot.totalInstructions),
-			protoIndex,
-			protoId: protoIndex >= 0 ? snapshot.protoIds[protoIndex] : '<unknown>',
+			functionIndex,
+			functionId: functionIndex >= 0 ? snapshot.functionIds[functionIndex] : '<unknown>',
 			range: snapshot.debugRanges[wordIndex],
 		});
 	}
@@ -452,60 +475,60 @@ export function collectCpuProfilerPathOpcodePressure(snapshot: CpuProfilerSnapsh
 	return rows;
 }
 
-export function collectCpuProfilerProtoOpcodePressure(snapshot: CpuProfilerSnapshot, protoLimit = 8, opcodeLimit = 5): CpuProfilerOpcodePressure[] {
-	const protoRows = collectCpuProfilerHotProtos(snapshot, protoLimit);
-	const countsByProto = new Array<Uint32Array | null>(snapshot.protoIds.length).fill(null);
-	visitCountedProtoWords(snapshot, (wordIndex, protoIndex, count) => {
-		let counts = countsByProto[protoIndex];
+export function collectCpuProfilerFunctionOpcodePressure(snapshot: CpuProfilerSnapshot, functionLimit = 8, opcodeLimit = 5): CpuProfilerOpcodePressure[] {
+	const functionRows = collectCpuProfilerHotFunctions(snapshot, functionLimit);
+	const countsByFunction = new Array<Uint32Array | null>(snapshot.functionIds.length).fill(null);
+	visitCountedFunctionWords(snapshot, (wordIndex, functionIndex, count) => {
+		let counts = countsByFunction[functionIndex];
 		if (counts === null) {
 			counts = new Uint32Array(OPCODE_COUNT);
-			countsByProto[protoIndex] = counts;
+			countsByFunction[functionIndex] = counts;
 		}
 		counts[snapshot.opcodeByWord[wordIndex]] += count;
 	});
 	const rows: CpuProfilerOpcodePressure[] = [];
-	for (let index = 0; index < protoRows.length; index += 1) {
-		const protoRow = protoRows[index];
-		const counts = countsByProto[protoRow.protoIndex];
+	for (let index = 0; index < functionRows.length; index += 1) {
+		const functionRow = functionRows[index];
+		const counts = countsByFunction[functionRow.functionIndex];
 		if (counts === null) {
 			continue;
 		}
 		rows.push({
-			label: protoRow.protoId,
-			totalCount: protoRow.count,
-			percent: protoRow.percent,
-			totalCycles: protoRow.cycles,
-			cyclePercent: protoRow.cyclePercent,
+			label: functionRow.functionId,
+			totalCount: functionRow.count,
+			percent: functionRow.percent,
+			totalCycles: functionRow.cycles,
+			cyclePercent: functionRow.cyclePercent,
 			opcodes: collectTopOpcodesFromCounts(counts, snapshot.totalInstructions, snapshot.totalBaseCycles, opcodeLimit),
 		});
 	}
 	return rows;
 }
 
-export function collectCpuProfilerOpcodeGroupProtos(snapshot: CpuProfilerSnapshot, predicate: (opcode: number) => boolean, limit = 8): CpuProfilerOpcodeGroupProto[] {
-	const protoCount = snapshot.protoIds.length;
-	const countsByProto = new Array<Uint32Array | null>(protoCount).fill(null);
-	const paths = new Array<string>(protoCount).fill('<unknown>');
-	const totalCyclesByProto = new Uint32Array(protoCount);
-	visitCountedProtoWords(snapshot, (wordIndex, protoIndex, count) => {
-		let counts = countsByProto[protoIndex];
+export function collectCpuProfilerOpcodeGroupFunctions(snapshot: CpuProfilerSnapshot, predicate: (opcode: number) => boolean, limit = 8): CpuProfilerOpcodeGroupFunction[] {
+	const functionCount = snapshot.functionIds.length;
+	const countsByFunction = new Array<Uint32Array | null>(functionCount).fill(null);
+	const paths = new Array<string>(functionCount).fill('<unknown>');
+	const totalCyclesByFunction = new Uint32Array(functionCount);
+	visitCountedFunctionWords(snapshot, (wordIndex, functionIndex, count) => {
+		let counts = countsByFunction[functionIndex];
 		if (counts === null) {
 			counts = new Uint32Array(OPCODE_COUNT);
-			countsByProto[protoIndex] = counts;
+			countsByFunction[functionIndex] = counts;
 		}
 		const opcode = snapshot.opcodeByWord[wordIndex];
 		counts[opcode] += count;
-		totalCyclesByProto[protoIndex] += count * BASE_CYCLES[opcode];
-		if (paths[protoIndex] === '<unknown>') {
+		totalCyclesByFunction[functionIndex] += count * BASE_CYCLES[opcode];
+		if (paths[functionIndex] === '<unknown>') {
 			const range = snapshot.debugRanges[wordIndex];
 			if (range !== null) {
-				paths[protoIndex] = range.path;
+				paths[functionIndex] = range.path;
 			}
 		}
 	});
-	const rows: CpuProfilerOpcodeGroupProto[] = [];
-	for (let protoIndex = 0; protoIndex < countsByProto.length; protoIndex += 1) {
-		const counts = countsByProto[protoIndex];
+	const rows: CpuProfilerOpcodeGroupFunction[] = [];
+	for (let functionIndex = 0; functionIndex < countsByFunction.length; functionIndex += 1) {
+		const counts = countsByFunction[functionIndex];
 		if (counts === null) {
 			continue;
 		}
@@ -513,46 +536,46 @@ export function collectCpuProfilerOpcodeGroupProtos(snapshot: CpuProfilerSnapsho
 		if (group.count === 0) {
 			continue;
 		}
-		const totalCycles = totalCyclesByProto[protoIndex];
+		const totalCycles = totalCyclesByFunction[functionIndex];
 		rows.push({
-			protoIndex,
-			protoId: snapshot.protoIds[protoIndex],
-			path: paths[protoIndex],
+			functionIndex,
+			functionId: snapshot.functionIds[functionIndex],
+			path: paths[functionIndex],
 			groupCount: group.count,
 			groupCycles: group.cycles,
 			totalCycles,
 			cyclePercent: percent(group.cycles, snapshot.totalBaseCycles),
-			ofProtoCyclePercent: percent(group.cycles, totalCycles),
+			ofFunctionCyclePercent: percent(group.cycles, totalCycles),
 		});
 	}
 	rows.sort((left, right) => {
 		if (right.groupCycles !== left.groupCycles) {
 			return right.groupCycles - left.groupCycles;
 		}
-		return left.protoId.localeCompare(right.protoId);
+		return left.functionId.localeCompare(right.functionId);
 	});
 	return rows.slice(0, limit);
 }
 
 export function formatCpuProfilerReport(snapshot: CpuProfilerSnapshot, options: CpuProfilerReportOptions = {}): string {
 	const topPaths = options.topPaths ?? 16;
-	const topProtos = options.topProtos ?? 16;
+	const topFunctions = options.topFunctions ?? 16;
 	const topOpcodes = options.topOpcodes ?? 16;
 	const topPcs = options.topPcs ?? 32;
 	const pathRows = collectCpuProfilerHotPaths(snapshot, topPaths);
-	const protoRows = collectCpuProfilerHotProtos(snapshot, topProtos);
+	const functionRows = collectCpuProfilerHotFunctions(snapshot, topFunctions);
 	const categoryRows = collectCpuProfilerCategoryPressure(snapshot);
 	const pathOpcodePressure = collectCpuProfilerPathOpcodePressure(snapshot);
-	const protoOpcodePressure = collectCpuProfilerProtoOpcodePressure(snapshot);
-	const closureGroupRows = collectCpuProfilerOpcodeGroupProtos(snapshot, opcode => opcode === OpCode.CLOSURE);
-	const tableGroupRows = collectCpuProfilerOpcodeGroupProtos(snapshot, opcode =>
+	const functionOpcodePressure = collectCpuProfilerFunctionOpcodePressure(snapshot);
+	const closureGroupRows = collectCpuProfilerOpcodeGroupFunctions(snapshot, opcode => opcode === OpCode.CLOSURE);
+	const tableGroupRows = collectCpuProfilerOpcodeGroupFunctions(snapshot, opcode =>
 		opcode === OpCode.GETT || opcode === OpCode.SETT || opcode === OpCode.GETI || opcode === OpCode.SETI || opcode === OpCode.GETFIELD || opcode === OpCode.SETFIELD || opcode === OpCode.SELF
 	);
-	const callGroupRows = collectCpuProfilerOpcodeGroupProtos(snapshot, opcode => opcode === OpCode.CALL || opcode === OpCode.RET);
-	const memoryGroupRows = collectCpuProfilerOpcodeGroupProtos(snapshot, opcode =>
+	const callGroupRows = collectCpuProfilerOpcodeGroupFunctions(snapshot, opcode => opcode === OpCode.CALL || opcode === OpCode.RET);
+	const memoryGroupRows = collectCpuProfilerOpcodeGroupFunctions(snapshot, opcode =>
 		opcode === OpCode.LOAD_MEM || opcode === OpCode.STORE_MEM || opcode === OpCode.STORE_MEM_WORDS || opcode === OpCode.LOAD_MEM_D || opcode === OpCode.STORE_MEM_D || opcode === OpCode.STORE_MEM_WORDS_D
 	);
-	const concatGroupRows = collectCpuProfilerOpcodeGroupProtos(snapshot, opcode => opcode === OpCode.CONCAT || opcode === OpCode.CONCATN);
+	const concatGroupRows = collectCpuProfilerOpcodeGroupFunctions(snapshot, opcode => opcode === OpCode.CONCAT || opcode === OpCode.CONCATN);
 	const opcodeRows = collectTopOpcodesFromCounts(snapshot.opcodeCounts, snapshot.totalInstructions, snapshot.totalBaseCycles, topOpcodes);
 	const pcRows = collectCpuProfilerHotPcs(snapshot, topPcs);
 	const lines: string[] = [];
@@ -567,10 +590,10 @@ export function formatCpuProfilerReport(snapshot: CpuProfilerSnapshot, options: 
 		lines.push(`${String(index + 1).padStart(2, ' ')}. ${row.path} instr=${row.count} share=${row.percent.toFixed(2)}% cycles=${row.cycles} cycle_share=${row.cyclePercent.toFixed(2)}%`);
 	}
 	lines.push('');
-	lines.push('Top Protos');
-	for (let index = 0; index < protoRows.length; index += 1) {
-		const row = protoRows[index];
-		lines.push(`${String(index + 1).padStart(2, ' ')}. ${row.protoId} instr=${row.count} share=${row.percent.toFixed(2)}% cycles=${row.cycles} cycle_share=${row.cyclePercent.toFixed(2)}% path=${row.path}`);
+	lines.push('Top Functions');
+	for (let index = 0; index < functionRows.length; index += 1) {
+		const row = functionRows[index];
+		lines.push(`${String(index + 1).padStart(2, ' ')}. ${row.functionId} instr=${row.count} share=${row.percent.toFixed(2)}% cycles=${row.cycles} cycle_share=${row.cyclePercent.toFixed(2)}% path=${row.path}`);
 	}
 	lines.push('');
 	lines.push('Category Pressure');
@@ -586,41 +609,41 @@ export function formatCpuProfilerReport(snapshot: CpuProfilerSnapshot, options: 
 		lines.push(`${String(index + 1).padStart(2, ' ')}. ${row.label} instr=${row.totalCount} share=${row.percent.toFixed(2)}% cycles=${row.totalCycles} cycle_share=${row.cyclePercent.toFixed(2)}% :: ${detail}`);
 	}
 	lines.push('');
-	lines.push('Proto Opcode Pressure');
-	for (let index = 0; index < protoOpcodePressure.length; index += 1) {
-		const row = protoOpcodePressure[index];
+	lines.push('Function Opcode Pressure');
+	for (let index = 0; index < functionOpcodePressure.length; index += 1) {
+		const row = functionOpcodePressure[index];
 		const detail = row.opcodes.map(opcode => `${opcode.name}=${opcode.count}x${opcode.baseCost}=${opcode.cycles}`).join(', ');
 		lines.push(`${String(index + 1).padStart(2, ' ')}. ${row.label} instr=${row.totalCount} share=${row.percent.toFixed(2)}% cycles=${row.totalCycles} cycle_share=${row.cyclePercent.toFixed(2)}% :: ${detail}`);
 	}
 	lines.push('');
-	lines.push('Closure-Heavy Protos');
+	lines.push('Closure-Heavy Functions');
 	for (let index = 0; index < closureGroupRows.length; index += 1) {
 		const row = closureGroupRows[index];
-		lines.push(`${String(index + 1).padStart(2, ' ')}. ${row.protoId} closures=${row.groupCount} cycles=${row.groupCycles} cycle_share=${row.cyclePercent.toFixed(2)}% of_proto=${row.ofProtoCyclePercent.toFixed(2)}% path=${row.path}`);
+		lines.push(`${String(index + 1).padStart(2, ' ')}. ${row.functionId} closures=${row.groupCount} cycles=${row.groupCycles} cycle_share=${row.cyclePercent.toFixed(2)}% of_function=${row.ofFunctionCyclePercent.toFixed(2)}% path=${row.path}`);
 	}
 	lines.push('');
-	lines.push('Table-Access Heavy Protos');
+	lines.push('Table-Access Heavy Functions');
 	for (let index = 0; index < tableGroupRows.length; index += 1) {
 		const row = tableGroupRows[index];
-		lines.push(`${String(index + 1).padStart(2, ' ')}. ${row.protoId} table_ops=${row.groupCount} cycles=${row.groupCycles} cycle_share=${row.cyclePercent.toFixed(2)}% of_proto=${row.ofProtoCyclePercent.toFixed(2)}% path=${row.path}`);
+		lines.push(`${String(index + 1).padStart(2, ' ')}. ${row.functionId} table_ops=${row.groupCount} cycles=${row.groupCycles} cycle_share=${row.cyclePercent.toFixed(2)}% of_function=${row.ofFunctionCyclePercent.toFixed(2)}% path=${row.path}`);
 	}
 	lines.push('');
-	lines.push('Call/Return Heavy Protos');
+	lines.push('Call/Return Heavy Functions');
 	for (let index = 0; index < callGroupRows.length; index += 1) {
 		const row = callGroupRows[index];
-		lines.push(`${String(index + 1).padStart(2, ' ')}. ${row.protoId} call_ops=${row.groupCount} cycles=${row.groupCycles} cycle_share=${row.cyclePercent.toFixed(2)}% of_proto=${row.ofProtoCyclePercent.toFixed(2)}% path=${row.path}`);
+		lines.push(`${String(index + 1).padStart(2, ' ')}. ${row.functionId} call_ops=${row.groupCount} cycles=${row.groupCycles} cycle_share=${row.cyclePercent.toFixed(2)}% of_function=${row.ofFunctionCyclePercent.toFixed(2)}% path=${row.path}`);
 	}
 	lines.push('');
-	lines.push('Memory I/O Heavy Protos');
+	lines.push('Memory I/O Heavy Functions');
 	for (let index = 0; index < memoryGroupRows.length; index += 1) {
 		const row = memoryGroupRows[index];
-		lines.push(`${String(index + 1).padStart(2, ' ')}. ${row.protoId} mem_ops=${row.groupCount} cycles=${row.groupCycles} cycle_share=${row.cyclePercent.toFixed(2)}% of_proto=${row.ofProtoCyclePercent.toFixed(2)}% path=${row.path}`);
+		lines.push(`${String(index + 1).padStart(2, ' ')}. ${row.functionId} mem_ops=${row.groupCount} cycles=${row.groupCycles} cycle_share=${row.cyclePercent.toFixed(2)}% of_function=${row.ofFunctionCyclePercent.toFixed(2)}% path=${row.path}`);
 	}
 	lines.push('');
-	lines.push('Concat-Heavy Protos');
+	lines.push('Concat-Heavy Functions');
 	for (let index = 0; index < concatGroupRows.length; index += 1) {
 		const row = concatGroupRows[index];
-		lines.push(`${String(index + 1).padStart(2, ' ')}. ${row.protoId} concat_ops=${row.groupCount} cycles=${row.groupCycles} cycle_share=${row.cyclePercent.toFixed(2)}% of_proto=${row.ofProtoCyclePercent.toFixed(2)}% path=${row.path}`);
+		lines.push(`${String(index + 1).padStart(2, ' ')}. ${row.functionId} concat_ops=${row.groupCount} cycles=${row.groupCycles} cycle_share=${row.cyclePercent.toFixed(2)}% of_function=${row.ofFunctionCyclePercent.toFixed(2)}% path=${row.path}`);
 	}
 	lines.push('');
 	lines.push('Hot PCs');
@@ -628,7 +651,7 @@ export function formatCpuProfilerReport(snapshot: CpuProfilerSnapshot, options: 
 		const row = pcRows[index];
 		lines.push(
 			`${String(index + 1).padStart(2, ' ')}. ${row.opcodeName} count=${row.count} share=${row.percent.toFixed(2)}% ` +
-			`proto=${row.protoId} loc=${formatLocation(row.range, row.protoId, row.pc)}`
+			`function=${row.functionId} loc=${formatLocation(row.range, row.functionId, row.pc)}`
 		);
 	}
 	lines.push('');

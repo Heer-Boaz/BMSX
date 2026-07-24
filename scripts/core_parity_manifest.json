@@ -278,7 +278,6 @@
 		"machine/ts/machine/machine.ts",
 		"machine/ts/machine/memory/specs.ts",
 		"machine/ts/machine/runtime/boot_timing.ts",
-		"machine/ts/machine/runtime/cpu_state.ts",
 		"machine/ts/machine/runtime/machine_state.ts",
 		"machine/ts/machine/runtime/runtime.ts",
 		"machine/ts/machine/runtime/save_machine_state.ts",
@@ -300,7 +299,6 @@
 		"machine/ts/rompack/host_system_atlas.generated.ts",
 		"machine/ts/rompack/host_system_atlas.ts",
 		"machine/ts/rompack/loader.ts",
-		"machine/ts/machine/program/loader.ts",
 		"machine/ts/render/shared/submissions.ts",
 		"machine/ts/render/shared/solid_pixels.ts",
 		"machine/ts/common/fixed_point.ts",
@@ -544,14 +542,6 @@
 				"machine/cpp/machine/runtime/save_state/schema.cpp"
 			],
 			"reason": "runtime_save_state_schema_symbol_contract"
-		},
-		{
-			"ts": "machine/ts/machine/runtime/cpu_state.ts",
-			"cpp": [
-				"machine/cpp/machine/runtime/cpu_state.h",
-				"machine/cpp/machine/runtime/cpu_state.cpp"
-			],
-			"reason": "runtime_cpu_state_contract"
 		},
 		{
 			"ts": "machine/ts/machine/scheduler/device.ts",
@@ -1045,23 +1035,14 @@
 				"machine/ts/lua/source_registry.ts",
 				"machine/ts/ide/runtime/native_bridge.ts",
 				"machine/ts/ide/runtime/sources.ts",
-				"machine/ts/rompack/tooling/program_linker.ts",
-				"machine/ts/rompack/tooling/program_tail.ts"
+				"machine/ts/rompack/tooling/blua32_linker.ts",
+				"machine/ts/rompack/tooling/blua32_revision.ts",
+				"machine/ts/rompack/tooling/blua32_tail.ts",
+				"machine/ts/rompack/tooling/rom_prefix_layout.ts"
 			],
 			"absent": [
-				"machine/ts/machine/program/compiler.ts",
-				"machine/ts/machine/program/compiler",
-				"machine/ts/machine/program/layout.ts",
-				"machine/ts/machine/program/linker.ts",
-				"machine/ts/machine/program/optimizer",
-				"machine/ts/machine/program/compile_value_flow.ts",
-				"machine/ts/machine/program/control_flow.ts",
-				"machine/ts/machine/program/bound_reference.ts",
-				"machine/ts/machine/program/source_range.ts",
-				"machine/ts/machine/program/sourcemap_minimal.ts",
-				"machine/ts/machine/program/target_semantics.ts",
-				"machine/ts/machine/program/sources.ts",
-				"machine/ts/machine/program/executor.ts",
+				"machine/ts/machine/program",
+				"machine/cpp/machine/program",
 				"machine/ts/machine/firmware/system_boot_symbols.ts",
 				"machine/ts/machine/firmware/builtin_descriptors.ts",
 				"machine/ts/machine/firmware/builtins.ts",
@@ -1344,47 +1325,20 @@
 			"reason": "cpu_string_pool_save_state_shape_contract"
 		},
 		{
-			"ts": "machine/ts/machine/program/loader.ts",
+			"ts": "machine/ts/machine/cpu/blua32_image.ts",
 			"cpp": [
-				"machine/cpp/machine/program/loader.h"
+				"machine/cpp/machine/cpu/blua32_image.h",
+				"machine/cpp/machine/cpu/blua32_image.cpp"
 			],
-			"shape_exclude": [
-				{
-					"symbol": "decodeProgramImage",
-					"reason": "TS passes the section and descriptor as Uint8Array views; C++ receives the same two borrowed byte ranges as spans."
-				},
-				{
-					"symbol": "decodeProgramSymbolsImage",
-					"reason": "TS passes a Uint8Array view; C++ receives the same borrowed program-symbol byte range as a span."
-				},
-				{
-					"symbol": "EncodedValue",
-					"reason": "TS represents encoded constants as a JavaScript union; C++ stores the same linked-image values in a native variant carrier."
-				},
-				{
-					"symbol": "ProgramSymbolsImage",
-					"reason": "TS aliases ProgramSymbolsImage to imported ProgramMetadata; C++ aliases to the same metadata owner but the parity scanner resolves the included C++ struct fields locally."
-				},
-				{
-					"symbol": "ProgramDataSection",
-					"field": "bytes",
-					"reason": "TS retains a Uint8Array view into physical ROM; C++ retains the same borrowed data-load-image bytes as a span."
-				},
-				{
-					"symbol": "ProgramRodataSection",
-					"field": "moduleProtos",
-					"reason": "TS module proto records use object literals; C++ stores the same path/proto pairs as std::pair in the native rodata vector."
-				},
-				{
-					"symbol": "ProgramTextSection",
-					"field": "code",
-					"reason": "TS retains a Uint8Array view into physical ROM; C++ retains the same borrowed instruction bytes as a span."
-				},
-				{
-					"symbol": "assembleProgramImages",
-					"reason": "TS returns Program directly and uses null for an absent cart image; C++ returns the same owner through unique_ptr and accepts the optional cart image as a pointer."
-				}
-			]
+			"reason": "physical_blua32_executable_image_contract"
+		},
+		{
+			"ts": "machine/ts/machine/cpu/blua32_symbols.ts",
+			"cpp": [
+				"machine/cpp/machine/cpu/blua32_symbols.h",
+				"machine/cpp/machine/cpu/blua32_symbols.cpp"
+			],
+			"reason": "blua32_tooling_symbols_contract"
 		},
 		{
 			"ts": "machine/ts/common/arrays_equal.ts",
@@ -1610,12 +1564,6 @@
 					"symbol": "forEachGlyphRunGlyph",
 					"reason": "TS receives a typed glyph callback function; C++ keeps the same callback contract as a template parameter to avoid std::function allocation in the hot glyph path."
 				}
-			]
-		},
-		{
-			"ts": "machine/ts/machine/runtime/cpu_state.ts",
-			"cpp": [
-				"machine/cpp/machine/runtime/cpu_state.h"
 			]
 		},
 		{
@@ -2227,15 +2175,13 @@
 			"ts": "machine/ts/machine/runtime/runtime.ts",
 			"cpp": [
 				"machine/cpp/machine/runtime/runtime.h",
-				"machine/cpp/machine/runtime/runtime.cpp",
-				"machine/cpp/machine/program/executor.cpp"
+				"machine/cpp/machine/runtime/runtime.cpp"
 			],
 			"methods": [
 				"boot",
-				"enterSystemFirmware",
-				"enterCartProgram",
-				"startCartProgram",
-				"startLoadedProgram",
+				"rebootSystem",
+				"resetHardwareState",
+				"resetForSystemBoot",
 				"callClosureInto",
 				"machineTimeMs",
 				"machineElapsedMs",
@@ -2260,10 +2206,6 @@
 		}
 	],
 	"cpp_missing_ts_exclusions": [
-		{
-			"cpp": "machine/cpp/machine/program/executor.cpp",
-			"reason": "C++ keeps Runtime::callClosureInto in a split implementation unit; TypeScript owns the same Runtime method in runtime.ts because TS class bodies cannot be split without prototype patching."
-		},
 		{
 			"cpp": "machine/cpp/machine/runtime/debug.cpp",
 			"reason": "C++ runtime logs native startup faults internally; TypeScript host/IDE fault presentation lives under machine/ts/ide/runtime/debug_state.ts and must not be mirrored back into machine runtime."

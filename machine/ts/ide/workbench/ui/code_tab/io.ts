@@ -27,6 +27,7 @@ import {
 	upsertCodeEditorTab,
 } from './contexts';
 import { codeTabSessionState } from './session_state';
+import { developmentCartridgeSource } from '../../../runtime/sources';
 
 function applyCodeTabDescriptor(context: CodeTabContext, descriptor: ResourceDescriptor, mode: CodeTabMode): void {
 	context.descriptor = descriptor;
@@ -51,7 +52,8 @@ export async function openAemCodeTab(descriptor: ResourceDescriptor): Promise<vo
 	try {
 		let context = codeTabSessionState.contexts.get(tabId);
 		if (!context) {
-			const source = await loadWorkspaceSourceFile(descriptor.path, machineManager.sourceState.cartProjectRootPath);
+			const cartridge = developmentCartridgeSource(machineManager.sourceState)!;
+			const source = await loadWorkspaceSourceFile(descriptor.path, cartridge.projectRootPath);
 			if (source === null) {
 				throw new Error(`AEM resource '${descriptor.path}' is unavailable.`);
 			}
@@ -89,7 +91,8 @@ export async function save(runtime: Runtime): Promise<void> {
 			workspaceSourceCache.delete(buildDirtyFilePath(targetPath));
 			workspaceSourceCache.set(targetPath, source);
 		} else {
-			await persistWorkspaceSourceFile(targetPath, source, machineManager.sourceState.cartProjectRootPath);
+			const cartridge = developmentCartridgeSource(machineManager.sourceState)!;
+			await persistWorkspaceSourceFile(targetPath, source, cartridge.projectRootPath);
 			workspaceSourceCache.set(targetPath, source);
 		}
 		commitActiveCodeTabSave(context, source);

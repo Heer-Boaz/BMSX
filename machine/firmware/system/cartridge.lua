@@ -18,17 +18,4 @@ cartridge.mailbox_control_dreq_read = 0x00000002
 cartridge.mailbox_control_dreq_write = 0x00000004
 cartridge.mailbox_status_irq_pending = 0x00000001
 
-local status<const>: *word = cartridge.status_addr
-local status_slot0_program<const> = 0x00000100
-local status_slot1_program<const> = 0x00000200
-local status_selected_slot1<const> = 0x00010000
-
-function cartridge.selected_program_present()
-	local value<const> = *status
-	local program_mask<const> = (value & status_selected_slot1) ~= 0
-		and status_slot1_program
-		or status_slot0_program
-	return (value & program_mask) ~= 0
-end
-
 return cartridge

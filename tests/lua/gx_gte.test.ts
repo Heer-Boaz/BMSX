@@ -12,7 +12,7 @@ import {
 import { IO_WORD_SIZE } from '../../machine/ts/machine/memory/map';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { MAPPED_BUS_MASTER_DMA } from '../../machine/ts/machine/memory/bus_signals';
-import { CPU, OpCode, RunResult, type Program, type ProgramMetadata, type Proto } from '../../machine/ts/machine/cpu/cpu';
+import { CPU, OpCode, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/machine/cpu/instruction_format';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import {
@@ -100,6 +100,7 @@ import {
 	GX_GTE_PLUS_SCALAR,
 	GxGte,
 } from '../../machine/ts/machine/devices/gx/gte';
+import { linkRawTestSystemBlua32 } from '../helpers/blua32';
 
 const GTE_SF = 1 << 19;
 
@@ -124,7 +125,7 @@ function serviceScheduledGtePlus(gte: GxGte, scheduler: DeviceScheduler, cycles:
 	gte.onService();
 }
 
-function installGtePlusBurstProgram(cpu: CPU, words: readonly number[]): void {
+function installGtePlusBurstProgram(cpu: CPU, words: readonly number[]): number {
 	const instructionCount = words.length + 3;
 	const code = new Uint8Array(instructionCount * INSTRUCTION_BYTES);
 	writeInstruction(code, 0, OpCode.LOADK, 0, 0, 0, 0);
@@ -133,36 +134,15 @@ function installGtePlusBurstProgram(cpu: CPU, words: readonly number[]): void {
 	}
 	writeInstruction(code, words.length + 1, OpCode.STORE_MEM_WORDS_D, 1, 0, words.length, 0);
 	writeInstruction(code, words.length + 2, OpCode.RET, 0, 0, 0, 0);
-	const proto: Proto = {
-		entryPC: 0,
-		codeLen: code.byteLength,
-		numParams: 0,
-		isVararg: false,
-		maxStack: words.length + 1,
-		upvalueDescs: [],
-		staticClosure: true,
-	};
-	const program: Program = {
-		code,
-		constPool: [IO_GX_GTE_PLUS_BASE, ...words],
-		protos: [proto],
-		moduleProtos: [],
-		moduleExports: [],
-		moduleProtoMap: new Map(),
-		stringPool: cpu.stringPool,
-		constPoolStringPool: cpu.stringPool,
-	};
-	const metadata: ProgramMetadata = {
-		debugRanges: [null],
-		protoIds: ['gte_plus_burst'],
-		resumePointsByProto: [[]],
-		localSlotsByProto: [[]],
-		upvalueNamesByProto: [[]],
-		globalNames: [],
-		systemGlobalNames: [],
-		exportProtoIdBySlot: {},
-	};
-	cpu.setProgram(program, metadata, metadata, 0, 0, 0);
+	const image = linkRawTestSystemBlua32({
+		text: code,
+		functions: [{ firstWord: 0, wordCount: instructionCount, maxStack: words.length + 1 }],
+		constants: [IO_GX_GTE_PLUS_BASE, ...words],
+		functionIds: ['gte_plus_burst'],
+	});
+	cpu.memory.installSystemRom(image.romBytes);
+	cpu.mountExecutableMedia({ system: image.symbols, cartridgeSlots: [null, null] });
+	return image.vectors.startupFunctionAddress;
 }
 
 function pack16(low: number, high: number): number {
@@ -460,8 +440,7 @@ test('GX-GTE+ CPU burst interlock is atomic across save, restore and command res
 		0,
 		GX_GTE_PLUS_FN_VMAD3,
 	];
-	installGtePlusBurstProgram(first.cpu, burstWords);
-	first.cpu.start(0);
+	first.cpu.start(installGtePlusBurstProgram(first.cpu, burstWords));
 	for (let index = 0; index < burstWords.length + 1; index += 1) {
 		first.cpu.step();
 	}
@@ -470,7 +449,7 @@ test('GX-GTE+ CPU burst interlock is atomic across save, restore and command res
 	assert.equal(first.cpu.runUntilDepth(0, 10), RunResult.Halted);
 	first.scheduler.endCpuSlice();
 	assert.equal(first.cpu.isMemoryWriteBlocked(), true);
-	const blockedCpuState = first.cpu.captureRuntimeState(new Map());
+	const blockedCpuState = first.cpu.captureRuntimeState();
 	assert.equal(blockedCpuState.memoryWriteBlockedAddress, commandAddress);
 	assert.equal(blockedCpuState.yieldRequested, false);
 	assert.equal(first.memory.readMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_ADD_XY * IO_WORD_SIZE), firstAddXy);
@@ -478,7 +457,7 @@ test('GX-GTE+ CPU burst interlock is atomic across save, restore and command res
 
 	first.scheduler.advanceTo(2);
 	const gteState = first.gte.captureState();
-	const cpuState = first.cpu.captureRuntimeState(new Map());
+	const cpuState = first.cpu.captureRuntimeState();
 	assert.equal(gteState.plusPendingCycles, 3);
 	assert.equal(gteState.plusInterlockArmed, true);
 
@@ -486,7 +465,7 @@ test('GX-GTE+ CPU burst interlock is atomic across save, restore and command res
 	installGtePlusBurstProgram(restored.cpu, burstWords);
 	restored.scheduler.setNowCycles(100);
 	restored.gte.restoreState(gteState);
-	restored.cpu.restoreRuntimeState(cpuState, new Map());
+	restored.cpu.restoreRuntimeState(cpuState);
 	assert.equal(restored.scheduler.nextDeadline(), 103);
 	restored.scheduler.advanceTo(102);
 	assert.equal(restored.cpu.runUntilDepth(0, 100), RunResult.Halted);

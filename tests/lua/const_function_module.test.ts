@@ -7,13 +7,23 @@ import { readLE32 } from '../../machine/ts/common/endian';
 import { splitText } from '../../machine/ts/common/text_lines';
 import { LuaLexer } from '../../machine/ts/lua/syntax/lexer';
 import { LuaParser } from '../../machine/ts/lua/syntax/parser';
-import { CPU, RunResult, type ProgramMetadata } from '../../machine/ts/machine/cpu/cpu';
-import { disassembleProto } from '../../machine/ts/machine/cpu/disassembler';
+import {
+	CPU,
+	CPU_STATUS_CART_ENTRY,
+	CPU_STATUS_SYSTEM_ENTRY,
+	RunResult,
+} from '../../machine/ts/machine/cpu/cpu';
+import type { ProgramMetadata } from '../../machine/ts/lua/compiler/program';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject, type CompiledProgram } from '../../machine/ts/lua/compiler';
 import type { OptimizationLevel } from '../../machine/ts/lua/compiler/optimizer';
-import { finalizeTestProgramPair, runTestSystemProgram } from '../helpers/program_image';
+import {
+	disassembleTestBlua32Functions,
+	linkTestBlua32Pair,
+	linkTestSystemBlua32,
+	runCompiledTestSystem,
+} from '../helpers/blua32';
 
 const BOOL01_PATH = 'bios/util/bool01';
 const DIV_TOWARD_ZERO_PATH = 'bios/util/div_toward_zero';
@@ -47,27 +57,31 @@ function compileWithModule(entrySource: string, modulePath: string, moduleSource
 }
 
 function runColdCompiled(compiled: CompiledProgram) {
-	const cpu = runTestSystemProgram(compiled, 100000);
+	const cpu = runCompiledTestSystem(compiled, 100000);
 	return Array.from(cpu.lastReturnValues);
 }
 
 function runColdPair(systemCompiled: CompiledProgram, cartCompiled: CompiledProgram) {
-	const finalized = finalizeTestProgramPair(systemCompiled, cartCompiled);
+	const finalized = linkTestBlua32Pair(systemCompiled, cartCompiled);
 	const memory = new Memory({ systemRom: finalized.systemRomBytes, cartridgeSlots: cartridgeSlots(finalized.cartRomBytes) });
 	const cpu = new CPU(memory, new IrqController(memory));
-	cpu.setProgram(finalized.program, finalized.cartImage.symbols, finalized.cartMetadata, 0, 0, 0);
-	cpu.start(finalized.cartImage.vectors.sectionInitProtoIndex);
+	cpu.mountExecutableMedia({
+		system: finalized.systemSymbols,
+		cartridgeSlots: [finalized.cartSymbols, null],
+	});
+	cpu.start(finalized.systemVectors.startupFunctionAddress, [], CPU_STATUS_SYSTEM_ENTRY);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
-	cpu.start(finalized.cartImage.vectors.resetProtoIndex);
+	cpu.start(finalized.cartVectors.startupFunctionAddress, [], CPU_STATUS_CART_ENTRY);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	return Array.from(cpu.lastReturnValues);
 }
 
 function disassembleConstExport(compiled: CompiledProgram, slotName: string): string {
-	const protoId = compiled.metadata.exportProtoIdBySlot[slotName];
-	const protoIndex = compiled.metadata.protoIds.indexOf(protoId);
-	assert.notEqual(protoIndex, -1);
-	return disassembleProto(compiled.program, protoIndex, compiled.metadata, { showProtoHeaders: true });
+	const functionId = compiled.metadata.exportProtoIdBySlot[slotName];
+	const image = linkTestSystemBlua32(compiled);
+	const functionIndex = image.symbols.metadata.functionIds.indexOf(functionId);
+	assert.notEqual(functionIndex, -1);
+	return disassembleTestBlua32Functions(image, [image.symbols.functionAddresses[functionIndex]]);
 }
 
 test('rect_overlaps compiles as a const function module and calls through export-proto', () => {

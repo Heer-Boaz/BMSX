@@ -3,7 +3,6 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
-#include <deque>
 #include <exception>
 #include <cmath>
 #include <functional>
@@ -22,6 +21,8 @@
 
 #include "common/scratchbuffer.h"
 #include "common/primitives.h"
+#include "machine/cpu/blua32_image.h"
+#include "machine/cpu/blua32_symbols.h"
 #include "machine/cpu/instruction_format.h"
 #include "machine/cpu/cop0.h"
 #include "machine/cpu/opcode_info.h"
@@ -42,17 +43,8 @@ struct NativeFunction;
 struct NativeObject;
 struct Upvalue;
 struct CallFrame;
-
-/**
- * Source range in Lua code for debugging/error reporting.
- */
-struct SourceRange {
-	std::string path;
-	int startLine = 0;
-	int startColumn = 0;
-	int endLine = 0;
-	int endColumn = 0;
-};
+struct Blua32ExecutionImage;
+struct Blua32RuntimeFunction;
 
 struct NativeFnCost {
 	uint16_t base = 1;
@@ -545,78 +537,6 @@ struct NativeObject : GCObject {
 	Table* metatable = nullptr;
 };
 
-/**
- * Upvalue descriptor - describes how to find an upvalue when creating a closure.
- */
-struct UpvalueDesc {
-	bool isLocal = false;
-	int index = 0;
-};
-
-/**
- * Function prototype - compiled function metadata.
- */
-struct Proto {
-	int entryPC = 0;
-	int codeLen = 0;
-	int maxStack = 0;
-	int numParams = 0;
-	bool isVararg = false;
-	std::vector<UpvalueDesc> upvalues;
-	bool staticClosure = false;
-};
-
-/**
- * Compiled program - bytecode, constants, and prototypes.
- */
-struct ProgramModuleExport {
-	std::string path;
-	std::string exportPathKey;
-	std::string slotName;
-};
-
-struct Program {
-	std::vector<uint8_t> codeBytes;
-	std::vector<Value> constPool;
-	StringPool stringPool;
-	StringPool* constPoolStringPool = nullptr;
-	std::vector<Proto> protos;
-	std::vector<std::pair<std::string, int>> moduleProtos;
-	std::vector<ProgramModuleExport> moduleExports;
-	std::unordered_map<std::string, int> moduleProtoMap;
-	bool constPoolCanonicalized = false;
-};
-
-struct LocalSlotDebug {
-	std::string name;
-	int reg = 0;
-	SourceRange definition;
-	SourceRange scope;
-};
-
-struct ProgramResumePoint {
-	int wordOffset = 0;
-	SourceRange range;
-	int op = 0;
-	std::vector<int> liveRegisters;
-	std::vector<int> uses;
-	std::vector<int> defs;
-};
-
-struct ProgramRuntimeSymbols {
-	std::vector<std::string> protoIds;
-	std::vector<std::string> globalNames;
-	std::vector<std::string> systemGlobalNames;
-	std::unordered_map<std::string, std::string> exportProtoIdBySlot;
-};
-
-struct ProgramMetadata : ProgramRuntimeSymbols {
-	std::vector<std::optional<SourceRange>> debugRanges;
-	std::vector<std::vector<ProgramResumePoint>> resumePointsByProto;
-	std::vector<std::vector<LocalSlotDebug>> localSlotsByProto;
-	std::vector<std::vector<std::string>> upvalueNamesByProto;
-};
-
 struct DecodedInstruction {
 	uint32_t word = 0;
 	uint32_t bx = 0;
@@ -639,8 +559,21 @@ struct Upvalue : GCObject {
 	Value value = valueNil();
 };
 
+struct Blua32RuntimeFunction {
+	u32 address = 0;
+	u32 codeAddress = 0;
+	u32 codeByteCount = 0;
+	u32 numParams = 0;
+	u32 maxStack = 0;
+	bool isVararg = false;
+	bool staticClosure = false;
+	std::vector<Blua32UpvalueRecord> upvalues;
+	Blua32ExecutionImage* image = nullptr;
+	u32 index = 0;
+};
+
 struct Closure : GCObject {
-	int protoIndex = 0;
+	u32 functionAddress = 0;
 	size_t upvalueCount = 0;
 	Upvalue** upvalues = nullptr;
 	size_t trackedHeapBytes = 0;
@@ -658,6 +591,52 @@ struct TableLoadInlineCache {
 	Value value = valueNil();
 };
 
+constexpr size_t DECODED_PAGE_SHIFT = 8;
+constexpr size_t DECODED_PAGE_WORDS = 1u << DECODED_PAGE_SHIFT;
+constexpr size_t DECODED_PAGE_MASK = DECODED_PAGE_WORDS - 1u;
+
+struct DecodedInstructionPage {
+	std::array<DecodedInstruction, DECODED_PAGE_WORDS> words{};
+};
+
+struct Blua32MediaImage {
+	Blua32ImageLayout layout;
+	Blua32BootHeader boot;
+	const Blua32SymbolsImage* symbols = nullptr;
+	int cartridgeSlot = -1;
+};
+
+struct Blua32ExecutionImage {
+	Blua32ImageLayout layout;
+	Blua32BootHeader boot;
+	const Blua32SymbolsImage* symbols = nullptr;
+	int cartridgeSlot = -1;
+	Blua32ExecutionImage* systemImage = nullptr;
+	std::vector<Blua32RuntimeFunction> functions;
+	std::vector<Value> constPool;
+	std::vector<u32> globalSlots;
+	std::vector<u32> systemGlobalSlots;
+	std::vector<DecodedInstructionPage> decodedPages;
+	size_t decodedWordCount = 0;
+	std::vector<TableLoadInlineCache> tableLoadCaches;
+	std::vector<Closure*> staticClosures;
+};
+
+struct CpuDebugState {
+	const Blua32ImageLayout* image = nullptr;
+	const Blua32SymbolsImage* symbols = nullptr;
+	u32 pc = 0;
+	u32 instruction = 0;
+};
+
+struct CpuCallStackEntry {
+	const Blua32ImageLayout* image = nullptr;
+	const Blua32SymbolsImage* symbols = nullptr;
+	u32 functionAddress = 0;
+	u32 functionIndex = 0;
+	u32 pc = 0;
+};
+
 enum class RunResult {
 	Halted,
 	Yielded,
@@ -670,8 +649,9 @@ enum class ProtectedCallKind : uint8_t {
 };
 
 struct CallFrame {
-	int protoIndex = 0;
-	int pc = 0;
+	u32 functionAddress = 0;
+	Blua32RuntimeFunction* functionRecord = nullptr;
+	u32 pc = 0;
 	int varargBase = 0;
 	int varargCount = 0;
 	Value* registers = nullptr;
@@ -682,7 +662,7 @@ struct CallFrame {
 	int returnCount = 0;
 	int top = 0;
 	bool captureReturns = false;
-	int callSitePc = 0;
+	u32 callSitePc = 0;
 	bool isExceptionFrame = false;
 	bool isNonMaskableExceptionFrame = false;
 };
@@ -749,7 +729,8 @@ struct CpuObjectState {
 	std::vector<CpuTableHashNodeSnapshot> hash;
 	int hashFree = -1;
 	CpuValueState metatable;
-	int protoIndex = 0;
+	u32 functionAddress = 0;
+	bool closureCanonical = false;
 	std::vector<int> upvalues;
 	bool upvalueOpen = false;
 	int upvalueIndex = 0;
@@ -758,8 +739,8 @@ struct CpuObjectState {
 };
 
 struct CpuFrameState {
-	int protoIndex = 0;
-	int pc = 0;
+	u32 functionAddress = 0;
+	u32 pc = 0;
 	int closureRef = -1;
 	std::vector<CpuValueState> registers;
 	std::vector<CpuValueState> varargs;
@@ -767,7 +748,7 @@ struct CpuFrameState {
 	int returnCount = 0;
 	int top = 0;
 	bool captureReturns = false;
-	int callSitePc = 0;
+	u32 callSitePc = 0;
 	bool isExceptionFrame = false;
 	bool isNonMaskableExceptionFrame = false;
 };
@@ -788,15 +769,15 @@ struct CpuRootValueState {
 };
 
 struct CpuRuntimeState {
+	int executionCartridgeSlot = -1;
 	std::vector<CpuRootValueState> systemGlobals;
 	std::vector<CpuRootValueState> globals;
-	std::vector<CpuRootValueState> moduleCache;
 	std::vector<CpuFrameState> frames;
 	std::vector<CpuProtectedCallState> protectedCalls;
 	std::vector<CpuValueState> lastReturnValues;
 	std::vector<CpuObjectState> objects;
 	std::vector<int> openUpvalues;
-	int lastPc = 0;
+	u32 lastPc = 0;
 	uint32_t lastInstruction = 0;
 	int instructionBudgetRemaining = 0;
 	bool haltedUntilIrq = false;
@@ -959,15 +940,16 @@ class CPU {
 public:
 	CPU(Memory& memory, IrqController& irqController);
 
-	void setProgram(Program* program, const ProgramRuntimeSymbols& runtimeSymbols, ProgramMetadata* metadata, int systemIrqProtoIndex, int cartIrqProtoIndex, int systemExceptionProtoIndex);
-	void relocateActiveFrames(std::span<const int> programCounterRelocations);
-	void clearProgramEnvironment();
-	Program* getProgram() const { return m_program; }
+	void mountExecutableMedia(const Blua32MediaSymbols& symbols);
+	void remountExecutableMedia();
+	void clearExecutionEnvironment();
+	u32 systemStartupFunctionAddress() const { return m_systemImage->boot.startupFunctionAddress; }
+	bool isCartridgeExecutionActive() const { return m_activeExecutionImage->cartridgeSlot >= 0; }
+	int activeCartridgeSlot() const { return m_activeExecutionImage->cartridgeSlot; }
 	StringPool& stringPool() { return m_stringPool; }
 	const StringPool& stringPool() const { return m_stringPool; }
 	Memory& memory() { return m_memory; }
 	const Memory& memory() const { return m_memory; }
-	void setExternalRootMarker(std::function<void(GcHeap&)> marker) { m_externalRootMarker = std::move(marker); }
 	void setStringIndexTable(Table* table) { m_stringIndexTable = table; }
 	void setGlobalByKey(const Value& key, const Value& value);
 	void setSystemGlobalByKey(const Value& key, const Value& value);
@@ -986,14 +968,13 @@ public:
 		std::function<std::optional<std::pair<Value, Value>>(const Value&)> nextEntry
 	);
 	Table* createTable(int arraySize = 0, int hashSize = 0);
-	Closure& rootClosure(int protoIndex) { return m_staticClosures[static_cast<size_t>(protoIndex)]; }
 
-	void start(int entryProtoIndex, NativeArgsView args = {}, u32 statusWord = CPU_STATUS_CART_ENTRY);
+	void start(u32 functionAddress, NativeArgsView args = {}, u32 statusWord = CPU_STATUS_CART_ENTRY);
 	void call(Closure& closure, NativeArgsView args = {}, int returnCount = 0);
 	void callExternal(Closure& closure, NativeArgsView args = {});
 	NativeResults* swapExternalReturnSink(NativeResults* sink);
-	CpuRuntimeState captureRuntimeState(const std::unordered_map<std::string, Value>& moduleCache) const;
-	void restoreRuntimeState(const CpuRuntimeState& state, std::unordered_map<std::string, Value>& moduleCache);
+	CpuRuntimeState captureRuntimeState() const;
+	void restoreRuntimeState(const CpuRuntimeState& state);
 	void requestYield();
 	void clearYieldRequest();
 	void haltUntilIrq();
@@ -1037,8 +1018,9 @@ public:
 
 	int getFrameDepth() const { return static_cast<int>(m_frames.size()); }
 	bool hasFrames() const { return !m_frames.empty(); }
-	std::optional<SourceRange> getDebugRange(int pc) const;
-	std::vector<std::pair<int, int>> getCallStack() const;
+	CpuDebugState getDebugState() const;
+	std::optional<SourceRange> getDebugRange(u32 pc) const;
+	std::vector<CpuCallStackEntry> getCallStack() const;
 	int getFrameRegisterCount(int frameIndex) const;
 	Value readFrameRegister(int frameIndex, int registerIndex) const;
 	bool hasFrameUpvalue(int frameIndex, int upvalueIndex) const;
@@ -1046,7 +1028,7 @@ public:
 
 	int instructionBudgetRemaining = 0;
 	std::vector<Value> lastReturnValues;
-	int lastPc = 0;
+	u32 lastPc = 0;
 	uint32_t lastInstruction = 0;
 	Table* globals = nullptr;
 
@@ -1074,14 +1056,32 @@ private:
 	void finishProtectedContinuation(size_t continuationIndex, int resultCount);
 	bool handleProtectedCallError(Value errorValue);
 	void runHousekeeping();
-	void initializeGlobalSlots(const ProgramRuntimeSymbols& runtimeSymbols, const std::unordered_map<StringId, Value>& previousSystemGlobals);
-	void materializeStaticClosures();
+	const Blua32ExecutionImage* executionImageForPc(u32 pc) const;
+	std::vector<u32> registerGlobalNames(const std::vector<std::string>& names, bool system);
+	std::optional<Blua32MediaImage> decodeExecutableMedia(
+		u32 romBaseAddress,
+		int cartridgeSlot,
+		const Blua32SymbolsImage* symbols
+	);
+	std::unique_ptr<Blua32ExecutionImage> activateExecutableImage(Blua32MediaImage&& media);
+	Blua32ExecutionImage* cartridgeImageForExecution(size_t slot);
+	void mountExecutableImages(
+		const Blua32SymbolsImage* systemSymbols,
+		const Blua32SymbolsImage* slot0Symbols,
+		const Blua32SymbolsImage* slot1Symbols
+	);
+	void decodeImageText(Blua32ExecutionImage& image);
+	Closure* staticClosureAtAddress(u32 address);
+	Blua32RuntimeFunction* functionRecordInImage(Blua32ExecutionImage& image, u32 address) const;
+	Blua32RuntimeFunction* functionRecordInExecutionDomain(Blua32ExecutionImage& executionImage, u32 address) const;
+	Blua32RuntimeFunction* functionRecordOnSelectedBus(u32 address);
+	void executeFunctionAddress(u32 functionAddress);
 	CallFrame* pushFrame(CallFrame& caller, Closure* closure, int argBase, int argCount,
-		int returnBase, int returnCount, bool captureReturns, int callSitePc);
+		int returnBase, int returnCount, bool captureReturns, u32 callSitePc);
 	CallFrame* pushFrame(Closure* closure, const Value* args, size_t argCount,
-		int returnBase, int returnCount, bool captureReturns, int callSitePc);
-	Closure* createTrackedClosure(int protoIndex, size_t upvalueCount);
-	Closure* createClosure(CallFrame& frame, int protoIndex);
+		int returnBase, int returnCount, bool captureReturns);
+	Closure* createTrackedClosure(u32 functionAddress, size_t upvalueCount);
+	Closure* createClosure(CallFrame& frame, Blua32RuntimeFunction& functionRecord);
 	void closeUpvalues(CallFrame& frame);
 	Upvalue* findOpenUpvalue(const CallFrame& frame, int index) const;
 	const Value& readUpvalue(Upvalue* upvalue);
@@ -1097,9 +1097,9 @@ private:
 	Value resolveTableIntegerIndex(Table* table, int index);
 	Value resolveTableFieldIndex(Table* table, StringId key);
 	Value loadTableIndex(const Value& base, const Value& key);
-	Value loadTableIntegerIndexCached(int cacheIndex, const Value& base, int index);
+	Value loadTableIntegerIndexCached(Blua32ExecutionImage& image, int cacheIndex, const Value& base, int index);
 	Value loadTableIntegerIndex(const Value& base, int index);
-	Value loadTableFieldIndexCached(int cacheIndex, const Value& base, StringId key);
+	Value loadTableFieldIndexCached(Blua32ExecutionImage& image, int cacheIndex, const Value& base, StringId key);
 	Value loadTableFieldIndex(const Value& base, StringId key);
 	void storeTableIndex(const Value& base, const Value& key, const Value& value);
 	void storeTableIntegerIndex(const Value& base, int index, const Value& value);
@@ -1115,24 +1115,24 @@ private:
 	void releaseNativeLocalRoots(size_t base);
 	void trackNativeLocalRoot(Value value);
 
-	void decodeProgram();
-	DecodedInstruction& decodedSlotForWrite(size_t wordIndex);
-	const DecodedInstruction& decodedAtWordIndex(int wordIndex) const {
-		return m_decodedPages[static_cast<size_t>(wordIndex) >> DECODED_PAGE_SHIFT]
+	DecodedInstruction& decodedSlotForWrite(Blua32ExecutionImage& image, size_t wordIndex);
+	const DecodedInstruction& decodedAtWordIndex(const Blua32ExecutionImage& image, size_t wordIndex) const {
+		return image.decodedPages[wordIndex >> DECODED_PAGE_SHIFT]
 			.words[static_cast<size_t>(wordIndex) & DECODED_PAGE_MASK];
 	}
 	void skipNextInstruction(CallFrame& frame);
 	void clearHaltAfterAcceptedInterrupt();
-	void enterAsynchronousException(int protoIndex, u32 causeWord);
 	void enterSynchronousException(CallFrame& interruptedFrame, u32 causeWord);
 	void enterSynchronousAddressException(CallFrame& interruptedFrame, u32 causeWord, u32 address);
-	void enterException(int protoIndex, u32 causeWord, u32 epcWord);
+	void enterException(Blua32ExecutionImage& image, u32 functionAddress, u32 causeWord, u32 epcWord);
 	void hardHalt();
 	void blockMappedWrite(CallFrame& frame, uint32_t address);
 	void markRoots(GcHeap& heap);
 
-	Program* m_program = nullptr;
-	ProgramMetadata* m_metadata = nullptr;
+	std::unique_ptr<Blua32ExecutionImage> m_systemImage;
+	std::array<std::optional<Blua32MediaImage>, 2> m_cartridgeMediaImages;
+	std::array<std::unique_ptr<Blua32ExecutionImage>, 2> m_cartridgeImages;
+	Blua32ExecutionImage* m_activeExecutionImage = nullptr;
 	std::vector<std::unique_ptr<CallFrame>> m_frames;
 	ScratchBuffer<ProtectedCallContinuation> m_protectedCallContinuations;
 	size_t m_protectedCallDepth = 0;
@@ -1141,7 +1141,7 @@ private:
 	bool m_interruptEventPending = false;
 	bool m_memoryWriteBlocked = false;
 	uint32_t m_memoryWriteBlockedAddress = 0;
-	int m_currentInstructionPc = 0;
+	u32 m_currentInstructionPc = 0;
 	bool m_hardHalted = false;
 	u32 m_statusWord = CPU_STATUS_CART_ENTRY;
 	u32 m_causeWord = 0;
@@ -1151,18 +1151,15 @@ private:
 	u32 m_nmiReturnEpcWord = 0;
 	u32 m_nmiReturnBadAddressWord = 0;
 	bool m_nonMaskableInterruptPending = false;
-	int m_systemIrqProtoIndex;
-	int m_cartIrqProtoIndex;
-	int m_systemExceptionProtoIndex;
+	u32 m_systemExceptionFunctionAddress = 0;
 	bool m_yieldRequested = false;
 	bool m_hostExternalCallActive = false;
 	Memory& m_memory;
 	IrqController& m_irqController;
 	StringPool m_stringPool;
 	GcHeap m_heap;
+	std::unordered_map<u32, Closure> m_staticClosuresByAddress;
 	std::array<BuiltinFunction, BUILTIN_FUNCTION_COUNT> m_builtinFunctions;
-	std::deque<Closure> m_staticClosures;
-	std::function<void(GcHeap&)> m_externalRootMarker;
 	NativeResults* m_externalReturnSink = nullptr;
 
 	ScratchBuffer<NativeResults> m_nativeReturnScratch;
@@ -1174,17 +1171,6 @@ private:
 	static constexpr int MAX_POOLED_FRAMES = 32;
 	std::vector<Value> m_stack;
 	int m_stackTop = 0;
-	static constexpr size_t DECODED_PAGE_SHIFT = 8;
-	static constexpr size_t DECODED_PAGE_WORDS = 1u << DECODED_PAGE_SHIFT;
-	static constexpr size_t DECODED_PAGE_MASK = DECODED_PAGE_WORDS - 1u;
-
-	struct DecodedInstructionPage {
-		std::array<DecodedInstruction, DECODED_PAGE_WORDS> words{};
-	};
-
-	std::vector<DecodedInstructionPage> m_decodedPages;
-	size_t m_decodedWordCount = 0;
-	std::vector<TableLoadInlineCache> m_tableLoadCaches;
 	Value m_indexKey = valueNil();
 	std::vector<StringId> m_systemGlobalNames;
 	std::vector<Value> m_systemGlobalValues;

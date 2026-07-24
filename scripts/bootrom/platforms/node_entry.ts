@@ -11,7 +11,7 @@ import { HeadlessGameViewHost, type HeadlessPresentedFrame } from '../../../mach
 import { HeadlessCaptureCoordinator, deriveHeadlessCaptureOutputDir, type ScheduledHeadlessCapture, type ScheduledHeadlessFrameCapture } from './headless_capture';
 import { printHeadlessCpuProfile } from './cpu_profile_report';
 import { runHostTest } from './hostrunner/host_test_runner';
-import { buildHostTestProgram, HOST_TEST_API_PATH } from './hostrunner/host_test_program';
+import { buildHostTestCartridge, HOST_TEST_API_PATH } from './hostrunner/host_test_cartridge';
 import { runIdeTest } from './hostrunner/ide_test_runner';
 
 declare const __BOOTROM_TARGET__: 'cli' | 'headless';
@@ -988,7 +988,7 @@ async function main(): Promise<void> {
 	if (cliOptions.testPath) {
 		const apiSource = await fs.readFile(path.resolve(HOST_TEST_API_PATH), 'utf8');
 		const testSource = await fs.readFile(path.resolve(cliOptions.testPath), 'utf8');
-		buffer = await buildHostTestProgram(systemRomBuffer, buffer, `${apiSource}\n${testSource}`);
+		buffer = await buildHostTestCartridge(systemRomBuffer, buffer, `${apiSource}\n${testSource}`);
 	}
 	installWorkspaceFetchBridge(workspaceRoot);
 

@@ -1,4 +1,4 @@
-import type { SourceRange } from '../../machine/cpu/cpu';
+import type { SourceRange } from '../../machine/cpu/blua32_symbols';
 
 type SourceRangeLike = {
 	readonly path: string;

@@ -18,14 +18,16 @@ import {
 import { buildLuaSources } from '../../machine/ts/lua/source_registry';
 import { compileLuaChunkToProgram } from '../../machine/ts/lua/compiler';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { BLUA32_IMAGE_ID } from '../../machine/ts/machine/cpu/blua32_image';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
-import { PROGRAM_IMAGE_ID, toLuaModulePath } from '../../machine/ts/machine/program/loader';
+import { toLuaModulePath } from '../../machine/ts/lua/module_path';
 import { parseCartridgeIndex } from '../../machine/ts/rompack/loader';
 import { SYSTEM_BOOT_ENTRY_PATH } from '../../machine/ts/core/system';
 import { decodeRomToc, ROM_TOC_HEADER_SIZE, ROM_TOC_INVALID_U32 } from '../../machine/ts/rompack/toc';
 import { encodeRomToc } from '../../machine/ts/rompack/tooling/toc_encode';
 import { buildGxTextureLayoutModuleSource, type GxTextureLayout } from '../../scripts/rompacker/gx_texture_layout';
+import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { parseLuaChunk } from './cpu_test_harness';
 
 const textEncoder = new TextEncoder();
@@ -131,10 +133,10 @@ test('buildLuaSources registers real Lua assets in one pass', () => {
 	assert.equal(registry.path2lua['bios/system.lua'], undefined);
 });
 
-test('release program images do not synthesize editable Lua source records', () => {
-	const programEntry: RomAsset = { resid: PROGRAM_IMAGE_ID, type: 'code', payload_id: 'system' };
-	const source = new TestRomSource([programEntry], {});
-	const registry = buildLuaSources(source, source, makeIndex('bios/bootrom.lua', [programEntry]), ['system']);
+test('release BLua32 images do not synthesize editable Lua source records', () => {
+	const imageEntry: RomAsset = { resid: BLUA32_IMAGE_ID, type: 'code', payload_id: 'system' };
+	const source = new TestRomSource([imageEntry], {});
+	const registry = buildLuaSources(source, source, makeIndex('bios/bootrom.lua', [imageEntry]), ['system']);
 
 	assert.equal(registry.can_boot_from_source, false);
 	assert.deepEqual(registry.records, []);
@@ -215,10 +217,11 @@ test('debug package source boot resolves the persisted GX texture layout module'
 			optLevel: 3,
 		},
 	);
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots(payload) });
+	const image = linkTestSystemBlua32(compiled);
+	const memory = new Memory({ systemRom: image.romBytes, cartridgeSlots: cartridgeSlots(payload) });
 	const cpu = new CPU(memory, new IrqController(memory));
-	cpu.setProgram(compiled.program, compiled.metadata, compiled.metadata, 0, 0, 0);
-	cpu.start(compiled.entryProtoIndex);
+	cpu.mountExecutableMedia({ system: image.symbols, cartridgeSlots: [null, null] });
+	cpu.start(image.vectors.startupFunctionAddress);
 
 	assert.equal(registry.module2lua[GX_TEXTURE_LAYOUT_MODULE_PATH].src, layoutSource);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
@@ -229,7 +232,7 @@ test('ROM TOC decode gives Lua assets an explicit zero update timestamp', () => 
 	const toc = encodeRomToc({
 			entries: [
 				{ resid: 'main', type: 'lua', source_path: 'cart.lua' },
-				{ resid: PROGRAM_IMAGE_ID, type: 'code' },
+				{ resid: BLUA32_IMAGE_ID, type: 'code' },
 			],
 		projectRootPath: 'carts/test',
 	});

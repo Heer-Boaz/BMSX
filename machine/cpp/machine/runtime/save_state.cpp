@@ -1,6 +1,5 @@
 #include "machine/runtime/save_state.h"
 
-#include "machine/runtime/cpu_state.h"
 #include "machine/runtime/save_machine_state.h"
 #include "machine/runtime/runtime.h"
 
@@ -9,8 +8,7 @@ namespace bmsx {
 RuntimeSaveState captureRuntimeSaveState(Runtime& runtime) {
 	RuntimeSaveState state;
 	state.machineState = captureRuntimeSaveMachineState(runtime);
-	state.cpuState = captureRuntimeCpuState(runtime);
-	state.systemProgramActive = !runtime.cartProgramStarted;
+	state.cpuState = runtime.machine.cpu.captureRuntimeState();
 	state.luaInitialized = runtime.m_luaInitialized;
 	state.luaRuntimeFailed = runtime.m_runtimeFailed;
 	state.pendingEntryCall = runtime.m_pendingCall == Runtime::PendingCall::Entry;
@@ -18,13 +16,8 @@ RuntimeSaveState captureRuntimeSaveState(Runtime& runtime) {
 }
 
 void applyRuntimeSaveState(Runtime& runtime, const RuntimeSaveState& state) {
-	if (state.systemProgramActive) {
-		runtime.enterSystemFirmware();
-	} else {
-		runtime.enterCartProgram();
-	}
 	applyRuntimeSaveMachineState(runtime, state.machineState);
-	applyRuntimeCpuState(runtime, state.cpuState);
+	runtime.machine.cpu.restoreRuntimeState(state.cpuState);
 	runtime.m_luaInitialized = state.luaInitialized;
 	runtime.m_runtimeFailed = state.luaRuntimeFailed;
 	runtime.m_pendingCall = state.pendingEntryCall ? Runtime::PendingCall::Entry : Runtime::PendingCall::None;

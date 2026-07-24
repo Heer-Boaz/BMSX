@@ -32,8 +32,6 @@ class MachineManager;
 class TextureManager;
 class Runtime;
 struct RuntimeOptions;
-struct ProgramImage;
-struct ProgramMetadata;
 struct ResolvedRuntimeTiming;
 
 /* ============================================================================
@@ -112,7 +110,6 @@ public:
 	const Runtime& runtime() const;
 	Runtime& ensureRuntime(const RuntimeOptions& options);
 	Registry& registry() { return Registry::instance(); }
-	const MachineManifest& machineManifest() const { return *machine_manifest; }
 	HostClock* clock() { return m_platform->clock(); }
 	SoundMaster* soundMaster() { return m_sound_master.get(); }
 	TextureManager* texmanager() { return m_texture_manager.get(); }
@@ -153,10 +150,6 @@ public:
 	static MachineManager& instance();
 
 private:
-	struct LoadedProgramImages {
-		std::unique_ptr<ProgramImage> image;
-		std::unique_ptr<ProgramMetadata> metadata;
-	};
 	struct LoadedCartridgeSlot {
 		MmapFile file;
 		std::vector<u8> owned;
@@ -173,23 +166,18 @@ private:
 	std::unique_ptr<Runtime> m_runtime;
 
 	// ROM state
-	RuntimeRomPackage m_system_rom;
-	RuntimeRomPackage m_cart_rom;
 	RomImage m_system_rom_image;
 	std::array<LoadedCartridgeSlot, CARTRIDGE_SLOT_COUNT> m_cartridge_slots;
 	CartridgeSlotMediaPair m_cartridge_media{};
-	u32 m_boot_cartridge_slot = 0;
 	MmapFile m_system_rom_file;
 	std::vector<u8> m_system_rom_owned;
 	bool m_rom_loaded = false;
 	bool m_system_rom_loaded = false;
 
-	void setMachineManifest(const MachineManifest& manifest);
 	void configureViewForGpuReset();
-	LoadedProgramImages loadProgramImagesFromRom(const RuntimeRomPackage& romPackage, const RomImage& image) const;
 	bool loadSystemRomInternal(const u8* data, size_t size);
 	bool bootLoadedCartridgeSlots();
-	bool bootSystemStartupProgram();
+	bool bootSystemFirmware();
 	void flushSystemOutput(Runtime& runtime);
 
 	MachineManagerState m_state = MachineManagerState::Uninitialized;
@@ -204,7 +192,6 @@ private:
 	u64 m_debugTickHostFrames = 0;
 	u64 m_debugTickUpdates = 0;
 	i64 m_debugLastUpdateCountTotal = 0;
-	const MachineManifest* machine_manifest = nullptr;
 	TickTiming m_last_tick_timing;
 	RenderTiming m_last_render_timing;
 	RenderPresentationState m_screen;

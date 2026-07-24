@@ -4,12 +4,6 @@ Dit bestand is alleen de werkvoorraad. Afgeronde hardwarecontracten horen in
 [`architecture.md`](architecture.md); testuitslagen en implementatiegeschiedenis
 horen niet in deze lijst.
 
-## Uitvoerbaar
-
-| ID | Nog te doen | Klaar wanneer | Afhankelijk van |
-| --- | --- | --- | --- |
-| `BIOS-TERM-EXT-01` | Voeg BIOS-commando `CALL <name> [arguments]` toe voor Lua-extensies uit een cartridge; developer-tools blijven cartcode. | Descriptor-, argument-, resultaat-, timing-, completion- en pager-ABI zijn vastgelegd en één developer-cart werkt zonder hostcallbacks. | Afgerond [slotcontract](architecture.md#cartridge-expansion-and-terminal-call). |
-
 ## Doorlopende performance-audit
 
 | ID | Opdracht | Klaar wanneer |
@@ -33,3 +27,5 @@ horen niet in deze lijst.
 | ID | Hervatten wanneer |
 | --- | --- |
 | `GX-SW-01` | Een profiel op representatieve low-end ARM-hardware een concrete software-rasterizerhotspot aanwijst. |
+| `BIOS-TERM-EXT-01` | Er een concrete behoefte is en de command-, call/return- en terminal-output-ABI voor een door firmware geselecteerde developer-cartridge is ontworpen. |
+| `IDE-HR-01` | De fysieke BLua32-kern is afgerond; verplaats dan linker-baselines, revisiesymbolen en PC-relocatie volledig naar IDE/debugtooling zonder heap, globals, RAM, devices, audio of de bestaande herhaalde Hot-Resume-flow te verliezen. |

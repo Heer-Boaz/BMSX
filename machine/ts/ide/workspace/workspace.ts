@@ -1,6 +1,6 @@
 import { machineManager } from '../../core/machine_manager';
-import { registerLuaSourceRecord, resolveLuaSourceRecord, type LuaSourceRecord, type LuaSourceRegistry } from '../../lua/source_registry';
-import { toLuaModulePath } from '../../machine/program/loader';
+import { registerLuaSourceRecord, type LuaSourceRecord, type LuaSourceRegistry } from '../../lua/source_registry';
+import { toLuaModulePath } from '../../lua/module_path';
 import type { StorageService } from '../../platform';
 import { ROM_GENERATED_MODULE_PATHS } from '../../rompack/format';
 import type { LuaResourceCreationRequest, ResourceDescriptor } from '../../rompack/tooling/resource';
@@ -19,39 +19,40 @@ import {
 import { workspaceSourceCache } from './cache';
 import { clearWorkspaceDirtyBuffers } from '../workbench/workspace/autosave';
 import { runtimeSemanticCache } from '../editor/contrib/intellisense/semantic/workspace/runtime';
+import { developmentCartridgeSource, resolveRuntimeLuaSource } from '../runtime/sources';
 
 export * from './files';
 export { joinWorkspacePaths } from './path';
 
 function resolveEditableCartLuaSources(): LuaSourceRegistry {
 	const sources = machineManager.sourceState;
-	return sources.cartLuaSources ?? sources.activeLuaSources;
+	const cartridge = developmentCartridgeSource(sources);
+	return cartridge ? cartridge.luaSources : sources.activeLuaSources;
 }
 
 function markLuaSourceRegistryChanged(registry: LuaSourceRegistry): void {
 	const sources = machineManager.sourceState;
 	if (registry === sources.systemLuaSources) {
-		sources.systemProgramMediaDirty = true;
+		sources.systemBlua32MediaDirty = true;
 	} else {
-		sources.cartProgramMediaDirty = true;
+		for (let slot = 0; slot < sources.cartridgeSlots.length; slot += 1) {
+			if (sources.cartridgeSlots[slot]?.luaSources === registry) {
+				sources.cartridgeBlua32MediaDirty[slot] = true;
+				runtimeSemanticCache.clear();
+				return;
+			}
+		}
+		throw new Error('Lua source registry is not installed.');
 	}
 	runtimeSemanticCache.clear();
 }
 
 function resolveEditableLuaSource(path: string): { registry: LuaSourceRegistry; asset: LuaSourceRecord } {
-	const sources = machineManager.sourceState;
-	const cartRegistry = sources.cartLuaSources;
-	if (cartRegistry) {
-		const cartAsset = resolveLuaSourceRecord(cartRegistry, path);
-		if (cartAsset) {
-			return { registry: cartRegistry, asset: cartAsset };
-		}
-	}
-	const asset = resolveLuaSourceRecord(sources.systemLuaSources, path);
-	if (!asset) {
+	const source = resolveRuntimeLuaSource(machineManager.sourceState, path);
+	if (!source) {
 		throw new Error(`Missing Lua source registry for '${path}'.`);
 	}
-	return { registry: sources.systemLuaSources, asset };
+	return { registry: source.registry, asset: source.record };
 }
 
 export function applyLuaCodeTabSources(snapshots: ReadonlyArray<{ path: string; source: string }>): void {
@@ -125,7 +126,7 @@ export async function createLuaResource(request: LuaResourceCreationRequest): Pr
 	registry.can_boot_from_source = true;
 	markLuaSourceRegistryChanged(registry);
 	const filesystemPath = asset.source_path;
-	await persistWorkspaceSourceFile(filesystemPath, contents, systemSource ? sources.systemProjectRootPath : sources.cartProjectRootPath);
+	await persistWorkspaceSourceFile(filesystemPath, contents, registry.projectRootPath);
 	const descriptor: ResourceDescriptor = { path: asset.source_path, type: 'lua' };
 	return descriptor;
 }
@@ -158,7 +159,7 @@ async function discardWorkspaceCanonicalPath(storage: StorageService, root: stri
 }
 
 export async function clearWorkspaceArtifacts(cart: LuaSourceRegistry, storage: StorageService): Promise<void> {
-	const root = machineManager.sourceState.cartProjectRootPath;
+	const root = cart.projectRootPath;
 	for (const asset of cart.records) {
 		if (asset.generated) {
 			continue;
@@ -173,7 +174,7 @@ export async function clearWorkspaceArtifacts(cart: LuaSourceRegistry, storage: 
 }
 
 async function clearWorkspaceDirtyFiles(cart: LuaSourceRegistry, storage: StorageService): Promise<void> {
-	const root = machineManager.sourceState.cartProjectRootPath;
+	const root = cart.projectRootPath;
 	const scratchPaths = await collectScratchWorkspaceDirtyPaths(root);
 	for (const asset of cart.records) {
 		if (asset.generated) {
@@ -195,7 +196,7 @@ async function reapplyWorkspaceBaseline(registry: LuaSourceRegistry): Promise<vo
 		registry,
 		storage: machineManager.platform.storage,
 		includeServer: false,
-		projectRootPath: machineManager.sourceState.cartProjectRootPath,
+		projectRootPath: registry.projectRootPath,
 		timestampNow: machineManager.platform.clock.dateNow(),
 	});
 	if (changed.size !== 0) {

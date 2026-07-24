@@ -1,18 +1,20 @@
-import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { splitText } from '../../machine/ts/common/text_lines';
 import { LuaLexer } from '../../machine/ts/lua/syntax/lexer';
 import { LuaParser } from '../../machine/ts/lua/syntax/parser';
-import { CPU, OpCode, RunResult, type Program, type ProgramMetadata } from '../../machine/ts/machine/cpu/cpu';
-import { disassembleProgram } from '../../machine/ts/machine/cpu/disassembler';
+import { OpCode, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { writeInstruction, INSTRUCTION_BYTES } from '../../machine/ts/machine/cpu/instruction_format';
 import { MemoryAccessKind } from '../../machine/ts/machine/memory/access_kind';
-import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { RAM_BASE } from '../../machine/ts/machine/memory/map';
-import { Memory } from '../../machine/ts/machine/memory/memory';
-import { compileLuaChunkToProgram } from '../../machine/ts/lua/compiler';
+import { compileLuaChunkToProgram, type CompiledProgram } from '../../machine/ts/lua/compiler';
+import {
+	createTestSystemCpu,
+	disassembleTestBlua32Functions,
+	linkRawTestSystemBlua32,
+	linkTestSystemBlua32,
+} from '../helpers/blua32';
 import { runCompiledLua } from './cpu_test_harness';
 
 const TEST_RAM_BASE = RAM_BASE + 0x20000;
@@ -27,20 +29,12 @@ function compileSource(source: string): ReturnType<typeof compileLuaChunkToProgr
 	return compileLuaChunkToProgram(parseSource(source), [], { entrySource: source });
 }
 
-function makeMetadata(instructionCount: number): ProgramMetadata {
-	return {
-		debugRanges: new Array(instructionCount).fill(null),
-		protoIds: ['main'],
-		resumePointsByProto: [[]],
-		localSlotsByProto: [[]],
-		upvalueNamesByProto: [[]],
-		globalNames: [],
-		systemGlobalNames: [],
-		exportProtoIdBySlot: {},
-	};
+function disassembleEntryFunction(compiled: CompiledProgram): string {
+	const image = linkTestSystemBlua32(compiled);
+	return disassembleTestBlua32Functions(image, [image.vectors.entryFunctionAddress]);
 }
 
-function makeDisplacedMemoryProgram(cpu: CPU): Program {
+function makeDisplacedMemoryCode(): Uint8Array {
 	const instructionCount = 10;
 	const code = new Uint8Array(instructionCount * INSTRUCTION_BYTES);
 	writeInstruction(code, 0, OpCode.LOADK, 0, 0, 0, 0);
@@ -53,30 +47,17 @@ function makeDisplacedMemoryProgram(cpu: CPU): Program {
 	writeInstruction(code, 7, OpCode.LOADK, 4, 0, 4, 0);
 	writeInstruction(code, 8, OpCode.STORE_MEM_WORDS_D, 3, 0, 2, 16);
 	writeInstruction(code, 9, OpCode.RET, 2, 1, 0, 0);
-	const pool = cpu.stringPool;
-	return {
-		code,
-		constPool: [TEST_RAM_BASE, 0x11111111, 0x22222222, 0x33333333, 0x44444444],
-		protos: [{
-			entryPC: 0,
-			codeLen: code.length,
-			numParams: 0,
-			isVararg: false,
-			maxStack: 5,
-			upvalueDescs: [],
-			staticClosure: false,
-		}],
-		stringPool: pool,
-		constPoolStringPool: pool,
-	};
+	return code;
 }
 
 test('CPU executes displaced memory load/store opcodes', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
-	const cpu = new CPU(memory, new IrqController(memory));
-	const metadata = makeMetadata(10);
-	cpu.setProgram(makeDisplacedMemoryProgram(cpu), metadata, metadata, 0, 0, 0);
-	cpu.start(0);
+	const finalized = linkRawTestSystemBlua32({
+		text: makeDisplacedMemoryCode(),
+		functions: [{ firstWord: 0, wordCount: 10, maxStack: 5 }],
+		constants: [TEST_RAM_BASE, 0x11111111, 0x22222222, 0x33333333, 0x44444444],
+	});
+	const { cpu, memory } = createTestSystemCpu(finalized);
+	cpu.start(finalized.vectors.startupFunctionAddress);
 
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	assert.deepEqual(Array.from(cpu.lastReturnValues), [0x22222222]);
@@ -93,7 +74,7 @@ mem[base + 48] = 7
 return mem[base + 48]
 `;
 	const compiled = compileSource(source);
-	const disassembly = disassembleProgram(compiled.program, compiled.metadata, { showProtoHeaders: false });
+	const disassembly = disassembleEntryFunction(compiled);
 
 	assert.match(disassembly, /STORE_MEM_D r\d+, r\d+, 0, 48/);
 	assert.match(disassembly, /LOAD_MEM_D r\d+, r\d+, 0, 48/);
@@ -101,14 +82,14 @@ return mem[base + 48]
 });
 
 test('compiler keeps generic memory path for out-of-range or unaligned offsets', () => {
-	const outOfRange = disassembleProgram(compileSource(`
+	const outOfRange = disassembleEntryFunction(compileSource(`
 local base = ${TEST_RAM_BASE}
 mem[base + 1024] = 7
-`).program, null, { showProtoHeaders: false });
-	const unaligned = disassembleProgram(compileSource(`
+`));
+	const unaligned = disassembleEntryFunction(compileSource(`
 local base = ${TEST_RAM_BASE}
 mem8[base + 2] = 7
-`).program, null, { showProtoHeaders: false });
+`));
 
 	assert.equal(outOfRange.includes('STORE_MEM_D'), false);
 	assert.match(outOfRange, /STORE_MEM r\d+, r\d+/);
@@ -173,7 +154,7 @@ packet->weight = 9
 return packet->color, packet->weight
 `;
 	const compiled = compileSource(source);
-	const disassembly = disassembleProgram(compiled.program, compiled.metadata, { showProtoHeaders: false });
+	const disassembly = disassembleEntryFunction(compiled);
 
 	assert.match(disassembly, /STORE_MEM_D r\d+, r\d+, 4, 0/);
 	assert.match(disassembly, /STORE_MEM_D r\d+, r\d+, 0, 20/);
@@ -198,7 +179,7 @@ matrices[1].m[3] = 8
 return mem[base], mem[base + sizeof(q16_matrix) + 12]
 `;
 	const compiled = compileSource(source);
-	const disassembly = disassembleProgram(compiled.program, compiled.metadata, { showProtoHeaders: false });
+	const disassembly = disassembleEntryFunction(compiled);
 
 	assert.equal(disassembly.includes('NEWT'), false);
 	assert.match(disassembly, /STORE_MEM_D r\d+, r\d+, 0, 0/);

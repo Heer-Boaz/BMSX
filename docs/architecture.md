@@ -139,7 +139,7 @@ Lua globals. This includes:
 - status, control, IRQ, and fault bit values;
 - command words, opcodes, packet fields, and descriptor layouts;
 - fixed-point formats, record sizes, offsets, and capacities;
-- ROM/program/header constants and memory-map addresses.
+- ROM/BLua32-image/header constants and memory-map addresses.
 
 The owning TS/C++ machine files define those constants for the emulator. The
 hardware documentation lists cart-visible values. Cart, BIOS, or cart-library
@@ -313,7 +313,7 @@ cycle zero remains a valid hardware deadline.
 Ownership terms are architectural roles, not interchangeable directory labels:
 
 - `machine` owns cart-observable semantics: CPU, memory, MMIO, firmware,
-  scheduler, devices, ROM/program formats, and deterministic save-state.
+  scheduler, devices, ROM/BLua32-image formats, and deterministic save-state.
 - `host` owns the process, window/device/runtime environment, files, physical
   input, audio/video presentation, external ABI callbacks, and execution loop.
 - `mode` is a behavior variant inside one host. A mode may choose pacing,
@@ -434,7 +434,7 @@ the deployment contract.
 ## Repository and package boundary policy
 
 Keep this repository as one monorepo while TS and C++ machine implementations
-need lockstep parity, the public machine API still moves, ROM/program/save-state
+need lockstep parity, the public machine API still moves, ROM/BLua32/save-state
 wire formats still change, host entrypoints still move with machine internals, and
 cross-language parity/golden cases need one CI slice.
 
@@ -442,7 +442,7 @@ Split repositories only after all of these are true:
 
 - `bmsx-machine` / C++ machine libraries have a stable public API.
 - Host entrypoints use only that public API, not internal imports/includes.
-- ROM, program, and save-state formats are releasable with explicit versions.
+- ROM, BLua32, and save-state formats are releasable with explicit versions.
 - Parity audits and golden cases can run as a published conformance suite.
 - External consumers exist that need independent versioning.
 
@@ -473,7 +473,7 @@ Rules:
   prove semantic parity; it only proves the mirrored surface is still accounted
   for.
 
-## ROM and program image
+## ROM and BLua32 executable images
 
 ROM data is CPU-visible source material.
 
@@ -485,21 +485,22 @@ Owners:
   `machine/cpp/rompack/toc.h/.cpp`.
 - Layered ROM lookup: `machine/ts/rompack/source.ts` and
   `machine/cpp/rompack/source.h/.cpp`.
-- Final program-image layout/loading:
-  `machine/ts/machine/program/*` and `machine/cpp/machine/program/*`.
+- BLua32 executable-image layout and CPU-side decode:
+  `machine/ts/machine/cpu/blua32_image.ts` and
+  `machine/cpp/machine/cpu/blua32_image.h/.cpp`.
 - Build-time Lua source compilation and Lua source registries:
   `machine/ts/lua/compiler.ts`, `machine/ts/lua/compiler/*`, and
   `machine/ts/lua/source_registry.ts`.
-- Program-object linking and ROM-tail writing:
-  `machine/ts/rompack/tooling/program_linker.ts` and
-  `machine/ts/rompack/tooling/program_tail.ts`.
-- Pack-time payload spans, final TOC records, and immutable program-prefix
+- BLua32 object linking and ROM-tail writing:
+  `machine/ts/rompack/tooling/blua32_linker.ts` and
+  `machine/ts/rompack/tooling/blua32_tail.ts`.
+- Pack-time payload spans, final TOC records, and immutable executable-prefix
   layout: `machine/ts/rompack/asset_layout.ts` and
-  `machine/ts/rompack/tooling/rom_layout.ts`.
+  `machine/ts/rompack/tooling/rom_prefix_layout.ts`.
 - ROM-header serialization shared by the packer and tail rebuilder:
   `machine/ts/rompack/tooling/header_encode.ts`.
 
-The ROM package and program image use the current wire records only. There is no
+The ROM package and BLua32 image use the current wire records only. There is no
 old-format reader and no decode path for obsolete records.
 
 Every top-level ROM section and every independently stored main, compiled,
@@ -515,8 +516,10 @@ likewise remain byte-packed. The producer does not insert padding inside a
 format, and consumers do not weaken CPU alignment or infer alternate layouts.
 
 Runtime package records describe ROM payloads; they do not own duplicate audio,
-atlas, or binary payload bytes. The active machine keeps one CPU-visible ROM
-backing per loaded layer. Native path-based libretro loads use read-only mapped
+atlas, or binary payload bytes. The browser IDE may decode package records for
+authoring views, but the native machine manager does not construct a parallel
+system or cartridge host package. The active machine keeps one CPU-visible ROM
+backing per loaded medium. Native path-based libretro loads use read-only mapped
 files for that backing; memory-buffer frontends provide data that the core owns
 once for lifetime safety. Node headless consumes the `fs.readFile` buffer
 directly. Guest code moves bytes from ROM to RAM/VRAM/APU through the machine;
@@ -528,10 +531,11 @@ aperture. The ROM label is an ordinary TOC asset. Texture streams use IMGDEC's
 `IMD1` format and audio uses its own codec where applicable; those asset
 datapaths do not turn the complete cartridge into a compressed container.
 
-Compiled Lua/YAML is source/program material, not mutable machine state. The
-compiler emits a tooling-owned program object with relocations. The ROM packer
-resolves those relocations at the actual physical `SYSTEM_ROM` or `CART_ROM`
-address and emits a final program image; neither runtime owns a linker.
+Compiled BLua is executable source material, not mutable machine state. BLua is
+the source dialect; BLua32 is BMSX's 32-bit instruction set and is not PUC-Lua
+bytecode. The compiler emits a tooling-owned BLua32 object with relocations. The
+ROM packer resolves those relocations at the actual physical `SYSTEM_ROM` or
+`CART_ROM` addresses and emits the final bytes; neither runtime owns a linker.
 
 The packer emits one immutable prefix: ordinary asset payload spans, per-entry
 metadata, and the manifest. It derives final TOC records from that layout
@@ -548,36 +552,119 @@ directly. Host runtime packages deliberately do not decode, copy, or cache cart
 texture records: the ROM bytes remain the single payload owner until guest DMA
 or an explicit tooling inspection reads them.
 
-`__program__` begins the deliberately mutable program tail after that prefix. Its
-ordinary TOC range contains the raw `[rodata | data-load-image | text]` bytes in
-that physical ROM, while its compiled range contains the final descriptor:
-placement, vectors, protos, const values, module records, section lengths, and
-resolved runtime slot symbols. The descriptor also carries a two-word static
-layout token over the absolute section bases, section lengths, and each storage
-symbol's name, offset, size, and alignment. Static physical sections precede text so an
-ordinary code-only Hot Resume cannot move retained ROM pointers merely because
-the instruction count changed. `__program_symbols__`, when present, follows it
-and contains debug metadata only. The movable TOC follows the program tail.
-Hot Resume therefore replaces only the ROM header, program bytes, symbols, and
-the TOC; asset, metadata, and manifest addresses remain unchanged.
+`__blua32__` begins the deliberately mutable executable tail after that prefix.
+It is one ordinary TOC payload containing a fixed binary image; it has no
+generic serializer descriptor and no parallel compiled range.
+`__blua32_symbols__`, when present, follows it and contains tooling metadata
+only. The movable TOC follows the executable tail. Hot Resume therefore
+replaces only the ROM header, executable bytes, symbols, and TOC; asset,
+metadata, and manifest addresses remain unchanged.
 
-The emulator core consumes only final images. It decodes the system and cart
-descriptors, retains views of their raw physical section bytes, and assembles the
-CPU's instruction/const/proto state as derived runtime data. TypeScript source
-builds and source registries stay on the compiler/rompack side and enter the
-machine through the same final-image boundary as native. Stripping
-`__program_symbols__` removes source ranges, local-slot names, and upvalue names;
-it does not change physical ROM bytes, boot, global slots, or restore behavior.
+The outer ROM header exposes the executable without a TOC lookup:
 
-CPU decode state is derived runtime infrastructure. The CPU decodes executable
-proto ranges into sparse pages and allocates table-load inline caches only for
-actual table-load opcodes. It must not allocate decode/cache state for gaps in
-the assembled text layout or for unused words in either physical ROM window.
+| Header byte | Word |
+| ---: | --- |
+| `32` | `__blua32__` byte offset in this physical ROM; zero means no executable image. |
+| `36` | `__blua32__` byte count. |
+| `40` | Startup function-record address. |
+| `44` | IRQ function-record address. |
+| `48` | Exception function-record address. |
+| `52` | Static-layout token low word. |
+| `56` | Static-layout token high word. |
+| `60` | Reserved, zero. |
+
+All addresses above are absolute CPU byte addresses. The current BLua32 image
+header is 96 little-endian bytes:
+
+| Byte | Field |
+| ---: | --- |
+| `0` | `BL32` magic. |
+| `4` | Image-format version. |
+| `8` | Complete image byte count. |
+| `12` | Flags; currently zero. |
+| `16`, `20` | Absolute function-table address and record count. |
+| `24`, `28` | Absolute constant-table address and record count. |
+| `32`, `36` | Absolute ordinary-global name table and count. |
+| `40`, `44` | Absolute system-global name table and count. |
+| `48`, `52` | Absolute shared-string bytes and byte count. |
+| `56`, `60` | Absolute `.rodata` bytes and byte count. |
+| `64`, `68` | Absolute `.data` load image and byte count. |
+| `72` | Writable `.data` VMA. |
+| `76`, `80` | Writable `.bss` VMA and byte count. |
+| `84`, `88` | Absolute text address and byte count. |
+| `92` | Reserved zero word. |
+
+Each 32-byte function record is 16-byte aligned and contains, in order, the
+absolute code address, code byte count, parameter count, maximum register
+count, raw function flags, absolute upvalue-table address, upvalue count, and
+one reserved word. A function record's physical address is the function's
+runtime identity. `CLOSURE` stores that address shifted right by four; its
+`WIDE` form covers every function record in the system and cartridge ROM
+windows. A four-byte upvalue word uses bit 31 for `in-stack` and bits 30--0 for
+the slot index.
+
+Each constant record is 16 bytes. Its first word selects nil, false, true,
+64-bit number, or string. Number payloads are little-endian binary64. String
+payloads contain an absolute address and byte count into the shared string
+bytes. Each global-name record is eight bytes with the same absolute string
+address and byte count. Global names are part of the Lua slot ABI; source paths,
+debug function ids, lexical ranges, local names, and workspace state are not.
+
+The image is laid out as header, `.rodata`, `.data` load bytes, function table,
+upvalue words, constant table, global-name tables, shared strings, and text,
+with the declared alignments. Keeping the static sections directly after the
+fixed header makes their physical addresses depend only on the static layout,
+not on edits that add functions, constants, global names, or text. Text
+contains the existing BLua32 instruction words unchanged. `.bss` owns no ROM
+payload.
+
+The emulator consumes those physical bytes directly. `Memory` binds retained
+views into the installed system ROM and both cartridge ROMs. The CPU parses a
+guest-inert media layout for the system ROM and each populated cartridge. It
+activates the system image at reset and activates a cartridge image only when
+execution first targets the currently selected socket. Activation binds
+constant strings, global slots, static closures and dense decoded instruction
+pages. Merely inserting an unexecuted second cartridge therefore cannot consume
+guest string or object identities or change table iteration. A call frame
+retains its physical function-record address and physical PC. Instruction fetch
+subtracts that frame's retained text base and indexes the activated dense
+decoded page. It performs no memory-map classification, TOC lookup, string
+lookup, allocation, parser work or activation check per instruction.
+
+`CLOSURE` resolves its physical record address arithmetically against the
+system or execution-latched cartridge function table. `LOADK` and RK operands
+index the constant table owned by the frame's image. Static closures are
+retained CPU objects keyed by physical function-record address. Table-load
+inline caches are allocated only for actual table-load instructions. Decode
+images, static closure indexes, and inline caches are derived runtime
+infrastructure: they are invalidated when their ROM owner publishes a new media
+revision and are never serialized.
+
+A closure value owns only its raw physical function-record address and captured
+upvalues. Entering a cartridge closure resolves that address once through the
+current `CP0.EXEC` cartridge-socket latch and retains the resulting image only
+on the new call frame for instruction fetch. The closure itself never pins a
+socket or decoded image. Therefore the same cartridge address deterministically
+names the function in the currently execution-latched socket before and after
+save-state restore.
+
+TypeScript source builds and source registries stay on the compiler/rompack
+side and enter the machine through the same raw image boundary as native.
+Stripping `__blua32_symbols__` removes source ranges, local-slot names, upvalue
+names, and Hot-Resume maps; it does not change physical executable bytes,
+vectors, global slots, boot, or restore behavior.
+
+Release ROMs omit `__blua32_symbols__`. The system build publishes the encoded
+system symbols beside its ROM as `<system-rom>.blua32-symbols`; the cartridge
+linker consumes that build artifact while resolving firmware calls. Debug ROMs
+also embed the symbols asset for the debugger and Hot Resume. The sidecar is
+never mounted, mapped, copied or decoded by the emulated machine, and
+cartridges do not carry a duplicate of the firmware symbols.
 
 ROM asset symbols are a compile/link contract, not a runtime registry. The
 rompack owner emits the generated const module `bmsx/assets`; the compiler
 recognises that module as compile-time only and inlines exported constants at
-each use site. The module never produces a runtime Lua table, module proto,
+each use site. The module never produces a runtime Lua table, module function,
 global slot, or `require` call in executable cart code. Using the module root as
 a value is a compile-time error; cart code must read concrete exports such as
 `assets.data_transition_config_addr` and `assets.data_transition_config_len`.
@@ -591,13 +678,13 @@ digit with an underscore. Public symbols are generated for ROM-backed asset
 records except Lua/code records and the ROM label. Address values are absolute
 CPU-visible ROM addresses: `SYSTEM_ROM_BASE` or `CART_ROM_BASE` plus the record
 offset in the corresponding ROM payload. The pack layout produces the final
-TOC records before program compilation; `bmsx/assets` consumes those same
+TOC records before BLua32 compilation; `bmsx/assets` consumes those same
 records, and the TOC encoder later serializes them without recomputing offsets.
 There is no parallel writer-owned layout or duplicate verification pass. Length
 values are byte counts.
 `rominspector.ts
 --asset-symbols` prints the generated symbol table so the ROM address ABI can be
-checked without disassembling program code.
+checked without disassembling BLua32 code.
 
 Schema-rich content, such as story graphs with dialogue nodes, choices, combat
 rounds, rewards, strings, and `next` links, is owned by a schema-specific asset
@@ -612,45 +699,53 @@ does not mandate fixed binary layouts for every map, room, timeline, registry,
 or asset record. Fixed layouts become a machine/tooling contract only when a
 concrete asset producer and hot/runtime consumer require that contract.
 
-Program objects exist only between the compiler and ROM-building/Hot-Resume
-tooling. Symbolic `module`, `export_proto`, section-address, const-value, and
-indexed-operand relocations are resolved before the final image is serialized;
-Hot Resume resolves the same object once more into derived live CPU state. They
-never become placeholder Lua values or mutable machine state. System text starts
-at PC zero. Cart text follows it directly, while the cart descriptor records its
-final text, const, proto, `.data`, and `.bss` bases.
+BLua32 objects exist only between compiler and ROM-building/Hot-Resume tooling.
+Symbolic module, static-function, section-address, constant, global-slot, and
+indexed-operand relocations are resolved before bytes are installed. They never
+become placeholder Lua values or mutable machine state. Cartridge objects link
+against the firmware image's published global-slot ABI and physical static
+function addresses; system and cartridge code, constants, and functions remain
+separate physical domains.
 
-Final images carry reset, section-init, IRQ, and exception vectors. A cold boot
-runs section-init, then static module initialization, then the reset vector. Hot
-Resume compiles each source-backed medium once, replaces its physical final
-program tail, and links that same program object into the live derived CPU
-program. Existing heap objects, globals, closures, frames, module state, RAM,
-and device state remain live. Proto indices stay stable; code for a changed proto
-is appended to the derived instruction buffer and later calls through an existing
-closure use the new entry. The TypeScript source owner retains the source text
-that produced the installed program separately from the mutable workspace text.
-The linker maps unchanged full lexical statement ranges from that installed revision to
-the appended proto and admits a sequence point only where the live local-name/register
-layout and instruction execution shape are unchanged. Sequence points name
-logical instruction starts, including a `WIDE` prefix; raw per-word debug ranges
-are not relocation keys. After installing the revised program,
-`CPU.relocateActiveFrames` consumes the complete relocation table directly,
-moves matching active-frame continuations to the new code, and grows an active
-frame's existing register backing when the new proto needs more slots.
-An unmatched continuation remains in the retained old code; debugger PCs and
-raw exception-return registers are not rewritten.
-This is authoring-time on-stack replacement: it adds no branch, lookup, or
-allocation to instruction execution. Unchanged proto code is retained without
-another copy, and source-revision maps are tooling state rather than savestate or
-machine state.
+The compiler emits a startup function that performs section initialization,
+initializes statically required modules in dependency order, clears the
+firmware-only boot primitives where applicable, calls the source entry, and
+returns. Cold reset starts the system startup vector from the system ROM header.
+Firmware inspects the raw cartridge headers through `CART_SELECT` and transfers
+to the selected cartridge startup address through the privileged `CP0.EXEC`
+control word. The host never calls a cartridge entry or assembles a combined
+execution namespace.
 
-Hot Resume does not call `Runtime.boot`, run section-init, initialize static
-modules, enter the firmware reset vector, or run `new_game`; rebuilding the
-physical tail is not a reboot. It reruns `init` so registration-owned handlers
-publish the changed module code. A revision is rejected as Hot-Resume-incompatible
-when captured-upvalue layouts changed, or retained `.rodata`/`.data`/`.bss`
-symbol layout or absolute static-storage placement moved.
-Hot Resume never turns that rejection into an implicit cold reboot.
+Hot Resume remains an IDE-only authoring facility above this machine contract.
+It compiles a source-backed medium once, rebuilds its physical executable tail,
+and installs that media through the ROM owner. Existing heap objects, globals,
+closures, frames, module state, RAM, devices, and audio remain live. The
+linker keeps every known function id in its previous physical function-record
+slot for the lifetime of that development lineage. A removed function leaves a
+record that retains its closure layout and enters a one-word hard-halt
+tombstone; a new function id appends after the existing high-water mark, and
+reinserting the removed id restores its original slot. Slots are never reused
+for a different identity while live closures may still exist. An ordinary cold
+ROM build has no previous lineage and emits a compact table.
+
+The tooling sidecar maps only compatible sequence points into the revised text.
+Closure addresses do not move and the CPU does not traverse or rewrite the Lua
+heap. Compatible active continuations receive the new physical PC, function
+record and register capacity. Unmatched active continuations continue in
+retained old development-tail bytes. The CPU fetch path remains the ordinary
+physical-address path and gains no authoring-time branch, lookup, parser, or
+allocation. Those retained bytes belong only to the live IDE session and are
+not save-state payload. A save captured with such a continuation retains its raw
+function-record address and PC; restore reconnects both to the currently
+inserted ROM revision, exactly like any other physical ROM address, and never
+resurrects an earlier development tail.
+
+Hot Resume does not perform a cold boot, run the startup vector, section
+initialization, static module initialization, or `new_game`. It reruns `init`
+so registration-owned handlers publish changed code. Captured-upvalue layout,
+static-closure identity mode, or static-storage layout changes are incompatible
+revisions. Incompatibility is reported to the IDE; it never becomes an implicit
+reboot, rollback, or legacy fallback.
 
 BLua sections are machine storage, not runtime metadata. Firmware `.rodata` and
 `.data` load bytes live in `SYSTEM_ROM`; cartridge `.rodata` and `.data` load
@@ -676,7 +771,7 @@ read/write them with `*symbol`. Indexing is for actual arrays and structs, not
 for pretending a scalar word is a one-element array.
 
 Const modules are the static symbol ABI. They export constants, section symbols,
-and function text-symbols without producing a runtime module table, module proto,
+and function text-symbols without producing a runtime module table, module function,
 global slot, or runtime `require` call. Function text-symbols are call targets
 only: const aliases may name them for direct calls, but they are not Lua runtime
 values and cannot be stored in tables, assigned to dynamic locals, or returned as
@@ -696,10 +791,10 @@ rompacker, TOC and host do not maintain a second module-name or attribute list.
 - `Memory` owns RAM, ROM windows, IO slots, and MMIO callback dispatch.
 - The CPU consumes instruction words and runtime values directly from the mapped
   machine representation.
-- Reserved opcodes, malformed standalone `WIDE` prefix words, and branch skips
-  past decoded text do not become host exceptions. The CPU latches a hard-halt
-  state, stops accepting IRQs, and stays stopped until a new program/reset path
-  starts it again.
+- Reserved opcodes, malformed standalone `WIDE` prefix words, invalid physical
+  function records, and branch skips past the active function text do not
+  become host exceptions. The CPU latches a hard-halt state, stops accepting
+  IRQs, and stays stopped until reset starts it again.
 - Typed memory opcodes consume the register/RK lane directly as machine data;
   producers own the numeric address/value representation before the CPU reaches
   RAM, ROM, VRAM, or MMIO byte/halfword/float datapaths.
@@ -754,7 +849,7 @@ rompacker, TOC and host do not maintain a second module-name or attribute list.
 The static cart ABI uses words, registers, addresses, sections, memory, and
 symbols as the primary representation. Static storage crosses module boundaries
 as section symbols and typed addresses; static function exports cross those
-boundaries as proto/text symbols; typed memory and numeric opcodes consume the
+boundaries as physical function addresses; typed memory and numeric opcodes consume the
 register/RK lanes directly as machine data. `CPU.Value` remains the dynamic Lua
 object-world representation, but hot/static machine-code ABI does not use it as
 module-export transport.
@@ -780,8 +875,11 @@ objects. TypeScript keeps the same boundary with `Closure` instances, dense
 `Upvalue[]` closure slots, and a required `heapBytes` word on every closure, so
 heap accounting consumes the producer-owned closure representation directly.
 Save-state serializes closure upvalue references as object ids at the
-persistence boundary; it does not expose either runtime's closure slot storage
-shape.
+persistence boundary. Each closure record also retains whether the object is
+the CPU-owned canonical static closure or a dynamic closure, so cartridge
+slots with different function flags at the same raw address cannot merge or
+split object identity during restore. It does not expose either runtime's
+closure slot storage shape.
 Snapshot object ids are reserved before an object's child values are captured,
 so cyclic/shared Lua table graphs stay object graphs rather than path lookups or
 duplicated tree materialisation.
@@ -808,15 +906,14 @@ TypeScript uses a pooled borrowed view with `get(index)`, not a `Proxy`-backed
 array facade. Both views expose Lua's nil-filled argument lane for reads beyond
 the supplied argument count without materializing an argument array per call.
 
-System firmware and cartridge program bytes live in their ordinary physical ROM
-assets. Guest loads observe the raw `__program__` section bytes through
-`SYSTEM_ROM` or `CART_ROM`, including `.rodata` and `.data` load images. There is
-no third executable address window and no runtime relocation write into either
-ROM. The CPU consumes an assembled instruction buffer because its PC space joins
-system and cart text into one derived execution namespace; that buffer is a
-decode input/cache, not guest-visible storage. Runtime const values, protos,
-module records, global-slot symbols, and CPU decode pages are likewise derived
-owner data. Debug/source metadata remains a separate optional asset.
+System firmware and cartridge BLua32 bytes live in their ordinary physical ROM
+assets. Guest loads observe the raw `__blua32__` image through `SYSTEM_ROM` or
+`CART_ROM`, including function/constant records, `.rodata`, `.data` load bytes,
+and text. There is no third executable address window, combined host-owned
+instruction buffer, or runtime relocation write into either ROM. Decoded
+instructions, runtime constant values, function-record indexes, interned global
+names, static closures, and inline caches are derived CPU state. Debug/source
+metadata remains a separate optional tooling asset.
 
 System ROM has its own CPU-visible window. The two cartridge sockets share one
 external address/data bus and therefore one CPU aperture; `CART_SELECT.bit0`
@@ -841,6 +938,10 @@ Saved:
   state, the monotonic scheduler cycle, rational host-cycle grant remainder,
   unused whole-cycle carry, the coalesced pending tick-completion latch, device
   registerfiles/latches/FIFOs/buffers, and device-visible memory.
+- Closures and frames identify BLua32 functions by raw physical function-record
+  address and retain physical PCs. Restore rebuilds decode images from the
+  inserted ROM media and reconnects those addresses; it does not serialize
+  decoded instructions, function indexes, source paths, or tooling symbols.
 - GX GPU raw register words, GP0 packet assembly, retained command-buffer state,
   raw 2 MiB VRAM, transfer/readback latches, PCRTC active and presentation words,
   CSR/IMR, beam offset/remainder/half-line/stage/VBlank state, and the pending
@@ -968,10 +1069,11 @@ ABI values; they are documented constants, not runtime-injected Lua globals.
 Cart and firmware code that tests or acknowledges them defines the constants it
 uses.
 
-Program images carry `irqProtoIndex` and `exceptionProtoIndex` vectors. On a
-guest-domain `HALT` or guest instruction boundary, an asserted unmasked
-maskable IRQ line makes the CPU push the selected generated IRQ root above the
-interrupted frame. That root calls the program's `irq(flags)` handler and ends
+The system and selected-cartridge ROM headers carry physical IRQ and exception
+function-record addresses. On a guest-domain `HALT` or guest instruction
+boundary, an asserted unmasked maskable IRQ line makes the CPU push the selected
+generated IRQ root above the interrupted frame. That root calls the image's
+`irq(flags)` handler and ends
 in `RFE`; an ordinary Lua return only returns to the root. Host/debugger closure
 calls may wake from a pending IRQ, but they do not consume or vector it. The NMI
 line and system exception vector exist at the CPU boundary; the ICU asserts the
@@ -990,7 +1092,7 @@ previous pair. A line vectors when both layers allow it: `STATUS.IEc` is set and
 instruction boundary after its mask bit is written, with no delayed-EI extra
 instruction.
 
-The compiler-generated IRQ vector reads `IRQ_FLAGS` and calls the program's
+The compiler-generated IRQ vector reads `IRQ_FLAGS` and calls the source-defined
 `irq(flags)` handler when bits are pending. Firmware compilation binds the
 BIOS `irq` and `exception` handlers through `SETSYS`/`GETSYS`; cart compilation
 binds the same source names through ordinary `SETGL`/`GETGL`. The compile domain
@@ -999,10 +1101,11 @@ final-image metadata cannot grant a cart access to a system slot.
 
 The CPU stores system and ordinary global slots in distinct registerfiles.
 Ordinary slots synchronize with the Lua globals table; system slots do not.
-Program replacement preserves system slots by interned name, and save-state
+Cartridge handoff and IDE media replacement preserve system slots by their
+image-declared names, and save-state
 serializes both registerfiles independently. This permits BIOS and cart code to
 use the natural handler names without renaming, a dispatcher facade, or the
-cart overwriting a supervisor vector after linking.
+cart overwriting a supervisor vector.
 
 The shipped handler belongs to firmware/cart code: BIOS and cartlib expose
 `system.irq` / `on_irq` as convenience dispatch over registered masks, and
@@ -1076,11 +1179,20 @@ registers with CPU instructions rather than MMIO or host builtins:
 | `STATUS` | 12 | Raw privilege/interrupt stack described below. |
 | `CAUSE` | 13 | Raw exception code and asserted CPU-line bits. |
 | `EPC` | 14 | Guest byte-PC at which exception return resumes. |
+| `EXEC` | 15 | Write-only non-returning transfer to a physical BLua32 function record. |
 
-`MFC0` reads all four words. Supervisor code may write `STATUS` and `EPC` with
-`MTC0`; `CAUSE` and `BAD_ADDRESS` are CPU-written latches. A user-mode CP0
-access is a defined privileged-instruction guest fault. It is never a native
-callback, seeded Lua global, or parallel firmware shadow.
+`MFC0` reads the four retained exception words; reading `EXEC` returns zero.
+Supervisor code may write `STATUS`, `EPC`, and `EXEC` with `MTC0`; `CAUSE` and
+`BAD_ADDRESS` are CPU-written latches. Writing `EXEC` selects the physical
+image containing the supplied function record, latches the currently selected
+cartridge socket when the address lies in the cartridge aperture, refreshes
+that image's derived decode state, installs its declared ordinary-global layout
+while retaining the system registerfile, clears the current call stack, sets
+cartridge-entry status for a cartridge target, and pushes that function. It
+never returns to the writer. An address that does not name a mapped executable
+function record hard halts the CPU. A user-mode CP0 access is a defined
+privileged-instruction guest fault. `EXEC` is not a native callback, seeded Lua
+global, or parallel firmware shadow.
 
 `STATUS[5:0]` follows the R3000 current/previous/old two-bit stack:
 
@@ -1158,14 +1270,14 @@ any outer exception context it intends to resume. No other host/runtime failure
 is converted into a CPU cause.
 
 Exception entry pushes a generated exception-root closure above the stopped
-frames. That root calls the program-owned handler and ends in `RFE`; a normal
+frames. That root calls the image-owned handler and ends in `RFE`; a normal
 Lua `return` only returns from the handler to the root. `RFE` is legal only in a
 CPU-marked exception root and uses `EPC` as the authoritative resume PC. Entry
 does not serialize, copy, unwind, or reconstruct the cart call stack. Only
 faults defined by the machine contract enter this path. Emulator invariant
 failures remain host failures.
 
-System and cart program vectors remain distinct after linking. A maskable IRQ
+System and cartridge physical vectors remain distinct. A maskable IRQ
 selects its vector from the pre-entry `KUc`: user execution uses the cart IRQ
 vector, supervisor execution uses the BIOS IRQ vector. NMI and synchronous
 faults always use the BIOS exception vector. Pending device bits are neither
@@ -1463,7 +1575,7 @@ shutdown, IDE symbol browser, or other current workbench services. Its layout
 and colors are firmware policy and intentionally do not emulate the removed
 host terminal's appearance.
 
-#### Cartridge expansion and terminal `CALL`
+#### Cartridge expansion
 
 BMSX has two physical cartridge sockets on one 16-bit external
 address/data bus. Both sockets receive the same address and bus strobes; distinct
@@ -1478,10 +1590,10 @@ cartridge aperture, not two relocated ROMs:
 
 `CART_SELECT` at `08010424h` is a raw retained word; bit 0 selects socket 1
 when set and socket 0 when clear. `CART_STATUS` at `08010428h` reports socket
-presence in bits 0--1, executable program presence in bits 8--9 and the decoded
-selection in bit 16. The four read-only words that follow expose each socket's
-raw board word and physical RAM byte count. Unknown board bits remain readable
-and have no current datapath effect.
+presence in bits 0--1 and the decoded selection in bit 16. The controller does
+not classify cartridge contents as executable. The four read-only words that
+follow expose each socket's raw board word and physical RAM byte count. Unknown
+board bits remain readable and have no current datapath effect.
 
 The ROM header owns the board declaration. Its word at byte 76 has
 `RAM=bit0` and `MAILBOX=bit1`; the word at byte 80 is the socket-local RAM
@@ -1490,7 +1602,7 @@ zero and ignores writes in the RAM window. A shorter ROM or RAM backing returns
 zero beyond its physical end. The complete header, sections and TOC must fit
 the 512 MiB ROM window; loaders and ROM producers reject a larger physical
 image. Reset retains cartridge RAM, resets the CPU
-selection to the boot socket and clears mailbox data, control, DREQ and local
+selection to socket 0 and clears mailbox data, control, DREQ and local
 IRQ state. At the source boundary the ROM packer maps
 `cartridge.board = rom|ram|mailbox|ram_mailbox` and optional
 `cartridge.ram_bytes` into those two raw header words.
@@ -1516,19 +1628,34 @@ the socket-local source latch. A central `IRQ_ACK` clears the IRQ-controller
 flag but does not retrigger a still-pending mailbox; firmware must write the
 mailbox's own `IRQ_ACK` before a later trigger can create another edge.
 
-Boot selection is deterministic: executable slot 0, executable slot 1,
-present slot 0, present slot 1, then empty slot 0. System firmware always
-supplies the reset program. Only the chosen executable cartridge contributes
-the cartridge half of the derived CPU program image; the other socket remains
-fully bus-visible as ROM, RAM and MMIO. A cartridge image is position-invariant
-and can be inserted in either socket without relinking. Both socket headers are
-decoded to publish physical media words, but only the chosen executable
-cartridge is decoded into an active runtime package; data-only and unselected
-cartridges remain raw bus backings.
+System firmware always supplies the reset vector. Firmware scans sockets in
+physical order by writing `CART_SELECT` and reading each raw ROM header through
+the shared aperture. It chooses the first present image whose BLua32 image
+offset is nonzero, leaves that socket selected, and writes the header's physical
+startup function address to `CP0.EXEC`. If neither cartridge is executable,
+firmware remains in its own boot flow. The emulator host neither chooses the
+executable socket nor calls its entry.
+
+Both sockets are executable through exactly the same cartridge aperture. The
+bus controller has two physical chip-select sources: ordinary CPU data cycles
+use `CART_SELECT`, while cartridge instruction cycles use the socket latched by
+the last cartridge-targeted `CP0.EXEC`. Only one socket drives any individual
+bus cycle. This lets cartridge code read another socket without silently
+retargeting its next instruction fetch; it is a CPU/bus latch, not a host-pinned
+image or second address namespace.
+
+A cartridge image is position-invariant between the two sockets because both
+use `10000000h`--`2FFFFFFFh` and does not require relinking. A later
+cartridge-targeted `CP0.EXEC` samples the then-current `CART_SELECT` value and
+replaces the execution latch. DMA uses its explicit socket chip-select
+overrides. There is no second executable namespace and no host merge of the two
+cartridges.
 
 Save-state stores the raw CPU selection word and, per socket, RAM, mailbox data,
 retained control and the local IRQ source latch. Immutable ROM bytes, board
-words and capacities remain properties of the inserted media. Browser hosts
+words and capacities remain properties of the inserted media. CPU state
+separately retains the cartridge execution-socket latch selected by `CP0.EXEC`.
+Browser hosts
 accept `rom` and optional `slot1` URL parameters, the Node host accepts
 `--slot0`/`--rom` and `--slot1`, and ordinary libretro content maps to slot 0.
 Libretro additionally publishes the `dualcart` subsystem with required slot 0
@@ -1545,25 +1672,6 @@ example its
 [GFX9000 device cartridge](https://github.com/openMSX/openMSX/blob/d1b8f2c81b3fcafde528e91e6133a7278a732e04/share/extensions/gfx9000.xml).
 BMSX deliberately does not copy MSX slot paging: the raw chip-select mux,
 external-bus aperture and per-board decode above are the complete base contract.
-
-The BIOS terminal remains the terminal. Its retained cells, editor, input,
-completion, pager and GX rendering stay in system firmware. A built-in
-`CALL <name> [arguments]` command will resolve a named extension exported by an
-inserted cartridge and transfer execution to Lua resident in that cartridge.
-The extension owns its command semantics and mutable state but writes through
-the firmware terminal's row/pager contract; it does not replace the terminal,
-publish a host overlay or install a host callback table. Slot priority, name
-collisions, raw descriptors/entry words, argument/result memory and call/return
-timing remain the explicit `BIOS-TERM-EXT-01` ABI-design boundary.
-
-The intended developer cartridge uses that mechanism to move former runtime
-IDE capabilities into cart-resident Lua rather than growing the BIOS monitor.
-An editor, compiler, symbol tool or workspace-like command belongs there. Any
-RAM, persistent storage, debug port or other capability it needs must be a real
-cartridge device visible through the machine bus. Host filesystem, workbench
-objects and JavaScript services never become implicit terminal extensions.
-Immutable cartridge ROM remains host-loaded input; extension RAM,
-registerfiles, FIFOs and in-flight device state are machine/save-state data.
 
 ### DMA
 
@@ -1616,11 +1724,9 @@ request latch into the DMA controller.
 The standard machine runs its CPU at 33.8688 MHz (44100 × 768, the PS1 CPU
 clock). The firmware/BIOS package occupies `SYSTEM_ROM`; up to two inserted
 cartridge packages sit behind the shared cartridge aperture and its socket
-chip-selects. Firmware code and assets share the first physical package. Only
-the boot-selected executable cartridge contributes the cartridge program
-descriptor, while both cartridge packages remain bus-visible. CPU execution
-state is derived from the selected system/cart program descriptors and is not a
-third memory-mapped ROM.
+chip-selects. Firmware code and assets share the first physical package. CPU
+execution fetches from the physical system image or the `CP0.EXEC`-latched
+cartridge socket; derived decode state is not a third memory-mapped ROM.
 
 DMA timing is region-dependent and block-based. For a block of `N` words, a
 side starting in RAM costs `1 + N` cycles: one cycle establishes a sixteen-word

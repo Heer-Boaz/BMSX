@@ -1,14 +1,10 @@
-import { cartridgeSlots } from '../helpers/cartridge';
-import assert from 'node:assert/strict';
-
 import { splitText } from '../../machine/ts/common/text_lines';
 import { LuaLexer } from '../../machine/ts/lua/syntax/lexer';
 import { LuaParser } from '../../machine/ts/lua/syntax/parser';
-import { CPU, RunResult, type Value } from '../../machine/ts/machine/cpu/cpu';
-import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
-import { Memory } from '../../machine/ts/machine/memory/memory';
+import type { Value } from '../../machine/ts/machine/cpu/cpu';
 import { compileLuaChunkToProgram } from '../../machine/ts/lua/compiler';
 import type { OptimizationLevel } from '../../machine/ts/lua/compiler/optimizer';
+import { runCompiledTestSystem } from '../helpers/blua32';
 
 export function parseLuaChunk(source: string, path = 'test.lua') {
 	const lexer = new LuaLexer(source, path);
@@ -22,10 +18,6 @@ export function compileLuaSource(source: string, path = 'test.lua', optLevel: Op
 
 export function runCompiledLua(source: string, path = 'test.lua', optLevel: OptimizationLevel = 0): Value[] {
 	const compiled = compileLuaSource(source, path, optLevel);
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
-	const cpu = new CPU(memory, new IrqController(memory));
-	cpu.setProgram(compiled.program, compiled.metadata, compiled.metadata, 0, 0, 0);
-	cpu.start(compiled.entryProtoIndex);
-	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	const cpu = runCompiledTestSystem(compiled, 100000);
 	return Array.from(cpu.lastReturnValues);
 }

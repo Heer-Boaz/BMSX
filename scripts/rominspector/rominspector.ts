@@ -1,19 +1,18 @@
 #!/usr/bin/env node
 // ROM Pack Inspector CLI
-// Usage: npx tsx scripts/rominspector.ts <romfile> [--ui] [--list-assets] [--manifest] [--program-asm]
+// Usage: npx tsx scripts/rominspector.ts <romfile> [--ui] [--list-assets] [--manifest] [--blua32-asm]
 
 import * as fs from 'fs/promises';
 import { parseArgs } from 'node:util';
 import { parseCartHeader, type RomAsset, type CartRomHeader, type RomManifest } from '../../machine/ts/rompack/format';
 import { collectRomAssetSymbols } from '../../machine/ts/rompack/asset_symbols';
-import type { ProgramImage } from '../../machine/ts/machine/program/loader';
 import { loadRomAssetList, parseCartridgeIndex } from '../../machine/ts/rompack/loader';
 import {
 	buildManifestAsset,
-	disassembleProgramImage,
+	disassembleBlua32Image,
 	formatByteSize,
 	formatNumberAsHex,
-	loadProgramFromAssets,
+	loadBlua32ImageFromAssets,
 	ROM_MANIFEST_ASSET_ID,
 	sortAssetsById,
 } from './shared';
@@ -23,19 +22,6 @@ import { generateCycleCostReport } from './cycle_cost_analysis';
 let assetList: RomAsset[] = [];
 let romManifest: RomManifest | null = null;
 let romProjectRootPath: string | null = null;
-
-const PROGRAM_ASM_BIAS_FLAG = '--program-asm-bias';
-function parseBiasValue(raw: string): number {
-	const valueText = raw.trim();
-	const hexadecimal = /^(?:0x([0-9a-f]+)|([0-9a-f]+)h)$/i.exec(valueText);
-	if (hexadecimal !== null) {
-		return Number.parseInt(hexadecimal[1] || hexadecimal[2], 16);
-	}
-	if (/^[0-9]+$/.test(valueText)) {
-		return Number.parseInt(valueText, 10);
-	}
-	throw new Error(`[RomInspector] Invalid ${PROGRAM_ASM_BIAS_FLAG} value: "${raw}".`);
-}
 async function loadAssets(
 	rombin: Uint8Array,
 	header: CartRomHeader,
@@ -201,10 +187,8 @@ async function main() {
 			'list-assets': { type: 'boolean' },
 			'asset-symbols': { type: 'boolean' },
 			manifest: { type: 'boolean' },
-			'program-asm': { type: 'boolean' },
-			'program-asm-bias': { type: 'string' },
+			'blua32-asm': { type: 'boolean' },
 			'cycle-cost': { type: 'boolean' },
-			'system-rom': { type: 'string' },
 		},
 	});
 	const uiFlag = values.ui === true;
@@ -212,16 +196,12 @@ async function main() {
 	const listAssetsFlag = values['list-assets'] === true;
 	const assetSymbolsFlag = values['asset-symbols'] === true;
 	const manifestFlag = values.manifest === true;
-	const programAsmFlag = values['program-asm'] === true;
+	const blua32AsmFlag = values['blua32-asm'] === true;
 	const cycleCostFlag = values['cycle-cost'] === true;
-	const programAsmBias = values['program-asm-bias'] === undefined
-		? null
-		: parseBiasValue(values['program-asm-bias']);
-	const systemRomFile = values['system-rom'];
 	const romfile = positionals[0];
 
 	if (!romfile) {
-		console.error('Usage: npx tsx scripts/rominspector.ts <romfile> [--system-rom <firmware-rom>] [--ui] [--ui-native] [--list-assets] [--asset-symbols] [--program-asm] [--program-asm-bias <value>] [--cycle-cost]');
+		console.error('Usage: npx tsx scripts/rominspector.ts <romfile> [--ui] [--ui-native] [--list-assets] [--asset-symbols] [--blua32-asm] [--cycle-cost]');
 		console.error('Options:');
 		console.error('  --ui            Open the native interactive UI');
 		console.error('  --ui-native     Alias for the native interactive UI');
@@ -229,9 +209,7 @@ async function main() {
 		console.error('  --asset-symbols Print generated bmsx/assets ROM address symbols');
 		console.error('  --manifest      Print cart manifest details to stdout');
 		console.error('  --cycle-cost    Print fantasy CPU cycle cost analysis');
-		console.error('  --program-asm   Print program disassembly and exit');
-		console.error('  --system-rom    Firmware ROM required when inspecting a cartridge program');
-		console.error('  --program-asm-bias  Base PC to add (e.g. 0x80000 or 80000h)');
+		console.error('  --blua32-asm    Print physical BLua32 disassembly and exit');
 		process.exit(1);
 	}
 
@@ -252,8 +230,11 @@ async function main() {
 		`toc=${header.tocOffset}+${header.tocLength} ` +
 		`data=${header.dataOffset}+${header.dataLength} ` +
 		`metadata=${header.metadataOffset}+${header.metadataLength} ` +
-		`boot=v${header.programBootVersion} flags=${formatNumberAsHex(header.programBootFlags, 8)} ` +
-		`entry=${header.programEntryProtoIndex} protos=${header.programProtoCount} code=${header.programCodeByteCount}`
+		`blua32=${header.blua32ImageOffset}+${header.blua32ImageByteCount} ` +
+		`startup=${formatNumberAsHex(header.blua32StartupFunctionAddress, 8)} ` +
+		`irq=${formatNumberAsHex(header.blua32IrqFunctionAddress, 8)} ` +
+		`exception=${formatNumberAsHex(header.blua32ExceptionFunctionAddress, 8)} ` +
+		`layout=${formatNumberAsHex(header.blua32StaticLayoutTokenHi, 8)}:${formatNumberAsHex(header.blua32StaticLayoutTokenLo, 8)}`
 	);
 
 	getTocBuffer(rombin, header);
@@ -261,26 +242,18 @@ async function main() {
 	if (header.manifestLength > 0 && !assetList.some(asset => asset.resid === ROM_MANIFEST_ASSET_ID)) {
 		assetList.unshift(buildManifestAsset(header));
 	}
-	let systemProgramImage: ProgramImage | null = null;
-	if (systemRomFile) {
-		const systemRom = await loadRompackFromFile(systemRomFile);
-		const systemIndex = await loadRomAssetList(systemRom);
-		systemProgramImage = loadProgramFromAssets(systemRom, systemIndex.entries).programImage;
-	}
-
-	if (programAsmFlag) {
-		const { program, metadata, sourceTextForPath, missingSourcePaths } = loadProgramFromAssets(rombin, assetList, systemProgramImage);
-		const pcBias = programAsmBias === null ? undefined : programAsmBias;
+	if (blua32AsmFlag) {
+		const { image, symbols, sourceTextByPath, missingSourcePaths } = loadBlua32ImageFromAssets(rombin, assetList);
 		if (missingSourcePaths.length > 0) {
-			console.warn(`[RomInspector] Source comments unavailable for ${missingSourcePaths.length} Lua path(s); ROM is stripped or partial.`);
+			console.warn(`Source comments unavailable for ${missingSourcePaths.length} Lua path(s); ROM is stripped or partial.`);
 		}
-		console.log(disassembleProgramImage(program, metadata, sourceTextForPath, { assembly: true, pcBias }));
+		console.log(disassembleBlua32Image(image, symbols, sourceTextByPath, { assembly: true }));
 		process.exit(0);
 	}
 
 	if (cycleCostFlag) {
-		const { program, metadata } = loadProgramFromAssets(rombin, assetList, systemProgramImage);
-		console.log(generateCycleCostReport(program, metadata));
+		const { image, symbols } = loadBlua32ImageFromAssets(rombin, assetList);
+		console.log(generateCycleCostReport(image, symbols));
 		process.exit(0);
 	}
 
@@ -311,7 +284,6 @@ async function main() {
 			assets: assetList,
 			manifest: romManifest,
 			projectRootPath: romProjectRootPath,
-			systemProgramImage,
 			formatByteSize,
 			formatNumberAsHex,
 		});

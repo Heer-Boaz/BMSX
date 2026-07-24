@@ -274,6 +274,8 @@ add_library(bmsx_core STATIC
 
 	# Machine runtime (Lua bytecode interpreter)
 	machine/cpu/cpu.cpp
+	machine/cpu/blua32_image.cpp
+	machine/cpu/blua32_symbols.cpp
 	machine/cpu/opcode_info.cpp
 	machine/cpu/instruction_format.cpp
 	render/shared/bmsx_font.cpp
@@ -309,15 +311,13 @@ add_library(bmsx_core STATIC
 	machine/runtime/host_fault.cpp
 	machine/runtime/machine_state.cpp
 	machine/runtime/save_machine_state.cpp
-	machine/runtime/cpu_state.cpp
 	machine/runtime/save_state.cpp
 	machine/runtime/save_state/schema.cpp
 	machine/runtime/save_state/codec.cpp
 	machine/runtime/cpu_executor.cpp
 	machine/runtime/boot_timing.cpp
 	machine/runtime/frame/loop.cpp
-	machine/program/executor.cpp
-	machine/program/scratch.cpp
+	machine/runtime/lua_scratch.cpp
 	machine/scheduler/frame.cpp
 	machine/memory/specs.cpp
 	render/presentation_state.cpp
@@ -336,7 +336,7 @@ add_library(bmsx_core STATIC
 	machine/devices/gx/gte.cpp
 	machine/common/hash.cpp
 	machine/cpu/string_pool.cpp
-	machine/program/loader.cpp
+	lua/module_path.cpp
 )
 
 
@@ -487,6 +487,9 @@ endif()
 
 if(BMSX_BUILD_TESTS)
 	enable_testing()
+	set(BMSX_TEST_ROM_SOURCE
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/support/blua32_test_rom.cpp
+	)
 
 	add_executable(bmsx_libretro_host_frame_pacer_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_host_frame_pacer_test.c
@@ -549,6 +552,7 @@ if(BMSX_BUILD_TESTS)
 	endif()
 	add_executable(bmsx_gx_gte_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/gx_gte_test.cpp
+		${BMSX_TEST_ROM_SOURCE}
 	)
 	target_link_libraries(bmsx_gx_gte_tests PRIVATE bmsx_core)
 	add_test(NAME bmsx_gx_gte_tests COMMAND bmsx_gx_gte_tests)
@@ -585,6 +589,7 @@ if(BMSX_BUILD_TESTS)
 
 	add_executable(bmsx_rompack_format_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/rompack_format_test.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/support/blua32_test_rom.cpp
 	)
 	target_link_libraries(bmsx_rompack_format_tests PRIVATE bmsx_core)
 	add_test(NAME bmsx_rompack_format_tests COMMAND bmsx_rompack_format_tests)
@@ -609,6 +614,7 @@ if(BMSX_BUILD_TESTS)
 
 	add_executable(bmsx_cpu_supervisor_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/cpu_supervisor_test.cpp
+		${BMSX_TEST_ROM_SOURCE}
 	)
 	target_link_libraries(bmsx_cpu_supervisor_tests PRIVATE bmsx_core)
 	add_test(NAME bmsx_cpu_supervisor_tests COMMAND bmsx_cpu_supervisor_tests)
@@ -621,6 +627,7 @@ if(BMSX_BUILD_TESTS)
 
 	add_executable(bmsx_system_controller_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/system_controller_test.cpp
+		${BMSX_TEST_ROM_SOURCE}
 	)
 	target_link_libraries(bmsx_system_controller_tests PRIVATE bmsx_core)
 	add_test(NAME bmsx_system_controller_tests COMMAND bmsx_system_controller_tests)
@@ -634,6 +641,7 @@ if(BMSX_BUILD_TESTS)
 	add_executable(bmsx_libretro_save_state_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_save_state_test.cpp
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/support/boot_rom_fixture.cpp
+		${BMSX_TEST_ROM_SOURCE}
 		${BMSX_LIBRETRO_DIR}/platform.cpp
 	)
 	target_link_libraries(bmsx_libretro_save_state_tests PRIVATE bmsx_core)
@@ -645,6 +653,7 @@ if(BMSX_BUILD_TESTS)
 	add_executable(bmsx_libretro_environment_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_environment_test.cpp
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/support/boot_rom_fixture.cpp
+		${BMSX_TEST_ROM_SOURCE}
 		${BMSX_LIBRETRO_DIR}/entry.cpp
 		${BMSX_LIBRETRO_DIR}/platform.cpp
 	)

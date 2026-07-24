@@ -5,7 +5,6 @@
 #include "machine_manager.h"
 #include "host_overlay_menu.h"
 #include "render/shared/bitmap_font.h"
-#include "system.h"
 #include "input/manager.h"
 #include "render/texture_manager.h"
 #include "../machine/runtime/runtime.h"
@@ -38,7 +37,6 @@ void MachineManager::LoadedCartridgeSlot::clear() {
 MachineManager::MachineManager()
 	: m_audio_ufps_scaled(PAL_REFRESH_UFPS_SCALED) {
 	s_instance = this;
-	machine_manifest = &defaultSystemMachineManifest();
 }
 
 MachineManager::~MachineManager() {
@@ -288,10 +286,6 @@ Runtime& MachineManager::ensureRuntime(const RuntimeOptions& options) {
 // ROM loading and boot orchestration
 // ============================================================================
 
-void MachineManager::setMachineManifest(const MachineManifest& manifest) {
-	machine_manifest = &manifest;
-}
-
 void MachineManager::configureViewForGpuReset() {
 	m_view->setRenderTargetSize(
 		static_cast<i32>(gxGpuDisplayModeScreenWidth(GX_GPU_RESET_DISPLAY_MODE_WORD)),
@@ -299,48 +293,20 @@ void MachineManager::configureViewForGpuReset() {
 	);
 }
 
-MachineManager::LoadedProgramImages MachineManager::loadProgramImagesFromRom(const RuntimeRomPackage& romPackage, const RomImage& image) const {
-	const RomAssetInfo& imageRecord = *romPackage.programImageRom;
-	const u8* romData = image.bytes.data();
-	LoadedProgramImages images;
-	images.image = decodeProgramImage(
-		std::span<const u8>(
-			romData + static_cast<size_t>(*imageRecord.start),
-			static_cast<size_t>(*imageRecord.end - *imageRecord.start)
-		),
-		std::span<const u8>(
-			romData + static_cast<size_t>(*imageRecord.compiledStart),
-			static_cast<size_t>(*imageRecord.compiledEnd - *imageRecord.compiledStart)
-		)
-	);
-	if (romPackage.programSymbolsRom) {
-		const RomAssetInfo& symbolsRecord = *romPackage.programSymbolsRom;
-		images.metadata = decodeProgramSymbolsImage(std::span<const u8>(
-			romData + static_cast<size_t>(*symbolsRecord.start),
-			static_cast<size_t>(*symbolsRecord.end - *symbolsRecord.start)
-		));
-	}
-	return images;
-}
-
 bool MachineManager::loadSystemRomInternal(const u8* data, size_t size) {
 	if (m_texture_manager) {
 		m_texture_manager->setBackend(m_view ? m_view->backend() : nullptr);
 	}
 	m_system_rom_image = parseRomImage(data, size, RomImageDomain::System);
-	loadSystemRomPackage(m_system_rom_image, m_system_rom);
-	m_system_rom.machine = defaultSystemMachineManifest();
-	m_system_rom.entryPoint = systemBootEntryPath();
 	m_system_rom_loaded = true;
-	machine_manifest = &m_system_rom.machine;
 	m_default_font = std::make_unique<Font>();
 	m_view->default_font = m_default_font.get();
 	return true;
 }
 
-bool MachineManager::bootSystemStartupProgram() {
+bool MachineManager::bootSystemFirmware() {
 	if (!m_system_rom_loaded) return false;
-	if (!m_system_rom.hasProgram()) return false;
+	if (m_system_rom_image.header.blua32ImageOffset == 0u) return false;
 
 	const ResolvedRuntimeTiming timing = resolveRuntimeTiming(PSX_MACHINE_SPEC.cpuFreqHz);
 	configureRuntimeMemoryMap();
@@ -357,27 +323,19 @@ bool MachineManager::bootSystemStartupProgram() {
 		timing.activeDisplayHalfLines,
 		timing.geoWorkUnitsPerSec,
 	});
-	setMachineManifest(m_cart_rom.hasProgram() ? m_cart_rom.machine : m_system_rom.machine);
 	syncAudioTiming();
-	rt.resetRuntimeForProgramReload();
+	rt.resetForSystemBoot();
 	m_screen.reset();
-	rt.enterSystemFirmware();
 	refreshRenderSurfaces();
-	LoadedProgramImages systemImages = loadProgramImagesFromRom(m_system_rom, m_system_rom_image);
-	std::unique_ptr<ProgramImage> cartImage;
-	std::unique_ptr<ProgramMetadata> cartMetadata;
-	if (m_cart_rom.hasProgram()) {
-		LoadedProgramImages cartImages = loadProgramImagesFromRom(m_cart_rom, m_cartridge_slots[m_boot_cartridge_slot].image);
-		cartImage = std::move(cartImages.image);
-		cartMetadata = std::move(cartImages.metadata);
+	Blua32MediaSymbols symbols;
+	symbols.system = loadBlua32SymbolsImage(m_system_rom_image);
+	for (u32 slot = 0; slot < CARTRIDGE_SLOT_COUNT; ++slot) {
+		const RomImage& image = m_cartridge_slots[slot].image;
+		if (!image.bytes.empty()) {
+			symbols.cartridgeSlots[slot] = loadBlua32SymbolsImage(image);
+		}
 	}
-	rt.boot(
-		*systemImages.image,
-		std::move(systemImages.metadata),
-		cartImage.get(),
-		std::move(cartMetadata),
-		ProgramBootTarget::System
-	);
+	rt.boot(std::move(symbols));
 	flushSystemOutput(rt);
 	return true;
 }
@@ -395,19 +353,12 @@ bool MachineManager::bootLoadedCartridgeSlots() {
 			header.cartridgeBoardWord,
 			header.cartridgeRamByteCount,
 			true,
-			header.programBootVersion != 0u,
 		};
 	}
-	m_boot_cartridge_slot = cartridgeBootSlot(m_cartridge_media);
-	m_cart_rom.clear();
-	if (m_cartridge_media[m_boot_cartridge_slot].programPresent) {
-		loadCartRomPackage(m_cartridge_slots[m_boot_cartridge_slot].image, m_cart_rom);
-	}
-
-	if (!m_system_rom_loaded || !m_system_rom.hasProgram()) {
+	if (!m_system_rom_loaded || m_system_rom_image.header.blua32ImageOffset == 0u) {
 		return false;
 	}
-	if (!bootSystemStartupProgram()) {
+	if (!bootSystemFirmware()) {
 		return false;
 	}
 
@@ -470,13 +421,10 @@ void MachineManager::unloadRom() {
 		registry().clear();
 	}
 	m_runtime.reset();
-	machine_manifest = &m_system_rom.machine;
-	m_cart_rom.clear();
 	m_cartridge_media = {};
 	for (LoadedCartridgeSlot& slot : m_cartridge_slots) {
 		slot.clear();
 	}
-	m_boot_cartridge_slot = 0;
 	m_rom_loaded = false;
 }
 
@@ -488,18 +436,17 @@ bool MachineManager::rebootLoadedRom() {
 		m_view->initializeDefaultTextures();
 	}
 
-	return bootSystemStartupProgram();
+	return bootSystemFirmware();
 }
 
 bool MachineManager::bootWithoutCart() {
 	if (!m_system_rom_loaded) {
-		throw std::runtime_error("[BMSX] bootWithoutCart: system ROM not loaded");
+		throw std::runtime_error("System ROM is not loaded.");
 	}
-	if (!m_system_rom.hasProgram()) {
-		throw std::runtime_error("[BMSX] bootWithoutCart: no program in system ROM");
+	if (m_system_rom_image.header.blua32ImageOffset == 0u) {
+		throw std::runtime_error("System ROM has no BLua32 image.");
 	}
-	std::cout << "[BMSX] bootWithoutCart: program found, booting..." << std::endl;
-	if (!bootSystemStartupProgram()) {
+	if (!bootSystemFirmware()) {
 		return false;
 	}
 	m_rom_loaded = true;

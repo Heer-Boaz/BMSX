@@ -7,7 +7,7 @@ import { findExistingDirectory, getParamOrEnv, normalizePathKey, parseArgsVector
 import { createCliUi } from './display';
 import { validateAudioEventReferences } from './audioeventvalidator';
 import { lintCartSources } from './cart_lua_linter_runtime';
-import { biosLuaPath, buildLuaProgramContextAssets, buildRomProgramTail, commonResPath, cartlibLuaPath, systemLuaPath, compileLuaChunkBuffer, createTextureAtlases, finalizeRompack, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired } from './rombuilder';
+import { biosLuaPath, BLUA32_SYMBOLS_SIDECAR_SUFFIX, buildBluaSourceContextAssets, buildRomBlua32Tail, commonResPath, cartlibLuaPath, systemLuaPath, compileLuaChunkBuffer, createTextureAtlases, finalizeRompack, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired } from './rombuilder';
 import { buildGxTextureLayoutModuleSource } from './gx_texture_layout';
 import type { TaskProgressReporter as ProgressReporter } from './progress';
 import type { RomPackerOptions } from './rompacker.rompack';
@@ -20,13 +20,13 @@ import {
 } from '../../machine/ts/rompack/format';
 import { LuaError } from '../../machine/ts/lua/errors';
 import { loadRomAssetList } from '../../machine/ts/rompack/loader';
-import { layoutRomProgramPrefix } from '../../machine/ts/rompack/tooling/rom_layout';
+import { layoutRomPrefix } from '../../machine/ts/rompack/tooling/rom_prefix_layout';
 import {
-	decodeProgramImage,
-	decodeProgramSymbolsImage,
-	PROGRAM_IMAGE_ID,
-	PROGRAM_SYMBOLS_IMAGE_ID,
-} from '../../machine/ts/machine/program/loader';
+	BLUA32_IMAGE_ID,
+	decodeBlua32Image,
+} from '../../machine/ts/machine/cpu/blua32_image';
+import { decodeBlua32SymbolsImage } from '../../machine/ts/machine/cpu/blua32_symbols';
+import { SYSTEM_ROM_BASE } from '../../machine/ts/machine/memory/map';
 
 import { join } from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
@@ -329,6 +329,8 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 		throw new Error('Missing BIOS respath (expected ./machine/firmware/res).');
 	}
 	const BIOSRomName = SYSTEM_ROM_NAME;
+	const BIOSRomPath = join(outputDirectory, `${BIOSRomName}${debug ? '.debug' : ''}.rom`);
+	const BIOSSymbolsPath = `${BIOSRomPath}${BLUA32_SYMBOLS_SIDECAR_SUFFIX}`;
 
 	const BIOSProjectRoot = normalizePathKey(join(BIOSResPath, '..'));
 	const BIOSVirtualRoot = BIOSProjectRoot.replace(/^\.\//, '');
@@ -348,10 +350,10 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 			await progress.taskCompleted();
 		}
 	} else {
-		const checkBuild = () => isRebuildRequired(BIOSRomName, bootloader_path, BIOSResPath, {
+		const checkBuild = async () => !existsSync(BIOSSymbolsPath) || await isRebuildRequired(BIOSRomName, bootloader_path, BIOSResPath, {
 			extraLuaPaths: [biosLuaPath, systemLuaPath],
 			debug,
-			romFilePath: join(outputDirectory, `${BIOSRomName}${debug ? '.debug' : ''}.rom`),
+			romFilePath: BIOSRomPath,
 		});
 		assetsNeedRebuild = progress ? await progress.runWithDetail(TASK.BIOS_REBUILD_CHECK, checkBuild) : await checkBuild();
 		if (progress) {
@@ -385,19 +387,19 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 	await runBIOSStep(TASK.TEXTURE_BUILD, () => createTextureAtlases(BIOSResources));
 	validateAudioEventReferences(BIOSResources);
 	const BIOSRomAssets = await runBIOSStep(TASK.ROM_ASSETS, () => generateRomAssets(BIOSResources, message => progress?.setDetail(message)));
-	const BIOSLayout = layoutRomProgramPrefix(BIOSRomAssets, debug, null);
-	const BIOSProgram = buildRomProgramTail(BIOSRomAssets, SYSTEM_BOOT_ENTRY_PATH, {
+	const BIOSLayout = layoutRomPrefix(BIOSRomAssets, debug, null);
+	const BIOSBlua32 = buildRomBlua32Tail(BIOSRomAssets, SYSTEM_BOOT_ENTRY_PATH, {
 		externalLuaAssets: [],
 		generatedLuaModules: [],
 		includeSymbols: debug,
 		optLevel,
-		programOffset: BIOSLayout.programOffset,
-		programDomain: 'system',
+		imageOffset: BIOSLayout.blua32Offset,
+		domain: 'system',
 	});
 	await runBIOSStep(TASK.BIOS_FINALIZE, () => finalizeRompack(BIOSRomName, {
 		projectRootPath: '',
 		debug,
-		program: BIOSProgram,
+		blua32: BIOSBlua32,
 		layout: BIOSLayout,
 		outputDirectory,
 		cartridgeBoardWord: 0,
@@ -406,7 +408,7 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 	if (progress) {
 		await progress.showDone();
 	}
-	logOk(`BIOS assets ready → ${pc.white(join(outputDirectory, `${BIOSRomName}${debug ? '.debug' : ''}.rom`))}`);
+	logOk(`BIOS assets ready → ${pc.white(BIOSRomPath)}`);
 }
 
 async function main() {
@@ -483,9 +485,13 @@ async function main() {
 		logBullet('Build', debug ? pc.cyan('DEBUG') : pc.blue('NON-DEBUG'));
 		logBullet('Opt level', pc.white(`-O${optLevel}`));
 		const systemRomPath = join(outputDirectory, `${SYSTEM_ROM_NAME}${romPackDebug ? '.debug' : ''}.rom`);
+		const systemSymbolsPath = `${systemRomPath}${BLUA32_SYMBOLS_SIDECAR_SUFFIX}`;
 		if (!isBIOSMode) {
 			if (!existsSync(systemRomPath)) {
 				throw new Error(`BIOS ROM not found at "${systemRomPath}". Build the bios ROM first.`);
+			}
+			if (!existsSync(systemSymbolsPath)) {
+				throw new Error(`BIOS BLua32 symbols not found at "${systemSymbolsPath}". Build the bios ROM first.`);
 			}
 		}
 
@@ -566,30 +572,26 @@ async function main() {
 					update_timestamp: 0,
 				});
 			}
-			const biosProgramContextAssets = await buildLuaProgramContextAssets([biosLuaPath, systemLuaPath], '');
+			const biosBluaSourceContextAssets = await buildBluaSourceContextAssets([biosLuaPath, systemLuaPath], '');
 			const systemRom = new Uint8Array(readFileSync(systemRomPath));
 			const systemIndex = await loadRomAssetList(systemRom);
-			const systemProgramEntry = systemIndex.entries.find(entry => entry.resid === PROGRAM_IMAGE_ID)!;
-			const systemProgramSymbolsEntry = systemIndex.entries.find(entry => entry.resid === PROGRAM_SYMBOLS_IMAGE_ID);
-			const systemProgram = {
-				image: decodeProgramImage(
-					systemRom.subarray(systemProgramEntry.start, systemProgramEntry.end),
-					systemRom.subarray(systemProgramEntry.compiled_start, systemProgramEntry.compiled_end),
-				),
-				metadata: systemProgramSymbolsEntry
-					? decodeProgramSymbolsImage(systemRom.subarray(systemProgramSymbolsEntry.start, systemProgramSymbolsEntry.end))
-					: null,
-			};
-			const romLayout = layoutRomProgramPrefix(romAssets, romPackDebug, runtimeRomManifest);
+			const systemBlua32Entry = systemIndex.entries.find(entry => entry.resid === BLUA32_IMAGE_ID)!;
+			const systemImage = decodeBlua32Image(
+				systemRom.subarray(systemBlua32Entry.start, systemBlua32Entry.end),
+				SYSTEM_ROM_BASE + systemBlua32Entry.start,
+			);
+			const systemSymbols = decodeBlua32SymbolsImage(readFileSync(systemSymbolsPath));
+			const romLayout = layoutRomPrefix(romAssets, romPackDebug, runtimeRomManifest);
 			const assetSymbols = collectRomAssetSymbols(romLayout.entries, 'cart');
 			const assetSymbolModuleSource = buildRomAssetSymbolModuleSourceFromSymbols(assetSymbols);
-			const program = buildRomProgramTail(romAssets, romManifest.lua.entry_path, {
+			const blua32 = buildRomBlua32Tail(romAssets, romManifest.lua.entry_path, {
 				includeSymbols: romPackDebug,
 				optLevel,
-				programOffset: romLayout.programOffset,
-				programDomain: 'cart',
-				systemProgram,
-				externalLuaAssets: biosProgramContextAssets,
+				imageOffset: romLayout.blua32Offset,
+				domain: 'cart',
+				systemImage,
+				systemSymbols,
+				externalLuaAssets: biosBluaSourceContextAssets,
 				generatedLuaModules: [{ path: ROM_ASSET_SYMBOL_MODULE_PATH, source: assetSymbolModuleSource }],
 			});
 			const cartridgeHeaderWords = resolveCartridgeHeaderWords(romManifest);
@@ -610,7 +612,7 @@ async function main() {
 				projectRootPath,
 				status: message => progress.setDetail(message),
 				debug: romPackDebug,
-				program,
+				blua32,
 				layout: romLayout,
 				outputDirectory,
 				cartridgeBoardWord: cartridgeHeaderWords.cartridgeBoardWord,

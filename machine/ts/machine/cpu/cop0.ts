@@ -2,6 +2,7 @@ export const COP0_BAD_ADDRESS = 8;
 export const COP0_STATUS = 12;
 export const COP0_CAUSE = 13;
 export const COP0_EPC = 14;
+export const COP0_EXEC = 15;
 
 export const CPU_STATUS_INTERRUPT_ENABLE_CURRENT = 1 << 0;
 export const CPU_STATUS_USER_MODE_CURRENT = 1 << 1;

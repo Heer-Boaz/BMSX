@@ -1391,7 +1391,8 @@ function encodeCpuObjectState(state: CpuObjectState): CpuObjectState {
 			return {
 				kind: 'closure',
 				hashId: state.hashId,
-				protoIndex: state.protoIndex,
+				functionAddress: state.functionAddress,
+				canonical: state.canonical,
 				upvalues: encodeVector(state.upvalues, (index) => index),
 			};
 		case 'upvalue':
@@ -1432,7 +1433,8 @@ function decodeCpuObjectState(value: unknown, label: string): CpuObjectState {
 			return {
 				kind: 'closure',
 				hashId: requireObjectKey(object, 'hashId', label, 'cpuObjectState.hashId') as number,
-				protoIndex: requireObjectKey(object, 'protoIndex', label, 'cpuObjectState.protoIndex') as number,
+				functionAddress: requireObjectKey(object, 'functionAddress', label, 'cpuObjectState.functionAddress') as number,
+				canonical: requireObjectKey(object, 'canonical', label, 'cpuObjectState.canonical') as boolean,
 				upvalues: decodeVector(
 					requireObjectKey(object, 'upvalues', label, 'cpuObjectState.upvalues'),
 					'cpuObjectState.upvalues',
@@ -1454,7 +1456,7 @@ function decodeCpuObjectState(value: unknown, label: string): CpuObjectState {
 
 function encodeCpuFrameState(state: CpuFrameState): CpuFrameState {
 	return {
-		protoIndex: state.protoIndex,
+		functionAddress: state.functionAddress,
 		pc: state.pc,
 		closureRef: state.closureRef,
 		registers: encodeVector(state.registers, encodeCpuValueState),
@@ -1472,7 +1474,7 @@ function encodeCpuFrameState(state: CpuFrameState): CpuFrameState {
 function decodeCpuFrameState(value: unknown, label: string): CpuFrameState {
 	const object = requireObject(value, label);
 	return {
-		protoIndex: requireObjectKey(object, 'protoIndex', label, 'cpuFrameState.protoIndex') as number,
+		functionAddress: requireObjectKey(object, 'functionAddress', label, 'cpuFrameState.functionAddress') as number,
 		pc: requireObjectKey(object, 'pc', label, 'cpuFrameState.pc') as number,
 		closureRef: requireObjectKey(object, 'closureRef', label, 'cpuFrameState.closureRef') as number,
 		registers: decodeVector(
@@ -1537,9 +1539,9 @@ function decodeCpuRootValueState(value: unknown, label: string): CpuRootValueSta
 
 function encodeCpuRuntimeState(state: CpuRuntimeState): CpuRuntimeState {
 	return {
+		executionCartridgeSlot: state.executionCartridgeSlot,
 		systemGlobals: encodeVector(state.systemGlobals, encodeCpuRootValueState),
 		globals: encodeVector(state.globals, encodeCpuRootValueState),
-		moduleCache: encodeVector(state.moduleCache, encodeCpuRootValueState),
 		frames: encodeVector(state.frames, encodeCpuFrameState),
 		protectedCalls: encodeVector(state.protectedCalls, encodeCpuProtectedCallState),
 		lastReturnValues: encodeVector(state.lastReturnValues, encodeCpuValueState),
@@ -1567,6 +1569,7 @@ function encodeCpuRuntimeState(state: CpuRuntimeState): CpuRuntimeState {
 function decodeCpuRuntimeState(value: unknown, label: string): CpuRuntimeState {
 	const object = requireObject(value, label);
 	return {
+		executionCartridgeSlot: requireObjectKey(object, 'executionCartridgeSlot', label, 'cpuState.executionCartridgeSlot') as number,
 		systemGlobals: decodeVector(
 			requireObjectKey(object, 'systemGlobals', label, 'cpuState.systemGlobals'),
 			'cpuState.systemGlobals',
@@ -1576,11 +1579,6 @@ function decodeCpuRuntimeState(value: unknown, label: string): CpuRuntimeState {
 			requireObjectKey(object, 'globals', label, 'cpuState.globals'),
 			'cpuState.globals',
 			(entry) => decodeCpuRootValueState(entry, 'cpuState.globals[]'),
-		),
-		moduleCache: decodeVector(
-			requireObjectKey(object, 'moduleCache', label, 'cpuState.moduleCache'),
-			'cpuState.moduleCache',
-			(entry) => decodeCpuRootValueState(entry, 'cpuState.moduleCache[]'),
 		),
 		frames: decodeVector(
 			requireObjectKey(object, 'frames', label, 'cpuState.frames'),
@@ -1630,7 +1628,6 @@ function encodeRuntimeSaveStateValue(state: RuntimeSaveState): RuntimeSaveState 
 	return {
 		machineState: encodeRuntimeSaveMachineState(state.machineState),
 		cpuState: encodeCpuRuntimeState(state.cpuState),
-		systemProgramActive: state.systemProgramActive,
 		luaInitialized: state.luaInitialized,
 		luaRuntimeFailed: state.luaRuntimeFailed,
 		pendingEntryCall: state.pendingEntryCall,
@@ -1642,7 +1639,6 @@ function decodeRuntimeSaveStateValue(value: unknown, label: string): RuntimeSave
 	return {
 		machineState: decodeRuntimeSaveMachineState(requireObjectKey(object, 'machineState', label, 'runtimeSaveState.machineState'), 'runtimeSaveState.machineState'),
 		cpuState: decodeCpuRuntimeState(requireObjectKey(object, 'cpuState', label, 'runtimeSaveState.cpuState'), 'runtimeSaveState.cpuState'),
-		systemProgramActive: requireObjectKey(object, 'systemProgramActive', label, 'runtimeSaveState.systemProgramActive') as boolean,
 		luaInitialized: requireObjectKey(object, 'luaInitialized', label, 'runtimeSaveState.luaInitialized') as boolean,
 		luaRuntimeFailed: requireObjectKey(object, 'luaRuntimeFailed', label, 'runtimeSaveState.luaRuntimeFailed') as boolean,
 		pendingEntryCall: requireObjectKey(object, 'pendingEntryCall', label, 'runtimeSaveState.pendingEntryCall') as boolean,

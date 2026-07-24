@@ -4,8 +4,6 @@ export const CARTRIDGE_BOARD_MAILBOX = 1 << 1;
 
 export const CARTRIDGE_STATUS_SLOT0_PRESENT = 1 << 0;
 export const CARTRIDGE_STATUS_SLOT1_PRESENT = 1 << 1;
-export const CARTRIDGE_STATUS_SLOT0_PROGRAM = 1 << 8;
-export const CARTRIDGE_STATUS_SLOT1_PROGRAM = 1 << 9;
 export const CARTRIDGE_STATUS_SELECTED_SLOT1 = 1 << 16;
 
 export const CARTRIDGE_MAILBOX_DATA_OFFSET = 0x00;
@@ -22,23 +20,12 @@ export type CartridgeSlotMedia = {
 	boardWord: number;
 	ramByteCount: number;
 	present: boolean;
-	programPresent: boolean;
 };
 
 export type CartridgeSlotMediaPair = [
 	CartridgeSlotMedia,
 	CartridgeSlotMedia,
 ];
-
-export function cartridgeBootSlot(media: CartridgeSlotMediaPair): number {
-	for (let slotIndex = 0; slotIndex < media.length; slotIndex += 1) {
-		if (media[slotIndex].programPresent) return slotIndex;
-	}
-	for (let slotIndex = 0; slotIndex < media.length; slotIndex += 1) {
-		if (media[slotIndex].present) return slotIndex;
-	}
-	return 0;
-}
 
 export type CartridgeSlotState = {
 	ram: Uint8Array;

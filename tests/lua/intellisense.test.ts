@@ -1,4 +1,3 @@
-import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -8,13 +7,12 @@ import { PieceTreeBuffer } from '../../machine/ts/ide/editor/text/piece_tree_buf
 import type { ProjectReferenceEnvironment } from '../../machine/ts/ide/editor/contrib/references/sources';
 import { LuaLexer } from '../../machine/ts/lua/syntax/lexer';
 import { LuaParser } from '../../machine/ts/lua/syntax/parser';
-import { CPU, RunResult, StringValue } from '../../machine/ts/machine/cpu/cpu';
-import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
-import { Memory } from '../../machine/ts/machine/memory/memory';
+import { RunResult, StringValue } from '../../machine/ts/machine/cpu/cpu';
 import { compileLuaChunkToProgram } from '../../machine/ts/lua/compiler';
 import { registerLuaSourceRecord } from '../../machine/ts/lua/source_registry';
 import { machineManager } from '../../machine/ts/core/machine_manager';
 import { createRuntimeFaultState } from '../../machine/ts/ide/runtime/fault_state';
+import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 
 const semanticFrontendModulePromise = import('../../machine/ts/lua/semantic/frontend');
 const semanticDiagnosticsModulePromise = import('../../machine/ts/lua/semantic/diagnostics');
@@ -121,10 +119,9 @@ function runtimeWithPausedCpuLocal(source: string) {
 		entrySource: source,
 		optLevel: 0,
 	});
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
-	const cpu = new CPU(memory, new IrqController(memory));
-	cpu.setProgram(compiled.program, compiled.metadata, compiled.metadata, 0, 0, 0);
-	cpu.start(compiled.entryProtoIndex);
+	const image = linkTestSystemBlua32(compiled);
+	const cpu = createTestSystemCpu(image).cpu;
+	cpu.start(image.vectors.startupFunctionAddress);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
 	const record = {
 		resid: sourcePath,

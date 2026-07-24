@@ -6,6 +6,7 @@
 #include "machine/memory/bus_signals.h"
 #include "machine/memory/memory.h"
 #include "machine/scheduler/device.h"
+#include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
 
 #include <array>
@@ -14,16 +15,32 @@
 #include <span>
 #include <stdexcept>
 #include <string>
-#include <unordered_map>
 #include <utility>
 
 namespace {
 
 constexpr uint32_t GTE_SF = 1u << 19u;
 
+auto makeGteTestImage() -> bmsx::test::Blua32TestImage {
+	bmsx::test::Blua32TestImage image;
+	image.text.resize(bmsx::INSTRUCTION_BYTES);
+	bmsx::writeInstruction(
+		std::span<bmsx::u8>(image.text),
+		0,
+		static_cast<bmsx::u8>(bmsx::OpCode::RET),
+		0,
+		0,
+		0
+	);
+	image.functions.push_back({
+		.firstWord = 0u,
+		.wordCount = 1u,
+	});
+	return image;
+}
 
 struct GteHarness {
-	std::array<uint8_t, 1> emptyRom{{0}};
+	bmsx::test::Blua32TestRom systemRom;
 	bmsx::Memory memory;
 	bmsx::IrqController irq;
 	bmsx::CPU cpu;
@@ -31,11 +48,20 @@ struct GteHarness {
 	bmsx::GxGte gte;
 
 	GteHarness()
-		: memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, bmsx::test::cartridgeSlots() })
+		: GteHarness(makeGteTestImage()) {
+	}
+
+	explicit GteHarness(bmsx::test::Blua32TestImage image)
+		: systemRom(bmsx::test::encodeBlua32TestRom(
+			bmsx::RomImageDomain::System,
+			image
+		))
+		, memory(bmsx::MemoryInit{systemRom.bytes, bmsx::test::cartridgeSlots()})
 		, irq(memory)
 		, cpu(memory, irq)
 		, scheduler(cpu)
 		, gte(memory, cpu, scheduler) {
+		cpu.mountExecutableMedia({});
 	}
 };
 
@@ -69,35 +95,30 @@ void serviceScheduledGtePlus(GteHarness& harness, bmsx::i64 cycles) {
 	harness.gte.onService();
 }
 
-void installGtePlusBurstProgram(
-	GteHarness& harness,
-	bmsx::Program& program,
-	bmsx::ProgramRuntimeSymbols& runtimeSymbols,
+auto makeGtePlusBurstImage(
 	const std::array<uint32_t, 9>& words
-) {
+) -> bmsx::test::Blua32TestImage {
 	constexpr int instructionCount = 12;
-	program.codeBytes.resize(instructionCount * bmsx::INSTRUCTION_BYTES);
-		std::span<bmsx::u8> code(program.codeBytes);
+	bmsx::test::Blua32TestImage image;
+	image.text.resize(instructionCount * bmsx::INSTRUCTION_BYTES);
+	std::span<bmsx::u8> code(image.text);
 	bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 0);
 	for (uint32_t index = 0u; index < words.size(); index += 1u) {
 		bmsx::writeInstruction(code, static_cast<int>(index + 1u), static_cast<bmsx::u8>(bmsx::OpCode::LOADK), static_cast<bmsx::u8>(index + 1u), 0, static_cast<bmsx::u8>(index + 1u));
 	}
 	bmsx::writeInstruction(code, 10, static_cast<bmsx::u8>(bmsx::OpCode::STORE_MEM_WORDS_D), 1, 0, static_cast<bmsx::u8>(words.size()));
 	bmsx::writeInstruction(code, 11, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
-	program.constPool.reserve(words.size() + 1u);
-	program.constPool.push_back(bmsx::valueNumber(static_cast<double>(bmsx::IO_GX_GTE_PLUS_BASE)));
+	image.constants.reserve(words.size() + 1u);
+	image.constants.emplace_back(static_cast<bmsx::f64>(bmsx::IO_GX_GTE_PLUS_BASE));
 	for (uint32_t word : words) {
-		program.constPool.push_back(bmsx::valueNumber(static_cast<double>(word)));
+		image.constants.emplace_back(static_cast<bmsx::f64>(word));
 	}
-	program.constPoolStringPool = &program.stringPool;
-	bmsx::Proto proto;
-	proto.entryPC = 0;
-	proto.codeLen = static_cast<int>(program.codeBytes.size());
-	proto.maxStack = static_cast<int>(words.size() + 1u);
-	proto.staticClosure = true;
-	program.protos.push_back(std::move(proto));
-	runtimeSymbols.protoIds.push_back("gte_plus_burst");
-	harness.cpu.setProgram(&program, runtimeSymbols, nullptr, 0, 0, 0);
+	image.functions.push_back({
+		.firstWord = 0u,
+		.wordCount = instructionCount,
+		.maxStack = static_cast<bmsx::u32>(words.size() + 1u),
+	});
+	return image;
 }
 
 void setupIdentityProjection(bmsx::GxGte& gte) {
@@ -371,10 +392,8 @@ void testPlusActiveCpuSliceCompletionEdge() {
 }
 
 void testPlusCpuBurstSaveRestoreInterlock() {
-	GteHarness first;
 	const uint32_t commandAddress = bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_COMMAND * bmsx::IO_WORD_SIZE;
 	const uint32_t firstAddXy = pack16(1u, 2u);
-	first.memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_ADD_XY * bmsx::IO_WORD_SIZE, firstAddXy);
 	const std::array<uint32_t, 9> burstWords{{
 		pack16(10u, static_cast<uint32_t>(-20)),
 		30u,
@@ -386,10 +405,9 @@ void testPlusCpuBurstSaveRestoreInterlock() {
 		0u,
 		bmsx::GX_GTE_PLUS_FN_VMAD3,
 	}};
-	bmsx::Program firstProgram;
-	bmsx::ProgramRuntimeSymbols firstRuntimeSymbols;
-	installGtePlusBurstProgram(first, firstProgram, firstRuntimeSymbols, burstWords);
-	first.cpu.start(0);
+	GteHarness first(makeGtePlusBurstImage(burstWords));
+	first.memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_ADD_XY * bmsx::IO_WORD_SIZE, firstAddXy);
+	first.cpu.start(first.systemRom.functionAddresses[0]);
 	for (size_t index = 0u; index < burstWords.size() + 1u; index += 1u) {
 		first.cpu.step();
 	}
@@ -398,8 +416,7 @@ void testPlusCpuBurstSaveRestoreInterlock() {
 	require(first.cpu.run(10) == bmsx::RunResult::Halted, "GTE+ burst blocks the CPU");
 	first.scheduler.endCpuSlice();
 	require(first.cpu.isMemoryWriteBlocked(), "GTE+ burst records CPU interlock");
-	const std::unordered_map<std::string, bmsx::Value> emptyModuleCache;
-	const bmsx::CpuRuntimeState blockedCpuState = first.cpu.captureRuntimeState(emptyModuleCache);
+	const bmsx::CpuRuntimeState blockedCpuState = first.cpu.captureRuntimeState();
 	require(blockedCpuState.memoryWriteBlockedAddress == commandAddress, "GTE+ burst blocks at command word");
 	require(!blockedCpuState.yieldRequested, "GTE+ mapped-store block supersedes scheduler yield");
 	require(first.memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_ADD_XY * bmsx::IO_WORD_SIZE) == firstAddXy, "GTE+ blocked burst commits no leading words");
@@ -407,18 +424,14 @@ void testPlusCpuBurstSaveRestoreInterlock() {
 
 	first.scheduler.advanceTo(2);
 	const bmsx::GxGteState gteState = first.gte.captureState();
-	const bmsx::CpuRuntimeState cpuState = first.cpu.captureRuntimeState(emptyModuleCache);
+	const bmsx::CpuRuntimeState cpuState = first.cpu.captureRuntimeState();
 	require(gteState.plusPendingCycles == 3u, "GTE+ blocked save retains remaining cycles");
 	require(gteState.plusInterlockArmed, "GTE+ blocked save retains its armed interlock edge");
 
-	GteHarness restored;
-	bmsx::Program restoredProgram;
-	bmsx::ProgramRuntimeSymbols restoredRuntimeSymbols;
-	installGtePlusBurstProgram(restored, restoredProgram, restoredRuntimeSymbols, burstWords);
+	GteHarness restored(makeGtePlusBurstImage(burstWords));
 	restored.scheduler.setNowCycles(100);
 	restored.gte.restoreState(gteState);
-	std::unordered_map<std::string, bmsx::Value> restoredModuleCache;
-	restored.cpu.restoreRuntimeState(cpuState, restoredModuleCache);
+	restored.cpu.restoreRuntimeState(cpuState);
 	require(restored.scheduler.nextDeadline() == 103, "GTE+ blocked restore rearms its interlock edge");
 	restored.scheduler.advanceTo(102);
 	require(restored.cpu.run(100) == bmsx::RunResult::Halted, "GTE+ restored CPU remains blocked before edge");

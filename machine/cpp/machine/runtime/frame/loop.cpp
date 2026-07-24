@@ -52,8 +52,7 @@ bool FrameLoopState::consumeSystemReset(Runtime& runtime) {
 	if (!runtime.machine.systemController.takeResetRequest()) {
 		return false;
 	}
-	resetFrameState(runtime);
-	runtime.rebootSystemProgram();
+	runtime.rebootSystem();
 	return true;
 }
 
@@ -92,12 +91,12 @@ void FrameLoopState::runUpdatePhase(Runtime& runtime) {
 			if (consumeSystemReset(runtime)) {
 				return;
 			}
-			if (result == RunResult::Halted && cpu.getFrameDepth() == 0 && !runtime.cartProgramStarted) {
-				runtime.frameScheduler.clearQueuedTime();
-				abandonFrameState(runtime);
-				runtime.startCartProgram();
-				return;
-			}
+		if (result == RunResult::Halted && cpu.getFrameDepth() == 0) {
+			runtime.m_pendingCall = Runtime::PendingCall::None;
+			runtime.frameScheduler.clearQueuedTime();
+			abandonFrameState(runtime);
+			return;
+		}
 			if (cpu.isHaltedUntilIrq()) {
 				return;
 			}

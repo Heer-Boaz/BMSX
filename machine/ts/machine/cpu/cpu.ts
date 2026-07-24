@@ -12,6 +12,7 @@ import {
 	COP0_BAD_ADDRESS,
 	COP0_CAUSE,
 	COP0_EPC,
+	COP0_EXEC,
 	COP0_STATUS,
 	CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD,
 	CPU_CAUSE_CODE_ADDRESS_ERROR_STORE,
@@ -23,15 +24,38 @@ import {
 	CPU_STATUS_INTERRUPT_ENABLE_CURRENT,
 	CPU_STATUS_MODE_STACK_MASK,
 	CPU_STATUS_RFE_RESTORE_MASK,
+	CPU_STATUS_SYSTEM_ENTRY,
 	CPU_STATUS_USER_MODE_CURRENT,
 } from './cop0';
-import { CpuExecutionProfiler, formatCpuProfilerReport, type CpuProfilerReportOptions } from './profiler';
+import {
+	CpuExecutionProfiler,
+	formatCpuProfilerReport,
+	type CpuProfilerImage,
+	type CpuProfilerReportOptions,
+} from './profiler';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord, signExtend } from './instruction_format';
+import {
+	BLUA32_BOOT_HEADER_SIZE,
+	BLUA32_FUNCTION_RECORD_SIZE,
+	Blua32ConstantTag,
+	decodeBlua32BootHeader,
+	decodeBlua32Image,
+	type Blua32BootHeader,
+	type Blua32FunctionRecord,
+	type Blua32ImageLayout,
+} from './blua32_image';
+import {
+	blua32SourceRangeAtPc,
+	type Blua32MediaSymbols,
+	type Blua32SymbolsImage,
+	type SourceRange,
+} from './blua32_symbols';
 import { MEMORY_ACCESS_KIND_ALIGNMENT_MASKS, MemoryAccessKind } from '../memory/access_kind';
 import { ScratchBuffer } from '../../common/scratchbuffer';
 import { ScratchArrayStack } from '../../common/scratchstack';
 import { luaFloorDivide, luaModulo } from '../../lua/numeric';
 import { ceilDiv4, ceilLog2, nextPowerOfTwo } from '../common/numeric';
+import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../memory/map';
 
 export { OpCode } from './opcode_info';
 
@@ -80,24 +104,6 @@ export function asStringId(value: StringValue): StringId {
 }
 
 export const isTruthyValue = (value: Value): boolean => value !== null && value !== false;
-
-export type SourcePosition = {
-	line: number;
-	column: number;
-};
-
-export type SourceRange = {
-	path: string;
-	start: SourcePosition;
-	end: SourcePosition;
-};
-
-export type LocalSlotDebug = {
-	name: string;
-	register: number;
-	definition: SourceRange;
-	scope: SourceRange;
-};
 
 const BUILTIN_FUNCTION_KIND = 'builtin_function';
 const NATIVE_FUNCTION_KIND = 'native_function';
@@ -274,37 +280,21 @@ export function isNativeObject(value: Value): value is NativeObject {
 	return (value as NativeObject).kind === NATIVE_OBJECT_KIND;
 }
 
-export type ProgramRuntimeSymbols = {
-	protoIds: string[];
-	globalNames: string[];
-	systemGlobalNames: string[];
-	// BLua module exports: maps a module export slot name (e.g. "foo__update") to the
-	// proto id of the exported function, but ONLY for static closures (no upvalues).
-	// The linker uses this to resolve an export reference directly to that proto (a
-	// link-time symbol / static closure) instead of a runtime global-slot load.
-	exportProtoIdBySlot: { [slotName: string]: string };
-};
-
-export type ProgramResumePoint = {
-	wordOffset: number;
-	range: SourceRange;
-	op: OpCode;
-	liveRegisters: number[];
-	uses: number[];
-	defs: number[];
-};
-
-export type ProgramMetadata = ProgramRuntimeSymbols & {
-	debugRanges: ReadonlyArray<SourceRange | null>;
-	resumePointsByProto: ReadonlyArray<ReadonlyArray<ProgramResumePoint>>;
-	localSlotsByProto: ReadonlyArray<ReadonlyArray<LocalSlotDebug>>;
-	upvalueNamesByProto: ReadonlyArray<ReadonlyArray<string>>;
-};
-
 export type CpuFrameSnapshot = {
-	protoIndex: number;
+	functionAddress: number;
+	functionIndex: number;
+	symbols: Blua32SymbolsImage | null;
+	textAddress: number;
 	pc: number;
 	registers: Value[];
+};
+
+export type CpuCallStackEntry = {
+	functionAddress: number;
+	functionIndex: number;
+	symbols: Blua32SymbolsImage | null;
+	textAddress: number;
+	pc: number;
 };
 
 export type CpuValueState =
@@ -329,7 +319,8 @@ export type CpuObjectState =
 	| {
 		kind: 'closure';
 		hashId: number;
-		protoIndex: number;
+		functionAddress: number;
+		canonical: boolean;
 		upvalues: number[];
 	}
 	| {
@@ -342,7 +333,7 @@ export type CpuObjectState =
 	};
 
 export type CpuFrameState = {
-	protoIndex: number;
+	functionAddress: number;
 	pc: number;
 	closureRef: number;
 	registers: CpuValueState[];
@@ -372,9 +363,9 @@ export type CpuRootValueState = {
 };
 
 export type CpuRuntimeState = {
+	executionCartridgeSlot: number;
 	systemGlobals: CpuRootValueState[];
 	globals: CpuRootValueState[];
-	moduleCache: CpuRootValueState[];
 	frames: CpuFrameState[];
 	protectedCalls: CpuProtectedCallState[];
 	lastReturnValues: CpuValueState[];
@@ -404,48 +395,11 @@ export const enum AcceptedInterruptKind {
 	NonMaskable,
 }
 
-export type Program = {
-	code: Uint8Array<ArrayBuffer>;
-	constPool: Value[];
-	protos: Proto[];
-	moduleProtos: ProgramModuleProto[];
-	moduleExports: ProgramModuleExport[];
-	moduleProtoMap: Map<string, number>;
-	stringPool: StringPool;
-	constPoolStringPool: StringPool;
-};
-
-export type ProgramModuleProto = {
-	path: string;
-	protoIndex: number;
-};
-
-export type ProgramModuleExport = {
-	path: string;
-	exportPathKey: string;
-	slotName: string;
-};
-
-export type Proto = {
-	entryPC: number;
-	codeLen: number;
-	numParams: number;
-	isVararg: boolean;
-	maxStack: number;
-	upvalueDescs: UpvalueDesc[];
-	staticClosure: boolean;
-};
-
-export type UpvalueDesc = {
-	inStack: boolean;
-	index: number;
-};
-
 export class Closure {
 	public hashId = 0;
 
 	public constructor(
-		public protoIndex: number,
+		public functionAddress: number,
 		public upvalues: Upvalue[],
 		public heapBytes: number,
 	) {
@@ -518,7 +472,8 @@ type OpenUpvalueSlot = {
 };
 
 type CallFrame = {
-	protoIndex: number;
+	functionAddress: number;
+	functionRecord: Blua32RuntimeFunction;
 	pc: number;
 	varargBase: number;
 	varargCount: number;
@@ -1513,6 +1468,40 @@ type DecodedInstructionPage = {
 	tableCacheIndexes: Uint32Array;
 };
 
+type Blua32RuntimeFunction = Blua32FunctionRecord & {
+	image: Blua32ExecutionImage;
+	index: number;
+};
+
+type Blua32MediaImage = {
+	layout: Blua32ImageLayout;
+	boot: Blua32BootHeader;
+	cartridgeSlot: number;
+	symbols: Blua32SymbolsImage | null;
+};
+
+type Blua32ExecutionImage = Blua32MediaImage & {
+	functions: Blua32RuntimeFunction[];
+	constPool: Value[];
+	globalSlots: Uint32Array;
+	systemGlobalSlots: Uint32Array;
+	decodedPages: DecodedInstructionPage[];
+	decodedWordCount: number;
+	tableLoadCaches: TableLoadInlineCache[];
+	staticClosures: Closure[];
+	profilerIndex: number;
+};
+
+export type Blua32ExecutionImageRevision = {
+	functionAddresses: Uint32Array;
+	pcAddresses: Int32Array;
+};
+
+export type Blua32MediaRevision = {
+	system: Blua32ExecutionImageRevision | null;
+	cartridgeSlots: [Blua32ExecutionImageRevision | null, Blua32ExecutionImageRevision | null];
+};
+
 function createDecodedInstructionPage(): DecodedInstructionPage {
 	const page: DecodedInstructionPage = {
 		widths: new Uint8Array(DECODED_PAGE_WORDS),
@@ -1543,8 +1532,6 @@ export class CPU {
 	public readonly globals: Table;
 	public readonly memory: Memory;
 
-	public program: Program = null;
-	private metadata: ProgramMetadata | null = null;
 	public readonly stringPool: StringPool;
 	private indexKey: StringValue = null;
 	private haltedUntilIrq = false;
@@ -1561,9 +1548,7 @@ export class CPU {
 	private nmiReturnEpcWord = 0;
 	private nmiReturnBadAddressWord = 0;
 	private nonMaskableInterruptPending = false;
-	private systemIrqProtoIndex!: number;
-	private cartIrqProtoIndex!: number;
-	private systemExceptionProtoIndex!: number;
+	private systemExceptionFunctionAddress = 0;
 	private hostExternalCallActive = false;
 	private yieldRequested = false;
 	private readonly frames: CallFrame[] = [];
@@ -1579,11 +1564,12 @@ export class CPU {
 	public readonly profiler = new CpuExecutionProfiler();
 	private profilerEnabled = false;
 	private profilerConfigured = false;
-	private profilerRuntimeSymbols!: ProgramRuntimeSymbols;
 	private externalReturnSink: Value[] | null = null;
-	private decodedPages: DecodedInstructionPage[] = [];
-	private decodedWordCount = 0;
-	private tableLoadCaches: TableLoadInlineCache[] = [];
+	private systemImage!: Blua32ExecutionImage;
+	private cartridgeMediaImages: [Blua32MediaImage | null, Blua32MediaImage | null] = [null, null];
+	private cartridgeImages: [Blua32ExecutionImage | null, Blua32ExecutionImage | null] = [null, null];
+	private activeExecutionImage!: Blua32ExecutionImage;
+	private readonly staticClosuresByAddress = new Map<number, Closure>();
 	public stringIndexTable: Table;
 	private systemGlobalNames: StringId[] = [];
 	private systemGlobalValues: Value[] = [];
@@ -1592,7 +1578,6 @@ export class CPU {
 	private globalValues: Value[] = [];
 	private globalSlotByKey: Map<StringId, number> = new Map();
 	private readonly framePool: CallFrame[] = [];
-	private readonly staticClosures: Closure[] = [];
 	private stackRegisters = new RegisterFile(8);
 	private stackTop = 0;
 	private nextObjectHashId = 1;
@@ -1747,11 +1732,10 @@ export class CPU {
 		throw new LuaExecutionError('Attempted to index field on a non-table value.');
 	}
 
-	private loadTableIntegerIndexCached(cacheIndex: number, base: Value, index: number): Value {
+	private loadTableIntegerIndexCached(cache: TableLoadInlineCache, base: Value, index: number): Value {
 		const indexKind = TableIndexKeyKind.Integer;
 		if (base instanceof Table) {
 			if (base.metatable === null) {
-				const cache = this.tableLoadCaches[cacheIndex];
 				const version = base.getVersion();
 				if (cache.table === base && cache.version === version) {
 					return cache.value;
@@ -1767,7 +1751,6 @@ export class CPU {
 		if (valueIsString(base)) {
 			const table = this.stringIndexTable;
 			if (table.metatable === null) {
-				const cache = this.tableLoadCaches[cacheIndex];
 				const version = table.getVersion();
 				if (cache.table === table && cache.version === version) {
 					return cache.value;
@@ -1794,10 +1777,9 @@ export class CPU {
 		throw new LuaExecutionError('Attempted to index field on a non-table value.');
 	}
 
-	private loadTableFieldIndexCached(cacheIndex: number, base: Value, key: StringValue): Value {
+	private loadTableFieldIndexCached(cache: TableLoadInlineCache, base: Value, key: StringValue): Value {
 		if (base instanceof Table) {
 			if (base.metatable === null) {
-				const cache = this.tableLoadCaches[cacheIndex];
 				const version = base.getVersion();
 				if (cache.table === base && cache.version === version) {
 					return cache.value;
@@ -1813,7 +1795,6 @@ export class CPU {
 		if (valueIsString(base)) {
 			const table = this.stringIndexTable;
 			if (table.metatable === null) {
-				const cache = this.tableLoadCaches[cacheIndex];
 				const version = table.getVersion();
 				if (cache.table === table && cache.version === version) {
 					return cache.value;
@@ -1881,7 +1862,8 @@ export class CPU {
 			return this.framePool.pop()!;
 		}
 		return {
-			protoIndex: 0,
+			functionAddress: 0,
+			functionRecord: null!,
 			pc: 0,
 			varargBase: 0,
 			varargCount: 0,
@@ -1928,66 +1910,62 @@ export class CPU {
 		this.stackTop = 0;
 	}
 
-	public setProgram(
-		program: Program,
-		runtimeSymbols: ProgramRuntimeSymbols,
-		metadata: ProgramMetadata | null,
-		systemIrqProtoIndex: number,
-		cartIrqProtoIndex: number,
-		systemExceptionProtoIndex: number,
+	public mountExecutableMedia(symbols: Blua32MediaSymbols): void {
+		this.mountExecutableImages(
+			symbols.system,
+			symbols.cartridgeSlots[0],
+			symbols.cartridgeSlots[1],
+		);
+	}
+
+	public remountExecutableMedia(): void {
+		const slot0 = this.cartridgeImages[0] || this.cartridgeMediaImages[0];
+		const slot1 = this.cartridgeImages[1] || this.cartridgeMediaImages[1];
+		this.mountExecutableImages(
+			this.systemImage.symbols,
+			slot0 ? slot0.symbols : null,
+			slot1 ? slot1.symbols : null,
+		);
+	}
+
+	private mountExecutableImages(
+		systemSymbols: Blua32SymbolsImage | null,
+		slot0Symbols: Blua32SymbolsImage | null,
+		slot1Symbols: Blua32SymbolsImage | null,
 	): void {
-		const previousSystemGlobals = new Map<StringId, Value>();
-		for (let slot = 0; slot < this.systemGlobalNames.length; slot += 1) {
-			previousSystemGlobals.set(this.systemGlobalNames[slot], this.systemGlobalValues[slot]);
+		this.staticClosuresByAddress.clear();
+		const systemMedia = this.decodeExecutableMedia(
+			SYSTEM_ROM_BASE,
+			-1,
+			systemSymbols,
+		);
+		if (!systemMedia) {
+			throw new Error('System ROM has no BLua32 executable image.');
 		}
-		const codeChanged = this.program === null || this.program.code !== program.code;
-		const protosChanged = this.program === null || this.program.protos !== program.protos;
-		// Ordinary globals remain Lua-table-visible across program replacement. System globals
-		// are a distinct CPU registerfile and are carried by slot name above instead.
-		this.syncGlobalSlotsToTable();
-		this.program = program;
-		this.systemIrqProtoIndex = systemIrqProtoIndex;
-		this.cartIrqProtoIndex = cartIrqProtoIndex;
-		this.systemExceptionProtoIndex = systemExceptionProtoIndex;
+		this.systemImage = this.activateExecutableImage(systemMedia);
+		this.cartridgeMediaImages = [
+			this.decodeExecutableMedia(
+				CART_ROM_BASE,
+				0,
+				slot0Symbols,
+			),
+			this.decodeExecutableMedia(
+				CART_ROM_BASE,
+				1,
+				slot1Symbols,
+			),
+		];
+		this.cartridgeImages = [null, null];
+		this.systemExceptionFunctionAddress = this.systemImage.boot.exceptionFunctionAddress;
 		this.hardHalted = false;
-		this.metadata = metadata;
-		const constPool = program.constPool;
-		const programPool = program.constPoolStringPool;
-		if (programPool !== this.stringPool) {
-			for (let index = 0; index < constPool.length; index += 1) {
-				const value = constPool[index];
-				if (valueIsString(value)) {
-					constPool[index] = StringValue.get(this.stringPool.intern(programPool.toString(asStringId(value)), false));
-				}
-			}
-			program.constPoolStringPool = this.stringPool;
-		}
-		if (protosChanged) {
-			this.materializeStaticClosures(program);
-		}
-		this.initializeGlobalSlots(runtimeSymbols, previousSystemGlobals);
-		if (codeChanged) {
-			this.decodeProgram(program);
-		}
-		this.profilerRuntimeSymbols = runtimeSymbols;
+		this.activeExecutionImage = this.systemImage;
 		this.profilerConfigured = false;
 		if (this.profilerEnabled) {
 			this.configureProfiler();
 		}
 	}
 
-	public relocateActiveFrames(programCounterRelocations: Int32Array): void {
-		for (let index = 0; index < this.frames.length; index += 1) {
-			const frame = this.frames[index];
-			frame.pc = programCounterRelocations[frame.pc / INSTRUCTION_BYTES];
-			const maxStack = this.program.protos[frame.protoIndex].maxStack;
-			if (maxStack > frame.stackCapacity) {
-				this.ensureRegisterCapacity(frame, maxStack - 1);
-			}
-		}
-	}
-
-	public clearProgramEnvironment(): void {
+	public clearExecutionEnvironment(): void {
 		this.lastReturnValues.length = 0;
 		this.clearCallStack();
 		this.externalReturnSink = null;
@@ -1995,46 +1973,326 @@ export class CPU {
 		this.globals.clear();
 	}
 
-	private materializeStaticClosures(program: Program): void {
-		const protos = program.protos;
-		const closures = this.staticClosures;
-		const existingCount = closures.length;
-		closures.length = protos.length;
-		for (let index = existingCount; index < protos.length; index += 1) {
-			const closure = new Closure(index, EMPTY_CLOSURE_UPVALUES, 0);
-			closure.hashId = this.allocateObjectHashId();
-			closures[index] = closure;
+	private registerGlobalNames(names: ReadonlyArray<string>, system: boolean): Uint32Array {
+		const slotByKey = system ? this.systemGlobalSlotByKey : this.globalSlotByKey;
+		const registeredNames = system ? this.systemGlobalNames : this.globalNames;
+		const values = system ? this.systemGlobalValues : this.globalValues;
+		const slots = new Uint32Array(names.length);
+		for (let index = 0; index < names.length; index += 1) {
+			const key = this.stringPool.intern(names[index], false);
+			let slot = slotByKey.get(key);
+			if (slot === undefined) {
+				slot = registeredNames.length;
+				slotByKey.set(key, slot);
+				registeredNames.push(key);
+				values.push(system ? null : this.globals.get(StringValue.get(key)));
+			}
+			slots[index] = slot;
+		}
+		return slots;
+	}
+
+	private decodeExecutableMedia(
+		romBaseAddress: number,
+		cartridgeSlot: number,
+		symbols: Blua32SymbolsImage | null,
+	): Blua32MediaImage | null {
+		const headerView = { bytes: null!, byteOffset: 0, byteLength: 0 };
+		if (!this.memory.bindRomByteView(
+			romBaseAddress,
+			BLUA32_BOOT_HEADER_SIZE,
+			cartridgeSlot < 0 ? 0 : cartridgeSlot,
+			headerView,
+		)) {
+			return null;
+		}
+		const boot = decodeBlua32BootHeader(headerView.bytes, headerView.byteOffset);
+		if (boot.imageOffset === 0) {
+			return null;
+		}
+		const imageAddress = romBaseAddress + boot.imageOffset;
+		const imageView = { bytes: null!, byteOffset: 0, byteLength: 0 };
+		if (!this.memory.bindRomByteView(
+			imageAddress,
+			boot.imageByteCount,
+			cartridgeSlot < 0 ? 0 : cartridgeSlot,
+			imageView,
+		)) {
+			throw new Error('BLua32 image is not backed by the installed ROM.');
+		}
+		const bytes = imageView.bytes.subarray(imageView.byteOffset, imageView.byteOffset + imageView.byteLength);
+		return {
+			layout: decodeBlua32Image(bytes, imageAddress),
+			boot,
+			cartridgeSlot,
+			symbols,
+		};
+	}
+
+	private activateExecutableImage(media: Blua32MediaImage): Blua32ExecutionImage {
+		const layout = media.layout;
+		const constPool = new Array<Value>(layout.constants.length);
+		for (let index = 0; index < layout.constants.length; index += 1) {
+			const constant = layout.constants[index];
+			switch (constant.tag) {
+				case Blua32ConstantTag.Nil:
+					constPool[index] = null;
+					break;
+				case Blua32ConstantTag.False:
+					constPool[index] = false;
+					break;
+				case Blua32ConstantTag.True:
+					constPool[index] = true;
+					break;
+				case Blua32ConstantTag.Number:
+					constPool[index] = constant.value;
+					break;
+				case Blua32ConstantTag.String:
+					constPool[index] = StringValue.get(this.stringPool.intern(constant.value, false));
+					break;
+			}
+		}
+		const globalSlots = this.registerGlobalNames(layout.globalNames, false);
+		const systemGlobalSlots = this.registerGlobalNames(layout.systemGlobalNames, true);
+		const decoded = this.decodeText(layout, globalSlots, systemGlobalSlots);
+		const image: Blua32ExecutionImage = {
+			...media,
+			functions: new Array(layout.functions.length),
+			constPool,
+			globalSlots,
+			systemGlobalSlots,
+			decodedPages: decoded.pages,
+			decodedWordCount: layout.header.textByteCount / INSTRUCTION_BYTES,
+			tableLoadCaches: decoded.tableLoadCaches,
+			staticClosures: new Array(layout.functions.length),
+			profilerIndex: 0,
+		};
+		for (let index = 0; index < layout.functions.length; index += 1) {
+			const functionRecord: Blua32RuntimeFunction = {
+				...layout.functions[index],
+				image,
+				index,
+			};
+			image.functions[index] = functionRecord;
+		}
+		this.bindStaticClosures(image);
+		const startup = this.functionRecordInImage(image, media.boot.startupFunctionAddress);
+		const irq = this.functionRecordInImage(image, media.boot.irqFunctionAddress);
+		const exception = this.functionRecordInImage(image, media.boot.exceptionFunctionAddress);
+		if (!startup || !irq || !exception
+			|| !startup.staticClosure || !irq.staticClosure || !exception.staticClosure) {
+			throw new Error('BLua32 boot vector does not name a static function record.');
+		}
+		return image;
+	}
+
+	private cartridgeImageForExecution(slot: number): Blua32ExecutionImage | null {
+		let image = this.cartridgeImages[slot];
+		if (image) {
+			return image;
+		}
+		const media = this.cartridgeMediaImages[slot];
+		if (!media) {
+			return null;
+		}
+		image = this.activateExecutableImage(media);
+		this.cartridgeMediaImages[slot] = null;
+		this.cartridgeImages[slot] = image;
+		this.profilerConfigured = false;
+		if (this.profilerEnabled) {
+			this.configureProfiler();
+		}
+		return image;
+	}
+
+	private staticClosureAtAddress(address: number): Closure {
+		const existing = this.staticClosuresByAddress.get(address);
+		if (existing) {
+			return existing;
+		}
+		const closure = new Closure(address, EMPTY_CLOSURE_UPVALUES, 0);
+		closure.hashId = this.allocateObjectHashId();
+		this.staticClosuresByAddress.set(address, closure);
+		return closure;
+	}
+
+	private bindStaticClosures(image: Blua32ExecutionImage): void {
+		for (let index = 0; index < image.functions.length; index += 1) {
+			const functionRecord = image.functions[index];
+			if (functionRecord.staticClosure) {
+				image.staticClosures[index] = this.staticClosureAtAddress(functionRecord.address);
+			}
 		}
 	}
 
-	private initializeGlobalSlots(runtimeSymbols: ProgramRuntimeSymbols, previousSystemGlobals: ReadonlyMap<StringId, Value>): void {
-		const systemNames = runtimeSymbols.systemGlobalNames;
-		const globalNames = runtimeSymbols.globalNames;
-		this.systemGlobalNames = new Array(systemNames.length);
-		this.systemGlobalValues = new Array(systemNames.length);
-		this.systemGlobalSlotByKey = new Map();
-		for (let index = 0; index < systemNames.length; index += 1) {
-			const key = this.stringPool.intern(systemNames[index], false);
-			this.systemGlobalNames[index] = key;
-			this.systemGlobalSlotByKey.set(key, index);
-			const previousValue = previousSystemGlobals.get(key);
-			this.systemGlobalValues[index] = previousValue === undefined ? null : previousValue;
+	public applyExecutableMediaRevision(
+		symbols: Blua32MediaSymbols,
+		revision: Blua32MediaRevision,
+	): void {
+		const previousSystemImage = this.systemImage;
+		const previousCartridgeImages = this.cartridgeImages;
+		const previousCartridgeMediaImages = this.cartridgeMediaImages;
+		const previousActiveImage = this.activeExecutionImage;
+
+		const imageRevisions = new Map<Blua32ExecutionImage, {
+			image: Blua32ExecutionImage;
+			revision: Blua32ExecutionImageRevision;
+		}>();
+
+		if (revision.system !== null) {
+			this.systemImage = this.activateExecutableImage(
+				this.decodeExecutableMedia(
+					SYSTEM_ROM_BASE,
+					-1,
+					symbols.system,
+				)!,
+			);
+			imageRevisions.set(previousSystemImage, {
+				image: this.systemImage,
+				revision: revision.system,
+			});
 		}
-		this.globalNames = new Array(globalNames.length);
-		this.globalValues = new Array(globalNames.length);
-		this.globalSlotByKey = new Map();
-		for (let index = 0; index < globalNames.length; index += 1) {
-			const key = this.stringPool.intern(globalNames[index], false);
-			this.globalNames[index] = key;
-			this.globalSlotByKey.set(key, index);
-			this.globalValues[index] = this.globals.get(StringValue.get(key));
+
+		const nextCartridgeImages: [Blua32ExecutionImage | null, Blua32ExecutionImage | null] = [
+			previousCartridgeImages[0],
+			previousCartridgeImages[1],
+		];
+		const nextCartridgeMediaImages: [Blua32MediaImage | null, Blua32MediaImage | null] = [
+			previousCartridgeMediaImages[0],
+			previousCartridgeMediaImages[1],
+		];
+		for (let slot = 0; slot < revision.cartridgeSlots.length; slot += 1) {
+			const imageRevision = revision.cartridgeSlots[slot];
+			if (imageRevision === null) {
+				continue;
+			}
+			const media = this.decodeExecutableMedia(
+				CART_ROM_BASE,
+				slot,
+				symbols.cartridgeSlots[slot],
+			);
+			const previousImage = previousCartridgeImages[slot];
+			if (!previousImage) {
+				nextCartridgeImages[slot] = null;
+				nextCartridgeMediaImages[slot] = media;
+				continue;
+			}
+			const image = this.activateExecutableImage(media!);
+			nextCartridgeImages[slot] = image;
+			nextCartridgeMediaImages[slot] = null;
+			imageRevisions.set(previousImage, { image, revision: imageRevision });
+		}
+		this.cartridgeImages = nextCartridgeImages;
+		this.cartridgeMediaImages = nextCartridgeMediaImages;
+
+		let activeExceptionFrameIndex = -1;
+		for (let frameIndex = this.frames.length - 1; frameIndex >= 0; frameIndex -= 1) {
+			if (this.frames[frameIndex].isExceptionFrame) {
+				activeExceptionFrameIndex = frameIndex;
+				break;
+			}
+		}
+		const epcOwnerFrameIndex = activeExceptionFrameIndex - 1;
+		let nmiReturnEpcOwnerFrameIndex = -1;
+		if (activeExceptionFrameIndex >= 0
+			&& this.frames[activeExceptionFrameIndex].isNonMaskableExceptionFrame) {
+			for (let frameIndex = activeExceptionFrameIndex - 1; frameIndex >= 0; frameIndex -= 1) {
+				if (this.frames[frameIndex].isExceptionFrame) {
+					nmiReturnEpcOwnerFrameIndex = frameIndex - 1;
+					break;
+				}
+			}
+		}
+
+		const relocatedPc = (
+			previousImage: Blua32ExecutionImage,
+			imageRevision: Blua32ExecutionImageRevision,
+			pc: number,
+		): number => {
+			const wordIndex = (pc - previousImage.layout.header.textAddress) / INSTRUCTION_BYTES;
+			return (wordIndex >>> 0) < imageRevision.pcAddresses.length
+				? imageRevision.pcAddresses[wordIndex]
+				: -1;
+		};
+
+		for (let frameIndex = this.frames.length - 1; frameIndex >= 0; frameIndex -= 1) {
+			const frame = this.frames[frameIndex];
+			const mappedImage = imageRevisions.get(frame.functionRecord.image);
+			if (!mappedImage) {
+				continue;
+			}
+			const previousImage = frame.functionRecord.image;
+			const pc = relocatedPc(previousImage, mappedImage.revision, frame.pc);
+			if (pc < 0) {
+				continue;
+			}
+
+			const childFrame = this.frames[frameIndex + 1];
+			let callSitePc = 0;
+			if (childFrame) {
+				callSitePc = relocatedPc(previousImage, mappedImage.revision, childFrame.callSitePc);
+				if (callSitePc < 0) {
+					continue;
+				}
+			}
+
+			let epcWord = 0;
+			if (frameIndex === epcOwnerFrameIndex) {
+				epcWord = relocatedPc(previousImage, mappedImage.revision, this.epcWord);
+				if (epcWord < 0) {
+					continue;
+				}
+			}
+
+			let nmiReturnEpcWord = 0;
+			if (frameIndex === nmiReturnEpcOwnerFrameIndex) {
+				nmiReturnEpcWord = relocatedPc(previousImage, mappedImage.revision, this.nmiReturnEpcWord);
+				if (nmiReturnEpcWord < 0) {
+					continue;
+				}
+			}
+
+			const address = mappedImage.revision.functionAddresses[frame.functionRecord.index];
+			const functionRecord = this.functionRecordInImage(mappedImage.image, address)!;
+			frame.functionAddress = address;
+			frame.functionRecord = functionRecord;
+			frame.pc = pc;
+			if (childFrame) {
+				childFrame.callSitePc = callSitePc;
+			}
+			if (frameIndex === epcOwnerFrameIndex) {
+				this.epcWord = epcWord;
+			}
+			if (frameIndex === nmiReturnEpcOwnerFrameIndex) {
+				this.nmiReturnEpcWord = nmiReturnEpcWord;
+			}
+			if (functionRecord.maxStack > frame.stackCapacity) {
+				this.ensureRegisterCapacity(frame, functionRecord.maxStack - 1);
+			}
+		}
+
+		const activeRevision = imageRevisions.get(previousActiveImage);
+		if (activeRevision) {
+			this.activeExecutionImage = activeRevision.image;
+		}
+		this.systemExceptionFunctionAddress = this.systemImage.boot.exceptionFunctionAddress;
+		this.profilerConfigured = false;
+		if (this.profilerEnabled) {
+			this.configureProfiler();
 		}
 	}
 
-	private decodeProgram(program: Program): void {
-		const code = program.code;
+	private decodeText(
+		layout: Blua32ImageLayout,
+		globalSlots: Uint32Array,
+		systemGlobalSlots: Uint32Array,
+	): {
+		pages: DecodedInstructionPage[];
+		tableLoadCaches: TableLoadInlineCache[];
+	} {
+		const codeOffset = layout.header.textAddress - layout.address;
+		const code = layout.bytes.subarray(codeOffset, codeOffset + layout.header.textByteCount);
 		const instructionCount = code.length / INSTRUCTION_BYTES;
-		this.decodedWordCount = instructionCount;
 		const decodedPages = new Array<DecodedInstructionPage>((instructionCount + DECODED_PAGE_WORDS - 1) >> DECODED_PAGE_SHIFT);
 		for (let pageIndex = 0; pageIndex < decodedPages.length; pageIndex += 1) {
 			decodedPages[pageIndex] = createDecodedInstructionPage();
@@ -2080,7 +2338,19 @@ export class CPU {
 			page.a[pageOffset] = (wideA << aShift) | (extA << MAX_OPERAND_BITS) | aLow;
 			page.b[pageOffset] = rawB;
 			page.c[pageOffset] = rawC;
-			page.bx[pageOffset] = decodedBx;
+			switch (op) {
+				case OpCode.GETGL:
+				case OpCode.SETGL:
+					page.bx[pageOffset] = globalSlots[decodedBx];
+					break;
+				case OpCode.GETSYS:
+				case OpCode.SETSYS:
+					page.bx[pageOffset] = systemGlobalSlots[decodedBx];
+					break;
+				default:
+					page.bx[pageOffset] = decodedBx;
+					break;
+			}
 			page.sbx[pageOffset] = signExtend(decodedBx, MAX_BX_BITS + EXT_BX_BITS + ((width - 1) * MAX_OPERAND_BITS));
 			page.rkB[pageOffset] = signExtend(rawB, MAX_OPERAND_BITS + EXT_B_BITS + ((width - 1) * MAX_OPERAND_BITS));
 			page.rkC[pageOffset] = signExtend(rawC, MAX_OPERAND_BITS + EXT_C_BITS + ((width - 1) * MAX_OPERAND_BITS));
@@ -2091,26 +2361,59 @@ export class CPU {
 			}
 			wordIndex += width;
 		}
-		this.decodedPages = decodedPages;
-		this.tableLoadCaches = tableLoadCaches;
+		return { pages: decodedPages, tableLoadCaches };
 	}
 
 	private decodedPageForWrite(decodedPages: DecodedInstructionPage[], wordIndex: number): DecodedInstructionPage {
 		return decodedPages[wordIndex >>> DECODED_PAGE_SHIFT];
 	}
 
-	private decodedPageAt(wordIndex: number): DecodedInstructionPage {
-		return this.decodedPages[wordIndex >>> DECODED_PAGE_SHIFT];
+	private decodedPageAt(image: Blua32ExecutionImage, wordIndex: number): DecodedInstructionPage {
+		return image.decodedPages[wordIndex >>> DECODED_PAGE_SHIFT];
 	}
 
 	private configureProfiler(): void {
-		this.profiler.configureProgram(this.program, this.profilerRuntimeSymbols, this.metadata, this.buildProfilerOpcodeByWord());
+		this.profiler.configureImages(this.profilerImages());
 		this.profilerConfigured = true;
 	}
 
-	private buildProfilerOpcodeByWord(): Uint8Array {
-		const opcodeByWord = new Uint8Array(this.program.code.length / INSTRUCTION_BYTES);
-		const decodedPages = this.decodedPages;
+	private profilerImages(): CpuProfilerImage[] {
+		const images: Blua32ExecutionImage[] = [this.systemImage];
+		for (let slot = 0; slot < this.cartridgeImages.length; slot += 1) {
+			const image = this.cartridgeImages[slot];
+			if (image !== null) {
+				images.push(image);
+			}
+		}
+		const descriptors = new Array<CpuProfilerImage>(images.length);
+		for (let imageIndex = 0; imageIndex < images.length; imageIndex += 1) {
+			const image = images[imageIndex];
+			image.profilerIndex = imageIndex;
+			const functionIds = image.symbols?.metadata.functionIds;
+			let resolvedFunctionIds: ReadonlyArray<string>;
+			if (functionIds === undefined) {
+				const generatedFunctionIds = new Array<string>(image.functions.length);
+				for (let functionIndex = 0; functionIndex < image.functions.length; functionIndex += 1) {
+					generatedFunctionIds[functionIndex] = `function@${image.functions[functionIndex].address.toString(16)}`;
+				}
+				resolvedFunctionIds = generatedFunctionIds;
+			} else {
+				resolvedFunctionIds = functionIds;
+			}
+			descriptors[imageIndex] = {
+				textAddress: image.layout.header.textAddress,
+				functions: image.functions,
+				functionIds: resolvedFunctionIds,
+				metadata: image.symbols ? image.symbols.metadata : null,
+				opcodeByWord: this.buildProfilerOpcodeByWord(image),
+			};
+		}
+		return descriptors;
+	}
+
+	private buildProfilerOpcodeByWord(image: Blua32ExecutionImage): Uint8Array {
+		const opcodeByWord = new Uint8Array(image.decodedWordCount);
+		const decodedPages = image.decodedPages;
 		for (let pageIndex = 0; pageIndex < decodedPages.length; pageIndex += 1) {
 			const page = decodedPages[pageIndex];
 			const pageStart = pageIndex << DECODED_PAGE_SHIFT;
@@ -2123,7 +2426,53 @@ export class CPU {
 		return opcodeByWord;
 	}
 
-	public start(entryProtoIndex: number, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS, statusWord = CPU_STATUS_CART_ENTRY): void {
+	private functionRecordInImage(image: Blua32ExecutionImage, address: number): Blua32RuntimeFunction | null {
+		const offset = address - image.layout.header.functionTableAddress;
+		if ((offset & (BLUA32_FUNCTION_RECORD_SIZE - 1)) !== 0
+			|| offset < 0
+			|| offset >= image.functions.length * BLUA32_FUNCTION_RECORD_SIZE) {
+			return null;
+		}
+		return image.functions[offset / BLUA32_FUNCTION_RECORD_SIZE];
+	}
+
+	private functionRecordInExecutionDomain(
+		executionImage: Blua32ExecutionImage,
+		address: number,
+	): Blua32RuntimeFunction | null {
+		const image = address < CART_ROM_BASE
+			? this.systemImage
+			: executionImage;
+		return this.functionRecordInImage(image, address);
+	}
+
+	private functionRecordOnSelectedBus(address: number): Blua32RuntimeFunction | null {
+		const image = address < CART_ROM_BASE
+			? this.systemImage
+			: this.cartridgeImageForExecution(this.memory.cartridgeController.selectedSlot());
+		if (!image) {
+			return null;
+		}
+		return this.functionRecordInImage(image, address);
+	}
+
+	public systemStartupFunctionAddress(): number {
+		return this.systemImage.boot.startupFunctionAddress;
+	}
+
+	public isCartridgeExecutionActive(): boolean {
+		return this.activeExecutionImage.cartridgeSlot >= 0;
+	}
+
+	public activeCartridgeSlot(): number {
+		return this.activeExecutionImage.cartridgeSlot;
+	}
+
+	public activeSymbols(): Blua32SymbolsImage | null {
+		return this.activeExecutionImage.symbols;
+	}
+
+	public start(functionAddress: number, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS, statusWord = CPU_STATUS_CART_ENTRY): void {
 		this.lastReturnValues.length = 0;
 		this.clearCallStack();
 		this.haltedUntilIrq = false;
@@ -2141,19 +2490,38 @@ export class CPU {
 		this.nonMaskableInterruptPending = false;
 		this.hostExternalCallActive = false;
 		this.yieldRequested = false;
-		this.pushFrame(this.rootClosure(entryProtoIndex), args, 0, 0, false, this.program.protos[entryProtoIndex].entryPC);
+		const functionRecord = this.functionRecordOnSelectedBus(functionAddress)!;
+		this.activeExecutionImage = functionRecord.image;
+		const closure = functionRecord.image.staticClosures[functionRecord.index];
+		this.pushFrame(closure, args, 0, 0, false);
 		enforceLuaHeapBudget();
 	}
 
-	public rootClosure(protoIndex: number): Closure {
-		const closure = this.staticClosures[protoIndex];
-		return closure;
+	private executeFunctionAddress(functionAddress: number): void {
+		const functionRecord = this.functionRecordOnSelectedBus(functionAddress);
+		if (functionRecord === null || !functionRecord.staticClosure) {
+			this.hardHalt();
+			return;
+		}
+		const image = functionRecord.image;
+		this.clearCallStack();
+		this.activeExecutionImage = image;
+		const cartridgeEntry = image.cartridgeSlot >= 0;
+		this.statusWord = cartridgeEntry ? CPU_STATUS_CART_ENTRY : CPU_STATUS_SYSTEM_ENTRY;
+		this.haltedUntilIrq = false;
+		this.interruptEventPending = false;
+		this.memoryWriteBlocked = false;
+		this.memoryWriteBlockedAddress = 0;
+		this.hardHalted = false;
+		this.yieldRequested = false;
+		const closure = image.staticClosures[functionRecord.index];
+		this.pushFrame(closure, EMPTY_CALL_ARGS, 0, 0, false);
 	}
 
 	public call(closure: Closure, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS, returnCount: number = 0): void {
 		this.lastReturnValues.length = 0;
 		this.yieldRequested = false;
-		this.pushFrame(closure, args, 0, returnCount, false, this.program.protos[closure.protoIndex].entryPC);
+		this.pushFrame(closure, args, 0, returnCount, false);
 	}
 
 	public enterHostExternalCall(): void {
@@ -2171,7 +2539,7 @@ export class CPU {
 	public callExternal(closure: Closure, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS): void {
 		this.lastReturnValues.length = 0;
 		this.yieldRequested = false;
-		this.pushFrame(closure, args, 0, 0, true, this.program.protos[closure.protoIndex].entryPC);
+		this.pushFrame(closure, args, 0, 0, true);
 	}
 
 	public requestYield(): void {
@@ -2266,7 +2634,12 @@ export class CPU {
 			const returnCauseWord = this.causeWord;
 			const returnEpcWord = this.epcWord;
 			const returnBadAddressWord = this.badAddressWord;
-			this.enterAsynchronousException(this.systemExceptionProtoIndex, CPU_CAUSE_NMI);
+			this.enterException(
+				this.systemImage,
+				this.systemExceptionFunctionAddress,
+				CPU_CAUSE_NMI,
+				this.frames[this.frames.length - 1].pc,
+			);
 			this.frames[this.frames.length - 1].isNonMaskableExceptionFrame = true;
 			this.nmiReturnCauseWord = returnCauseWord;
 			this.nmiReturnEpcWord = returnEpcWord;
@@ -2275,22 +2648,23 @@ export class CPU {
 			return true;
 		}
 		if (this.canAcceptMaskableInterruptLine()) {
-			const irqProtoIndex = this.isUserMode() ? this.cartIrqProtoIndex : this.systemIrqProtoIndex;
+			const image = this.isUserMode() ? this.activeExecutionImage : this.systemImage;
 			const wasHalted = this.haltedUntilIrq;
-			this.enterAsynchronousException(irqProtoIndex, CPU_CAUSE_IRQ);
+			this.enterException(
+				image,
+				image.boot.irqFunctionAddress,
+				CPU_CAUSE_IRQ,
+				this.frames[this.frames.length - 1].pc,
+			);
 			if (!wasHalted) this.interruptEventPending = true;
 			return true;
 		}
 		return false;
 	}
 
-	private enterAsynchronousException(protoIndex: number, causeWord: number): void {
-		this.enterException(protoIndex, causeWord, this.frames[this.frames.length - 1].pc);
-	}
-
 	private enterSynchronousException(interruptedFrame: CallFrame, causeWord: number): void {
 		interruptedFrame.pc = this.currentInstructionPc;
-		this.enterException(this.systemExceptionProtoIndex, causeWord, this.currentInstructionPc);
+		this.enterException(this.systemImage, this.systemExceptionFunctionAddress, causeWord, this.currentInstructionPc);
 	}
 
 	private enterSynchronousAddressException(interruptedFrame: CallFrame, causeWord: number, address: number): void {
@@ -2298,13 +2672,21 @@ export class CPU {
 		this.enterSynchronousException(interruptedFrame, causeWord);
 	}
 
-	private enterException(protoIndex: number, causeWord: number, epcWord: number): void {
+	private enterException(
+		image: Blua32ExecutionImage,
+		functionAddress: number,
+		causeWord: number,
+		epcWord: number,
+	): void {
 		this.epcWord = epcWord >>> 0;
 		this.causeWord = causeWord >>> 0;
 		this.statusWord = ((this.statusWord & ~CPU_STATUS_MODE_STACK_MASK)
 			| ((this.statusWord << 2) & CPU_STATUS_MODE_STACK_MASK)) >>> 0;
 		this.clearHaltAfterAcceptedInterrupt();
-		const frame = this.pushFrame(this.rootClosure(protoIndex), EMPTY_CALL_ARGS, 0, 0, false, this.program.protos[protoIndex].entryPC);
+		const functionRecord = this.functionRecordInImage(image, functionAddress)!;
+		const closure = image.staticClosures[functionRecord.index];
+		const frame = this.pushFrame(closure, EMPTY_CALL_ARGS, 0, 0, false)!;
+		frame.callSitePc = epcWord;
 		frame.isExceptionFrame = true;
 	}
 
@@ -2328,7 +2710,6 @@ export class CPU {
 		const frames = this.frames;
 		const profiler = this.profilerEnabled ? this.profiler : null;
 		const baseCycles = BASE_CYCLES;
-		const decodedPages = this.decodedPages;
 		while (frames.length > targetDepth) {
 			try {
 				while (frames.length > targetDepth) {
@@ -2351,14 +2732,15 @@ export class CPU {
 						continue;
 					}
 					const frame = frames[frames.length - 1];
+					const image = frame.functionRecord.image;
 					const pc = frame.pc;
-					const wordIndex = pc / INSTRUCTION_BYTES;
-					if ((wordIndex >>> 0) >= this.decodedWordCount) {
+					const wordIndex = (pc - image.layout.header.textAddress) / INSTRUCTION_BYTES;
+					if ((wordIndex >>> 0) >= image.decodedWordCount) {
 						this.hardHalt();
 						return RunResult.Halted;
 					}
 					const pageIndex = wordIndex >>> DECODED_PAGE_SHIFT;
-					const page = decodedPages[pageIndex];
+					const page = image.decodedPages[pageIndex];
 					const pageOffset = wordIndex & DECODED_PAGE_MASK;
 					const width = page.widths[pageOffset];
 					const op = page.ops[pageOffset];
@@ -2367,7 +2749,7 @@ export class CPU {
 					this.lastPc = pc + ((width - 1) * INSTRUCTION_BYTES);
 					this.lastInstruction = page.words[pageOffset];
 					if (profiler !== null) {
-						profiler.record(wordIndex, op);
+						profiler.record(image.profilerIndex, wordIndex, op);
 					}
 					this.instructionBudgetRemaining -= baseCycles[op];
 					this.executeInstruction(
@@ -2416,14 +2798,22 @@ export class CPU {
 	}
 
 	private skipNextInstruction(frame: CallFrame): void {
-		const wordIndex = frame.pc / INSTRUCTION_BYTES;
-		if ((wordIndex >>> 0) >= this.decodedWordCount) {
+		const image = frame.functionRecord.image;
+		const wordIndex = (frame.pc - image.layout.header.textAddress) / INSTRUCTION_BYTES;
+		if ((wordIndex >>> 0) >= image.decodedWordCount) {
 			this.hardHalt();
 			return;
 		}
-		const page = this.decodedPageAt(wordIndex);
+		const page = this.decodedPageAt(image, wordIndex);
 		const width = page.widths[wordIndex & DECODED_PAGE_MASK];
-		frame.pc += width * INSTRUCTION_BYTES;
+		const nextPc = frame.pc + width * INSTRUCTION_BYTES;
+		const functionRecord = frame.functionRecord;
+		if (nextPc < functionRecord.codeAddress
+			|| nextPc >= functionRecord.codeAddress + functionRecord.codeByteCount) {
+			this.hardHalt();
+			return;
+		}
+		frame.pc = nextPc;
 	}
 
 	public step(): void {
@@ -2431,14 +2821,15 @@ export class CPU {
 			return;
 		}
 		const frame = this.frames[this.frames.length - 1];
+		const image = frame.functionRecord.image;
 		const pc = frame.pc;
-		const wordIndex = pc / INSTRUCTION_BYTES;
-		if ((wordIndex >>> 0) >= this.decodedWordCount) {
+		const wordIndex = (pc - image.layout.header.textAddress) / INSTRUCTION_BYTES;
+		if ((wordIndex >>> 0) >= image.decodedWordCount) {
 			this.hardHalt();
 			return;
 		}
 		const profiler = this.profilerEnabled ? this.profiler : null;
-		const page = this.decodedPageAt(wordIndex);
+		const page = this.decodedPageAt(image, wordIndex);
 		const pageOffset = wordIndex & DECODED_PAGE_MASK;
 		const width = page.widths[pageOffset];
 		const op = page.ops[pageOffset];
@@ -2447,7 +2838,7 @@ export class CPU {
 		this.lastPc = pc + ((width - 1) * INSTRUCTION_BYTES);
 		this.lastInstruction = page.words[pageOffset];
 		if (profiler !== null) {
-			profiler.record(wordIndex, op);
+			profiler.record(image.profilerIndex, wordIndex, op);
 		}
 		this.charge(BASE_CYCLES[op]);
 		try {
@@ -2471,10 +2862,18 @@ export class CPU {
 		}
 	}
 
-	public getDebugState(): { pc: number; instr: number; registers: Value[] } {
+	public getDebugState(): {
+		image: Blua32ImageLayout | null;
+		symbols: Blua32SymbolsImage | null;
+		pc: number;
+		instr: number;
+		registers: Value[];
+	} {
 		const frame = this.frames[this.frames.length - 1];
 		if (!frame) {
 			return {
+				image: this.activeExecutionImage.layout,
+				symbols: this.activeExecutionImage.symbols,
 				pc: this.lastPc,
 				instr: this.lastInstruction,
 				registers: [],
@@ -2483,6 +2882,8 @@ export class CPU {
 		const registers = this.debugRegistersScratch;
 		frame.registers.copyTo(registers, frame.top);
 		return {
+			image: frame.functionRecord.image.layout,
+			symbols: frame.functionRecord.image.symbols,
 			pc: this.lastPc,
 			instr: this.lastInstruction,
 			registers,
@@ -2508,22 +2909,49 @@ export class CPU {
 		return formatCpuProfilerReport(this.profiler.snapshot(), options);
 	}
 
-	public getDebugRange(pc: number): SourceRange | null {
-		if (!this.metadata) {
-			return null;
+	private executionImageForPc(pc: number): Blua32ExecutionImage | null {
+		for (let frameIndex = this.frames.length - 1; frameIndex >= 0; frameIndex -= 1) {
+			const image = this.frames[frameIndex].functionRecord.image;
+			const textAddress = image.layout.header.textAddress;
+			if (pc >= textAddress && pc < textAddress + image.layout.header.textByteCount) {
+				return image;
+			}
 		}
-		const wordIndex = pc / INSTRUCTION_BYTES;
-		return this.metadata.debugRanges[wordIndex];
+		const systemTextAddress = this.systemImage.layout.header.textAddress;
+		if (pc >= systemTextAddress
+			&& pc < systemTextAddress + this.systemImage.layout.header.textByteCount) {
+			return this.systemImage;
+		}
+		const activeTextAddress = this.activeExecutionImage.layout.header.textAddress;
+		if (pc >= activeTextAddress
+			&& pc < activeTextAddress + this.activeExecutionImage.layout.header.textByteCount) {
+			return this.activeExecutionImage;
+		}
+		return null;
 	}
 
-	public getCallStack(): ReadonlyArray<{ protoIndex: number; pc: number }> {
+	public getDebugRange(pc: number): SourceRange | null {
+		const image = this.executionImageForPc(pc);
+		if (image === null || image.symbols === null) {
+			return null;
+		}
+		return blua32SourceRangeAtPc(image.symbols, image.layout.header.textAddress, pc);
+	}
+
+	public getCallStack(): ReadonlyArray<CpuCallStackEntry> {
 		const frames = this.frames;
-		const stack: Array<{ protoIndex: number; pc: number }> = [];
+		const stack = new Array<CpuCallStackEntry>(frames.length);
 		const topIndex = frames.length - 1;
 		for (let index = 0; index < frames.length; index += 1) {
 			const frame = frames[index];
-			const pc = index === topIndex ? this.lastPc : frame.callSitePc;
-			stack.push({ protoIndex: frame.protoIndex, pc });
+			const pc = index === topIndex ? this.lastPc : frames[index + 1].callSitePc;
+			stack[index] = {
+				functionAddress: frame.functionAddress,
+				functionIndex: frame.functionRecord.index,
+				symbols: frame.functionRecord.image.symbols,
+				textAddress: frame.functionRecord.image.layout.header.textAddress,
+				pc,
+			};
 		}
 		return stack;
 	}
@@ -2534,13 +2962,19 @@ export class CPU {
 		const result: CpuFrameSnapshot[] = [];
 		for (let index = 0; index < frames.length; index += 1) {
 			const frame = frames[index];
-			const pc = index === topIndex ? this.lastPc : frame.callSitePc;
-			const proto = this.program.protos[frame.protoIndex];
-			const registers: Value[] = new Array(proto.maxStack);
-			for (let r = 0; r < proto.maxStack; r += 1) {
+			const pc = index === topIndex ? this.lastPc : frames[index + 1].callSitePc;
+			const registers: Value[] = new Array(frame.functionRecord.maxStack);
+			for (let r = 0; r < frame.functionRecord.maxStack; r += 1) {
 				registers[r] = frame.registers.get(r);
 			}
-			result.push({ protoIndex: frame.protoIndex, pc, registers });
+			result.push({
+				functionAddress: frame.functionAddress,
+				functionIndex: frame.functionRecord.index,
+				symbols: frame.functionRecord.image.symbols,
+				textAddress: frame.functionRecord.image.layout.header.textAddress,
+				pc,
+				registers,
+			});
 		}
 		return result;
 	}
@@ -2575,7 +3009,7 @@ export class CPU {
 	public setSystemGlobalByKey(key: StringValue, value: Value): void {
 		const slot = this.systemGlobalSlotByKey.get(key.id);
 		if (slot === undefined) {
-			throw new Error(`[CPU] System global '${this.stringPool.toString(key.id)}' has no register slot.`);
+			throw new Error(`System global '${this.stringPool.toString(key.id)}' has no register slot.`);
 		}
 		this.systemGlobalValues[slot] = value;
 	}
@@ -2633,6 +3067,7 @@ export class CPU {
 		disp: number,
 	): void {
 		const registers = frame.registers;
+		const image = frame.functionRecord.image;
 		switch (op) {
 				case OpCode.WIDE:
 					this.hardHalt();
@@ -2641,7 +3076,7 @@ export class CPU {
 					this.copyRegisterFast(frame, registers, a, b);
 					return;
 				case OpCode.LOADK: {
-					this.setRegisterFast(frame, registers, a, this.program.constPool[bx]);
+					this.setRegisterFast(frame, registers, a, image.constPool[bx]);
 					return;
 				}
 				case OpCode.KNIL:
@@ -2683,22 +3118,22 @@ export class CPU {
 					this.setGlobalBySlot(bx, registers.get(a));
 					return;
 				case OpCode.GETI:
-					this.setRegisterFast(frame, registers, a, this.loadTableIntegerIndexCached(tableCacheIndex, registers.get(b), c));
+					this.setRegisterFast(frame, registers, a, this.loadTableIntegerIndexCached(image.tableLoadCaches[tableCacheIndex], registers.get(b), c));
 					return;
 				case OpCode.SETI:
 					this.storeTableIntegerIndex(registers.get(a), b, this.readRK(frame, rkC));
 					return;
 				case OpCode.GETFIELD:
-					this.setRegisterFast(frame, registers, a, this.loadTableFieldIndexCached(tableCacheIndex, registers.get(b), this.program.constPool[c] as StringValue));
+					this.setRegisterFast(frame, registers, a, this.loadTableFieldIndexCached(image.tableLoadCaches[tableCacheIndex], registers.get(b), image.constPool[c] as StringValue));
 					return;
 				case OpCode.SETFIELD:
-					this.storeTableFieldIndex(registers.get(a), this.program.constPool[b] as StringValue, this.readRK(frame, rkC));
+					this.storeTableFieldIndex(registers.get(a), image.constPool[b] as StringValue, this.readRK(frame, rkC));
 					return;
 				case OpCode.SELF: {
 					const base = registers.get(b);
-					const key = this.program.constPool[c] as StringValue;
+					const key = image.constPool[c] as StringValue;
 					this.setRegisterFast(frame, registers, a + 1, base);
-					this.setRegisterFast(frame, registers, a, this.loadTableFieldIndexCached(tableCacheIndex, base, key));
+					this.setRegisterFast(frame, registers, a, this.loadTableFieldIndexCached(image.tableLoadCaches[tableCacheIndex], base, key));
 					return;
 				}
 		case OpCode.HALT:
@@ -2833,7 +3268,7 @@ export class CPU {
 					return;
 				}
 				case OpCode.MFC0: {
-					if ((this.statusWord & CPU_STATUS_USER_MODE_CURRENT) !== 0) {
+					if (this.isUserMode()) {
 						this.enterSynchronousException(frame, CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
 						return;
 					}
@@ -2843,13 +3278,14 @@ export class CPU {
 						case COP0_STATUS: value = this.statusWord; break;
 						case COP0_CAUSE: value = this.causeWord; break;
 						case COP0_EPC: value = this.epcWord; break;
+						case COP0_EXEC: value = 0; break;
 						default: this.hardHalt(); return;
 					}
 					this.setRegisterNumberFast(frame, registers, a, value);
 					return;
 				}
 				case OpCode.MTC0: {
-					if ((this.statusWord & CPU_STATUS_USER_MODE_CURRENT) !== 0) {
+					if (this.isUserMode()) {
 						this.enterSynchronousException(frame, CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
 						return;
 					}
@@ -2857,6 +3293,7 @@ export class CPU {
 					switch (b) {
 						case COP0_STATUS: this.statusWord = value; return;
 						case COP0_EPC: this.epcWord = value; return;
+						case COP0_EXEC: this.executeFunctionAddress(value); return;
 						case COP0_BAD_ADDRESS:
 						case COP0_CAUSE:
 							return;
@@ -2864,7 +3301,7 @@ export class CPU {
 					}
 				}
 				case OpCode.RFE:
-					if ((this.statusWord & CPU_STATUS_USER_MODE_CURRENT) !== 0) {
+					if (this.isUserMode()) {
 						this.enterSynchronousException(frame, CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
 						return;
 					}
@@ -2874,14 +3311,21 @@ export class CPU {
 					}
 					const returnFromNmi = frame.isNonMaskableExceptionFrame;
 					const returnPc = this.epcWord;
+					const caller = this.frames[this.frames.length - 2];
+					if (caller !== undefined
+						&& (returnPc < caller.functionRecord.codeAddress
+							|| returnPc >= caller.functionRecord.codeAddress + caller.functionRecord.codeByteCount)) {
+						this.hardHalt();
+						return;
+					}
 					this.closeUpvalues(frame);
 					this.frames.pop();
 					this.stackTop = frame.varargBase;
 					this.releaseFrame(frame);
 					this.statusWord = ((this.statusWord & ~CPU_STATUS_RFE_RESTORE_MASK)
 						| ((this.statusWord >> 2) & CPU_STATUS_RFE_RESTORE_MASK)) >>> 0;
-					if (this.frames.length > 0) {
-						this.frames[this.frames.length - 1].pc = returnPc;
+					if (caller !== undefined) {
+						caller.pc = returnPc;
 					}
 					if (returnFromNmi) {
 						this.causeWord = this.nmiReturnCauseWord;
@@ -2890,7 +3334,7 @@ export class CPU {
 					}
 					return;
 				case OpCode.LOADKR:
-					this.setRegisterFast(frame, registers, a, this.program.constPool[registers.get(b) as number]);
+					this.setRegisterFast(frame, registers, a, image.constPool[registers.get(b) as number]);
 					return;
 
 				case OpCode.LE: {
@@ -2905,23 +3349,52 @@ export class CPU {
 					return;
 				}
 				case OpCode.JMP: {
-					frame.pc += sbx * INSTRUCTION_BYTES;
+					const targetPc = frame.pc + sbx * INSTRUCTION_BYTES;
+					const functionRecord = frame.functionRecord;
+					if (targetPc < functionRecord.codeAddress
+						|| targetPc >= functionRecord.codeAddress + functionRecord.codeByteCount) {
+						this.hardHalt();
+						return;
+					}
+					frame.pc = targetPc;
 					return;
 				}
 				case OpCode.JMPIF: {
 					if (registers.isTruthy(a)) {
-						frame.pc += sbx * INSTRUCTION_BYTES;
+						const targetPc = frame.pc + sbx * INSTRUCTION_BYTES;
+						const functionRecord = frame.functionRecord;
+						if (targetPc < functionRecord.codeAddress
+							|| targetPc >= functionRecord.codeAddress + functionRecord.codeByteCount) {
+							this.hardHalt();
+							return;
+						}
+						frame.pc = targetPc;
 					}
 					return;
 				}
 				case OpCode.JMPIFNOT: {
 					if (!registers.isTruthy(a)) {
-						frame.pc += sbx * INSTRUCTION_BYTES;
+						const targetPc = frame.pc + sbx * INSTRUCTION_BYTES;
+						const functionRecord = frame.functionRecord;
+						if (targetPc < functionRecord.codeAddress
+							|| targetPc >= functionRecord.codeAddress + functionRecord.codeByteCount) {
+							this.hardHalt();
+							return;
+						}
+						frame.pc = targetPc;
 					}
 					return;
 				}
 				case OpCode.CLOSURE: {
-					this.setRegisterClosureFast(frame, registers, a, this.createClosure(frame, bx));
+					const functionRecord = this.functionRecordInExecutionDomain(
+						frame.functionRecord.image,
+						bx * 16,
+					);
+					if (!functionRecord) {
+						this.hardHalt();
+						return;
+					}
+					this.setRegisterClosureFast(frame, registers, a, this.createClosure(frame, functionRecord));
 					enforceLuaHeapBudget();
 					return;
 				}
@@ -3216,27 +3689,41 @@ export class CPU {
 		return registers;
 	}
 
-	private pushFrame(closure: Closure, args: ReadonlyArray<Value>, returnBase: number, returnCount: number, captureReturns: boolean, callSitePc: number): CallFrame {
-		const proto = this.program.protos[closure.protoIndex];
+	private pushFrame(
+		closure: Closure,
+		args: ReadonlyArray<Value>,
+		returnBase: number,
+		returnCount: number,
+		captureReturns: boolean,
+	): CallFrame | null {
+		const functionRecord = this.functionRecordInExecutionDomain(
+			this.activeExecutionImage,
+			closure.functionAddress,
+		);
+		if (functionRecord === null) {
+			this.hardHalt();
+			return null;
+		}
 		const frame = this.acquireFrame();
-		frame.protoIndex = closure.protoIndex;
-		frame.pc = proto.entryPC;
+		frame.functionAddress = closure.functionAddress;
+		frame.functionRecord = functionRecord;
+		frame.pc = functionRecord.codeAddress;
 		frame.closure = closure;
 		frame.returnBase = returnBase;
 		frame.returnCount = returnCount;
-		frame.top = proto.numParams;
+		frame.top = functionRecord.numParams;
 		frame.captureReturns = captureReturns;
-		frame.callSitePc = callSitePc;
+		frame.callSitePc = functionRecord.codeAddress;
 		frame.varargBase = this.stackTop;
-		frame.varargCount = proto.isVararg ? Math.max(args.length - proto.numParams, 0) : 0;
-		const registers = this.prepareFrameRegisters(frame, proto.maxStack);
+		frame.varargCount = functionRecord.isVararg ? Math.max(args.length - functionRecord.numParams, 0) : 0;
+		const registers = this.prepareFrameRegisters(frame, functionRecord.maxStack);
 
 		let argIndex = 0;
-		for (let index = 0; index < proto.numParams; index += 1) {
+		for (let index = 0; index < functionRecord.numParams; index += 1) {
 			registers.set(index, argIndex < args.length ? args[argIndex] : null);
 			argIndex += 1;
 		}
-		if (proto.isVararg) {
+		if (functionRecord.isVararg) {
 			for (let index = 0; index < frame.varargCount; index += 1) {
 				this.stackRegisters.set(frame.varargBase + index, args[argIndex + index]);
 			}
@@ -3245,46 +3732,53 @@ export class CPU {
 		return frame;
 	}
 
-	private pushFrameFromCaller(caller: CallFrame, closure: Closure, argBase: number, argCount: number, returnBase: number, returnCount: number, captureReturns: boolean, callSitePc: number): CallFrame {
-		const proto = this.program.protos[closure.protoIndex];
+	private pushFrameFromCaller(caller: CallFrame, closure: Closure, argBase: number, argCount: number, returnBase: number, returnCount: number, captureReturns: boolean, callSitePc: number): CallFrame | null {
+		const functionRecord = this.functionRecordInExecutionDomain(
+			this.activeExecutionImage,
+			closure.functionAddress,
+		);
+		if (functionRecord === null) {
+			this.hardHalt();
+			return null;
+		}
 		const frame = this.acquireFrame();
-		frame.protoIndex = closure.protoIndex;
-		frame.pc = proto.entryPC;
+		frame.functionAddress = closure.functionAddress;
+		frame.functionRecord = functionRecord;
+		frame.pc = functionRecord.codeAddress;
 		frame.closure = closure;
 		frame.returnBase = returnBase;
 		frame.returnCount = returnCount;
-		frame.top = proto.numParams;
+		frame.top = functionRecord.numParams;
 		frame.captureReturns = captureReturns;
 		frame.callSitePc = callSitePc;
 		frame.varargBase = this.stackTop;
-		frame.varargCount = proto.isVararg ? Math.max(argCount - proto.numParams, 0) : 0;
+		frame.varargCount = functionRecord.isVararg ? Math.max(argCount - functionRecord.numParams, 0) : 0;
 
 		const callerRegisters = caller.registers;
-		const registers = this.prepareFrameRegisters(frame, proto.maxStack);
-		const copiedCount = Math.min(proto.numParams, argCount);
+		const registers = this.prepareFrameRegisters(frame, functionRecord.maxStack);
+		const copiedCount = Math.min(functionRecord.numParams, argCount);
 		if (copiedCount > 0) {
 			registers.copyRangeFrom(callerRegisters, 0, argBase, copiedCount);
 		}
-		for (let index = copiedCount; index < proto.numParams; index += 1) {
+		for (let index = copiedCount; index < functionRecord.numParams; index += 1) {
 			registers.setNil(index);
 		}
-		if (proto.isVararg) {
+		if (functionRecord.isVararg) {
 			for (let index = 0; index < frame.varargCount; index += 1) {
-				this.stackRegisters.set(frame.varargBase + index, callerRegisters.get(argBase + proto.numParams + index));
+				this.stackRegisters.set(frame.varargBase + index, callerRegisters.get(argBase + functionRecord.numParams + index));
 			}
 		}
 		this.frames.push(frame);
 		return frame;
 	}
 
-	private createClosure(frame: CallFrame, protoIndex: number): Closure {
-		const proto = this.program.protos[protoIndex];
-		if (proto.staticClosure && proto.upvalueDescs.length === 0) {
-			return this.rootClosure(protoIndex);
+	private createClosure(frame: CallFrame, functionRecord: Blua32RuntimeFunction): Closure {
+		if (functionRecord.staticClosure && functionRecord.upvalues.length === 0) {
+			return functionRecord.image.staticClosures[functionRecord.index];
 		}
-		const upvalues = new Array<Upvalue>(proto.upvalueDescs.length);
-		for (let index = 0; index < proto.upvalueDescs.length; index += 1) {
-			const desc = proto.upvalueDescs[index];
+		const upvalues = new Array<Upvalue>(functionRecord.upvalues.length);
+		for (let index = 0; index < functionRecord.upvalues.length; index += 1) {
+			const desc = functionRecord.upvalues[index];
 			if (desc.inStack) {
 				let upvalue = this.findOpenUpvalue(frame, desc.index);
 					if (!upvalue) {
@@ -3299,7 +3793,7 @@ export class CPU {
 		}
 		const heapBytes = CLOSURE_HEAP_BYTES + (upvalues.length * CLOSURE_UPVALUE_SLOT_HEAP_BYTES);
 		addTrackedLuaHeapBytes(heapBytes);
-		const closure = new Closure(protoIndex, upvalues, heapBytes);
+		const closure = new Closure(functionRecord.address, upvalues, heapBytes);
 		closure.hashId = this.allocateObjectHashId();
 		return closure;
 	}
@@ -3379,7 +3873,7 @@ export class CPU {
 		if (index >= frame.stackCapacity) {
 			const frameIndex = this.frames.indexOf(frame);
 			if (frameIndex < 0) {
-				throw new Error('[CPU] Attempted to grow registers for a released frame.');
+				throw new Error('Attempted to grow registers for a released frame.');
 			}
 			const needed = index + 1;
 			const previousCapacity = frame.stackCapacity;
@@ -3476,7 +3970,7 @@ export class CPU {
 	private readRK(frame: CallFrame, rk: number): Value {
 		if (rk < 0) {
 			const index = -1 - rk;
-			return this.program.constPool[index];
+			return frame.functionRecord.image.constPool[index];
 		}
 		return frame.registers.get(rk);
 	}
@@ -3912,7 +4406,7 @@ export class CPU {
 		throw new LuaThrownValueError(value, this.valueToString(value));
 	}
 
-	public captureRuntimeState(moduleCache: ReadonlyMap<string, Value>): CpuRuntimeState {
+	public captureRuntimeState(): CpuRuntimeState {
 		this.syncGlobalSlotsToTable();
 		const objectOrdinals = new Map<Table | Closure | Upvalue, number>();
 		const objects: CpuObjectState[] = [];
@@ -3950,7 +4444,7 @@ export class CPU {
 			if (valueIsClosure(value)) {
 				return { tag: 'ref', id: ensureObjectId(value, 'closure') };
 			}
-			throw new Error(`[CPU] Runtime snapshot cannot preserve ${valueTypeName(value)} value.`);
+			throw new Error(`Runtime snapshot cannot preserve ${valueTypeName(value)} value.`);
 		};
 
 		const captureObjectState = (object: Table | Closure | Upvalue, kind: CpuObjectState['kind']): CpuObjectState => {
@@ -4007,7 +4501,8 @@ export class CPU {
 					return {
 						kind: 'closure',
 						hashId: closure.hashId,
-						protoIndex: closure.protoIndex,
+						functionAddress: closure.functionAddress,
+						canonical: this.staticClosuresByAddress.get(closure.functionAddress) === closure,
 						upvalues,
 					};
 				}
@@ -4040,17 +4535,6 @@ export class CPU {
 			});
 		});
 
-		const moduleCacheState: CpuRootValueState[] = [];
-		for (const [name, value] of moduleCache) {
-			if (isNativeFunction(value) || isNativeObject(value)) {
-				continue;
-			}
-			moduleCacheState.push({
-				name,
-				value: captureValueState(value),
-			});
-		}
-
 		const frames = new Array<CpuFrameState>(this.frames.length);
 		for (let frameIndex = 0; frameIndex < this.frames.length; frameIndex += 1) {
 			const frame = this.frames[frameIndex];
@@ -4063,7 +4547,7 @@ export class CPU {
 				varargs[varargIndex] = captureValueState(this.stackRegisters.get(frame.varargBase + varargIndex));
 			}
 			frames[frameIndex] = {
-				protoIndex: frame.protoIndex,
+				functionAddress: frame.functionAddress,
 				pc: frame.pc,
 				closureRef: ensureObjectId(frame.closure, 'closure'),
 				registers,
@@ -4103,9 +4587,9 @@ export class CPU {
 		}
 
 		return {
+			executionCartridgeSlot: this.activeExecutionImage.cartridgeSlot,
 			systemGlobals,
 			globals,
-			moduleCache: moduleCacheState,
 			frames,
 			protectedCalls,
 			lastReturnValues,
@@ -4130,9 +4614,12 @@ export class CPU {
 		};
 	}
 
-	public restoreRuntimeState(state: CpuRuntimeState, moduleCache: Map<string, Value>): void {
+	public restoreRuntimeState(state: CpuRuntimeState): void {
 		type RestoredObject = Table | Closure | Upvalue;
 		const restoredObjects = new Array<RestoredObject>(state.objects.length);
+		const executionImage = state.executionCartridgeSlot < 0
+			? this.systemImage
+			: this.cartridgeImageForExecution(state.executionCartridgeSlot)!;
 		let maxRestoredHashId = 0;
 
 		for (let index = 0; index < state.objects.length; index += 1) {
@@ -4149,15 +4636,14 @@ export class CPU {
 				}
 				case 'closure': {
 					const upvalues = new Array<Upvalue>(objectState.upvalues.length);
-					const proto = this.program.protos[objectState.protoIndex];
-					if (proto.staticClosure && upvalues.length === 0) {
-						const closure = this.rootClosure(objectState.protoIndex);
+					if (objectState.canonical) {
+						const closure = this.staticClosuresByAddress.get(objectState.functionAddress)!;
 						closure.hashId = objectState.hashId;
 						restoredObjects[index] = closure;
 					} else {
 						const heapBytes = CLOSURE_HEAP_BYTES + (upvalues.length * CLOSURE_UPVALUE_SLOT_HEAP_BYTES);
 						addTrackedLuaHeapBytes(heapBytes);
-						const closure = new Closure(objectState.protoIndex, upvalues, heapBytes);
+						const closure = new Closure(objectState.functionAddress, upvalues, heapBytes);
 						closure.hashId = objectState.hashId;
 						restoredObjects[index] = closure;
 					}
@@ -4210,7 +4696,7 @@ export class CPU {
 				}
 				case 'closure': {
 					const closure = restoredObjects[index] as Closure;
-					closure.protoIndex = objectState.protoIndex;
+					closure.functionAddress = objectState.functionAddress;
 					for (let upvalueIndex = 0; upvalueIndex < objectState.upvalues.length; upvalueIndex += 1) {
 						closure.upvalues[upvalueIndex] = restoredObjects[objectState.upvalues[upvalueIndex]] as Upvalue;
 					}
@@ -4231,19 +4717,16 @@ export class CPU {
 		this.clearCallStack();
 		this.externalReturnSink = null;
 		this.globals.clear();
-		for (let slot = 0; slot < this.systemGlobalValues.length; slot += 1) {
-			this.systemGlobalValues[slot] = null;
-		}
-		for (let slot = 0; slot < this.globalValues.length; slot += 1) {
-			this.globalValues[slot] = null;
-		}
-		moduleCache.clear();
+		this.activeExecutionImage = executionImage;
+		this.systemGlobalValues.fill(null);
+		this.globalValues.fill(null);
 
 		for (let frameIndex = 0; frameIndex < state.frames.length; frameIndex += 1) {
 			const frameState = state.frames[frameIndex];
-			const proto = this.program.protos[frameState.protoIndex];
+			const functionRecord = this.functionRecordInExecutionDomain(executionImage, frameState.functionAddress)!;
 			const frame = this.acquireFrame();
-			frame.protoIndex = frameState.protoIndex;
+			frame.functionAddress = frameState.functionAddress;
+			frame.functionRecord = functionRecord;
 			frame.pc = frameState.pc;
 			frame.closure = restoredObjects[frameState.closureRef] as Closure;
 			frame.returnBase = frameState.returnBase;
@@ -4254,7 +4737,7 @@ export class CPU {
 			frame.isNonMaskableExceptionFrame = frameState.isNonMaskableExceptionFrame;
 			frame.varargBase = this.stackTop;
 			frame.varargCount = frameState.varargs.length;
-			const registers = this.prepareFrameRegisters(frame, proto.maxStack);
+			const registers = this.prepareFrameRegisters(frame, functionRecord.maxStack);
 			for (let registerIndex = 0; registerIndex < frameState.registers.length; registerIndex += 1) {
 				registers.set(registerIndex, restoreValue(frameState.registers[registerIndex]));
 			}
@@ -4296,11 +4779,6 @@ export class CPU {
 			const entry = state.globals[index];
 			this.setGlobalByKey(StringValue.get(this.stringPool.intern(entry.name)), restoreValue(entry.value));
 		}
-		for (let index = 0; index < state.moduleCache.length; index += 1) {
-			const entry = state.moduleCache[index];
-			moduleCache.set(entry.name, restoreValue(entry.value));
-		}
-
 		for (let index = 0; index < state.lastReturnValues.length; index += 1) {
 			this.lastReturnValues[index] = restoreValue(state.lastReturnValues[index]);
 		}
@@ -4325,6 +4803,7 @@ export class CPU {
 
 	public collectTrackedHeapBytes(extraRoots: ReadonlyArray<Value> = []): number {
 		const seen = new WeakSet<object>();
+		const seenImages = new WeakSet<object>();
 		let total = 0;
 		const valueStack: Value[] = [];
 		const upvalueStack: Upvalue[] = [];
@@ -4342,6 +4821,15 @@ export class CPU {
 				return;
 			}
 			valueStack.push(value);
+		};
+		const pushImage = (image: Blua32ExecutionImage): void => {
+			if (seenImages.has(image)) {
+				return;
+			}
+			seenImages.add(image);
+			for (let index = 0; index < image.constPool.length; index += 1) {
+				pushValue(image.constPool[index]);
+			}
 		};
 
 		pushValue(this.globals);
@@ -4361,13 +4849,17 @@ export class CPU {
 				pushValue(this.externalReturnSink[index]);
 			}
 		}
-		if (this.program !== null) {
-			for (let index = 0; index < this.program.constPool.length; index += 1) {
-				pushValue(this.program.constPool[index]);
+		pushImage(this.systemImage);
+		for (let slot = 0; slot < this.cartridgeImages.length; slot += 1) {
+			const image = this.cartridgeImages[slot];
+			if (image === null) {
+				continue;
 			}
+			pushImage(image);
 		}
 		for (let frameIndex = 0; frameIndex < this.frames.length; frameIndex += 1) {
 			const frame = this.frames[frameIndex];
+			pushImage(frame.functionRecord.image);
 			pushValue(frame.closure);
 			for (let registerIndex = 0; registerIndex < frame.top; registerIndex += 1) {
 				pushValue(frame.registers.get(registerIndex));

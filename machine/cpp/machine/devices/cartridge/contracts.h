@@ -14,8 +14,6 @@ constexpr u32 CARTRIDGE_BOARD_MAILBOX = 1u << 1;
 
 constexpr u32 CARTRIDGE_STATUS_SLOT0_PRESENT = 1u << 0;
 constexpr u32 CARTRIDGE_STATUS_SLOT1_PRESENT = 1u << 1;
-constexpr u32 CARTRIDGE_STATUS_SLOT0_PROGRAM = 1u << 8;
-constexpr u32 CARTRIDGE_STATUS_SLOT1_PROGRAM = 1u << 9;
 constexpr u32 CARTRIDGE_STATUS_SELECTED_SLOT1 = 1u << 16;
 
 constexpr u32 CARTRIDGE_MAILBOX_DATA_OFFSET = 0x00u;
@@ -32,20 +30,9 @@ struct CartridgeSlotMedia {
 	u32 boardWord = 0;
 	u32 ramByteCount = 0;
 	bool present = false;
-	bool programPresent = false;
 };
 
 using CartridgeSlotMediaPair = std::array<CartridgeSlotMedia, CARTRIDGE_SLOT_COUNT>;
-
-constexpr u32 cartridgeBootSlot(const CartridgeSlotMediaPair& media) {
-	for (u32 slotIndex = 0; slotIndex < CARTRIDGE_SLOT_COUNT; ++slotIndex) {
-		if (media[slotIndex].programPresent) return slotIndex;
-	}
-	for (u32 slotIndex = 0; slotIndex < CARTRIDGE_SLOT_COUNT; ++slotIndex) {
-		if (media[slotIndex].present) return slotIndex;
-	}
-	return 0u;
-}
 
 struct CartridgeSlotState {
 	std::vector<u8> ram;

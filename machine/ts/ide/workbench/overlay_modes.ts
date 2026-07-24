@@ -76,7 +76,7 @@ export function toggleEditor(runtime: Runtime): void {
 }
 
 export function activateEditor(runtime: Runtime): void {
-	if (!runtime.programMetadata) {
+	if (!runtime.machine.cpu.activeSymbols()) {
 		return;
 	}
 	const state = machineManager.ideState;

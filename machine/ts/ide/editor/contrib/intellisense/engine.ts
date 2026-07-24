@@ -9,14 +9,19 @@ import { getCachedLuaParse } from '../../../../lua/analysis/cache';
 import { LuaInterpreter } from '../../../../lua/runtime';
 import { extractErrorMessage, isLuaFunctionValue, isLuaTable, LuaFunctionValue, LuaNativeValue, LuaTable, LuaValue, resolveNativeTypeName } from '../../../../lua/value';
 import { API_METHOD_METADATA, type ApiMethodMetadata } from '../../../../language/lua/api_metadata';
-import { Table, type CpuFrameSnapshot, type LocalSlotDebug, type SourceRange, type Value } from '../../../../machine/cpu/cpu';
+import { Table, type CpuFrameSnapshot, type Value } from '../../../../machine/cpu/cpu';
+import {
+	blua32SourceRangeAtPc,
+	type Blua32LocalSlotDebug,
+	type SourceRange,
+} from '../../../../machine/cpu/blua32_symbols';
 import { DEFAULT_LUA_BUILTIN_FUNCTIONS, DEFAULT_LUA_BUILTIN_NAMES } from '../../../../lua/builtin_descriptors';
 import { luaBuiltinMetadata } from '../../../runtime/lua_builtins';
 import { buildMarshalContext, toNativeValue } from '../../../runtime/native_bridge';
 import { buildLuaSemanticFrontend } from '../../../../lua/semantic/frontend';
 import type { Runtime } from '../../../../machine/runtime/runtime';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
-import { resolveRuntimeLuaSource } from '../../../runtime/sources';
+import { developmentCartridgeSource, resolveRuntimeLuaSource } from '../../../runtime/sources';
 import { asStringId, valueIsString } from '../../../../machine/cpu/cpu';
 import type { LuaBuiltinDescriptor, LuaDefinitionLocation, LuaDefinitionRange, LuaHoverResult, LuaHoverScope, LuaMemberCompletion, LuaSymbolEntry } from '../../../../lua/semantic_contracts';
 import { ensureCursorVisible, updateDesiredColumn } from '../../ui/view/caret/caret';
@@ -1412,7 +1417,9 @@ export function findStaticDefinitionLocation(chain: ReadonlyArray<string>, usage
 export function getStaticDefinitions(preferredChunk: string): { definitions: ReadonlyArray<LuaDefinitionInfo>; paths: Array<{ path: string; info: { asset_id: string; path?: string } }>; models: Map<string, LuaSemanticModel> } {
 	const interpreter = machineManager.ideState.nativeBridge.luaInterpreter;
 	const matchingChunks: Array<{ path: string; info: { asset_id: string; path?: string } }> = [];
-	const luaSources = machineManager.sourceState.cartLuaSources ? machineManager.sourceState.cartLuaSources : machineManager.sourceState.activeLuaSources;
+	const sources = machineManager.sourceState;
+	const cartridge = developmentCartridgeSource(sources);
+	const luaSources = cartridge ? cartridge.luaSources : sources.activeLuaSources;
 	for (const asset of luaSources.records) {
 		const path = asset.module_path;
 		const info: { asset_id: string; path?: string } = { asset_id: asset.resid, path: asset.source_path };
@@ -1603,20 +1610,20 @@ export type FrameLocal = {
 };
 
 export function collectFrameLocals(runtime: Runtime, snapshot: CpuFrameSnapshot[], cpuFrameIndex: number): FrameLocal[] {
-	const metadata = runtime.programMetadata;
-	if (!metadata) {
+	const frame = snapshot[cpuFrameIndex];
+	if (frame.symbols === null) {
 		return [];
 	}
-	const frame = snapshot[cpuFrameIndex];
-	const frameRange = runtime.machine.cpu.getDebugRange(frame.pc);
+	const metadata = frame.symbols.metadata;
+	const frameRange = blua32SourceRangeAtPc(frame.symbols, frame.textAddress, frame.pc);
 	if (!frameRange) {
 		return [];
 	}
-	const slots = metadata.localSlotsByProto[frame.protoIndex];
+	const slots = metadata.localSlotsByFunction[frame.functionIndex];
 	if (slots.length === 0) {
 		return [];
 	}
-	const byName = new Map<string, LocalSlotDebug>();
+	const byName = new Map<string, Blua32LocalSlotDebug>();
 	for (let i = 0; i < slots.length; i += 1) {
 		const slot = slots[i];
 		if (!positionWithinRange(frameRange.start.line, frameRange.start.column, slot.scope as unknown as LuaSourceRange)) {
@@ -1629,7 +1636,7 @@ export function collectFrameLocals(runtime: Runtime, snapshot: CpuFrameSnapshot[
 	}
 	const result: FrameLocal[] = [];
 	for (const [name, slot] of byName) {
-		result.push({ name, value: wrapRuntimeValueForIntellisense(runtime, frame.registers[slot.register]) });
+		result.push({ name, value: wrapRuntimeValueForIntellisense(runtime, frame.registers[slot.registerIndex]) });
 	}
 	result.sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
 	return result;
@@ -1695,10 +1702,6 @@ function resolveRuntimeLocalChainValue(
 	if (parts.length === 0 || !path || usageRow === null) {
 		return null;
 	}
-	const metadata = runtime.programMetadata;
-	if (!metadata) {
-		return null;
-	}
 	let requestedPath = path;
 	const requestedSource = resolveRuntimeLuaSource(machineManager.sourceState, path);
 	if (requestedSource) {
@@ -1716,18 +1719,21 @@ function resolveRuntimeLocalChainValue(
 	}
 	const rootName = parts[0];
 	let selectedFrameIndex = -1;
-	let selectedSlot: LocalSlotDebug = null;
+	let selectedSlot: Blua32LocalSlotDebug = null;
 	for (let frameIndex = callStack.length - 1; frameIndex >= 0; frameIndex -= 1) {
 		const frame = callStack[frameIndex];
-		const frameRange = cpu.getDebugRange(frame.pc);
+		if (frame.symbols === null) {
+			continue;
+		}
+		const frameRange = blua32SourceRangeAtPc(frame.symbols, frame.textAddress, frame.pc);
 		if (!isFrameRangeForPath(frameRange, requestedPath)) {
 			continue;
 		}
-		const slots = metadata.localSlotsByProto[frame.protoIndex];
+		const slots = frame.symbols.metadata.localSlotsByFunction[frame.functionIndex];
 		if (slots.length === 0) {
 			continue;
 		}
-		let frameBest: LocalSlotDebug = null;
+		let frameBest: Blua32LocalSlotDebug = null;
 		for (let slotIndex = 0; slotIndex < slots.length; slotIndex += 1) {
 			const slot = slots[slotIndex];
 			if (slot.name !== rootName) {
@@ -1755,14 +1761,16 @@ function resolveRuntimeLocalChainValue(
 		}
 	}
 	if (selectedFrameIndex < 0 || !selectedSlot) {
-		const upvalueNamesByProto = metadata.upvalueNamesByProto;
 		for (let frameIndex = callStack.length - 1; frameIndex >= 0; frameIndex -= 1) {
 			const frame = callStack[frameIndex];
-			const frameRange = cpu.getDebugRange(frame.pc);
+			if (frame.symbols === null) {
+				continue;
+			}
+			const frameRange = blua32SourceRangeAtPc(frame.symbols, frame.textAddress, frame.pc);
 			if (!isFrameRangeForPath(frameRange, requestedPath)) {
 				continue;
 			}
-			const frameUpvalueNames = upvalueNamesByProto[frame.protoIndex];
+			const frameUpvalueNames = frame.symbols.metadata.upvalueNamesByFunction[frame.functionIndex];
 			const upvalueIndex = frameUpvalueNames.indexOf(rootName);
 			if (upvalueIndex === -1 || !cpu.hasFrameUpvalue(frameIndex, upvalueIndex)) {
 				continue;
@@ -1776,8 +1784,8 @@ function resolveRuntimeLocalChainValue(
 		return null;
 	}
 	const rawRegValue = faultSnapshot
-		? faultSnapshot[selectedFrameIndex].registers[selectedSlot.register]
-		: cpu.readFrameRegister(selectedFrameIndex, selectedSlot.register);
+		? faultSnapshot[selectedFrameIndex].registers[selectedSlot.registerIndex]
+		: cpu.readFrameRegister(selectedFrameIndex, selectedSlot.registerIndex);
 	const chained = walkValueChain(wrapRuntimeValueForIntellisense(runtime, rawRegValue), parts, 1);
 	if (chained === null) {
 		return { kind: 'not_defined' };

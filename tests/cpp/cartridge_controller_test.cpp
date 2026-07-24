@@ -48,27 +48,23 @@ void testPhysicalSocketSelectionAndRawLatch() {
 			.boardWord = bmsx::CARTRIDGE_BOARD_RAM,
 			.ramByteCount = 16u,
 			.present = true,
-			.programPresent = true,
 		},
 		{
 			.rom = slot1Rom,
 			.boardWord = bmsx::CARTRIDGE_BOARD_MAILBOX,
 			.present = true,
-			.programPresent = true,
 		},
 	}};
 	CartridgeHarness harness(slots);
 	bmsx::Memory& memory = harness.memory;
 
-	require(memory.readMappedU32LE(bmsx::IO_CART_SELECT) == 0u, "slot 0 program has boot priority");
+	require(memory.readMappedU32LE(bmsx::IO_CART_SELECT) == 0u, "reset selects physical socket 0");
 	require(memory.readMappedU32LE(bmsx::CART_ROM_BASE) == 0x11223344u, "CPU aperture reads slot 0 after reset");
 	require(
 		memory.readMappedU32LE(bmsx::IO_CART_STATUS)
 			== (bmsx::CARTRIDGE_STATUS_SLOT0_PRESENT
-				| bmsx::CARTRIDGE_STATUS_SLOT1_PRESENT
-				| bmsx::CARTRIDGE_STATUS_SLOT0_PROGRAM
-				| bmsx::CARTRIDGE_STATUS_SLOT1_PROGRAM),
-		"status reports both inserted program cartridges"
+				| bmsx::CARTRIDGE_STATUS_SLOT1_PRESENT),
+		"status reports both inserted cartridges"
 	);
 	require(memory.readMappedU32LE(bmsx::IO_CART_SLOT0_BOARD) == bmsx::CARTRIDGE_BOARD_RAM, "slot 0 board word is hardware-visible");
 	require(memory.readMappedU32LE(bmsx::IO_CART_SLOT0_RAM_BYTES) == 16u, "slot 0 RAM capacity is hardware-visible");
@@ -82,8 +78,6 @@ void testPhysicalSocketSelectionAndRawLatch() {
 		memory.readMappedU32LE(bmsx::IO_CART_STATUS)
 			== (bmsx::CARTRIDGE_STATUS_SLOT0_PRESENT
 				| bmsx::CARTRIDGE_STATUS_SLOT1_PRESENT
-				| bmsx::CARTRIDGE_STATUS_SLOT0_PROGRAM
-				| bmsx::CARTRIDGE_STATUS_SLOT1_PROGRAM
 				| bmsx::CARTRIDGE_STATUS_SELECTED_SLOT1),
 		"status reflects the selected physical socket"
 	);
@@ -103,13 +97,13 @@ void testSocketLocalRamMailboxResetAndRestore() {
 			.boardWord = board,
 			.ramByteCount = 16u,
 			.present = true,
-			.programPresent = true,
 		},
 	}};
 	CartridgeHarness harness(slots);
 	bmsx::Memory& memory = harness.memory;
 
-	require(memory.readMappedU32LE(bmsx::IO_CART_SELECT) == 1u, "slot 1 program wins over a slot 0 data cartridge");
+	require(memory.readMappedU32LE(bmsx::IO_CART_SELECT) == 0u, "cartridge hardware does not interpret executable metadata");
+	memory.writeMappedU32LE(bmsx::IO_CART_SELECT, 1u);
 	memory.writeMappedU32LE(bmsx::CART_RAM_BASE, 0x11112222u);
 	memory.writeMappedU32LE(bmsx::CART_MMIO_BASE + bmsx::CARTRIDGE_MAILBOX_DATA_OFFSET, 0x33334444u);
 	memory.writeMappedU32LE(
@@ -157,8 +151,8 @@ void testSocketLocalRamMailboxResetAndRestore() {
 	require(memory.readMappedU32LE(bmsx::CART_MMIO_BASE + bmsx::CARTRIDGE_MAILBOX_DATA_OFFSET) == 0x33334444u, "slot 1 mailbox is independent");
 
 	memory.cartridgeController().reset();
-	require(memory.readMappedU32LE(bmsx::IO_CART_SELECT) == 1u, "reset returns to the boot socket");
-	require(memory.readMappedU32LE(bmsx::CART_RAM_BASE) == 0x11112222u, "reset retains cartridge RAM");
+	require(memory.readMappedU32LE(bmsx::IO_CART_SELECT) == 0u, "reset returns to physical socket 0");
+	require(memory.readMappedU32LE(bmsx::CART_RAM_BASE) == 0x55556666u, "reset retains cartridge RAM");
 	require(memory.readMappedU32LE(bmsx::CART_MMIO_BASE + bmsx::CARTRIDGE_MAILBOX_DATA_OFFSET) == 0u, "reset clears mailbox data");
 	require(memory.readMappedU32LE(bmsx::CART_MMIO_BASE + bmsx::CARTRIDGE_MAILBOX_STATUS_OFFSET) == 0u, "reset clears mailbox IRQ state");
 }

@@ -36,14 +36,14 @@ on_irq(irq_cartridge_slot1, function()
 end)
 *irq_mask = irq_dma0_done | irq_cartridge_slot1
 
-assert(*cart_status == 0x00010203, 'mixed-socket boot selection mismatch')
+assert(*cart_status == 0x00010003, 'mixed-socket boot selection mismatch')
 assert(*slot0_board == 3 and *slot1_board == 3, 'cartridge board words mismatch')
 assert(*slot0_ram_bytes == 256 and *slot1_ram_bytes == 256, 'cartridge RAM capacities mismatch')
 *cart_select = 0
-assert(mem32le[cartridge.rom_base + 32] == 0, 'data cartridge exposed an executable program')
+assert(mem32le[cartridge.rom_base + 32] == 0, 'data cartridge exposed a BLua32 image')
 *cart_ram_probe = 0x10203040
 *cart_select = 1
-assert(mem32le[cartridge.rom_base + 32] ~= 0, 'program cartridge did not expose its boot header')
+assert(mem32le[cartridge.rom_base + 32] ~= 0, 'boot cartridge did not expose its BLua32 header')
 *cart_ram_probe = 0x50607080
 *cart_select = 0
 assert(*cart_ram_probe == 0x10203040, 'slot 0 cartridge RAM decode mismatch')

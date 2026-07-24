@@ -308,7 +308,7 @@ void testSampleTransferEdgeOrdering() {
 
 	auto programTransferEdge = [&programVoice](AudioHarness& harness) {
 		programVoice(harness);
-		const bmsx::u32 dmaSource = bmsx::PROGRAM_STATIC_RAM_BASE + 0x300u;
+		const bmsx::u32 dmaSource = bmsx::DYNAMIC_RAM_BASE + 0x300u;
 		harness.memory.writeMappedU32LE(dmaSource, 0xc0c0c0c0u);
 		harness.scheduler.advanceTo(46);
 		harness.memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_ADDRESS, 0u);
@@ -407,11 +407,11 @@ void testSampleBusDmaAndMidTransferRestore() {
 		const auto cartSample = static_cast<bmsx::i16>(harness.output.outputRing.readFramePacked() & 0xffffu);
 		require(cartSample < 0, "APU should fetch PCM from the cart ROM chip select");
 
-		harness.memory.writeMappedU32LE(bmsx::PROGRAM_STATIC_RAM_BASE, 0x11223344u);
-		programPcmVoice(harness, bmsx::PROGRAM_STATIC_RAM_BASE);
+		harness.memory.writeMappedU32LE(bmsx::DYNAMIC_RAM_BASE, 0x11223344u);
+		programPcmVoice(harness, bmsx::DYNAMIC_RAM_BASE);
 		const bmsx::AudioControllerState rejected = harness.audio.captureState();
 		require(harness.memory.readIoU32(bmsx::IO_APU_FAULT_CODE) == bmsx::APU_FAULT_SOURCE_RANGE, "CPU RAM should fault on the APU sample bus");
-		require(harness.memory.readIoU32(bmsx::IO_APU_FAULT_DETAIL) == bmsx::PROGRAM_STATIC_RAM_BASE, "source-range fault should latch the rejected CPU address");
+		require(harness.memory.readIoU32(bmsx::IO_APU_FAULT_DETAIL) == bmsx::DYNAMIC_RAM_BASE, "source-range fault should latch the rejected CPU address");
 		require(rejected.output.voices.size() == 1u, "a rejected PLAY must retain the active ROM voice");
 		require(rejected.output.voices[0].cursorQ16 == static_cast<bmsx::i64>(bmsx::APU_RATE_STEP_Q16_ONE), "a rejected PLAY must not restart the active voice");
 		require(rejected.slotRegisterWords[bmsx::apuSlotRegisterWordIndex(1u, bmsx::APU_PARAMETER_SOURCE_ADDR_INDEX)] == bmsx::CART_ROM_BASE, "a rejected PLAY must not replace active slot state");
@@ -431,8 +431,8 @@ void testSampleBusDmaAndMidTransferRestore() {
 
 	AudioHarness live;
 	live.audio.setTiming(bmsx::APU_TRANSFER_WORDS_PER_SECOND, 0);
-	const bmsx::u32 source = bmsx::PROGRAM_STATIC_RAM_BASE + 0x100u;
-	const bmsx::u32 target = bmsx::PROGRAM_STATIC_RAM_BASE + 0x200u;
+	const bmsx::u32 source = bmsx::DYNAMIC_RAM_BASE + 0x100u;
+	const bmsx::u32 target = bmsx::DYNAMIC_RAM_BASE + 0x200u;
 	const bmsx::u32 transferAddress = bmsx::APU_SAMPLE_RAM_BYTES - 8u;
 	for (bmsx::u32 index = 0u; index < 32u; index += 1u) {
 		live.memory.writeMappedU32LE(source + index * bmsx::IO_WORD_SIZE, 0x5a000000u | index);
@@ -533,8 +533,8 @@ void testSampleTransferWrongDirectionBlock() {
 	AudioHarness harness;
 	harness.dma.setTiming(0, 8, 0, 0, 0, 0);
 	harness.audio.setTiming(bmsx::APU_TRANSFER_WORDS_PER_SECOND, 0);
-	const bmsx::u32 source = bmsx::PROGRAM_STATIC_RAM_BASE + 0x500u;
-	const bmsx::u32 target = bmsx::PROGRAM_STATIC_RAM_BASE + 0x600u;
+	const bmsx::u32 source = bmsx::DYNAMIC_RAM_BASE + 0x500u;
+	const bmsx::u32 target = bmsx::DYNAMIC_RAM_BASE + 0x600u;
 	for (bmsx::u32 index = 0u; index < 32u; index += 1u) {
 		harness.memory.writeMappedU32LE(source + index * bmsx::IO_WORD_SIZE, 0x66000000u | index);
 	}

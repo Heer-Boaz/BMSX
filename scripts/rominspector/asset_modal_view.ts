@@ -1,7 +1,8 @@
 import { type GLTFModel, type RomAsset, type RomManifest } from '../../machine/ts/rompack/format';
 import { decodeBinary } from '../../machine/ts/common/serializer/binencoder';
 import { loadModelFromBuffer as loadGLTFModelFromBuffer } from '../../machine/ts/rompack/loader';
-import { decodeProgramSymbolsImage, PROGRAM_IMAGE_ID, PROGRAM_SYMBOLS_IMAGE_ID, type ProgramImage } from '../../machine/ts/machine/program/loader';
+import { BLUA32_IMAGE_ID, BLUA32_SYMBOLS_IMAGE_ID } from '../../machine/ts/machine/cpu/blua32_image';
+import { decodeBlua32SymbolsImage } from '../../machine/ts/machine/cpu/blua32_symbols';
 import { asciiWaveBraille, generateBrailleAsciiArt, generatePixelPerfectAsciiArt, renderBufferBar } from './asciiart';
 import { decodeAudioPreviewToPcm } from './audio_preview';
 import {
@@ -13,8 +14,8 @@ import { GX_GPU_TEXTURE_MODE_DIRECT16 } from '../../machine/ts/machine/devices/g
 import { decodeImgDecStream } from '../../machine/ts/rompack/tooling/imgdec_codec';
 import { GX_SYSTEM_TEXTURE_ASSET_ID } from '../rompacker/system_texture';
 import {
-	disassembleProgramImage,
-	loadProgramFromAssets,
+	disassembleBlua32Image,
+	loadBlua32ImageFromAssets,
 	ROM_MANIFEST_ASSET_ID,
 } from './shared';
 
@@ -56,7 +57,6 @@ type BuildAssetModalViewContext = {
 	decodedTexture: TextureDecodeCache;
 	manifest: RomManifest | null;
 	projectRootPath: string | null;
-	systemProgramImage: ProgramImage | null;
 	formatByteSize(size: number): string;
 	modalWidth: number;
 	modalHeight: number;
@@ -338,20 +338,20 @@ export async function buildAssetModalView(selected: RomAsset, ctx: BuildAssetMod
 			}
 			break;
 		case 'code':
-			if (selected.resid === PROGRAM_IMAGE_ID) {
-				const { programImage, program, metadata, sourceTextForPath, missingSourcePaths } = loadProgramFromAssets(ctx.rombin, ctx.assetList, ctx.systemProgramImage);
-				disassembly = disassembleProgramImage(program, metadata, sourceTextForPath);
-				metadataLines.push(`Program reset vector proto: ${programImage.vectors.resetProtoIndex}`);
-				metadataLines.push(`Program protos: ${program.protos.length}`);
-				metadataLines.push(`Program consts: ${program.constPool.length}`);
-				metadataLines.push(`Program code bytes: ${program.code.length}`);
+			if (selected.resid === BLUA32_IMAGE_ID) {
+				const { image, symbols, sourceTextByPath, missingSourcePaths } = loadBlua32ImageFromAssets(ctx.rombin, ctx.assetList);
+				disassembly = disassembleBlua32Image(image, symbols, sourceTextByPath);
+				metadataLines.push(`BLua32 image address: ${image.address.toString(16).toUpperCase()}h`);
+				metadataLines.push(`BLua32 functions: ${image.functions.length}`);
+				metadataLines.push(`BLua32 constants: ${image.constants.length}`);
+				metadataLines.push(`BLua32 text bytes: ${image.header.textByteCount}`);
 				if (missingSourcePaths.length > 0) {
 					metadataLines.push(`Source comments: unavailable (${missingSourcePaths.length} missing Lua paths)`);
 				}
-				preview = '[Program asset: open Details tab for disassembly]';
-			} else if (selected.resid === PROGRAM_SYMBOLS_IMAGE_ID) {
-				const symbols = decodeProgramSymbolsImage(ctx.rombin.subarray(selected.start, selected.end));
-				metadataLines.push(`Program symbols protos: ${symbols.protoIds.length}`);
+				preview = '[BLua32 image: open Details tab for disassembly]';
+			} else if (selected.resid === BLUA32_SYMBOLS_IMAGE_ID) {
+				const symbols = decodeBlua32SymbolsImage(ctx.rombin.subarray(selected.start, selected.end));
+				metadataLines.push(`BLua32 symbol functions: ${symbols.functionAddresses.length}`);
 				preview = JSON.stringify(symbols, null, 2);
 			} else {
 				throw new Error(`Unsupported code asset '${selected.resid}'.`);

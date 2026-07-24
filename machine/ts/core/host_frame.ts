@@ -48,7 +48,7 @@ export function runMachineHostFrame(runtime: Runtime, currentTime: number, runRe
 					manager.view.backend.executeGxGpuReadback(runtime.machine.gxGpu);
 					runtime.frameScheduler.run(0);
 				}
-				syncRuntimeSourceActivity(manager.sourceState, runtime.cartProgramStarted);
+				syncRuntimeSourceActivity(manager.sourceState, runtime.machine.cpu.activeCartridgeSlot());
 				manager.syncRuntimeAudioTiming();
 				screen.syncAfterRuntimeUpdate(runtime, previousTickSequence);
 			}

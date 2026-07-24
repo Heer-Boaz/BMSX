@@ -1,4 +1,4 @@
-#include "machine/program/scratch.h"
+#include "machine/runtime/lua_scratch.h"
 
 namespace bmsx {
 

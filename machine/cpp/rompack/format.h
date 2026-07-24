@@ -6,6 +6,7 @@
 #define BMSX_ROMPACK_H
 
 #include "common/primitives.h"
+#include "machine/cpu/blua32_image.h"
 #include "machine/model_registry.h"
 #include <array>
 #include <cstddef>
@@ -16,8 +17,6 @@
 
 namespace bmsx {
 
-struct ProgramImage;
-
 enum class RomImageDomain {
 	System,
 	Cartridge,
@@ -25,13 +24,10 @@ enum class RomImageDomain {
 
 constexpr u32 CART_ROM_MAGIC = 0x58534D42u;
 constexpr std::array<u8, 4> CART_ROM_MAGIC_BYTES = { 0x42, 0x4d, 0x53, 0x58 };
-constexpr size_t CART_ROM_PROGRAM_HEADER_SIZE = 64;
 constexpr size_t CART_ROM_METADATA_HEADER_SIZE = 72;
 constexpr size_t CART_ROM_HEADER_SIZE = 84;
 constexpr size_t CART_ROM_WORD_ALIGNMENT = 4;
 constexpr u32 CART_VDP_CLASS_PSX = 1;
-constexpr u32 PROGRAM_BOOT_HEADER_VERSION = 1;
-
 struct CartRomHeader {
 	u32 headerSize = 0;
 	u32 manifestOffset = 0;
@@ -40,14 +36,13 @@ struct CartRomHeader {
 	u32 tocLength = 0;
 	u32 dataOffset = 0;
 	u32 dataLength = 0;
-	u32 programBootVersion = 0;
-	u32 programBootFlags = 0;
-	u32 programEntryProtoIndex = 0;
-	u32 programCodeByteCount = 0;
-	u32 programConstPoolCount = 0;
-	u32 programProtoCount = 0;
-	u32 programReserved0 = 0;
-	u32 programConstRelocCount = 0;
+	u32 blua32ImageOffset = 0;
+	u32 blua32ImageByteCount = 0;
+	u32 blua32StartupFunctionAddress = 0;
+	u32 blua32IrqFunctionAddress = 0;
+	u32 blua32ExceptionFunctionAddress = 0;
+	u32 blua32StaticLayoutTokenLo = 0;
+	u32 blua32StaticLayoutTokenHi = 0;
 	u32 metadataOffset = 0;
 	u32 metadataLength = 0;
 	MachineVdpClass vdpClass = MachineVdpClass::Psx;
@@ -80,9 +75,6 @@ struct CartManifest {
 	u32 cartridgeBoardWord = 0;
 	u32 cartridgeRamByteCount = 0;
 };
-
-std::vector<u8> encodeCartManifest(const CartManifest& cart);
-std::vector<u8> encodeProgramRom(const CartManifest& cart, const ProgramImage& program, RomImageDomain domain);
 
 } // namespace bmsx
 

@@ -3,7 +3,7 @@
 namespace bmsx {
 
 std::optional<std::string> extractSourceRangeText(const SourceRange& range, const std::string& source) {
-	if (range.startLine <= 0 || range.endLine < range.startLine) {
+	if (range.start.line <= 0 || range.end.line < range.start.line) {
 		return std::nullopt;
 	}
 	std::string out;
@@ -17,12 +17,12 @@ std::optional<std::string> extractSourceRangeText(const SourceRange& range, cons
 		if (lineEnd > lineStart && source[lineEnd - 1] == '\r') {
 			lineEnd -= 1;
 		}
-		if (line >= range.startLine && line <= range.endLine) {
+		if (line >= range.start.line && line <= range.end.line) {
 			if (!out.empty()) {
 				out.push_back(' ');
 			}
 			out.append(source.data() + lineStart, lineEnd - lineStart);
-			if (line == range.endLine) {
+			if (line == range.end.line) {
 				return out;
 			}
 		}

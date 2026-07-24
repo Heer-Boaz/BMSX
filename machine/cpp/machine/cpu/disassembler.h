@@ -1,6 +1,9 @@
 #pragma once
 
-#include "machine/cpu/cpu.h"
+#include "machine/cpu/blua32_image.h"
+#include "machine/cpu/blua32_symbols.h"
+#include "machine/cpu/opcode_info.h"
+
 #include <optional>
 #include <string>
 #include <vector>
@@ -14,7 +17,7 @@ struct InstructionOperandDebugInfo {
 };
 
 struct InstructionDebugInfo {
-	int pc = 0;
+	u32 pc = 0;
 	std::string pcText;
 	OpCode op = OpCode::MOV;
 	std::string opName;
@@ -23,7 +26,11 @@ struct InstructionDebugInfo {
 	std::optional<SourceRange> sourceRange;
 };
 
-InstructionDebugInfo describeInstructionAtPc(const Program& program, const ProgramMetadata* metadata, int pc);
+auto describeInstructionAtPc(
+	const Blua32ImageLayout& image,
+	const Blua32SymbolsImage* symbols,
+	u32 pc
+) -> InstructionDebugInfo;
 std::string formatSourceSnippet(const SourceRange& range, const std::string& source);
 
 } // namespace bmsx

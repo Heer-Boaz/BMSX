@@ -1,6 +1,6 @@
 #pragma once
 
-#include "machine/cpu/cpu.h"
+#include "machine/cpu/blua32_symbols.h"
 
 #include <optional>
 #include <string>

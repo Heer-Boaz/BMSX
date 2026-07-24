@@ -9,7 +9,7 @@ DISPATCH_LABEL(MOV) {
 }
 
 DISPATCH_LABEL(LOADK) {
-	SET_REGISTER_FAST(a, m_program->constPool[static_cast<size_t>(bx)]);
+	SET_REGISTER_FAST(a, IMAGE.constPool[static_cast<size_t>(bx)]);
 	DISPATCH_CONTINUE();
 }
 
@@ -76,7 +76,7 @@ DISPATCH_LABEL(SETGL) {
 }
 
 DISPATCH_LABEL(GETI) {
-	SET_REGISTER_FAST(a, loadTableIntegerIndexCached(TABLE_CACHE_INDEX(), REG(b), c));
+	SET_REGISTER_FAST(a, loadTableIntegerIndexCached(IMAGE, TABLE_CACHE_INDEX(), REG(b), c));
 	DISPATCH_CONTINUE();
 }
 
@@ -86,20 +86,29 @@ DISPATCH_LABEL(SETI) {
 }
 
 DISPATCH_LABEL(GETFIELD) {
-	SET_REGISTER_FAST(a, loadTableFieldIndexCached(TABLE_CACHE_INDEX(), REG(b), asStringId(m_program->constPool[static_cast<size_t>(c)])));
+	SET_REGISTER_FAST(a, loadTableFieldIndexCached(
+		IMAGE,
+		TABLE_CACHE_INDEX(),
+		REG(b),
+		asStringId(IMAGE.constPool[static_cast<size_t>(c)])
+	));
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(SETFIELD) {
-	storeTableFieldIndex(REG(a), asStringId(m_program->constPool[static_cast<size_t>(b)]), readRK(FRAME, rkC));
+	storeTableFieldIndex(
+		REG(a),
+		asStringId(IMAGE.constPool[static_cast<size_t>(b)]),
+		readRK(FRAME, rkC)
+	);
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(SELF) {
 	const Value base = REG(b);
-	const StringId key = asStringId(m_program->constPool[static_cast<size_t>(c)]);
+	const StringId key = asStringId(IMAGE.constPool[static_cast<size_t>(c)]);
 	SET_REGISTER_FAST(a + 1, base);
-	SET_REGISTER_FAST(a, loadTableFieldIndexCached(TABLE_CACHE_INDEX(), base, key));
+	SET_REGISTER_FAST(a, loadTableFieldIndexCached(IMAGE, TABLE_CACHE_INDEX(), base, key));
 	DISPATCH_CONTINUE();
 }
 
@@ -336,6 +345,7 @@ DISPATCH_LABEL(MFC0) {
 		case COP0_STATUS: value = m_statusWord; break;
 		case COP0_CAUSE: value = m_causeWord; break;
 		case COP0_EPC: value = m_epcWord; break;
+		case COP0_EXEC: value = 0u; break;
 		default: hardHalt(); DISPATCH_CONTINUE();
 	}
 	SET_REGISTER_FAST(a, valueNumber(static_cast<double>(value)));
@@ -351,6 +361,7 @@ DISPATCH_LABEL(MTC0) {
 	switch (b) {
 		case COP0_STATUS: m_statusWord = value; break;
 		case COP0_EPC: m_epcWord = value; break;
+		case COP0_EXEC: executeFunctionAddress(value); DISPATCH_CONTINUE();
 		case COP0_BAD_ADDRESS:
 		case COP0_CAUSE:
 			break;
@@ -360,26 +371,55 @@ DISPATCH_LABEL(MTC0) {
 }
 
 DISPATCH_LABEL(JMP) {
-	FRAME.pc += sbx * INSTRUCTION_BYTES;
+	const u32 targetPc = FRAME.pc + sbx * INSTRUCTION_BYTES;
+	const Blua32RuntimeFunction& function = *FRAME.functionRecord;
+	if (targetPc < function.codeAddress
+		|| targetPc >= function.codeAddress + function.codeByteCount) {
+		hardHalt();
+		DISPATCH_CONTINUE();
+	}
+	FRAME.pc = targetPc;
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(JMPIF) {
 	if (isTruthy(REG(a))) {
-		FRAME.pc += sbx * INSTRUCTION_BYTES;
+		const u32 targetPc = FRAME.pc + sbx * INSTRUCTION_BYTES;
+		const Blua32RuntimeFunction& function = *FRAME.functionRecord;
+		if (targetPc < function.codeAddress
+			|| targetPc >= function.codeAddress + function.codeByteCount) {
+			hardHalt();
+			DISPATCH_CONTINUE();
+		}
+		FRAME.pc = targetPc;
 	}
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(JMPIFNOT) {
 	if (!isTruthy(REG(a))) {
-		FRAME.pc += sbx * INSTRUCTION_BYTES;
+		const u32 targetPc = FRAME.pc + sbx * INSTRUCTION_BYTES;
+		const Blua32RuntimeFunction& function = *FRAME.functionRecord;
+		if (targetPc < function.codeAddress
+			|| targetPc >= function.codeAddress + function.codeByteCount) {
+			hardHalt();
+			DISPATCH_CONTINUE();
+		}
+		FRAME.pc = targetPc;
 	}
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(CLOSURE) {
-	Closure* closure = createClosure(FRAME, static_cast<int>(bx));
+	Blua32RuntimeFunction* functionRecord = functionRecordInExecutionDomain(
+		*FRAME.functionRecord->image,
+		bx * BLUA32_FUNCTION_ALIGNMENT
+	);
+	if (!functionRecord) {
+		hardHalt();
+		DISPATCH_CONTINUE();
+	}
+	Closure* closure = createClosure(FRAME, *functionRecord);
 	SET_REGISTER_FAST(a, valueClosure(closure));
 	runHousekeeping();
 	DISPATCH_CONTINUE();
@@ -644,6 +684,14 @@ DISPATCH_LABEL(RFE) {
 	}
 	const bool returnFromNmi = FRAME.isNonMaskableExceptionFrame;
 	const u32 returnPc = m_epcWord;
+	if (m_frames.size() > 1u) {
+		const Blua32RuntimeFunction& callerFunction = *m_frames[m_frames.size() - 2u]->functionRecord;
+		if (returnPc < callerFunction.codeAddress
+			|| returnPc >= callerFunction.codeAddress + callerFunction.codeByteCount) {
+			hardHalt();
+			DISPATCH_CONTINUE();
+		}
+	}
 	closeUpvalues(FRAME);
 	auto finished = std::move(m_frames.back());
 	m_frames.pop_back();
@@ -652,7 +700,7 @@ DISPATCH_LABEL(RFE) {
 	m_statusWord = (m_statusWord & ~CPU_STATUS_RFE_RESTORE_MASK)
 		| ((m_statusWord >> 2u) & CPU_STATUS_RFE_RESTORE_MASK);
 	if (!m_frames.empty()) {
-		m_frames.back()->pc = static_cast<int>(returnPc);
+		m_frames.back()->pc = returnPc;
 	}
 	if (returnFromNmi) {
 		m_causeWord = m_nmiReturnCauseWord;
@@ -664,6 +712,6 @@ DISPATCH_LABEL(RFE) {
 }
 
 DISPATCH_LABEL(LOADKR) {
-	SET_REGISTER_FAST(a, m_program->constPool[static_cast<size_t>(asNumber(REG(b)))]);
+	SET_REGISTER_FAST(a, IMAGE.constPool[static_cast<size_t>(asNumber(REG(b)))]);
 	DISPATCH_CONTINUE();
 }

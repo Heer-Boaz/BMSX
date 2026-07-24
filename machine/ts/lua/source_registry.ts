@@ -10,7 +10,7 @@ import {
 } from '../rompack/format';
 import { utf8FatalDecoder } from '../common/serializer/binencoder';
 import { buildRomAssetSymbolModuleSource } from '../rompack/asset_symbols';
-import { toLuaModulePath } from '../machine/program/loader';
+import { toLuaModulePath } from './module_path';
 
 export const DEFAULT_SYSTEM_PROJECT_ROOT_PATH = 'machine/ts';
 

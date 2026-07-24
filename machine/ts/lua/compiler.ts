@@ -39,7 +39,18 @@ import {
 	type LuaWhileStatement,
 	type LuaGotoStatement,
 } from './syntax/ast';
-import { OpCode, StringValue, asStringId, isTruthyValue, valueIsString, type Program, type ProgramMetadata, type ProgramModuleExport, type ProgramModuleProto, type ProgramResumePoint, type Proto, type UpvalueDesc, type Value, type SourceRange, type LocalSlotDebug } from '../machine/cpu/cpu';
+import { OpCode, StringValue, asStringId, isTruthyValue, valueIsString, type Value } from '../machine/cpu/cpu';
+import type { SourceRange } from '../machine/cpu/blua32_symbols';
+import type {
+	LocalSlotDebug,
+	Program,
+	ProgramMetadata,
+	ProgramModuleExport,
+	ProgramModuleProto,
+	ProgramResumePoint,
+	Proto,
+	UpvalueDesc,
+} from './compiler/program';
 import { encodeFixedCallArgCount, getOpcodeName } from '../machine/cpu/opcode_info';
 import { optimizeInstructions, type Instruction, type InstructionSet, type OptimizationLevel } from './compiler/optimizer';
 import {
@@ -54,7 +65,7 @@ import { appendModuleExportPathKey } from './compiler/passes/module_names';
 import { collectStaticStorageDeclarations, type StaticStorageDeclaration } from './compiler/passes/static_storage';
 import { collectStaticFunctionExports } from './compiler/passes/static_functions';
 import { assertStaticFunctionInstructionSet, staticLaneForbiddenOpcodeReason } from './compiler/passes/static_proto_contract';
-import { toLuaModulePath } from '../machine/program/loader';
+import { toLuaModulePath } from './module_path';
 import {
 	encodeProgramObjectSections,
 	type ProgramConstReloc,
@@ -89,13 +100,14 @@ import { getMemoryAccessKindForName, MemoryAccessKind } from '../machine/memory/
 import { writeLE16, writeLE32 } from '../common/endian';
 import { isReservedIntrinsicName } from './semantic/common';
 import { IO_IRQ_FLAGS } from '../machine/bus/io';
-import { COP0_BAD_ADDRESS, COP0_CAUSE, COP0_EPC, COP0_STATUS } from '../machine/cpu/cop0';
+import { COP0_BAD_ADDRESS, COP0_CAUSE, COP0_EPC, COP0_EXEC, COP0_STATUS } from '../machine/cpu/cop0';
 import { buildProgramResumePoints } from './compiler/resume_points';
 
 export type CompiledProgram = {
 	program: Program;
 	metadata: ProgramMetadata;
 	entryProtoIndex: number;
+	startupProtoIndex: number;
 	sectionInitProtoIndex: number;
 	irqProtoIndex: number;
 	exceptionProtoIndex: number;
@@ -113,7 +125,7 @@ export type CompiledProgram = {
 export function encodeCompiledProgramObject(compiled: CompiledProgram): ProgramObjectImage {
 	return {
 		vectors: {
-			resetProtoIndex: compiled.entryProtoIndex,
+			resetProtoIndex: compiled.startupProtoIndex,
 			sectionInitProtoIndex: compiled.sectionInitProtoIndex,
 			irqProtoIndex: compiled.irqProtoIndex,
 			exceptionProtoIndex: compiled.exceptionProtoIndex,
@@ -405,7 +417,7 @@ class ProgramBuilder {
 	private readonly moduleExportSlotByKey = new Map<string, string>();
 	private readonly moduleExportPathContractByKey = new Set<string>();
 	private readonly modulePathSet = new Set<string>();
-	private readonly staticModulePaths: string[] = [];
+	public readonly staticModulePaths: string[] = [];
 	private readonly staticModulePathSet: Set<string> = new Set();
 	private readonly programDomain: ProgramCompileDomain;
 
@@ -633,7 +645,7 @@ class ProgramBuilder {
 		this.structLayoutMap.set(layout.name, layout);
 	}
 
-	private resolveSystemGlobalSlot(name: string): number {
+	public resolveSystemGlobalSlot(name: string): number {
 		const slot = this.systemGlobalSlotByName.get(name);
 		if (slot) {
 			return slot - 1;
@@ -701,6 +713,11 @@ class ProgramBuilder {
 		}
 		this.moduleProtoEntrySlotByPath.set(path, this.moduleProtoEntries.length + 1);
 		this.moduleProtoEntries.push({ path, protoIndex });
+	}
+
+	public moduleProtoIndex(path: string): number | undefined {
+		const slot = this.moduleProtoEntrySlotByPath.get(path);
+		return slot === undefined ? undefined : this.moduleProtoEntries[slot - 1].protoIndex;
 	}
 
 	private makeModuleExportKey(path: string, exportPathKey: string): string {
@@ -840,6 +857,7 @@ class ProgramBuilder {
 				switch (reloc.kind) {
 					case 'module':
 					case 'export_proto':
+					case 'module_init':
 						fullConstRelocs.push({
 							wordIndex: targetOffsetWords + reloc.wordIndex,
 							kind: reloc.kind,
@@ -982,6 +1000,7 @@ const buildEntryProtoId = (moduleId: string): string => `${buildModuleRootId(mod
 const buildModuleProtoId = (moduleId: string): string => `${buildModuleRootId(moduleId)}/module`;
 
 const buildSectionInitProtoId = (moduleId: string): string => `${buildModuleRootId(moduleId)}/section_init`;
+const buildStartupProtoId = (moduleId: string): string => `${buildModuleRootId(moduleId)}/startup`;
 const buildInterruptProtoId = (moduleId: string): string => `${buildModuleRootId(moduleId)}/irq`;
 const buildExceptionProtoId = (moduleId: string): string => `${buildModuleRootId(moduleId)}/exception`;
 
@@ -1268,6 +1287,43 @@ class FunctionBuilder {
 				this.patchJump(jumpOut, this.code.length);
 			}
 			this.emitDefaultReturn();
+		});
+		this.finalizeLabels();
+	}
+
+	public compileStartup(
+		range: LuaSourceRange,
+		sectionInitProtoIndex: number,
+		entryProtoIndex: number,
+		clearBootPrimitives: boolean,
+	): void {
+		this.withRange(range, () => {
+			const callReg = this.allocTemp();
+			this.emitABx(OpCode.CLOSURE, callReg, sectionInitProtoIndex);
+			this.emitABC(OpCode.CALL, callReg, encodeFixedCallArgCount(0), 0);
+			for (let index = 0; index < this.program.staticModulePaths.length; index += 1) {
+				const path = this.program.staticModulePaths[index];
+				const functionIndex = this.program.moduleProtoIndex(path);
+				if (functionIndex === undefined) {
+					this.emitABx(OpCode.LOADK, callReg, 0, { kind: 'module_init', symbol: path });
+				} else {
+					this.emitABx(OpCode.CLOSURE, callReg, functionIndex);
+				}
+				this.emitABC(OpCode.CALL, callReg, encodeFixedCallArgCount(0), 0);
+			}
+			if (clearBootPrimitives) {
+				this.emitABC(OpCode.KNIL, callReg, 0, 0);
+				for (let index = 0; index < SYSTEM_ROM_BOOT_PRIMITIVE_NAMES.length; index += 1) {
+					this.emitABx(
+						OpCode.SETSYS,
+						callReg,
+						this.program.resolveSystemGlobalSlot(SYSTEM_ROM_BOOT_PRIMITIVE_NAMES[index]),
+					);
+				}
+			}
+			this.emitABx(OpCode.CLOSURE, callReg, entryProtoIndex);
+			this.emitABC(OpCode.CALL, callReg, encodeFixedCallArgCount(0), 0);
+			this.emitABC(OpCode.RET, callReg, 0, 0);
 		});
 		this.finalizeLabels();
 	}
@@ -1586,7 +1642,10 @@ class FunctionBuilder {
 			}
 			if (instr.format === 'ABx') {
 				const bxWidthValue = instr.b;
-				const forceWide = isConstBxOp(instr.op);
+				const forceWide = isConstBxOp(instr.op)
+					|| instr.op === OpCode.CLOSURE
+					|| isGlobalSlotOp(instr.op)
+					|| instr.symbolicReloc !== undefined;
 				const aWide = needsWideUnsigned(instr.a, MAX_OPERAND_BITS, 0);
 				const bxWide = isSignedBxOp(instr.op)
 					? needsWideSigned(bxWidthValue, MAX_BX_BITS, EXT_BX_BITS)
@@ -1856,7 +1915,7 @@ class FunctionBuilder {
 		const effectiveScopeRange = scopeRange ?? scope.range;
 		this.localDebugSlots.push({
 			name,
-			register: reg,
+			registerIndex: reg,
 			definition: definitionRange,
 			scope: effectiveScopeRange,
 		});
@@ -2048,7 +2107,7 @@ class FunctionBuilder {
 		return this.resolveCompileTimeConstClosureBinding(symbolHandle);
 	}
 
-	private markStaticModulePath(path: string, visiting: Set<string> = new Set()): void {
+	public markStaticModulePath(path: string, visiting: Set<string> = new Set()): void {
 		if (this.program.hasStaticModulePath(path)) {
 			return;
 		}
@@ -2056,6 +2115,9 @@ class FunctionBuilder {
 			throw new Error(`Compile-time require cycle includes module '${path}'.`);
 		}
 		const context = this.moduleCompileContext as ModuleCompileContext;
+		if (context.externalModulePaths.has(path)) {
+			return;
+		}
 		const moduleInfo = context.modulesByPath.get(path);
 		if (moduleInfo && moduleInfo.constModule) {
 			return;
@@ -2141,19 +2203,15 @@ class FunctionBuilder {
 	}
 
 	private resolveStaticModuleBinding(expression: LuaExpression, allowRequireRoot: boolean): ModuleBinding | undefined {
-		/*
-			Note: emulated-machine semantics and symbolic link-time relocations
+			/*
+				BLua32 uses flat machine instructions. Live Lua module tables are not
+				part of that ABI. Compile-time system-ROM modules contribute initializer
+				paths to the object image; unresolved exports become link relocations
+				that are rewritten before the image enters ROM.
 
-			- This project targets a emulated-machine-style ABI based on flat machine instructions; Lua
-			runtime concepts such as live module tables are not part of the ABI. The compiler treats
-			certain system ROM modules as compile-time descriptors and records initializer paths in the
-			program image's static module path list.
-			- The compiler must not fabricate runtime tables. When a module export cannot be resolved at
-			compile time, the compiler emits an explicit symbolic relocation on the instruction.
-			The relocation resolver rewrites the operand/instruction before execution.
-			- This function resolves shaped source modules and installed program modules. Plain unshaped
-			modules are handled only by require lowering, not by member/static export lowering.
-		 */
+				This resolves shaped source modules and installed compiler modules.
+				Plain unshaped modules are handled by require lowering.
+			 */
 		if (allowRequireRoot) {
 			const requireBinding = this.resolveRequireModuleBinding(expression);
 			if (requireBinding && (requireBinding.kind === 'source' || requireBinding.kind === 'installed')) {
@@ -2339,9 +2397,6 @@ class FunctionBuilder {
 	private resolveConstLocalModuleBinding(expression: LuaExpression): ModuleBinding | undefined {
 		const binding = this.resolveStaticModuleBinding(expression, true);
 		if (binding) {
-			if (binding.kind === 'source' && binding.moduleInfo.external && binding.moduleInfo.constModule === false) {
-				this.markStaticModulePath(binding.modulePath);
-			}
 			if (binding.exportDepth === 0 || this.resolveStaticFunctionExportCallSlot(binding)) {
 				return binding;
 			}
@@ -3540,7 +3595,7 @@ class FunctionBuilder {
 			if (expr.kind === LuaSyntaxKind.MemberExpression) {
 				const cop0Register = this.resolveCop0Register(expr as LuaMemberExpression);
 				if (cop0Register) {
-					if (cop0Register !== COP0_STATUS && cop0Register !== COP0_EPC) {
+					if (cop0Register !== COP0_STATUS && cop0Register !== COP0_EPC && cop0Register !== COP0_EXEC) {
 						throw new Error(`cop0.${(expr as LuaMemberExpression).identifier} is read-only.`);
 					}
 					targets.push({ kind: 'cop0', register: cop0Register });
@@ -3749,6 +3804,9 @@ class FunctionBuilder {
 				return;
 			}
 			case 'cop0':
+				if (target.register === COP0_EXEC) {
+					throw new Error('cop0.exec does not support compound assignment.');
+				}
 				this.emitABC(OpCode.MFC0, temp, target.register, 0);
 				this.emitABC(op, temp, temp, valueReg, RK_B | RK_C);
 				this.emitABC(OpCode.MTC0, temp, target.register, 0);
@@ -4156,6 +4214,9 @@ class FunctionBuilder {
 	private compileMemberExpression(expression: any, target: number): void {
 		const cop0Register = this.resolveCop0Register(expression as LuaMemberExpression);
 		if (cop0Register) {
+			if (cop0Register === COP0_EXEC) {
+				throw new Error('cop0.exec is write-only.');
+			}
 			this.emitABC(OpCode.MFC0, target, cop0Register, 0);
 			return;
 		}
@@ -4192,6 +4253,7 @@ class FunctionBuilder {
 			case 'status': return COP0_STATUS;
 			case 'cause': return COP0_CAUSE;
 			case 'epc': return COP0_EPC;
+			case 'exec': return COP0_EXEC;
 			default: throw new Error(`Unknown cop0 register '${expression.identifier}'.`);
 		}
 	}
@@ -4860,10 +4922,13 @@ class FunctionBuilder {
 			case 'installed':
 				return;
 			case 'unshaped':
+				if (binding.external) {
+					return;
+				}
 				this.markStaticModulePath(binding.modulePath);
 				return;
 			case 'source':
-				if (binding.moduleInfo.constModule) {
+				if (binding.moduleInfo.constModule || binding.moduleInfo.external) {
 					return;
 				}
 				this.markStaticModulePath(binding.modulePath);
@@ -4880,7 +4945,9 @@ class FunctionBuilder {
 				}
 				return;
 			case 'unshaped':
-				this.markStaticModulePath(binding.modulePath);
+				if (!binding.external) {
+					this.markStaticModulePath(binding.modulePath);
+				}
 				this.emitLoadBool(target, true);
 				if (resultCount > 1) {
 					this.emitLoadNil(target + 1, resultCount - 1);
@@ -4893,7 +4960,9 @@ class FunctionBuilder {
 				if (binding.moduleInfo.constModule) {
 					this.failCompileTimeModuleRootRuntimeUse(binding.modulePath);
 				}
-				this.markStaticModulePath(binding.modulePath);
+				if (!binding.moduleInfo.external) {
+					this.markStaticModulePath(binding.modulePath);
+				}
 				const rootSlot = binding.moduleInfo.exportSlotsByPathKey.get('');
 				if (rootSlot) {
 					this.emitModuleSlotRelocLoad(rootSlot, target);
@@ -5240,6 +5309,36 @@ function compileSectionInitProto(
 	return protoIndex;
 }
 
+function compileStartupProto(
+	program: ProgramBuilder,
+	moduleId: string,
+	range: LuaSourceRange,
+	semantics: LuaSemanticFrontendFile,
+	frontend: LuaSemanticFrontend,
+	sectionInitProtoIndex: number,
+	entryProtoIndex: number,
+	clearBootPrimitives: boolean,
+): number {
+	const protoId = buildStartupProtoId(moduleId);
+	const builder = new FunctionBuilder(program, null, { moduleId, protoId, semantics, frontend });
+	builder.compileStartup(range, sectionInitProtoIndex, entryProtoIndex, clearBootPrimitives);
+	const code = builder.getCode();
+	const ranges = builder.getRanges();
+	const constRelocs = builder.getConstRelocs();
+	const instructionSet = builder.getInstructionSet();
+	const protoIndex = program.addProto({
+		entryPC: 0,
+		codeLen: ranges.length * INSTRUCTION_BYTES,
+		numParams: 0,
+		isVararg: false,
+		maxStack: builder.getMaxStack(),
+		upvalueDescs: [],
+		staticClosure: true,
+	}, code, ranges, constRelocs, builder.getResumePoints(), [], [], protoId, instructionSet);
+	program.markStaticClosureProto(protoIndex);
+	return protoIndex;
+}
+
 function compileInterruptProto(
 	program: ProgramBuilder,
 	moduleId: string,
@@ -5379,6 +5478,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 	const moduleId = chunk.range.path;
 	const entryProtoId = buildEntryProtoId(moduleId);
 	let entryProtoIndex = -1;
+	let startupProtoIndex = -1;
 	let sectionInitProtoIndex = -1;
 	let irqProtoIndex = -1;
 	let exceptionProtoIndex = -1;
@@ -5462,11 +5562,27 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 	irqProtoIndex = compileInterruptProto(programBuilder, moduleId, chunk.range, entrySemantics, frontend);
 	exceptionProtoIndex = compileExceptionProto(programBuilder, moduleId, chunk.range, entrySemantics, frontend);
 	recordModuleExportContracts(programBuilder, moduleCompileContext);
+	if ((options.programDomain ?? 'cart') === 'system') {
+		for (let index = 0; index < canonicalModules.length; index += 1) {
+			entryBuilder.markStaticModulePath(canonicalModules[index].path);
+		}
+	}
+	startupProtoIndex = compileStartupProto(
+		programBuilder,
+		moduleId,
+		chunk.range,
+		entrySemantics,
+		frontend,
+		sectionInitProtoIndex,
+		entryProtoIndex,
+		(options.programDomain ?? 'cart') === 'system',
+	);
 	const { program, metadata, constRelocs, constValueRelocs, rodataConstRelocs, data, bss, rodataBytes, rodataSymbols, staticModulePaths } = programBuilder.buildProgram();
 	return {
 		program,
 		metadata,
 		entryProtoIndex,
+		startupProtoIndex,
 		sectionInitProtoIndex,
 		irqProtoIndex,
 		exceptionProtoIndex,

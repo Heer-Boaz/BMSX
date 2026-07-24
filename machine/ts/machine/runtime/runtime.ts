@@ -1,6 +1,14 @@
-import { AcceptedInterruptKind, EMPTY_CALL_ARGS, RunResult, StringValue, type Closure, type Value, type Program, type ProgramMetadata, type ProgramRuntimeSymbols } from '../cpu/cpu';
-import { CPU_STATUS_CART_ENTRY, CPU_STATUS_SYSTEM_ENTRY } from '../cpu/cop0';
-import { clearLuaBootPrimitives, seedLuaGlobals } from '../firmware/globals';
+import {
+	AcceptedInterruptKind,
+	EMPTY_CALL_ARGS,
+	RunResult,
+	StringValue,
+	type Closure,
+	type Value,
+} from '../cpu/cpu';
+import type { Blua32MediaSymbols } from '../cpu/blua32_symbols';
+import { CPU_STATUS_SYSTEM_ENTRY } from '../cpu/cop0';
+import { seedLuaGlobals } from '../firmware/globals';
 import type { RuntimeOptions } from './options';
 import { addTrackedLuaHeapBytes, configureLuaHeapUsage, getTrackedLuaHeapBytes, resetTrackedLuaHeapBytes } from '../memory/lua_heap_usage';
 import { FrameLoopState } from './frame/loop';
@@ -10,8 +18,7 @@ import { TimingState } from './timing/state';
 import { VblankState } from './vblank';
 import { advanceRuntimeTime, CpuExecutionState, runDueRuntimeTimers } from './cpu_executor';
 import { HostFaultState } from './host_fault';
-import { LuaScratchState } from '../program/scratch';
-import { assembleProgramImages, type ProgramBootTarget, type ProgramImage, type ProgramVectorTable } from '../program/loader';
+import { LuaScratchState } from './lua_scratch';
 import { refreshDeviceTimings } from './timing/config';
 import { HZ_SCALE } from './timing/constants';
 import type { GxGpuPcrtcTiming } from '../devices/gx/gpu_pcrtc';
@@ -56,8 +63,6 @@ function runHaltedClosureUntilInterrupt(runtime: Runtime): number {
 	return consumed;
 }
 
-export const EMPTY_STATIC_MODULE_PATHS: ReadonlyArray<string> = [];
-
 export class Runtime {
 	public readonly timing: TimingState;
 	public cpuUsageCyclesUsed(): number {
@@ -76,8 +81,6 @@ export class Runtime {
 			|| this.luaRuntimeFailed;
 	}
 
-	public programMetadata: ProgramMetadata | null = null;
-	public programRuntimeSymbols!: ProgramRuntimeSymbols;
 	public luaInitialized = false;
 	public get isInitialized(): boolean {
 		return this.luaInitialized;
@@ -88,17 +91,9 @@ export class Runtime {
 	}
 	public readonly frameScheduler: FrameSchedulerState;
 	public readonly frameLoop: FrameLoopState;
-	public cartProgramStarted = false;
-	public programVectors: ProgramVectorTable | null = null;
-	public systemVectors!: ProgramVectorTable;
-	public cartVectors!: ProgramVectorTable;
-	private systemStaticModulePaths: ReadonlyArray<string> = EMPTY_STATIC_MODULE_PATHS;
-	public cartStaticModulePaths: ReadonlyArray<string> = [];
 	public readonly vblank: VblankState;
 	public readonly cpuExecution: CpuExecutionState;
 	public readonly luaScratch = new LuaScratchState();
-	public readonly moduleCache = new Map<string, Value>();
-	public cartEntryAvailable = false;
 	public readonly hostFault: HostFaultState;
 	public readonly machine: Machine;
 
@@ -111,17 +106,13 @@ export class Runtime {
 		this.applyPublishedGxGpuPcrtcTiming(this.machine.gxGpu.readDeviceOutput().pcrtcTiming);
 	}
 
-	public resetRuntimeForProgramReload(): void {
+	public resetForSystemBoot(): void {
 		this.frameLoop.resetFrameState();
 		this.luaRuntimeFailed = false;
 		this.luaInitialized = false;
 		this.pendingCall = null;
-		this.programVectors = null;
-		this.cartEntryAvailable = false;
-		this.cartStaticModulePaths = EMPTY_STATIC_MODULE_PATHS;
 		this.hostFault.clear();
-		this.moduleCache.clear();
-		this.machine.cpu.clearProgramEnvironment();
+		this.machine.cpu.clearExecutionEnvironment();
 		this.machine.memory.clearIoSlots();
 		this.machine.initializeSystemIo();
 		this.resetHardwareState();
@@ -129,89 +120,25 @@ export class Runtime {
 		addTrackedLuaHeapBytes(this.machine.cpu.globals.getTrackedHeapBytes());
 	}
 
-	public boot(
-		systemImage: ProgramImage,
-		systemMetadata: ProgramMetadata | null,
-		cartImage: ProgramImage | null,
-		cartMetadata: ProgramMetadata | null,
-		bootTarget: ProgramBootTarget,
-	): void {
-		const activeImage = bootTarget === 'cart' ? cartImage! : systemImage;
-		const runtimeImage = cartImage ?? systemImage;
-		const metadata = cartImage ? cartMetadata : systemMetadata;
-		this.systemVectors = systemImage.vectors;
-		this.systemStaticModulePaths = systemImage.sections.rodata.staticModulePaths;
-		this.cartEntryAvailable = cartImage !== null;
-		this.cartVectors = cartImage ? cartImage.vectors : systemImage.vectors;
-		this.cartStaticModulePaths = cartImage ? cartImage.sections.rodata.staticModulePaths : EMPTY_STATIC_MODULE_PATHS;
-		this.cartProgramStarted = bootTarget === 'cart';
-		const program = assembleProgramImages(systemImage, cartImage);
-		this.machine.cpu.setProgram(
-			program,
-			runtimeImage.symbols,
-			metadata,
-			this.systemVectors.irqProtoIndex,
-			this.cartVectors.irqProtoIndex,
-			this.systemVectors.exceptionProtoIndex,
-		);
+	public boot(symbols: Blua32MediaSymbols): void {
+		this.machine.cpu.mountExecutableMedia(symbols);
 		seedLuaGlobals(this);
-		this.programRuntimeSymbols = runtimeImage.symbols;
-		this.programMetadata = metadata;
-		this.startLoadedProgram(
-			activeImage.vectors,
-			this.systemStaticModulePaths,
-			this.cartProgramStarted ? this.cartStaticModulePaths : EMPTY_STATIC_MODULE_PATHS,
-		);
+		this.startSystemFirmware();
 	}
 
-	public enterSystemFirmware(): void {
-		this.cartProgramStarted = false;
-	}
-
-	public enterCartProgram(): void {
-		this.cartProgramStarted = true;
-	}
-
-	public startCartProgram(): void {
-		this.enterCartProgram();
-		this.startLoadedProgram(this.cartVectors, EMPTY_STATIC_MODULE_PATHS, this.cartStaticModulePaths);
-	}
-
-	public rebootSystemProgram(): void {
-		this.enterSystemFirmware();
-		this.luaRuntimeFailed = false;
-		this.luaInitialized = false;
-		this.pendingCall = null;
-		this.programVectors = null;
-		this.hostFault.clear();
-		this.moduleCache.clear();
-		this.machine.cpu.clearProgramEnvironment();
-		this.machine.memory.clearIoSlots();
-		this.machine.initializeSystemIo();
-		this.resetHardwareState();
-		resetTrackedLuaHeapBytes();
-		addTrackedLuaHeapBytes(this.machine.cpu.globals.getTrackedHeapBytes());
-		this.machine.cpu.setProgram(
-			this.machine.cpu.program,
-			this.programRuntimeSymbols,
-			this.programMetadata,
-			this.systemVectors.irqProtoIndex,
-			this.cartVectors.irqProtoIndex,
-			this.systemVectors.exceptionProtoIndex,
-		);
+	public rebootSystem(): void {
+		this.resetForSystemBoot();
+		this.machine.cpu.remountExecutableMedia();
 		seedLuaGlobals(this);
-		this.startLoadedProgram(this.systemVectors, this.systemStaticModulePaths, EMPTY_STATIC_MODULE_PATHS);
+		this.startSystemFirmware();
 	}
 
-	public startLoadedProgram(vectors: ProgramVectorTable, systemStaticModulePaths: ReadonlyArray<string>, cartStaticModulePaths: ReadonlyArray<string>): void {
-		this.programVectors = vectors;
-		const statusWord = this.cartProgramStarted ? CPU_STATUS_CART_ENTRY : CPU_STATUS_SYSTEM_ENTRY;
-		this.runSectionInitializer(vectors.sectionInitProtoIndex, statusWord);
-		this.runStaticModuleInitializers(systemStaticModulePaths);
-		clearLuaBootPrimitives(this);
-		this.runStaticModuleInitializers(cartStaticModulePaths);
-		this.machine.cpu.syncGlobalSlotsToTable();
-		this.machine.cpu.start(vectors.resetProtoIndex, EMPTY_CALL_ARGS, statusWord);
+	private startSystemFirmware(): void {
+		this.machine.cpu.start(
+			this.machine.cpu.systemStartupFunctionAddress(),
+			EMPTY_CALL_ARGS,
+			CPU_STATUS_SYSTEM_ENTRY,
+		);
 		this.pendingCall = 'entry';
 		this.luaInitialized = true;
 	}
@@ -258,43 +185,6 @@ export class Runtime {
 		}
 	}
 	// end repeated-sequence-acceptable
-
-	private runSectionInitializer(protoIndex: number, statusWord: number): void {
-		const cpu = this.machine.cpu;
-		cpu.start(protoIndex, EMPTY_CALL_ARGS, statusWord);
-		cpu.runUntilDepth(0, Number.MAX_SAFE_INTEGER);
-		if (cpu.getFrameDepth() !== 0) {
-			throw new Error('section initializer did not return.');
-		}
-	}
-
-	private runStaticModuleInitializers(paths: ReadonlyArray<string>): void {
-		for (let index = 0; index < paths.length; index += 1) {
-			this.runStaticModuleInitializer(paths[index]);
-		}
-	}
-
-	private runStaticModuleInitializer(path: string): void {
-		if (this.moduleCache.has(path)) {
-			return;
-		}
-		const program = this.machine.cpu.program as Program;
-		const protoIndex = program.moduleProtoMap.get(path);
-		if (protoIndex === undefined) {
-			throw new Error(`static module init failed: module '${path}' is not compiled.`);
-		}
-		this.moduleCache.set(path, true);
-		const results = this.luaScratch.values.acquire();
-		try {
-			this.callClosureInto(this.machine.cpu.rootClosure(protoIndex), EMPTY_CALL_ARGS, results);
-		} catch (error) {
-			this.moduleCache.delete(path);
-			throw error;
-		} finally {
-			this.luaScratch.values.release(results);
-		}
-		this.moduleCache.delete(path);
-	}
 
 	public constructor(
 		options: RuntimeOptions,
@@ -369,16 +259,7 @@ export class Runtime {
 	}
 
 	private static collectTrackedHeapBytesThunk(context: Runtime): number {
-		const extraRoots = context.luaScratch.values.acquire();
-		try {
-			for (const value of context.moduleCache.values()) {
-				extraRoots.push(value);
-			}
-			return context.machine.cpu.collectTrackedHeapBytes(extraRoots);
-		}
-		finally {
-			context.luaScratch.values.release(extraRoots);
-		}
+		return context.machine.cpu.collectTrackedHeapBytes();
 	}
 
 	public ramUsedBytes(): number {

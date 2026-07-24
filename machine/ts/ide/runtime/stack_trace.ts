@@ -2,12 +2,20 @@ import type { Runtime } from '../../machine/runtime/runtime';
 import type { StackTraceFrame } from '../../lua/value';
 import { buildLuaFrameRawLabel } from '../../lua/stack_frame_label';
 import { machineManager } from '../../core/machine_manager';
+import {
+	blua32SourceRangeAtPc,
+	type Blua32SymbolsImage,
+} from '../../machine/cpu/blua32_symbols';
 
-function resolveLuaFunctionName(runtime: Runtime, protoIndex: number): string {
-	if (!runtime.programMetadata) {
-		return `proto:${protoIndex}`;
+function resolveLuaFunctionName(
+	symbols: Blua32SymbolsImage | null,
+	functionIndex: number,
+	functionAddress: number,
+): string {
+	if (symbols === null) {
+		return `function@${functionAddress.toString(16)}`;
 	}
-	const protoId = runtime.programMetadata.protoIds[protoIndex];
+	const protoId = symbols.metadata.functionIds[functionIndex];
 	const slashIndex = protoId.lastIndexOf('/');
 	const hint = slashIndex >= 0 ? protoId.slice(slashIndex + 1) : protoId;
 	const colonIndex = hint.indexOf(':');
@@ -36,11 +44,17 @@ export function buildLuaStackFrames(runtime: Runtime): StackTraceFrame[] {
 	const frames: StackTraceFrame[] = [];
 	for (let index = callStack.length - 1; index >= 0; index -= 1) {
 		const entry = callStack[index];
-		const range = runtime.machine.cpu.getDebugRange(entry.pc);
+		const range = entry.symbols === null
+			? null
+			: blua32SourceRangeAtPc(entry.symbols, entry.textAddress, entry.pc);
 		const source = range ? range.path : machineManager.sourceState.currentPath;
 		const line = range ? range.start.line : 0;
 		const column = range ? range.start.column : 0;
-		const functionName = resolveLuaFunctionName(runtime, entry.protoIndex);
+		const functionName = resolveLuaFunctionName(
+			entry.symbols,
+			entry.functionIndex,
+			entry.functionAddress,
+		);
 		frames.push({
 			origin: 'lua',
 			functionName,

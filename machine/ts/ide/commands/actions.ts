@@ -37,12 +37,16 @@ export function performHotResume(runtime: Runtime): boolean {
 	const pendingSources = capturePendingLuaCodeTabSources();
 	scheduleRuntimeTask(async () => {
 		const sources = machineManager.sourceState;
-		if (sources.cartLuaSources) {
+		for (let slot = 0; slot < sources.cartridgeSlots.length; slot += 1) {
+			const cartridge = sources.cartridgeSlots[slot];
+			if (cartridge === null) {
+				continue;
+			}
 			await applyWorkspaceOverridesToRegistry({
-				registry: sources.cartLuaSources,
+				registry: cartridge.luaSources,
 				storage: machineManager.platform.storage,
 				includeServer: true,
-				projectRootPath: sources.cartProjectRootPath!,
+				projectRootPath: cartridge.projectRootPath,
 			});
 		}
 		await applyWorkspaceOverridesToRegistry({
@@ -52,7 +56,7 @@ export function performHotResume(runtime: Runtime): boolean {
 			projectRootPath: sources.systemProjectRootPath,
 		});
 		applyLuaCodeTabSources(pendingSources);
-		hotResume(runtime, sources.systemProgramMediaDirty, sources.cartProgramMediaDirty);
+		hotResume(runtime, sources.systemBlua32MediaDirty, sources.cartridgeBlua32MediaDirty);
 		markLuaCodeTabsAppliedToRuntime(pendingSources);
 	}, (error) => {
 		console.error(error);

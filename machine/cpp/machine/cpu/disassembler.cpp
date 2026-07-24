@@ -11,13 +11,14 @@
 #include <span>
 #include <sstream>
 #include <string_view>
+#include <variant>
 
 namespace bmsx {
 
 namespace {
 
 struct DecodedDebugInstruction {
-	int pc = 0;
+	u32 pc = 0;
 	OpCode op = OpCode::MOV;
 	int a = 0;
 	int b = 0;
@@ -34,9 +35,9 @@ struct RkDebugValue {
 	std::optional<int> registerIndex;
 };
 
-int hexWidth(int value) {
+int hexWidth(u32 value) {
 	int width = 1;
-	uint32_t current = static_cast<uint32_t>(value);
+	u32 current = value;
 	while (current >= 16U) {
 		current >>= 4U;
 		width += 1;
@@ -44,7 +45,7 @@ int hexWidth(int value) {
 	return width;
 }
 
-std::string formatPcHex(int pc, int width) {
+std::string formatPcHex(u32 pc, int width) {
 	std::ostringstream out;
 	out << std::uppercase << std::hex << std::setfill('0') << std::setw(width) << pc << 'h';
 	return out.str();
@@ -62,15 +63,27 @@ std::string formatCallArgCountLiteral(int value) {
 	return value == 0 ? "*" : std::to_string(decodeCallArgCount(value, 0));
 }
 
-std::string formatConstValue(const Program& program, int index) {
-	const StringPool& stringPool = program.constPoolStringPool ? *program.constPoolStringPool : program.stringPool;
-	return "k" + std::to_string(index) + "(" + valueToString(program.constPool.at(static_cast<size_t>(index)), stringPool) + ")";
+std::string formatConstValue(const Blua32ImageLayout& image, int index) {
+	const Blua32EncodedConstant& value = image.constants[static_cast<size_t>(index)];
+	std::ostringstream text;
+	text << 'k' << index << '(';
+	if (std::holds_alternative<std::monostate>(value)) {
+		text << "nil";
+	} else if (const bool* boolean = std::get_if<bool>(&value)) {
+		text << (*boolean ? "true" : "false");
+	} else if (const f64* number = std::get_if<f64>(&value)) {
+		text << formatNumber(*number);
+	} else {
+		text << std::quoted(std::get<std::string>(value));
+	}
+	text << ')';
+	return text.str();
 }
 
-RkDebugValue describeRkValue(const Program& program, uint32_t raw, int bits) {
+RkDebugValue describeRkValue(const Blua32ImageLayout& image, uint32_t raw, int bits) {
 	const int rk = signExtend(raw, bits);
 	if (rk < 0) {
-		return { formatConstValue(program, -1 - rk), std::nullopt };
+		return { formatConstValue(image, -1 - rk), std::nullopt };
 	}
 	return { "r" + std::to_string(rk), rk };
 }
@@ -81,36 +94,37 @@ std::string formatSignedOffset(int value, int width) {
 	return std::string(1, sign) + formatPcHex(absValue, width);
 }
 
-std::string formatJumpTarget(int pc, int sbx, int pcWidth) {
+std::string formatJumpTarget(u32 pc, int sbx, int pcWidth) {
 	const int offset = sbx * INSTRUCTION_BYTES;
-	const int target = pc + INSTRUCTION_BYTES + offset;
+	const u32 target = pc + INSTRUCTION_BYTES + static_cast<u32>(offset);
 	return formatSignedOffset(offset, pcWidth) + " -> " + formatPcHex(target, pcWidth);
 }
 
-std::string formatProtoOperand(const ProgramMetadata* metadata, int bx) {
-	if (!metadata) {
-		return "p" + std::to_string(bx);
+std::string formatFunctionOperand(
+	const Blua32ImageLayout& image,
+	const Blua32SymbolsImage* symbols,
+	u32 encodedAddress
+) {
+	const u32 address = encodedAddress << 4u;
+	std::ostringstream text;
+	text << "function@" << formatPcHex(address, 8);
+	const u32 first = image.header.functionTableAddress;
+	const u32 end = first + image.header.functionCount * BLUA32_FUNCTION_RECORD_SIZE;
+	if (symbols && address >= first && address < end) {
+		const size_t functionIndex = (address - first) / BLUA32_FUNCTION_RECORD_SIZE;
+		text << " (" << symbols->metadata.functionIds[functionIndex] << ')';
 	}
-	if (bx < 0 || bx >= static_cast<int>(metadata->protoIds.size())) {
-		throw BMSX_RUNTIME_ERROR("[Disassembler] Missing proto id for index " + std::to_string(bx) + ".");
-	}
-	return "p" + std::to_string(bx) + " (" + metadata->protoIds[static_cast<size_t>(bx)] + ")";
+	return text.str();
 }
 
-std::string formatGlobalSlotOperand(const ProgramMetadata* metadata, int slot, bool system) {
+std::string formatGlobalSlotOperand(const Blua32ImageLayout& image, int slot, bool system) {
 	const char* prefix = system ? "sys" : "gl";
-	if (!metadata) {
-		return std::string(prefix) + std::to_string(slot);
-	}
-	const std::vector<std::string>& names = system ? metadata->systemGlobalNames : metadata->globalNames;
-	if (slot < 0 || slot >= static_cast<int>(names.size())) {
-		throw BMSX_RUNTIME_ERROR(std::string("[Disassembler] Missing ") + prefix + " slot name for index " + std::to_string(slot) + ".");
-	}
+	const std::vector<std::string>& names = system ? image.systemGlobalNames : image.globalNames;
 	return std::string(prefix) + std::to_string(slot) + " (" + names[static_cast<size_t>(slot)] + ")";
 }
 
-std::string formatRKOperand(const Program& program, uint32_t raw, int bits) {
-	return describeRkValue(program, raw, bits).text;
+std::string formatRKOperand(const Blua32ImageLayout& image, uint32_t raw, int bits) {
+	return describeRkValue(image, raw, bits).text;
 }
 
 InstructionOperandDebugInfo registerOperand(const char* label, int index) {
@@ -121,14 +135,21 @@ InstructionOperandDebugInfo plainOperand(const char* label, std::string text) {
 	return InstructionOperandDebugInfo{label, std::move(text), std::nullopt};
 }
 
-InstructionOperandDebugInfo rkOperand(const char* label, const Program& program, uint32_t raw, int bits) {
-	const RkDebugValue rk = describeRkValue(program, raw, bits);
+InstructionOperandDebugInfo rkOperand(const char* label, const Blua32ImageLayout& image, uint32_t raw, int bits) {
+	const RkDebugValue rk = describeRkValue(image, raw, bits);
 	return InstructionOperandDebugInfo{label, rk.text, rk.registerIndex};
 }
 
-DecodedDebugInstruction decodeInstructionFromStart(const Program& program, int pc) {
-	std::span<const uint8_t> code = program.codeBytes;
-	const int wordIndex = pc / INSTRUCTION_BYTES;
+std::span<const u8> imageTextBytes(const Blua32ImageLayout& image) {
+	return image.bytes.subspan(
+		image.header.textAddress - image.address,
+		image.header.textByteCount
+	);
+}
+
+DecodedDebugInstruction decodeInstructionFromStart(const Blua32ImageLayout& image, u32 pc) {
+	const std::span<const u8> code = imageTextBytes(image);
+	const size_t wordIndex = (pc - image.header.textAddress) / INSTRUCTION_BYTES;
 	const uint32_t word = readInstructionWord(code, wordIndex);
 	const uint32_t ext = word >> 24;
 	const auto op = static_cast<OpCode>((word >> 18) & 0x3f);
@@ -198,30 +219,32 @@ DecodedDebugInstruction decodeInstructionFromStart(const Program& program, int p
 	};
 }
 
-DecodedDebugInstruction decodeInstructionAtPcInternal(const Program& program, int pc) {
+DecodedDebugInstruction decodeInstructionAtPcInternal(const Blua32ImageLayout& image, u32 pc) {
 	if ((pc % INSTRUCTION_BYTES) != 0) {
-		throw BMSX_RUNTIME_ERROR("[Disassembler] Instruction pc " + std::to_string(pc) + " is not aligned.");
+		throw BMSX_RUNTIME_ERROR("Instruction PC is not aligned.");
 	}
-	if (pc < 0 || pc >= static_cast<int>(program.codeBytes.size())) {
-		throw BMSX_RUNTIME_ERROR("[Disassembler] Instruction pc " + std::to_string(pc) + " is out of bounds.");
+	if (pc < image.header.textAddress
+		|| pc >= image.header.textAddress + image.header.textByteCount) {
+		throw BMSX_RUNTIME_ERROR("Instruction PC is outside BLua32 text.");
 	}
-	const int wordIndex = pc / INSTRUCTION_BYTES;
-	const uint32_t word = readInstructionWord(program.codeBytes, wordIndex);
+	const std::span<const u8> code = imageTextBytes(image);
+	const size_t wordIndex = (pc - image.header.textAddress) / INSTRUCTION_BYTES;
+	const uint32_t word = readInstructionWord(code, wordIndex);
 	const auto op = static_cast<OpCode>((word >> 18) & 0x3f);
 	if (op == OpCode::WIDE) {
-		return decodeInstructionFromStart(program, pc);
+		return decodeInstructionFromStart(image, pc);
 	}
 	if (wordIndex > 0) {
-		const uint32_t previous = readInstructionWord(program.codeBytes, wordIndex - 1);
+		const uint32_t previous = readInstructionWord(code, wordIndex - 1);
 		const auto previousOp = static_cast<OpCode>((previous >> 18) & 0x3f);
 		if (previousOp == OpCode::WIDE) {
-			return decodeInstructionFromStart(program, pc - INSTRUCTION_BYTES);
+			return decodeInstructionFromStart(image, pc - INSTRUCTION_BYTES);
 		}
 	}
-	return decodeInstructionFromStart(program, pc);
+	return decodeInstructionFromStart(image, pc);
 }
 
-std::string formatInstructionText(const DecodedDebugInstruction& decoded, const Program& program, const ProgramMetadata* metadata, int pcWidth) {
+std::string formatInstructionText(const DecodedDebugInstruction& decoded, const Blua32ImageLayout& image, const Blua32SymbolsImage* symbols, int pcWidth) {
 	switch (decoded.op) {
 		case OpCode::MOV:
 			return "MOV r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.b);
@@ -240,33 +263,33 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 		case OpCode::KSMI:
 			return "KSMI r" + std::to_string(decoded.a) + ", " + formatNumber(decoded.sbx);
 		case OpCode::LOADK:
-			return "LOADK r" + std::to_string(decoded.a) + ", " + formatConstValue(program, decoded.bx);
+			return "LOADK r" + std::to_string(decoded.a) + ", " + formatConstValue(image, decoded.bx);
 		case OpCode::LOADKR:
 			return "LOADKR r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.b);
 		case OpCode::LOADNIL:
 			return "LOADNIL r" + std::to_string(decoded.a) + ", " + std::to_string(decoded.b);
 		case OpCode::GETSYS:
-			return "GETSYS r" + std::to_string(decoded.a) + ", " + formatGlobalSlotOperand(metadata, decoded.bx, true);
+			return "GETSYS r" + std::to_string(decoded.a) + ", " + formatGlobalSlotOperand(image, decoded.bx, true);
 		case OpCode::SETSYS:
-			return "SETSYS r" + std::to_string(decoded.a) + ", " + formatGlobalSlotOperand(metadata, decoded.bx, true);
+			return "SETSYS r" + std::to_string(decoded.a) + ", " + formatGlobalSlotOperand(image, decoded.bx, true);
 		case OpCode::GETGL:
-			return "GETGL r" + std::to_string(decoded.a) + ", " + formatGlobalSlotOperand(metadata, decoded.bx, false);
+			return "GETGL r" + std::to_string(decoded.a) + ", " + formatGlobalSlotOperand(image, decoded.bx, false);
 		case OpCode::SETGL:
-			return "SETGL r" + std::to_string(decoded.a) + ", " + formatGlobalSlotOperand(metadata, decoded.bx, false);
+			return "SETGL r" + std::to_string(decoded.a) + ", " + formatGlobalSlotOperand(image, decoded.bx, false);
 		case OpCode::GETI:
 			return "GETI r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.b) + ", " + std::to_string(decoded.c);
 		case OpCode::SETI:
-			return "SETI r" + std::to_string(decoded.a) + ", " + std::to_string(decoded.b) + ", " + describeRkValue(program, static_cast<uint32_t>(decoded.c), decoded.rkBitsC).text;
+			return "SETI r" + std::to_string(decoded.a) + ", " + std::to_string(decoded.b) + ", " + describeRkValue(image, static_cast<uint32_t>(decoded.c), decoded.rkBitsC).text;
 		case OpCode::GETFIELD:
-			return "GETFIELD r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.b) + ", " + formatConstValue(program, decoded.c);
+			return "GETFIELD r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.b) + ", " + formatConstValue(image, decoded.c);
 		case OpCode::SETFIELD:
-			return "SETFIELD r" + std::to_string(decoded.a) + ", " + formatConstValue(program, decoded.b) + ", " + describeRkValue(program, static_cast<uint32_t>(decoded.c), decoded.rkBitsC).text;
+			return "SETFIELD r" + std::to_string(decoded.a) + ", " + formatConstValue(image, decoded.b) + ", " + describeRkValue(image, static_cast<uint32_t>(decoded.c), decoded.rkBitsC).text;
 		case OpCode::SELF:
-			return "SELF r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.a + 1) + ", r" + std::to_string(decoded.b) + ", " + formatConstValue(program, decoded.c);
+			return "SELF r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.a + 1) + ", r" + std::to_string(decoded.b) + ", " + formatConstValue(image, decoded.c);
 		case OpCode::GETT:
-			return "GETT r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.b) + ", " + describeRkValue(program, static_cast<uint32_t>(decoded.c), decoded.rkBitsC).text;
+			return "GETT r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.b) + ", " + describeRkValue(image, static_cast<uint32_t>(decoded.c), decoded.rkBitsC).text;
 		case OpCode::SETT:
-			return "SETT r" + std::to_string(decoded.a) + ", " + describeRkValue(program, static_cast<uint32_t>(decoded.b), decoded.rkBitsB).text + ", " + describeRkValue(program, static_cast<uint32_t>(decoded.c), decoded.rkBitsC).text;
+			return "SETT r" + std::to_string(decoded.a) + ", " + describeRkValue(image, static_cast<uint32_t>(decoded.b), decoded.rkBitsB).text + ", " + describeRkValue(image, static_cast<uint32_t>(decoded.c), decoded.rkBitsC).text;
 		case OpCode::NEWT:
 			return "NEWT r" + std::to_string(decoded.a) + ", " + std::to_string(decoded.b) + ", " + std::to_string(decoded.c);
 		case OpCode::ADD:
@@ -282,7 +305,7 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 		case OpCode::SHL:
 		case OpCode::SHR:
 		case OpCode::CONCAT:
-			return std::string(getOpcodeName(decoded.op)) + " r" + std::to_string(decoded.a) + ", " + describeRkValue(program, static_cast<uint32_t>(decoded.b), decoded.rkBitsB).text + ", " + describeRkValue(program, static_cast<uint32_t>(decoded.c), decoded.rkBitsC).text;
+			return std::string(getOpcodeName(decoded.op)) + " r" + std::to_string(decoded.a) + ", " + describeRkValue(image, static_cast<uint32_t>(decoded.b), decoded.rkBitsB).text + ", " + describeRkValue(image, static_cast<uint32_t>(decoded.c), decoded.rkBitsC).text;
 		case OpCode::CONCATN:
 			return "CONCATN r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.b) + ", " + std::to_string(decoded.c);
 		case OpCode::UNM:
@@ -293,7 +316,7 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 		case OpCode::EQ:
 		case OpCode::LT:
 		case OpCode::LE:
-			return std::string(getOpcodeName(decoded.op)) + " " + formatBoolLiteral(decoded.a) + ", " + describeRkValue(program, static_cast<uint32_t>(decoded.b), decoded.rkBitsB).text + ", " + describeRkValue(program, static_cast<uint32_t>(decoded.c), decoded.rkBitsC).text;
+			return std::string(getOpcodeName(decoded.op)) + " " + formatBoolLiteral(decoded.a) + ", " + describeRkValue(image, static_cast<uint32_t>(decoded.b), decoded.rkBitsB).text + ", " + describeRkValue(image, static_cast<uint32_t>(decoded.c), decoded.rkBitsC).text;
 		case OpCode::JMP:
 			return "JMP " + formatJumpTarget(decoded.pc, decoded.sbx, pcWidth);
 		case OpCode::JMPIF:
@@ -301,7 +324,8 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 		case OpCode::JMPIFNOT:
 			return "JMPIFNOT r" + std::to_string(decoded.a) + ", " + formatJumpTarget(decoded.pc, decoded.sbx, pcWidth);
 		case OpCode::CLOSURE:
-			return "CLOSURE r" + std::to_string(decoded.a) + ", " + formatProtoOperand(metadata, decoded.bx);
+			return "CLOSURE r" + std::to_string(decoded.a) + ", "
+				+ formatFunctionOperand(image, symbols, static_cast<u32>(decoded.bx));
 		case OpCode::GETUP:
 			return "GETUP r" + std::to_string(decoded.a) + ", u" + std::to_string(decoded.b);
 		case OpCode::SETUP:
@@ -325,20 +349,20 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 		case OpCode::STORE_MEM_WORDS_D:
 			return "STORE_MEM_WORDS_D r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.b) + ", " + std::to_string(decoded.c) + ", " + std::to_string(decoded.disp << 2);
 		case OpCode::LOAD_MEM:
-			return "LOAD_MEM r" + std::to_string(decoded.a) + ", " + formatRKOperand(program, static_cast<uint32_t>(decoded.b), decoded.rkBitsB);
+			return "LOAD_MEM r" + std::to_string(decoded.a) + ", " + formatRKOperand(image, static_cast<uint32_t>(decoded.b), decoded.rkBitsB);
 		case OpCode::STORE_MEM:
-			return "STORE_MEM r" + std::to_string(decoded.a) + ", " + formatRKOperand(program, static_cast<uint32_t>(decoded.b), decoded.rkBitsB);
+			return "STORE_MEM r" + std::to_string(decoded.a) + ", " + formatRKOperand(image, static_cast<uint32_t>(decoded.b), decoded.rkBitsB);
 		case OpCode::STORE_MEM_WORDS:
-			return "STORE_MEM_WORDS r" + std::to_string(decoded.a) + ", " + formatRKOperand(program, static_cast<uint32_t>(decoded.b), decoded.rkBitsB) + ", " + std::to_string(decoded.c);
+			return "STORE_MEM_WORDS r" + std::to_string(decoded.a) + ", " + formatRKOperand(image, static_cast<uint32_t>(decoded.b), decoded.rkBitsB) + ", " + std::to_string(decoded.c);
 		case OpCode::HALT:
 			return "HALT";
 		case OpCode::WIDE:
 			break;
 	}
-	throw BMSX_RUNTIME_ERROR("[Disassembler] Unexpected WIDE opcode in instruction formatter.");
+	throw BMSX_RUNTIME_ERROR("Unexpected WIDE opcode in instruction formatter.");
 }
 
-std::vector<InstructionOperandDebugInfo> buildInstructionOperands(const DecodedDebugInstruction& decoded, const Program& program, const ProgramMetadata* metadata, int pcWidth) {
+std::vector<InstructionOperandDebugInfo> buildInstructionOperands(const DecodedDebugInstruction& decoded, const Blua32ImageLayout& image, const Blua32SymbolsImage* symbols, int pcWidth) {
 	switch (decoded.op) {
 		case OpCode::MOV:
 			return {registerOperand("dst", decoded.a), registerOperand("src", decoded.b)};
@@ -357,33 +381,33 @@ std::vector<InstructionOperandDebugInfo> buildInstructionOperands(const DecodedD
 		case OpCode::KSMI:
 			return {registerOperand("dst", decoded.a), plainOperand("imm", formatNumber(decoded.sbx))};
 		case OpCode::LOADK:
-			return {registerOperand("dst", decoded.a), plainOperand("const", formatConstValue(program, decoded.bx))};
+			return {registerOperand("dst", decoded.a), plainOperand("const", formatConstValue(image, decoded.bx))};
 		case OpCode::LOADKR:
 			return {registerOperand("dst", decoded.a), registerOperand("const_index", decoded.b)};
 		case OpCode::LOADNIL:
 			return {registerOperand("base", decoded.a), plainOperand("count", std::to_string(decoded.b))};
 		case OpCode::GETSYS:
-			return {registerOperand("dst", decoded.a), plainOperand("slot", formatGlobalSlotOperand(metadata, decoded.bx, true))};
+			return {registerOperand("dst", decoded.a), plainOperand("slot", formatGlobalSlotOperand(image, decoded.bx, true))};
 		case OpCode::SETSYS:
-			return {registerOperand("src", decoded.a), plainOperand("slot", formatGlobalSlotOperand(metadata, decoded.bx, true))};
+			return {registerOperand("src", decoded.a), plainOperand("slot", formatGlobalSlotOperand(image, decoded.bx, true))};
 		case OpCode::GETGL:
-			return {registerOperand("dst", decoded.a), plainOperand("slot", formatGlobalSlotOperand(metadata, decoded.bx, false))};
+			return {registerOperand("dst", decoded.a), plainOperand("slot", formatGlobalSlotOperand(image, decoded.bx, false))};
 		case OpCode::SETGL:
-			return {registerOperand("src", decoded.a), plainOperand("slot", formatGlobalSlotOperand(metadata, decoded.bx, false))};
+			return {registerOperand("src", decoded.a), plainOperand("slot", formatGlobalSlotOperand(image, decoded.bx, false))};
 		case OpCode::GETI:
 			return {registerOperand("dst", decoded.a), registerOperand("table", decoded.b), plainOperand("index", std::to_string(decoded.c))};
 		case OpCode::SETI:
-			return {registerOperand("table", decoded.a), plainOperand("index", std::to_string(decoded.b)), rkOperand("value", program, static_cast<uint32_t>(decoded.c), decoded.rkBitsC)};
+			return {registerOperand("table", decoded.a), plainOperand("index", std::to_string(decoded.b)), rkOperand("value", image, static_cast<uint32_t>(decoded.c), decoded.rkBitsC)};
 		case OpCode::GETFIELD:
-			return {registerOperand("dst", decoded.a), registerOperand("table", decoded.b), plainOperand("field", formatConstValue(program, decoded.c))};
+			return {registerOperand("dst", decoded.a), registerOperand("table", decoded.b), plainOperand("field", formatConstValue(image, decoded.c))};
 		case OpCode::SETFIELD:
-			return {registerOperand("table", decoded.a), plainOperand("field", formatConstValue(program, decoded.b)), rkOperand("value", program, static_cast<uint32_t>(decoded.c), decoded.rkBitsC)};
+			return {registerOperand("table", decoded.a), plainOperand("field", formatConstValue(image, decoded.b)), rkOperand("value", image, static_cast<uint32_t>(decoded.c), decoded.rkBitsC)};
 		case OpCode::SELF:
-			return {registerOperand("fn_dst", decoded.a), plainOperand("self_dst", "r" + std::to_string(decoded.a + 1)), registerOperand("table", decoded.b), plainOperand("field", formatConstValue(program, decoded.c))};
+			return {registerOperand("fn_dst", decoded.a), plainOperand("self_dst", "r" + std::to_string(decoded.a + 1)), registerOperand("table", decoded.b), plainOperand("field", formatConstValue(image, decoded.c))};
 		case OpCode::GETT:
-			return {registerOperand("dst", decoded.a), registerOperand("table", decoded.b), rkOperand("key", program, static_cast<uint32_t>(decoded.c), decoded.rkBitsC)};
+			return {registerOperand("dst", decoded.a), registerOperand("table", decoded.b), rkOperand("key", image, static_cast<uint32_t>(decoded.c), decoded.rkBitsC)};
 		case OpCode::SETT:
-			return {registerOperand("table", decoded.a), rkOperand("key", program, static_cast<uint32_t>(decoded.b), decoded.rkBitsB), rkOperand("value", program, static_cast<uint32_t>(decoded.c), decoded.rkBitsC)};
+			return {registerOperand("table", decoded.a), rkOperand("key", image, static_cast<uint32_t>(decoded.b), decoded.rkBitsB), rkOperand("value", image, static_cast<uint32_t>(decoded.c), decoded.rkBitsC)};
 		case OpCode::NEWT:
 			return {registerOperand("dst", decoded.a), plainOperand("array", std::to_string(decoded.b)), plainOperand("hash", std::to_string(decoded.c))};
 		case OpCode::ADD:
@@ -399,7 +423,7 @@ std::vector<InstructionOperandDebugInfo> buildInstructionOperands(const DecodedD
 		case OpCode::SHL:
 		case OpCode::SHR:
 		case OpCode::CONCAT:
-			return {registerOperand("dst", decoded.a), rkOperand("left", program, static_cast<uint32_t>(decoded.b), decoded.rkBitsB), rkOperand("right", program, static_cast<uint32_t>(decoded.c), decoded.rkBitsC)};
+			return {registerOperand("dst", decoded.a), rkOperand("left", image, static_cast<uint32_t>(decoded.b), decoded.rkBitsB), rkOperand("right", image, static_cast<uint32_t>(decoded.c), decoded.rkBitsC)};
 		case OpCode::CONCATN:
 			return {registerOperand("dst", decoded.a), registerOperand("base", decoded.b), plainOperand("count", std::to_string(decoded.c))};
 		case OpCode::UNM:
@@ -410,14 +434,20 @@ std::vector<InstructionOperandDebugInfo> buildInstructionOperands(const DecodedD
 		case OpCode::EQ:
 		case OpCode::LT:
 		case OpCode::LE:
-			return {plainOperand("expect", formatBoolLiteral(decoded.a)), rkOperand("left", program, static_cast<uint32_t>(decoded.b), decoded.rkBitsB), rkOperand("right", program, static_cast<uint32_t>(decoded.c), decoded.rkBitsC)};
+			return {plainOperand("expect", formatBoolLiteral(decoded.a)), rkOperand("left", image, static_cast<uint32_t>(decoded.b), decoded.rkBitsB), rkOperand("right", image, static_cast<uint32_t>(decoded.c), decoded.rkBitsC)};
 		case OpCode::JMP:
 			return {plainOperand("jump", formatJumpTarget(decoded.pc, decoded.sbx, pcWidth))};
 		case OpCode::JMPIF:
 		case OpCode::JMPIFNOT:
 			return {registerOperand("cond", decoded.a), plainOperand("jump", formatJumpTarget(decoded.pc, decoded.sbx, pcWidth))};
 		case OpCode::CLOSURE:
-			return {registerOperand("dst", decoded.a), plainOperand("proto", formatProtoOperand(metadata, decoded.bx))};
+			return {
+				registerOperand("dst", decoded.a),
+				plainOperand(
+					"function",
+					formatFunctionOperand(image, symbols, static_cast<u32>(decoded.bx))
+				),
+			};
 		case OpCode::GETUP:
 			return {registerOperand("dst", decoded.a), plainOperand("upvalue", "u" + std::to_string(decoded.b))};
 		case OpCode::SETUP:
@@ -435,11 +465,11 @@ std::vector<InstructionOperandDebugInfo> buildInstructionOperands(const DecodedD
 		case OpCode::STORE_MEM_WORDS_D:
 			return {registerOperand("src_base", decoded.a), registerOperand("base", decoded.b), plainOperand("count", std::to_string(decoded.c)), plainOperand("disp", std::to_string(decoded.disp << 2))};
 		case OpCode::LOAD_MEM:
-			return {registerOperand("dst", decoded.a), rkOperand("addr", program, static_cast<uint32_t>(decoded.b), decoded.rkBitsB)};
+			return {registerOperand("dst", decoded.a), rkOperand("addr", image, static_cast<uint32_t>(decoded.b), decoded.rkBitsB)};
 		case OpCode::STORE_MEM:
-			return {registerOperand("src", decoded.a), rkOperand("addr", program, static_cast<uint32_t>(decoded.b), decoded.rkBitsB)};
+			return {registerOperand("src", decoded.a), rkOperand("addr", image, static_cast<uint32_t>(decoded.b), decoded.rkBitsB)};
 		case OpCode::STORE_MEM_WORDS:
-			return {registerOperand("src_base", decoded.a), rkOperand("addr", program, static_cast<uint32_t>(decoded.b), decoded.rkBitsB), plainOperand("count", std::to_string(decoded.c))};
+			return {registerOperand("src_base", decoded.a), rkOperand("addr", image, static_cast<uint32_t>(decoded.b), decoded.rkBitsB), plainOperand("count", std::to_string(decoded.c))};
 		case OpCode::MFC0:
 			return {registerOperand("dst", decoded.a), plainOperand("cp0", "c" + std::to_string(decoded.b))};
 		case OpCode::MTC0:
@@ -451,7 +481,7 @@ std::vector<InstructionOperandDebugInfo> buildInstructionOperands(const DecodedD
 		case OpCode::WIDE:
 			break;
 	}
-	throw BMSX_RUNTIME_ERROR("[Disassembler] Unexpected WIDE opcode in operand formatter.");
+	throw BMSX_RUNTIME_ERROR("Unexpected WIDE opcode in operand formatter.");
 }
 
 std::string compactWhitespace(std::string_view value) {
@@ -475,22 +505,24 @@ std::string compactWhitespace(std::string_view value) {
 
 } // namespace
 
-InstructionDebugInfo describeInstructionAtPc(const Program& program, const ProgramMetadata* metadata, int pc) {
-	const int lastPc = std::max(0, static_cast<int>(program.codeBytes.size()) - INSTRUCTION_BYTES);
-	const int pcWidth = hexWidth(lastPc);
-	const DecodedDebugInstruction decoded = decodeInstructionAtPcInternal(program, pc);
-	const int wordIndex = decoded.pc / INSTRUCTION_BYTES;
+auto describeInstructionAtPc(
+	const Blua32ImageLayout& image,
+	const Blua32SymbolsImage* symbols,
+	u32 pc
+) -> InstructionDebugInfo {
+	const int pcWidth = hexWidth(image.header.textAddress + image.header.textByteCount - INSTRUCTION_BYTES);
+	const DecodedDebugInstruction decoded = decodeInstructionAtPcInternal(image, pc);
 	std::optional<SourceRange> sourceRange = std::nullopt;
-	if (metadata && wordIndex >= 0 && wordIndex < static_cast<int>(metadata->debugRanges.size())) {
-		sourceRange = metadata->debugRanges[static_cast<size_t>(wordIndex)];
+	if (symbols) {
+		sourceRange = blua32SourceRangeAtPc(*symbols, image.header.textAddress, decoded.pc);
 	}
 	return InstructionDebugInfo{
 		decoded.pc,
 		formatPcHex(decoded.pc, pcWidth),
 		decoded.op,
 		getOpcodeName(decoded.op),
-		formatInstructionText(decoded, program, metadata, pcWidth),
-		buildInstructionOperands(decoded, program, metadata, pcWidth),
+		formatInstructionText(decoded, image, symbols, pcWidth),
+		buildInstructionOperands(decoded, image, symbols, pcWidth),
 		sourceRange,
 	};
 }

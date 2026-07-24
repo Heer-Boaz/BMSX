@@ -1,77 +1,70 @@
-// Fantasy CPU cycle cost analysis for ROM programs.
-// Works directly with the Program/Proto bytecode — no text parsing.
+// Fantasy CPU cycle cost analysis for physical BLua32 images.
 
+import type { Blua32ImageLayout } from '../../machine/ts/machine/cpu/blua32_image';
+import type { Blua32SymbolsImage } from '../../machine/ts/machine/cpu/blua32_symbols';
 import { BASE_CYCLES, OPCODE_CATEGORY, OPCODE_COUNT, OPCODE_NAMES, OpCode } from '../../machine/ts/machine/cpu/opcode_info';
 import { INSTRUCTION_BYTES, readInstructionWord } from '../../machine/ts/machine/cpu/instruction_format';
 
-type ProgramProto = {
-	entryPC: number;
-	codeLen: number;
-};
-
-type Program = {
-	code: Uint8Array;
-	protos: ProgramProto[];
-};
-
-type ProgramMetadata = {
-	protoIds: string[];
-};
-
 // ── Analysis data structures ───────────────────────────────────────────
 
-type ProtoStats = {
+type FunctionStats = {
 	index: number;
 	id: string;
 	instrCount: number;
 	totalBaseCycles: number;
-	opCounts: Uint32Array; // per-opcode count within this proto
+	opCounts: Uint32Array;
 };
 
 // ── Core analysis ──────────────────────────────────────────────────────
 
-function analyzeProgram(program: Program, metadata: ProgramMetadata | null): {
-	protos: ProtoStats[];
+function analyzeImage(image: Blua32ImageLayout, symbols: Blua32SymbolsImage | null): {
+	functions: FunctionStats[];
 	globalOpCount: Uint32Array;
 	globalOpCycles: Float64Array;
 	totalInstructions: number;
 	totalBaseCycles: number;
 } {
-	const code = program.code;
-	const protos: ProtoStats[] = [];
+	const code = image.textBytes;
+	const functions: FunctionStats[] = [];
 	const globalOpCount = new Uint32Array(OPCODE_COUNT);
 	const globalOpCycles = new Float64Array(OPCODE_COUNT);
 	let totalInstructions = 0;
 	let totalBaseCycles = 0;
 
-	for (let pi = 0; pi < program.protos.length; pi += 1) {
-		const proto = program.protos[pi];
-		const id = metadata ? metadata.protoIds[pi] : `proto_${pi}`;
+	for (let functionIndex = 0; functionIndex < image.functions.length; functionIndex += 1) {
+		const fn = image.functions[functionIndex];
+		const id = symbols ? symbols.metadata.functionIds[functionIndex] : `function_${functionIndex}`;
 		const opCounts = new Uint32Array(OPCODE_COUNT);
-		let protoInstrCount = 0;
-		let protoBaseCycles = 0;
+		let functionInstructionCount = 0;
+		let functionBaseCycles = 0;
 
-		const startWord = proto.entryPC / INSTRUCTION_BYTES;
-		const endWord = (proto.entryPC + proto.codeLen) / INSTRUCTION_BYTES;
+		const startWord = (fn.codeAddress - image.header.textAddress) / INSTRUCTION_BYTES;
+		const endWord = (fn.codeAddress + fn.codeByteCount - image.header.textAddress) / INSTRUCTION_BYTES;
 
 		for (let wi = startWord; wi < endWord; wi += 1) {
 			const instr = readInstructionWord(code, wi);
 			const op = (instr >>> 18) & 0x3f;
-			if (op === OpCode.WIDE) continue; // WIDE prefix: cost 0, not a real instruction
+			if (op === OpCode.WIDE) continue;
 			const cost = BASE_CYCLES[op];
 			opCounts[op] += 1;
 			globalOpCount[op] += 1;
 			globalOpCycles[op] += cost;
-			protoInstrCount += 1;
-			protoBaseCycles += cost;
+			functionInstructionCount += 1;
+			functionBaseCycles += cost;
 		}
 
-		protos.push({ index: pi, id, instrCount: protoInstrCount, totalBaseCycles: protoBaseCycles, opCounts });
-		totalInstructions += protoInstrCount;
-		totalBaseCycles += protoBaseCycles;
+		functions.push({
+			index: functionIndex,
+			id,
+			instrCount: functionInstructionCount,
+			totalBaseCycles: functionBaseCycles,
+			opCounts,
+		});
+		totalInstructions += functionInstructionCount;
+		totalBaseCycles += functionBaseCycles;
 	}
 
-	return { protos, globalOpCount, globalOpCycles, totalInstructions, totalBaseCycles };
+	return { functions, globalOpCount, globalOpCycles, totalInstructions, totalBaseCycles };
 }
 
 // ── Formatting helpers ─────────────────────────────────────────────────
@@ -95,8 +88,8 @@ function opCountForCategory(opCounts: Uint32Array, predicate: (op: number) => bo
 
 // ── Report generation ──────────────────────────────────────────────────
 
-export function generateCycleCostReport(program: Program, metadata: ProgramMetadata | null): string {
-	const { protos, globalOpCount, globalOpCycles, totalInstructions, totalBaseCycles } = analyzeProgram(program, metadata);
+export function generateCycleCostReport(image: Blua32ImageLayout, symbols: Blua32SymbolsImage | null): string {
+	const { functions, globalOpCount, globalOpCycles, totalInstructions, totalBaseCycles } = analyzeImage(image, symbols);
 	const lines: string[] = [];
 	const w = (s: string) => lines.push(s);
 
@@ -104,7 +97,7 @@ export function generateCycleCostReport(program: Program, metadata: ProgramMetad
 	w('Fantasy CPU Cycle Cost Analysis');
 	w(BANNER);
 	w('');
-	w(`Total protos: ${protos.length}`);
+	w(`Total functions: ${functions.length}`);
 	w(`Total instructions: ${totalInstructions}`);
 	w(`Total base cycles (static): ${totalBaseCycles}`);
 	w(`Average cycles/instruction: ${(totalBaseCycles / totalInstructions).toFixed(2)}`);
@@ -182,27 +175,27 @@ export function generateCycleCostReport(program: Program, metadata: ProgramMetad
 		);
 	}
 
-	// ── Section 3: Top protos by static cycle cost ─────────────────
+	// ── Section 3: Top functions by static cycle cost ──────────────
 	w('');
 	w(SEP);
-	w('TOP 40 PROTOS BY STATIC BASE CYCLE COST (potential hotspots if called frequently)');
+	w('TOP 40 FUNCTIONS BY STATIC BASE CYCLE COST (potential hotspots if called frequently)');
 	w(SEP);
 	w('');
 
-	const sortedProtos = [...protos].sort((a, b) => b.totalBaseCycles - a.totalBaseCycles);
+	const sortedFunctions = [...functions].sort((a, b) => b.totalBaseCycles - a.totalBaseCycles);
 	w(
 		'#'.padStart(4) +
-		'Proto'.padStart(7) +
+		'Function'.padStart(9) +
 		'Instrs'.padStart(8) +
 		'Cycles'.padStart(10) +
 		'Avg'.padStart(7) +
 		'  ID'
 	);
-	for (let i = 0; i < Math.min(40, sortedProtos.length); i += 1) {
-		const p = sortedProtos[i];
+	for (let i = 0; i < Math.min(40, sortedFunctions.length); i += 1) {
+		const p = sortedFunctions[i];
 		w(
 			String(i + 1).padStart(4) +
-			String(p.index).padStart(7) +
+			String(p.index).padStart(9) +
 			String(p.instrCount).padStart(8) +
 			String(p.totalBaseCycles).padStart(10) +
 			(p.totalBaseCycles / p.instrCount).toFixed(1).padStart(7) +
@@ -213,15 +206,15 @@ export function generateCycleCostReport(program: Program, metadata: ProgramMetad
 	// ── Section 4: Highest avg cycle cost per instruction ──────────
 	w('');
 	w(SEP);
-	w('TOP 30 PROTOS BY HIGHEST AVG CYCLE COST PER INSTRUCTION (>=5 instructions)');
+	w('TOP 30 FUNCTIONS BY HIGHEST AVG CYCLE COST PER INSTRUCTION (>=5 instructions)');
 	w(SEP);
 	w('');
 
-	const sortedByAvg = protos.filter(p => p.instrCount >= 5)
+	const sortedByAvg = functions.filter(p => p.instrCount >= 5)
 		.sort((a, b) => (b.totalBaseCycles / b.instrCount) - (a.totalBaseCycles / a.instrCount));
 	w(
 		'#'.padStart(4) +
-		'Proto'.padStart(7) +
+		'Function'.padStart(9) +
 		'Instrs'.padStart(8) +
 		'Cycles'.padStart(10) +
 		'Avg'.padStart(7) +
@@ -231,7 +224,7 @@ export function generateCycleCostReport(program: Program, metadata: ProgramMetad
 		const p = sortedByAvg[i];
 		w(
 			String(i + 1).padStart(4) +
-			String(p.index).padStart(7) +
+			String(p.index).padStart(9) +
 			String(p.instrCount).padStart(8) +
 			String(p.totalBaseCycles).padStart(10) +
 			(p.totalBaseCycles / p.instrCount).toFixed(1).padStart(7) +
@@ -253,7 +246,7 @@ export function generateCycleCostReport(program: Program, metadata: ProgramMetad
 		w(title);
 		w(SEP);
 		w('');
-		const ranked = protos
+		const ranked = functions
 			.map(p => {
 				const { count, cycles } = opCountForCategory(p.opCounts, predicate);
 				return { ...p, groupCount: count, groupCycles: cycles };
@@ -262,7 +255,7 @@ export function generateCycleCostReport(program: Program, metadata: ProgramMetad
 			.sort((a, b) => b.groupCycles - a.groupCycles);
 		w(
 			'#'.padStart(4) +
-			'Proto'.padStart(7) +
+			'Function'.padStart(9) +
 			countLabel.padStart(10) +
 			cyclesLabel.padStart(12) +
 			'TotalCyc'.padStart(10) +
@@ -273,7 +266,7 @@ export function generateCycleCostReport(program: Program, metadata: ProgramMetad
 			const p = ranked[i];
 			w(
 				String(i + 1).padStart(4) +
-				String(p.index).padStart(7) +
+				String(p.index).padStart(9) +
 				String(p.groupCount).padStart(10) +
 				String(p.groupCycles).padStart(12) +
 				String(p.totalBaseCycles).padStart(10) +
@@ -283,37 +276,37 @@ export function generateCycleCostReport(program: Program, metadata: ProgramMetad
 		}
 	};
 
-	// ── Section 5: Closure-heavy protos ────────────────────────────
+	// ── Section 5: Closure-heavy functions ─────────────────────────
 	printOpcodeGroupTable(
-		'TOP 20 PROTOS WITH MOST CLOSURE INSTRUCTIONS',
+		'TOP 20 FUNCTIONS WITH MOST CLOSURE INSTRUCTIONS',
 		op => op === OpCode.CLOSURE, 20,
 		'CLOSUREs', 'ClosureCyc', '%Closure',
 	);
 
-	// ── Section 6: Table access heavy protos ───────────────────────
+	// ── Section 6: Table access heavy functions ────────────────────
 	printOpcodeGroupTable(
-		'TOP 20 PROTOS WITH MOST TABLE ACCESS CYCLES (generic + specialized table ops)',
+		'TOP 20 FUNCTIONS WITH MOST TABLE ACCESS CYCLES (generic + specialized table ops)',
 		op => op === OpCode.GETT || op === OpCode.SETT || op === OpCode.GETI || op === OpCode.SETI || op === OpCode.GETFIELD || op === OpCode.SETFIELD || op === OpCode.SELF, 20,
 		'TableOps', 'TblCycles', '%Table',
 	);
 
-	// ── Section 7: CALL-heavy protos ───────────────────────────────
+	// ── Section 7: CALL-heavy functions ────────────────────────────
 	printOpcodeGroupTable(
-		'TOP 20 PROTOS WITH MOST CALL+RET CYCLES',
+		'TOP 20 FUNCTIONS WITH MOST CALL+RET CYCLES',
 		op => op === OpCode.CALL || op === OpCode.RET, 20,
 		'Call/Ret', 'CallCycles', '%Call',
 	);
 
-	// ── Section 8: Memory I/O heavy protos ─────────────────────────
+	// ── Section 8: Memory I/O heavy functions ──────────────────────
 	printOpcodeGroupTable(
-		'TOP 20 PROTOS WITH MOST MEMORY I/O',
+		'TOP 20 FUNCTIONS WITH MOST MEMORY I/O',
 		op => op === OpCode.LOAD_MEM || op === OpCode.STORE_MEM || op === OpCode.STORE_MEM_WORDS, 20,
 		'MemOps', 'MemCycles', '%Mem',
 	);
 
-	// ── Section 9: CONCAT heavy protos ─────────────────────────────
+	// ── Section 9: CONCAT heavy functions ──────────────────────────
 	printOpcodeGroupTable(
-		'TOP 15 PROTOS WITH MOST STRING CONCAT CYCLES',
+		'TOP 15 FUNCTIONS WITH MOST STRING CONCAT CYCLES',
 		op => op === OpCode.CONCAT || op === OpCode.CONCATN, 15,
 		'ConcatOps', 'ConcatCyc', '%Concat',
 	);
@@ -344,7 +337,7 @@ export function generateCycleCostReport(program: Program, metadata: ProgramMetad
 	w('  - Native CALL: +native tier cost (0, 1, 2, or 4)');
 	w('  - STORE_MEM_WORDS: +ceil(wordCount/4)');
 	w('');
-	w('Runtime hotspots depend on call frequency. Protos inside tight update loops');
+	w('Runtime hotspots depend on call frequency. Functions inside tight update loops');
 	w('(e.g. per-frame tick, physics step, render prep) multiply their static cost');
 	w('by invocation count.');
 

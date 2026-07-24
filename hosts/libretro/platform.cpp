@@ -510,12 +510,12 @@ bool LibretroPlatform::loadEmptyCart() {
 		for (const auto& path : systemRomPaths) {
 			log(RETRO_LOG_INFO, "[BMSX] No system ROM found at: %s\n", path.c_str());
 		}
-		log(RETRO_LOG_WARN, "[BMSX] No system ROM found, running without system program\n");
+		log(RETRO_LOG_WARN, "[BMSX] No system ROM found, running without system firmware\n");
 	}
 
 	// Boot system ROM (runs bootrom.lua)
 	if (systemRomLoaded && m_machine_manager && m_machine_manager->bootWithoutCart()) {
-		log(RETRO_LOG_INFO, "[BMSX] Booted system ROM program\n");
+		log(RETRO_LOG_INFO, "[BMSX] Booted system ROM firmware\n");
 		m_rom_loaded = true;
 		return true;
 	}

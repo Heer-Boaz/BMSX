@@ -221,10 +221,10 @@ Important:
 ## ROM Inspection
 
 `scripts/rominspector/rominspector.ts` is a CLI for inspecting a built `.rom`
-file. It loads (and transparently decompresses) the ROM, parses the cart header
-and TOC, and reports asset layout, manifest, and program/link details. This is
-the tool for confirming the `bmsx/assets` address/length symbols and the rest of
-the ROM layout without disassembling by hand.
+file. It reads the raw ROM, parses the cart header and TOC, and reports asset
+layout, manifest, and physical BLua32 details. This is the tool for confirming
+the `bmsx/assets` address/length symbols and the rest of the ROM layout without
+disassembling by hand.
 
 Run it directly with `tsx`:
 
@@ -238,22 +238,20 @@ Options:
   buffer/metabuffer start/end offsets in hex); this is the default when no other
   output flag is given
 - `--manifest` print the cart manifest (and project root path) as JSON
-- `--program-asm` print the program image disassembly and exit; source-line
+- `--blua32-asm` print the physical BLua32 disassembly and exit; source-line
   comments are included when the ROM is not stripped
-- `--program-asm-bias <value>` add a base PC to the disassembly addresses,
-  accepts decimal or hex (`0x80000` or `80000h`)
-- `--program-link-info` print const-pool size, const-reloc count, and any
-  symbolic `module`/`export_proto` relocations
-- `--cycle-cost` print a fantasy-CPU cycle-cost analysis of the program
+- `--asset-symbols` print the generated `bmsx/assets` ROM address symbols
+- `--cycle-cost` print a BLua32 cycle-cost analysis
 - `--ui` / `--ui-native` open the interactive native inspector UI
 
 The header line printed on every run shows header/manifest/toc/data/metadata
-offsets and lengths plus the program boot entry, proto count, and code byte
-count, so the section layout is visible at a glance.
+offsets and lengths plus the BLua32 image range, physical startup/IRQ/exception
+function addresses, and static-layout token, so the section layout is visible
+at a glance.
 
 ## Notes
 
-- `build:game` means “build a Lua cart ROM”
+- `build:game` means “build a BLua cartridge ROM”
 - cart folder resolution is `carts/<name>`
 - old TypeScript full-game projects were removed instead of being kept as compatibility fallbacks
 - the last complete branch that still contains the old TypeScript full-game runtime lives at `archive/ts-full-engine`

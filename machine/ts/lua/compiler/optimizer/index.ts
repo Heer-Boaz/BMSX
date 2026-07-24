@@ -1,4 +1,6 @@
-import { OpCode, valueIsString, type Proto, type SourceRange, type UpvalueDesc, type Value } from '../../../machine/cpu/cpu';
+import { OpCode, valueIsString, type Value } from '../../../machine/cpu/cpu';
+import type { SourceRange } from '../../../machine/cpu/blua32_symbols';
+import type { Proto, UpvalueDesc } from '../program';
 import { decodeCallArgCount } from '../../../machine/cpu/opcode_info';
 import { MAX_EXT_CONST } from '../../../machine/cpu/instruction_format';
 import type { StringPool } from '../../../machine/cpu/string_pool';
@@ -32,7 +34,7 @@ export type Instruction = {
 	rkMask: number;
 	target: number | null;
 	callProtoIndex?: number | null;
-	symbolicReloc?: { kind: 'module' | 'export_proto'; symbol: string };
+	symbolicReloc?: { kind: 'module' | 'export_proto' | 'module_init'; symbol: string };
 	resumeRange?: SourceRange;
 };
 

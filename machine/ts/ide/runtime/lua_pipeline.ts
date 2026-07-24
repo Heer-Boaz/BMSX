@@ -3,6 +3,9 @@ import type { LuaChunk } from '../../lua/syntax/ast';
 import { LuaInterpreter } from '../../lua/runtime';
 import { getReservedLuaIdentifiers, registerLuaInterpreterBuiltins } from './lua_builtins';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject, type ProgramCompileDomain } from '../../lua/compiler';
+import type { ProgramMetadata } from '../../lua/compiler/program';
+import type { ProgramObjectImage } from '../../lua/compiler/program_object';
+import { toLuaModulePath } from '../../lua/module_path';
 import { readWorkspaceLuaSourceText } from '../workspace/files';
 import type { RuntimeSymbolEntry, RuntimeSymbolKind } from './symbols';
 import { resolveLuaSourceRecord, type LuaSourceRegistry } from '../../lua/source_registry';
@@ -10,35 +13,42 @@ import { logDebugState } from './debug_state';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/memory/map';
 import { resetHandledLuaErrors } from './fault_state';
 import {
-	decodeProgramImage,
-	decodeProgramSymbolsImage,
-	PROGRAM_IMAGE_ID,
-	PROGRAM_SYMBOLS_IMAGE_ID,
-	toLuaModulePath,
-	type ProgramImage,
-	type ProgramSymbolsImage,
-} from '../../machine/program/loader';
+	BLUA32_IMAGE_ID,
+	BLUA32_SYMBOLS_IMAGE_ID,
+	decodeBlua32Image,
+	type Blua32ImageLayout,
+} from '../../machine/cpu/blua32_image';
+import {
+	decodeBlua32SymbolsImage,
+	type Blua32SymbolsImage,
+} from '../../machine/cpu/blua32_symbols';
 import { Table, type Value, isNativeFunction, isNativeObject } from '../../machine/cpu/cpu';
+import type { Blua32MediaSymbols } from '../../machine/cpu/blua32_symbols';
 import { asStringId, valueIsNumber, valueIsString } from '../../machine/cpu/cpu';
 import type { Runtime } from '../../machine/runtime/runtime';
-import { installRuntimeRomLayers, resolveRuntimeLuaSource } from './sources';
+import {
+	installRuntimeRomLayers,
+	resolveRuntimeLuaSource,
+} from './sources';
 import { LogLevel } from '../../platform/platform';
-import { linkCartProgramImage, linkSystemProgramImage } from '../../rompack/tooling/program_linker';
-import { buildProgramTail } from '../../rompack/tooling/program_tail';
-import type { RomSourceLayer } from '../../rompack/source';
+import {
+	linkCartBlua32Image,
+	linkSystemBlua32Image,
+	type LinkedBlua32Image,
+} from '../../rompack/tooling/blua32_linker';
+import { buildBlua32Tail } from '../../rompack/tooling/blua32_tail';
+import type { RawRomSource, RomSourceLayer } from '../../rompack/source';
 
-export type RebuiltProgram = {
-	object: ReturnType<typeof encodeCompiledProgramObject>;
-	objectMetadata: ProgramSymbolsImage;
-	image: ProgramImage;
-	mediaMetadata: ProgramSymbolsImage;
-	programAddress: number;
+export type RebuiltBlua32Image = {
+	linked: LinkedBlua32Image;
+	previousImage: Blua32ImageLayout;
+	previousSymbols: Blua32SymbolsImage;
 	sources: ReadonlyMap<string, string>;
 };
 
-export type RebuiltProgramMedia = {
-	system: RebuiltProgram | null;
-	cart: RebuiltProgram | null;
+export type RebuiltBlua32Media = {
+	system: RebuiltBlua32Image | null;
+	cartridgeSlots: [RebuiltBlua32Image | null, RebuiltBlua32Image | null];
 };
 
 function installFreshLuaInterpreter(runtime: Runtime): LuaInterpreter {
@@ -142,20 +152,22 @@ export function listSymbols(runtime: Runtime): RuntimeSymbolEntry[] {
 	return Array.from(symbolsByName.values());
 }
 
-export function loadProgramImagesForSource(source: 'system' | 'cart'): { program: ProgramImage; symbols: ProgramSymbolsImage | null } {
-	const sources = machineManager.sourceState;
-	const romSource = source === 'system' ? sources.systemRomSource : sources.cartRomSource!;
-	const programEntry = romSource.getEntry(PROGRAM_IMAGE_ID)!;
-	const program = decodeProgramImage(
-		romSource.getBytesView(programEntry),
-		romSource.getCompiledBytesView(programEntry),
+export function loadBlua32Image(
+	romSource: RawRomSource,
+	romBaseAddress: number,
+	imageOffset: number,
+): { image: Blua32ImageLayout; symbols: Blua32SymbolsImage | null } {
+	const imageEntry = romSource.getEntry(BLUA32_IMAGE_ID)!;
+	const image = decodeBlua32Image(
+		romSource.getBytesView(imageEntry),
+		romBaseAddress + imageOffset,
 	);
-	const symbolsEntry = romSource.getEntry(PROGRAM_SYMBOLS_IMAGE_ID);
-	let symbols: ProgramSymbolsImage | null = null;
+	const symbolsEntry = romSource.getEntry(BLUA32_SYMBOLS_IMAGE_ID);
+	let symbols: Blua32SymbolsImage | null = null;
 	if (symbolsEntry) {
-		symbols = decodeProgramSymbolsImage(romSource.getBytesView(symbolsEntry));
+		symbols = decodeBlua32SymbolsImage(romSource.getBytesView(symbolsEntry));
 	}
-	return { program, symbols };
+	return { image, symbols };
 }
 
 function buildModuleChunks(
@@ -188,7 +200,12 @@ function compileRegistryProgramObject(
 	interpreter: LuaInterpreter,
 	programDomain: ProgramCompileDomain,
 	externalModules: ReadonlyArray<{ path: string; chunk: LuaChunk; source: string }>,
-): { object: ReturnType<typeof encodeCompiledProgramObject>; metadata: ProgramSymbolsImage; modules: Array<{ path: string; chunk: LuaChunk; source: string }>; sources: ReadonlyMap<string, string> } {
+): {
+	object: ProgramObjectImage;
+	metadata: ProgramMetadata;
+	modules: Array<{ path: string; chunk: LuaChunk; source: string }>;
+	sources: ReadonlyMap<string, string>;
+} {
 	const entryRecord = resolveLuaSourceRecord(registry, registry.entry_path);
 	if (entryRecord === null) {
 		throw new Error(`cannot compile boot program: entry Lua source '${registry.entry_path}' is missing.`);
@@ -216,134 +233,167 @@ function compileRegistryProgramObject(
 	};
 }
 
-export function buildProgramMedia(
+export function buildBlua32Media(
 	interpreter: LuaInterpreter,
 	rebuildSystem: boolean,
-	rebuildCart: boolean,
-): RebuiltProgramMedia {
+	rebuildCartridgeSlots: readonly [boolean, boolean],
+): RebuiltBlua32Media {
 	const sources = machineManager.sourceState;
 	const systemRegistry = sources.systemLuaSources;
-	const cartRegistry = sources.cartLuaSources;
-	const cartRegistryToBuild = rebuildSystem || rebuildCart ? cartRegistry : null;
-	let system: ReturnType<typeof loadProgramImagesForSource>;
-	let rebuiltSystem: RebuiltProgramMedia['system'] = null;
-	let rebuiltCart: RebuiltProgramMedia['cart'] = null;
+	const cartridgeImageOffsets: [number, number] = [0, 0];
+	let rebuildAnyCartridge = false;
+	for (let slot = 0; slot < sources.cartridgeSlots.length; slot += 1) {
+		const cartridge = sources.cartridgeSlots[slot];
+		const imageOffset = cartridge ? cartridge.rom.header.blua32ImageOffset : 0;
+		if (imageOffset && (rebuildSystem || rebuildCartridgeSlots[slot])) {
+			cartridgeImageOffsets[slot] = imageOffset;
+			rebuildAnyCartridge = true;
+		}
+	}
+	const installedSystem = loadBlua32Image(
+		sources.systemRomSource,
+		SYSTEM_ROM_BASE,
+		sources.systemRom.header.blua32ImageOffset,
+	);
+	let systemImage = installedSystem.image;
+	let systemSymbols = installedSystem.symbols;
+	let rebuiltSystem: RebuiltBlua32Image | null = null;
 	let systemModules: ReadonlyArray<{ path: string; chunk: LuaChunk; source: string }> = [];
 	if (rebuildSystem) {
 		const compiledSystem = compileRegistryProgramObject(systemRegistry, interpreter, 'system', []);
-		const systemProgramEntry = sources.systemRomSource.getEntry(PROGRAM_IMAGE_ID)!;
-		const programAddress = SYSTEM_ROM_BASE + systemProgramEntry.start!;
-		const linkedSystem = linkSystemProgramImage(
+		const linked = linkSystemBlua32Image(
 			compiledSystem.object,
 			compiledSystem.metadata,
-			programAddress,
+			SYSTEM_ROM_BASE + sources.systemRom.header.blua32ImageOffset,
+			{ image: installedSystem.image, symbols: installedSystem.symbols! },
 		);
-		system = { program: linkedSystem.image, symbols: linkedSystem.metadata };
+		systemImage = linked.layout;
+		systemSymbols = linked.symbols;
 		rebuiltSystem = {
-			object: compiledSystem.object,
-			objectMetadata: compiledSystem.metadata,
-			image: linkedSystem.image,
-			mediaMetadata: linkedSystem.metadata!,
-			programAddress,
+			linked,
+			previousImage: installedSystem.image,
+			previousSymbols: installedSystem.symbols!,
 			sources: compiledSystem.sources,
 		};
 		systemModules = compiledSystem.modules;
-	} else {
-		system = loadProgramImagesForSource('system');
-		if (cartRegistryToBuild !== null) {
-			const systemEntry = resolveLuaSourceRecord(systemRegistry, systemRegistry.entry_path)!;
-			systemModules = buildModuleChunks(systemEntry.module_path, [systemRegistry], interpreter);
-		}
+	} else if (rebuildAnyCartridge) {
+		const systemEntry = resolveLuaSourceRecord(systemRegistry, systemRegistry.entry_path)!;
+		systemModules = buildModuleChunks(systemEntry.module_path, [systemRegistry], interpreter);
 	}
 
-	if (cartRegistryToBuild !== null) {
-		const compiledCart = compileRegistryProgramObject(cartRegistryToBuild, interpreter, 'cart', systemModules);
-		const cartProgramEntry = sources.cartRomSource!.getEntry(PROGRAM_IMAGE_ID)!;
-		const programAddress = CART_ROM_BASE + cartProgramEntry.start!;
-		const linkedCart = linkCartProgramImage(
-			system.program,
-			system.symbols,
-			compiledCart.object,
-			compiledCart.metadata,
-			programAddress,
+	const rebuiltCartridgeSlots: [RebuiltBlua32Image | null, RebuiltBlua32Image | null] = [null, null];
+	if (rebuildAnyCartridge && systemSymbols === null) {
+		throw new Error('Cartridge BLua32 linking requires system symbols.');
+	}
+	for (let slot = 0; slot < sources.cartridgeSlots.length; slot += 1) {
+		const imageOffset = cartridgeImageOffsets[slot];
+		if (!imageOffset) {
+			continue;
+		}
+		const cartridge = sources.cartridgeSlots[slot]!;
+		const compiled = compileRegistryProgramObject(
+			cartridge.luaSources,
+			interpreter,
+			'cart',
+			systemModules,
 		);
-		rebuiltCart = {
-			object: compiledCart.object,
-			objectMetadata: compiledCart.metadata,
-			image: linkedCart.image,
-			mediaMetadata: linkedCart.metadata!,
-			programAddress,
-			sources: compiledCart.sources,
+		const imageAddress = CART_ROM_BASE + imageOffset;
+		const installed = loadBlua32Image(cartridge.romSource, CART_ROM_BASE, imageOffset);
+		const linked = linkCartBlua32Image(
+			systemImage,
+			systemSymbols,
+			compiled.object,
+			compiled.metadata,
+			imageAddress,
+			{ image: installed.image, symbols: installed.symbols! },
+		);
+		rebuiltCartridgeSlots[slot] = {
+			linked,
+			previousImage: installed.image,
+			previousSymbols: installed.symbols!,
+			sources: compiled.sources,
 		};
 	}
-	return { system: rebuiltSystem, cart: rebuiltCart };
+	return {
+		system: rebuiltSystem,
+		cartridgeSlots: rebuiltCartridgeSlots,
+	};
 }
 
-export function installProgramMedia(runtime: Runtime, rebuilt: RebuiltProgramMedia): void {
+export function installBlua32Media(runtime: Runtime, rebuilt: RebuiltBlua32Media): void {
 	const sources = machineManager.sourceState;
 	let systemLayer: RomSourceLayer | null = null;
-	let cartLayer: RomSourceLayer | null = null;
+	const cartridgeLayers: [RomSourceLayer | null, RomSourceLayer | null] = [null, null];
 	if (rebuilt.system !== null) {
-		systemLayer = buildProgramTail(sources.systemRom, rebuilt.system.image, rebuilt.system.mediaMetadata);
+		systemLayer = buildBlua32Tail(sources.systemRom, rebuilt.system.linked);
 	}
-	if (rebuilt.cart !== null) {
-		cartLayer = buildProgramTail(sources.cartRom!, rebuilt.cart.image, rebuilt.cart.mediaMetadata);
+	for (let slot = 0; slot < rebuilt.cartridgeSlots.length; slot += 1) {
+		const image = rebuilt.cartridgeSlots[slot];
+		if (image !== null) {
+			cartridgeLayers[slot] = buildBlua32Tail(sources.cartridgeSlots[slot]!.rom, image.linked);
+		}
 	}
-	installRuntimeRomLayers(
-		sources,
-		systemLayer,
-		cartLayer,
-	);
+	installRuntimeRomLayers(sources, systemLayer, cartridgeLayers);
 	if (systemLayer !== null) {
-		runtime.machine.memory.systemRom = systemLayer.payload;
-		sources.systemProgramSources = rebuilt.system!.sources;
-		sources.systemProgramMediaDirty = false;
+		runtime.machine.memory.installSystemRom(systemLayer.payload);
+		sources.systemInstalledBlua32Sources = rebuilt.system!.sources;
+		sources.systemBlua32MediaDirty = false;
 	}
-	if (cartLayer !== null) {
-		sources.cartProgramSources = rebuilt.cart!.sources;
-		sources.cartProgramMediaDirty = false;
+	for (let slot = 0; slot < cartridgeLayers.length; slot += 1) {
+		const layer = cartridgeLayers[slot];
+		if (layer === null) {
+			continue;
+		}
+		runtime.machine.memory.cartridgeController.installRom(slot, layer.payload);
+		sources.cartridgeSlots[slot]!.installedBlua32Sources = rebuilt.cartridgeSlots[slot]!.sources;
+		sources.cartridgeBlua32MediaDirty[slot] = false;
 	}
 }
 
-function bootProgramImages(runtime: Runtime): boolean {
-	const system = loadProgramImagesForSource('system');
-	let cartProgram: ProgramImage | null = null;
-	let cartSymbols: ProgramSymbolsImage | null = null;
+export function loadBlua32MediaSymbols(): Blua32MediaSymbols {
 	const sources = machineManager.sourceState;
-	if (sources.cartRomSource?.getEntry(PROGRAM_IMAGE_ID)) {
-		const cart = loadProgramImagesForSource('cart');
-		cartProgram = cart.program;
-		cartSymbols = cart.symbols;
+	const system = loadBlua32Image(
+		sources.systemRomSource,
+		SYSTEM_ROM_BASE,
+		sources.systemRom.header.blua32ImageOffset,
+	);
+	const cartridgeSymbols: [Blua32SymbolsImage | null, Blua32SymbolsImage | null] = [null, null];
+	for (let slot = 0; slot < sources.cartridgeSlots.length; slot += 1) {
+		const cartridge = sources.cartridgeSlots[slot];
+		if (cartridge && cartridge.rom.header.blua32ImageOffset) {
+			cartridgeSymbols[slot] = loadBlua32Image(
+				cartridge.romSource,
+				CART_ROM_BASE,
+				cartridge.rom.header.blua32ImageOffset,
+			).symbols;
+		}
 	}
+	return {
+		system: system.symbols,
+		cartridgeSlots: cartridgeSymbols,
+	};
+}
+
+export function bootActiveBlua32Media(runtime: Runtime, rebuildBlua32Media: boolean): void {
+	const interpreter = installFreshLuaInterpreter(runtime);
+	if (rebuildBlua32Media) {
+		const sources = machineManager.sourceState;
+		installBlua32Media(runtime, buildBlua32Media(
+			interpreter,
+			sources.systemBlua32MediaDirty,
+			sources.cartridgeBlua32MediaDirty,
+		));
+	}
+	const sources = machineManager.sourceState;
 	sources.currentPath = sources.activeLuaSources.entry_path;
-	runtime.resetRuntimeForProgramReload();
+	runtime.resetForSystemBoot();
 	try {
-		runtime.boot(
-			system.program,
-			system.symbols,
-			cartProgram,
-			cartSymbols,
-			'system',
-		);
-		return true;
+		runtime.boot(loadBlua32MediaSymbols());
 	} catch (error) {
-		machineManager.platform.log(LogLevel.Error, 'Program-image boot failed.');
+		machineManager.platform.log(LogLevel.Error, 'BLua32 boot failed.');
 		logDebugState(runtime, machineManager.platform);
 		throw error;
 	}
-}
-
-export function bootActiveProgram(runtime: Runtime, rebuildProgramMedia: boolean): boolean {
-	const interpreter = installFreshLuaInterpreter(runtime);
-	if (rebuildProgramMedia) {
-		const sources = machineManager.sourceState;
-		installProgramMedia(runtime, buildProgramMedia(
-			interpreter,
-			sources.systemProgramMediaDirty,
-			sources.cartProgramMediaDirty,
-		));
-	}
-	return bootProgramImages(runtime);
 }
 
 export function resourceSourceForChunk(path: string): string {

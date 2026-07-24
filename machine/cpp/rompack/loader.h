@@ -6,6 +6,7 @@
 #define BMSX_ROMPACK_PACKAGE_H
 
 #include "common/primitives.h"
+#include "machine/cpu/blua32_symbols.h"
 #include "rompack/format.h"
 #include "rompack/assets.h"
 #include "common/serializer/binencoder.h"
@@ -39,8 +40,6 @@ public:
 	std::unordered_map<AssetToken, BinAsset> bin;
 	std::unordered_map<AssetToken, AudioEventAsset> audioevents;
 
-	std::optional<RomAssetInfo> programImageRom;
-	std::optional<RomAssetInfo> programSymbolsRom;
 	u32 cartridgeBoardWord = 0;
 	u32 cartridgeRamByteCount = 0;
 
@@ -82,7 +81,6 @@ public:
 	bool hasLuaModule(const AssetId& modulePath) const;
 	bool hasLuaSource(const AssetId& sourcePath) const;
 	bool hasAudioEvent(const AssetId& id) const;
-	bool hasProgram() const { return programImageRom.has_value(); }
 	bool hasAnyImg() const { return !img.empty(); }
 
 private:
@@ -109,6 +107,7 @@ struct RomImage {
  * ============================================================================ */
 
 RomImage parseRomImage(const u8* buffer, size_t size, RomImageDomain domain);
+auto loadBlua32SymbolsImage(const RomImage& image) -> std::unique_ptr<Blua32SymbolsImage>;
 
 // Load a cart image into RuntimeRomPackage, including cart metadata, machine spec, and entry point.
 void loadCartRomPackage(const RomImage& image,
@@ -116,7 +115,7 @@ void loadCartRomPackage(const RomImage& image,
 					const AssetLoadCallbacks* callbacks = nullptr,
 					const char* payloadId = "cart");
 
-// Load only the ROM package/program payload into RuntimeRomPackage. Does not decode cart metadata.
+// Load only the ROM package asset payload into RuntimeRomPackage. Does not decode cart metadata.
 void loadSystemRomPackage(const RomImage& image,
 					RuntimeRomPackage& romPackage,
 					const AssetLoadCallbacks* callbacks = nullptr,

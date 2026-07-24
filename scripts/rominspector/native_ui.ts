@@ -1,6 +1,5 @@
 import type { RomAsset } from '../../machine/ts/rompack/format';
-import type { ProgramImage } from '../../machine/ts/machine/program/loader';
-import { PROGRAM_IMAGE_ID, PROGRAM_SYMBOLS_IMAGE_ID } from '../../machine/ts/machine/program/loader';
+import { BLUA32_IMAGE_ID, BLUA32_SYMBOLS_IMAGE_ID } from '../../machine/ts/machine/cpu/blua32_image';
 import { parseCartHeader } from '../../machine/ts/rompack/format';
 import { parseRomMetadataSection } from '../../machine/ts/rompack/metadata';
 import { clamp } from '../../machine/ts/common/clamp';
@@ -51,7 +50,6 @@ type NativeUiContext = {
 	assets: RomAsset[];
 	manifest: any;
 	projectRootPath: string | null;
-	systemProgramImage: ProgramImage | null;
 	formatByteSize(size: number): string;
 	formatNumberAsHex(n: number, width?: number): string;
 };
@@ -654,10 +652,10 @@ function headerLabel(column: TableColumn, sortState: SortState): string {
 }
 
 function makeRegionLabel(asset: RomAsset): string {
-	if (asset.resid === PROGRAM_IMAGE_ID) {
-		return 'program';
+	if (asset.resid === BLUA32_IMAGE_ID) {
+		return 'blua32';
 	}
-	if (asset.resid === PROGRAM_SYMBOLS_IMAGE_ID) {
+	if (asset.resid === BLUA32_SYMBOLS_IMAGE_ID) {
 		return 'symbols';
 	}
 	return asset.type;
@@ -670,7 +668,7 @@ function makeRegionColorTag(label: string): string {
 		case 'data': return '{light-green-fg}';
 		case 'lua': return '{#6EE7B7-fg}';
 		case 'model': return '{light-magenta-fg}';
-		case 'program': return '{#FFB000-fg}';
+		case 'blua32': return '{#FFB000-fg}';
 		case 'symbols': return '{#FF6FAE-fg}';
 		case 'texture': return '{#14B8A6-fg}';
 		case 'manifest': return '{light-red-fg}';
@@ -1615,7 +1613,6 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 			decodedTexture,
 			manifest: ctx.manifest,
 			projectRootPath: ctx.projectRootPath,
-			systemProgramImage: ctx.systemProgramImage,
 			formatByteSize: ctx.formatByteSize,
 			modalWidth: Math.max(20, Math.floor(screen.width() * 0.8) - 4),
 			modalHeight: Math.max(8, Math.floor(screen.height() * 0.8) - 8),

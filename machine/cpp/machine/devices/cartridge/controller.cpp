@@ -22,14 +22,13 @@ constexpr u32 CARTRIDGE_DREQ_MASK =
 } // namespace
 
 CartridgeController::CartridgeController(const CartridgeSlotMediaPair& media) {
-	m_bootSlotIndex = cartridgeBootSlot(media);
 	for (u32 slotIndex = 0; slotIndex < CARTRIDGE_SLOT_COUNT; ++slotIndex) {
 		const CartridgeSlotMedia& source = media[slotIndex];
 		Slot& slot = m_slots[slotIndex];
 		slot.media = source;
 		slot.ram.resize(source.ramByteCount);
 	}
-	m_selectionWord = m_bootSlotIndex;
+	m_selectionWord = 0u;
 }
 
 void CartridgeController::connect(Memory& memory, IrqController& irq, DmaController& dma) {
@@ -45,7 +44,7 @@ void CartridgeController::connect(Memory& memory, IrqController& irq, DmaControl
 }
 
 void CartridgeController::reset() {
-	m_selectionWord = m_bootSlotIndex;
+	m_selectionWord = 0u;
 	for (Slot& slot : m_slots) {
 		slot.mailboxDataWord = 0u;
 		slot.mailboxControlWord = 0u;
@@ -303,8 +302,6 @@ u64 CartridgeController::readStatusThunk(void* context, u32, MappedBusSignals) {
 	u32 status = controller.selectedSlot() == 1u ? CARTRIDGE_STATUS_SELECTED_SLOT1 : 0u;
 	if (controller.m_slots[0].media.present) status |= CARTRIDGE_STATUS_SLOT0_PRESENT;
 	if (controller.m_slots[1].media.present) status |= CARTRIDGE_STATUS_SLOT1_PRESENT;
-	if (controller.m_slots[0].media.programPresent) status |= CARTRIDGE_STATUS_SLOT0_PROGRAM;
-	if (controller.m_slots[1].media.programPresent) status |= CARTRIDGE_STATUS_SLOT1_PROGRAM;
 	return valueNumber(static_cast<f64>(status));
 }
 

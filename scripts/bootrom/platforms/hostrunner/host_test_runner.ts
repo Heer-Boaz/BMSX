@@ -5,7 +5,7 @@ import { EMPTY_CALL_ARGS, Table, asStringId, valueIsString, type Closure, type S
 import { callClosureIntoSuspended } from '../../../../machine/ts/ide/runtime/closure_executor';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import type { InputEvt } from 'bmsx/platform';
-import { HOST_TEST_MODULE_PATH } from './host_test_program';
+import { HOST_TEST_LOADER_GLOBAL } from './host_test_cartridge';
 
 export interface HostTestRunnerClock {
 	scheduleOnce(delayMs: number, cb: (timestampMs: number) => void): void;
@@ -92,7 +92,7 @@ class HostTestRunner {
 	}
 
 	private tickUnsafe(timestampMs: number): void {
-		if (!this.options.runtime.cartProgramStarted || !this.options.runtime.isInitialized) {
+		if (!this.options.runtime.machine.cpu.isCartridgeExecutionActive() || !this.options.runtime.isInitialized) {
 			return;
 		}
 		if (!this.installed) {
@@ -139,10 +139,10 @@ class HostTestRunner {
 	private install(): void {
 		const runtime = this.options.runtime;
 		const cpu = runtime.machine.cpu;
-		const protoIndex = cpu.program!.moduleProtoMap.get(HOST_TEST_MODULE_PATH)!;
+		const loader = cpu.getGlobalByKey(runtime.internString(HOST_TEST_LOADER_GLOBAL)) as Closure;
 		const results = runtime.luaScratch.values.acquire();
 		try {
-			callClosureIntoSuspended(runtime, cpu.rootClosure(protoIndex), EMPTY_CALL_ARGS, results);
+			callClosureIntoSuspended(runtime, loader, EMPTY_CALL_ARGS, results);
 		} finally {
 			runtime.luaScratch.values.release(results);
 		}

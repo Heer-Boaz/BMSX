@@ -1,13 +1,11 @@
 import type { CpuRuntimeState } from '../cpu/cpu';
 import type { RuntimeSaveMachineState } from './save_machine_state';
 import type { Runtime } from './runtime';
-import { applyRuntimeCpuState, captureRuntimeCpuState } from './cpu_state';
 import { applyRuntimeSaveMachineState, captureRuntimeSaveMachineState } from './save_machine_state';
 
 export type RuntimeSaveState = {
 	machineState: RuntimeSaveMachineState;
 	cpuState: CpuRuntimeState;
-	systemProgramActive: boolean;
 	luaInitialized: boolean;
 	luaRuntimeFailed: boolean;
 	pendingEntryCall: boolean;
@@ -16,8 +14,7 @@ export type RuntimeSaveState = {
 export function captureRuntimeSaveState(runtime: Runtime): RuntimeSaveState {
 	return {
 		machineState: captureRuntimeSaveMachineState(runtime),
-		cpuState: captureRuntimeCpuState(runtime),
-		systemProgramActive: !runtime.cartProgramStarted,
+		cpuState: runtime.machine.cpu.captureRuntimeState(),
 		luaInitialized: runtime.luaInitialized,
 		luaRuntimeFailed: runtime.luaRuntimeFailed,
 		pendingEntryCall: runtime.pendingCall === 'entry',
@@ -25,13 +22,8 @@ export function captureRuntimeSaveState(runtime: Runtime): RuntimeSaveState {
 }
 
 export function applyRuntimeSaveState(runtime: Runtime, state: RuntimeSaveState): void {
-	if (state.systemProgramActive) {
-		runtime.enterSystemFirmware();
-	} else {
-		runtime.enterCartProgram();
-	}
 	applyRuntimeSaveMachineState(runtime, state.machineState);
-	applyRuntimeCpuState(runtime, state.cpuState);
+	runtime.machine.cpu.restoreRuntimeState(state.cpuState);
 	runtime.luaInitialized = state.luaInitialized;
 	runtime.luaRuntimeFailed = state.luaRuntimeFailed;
 	runtime.pendingCall = state.pendingEntryCall ? 'entry' : null;

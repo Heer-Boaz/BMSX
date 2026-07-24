@@ -13,11 +13,9 @@
 #include "machine/runtime/timing/state.h"
 #include "machine/runtime/vblank.h"
 #include "machine/runtime/cpu_executor.h"
-#include "machine/runtime/cpu_state.h"
 #include "machine/runtime/options.h"
 #include "machine/runtime/save_state.h"
-#include "machine/program/loader.h"
-#include "machine/program/scratch.h"
+#include "machine/runtime/lua_scratch.h"
 #include "machine/memory/bus_signals.h"
 #include "machine/memory/memory.h"
 #include "machine/runtime/frame/loop.h"
@@ -28,17 +26,12 @@
 #include "common/primitives.h"
 #include <cstddef>
 #include <memory>
-#include <span>
 #include <string>
 #include <string_view>
-#include <unordered_map>
 #include <utility>
-#include <vector>
 
 namespace bmsx {
 
-// Forward declarations
-struct ProgramImage;
 struct GxGpuPcrtcTiming;
 
 /**
@@ -53,8 +46,6 @@ public:
 	friend class FrameSchedulerState;
 	friend auto captureRuntimeSaveState(Runtime& runtime) -> RuntimeSaveState;
 	friend void applyRuntimeSaveState(Runtime& runtime, const RuntimeSaveState& state);
-	friend auto captureRuntimeCpuState(const Runtime& runtime) -> CpuRuntimeState;
-	friend void applyRuntimeCpuState(Runtime& runtime, const CpuRuntimeState& state);
 
 	Runtime(
 		const RuntimeOptions& options,
@@ -66,16 +57,7 @@ public:
 	Runtime(const Runtime&) = delete;
 	auto operator=(const Runtime&) -> Runtime& = delete;
 
-	/**
-	 * Boot the runtime with a compiled program.
-	 */
-	void boot(
-		const ProgramImage& systemImage,
-		std::unique_ptr<ProgramMetadata> systemMetadata,
-		const ProgramImage* cartImage,
-		std::unique_ptr<ProgramMetadata> cartMetadata,
-		ProgramBootTarget bootTarget
-	);
+	void boot(Blua32MediaSymbols symbols);
 	void handleLuaError(const std::string& message);
 
 	/**
@@ -88,10 +70,7 @@ public:
 	 */
 	auto hasRuntimeFailed() const -> bool { return m_runtimeFailed; }
 
-	void enterSystemFirmware();
-	void enterCartProgram();
-	void startCartProgram();
-	void rebootSystemProgram();
+	void rebootSystem();
 
 	auto machineTimeMs() const -> uint32_t;
 	auto machineElapsedMs() const -> f64;
@@ -115,10 +94,8 @@ public:
 
 	auto internString(std::string_view name) -> Value { return valueString(machine.cpu.stringPool().intern(name)); }
 
-	void startLoadedProgram(ProgramVectorTable vectors, std::span<const std::string> systemStaticModulePaths, std::span<const std::string> cartStaticModulePaths);
-
 	void resetHardwareState();
-	void resetRuntimeForProgramReload();
+	void resetForSystemBoot();
 	auto cpuUsageCyclesUsed() const -> i64 {
 		return frameLoop.frameActive
 			? frameLoop.frameState.activeCpuUsedCycles
@@ -142,11 +119,7 @@ private:
 		Entry,
 	};
 	void setupBuiltins();
-	void clearLuaBootPrimitives();
-	void runStaticModuleInitializers(std::span<const std::string> paths);
-	void runSectionInitializer(int protoIndex, u32 statusWord);
-	void runStaticModuleInitializer(const std::string& path);
-	auto valueToString(const Value& value) const -> std::string;
+	void startSystemFirmware();
 	void logDebugState() const;
 	void logLuaCallStack() const;
 
@@ -158,24 +131,10 @@ private:
 public:
 	Machine machine;
 	HostFaultState hostFault;
-	ProgramVectorTable* programVectors = nullptr;
-	bool cartEntryAvailable = false;
-	bool cartProgramStarted = false;
 
 private:
-	std::unique_ptr<Program> m_programStorage;
-	Program* m_program = nullptr;
-	ProgramRuntimeSymbols m_programRuntimeSymbols;
-	std::unique_ptr<ProgramMetadata> m_programMetadataStorage;
-	ProgramMetadata* m_programMetadata = nullptr;
-
-	ProgramVectorTable m_systemVectors;
-	ProgramVectorTable m_cartVectors;
-	std::vector<std::string> m_systemStaticModulePaths;
-	ProgramVectorTable m_programVectorsStorage;
-	std::vector<std::string> m_cartStaticModulePaths;
-
 	// State flags
+	Blua32MediaSymbols m_blua32MediaSymbols;
 	bool m_luaInitialized = false;
 	bool m_runtimeFailed = false;
 	static size_t getBaseRamUsedBytesThunk(void* context);
@@ -189,7 +148,6 @@ private:
 	static void onGxGpuGp1WriteThunk(void* context, uint32_t addr, Value value, MappedBusSignals busSignals);
 	PendingCall m_pendingCall = PendingCall::None;
 
-	std::unordered_map<std::string, Value> m_moduleCache;
 	i64 m_debugUpdateCountTotal = 0;
 };
 

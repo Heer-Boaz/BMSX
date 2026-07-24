@@ -4,9 +4,9 @@
 
 #include "rompack/loader.h"
 #include "common/serializer/binencoder.h"
-#include "../machine/program/loader.h"
 #include "common/endian.h"
 #include "common/mem_snapshot.h"
+#include "lua/module_path.h"
 #include "machine/memory/map.h"
 #include "rompack/format.h"
 #include "rompack/metadata.h"
@@ -870,8 +870,6 @@ void RuntimeRomPackage::clear() {
 	m_lua.clear();
 	m_luaSourceToModule.clear();
 	audioevents.clear();
-	programImageRom.reset();
-	programSymbolsRom.reset();
 	cartridgeBoardWord = 0;
 	cartridgeRamByteCount = 0;
 	projectRootPath.clear();
@@ -997,6 +995,24 @@ RomImage parseRomImage(const u8* buffer, size_t size, RomImageDomain domain) {
 				: "Cartridge ROM payload exceeds its address window.");
 	}
 	return RomImage{std::span<const u8>(buffer, size), parseCartHeader(buffer, size)};
+}
+
+auto loadBlua32SymbolsImage(const RomImage& image) -> std::unique_ptr<Blua32SymbolsImage> {
+	const RomTocPayload toc = decodeRomToc(
+		image.bytes.data() + image.header.tocOffset,
+		image.header.tocLength
+	);
+	for (const RomSourceEntry& entry : toc.entries) {
+		if (entry.resid != BLUA32_SYMBOLS_IMAGE_ID) {
+			continue;
+		}
+		const size_t start = static_cast<size_t>(*entry.rom.start);
+		const size_t byteCount = static_cast<size_t>(*entry.rom.end - *entry.rom.start);
+		return std::make_unique<Blua32SymbolsImage>(
+			decodeBlua32SymbolsImage(image.bytes.subspan(start, byteCount))
+		);
+	}
+	return nullptr;
 }
 
 static void decodeCartridgeMetadata(const u8* romData, const CartRomHeader& header, RuntimeRomPackage& romPackage) {
@@ -1262,11 +1278,6 @@ static void loadRomAssetPayloadInternal(const u8* romData,
 				if (bufStart < 0 || bufEnd <= bufStart) {
 					throw BMSX_RUNTIME_ERROR("Code ROM entry missing payload: " + assetId);
 				}
-				if (assetId == PROGRAM_IMAGE_ID) {
-					romPackage.programImageRom = romInfo;
-				} else if (assetId == PROGRAM_SYMBOLS_IMAGE_ID) {
-					romPackage.programSymbolsRom = romInfo;
-				}
 				break;
 			}
 			case AssetTypeKind::Data: {
@@ -1284,10 +1295,6 @@ static void loadRomAssetPayloadInternal(const u8* romData,
 			case AssetTypeKind::Unknown:
 				break;
 		}
-	}
-
-	if (!romPackage.programImageRom && romPackage.programSymbolsRom) {
-		throw BMSX_RUNTIME_ERROR("Program symbols require the program image.");
 	}
 
 	logMemSnapshot("rom-package:end");

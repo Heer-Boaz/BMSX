@@ -8,6 +8,7 @@ constexpr u8 COP0_BAD_ADDRESS = 8u;
 constexpr u8 COP0_STATUS = 12u;
 constexpr u8 COP0_CAUSE = 13u;
 constexpr u8 COP0_EPC = 14u;
+constexpr u8 COP0_EXEC = 15u;
 
 constexpr u32 CPU_STATUS_INTERRUPT_ENABLE_CURRENT = 1u << 0u;
 constexpr u32 CPU_STATUS_USER_MODE_CURRENT = 1u << 1u;

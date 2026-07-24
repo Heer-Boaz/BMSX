@@ -41,9 +41,7 @@ import {
 	CARTRIDGE_MAILBOX_STATUS_OFFSET,
 	CARTRIDGE_STATUS_SELECTED_SLOT1,
 	CARTRIDGE_STATUS_SLOT0_PRESENT,
-	CARTRIDGE_STATUS_SLOT0_PROGRAM,
 	CARTRIDGE_STATUS_SLOT1_PRESENT,
-	CARTRIDGE_STATUS_SLOT1_PROGRAM,
 	type CartridgeSlotMediaPair,
 } from '../../machine/ts/machine/devices/cartridge/contracts';
 import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
@@ -91,18 +89,17 @@ function slot(
 	boardWord: number,
 	ramByteCount: number,
 	present: boolean,
-	programPresent: boolean,
 ): CartridgeSlotMediaPair[number] {
 	const rom = new Uint8Array(romWords.length * 4);
 	for (let index = 0; index < romWords.length; index += 1) {
 		writeLE32(rom, index * 4, romWords[index]!);
 	}
-	return { rom, boardWord, ramByteCount, present, programPresent };
+	return { rom, boardWord, ramByteCount, present };
 }
 
 test('cartridge bus selects one physical socket and retains the raw selection latch', () => {
-	const slot0 = slot([0x11223344], CARTRIDGE_BOARD_RAM, 16, true, true);
-	const slot1 = slot([0xaabbccdd], CARTRIDGE_BOARD_MAILBOX, 0, true, true);
+	const slot0 = slot([0x11223344], CARTRIDGE_BOARD_RAM, 16, true);
+	const slot1 = slot([0xaabbccdd], CARTRIDGE_BOARD_MAILBOX, 0, true);
 	const { memory } = createHarness([slot0, slot1]);
 
 	assert.equal(memory.readMappedU32LE(IO_CART_SELECT), 0);
@@ -110,9 +107,7 @@ test('cartridge bus selects one physical socket and retains the raw selection la
 	assert.equal(
 		memory.readMappedU32LE(IO_CART_STATUS),
 		CARTRIDGE_STATUS_SLOT0_PRESENT
-			| CARTRIDGE_STATUS_SLOT1_PRESENT
-			| CARTRIDGE_STATUS_SLOT0_PROGRAM
-			| CARTRIDGE_STATUS_SLOT1_PROGRAM,
+			| CARTRIDGE_STATUS_SLOT1_PRESENT,
 	);
 	assert.equal(memory.readMappedU32LE(IO_CART_SLOT0_BOARD), CARTRIDGE_BOARD_RAM);
 	assert.equal(memory.readMappedU32LE(IO_CART_SLOT0_RAM_BYTES), 16);
@@ -126,8 +121,6 @@ test('cartridge bus selects one physical socket and retains the raw selection la
 		memory.readMappedU32LE(IO_CART_STATUS),
 		CARTRIDGE_STATUS_SLOT0_PRESENT
 			| CARTRIDGE_STATUS_SLOT1_PRESENT
-			| CARTRIDGE_STATUS_SLOT0_PROGRAM
-			| CARTRIDGE_STATUS_SLOT1_PROGRAM
 			| CARTRIDGE_STATUS_SELECTED_SLOT1,
 	);
 });
@@ -135,11 +128,11 @@ test('cartridge bus selects one physical socket and retains the raw selection la
 test('cartridge RAM, mailbox state, reset, and restore remain socket-local', () => {
 	const board = CARTRIDGE_BOARD_RAM | CARTRIDGE_BOARD_MAILBOX;
 	const { memory } = createHarness([
-		slot([], board, 16, true, false),
-		slot([], board, 16, true, true),
+		slot([], board, 16, true),
+		slot([], board, 16, true),
 	]);
 
-	assert.equal(memory.readMappedU32LE(IO_CART_SELECT), 1);
+	assert.equal(memory.readMappedU32LE(IO_CART_SELECT), 0);
 	memory.writeMappedU32LE(CART_RAM_BASE, 0x11112222);
 	memory.writeMappedU32LE(MAILBOX_DATA_ADDRESS, 0x33334444);
 	memory.writeMappedU32LE(
@@ -151,34 +144,34 @@ test('cartridge RAM, mailbox state, reset, and restore remain socket-local', () 
 		0x80000002,
 	);
 	assert.equal(memory.readMappedU32LE(MAILBOX_STATUS_ADDRESS), CARTRIDGE_MAILBOX_STATUS_IRQ_PENDING);
-	assert.notEqual(memory.readMappedU32LE(IO_IRQ_FLAGS) & IRQ_CARTRIDGE_SLOT1, 0);
+	assert.notEqual(memory.readMappedU32LE(IO_IRQ_FLAGS) & IRQ_CARTRIDGE_SLOT0, 0);
 
-	memory.writeMappedU32LE(IO_CART_SELECT, 0x2468ace0);
+	memory.writeMappedU32LE(IO_CART_SELECT, 0x2468ace1);
 	memory.writeMappedU32LE(CART_RAM_BASE, 0x55556666);
 	memory.writeMappedU32LE(MAILBOX_DATA_ADDRESS, 0x77778888);
 	memory.writeMappedU32LE(
 		MAILBOX_CONTROL_ADDRESS,
 		CARTRIDGE_MAILBOX_CONTROL_IRQ_TRIGGER | CARTRIDGE_MAILBOX_CONTROL_DREQ_WRITE,
 	);
-	assert.notEqual(memory.readMappedU32LE(IO_IRQ_FLAGS) & IRQ_CARTRIDGE_SLOT0, 0);
+	assert.notEqual(memory.readMappedU32LE(IO_IRQ_FLAGS) & IRQ_CARTRIDGE_SLOT1, 0);
 	const saved = memory.cartridgeController.captureState();
 
 	memory.writeMappedU32LE(CART_RAM_BASE, 0);
 	memory.writeMappedU32LE(MAILBOX_DATA_ADDRESS, 0);
 	memory.writeMappedU32LE(MAILBOX_IRQ_ACK_ADDRESS, 1);
-	memory.writeMappedU32LE(IO_CART_SELECT, 1);
+	memory.writeMappedU32LE(IO_CART_SELECT, 0);
 	memory.cartridgeController.restoreState(saved);
 
-	assert.equal(memory.readMappedU32LE(IO_CART_SELECT), 0x2468ace0);
+	assert.equal(memory.readMappedU32LE(IO_CART_SELECT), 0x2468ace1);
 	assert.equal(memory.readMappedU32LE(CART_RAM_BASE), 0x55556666);
 	assert.equal(memory.readMappedU32LE(MAILBOX_DATA_ADDRESS), 0x77778888);
 	assert.equal(memory.readMappedU32LE(MAILBOX_STATUS_ADDRESS), CARTRIDGE_MAILBOX_STATUS_IRQ_PENDING);
-	memory.writeMappedU32LE(IO_CART_SELECT, 1);
+	memory.writeMappedU32LE(IO_CART_SELECT, 0);
 	assert.equal(memory.readMappedU32LE(CART_RAM_BASE), 0x11112222);
 	assert.equal(memory.readMappedU32LE(MAILBOX_DATA_ADDRESS), 0x33334444);
 
 	memory.cartridgeController.reset();
-	assert.equal(memory.readMappedU32LE(IO_CART_SELECT), 1);
+	assert.equal(memory.readMappedU32LE(IO_CART_SELECT), 0);
 	assert.equal(memory.readMappedU32LE(CART_RAM_BASE), 0x11112222);
 	assert.equal(memory.readMappedU32LE(MAILBOX_DATA_ADDRESS), 0);
 	assert.equal(memory.readMappedU32LE(MAILBOX_STATUS_ADDRESS), 0);
@@ -186,8 +179,8 @@ test('cartridge RAM, mailbox state, reset, and restore remain socket-local', () 
 
 test('mailbox IRQ raises once per cartridge source-latch edge', () => {
 	const { memory } = createHarness([
-		slot([], CARTRIDGE_BOARD_MAILBOX, 0, true, false),
-		slot([], 0, 0, false, false),
+		slot([], CARTRIDGE_BOARD_MAILBOX, 0, true),
+		slot([], 0, 0, false),
 	]);
 
 	memory.writeMappedU32LE(MAILBOX_CONTROL_ADDRESS, CARTRIDGE_MAILBOX_CONTROL_IRQ_TRIGGER);
@@ -212,8 +205,8 @@ test('mailbox IRQ raises once per cartridge source-latch edge', () => {
 test('cartridge DREQ selectors override CPU selection independently on both DMA sides', () => {
 	const board = CARTRIDGE_BOARD_RAM | CARTRIDGE_BOARD_MAILBOX;
 	const { memory, dma, scheduler } = createHarness([
-		slot([0x01020304, 0x11121314], board, 16, true, false),
-		slot([0xa1a2a3a4, 0xb1b2b3b4], board, 16, true, false),
+		slot([0x01020304, 0x11121314], board, 16, true),
+		slot([0xa1a2a3a4, 0xb1b2b3b4], board, 16, true),
 	]);
 
 	memory.writeMappedU32LE(IO_CART_SELECT, 1);

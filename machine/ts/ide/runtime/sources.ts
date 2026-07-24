@@ -1,6 +1,5 @@
-import type { RuntimeRomPackage } from '../../rompack/format';
+import { parseCartHeader, type RuntimeRomPackage } from '../../rompack/format';
 import type { RuntimeRomLayer } from '../../rompack/loader';
-import type { CartridgeSlotMedia } from '../../machine/devices/cartridge/contracts';
 import { RomSourceStack, type RawRomSource, type RomSourceLayer } from '../../rompack/source';
 import type { LuaEnvironment } from '../../lua/environment';
 import {
@@ -11,35 +10,38 @@ import {
 	DEFAULT_SYSTEM_PROJECT_ROOT_PATH,
 } from '../../lua/source_registry';
 
+export type RuntimeCartridgeSourceState = {
+	rom: RuntimeRomLayer;
+	package: RuntimeRomPackage;
+	luaSources: LuaSourceRegistry;
+	romSource: RawRomSource;
+	projectRootPath: string;
+	installedBlua32Sources: ReadonlyMap<string, string>;
+};
+
 export type RuntimeSourceState = {
 	systemRom: RuntimeRomLayer;
-	cartRom: RuntimeRomLayer | null;
-	cartSlotMedia: CartridgeSlotMedia | null;
+	cartridgeSlots: [RuntimeCartridgeSourceState | null, RuntimeCartridgeSourceState | null];
 	systemPackage: RuntimeRomPackage;
-	cartPackage: RuntimeRomPackage | null;
 	activePackage: RuntimeRomPackage;
 	systemLuaSources: LuaSourceRegistry;
-	cartLuaSources: LuaSourceRegistry | null;
 	activeLuaSources: LuaSourceRegistry;
 	luaSourceRegistries: LuaSourceRegistry[];
 	luaSourceSearchRegistries: LuaSourceRegistry[];
 	moduleCompileLuaSources: LuaSourceRegistry[];
 	systemRomSource: RawRomSource;
-	cartRomSource: RawRomSource | null;
 	activeRomSource: RawRomSource;
 	systemProjectRootPath: string;
-	cartProjectRootPath: string | null;
 	currentPath: string;
-	cartProgramStarted: boolean;
+	activeCartridgeSlot: number;
 	realtimeCompileOptLevel: 0 | 1 | 2 | 3;
-	systemProgramMediaDirty: boolean;
-	cartProgramMediaDirty: boolean;
+	systemBlua32MediaDirty: boolean;
+	cartridgeBlua32MediaDirty: [boolean, boolean];
 	luaChunkEnvironmentsByPath: Map<string, LuaEnvironment>;
-	systemProgramSources: ReadonlyMap<string, string>;
-	cartProgramSources: ReadonlyMap<string, string> | null;
+	systemInstalledBlua32Sources: ReadonlyMap<string, string>;
 };
 
-function indexProgramSources(registry: LuaSourceRegistry): Map<string, string> {
+function indexInstalledBlua32Sources(registry: LuaSourceRegistry): Map<string, string> {
 	const sourceByPath = new Map<string, string>();
 	for (let index = 0; index < registry.records.length; index += 1) {
 		const record = registry.records[index];
@@ -50,8 +52,7 @@ function indexProgramSources(registry: LuaSourceRegistry): Map<string, string> {
 
 export function createRuntimeSourceState(
 	systemLayer: RuntimeRomLayer,
-	cartLayer: RuntimeRomLayer | null,
-	cartSlotMedia: CartridgeSlotMedia | null,
+	cartridgeLayers: [RuntimeRomLayer | null, RuntimeRomLayer | null],
 ): RuntimeSourceState {
 	const systemSource = new RomSourceStack([{ id: systemLayer.id, index: systemLayer.index, payload: systemLayer.payload }]);
 	const systemLuaSources = buildLuaSources(systemSource, systemSource, systemLayer.index, ['system']);
@@ -59,7 +60,12 @@ export function createRuntimeSourceState(
 	const luaSourceSearchRegistries: LuaSourceRegistry[] = [];
 	const moduleCompileLuaSources: LuaSourceRegistry[] = [];
 	const systemProjectRootPath = systemLuaSources.projectRootPath || DEFAULT_SYSTEM_PROJECT_ROOT_PATH;
-	if (cartLayer) {
+	const cartridgeSlots: [RuntimeCartridgeSourceState | null, RuntimeCartridgeSourceState | null] = [null, null];
+	for (let slot = 0; slot < cartridgeLayers.length; slot += 1) {
+		const cartLayer = cartridgeLayers[slot];
+		if (cartLayer === null) {
+			continue;
+		}
 		const activeSourceLayers: RomSourceLayer[] = [
 			{ id: cartLayer.id, index: cartLayer.index, payload: cartLayer.payload },
 			{ id: systemLayer.id, index: systemLayer.index, payload: systemLayer.payload },
@@ -67,69 +73,42 @@ export function createRuntimeSourceState(
 		const activeRomSource = new RomSourceStack(activeSourceLayers);
 		const cartRomSource = new RomSourceStack([{ id: cartLayer.id, index: cartLayer.index, payload: cartLayer.payload }]);
 		const cartLuaSources = buildLuaSources(cartRomSource, activeRomSource, cartLayer.index, ['cart']);
-		const state: RuntimeSourceState = {
-			systemRom: systemLayer,
-			cartRom: cartLayer,
-			cartSlotMedia,
-			systemPackage: systemLayer.package,
-			cartPackage: cartLayer.package,
-			activePackage: systemLayer.package,
-			systemLuaSources,
-			cartLuaSources,
-			activeLuaSources: systemLuaSources,
-			luaSourceRegistries,
-			luaSourceSearchRegistries,
-			moduleCompileLuaSources,
-			systemRomSource: systemSource,
-			cartRomSource,
-			activeRomSource: systemSource,
-			systemProjectRootPath,
-			cartProjectRootPath: cartLayer.index.projectRootPath,
-			currentPath: systemLuaSources.entry_path,
-			cartProgramStarted: false,
-			realtimeCompileOptLevel: 3,
-			systemProgramMediaDirty: false,
-			cartProgramMediaDirty: false,
-			luaChunkEnvironmentsByPath: new Map(),
-			systemProgramSources: indexProgramSources(systemLuaSources),
-			cartProgramSources: indexProgramSources(cartLuaSources),
+		cartridgeSlots[slot] = {
+			rom: cartLayer,
+			package: cartLayer.package,
+			luaSources: cartLuaSources,
+			romSource: cartRomSource,
+			projectRootPath: cartLayer.index.projectRootPath,
+			installedBlua32Sources: indexInstalledBlua32Sources(cartLuaSources),
 		};
-		enterSystemSources(state);
-		return state;
 	}
 	const state: RuntimeSourceState = {
 		systemRom: systemLayer,
-		cartRom: null,
-		cartSlotMedia: null,
+		cartridgeSlots,
 		systemPackage: systemLayer.package,
-		cartPackage: null,
 		activePackage: systemLayer.package,
 		systemLuaSources,
-		cartLuaSources: null,
 		activeLuaSources: systemLuaSources,
 		luaSourceRegistries,
 		luaSourceSearchRegistries,
 		moduleCompileLuaSources,
 		systemRomSource: systemSource,
-		cartRomSource: null,
 		activeRomSource: systemSource,
 		systemProjectRootPath,
-		cartProjectRootPath: null,
 		currentPath: systemLuaSources.entry_path,
-		cartProgramStarted: false,
+		activeCartridgeSlot: -1,
 		realtimeCompileOptLevel: 3,
-		systemProgramMediaDirty: false,
-		cartProgramMediaDirty: false,
+		systemBlua32MediaDirty: false,
+		cartridgeBlua32MediaDirty: [false, false],
 		luaChunkEnvironmentsByPath: new Map(),
-		systemProgramSources: indexProgramSources(systemLuaSources),
-		cartProgramSources: null,
+		systemInstalledBlua32Sources: indexInstalledBlua32Sources(systemLuaSources),
 	};
 	enterSystemSources(state);
 	return state;
 }
 
 export function enterSystemSources(state: RuntimeSourceState): void {
-	state.cartProgramStarted = false;
+	state.activeCartridgeSlot = -1;
 	state.activePackage = state.systemPackage;
 	state.activeLuaSources = state.systemLuaSources;
 	state.activeRomSource = state.systemRomSource;
@@ -137,51 +116,75 @@ export function enterSystemSources(state: RuntimeSourceState): void {
 	rebuildLuaSourceOrders(state);
 }
 
-export function enterCartSources(state: RuntimeSourceState): void {
-	state.cartProgramStarted = true;
-	state.activePackage = state.cartPackage!;
-	state.activeLuaSources = state.cartLuaSources!;
-	state.activeRomSource = state.cartRomSource!;
+export function enterCartridgeSources(state: RuntimeSourceState, slot: number): void {
+	const cartridge = state.cartridgeSlots[slot]!;
+	state.activeCartridgeSlot = slot;
+	state.activePackage = cartridge.package;
+	state.activeLuaSources = cartridge.luaSources;
+	state.activeRomSource = cartridge.romSource;
 	state.currentPath = state.activeLuaSources.entry_path;
 	rebuildLuaSourceOrders(state);
 }
 
-export function syncRuntimeSourceActivity(state: RuntimeSourceState, cartProgramStarted: boolean): void {
-	if (state.cartProgramStarted === cartProgramStarted) {
+export function syncRuntimeSourceActivity(state: RuntimeSourceState, cartridgeSlot: number): void {
+	if (state.activeCartridgeSlot === cartridgeSlot) {
 		return;
 	}
-	if (cartProgramStarted) {
-		enterCartSources(state);
+	if (cartridgeSlot >= 0) {
+		enterCartridgeSources(state, cartridgeSlot);
 		return;
 	}
 	enterSystemSources(state);
 }
 
+export function developmentCartridgeSource(state: RuntimeSourceState): RuntimeCartridgeSourceState | null {
+	if (state.activeCartridgeSlot >= 0) {
+		return state.cartridgeSlots[state.activeCartridgeSlot];
+	}
+	for (let slot = 0; slot < state.cartridgeSlots.length; slot += 1) {
+		const cartridge = state.cartridgeSlots[slot];
+		if (cartridge
+			&& cartridge.rom.header.blua32ImageOffset
+			&& cartridge.luaSources.can_boot_from_source) {
+			return cartridge;
+		}
+	}
+	return null;
+}
+
 export function installRuntimeRomLayers(
 	state: RuntimeSourceState,
 	systemLayer: RomSourceLayer | null,
-	cartLayer: RomSourceLayer | null,
+	cartridgeLayers: [RomSourceLayer | null, RomSourceLayer | null],
 ): void {
 	if (systemLayer !== null) {
 		state.systemRom.index = systemLayer.index;
 		state.systemRom.payload = systemLayer.payload;
+		state.systemRom.header = parseCartHeader(systemLayer.payload);
 		state.systemRomSource = new RomSourceStack([{
 			id: systemLayer.id,
 			index: systemLayer.index,
 			payload: systemLayer.payload,
 		}]);
 	}
-	if (cartLayer !== null) {
-		state.cartRom!.index = cartLayer.index;
-		state.cartRom!.payload = cartLayer.payload;
-		state.cartSlotMedia!.rom = cartLayer.payload;
-		state.cartRomSource = new RomSourceStack([{
-			id: cartLayer.id,
-			index: cartLayer.index,
-			payload: cartLayer.payload,
+	for (let slot = 0; slot < cartridgeLayers.length; slot += 1) {
+		const layer = cartridgeLayers[slot];
+		if (layer === null) {
+			continue;
+		}
+		const cartridge = state.cartridgeSlots[slot]!;
+		cartridge.rom.index = layer.index;
+		cartridge.rom.payload = layer.payload;
+		cartridge.rom.header = parseCartHeader(layer.payload);
+		cartridge.romSource = new RomSourceStack([{
+			id: layer.id,
+			index: layer.index,
+			payload: layer.payload,
 		}]);
 	}
-	state.activeRomSource = state.cartProgramStarted ? state.cartRomSource! : state.systemRomSource;
+	state.activeRomSource = state.activeCartridgeSlot < 0
+		? state.systemRomSource
+		: state.cartridgeSlots[state.activeCartridgeSlot]!.romSource;
 }
 
 export function resolveRuntimeLuaSource(state: RuntimeSourceState, path: string): LuaSourceMatch | null {
@@ -197,17 +200,23 @@ export function resolveRuntimeLuaSource(state: RuntimeSourceState, path: string)
 
 function rebuildLuaSourceOrders(state: RuntimeSourceState): void {
 	state.luaSourceRegistries.length = 0;
-	if (state.cartLuaSources) {
-		state.luaSourceRegistries.push(state.cartLuaSources);
+	for (let slot = 0; slot < state.cartridgeSlots.length; slot += 1) {
+		const cartridge = state.cartridgeSlots[slot];
+		if (cartridge !== null) {
+			state.luaSourceRegistries.push(cartridge.luaSources);
+		}
 	}
 	state.luaSourceRegistries.push(state.systemLuaSources);
 
 	state.luaSourceSearchRegistries.length = 0;
 	state.luaSourceSearchRegistries.push(state.activeLuaSources);
-	if (state.cartLuaSources && state.cartLuaSources !== state.activeLuaSources) {
-		state.luaSourceSearchRegistries.push(state.cartLuaSources);
+	for (let slot = 0; slot < state.cartridgeSlots.length; slot += 1) {
+		const cartridge = state.cartridgeSlots[slot];
+		if (cartridge !== null && cartridge.luaSources !== state.activeLuaSources) {
+			state.luaSourceSearchRegistries.push(cartridge.luaSources);
+		}
 	}
-	if (state.systemLuaSources !== state.activeLuaSources && state.systemLuaSources !== state.cartLuaSources) {
+	if (state.systemLuaSources !== state.activeLuaSources) {
 		state.luaSourceSearchRegistries.push(state.systemLuaSources);
 	}
 

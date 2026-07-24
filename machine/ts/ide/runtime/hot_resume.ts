@@ -1,87 +1,65 @@
 import { machineManager } from '../../core/machine_manager';
 import { convertToError } from '../../lua/value';
-import { EMPTY_CALL_ARGS, type Closure } from '../../machine/cpu/cpu';
-import type { ProgramImage } from '../../machine/program/loader';
+import {
+	EMPTY_CALL_ARGS,
+	type Blua32MediaRevision,
+	type Closure,
+} from '../../machine/cpu/cpu';
 import type { Runtime } from '../../machine/runtime/runtime';
 import { clearOverlayFrame } from '../../render/host_overlay/overlay_queue';
-import { linkProgramRevision, type LinkedProgramRevision } from '../../rompack/tooling/program_linker';
-import { composeProgramCounterRelocations } from '../../rompack/tooling/program_revision';
+import { buildBlua32ExecutionRevision } from '../../rompack/tooling/blua32_revision';
 import { callClosureIntoSuspended } from './closure_executor';
 import { clearRuntimeDebuggerPause } from './debug_pause';
 import { clearFaultSnapshot, resetHandledLuaErrors } from './fault_state';
 import {
-	buildProgramMedia,
-	installProgramMedia,
-	loadProgramImagesForSource,
-	type RebuiltProgramMedia,
+	buildBlua32Media,
+	installBlua32Media,
+	loadBlua32MediaSymbols,
 } from './lua_pipeline';
 
-function assertLiveStorageLayoutUnchanged(previous: ProgramImage, rebuilt: ProgramImage): void {
-	if (rebuilt.staticLayoutToken.lo !== previous.staticLayoutToken.lo
-		|| rebuilt.staticLayoutToken.hi !== previous.staticLayoutToken.hi) {
-		throw new Error('Hot resume cannot change the static storage layout.');
-	}
-}
-
-/** Rebuilds changed physical ROM tails and links their protos into the live Lua state. */
 export function hotResume(
 	runtime: Runtime,
 	rebuildSystem: boolean,
-	rebuildCart: boolean,
+	rebuildCartridgeSlots: readonly [boolean, boolean],
 ): void {
 	const interpreter = machineManager.ideState.nativeBridge.luaInterpreter;
 	try {
-		let rebuilt: RebuiltProgramMedia | null = null;
-		let revision: LinkedProgramRevision | null = null;
-		let systemVectors = runtime.systemVectors;
-		let cartVectors = runtime.cartVectors;
-		if (rebuildSystem || rebuildCart) {
+		const rebuildMedia = rebuildSystem
+			|| rebuildCartridgeSlots[0]
+			|| rebuildCartridgeSlots[1];
+		if (rebuildMedia) {
 			const sourceState = machineManager.sourceState;
-			rebuilt = buildProgramMedia(
-				interpreter,
-				rebuildSystem,
-				rebuildCart,
-			);
+			const rebuilt = buildBlua32Media(interpreter, rebuildSystem, rebuildCartridgeSlots);
+			const revision: Blua32MediaRevision = {
+				system: null,
+				cartridgeSlots: [null, null],
+			};
 			if (rebuilt.system !== null) {
-				assertLiveStorageLayoutUnchanged(loadProgramImagesForSource('system').program, rebuilt.system.image);
-			}
-			if (rebuilt.cart !== null) {
-				assertLiveStorageLayoutUnchanged(loadProgramImagesForSource('cart').program, rebuilt.cart.image);
-			}
-
-			if (rebuilt.system !== null) {
-				revision = linkProgramRevision(
-					runtime.machine.cpu.program,
-					runtime.programMetadata!,
-					rebuilt.system.object,
-					rebuilt.system.objectMetadata,
-					rebuilt.system.image,
-					rebuilt.system.programAddress,
-					sourceState.systemProgramSources,
+				revision.system = buildBlua32ExecutionRevision(
+					rebuilt.system.previousImage,
+					rebuilt.system.previousSymbols,
+					sourceState.systemInstalledBlua32Sources,
+					rebuilt.system.linked,
 					rebuilt.system.sources,
 				);
-				systemVectors = revision.vectors;
 			}
-			if (rebuilt.cart !== null) {
-				const baseProgram = revision === null ? runtime.machine.cpu.program : revision.program;
-				const baseMetadata = revision === null ? runtime.programMetadata! : revision.metadata;
-				const next = linkProgramRevision(
-					baseProgram,
-					baseMetadata,
-					rebuilt.cart.object,
-					rebuilt.cart.objectMetadata,
-					rebuilt.cart.image,
-					rebuilt.cart.programAddress,
-					sourceState.cartProgramSources!,
-					rebuilt.cart.sources,
-				);
-				if (revision !== null) {
-					composeProgramCounterRelocations(revision.pcRelocations, next.pcRelocations);
-					next.pcRelocations = revision.pcRelocations;
+			for (let slot = 0; slot < rebuilt.cartridgeSlots.length; slot += 1) {
+				const image = rebuilt.cartridgeSlots[slot];
+				if (image === null) {
+					continue;
 				}
-				revision = next;
-				cartVectors = revision.vectors;
+				const cartridge = sourceState.cartridgeSlots[slot]!;
+				revision.cartridgeSlots[slot] = buildBlua32ExecutionRevision(
+					image.previousImage,
+					image.previousSymbols,
+					cartridge.installedBlua32Sources,
+					image.linked,
+					image.sources,
+				);
 			}
+			installBlua32Media(runtime, rebuilt);
+			runtime.machine.cpu.applyExecutableMediaRevision(loadBlua32MediaSymbols(), revision);
+			machineManager.ideState.editor.clearNativeMemberCompletionCache();
 		}
 
 		clearRuntimeDebuggerPause(runtime);
@@ -90,26 +68,7 @@ export function hotResume(
 		resetHandledLuaErrors();
 		runtime.luaRuntimeFailed = false;
 		clearOverlayFrame();
-		machineManager.sndmaster.resetPlaybackState();
 
-		if (rebuilt !== null) {
-			const linkedRevision = revision!;
-			runtime.machine.cpu.setProgram(
-				linkedRevision.program,
-				linkedRevision.metadata,
-				linkedRevision.metadata,
-				systemVectors.irqProtoIndex,
-				cartVectors.irqProtoIndex,
-				systemVectors.exceptionProtoIndex,
-			);
-			runtime.machine.cpu.relocateActiveFrames(linkedRevision.pcRelocations);
-			runtime.systemVectors = systemVectors;
-			runtime.cartVectors = cartVectors;
-			runtime.programRuntimeSymbols = linkedRevision.metadata;
-			runtime.programMetadata = linkedRevision.metadata;
-			installProgramMedia(runtime, rebuilt);
-			machineManager.ideState.editor.clearNativeMemberCompletionCache();
-		}
 		const initClosure = runtime.machine.cpu.getGlobalByKey(runtime.internString('init')) as Closure;
 		const results = runtime.luaScratch.values.acquire();
 		try {

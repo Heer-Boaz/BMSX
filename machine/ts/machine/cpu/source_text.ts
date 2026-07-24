@@ -1,4 +1,4 @@
-import type { SourceRange } from './cpu';
+import type { SourceRange } from './blua32_symbols';
 
 export function extractSourceRangeText(range: SourceRange, source: string): string | null {
 	if (range.start.line <= 0 || range.end.line < range.start.line) {

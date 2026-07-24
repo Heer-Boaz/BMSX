@@ -481,16 +481,16 @@ function createRuntimeSaveState(): RuntimeSaveState {
 				frameDeltaMs: 20.096,
 			},
 			schedulerNowCycles: 1234,
-		},
-		cpuState: {
-			systemGlobals: [
+			},
+			cpuState: {
+				executionCartridgeSlot: 0,
+				systemGlobals: [
 				{ name: 'irq', value: { tag: 'number', value: 7 } },
 			],
-			globals: [
-				{ name: 'answer', value: { tag: 'number', value: 42 } },
-			],
-			moduleCache: [],
-			frames: [],
+				globals: [
+					{ name: 'answer', value: { tag: 'number', value: 42 } },
+				],
+				frames: [],
 			protectedCalls: [{
 				kind: ProtectedCallKind.XPCallHandler,
 				callerFrameIndex: 2,
@@ -520,8 +520,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 			nonMaskableInterruptPending: false,
 			yieldRequested: false,
 		},
-		systemProgramActive: true,
-		luaInitialized: true,
+			luaInitialized: true,
 		luaRuntimeFailed: false,
 		pendingEntryCall: false,
 	} as unknown as RuntimeSaveState;
@@ -611,7 +610,7 @@ test('runtime save-state codec stores READY GPUREAD bytes and rejects backend-on
 test('runtime save-state codec preserves exception frame metadata', () => {
 	const state = createRuntimeSaveState();
 	state.cpuState.frames = [{
-		protoIndex: 3,
+		functionAddress: 0x10000120,
 		pc: 44,
 		closureRef: 7,
 		registers: [{ tag: 'nil' }],

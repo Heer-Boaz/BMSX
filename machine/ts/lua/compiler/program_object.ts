@@ -1,5 +1,20 @@
-import { asStringId, valueIsString, type Program, type ProgramModuleExport, type ProgramModuleProto, type ProgramRuntimeSymbols, type Proto } from '../../machine/cpu/cpu';
-import type { EncodedValue, ProgramVectorTable } from '../../machine/program/loader';
+import { asStringId, valueIsString } from '../../machine/cpu/cpu';
+import type {
+	Program,
+	ProgramModuleExport,
+	ProgramModuleProto,
+	ProgramRuntimeSymbols,
+	Proto,
+} from './program';
+
+export type ProgramObjectConstant = null | boolean | number | string;
+
+export type ProgramObjectVectorTable = {
+	resetProtoIndex: number;
+	sectionInitProtoIndex: number;
+	irqProtoIndex: number;
+	exceptionProtoIndex: number;
+};
 
 export type ProgramStorageSymbol = {
 	name: string;
@@ -28,7 +43,7 @@ export type ProgramObjectSections = {
 		protos: Proto[];
 	};
 	rodata: {
-		constPool: EncodedValue[];
+		constPool: ProgramObjectConstant[];
 		moduleProtos: ProgramModuleProto[];
 		moduleExports: ProgramModuleExport[];
 		staticModulePaths: string[];
@@ -40,7 +55,7 @@ export type ProgramObjectSections = {
 };
 
 export type ProgramIndexedConstRelocKind = 'bx' | 'rk_b' | 'rk_c' | 'const_b' | 'const_c' | 'gl' | 'sys';
-export type ProgramSymbolicConstRelocKind = 'module' | 'export_proto';
+export type ProgramSymbolicConstRelocKind = 'module' | 'export_proto' | 'module_init';
 
 export type ProgramConstReloc =
 	| { wordIndex: number; kind: ProgramIndexedConstRelocKind; constIndex: number }
@@ -59,7 +74,7 @@ export type ProgramRodataConstReloc = {
 };
 
 export type ProgramObjectImage = {
-	vectors: ProgramVectorTable;
+	vectors: ProgramObjectVectorTable;
 	sections: ProgramObjectSections;
 	link: {
 		constRelocs: ProgramConstReloc[];
@@ -77,12 +92,12 @@ export function encodeProgramObjectSections(
 	rodataBytes: Uint8Array,
 	rodataSymbols: ProgramRodataSymbol[],
 ): ProgramObjectSections {
-	const constPool: EncodedValue[] = new Array(program.constPool.length);
+	const constPool: ProgramObjectConstant[] = new Array(program.constPool.length);
 	for (let index = 0; index < program.constPool.length; index += 1) {
 		const value = program.constPool[index];
 		constPool[index] = valueIsString(value)
 			? program.constPoolStringPool.toString(asStringId(value))
-			: value as EncodedValue;
+			: value as ProgramObjectConstant;
 	}
 	return {
 		text: { code: program.code, protos: program.protos },

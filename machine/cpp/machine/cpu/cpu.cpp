@@ -4,6 +4,7 @@
 #include "lua/numeric.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/lua_heap_usage.h"
+#include "machine/memory/map.h"
 #include "machine/memory/memory.h"
 #include "common/utf8.h"
 #include <algorithm>
@@ -941,7 +942,6 @@ CPU::CPU(Memory& memory, IrqController& irqController)
 		builtin.cyclePerRet = cost.perRet;
 	}
 	m_heap.setRootMarker([this](GcHeap& heap) { markRoots(heap); });
-	m_externalRootMarker = [](GcHeap&) {};
 	globals = m_heap.allocate<Table>(ObjType::Table, 0, 0);
 	m_stringIndexTable = createTable();
 	m_indexKey = valueString(m_stringPool.intern("__index"));
@@ -994,115 +994,204 @@ Table* CPU::createTable(int arraySize, int hashSize) {
 	return table;
 }
 
-void CPU::materializeStaticClosures() {
-	const size_t protoCount = m_program->protos.size();
-	const size_t existingCount = m_staticClosures.size();
-	m_staticClosures.resize(protoCount);
-	for (size_t index = 0; index < protoCount; ++index) {
-		Closure& closure = m_staticClosures[index];
-		closure.type = ObjType::Closure;
-		closure.marked = false;
-		if (index >= existingCount) {
-			closure.hashId = m_heap.allocateHashId();
-		}
-		closure.next = nullptr;
-		closure.protoIndex = static_cast<int>(index);
-		closure.upvalueCount = 0;
-		closure.upvalues = nullptr;
-		closure.trackedHeapBytes = 0;
-	}
-}
-
-Closure* CPU::createTrackedClosure(int protoIndex, size_t upvalueCount) {
+Closure* CPU::createTrackedClosure(
+	u32 functionAddress,
+	size_t upvalueCount
+) {
 	auto* closure = m_heap.allocateClosure(upvalueCount);
-	closure->protoIndex = protoIndex;
+	closure->functionAddress = functionAddress;
 	closure->trackedHeapBytes = kClosureHeapBytes + (upvalueCount * kClosureUpvalueSlotHeapBytes);
 	addTrackedLuaHeapBytes(static_cast<ptrdiff_t>(trackedClosureBytes(*closure)));
 	return closure;
 }
 
-void CPU::setProgram(Program* program, const ProgramRuntimeSymbols& runtimeSymbols, ProgramMetadata* metadata, int systemIrqProtoIndex, int cartIrqProtoIndex, int systemExceptionProtoIndex) {
-	const bool programChanged = m_program != program;
-	std::unordered_map<StringId, Value> previousSystemGlobals;
-	previousSystemGlobals.reserve(m_systemGlobalNames.size());
-	for (size_t index = 0; index < m_systemGlobalNames.size(); ++index) {
-		previousSystemGlobals.emplace(m_systemGlobalNames[index], m_systemGlobalValues[index]);
+void CPU::mountExecutableMedia(const Blua32MediaSymbols& symbols) {
+	mountExecutableImages(
+		symbols.system.get(),
+		symbols.cartridgeSlots[0].get(),
+		symbols.cartridgeSlots[1].get()
+	);
+}
+
+void CPU::remountExecutableMedia() {
+	const Blua32SymbolsImage* systemSymbols = m_systemImage->symbols;
+	const Blua32SymbolsImage* slot0Symbols = m_cartridgeImages[0]
+		? m_cartridgeImages[0]->symbols
+		: (m_cartridgeMediaImages[0] ? m_cartridgeMediaImages[0]->symbols : nullptr);
+	const Blua32SymbolsImage* slot1Symbols = m_cartridgeImages[1]
+		? m_cartridgeImages[1]->symbols
+		: (m_cartridgeMediaImages[1] ? m_cartridgeMediaImages[1]->symbols : nullptr);
+	mountExecutableImages(systemSymbols, slot0Symbols, slot1Symbols);
+}
+
+void CPU::mountExecutableImages(
+	const Blua32SymbolsImage* systemSymbols,
+	const Blua32SymbolsImage* slot0Symbols,
+	const Blua32SymbolsImage* slot1Symbols
+) {
+	m_staticClosuresByAddress.clear();
+	std::optional<Blua32MediaImage> systemMedia = decodeExecutableMedia(
+		SYSTEM_ROM_BASE,
+		-1,
+		systemSymbols
+	);
+	if (!systemMedia) {
+		throw BMSX_RUNTIME_ERROR("System ROM has no BLua32 executable image.");
 	}
-	// Ordinary globals remain Lua-table-visible across program replacement. System globals
-	// are a distinct CPU registerfile and are carried by slot name above instead.
-	syncGlobalSlotsToTable();
-	m_program = program;
-	m_systemIrqProtoIndex = systemIrqProtoIndex;
-	m_cartIrqProtoIndex = cartIrqProtoIndex;
-	m_systemExceptionProtoIndex = systemExceptionProtoIndex;
+	m_systemImage = activateExecutableImage(std::move(*systemMedia));
+	m_cartridgeMediaImages[0] = decodeExecutableMedia(CART_ROM_BASE, 0, slot0Symbols);
+	m_cartridgeMediaImages[1] = decodeExecutableMedia(CART_ROM_BASE, 1, slot1Symbols);
+	m_cartridgeImages[0].reset();
+	m_cartridgeImages[1].reset();
+	m_systemExceptionFunctionAddress = m_systemImage->boot.exceptionFunctionAddress;
+	m_activeExecutionImage = m_systemImage.get();
 	m_hardHalted = false;
-	m_metadata = metadata;
-	if (!m_program) {
-		m_staticClosures.clear();
-		clearGlobalSlots();
-		m_decodedPages.clear();
-		m_decodedWordCount = 0;
-		m_tableLoadCaches.clear();
-		return;
-	}
-	if (!m_program->constPoolCanonicalized) {
-		const StringPool& programPool = *m_program->constPoolStringPool;
-		auto& constPool = m_program->constPool;
-		for (size_t index = 0; index < constPool.size(); ++index) {
-			Value value = constPool[index];
-			if (valueIsString(value)) {
-				StringId oldId = asStringId(value);
-				StringId newId = m_stringPool.intern(programPool.toString(oldId), false);
-				constPool[index] = valueString(newId);
-			}
+}
+
+std::vector<u32> CPU::registerGlobalNames(const std::vector<std::string>& names, bool system) {
+	auto& slotByKey = system ? m_systemGlobalSlotByKey : m_globalSlotByKey;
+	auto& registeredNames = system ? m_systemGlobalNames : m_globalNames;
+	auto& values = system ? m_systemGlobalValues : m_globalValues;
+	std::vector<u32> slots(names.size());
+	for (size_t index = 0; index < names.size(); ++index) {
+		const StringId key = m_stringPool.intern(names[index], false);
+		auto slot = slotByKey.find(key);
+		if (slot == slotByKey.end()) {
+			const size_t slotIndex = registeredNames.size();
+			slot = slotByKey.emplace(key, slotIndex).first;
+			registeredNames.push_back(key);
+			values.push_back(system ? valueNil() : globals->get(valueString(key)));
 		}
-		m_program->constPoolCanonicalized = true;
-		m_program->constPoolStringPool = &m_stringPool;
-	} else if (m_program->constPoolStringPool != &m_stringPool) {
-		throw BMSX_RUNTIME_ERROR("[CPU] Program const pool is canonicalized for a different string pool.");
+		slots[index] = static_cast<u32>(slot->second);
 	}
-	if (programChanged) {
-		materializeStaticClosures();
-	}
-	initializeGlobalSlots(runtimeSymbols, previousSystemGlobals);
-	if (programChanged) {
-		decodeProgram();
-	}
+	return slots;
 }
 
-void CPU::relocateActiveFrames(std::span<const int> programCounterRelocations) {
-	for (size_t index = 0; index < m_frames.size(); ++index) {
-		CallFrame& frame = *m_frames[index];
-		frame.pc = programCounterRelocations[static_cast<size_t>(frame.pc / INSTRUCTION_BYTES)];
-		const int maxStack = m_program->protos[static_cast<size_t>(frame.protoIndex)].maxStack;
-		if (maxStack > frame.stackCapacity) {
-			ensureRegisterCapacity(frame, maxStack - 1);
+std::optional<Blua32MediaImage> CPU::decodeExecutableMedia(
+	u32 romBaseAddress,
+	int cartridgeSlot,
+	const Blua32SymbolsImage* symbols
+) {
+	Span<const u8> headerBytes;
+	if (!m_memory.bindRomByteView(
+			romBaseAddress,
+			BLUA32_BOOT_HEADER_SIZE,
+			cartridgeSlot < 0 ? 0u : static_cast<u32>(cartridgeSlot),
+			headerBytes
+	)) {
+		return {};
+	}
+	const Blua32BootHeader boot = decodeBlua32BootHeader(
+		std::span<const u8>(headerBytes.data(), headerBytes.size())
+	);
+	if (boot.imageOffset == 0u) {
+		return {};
+	}
+	const u32 imageAddress = romBaseAddress + boot.imageOffset;
+	Span<const u8> imageBytes;
+	if (!m_memory.bindRomByteView(
+			imageAddress,
+			boot.imageByteCount,
+			cartridgeSlot < 0 ? 0u : static_cast<u32>(cartridgeSlot),
+			imageBytes
+	)) {
+		throw BMSX_RUNTIME_ERROR("BLua32 image is not backed by the installed ROM.");
+	}
+	return Blua32MediaImage{
+		.layout = decodeBlua32Image(
+			std::span<const u8>(imageBytes.data(), imageBytes.size()),
+			imageAddress
+		),
+		.boot = boot,
+		.symbols = symbols,
+		.cartridgeSlot = cartridgeSlot,
+	};
+}
+
+std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutableImage(Blua32MediaImage&& media) {
+	auto image = std::make_unique<Blua32ExecutionImage>();
+	image->layout = std::move(media.layout);
+	image->boot = media.boot;
+	image->symbols = media.symbols;
+	image->cartridgeSlot = media.cartridgeSlot;
+	image->systemImage = media.cartridgeSlot < 0 ? image.get() : m_systemImage.get();
+	image->constPool.reserve(image->layout.constants.size());
+	for (const Blua32EncodedConstant& constant : image->layout.constants) {
+		if (std::holds_alternative<std::monostate>(constant)) {
+			image->constPool.push_back(valueNil());
+		} else if (const auto* boolean = std::get_if<bool>(&constant)) {
+			image->constPool.push_back(valueBool(*boolean));
+		} else if (const auto* number = std::get_if<f64>(&constant)) {
+			image->constPool.push_back(valueNumber(*number));
+		} else {
+			image->constPool.push_back(valueString(m_stringPool.intern(std::get<std::string>(constant), false)));
 		}
 	}
+	image->globalSlots = registerGlobalNames(image->layout.globalNames, false);
+	image->systemGlobalSlots = registerGlobalNames(image->layout.systemGlobalNames, true);
+	decodeImageText(*image);
+
+	image->functions.resize(image->layout.functions.size());
+	image->staticClosures.resize(image->layout.functions.size());
+	for (size_t index = 0; index < image->layout.functions.size(); ++index) {
+		const Blua32FunctionRecord& source = image->layout.functions[index];
+		Blua32RuntimeFunction& function = image->functions[index];
+		function.address = source.address;
+		function.codeAddress = source.codeAddress;
+		function.codeByteCount = source.codeByteCount;
+		function.numParams = source.numParams;
+		function.maxStack = source.maxStack;
+		function.isVararg = source.isVararg;
+		function.staticClosure = source.staticClosure;
+		function.upvalues = source.upvalues;
+		function.image = image.get();
+		function.index = static_cast<u32>(index);
+		if (function.staticClosure) {
+			image->staticClosures[index] = staticClosureAtAddress(function.address);
+		}
+	}
+
+	Blua32RuntimeFunction* startup = functionRecordInImage(*image, media.boot.startupFunctionAddress);
+	Blua32RuntimeFunction* irq = functionRecordInImage(*image, media.boot.irqFunctionAddress);
+	Blua32RuntimeFunction* exception = functionRecordInImage(*image, media.boot.exceptionFunctionAddress);
+	if (!startup || !irq || !exception
+		|| !startup->staticClosure || !irq->staticClosure || !exception->staticClosure) {
+		throw BMSX_RUNTIME_ERROR("BLua32 boot vector does not name a static function record.");
+	}
+	return image;
 }
 
-void CPU::initializeGlobalSlots(const ProgramRuntimeSymbols& runtimeSymbols, const std::unordered_map<StringId, Value>& previousSystemGlobals) {
-	clearGlobalSlots();
-	m_systemGlobalNames.resize(runtimeSymbols.systemGlobalNames.size());
-	m_systemGlobalValues.resize(runtimeSymbols.systemGlobalNames.size());
-	for (size_t index = 0; index < runtimeSymbols.systemGlobalNames.size(); ++index) {
-		const StringId key = m_stringPool.intern(runtimeSymbols.systemGlobalNames[index], false);
-		m_systemGlobalNames[index] = key;
-		m_systemGlobalSlotByKey.emplace(key, index);
-		const auto previous = previousSystemGlobals.find(key);
-		m_systemGlobalValues[index] = previous == previousSystemGlobals.end() ? valueNil() : previous->second;
+Blua32ExecutionImage* CPU::cartridgeImageForExecution(size_t slot) {
+	std::unique_ptr<Blua32ExecutionImage>& image = m_cartridgeImages[slot];
+	if (image) {
+		return image.get();
 	}
-	m_globalNames.resize(runtimeSymbols.globalNames.size());
-	m_globalValues.resize(runtimeSymbols.globalNames.size());
-	for (size_t index = 0; index < runtimeSymbols.globalNames.size(); ++index) {
-		const StringId key = m_stringPool.intern(runtimeSymbols.globalNames[index], false);
-		m_globalNames[index] = key;
-		m_globalSlotByKey.emplace(key, index);
-		m_globalValues[index] = globals->get(valueString(key));
+	std::optional<Blua32MediaImage>& media = m_cartridgeMediaImages[slot];
+	if (!media) {
+		return nullptr;
 	}
+	image = activateExecutableImage(std::move(*media));
+	media.reset();
+	return image.get();
 }
 
-void CPU::clearProgramEnvironment() {
+Closure* CPU::staticClosureAtAddress(u32 address) {
+	auto [entry, inserted] = m_staticClosuresByAddress.try_emplace(address);
+	Closure& closure = entry->second;
+	if (inserted) {
+		closure.type = ObjType::Closure;
+		closure.marked = false;
+		closure.hashId = m_heap.allocateHashId();
+		closure.next = nullptr;
+		closure.functionAddress = address;
+		closure.upvalueCount = 0;
+		closure.upvalues = nullptr;
+		closure.trackedHeapBytes = 0;
+	}
+	return &closure;
+}
+
+void CPU::clearExecutionEnvironment() {
 	lastReturnValues.clear();
 	clearCallStack();
 	m_externalReturnSink = nullptr;
@@ -1132,7 +1221,7 @@ void CPU::setSystemGlobalByKey(const Value& key, const Value& value) {
 	const StringId keyId = asStringId(key);
 	const auto slot = m_systemGlobalSlotByKey.find(keyId);
 	if (slot == m_systemGlobalSlotByKey.end()) {
-		throw BMSX_RUNTIME_ERROR("[CPU] System global '" + m_stringPool.toString(keyId) + "' has no register slot.");
+		throw BMSX_RUNTIME_ERROR("System global '" + m_stringPool.toString(keyId) + "' has no register slot.");
 	}
 	m_systemGlobalValues[slot->second] = value;
 }
@@ -1153,24 +1242,22 @@ void CPU::syncGlobalSlotsToTable() {
 }
 
 
-void CPU::decodeProgram() {
-	m_decodedPages.clear();
-	m_tableLoadCaches.clear();
-	if (!m_program) {
-		m_decodedWordCount = 0;
-		return;
-	}
-	std::span<const uint8_t> code = m_program->codeBytes;
-	m_decodedWordCount = code.size() / INSTRUCTION_BYTES;
-	const size_t pageCount = (m_decodedWordCount + DECODED_PAGE_WORDS - 1u) >> DECODED_PAGE_SHIFT;
-	m_decodedPages.resize(pageCount);
-	for (DecodedInstructionPage& page : m_decodedPages) {
+void CPU::decodeImageText(Blua32ExecutionImage& image) {
+	const size_t codeOffset = image.layout.header.textAddress - image.layout.address;
+	const std::span<const u8> code = image.layout.bytes.subspan(
+		codeOffset,
+		image.layout.header.textByteCount
+	);
+	image.decodedWordCount = code.size() / INSTRUCTION_BYTES;
+	const size_t pageCount = (image.decodedWordCount + DECODED_PAGE_WORDS - 1u) >> DECODED_PAGE_SHIFT;
+	image.decodedPages.resize(pageCount);
+	for (DecodedInstructionPage& page : image.decodedPages) {
 		for (DecodedInstruction& decoded : page.words) {
 			decoded.op = static_cast<uint8_t>(OpCode::WIDE);
 			decoded.width = 1;
 		}
 	}
-	for (size_t wordIndex = 0; wordIndex < m_decodedWordCount;) {
+	for (size_t wordIndex = 0; wordIndex < image.decodedWordCount;) {
 		int width = 1;
 		uint8_t wideA = 0;
 		uint8_t wideB = 0;
@@ -1178,7 +1265,7 @@ void CPU::decodeProgram() {
 		uint32_t instr = readInstructionWord(code, static_cast<int>(wordIndex));
 		uint8_t op = static_cast<uint8_t>((instr >> 18) & 0x3f);
 		uint8_t ext = static_cast<uint8_t>(instr >> 24);
-		if (static_cast<OpCode>(op) == OpCode::WIDE && wordIndex + 1u < m_decodedWordCount) {
+		if (static_cast<OpCode>(op) == OpCode::WIDE && wordIndex + 1u < image.decodedWordCount) {
 			width = 2;
 			wideA = static_cast<uint8_t>((instr >> 12) & 0x3f);
 			wideB = static_cast<uint8_t>((instr >> 6) & 0x3f);
@@ -1212,39 +1299,88 @@ void CPU::decodeProgram() {
 		decoded.a = static_cast<uint16_t>((static_cast<int>(wideA) << aShift) | (static_cast<int>(extA) << MAX_OPERAND_BITS) | aLow);
 		decoded.b = static_cast<uint16_t>((static_cast<int>(wideB) << bShift) | (static_cast<int>(extB) << MAX_OPERAND_BITS) | bLow);
 		decoded.c = static_cast<uint16_t>((static_cast<int>(wideC) << cShift) | (static_cast<int>(extC) << MAX_OPERAND_BITS) | cLow);
-		decoded.bx = (static_cast<uint32_t>(wideB) << (MAX_BX_BITS + EXT_BX_BITS))
+		const u32 decodedBx = (static_cast<uint32_t>(wideB) << (MAX_BX_BITS + EXT_BX_BITS))
 			| (static_cast<uint32_t>(usesBx ? ext : 0) << MAX_BX_BITS)
 			| bxLow;
-		decoded.sbx = signExtend(decoded.bx, MAX_BX_BITS + EXT_BX_BITS + ((width - 1) * MAX_OPERAND_BITS));
+		switch (static_cast<OpCode>(op)) {
+			case OpCode::GETGL:
+			case OpCode::SETGL:
+				decoded.bx = image.globalSlots[decodedBx];
+				break;
+			case OpCode::GETSYS:
+			case OpCode::SETSYS:
+				decoded.bx = image.systemGlobalSlots[decodedBx];
+				break;
+			default:
+				decoded.bx = decodedBx;
+				break;
+		}
+		decoded.sbx = signExtend(decodedBx, MAX_BX_BITS + EXT_BX_BITS + ((width - 1) * MAX_OPERAND_BITS));
 		decoded.rkB = signExtend(rkRawB, MAX_OPERAND_BITS + EXT_B_BITS + ((width - 1) * MAX_OPERAND_BITS));
 		decoded.rkC = signExtend(rkRawC, MAX_OPERAND_BITS + EXT_C_BITS + ((width - 1) * MAX_OPERAND_BITS));
 		decoded.disp = ext;
 		if (static_cast<OpCode>(op) == OpCode::GETI
 			|| static_cast<OpCode>(op) == OpCode::GETFIELD
 			|| static_cast<OpCode>(op) == OpCode::SELF) {
-			decoded.tableCacheIndex = static_cast<uint32_t>(m_tableLoadCaches.size());
-			m_tableLoadCaches.push_back(TableLoadInlineCache{});
+			decoded.tableCacheIndex = static_cast<uint32_t>(image.tableLoadCaches.size());
+			image.tableLoadCaches.push_back(TableLoadInlineCache{});
 		}
-		decodedSlotForWrite(wordIndex) = decoded;
+		decodedSlotForWrite(image, wordIndex) = decoded;
 		wordIndex += static_cast<size_t>(width);
 	}
 }
 
-DecodedInstruction& CPU::decodedSlotForWrite(size_t wordIndex) {
-	return m_decodedPages[wordIndex >> DECODED_PAGE_SHIFT].words[wordIndex & DECODED_PAGE_MASK];
+DecodedInstruction& CPU::decodedSlotForWrite(Blua32ExecutionImage& image, size_t wordIndex) {
+	return image.decodedPages[wordIndex >> DECODED_PAGE_SHIFT].words[wordIndex & DECODED_PAGE_MASK];
 }
 
 void CPU::skipNextInstruction(CallFrame& frame) {
-	const int wordIndex = frame.pc / INSTRUCTION_BYTES;
-	if (static_cast<uint32_t>(wordIndex) >= m_decodedWordCount) {
+	Blua32ExecutionImage& image = *frame.functionRecord->image;
+	const size_t wordIndex = (frame.pc - image.layout.header.textAddress) / INSTRUCTION_BYTES;
+	if (wordIndex >= image.decodedWordCount) {
 		hardHalt();
 		return;
 	}
-	const DecodedInstruction& decoded = decodedAtWordIndex(wordIndex);
-	frame.pc += static_cast<int>(decoded.width) * INSTRUCTION_BYTES;
+	const DecodedInstruction& decoded = decodedAtWordIndex(image, wordIndex);
+	const u32 nextPc = frame.pc + static_cast<u32>(decoded.width) * INSTRUCTION_BYTES;
+	if (nextPc < frame.functionRecord->codeAddress
+		|| nextPc >= frame.functionRecord->codeAddress + frame.functionRecord->codeByteCount) {
+		hardHalt();
+		return;
+	}
+	frame.pc = nextPc;
 }
 
-void CPU::start(int entryProtoIndex, NativeArgsView args, u32 statusWord) {
+Blua32RuntimeFunction* CPU::functionRecordInImage(Blua32ExecutionImage& image, u32 address) const {
+	if (address < image.layout.header.functionTableAddress) {
+		return nullptr;
+	}
+	const u32 offset = address - image.layout.header.functionTableAddress;
+	if ((offset & (BLUA32_FUNCTION_RECORD_SIZE - 1u)) != 0u
+		|| offset >= image.functions.size() * BLUA32_FUNCTION_RECORD_SIZE) {
+		return nullptr;
+	}
+	return &image.functions[offset / BLUA32_FUNCTION_RECORD_SIZE];
+}
+
+Blua32RuntimeFunction* CPU::functionRecordInExecutionDomain(
+	Blua32ExecutionImage& executionImage,
+	u32 address
+) const {
+	Blua32ExecutionImage& image = address < CART_ROM_BASE
+		? *executionImage.systemImage
+		: executionImage;
+	return functionRecordInImage(image, address);
+}
+
+Blua32RuntimeFunction* CPU::functionRecordOnSelectedBus(u32 address) {
+	Blua32ExecutionImage* image = address < CART_ROM_BASE
+		? m_systemImage.get()
+		: cartridgeImageForExecution(m_memory.cartridgeController().selectedSlot());
+	return image ? functionRecordInImage(*image, address) : nullptr;
+}
+
+void CPU::start(u32 functionAddress, NativeArgsView args, u32 statusWord) {
 	lastReturnValues.clear();
 	clearCallStack();
 	m_haltedUntilIrq = false;
@@ -1262,21 +1398,44 @@ void CPU::start(int entryProtoIndex, NativeArgsView args, u32 statusWord) {
 	m_nonMaskableInterruptPending = false;
 	m_yieldRequested = false;
 	m_hostExternalCallActive = false;
-	Closure* closure = &rootClosure(entryProtoIndex);
-	pushFrame(closure, args.data(), args.size(), 0, 0, false, m_program->protos[entryProtoIndex].entryPC);
+	Blua32RuntimeFunction& function = *functionRecordOnSelectedBus(functionAddress);
+	m_activeExecutionImage = function.image;
+	Closure* closure = function.image->staticClosures[function.index];
+	pushFrame(closure, args.data(), args.size(), 0, 0, false);
 	runHousekeeping();
+}
+
+void CPU::executeFunctionAddress(u32 functionAddress) {
+	Blua32RuntimeFunction* function = functionRecordOnSelectedBus(functionAddress);
+	if (!function || !function->staticClosure) {
+		hardHalt();
+		return;
+	}
+	clearCallStack();
+	m_activeExecutionImage = function->image;
+	m_statusWord = function->image->cartridgeSlot >= 0
+		? CPU_STATUS_CART_ENTRY
+		: CPU_STATUS_SYSTEM_ENTRY;
+	m_haltedUntilIrq = false;
+	m_interruptEventPending = false;
+	m_memoryWriteBlocked = false;
+	m_memoryWriteBlockedAddress = 0u;
+	m_hardHalted = false;
+	m_yieldRequested = false;
+	Closure* closure = function->image->staticClosures[function->index];
+	pushFrame(closure, nullptr, 0, 0, 0, false);
 }
 
 void CPU::call(Closure& closure, NativeArgsView args, int returnCount) {
 	lastReturnValues.clear();
 	m_yieldRequested = false;
-	pushFrame(&closure, args.data(), args.size(), 0, returnCount, false, m_program->protos[closure.protoIndex].entryPC);
+	pushFrame(&closure, args.data(), args.size(), 0, returnCount, false);
 }
 
 void CPU::callExternal(Closure& closure, NativeArgsView args) {
 	lastReturnValues.clear();
 	m_yieldRequested = false;
-	pushFrame(&closure, args.data(), args.size(), 0, 0, true, m_program->protos[closure.protoIndex].entryPC);
+	pushFrame(&closure, args.data(), args.size(), 0, 0, true);
 }
 
 NativeResults* CPU::swapExternalReturnSink(NativeResults* sink) {
@@ -1285,7 +1444,7 @@ NativeResults* CPU::swapExternalReturnSink(NativeResults* sink) {
 	return previous;
 }
 
-CpuRuntimeState CPU::captureRuntimeState(const std::unordered_map<std::string, Value>& moduleCache) const {
+CpuRuntimeState CPU::captureRuntimeState() const {
 	const_cast<CPU&>(*this).syncGlobalSlotsToTable();
 	std::unordered_map<const void*, int> objectIds;
 	std::vector<CpuObjectState> objects;
@@ -1347,7 +1506,7 @@ CpuRuntimeState CPU::captureRuntimeState(const std::unordered_map<std::string, V
 			state.refId = ensureObjectId(asUpvalue(value));
 			return state;
 		}
-		throw BMSX_RUNTIME_ERROR("[CPU] Runtime snapshot cannot preserve " + std::string(valueTypeName(value)) + " value.");
+		throw BMSX_RUNTIME_ERROR("Runtime snapshot cannot preserve " + std::string(valueTypeName(value)) + " value.");
 	};
 
 	captureObjectState = [&](GCObject* object) -> CpuObjectState {
@@ -1377,7 +1536,10 @@ CpuRuntimeState CPU::captureRuntimeState(const std::unordered_map<std::string, V
 			case ObjType::Closure: {
 				state.kind = CpuObjectState::Kind::Closure;
 				Closure* closure = static_cast<Closure*>(object);
-				state.protoIndex = closure->protoIndex;
+				state.functionAddress = closure->functionAddress;
+				const auto canonical = m_staticClosuresByAddress.find(closure->functionAddress);
+				state.closureCanonical = canonical != m_staticClosuresByAddress.end()
+					&& &canonical->second == closure;
 				state.upvalues.reserve(closure->upvalueCount);
 				for (size_t upvalueIndex = 0; upvalueIndex < closure->upvalueCount; ++upvalueIndex) {
 					state.upvalues.push_back(ensureObjectId(closure->upvalues[upvalueIndex]));
@@ -1403,7 +1565,7 @@ CpuRuntimeState CPU::captureRuntimeState(const std::unordered_map<std::string, V
 				return state;
 			}
 			default:
-				throw std::runtime_error("[CPU] Unsupported runtime snapshot object.");
+				throw std::runtime_error("Unsupported runtime snapshot object.");
 		}
 	};
 
@@ -1431,17 +1593,12 @@ CpuRuntimeState CPU::captureRuntimeState(const std::unordered_map<std::string, V
 			captureValueState(value),
 		});
 	});
-	for (const auto& [name, value] : moduleCache) {
-		if (valueIsNativeFunction(value) || valueIsNativeObject(value)) {
-			continue;
-		}
-		state.moduleCache.push_back(CpuRootValueState{ name, captureValueState(value) });
-	}
+	state.executionCartridgeSlot = m_activeExecutionImage->cartridgeSlot;
 	state.frames.reserve(m_frames.size());
 	for (const auto& framePtr : m_frames) {
 		const CallFrame& frame = *framePtr;
 		CpuFrameState frameState;
-		frameState.protoIndex = frame.protoIndex;
+		frameState.functionAddress = frame.functionAddress;
 		frameState.pc = frame.pc;
 		frameState.closureRef = ensureObjectId(frame.closure);
 		frameState.returnBase = frame.returnBase;
@@ -1509,7 +1666,7 @@ CpuRuntimeState CPU::captureRuntimeState(const std::unordered_map<std::string, V
 	return state;
 }
 
-void CPU::restoreRuntimeState(const CpuRuntimeState& state, std::unordered_map<std::string, Value>& moduleCache) {
+void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	m_heap.suspendCollection();
 
 	struct RestoredObject {
@@ -1518,6 +1675,9 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state, std::unordered_map<s
 		Upvalue* upvalue = nullptr;
 	};
 
+	Blua32ExecutionImage* executionImage = state.executionCartridgeSlot < 0
+		? m_systemImage.get()
+		: cartridgeImageForExecution(static_cast<size_t>(state.executionCartridgeSlot));
 	std::vector<RestoredObject> restoredObjects(state.objects.size());
 	for (size_t index = 0; index < state.objects.size(); ++index) {
 		const CpuObjectState& objectState = state.objects[index];
@@ -1529,9 +1689,9 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state, std::unordered_map<s
 				break;
 			case CpuObjectState::Kind::Closure: {
 				const size_t upvalueCount = objectState.upvalues.size();
-				restoredObjects[index].closure = m_program->protos[static_cast<size_t>(objectState.protoIndex)].staticClosure && objectState.upvalues.empty()
-					? &rootClosure(objectState.protoIndex)
-					: createTrackedClosure(objectState.protoIndex, upvalueCount);
+				restoredObjects[index].closure = objectState.closureCanonical
+					? &m_staticClosuresByAddress.find(objectState.functionAddress)->second
+					: createTrackedClosure(objectState.functionAddress, upvalueCount);
 				restoredObjects[index].closure->hashId = objectState.hashId;
 				m_heap.observeHashId(objectState.hashId);
 				break;
@@ -1610,7 +1770,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state, std::unordered_map<s
 			}
 			case CpuObjectState::Kind::Closure: {
 				Closure* closure = restoredObjects[index].closure;
-				closure->protoIndex = objectState.protoIndex;
+				closure->functionAddress = objectState.functionAddress;
 				for (size_t upvalueIndex = 0; upvalueIndex < objectState.upvalues.size(); ++upvalueIndex) {
 					closure->upvalues[upvalueIndex] = restoredObjects[static_cast<size_t>(objectState.upvalues[upvalueIndex])].upvalue;
 				}
@@ -1631,18 +1791,22 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state, std::unordered_map<s
 	clearCallStack();
 	m_externalReturnSink = nullptr;
 	globals->clear();
+	m_activeExecutionImage = executionImage;
 	for (Value& value : m_systemGlobalValues) {
 		value = valueNil();
 	}
 	for (Value& value : m_globalValues) {
 		value = valueNil();
 	}
-	moduleCache.clear();
 
 	for (const CpuFrameState& frameState : state.frames) {
-		const Proto& proto = m_program->protos[frameState.protoIndex];
+		Blua32RuntimeFunction* functionRecord = functionRecordInExecutionDomain(
+			*executionImage,
+			frameState.functionAddress
+		);
 		auto frame = acquireFrame();
-		frame->protoIndex = frameState.protoIndex;
+		frame->functionAddress = frameState.functionAddress;
+		frame->functionRecord = functionRecord;
 		frame->pc = frameState.pc;
 		frame->closure = restoredObjects[static_cast<size_t>(frameState.closureRef)].closure;
 		frame->returnBase = frameState.returnBase;
@@ -1654,7 +1818,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state, std::unordered_map<s
 		frame->varargBase = m_stackTop;
 		frame->varargCount = static_cast<int>(frameState.varargs.size());
 		frame->stackBase = frame->varargBase + frame->varargCount;
-		size_t targetCapacity = nextPowerOfTwo(static_cast<size_t>(std::max(proto.maxStack, 1)));
+		size_t targetCapacity = nextPowerOfTwo(static_cast<size_t>(std::max(functionRecord->maxStack, 1u)));
 		if (targetCapacity < 8) {
 			targetCapacity = 8;
 		}
@@ -1705,9 +1869,6 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state, std::unordered_map<s
 	}
 	for (const CpuRootValueState& entry : state.globals) {
 		setGlobalByKey(valueString(m_stringPool.intern(entry.name)), restoreValue(entry.value));
-	}
-	for (const CpuRootValueState& entry : state.moduleCache) {
-		moduleCache[entry.name] = restoreValue(entry.value);
 	}
 	lastReturnValues.reserve(state.lastReturnValues.size());
 	for (const CpuValueState& valueState : state.lastReturnValues) {
@@ -2168,7 +2329,12 @@ bool CPU::enterPendingInterrupt() {
 		const u32 returnCauseWord = m_causeWord;
 		const u32 returnEpcWord = m_epcWord;
 		const u32 returnBadAddressWord = m_badAddressWord;
-		enterAsynchronousException(m_systemExceptionProtoIndex, CPU_CAUSE_NMI);
+		enterException(
+			*m_systemImage,
+			m_systemExceptionFunctionAddress,
+			CPU_CAUSE_NMI,
+			m_frames.back()->pc
+		);
 		m_frames.back()->isNonMaskableExceptionFrame = true;
 		m_nmiReturnCauseWord = returnCauseWord;
 		m_nmiReturnEpcWord = returnEpcWord;
@@ -2177,22 +2343,18 @@ bool CPU::enterPendingInterrupt() {
 		return true;
 	}
 	if (canAcceptMaskableInterruptLine()) {
-		const int irqProtoIndex = isUserMode() ? m_cartIrqProtoIndex : m_systemIrqProtoIndex;
+		Blua32ExecutionImage& image = isUserMode() ? *m_activeExecutionImage : *m_systemImage;
 		const bool wasHalted = m_haltedUntilIrq;
-		enterAsynchronousException(irqProtoIndex, CPU_CAUSE_IRQ);
+		enterException(image, image.boot.irqFunctionAddress, CPU_CAUSE_IRQ, m_frames.back()->pc);
 		if (!wasHalted) m_interruptEventPending = true;
 		return true;
 	}
 	return false;
 }
 
-void CPU::enterAsynchronousException(int protoIndex, u32 causeWord) {
-	enterException(protoIndex, causeWord, static_cast<u32>(m_frames.back()->pc));
-}
-
 void CPU::enterSynchronousException(CallFrame& interruptedFrame, u32 causeWord) {
 	interruptedFrame.pc = m_currentInstructionPc;
-	enterException(m_systemExceptionProtoIndex, causeWord, static_cast<u32>(m_currentInstructionPc));
+	enterException(*m_systemImage, m_systemExceptionFunctionAddress, causeWord, m_currentInstructionPc);
 }
 
 void CPU::enterSynchronousAddressException(CallFrame& interruptedFrame, u32 causeWord, u32 address) {
@@ -2200,13 +2362,28 @@ void CPU::enterSynchronousAddressException(CallFrame& interruptedFrame, u32 caus
 	enterSynchronousException(interruptedFrame, causeWord);
 }
 
-void CPU::enterException(int protoIndex, u32 causeWord, u32 epcWord) {
+void CPU::enterException(
+	Blua32ExecutionImage& image,
+	u32 functionAddress,
+	u32 causeWord,
+	u32 epcWord
+) {
 	m_epcWord = epcWord;
 	m_causeWord = causeWord;
 	m_statusWord = (m_statusWord & ~CPU_STATUS_MODE_STACK_MASK)
 		| ((m_statusWord << 2u) & CPU_STATUS_MODE_STACK_MASK);
 	clearHaltAfterAcceptedInterrupt();
-	CallFrame* frame = pushFrame(&rootClosure(protoIndex), nullptr, 0, 0, 0, false, m_program->protos[protoIndex].entryPC);
+	Blua32RuntimeFunction& functionRecord = *functionRecordInImage(image, functionAddress);
+	Closure* closure = image.staticClosures[functionRecord.index];
+	CallFrame* frame = pushFrame(
+		closure,
+		nullptr,
+		0,
+		0,
+		0,
+		false
+	);
+	frame->callSitePc = epcWord;
 	frame->isExceptionFrame = true;
 }
 
@@ -2241,9 +2418,10 @@ RunResult CPU::run(int instructionBudget) {
 	instructionBudgetRemaining = instructionBudget;
 	auto& frames = m_frames;
 	CallFrame* frame = nullptr;
+	Blua32ExecutionImage* image = nullptr;
 	const DecodedInstruction* decoded;
-	int pc = 0;
-	int wordIndex = 0;
+	u32 pc = 0;
+	size_t wordIndex = 0;
 	int a = 0;
 	int b = 0;
 	int c = 0;
@@ -2287,18 +2465,19 @@ dispatch_loop_check:
 		enterPendingInterrupt();
 		goto dispatch_loop_check;
 	}
-	frame = frames.back().get();
-	registers = frame->registers;
-	pc = frame->pc;
-	wordIndex = pc / INSTRUCTION_BYTES;
-	if (static_cast<uint32_t>(wordIndex) >= m_decodedWordCount) {
-		hardHalt();
-		return RunResult::Halted;
-	}
-	decoded = &decodedAtWordIndex(wordIndex);
-	m_currentInstructionPc = pc;
-	frame->pc = pc + (static_cast<int>(decoded->width) * INSTRUCTION_BYTES);
-	lastPc = pc + ((static_cast<int>(decoded->width) - 1) * INSTRUCTION_BYTES);
+		frame = frames.back().get();
+		image = frame->functionRecord->image;
+		registers = frame->registers;
+		pc = frame->pc;
+		wordIndex = (pc - image->layout.header.textAddress) / INSTRUCTION_BYTES;
+		if (wordIndex >= image->decodedWordCount) {
+			hardHalt();
+			return RunResult::Halted;
+		}
+		decoded = &decodedAtWordIndex(*image, wordIndex);
+		m_currentInstructionPc = pc;
+		frame->pc = pc + (static_cast<u32>(decoded->width) * INSTRUCTION_BYTES);
+		lastPc = pc + ((static_cast<u32>(decoded->width) - 1u) * INSTRUCTION_BYTES);
 	lastInstruction = decoded->word;
 	instructionBudgetRemaining -= static_cast<int>(BASE_CYCLES[decoded->op]);
 	a = decoded->a;
@@ -2310,8 +2489,9 @@ dispatch_loop_check:
 	rkC = decoded->rkC;
 	disp = decoded->disp;
 
-#define FRAME (*frame)
-#define REG(index) registers[static_cast<size_t>(index)]
+	#define FRAME (*frame)
+	#define IMAGE (*image)
+	#define REG(index) registers[static_cast<size_t>(index)]
 #define CYCLES_ADD(n) do { instructionBudgetRemaining -= (n); } while (0)
 #define SET_REGISTER_FAST(index, valueExpr) do { \
 	REG(index) = (valueExpr); \
@@ -2347,13 +2527,15 @@ dispatch_continue:
 #undef TABLE_CACHE_INDEX
 #undef SET_REGISTER_FAST
 #undef CYCLES_ADD
-#undef REG
-#undef FRAME
+	#undef REG
+	#undef IMAGE
+	#undef FRAME
 	goto dispatch_loop_check;
 
 #if BMSX_USE_COMPUTED_GOTO
-#define FRAME (*frame)
-#define REG(index) registers[static_cast<size_t>(index)]
+	#define FRAME (*frame)
+	#define IMAGE (*image)
+	#define REG(index) registers[static_cast<size_t>(index)]
 #define CYCLES_ADD(n) do { instructionBudgetRemaining -= (n); } while (0)
 #define SET_REGISTER_FAST(index, valueExpr) do { \
 	REG(index) = (valueExpr); \
@@ -2377,8 +2559,9 @@ dispatch_continue:
 #undef DISPATCH_LABEL
 #undef SET_REGISTER_FAST
 #undef CYCLES_ADD
-#undef REG
-#undef FRAME
+	#undef REG
+	#undef IMAGE
+	#undef FRAME
 #endif
 		} catch (const LuaThrownValueError& error) {
 			if (!handleProtectedCallError(error.value)) {
@@ -2396,9 +2579,10 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget) {
 	instructionBudgetRemaining = instructionBudget;
 	auto& frames = m_frames;
 	CallFrame* frame = nullptr;
+	Blua32ExecutionImage* image = nullptr;
 	const DecodedInstruction* decoded;
-	int pc = 0;
-	int wordIndex = 0;
+	u32 pc = 0;
+	size_t wordIndex = 0;
 	int a = 0;
 	int b = 0;
 	int c = 0;
@@ -2442,18 +2626,19 @@ dispatch_loop_check:
 		enterPendingInterrupt();
 		goto dispatch_loop_check;
 	}
-	frame = frames.back().get();
-	registers = frame->registers;
-	pc = frame->pc;
-	wordIndex = pc / INSTRUCTION_BYTES;
-	if (static_cast<uint32_t>(wordIndex) >= m_decodedWordCount) {
-		hardHalt();
-		return RunResult::Halted;
-	}
-	decoded = &decodedAtWordIndex(wordIndex);
-	m_currentInstructionPc = pc;
-	frame->pc = pc + (static_cast<int>(decoded->width) * INSTRUCTION_BYTES);
-	lastPc = pc + ((static_cast<int>(decoded->width) - 1) * INSTRUCTION_BYTES);
+		frame = frames.back().get();
+		image = frame->functionRecord->image;
+		registers = frame->registers;
+		pc = frame->pc;
+		wordIndex = (pc - image->layout.header.textAddress) / INSTRUCTION_BYTES;
+		if (wordIndex >= image->decodedWordCount) {
+			hardHalt();
+			return RunResult::Halted;
+		}
+		decoded = &decodedAtWordIndex(*image, wordIndex);
+		m_currentInstructionPc = pc;
+		frame->pc = pc + (static_cast<u32>(decoded->width) * INSTRUCTION_BYTES);
+		lastPc = pc + ((static_cast<u32>(decoded->width) - 1u) * INSTRUCTION_BYTES);
 	lastInstruction = decoded->word;
 	instructionBudgetRemaining -= static_cast<int>(BASE_CYCLES[decoded->op]);
 	a = decoded->a;
@@ -2465,8 +2650,9 @@ dispatch_loop_check:
 	rkC = decoded->rkC;
 	disp = decoded->disp;
 
-#define FRAME (*frame)
-#define REG(index) registers[static_cast<size_t>(index)]
+	#define FRAME (*frame)
+	#define IMAGE (*image)
+	#define REG(index) registers[static_cast<size_t>(index)]
 #define CYCLES_ADD(n) do { instructionBudgetRemaining -= (n); } while (0)
 #define SET_REGISTER_FAST(index, valueExpr) do { \
 	REG(index) = (valueExpr); \
@@ -2502,13 +2688,15 @@ dispatch_continue:
 #undef TABLE_CACHE_INDEX
 #undef SET_REGISTER_FAST
 #undef CYCLES_ADD
-#undef REG
-#undef FRAME
+	#undef REG
+	#undef IMAGE
+	#undef FRAME
 	goto dispatch_loop_check;
 
 #if BMSX_USE_COMPUTED_GOTO
-#define FRAME (*frame)
-#define REG(index) registers[static_cast<size_t>(index)]
+	#define FRAME (*frame)
+	#define IMAGE (*image)
+	#define REG(index) registers[static_cast<size_t>(index)]
 #define CYCLES_ADD(n) do { instructionBudgetRemaining -= (n); } while (0)
 #define SET_REGISTER_FAST(index, valueExpr) do { \
 	REG(index) = (valueExpr); \
@@ -2532,8 +2720,9 @@ dispatch_continue:
 #undef DISPATCH_LABEL
 #undef SET_REGISTER_FAST
 #undef CYCLES_ADD
-#undef REG
-#undef FRAME
+	#undef REG
+	#undef IMAGE
+	#undef FRAME
 #endif
 		} catch (const LuaThrownValueError& error) {
 			if (!handleProtectedCallError(error.value)) {
@@ -2590,16 +2779,17 @@ void CPU::step() {
 	if (m_frames.empty()) return;
 	if (m_hardHalted || m_haltedUntilIrq || m_memoryWriteBlocked) return;
 	CallFrame& frame = *m_frames.back();
-	int pc = frame.pc;
-	int wordIndex = pc / INSTRUCTION_BYTES;
-	if (static_cast<uint32_t>(wordIndex) >= m_decodedWordCount) {
+	Blua32ExecutionImage& image = *frame.functionRecord->image;
+	const u32 pc = frame.pc;
+	const size_t wordIndex = (pc - image.layout.header.textAddress) / INSTRUCTION_BYTES;
+	if (wordIndex >= image.decodedWordCount) {
 		hardHalt();
 		return;
 	}
-	const DecodedInstruction& decoded = decodedAtWordIndex(wordIndex);
+	const DecodedInstruction& decoded = decodedAtWordIndex(image, wordIndex);
 	m_currentInstructionPc = pc;
-	frame.pc = pc + (static_cast<int>(decoded.width) * INSTRUCTION_BYTES);
-	lastPc = pc + ((static_cast<int>(decoded.width) - 1) * INSTRUCTION_BYTES);
+	frame.pc = pc + (static_cast<u32>(decoded.width) * INSTRUCTION_BYTES);
+	lastPc = pc + ((static_cast<u32>(decoded.width) - 1u) * INSTRUCTION_BYTES);
 	lastInstruction = decoded.word;
 	instructionBudgetRemaining -= static_cast<int>(BASE_CYCLES[decoded.op]);
 	try {
@@ -2615,21 +2805,60 @@ void CPU::step() {
 	}
 }
 
-std::optional<SourceRange> CPU::getDebugRange(int pc) const {
-	int wordIndex = pc / INSTRUCTION_BYTES;
-	if (!m_metadata || wordIndex < 0 || wordIndex >= static_cast<int>(m_metadata->debugRanges.size())) {
-		return std::nullopt;
-	}
-	return m_metadata->debugRanges[static_cast<size_t>(wordIndex)];
+CpuDebugState CPU::getDebugState() const {
+	const Blua32ExecutionImage* image = m_frames.empty()
+		? m_activeExecutionImage
+		: m_frames.back()->functionRecord->image;
+	return CpuDebugState{
+		image ? &image->layout : nullptr,
+		image ? image->symbols : nullptr,
+		lastPc,
+		lastInstruction,
+	};
 }
 
-std::vector<std::pair<int, int>> CPU::getCallStack() const {
-	std::vector<std::pair<int, int>> stack;
+std::optional<SourceRange> CPU::getDebugRange(u32 pc) const {
+	const Blua32ExecutionImage* image = executionImageForPc(pc);
+	if (!image || !image->symbols) {
+		return std::nullopt;
+	}
+	return blua32SourceRangeAtPc(*image->symbols, image->layout.header.textAddress, pc);
+}
+
+const Blua32ExecutionImage* CPU::executionImageForPc(u32 pc) const {
+	for (auto frame = m_frames.rbegin(); frame != m_frames.rend(); ++frame) {
+		const Blua32ExecutionImage* image = (*frame)->functionRecord->image;
+		if (pc >= image->layout.header.textAddress
+			&& pc < image->layout.header.textAddress + image->layout.header.textByteCount) {
+			return image;
+		}
+	}
+	if (pc >= m_systemImage->layout.header.textAddress
+		&& pc < m_systemImage->layout.header.textAddress + m_systemImage->layout.header.textByteCount) {
+		return m_systemImage.get();
+	}
+	if (pc >= m_activeExecutionImage->layout.header.textAddress
+		&& pc < m_activeExecutionImage->layout.header.textAddress
+			+ m_activeExecutionImage->layout.header.textByteCount) {
+		return m_activeExecutionImage;
+	}
+	return nullptr;
+}
+
+std::vector<CpuCallStackEntry> CPU::getCallStack() const {
+	std::vector<CpuCallStackEntry> stack;
+	stack.reserve(m_frames.size());
 	int topIndex = static_cast<int>(m_frames.size()) - 1;
 	for (int i = 0; i < static_cast<int>(m_frames.size()); ++i) {
 		const auto& frame = m_frames[i];
-		int pc = (i == topIndex) ? lastPc : frame->callSitePc;
-		stack.emplace_back(frame->protoIndex, pc);
+		const u32 pc = (i == topIndex) ? lastPc : m_frames[static_cast<size_t>(i + 1)]->callSitePc;
+		stack.push_back(CpuCallStackEntry{
+			&frame->functionRecord->image->layout,
+			frame->functionRecord->image->symbols,
+			frame->functionAddress,
+			frame->functionRecord->index,
+			pc,
+		});
 	}
 	return stack;
 }
@@ -2663,8 +2892,10 @@ void CPU::executeInstruction(CallFrame& frame, const DecodedInstruction& decoded
 	const int rkC = decoded.rkC;
 	const int disp = decoded.disp;
 	Value* registers = frame.registers;
+	Blua32ExecutionImage& image = *frame.functionRecord->image;
 
 #define FRAME frame
+#define IMAGE image
 #define REG(index) registers[static_cast<size_t>(index)]
 #define CYCLES_ADD(n) do { instructionBudgetRemaining -= (n); } while (0)
 #define SET_REGISTER_FAST(index, valueExpr) do { \
@@ -2692,6 +2923,7 @@ void CPU::executeInstruction(CallFrame& frame, const DecodedInstruction& decoded
 #undef SET_REGISTER_FAST
 #undef CYCLES_ADD
 #undef REG
+#undef IMAGE
 #undef FRAME
 }
 
@@ -2704,27 +2936,29 @@ Upvalue* CPU::findOpenUpvalue(const CallFrame& frame, int index) const {
 	return nullptr;
 }
 
-Closure* CPU::createClosure(CallFrame& frame, int protoIndex) {
-	const Proto& proto = m_program->protos[protoIndex];
-	if (proto.staticClosure && proto.upvalues.empty()) {
-		return &rootClosure(protoIndex);
+Closure* CPU::createClosure(CallFrame& frame, Blua32RuntimeFunction& functionRecord) {
+	if (functionRecord.staticClosure && functionRecord.upvalues.empty()) {
+		return functionRecord.image->staticClosures[functionRecord.index];
 	}
-	auto* closure = createTrackedClosure(protoIndex, proto.upvalues.size());
-	for (size_t i = 0; i < proto.upvalues.size(); ++i) {
-		const UpvalueDesc& uv = proto.upvalues[i];
-		if (uv.isLocal) {
-			Upvalue* upvalue = findOpenUpvalue(frame, uv.index);
+	auto* closure = createTrackedClosure(
+		functionRecord.address,
+		functionRecord.upvalues.size()
+	);
+	for (size_t index = 0; index < functionRecord.upvalues.size(); ++index) {
+		const Blua32UpvalueRecord& upvalueRecord = functionRecord.upvalues[index];
+		if (upvalueRecord.inStack) {
+			Upvalue* upvalue = findOpenUpvalue(frame, static_cast<int>(upvalueRecord.index));
 			if (!upvalue) {
 				upvalue = m_heap.allocate<Upvalue>(ObjType::Upvalue);
 				addTrackedLuaHeapBytes(kUpvalueHeapBytes);
 				upvalue->open = true;
-				upvalue->index = uv.index;
+				upvalue->index = static_cast<int>(upvalueRecord.index);
 				upvalue->frame = &frame;
-				m_openUpvalues.push_back(OpenUpvalueSlot{ &frame, uv.index, upvalue });
+				m_openUpvalues.push_back(OpenUpvalueSlot{ &frame, upvalue->index, upvalue });
 			}
-			closure->upvalues[i] = upvalue;
+			closure->upvalues[index] = upvalue;
 		} else {
-			closure->upvalues[i] = frame.closure->upvalues[uv.index];
+			closure->upvalues[index] = frame.closure->upvalues[upvalueRecord.index];
 		}
 	}
 	return closure;
@@ -2762,21 +2996,31 @@ void CPU::writeUpvalue(Upvalue* upvalue, const Value& value) {
 }
 
 CallFrame* CPU::pushFrame(CallFrame& caller, Closure* closure, int argBase, int argCount,
-	int returnBase, int returnCount, bool captureReturns, int callSitePc) {
-	const Proto& proto = m_program->protos[closure->protoIndex];
+	int returnBase, int returnCount, bool captureReturns, u32 callSitePc) {
+	Blua32RuntimeFunction* functionRecord = functionRecordInExecutionDomain(
+		*m_activeExecutionImage,
+		closure->functionAddress
+	);
+	if (!functionRecord) {
+		hardHalt();
+		return nullptr;
+	}
 	const int callerArgBase = caller.stackBase + argBase;
 	auto frame = acquireFrame();
-	frame->protoIndex = closure->protoIndex;
-	frame->pc = proto.entryPC;
+	frame->functionAddress = closure->functionAddress;
+	frame->functionRecord = functionRecord;
+	frame->pc = functionRecord->codeAddress;
 	frame->closure = closure;
 	frame->returnBase = returnBase;
 	frame->returnCount = returnCount;
 	frame->captureReturns = captureReturns;
 	frame->callSitePc = callSitePc;
 	frame->varargBase = m_stackTop;
-	frame->varargCount = proto.isVararg ? std::max(argCount - proto.numParams, 0) : 0;
+	frame->varargCount = functionRecord->isVararg
+		? std::max(argCount - static_cast<int>(functionRecord->numParams), 0)
+		: 0;
 	frame->stackBase = frame->varargBase + frame->varargCount;
-	size_t targetCapacity = nextPowerOfTwo(static_cast<size_t>(std::max(proto.maxStack, 1)));
+	size_t targetCapacity = nextPowerOfTwo(static_cast<size_t>(std::max(functionRecord->maxStack, 1u)));
 	if (targetCapacity < 8) {
 		targetCapacity = 8;
 	}
@@ -2784,18 +3028,20 @@ CallFrame* CPU::pushFrame(CallFrame& caller, Closure* closure, int argBase, int 
 	m_stackTop = frame->stackBase + frame->stackCapacity;
 	ensureStackSize(static_cast<size_t>(m_stackTop));
 	frame->registers = m_stack.data() + frame->stackBase;
-	frame->top = proto.numParams;
+	frame->top = static_cast<int>(functionRecord->numParams);
 
-	for (int i = 0; i < proto.numParams; ++i) {
+	for (int i = 0; i < static_cast<int>(functionRecord->numParams); ++i) {
 		if (i < argCount) {
 			frame->registers[static_cast<size_t>(i)] = m_stack[static_cast<size_t>(callerArgBase + i)];
 		} else {
 			frame->registers[static_cast<size_t>(i)] = valueNil();
 		}
 	}
-	if (proto.isVararg) {
+	if (functionRecord->isVararg) {
 		for (int i = 0; i < frame->varargCount; ++i) {
-			m_stack[static_cast<size_t>(frame->varargBase + i)] = m_stack[static_cast<size_t>(callerArgBase + proto.numParams + i)];
+			m_stack[static_cast<size_t>(frame->varargBase + i)] = m_stack[
+				static_cast<size_t>(callerArgBase + static_cast<int>(functionRecord->numParams) + i)
+			];
 		}
 	}
 	CallFrame* pushed = frame.get();
@@ -2804,8 +3050,15 @@ CallFrame* CPU::pushFrame(CallFrame& caller, Closure* closure, int argBase, int 
 }
 
 CallFrame* CPU::pushFrame(Closure* closure, const Value* args, size_t argCount,
-	int returnBase, int returnCount, bool captureReturns, int callSitePc) {
-	const Proto& proto = m_program->protos[closure->protoIndex];
+	int returnBase, int returnCount, bool captureReturns) {
+	Blua32RuntimeFunction* functionRecord = functionRecordInExecutionDomain(
+		*m_activeExecutionImage,
+		closure->functionAddress
+	);
+	if (!functionRecord) {
+		hardHalt();
+		return nullptr;
+	}
 	const uintptr_t stackBegin = reinterpret_cast<uintptr_t>(m_stack.data());
 	const uintptr_t stackEnd = stackBegin + m_stack.size() * sizeof(Value);
 	const uintptr_t argsBegin = reinterpret_cast<uintptr_t>(args);
@@ -2813,17 +3066,20 @@ CallFrame* CPU::pushFrame(Closure* closure, const Value* args, size_t argCount,
 	const bool argsInStack = argCount > 0 && stackBegin != 0 && argsBegin >= stackBegin && argsEnd <= stackEnd;
 	const ptrdiff_t argsOffset = argsInStack ? static_cast<ptrdiff_t>((argsBegin - stackBegin) / sizeof(Value)) : 0;
 	auto frame = acquireFrame();
-	frame->protoIndex = closure->protoIndex;
-	frame->pc = proto.entryPC;
+	frame->functionAddress = closure->functionAddress;
+	frame->functionRecord = functionRecord;
+	frame->pc = functionRecord->codeAddress;
 	frame->closure = closure;
 	frame->returnBase = returnBase;
 	frame->returnCount = returnCount;
 	frame->captureReturns = captureReturns;
-	frame->callSitePc = callSitePc;
+	frame->callSitePc = functionRecord->codeAddress;
 	frame->varargBase = m_stackTop;
-	frame->varargCount = proto.isVararg ? std::max(static_cast<int>(argCount) - proto.numParams, 0) : 0;
+	frame->varargCount = functionRecord->isVararg
+		? std::max(static_cast<int>(argCount) - static_cast<int>(functionRecord->numParams), 0)
+		: 0;
 	frame->stackBase = frame->varargBase + frame->varargCount;
-	size_t targetCapacity = nextPowerOfTwo(static_cast<size_t>(std::max(proto.maxStack, 1)));
+	size_t targetCapacity = nextPowerOfTwo(static_cast<size_t>(std::max(functionRecord->maxStack, 1u)));
 	if (targetCapacity < 8) {
 		targetCapacity = 8;
 	}
@@ -2831,19 +3087,21 @@ CallFrame* CPU::pushFrame(Closure* closure, const Value* args, size_t argCount,
 	m_stackTop = frame->stackBase + frame->stackCapacity;
 	ensureStackSize(static_cast<size_t>(m_stackTop));
 	frame->registers = m_stack.data() + frame->stackBase;
-	frame->top = proto.numParams;
+	frame->top = static_cast<int>(functionRecord->numParams);
 	const Value* sourceArgs = argsInStack ? m_stack.data() + argsOffset : args;
 
-	for (int i = 0; i < proto.numParams; ++i) {
+	for (int i = 0; i < static_cast<int>(functionRecord->numParams); ++i) {
 		if (i < static_cast<int>(argCount)) {
 			frame->registers[static_cast<size_t>(i)] = sourceArgs[i];
 		} else {
 			frame->registers[static_cast<size_t>(i)] = valueNil();
 		}
 	}
-	if (proto.isVararg) {
+	if (functionRecord->isVararg) {
 		for (int i = 0; i < frame->varargCount; ++i) {
-			m_stack[static_cast<size_t>(frame->varargBase + i)] = sourceArgs[static_cast<size_t>(proto.numParams + i)];
+			m_stack[static_cast<size_t>(frame->varargBase + i)] = sourceArgs[
+				static_cast<size_t>(functionRecord->numParams) + static_cast<size_t>(i)
+			];
 		}
 	}
 	CallFrame* pushed = frame.get();
@@ -2887,7 +3145,7 @@ Value* CPU::ensureRegisterCapacity(CallFrame& frame, int index) {
 		}
 	}
 	if (frameIndex < 0) {
-		throw BMSX_RUNTIME_ERROR("[CPU] Attempted to grow registers for a non-top frame.");
+		throw BMSX_RUNTIME_ERROR("Attempted to grow registers for a non-top frame.");
 	}
 	const size_t needed = static_cast<size_t>(index) + 1;
 	size_t bucket = nextPowerOfTwo(needed);
@@ -2933,8 +3191,8 @@ void CPU::writeMappedWordSequence(CallFrame& frame, uint32_t addr, int valueBase
 
 const Value& CPU::readRK(CallFrame& frame, int rk) {
 	if (rk < 0) {
-		int index = -1 - rk;
-		return m_program->constPool[static_cast<size_t>(index)];
+		const int index = -1 - rk;
+		return frame.functionRecord->image->constPool[static_cast<size_t>(index)];
 	}
 	return frame.registers[static_cast<size_t>(rk)];
 }
@@ -3007,11 +3265,16 @@ Value CPU::loadTableIndex(const Value& base, const Value& key) {
 	throw LuaExecutionError("Attempted to index field on a non-table value.");
 }
 
-Value CPU::loadTableIntegerIndexCached(int cacheIndex, const Value& base, int index) {
+Value CPU::loadTableIntegerIndexCached(
+	Blua32ExecutionImage& image,
+	int cacheIndex,
+	const Value& base,
+	int index
+) {
 	if (valueIsTable(base)) {
 		Table* table = asTable(base);
 		if (!table->metatable) {
-			TableLoadInlineCache& cache = m_tableLoadCaches[static_cast<size_t>(cacheIndex)];
+			TableLoadInlineCache& cache = image.tableLoadCaches[static_cast<size_t>(cacheIndex)];
 			if (cache.table == table && cache.version == table->version()) {
 				return cache.value;
 			}
@@ -3025,7 +3288,7 @@ Value CPU::loadTableIntegerIndexCached(int cacheIndex, const Value& base, int in
 	}
 	if (valueIsString(base)) {
 		if (!m_stringIndexTable->metatable) {
-			TableLoadInlineCache& cache = m_tableLoadCaches[static_cast<size_t>(cacheIndex)];
+			TableLoadInlineCache& cache = image.tableLoadCaches[static_cast<size_t>(cacheIndex)];
 			if (cache.table == m_stringIndexTable && cache.version == m_stringIndexTable->version()) {
 				return cache.value;
 			}
@@ -3081,11 +3344,16 @@ Value CPU::loadTableIntegerIndex(const Value& base, int index) {
 	throw LuaExecutionError("Attempted to index field on a non-table value.");
 }
 
-Value CPU::loadTableFieldIndexCached(int cacheIndex, const Value& base, StringId key) {
+Value CPU::loadTableFieldIndexCached(
+	Blua32ExecutionImage& image,
+	int cacheIndex,
+	const Value& base,
+	StringId key
+) {
 	if (valueIsTable(base)) {
 		Table* table = asTable(base);
 		if (!table->metatable) {
-			TableLoadInlineCache& cache = m_tableLoadCaches[static_cast<size_t>(cacheIndex)];
+			TableLoadInlineCache& cache = image.tableLoadCaches[static_cast<size_t>(cacheIndex)];
 			if (cache.table == table && cache.version == table->version()) {
 				return cache.value;
 			}
@@ -3099,7 +3367,7 @@ Value CPU::loadTableFieldIndexCached(int cacheIndex, const Value& base, StringId
 	}
 	if (valueIsString(base)) {
 		if (!m_stringIndexTable->metatable) {
-			TableLoadInlineCache& cache = m_tableLoadCaches[static_cast<size_t>(cacheIndex)];
+			TableLoadInlineCache& cache = image.tableLoadCaches[static_cast<size_t>(cacheIndex)];
 			if (cache.table == m_stringIndexTable && cache.version == m_stringIndexTable->version()) {
 				return cache.value;
 			}
@@ -3299,21 +3567,29 @@ void CPU::markRoots(GcHeap& heap) {
 	for (const Value value : m_nativeLocalRoots) {
 		heap.markValue(value);
 	}
-	for (const auto& cache : m_tableLoadCaches) {
-		if (cache.table) {
-			heap.markObject(cache.table);
-		}
-		heap.markValue(cache.value);
-	}
 	for (const auto& value : m_systemGlobalValues) {
 		heap.markValue(value);
 	}
 	for (const auto& value : m_globalValues) {
 		heap.markValue(value);
 	}
-	if (m_program) {
-		for (const auto& value : m_program->constPool) {
+	const std::array<Blua32ExecutionImage*, 3> images{
+		m_systemImage.get(),
+		m_cartridgeImages[0].get(),
+		m_cartridgeImages[1].get(),
+	};
+	for (Blua32ExecutionImage* image : images) {
+		if (!image) {
+			continue;
+		}
+		for (Value value : image->constPool) {
 			heap.markValue(value);
+		}
+		for (const TableLoadInlineCache& cache : image->tableLoadCaches) {
+			if (cache.table) {
+				heap.markObject(cache.table);
+			}
+			heap.markValue(cache.value);
 		}
 	}
 	for (const auto& framePtr : m_frames) {
@@ -3330,7 +3606,6 @@ void CPU::markRoots(GcHeap& heap) {
 		heap.markObject(entry.upvalue);
 		heap.markValue(entry.frame->registers[static_cast<size_t>(entry.index)]);
 	}
-	m_externalRootMarker(heap);
 }
 
 // end repeated-sequence-acceptable

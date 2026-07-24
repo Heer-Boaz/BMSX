@@ -6,11 +6,10 @@ import { test } from 'node:test';
 import { CART_ROM_BASE } from '../../machine/ts/machine/memory/map';
 import { buildRomAssetSymbolModuleSource, collectRomAssetSymbols } from '../../machine/ts/rompack/asset_symbols';
 import { layoutRomAssetPayloads } from '../../machine/ts/rompack/asset_layout';
-import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES, CART_ROM_WORD_ALIGNMENT, PROGRAM_BOOT_HEADER_VERSION, type RomAsset } from '../../machine/ts/rompack/format';
+import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES, CART_ROM_WORD_ALIGNMENT, type RomAsset } from '../../machine/ts/rompack/format';
 import { loadRomAssetList } from '../../machine/ts/rompack/loader';
-import { layoutRomProgramPrefix } from '../../machine/ts/rompack/tooling/rom_layout';
-import { PROGRAM_IMAGE_ID } from '../../machine/ts/machine/program/loader';
-import { finalizeRompack, getResMetaList } from '../../scripts/rompacker/rombuilder';
+import { layoutRomPrefix } from '../../machine/ts/rompack/tooling/rom_prefix_layout';
+import { buildRomBlua32Tail, compileLuaChunkBuffer, finalizeRompack, getResMetaList } from '../../scripts/rompacker/rombuilder';
 
 const ROOT = join(process.cwd(), 'tmp', 'rompacker-bin-scan-test');
 
@@ -86,28 +85,28 @@ test('ROM writer materializes word-aligned payload ranges', async () => {
 			{ type: 'image', resid: 'sprite', collision_bin_buffer: Buffer.from([0x44, 0x55, 0x66, 0x77]) },
 			{ type: 'romlabel', resid: 'label', buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47]) },
 		];
-		const layout = layoutRomProgramPrefix(assets, true, null);
+		const layout = layoutRomPrefix(assets, true, null);
 		const ranges = layout.assetRanges;
-		const programAssets: RomAsset[] = [
-			{ type: 'code', resid: PROGRAM_IMAGE_ID, buffer: Buffer.from([0x88]), compiled_buffer: Buffer.from([0x99]) },
-		];
+		const entrySource = 'return 0';
+		const blua32 = buildRomBlua32Tail([{
+			type: 'lua',
+			resid: 'entry',
+			buffer: Buffer.from(entrySource),
+			compiled_buffer: compileLuaChunkBuffer(entrySource, 'entry.lua'),
+			source_path: 'entry.lua',
+		}], 'entry.lua', {
+			externalLuaAssets: [],
+			generatedLuaModules: [],
+			includeSymbols: false,
+			optLevel: 3,
+			imageOffset: layout.blua32Offset,
+			domain: 'system',
+		});
 		await finalizeRompack('aligned', {
 			debug: false,
 			cartridgeBoardWord: 0,
 			cartridgeRamByteCount: 0,
-			program: {
-				domain: 'cart',
-				boot: {
-					version: PROGRAM_BOOT_HEADER_VERSION,
-					flags: 0,
-					resetProtoIndex: 0,
-					codeByteCount: 0,
-					constPoolCount: 0,
-					protoCount: 0,
-					constRelocCount: 0,
-				},
-				layout: layoutRomAssetPayloads(programAssets, true, layout.programOffset),
-			},
+			blua32,
 			layout,
 			outputDirectory,
 		});

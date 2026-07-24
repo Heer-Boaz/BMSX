@@ -124,7 +124,8 @@ export type MemoryInit = {
 export const NO_BLOCKED_MAPPED_WRITE = 0xffffffff;
 
 export class Memory {
-	public systemRom: Uint8Array;
+	private systemRom: Uint8Array;
+	private systemRomMediaRevision = 1;
 	public readonly cartridgeController: CartridgeController;
 	private readonly ram: Uint8Array;
 	private readonly ioSlots: Value[];
@@ -168,6 +169,15 @@ export class Memory {
 		this.ioWriteContexts[this.busFaultAckSlot] = this;
 		this.ioWriteHandlers[this.busFaultAckSlot] = Memory.onBusFaultAckWriteThunk;
 		this.clearBusFault();
+	}
+
+	public installSystemRom(rom: Uint8Array): void {
+		this.systemRom = rom;
+		this.systemRomMediaRevision += 1;
+	}
+
+	public systemRomRevision(): number {
+		return this.systemRomMediaRevision;
 	}
 
 	public mapIoRead<TContext>(addr: number, context: TContext, handler: IoReadHandler<TContext>): void {

@@ -10,7 +10,7 @@ import { buildRomMetadataSection } from './metadata_encode';
 
 const EMPTY_BYTES = new Uint8Array(0);
 
-export type RomProgramPrefixLayout = {
+export type RomPrefixLayout = {
 	entries: RomAsset[];
 	assetRanges: RomAssetPayloadRange[];
 	metadataAssets: RomAsset[];
@@ -20,14 +20,14 @@ export type RomProgramPrefixLayout = {
 	metadataLength: number;
 	manifest: Uint8Array;
 	manifestOffset: number;
-	programOffset: number;
+	blua32Offset: number;
 };
 
-export function layoutRomProgramPrefix(
+export function layoutRomPrefix(
 	assetList: ReadonlyArray<RomAsset>,
 	includeLuaAssets: boolean,
 	manifest: RomManifest | null,
-): RomProgramPrefixLayout {
+): RomPrefixLayout {
 	const assetLayout = layoutRomAssetPayloads(assetList, includeLuaAssets);
 	const metadataAssets: RomAsset[] = [];
 	const metadataValues: Array<ImgMeta | TextureMeta | AudioMeta> = [];
@@ -85,6 +85,6 @@ export function layoutRomProgramPrefix(
 		metadataLength,
 		manifest: encodedManifest,
 		manifestOffset,
-		programOffset: offset,
+		blua32Offset: offset,
 	};
 }

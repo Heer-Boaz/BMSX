@@ -119,7 +119,7 @@ import type { AudioControllerState, ApuOutputState, ApuOutputVoiceState } from '
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
-import { CART_ROM_BASE, PROGRAM_STATIC_RAM_BASE, RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/machine/memory/map';
+import { CART_ROM_BASE, DYNAMIC_RAM_BASE, RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/machine/memory/map';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 import { cyclesUntilBudgetUnits } from '../../machine/ts/machine/scheduler/budget';
@@ -415,8 +415,8 @@ test('APU voices read cart sample ROM directly and reject CPU RAM addresses', ()
 	assert.deepEqual(cartState.sampleRam.subarray(0, 4), new Uint8Array(4));
 
 	const cpuHarness = createAudioHarness();
-	cpuHarness.memory.writeMappedU32LE(PROGRAM_STATIC_RAM_BASE, 0x11223344);
-	writePcmSourceRegisters(cpuHarness.memory, PROGRAM_STATIC_RAM_BASE, 4);
+	cpuHarness.memory.writeMappedU32LE(DYNAMIC_RAM_BASE, 0x11223344);
+	writePcmSourceRegisters(cpuHarness.memory, DYNAMIC_RAM_BASE, 4);
 	cpuHarness.memory.writeValue(IO_APU_SLOT, 1);
 	cpuHarness.memory.writeValue(IO_APU_CMD, APU_CMD_PLAY);
 	cpuHarness.audio.onService(0);
@@ -433,14 +433,12 @@ test('APU voices latch their cartridge socket across CPU selection changes and r
 				boardWord: 0,
 				ramByteCount: 0,
 				present: true,
-				programPresent: false,
 			},
 			{
 				rom: new Uint8Array([0xff, 0xff, 0xff, 0xff]),
 				boardWord: 0,
 				ramByteCount: 0,
 				present: true,
-				programPresent: false,
 			},
 		],
 	});
@@ -492,7 +490,7 @@ function createTransferEdgeHarness(): ReturnType<typeof createAudioControllerHar
 	harness.memory.writeValue(IO_APU_SLOT, 1);
 	harness.memory.writeValue(IO_APU_CMD, APU_CMD_PLAY);
 	harness.audio.onService(0);
-	const dmaSource = PROGRAM_STATIC_RAM_BASE + 0x300;
+	const dmaSource = DYNAMIC_RAM_BASE + 0x300;
 	harness.memory.writeMappedU32LE(dmaSource, 0xc0c0c0c0);
 	harness.scheduler.advanceTo(46);
 	harness.memory.writeMappedU32LE(IO_APU_TRANSFER_ADDRESS, 0);
@@ -556,8 +554,8 @@ test('APU DMA round-trip obeys FIFO timing, RAM wrap, and mid-transfer restore',
 	const live = createAudioHarness();
 	live.dma.setTiming(1, 0, 1, 0, 0, 0);
 	live.audio.setTiming(APU_TRANSFER_WORDS_PER_SECOND, 0);
-	const source = PROGRAM_STATIC_RAM_BASE + 0x100;
-	const target = PROGRAM_STATIC_RAM_BASE + 0x200;
+	const source = DYNAMIC_RAM_BASE + 0x100;
+	const target = DYNAMIC_RAM_BASE + 0x200;
 	const transferAddress = APU_SAMPLE_RAM_BYTES - 8;
 	for (let index = 0; index < 32; index += 1) {
 		live.memory.writeMappedU32LE(source + index * 4, (0x5a000000 | index) >>> 0);
@@ -642,8 +640,8 @@ test('APU transfer FIFO is not consumed by a forced wrong-direction DMA block', 
 	const harness = createAudioHarness();
 	harness.dma.setTiming(0, 8, 0, 0, 0, 0);
 	harness.audio.setTiming(APU_TRANSFER_WORDS_PER_SECOND, 0);
-	const source = PROGRAM_STATIC_RAM_BASE + 0x500;
-	const target = PROGRAM_STATIC_RAM_BASE + 0x600;
+	const source = DYNAMIC_RAM_BASE + 0x500;
+	const target = DYNAMIC_RAM_BASE + 0x600;
 	for (let index = 0; index < 32; index += 1) {
 		harness.memory.writeMappedU32LE(source + index * 4, (0x66000000 | index) >>> 0);
 	}

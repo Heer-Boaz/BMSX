@@ -1,15 +1,13 @@
-import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { splitText } from '../../machine/ts/common/text_lines';
 import { LuaLexer } from '../../machine/ts/lua/syntax/lexer';
 import { LuaParser } from '../../machine/ts/lua/syntax/parser';
-import { CPU, RunResult, type Value } from '../../machine/ts/machine/cpu/cpu';
-import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
+import { RunResult, type Value } from '../../machine/ts/machine/cpu/cpu';
 import { RAM_BASE } from '../../machine/ts/machine/memory/map';
-import { Memory } from '../../machine/ts/machine/memory/memory';
 import { compileLuaChunkToProgram } from '../../machine/ts/lua/compiler';
+import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 
 const BIN_ADDR = RAM_BASE + 0x21000;
 
@@ -19,13 +17,12 @@ function runStructRead(packedWords: number[], snippet: string): Value[] {
 	const lexer = new LuaLexer(snippet, 'bin_struct.lua');
 	const parser = new LuaParser(lexer.scanTokens(), 'bin_struct.lua', splitText(snippet));
 	const compiled = compileLuaChunkToProgram(parser.parseChunk(), [], { entrySource: snippet });
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
+	const image = linkTestSystemBlua32(compiled);
+	const { cpu, memory } = createTestSystemCpu(image);
 	for (let index = 0; index < packedWords.length; index += 1) {
 		memory.writeMappedU32LE(BIN_ADDR + index * 4, packedWords[index] >>> 0);
 	}
-	const cpu = new CPU(memory, new IrqController(memory));
-	cpu.setProgram(compiled.program, compiled.metadata, compiled.metadata, 0, 0, 0);
-	cpu.start(compiled.entryProtoIndex);
+	cpu.start(image.vectors.startupFunctionAddress);
 	assert.equal(cpu.runUntilDepth(0, 1000000), RunResult.Halted);
 	return Array.from(cpu.lastReturnValues);
 }

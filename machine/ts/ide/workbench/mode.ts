@@ -129,7 +129,7 @@ export function onLuaDebuggerPause(runtime: Runtime, signal: LuaDebuggerPauseSig
 	applyDebuggerStopLocation(signal);
 	if (signal.reason === 'exception') {
 		recordDebuggerExceptionFault(runtime, signal);
-		if (runtime.programMetadata && isManagedOverlayEditorActive()) {
+		if (runtime.machine.cpu.activeSymbols() && isManagedOverlayEditorActive()) {
 			const faultSnapshot = machineManager.faultState.faultSnapshot;
 			const message = faultSnapshot.message;
 			machineManager.ideState.editor.showRuntimeErrorInChunk(faultSnapshot.path, faultSnapshot.line, faultSnapshot.column, message);

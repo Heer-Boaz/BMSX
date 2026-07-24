@@ -11,12 +11,12 @@ import type { GameViewHost, Platform } from '../platform';
 import { PAL_REFRESH_UFPS_SCALED, PSX_MACHINE_SPEC } from '../machine/model_registry';
 import { HZ_SCALE } from '../machine/runtime/timing/constants';
 import { renderGate, runGate } from '../common/taskgate';
-import { prepareRebootToBootRom, startPreparedRuntime } from '../ide/runtime/program_boot';
+import { prepareRebootToBootRom, startPreparedRuntime } from '../ide/workbench/blua32_boot';
 import { Runtime } from '../machine/runtime/runtime';
 import { Memory } from '../machine/memory/memory';
 import { configureRuntimeMemoryMap } from '../machine/memory/specs';
 import { resolveRuntimeTiming } from '../machine/runtime/boot_timing';
-import { bootActiveProgram } from '../ide/runtime/lua_pipeline';
+import { bootActiveBlua32Media } from '../ide/runtime/lua_pipeline';
 import { handleLuaError } from '../ide/workbench/runtime_errors';
 import { createRuntimeSourceState, type RuntimeSourceState } from '../ide/runtime/sources';
 import type { GPUBackend } from '../render/backend/backend';
@@ -33,7 +33,6 @@ import {
 	parseRomImage,
 } from '../rompack/loader';
 import {
-	cartridgeBootSlot,
 	type CartridgeSlotMediaPair,
 } from '../machine/devices/cartridge/contracts';
 import { SYSTEM_BOOT_ENTRY_PATH, SYSTEM_MACHINE_MANIFEST } from './system';
@@ -180,14 +179,12 @@ export class MachineManager {
 				boardWord: 0,
 				ramByteCount: 0,
 				present: false,
-				programPresent: false,
 			},
 			{
 				rom: EMPTY_CARTRIDGE_ROM,
 				boardWord: 0,
 				ramByteCount: 0,
 				present: false,
-				programPresent: false,
 			},
 		];
 		for (let slotIndex = 0; slotIndex < cartridgeImages.length; slotIndex += 1) {
@@ -198,20 +195,22 @@ export class MachineManager {
 				boardWord: image.header.cartridgeBoardWord,
 				ramByteCount: image.header.cartridgeRamByteCount,
 				present: true,
-				programPresent: image.header.programBootVersion !== 0,
 			};
 		}
-		const bootSlot = cartridgeBootSlot(cartridgeMedia);
-		const bootImage = cartridgeMedia[bootSlot].programPresent ? cartridgeImages[bootSlot] : null;
-		const [systemLayer, cartLayer] = await Promise.all([
+		const [systemLayer, slot0Layer, slot1Layer] = await Promise.all([
 			buildSystemRuntimeRomLayer({
 				image: systemImage,
 				machine: SYSTEM_MACHINE_MANIFEST,
 				entry_path: SYSTEM_BOOT_ENTRY_PATH,
 			}),
-			bootImage ? buildRuntimeRomLayer({ image: bootImage, id: 'cart' }) : null,
+			cartridgeImages[0] ? buildRuntimeRomLayer({ image: cartridgeImages[0], id: 'cart' }) : null,
+			cartridgeImages[1] ? buildRuntimeRomLayer({ image: cartridgeImages[1], id: 'cart' }) : null,
 		]);
-		return { systemLayer, cartLayer, cartridgeMedia, bootSlot };
+		return {
+			systemLayer,
+			cartridgeLayers: [slot0Layer, slot1Layer] as const,
+			cartridgeMedia,
+		};
 	}
 
 	public async boot(options: MachineBootOptions): Promise<Runtime> {
@@ -224,7 +223,7 @@ export class MachineManager {
 			throw new Error('[MachineManager] Platform did not expose a GameViewHost.');
 		}
 		const bootPlan = await this.buildBootPlan(systemRom, cartridgeSlots);
-		const { systemLayer, cartLayer, cartridgeMedia, bootSlot } = bootPlan;
+		const { systemLayer, cartridgeLayers, cartridgeMedia } = bootPlan;
 		configureRuntimeMemoryMap();
 		const memory = new Memory({
 			systemRom: systemLayer.payload,
@@ -245,8 +244,7 @@ export class MachineManager {
 
 		this.sourceState = createRuntimeSourceState(
 			systemLayer,
-			cartLayer,
-			cartLayer ? cartridgeMedia[bootSlot] : null,
+			[cartridgeLayers[0], cartridgeLayers[1]],
 		);
 		const timing = resolveRuntimeTiming(PSX_MACHINE_SPEC.cpuFreqHz);
 		const runtime = new Runtime({
@@ -310,11 +308,11 @@ export class MachineManager {
 		const gateToken = this.ideState.luaGate.begin({ blocking: true, tag: 'reboot_bootrom' });
 		try {
 			await this.resetRuntime();
-			const rebuildProgramMedia = await prepareRebootToBootRom(this.runtime);
+			const rebuildBlua32Media = await prepareRebootToBootRom(this.runtime);
 			await this.refreshRenderSurfaces();
 			this.bootstrapStartupAudio();
 			try {
-				bootActiveProgram(this.runtime, rebuildProgramMedia);
+				bootActiveBlua32Media(this.runtime, rebuildBlua32Media);
 			}
 			catch (error) {
 				handleLuaError(this.runtime, error);

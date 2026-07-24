@@ -24,6 +24,10 @@ local input_control<const>: *word = 0x0800006c
 
 local cart_rom_magic<const> = 0x58534d42
 local cart_rom_base_header_size<const> = 32
+local cart_blua32_image_offset<const> = 32
+local cart_blua32_startup_offset<const> = 40
+local cart_select<const>: *word = cartridge.select_addr
+local cart_status<const>: *word = cartridge.status_addr
 local irq_vblank<const> = 0x0004
 local irq_dma_done<const> = 0x0001
 local irq_gpu<const> = 0x0040
@@ -45,24 +49,34 @@ function exception()
 	monitor.enter()
 end
 
-local cart_header_present<const> = function()
-	if mem[cartridge.rom_base] ~= cart_rom_magic then
-		return false
+local scan_cartridges<const> = function()
+	local status<const> = *cart_status
+	local cart_present = false
+	for slot = 0, 1 do
+		if (status & (1 << slot)) ~= 0 then
+			cart_present = true
+			*cart_select = slot
+			if mem[cartridge.rom_base] == cart_rom_magic
+				and mem[cartridge.rom_base + 4] >= cart_rom_base_header_size
+				and mem[cartridge.rom_base + cart_blua32_image_offset] ~= 0 then
+				return cart_present, mem[cartridge.rom_base + cart_blua32_startup_offset]
+			end
+		end
 	end
-	return mem[cartridge.rom_base + 4] >= cart_rom_base_header_size
+	return cart_present, nil
 end
 
 local initialize_boot_output<const> = function()
 	terminal.open()
 	terminal.write_at(2, 4, 'BMSX SYSTEM BIOS', terminal.palette_accent)
 	terminal.write_at(4, 4, 'SYSTEM', terminal.palette_accent)
-	terminal.write_at(5, 4, 'CPU       LUA32', terminal.palette_text)
+	terminal.write_at(5, 4, 'CPU       BLUA32', terminal.palette_text)
 	terminal.write_at(6, 4, 'RAM       4096 KB', terminal.palette_text)
 	terminal.write_at(7, 4, 'VRAM      2048 KB', terminal.palette_text)
 	terminal.write_at(8, 4, 'VIDEO     256x192 50HZ', terminal.palette_text)
 	terminal.write_at(10, 4, 'CARTRIDGE', terminal.palette_accent)
 	terminal.write_at(11, 4, 'ROM       ', terminal.palette_text)
-	terminal.write_at(12, 4, 'PROGRAM   WAITING', terminal.palette_text)
+	terminal.write_at(12, 4, 'BLUA32    WAITING', terminal.palette_text)
 	terminal.write_at(14, 4, 'BOOT', terminal.palette_accent)
 	terminal.write_at(15, 4, 'WAITING FOR CARTRIDGE', terminal.palette_text)
 	*boot_screen_started = 1
@@ -94,16 +108,14 @@ local update_boot_output<const> = function(cart_present)
 end
 
 local update_boot_screen<const> = function()
-	local cart_present<const> = cart_header_present()
-	if cart_present and cartridge.selected_program_present() then
-		-- Runtime starts the cart only after this system root returns. Keep the
-		-- handoff after the first VBlank; the cart then programs primary scanout.
+	local cart_present<const>, startup<const> = scan_cartridges()
+	if startup ~= nil then
 		*irq_mask = 0
+		romdir.mount_selected_cartridge()
 		print('Cart boot requested.')
-		return true
+		cop0.exec = startup
 	end
 	update_boot_output(cart_present)
-	return false
 end
 
 function init()
@@ -125,8 +137,6 @@ new_game()
 *input_control = input_arm
 while true do
 	vblank.wait()
-	if update_boot_screen() then
-		return
-	end
+	update_boot_screen()
 	*input_control = input_arm
 end

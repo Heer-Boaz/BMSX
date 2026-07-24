@@ -1,6 +1,7 @@
 // start repeated-sequence-acceptable -- SSA optimizer keeps instruction rewrites inline for compile-time throughput and readable opcode cases.
 // start normalized-body-acceptable -- SSA value rewrites intentionally mirror non-SSA rewrites without sharing mutable pass internals.
-import { OpCode, type SourceRange, type Value } from '../../../machine/cpu/cpu';
+import { OpCode, type Value } from '../../../machine/cpu/cpu';
+import type { SourceRange } from '../../../machine/cpu/blua32_symbols';
 import { MAX_EXT_CONST } from '../../../machine/cpu/instruction_format';
 import { valueIsString } from '../../../machine/cpu/cpu';
 import { buildBasicBlocks, buildBlockGraph, getJumpTarget, isJump, remapInstructions, type Block } from '../control_flow';

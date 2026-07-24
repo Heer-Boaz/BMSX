@@ -12,6 +12,41 @@
 
 namespace bmsx {
 
+namespace {
+
+int runHaltedClosureUntilInterrupt(Runtime& runtime) {
+	CPU& cpu = runtime.machine.cpu;
+	DeviceScheduler& scheduler = runtime.machine.scheduler;
+	int consumed = 0;
+	bool advancedDeadline = false;
+	while (cpu.isHaltedUntilIrq()) {
+		if (cpu.peekPendingInterrupt() != AcceptedInterruptKind::None) {
+			cpu.clearHaltUntilIrq();
+			return consumed;
+		}
+		if (advancedDeadline) {
+			return consumed;
+		}
+		const i64 nextDeadline = scheduler.nextDeadline();
+		if (nextDeadline == std::numeric_limits<i64>::max()) {
+			return consumed;
+		}
+		const i64 idleCycles = nextDeadline - scheduler.nowCycles();
+		if (idleCycles <= 0) {
+			if (runDueRuntimeTimers(runtime)) {
+				return consumed;
+			}
+			continue;
+		}
+		advanceRuntimeTime(runtime, static_cast<int>(idleCycles));
+		consumed += static_cast<int>(idleCycles);
+		advancedDeadline = true;
+	}
+	return consumed;
+}
+
+} // namespace
+
 Runtime::Runtime(
 	const RuntimeOptions& options,
 	RuntimeInputSource& input
@@ -45,11 +80,6 @@ Runtime::Runtime(
 	refreshDeviceTimings(*this, machine.scheduler.currentNowCycles());
 	machine.runDeviceService(DEVICE_SERVICE_GPU);
 	applyPublishedGxGpuPcrtcTiming(machine.gxGpu.readDeviceOutput().pcrtcTiming);
-	machine.cpu.setExternalRootMarker([this](GcHeap& heap) {
-		for (const auto& entry : m_moduleCache) {
-			heap.markValue(entry.second);
-		}
-	});
 
 	configureLuaHeapUsage(this, &Runtime::getBaseRamUsedBytesThunk, &Runtime::collectTrackedHeapBytesThunk);
 
@@ -58,6 +88,48 @@ Runtime::Runtime(
 Runtime::~Runtime() {
 	resetLuaHeapUsageHooks();
 	resetTrackedLuaHeapBytes();
+}
+
+void Runtime::callClosureInto(Closure& fn, NativeArgsView args, NativeResults& out) {
+	CPU& cpu = machine.cpu;
+	if (machine.scheduler.isCpuSliceActive() || cpu.isHostExternalCallActive()) {
+		throw std::runtime_error("External Lua closure execution requires a suspended CPU.");
+	}
+	const int depthBefore = cpu.getFrameDepth();
+	const int previousBudget = cpu.instructionBudgetRemaining;
+	const int budgetSentinel = std::numeric_limits<int>::max();
+	NativeResults* previousSink = cpu.swapExternalReturnSink(&out);
+	int spentBudget = 0;
+	int activeBudget = 0;
+	out.clear();
+	cpu.enterHostExternalCall();
+	try {
+		cpu.callExternal(fn, args);
+		while (cpu.getFrameDepth() > depthBefore) {
+			activeBudget = budgetSentinel;
+			const RunResult result = cpu.runUntilDepth(depthBefore, budgetSentinel);
+			spentBudget += activeBudget - cpu.instructionBudgetRemaining;
+			activeBudget = 0;
+			if (cpu.getFrameDepth() > depthBefore && result == RunResult::Halted) {
+				spentBudget += runHaltedClosureUntilInterrupt(*this);
+				if (cpu.isHaltedUntilIrq()) {
+					break;
+				}
+			}
+		}
+	} catch (...) {
+		if (activeBudget > 0) {
+			spentBudget += activeBudget - cpu.instructionBudgetRemaining;
+		}
+		cpu.unwindToDepth(depthBefore);
+		cpu.instructionBudgetRemaining = previousBudget - spentBudget;
+		cpu.swapExternalReturnSink(previousSink);
+		cpu.leaveHostExternalCall();
+		throw;
+	}
+	cpu.instructionBudgetRemaining = previousBudget - spentBudget;
+	cpu.swapExternalReturnSink(previousSink);
+	cpu.leaveHostExternalCall();
 }
 
 auto Runtime::machineTimeMs() const -> uint32_t {
@@ -165,171 +237,69 @@ uint32_t Runtime::vramTotalBytes() const {
 	return static_cast<uint32_t>(GX_GPU_VRAM_BYTE_COUNT);
 }
 
-void Runtime::enterSystemFirmware() {
-	cartProgramStarted = false;
+void Runtime::boot(Blua32MediaSymbols symbols) {
+	m_blua32MediaSymbols = std::move(symbols);
+	machine.cpu.mountExecutableMedia(m_blua32MediaSymbols);
+	setupBuiltins();
+	startSystemFirmware();
 }
 
-void Runtime::enterCartProgram() {
-	cartProgramStarted = true;
-}
-
-void Runtime::startCartProgram() {
-	enterCartProgram();
-	startLoadedProgram(m_cartVectors, std::span<const std::string>{}, m_cartStaticModulePaths);
-}
-
-void Runtime::boot(
-	const ProgramImage& systemImage,
-	std::unique_ptr<ProgramMetadata> systemMetadata,
-	const ProgramImage* cartImage,
-	std::unique_ptr<ProgramMetadata> cartMetadata,
-	ProgramBootTarget bootTarget
-) {
-	m_moduleCache.clear();
-	const ProgramImage& activeImage = bootTarget == ProgramBootTarget::Cart ? *cartImage : systemImage;
-	const ProgramImage& runtimeImage = cartImage ? *cartImage : systemImage;
-	m_systemVectors = systemImage.vectors;
-	m_systemStaticModulePaths = systemImage.sections.rodata.staticModulePaths;
-	cartEntryAvailable = cartImage != nullptr;
-	m_cartVectors = cartImage ? cartImage->vectors : systemImage.vectors;
-	if (cartImage) {
-		m_cartStaticModulePaths = cartImage->sections.rodata.staticModulePaths;
-	} else {
-		m_cartStaticModulePaths.clear();
-	}
-	cartProgramStarted = bootTarget == ProgramBootTarget::Cart;
-	m_programStorage = assembleProgramImages(systemImage, cartImage);
-	try {
-		m_program = m_programStorage.get();
-		m_programRuntimeSymbols = runtimeImage.symbols;
-		m_programMetadataStorage = cartImage ? std::move(cartMetadata) : std::move(systemMetadata);
-		m_programMetadata = m_programMetadataStorage.get();
-		machine.cpu.setProgram(
-			m_program,
-			m_programRuntimeSymbols,
-			m_programMetadata,
-			m_systemVectors.irqProtoIndex,
-			m_cartVectors.irqProtoIndex,
-			m_systemVectors.exceptionProtoIndex
-		);
-		setupBuiltins();
-		enforceLuaHeapBudget();
-		startLoadedProgram(
-			activeImage.vectors,
-			m_systemStaticModulePaths,
-			cartProgramStarted ? std::span<const std::string>{ m_cartStaticModulePaths } : std::span<const std::string>{}
-		);
-	} catch (const std::exception& e) {
-		handleLuaError(e.what());
-	}
-}
-
-void Runtime::startLoadedProgram(ProgramVectorTable vectors, std::span<const std::string> systemStaticModulePaths, std::span<const std::string> cartStaticModulePaths) {
-	m_programVectorsStorage = vectors;
-	programVectors = &m_programVectorsStorage;
-	const u32 statusWord = cartProgramStarted ? CPU_STATUS_CART_ENTRY : CPU_STATUS_SYSTEM_ENTRY;
-	runSectionInitializer(vectors.sectionInitProtoIndex, statusWord);
-	runStaticModuleInitializers(systemStaticModulePaths);
-	clearLuaBootPrimitives();
-	runStaticModuleInitializers(cartStaticModulePaths);
-	machine.cpu.syncGlobalSlotsToTable();
-	enforceLuaHeapBudget();
-	machine.cpu.start(vectors.resetProtoIndex, NativeArgsView(), statusWord);
+void Runtime::startSystemFirmware() {
+	machine.cpu.start(
+		machine.cpu.systemStartupFunctionAddress(),
+		NativeArgsView(),
+		CPU_STATUS_SYSTEM_ENTRY
+	);
 	enforceLuaHeapBudget();
 	m_pendingCall = PendingCall::Entry;
 	m_luaInitialized = true;
 }
 
-void Runtime::rebootSystemProgram() {
-	enterSystemFirmware();
-	m_runtimeFailed = false;
-	m_luaInitialized = false;
-	m_pendingCall = PendingCall::None;
-	programVectors = nullptr;
-	hostFault.clear();
-	m_moduleCache.clear();
-	machine.cpu.clearProgramEnvironment();
-	machine.memory.clearIoSlots();
-	machine.initializeSystemIo();
-	resetHardwareState();
-	machine.cpu.setProgram(
-		m_program,
-		m_programRuntimeSymbols,
-		m_programMetadata,
-		m_systemVectors.irqProtoIndex,
-		m_cartVectors.irqProtoIndex,
-		m_systemVectors.exceptionProtoIndex
-	);
+void Runtime::rebootSystem() {
+	resetForSystemBoot();
+	machine.cpu.remountExecutableMedia();
 	setupBuiltins();
-	enforceLuaHeapBudget();
-	startLoadedProgram(m_systemVectors, m_systemStaticModulePaths, std::span<const std::string>{});
-}
-
-void Runtime::runSectionInitializer(int protoIndex, u32 statusWord) {
-	machine.cpu.start(protoIndex, NativeArgsView(), statusWord);
-	machine.cpu.runUntilDepth(0, std::numeric_limits<int>::max());
-	if (machine.cpu.hasFrames()) {
-		throw BMSX_RUNTIME_ERROR("section initializer did not return.");
-	}
-}
-
-void Runtime::runStaticModuleInitializer(const std::string& path) {
-	if (m_moduleCache.find(path) != m_moduleCache.end()) {
-		return;
-	}
-	const auto protoIt = m_program->moduleProtoMap.find(path);
-	if (protoIt == m_program->moduleProtoMap.end()) {
-		throw BMSX_RUNTIME_ERROR("static module init failed: module '" + path + "' is not compiled.");
-	}
-	m_moduleCache[path] = valueBool(true);
-	Closure& closure = machine.cpu.rootClosure(protoIt->second);
-	NativeResults results;
-	try {
-		callClosureInto(closure, NativeArgsView(), results);
-	} catch (...) {
-		m_moduleCache.erase(path);
-		throw;
-	}
-	m_moduleCache.erase(path);
-}
-
-void Runtime::runStaticModuleInitializers(std::span<const std::string> paths) {
-	for (const std::string& path : paths) {
-		runStaticModuleInitializer(path);
-	}
+	startSystemFirmware();
 }
 
 void Runtime::logLuaCallStack() const {
-	const ProgramMetadata* metadata = m_programMetadata;
-	if (!metadata) {
-		return;
-	}
-	auto stack = machine.cpu.getCallStack();
+	const auto stack = machine.cpu.getCallStack();
 	if (stack.empty()) {
-		auto range = machine.cpu.getDebugRange(machine.cpu.lastPc);
+		const std::optional<SourceRange> range = machine.cpu.getDebugRange(machine.cpu.lastPc);
 		if (range.has_value()) {
-			std::cout << "  at <current> (" << range->path << ":" << range->startLine << ":" << range->startColumn << ")"
-						<< std::endl;
+			std::cout << "  at <current> (" << range->path << ':'
+				<< range->start.line << ':' << range->start.column << ')' << std::endl;
 		} else {
-			std::cout << "  at <current> (pc=" << machine.cpu.lastPc << ")" << std::endl;
+			std::cout << "  at <current> (pc=0x" << std::hex
+				<< machine.cpu.lastPc << std::dec << ')' << std::endl;
 		}
 		return;
 	}
-	for (const auto& [protoIndex, pc] : stack) {
-		const std::string& protoId = metadata->protoIds[protoIndex];
-		auto range = machine.cpu.getDebugRange(pc);
-		if (range.has_value()) {
-			std::cout << "  at " << protoId << " (" << range->path << ":" << range->startLine << ":" << range->startColumn << ")"
-						<< std::endl;
+	for (const CpuCallStackEntry& frame : stack) {
+		const Blua32SymbolsImage* symbols = frame.symbols;
+		if (symbols) {
+			std::cout << "  at " << symbols->metadata.functionIds[frame.functionIndex];
+			const std::optional<SourceRange> range = blua32SourceRangeAtPc(
+				*symbols,
+				frame.image->header.textAddress,
+				frame.pc
+			);
+			if (range.has_value()) {
+				std::cout << " (" << range->path << ':'
+					<< range->start.line << ':' << range->start.column << ')' << std::endl;
+				continue;
+			}
 		} else {
-			std::cout << "  at " << protoId << " (pc=" << pc << ")" << std::endl;
+			std::cout << "  at function@0x" << std::hex
+				<< frame.functionAddress << std::dec;
 		}
+		std::cout << " (pc=0x" << std::hex << frame.pc << std::dec << ')' << std::endl;
 	}
 }
 
 void Runtime::handleLuaError(const std::string& message) {
 	hostFault.publishStartup();
-	std::cout << "[Runtime] Error: " << message << std::endl;
+	std::cout << "Runtime error: " << message << std::endl;
 	logDebugState();
 	logLuaCallStack();
 	machine.cpu.clearHaltUntilIrq();
@@ -340,17 +310,13 @@ void Runtime::handleLuaError(const std::string& message) {
 }
 
 
-void Runtime::resetRuntimeForProgramReload() {
+void Runtime::resetForSystemBoot() {
 	frameLoop.resetFrameState(*this);
 	m_runtimeFailed = false;
 	m_luaInitialized = false;
 	m_pendingCall = PendingCall::None;
-	programVectors = nullptr;
-	cartEntryAvailable = false;
-	m_cartStaticModulePaths.clear();
 	hostFault.clear();
-	m_moduleCache.clear();
-	machine.cpu.clearProgramEnvironment();
+	machine.cpu.clearExecutionEnvironment();
 	machine.memory.clearIoSlots();
 	machine.initializeSystemIo();
 	resetHardwareState();

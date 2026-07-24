@@ -27,14 +27,13 @@ const EMPTY_CART_HEADER: CartRomHeader = {
 	tocLength: 0,
 	dataOffset: 0,
 	dataLength: 0,
-	programBootVersion: 0,
-	programBootFlags: 0,
-	programEntryProtoIndex: 0,
-	programCodeByteCount: 0,
-	programConstPoolCount: 0,
-	programProtoCount: 0,
-	programReserved0: 0,
-	programConstRelocCount: 0,
+	blua32ImageOffset: 0,
+	blua32ImageByteCount: 0,
+	blua32StartupFunctionAddress: 0,
+	blua32IrqFunctionAddress: 0,
+	blua32ExceptionFunctionAddress: 0,
+	blua32StaticLayoutTokenLo: 0,
+	blua32StaticLayoutTokenHi: 0,
 	metadataOffset: 0,
 	metadataLength: 0,
 	vdpClass: 'psx',
@@ -66,13 +65,36 @@ test('ROM header rejects unsupported VDP-class markers', () => {
 	assert.throws(() => parseCartHeader(rom), /Unsupported ROM VDP class marker/);
 });
 
-test('ROM header accepts data-only and current program images only', () => {
+test('ROM header carries raw BLua32 image and vector words', () => {
 	const rom = new Uint8Array(CART_ROM_HEADER_SIZE);
-	writeCartRomHeader(rom, EMPTY_CART_HEADER);
-	assert.equal(parseCartHeader(rom).programBootVersion, 0);
-
-	new DataView(rom.buffer).setUint32(32, 2, true);
-	assert.throws(() => parseCartHeader(rom), /Unsupported ROM program boot version/);
+	writeCartRomHeader(rom, {
+		...EMPTY_CART_HEADER,
+		blua32ImageOffset: 0x100,
+		blua32ImageByteCount: 0x200,
+		blua32StartupFunctionAddress: 0x01000300,
+		blua32IrqFunctionAddress: 0x01000320,
+		blua32ExceptionFunctionAddress: 0x01000340,
+		blua32StaticLayoutTokenLo: 0x11223344,
+		blua32StaticLayoutTokenHi: 0x55667788,
+	});
+	const header = parseCartHeader(rom);
+	assert.deepEqual({
+		imageOffset: header.blua32ImageOffset,
+		imageByteCount: header.blua32ImageByteCount,
+		startupFunctionAddress: header.blua32StartupFunctionAddress,
+		irqFunctionAddress: header.blua32IrqFunctionAddress,
+		exceptionFunctionAddress: header.blua32ExceptionFunctionAddress,
+		staticLayoutTokenLo: header.blua32StaticLayoutTokenLo,
+		staticLayoutTokenHi: header.blua32StaticLayoutTokenHi,
+	}, {
+		imageOffset: 0x100,
+		imageByteCount: 0x200,
+		startupFunctionAddress: 0x01000300,
+		irqFunctionAddress: 0x01000320,
+		exceptionFunctionAddress: 0x01000340,
+		staticLayoutTokenLo: 0x11223344,
+		staticLayoutTokenHi: 0x55667788,
+	});
 });
 
 test('ROM header carries the physical cartridge board words', () => {

@@ -41,10 +41,7 @@ import {
 	CARTRIDGE_MAILBOX_STATUS_OFFSET,
 	CARTRIDGE_STATUS_SELECTED_SLOT1,
 	CARTRIDGE_STATUS_SLOT0_PRESENT,
-	CARTRIDGE_STATUS_SLOT0_PROGRAM,
 	CARTRIDGE_STATUS_SLOT1_PRESENT,
-	CARTRIDGE_STATUS_SLOT1_PROGRAM,
-	cartridgeBootSlot,
 	type CartridgeByteView,
 	type CartridgeControllerState,
 	type CartridgeSlotMedia,
@@ -68,13 +65,12 @@ const CARTRIDGE_DREQ_MASK =
 
 export class CartridgeController {
 	private readonly slots: [CartridgeSlot, CartridgeSlot];
-	private readonly bootSlotIndex: number;
+	private readonly romMediaRevisions = new Uint32Array([1, 1]);
 	private selectionWord = 0;
 	private irq!: IrqController;
 	private dma!: DmaController;
 
 	public constructor(media: CartridgeSlotMediaPair) {
-		this.bootSlotIndex = cartridgeBootSlot(media);
 		this.slots = [
 			{
 				media: media[0],
@@ -91,7 +87,6 @@ export class CartridgeController {
 				mailboxIrqPending: false,
 			},
 		];
-		this.selectionWord = this.bootSlotIndex;
 	}
 
 	public connect(memory: Memory, irq: IrqController, dma: DmaController): void {
@@ -110,12 +105,21 @@ export class CartridgeController {
 		return this.selectionWord & 1;
 	}
 
+	public installRom(slotIndex: number, rom: Uint8Array): void {
+		this.slots[slotIndex]!.media.rom = rom;
+		this.romMediaRevisions[slotIndex] += 1;
+	}
+
+	public romRevision(slotIndex: number): number {
+		return this.romMediaRevisions[slotIndex];
+	}
+
 	public ramByteCount(): number {
 		return this.slots[0].ram.byteLength + this.slots[1].ram.byteLength;
 	}
 
 	public reset(): void {
-		this.selectionWord = this.bootSlotIndex;
+		this.selectionWord = 0;
 		for (let slotIndex = 0; slotIndex < this.slots.length; slotIndex += 1) {
 			const slot = this.slots[slotIndex]!;
 			slot.mailboxDataWord = 0;
@@ -364,8 +368,6 @@ export class CartridgeController {
 		let status = context.selectedSlot() === 1 ? CARTRIDGE_STATUS_SELECTED_SLOT1 : 0;
 		if (context.slots[0].media.present) status |= CARTRIDGE_STATUS_SLOT0_PRESENT;
 		if (context.slots[1].media.present) status |= CARTRIDGE_STATUS_SLOT1_PRESENT;
-		if (context.slots[0].media.programPresent) status |= CARTRIDGE_STATUS_SLOT0_PROGRAM;
-		if (context.slots[1].media.programPresent) status |= CARTRIDGE_STATUS_SLOT1_PROGRAM;
 		return status;
 	}
 
