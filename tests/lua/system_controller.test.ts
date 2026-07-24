@@ -286,16 +286,7 @@ test('an unexecuted second cartridge does not alter guest identity allocation', 
 		cartridgeSlots: [slot0.cartSymbols, slot1.cartSymbols],
 	});
 	revisedDual.machine.memory.cartridgeController.installRom(1, slot1.cartRomBytes);
-	revisedDual.machine.cpu.applyExecutableMediaRevision({
-		system: slot0.systemSymbols,
-		cartridgeSlots: [slot0.cartSymbols, slot1.cartSymbols],
-	}, {
-		system: null,
-		cartridgeSlots: [null, {
-			functionAddresses: new Uint32Array(0),
-			pcAddresses: new Int32Array(0),
-		}],
-	});
+	revisedDual.machine.cpu.installExecutionImage(1, slot1.cartSymbols);
 
 	const singleStringId = single.machine.cpu.stringPool.intern('post-boot-probe', false);
 	assert.equal(dual.machine.cpu.stringPool.intern('post-boot-probe', false), singleStringId);

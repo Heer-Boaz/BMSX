@@ -174,16 +174,11 @@ class RuntimeCartEditor implements CartEditor {
 	public constructor(runtime: Runtime, viewport: Viewport, fontVariant: Parameters<typeof setFontVariant>[0]) {
 		this.runtime = runtime;
 		const sourceState = machineManager.sourceState;
-		this.isAvailable = sourceState.systemLuaSources.can_boot_from_source;
-		for (let slot = 0; slot < sourceState.cartridgeSlots.length; slot += 1) {
-			const cartridge = sourceState.cartridgeSlots[slot];
-			if (cartridge !== null
-				&& cartridge.rom.header.blua32ImageOffset
-				&& !cartridge.luaSources.can_boot_from_source) {
-				this.isAvailable = false;
-				break;
-			}
-		}
+		const activeCartridge = sourceState.activeCartridgeSlot >= 0
+			? sourceState.cartridgeSlots[sourceState.activeCartridgeSlot]
+			: null;
+		this.isAvailable = sourceState.systemLuaSources.can_boot_from_source
+			&& (activeCartridge === null || activeCartridge.luaSources.can_boot_from_source);
 		this.commands = new IdeCommandController(runtime);
 		this.navigation = new EditorNavigationController(runtime);
 		this.completion = new EditorCompletionController(runtime);

@@ -1,4 +1,3 @@
-import type { Blua32ExecutionImageRevision } from '../../machine/cpu/cpu';
 import type { Blua32FunctionRecord, Blua32ImageLayout } from '../../machine/cpu/blua32_image';
 import type {
 	Blua32LocalSlotDebug,
@@ -240,6 +239,34 @@ function mapChangedFunctionProgramCounters(
 		pcAddresses[(previousPc - previousImage.header.textAddress) / INSTRUCTION_BYTES]
 			= freshFunction.codeAddress + freshPoint.wordOffset * INSTRUCTION_BYTES;
 	}
+}
+
+export type Blua32ExecutionImageRevision = {
+	functionAddresses: Uint32Array;
+	pcAddresses: Int32Array;
+};
+
+export function relocatedContinuationPc(
+	revision: Blua32ExecutionImageRevision,
+	previousImage: Blua32ImageLayout,
+	pc: number,
+): number {
+	const wordIndex = (pc - previousImage.header.textAddress) / INSTRUCTION_BYTES;
+	return (wordIndex >>> 0) < revision.pcAddresses.length ? revision.pcAddresses[wordIndex] : -1;
+}
+
+// A call site is always the instruction immediately preceding the caller's own resume point
+// (`CPU.pushFrameFromCaller` is invoked with `callSitePc = caller.pc - INSTRUCTION_BYTES` at every
+// call site, direct or protected). Resume points are registered at resume-after-call addresses,
+// not at the call instruction itself, so a call site is relocated by recovering the associated
+// resume point and re-applying the same fixed offset on the fresh side.
+export function relocatedCallSitePc(
+	revision: Blua32ExecutionImageRevision,
+	previousImage: Blua32ImageLayout,
+	callSitePc: number,
+): number {
+	const returnPc = relocatedContinuationPc(revision, previousImage, callSitePc + INSTRUCTION_BYTES);
+	return returnPc < 0 ? -1 : returnPc - INSTRUCTION_BYTES;
 }
 
 export function buildBlua32ExecutionRevision(

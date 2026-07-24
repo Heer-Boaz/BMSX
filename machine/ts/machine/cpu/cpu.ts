@@ -1492,14 +1492,14 @@ type Blua32ExecutionImage = Blua32MediaImage & {
 	profilerIndex: number;
 };
 
-export type Blua32ExecutionImageRevision = {
-	functionAddresses: Uint32Array;
-	pcAddresses: Int32Array;
-};
-
-export type Blua32MediaRevision = {
-	system: Blua32ExecutionImageRevision | null;
-	cartridgeSlots: [Blua32ExecutionImageRevision | null, Blua32ExecutionImageRevision | null];
+export type CpuRawFrameContinuation = {
+	frameIndex: number;
+	slot: number;
+	functionIndex: number;
+	pc: number;
+	callSitePc: number | null;
+	epcWord: number | null;
+	nmiReturnEpcWord: number | null;
 };
 
 function createDecodedInstructionPage(): DecodedInstructionPage {
@@ -2125,66 +2125,40 @@ export class CPU {
 		}
 	}
 
-	public applyExecutableMediaRevision(
-		symbols: Blua32MediaSymbols,
-		revision: Blua32MediaRevision,
-	): void {
-		const previousSystemImage = this.systemImage;
-		const previousCartridgeImages = this.cartridgeImages;
-		const previousCartridgeMediaImages = this.cartridgeMediaImages;
-		const previousActiveImage = this.activeExecutionImage;
-
-		const imageRevisions = new Map<Blua32ExecutionImage, {
-			image: Blua32ExecutionImage;
-			revision: Blua32ExecutionImageRevision;
-		}>();
-
-		if (revision.system !== null) {
-			this.systemImage = this.activateExecutableImage(
-				this.decodeExecutableMedia(
-					SYSTEM_ROM_BASE,
-					-1,
-					symbols.system,
-				)!,
-			);
-			imageRevisions.set(previousSystemImage, {
-				image: this.systemImage,
-				revision: revision.system,
-			});
-		}
-
-		const nextCartridgeImages: [Blua32ExecutionImage | null, Blua32ExecutionImage | null] = [
-			previousCartridgeImages[0],
-			previousCartridgeImages[1],
-		];
-		const nextCartridgeMediaImages: [Blua32MediaImage | null, Blua32MediaImage | null] = [
-			previousCartridgeMediaImages[0],
-			previousCartridgeMediaImages[1],
-		];
-		for (let slot = 0; slot < revision.cartridgeSlots.length; slot += 1) {
-			const imageRevision = revision.cartridgeSlots[slot];
-			if (imageRevision === null) {
-				continue;
+	public installExecutionImage(target: 'system' | 0 | 1, symbols: Blua32SymbolsImage | null): void {
+		if (target === 'system') {
+			const media = this.decodeExecutableMedia(SYSTEM_ROM_BASE, -1, symbols);
+			if (!media) {
+				throw new Error('System ROM has no BLua32 executable image.');
 			}
-			const media = this.decodeExecutableMedia(
-				CART_ROM_BASE,
-				slot,
-				symbols.cartridgeSlots[slot],
-			);
-			const previousImage = previousCartridgeImages[slot];
+			const previousImage = this.systemImage;
+			this.systemImage = this.activateExecutableImage(media);
+			this.systemExceptionFunctionAddress = this.systemImage.boot.exceptionFunctionAddress;
+			if (this.activeExecutionImage === previousImage) {
+				this.activeExecutionImage = this.systemImage;
+			}
+		} else {
+			const media = this.decodeExecutableMedia(CART_ROM_BASE, target, symbols);
+			const previousImage = this.cartridgeImages[target];
 			if (!previousImage) {
-				nextCartridgeImages[slot] = null;
-				nextCartridgeMediaImages[slot] = media;
-				continue;
+				this.cartridgeImages[target] = null;
+				this.cartridgeMediaImages[target] = media;
+			} else {
+				const image = this.activateExecutableImage(media!);
+				this.cartridgeImages[target] = image;
+				this.cartridgeMediaImages[target] = null;
+				if (this.activeExecutionImage === previousImage) {
+					this.activeExecutionImage = image;
+				}
 			}
-			const image = this.activateExecutableImage(media!);
-			nextCartridgeImages[slot] = image;
-			nextCartridgeMediaImages[slot] = null;
-			imageRevisions.set(previousImage, { image, revision: imageRevision });
 		}
-		this.cartridgeImages = nextCartridgeImages;
-		this.cartridgeMediaImages = nextCartridgeMediaImages;
+		this.profilerConfigured = false;
+		if (this.profilerEnabled) {
+			this.configureProfiler();
+		}
+	}
 
+	private exceptionOwnerFrameIndices(): { epcOwnerFrameIndex: number; nmiReturnEpcOwnerFrameIndex: number } {
 		let activeExceptionFrameIndex = -1;
 		for (let frameIndex = this.frames.length - 1; frameIndex >= 0; frameIndex -= 1) {
 			if (this.frames[frameIndex].isExceptionFrame) {
@@ -2203,82 +2177,59 @@ export class CPU {
 				}
 			}
 		}
+		return { epcOwnerFrameIndex, nmiReturnEpcOwnerFrameIndex };
+	}
 
-		const relocatedPc = (
-			previousImage: Blua32ExecutionImage,
-			imageRevision: Blua32ExecutionImageRevision,
-			pc: number,
-		): number => {
-			const wordIndex = (pc - previousImage.layout.header.textAddress) / INSTRUCTION_BYTES;
-			return (wordIndex >>> 0) < imageRevision.pcAddresses.length
-				? imageRevision.pcAddresses[wordIndex]
-				: -1;
-		};
-
-		for (let frameIndex = this.frames.length - 1; frameIndex >= 0; frameIndex -= 1) {
+	public rawContinuations(): CpuRawFrameContinuation[] {
+		const { epcOwnerFrameIndex, nmiReturnEpcOwnerFrameIndex } = this.exceptionOwnerFrameIndices();
+		const topIndex = this.frames.length - 1;
+		const continuations: CpuRawFrameContinuation[] = new Array(this.frames.length);
+		for (let frameIndex = 0; frameIndex <= topIndex; frameIndex += 1) {
 			const frame = this.frames[frameIndex];
-			const mappedImage = imageRevisions.get(frame.functionRecord.image);
-			if (!mappedImage) {
-				continue;
-			}
-			const previousImage = frame.functionRecord.image;
-			const pc = relocatedPc(previousImage, mappedImage.revision, frame.pc);
-			if (pc < 0) {
-				continue;
-			}
-
 			const childFrame = this.frames[frameIndex + 1];
-			let callSitePc = 0;
-			if (childFrame) {
-				callSitePc = relocatedPc(previousImage, mappedImage.revision, childFrame.callSitePc);
-				if (callSitePc < 0) {
-					continue;
-				}
-			}
-
-			let epcWord = 0;
-			if (frameIndex === epcOwnerFrameIndex) {
-				epcWord = relocatedPc(previousImage, mappedImage.revision, this.epcWord);
-				if (epcWord < 0) {
-					continue;
-				}
-			}
-
-			let nmiReturnEpcWord = 0;
-			if (frameIndex === nmiReturnEpcOwnerFrameIndex) {
-				nmiReturnEpcWord = relocatedPc(previousImage, mappedImage.revision, this.nmiReturnEpcWord);
-				if (nmiReturnEpcWord < 0) {
-					continue;
-				}
-			}
-
-			const address = mappedImage.revision.functionAddresses[frame.functionRecord.index];
-			const functionRecord = this.functionRecordInImage(mappedImage.image, address)!;
-			frame.functionAddress = address;
-			frame.functionRecord = functionRecord;
-			frame.pc = pc;
-			if (childFrame) {
-				childFrame.callSitePc = callSitePc;
-			}
-			if (frameIndex === epcOwnerFrameIndex) {
-				this.epcWord = epcWord;
-			}
-			if (frameIndex === nmiReturnEpcOwnerFrameIndex) {
-				this.nmiReturnEpcWord = nmiReturnEpcWord;
-			}
-			if (functionRecord.maxStack > frame.stackCapacity) {
-				this.ensureRegisterCapacity(frame, functionRecord.maxStack - 1);
-			}
+			continuations[frameIndex] = {
+				frameIndex,
+				slot: frame.functionRecord.image.cartridgeSlot,
+				functionIndex: frame.functionRecord.index,
+				pc: frame.pc,
+				callSitePc: childFrame ? childFrame.callSitePc : null,
+				epcWord: frameIndex === epcOwnerFrameIndex ? this.epcWord : null,
+				nmiReturnEpcWord: frameIndex === nmiReturnEpcOwnerFrameIndex ? this.nmiReturnEpcWord : null,
+			};
 		}
+		return continuations;
+	}
 
-		const activeRevision = imageRevisions.get(previousActiveImage);
-		if (activeRevision) {
-			this.activeExecutionImage = activeRevision.image;
+	public relocateFrame(
+		frameIndex: number,
+		functionAddress: number,
+		pc: number,
+		callSitePc: number | null,
+		epcWord: number | null,
+		nmiReturnEpcWord: number | null,
+	): void {
+		const frame = this.frames[frameIndex];
+		const slot = frame.functionRecord.image.cartridgeSlot;
+		const image = slot < 0 ? this.systemImage : this.cartridgeImages[slot]!;
+		const functionRecord = this.functionRecordInImage(image, functionAddress);
+		if (!functionRecord) {
+			this.hardHalt();
+			return;
 		}
-		this.systemExceptionFunctionAddress = this.systemImage.boot.exceptionFunctionAddress;
-		this.profilerConfigured = false;
-		if (this.profilerEnabled) {
-			this.configureProfiler();
+		frame.functionAddress = functionAddress;
+		frame.functionRecord = functionRecord;
+		frame.pc = pc;
+		if (callSitePc !== null) {
+			this.frames[frameIndex + 1].callSitePc = callSitePc;
+		}
+		if (epcWord !== null) {
+			this.epcWord = epcWord;
+		}
+		if (nmiReturnEpcWord !== null) {
+			this.nmiReturnEpcWord = nmiReturnEpcWord;
+		}
+		if (functionRecord.maxStack > frame.stackCapacity) {
+			this.ensureRegisterCapacity(frame, functionRecord.maxStack - 1);
 		}
 	}
 
