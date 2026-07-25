@@ -59,7 +59,7 @@ function indexInstalledBlua32Sources(registry: LuaSourceRegistry): Map<string, s
 
 export function createRuntimeSourceState(
 	systemLayer: RuntimeRomLayer,
-	cartridgeLayers: [RuntimeRomLayer | null, RuntimeRomLayer | null],
+	cartridgeLayers: readonly [RuntimeRomLayer | null, RuntimeRomLayer | null],
 ): RuntimeSourceState {
 	const systemSource = new RomSourceStack([{ id: systemLayer.id, index: systemLayer.index, payload: systemLayer.payload }]);
 	const systemLuaSources = buildLuaSources(systemSource, systemSource, systemLayer.index, ['system']);

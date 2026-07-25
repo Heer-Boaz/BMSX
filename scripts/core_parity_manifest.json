@@ -56,11 +56,6 @@
 			"reason": "machine_runtime_public_barrel"
 		},
 		{
-			"pattern": "machine/ts/machine_runtime.ts",
-			"category": "host",
-			"reason": "machine_runtime_js_artifact_entrypoint"
-		},
-		{
 			"pattern": "machine/ts/input/host/assignment_processor.ts",
 			"category": "host",
 			"reason": "host_input_assignment_ui_not_core"
@@ -273,7 +268,6 @@
 	],
 	"core_roots": [
 		"machine/ts/common/taskgate.ts",
-		"machine/ts/core/host_frame.ts",
 		"machine/ts/core/host_overlay_menu.ts",
 		"machine/ts/core/machine_manager.ts",
 		"machine/ts/core/rom_boot_manager.ts",
@@ -294,7 +288,6 @@
 		"machine/ts/render/gx/view_snapshot.ts",
 		"machine/ts/render/post/device_quantize/lut.ts",
 		"machine/ts/render/post/device_quantize/mode.ts",
-		"machine/ts/render/presentation_state.ts",
 		"machine/ts/render/runtime_state.ts",
 		"machine/ts/render/shared/bmsx_font.ts",
 		"machine/ts/render/shared/glyph_runs.ts",

@@ -1,4 +1,4 @@
-import { machineManager } from '../../machine/ts/core/machine_manager';
+import { runtimeWorkbenchState } from '../runtime/workbench_state';
 import { centerCursorVertically, setCursorPosition } from '../editor/ui/view/caret/caret';
 import { beginNavigationCapture, completeNavigation } from '../navigation/navigation_history';
 import { activateCodeTab, isTabActive, setActiveTab } from '../workbench/ui/tabs';
@@ -167,7 +167,7 @@ export function showLuaErrorOverlay(error: unknown): boolean {
 	const safeLine = hasLine ? rawLine : 0;
 	const safeColumn = hasColumn ? rawColumn : 0;
 	const baseMessage = messageText ?? 'Unprintable error';
-	machineManager.ideState.editor.showRuntimeErrorInChunk(path, safeLine, safeColumn, baseMessage);
+	runtimeWorkbenchState.ide.editor.showRuntimeErrorInChunk(path, safeLine, safeColumn, baseMessage);
 	return true;
 }
 

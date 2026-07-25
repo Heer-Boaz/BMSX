@@ -1,5 +1,5 @@
+import { runtimeWorkbenchState } from '../../../runtime/workbench_state';
 import type { ResourceDescriptor, ResourceIdentity } from '../../../common/resource';
-import { machineManager } from '../../../../machine/ts/core/machine_manager';
 import {
 	resolveRuntimeLuaSource,
 	resolveRuntimeLuaSourceForContext,
@@ -7,7 +7,7 @@ import {
 import type { ResourceDomain } from '../../../common/resource';
 
 export function findResourceDescriptorForChunk(identity: ResourceIdentity): ResourceDescriptor | null {
-	const source = resolveRuntimeLuaSource(machineManager.sourceState, identity);
+	const source = resolveRuntimeLuaSource(runtimeWorkbenchState.sources, identity);
 	if (source === null) {
 		return null;
 	}
@@ -25,7 +25,7 @@ export function findResourceDescriptorForContext(
 	domain: ResourceDomain,
 	path: string,
 ): ResourceDescriptor | null {
-	const source = resolveRuntimeLuaSourceForContext(machineManager.sourceState, domain, path);
+	const source = resolveRuntimeLuaSourceForContext(runtimeWorkbenchState.sources, domain, path);
 	if (source === null) {
 		return null;
 	}

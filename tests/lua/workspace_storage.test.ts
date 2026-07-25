@@ -1,3 +1,4 @@
+import { runtimeWorkbenchState } from '../../ide/runtime/workbench_state';
 import './test_setup';
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
@@ -94,7 +95,7 @@ function createPlatformStub(storage: MockStorage) {
 }
 
 const ORIGINAL_PLATFORM = (machineManager as any).platform;
-const ORIGINAL_SOURCE_STATE = (machineManager as any).sourceState;
+const ORIGINAL_SOURCE_STATE = runtimeWorkbenchState.sources;
 const ORIGINAL_FETCH = globalThis.fetch;
 const TEST_DOMAIN = 0;
 // disable-next-line legacy_sentinel_string_pattern -- seeds and verifies removal of the obsolete local-only workspace marker.
@@ -121,7 +122,7 @@ async function resetEnvironment(storage: MockStorage): Promise<void> {
 	tabSessionState.activeTabId = null;
 	editorDocumentState.buffer = new PieceTreeBuffer('');
 	(machineManager as any).platform = ORIGINAL_PLATFORM;
-	(machineManager as any).sourceState = ORIGINAL_SOURCE_STATE;
+	runtimeWorkbenchState.sources = ORIGINAL_SOURCE_STATE;
 	globalThis.fetch = ORIGINAL_FETCH;
 }
 
@@ -206,7 +207,7 @@ function sourceRegistry(source: string): LuaSourceRegistry {
 test('resource identity keeps identical cartridge paths isolated by slot', (t) => {
 	const slot0Sources = sourceRegistry('return "slot 0"');
 	const slot1Sources = sourceRegistry('return "slot 1"');
-	(machineManager as any).sourceState = {
+	runtimeWorkbenchState.sources = {
 		systemLuaSources: sourceRegistry('return "system"'),
 		cartridgeSlots: [
 			{ domain: 0, luaSources: slot0Sources },
@@ -216,14 +217,14 @@ test('resource identity keeps identical cartridge paths isolated by slot', (t) =
 		activeCartridgeSlot: 0,
 	};
 	t.after(() => {
-		(machineManager as any).sourceState = ORIGINAL_SOURCE_STATE;
+		runtimeWorkbenchState.sources = ORIGINAL_SOURCE_STATE;
 		codeTabSessionState.contexts.clear();
 		resetSemanticWorkspaces();
 		clearWorkspaceSourceCaches();
 	});
 
-	assert.equal(resolveRuntimeLuaSource(machineManager.sourceState, { domain: 0, path: 'entry.lua' })!.record.src, 'return "slot 0"');
-	assert.equal(resolveRuntimeLuaSource(machineManager.sourceState, { domain: 1, path: 'entry.lua' })!.record.src, 'return "slot 1"');
+	assert.equal(resolveRuntimeLuaSource(runtimeWorkbenchState.sources, { domain: 0, path: 'entry.lua' })!.record.src, 'return "slot 0"');
+	assert.equal(resolveRuntimeLuaSource(runtimeWorkbenchState.sources, { domain: 1, path: 'entry.lua' })!.record.src, 'return "slot 1"');
 
 	const slot0Context = installCodeContext('entry.lua', 'return "slot 0"', 0);
 	const slot1Context = installCodeContext('entry.lua', 'return "slot 1"', 1);
@@ -609,7 +610,7 @@ test('runtime source capture detects changed code when editor epochs collide', (
 		generated: false,
 	});
 	const systemRegistry = { records: [], path2lua: {}, module2lua: {}, revision: 0 };
-	(machineManager as any).sourceState = {
+	runtimeWorkbenchState.sources = {
 		cartridgeSlots: [{
 			domain: TEST_DOMAIN,
 			luaSources: registry,
@@ -732,7 +733,7 @@ test('explicit lua save promotes canonical source and removes dirty entry', asyn
 		requests.push({ method: request.method, path });
 		return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
 	};
-	(machineManager as any).sourceState = {
+	runtimeWorkbenchState.sources = {
 		cartridgeSlots: [{ domain: TEST_DOMAIN, luaSources: registry }, null],
 		systemLuaSources: systemRegistry,
 		activeLuaSources: registry,
@@ -752,8 +753,8 @@ test('explicit lua save promotes canonical source and removes dirty entry', asyn
 	assert.equal(storage.getItem(buildWorkspaceStorageKey('offline-cart', dirtyPath)), null);
 	assert.equal(workspaceFileCache.get(dirtyPath), undefined);
 	assert.equal(workspaceFileCache.get('src/foo.lua'), '-- saved source');
-	assert.equal((machineManager as any).sourceState.systemBlua32MediaDirty, false);
-	assert.equal((machineManager as any).sourceState.cartridgeBlua32MediaDirty[0], true);
+	assert.equal(runtimeWorkbenchState.sources.systemBlua32MediaDirty, false);
+	assert.equal(runtimeWorkbenchState.sources.cartridgeBlua32MediaDirty[0], true);
 	await applyWorkspaceOverridesToRegistry({
 		registry,
 		storage,

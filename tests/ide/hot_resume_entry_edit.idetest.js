@@ -24,18 +24,19 @@ const systemRevisionSource = (record, revision) => record.base_src.replace(
 	`function gx_gpu.clear_color(color)\n\thot_resume_system_probe = ${revision}\n`,
 );
 const runtime = t.runtime();
+const sourceState = t.sourceState();
 const cpu = runtime.machine.cpu;
 const liveMathTable = cpu.getGlobalByKey(runtime.internString('math'));
 const liveStateProbeKey = runtime.internString('__hot_resume_live_state_probe');
 cpu.setGlobalByKey(liveStateProbeKey, liveMathTable);
-const cartridge = machineManager.sourceState.cartridgeSlots[cpu.activeCartridgeSlot()];
+const cartridge = sourceState.cartridgeSlots[cpu.activeCartridgeSlot()];
 const entryRecord = cartridge.luaSources.path2lua['entry.lua'];
 const valueRecord = cartridge.luaSources.path2lua['value.lua'];
-const gxGpuRecord = machineManager.sourceState.systemLuaSources.path2lua['system/gx_gpu.lua'];
+const gxGpuRecord = sourceState.systemLuaSources.path2lua['system/gx_gpu.lua'];
 const initialSystemMediaRevision = runtime.machine.memory.systemRomRevision();
 const initialCartMediaRevision = runtime.machine.memory.cartridgeController.romRevision(cpu.activeCartridgeSlot());
 const dataOnlySlot = cpu.activeCartridgeSlot() === 0 ? 1 : 0;
-const dataOnlyCartridge = machineManager.sourceState.cartridgeSlots[dataOnlySlot];
+const dataOnlyCartridge = sourceState.cartridgeSlots[dataOnlySlot];
 const initialDataOnlyMediaRevision = runtime.machine.memory.cartridgeController.romRevision(dataOnlySlot);
 t.assert(dataOnlyCartridge !== null, 'second cartridge is not installed');
 t.assert(dataOnlyCartridge.rom.header.blua32ImageOffset === 0, 'second cartridge unexpectedly contains executable BLua32');

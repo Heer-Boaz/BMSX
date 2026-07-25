@@ -1,3 +1,4 @@
+import { runtimeWorkbenchState } from './workbench_state';
 import { LuaHandlerCache, isLuaHandlerFunction } from '../../machine/ts/lua/handler_cache';
 import { convertToError, isLuaCallSignal, LuaValue, LuaTable, isLuaTable, createLuaTable, LuaNativeValue, isLuaFunctionValue, isPlainObject, resolveNativeTypeName, LuaFunctionValue } from '../../machine/ts/lua/value';
 import type { LuaInterpreter } from '../../machine/ts/lua/runtime';
@@ -6,7 +7,6 @@ import type { Table } from '../../machine/ts/machine/cpu/table';
 import { asStringId, valueIsHeap, valueIsNumber, valueIsString, valueTag, ValueTag, type NativeFunction, type NativeObject, type StringValue, type Value } from '../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { LuaInteropAdapter, LuaMarshalContext } from '../../machine/ts/lua/interop';
-import { machineManager } from '../../machine/ts/core/machine_manager';
 
 export interface HandlerFn extends Function {
 	(...args: unknown[]): unknown;
@@ -515,7 +515,7 @@ export function extendMarshalContext(ctx: LuaMarshalContext, segment: string): L
 }
 
 export function buildMarshalContext(): LuaMarshalContext {
-	return { moduleId: machineManager.sourceState.activeLuaSources.entry_path, path: [] };
+	return { moduleId: runtimeWorkbenchState.sources.activeLuaSources.entry_path, path: [] };
 }
 
 export function describeMarshalSegment(bridge: RuntimeNativeBridge, key: Value): string {

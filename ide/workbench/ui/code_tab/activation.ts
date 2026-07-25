@@ -1,3 +1,4 @@
+import { runtimeWorkbenchState } from '../../../runtime/workbench_state';
 // disable cross_layer_import_pattern -- code-tab activation owns the editor/workbench state handoff during tab switches, saves, and result navigation.
 import type { CodeTabContext } from '../../../common/models';
 import { editorDocumentState, restoreDocumentStateFromContext, storeDocumentStateInContext } from '../../../editor/editing/document_state';
@@ -21,7 +22,6 @@ import { setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../.
 import { beginNavigationCapture, completeNavigation } from '../../../navigation/navigation_history';
 import { showEditorMessage } from '../../../common/feedback_state';
 import * as constants from '../../../common/constants';
-import { machineManager } from '../../../../machine/ts/core/machine_manager';
 import {
 	resolveRuntimeLuaSource,
 	resolveRuntimeLuaSourceForContext,
@@ -96,7 +96,7 @@ export function captureActiveCodeTabSource(): string {
 
 export function capturePendingLuaCodeTabSources(): LuaCodeTabSourceSnapshot[] {
 	const snapshots: LuaCodeTabSourceSnapshot[] = [];
-	const sources = machineManager.sourceState;
+	const sources = runtimeWorkbenchState.sources;
 	for (const context of codeTabSessionState.contexts.values()) {
 		if (context.mode !== 'lua') {
 			continue;
@@ -209,7 +209,7 @@ export function navigateToLuaDefinition(runtime: Runtime, definition: LuaDefinit
 	try {
 		const activeDomain = getActiveCodeTabContext().descriptor.domain;
 		const source = resolveRuntimeLuaSourceForContext(
-			machineManager.sourceState,
+			runtimeWorkbenchState.sources,
 			activeDomain,
 			definition.path,
 		)!;

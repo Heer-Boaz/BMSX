@@ -1,8 +1,9 @@
-import { machineManager } from '../core/machine_manager';
-import type { Runtime } from '../machine/runtime/runtime';
-import type { TickCompletion } from '../machine/scheduler/frame';
-import * as workbenchMode from '../../../ide/workbench/mode';
-import { commitGxGpuViewSnapshot } from './gx/view_snapshot';
+import { runtimeWorkbenchState } from './workbench_state';
+import { machineManager } from '../../machine/ts/core/machine_manager';
+import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
+import type { TickCompletion } from '../../machine/ts/machine/scheduler/frame';
+import * as workbenchMode from '../workbench/mode';
+import { commitGxGpuViewSnapshot } from '../../machine/ts/render/gx/view_snapshot';
 
 export type RenderPresentationMode = 'partial' | 'completed';
 
@@ -113,7 +114,7 @@ export class RenderPresentationState {
 		if (!this.pendingPresentation) {
 			return false;
 		}
-		const overlayActive = machineManager.ideState.overlayActive;
+		const overlayActive = runtimeWorkbenchState.ide.overlayActive;
 		out.mode = this.presentationMode;
 		out.commitFrame = overlayActive ? false : this.presentationCommitFrame;
 		workbenchMode.tickIDEDraw(runtime);
@@ -160,19 +161,19 @@ export class RenderPresentationState {
 			}
 			this.recordTickCompletion(this.tickCompletionScratch.visualCommitted);
 		}
-		if (machineManager.ideState.overlayActive) {
+		if (runtimeWorkbenchState.ide.overlayActive) {
 			runtime.frameScheduler.clearQueuedTime();
 			this.markPresentation('completed', false);
 		} else if (runtime.frameScheduler.lastTickSequence !== previousTickSequence) {
 			this.markPresentation('completed', tickVisualCommitted);
-		} else if (runtime.isDrawPending || machineManager.faultState.faultSnapshot !== null) {
+		} else if (runtime.isDrawPending || runtimeWorkbenchState.fault.faultSnapshot !== null) {
 			this.markPresentation('partial', false);
 		}
 	}
 
 
 	public presentPausedFrame(runtime: Runtime, hostDeltaMs: number): void {
-		if (machineManager.ideState.overlayActive) {
+		if (runtimeWorkbenchState.ide.overlayActive) {
 			this.runOverlay(runtime);
 			this.consumePresentation(runtime, this.presentationScratch);
 			this.presentFrame(runtime, hostDeltaMs, this.presentationScratch.mode, this.presentationScratch.commitFrame);
@@ -192,7 +193,7 @@ export class RenderPresentationState {
 	}
 
 	public presentErrorOverlay(runtime: Runtime, hostDeltaMs: number): void {
-		if (!machineManager.ideState.overlayActive) {
+		if (!runtimeWorkbenchState.ide.overlayActive) {
 			return;
 		}
 		this.runOverlay(runtime);
@@ -220,8 +221,10 @@ export class RenderPresentationState {
 			+ `tick_deferred=${this.debugPresentTickDeferred} `
 			+ `present_partial=${this.debugPresentPartialPresents} present_commit=${this.debugPresentCommitPresents} `
 			+ `present_hold=${this.debugPresentHoldPresents} present_paused=${this.debugPresentPausedPresents} `
-			+ `draw_pending=${runtime.isDrawPending || machineManager.faultState.faultSnapshot !== null ? 1 : 0} active_tick=${runtime.frameLoop.frameActive ? 1 : 0}`
+			+ `draw_pending=${runtime.isDrawPending || runtimeWorkbenchState.fault.faultSnapshot !== null ? 1 : 0} active_tick=${runtime.frameLoop.frameActive ? 1 : 0}`
 		);
 		this.resetDebugCounters(currentTime);
 	}
 }
+
+export const renderPresentationState = new RenderPresentationState();

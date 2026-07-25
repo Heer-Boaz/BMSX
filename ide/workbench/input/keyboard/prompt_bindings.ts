@@ -1,4 +1,4 @@
-import { machineManager } from '../../../../machine/ts/core/machine_manager';
+import { runtimeWorkbenchState } from '../../../runtime/workbench_state';
 import { cycleTab } from '../../ui/tabs';
 import { isCodeTabActive } from '../../ui/code_tab/contexts';
 import { selectAllSingleCursor } from '../../../editor/editing/cursor/state';
@@ -13,7 +13,7 @@ function handleCreateResourceBinding(): boolean {
 		return false;
 	}
 	consumeIdeKey('KeyN');
-	machineManager.ideState.editor.commands.execute('createResource');
+	runtimeWorkbenchState.ide.editor.commands.execute('createResource');
 	return true;
 }
 
@@ -22,7 +22,7 @@ function handleGlobalFindBinding(): boolean {
 		return false;
 	}
 	consumeIdeKey('KeyF');
-	machineManager.ideState.editor.commands.execute('findGlobal');
+	runtimeWorkbenchState.ide.editor.commands.execute('findGlobal');
 	return true;
 }
 
@@ -31,7 +31,7 @@ function handleLocalFindBinding(): boolean {
 		return false;
 	}
 	consumeIdeKey('KeyF');
-	machineManager.ideState.editor.commands.execute('findLocal');
+	runtimeWorkbenchState.ide.editor.commands.execute('findLocal');
 	return true;
 }
 
@@ -50,10 +50,10 @@ function handleDefinitionAndReferenceBinding(): boolean {
 	}
 	consumeIdeKey('F12');
 	if (isShiftDown()) {
-		machineManager.ideState.editor.commands.execute('referenceSearch');
+		runtimeWorkbenchState.ide.editor.commands.execute('referenceSearch');
 		return true;
 	}
-	machineManager.ideState.editor.commands.execute('goToDefinition');
+	runtimeWorkbenchState.ide.editor.commands.execute('goToDefinition');
 	return true;
 }
 
@@ -61,7 +61,7 @@ function handleSelectAllBinding(): boolean {
 	if (!(isCtrlDown() || isMetaDown()) || isInlineWidgetFocused() || !isCodeTabActive() || !isKeyJustPressed('KeyA')) {
 		return false;
 	}
-	if (machineManager.ideState.editor.resourcePanel.isFocused()) {
+	if (runtimeWorkbenchState.ide.editor.resourcePanel.isFocused()) {
 		return false;
 	}
 	consumeIdeKey('KeyA');
@@ -79,7 +79,7 @@ function handleLineJumpBinding(): boolean {
 		return false;
 	}
 	consumeIdeKey('KeyL');
-	machineManager.ideState.editor.commands.execute('lineJump');
+	runtimeWorkbenchState.ide.editor.commands.execute('lineJump');
 	return true;
 }
 

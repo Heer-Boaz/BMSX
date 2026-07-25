@@ -1,3 +1,4 @@
+import { runtimeWorkbenchState } from '../../../runtime/workbench_state';
 import { clamp } from '../../../../machine/ts/common/clamp';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
 import type { ResourceDescriptor } from '../../../common/resource';
@@ -5,7 +6,6 @@ import * as constants from '../../../common/constants';
 import { computeResourceTabTitle } from '../../ui/tab/titles';
 import { appendTextLines } from '../../../../machine/ts/common/text_lines';
 import type { ResourceViewerState } from '../../../common/models';
-import { machineManager } from '../../../../machine/ts/core/machine_manager';
 
 export type ResourceViewerBounds = {
 	codeTop: number;
@@ -53,7 +53,7 @@ export function buildResourceViewerState(descriptor: ResourceDescriptor): Resour
 		scroll: 0,
 	};
 	let error: string = null;
-	const activePackage = machineManager.sourceState.activePackage;
+	const activePackage = runtimeWorkbenchState.sources.activePackage;
 	lines.push('');
 	switch (descriptor.type) {
 		case 'lua': {

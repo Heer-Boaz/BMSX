@@ -1,13 +1,13 @@
+import { runtimeWorkbenchState } from '../../runtime/workbench_state';
 import { aemDocumentFormat, parseStructuredTextDocument } from '../../../machine/ts/rompack/tooling/aem';
 import type { ResourceDescriptor } from '../../common/resource';
 import { formatAemYamlDocument } from './yaml_formatter';
-import { machineManager } from '../../../machine/ts/core/machine_manager';
 
 export function listAemResourceDescriptors(): ResourceDescriptor[] {
-	const romSource = machineManager.sourceState.activeRomSource;
+	const romSource = runtimeWorkbenchState.sources.activeRomSource;
 	const records = romSource.list('aem');
 	const descriptors: ResourceDescriptor[] = [];
-	const domain = machineManager.sourceState.activeCartridgeSlot;
+	const domain = runtimeWorkbenchState.sources.activeCartridgeSlot;
 	for (let index = 0; index < records.length; index += 1) {
 		const record = records[index]!;
 		if (!record.source_path) {

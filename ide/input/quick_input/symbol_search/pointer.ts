@@ -1,4 +1,4 @@
-import { machineManager } from '../../../../machine/ts/core/machine_manager';
+import { runtimeWorkbenchState } from '../../../runtime/workbench_state';
 import { point_in_rect } from '../../../../machine/ts/common/rect';
 import * as constants from '../../../common/constants';
 import { closeSearch, processInlineFieldPointer } from '../../../editor/contrib/find/search';
@@ -32,7 +32,7 @@ export function handleSymbolSearchPointer(runtime: Runtime, snapshot: PointerSna
 			closeSearch(false, true);
 			symbolSearchState.visible = true;
 			symbolSearchState.active = true;
-			activateQuickInputField(machineManager.ideState.editor.resourcePanel);
+			activateQuickInputField(runtimeWorkbenchState.ide.editor.resourcePanel);
 		}
 		const label = symbolSearchState.global ? 'SYMBOL #:' : 'SYMBOL @:';
 		processInlineFieldPointer(symbolSearchState.field, quickInputTextLeft(label), snapshot.viewportX, justPressed, snapshot.primaryPressed);

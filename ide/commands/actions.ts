@@ -1,3 +1,4 @@
+import { runtimeWorkbenchState } from '../runtime/workbench_state';
 import { machineManager } from '../../machine/ts/core/machine_manager';
 import { editorRuntimeState } from '../editor/common/runtime_state';
 import { scheduleRuntimeTask } from '../common/background_tasks';
@@ -36,7 +37,7 @@ export function performHotResume(runtime: Runtime): boolean {
 	console.log('Performing hot resume.');
 	const pendingSources = capturePendingLuaCodeTabSources();
 	scheduleRuntimeTask(async () => {
-		const sources = machineManager.sourceState;
+		const sources = runtimeWorkbenchState.sources;
 		for (let slot = 0; slot < sources.cartridgeSlots.length; slot += 1) {
 			const cartridge = sources.cartridgeSlots[slot];
 			if (cartridge === null) {
@@ -61,7 +62,7 @@ export function performHotResume(runtime: Runtime): boolean {
 	}, (error) => {
 		console.error(error);
 		handleLuaError(runtime, error);
-		machineManager.ideState.editor.handleRuntimeTaskError(error, 'Failed to resume game');
+		runtimeWorkbenchState.ide.editor.handleRuntimeTaskError(error, 'Failed to resume game');
 	});
 	return true;
 }
@@ -76,7 +77,7 @@ export function performReboot(): boolean {
 		await machineManager.rebootToBootRom();
 		markLuaCodeTabsAppliedToRuntime(pendingSources);
 	}, (error) => {
-		machineManager.ideState.editor.handleRuntimeTaskError(error, 'Failed to reboot game');
+		runtimeWorkbenchState.ide.editor.handleRuntimeTaskError(error, 'Failed to reboot game');
 	});
 	return true;
 }

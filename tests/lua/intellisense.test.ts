@@ -1,3 +1,4 @@
+import { runtimeWorkbenchState } from '../../ide/runtime/workbench_state';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -11,7 +12,6 @@ import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { StringValue } from '../../machine/ts/machine/cpu/value';
 import { compileLuaChunkToProgram } from '../../machine/ts/lua/compiler';
 import { registerLuaSourceRecord } from '../../machine/ts/lua/source_registry';
-import { machineManager } from '../../machine/ts/core/machine_manager';
 import { createRuntimeFaultState } from '../../ide/runtime/fault_state';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { setActiveBlua32MediaSymbols } from '../../ide/runtime/lua_pipeline';
@@ -63,8 +63,8 @@ function runtimeStub(files: Record<string, string> = {}) {
 		luaSourceRegistries: [systemLuaSources],
 		moduleCompileLuaSources: [systemLuaSources],
 	};
-	(machineManager as any).sourceState = sourceState;
-	(machineManager as any).ideState = {
+	runtimeWorkbenchState.sources = sourceState;
+	runtimeWorkbenchState.ide = {
 		nativeBridge: {
 			luaInterpreter: { globalEnvironment: LuaEnvironment.createRoot() },
 		},
@@ -181,9 +181,9 @@ function runtimeWithPausedCpuLocal(source: string) {
 				return StringValue.get(cpu.stringPool.intern(value));
 			},
 		} as any;
-	machineManager.faultState = createRuntimeFaultState();
-	(machineManager as any).sourceState = sourceState;
-	(machineManager as any).ideState = {
+	runtimeWorkbenchState.fault = createRuntimeFaultState();
+	runtimeWorkbenchState.sources = sourceState;
+	runtimeWorkbenchState.ide = {
 		nativeBridge: {
 			luaInterpreter: runtime.interpreter,
 		},

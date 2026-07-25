@@ -1,4 +1,4 @@
-import { machineManager } from '../../machine/ts/core/machine_manager';
+import { runtimeWorkbenchState } from '../runtime/workbench_state';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { EditorCommandId } from '../common/commands';
 import { editorDocumentState } from '../editor/editing/document_state';
@@ -45,8 +45,8 @@ export class IdeCommandController {
 			case 'save':
 				return isCodeTabActive() && editorDocumentState.dirty;
 			case 'filter':
-				return machineManager.ideState.editor.resourcePanel.isVisible()
-					&& machineManager.ideState.editor.resourcePanel.getMode() === 'resources';
+				return runtimeWorkbenchState.ide.editor.resourcePanel.isVisible()
+					&& runtimeWorkbenchState.ide.editor.resourcePanel.getMode() === 'resources';
 			case 'debugContinue':
 			case 'debugStepOver':
 			case 'debugStepInto':
@@ -60,11 +60,11 @@ export class IdeCommandController {
 	public isActive(command: EditorCommandId): boolean {
 		switch (command) {
 			case 'resources':
-				return machineManager.ideState.editor.resourcePanel.isVisible();
+				return runtimeWorkbenchState.ide.editor.resourcePanel.isVisible();
 			case 'problems':
 				return problemsPanel.isVisible;
 			case 'filter':
-				return machineManager.ideState.editor.resourcePanel.getFilterMode() === 'lua_only';
+				return runtimeWorkbenchState.ide.editor.resourcePanel.getFilterMode() === 'lua_only';
 			case 'wrap':
 				return editorViewState.wordWrapEnabled;
 			default:

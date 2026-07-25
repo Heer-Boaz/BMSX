@@ -1,4 +1,4 @@
-import { machineManager } from '../../../../machine/ts/core/machine_manager';
+import { runtimeWorkbenchState } from '../../../runtime/workbench_state';
 import type { ResourceDescriptor } from '../../../common/models';
 import { prepareEditorForSourceFocus, releaseResourcePanelFocus } from '../../../navigation/source_focus';
 import { findResourceDescriptorForChunk } from './lookup';
@@ -9,7 +9,7 @@ import type { ResourceDomain, ResourceIdentity } from '../../../common/resource'
 import { resolveRuntimeLuaSourceForContext } from '../../../runtime/sources';
 
 export function openResourceDescriptor(descriptor: ResourceDescriptor): void {
-	const resourcePanel = machineManager.ideState.editor.resourcePanel;
+	const resourcePanel = runtimeWorkbenchState.ide.editor.resourcePanel;
 	if (descriptor.asset_id && descriptor.asset_id.length > 0) {
 		resourcePanel.queuePendingSelection(descriptor);
 		if (resourcePanel.isVisible()) {
@@ -41,7 +41,7 @@ export function focusChunkSourceForContext(
 	domain: ResourceDomain,
 	path: string,
 ): ResourceIdentity | null {
-	const source = resolveRuntimeLuaSourceForContext(machineManager.sourceState, domain, path);
+	const source = resolveRuntimeLuaSourceForContext(runtimeWorkbenchState.sources, domain, path);
 	if (source === null) {
 		return null;
 	}

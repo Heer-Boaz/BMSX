@@ -1,3 +1,4 @@
+import { runtimeWorkbenchState } from '../../runtime/workbench_state';
 import { machineManager } from '../../../machine/ts/core/machine_manager';
 import { point_in_rect } from '../../../machine/ts/common/rect';
 import * as constants from '../../common/constants';
@@ -39,13 +40,13 @@ export function handleEditorWheelInput(): void {
 	if (handleResourceSearchWheel(direction, steps, activePointer, playerInput)) {
 		return;
 	}
-	if (handleResourcePanelWheel(machineManager.ideState.editor.resourcePanel, direction, steps, activePointer, playerInput)) {
+	if (handleResourcePanelWheel(runtimeWorkbenchState.ide.editor.resourcePanel, direction, steps, activePointer, playerInput)) {
 		return;
 	}
 	if (handleProblemsPanelWheel(direction, steps, activePointer, playerInput)) {
 		return;
 	}
-	if (machineManager.ideState.editor.completion.handlePointerWheel(direction, steps, activePointer !== null ? { x: activePointer.viewportX, y: activePointer.viewportY } : null)) {
+	if (runtimeWorkbenchState.ide.editor.completion.handlePointerWheel(direction, steps, activePointer !== null ? { x: activePointer.viewportX, y: activePointer.viewportY } : null)) {
 		playerInput.consumeRawButton('pointer_wheel', 'pointer');
 		return;
 	}

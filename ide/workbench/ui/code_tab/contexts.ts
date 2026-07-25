@@ -1,5 +1,5 @@
+import { runtimeWorkbenchState } from '../../../runtime/workbench_state';
 // disable cross_layer_import_pattern -- code-tab contexts own editable buffer instances stored in workbench tab state.
-import { machineManager } from '../../../../machine/ts/core/machine_manager';
 import { editorDocumentState } from '../../../editor/editing/document_state';
 import type {
 	CodeTabContext,
@@ -96,7 +96,7 @@ export function upsertCodeEditorTab(context: CodeTabContext): EditorTabDescripto
 
 export function createEntryTabContext(): CodeTabContext {
 	const luaDescriptors = listResources().filter(r => r.type === 'lua');
-	const sources = machineManager.sourceState;
+	const sources = runtimeWorkbenchState.sources;
 	const descriptor = luaDescriptors.find(r =>
 		r.domain === sources.activeCartridgeSlot
 		&& r.path === sources.activeLuaSources.entry_path

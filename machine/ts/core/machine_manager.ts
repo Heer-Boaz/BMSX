@@ -1,5 +1,3 @@
-import type { RuntimeIdeState } from '../../../ide/runtime/state';
-import type { RuntimeFaultState } from '../../../ide/runtime/fault_state';
 import { SoundMaster } from "../audio/soundmaster";
 import { Input } from "../input/manager";
 import { GameView } from "../render/gameview";
@@ -11,18 +9,12 @@ import type { GameViewHost, Platform } from '../platform';
 import { PAL_REFRESH_UFPS_SCALED, PSX_MACHINE_SPEC } from '../machine/model_registry';
 import { HZ_SCALE } from '../machine/runtime/timing/constants';
 import { renderGate, runGate } from '../common/taskgate';
-import { prepareRebootToBootRom, startPreparedRuntime } from '../../../ide/workbench/blua32_boot';
 import { Runtime } from '../machine/runtime/runtime';
 import { Memory } from '../machine/memory/memory';
 import { configureRuntimeMemoryMap } from '../machine/memory/specs';
 import { resolveRuntimeTiming } from '../machine/runtime/boot_timing';
-import { bootActiveBlua32Media } from '../../../ide/runtime/lua_pipeline';
-import { handleLuaError } from '../../../ide/workbench/runtime_errors';
-import { createRuntimeSourceState, type RuntimeSourceState } from '../../../ide/runtime/sources';
 import type { GPUBackend } from '../render/backend/backend';
 import { clearOverlayFrame } from '../render/host_overlay/overlay_queue';
-import { RenderPresentationState } from '../render/presentation_state';
-import { runMachineHostFrame } from './host_frame';
 import { captureRuntimeSaveStateBytes } from '../machine/runtime/save_state/codec';
 import { gxGpuDisplayModeScreenWidth, gxGpuVerticalVisibleLines } from '../machine/devices/gx/gpu_display';
 import { commitGxGpuViewSnapshot } from '../render/gx/view_snapshot';
@@ -31,6 +23,7 @@ import {
 	buildRuntimeRomLayer,
 	buildSystemRuntimeRomLayer,
 	parseRomImage,
+	type RuntimeRomLayer,
 } from '../rompack/loader';
 import {
 	type CartridgeSlotMediaPair,
@@ -42,7 +35,7 @@ global = globalScope; // Ensure global is defined
 const systemOutputDecoder = new TextDecoder('utf-8', { fatal: true });
 const EMPTY_CARTRIDGE_ROM = new Uint8Array(0);
 
-export interface MachineBootOptions {
+export interface MachineLaunchOptions {
 	systemRom: Uint8Array;
 	cartridgeSlots: [Uint8Array | null, Uint8Array | null];
 	sndcontext?: AudioContext;
@@ -55,10 +48,23 @@ export interface MachineBootOptions {
 	viewHost?: GameViewHost;
 }
 
+export type MachineBootMedia = {
+	systemLayer: RuntimeRomLayer;
+	cartridgeLayers: readonly [RuntimeRomLayer | null, RuntimeRomLayer | null];
+};
+
+export interface MachineBootOptions extends MachineLaunchOptions {
+	initializeRuntime(runtime: Runtime, media: MachineBootMedia): Promise<void>;
+	runHostFrame(runtime: Runtime, currentTime: number, runReady: boolean): void;
+	rebootRuntime(runtime: Runtime): Promise<void>;
+}
+
 const DEFAULT_MASTER_VOLUME = 1;
 
 export class MachineManager {
 	private initialized = false;
+	private hostFrameRunner!: MachineBootOptions['runHostFrame'];
+	private runtimeRebooter!: MachineBootOptions['rebootRuntime'];
 
 	/**
 	 * Indicates whether debug mode is enabled.
@@ -83,10 +89,6 @@ export class MachineManager {
 	private _view!: GameView;
 	private _platform!: Platform;
 	private _runtime!: Runtime;
-	public sourceState!: RuntimeSourceState;
-	public ideState!: RuntimeIdeState;
-	public faultState!: RuntimeFaultState;
-	public readonly screen = new RenderPresentationState();
 	/**
 	 * Indicates whether the game is currently running.
 	 */
@@ -224,6 +226,8 @@ export class MachineManager {
 		}
 		const bootPlan = await this.buildBootPlan(systemRom, cartridgeSlots);
 		const { systemLayer, cartridgeLayers, cartridgeMedia } = bootPlan;
+		this.hostFrameRunner = options.runHostFrame;
+		this.runtimeRebooter = options.rebootRuntime;
 		configureRuntimeMemoryMap();
 		const memory = new Memory({
 			systemRom: systemLayer.payload,
@@ -242,10 +246,6 @@ export class MachineManager {
 			this.input.enableOnscreenGamepad();
 		}
 
-		this.sourceState = createRuntimeSourceState(
-			systemLayer,
-			[cartridgeLayers[0], cartridgeLayers[1]],
-		);
 		const timing = resolveRuntimeTiming(PSX_MACHINE_SPEC.cpuFreqHz);
 		const runtime = new Runtime({
 			memory,
@@ -290,7 +290,10 @@ export class MachineManager {
 
 		await gview.initializeDefaultTextures();
 		this.view.default_font = new Font();
-		await startPreparedRuntime(runtime);
+		await options.initializeRuntime(runtime, {
+			systemLayer,
+			cartridgeLayers,
+		});
 		this.flushSystemOutput(runtime);
 
 		if (this.debug) {
@@ -305,24 +308,7 @@ export class MachineManager {
 	}
 
 	public async rebootToBootRom(): Promise<void> {
-		const gateToken = this.ideState.luaGate.begin({ blocking: true, tag: 'reboot_bootrom' });
-		try {
-			await this.resetRuntime();
-			const rebuildBlua32Media = await prepareRebootToBootRom(this.runtime);
-			await this.refreshRenderSurfaces();
-			this.bootstrapStartupAudio();
-			try {
-				bootActiveBlua32Media(this.runtime, rebuildBlua32Media);
-			}
-			catch (error) {
-				handleLuaError(this.runtime, error);
-				throw error;
-			}
-			this.flushSystemOutput(this.runtime);
-		}
-		finally {
-			this.ideState.luaGate.end(gateToken);
-		}
+		await this.runtimeRebooter(this.runtime);
 	}
 
 	public async refreshRenderSurfaces(): Promise<void> {
@@ -343,13 +329,9 @@ export class MachineManager {
 			clearOverlayFrame();
 
 			runtime.frameScheduler.clearQueuedTime();
-			this.screen.reset();
 			runtime.frameLoop.abandonFrameState();
-			const ideState = this.ideState;
-			ideState.overlayDrawFrameOwner = null;
 			runtime.machine.cpu.clearHaltUntilIrq();
 			runtime.vblank.reset();
-			ideState.overlayRenderer.abandonFrame();
 
 			if (!preserveTextures) {
 				this.texmanager.clear();
@@ -376,7 +358,7 @@ export class MachineManager {
 		runtime.frameLoop.currentTimeMs = now;
 		runtime.frameScheduler.clearQueuedTime();
 		platform.frames.start((currentTime: number) => {
-			runMachineHostFrame(runtime, currentTime, runGate.ready);
+			this.hostFrameRunner(runtime, currentTime, runGate.ready);
 		});
 		this.running = true;
 	}

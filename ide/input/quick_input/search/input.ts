@@ -1,4 +1,4 @@
-import { machineManager } from '../../../../machine/ts/core/machine_manager';
+import { runtimeWorkbenchState } from '../../../runtime/workbench_state';
 import { activeSearchMatchCount, applySearchSelection, jumpToNextMatch, jumpToPreviousMatch, searchPageSize, stepSearchSelection } from '../../../editor/contrib/find/search';
 import { applyInlineFieldEditing } from '../../../editor/ui/inline/text_field';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from '../../keyboard/key_input';
@@ -40,12 +40,12 @@ export function handleSearchInput(runtime: Runtime): void {
 	const altDown = isAltDown();
 	if ((ctrlDown || metaDown) && shiftDown && !altDown && isKeyJustPressed('KeyF')) {
 		consumeIdeKey('KeyF');
-		machineManager.ideState.editor.search.openSearch(false, 'global');
+		runtimeWorkbenchState.ide.editor.search.openSearch(false, 'global');
 		return;
 	}
 	if ((ctrlDown || metaDown) && !altDown && isKeyJustPressed('KeyF')) {
 		consumeIdeKey('KeyF');
-		machineManager.ideState.editor.search.openSearch(false, 'local');
+		runtimeWorkbenchState.ide.editor.search.openSearch(false, 'local');
 		return;
 	}
 	if ((ctrlDown || metaDown) && shouldRepeatKeyFromPlayer('KeyZ')) {
@@ -126,6 +126,6 @@ export function handleSearchInput(runtime: Runtime): void {
 	});
 	editorSearchState.query = editorSearchState.field.text;
 	if (textChanged) {
-		machineManager.ideState.editor.search.onSearchQueryChanged();
+		runtimeWorkbenchState.ide.editor.search.onSearchQueryChanged();
 	}
 }

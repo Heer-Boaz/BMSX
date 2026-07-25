@@ -1,4 +1,4 @@
-import { machineManager } from '../../../machine/ts/core/machine_manager';
+import { runtimeWorkbenchState } from '../../runtime/workbench_state';
 import { setCursorPosition } from '../../editor/ui/view/caret/caret';
 import { setSingleCursorSelectionAnchor } from '../../editor/editing/cursor/state';
 import { focusEditorFromSearch } from '../../editor/contrib/find/search';
@@ -11,12 +11,12 @@ import { editorDocumentState } from '../../editor/editing/document_state';
 
 export function focusPrimaryEditorSurface(): void {
 	clearReferenceHighlights();
-	machineManager.ideState.editor.resourcePanel.setFocused(false);
+	runtimeWorkbenchState.ide.editor.resourcePanel.setFocused(false);
 	focusEditorFromLineJump();
 	focusEditorFromSearch();
 	focusEditorFromResourceSearch();
 	focusEditorFromSymbolSearch();
-	machineManager.ideState.editor.completion.closeSession();
+	runtimeWorkbenchState.ide.editor.completion.closeSession();
 }
 
 export function focusEditorAtPosition(row: number, column: number): void {

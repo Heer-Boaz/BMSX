@@ -1,3 +1,4 @@
+import { runtimeWorkbenchState } from './runtime/workbench_state';
 import { machineManager } from '../machine/ts/core/machine_manager';
 import type { Runtime } from '../machine/ts/machine/runtime/runtime';
 import { LogLevel } from '../machine/ts/platform/index';
@@ -158,7 +159,7 @@ class RuntimeCartEditor implements CartEditor {
 
 	public constructor(runtime: Runtime, viewport: Viewport, fontVariant: Parameters<typeof setFontVariant>[0]) {
 		this.runtime = runtime;
-		const sourceState = machineManager.sourceState;
+		const sourceState = runtimeWorkbenchState.sources;
 		const activeCartridge = sourceState.activeCartridgeSlot !== SYSTEM_RESOURCE_DOMAIN
 			? sourceState.cartridgeSlots[sourceState.activeCartridgeSlot]
 			: null;
@@ -229,13 +230,13 @@ class RuntimeCartEditor implements CartEditor {
 		}
 		if (runtime.hasRuntimeFailed) {
 			const rendered = this.renderRuntimeFaultOverlay({
-				snapshot: machineManager.faultState.faultSnapshot,
+				snapshot: runtimeWorkbenchState.fault.faultSnapshot,
 				luaRuntimeFailed: runtime.hasRuntimeFailed,
-				needsFlush: machineManager.faultState.faultOverlayNeedsFlush,
+				needsFlush: runtimeWorkbenchState.fault.faultOverlayNeedsFlush,
 				force: false,
 			});
 			if (rendered) {
-				machineManager.faultState.faultOverlayNeedsFlush = false;
+				runtimeWorkbenchState.fault.faultOverlayNeedsFlush = false;
 			}
 		}
 	}
@@ -247,7 +248,7 @@ class RuntimeCartEditor implements CartEditor {
 		if (editorViewState.dimCrtInEditor) {
 			this.restoreCrtPostprocessingFromEditor();
 		}
-		machineManager.ideState.editor.completion.closeSession();
+		runtimeWorkbenchState.ide.editor.completion.closeSession();
 		editorInput.applyOverrides(false, captureKeys);
 		clearSingleCursorSelection(editorDocumentState);
 		clearEditorPointerSelectionState();
@@ -261,7 +262,7 @@ class RuntimeCartEditor implements CartEditor {
 		lineJumpState.visible = false;
 		closeBlockingWorkbenchModal();
 		closeCreateResourcePrompt(false);
-		machineManager.ideState.editor.resourcePanel.hide();
+		runtimeWorkbenchState.ide.editor.resourcePanel.hide();
 		editorChromeState.resourcePanelResizing = false;
 		cancelSearchJob();
 		cancelGlobalSearchJob();
@@ -287,7 +288,7 @@ class RuntimeCartEditor implements CartEditor {
 		updateBlink(deltaSeconds);
 		updateEditorMessage(deltaSeconds);
 		updateRuntimeErrorOverlay(deltaSeconds);
-		machineManager.ideState.editor.completion.processPending(deltaSeconds);
+		runtimeWorkbenchState.ide.editor.completion.processPending(deltaSeconds);
 		const semanticError = editorViewState.layout.getLastSemanticError();
 		if (semanticError && semanticError !== editorRuntimeState.lastReportedSemanticError) {
 			showEditorMessage(semanticError, constants.COLOR_STATUS_ERROR, 2.0);
@@ -312,19 +313,19 @@ class RuntimeCartEditor implements CartEditor {
 		editorViewState.codeHorizontalScrollbarVisible = false;
 		api.fill_rect(0, 0, editorViewState.viewportWidth, editorViewState.viewportHeight, 0, constants.COLOR_FRAME);
 
-		renderTopBar(machineManager.ideState.editor.commands, this.chromeRenderContext);
+		renderTopBar(runtimeWorkbenchState.ide.editor.commands, this.chromeRenderContext);
 
 		editorViewState.tabBarRowCount = renderTabBar(this.chromeRenderContext);
-		drawResourcePanel(machineManager.ideState.editor.resourcePanel);
+		drawResourcePanel(runtimeWorkbenchState.ide.editor.resourcePanel);
 		if (isResourceViewActive()) {
 			drawResourceViewer();
 		} else {
 			renderInlineWidgets();
-			const resourcePanel = machineManager.ideState.editor.resourcePanel;
+			const resourcePanel = runtimeWorkbenchState.ide.editor.resourcePanel;
 			const problemsPanelHasFocus = problemsPanel.isVisible && problemsPanel.isFocused;
 			const cursorActive = !(editorSearchState.active || lineJumpState.active || resourcePanel.isFocused() || createResourceState.active || problemsPanelHasFocus);
 			const codeAreaViewport = renderCodeArea(
-				machineManager.ideState.editor.completion,
+				runtimeWorkbenchState.ide.editor.completion,
 				cursorActive,
 				getBreakpointsForChunk(getActiveCodeTabContext().descriptor.path),
 			);
@@ -332,7 +333,7 @@ class RuntimeCartEditor implements CartEditor {
 		}
 		drawProblemsPanel();
 		renderStatusBar(runtime);
-		renderTopBarDropdown(machineManager.ideState.editor.commands, this.chromeRenderContext);
+		renderTopBarDropdown(runtimeWorkbenchState.ide.editor.commands, this.chromeRenderContext);
 		if (hasBlockingWorkbenchModal()) {
 			drawBlockingWorkbenchModal();
 		}
@@ -379,7 +380,7 @@ class RuntimeCartEditor implements CartEditor {
 		createResourceState.error = null;
 		createResourceState.working = false;
 		closeBlockingWorkbenchModal();
-		machineManager.ideState.editor.resourcePanel.hide();
+		runtimeWorkbenchState.ide.editor.resourcePanel.hide();
 		editorChromeState.resourcePanelResizing = false;
 		if (this.isAvailable) {
 			activateCodeTab();
@@ -426,7 +427,7 @@ class RuntimeCartEditor implements CartEditor {
 	}
 
 	public renderFaultOverlay(): void {
-		const snapshot = machineManager.faultState.faultSnapshot;
+		const snapshot = runtimeWorkbenchState.fault.faultSnapshot;
 		if (!snapshot) {
 			return;
 		}
@@ -507,8 +508,8 @@ class RuntimeCartEditor implements CartEditor {
 			editorRuntimeState.initialized = false;
 			return resourcePanel;
 		}
-		const cartridge = developmentCartridgeSource(machineManager.sourceState);
-		initializeWorkspaceStorage(runtime, cartridge ? cartridge.projectRootPath : machineManager.sourceState.systemProjectRootPath);
+		const cartridge = developmentCartridgeSource(runtimeWorkbenchState.sources);
+		initializeWorkspaceStorage(runtime, cartridge ? cartridge.projectRootPath : runtimeWorkbenchState.sources.systemProjectRootPath);
 		const initialContext = createEntryTabContext();
 		configureFontVariant(editorViewState.fontVariant, initialContext.mode);
 		resourcePanel.setFontMetrics(editorViewState.lineHeight, editorViewState.charAdvance);

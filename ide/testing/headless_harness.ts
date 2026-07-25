@@ -1,3 +1,4 @@
+import { runtimeWorkbenchState } from '../runtime/workbench_state';
 import { machineManager } from '../../machine/ts/core/machine_manager';
 import { collectTrackedLuaHeapBytes, getTrackedLuaHeapBytes } from '../../machine/ts/machine/memory/lua_heap_usage';
 import { hotResume } from '../runtime/hot_resume';
@@ -12,6 +13,7 @@ import { loadBlua32Image } from '../runtime/lua_pipeline';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/machine/memory/map';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/machine/cpu/execution_address_space';
 import { findResourceDescriptorForContext } from '../workbench/contrib/resources/lookup';
+import type { RuntimeSourceState } from '../runtime/sources';
 
 /**
  * Host-side test surface for the IDE/runtime, exposed through the `bmsx` global so
@@ -25,6 +27,7 @@ import { findResourceDescriptorForContext } from '../workbench/contrib/resources
  */
 export type HeadlessIdeHarness = {
 	getRuntime(): Runtime;
+	getSourceState(): RuntimeSourceState;
 	isCartActive(): boolean;
 	getTrackedLuaHeapBytes(): number;
 	/**
@@ -60,6 +63,7 @@ function requireRuntime(): Runtime {
 
 export const headlessIdeHarness: HeadlessIdeHarness = {
 	getRuntime: requireRuntime,
+	getSourceState: () => runtimeWorkbenchState.sources,
 	isCartActive: () => {
 		const runtime = machineManager.runtime;
 		return !!runtime && runtime.machine.cpu.isCartridgeExecutionActive() && runtime.isInitialized;
@@ -76,7 +80,7 @@ export const headlessIdeHarness: HeadlessIdeHarness = {
 	openLuaSource: (path: string) => {
 		activateEditor(requireRuntime());
 		const descriptor = findResourceDescriptorForContext(
-			machineManager.sourceState.activeCartridgeSlot,
+			runtimeWorkbenchState.sources.activeCartridgeSlot,
 			path,
 		)!;
 		openLuaCodeTab(descriptor);
@@ -95,7 +99,7 @@ export const headlessIdeHarness: HeadlessIdeHarness = {
 		const runtime = requireRuntime();
 		const cpu = runtime.machine.cpu;
 		const slot = cpu.activeCartridgeSlot();
-		const sourceState = machineManager.sourceState;
+		const sourceState = runtimeWorkbenchState.sources;
 		const layer = slot === SYSTEM_EXECUTION_DOMAIN_ID
 			? sourceState.systemRom
 			: sourceState.cartridgeSlots[slot]!.rom;

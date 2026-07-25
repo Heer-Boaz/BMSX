@@ -1,7 +1,7 @@
+import { runtimeWorkbenchState } from '../../../../../runtime/workbench_state';
 import type { ParsedLuaChunk } from '../../../../../../machine/ts/lua/analysis/parse';
 import { splitText } from '../../../../../../machine/ts/common/text_lines';
 import * as luaPipeline from '../../../../../runtime/lua_pipeline';
-import { machineManager } from '../../../../../../machine/ts/core/machine_manager';
 import { getOrCreateSemanticWorkspace, syncSemanticWorkspacePath, type SemanticWorkspacePathInput } from './state';
 import type { LuaDefinitionInfo } from '../../../../../../machine/ts/lua/syntax/ast/index';
 import type { FileSemanticData, LuaSemanticModel, LuaSemanticWorkspace, LuaSemanticWorkspaceSnapshot } from '../../../../../../machine/ts/lua/semantic/model';
@@ -89,7 +89,7 @@ export function primeRuntimeSemanticWorkspaceProjectSources(
 	domain: ResourceDomain,
 	workspace: LuaSemanticWorkspace = getOrCreateSemanticWorkspace(domain),
 ): LuaSemanticWorkspace {
-	const sources = machineManager.sourceState;
+	const sources = runtimeWorkbenchState.sources;
 	const primaryRegistry = runtimeLuaSourceRegistry(sources, domain)!;
 	const systemRegistry = sources.systemLuaSources;
 	const primed = primedWorkspaceStates.get(workspace);

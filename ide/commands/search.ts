@@ -1,4 +1,4 @@
-import { machineManager } from '../../machine/ts/core/machine_manager';
+import { runtimeWorkbenchState } from '../runtime/workbench_state';
 import { focusRuntimeErrorOverlay } from '../runtime_error/navigation';
 import { openResourceSearch } from '../workbench/contrib/resources/search/index';
 import { openLineJump } from '../editor/contrib/find/line_jump';
@@ -47,10 +47,10 @@ export function executeEditorSearchCommand(runtime: Runtime, command: EditorSear
 			openCreateResourcePrompt();
 			return;
 		case 'findGlobal':
-			machineManager.ideState.editor.search.openSearch(true, 'global');
+			runtimeWorkbenchState.ide.editor.search.openSearch(true, 'global');
 			return;
 		case 'findLocal':
-			machineManager.ideState.editor.search.openSearch(true, 'local');
+			runtimeWorkbenchState.ide.editor.search.openSearch(true, 'local');
 			return;
 		case 'lineJump':
 			openLineJump();

@@ -1,4 +1,4 @@
-import { machineManager } from '../../../../machine/ts/core/machine_manager';
+import { runtimeWorkbenchState } from '../../../runtime/workbench_state';
 import * as TextEditing from '../../editing/text_editing_and_selection';
 import { moveCursorDown, moveCursorEnd, moveCursorHome, moveCursorLeft, moveCursorRight, moveCursorUp, pageDown, pageUp } from '../../ui/view/caret/caret';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isShiftDown, shouldRepeatKeyFromPlayer } from '../../../input/keyboard/key_input';
@@ -13,7 +13,7 @@ export function handleEditorNavigationKeys(): void {
 	const shiftDown = isShiftDown();
 	const altDown = isAltDown();
 	if (altDown) {
-		handleEditorAltNavigation(machineManager.ideState.editor.navigation, ctrlDown, shiftDown);
+		handleEditorAltNavigation(runtimeWorkbenchState.ide.editor.navigation, ctrlDown, shiftDown);
 		return;
 	}
 	if (shouldRepeatKeyFromPlayer('ArrowLeft')) {

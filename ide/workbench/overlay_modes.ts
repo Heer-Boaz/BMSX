@@ -1,3 +1,4 @@
+import { runtimeWorkbenchState } from '../runtime/workbench_state';
 import { setOverlayResolutionMode } from '../runtime/state';
 import { blua32SymbolsForSlot, activeBlua32MediaSymbols } from '../runtime/lua_pipeline';
 import { machineManager } from '../../machine/ts/core/machine_manager';
@@ -8,7 +9,7 @@ const EDITOR_TARGET_WIDTH = 384;
 const EDITOR_TARGET_HEIGHT = 288;
 
 function enterEditorRenderTargets(): void {
-	const state = machineManager.ideState;
+	const state = runtimeWorkbenchState.ide;
 	if (state.editorRenderTargetBaselineActive) {
 		return;
 	}
@@ -21,7 +22,7 @@ function enterEditorRenderTargets(): void {
 }
 
 function leaveEditorRenderTargets(): void {
-	const state = machineManager.ideState;
+	const state = runtimeWorkbenchState.ide;
 	if (!state.editorRenderTargetBaselineActive) {
 		return;
 	}
@@ -32,12 +33,12 @@ function leaveEditorRenderTargets(): void {
 }
 
 export function editorBlocksRuntimePipeline(): boolean {
-	const state = machineManager.ideState;
+	const state = runtimeWorkbenchState.ide;
 	return state.editor.blocksRuntimePipeline;
 }
 
 export function isManagedOverlayEditorActive(): boolean {
-	const state = machineManager.ideState;
+	const state = runtimeWorkbenchState.ide;
 	if (!state.editor.blocksRuntimePipeline) {
 		return false;
 	}
@@ -45,7 +46,7 @@ export function isManagedOverlayEditorActive(): boolean {
 }
 
 export function updateGamePipelineExts(): void {
-	const state = machineManager.ideState;
+	const state = runtimeWorkbenchState.ide;
 	const overlayActive = state.editor.blocksRuntimePipeline && state.editor.isActive;
 	state.overlayActive = overlayActive;
 	Input.instance.setGameplayCaptureEnabled(!overlayActive);
@@ -64,11 +65,11 @@ function updateOverlayAudioSuspension(): void {
 }
 
 function isOverlayActive(): boolean {
-	return machineManager.ideState.overlayActive;
+	return runtimeWorkbenchState.ide.overlayActive;
 }
 
 export function toggleEditor(runtime: Runtime): void {
-	const state = machineManager.ideState;
+	const state = runtimeWorkbenchState.ide;
 	if (state.editor.isActive) {
 		deactivateEditor();
 		return;
@@ -80,7 +81,7 @@ export function activateEditor(runtime: Runtime): void {
 	if (blua32SymbolsForSlot(activeBlua32MediaSymbols(), runtime.machine.cpu.activeCartridgeSlot()) === null) {
 		return;
 	}
-	const state = machineManager.ideState;
+	const state = runtimeWorkbenchState.ide;
 	const editor = state.editor;
 	const wasActive = editor.isActive;
 	if (!wasActive) {
@@ -103,7 +104,7 @@ export function activateEditor(runtime: Runtime): void {
 }
 
 export function deactivateEditor(): void {
-	const state = machineManager.ideState;
+	const state = runtimeWorkbenchState.ide;
 	const editor = state.editor;
 	if (editor.isActive) {
 		editor.deactivate();

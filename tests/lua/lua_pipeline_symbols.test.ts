@@ -7,7 +7,7 @@ import { StringPool } from '../../machine/ts/machine/cpu/string_pool';
 import { registerLuaSourceRecord, type LuaSourceRegistry } from '../../machine/ts/lua/source_registry';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { listSymbols } from '../../ide/runtime/lua_pipeline';
-import { machineManager } from '../../machine/ts/core/machine_manager';
+import { runtimeWorkbenchState } from '../../ide/runtime/workbench_state';
 
 function makeRegistry(sourcePaths: readonly string[]): LuaSourceRegistry {
 	const registry: LuaSourceRegistry = {
@@ -36,9 +36,9 @@ function makeRegistry(sourcePaths: readonly string[]): LuaSourceRegistry {
 }
 
 test('listSymbols hides compiler-generated module export slots through loader module paths', (t) => {
-	const originalSourceState = (machineManager as any).sourceState;
+	const originalSourceState = runtimeWorkbenchState.sources;
 	t.after(() => {
-		(machineManager as any).sourceState = originalSourceState;
+		runtimeWorkbenchState.sources = originalSourceState;
 	});
 	const stringPool = new StringPool();
 	const globals = new Table(0, 8);
@@ -48,7 +48,7 @@ test('listSymbols hides compiler-generated module export slots through loader mo
 	globals.set(StringValue.get(stringPool.intern('player_score')), true);
 	const systemLuaSources = makeRegistry(['system/font.lua']);
 	const cartLuaSources = makeRegistry(['carts/pietious/room/index.lua']);
-	(machineManager as any).sourceState = {
+	runtimeWorkbenchState.sources = {
 		systemLuaSources,
 		cartridgeSlots: [{ domain: 0, luaSources: cartLuaSources }, null],
 		activeLuaSources: cartLuaSources,

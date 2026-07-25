@@ -344,7 +344,7 @@ export async function buildMachineRuntime(debug: boolean): Promise<void> {
 	const runtimeFilename = getMachineRuntimeFilename(debug);
 	const runtimeRomPath = `./rom/${runtimeFilename}`;
 	const runtimeDistPath = `./dist/${runtimeFilename}`;
-	await buildBrowserIife('./machine/ts/machine_runtime.ts', runtimeRomPath, debug);
+	await buildBrowserIife('./ide/machine_runtime.ts', runtimeRomPath, debug);
 	await copyFile(runtimeRomPath, runtimeDistPath);
 }
 

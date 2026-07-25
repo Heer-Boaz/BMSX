@@ -1,3 +1,4 @@
+import { runtimeWorkbenchState } from '../runtime/workbench_state';
 import { machineManager } from '../../machine/ts/core/machine_manager';
 import { registerLuaSourceRecord, type LuaSourceRecord, type LuaSourceRegistry } from '../../machine/ts/lua/source_registry';
 import { toLuaModulePath } from '../../machine/ts/lua/module_path';
@@ -40,13 +41,13 @@ export * from './files';
 export { joinWorkspacePaths } from './path';
 
 function resolveEditableCartLuaSources(): LuaSourceRegistry {
-	const sources = machineManager.sourceState;
+	const sources = runtimeWorkbenchState.sources;
 	const cartridge = developmentCartridgeSource(sources);
 	return cartridge ? cartridge.luaSources : sources.activeLuaSources;
 }
 
 function markLuaSourceRegistryChanged(registry: LuaSourceRegistry): void {
-	const sources = machineManager.sourceState;
+	const sources = runtimeWorkbenchState.sources;
 	if (registry === sources.systemLuaSources) {
 		sources.systemBlua32MediaDirty = true;
 	} else {
@@ -63,7 +64,7 @@ function markLuaSourceRegistryChanged(registry: LuaSourceRegistry): void {
 }
 
 function resolveEditableLuaSource(identity: ResourceIdentity): { registry: LuaSourceRegistry; asset: LuaSourceRecord } {
-	const source = resolveRuntimeLuaSource(machineManager.sourceState, identity);
+	const source = resolveRuntimeLuaSource(runtimeWorkbenchState.sources, identity);
 	if (!source) {
 		throw new Error(`Missing Lua source registry for '${identity.path}'.`);
 	}
@@ -131,7 +132,7 @@ export async function createLuaResource(request: LuaResourceCreationRequest): Pr
 		generated: false,
 	};
 	const systemSource = asset.source_path.startsWith('bios/') || asset.source_path.startsWith('system/');
-	const sources = machineManager.sourceState;
+	const sources = runtimeWorkbenchState.sources;
 	const registry = systemSource
 		? sources.systemLuaSources
 		: resolveEditableCartLuaSources();
@@ -151,7 +152,7 @@ export async function applyWorkspaceOverridesToRegistry(params: {
 	includeServer?: boolean;
 	projectRootPath: string;
 }): Promise<Set<string>> {
-	const domain = runtimeLuaSourceDomain(machineManager.sourceState, params.registry);
+	const domain = runtimeLuaSourceDomain(runtimeWorkbenchState.sources, params.registry);
 	const changed = await applyWorkspaceSourceOverrides({
 		domain,
 		registry: params.registry,
@@ -186,7 +187,7 @@ async function discardWorkspaceCanonicalPath(storage: StorageService, root: stri
 
 export async function clearWorkspaceArtifacts(cart: LuaSourceRegistry, storage: StorageService): Promise<void> {
 	const root = cart.projectRootPath;
-	const domain = runtimeLuaSourceDomain(machineManager.sourceState, cart);
+	const domain = runtimeLuaSourceDomain(runtimeWorkbenchState.sources, cart);
 	for (const asset of cart.records) {
 		if (asset.generated) {
 			continue;
@@ -202,7 +203,7 @@ export async function clearWorkspaceArtifacts(cart: LuaSourceRegistry, storage: 
 
 async function clearWorkspaceDirtyFiles(cart: LuaSourceRegistry, storage: StorageService): Promise<void> {
 	const root = cart.projectRootPath;
-	const domain = runtimeLuaSourceDomain(machineManager.sourceState, cart);
+	const domain = runtimeLuaSourceDomain(runtimeWorkbenchState.sources, cart);
 	const scratchPaths = await collectScratchWorkspaceDirtyPaths(root);
 	for (const asset of cart.records) {
 		if (asset.generated) {
@@ -220,7 +221,7 @@ async function clearWorkspaceDirtyFiles(cart: LuaSourceRegistry, storage: Storag
 // Re-applies the saved (canonical) sources and clears dirty buffers, returning the
 // workspace to its on-disk baseline. Shared tail of the reset/nuke flows.
 async function reapplyWorkspaceBaseline(registry: LuaSourceRegistry): Promise<void> {
-	const domain = runtimeLuaSourceDomain(machineManager.sourceState, registry);
+	const domain = runtimeLuaSourceDomain(runtimeWorkbenchState.sources, registry);
 	const changed = await applyWorkspaceSourceOverrides({
 		domain,
 		registry,
@@ -248,7 +249,7 @@ export async function nukeWorkspaceState(): Promise<void> {
 }
 
 export function listResources(): ResourceDescriptor[] {
-	const sources = machineManager.sourceState;
+	const sources = runtimeWorkbenchState.sources;
 	const descriptors: ResourceDescriptor[] = [];
 	for (const domain of CARTRIDGE_RESOURCE_DOMAINS) {
 		const cartridge = sources.cartridgeSlots[domain];

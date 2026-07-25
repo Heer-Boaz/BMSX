@@ -1,3 +1,4 @@
+import { runtimeWorkbenchState } from '../../runtime/workbench_state';
 import { machineManager } from '../../../machine/ts/core/machine_manager';
 import * as luaPipeline from '../../runtime/lua_pipeline';
 import {
@@ -83,8 +84,8 @@ export function buildWorkspaceAutosavePayload(entries: Map<string, DirtyContextE
 		savedAt: machineManager.platform.clock.dateNow(),
 		dirtyFiles,
 		breakpoints: serializeBreakpoints(),
-		fontVariant: machineManager.ideState.activeFontVariant,
-		overlayResolutionMode: machineManager.ideState.overlayResolutionMode,
+		fontVariant: runtimeWorkbenchState.ide.activeFontVariant,
+		overlayResolutionMode: runtimeWorkbenchState.ide.overlayResolutionMode,
 	};
 }
 

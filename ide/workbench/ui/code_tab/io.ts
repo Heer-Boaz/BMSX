@@ -1,4 +1,4 @@
-import { machineManager } from '../../../../machine/ts/core/machine_manager';
+import { runtimeWorkbenchState } from '../../../runtime/workbench_state';
 import { showEditorMessage, showEditorWarningBanner } from '../../../common/feedback_state';
 import type { CodeTabContext, CodeTabMode, ResourceDescriptor } from '../../../common/models';
 import * as constants from '../../../common/constants';
@@ -52,7 +52,7 @@ export async function openAemCodeTab(descriptor: ResourceDescriptor): Promise<vo
 	try {
 		let context = codeTabSessionState.contexts.get(tabId);
 		if (!context) {
-			const sources = machineManager.sourceState;
+			const sources = runtimeWorkbenchState.sources;
 			const projectRootPath = runtimeSourceProjectRootPath(sources, descriptor.domain);
 			const source = await loadWorkspaceSourceFile(descriptor.path, projectRootPath);
 			if (source === null) {
@@ -91,7 +91,7 @@ export async function save(runtime: Runtime): Promise<void> {
 			await saveLuaResourceSource(context.descriptor, source);
 		} else {
 			const projectRootPath = runtimeSourceProjectRootPath(
-				machineManager.sourceState,
+				runtimeWorkbenchState.sources,
 				context.descriptor.domain,
 			);
 			await persistWorkspaceSourceFile(targetPath, source, projectRootPath);

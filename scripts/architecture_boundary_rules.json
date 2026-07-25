@@ -70,6 +70,21 @@
 			"reason": "TS ROM wire-format code must not depend on host, IDE, render, input, audio, or language layers."
 		},
 		{
+			"from": "ts-core",
+			"deny": ["ts-ide"],
+			"reason": "TS host-core orchestration must expose physical runtime lifecycle hooks instead of importing IDE policy."
+		},
+		{
+			"from": "ts-runtime-api",
+			"deny": ["ts-ide"],
+			"reason": "TS runtime entrypoints must stay below the IDE composition layer."
+		},
+		{
+			"from": "ts-render",
+			"deny": ["ts-ide"],
+			"reason": "TS render primitives and backends must not depend on IDE presentation policy."
+		},
+		{
 			"from": "cpp-gx-machine",
 			"deny": ["cpp-core", "cpp-render", "cpp-gx-gles2-render", "cpp-software-render", "cpp-platform", "cpp-input", "cpp-audio"],
 			"reason": "C++ GX machine code must emit the GPU command contract, not depend on render backends."

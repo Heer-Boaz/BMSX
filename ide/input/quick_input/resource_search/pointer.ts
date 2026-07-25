@@ -1,4 +1,4 @@
-import { machineManager } from '../../../../machine/ts/core/machine_manager';
+import { runtimeWorkbenchState } from '../../../runtime/workbench_state';
 import { point_in_rect } from '../../../../machine/ts/common/rect';
 import * as constants from '../../../common/constants';
 import { closeSearch, processInlineFieldPointer } from '../../../editor/contrib/find/search';
@@ -33,7 +33,7 @@ export function handleResourceSearchPointer(snapshot: PointerSnapshot, justPress
 			closeSymbolSearch(false);
 			resourceSearchState.visible = true;
 			resourceSearchState.active = true;
-			activateQuickInputField(machineManager.ideState.editor.resourcePanel);
+			activateQuickInputField(runtimeWorkbenchState.ide.editor.resourcePanel);
 		}
 		processInlineFieldPointer(resourceSearchState.field, quickInputTextLeft('FILE :'), snapshot.viewportX, justPressed, snapshot.primaryPressed);
 		finishQuickInputPointer(snapshot);

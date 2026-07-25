@@ -1,4 +1,4 @@
-import { machineManager } from '../../machine/ts/core/machine_manager';
+import { runtimeWorkbenchState } from './workbench_state';
 import { Closure } from '../../machine/ts/machine/cpu/closure';
 import { Table } from '../../machine/ts/machine/cpu/table';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
@@ -12,7 +12,7 @@ import type { ResourceDescriptor } from '../common/resource';
 import { callClosureIntoWithScheduler } from './closure_executor';
 
 function buildRuntimeAemValidationLookup() {
-	const activePackage = machineManager.sourceState.activePackage;
+	const activePackage = runtimeWorkbenchState.sources.activePackage;
 	const dataRecordNames = Object.keys(activePackage.data);
 	const dataRecords: Array<{ name: string; value: unknown }> = new Array(dataRecordNames.length);
 	for (let index = 0; index < dataRecordNames.length; index += 1) {
@@ -43,6 +43,6 @@ export function applyAemSourceToRuntime(runtime: Runtime, descriptor: ResourceDe
 	const assetId = descriptor.asset_id!;
 	const doc = parseStructuredTextDocument(source, aemDocumentFormat(descriptor.path), `AEM file '${descriptor.path}'`);
 	assertValidAemDocument(doc, buildRuntimeAemValidationLookup(), descriptor.path);
-	machineManager.sourceState.activePackage.audioevents[assetId] = doc as Record<string, unknown>;
+	runtimeWorkbenchState.sources.activePackage.audioevents[assetId] = doc as Record<string, unknown>;
 	reloadAem(runtime);
 }

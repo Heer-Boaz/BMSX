@@ -1,4 +1,4 @@
-import { machineManager } from '../../../machine/ts/core/machine_manager';
+import { runtimeWorkbenchState } from '../../runtime/workbench_state';
 import type { ResourceDescriptor } from '../../common/models';
 import { restoreBreakpointsFromPayload } from '../contrib/debugger/controller';
 import * as workbenchMode from '../mode';
@@ -29,7 +29,7 @@ function migrateLegacyWorkspaceAutosavePayload(
 	payload: LegacyWorkspaceAutosavePayload,
 	projectRootPath: string,
 ): WorkspaceAutosavePayload {
-	const sourceState = machineManager.sourceState;
+	const sourceState = runtimeWorkbenchState.sources;
 	const workspaceDomain = runtimeSourceDomainForProjectRootPath(sourceState, projectRootPath);
 	const dirtyFiles: PersistedDirtyEntry[] = payload.dirtyFiles.map(entry => {
 		const domain = entry.descriptor.type === 'lua'
@@ -89,7 +89,7 @@ export async function restoreWorkspaceSessionFromDisk(projectRootPath: string): 
 
 export async function applyWorkspaceAutosavePayload(payload: WorkspaceAutosavePayload): Promise<void> {
 	clearCodeTabContexts();
-	initializeTabs(createEntryTabContext(), machineManager.ideState.editor.resourcePanel);
+	initializeTabs(createEntryTabContext(), runtimeWorkbenchState.ide.editor.resourcePanel);
 	if (payload.fontVariant) {
 		workbenchMode.setActiveIdeFontVariant(payload.fontVariant);
 	}

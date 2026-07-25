@@ -20,6 +20,7 @@ async function main(): Promise<void> {
 
 	const [
 		{ machineManager },
+		{ bootManagedMachine },
 		{ runMachineHostFrame },
 		{ HeadlessPlatformServices },
 		{ applyRuntimeSaveStateBytes },
@@ -27,7 +28,8 @@ async function main(): Promise<void> {
 		{ CARTRIDGE_MAILBOX_CONTROL_OFFSET, CARTRIDGE_MAILBOX_CONTROL_IRQ_TRIGGER },
 	] = await Promise.all([
 		import('../../../machine/ts/core/machine_manager'),
-		import('../../../machine/ts/core/host_frame'),
+		import('../../../ide/runtime/machine_boot'),
+		import('../../../ide/runtime/host_frame'),
 		import('../../../hosts/node/headless/platform_headless'),
 		import('../../../machine/ts/machine/runtime/save_state/codec'),
 		import('../../../machine/ts/machine/memory/map'),
@@ -49,7 +51,7 @@ async function main(): Promise<void> {
 		readFile(bootableCartPath),
 	]);
 	const platform = new ConformancePlatform();
-	const runtime = await machineManager.boot({
+	const runtime = await bootManagedMachine({
 		systemRom,
 		cartridgeSlots: [dataRom, bootableCartRom],
 		platform,

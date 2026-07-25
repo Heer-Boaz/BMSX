@@ -1,3 +1,4 @@
+import { runtimeWorkbenchState } from './workbench_state';
 import { machineManager } from '../../machine/ts/core/machine_manager';
 import type { LuaChunk } from '../../machine/ts/lua/syntax/ast/index';
 import { LuaInterpreter } from '../../machine/ts/lua/runtime';
@@ -53,10 +54,10 @@ export type RebuiltBlua32Media = {
 
 function installFreshLuaInterpreter(runtime: Runtime): LuaInterpreter {
 	resetHandledLuaErrors();
-	const bridge = machineManager.ideState.nativeBridge;
+	const bridge = runtimeWorkbenchState.ide.nativeBridge;
 	const interpreter = new LuaInterpreter(bridge.luaJsBridge);
 	bridge.luaInterpreter = interpreter;
-	interpreter.attachDebugger(machineManager.ideState.debugger.controller);
+	interpreter.attachDebugger(runtimeWorkbenchState.ide.debugger.controller);
 	interpreter.clearLastFaultEnvironment();
 	registerLuaInterpreterBuiltins(interpreter);
 	interpreter.setReservedIdentifiers(getReservedLuaIdentifiers());
@@ -107,7 +108,7 @@ function buildSymbolModuleSlotPrefix(modulePath: string): string {
 
 function collectHiddenSymbolPrefixes(): Set<string> {
 	const prefixes = new Set<string>();
-	const sources = machineManager.sourceState;
+	const sources = runtimeWorkbenchState.sources;
 	for (let registryIndex = 0; registryIndex < sources.luaSourceRegistries.length; registryIndex += 1) {
 		const registry = sources.luaSourceRegistries[registryIndex];
 		for (let assetIndex = 0; assetIndex < registry.records.length; assetIndex += 1) {
@@ -217,7 +218,7 @@ function compileRegistryProgramObject(
 		sources.set(modules[index].path, modules[index].source);
 	}
 	const compiled = compileLuaChunkToProgram(entryChunk, modules, {
-		optLevel: machineManager.sourceState.realtimeCompileOptLevel,
+		optLevel: runtimeWorkbenchState.sources.realtimeCompileOptLevel,
 		entrySource,
 		externalModules,
 		programDomain,
@@ -235,7 +236,7 @@ export function buildBlua32Media(
 	rebuildSystem: boolean,
 	rebuildCartridgeSlots: readonly [boolean, boolean],
 ): RebuiltBlua32Media {
-	const sources = machineManager.sourceState;
+	const sources = runtimeWorkbenchState.sources;
 	const systemRegistry = sources.systemLuaSources;
 	const cartridgeImageOffsets: [number, number] = [0, 0];
 	let rebuildAnyCartridge = false;
@@ -318,7 +319,7 @@ export function buildBlua32Media(
 }
 
 export function installBlua32Media(runtime: Runtime, rebuilt: RebuiltBlua32Media): void {
-	const sources = machineManager.sourceState;
+	const sources = runtimeWorkbenchState.sources;
 	let systemLayer: RomSourceLayer | null = null;
 	const cartridgeLayers: [RomSourceLayer | null, RomSourceLayer | null] = [null, null];
 	if (rebuilt.system !== null) {
@@ -348,7 +349,7 @@ export function installBlua32Media(runtime: Runtime, rebuilt: RebuiltBlua32Media
 }
 
 export function loadBlua32MediaSymbols(): Blua32MediaSymbols {
-	const sources = machineManager.sourceState;
+	const sources = runtimeWorkbenchState.sources;
 	const system = loadBlua32Image(
 		sources.systemRomSource,
 		SYSTEM_ROM_BASE,
@@ -393,7 +394,7 @@ export function activeBlua32MediaSymbols(): Blua32MediaSymbols {
 export function bootActiveBlua32Media(runtime: Runtime, rebuildBlua32Media: boolean): void {
 	const interpreter = installFreshLuaInterpreter(runtime);
 	if (rebuildBlua32Media) {
-		const sources = machineManager.sourceState;
+		const sources = runtimeWorkbenchState.sources;
 		installBlua32Media(runtime, buildBlua32Media(
 			interpreter,
 			sources.systemBlua32MediaDirty,
@@ -412,7 +413,7 @@ export function bootActiveBlua32Media(runtime: Runtime, rebuildBlua32Media: bool
 }
 
 export function resourceSourceForChunk(identity: ResourceIdentity): string {
-	const luaSource = resolveRuntimeLuaSource(machineManager.sourceState, identity);
+	const luaSource = resolveRuntimeLuaSource(runtimeWorkbenchState.sources, identity);
 	if (!luaSource) {
 		throw new Error(`Missing Lua source for '${identity.path}'.`);
 	}

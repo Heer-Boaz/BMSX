@@ -1,4 +1,4 @@
-import { machineManager } from '../../../machine/ts/core/machine_manager';
+import { runtimeWorkbenchState } from '../../runtime/workbench_state';
 import type { EditorCommandId } from '../../common/commands';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from './key_input';
 import { handleEscapeKey } from './modal_input';
@@ -98,7 +98,7 @@ function handleCommandKeyBinding(binding: CommandKeyBinding, state: ModifierStat
 		return false;
 	}
 	consumeIdeKey(binding.code);
-	machineManager.ideState.editor.commands.execute(binding.command);
+	runtimeWorkbenchState.ide.editor.commands.execute(binding.command);
 	return true;
 }
 

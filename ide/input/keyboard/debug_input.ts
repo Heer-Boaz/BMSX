@@ -1,4 +1,4 @@
-import { machineManager } from '../../../machine/ts/core/machine_manager';
+import { runtimeWorkbenchState } from '../../runtime/workbench_state';
 import { prepareDebuggerStepOverlay, toggleBreakpointForEditorRow } from '../../workbench/contrib/debugger/controller';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from './key_input';
 
@@ -23,7 +23,7 @@ function handleDebuggerShortcuts(): boolean {
 }
 
 function evaluateDebuggerShortcuts(): boolean {
-	const debuggerUi = machineManager.ideState.editor.debugger;
+	const debuggerUi = runtimeWorkbenchState.ide.editor.debugger;
 	const ctrlDown = isCtrlDown();
 	const metaDown = isMetaDown();
 	const shiftDown = isShiftDown();

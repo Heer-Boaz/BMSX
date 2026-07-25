@@ -1,7 +1,7 @@
+import { runtimeWorkbenchState } from './workbench_state';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { StackTraceFrame } from '../../machine/ts/lua/value';
 import { buildLuaFrameRawLabel } from '../../machine/ts/lua/stack_frame_label';
-import { machineManager } from '../../machine/ts/core/machine_manager';
 import {
 	blua32SourceRangeAtPc,
 	type Blua32SymbolsImage,
@@ -50,7 +50,7 @@ export function buildLuaStackFrames(runtime: Runtime): StackTraceFrame[] {
 		const range = symbols === null
 			? null
 			: blua32SourceRangeAtPc(symbols, entry.textAddress, entry.pc);
-		const source = range ? range.path : machineManager.sourceState.activeLuaSources.entry_path;
+		const source = range ? range.path : runtimeWorkbenchState.sources.activeLuaSources.entry_path;
 		const line = range ? range.start.line : 0;
 		const column = range ? range.start.column : 0;
 		const functionName = resolveLuaFunctionName(

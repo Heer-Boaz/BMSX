@@ -3,7 +3,7 @@ import * as fs from 'node:fs/promises';
 
 import { createCanvas, Image, loadImage } from 'canvas';
 
-import { type MachineBootOptions } from '../../../machine/ts/core/machine_manager';
+import { type MachineLaunchOptions } from '../../../machine/ts/core/machine_manager';
 import { CpuProfilerSession, formatCpuProfilerReport } from '../../../machine/ts/machine/cpu/profiler';
 import { HEADLESS_DEFAULT_FRAME_INTERVAL_MS, HeadlessPlatformServices } from '../../../hosts/node/headless/platform_headless';
 import { CLIPlatformServices } from '../../../hosts/node/cli/platform_cli';
@@ -38,6 +38,7 @@ interface BootGlobals {
 
 type MachineNamespace = {
 	machineManager: typeof import('../../../machine/ts/core/machine_manager').machineManager;
+	bootMachine: (options: MachineLaunchOptions) => Promise<import('../../../machine/ts/machine/runtime/runtime').Runtime>;
 	ide: import('../../../ide/testing/headless_harness').HeadlessIdeHarness;
 };
 
@@ -1077,7 +1078,7 @@ async function main(): Promise<void> {
 	const canCaptureImmediately = (): boolean => {
 		return captureCoordinator ? captureCoordinator.canCaptureNow() : !!headlessHost?.getPresentedFrameSnapshot();
 	};
-	const bootArgs: MachineBootOptions = {
+	const bootArgs: MachineLaunchOptions = {
 		cartridgeSlots: [buffer, slot1Buffer],
 		systemRom: systemRomBuffer,
 		platform,
@@ -1091,7 +1092,7 @@ async function main(): Promise<void> {
 	}
 
 	console.log(`[bootrom:${__BOOTROM_TARGET__}] Starting game (debug=${debugFlag}, frameIntervalMs=${frameInterval}).`);
-	const runtime = await machineRuntime.machineManager.boot(bootArgs);
+	const runtime = await machineRuntime.bootMachine(bootArgs);
 	const requestExit = (code: number): void => {
 		if (!cpuProfileDumped && cpuProfilerSession !== null) {
 			cpuProfileDumped = true;

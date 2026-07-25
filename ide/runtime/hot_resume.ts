@@ -1,4 +1,4 @@
-import { machineManager } from '../../machine/ts/core/machine_manager';
+import { runtimeWorkbenchState } from './workbench_state';
 import { convertToError } from '../../machine/ts/lua/value';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { EMPTY_CALL_ARGS } from '../../machine/ts/machine/cpu/value';
@@ -33,13 +33,13 @@ export function hotResume(
 	rebuildSystem: boolean,
 	rebuildCartridgeSlots: readonly [boolean, boolean],
 ): void {
-	const interpreter = machineManager.ideState.nativeBridge.luaInterpreter;
+	const interpreter = runtimeWorkbenchState.ide.nativeBridge.luaInterpreter;
 	try {
 		const rebuildMedia = rebuildSystem
 			|| rebuildCartridgeSlots[0]
 			|| rebuildCartridgeSlots[1];
 		if (rebuildMedia) {
-			const sourceState = machineManager.sourceState;
+			const sourceState = runtimeWorkbenchState.sources;
 			const rebuilt = buildBlua32Media(interpreter, rebuildSystem, rebuildCartridgeSlots);
 			const revisionsBySlot = new Map<number, TargetRevision>();
 			if (rebuilt.system !== null) {
@@ -116,7 +116,7 @@ export function hotResume(
 				);
 			}
 			setActiveBlua32MediaSymbols(loadBlua32MediaSymbols());
-			machineManager.ideState.editor.clearNativeMemberCompletionCache();
+			runtimeWorkbenchState.ide.editor.clearNativeMemberCompletionCache();
 		}
 
 		clearRuntimeDebuggerPause(runtime);

@@ -1,4 +1,4 @@
-import { machineManager } from '../../../../machine/ts/core/machine_manager';
+import { runtimeWorkbenchState } from '../../../runtime/workbench_state';
 import { createLuaSemanticFrontendFromSnapshot } from './semantic/workspace/index';
 import type { LuaSemanticWorkspaceSnapshot } from '../../../../machine/ts/lua/semantic/model';
 import { prepareRuntimeSemanticWorkspaceForEditorBuffer } from './semantic/workspace/runtime';
@@ -7,7 +7,7 @@ import type { TextBuffer } from '../../text/text_buffer';
 import type { ResourceIdentity } from '../../../common/resource';
 
 export function runtimeSemanticExtraGlobalNames(): string[] {
-	return Array.from(machineManager.ideState.nativeBridge.luaInterpreter.globalEnvironment.keys());
+	return Array.from(runtimeWorkbenchState.ide.nativeBridge.luaInterpreter.globalEnvironment.keys());
 }
 
 export function buildEditorSemanticSnapshot(

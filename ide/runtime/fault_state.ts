@@ -1,3 +1,4 @@
+import { runtimeWorkbenchState } from './workbench_state';
 import { LuaError, LuaSyntaxError } from '../../machine/ts/lua/errors';
 import { machineManager } from '../../machine/ts/core/machine_manager';
 import type { LuaCallFrame } from '../../machine/ts/lua/runtime';
@@ -45,11 +46,11 @@ export function createRuntimeFaultState(): RuntimeFaultState {
 
 
 export function resetHandledLuaErrors(): void {
-	machineManager.faultState.handledLuaErrors = new WeakSet<object>();
+	runtimeWorkbenchState.fault.handledLuaErrors = new WeakSet<object>();
 }
 
 function resolveEditorSourceWorkspacePath(source: string): string {
-	const sources = machineManager.sourceState;
+	const sources = runtimeWorkbenchState.sources;
 	for (let slot = 0; slot < sources.cartridgeSlots.length; slot += 1) {
 		const cartridge = sources.cartridgeSlots[slot];
 		if (cartridge !== null && cartridge.luaSources.path2lua[source]) {
@@ -83,14 +84,14 @@ function runtimeStackFrameLocation(frame: StackTraceFrame): RuntimeErrorLocation
 }
 
 function resolveRuntimeErrorLocation(error: Error): RuntimeErrorLocation {
-	const state = machineManager.faultState;
+	const state = runtimeWorkbenchState.fault;
 	if (state.lastLuaCallStack.length > 0) {
 		return runtimeStackFrameLocation(state.lastLuaCallStack[0]);
 	}
 	if (error instanceof LuaError) {
 		return runtimeLuaErrorLocation(error);
 	}
-	return { path: machineManager.sourceState.activeLuaSources.entry_path, line: 0, column: 0 };
+	return { path: runtimeWorkbenchState.sources.activeLuaSources.entry_path, line: 0, column: 0 };
 }
 
 function createLuaErrorStackFrame(error: LuaError, functionName: string): StackTraceFrame {
@@ -116,7 +117,7 @@ function errorStackFunctionName(callFrames: ReadonlyArray<LuaCallFrame>, luaFram
 }
 
 export function clearFaultSnapshot(): void {
-	const state = machineManager.faultState;
+	const state = runtimeWorkbenchState.fault;
 	state.faultSnapshot = null;
 	state.lastCpuFaultSnapshot = [];
 	state.faultOverlayNeedsFlush = false;
@@ -135,7 +136,7 @@ function setRuntimeFault(runtime: Runtime, payload: {
 	details: RuntimeErrorDetails;
 	fromDebugger: boolean;
 }): void {
-	const state = machineManager.faultState;
+	const state = runtimeWorkbenchState.fault;
 	runtime.luaRuntimeFailed = true;
 	state.faultSnapshot = payload;
 	state.faultSnapshot.timestampMs = machineManager.platform.clock.dateNow();
@@ -143,8 +144,8 @@ function setRuntimeFault(runtime: Runtime, payload: {
 }
 
 export function recordDebuggerExceptionFault(runtime: Runtime, signal: LuaDebuggerPauseSignal): void {
-	const exception = machineManager.ideState.debugger.pauseCoordinator.getPendingException();
-	const state = machineManager.faultState;
+	const exception = runtimeWorkbenchState.ide.debugger.pauseCoordinator.getPendingException();
+	const state = runtimeWorkbenchState.fault;
 	if (state.faultSnapshot && runtime.luaRuntimeFailed) {
 		state.faultOverlayNeedsFlush = true;
 		return;
@@ -174,7 +175,7 @@ export function recordDebuggerExceptionFault(runtime: Runtime, signal: LuaDebugg
 
 export function recordLuaError(runtime: Runtime, whatever: unknown): RecordedRuntimeLuaError | null {
 	const error = convertToError(whatever);
-	const state = machineManager.faultState;
+	const state = runtimeWorkbenchState.fault;
 	if (state.handledLuaErrors.has(error)) {
 		return null;
 	}
@@ -215,7 +216,7 @@ function buildRuntimeErrorDetailsForEditor(error: unknown, message: string, call
 	if (useInterpreterStack) {
 		luaFrames = callFrames.length > 0 ? convertLuaCallFrames(callFrames) : [];
 	} else {
-		const state = machineManager.faultState;
+		const state = runtimeWorkbenchState.fault;
 		if (state.lastLuaCallStack.length > 0) {
 			luaFrames = state.lastLuaCallStack.slice();
 		}

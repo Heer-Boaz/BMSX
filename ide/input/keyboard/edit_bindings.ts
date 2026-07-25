@@ -1,4 +1,4 @@
-import { machineManager } from '../../../machine/ts/core/machine_manager';
+import { runtimeWorkbenchState } from '../../runtime/workbench_state';
 import { jumpToNextMatch, jumpToPreviousMatch } from '../../editor/contrib/find/search';
 import { closeActiveTab } from '../../workbench/ui/tabs';
 import { isCodeTabActive, isEditableCodeTab, isReadOnlyCodeTab } from '../../workbench/ui/code_tab/contexts';
@@ -72,7 +72,7 @@ function handleSaveBinding(): boolean {
 		notifyReadOnlyEdit();
 		return true;
 	}
-	machineManager.ideState.editor.commands.execute('save');
+	runtimeWorkbenchState.ide.editor.commands.execute('save');
 	return true;
 }
 

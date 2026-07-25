@@ -1,4 +1,4 @@
-import { machineManager } from '../../../../../machine/ts/core/machine_manager';
+import { runtimeWorkbenchState } from '../../../../runtime/workbench_state';
 import * as constants from '../../../../common/constants';
 import { setFieldText } from '../../../../editor/ui/inline/text_field';
 import { getActiveCodeTabContext } from '../../../ui/code_tab/contexts';
@@ -14,7 +14,7 @@ export function openCreateResourcePrompt(): void {
 	if (createResourceState.working) {
 		return;
 	}
-	machineManager.ideState.editor.resourcePanel.setFocused(false);
+	runtimeWorkbenchState.ide.editor.resourcePanel.setFocused(false);
 	renameController.cancel();
 	let defaultPath = createResourceState.path.length === 0
 		? determineCreateResourceDefaultPath()

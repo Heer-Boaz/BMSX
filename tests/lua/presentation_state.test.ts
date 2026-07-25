@@ -3,7 +3,8 @@ import test from 'node:test';
 
 import { machineManager } from '../../machine/ts/core/machine_manager';
 import type { GxGpuDeviceOutput } from '../../machine/ts/machine/devices/gx/device_output';
-import { RenderPresentationState } from '../../machine/ts/render/presentation_state';
+import { RenderPresentationState } from '../../ide/runtime/presentation_state';
+import { runtimeWorkbenchState } from '../../ide/runtime/workbench_state';
 
 test('PCRTC revision drives render-target changes without overwriting the IDE target', () => {
 	const scanout = {
@@ -40,15 +41,14 @@ test('PCRTC revision drives render-target changes without overwriting the IDE ta
 		deltatime: number;
 		paused: boolean;
 		view: typeof view;
-		ideState: { overlayActive: boolean; editor: { blocksRuntimePipeline: boolean; isActive: boolean } };
 		sndmaster: { finishFrame(): void };
 	};
 	manager.paused = false;
 	manager.view = view;
-	manager.ideState = {
+	runtimeWorkbenchState.ide = {
 		overlayActive: true,
 		editor: { blocksRuntimePipeline: false, isActive: false },
-	};
+	} as never;
 	manager.sndmaster = { finishFrame(): void {} };
 	const runtime = {
 		machine: {

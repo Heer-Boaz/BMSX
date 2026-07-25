@@ -1,3 +1,4 @@
+import { runtimeWorkbenchState } from '../../runtime/workbench_state';
 import { machineManager } from '../../../machine/ts/core/machine_manager';
 import type { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { clearGotoHoverHighlight, clearHoverTooltip } from '../../editor/contrib/intellisense/engine';
@@ -19,7 +20,7 @@ export function handleTextEditorPointerInput(runtime: Runtime): void {
 	const gotoModifierActive = ctrlDown || metaDown;
 	const activeContext = getActiveCodeTabContext();
 	const snapshot = readEditorPointerSnapshot();
-	if (prepareEditorPointerFrame(machineManager.ideState.editor.resourcePanel, snapshot, gotoModifierActive)) {
+	if (prepareEditorPointerFrame(runtimeWorkbenchState.ide.editor.resourcePanel, snapshot, gotoModifierActive)) {
 		return;
 	}
 	const playerInput = machineManager.input.getPlayerInput(1);

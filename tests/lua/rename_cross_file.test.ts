@@ -10,8 +10,8 @@ import { buildCodeTabId, clearCodeTabContexts, registerCodeTabContext } from '..
 import { codeTabSessionState } from '../../ide/workbench/ui/code_tab/session_state';
 import { tabSessionState } from '../../ide/workbench/ui/tab/session_state';
 import { SYSTEM_RESOURCE_DOMAIN } from '../../ide/common/resource';
-import { machineManager } from '../../machine/ts/core/machine_manager';
 import { registerLuaSourceRecord, type LuaSourceRegistry } from '../../machine/ts/lua/source_registry';
+import { runtimeWorkbenchState } from '../../ide/runtime/workbench_state';
 
 function codeContext(descriptor: ResourceDescriptor, source: string): CodeTabContext {
 	const buffer = new PieceTreeBuffer(source);
@@ -79,7 +79,7 @@ test('cross file rename updates an existing code tab and semantic workspace', ()
 		base_src: usageSource,
 		update_timestamp: 0,
 	});
-	(machineManager as any).sourceState = {
+	runtimeWorkbenchState.sources = {
 		systemLuaSources: registry,
 		activeLuaSources: registry,
 		activeCartridgeSlot: SYSTEM_RESOURCE_DOMAIN,

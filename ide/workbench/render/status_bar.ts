@@ -1,4 +1,4 @@
-import { machineManager } from '../../../machine/ts/core/machine_manager';
+import { runtimeWorkbenchState } from '../../runtime/workbench_state';
 import * as constants from '../../common/constants';
 import { getActiveSymbolSearchMatch } from '../../editor/contrib/symbols/shared';
 import { statusAreaHeight, getStatusMessageLines } from '../common/layout';
@@ -18,7 +18,7 @@ import type { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 
 export function renderStatusBar(runtime: Runtime): void {
 	const runtimeFaulted = runtime.hasRuntimeFailed;
-	const resourcePanel = machineManager.ideState.editor.resourcePanel;
+	const resourcePanel = runtimeWorkbenchState.ide.editor.resourcePanel;
 	const statusTop = editorViewState.viewportHeight - statusAreaHeight();
 	const statusBottom = editorViewState.viewportHeight;
 	const statusBackground = constants.COLOR_STATUS_BACKGROUND;

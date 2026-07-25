@@ -1,4 +1,4 @@
-import { machineManager } from '../../../machine/ts/core/machine_manager';
+import { runtimeWorkbenchState } from '../../runtime/workbench_state';
 import { editorInput } from '../../editor/input/keyboard/text_input';
 import type { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { isResourceViewActive } from '../../workbench/ui/tabs';
@@ -39,7 +39,7 @@ export function handleEditorInput(runtime: Runtime): void {
 	if (handleEditorClipboardAndCommandBindings()) {
 		return;
 	}
-	if (machineManager.ideState.editor.completion.handleKeybindings()) {
+	if (runtimeWorkbenchState.ide.editor.completion.handleKeybindings()) {
 		return;
 	}
 	if (handleCodeFormattingKeybinding()) {
@@ -49,7 +49,7 @@ export function handleEditorInput(runtime: Runtime): void {
 }
 
 function handleFocusedResourcePanelInput(): boolean {
-	const resourcePanel = machineManager.ideState.editor.resourcePanel;
+	const resourcePanel = runtimeWorkbenchState.ide.editor.resourcePanel;
 	if (!resourcePanel.isVisible() || !resourcePanel.isFocused()) {
 		return false;
 	}

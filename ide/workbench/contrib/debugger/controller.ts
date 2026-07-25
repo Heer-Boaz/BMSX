@@ -1,5 +1,5 @@
+import { runtimeWorkbenchState } from '../../../runtime/workbench_state';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
-import { machineManager } from '../../../../machine/ts/core/machine_manager';
 import * as workbenchMode from '../../mode';
 import { type LuaDebuggerSessionMetrics } from '../../../../machine/ts/lua/debugger';
 import { editorRuntimeState } from '../../../editor/common/runtime_state';
@@ -193,7 +193,7 @@ export function restoreBreakpointsFromPayload(payload: SerializedBreakpointMap |
 }
 
 export function syncRuntimeBreakpoints(): void {
-	machineManager.ideState.debugger.controller.setBreakpoints(editorDebuggerState.breakpoints);
+	runtimeWorkbenchState.ide.debugger.controller.setBreakpoints(editorDebuggerState.breakpoints);
 }
 
 export function getActiveBreakpointPath(): string {

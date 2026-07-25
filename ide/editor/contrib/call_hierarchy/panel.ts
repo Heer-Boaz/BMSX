@@ -1,8 +1,8 @@
-import { machineManager } from '../../../../machine/ts/core/machine_manager';
+import { runtimeWorkbenchState } from '../../../runtime/workbench_state';
 import type { CallHierarchyView } from './view';
 import { closeSymbolSearch } from '../symbols/shared';
 
 export function showCallHierarchyView(view: CallHierarchyView): void {
 	closeSymbolSearch(false);
-	machineManager.ideState.editor.resourcePanel.showCallHierarchy(view);
+	runtimeWorkbenchState.ide.editor.resourcePanel.showCallHierarchy(view);
 }

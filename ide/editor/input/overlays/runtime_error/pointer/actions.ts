@@ -1,4 +1,4 @@
-import { machineManager } from '../../../../../../machine/ts/core/machine_manager';
+import { runtimeWorkbenchState } from '../../../../../runtime/workbench_state';
 import { rebuildRuntimeErrorOverlayView } from '../../../../contrib/runtime_error/overlay';
 import { RuntimeErrorOverlay } from '../../../../../common/models';
 import { RuntimeErrorOverlayClickResult } from '../../../../render/error_overlay';
@@ -14,7 +14,7 @@ export function handleRuntimeErrorOverlayPointerClick(overlay: RuntimeErrorOverl
 			return;
 		case 'navigate':
 			setRuntimeErrorOverlayExpanded(overlay, false);
-			machineManager.ideState.editor.debugger.navigateToRuntimeErrorFrameTarget(clickResult.frame);
+			runtimeWorkbenchState.ide.editor.debugger.navigateToRuntimeErrorFrameTarget(clickResult.frame);
 			return;
 		case 'noop':
 		default:

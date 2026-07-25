@@ -1,3 +1,4 @@
+import { runtimeWorkbenchState } from '../../runtime/workbench_state';
 import { machineManager } from '../../../machine/ts/core/machine_manager';
 import type { PointerSnapshot } from '../../common/models';
 import { handleInvalidEditorPointerSnapshot } from './invalid_snapshot';
@@ -16,13 +17,13 @@ export function handleEditorChromePointerDispatch(
 	if (handleEditorTabDragPointer(snapshot)) {
 		return true;
 	}
-	if (handleEditorScrollbarPointer(machineManager.ideState.editor.resourcePanel, snapshot, justPressed)) {
+	if (handleEditorScrollbarPointer(runtimeWorkbenchState.ide.editor.resourcePanel, snapshot, justPressed)) {
 		return true;
 	}
-	if (justPressed && handleTopBarPointer(machineManager.ideState.editor.commands, snapshot)) {
+	if (justPressed && handleTopBarPointer(runtimeWorkbenchState.ide.editor.commands, snapshot)) {
 		return true;
 	}
-	if (handleEditorPanelResizePointer(machineManager.ideState.editor.resourcePanel, snapshot, justPressed)) {
+	if (handleEditorPanelResizePointer(runtimeWorkbenchState.ide.editor.resourcePanel, snapshot, justPressed)) {
 		return true;
 	}
 	if (handleInvalidEditorPointerSnapshot(snapshot)) {

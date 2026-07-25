@@ -1,4 +1,4 @@
-import { machineManager } from '../../../../machine/ts/core/machine_manager';
+import { runtimeWorkbenchState } from '../../../runtime/workbench_state';
 import type { LuaDefinitionInfo, LuaDefinitionKind, LuaSourceRange } from '../../../../machine/ts/lua/syntax/ast/index';
 import { LuaEnvironment } from '../../../../machine/ts/lua/environment';
 import { LuaLexer } from '../../../../machine/ts/lua/syntax/lexer';
@@ -160,7 +160,7 @@ function resolveTableChain(table: LuaTable): LuaTable[] {
 function resolveTableTypeName(table: LuaTable): string {
 	const chain = resolveTableChain(table);
 	for (let i = 0; i < chain.length; i += 1) {
-		const direct = machineManager.ideState.nativeBridge.luaInterpreter.resolveValueName(chain[i]);
+		const direct = runtimeWorkbenchState.ide.nativeBridge.luaInterpreter.resolveValueName(chain[i]);
 		if (direct) {
 			return direct;
 		}
@@ -499,7 +499,7 @@ export function computeLuaDiagnostics(options: LuaDiagnosticOptions): LuaDiagnos
 	if (!semanticData) {
 		return [];
 	}
-	const extraGlobalNames = Array.from(machineManager.ideState.nativeBridge.luaInterpreter.globalEnvironment.keys());
+	const extraGlobalNames = Array.from(runtimeWorkbenchState.ide.nativeBridge.luaInterpreter.globalEnvironment.keys());
 	const frontend = buildLuaSemanticFrontend([{
 		path: options.path,
 		source: options.source,
@@ -1191,8 +1191,8 @@ export function resolveLuaDefinitionMetadata(range: LuaSourceRange): LuaDefiniti
 		return null;
 	}
 	const sourceMatch = resolveRuntimeLuaSourceForContext(
-		machineManager.sourceState,
-		machineManager.sourceState.activeCartridgeSlot,
+		runtimeWorkbenchState.sources,
+		runtimeWorkbenchState.sources.activeCartridgeSlot,
 		range.path,
 	);
 	if (sourceMatch && sourceMatch.record.source_path !== range.path) {
@@ -1368,7 +1368,7 @@ export function findStaticDefinitionLocation(chain: ReadonlyArray<string>, usage
 		let model = models.get(path.path);
 		if (!model) {
 			const sourceMatch = resolveRuntimeLuaSourceForContext(
-				machineManager.sourceState,
+				runtimeWorkbenchState.sources,
 				activeContext.descriptor.domain,
 				path.path,
 			)!;
@@ -1446,9 +1446,9 @@ export function getStaticDefinitions(
 	domain: ResourceDomain,
 	preferredChunk: string,
 ): { definitions: ReadonlyArray<LuaDefinitionInfo>; paths: Array<{ path: string; info: { asset_id: string; path?: string } }>; models: Map<string, LuaSemanticModel> } {
-	const interpreter = machineManager.ideState.nativeBridge.luaInterpreter;
+	const interpreter = runtimeWorkbenchState.ide.nativeBridge.luaInterpreter;
 	const matchingChunks: Array<{ path: string; info: { asset_id: string; path?: string } }> = [];
-	const sources = machineManager.sourceState;
+	const sources = runtimeWorkbenchState.sources;
 	const sourceMatch = resolveRuntimeLuaSourceForContext(sources, domain, preferredChunk);
 	if (sourceMatch !== null) {
 		const asset = sourceMatch.record;
@@ -1493,7 +1493,7 @@ export function getStaticDefinitions(
 }
 
 export function buildSemanticModelForChunk(domain: ResourceDomain, path: string): LuaSemanticModel {
-	const sourceMatch = resolveRuntimeLuaSourceForContext(machineManager.sourceState, domain, path)!;
+	const sourceMatch = resolveRuntimeLuaSourceForContext(runtimeWorkbenchState.sources, domain, path)!;
 	const source = luaPipeline.resourceSourceForChunk({
 		domain: sourceMatch.domain,
 		path: sourceMatch.record.source_path,
@@ -1617,7 +1617,7 @@ function wrapHostValueForIntellisense(value: unknown): LuaValue {
 	}
 	if (typeof value === 'object' || value instanceof Function) {
 		const native = value as object | Function;
-		return machineManager.ideState.nativeBridge.luaInterpreter.getOrCreateNativeValue(native, resolveNativeTypeName(native));
+		return runtimeWorkbenchState.ide.nativeBridge.luaInterpreter.getOrCreateNativeValue(native, resolveNativeTypeName(native));
 	}
 	return null;
 }
@@ -1629,7 +1629,7 @@ function wrapRuntimeValueForIntellisense(runtime: Runtime, value: Value): LuaVal
 	if (valueIsString(value)) {
 		return runtime.machine.cpu.stringPool.toString(asStringId(value));
 	}
-	const bridge = machineManager.ideState.nativeBridge;
+	const bridge = runtimeWorkbenchState.ide.nativeBridge;
 	const marshalContext = buildMarshalContext();
 	const native = toNativeValue(bridge, value, marshalContext, new WeakMap<Table, unknown>());
 	return wrapHostValueForIntellisense(native);
@@ -1679,7 +1679,7 @@ export function resolveSnapshotExpression(runtime: Runtime, expression: string):
 	if (!parts || parts.length === 0) {
 		return null;
 	}
-	const snapshot = machineManager.faultState.lastCpuFaultSnapshot;
+	const snapshot = runtimeWorkbenchState.fault.lastCpuFaultSnapshot;
 	if (snapshot.length === 0) {
 		return null;
 	}
@@ -1736,7 +1736,7 @@ function resolveRuntimeLocalChainValue(
 	}
 	let requestedPath = path;
 	const requestedSource = resolveRuntimeLuaSourceForContext(
-		machineManager.sourceState,
+		runtimeWorkbenchState.sources,
 		runtime.machine.cpu.activeCartridgeSlot(),
 		path,
 	);
@@ -1746,8 +1746,8 @@ function resolveRuntimeLocalChainValue(
 	const cpu = runtime.machine.cpu;
 	// Use the fault snapshot when the fault overlay is active — by hover time, the crash
 	// frame has been popped from the live CPU stack, so we must use the saved registers.
-	const faultSnapshot = machineManager.faultState.faultSnapshot !== null
-		? machineManager.faultState.lastCpuFaultSnapshot
+	const faultSnapshot = runtimeWorkbenchState.fault.faultSnapshot !== null
+		? runtimeWorkbenchState.fault.lastCpuFaultSnapshot
 		: null;
 	const callStack = faultSnapshot ?? cpu.getCallStack();
 	if (callStack.length === 0) {
@@ -1877,7 +1877,7 @@ export function resolveLuaChainValue(
 	if (!parts || parts.length === 0) {
 		return null;
 	}
-	const interpreter = machineManager.ideState.nativeBridge.luaInterpreter;
+	const interpreter = runtimeWorkbenchState.ide.nativeBridge.luaInterpreter;
 	const root = parts[0];
 	const globalEnv = interpreter.globalEnvironment;
 
@@ -1949,7 +1949,7 @@ export function resolveIdentifierThroughChain(environment: LuaEnvironment, name:
 }
 
 export function describeLuaValueForInspector(value: LuaValue): { lines: string[]; valueType: string; isFunction: boolean } {
-	const resolvedName = machineManager.ideState.nativeBridge.luaInterpreter.resolveValueName(value);
+	const resolvedName = runtimeWorkbenchState.ide.nativeBridge.luaInterpreter.resolveValueName(value);
 	if (value === null) {
 		return { lines: ['Nil'], valueType: 'nil', isFunction: false };
 	}

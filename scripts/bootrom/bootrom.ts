@@ -1,5 +1,5 @@
 // IMPORTANT: IMPORTS TO `bmsx/blabla` ARE NOT ALLOWED!!!!!! THIS WILL CAUSE PROBLEMS WITH .GLSL FILES BEING INCLUDED AND THE ROMPACKER CANNOT HANDLE THIS!!!!!
-import type { MachineBootOptions } from '../../machine/ts/core/machine_manager';
+import type { MachineLaunchOptions } from '../../machine/ts/core/machine_manager';
 import { parseCartHeader } from '../../machine/ts/rompack/format';
 import { decodeRomToc } from '../../machine/ts/rompack/toc';
 import { createAudioContext, startAudioOnIos } from './bootaudio';
@@ -7,7 +7,8 @@ import { createAudioContext, startAudioOnIos } from './bootaudio';
 const HAS_DOM_ENVIRONMENT = typeof document !== 'undefined' && document !== null;
 const initialStartingGamepadIndex: number = null;
 type BMSX = {
-	constructPlatformFromViewHostHandle: (handle: HTMLCanvasElement, options: { audioContext: AudioContext; debug: boolean }) => MachineBootOptions['platform'];
+	constructPlatformFromViewHostHandle: (handle: HTMLCanvasElement, options: { audioContext: AudioContext; debug: boolean }) => MachineLaunchOptions['platform'];
+	bootMachine: (options: MachineLaunchOptions) => Promise<unknown>;
 	machineManager: typeof import('../../machine/ts/core/machine_manager').machineManager;
 };
 
@@ -77,10 +78,10 @@ export const bootrom = {
 	snd_unlocked: false,
 	gainnode: null as GainNode,
 	theshowsover: false,
-	startingGamepadIndex: initialStartingGamepadIndex as MachineBootOptions['startingGamepadIndex'],
-	enableOnscreenGamepad: false as MachineBootOptions['enableOnscreenGamepad'],
-	platform: null as MachineBootOptions['platform'],
-	viewHost: null as MachineBootOptions['viewHost'],
+	startingGamepadIndex: initialStartingGamepadIndex as MachineLaunchOptions['startingGamepadIndex'],
+	enableOnscreenGamepad: false as MachineLaunchOptions['enableOnscreenGamepad'],
+	platform: null as MachineLaunchOptions['platform'],
+	viewHost: null as MachineLaunchOptions['viewHost'],
 
 	/**
 	 * Starts the game.
@@ -110,7 +111,6 @@ export const bootrom = {
 			document.body.classList.add('game-started'); // Change background color of body
 		};
 
-		const machineManager = globalThis.bmsx.machineManager;
 		if (HAS_DOM_ENVIRONMENT) {
 			createAudioContext(bootrom);
 			const gamescreen = document.getElementById('gamescreen');
@@ -138,7 +138,7 @@ export const bootrom = {
 		if (!platform) {
 			throw new Error('Platform not initialized before starting the game.');
 		}
-		await machineManager.boot({
+		await globalThis.bmsx.bootMachine({
 			cartridgeSlots: bootrom.cartridgeSlots,
 			systemRom: bootrom.systemRom,
 			sndcontext: bootrom.sndcontext,
@@ -148,7 +148,7 @@ export const bootrom = {
 			enableOnscreenGamepad: bootrom.enableOnscreenGamepad,
 			platform,
 			viewHost: bootrom.viewHost,
-		} as MachineBootOptions);
+		});
 		wrapup();
 		bootrom.cartridgeSlots[0] = null;
 		bootrom.cartridgeSlots[1] = null;
