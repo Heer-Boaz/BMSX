@@ -1558,9 +1558,11 @@ function encodeCpuRuntimeState(state: CpuRuntimeState): CpuRuntimeState {
 		causeWord: state.causeWord,
 		epcWord: state.epcWord,
 		badAddressWord: state.badAddressWord,
+		luaFaultReasonWord: state.luaFaultReasonWord,
 		nmiReturnCauseWord: state.nmiReturnCauseWord,
 		nmiReturnEpcWord: state.nmiReturnEpcWord,
 		nmiReturnBadAddressWord: state.nmiReturnBadAddressWord,
+		nmiReturnLuaFaultReasonWord: state.nmiReturnLuaFaultReasonWord,
 		nonMaskableInterruptPending: state.nonMaskableInterruptPending,
 		yieldRequested: state.yieldRequested,
 	};
@@ -1616,9 +1618,11 @@ function decodeCpuRuntimeState(value: unknown, label: string): CpuRuntimeState {
 		causeWord: requireObjectKey(object, 'causeWord', label, 'cpuState.causeWord') as number,
 		epcWord: requireObjectKey(object, 'epcWord', label, 'cpuState.epcWord') as number,
 		badAddressWord: requireObjectKey(object, 'badAddressWord', label, 'cpuState.badAddressWord') as number,
+		luaFaultReasonWord: requireObjectKey(object, 'luaFaultReasonWord', label, 'cpuState.luaFaultReasonWord') as number,
 		nmiReturnCauseWord: requireObjectKey(object, 'nmiReturnCauseWord', label, 'cpuState.nmiReturnCauseWord') as number,
 		nmiReturnEpcWord: requireObjectKey(object, 'nmiReturnEpcWord', label, 'cpuState.nmiReturnEpcWord') as number,
 		nmiReturnBadAddressWord: requireObjectKey(object, 'nmiReturnBadAddressWord', label, 'cpuState.nmiReturnBadAddressWord') as number,
+		nmiReturnLuaFaultReasonWord: requireObjectKey(object, 'nmiReturnLuaFaultReasonWord', label, 'cpuState.nmiReturnLuaFaultReasonWord') as number,
 		nonMaskableInterruptPending: requireObjectKey(object, 'nonMaskableInterruptPending', label, 'cpuState.nonMaskableInterruptPending') as boolean,
 		yieldRequested: requireObjectKey(object, 'yieldRequested', label, 'cpuState.yieldRequested') as boolean,
 	};

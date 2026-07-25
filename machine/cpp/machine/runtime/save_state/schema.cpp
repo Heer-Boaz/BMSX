@@ -398,6 +398,8 @@ const std::vector<std::string> RUNTIME_SAVE_STATE_PROP_NAMES = {
 	"mailboxDataWord",
 	"mailboxControlWord",
 	"mailboxIrqPending",
+	"luaFaultReasonWord",
+	"nmiReturnLuaFaultReasonWord",
 };
 
 } // namespace bmsx

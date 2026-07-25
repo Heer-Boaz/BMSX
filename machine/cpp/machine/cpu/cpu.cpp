@@ -455,7 +455,7 @@ void Table::removeFromHash(const Value& key) {
 
 Value Table::get(const Value& key) const {
 	if (isNil(key)) {
-		throw LuaExecutionError("Table index is nil.");
+		throw LuaExecutionError("Table index is nil.", LUA_FAULT_REASON_INDEX_NIL);
 	}
 	int index = 0;
 	if (getArrayIndex(key, index)) {
@@ -473,7 +473,7 @@ Value Table::get(const Value& key) const {
 
 void Table::set(const Value& key, const Value& value) {
 	if (isNil(key)) {
-		throw LuaExecutionError("Table index is nil.");
+		throw LuaExecutionError("Table index is nil.", LUA_FAULT_REASON_INDEX_NIL);
 	}
 	int index = 0;
 	bool isArrayKey = getArrayIndex(key, index);
@@ -1392,9 +1392,11 @@ void CPU::start(u32 functionAddress, NativeArgsView args, u32 statusWord) {
 	m_causeWord = 0u;
 	m_epcWord = 0u;
 	m_badAddressWord = 0u;
+	m_luaFaultReasonWord = 0u;
 	m_nmiReturnCauseWord = 0u;
 	m_nmiReturnEpcWord = 0u;
 	m_nmiReturnBadAddressWord = 0u;
+	m_nmiReturnLuaFaultReasonWord = 0u;
 	m_nonMaskableInterruptPending = false;
 	m_yieldRequested = false;
 	m_hostExternalCallActive = false;
@@ -1658,9 +1660,11 @@ CpuRuntimeState CPU::captureRuntimeState() const {
 	state.causeWord = m_causeWord;
 	state.epcWord = m_epcWord;
 	state.badAddressWord = m_badAddressWord;
+	state.luaFaultReasonWord = m_luaFaultReasonWord;
 	state.nmiReturnCauseWord = m_nmiReturnCauseWord;
 	state.nmiReturnEpcWord = m_nmiReturnEpcWord;
 	state.nmiReturnBadAddressWord = m_nmiReturnBadAddressWord;
+	state.nmiReturnLuaFaultReasonWord = m_nmiReturnLuaFaultReasonWord;
 	state.nonMaskableInterruptPending = m_nonMaskableInterruptPending;
 	state.yieldRequested = m_yieldRequested;
 	return state;
@@ -1885,9 +1889,11 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	m_causeWord = state.causeWord;
 	m_epcWord = state.epcWord;
 	m_badAddressWord = state.badAddressWord;
+	m_luaFaultReasonWord = state.luaFaultReasonWord;
 	m_nmiReturnCauseWord = state.nmiReturnCauseWord;
 	m_nmiReturnEpcWord = state.nmiReturnEpcWord;
 	m_nmiReturnBadAddressWord = state.nmiReturnBadAddressWord;
+	m_nmiReturnLuaFaultReasonWord = state.nmiReturnLuaFaultReasonWord;
 	m_nonMaskableInterruptPending = state.nonMaskableInterruptPending;
 	m_yieldRequested = state.yieldRequested;
 	collectHeap();
@@ -1975,7 +1981,7 @@ void CPU::startProtectedCall(BuiltinFunctionId id, CallFrame& caller, int callBa
 			? caller.registers[static_cast<size_t>(argumentBase + 1)]
 			: valueNil();
 		if (!valueIsClosure(handler) && !valueIsBuiltinFunction(handler) && !valueIsNativeFunction(handler)) {
-			throw LuaExecutionError("xpcall error handler must be a function.");
+			throw LuaExecutionError("xpcall error handler must be a function.", LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION);
 		}
 	}
 	const size_t continuationIndex = m_protectedCallDepth;
@@ -2035,7 +2041,7 @@ void CPU::invokeProtectedTarget(size_t continuationIndex, Value target, int argu
 		finishProtectedCall(continuationIndex, results.data(), static_cast<int>(results.size()));
 		return;
 	}
-	throw LuaExecutionError("Attempted to call a non-function value.");
+	throw LuaExecutionError("Attempted to call a non-function value.", LUA_FAULT_REASON_CALL_NON_FUNCTION);
 }
 
 void CPU::finishProtectedCall(size_t continuationIndex, const Value* values, int valueCount) {
@@ -2190,7 +2196,7 @@ void CPU::runBuiltinNextValue(Value target, Value key, NativeResults& out) {
 		return;
 	}
 	if (!valueIsNativeObject(target)) {
-		throw LuaExecutionError("Attempted to iterate a non-table value.");
+		throw LuaExecutionError("Attempted to iterate a non-table value.", LUA_FAULT_REASON_ITERATE_NON_TABLE);
 	}
 	auto* obj = asNativeObject(target);
 	auto entry = obj->nextEntry(key);
@@ -2329,6 +2335,7 @@ bool CPU::enterPendingInterrupt() {
 		const u32 returnCauseWord = m_causeWord;
 		const u32 returnEpcWord = m_epcWord;
 		const u32 returnBadAddressWord = m_badAddressWord;
+		const u32 returnLuaFaultReasonWord = m_luaFaultReasonWord;
 		enterException(
 			*m_systemImage,
 			m_systemExceptionFunctionAddress,
@@ -2339,6 +2346,7 @@ bool CPU::enterPendingInterrupt() {
 		m_nmiReturnCauseWord = returnCauseWord;
 		m_nmiReturnEpcWord = returnEpcWord;
 		m_nmiReturnBadAddressWord = returnBadAddressWord;
+		m_nmiReturnLuaFaultReasonWord = returnLuaFaultReasonWord;
 		if (!wasHalted) m_interruptEventPending = true;
 		return true;
 	}
@@ -2360,6 +2368,11 @@ void CPU::enterSynchronousException(CallFrame& interruptedFrame, u32 causeWord) 
 void CPU::enterSynchronousAddressException(CallFrame& interruptedFrame, u32 causeWord, u32 address) {
 	m_badAddressWord = address;
 	enterSynchronousException(interruptedFrame, causeWord);
+}
+
+void CPU::enterLuaFaultException(u32 reason) {
+	m_luaFaultReasonWord = reason;
+	enterSynchronousException(*m_frames.back(), CPU_CAUSE_CODE_TRAP);
 }
 
 void CPU::enterException(
@@ -2565,11 +2578,11 @@ dispatch_continue:
 #endif
 		} catch (const LuaThrownValueError& error) {
 			if (!handleProtectedCallError(error.value)) {
-				throw;
+				enterLuaFaultException(LUA_FAULT_REASON_EXPLICIT_ERROR);
 			}
 		} catch (const LuaExecutionError& error) {
 			if (!handleProtectedCallError(valueString(m_stringPool.intern(error.what())))) {
-				throw;
+				enterLuaFaultException(error.reason);
 			}
 		}
 	}
@@ -2726,11 +2739,11 @@ dispatch_continue:
 #endif
 		} catch (const LuaThrownValueError& error) {
 			if (!handleProtectedCallError(error.value)) {
-				throw;
+				enterLuaFaultException(LUA_FAULT_REASON_EXPLICIT_ERROR);
 			}
 		} catch (const LuaExecutionError& error) {
 			if (!handleProtectedCallError(valueString(m_stringPool.intern(error.what())))) {
-				throw;
+				enterLuaFaultException(error.reason);
 			}
 		}
 	}
@@ -2796,11 +2809,11 @@ void CPU::step() {
 		executeInstruction(frame, decoded);
 	} catch (const LuaThrownValueError& error) {
 		if (!handleProtectedCallError(error.value)) {
-			throw;
+			enterLuaFaultException(LUA_FAULT_REASON_EXPLICIT_ERROR);
 		}
 	} catch (const LuaExecutionError& error) {
 		if (!handleProtectedCallError(valueString(m_stringPool.intern(error.what())))) {
-			throw;
+			enterLuaFaultException(error.reason);
 		}
 	}
 }
@@ -3215,7 +3228,7 @@ Value CPU::resolveTableIndexChain(Table* table, Getter get) {
 		}
 		current = asTable(indexerValue);
 	}
-	throw LuaExecutionError("Metatable __index loop detected.");
+	throw LuaExecutionError("Metatable __index loop detected.", LUA_FAULT_REASON_METATABLE_LOOP);
 }
 
 Value CPU::resolveTableIndex(Table* table, const Value& key) {
@@ -3262,7 +3275,7 @@ Value CPU::loadTableIndex(const Value& base, const Value& key) {
 		}
 		return directValue;
 	}
-	throw LuaExecutionError("Attempted to index field on a non-table value.");
+	throw LuaExecutionError("Attempted to index field on a non-table value.", LUA_FAULT_REASON_INDEX_NON_TABLE);
 }
 
 Value CPU::loadTableIntegerIndexCached(
@@ -3312,7 +3325,7 @@ Value CPU::loadTableIntegerIndexCached(
 		}
 		return directValue;
 	}
-	throw LuaExecutionError("Attempted to index field on a non-table value.");
+	throw LuaExecutionError("Attempted to index field on a non-table value.", LUA_FAULT_REASON_INDEX_NON_TABLE);
 }
 
 Value CPU::loadTableIntegerIndex(const Value& base, int index) {
@@ -3341,7 +3354,7 @@ Value CPU::loadTableIntegerIndex(const Value& base, int index) {
 		}
 		return directValue;
 	}
-	throw LuaExecutionError("Attempted to index field on a non-table value.");
+	throw LuaExecutionError("Attempted to index field on a non-table value.", LUA_FAULT_REASON_INDEX_NON_TABLE);
 }
 
 Value CPU::loadTableFieldIndexCached(
@@ -3391,7 +3404,7 @@ Value CPU::loadTableFieldIndexCached(
 		}
 		return directValue;
 	}
-	throw LuaExecutionError("Attempted to index field on a non-table value.");
+	throw LuaExecutionError("Attempted to index field on a non-table value.", LUA_FAULT_REASON_INDEX_NON_TABLE);
 }
 
 Value CPU::loadTableFieldIndex(const Value& base, StringId key) {
@@ -3420,7 +3433,7 @@ Value CPU::loadTableFieldIndex(const Value& base, StringId key) {
 		}
 		return directValue;
 	}
-	throw LuaExecutionError("Attempted to index field on a non-table value.");
+	throw LuaExecutionError("Attempted to index field on a non-table value.", LUA_FAULT_REASON_INDEX_NON_TABLE);
 }
 
 void CPU::storeTableIndex(const Value& base, const Value& key, const Value& value) {
@@ -3432,7 +3445,7 @@ void CPU::storeTableIndex(const Value& base, const Value& key, const Value& valu
 		asNativeObject(base)->set(key, value);
 		return;
 	}
-	throw LuaExecutionError("Attempted to assign to a non-table value.");
+	throw LuaExecutionError("Attempted to assign to a non-table value.", LUA_FAULT_REASON_ASSIGN_NON_TABLE);
 }
 
 void CPU::storeTableIntegerIndex(const Value& base, int index, const Value& value) {
@@ -3444,7 +3457,7 @@ void CPU::storeTableIntegerIndex(const Value& base, int index, const Value& valu
 		asNativeObject(base)->set(valueNumber(static_cast<double>(index)), value);
 		return;
 	}
-	throw LuaExecutionError("Attempted to assign to a non-table value.");
+	throw LuaExecutionError("Attempted to assign to a non-table value.", LUA_FAULT_REASON_ASSIGN_NON_TABLE);
 }
 
 void CPU::storeTableFieldIndex(const Value& base, StringId key, const Value& value) {
@@ -3456,7 +3469,7 @@ void CPU::storeTableFieldIndex(const Value& base, StringId key, const Value& val
 		asNativeObject(base)->set(valueString(key), value);
 		return;
 	}
-	throw LuaExecutionError("Attempted to assign to a non-table value.");
+	throw LuaExecutionError("Attempted to assign to a non-table value.", LUA_FAULT_REASON_ASSIGN_NON_TABLE);
 }
 
 std::unique_ptr<CallFrame> CPU::acquireFrame() {

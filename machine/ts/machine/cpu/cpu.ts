@@ -13,11 +13,13 @@ import {
 	COP0_CAUSE,
 	COP0_EPC,
 	COP0_EXEC,
+	COP0_LUA_FAULT_REASON,
 	COP0_STATUS,
 	CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD,
 	CPU_CAUSE_CODE_ADDRESS_ERROR_STORE,
 	CPU_CAUSE_CODE_DATA_BUS_ERROR,
 	CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE,
+	CPU_CAUSE_CODE_TRAP,
 	CPU_CAUSE_IRQ,
 	CPU_CAUSE_NMI,
 	CPU_STATUS_CART_ENTRY,
@@ -26,6 +28,15 @@ import {
 	CPU_STATUS_RFE_RESTORE_MASK,
 	CPU_STATUS_SYSTEM_ENTRY,
 	CPU_STATUS_USER_MODE_CURRENT,
+	LUA_FAULT_REASON_ASSIGN_NON_TABLE,
+	LUA_FAULT_REASON_CALL_NON_FUNCTION,
+	LUA_FAULT_REASON_EXPLICIT_ERROR,
+	LUA_FAULT_REASON_INDEX_NIL,
+	LUA_FAULT_REASON_INDEX_NON_TABLE,
+	LUA_FAULT_REASON_ITERATE_NON_TABLE,
+	LUA_FAULT_REASON_METATABLE_LOOP,
+	LUA_FAULT_REASON_UNKNOWN,
+	LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION,
 } from './cop0';
 import {
 	CpuExecutionProfiler,
@@ -141,7 +152,7 @@ export class LuaThrownValueError extends Error {
 }
 
 export class LuaExecutionError extends Error {
-	public constructor(message: string) {
+	public constructor(message: string, public readonly reason: number = LUA_FAULT_REASON_UNKNOWN) {
 		super(message);
 		this.name = 'LuaExecutionError';
 	}
@@ -382,9 +393,11 @@ export type CpuRuntimeState = {
 	causeWord: number;
 	epcWord: number;
 	badAddressWord: number;
+	luaFaultReasonWord: number;
 	nmiReturnCauseWord: number;
 	nmiReturnEpcWord: number;
 	nmiReturnBadAddressWord: number;
+	nmiReturnLuaFaultReasonWord: number;
 	nonMaskableInterruptPending: boolean;
 	yieldRequested: boolean;
 };
@@ -556,7 +569,7 @@ export class Table {
 
 	public get(key: Value): Value {
 		if (key === null) {
-			throw new LuaExecutionError('Table index is nil.');
+			throw new LuaExecutionError('Table index is nil.', LUA_FAULT_REASON_INDEX_NIL);
 		}
 		const index = this.getArrayIndex(key);
 		if (index !== null && index < this.array.length) {
@@ -571,7 +584,7 @@ export class Table {
 
 	public set(key: Value, value: Value): void {
 		if (key === null) {
-			throw new LuaExecutionError('Table index is nil.');
+			throw new LuaExecutionError('Table index is nil.', LUA_FAULT_REASON_INDEX_NIL);
 		}
 		const index = this.getArrayIndex(key);
 		if (index !== null) {
@@ -1544,9 +1557,11 @@ export class CPU {
 	private causeWord = 0;
 	private epcWord = 0;
 	private badAddressWord = 0;
+	private luaFaultReasonWord = 0;
 	private nmiReturnCauseWord = 0;
 	private nmiReturnEpcWord = 0;
 	private nmiReturnBadAddressWord = 0;
+	private nmiReturnLuaFaultReasonWord = 0;
 	private nonMaskableInterruptPending = false;
 	private systemExceptionFunctionAddress = 0;
 	private hostExternalCallActive = false;
@@ -1700,7 +1715,7 @@ export class CPU {
 			}
 			current = indexer;
 		}
-		throw new LuaExecutionError('Metatable __index loop detected.');
+		throw new LuaExecutionError('Metatable __index loop detected.', LUA_FAULT_REASON_METATABLE_LOOP);
 	}
 
 	private loadTableIndex(base: Value, key: Value): Value {
@@ -1729,7 +1744,7 @@ export class CPU {
 			}
 			return null;
 		}
-		throw new LuaExecutionError('Attempted to index field on a non-table value.');
+		throw new LuaExecutionError('Attempted to index field on a non-table value.', LUA_FAULT_REASON_INDEX_NON_TABLE);
 	}
 
 	private loadTableIntegerIndexCached(cache: TableLoadInlineCache, base: Value, index: number): Value {
@@ -1774,7 +1789,7 @@ export class CPU {
 			}
 			return directValue;
 		}
-		throw new LuaExecutionError('Attempted to index field on a non-table value.');
+		throw new LuaExecutionError('Attempted to index field on a non-table value.', LUA_FAULT_REASON_INDEX_NON_TABLE);
 	}
 
 	private loadTableFieldIndexCached(cache: TableLoadInlineCache, base: Value, key: StringValue): Value {
@@ -1818,7 +1833,7 @@ export class CPU {
 			}
 			return directValue;
 		}
-		throw new LuaExecutionError('Attempted to index field on a non-table value.');
+		throw new LuaExecutionError('Attempted to index field on a non-table value.', LUA_FAULT_REASON_INDEX_NON_TABLE);
 	}
 
 	private storeTableIndex(base: Value, key: Value, value: Value): void {
@@ -1830,7 +1845,7 @@ export class CPU {
 			base.set(key, value);
 			return;
 		}
-		throw new LuaExecutionError('Attempted to assign to a non-table value.');
+		throw new LuaExecutionError('Attempted to assign to a non-table value.', LUA_FAULT_REASON_ASSIGN_NON_TABLE);
 	}
 
 	private storeTableIntegerIndex(base: Value, index: number, value: Value): void {
@@ -1842,7 +1857,7 @@ export class CPU {
 			base.set(index, value);
 			return;
 		}
-		throw new LuaExecutionError('Attempted to assign to a non-table value.');
+		throw new LuaExecutionError('Attempted to assign to a non-table value.', LUA_FAULT_REASON_ASSIGN_NON_TABLE);
 	}
 
 	private storeTableFieldIndex(base: Value, key: StringValue, value: Value): void {
@@ -1854,7 +1869,7 @@ export class CPU {
 			base.set(key, value);
 			return;
 		}
-		throw new LuaExecutionError('Attempted to assign to a non-table value.');
+		throw new LuaExecutionError('Attempted to assign to a non-table value.', LUA_FAULT_REASON_ASSIGN_NON_TABLE);
 	}
 
 	private acquireFrame(): CallFrame {
@@ -2435,9 +2450,11 @@ export class CPU {
 		this.causeWord = 0;
 		this.epcWord = 0;
 		this.badAddressWord = 0;
+		this.luaFaultReasonWord = 0;
 		this.nmiReturnCauseWord = 0;
 		this.nmiReturnEpcWord = 0;
 		this.nmiReturnBadAddressWord = 0;
+		this.nmiReturnLuaFaultReasonWord = 0;
 		this.nonMaskableInterruptPending = false;
 		this.hostExternalCallActive = false;
 		this.yieldRequested = false;
@@ -2585,6 +2602,7 @@ export class CPU {
 			const returnCauseWord = this.causeWord;
 			const returnEpcWord = this.epcWord;
 			const returnBadAddressWord = this.badAddressWord;
+			const returnLuaFaultReasonWord = this.luaFaultReasonWord;
 			this.enterException(
 				this.systemImage,
 				this.systemExceptionFunctionAddress,
@@ -2595,6 +2613,7 @@ export class CPU {
 			this.nmiReturnCauseWord = returnCauseWord;
 			this.nmiReturnEpcWord = returnEpcWord;
 			this.nmiReturnBadAddressWord = returnBadAddressWord;
+			this.nmiReturnLuaFaultReasonWord = returnLuaFaultReasonWord;
 			if (!wasHalted) this.interruptEventPending = true;
 			return true;
 		}
@@ -2621,6 +2640,13 @@ export class CPU {
 	private enterSynchronousAddressException(interruptedFrame: CallFrame, causeWord: number, address: number): void {
 		this.badAddressWord = address >>> 0;
 		this.enterSynchronousException(interruptedFrame, causeWord);
+	}
+
+	private enterLuaFaultException(error: LuaExecutionError | LuaThrownValueError): void {
+		this.luaFaultReasonWord = error instanceof LuaExecutionError
+			? error.reason
+			: LUA_FAULT_REASON_EXPLICIT_ERROR;
+		this.enterSynchronousException(this.frames[this.frames.length - 1], CPU_CAUSE_CODE_TRAP);
 	}
 
 	private enterException(
@@ -2719,7 +2745,11 @@ export class CPU {
 				}
 			} catch (error) {
 				if (!this.handleProtectedCallError(error)) {
-					throw error;
+					if (error instanceof LuaExecutionError || error instanceof LuaThrownValueError) {
+						this.enterLuaFaultException(error);
+					} else {
+						throw error;
+					}
 				}
 			}
 		}
@@ -2808,7 +2838,11 @@ export class CPU {
 			);
 		} catch (error) {
 			if (!this.handleProtectedCallError(error)) {
-				throw error;
+				if (error instanceof LuaExecutionError || error instanceof LuaThrownValueError) {
+					this.enterLuaFaultException(error);
+				} else {
+					throw error;
+				}
 			}
 		}
 	}
@@ -3226,6 +3260,7 @@ export class CPU {
 					let value: number;
 					switch (b) {
 						case COP0_BAD_ADDRESS: value = this.badAddressWord; break;
+						case COP0_LUA_FAULT_REASON: value = this.luaFaultReasonWord; break;
 						case COP0_STATUS: value = this.statusWord; break;
 						case COP0_CAUSE: value = this.causeWord; break;
 						case COP0_EPC: value = this.epcWord; break;
@@ -3246,6 +3281,7 @@ export class CPU {
 						case COP0_EPC: this.epcWord = value; return;
 						case COP0_EXEC: this.executeFunctionAddress(value); return;
 						case COP0_BAD_ADDRESS:
+						case COP0_LUA_FAULT_REASON:
 						case COP0_CAUSE:
 							return;
 						default: this.hardHalt(); return;
@@ -3282,6 +3318,7 @@ export class CPU {
 						this.causeWord = this.nmiReturnCauseWord;
 						this.epcWord = this.nmiReturnEpcWord;
 						this.badAddressWord = this.nmiReturnBadAddressWord;
+						this.luaFaultReasonWord = this.nmiReturnLuaFaultReasonWord;
 					}
 					return;
 				case OpCode.LOADKR:
@@ -3398,7 +3435,7 @@ export class CPU {
 						this.pushFrameFromCaller(frame, callee, a + 1, argCount, a, c, false, frame.pc - INSTRUCTION_BYTES);
 						return;
 					}
-					throw new LuaExecutionError('Attempted to call a non-function value.');
+					throw new LuaExecutionError('Attempted to call a non-function value.', LUA_FAULT_REASON_CALL_NON_FUNCTION);
 				}
 				case OpCode.RET: {
 					const total = b === 0 ? Math.max(frame.top - a, 0) : b;
@@ -4006,7 +4043,7 @@ export class CPU {
 		if (id === BuiltinFunctionId.XPCall) {
 			const handler = argumentCount > 1 ? caller.registers.get(argumentBase + 1) : null;
 			if (!valueIsClosure(handler) && !isBuiltinFunction(handler) && !isNativeFunction(handler)) {
-				throw new LuaExecutionError('xpcall error handler must be a function.');
+				throw new LuaExecutionError('xpcall error handler must be a function.', LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION);
 			}
 		}
 		const continuationIndex = this.protectedCallDepth;
@@ -4078,7 +4115,7 @@ export class CPU {
 			}
 			return;
 		}
-		throw new LuaExecutionError('Attempted to call a non-function value.');
+		throw new LuaExecutionError('Attempted to call a non-function value.', LUA_FAULT_REASON_CALL_NON_FUNCTION);
 	}
 
 	private finishProtectedCallFromArray(continuationIndex: number, values: Value[]): void {
@@ -4243,7 +4280,7 @@ export class CPU {
 			return;
 		}
 		if (!isNativeObject(target)) {
-			throw new LuaExecutionError('Attempted to iterate a non-table value.');
+			throw new LuaExecutionError('Attempted to iterate a non-table value.', LUA_FAULT_REASON_ITERATE_NON_TABLE);
 		}
 		const entry = target.nextEntry(keyValue);
 		if (entry === null) {
@@ -4557,9 +4594,11 @@ export class CPU {
 			causeWord: this.causeWord,
 			epcWord: this.epcWord,
 			badAddressWord: this.badAddressWord,
+			luaFaultReasonWord: this.luaFaultReasonWord,
 			nmiReturnCauseWord: this.nmiReturnCauseWord,
 			nmiReturnEpcWord: this.nmiReturnEpcWord,
 			nmiReturnBadAddressWord: this.nmiReturnBadAddressWord,
+			nmiReturnLuaFaultReasonWord: this.nmiReturnLuaFaultReasonWord,
 			nonMaskableInterruptPending: this.nonMaskableInterruptPending,
 			yieldRequested: this.yieldRequested,
 		};
@@ -4744,9 +4783,11 @@ export class CPU {
 		this.causeWord = state.causeWord;
 		this.epcWord = state.epcWord;
 		this.badAddressWord = state.badAddressWord;
+		this.luaFaultReasonWord = state.luaFaultReasonWord;
 		this.nmiReturnCauseWord = state.nmiReturnCauseWord;
 		this.nmiReturnEpcWord = state.nmiReturnEpcWord;
 		this.nmiReturnBadAddressWord = state.nmiReturnBadAddressWord;
+		this.nmiReturnLuaFaultReasonWord = state.nmiReturnLuaFaultReasonWord;
 		this.nonMaskableInterruptPending = state.nonMaskableInterruptPending;
 		this.yieldRequested = state.yieldRequested;
 		refreshTrackedLuaHeapBytes();

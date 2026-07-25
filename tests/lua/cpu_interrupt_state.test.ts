@@ -11,9 +11,11 @@ import {
 	CPU_CAUSE_CODE_ADDRESS_ERROR_STORE,
 	CPU_CAUSE_CODE_DATA_BUS_ERROR,
 	CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE,
+	CPU_CAUSE_CODE_TRAP,
 	CPU_CAUSE_NMI,
 	CPU_STATUS_CART_ENTRY,
 	CPU_STATUS_SYSTEM_ENTRY,
+	LUA_FAULT_REASON_CALL_NON_FUNCTION,
 } from '../../machine/ts/machine/cpu/cop0';
 import {
 	BUS_FAULT_ACCESS_READ,
@@ -884,6 +886,35 @@ test('invalid CLOSURE targets hard-halt without entering host error handling', (
 	assert.deepEqual(cpu.getCallStack().map(frame => frame.functionAddress), [
 		image.symbols.functionAddresses[0],
 	]);
+});
+
+test('an uncaught Lua runtime error enters the exception root with CPU_CAUSE_CODE_TRAP instead of throwing to host', () => {
+	const source = `
+exception_cause = 0
+exception_reason = 0
+function exception()
+	exception_cause = cop0.cause
+	exception_reason = cop0.lua_fault_reason
+	halt_until_irq
+end
+local nothing = nil
+nothing()
+`;
+	const { cpu, image } = makeCompiledCpu(source);
+	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	assert.equal(cpu.isHaltedUntilIrq(), true);
+	assert.equal(
+		cpu.getCallStack().some(frame => frame.functionAddress === image.vectors.exceptionFunctionAddress),
+		true,
+	);
+	assert.equal(
+		cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('exception_cause'))),
+		CPU_CAUSE_CODE_TRAP,
+	);
+	assert.equal(
+		cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('exception_reason'))),
+		LUA_FAULT_REASON_CALL_NON_FUNCTION,
+	);
 });
 
 test('cross-image call-stack PCs belong to the frame image', () => {

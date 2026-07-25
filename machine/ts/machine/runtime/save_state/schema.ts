@@ -393,4 +393,6 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'mailboxDataWord',
 	'mailboxControlWord',
 	'mailboxIrqPending',
+	'luaFaultReasonWord',
+	'nmiReturnLuaFaultReasonWord',
 ] as const;

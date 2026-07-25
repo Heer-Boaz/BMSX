@@ -5,6 +5,7 @@
 namespace bmsx {
 
 constexpr u8 COP0_BAD_ADDRESS = 8u;
+constexpr u8 COP0_LUA_FAULT_REASON = 9u;
 constexpr u8 COP0_STATUS = 12u;
 constexpr u8 COP0_CAUSE = 13u;
 constexpr u8 COP0_EPC = 14u;
@@ -24,5 +25,16 @@ constexpr u32 CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD = 4u << 2u;
 constexpr u32 CPU_CAUSE_CODE_ADDRESS_ERROR_STORE = 5u << 2u;
 constexpr u32 CPU_CAUSE_CODE_DATA_BUS_ERROR = 7u << 2u;
 constexpr u32 CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE = 11u << 2u;
+constexpr u32 CPU_CAUSE_CODE_TRAP = 13u << 2u;
+
+constexpr u32 LUA_FAULT_REASON_UNKNOWN = 0u;
+constexpr u32 LUA_FAULT_REASON_CALL_NON_FUNCTION = 1u;
+constexpr u32 LUA_FAULT_REASON_INDEX_NON_TABLE = 2u;
+constexpr u32 LUA_FAULT_REASON_ASSIGN_NON_TABLE = 3u;
+constexpr u32 LUA_FAULT_REASON_INDEX_NIL = 4u;
+constexpr u32 LUA_FAULT_REASON_METATABLE_LOOP = 5u;
+constexpr u32 LUA_FAULT_REASON_ITERATE_NON_TABLE = 6u;
+constexpr u32 LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION = 7u;
+constexpr u32 LUA_FAULT_REASON_EXPLICIT_ERROR = 8u;
 
 } // namespace bmsx

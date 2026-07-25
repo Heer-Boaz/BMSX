@@ -81,6 +81,7 @@ bss monitor_saved_status: word
 bss monitor_saved_cause: word
 bss monitor_saved_epc: word
 bss monitor_saved_bad_address: word
+bss monitor_saved_lua_fault_reason: word
 bss monitor_saved_irq_mask: word
 bss monitor_continue_requested: word
 
@@ -394,6 +395,7 @@ function monitor.enter()
 	*monitor_saved_cause = cop0.cause
 	*monitor_saved_epc = cop0.epc
 	*monitor_saved_bad_address = cop0.bad_address
+	*monitor_saved_lua_fault_reason = cop0.lua_fault_reason
 	*monitor_saved_irq_mask = *irq_mask
 	*monitor_continue_requested = 0
 
@@ -420,6 +422,7 @@ function monitor.enter()
 		*monitor_saved_cause,
 		*monitor_saved_epc,
 		*monitor_saved_bad_address,
+		*monitor_saved_lua_fault_reason,
 		*monitor_saved_irq_mask)
 	gx_gpu.prepare_supervisor_256x192(layout.vram_origin)
 	local system_texture<const> = romdir.resource('gx_system_texture')

@@ -100,7 +100,7 @@ import { getMemoryAccessKindForName, MemoryAccessKind } from '../machine/memory/
 import { writeLE16, writeLE32 } from '../common/endian';
 import { isReservedIntrinsicName } from './semantic/common';
 import { IO_IRQ_FLAGS } from '../machine/bus/io';
-import { COP0_BAD_ADDRESS, COP0_CAUSE, COP0_EPC, COP0_EXEC, COP0_STATUS } from '../machine/cpu/cop0';
+import { COP0_BAD_ADDRESS, COP0_CAUSE, COP0_EPC, COP0_EXEC, COP0_LUA_FAULT_REASON, COP0_STATUS } from '../machine/cpu/cop0';
 import { buildProgramResumePoints } from './compiler/resume_points';
 
 export type CompiledProgram = {
@@ -4250,6 +4250,7 @@ class FunctionBuilder {
 		}
 		switch (expression.identifier) {
 			case 'bad_address': return COP0_BAD_ADDRESS;
+			case 'lua_fault_reason': return COP0_LUA_FAULT_REASON;
 			case 'status': return COP0_STATUS;
 			case 'cause': return COP0_CAUSE;
 			case 'epc': return COP0_EPC;

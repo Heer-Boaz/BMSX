@@ -514,7 +514,9 @@ struct LuaThrownValueError final : std::exception {
 };
 
 struct LuaExecutionError final : std::runtime_error {
-	using std::runtime_error::runtime_error;
+	u32 reason;
+	explicit LuaExecutionError(const std::string& message, u32 reason = LUA_FAULT_REASON_UNKNOWN)
+		: std::runtime_error(message), reason(reason) {}
 };
 
 struct NativeFunction : GCObject {
@@ -788,9 +790,11 @@ struct CpuRuntimeState {
 	u32 causeWord = 0;
 	u32 epcWord = 0;
 	u32 badAddressWord = 0;
+	u32 luaFaultReasonWord = 0;
 	u32 nmiReturnCauseWord = 0;
 	u32 nmiReturnEpcWord = 0;
 	u32 nmiReturnBadAddressWord = 0;
+	u32 nmiReturnLuaFaultReasonWord = 0;
 	bool nonMaskableInterruptPending = false;
 	bool yieldRequested = false;
 };
@@ -1125,6 +1129,7 @@ private:
 	void enterSynchronousException(CallFrame& interruptedFrame, u32 causeWord);
 	void enterSynchronousAddressException(CallFrame& interruptedFrame, u32 causeWord, u32 address);
 	void enterException(Blua32ExecutionImage& image, u32 functionAddress, u32 causeWord, u32 epcWord);
+	void enterLuaFaultException(u32 reason);
 	void hardHalt();
 	void blockMappedWrite(CallFrame& frame, uint32_t address);
 	void markRoots(GcHeap& heap);
@@ -1147,9 +1152,11 @@ private:
 	u32 m_causeWord = 0;
 	u32 m_epcWord = 0;
 	u32 m_badAddressWord = 0;
+	u32 m_luaFaultReasonWord = 0;
 	u32 m_nmiReturnCauseWord = 0;
 	u32 m_nmiReturnEpcWord = 0;
 	u32 m_nmiReturnBadAddressWord = 0;
+	u32 m_nmiReturnLuaFaultReasonWord = 0;
 	bool m_nonMaskableInterruptPending = false;
 	u32 m_systemExceptionFunctionAddress = 0;
 	bool m_yieldRequested = false;

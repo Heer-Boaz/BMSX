@@ -342,6 +342,7 @@ DISPATCH_LABEL(MFC0) {
 	u32 value = 0u;
 	switch (b) {
 		case COP0_BAD_ADDRESS: value = m_badAddressWord; break;
+		case COP0_LUA_FAULT_REASON: value = m_luaFaultReasonWord; break;
 		case COP0_STATUS: value = m_statusWord; break;
 		case COP0_CAUSE: value = m_causeWord; break;
 		case COP0_EPC: value = m_epcWord; break;
@@ -363,6 +364,7 @@ DISPATCH_LABEL(MTC0) {
 		case COP0_EPC: m_epcWord = value; break;
 		case COP0_EXEC: executeFunctionAddress(value); DISPATCH_CONTINUE();
 		case COP0_BAD_ADDRESS:
+		case COP0_LUA_FAULT_REASON:
 		case COP0_CAUSE:
 			break;
 		default: hardHalt(); break;
@@ -706,6 +708,7 @@ DISPATCH_LABEL(RFE) {
 		m_causeWord = m_nmiReturnCauseWord;
 		m_epcWord = m_nmiReturnEpcWord;
 		m_badAddressWord = m_nmiReturnBadAddressWord;
+		m_luaFaultReasonWord = m_nmiReturnLuaFaultReasonWord;
 	}
 	releaseFrame(std::move(finished));
 	DISPATCH_CONTINUE();

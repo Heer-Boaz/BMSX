@@ -1,0 +1,8 @@
+title: Monitor Fault Probe
+short_name: 'monitor_fault_probe'
+rom_name: 'monitor_fault_probe'
+machine:
+    namespace: 'monitor_fault_probe'
+    vdp_class: psx
+lua:
+    entry_path: entry.lua

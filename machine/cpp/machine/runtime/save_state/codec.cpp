@@ -1663,9 +1663,11 @@ BinValue encodeCpuRuntimeState(const CpuRuntimeState& state) {
 	object["causeWord"] = static_cast<i64>(state.causeWord);
 	object["epcWord"] = static_cast<i64>(state.epcWord);
 	object["badAddressWord"] = static_cast<i64>(state.badAddressWord);
+	object["luaFaultReasonWord"] = static_cast<i64>(state.luaFaultReasonWord);
 	object["nmiReturnCauseWord"] = static_cast<i64>(state.nmiReturnCauseWord);
 	object["nmiReturnEpcWord"] = static_cast<i64>(state.nmiReturnEpcWord);
 	object["nmiReturnBadAddressWord"] = static_cast<i64>(state.nmiReturnBadAddressWord);
+	object["nmiReturnLuaFaultReasonWord"] = static_cast<i64>(state.nmiReturnLuaFaultReasonWord);
 	object["nonMaskableInterruptPending"] = state.nonMaskableInterruptPending;
 	object["yieldRequested"] = state.yieldRequested;
 	return BinValue(std::move(object));
@@ -1717,9 +1719,11 @@ CpuRuntimeState decodeCpuRuntimeState(const BinValue& value, const char* label) 
 	state.causeWord = requireU32(requireField(object, "causeWord", label), "cpuState.causeWord");
 	state.epcWord = requireU32(requireField(object, "epcWord", label), "cpuState.epcWord");
 	state.badAddressWord = requireU32(requireField(object, "badAddressWord", label), "cpuState.badAddressWord");
+	state.luaFaultReasonWord = requireU32(requireField(object, "luaFaultReasonWord", label), "cpuState.luaFaultReasonWord");
 	state.nmiReturnCauseWord = requireU32(requireField(object, "nmiReturnCauseWord", label), "cpuState.nmiReturnCauseWord");
 	state.nmiReturnEpcWord = requireU32(requireField(object, "nmiReturnEpcWord", label), "cpuState.nmiReturnEpcWord");
 	state.nmiReturnBadAddressWord = requireU32(requireField(object, "nmiReturnBadAddressWord", label), "cpuState.nmiReturnBadAddressWord");
+	state.nmiReturnLuaFaultReasonWord = requireU32(requireField(object, "nmiReturnLuaFaultReasonWord", label), "cpuState.nmiReturnLuaFaultReasonWord");
 	state.nonMaskableInterruptPending = requireBool(requireField(object, "nonMaskableInterruptPending", label), "cpuState.nonMaskableInterruptPending");
 	state.yieldRequested = requireBool(requireField(object, "yieldRequested", label), "cpuState.yieldRequested");
 	return state;

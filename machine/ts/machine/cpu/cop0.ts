@@ -1,4 +1,5 @@
 export const COP0_BAD_ADDRESS = 8;
+export const COP0_LUA_FAULT_REASON = 9;
 export const COP0_STATUS = 12;
 export const COP0_CAUSE = 13;
 export const COP0_EPC = 14;
@@ -18,3 +19,14 @@ export const CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD = 4 << 2;
 export const CPU_CAUSE_CODE_ADDRESS_ERROR_STORE = 5 << 2;
 export const CPU_CAUSE_CODE_DATA_BUS_ERROR = 7 << 2;
 export const CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE = 11 << 2;
+export const CPU_CAUSE_CODE_TRAP = 13 << 2;
+
+export const LUA_FAULT_REASON_UNKNOWN = 0;
+export const LUA_FAULT_REASON_CALL_NON_FUNCTION = 1;
+export const LUA_FAULT_REASON_INDEX_NON_TABLE = 2;
+export const LUA_FAULT_REASON_ASSIGN_NON_TABLE = 3;
+export const LUA_FAULT_REASON_INDEX_NIL = 4;
+export const LUA_FAULT_REASON_METATABLE_LOOP = 5;
+export const LUA_FAULT_REASON_ITERATE_NON_TABLE = 6;
+export const LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION = 7;
+export const LUA_FAULT_REASON_EXPLICIT_ERROR = 8;

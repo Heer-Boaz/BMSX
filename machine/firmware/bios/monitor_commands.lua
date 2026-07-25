@@ -45,8 +45,18 @@ local exception_code_address_error_load<const> = 4
 local exception_code_address_error_store<const> = 5
 local exception_code_data_bus_error<const> = 7
 local exception_code_coprocessor_unusable<const> = 11
+local exception_code_trap<const> = 13
 local exception_nmi<const> = 0xfffffffb
 local exception_unknown<const> = 0xfffffffa
+
+local lua_fault_reason_call_non_function<const> = 1
+local lua_fault_reason_index_non_table<const> = 2
+local lua_fault_reason_assign_non_table<const> = 3
+local lua_fault_reason_index_nil<const> = 4
+local lua_fault_reason_metatable_loop<const> = 5
+local lua_fault_reason_iterate_non_table<const> = 6
+local lua_fault_reason_xpcall_handler_not_function<const> = 7
+local lua_fault_reason_explicit_error<const> = 8
 
 struct monitor_command
 	name: string
@@ -77,7 +87,33 @@ rodata exception_registry: monitor_exception[] = {
 	{ code = exception_code_address_error_store, mnemonic = 'ADES', description = 'ADDRESS ERROR STORE', has_bad_address = 1 },
 	{ code = exception_code_data_bus_error, mnemonic = 'DBE', description = 'DATA BUS ERROR', has_bad_address = 0 },
 	{ code = exception_code_coprocessor_unusable, mnemonic = 'CPU', description = 'COPROCESSOR UNUSABLE', has_bad_address = 0 },
+	{ code = exception_code_trap, mnemonic = 'TRAP', description = 'LUA RUNTIME FAULT', has_bad_address = 0 },
 }
+
+struct lua_fault_reason_entry
+	code: u8
+	description: string
+end
+
+rodata lua_fault_reason_registry: lua_fault_reason_entry[] = {
+	{ code = lua_fault_reason_call_non_function, description = 'ATTEMPT TO CALL A NON-FUNCTION VALUE' },
+	{ code = lua_fault_reason_index_non_table, description = 'ATTEMPT TO INDEX A NON-TABLE VALUE' },
+	{ code = lua_fault_reason_assign_non_table, description = 'ATTEMPT TO ASSIGN TO A NON-TABLE VALUE' },
+	{ code = lua_fault_reason_index_nil, description = 'TABLE INDEX IS NIL' },
+	{ code = lua_fault_reason_metatable_loop, description = 'METATABLE __INDEX LOOP DETECTED' },
+	{ code = lua_fault_reason_iterate_non_table, description = 'ATTEMPT TO ITERATE A NON-TABLE VALUE' },
+	{ code = lua_fault_reason_xpcall_handler_not_function, description = 'XPCALL ERROR HANDLER MUST BE A FUNCTION' },
+	{ code = lua_fault_reason_explicit_error, description = 'UNHANDLED error() CALL' },
+}
+
+local lua_fault_reason_description<const> = function(reason)
+	for index = 0, #lua_fault_reason_registry - 1 do
+		if lua_fault_reason_registry[index].code == reason then
+			return lua_fault_reason_registry[index].description
+		end
+	end
+	return 'UNKNOWN'
+end
 
 bss monitor_command_producer: word
 bss monitor_command_cursor: word
@@ -90,9 +126,11 @@ bss monitor_context_status: word
 bss monitor_context_cause: word
 bss monitor_context_epc: word
 bss monitor_context_bad_address: word
+bss monitor_context_lua_fault_reason: word
 bss monitor_context_irq_mask: word
 bss monitor_context_exception: word
 bss monitor_context_has_bad_address: word
+bss monitor_context_has_lua_fault_reason: word
 
 monitor_commands.action_none = action_none
 monitor_commands.action_output = action_output
@@ -282,17 +320,20 @@ local arguments_end<const> = function(line, index, length)
 	return skip_spaces(line, index, length) == length
 end
 
-function monitor_commands.open(status, cause, epc, bad_address, irq_mask)
+function monitor_commands.open(status, cause, epc, bad_address, lua_fault_reason, irq_mask)
 	*monitor_context_status = status
 	*monitor_context_cause = cause
 	*monitor_context_epc = epc
 	*monitor_context_bad_address = bad_address
+	*monitor_context_lua_fault_reason = lua_fault_reason
 	*monitor_context_irq_mask = irq_mask
 	local exception<const> = exception_at(cause)
 	*monitor_context_exception = exception
 	*monitor_context_has_bad_address = 0
+	*monitor_context_has_lua_fault_reason = 0
 	if exception ~= exception_nmi and exception ~= exception_unknown then
 		*monitor_context_has_bad_address = exception_registry[exception].has_bad_address
+		*monitor_context_has_lua_fault_reason = exception_registry[exception].code == exception_code_trap and 1 or 0
 	end
 	*monitor_command_producer = producer_none
 end
@@ -310,8 +351,10 @@ end
 function monitor_commands.clear_fault()
 	*monitor_context_cause = 0
 	*monitor_context_bad_address = 0
+	*monitor_context_lua_fault_reason = 0
 	*monitor_context_exception = exception_unknown
 	*monitor_context_has_bad_address = 0
+	*monitor_context_has_lua_fault_reason = 0
 end
 
 function monitor_commands.complete(line, length, cursor, capacity)
@@ -528,8 +571,13 @@ function monitor_commands.next_row(row)
 				column = write_text(row, 0, 'EPC     ', palette_accent)
 				write_hex(row, column, *monitor_context_epc, palette_text)
 			elseif register_cursor == 2 then
-				column = write_text(row, 0, 'BADADDR ', palette_accent)
-				write_hex(row, column, *monitor_context_bad_address, palette_text)
+				if *monitor_context_has_lua_fault_reason ~= 0 then
+					column = write_text(row, 0, 'LUAFAULT ', palette_accent)
+					write_text(row, column, lua_fault_reason_description(*monitor_context_lua_fault_reason), palette_text)
+				else
+					column = write_text(row, 0, 'BADADDR ', palette_accent)
+					write_hex(row, column, *monitor_context_bad_address, palette_text)
+				end
 			elseif register_cursor == 3 then
 				column = write_text(row, 0, 'STATUS  ', palette_accent)
 				write_hex(row, column, *monitor_context_status, palette_text)
@@ -539,7 +587,8 @@ function monitor_commands.next_row(row)
 			end
 		end
 		*monitor_command_cursor = cursor + 1
-		if (entry.kind == command_fault and (cursor == 3 or (cursor == 2 and *monitor_context_has_bad_address == 0)))
+		if (entry.kind == command_fault and (cursor == 3
+				or (cursor == 2 and *monitor_context_has_bad_address == 0 and *monitor_context_has_lua_fault_reason == 0)))
 			or (entry.kind == command_registers and cursor == 4) then
 			*monitor_command_producer = producer_none
 			return row_done

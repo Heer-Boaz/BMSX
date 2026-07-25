@@ -1,0 +1,7 @@
+[
+	{
+		"description": "monitor crash screen",
+		"frame": 30,
+		"capture": true
+	}
+]
