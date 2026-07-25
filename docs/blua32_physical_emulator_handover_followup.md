@@ -270,6 +270,33 @@ velden raakt (append-only toevoegen/verwijderen in
 `RUNTIME_SAVE_STATE_PROP_NAMES`), volg de bestaande append-only-regel en ga
 niet verder dan strikt noodzakelijk om de build/tests groen te houden.
 
+**Performance-regressiemeting: vereist vóór sub-slice 0.2/0.3, niet
+optioneel.** De volledige validatiebattery (zie boven) meet uitsluitend
+correctheid (pixel-parity, frame-scan, unit-tests, audits) — niets daarvan
+meet host-side wall-clock-kosten per uitgevoerde instructie. Dat is precies
+het risico dat sub-slice 0.3b punt 1 probeert te vermijden (geen indirectie
+op het hete `pushFrame`-pad) — zonder meting zou een regressie daar alsnog
+door de hele battery heen glippen. Het benodigde framework **bestaat al**,
+hoeft niet gebouwd te worden:
+- `CpuExecutionProfiler`/`--cpu-profile` (headless CLI-vlag,
+  `scripts/bootrom/platforms/node_entry.ts:1103`,
+  `cpu.setProfilerEnabled(true)` + `formatCpuProfilerReport()` bij afsluiten)
+  geeft een deterministisch, structureel profiel (opcode-tellingen, hot
+  paths, categorie-drukverdeling) — goed voor "welke opcodes worden het
+  vaakst uitgevoerd", niet voor wall-clock-kosten per opcode.
+- `hosts/libretro_host/frame_timing.c`/`.h` is een generieke wall-clock
+  paced-timeline-harness (warmup, max-frames), al gebruikt door de
+  bestaande `profile:libretro-particle-soak-offscreen-wsl`/
+  `profile:libretro-upload-soak-offscreen-wsl`-scripts — nu toevallig
+  alleen ingezet voor GLES2-renderdoeleinden via `--gles2-timing-report`.
+
+Wat ontbreekt is niet het framework maar een **CPU-instructiezware
+soakcart** die dezelfde `frame_timing`-harness gebruikt (bijv. via
+`--backend software` om GLES2-ruis te vermijden) — een nieuw
+`profile:cpu-*-soak`-script naar het bestaande patroon, met een
+vóór-en-na-vergelijking rond sub-slice 0.2/0.3 specifiek. Zet dit op
+vóórdat aan 0.2/0.3 wordt begonnen, niet achteraf als iets al traag blijkt.
+
 **Waarom dit vóór Taak A moet**: Taak A's eager-decode-probleem en de
 RAM-executie-dispatch-inconsistentie zijn allebei symptomen van dezelfde
 onderliggende fout (CPU bezit media-/bus-loader-verantwoordelijkheid die
@@ -356,10 +383,27 @@ interface (bijv. `ExecutionAddressResolver` met een enkele methode
 `resolve(address): { image, functionRecord } | null`), analoog aan hoe een
 MAME-CPU-device een door de driver geconfigureerde address-space krijgt
 aangereikt zonder zelf te weten wat daar precies achter zit. De loader
-implementeert die interface en wordt van buitenaf gekoppeld (door wie de
-CPU+Memory+CartridgeController+Loader samenstelt — vermoedelijk `Machine`/
-`Runtime`), niet door de CPU die de loader rechtstreeks importeert of
-aanroept bij naam.
+implementeert die interface en wordt van buitenaf gekoppeld — **geverifieerd
+haalbaar**: `Machine` (`machine/ts/machine/machine.ts:59`) doet vandaag al
+`this.cpu = new CPU(this.memory, this.irqController)` als bestaande
+compositieroot met een vaste constructievolgorde; de loader construeren en
+meegeven (`new CPU(this.memory, this.irqController, loader)`) past daar
+natuurlijk in, geen cirkelvormige afhankelijkheid of herstructurering van
+`Machine` nodig. C++'s `Machine`/`machine.h`-equivalent is hier nog niet op
+gecontroleerd.
+
+**Type-relocatie die nog niet als stap in dit plan stond:**
+`Blua32MediaImage`/`Blua32ExecutionImage` zijn vandaag **private types
+inline in `cpu.ts`** (regels 1484/1490), niet al aanwezig in
+`blua32_image.ts` zoals hierboven geformuleerd. `Blua32MediaImage`
+(`layout`/`boot`/`cartridgeSlot`) is pure ruwe media-data — natuurlijke
+nieuwe plek is `blua32_image.ts` zelf, naast de `Blua32ImageLayout`/
+`Blua32BootHeader` waar het al direct op leunt. `Blua32ExecutionImage`
+breidt dat uit met `functions`/`constPool`/`globalSlots`/`decodedPages`/
+`staticClosures`/`profilerIndex` — stuk voor stuk CPU-runtime-state, precies
+wat `activateExecutableImage` erin verankert — dat type blijft dus
+CPU-eigendom (in `cpu.ts` of een nieuw CPU-eigen bestand, niet in de
+loader).
 
 Belangrijke nuance uit nader onderzoek: `activateExecutableImage` (regels
 2017-2073) is **niet** pure loader-logica — het interned constant-strings
