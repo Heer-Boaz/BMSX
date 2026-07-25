@@ -38,7 +38,7 @@ interface BootGlobals {
 
 type MachineNamespace = {
 	machineManager: typeof import('../../../machine/ts/core/machine_manager').machineManager;
-	ide: import('../../../machine/ts/ide/testing/headless_harness').HeadlessIdeHarness;
+	ide: import('../../../ide/testing/headless_harness').HeadlessIdeHarness;
 };
 
 interface InputTimelineEntry {

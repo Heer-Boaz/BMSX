@@ -5,7 +5,7 @@ import { Table, StringValue } from '../../machine/ts/machine/cpu/cpu';
 import { StringPool } from '../../machine/ts/machine/cpu/string_pool';
 import { registerLuaSourceRecord, type LuaSourceRegistry } from '../../machine/ts/lua/source_registry';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import { listSymbols } from '../../machine/ts/ide/runtime/lua_pipeline';
+import { listSymbols } from '../../ide/runtime/lua_pipeline';
 import { machineManager } from '../../machine/ts/core/machine_manager';
 
 function makeRegistry(sourcePaths: readonly string[]): LuaSourceRegistry {

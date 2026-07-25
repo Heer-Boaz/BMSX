@@ -2,7 +2,7 @@ import './test_setup';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { machineManager } from '../../machine/ts/core/machine_manager';
-import { scheduleRuntimeTask } from '../../machine/ts/ide/common/background_tasks';
+import { scheduleRuntimeTask } from '../../ide/common/background_tasks';
 import { defaultMicrotaskQueue } from '../../machine/ts/platform/platform';
 
 test('IDE runtime tasks complete serially in submission order', async () => {

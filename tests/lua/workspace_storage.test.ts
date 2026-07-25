@@ -1,12 +1,12 @@
 import './test_setup';
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
-import type { CodeTabContext } from '../../machine/ts/ide/common/models';
+import type { CodeTabContext } from '../../ide/common/models';
 import type { StorageService } from '../../machine/ts/platform/platform';
 import { machineManager } from '../../machine/ts/core/machine_manager';
-import { PieceTreeBuffer } from '../../machine/ts/ide/editor/text/piece_tree_buffer';
-import { getTextSnapshot } from '../../machine/ts/ide/editor/text/source_text';
-import { workspaceSourceCache } from '../../machine/ts/ide/workspace/cache';
+import { PieceTreeBuffer } from '../../ide/editor/text/piece_tree_buffer';
+import { getTextSnapshot } from '../../ide/editor/text/source_text';
+import { workspaceSourceCache } from '../../ide/workspace/cache';
 import {
 	WORKSPACE_METADATA_DIR,
 	WORKSPACE_MARKER_FILE,
@@ -15,15 +15,15 @@ import {
 	buildWorkspaceStorageKey,
 	joinWorkspacePaths,
 	readWorkspaceLuaSourceText,
-} from '../../machine/ts/ide/workspace/files';
+} from '../../ide/workspace/files';
 import {
 	clearOpenWorkspacePathDirtyState,
 	collectUnsavedWorkspaceSourcePaths,
 	setOpenWorkspacePathDirty,
-} from '../../machine/ts/ide/workspace/open_dirty';
-import { codeTabSessionState } from '../../machine/ts/ide/workbench/ui/code_tab/session_state';
-import { tabSessionState } from '../../machine/ts/ide/workbench/ui/tab/session_state';
-import { collectDirtyContextEntries, persistDirtyContextEntries } from '../../machine/ts/ide/workbench/workspace/autosave';
+} from '../../ide/workspace/open_dirty';
+import { codeTabSessionState } from '../../ide/workbench/ui/code_tab/session_state';
+import { tabSessionState } from '../../ide/workbench/ui/tab/session_state';
+import { collectDirtyContextEntries, persistDirtyContextEntries } from '../../ide/workbench/workspace/autosave';
 import {
 	buildDirtyFilePath,
 	configureWorkspaceStorage,
@@ -31,13 +31,13 @@ import {
 	readWorkspaceStateFile,
 	writeWorkspaceFile,
 	writeWorkspaceStateFile,
-} from '../../machine/ts/ide/workbench/workspace/io';
-import { hydrateDirtyFiles } from '../../machine/ts/ide/workbench/workspace/restore';
-import { captureActiveCodeTabSource, capturePendingLuaCodeTabSources, markLuaCodeTabsAppliedToRuntime } from '../../machine/ts/ide/workbench/ui/code_tab/activation';
-import { captureContextText } from '../../machine/ts/ide/workbench/workspace/context_snapshot';
-import { editorDocumentState } from '../../machine/ts/ide/editor/editing/document_state';
+} from '../../ide/workbench/workspace/io';
+import { hydrateDirtyFiles } from '../../ide/workbench/workspace/restore';
+import { captureActiveCodeTabSource, capturePendingLuaCodeTabSources, markLuaCodeTabsAppliedToRuntime } from '../../ide/workbench/ui/code_tab/activation';
+import { captureContextText } from '../../ide/workbench/workspace/context_snapshot';
+import { editorDocumentState } from '../../ide/editor/editing/document_state';
 import { registerLuaSourceRecord, type LuaSourceRegistry } from '../../machine/ts/lua/source_registry';
-import { applyWorkspaceOverridesToRegistry, saveLuaResourceSource } from '../../machine/ts/ide/workspace/workspace';
+import { applyWorkspaceOverridesToRegistry, saveLuaResourceSource } from '../../ide/workspace/workspace';
 
 class MockStorage implements StorageService {
 	private readonly store = new Map<string, string>();

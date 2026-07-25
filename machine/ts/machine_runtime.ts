@@ -1,6 +1,6 @@
 import { machineManager } from './core/machine_manager';
 import type { MachineManager } from './core/machine_manager';
-import { headlessIdeHarness, type HeadlessIdeHarness } from './ide/testing/headless_harness';
+import { headlessIdeHarness, type HeadlessIdeHarness } from '../../ide/testing/headless_harness';
 
 type BmsxMachineGlobal = {
 	machineManager: MachineManager;

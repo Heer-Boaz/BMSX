@@ -2,7 +2,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
 import { extractErrorMessage } from '../../../../machine/ts/lua/value';
-import type { HeadlessIdeHarness } from '../../../../machine/ts/ide/testing/headless_harness';
+import type { HeadlessIdeHarness } from '../../../../ide/testing/headless_harness';
 
 export interface IdeTestRunnerOptions {
 	testPath: string;

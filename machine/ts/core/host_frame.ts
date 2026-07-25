@@ -1,7 +1,7 @@
 import { machineManager } from './machine_manager';
 import { hostOverlayMenu } from './host_overlay_menu';
-import * as workbenchMode from '../ide/workbench/mode';
-import { syncRuntimeSourceActivity } from '../ide/runtime/sources';
+import * as workbenchMode from '../../../ide/workbench/mode';
+import { syncRuntimeSourceActivity } from '../../../ide/runtime/sources';
 import type { Runtime } from '../machine/runtime/runtime';
 
 const MAX_HOST_FRAME_DELTA_MS = 250;

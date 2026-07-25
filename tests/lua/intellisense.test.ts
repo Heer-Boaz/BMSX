@@ -1,27 +1,27 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { CodeTabContext, ResourceDescriptor } from '../../machine/ts/ide/common/models';
+import type { CodeTabContext, ResourceDescriptor } from '../../ide/common/models';
 import { splitText } from '../../machine/ts/common/text_lines';
-import { PieceTreeBuffer } from '../../machine/ts/ide/editor/text/piece_tree_buffer';
-import type { ProjectReferenceEnvironment } from '../../machine/ts/ide/editor/contrib/references/sources';
+import { PieceTreeBuffer } from '../../ide/editor/text/piece_tree_buffer';
+import type { ProjectReferenceEnvironment } from '../../ide/editor/contrib/references/sources';
 import { LuaLexer } from '../../machine/ts/lua/syntax/lexer';
 import { LuaParser } from '../../machine/ts/lua/syntax/parser';
 import { RunResult, StringValue } from '../../machine/ts/machine/cpu/cpu';
 import { compileLuaChunkToProgram } from '../../machine/ts/lua/compiler';
 import { registerLuaSourceRecord } from '../../machine/ts/lua/source_registry';
 import { machineManager } from '../../machine/ts/core/machine_manager';
-import { createRuntimeFaultState } from '../../machine/ts/ide/runtime/fault_state';
+import { createRuntimeFaultState } from '../../ide/runtime/fault_state';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 
 const semanticFrontendModulePromise = import('../../machine/ts/lua/semantic/frontend');
 const semanticDiagnosticsModulePromise = import('../../machine/ts/lua/semantic/diagnostics');
 const semanticModelModulePromise = import('../../machine/ts/lua/semantic/model');
-const referenceSourcesModulePromise = import('../../machine/ts/ide/editor/contrib/references/sources');
-const workspaceModulePromise = import('../../machine/ts/ide/editor/contrib/intellisense/semantic/workspace');
-const workspaceStateModulePromise = import('../../machine/ts/ide/editor/contrib/intellisense/semantic/workspace/state');
-const referenceNavigationModulePromise = import('../../machine/ts/ide/editor/contrib/references/lookup');
-const intellisenseEngineModulePromise = import('../../machine/ts/ide/editor/contrib/intellisense/engine');
+const referenceSourcesModulePromise = import('../../ide/editor/contrib/references/sources');
+const workspaceModulePromise = import('../../ide/editor/contrib/intellisense/semantic/workspace/index');
+const workspaceStateModulePromise = import('../../ide/editor/contrib/intellisense/semantic/workspace/state');
+const referenceNavigationModulePromise = import('../../ide/editor/contrib/references/lookup');
+const intellisenseEngineModulePromise = import('../../ide/editor/contrib/intellisense/engine');
 
 function runtimeStub(files: Record<string, string> = {}) {
 	const records: any[] = [];

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { buildLuaSemanticFrontend } from '../../machine/ts/lua/semantic/frontend';
-import { createLuaSemanticFrontendFromSnapshot } from '../../machine/ts/ide/editor/contrib/intellisense/semantic/workspace';
+import { createLuaSemanticFrontendFromSnapshot } from '../../ide/editor/contrib/intellisense/semantic/workspace/index';
 import { LuaSemanticWorkspace } from '../../machine/ts/lua/semantic/model';
 
 test('LuaSemanticFrontend rejects host-published machine word globals', () => {

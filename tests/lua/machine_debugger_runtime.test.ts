@@ -6,7 +6,7 @@ import {
 	emitDebuggerLifecycleEvent,
 	getDebuggerExecutionState,
 	subscribeDebuggerLifecycleEvents,
-} from '../../machine/ts/ide/workbench/contrib/debugger/controller';
+} from '../../ide/workbench/contrib/debugger/controller';
 
 function pauseSignal(): LuaDebuggerPauseSignal {
 	return {

@@ -1,7 +1,7 @@
 import { machineManager } from '../core/machine_manager';
 import type { Runtime } from '../machine/runtime/runtime';
 import type { TickCompletion } from '../machine/scheduler/frame';
-import * as workbenchMode from '../ide/workbench/mode';
+import * as workbenchMode from '../../../ide/workbench/mode';
 import { commitGxGpuViewSnapshot } from './gx/view_snapshot';
 
 export type RenderPresentationMode = 'partial' | 'completed';

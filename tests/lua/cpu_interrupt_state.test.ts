@@ -39,7 +39,7 @@ import { MemoryAccessKind } from '../../machine/ts/machine/memory/access_kind';
 import { CART_ROM_BASE, IO_WORD_SIZE, DYNAMIC_RAM_BASE } from '../../machine/ts/machine/memory/map';
 import { compileLuaChunkToProgram } from '../../machine/ts/lua/compiler';
 import type { OptimizationLevel } from '../../machine/ts/lua/compiler/optimizer';
-import { callClosureIntoWithScheduler } from '../../machine/ts/ide/runtime/closure_executor';
+import { callClosureIntoWithScheduler } from '../../ide/runtime/closure_executor';
 import { CpuExecutionState, runDueRuntimeTimers } from '../../machine/ts/machine/runtime/cpu_executor';
 import { FrameLoopState } from '../../machine/ts/machine/runtime/frame/loop';
 import { FrameSchedulerState } from '../../machine/ts/machine/scheduler/frame';

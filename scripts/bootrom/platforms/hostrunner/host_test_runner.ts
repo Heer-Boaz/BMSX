@@ -2,7 +2,7 @@ import * as path from 'node:path';
 
 import { extractErrorMessage } from '../../../../machine/ts/lua/value';
 import { EMPTY_CALL_ARGS, Table, asStringId, valueIsString, type Closure, type StringValue, type Value } from '../../../../machine/ts/machine/cpu/cpu';
-import { callClosureIntoSuspended } from '../../../../machine/ts/ide/runtime/closure_executor';
+import { callClosureIntoSuspended } from '../../../../ide/runtime/closure_executor';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import type { InputEvt } from 'bmsx/platform';
 import { HOST_TEST_LOADER_GLOBAL } from './host_test_cartridge';

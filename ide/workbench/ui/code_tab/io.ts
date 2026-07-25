@@ -1,0 +1,122 @@
+import { machineManager } from '../../../../machine/ts/core/machine_manager';
+import { showEditorMessage, showEditorWarningBanner } from '../../../common/feedback_state';
+import type { CodeTabContext, CodeTabMode, ResourceDescriptor } from '../../../common/models';
+import * as constants from '../../../common/constants';
+import { showLuaErrorOverlay } from '../../../runtime_error/navigation';
+import { saveLuaResourceSource } from '../../../workspace/workspace';
+import { loadWorkspaceSourceFile, persistWorkspaceSourceFile } from '../../../workspace/files';
+import { buildDirtyFilePath } from '../../workspace/io';
+import { workspaceSourceCache } from '../../../workspace/cache';
+import { applyAemSourceToRuntime } from '../../../runtime/aem';
+import { extractErrorMessage } from '../../../../machine/ts/lua/value';
+import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
+import { computeResourceTabTitle } from '../tab/titles';
+import { setActiveTab } from '../tabs';
+import {
+	captureActiveCodeTabSource,
+	commitActiveCodeTabSave,
+	setActiveCodeTabAppliedGeneration,
+	type CodeTabSelection,
+} from './activation';
+import {
+	buildCodeTabId,
+	createAemCodeTabContext,
+	createLuaCodeTabContext,
+	getActiveCodeTabContext,
+	setContextRuntimeSyncState,
+	upsertCodeEditorTab,
+} from './contexts';
+import { codeTabSessionState } from './session_state';
+import { developmentCartridgeSource } from '../../../runtime/sources';
+
+function applyCodeTabDescriptor(context: CodeTabContext, descriptor: ResourceDescriptor, mode: CodeTabMode): void {
+	context.descriptor = descriptor;
+	context.readOnly = !!descriptor.readOnly;
+	context.mode = mode;
+	context.title = computeResourceTabTitle(descriptor);
+}
+
+export function openLuaCodeTab(descriptor: ResourceDescriptor, selection?: CodeTabSelection): void {
+	const tabId = buildCodeTabId(descriptor);
+	if (!codeTabSessionState.contexts.has(tabId)) {
+		codeTabSessionState.contexts.set(tabId, createLuaCodeTabContext(descriptor));
+	}
+	const context = codeTabSessionState.contexts.get(tabId)!;
+	applyCodeTabDescriptor(context, descriptor, 'lua');
+	upsertCodeEditorTab(context);
+	setActiveTab(tabId, selection);
+}
+
+export async function openAemCodeTab(descriptor: ResourceDescriptor): Promise<void> {
+	const tabId = buildCodeTabId(descriptor);
+	try {
+		let context = codeTabSessionState.contexts.get(tabId);
+		if (!context) {
+			const cartridge = developmentCartridgeSource(machineManager.sourceState)!;
+			const source = await loadWorkspaceSourceFile(descriptor.path, cartridge.projectRootPath);
+			if (source === null) {
+				throw new Error(`AEM resource '${descriptor.path}' is unavailable.`);
+			}
+			context = createAemCodeTabContext(descriptor, source);
+			codeTabSessionState.contexts.set(tabId, context);
+		}
+		applyCodeTabDescriptor(context, descriptor, 'aem');
+		upsertCodeEditorTab(context);
+		setActiveTab(tabId);
+	} catch (error) {
+		showEditorMessage(extractErrorMessage(error), constants.COLOR_STATUS_ERROR, 4.0);
+	}
+}
+
+export async function openCodeTabForDescriptor(descriptor: ResourceDescriptor): Promise<void> {
+	if (descriptor.type === 'lua') {
+		openLuaCodeTab(descriptor);
+		return;
+	}
+	if (descriptor.type === 'aem') {
+		await openAemCodeTab(descriptor);
+		return;
+	}
+	throw new Error(`Unsupported code tab resource type '${descriptor.type}' for '${descriptor.path}'.`);
+}
+
+export async function save(runtime: Runtime): Promise<void> {
+	const context = getActiveCodeTabContext();
+	const source = captureActiveCodeTabSource();
+	const targetPath = context.descriptor.path;
+	const previousAppliedGeneration = context.appliedGeneration;
+	try {
+		if (context.mode === 'lua') {
+			await saveLuaResourceSource(targetPath, source);
+			workspaceSourceCache.delete(buildDirtyFilePath(targetPath));
+			workspaceSourceCache.set(targetPath, source);
+		} else {
+			const cartridge = developmentCartridgeSource(machineManager.sourceState)!;
+			await persistWorkspaceSourceFile(targetPath, source, cartridge.projectRootPath);
+			workspaceSourceCache.set(targetPath, source);
+		}
+		commitActiveCodeTabSave(context, source);
+		if (context.mode === 'lua') {
+			setContextRuntimeSyncState(context, 'runtime_update_pending', null);
+			showEditorMessage(`${context.title} saved (runtime update pending)`, constants.COLOR_STATUS_SUCCESS, 2.5);
+			return;
+		}
+		try {
+			applyAemSourceToRuntime(runtime, context.descriptor, source);
+			setActiveCodeTabAppliedGeneration(context, context.saveGeneration);
+			setContextRuntimeSyncState(context, 'synced', null);
+			showEditorMessage(`${context.title} saved`, constants.COLOR_STATUS_SUCCESS, 2.5);
+		} catch (applyError) {
+			const applyMessage = extractErrorMessage(applyError);
+			setActiveCodeTabAppliedGeneration(context, previousAppliedGeneration);
+			setContextRuntimeSyncState(context, 'diverged', applyMessage);
+			showEditorMessage(`${context.title} saved, but runtime apply failed`, constants.COLOR_STATUS_WARNING, 4.0);
+			showEditorWarningBanner(`Saved, but runtime apply failed: ${applyMessage}`, 5.0);
+		}
+	} catch (error) {
+		if (context.mode === 'lua' && showLuaErrorOverlay(error)) {
+			return;
+		}
+		showEditorMessage(extractErrorMessage(error), constants.COLOR_STATUS_ERROR, 4.0);
+	}
+}

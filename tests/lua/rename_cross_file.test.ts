@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { CodeTabContext, ResourceDescriptor, SearchMatch } from '../../machine/ts/ide/common/models';
-import { PieceTreeBuffer } from '../../machine/ts/ide/editor/text/piece_tree_buffer';
-import { createLuaSemanticFrontendFromSnapshot, LuaSemanticWorkspace } from '../../machine/ts/ide/editor/contrib/intellisense/semantic/workspace';
-import { getOrCreateSemanticWorkspace, resetSemanticWorkspace } from '../../machine/ts/ide/editor/contrib/intellisense/semantic/workspace/state';
-import { CrossFileRenameManager, convertRangeToSearchMatch } from '../../machine/ts/ide/editor/contrib/rename/operations';
-import { buildCodeTabId, clearCodeTabContexts, registerCodeTabContext } from '../../machine/ts/ide/workbench/ui/code_tab/contexts';
-import { codeTabSessionState } from '../../machine/ts/ide/workbench/ui/code_tab/session_state';
-import { tabSessionState } from '../../machine/ts/ide/workbench/ui/tab/session_state';
+import type { CodeTabContext, ResourceDescriptor, SearchMatch } from '../../ide/common/models';
+import { PieceTreeBuffer } from '../../ide/editor/text/piece_tree_buffer';
+import { createLuaSemanticFrontendFromSnapshot, LuaSemanticWorkspace } from '../../ide/editor/contrib/intellisense/semantic/workspace/index';
+import { getOrCreateSemanticWorkspace, resetSemanticWorkspace } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
+import { CrossFileRenameManager, convertRangeToSearchMatch } from '../../ide/editor/contrib/rename/operations';
+import { buildCodeTabId, clearCodeTabContexts, registerCodeTabContext } from '../../ide/workbench/ui/code_tab/contexts';
+import { codeTabSessionState } from '../../ide/workbench/ui/code_tab/session_state';
+import { tabSessionState } from '../../ide/workbench/ui/tab/session_state';
 import { machineManager } from '../../machine/ts/core/machine_manager';
 import { registerLuaSourceRecord, type LuaSourceRegistry } from '../../machine/ts/lua/source_registry';
 
