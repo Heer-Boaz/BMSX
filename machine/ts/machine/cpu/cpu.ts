@@ -46,7 +46,6 @@ import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX
 import {
 	BLUA32_FUNCTION_RECORD_SIZE,
 	Blua32ConstantTag,
-	type Blua32FunctionRecord,
 	type Blua32ImageLayout,
 } from './blua32_image';
 import {
@@ -85,17 +84,22 @@ import { LuaExecutionError, LuaThrownValueError } from './errors';
 import { Table } from './table';
 import { Closure, EMPTY_CLOSURE_UPVALUES, type OpenUpvalueSlot, type Upvalue } from './closure';
 import { ArrayNativeArgsView, RegisterFile, RegisterNativeArgsView } from './register_file';
+import {
+	DECODED_PAGE_MASK,
+	DECODED_PAGE_SHIFT,
+	DECODED_PAGE_WORDS,
+	createDecodedInstructionPage,
+	type Blua32ExecutionImage,
+	type Blua32RuntimeFunction,
+	type DecodedInstructionPage,
+	type TableLoadInlineCache,
+} from './execution_image';
+import { ProtectedCallContinuation, ProtectedCallKind, type CallFrame } from './call_state';
 
 export { OpCode } from './opcode_info';
 
 // start repeated-sequence-acceptable -- Lua VM/table/register hot paths deliberately keep short copy/update sequences inline.
 // start normalized-body-acceptable -- Specialized Lua VM accessors stay split so the fast paths avoid dispatch helpers.
-
-export const enum ProtectedCallKind {
-	PCall,
-	XPCallBody,
-	XPCallHandler,
-}
 
 const DEFAULT_NATIVE_COST: NativeFnCost = { base: 1, perArg: 0, perRet: 0 };
 
@@ -264,77 +268,6 @@ const enum TableIndexKeyKind {
 	Field,
 }
 
-export type CallFrame = {
-	functionAddress: number;
-	functionRecord: Blua32RuntimeFunction;
-	pc: number;
-	varargBase: number;
-	varargCount: number;
-	stackBase: number;
-	stackCapacity: number;
-	registers: RegisterFile;
-	closure: Closure;
-	returnBase: number;
-	returnCount: number;
-	top: number;
-	captureReturns: boolean;
-	callSitePc: number;
-	isExceptionFrame: boolean;
-	isNonMaskableExceptionFrame: boolean;
-};
-
-class ProtectedCallContinuation {
-	public kind = ProtectedCallKind.PCall;
-	public caller: CallFrame | null = null;
-	public target: CallFrame | null = null;
-	public returnsToProtectedParent = false;
-	public callBase = 0;
-	public returnCount = 0;
-	public handlerRegister = -1;
-}
-
-type TableLoadInlineCache = {
-	table: Table | null;
-	version: number;
-	value: Value;
-};
-
-const DECODED_PAGE_SHIFT = 8;
-const DECODED_PAGE_WORDS = 1 << DECODED_PAGE_SHIFT;
-const DECODED_PAGE_MASK = DECODED_PAGE_WORDS - 1;
-
-type DecodedInstructionPage = {
-	widths: Uint8Array;
-	ops: Uint8Array;
-	a: Uint16Array;
-	b: Uint16Array;
-	c: Uint16Array;
-	bx: Uint32Array;
-	sbx: Int32Array;
-	rkB: Int32Array;
-	rkC: Int32Array;
-	disp: Uint8Array;
-	words: Uint32Array;
-	tableCacheIndexes: Uint32Array;
-};
-
-type Blua32RuntimeFunction = Blua32FunctionRecord & {
-	image: Blua32ExecutionImage;
-	index: number;
-};
-
-type Blua32ExecutionImage = Blua32DecodedExecutionImage & {
-	functions: Blua32RuntimeFunction[];
-	constPool: Value[];
-	globalSlots: Uint32Array;
-	systemGlobalSlots: Uint32Array;
-	decodedPages: DecodedInstructionPage[];
-	decodedWordCount: number;
-	tableLoadCaches: TableLoadInlineCache[];
-	staticClosures: Closure[];
-	profilerIndex: number;
-};
-
 export type CpuRawFrameContinuation = {
 	frameIndex: number;
 	slot: number;
@@ -344,26 +277,6 @@ export type CpuRawFrameContinuation = {
 	epcWord: number | null;
 	nmiReturnEpcWord: number | null;
 };
-
-function createDecodedInstructionPage(): DecodedInstructionPage {
-	const page: DecodedInstructionPage = {
-		widths: new Uint8Array(DECODED_PAGE_WORDS),
-		ops: new Uint8Array(DECODED_PAGE_WORDS),
-		a: new Uint16Array(DECODED_PAGE_WORDS),
-		b: new Uint16Array(DECODED_PAGE_WORDS),
-		c: new Uint16Array(DECODED_PAGE_WORDS),
-		bx: new Uint32Array(DECODED_PAGE_WORDS),
-		sbx: new Int32Array(DECODED_PAGE_WORDS),
-		rkB: new Int32Array(DECODED_PAGE_WORDS),
-		rkC: new Int32Array(DECODED_PAGE_WORDS),
-		disp: new Uint8Array(DECODED_PAGE_WORDS),
-		words: new Uint32Array(DECODED_PAGE_WORDS),
-		tableCacheIndexes: new Uint32Array(DECODED_PAGE_WORDS),
-	};
-	page.widths.fill(1);
-	page.ops.fill(OpCode.WIDE);
-	return page;
-}
 
 // Pool constant for frame reuse
 const MAX_POOLED_FRAMES = 32;

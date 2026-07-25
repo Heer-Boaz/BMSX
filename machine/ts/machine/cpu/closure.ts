@@ -1,5 +1,5 @@
 import { VALUE_TAG, ValueTag, type Value } from './value';
-import type { CallFrame } from './cpu';
+import type { CallFrame } from './call_state';
 
 export type Upvalue = {
 	hashId: number;
