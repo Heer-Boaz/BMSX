@@ -26,7 +26,8 @@ import {
 	IRQ_DMA0_DONE,
 	IRQ_DMA1_DONE,
 } from '../../bus/io';
-import type { CPU, Value } from '../../cpu/cpu';
+import type { CPU } from '../../cpu/cpu';
+import type { Value } from '../../cpu/value';
 import { IO_WORD_SIZE } from '../../memory/map';
 import {
 	MAPPED_BUS_CARTRIDGE_SLOT1,

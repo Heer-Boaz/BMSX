@@ -39,7 +39,8 @@ import {
 	type LuaWhileStatement,
 	type LuaGotoStatement,
 } from './syntax/ast';
-import { OpCode, StringValue, asStringId, isTruthyValue, valueIsString, type Value } from '../machine/cpu/cpu';
+import { OpCode } from '../machine/cpu/cpu';
+import { StringValue, asStringId, isTruthyValue, valueIsString, type Value } from '../machine/cpu/value';
 import type { SourceRange } from '../machine/cpu/blua32_symbols';
 import type {
 	LocalSlotDebug,

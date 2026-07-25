@@ -1,4 +1,4 @@
-import { BuiltinFunctionId } from '../cpu/cpu';
+import { BuiltinFunctionId } from '../cpu/value';
 
 export interface LuaBootPrimitive {
 	readonly name: string;

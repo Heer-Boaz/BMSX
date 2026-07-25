@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { BuiltinFunctionId, CPU, OpCode, RunResult, StringValue, createBuiltinFunction } from '../../machine/ts/machine/cpu/cpu';
+import { CPU, OpCode, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { BuiltinFunctionId, StringValue, createBuiltinFunction } from '../../machine/ts/machine/cpu/value';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/machine/cpu/instruction_format';
 import {
 	createTestSystemCpu,

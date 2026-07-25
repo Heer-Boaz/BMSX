@@ -1,9 +1,7 @@
 import { machineManager } from '../../machine/ts/core/machine_manager';
 import { convertToError } from '../../machine/ts/lua/value';
-import {
-	EMPTY_CALL_ARGS,
-	type Closure,
-} from '../../machine/ts/machine/cpu/cpu';
+import type { Closure } from '../../machine/ts/machine/cpu/cpu';
+import { EMPTY_CALL_ARGS } from '../../machine/ts/machine/cpu/value';
 import type { Blua32ImageLayout } from '../../machine/ts/machine/cpu/blua32_image';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/machine/cpu/execution_address_space';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';

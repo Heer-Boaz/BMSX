@@ -1,4 +1,5 @@
-import { OpCode, valueIsString, type Value } from '../../../machine/cpu/cpu';
+import { OpCode } from '../../../machine/cpu/cpu';
+import { valueIsString, type Value } from '../../../machine/cpu/value';
 import type { SourceRange } from '../../../machine/cpu/blua32_symbols';
 import type { Proto, UpvalueDesc } from '../program';
 import { decodeCallArgCount } from '../../../machine/cpu/opcode_info';

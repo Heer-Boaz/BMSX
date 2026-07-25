@@ -2,7 +2,8 @@ import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { AcceptedInterruptKind, BuiltinFunctionId, CPU, EMPTY_CALL_ARGS, Table, createBuiltinFunction, OpCode, RunResult, StringValue, type Closure, type Value } from '../../machine/ts/machine/cpu/cpu';
+import { AcceptedInterruptKind, CPU, Table, OpCode, RunResult, type Closure } from '../../machine/ts/machine/cpu/cpu';
+import { BuiltinFunctionId, EMPTY_CALL_ARGS, createBuiltinFunction, StringValue, type Value } from '../../machine/ts/machine/cpu/value';
 import { writeInstruction, INSTRUCTION_BYTES } from '../../machine/ts/machine/cpu/instruction_format';
 import { BASE_CYCLES, encodeFixedCallArgCount } from '../../machine/ts/machine/cpu/opcode_info';
 import {

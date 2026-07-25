@@ -1,7 +1,7 @@
 import { splitText } from '../../machine/ts/common/text_lines';
 import { LuaLexer } from '../../machine/ts/lua/syntax/lexer';
 import { LuaParser } from '../../machine/ts/lua/syntax/parser';
-import type { Value } from '../../machine/ts/machine/cpu/cpu';
+import type { Value } from '../../machine/ts/machine/cpu/value';
 import { compileLuaChunkToProgram } from '../../machine/ts/lua/compiler';
 import type { OptimizationLevel } from '../../machine/ts/lua/compiler/optimizer';
 import { runCompiledTestSystem } from '../helpers/blua32';

@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { Table, StringValue } from '../../machine/ts/machine/cpu/cpu';
+import { Table } from '../../machine/ts/machine/cpu/cpu';
+import { StringValue } from '../../machine/ts/machine/cpu/value';
 import { StringPool } from '../../machine/ts/machine/cpu/string_pool';
 import { registerLuaSourceRecord, type LuaSourceRegistry } from '../../machine/ts/lua/source_registry';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';

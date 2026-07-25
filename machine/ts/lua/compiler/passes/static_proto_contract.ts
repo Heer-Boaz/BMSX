@@ -1,5 +1,5 @@
 import { OpCode, getOpcodeName } from '../../../machine/cpu/opcode_info';
-import { valueIsString, type Value } from '../../../machine/cpu/cpu';
+import { valueIsString, type Value } from '../../../machine/cpu/value';
 import type { Instruction, InstructionSet } from '../optimizer';
 
 export const staticLaneForbiddenOpcodeReason = (op: OpCode): string | null => {

@@ -3,7 +3,7 @@ import {
 	IO_APU_TRANSFER_CONTROL,
 	IO_APU_TRANSFER_DATA,
 } from '../../bus/io';
-import type { Value } from '../../cpu/cpu';
+import type { Value } from '../../cpu/value';
 import {
 	MAPPED_BUS_MASTER_DMA,
 	MAPPED_BUS_DMA_BLOCK_END,

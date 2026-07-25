@@ -9,7 +9,8 @@ import { getCachedLuaParse } from '../../../../machine/ts/lua/analysis/cache';
 import { LuaInterpreter } from '../../../../machine/ts/lua/runtime';
 import { extractErrorMessage, isLuaFunctionValue, isLuaTable, LuaFunctionValue, LuaNativeValue, LuaTable, LuaValue, resolveNativeTypeName } from '../../../../machine/ts/lua/value';
 import { API_METHOD_METADATA, type ApiMethodMetadata } from '../../../../machine/ts/language/lua/api_metadata';
-import { Table, type CpuFrameSnapshot, type Value } from '../../../../machine/ts/machine/cpu/cpu';
+import { Table, type CpuFrameSnapshot } from '../../../../machine/ts/machine/cpu/cpu';
+import { asStringId, valueIsString, type Value } from '../../../../machine/ts/machine/cpu/value';
 import {
 	blua32SourceRangeAtPc,
 	type Blua32LocalSlotDebug,
@@ -22,7 +23,6 @@ import { buildLuaSemanticFrontend } from '../../../../machine/ts/lua/semantic/fr
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
 import { developmentCartridgeSource, resolveRuntimeLuaSource } from '../../../runtime/sources';
-import { asStringId, valueIsString } from '../../../../machine/ts/machine/cpu/cpu';
 import type { LuaBuiltinDescriptor, LuaDefinitionLocation, LuaDefinitionRange, LuaHoverResult, LuaHoverScope, LuaMemberCompletion, LuaSymbolEntry } from '../../../../machine/ts/lua/semantic_contracts';
 import { ensureCursorVisible, updateDesiredColumn } from '../../ui/view/caret/caret';
 import { editorCaretState } from '../../ui/view/caret/state';

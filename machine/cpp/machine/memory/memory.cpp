@@ -1,4 +1,5 @@
 #include "machine/memory/memory.h"
+#include "machine/cpu/cpu.h"
 #include "common/endian.h"
 #include "machine/devices/cartridge/controller.h"
 

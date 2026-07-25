@@ -1,7 +1,7 @@
 #pragma once
 
 #include "common/primitives.h"
-#include "machine/cpu/cpu.h"
+#include "machine/cpu/value.h"
 #include "machine/memory/bus_signals.h"
 
 namespace bmsx {

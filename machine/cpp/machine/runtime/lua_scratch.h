@@ -1,7 +1,7 @@
 #pragma once
 
 #include "common/scratchbuffer.h"
-#include "machine/cpu/cpu.h"
+#include "machine/cpu/value.h"
 
 #include <vector>
 

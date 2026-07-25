@@ -2,7 +2,7 @@
 #include "machine/devices/audio/output.h"
 
 #include "machine/bus/io.h"
-#include "machine/cpu/cpu.h"
+#include "machine/cpu/value.h"
 #include "machine/scheduler/device.h"
 
 namespace bmsx {

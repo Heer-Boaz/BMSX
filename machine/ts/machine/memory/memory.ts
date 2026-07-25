@@ -1,4 +1,4 @@
-import type { Value } from '../cpu/cpu';
+import type { Value } from '../cpu/value';
 import {
 	CART_BUS_END,
 	CART_MMIO_END,

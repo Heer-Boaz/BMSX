@@ -13,7 +13,7 @@ import {
 	IRQ_CARTRIDGE_SLOT0,
 	IRQ_CARTRIDGE_SLOT1,
 } from '../../bus/io';
-import type { Value } from '../../cpu/cpu';
+import type { Value } from '../../cpu/value';
 import {
 	MAPPED_BUS_CARTRIDGE_SLOT1,
 	MAPPED_BUS_CARTRIDGE_SLOT_OVERRIDE,

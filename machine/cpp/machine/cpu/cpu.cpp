@@ -1,6 +1,5 @@
 #include "machine/cpu/cpu.h"
 #include "machine/common/numeric.h"
-#include "machine/common/number_format.h"
 #include "lua/numeric.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/lua_heap_usage.h"
@@ -25,47 +24,8 @@ namespace bmsx {
 
 // start repeated-sequence-acceptable -- CPU interpreter hot paths keep duplicated opcode/register statements inline.
 
-uint32_t valueObjectHashId(Value v) {
-	switch (valueTag(v)) {
-		case ValueTag::Table:
-			return asTable(v)->hashId;
-		case ValueTag::Closure:
-			return asClosure(v)->hashId;
-		case ValueTag::NativeFunction:
-			return asNativeFunction(v)->hashId;
-		case ValueTag::NativeObject:
-			return asNativeObject(v)->hashId;
-		case ValueTag::Upvalue:
-			return asUpvalue(v)->hashId;
-		default:
-			return static_cast<uint32_t>(valuePayload(v));
-	}
-}
-
-uint32_t valueBuiltinFunctionHashId(Value v) {
-	return static_cast<uint32_t>(asBuiltinFunction(v)->id) + 1u;
-}
-
 namespace {
-static constexpr NativeFnCost kNativeCostTier1 { 1, 0, 0 };
-static constexpr NativeFnCost kNativeCostTier2 { 2, 0, 0 };
-static constexpr NativeFnCost kNativeCostTier4 { 4, 0, 0 };
-static constexpr NativeFnCost kDefaultNativeCost = kNativeCostTier1;
-
-constexpr std::array<NativeFnCost, BUILTIN_FUNCTION_COUNT> kBuiltinFunctionCosts {{
-	kNativeCostTier1,
-	kNativeCostTier1,
-	kNativeCostTier2,
-	kNativeCostTier2,
-	kNativeCostTier1,
-	kNativeCostTier1,
-	kNativeCostTier1,
-	kNativeCostTier2,
-	kNativeCostTier2,
-	kNativeCostTier2,
-	kNativeCostTier4,
-	kNativeCostTier4,
-}};
+static constexpr NativeFnCost kDefaultNativeCost { 1, 0, 0 };
 
 constexpr size_t kTableHeapBytes = 32;
 constexpr size_t kTableArraySlotHeapBytes = 8;
@@ -88,58 +48,6 @@ static inline size_t closureAllocationBytes(size_t upvalueCount) {
 LuaThrownValueError::LuaThrownValueError(Value value, const StringPool& stringPool)
 	: value(value)
 	, message(valueToString(value, stringPool)) {}
-
-std::string valueToString(const Value& v, const StringPool& stringPool) {
-	if (isNil(v)) return "nil";
-	if (valueIsTagged(v)) {
-		switch (valueTag(v)) {
-			case ValueTag::False: return "false";
-			case ValueTag::True: return "true";
-			case ValueTag::String: return stringPool.toString(asStringId(v));
-			case ValueTag::Table: return "table";
-			case ValueTag::Closure: return "function";
-			case ValueTag::BuiltinFunction: return "function";
-			case ValueTag::NativeFunction: return "function";
-			case ValueTag::NativeObject: return "native";
-			case ValueTag::Upvalue: return "upvalue";
-			case ValueTag::Nil: return "nil";
-			default: return "unknown";
-		}
-	}
-	double num = asNumber(v);
-	if (!std::isfinite(num)) {
-		return std::isnan(num) ? "nan" : (num < 0 ? "-inf" : "inf");
-	}
-	return formatNumber(num);
-}
-
-const inline char* valueTypeName(Value v) {
-	if (valueIsNumber(v)) return "number";
-	if (!valueIsTagged(v)) return "unknown";
-	switch (valueTag(v)) {
-		case ValueTag::Nil: return "nil";
-		case ValueTag::False: return "boolean";
-		case ValueTag::True: return "boolean";
-		case ValueTag::String: return "string";
-		case ValueTag::Table: return "table";
-		case ValueTag::Closure: return "closure";
-		case ValueTag::BuiltinFunction: return "builtin_function";
-		case ValueTag::NativeFunction: return "native_function";
-		case ValueTag::NativeObject: return "native_object";
-		case ValueTag::Upvalue: return "upvalue";
-		default: return "unknown";
-	}
-}
-
-const inline char* valueTypeNameForLua(Value v) {
-	if (isNil(v)) return "nil";
-	if (valueIsBool(v)) return "boolean";
-	if (valueIsNumber(v)) return "number";
-	if (valueIsString(v)) return "string";
-	if (valueIsTable(v)) return "table";
-	if (valueIsNativeObject(v)) return "native";
-	return "function";
-}
 
 Table::Table(int arraySize, int hashSize) {
 	if (arraySize > 0) {
@@ -937,7 +845,7 @@ CPU::CPU(Memory& memory, IrqController& irqController)
 	m_executionImages.reserve(3);
 	for (size_t index = 0; index < m_builtinFunctions.size(); ++index) {
 		BuiltinFunction& builtin = m_builtinFunctions[index];
-		const NativeFnCost cost = kBuiltinFunctionCosts[index];
+		const NativeFnCost cost = BUILTIN_FUNCTION_COSTS[index];
 		builtin.id = static_cast<BuiltinFunctionId>(index);
 		builtin.cycleBase = cost.base;
 		builtin.cyclePerArg = cost.perArg;

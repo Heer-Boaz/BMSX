@@ -1,7 +1,7 @@
 #include "machine/devices/audio/selected_slot_latch.h"
 
 #include "machine/bus/io.h"
-#include "machine/cpu/cpu.h"
+#include "machine/cpu/value.h"
 #include "machine/devices/audio/contracts.h"
 #include "machine/devices/audio/slot_bank.h"
 #include "machine/devices/device_status.h"

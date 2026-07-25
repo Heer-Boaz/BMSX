@@ -1,5 +1,5 @@
 import { IO_APU_SELECTED_SLOT_REG0, IO_APU_SLOT, IO_ARG_STRIDE } from '../../bus/io';
-import type { Value } from '../../cpu/cpu';
+import type { Value } from '../../cpu/value';
 import type { Memory } from '../../memory/memory';
 import type { DeviceScheduler } from '../../scheduler/device';
 import type { DeviceStatusLatch } from '../device_status';

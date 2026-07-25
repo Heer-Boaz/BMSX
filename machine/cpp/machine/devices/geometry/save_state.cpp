@@ -1,7 +1,7 @@
 #include "machine/devices/geometry/controller.h"
 
 #include "machine/bus/io.h"
-#include "machine/cpu/cpu.h"
+#include "machine/cpu/value.h"
 
 #include <cstddef>
 

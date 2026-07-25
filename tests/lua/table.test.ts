@@ -3,12 +3,14 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
-	BuiltinFunctionId,
 	Closure,
 	CPU,
+	Table,
+} from '../../machine/ts/machine/cpu/cpu';
+import {
+	BuiltinFunctionId,
 	StringValue,
 	createBuiltinFunction,
-	Table,
 	ValueTag,
 	valueIsClosure,
 	valueIsHeap,
@@ -16,7 +18,7 @@ import {
 	valueIsTable,
 	valueTag,
 	type Value,
-} from '../../machine/ts/machine/cpu/cpu';
+} from '../../machine/ts/machine/cpu/value';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { runCompiledLua } from './cpu_test_harness';

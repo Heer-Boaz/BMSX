@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { splitText } from '../../machine/ts/common/text_lines';
 import { LuaLexer } from '../../machine/ts/lua/syntax/lexer';
 import { LuaParser } from '../../machine/ts/lua/syntax/parser';
-import { valueIsString } from '../../machine/ts/machine/cpu/cpu';
+import { valueIsString } from '../../machine/ts/machine/cpu/value';
 import {
 	INP_CTRL_ARM,
 	IO_INP_CTRL,

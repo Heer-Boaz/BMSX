@@ -1,4 +1,5 @@
-import type { CPU, Value } from '../../cpu/cpu';
+import type { CPU } from '../../cpu/cpu';
+import type { Value } from '../../cpu/value';
 import {
 	DMA_REQUEST_GX_WRITE,
 	IO_GX_GPU_GP0,

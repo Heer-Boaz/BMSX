@@ -2,8 +2,7 @@ import {
 	describeBlua32InstructionAtPc,
 	type InstructionOperandDebugInfo,
 } from '../../machine/ts/machine/cpu/disassembler';
-import { valueToString } from '../../machine/ts/machine/firmware/globals';
-import type { Value } from '../../machine/ts/machine/cpu/cpu';
+import { valueToString, type Value } from '../../machine/ts/machine/cpu/value';
 import type { SourceRange } from '../../machine/ts/machine/cpu/blua32_symbols';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { LogLevel, type Platform } from '../../machine/ts/platform/platform';

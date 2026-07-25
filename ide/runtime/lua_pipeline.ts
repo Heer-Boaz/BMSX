@@ -22,9 +22,8 @@ import {
 	decodeBlua32SymbolsImage,
 	type Blua32SymbolsImage,
 } from '../../machine/ts/machine/cpu/blua32_symbols';
-import { type Value, ValueTag, valueTag } from '../../machine/ts/machine/cpu/cpu';
+import { asStringId, valueIsString, valueTag, ValueTag, type Value } from '../../machine/ts/machine/cpu/value';
 import type { Blua32MediaSymbols } from '../../machine/ts/machine/cpu/blua32_symbols';
-import { asStringId, valueIsString } from '../../machine/ts/machine/cpu/cpu';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import {
 	installRuntimeRomLayers,

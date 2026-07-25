@@ -2,7 +2,8 @@ import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { BuiltinFunctionId, CPU, createBuiltinFunction } from '../../machine/ts/machine/cpu/cpu';
+import { CPU } from '../../machine/ts/machine/cpu/cpu';
+import { BuiltinFunctionId, createBuiltinFunction } from '../../machine/ts/machine/cpu/value';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 

@@ -13,7 +13,8 @@ import {
 	IO_IMGDEC_TEXTURE_SIZE,
 	IRQ_IMGDEC,
 } from '../../bus/io';
-import type { CPU, Value } from '../../cpu/cpu';
+import type { CPU } from '../../cpu/cpu';
+import type { Value } from '../../cpu/value';
 import {
 	MAPPED_BUS_DMA_BLOCK_END,
 	MAPPED_BUS_MASTER_DMA,

@@ -5,7 +5,7 @@
 #include <span>
 #include <vector>
 
-#include "machine/cpu/cpu.h"
+#include "machine/cpu/value.h"
 #include "machine/devices/cartridge/controller.h"
 #include "machine/memory/bus_signals.h"
 #include "machine/memory/map.h"
@@ -13,6 +13,8 @@
 #include "common/primitives.h"
 
 namespace bmsx {
+
+class GcHeap;
 
 enum class MemoryRegionKind { Ram, SystemRom, Cartridge, Io, Other };
 

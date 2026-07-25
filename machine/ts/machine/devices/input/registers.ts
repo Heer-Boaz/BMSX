@@ -14,7 +14,7 @@ import {
 } from '../../bus/io';
 import { IO_WORD_SIZE } from '../../memory/map';
 import { encodeSignedFix16 } from '../../common/numeric';
-import type { Value } from '../../cpu/cpu';
+import type { Value } from '../../cpu/value';
 import { Memory } from '../../memory/memory';
 import {
 	INPUT_CONTROLLER_KEY_WORD_COUNT,

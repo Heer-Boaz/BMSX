@@ -1,11 +1,9 @@
 import {
 	AcceptedInterruptKind,
-	EMPTY_CALL_ARGS,
 	RunResult,
-	StringValue,
 	type Closure,
-	type Value,
 } from '../cpu/cpu';
+import { EMPTY_CALL_ARGS, StringValue, type Value } from '../cpu/value';
 import { CPU_STATUS_SYSTEM_ENTRY } from '../cpu/cop0';
 import { seedLuaGlobals } from '../firmware/globals';
 import type { RuntimeOptions } from './options';

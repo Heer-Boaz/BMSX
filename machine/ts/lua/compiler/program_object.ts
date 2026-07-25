@@ -1,4 +1,4 @@
-import { asStringId, valueIsString } from '../../machine/cpu/cpu';
+import { asStringId, valueIsString } from '../../machine/cpu/value';
 import type {
 	Program,
 	ProgramModuleExport,

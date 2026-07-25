@@ -12,7 +12,8 @@ import {
 	SYS_STATUS_SUPERVISOR_EXIT_REQUESTED,
 	SYS_STATUS_SUPERVISOR_RESUMABLE,
 } from '../../bus/io';
-import type { CPU, Value } from '../../cpu/cpu';
+import type { CPU } from '../../cpu/cpu';
+import type { Value } from '../../cpu/value';
 import { encodeUtf8Codepoint } from '../../../common/utf8';
 import type { DmaController } from '../dma/controller';
 import type { GeometryController } from '../geometry/controller';

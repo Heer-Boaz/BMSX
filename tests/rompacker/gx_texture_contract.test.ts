@@ -7,7 +7,8 @@ import { test } from 'node:test';
 
 import { createCanvas } from 'canvas';
 
-import { CPU, RunResult, StringValue, createBuiltinFunction } from '../../machine/ts/machine/cpu/cpu';
+import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { StringValue, createBuiltinFunction } from '../../machine/ts/machine/cpu/value';
 import { CPU_STATUS_SYSTEM_ENTRY } from '../../machine/ts/machine/cpu/cop0';
 import {
 	BLUA32_IMAGE_ID,

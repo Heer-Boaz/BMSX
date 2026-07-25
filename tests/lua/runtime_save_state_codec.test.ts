@@ -34,7 +34,8 @@ import {
 } from '../../machine/ts/machine/runtime/save_state/codec';
 import { decodeBinaryWithPropTable } from '../../machine/ts/common/serializer/binencoder';
 import { RUNTIME_SAVE_STATE_PROP_NAMES } from '../../machine/ts/machine/runtime/save_state/schema';
-import { BuiltinFunctionId, ProtectedCallKind } from '../../machine/ts/machine/cpu/cpu';
+import { ProtectedCallKind } from '../../machine/ts/machine/cpu/cpu';
+import { BuiltinFunctionId } from '../../machine/ts/machine/cpu/value';
 import { CPU_STATUS_CART_ENTRY } from '../../machine/ts/machine/cpu/cop0';
 import { DMA_STATUS_BUSY, SYS_PRINT_BUFFER_BYTES } from '../../machine/ts/machine/bus/io';
 import { RAM_BASE, RAM_END } from '../../machine/ts/machine/memory/map';

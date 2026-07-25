@@ -1,4 +1,5 @@
-import type { CPU, Value } from '../../cpu/cpu';
+import type { CPU } from '../../cpu/cpu';
+import type { Value } from '../../cpu/value';
 import {
 	IO_GX_GTE_COMMAND,
 	IO_GX_GTE_CONTROL0,

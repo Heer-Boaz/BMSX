@@ -8,7 +8,7 @@ import {
 	IO_INP_OUTPUT_PORT,
 	IO_INP_STATUS,
 } from '../../bus/io';
-import type { Value } from '../../cpu/cpu';
+import type { Value } from '../../cpu/value';
 import { Memory } from '../../memory/memory';
 import type { SystemController } from '../system/controller';
 import type { InputControllerState } from './save_state';

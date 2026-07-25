@@ -1,7 +1,8 @@
 import { decodeBinaryWithPropTable, encodeBinaryWithPropTable, requireObject, requireObjectKey } from '../../../common/serializer/binencoder';
 import { IO_DMA_CHANNEL_COUNT, SYS_PRINT_BUFFER_BYTES } from '../../bus/io';
 import type { MachineSaveState } from '../../save_state';
-import type { BuiltinFunctionId, CpuFrameState, CpuObjectState, CpuProtectedCallState, CpuRootValueState, CpuRuntimeState, CpuValueState } from '../../cpu/cpu';
+import type { CpuFrameState, CpuObjectState, CpuProtectedCallState, CpuRootValueState, CpuRuntimeState, CpuValueState } from '../../cpu/cpu';
+import type { BuiltinFunctionId } from '../../cpu/value';
 import type { IrqControllerState } from '../../devices/irq/save_state';
 import type { AudioControllerState } from '../../devices/audio/save_state';
 import type {
