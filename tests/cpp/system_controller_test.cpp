@@ -355,6 +355,9 @@ void testUnexecutedSecondCartridgeDoesNotAlterGuestIdentity() {
 		singleCpu.createTable()->hashId == dualCpu.createTable()->hashId,
 		"an unexecuted second cartridge does not allocate guest object ids"
 	);
+
+	dual.cart1Rom.bytes[dual.cart1Rom.boot.imageOffset] ^= 0xffu;
+	dual.runtime.rebootSystem();
 }
 
 void testGuestExecutionSelectionAndClosureIdentitySurviveTheSaveStateWireFormat() {

@@ -120,14 +120,14 @@ export class Runtime {
 	}
 
 	public boot(): void {
-		this.machine.cpu.mountExecutableMedia();
+		this.machine.cpu.mountExecutionImages();
 		seedLuaGlobals(this);
 		this.startSystemFirmware();
 	}
 
 	public rebootSystem(): void {
 		this.resetForSystemBoot();
-		this.machine.cpu.remountExecutableMedia();
+		this.machine.cpu.mountExecutionImages();
 		seedLuaGlobals(this);
 		this.startSystemFirmware();
 	}

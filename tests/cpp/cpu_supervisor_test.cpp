@@ -145,7 +145,7 @@ struct CpuTestMachine {
 		irq.reset();
 		dma.reset();
 		memory.cartridgeController().reset();
-		cpu.mountExecutableMedia();
+		cpu.mountExecutionImages();
 	}
 };
 
@@ -216,7 +216,7 @@ void testSystemAndOrdinaryGlobalRegisterfilesStayDistinct() {
 	machine.cpu.setSystemGlobalByKey(irqKey, bmsx::valueNumber(11.0));
 	machine.cpu.setGlobalByKey(irqKey, bmsx::valueNumber(22.0));
 
-	machine.cpu.mountExecutableMedia();
+	machine.cpu.mountExecutionImages();
 	const bmsx::CpuRuntimeState saved = machine.cpu.captureRuntimeState();
 	require(saved.systemGlobals.size() == 1u && saved.systemGlobals[0].name == "irq" && saved.systemGlobals[0].value.numberValue == 11.0, "media remount preserves the system registerfile");
 	require(saved.globals.size() == 1u && saved.globals[0].name == "irq" && saved.globals[0].value.numberValue == 22.0, "media remount preserves the ordinary global table");

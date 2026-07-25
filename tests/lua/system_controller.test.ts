@@ -14,7 +14,10 @@ import {
 	SYS_PRINT_BUFFER_BYTES,
 } from '../../machine/ts/machine/bus/io';
 import { Machine } from '../../machine/ts/machine/machine';
-import { BLUA32_BOOT_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/machine/cpu/blua32_image';
+import {
+	BLUA32_BOOT_STARTUP_FUNCTION_ADDRESS_OFFSET,
+	decodeBlua32BootHeader,
+} from '../../machine/ts/machine/cpu/blua32_image';
 import { EMPTY_CALL_ARGS, OpCode, RunResult, StringValue, Table, type Closure } from '../../machine/ts/machine/cpu/cpu';
 import { blua32SourceRangeAtPc } from '../../machine/ts/machine/cpu/blua32_symbols';
 import { COP0_EXEC, CPU_STATUS_SYSTEM_ENTRY } from '../../machine/ts/machine/cpu/cop0';
@@ -262,10 +265,11 @@ test('an unexecuted second cartridge does not alter guest identity allocation', 
 	const slot1 = linkRawTestBlua32Pair(systemSource, unusedSource);
 	const single = createSystemResetRuntime(slot0.systemRomBytes, slot0.cartRomBytes);
 	single.boot();
+	const unusedSlotRom = slot1.cartRomBytes.slice();
 	const dual = createSystemResetRuntime(
 		slot0.systemRomBytes,
 		slot0.cartRomBytes,
-		slot1.cartRomBytes,
+		unusedSlotRom,
 	);
 	dual.boot();
 	const revisedDual = createSystemResetRuntime(
@@ -275,7 +279,7 @@ test('an unexecuted second cartridge does not alter guest identity allocation', 
 	);
 	revisedDual.boot();
 	revisedDual.machine.memory.cartridgeController.installRom(1, slot1.cartRomBytes);
-	revisedDual.machine.cpu.installExecutionImage(1);
+	revisedDual.machine.cpu.reloadExecutionDomain(1);
 
 	const singleStringId = single.machine.cpu.stringPool.intern('post-boot-probe', false);
 	assert.equal(dual.machine.cpu.stringPool.intern('post-boot-probe', false), singleStringId);
@@ -283,6 +287,9 @@ test('an unexecuted second cartridge does not alter guest identity allocation', 
 	const singleTableId = single.machine.cpu.createTable(0, 0).hashId;
 	assert.equal(dual.machine.cpu.createTable(0, 0).hashId, singleTableId);
 	assert.equal(revisedDual.machine.cpu.createTable(0, 0).hashId, singleTableId);
+
+	unusedSlotRom[decodeBlua32BootHeader(unusedSlotRom).imageOffset] ^= 0xff;
+	dual.rebootSystem();
 });
 
 test('guest cartridge selection and EXEC-latched closures survive the runtime save-state wire format', () => {

@@ -238,7 +238,7 @@ uint32_t Runtime::vramTotalBytes() const {
 }
 
 void Runtime::boot() {
-	machine.cpu.mountExecutableMedia();
+	machine.cpu.mountExecutionImages();
 	setupBuiltins();
 	startSystemFirmware();
 }
@@ -260,7 +260,7 @@ void Runtime::startSystemFirmware() {
 
 void Runtime::rebootSystem() {
 	resetForSystemBoot();
-	machine.cpu.remountExecutableMedia();
+	machine.cpu.mountExecutionImages();
 	setupBuiltins();
 	startSystemFirmware();
 }

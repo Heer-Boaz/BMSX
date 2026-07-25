@@ -23,6 +23,7 @@
 #include "common/primitives.h"
 #include "machine/cpu/blua32_image.h"
 #include "machine/cpu/blua32_symbols.h"
+#include "machine/cpu/execution_address_space.h"
 #include "machine/cpu/instruction_format.h"
 #include "machine/cpu/cop0.h"
 #include "machine/cpu/opcode_info.h"
@@ -601,16 +602,10 @@ struct DecodedInstructionPage {
 	std::array<DecodedInstruction, DECODED_PAGE_WORDS> words{};
 };
 
-struct Blua32MediaImage {
-	Blua32ImageLayout layout;
-	Blua32BootHeader boot;
-	int cartridgeSlot = -1;
-};
-
 struct Blua32ExecutionImage {
 	Blua32ImageLayout layout;
 	Blua32BootHeader boot;
-	int cartridgeSlot = -1;
+	int executionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	Blua32ExecutionImage* systemImage = nullptr;
 	std::vector<Blua32RuntimeFunction> functions;
 	std::vector<Value> constPool;
@@ -942,12 +937,11 @@ class CPU {
 public:
 	CPU(Memory& memory, IrqController& irqController);
 
-	void mountExecutableMedia();
-	void remountExecutableMedia();
+	void mountExecutionImages();
 	void clearExecutionEnvironment();
 	u32 systemStartupFunctionAddress() const { return m_systemImage->boot.startupFunctionAddress; }
-	bool isCartridgeExecutionActive() const { return m_activeExecutionImage->cartridgeSlot >= 0; }
-	int activeCartridgeSlot() const { return m_activeExecutionImage->cartridgeSlot; }
+	bool isCartridgeExecutionActive() const { return m_activeExecutionImage->executionDomainId >= 0; }
+	int activeCartridgeSlot() const { return m_activeExecutionImage->executionDomainId; }
 	StringPool& stringPool() { return m_stringPool; }
 	const StringPool& stringPool() const { return m_stringPool; }
 	Memory& memory() { return m_memory; }
@@ -1058,13 +1052,8 @@ private:
 	bool handleProtectedCallError(Value errorValue);
 	void runHousekeeping();
 	std::vector<u32> registerGlobalNames(const std::vector<std::string>& names, bool system);
-	std::optional<Blua32MediaImage> decodeExecutableMedia(
-		u32 romBaseAddress,
-		int cartridgeSlot
-	);
-	std::unique_ptr<Blua32ExecutionImage> activateExecutableImage(Blua32MediaImage&& media);
-	Blua32ExecutionImage* cartridgeImageForExecution(size_t slot);
-	void mountExecutableImages();
+	std::unique_ptr<Blua32ExecutionImage> activateExecutionImage(Blua32DecodedExecutionImage&& decodedImage);
+	Blua32ExecutionImage* executionImageForDomain(int executionDomainId);
 	void decodeImageText(Blua32ExecutionImage& image);
 	Closure* staticClosureAtAddress(u32 address);
 	Blua32RuntimeFunction* functionRecordInImage(Blua32ExecutionImage& image, u32 address) const;
@@ -1125,9 +1114,8 @@ private:
 	void blockMappedWrite(CallFrame& frame, uint32_t address);
 	void markRoots(GcHeap& heap);
 
-	std::unique_ptr<Blua32ExecutionImage> m_systemImage;
-	std::array<std::optional<Blua32MediaImage>, 2> m_cartridgeMediaImages;
-	std::array<std::unique_ptr<Blua32ExecutionImage>, 2> m_cartridgeImages;
+	std::vector<std::unique_ptr<Blua32ExecutionImage>> m_executionImages;
+	Blua32ExecutionImage* m_systemImage = nullptr;
 	Blua32ExecutionImage* m_activeExecutionImage = nullptr;
 	std::vector<std::unique_ptr<CallFrame>> m_frames;
 	ScratchBuffer<ProtectedCallContinuation> m_protectedCallContinuations;
@@ -1154,6 +1142,7 @@ private:
 	bool m_hostExternalCallActive = false;
 	Memory& m_memory;
 	IrqController& m_irqController;
+	ExecutionAddressSpace m_executionAddressSpace;
 	StringPool m_stringPool;
 	GcHeap m_heap;
 	std::unordered_map<u32, Closure> m_staticClosuresByAddress;

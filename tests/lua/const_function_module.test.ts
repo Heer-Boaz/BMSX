@@ -65,7 +65,7 @@ function runColdPair(systemCompiled: CompiledProgram, cartCompiled: CompiledProg
 	const finalized = linkTestBlua32Pair(systemCompiled, cartCompiled);
 	const memory = new Memory({ systemRom: finalized.systemRomBytes, cartridgeSlots: cartridgeSlots(finalized.cartRomBytes) });
 	const cpu = new CPU(memory, new IrqController(memory));
-	cpu.mountExecutableMedia();
+	cpu.mountExecutionImages();
 	cpu.start(finalized.systemVectors.startupFunctionAddress, [], CPU_STATUS_SYSTEM_ENTRY);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	cpu.start(finalized.cartVectors.startupFunctionAddress, [], CPU_STATUS_CART_ENTRY);

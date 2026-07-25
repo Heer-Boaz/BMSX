@@ -61,7 +61,7 @@ struct GteHarness {
 		, cpu(memory, irq)
 		, scheduler(cpu)
 		, gte(memory, cpu, scheduler) {
-		cpu.mountExecutableMedia();
+		cpu.mountExecutionImages();
 	}
 };
 

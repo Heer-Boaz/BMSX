@@ -931,8 +931,10 @@ CPU::CPU(Memory& memory, IrqController& irqController)
 	: m_protectedCallContinuations(MAX_POOLED_FRAMES)
 	, m_memory(memory)
 	, m_irqController(irqController)
+	, m_executionAddressSpace(memory)
 	, m_stringPool(true)
 	, m_heap(m_stringPool) {
+	m_executionImages.reserve(3);
 	for (size_t index = 0; index < m_builtinFunctions.size(); ++index) {
 		BuiltinFunction& builtin = m_builtinFunctions[index];
 		const NativeFnCost cost = kBuiltinFunctionCosts[index];
@@ -1005,27 +1007,20 @@ Closure* CPU::createTrackedClosure(
 	return closure;
 }
 
-void CPU::mountExecutableMedia() {
-	mountExecutableImages();
-}
-
-void CPU::remountExecutableMedia() {
-	mountExecutableImages();
-}
-
-void CPU::mountExecutableImages() {
+void CPU::mountExecutionImages() {
 	m_staticClosuresByAddress.clear();
-	std::optional<Blua32MediaImage> systemMedia = decodeExecutableMedia(SYSTEM_ROM_BASE, -1);
-	if (!systemMedia) {
+	m_executionImages.clear();
+	std::optional<Blua32DecodedExecutionImage> systemImage =
+		m_executionAddressSpace.loadDomain(SYSTEM_EXECUTION_DOMAIN_ID);
+	if (!systemImage) {
 		throw BMSX_RUNTIME_ERROR("System ROM has no BLua32 executable image.");
 	}
-	m_systemImage = activateExecutableImage(std::move(*systemMedia));
-	m_cartridgeMediaImages[0] = decodeExecutableMedia(CART_ROM_BASE, 0);
-	m_cartridgeMediaImages[1] = decodeExecutableMedia(CART_ROM_BASE, 1);
-	m_cartridgeImages[0].reset();
-	m_cartridgeImages[1].reset();
+	std::unique_ptr<Blua32ExecutionImage> activatedSystemImage =
+		activateExecutionImage(std::move(*systemImage));
+	m_systemImage = activatedSystemImage.get();
+	m_executionImages.push_back(std::move(activatedSystemImage));
 	m_systemExceptionFunctionAddress = m_systemImage->boot.exceptionFunctionAddress;
-	m_activeExecutionImage = m_systemImage.get();
+	m_activeExecutionImage = m_systemImage;
 	m_hardHalted = false;
 }
 
@@ -1048,51 +1043,16 @@ std::vector<u32> CPU::registerGlobalNames(const std::vector<std::string>& names,
 	return slots;
 }
 
-std::optional<Blua32MediaImage> CPU::decodeExecutableMedia(
-	u32 romBaseAddress,
-	int cartridgeSlot
+std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
+	Blua32DecodedExecutionImage&& decodedImage
 ) {
-	Span<const u8> headerBytes;
-	if (!m_memory.bindRomByteView(
-			romBaseAddress,
-			BLUA32_BOOT_HEADER_SIZE,
-			cartridgeSlot < 0 ? 0u : static_cast<u32>(cartridgeSlot),
-			headerBytes
-	)) {
-		return {};
-	}
-	const Blua32BootHeader boot = decodeBlua32BootHeader(
-		std::span<const u8>(headerBytes.data(), headerBytes.size())
-	);
-	if (boot.imageOffset == 0u) {
-		return {};
-	}
-	const u32 imageAddress = romBaseAddress + boot.imageOffset;
-	Span<const u8> imageBytes;
-	if (!m_memory.bindRomByteView(
-			imageAddress,
-			boot.imageByteCount,
-			cartridgeSlot < 0 ? 0u : static_cast<u32>(cartridgeSlot),
-			imageBytes
-	)) {
-		throw BMSX_RUNTIME_ERROR("BLua32 image is not backed by the installed ROM.");
-	}
-	return Blua32MediaImage{
-		.layout = decodeBlua32Image(
-			std::span<const u8>(imageBytes.data(), imageBytes.size()),
-			imageAddress
-		),
-		.boot = boot,
-		.cartridgeSlot = cartridgeSlot,
-	};
-}
-
-std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutableImage(Blua32MediaImage&& media) {
 	auto image = std::make_unique<Blua32ExecutionImage>();
-	image->layout = std::move(media.layout);
-	image->boot = media.boot;
-	image->cartridgeSlot = media.cartridgeSlot;
-	image->systemImage = media.cartridgeSlot < 0 ? image.get() : m_systemImage.get();
+	image->layout = std::move(decodedImage.layout);
+	image->boot = decodedImage.boot;
+	image->executionDomainId = decodedImage.executionDomainId;
+	image->systemImage = decodedImage.executionDomainId == SYSTEM_EXECUTION_DOMAIN_ID
+		? image.get()
+		: m_systemImage;
 	image->constPool.reserve(image->layout.constants.size());
 	for (const Blua32EncodedConstant& constant : image->layout.constants) {
 		if (std::holds_alternative<std::monostate>(constant)) {
@@ -1129,9 +1089,9 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutableImage(Blua32MediaIm
 		}
 	}
 
-	Blua32RuntimeFunction* startup = functionRecordInImage(*image, media.boot.startupFunctionAddress);
-	Blua32RuntimeFunction* irq = functionRecordInImage(*image, media.boot.irqFunctionAddress);
-	Blua32RuntimeFunction* exception = functionRecordInImage(*image, media.boot.exceptionFunctionAddress);
+	Blua32RuntimeFunction* startup = functionRecordInImage(*image, decodedImage.boot.startupFunctionAddress);
+	Blua32RuntimeFunction* irq = functionRecordInImage(*image, decodedImage.boot.irqFunctionAddress);
+	Blua32RuntimeFunction* exception = functionRecordInImage(*image, decodedImage.boot.exceptionFunctionAddress);
 	if (!startup || !irq || !exception
 		|| !startup->staticClosure || !irq->staticClosure || !exception->staticClosure) {
 		throw BMSX_RUNTIME_ERROR("BLua32 boot vector does not name a static function record.");
@@ -1139,18 +1099,22 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutableImage(Blua32MediaIm
 	return image;
 }
 
-Blua32ExecutionImage* CPU::cartridgeImageForExecution(size_t slot) {
-	std::unique_ptr<Blua32ExecutionImage>& image = m_cartridgeImages[slot];
-	if (image) {
-		return image.get();
+Blua32ExecutionImage* CPU::executionImageForDomain(int executionDomainId) {
+	for (const std::unique_ptr<Blua32ExecutionImage>& image : m_executionImages) {
+		if (image->executionDomainId == executionDomainId) {
+			return image.get();
+		}
 	}
-	std::optional<Blua32MediaImage>& media = m_cartridgeMediaImages[slot];
-	if (!media) {
+	std::optional<Blua32DecodedExecutionImage> decodedImage =
+		m_executionAddressSpace.loadDomain(executionDomainId);
+	if (!decodedImage) {
 		return nullptr;
 	}
-	image = activateExecutableImage(std::move(*media));
-	media.reset();
-	return image.get();
+	std::unique_ptr<Blua32ExecutionImage> image =
+		activateExecutionImage(std::move(*decodedImage));
+	Blua32ExecutionImage* activatedImage = image.get();
+	m_executionImages.push_back(std::move(image));
+	return activatedImage;
 }
 
 Closure* CPU::staticClosureAtAddress(u32 address) {
@@ -1355,18 +1319,13 @@ Blua32RuntimeFunction* CPU::functionRecordInExecutionDomain(
 }
 
 Blua32RuntimeFunction* CPU::functionRecordOnSelectedBus(u32 address) {
-	if (address >= CART_ROM_BASE) {
-		Blua32ExecutionImage* image =
-			cartridgeImageForExecution(m_memory.cartridgeController().selectedSlot());
-		if (!image) {
-			return nullptr;
-		}
-		return functionRecordInImage(*image, address);
-	}
-	if (address >= RAM_BASE) {
+	const std::optional<int> executionDomainId =
+		m_executionAddressSpace.domainIdOnBus(address);
+	if (!executionDomainId) {
 		return nullptr;
 	}
-	return functionRecordInImage(*m_systemImage, address);
+	Blua32ExecutionImage* image = executionImageForDomain(*executionDomainId);
+	return image ? functionRecordInImage(*image, address) : nullptr;
 }
 
 void CPU::start(u32 functionAddress, NativeArgsView args, u32 statusWord) {
@@ -1404,7 +1363,7 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 	}
 	clearCallStack();
 	m_activeExecutionImage = function->image;
-	m_statusWord = function->image->cartridgeSlot >= 0
+	m_statusWord = function->image->executionDomainId >= 0
 		? CPU_STATUS_CART_ENTRY
 		: CPU_STATUS_SYSTEM_ENTRY;
 	m_haltedUntilIrq = false;
@@ -1584,7 +1543,7 @@ CpuRuntimeState CPU::captureRuntimeState() const {
 			captureValueState(value),
 		});
 	});
-	state.executionCartridgeSlot = m_activeExecutionImage->cartridgeSlot;
+	state.executionCartridgeSlot = m_activeExecutionImage->executionDomainId;
 	state.frames.reserve(m_frames.size());
 	for (const auto& framePtr : m_frames) {
 		const CallFrame& frame = *framePtr;
@@ -1669,8 +1628,8 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	};
 
 	Blua32ExecutionImage* executionImage = state.executionCartridgeSlot < 0
-		? m_systemImage.get()
-		: cartridgeImageForExecution(static_cast<size_t>(state.executionCartridgeSlot));
+		? m_systemImage
+		: executionImageForDomain(state.executionCartridgeSlot);
 	std::vector<RestoredObject> restoredObjects(state.objects.size());
 	for (size_t index = 0; index < state.objects.size(); ++index) {
 		const CpuObjectState& objectState = state.objects[index];
@@ -2813,7 +2772,7 @@ CpuDebugState CPU::getDebugState() const {
 		: m_frames.back()->functionRecord->image;
 	return CpuDebugState{
 		image ? &image->layout : nullptr,
-		image ? image->cartridgeSlot : -1,
+		image ? image->executionDomainId : SYSTEM_EXECUTION_DOMAIN_ID,
 		lastPc,
 		lastInstruction,
 	};
@@ -2828,7 +2787,7 @@ std::vector<CpuCallStackEntry> CPU::getCallStack() const {
 		const u32 pc = (i == topIndex) ? lastPc : m_frames[static_cast<size_t>(i + 1)]->callSitePc;
 		stack.push_back(CpuCallStackEntry{
 			&frame->functionRecord->image->layout,
-			frame->functionRecord->image->cartridgeSlot,
+			frame->functionRecord->image->executionDomainId,
 			frame->functionAddress,
 			frame->functionRecord->index,
 			pc,
@@ -3547,15 +3506,8 @@ void CPU::markRoots(GcHeap& heap) {
 	for (const auto& value : m_globalValues) {
 		heap.markValue(value);
 	}
-	const std::array<Blua32ExecutionImage*, 3> images{
-		m_systemImage.get(),
-		m_cartridgeImages[0].get(),
-		m_cartridgeImages[1].get(),
-	};
-	for (Blua32ExecutionImage* image : images) {
-		if (!image) {
-			continue;
-		}
+	for (const std::unique_ptr<Blua32ExecutionImage>& executionImage : m_executionImages) {
+		Blua32ExecutionImage* image = executionImage.get();
 		for (Value value : image->constPool) {
 			heap.markValue(value);
 		}

@@ -141,7 +141,7 @@ function installGtePlusBurstProgram(cpu: CPU, words: readonly number[]): number 
 		functionIds: ['gte_plus_burst'],
 	});
 	cpu.memory.installSystemRom(image.romBytes);
-	cpu.mountExecutableMedia();
+	cpu.mountExecutionImages();
 	return image.vectors.startupFunctionAddress;
 }
 

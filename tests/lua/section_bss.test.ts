@@ -51,7 +51,7 @@ function runColdCompiled(compiled: CompiledProgram, memory = new Memory({ system
 	const finalized = linkTestSystemBlua32(compiled);
 	memory.installSystemRom(finalized.romBytes);
 	const cpu = new CPU(memory, new IrqController(memory));
-	cpu.mountExecutableMedia();
+	cpu.mountExecutionImages();
 	cpu.start(finalized.vectors.startupFunctionAddress);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	return { memory, values: Array.from(cpu.lastReturnValues), image: finalized.image };

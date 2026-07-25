@@ -47,21 +47,22 @@ import {
 } from './profiler';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord, signExtend } from './instruction_format';
 import {
-	BLUA32_BOOT_HEADER_SIZE,
 	BLUA32_FUNCTION_RECORD_SIZE,
 	Blua32ConstantTag,
-	decodeBlua32BootHeader,
-	decodeBlua32Image,
-	type Blua32BootHeader,
 	type Blua32FunctionRecord,
 	type Blua32ImageLayout,
 } from './blua32_image';
+import {
+	ExecutionAddressSpace,
+	SYSTEM_EXECUTION_DOMAIN_ID,
+	type Blua32DecodedExecutionImage,
+} from './execution_address_space';
 import { MEMORY_ACCESS_KIND_ALIGNMENT_MASKS, MemoryAccessKind } from '../memory/access_kind';
 import { ScratchBuffer } from '../../common/scratchbuffer';
 import { ScratchArrayStack } from '../../common/scratchstack';
 import { luaFloorDivide, luaModulo } from '../../lua/numeric';
 import { ceilDiv4, ceilLog2, nextPowerOfTwo } from '../common/numeric';
-import { CART_ROM_BASE, RAM_BASE, SYSTEM_ROM_BASE } from '../memory/map';
+import { CART_ROM_BASE, RAM_BASE } from '../memory/map';
 
 export { OpCode } from './opcode_info';
 
@@ -1481,13 +1482,7 @@ type Blua32RuntimeFunction = Blua32FunctionRecord & {
 	index: number;
 };
 
-type Blua32MediaImage = {
-	layout: Blua32ImageLayout;
-	boot: Blua32BootHeader;
-	cartridgeSlot: number;
-};
-
-type Blua32ExecutionImage = Blua32MediaImage & {
+type Blua32ExecutionImage = Blua32DecodedExecutionImage & {
 	functions: Blua32RuntimeFunction[];
 	constPool: Value[];
 	globalSlots: Uint32Array;
@@ -1574,9 +1569,9 @@ export class CPU {
 	private profilerEnabled = false;
 	private profilerConfigured = false;
 	private externalReturnSink: Value[] | null = null;
+	private readonly executionAddressSpace: ExecutionAddressSpace;
+	private readonly executionImages: Blua32ExecutionImage[] = [];
 	private systemImage!: Blua32ExecutionImage;
-	private cartridgeMediaImages: [Blua32MediaImage | null, Blua32MediaImage | null] = [null, null];
-	private cartridgeImages: [Blua32ExecutionImage | null, Blua32ExecutionImage | null] = [null, null];
 	private activeExecutionImage!: Blua32ExecutionImage;
 	private readonly staticClosuresByAddress = new Map<number, Closure>();
 	private readonly profilerFunctionIdsBySlot = new Map<number, ReadonlyArray<string>>();
@@ -1595,6 +1590,7 @@ export class CPU {
 
 	constructor(memory: Memory, private readonly irqController: IrqController) {
 		this.memory = memory;
+		this.executionAddressSpace = new ExecutionAddressSpace(memory);
 		this.stringPool = new StringPool(true);
 		this.globals = this.createTable(0, 0);
 		this.stringIndexTable = this.createTable(0, 0);
@@ -1921,28 +1917,17 @@ export class CPU {
 		this.stackTop = 0;
 	}
 
-	public mountExecutableMedia(): void {
-		this.mountExecutableImages();
-	}
-
-	public remountExecutableMedia(): void {
-		this.mountExecutableImages();
-	}
-
-	private mountExecutableImages(): void {
+	public mountExecutionImages(): void {
 		this.staticClosuresByAddress.clear();
 		this.profilerFunctionIdsBySlot.clear();
 		this.profilerMetadataBySlot.clear();
-		const systemMedia = this.decodeExecutableMedia(SYSTEM_ROM_BASE, -1);
-		if (!systemMedia) {
+		this.executionImages.length = 0;
+		const systemImage = this.executionAddressSpace.loadDomain(SYSTEM_EXECUTION_DOMAIN_ID);
+		if (systemImage === null) {
 			throw new Error('System ROM has no BLua32 executable image.');
 		}
-		this.systemImage = this.activateExecutableImage(systemMedia);
-		this.cartridgeMediaImages = [
-			this.decodeExecutableMedia(CART_ROM_BASE, 0),
-			this.decodeExecutableMedia(CART_ROM_BASE, 1),
-		];
-		this.cartridgeImages = [null, null];
+		this.systemImage = this.activateExecutionImage(systemImage);
+		this.executionImages.push(this.systemImage);
 		this.systemExceptionFunctionAddress = this.systemImage.boot.exceptionFunctionAddress;
 		this.hardHalted = false;
 		this.activeExecutionImage = this.systemImage;
@@ -1979,43 +1964,8 @@ export class CPU {
 		return slots;
 	}
 
-	private decodeExecutableMedia(
-		romBaseAddress: number,
-		cartridgeSlot: number,
-	): Blua32MediaImage | null {
-		const headerView = { bytes: null!, byteOffset: 0, byteLength: 0 };
-		if (!this.memory.bindRomByteView(
-			romBaseAddress,
-			BLUA32_BOOT_HEADER_SIZE,
-			cartridgeSlot < 0 ? 0 : cartridgeSlot,
-			headerView,
-		)) {
-			return null;
-		}
-		const boot = decodeBlua32BootHeader(headerView.bytes, headerView.byteOffset);
-		if (boot.imageOffset === 0) {
-			return null;
-		}
-		const imageAddress = romBaseAddress + boot.imageOffset;
-		const imageView = { bytes: null!, byteOffset: 0, byteLength: 0 };
-		if (!this.memory.bindRomByteView(
-			imageAddress,
-			boot.imageByteCount,
-			cartridgeSlot < 0 ? 0 : cartridgeSlot,
-			imageView,
-		)) {
-			throw new Error('BLua32 image is not backed by the installed ROM.');
-		}
-		const bytes = imageView.bytes.subarray(imageView.byteOffset, imageView.byteOffset + imageView.byteLength);
-		return {
-			layout: decodeBlua32Image(bytes, imageAddress),
-			boot,
-			cartridgeSlot,
-		};
-	}
-
-	private activateExecutableImage(media: Blua32MediaImage): Blua32ExecutionImage {
-		const layout = media.layout;
+	private activateExecutionImage(decodedImage: Blua32DecodedExecutionImage): Blua32ExecutionImage {
+		const layout = decodedImage.layout;
 		const constPool = new Array<Value>(layout.constants.length);
 		for (let index = 0; index < layout.constants.length; index += 1) {
 			const constant = layout.constants[index];
@@ -2041,7 +1991,7 @@ export class CPU {
 		const systemGlobalSlots = this.registerGlobalNames(layout.systemGlobalNames, true);
 		const decoded = this.decodeText(layout, globalSlots, systemGlobalSlots);
 		const image: Blua32ExecutionImage = {
-			...media,
+			...decodedImage,
 			functions: new Array(layout.functions.length),
 			constPool,
 			globalSlots,
@@ -2061,9 +2011,9 @@ export class CPU {
 			image.functions[index] = functionRecord;
 		}
 		this.bindStaticClosures(image);
-		const startup = this.functionRecordInImage(image, media.boot.startupFunctionAddress);
-		const irq = this.functionRecordInImage(image, media.boot.irqFunctionAddress);
-		const exception = this.functionRecordInImage(image, media.boot.exceptionFunctionAddress);
+		const startup = this.functionRecordInImage(image, decodedImage.boot.startupFunctionAddress);
+		const irq = this.functionRecordInImage(image, decodedImage.boot.irqFunctionAddress);
+		const exception = this.functionRecordInImage(image, decodedImage.boot.exceptionFunctionAddress);
 		if (!startup || !irq || !exception
 			|| !startup.staticClosure || !irq.staticClosure || !exception.staticClosure) {
 			throw new Error('BLua32 boot vector does not name a static function record.');
@@ -2071,18 +2021,19 @@ export class CPU {
 		return image;
 	}
 
-	private cartridgeImageForExecution(slot: number): Blua32ExecutionImage | null {
-		let image = this.cartridgeImages[slot];
-		if (image) {
-			return image;
+	private executionImageForDomain(executionDomainId: number): Blua32ExecutionImage | null {
+		for (let index = 0; index < this.executionImages.length; index += 1) {
+			const image = this.executionImages[index];
+			if (image.executionDomainId === executionDomainId) {
+				return image;
+			}
 		}
-		const media = this.cartridgeMediaImages[slot];
-		if (!media) {
+		const decodedImage = this.executionAddressSpace.loadDomain(executionDomainId);
+		if (decodedImage === null) {
 			return null;
 		}
-		image = this.activateExecutableImage(media);
-		this.cartridgeMediaImages[slot] = null;
-		this.cartridgeImages[slot] = image;
+		const image = this.activateExecutionImage(decodedImage);
+		this.executionImages.push(image);
 		this.profilerConfigured = false;
 		if (this.profilerEnabled) {
 			this.configureProfiler();
@@ -2110,32 +2061,30 @@ export class CPU {
 		}
 	}
 
-	public installExecutionImage(target: 'system' | 0 | 1): void {
-		if (target === 'system') {
-			const media = this.decodeExecutableMedia(SYSTEM_ROM_BASE, -1);
-			if (!media) {
-				throw new Error('System ROM has no BLua32 executable image.');
+	public reloadExecutionDomain(executionDomainId: number): void {
+		let imageIndex = -1;
+		for (let index = 0; index < this.executionImages.length; index += 1) {
+			if (this.executionImages[index].executionDomainId === executionDomainId) {
+				imageIndex = index;
+				break;
 			}
-			const previousImage = this.systemImage;
-			this.systemImage = this.activateExecutableImage(media);
-			this.systemExceptionFunctionAddress = this.systemImage.boot.exceptionFunctionAddress;
-			if (this.activeExecutionImage === previousImage) {
-				this.activeExecutionImage = this.systemImage;
-			}
-		} else {
-			const media = this.decodeExecutableMedia(CART_ROM_BASE, target);
-			const previousImage = this.cartridgeImages[target];
-			if (!previousImage) {
-				this.cartridgeImages[target] = null;
-				this.cartridgeMediaImages[target] = media;
-			} else {
-				const image = this.activateExecutableImage(media!);
-				this.cartridgeImages[target] = image;
-				this.cartridgeMediaImages[target] = null;
-				if (this.activeExecutionImage === previousImage) {
-					this.activeExecutionImage = image;
-				}
-			}
+		}
+		if (imageIndex < 0) {
+			return;
+		}
+		const decodedImage = this.executionAddressSpace.loadDomain(executionDomainId);
+		if (decodedImage === null) {
+			throw new Error('Active execution domain has no BLua32 executable image.');
+		}
+		const previousImage = this.executionImages[imageIndex];
+		const image = this.activateExecutionImage(decodedImage);
+		this.executionImages[imageIndex] = image;
+		if (executionDomainId === SYSTEM_EXECUTION_DOMAIN_ID) {
+			this.systemImage = image;
+			this.systemExceptionFunctionAddress = image.boot.exceptionFunctionAddress;
+		}
+		if (this.activeExecutionImage === previousImage) {
+			this.activeExecutionImage = image;
 		}
 		this.profilerConfigured = false;
 		if (this.profilerEnabled) {
@@ -2174,7 +2123,7 @@ export class CPU {
 			const childFrame = this.frames[frameIndex + 1];
 			continuations[frameIndex] = {
 				frameIndex,
-				slot: frame.functionRecord.image.cartridgeSlot,
+				slot: frame.functionRecord.image.executionDomainId,
 				functionIndex: frame.functionRecord.index,
 				pc: frame.pc,
 				callSitePc: childFrame ? childFrame.callSitePc : null,
@@ -2194,8 +2143,9 @@ export class CPU {
 		nmiReturnEpcWord: number | null,
 	): void {
 		const frame = this.frames[frameIndex];
-		const slot = frame.functionRecord.image.cartridgeSlot;
-		const image = slot < 0 ? this.systemImage : this.cartridgeImages[slot]!;
+		const image = this.executionImageForDomain(
+			frame.functionRecord.image.executionDomainId,
+		)!;
 		const functionRecord = this.functionRecordInImage(image, functionAddress);
 		if (!functionRecord) {
 			this.hardHalt();
@@ -2332,18 +2282,11 @@ export class CPU {
 	}
 
 	private profilerImages(): CpuProfilerImage[] {
-		const images: Blua32ExecutionImage[] = [this.systemImage];
-		for (let slot = 0; slot < this.cartridgeImages.length; slot += 1) {
-			const image = this.cartridgeImages[slot];
-			if (image !== null) {
-				images.push(image);
-			}
-		}
-		const descriptors = new Array<CpuProfilerImage>(images.length);
-		for (let imageIndex = 0; imageIndex < images.length; imageIndex += 1) {
-			const image = images[imageIndex];
+		const descriptors = new Array<CpuProfilerImage>(this.executionImages.length);
+		for (let imageIndex = 0; imageIndex < this.executionImages.length; imageIndex += 1) {
+			const image = this.executionImages[imageIndex];
 			image.profilerIndex = imageIndex;
-			const attachedFunctionIds = this.profilerFunctionIdsBySlot.get(image.cartridgeSlot);
+			const attachedFunctionIds = this.profilerFunctionIdsBySlot.get(image.executionDomainId);
 			let functionIds: ReadonlyArray<string>;
 			if (attachedFunctionIds === undefined) {
 				const generatedFunctionIds = new Array<string>(image.functions.length);
@@ -2358,7 +2301,7 @@ export class CPU {
 				textAddress: image.layout.header.textAddress,
 				functions: image.functions,
 				functionIds,
-				metadata: this.profilerMetadataBySlot.get(image.cartridgeSlot) ?? null,
+				metadata: this.profilerMetadataBySlot.get(image.executionDomainId) ?? null,
 				opcodeByWord: this.buildProfilerOpcodeByWord(image),
 			};
 		}
@@ -2404,17 +2347,12 @@ export class CPU {
 	}
 
 	private functionRecordOnSelectedBus(address: number): Blua32RuntimeFunction | null {
-		if (address >= CART_ROM_BASE) {
-			const image = this.cartridgeImageForExecution(this.memory.cartridgeController.selectedSlot());
-			if (!image) {
-				return null;
-			}
-			return this.functionRecordInImage(image, address);
-		}
-		if (address >= RAM_BASE) {
+		const executionDomainId = this.executionAddressSpace.domainIdOnBus(address);
+		if (executionDomainId === null) {
 			return null;
 		}
-		return this.functionRecordInImage(this.systemImage, address);
+		const image = this.executionImageForDomain(executionDomainId);
+		return image === null ? null : this.functionRecordInImage(image, address);
 	}
 
 	public systemStartupFunctionAddress(): number {
@@ -2422,11 +2360,11 @@ export class CPU {
 	}
 
 	public isCartridgeExecutionActive(): boolean {
-		return this.activeExecutionImage.cartridgeSlot >= 0;
+		return this.activeExecutionImage.executionDomainId >= 0;
 	}
 
 	public activeCartridgeSlot(): number {
-		return this.activeExecutionImage.cartridgeSlot;
+		return this.activeExecutionImage.executionDomainId;
 	}
 
 	public start(functionAddress: number, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS, statusWord = CPU_STATUS_CART_ENTRY): void {
@@ -2465,7 +2403,7 @@ export class CPU {
 		const image = functionRecord.image;
 		this.clearCallStack();
 		this.activeExecutionImage = image;
-		const cartridgeEntry = image.cartridgeSlot >= 0;
+		const cartridgeEntry = image.executionDomainId >= 0;
 		this.statusWord = cartridgeEntry ? CPU_STATUS_CART_ENTRY : CPU_STATUS_SYSTEM_ENTRY;
 		this.haltedUntilIrq = false;
 		this.interruptEventPending = false;
@@ -2849,7 +2787,7 @@ export class CPU {
 		if (!frame) {
 			return {
 				image: this.activeExecutionImage.layout,
-				slot: this.activeExecutionImage.cartridgeSlot,
+				slot: this.activeExecutionImage.executionDomainId,
 				pc: this.lastPc,
 				instr: this.lastInstruction,
 				registers: [],
@@ -2859,7 +2797,7 @@ export class CPU {
 		frame.registers.copyTo(registers, frame.top);
 		return {
 			image: frame.functionRecord.image.layout,
-			slot: frame.functionRecord.image.cartridgeSlot,
+			slot: frame.functionRecord.image.executionDomainId,
 			pc: this.lastPc,
 			instr: this.lastInstruction,
 			registers,
@@ -2895,7 +2833,7 @@ export class CPU {
 			stack[index] = {
 				functionAddress: frame.functionAddress,
 				functionIndex: frame.functionRecord.index,
-				slot: frame.functionRecord.image.cartridgeSlot,
+				slot: frame.functionRecord.image.executionDomainId,
 				textAddress: frame.functionRecord.image.layout.header.textAddress,
 				pc,
 			};
@@ -2917,7 +2855,7 @@ export class CPU {
 			result.push({
 				functionAddress: frame.functionAddress,
 				functionIndex: frame.functionRecord.index,
-				slot: frame.functionRecord.image.cartridgeSlot,
+				slot: frame.functionRecord.image.executionDomainId,
 				textAddress: frame.functionRecord.image.layout.header.textAddress,
 				pc,
 				registers,
@@ -4537,7 +4475,7 @@ export class CPU {
 		}
 
 		return {
-			executionCartridgeSlot: this.activeExecutionImage.cartridgeSlot,
+			executionCartridgeSlot: this.activeExecutionImage.executionDomainId,
 			systemGlobals,
 			globals,
 			frames,
@@ -4571,7 +4509,7 @@ export class CPU {
 		const restoredObjects = new Array<RestoredObject>(state.objects.length);
 		const executionImage = state.executionCartridgeSlot < 0
 			? this.systemImage
-			: this.cartridgeImageForExecution(state.executionCartridgeSlot)!;
+			: this.executionImageForDomain(state.executionCartridgeSlot)!;
 		let maxRestoredHashId = 0;
 
 		for (let index = 0; index < state.objects.length; index += 1) {
@@ -4803,13 +4741,8 @@ export class CPU {
 				pushValue(this.externalReturnSink[index]);
 			}
 		}
-		pushImage(this.systemImage);
-		for (let slot = 0; slot < this.cartridgeImages.length; slot += 1) {
-			const image = this.cartridgeImages[slot];
-			if (image === null) {
-				continue;
-			}
-			pushImage(image);
+		for (let index = 0; index < this.executionImages.length; index += 1) {
+			pushImage(this.executionImages[index]);
 		}
 		for (let frameIndex = 0; frameIndex < this.frames.length; frameIndex += 1) {
 			const frame = this.frames[frameIndex];
