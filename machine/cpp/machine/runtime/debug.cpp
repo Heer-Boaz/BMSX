@@ -14,7 +14,7 @@ void Runtime::logDebugState() const {
 	}
 	const InstructionDebugInfo instruction = describeInstructionAtPc(
 		*debug.image,
-		debug.symbols,
+		blua32SymbolsForSlot(m_blua32MediaSymbols, debug.slot),
 		debug.pc
 	);
 	const int topFrameIndex = machine.cpu.getFrameDepth() - 1;

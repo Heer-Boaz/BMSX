@@ -374,6 +374,25 @@ export function loadBlua32MediaSymbols(): Blua32MediaSymbols {
 	};
 }
 
+export function blua32SymbolsForSlot(symbols: Blua32MediaSymbols, slot: number): Blua32SymbolsImage | null {
+	return slot < 0 ? symbols.system : symbols.cartridgeSlots[slot];
+}
+
+// Debug-symbol consumers (stack traces, hover/intellisense, the editor's symbols-available
+// gate) need this on every interaction, not just at boot — re-decoding a full ROM container's
+// TOC on every hover would be wasteful, and CPU itself never holds Blua32SymbolsImage at all.
+// Updated explicitly at the only two points the installed media actually changes (boot,
+// hot-resume); everything else reads this cheap, already-decoded snapshot.
+let activeMediaSymbolsSnapshot: Blua32MediaSymbols = { system: null, cartridgeSlots: [null, null] };
+
+export function setActiveBlua32MediaSymbols(symbols: Blua32MediaSymbols): void {
+	activeMediaSymbolsSnapshot = symbols;
+}
+
+export function activeBlua32MediaSymbols(): Blua32MediaSymbols {
+	return activeMediaSymbolsSnapshot;
+}
+
 export function bootActiveBlua32Media(runtime: Runtime, rebuildBlua32Media: boolean): void {
 	const interpreter = installFreshLuaInterpreter(runtime);
 	if (rebuildBlua32Media) {
@@ -388,12 +407,13 @@ export function bootActiveBlua32Media(runtime: Runtime, rebuildBlua32Media: bool
 	sources.currentPath = sources.activeLuaSources.entry_path;
 	runtime.resetForSystemBoot();
 	try {
-		runtime.boot(loadBlua32MediaSymbols());
+		runtime.boot();
 	} catch (error) {
 		machineManager.platform.log(LogLevel.Error, 'BLua32 boot failed.');
 		logDebugState(runtime, machineManager.platform);
 		throw error;
 	}
+	setActiveBlua32MediaSymbols(loadBlua32MediaSymbols());
 }
 
 export function resourceSourceForChunk(path: string): string {

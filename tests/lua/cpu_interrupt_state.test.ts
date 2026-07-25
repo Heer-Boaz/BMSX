@@ -712,10 +712,7 @@ return wait_cart
 	const memory = new Memory({ systemRom: linked.systemRomBytes, cartridgeSlots: cartridgeSlots(linked.cartRomBytes) });
 	const irqController = new IrqController(memory);
 	const cpu = new CPU(memory, irqController);
-	cpu.mountExecutableMedia({
-		system: linked.systemSymbols,
-		cartridgeSlots: [linked.cartSymbols, null],
-	});
+	cpu.mountExecutableMedia();
 	cpu.start(linked.systemVectors.startupFunctionAddress, EMPTY_CALL_ARGS, CPU_STATUS_SYSTEM_ENTRY);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	const systemWaiter = cpu.lastReturnValues[0] as Closure;
@@ -955,10 +952,7 @@ cross_image_stack.caller()
 		cartridgeSlots: cartridgeSlots(linked.cartRomBytes),
 	});
 	const cpu = new CPU(memory, new IrqController(memory));
-	cpu.mountExecutableMedia({
-		system: linked.systemSymbols,
-		cartridgeSlots: [linked.cartSymbols, null],
-	});
+	cpu.mountExecutableMedia();
 
 	cpu.start(linked.cartVectors.startupFunctionAddress, EMPTY_CALL_ARGS, CPU_STATUS_CART_ENTRY);
 	assert.equal(cpu.runUntilDepth(0, 10_000), RunResult.Halted);
@@ -1295,7 +1289,7 @@ test('CPU execution stops at the device deadline that activates GPUREAD', () => 
 		functionIds: ['gpu_read_deadline'],
 	});
 	machine.memory.installSystemRom(image.romBytes);
-	cpu.mountExecutableMedia({ system: image.symbols, cartridgeSlots: [null, null] });
+	cpu.mountExecutableMedia();
 	cpu.start(image.vectors.startupFunctionAddress);
 	machine.gxGpu.writeGp0(GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24);
 	machine.gxGpu.writeGp0(0);

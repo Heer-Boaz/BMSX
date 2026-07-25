@@ -6,7 +6,6 @@ import {
 	type Closure,
 	type Value,
 } from '../cpu/cpu';
-import type { Blua32MediaSymbols } from '../cpu/blua32_symbols';
 import { CPU_STATUS_SYSTEM_ENTRY } from '../cpu/cop0';
 import { seedLuaGlobals } from '../firmware/globals';
 import type { RuntimeOptions } from './options';
@@ -120,8 +119,8 @@ export class Runtime {
 		addTrackedLuaHeapBytes(this.machine.cpu.globals.getTrackedHeapBytes());
 	}
 
-	public boot(symbols: Blua32MediaSymbols): void {
-		this.machine.cpu.mountExecutableMedia(symbols);
+	public boot(): void {
+		this.machine.cpu.mountExecutableMedia();
 		seedLuaGlobals(this);
 		this.startSystemFirmware();
 	}

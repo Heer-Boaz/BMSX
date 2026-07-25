@@ -7,6 +7,7 @@ import * as constants from '../common/constants';
 import { EDITOR_TOGGLE_GAMEPAD_BUTTONS, EDITOR_TOGGLE_KEY, GAME_PAUSE_KEY } from '../common/constants';
 import { editorDebuggerState } from './contrib/debugger/state';
 import { seedDefaultLuaBuiltins } from '../runtime/lua_builtins';
+import { blua32SymbolsForSlot, activeBlua32MediaSymbols } from '../runtime/lua_pipeline';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { RenderPresentationState } from '../../machine/ts/render/presentation_state';
 import type { FontVariant } from '../../machine/ts/render/shared/bmsx_font';
@@ -129,7 +130,8 @@ export function onLuaDebuggerPause(runtime: Runtime, signal: LuaDebuggerPauseSig
 	applyDebuggerStopLocation(signal);
 	if (signal.reason === 'exception') {
 		recordDebuggerExceptionFault(runtime, signal);
-		if (runtime.machine.cpu.activeSymbols() && isManagedOverlayEditorActive()) {
+		const hasActiveSymbols = blua32SymbolsForSlot(activeBlua32MediaSymbols(), runtime.machine.cpu.activeCartridgeSlot()) !== null;
+		if (hasActiveSymbols && isManagedOverlayEditorActive()) {
 			const faultSnapshot = machineManager.faultState.faultSnapshot;
 			const message = faultSnapshot.message;
 			machineManager.ideState.editor.showRuntimeErrorInChunk(faultSnapshot.path, faultSnapshot.line, faultSnapshot.column, message);

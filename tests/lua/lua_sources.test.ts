@@ -220,7 +220,7 @@ test('debug package source boot resolves the persisted GX texture layout module'
 	const image = linkTestSystemBlua32(compiled);
 	const memory = new Memory({ systemRom: image.romBytes, cartridgeSlots: cartridgeSlots(payload) });
 	const cpu = new CPU(memory, new IrqController(memory));
-	cpu.mountExecutableMedia({ system: image.symbols, cartridgeSlots: [null, null] });
+	cpu.mountExecutableMedia();
 	cpu.start(image.vectors.startupFunctionAddress);
 
 	assert.equal(registry.module2lua[GX_TEXTURE_LAYOUT_MODULE_PATH].src, layoutSource);

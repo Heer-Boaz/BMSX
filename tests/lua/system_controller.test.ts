@@ -16,6 +16,7 @@ import {
 import { Machine } from '../../machine/ts/machine/machine';
 import { BLUA32_BOOT_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/machine/cpu/blua32_image';
 import { EMPTY_CALL_ARGS, OpCode, RunResult, StringValue, Table, type Closure } from '../../machine/ts/machine/cpu/cpu';
+import { blua32SourceRangeAtPc } from '../../machine/ts/machine/cpu/blua32_symbols';
 import { COP0_EXEC, CPU_STATUS_SYSTEM_ENTRY } from '../../machine/ts/machine/cpu/cop0';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/machine/cpu/instruction_format';
 import { LUA_BOOT_PRIMITIVES } from '../../machine/ts/machine/firmware/boot_primitives';
@@ -227,10 +228,7 @@ return
 	const cart = compileLuaChunkToProgram(parseLuaChunk(cartSource, 'system_reset_cart.lua'), [], { entrySource: cartSource, programDomain: 'cart' });
 	const images = linkTestBlua32Pair(system, cart);
 	const runtime = createSystemResetRuntime(images.systemRomBytes, images.cartRomBytes);
-	runtime.boot({
-		system: images.systemSymbols,
-		cartridgeSlots: [images.cartSymbols, null],
-	});
+	runtime.boot();
 
 	assert.equal(runtime.machine.memory.readMappedU32LE(DYNAMIC_RAM_BASE), 0);
 	assert.equal(runtime.machine.cpu.runUntilDepth(0, 1000), RunResult.Halted);
@@ -263,30 +261,21 @@ test('an unexecuted second cartridge does not alter guest identity allocation', 
 	unusedSource.globalNames = ['unused_slot_global'];
 	const slot1 = linkRawTestBlua32Pair(systemSource, unusedSource);
 	const single = createSystemResetRuntime(slot0.systemRomBytes, slot0.cartRomBytes);
-	single.boot({
-		system: slot0.systemSymbols,
-		cartridgeSlots: [slot0.cartSymbols, null],
-	});
+	single.boot();
 	const dual = createSystemResetRuntime(
 		slot0.systemRomBytes,
 		slot0.cartRomBytes,
 		slot1.cartRomBytes,
 	);
-	dual.boot({
-		system: slot0.systemSymbols,
-		cartridgeSlots: [slot0.cartSymbols, slot1.cartSymbols],
-	});
+	dual.boot();
 	const revisedDual = createSystemResetRuntime(
 		slot0.systemRomBytes,
 		slot0.cartRomBytes,
 		slot1.cartRomBytes,
 	);
-	revisedDual.boot({
-		system: slot0.systemSymbols,
-		cartridgeSlots: [slot0.cartSymbols, slot1.cartSymbols],
-	});
+	revisedDual.boot();
 	revisedDual.machine.memory.cartridgeController.installRom(1, slot1.cartRomBytes);
-	revisedDual.machine.cpu.installExecutionImage(1, slot1.cartSymbols);
+	revisedDual.machine.cpu.installExecutionImage(1);
 
 	const singleStringId = single.machine.cpu.stringPool.intern('post-boot-probe', false);
 	assert.equal(dual.machine.cpu.stringPool.intern('post-boot-probe', false), singleStringId);
@@ -305,10 +294,7 @@ test('guest cartridge selection and EXEC-latched closures survive the runtime sa
 		slot0.cartRomBytes,
 		slot1.cartRomBytes,
 	);
-	runtime.boot({
-		system: slot0.systemSymbols,
-		cartridgeSlots: [slot0.cartSymbols, slot1.cartSymbols],
-	});
+	runtime.boot();
 	const cpu = runtime.machine.cpu;
 
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
@@ -331,11 +317,17 @@ test('guest cartridge selection and EXEC-latched closures survive the runtime sa
 	const slot1Closure = cpu.lastReturnValues[0] as Closure;
 	assert.equal(slot1Closure, slot0Closure);
 	assert.equal(closureTable.get(slot1Closure), 77);
-	assert.equal(cpu.getDebugState().symbols, slot1.cartSymbols);
-	assert.equal(cpu.getDebugRange(cpu.lastPc)!.path, 'slot1.lua');
+	assert.equal(cpu.getDebugState().slot, 1);
+	assert.equal(
+		blua32SourceRangeAtPc(slot1.cartSymbols, cpu.getDebugState().image!.header.textAddress, cpu.lastPc)!.path,
+		'slot1.lua',
+	);
 	runtime.machine.memory.writeMappedU32LE(IO_CART_SELECT, 0);
-	assert.equal(cpu.getDebugState().symbols, slot1.cartSymbols);
-	assert.equal(cpu.getDebugRange(cpu.lastPc)!.path, 'slot1.lua');
+	assert.equal(cpu.getDebugState().slot, 1);
+	assert.equal(
+		blua32SourceRangeAtPc(slot1.cartSymbols, cpu.getDebugState().image!.header.textAddress, cpu.lastPc)!.path,
+		'slot1.lua',
+	);
 
 	const saveBytes = captureRuntimeSaveStateBytes(runtime);
 	cpu.start(
@@ -364,10 +356,7 @@ test('distinct non-static closures remain distinct table keys through the runtim
 		makeClosureCartSource(111, 'slot0.lua', false),
 	);
 	const runtime = createSystemResetRuntime(images.systemRomBytes, images.cartRomBytes);
-	runtime.boot({
-		system: images.systemSymbols,
-		cartridgeSlots: [images.cartSymbols, null],
-	});
+	runtime.boot();
 	const cpu = runtime.machine.cpu;
 
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
@@ -419,10 +408,7 @@ test('mixed static and non-static cartridge closures keep their identities acros
 		slot0.cartRomBytes,
 		slot1.cartRomBytes,
 	);
-	runtime.boot({
-		system: slot0.systemSymbols,
-		cartridgeSlots: [slot0.cartSymbols, slot1.cartSymbols],
-	});
+	runtime.boot();
 	const cpu = runtime.machine.cpu;
 
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);

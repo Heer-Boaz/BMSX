@@ -237,11 +237,14 @@ uint32_t Runtime::vramTotalBytes() const {
 	return static_cast<uint32_t>(GX_GPU_VRAM_BYTE_COUNT);
 }
 
-void Runtime::boot(Blua32MediaSymbols symbols) {
-	m_blua32MediaSymbols = std::move(symbols);
-	machine.cpu.mountExecutableMedia(m_blua32MediaSymbols);
+void Runtime::boot() {
+	machine.cpu.mountExecutableMedia();
 	setupBuiltins();
 	startSystemFirmware();
+}
+
+void Runtime::setBlua32MediaSymbols(Blua32MediaSymbols symbols) {
+	m_blua32MediaSymbols = std::move(symbols);
 }
 
 void Runtime::startSystemFirmware() {
@@ -265,7 +268,11 @@ void Runtime::rebootSystem() {
 void Runtime::logLuaCallStack() const {
 	const auto stack = machine.cpu.getCallStack();
 	if (stack.empty()) {
-		const std::optional<SourceRange> range = machine.cpu.getDebugRange(machine.cpu.lastPc);
+		const CpuDebugState debug = machine.cpu.getDebugState();
+		const Blua32SymbolsImage* symbols = blua32SymbolsForSlot(m_blua32MediaSymbols, debug.slot);
+		const std::optional<SourceRange> range = (symbols && debug.image)
+			? blua32SourceRangeAtPc(*symbols, debug.image->header.textAddress, machine.cpu.lastPc)
+			: std::nullopt;
 		if (range.has_value()) {
 			std::cout << "  at <current> (" << range->path << ':'
 				<< range->start.line << ':' << range->start.column << ')' << std::endl;
@@ -276,7 +283,7 @@ void Runtime::logLuaCallStack() const {
 		return;
 	}
 	for (const CpuCallStackEntry& frame : stack) {
-		const Blua32SymbolsImage* symbols = frame.symbols;
+		const Blua32SymbolsImage* symbols = blua32SymbolsForSlot(m_blua32MediaSymbols, frame.slot);
 		if (symbols) {
 			std::cout << "  at " << symbols->metadata.functionIds[frame.functionIndex];
 			const std::optional<SourceRange> range = blua32SourceRangeAtPc(

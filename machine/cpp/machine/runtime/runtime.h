@@ -57,7 +57,8 @@ public:
 	Runtime(const Runtime&) = delete;
 	auto operator=(const Runtime&) -> Runtime& = delete;
 
-	void boot(Blua32MediaSymbols symbols);
+	void boot();
+	void setBlua32MediaSymbols(Blua32MediaSymbols symbols);
 	void handleLuaError(const std::string& message);
 
 	/**

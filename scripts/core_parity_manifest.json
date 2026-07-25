@@ -1,12 +1,12 @@
 {
 	"patterns": [
 		{
-			"pattern": "machine/ts/ide/language/**",
+			"pattern": "ide/language/**",
 			"category": "language",
 			"reason": "language_tooling"
 		},
 		{
-			"pattern": "machine/ts/ide/**",
+			"pattern": "ide/**",
 			"category": "ide",
 			"reason": "ide_only"
 		},
@@ -1033,8 +1033,8 @@
 				"machine/ts/lua/compiler/passes",
 				"machine/ts/lua/compiler/optimizer",
 				"machine/ts/lua/source_registry.ts",
-				"machine/ts/ide/runtime/native_bridge.ts",
-				"machine/ts/ide/runtime/sources.ts",
+				"ide/runtime/native_bridge.ts",
+				"ide/runtime/sources.ts",
 				"machine/ts/rompack/tooling/blua32_linker.ts",
 				"machine/ts/rompack/tooling/blua32_revision.ts",
 				"machine/ts/rompack/tooling/blua32_tail.ts",
@@ -1809,7 +1809,7 @@
 			"reason": "gles2_device_quantize_draw_must_reuse_retained_resources_without_heap_work"
 		},
 		{
-			"file": "machine/ts/ide/runtime/overlay_renderer.ts",
+			"file": "ide/runtime/overlay_renderer.ts",
 			"functions": [
 				"endFrame"
 			],
@@ -2201,6 +2201,10 @@
 				{
 					"name": "handleLuaError",
 					"reason": "cpp_libretro_runtime_publishes_host_faults_directly_ts_ide_owns_fault_presentation_outside_machine_runtime"
+				},
+				{
+					"name": "setBlua32MediaSymbols",
+					"reason": "cpp_has_no_separate_ide_layer_so_runtime_retains_debug_symbols_directly_for_its_own_crash_logging_ts_ide_owns_the_equivalent_cache_outside_machine_runtime"
 				}
 			]
 		}
@@ -2208,7 +2212,7 @@
 	"cpp_missing_ts_exclusions": [
 		{
 			"cpp": "machine/cpp/machine/runtime/debug.cpp",
-			"reason": "C++ runtime logs native startup faults internally; TypeScript host/IDE fault presentation lives under machine/ts/ide/runtime/debug_state.ts and must not be mirrored back into machine runtime."
+			"reason": "C++ runtime logs native startup faults internally; TypeScript host/IDE fault presentation lives under ide/runtime/debug_state.ts and must not be mirrored back into machine runtime."
 		}
 	]
 }

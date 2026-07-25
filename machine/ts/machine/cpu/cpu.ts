@@ -42,6 +42,7 @@ import {
 	CpuExecutionProfiler,
 	formatCpuProfilerReport,
 	type CpuProfilerImage,
+	type CpuProfilerMetadata,
 	type CpuProfilerReportOptions,
 } from './profiler';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord, signExtend } from './instruction_format';
@@ -55,12 +56,6 @@ import {
 	type Blua32FunctionRecord,
 	type Blua32ImageLayout,
 } from './blua32_image';
-import {
-	blua32SourceRangeAtPc,
-	type Blua32MediaSymbols,
-	type Blua32SymbolsImage,
-	type SourceRange,
-} from './blua32_symbols';
 import { MEMORY_ACCESS_KIND_ALIGNMENT_MASKS, MemoryAccessKind } from '../memory/access_kind';
 import { ScratchBuffer } from '../../common/scratchbuffer';
 import { ScratchArrayStack } from '../../common/scratchstack';
@@ -294,7 +289,7 @@ export function isNativeObject(value: Value): value is NativeObject {
 export type CpuFrameSnapshot = {
 	functionAddress: number;
 	functionIndex: number;
-	symbols: Blua32SymbolsImage | null;
+	slot: number;
 	textAddress: number;
 	pc: number;
 	registers: Value[];
@@ -303,7 +298,7 @@ export type CpuFrameSnapshot = {
 export type CpuCallStackEntry = {
 	functionAddress: number;
 	functionIndex: number;
-	symbols: Blua32SymbolsImage | null;
+	slot: number;
 	textAddress: number;
 	pc: number;
 };
@@ -1490,7 +1485,6 @@ type Blua32MediaImage = {
 	layout: Blua32ImageLayout;
 	boot: Blua32BootHeader;
 	cartridgeSlot: number;
-	symbols: Blua32SymbolsImage | null;
 };
 
 type Blua32ExecutionImage = Blua32MediaImage & {
@@ -1585,6 +1579,8 @@ export class CPU {
 	private cartridgeImages: [Blua32ExecutionImage | null, Blua32ExecutionImage | null] = [null, null];
 	private activeExecutionImage!: Blua32ExecutionImage;
 	private readonly staticClosuresByAddress = new Map<number, Closure>();
+	private readonly profilerFunctionIdsBySlot = new Map<number, ReadonlyArray<string>>();
+	private readonly profilerMetadataBySlot = new Map<number, CpuProfilerMetadata | null>();
 	public stringIndexTable: Table;
 	private systemGlobalNames: StringId[] = [];
 	private systemGlobalValues: Value[] = [];
@@ -1925,50 +1921,26 @@ export class CPU {
 		this.stackTop = 0;
 	}
 
-	public mountExecutableMedia(symbols: Blua32MediaSymbols): void {
-		this.mountExecutableImages(
-			symbols.system,
-			symbols.cartridgeSlots[0],
-			symbols.cartridgeSlots[1],
-		);
+	public mountExecutableMedia(): void {
+		this.mountExecutableImages();
 	}
 
 	public remountExecutableMedia(): void {
-		const slot0 = this.cartridgeImages[0] || this.cartridgeMediaImages[0];
-		const slot1 = this.cartridgeImages[1] || this.cartridgeMediaImages[1];
-		this.mountExecutableImages(
-			this.systemImage.symbols,
-			slot0 ? slot0.symbols : null,
-			slot1 ? slot1.symbols : null,
-		);
+		this.mountExecutableImages();
 	}
 
-	private mountExecutableImages(
-		systemSymbols: Blua32SymbolsImage | null,
-		slot0Symbols: Blua32SymbolsImage | null,
-		slot1Symbols: Blua32SymbolsImage | null,
-	): void {
+	private mountExecutableImages(): void {
 		this.staticClosuresByAddress.clear();
-		const systemMedia = this.decodeExecutableMedia(
-			SYSTEM_ROM_BASE,
-			-1,
-			systemSymbols,
-		);
+		this.profilerFunctionIdsBySlot.clear();
+		this.profilerMetadataBySlot.clear();
+		const systemMedia = this.decodeExecutableMedia(SYSTEM_ROM_BASE, -1);
 		if (!systemMedia) {
 			throw new Error('System ROM has no BLua32 executable image.');
 		}
 		this.systemImage = this.activateExecutableImage(systemMedia);
 		this.cartridgeMediaImages = [
-			this.decodeExecutableMedia(
-				CART_ROM_BASE,
-				0,
-				slot0Symbols,
-			),
-			this.decodeExecutableMedia(
-				CART_ROM_BASE,
-				1,
-				slot1Symbols,
-			),
+			this.decodeExecutableMedia(CART_ROM_BASE, 0),
+			this.decodeExecutableMedia(CART_ROM_BASE, 1),
 		];
 		this.cartridgeImages = [null, null];
 		this.systemExceptionFunctionAddress = this.systemImage.boot.exceptionFunctionAddress;
@@ -2010,7 +1982,6 @@ export class CPU {
 	private decodeExecutableMedia(
 		romBaseAddress: number,
 		cartridgeSlot: number,
-		symbols: Blua32SymbolsImage | null,
 	): Blua32MediaImage | null {
 		const headerView = { bytes: null!, byteOffset: 0, byteLength: 0 };
 		if (!this.memory.bindRomByteView(
@@ -2040,7 +2011,6 @@ export class CPU {
 			layout: decodeBlua32Image(bytes, imageAddress),
 			boot,
 			cartridgeSlot,
-			symbols,
 		};
 	}
 
@@ -2140,9 +2110,9 @@ export class CPU {
 		}
 	}
 
-	public installExecutionImage(target: 'system' | 0 | 1, symbols: Blua32SymbolsImage | null): void {
+	public installExecutionImage(target: 'system' | 0 | 1): void {
 		if (target === 'system') {
-			const media = this.decodeExecutableMedia(SYSTEM_ROM_BASE, -1, symbols);
+			const media = this.decodeExecutableMedia(SYSTEM_ROM_BASE, -1);
 			if (!media) {
 				throw new Error('System ROM has no BLua32 executable image.');
 			}
@@ -2153,7 +2123,7 @@ export class CPU {
 				this.activeExecutionImage = this.systemImage;
 			}
 		} else {
-			const media = this.decodeExecutableMedia(CART_ROM_BASE, target, symbols);
+			const media = this.decodeExecutableMedia(CART_ROM_BASE, target);
 			const previousImage = this.cartridgeImages[target];
 			if (!previousImage) {
 				this.cartridgeImages[target] = null;
@@ -2338,6 +2308,24 @@ export class CPU {
 		return image.decodedPages[wordIndex >>> DECODED_PAGE_SHIFT];
 	}
 
+	// Opt-in, external-only companion data for the profiler (a genuine debugger/tooling
+	// concern), keyed by physical slot. Never sourced from the CPU's own execution
+	// structs — the caller (test harness, IDE profiling session) supplies it separately
+	// from whatever it used to link/compile the ROM, so the CPU itself never needs to
+	// know about source symbols to execute or to profile.
+	public attachProfilerDebugInfo(
+		slot: number,
+		functionIds: ReadonlyArray<string>,
+		metadata: CpuProfilerMetadata | null,
+	): void {
+		this.profilerFunctionIdsBySlot.set(slot, functionIds);
+		this.profilerMetadataBySlot.set(slot, metadata);
+		this.profilerConfigured = false;
+		if (this.profilerEnabled) {
+			this.configureProfiler();
+		}
+	}
+
 	private configureProfiler(): void {
 		this.profiler.configureImages(this.profilerImages());
 		this.profilerConfigured = true;
@@ -2355,22 +2343,22 @@ export class CPU {
 		for (let imageIndex = 0; imageIndex < images.length; imageIndex += 1) {
 			const image = images[imageIndex];
 			image.profilerIndex = imageIndex;
-			const functionIds = image.symbols?.metadata.functionIds;
-			let resolvedFunctionIds: ReadonlyArray<string>;
-			if (functionIds === undefined) {
+			const attachedFunctionIds = this.profilerFunctionIdsBySlot.get(image.cartridgeSlot);
+			let functionIds: ReadonlyArray<string>;
+			if (attachedFunctionIds === undefined) {
 				const generatedFunctionIds = new Array<string>(image.functions.length);
 				for (let functionIndex = 0; functionIndex < image.functions.length; functionIndex += 1) {
 					generatedFunctionIds[functionIndex] = `function@${image.functions[functionIndex].address.toString(16)}`;
 				}
-				resolvedFunctionIds = generatedFunctionIds;
+				functionIds = generatedFunctionIds;
 			} else {
-				resolvedFunctionIds = functionIds;
+				functionIds = attachedFunctionIds;
 			}
 			descriptors[imageIndex] = {
 				textAddress: image.layout.header.textAddress,
 				functions: image.functions,
-				functionIds: resolvedFunctionIds,
-				metadata: image.symbols ? image.symbols.metadata : null,
+				functionIds,
+				metadata: this.profilerMetadataBySlot.get(image.cartridgeSlot) ?? null,
 				opcodeByWord: this.buildProfilerOpcodeByWord(image),
 			};
 		}
@@ -2432,10 +2420,6 @@ export class CPU {
 
 	public activeCartridgeSlot(): number {
 		return this.activeExecutionImage.cartridgeSlot;
-	}
-
-	public activeSymbols(): Blua32SymbolsImage | null {
-		return this.activeExecutionImage.symbols;
 	}
 
 	public start(functionAddress: number, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS, statusWord = CPU_STATUS_CART_ENTRY): void {
@@ -2849,7 +2833,7 @@ export class CPU {
 
 	public getDebugState(): {
 		image: Blua32ImageLayout | null;
-		symbols: Blua32SymbolsImage | null;
+		slot: number;
 		pc: number;
 		instr: number;
 		registers: Value[];
@@ -2858,7 +2842,7 @@ export class CPU {
 		if (!frame) {
 			return {
 				image: this.activeExecutionImage.layout,
-				symbols: this.activeExecutionImage.symbols,
+				slot: this.activeExecutionImage.cartridgeSlot,
 				pc: this.lastPc,
 				instr: this.lastInstruction,
 				registers: [],
@@ -2868,7 +2852,7 @@ export class CPU {
 		frame.registers.copyTo(registers, frame.top);
 		return {
 			image: frame.functionRecord.image.layout,
-			symbols: frame.functionRecord.image.symbols,
+			slot: frame.functionRecord.image.cartridgeSlot,
 			pc: this.lastPc,
 			instr: this.lastInstruction,
 			registers,
@@ -2894,35 +2878,6 @@ export class CPU {
 		return formatCpuProfilerReport(this.profiler.snapshot(), options);
 	}
 
-	private executionImageForPc(pc: number): Blua32ExecutionImage | null {
-		for (let frameIndex = this.frames.length - 1; frameIndex >= 0; frameIndex -= 1) {
-			const image = this.frames[frameIndex].functionRecord.image;
-			const textAddress = image.layout.header.textAddress;
-			if (pc >= textAddress && pc < textAddress + image.layout.header.textByteCount) {
-				return image;
-			}
-		}
-		const systemTextAddress = this.systemImage.layout.header.textAddress;
-		if (pc >= systemTextAddress
-			&& pc < systemTextAddress + this.systemImage.layout.header.textByteCount) {
-			return this.systemImage;
-		}
-		const activeTextAddress = this.activeExecutionImage.layout.header.textAddress;
-		if (pc >= activeTextAddress
-			&& pc < activeTextAddress + this.activeExecutionImage.layout.header.textByteCount) {
-			return this.activeExecutionImage;
-		}
-		return null;
-	}
-
-	public getDebugRange(pc: number): SourceRange | null {
-		const image = this.executionImageForPc(pc);
-		if (image === null || image.symbols === null) {
-			return null;
-		}
-		return blua32SourceRangeAtPc(image.symbols, image.layout.header.textAddress, pc);
-	}
-
 	public getCallStack(): ReadonlyArray<CpuCallStackEntry> {
 		const frames = this.frames;
 		const stack = new Array<CpuCallStackEntry>(frames.length);
@@ -2933,7 +2888,7 @@ export class CPU {
 			stack[index] = {
 				functionAddress: frame.functionAddress,
 				functionIndex: frame.functionRecord.index,
-				symbols: frame.functionRecord.image.symbols,
+				slot: frame.functionRecord.image.cartridgeSlot,
 				textAddress: frame.functionRecord.image.layout.header.textAddress,
 				pc,
 			};
@@ -2955,7 +2910,7 @@ export class CPU {
 			result.push({
 				functionAddress: frame.functionAddress,
 				functionIndex: frame.functionRecord.index,
-				symbols: frame.functionRecord.image.symbols,
+				slot: frame.functionRecord.image.cartridgeSlot,
 				textAddress: frame.functionRecord.image.layout.header.textAddress,
 				pc,
 				registers,

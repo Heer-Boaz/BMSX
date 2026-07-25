@@ -6,6 +6,7 @@ import {
 	blua32SourceRangeAtPc,
 	type Blua32SymbolsImage,
 } from '../../machine/ts/machine/cpu/blua32_symbols';
+import { blua32SymbolsForSlot, activeBlua32MediaSymbols } from './lua_pipeline';
 
 function resolveLuaFunctionName(
 	symbols: Blua32SymbolsImage | null,
@@ -41,17 +42,19 @@ function resolveLuaFunctionName(
 
 export function buildLuaStackFrames(runtime: Runtime): StackTraceFrame[] {
 	const callStack = runtime.machine.cpu.getCallStack();
+	const mediaSymbols = activeBlua32MediaSymbols();
 	const frames: StackTraceFrame[] = [];
 	for (let index = callStack.length - 1; index >= 0; index -= 1) {
 		const entry = callStack[index];
-		const range = entry.symbols === null
+		const symbols = blua32SymbolsForSlot(mediaSymbols, entry.slot);
+		const range = symbols === null
 			? null
-			: blua32SourceRangeAtPc(entry.symbols, entry.textAddress, entry.pc);
+			: blua32SourceRangeAtPc(symbols, entry.textAddress, entry.pc);
 		const source = range ? range.path : machineManager.sourceState.currentPath;
 		const line = range ? range.start.line : 0;
 		const column = range ? range.start.column : 0;
 		const functionName = resolveLuaFunctionName(
-			entry.symbols,
+			symbols,
 			entry.functionIndex,
 			entry.functionAddress,
 		);

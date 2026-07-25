@@ -1005,42 +1005,23 @@ Closure* CPU::createTrackedClosure(
 	return closure;
 }
 
-void CPU::mountExecutableMedia(const Blua32MediaSymbols& symbols) {
-	mountExecutableImages(
-		symbols.system.get(),
-		symbols.cartridgeSlots[0].get(),
-		symbols.cartridgeSlots[1].get()
-	);
+void CPU::mountExecutableMedia() {
+	mountExecutableImages();
 }
 
 void CPU::remountExecutableMedia() {
-	const Blua32SymbolsImage* systemSymbols = m_systemImage->symbols;
-	const Blua32SymbolsImage* slot0Symbols = m_cartridgeImages[0]
-		? m_cartridgeImages[0]->symbols
-		: (m_cartridgeMediaImages[0] ? m_cartridgeMediaImages[0]->symbols : nullptr);
-	const Blua32SymbolsImage* slot1Symbols = m_cartridgeImages[1]
-		? m_cartridgeImages[1]->symbols
-		: (m_cartridgeMediaImages[1] ? m_cartridgeMediaImages[1]->symbols : nullptr);
-	mountExecutableImages(systemSymbols, slot0Symbols, slot1Symbols);
+	mountExecutableImages();
 }
 
-void CPU::mountExecutableImages(
-	const Blua32SymbolsImage* systemSymbols,
-	const Blua32SymbolsImage* slot0Symbols,
-	const Blua32SymbolsImage* slot1Symbols
-) {
+void CPU::mountExecutableImages() {
 	m_staticClosuresByAddress.clear();
-	std::optional<Blua32MediaImage> systemMedia = decodeExecutableMedia(
-		SYSTEM_ROM_BASE,
-		-1,
-		systemSymbols
-	);
+	std::optional<Blua32MediaImage> systemMedia = decodeExecutableMedia(SYSTEM_ROM_BASE, -1);
 	if (!systemMedia) {
 		throw BMSX_RUNTIME_ERROR("System ROM has no BLua32 executable image.");
 	}
 	m_systemImage = activateExecutableImage(std::move(*systemMedia));
-	m_cartridgeMediaImages[0] = decodeExecutableMedia(CART_ROM_BASE, 0, slot0Symbols);
-	m_cartridgeMediaImages[1] = decodeExecutableMedia(CART_ROM_BASE, 1, slot1Symbols);
+	m_cartridgeMediaImages[0] = decodeExecutableMedia(CART_ROM_BASE, 0);
+	m_cartridgeMediaImages[1] = decodeExecutableMedia(CART_ROM_BASE, 1);
 	m_cartridgeImages[0].reset();
 	m_cartridgeImages[1].reset();
 	m_systemExceptionFunctionAddress = m_systemImage->boot.exceptionFunctionAddress;
@@ -1069,8 +1050,7 @@ std::vector<u32> CPU::registerGlobalNames(const std::vector<std::string>& names,
 
 std::optional<Blua32MediaImage> CPU::decodeExecutableMedia(
 	u32 romBaseAddress,
-	int cartridgeSlot,
-	const Blua32SymbolsImage* symbols
+	int cartridgeSlot
 ) {
 	Span<const u8> headerBytes;
 	if (!m_memory.bindRomByteView(
@@ -1103,7 +1083,6 @@ std::optional<Blua32MediaImage> CPU::decodeExecutableMedia(
 			imageAddress
 		),
 		.boot = boot,
-		.symbols = symbols,
 		.cartridgeSlot = cartridgeSlot,
 	};
 }
@@ -1112,7 +1091,6 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutableImage(Blua32MediaIm
 	auto image = std::make_unique<Blua32ExecutionImage>();
 	image->layout = std::move(media.layout);
 	image->boot = media.boot;
-	image->symbols = media.symbols;
 	image->cartridgeSlot = media.cartridgeSlot;
 	image->systemImage = media.cartridgeSlot < 0 ? image.get() : m_systemImage.get();
 	image->constPool.reserve(image->layout.constants.size());
@@ -2824,38 +2802,10 @@ CpuDebugState CPU::getDebugState() const {
 		: m_frames.back()->functionRecord->image;
 	return CpuDebugState{
 		image ? &image->layout : nullptr,
-		image ? image->symbols : nullptr,
+		image ? image->cartridgeSlot : -1,
 		lastPc,
 		lastInstruction,
 	};
-}
-
-std::optional<SourceRange> CPU::getDebugRange(u32 pc) const {
-	const Blua32ExecutionImage* image = executionImageForPc(pc);
-	if (!image || !image->symbols) {
-		return std::nullopt;
-	}
-	return blua32SourceRangeAtPc(*image->symbols, image->layout.header.textAddress, pc);
-}
-
-const Blua32ExecutionImage* CPU::executionImageForPc(u32 pc) const {
-	for (auto frame = m_frames.rbegin(); frame != m_frames.rend(); ++frame) {
-		const Blua32ExecutionImage* image = (*frame)->functionRecord->image;
-		if (pc >= image->layout.header.textAddress
-			&& pc < image->layout.header.textAddress + image->layout.header.textByteCount) {
-			return image;
-		}
-	}
-	if (pc >= m_systemImage->layout.header.textAddress
-		&& pc < m_systemImage->layout.header.textAddress + m_systemImage->layout.header.textByteCount) {
-		return m_systemImage.get();
-	}
-	if (pc >= m_activeExecutionImage->layout.header.textAddress
-		&& pc < m_activeExecutionImage->layout.header.textAddress
-			+ m_activeExecutionImage->layout.header.textByteCount) {
-		return m_activeExecutionImage;
-	}
-	return nullptr;
 }
 
 std::vector<CpuCallStackEntry> CPU::getCallStack() const {
@@ -2867,7 +2817,7 @@ std::vector<CpuCallStackEntry> CPU::getCallStack() const {
 		const u32 pc = (i == topIndex) ? lastPc : m_frames[static_cast<size_t>(i + 1)]->callSitePc;
 		stack.push_back(CpuCallStackEntry{
 			&frame->functionRecord->image->layout,
-			frame->functionRecord->image->symbols,
+			frame->functionRecord->image->cartridgeSlot,
 			frame->functionAddress,
 			frame->functionRecord->index,
 			pc,

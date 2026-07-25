@@ -20,6 +20,7 @@ import {
 	buildBlua32Media,
 	installBlua32Media,
 	loadBlua32MediaSymbols,
+	setActiveBlua32MediaSymbols,
 } from './lua_pipeline';
 
 type TargetRevision = {
@@ -74,13 +75,12 @@ export function hotResume(
 			installBlua32Media(runtime, rebuilt);
 
 			const cpu = runtime.machine.cpu;
-			const freshSymbols = loadBlua32MediaSymbols();
 			if (rebuilt.system !== null) {
-				cpu.installExecutionImage('system', freshSymbols.system);
+				cpu.installExecutionImage('system');
 			}
 			for (let slot = 0; slot < rebuilt.cartridgeSlots.length; slot += 1) {
 				if (rebuilt.cartridgeSlots[slot] !== null) {
-					cpu.installExecutionImage(slot as 0 | 1, freshSymbols.cartridgeSlots[slot]);
+					cpu.installExecutionImage(slot as 0 | 1);
 				}
 			}
 
@@ -115,6 +115,7 @@ export function hotResume(
 					`Hot resume could not relocate ${unmappedCount} active continuation(s) after an incompatible edit.`,
 				);
 			}
+			setActiveBlua32MediaSymbols(loadBlua32MediaSymbols());
 			machineManager.ideState.editor.clearNativeMemberCompletionCache();
 		}
 

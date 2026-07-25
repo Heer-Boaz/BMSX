@@ -83,5 +83,9 @@ auto blua32SourceRangeAtPc(
 	u32 textAddress,
 	u32 pc
 ) -> std::optional<SourceRange>;
+auto blua32SymbolsForSlot(
+	const Blua32MediaSymbols& symbols,
+	int slot
+) -> const Blua32SymbolsImage*;
 
 } // namespace bmsx

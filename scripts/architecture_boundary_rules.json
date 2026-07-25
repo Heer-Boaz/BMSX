@@ -2,6 +2,7 @@
 	"roots": [
 		"machine/ts",
 		"machine/cpp",
+		"ide",
 		"hosts/browser",
 		"hosts/node",
 		"hosts/libretro"
@@ -25,7 +26,7 @@
 		{ "name": "ts-rompack", "paths": ["machine/ts/rompack/**"] },
 		{ "name": "ts-runtime-api", "paths": ["machine/ts/*.ts"] },
 		{ "name": "ts-core", "paths": ["machine/ts/core/**"] },
-		{ "name": "ts-ide", "paths": ["machine/ts/ide/**"] },
+		{ "name": "ts-ide", "paths": ["ide/**"] },
 		{ "name": "ts-render", "paths": ["machine/ts/render/**"] },
 		{ "name": "ts-platform", "paths": ["machine/ts/platform/**"] },
 		{ "name": "ts-input", "paths": ["machine/ts/input/**"] },

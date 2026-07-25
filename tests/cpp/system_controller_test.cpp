@@ -217,7 +217,7 @@ struct SystemRuntimeFixture {
 			},
 			input
 		) {
-		runtime.boot({});
+		runtime.boot();
 	}
 };
 

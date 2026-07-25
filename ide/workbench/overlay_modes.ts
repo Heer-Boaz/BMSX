@@ -1,4 +1,5 @@
 import { setOverlayResolutionMode } from '../runtime/state';
+import { blua32SymbolsForSlot, activeBlua32MediaSymbols } from '../runtime/lua_pipeline';
 import { machineManager } from '../../machine/ts/core/machine_manager';
 import { Input } from '../../machine/ts/input/manager';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
@@ -76,7 +77,7 @@ export function toggleEditor(runtime: Runtime): void {
 }
 
 export function activateEditor(runtime: Runtime): void {
-	if (!runtime.machine.cpu.activeSymbols()) {
+	if (blua32SymbolsForSlot(activeBlua32MediaSymbols(), runtime.machine.cpu.activeCartridgeSlot()) === null) {
 		return;
 	}
 	const state = machineManager.ideState;

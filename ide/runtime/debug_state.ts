@@ -7,6 +7,7 @@ import type { Value } from '../../machine/ts/machine/cpu/cpu';
 import type { SourceRange } from '../../machine/ts/machine/cpu/blua32_symbols';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { LogLevel, type Platform } from '../../machine/ts/platform/platform';
+import { blua32SymbolsForSlot, activeBlua32MediaSymbols } from './lua_pipeline';
 
 function formatInstructionOperandDebug(
 	runtime: Runtime,
@@ -30,9 +31,10 @@ export function logDebugState(runtime: Runtime, platform: Platform): void {
 	if (debug.image === null) {
 		return;
 	}
+	const symbols = blua32SymbolsForSlot(activeBlua32MediaSymbols(), debug.slot);
 	const instruction = describeBlua32InstructionAtPc(
 		debug.image,
-		debug.symbols,
+		symbols,
 		debug.pc,
 	);
 	const operandSummary = instruction.operands

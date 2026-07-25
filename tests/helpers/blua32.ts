@@ -356,20 +356,14 @@ export function linkTestBlua32Pair(
 	};
 }
 
-function systemSymbols(symbols: Blua32SymbolsImage): Blua32MediaSymbols {
-	return {
-		system: symbols,
-		cartridgeSlots: [null, null],
-	};
-}
-
 export function createTestSystemCpu(
 	finalized: TestBlua32Image,
 ): { cpu: CPU; memory: Memory; irqController: IrqController } {
 	const memory = new Memory({ systemRom: finalized.romBytes, cartridgeSlots: cartridgeSlots() });
 	const irqController = new IrqController(memory);
 	const cpu = new CPU(memory, irqController);
-	cpu.mountExecutableMedia(systemSymbols(finalized.symbols));
+	cpu.mountExecutableMedia();
+	cpu.attachProfilerDebugInfo(-1, finalized.symbols.metadata.functionIds, finalized.symbols.metadata);
 	return { cpu, memory, irqController };
 }
 

@@ -2,6 +2,7 @@ import { machineManager } from '../machine/ts/core/machine_manager';
 import type { Runtime } from '../machine/ts/machine/runtime/runtime';
 import { LogLevel } from '../machine/ts/platform/index';
 import { developmentCartridgeSource, resolveRuntimeLuaSource } from './runtime/sources';
+import { blua32SymbolsForSlot, activeBlua32MediaSymbols } from './runtime/lua_pipeline';
 import type { Viewport } from '../machine/ts/rompack/format';
 import { api } from './runtime/overlay_api';
 import * as constants from './common/constants';
@@ -192,7 +193,8 @@ class RuntimeCartEditor implements CartEditor {
 
 	public activate(): void {
 		const runtime = this.runtime;
-		if (!this.isAvailable || !runtime.machine.cpu.activeSymbols()) {
+		const activeSlot = runtime.machine.cpu.activeCartridgeSlot();
+		if (!this.isAvailable || blua32SymbolsForSlot(activeBlua32MediaSymbols(), activeSlot) === null) {
 			return;
 		}
 		editorInput.applyOverrides(true, captureKeys);

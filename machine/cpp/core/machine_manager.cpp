@@ -335,7 +335,8 @@ bool MachineManager::bootSystemFirmware() {
 			symbols.cartridgeSlots[slot] = loadBlua32SymbolsImage(image);
 		}
 	}
-	rt.boot(std::move(symbols));
+	rt.boot();
+	rt.setBlua32MediaSymbols(std::move(symbols));
 	flushSystemOutput(rt);
 	return true;
 }

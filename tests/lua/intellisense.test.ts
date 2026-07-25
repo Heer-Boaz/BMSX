@@ -13,6 +13,7 @@ import { registerLuaSourceRecord } from '../../machine/ts/lua/source_registry';
 import { machineManager } from '../../machine/ts/core/machine_manager';
 import { createRuntimeFaultState } from '../../ide/runtime/fault_state';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
+import { setActiveBlua32MediaSymbols } from '../../ide/runtime/lua_pipeline';
 
 const semanticFrontendModulePromise = import('../../machine/ts/lua/semantic/frontend');
 const semanticDiagnosticsModulePromise = import('../../machine/ts/lua/semantic/diagnostics');
@@ -121,6 +122,7 @@ function runtimeWithPausedCpuLocal(source: string) {
 	});
 	const image = linkTestSystemBlua32(compiled);
 	const cpu = createTestSystemCpu(image).cpu;
+	setActiveBlua32MediaSymbols({ system: image.symbols, cartridgeSlots: [null, null] });
 	cpu.start(image.vectors.startupFunctionAddress);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
 	const record = {

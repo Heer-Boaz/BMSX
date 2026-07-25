@@ -604,14 +604,12 @@ struct DecodedInstructionPage {
 struct Blua32MediaImage {
 	Blua32ImageLayout layout;
 	Blua32BootHeader boot;
-	const Blua32SymbolsImage* symbols = nullptr;
 	int cartridgeSlot = -1;
 };
 
 struct Blua32ExecutionImage {
 	Blua32ImageLayout layout;
 	Blua32BootHeader boot;
-	const Blua32SymbolsImage* symbols = nullptr;
 	int cartridgeSlot = -1;
 	Blua32ExecutionImage* systemImage = nullptr;
 	std::vector<Blua32RuntimeFunction> functions;
@@ -626,14 +624,14 @@ struct Blua32ExecutionImage {
 
 struct CpuDebugState {
 	const Blua32ImageLayout* image = nullptr;
-	const Blua32SymbolsImage* symbols = nullptr;
+	int slot = -1;
 	u32 pc = 0;
 	u32 instruction = 0;
 };
 
 struct CpuCallStackEntry {
 	const Blua32ImageLayout* image = nullptr;
-	const Blua32SymbolsImage* symbols = nullptr;
+	int slot = -1;
 	u32 functionAddress = 0;
 	u32 functionIndex = 0;
 	u32 pc = 0;
@@ -944,7 +942,7 @@ class CPU {
 public:
 	CPU(Memory& memory, IrqController& irqController);
 
-	void mountExecutableMedia(const Blua32MediaSymbols& symbols);
+	void mountExecutableMedia();
 	void remountExecutableMedia();
 	void clearExecutionEnvironment();
 	u32 systemStartupFunctionAddress() const { return m_systemImage->boot.startupFunctionAddress; }
@@ -1023,7 +1021,6 @@ public:
 	int getFrameDepth() const { return static_cast<int>(m_frames.size()); }
 	bool hasFrames() const { return !m_frames.empty(); }
 	CpuDebugState getDebugState() const;
-	std::optional<SourceRange> getDebugRange(u32 pc) const;
 	std::vector<CpuCallStackEntry> getCallStack() const;
 	int getFrameRegisterCount(int frameIndex) const;
 	Value readFrameRegister(int frameIndex, int registerIndex) const;
@@ -1060,20 +1057,14 @@ private:
 	void finishProtectedContinuation(size_t continuationIndex, int resultCount);
 	bool handleProtectedCallError(Value errorValue);
 	void runHousekeeping();
-	const Blua32ExecutionImage* executionImageForPc(u32 pc) const;
 	std::vector<u32> registerGlobalNames(const std::vector<std::string>& names, bool system);
 	std::optional<Blua32MediaImage> decodeExecutableMedia(
 		u32 romBaseAddress,
-		int cartridgeSlot,
-		const Blua32SymbolsImage* symbols
+		int cartridgeSlot
 	);
 	std::unique_ptr<Blua32ExecutionImage> activateExecutableImage(Blua32MediaImage&& media);
 	Blua32ExecutionImage* cartridgeImageForExecution(size_t slot);
-	void mountExecutableImages(
-		const Blua32SymbolsImage* systemSymbols,
-		const Blua32SymbolsImage* slot0Symbols,
-		const Blua32SymbolsImage* slot1Symbols
-	);
+	void mountExecutableImages();
 	void decodeImageText(Blua32ExecutionImage& image);
 	Closure* staticClosureAtAddress(u32 address);
 	Blua32RuntimeFunction* functionRecordInImage(Blua32ExecutionImage& image, u32 address) const;

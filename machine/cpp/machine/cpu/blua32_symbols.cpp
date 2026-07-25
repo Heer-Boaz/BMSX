@@ -295,4 +295,14 @@ auto blua32SourceRangeAtPc(
 	return symbols.metadata.debugRanges[wordIndex];
 }
 
+auto blua32SymbolsForSlot(
+	const Blua32MediaSymbols& symbols,
+	int slot
+) -> const Blua32SymbolsImage* {
+	if (slot < 0) {
+		return symbols.system.get();
+	}
+	return symbols.cartridgeSlots[static_cast<size_t>(slot)].get();
+}
+
 } // namespace bmsx
