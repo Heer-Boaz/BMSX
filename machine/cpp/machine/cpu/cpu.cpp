@@ -1345,17 +1345,28 @@ Blua32RuntimeFunction* CPU::functionRecordInExecutionDomain(
 	Blua32ExecutionImage& executionImage,
 	u32 address
 ) const {
-	Blua32ExecutionImage& image = address < CART_ROM_BASE
-		? *executionImage.systemImage
-		: executionImage;
-	return functionRecordInImage(image, address);
+	if (address >= CART_ROM_BASE) {
+		return functionRecordInImage(executionImage, address);
+	}
+	if (address >= RAM_BASE) {
+		return nullptr;
+	}
+	return functionRecordInImage(*executionImage.systemImage, address);
 }
 
 Blua32RuntimeFunction* CPU::functionRecordOnSelectedBus(u32 address) {
-	Blua32ExecutionImage* image = address < CART_ROM_BASE
-		? m_systemImage.get()
-		: cartridgeImageForExecution(m_memory.cartridgeController().selectedSlot());
-	return image ? functionRecordInImage(*image, address) : nullptr;
+	if (address >= CART_ROM_BASE) {
+		Blua32ExecutionImage* image =
+			cartridgeImageForExecution(m_memory.cartridgeController().selectedSlot());
+		if (!image) {
+			return nullptr;
+		}
+		return functionRecordInImage(*image, address);
+	}
+	if (address >= RAM_BASE) {
+		return nullptr;
+	}
+	return functionRecordInImage(*m_systemImage, address);
 }
 
 void CPU::start(u32 functionAddress, NativeArgsView args, u32 statusWord) {

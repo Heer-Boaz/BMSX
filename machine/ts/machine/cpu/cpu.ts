@@ -61,7 +61,7 @@ import { ScratchBuffer } from '../../common/scratchbuffer';
 import { ScratchArrayStack } from '../../common/scratchstack';
 import { luaFloorDivide, luaModulo } from '../../lua/numeric';
 import { ceilDiv4, ceilLog2, nextPowerOfTwo } from '../common/numeric';
-import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../memory/map';
+import { CART_ROM_BASE, RAM_BASE, SYSTEM_ROM_BASE } from '../memory/map';
 
 export { OpCode } from './opcode_info';
 
@@ -2394,20 +2394,27 @@ export class CPU {
 		executionImage: Blua32ExecutionImage,
 		address: number,
 	): Blua32RuntimeFunction | null {
-		const image = address < CART_ROM_BASE
-			? this.systemImage
-			: executionImage;
-		return this.functionRecordInImage(image, address);
+		if (address >= CART_ROM_BASE) {
+			return this.functionRecordInImage(executionImage, address);
+		}
+		if (address >= RAM_BASE) {
+			return null;
+		}
+		return this.functionRecordInImage(this.systemImage, address);
 	}
 
 	private functionRecordOnSelectedBus(address: number): Blua32RuntimeFunction | null {
-		const image = address < CART_ROM_BASE
-			? this.systemImage
-			: this.cartridgeImageForExecution(this.memory.cartridgeController.selectedSlot());
-		if (!image) {
+		if (address >= CART_ROM_BASE) {
+			const image = this.cartridgeImageForExecution(this.memory.cartridgeController.selectedSlot());
+			if (!image) {
+				return null;
+			}
+			return this.functionRecordInImage(image, address);
+		}
+		if (address >= RAM_BASE) {
 			return null;
 		}
-		return this.functionRecordInImage(image, address);
+		return this.functionRecordInImage(this.systemImage, address);
 	}
 
 	public systemStartupFunctionAddress(): number {

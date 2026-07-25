@@ -76,8 +76,8 @@ static uint64_t monotonic_ns(void) {
 static void usage(const char* argv0) {
 	fprintf(stderr,
 			"Usage:\n"
-			"  %s --core ./libretro_bmsx.so --no-game [--backend software|gles2] [--video fb|sdl] [--hidden-window] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--input-timeline FILE] [--paced-timeline] [--auto-timeline] [--no-audio] [--max-frames N] [--gles2-timing-report] [--timing-warmup N] [--crt-postprocessing on|off] [--crt-noise on|off] [--dither off|rgb565|msx10]\n"
-			"  %s --core ./libretro_bmsx.so GAME.rom [--slot1 AUX.rom] [--backend software|gles2] [--video fb|sdl] [--hidden-window] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--input-timeline FILE] [--paced-timeline] [--auto-timeline] [--no-audio] [--max-frames N] [--gles2-timing-report] [--timing-warmup N] [--crt-postprocessing on|off] [--crt-noise on|off] [--dither off|rgb565|msx10]\n",
+			"  %s --core ./libretro_bmsx.so --no-game [--backend software|gles2] [--video fb|sdl] [--hidden-window] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--input-timeline FILE] [--paced-timeline] [--auto-timeline] [--no-audio] [--max-frames N] [--timing-report] [--timing-warmup N] [--crt-postprocessing on|off] [--crt-noise on|off] [--dither off|rgb565|msx10]\n"
+			"  %s --core ./libretro_bmsx.so GAME.rom [--slot1 AUX.rom] [--backend software|gles2] [--video fb|sdl] [--hidden-window] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--input-timeline FILE] [--paced-timeline] [--auto-timeline] [--no-audio] [--max-frames N] [--timing-report] [--timing-warmup N] [--crt-postprocessing on|off] [--crt-noise on|off] [--dither off|rgb565|msx10]\n",
 			argv0, argv0);
 	exit(2);
 }
@@ -173,7 +173,7 @@ int main(int argc, char** argv) {
 					"--max-frames");
 			continue;
 		}
-		if (strcmp(argv[i], "--gles2-timing-report") == 0) {
+		if (strcmp(argv[i], "--timing-report") == 0) {
 			frame_timing.enabled = true;
 			continue;
 		}
@@ -239,12 +239,11 @@ int main(int argc, char** argv) {
 	if (strcmp(backend, "software") != 0 && strcmp(backend, "gles2") != 0) {
 		host_fatal("Invalid --backend %s (expected software|gles2)", backend);
 	}
-	if (frame_timing.enabled && strcmp(backend, "gles2") != 0) {
-		host_fatal("--gles2-timing-report requires --backend gles2");
-	}
 	if (strcmp(video_backend, "fb") != 0 && strcmp(video_backend, "sdl") != 0) {
 		host_fatal("Invalid --video %s (expected fb|sdl)", video_backend);
 	}
+	const bool profile_gx_upload =
+			frame_timing.enabled && strcmp(backend, "gles2") == 0;
 	const bool use_sdl_backend = strcmp(video_backend, "sdl") == 0;
 #ifdef BMSX_LIBRETRO_HOST_SDL
 	if (use_sdl_backend) {
@@ -264,7 +263,7 @@ int main(int argc, char** argv) {
 
 	BmsxCoreSession session;
 	core_session_open(&session, core_path, system_dir, save_dir);
-	session.accept_gx_upload_profile_interface = frame_timing.enabled;
+	session.accept_gx_upload_profile_interface = profile_gx_upload;
 	bmsx_core_options_override(
 			&session.options,
 			"bmsx_render_backend",
@@ -290,8 +289,8 @@ int main(int argc, char** argv) {
 
 	BmsxLibretroApi* core = &session.api;
 	core->retro_set_environment(core_session_environment);
-	if (frame_timing.enabled && !session.gx_upload_profile_interface_set) {
-		host_fatal("--gles2-timing-report requires GX upload profile interface v1");
+	if (profile_gx_upload && !session.gx_upload_profile_interface_set) {
+		host_fatal("--timing-report requires GX upload profile interface v1 for the GLES2 backend");
 	}
 	core->retro_set_video_refresh(video_presenter_refresh);
 	core->retro_set_audio_sample(audio_output_sample);
@@ -381,15 +380,17 @@ int main(int argc, char** argv) {
 		const bool presented_frame = video_presenter_end_frame();
 		const uint64_t run_end_ns = frame_timing.record_frame ? monotonic_ns() : 0u;
 		if (frame_timing.record_frame) {
-			BmsxGxUploadProfileFrameV1 gx_upload_frame;
-			if (session.gx_upload_profile.read_frame(
-					frame_timing.gx_render_frame_serial,
-					&gx_upload_frame)) {
-				frame_timing.gx_render_frame_serial =
-						gx_upload_frame.render_frame_serial;
-				bmsx_frame_timing_record_gx_upload(
-						&frame_timing.report,
-						&gx_upload_frame);
+			if (profile_gx_upload) {
+				BmsxGxUploadProfileFrameV1 gx_upload_frame;
+				if (session.gx_upload_profile.read_frame(
+						frame_timing.gx_render_frame_serial,
+						&gx_upload_frame)) {
+					frame_timing.gx_render_frame_serial =
+							gx_upload_frame.render_frame_serial;
+					bmsx_frame_timing_record_gx_upload(
+							&frame_timing.report,
+							&gx_upload_frame);
+				}
 			}
 			const uint64_t run_ns = run_end_ns - run_start_ns;
 			bmsx_frame_timing_record(&frame_timing.report,
@@ -424,7 +425,10 @@ int main(int argc, char** argv) {
 				session.frame_period_ns);
 	}
 	if (frame_timing.enabled) {
-		bmsx_frame_timing_print(&frame_timing.report, frame_timing.warmup_frames);
+		bmsx_frame_timing_print(
+				&frame_timing.report,
+				frame_timing.warmup_frames,
+				profile_gx_upload);
 	}
 
 	input_timeline_shutdown();

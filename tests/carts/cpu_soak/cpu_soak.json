@@ -1,0 +1,11 @@
+[
+	{
+		"description": "keep the unpaced CPU soak alive through the measurement window",
+		"frame": 2400,
+		"event": {
+			"type": "button",
+			"code": "Enter",
+			"down": false
+		}
+	}
+]

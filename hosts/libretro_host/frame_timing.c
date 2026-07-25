@@ -100,7 +100,10 @@ void bmsx_frame_timing_record_gx_upload(
 	}
 }
 
-void bmsx_frame_timing_print(const BmsxFrameTimingReport* report, uint64_t warmup_frames) {
+void bmsx_frame_timing_print(
+		const BmsxFrameTimingReport* report,
+		uint64_t warmup_frames,
+		bool include_gx_upload) {
 	print_histogram("retro_run", &report->retro_run);
 	print_histogram("core_without_present", &report->core_without_present);
 	print_histogram("final_blit", &report->final_blit);
@@ -110,6 +113,9 @@ void bmsx_frame_timing_print(const BmsxFrameTimingReport* report, uint64_t warmu
 			(unsigned long long)report->presented_frames,
 			(unsigned long long)report->dropped_presentations,
 			(unsigned long long)warmup_frames);
+	if (!include_gx_upload) {
+		return;
+	}
 	const double gx_average_frame_ms = report->gx_profiled_frames == 0u
 		? 0.0
 		: (double)report->gx_cpu_nanoseconds / (double)report->gx_profiled_frames / 1000000.0;

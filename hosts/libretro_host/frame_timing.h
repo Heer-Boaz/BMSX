@@ -56,4 +56,7 @@ void bmsx_frame_timing_record_gx_upload(
 	BmsxFrameTimingReport* report,
 	const BmsxGxUploadProfileFrameV1* frame);
 uint64_t bmsx_frame_timing_percentile_ms(const BmsxFrameTimingHistogram* histogram, uint64_t numerator);
-void bmsx_frame_timing_print(const BmsxFrameTimingReport* report, uint64_t warmup_frames);
+void bmsx_frame_timing_print(
+	const BmsxFrameTimingReport* report,
+	uint64_t warmup_frames,
+	bool include_gx_upload);
