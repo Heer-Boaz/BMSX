@@ -1,6 +1,7 @@
 #pragma once
 
 #include "machine/cpu/cpu.h"
+#include "machine/cpu/blua32_symbols.h"
 #include "machine/devices/dma/controller.h"
 #include "machine/devices/geometry/controller.h"
 #include "machine/devices/input/controller.h"

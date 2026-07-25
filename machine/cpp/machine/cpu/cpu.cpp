@@ -369,9 +369,6 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 	image->layout = std::move(decodedImage.layout);
 	image->boot = decodedImage.boot;
 	image->executionDomainId = decodedImage.executionDomainId;
-	image->systemImage = decodedImage.executionDomainId == SYSTEM_EXECUTION_DOMAIN_ID
-		? image.get()
-		: m_systemImage;
 	image->constPool.reserve(image->layout.constants.size());
 	for (const Blua32EncodedConstant& constant : image->layout.constants) {
 		if (std::holds_alternative<std::monostate>(constant)) {
@@ -634,7 +631,7 @@ Blua32RuntimeFunction* CPU::functionRecordInExecutionDomain(
 	if (address >= RAM_BASE) {
 		return nullptr;
 	}
-	return functionRecordInImage(*executionImage.systemImage, address);
+	return functionRecordInImage(*m_systemImage, address);
 }
 
 Blua32RuntimeFunction* CPU::functionRecordOnSelectedBus(u32 address) {

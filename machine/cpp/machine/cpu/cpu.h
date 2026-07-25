@@ -18,7 +18,6 @@
 #include "common/scratchbuffer.h"
 #include "common/primitives.h"
 #include "machine/cpu/blua32_image.h"
-#include "machine/cpu/blua32_symbols.h"
 #include "machine/cpu/call_state.h"
 #include "machine/cpu/closure.h"
 #include "machine/cpu/execution_address_space.h"
