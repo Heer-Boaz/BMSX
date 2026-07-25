@@ -45,6 +45,7 @@ import {
 	ExecutionAddressSpace,
 	SYSTEM_EXECUTION_DOMAIN_ID,
 	type Blua32DecodedExecutionImage,
+	type ExecutionDomainId,
 } from './execution_address_space';
 import { MEMORY_ACCESS_KIND_ALIGNMENT_MASKS, MemoryAccessKind } from '../memory/access_kind';
 import { ScratchBuffer } from '../../common/scratchbuffer';
@@ -216,7 +217,7 @@ export type CpuRootValueState = {
 };
 
 export type CpuRuntimeState = {
-	executionCartridgeSlot: number;
+	executionCartridgeSlot: ExecutionDomainId;
 	systemGlobals: CpuRootValueState[];
 	globals: CpuRootValueState[];
 	frames: CpuFrameState[];
@@ -776,7 +777,7 @@ export class CPU {
 		return image;
 	}
 
-	private executionImageForDomain(executionDomainId: number): Blua32ExecutionImage | null {
+	private executionImageForDomain(executionDomainId: ExecutionDomainId): Blua32ExecutionImage | null {
 		for (let index = 0; index < this.executionImages.length; index += 1) {
 			const image = this.executionImages[index];
 			if (image.executionDomainId === executionDomainId) {
@@ -812,7 +813,7 @@ export class CPU {
 		}
 	}
 
-	public reloadExecutionDomain(executionDomainId: number): void {
+	public reloadExecutionDomain(executionDomainId: ExecutionDomainId): void {
 		let imageIndex = -1;
 		for (let index = 0; index < this.executionImages.length; index += 1) {
 			if (this.executionImages[index].executionDomainId === executionDomainId) {
@@ -1053,7 +1054,7 @@ export class CPU {
 		return this.activeExecutionImage.executionDomainId >= 0;
 	}
 
-	public activeCartridgeSlot(): number {
+	public activeCartridgeSlot(): ExecutionDomainId {
 		return this.activeExecutionImage.executionDomainId;
 	}
 
@@ -3180,7 +3181,7 @@ export class CPU {
 	public restoreRuntimeState(state: CpuRuntimeState): void {
 		type RestoredObject = Table | Closure | Upvalue;
 		const restoredObjects = new Array<RestoredObject>(state.objects.length);
-		const executionImage = state.executionCartridgeSlot < 0
+		const executionImage = state.executionCartridgeSlot === SYSTEM_EXECUTION_DOMAIN_ID
 			? this.systemImage
 			: this.executionImageForDomain(state.executionCartridgeSlot)!;
 		let maxRestoredHashId = 0;

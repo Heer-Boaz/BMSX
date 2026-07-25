@@ -13,9 +13,13 @@ import type { CachedHighlight, CodeTabMode, HighlightLine, VisualLineSegment } f
 import { scheduleIdeOnce } from '../../../common/background_tasks';
 import { EditorFont } from '../view/font';
 import { getLinesSnapshot, getTextSnapshot } from '../../text/source_text';
-import { syncSemanticWorkspacePaths } from '../../contrib/intellisense/semantic/workspace/state';
+import {
+	getOrCreateSemanticWorkspace,
+	syncSemanticWorkspacePaths,
+} from '../../contrib/intellisense/semantic/workspace/state';
 import type { TextBuffer } from '../../text/text_buffer';
 import type { Position } from '../../../common/models';
+import type { ResourceDomain, ResourceIdentity } from '../../../common/resource';
 
 interface SliceResult {
 	startDisplay: number;
@@ -87,6 +91,7 @@ type BuiltinIdentifierSnapshot = { epoch: number; ids: Iterable<string> };
 
 type PendingSemanticUpdate = {
 	version: number;
+	domain: ResourceDomain;
 	path: string;
 	requestId: number;
 	buffer: TextBuffer;
@@ -124,6 +129,7 @@ export class CodeLayout {
 	private visualLinesDirty = true;
 	private semanticModel: LuaSemanticModel = null;
 	private semanticVersion = -1;
+	private semanticDomain: ResourceDomain = null;
 	private semanticPath: string = null;
 	private semanticBuffer: TextBuffer = null;
 	private readonly semanticDebounceMs: number;
@@ -244,6 +250,7 @@ export class CodeLayout {
 		this.semanticBuffer = null;
 		this.semanticModel = null;
 		this.semanticVersion = -1;
+		this.semanticDomain = null;
 		this.semanticPath = null;
 		this.lastSemanticError = null;
 		this.lastSemanticErrorVersion = -1;
@@ -266,7 +273,7 @@ export class CodeLayout {
 		this.rowSegmentsScratch.clear();
 	}
 
-	public requestSemanticUpdate(buffer: TextBuffer, documentVersion: number, path: string): void {
+	public requestSemanticUpdate(buffer: TextBuffer, documentVersion: number, identity: ResourceIdentity): void {
 		if (this.codeTabMode !== 'lua') {
 			this.pendingSemantic = null;
 			this.semanticDueAtMs = null;
@@ -274,7 +281,7 @@ export class CodeLayout {
 			this.annotationRowSig = null;
 			return;
 		}
-		this.ensureSemanticModel(buffer, documentVersion, path, 'background');
+		this.ensureSemanticModel(buffer, documentVersion, identity, 'background');
 	}
 
 	public getCachedHighlight(buffer: TextBuffer, row: number): CachedHighlight {
@@ -539,12 +546,18 @@ export class CodeLayout {
 		return this.lastSemanticError;
 	}
 
-	public getSemanticDefinitions(buffer: TextBuffer, documentVersion: number, path: string): readonly LuaDefinitionInfo[] {
-		this.ensureSemanticModel(buffer, documentVersion, path, 'background');
+	public getSemanticDefinitions(
+		buffer: TextBuffer,
+		documentVersion: number,
+		identity: ResourceIdentity,
+	): readonly LuaDefinitionInfo[] {
+		this.ensureSemanticModel(buffer, documentVersion, identity, 'background');
 		if (!this.semanticModel) {
 			return null;
 		}
-		if (this.semanticVersion !== documentVersion || this.semanticPath !== path) {
+		if (this.semanticVersion !== documentVersion
+			|| this.semanticDomain !== identity.domain
+			|| this.semanticPath !== identity.path) {
 			return null;
 		}
 		return this.semanticModel.definitions;
@@ -802,29 +815,38 @@ export class CodeLayout {
 		return columns > 0 ? columns : 1;
 	}
 
-	public getSemanticModel(buffer: TextBuffer, documentVersion: number, path: string): LuaSemanticModel {
-		this.ensureSemanticModel(buffer, documentVersion, path, 'background');
+	public getSemanticModel(buffer: TextBuffer, documentVersion: number, identity: ResourceIdentity): LuaSemanticModel {
+		this.ensureSemanticModel(buffer, documentVersion, identity, 'background');
 		return this.semanticModel;
 	}
 
 	private ensureSemanticModel(
 		buffer: TextBuffer,
 		version: number,
-		path: string,
+		identity: ResourceIdentity,
 		_mode: 'background',
 	): void {
-		if (this.semanticBuffer === buffer && this.semanticVersion === version && this.semanticPath === path) {
+		if (this.semanticBuffer === buffer
+			&& this.semanticVersion === version
+			&& this.semanticDomain === identity.domain
+			&& this.semanticPath === identity.path) {
 			if (this.semanticModel) {
 				return;
 			}
-			if (this.lastSemanticError && this.lastSemanticErrorVersion === version && this.lastSemanticErrorChunk === path) {
+			if (this.lastSemanticError
+				&& this.lastSemanticErrorVersion === version
+				&& this.lastSemanticErrorChunk === identity.path) {
 				return;
 			}
 		}
-		if (this.pendingSemantic && this.pendingSemantic.buffer === buffer && this.pendingSemantic.version === version && this.pendingSemantic.path === path) {
+		if (this.pendingSemantic
+			&& this.pendingSemantic.buffer === buffer
+			&& this.pendingSemantic.version === version
+			&& this.pendingSemantic.domain === identity.domain
+			&& this.pendingSemantic.path === identity.path) {
 			return;
 		}
-		const pending = this.updatePendingSemantic(buffer, version, path);
+		const pending = this.updatePendingSemantic(buffer, version, identity);
 		// if (mode === 'force') {
 		// 	this.semanticDueAtMs = null;
 		// 	if (this.semanticTimer) {
@@ -865,18 +887,23 @@ export class CodeLayout {
 	private updatePendingSemantic(
 		buffer: TextBuffer,
 		version: number,
-		path: string,
+		identity: ResourceIdentity,
 	): PendingSemanticUpdate {
 		this.lastSemanticError = null;
 		this.lastSemanticErrorVersion = -1;
 		this.lastSemanticErrorChunk = null;
 		const current = this.pendingSemantic;
-		if (current && current.buffer === buffer && current.version === version && current.path === path) {
+		if (current
+			&& current.buffer === buffer
+			&& current.version === version
+			&& current.domain === identity.domain
+			&& current.path === identity.path) {
 			return current;
 		}
 		const pending: PendingSemanticUpdate = {
 			version,
-			path,
+			domain: identity.domain,
+			path: identity.path,
 			requestId: this.nextSemanticRequestId,
 			buffer,
 		};
@@ -925,20 +952,29 @@ export class CodeLayout {
 				source,
 				lines: pending.lines,
 				version: pending.version,
-			}]);
+			}], getOrCreateSemanticWorkspace(pending.domain));
 			model = snapshot.getFileData(pending.path).model;
 		} catch (error) {
 			model = null;
 			errorMessage = error instanceof Error ? error.message : String(error);
 		}
 		const annotations = model ? model.annotations : null;
-		this.finalizeSemanticUpdate(pending.buffer, model, pending.version, pending.path, annotations, errorMessage);
+		this.finalizeSemanticUpdate(
+			pending.buffer,
+			model,
+			pending.version,
+			pending.domain,
+			pending.path,
+			annotations,
+			errorMessage,
+		);
 	}
 
 	private finalizeSemanticUpdate(
 		buffer: TextBuffer,
 		model: LuaSemanticModel,
 		version: number,
+		domain: ResourceDomain,
 		path: string,
 		annotations: SemanticAnnotations,
 		errorMessage?: string,
@@ -946,6 +982,7 @@ export class CodeLayout {
 		this.semanticBuffer = buffer;
 		this.semanticModel = model;
 		this.semanticVersion = version;
+		this.semanticDomain = domain;
 		this.semanticPath = path;
 		this.semanticDueAtMs = null;
 		this.pendingSemantic = null;

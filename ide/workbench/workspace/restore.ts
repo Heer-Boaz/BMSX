@@ -7,30 +7,82 @@ import {
 	clearCodeTabContexts,
 	createEntryTabContext,
 	findCodeTabContext,
-	getCodeTabContextById,
 } from '../ui/code_tab/contexts';
 import { openCodeTabForDescriptor } from '../ui/code_tab/io';
-import { workspaceSourceCache } from '../../workspace/cache';
+import { workspaceFileCache } from '../../workspace/cache';
 import { readWorkspaceFile, readWorkspaceStateFile } from './io';
 import { restoreWorkspaceContextSource } from './context_snapshot';
 import { buildWorkspaceAutosaveSignature } from './autosave';
-import type { PersistedDirtyEntry, WorkspaceAutosavePayload } from './models';
+import {
+	WORKSPACE_AUTOSAVE_VERSION,
+	type LegacyWorkspaceAutosavePayload,
+	type PersistedDirtyEntry,
+	type StoredWorkspaceAutosavePayload,
+	type WorkspaceAutosavePayload,
+} from './models';
+import {
+	resolveRuntimeLuaSourceForContext,
+	runtimeSourceDomainForProjectRootPath,
+} from '../../runtime/sources';
 
-export async function restoreWorkspaceSessionFromDisk(): Promise<string> {
+function migrateLegacyWorkspaceAutosavePayload(
+	payload: LegacyWorkspaceAutosavePayload,
+	projectRootPath: string,
+): WorkspaceAutosavePayload {
+	const sourceState = machineManager.sourceState;
+	const workspaceDomain = runtimeSourceDomainForProjectRootPath(sourceState, projectRootPath);
+	const dirtyFiles: PersistedDirtyEntry[] = payload.dirtyFiles.map(entry => {
+		const domain = entry.descriptor.type === 'lua'
+			? resolveRuntimeLuaSourceForContext(sourceState, workspaceDomain, entry.descriptor.path)!.domain
+			: workspaceDomain;
+		return {
+			descriptor: {
+				domain,
+				path: entry.descriptor.path,
+				type: entry.descriptor.type,
+				asset_id: entry.descriptor.asset_id,
+				readOnly: entry.descriptor.readOnly,
+			},
+			dirtyPath: entry.dirtyPath,
+			cursorRow: entry.cursorRow,
+			cursorColumn: entry.cursorColumn,
+			scrollRow: entry.scrollRow,
+			scrollColumn: entry.scrollColumn,
+			selectionAnchor: entry.selectionAnchor,
+		};
+	});
+	return {
+		version: WORKSPACE_AUTOSAVE_VERSION,
+		savedAt: payload.savedAt,
+		dirtyFiles,
+		breakpoints: payload.breakpoints,
+		fontVariant: payload.fontVariant,
+		overlayResolutionMode: payload.overlayResolutionMode,
+	};
+}
+
+export async function restoreWorkspaceSessionFromDisk(projectRootPath: string): Promise<string> {
 	const stateText = await readWorkspaceStateFile();
 	if (!stateText) {
 		return null;
 	}
-	let payload: WorkspaceAutosavePayload = null;
+	let storedPayload: StoredWorkspaceAutosavePayload = null;
 	try {
-		payload = JSON.parse(stateText) as WorkspaceAutosavePayload;
+		storedPayload = JSON.parse(stateText) as StoredWorkspaceAutosavePayload;
 	} catch (error) {
 		console.warn('[CartEditor] Failed to parse workspace session state:', error);
 		return null;
 	}
-	if (!payload) {
+	if (!storedPayload) {
 		return null;
 	}
+	const storedVersion: number | undefined = storedPayload.version;
+	if (storedVersion !== undefined && storedVersion !== WORKSPACE_AUTOSAVE_VERSION) {
+		throw new Error(`Unsupported workspace autosave version '${storedVersion}'.`);
+	}
+	const payload = storedVersion === undefined
+		? migrateLegacyWorkspaceAutosavePayload(storedPayload as LegacyWorkspaceAutosavePayload, projectRootPath)
+		: storedPayload as WorkspaceAutosavePayload;
 	await applyWorkspaceAutosavePayload(payload);
 	return buildWorkspaceAutosaveSignature(payload);
 }
@@ -48,18 +100,16 @@ export async function applyWorkspaceAutosavePayload(payload: WorkspaceAutosavePa
 export async function hydrateDirtyFiles(entries: PersistedDirtyEntry[]): Promise<void> {
 	for (const entry of entries) {
 		const descriptor: ResourceDescriptor = {
+			domain: entry.descriptor.domain,
 			path: entry.descriptor.path,
 			type: entry.descriptor.type,
 			asset_id: entry.descriptor.asset_id,
 			readOnly: entry.descriptor.readOnly,
 		};
-		let context = getCodeTabContextById(entry.contextId);
-		if (!context) {
-			context = findCodeTabContext(descriptor.path);
-		}
+		let context = findCodeTabContext(descriptor);
 		if (!context) {
 			await openCodeTabForDescriptor(descriptor);
-			context = findCodeTabContext(descriptor.path);
+			context = findCodeTabContext(descriptor);
 		}
 		if (!context) {
 			throw new Error(`Failed to restore code tab context for '${descriptor.path}'.`);
@@ -68,7 +118,7 @@ export async function hydrateDirtyFiles(entries: PersistedDirtyEntry[]): Promise
 		if (contents === null) {
 			continue;
 		}
-		workspaceSourceCache.set(entry.dirtyPath, contents);
+		workspaceFileCache.set(entry.dirtyPath, contents);
 		restoreWorkspaceContextSource(context, contents, entry, true);
 	}
 }

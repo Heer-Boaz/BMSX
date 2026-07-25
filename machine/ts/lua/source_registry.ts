@@ -25,6 +25,7 @@ export type LuaSourceRegistry = {
 	namespace: string;
 	projectRootPath: string;
 	can_boot_from_source: boolean;
+	revision: number;
 };
 
 export type LuaSourceMatch = {
@@ -41,6 +42,7 @@ export function registerLuaSourceRecord(registry: LuaSourceRegistry, record: Lua
 	}
 	registry.path2lua[record.source_path] = record;
 	registry.module2lua[record.module_path] = record;
+	registry.revision += 1;
 }
 
 export function resolveLuaSourceRecord(registry: LuaSourceRegistry, path: string): LuaSourceRecord | null {
@@ -64,6 +66,7 @@ export function buildLuaSources(cartSource: RawRomSource, romSource: RawRomSourc
 		namespace: index.machine.namespace,
 		projectRootPath: index.projectRootPath,
 		can_boot_from_source: false,
+		revision: 0,
 	};
 
 	let sourceCount = 0;

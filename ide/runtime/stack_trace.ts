@@ -50,7 +50,7 @@ export function buildLuaStackFrames(runtime: Runtime): StackTraceFrame[] {
 		const range = symbols === null
 			? null
 			: blua32SourceRangeAtPc(symbols, entry.textAddress, entry.pc);
-		const source = range ? range.path : machineManager.sourceState.currentPath;
+		const source = range ? range.path : machineManager.sourceState.activeLuaSources.entry_path;
 		const line = range ? range.start.line : 0;
 		const column = range ? range.start.column : 0;
 		const functionName = resolveLuaFunctionName(

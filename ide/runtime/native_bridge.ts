@@ -515,7 +515,7 @@ export function extendMarshalContext(ctx: LuaMarshalContext, segment: string): L
 }
 
 export function buildMarshalContext(): LuaMarshalContext {
-	return { moduleId: machineManager.sourceState.currentPath, path: [] };
+	return { moduleId: machineManager.sourceState.activeLuaSources.entry_path, path: [] };
 }
 
 export function describeMarshalSegment(bridge: RuntimeNativeBridge, key: Value): string {

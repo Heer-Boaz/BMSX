@@ -29,11 +29,11 @@ let diagnosticsScheduledForMs = 0;
 let lastDiagnosticsRunMs = 0;
 export function createDiagnosticProviders(): DiagnosticProviders {
 	return {
-		listLocalSymbols: (path) => {
-			return listLuaSymbols(path);
+		listLocalSymbols: (domain, path) => {
+			return listLuaSymbols(domain, path);
 		},
-		listGlobalSymbols: () => {
-			return listGlobalLuaSymbols();
+		listGlobalSymbols: (domain) => {
+			return listGlobalLuaSymbols(domain);
 		},
 		listBuiltins: () => {
 			return listLuaBuiltinFunctions();
@@ -203,6 +203,7 @@ export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
 		const source = getTextSnapshot(buffer);
 		const input: DiagnosticContextInput = {
 			id: context.id,
+			domain: context.descriptor.domain,
 			path,
 			source,
 			lines: getLinesSnapshot(buffer),
@@ -295,15 +296,24 @@ export function markDiagnosticsDirtyForChunk(path: string): void {
 
 export function getActiveSemanticDefinitions(): readonly LuaDefinitionInfo[] {
 	const context = getActiveCodeTabContext();
-	const path = context.descriptor.path;
-	return editorViewState.layout.getSemanticDefinitions(editorDocumentState.buffer, editorDocumentState.textVersion, path);
+	return editorViewState.layout.getSemanticDefinitions(
+		editorDocumentState.buffer,
+		editorDocumentState.textVersion,
+		context.descriptor,
+	);
 }
 
 export function getLuaModuleAliases(path: string): Map<string, ModuleAliasEntry> {
 	const activeContext = getActiveCodeTabContext();
 	const targetChunk = path || activeContext.descriptor.path;
-	editorViewState.layout.getSemanticDefinitions(editorDocumentState.buffer, editorDocumentState.textVersion, targetChunk);
-	const data = getOrCreateSemanticWorkspace().getSnapshot().getFileData(targetChunk);
+	editorViewState.layout.getSemanticDefinitions(
+		editorDocumentState.buffer,
+		editorDocumentState.textVersion,
+		{ domain: activeContext.descriptor.domain, path: targetChunk },
+	);
+	const data = getOrCreateSemanticWorkspace(activeContext.descriptor.domain)
+		.getSnapshot()
+		.getFileData(targetChunk);
 	if (!data || data.moduleAliases.length === 0) {
 		return new Map();
 	}
@@ -316,20 +326,10 @@ export function getLuaModuleAliases(path: string): Map<string, ModuleAliasEntry>
 }
 
 export function findContextByChunk(path: string): CodeTabContext {
-	const byChunk = findCodeTabContext(path);
-	if (byChunk) {
-		return byChunk;
-	}
-	for (const context of getCodeTabContexts()) {
-		const descriptor = context.descriptor;
-		if (descriptor) {
-			continue;
-		}
-		if (path === '__entry__') {
-			return context;
-		}
-	}
-	return null;
+	return findCodeTabContext({
+		domain: getActiveCodeTabContext().descriptor.domain,
+		path,
+	});
 }
 
 export function getDiagnosticsForRow(row: number): readonly EditorDiagnostic[] {

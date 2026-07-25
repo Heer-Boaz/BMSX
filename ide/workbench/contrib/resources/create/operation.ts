@@ -33,7 +33,7 @@ export async function confirmCreateResourcePrompt(): Promise<void> {
 	try {
 		const descriptor = await createLuaResource({ path: resourcePath, contents });
 		createResourceState.lastDirectory = directory;
-		machineManager.ideState.editor.resourcePanel.queuePendingSelection(descriptor.asset_id);
+		machineManager.ideState.editor.resourcePanel.queuePendingSelection(descriptor);
 		if (machineManager.ideState.editor.resourcePanel.isVisible()) {
 			machineManager.ideState.editor.resourcePanel.refresh();
 		}

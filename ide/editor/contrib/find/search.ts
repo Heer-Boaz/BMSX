@@ -310,7 +310,7 @@ function runGlobalSearchSlice(job: GlobalSearchJob): boolean {
 	while (job.descriptorIndex < job.descriptors.length && processed < GLOBAL_ROWS_PER_SLICE && !job.limitHit) {
 			if (job.currentLines === null) {
 				const descriptor = job.descriptors[job.descriptorIndex];
-				const source = luaPipeline.resourceSourceForChunk(descriptor.path);
+				const source = luaPipeline.resourceSourceForChunk(descriptor);
 				job.currentLines = splitText(source);
 				job.nextRow = 0;
 			}

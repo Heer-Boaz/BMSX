@@ -4,13 +4,13 @@ import type {
 	LuaDefinitionLocation,
 	LuaSymbolEntry,
 } from '../../machine/ts/lua/semantic_contracts';
-import type { ResourceDescriptor } from '../../machine/ts/rompack/tooling/resource';
+import type { ResourceDescriptor, ResourceDomain } from './resource';
 import type { StackTraceFrame } from '../../machine/ts/lua/value';
 import type { EditorCommandId } from './commands';
 import { RectBounds } from '../../machine/ts/rompack/format';
 import type { TextBuffer } from '../editor/text/text_buffer';
 import type { EditorUndoRecord } from '../editor/text/undo';
-export type { ResourceDescriptor } from '../../machine/ts/rompack/tooling/resource';
+export type { ResourceDescriptor } from './resource';
 
 export type Position = { row: number; column: number };
 
@@ -349,7 +349,7 @@ export type SymbolSearchState = {
 	mode: 'symbols' | 'references';
 	catalog: SymbolCatalogEntry[];
 	referenceCatalog: import('../editor/contrib/references/sources').ReferenceCatalogEntry[];
-	catalogContext: { scope: 'local' | 'global'; path: string };
+	catalogContext: { scope: 'local' | 'global'; domain: ResourceDomain; path: string };
 	matches: SymbolSearchResult[];
 	selectionIndex: number;
 	displayOffset: number;

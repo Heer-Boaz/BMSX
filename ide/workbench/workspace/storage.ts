@@ -2,7 +2,7 @@ import { machineManager } from '../../../machine/ts/core/machine_manager';
 import { scheduleIdeOnce } from '../../common/background_tasks';
 import { taskGate } from '../../../machine/ts/common/taskgate';
 import type { Runtime } from '../../../machine/ts/machine/runtime/runtime';
-import { workspaceSourceCache } from '../../workspace/cache';
+import { clearWorkspaceSourceCaches } from '../../workspace/cache';
 import { workspaceState } from './state';
 import { clearWorkspaceStorageConfiguration, configureWorkspaceStorage, isWorkspaceServerAvailable, scheduleWorkspaceServerRetry, writeWorkspaceStateFile } from './io';
 import { restoreWorkspaceSessionFromDisk } from './restore';
@@ -37,7 +37,7 @@ function disableWorkspacePersistence(): void {
 export function initializeWorkspaceStorage(runtime: Runtime, projectRootPath: string | null): void {
 	stopWorkspaceAutosaveLoop();
 	workspaceState.autosaveSignature = null;
-	workspaceSourceCache.clear();
+	clearWorkspaceSourceCaches();
 	if (!projectRootPath || projectRootPath.length === 0) {
 		workspaceState.autosaveEnabled = false;
 		clearWorkspaceStorageConfiguration();
@@ -51,7 +51,7 @@ export function initializeWorkspaceStorage(runtime: Runtime, projectRootPath: st
 	(async () => {
 		try {
 			await configureWorkspaceStorage(projectRootPath);
-			const signature = await restoreWorkspaceSessionFromDisk();
+			const signature = await restoreWorkspaceSessionFromDisk(projectRootPath);
 			workspaceState.autosaveSignature = signature;
 			workspaceState.serverConnected = isWorkspaceServerAvailable();
 		} catch (error) {

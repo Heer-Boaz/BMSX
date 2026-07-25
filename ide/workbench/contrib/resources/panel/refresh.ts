@@ -6,13 +6,14 @@ import {
 	buildCallHierarchyPanelItems,
 	buildResourcePanelItems,
 	computeResourcePanelMaxLineWidth,
-	findResourcePanelIndexByAssetId,
+	findResourcePanelIndexByIdentity,
 	findResourcePanelIndexByCallHierarchyNodeId,
 	type ResourcePanelFilterMode,
 } from './items';
 import { ensureResourcePanelSelectionScroll } from './navigation';
 import { resourcePanelLineCapacity } from './layout';
 import type { Runtime } from '../../../../../machine/ts/machine/runtime/runtime';
+import type { ResourceIdentity } from '../../../../common/resource';
 
 export type ResourcePanelRefreshResult = {
 	items: ResourceBrowserItem[];
@@ -27,15 +28,15 @@ export function refreshResourcePanelResourceState(options: {
 	bounds: RectBounds;
 	lineHeight: number;
 	previousDescriptor: ResourceDescriptor;
-	targetAssetId: string;
+	targetIdentity: ResourceIdentity;
 	previousIndex: number;
 	previousScroll: number;
 }): ResourcePanelRefreshResult {
 	const items = buildResourcePanelItems(options.filterMode);
 	const maxLineWidth = computeResourcePanelMaxLineWidth(items);
 	const capacity = resourcePanelLineCapacity(options.bounds, items.length, maxLineWidth, options.lineHeight);
-	const targetAssetId = options.targetAssetId || (options.previousDescriptor ? options.previousDescriptor.asset_id : null);
-	let selectionIndex = targetAssetId ? findResourcePanelIndexByAssetId(items, targetAssetId) : -1;
+	const targetIdentity = options.targetIdentity || options.previousDescriptor;
+	let selectionIndex = targetIdentity ? findResourcePanelIndexByIdentity(items, targetIdentity) : -1;
 	if (selectionIndex === -1 && options.previousIndex >= 0 && options.previousIndex < items.length) {
 		selectionIndex = options.previousIndex;
 	}

@@ -5,8 +5,8 @@ import * as constants from '../../../common/constants';
 import { showLuaErrorOverlay } from '../../../runtime_error/navigation';
 import { saveLuaResourceSource } from '../../../workspace/workspace';
 import { loadWorkspaceSourceFile, persistWorkspaceSourceFile } from '../../../workspace/files';
-import { buildDirtyFilePath } from '../../workspace/io';
-import { workspaceSourceCache } from '../../../workspace/cache';
+import { workspaceFileCache } from '../../../workspace/cache';
+import { resolveWorkspacePath } from '../../../workspace/path';
 import { applyAemSourceToRuntime } from '../../../runtime/aem';
 import { extractErrorMessage } from '../../../../machine/ts/lua/value';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
@@ -27,7 +27,7 @@ import {
 	upsertCodeEditorTab,
 } from './contexts';
 import { codeTabSessionState } from './session_state';
-import { developmentCartridgeSource } from '../../../runtime/sources';
+import { runtimeSourceProjectRootPath } from '../../../runtime/sources';
 
 function applyCodeTabDescriptor(context: CodeTabContext, descriptor: ResourceDescriptor, mode: CodeTabMode): void {
 	context.descriptor = descriptor;
@@ -52,8 +52,9 @@ export async function openAemCodeTab(descriptor: ResourceDescriptor): Promise<vo
 	try {
 		let context = codeTabSessionState.contexts.get(tabId);
 		if (!context) {
-			const cartridge = developmentCartridgeSource(machineManager.sourceState)!;
-			const source = await loadWorkspaceSourceFile(descriptor.path, cartridge.projectRootPath);
+			const sources = machineManager.sourceState;
+			const projectRootPath = runtimeSourceProjectRootPath(sources, descriptor.domain);
+			const source = await loadWorkspaceSourceFile(descriptor.path, projectRootPath);
 			if (source === null) {
 				throw new Error(`AEM resource '${descriptor.path}' is unavailable.`);
 			}
@@ -87,13 +88,14 @@ export async function save(runtime: Runtime): Promise<void> {
 	const previousAppliedGeneration = context.appliedGeneration;
 	try {
 		if (context.mode === 'lua') {
-			await saveLuaResourceSource(targetPath, source);
-			workspaceSourceCache.delete(buildDirtyFilePath(targetPath));
-			workspaceSourceCache.set(targetPath, source);
+			await saveLuaResourceSource(context.descriptor, source);
 		} else {
-			const cartridge = developmentCartridgeSource(machineManager.sourceState)!;
-			await persistWorkspaceSourceFile(targetPath, source, cartridge.projectRootPath);
-			workspaceSourceCache.set(targetPath, source);
+			const projectRootPath = runtimeSourceProjectRootPath(
+				machineManager.sourceState,
+				context.descriptor.domain,
+			);
+			await persistWorkspaceSourceFile(targetPath, source, projectRootPath);
+			workspaceFileCache.set(resolveWorkspacePath(targetPath, projectRootPath), source);
 		}
 		commitActiveCodeTabSave(context, source);
 		if (context.mode === 'lua') {

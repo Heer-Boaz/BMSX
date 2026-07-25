@@ -9,6 +9,7 @@ import { CrossFileRenameManager, convertRangeToSearchMatch } from '../../ide/edi
 import { buildCodeTabId, clearCodeTabContexts, registerCodeTabContext } from '../../ide/workbench/ui/code_tab/contexts';
 import { codeTabSessionState } from '../../ide/workbench/ui/code_tab/session_state';
 import { tabSessionState } from '../../ide/workbench/ui/tab/session_state';
+import { SYSTEM_RESOURCE_DOMAIN } from '../../ide/common/resource';
 import { machineManager } from '../../machine/ts/core/machine_manager';
 import { registerLuaSourceRecord, type LuaSourceRegistry } from '../../machine/ts/lua/source_registry';
 
@@ -67,6 +68,7 @@ test('cross file rename updates an existing code tab and semantic workspace', ()
 		namespace: 'test',
 		projectRootPath: '',
 		can_boot_from_source: true,
+		revision: 0,
 	};
 	registerLuaSourceRecord(registry, {
 		resid: 'usage.lua',
@@ -79,11 +81,10 @@ test('cross file rename updates an existing code tab and semantic workspace', ()
 	});
 	(machineManager as any).sourceState = {
 		systemLuaSources: registry,
-		cartLuaSources: null,
 		activeLuaSources: registry,
-		currentPath: registry.entry_path,
+		activeCartridgeSlot: SYSTEM_RESOURCE_DOMAIN,
+		cartridgeSlots: [null, null],
 		luaSourceRegistries: [registry],
-		luaSourceSearchRegistries: [registry],
 		moduleCompileLuaSources: [registry],
 	};
 
@@ -91,9 +92,14 @@ test('cross file rename updates an existing code tab and semantic workspace', ()
 	tabSessionState.tabs.length = 0;
 	codeTabSessionState.activeContextId = null;
 	tabSessionState.activeTabId = null;
-	resetSemanticWorkspace();
+	resetSemanticWorkspace(SYSTEM_RESOURCE_DOMAIN);
 
-	const usageDescriptor: ResourceDescriptor = { path: 'usage.lua', type: 'lua', asset_id: 'usage.lua' };
+	const usageDescriptor: ResourceDescriptor = {
+		domain: SYSTEM_RESOURCE_DOMAIN,
+		path: 'usage.lua',
+		type: 'lua',
+		asset_id: 'usage.lua',
+	};
 	const usageContext = codeContext(usageDescriptor, usageSource);
 	registerCodeTabContext(usageContext);
 	tabSessionState.tabs.push({
@@ -114,14 +120,20 @@ test('cross file rename updates an existing code tab and semantic workspace', ()
 	assert.ok(otherRanges.length > 0);
 
 	const manager = new CrossFileRenameManager();
-	const replacements = manager.applyRenameToChunk('usage.lua', otherRanges, 'worldState', 'main.lua');
+	const replacements = manager.applyRenameToChunk(
+		SYSTEM_RESOURCE_DOMAIN,
+		'usage.lua',
+		otherRanges,
+		'worldState',
+		'main.lua',
+	);
 	assert.equal(replacements, otherRanges.length);
 
 	assert.equal(usageContext.dirty, true);
 	assert.equal(usageContext.buffer.getText(), 'print(worldState.value)');
 	assert.equal(tabSessionState.tabs[0]!.dirty, true);
 
-	const updatedData = getOrCreateSemanticWorkspace().getFileData('usage.lua');
+	const updatedData = getOrCreateSemanticWorkspace(SYSTEM_RESOURCE_DOMAIN).getFileData('usage.lua');
 	assert.ok(updatedData);
 	assert.equal(updatedData!.source.trim(), 'print(worldState.value)');
 

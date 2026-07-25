@@ -1,6 +1,9 @@
 import type { Position } from '../../common/models';
 import type { FontVariant } from '../../../machine/ts/render/shared/bmsx_font';
 import type { SerializedBreakpointMap } from '../contrib/debugger/controller';
+import type { ResourceDomain } from '../../common/resource';
+
+export const WORKSPACE_AUTOSAVE_VERSION = 1;
 
 export type WorkspaceStoragePaths = {
 	projectRootPath: string;
@@ -19,6 +22,7 @@ export type SnapshotMetadata = {
 };
 
 export type SerializedDescriptor = {
+	domain: ResourceDomain;
 	path: string;
 	type: string;
 	asset_id?: string;
@@ -26,7 +30,6 @@ export type SerializedDescriptor = {
 };
 
 export type PersistedDirtyEntry = {
-	contextId: string;
 	descriptor: SerializedDescriptor;
 	dirtyPath: string;
 	cursorRow: number;
@@ -37,6 +40,7 @@ export type PersistedDirtyEntry = {
 };
 
 export type WorkspaceAutosavePayload = {
+	version: typeof WORKSPACE_AUTOSAVE_VERSION;
 	savedAt: number;
 	dirtyFiles: PersistedDirtyEntry[];
 	breakpoints?: SerializedBreakpointMap;
@@ -45,3 +49,17 @@ export type WorkspaceAutosavePayload = {
 };
 
 export type DirtyContextEntry = PersistedDirtyEntry & { text: string };
+
+export type LegacyWorkspaceAutosavePayload = {
+	version?: never;
+	savedAt: number;
+	dirtyFiles: Array<Omit<PersistedDirtyEntry, 'descriptor'> & {
+		contextId?: string;
+		descriptor: Omit<SerializedDescriptor, 'domain'>;
+	}>;
+	breakpoints?: SerializedBreakpointMap;
+	fontVariant?: FontVariant;
+	overlayResolutionMode?: 'offscreen' | 'viewport';
+};
+
+export type StoredWorkspaceAutosavePayload = WorkspaceAutosavePayload | LegacyWorkspaceAutosavePayload;

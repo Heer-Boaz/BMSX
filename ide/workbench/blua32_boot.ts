@@ -76,6 +76,5 @@ function clearBootFaults(runtime: Runtime): void {
 
 function clearLuaBootState(runtime: Runtime): void {
 	runtime.luaInitialized = false;
-	machineManager.sourceState.luaChunkEnvironmentsByPath.clear();
 	machineManager.ideState.editor.clearRuntimeErrorOverlay();
 }

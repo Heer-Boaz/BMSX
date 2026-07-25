@@ -13,6 +13,7 @@ import {
 } from '../../workspace/files';
 import { workspaceState } from './state';
 import type { WorkspaceStoragePaths } from './models';
+import type { ResourceIdentity } from '../../common/resource';
 
 let storagePaths: WorkspaceStoragePaths = null;
 let serverBackend: ServerWorkspaceBackend = null;
@@ -213,11 +214,11 @@ export async function configureWorkspaceStorage(projectRootPath: string): Promis
 	}
 }
 
-export function buildDirtyFilePath(resourcePath: string): string {
+export function buildDirtyFilePath(resource: ResourceIdentity): string {
 	if (!storagePaths) {
 		throw new Error('[WorkspaceStorage] Workspace storage not configured.');
 	}
-	return buildWorkspaceDirtyEntryPath(storagePaths.projectRootPath, resourcePath);
+	return buildWorkspaceDirtyEntryPath(storagePaths.projectRootPath, resource.domain, resource.path);
 }
 
 export function hasWorkspaceStorage(): boolean {

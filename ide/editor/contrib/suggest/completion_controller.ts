@@ -23,6 +23,7 @@ import {
 	ParameterHintState,
 } from '../../../common/models';
 import type { LuaBuiltinDescriptor, LuaDefinitionRange, LuaSymbolEntry } from '../../../../machine/ts/lua/semantic_contracts';
+import { resourceIdentityKey } from '../../../common/resource';
 import * as constants from '../../../common/constants';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from '../../../input/keyboard/key_input';
 import { isLuaCommentContext } from '../../../common/text';
@@ -107,6 +108,10 @@ export class CompletionController {
 		return getActiveCodeTabContext().descriptor.path;
 	}
 
+	protected getActiveDomain() {
+		return getActiveCodeTabContext().descriptor.domain;
+	}
+
 	protected getSemanticDefinitions(): readonly LuaDefinitionInfo[] {
 		return getActiveSemanticDefinitions();
 	}
@@ -173,6 +178,7 @@ export class CompletionController {
 	private readonly localCompletionCache: Map<string, LocalCompletionCacheEntry> = new Map();
 	private cachedGlobalCompletionItems: LuaCompletionItem[] = null;
 	private cachedGlobalCompletionVersion = -1;
+	private cachedGlobalCompletionDomain = -1;
 	private sharedCompletionItems: LuaCompletionItem[] = null;
 	private sharedCompletionVersion = -1;
 	private pendingCompletionRequest: { context: CompletionContext; trigger: CompletionTrigger; elapsed: number } = null;
@@ -611,8 +617,8 @@ export class CompletionController {
 	}
 
 	private ensureLocalCompletionCache(): LocalCompletionCacheEntry {
-		const key = this.getActivePath();
-		if (!key) return null;
+		const descriptor = getActiveCodeTabContext().descriptor;
+		const key = resourceIdentityKey(descriptor);
 		const path = this.getActivePath();
 		const currentVersion = this.getTextVersion();
 		const cached = this.localCompletionCache.get(key);
@@ -637,16 +643,20 @@ export class CompletionController {
 
 	private getGlobalCompletionItems(): LuaCompletionItem[] {
 		const version = this.getTextVersion();
-		if (this.cachedGlobalCompletionItems && this.cachedGlobalCompletionVersion === version) {
+		const domain = this.getActiveDomain();
+		if (this.cachedGlobalCompletionItems
+			&& this.cachedGlobalCompletionVersion === version
+			&& this.cachedGlobalCompletionDomain === domain) {
 			return this.cachedGlobalCompletionItems;
 		}
-		const entries = listGlobalLuaSymbols();
+		const entries = listGlobalLuaSymbols(domain);
 		const items = this.buildSymbolCompletionItems(entries, 'global');
 		const apiItem: LuaCompletionItem = { label: 'api', insertText: 'api', sortKey: 'global:api', kind: 'global', detail: 'Runtime API root' };
 		items.push(apiItem);
 		items.sort((a, b) => a.label.localeCompare(b.label));
 		this.cachedGlobalCompletionItems = items;
 		this.cachedGlobalCompletionVersion = version;
+		this.cachedGlobalCompletionDomain = domain;
 		this.sharedCompletionItems = null;
 		this.sharedCompletionVersion = -1;
 		return items;
@@ -798,7 +808,7 @@ export class CompletionController {
 		}
 		let symbols: LuaSymbolEntry[] = [];
 		try {
-			symbols = listLuaSymbols(moduleAlias.module);
+			symbols = listLuaSymbols(this.getActiveDomain(), moduleAlias.module);
 		} catch {
 			symbols = [];
 		}

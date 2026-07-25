@@ -1,4 +1,10 @@
-import type { ResourceDescriptor } from '../../../../../machine/ts/rompack/tooling/resource';
+import {
+	CARTRIDGE_RESOURCE_DOMAINS,
+	resourceIdentityEquals,
+	SYSTEM_RESOURCE_DOMAIN,
+	type ResourceDescriptor,
+	type ResourceIdentity,
+} from '../../../../common/resource';
 import { measureTextRange } from '../../../../editor/common/text/layout';
 import type { ResourceBrowserItem } from '../../../../common/models';
 import { listResourcesStrict } from '../catalog';
@@ -49,10 +55,13 @@ export function computeResourcePanelMaxLineWidth(items: readonly ResourceBrowser
 	return maxWidth;
 }
 
-export function findResourcePanelIndexByAssetId(items: readonly ResourceBrowserItem[], assetId: string): number {
+export function findResourcePanelIndexByIdentity(
+	items: readonly ResourceBrowserItem[],
+	identity: ResourceIdentity,
+): number {
 	for (let index = 0; index < items.length; index += 1) {
 		const descriptor = items[index].descriptor;
-		if (descriptor && descriptor.asset_id === assetId) {
+		if (descriptor && resourceIdentityEquals(descriptor, identity)) {
 			return index;
 		}
 	}
@@ -89,33 +98,45 @@ function buildResourceTreeItems(entries: readonly ResourceDescriptor[], filterMo
 		});
 		return items;
 	}
-	const root: ResourceDirectory = { name: '.', children: new Map(), files: [] };
-	for (let entryIndex = 0; entryIndex < entries.length; entryIndex += 1) {
-		const entry = entries[entryIndex];
-		const path = entry.path;
-		const parts = path.split('/').filter(part => part.length > 0 && part !== '.');
-		if (parts.length === 0) {
-			root.files.push({ name: path, descriptor: entry });
-			continue;
-		}
-		let directory = root;
-		for (let partIndex = 0; partIndex < parts.length; partIndex += 1) {
-			const part = parts[partIndex];
-			const isLeaf = partIndex === parts.length - 1;
-			if (isLeaf) {
-				directory.files.push({ name: part, descriptor: entry });
+	const domains = [SYSTEM_RESOURCE_DOMAIN, ...CARTRIDGE_RESOURCE_DOMAINS] as const;
+	items.push({ line: './', contentStartColumn: 0, descriptor: null });
+	for (let domainIndex = 0; domainIndex < domains.length; domainIndex += 1) {
+		const domain = domains[domainIndex];
+		const root: ResourceDirectory = { name: '.', children: new Map(), files: [] };
+		for (let entryIndex = 0; entryIndex < entries.length; entryIndex += 1) {
+			const entry = entries[entryIndex];
+			if (entry.domain !== domain) {
 				continue;
 			}
-			let child = directory.children.get(part);
-			if (!child) {
-				child = { name: part, children: new Map(), files: [] };
-				directory.children.set(part, child);
+			const path = entry.path;
+			const parts = path.split('/').filter(part => part.length > 0 && part !== '.');
+			if (parts.length === 0) {
+				root.files.push({ name: path, descriptor: entry });
+				continue;
 			}
-			directory = child;
+			let directory = root;
+			for (let partIndex = 0; partIndex < parts.length; partIndex += 1) {
+				const part = parts[partIndex];
+				const isLeaf = partIndex === parts.length - 1;
+				if (isLeaf) {
+					directory.files.push({ name: part, descriptor: entry });
+					continue;
+				}
+				let child = directory.children.get(part);
+				if (!child) {
+					child = { name: part, children: new Map(), files: [] };
+					directory.children.set(part, child);
+				}
+				directory = child;
+			}
 		}
+		if (root.files.length === 0 && root.children.size === 0) {
+			continue;
+		}
+		const label = domain === SYSTEM_RESOURCE_DOMAIN ? 'system' : `slot${domain}`;
+		items.push({ line: `${label}/`, contentStartColumn: 0, descriptor: null });
+		appendResourceDirectory(items, root, 1);
 	}
-	items.push({ line: './', contentStartColumn: 0, descriptor: null });
-	appendResourceDirectory(items, root, 0);
 	return items;
 }
 

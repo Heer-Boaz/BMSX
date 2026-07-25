@@ -22,7 +22,11 @@ import { beginNavigationCapture, completeNavigation } from '../../../navigation/
 import { showEditorMessage } from '../../../common/feedback_state';
 import * as constants from '../../../common/constants';
 import { machineManager } from '../../../../machine/ts/core/machine_manager';
-import { resolveRuntimeLuaSource } from '../../../runtime/sources';
+import {
+	resolveRuntimeLuaSource,
+	resolveRuntimeLuaSourceForContext,
+} from '../../../runtime/sources';
+import { SYSTEM_RESOURCE_DOMAIN, type ResourceDomain } from '../../../common/resource';
 import { focusChunkSource } from '../../contrib/resources/navigation';
 import {
 	findCodeTabContext,
@@ -44,6 +48,7 @@ export type CodeTabSelection = {
 export type LuaCodeTabSourceSnapshot = {
 	contextId: string;
 	generation: number;
+	domain: ResourceDomain;
 	path: string;
 	source: string;
 };
@@ -97,17 +102,10 @@ export function capturePendingLuaCodeTabSources(): LuaCodeTabSourceSnapshot[] {
 			continue;
 		}
 		const source = getTextSnapshot(context.buffer);
-		const match = resolveRuntimeLuaSource(sources, context.descriptor.path)!;
-		let installedSources = sources.systemInstalledBlua32Sources;
-		if (match.registry !== sources.systemLuaSources) {
-			for (let slot = 0; slot < sources.cartridgeSlots.length; slot += 1) {
-				const cartridge = sources.cartridgeSlots[slot];
-				if (cartridge !== null && match.registry === cartridge.luaSources) {
-					installedSources = cartridge.installedBlua32Sources;
-					break;
-				}
-			}
-		}
+		const match = resolveRuntimeLuaSource(sources, context.descriptor)!;
+		const installedSources = match.domain === SYSTEM_RESOURCE_DOMAIN
+			? sources.systemInstalledBlua32Sources
+			: sources.cartridgeSlots[match.domain]!.installedBlua32Sources;
 		if (context.saveGeneration === context.appliedGeneration
 			&& source === installedSources.get(match.record.module_path)) {
 			continue;
@@ -115,6 +113,7 @@ export function capturePendingLuaCodeTabSources(): LuaCodeTabSourceSnapshot[] {
 		snapshots.push({
 			contextId: context.id,
 			generation: context.saveGeneration,
+			domain: context.descriptor.domain,
 			path: context.descriptor.path,
 			source,
 		});
@@ -208,8 +207,15 @@ export function navigateToLuaDefinition(runtime: Runtime, definition: LuaDefinit
 	clearReferenceHighlights();
 	let targetContextId: string = null;
 	try {
-		focusChunkSource(runtime, definition.path);
-		const context = findCodeTabContext(definition.path);
+		const activeDomain = getActiveCodeTabContext().descriptor.domain;
+		const source = resolveRuntimeLuaSourceForContext(
+			machineManager.sourceState,
+			activeDomain,
+			definition.path,
+		)!;
+		const identity = { domain: source.domain, path: source.record.source_path };
+		focusChunkSource(runtime, identity);
+		const context = findCodeTabContext(identity);
 		if (context) {
 			targetContextId = context.id;
 		}

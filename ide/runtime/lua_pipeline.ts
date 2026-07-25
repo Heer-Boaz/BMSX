@@ -37,6 +37,7 @@ import {
 } from '../../machine/ts/rompack/tooling/blua32_linker';
 import { buildBlua32Tail } from '../../machine/ts/rompack/tooling/blua32_tail';
 import type { RawRomSource, RomSourceLayer } from '../../machine/ts/rompack/source';
+import type { ResourceIdentity } from '../common/resource';
 
 export type RebuiltBlua32Image = {
 	linked: LinkedBlua32Image;
@@ -399,8 +400,6 @@ export function bootActiveBlua32Media(runtime: Runtime, rebuildBlua32Media: bool
 			sources.cartridgeBlua32MediaDirty,
 		));
 	}
-	const sources = machineManager.sourceState;
-	sources.currentPath = sources.activeLuaSources.entry_path;
 	runtime.resetForSystemBoot();
 	try {
 		runtime.boot();
@@ -412,10 +411,10 @@ export function bootActiveBlua32Media(runtime: Runtime, rebuildBlua32Media: bool
 	setActiveBlua32MediaSymbols(loadBlua32MediaSymbols());
 }
 
-export function resourceSourceForChunk(path: string): string {
-	const luaSource = resolveRuntimeLuaSource(machineManager.sourceState, path);
+export function resourceSourceForChunk(identity: ResourceIdentity): string {
+	const luaSource = resolveRuntimeLuaSource(machineManager.sourceState, identity);
 	if (!luaSource) {
-		throw new Error(`Missing Lua source for '${path}'.`);
+		throw new Error(`Missing Lua source for '${identity.path}'.`);
 	}
 	return readWorkspaceLuaSourceText(luaSource.registry, luaSource.record);
 }

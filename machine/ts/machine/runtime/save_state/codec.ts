@@ -1571,8 +1571,17 @@ function encodeCpuRuntimeState(state: CpuRuntimeState): CpuRuntimeState {
 
 function decodeCpuRuntimeState(value: unknown, label: string): CpuRuntimeState {
 	const object = requireObject(value, label);
+	const executionCartridgeSlot = requireNumberValue(
+		requireObjectKey(object, 'executionCartridgeSlot', label, 'cpuState.executionCartridgeSlot'),
+		'cpuState.executionCartridgeSlot',
+	);
+	if (executionCartridgeSlot !== -1
+		&& executionCartridgeSlot !== 0
+		&& executionCartridgeSlot !== 1) {
+		throw new Error('cpuState.executionCartridgeSlot must identify the system or a cartridge slot.');
+	}
 	return {
-		executionCartridgeSlot: requireObjectKey(object, 'executionCartridgeSlot', label, 'cpuState.executionCartridgeSlot') as number,
+		executionCartridgeSlot,
 		systemGlobals: decodeVector(
 			requireObjectKey(object, 'systemGlobals', label, 'cpuState.systemGlobals'),
 			'cpuState.systemGlobals',

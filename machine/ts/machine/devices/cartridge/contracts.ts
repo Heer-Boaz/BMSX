@@ -1,4 +1,5 @@
 export const CARTRIDGE_SLOT_COUNT = 2;
+export type CartridgeSlotIndex = 0 | 1;
 export const CARTRIDGE_BOARD_RAM = 1 << 0;
 export const CARTRIDGE_BOARD_MAILBOX = 1 << 1;
 

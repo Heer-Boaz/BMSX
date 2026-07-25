@@ -5,6 +5,7 @@ import { extractHoverExpression } from '../intellisense/engine';
 import { buildIncomingCallHierarchyView, type CallHierarchyView } from './view';
 import { editorDocumentState } from '../../editing/document_state';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
+import { SYSTEM_RESOURCE_DOMAIN } from '../../../common/resource';
 
 export type CallHierarchyQueryResult =
 	| { kind: 'success'; view: CallHierarchyView; }
@@ -17,7 +18,7 @@ export function resolveCallHierarchyViewAt(runtime: Runtime, row: number, column
 		return { kind: 'missing_definition' };
 	}
 	const path = context.descriptor.path;
-	const snapshot = buildEditorSemanticSnapshot(path, editorDocumentState.buffer, editorDocumentState.textVersion);
+	const snapshot = buildEditorSemanticSnapshot(context.descriptor, editorDocumentState.buffer, editorDocumentState.textVersion);
 	const frontend = createEditorSemanticFrontend(snapshot);
 	const resolution = frontend.findReferencesByPosition(path, row + 1, column + 1);
 	const expression = extractHoverExpression(row, column, path)?.expression;
@@ -28,7 +29,7 @@ export function resolveCallHierarchyViewAt(runtime: Runtime, row: number, column
 	let rootReadOnly = false;
 	for (let index = 0; index < descriptors.length; index += 1) {
 		const descriptor = descriptors[index];
-		if (descriptor.path === path) {
+		if (descriptor.domain === context.descriptor.domain && descriptor.path === path) {
 			rootReadOnly = descriptor.readOnly === true;
 			break;
 		}
@@ -36,7 +37,10 @@ export function resolveCallHierarchyViewAt(runtime: Runtime, row: number, column
 	const allowedPaths = new Set<string>();
 	for (let index = 0; index < descriptors.length; index += 1) {
 		const descriptor = descriptors[index];
-		if ((descriptor.readOnly === true) === rootReadOnly) {
+		if ((descriptor.domain === context.descriptor.domain
+			|| (context.descriptor.domain !== SYSTEM_RESOURCE_DOMAIN
+				&& descriptor.domain === SYSTEM_RESOURCE_DOMAIN))
+			&& (descriptor.readOnly === true) === rootReadOnly) {
 			allowedPaths.add(descriptor.path);
 		}
 	}

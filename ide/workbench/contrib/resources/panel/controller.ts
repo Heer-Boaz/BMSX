@@ -11,7 +11,7 @@ import { measureTextRange } from '../../../../editor/common/text/layout';
 import type { CallHierarchyView } from '../../../../editor/contrib/call_hierarchy/view';
 import { editorViewState } from '../../../../editor/ui/view/state';
 import {
-	findResourcePanelIndexByAssetId,
+	findResourcePanelIndexByIdentity,
 	findResourcePanelIndexByCallHierarchyNodeId,
 	type ResourcePanelFilterMode,
 } from './items';
@@ -43,6 +43,7 @@ import {
 } from './refresh';
 import { handleResourcePanelKeyboardInput } from './keyboard';
 import type { Runtime } from '../../../../../machine/ts/machine/runtime/runtime';
+import type { ResourceIdentity } from '../../../../common/resource';
 
 export type ResourcePanelItemMetrics = {
 	item: ResourceBrowserItem;
@@ -93,7 +94,7 @@ export class ResourcePanelController {
 	public hoverIndex = -1;
 	public maxLineWidth = 0;
 	private callHierarchyView: CallHierarchyView = null;
-	private pendingSelectionAssetId: string = null;
+	private pendingSelectionIdentity: ResourceIdentity = null;
 	private readonly callHierarchyExpandedNodeIds = new Set<string>();
 	private readonly bounds: RectBounds = create_rect_bounds();
 	private readonly layout: ResourcePanelLayout = createResourcePanelLayout(this.bounds);
@@ -285,7 +286,7 @@ export class ResourcePanelController {
 		this.hoverIndex = -1;
 		this.hscroll = 0;
 		this.maxLineWidth = 0;
-		this.pendingSelectionAssetId = null;
+		this.pendingSelectionIdentity = null;
 	}
 
 	public refresh(): void {
@@ -298,7 +299,7 @@ export class ResourcePanelController {
 			this.refreshCallHierarchyContents();
 			return;
 		}
-		const previousDescriptor = this.pendingSelectionAssetId
+		const previousDescriptor = this.pendingSelectionIdentity
 			? null
 			: (this.selectionIndex >= 0 && this.selectionIndex < this.items.length)
 				? this.items[this.selectionIndex].descriptor
@@ -309,11 +310,11 @@ export class ResourcePanelController {
 			bounds,
 			lineHeight: this.lineHeight,
 			previousDescriptor,
-			targetAssetId: this.pendingSelectionAssetId,
+			targetIdentity: this.pendingSelectionIdentity,
 			previousIndex: this.selectionIndex,
 			previousScroll: this.scroll,
 		}));
-		this.pendingSelectionAssetId = null;
+		this.pendingSelectionIdentity = null;
 	}
 
 	private refreshCallHierarchyContents(): void {
@@ -335,21 +336,21 @@ export class ResourcePanelController {
 		}));
 	}
 
-	queuePendingSelection(assetId: string): void {
-		this.pendingSelectionAssetId = assetId;
+	queuePendingSelection(identity: ResourceIdentity): void {
+		this.pendingSelectionIdentity = identity;
 	}
 
 	applyPendingSelection(): void {
-		if (!this.visible || !this.pendingSelectionAssetId) {
+		if (!this.visible || !this.pendingSelectionIdentity) {
 			return;
 		}
-		const index = findResourcePanelIndexByAssetId(this.items, this.pendingSelectionAssetId);
+		const index = findResourcePanelIndexByIdentity(this.items, this.pendingSelectionIdentity);
 		if (index === -1) {
 			return;
 		}
 		this.selectionIndex = index;
 		this.ensureSelectionVisible();
-		this.pendingSelectionAssetId = null;
+		this.pendingSelectionIdentity = null;
 	}
 
 	public moveSelectionBy(delta: number): void {

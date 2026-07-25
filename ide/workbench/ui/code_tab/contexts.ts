@@ -11,13 +11,18 @@ import type {
 import * as luaPipeline from '../../../runtime/lua_pipeline';
 import { PieceTreeBuffer } from '../../../editor/text/piece_tree_buffer';
 import { listResources } from '../../../workspace/workspace';
-import { clearOpenWorkspacePathDirtyState, setOpenWorkspacePathDirty } from '../../../workspace/open_dirty';
+import { clearOpenWorkspaceDocumentDirtyState, setOpenWorkspaceDocumentDirty } from '../../../workspace/open_dirty';
 import { computeResourceTabTitle } from '../tab/titles';
 import { codeTabSessionState } from './session_state';
 import { tabSessionState } from '../tab/session_state';
+import {
+	resourceIdentityEquals,
+	resourceIdentityKey,
+	type ResourceIdentity,
+} from '../../../common/resource';
 
 function resolveLuaSource(descriptor: ResourceDescriptor): string {
-	return luaPipeline.resourceSourceForChunk(descriptor.path);
+	return luaPipeline.resourceSourceForChunk(descriptor);
 }
 
 function createCodeTabContext(descriptor: ResourceDescriptor, initialSource: string, mode: CodeTabMode): CodeTabContext {
@@ -53,7 +58,7 @@ function createCodeTabContext(descriptor: ResourceDescriptor, initialSource: str
 }
 
 export function buildCodeTabId(descriptor: ResourceDescriptor): string {
-	return `code:${descriptor.path}`;
+	return `code:${resourceIdentityKey(descriptor)}`;
 }
 
 export function setTabRuntimeSyncState(tabId: string, runtimeSyncState: EditorRuntimeSyncState, runtimeSyncMessage: string): void {
@@ -91,8 +96,11 @@ export function upsertCodeEditorTab(context: CodeTabContext): EditorTabDescripto
 
 export function createEntryTabContext(): CodeTabContext {
 	const luaDescriptors = listResources().filter(r => r.type === 'lua');
-	const preferredRegistry = machineManager.sourceState.luaSourceRegistries[0];
-	const descriptor = luaDescriptors.find(r => r.path === preferredRegistry.entry_path)!;
+	const sources = machineManager.sourceState;
+	const descriptor = luaDescriptors.find(r =>
+		r.domain === sources.activeCartridgeSlot
+		&& r.path === sources.activeLuaSources.entry_path
+	)!;
 	return createLuaCodeTabContext(descriptor);
 }
 
@@ -130,12 +138,12 @@ export function getCodeTabContexts(): Iterable<CodeTabContext> {
 
 export function registerCodeTabContext(context: CodeTabContext): void {
 	codeTabSessionState.contexts.set(context.id, context);
-	setOpenWorkspacePathDirty(context.descriptor.path, context.dirty);
+	setOpenWorkspaceDocumentDirty(context.descriptor, context.dirty);
 }
 
 export function clearCodeTabContexts(): void {
 	codeTabSessionState.contexts.clear();
-	clearOpenWorkspacePathDirtyState();
+	clearOpenWorkspaceDocumentDirtyState();
 }
 
 export function setTabDirty(tabId: string, dirty: boolean): void {
@@ -143,7 +151,7 @@ export function setTabDirty(tabId: string, dirty: boolean): void {
 	tab.dirty = dirty;
 	const context = codeTabSessionState.contexts.get(tabId);
 	if (context) {
-		setOpenWorkspacePathDirty(context.descriptor.path, dirty);
+		setOpenWorkspaceDocumentDirty(context.descriptor, dirty);
 	}
 }
 
@@ -170,9 +178,9 @@ export function isEditableCodeTab(): boolean {
 	return isCodeTabActive() && !codeTabSessionState.activeContextReadOnly;
 }
 
-export function findCodeTabContext(path: string): CodeTabContext {
+export function findCodeTabContext(identity: ResourceIdentity): CodeTabContext {
 	for (const context of codeTabSessionState.contexts.values()) {
-		if (context.descriptor.path === path) {
+		if (resourceIdentityEquals(context.descriptor, identity)) {
 			return context;
 		}
 	}

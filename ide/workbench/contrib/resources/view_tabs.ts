@@ -1,4 +1,4 @@
-import type { ResourceDescriptor } from '../../../../machine/ts/rompack/tooling/resource';
+import { resourceIdentityKey, type ResourceDescriptor } from '../../../common/resource';
 import type { EditorTabId, ResourceViewerState } from '../../../common/models';
 import { setActiveTab } from '../../ui/tabs';
 import { tabSessionState } from '../../ui/tab/session_state';
@@ -16,7 +16,7 @@ export function getActiveResourceViewer(): ResourceViewerState {
 }
 
 export function openResourceViewerTab(descriptor: ResourceDescriptor): void {
-	const tabId: EditorTabId = `resource:${descriptor.path}`;
+	const tabId: EditorTabId = `resource:${resourceIdentityKey(descriptor)}`;
 	let tab = null;
 	for (let index = 0; index < tabSessionState.tabs.length; index += 1) {
 		const candidate = tabSessionState.tabs[index];

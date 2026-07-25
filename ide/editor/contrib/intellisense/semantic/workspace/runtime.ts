@@ -5,6 +5,12 @@ import { machineManager } from '../../../../../../machine/ts/core/machine_manage
 import { getOrCreateSemanticWorkspace, syncSemanticWorkspacePath, type SemanticWorkspacePathInput } from './state';
 import type { LuaDefinitionInfo } from '../../../../../../machine/ts/lua/syntax/ast/index';
 import type { FileSemanticData, LuaSemanticModel, LuaSemanticWorkspace, LuaSemanticWorkspaceSnapshot } from '../../../../../../machine/ts/lua/semantic/model';
+import type { LuaSourceRegistry } from '../../../../../../machine/ts/lua/source_registry';
+import {
+	SYSTEM_RESOURCE_DOMAIN,
+	type ResourceDomain,
+} from '../../../../../common/resource';
+import { runtimeLuaSourceRegistry } from '../../../../../runtime/sources';
 
 export type RuntimeSemanticCacheEntry = {
 	source: string;
@@ -15,11 +21,33 @@ export type RuntimeSemanticCacheEntry = {
 	analysis?: FileSemanticData;
 };
 
-let primedProjectWorkspace: LuaSemanticWorkspace = null;
-export const runtimeSemanticCache: Map<string, RuntimeSemanticCacheEntry> = new Map();
+type PrimedWorkspaceState = {
+	primaryRegistry: LuaSourceRegistry;
+	primaryRevision: number;
+	systemRegistry: LuaSourceRegistry;
+	systemRevision: number;
+};
 
-export function cacheRuntimeSemanticWorkspaceAnalysis(path: string, source: string, data: FileSemanticData, parsed?: ParsedLuaChunk): void {
-	runtimeSemanticCache.set(path, {
+const primedWorkspaceStates = new WeakMap<LuaSemanticWorkspace, PrimedWorkspaceState>();
+export const runtimeSemanticCache = new Map<ResourceDomain, Map<string, RuntimeSemanticCacheEntry>>();
+
+export function runtimeSemanticCacheForDomain(domain: ResourceDomain): Map<string, RuntimeSemanticCacheEntry> {
+	let cache = runtimeSemanticCache.get(domain);
+	if (!cache) {
+		cache = new Map();
+		runtimeSemanticCache.set(domain, cache);
+	}
+	return cache;
+}
+
+export function cacheRuntimeSemanticWorkspaceAnalysis(
+	domain: ResourceDomain,
+	path: string,
+	source: string,
+	data: FileSemanticData,
+	parsed?: ParsedLuaChunk,
+): void {
+	runtimeSemanticCacheForDomain(domain).set(path, {
 		source,
 		model: data.model,
 		definitions: data.model.definitions,
@@ -29,9 +57,16 @@ export function cacheRuntimeSemanticWorkspaceAnalysis(path: string, source: stri
 	});
 }
 
-export function cacheRuntimeSemanticParseState(path: string, source: string, lines: readonly string[], parsed: ParsedLuaChunk): void {
-	const cacheEntry = runtimeSemanticCache.get(path);
-	runtimeSemanticCache.set(path, {
+export function cacheRuntimeSemanticParseState(
+	domain: ResourceDomain,
+	path: string,
+	source: string,
+	lines: readonly string[],
+	parsed: ParsedLuaChunk,
+): void {
+	const cache = runtimeSemanticCacheForDomain(domain);
+	const cacheEntry = cache.get(path);
+	cache.set(path, {
 		source,
 		model: cacheEntry?.model,
 		definitions: cacheEntry?.definitions,
@@ -40,41 +75,74 @@ export function cacheRuntimeSemanticParseState(path: string, source: string, lin
 	});
 }
 
-export function syncRuntimeSemanticWorkspacePath(input: SemanticWorkspacePathInput, workspace: LuaSemanticWorkspace = getOrCreateSemanticWorkspace()): FileSemanticData {
+export function syncRuntimeSemanticWorkspacePath(
+	domain: ResourceDomain,
+	input: SemanticWorkspacePathInput,
+	workspace: LuaSemanticWorkspace = getOrCreateSemanticWorkspace(domain),
+): FileSemanticData {
 	const data = syncSemanticWorkspacePath(input, workspace);
-	cacheRuntimeSemanticWorkspaceAnalysis(input.path, data.source, data, data.parsed);
+	cacheRuntimeSemanticWorkspaceAnalysis(domain, input.path, data.source, data, data.parsed);
 	return data;
 }
 
-export function primeRuntimeSemanticWorkspaceProjectSources(workspace: LuaSemanticWorkspace = getOrCreateSemanticWorkspace()): LuaSemanticWorkspace {
-	if (primedProjectWorkspace === workspace) {
+export function primeRuntimeSemanticWorkspaceProjectSources(
+	domain: ResourceDomain,
+	workspace: LuaSemanticWorkspace = getOrCreateSemanticWorkspace(domain),
+): LuaSemanticWorkspace {
+	const sources = machineManager.sourceState;
+	const primaryRegistry = runtimeLuaSourceRegistry(sources, domain)!;
+	const systemRegistry = sources.systemLuaSources;
+	const primed = primedWorkspaceStates.get(workspace);
+	if (primed
+		&& primed.primaryRegistry === primaryRegistry
+		&& primed.primaryRevision === primaryRegistry.revision
+		&& primed.systemRegistry === systemRegistry
+		&& primed.systemRevision === systemRegistry.revision) {
 		return workspace;
 	}
-	const sources = machineManager.sourceState;
-	for (let registryIndex = 0; registryIndex < sources.luaSourceRegistries.length; registryIndex += 1) {
-		const registry = sources.luaSourceRegistries[registryIndex];
+	const cache = runtimeSemanticCacheForDomain(domain);
+	const registries = domain === SYSTEM_RESOURCE_DOMAIN
+		? [systemRegistry]
+		: [primaryRegistry, systemRegistry];
+	const seenPaths = new Set<string>();
+	for (let registryIndex = 0; registryIndex < registries.length; registryIndex += 1) {
+		const registry = registries[registryIndex];
+		const sourceDomain = registry === systemRegistry ? SYSTEM_RESOURCE_DOMAIN : domain;
 		for (let recordIndex = 0; recordIndex < registry.records.length; recordIndex += 1) {
 			const path = registry.records[recordIndex].source_path;
-			const cacheEntry = runtimeSemanticCache.get(path);
-			const source = cacheEntry ? cacheEntry.source : luaPipeline.resourceSourceForChunk(path);
+			if (seenPaths.has(path)) {
+				continue;
+			}
+			seenPaths.add(path);
+			const cacheEntry = cache.get(path);
+			const source = luaPipeline.resourceSourceForChunk({ domain: sourceDomain, path });
 			const existing = workspace.getFileData(path);
 			if (existing && existing.source === source) {
 				continue;
 			}
-			const lines = cacheEntry?.lines ?? splitText(source);
-			const parsed = cacheEntry?.parsed;
+			const cachedSource = cacheEntry?.source === source ? cacheEntry : null;
+			const lines = cachedSource?.lines ?? splitText(source);
+			const parsed = cachedSource?.parsed;
 			workspace.updateFile(path, source, lines, parsed, undefined);
 			const data = workspace.getFileData(path);
-			cacheRuntimeSemanticWorkspaceAnalysis(path, source, data, parsed);
+			cacheRuntimeSemanticWorkspaceAnalysis(domain, path, source, data, parsed);
 		}
 	}
-	primedProjectWorkspace = workspace;
+	primedWorkspaceStates.set(workspace, {
+		primaryRegistry,
+		primaryRevision: primaryRegistry.revision,
+		systemRegistry,
+		systemRevision: systemRegistry.revision,
+	});
 	return workspace;
 }
 
-export function prepareRuntimeSemanticWorkspaceForEditorBuffer(input: SemanticWorkspacePathInput): LuaSemanticWorkspaceSnapshot {
-	const workspace = getOrCreateSemanticWorkspace();
-	syncRuntimeSemanticWorkspacePath(input, workspace);
-	primeRuntimeSemanticWorkspaceProjectSources(workspace);
+export function prepareRuntimeSemanticWorkspaceForEditorBuffer(
+	domain: ResourceDomain,
+	input: SemanticWorkspacePathInput,
+): LuaSemanticWorkspaceSnapshot {
+	const workspace = getOrCreateSemanticWorkspace(domain);
+	syncRuntimeSemanticWorkspacePath(domain, input, workspace);
+	primeRuntimeSemanticWorkspaceProjectSources(domain, workspace);
 	return workspace.getSnapshot();
 }

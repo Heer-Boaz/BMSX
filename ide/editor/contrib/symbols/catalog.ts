@@ -28,14 +28,12 @@ export function symbolSourceLabel(entry: LuaSymbolEntry): string | null {
 
 export function refreshSymbolCatalog(force: boolean): void {
 	const scope: 'local' | 'global' = symbolSearchState.global ? 'global' : 'local';
-	let path: string = null;
-	if (scope === 'local') {
-		const context = getActiveCodeTabContext();
-		path = context.descriptor.path;
-	}
+	const descriptor = getActiveCodeTabContext().descriptor;
+	const path = scope === 'local' ? descriptor.path : null;
 	const existing = symbolSearchState.catalogContext;
 	const unchanged = existing !== null
 		&& existing.scope === scope
+		&& existing.domain === descriptor.domain
 		&& (scope === 'global' || existing.path === path);
 	if (!force && unchanged) {
 		return;
@@ -43,8 +41,8 @@ export function refreshSymbolCatalog(force: boolean): void {
 	let entries: LuaSymbolEntry[] = [];
 	try {
 		entries = scope === 'global'
-			? listGlobalLuaSymbols()
-			: listLuaSymbols(path);
+			? listGlobalLuaSymbols(descriptor.domain)
+			: listLuaSymbols(descriptor.domain, path);
 	} catch (error) {
 		const message = extractErrorMessage(error);
 		symbolSearchState.catalog = [];
@@ -55,7 +53,7 @@ export function refreshSymbolCatalog(force: boolean): void {
 		showEditorMessage(`Failed to list symbols: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);
 		return;
 	}
-	symbolSearchState.catalogContext = { scope, path };
+	symbolSearchState.catalogContext = { scope, domain: descriptor.domain, path };
 	const deduped: LuaSymbolEntry[] = [];
 	const seen = new Set<string>();
 	for (let index = 0; index < entries.length; index += 1) {

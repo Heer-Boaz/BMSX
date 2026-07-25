@@ -1,6 +1,9 @@
 import { machineManager } from '../../../machine/ts/core/machine_manager';
 import * as luaPipeline from '../../runtime/lua_pipeline';
-import { workspaceSourceCache } from '../../workspace/cache';
+import {
+	clearWorkspaceSourceCaches,
+	workspaceFileCache,
+} from '../../workspace/cache';
 import { resetNavigationHistoryState } from '../../navigation/navigation_history';
 import { editorDebuggerState } from '../contrib/debugger/state';
 import {
@@ -18,7 +21,13 @@ import {
 	resetWorkspaceActiveDocumentDirtyBufferState,
 	resetWorkspaceContextToCleanSource,
 } from './context_snapshot';
-import type { DirtyContextEntry, PersistedDirtyEntry, SerializedDescriptor, WorkspaceAutosavePayload } from './models';
+import {
+	WORKSPACE_AUTOSAVE_VERSION,
+	type DirtyContextEntry,
+	type PersistedDirtyEntry,
+	type SerializedDescriptor,
+	type WorkspaceAutosavePayload,
+} from './models';
 
 export function collectDirtyContextEntries(): Map<string, DirtyContextEntry> {
 	if (!hasWorkspaceStorage()) {
@@ -30,16 +39,16 @@ export function collectDirtyContextEntries(): Map<string, DirtyContextEntry> {
 			continue;
 		}
 		const descriptor: SerializedDescriptor = {
+			domain: context.descriptor.domain,
 			path: context.descriptor.path,
 			type: context.descriptor.type,
 			asset_id: context.descriptor.asset_id,
 			readOnly: context.descriptor.readOnly,
 		};
 		const metadata = captureContextSnapshotMetadata(context);
-		const dirtyPath = buildDirtyFilePath(descriptor.path);
+		const dirtyPath = buildDirtyFilePath(descriptor);
 		const text = captureContextText(context);
 		entries.set(dirtyPath, {
-			contextId: context.id,
 			descriptor,
 			dirtyPath,
 			cursorRow: metadata.cursorRow,
@@ -60,7 +69,6 @@ export function buildWorkspaceAutosavePayload(entries: Map<string, DirtyContextE
 	const dirtyFiles: PersistedDirtyEntry[] = [];
 	for (const entry of entries.values()) {
 		dirtyFiles.push({
-			contextId: entry.contextId,
 			descriptor: entry.descriptor,
 			dirtyPath: entry.dirtyPath,
 			cursorRow: entry.cursorRow,
@@ -71,6 +79,7 @@ export function buildWorkspaceAutosavePayload(entries: Map<string, DirtyContextE
 		});
 	}
 	return {
+		version: WORKSPACE_AUTOSAVE_VERSION,
 		savedAt: machineManager.platform.clock.dateNow(),
 		dirtyFiles,
 		breakpoints: serializeBreakpoints(),
@@ -83,7 +92,7 @@ export function buildWorkspaceAutosaveSignature(payload: WorkspaceAutosavePayloa
 	const dirtyParts = payload.dirtyFiles
 		.map((dirty) => {
 			const selection = dirty.selectionAnchor ? `${dirty.selectionAnchor.row}:${dirty.selectionAnchor.column}` : '';
-			const descriptorKey = `${dirty.descriptor.path}:${dirty.descriptor.type}`;
+			const descriptorKey = `${dirty.descriptor.domain}:${dirty.descriptor.path}:${dirty.descriptor.type}`;
 			return [
 				dirty.dirtyPath,
 				descriptorKey,
@@ -112,14 +121,14 @@ export async function persistDirtyContextEntries(entries: Map<string, DirtyConte
 	const activeDirtyPaths = new Set<string>();
 	for (const [dirtyPath, entry] of entries) {
 		activeDirtyPaths.add(dirtyPath);
-		const cached = workspaceSourceCache.get(dirtyPath);
+		const cached = workspaceFileCache.get(dirtyPath);
 		if (cached === entry.text) {
 			continue;
 		}
 		await writeWorkspaceFile(dirtyPath, entry.text);
-		workspaceSourceCache.set(dirtyPath, entry.text);
+		workspaceFileCache.set(dirtyPath, entry.text);
 	}
-	for (const cachedPath of workspaceSourceCache.keys()) {
+	for (const cachedPath of workspaceFileCache.keys()) {
 		if (!cachedPath.includes(`/${getWorkspaceDirtyDirSegment()}/`)) {
 			continue;
 		}
@@ -127,24 +136,24 @@ export async function persistDirtyContextEntries(entries: Map<string, DirtyConte
 			continue;
 		}
 		await deleteWorkspaceFile(cachedPath);
-		workspaceSourceCache.delete(cachedPath);
+		workspaceFileCache.delete(cachedPath);
 	}
 }
 
-export function loadCleanSrc(path: string): string {
-	const context = findCodeTabContext(path);
+export function loadCleanSrc(descriptor: SerializedDescriptor): string {
+	const context = findCodeTabContext(descriptor);
 	if (context && context.mode === 'aem') {
 		return context.lastSavedSource;
 	}
-	return luaPipeline.resourceSourceForChunk(path);
+	return luaPipeline.resourceSourceForChunk(descriptor);
 }
 
 export function clearWorkspaceDirtyBuffers(): void {
-	workspaceSourceCache.clear();
+	clearWorkspaceSourceCaches();
 	workspaceState.autosaveSignature = null;
 	resetWorkspaceActiveDocumentDirtyBufferState();
 	for (const context of getCodeTabContexts()) {
-		resetWorkspaceContextToCleanSource(context, loadCleanSrc(context.descriptor.path));
+		resetWorkspaceContextToCleanSource(context, loadCleanSrc(context.descriptor));
 	}
 }
 

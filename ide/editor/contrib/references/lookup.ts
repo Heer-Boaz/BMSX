@@ -4,6 +4,7 @@ import type { ReferenceMatchInfo } from './state';
 import type { TextBuffer } from '../../text/text_buffer';
 import type { SearchMatch } from '../../../common/models';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
+import type { ResourceIdentity } from '../../../common/resource';
 
 export type ReferenceLookupOptions = {
 	runtime: Runtime;
@@ -11,7 +12,7 @@ export type ReferenceLookupOptions = {
 	textVersion: number;
 	cursorRow: number;
 	cursorColumn: number;
-	path: string;
+	identity: ResourceIdentity;
 };
 
 export type ReferenceLookupResult =
@@ -19,18 +20,19 @@ export type ReferenceLookupResult =
 	| { kind: 'error'; message: string; duration: number; };
 
 export function resolveReferenceLookup(options: ReferenceLookupOptions): ReferenceLookupResult {
-	const identifier = extractHoverExpressionFromBuffer(options.buffer, options.cursorRow, options.cursorColumn, options.path);
+	const path = options.identity.path;
+	const identifier = extractHoverExpressionFromBuffer(options.buffer, options.cursorRow, options.cursorColumn, path);
 	if (!identifier) {
 		return { kind: 'error', message: 'No identifier at cursor', duration: 1.6 };
 	}
-	const frontend = buildEditorSemanticFrontend(options.path, options.buffer, options.textVersion);
-	const resolution = frontend.findReferencesByPosition(options.path, options.cursorRow + 1, options.cursorColumn + 1);
+	const frontend = buildEditorSemanticFrontend(options.identity, options.buffer, options.textVersion);
+	const resolution = frontend.findReferencesByPosition(path, options.cursorRow + 1, options.cursorColumn + 1);
 	if (!resolution) {
 		return { kind: 'error', message: `Definition not found for ${identifier.expression}`, duration: 1.8 };
 	}
 	const matches: SearchMatch[] = [];
 	const seen = new Set<string>();
-	if (resolution.decl.file === options.path) {
+	if (resolution.decl.file === path) {
 		const definitionMatch = rangeToSearchMatchInBuffer(resolution.decl.range, options.buffer);
 		if (definitionMatch) {
 			const key = `${definitionMatch.row}:${definitionMatch.start}`;
@@ -40,7 +42,7 @@ export function resolveReferenceLookup(options: ReferenceLookupOptions): Referen
 	}
 	for (let index = 0; index < resolution.references.length; index += 1) {
 		const reference = resolution.references[index];
-		if (reference.file !== options.path) {
+		if (reference.file !== path) {
 			continue;
 		}
 		const match = rangeToSearchMatchInBuffer(reference.range, options.buffer);

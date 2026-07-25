@@ -21,6 +21,7 @@ import {
 	loadBlua32MediaSymbols,
 	setActiveBlua32MediaSymbols,
 } from './lua_pipeline';
+import { CARTRIDGE_RESOURCE_DOMAINS } from '../common/resource';
 
 type TargetRevision = {
 	previousImage: Blua32ImageLayout;
@@ -53,7 +54,7 @@ export function hotResume(
 					),
 				});
 			}
-			for (let slot = 0; slot < rebuilt.cartridgeSlots.length; slot += 1) {
+			for (const slot of CARTRIDGE_RESOURCE_DOMAINS) {
 				const image = rebuilt.cartridgeSlots[slot];
 				if (image === null) {
 					continue;
@@ -77,7 +78,7 @@ export function hotResume(
 			if (rebuilt.system !== null) {
 				cpu.reloadExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID);
 			}
-			for (let slot = 0; slot < rebuilt.cartridgeSlots.length; slot += 1) {
+			for (const slot of CARTRIDGE_RESOURCE_DOMAINS) {
 				if (rebuilt.cartridgeSlots[slot] !== null) {
 					cpu.reloadExecutionDomain(slot);
 				}

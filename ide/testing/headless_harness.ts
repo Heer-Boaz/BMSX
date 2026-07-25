@@ -10,6 +10,8 @@ import { selectAllSingleCursor } from '../editor/editing/cursor/state';
 import { insertText } from '../editor/editing/text_editing_and_selection';
 import { loadBlua32Image } from '../runtime/lua_pipeline';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/machine/memory/map';
+import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/machine/cpu/execution_address_space';
+import { findResourceDescriptorForContext } from '../workbench/contrib/resources/lookup';
 
 /**
  * Host-side test surface for the IDE/runtime, exposed through the `bmsx` global so
@@ -73,7 +75,11 @@ export const headlessIdeHarness: HeadlessIdeHarness = {
 	},
 	openLuaSource: (path: string) => {
 		activateEditor(requireRuntime());
-		openLuaCodeTab({ path, type: 'lua' });
+		const descriptor = findResourceDescriptorForContext(
+			machineManager.sourceState.activeCartridgeSlot,
+			path,
+		)!;
+		openLuaCodeTab(descriptor);
 	},
 	replaceActiveCodeSource: (source: string) => {
 		const buffer = editorDocumentState.buffer;
@@ -90,15 +96,15 @@ export const headlessIdeHarness: HeadlessIdeHarness = {
 		const cpu = runtime.machine.cpu;
 		const slot = cpu.activeCartridgeSlot();
 		const sourceState = machineManager.sourceState;
-		const layer = slot < 0
+		const layer = slot === SYSTEM_EXECUTION_DOMAIN_ID
 			? sourceState.systemRom
 			: sourceState.cartridgeSlots[slot]!.rom;
-		const source = slot < 0
+		const source = slot === SYSTEM_EXECUTION_DOMAIN_ID
 			? sourceState.systemRomSource
 			: sourceState.cartridgeSlots[slot]!.romSource;
 		const executable = loadBlua32Image(
 			source,
-			slot < 0 ? SYSTEM_ROM_BASE : CART_ROM_BASE,
+			slot === SYSTEM_EXECUTION_DOMAIN_ID ? SYSTEM_ROM_BASE : CART_ROM_BASE,
 			layer.header.blua32ImageOffset,
 		);
 		collectTrackedLuaHeapBytes();

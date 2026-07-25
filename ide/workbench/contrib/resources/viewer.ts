@@ -1,6 +1,6 @@
 import { clamp } from '../../../../machine/ts/common/clamp';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
-import type { ResourceDescriptor } from '../../../../machine/ts/rompack/tooling/resource';
+import type { ResourceDescriptor } from '../../../common/resource';
 import * as constants from '../../../common/constants';
 import { computeResourceTabTitle } from '../../ui/tab/titles';
 import { appendTextLines } from '../../../../machine/ts/common/text_lines';
@@ -57,15 +57,10 @@ export function buildResourceViewerState(descriptor: ResourceDescriptor): Resour
 	lines.push('');
 	switch (descriptor.type) {
 		case 'lua': {
-			const path = descriptor.path ?? descriptor.asset_id;
-			const source = luaPipeline.resourceSourceForChunk(path);
-			if (typeof source === 'string') {
-				appendResourceViewerLine(lines, '-- Lua Source --');
-				lines.push('');
-				appendTextLines(lines, source);
-			} else {
-				error = `Lua source '${descriptor.asset_id}' unavailable.`;
-			}
+			const source = luaPipeline.resourceSourceForChunk(descriptor);
+			appendResourceViewerLine(lines, '-- Lua Source --');
+			lines.push('');
+			appendTextLines(lines, source);
 			break;
 		}
 		case 'data': {

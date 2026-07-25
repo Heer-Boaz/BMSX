@@ -1,6 +1,9 @@
 import { clamp } from '../../../../machine/ts/common/clamp';
 import type { LuaDefinitionLocation, LuaSymbolEntry } from '../../../../machine/ts/lua/semantic_contracts';
-import type { ResourceDescriptor } from '../../../../machine/ts/rompack/tooling/resource';
+import {
+	SYSTEM_RESOURCE_DOMAIN,
+	type ResourceDescriptor,
+} from '../../../common/resource';
 import type { CodeTabContext, SearchMatch, SymbolSearchResult } from '../../../common/models';
 import { parseLuaIdentifierChain } from '../../../language/lua/identifier_chain';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
@@ -211,31 +214,46 @@ function prepareProjectSemanticFrontend(
 	const inputs: SemanticWorkspacePathInput[] = [];
 	registerProjectFile(inputs, metadata, currentPath, currentSource, currentLines);
 
-	for (const context of environment.codeTabContexts) {
-		const path = context.descriptor.path;
-		if (metadata.has(path)) {
-			continue;
+	const activeDomain = environment.activeContext.descriptor.domain;
+	const sourceDomains = activeDomain === SYSTEM_RESOURCE_DOMAIN
+		? [activeDomain]
+		: [activeDomain, SYSTEM_RESOURCE_DOMAIN] as const;
+	for (let domainIndex = 0; domainIndex < sourceDomains.length; domainIndex += 1) {
+		const domain = sourceDomains[domainIndex];
+		for (const context of environment.codeTabContexts) {
+			if (context.descriptor.domain !== domain) {
+				continue;
+			}
+			const path = context.descriptor.path;
+			if (metadata.has(path)) {
+				continue;
+			}
+			const source = context === environment.activeContext
+				? environment.activeSource
+				: getTextSnapshot(context.buffer);
+			const lines = context === environment.activeContext
+				? environment.activeLines
+				: getLinesSnapshot(context.buffer);
+			registerProjectFile(inputs, metadata, path, source, lines);
 		}
-		const source = context === environment.activeContext
-			? environment.activeSource
-			: getTextSnapshot(context.buffer);
-		const lines = context === environment.activeContext
-			? environment.activeLines
-			: getLinesSnapshot(context.buffer);
-		registerProjectFile(inputs, metadata, path, source, lines);
 	}
 
 	const resources = environment.listResources ? environment.listResources() : listResources();
-	for (let index = 0; index < resources.length; index += 1) {
-		const descriptor = resources[index];
-		if (!(descriptor.type === 'lua' || descriptor.path.endsWith('.lua')) || metadata.has(descriptor.path)) {
-			continue;
+	for (let domainIndex = 0; domainIndex < sourceDomains.length; domainIndex += 1) {
+		const domain = sourceDomains[domainIndex];
+		for (let index = 0; index < resources.length; index += 1) {
+			const descriptor = resources[index];
+			if (descriptor.domain !== domain
+				|| !(descriptor.type === 'lua' || descriptor.path.endsWith('.lua'))
+				|| metadata.has(descriptor.path)) {
+				continue;
+			}
+			const source = environment.loadLuaResource && descriptor.asset_id
+				? environment.loadLuaResource(descriptor.asset_id)
+				: luaPipeline.resourceSourceForChunk(descriptor);
+			const lines = splitText(source);
+			registerProjectFile(inputs, metadata, descriptor.path, source, lines, descriptor.asset_id);
 		}
-		const source = environment.loadLuaResource && descriptor.asset_id
-			? environment.loadLuaResource(descriptor.asset_id)
-			: luaPipeline.resourceSourceForChunk(descriptor.path);
-		const lines = splitText(source);
-		registerProjectFile(inputs, metadata, descriptor.path, source, lines, descriptor.asset_id);
 	}
 	const snapshot = syncSemanticWorkspacePaths(inputs, workspace);
 

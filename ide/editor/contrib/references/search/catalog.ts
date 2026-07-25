@@ -29,7 +29,7 @@ export function buildReferenceSearchCatalog(runtime: Runtime, info: ReferenceMat
 		codeTabContexts: getCodeTabContexts(),
 	};
 	return buildProjectReferenceCatalog({
-		workspace: getOrCreateSemanticWorkspace(),
+		workspace: getOrCreateSemanticWorkspace(context.descriptor.domain),
 		info,
 		source: activeSource,
 		lines: activeLines,

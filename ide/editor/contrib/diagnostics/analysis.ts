@@ -6,9 +6,11 @@ import { editorRuntimeState } from '../../common/runtime_state';
 import { diagnosticsDebounceMs, editorDiagnosticsState } from './state';
 import { cacheRuntimeSemanticParseState } from '../intellisense/semantic/workspace/runtime';
 import { getCodeTabContexts } from '../../../workbench/ui/code_tab/contexts';
+import type { ResourceDomain } from '../../../common/resource';
 
 export type DiagnosticContextInput = {
 	id: string;
+	domain: ResourceDomain;
 	path: string;
 	source: string;
 	lines?: readonly string[];
@@ -16,8 +18,8 @@ export type DiagnosticContextInput = {
 };
 
 export type DiagnosticProviders = {
-	listLocalSymbols(path: string): LuaSymbolEntry[];
-	listGlobalSymbols(): LuaSymbolEntry[];
+	listLocalSymbols(domain: ResourceDomain, path: string): LuaSymbolEntry[];
+	listGlobalSymbols(domain: ResourceDomain): LuaSymbolEntry[];
 	listBuiltins(): LuaBuiltinDescriptor[];
 };
 
@@ -26,7 +28,6 @@ export function computeAggregatedEditorDiagnostics(
 	providers: DiagnosticProviders,
 ): EditorDiagnostic[] {
 	if (contexts.length === 0) return [];
-	const globalSymbols = providers.listGlobalSymbols();
 	const builtinDescriptors = providers.listBuiltins();
 	const apiData = getApiCompletionData();
 
@@ -35,6 +36,7 @@ export function computeAggregatedEditorDiagnostics(
 		const ctx = contexts[i];
 		const path = ctx.path;
 		const source = ctx.source;
+		const globalSymbols = providers.listGlobalSymbols(ctx.domain);
 		const parseEntry = getCachedLuaParse({
 			path,
 			source,
@@ -43,10 +45,11 @@ export function computeAggregatedEditorDiagnostics(
 		});
 		const baseLines = parseEntry.lines;
 		const parsed = parseEntry.parsed;
-		cacheRuntimeSemanticParseState(path, source, baseLines, parsed);
-		const localSymbols = providers.listLocalSymbols(path);
+		cacheRuntimeSemanticParseState(ctx.domain, path, source, baseLines, parsed);
+		const localSymbols = providers.listLocalSymbols(ctx.domain, path);
 		const luaDiagnostics = computeLuaDiagnostics({
 			source,
+			domain: ctx.domain,
 			path,
 			localSymbols,
 			globalSymbols,

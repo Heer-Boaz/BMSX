@@ -3,7 +3,7 @@ import type { ReferenceMatchInfo } from '../references/state';
 import type { LuaSourceRange } from '../../../../machine/ts/lua/syntax/ast/index';
 import { clamp } from '../../../../machine/ts/common/clamp';
 import { createLuaCodeTabContext, findCodeTabContext, getActiveCodeTabContext } from '../../../workbench/ui/code_tab/contexts';
-import { findResourceDescriptorForChunk } from '../../../workbench/contrib/resources/lookup';
+import { findResourceDescriptorForContext } from '../../../workbench/contrib/resources/lookup';
 import { getLinesSnapshot, getTextSnapshot } from '../../text/source_text';
 import { syncSemanticWorkspacePath, getOrCreateSemanticWorkspace } from '../intellisense/semantic/workspace/state';
 import { markTextMutated } from '../../common/text/runtime';
@@ -16,6 +16,7 @@ import { editorCaretState } from '../../ui/view/caret/state';
 import { editorDocumentState } from '../../editing/document_state';
 import { registerCodeTabContext, setTabDirty } from '../../../workbench/ui/code_tab/contexts';
 import { editorViewState } from '../../ui/view/state';
+import type { ResourceDomain } from '../../../common/resource';
 
 export function commitRename(
 	matches: readonly SearchMatch[],
@@ -25,7 +26,8 @@ export function commitRename(
 ): number {
 	const activeContext = getActiveCodeTabContext();
 	const activePath = activeContext.descriptor.path;
-	const workspace = getOrCreateSemanticWorkspace();
+	const activeDomain = activeContext.descriptor.domain;
+	const workspace = getOrCreateSemanticWorkspace(activeDomain);
 	const sortedMatches = matches.slice();
 	sortedMatches.sort((a, b) => a.row !== b.row ? a.row - b.row : a.start - b.start);
 	let updatedTotal = 0;
@@ -82,7 +84,13 @@ export function commitRename(
 	}
 
 	for (const bucket of rangeMap.values()) {
-		const replacements = crossFileRenameManager.applyRenameToChunk(bucket.path, bucket.ranges, newName, activePath);
+		const replacements = crossFileRenameManager.applyRenameToChunk(
+			activeDomain,
+			bucket.path,
+			bucket.ranges,
+			newName,
+			activePath,
+		);
 		updatedTotal += replacements;
 		if (replacements > 0) {
 			markDiagnosticsDirtyForChunk(bucket.path);
@@ -94,11 +102,17 @@ export function commitRename(
 export class CrossFileRenameManager {
 	public constructor() {}
 
-	public applyRenameToChunk(path: string, ranges: readonly LuaSourceRange[], newName: string, activePath: string): number {
+	public applyRenameToChunk(
+		domain: ResourceDomain,
+		path: string,
+		ranges: readonly LuaSourceRange[],
+		newName: string,
+		activePath: string,
+	): number {
 		if (path === activePath) {
 			return 0;
 		}
-		const context = this.ensureCodeTabContextForChunk(path);
+		const context = this.ensureCodeTabContextForChunk(domain, path);
 		if (context.readOnly === true) {
 			return 0;
 		}
@@ -117,7 +131,7 @@ export class CrossFileRenameManager {
 			context.buffer.replace(startOffset, endOffset - startOffset, newName);
 		}
 		this.markContextBufferMutated(context);
-		const workspace = getOrCreateSemanticWorkspace();
+		const workspace = getOrCreateSemanticWorkspace(domain);
 		syncSemanticWorkspacePath({
 			path,
 			source: getTextSnapshot(context.buffer),
@@ -142,13 +156,16 @@ export class CrossFileRenameManager {
 		this.markContextTabDirty(context.id, context.dirty);
 	}
 
-	private ensureCodeTabContextForChunk(path: string): CodeTabContext {
-		const existing = findCodeTabContext(path);
+	private ensureCodeTabContextForChunk(
+		domain: ResourceDomain,
+		path: string,
+	): CodeTabContext {
+		const descriptor = findResourceDescriptorForContext(domain, path)!;
+		const existing = findCodeTabContext(descriptor);
 		if (existing) {
 			return existing;
 		}
-		const descriptor = findResourceDescriptorForChunk(path)!;
-		let context = findCodeTabContext(descriptor.path);
+		let context = findCodeTabContext(descriptor);
 		if (!context) {
 			context = createLuaCodeTabContext(descriptor);
 			registerCodeTabContext(context);

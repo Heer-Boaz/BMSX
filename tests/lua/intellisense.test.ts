@@ -15,6 +15,8 @@ import { machineManager } from '../../machine/ts/core/machine_manager';
 import { createRuntimeFaultState } from '../../ide/runtime/fault_state';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { setActiveBlua32MediaSymbols } from '../../ide/runtime/lua_pipeline';
+import { LuaEnvironment } from '../../machine/ts/lua/environment';
+import { SYSTEM_RESOURCE_DOMAIN } from '../../ide/common/resource';
 
 const semanticFrontendModulePromise = import('../../machine/ts/lua/semantic/frontend');
 const semanticDiagnosticsModulePromise = import('../../machine/ts/lua/semantic/diagnostics');
@@ -37,6 +39,7 @@ function runtimeStub(files: Record<string, string> = {}) {
 		namespace: 'tests',
 		projectRootPath: '',
 		can_boot_from_source: true,
+		revision: 0,
 	};
 	for (const path in files) {
 		const source = files[path];
@@ -54,22 +57,21 @@ function runtimeStub(files: Record<string, string> = {}) {
 	}
 	const sourceState = {
 		systemLuaSources,
-		cartLuaSources: null,
+		cartridgeSlots: [null, null],
 		activeLuaSources: systemLuaSources,
-		currentPath: systemLuaSources.entry_path,
+		activeCartridgeSlot: SYSTEM_RESOURCE_DOMAIN,
 		luaSourceRegistries: [systemLuaSources],
-		luaSourceSearchRegistries: [systemLuaSources],
 		moduleCompileLuaSources: [systemLuaSources],
 	};
 	(machineManager as any).sourceState = sourceState;
 	(machineManager as any).ideState = {
 		nativeBridge: {
-			luaInterpreter: { globalEnvironment: new Map() },
+			luaInterpreter: { globalEnvironment: LuaEnvironment.createRoot() },
 		},
 	};
 	return {
 		pathSemanticCache: new Map(),
-		interpreter: { globalEnvironment: new Map() },
+		interpreter: { globalEnvironment: LuaEnvironment.createRoot() },
 		...sourceState,
 		resolveLuaSource(path: string) {
 			const record = path2lua[path] ?? module2lua[path];
@@ -136,7 +138,7 @@ function runtimeWithPausedCpuLocal(source: string) {
 		update_timestamp: 0,
 		base_update_timestamp: 0,
 	};
-	const cartLuaSources = {
+	const systemLuaSources = {
 		records: [record],
 		path2lua: { [sourcePath]: record },
 		module2lua: { [modulePath]: record },
@@ -144,45 +146,34 @@ function runtimeWithPausedCpuLocal(source: string) {
 		namespace: 'tests',
 		projectRootPath: '',
 		can_boot_from_source: true,
-	};
-	const systemLuaSources = {
-		records: [],
-		path2lua: {},
-		module2lua: {},
-		entry_path: '',
-		namespace: 'system',
-		projectRootPath: '',
-		can_boot_from_source: false,
+		revision: 0,
 	};
 	const sourceState = {
-		cartLuaSources,
-		activeLuaSources: cartLuaSources,
+		activeLuaSources: systemLuaSources,
 		systemLuaSources,
-		currentPath: sourcePath,
-		luaSourceRegistries: [cartLuaSources, systemLuaSources],
-		luaSourceSearchRegistries: [cartLuaSources, systemLuaSources],
-		moduleCompileLuaSources: [cartLuaSources, systemLuaSources],
+		activeCartridgeSlot: SYSTEM_RESOURCE_DOMAIN,
+		cartridgeSlots: [null, null],
+		luaSourceRegistries: [systemLuaSources],
+		moduleCompileLuaSources: [systemLuaSources],
 	};
 	const runtime = {
 			programMetadata: compiled.metadata,
 			machine: { cpu },
 			interpreter: {
-				globalEnvironment: new Map(),
+				globalEnvironment: LuaEnvironment.createRoot(),
 				lastFaultEnvironment: null,
 				resolveValueName: () => null,
 				getOrCreateNativeValue: () => {
 					throw new Error('unexpected native value in intellisense live-local test');
 				},
 			},
-			luaChunkEnvironmentsByPath: new Map(),
-			currentPath: null,
 			luaBuiltinMetadata: new Map(),
 			nativeMemberCompletionCache: new WeakMap(),
 			pathSemanticCache: new Map(),
 			...sourceState,
 			resolveLuaSource(path: string) {
 				if (path === sourcePath || path === modulePath) {
-					return { registry: this.cartLuaSources, record };
+					return { registry: this.systemLuaSources, record };
 				}
 				return null;
 			},
@@ -301,7 +292,7 @@ test('intellisense live locals resolve editor source paths against CPU module pa
 	}
 	assert.equal(resolved.value, 42);
 
-	const definition = resolveLuaDefinitionMetadata(resolved.value, resolved.definitionRange);
+	const definition = resolveLuaDefinitionMetadata(resolved.definitionRange);
 	assert.ok(definition);
 	assert.equal(definition.path, sourcePath);
 	assert.equal(definition.range.startLine, 1);
@@ -452,10 +443,10 @@ test('project reference catalog resolves globals across paths', async () => {
 	workspace.updateFile('parameter.lua', parameterSource);
 	workspace.updateFile('local.lua', localSource);
 
-	const usageDescriptor: ResourceDescriptor = { path: 'usage.lua', type: 'lua', asset_id: 'usage' };
-	const globalDescriptor: ResourceDescriptor = { path: 'global.lua', type: 'lua', asset_id: 'global' };
-	const parameterDescriptor: ResourceDescriptor = { path: 'parameter.lua', type: 'lua', asset_id: 'parameter' };
-	const localDescriptor: ResourceDescriptor = { path: 'local.lua', type: 'lua', asset_id: 'local' };
+	const usageDescriptor: ResourceDescriptor = { domain: SYSTEM_RESOURCE_DOMAIN, path: 'usage.lua', type: 'lua', asset_id: 'usage' };
+	const globalDescriptor: ResourceDescriptor = { domain: SYSTEM_RESOURCE_DOMAIN, path: 'global.lua', type: 'lua', asset_id: 'global' };
+	const parameterDescriptor: ResourceDescriptor = { domain: SYSTEM_RESOURCE_DOMAIN, path: 'parameter.lua', type: 'lua', asset_id: 'parameter' };
+	const localDescriptor: ResourceDescriptor = { domain: SYSTEM_RESOURCE_DOMAIN, path: 'local.lua', type: 'lua', asset_id: 'local' };
 
 	const usageContext = codeContext(usageDescriptor, usageSource);
 
@@ -536,8 +527,8 @@ test('project definition resolver locates global across paths', async () => {
 	workspace.updateFile('usage.lua', usageSource);
 	workspace.updateFile('global.lua', globalSource);
 
-	const usageDescriptor: ResourceDescriptor = { path: 'usage.lua', type: 'lua', asset_id: 'usage' };
-	const globalDescriptor: ResourceDescriptor = { path: 'global.lua', type: 'lua', asset_id: 'global' };
+	const usageDescriptor: ResourceDescriptor = { domain: SYSTEM_RESOURCE_DOMAIN, path: 'usage.lua', type: 'lua', asset_id: 'usage' };
+	const globalDescriptor: ResourceDescriptor = { domain: SYSTEM_RESOURCE_DOMAIN, path: 'global.lua', type: 'lua', asset_id: 'global' };
 
 	const usageContext = codeContext(usageDescriptor, usageSource);
 
@@ -562,7 +553,7 @@ test('project definition resolver locates global across paths', async () => {
 		expression: 'state',
 		environment,
 		workspace,
-		currentPath: 'usage.lua',
+		currentPath: usageDescriptor.path,
 		currentSource: usageSource,
 		currentLines: usageLines,
 	});
@@ -600,7 +591,7 @@ test('reference lookup resolves global definition across paths', async () => {
 	workspace.updateFile('global.lua', globalSource);
 
 	const usageLines = usageSource.split('\n');
-	resetSemanticWorkspace();
+	resetSemanticWorkspace(SYSTEM_RESOURCE_DOMAIN);
 
 	const stateRow = usageLines.findIndex(line => line.includes('print(state'));
 	assert.ok(stateRow >= 0);
@@ -622,7 +613,7 @@ test('reference lookup resolves global definition across paths', async () => {
 			}
 			return { expression: 'state', startColumn: index, endColumn: index + name.length };
 		},
-		path: 'usage.lua',
+		identity: { domain: SYSTEM_RESOURCE_DOMAIN, path: 'usage.lua' },
 	});
 
 	assert.equal(result.kind, 'success', 'reference lookup succeeded');
@@ -655,7 +646,7 @@ test('reference lookup prefers local parameter over global', async () => {
 	workspace.updateFile('global.lua', globalSource);
 
 	const usageLines = usageSource.split('\n');
-	resetSemanticWorkspace();
+	resetSemanticWorkspace(SYSTEM_RESOURCE_DOMAIN);
 
 	const helperLineIndex = usageLines.findIndex(line => line.includes('helper'));
 	assert.ok(helperLineIndex >= 0);
@@ -676,7 +667,7 @@ test('reference lookup prefers local parameter over global', async () => {
 			}
 			return { expression: 'state', startColumn: index, endColumn: index + name.length };
 		},
-		path: 'usage.lua',
+		identity: { domain: SYSTEM_RESOURCE_DOMAIN, path: 'usage.lua' },
 	});
 
 	assert.equal(parameterResult.kind, 'success', 'parameter lookup succeeds');
@@ -710,8 +701,8 @@ test('intellisense recognizes global variable from another file', async () => {
 	workspace.updateFile('usage.lua', usageSource);
 	workspace.updateFile('global.lua', globalSource);
 
-	const usageDescriptor: ResourceDescriptor = { path: 'usage.lua', type: 'lua', asset_id: 'usage' };
-	const globalDescriptor: ResourceDescriptor = { path: 'global.lua', type: 'lua', asset_id: 'global' };
+	const usageDescriptor: ResourceDescriptor = { domain: SYSTEM_RESOURCE_DOMAIN, path: 'usage.lua', type: 'lua', asset_id: 'usage' };
+	const globalDescriptor: ResourceDescriptor = { domain: SYSTEM_RESOURCE_DOMAIN, path: 'global.lua', type: 'lua', asset_id: 'global' };
 
 	const usageContext = codeContext(usageDescriptor, usageSource);
 

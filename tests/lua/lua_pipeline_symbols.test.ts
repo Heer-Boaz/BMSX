@@ -18,6 +18,7 @@ function makeRegistry(sourcePaths: readonly string[]): LuaSourceRegistry {
 		namespace: 'test',
 		projectRootPath: '',
 		can_boot_from_source: false,
+		revision: 0,
 	};
 	for (let index = 0; index < sourcePaths.length; index += 1) {
 		const sourcePath = sourcePaths[index];
@@ -34,7 +35,11 @@ function makeRegistry(sourcePaths: readonly string[]): LuaSourceRegistry {
 	return registry;
 }
 
-test('listSymbols hides compiler-generated module export slots through loader module paths', () => {
+test('listSymbols hides compiler-generated module export slots through loader module paths', (t) => {
+	const originalSourceState = (machineManager as any).sourceState;
+	t.after(() => {
+		(machineManager as any).sourceState = originalSourceState;
+	});
 	const stringPool = new StringPool();
 	const globals = new Table(0, 8);
 	globals.set(StringValue.get(stringPool.intern('system__font__get')), true);
@@ -45,11 +50,10 @@ test('listSymbols hides compiler-generated module export slots through loader mo
 	const cartLuaSources = makeRegistry(['carts/pietious/room/index.lua']);
 	(machineManager as any).sourceState = {
 		systemLuaSources,
-		cartLuaSources,
+		cartridgeSlots: [{ domain: 0, luaSources: cartLuaSources }, null],
 		activeLuaSources: cartLuaSources,
-		currentPath: cartLuaSources.entry_path,
+		activeCartridgeSlot: 0,
 		luaSourceRegistries: [cartLuaSources, systemLuaSources],
-		luaSourceSearchRegistries: [cartLuaSources, systemLuaSources],
 		moduleCompileLuaSources: [cartLuaSources, systemLuaSources],
 	};
 	const runtime = {

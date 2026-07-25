@@ -1,5 +1,6 @@
 import type { ResourceBrowserItem } from '../../../../common/models';
-import { openResourceDescriptor, focusChunkSource } from '../navigation';
+import { openResourceDescriptor, focusChunkSourceForContext } from '../navigation';
+import { getActiveCodeTabContext } from '../../../ui/code_tab/contexts';
 import { applyDefinitionSelection } from '../../../../editor/contrib/intellisense/engine';
 import { toggleSelectedCallHierarchyExpansion } from './navigation';
 import type { Runtime } from '../../../../../machine/ts/machine/runtime/runtime';
@@ -16,7 +17,11 @@ export function openResourcePanelCallHierarchyLocation(runtime: Runtime, item: R
 	if (!item?.location) {
 		return;
 	}
-	focusChunkSource(runtime, item.location.path);
+	focusChunkSourceForContext(
+		runtime,
+		getActiveCodeTabContext().descriptor.domain,
+		item.location.path,
+	);
 	applyDefinitionSelection(item.location.range);
 }
 

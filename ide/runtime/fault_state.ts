@@ -90,7 +90,7 @@ function resolveRuntimeErrorLocation(error: Error): RuntimeErrorLocation {
 	if (error instanceof LuaError) {
 		return runtimeLuaErrorLocation(error);
 	}
-	return { path: machineManager.sourceState.currentPath, line: 0, column: 0 };
+	return { path: machineManager.sourceState.activeLuaSources.entry_path, line: 0, column: 0 };
 }
 
 function createLuaErrorStackFrame(error: LuaError, functionName: string): StackTraceFrame {

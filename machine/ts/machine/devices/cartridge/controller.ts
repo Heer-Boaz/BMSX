@@ -46,6 +46,7 @@ import {
 	type CartridgeControllerState,
 	type CartridgeSlotMedia,
 	type CartridgeSlotMediaPair,
+	type CartridgeSlotIndex,
 	type CartridgeSlotState,
 } from './contracts';
 
@@ -101,8 +102,8 @@ export class CartridgeController {
 		memory.mapIoRead(IO_CART_SLOT1_RAM_BYTES, this, CartridgeController.readSlot1RamBytesThunk);
 	}
 
-	public selectedSlot(): number {
-		return this.selectionWord & 1;
+	public selectedSlot(): CartridgeSlotIndex {
+		return (this.selectionWord & 1) === 0 ? 0 : 1;
 	}
 
 	public installRom(slotIndex: number, rom: Uint8Array): void {

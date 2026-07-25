@@ -31,7 +31,7 @@ export function openReferenceSearchPopup(runtime: Runtime): void {
 		textVersion: editorDocumentState.textVersion,
 		cursorRow: editorDocumentState.cursorRow,
 		cursorColumn: editorDocumentState.cursorColumn,
-		path: context.descriptor.path,
+		identity: context.descriptor,
 	});
 	if (result.kind === 'error') {
 		showEditorMessage(result.message, constants.COLOR_STATUS_WARNING, result.duration);

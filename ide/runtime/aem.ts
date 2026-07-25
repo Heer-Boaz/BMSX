@@ -8,7 +8,7 @@ import {
 	buildAemValidationLookup,
 	parseStructuredTextDocument,
 } from '../../machine/ts/rompack/tooling/aem';
-import type { ResourceDescriptor } from '../../machine/ts/rompack/tooling/resource';
+import type { ResourceDescriptor } from '../common/resource';
 import { callClosureIntoWithScheduler } from './closure_executor';
 
 function buildRuntimeAemValidationLookup() {

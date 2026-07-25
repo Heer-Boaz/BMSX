@@ -31,7 +31,7 @@ export function openRenamePrompt(runtime: Runtime): void {
 		textVersion: editorDocumentState.textVersion,
 		cursorRow: editorDocumentState.cursorRow,
 		cursorColumn: editorDocumentState.cursorColumn,
-		path: context.descriptor.path,
+		identity: context.descriptor,
 	});
 	if (started) {
 		editorCaretState.cursorVisible = true;

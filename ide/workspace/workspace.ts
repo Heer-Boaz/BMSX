@@ -3,7 +3,14 @@ import { registerLuaSourceRecord, type LuaSourceRecord, type LuaSourceRegistry }
 import { toLuaModulePath } from '../../machine/ts/lua/module_path';
 import type { StorageService } from '../../machine/ts/platform/index';
 import { ROM_GENERATED_MODULE_PATHS } from '../../machine/ts/rompack/format';
-import type { LuaResourceCreationRequest, ResourceDescriptor } from '../../machine/ts/rompack/tooling/resource';
+import {
+	CARTRIDGE_RESOURCE_DOMAINS,
+	SYSTEM_RESOURCE_DOMAIN,
+	type LuaResourceCreationRequest,
+	type ResourceDescriptor,
+	type ResourceDomain,
+	type ResourceIdentity,
+} from '../common/resource';
 import { joinWorkspacePaths, resolveWorkspacePath } from './path';
 import {
 	applyWorkspaceSourceOverrides,
@@ -16,10 +23,18 @@ import {
 	WORKSPACE_METADATA_DIR,
 	WORKSPACE_STATE_FILE,
 } from './files';
-import { workspaceSourceCache } from './cache';
+import {
+	deleteWorkspaceLuaSourceOverride,
+	setWorkspaceLuaSourceOverride,
+	workspaceFileCache,
+} from './cache';
 import { clearWorkspaceDirtyBuffers } from '../workbench/workspace/autosave';
 import { runtimeSemanticCache } from '../editor/contrib/intellisense/semantic/workspace/runtime';
-import { developmentCartridgeSource, resolveRuntimeLuaSource } from '../runtime/sources';
+import {
+	developmentCartridgeSource,
+	resolveRuntimeLuaSource,
+	runtimeLuaSourceDomain,
+} from '../runtime/sources';
 
 export * from './files';
 export { joinWorkspacePaths } from './path';
@@ -35,10 +50,10 @@ function markLuaSourceRegistryChanged(registry: LuaSourceRegistry): void {
 	if (registry === sources.systemLuaSources) {
 		sources.systemBlua32MediaDirty = true;
 	} else {
-		for (let slot = 0; slot < sources.cartridgeSlots.length; slot += 1) {
+		for (const slot of CARTRIDGE_RESOURCE_DOMAINS) {
 			if (sources.cartridgeSlots[slot]?.luaSources === registry) {
 				sources.cartridgeBlua32MediaDirty[slot] = true;
-				runtimeSemanticCache.clear();
+				runtimeSemanticCache.delete(slot);
 				return;
 			}
 		}
@@ -47,32 +62,29 @@ function markLuaSourceRegistryChanged(registry: LuaSourceRegistry): void {
 	runtimeSemanticCache.clear();
 }
 
-function resolveEditableLuaSource(path: string): { registry: LuaSourceRegistry; asset: LuaSourceRecord } {
-	const source = resolveRuntimeLuaSource(machineManager.sourceState, path);
+function resolveEditableLuaSource(identity: ResourceIdentity): { registry: LuaSourceRegistry; asset: LuaSourceRecord } {
+	const source = resolveRuntimeLuaSource(machineManager.sourceState, identity);
 	if (!source) {
-		throw new Error(`Missing Lua source registry for '${path}'.`);
+		throw new Error(`Missing Lua source registry for '${identity.path}'.`);
 	}
 	return { registry: source.registry, asset: source.record };
 }
 
-export function applyLuaCodeTabSources(snapshots: ReadonlyArray<{ path: string; source: string }>): void {
+export function applyLuaCodeTabSources(snapshots: ReadonlyArray<ResourceIdentity & { source: string }>): void {
 	for (let index = 0; index < snapshots.length; index += 1) {
 		const snapshot = snapshots[index];
-		const target = resolveEditableLuaSource(snapshot.path);
-		workspaceSourceCache.set(
-			buildWorkspaceDirtyEntryPath(target.registry.projectRootPath, target.asset.source_path),
-			snapshot.source,
-		);
+		const target = resolveEditableLuaSource(snapshot);
+		setWorkspaceLuaSourceOverride(target.registry, target.asset.source_path, snapshot.source);
 		markLuaSourceRegistryChanged(target.registry);
 	}
 }
 
-export async function saveLuaResourceSource(path: string, source: string): Promise<void> {
-	const target = resolveEditableLuaSource(path);
+export async function saveLuaResourceSource(identity: ResourceIdentity, source: string): Promise<void> {
+	const target = resolveEditableLuaSource(identity);
 	const registry = target.registry;
 	const asset = target.asset;
 	if (asset.generated) {
-		throw new Error(`Generated Lua source '${path}' is read-only.`);
+		throw new Error(`Generated Lua source '${identity.path}' is read-only.`);
 	}
 	const sourcePath = asset.source_path;
 	const projectRootPath = registry.projectRootPath;
@@ -88,11 +100,12 @@ export async function saveLuaResourceSource(path: string, source: string): Promi
 		sourcePath,
 		{ source, path: sourcePath, cartPath: sourcePath, updatedAt },
 	]]), updatedAt);
-	const dirtyPath = buildWorkspaceDirtyEntryPath(projectRootPath, sourcePath);
+	const dirtyPath = buildWorkspaceDirtyEntryPath(projectRootPath, identity.domain, sourcePath);
 	machineManager.platform.storage.removeItem(buildWorkspaceStorageKey(projectRootPath, dirtyPath));
 	await deleteWorkspaceServerFile(dirtyPath);
-	workspaceSourceCache.delete(dirtyPath);
-	workspaceSourceCache.set(sourcePath, source);
+	workspaceFileCache.delete(dirtyPath);
+	workspaceFileCache.set(resolveWorkspacePath(sourcePath, projectRootPath), source);
+	deleteWorkspaceLuaSourceOverride(registry, sourcePath);
 }
 
 export async function createLuaResource(request: LuaResourceCreationRequest): Promise<ResourceDescriptor> {
@@ -122,17 +135,25 @@ export async function createLuaResource(request: LuaResourceCreationRequest): Pr
 	const registry = systemSource
 		? sources.systemLuaSources
 		: resolveEditableCartLuaSources();
+	const domain = runtimeLuaSourceDomain(sources, registry);
 	registerLuaSourceRecord(registry, asset);
 	registry.can_boot_from_source = true;
 	markLuaSourceRegistryChanged(registry);
 	const filesystemPath = asset.source_path;
 	await persistWorkspaceSourceFile(filesystemPath, contents, registry.projectRootPath);
-	const descriptor: ResourceDescriptor = { path: asset.source_path, type: 'lua' };
+	const descriptor: ResourceDescriptor = { domain, path: asset.source_path, type: 'lua' };
 	return descriptor;
 }
 
-export async function applyWorkspaceOverridesToRegistry(params: { registry: LuaSourceRegistry; storage: StorageService; includeServer?: boolean; projectRootPath: string }): Promise<Set<string>> {
+export async function applyWorkspaceOverridesToRegistry(params: {
+	registry: LuaSourceRegistry;
+	storage: StorageService;
+	includeServer?: boolean;
+	projectRootPath: string;
+}): Promise<Set<string>> {
+	const domain = runtimeLuaSourceDomain(machineManager.sourceState, params.registry);
 	const changed = await applyWorkspaceSourceOverrides({
+		domain,
 		registry: params.registry,
 		storage: params.storage,
 		includeServer: params.includeServer,
@@ -145,8 +166,13 @@ export async function applyWorkspaceOverridesToRegistry(params: { registry: LuaS
 	return changed;
 }
 
-async function discardWorkspaceDirtyPath(storage: StorageService, root: string, cartPath: string): Promise<void> {
-	const dirtyPath = buildWorkspaceDirtyEntryPath(root, cartPath);
+async function discardWorkspaceDirtyPath(
+	storage: StorageService,
+	root: string,
+	domain: ResourceDomain,
+	cartPath: string,
+): Promise<void> {
+	const dirtyPath = buildWorkspaceDirtyEntryPath(root, domain, cartPath);
 	const storageKey = buildWorkspaceStorageKey(root, dirtyPath);
 	storage.removeItem(storageKey);
 	await deleteWorkspaceServerFile(dirtyPath);
@@ -160,11 +186,12 @@ async function discardWorkspaceCanonicalPath(storage: StorageService, root: stri
 
 export async function clearWorkspaceArtifacts(cart: LuaSourceRegistry, storage: StorageService): Promise<void> {
 	const root = cart.projectRootPath;
+	const domain = runtimeLuaSourceDomain(machineManager.sourceState, cart);
 	for (const asset of cart.records) {
 		if (asset.generated) {
 			continue;
 		}
-		await discardWorkspaceDirtyPath(storage, root, asset.source_path);
+		await discardWorkspaceDirtyPath(storage, root, domain, asset.source_path);
 		await discardWorkspaceCanonicalPath(storage, root, asset.source_path);
 	}
 	const statePath = joinWorkspacePaths(root, WORKSPACE_METADATA_DIR, WORKSPACE_STATE_FILE);
@@ -175,12 +202,13 @@ export async function clearWorkspaceArtifacts(cart: LuaSourceRegistry, storage: 
 
 async function clearWorkspaceDirtyFiles(cart: LuaSourceRegistry, storage: StorageService): Promise<void> {
 	const root = cart.projectRootPath;
+	const domain = runtimeLuaSourceDomain(machineManager.sourceState, cart);
 	const scratchPaths = await collectScratchWorkspaceDirtyPaths(root);
 	for (const asset of cart.records) {
 		if (asset.generated) {
 			continue;
 		}
-		await discardWorkspaceDirtyPath(storage, root, asset.source_path);
+		await discardWorkspaceDirtyPath(storage, root, domain, asset.source_path);
 	}
 	for (const dirtyPath of scratchPaths) {
 		const storageKey = buildWorkspaceStorageKey(root, dirtyPath);
@@ -192,7 +220,9 @@ async function clearWorkspaceDirtyFiles(cart: LuaSourceRegistry, storage: Storag
 // Re-applies the saved (canonical) sources and clears dirty buffers, returning the
 // workspace to its on-disk baseline. Shared tail of the reset/nuke flows.
 async function reapplyWorkspaceBaseline(registry: LuaSourceRegistry): Promise<void> {
+	const domain = runtimeLuaSourceDomain(machineManager.sourceState, registry);
 	const changed = await applyWorkspaceSourceOverrides({
+		domain,
 		registry,
 		storage: machineManager.platform.storage,
 		includeServer: false,
@@ -218,17 +248,33 @@ export async function nukeWorkspaceState(): Promise<void> {
 }
 
 export function listResources(): ResourceDescriptor[] {
-	const descriptorsByPath = new Map<string, ResourceDescriptor>();
-	for (const registry of machineManager.sourceState.luaSourceRegistries) {
+	const sources = machineManager.sourceState;
+	const descriptors: ResourceDescriptor[] = [];
+	for (const domain of CARTRIDGE_RESOURCE_DOMAINS) {
+		const cartridge = sources.cartridgeSlots[domain];
+		if (cartridge === null) {
+			continue;
+		}
+		const registry = cartridge.luaSources;
 		for (const asset of registry.records) {
-			const path = asset.source_path;
-			if (descriptorsByPath.has(path)) {
-				continue;
-			}
-			descriptorsByPath.set(path, { path, type: asset.type, asset_id: asset.resid, readOnly: asset.generated });
+			descriptors.push({
+				domain,
+				path: asset.source_path,
+				type: asset.type,
+				asset_id: asset.resid,
+				readOnly: asset.generated,
+			});
 		}
 	}
-	const descriptors = Array.from(descriptorsByPath.values());
-	descriptors.sort((left, right) => left.path.localeCompare(right.path));
+	for (const asset of sources.systemLuaSources.records) {
+		descriptors.push({
+			domain: SYSTEM_RESOURCE_DOMAIN,
+			path: asset.source_path,
+			type: asset.type,
+			asset_id: asset.resid,
+			readOnly: asset.generated,
+		});
+	}
+	descriptors.sort((left, right) => left.path.localeCompare(right.path) || left.domain - right.domain);
 	return descriptors;
 }

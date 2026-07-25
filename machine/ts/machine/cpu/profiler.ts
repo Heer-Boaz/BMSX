@@ -7,6 +7,7 @@ import {
 	type CpuInstructionTrace,
 } from './execution_image';
 import type { CPU } from './cpu';
+import type { ExecutionDomainId } from './execution_address_space';
 
 export type CpuProfilerSourcePosition = {
 	line: number;
@@ -295,8 +296,8 @@ export class CpuExecutionProfiler {
 
 export class CpuProfilerSession implements CpuInstructionTrace {
 	public readonly profiler = new CpuExecutionProfiler();
-	private readonly functionIdsByDomain = new Map<number, ReadonlyArray<string>>();
-	private readonly metadataByDomain = new Map<number, CpuProfilerMetadata | null>();
+	private readonly functionIdsByDomain = new Map<ExecutionDomainId, ReadonlyArray<string>>();
+	private readonly metadataByDomain = new Map<ExecutionDomainId, CpuProfilerMetadata | null>();
 	private readonly imageIndexes = new Map<Blua32ExecutionImage, number>();
 	private enabled = false;
 
@@ -304,7 +305,7 @@ export class CpuProfilerSession implements CpuInstructionTrace {
 	}
 
 	public attachDebugInfo(
-		executionDomainId: number,
+		executionDomainId: ExecutionDomainId,
 		functionIds: ReadonlyArray<string>,
 		metadata: CpuProfilerMetadata | null,
 	): void {

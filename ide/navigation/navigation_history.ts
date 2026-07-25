@@ -5,11 +5,13 @@ import { setCursorPosition, ensureCursorVisible } from '../editor/ui/view/caret/
 import * as TextEditing from '../editor/editing/text_editing_and_selection';
 import { editorCaretState } from '../editor/ui/view/caret/state';
 import { editorDocumentState } from '../editor/editing/document_state';
+import type { ResourceDomain } from '../common/resource';
 
 const NAVIGATION_HISTORY_LIMIT = 64;
 
 export type NavigationHistoryEntry = {
 	contextId: string;
+	domain: ResourceDomain;
 	path: string;
 	row: number;
 	column: number;
@@ -90,6 +92,7 @@ export function pushNavigationEntry(stack: NavigationHistoryEntry[], entry: Navi
 
 export function areNavigationEntriesEqual(a: NavigationHistoryEntry, b: NavigationHistoryEntry): boolean {
 	return a.contextId === b.contextId
+		&& a.domain === b.domain
 		&& a.path === b.path
 		&& a.row === b.row
 		&& a.column === b.column;
@@ -110,6 +113,7 @@ export function createNavigationEntry(): NavigationHistoryEntry {
 	const column = clamp(editorDocumentState.cursorColumn, 0, lineLen);
 	return {
 		contextId: context.id,
+		domain: context.descriptor.domain,
 		path,
 		row,
 		column,

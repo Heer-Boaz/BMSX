@@ -9,11 +9,12 @@ import type { Memory, RomByteView } from '../memory/memory';
 import { CART_ROM_BASE, RAM_BASE, SYSTEM_ROM_BASE } from '../memory/map';
 
 export const SYSTEM_EXECUTION_DOMAIN_ID = -1;
+export type ExecutionDomainId = -1 | 0 | 1;
 
 export type Blua32DecodedExecutionImage = {
 	layout: Blua32ImageLayout;
 	boot: Blua32BootHeader;
-	executionDomainId: number;
+	executionDomainId: ExecutionDomainId;
 };
 
 const EMPTY_ROM_BYTES = new Uint8Array(0);
@@ -33,7 +34,7 @@ export class ExecutionAddressSpace {
 	public constructor(private readonly memory: Memory) {
 	}
 
-	public domainIdOnBus(address: number): number | null {
+	public domainIdOnBus(address: number): ExecutionDomainId | null {
 		if (address < RAM_BASE) {
 			return SYSTEM_EXECUTION_DOMAIN_ID;
 		}
@@ -43,7 +44,7 @@ export class ExecutionAddressSpace {
 		return this.memory.cartridgeController.selectedSlot();
 	}
 
-	public loadDomain(executionDomainId: number): Blua32DecodedExecutionImage | null {
+	public loadDomain(executionDomainId: ExecutionDomainId): Blua32DecodedExecutionImage | null {
 		const romBaseAddress = executionDomainId === SYSTEM_EXECUTION_DOMAIN_ID
 			? SYSTEM_ROM_BASE
 			: CART_ROM_BASE;

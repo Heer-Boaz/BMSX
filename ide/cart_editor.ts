@@ -1,12 +1,13 @@
 import { machineManager } from '../machine/ts/core/machine_manager';
 import type { Runtime } from '../machine/ts/machine/runtime/runtime';
 import { LogLevel } from '../machine/ts/platform/index';
-import { developmentCartridgeSource, resolveRuntimeLuaSource } from './runtime/sources';
+import { developmentCartridgeSource } from './runtime/sources';
 import { blua32SymbolsForSlot, activeBlua32MediaSymbols } from './runtime/lua_pipeline';
 import type { Viewport } from '../machine/ts/rompack/format';
 import { api } from './runtime/overlay_api';
 import * as constants from './common/constants';
 import type { CodeTabMode, FaultSnapshot, RuntimeErrorDetails } from './common/models';
+import { SYSTEM_RESOURCE_DOMAIN } from './common/resource';
 import { showEditorMessage, updateEditorMessage, setEditorFeedbackActive, editorFeedbackState } from './common/feedback_state';
 import { clearBackgroundTasks } from './common/background_tasks';
 import { editorRuntimeState } from './editor/common/runtime_state';
@@ -36,9 +37,8 @@ import {
 	syncRuntimeErrorOverlayFromContext,
 } from './runtime_error/navigation';
 import { clearGotoHoverHighlight, clearNativeMemberCompletionCache } from './editor/contrib/intellisense/engine';
-import { resetSemanticWorkspace } from './editor/contrib/intellisense/semantic/workspace/state';
+import { resetSemanticWorkspaces } from './editor/contrib/intellisense/semantic/workspace/state';
 import { updateRuntimeErrorOverlay } from './editor/contrib/runtime_error/overlay';
-import { getTextSnapshot } from './editor/text/source_text';
 import { editorDocumentState } from './editor/editing/document_state';
 import { clearSingleCursorSelection } from './editor/editing/cursor/state';
 import { editorDiagnosticsState } from './editor/contrib/diagnostics/state';
@@ -57,12 +57,11 @@ import { editorInput } from './editor/input/keyboard/text_input';
 import { handleTextEditorPointerInput } from './input/pointer/dispatch';
 import { clearEditorPointerSelectionState, editorPointerState } from './input/pointer/state';
 import { handleEditorWheelInput } from './input/pointer/wheel';
-import { findCodeTabContext, getActiveCodeTabContext, getActiveCodeTabContextId, createEntryTabContext } from './workbench/ui/code_tab/contexts';
+import { getActiveCodeTabContext, getActiveCodeTabContextId, createEntryTabContext } from './workbench/ui/code_tab/contexts';
 import { storeActiveCodeTabContext } from './workbench/ui/code_tab/activation';
-import { readWorkspaceLuaSourceText } from './workspace/files';
 import { initializeWorkspaceStorage, runWorkspaceAutosaveTick, stopWorkspaceAutosaveLoop } from './workbench/workspace/storage';
 import { workspaceState } from './workbench/workspace/state';
-import { workspaceSourceCache } from './workspace/cache';
+import { clearWorkspaceSourceCaches } from './workspace/cache';
 import { DebuggerUiController, getBreakpointsForChunk } from './workbench/contrib/debugger/controller';
 import { closeBlockingWorkbenchModal, drawBlockingWorkbenchModal, handleBlockingWorkbenchModalInput, hasBlockingWorkbenchModal } from './workbench/contrib/modal/blocking_modal';
 import { drawProblemsPanel, problemsPanel } from './workbench/contrib/problems/panel/controller';
@@ -81,9 +80,11 @@ import {
 	withNavigationCaptureSuspended,
 	type NavigationHistoryEntry,
 } from './navigation/navigation_history';
-import { focusChunkSource } from './workbench/contrib/resources/navigation';
+import {
+	focusChunkSource,
+	focusChunkSourceForContext,
+} from './workbench/contrib/resources/navigation';
 import { editorChromeState } from './workbench/ui/chrome_state';
-import { tabSessionState } from './workbench/ui/tab/session_state';
 import { activateCodeTab, findTabById, initializeTabs, isResourceViewActive, setActiveTab } from './workbench/ui/tabs';
 import { drawResourcePanel, drawResourceViewer } from './workbench/render/resource_panel';
 import { renderEditorContextMenu } from './workbench/render/context_menu';
@@ -122,29 +123,12 @@ export type CartEditor = {
 	showRuntimeError: (line: number, column: number, message: string, details?: RuntimeErrorDetails, path?: string) => void;
 	clearRuntimeErrorOverlay: typeof clearRuntimeErrorOverlay;
 	clearAllRuntimeErrorOverlays: typeof clearAllRuntimeErrorOverlays;
-	getSourceForChunk: (path: string) => string;
 	clearWorkspaceDirtyBuffers: () => ReturnType<typeof clearWorkspaceDirtyBuffers>;
 	renderFaultOverlay: () => void;
 	renderRuntimeFaultOverlay: (options: RenderRuntimeFaultOverlayOptions) => boolean;
 	clearNativeMemberCompletionCache: () => void;
 	handleRuntimeTaskError: (error: unknown, fallbackMessage: string) => void;
 };
-
-export function getSourceForChunk(path: string): string {
-	const luaSource = resolveRuntimeLuaSource(machineManager.sourceState, path);
-	if (!luaSource) {
-		throw new Error(`Missing Lua source for '${path}'.`);
-	}
-	const asset = luaSource.record;
-	const context = findCodeTabContext(asset.source_path);
-	if (context) {
-		if (context.id === getActiveCodeTabContext().id && context.id === tabSessionState.activeTabId) {
-			return getTextSnapshot(editorDocumentState.buffer);
-		}
-		return getTextSnapshot(context.buffer);
-	}
-	return readWorkspaceLuaSourceText(luaSource.registry, asset);
-}
 
 class RuntimeCartEditor implements CartEditor {
 	public readonly blocksRuntimePipeline = true;
@@ -175,7 +159,7 @@ class RuntimeCartEditor implements CartEditor {
 	public constructor(runtime: Runtime, viewport: Viewport, fontVariant: Parameters<typeof setFontVariant>[0]) {
 		this.runtime = runtime;
 		const sourceState = machineManager.sourceState;
-		const activeCartridge = sourceState.activeCartridgeSlot >= 0
+		const activeCartridge = sourceState.activeCartridgeSlot !== SYSTEM_RESOURCE_DOMAIN
 			? sourceState.cartridgeSlots[sourceState.activeCartridgeSlot]
 			: null;
 		this.isAvailable = sourceState.systemLuaSources.can_boot_from_source
@@ -372,7 +356,7 @@ class RuntimeCartEditor implements CartEditor {
 			void runWorkspaceAutosaveTick(this.runtime);
 		}
 		workspaceState.autosaveEnabled = false;
-		workspaceSourceCache.clear();
+		clearWorkspaceSourceCaches();
 		workspaceState.autosaveSignature = null;
 		initializeWorkspaceStorage(this.runtime, null);
 		clearEditorPointerSelectionState();
@@ -419,7 +403,11 @@ class RuntimeCartEditor implements CartEditor {
 		if (!editorRuntimeState.active) {
 			this.activate();
 		}
-		focusChunkSource(this.runtime, path);
+		focusChunkSourceForContext(
+			this.runtime,
+			this.runtime.machine.cpu.activeCartridgeSlot(),
+			path,
+		);
 		this.showRuntimeError(line, column, message, details, path);
 	}
 
@@ -431,10 +419,6 @@ class RuntimeCartEditor implements CartEditor {
 		setActiveRuntimeErrorOverlayForCurrentContext(applied.overlay);
 		setExecutionStopHighlightForCurrentContext(applied.targetRow);
 		showEditorMessage(applied.statusLine, constants.COLOR_STATUS_ERROR, 2.0);
-	}
-
-	public getSourceForChunk(path: string): string {
-		return getSourceForChunk(path);
 	}
 
 	public clearWorkspaceDirtyBuffers(): ReturnType<typeof clearWorkspaceDirtyBuffers> {
@@ -503,7 +487,7 @@ class RuntimeCartEditor implements CartEditor {
 		editorDocumentState.preMutationSource = null;
 		applyViewportSize(viewport);
 		editorRuntimeState.clockNow = () => machineManager.platform.clock.now();
-		resetSemanticWorkspace();
+		resetSemanticWorkspaces();
 		editorViewState.scrollbars = {
 			codeVertical: new Scrollbar('codeVertical', 'vertical'),
 			codeHorizontal: new Scrollbar('codeHorizontal', 'horizontal'),
@@ -613,7 +597,7 @@ export class EditorNavigationController {
 	private openHistoryEntry(target: NavigationHistoryEntry): void {
 		withNavigationCaptureSuspended(() => {
 			if (!activateNavigationEntryContext(target)) {
-				focusChunkSource(this.runtime, target.path);
+				focusChunkSource(this.runtime, target);
 				activateNavigationEntryContext(target);
 			}
 			applyNavigationEntryPosition(target);

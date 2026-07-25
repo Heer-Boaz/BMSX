@@ -5,7 +5,7 @@ import { type LuaDebuggerSessionMetrics } from '../../../../machine/ts/lua/debug
 import { editorRuntimeState } from '../../../editor/common/runtime_state';
 import { editorDebuggerState } from './state';
 import { showEditorMessage } from '../../../common/feedback_state';
-import { focusChunkSource } from '../resources/navigation';
+import { focusChunkSourceForContext } from '../resources/navigation';
 import { getActiveCodeTabContext } from '../../ui/code_tab/contexts';
 import { clamp, clamp_fallback } from '../../../../machine/ts/common/clamp';
 import { centerCursorVertically, ensureCursorVisible, setCursorPosition, updateDesiredColumn } from '../../../editor/ui/view/caret/caret';
@@ -234,7 +234,7 @@ function showDebuggerPauseOverlay(runtime: Runtime, payload: DebuggerPauseDispla
 		clearExecutionStopHighlights();
 		return;
 	}
-	focusChunkSource(runtime, normalizedChunk);
+	focusChunkSourceForContext(runtime, runtime.machine.cpu.activeCartridgeSlot(), normalizedChunk);
 	const safeLine = clamp_fallback(payload.line, 1, payload.line - 1, 1);
 	const safeColumn = clamp_fallback(payload.column, 1, payload.column - 1, 1);
 	updateDebuggerCaret(safeLine, safeColumn);
@@ -296,7 +296,7 @@ function navigateToRuntimeErrorFrameTargetForRuntime(runtime: Runtime, frame: St
 	}
 	const normalizedChunk = source;
 	try {
-		focusChunkSource(runtime, normalizedChunk);
+		focusChunkSourceForContext(runtime, runtime.machine.cpu.activeCartridgeSlot(), normalizedChunk);
 	} catch (error) {
 		const message = extractErrorMessage(error);
 		showEditorMessage(`Failed to open runtime path: ${message}`, constants.COLOR_STATUS_ERROR, 1.6);
