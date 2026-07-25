@@ -2,7 +2,11 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { OpCode, RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { collectCpuProfilerHotPcs } from '../../machine/ts/machine/cpu/profiler';
+import {
+	CpuProfilerSession,
+	collectCpuProfilerHotPcs,
+	formatCpuProfilerReport,
+} from '../../machine/ts/machine/cpu/profiler';
 import { writeInstruction, INSTRUCTION_BYTES } from '../../machine/ts/machine/cpu/instruction_format';
 import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 
@@ -25,15 +29,18 @@ function makeProfilerImage() {
 	});
 }
 
-test('CPU profiler records opcode and PC execution counts', () => {
-	const image = makeProfilerImage();
+function profileImage(image: ReturnType<typeof makeProfilerImage>) {
 	const cpu = createTestSystemCpu(image).cpu;
-	cpu.setProfilerEnabled(true);
+	const profilerSession = new CpuProfilerSession(cpu);
+	profilerSession.attachDebugInfo(-1, image.symbols.metadata.functionIds, image.symbols.metadata);
+	profilerSession.enable();
 	cpu.start(image.vectors.startupFunctionAddress);
-
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
+	return profilerSession.profiler.snapshot();
+}
 
-	const snapshot = cpu.profiler.snapshot();
+test('CPU profiler records opcode and PC execution counts', () => {
+	const snapshot = profileImage(makeProfilerImage());
 	assert.equal(snapshot.totalInstructions, 4);
 	assert.equal(snapshot.totalBaseCycles, 5);
 	assert.equal(snapshot.opcodeCounts[OpCode.K1], 2);
@@ -46,14 +53,7 @@ test('CPU profiler records opcode and PC execution counts', () => {
 });
 
 test('CPU profiler report resolves hot PCs back to opcode and source location', () => {
-	const image = makeProfilerImage();
-	const cpu = createTestSystemCpu(image).cpu;
-	cpu.setProfilerEnabled(true);
-	cpu.start(image.vectors.startupFunctionAddress);
-
-	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
-
-	const snapshot = cpu.profiler.snapshot();
+	const snapshot = profileImage(makeProfilerImage());
 	const hotAdd = collectCpuProfilerHotPcs(snapshot, 8, OpCode.ADD);
 	assert.equal(hotAdd.length, 1);
 	assert.equal(hotAdd[0].opcodeName, 'ADD');
@@ -61,7 +61,7 @@ test('CPU profiler report resolves hot PCs back to opcode and source location', 
 	assert.equal(hotAdd[0].range?.path, 'manual.lua');
 	assert.equal(hotAdd[0].range?.start.line, 3);
 
-	const report = cpu.formatProfilerReport({ topPaths: 8, topFunctions: 8, topOpcodes: 8, topPcs: 8 });
+	const report = formatCpuProfilerReport(snapshot, { topPaths: 8, topFunctions: 8, topOpcodes: 8, topPcs: 8 });
 	assert.match(report, /Fantasy CPU Runtime Profile/);
 	assert.match(report, /Estimated base cycles: 5/);
 	assert.match(report, /Top Paths/);

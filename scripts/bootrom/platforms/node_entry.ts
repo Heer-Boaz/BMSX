@@ -4,12 +4,12 @@ import * as fs from 'node:fs/promises';
 import { createCanvas, Image, loadImage } from 'canvas';
 
 import { type MachineBootOptions } from '../../../machine/ts/core/machine_manager';
+import { CpuProfilerSession, formatCpuProfilerReport } from '../../../machine/ts/machine/cpu/profiler';
 import { HEADLESS_DEFAULT_FRAME_INTERVAL_MS, HeadlessPlatformServices } from '../../../hosts/node/headless/platform_headless';
 import { CLIPlatformServices } from '../../../hosts/node/cli/platform_cli';
 import type { Platform, InputEvt } from 'bmsx/platform';
 import { HeadlessGameViewHost, type HeadlessPresentedFrame } from '../../../machine/ts/render/headless/view';
 import { HeadlessCaptureCoordinator, deriveHeadlessCaptureOutputDir, type ScheduledHeadlessCapture, type ScheduledHeadlessFrameCapture } from './headless_capture';
-import { printHeadlessCpuProfile } from './cpu_profile_report';
 import { runHostTest } from './hostrunner/host_test_runner';
 import { buildHostTestCartridge, HOST_TEST_API_PATH } from './hostrunner/host_test_cartridge';
 import { runIdeTest } from './hostrunner/ide_test_runner';
@@ -1003,7 +1003,7 @@ async function main(): Promise<void> {
 	}
 	let captureCoordinator: HeadlessCaptureCoordinator | null = null;
 	let cpuProfileDumped = false;
-	let cpuProfileActive = false;
+	let cpuProfilerSession: CpuProfilerSession | null = null;
 	const baseRequestExit = createProcessExitController(() => captureCoordinator);
 	const postInput = (event: InputEvt) => {
 		platform.input.post(event);
@@ -1093,16 +1093,17 @@ async function main(): Promise<void> {
 	console.log(`[bootrom:${__BOOTROM_TARGET__}] Starting game (debug=${debugFlag}, frameIntervalMs=${frameInterval}).`);
 	const runtime = await machineRuntime.machineManager.boot(bootArgs);
 	const requestExit = (code: number): void => {
-		if (!cpuProfileDumped && cpuProfileActive) {
+		if (!cpuProfileDumped && cpuProfilerSession !== null) {
 			cpuProfileDumped = true;
-			printHeadlessCpuProfile({ formatCpuProfilerReport: () => runtime.machine.cpu.formatProfilerReport() }, __BOOTROM_TARGET__);
+			console.log(`[bootrom:${__BOOTROM_TARGET__}] Fantasy CPU profiler report:`);
+			console.log(formatCpuProfilerReport(cpuProfilerSession.profiler.snapshot()));
 		}
 		baseRequestExit(code);
 	};
 	processExitController = requestExit;
 	if (cliOptions.cpuProfile) {
-		runtime.machine.cpu.setProfilerEnabled(true);
-		cpuProfileActive = true;
+		cpuProfilerSession = new CpuProfilerSession(runtime.machine.cpu);
+		cpuProfilerSession.enable();
 		console.log(`[bootrom:${__BOOTROM_TARGET__}] Fantasy CPU profiler enabled.`);
 	}
 	const createTimelineFrameClock = (): TimelineFrameClock | null => {

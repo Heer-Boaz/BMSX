@@ -44,7 +44,10 @@ export type Blua32ExecutionImage = Blua32DecodedExecutionImage & {
 	decodedWordCount: number;
 	tableLoadCaches: TableLoadInlineCache[];
 	staticClosures: Closure[];
-	profilerIndex: number;
+};
+
+export type CpuInstructionTrace = {
+	recordInstruction(image: Blua32ExecutionImage, wordIndex: number, opcode: number): void;
 };
 
 export function createDecodedInstructionPage(): DecodedInstructionPage {

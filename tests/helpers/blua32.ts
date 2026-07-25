@@ -363,7 +363,6 @@ export function createTestSystemCpu(
 	const irqController = new IrqController(memory);
 	const cpu = new CPU(memory, irqController);
 	cpu.mountExecutionImages();
-	cpu.attachProfilerDebugInfo(-1, finalized.symbols.metadata.functionIds, finalized.symbols.metadata);
 	return { cpu, memory, irqController };
 }
 

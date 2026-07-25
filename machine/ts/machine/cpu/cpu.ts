@@ -35,13 +35,6 @@ import {
 	LUA_FAULT_REASON_METATABLE_LOOP,
 	LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION,
 } from './cop0';
-import {
-	CpuExecutionProfiler,
-	formatCpuProfilerReport,
-	type CpuProfilerImage,
-	type CpuProfilerMetadata,
-	type CpuProfilerReportOptions,
-} from './profiler';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord, signExtend } from './instruction_format';
 import {
 	BLUA32_FUNCTION_RECORD_SIZE,
@@ -91,6 +84,7 @@ import {
 	createDecodedInstructionPage,
 	type Blua32ExecutionImage,
 	type Blua32RuntimeFunction,
+	type CpuInstructionTrace,
 	type DecodedInstructionPage,
 	type TableLoadInlineCache,
 } from './execution_image';
@@ -319,17 +313,13 @@ export class CPU {
 	private arrayNativeArgsScratchIndex = 0;
 	private readonly debugRegistersScratch: Value[] = [];
 	private readonly nativeReturnScratch = new ScratchArrayStack<Value>();
-	public readonly profiler = new CpuExecutionProfiler();
-	private profilerEnabled = false;
-	private profilerConfigured = false;
+	private instructionTrace: CpuInstructionTrace | null = null;
 	private externalReturnSink: Value[] | null = null;
 	private readonly executionAddressSpace: ExecutionAddressSpace;
 	private readonly executionImages: Blua32ExecutionImage[] = [];
 	private systemImage!: Blua32ExecutionImage;
 	private activeExecutionImage!: Blua32ExecutionImage;
 	private readonly staticClosuresByAddress = new Map<number, Closure>();
-	private readonly profilerFunctionIdsBySlot = new Map<number, ReadonlyArray<string>>();
-	private readonly profilerMetadataBySlot = new Map<number, CpuProfilerMetadata | null>();
 	public stringIndexTable: Table;
 	private systemGlobalNames: StringId[] = [];
 	private systemGlobalValues: Value[] = [];
@@ -691,8 +681,6 @@ export class CPU {
 
 	public mountExecutionImages(): void {
 		this.staticClosuresByAddress.clear();
-		this.profilerFunctionIdsBySlot.clear();
-		this.profilerMetadataBySlot.clear();
 		this.executionImages.length = 0;
 		const systemImage = this.executionAddressSpace.loadDomain(SYSTEM_EXECUTION_DOMAIN_ID);
 		if (systemImage === null) {
@@ -703,10 +691,6 @@ export class CPU {
 		this.systemExceptionFunctionAddress = this.systemImage.boot.exceptionFunctionAddress;
 		this.hardHalted = false;
 		this.activeExecutionImage = this.systemImage;
-		this.profilerConfigured = false;
-		if (this.profilerEnabled) {
-			this.configureProfiler();
-		}
 	}
 
 	public clearExecutionEnvironment(): void {
@@ -772,7 +756,6 @@ export class CPU {
 			decodedWordCount: layout.header.textByteCount / INSTRUCTION_BYTES,
 			tableLoadCaches: decoded.tableLoadCaches,
 			staticClosures: new Array(layout.functions.length),
-			profilerIndex: 0,
 		};
 		for (let index = 0; index < layout.functions.length; index += 1) {
 			const functionRecord: Blua32RuntimeFunction = {
@@ -806,10 +789,6 @@ export class CPU {
 		}
 		const image = this.activateExecutionImage(decodedImage);
 		this.executionImages.push(image);
-		this.profilerConfigured = false;
-		if (this.profilerEnabled) {
-			this.configureProfiler();
-		}
 		return image;
 	}
 
@@ -858,10 +837,14 @@ export class CPU {
 		if (this.activeExecutionImage === previousImage) {
 			this.activeExecutionImage = image;
 		}
-		this.profilerConfigured = false;
-		if (this.profilerEnabled) {
-			this.configureProfiler();
-		}
+	}
+
+	public currentExecutionImages(): readonly Blua32ExecutionImage[] {
+		return this.executionImages;
+	}
+
+	public setInstructionTrace(trace: CpuInstructionTrace | null): void {
+		this.instructionTrace = trace;
 	}
 
 	private exceptionOwnerFrameIndices(): { epcOwnerFrameIndex: number; nmiReturnEpcOwnerFrameIndex: number } {
@@ -1028,71 +1011,6 @@ export class CPU {
 
 	private decodedPageAt(image: Blua32ExecutionImage, wordIndex: number): DecodedInstructionPage {
 		return image.decodedPages[wordIndex >>> DECODED_PAGE_SHIFT];
-	}
-
-	// Opt-in, external-only companion data for the profiler (a genuine debugger/tooling
-	// concern), keyed by physical slot. Never sourced from the CPU's own execution
-	// structs — the caller (test harness, IDE profiling session) supplies it separately
-	// from whatever it used to link/compile the ROM, so the CPU itself never needs to
-	// know about source symbols to execute or to profile.
-	public attachProfilerDebugInfo(
-		slot: number,
-		functionIds: ReadonlyArray<string>,
-		metadata: CpuProfilerMetadata | null,
-	): void {
-		this.profilerFunctionIdsBySlot.set(slot, functionIds);
-		this.profilerMetadataBySlot.set(slot, metadata);
-		this.profilerConfigured = false;
-		if (this.profilerEnabled) {
-			this.configureProfiler();
-		}
-	}
-
-	private configureProfiler(): void {
-		this.profiler.configureImages(this.profilerImages());
-		this.profilerConfigured = true;
-	}
-
-	private profilerImages(): CpuProfilerImage[] {
-		const descriptors = new Array<CpuProfilerImage>(this.executionImages.length);
-		for (let imageIndex = 0; imageIndex < this.executionImages.length; imageIndex += 1) {
-			const image = this.executionImages[imageIndex];
-			image.profilerIndex = imageIndex;
-			const attachedFunctionIds = this.profilerFunctionIdsBySlot.get(image.executionDomainId);
-			let functionIds: ReadonlyArray<string>;
-			if (attachedFunctionIds === undefined) {
-				const generatedFunctionIds = new Array<string>(image.functions.length);
-				for (let functionIndex = 0; functionIndex < image.functions.length; functionIndex += 1) {
-					generatedFunctionIds[functionIndex] = `function@${image.functions[functionIndex].address.toString(16)}`;
-				}
-				functionIds = generatedFunctionIds;
-			} else {
-				functionIds = attachedFunctionIds;
-			}
-			descriptors[imageIndex] = {
-				textAddress: image.layout.header.textAddress,
-				functions: image.functions,
-				functionIds,
-				metadata: this.profilerMetadataBySlot.get(image.executionDomainId) ?? null,
-				opcodeByWord: this.buildProfilerOpcodeByWord(image),
-			};
-		}
-		return descriptors;
-	}
-
-	private buildProfilerOpcodeByWord(image: Blua32ExecutionImage): Uint8Array {
-		const opcodeByWord = new Uint8Array(image.decodedWordCount);
-		const decodedPages = image.decodedPages;
-		for (let pageIndex = 0; pageIndex < decodedPages.length; pageIndex += 1) {
-			const page = decodedPages[pageIndex];
-			const pageStart = pageIndex << DECODED_PAGE_SHIFT;
-			const remainingWords = opcodeByWord.length - pageStart;
-			const pageWords = remainingWords < DECODED_PAGE_WORDS ? remainingWords : DECODED_PAGE_WORDS;
-			for (let offset = 0; offset < pageWords; offset += 1) {
-				opcodeByWord[pageStart + offset] = page.ops[offset];
-			}
-		}
-		return opcodeByWord;
 	}
 
 	private functionRecordInImage(image: Blua32ExecutionImage, address: number): Blua32RuntimeFunction | null {
@@ -1386,7 +1304,7 @@ export class CPU {
 	public runUntilDepth(targetDepth: number, instructionBudget: number): RunResult {
 		this.instructionBudgetRemaining = instructionBudget;
 		const frames = this.frames;
-		const profiler = this.profilerEnabled ? this.profiler : null;
+		const instructionTrace = this.instructionTrace;
 		const baseCycles = BASE_CYCLES;
 		while (frames.length > targetDepth) {
 			try {
@@ -1426,8 +1344,8 @@ export class CPU {
 					frame.pc = pc + (width * INSTRUCTION_BYTES);
 					this.lastPc = pc + ((width - 1) * INSTRUCTION_BYTES);
 					this.lastInstruction = page.words[pageOffset];
-					if (profiler !== null) {
-						profiler.record(image.profilerIndex, wordIndex, op);
+					if (instructionTrace !== null) {
+						instructionTrace.recordInstruction(image, wordIndex, op);
 					}
 					this.instructionBudgetRemaining -= baseCycles[op];
 					this.executeInstruction(
@@ -1510,7 +1428,7 @@ export class CPU {
 			this.hardHalt();
 			return;
 		}
-		const profiler = this.profilerEnabled ? this.profiler : null;
+		const instructionTrace = this.instructionTrace;
 		const page = this.decodedPageAt(image, wordIndex);
 		const pageOffset = wordIndex & DECODED_PAGE_MASK;
 		const width = page.widths[pageOffset];
@@ -1519,8 +1437,8 @@ export class CPU {
 		frame.pc = pc + (width * INSTRUCTION_BYTES);
 		this.lastPc = pc + ((width - 1) * INSTRUCTION_BYTES);
 		this.lastInstruction = page.words[pageOffset];
-		if (profiler !== null) {
-			profiler.record(image.profilerIndex, wordIndex, op);
+		if (instructionTrace !== null) {
+			instructionTrace.recordInstruction(image, wordIndex, op);
 		}
 		this.charge(BASE_CYCLES[op]);
 		try {
@@ -1574,25 +1492,6 @@ export class CPU {
 			instr: this.lastInstruction,
 			registers,
 		};
-	}
-
-	public setProfilerEnabled(enabled: boolean): void {
-		this.profilerEnabled = enabled;
-		if (enabled) {
-			if (!this.profilerConfigured) {
-				this.configureProfiler();
-			} else {
-				this.profiler.reset();
-			}
-		}
-	}
-
-	public isProfilerEnabled(): boolean {
-		return this.profilerEnabled;
-	}
-
-	public formatProfilerReport(options: CpuProfilerReportOptions = {}): string {
-		return formatCpuProfilerReport(this.profiler.snapshot(), options);
 	}
 
 	public getCallStack(): ReadonlyArray<CpuCallStackEntry> {

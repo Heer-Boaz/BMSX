@@ -1,5 +1,12 @@
 import { BASE_CYCLES, OPCODE_CATEGORY, OPCODE_COUNT, OpCode, getOpcodeName } from './opcode_info';
 import { INSTRUCTION_BYTES } from './instruction_format';
+import {
+	DECODED_PAGE_SHIFT,
+	DECODED_PAGE_WORDS,
+	type Blua32ExecutionImage,
+	type CpuInstructionTrace,
+} from './execution_image';
+import type { CPU } from './cpu';
 
 export type CpuProfilerSourcePosition = {
 	line: number;
@@ -284,6 +291,101 @@ export class CpuExecutionProfiler {
 			debugRanges: this.debugRanges.slice(),
 		};
 	}
+}
+
+export class CpuProfilerSession implements CpuInstructionTrace {
+	public readonly profiler = new CpuExecutionProfiler();
+	private readonly functionIdsByDomain = new Map<number, ReadonlyArray<string>>();
+	private readonly metadataByDomain = new Map<number, CpuProfilerMetadata | null>();
+	private readonly imageIndexes = new Map<Blua32ExecutionImage, number>();
+	private enabled = false;
+
+	public constructor(private readonly cpu: CPU) {
+	}
+
+	public attachDebugInfo(
+		executionDomainId: number,
+		functionIds: ReadonlyArray<string>,
+		metadata: CpuProfilerMetadata | null,
+	): void {
+		this.functionIdsByDomain.set(executionDomainId, functionIds);
+		this.metadataByDomain.set(executionDomainId, metadata);
+		if (this.enabled) {
+			this.configureImages();
+		}
+	}
+
+	public enable(): void {
+		if (this.enabled) {
+			this.profiler.reset();
+			return;
+		}
+		this.configureImages();
+		this.cpu.setInstructionTrace(this);
+		this.enabled = true;
+	}
+
+	public disable(): void {
+		if (!this.enabled) {
+			return;
+		}
+		this.cpu.setInstructionTrace(null);
+		this.enabled = false;
+	}
+
+	public recordInstruction(image: Blua32ExecutionImage, wordIndex: number, opcode: number): void {
+		let imageIndex = this.imageIndexes.get(image);
+		if (imageIndex === undefined) {
+			this.configureImages();
+			imageIndex = this.cpu.currentExecutionImages().indexOf(image);
+		}
+		this.profiler.record(imageIndex, wordIndex, opcode);
+	}
+
+	private configureImages(): void {
+		const images = this.cpu.currentExecutionImages();
+		const descriptors = new Array<CpuProfilerImage>(images.length);
+		this.imageIndexes.clear();
+		for (let imageIndex = 0; imageIndex < images.length; imageIndex += 1) {
+			const image = images[imageIndex];
+			this.imageIndexes.set(image, imageIndex);
+			const attachedFunctionIds = this.functionIdsByDomain.get(image.executionDomainId);
+			let functionIds: ReadonlyArray<string>;
+			if (attachedFunctionIds === undefined) {
+				const generatedFunctionIds = new Array<string>(image.functions.length);
+				for (let functionIndex = 0; functionIndex < image.functions.length; functionIndex += 1) {
+					generatedFunctionIds[functionIndex] = `function@${image.functions[functionIndex].address.toString(16)}`;
+				}
+				functionIds = generatedFunctionIds;
+			} else {
+				functionIds = attachedFunctionIds;
+			}
+			const attachedMetadata = this.metadataByDomain.get(image.executionDomainId);
+			descriptors[imageIndex] = {
+				textAddress: image.layout.header.textAddress,
+				functions: image.functions,
+				functionIds,
+				metadata: attachedMetadata === undefined ? null : attachedMetadata,
+				opcodeByWord: buildProfilerOpcodeByWord(image),
+			};
+		}
+		this.profiler.configureImages(descriptors);
+	}
+}
+
+function buildProfilerOpcodeByWord(image: Blua32ExecutionImage): Uint8Array {
+	const opcodeByWord = new Uint8Array(image.decodedWordCount);
+	const decodedPages = image.decodedPages;
+	for (let pageIndex = 0; pageIndex < decodedPages.length; pageIndex += 1) {
+		const page = decodedPages[pageIndex];
+		const pageStart = pageIndex << DECODED_PAGE_SHIFT;
+		const remainingWords = opcodeByWord.length - pageStart;
+		const pageWords = remainingWords < DECODED_PAGE_WORDS ? remainingWords : DECODED_PAGE_WORDS;
+		for (let offset = 0; offset < pageWords; offset += 1) {
+			opcodeByWord[pageStart + offset] = page.ops[offset];
+		}
+	}
+	return opcodeByWord;
 }
 
 export function collectCpuProfilerHotPaths(snapshot: CpuProfilerSnapshot, limit = 16): CpuProfilerHotPath[] {
