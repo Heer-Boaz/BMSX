@@ -241,6 +241,11 @@
 			"reason": "devtool_cpu_profiler_not_core_parity_surface"
 		},
 		{
+			"pattern": "machine/ts/machine/cpu/register_file.ts",
+			"category": "cpu_interpreter_exception",
+			"reason": "ts_soa_register_storage_cpp_uses_qnan_boxed_value_words_directly"
+		},
+		{
 			"pattern": "machine/ts/rompack/tooling/**",
 			"category": "rompacker_tooling",
 			"reason": "rompacker_authoring_schema_not_runtime_core"
