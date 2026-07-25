@@ -5,8 +5,8 @@ import { test } from 'node:test';
 import {
 	Closure,
 	CPU,
-	Table,
 } from '../../machine/ts/machine/cpu/cpu';
+import { Table } from '../../machine/ts/machine/cpu/table';
 import {
 	BuiltinFunctionId,
 	StringValue,

@@ -1,5 +1,6 @@
 import { machineManager } from '../../machine/ts/core/machine_manager';
-import { Closure, Table } from '../../machine/ts/machine/cpu/cpu';
+import { Closure } from '../../machine/ts/machine/cpu/cpu';
+import { Table } from '../../machine/ts/machine/cpu/table';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import {
 	aemDocumentFormat,

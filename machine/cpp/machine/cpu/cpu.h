@@ -3,7 +3,6 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <exception>
 #include <functional>
 #include <memory>
 #include <new>
@@ -21,9 +20,11 @@
 #include "machine/cpu/blua32_image.h"
 #include "machine/cpu/blua32_symbols.h"
 #include "machine/cpu/execution_address_space.h"
+#include "machine/cpu/errors.h"
 #include "machine/cpu/instruction_format.h"
 #include "machine/cpu/cop0.h"
 #include "machine/cpu/opcode_info.h"
+#include "machine/cpu/table.h"
 #include "machine/cpu/value.h"
 #include "machine/memory/access_kind.h"
 
@@ -56,20 +57,6 @@ public:
 private:
 	CPU* m_cpu = nullptr;
 	NativeResults* m_out = nullptr;
-};
-
-struct LuaThrownValueError final : std::exception {
-	Value value = valueNil();
-	std::string message;
-
-	LuaThrownValueError(Value value, const StringPool& stringPool);
-	const char* what() const noexcept override { return message.c_str(); }
-};
-
-struct LuaExecutionError final : std::runtime_error {
-	u32 reason;
-	explicit LuaExecutionError(const std::string& message, u32 reason = LUA_FAULT_REASON_UNKNOWN)
-		: std::runtime_error(message), reason(reason) {}
 };
 
 struct DecodedInstruction {
@@ -204,20 +191,6 @@ struct ProtectedCallContinuation {
 	int handlerRegister = -1;
 };
 
-struct TableHashNodeState {
-	Value key = valueNil();
-	Value value = valueNil();
-	int next = -1;
-};
-
-struct TableRuntimeState {
-	std::vector<Value> array;
-	size_t arrayLength = 0;
-	std::vector<TableHashNodeState> hash;
-	int hashFree = -1;
-	Table* metatable = nullptr;
-};
-
 enum class CpuValueStateTag : uint8_t {
 	Nil,
 	False,
@@ -328,76 +301,6 @@ enum class AcceptedInterruptKind : uint8_t {
 	None = 0,
 	Maskable = 1,
 	NonMaskable = 2,
-};
-
-class Table : public GCObject {
-public:
-	Table(int arraySize = 0, int hashSize = 0);
-
-	Value get(const Value& key) const;
-	void set(const Value& key, const Value& value);
-	Value getInteger(int index) const;
-	void setInteger(int index, const Value& value);
-	Value getStringKey(StringId key) const;
-	void setStringKey(StringId key, const Value& value);
-	int length() const;
-	void clear();
-	template <typename Fn>
-	void forEachEntry(Fn&& fn) const {
-		for (size_t i = 0; i < m_array.size(); ++i) {
-			if (!isNil(m_array[i])) {
-				fn(valueNumber(static_cast<double>(i + 1)), m_array[i]);
-			}
-		}
-		for (size_t i = 0; i < m_hashSize; ++i) {
-			if (!isNil(m_hashKeys[i])) {
-				fn(m_hashKeys[i], m_hashValues[i]);
-			}
-		}
-	}
-	std::optional<std::pair<Value, Value>> nextEntry(const Value& after) const;
-	std::optional<std::tuple<size_t, size_t, Value, Value>> nextEntryFromCursor(size_t arrayCursor, size_t hashCursor, const Value& previousHashKey = valueNil()) const;
-	TableRuntimeState captureRuntimeState() const;
-	void restoreRuntimeState(const TableRuntimeState& state);
-	size_t trackedHeapBytes() const;
-
-	Table* metatable = nullptr;
-	uint32_t version() const { return m_version; }
-	void bumpVersion() {
-		++m_version;
-		if (m_version == 0) {
-			m_version = 1;
-		}
-	}
-
-private:
-	struct HashStorageDeleter {
-		void operator()(void* ptr) const noexcept { ::operator delete(ptr); }
-	};
-
-	bool getArrayIndex(const Value& key, int& outIndex) const;
-	bool hasArrayIndex(size_t index) const;
-	void updateArrayLengthFrom(size_t startIndex);
-	size_t hashValue(const Value& key) const;
-	bool keyEquals(const Value& a, const Value& b) const;
-	int findNodeIndex(const Value& key) const;
-	int getFreeIndex();
-	void rehash(const Value& key);
-	void resize(size_t newArraySize, size_t newHashSize);
-	void allocateHash(size_t size);
-	void rawSet(const Value& key, const Value& value);
-	void insertHash(const Value& key, const Value& value);
-	void removeFromHash(const Value& key);
-
-	std::vector<Value> m_array;
-	size_t m_arrayLength = 0;
-	std::unique_ptr<void, HashStorageDeleter> m_hashStorage;
-	Value* m_hashKeys = nullptr;
-	Value* m_hashValues = nullptr;
-	int32_t* m_hashNext = nullptr;
-	size_t m_hashSize = 0;
-	int m_hashFree = -1;
-	uint32_t m_version = 1;
 };
 
 class GcHeap {

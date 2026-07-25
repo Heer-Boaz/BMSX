@@ -9,7 +9,8 @@ import { getCachedLuaParse } from '../../../../machine/ts/lua/analysis/cache';
 import { LuaInterpreter } from '../../../../machine/ts/lua/runtime';
 import { extractErrorMessage, isLuaFunctionValue, isLuaTable, LuaFunctionValue, LuaNativeValue, LuaTable, LuaValue, resolveNativeTypeName } from '../../../../machine/ts/lua/value';
 import { API_METHOD_METADATA, type ApiMethodMetadata } from '../../../../machine/ts/language/lua/api_metadata';
-import { Table, type CpuFrameSnapshot } from '../../../../machine/ts/machine/cpu/cpu';
+import type { CpuFrameSnapshot } from '../../../../machine/ts/machine/cpu/cpu';
+import { Table } from '../../../../machine/ts/machine/cpu/table';
 import { asStringId, valueIsString, type Value } from '../../../../machine/ts/machine/cpu/value';
 import {
 	blua32SourceRangeAtPc,

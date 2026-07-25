@@ -1,6 +1,7 @@
 import { formatNumber } from '../common/number_format';
-import type { Closure, Table } from './cpu';
+import type { Closure } from './cpu';
 import type { StringId, StringPool } from './string_pool';
+import type { Table } from './table';
 
 export const enum ValueTag {
 	Nil,

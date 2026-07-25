@@ -1,7 +1,8 @@
 import * as path from 'node:path';
 
 import { extractErrorMessage } from '../../../../machine/ts/lua/value';
-import { Table, type Closure } from '../../../../machine/ts/machine/cpu/cpu';
+import type { Closure } from '../../../../machine/ts/machine/cpu/cpu';
+import { Table } from '../../../../machine/ts/machine/cpu/table';
 import { EMPTY_CALL_ARGS, asStringId, valueIsString, valueIsTable, type StringValue, type Value } from '../../../../machine/ts/machine/cpu/value';
 import { callClosureIntoSuspended } from '../../../../ide/runtime/closure_executor';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';

@@ -1,4 +1,5 @@
-import { ArrayNativeArgsView, type Table } from '../cpu/cpu';
+import { ArrayNativeArgsView } from '../cpu/cpu';
+import type { Table } from '../cpu/table';
 import type { Value } from '../cpu/value';
 import { ScratchArrayStack, ScratchMapStack } from '../../common/scratchstack';
 import { ScratchBuffer } from '../../common/scratchbuffer';

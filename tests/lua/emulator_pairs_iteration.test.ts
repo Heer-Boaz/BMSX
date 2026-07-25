@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { Table } from '../../machine/ts/machine/cpu/cpu';
+import { Table } from '../../machine/ts/machine/cpu/table';
 import type { Value } from '../../machine/ts/machine/cpu/value';
 
 function keyLabel(value: Value): string {

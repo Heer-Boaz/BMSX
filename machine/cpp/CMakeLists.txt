@@ -274,6 +274,8 @@ add_library(bmsx_core STATIC
 
 	# Machine runtime (Lua bytecode interpreter)
 	machine/cpu/cpu.cpp
+	machine/cpu/errors.cpp
+	machine/cpu/table.cpp
 	machine/cpu/value.cpp
 	machine/cpu/blua32_image.cpp
 	machine/cpu/execution_address_space.cpp
