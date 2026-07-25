@@ -1,7 +1,6 @@
 #include "machine/devices/gx/gte.h"
 #include "machine/bus/io.h"
 #include "machine/cpu/cpu.h"
-#include "machine/cpu/execution_loader.h"
 #include "machine/cpu/instruction_format.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/bus_signals.h"
@@ -44,7 +43,6 @@ struct GteHarness {
 	bmsx::test::Blua32TestRom systemRom;
 	bmsx::Memory memory;
 	bmsx::IrqController irq;
-	bmsx::ExecutionLoader executionLoader;
 	bmsx::CPU cpu;
 	bmsx::DeviceScheduler scheduler;
 	bmsx::GxGte gte;
@@ -60,11 +58,10 @@ struct GteHarness {
 		))
 		, memory(bmsx::MemoryInit{systemRom.bytes, bmsx::test::cartridgeSlots()})
 		, irq(memory)
-		, executionLoader(memory)
-		, cpu(memory, irq, executionLoader)
+		, cpu(memory, irq)
 		, scheduler(cpu)
 		, gte(memory, cpu, scheduler) {
-		executionLoader.mountExecutableMedia(cpu);
+		cpu.mountExecutableMedia();
 	}
 };
 

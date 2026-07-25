@@ -1,6 +1,5 @@
 #include "machine/bus/io.h"
 #include "machine/cpu/cpu.h"
-#include "machine/cpu/execution_loader.h"
 #include "machine/devices/dma/controller.h"
 #include "machine/devices/geometry/controller.h"
 #include "machine/devices/geometry/contracts.h"
@@ -40,7 +39,6 @@ struct ImgDecHarness {
 	std::array<bmsx::u8, 4096u> cartRom{};
 	bmsx::Memory memory;
 	bmsx::IrqController irq;
-	bmsx::ExecutionLoader executionLoader;
 	bmsx::CPU cpu;
 	bmsx::DeviceScheduler scheduler;
 	bmsx::DmaController dma;
@@ -52,8 +50,7 @@ struct ImgDecHarness {
 	ImgDecHarness()
 		: memory(bmsx::MemoryInit{ {}, bmsx::test::cartridgeSlots(cartRom) })
 		, irq(memory)
-		, executionLoader(memory)
-		, cpu(memory, irq, executionLoader)
+		, cpu(memory, irq)
 		, scheduler(cpu)
 		, dma(memory, cpu, irq, scheduler)
 		, geometry(memory, irq, scheduler)

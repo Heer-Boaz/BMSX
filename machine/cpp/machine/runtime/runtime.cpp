@@ -238,7 +238,7 @@ uint32_t Runtime::vramTotalBytes() const {
 }
 
 void Runtime::boot() {
-	machine.executionLoader.mountExecutableMedia(machine.cpu);
+	machine.cpu.mountExecutableMedia();
 	setupBuiltins();
 	startSystemFirmware();
 }
@@ -249,7 +249,7 @@ void Runtime::setBlua32MediaSymbols(Blua32MediaSymbols symbols) {
 
 void Runtime::startSystemFirmware() {
 	machine.cpu.start(
-		machine.executionLoader.systemStartupFunctionAddress(),
+		machine.cpu.systemStartupFunctionAddress(),
 		NativeArgsView(),
 		CPU_STATUS_SYSTEM_ENTRY
 	);
@@ -260,7 +260,7 @@ void Runtime::startSystemFirmware() {
 
 void Runtime::rebootSystem() {
 	resetForSystemBoot();
-	machine.executionLoader.mountExecutableMedia(machine.cpu);
+	machine.cpu.remountExecutableMedia();
 	setupBuiltins();
 	startSystemFirmware();
 }

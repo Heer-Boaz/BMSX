@@ -1,7 +1,6 @@
 #include "machine/bus/io.h"
 #include "machine/cpu/cop0.h"
 #include "machine/cpu/cpu.h"
-#include "machine/cpu/execution_loader.h"
 #include "machine/cpu/instruction_format.h"
 #include "machine/cpu/opcode_info.h"
 #include "machine/devices/dma/controller.h"
@@ -118,7 +117,6 @@ struct CpuTestMachine {
 	bmsx::test::Blua32TestRom cartRom;
 	bmsx::Memory memory;
 	bmsx::IrqController irq;
-	bmsx::ExecutionLoader executionLoader;
 	bmsx::CPU cpu;
 	bmsx::DeviceScheduler scheduler;
 	bmsx::DmaController dma;
@@ -140,15 +138,14 @@ struct CpuTestMachine {
 			bmsx::test::cartridgeSlots(cartRom.bytes),
 		})
 		, irq(memory)
-		, executionLoader(memory)
-		, cpu(memory, irq, executionLoader)
+		, cpu(memory, irq)
 		, scheduler(cpu)
 		, dma(memory, cpu, irq, scheduler) {
 		memory.cartridgeController().connect(memory, irq, dma);
 		irq.reset();
 		dma.reset();
 		memory.cartridgeController().reset();
-		executionLoader.mountExecutableMedia(cpu);
+		cpu.mountExecutableMedia();
 	}
 };
 
@@ -219,7 +216,7 @@ void testSystemAndOrdinaryGlobalRegisterfilesStayDistinct() {
 	machine.cpu.setSystemGlobalByKey(irqKey, bmsx::valueNumber(11.0));
 	machine.cpu.setGlobalByKey(irqKey, bmsx::valueNumber(22.0));
 
-	machine.executionLoader.mountExecutableMedia(machine.cpu);
+	machine.cpu.mountExecutableMedia();
 	const bmsx::CpuRuntimeState saved = machine.cpu.captureRuntimeState();
 	require(saved.systemGlobals.size() == 1u && saved.systemGlobals[0].name == "irq" && saved.systemGlobals[0].value.numberValue == 11.0, "media remount preserves the system registerfile");
 	require(saved.globals.size() == 1u && saved.globals[0].name == "irq" && saved.globals[0].value.numberValue == 22.0, "media remount preserves the ordinary global table");

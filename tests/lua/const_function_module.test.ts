@@ -13,7 +13,6 @@ import {
 	CPU_STATUS_SYSTEM_ENTRY,
 	RunResult,
 } from '../../machine/ts/machine/cpu/cpu';
-import { ExecutionLoader } from '../../machine/ts/machine/cpu/execution_loader';
 import type { ProgramMetadata } from '../../machine/ts/lua/compiler/program';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
@@ -65,9 +64,8 @@ function runColdCompiled(compiled: CompiledProgram) {
 function runColdPair(systemCompiled: CompiledProgram, cartCompiled: CompiledProgram) {
 	const finalized = linkTestBlua32Pair(systemCompiled, cartCompiled);
 	const memory = new Memory({ systemRom: finalized.systemRomBytes, cartridgeSlots: cartridgeSlots(finalized.cartRomBytes) });
-	const executionLoader = new ExecutionLoader(memory);
-	const cpu = new CPU(memory, new IrqController(memory), executionLoader);
-	executionLoader.mountExecutableMedia(cpu);
+	const cpu = new CPU(memory, new IrqController(memory));
+	cpu.mountExecutableMedia();
 	cpu.start(finalized.systemVectors.startupFunctionAddress, [], CPU_STATUS_SYSTEM_ENTRY);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	cpu.start(finalized.cartVectors.startupFunctionAddress, [], CPU_STATUS_CART_ENTRY);

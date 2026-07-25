@@ -8,7 +8,6 @@ import {
 	GxGpuCommandBuffer,
 } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
-import { ExecutionLoader } from '../../machine/ts/machine/cpu/execution_loader';
 import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
 import { GX_GPU_GP0_FILL_RECTANGLE } from '../../machine/ts/machine/devices/gx/gp0';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
@@ -20,11 +19,7 @@ import { gxGpuSoftwareVram, gxGpuSoftwareVramIndex } from '../../machine/ts/rend
 const GX_GPU_SOFTWARE_FULL_DRAWING_AREA_BOTTOM_RIGHT_WORD = 1023 | (511 << 10);
 const commandBufferMemory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
 const commandBufferIrq = new IrqController(commandBufferMemory);
-const commandBufferCpu = new CPU(
-	commandBufferMemory,
-	commandBufferIrq,
-	new ExecutionLoader(commandBufferMemory),
-);
+const commandBufferCpu = new CPU(commandBufferMemory, commandBufferIrq);
 const commandBufferScheduler = new DeviceScheduler(commandBufferCpu);
 const commandBufferDma = new DmaController(commandBufferMemory, commandBufferCpu, commandBufferIrq, commandBufferScheduler);
 

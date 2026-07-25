@@ -76,11 +76,11 @@ export function hotResume(
 
 			const cpu = runtime.machine.cpu;
 			if (rebuilt.system !== null) {
-				runtime.machine.executionLoader.installExecutionImage(cpu, 'system');
+				cpu.installExecutionImage('system');
 			}
 			for (let slot = 0; slot < rebuilt.cartridgeSlots.length; slot += 1) {
 				if (rebuilt.cartridgeSlots[slot] !== null) {
-					runtime.machine.executionLoader.installExecutionImage(cpu, slot as 0 | 1);
+					cpu.installExecutionImage(slot as 0 | 1);
 				}
 			}
 

@@ -117,7 +117,6 @@ import { ApuSampleMemory } from '../../machine/ts/machine/devices/audio/sample_m
 import type { ApuSourceByteView } from '../../machine/ts/machine/devices/audio/source';
 import type { AudioControllerState, ApuOutputState, ApuOutputVoiceState } from '../../machine/ts/machine/devices/audio/save_state';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
-import { ExecutionLoader } from '../../machine/ts/machine/cpu/execution_loader';
 import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { CART_ROM_BASE, DYNAMIC_RAM_BASE, RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/machine/memory/map';
@@ -173,7 +172,7 @@ function createAudioControllerHarness(
 	memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }),
 ): { memory: Memory; audio: AudioController; dma: DmaController; scheduler: DeviceScheduler } {
 	const irq = new IrqController(memory);
-	const cpu = new CPU(memory, irq, new ExecutionLoader(memory));
+	const cpu = new CPU(memory, irq);
 	const scheduler = new DeviceScheduler(cpu);
 	const dma = new DmaController(memory, cpu, irq, scheduler);
 	memory.cartridgeController.connect(memory, irq, dma);

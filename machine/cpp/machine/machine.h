@@ -2,7 +2,6 @@
 
 #include "machine/bus/io.h"
 #include "machine/cpu/cpu.h"
-#include "machine/cpu/execution_loader.h"
 #include "machine/devices/audio/controller.h"
 #include "machine/devices/cartridge/controller.h"
 #include "machine/devices/dma/controller.h"
@@ -32,7 +31,6 @@ public:
 	Memory& memory;
 	CartridgeController& cartridgeController;
 	IrqController irqController;
-	ExecutionLoader executionLoader;
 	CPU cpu;
 	DeviceScheduler scheduler;
 	ApuOutputMixer audioOutput;

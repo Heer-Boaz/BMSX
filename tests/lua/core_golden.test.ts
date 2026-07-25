@@ -30,7 +30,6 @@ import {
 } from '../../machine/ts/machine/bus/io';
 import { transformFixed16 } from '../../machine/ts/machine/common/numeric';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
-import { ExecutionLoader } from '../../machine/ts/machine/cpu/execution_loader';
 import {
 	GX_GPU_PCRTC_RUNTIME_EDGE_VBLANK_BEGIN,
 	GX_GPU_PCRTC_RUNTIME_EDGE_VBLANK_END,
@@ -138,11 +137,7 @@ test('core golden: budget and fixed16 datapaths match native integer semantics',
 
 test('core golden: the GPU VBlank edge presents and completes the active runtime tick', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(), cartridgeSlots: cartridgeSlots() });
-	const scheduler = new DeviceScheduler(new CPU(
-		memory,
-		new IrqController(memory),
-		new ExecutionLoader(memory),
-	));
+	const scheduler = new DeviceScheduler(new CPU(memory, new IrqController(memory)));
 	const inputSampleEdges: Array<{ currentTimeMs: number; nowCycles: number }> = [];
 	const completedFrames: unknown[] = [];
 	let raisedIrq = 0;

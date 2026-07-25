@@ -2,7 +2,6 @@
 
 #include "machine/bus/io.h"
 #include "machine/cpu/cpu.h"
-#include "machine/cpu/execution_loader.h"
 #include "machine/devices/gx/gpu.h"
 #include "machine/devices/gx/gpu_command_buffer.h"
 #include "machine/devices/gx/gp0.h"
@@ -35,7 +34,6 @@ struct DmaGpuHarness {
 	std::array<uint8_t, 8> cartRom{{0x44u, 0x33u, 0x22u, 0x11u, 0x88u, 0x77u, 0x66u, 0x55u}};
 	bmsx::Memory memory;
 	bmsx::IrqController irq;
-	bmsx::ExecutionLoader executionLoader;
 	bmsx::CPU cpu;
 	bmsx::DeviceScheduler scheduler;
 	bmsx::DmaController dma;
@@ -44,8 +42,7 @@ struct DmaGpuHarness {
 	DmaGpuHarness()
 		: memory(bmsx::MemoryInit{ { systemRom.data(), systemRom.size() }, bmsx::test::cartridgeSlots(cartRom) })
 		, irq(memory)
-		, executionLoader(memory)
-		, cpu(memory, irq, executionLoader)
+		, cpu(memory, irq)
 		, scheduler(cpu)
 		, dma(memory, cpu, irq, scheduler)
 		, gpu(memory, cpu, irq, scheduler, dma) {

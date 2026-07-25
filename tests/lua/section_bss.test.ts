@@ -6,7 +6,6 @@ import { splitText } from '../../machine/ts/common/text_lines';
 import { LuaLexer } from '../../machine/ts/lua/syntax/lexer';
 import { LuaParser } from '../../machine/ts/lua/syntax/parser';
 import { CPU, RunResult, type Value } from '../../machine/ts/machine/cpu/cpu';
-import { ExecutionLoader } from '../../machine/ts/machine/cpu/execution_loader';
 import { Blua32ConstantTag } from '../../machine/ts/machine/cpu/blua32_image';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
@@ -51,9 +50,8 @@ function disassembleEntryFunction(compiled: CompiledProgram): string {
 function runColdCompiled(compiled: CompiledProgram, memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() })): { memory: Memory; values: Value[]; image: ReturnType<typeof linkTestSystemBlua32>['image'] } {
 	const finalized = linkTestSystemBlua32(compiled);
 	memory.installSystemRom(finalized.romBytes);
-	const executionLoader = new ExecutionLoader(memory);
-	const cpu = new CPU(memory, new IrqController(memory), executionLoader);
-	executionLoader.mountExecutableMedia(cpu);
+	const cpu = new CPU(memory, new IrqController(memory));
+	cpu.mountExecutableMedia();
 	cpu.start(finalized.vectors.startupFunctionAddress);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	return { memory, values: Array.from(cpu.lastReturnValues), image: finalized.image };

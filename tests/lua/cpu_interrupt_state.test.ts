@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { AcceptedInterruptKind, BuiltinFunctionId, CPU, EMPTY_CALL_ARGS, Table, createBuiltinFunction, OpCode, RunResult, StringValue, type Closure, type Value } from '../../machine/ts/machine/cpu/cpu';
-import { ExecutionLoader } from '../../machine/ts/machine/cpu/execution_loader';
 import { writeInstruction, INSTRUCTION_BYTES } from '../../machine/ts/machine/cpu/instruction_format';
 import { BASE_CYCLES, encodeFixedCallArgCount } from '../../machine/ts/machine/cpu/opcode_info';
 import {
@@ -712,9 +711,8 @@ return wait_cart
 	const linked = linkTestBlua32Pair(system, cart);
 	const memory = new Memory({ systemRom: linked.systemRomBytes, cartridgeSlots: cartridgeSlots(linked.cartRomBytes) });
 	const irqController = new IrqController(memory);
-	const executionLoader = new ExecutionLoader(memory);
-	const cpu = new CPU(memory, irqController, executionLoader);
-	executionLoader.mountExecutableMedia(cpu);
+	const cpu = new CPU(memory, irqController);
+	cpu.mountExecutableMedia();
 	cpu.start(linked.systemVectors.startupFunctionAddress, EMPTY_CALL_ARGS, CPU_STATUS_SYSTEM_ENTRY);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	const systemWaiter = cpu.lastReturnValues[0] as Closure;
@@ -953,9 +951,8 @@ cross_image_stack.caller()
 		systemRom: linked.systemRomBytes,
 		cartridgeSlots: cartridgeSlots(linked.cartRomBytes),
 	});
-	const executionLoader = new ExecutionLoader(memory);
-	const cpu = new CPU(memory, new IrqController(memory), executionLoader);
-	executionLoader.mountExecutableMedia(cpu);
+	const cpu = new CPU(memory, new IrqController(memory));
+	cpu.mountExecutableMedia();
 
 	cpu.start(linked.cartVectors.startupFunctionAddress, EMPTY_CALL_ARGS, CPU_STATUS_CART_ENTRY);
 	assert.equal(cpu.runUntilDepth(0, 10_000), RunResult.Halted);
@@ -1292,7 +1289,7 @@ test('CPU execution stops at the device deadline that activates GPUREAD', () => 
 		functionIds: ['gpu_read_deadline'],
 	});
 	machine.memory.installSystemRom(image.romBytes);
-	machine.executionLoader.mountExecutableMedia(cpu);
+	cpu.mountExecutableMedia();
 	cpu.start(image.vectors.startupFunctionAddress);
 	machine.gxGpu.writeGp0(GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24);
 	machine.gxGpu.writeGp0(0);

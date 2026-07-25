@@ -112,12 +112,6 @@ export type Blua32ImageLayout = {
 	textBytes: Uint8Array;
 };
 
-export type Blua32MediaImage = {
-	layout: Blua32ImageLayout;
-	boot: Blua32BootHeader;
-	cartridgeSlot: number;
-};
-
 const stringDecoder = new TextDecoder('utf-8', { fatal: true });
 
 function imageOffset(address: number, byteCount: number, imageAddress: number, imageByteCount: number): number {
