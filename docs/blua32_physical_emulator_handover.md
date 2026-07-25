@@ -685,6 +685,23 @@ legitieme emulatorcaches. Maar controleer streng:
 
 Dit is de kern van de oude-framefout.
 
+**Aanvulling — dit bleek groter dan hier beschreven.** Een structurele audit
+van `cpu.ts`/`cpu.cpp` (zie "Taak 0" in
+`docs/blua32_physical_emulator_handover_followup.md` voor het volledige
+overzicht) legde bloot dat de CPU-klasse/het CPU-bestand aanzienlijk meer
+verantwoordelijkheid draagt dan §7.8 hierboven suggereert: ROM/media-mount-
+en-decode, cartridge-busslotresolutie, en profiler-orkestratie/opmaak zitten
+er allemaal op, terwijl geen enkele daarvan hoort bij een "echte" CPU-core
+(vergelijk MAME-CPU-devices). `cpu.ts` is bovendien geen enkele klasse maar
+tien (inclusief een volledige 656-regel generieke Lua-hashtable-
+implementatie, `Table`, die niets met de CPU te maken heeft). De gebruiker
+heeft expliciet besloten dat het ontvlechten hiervan **vóór** §7.9/§7.10
+moet gebeuren, omdat §7.10's eager-decode-probleem er een symptoom van is.
+Zie de follow-up voor de volledige, met codeverwijzingen onderbouwde audit
+en de precieze scheidslijn tussen wat wél (builtins met echte cyclus-
+kosten, register-/frame-/protected-call-machinery) en niet (media-mount,
+profiler-opmaak) op de CPU thuishoort.
+
 ### 7.9 Dual-slot IDE-sourceownership is nog niet af
 
 De diff heeft een goede eerste stap:
@@ -758,6 +775,22 @@ opgelost. Maak de producer/media-/executiongrens fysiek:
 
 Onderzoek daarbij de C++-route tegelijk; voorkom dat TS lazy wordt terwijl
 native eager blijft.
+
+**Aanvulling (zie `docs/blua32_physical_emulator_handover_followup.md`
+voor het volledige overzicht):** BMSX heeft het goedkope presence-signaal al
+hardwarematig — `CartridgeController.readStatusThunk()` exposeert
+`IO_CART_STATUS` met `SLOT0_PRESENT`/`SLOT1_PRESENT`, los van enige
+BLua32-decode — en `decodeExecutableMedia()` heeft al een goedkope early-out
+bij ontbrekende/ongeldige header. De lek zit specifiek bij een aanwezige,
+geldige, maar nooit door `cartridgeController.selectedSlot()` geselecteerde
+slot: die wordt bij elke `mountExecutableImages()` toch volledig gedecodeerd.
+Twee bestaande (niet 1-op-1 te kopiëren, wel illustratieve) hardware-
+precedenten voor exact dit onderscheid: de MSX-BIOS-slotscan (een niet-
+uitvoerbare cartridge zoals de Konami Sound Cartridge bij (SD) Snatcher
+wordt door de "AB"-header-scan simpelweg nooit gezien, dus nooit gedecodeerd
+als programma) en de Nintendo DS' asymmetrische Slot-1/Slot-2 (Slot-2 is
+direct memory-mapped en wordt alleen door het draaiende Slot-1-programma op
+eigen initiatief geprobeerd, nooit door de hardware zelf geïnterpreteerd).
 
 ## 8. Auditorbevindingen op het exacte stoppunt
 
