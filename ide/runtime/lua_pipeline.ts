@@ -22,9 +22,9 @@ import {
 	decodeBlua32SymbolsImage,
 	type Blua32SymbolsImage,
 } from '../../machine/ts/machine/cpu/blua32_symbols';
-import { Table, type Value, isNativeFunction, isNativeObject } from '../../machine/ts/machine/cpu/cpu';
+import { type Value, ValueTag, valueTag } from '../../machine/ts/machine/cpu/cpu';
 import type { Blua32MediaSymbols } from '../../machine/ts/machine/cpu/blua32_symbols';
-import { asStringId, valueIsNumber, valueIsString } from '../../machine/ts/machine/cpu/cpu';
+import { asStringId, valueIsString } from '../../machine/ts/machine/cpu/cpu';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import {
 	installRuntimeRomLayers,
@@ -69,29 +69,26 @@ function installFreshLuaInterpreter(runtime: Runtime): LuaInterpreter {
 }
 
 function describeSymbolValue(value: Value): { kind: RuntimeSymbolKind; valueType: string } {
-	switch (value) {
-		case null:
+	switch (valueTag(value)) {
+		case ValueTag.Nil:
 			return { kind: 'constant', valueType: 'nil' };
-		case false:
-		case true:
+		case ValueTag.False:
+		case ValueTag.True:
 			return { kind: 'constant', valueType: 'boolean' };
+		case ValueTag.Number:
+			return { kind: 'constant', valueType: 'number' };
+		case ValueTag.String:
+			return { kind: 'constant', valueType: 'string' };
+		case ValueTag.Table:
+			return { kind: 'table', valueType: 'table' };
+		case ValueTag.NativeFunction:
+			return { kind: 'function', valueType: 'native_function' };
+		case ValueTag.NativeObject:
+			return { kind: 'table', valueType: 'native_object' };
+		case ValueTag.Closure:
+		case ValueTag.BuiltinFunction:
+			return { kind: 'function', valueType: 'function' };
 	}
-	if (valueIsNumber(value)) {
-		return { kind: 'constant', valueType: 'number' };
-	}
-	if (valueIsString(value)) {
-		return { kind: 'constant', valueType: 'string' };
-	}
-	if (value instanceof Table) {
-		return { kind: 'table', valueType: 'table' };
-	}
-	if (isNativeFunction(value)) {
-		return { kind: 'function', valueType: 'native_function' };
-	}
-	if (isNativeObject(value)) {
-		return { kind: 'table', valueType: 'native_object' };
-	}
-	return { kind: 'function', valueType: 'function' };
 }
 
 function buildSymbolModuleSlotPrefix(modulePath: string): string {

@@ -1,7 +1,7 @@
 import { LuaHandlerCache, isLuaHandlerFunction } from '../../machine/ts/lua/handler_cache';
 import { convertToError, isLuaCallSignal, LuaValue, LuaTable, isLuaTable, createLuaTable, LuaNativeValue, isLuaFunctionValue, isPlainObject, resolveNativeTypeName, LuaFunctionValue } from '../../machine/ts/lua/value';
 import type { LuaInterpreter } from '../../machine/ts/lua/runtime';
-import { Table, asStringId, valueIsString, type Closure, type NativeFunction, type NativeObject, type Value, isNativeFunction, isNativeObject } from '../../machine/ts/machine/cpu/cpu';
+import { asStringId, valueIsHeap, valueIsNumber, valueIsString, valueTag, ValueTag, type Closure, type NativeFunction, type NativeObject, type StringValue, type Table, type Value } from '../../machine/ts/machine/cpu/cpu';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { LuaInteropAdapter, LuaMarshalContext } from '../../machine/ts/lua/interop';
 import { machineManager } from '../../machine/ts/core/machine_manager';
@@ -520,7 +520,7 @@ export function describeMarshalSegment(bridge: RuntimeNativeBridge, key: Value):
 	if (valueIsString(key)) {
 		return bridge.runtime.machine.cpu.stringPool.toString(asStringId(key));
 	}
-	if (typeof key === 'number') {
+	if (valueIsNumber(key)) {
 		return String(key);
 	}
 	return null;
@@ -530,7 +530,7 @@ function resolveNativeKey(bridge: RuntimeNativeBridge, key: Value): string {
 	if (valueIsString(key)) {
 		return bridge.runtime.machine.cpu.stringPool.toString(asStringId(key));
 	}
-	if (typeof key === 'number' && Number.isInteger(key)) {
+	if (valueIsNumber(key) && Number.isInteger(key)) {
 		return String(key);
 	}
 	return null;
@@ -548,14 +548,17 @@ function nativeKeysEqual(bridge: RuntimeNativeBridge, left: Value, right: Value)
 	if (left === right) {
 		return true;
 	}
-	if (valueIsString(left) && valueIsString(right)) {
-		return bridge.runtime.machine.cpu.stringPool.toString(asStringId(left)) === bridge.runtime.machine.cpu.stringPool.toString(asStringId(right));
+	const leftTag = valueTag(left);
+	const rightTag = valueTag(right);
+	if (leftTag === ValueTag.String && rightTag === ValueTag.String) {
+		return bridge.runtime.machine.cpu.stringPool.toString(asStringId(left as StringValue))
+			=== bridge.runtime.machine.cpu.stringPool.toString(asStringId(right as StringValue));
 	}
-	if (typeof left === 'number' && valueIsString(right)) {
-		return String(left) === bridge.runtime.machine.cpu.stringPool.toString(asStringId(right));
+	if (leftTag === ValueTag.Number && rightTag === ValueTag.String) {
+		return String(left as number) === bridge.runtime.machine.cpu.stringPool.toString(asStringId(right as StringValue));
 	}
-	if (valueIsString(left) && typeof right === 'number') {
-		return bridge.runtime.machine.cpu.stringPool.toString(asStringId(left)) === String(right);
+	if (leftTag === ValueTag.String && rightTag === ValueTag.Number) {
+		return bridge.runtime.machine.cpu.stringPool.toString(asStringId(left as StringValue)) === String(right as number);
 	}
 	return false;
 }
@@ -645,7 +648,7 @@ function tableToNative(bridge: RuntimeNativeBridge, table: Table, context: LuaMa
 	// start repeated-sequence-acceptable -- Runtime table marshaling keeps this scan direct and allocation-free.
 	table.forEachEntry((key) => {
 		entryCount += 1;
-		if (typeof key === 'number' && Number.isInteger(key) && key >= 1) {
+		if (valueIsNumber(key) && Number.isInteger(key) && key >= 1) {
 			numericCount += 1;
 			if (key > maxNumericIndex) {
 				maxNumericIndex = key;
@@ -712,13 +715,7 @@ export function toRuntimeValue(bridge: RuntimeNativeBridge, value: unknown): Val
 	if (typeof value === 'string') {
 		return bridge.runtime.internString(value);
 	}
-	if (isNativeObject(value as Value)) {
-		return value as Value;
-	}
-	if (isNativeFunction(value as Value)) {
-		return value as Value;
-	}
-	if (value instanceof Table) {
+	if (valueIsHeap(value)) {
 		return value;
 	}
 	if (Array.isArray(value)) {
@@ -764,19 +761,21 @@ export function toRuntimeValue(bridge: RuntimeNativeBridge, value: unknown): Val
 }
 
 export function toNativeValue(bridge: RuntimeNativeBridge, value: Value, context: LuaMarshalContext, visited: TableMarshalVisited): unknown {
-	if (value === null || typeof value === 'boolean' || typeof value === 'number') {
+	const tag = valueTag(value);
+	if (tag <= ValueTag.Number) {
 		return value;
 	}
-	if (valueIsString(value)) {
-		return bridge.runtime.machine.cpu.stringPool.toString(asStringId(value));
+	if (tag === ValueTag.String) {
+		return bridge.runtime.machine.cpu.stringPool.toString(asStringId(value as StringValue));
 	}
-	if (value instanceof Table) {
-		return tableToNative(bridge, value, context, visited);
+	if (tag === ValueTag.Table) {
+		return tableToNative(bridge, value as Table, context, visited);
 	}
-	if (isNativeObject(value)) {
-		return value.raw;
+	if (tag === ValueTag.NativeObject) {
+		return (value as NativeObject).raw;
 	}
-	if (isNativeFunction(value)) {
+	if (tag === ValueTag.NativeFunction) {
+		const nativeFunction = value as NativeFunction;
 		return (...args: unknown[]) => {
 			const callArgs = bridge.runtime.luaScratch.values.acquire();
 			const results = bridge.runtime.luaScratch.values.acquire();
@@ -787,7 +786,7 @@ export function toNativeValue(bridge: RuntimeNativeBridge, value: Value, context
 				}
 				const nativeArgs = bridge.runtime.luaScratch.acquireNativeArgs(callArgs);
 				try {
-					value.invoke(nativeArgs, results);
+					nativeFunction.invoke(nativeArgs, results);
 				} finally {
 					bridge.runtime.luaScratch.releaseNativeArgs(nativeArgs);
 				}
@@ -834,7 +833,7 @@ export function getOrCreateNativeObject(bridge: RuntimeNativeBridge, value: obje
 		: () => nativeObjectEntryCount(value as Record<string, unknown>);
 	const wrapper = bridge.runtime.machine.cpu.createNativeObject(value, {
 		get: (key) => {
-			if (isArray && typeof key === 'number' && Number.isInteger(key) && key >= 1) {
+			if (isArray && valueIsNumber(key) && Number.isInteger(key) && key >= 1) {
 				const index = key - 1;
 				if (index >= arrayValue.length) {
 					return null;
@@ -856,7 +855,7 @@ export function getOrCreateNativeObject(bridge: RuntimeNativeBridge, value: obje
 			return toRuntimeValue(bridge, rawValue);
 		},
 		set: (key, entryValue) => {
-			if (isArray && typeof key === 'number' && Number.isInteger(key) && key >= 1) {
+			if (isArray && valueIsNumber(key) && Number.isInteger(key) && key >= 1) {
 				const index = key - 1;
 				const ctx = buildMarshalContext();
 				arrayValue[index] = toNativeValue(bridge, entryValue, ctx, new WeakMap());

@@ -2,10 +2,60 @@ import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { BuiltinFunctionId, CPU, StringValue, createBuiltinFunction, Table, type Value } from '../../machine/ts/machine/cpu/cpu';
+import {
+	BuiltinFunctionId,
+	Closure,
+	CPU,
+	StringValue,
+	createBuiltinFunction,
+	Table,
+	ValueTag,
+	valueIsClosure,
+	valueIsHeap,
+	valueIsNumber,
+	valueIsTable,
+	valueTag,
+	type Value,
+} from '../../machine/ts/machine/cpu/cpu';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { runCompiledLua } from './cpu_test_harness';
+
+test('runtime values expose one numeric representation tag', () => {
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
+	const cpu = new CPU(memory, new IrqController(memory));
+	const stringValue = StringValue.get(cpu.stringPool.intern('tagged'));
+	const table = cpu.createTable(0, 0);
+	const closure = new Closure(0x1000, [], 0);
+	const builtinFunction = createBuiltinFunction(BuiltinFunctionId.Next);
+	const nativeFunction = cpu.createNativeFunction('tagged_native', () => {});
+	const nativeObject = cpu.createNativeObject({}, { get: () => null, set: () => {}, len: () => 0, nextEntry: () => null });
+	const values: ReadonlyArray<readonly [Value, ValueTag]> = [
+		[null, ValueTag.Nil],
+		[false, ValueTag.False],
+		[true, ValueTag.True],
+		[42, ValueTag.Number],
+		[stringValue, ValueTag.String],
+		[table, ValueTag.Table],
+		[closure, ValueTag.Closure],
+		[builtinFunction, ValueTag.BuiltinFunction],
+		[nativeFunction, ValueTag.NativeFunction],
+		[nativeObject, ValueTag.NativeObject],
+	];
+
+	for (let index = 0; index < values.length; index += 1) {
+		assert.equal(valueTag(values[index][0]), values[index][1]);
+	}
+	assert.equal(valueIsNumber(42), true);
+	assert.equal(valueIsNumber(closure), false);
+	assert.equal(valueIsClosure(closure), true);
+	assert.equal(valueIsClosure(table), false);
+	assert.equal(valueIsTable(table), true);
+	assert.equal(valueIsTable(nativeObject), false);
+	assert.equal(valueIsHeap(table), true);
+	assert.equal(valueIsHeap(nativeFunction), true);
+	assert.equal(valueIsHeap({ valueTag: ValueTag.Table }), false);
+});
 
 test('Table stores sparse unsigned integer keys in the hash part', () => {
 	const table = new Table(0, 0);

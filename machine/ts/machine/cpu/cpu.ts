@@ -69,11 +69,23 @@ export { OpCode } from './opcode_info';
 // start repeated-sequence-acceptable -- Lua VM/table/register hot paths deliberately keep short copy/update sequences inline.
 // start normalized-body-acceptable -- Specialized Lua VM accessors stay split so the fast paths avoid dispatch helpers.
 
-const STRING_VALUE_KIND = 'string_value';
-const TABLE_VALUE_KIND = 'table';
+export const enum ValueTag {
+	Nil,
+	False,
+	True,
+	Number,
+	String,
+	Table,
+	Closure,
+	BuiltinFunction,
+	NativeFunction,
+	NativeObject,
+}
+
+const VALUE_TAG: unique symbol = Symbol('bmsx.valueTag');
 
 export class StringValue {
-	public readonly kind = STRING_VALUE_KIND;
+	public readonly [VALUE_TAG] = ValueTag.String;
 	public readonly id: StringId;
 
 	private constructor(id: StringId) {
@@ -93,17 +105,31 @@ export class StringValue {
 const STRING_VALUES: StringValue[] = [];
 
 export type Value = null | boolean | number | StringValue | Table | Closure | BuiltinFunction | NativeFunction | NativeObject;
+export type HeapValue = StringValue | Table | Closure | BuiltinFunction | NativeFunction | NativeObject;
 export const EMPTY_CALL_ARGS: ReadonlyArray<Value> = [];
 
+export function valueTag(value: Value): ValueTag {
+	if (value === null) {
+		return ValueTag.Nil;
+	}
+	if (value === false) {
+		return ValueTag.False;
+	}
+	if (value === true) {
+		return ValueTag.True;
+	}
+	if (typeof value !== 'object') {
+		return ValueTag.Number;
+	}
+	return value[VALUE_TAG];
+}
+
+export function valueIsHeap(value: unknown): value is HeapValue {
+	return value !== null && typeof value === 'object' && VALUE_TAG in value;
+}
 
 export function valueIsString(value: Value): value is StringValue {
-	switch (value) {
-		case null:
-		case false:
-		case true:
-			return false;
-	}
-	return (value as StringValue).kind === STRING_VALUE_KIND;
+	return valueTag(value) === ValueTag.String;
 }
 
 export function asStringId(value: StringValue): StringId {
@@ -111,10 +137,6 @@ export function asStringId(value: StringValue): StringId {
 }
 
 export const isTruthyValue = (value: Value): boolean => value !== null && value !== false;
-
-const BUILTIN_FUNCTION_KIND = 'builtin_function';
-const NATIVE_FUNCTION_KIND = 'native_function';
-const NATIVE_OBJECT_KIND = 'native_object';
 
 export type NativeFnCost = {
 	base: number;
@@ -161,7 +183,7 @@ export const enum ProtectedCallKind {
 }
 
 export type BuiltinFunction = {
-	readonly kind: typeof BUILTIN_FUNCTION_KIND;
+	readonly [VALUE_TAG]: ValueTag.BuiltinFunction;
 	readonly id: BuiltinFunctionId;
 	readonly cost: NativeFnCost;
 };
@@ -170,18 +192,18 @@ const BUILTIN_COST_TIER1: NativeFnCost = { base: 1, perArg: 0, perRet: 0 };
 const BUILTIN_COST_TIER2: NativeFnCost = { base: 2, perArg: 0, perRet: 0 };
 const BUILTIN_COST_TIER4: NativeFnCost = { base: 4, perArg: 0, perRet: 0 };
 const BUILTIN_FUNCTIONS: readonly BuiltinFunction[] = [
-	{ kind: BUILTIN_FUNCTION_KIND, id: BuiltinFunctionId.Next, cost: BUILTIN_COST_TIER1 },
-	{ kind: BUILTIN_FUNCTION_KIND, id: BuiltinFunctionId.Type, cost: BUILTIN_COST_TIER1 },
-	{ kind: BUILTIN_FUNCTION_KIND, id: BuiltinFunctionId.SetMetatable, cost: BUILTIN_COST_TIER2 },
-	{ kind: BUILTIN_FUNCTION_KIND, id: BuiltinFunctionId.GetMetatable, cost: BUILTIN_COST_TIER2 },
-	{ kind: BUILTIN_FUNCTION_KIND, id: BuiltinFunctionId.RawGet, cost: BUILTIN_COST_TIER1 },
-	{ kind: BUILTIN_FUNCTION_KIND, id: BuiltinFunctionId.RawSet, cost: BUILTIN_COST_TIER1 },
-	{ kind: BUILTIN_FUNCTION_KIND, id: BuiltinFunctionId.Select, cost: BUILTIN_COST_TIER1 },
-	{ kind: BUILTIN_FUNCTION_KIND, id: BuiltinFunctionId.StringByte, cost: BUILTIN_COST_TIER2 },
-	{ kind: BUILTIN_FUNCTION_KIND, id: BuiltinFunctionId.StringChar, cost: BUILTIN_COST_TIER2 },
-	{ kind: BUILTIN_FUNCTION_KIND, id: BuiltinFunctionId.Error, cost: BUILTIN_COST_TIER2 },
-	{ kind: BUILTIN_FUNCTION_KIND, id: BuiltinFunctionId.PCall, cost: BUILTIN_COST_TIER4 },
-	{ kind: BUILTIN_FUNCTION_KIND, id: BuiltinFunctionId.XPCall, cost: BUILTIN_COST_TIER4 },
+	{ [VALUE_TAG]: ValueTag.BuiltinFunction, id: BuiltinFunctionId.Next, cost: BUILTIN_COST_TIER1 },
+	{ [VALUE_TAG]: ValueTag.BuiltinFunction, id: BuiltinFunctionId.Type, cost: BUILTIN_COST_TIER1 },
+	{ [VALUE_TAG]: ValueTag.BuiltinFunction, id: BuiltinFunctionId.SetMetatable, cost: BUILTIN_COST_TIER2 },
+	{ [VALUE_TAG]: ValueTag.BuiltinFunction, id: BuiltinFunctionId.GetMetatable, cost: BUILTIN_COST_TIER2 },
+	{ [VALUE_TAG]: ValueTag.BuiltinFunction, id: BuiltinFunctionId.RawGet, cost: BUILTIN_COST_TIER1 },
+	{ [VALUE_TAG]: ValueTag.BuiltinFunction, id: BuiltinFunctionId.RawSet, cost: BUILTIN_COST_TIER1 },
+	{ [VALUE_TAG]: ValueTag.BuiltinFunction, id: BuiltinFunctionId.Select, cost: BUILTIN_COST_TIER1 },
+	{ [VALUE_TAG]: ValueTag.BuiltinFunction, id: BuiltinFunctionId.StringByte, cost: BUILTIN_COST_TIER2 },
+	{ [VALUE_TAG]: ValueTag.BuiltinFunction, id: BuiltinFunctionId.StringChar, cost: BUILTIN_COST_TIER2 },
+	{ [VALUE_TAG]: ValueTag.BuiltinFunction, id: BuiltinFunctionId.Error, cost: BUILTIN_COST_TIER2 },
+	{ [VALUE_TAG]: ValueTag.BuiltinFunction, id: BuiltinFunctionId.PCall, cost: BUILTIN_COST_TIER4 },
+	{ [VALUE_TAG]: ValueTag.BuiltinFunction, id: BuiltinFunctionId.XPCall, cost: BUILTIN_COST_TIER4 },
 ];
 
 export function createBuiltinFunction(id: BuiltinFunctionId): BuiltinFunction {
@@ -189,7 +211,7 @@ export function createBuiltinFunction(id: BuiltinFunctionId): BuiltinFunction {
 }
 
 export type NativeFunction = {
-	readonly kind: typeof NATIVE_FUNCTION_KIND;
+	readonly [VALUE_TAG]: ValueTag.NativeFunction;
 	readonly hashId: number;
 	readonly name: string;
 	invoke(args: NativeArgs, out: Value[]): void;
@@ -202,7 +224,7 @@ export type NativeArgs = {
 };
 
 export type NativeObject = {
-	readonly kind: typeof NATIVE_OBJECT_KIND;
+	readonly [VALUE_TAG]: ValueTag.NativeObject;
 	readonly hashId: number;
 	readonly raw: object;
 	get(key: Value): Value;
@@ -213,15 +235,18 @@ export type NativeObject = {
 };
 
 function valueTypeName(value: Value): string {
-	if (value === null) return 'nil';
-	if (typeof value === 'boolean') return 'boolean';
-	if (valueIsNumber(value)) return 'number';
-	if (valueIsString(value)) return 'string';
-	if (value instanceof Table) return 'table';
-	if (isBuiltinFunction(value)) return 'builtin_function';
-	if (isNativeFunction(value)) return 'native_function';
-	if (isNativeObject(value)) return 'native_object';
-	return 'closure';
+	switch (valueTag(value)) {
+		case ValueTag.Nil: return 'nil';
+		case ValueTag.False:
+		case ValueTag.True: return 'boolean';
+		case ValueTag.Number: return 'number';
+		case ValueTag.String: return 'string';
+		case ValueTag.Table: return 'table';
+		case ValueTag.Closure: return 'closure';
+		case ValueTag.BuiltinFunction: return 'builtin_function';
+		case ValueTag.NativeFunction: return 'native_function';
+		case ValueTag.NativeObject: return 'native_object';
+	}
 }
 
 const DEFAULT_NATIVE_COST: NativeFnCost = { base: 1, perArg: 0, perRet: 0 };
@@ -245,7 +270,7 @@ function createNativeFunction(
 	const resolvedCost = cost ?? DEFAULT_NATIVE_COST;
 	addTrackedLuaHeapBytes(NATIVE_FUNCTION_HEAP_BYTES);
 	return {
-		kind: NATIVE_FUNCTION_KIND,
+		[VALUE_TAG]: ValueTag.NativeFunction,
 		hashId,
 		name,
 		cost: resolvedCost,
@@ -263,28 +288,19 @@ function createNativeObject(hashId: number, raw: object, handlers: {
 	nextEntry: (after: Value) => [Value, Value] | null;
 }): NativeObject {
 	addTrackedLuaHeapBytes(NATIVE_OBJECT_HEAP_BYTES);
-	return { kind: NATIVE_OBJECT_KIND, hashId, raw, get: handlers.get, set: handlers.set, len: handlers.len, nextEntry: handlers.nextEntry, metatable: null };
+	return { [VALUE_TAG]: ValueTag.NativeObject, hashId, raw, get: handlers.get, set: handlers.set, len: handlers.len, nextEntry: handlers.nextEntry, metatable: null };
 }
 
 export function isBuiltinFunction(value: Value): value is BuiltinFunction {
-	if (value === null) {
-		return false;
-	}
-	return (value as BuiltinFunction).kind === BUILTIN_FUNCTION_KIND;
+	return valueTag(value) === ValueTag.BuiltinFunction;
 }
 
 export function isNativeFunction(value: Value): value is NativeFunction {
-	if (value === null) {
-		return false;
-	}
-	return (value as NativeFunction).kind === NATIVE_FUNCTION_KIND;
+	return valueTag(value) === ValueTag.NativeFunction;
 }
 
 export function isNativeObject(value: Value): value is NativeObject {
-	if (value === null) {
-		return false;
-	}
-	return (value as NativeObject).kind === NATIVE_OBJECT_KIND;
+	return valueTag(value) === ValueTag.NativeObject;
 }
 
 export type CpuFrameSnapshot = {
@@ -405,6 +421,7 @@ export const enum AcceptedInterruptKind {
 }
 
 export class Closure {
+	public readonly [VALUE_TAG] = ValueTag.Closure;
 	public hashId = 0;
 
 	public constructor(
@@ -416,40 +433,15 @@ export class Closure {
 }
 
 export function valueIsClosure(value: Value): value is Closure {
-	return value instanceof Closure;
+	return valueTag(value) === ValueTag.Closure;
 }
 
 export function valueIsNumber(value: Value): value is number {
-	switch (value) {
-		case null:
-		case false:
-		case true:
-			return false;
-	}
-	if (valueIsClosure(value)) {
-		return false;
-	}
-	switch ((value as { readonly kind?: string }).kind) {
-		case STRING_VALUE_KIND:
-		case TABLE_VALUE_KIND:
-		case BUILTIN_FUNCTION_KIND:
-		case NATIVE_FUNCTION_KIND:
-		case NATIVE_OBJECT_KIND:
-			return false;
-		default:
-			return true;
-	}
+	return valueTag(value) === ValueTag.Number;
 }
 
-function valueIsImmediate(value: Value): value is null | boolean | number {
-	switch (value) {
-		case null:
-		case false:
-		case true:
-			return true;
-		default:
-			return valueIsNumber(value);
-	}
+export function valueIsTable(value: Value): value is Table {
+	return valueTag(value) === ValueTag.Table;
 }
 
 export const enum RunResult {
@@ -524,7 +516,7 @@ export type TableRuntimeState = {
 };
 
 export class Table {
-	public readonly kind = TABLE_VALUE_KIND;
+	public readonly [VALUE_TAG] = ValueTag.Table;
 	public hashId = 0;
 	private array: Value[];
 	public arrayLength = 0;
@@ -872,34 +864,50 @@ export class Table {
 	}
 
 	private hashValue(key: Value): number {
-		if (valueIsNumber(key)) {
-			const normalized = key === 0 ? 0 : key;
-			if (normalized !== normalized) {
-				return 0x7ff80000;
+		switch (valueTag(key)) {
+			case ValueTag.Number: {
+				const numberKey = key as number;
+				const normalized = numberKey === 0 ? 0 : numberKey;
+				if (normalized !== normalized) {
+					return 0x7ff80000;
+				}
+				Table.float64View[0] = normalized;
+				return (Table.uint32View[0] ^ Table.uint32View[1]) >>> 0;
 			}
-			Table.float64View[0] = normalized;
-			return (Table.uint32View[0] ^ Table.uint32View[1]) >>> 0;
+			case ValueTag.False:
+				return 0x85ebca6b;
+			case ValueTag.True:
+				return 0x9e3779b9;
+			case ValueTag.String:
+				return ((key as StringValue).id * 2654435761) >>> 0;
+			case ValueTag.BuiltinFunction:
+				return (((key as BuiltinFunction).id + 1) * 0x27d4eb2d) >>> 0;
+			case ValueTag.Table:
+			case ValueTag.Closure:
+			case ValueTag.NativeFunction:
+			case ValueTag.NativeObject:
+				return ((key as Table | Closure | NativeFunction | NativeObject).hashId * 2654435761) >>> 0;
+			case ValueTag.Nil:
+				return 0x27d4eb2d;
 		}
-		if (typeof key === 'boolean') {
-			return key ? 0x9e3779b9 : 0x85ebca6b;
-		}
-		if (valueIsString(key)) {
-			return (key.id * 2654435761) >>> 0;
-		}
-		if (isBuiltinFunction(key)) {
-			return ((key.id + 1) * 0x27d4eb2d) >>> 0;
-		}
-		return (key.hashId * 2654435761) >>> 0;
 	}
 
 	private keyEquals(a: Value, b: Value): boolean {
-		if (valueIsNumber(a) && valueIsNumber(b)) {
-			return a === b || (a !== a && b !== b);
+		const tag = valueTag(a);
+		if (tag !== valueTag(b)) {
+			return false;
 		}
-		if (valueIsString(a) && valueIsString(b)) {
-			return a.id === b.id;
+		switch (tag) {
+			case ValueTag.Number: {
+				const left = a as number;
+				const right = b as number;
+				return left === right || (left !== left && right !== right);
+			}
+			case ValueTag.String:
+				return (a as StringValue).id === (b as StringValue).id;
+			default:
+				return a === b;
 		}
-		return a === b;
 	}
 
 	private findNodeIndex(key: Value): number {
@@ -1167,19 +1175,6 @@ export class Table {
 	}
 }
 
-const enum RegisterTag {
-	Nil,
-	False,
-	True,
-	Number,
-	String,
-	Table,
-	Closure,
-	BuiltinFunction,
-	NativeFunction,
-	NativeObject,
-}
-
 class RegisterFile {
 	private tags: Uint8Array;
 	private numbers: Float64Array;
@@ -1212,7 +1207,7 @@ class RegisterFile {
 	public clear(count: number): void {
 		const start = this.base;
 		const end = start + count;
-		this.tags.fill(RegisterTag.Nil, start, end);
+		this.tags.fill(ValueTag.Nil, start, end);
 		for (let slot = start; slot < end; slot += 1) {
 			this.refs[slot] = null;
 		}
@@ -1282,7 +1277,7 @@ class RegisterFile {
 	}
 
 	public isNumber(index: number): boolean {
-		return this.tags[this.base + index] === RegisterTag.Number;
+		return this.tags[this.base + index] === ValueTag.Number;
 	}
 
 	public getNumber(index: number): number {
@@ -1291,26 +1286,26 @@ class RegisterFile {
 
 	public isTruthy(index: number): boolean {
 		const tag = this.tags[this.base + index];
-		return tag !== RegisterTag.Nil && tag !== RegisterTag.False;
+		return tag !== ValueTag.Nil && tag !== ValueTag.False;
 	}
 
 	public get(index: number): Value {
 		const slot = this.base + index;
 		switch (this.tags[slot]) {
-			case RegisterTag.Nil:
+			case ValueTag.Nil:
 				return null;
-			case RegisterTag.False:
+			case ValueTag.False:
 				return false;
-			case RegisterTag.True:
+			case ValueTag.True:
 				return true;
-			case RegisterTag.Number:
+			case ValueTag.Number:
 				return this.numbers[slot];
-			case RegisterTag.String:
-			case RegisterTag.Table:
-			case RegisterTag.Closure:
-			case RegisterTag.BuiltinFunction:
-			case RegisterTag.NativeFunction:
-			case RegisterTag.NativeObject:
+			case ValueTag.String:
+			case ValueTag.Table:
+			case ValueTag.Closure:
+			case ValueTag.BuiltinFunction:
+			case ValueTag.NativeFunction:
+			case ValueTag.NativeObject:
 				return this.refs[slot];
 			default:
 				throw new Error('Invalid register tag.');
@@ -1319,93 +1314,71 @@ class RegisterFile {
 
 	public setNil(index: number): void {
 		const slot = this.base + index;
-		this.tags[slot] = RegisterTag.Nil;
+		this.tags[slot] = ValueTag.Nil;
 		this.refs[slot] = null;
 	}
 
 	public setBool(index: number, value: boolean): void {
 		const slot = this.base + index;
-		this.tags[slot] = value ? RegisterTag.True : RegisterTag.False;
+		this.tags[slot] = value ? ValueTag.True : ValueTag.False;
 		this.refs[slot] = null;
 	}
 
 	public setNumber(index: number, value: number): void {
 		const slot = this.base + index;
-		this.tags[slot] = RegisterTag.Number;
+		this.tags[slot] = ValueTag.Number;
 		this.numbers[slot] = value;
 		this.refs[slot] = null;
 	}
 
 	public setString(index: number, value: StringValue): void {
 		const slot = this.base + index;
-		this.tags[slot] = RegisterTag.String;
+		this.tags[slot] = ValueTag.String;
 		this.refs[slot] = value;
 	}
 
 	public setTable(index: number, value: Table): void {
 		const slot = this.base + index;
-		this.tags[slot] = RegisterTag.Table;
+		this.tags[slot] = ValueTag.Table;
 		this.refs[slot] = value;
 	}
 
 	public setClosure(index: number, value: Closure): void {
 		const slot = this.base + index;
-		this.tags[slot] = RegisterTag.Closure;
+		this.tags[slot] = ValueTag.Closure;
 		this.refs[slot] = value;
 	}
 
 	public setBuiltinFunction(index: number, value: BuiltinFunction): void {
 		const slot = this.base + index;
-		this.tags[slot] = RegisterTag.BuiltinFunction;
+		this.tags[slot] = ValueTag.BuiltinFunction;
 		this.refs[slot] = value;
 	}
 
 	public setNativeFunction(index: number, value: NativeFunction): void {
 		const slot = this.base + index;
-		this.tags[slot] = RegisterTag.NativeFunction;
+		this.tags[slot] = ValueTag.NativeFunction;
 		this.refs[slot] = value;
 	}
 
 	public setNativeObject(index: number, value: NativeObject): void {
 		const slot = this.base + index;
-		this.tags[slot] = RegisterTag.NativeObject;
+		this.tags[slot] = ValueTag.NativeObject;
 		this.refs[slot] = value;
 	}
 
 	public set(index: number, value: Value): void {
-		if (value === null) {
-			this.setNil(index);
-			return;
+		const slot = this.base + index;
+		const tag = valueTag(value);
+		this.tags[slot] = tag;
+		if (tag === ValueTag.Number) {
+			this.numbers[slot] = value as number;
+			this.refs[slot] = null;
+		} else if (tag <= ValueTag.Number) {
+			this.refs[slot] = null;
+		} else {
+			this.refs[slot] = value;
 		}
-		if (valueIsNumber(value)) {
-			this.setNumber(index, value);
-			return;
-		}
-		if (typeof value === 'boolean') {
-			this.setBool(index, value);
-			return;
-		}
-		if (valueIsString(value)) {
-			this.setString(index, value);
-			return;
-		}
-		if (value instanceof Table) {
-			this.setTable(index, value);
-			return;
-		}
-		if (isBuiltinFunction(value)) {
-			this.setBuiltinFunction(index, value);
-			return;
-		}
-		if (isNativeFunction(value)) {
-			this.setNativeFunction(index, value);
-			return;
-		}
-		if (isNativeObject(value)) {
-			this.setNativeObject(index, value);
-			return;
-		}
-		this.setClosure(index, value);
 	}
 }
 
@@ -1702,7 +1675,7 @@ export class CPU {
 				return null;
 			}
 			const indexer = metatable.getStringKey(this.indexKey);
-			if (!(indexer instanceof Table)) {
+			if (!(valueIsTable(indexer))) {
 				return null;
 			}
 			current = indexer;
@@ -1711,157 +1684,175 @@ export class CPU {
 	}
 
 	private loadTableIndex(base: Value, key: Value): Value {
-		if (base instanceof Table) {
-			if (base.metatable === null) {
-				return base.get(key);
+		switch (valueTag(base)) {
+			case ValueTag.Table: {
+				const table = base as Table;
+				if (table.metatable === null) {
+					return table.get(key);
+				}
+				return this.resolveTableIndexChain(table, key, TableIndexKeyKind.Value);
 			}
-			return this.resolveTableIndexChain(base, key, TableIndexKeyKind.Value);
+			case ValueTag.String: {
+				const table = this.stringIndexTable;
+				if (table.metatable === null) {
+					return table.get(key);
+				}
+				return this.resolveTableIndexChain(table, key, TableIndexKeyKind.Value);
+			}
+			case ValueTag.NativeObject: {
+				const nativeObject = base as NativeObject;
+				const directValue = nativeObject.get(key);
+				const metatable = nativeObject.metatable;
+				if (directValue !== null || metatable === null) {
+					return directValue;
+				}
+				const indexer = metatable.getStringKey(this.indexKey);
+				if (valueIsTable(indexer)) {
+					return this.resolveTableIndexChain(indexer, key, TableIndexKeyKind.Value);
+				}
+				return null;
+			}
+			default:
+				throw new LuaExecutionError('Attempted to index field on a non-table value.', LUA_FAULT_REASON_INDEX_NON_TABLE);
 		}
-		if (valueIsString(base)) {
-			const indexTable = this.stringIndexTable;
-			if (indexTable.metatable === null) {
-				return indexTable.get(key);
-			}
-			return this.resolveTableIndexChain(indexTable, key, TableIndexKeyKind.Value);
-		}
-		if (isNativeObject(base)) {
-			const directValue = base.get(key);
-			const metatable = base.metatable;
-			if (directValue !== null || metatable === null) {
-				return directValue;
-			}
-			const indexer = metatable.getStringKey(this.indexKey);
-			if (indexer instanceof Table) {
-				return this.resolveTableIndexChain(indexer, key, TableIndexKeyKind.Value);
-			}
-			return null;
-		}
-		throw new LuaExecutionError('Attempted to index field on a non-table value.', LUA_FAULT_REASON_INDEX_NON_TABLE);
 	}
 
 	private loadTableIntegerIndexCached(cache: TableLoadInlineCache, base: Value, index: number): Value {
 		const indexKind = TableIndexKeyKind.Integer;
-		if (base instanceof Table) {
-			if (base.metatable === null) {
-				const version = base.getVersion();
-				if (cache.table === base && cache.version === version) {
-					return cache.value;
+		switch (valueTag(base)) {
+			case ValueTag.Table: {
+				const table = base as Table;
+				if (table.metatable === null) {
+					const version = table.getVersion();
+					if (cache.table === table && cache.version === version) {
+						return cache.value;
+					}
+					const value = table.getInteger(index);
+					cache.table = table;
+					cache.version = version;
+					cache.value = value;
+					return value;
 				}
-				const value = base.getInteger(index);
-				cache.table = base;
-				cache.version = version;
-				cache.value = value;
-				return value;
+				return this.resolveTableIndexChain(table, index, indexKind);
 			}
-			return this.resolveTableIndexChain(base, index, indexKind);
-		}
-		if (valueIsString(base)) {
-			const table = this.stringIndexTable;
-			if (table.metatable === null) {
-				const version = table.getVersion();
-				if (cache.table === table && cache.version === version) {
-					return cache.value;
+			case ValueTag.String: {
+				const table = this.stringIndexTable;
+				if (table.metatable === null) {
+					const version = table.getVersion();
+					if (cache.table === table && cache.version === version) {
+						return cache.value;
+					}
+					const value = table.getInteger(index);
+					cache.table = table;
+					cache.version = version;
+					cache.value = value;
+					return value;
 				}
-				const value = table.getInteger(index);
-				cache.table = table;
-				cache.version = version;
-				cache.value = value;
-				return value;
+				return this.resolveTableIndexChain(table, index, indexKind);
 			}
-			return this.resolveTableIndexChain(table, index, indexKind);
-		}
-		if (isNativeObject(base)) {
-			const directValue = base.get(index);
-			if (directValue !== null || base.metatable === null) {
+			case ValueTag.NativeObject: {
+				const nativeObject = base as NativeObject;
+				const directValue = nativeObject.get(index);
+				if (directValue !== null || nativeObject.metatable === null) {
+					return directValue;
+				}
+				const indexer = nativeObject.metatable.getStringKey(this.indexKey);
+				if (valueIsTable(indexer)) {
+					return this.resolveTableIndexChain(indexer, index, indexKind);
+				}
 				return directValue;
 			}
-			const indexer = base.metatable.getStringKey(this.indexKey);
-			if (indexer instanceof Table) {
-				return this.resolveTableIndexChain(indexer, index, indexKind);
-			}
-			return directValue;
+			default:
+				throw new LuaExecutionError('Attempted to index field on a non-table value.', LUA_FAULT_REASON_INDEX_NON_TABLE);
 		}
-		throw new LuaExecutionError('Attempted to index field on a non-table value.', LUA_FAULT_REASON_INDEX_NON_TABLE);
 	}
 
 	private loadTableFieldIndexCached(cache: TableLoadInlineCache, base: Value, key: StringValue): Value {
-		if (base instanceof Table) {
-			if (base.metatable === null) {
-				const version = base.getVersion();
-				if (cache.table === base && cache.version === version) {
-					return cache.value;
+		switch (valueTag(base)) {
+			case ValueTag.Table: {
+				const table = base as Table;
+				if (table.metatable === null) {
+					const version = table.getVersion();
+					if (cache.table === table && cache.version === version) {
+						return cache.value;
+					}
+					const value = table.getStringKey(key);
+					cache.table = table;
+					cache.version = version;
+					cache.value = value;
+					return value;
 				}
-				const value = base.getStringKey(key);
-				cache.table = base;
-				cache.version = version;
-				cache.value = value;
-				return value;
+				return this.resolveTableIndexChain(table, key, TableIndexKeyKind.Field);
 			}
-			return this.resolveTableIndexChain(base, key, TableIndexKeyKind.Field);
-		}
-		if (valueIsString(base)) {
-			const table = this.stringIndexTable;
-			if (table.metatable === null) {
-				const version = table.getVersion();
-				if (cache.table === table && cache.version === version) {
-					return cache.value;
+			case ValueTag.String: {
+				const table = this.stringIndexTable;
+				if (table.metatable === null) {
+					const version = table.getVersion();
+					if (cache.table === table && cache.version === version) {
+						return cache.value;
+					}
+					const value = table.getStringKey(key);
+					cache.table = table;
+					cache.version = version;
+					cache.value = value;
+					return value;
 				}
-				const value = table.getStringKey(key);
-				cache.table = table;
-				cache.version = version;
-				cache.value = value;
-				return value;
+				return this.resolveTableIndexChain(table, key, TableIndexKeyKind.Field);
 			}
-			return this.resolveTableIndexChain(table, key, TableIndexKeyKind.Field);
-		}
-		if (isNativeObject(base)) {
-			const directValue = base.get(key);
-			if (directValue !== null || base.metatable === null) {
+			case ValueTag.NativeObject: {
+				const nativeObject = base as NativeObject;
+				const directValue = nativeObject.get(key);
+				if (directValue !== null || nativeObject.metatable === null) {
+					return directValue;
+				}
+				const indexer = nativeObject.metatable.getStringKey(this.indexKey);
+				if (valueIsTable(indexer)) {
+					return this.resolveTableIndexChain(indexer, key, TableIndexKeyKind.Field);
+				}
 				return directValue;
 			}
-			const indexer = base.metatable.getStringKey(this.indexKey);
-			if (indexer instanceof Table) {
-				return this.resolveTableIndexChain(indexer, key, TableIndexKeyKind.Field);
-			}
-			return directValue;
+			default:
+				throw new LuaExecutionError('Attempted to index field on a non-table value.', LUA_FAULT_REASON_INDEX_NON_TABLE);
 		}
-		throw new LuaExecutionError('Attempted to index field on a non-table value.', LUA_FAULT_REASON_INDEX_NON_TABLE);
 	}
 
 	private storeTableIndex(base: Value, key: Value, value: Value): void {
-		if (base instanceof Table) {
-			base.set(key, value);
-			return;
+		switch (valueTag(base)) {
+			case ValueTag.Table:
+				(base as Table).set(key, value);
+				return;
+			case ValueTag.NativeObject:
+				(base as NativeObject).set(key, value);
+				return;
+			default:
+				throw new LuaExecutionError('Attempted to assign to a non-table value.', LUA_FAULT_REASON_ASSIGN_NON_TABLE);
 		}
-		if (isNativeObject(base)) {
-			base.set(key, value);
-			return;
-		}
-		throw new LuaExecutionError('Attempted to assign to a non-table value.', LUA_FAULT_REASON_ASSIGN_NON_TABLE);
 	}
 
 	private storeTableIntegerIndex(base: Value, index: number, value: Value): void {
-		if (base instanceof Table) {
-			base.setInteger(index, value);
-			return;
+		switch (valueTag(base)) {
+			case ValueTag.Table:
+				(base as Table).setInteger(index, value);
+				return;
+			case ValueTag.NativeObject:
+				(base as NativeObject).set(index, value);
+				return;
+			default:
+				throw new LuaExecutionError('Attempted to assign to a non-table value.', LUA_FAULT_REASON_ASSIGN_NON_TABLE);
 		}
-		if (isNativeObject(base)) {
-			base.set(index, value);
-			return;
-		}
-		throw new LuaExecutionError('Attempted to assign to a non-table value.', LUA_FAULT_REASON_ASSIGN_NON_TABLE);
 	}
 
 	private storeTableFieldIndex(base: Value, key: StringValue, value: Value): void {
-		if (base instanceof Table) {
-			base.setStringKey(key, value);
-			return;
+		switch (valueTag(base)) {
+			case ValueTag.Table:
+				(base as Table).setStringKey(key, value);
+				return;
+			case ValueTag.NativeObject:
+				(base as NativeObject).set(key, value);
+				return;
+			default:
+				throw new LuaExecutionError('Attempted to assign to a non-table value.', LUA_FAULT_REASON_ASSIGN_NON_TABLE);
 		}
-		if (isNativeObject(base)) {
-			base.set(key, value);
-			return;
-		}
-		throw new LuaExecutionError('Attempted to assign to a non-table value.', LUA_FAULT_REASON_ASSIGN_NON_TABLE);
 	}
 
 	private acquireFrame(): CallFrame {
@@ -3115,17 +3106,19 @@ export class CPU {
 					return;
 				case OpCode.LEN: {
 					const value = registers.get(b);
-					if (valueIsString(value)) {
-						const cp = this.stringPool.codepointCount(asStringId(value));
-						this.setRegisterNumberFast(frame, registers, a, cp);
-						return;
+					switch (valueTag(value)) {
+						case ValueTag.String: {
+							const cp = this.stringPool.codepointCount(asStringId(value as StringValue));
+							this.setRegisterNumberFast(frame, registers, a, cp);
+							return;
+						}
+						case ValueTag.Table:
+							this.setRegisterNumberFast(frame, registers, a, (value as Table).arrayLength);
+							return;
+						default:
+							this.setRegisterNumberFast(frame, registers, a, (value as NativeObject).len());
+							return;
 					}
-					if (value instanceof Table) {
-						this.setRegisterNumberFast(frame, registers, a, value.arrayLength);
-						return;
-					}
-					this.setRegisterNumberFast(frame, registers, a, (value as NativeObject).len());
-					return;
 				}
 				case OpCode.BNOT: {
 					const value = registers.get(b) as number;
@@ -3310,32 +3303,34 @@ export class CPU {
 				case OpCode.CALL: {
 					const callee = registers.get(a);
 					const argCount = b === 0 ? Math.max(frame.top - a - 1, 0) : b - 1;
-					if (isBuiltinFunction(callee)) {
-						this.runBuiltinFunction(callee, frame, a, c, argCount);
-						return;
-					}
-					if (isNativeFunction(callee)) {
-						this.charge(callee.cost.base);
-						const nativeArgs = this.acquireRegisterNativeArgs();
-						const results = this.nativeReturnScratch.acquire();
-						try {
-							nativeArgs.bind(registers, a + 1, argCount);
-							callee.invoke(nativeArgs, results);
-							if (this.frames.length > 0 && this.frames[this.frames.length - 1] === frame) {
-								this.writeReturnValues(frame, a, c, results);
+					switch (valueTag(callee)) {
+						case ValueTag.BuiltinFunction:
+							this.runBuiltinFunction(callee as BuiltinFunction, frame, a, c, argCount);
+							return;
+						case ValueTag.NativeFunction: {
+							const nativeFunction = callee as NativeFunction;
+							this.charge(nativeFunction.cost.base);
+							const nativeArgs = this.acquireRegisterNativeArgs();
+							const results = this.nativeReturnScratch.acquire();
+							try {
+								nativeArgs.bind(registers, a + 1, argCount);
+								nativeFunction.invoke(nativeArgs, results);
+								if (this.frames.length > 0 && this.frames[this.frames.length - 1] === frame) {
+									this.writeReturnValues(frame, a, c, results);
+								}
+								enforceLuaHeapBudget();
+							} finally {
+								this.releaseRegisterNativeArgs(nativeArgs);
+								this.nativeReturnScratch.release(results);
 							}
-							enforceLuaHeapBudget();
-						} finally {
-							this.releaseRegisterNativeArgs(nativeArgs);
-							this.nativeReturnScratch.release(results);
+							return;
 						}
-						return;
+						case ValueTag.Closure:
+							this.pushFrameFromCaller(frame, callee as Closure, a + 1, argCount, a, c, false, frame.pc - INSTRUCTION_BYTES);
+							return;
+						default:
+							throw new LuaExecutionError('Attempted to call a non-function value.', LUA_FAULT_REASON_CALL_NON_FUNCTION);
 					}
-					if (valueIsClosure(callee)) {
-						this.pushFrameFromCaller(frame, callee, a + 1, argCount, a, c, false, frame.pc - INSTRUCTION_BYTES);
-						return;
-					}
-					throw new LuaExecutionError('Attempted to call a non-function value.', LUA_FAULT_REASON_CALL_NON_FUNCTION);
 				}
 				case OpCode.RET: {
 					const total = b === 0 ? Math.max(frame.top - a, 0) : b;
@@ -3942,7 +3937,10 @@ export class CPU {
 	): void {
 		if (id === BuiltinFunctionId.XPCall) {
 			const handler = argumentCount > 1 ? caller.registers.get(argumentBase + 1) : null;
-			if (!valueIsClosure(handler) && !isBuiltinFunction(handler) && !isNativeFunction(handler)) {
+			const handlerTag = valueTag(handler);
+			if (handlerTag !== ValueTag.Closure
+				&& handlerTag !== ValueTag.BuiltinFunction
+				&& handlerTag !== ValueTag.NativeFunction) {
 				throw new LuaExecutionError('xpcall error handler must be a function.', LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION);
 			}
 		}
@@ -3969,53 +3967,57 @@ export class CPU {
 	private invokeProtectedTarget(continuationIndex: number, target: Value, argumentBase: number, argumentCount: number): void {
 		const continuation = this.protectedCallContinuations.peek(continuationIndex);
 		const caller = continuation.caller!;
-		if (valueIsClosure(target)) {
-			continuation.target = this.pushFrameFromCaller(
-				caller,
-				target,
-				argumentBase,
-				argumentCount,
-				0,
-				0,
-				false,
-				caller.pc - INSTRUCTION_BYTES,
-			);
-			return;
-		}
-		if (isBuiltinFunction(target)) {
-			this.charge(target.cost.base);
-			if (target.id === BuiltinFunctionId.PCall || target.id === BuiltinFunctionId.XPCall) {
-				this.startProtectedCall(target.id, caller, continuation.callBase, 0, argumentBase, argumentCount, true);
+		switch (valueTag(target)) {
+			case ValueTag.Closure:
+				continuation.target = this.pushFrameFromCaller(
+					caller,
+					target as Closure,
+					argumentBase,
+					argumentCount,
+					0,
+					0,
+					false,
+					caller.pc - INSTRUCTION_BYTES,
+				);
+				return;
+			case ValueTag.BuiltinFunction: {
+				const builtinFunction = target as BuiltinFunction;
+				this.charge(builtinFunction.cost.base);
+				if (builtinFunction.id === BuiltinFunctionId.PCall || builtinFunction.id === BuiltinFunctionId.XPCall) {
+					this.startProtectedCall(builtinFunction.id, caller, continuation.callBase, 0, argumentBase, argumentCount, true);
+					return;
+				}
+				const nativeArgs = this.acquireRegisterNativeArgs();
+				const results = this.nativeReturnScratch.acquire();
+				try {
+					nativeArgs.bind(caller.registers, argumentBase, argumentCount);
+					this.callBuiltinFunctionView(builtinFunction, nativeArgs, results);
+					this.finishProtectedCallFromArray(continuationIndex, results);
+				} finally {
+					this.releaseRegisterNativeArgs(nativeArgs);
+					this.nativeReturnScratch.release(results);
+				}
 				return;
 			}
-			const nativeArgs = this.acquireRegisterNativeArgs();
-			const results = this.nativeReturnScratch.acquire();
-			try {
-				nativeArgs.bind(caller.registers, argumentBase, argumentCount);
-				this.callBuiltinFunctionView(target, nativeArgs, results);
-				this.finishProtectedCallFromArray(continuationIndex, results);
-			} finally {
-				this.releaseRegisterNativeArgs(nativeArgs);
-				this.nativeReturnScratch.release(results);
+			case ValueTag.NativeFunction: {
+				const nativeFunction = target as NativeFunction;
+				this.charge(nativeFunction.cost.base);
+				const nativeArgs = this.acquireRegisterNativeArgs();
+				const results = this.nativeReturnScratch.acquire();
+				try {
+					nativeArgs.bind(caller.registers, argumentBase, argumentCount);
+					nativeFunction.invoke(nativeArgs, results);
+					enforceLuaHeapBudget();
+					this.finishProtectedCallFromArray(continuationIndex, results);
+				} finally {
+					this.releaseRegisterNativeArgs(nativeArgs);
+					this.nativeReturnScratch.release(results);
+				}
+				return;
 			}
-			return;
+			default:
+				throw new LuaExecutionError('Attempted to call a non-function value.', LUA_FAULT_REASON_CALL_NON_FUNCTION);
 		}
-		if (isNativeFunction(target)) {
-			this.charge(target.cost.base);
-			const nativeArgs = this.acquireRegisterNativeArgs();
-			const results = this.nativeReturnScratch.acquire();
-			try {
-				nativeArgs.bind(caller.registers, argumentBase, argumentCount);
-				target.invoke(nativeArgs, results);
-				enforceLuaHeapBudget();
-				this.finishProtectedCallFromArray(continuationIndex, results);
-			} finally {
-				this.releaseRegisterNativeArgs(nativeArgs);
-				this.nativeReturnScratch.release(results);
-			}
-			return;
-		}
-		throw new LuaExecutionError('Attempted to call a non-function value.', LUA_FAULT_REASON_CALL_NON_FUNCTION);
 	}
 
 	private finishProtectedCallFromArray(continuationIndex: number, values: Value[]): void {
@@ -4170,24 +4172,28 @@ export class CPU {
 
 	private runBuiltinNextValue(target: Value, keyValue: Value, out: Value[]): void {
 		out.length = 0;
-		if (target instanceof Table) {
-			const entry = target.nextEntry(keyValue);
-			if (entry === null) {
-				out.push(null);
+		switch (valueTag(target)) {
+			case ValueTag.Table: {
+				const entry = (target as Table).nextEntry(keyValue);
+				if (entry === null) {
+					out.push(null);
+					return;
+				}
+				out.push(entry[0], entry[1]);
 				return;
 			}
-			out.push(entry[0], entry[1]);
-			return;
+			case ValueTag.NativeObject: {
+				const entry = (target as NativeObject).nextEntry(keyValue);
+				if (entry === null) {
+					out.push(null);
+					return;
+				}
+				out.push(entry[0], entry[1]);
+				return;
+			}
+			default:
+				throw new LuaExecutionError('Attempted to iterate a non-table value.', LUA_FAULT_REASON_ITERATE_NON_TABLE);
 		}
-		if (!isNativeObject(target)) {
-			throw new LuaExecutionError('Attempted to iterate a non-table value.', LUA_FAULT_REASON_ITERATE_NON_TABLE);
-		}
-		const entry = target.nextEntry(keyValue);
-		if (entry === null) {
-			out.push(null);
-			return;
-		}
-		out.push(entry[0], entry[1]);
 	}
 
 	private runBuiltinType(value: Value, out: Value[]): void {
@@ -4195,23 +4201,31 @@ export class CPU {
 	}
 
 	private typeNameForLua(value: Value): string {
-		const rawName = valueTypeName(value);
-		switch (rawName) {
-			case 'builtin_function':
-			case 'native_function':
-			case 'closure':
+		switch (valueTag(value)) {
+			case ValueTag.Nil:
+				return 'nil';
+			case ValueTag.False:
+			case ValueTag.True:
+				return 'boolean';
+			case ValueTag.Number:
+				return 'number';
+			case ValueTag.String:
+				return 'string';
+			case ValueTag.Table:
+				return 'table';
+			case ValueTag.Closure:
+			case ValueTag.BuiltinFunction:
+			case ValueTag.NativeFunction:
 				return 'function';
-			case 'native_object':
+			case ValueTag.NativeObject:
 				return 'native';
-			default:
-				return rawName;
 		}
 	}
 
 	private runBuiltinSetMetatable(args: NativeArgs, out: Value[]): void {
 		const target = args.get(0);
 		const metatable = args.get(1) as Table | null;
-		if (target instanceof Table) {
+		if (valueIsTable(target)) {
 			target.metatable = metatable;
 			out.push(target);
 			return;
@@ -4222,7 +4236,7 @@ export class CPU {
 
 	private runBuiltinGetMetatable(args: NativeArgs, out: Value[]): void {
 		const target = args.get(0);
-		if (target instanceof Table) {
+		if (valueIsTable(target)) {
 			out.push(target.metatable);
 			return;
 		}
@@ -4311,28 +4325,27 @@ export class CPU {
 		};
 
 		const captureValueState = (value: Value): CpuValueState => {
-			if (value === null) {
-				return { tag: 'nil' };
+			switch (valueTag(value)) {
+				case ValueTag.Nil:
+					return { tag: 'nil' };
+				case ValueTag.False:
+					return { tag: 'false' };
+				case ValueTag.True:
+					return { tag: 'true' };
+				case ValueTag.Number:
+					return { tag: 'number', value: value as number };
+				case ValueTag.String:
+					return { tag: 'string', id: (value as StringValue).id };
+				case ValueTag.BuiltinFunction:
+					return { tag: 'builtin', id: (value as BuiltinFunction).id };
+				case ValueTag.Table:
+					return { tag: 'ref', id: ensureObjectId(value as Table, 'table') };
+				case ValueTag.Closure:
+					return { tag: 'ref', id: ensureObjectId(value as Closure, 'closure') };
+				case ValueTag.NativeFunction:
+				case ValueTag.NativeObject:
+					throw new Error(`Runtime snapshot cannot preserve ${valueTypeName(value)} value.`);
 			}
-			if (typeof value === 'boolean') {
-				return { tag: value ? 'true' : 'false' };
-			}
-			if (valueIsNumber(value)) {
-				return { tag: 'number', value };
-			}
-			if (valueIsString(value)) {
-				return { tag: 'string', id: value.id };
-			}
-			if (isBuiltinFunction(value)) {
-				return { tag: 'builtin', id: value.id };
-			}
-			if (value instanceof Table) {
-				return { tag: 'ref', id: ensureObjectId(value, 'table') };
-			}
-			if (valueIsClosure(value)) {
-				return { tag: 'ref', id: ensureObjectId(value, 'closure') };
-			}
-			throw new Error(`Runtime snapshot cannot preserve ${valueTypeName(value)} value.`);
 		};
 
 		const captureObjectState = (object: Table | Closure | Upvalue, kind: CpuObjectState['kind']): CpuObjectState => {
@@ -4400,7 +4413,8 @@ export class CPU {
 		const systemGlobals: CpuRootValueState[] = [];
 		for (let slot = 0; slot < this.systemGlobalNames.length; slot += 1) {
 			const value = this.systemGlobalValues[slot];
-			if (isNativeFunction(value) || isNativeObject(value)) {
+			const tag = valueTag(value);
+			if (tag === ValueTag.NativeFunction || tag === ValueTag.NativeObject) {
 				continue;
 			}
 			systemGlobals.push({
@@ -4414,7 +4428,8 @@ export class CPU {
 			if (!valueIsString(key)) {
 				return;
 			}
-			if (isNativeFunction(value) || isNativeObject(value)) {
+			const tag = valueTag(value);
+			if (tag === ValueTag.NativeFunction || tag === ValueTag.NativeObject) {
 				return;
 			}
 			globals.push({
@@ -4705,14 +4720,18 @@ export class CPU {
 		}
 
 		const pushValue = (value: Value): void => {
-			if (valueIsImmediate(value)) {
-				return;
+			switch (valueTag(value)) {
+				case ValueTag.Nil:
+				case ValueTag.False:
+				case ValueTag.True:
+				case ValueTag.Number:
+					return;
+				case ValueTag.String:
+					this.stringPool.markReachable(asStringId(value as StringValue));
+					return;
+				default:
+					valueStack.push(value);
 			}
-			if (valueIsString(value)) {
-				this.stringPool.markReachable(asStringId(value));
-				return;
-			}
-			valueStack.push(value);
 		};
 		const pushImage = (image: Blua32ExecutionImage): void => {
 			if (seenImages.has(image)) {
@@ -4778,49 +4797,60 @@ export class CPU {
 				continue;
 			}
 			const value = valueStack.pop()!;
-			if (value instanceof Table) {
-				if (seen.has(value)) {
+			switch (valueTag(value)) {
+				case ValueTag.Table: {
+					const table = value as Table;
+					if (seen.has(table)) {
+						continue;
+					}
+					seen.add(table);
+					total += table.getTrackedHeapBytes();
+					table.walkTrackedValues(pushValue);
 					continue;
 				}
-				seen.add(value);
-				total += value.getTrackedHeapBytes();
-				value.walkTrackedValues(pushValue);
-				continue;
-			}
-			if (isBuiltinFunction(value)) {
-				if (seen.has(value)) {
+				case ValueTag.BuiltinFunction: {
+					const builtinFunction = value as BuiltinFunction;
+					if (seen.has(builtinFunction)) {
+						continue;
+					}
+					seen.add(builtinFunction);
 					continue;
 				}
-				seen.add(value);
-				continue;
-			}
-			if (isNativeFunction(value)) {
-				if (seen.has(value)) {
+				case ValueTag.NativeFunction: {
+					const nativeFunction = value as NativeFunction;
+					if (seen.has(nativeFunction)) {
+						continue;
+					}
+					seen.add(nativeFunction);
+					total += NATIVE_FUNCTION_HEAP_BYTES;
 					continue;
 				}
-				seen.add(value);
-				total += NATIVE_FUNCTION_HEAP_BYTES;
-				continue;
-			}
-			if (isNativeObject(value)) {
-				if (seen.has(value)) {
+				case ValueTag.NativeObject: {
+					const nativeObject = value as NativeObject;
+					if (seen.has(nativeObject)) {
+						continue;
+					}
+					seen.add(nativeObject);
+					total += NATIVE_OBJECT_HEAP_BYTES;
+					if (nativeObject.metatable !== null) {
+						pushValue(nativeObject.metatable);
+					}
 					continue;
 				}
-				seen.add(value);
-				total += NATIVE_OBJECT_HEAP_BYTES;
-				if (value.metatable !== null) {
-					pushValue(value.metatable);
+				case ValueTag.Closure: {
+					const closure = value as Closure;
+					if (seen.has(closure)) {
+						continue;
+					}
+					seen.add(closure);
+					total += closure.heapBytes;
+					for (let index = 0; index < closure.upvalues.length; index += 1) {
+						upvalueStack.push(closure.upvalues[index]);
+					}
+					continue;
 				}
-				continue;
-			}
-			const closure = value as Closure;
-			if (seen.has(closure)) {
-				continue;
-			}
-			seen.add(closure);
-			total += closure.heapBytes;
-			for (let index = 0; index < closure.upvalues.length; index += 1) {
-				upvalueStack.push(closure.upvalues[index]);
+				default:
+					continue;
 			}
 		}
 		this.stringPool.reclaimUnreachableTracked();
@@ -4829,36 +4859,33 @@ export class CPU {
 	}
 
 	private valueToString(value: Value): string {
-		if (value === null) {
-			return 'nil';
-		}
-		if (typeof value === 'boolean') {
-			return value ? 'true' : 'false';
-		}
-		if (valueIsNumber(value)) {
-			if (value - value !== 0) {
-				return value !== value ? 'nan' : (value < 0 ? '-inf' : 'inf');
+		switch (valueTag(value)) {
+			case ValueTag.Nil:
+				return 'nil';
+			case ValueTag.False:
+				return 'false';
+			case ValueTag.True:
+				return 'true';
+			case ValueTag.Number: {
+				const numberValue = value as number;
+				if (numberValue - numberValue !== 0) {
+					return numberValue !== numberValue ? 'nan' : (numberValue < 0 ? '-inf' : 'inf');
+				}
+				// Parity with C++ runtime string output (Lua tostring semantics).
+				// Slower than V8's native formatting; avoid tight-loop conversions.
+				return formatNumber(numberValue);
 			}
-			// Parity with C++ runtime string output (Lua tostring semantics).
-			// Slower than V8's native formatting; avoid tight-loop conversions.
-			return formatNumber(value);
+			case ValueTag.String:
+				return this.stringPool.toString(asStringId(value as StringValue));
+			case ValueTag.Table:
+				return 'table';
+			case ValueTag.NativeObject:
+				return 'native';
+			case ValueTag.Closure:
+			case ValueTag.BuiltinFunction:
+			case ValueTag.NativeFunction:
+				return 'function';
 		}
-		if (valueIsString(value)) {
-			return this.stringPool.toString(asStringId(value));
-		}
-		if (value instanceof Table) {
-			return 'table';
-		}
-		if (isBuiltinFunction(value)) {
-			return 'function';
-		}
-		if (isNativeFunction(value)) {
-			return 'function';
-		}
-		if (isNativeObject(value)) {
-			return 'native';
-		}
-		return 'function';
 	}
 
 }

@@ -1,7 +1,7 @@
 import * as path from 'node:path';
 
 import { extractErrorMessage } from '../../../../machine/ts/lua/value';
-import { EMPTY_CALL_ARGS, Table, asStringId, valueIsString, type Closure, type StringValue, type Value } from '../../../../machine/ts/machine/cpu/cpu';
+import { EMPTY_CALL_ARGS, Table, asStringId, valueIsString, valueIsTable, type Closure, type StringValue, type Value } from '../../../../machine/ts/machine/cpu/cpu';
 import { callClosureIntoSuspended } from '../../../../ide/runtime/closure_executor';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import type { InputEvt } from 'bmsx/platform';
@@ -128,7 +128,7 @@ class HostTestRunner {
 				this.updateArgs[0] = this.updateFrames;
 				const result = this.callGuest(this.update, this.updateArgs);
 				this.applyCommands(result);
-				if (result === true || (result instanceof Table && result.getStringKey(this.doneKey) === true)) {
+				if (result === true || (valueIsTable(result) && result.getStringKey(this.doneKey) === true)) {
 					this.pass();
 				}
 				return;
@@ -163,20 +163,19 @@ class HostTestRunner {
 		this.options.logger(`test:${this.label} loaded`);
 	}
 
-	private callGuest(fn: Closure, args: ReadonlyArray<Value>): Value | undefined {
+	private callGuest(fn: Closure, args: ReadonlyArray<Value>): Value {
 		const runtime = this.options.runtime;
 		const results = runtime.luaScratch.values.acquire();
 		try {
 			callClosureIntoSuspended(runtime, fn, args, results);
-			return results.length === 0 ? undefined : results[0];
+			return results.length === 0 ? null : results[0];
 		} finally {
 			runtime.luaScratch.values.release(results);
 		}
 	}
 
-	private applyCommands(value: Value | undefined): void {
+	private applyCommands(value: Value): void {
 		switch (value) {
-			case undefined:
 			case null:
 			case true:
 			case false:
