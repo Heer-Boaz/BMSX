@@ -5,6 +5,7 @@
 #include "render/backend/gx_gpu_render_rules.h"
 #include "machine/bus/io.h"
 #include "machine/cpu/cpu.h"
+#include "machine/cpu/execution_loader.h"
 #include "machine/memory/memory.h"
 #include "machine/model_registry.h"
 #include "machine/scheduler/device.h"
@@ -29,6 +30,7 @@ struct GpuHarness {
 	std::array<uint8_t, 1> emptyRom{{0}};
 	bmsx::Memory memory;
 	bmsx::IrqController irq;
+	bmsx::ExecutionLoader executionLoader;
 	bmsx::CPU cpu;
 	bmsx::DeviceScheduler scheduler;
 	bmsx::DmaController dma;
@@ -37,7 +39,8 @@ struct GpuHarness {
 	GpuHarness()
 		: memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, bmsx::test::cartridgeSlots() })
 		, irq(memory)
-		, cpu(memory, irq)
+		, executionLoader(memory)
+		, cpu(memory, irq, executionLoader)
 		, scheduler(cpu)
 		, dma(memory, cpu, irq, scheduler)
 		, gpu(memory, cpu, irq, scheduler, dma) {
@@ -53,6 +56,7 @@ struct CommandBufferDmaHarness {
 	std::array<uint8_t, 1> emptyRom{{0}};
 	bmsx::Memory memory;
 	bmsx::IrqController irq;
+	bmsx::ExecutionLoader executionLoader;
 	bmsx::CPU cpu;
 	bmsx::DeviceScheduler scheduler;
 	bmsx::DmaController dma;
@@ -60,7 +64,8 @@ struct CommandBufferDmaHarness {
 	CommandBufferDmaHarness()
 		: memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, bmsx::test::cartridgeSlots() })
 		, irq(memory)
-		, cpu(memory, irq)
+		, executionLoader(memory)
+		, cpu(memory, irq, executionLoader)
 		, scheduler(cpu)
 		, dma(memory, cpu, irq, scheduler) {
 		memory.cartridgeController().connect(memory, irq, dma);

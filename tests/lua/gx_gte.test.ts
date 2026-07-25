@@ -13,6 +13,7 @@ import { IO_WORD_SIZE } from '../../machine/ts/machine/memory/map';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { MAPPED_BUS_MASTER_DMA } from '../../machine/ts/machine/memory/bus_signals';
 import { CPU, OpCode, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { ExecutionLoader } from '../../machine/ts/machine/cpu/execution_loader';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/machine/cpu/instruction_format';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import {
@@ -104,12 +105,25 @@ import { linkRawTestSystemBlua32 } from '../helpers/blua32';
 
 const GTE_SF = 1 << 19;
 
-function createGte(): { memory: Memory; cpu: CPU; gte: GxGte; scheduler: DeviceScheduler } {
+function createGte(): {
+	memory: Memory;
+	cpu: CPU;
+	executionLoader: ExecutionLoader;
+	gte: GxGte;
+	scheduler: DeviceScheduler;
+} {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
 	const irq = new IrqController(memory);
-	const cpu = new CPU(memory, irq);
+	const executionLoader = new ExecutionLoader(memory);
+	const cpu = new CPU(memory, irq, executionLoader);
 	const scheduler = new DeviceScheduler(cpu);
-	return { memory, cpu, gte: new GxGte(memory, cpu, scheduler), scheduler };
+	return {
+		memory,
+		cpu,
+		executionLoader,
+		gte: new GxGte(memory, cpu, scheduler),
+		scheduler,
+	};
 }
 
 function completeGtePlus(memory: Memory, scheduler: DeviceScheduler, cycles: number): void {
@@ -125,7 +139,11 @@ function serviceScheduledGtePlus(gte: GxGte, scheduler: DeviceScheduler, cycles:
 	gte.onService();
 }
 
-function installGtePlusBurstProgram(cpu: CPU, words: readonly number[]): number {
+function installGtePlusBurstProgram(
+	cpu: CPU,
+	executionLoader: ExecutionLoader,
+	words: readonly number[],
+): number {
 	const instructionCount = words.length + 3;
 	const code = new Uint8Array(instructionCount * INSTRUCTION_BYTES);
 	writeInstruction(code, 0, OpCode.LOADK, 0, 0, 0, 0);
@@ -141,7 +159,7 @@ function installGtePlusBurstProgram(cpu: CPU, words: readonly number[]): number 
 		functionIds: ['gte_plus_burst'],
 	});
 	cpu.memory.installSystemRom(image.romBytes);
-	cpu.mountExecutableMedia();
+	executionLoader.mountExecutableMedia(cpu);
 	return image.vectors.startupFunctionAddress;
 }
 
@@ -440,7 +458,7 @@ test('GX-GTE+ CPU burst interlock is atomic across save, restore and command res
 		0,
 		GX_GTE_PLUS_FN_VMAD3,
 	];
-	first.cpu.start(installGtePlusBurstProgram(first.cpu, burstWords));
+	first.cpu.start(installGtePlusBurstProgram(first.cpu, first.executionLoader, burstWords));
 	for (let index = 0; index < burstWords.length + 1; index += 1) {
 		first.cpu.step();
 	}
@@ -462,7 +480,7 @@ test('GX-GTE+ CPU burst interlock is atomic across save, restore and command res
 	assert.equal(gteState.plusInterlockArmed, true);
 
 	const restored = createGte();
-	installGtePlusBurstProgram(restored.cpu, burstWords);
+	installGtePlusBurstProgram(restored.cpu, restored.executionLoader, burstWords);
 	restored.scheduler.setNowCycles(100);
 	restored.gte.restoreState(gteState);
 	restored.cpu.restoreRuntimeState(cpuState);

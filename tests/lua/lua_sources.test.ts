@@ -18,6 +18,7 @@ import {
 import { buildLuaSources } from '../../machine/ts/lua/source_registry';
 import { compileLuaChunkToProgram } from '../../machine/ts/lua/compiler';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { ExecutionLoader } from '../../machine/ts/machine/cpu/execution_loader';
 import { BLUA32_IMAGE_ID } from '../../machine/ts/machine/cpu/blua32_image';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
@@ -219,8 +220,9 @@ test('debug package source boot resolves the persisted GX texture layout module'
 	);
 	const image = linkTestSystemBlua32(compiled);
 	const memory = new Memory({ systemRom: image.romBytes, cartridgeSlots: cartridgeSlots(payload) });
-	const cpu = new CPU(memory, new IrqController(memory));
-	cpu.mountExecutableMedia();
+	const executionLoader = new ExecutionLoader(memory);
+	const cpu = new CPU(memory, new IrqController(memory), executionLoader);
+	executionLoader.mountExecutableMedia(cpu);
 	cpu.start(image.vectors.startupFunctionAddress);
 
 	assert.equal(registry.module2lua[GX_TEXTURE_LAYOUT_MODULE_PATH].src, layoutSource);

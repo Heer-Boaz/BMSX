@@ -1,5 +1,6 @@
 #include "machine/bus/io.h"
 #include "machine/cpu/cpu.h"
+#include "machine/cpu/execution_loader.h"
 #include "machine/devices/cartridge/contracts.h"
 #include "machine/devices/dma/controller.h"
 #include "machine/devices/irq/controller.h"
@@ -21,6 +22,7 @@ void require(bool condition, const char* message) {
 struct CartridgeHarness {
 	bmsx::Memory memory;
 	bmsx::IrqController irq;
+	bmsx::ExecutionLoader executionLoader;
 	bmsx::CPU cpu;
 	bmsx::DeviceScheduler scheduler;
 	bmsx::DmaController dma;
@@ -28,7 +30,8 @@ struct CartridgeHarness {
 	explicit CartridgeHarness(const bmsx::CartridgeSlotMediaPair& slots)
 		: memory(bmsx::MemoryInit{ {}, slots })
 		, irq(memory)
-		, cpu(memory, irq)
+		, executionLoader(memory)
+		, cpu(memory, irq, executionLoader)
 		, scheduler(cpu)
 		, dma(memory, cpu, irq, scheduler) {
 		memory.cartridgeController().connect(memory, irq, dma);

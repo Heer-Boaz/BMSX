@@ -120,21 +120,21 @@ export class Runtime {
 	}
 
 	public boot(): void {
-		this.machine.cpu.mountExecutableMedia();
+		this.machine.executionLoader.mountExecutableMedia(this.machine.cpu);
 		seedLuaGlobals(this);
 		this.startSystemFirmware();
 	}
 
 	public rebootSystem(): void {
 		this.resetForSystemBoot();
-		this.machine.cpu.remountExecutableMedia();
+		this.machine.executionLoader.mountExecutableMedia(this.machine.cpu);
 		seedLuaGlobals(this);
 		this.startSystemFirmware();
 	}
 
 	private startSystemFirmware(): void {
 		this.machine.cpu.start(
-			this.machine.cpu.systemStartupFunctionAddress(),
+			this.machine.executionLoader.systemStartupFunctionAddress(),
 			EMPTY_CALL_ARGS,
 			CPU_STATUS_SYSTEM_ENTRY,
 		);

@@ -99,6 +99,12 @@ struct Blua32ImageLayout {
 	std::span<const u8> textBytes;
 };
 
+struct Blua32MediaImage {
+	Blua32ImageLayout layout;
+	Blua32BootHeader boot;
+	int cartridgeSlot = -1;
+};
+
 auto decodeBlua32BootHeader(std::span<const u8> bytes) -> Blua32BootHeader;
 auto decodeBlua32Image(std::span<const u8> bytes, u32 imageAddress) -> Blua32ImageLayout;
 

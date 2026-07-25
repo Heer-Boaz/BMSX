@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { BuiltinFunctionId, CPU, StringValue, createBuiltinFunction, Table, type Value } from '../../machine/ts/machine/cpu/cpu';
+import { ExecutionLoader } from '../../machine/ts/machine/cpu/execution_loader';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { runCompiledLua } from './cpu_test_harness';
@@ -23,7 +24,7 @@ test('Table stores sparse unsigned integer keys in the hash part', () => {
 
 test('Table hashes runtime object keys from value-owned identity', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
-	const cpu = new CPU(memory, new IrqController(memory));
+	const cpu = new CPU(memory, new IrqController(memory), new ExecutionLoader(memory));
 	const table = cpu.createTable(0, 4);
 	const tableKey = cpu.createTable(0, 0);
 	const nativeFnKey = cpu.createNativeFunction('key_fn', () => {});
@@ -70,7 +71,7 @@ return -1 % 0x100000000, (0x84222325 ~ 0x61) % 0x100000000
 
 test('string.byte nil position uses default', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
-	const cpu = new CPU(memory, new IrqController(memory));
+	const cpu = new CPU(memory, new IrqController(memory), new ExecutionLoader(memory));
 	const stringByteId = BuiltinFunctionId.StringByte;
 
 	const out: Value[] = [];

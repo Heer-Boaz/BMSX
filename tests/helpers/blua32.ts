@@ -19,6 +19,7 @@ import {
 	CPU,
 	RunResult,
 } from '../../machine/ts/machine/cpu/cpu';
+import { ExecutionLoader } from '../../machine/ts/machine/cpu/execution_loader';
 import { describeBlua32InstructionAtPc } from '../../machine/ts/machine/cpu/disassembler';
 import { INSTRUCTION_BYTES, readInstructionWord } from '../../machine/ts/machine/cpu/instruction_format';
 import { OpCode } from '../../machine/ts/machine/cpu/opcode_info';
@@ -361,8 +362,9 @@ export function createTestSystemCpu(
 ): { cpu: CPU; memory: Memory; irqController: IrqController } {
 	const memory = new Memory({ systemRom: finalized.romBytes, cartridgeSlots: cartridgeSlots() });
 	const irqController = new IrqController(memory);
-	const cpu = new CPU(memory, irqController);
-	cpu.mountExecutableMedia();
+	const executionLoader = new ExecutionLoader(memory);
+	const cpu = new CPU(memory, irqController, executionLoader);
+	executionLoader.mountExecutableMedia(cpu);
 	cpu.attachProfilerDebugInfo(-1, finalized.symbols.metadata.functionIds, finalized.symbols.metadata);
 	return { cpu, memory, irqController };
 }

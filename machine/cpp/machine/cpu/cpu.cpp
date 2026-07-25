@@ -927,10 +927,15 @@ CPU::NativeLocalRootsScope::~NativeLocalRootsScope() {
 	}
 }
 
-CPU::CPU(Memory& memory, IrqController& irqController)
+CPU::CPU(
+	Memory& memory,
+	IrqController& irqController,
+	ExecutionAddressResolver& executionAddressResolver
+)
 	: m_protectedCallContinuations(MAX_POOLED_FRAMES)
 	, m_memory(memory)
 	, m_irqController(irqController)
+	, m_executionAddressResolver(executionAddressResolver)
 	, m_stringPool(true)
 	, m_heap(m_stringPool) {
 	for (size_t index = 0; index < m_builtinFunctions.size(); ++index) {
@@ -1005,28 +1010,8 @@ Closure* CPU::createTrackedClosure(
 	return closure;
 }
 
-void CPU::mountExecutableMedia() {
-	mountExecutableImages();
-}
-
-void CPU::remountExecutableMedia() {
-	mountExecutableImages();
-}
-
-void CPU::mountExecutableImages() {
+void CPU::beginExecutionImageMount() {
 	m_staticClosuresByAddress.clear();
-	std::optional<Blua32MediaImage> systemMedia = decodeExecutableMedia(SYSTEM_ROM_BASE, -1);
-	if (!systemMedia) {
-		throw BMSX_RUNTIME_ERROR("System ROM has no BLua32 executable image.");
-	}
-	m_systemImage = activateExecutableImage(std::move(*systemMedia));
-	m_cartridgeMediaImages[0] = decodeExecutableMedia(CART_ROM_BASE, 0);
-	m_cartridgeMediaImages[1] = decodeExecutableMedia(CART_ROM_BASE, 1);
-	m_cartridgeImages[0].reset();
-	m_cartridgeImages[1].reset();
-	m_systemExceptionFunctionAddress = m_systemImage->boot.exceptionFunctionAddress;
-	m_activeExecutionImage = m_systemImage.get();
-	m_hardHalted = false;
 }
 
 std::vector<u32> CPU::registerGlobalNames(const std::vector<std::string>& names, bool system) {
@@ -1048,51 +1033,11 @@ std::vector<u32> CPU::registerGlobalNames(const std::vector<std::string>& names,
 	return slots;
 }
 
-std::optional<Blua32MediaImage> CPU::decodeExecutableMedia(
-	u32 romBaseAddress,
-	int cartridgeSlot
-) {
-	Span<const u8> headerBytes;
-	if (!m_memory.bindRomByteView(
-			romBaseAddress,
-			BLUA32_BOOT_HEADER_SIZE,
-			cartridgeSlot < 0 ? 0u : static_cast<u32>(cartridgeSlot),
-			headerBytes
-	)) {
-		return {};
-	}
-	const Blua32BootHeader boot = decodeBlua32BootHeader(
-		std::span<const u8>(headerBytes.data(), headerBytes.size())
-	);
-	if (boot.imageOffset == 0u) {
-		return {};
-	}
-	const u32 imageAddress = romBaseAddress + boot.imageOffset;
-	Span<const u8> imageBytes;
-	if (!m_memory.bindRomByteView(
-			imageAddress,
-			boot.imageByteCount,
-			cartridgeSlot < 0 ? 0u : static_cast<u32>(cartridgeSlot),
-			imageBytes
-	)) {
-		throw BMSX_RUNTIME_ERROR("BLua32 image is not backed by the installed ROM.");
-	}
-	return Blua32MediaImage{
-		.layout = decodeBlua32Image(
-			std::span<const u8>(imageBytes.data(), imageBytes.size()),
-			imageAddress
-		),
-		.boot = boot,
-		.cartridgeSlot = cartridgeSlot,
-	};
-}
-
 std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutableImage(Blua32MediaImage&& media) {
 	auto image = std::make_unique<Blua32ExecutionImage>();
 	image->layout = std::move(media.layout);
 	image->boot = media.boot;
 	image->cartridgeSlot = media.cartridgeSlot;
-	image->systemImage = media.cartridgeSlot < 0 ? image.get() : m_systemImage.get();
 	image->constPool.reserve(image->layout.constants.size());
 	for (const Blua32EncodedConstant& constant : image->layout.constants) {
 		if (std::holds_alternative<std::monostate>(constant)) {
@@ -1139,18 +1084,11 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutableImage(Blua32MediaIm
 	return image;
 }
 
-Blua32ExecutionImage* CPU::cartridgeImageForExecution(size_t slot) {
-	std::unique_ptr<Blua32ExecutionImage>& image = m_cartridgeImages[slot];
-	if (image) {
-		return image.get();
-	}
-	std::optional<Blua32MediaImage>& media = m_cartridgeMediaImages[slot];
-	if (!media) {
-		return nullptr;
-	}
-	image = activateExecutableImage(std::move(*media));
-	media.reset();
-	return image.get();
+void CPU::setSystemExecutionImage(Blua32ExecutionImage& image) {
+	m_systemImage = &image;
+	m_systemExceptionFunctionAddress = image.boot.exceptionFunctionAddress;
+	m_activeExecutionImage = &image;
+	m_hardHalted = false;
 }
 
 Closure* CPU::staticClosureAtAddress(u32 address) {
@@ -1351,21 +1289,6 @@ Blua32RuntimeFunction* CPU::functionRecordInExecutionDomain(
 	if (address >= RAM_BASE) {
 		return nullptr;
 	}
-	return functionRecordInImage(*executionImage.systemImage, address);
-}
-
-Blua32RuntimeFunction* CPU::functionRecordOnSelectedBus(u32 address) {
-	if (address >= CART_ROM_BASE) {
-		Blua32ExecutionImage* image =
-			cartridgeImageForExecution(m_memory.cartridgeController().selectedSlot());
-		if (!image) {
-			return nullptr;
-		}
-		return functionRecordInImage(*image, address);
-	}
-	if (address >= RAM_BASE) {
-		return nullptr;
-	}
 	return functionRecordInImage(*m_systemImage, address);
 }
 
@@ -1389,7 +1312,8 @@ void CPU::start(u32 functionAddress, NativeArgsView args, u32 statusWord) {
 	m_nonMaskableInterruptPending = false;
 	m_yieldRequested = false;
 	m_hostExternalCallActive = false;
-	Blua32RuntimeFunction& function = *functionRecordOnSelectedBus(functionAddress);
+	Blua32RuntimeFunction& function =
+		*m_executionAddressResolver.functionRecordOnSelectedBus(*this, functionAddress);
 	m_activeExecutionImage = function.image;
 	Closure* closure = function.image->staticClosures[function.index];
 	pushFrame(closure, args.data(), args.size(), 0, 0, false);
@@ -1397,7 +1321,8 @@ void CPU::start(u32 functionAddress, NativeArgsView args, u32 statusWord) {
 }
 
 void CPU::executeFunctionAddress(u32 functionAddress) {
-	Blua32RuntimeFunction* function = functionRecordOnSelectedBus(functionAddress);
+	Blua32RuntimeFunction* function =
+		m_executionAddressResolver.functionRecordOnSelectedBus(*this, functionAddress);
 	if (!function || !function->staticClosure) {
 		hardHalt();
 		return;
@@ -1669,8 +1594,11 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	};
 
 	Blua32ExecutionImage* executionImage = state.executionCartridgeSlot < 0
-		? m_systemImage.get()
-		: cartridgeImageForExecution(static_cast<size_t>(state.executionCartridgeSlot));
+		? m_systemImage
+		: m_executionAddressResolver.executionImageForSlot(
+			*this,
+			state.executionCartridgeSlot
+		);
 	std::vector<RestoredObject> restoredObjects(state.objects.size());
 	for (size_t index = 0; index < state.objects.size(); ++index) {
 		const CpuObjectState& objectState = state.objects[index];
@@ -3547,12 +3475,7 @@ void CPU::markRoots(GcHeap& heap) {
 	for (const auto& value : m_globalValues) {
 		heap.markValue(value);
 	}
-	const std::array<Blua32ExecutionImage*, 3> images{
-		m_systemImage.get(),
-		m_cartridgeImages[0].get(),
-		m_cartridgeImages[1].get(),
-	};
-	for (Blua32ExecutionImage* image : images) {
+	for (Blua32ExecutionImage* image : m_executionAddressResolver.loadedExecutionImages()) {
 		if (!image) {
 			continue;
 		}

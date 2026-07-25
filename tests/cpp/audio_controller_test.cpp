@@ -2,6 +2,7 @@
 #include "common/endian.h"
 #include "machine/bus/io.h"
 #include "machine/cpu/cpu.h"
+#include "machine/cpu/execution_loader.h"
 #include "machine/devices/audio/controller.h"
 #include "machine/devices/audio/biquad_filter.h"
 #include "machine/devices/audio/output.h"
@@ -33,6 +34,7 @@ struct AudioHarness {
 	std::array<bmsx::u8, 4> auxiliaryCartRom{{0xffu, 0xffu, 0xffu, 0xffu}};
 	bmsx::Memory memory;
 	bmsx::IrqController irq;
+	bmsx::ExecutionLoader executionLoader;
 	bmsx::CPU cpu;
 	bmsx::DeviceScheduler scheduler;
 	bmsx::ApuOutputMixer output;
@@ -55,7 +57,8 @@ struct AudioHarness {
 				}}
 				: bmsx::test::cartridgeSlots(cartRom)})
 		, irq(memory)
-		, cpu(memory, irq)
+		, executionLoader(memory)
+		, cpu(memory, irq, executionLoader)
 		, scheduler(cpu)
 		, output()
 		, dma(memory, cpu, irq, scheduler)
