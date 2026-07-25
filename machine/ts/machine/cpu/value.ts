@@ -1,5 +1,5 @@
 import { formatNumber } from '../common/number_format';
-import type { Closure } from './cpu';
+import type { Closure } from './closure';
 import type { StringId, StringPool } from './string_pool';
 import type { Table } from './table';
 

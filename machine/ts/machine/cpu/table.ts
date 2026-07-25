@@ -13,7 +13,7 @@ import {
 	type StringValue,
 	type Value,
 } from './value';
-import type { Closure } from './cpu';
+import type { Closure } from './closure';
 
 // start repeated-sequence-acceptable -- Lua table mutation hot paths keep direct array/hash updates instead of routing through dispatch helpers.
 

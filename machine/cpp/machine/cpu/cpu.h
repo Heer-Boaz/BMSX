@@ -19,6 +19,7 @@
 #include "common/primitives.h"
 #include "machine/cpu/blua32_image.h"
 #include "machine/cpu/blua32_symbols.h"
+#include "machine/cpu/closure.h"
 #include "machine/cpu/execution_address_space.h"
 #include "machine/cpu/errors.h"
 #include "machine/cpu/instruction_format.h"
@@ -36,8 +37,6 @@ class IrqController;
 class Memory;
 
 struct Table;
-struct Closure;
-struct Upvalue;
 struct CallFrame;
 struct Blua32ExecutionImage;
 struct Blua32RuntimeFunction;
@@ -74,13 +73,6 @@ struct DecodedInstruction {
 	uint8_t disp = 0;
 };
 
-struct Upvalue : GCObject {
-	bool open = false;
-	int index = 0;
-	CallFrame* frame = nullptr;
-	Value value = valueNil();
-};
-
 struct Blua32RuntimeFunction {
 	u32 address = 0;
 	u32 codeAddress = 0;
@@ -92,19 +84,6 @@ struct Blua32RuntimeFunction {
 	std::vector<Blua32UpvalueRecord> upvalues;
 	Blua32ExecutionImage* image = nullptr;
 	u32 index = 0;
-};
-
-struct Closure : GCObject {
-	u32 functionAddress = 0;
-	size_t upvalueCount = 0;
-	Upvalue** upvalues = nullptr;
-	size_t trackedHeapBytes = 0;
-};
-
-struct OpenUpvalueSlot {
-	CallFrame* frame = nullptr;
-	int index = 0;
-	Upvalue* upvalue = nullptr;
 };
 
 struct TableLoadInlineCache {

@@ -18,7 +18,8 @@ import {
 	BLUA32_BOOT_STARTUP_FUNCTION_ADDRESS_OFFSET,
 	decodeBlua32BootHeader,
 } from '../../machine/ts/machine/cpu/blua32_image';
-import { OpCode, RunResult, type Closure } from '../../machine/ts/machine/cpu/cpu';
+import { OpCode, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { Table } from '../../machine/ts/machine/cpu/table';
 import { EMPTY_CALL_ARGS, StringValue } from '../../machine/ts/machine/cpu/value';
 import { blua32SourceRangeAtPc } from '../../machine/ts/machine/cpu/blua32_symbols';

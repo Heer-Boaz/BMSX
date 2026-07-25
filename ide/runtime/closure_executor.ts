@@ -1,4 +1,5 @@
-import { AcceptedInterruptKind, Closure, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { AcceptedInterruptKind, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import type { Value } from '../../machine/ts/machine/cpu/value';
 import { advanceRuntimeTime, runDueRuntimeTimers } from '../../machine/ts/machine/runtime/cpu_executor';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';

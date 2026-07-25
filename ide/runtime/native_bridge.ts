@@ -1,7 +1,7 @@
 import { LuaHandlerCache, isLuaHandlerFunction } from '../../machine/ts/lua/handler_cache';
 import { convertToError, isLuaCallSignal, LuaValue, LuaTable, isLuaTable, createLuaTable, LuaNativeValue, isLuaFunctionValue, isPlainObject, resolveNativeTypeName, LuaFunctionValue } from '../../machine/ts/lua/value';
 import type { LuaInterpreter } from '../../machine/ts/lua/runtime';
-import type { Closure } from '../../machine/ts/machine/cpu/cpu';
+import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import type { Table } from '../../machine/ts/machine/cpu/table';
 import { asStringId, valueIsHeap, valueIsNumber, valueIsString, valueTag, ValueTag, type NativeFunction, type NativeObject, type StringValue, type Value } from '../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';

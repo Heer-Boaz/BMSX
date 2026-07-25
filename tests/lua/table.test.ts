@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
-	Closure,
 	CPU,
 } from '../../machine/ts/machine/cpu/cpu';
+import { Closure } from '../../machine/ts/machine/cpu/closure';
 import { Table } from '../../machine/ts/machine/cpu/table';
 import {
 	BuiltinFunctionId,

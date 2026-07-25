@@ -83,6 +83,7 @@ import {
 } from './value';
 import { LuaExecutionError, LuaThrownValueError } from './errors';
 import { Table } from './table';
+import { Closure, EMPTY_CLOSURE_UPVALUES, type OpenUpvalueSlot, type Upvalue } from './closure';
 
 export { OpCode } from './opcode_info';
 
@@ -250,18 +251,6 @@ export const enum AcceptedInterruptKind {
 	NonMaskable,
 }
 
-export class Closure {
-	public readonly [VALUE_TAG] = ValueTag.Closure;
-	public hashId = 0;
-
-	public constructor(
-		public functionAddress: number,
-		public upvalues: Upvalue[],
-		public heapBytes: number,
-	) {
-	}
-}
-
 export const enum RunResult {
 	Halted,
 	Yielded,
@@ -274,23 +263,7 @@ const enum TableIndexKeyKind {
 	Field,
 }
 
-type Upvalue = {
-	hashId: number;
-	open: boolean;
-	index: number;
-	frame: CallFrame;
-	value: Value;
-};
-
-const EMPTY_CLOSURE_UPVALUES: Upvalue[] = [];
-
-type OpenUpvalueSlot = {
-	frame: CallFrame;
-	index: number;
-	upvalue: Upvalue;
-};
-
-type CallFrame = {
+export type CallFrame = {
 	functionAddress: number;
 	functionRecord: Blua32RuntimeFunction;
 	pc: number;
