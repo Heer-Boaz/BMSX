@@ -335,7 +335,24 @@ void CPU::reset() {
 		m_executionAddressSpace.resolveSystemDomain();
 	const u32 systemResetFunctionAddress = systemImage.startupFunctionAddress;
 	const u32 systemExceptionFunctionAddress = systemImage.exceptionFunctionAddress;
-	prepareRootExecution(CPU_STATUS_SYSTEM_ENTRY);
+	completionValues.clear();
+	clearCallStack();
+	m_haltedUntilIrq = false;
+	m_interruptEventPending = false;
+	m_memoryWriteBlocked = false;
+	m_memoryWriteBlockedAddress = 0u;
+	m_hardHalted = false;
+	m_statusWord = CPU_STATUS_SYSTEM_ENTRY;
+	m_causeWord = 0u;
+	m_epcWord = 0u;
+	m_badAddressWord = 0u;
+	m_luaFaultReasonWord = 0u;
+	m_nmiReturnCauseWord = 0u;
+	m_nmiReturnEpcWord = 0u;
+	m_nmiReturnBadAddressWord = 0u;
+	m_nmiReturnLuaFaultReasonWord = 0u;
+	m_nonMaskableInterruptPending = false;
+	m_yieldRequested = false;
 	m_staticClosuresByAddress.clear();
 	m_executionImages.clear();
 	std::unique_ptr<Blua32ExecutionImage> activatedSystemImage =
@@ -344,7 +361,12 @@ void CPU::reset() {
 	m_executionImages.push_back(std::move(activatedSystemImage));
 	m_systemExceptionFunctionAddress = systemExceptionFunctionAddress;
 	m_activeExecutionImage = m_systemImage;
-	enterRootExecution(systemResetFunctionAddress, NativeArgsView());
+	Blua32RuntimeFunction& systemResetFunction =
+		*functionRecordInImage(*m_systemImage, systemResetFunctionAddress);
+	Closure* systemResetClosure =
+		m_systemImage->staticClosures[systemResetFunction.index];
+	pushFrame(systemResetClosure, nullptr, 0u, 0, 0, false);
+	runHousekeeping();
 }
 
 std::vector<u32> CPU::registerGlobalNames(const std::vector<std::string>& names, bool system) {
@@ -682,35 +704,6 @@ Blua32RuntimeFunction* CPU::functionRecordOnSelectedBus(u32 address) {
 	}
 	Blua32ExecutionImage* image = executionImageForDomain(*executionDomainId);
 	return image ? functionRecordInImage(*image, address) : nullptr;
-}
-
-void CPU::prepareRootExecution(u32 statusWord) {
-	completionValues.clear();
-	clearCallStack();
-	m_haltedUntilIrq = false;
-	m_interruptEventPending = false;
-	m_memoryWriteBlocked = false;
-	m_memoryWriteBlockedAddress = 0;
-	m_hardHalted = false;
-	m_statusWord = statusWord;
-	m_causeWord = 0u;
-	m_epcWord = 0u;
-	m_badAddressWord = 0u;
-	m_luaFaultReasonWord = 0u;
-	m_nmiReturnCauseWord = 0u;
-	m_nmiReturnEpcWord = 0u;
-	m_nmiReturnBadAddressWord = 0u;
-	m_nmiReturnLuaFaultReasonWord = 0u;
-	m_nonMaskableInterruptPending = false;
-	m_yieldRequested = false;
-}
-
-void CPU::enterRootExecution(u32 functionAddress, NativeArgsView args) {
-	Blua32RuntimeFunction& function = *functionRecordOnSelectedBus(functionAddress);
-	m_activeExecutionImage = function.image;
-	Closure* closure = function.image->staticClosures[function.index];
-	pushFrame(closure, args.data(), args.size(), 0, 0, false);
-	runHousekeeping();
 }
 
 void CPU::executeFunctionAddress(u32 functionAddress) {

@@ -403,8 +403,6 @@ private:
 	std::unique_ptr<CallFrame> acquireFrame();
 	void releaseFrame(std::unique_ptr<CallFrame> frame);
 	void clearCallStack();
-	void prepareRootExecution(u32 statusWord);
-	void enterRootExecution(u32 functionAddress, NativeArgsView args);
 	void ensureStackSize(size_t size);
 	void refreshFrameRegisterPointers();
 	NativeResultsScratchScope acquireNativeReturnScratch();

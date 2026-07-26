@@ -657,17 +657,43 @@ export class CPU {
 
 	public reset(): void {
 		const systemImage = this.executionAddressSpace.resolveSystemDomain();
-		this.prepareRootExecution(CPU_STATUS_SYSTEM_ENTRY);
+		const systemResetFunctionAddress = systemImage.startupFunctionAddress;
+		this.completionValues.length = 0;
+		this.clearCallStack();
+		this.haltedUntilIrq = false;
+		this.interruptEventPending = false;
+		this.memoryWriteBlocked = false;
+		this.memoryWriteBlockedAddress = 0;
+		this.hardHalted = false;
+		this.statusWord = CPU_STATUS_SYSTEM_ENTRY;
+		this.causeWord = 0;
+		this.epcWord = 0;
+		this.badAddressWord = 0;
+		this.luaFaultReasonWord = 0;
+		this.nmiReturnCauseWord = 0;
+		this.nmiReturnEpcWord = 0;
+		this.nmiReturnBadAddressWord = 0;
+		this.nmiReturnLuaFaultReasonWord = 0;
+		this.nonMaskableInterruptPending = false;
+		this.yieldRequested = false;
 		this.staticClosuresByAddress.clear();
 		this.executionImages.length = 0;
 		this.systemImage = this.activateExecutionImage(systemImage);
 		this.executionImages.push(this.systemImage);
 		this.systemExceptionFunctionAddress = systemImage.exceptionFunctionAddress;
 		this.activeExecutionImage = this.systemImage;
-		this.enterRootExecution(
-			systemImage.startupFunctionAddress,
+		const systemResetFunction = this.functionRecordInImage(
+			this.systemImage,
+			systemResetFunctionAddress,
+		)!;
+		this.pushFrame(
+			this.systemImage.staticClosures[systemResetFunction.index],
 			EMPTY_CALL_ARGS,
+			0,
+			0,
+			false,
 		);
+		enforceLuaHeapBudget();
 	}
 
 	public clearExecutionEnvironment(): void {
@@ -955,35 +981,6 @@ export class CPU {
 
 	public activeCartridgeSlot(): ExecutionDomainId {
 		return this.activeExecutionImage.executionDomainId;
-	}
-
-	private prepareRootExecution(statusWord: number): void {
-		this.completionValues.length = 0;
-		this.clearCallStack();
-		this.haltedUntilIrq = false;
-		this.interruptEventPending = false;
-		this.memoryWriteBlocked = false;
-		this.memoryWriteBlockedAddress = 0;
-		this.hardHalted = false;
-		this.statusWord = statusWord >>> 0;
-		this.causeWord = 0;
-		this.epcWord = 0;
-		this.badAddressWord = 0;
-		this.luaFaultReasonWord = 0;
-		this.nmiReturnCauseWord = 0;
-		this.nmiReturnEpcWord = 0;
-		this.nmiReturnBadAddressWord = 0;
-		this.nmiReturnLuaFaultReasonWord = 0;
-		this.nonMaskableInterruptPending = false;
-		this.yieldRequested = false;
-	}
-
-	private enterRootExecution(functionAddress: number, args: ReadonlyArray<Value>): void {
-		const functionRecord = this.functionRecordOnSelectedBus(functionAddress)!;
-		this.activeExecutionImage = functionRecord.image;
-		const closure = functionRecord.image.staticClosures[functionRecord.index];
-		this.pushFrame(closure, args, 0, 0, false);
-		enforceLuaHeapBudget();
 	}
 
 	private executeFunctionAddress(functionAddress: number): void {
