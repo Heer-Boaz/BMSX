@@ -727,12 +727,6 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 	pushFrame(closure, nullptr, 0, 0, 0, false);
 }
 
-void CPU::call(Closure& closure, NativeArgsView args, int returnCount) {
-	completionValues.clear();
-	m_yieldRequested = false;
-	pushFrame(&closure, args.data(), args.size(), 0, returnCount, false);
-}
-
 void CPU::beginCompletionCall(Closure& closure, NativeArgsView args) {
 	completionValues.clear();
 	m_yieldRequested = false;

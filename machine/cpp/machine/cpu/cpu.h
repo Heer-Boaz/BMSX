@@ -273,7 +273,6 @@ public:
 	);
 	Table* createTable(int arraySize = 0, int hashSize = 0);
 
-	void call(Closure& closure, NativeArgsView args = {}, int returnCount = 0);
 	void beginCompletionCall(Closure& closure, NativeArgsView args = {});
 	CpuRuntimeState captureRuntimeState() const;
 	void restoreRuntimeState(const CpuRuntimeState& state);

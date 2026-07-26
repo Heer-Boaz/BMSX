@@ -288,8 +288,7 @@ test('intellisense resolves captured fault upvalues after the CPU stack is repla
 	assert.equal(cpu.getFrameDepth(), 0);
 	const closure = cpu.completionValues[0];
 	assert.ok(valueIsClosure(closure));
-	cpu.call(closure);
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	runtime.callClosure(closure);
 	assert.equal(cpu.getFrameDepth(), 1);
 
 	const fault = createRuntimeFaultState();

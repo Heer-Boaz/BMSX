@@ -1004,12 +1004,6 @@ export class CPU {
 		this.pushFrame(closure, EMPTY_CALL_ARGS, 0, 0, false);
 	}
 
-	public call(closure: Closure, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS, returnCount: number = 0): void {
-		this.completionValues.length = 0;
-		this.yieldRequested = false;
-		this.pushFrame(closure, args, 0, returnCount, false);
-	}
-
 	public beginCompletionCall(closure: Closure, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS): void {
 		this.completionValues.length = 0;
 		this.yieldRequested = false;
