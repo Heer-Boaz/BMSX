@@ -73,7 +73,6 @@ function profileImage(image: ReturnType<typeof makeProfilerImage>) {
 	const cpu = createTestSystemCpu(image).cpu;
 	const profilerSession = new CpuProfilerSession(cpu, makeProfilerSources(image));
 	profilerSession.enable();
-	cpu.start(image.vectors.startupFunctionAddress);
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	const snapshot = profilerSession.snapshot();
 	profilerSession.disable();
@@ -129,7 +128,6 @@ test('CPU profiler starts a new profiling epoch when IDE tooling media changes',
 	const profilerSession = new CpuProfilerSession(cpu, sources);
 	profilerSession.enable();
 
-	cpu.start(initial.vectors.startupFunctionAddress);
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	assert.equal(profilerSession.snapshot().totalInstructions, 4);
 
@@ -145,7 +143,7 @@ test('CPU profiler starts a new profiling epoch when IDE tooling media changes',
 	assert.equal(resetSnapshot.pcCounts.length, 2);
 	assert.deepEqual(resetSnapshot.functionIds, ['reloaded']);
 
-	cpu.start(reloaded.vectors.startupFunctionAddress);
+	cpu.reset();
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	const snapshot = profilerSession.snapshot();
 	profilerSession.disable();

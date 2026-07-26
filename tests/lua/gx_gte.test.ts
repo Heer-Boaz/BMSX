@@ -135,7 +135,7 @@ function serviceScheduledGtePlus(gte: GxGte, scheduler: DeviceScheduler, cycles:
 function installGtePlusBurstProgram(
 	cpu: CPU,
 	words: readonly number[],
-): number {
+): void {
 	const instructionCount = words.length + 3;
 	const code = new Uint8Array(instructionCount * INSTRUCTION_BYTES);
 	writeInstruction(code, 0, OpCode.LOADK, 0, 0, 0, 0);
@@ -152,7 +152,6 @@ function installGtePlusBurstProgram(
 	});
 	cpu.memory.installSystemRom(image.romBytes);
 	cpu.reset();
-	return image.vectors.startupFunctionAddress;
 }
 
 function pack16(low: number, high: number): number {
@@ -450,7 +449,7 @@ test('GX-GTE+ CPU burst interlock is atomic across save, restore and command res
 		0,
 		GX_GTE_PLUS_FN_VMAD3,
 	];
-	first.cpu.start(installGtePlusBurstProgram(first.cpu, burstWords));
+	installGtePlusBurstProgram(first.cpu, burstWords);
 	assert.equal(first.cpu.runUntilDepth(0, burstWords.length + 1), RunResult.Yielded);
 	first.memory.writeMappedU32LE(commandAddress, GX_GTE_PLUS_FN_VMAD3);
 	first.scheduler.beginCpuSlice(10);

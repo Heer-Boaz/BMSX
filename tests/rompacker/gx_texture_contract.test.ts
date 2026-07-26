@@ -10,7 +10,6 @@ import { createCanvas } from 'canvas';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { StringValue, createBuiltinFunction } from '../../machine/ts/machine/cpu/value';
-import { CPU_STATUS_SYSTEM_ENTRY } from '../../machine/ts/machine/cpu/cop0';
 import {
 	BLUA32_IMAGE_ID,
 	decodeBlua32Image,
@@ -24,7 +23,7 @@ import { LUA_BOOT_PRIMITIVES } from '../../machine/ts/machine/firmware/boot_prim
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/machine/memory/map';
 import { layoutRomAssetPayloads } from '../../machine/ts/rompack/asset_layout';
-import { parseCartHeader, type RomAsset } from '../../machine/ts/rompack/format';
+import type { RomAsset } from '../../machine/ts/rompack/format';
 import { loadRomAssetList } from '../../machine/ts/rompack/loader';
 import {
 	decodeGxTextureImage,
@@ -473,11 +472,6 @@ return imgdec
 		cpu.stringIndexTable = stringTable;
 		cpu.setGlobalByKey(StringValue.get(cpu.stringPool.intern('string')), stringTable);
 		cpu.setGlobalByKey(StringValue.get(cpu.stringPool.intern('table')), tableTable);
-		cpu.start(
-			parseCartHeader(systemRom).blua32StartupFunctionAddress,
-			[],
-			CPU_STATUS_SYSTEM_ENTRY,
-		);
 		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 		assert.deepEqual(Array.from(cpu.completionValues, value => (value as number) >>> 0), [
 			1,

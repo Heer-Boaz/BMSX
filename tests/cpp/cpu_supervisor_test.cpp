@@ -22,13 +22,13 @@ namespace {
 
 constexpr bmsx::u32 SYSTEM_IRQ_FUNCTION = 0u;
 constexpr bmsx::u32 SYSTEM_EXCEPTION_FUNCTION = 1u;
-constexpr bmsx::u32 USER_CP0_FUNCTION = 2u;
-constexpr bmsx::u32 SYSTEM_CP0_FUNCTION = 3u;
-constexpr bmsx::u32 USER_BUS_LOAD_FUNCTION = 4u;
-constexpr bmsx::u32 SYSTEM_BUS_BURST_FUNCTION = 5u;
-constexpr bmsx::u32 EXEC_CART_FUNCTION = 6u;
+constexpr bmsx::u32 SYSTEM_CP0_FUNCTION = 2u;
+constexpr bmsx::u32 SYSTEM_BUS_BURST_FUNCTION = 3u;
+constexpr bmsx::u32 EXEC_CART_FUNCTION = 4u;
 constexpr bmsx::u32 CART_USER_HALT_FUNCTION = 0u;
 constexpr bmsx::u32 CART_IRQ_FUNCTION = 1u;
+constexpr bmsx::u32 CART_USER_CP0_FUNCTION = 2u;
+constexpr bmsx::u32 CART_USER_BUS_LOAD_FUNCTION = 3u;
 constexpr bmsx::u32 UNMAPPED_ADDRESS = 0x06000000u;
 
 void require(bool condition, const char* message) {
@@ -38,17 +38,17 @@ void require(bool condition, const char* message) {
 }
 
 auto makeSupervisorSystemImage(
+	bmsx::u32 cartridgeEntryFunction = CART_USER_HALT_FUNCTION,
 	std::vector<std::string> globalNames = {},
 	std::vector<std::string> systemGlobalNames = {}
 ) -> bmsx::test::Blua32TestImage {
 	bmsx::test::Blua32TestImage image;
-	image.text.resize(23u * bmsx::INSTRUCTION_BYTES);
+	image.text.resize(16u * bmsx::INSTRUCTION_BYTES);
 	image.constants = {
-		static_cast<bmsx::f64>(UNMAPPED_ADDRESS),
 		static_cast<bmsx::f64>(bmsx::IO_SYS_BUS_FAULT_CODE - bmsx::IO_WORD_SIZE),
 		static_cast<bmsx::f64>(bmsx::test::blua32TestFunctionAddress(
 			bmsx::RomImageDomain::Cartridge,
-			CART_USER_HALT_FUNCTION
+			cartridgeEntryFunction
 		)),
 	};
 	image.globalNames = std::move(globalNames);
@@ -59,34 +59,25 @@ auto makeSupervisorSystemImage(
 	bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::MFC0), 0, bmsx::COP0_CAUSE, 0);
 	bmsx::writeInstruction(code, 2, static_cast<bmsx::u8>(bmsx::OpCode::RFE), 0, 0, 0);
 	bmsx::writeInstruction(code, 3, static_cast<bmsx::u8>(bmsx::OpCode::MFC0), 0, bmsx::COP0_STATUS, 0);
-	bmsx::writeInstruction(code, 4, static_cast<bmsx::u8>(bmsx::OpCode::K1), 0, 0, 0);
-	bmsx::writeInstruction(code, 5, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 1, 0);
-	bmsx::writeInstruction(code, 6, static_cast<bmsx::u8>(bmsx::OpCode::MFC0), 0, bmsx::COP0_STATUS, 0);
-	bmsx::writeInstruction(code, 7, static_cast<bmsx::u8>(bmsx::OpCode::MTC0), 0, bmsx::COP0_EPC, 0);
-	bmsx::writeInstruction(code, 8, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
-	bmsx::writeInstruction(code, 9, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 0);
-	bmsx::writeInstruction(code, 10, static_cast<bmsx::u8>(bmsx::OpCode::K1), 1, 0, 0);
-	bmsx::writeInstruction(code, 11, static_cast<bmsx::u8>(bmsx::OpCode::LOAD_MEM_D), 1, 0, static_cast<bmsx::u8>(bmsx::MemoryAccessKind::Word));
-	bmsx::writeInstruction(code, 12, static_cast<bmsx::u8>(bmsx::OpCode::RET), 1, 1, 0);
-	bmsx::writeInstruction(code, 13, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 1);
-	bmsx::writeInstruction(code, 14, static_cast<bmsx::u8>(bmsx::OpCode::K1), 1, 0, 0);
-	bmsx::writeInstruction(code, 15, static_cast<bmsx::u8>(bmsx::OpCode::K1), 2, 0, 0);
-	bmsx::writeInstruction(code, 16, static_cast<bmsx::u8>(bmsx::OpCode::K1), 3, 0, 0);
-	bmsx::writeInstruction(code, 17, static_cast<bmsx::u8>(bmsx::OpCode::K1), 4, 0, 0);
-	bmsx::writeInstruction(code, 18, static_cast<bmsx::u8>(bmsx::OpCode::K1), 5, 0, 0);
-	bmsx::writeInstruction(code, 19, static_cast<bmsx::u8>(bmsx::OpCode::STORE_MEM_WORDS_D), 1, 0, 5);
-	bmsx::writeInstruction(code, 20, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
-	bmsx::writeInstruction(code, 21, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 2);
-	bmsx::writeInstruction(code, 22, static_cast<bmsx::u8>(bmsx::OpCode::MTC0), 0, bmsx::COP0_EXEC, 0);
+	bmsx::writeInstruction(code, 4, static_cast<bmsx::u8>(bmsx::OpCode::MTC0), 0, bmsx::COP0_EPC, 0);
+	bmsx::writeInstruction(code, 5, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
+	bmsx::writeInstruction(code, 6, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 0);
+	bmsx::writeInstruction(code, 7, static_cast<bmsx::u8>(bmsx::OpCode::K1), 1, 0, 0);
+	bmsx::writeInstruction(code, 8, static_cast<bmsx::u8>(bmsx::OpCode::K1), 2, 0, 0);
+	bmsx::writeInstruction(code, 9, static_cast<bmsx::u8>(bmsx::OpCode::K1), 3, 0, 0);
+	bmsx::writeInstruction(code, 10, static_cast<bmsx::u8>(bmsx::OpCode::K1), 4, 0, 0);
+	bmsx::writeInstruction(code, 11, static_cast<bmsx::u8>(bmsx::OpCode::K1), 5, 0, 0);
+	bmsx::writeInstruction(code, 12, static_cast<bmsx::u8>(bmsx::OpCode::STORE_MEM_WORDS_D), 1, 0, 5);
+	bmsx::writeInstruction(code, 13, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
+	bmsx::writeInstruction(code, 14, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 1);
+	bmsx::writeInstruction(code, 15, static_cast<bmsx::u8>(bmsx::OpCode::MTC0), 0, bmsx::COP0_EXEC, 0);
 
 	image.functions = {
 		{.firstWord = 0u, .wordCount = 1u},
 		{.firstWord = 1u, .wordCount = 2u},
 		{.firstWord = 3u, .wordCount = 3u},
-		{.firstWord = 6u, .wordCount = 3u},
-		{.firstWord = 9u, .wordCount = 4u, .maxStack = 2u},
-		{.firstWord = 13u, .wordCount = 8u, .maxStack = 6u},
-		{.firstWord = 21u, .wordCount = 2u},
+		{.firstWord = 6u, .wordCount = 8u, .maxStack = 6u},
+		{.firstWord = 14u, .wordCount = 2u},
 	};
 	image.startupFunctionIndex = SYSTEM_IRQ_FUNCTION;
 	image.irqFunctionIndex = SYSTEM_IRQ_FUNCTION;
@@ -96,15 +87,27 @@ auto makeSupervisorSystemImage(
 
 auto makeSupervisorCartImage() -> bmsx::test::Blua32TestImage {
 	bmsx::test::Blua32TestImage image;
-	image.text.resize(4u * bmsx::INSTRUCTION_BYTES);
+	image.text.resize(11u * bmsx::INSTRUCTION_BYTES);
+	image.constants = {
+		static_cast<bmsx::f64>(UNMAPPED_ADDRESS),
+	};
 	std::span<bmsx::u8> code(image.text);
 	bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::HALT), 0, 0, 0);
 	bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::K1), 0, 0, 0);
 	bmsx::writeInstruction(code, 2, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 1, 0);
 	bmsx::writeInstruction(code, 3, static_cast<bmsx::u8>(bmsx::OpCode::RFE), 0, 0, 0);
+	bmsx::writeInstruction(code, 4, static_cast<bmsx::u8>(bmsx::OpCode::MFC0), 0, bmsx::COP0_STATUS, 0);
+	bmsx::writeInstruction(code, 5, static_cast<bmsx::u8>(bmsx::OpCode::K1), 0, 0, 0);
+	bmsx::writeInstruction(code, 6, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 1, 0);
+	bmsx::writeInstruction(code, 7, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 0);
+	bmsx::writeInstruction(code, 8, static_cast<bmsx::u8>(bmsx::OpCode::K1), 1, 0, 0);
+	bmsx::writeInstruction(code, 9, static_cast<bmsx::u8>(bmsx::OpCode::LOAD_MEM_D), 1, 0, static_cast<bmsx::u8>(bmsx::MemoryAccessKind::Word));
+	bmsx::writeInstruction(code, 10, static_cast<bmsx::u8>(bmsx::OpCode::RET), 1, 1, 0);
 	image.functions = {
 		{.firstWord = 0u, .wordCount = 3u},
 		{.firstWord = 3u, .wordCount = 1u},
+		{.firstWord = 4u, .wordCount = 3u},
+		{.firstWord = 7u, .wordCount = 4u, .maxStack = 2u},
 	};
 	image.startupFunctionIndex = CART_USER_HALT_FUNCTION;
 	image.irqFunctionIndex = CART_IRQ_FUNCTION;
@@ -152,8 +155,9 @@ struct CpuTestMachine {
 };
 
 void testManualNmiAndSaveStateReturn() {
-	CpuTestMachine machine(makeSupervisorSystemImage());
-	machine.cpu.start(machine.cartRom.functionAddresses[CART_USER_HALT_FUNCTION]);
+	bmsx::test::Blua32TestImage systemImage = makeSupervisorSystemImage();
+	systemImage.startupFunctionIndex = EXEC_CART_FUNCTION;
+	CpuTestMachine machine(std::move(systemImage));
 	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "HALT parks the user frame");
 	machine.cpu.requestNonMaskableInterrupt();
 	require(machine.cpu.enterPendingInterrupt(), "NMI enters through the CPU interrupt boundary");
@@ -178,45 +182,58 @@ void testManualNmiAndSaveStateReturn() {
 }
 
 void testPrivilegeVectorRoutingAndCp0Fault() {
-	CpuTestMachine machine(makeSupervisorSystemImage());
-	machine.memory.writeMappedU32LE(bmsx::IO_IRQ_MASK, bmsx::IRQ_VBLANK);
-	machine.irq.raise(bmsx::IRQ_VBLANK);
+	{
+		bmsx::test::Blua32TestImage systemImage = makeSupervisorSystemImage();
+		systemImage.startupFunctionIndex = EXEC_CART_FUNCTION;
+		CpuTestMachine machine(std::move(systemImage));
+		require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "physical reset firmware enters cartridge code");
+		machine.memory.writeMappedU32LE(bmsx::IO_IRQ_MASK, bmsx::IRQ_VBLANK);
+		machine.irq.raise(bmsx::IRQ_VBLANK);
+		require(machine.cpu.enterPendingInterrupt(), "user IRQ enters");
+		require(machine.cpu.captureRuntimeState().frames.back().functionAddress == machine.cartRom.functionAddresses[CART_IRQ_FUNCTION], "user IRQ selects the cartridge's physical IRQ vector");
+	}
 
-	machine.cpu.start(machine.cartRom.functionAddresses[CART_USER_HALT_FUNCTION]);
-	require(machine.cpu.enterPendingInterrupt(), "user IRQ enters");
-	require(machine.cpu.captureRuntimeState().frames.back().functionAddress == machine.cartRom.functionAddresses[CART_IRQ_FUNCTION], "user IRQ selects the cartridge's physical IRQ vector");
+	{
+		bmsx::test::Blua32TestImage systemImage = makeSupervisorSystemImage();
+		systemImage.startupFunctionIndex = SYSTEM_CP0_FUNCTION;
+		CpuTestMachine machine(std::move(systemImage));
+		machine.memory.writeMappedU32LE(bmsx::IO_IRQ_MASK, bmsx::IRQ_VBLANK);
+		machine.irq.raise(bmsx::IRQ_VBLANK);
+		require(machine.cpu.enterPendingInterrupt(), "supervisor IRQ enters");
+		require(machine.cpu.captureRuntimeState().frames.back().functionAddress == machine.systemRom.functionAddresses[SYSTEM_IRQ_FUNCTION], "supervisor IRQ selects the system's physical IRQ vector");
+	}
 
-	machine.cpu.start(
-		machine.cartRom.functionAddresses[CART_USER_HALT_FUNCTION],
-		{},
-		bmsx::CPU_STATUS_SYSTEM_ENTRY
-	);
-	require(machine.cpu.enterPendingInterrupt(), "supervisor IRQ enters");
-	require(machine.cpu.captureRuntimeState().frames.back().functionAddress == machine.systemRom.functionAddresses[SYSTEM_IRQ_FUNCTION], "supervisor IRQ selects the system's physical IRQ vector");
+	{
+		bmsx::test::Blua32TestImage systemImage =
+			makeSupervisorSystemImage(CART_USER_CP0_FUNCTION);
+		systemImage.startupFunctionIndex = EXEC_CART_FUNCTION;
+		CpuTestMachine machine(std::move(systemImage));
+		require(machine.cpu.runUntilDepth(0, 3) == bmsx::RunResult::Yielded, "user MFC0 vectors synchronously");
+		bmsx::CpuRuntimeState fault = machine.cpu.captureRuntimeState();
+		require(fault.causeWord == bmsx::CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE, "user CP0 access latches the privileged-instruction cause");
+		require(fault.epcWord == machine.cartRom.textAddress + 4u * bmsx::INSTRUCTION_BYTES, "synchronous EPC identifies the physical faulting instruction");
+		require(fault.frames.back().functionAddress == machine.systemRom.functionAddresses[SYSTEM_EXCEPTION_FUNCTION], "user CP0 fault selects the system exception vector");
+		fault.epcWord += bmsx::INSTRUCTION_BYTES;
+		machine.cpu.restoreRuntimeState(fault);
+		require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "edited EPC skips the faulting instruction on RFE");
+		require(machine.cpu.completionValues.size() == 1u && bmsx::asNumber(machine.cpu.completionValues[0]) == 1.0, "fault handler resumes the selected user instruction");
+	}
 
-	machine.irq.reset();
-	machine.cpu.start(machine.systemRom.functionAddresses[USER_CP0_FUNCTION]);
-	require(machine.cpu.runUntilDepth(0, 1) == bmsx::RunResult::Yielded, "user MFC0 vectors synchronously");
-	bmsx::CpuRuntimeState fault = machine.cpu.captureRuntimeState();
-	require(fault.causeWord == bmsx::CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE, "user CP0 access latches the privileged-instruction cause");
-	require(fault.epcWord == machine.systemRom.textAddress + 3u * bmsx::INSTRUCTION_BYTES, "synchronous EPC identifies the physical faulting instruction");
-	require(fault.frames.back().functionAddress == machine.systemRom.functionAddresses[SYSTEM_EXCEPTION_FUNCTION], "user CP0 fault selects the system exception vector");
-	fault.epcWord += bmsx::INSTRUCTION_BYTES;
-	machine.cpu.restoreRuntimeState(fault);
-	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "edited EPC skips the faulting instruction on RFE");
-	require(machine.cpu.completionValues.size() == 1u && bmsx::asNumber(machine.cpu.completionValues[0]) == 1.0, "fault handler resumes the selected user instruction");
-
-	machine.cpu.start(
-		machine.systemRom.functionAddresses[SYSTEM_CP0_FUNCTION],
-		{},
-		bmsx::CPU_STATUS_SYSTEM_ENTRY
-	);
-	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "supervisor CP0 code completes");
-	require(machine.cpu.captureRuntimeState().epcWord == bmsx::CPU_STATUS_SYSTEM_ENTRY, "MTC0 writes the raw EPC word");
+	{
+		bmsx::test::Blua32TestImage systemImage = makeSupervisorSystemImage();
+		systemImage.startupFunctionIndex = SYSTEM_CP0_FUNCTION;
+		CpuTestMachine machine(std::move(systemImage));
+		require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "supervisor CP0 code completes");
+		require(machine.cpu.captureRuntimeState().epcWord == bmsx::CPU_STATUS_SYSTEM_ENTRY, "MTC0 writes the raw EPC word");
+	}
 }
 
 void testSystemAndOrdinaryGlobalRegisterfilesStayDistinct() {
-	CpuTestMachine machine(makeSupervisorSystemImage({"irq"}, {"irq"}));
+	CpuTestMachine machine(makeSupervisorSystemImage(
+		CART_USER_HALT_FUNCTION,
+		{"irq"},
+		{"irq"}
+	));
 	const bmsx::Value irqKey = bmsx::valueString(machine.cpu.stringPool().intern("irq"));
 	machine.cpu.setSystemGlobalByKey(irqKey, bmsx::valueNumber(11.0));
 	machine.cpu.setGlobalByKey(irqKey, bmsx::valueNumber(22.0));
@@ -238,14 +255,11 @@ void testSystemAndOrdinaryGlobalRegisterfilesStayDistinct() {
 }
 
 void testCp0ExecTransfersToTheSelectedPhysicalCartridgeImage() {
-	CpuTestMachine machine(makeSupervisorSystemImage());
+	bmsx::test::Blua32TestImage systemImage = makeSupervisorSystemImage();
+	systemImage.startupFunctionIndex = EXEC_CART_FUNCTION;
+	CpuTestMachine machine(std::move(systemImage));
 	require(machine.cpu.isExecutionDomainResident(bmsx::SYSTEM_EXECUTION_DOMAIN_ID), "system execution domain is resident after reset");
 	require(!machine.cpu.isExecutionDomainResident(0), "unexecuted cartridge domain is not resident");
-	machine.cpu.start(
-		machine.systemRom.functionAddresses[EXEC_CART_FUNCTION],
-		{},
-		bmsx::CPU_STATUS_SYSTEM_ENTRY
-	);
 	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "CP0.EXEC transfers execution to cartridge bytecode");
 	require(machine.cpu.isExecutionDomainResident(0), "CP0.EXEC makes the selected cartridge domain resident");
 	const bmsx::CpuRuntimeState state = machine.cpu.captureRuntimeState();
@@ -299,7 +313,6 @@ void testControlFlowCannotLeaveTheActiveFunctionRecord() {
 		image.exceptionFunctionIndex = 1u;
 		CpuTestMachine machine(std::move(image));
 
-		machine.cpu.start(machine.systemRom.functionAddresses[0]);
 		require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, testCase.name);
 		const bmsx::CpuRuntimeState state = machine.cpu.captureRuntimeState();
 		require(state.frames.size() == 1u, "branch hard-halts before entering adjacent function text");
@@ -321,7 +334,6 @@ void testInvalidClosureTargetHardHalts() {
 	image.functions = {{.firstWord = 0u, .wordCount = 1u}};
 	CpuTestMachine machine(std::move(image));
 
-	machine.cpu.start(machine.systemRom.functionAddresses[0]);
 	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "invalid CLOSURE target hard-halts");
 	const bmsx::CpuRuntimeState state = machine.cpu.captureRuntimeState();
 	require(state.frames.size() == 1u, "invalid CLOSURE target retains the active frame");
@@ -330,21 +342,31 @@ void testInvalidClosureTargetHardHalts() {
 
 void testCrossImageCallStackPcsBelongToTheirFrames() {
 	bmsx::test::Blua32TestImage system;
-	system.text.resize(5u * bmsx::INSTRUCTION_BYTES);
+	system.text.resize(7u * bmsx::INSTRUCTION_BYTES);
 	std::span<bmsx::u8> systemCode(system.text);
 	bmsx::writeInstruction(systemCode, 0, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
 	bmsx::writeInstruction(systemCode, 1, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 0, 0, 0);
 	bmsx::writeInstruction(systemCode, 2, static_cast<bmsx::u8>(bmsx::OpCode::CALL), 0, bmsx::encodeFixedCallArgCount(0), 1);
 	bmsx::writeInstruction(systemCode, 3, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
 	bmsx::writeInstruction(systemCode, 4, static_cast<bmsx::u8>(bmsx::OpCode::HALT), 0, 0, 0);
+	bmsx::writeInstruction(systemCode, 5, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 0);
+	bmsx::writeInstruction(systemCode, 6, static_cast<bmsx::u8>(bmsx::OpCode::MTC0), 0, bmsx::COP0_EXEC, 0);
 	system.functions = {
 		{.firstWord = 0u, .wordCount = 4u},
 		{.firstWord = 4u, .wordCount = 1u},
+		{.firstWord = 5u, .wordCount = 2u},
+	};
+	system.constants = {
+		static_cast<bmsx::f64>(bmsx::test::blua32TestFunctionAddress(
+			bmsx::RomImageDomain::Cartridge,
+			0u
+		)),
 	};
 	system.closureRelocations = {{
 		1u,
 		bmsx::test::blua32TestFunctionAddress(bmsx::RomImageDomain::System, 1u),
 	}};
+	system.startupFunctionIndex = 2u;
 	system.irqFunctionIndex = 1u;
 	system.exceptionFunctionIndex = 1u;
 
@@ -368,7 +390,6 @@ void testCrossImageCallStackPcsBelongToTheirFrames() {
 	cart.exceptionFunctionIndex = 1u;
 
 	CpuTestMachine machine(std::move(system), std::move(cart));
-	machine.cpu.start(machine.cartRom.functionAddresses[0]);
 	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "cross-image leaf reaches HALT");
 	const std::optional<bmsx::Blua32ImageLayout> systemLayout =
 		bmsx::decodeBlua32RomImage(machine.systemRom.bytes, bmsx::SYSTEM_ROM_BASE);
@@ -403,9 +424,10 @@ void testCrossImageCallStackPcsBelongToTheirFrames() {
 }
 
 void testRfeCannotResumeOutsideTheInterruptedFunctionRecord() {
-	CpuTestMachine machine(makeSupervisorSystemImage());
-	machine.cpu.start(machine.cartRom.functionAddresses[CART_USER_HALT_FUNCTION]);
-	require(machine.cpu.runUntilDepth(0, 1) == bmsx::RunResult::Halted, "cart reaches HALT before NMI");
+	bmsx::test::Blua32TestImage systemImage = makeSupervisorSystemImage();
+	systemImage.startupFunctionIndex = EXEC_CART_FUNCTION;
+	CpuTestMachine machine(std::move(systemImage));
+	require(machine.cpu.runUntilDepth(0, 3) == bmsx::RunResult::Halted, "cart reaches HALT before NMI");
 	machine.cpu.requestNonMaskableInterrupt();
 	require(machine.cpu.enterPendingInterrupt(), "NMI enters the system exception vector");
 
@@ -420,12 +442,14 @@ void testRfeCannotResumeOutsideTheInterruptedFunctionRecord() {
 }
 
 void testMappedBusErrorsEnterTheSystemExceptionVector() {
-	CpuTestMachine machine(makeSupervisorSystemImage());
-	machine.cpu.start(machine.systemRom.functionAddresses[USER_BUS_LOAD_FUNCTION]);
-	require(machine.cpu.runUntilDepth(0, 4) == bmsx::RunResult::Yielded, "faulting mapped load enters the exception root");
+	bmsx::test::Blua32TestImage systemImage =
+		makeSupervisorSystemImage(CART_USER_BUS_LOAD_FUNCTION);
+	systemImage.startupFunctionIndex = EXEC_CART_FUNCTION;
+	CpuTestMachine machine(std::move(systemImage));
+	require(machine.cpu.runUntilDepth(0, 6) == bmsx::RunResult::Yielded, "faulting mapped load enters the exception root");
 	bmsx::CpuRuntimeState loadFault = machine.cpu.captureRuntimeState();
 	require(loadFault.causeWord == bmsx::CPU_CAUSE_CODE_DATA_BUS_ERROR, "mapped load latches DBE");
-	require(loadFault.epcWord == machine.systemRom.textAddress + 11u * bmsx::INSTRUCTION_BYTES, "mapped load EPC identifies the physical faulting instruction");
+	require(loadFault.epcWord == machine.cartRom.textAddress + 9u * bmsx::INSTRUCTION_BYTES, "mapped load EPC identifies the physical faulting instruction");
 	require(loadFault.badAddressWord == 0u, "DBE leaves BAD_ADDRESS unchanged");
 	require(loadFault.frames.back().functionAddress == machine.systemRom.functionAddresses[SYSTEM_EXCEPTION_FUNCTION], "mapped load selects the system exception vector");
 	require(bmsx::asNumber(machine.cpu.readFrameRegister(0, 1)) == 1.0, "faulting load does not commit its destination register");
@@ -436,15 +460,15 @@ void testMappedBusErrorsEnterTheSystemExceptionVector() {
 
 	machine.memory.writeMappedU32LE(bmsx::IO_SYS_BUS_FAULT_ACK, 1u);
 	machine.memory.readMappedU8(UNMAPPED_ADDRESS);
-	machine.cpu.start(
-		machine.systemRom.functionAddresses[SYSTEM_BUS_BURST_FUNCTION],
-		{},
-		bmsx::CPU_STATUS_SYSTEM_ENTRY
+	bmsx::test::programBlua32TestResetVector(
+		machine.systemRom,
+		SYSTEM_BUS_BURST_FUNCTION
 	);
+	machine.cpu.reset();
 	require(machine.cpu.runUntilDepth(0, 10) == bmsx::RunResult::Yielded, "supervisor burst fault enters a nested exception root");
 	const bmsx::CpuRuntimeState burstFault = machine.cpu.captureRuntimeState();
 	require(burstFault.causeWord == bmsx::CPU_CAUSE_CODE_DATA_BUS_ERROR, "supervisor burst latches DBE");
-	require(burstFault.epcWord == machine.systemRom.textAddress + 19u * bmsx::INSTRUCTION_BYTES, "supervisor burst EPC identifies the physical faulting instruction");
+	require(burstFault.epcWord == machine.systemRom.textAddress + 12u * bmsx::INSTRUCTION_BYTES, "supervisor burst EPC identifies the physical faulting instruction");
 	require(burstFault.statusWord == (bmsx::CPU_STATUS_SYSTEM_ENTRY << 2u), "supervisor DBE pushes the status mode stack");
 	require(burstFault.frames.back().functionAddress == machine.systemRom.functionAddresses[SYSTEM_EXCEPTION_FUNCTION], "supervisor DBE selects the system exception vector");
 	require(machine.memory.readIoU32(bmsx::IO_SYS_BUS_FAULT_CODE - bmsx::IO_WORD_SIZE) == 1u, "burst retains the completed write prefix");
@@ -480,7 +504,6 @@ void testMappedMemoryAlignmentContract() {
 
 	machine.memory.writeMappedU8(BYTE_ADDRESS, 0x5au);
 	machine.memory.writeMappedF64LE(F64_ADDRESS, F64_VALUE);
-	machine.cpu.start(machine.systemRom.functionAddresses[0]);
 	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "aligned mapped loads complete");
 	require(machine.cpu.completionValues.size() == 2u, "aligned mapped loads return both values");
 	require(bmsx::asNumber(machine.cpu.completionValues[0]) == 0x5a, "byte access accepts an odd address");
@@ -531,6 +554,7 @@ void testAddressErrorsPrecedeMappedMemoryBusCycles() {
 			{.firstWord = 0u, .wordCount = 1u},
 			{.firstWord = 1u, .wordCount = instructionCount - 1u, .maxStack = testCase.valueCount + 1u},
 		};
+		image.startupFunctionIndex = 1u;
 		image.irqFunctionIndex = 0u;
 		image.exceptionFunctionIndex = 0u;
 		CpuTestMachine machine(std::move(image));
@@ -540,7 +564,6 @@ void testAddressErrorsPrecedeMappedMemoryBusCycles() {
 		machine.memory.writeMappedU32LE(ALIGNED_ADDRESS + 8u, 0x99aabbccu);
 		const bmsx::u32 faultSequence = machine.memory.readBusFaultSequence();
 
-		machine.cpu.start(machine.systemRom.functionAddresses[1]);
 		require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, testCase.name);
 		const bmsx::CpuRuntimeState state = machine.cpu.captureRuntimeState();
 		require(state.causeWord == testCase.cause, testCase.name);
@@ -641,7 +664,6 @@ void testProtectedCallMicrocodePreemptsSavesAndHandlesLuaErrors() {
 		machine.cpu.setSystemGlobalByKey(key, machine.cpu.createBuiltinFunction(builtinIds[index]));
 	}
 
-	machine.cpu.start(machine.systemRom.functionAddresses[0]);
 	require(machine.cpu.runUntilDepth(0, 3) == bmsx::RunResult::Yielded, "pcall body should remain preemptible");
 	bmsx::CpuRuntimeState state = machine.cpu.captureRuntimeState();
 	require(state.protectedCalls.size() == 1u, "save state should retain the active protected call");
@@ -650,23 +672,27 @@ void testProtectedCallMicrocodePreemptsSavesAndHandlesLuaErrors() {
 	require(machine.cpu.completionValues.size() == 3u && bmsx::isTruthy(machine.cpu.completionValues[0]), "pcall should return success");
 	require(bmsx::asNumber(machine.cpu.completionValues[1]) == 3.0 && bmsx::asNumber(machine.cpu.completionValues[2]) == 4.0, "pcall should preserve multiple results");
 
-	machine.cpu.start(machine.systemRom.functionAddresses[2]);
+	bmsx::test::programBlua32TestResetVector(machine.systemRom, 2u);
+	machine.cpu.reset();
 	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "xpcall error path should complete");
 	require(machine.cpu.completionValues.size() == 2u && !bmsx::isTruthy(machine.cpu.completionValues[0]), "xpcall should return failure");
 	require(bmsx::asNumber(machine.cpu.completionValues[1]) == 42.0, "xpcall handler should receive the thrown Lua value");
 
-	machine.cpu.start(machine.systemRom.functionAddresses[6]);
+	bmsx::test::programBlua32TestResetVector(machine.systemRom, 6u);
+	machine.cpu.reset();
 	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "invalid xpcall handler should be caught by the outer pcall");
 	require(machine.cpu.completionValues.size() == 2u && !bmsx::isTruthy(machine.cpu.completionValues[0]), "xpcall should validate its handler before running the body");
 	require(bmsx::valueIsString(machine.cpu.completionValues[1]), "invalid xpcall handler should return a Lua error value");
 
-	machine.cpu.start(machine.systemRom.functionAddresses[7]);
+	bmsx::test::programBlua32TestResetVector(machine.systemRom, 7u);
+	machine.cpu.reset();
 	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "xpcall handler failure should complete");
 	require(machine.cpu.completionValues.size() == 2u && !bmsx::isTruthy(machine.cpu.completionValues[0]), "xpcall handler failure should return failure");
 	require(bmsx::valueIsString(machine.cpu.completionValues[1]), "xpcall handler failure should return the Lua error-in-handler value");
 	require(machine.cpu.stringPool().toString(bmsx::asStringId(machine.cpu.completionValues[1])) == "error in error handling", "xpcall should hide the handler's replacement error");
 
-	machine.cpu.start(machine.systemRom.functionAddresses[5]);
+	bmsx::test::programBlua32TestResetVector(machine.systemRom, 5u);
+	machine.cpu.reset();
 	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "nested pcall should complete");
 	require(machine.cpu.completionValues.size() == 4u, "nested pcall should preserve the open result sequence");
 	require(bmsx::isTruthy(machine.cpu.completionValues[0]) && bmsx::isTruthy(machine.cpu.completionValues[1]), "nested pcall should prefix both success values");

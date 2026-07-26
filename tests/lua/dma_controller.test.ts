@@ -690,7 +690,6 @@ local gp0<const>: *word = ${IO_GX_GPU_GP0}
 	const finalized = linkTestSystemBlua32(compiled);
 	memory.installSystemRom(finalized.romBytes);
 	cpu.reset();
-	cpu.start(finalized.vectors.startupFunctionAddress);
 
 	programTransfer(memory, source, IO_GX_GPU_GP0, 1, DMA_DISABLED_CONTROL);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);

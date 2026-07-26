@@ -9,14 +9,14 @@ import { LuaLexer } from '../../machine/ts/lua/syntax/lexer';
 import { LuaParser } from '../../machine/ts/lua/syntax/parser';
 import {
 	CPU,
-	CPU_STATUS_CART_ENTRY,
-	CPU_STATUS_SYSTEM_ENTRY,
 	RunResult,
 } from '../../machine/ts/machine/cpu/cpu';
+import { BLUA32_BOOT_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/machine/cpu/blua32_image';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import type { ProgramMetadata } from '../../machine/ts/lua/compiler/program';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
+import { CART_ROM_BASE } from '../../machine/ts/machine/memory/map';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject, type CompiledProgram } from '../../machine/ts/lua/compiler';
 import type { OptimizationLevel } from '../../machine/ts/lua/compiler/optimizer';
 import {
@@ -34,6 +34,7 @@ const CLAMP_PATH = 'bios/util/clamp';
 const RECT_OVERLAPS_PATH = 'bios/util/rect_overlaps';
 const SINCOS_TURN32_PATH = 'bios/util/sincos_turn32';
 const STATIC_FORBIDDEN_OPCODE_PATTERN = /\b(?:GETSYS|SETSYS|GETGL|SETGL|NEWT|GETT|SETT|GETI|SETI|GETFIELD|SETFIELD|SELF|LEN|CLOSURE|VARARG|CONCAT|CONCATN)\b/;
+const CART_BOOT_SOURCE = `cop0.exec = mem[${CART_ROM_BASE + BLUA32_BOOT_STARTUP_FUNCTION_ADDRESS_OFFSET}]`;
 
 const buildExpectedSineQuarter = (): number[] => {
 	const out: number[] = [];
@@ -68,9 +69,6 @@ function runColdPair(systemCompiled: CompiledProgram, cartCompiled: CompiledProg
 	const executionAddressSpace = new ExecutionAddressSpace(memory);
 	const cpu = new CPU(memory, new IrqController(memory), executionAddressSpace);
 	cpu.reset();
-	cpu.start(finalized.systemVectors.startupFunctionAddress, [], CPU_STATUS_SYSTEM_ENTRY);
-	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
-	cpu.start(finalized.cartVectors.startupFunctionAddress, [], CPU_STATUS_CART_ENTRY);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	return Array.from(cpu.completionValues);
 }
@@ -270,9 +268,9 @@ test('cart const-function calls link to system export protos', () => {
 	const moduleSource = readFileSync('machine/firmware/bios/util/rect_overlaps.lua', 'utf8');
 	const module = { path: RECT_OVERLAPS_PATH, chunk: parseSource(moduleSource, `${RECT_OVERLAPS_PATH}.lua`), source: moduleSource };
 	const systemCompiled = compileLuaChunkToProgram(
-		parseSource('return nil', 'system.lua'),
+		parseSource(CART_BOOT_SOURCE, 'system.lua'),
 		[module],
-		{ entrySource: 'return nil' },
+		{ entrySource: CART_BOOT_SOURCE, programDomain: 'system' },
 	);
 	const cartSource = `
 local rect_overlaps<const> = require("${RECT_OVERLAPS_PATH}")
@@ -290,9 +288,9 @@ test('installed const-function modules stay call targets without Lua value mater
 	const moduleSource = readFileSync('machine/firmware/bios/util/clamp.lua', 'utf8');
 	const module = { path: CLAMP_PATH, chunk: parseSource(moduleSource, `${CLAMP_PATH}.lua`), source: moduleSource };
 	const systemCompiled = compileLuaChunkToProgram(
-		parseSource('return nil', 'system.lua'),
+		parseSource(CART_BOOT_SOURCE, 'system.lua'),
 		[module],
-		{ entrySource: 'return nil', programDomain: 'system' },
+		{ entrySource: CART_BOOT_SOURCE, programDomain: 'system' },
 	);
 	const source = `
 local clamp<const> = require("${CLAMP_PATH}")
@@ -332,9 +330,9 @@ return { math = { clamp = clamp } }
 `;
 	const module = { path: modulePath, chunk: parseSource(moduleSource, `${modulePath}.lua`), source: moduleSource };
 	const systemCompiled = compileLuaChunkToProgram(
-		parseSource('return nil', 'system.lua'),
+		parseSource(CART_BOOT_SOURCE, 'system.lua'),
 		[module],
-		{ entrySource: 'return nil', programDomain: 'system' },
+		{ entrySource: CART_BOOT_SOURCE, programDomain: 'system' },
 	);
 	const callSource = `
 local api<const> = require("${modulePath}")

@@ -684,11 +684,6 @@ Blua32RuntimeFunction* CPU::functionRecordOnSelectedBus(u32 address) {
 	return image ? functionRecordInImage(*image, address) : nullptr;
 }
 
-void CPU::start(u32 functionAddress, NativeArgsView args, u32 statusWord) {
-	prepareRootExecution(statusWord);
-	enterRootExecution(functionAddress, args);
-}
-
 void CPU::prepareRootExecution(u32 statusWord) {
 	completionValues.clear();
 	clearCallStack();

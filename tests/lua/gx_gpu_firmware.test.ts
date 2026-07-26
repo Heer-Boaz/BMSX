@@ -85,7 +85,6 @@ const FIRMWARE_MODES: readonly FirmwareMode[] = [
 function runFirmwareMode(modeIndex: number): { memory: Memory; cpu: CPU } {
 	const { memory, cpu } = createTestSystemCpu(finalized);
 	memory.writeMappedU32LE(MODE_SELECTOR_ADDRESS, modeIndex);
-	cpu.start(finalized.vectors.startupFunctionAddress);
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 	return { memory, cpu };
 }

@@ -60,6 +60,8 @@ auto encodeBlua32TestRom(
 	u32 cartridgeRamByteCount = 0u
 ) -> Blua32TestRom;
 
+void programBlua32TestResetVector(Blua32TestRom& rom, u32 functionIndex);
+
 auto encodeBlua32TestDataRom(
 	u32 cartridgeBoardWord = 0u,
 	u32 cartridgeRamByteCount = 0u

@@ -305,6 +305,13 @@ auto encodeBlua32TestRom(
 	return rom;
 }
 
+void programBlua32TestResetVector(Blua32TestRom& rom, u32 functionIndex) {
+	rom.boot.startupFunctionAddress = rom.functionAddresses[functionIndex];
+	CartRomHeader header = parseCartHeader(rom.bytes.data(), rom.bytes.size());
+	header.blua32StartupFunctionAddress = rom.boot.startupFunctionAddress;
+	writeCartRomHeader(rom.bytes.data(), header);
+}
+
 auto encodeBlua32TestDataRom(
 	u32 cartridgeBoardWord,
 	u32 cartridgeRamByteCount

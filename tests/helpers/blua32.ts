@@ -367,6 +367,20 @@ export function createTestSystemCpu(
 	return { cpu, memory, irqController, executionAddressSpace };
 }
 
+export function createTestBlua32PairCpu(
+	finalized: TestBlua32ImagePair,
+): { cpu: CPU; memory: Memory; irqController: IrqController; executionAddressSpace: ExecutionAddressSpace } {
+	const memory = new Memory({
+		systemRom: finalized.systemRomBytes,
+		cartridgeSlots: cartridgeSlots(finalized.cartRomBytes),
+	});
+	const irqController = new IrqController(memory);
+	const executionAddressSpace = new ExecutionAddressSpace(memory);
+	const cpu = new CPU(memory, irqController, executionAddressSpace);
+	cpu.reset();
+	return { cpu, memory, irqController, executionAddressSpace };
+}
+
 export function runCompiledTestSystem(compiled: CompiledProgram, cycleBudget: number): CPU {
 	const finalized = linkTestSystemBlua32(compiled);
 	const cpu = createTestSystemCpu(finalized).cpu;

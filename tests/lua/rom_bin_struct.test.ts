@@ -23,7 +23,6 @@ function runStructRead(packedWords: number[], snippet: string): Value[] {
 	for (let index = 0; index < packedWords.length; index += 1) {
 		memory.writeMappedU32LE(BIN_ADDR + index * 4, packedWords[index] >>> 0);
 	}
-	cpu.start(image.vectors.startupFunctionAddress);
 	assert.equal(cpu.runUntilDepth(0, 1000000), RunResult.Halted);
 	return Array.from(cpu.completionValues);
 }

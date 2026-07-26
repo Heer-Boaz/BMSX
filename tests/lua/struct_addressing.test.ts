@@ -57,7 +57,6 @@ test('CPU executes displaced memory load/store opcodes', () => {
 		constants: [TEST_RAM_BASE, 0x11111111, 0x22222222, 0x33333333, 0x44444444],
 	});
 	const { cpu, memory } = createTestSystemCpu(finalized);
-	cpu.start(finalized.vectors.startupFunctionAddress);
 
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	assert.deepEqual(Array.from(cpu.completionValues), [0x22222222]);

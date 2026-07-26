@@ -223,7 +223,6 @@ test('debug package source boot resolves the persisted GX texture layout module'
 	const executionAddressSpace = new ExecutionAddressSpace(memory);
 	const cpu = new CPU(memory, new IrqController(memory), executionAddressSpace);
 	cpu.reset();
-	cpu.start(image.vectors.startupFunctionAddress);
 
 	assert.equal(registry.module2lua[GX_TEXTURE_LAYOUT_MODULE_PATH].src, layoutSource);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);

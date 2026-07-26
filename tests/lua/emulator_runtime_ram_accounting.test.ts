@@ -18,17 +18,15 @@ const EMPTY_TEST_IMAGE = linkRawTestSystemBlua32({
 	functions: [{ firstWord: 0, wordCount: 1 }],
 });
 
-function createCpuWithProgram(source: string): { cpu: CPU; startupFunctionAddress: number } {
+function createCpuWithProgram(source: string): CPU {
 	const compiled = compileLuaSource(source, 'ram_accounting.lua');
 	const finalized = linkTestSystemBlua32(compiled);
-	const cpu = createTestSystemCpu(finalized).cpu;
-	return { cpu, startupFunctionAddress: finalized.vectors.startupFunctionAddress };
+	return createTestSystemCpu(finalized).cpu;
 }
 
 function collectHeapDeltaAfterRun(source: string): { before: number; after: number } {
-	const { cpu, startupFunctionAddress } = createCpuWithProgram(source);
+	const cpu = createCpuWithProgram(source);
 	const before = cpu.collectTrackedHeapBytes();
-	cpu.start(startupFunctionAddress);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	return { before, after: cpu.collectTrackedHeapBytes() };
 }
@@ -198,7 +196,7 @@ test('unreachable runtime strings are reclaimed by the heap collector', () => {
 });
 
 test('non-capturing const functions materialize as static proto references', () => {
-	const { cpu, startupFunctionAddress } = createCpuWithProgram([
+	const cpu = createCpuWithProgram([
 		'local f<const> = function()',
 		'	return 7',
 		'end',
@@ -206,20 +204,18 @@ test('non-capturing const functions materialize as static proto references', () 
 	].join('\n'));
 	const before = cpu.collectTrackedHeapBytes();
 
-	cpu.start(startupFunctionAddress);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 
 	assert.equal(cpu.collectTrackedHeapBytes(), before);
 });
 
 test('restored static closures reuse the static proto cache', () => {
-	const { cpu, startupFunctionAddress } = createCpuWithProgram([
+	const cpu = createCpuWithProgram([
 		'local f<const> = function()',
 		'	return 7',
 		'end',
 		'return f',
 	].join('\n'));
-	cpu.start(startupFunctionAddress);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	const closure = cpu.completionValues[0];
 	const before = cpu.collectTrackedHeapBytes();

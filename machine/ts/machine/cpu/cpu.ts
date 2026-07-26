@@ -957,11 +957,6 @@ export class CPU {
 		return this.activeExecutionImage.executionDomainId;
 	}
 
-	public start(functionAddress: number, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS, statusWord = CPU_STATUS_CART_ENTRY): void {
-		this.prepareRootExecution(statusWord);
-		this.enterRootExecution(functionAddress, args);
-	}
-
 	private prepareRootExecution(statusWord: number): void {
 		this.completionValues.length = 0;
 		this.clearCallStack();

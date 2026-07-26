@@ -273,7 +273,6 @@ public:
 	);
 	Table* createTable(int arraySize = 0, int hashSize = 0);
 
-	void start(u32 functionAddress, NativeArgsView args = {}, u32 statusWord = CPU_STATUS_CART_ENTRY);
 	void call(Closure& closure, NativeArgsView args = {}, int returnCount = 0);
 	void beginCompletionCall(Closure& closure, NativeArgsView args = {});
 	CpuRuntimeState captureRuntimeState() const;

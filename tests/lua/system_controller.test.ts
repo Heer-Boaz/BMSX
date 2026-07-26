@@ -20,15 +20,15 @@ import {
 } from '../../machine/ts/machine/cpu/blua32_image';
 import { OpCode, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
+import { encodeFixedCallArgCount } from '../../machine/ts/machine/cpu/opcode_info';
 import { Table } from '../../machine/ts/machine/cpu/table';
-import { EMPTY_CALL_ARGS, StringValue } from '../../machine/ts/machine/cpu/value';
+import { StringValue } from '../../machine/ts/machine/cpu/value';
 import { blua32SourceRangeAtPc } from '../../machine/ts/rompack/tooling/blua32_symbols';
-import { COP0_EXEC, CPU_STATUS_SYSTEM_ENTRY } from '../../machine/ts/machine/cpu/cop0';
+import { COP0_EXEC } from '../../machine/ts/machine/cpu/cop0';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/machine/cpu/instruction_format';
 import { LUA_BOOT_PRIMITIVES } from '../../machine/ts/machine/firmware/boot_primitives';
 import { Memory } from '../../machine/ts/machine/memory/memory';
-import { MemoryAccessKind } from '../../machine/ts/machine/memory/access_kind';
-import { CART_ROM_BASE, DYNAMIC_RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/machine/memory/map';
+import { CART_ROM_BASE, DYNAMIC_RAM_BASE } from '../../machine/ts/machine/memory/map';
 import { resolveRuntimeTiming } from '../../machine/ts/machine/runtime/boot_timing';
 import type { RuntimeInputSource } from '../../machine/ts/machine/runtime/input';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
@@ -58,6 +58,8 @@ class SystemResetInputSource implements RuntimeInputSource {
 }
 
 const CART_RESET_MARKER_ADDRESS = DYNAMIC_RAM_BASE + 0x1000;
+const CART_CLOSURE_GLOBAL_NAME = 'selected_cart_closure';
+const CART_CLOSURE_RESULT_GLOBAL_NAME = 'selected_cart_closure_result';
 
 function createSystemResetRuntime(systemRom: Uint8Array, cartRom: Uint8Array, cart1Rom = new Uint8Array(0)): Runtime {
 	const timing = resolveRuntimeTiming(5_000_000);
@@ -74,39 +76,25 @@ function createSystemResetRuntime(systemRom: Uint8Array, cartRom: Uint8Array, ca
 }
 
 function makeExecutionSelectorSystemSource(): TestBlua32Source {
-	const text = new Uint8Array(11 * INSTRUCTION_BYTES);
+	const text = new Uint8Array(3 * INSTRUCTION_BYTES);
 	writeInstruction(text, 0, OpCode.LOADK, 0, 0, 0, 0);
-	writeInstruction(text, 1, OpCode.LOADK, 1, 0, 1, 0);
-	writeInstruction(text, 2, OpCode.STORE_MEM, 0, 1, MemoryAccessKind.U32LE, 0);
-	writeInstruction(text, 3, OpCode.LOADK, 0, 0, 2, 0);
-	writeInstruction(text, 4, OpCode.MTC0, 0, COP0_EXEC, 0, 0);
-	writeInstruction(text, 5, OpCode.LOADK, 0, 0, 3, 0);
-	writeInstruction(text, 6, OpCode.LOADK, 1, 0, 1, 0);
-	writeInstruction(text, 7, OpCode.STORE_MEM, 0, 1, MemoryAccessKind.U32LE, 0);
-	writeInstruction(text, 8, OpCode.LOADK, 0, 0, 2, 0);
-	writeInstruction(text, 9, OpCode.MTC0, 0, COP0_EXEC, 0, 0);
-	writeInstruction(text, 10, OpCode.HALT, 0, 0, 0, 0);
+	writeInstruction(text, 1, OpCode.MTC0, 0, COP0_EXEC, 0, 0);
+	writeInstruction(text, 2, OpCode.RFE, 0, 0, 0, 0);
 	return {
 		text,
 		functions: [
-			{ firstWord: 0, wordCount: 5, maxStack: 2 },
-			{ firstWord: 5, wordCount: 5, maxStack: 2 },
-			{ firstWord: 10, wordCount: 1 },
+			{ firstWord: 0, wordCount: 2 },
+			{ firstWord: 2, wordCount: 1 },
 		],
-		constants: [
-			0,
-			IO_CART_SELECT,
-			blua32TestFunctionAddress(CART_ROM_BASE, 0),
-			1,
-		],
-		irqFunctionIndex: 2,
-		exceptionFunctionIndex: 2,
+		constants: [blua32TestFunctionAddress(CART_ROM_BASE, 0)],
+		irqFunctionIndex: 1,
+		exceptionFunctionIndex: 0,
 		systemGlobalNames: LUA_BOOT_PRIMITIVES.map((primitive) => primitive.name),
 	};
 }
 
 function makeClosureCartSource(value: number, path: string, staticClosure: boolean): TestBlua32Source {
-	const text = new Uint8Array(6 * INSTRUCTION_BYTES);
+	const text = new Uint8Array(9 * INSTRUCTION_BYTES);
 	const range = {
 		path,
 		start: { line: 1, column: 1 },
@@ -114,19 +102,26 @@ function makeClosureCartSource(value: number, path: string, staticClosure: boole
 	};
 	writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0, 0);
 	writeInstruction(text, 1, OpCode.CLOSURE, 0, 0, 1, 0);
-	writeInstruction(text, 2, OpCode.RET, 0, 1, 0, 0);
-	writeInstruction(text, 3, OpCode.LOADK, 0, 0, 0, 0);
-	writeInstruction(text, 4, OpCode.RET, 0, 1, 0, 0);
-	writeInstruction(text, 5, OpCode.RFE, 0, 0, 0, 0);
+	writeInstruction(text, 2, OpCode.SETGL, 0, 0, 0, 0);
+	writeInstruction(text, 3, OpCode.CALL, 0, encodeFixedCallArgCount(0), 1, 0);
+	writeInstruction(text, 4, OpCode.SETGL, 0, 0, 1, 0);
+	writeInstruction(text, 5, OpCode.HALT, 0, 0, 0, 0);
+	writeInstruction(text, 6, OpCode.LOADK, 0, 0, 0, 0);
+	writeInstruction(text, 7, OpCode.RET, 0, 1, 0, 0);
+	writeInstruction(text, 8, OpCode.RFE, 0, 0, 0, 0);
 	return {
 		text,
 		functions: [
-			{ firstWord: 0, wordCount: 3 },
-			{ firstWord: 3, wordCount: 2, staticClosure },
-			{ firstWord: 5, wordCount: 1 },
+			{ firstWord: 0, wordCount: 6 },
+			{ firstWord: 6, wordCount: 2, staticClosure },
+			{ firstWord: 8, wordCount: 1 },
 		],
 		constants: [value],
-		debugRanges: [range, range, range, range, range, range],
+		globalNames: [
+			CART_CLOSURE_GLOBAL_NAME,
+			CART_CLOSURE_RESULT_GLOBAL_NAME,
+		],
+		debugRanges: [range, range, range, range, range, range, range, range, range],
 		irqFunctionIndex: 2,
 		exceptionFunctionIndex: 2,
 	};
@@ -263,8 +258,12 @@ test('an unexecuted second cartridge does not alter guest identity allocation', 
 		makeClosureCartSource(111, 'slot0.lua', true),
 	);
 	const unusedSource = makeClosureCartSource(222, 'slot1.lua', true);
-	unusedSource.constants = [...unusedSource.constants!, 'unused-slot-string'];
-	unusedSource.globalNames = ['unused_slot_global'];
+	unusedSource.constants = [222, 'unused-slot-string'];
+	unusedSource.globalNames = [
+		CART_CLOSURE_GLOBAL_NAME,
+		CART_CLOSURE_RESULT_GLOBAL_NAME,
+		'unused_slot_global',
+	];
 	const slot1 = linkRawTestBlua32Pair(systemSource, unusedSource);
 	const single = createSystemResetRuntime(slot0.systemRomBytes, slot0.cartRomBytes);
 	single.boot();
@@ -308,8 +307,11 @@ test('guest cartridge selection and EXEC-latched closures survive the runtime sa
 	const cpu = runtime.machine.cpu;
 
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	const selectedClosureName = StringValue.get(cpu.stringPool.intern(CART_CLOSURE_GLOBAL_NAME));
+	const selectedClosureResultName = StringValue.get(cpu.stringPool.intern(CART_CLOSURE_RESULT_GLOBAL_NAME));
 	assert.equal(cpu.activeCartridgeSlot(), 0);
-	const slot0Closure = cpu.completionValues[0] as Closure;
+	const slot0Closure = cpu.getGlobalByKey(selectedClosureName) as Closure;
+	assert.equal(cpu.getGlobalByKey(selectedClosureResultName), 111);
 	const savedClosureName = StringValue.get(cpu.stringPool.intern('saved_closure'));
 	const closureTableName = StringValue.get(cpu.stringPool.intern('closure_table'));
 	const closureTable = cpu.createTable();
@@ -317,16 +319,15 @@ test('guest cartridge selection and EXEC-latched closures survive the runtime sa
 	cpu.setGlobalByKey(savedClosureName, slot0Closure);
 	cpu.setGlobalByKey(closureTableName, closureTable);
 
-	cpu.start(
-		blua32TestFunctionAddress(SYSTEM_ROM_BASE, 1),
-		EMPTY_CALL_ARGS,
-		CPU_STATUS_SYSTEM_ENTRY,
-	);
+	runtime.machine.memory.writeMappedU32LE(IO_CART_SELECT, 1);
+	cpu.requestNonMaskableInterrupt();
+	assert.equal(cpu.enterPendingInterrupt(), true);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
 	assert.equal(cpu.activeCartridgeSlot(), 1);
-	const slot1Closure = cpu.completionValues[0] as Closure;
+	const slot1Closure = cpu.getGlobalByKey(selectedClosureName) as Closure;
 	assert.equal(slot1Closure, slot0Closure);
 	assert.equal(closureTable.get(slot1Closure), 77);
+	assert.equal(cpu.getGlobalByKey(selectedClosureResultName), 222);
 	assert.equal(cpu.activeCartridgeSlot(), 1);
 	const slot1SourceRange = blua32SourceRangeAtPc(
 		slot1.cartSymbols,
@@ -346,24 +347,19 @@ test('guest cartridge selection and EXEC-latched closures survive the runtime sa
 	assert.equal(sourceRangeAfterBusSelection.path, 'slot1.lua');
 
 	const saveBytes = captureRuntimeSaveStateBytes(runtime);
-	cpu.start(
-		blua32TestFunctionAddress(SYSTEM_ROM_BASE, 0),
-		EMPTY_CALL_ARGS,
-		CPU_STATUS_SYSTEM_ENTRY,
-	);
+	cpu.requestNonMaskableInterrupt();
+	assert.equal(cpu.enterPendingInterrupt(), true);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
-	cpu.call(slot0Closure);
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
-	assert.equal(cpu.completionValues[0], 111);
+	assert.equal(cpu.activeCartridgeSlot(), 0);
+	assert.equal(cpu.getGlobalByKey(selectedClosureResultName), 111);
 
 	applyRuntimeSaveStateBytes(runtime, saveBytes);
 	const restoredClosure = cpu.getGlobalByKey(savedClosureName) as Closure;
 	const restoredTable = cpu.getGlobalByKey(closureTableName) as Table;
 	assert.equal(restoredClosure, slot1Closure);
 	assert.equal(restoredTable.get(restoredClosure), 77);
-	cpu.call(restoredClosure);
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
-	assert.equal(cpu.completionValues[0], 222);
+	assert.equal(cpu.activeCartridgeSlot(), 1);
+	assert.equal(cpu.getGlobalByKey(selectedClosureResultName), 222);
 });
 
 test('distinct non-static closures remain distinct table keys through the runtime save-state wire format', () => {
@@ -376,14 +372,13 @@ test('distinct non-static closures remain distinct table keys through the runtim
 	const cpu = runtime.machine.cpu;
 
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
-	const firstClosure = cpu.completionValues[0] as Closure;
-	cpu.start(
-		blua32TestFunctionAddress(SYSTEM_ROM_BASE, 0),
-		EMPTY_CALL_ARGS,
-		CPU_STATUS_SYSTEM_ENTRY,
-	);
+	const selectedClosureName = StringValue.get(cpu.stringPool.intern(CART_CLOSURE_GLOBAL_NAME));
+	const firstClosure = cpu.getGlobalByKey(selectedClosureName) as Closure;
+	runtime.machine.memory.writeMappedU32LE(IO_CART_SELECT, 0);
+	cpu.requestNonMaskableInterrupt();
+	assert.equal(cpu.enterPendingInterrupt(), true);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
-	const secondClosure = cpu.completionValues[0] as Closure;
+	const secondClosure = cpu.getGlobalByKey(selectedClosureName) as Closure;
 	assert.notEqual(firstClosure, secondClosure);
 	assert.equal(firstClosure.functionAddress, secondClosure.functionAddress);
 
@@ -428,14 +423,13 @@ test('mixed static and non-static cartridge closures keep their identities acros
 	const cpu = runtime.machine.cpu;
 
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
-	const dynamicClosure = cpu.completionValues[0] as Closure;
-	cpu.start(
-		blua32TestFunctionAddress(SYSTEM_ROM_BASE, 1),
-		EMPTY_CALL_ARGS,
-		CPU_STATUS_SYSTEM_ENTRY,
-	);
+	const selectedClosureName = StringValue.get(cpu.stringPool.intern(CART_CLOSURE_GLOBAL_NAME));
+	const dynamicClosure = cpu.getGlobalByKey(selectedClosureName) as Closure;
+	runtime.machine.memory.writeMappedU32LE(IO_CART_SELECT, 1);
+	cpu.requestNonMaskableInterrupt();
+	assert.equal(cpu.enterPendingInterrupt(), true);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
-	const canonicalClosure = cpu.completionValues[0] as Closure;
+	const canonicalClosure = cpu.getGlobalByKey(selectedClosureName) as Closure;
 	assert.notEqual(dynamicClosure, canonicalClosure);
 	assert.equal(dynamicClosure.functionAddress, canonicalClosure.functionAddress);
 
@@ -457,11 +451,9 @@ test('mixed static and non-static cartridge closures keep their identities acros
 	assert.equal(restoredTable.get(restoredDynamic), 11);
 	assert.equal(restoredTable.get(restoredCanonical), 22);
 
-	cpu.start(
-		blua32TestFunctionAddress(SYSTEM_ROM_BASE, 0),
-		EMPTY_CALL_ARGS,
-		CPU_STATUS_SYSTEM_ENTRY,
-	);
+	runtime.machine.memory.writeMappedU32LE(IO_CART_SELECT, 0);
+	cpu.requestNonMaskableInterrupt();
+	assert.equal(cpu.enterPendingInterrupt(), true);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
 	applyRuntimeSaveStateBytes(runtime, captureRuntimeSaveStateBytes(runtime));
 	restoredDynamic = cpu.getGlobalByKey(dynamicName) as Closure;
@@ -471,12 +463,10 @@ test('mixed static and non-static cartridge closures keep their identities acros
 	assert.equal(restoredTable.get(restoredDynamic), 11);
 	assert.equal(restoredTable.get(restoredCanonical), 22);
 
-	cpu.start(
-		blua32TestFunctionAddress(SYSTEM_ROM_BASE, 1),
-		EMPTY_CALL_ARGS,
-		CPU_STATUS_SYSTEM_ENTRY,
-	);
+	runtime.machine.memory.writeMappedU32LE(IO_CART_SELECT, 1);
+	cpu.requestNonMaskableInterrupt();
+	assert.equal(cpu.enterPendingInterrupt(), true);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
-	assert.equal(cpu.completionValues[0], restoredCanonical);
-	assert.equal(restoredTable.get(cpu.completionValues[0]), 22);
+	assert.equal(cpu.getGlobalByKey(selectedClosureName), restoredCanonical);
+	assert.equal(restoredTable.get(cpu.getGlobalByKey(selectedClosureName)), 22);
 });
