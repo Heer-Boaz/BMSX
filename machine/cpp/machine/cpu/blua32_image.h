@@ -2,6 +2,7 @@
 
 #include "common/primitives.h"
 
+#include <optional>
 #include <span>
 #include <string>
 #include <variant>
@@ -100,6 +101,7 @@ struct Blua32ImageLayout {
 };
 
 auto decodeBlua32BootHeader(std::span<const u8> bytes) -> Blua32BootHeader;
+auto decodeBlua32RomImage(std::span<const u8> bytes, u32 romBaseAddress) -> std::optional<Blua32ImageLayout>;
 auto decodeBlua32Image(std::span<const u8> bytes, u32 imageAddress) -> Blua32ImageLayout;
 
 } // namespace bmsx

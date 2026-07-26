@@ -25,13 +25,13 @@
 		"typescript": "^6.0.3"
 	},
 	"scripts": {
-		"headless:game": "node dist/host_headless.debug.js --machine-runtime dist/libbmsx.debug.js --system-rom dist/bmsx-bios.debug.rom",
-		"headless:test": "sh -c 'rom=\"$1\"; test=\"$2\"; if [ -z \"$rom\" ] || [ -z \"$test\" ]; then echo \"Usage: npm run headless:test -- <gameromname> <test-file>\"; exit 1; fi; node dist/host_headless.debug.js --machine-runtime dist/libbmsx.debug.js --system-rom dist/bmsx-bios.debug.rom --test \"$test\" \"$rom\"' --",
-		"ide:test": "sh -c 'rom=\"$1\"; test=\"$2\"; if [ -z \"$rom\" ] || [ -z \"$test\" ]; then echo \"Usage: npm run ide:test -- <gameromname> <ide-test-file> [host options]\"; exit 1; fi; shift 2; node dist/host_headless.debug.js --machine-runtime dist/libbmsx.debug.js --system-rom dist/bmsx-bios.debug.rom \"$@\" --ide-test \"$test\" \"$rom\"' --",
+		"headless:game": "node dist/host_headless.debug.js --system-rom dist/bmsx-bios.debug.rom",
+		"headless:test": "sh -c 'rom=\"$1\"; test=\"$2\"; if [ -z \"$rom\" ] || [ -z \"$test\" ]; then echo \"Usage: npm run headless:test -- <gameromname> <test-file>\"; exit 1; fi; node dist/host_headless.debug.js --system-rom dist/bmsx-bios.debug.rom --test \"$test\" \"$rom\"' --",
+		"ide:test": "sh -c 'rom=\"$1\"; test=\"$2\"; if [ -z \"$rom\" ] || [ -z \"$test\" ]; then echo \"Usage: npm run ide:test -- <gameromname> <ide-test-file> [host options]\"; exit 1; fi; shift 2; node dist/host_headless.debug.js --system-rom dist/bmsx-bios.debug.rom \"$@\" --ide-test \"$test\" \"$rom\"' --",
 		"test:hot-resume": "npm run build:platform:headless -- --debug --force && npm run build:bios -- --debug --force && npm run build:game -- hot_resume_test --debug --force && npx tsx tests/conformance/cartridge/create_data_rom.ts dist/hot_resume_test.debug.rom dist/hot_resume_data.debug.rom && npm run ide:test -- hot_resume_test tests/ide/hot_resume_entry_edit.idetest.js --slot1 dist/hot_resume_data.debug.rom",
 		"headless:forcebuildallrun": "sh -c 'rom=\"$1\"; if [ -z \"$rom\" ]; then echo \"Usage: npm run headless:forcebuildallrun -- <gameromname>\"; exit 1; fi; npm run build:platform:headless -- --debug --force && npm run build:bios -- --debug --force && npx tsx scripts/rompacker/rompacker.ts --mode rompack --skiptypecheck --debug --force -romname \"$rom\" && npm run headless:game -- \"$rom\"' --",
 		"headless:forcebuildalltest": "sh -c 'rom=\"$1\"; test=\"$2\"; if [ -z \"$rom\" ] || [ -z \"$test\" ]; then echo \"Usage: npm run headless:forcebuildalltest -- <gameromname> <test-file>\"; exit 1; fi; npm run build:platform:headless -- --debug --force && npm run build:bios -- --debug --force && npx tsx scripts/rompacker/rompacker.ts --mode rompack --skiptypecheck --debug --force -romname \"$rom\" && npm run headless:test -- \"$rom\" \"$test\"' --",
-		"test:lua": "npx tsx --test --import ./tests/lua/test_setup.ts tests/lua/*.test.ts",
+		"test:lua": "npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts tests/lua/*.test.ts",
 		"test:rompacker": "npx tsx --test tests/rompacker/*.ts",
 		"test:render-parity": "npm run build:platform:headless -- --force && npm run build:platform:libretro-wsl -- --force && npm run build:libretro-host && npm run build:bios -- --force && npm run build:game -- renderhwtest --force && npm run build:game -- bare_metal_cart --force && node scripts/render/pixel_parity.mjs renderhwtest && node scripts/render/pixel_parity.mjs bare_metal_cart",
 		"test:cartridge-conformance": "node tests/conformance/cartridge/run.mjs",

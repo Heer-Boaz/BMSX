@@ -1,4 +1,4 @@
-import { runtimeWorkbenchState } from '../../../runtime/workbench_state';
+import type { ResourcePanelController } from '../../../workbench/contrib/resources/panel/controller';
 import { point_in_rect } from '../../../../machine/ts/common/rect';
 import * as constants from '../../../common/constants';
 import { closeSearch, processInlineFieldPointer } from '../../../editor/contrib/find/search';
@@ -11,8 +11,16 @@ import { closeSymbolSearch } from '../../../editor/contrib/symbols/shared';
 import { activateQuickInputField, finishQuickInputPointer, quickInputTextLeft } from '../pointer/common';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { resourceSearchState } from '../../../workbench/contrib/resources/widget_state';
+import type { CartEditor } from '../../../cart_editor';
+import type { RuntimeSourceState } from '../../../runtime/sources';
 
-export function handleResourceSearchPointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
+export function handleResourceSearchPointer(
+	editor: CartEditor,
+	sources: RuntimeSourceState,
+	resourcePanel: ResourcePanelController,
+	snapshot: PointerSnapshot,
+	justPressed: boolean,
+): boolean {
 	const bounds = getResourceSearchBarBounds();
 	if (!resourceSearchState.visible || !bounds) {
 		return false;
@@ -33,7 +41,7 @@ export function handleResourceSearchPointer(snapshot: PointerSnapshot, justPress
 			closeSymbolSearch(false);
 			resourceSearchState.visible = true;
 			resourceSearchState.active = true;
-			activateQuickInputField(runtimeWorkbenchState.ide.editor.resourcePanel);
+			activateQuickInputField(resourcePanel);
 		}
 		processInlineFieldPointer(resourceSearchState.field, quickInputTextLeft('FILE :'), snapshot.viewportX, justPressed, snapshot.primaryPressed);
 		finishQuickInputPointer(snapshot);
@@ -46,7 +54,7 @@ export function handleResourceSearchPointer(snapshot: PointerSnapshot, justPress
 			resourceSearchState.selectionIndex = hoverIndex;
 			ensureResourceSearchSelectionVisible();
 		}
-		applyResourceSearchSelection(hoverIndex);
+		applyResourceSearchSelection(editor, sources, hoverIndex);
 		finishQuickInputPointer(snapshot);
 		return true;
 	}

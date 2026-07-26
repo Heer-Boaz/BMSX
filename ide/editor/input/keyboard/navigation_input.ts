@@ -1,4 +1,4 @@
-import { runtimeWorkbenchState } from '../../../runtime/workbench_state';
+import type { EditorNavigationController } from '../../../cart_editor';
 import * as TextEditing from '../../editing/text_editing_and_selection';
 import { moveCursorDown, moveCursorEnd, moveCursorHome, moveCursorLeft, moveCursorRight, moveCursorUp, pageDown, pageUp } from '../../ui/view/caret/caret';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isShiftDown, shouldRepeatKeyFromPlayer } from '../../../input/keyboard/key_input';
@@ -8,12 +8,12 @@ type NavigationHistoryCommands = {
 	goForward(): void;
 };
 
-export function handleEditorNavigationKeys(): void {
+export function handleEditorNavigationKeys(navigation: EditorNavigationController): void {
 	const ctrlDown = isCtrlDown();
 	const shiftDown = isShiftDown();
 	const altDown = isAltDown();
 	if (altDown) {
-		handleEditorAltNavigation(runtimeWorkbenchState.ide.editor.navigation, ctrlDown, shiftDown);
+		handleEditorAltNavigation(navigation, ctrlDown, shiftDown);
 		return;
 	}
 	if (shouldRepeatKeyFromPlayer('ArrowLeft')) {

@@ -1,4 +1,3 @@
-import { runtimeWorkbenchState } from '../runtime/workbench_state';
 import { machineManager } from '../../machine/ts/core/machine_manager';
 import { registerLuaSourceRecord, type LuaSourceRecord, type LuaSourceRegistry } from '../../machine/ts/lua/source_registry';
 import { toLuaModulePath } from '../../machine/ts/lua/module_path';
@@ -35,19 +34,18 @@ import {
 	developmentCartridgeSource,
 	resolveRuntimeLuaSource,
 	runtimeLuaSourceDomain,
+	type RuntimeSourceState,
 } from '../runtime/sources';
 
 export * from './files';
 export { joinWorkspacePaths } from './path';
 
-function resolveEditableCartLuaSources(): LuaSourceRegistry {
-	const sources = runtimeWorkbenchState.sources;
+function resolveEditableCartLuaSources(sources: RuntimeSourceState): LuaSourceRegistry {
 	const cartridge = developmentCartridgeSource(sources);
 	return cartridge ? cartridge.luaSources : sources.activeLuaSources;
 }
 
-function markLuaSourceRegistryChanged(registry: LuaSourceRegistry): void {
-	const sources = runtimeWorkbenchState.sources;
+function markLuaSourceRegistryChanged(sources: RuntimeSourceState, registry: LuaSourceRegistry): void {
 	if (registry === sources.systemLuaSources) {
 		sources.systemBlua32MediaDirty = true;
 	} else {
@@ -63,25 +61,28 @@ function markLuaSourceRegistryChanged(registry: LuaSourceRegistry): void {
 	runtimeSemanticCache.clear();
 }
 
-function resolveEditableLuaSource(identity: ResourceIdentity): { registry: LuaSourceRegistry; asset: LuaSourceRecord } {
-	const source = resolveRuntimeLuaSource(runtimeWorkbenchState.sources, identity);
+function resolveEditableLuaSource(sources: RuntimeSourceState, identity: ResourceIdentity): { registry: LuaSourceRegistry; asset: LuaSourceRecord } {
+	const source = resolveRuntimeLuaSource(sources, identity);
 	if (!source) {
 		throw new Error(`Missing Lua source registry for '${identity.path}'.`);
 	}
 	return { registry: source.registry, asset: source.record };
 }
 
-export function applyLuaCodeTabSources(snapshots: ReadonlyArray<ResourceIdentity & { source: string }>): void {
+export function applyLuaCodeTabSources(
+	sources: RuntimeSourceState,
+	snapshots: ReadonlyArray<ResourceIdentity & { source: string }>,
+): void {
 	for (let index = 0; index < snapshots.length; index += 1) {
 		const snapshot = snapshots[index];
-		const target = resolveEditableLuaSource(snapshot);
+		const target = resolveEditableLuaSource(sources, snapshot);
 		setWorkspaceLuaSourceOverride(target.registry, target.asset.source_path, snapshot.source);
-		markLuaSourceRegistryChanged(target.registry);
+		markLuaSourceRegistryChanged(sources, target.registry);
 	}
 }
 
-export async function saveLuaResourceSource(identity: ResourceIdentity, source: string): Promise<void> {
-	const target = resolveEditableLuaSource(identity);
+export async function saveLuaResourceSource(sources: RuntimeSourceState, identity: ResourceIdentity, source: string): Promise<void> {
+	const target = resolveEditableLuaSource(sources, identity);
 	const registry = target.registry;
 	const asset = target.asset;
 	if (asset.generated) {
@@ -96,7 +97,7 @@ export async function saveLuaResourceSource(identity: ResourceIdentity, source: 
 	asset.base_update_timestamp = updatedAt;
 	asset.update_timestamp = updatedAt;
 	registerLuaSourceRecord(registry, asset);
-	markLuaSourceRegistryChanged(registry);
+	markLuaSourceRegistryChanged(sources, registry);
 	persistWorkspaceOverridesToLocalStorage(machineManager.platform.storage, projectRootPath, new Map([[
 		sourcePath,
 		{ source, path: sourcePath, cartPath: sourcePath, updatedAt },
@@ -109,7 +110,7 @@ export async function saveLuaResourceSource(identity: ResourceIdentity, source: 
 	deleteWorkspaceLuaSourceOverride(registry, sourcePath);
 }
 
-export async function createLuaResource(request: LuaResourceCreationRequest): Promise<ResourceDescriptor> {
+export async function createLuaResource(sources: RuntimeSourceState, request: LuaResourceCreationRequest): Promise<ResourceDescriptor> {
 	const contents = typeof request.contents === 'string' ? request.contents : '';
 	const path = request.path;
 	const slashIndex = path.lastIndexOf('/');
@@ -132,27 +133,26 @@ export async function createLuaResource(request: LuaResourceCreationRequest): Pr
 		generated: false,
 	};
 	const systemSource = asset.source_path.startsWith('bios/') || asset.source_path.startsWith('system/');
-	const sources = runtimeWorkbenchState.sources;
 	const registry = systemSource
 		? sources.systemLuaSources
-		: resolveEditableCartLuaSources();
+		: resolveEditableCartLuaSources(sources);
 	const domain = runtimeLuaSourceDomain(sources, registry);
 	registerLuaSourceRecord(registry, asset);
 	registry.can_boot_from_source = true;
-	markLuaSourceRegistryChanged(registry);
+	markLuaSourceRegistryChanged(sources, registry);
 	const filesystemPath = asset.source_path;
 	await persistWorkspaceSourceFile(filesystemPath, contents, registry.projectRootPath);
 	const descriptor: ResourceDescriptor = { domain, path: asset.source_path, type: 'lua' };
 	return descriptor;
 }
 
-export async function applyWorkspaceOverridesToRegistry(params: {
+export async function applyWorkspaceOverridesToRegistry(sources: RuntimeSourceState, params: {
 	registry: LuaSourceRegistry;
 	storage: StorageService;
 	includeServer?: boolean;
 	projectRootPath: string;
 }): Promise<Set<string>> {
-	const domain = runtimeLuaSourceDomain(runtimeWorkbenchState.sources, params.registry);
+	const domain = runtimeLuaSourceDomain(sources, params.registry);
 	const changed = await applyWorkspaceSourceOverrides({
 		domain,
 		registry: params.registry,
@@ -162,7 +162,7 @@ export async function applyWorkspaceOverridesToRegistry(params: {
 		timestampNow: machineManager.platform.clock.dateNow(),
 	});
 	if (changed.size !== 0) {
-		markLuaSourceRegistryChanged(params.registry);
+		markLuaSourceRegistryChanged(sources, params.registry);
 	}
 	return changed;
 }
@@ -185,9 +185,13 @@ async function discardWorkspaceCanonicalPath(storage: StorageService, root: stri
 	await deleteWorkspaceServerFile(resolveWorkspacePath(cartPath, root));
 }
 
-export async function clearWorkspaceArtifacts(cart: LuaSourceRegistry, storage: StorageService): Promise<void> {
+export async function clearWorkspaceArtifacts(
+	sources: RuntimeSourceState,
+	cart: LuaSourceRegistry,
+	storage: StorageService,
+): Promise<void> {
 	const root = cart.projectRootPath;
-	const domain = runtimeLuaSourceDomain(runtimeWorkbenchState.sources, cart);
+	const domain = runtimeLuaSourceDomain(sources, cart);
 	for (const asset of cart.records) {
 		if (asset.generated) {
 			continue;
@@ -201,9 +205,13 @@ export async function clearWorkspaceArtifacts(cart: LuaSourceRegistry, storage: 
 	await deleteWorkspaceServerFile(statePath);
 }
 
-async function clearWorkspaceDirtyFiles(cart: LuaSourceRegistry, storage: StorageService): Promise<void> {
+async function clearWorkspaceDirtyFiles(
+	sources: RuntimeSourceState,
+	cart: LuaSourceRegistry,
+	storage: StorageService,
+): Promise<void> {
 	const root = cart.projectRootPath;
-	const domain = runtimeLuaSourceDomain(runtimeWorkbenchState.sources, cart);
+	const domain = runtimeLuaSourceDomain(sources, cart);
 	const scratchPaths = await collectScratchWorkspaceDirtyPaths(root);
 	for (const asset of cart.records) {
 		if (asset.generated) {
@@ -220,8 +228,8 @@ async function clearWorkspaceDirtyFiles(cart: LuaSourceRegistry, storage: Storag
 
 // Re-applies the saved (canonical) sources and clears dirty buffers, returning the
 // workspace to its on-disk baseline. Shared tail of the reset/nuke flows.
-async function reapplyWorkspaceBaseline(registry: LuaSourceRegistry): Promise<void> {
-	const domain = runtimeLuaSourceDomain(runtimeWorkbenchState.sources, registry);
+async function reapplyWorkspaceBaseline(sources: RuntimeSourceState, registry: LuaSourceRegistry): Promise<void> {
+	const domain = runtimeLuaSourceDomain(sources, registry);
 	const changed = await applyWorkspaceSourceOverrides({
 		domain,
 		registry,
@@ -231,25 +239,24 @@ async function reapplyWorkspaceBaseline(registry: LuaSourceRegistry): Promise<vo
 		timestampNow: machineManager.platform.clock.dateNow(),
 	});
 	if (changed.size !== 0) {
-		markLuaSourceRegistryChanged(registry);
+		markLuaSourceRegistryChanged(sources, registry);
 	}
-	clearWorkspaceDirtyBuffers();
+	clearWorkspaceDirtyBuffers(sources);
 }
 
-export async function resetWorkspaceDirtyBuffersAndStorage(): Promise<void> {
-	const registry = resolveEditableCartLuaSources();
-	await clearWorkspaceDirtyFiles(registry, machineManager.platform.storage);
-	await reapplyWorkspaceBaseline(registry);
+export async function resetWorkspaceDirtyBuffersAndStorage(sources: RuntimeSourceState): Promise<void> {
+	const registry = resolveEditableCartLuaSources(sources);
+	await clearWorkspaceDirtyFiles(sources, registry, machineManager.platform.storage);
+	await reapplyWorkspaceBaseline(sources, registry);
 }
 
-export async function nukeWorkspaceState(): Promise<void> {
-	const registry = resolveEditableCartLuaSources();
-	await clearWorkspaceArtifacts(registry, machineManager.platform.storage);
-	await reapplyWorkspaceBaseline(registry);
+export async function nukeWorkspaceState(sources: RuntimeSourceState): Promise<void> {
+	const registry = resolveEditableCartLuaSources(sources);
+	await clearWorkspaceArtifacts(sources, registry, machineManager.platform.storage);
+	await reapplyWorkspaceBaseline(sources, registry);
 }
 
-export function listResources(): ResourceDescriptor[] {
-	const sources = runtimeWorkbenchState.sources;
+export function listResources(sources: RuntimeSourceState): ResourceDescriptor[] {
 	const descriptors: ResourceDescriptor[] = [];
 	for (const domain of CARTRIDGE_RESOURCE_DOMAINS) {
 		const cartridge = sources.cartridgeSlots[domain];

@@ -1,9 +1,18 @@
-import { runtimeWorkbenchState } from '../../../../../runtime/workbench_state';
 import { rebuildRuntimeErrorOverlayView } from '../../../../contrib/runtime_error/overlay';
 import { RuntimeErrorOverlay } from '../../../../../common/models';
 import { RuntimeErrorOverlayClickResult } from '../../../../render/error_overlay';
+import type { CartEditor } from '../../../../../cart_editor';
+import type { RuntimeSourceState } from '../../../../../runtime/sources';
+import type { Runtime } from '../../../../../../machine/ts/machine/runtime/runtime';
+import { navigateToRuntimeErrorFrameTarget } from '../../../../../runtime_error/navigation';
 
-export function handleRuntimeErrorOverlayPointerClick(overlay: RuntimeErrorOverlay, hoverLine: number): void {
+export function handleRuntimeErrorOverlayPointerClick(
+	editor: CartEditor,
+	sources: RuntimeSourceState,
+	runtime: Runtime,
+	overlay: RuntimeErrorOverlay,
+	hoverLine: number,
+): void {
 	const clickResult = evaluateRuntimeErrorOverlayClick(overlay, hoverLine);
 	switch (clickResult.kind) {
 		case 'expand':
@@ -14,7 +23,7 @@ export function handleRuntimeErrorOverlayPointerClick(overlay: RuntimeErrorOverl
 			return;
 		case 'navigate':
 			setRuntimeErrorOverlayExpanded(overlay, false);
-			runtimeWorkbenchState.ide.editor.debugger.navigateToRuntimeErrorFrameTarget(clickResult.frame);
+			navigateToRuntimeErrorFrameTarget(editor, sources, runtime, clickResult.frame);
 			return;
 		case 'noop':
 		default:

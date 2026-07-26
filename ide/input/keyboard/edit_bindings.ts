@@ -1,4 +1,4 @@
-import { runtimeWorkbenchState } from '../../runtime/workbench_state';
+import type { IdeCommandController } from '../../commands/controller';
 import { jumpToNextMatch, jumpToPreviousMatch } from '../../editor/contrib/find/search';
 import { closeActiveTab } from '../../workbench/ui/tabs';
 import { isCodeTabActive, isEditableCodeTab, isReadOnlyCodeTab } from '../../workbench/ui/code_tab/contexts';
@@ -10,6 +10,8 @@ import * as TextEditing from '../../editor/editing/text_editing_and_selection';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from './key_input';
 import { isInlineWidgetFocused } from '../../quick_input/inline_widget';
 import { editorSearchState } from '../../editor/contrib/find/widget_state';
+import type { RuntimeSourceState } from '../../runtime/sources';
+import type { ResourcePanelController } from '../../workbench/contrib/resources/panel/controller';
 
 export function handleSearchNavigationKeybinding(): boolean {
 	if (editorSearchState.query.length === 0 || !isKeyJustPressed('F3')) {
@@ -54,16 +56,19 @@ function handleRedoBinding(): boolean {
 	return true;
 }
 
-function handleCloseTabBinding(): boolean {
+function handleCloseTabBinding(
+	resourcePanel: ResourcePanelController,
+	sources: RuntimeSourceState,
+): boolean {
 	if (!(isCtrlDown() || isMetaDown()) || !isKeyJustPressed('KeyW')) {
 		return false;
 	}
 	consumeIdeKey('KeyW');
-	closeActiveTab();
+	closeActiveTab(resourcePanel, sources);
 	return true;
 }
 
-function handleSaveBinding(): boolean {
+function handleSaveBinding(commands: IdeCommandController): boolean {
 	if (!isCtrlDown() || isShiftDown() || !isKeyJustPressed('KeyS')) {
 		return false;
 	}
@@ -72,7 +77,7 @@ function handleSaveBinding(): boolean {
 		notifyReadOnlyEdit();
 		return true;
 	}
-	runtimeWorkbenchState.ide.editor.commands.execute('save');
+	commands.execute('save');
 	return true;
 }
 
@@ -160,11 +165,15 @@ export function handleCodeFormattingKeybinding(): boolean {
 	return true;
 }
 
-export function handleEditorClipboardAndCommandBindings(): boolean {
+export function handleEditorClipboardAndCommandBindings(
+	resourcePanel: ResourcePanelController,
+	sources: RuntimeSourceState,
+	commands: IdeCommandController,
+): boolean {
 	return handleUndoBinding()
 		|| handleRedoBinding()
-		|| handleCloseTabBinding()
-		|| handleSaveBinding()
+		|| handleCloseTabBinding(resourcePanel, sources)
+		|| handleSaveBinding(commands)
 		|| handleCopyBinding()
 		|| handleCutBinding()
 		|| handlePasteBinding()

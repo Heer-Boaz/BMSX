@@ -1,14 +1,16 @@
 import { machineManager } from '../../../../machine/ts/core/machine_manager';
 import { CONTEXT_MENU_POINTER_CONSUME_PRIMARY, CONTEXT_MENU_POINTER_CONSUME_SECONDARY, CONTEXT_MENU_POINTER_IGNORED, handleEditorContextMenuPointerSession, openEditorContextMenuAtPointer } from './session';
 import type { PointerSnapshot } from '../../../common/models';
+import type { CartEditor } from '../../../cart_editor';
 
 export function handleEditorContextMenuPointer(
+	editor: CartEditor,
 	snapshot: PointerSnapshot,
 	justPressed: boolean,
 	secondaryJustPressed: boolean,
 	playerInput: ReturnType<typeof machineManager.input.getPlayerInput>
 ): boolean {
-	const result = handleEditorContextMenuPointerSession(snapshot, justPressed, secondaryJustPressed);
+	const result = handleEditorContextMenuPointerSession(editor, snapshot, justPressed, secondaryJustPressed);
 	if (result === CONTEXT_MENU_POINTER_IGNORED) {
 		return false;
 	}

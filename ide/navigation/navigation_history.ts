@@ -6,6 +6,7 @@ import * as TextEditing from '../editor/editing/text_editing_and_selection';
 import { editorCaretState } from '../editor/ui/view/caret/state';
 import { editorDocumentState } from '../editor/editing/document_state';
 import type { ResourceDomain } from '../common/resource';
+import type { ResourcePanelController } from '../workbench/contrib/resources/panel/controller';
 
 const NAVIGATION_HISTORY_LIMIT = 64;
 
@@ -130,18 +131,24 @@ export function withNavigationCaptureSuspended<T>(operation: () => T): T {
 	}
 }
 
-export function activateNavigationEntryContext(entry: NavigationHistoryEntry): boolean {
+export function activateNavigationEntryContext(
+	resourcePanel: ResourcePanelController,
+	entry: NavigationHistoryEntry,
+): boolean {
 	const existingContext = getCodeTabContextById(entry.contextId);
 	if (existingContext) {
-		setActiveTab(entry.contextId);
+		setActiveTab(resourcePanel, entry.contextId);
 		return true;
 	}
 	return false;
 }
 
-export function applyNavigationEntryPosition(entry: NavigationHistoryEntry): void {
+export function applyNavigationEntryPosition(
+	resourcePanel: ResourcePanelController,
+	entry: NavigationHistoryEntry,
+): void {
 	if (!isCodeTabActive()) {
-		activateCodeTab();
+		activateCodeTab(resourcePanel);
 	}
 	if (!isCodeTabActive()) {
 		return;

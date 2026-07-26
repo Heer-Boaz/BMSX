@@ -1694,6 +1694,7 @@ void CPU::resumeMemoryWrite(uint32_t address) {
 RunResult CPU::run(int instructionBudget) {
 	instructionBudgetRemaining = instructionBudget;
 	auto& frames = m_frames;
+	CpuExecutionObserver* const executionObserver = m_executionObserver;
 	CallFrame* frame = nullptr;
 	Blua32ExecutionImage* image = nullptr;
 	const DecodedInstruction* decoded;
@@ -1756,6 +1757,9 @@ dispatch_loop_check:
 		frame->pc = pc + (static_cast<u32>(decoded->width) * INSTRUCTION_BYTES);
 		lastPc = pc + ((static_cast<u32>(decoded->width) - 1u) * INSTRUCTION_BYTES);
 	lastInstruction = decoded->word;
+	if (executionObserver) {
+		executionObserver->onInstruction(image->executionDomainId, pc, decoded->op);
+	}
 	instructionBudgetRemaining -= static_cast<int>(BASE_CYCLES[decoded->op]);
 	a = decoded->a;
 	b = decoded->b;
@@ -1855,6 +1859,7 @@ dispatch_continue:
 RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget) {
 	instructionBudgetRemaining = instructionBudget;
 	auto& frames = m_frames;
+	CpuExecutionObserver* const executionObserver = m_executionObserver;
 	CallFrame* frame = nullptr;
 	Blua32ExecutionImage* image = nullptr;
 	const DecodedInstruction* decoded;
@@ -1917,6 +1922,9 @@ dispatch_loop_check:
 		frame->pc = pc + (static_cast<u32>(decoded->width) * INSTRUCTION_BYTES);
 		lastPc = pc + ((static_cast<u32>(decoded->width) - 1u) * INSTRUCTION_BYTES);
 	lastInstruction = decoded->word;
+	if (executionObserver) {
+		executionObserver->onInstruction(image->executionDomainId, pc, decoded->op);
+	}
 	instructionBudgetRemaining -= static_cast<int>(BASE_CYCLES[decoded->op]);
 	a = decoded->a;
 	b = decoded->b;
@@ -2064,10 +2072,14 @@ void CPU::step() {
 		return;
 	}
 	const DecodedInstruction& decoded = decodedAtWordIndex(image, wordIndex);
+	CpuExecutionObserver* const executionObserver = m_executionObserver;
 	m_currentInstructionPc = pc;
 	frame.pc = pc + (static_cast<u32>(decoded.width) * INSTRUCTION_BYTES);
 	lastPc = pc + ((static_cast<u32>(decoded.width) - 1u) * INSTRUCTION_BYTES);
 	lastInstruction = decoded.word;
+	if (executionObserver) {
+		executionObserver->onInstruction(image.executionDomainId, pc, decoded.op);
+	}
 	instructionBudgetRemaining -= static_cast<int>(BASE_CYCLES[decoded.op]);
 	try {
 		executeInstruction(frame, decoded);

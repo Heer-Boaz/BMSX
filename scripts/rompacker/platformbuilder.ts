@@ -34,10 +34,8 @@ function getPlatformTaskList(platform: RomPackerTarget): TaskName[] {
 	const tasks: TaskName[] = [
 		TASK.HOST_SYSTEM_ATLAS,
 	];
-	if (platform === 'browser' || platform === 'headless' || platform === 'cli') {
-		tasks.push(TASK.MACHINE_RUNTIME);
-	}
 	if (platform === 'browser') {
+		tasks.push(TASK.MACHINE_RUNTIME);
 		tasks.push(TASK.BROWSER_HOST);
 	}
 	tasks.push(TASK.PLATFORM_ARTIFACTS);
@@ -102,6 +100,8 @@ function resolvePlatformDependencyRoots(platform: RomPackerTarget): string[] {
 		return [];
 	}
 	const roots = [
+		join(process.cwd(), 'ide'),
+		join(process.cwd(), 'runtime'),
 		join(process.cwd(), 'scripts', 'rompacker'),
 		join(process.cwd(), 'scripts', 'bootrom'),
 		join(process.cwd(), 'machine', 'ts'),

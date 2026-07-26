@@ -9,9 +9,6 @@ for (const extension of ['.glsl', '.wgsl']) {
 	};
 }
 
-(globalThis as any).window = globalThis;
-(globalThis as any).navigator = { userAgent: 'node' };
-
 async function main(): Promise<void> {
 	const [systemPath, dataPath, bootableCartPath] = process.argv.slice(2);
 	if (!systemPath || !dataPath || !bootableCartPath) {
@@ -20,16 +17,22 @@ async function main(): Promise<void> {
 
 	const [
 		{ machineManager },
-		{ bootManagedMachine },
+		{ prepareMachineRuntime },
 		{ runMachineHostFrame },
+		{ RenderPresentationState },
+		{ HostOverlayMenu },
+		{ runGate },
 		{ HeadlessPlatformServices },
 		{ applyRuntimeSaveStateBytes },
 		{ CART_MMIO_BASE },
 		{ CARTRIDGE_MAILBOX_CONTROL_OFFSET, CARTRIDGE_MAILBOX_CONTROL_IRQ_TRIGGER },
 	] = await Promise.all([
 		import('../../../machine/ts/core/machine_manager'),
-		import('../../../ide/runtime/machine_boot'),
-		import('../../../ide/runtime/host_frame'),
+		import('../../../runtime/machine_runtime'),
+		import('../../../runtime/host_frame'),
+		import('../../../runtime/presentation_state'),
+		import('../../../runtime/host_overlay_menu'),
+		import('../../../machine/ts/common/taskgate'),
 		import('../../../hosts/node/headless/platform_headless'),
 		import('../../../machine/ts/machine/runtime/save_state/codec'),
 		import('../../../machine/ts/machine/memory/map'),
@@ -51,14 +54,16 @@ async function main(): Promise<void> {
 		readFile(bootableCartPath),
 	]);
 	const platform = new ConformancePlatform();
-	const runtime = await bootManagedMachine({
+	const ide = await prepareMachineRuntime({
 		systemRom,
 		cartridgeSlots: [dataRom, bootableCartRom],
 		platform,
 		viewHost: platform.gameviewHost,
-		autoStart: false,
 	});
-	machineManager.running = true;
+	const runtime = machineManager.runtime;
+	const presentation = new RenderPresentationState(ide);
+	const hostOverlayMenu = new HostOverlayMenu(ide);
+	machineManager.start();
 	runtime.frameLoop.currentTimeMs = 0;
 	let currentTimeMs = 0;
 	const transcriptCount = (entry: string): number => {
@@ -76,7 +81,14 @@ async function main(): Promise<void> {
 				return;
 			}
 			currentTimeMs += runtime.timing.frameDurationMs;
-			runMachineHostFrame(runtime, currentTimeMs, true);
+			runMachineHostFrame(
+				ide,
+				presentation,
+				hostOverlayMenu,
+				runtime,
+				currentTimeMs,
+				runGate.ready,
+			);
 		}
 		throw new Error(`Guest did not publish ${entry} x${count}.`);
 	};

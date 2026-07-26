@@ -3,11 +3,10 @@ import { extractHoverExpressionFromBuffer } from '../intellisense/engine';
 import type { ReferenceMatchInfo } from './state';
 import type { TextBuffer } from '../../text/text_buffer';
 import type { SearchMatch } from '../../../common/models';
-import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import type { ResourceIdentity } from '../../../common/resource';
+import type { RuntimeNativeBridge } from '../../../runtime/native_bridge';
 
 export type ReferenceLookupOptions = {
-	runtime: Runtime;
 	buffer: TextBuffer;
 	textVersion: number;
 	cursorRow: number;
@@ -19,13 +18,13 @@ export type ReferenceLookupResult =
 	| { kind: 'success'; info: ReferenceMatchInfo; initialIndex: number; }
 	| { kind: 'error'; message: string; duration: number; };
 
-export function resolveReferenceLookup(options: ReferenceLookupOptions): ReferenceLookupResult {
+export function resolveReferenceLookup(bridge: RuntimeNativeBridge, options: ReferenceLookupOptions): ReferenceLookupResult {
 	const path = options.identity.path;
 	const identifier = extractHoverExpressionFromBuffer(options.buffer, options.cursorRow, options.cursorColumn, path);
 	if (!identifier) {
 		return { kind: 'error', message: 'No identifier at cursor', duration: 1.6 };
 	}
-	const frontend = buildEditorSemanticFrontend(options.identity, options.buffer, options.textVersion);
+	const frontend = buildEditorSemanticFrontend(bridge, options.identity, options.buffer, options.textVersion);
 	const resolution = frontend.findReferencesByPosition(path, options.cursorRow + 1, options.cursorColumn + 1);
 	if (!resolution) {
 		return { kind: 'error', message: `Definition not found for ${identifier.expression}`, duration: 1.8 };

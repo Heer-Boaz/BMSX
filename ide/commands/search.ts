@@ -1,4 +1,3 @@
-import { runtimeWorkbenchState } from '../runtime/workbench_state';
 import { focusRuntimeErrorOverlay } from '../runtime_error/navigation';
 import { openResourceSearch } from '../workbench/contrib/resources/search/index';
 import { openLineJump } from '../editor/contrib/find/line_jump';
@@ -7,7 +6,10 @@ import { openReferenceSearchPopup } from '../editor/contrib/references/search/in
 import { openRenamePrompt } from '../editor/contrib/rename/prompt';
 import { openGlobalSymbolSearch, openSymbolSearch } from '../editor/contrib/symbols/search/index';
 import type { EditorCommandId, EditorSearchCommandId } from '../common/commands';
-import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
+import type { RenameController } from '../editor/contrib/rename/controller';
+import type { CartEditor } from '../cart_editor';
+import type { RuntimeSourceState } from '../runtime/sources';
+import type { RuntimeNativeBridge } from '../runtime/native_bridge';
 
 export function isEditorSearchCommand(command: EditorCommandId): command is EditorSearchCommandId {
 	switch (command) {
@@ -27,39 +29,45 @@ export function isEditorSearchCommand(command: EditorCommandId): command is Edit
 	}
 }
 
-export function executeEditorSearchCommand(runtime: Runtime, command: EditorSearchCommandId): void {
+export function executeEditorSearchCommand(
+	editor: CartEditor,
+	sources: RuntimeSourceState,
+	nativeBridge: RuntimeNativeBridge,
+	rename: RenameController,
+	command: EditorSearchCommandId,
+): void {
 	switch (command) {
 		case 'symbolSearch':
-			openSymbolSearch();
+			openSymbolSearch(nativeBridge, rename);
 			return;
 		case 'symbolSearchGlobal':
-			openGlobalSymbolSearch();
+			openGlobalSymbolSearch(nativeBridge, rename);
 			return;
 		case 'resourceSearch':
-			openResourceSearch();
+			openResourceSearch(sources);
 			return;
 		case 'runtimeErrorFocus':
-			if (!focusRuntimeErrorOverlay()) {
-				openResourceSearch();
+			if (!focusRuntimeErrorOverlay(editor.resourcePanel)) {
+				openResourceSearch(sources);
 			}
 			return;
 		case 'createResource':
-			openCreateResourcePrompt();
+			openCreateResourcePrompt(sources, editor.resourcePanel);
 			return;
 		case 'findGlobal':
-			runtimeWorkbenchState.ide.editor.search.openSearch(true, 'global');
+			editor.search.openSearch(true, 'global');
 			return;
 		case 'findLocal':
-			runtimeWorkbenchState.ide.editor.search.openSearch(true, 'local');
+			editor.search.openSearch(true, 'local');
 			return;
 		case 'lineJump':
 			openLineJump();
 			return;
 		case 'referenceSearch':
-			openReferenceSearchPopup(runtime);
+			openReferenceSearchPopup(nativeBridge, rename);
 			return;
 		case 'rename':
-			openRenamePrompt(runtime);
+			openRenamePrompt(nativeBridge, rename);
 			return;
 	}
 }

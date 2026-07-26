@@ -11,8 +11,16 @@ import * as constants from '../../../common/constants';
 import { editorPointerState, stopPointerSelectionAndResetClicks } from '../state';
 import { editorDocumentState } from '../../../editor/editing/document_state';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
+import type { CartEditor } from '../../../cart_editor';
+import type { RuntimeNativeBridge } from '../../../runtime/native_bridge';
+import type { RuntimeFaultState } from '../../../runtime/fault_state';
+import type { RuntimeSourceState } from '../../../runtime/sources';
 
 export function handleCodeAreaPrimaryPressPointer(
+	editor: CartEditor,
+	sources: RuntimeSourceState,
+	bridge: RuntimeNativeBridge,
+	fault: RuntimeFaultState,
 	runtime: Runtime,
 	snapshot: PointerSnapshot,
 	justPressed: boolean,
@@ -23,11 +31,19 @@ export function handleCodeAreaPrimaryPressPointer(
 	if (!justPressed || !insideCodeArea) {
 		return false;
 	}
-	focusPrimaryEditorSurface();
+	focusPrimaryEditorSurface(editor);
 	const target = resolvePointerTextPosition(snapshot.viewportX, snapshot.viewportY, bounds);
 	const targetRow = target.row;
 	const targetColumn = target.column;
-	if (gotoModifierActive && gotoDefinitionAt(runtime, targetRow, targetColumn)) {
+	if (gotoModifierActive && gotoDefinitionAt(
+		bridge,
+		fault,
+		editor,
+		sources,
+		runtime,
+		targetRow,
+		targetColumn,
+	)) {
 		stopPointerSelectionAndResetClicks(snapshot);
 		return true;
 	}

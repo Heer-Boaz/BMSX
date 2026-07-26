@@ -23,7 +23,7 @@ import { capturePreMutationSource } from '../common/text/runtime';
 import { resetBlink } from '../render/caret';
 import * as constants from '../../common/constants';
 import { formatLuaDocument } from '../../language/lua/formatter';
-import { extractErrorMessage } from '../../../machine/ts/lua/value';
+import { extractErrorMessage } from '../../language/lua/interpreter/value';
 import { getLinesSnapshot, getTextSnapshot } from '../text/source_text';
 import type { MutableTextPosition, TextBuffer } from '../text/text_buffer';
 import { prepareUndo, applyUndoableReplace, recordEditContext } from './undo_controller';

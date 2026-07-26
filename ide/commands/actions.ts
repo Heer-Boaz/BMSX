@@ -1,4 +1,3 @@
-import { runtimeWorkbenchState } from '../runtime/workbench_state';
 import { machineManager } from '../../machine/ts/core/machine_manager';
 import { editorRuntimeState } from '../editor/common/runtime_state';
 import { scheduleRuntimeTask } from '../common/background_tasks';
@@ -7,21 +6,45 @@ import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { hotResume } from '../runtime/hot_resume';
 import { deactivateEditor } from '../workbench/overlay_modes';
 import { handleLuaError } from '../workbench/runtime_errors';
+import { rebootPreparedRuntime } from '../workbench/blua32_boot';
 import type { ActionPromptAction } from '../common/models';
 import { clearExecutionStopHighlights } from '../runtime_error/navigation';
 import * as constants from '../common/constants';
 import { setEditorCaseInsensitivity } from '../editor/render/text_renderer';
 import { editorViewState } from '../editor/ui/view/state';
 import { capturePendingLuaCodeTabSources, markLuaCodeTabsAppliedToRuntime } from '../workbench/ui/code_tab/activation';
+import type { CartEditor } from '../cart_editor';
+import type { RuntimeSourceState } from '../runtime/sources';
+import type { RuntimeFaultState } from '../runtime/fault_state';
+import type { RuntimeNativeBridge } from '../runtime/native_bridge';
+import type { GateGroup } from '../../machine/ts/common/taskgate';
+import type { OverlayRenderer } from '../runtime/overlay_renderer';
 
-export function performEditorAction(runtime: Runtime, action: ActionPromptAction): boolean {
+export function performEditorAction(
+	editor: CartEditor,
+	sources: RuntimeSourceState,
+	fault: RuntimeFaultState,
+	nativeBridge: RuntimeNativeBridge,
+	luaGate: GateGroup,
+	overlayRenderer: OverlayRenderer,
+	runtime: Runtime,
+	action: ActionPromptAction,
+): boolean {
 	switch (action) {
 		case 'hot-resume':
-			return performHotResume(runtime);
+			return performHotResume(editor, sources, fault, nativeBridge, overlayRenderer, runtime);
 		case 'reboot':
-			return performReboot();
+			return performReboot(
+				editor,
+				sources,
+				fault,
+				nativeBridge,
+				luaGate,
+				overlayRenderer,
+				runtime,
+			);
 		case 'close':
-			deactivateEditor();
+			deactivateEditor(editor, overlayRenderer);
 			return true;
 		case 'theme-toggle':
 			toggleThemeMode();
@@ -31,53 +54,83 @@ export function performEditorAction(runtime: Runtime, action: ActionPromptAction
 	}
 }
 
-export function performHotResume(runtime: Runtime): boolean {
+export function performHotResume(
+	editor: CartEditor,
+	sources: RuntimeSourceState,
+	fault: RuntimeFaultState,
+	nativeBridge: RuntimeNativeBridge,
+	overlayRenderer: OverlayRenderer,
+	runtime: Runtime,
+): boolean {
 	clearExecutionStopHighlights();
-	deactivateEditor();
+	deactivateEditor(editor, overlayRenderer);
 	console.log('Performing hot resume.');
-	const pendingSources = capturePendingLuaCodeTabSources();
+	const pendingSources = capturePendingLuaCodeTabSources(sources);
 	scheduleRuntimeTask(async () => {
-		const sources = runtimeWorkbenchState.sources;
 		for (let slot = 0; slot < sources.cartridgeSlots.length; slot += 1) {
 			const cartridge = sources.cartridgeSlots[slot];
 			if (cartridge === null) {
 				continue;
 			}
-			await applyWorkspaceOverridesToRegistry({
+			await applyWorkspaceOverridesToRegistry(sources, {
 				registry: cartridge.luaSources,
 				storage: machineManager.platform.storage,
 				includeServer: true,
 				projectRootPath: cartridge.projectRootPath,
 			});
 		}
-		await applyWorkspaceOverridesToRegistry({
+		await applyWorkspaceOverridesToRegistry(sources, {
 			registry: sources.systemLuaSources,
 			storage: machineManager.platform.storage,
 			includeServer: true,
 			projectRootPath: sources.systemProjectRootPath,
 		});
-		applyLuaCodeTabSources(pendingSources);
-		hotResume(runtime, sources.systemBlua32MediaDirty, sources.cartridgeBlua32MediaDirty);
+		applyLuaCodeTabSources(sources, pendingSources);
+		hotResume(
+			sources,
+			nativeBridge,
+			fault,
+			editor,
+			runtime,
+			sources.systemBlua32MediaDirty,
+			sources.cartridgeBlua32MediaDirty,
+		);
 		markLuaCodeTabsAppliedToRuntime(pendingSources);
 	}, (error) => {
 		console.error(error);
-		handleLuaError(runtime, error);
-		runtimeWorkbenchState.ide.editor.handleRuntimeTaskError(error, 'Failed to resume game');
+		handleLuaError(fault, sources, runtime, error);
+		editor.handleRuntimeTaskError(error, 'Failed to resume game');
 	});
 	return true;
 }
 
-export function performReboot(): boolean {
+export function performReboot(
+	editor: CartEditor,
+	sources: RuntimeSourceState,
+	fault: RuntimeFaultState,
+	nativeBridge: RuntimeNativeBridge,
+	luaGate: GateGroup,
+	overlayRenderer: OverlayRenderer,
+	runtime: Runtime,
+): boolean {
 	clearExecutionStopHighlights();
-	deactivateEditor();
-	const pendingSources = capturePendingLuaCodeTabSources();
+	deactivateEditor(editor, overlayRenderer);
+	const pendingSources = capturePendingLuaCodeTabSources(sources);
 	scheduleRuntimeTask(async () => {
 		console.info('[IDE] Performing cold reboot through bootrom');
-		applyLuaCodeTabSources(pendingSources);
-		await machineManager.rebootToBootRom();
+		applyLuaCodeTabSources(sources, pendingSources);
+		await rebootPreparedRuntime(
+			sources,
+			fault,
+			nativeBridge,
+			editor,
+			luaGate,
+			overlayRenderer,
+			runtime,
+		);
 		markLuaCodeTabsAppliedToRuntime(pendingSources);
 	}, (error) => {
-		runtimeWorkbenchState.ide.editor.handleRuntimeTaskError(error, 'Failed to reboot game');
+		editor.handleRuntimeTaskError(error, 'Failed to reboot game');
 	});
 	return true;
 }

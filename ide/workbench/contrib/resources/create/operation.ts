@@ -1,14 +1,18 @@
-import { runtimeWorkbenchState } from '../../../../runtime/workbench_state';
+import type { RuntimeSourceState } from '../../../../runtime/sources';
+import type { ResourcePanelController } from '../panel/controller';
 import * as constants from '../../../../common/constants';
 import { showEditorMessage } from '../../../../common/feedback_state';
 import { resetBlink } from '../../../../editor/render/caret';
 import { openLuaCodeTab } from '../../../ui/code_tab/io';
 import { createLuaResource } from '../../../../workspace/workspace';
-import { extractErrorMessage } from '../../../../../machine/ts/lua/value';
+import { extractErrorMessage } from '../../../../language/lua/interpreter/value';
 import { applyCreateResourceFieldText, closeCreateResourcePrompt, ensureDirectorySuffix } from './index';
 import { createResourceState } from '../widget_state';
 
-export async function confirmCreateResourcePrompt(): Promise<void> {
+export async function confirmCreateResourcePrompt(
+	sources: RuntimeSourceState,
+	resourcePanel: ResourcePanelController,
+): Promise<void> {
 	if (createResourceState.working) {
 		return;
 	}
@@ -31,13 +35,13 @@ export async function confirmCreateResourcePrompt(): Promise<void> {
 	resetBlink();
 	const contents = constants.DEFAULT_NEW_LUA_RESOURCE_CONTENT;
 	try {
-		const descriptor = await createLuaResource({ path: resourcePath, contents });
+		const descriptor = await createLuaResource(sources, { path: resourcePath, contents });
 		createResourceState.lastDirectory = directory;
-		runtimeWorkbenchState.ide.editor.resourcePanel.queuePendingSelection(descriptor);
-		if (runtimeWorkbenchState.ide.editor.resourcePanel.isVisible()) {
-			runtimeWorkbenchState.ide.editor.resourcePanel.refresh();
+		resourcePanel.queuePendingSelection(descriptor);
+		if (resourcePanel.isVisible()) {
+			resourcePanel.refresh();
 		}
-		openLuaCodeTab(descriptor);
+		openLuaCodeTab(resourcePanel, sources, descriptor);
 		showEditorMessage(`Created ${descriptor.path} (asset ${descriptor.asset_id})`, constants.COLOR_STATUS_SUCCESS, 2.5);
 		closeCreateResourcePrompt(false);
 	} catch (error) {

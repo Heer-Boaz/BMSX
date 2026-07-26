@@ -7,6 +7,10 @@ import { workspaceState } from './state';
 import { clearWorkspaceStorageConfiguration, configureWorkspaceStorage, isWorkspaceServerAvailable, scheduleWorkspaceServerRetry, writeWorkspaceStateFile } from './io';
 import { restoreWorkspaceSessionFromDisk } from './restore';
 import { buildWorkspaceAutosavePayload, buildWorkspaceAutosaveSignature, clearWorkspaceSessionStateData, collectDirtyContextEntries, persistDirtyContextEntries } from './autosave';
+import type { CartEditor } from '../../cart_editor';
+import type { RuntimeSourceState } from '../../runtime/sources';
+import type { RuntimeDebuggerState } from '../../runtime/debugger_state';
+import type { OverlayRenderer } from '../../runtime/overlay_renderer';
 
 const WORKSPACE_AUTOSAVE_INTERVAL_MS = 2500;
 const workspaceRestoreGate = taskGate.group('restore');
@@ -18,13 +22,19 @@ function detachWorkspaceExitHandler(): void {
 	}
 }
 
-function attachWorkspaceExitHandler(runtime: Runtime): void {
+function attachWorkspaceExitHandler(
+	editor: CartEditor,
+	sources: RuntimeSourceState,
+	debuggerState: RuntimeDebuggerState,
+	overlayRenderer: OverlayRenderer,
+	runtime: Runtime,
+): void {
 	detachWorkspaceExitHandler();
 	workspaceState.disposeExitListener = machineManager.platform.lifecycle.onWillExit(() => {
 		if (!workspaceState.autosaveEnabled) {
 			return;
 		}
-		void runWorkspaceAutosaveTick(runtime);
+		void runWorkspaceAutosaveTick(editor, sources, debuggerState, overlayRenderer, runtime);
 	});
 }
 
@@ -34,7 +44,14 @@ function disableWorkspacePersistence(): void {
 	detachWorkspaceExitHandler();
 }
 
-export function initializeWorkspaceStorage(runtime: Runtime, projectRootPath: string | null): void {
+export function initializeWorkspaceStorage(
+	editor: CartEditor,
+	sources: RuntimeSourceState,
+	debuggerState: RuntimeDebuggerState,
+	overlayRenderer: OverlayRenderer,
+	runtime: Runtime,
+	projectRootPath: string | null,
+): void {
 	stopWorkspaceAutosaveLoop();
 	workspaceState.autosaveSignature = null;
 	clearWorkspaceSourceCaches();
@@ -46,12 +63,18 @@ export function initializeWorkspaceStorage(runtime: Runtime, projectRootPath: st
 		return;
 	}
 	workspaceState.autosaveEnabled = true;
-	attachWorkspaceExitHandler(runtime);
+	attachWorkspaceExitHandler(editor, sources, debuggerState, overlayRenderer, runtime);
 	const token = workspaceRestoreGate.begin({ blocking: true, tag: 'restore' });
 	(async () => {
 		try {
 			await configureWorkspaceStorage(projectRootPath);
-			const signature = await restoreWorkspaceSessionFromDisk(projectRootPath);
+			const signature = await restoreWorkspaceSessionFromDisk(
+				editor,
+				sources,
+				debuggerState,
+				overlayRenderer,
+				projectRootPath,
+			);
 			workspaceState.autosaveSignature = signature;
 			workspaceState.serverConnected = isWorkspaceServerAvailable();
 		} catch (error) {
@@ -62,25 +85,31 @@ export function initializeWorkspaceStorage(runtime: Runtime, projectRootPath: st
 			workspaceRestoreGate.end(token);
 		}
 		if (workspaceState.autosaveEnabled) {
-			scheduleWorkspaceAutosaveLoop(runtime);
+			scheduleWorkspaceAutosaveLoop(editor, sources, debuggerState, overlayRenderer, runtime);
 		}
 		if (workspaceState.autosaveQueued) {
 			workspaceState.autosaveQueued = false;
-			void runWorkspaceAutosaveTick(runtime);
+			void runWorkspaceAutosaveTick(editor, sources, debuggerState, overlayRenderer, runtime);
 		}
 	})().catch((error) => {
 		console.warn('[CartEditor] Workspace restore failed:', error);
 	});
 }
 
-export function scheduleWorkspaceAutosaveLoop(runtime: Runtime): void {
+export function scheduleWorkspaceAutosaveLoop(
+	editor: CartEditor,
+	sources: RuntimeSourceState,
+	debuggerState: RuntimeDebuggerState,
+	overlayRenderer: OverlayRenderer,
+	runtime: Runtime,
+): void {
 	if (!workspaceState.autosaveEnabled || workspaceState.autosaveHandle) {
 		return;
 	}
 	workspaceState.autosaveHandle = scheduleIdeOnce(WORKSPACE_AUTOSAVE_INTERVAL_MS, () => {
 		workspaceState.autosaveHandle = null;
-		void runWorkspaceAutosaveTick(runtime);
-		scheduleWorkspaceAutosaveLoop(runtime);
+		void runWorkspaceAutosaveTick(editor, sources, debuggerState, overlayRenderer, runtime);
+		scheduleWorkspaceAutosaveLoop(editor, sources, debuggerState, overlayRenderer, runtime);
 	});
 }
 
@@ -92,7 +121,13 @@ export function stopWorkspaceAutosaveLoop(): void {
 	workspaceState.autosaveHandle = null;
 }
 
-export async function runWorkspaceAutosaveTick(runtime: Runtime): Promise<void> {
+export async function runWorkspaceAutosaveTick(
+	editor: CartEditor,
+	sources: RuntimeSourceState,
+	debuggerState: RuntimeDebuggerState,
+	overlayRenderer: OverlayRenderer,
+	runtime: Runtime,
+): Promise<void> {
 	if (!workspaceState.autosaveEnabled) {
 		return;
 	}
@@ -110,7 +145,7 @@ export async function runWorkspaceAutosaveTick(runtime: Runtime): Promise<void> 
 	workspaceState.autosaveRunning = true;
 	try {
 		const dirtyEntries = collectDirtyContextEntries();
-		const payload = buildWorkspaceAutosavePayload(dirtyEntries);
+		const payload = buildWorkspaceAutosavePayload(editor, debuggerState, overlayRenderer, dirtyEntries);
 		await persistDirtyContextEntries(dirtyEntries);
 		if (payload) {
 			const signature = buildWorkspaceAutosaveSignature(payload);
@@ -125,12 +160,12 @@ export async function runWorkspaceAutosaveTick(runtime: Runtime): Promise<void> 
 		workspaceState.autosaveRunning = false;
 		if (workspaceState.autosaveQueued) {
 			workspaceState.autosaveQueued = false;
-			await runWorkspaceAutosaveTick(runtime);
+			await runWorkspaceAutosaveTick(editor, sources, debuggerState, overlayRenderer, runtime);
 		}
 	}
 }
 
-export function clearWorkspaceSessionState(): void {
+export function clearWorkspaceSessionState(debuggerState: RuntimeDebuggerState): void {
 	stopWorkspaceAutosaveLoop();
-	clearWorkspaceSessionStateData();
+	clearWorkspaceSessionStateData(debuggerState);
 }

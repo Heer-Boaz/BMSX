@@ -7,14 +7,15 @@ import { setCursorPosition, ensureCursorVisible } from '../../ui/view/caret/care
 import * as TextEditing from '../../editing/text_editing_and_selection';
 import { editorCaretState } from '../../ui/view/caret/state';
 import { editorDocumentState } from '../../editing/document_state';
+import type { ResourcePanelController } from '../../../workbench/contrib/resources/panel/controller';
 
-export function gotoDiagnostic(diagnostic: EditorDiagnostic): void {
+export function gotoDiagnostic(resourcePanel: ResourcePanelController, diagnostic: EditorDiagnostic): void {
 	const navigationCheckpoint = beginNavigationCapture();
 	if (diagnostic.contextId && diagnostic.contextId.length > 0 && diagnostic.contextId !== getActiveCodeTabContextId()) {
-		setActiveTab(diagnostic.contextId);
+		setActiveTab(resourcePanel, diagnostic.contextId);
 	}
 	if (!isCodeTabActive()) {
-		activateCodeTab();
+		activateCodeTab(resourcePanel);
 	}
 	if (!isCodeTabActive()) {
 		return;

@@ -1,4 +1,4 @@
-import { runtimeWorkbenchState } from '../../runtime/workbench_state';
+import type { CartEditor } from '../../cart_editor';
 import { machineManager } from '../../../machine/ts/core/machine_manager';
 import type { PointerSnapshot } from '../../common/models';
 import { handleInvalidEditorPointerSnapshot } from './invalid_snapshot';
@@ -7,8 +7,11 @@ import { handleEditorScrollbarPointer } from './scrollbar';
 import { handleTabBarMiddleClick, handleTabBarPointer } from '../../workbench/input/pointer/tab_bar/pointer';
 import { handleEditorTabDragPointer } from './tab_drag';
 import { handleTopBarPointer } from '../../workbench/input/pointer/top_bar/pointer';
+import type { RuntimeSourceState } from '../../runtime/sources';
 
 export function handleEditorChromePointerDispatch(
+	editor: CartEditor,
+	sources: RuntimeSourceState,
 	snapshot: PointerSnapshot,
 	justPressed: boolean,
 	pointerAuxJustPressed: boolean,
@@ -17,22 +20,22 @@ export function handleEditorChromePointerDispatch(
 	if (handleEditorTabDragPointer(snapshot)) {
 		return true;
 	}
-	if (handleEditorScrollbarPointer(runtimeWorkbenchState.ide.editor.resourcePanel, snapshot, justPressed)) {
+	if (handleEditorScrollbarPointer(editor.resourcePanel, snapshot, justPressed)) {
 		return true;
 	}
-	if (justPressed && handleTopBarPointer(runtimeWorkbenchState.ide.editor.commands, snapshot)) {
+	if (justPressed && handleTopBarPointer(editor.commands, snapshot)) {
 		return true;
 	}
-	if (handleEditorPanelResizePointer(runtimeWorkbenchState.ide.editor.resourcePanel, snapshot, justPressed)) {
+	if (handleEditorPanelResizePointer(editor.resourcePanel, snapshot, justPressed)) {
 		return true;
 	}
 	if (handleInvalidEditorPointerSnapshot(snapshot)) {
 		return true;
 	}
-	if (pointerAuxJustPressed && handleTabBarMiddleClick(snapshot, playerInput)) {
+	if (pointerAuxJustPressed && handleTabBarMiddleClick(editor.resourcePanel, sources, snapshot, playerInput)) {
 		return true;
 	}
-	if (justPressed && handleTabBarPointer(snapshot)) {
+	if (justPressed && handleTabBarPointer(editor.resourcePanel, sources, snapshot)) {
 		return true;
 	}
 	return false;

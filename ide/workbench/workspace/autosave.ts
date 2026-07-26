@@ -1,4 +1,6 @@
-import { runtimeWorkbenchState } from '../../runtime/workbench_state';
+import type { RuntimeSourceState } from '../../runtime/sources';
+import type { RuntimeDebuggerState } from '../../runtime/debugger_state';
+import type { OverlayRenderer } from '../../runtime/overlay_renderer';
 import { machineManager } from '../../../machine/ts/core/machine_manager';
 import * as luaPipeline from '../../runtime/lua_pipeline';
 import {
@@ -6,7 +8,6 @@ import {
 	workspaceFileCache,
 } from '../../workspace/cache';
 import { resetNavigationHistoryState } from '../../navigation/navigation_history';
-import { editorDebuggerState } from '../contrib/debugger/state';
 import {
 	findCodeTabContext,
 	getCodeTabContexts,
@@ -29,6 +30,7 @@ import {
 	type SerializedDescriptor,
 	type WorkspaceAutosavePayload,
 } from './models';
+import type { CartEditor } from '../../cart_editor';
 
 export function collectDirtyContextEntries(): Map<string, DirtyContextEntry> {
 	if (!hasWorkspaceStorage()) {
@@ -63,7 +65,12 @@ export function collectDirtyContextEntries(): Map<string, DirtyContextEntry> {
 	return entries;
 }
 
-export function buildWorkspaceAutosavePayload(entries: Map<string, DirtyContextEntry>): WorkspaceAutosavePayload {
+export function buildWorkspaceAutosavePayload(
+	editor: CartEditor,
+	debuggerState: RuntimeDebuggerState,
+	overlayRenderer: OverlayRenderer,
+	entries: Map<string, DirtyContextEntry>,
+): WorkspaceAutosavePayload {
 	if (!workspaceState.autosaveEnabled) {
 		return null;
 	}
@@ -83,9 +90,9 @@ export function buildWorkspaceAutosavePayload(entries: Map<string, DirtyContextE
 		version: WORKSPACE_AUTOSAVE_VERSION,
 		savedAt: machineManager.platform.clock.dateNow(),
 		dirtyFiles,
-		breakpoints: serializeBreakpoints(),
-		fontVariant: runtimeWorkbenchState.ide.activeFontVariant,
-		overlayResolutionMode: runtimeWorkbenchState.ide.overlayResolutionMode,
+		breakpoints: serializeBreakpoints(debuggerState),
+		fontVariant: editor.fontVariant,
+		overlayResolutionMode: overlayRenderer.resolutionMode,
 	};
 }
 
@@ -111,8 +118,8 @@ export function buildWorkspaceAutosaveSignature(payload: WorkspaceAutosavePayloa
 			.map(path => `${path}:${payload.breakpoints[path].join(',')}`)
 		: [];
 	return [
-		payload.fontVariant === undefined ? 'font:unset' : `font:${payload.fontVariant}`,
-		payload.overlayResolutionMode === undefined ? 'overlay:unset' : `overlay:${payload.overlayResolutionMode}`,
+		payload.fontVariant ? `font:${payload.fontVariant}` : 'font:unset',
+		payload.overlayResolutionMode ? `overlay:${payload.overlayResolutionMode}` : 'overlay:unset',
 		dirtyParts.join('|'),
 		breakpointEntries.join('|'),
 	].join('#');
@@ -141,30 +148,30 @@ export async function persistDirtyContextEntries(entries: Map<string, DirtyConte
 	}
 }
 
-export function loadCleanSrc(descriptor: SerializedDescriptor): string {
+export function loadCleanSrc(sources: RuntimeSourceState, descriptor: SerializedDescriptor): string {
 	const context = findCodeTabContext(descriptor);
 	if (context && context.mode === 'aem') {
 		return context.lastSavedSource;
 	}
-	return luaPipeline.resourceSourceForChunk(descriptor);
+	return luaPipeline.resourceSourceForChunk(sources, descriptor);
 }
 
-export function clearWorkspaceDirtyBuffers(): void {
+export function clearWorkspaceDirtyBuffers(sources: RuntimeSourceState): void {
 	clearWorkspaceSourceCaches();
 	workspaceState.autosaveSignature = null;
 	resetWorkspaceActiveDocumentDirtyBufferState();
 	for (const context of getCodeTabContexts()) {
-		resetWorkspaceContextToCleanSource(context, loadCleanSrc(context.descriptor));
+		resetWorkspaceContextToCleanSource(context, loadCleanSrc(sources, context.descriptor));
 	}
 }
 
-export function clearWorkspaceSessionStateData(): void {
+export function clearWorkspaceSessionStateData(debuggerState: RuntimeDebuggerState): void {
 	clearWorkspaceActiveDocumentSessionState();
 	for (const context of getCodeTabContexts()) {
 		clearWorkspaceContextSessionState(context);
 	}
 	resetNavigationHistoryState();
-	editorDebuggerState.breakpoints.clear();
+	debuggerState.breakpoints.clear();
 	workspaceState.autosaveSignature = null;
 	workspaceState.autosaveQueued = false;
 	workspaceState.autosaveRunning = false;

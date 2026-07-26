@@ -91,11 +91,6 @@
 			"reason": "host_platform_not_core"
 		},
 		{
-			"pattern": "machine/ts/audio/startup.ts",
-			"category": "host",
-			"reason": "browser_audio_unlock_not_core"
-		},
-		{
 			"pattern": "machine/ts/audio/**",
 			"category": "host",
 			"reason": "host_audio_not_core"
@@ -231,11 +226,6 @@
 			"reason": "compiler_mmio_metadata_not_runtime_core"
 		},
 		{
-			"pattern": "machine/ts/machine/cpu/profiler.ts",
-			"category": "host",
-			"reason": "devtool_cpu_profiler_not_core_parity_surface"
-		},
-		{
 			"pattern": "machine/ts/machine/cpu/register_file.ts",
 			"category": "cpu_interpreter_exception",
 			"reason": "ts_soa_register_storage_cpp_uses_qnan_boxed_value_words_directly"
@@ -268,7 +258,6 @@
 	],
 	"core_roots": [
 		"machine/ts/common/taskgate.ts",
-		"machine/ts/core/host_overlay_menu.ts",
 		"machine/ts/core/machine_manager.ts",
 		"machine/ts/core/rom_boot_manager.ts",
 		"machine/ts/core/system.ts",
@@ -2210,7 +2199,7 @@
 	"cpp_missing_ts_exclusions": [
 		{
 			"cpp": "machine/cpp/machine/runtime/debug.cpp",
-			"reason": "C++ runtime logs native startup faults internally; TypeScript host/IDE fault presentation lives under ide/runtime/debug_state.ts and must not be mirrored back into machine runtime."
+			"reason": "C++ runtime logs native startup faults internally; TypeScript host/IDE fault presentation lives under ide/workbench/runtime_errors.ts and must not be mirrored back into machine runtime."
 		}
 	]
 }

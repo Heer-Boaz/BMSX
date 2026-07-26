@@ -4,6 +4,7 @@ import { clearHoverTooltip, clearGotoHoverHighlight } from '../../editor/contrib
 import { getProblemsPanelBounds, isPointerOverProblemsPanelDivider, problemsPanel, setProblemsPanelHeightFromViewportY } from '../../workbench/contrib/problems/panel/controller';
 import { editorChromeState } from '../../workbench/ui/chrome_state';
 import { editorPointerState, stopPointerSelectionAndResetClicks } from './state';
+import type { ResourcePanelController } from '../../workbench/contrib/resources/panel/controller';
 
 export function handleProblemsPanelResizePointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
 	if (editorChromeState.problemsPanelResizing) {
@@ -22,7 +23,12 @@ export function handleProblemsPanelResizePointer(snapshot: PointerSnapshot, just
 	return true;
 }
 
-export function handleProblemsPanelPointer(snapshot: PointerSnapshot, justPressed: boolean, justReleased: boolean): boolean {
+export function handleProblemsPanelPointer(
+	resourcePanel: ResourcePanelController,
+	snapshot: PointerSnapshot,
+	justPressed: boolean,
+	justReleased: boolean,
+): boolean {
 	const problemsBounds = getProblemsPanelBounds();
 	if (!problemsPanel.isVisible || !problemsBounds) {
 		return false;
@@ -34,7 +40,7 @@ export function handleProblemsPanelPointer(snapshot: PointerSnapshot, justPresse
 		}
 		return false;
 	}
-	if (!problemsPanel.handlePointer(snapshot, justPressed, justReleased, problemsBounds)) {
+	if (!problemsPanel.handlePointer(resourcePanel, snapshot, justPressed, justReleased, problemsBounds)) {
 		return false;
 	}
 	stopPointerSelectionAndResetClicks(snapshot);

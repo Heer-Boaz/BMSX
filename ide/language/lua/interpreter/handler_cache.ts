@@ -1,4 +1,4 @@
-import { isHostCallable, isLuaDebuggerPauseSignal } from './value';
+import { isHostCallable } from './value';
 import type { LuaFunctionValue } from './value';
 
 export interface LuaHandlerFn extends Function {
@@ -128,9 +128,6 @@ export class LuaHandlerCache {
 			try {
 				return cache.callLua(currentFn, this, args);
 			} catch (error) {
-				if (isLuaDebuggerPauseSignal(error)) {
-					throw error;
-				}
 				cache.reportError(error, { hid, moduleId, path });
 			}
 		} as unknown as LuaHandlerFn;

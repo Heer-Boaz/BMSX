@@ -5,8 +5,9 @@ import { getActiveCodeTabContext } from '../../../workbench/ui/code_tab/contexts
 import { showEditorMessage } from '../../../common/feedback_state';
 import { listGlobalLuaSymbols, listLuaSymbols } from '../intellisense/engine';
 import { symbolKindLabel } from '../../../../machine/ts/lua/semantic/model';
-import { extractErrorMessage } from '../../../../machine/ts/lua/value';
+import { extractErrorMessage } from '../../../language/lua/interpreter/value';
 import { symbolSearchState } from './search/state';
+import type { RuntimeNativeBridge } from '../../../runtime/native_bridge';
 
 export function symbolCatalogDedupKey(entry: LuaSymbolEntry): string {
 	const { location, kind, name } = entry;
@@ -26,7 +27,7 @@ export function symbolSourceLabel(entry: LuaSymbolEntry): string | null {
 	return computeSourceLabel(path);
 }
 
-export function refreshSymbolCatalog(force: boolean): void {
+export function refreshSymbolCatalog(bridge: RuntimeNativeBridge, force: boolean): void {
 	const scope: 'local' | 'global' = symbolSearchState.global ? 'global' : 'local';
 	const descriptor = getActiveCodeTabContext().descriptor;
 	const path = scope === 'local' ? descriptor.path : null;
@@ -41,8 +42,8 @@ export function refreshSymbolCatalog(force: boolean): void {
 	let entries: LuaSymbolEntry[] = [];
 	try {
 		entries = scope === 'global'
-			? listGlobalLuaSymbols(descriptor.domain)
-			: listLuaSymbols(descriptor.domain, path);
+			? listGlobalLuaSymbols(bridge, descriptor.domain)
+			: listLuaSymbols(bridge, descriptor.domain, path);
 	} catch (error) {
 		const message = extractErrorMessage(error);
 		symbolSearchState.catalog = [];

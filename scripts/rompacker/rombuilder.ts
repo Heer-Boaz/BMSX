@@ -1,4 +1,5 @@
 import { glsl } from "esbuild-plugin-glsl";
+import type { BuildOptions } from 'esbuild';
 // @ts-ignore
 import type { Stats } from 'fs';
 import { encodeBinary } from '../../machine/ts/common/serializer/binencoder';
@@ -121,12 +122,24 @@ type ImageCollisionBuild = {
 	collisionbin: Buffer;
 };
 
-export const BOOTROM_TS_FILENAME = 'bootrom.ts';
-export const BOOTROM_JS_FILENAME = 'bootrom.js';
-export const BOOTROM_TS_RELATIVE_PATH = `../../scripts/bootrom/${BOOTROM_TS_FILENAME}`;
-export const BOOTROM_JS_RELATIVE_PATH = `../../rom/${BOOTROM_JS_FILENAME}`;
-export const NODE_BOOTROM_ENTRY_RELATIVE_PATH = `../../scripts/bootrom/platforms/node_entry.ts`;
+export const NODE_HOST_ENTRY_RELATIVE_PATH = '../../scripts/bootrom/platforms/node_entry.ts';
 export const MACHINE_RUNTIME_BASENAME = 'libbmsx';
+const MACHINE_RUNTIME_SOURCE_ROOTS = ['machine/ts'] as const;
+const BROWSER_HOST_SOURCE_ROOTS = [
+	'hosts/browser',
+	'ide',
+	'machine/ts',
+	'runtime',
+	'scripts/bootrom/bootaudio.ts',
+	'scripts/bootrom/bootrom.ts',
+] as const;
+const NODE_HOST_SOURCE_ROOTS = [
+	'hosts/node',
+	'ide',
+	'machine/ts',
+	'runtime',
+	'scripts/bootrom',
+] as const;
 export const BROWSER_HOST_BASENAME = 'engine';
 export const NODE_HEADLESS_HOST_BASENAME = 'host_headless';
 export const NODE_CLI_HOST_BASENAME = 'host_cli';
@@ -309,12 +322,17 @@ export async function getRomManifest(dirPath: string): Promise<RomBuildManifest 
 	else return null;
 }
 
-async function buildBrowserIife(entryPoint: string, outfile: string, debug: boolean): Promise<void> {
+async function buildBrowserBundle(
+	entryPoint: string,
+	outfile: string,
+	debug: boolean,
+	format: 'esm' | 'iife',
+): Promise<void> {
 	await build({
 		entryPoints: [entryPoint],
 		bundle: true,
 		platform: 'browser',
-		format: 'iife',
+		format,
 		target: 'es2020',
 		outfile,
 		keepNames: true,
@@ -323,6 +341,7 @@ async function buildBrowserIife(entryPoint: string, outfile: string, debug: bool
 		sourcesContent: debug,
 		define: {
 			'process.env.NODE_ENV': debug ? '"development"' : '"production"',
+			'__BMSX_BROWSER_DEBUG__': debug ? 'true' : 'false',
 		},
 		plugins: [
 			glsl({ minify: !debug }),
@@ -344,7 +363,7 @@ export async function buildMachineRuntime(debug: boolean): Promise<void> {
 	const runtimeFilename = getMachineRuntimeFilename(debug);
 	const runtimeRomPath = `./rom/${runtimeFilename}`;
 	const runtimeDistPath = `./dist/${runtimeFilename}`;
-	await buildBrowserIife('./ide/machine_runtime.ts', runtimeRomPath, debug);
+	await buildBrowserBundle('./machine/ts/index.ts', runtimeRomPath, debug, 'esm');
 	await copyFile(runtimeRomPath, runtimeDistPath);
 }
 
@@ -355,7 +374,7 @@ export async function buildBrowserHost(debug: boolean): Promise<void> {
 	const hostFilename = getBrowserHostFilename(debug);
 	const hostRomPath = `./rom/${hostFilename}`;
 	const hostDistPath = `./dist/${hostFilename}`;
-	await buildBrowserIife('./hosts/browser/engine.ts', hostRomPath, debug);
+	await buildBrowserBundle('./hosts/browser/engine.ts', hostRomPath, debug, 'iife');
 	await copyFile(hostRomPath, hostDistPath);
 }
 
@@ -452,13 +471,9 @@ export async function buildGameHtmlAndManifest(rom_name: string, title: string, 
 		const imgPrefix = 'data:image/png;base64,';
 		const defaultRom = deploy ? `${rom_name}.${debug ? 'debug.' : ''}rom` : '';
 		const replacements = {
-			'//#bootromjs': romjs,
 			'/*#css*/': cssMinified,
 			'#title': title,
-			'#machineruntimejs': getMachineRuntimeFilename(debug),
 			'#browserhostjs': getBrowserHostFilename(debug),
-			'//#debug': `bootrom.debug = ${debug};\n`,
-			'#biospath': `./bmsx-bios.${debug ? 'debug.' : ''}rom`,
 			'__DEFAULT_ROM__': defaultRom,
 			'@@BMSX_LOGO@@': `${imgPrefix}${images['./rom/bmsx.png']}`,
 			'@@DPAD_D@@': `${imgPrefix}${images['./rom/d-pad-d.png']}`,
@@ -475,10 +490,9 @@ export async function buildGameHtmlAndManifest(rom_name: string, title: string, 
 		return applyStringReplacements(htmlToTransform, replacements);
 	}
 
-	let html: string, romjs: string;
+	let html: string;
 	try {
 		html = await readFile("./gamebase.html", 'utf8');
-		romjs = await readFile(`./rom/${BOOTROM_JS_FILENAME}`, 'utf8');
 	} catch (error) {
 		throw new Error(`Error reading files while building HTML and Manifest files: ${error.message}`);
 	}
@@ -1803,67 +1817,20 @@ export async function deployToServer(_rom_name: string, _title: string) {
 }
 
 /**
- * Checks if the TypeScript file for the ROM loader is newer than its compiled output
- * and compiles it if needed. This function ensures that the output is always up to date.
+ * Builds the statically composed Node host when its owned sources changed.
  *
  * @throws {Error} Will throw if the loader file does not exist or if compilation fails.
  * @returns {Promise<void>} A promise that resolves once the compilation process is complete
  *                         or if no action is needed.
  */
-export interface BootromBuildOptions {
+export interface NodeHostBuildOptions {
 	debug: boolean;
 	forceBuild: boolean;
-	platform: RomPackerTarget;
+	platform: 'cli' | 'headless';
 }
 
-async function buildBrowserBootrom(options: { debug: boolean; forceBuild: boolean; }): Promise<void> {
-	const romTsPath = join(__dirname, BOOTROM_TS_RELATIVE_PATH);
-	const romJsPath = join(__dirname, BOOTROM_JS_RELATIVE_PATH);
-
-	try {
-		await access(romTsPath);
-	} catch {
-		throw new Error(`"${BOOTROM_TS_FILENAME}" could not be found at "${romTsPath}"`);
-	}
-
-	const romTsStats = await stat(romTsPath);
-	let romJsStats: Stats;
-
-	try {
-		await access(romJsPath);
-		romJsStats = await stat(romJsPath);
-	} catch {
-		romJsStats = undefined;
-	}
-
-	if (romJsStats && !options.forceBuild && romTsStats.mtime <= romJsStats.mtime) {
-		return;
-	}
-
-	const esbuildOptions: any = {
-		entryPoints: [romTsPath],
-		bundle: true,
-		sourcemap: options.debug ? 'inline' : false,
-		sourcesContent: options.debug,
-		platform: 'browser',
-		target: 'es2024',
-		format: 'iife',
-		minify: !options.debug,
-		keepNames: true,
-		outfile: romJsPath,
-	};
-	if (options.debug) {
-		esbuildOptions['sourcemap'] = 'inline';
-	}
-	try {
-		await build(esbuildOptions);
-	} catch (e) {
-		throw new Error(`Error while compiling "${BOOTROM_TS_FILENAME}" with esbuild: ${e?.message ?? e}`);
-	}
-}
-
-async function buildNodeBootrom(options: BootromBuildOptions): Promise<void> {
-	const romTsPath = join(__dirname, NODE_BOOTROM_ENTRY_RELATIVE_PATH);
+export async function buildNodeHost(options: NodeHostBuildOptions): Promise<void> {
+	const romTsPath = join(__dirname, NODE_HOST_ENTRY_RELATIVE_PATH);
 	try {
 		await access(romTsPath);
 	} catch {
@@ -1872,28 +1839,10 @@ async function buildNodeBootrom(options: BootromBuildOptions): Promise<void> {
 
 	const outfileName = getNodeLauncherFilename(options.platform, options.debug);
 	const outPath = join(process.cwd(), 'dist', outfileName);
-
-	let rebuild = options.forceBuild;
+	const rebuild = options.forceBuild || await isNodeHostRebuildRequired(outPath);
 	if (!rebuild) {
-		let outStats: Stats;
-		let entryStats: Stats;
-		try {
-			outStats = await stat(outPath);
-		} catch {
-			outStats = undefined;
-		}
-		try {
-			entryStats = await stat(romTsPath);
-		} catch {
-			entryStats = undefined;
-		}
-		rebuild = !outStats || !entryStats || entryStats.mtime > outStats.mtime;
+		return;
 	}
-	if (!rebuild) {
-		rebuild = await isMachineRuntimeRebuildRequired(outPath);
-	}
-
-	if (!rebuild) return;
 
 	await mkdir(join(process.cwd(), 'dist'), { recursive: true });
 
@@ -1902,7 +1851,7 @@ async function buildNodeBootrom(options: BootromBuildOptions): Promise<void> {
 		'__BOOTROM_DEBUG__': options.debug ? 'true' : 'false',
 	};
 
-	const esbuildOptions: any = {
+	const esbuildOptions: BuildOptions = {
 		entryPoints: [romTsPath],
 		bundle: true,
 		platform: 'node',
@@ -1916,26 +1865,11 @@ async function buildNodeBootrom(options: BootromBuildOptions): Promise<void> {
 		sourcesContent: options.debug,
 		outfile: outPath,
 	};
-	if (options.debug) {
-		esbuildOptions['sourcemap'] = 'inline';
-	}
 	try {
 		await build(esbuildOptions);
 	} catch (e) {
 		throw new Error(`Error while compiling Node boot entry for platform "${options.platform}": ${e?.message ?? e}`);
 	}
-}
-
-export async function buildBootromScriptIfNewer(options: BootromBuildOptions): Promise<void> {
-	if (options.platform === 'browser') {
-		await buildBrowserBootrom({ debug: options.debug, forceBuild: options.forceBuild });
-		return;
-	}
-	if (options.platform === 'cli' || options.platform === 'headless') {
-		await buildNodeBootrom(options);
-		return;
-	}
-	throw new Error(`Unsupported platform "${options.platform}" when building bootrom script.`);
 }
 
 const codeFileExtensions = ['.ts', '.glsl', '.js', '.jsx', '.tsx', '.html', '.css', '.json', '.xml', '.lua'];
@@ -2055,7 +1989,7 @@ export async function isRebuildRequired(romname: string, bootloaderPath: string,
 
 	const bootloaderNeedsRebuild = cartProject ? false : await anyFileNewerThan(collectSourceFiles([bootloaderPath], CODE_FILE_EXTENSION_SET), romMtimeMs);
 	const resNeedsRebuild = await anyFileNewerThan(await getFiles(resPath), romMtimeMs);
-	const machineRuntimeNeedsRebuild = cartProject ? false : await anyFileNewerThan(collectSourceFiles(['machine/ts'], CODE_FILE_EXTENSION_SET), romMtimeMs);
+	const machineRuntimeNeedsRebuild = cartProject ? false : await anyFileNewerThan(collectSourceFiles(MACHINE_RUNTIME_SOURCE_ROOTS, CODE_FILE_EXTENSION_SET), romMtimeMs);
 
 	return extraNeedsRebuild ||
 		bootloaderNeedsRebuild ||
@@ -2071,7 +2005,7 @@ export async function isMachineRuntimeRebuildRequired(outFilePath: string = `./d
 		return true;
 	}
 
-	return anyFileNewerThan(collectSourceFiles(['machine/ts'], CODE_FILE_EXTENSION_SET), outputStats.mtimeMs);
+	return anyFileNewerThan(collectSourceFiles(MACHINE_RUNTIME_SOURCE_ROOTS, CODE_FILE_EXTENSION_SET), outputStats.mtimeMs);
 }
 
 export async function isBrowserHostRebuildRequired(outFilePath: string = `./dist/${getBrowserHostFilename(false)}`): Promise<boolean> {
@@ -2082,10 +2016,24 @@ export async function isBrowserHostRebuildRequired(outFilePath: string = `./dist
 		return true;
 	}
 
-	return anyFileNewerThan(collectSourceFiles([
-		'hosts/browser',
-		'machine/ts',
-	], CODE_FILE_EXTENSION_SET), outputStats.mtimeMs);
+	return anyFileNewerThan(
+		collectSourceFiles(BROWSER_HOST_SOURCE_ROOTS, CODE_FILE_EXTENSION_SET),
+		outputStats.mtimeMs,
+	);
+}
+
+export async function isNodeHostRebuildRequired(outFilePath: string): Promise<boolean> {
+	let outputStats: Stats;
+	try {
+		outputStats = await stat(outFilePath);
+	} catch {
+		return true;
+	}
+
+	return anyFileNewerThan(
+		collectSourceFiles(NODE_HOST_SOURCE_ROOTS, CODE_FILE_EXTENSION_SET),
+		outputStats.mtimeMs,
+	);
 }
 // Define common assets path
 export const commonResPath = `./machine/firmware/res`;

@@ -27,6 +27,7 @@ import { problemsPanel } from '../../../workbench/contrib/problems/panel/control
 import { renameController } from '../../contrib/rename/controller';
 import { symbolSearchState } from '../../contrib/symbols/search/state';
 import { createResourceState, resourceSearchState } from '../../../workbench/contrib/resources/widget_state';
+import type { SymbolSearchResult } from '../../../common/models';
 
 type InlineSearchResultEntry = {
 	primary: string;
@@ -39,16 +40,6 @@ type InlineResourceSearchResult = {
 		typeLabel: string;
 		displayPath: string;
 		assetLabel?: string;
-	};
-};
-
-type InlineSymbolSearchResult = {
-	entry: {
-		kindLabel: string;
-		displayName: string;
-		line: number;
-		sourceLabel?: string;
-		symbol: unknown;
 	};
 };
 
@@ -89,17 +80,16 @@ const drawResourceSearchResultRow = (match: InlineResourceSearchResult, rowTop: 
 	}
 };
 
-const drawSymbolSearchResultRow = (match: InlineSymbolSearchResult, rowTop: number): void => {
-	const mode = symbolSearchState.mode ?? 'symbols';
+const drawSymbolSearchResultRow = (match: SymbolSearchResult, rowTop: number): void => {
+	const mode = symbolSearchState.mode;
 	const compactMode = mode === 'references'
 		? true
 		: (symbolSearchState.global && isSymbolSearchCompactMode());
 	let textX = constants.SYMBOL_SEARCH_RESULT_PADDING_X;
 	const kindText = match.entry.kindLabel;
-	const symbol = match.entry.symbol as { __referenceColumn?: number };
-	const referenceColumn = symbol.__referenceColumn;
+	const referenceColumn = match.entry.symbol.location.range.startColumn;
 	const lineValue = match.entry.line;
-	const lineText = mode === 'references' && typeof referenceColumn === 'number'
+	const lineText = mode === 'references'
 		? `:${lineValue}:${referenceColumn}`
 		: `:${lineValue}`;
 	const lineWidth = measureText(lineText);
@@ -112,14 +102,14 @@ const drawSymbolSearchResultRow = (match: InlineSymbolSearchResult, rowTop: numb
 		const secondaryY = rowTop + editorViewState.lineHeight;
 		const lineX = editorViewState.viewportWidth - lineWidth - constants.SYMBOL_SEARCH_RESULT_PADDING_X;
 		drawEditorText(editorViewState.font, lineText, lineX, secondaryY, 0, constants.COLOR_SYMBOL_SEARCH_TEXT);
-		const sourceLabel = match.entry.sourceLabel ?? '';
+		const sourceLabel = match.entry.sourceLabel;
 		if (sourceLabel) {
 			drawEditorText(editorViewState.font, sourceLabel, constants.SYMBOL_SEARCH_RESULT_PADDING_X, secondaryY, 0, constants.COLOR_SYMBOL_SEARCH_KIND);
 		}
 	} else {
 		const lineX = editorViewState.viewportWidth - lineWidth - constants.SYMBOL_SEARCH_RESULT_PADDING_X;
 		drawEditorText(editorViewState.font, lineText, lineX, rowTop, 0, constants.COLOR_SYMBOL_SEARCH_TEXT);
-		const sourceLabel = match.entry.sourceLabel ?? '';
+		const sourceLabel = match.entry.sourceLabel;
 		if (sourceLabel) {
 			const sourceWidth = measureText(sourceLabel);
 			const sourceXCandidate = lineX - editorViewState.spaceAdvance - sourceWidth;
@@ -269,7 +259,7 @@ export function renderSymbolSearchBar(): void {
 	api.fill_rect(bounds.left, separatorTop, bounds.right, separatorTop + constants.SYMBOL_SEARCH_RESULT_SPACING, 0, constants.COLOR_SYMBOL_SEARCH_OUTLINE);
 	const resultsTop = separatorTop + constants.SYMBOL_SEARCH_RESULT_SPACING;
 	const entryHeight = symbolSearchEntryHeight();
-	renderResultList(symbolSearchState.matches, visible, symbolSearchState.displayOffset ?? 0, 0, entryHeight, resultsTop, bounds.right, symbolSearchState.selectionIndex ?? -1, symbolSearchState.hoverIndex ?? -1, drawSymbolSearchResultRow);
+	renderResultList(symbolSearchState.matches, visible, symbolSearchState.displayOffset, 0, entryHeight, resultsTop, bounds.right, symbolSearchState.selectionIndex, symbolSearchState.hoverIndex, drawSymbolSearchResultRow);
 }
 
 function renderResultList<T>(

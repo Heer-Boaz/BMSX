@@ -322,19 +322,19 @@ Ownership terms are architectural roles, not interchangeable directory labels:
 Current artifact roles:
 
 - `dist/libbmsx.js` / `.debug.js`: importable JavaScript machine/runtime
-  artifact. It exposes `MachineManager.boot(...)`; it does not own browser, Node, SDL, ALSA, EGL,
-  or libretro host services.
+  artifact. It exposes `MachineManager.initialize(...)`; it does not own browser,
+  Node, SDL, ALSA, EGL, IDE, or libretro host services.
 - `dist/engine.js` / `.debug.js`: browser host/bootstrap artifact. It wires
-  browser video, audio, input, and view-host construction around the machine
-  runtime.
+  browser video, audio, input, view-host construction, runtime preparation, and
+  the frame loop through static composition.
 - `libbmsx.a` in its CMake build tree: C++ machine/runtime static library. Build
   trees never share this target-specific archive.
 - `dist/libretro_bmsx.so` / `.dll` / `.dylib`: libretro core entrypoint around the C++ machine runtime.
 - `bmsx_libretro_host`: local frontend executable that loads a libretro core and
   owns SDL, ALSA, EGL/fbdev, input devices, screenshots, and the process loop.
 - `dist/host_headless.js` / `.debug.js` and `dist/host_cli.js` / `.debug.js`:
-  Node host executables/modes that load the machine runtime artifact and own
-  their process/runtime environment.
+  Node host executables/modes that statically compose the machine runtime and
+  own their process/runtime environment.
 
 Do not use `platform` as an architecture category for both `libretro` and
 `libretro_host`. `hosts/libretro` is the libretro core entrypoint;

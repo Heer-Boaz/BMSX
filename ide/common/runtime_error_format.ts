@@ -1,5 +1,5 @@
-import { LuaCallFrame } from '../../machine/ts/lua/runtime';
-import { StackTraceFrame } from '../../machine/ts/lua/value';
+import { LuaCallFrame } from '../language/lua/interpreter/interpreter';
+import { StackTraceFrame } from '../language/lua/interpreter/value';
 import { splitText } from '../../machine/ts/common/text_lines';
 import { RuntimeErrorDetails } from './models';
 import { createMinimalSourceMapConsumer, InlineSourceMap, MinimalSourceMapConsumer, originalPositionFor } from '../../machine/ts/lua/compiler/sourcemap_minimal';

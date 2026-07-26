@@ -90,6 +90,9 @@ function createOverlayCommandBuffer(): OverlayCommandBuffer {
 }
 
 export class OverlayRenderer {
+	public active = false;
+	public drawFramePending = false;
+	public resolutionMode: 'offscreen' | 'viewport' = 'viewport';
 	private activeBuffer = createOverlayCommandBuffer();
 	private standbyBuffer = createOverlayCommandBuffer();
 	private frameLogicalWidth = 0;
@@ -103,6 +106,7 @@ export class OverlayRenderer {
 	}
 
 	public setRenderingViewportType(view: GameView, type: 'viewport' | 'offscreen'): void {
+		this.resolutionMode = type;
 		let targetSize: Viewport;
 		switch (type) {
 			case 'viewport':
@@ -262,6 +266,7 @@ export class OverlayRenderer {
 	}
 
 	public abandonFrame(): void {
+		this.drawFramePending = false;
 		const buffer = this.activeBuffer;
 		buffer.commands.length = 0;
 		buffer.rectCount = 0;

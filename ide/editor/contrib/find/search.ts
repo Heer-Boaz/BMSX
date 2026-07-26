@@ -21,6 +21,7 @@ import { splitText } from '../../../../machine/ts/common/text_lines';
 import { editorViewState } from '../../ui/view/state';
 import type { RenameController } from '../rename/controller';
 import { editorSearchState } from './widget_state';
+import type { RuntimeSourceState } from '../../../runtime/sources';
 
 const LOCAL_ROWS_PER_SLICE = 256;
 const GLOBAL_ROWS_PER_SLICE = 128;
@@ -61,7 +62,10 @@ export function activeSearchMatchCount(): number {
 }
 
 export class EditorSearchController {
-	public constructor(private readonly renameController: RenameController) {
+	public constructor(
+		private readonly sources: RuntimeSourceState,
+		private readonly renameController: RenameController,
+	) {
 	}
 
 	public openSearch(useSelection: boolean, scope: 'local' | 'global' = 'local'): void {
@@ -121,7 +125,7 @@ export class EditorSearchController {
 			editorSearchState.globalMatches = [];
 			return;
 		}
-		startGlobalSearchJob();
+		startGlobalSearchJob(this.sources);
 	}
 }
 
@@ -278,10 +282,10 @@ function ensureLocalJobCompleted(): void {
 	}
 }
 
-function startGlobalSearchJob(): void {
+function startGlobalSearchJob(sources: RuntimeSourceState): void {
 	cancelGlobalSearchJob();
 
-	const descriptors = listResources().filter(entry => entry.type === 'lua');
+	const descriptors = listResources(sources).filter(entry => entry.type === 'lua');
 	const job: GlobalSearchJob = {
 		query: normalizeQuery(editorSearchState.query),
 		descriptors,
@@ -296,10 +300,10 @@ function startGlobalSearchJob(): void {
 	editorSearchState.currentIndex = -1;
 	editorSearchState.displayOffset = 0;
 	editorSearchState.hoverIndex = -1;
-	enqueueBackgroundTask(() => runGlobalSearchSlice(job));
+	enqueueBackgroundTask(() => runGlobalSearchSlice(sources, job));
 }
 
-function runGlobalSearchSlice(job: GlobalSearchJob): boolean {
+function runGlobalSearchSlice(sources: RuntimeSourceState, job: GlobalSearchJob): boolean {
 	if (editorSearchState.globalJob !== job) return false;
 	if (job.query.length === 0) {
 		editorSearchState.globalJob = null;
@@ -310,7 +314,7 @@ function runGlobalSearchSlice(job: GlobalSearchJob): boolean {
 	while (job.descriptorIndex < job.descriptors.length && processed < GLOBAL_ROWS_PER_SLICE && !job.limitHit) {
 			if (job.currentLines === null) {
 				const descriptor = job.descriptors[job.descriptorIndex];
-				const source = luaPipeline.resourceSourceForChunk(descriptor);
+				const source = luaPipeline.resourceSourceForChunk(sources, descriptor);
 				job.currentLines = splitText(source);
 				job.nextRow = 0;
 			}

@@ -11,8 +11,10 @@ import { closeSymbolSearch } from '../../../../editor/contrib/symbols/shared';
 import { closeLineJump } from '../../../../editor/contrib/find/line_jump';
 import { refreshResourceCatalog, updateResourceSearchMatches } from './catalog';
 import { resourceSearchState } from '../widget_state';
+import type { RuntimeSourceState } from '../../../../runtime/sources';
+import type { CartEditor } from '../../../../cart_editor';
 
-export function openResourceSearch(initialQuery: string = ''): void {
+export function openResourceSearch(sources: RuntimeSourceState, initialQuery: string = ''): void {
 	clearReferenceHighlights();
 	closeSearch(false, true);
 	closeLineJump(false);
@@ -21,7 +23,7 @@ export function openResourceSearch(initialQuery: string = ''): void {
 	resourceSearchState.visible = true;
 	resourceSearchState.active = true;
 	applyResourceSearchFieldText(initialQuery, true);
-	refreshResourceCatalog();
+	refreshResourceCatalog(sources);
 	updateResourceSearchMatches();
 	resourceSearchState.hoverIndex = -1;
 	resetBlink();
@@ -58,7 +60,11 @@ export function focusEditorFromResourceSearch(): void {
 	resetBlink();
 }
 
-export function applyResourceSearchSelection(index: number): void {
+export function applyResourceSearchSelection(
+	editor: CartEditor,
+	sources: RuntimeSourceState,
+	index: number,
+): void {
 	if (index < 0 || index >= resourceSearchState.matches.length) {
 		showEditorMessage('Resource not found', constants.COLOR_STATUS_WARNING, 1.5);
 		return;
@@ -66,7 +72,7 @@ export function applyResourceSearchSelection(index: number): void {
 	const match = resourceSearchState.matches[index];
 	closeResourceSearch(true);
 	scheduleMicrotask(() => {
-		openResourceDescriptor(match.entry.descriptor);
+		openResourceDescriptor(editor, sources, match.entry.descriptor);
 	});
 }
 

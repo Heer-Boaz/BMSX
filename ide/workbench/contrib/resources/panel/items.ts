@@ -9,6 +9,7 @@ import { measureTextRange } from '../../../../editor/common/text/layout';
 import type { ResourceBrowserItem } from '../../../../common/models';
 import { listResourcesStrict } from '../catalog';
 import type { CallHierarchyView, CallHierarchyViewNode } from '../../../../editor/contrib/call_hierarchy/view';
+import type { RuntimeSourceState } from '../../../../runtime/sources';
 
 export type ResourcePanelFilterMode = 'lua_only' | 'all';
 
@@ -18,8 +19,11 @@ type ResourceDirectory = {
 	files: { name: string; descriptor: ResourceDescriptor }[];
 };
 
-export function buildResourcePanelItems(filterMode: ResourcePanelFilterMode): ResourceBrowserItem[] {
-	const descriptors = collectResourcePanelDescriptors();
+export function buildResourcePanelItems(
+	sources: RuntimeSourceState,
+	filterMode: ResourcePanelFilterMode,
+): ResourceBrowserItem[] {
+	const descriptors = collectResourcePanelDescriptors(sources);
 	const filtered: ResourceDescriptor[] = [];
 	for (let index = 0; index < descriptors.length; index += 1) {
 		const descriptor = descriptors[index];
@@ -77,8 +81,8 @@ export function findResourcePanelIndexByCallHierarchyNodeId(items: readonly Reso
 	return -1;
 }
 
-function collectResourcePanelDescriptors(): ResourceDescriptor[] {
-	return listResourcesStrict();
+function collectResourcePanelDescriptors(sources: RuntimeSourceState): ResourceDescriptor[] {
+	return listResourcesStrict(sources);
 }
 
 function matchesResourcePanelFilter(descriptor: ResourceDescriptor, filterMode: ResourcePanelFilterMode): boolean {

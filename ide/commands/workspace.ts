@@ -5,6 +5,12 @@ import { performEditorAction } from './actions';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { EditorCommandId, EditorWorkspaceCommandId } from '../common/commands';
 import { editorDocumentState } from '../editor/editing/document_state';
+import type { CartEditor } from '../cart_editor';
+import type { RuntimeSourceState } from '../runtime/sources';
+import type { RuntimeFaultState } from '../runtime/fault_state';
+import type { RuntimeNativeBridge } from '../runtime/native_bridge';
+import type { GateGroup } from '../../machine/ts/common/taskgate';
+import type { OverlayRenderer } from '../runtime/overlay_renderer';
 
 export function isEditorWorkspaceCommand(command: EditorCommandId): command is EditorWorkspaceCommandId {
 	switch (command) {
@@ -18,25 +24,52 @@ export function isEditorWorkspaceCommand(command: EditorCommandId): command is E
 	}
 }
 
-export function executeEditorWorkspaceCommand(runtime: Runtime, command: EditorWorkspaceCommandId): void {
+export function executeEditorWorkspaceCommand(
+	editor: CartEditor,
+	sources: RuntimeSourceState,
+	fault: RuntimeFaultState,
+	nativeBridge: RuntimeNativeBridge,
+	luaGate: GateGroup,
+	overlayRenderer: OverlayRenderer,
+	runtime: Runtime,
+	command: EditorWorkspaceCommandId,
+): void {
 	switch (command) {
 		case 'save':
 			if (editorDocumentState.dirty) {
-				void save(runtime);
+				void save(editor, sources, runtime);
 			}
 			return;
 		case 'hot-resume':
 		case 'reboot':
-			activateCodeTab();
+			activateCodeTab(editor.resourcePanel);
 			if (editorDocumentState.dirty) {
 				showActionPrompt(command);
 				return;
 			}
-			performEditorAction(runtime, command);
+			performEditorAction(
+				editor,
+				sources,
+				fault,
+				nativeBridge,
+				luaGate,
+				overlayRenderer,
+				runtime,
+				command,
+			);
 			return;
 		case 'theme-toggle':
-			activateCodeTab();
-			performEditorAction(runtime, command);
+			activateCodeTab(editor.resourcePanel);
+			performEditorAction(
+				editor,
+				sources,
+				fault,
+				nativeBridge,
+				luaGate,
+				overlayRenderer,
+				runtime,
+				command,
+			);
 			return;
 	}
 }

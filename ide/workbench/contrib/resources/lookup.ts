@@ -1,14 +1,17 @@
-import { runtimeWorkbenchState } from '../../../runtime/workbench_state';
 import type { ResourceDescriptor, ResourceIdentity } from '../../../common/resource';
 import {
 	resolveRuntimeLuaSource,
 	resolveRuntimeLuaSourceForContext,
 } from '../../../runtime/sources';
+import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { ResourceDomain } from '../../../common/resource';
 
-export function findResourceDescriptorForChunk(identity: ResourceIdentity): ResourceDescriptor | null {
-	const source = resolveRuntimeLuaSource(runtimeWorkbenchState.sources, identity);
-	if (source === null) {
+export function findResourceDescriptorForChunk(
+	sources: RuntimeSourceState,
+	identity: ResourceIdentity,
+): ResourceDescriptor | null {
+	const source = resolveRuntimeLuaSource(sources, identity);
+	if (!source) {
 		return null;
 	}
 	const asset = source.record;
@@ -21,13 +24,14 @@ export function findResourceDescriptorForChunk(identity: ResourceIdentity): Reso
 	};
 }
 
-export function findResourceDescriptorForContext(
+export function resolveResourceDescriptorForContext(
+	sources: RuntimeSourceState,
 	domain: ResourceDomain,
 	path: string,
-): ResourceDescriptor | null {
-	const source = resolveRuntimeLuaSourceForContext(runtimeWorkbenchState.sources, domain, path);
-	if (source === null) {
-		return null;
+): ResourceDescriptor {
+	const source = resolveRuntimeLuaSourceForContext(sources, domain, path);
+	if (!source) {
+		throw new Error(`Lua resource '${path}' is not installed for domain '${domain}'.`);
 	}
 	const asset = source.record;
 	return {

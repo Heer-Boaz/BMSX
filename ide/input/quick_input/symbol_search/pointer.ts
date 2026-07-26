@@ -1,4 +1,4 @@
-import { runtimeWorkbenchState } from '../../../runtime/workbench_state';
+import type { ResourcePanelController } from '../../../workbench/contrib/resources/panel/controller';
 import { point_in_rect } from '../../../../machine/ts/common/rect';
 import * as constants from '../../../common/constants';
 import { closeSearch, processInlineFieldPointer } from '../../../editor/contrib/find/search';
@@ -10,9 +10,16 @@ import { ensureSymbolSearchSelectionVisible } from '../../../editor/contrib/symb
 import { activateQuickInputField, finishQuickInputPointer, quickInputTextLeft } from '../pointer/common';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { symbolSearchState } from '../../../editor/contrib/symbols/search/state';
-import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
+import type { CartEditor } from '../../../cart_editor';
+import type { RuntimeSourceState } from '../../../runtime/sources';
 
-export function handleSymbolSearchPointer(runtime: Runtime, snapshot: PointerSnapshot, justPressed: boolean): boolean {
+export function handleSymbolSearchPointer(
+	resourcePanel: ResourcePanelController,
+	editor: CartEditor,
+	sources: RuntimeSourceState,
+	snapshot: PointerSnapshot,
+	justPressed: boolean,
+): boolean {
 	const bounds = getSymbolSearchBarBounds();
 	if (!symbolSearchState.visible || !bounds) {
 		return false;
@@ -32,7 +39,7 @@ export function handleSymbolSearchPointer(runtime: Runtime, snapshot: PointerSna
 			closeSearch(false, true);
 			symbolSearchState.visible = true;
 			symbolSearchState.active = true;
-			activateQuickInputField(runtimeWorkbenchState.ide.editor.resourcePanel);
+			activateQuickInputField(resourcePanel);
 		}
 		const label = symbolSearchState.global ? 'SYMBOL #:' : 'SYMBOL @:';
 		processInlineFieldPointer(symbolSearchState.field, quickInputTextLeft(label), snapshot.viewportX, justPressed, snapshot.primaryPressed);
@@ -46,7 +53,7 @@ export function handleSymbolSearchPointer(runtime: Runtime, snapshot: PointerSna
 			symbolSearchState.selectionIndex = hoverIndex;
 			ensureSymbolSearchSelectionVisible();
 		}
-		applySymbolSearchSelection(runtime, hoverIndex);
+			applySymbolSearchSelection(editor, sources, hoverIndex);
 		finishQuickInputPointer(snapshot);
 		return true;
 	}

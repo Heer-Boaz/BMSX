@@ -73,11 +73,11 @@ The host may accelerate implementation details, but it must not own the semantic
 
 Current artifact names encode that split:
 
-- `dist/libbmsx.js`: JavaScript machine/runtime.
-- `dist/engine.js`: browser host/bootstrap.
+- `dist/libbmsx.js`: importable JavaScript machine/runtime library.
+- `dist/engine.js`: browser host/bootstrap with its statically linked runtime composition.
 - `libbmsx.a` in its CMake build tree: C++ machine/runtime.
 - `dist/libretro_bmsx.so`: libretro core built around the C++ machine runtime.
-- `dist/host_headless.js` and `dist/host_cli.js`: Node host modes.
+- `dist/host_headless.js` and `dist/host_cli.js`: Node host modes with their statically linked runtime composition.
 
 ## Runtime Timing
 
@@ -161,7 +161,7 @@ Important:
 
 - `headless:forcebuildallrun` and `headless:game` take the cart folder name
 - `headless:bare-metal` force-builds and runs `bare_metal_cart` through TS headless and the C++ libretro host
-- headless uses `dist/host_headless.debug.js`, `dist/libbmsx.debug.js`, and `dist/bmsx-bios.debug.rom`
+- headless runs `dist/host_headless.debug.js` with `dist/bmsx-bios.debug.rom`; it does not dynamically load `dist/libbmsx.debug.js`
 - host tests are always explicit; `headless:game` does not auto-load assert modules
 - if no explicit test is provided, `headless:game` falls back to `<cart>_demo.json`
 - headless timelines run unpaced, so the full scenario completes as fast as the emulator can simulate it

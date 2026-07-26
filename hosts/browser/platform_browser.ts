@@ -39,11 +39,12 @@ import {
 } from 'bmsx/platform';
 import { HZ_SCALE } from 'bmsx/machine/runtime/timing/constants';
 import { GX_GPU_DISPLAY_ASPECT_HEIGHT, GX_GPU_DISPLAY_ASPECT_WIDTH } from 'bmsx/machine/model_registry';
+import { machineManager } from 'bmsx/core/machine_manager';
+import { createBrowserBackend } from 'bmsx/render/backend/browser_factory';
 import { WorkerStreamingAudioService } from './worker_audio';
 import { type GamepadControlHandle, type GameViewCanvas, type GameViewHost, type HostEventListenerTarget, type HostEventOptions, type HostWindowEventType, type OnscreenGamepadHandles, type OverlayHandle, type SurfaceBounds, type ViewportDimensions } from 'bmsx/platform';
 import { type vec2 } from 'bmsx/rompack/format';
 
-declare const machineManager: any; // avoid circular dependency issues
 const ONSCREEN_LAYOUT_MODE: 'canvas' | 'gamepad' = 'canvas';
 
 /**
@@ -1637,26 +1638,6 @@ export class BrowserGameViewHost implements GameViewHost {
 	}
 
 	public async createBackend() {
-		return createBackend(this);
+		return createBrowserBackend(this.surface.handle);
 	}
-}
-const backendFactoryKey = '__bmsxCreateBackend';
-
-type BackendFactory = (host: BrowserGameViewHost) => Promise<unknown>;
-interface BackendFactoryHolder {
-	__bmsxCreateBackend?: BackendFactory;
-}
-
-function resolveBackendFactory(): BackendFactory {
-	const holder = globalThis as BackendFactoryHolder;
-	const factory = holder[backendFactoryKey];
-	if (typeof factory !== 'function') {
-		throw new Error('[BrowserPlatform] GPU backend factory not installed. Make sure the browser host registers one before requesting it.');
-	}
-	return factory;
-}
-
-export async function createBackend(host: BrowserGameViewHost): Promise<unknown> {
-	const factory = resolveBackendFactory();
-	return factory(host);
 }

@@ -1,12 +1,12 @@
-import { runtimeWorkbenchState } from './workbench_state';
-import { LuaHandlerCache, isLuaHandlerFunction } from '../../machine/ts/lua/handler_cache';
-import { convertToError, isLuaCallSignal, LuaValue, LuaTable, isLuaTable, createLuaTable, LuaNativeValue, isLuaFunctionValue, isPlainObject, resolveNativeTypeName, LuaFunctionValue } from '../../machine/ts/lua/value';
-import type { LuaInterpreter } from '../../machine/ts/lua/runtime';
+import { LuaHandlerCache, isLuaHandlerFunction } from '../language/lua/interpreter/handler_cache';
+import { convertToError, LuaValue, LuaTable, isLuaTable, createLuaTable, LuaNativeValue, isLuaFunctionValue, isPlainObject, resolveNativeTypeName, LuaFunctionValue } from '../language/lua/interpreter/value';
+import type { LuaInterpreter } from '../language/lua/interpreter/interpreter';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import type { Table } from '../../machine/ts/machine/cpu/table';
 import { asStringId, valueIsHeap, valueIsNumber, valueIsString, valueTag, ValueTag, type NativeFunction, type NativeObject, type StringValue, type Value } from '../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import type { LuaInteropAdapter, LuaMarshalContext } from '../../machine/ts/lua/interop';
+import type { LuaInteropAdapter, LuaMarshalContext } from '../language/lua/interpreter/interop';
+import type { RuntimeSourceState } from './sources';
 
 export interface HandlerFn extends Function {
 	(...args: unknown[]): unknown;
@@ -246,17 +246,17 @@ export class RuntimeNativeBridge {
 	public readonly tableIds = new WeakMap<Table, number>();
 	public nextTableId = 1;
 
-	constructor(public readonly runtime: Runtime) {
+	constructor(
+		public readonly runtime: Runtime,
+		public readonly sources: RuntimeSourceState,
+	) {
 		this.luaJsBridge = new LuaJsBridge(this);
 	}
 
 	private callLuaFunctionPrepared(fn: LuaFunctionValue, luaArgs: ReadonlyArray<LuaValue>): unknown[] {
 		const results = fn.call(luaArgs);
-		if (isLuaCallSignal(results)) {
-			return [];
-		}
 		const output: unknown[] = [];
-		const baseCtx = buildMarshalContext();
+		const baseCtx = buildMarshalContext(this.sources);
 		for (let i = 0; i < results.length; i += 1) {
 			output.push(this.luaJsBridge.convertFromLua(results[i], extendMarshalContext(baseCtx, `ret${i}`)));
 		}
@@ -277,7 +277,7 @@ export class RuntimeNativeBridge {
 			if (results.length === 0) {
 				return undefined;
 			}
-			const ctx = buildMarshalContext();
+			const ctx = buildMarshalContext(this.sources);
 			return toNativeValue(this, results[0], ctx, new WeakMap());
 		} finally {
 			this.runtime.luaScratch.values.release(results);
@@ -341,7 +341,7 @@ export class LuaJsBridge implements LuaInteropAdapter {
 
 	public convertFromLua(value: LuaValue, context?: LuaMarshalContext): unknown {
 		if (!context) {
-			context = buildMarshalContext();
+			context = buildMarshalContext(this.bridge.sources);
 		}
 		return this.luaValueToJsWithVisited(value, context, new WeakMap<LuaTable, unknown>());
 	}
@@ -514,8 +514,8 @@ export function extendMarshalContext(ctx: LuaMarshalContext, segment: string): L
 	};
 }
 
-export function buildMarshalContext(): LuaMarshalContext {
-	return { moduleId: runtimeWorkbenchState.sources.activeLuaSources.entry_path, path: [] };
+export function buildMarshalContext(sources: RuntimeSourceState): LuaMarshalContext {
+	return { moduleId: sources.activeLuaSources.entry_path, path: [] };
 }
 
 export function describeMarshalSegment(bridge: RuntimeNativeBridge, key: Value): string {
@@ -859,7 +859,7 @@ export function getOrCreateNativeObject(bridge: RuntimeNativeBridge, value: obje
 		set: (key, entryValue) => {
 			if (isArray && valueIsNumber(key) && Number.isInteger(key) && key >= 1) {
 				const index = key - 1;
-				const ctx = buildMarshalContext();
+				const ctx = buildMarshalContext(bridge.sources);
 				arrayValue[index] = toNativeValue(bridge, entryValue, ctx, new WeakMap());
 				return;
 			}
@@ -871,7 +871,7 @@ export function getOrCreateNativeObject(bridge: RuntimeNativeBridge, value: obje
 				delete (value as Record<string, unknown>)[prop];
 				return;
 			}
-			const ctx = buildMarshalContext();
+			const ctx = buildMarshalContext(bridge.sources);
 			(value as Record<string, unknown>)[prop] = toNativeValue(bridge, entryValue, ctx, new WeakMap());
 		},
 		len,
@@ -888,7 +888,7 @@ export function getOrCreateNativeFunction(bridge: RuntimeNativeBridge, fn: Funct
 	}
 	const name = resolveNativeTypeName(fn);
 	const wrapper = bridge.runtime.machine.cpu.createNativeFunction(name, (args, out) => {
-		const ctx = buildMarshalContext();
+		const ctx = buildMarshalContext(bridge.sources);
 		const visited = bridge.runtime.luaScratch.tableMarshal.acquire();
 		const jsArgs = bridge.runtime.luaScratch.values.acquire() as unknown[];
 		try {
@@ -918,7 +918,7 @@ export function getOrCreateNativeMethod(bridge: RuntimeNativeBridge, target: obj
 	}
 	const name = `${resolveNativeTypeName(target)}.${key}`;
 	const wrapper = bridge.runtime.machine.cpu.createNativeFunction(name, (args, out) => {
-		const ctx = buildMarshalContext();
+		const ctx = buildMarshalContext(bridge.sources);
 		const visited = bridge.runtime.luaScratch.tableMarshal.acquire();
 		const jsArgs = bridge.runtime.luaScratch.values.acquire() as unknown[];
 		const member = (target as Record<string, unknown>)[key];

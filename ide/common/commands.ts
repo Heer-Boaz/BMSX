@@ -1,9 +1,3 @@
-export type EditorDebugCommandId =
-	| 'debugContinue'
-	| 'debugStepOver'
-	| 'debugStepInto'
-	| 'debugStepOut';
-
 export type EditorSearchCommandId =
 	| 'symbolSearch'
 	| 'symbolSearchGlobal'
@@ -33,7 +27,6 @@ export type EditorWorkspaceCommandId =
 	| 'theme-toggle';
 
 export type EditorCommandId =
-	| EditorDebugCommandId
 	| EditorSearchCommandId
 	| EditorSymbolNavigationCommandId
 	| EditorViewCommandId
@@ -48,8 +41,4 @@ export type TopBarButtonId = Extract<
 	| 'problems'
 	| 'filter'
 	| 'wrap'
-	| 'debugContinue'
-	| 'debugStepOver'
-	| 'debugStepInto'
-	| 'debugStepOut'
 >;

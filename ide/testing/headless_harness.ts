@@ -1,25 +1,22 @@
-import { runtimeWorkbenchState } from '../runtime/workbench_state';
-import { machineManager } from '../../machine/ts/core/machine_manager';
 import { collectTrackedLuaHeapBytes, getTrackedLuaHeapBytes } from '../../machine/ts/machine/memory/lua_heap_usage';
 import { hotResume } from '../runtime/hot_resume';
 import { performHotResume } from '../commands/actions';
+import { rebootPreparedRuntime } from '../workbench/blua32_boot';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { openLuaCodeTab } from '../workbench/ui/code_tab/io';
 import { editorDocumentState } from '../editor/editing/document_state';
 import { activateEditor } from '../workbench/overlay_modes';
 import { selectAllSingleCursor } from '../editor/editing/cursor/state';
 import { insertText } from '../editor/editing/text_editing_and_selection';
-import { loadBlua32Image } from '../runtime/lua_pipeline';
-import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/machine/memory/map';
-import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/machine/cpu/execution_address_space';
-import { findResourceDescriptorForContext } from '../workbench/contrib/resources/lookup';
+import { resolveResourceDescriptorForContext } from '../workbench/contrib/resources/lookup';
 import type { RuntimeSourceState } from '../runtime/sources';
+import type { RuntimeIdeState } from '../runtime/state';
+import { blua32ToolingImageForDomain } from '../runtime/blua32_media';
 
 /**
- * Host-side test surface for the IDE/runtime, exposed through the `bmsx` global so
- * headless hosts can drive editor/terminal/hot-resume flows that normally only run
- * in the browser. Everything binds to the live runtime via `machineManager`, so the
- * harness operates on the same singletons that are actually executing the cart.
+ * Host-side test surface for the IDE/runtime. The headless composition root creates
+ * it from the retained IDE and runtime owners, so every action targets the machine
+ * that is actually executing the cart.
  *
  * IDE actions must be invoked *between* frames (never re-entrantly from inside Lua
  * execution); the headless `--ide-test` runner guarantees this by running scenarios
@@ -36,6 +33,7 @@ export type HeadlessIdeHarness = {
 	hotResumeCore(): void;
 	/** Full IDE hot-resume action (fire-and-forget; settle by advancing frames). */
 	performHotResume(): void;
+	reboot(): Promise<void>;
 	openLuaSource(path: string): void;
 	replaceActiveCodeSource(source: string): void;
 	/** Diagnostic breakdown of tracked-heap contributors, for leak hunting. */
@@ -53,78 +51,82 @@ export type HeadlessIdeHeapStats = {
 	globals: number;
 };
 
-function requireRuntime(): Runtime {
-	const runtime = machineManager.runtime;
-	if (!runtime) {
-		throw new Error('Runtime is not booted yet.');
-	}
-	return runtime;
+export function createHeadlessIdeHarness(ide: RuntimeIdeState, runtime: Runtime): HeadlessIdeHarness {
+	return {
+		getRuntime: () => runtime,
+		getSourceState: () => ide.sources,
+		isCartActive: () => runtime.machine.cpu.isCartridgeExecutionActive() && runtime.isInitialized,
+		getTrackedLuaHeapBytes,
+		hotResumeCore: () => {
+			const slot = runtime.machine.cpu.activeCartridgeSlot();
+			hotResume(
+				ide.sources,
+				ide.nativeBridge,
+				ide.fault,
+				ide.editor,
+				runtime,
+				slot < 0,
+				[slot === 0, slot === 1],
+			);
+		},
+		performHotResume: () => {
+			performHotResume(
+				ide.editor,
+				ide.sources,
+				ide.fault,
+				ide.nativeBridge,
+				ide.overlayRenderer,
+				runtime,
+			);
+		},
+		reboot: () => rebootPreparedRuntime(
+			ide.sources,
+			ide.fault,
+			ide.nativeBridge,
+			ide.editor,
+			ide.luaGate,
+			ide.overlayRenderer,
+			runtime,
+		),
+		openLuaSource: (path: string) => {
+			activateEditor(ide.editor, ide.sources, ide.overlayRenderer, runtime);
+			const descriptor = resolveResourceDescriptorForContext(
+				ide.sources,
+				ide.sources.activeCartridgeSlot,
+				path,
+			);
+			openLuaCodeTab(ide.editor.resourcePanel, ide.sources, descriptor);
+		},
+		replaceActiveCodeSource: (source: string) => {
+			const buffer = editorDocumentState.buffer;
+			const lastRow = buffer.getLineCount() - 1;
+			selectAllSingleCursor(
+				editorDocumentState,
+				lastRow,
+				buffer.getLineEndOffset(lastRow) - buffer.getLineStartOffset(lastRow),
+			);
+			insertText(source);
+		},
+		debugStats: () => {
+			const cpu = runtime.machine.cpu;
+			const slot = cpu.activeCartridgeSlot();
+			const sourceState = ide.sources;
+			const executable = blua32ToolingImageForDomain(sourceState.currentBlua32Media, slot)!;
+			collectTrackedLuaHeapBytes();
+			const tracked = getTrackedLuaHeapBytes();
+			const stringBytes = cpu.stringPool.trackedLuaHeapBytes();
+			let globals = 0;
+			cpu.globals.forEachEntry(() => { globals += 1; });
+			return {
+				tracked,
+				stringBytes,
+				objectBytes: tracked - stringBytes,
+				moduleFunctions: executable.symbols!.moduleFunctions.length,
+				functions: executable.layout.functions.length,
+				constants: executable.layout.constants.length,
+				codeBytes: executable.layout.header.textByteCount,
+				globals,
+			};
+		},
+	};
 }
-
-export const headlessIdeHarness: HeadlessIdeHarness = {
-	getRuntime: requireRuntime,
-	getSourceState: () => runtimeWorkbenchState.sources,
-	isCartActive: () => {
-		const runtime = machineManager.runtime;
-		return !!runtime && runtime.machine.cpu.isCartridgeExecutionActive() && runtime.isInitialized;
-	},
-	getTrackedLuaHeapBytes,
-	hotResumeCore: () => {
-		const runtime = requireRuntime();
-		const slot = runtime.machine.cpu.activeCartridgeSlot();
-		hotResume(runtime, slot < 0, [slot === 0, slot === 1]);
-	},
-	performHotResume: () => {
-		performHotResume(requireRuntime());
-	},
-	openLuaSource: (path: string) => {
-		activateEditor(requireRuntime());
-		const descriptor = findResourceDescriptorForContext(
-			runtimeWorkbenchState.sources.activeCartridgeSlot,
-			path,
-		)!;
-		openLuaCodeTab(descriptor);
-	},
-	replaceActiveCodeSource: (source: string) => {
-		const buffer = editorDocumentState.buffer;
-		const lastRow = buffer.getLineCount() - 1;
-		selectAllSingleCursor(
-			editorDocumentState,
-			lastRow,
-			buffer.getLineEndOffset(lastRow) - buffer.getLineStartOffset(lastRow),
-		);
-		insertText(source);
-	},
-	debugStats: () => {
-		const runtime = requireRuntime();
-		const cpu = runtime.machine.cpu;
-		const slot = cpu.activeCartridgeSlot();
-		const sourceState = runtimeWorkbenchState.sources;
-		const layer = slot === SYSTEM_EXECUTION_DOMAIN_ID
-			? sourceState.systemRom
-			: sourceState.cartridgeSlots[slot]!.rom;
-		const source = slot === SYSTEM_EXECUTION_DOMAIN_ID
-			? sourceState.systemRomSource
-			: sourceState.cartridgeSlots[slot]!.romSource;
-		const executable = loadBlua32Image(
-			source,
-			slot === SYSTEM_EXECUTION_DOMAIN_ID ? SYSTEM_ROM_BASE : CART_ROM_BASE,
-			layer.header.blua32ImageOffset,
-		);
-		collectTrackedLuaHeapBytes();
-		const tracked = getTrackedLuaHeapBytes();
-		const stringBytes = cpu.stringPool.trackedLuaHeapBytes();
-		let globals = 0;
-		cpu.globals.forEachEntry(() => { globals += 1; });
-		return {
-			tracked,
-			stringBytes,
-			objectBytes: tracked - stringBytes,
-			moduleFunctions: executable.symbols!.moduleFunctions.length,
-			functions: executable.image.functions.length,
-			constants: executable.image.constants.length,
-			codeBytes: executable.image.header.textByteCount,
-			globals,
-		};
-	},
-};

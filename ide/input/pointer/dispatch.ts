@@ -1,4 +1,3 @@
-import { runtimeWorkbenchState } from '../../runtime/workbench_state';
 import { machineManager } from '../../../machine/ts/core/machine_manager';
 import type { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { clearGotoHoverHighlight, clearHoverTooltip } from '../../editor/contrib/intellisense/engine';
@@ -13,14 +12,28 @@ import { handleQuickInputPointer } from '../quick_input/pointer/dispatch';
 import { handleEditorContextMenuPointer } from './context_menu/input';
 import { getActiveCodeTabContext } from '../../workbench/ui/code_tab/contexts';
 import { handleEditorChromePointerDispatch } from './chrome_dispatch';
+import type { CartEditor } from '../../cart_editor';
+import type { RuntimeSourceState } from '../../runtime/sources';
+import type { RuntimeNativeBridge } from '../../runtime/native_bridge';
+import type { RuntimeFaultState } from '../../runtime/fault_state';
+import type { GateGroup } from '../../../machine/ts/common/taskgate';
+import type { OverlayRenderer } from '../../runtime/overlay_renderer';
 
-export function handleTextEditorPointerInput(runtime: Runtime): void {
+export function handleTextEditorPointerInput(
+	editor: CartEditor,
+	sources: RuntimeSourceState,
+	nativeBridge: RuntimeNativeBridge,
+	fault: RuntimeFaultState,
+	luaGate: GateGroup,
+	overlayRenderer: OverlayRenderer,
+	runtime: Runtime,
+): void {
 	const ctrlDown = isCtrlDown();
 	const metaDown = isMetaDown();
 	const gotoModifierActive = ctrlDown || metaDown;
 	const activeContext = getActiveCodeTabContext();
 	const snapshot = readEditorPointerSnapshot();
-	if (prepareEditorPointerFrame(runtimeWorkbenchState.ide.editor.resourcePanel, snapshot, gotoModifierActive)) {
+	if (prepareEditorPointerFrame(editor.resourcePanel, snapshot, gotoModifierActive)) {
 		return;
 	}
 	const playerInput = machineManager.input.getPlayerInput(1);
@@ -29,23 +42,45 @@ export function handleTextEditorPointerInput(runtime: Runtime): void {
 	const justReleased = (buttonMask & POINTER_PRIMARY_JUST_RELEASED) !== 0;
 	const pointerSecondaryJustPressed = (buttonMask & POINTER_SECONDARY_JUST_PRESSED) !== 0;
 	const pointerAuxJustPressed = (buttonMask & POINTER_AUX_JUST_PRESSED) !== 0;
-	if (handleEditorContextMenuPointer(snapshot, justPressed, pointerSecondaryJustPressed, playerInput)) {
+	if (handleEditorContextMenuPointer(editor, snapshot, justPressed, pointerSecondaryJustPressed, playerInput)) {
 		editorPointerState.pointerPrimaryWasPressed = snapshot.primaryPressed;
 		clearHoverTooltip();
 		clearGotoHoverHighlight();
 		return;
 	}
-	if (handleEditorChromePointerDispatch(snapshot, justPressed, pointerAuxJustPressed, playerInput)) {
+	if (handleEditorChromePointerDispatch(editor, sources, snapshot, justPressed, pointerAuxJustPressed, playerInput)) {
 		return;
 	}
-	if (handleEditorPanelPointer(snapshot, justPressed, justReleased)) {
+	if (handleEditorPanelPointer(editor.resourcePanel, snapshot, justPressed, justReleased)) {
 		return;
 	}
-	if (handleEditorPointerGuards(runtime, snapshot, justPressed)) {
+	if (handleEditorPointerGuards(
+		editor,
+		sources,
+		nativeBridge,
+		fault,
+		luaGate,
+		overlayRenderer,
+		runtime,
+		snapshot,
+		justPressed,
+	)) {
 		return;
 	}
-	if (handleQuickInputPointer(runtime, snapshot, justPressed)) {
+	if (handleQuickInputPointer(editor, sources, snapshot, justPressed)) {
 		return;
 	}
-	handleCodeAreaPointerInput(runtime, snapshot, justPressed, gotoModifierActive, activeContext, pointerSecondaryJustPressed, playerInput);
+	handleCodeAreaPointerInput(
+		editor,
+		sources,
+		nativeBridge,
+		fault,
+		runtime,
+		snapshot,
+		justPressed,
+		gotoModifierActive,
+		activeContext,
+		pointerSecondaryJustPressed,
+		playerInput,
+	);
 }

@@ -3,42 +3,63 @@ import { openResourceDescriptor, focusChunkSourceForContext } from '../navigatio
 import { getActiveCodeTabContext } from '../../../ui/code_tab/contexts';
 import { applyDefinitionSelection } from '../../../../editor/contrib/intellisense/engine';
 import { toggleSelectedCallHierarchyExpansion } from './navigation';
-import type { Runtime } from '../../../../../machine/ts/machine/runtime/runtime';
+import type { CartEditor } from '../../../../cart_editor';
+import type { RuntimeSourceState } from '../../../../runtime/sources';
 
-export function openResourcePanelDescriptorItem(item: ResourceBrowserItem): boolean {
+export function openResourcePanelDescriptorItem(
+	editor: CartEditor,
+	sources: RuntimeSourceState,
+	item: ResourceBrowserItem,
+): boolean {
 	if (!item?.descriptor) {
 		return false;
 	}
-	openResourceDescriptor(item.descriptor);
+	openResourceDescriptor(editor, sources, item.descriptor);
 	return true;
 }
 
-export function openResourcePanelCallHierarchyLocation(runtime: Runtime, item: ResourceBrowserItem): void {
+export function openResourcePanelCallHierarchyLocation(
+	editor: CartEditor,
+	sources: RuntimeSourceState,
+	item: ResourceBrowserItem,
+): void {
 	if (!item?.location) {
 		return;
 	}
 	focusChunkSourceForContext(
-		runtime,
+		editor,
+		sources,
 		getActiveCodeTabContext().descriptor.domain,
 		item.location.path,
 	);
 	applyDefinitionSelection(item.location.range);
 }
 
-export function openSelectedResourcePanelItem(items: readonly ResourceBrowserItem[], selectionIndex: number): void {
+export function openSelectedResourcePanelItem(
+	editor: CartEditor,
+	sources: RuntimeSourceState,
+	items: readonly ResourceBrowserItem[],
+	selectionIndex: number,
+): void {
 	const item = items[selectionIndex];
-	if (openResourcePanelDescriptorItem(item)) {
+	if (openResourcePanelDescriptorItem(editor, sources, item)) {
 		return;
 	}
 }
 
-export function openSelectedResourcePanelCallHierarchyLocation(runtime: Runtime, items: readonly ResourceBrowserItem[], selectionIndex: number): void {
+export function openSelectedResourcePanelCallHierarchyLocation(
+	editor: CartEditor,
+	sources: RuntimeSourceState,
+	items: readonly ResourceBrowserItem[],
+	selectionIndex: number,
+): void {
 	const item = items[selectionIndex];
-	openResourcePanelCallHierarchyLocation(runtime, item);
+	openResourcePanelCallHierarchyLocation(editor, sources, item);
 }
 
 export function activateSelectedCallHierarchyItem(
-	runtime: Runtime,
+	editor: CartEditor,
+	sources: RuntimeSourceState,
 	items: readonly ResourceBrowserItem[],
 	selectionIndex: number,
 	expandedNodeIds: Set<string>,
@@ -47,6 +68,6 @@ export function activateSelectedCallHierarchyItem(
 	if (toggledNodeId) {
 		return toggledNodeId;
 	}
-	openSelectedResourcePanelCallHierarchyLocation(runtime, items, selectionIndex);
+	openSelectedResourcePanelCallHierarchyLocation(editor, sources, items, selectionIndex);
 	return null;
 }

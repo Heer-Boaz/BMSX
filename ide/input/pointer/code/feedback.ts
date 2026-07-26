@@ -5,8 +5,12 @@ import type { CodeAreaBounds } from '../../../editor/ui/view/view';
 import type { CodeTabContext, PointerSnapshot } from '../../../common/models';
 import { isAltDown } from '../../keyboard/key_input';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
+import type { RuntimeNativeBridge } from '../../../runtime/native_bridge';
+import type { RuntimeFaultState } from '../../../runtime/fault_state';
 
 export function updateCodeAreaPointerFeedback(
+	bridge: RuntimeNativeBridge,
+	fault: RuntimeFaultState,
 	runtime: Runtime,
 	snapshot: PointerSnapshot,
 	insideCodeArea: boolean,
@@ -17,14 +21,14 @@ export function updateCodeAreaPointerFeedback(
 ): void {
 	if (isCodeTabActive() && !snapshot.primaryPressed && !pointerSelecting && insideCodeArea && gotoModifierActive) {
 		const hover = resolvePointerTextPosition(snapshot.viewportX, snapshot.viewportY, bounds);
-		refreshGotoHoverHighlight(runtime, hover.row, hover.column, activeContext);
+			refreshGotoHoverHighlight(bridge, fault, runtime, hover.row, hover.column, activeContext);
 	} else if (!gotoModifierActive || !insideCodeArea || snapshot.primaryPressed || pointerSelecting || !isCodeTabActive()) {
 		clearGotoHoverHighlight();
 	}
 	if (isCodeTabActive()) {
 		const altDown = isAltDown();
 		if (!snapshot.primaryPressed && !pointerSelecting && insideCodeArea && altDown) {
-			updateHoverTooltip(runtime, snapshot, activeContext, bounds);
+				updateHoverTooltip(bridge, fault, runtime, snapshot, activeContext, bounds);
 		} else {
 			clearHoverTooltip();
 		}

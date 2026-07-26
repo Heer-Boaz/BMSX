@@ -1,6 +1,9 @@
-import { runtimeWorkbenchState } from '../../runtime/workbench_state';
 import { editorInput } from '../../editor/input/keyboard/text_input';
 import type { Runtime } from '../../../machine/ts/machine/runtime/runtime';
+import type { RuntimeSourceState } from '../../runtime/sources';
+import type { RuntimeNativeBridge } from '../../runtime/native_bridge';
+import type { CartEditor } from '../../cart_editor';
+import type { ResourcePanelController } from '../../workbench/contrib/resources/panel/controller';
 import { isResourceViewActive } from '../../workbench/ui/tabs';
 import { handleResourceViewerInput } from '../../workbench/input/keyboard/resource_viewer_input';
 import { handleEditorGlobalBindings } from './global_bindings';
@@ -13,43 +16,47 @@ import {
 	handleSearchNavigationKeybinding,
 } from './edit_bindings';
 
-export function handleEditorInput(runtime: Runtime): void {
-	if (handleFocusedResourcePanelInput()) {
+export function handleEditorInput(
+	editor: CartEditor,
+	sources: RuntimeSourceState,
+	nativeBridge: RuntimeNativeBridge,
+	runtime: Runtime,
+): void {
+	if (handleFocusedResourcePanelInput(editor.resourcePanel)) {
 		return;
 	}
 	if (isResourceViewActive()) {
 		handleResourceViewerInput();
 		return;
 	}
-	if (handleEditorGlobalBindings()) {
+	if (handleEditorGlobalBindings(editor.commands)) {
 		return;
 	}
-	if (handleEditorPromptBindings()) {
+	if (handleEditorPromptBindings(editor)) {
 		return;
 	}
-	if (handleInlineWidgetInput(runtime)) {
+	if (handleInlineWidgetInput(editor, sources, nativeBridge, editor.crossFileRename, runtime)) {
 		return;
 	}
-	if (handleFocusedProblemsPanelInput()) {
+	if (handleFocusedProblemsPanelInput(editor.resourcePanel)) {
 		return;
 	}
 	if (handleSearchNavigationKeybinding()) {
 		return;
 	}
-	if (handleEditorClipboardAndCommandBindings()) {
+	if (handleEditorClipboardAndCommandBindings(editor.resourcePanel, sources, editor.commands)) {
 		return;
 	}
-	if (runtimeWorkbenchState.ide.editor.completion.handleKeybindings()) {
+	if (editor.completion.handleKeybindings()) {
 		return;
 	}
 	if (handleCodeFormattingKeybinding()) {
 		return;
 	}
-	editorInput.handleEditorInput();
+	editorInput.handleEditorInput(editor);
 }
 
-function handleFocusedResourcePanelInput(): boolean {
-	const resourcePanel = runtimeWorkbenchState.ide.editor.resourcePanel;
+function handleFocusedResourcePanelInput(resourcePanel: ResourcePanelController): boolean {
 	if (!resourcePanel.isVisible() || !resourcePanel.isFocused()) {
 		return false;
 	}
@@ -57,10 +64,10 @@ function handleFocusedResourcePanelInput(): boolean {
 	return true;
 }
 
-function handleFocusedProblemsPanelInput(): boolean {
+function handleFocusedProblemsPanelInput(resourcePanel: ResourcePanelController): boolean {
 	if (!problemsPanel.isVisible || !problemsPanel.isFocused) {
 		return false;
 	}
-	problemsPanel.handleKeyboard();
+	problemsPanel.handleKeyboard(resourcePanel);
 	return true;
 }

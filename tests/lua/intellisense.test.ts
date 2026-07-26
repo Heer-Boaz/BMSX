@@ -1,22 +1,29 @@
-import { runtimeWorkbenchState } from '../../ide/runtime/workbench_state';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import type { CodeTabContext, ResourceDescriptor } from '../../ide/common/models';
 import { splitText } from '../../machine/ts/common/text_lines';
 import { PieceTreeBuffer } from '../../ide/editor/text/piece_tree_buffer';
-import type { ProjectReferenceEnvironment } from '../../ide/editor/contrib/references/sources';
 import { LuaLexer } from '../../machine/ts/lua/syntax/lexer';
 import { LuaParser } from '../../machine/ts/lua/syntax/parser';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { StringValue } from '../../machine/ts/machine/cpu/value';
 import { compileLuaChunkToProgram } from '../../machine/ts/lua/compiler';
-import { registerLuaSourceRecord } from '../../machine/ts/lua/source_registry';
+import {
+	registerLuaSourceRecord,
+	type LuaSourceRecord,
+	type LuaSourceRegistry,
+} from '../../machine/ts/lua/source_registry';
 import { createRuntimeFaultState } from '../../ide/runtime/fault_state';
-import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
-import { setActiveBlua32MediaSymbols } from '../../ide/runtime/lua_pipeline';
-import { LuaEnvironment } from '../../machine/ts/lua/environment';
+import { linkTestSystemBlua32 } from '../helpers/blua32';
+import { LuaInterpreter } from '../../ide/language/lua/interpreter/interpreter';
 import { SYSTEM_RESOURCE_DOMAIN } from '../../ide/common/resource';
+import { RuntimeNativeBridge } from '../../ide/runtime/native_bridge';
+import type { RuntimeSourceState } from '../../ide/runtime/sources';
+import {
+	createTestRuntime,
+	createTestRuntimeRomPayload,
+	createTestSystemImageRuntimeSourceState,
+} from '../helpers/runtime_sources';
 
 const semanticFrontendModulePromise = import('../../machine/ts/lua/semantic/frontend');
 const semanticDiagnosticsModulePromise = import('../../machine/ts/lua/semantic/diagnostics');
@@ -27,14 +34,13 @@ const workspaceStateModulePromise = import('../../ide/editor/contrib/intellisens
 const referenceNavigationModulePromise = import('../../ide/editor/contrib/references/lookup');
 const intellisenseEngineModulePromise = import('../../ide/editor/contrib/intellisense/engine');
 
-function runtimeStub(files: Record<string, string> = {}) {
-	const records: any[] = [];
-	const path2lua: Record<string, any> = {};
-	const module2lua: Record<string, any> = {};
-	const systemLuaSources = {
-		records,
-		path2lua,
-		module2lua,
+const EMPTY_ROM_PAYLOAD = createTestRuntimeRomPayload();
+
+function createSourceState(files: Record<string, string>, systemRom: Uint8Array): RuntimeSourceState {
+	const systemLuaSources: LuaSourceRegistry = {
+		records: [],
+		path2lua: {},
+		module2lua: {},
 		entry_path: '',
 		namespace: 'tests',
 		projectRootPath: '',
@@ -44,40 +50,27 @@ function runtimeStub(files: Record<string, string> = {}) {
 	for (const path in files) {
 		const source = files[path];
 		const modulePath = path.replace(/\.lua$/, '').replace(/\\/g, '/');
-		const record = {
+		const record: LuaSourceRecord = {
 			resid: path,
 			type: 'lua',
 			src: source,
 			base_src: source,
+			base_update_timestamp: 0,
 			source_path: path,
 			module_path: modulePath,
 			update_timestamp: 0,
+			generated: false,
 		};
 		registerLuaSourceRecord(systemLuaSources, record);
 	}
-	const sourceState = {
-		systemLuaSources,
-		cartridgeSlots: [null, null],
-		activeLuaSources: systemLuaSources,
-		activeCartridgeSlot: SYSTEM_RESOURCE_DOMAIN,
-		luaSourceRegistries: [systemLuaSources],
-		moduleCompileLuaSources: [systemLuaSources],
-	};
-	runtimeWorkbenchState.sources = sourceState;
-	runtimeWorkbenchState.ide = {
-		nativeBridge: {
-			luaInterpreter: { globalEnvironment: LuaEnvironment.createRoot() },
-		},
-	};
-	return {
-		pathSemanticCache: new Map(),
-		interpreter: { globalEnvironment: LuaEnvironment.createRoot() },
-		...sourceState,
-		resolveLuaSource(path: string) {
-			const record = path2lua[path] ?? module2lua[path];
-			return record ? { registry: this.systemLuaSources, record } : null;
-		},
-	} as any;
+	return createTestSystemImageRuntimeSourceState(systemRom, systemLuaSources);
+}
+
+function createIntellisenseBridge(files: Record<string, string> = {}): RuntimeNativeBridge {
+	const runtime = createTestRuntime(EMPTY_ROM_PAYLOAD);
+	const bridge = new RuntimeNativeBridge(runtime, createSourceState(files, EMPTY_ROM_PAYLOAD));
+	bridge.luaInterpreter = new LuaInterpreter(bridge.luaJsBridge);
+	return bridge;
 }
 
 function codeContext(descriptor: ResourceDescriptor, source: string): CodeTabContext {
@@ -124,11 +117,12 @@ function runtimeWithPausedCpuLocal(source: string) {
 		optLevel: 0,
 	});
 	const image = linkTestSystemBlua32(compiled);
-	const cpu = createTestSystemCpu(image).cpu;
-	setActiveBlua32MediaSymbols({ system: image.symbols, cartridgeSlots: [null, null] });
+	const runtime = createTestRuntime(image.romBytes);
+	const cpu = runtime.machine.cpu;
+	cpu.mountExecutionImages();
 	cpu.start(image.vectors.startupFunctionAddress);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
-	const record = {
+	const record: LuaSourceRecord = {
 		resid: sourcePath,
 		type: 'lua',
 		src: source,
@@ -137,58 +131,29 @@ function runtimeWithPausedCpuLocal(source: string) {
 		module_path: modulePath,
 		update_timestamp: 0,
 		base_update_timestamp: 0,
+		generated: false,
 	};
-	const systemLuaSources = {
-		records: [record],
-		path2lua: { [sourcePath]: record },
-		module2lua: { [modulePath]: record },
+	const systemLuaSources: LuaSourceRegistry = {
+		records: [],
+		path2lua: {},
+		module2lua: {},
 		entry_path: sourcePath,
 		namespace: 'tests',
 		projectRootPath: '',
 		can_boot_from_source: true,
 		revision: 0,
 	};
-	const sourceState = {
-		activeLuaSources: systemLuaSources,
-		systemLuaSources,
-		activeCartridgeSlot: SYSTEM_RESOURCE_DOMAIN,
+	registerLuaSourceRecord(systemLuaSources, record);
+	const sources = createTestSystemImageRuntimeSourceState(image.romBytes, systemLuaSources);
+	sources.currentBlua32Media = {
+		system: { layout: image.image, symbols: image.symbols },
 		cartridgeSlots: [null, null],
-		luaSourceRegistries: [systemLuaSources],
-		moduleCompileLuaSources: [systemLuaSources],
 	};
-	const runtime = {
-			programMetadata: compiled.metadata,
-			machine: { cpu },
-			interpreter: {
-				globalEnvironment: LuaEnvironment.createRoot(),
-				lastFaultEnvironment: null,
-				resolveValueName: () => null,
-				getOrCreateNativeValue: () => {
-					throw new Error('unexpected native value in intellisense live-local test');
-				},
-			},
-			luaBuiltinMetadata: new Map(),
-			nativeMemberCompletionCache: new WeakMap(),
-			pathSemanticCache: new Map(),
-			...sourceState,
-			resolveLuaSource(path: string) {
-				if (path === sourcePath || path === modulePath) {
-					return { registry: this.systemLuaSources, record };
-				}
-				return null;
-			},
-			internString(value: string) {
-				return StringValue.get(cpu.stringPool.intern(value));
-			},
-		} as any;
-	runtimeWorkbenchState.fault = createRuntimeFaultState();
-	runtimeWorkbenchState.sources = sourceState;
-	runtimeWorkbenchState.ide = {
-		nativeBridge: {
-			luaInterpreter: runtime.interpreter,
-		},
-	};
+	const bridge = new RuntimeNativeBridge(runtime, sources);
+	bridge.luaInterpreter = new LuaInterpreter(bridge.luaJsBridge);
 	return {
+		bridge,
+		fault: createRuntimeFaultState(),
 		runtime,
 		sourcePath,
 	};
@@ -281,10 +246,10 @@ test('intellisense live locals resolve editor source paths against CPU module pa
 		'halt_until_irq',
 		'return counter',
 	].join('\n');
-	const { runtime, sourcePath } = runtimeWithPausedCpuLocal(source);
+	const { bridge, fault, runtime, sourcePath } = runtimeWithPausedCpuLocal(source);
 	const counterColumn = source.indexOf('counter') + 1;
 
-	const resolved = resolveLuaChainValue(runtime, ['counter'], sourcePath, 1, counterColumn);
+	const resolved = resolveLuaChainValue(bridge, fault, runtime, ['counter'], sourcePath, 1, counterColumn);
 	assert.ok(resolved);
 	assert.equal(resolved.kind, 'value');
 	if (resolved.kind !== 'value') {
@@ -292,7 +257,7 @@ test('intellisense live locals resolve editor source paths against CPU module pa
 	}
 	assert.equal(resolved.value, 42);
 
-	const definition = resolveLuaDefinitionMetadata(resolved.definitionRange);
+	const definition = resolveLuaDefinitionMetadata(bridge, resolved.definitionRange);
 	assert.ok(definition);
 	assert.equal(definition.path, sourcePath);
 	assert.equal(definition.range.startLine, 1);
@@ -444,30 +409,15 @@ test('project reference catalog resolves globals across paths', async () => {
 	workspace.updateFile('local.lua', localSource);
 
 	const usageDescriptor: ResourceDescriptor = { domain: SYSTEM_RESOURCE_DOMAIN, path: 'usage.lua', type: 'lua', asset_id: 'usage' };
-	const globalDescriptor: ResourceDescriptor = { domain: SYSTEM_RESOURCE_DOMAIN, path: 'global.lua', type: 'lua', asset_id: 'global' };
-	const parameterDescriptor: ResourceDescriptor = { domain: SYSTEM_RESOURCE_DOMAIN, path: 'parameter.lua', type: 'lua', asset_id: 'parameter' };
-	const localDescriptor: ResourceDescriptor = { domain: SYSTEM_RESOURCE_DOMAIN, path: 'local.lua', type: 'lua', asset_id: 'local' };
 
 	const usageContext = codeContext(usageDescriptor, usageSource);
 
 	const usageLines = usageSource.split('\n');
-	const runtime = runtimeStub();
-	const environment: ProjectReferenceEnvironment = {
-		runtime,
-		activeContext: usageContext,
-		activeSource: usageSource,
-		activeLines: usageLines,
-		codeTabContexts: [usageContext],
-		listResources: () => [usageDescriptor, globalDescriptor, parameterDescriptor, localDescriptor],
-		loadLuaResource: (asset_id: string) => {
-			if (asset_id === 'usage') return usageSource;
-			if (asset_id === 'global') return globalSource;
-			if (asset_id === 'parameter') return parameterSource;
-			if (asset_id === 'local') return localSource;
-			throw new Error(`Unexpected asset ${asset_id}`);
-		},
-	};
-
+	const bridge = createIntellisenseBridge({
+		'global.lua': globalSource,
+		'parameter.lua': parameterSource,
+		'local.lua': localSource,
+	});
 	const stateRow = usageLines.findIndex(line => line.includes('print(state'));
 	assert.ok(stateRow >= 0);
 	const stateColumn = usageLines[stateRow]!.indexOf('state');
@@ -491,13 +441,14 @@ test('project reference catalog resolves globals across paths', async () => {
 		documentVersion: 1,
 	};
 
-	const catalog = buildReferenceCatalogForExpression({
+	const catalog = buildReferenceCatalogForExpression(bridge, {
 		workspace,
 		info,
 		source: usageSource,
 		lines: usageLines,
 		path: 'usage.lua',
-		environment,
+		activeContext: usageContext,
+		codeTabContexts: [usageContext],
 	});
 
 	assert.ok(catalog.some(entry => entry.symbol.location.path === 'global.lua'), 'global path included in reference catalog');
@@ -528,30 +479,16 @@ test('project definition resolver locates global across paths', async () => {
 	workspace.updateFile('global.lua', globalSource);
 
 	const usageDescriptor: ResourceDescriptor = { domain: SYSTEM_RESOURCE_DOMAIN, path: 'usage.lua', type: 'lua', asset_id: 'usage' };
-	const globalDescriptor: ResourceDescriptor = { domain: SYSTEM_RESOURCE_DOMAIN, path: 'global.lua', type: 'lua', asset_id: 'global' };
 
 	const usageContext = codeContext(usageDescriptor, usageSource);
 
 	const usageLines = usageSource.split('\n');
 
-	const runtime = runtimeStub();
-	const environment: ProjectReferenceEnvironment = {
-		runtime,
-		activeContext: usageContext,
-		activeSource: usageSource,
-		activeLines: usageLines,
-		codeTabContexts: [usageContext],
-		listResources: () => [usageDescriptor, globalDescriptor],
-		loadLuaResource: (asset_id: string) => {
-			if (asset_id === 'usage') return usageSource;
-			if (asset_id === 'global') return globalSource;
-			throw new Error(`Unexpected asset ${asset_id}`);
-		},
-	};
-
-	const location = resolveDefinitionLocationForExpression({
+	const bridge = createIntellisenseBridge({ 'global.lua': globalSource });
+	const location = resolveDefinitionLocationForExpression(bridge, {
 		expression: 'state',
-		environment,
+		activeContext: usageContext,
+		codeTabContexts: [usageContext],
 		workspace,
 		currentPath: usageDescriptor.path,
 		currentSource: usageSource,
@@ -560,7 +497,6 @@ test('project definition resolver locates global across paths', async () => {
 
 	assert.ok(location, 'global definition location resolved');
 	assert.equal(location!.path, 'global.lua');
-	assert.equal(location!.asset_id, 'global');
 	assert.equal(location!.range.startLine, 1);
 	assert.equal(location!.range.startColumn, 1);
 });
@@ -598,21 +534,11 @@ test('reference lookup resolves global definition across paths', async () => {
 	const stateColumn = usageLines[stateRow]!.indexOf('state');
 	assert.ok(stateColumn >= 0);
 
-	const result = resolveReferenceLookup({
-		runtime: runtimeStub({ 'global.lua': globalSource }),
+	const result = resolveReferenceLookup(createIntellisenseBridge({ 'global.lua': globalSource }), {
 		buffer: new PieceTreeBuffer(usageSource),
 		textVersion: 1,
 		cursorRow: stateRow,
 		cursorColumn: stateColumn,
-		extractExpression: (row, column) => {
-			const line = usageLines[row] ?? '';
-			const name = 'state';
-			const index = line.indexOf(name);
-			if (index === -1 || column < index || column >= index + name.length) {
-				return null;
-			}
-			return { expression: 'state', startColumn: index, endColumn: index + name.length };
-		},
 		identity: { domain: SYSTEM_RESOURCE_DOMAIN, path: 'usage.lua' },
 	});
 
@@ -652,21 +578,11 @@ test('reference lookup prefers local parameter over global', async () => {
 	assert.ok(helperLineIndex >= 0);
 	const parameterColumn = usageLines[helperLineIndex]!.indexOf('state');
 
-	const parameterResult = resolveReferenceLookup({
-		runtime: runtimeStub({ 'global.lua': globalSource }),
+	const parameterResult = resolveReferenceLookup(createIntellisenseBridge({ 'global.lua': globalSource }), {
 		buffer: new PieceTreeBuffer(usageSource),
 		textVersion: 1,
 		cursorRow: helperLineIndex,
 		cursorColumn: parameterColumn,
-		extractExpression: (row, column) => {
-			const line = usageLines[row] ?? '';
-			const name = 'state';
-			const index = line.indexOf(name);
-			if (index === -1 || column < index || column >= index + name.length) {
-				return null;
-			}
-			return { expression: 'state', startColumn: index, endColumn: index + name.length };
-		},
 		identity: { domain: SYSTEM_RESOURCE_DOMAIN, path: 'usage.lua' },
 	});
 
@@ -702,27 +618,12 @@ test('intellisense recognizes global variable from another file', async () => {
 	workspace.updateFile('global.lua', globalSource);
 
 	const usageDescriptor: ResourceDescriptor = { domain: SYSTEM_RESOURCE_DOMAIN, path: 'usage.lua', type: 'lua', asset_id: 'usage' };
-	const globalDescriptor: ResourceDescriptor = { domain: SYSTEM_RESOURCE_DOMAIN, path: 'global.lua', type: 'lua', asset_id: 'global' };
 
 	const usageContext = codeContext(usageDescriptor, usageSource);
 
 	const usageLines = usageSource.split('\n');
 
-	const runtime = runtimeStub();
-	const environment: ProjectReferenceEnvironment = {
-		runtime,
-		activeContext: usageContext,
-		activeSource: usageSource,
-		activeLines: usageLines,
-		codeTabContexts: [usageContext],
-		listResources: () => [usageDescriptor, globalDescriptor],
-		loadLuaResource: (asset_id: string) => {
-			if (asset_id === 'usage') return usageSource;
-			if (asset_id === 'global') return globalSource;
-			throw new Error(`Unexpected asset ${asset_id}`);
-		},
-	};
-
+	const bridge = createIntellisenseBridge({ 'global.lua': globalSource });
 	const stateRow = usageLines.findIndex(line => line.includes('print(state'));
 	const stateColumn = usageLines[stateRow]!.indexOf('state');
 	const symbolInfo = createLuaSemanticFrontendFromSnapshot(workspace.getSnapshot()).findReferencesByPosition('usage.lua', stateRow + 1, stateColumn + 1);
@@ -743,13 +644,14 @@ test('intellisense recognizes global variable from another file', async () => {
 		documentVersion: 1,
 	};
 
-	const catalog = buildReferenceCatalogForExpression({
+	const catalog = buildReferenceCatalogForExpression(bridge, {
 		workspace,
 		info,
 		source: usageSource,
 		lines: usageLines,
 		path: 'usage.lua',
-		environment,
+		activeContext: usageContext,
+		codeTabContexts: [usageContext],
 	});
 
 	const diagnostics = buildLuaSemanticFrontend(

@@ -1,5 +1,5 @@
 import { machineManager } from '../../../../machine/ts/core/machine_manager';
-import { toggleBreakpointForEditorRow } from '../../../workbench/contrib/debugger/controller';
+import type { BreakpointController } from '../../../workbench/contrib/debugger/controller';
 import { resolvePointerRow } from '../../../editor/ui/view/view';
 import type { CodeAreaBounds } from '../../../editor/ui/view/view';
 import { openEditorContextMenuFromPointer } from '../context_menu/input';
@@ -20,12 +20,18 @@ export function handleCodeAreaSecondaryPointer(
 	return true;
 }
 
-export function handleCodeAreaGutterPointer(snapshot: PointerSnapshot, justPressed: boolean, inGutter: boolean, bounds: CodeAreaBounds): boolean {
+export function handleCodeAreaGutterPointer(
+	breakpoints: BreakpointController,
+	snapshot: PointerSnapshot,
+	justPressed: boolean,
+	inGutter: boolean,
+	bounds: CodeAreaBounds,
+): boolean {
 	if (!justPressed || !inGutter) {
 		return false;
 	}
 	const targetRow = resolvePointerRow(snapshot.viewportY, bounds);
-	if (!toggleBreakpointForEditorRow(targetRow)) {
+	if (!breakpoints.toggleBreakpointForEditorRow(targetRow)) {
 		return false;
 	}
 	stopPointerSelectionAndResetClicks(snapshot);

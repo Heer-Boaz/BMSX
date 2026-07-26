@@ -1,30 +1,33 @@
-import { runtimeWorkbenchState } from '../runtime/workbench_state';
 import { machineManager } from '../../machine/ts/core/machine_manager';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import { applyWorkspaceOverridesToRegistry } from '../workspace/workspace';
-import * as workbenchMode from './mode';
-import { deactivateEditor } from './overlay_modes';
-import { handleLuaError } from './runtime_errors';
 import { clearRuntimeFault } from '../runtime/fault_state';
 import { bootActiveBlua32Media } from '../runtime/lua_pipeline';
 import { enterSystemSources } from '../runtime/sources';
-import { renderPresentationState } from '../runtime/presentation_state';
+import type { RuntimeIdeState } from '../runtime/state';
+import type { RuntimeSourceState } from '../runtime/sources';
+import type { RuntimeFaultState } from '../runtime/fault_state';
+import type { RuntimeNativeBridge } from '../runtime/native_bridge';
+import type { CartEditor } from '../cart_editor';
+import type { GateGroup } from '../../machine/ts/common/taskgate';
+import type { OverlayRenderer } from '../runtime/overlay_renderer';
+import { applyWorkspaceOverridesToRegistry } from '../workspace/workspace';
+import { deactivateEditor } from './overlay_modes';
+import { handleLuaError } from './runtime_errors';
 
-async function applyBlua32MediaOverrides(): Promise<boolean> {
-	const sources = runtimeWorkbenchState.sources;
+async function applyBlua32MediaOverrides(sources: RuntimeSourceState): Promise<boolean> {
 	for (let slot = 0; slot < sources.cartridgeSlots.length; slot += 1) {
 		const cartridge = sources.cartridgeSlots[slot];
-		if (cartridge === null || !cartridge.projectRootPath) {
+		if (!cartridge || !cartridge.projectRootPath) {
 			continue;
 		}
-		await applyWorkspaceOverridesToRegistry({
+		await applyWorkspaceOverridesToRegistry(sources, {
 			registry: cartridge.luaSources,
 			storage: machineManager.platform.storage,
 			includeServer: true,
 			projectRootPath: cartridge.projectRootPath,
 		});
 	}
-	await applyWorkspaceOverridesToRegistry({
+	await applyWorkspaceOverridesToRegistry(sources, {
 		registry: sources.systemLuaSources,
 		storage: machineManager.platform.storage,
 		includeServer: true,
@@ -35,70 +38,104 @@ async function applyBlua32MediaOverrides(): Promise<boolean> {
 		|| sources.cartridgeBlua32MediaDirty[1];
 }
 
-export async function startPreparedRuntime(runtime: Runtime): Promise<void> {
-	const rebuildBlua32Media = await applyBlua32MediaOverrides();
-	const sources = runtimeWorkbenchState.sources;
-	const viewport = machineManager.view.viewportSize;
-	workbenchMode.initializeIdeFeatures(runtime, { width: viewport.x, height: viewport.y });
-	enterSystemSources(sources);
-	await bootPreparedBlua32Media(runtime, rebuildBlua32Media);
+export async function startPreparedRuntime(state: RuntimeIdeState, runtime: Runtime): Promise<void> {
+	const rebuildBlua32Media = await applyBlua32MediaOverrides(state.sources);
+	enterSystemSources(state.sources);
+	await bootPreparedBlua32Media(
+		state.sources,
+		state.fault,
+		state.nativeBridge,
+		state.editor,
+		state.luaGate,
+		runtime,
+		rebuildBlua32Media,
+	);
 }
 
-async function prepareRebootToBootRom(runtime: Runtime): Promise<boolean> {
-	clearBootFaults(runtime);
-	deactivateEditor();
-	clearLuaBootState(runtime);
-	const rebuildBlua32Media = await applyBlua32MediaOverrides();
-	const sources = runtimeWorkbenchState.sources;
+async function prepareRebootToBootRom(
+	sources: RuntimeSourceState,
+	fault: RuntimeFaultState,
+	editor: CartEditor,
+	overlayRenderer: OverlayRenderer,
+	runtime: Runtime,
+): Promise<boolean> {
+	clearRuntimeFault(fault, runtime);
+	deactivateEditor(editor, overlayRenderer);
+	clearLuaBootState(editor, runtime);
+	const rebuildBlua32Media = await applyBlua32MediaOverrides(sources);
 	enterSystemSources(sources);
 	return rebuildBlua32Media;
 }
 
-export async function rebootPreparedRuntime(runtime: Runtime): Promise<void> {
-	const state = runtimeWorkbenchState.ide;
-	const gateToken = state.luaGate.begin({ blocking: true, tag: 'reboot_bootrom' });
+export async function rebootPreparedRuntime(
+	sources: RuntimeSourceState,
+	fault: RuntimeFaultState,
+	nativeBridge: RuntimeNativeBridge,
+	editor: CartEditor,
+	luaGate: GateGroup,
+	overlayRenderer: OverlayRenderer,
+	runtime: Runtime,
+): Promise<void> {
+	const gateToken = luaGate.begin({ blocking: true, tag: 'reboot_bootrom' });
 	try {
-		renderPresentationState.reset();
-		state.overlayDrawFrameOwner = null;
-		state.overlayRenderer.abandonFrame();
+		overlayRenderer.abandonFrame();
 		await machineManager.resetRuntime();
-		const rebuildBlua32Media = await prepareRebootToBootRom(runtime);
+		const rebuildBlua32Media = await prepareRebootToBootRom(
+			sources,
+			fault,
+			editor,
+			overlayRenderer,
+			runtime,
+		);
 		machineManager.bootstrapStartupAudio();
 		try {
-			bootActiveBlua32Media(runtime, rebuildBlua32Media);
+			bootActiveBlua32Media(
+				sources,
+				fault,
+				nativeBridge,
+				runtime,
+				rebuildBlua32Media,
+			);
 		} catch (error) {
-			handleLuaError(runtime, error);
+			handleLuaError(fault, sources, runtime, error);
 			throw error;
 		}
 		machineManager.flushSystemOutput(runtime);
 	} finally {
-		state.luaGate.end(gateToken);
+		luaGate.end(gateToken);
 	}
 }
 
-async function bootPreparedBlua32Media(runtime: Runtime, rebuildBlua32Media: boolean): Promise<void> {
-	const gateToken = runtimeWorkbenchState.ide.luaGate.begin({ blocking: true, tag: 'boot' });
+async function bootPreparedBlua32Media(
+	sources: RuntimeSourceState,
+	fault: RuntimeFaultState,
+	nativeBridge: RuntimeNativeBridge,
+	editor: CartEditor,
+	luaGate: GateGroup,
+	runtime: Runtime,
+	rebuildBlua32Media: boolean,
+): Promise<void> {
+	const gateToken = luaGate.begin({ blocking: true, tag: 'boot' });
 	try {
 		runtime.hostFault.clear();
-		clearBootFaults(runtime);
-		clearLuaBootState(runtime);
-		bootActiveBlua32Media(runtime, rebuildBlua32Media);
-	}
-	catch (error) {
-		handleLuaError(runtime, error);
+		clearRuntimeFault(fault, runtime);
+		clearLuaBootState(editor, runtime);
+		bootActiveBlua32Media(
+			sources,
+			fault,
+			nativeBridge,
+			runtime,
+			rebuildBlua32Media,
+		);
+	} catch (error) {
+		handleLuaError(fault, sources, runtime, error);
 		throw new Error(`failed to boot runtime: ${error}`);
-	}
-	finally {
-		runtimeWorkbenchState.ide.luaGate.end(gateToken);
+	} finally {
+		luaGate.end(gateToken);
 	}
 }
 
-function clearBootFaults(runtime: Runtime): void {
-	workbenchMode.clearActiveDebuggerPause(runtime);
-	clearRuntimeFault(runtime);
-}
-
-function clearLuaBootState(runtime: Runtime): void {
+function clearLuaBootState(editor: CartEditor, runtime: Runtime): void {
 	runtime.luaInitialized = false;
-	runtimeWorkbenchState.ide.editor.clearRuntimeErrorOverlay();
+	editor.clearRuntimeErrorOverlay();
 }

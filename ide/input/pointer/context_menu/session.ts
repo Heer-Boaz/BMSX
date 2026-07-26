@@ -6,13 +6,19 @@ import { editorContextMenuState } from '../../../workbench/contrib/context_menu/
 import { closeEditorContextMenu, findEditorContextMenuEntryAt, layoutEditorContextMenu, openEditorContextMenu, updateEditorContextMenuHover } from '../../../workbench/contrib/context_menu/widget';
 import { executeEditorContextMenuAction } from '../../../workbench/contrib/context_menu/actions';
 import { getActiveCodeTabContext, isEditableCodeTab } from '../../../workbench/ui/code_tab/contexts';
+import type { CartEditor } from '../../../cart_editor';
 
 export const CONTEXT_MENU_POINTER_IGNORED = 0;
 export const CONTEXT_MENU_POINTER_HANDLED = 1;
 export const CONTEXT_MENU_POINTER_CONSUME_PRIMARY = 2;
 export const CONTEXT_MENU_POINTER_CONSUME_SECONDARY = 3;
 
-export function handleEditorContextMenuPointerSession(snapshot: PointerSnapshot, justPressed: boolean, secondaryJustPressed: boolean): number {
+export function handleEditorContextMenuPointerSession(
+	editor: CartEditor,
+	snapshot: PointerSnapshot,
+	justPressed: boolean,
+	secondaryJustPressed: boolean,
+): number {
 	const menu = editorContextMenuState;
 	if (!menu.visible) {
 		return CONTEXT_MENU_POINTER_IGNORED;
@@ -40,7 +46,7 @@ export function handleEditorContextMenuPointerSession(snapshot: PointerSnapshot,
 	if (!entry.enabled) {
 		return CONTEXT_MENU_POINTER_HANDLED;
 	}
-	executeEditorContextMenuAction(entry.action, token);
+	executeEditorContextMenuAction(editor, editor.commands, entry.action, token);
 	return CONTEXT_MENU_POINTER_CONSUME_PRIMARY;
 }
 

@@ -1,4 +1,4 @@
-import { runtimeWorkbenchState } from '../../../runtime/workbench_state';
+import type { CartEditor } from '../../../cart_editor';
 import { cycleTab } from '../../ui/tabs';
 import { isCodeTabActive } from '../../ui/code_tab/contexts';
 import { selectAllSingleCursor } from '../../../editor/editing/cursor/state';
@@ -8,60 +8,60 @@ import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isS
 import { isInlineWidgetFocused } from '../../../quick_input/inline_widget';
 import { editorDocumentState } from '../../../editor/editing/document_state';
 
-function handleCreateResourceBinding(): boolean {
+function handleCreateResourceBinding(editor: CartEditor): boolean {
 	if (!(isCtrlDown() || isMetaDown()) || !isKeyJustPressed('KeyN')) {
 		return false;
 	}
 	consumeIdeKey('KeyN');
-	runtimeWorkbenchState.ide.editor.commands.execute('createResource');
+	editor.commands.execute('createResource');
 	return true;
 }
 
-function handleGlobalFindBinding(): boolean {
+function handleGlobalFindBinding(editor: CartEditor): boolean {
 	if (!(isCtrlDown() || isMetaDown()) || !isShiftDown() || isAltDown() || !isKeyJustPressed('KeyF')) {
 		return false;
 	}
 	consumeIdeKey('KeyF');
-	runtimeWorkbenchState.ide.editor.commands.execute('findGlobal');
+	editor.commands.execute('findGlobal');
 	return true;
 }
 
-function handleLocalFindBinding(): boolean {
+function handleLocalFindBinding(editor: CartEditor): boolean {
 	if (!(isCtrlDown() || isMetaDown()) || isShiftDown() || isAltDown() || !isKeyJustPressed('KeyF')) {
 		return false;
 	}
 	consumeIdeKey('KeyF');
-	runtimeWorkbenchState.ide.editor.commands.execute('findLocal');
+	editor.commands.execute('findLocal');
 	return true;
 }
 
-function handleCycleTabBinding(): boolean {
+function handleCycleTabBinding(editor: CartEditor): boolean {
 	if (!(isCtrlDown() || isMetaDown()) || !isKeyJustPressed('Tab')) {
 		return false;
 	}
 	consumeIdeKey('Tab');
-	cycleTab(isShiftDown() ? -1 : 1);
+	cycleTab(editor.resourcePanel, isShiftDown() ? -1 : 1);
 	return true;
 }
 
-function handleDefinitionAndReferenceBinding(): boolean {
+function handleDefinitionAndReferenceBinding(editor: CartEditor): boolean {
 	if (isInlineWidgetFocused() || !isKeyJustPressed('F12')) {
 		return false;
 	}
 	consumeIdeKey('F12');
 	if (isShiftDown()) {
-		runtimeWorkbenchState.ide.editor.commands.execute('referenceSearch');
+		editor.commands.execute('referenceSearch');
 		return true;
 	}
-	runtimeWorkbenchState.ide.editor.commands.execute('goToDefinition');
+	editor.commands.execute('goToDefinition');
 	return true;
 }
 
-function handleSelectAllBinding(): boolean {
+function handleSelectAllBinding(editor: CartEditor): boolean {
 	if (!(isCtrlDown() || isMetaDown()) || isInlineWidgetFocused() || !isCodeTabActive() || !isKeyJustPressed('KeyA')) {
 		return false;
 	}
-	if (runtimeWorkbenchState.ide.editor.resourcePanel.isFocused()) {
+	if (editor.resourcePanel.isFocused()) {
 		return false;
 	}
 	consumeIdeKey('KeyA');
@@ -74,21 +74,21 @@ function handleSelectAllBinding(): boolean {
 	return true;
 }
 
-function handleLineJumpBinding(): boolean {
+function handleLineJumpBinding(editor: CartEditor): boolean {
 	if (!(isCtrlDown() || isMetaDown()) || !isKeyJustPressed('KeyL')) {
 		return false;
 	}
 	consumeIdeKey('KeyL');
-	runtimeWorkbenchState.ide.editor.commands.execute('lineJump');
+	editor.commands.execute('lineJump');
 	return true;
 }
 
-export function handleEditorPromptBindings(): boolean {
-	return handleCreateResourceBinding()
-		|| handleGlobalFindBinding()
-		|| handleLocalFindBinding()
-		|| handleCycleTabBinding()
-		|| handleDefinitionAndReferenceBinding()
-		|| handleSelectAllBinding()
-		|| handleLineJumpBinding();
+export function handleEditorPromptBindings(editor: CartEditor): boolean {
+	return handleCreateResourceBinding(editor)
+		|| handleGlobalFindBinding(editor)
+		|| handleLocalFindBinding(editor)
+		|| handleCycleTabBinding(editor)
+		|| handleDefinitionAndReferenceBinding(editor)
+		|| handleSelectAllBinding(editor)
+		|| handleLineJumpBinding(editor);
 }

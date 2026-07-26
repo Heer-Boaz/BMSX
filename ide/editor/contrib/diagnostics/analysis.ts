@@ -1,12 +1,18 @@
-import type { LuaBuiltinDescriptor, LuaSymbolEntry } from '../../../../machine/ts/lua/semantic_contracts';
 import type { EditorDiagnostic } from '../../../common/models';
-import { computeLuaDiagnostics, getApiCompletionData } from '../intellisense/engine';
+import {
+	computeLuaDiagnostics,
+	getApiCompletionData,
+	listGlobalLuaSymbols,
+	listLuaBuiltinFunctions,
+	listLuaSymbols,
+} from '../intellisense/engine';
 import { getCachedLuaParse } from '../../../../machine/ts/lua/analysis/cache';
 import { editorRuntimeState } from '../../common/runtime_state';
 import { diagnosticsDebounceMs, editorDiagnosticsState } from './state';
 import { cacheRuntimeSemanticParseState } from '../intellisense/semantic/workspace/runtime';
 import { getCodeTabContexts } from '../../../workbench/ui/code_tab/contexts';
 import type { ResourceDomain } from '../../../common/resource';
+import type { RuntimeNativeBridge } from '../../../runtime/native_bridge';
 
 export type DiagnosticContextInput = {
 	id: string;
@@ -17,18 +23,12 @@ export type DiagnosticContextInput = {
 	version: number;
 };
 
-export type DiagnosticProviders = {
-	listLocalSymbols(domain: ResourceDomain, path: string): LuaSymbolEntry[];
-	listGlobalSymbols(domain: ResourceDomain): LuaSymbolEntry[];
-	listBuiltins(): LuaBuiltinDescriptor[];
-};
-
 export function computeAggregatedEditorDiagnostics(
+	bridge: RuntimeNativeBridge,
 	contexts: ReadonlyArray<DiagnosticContextInput>,
-	providers: DiagnosticProviders,
 ): EditorDiagnostic[] {
 	if (contexts.length === 0) return [];
-	const builtinDescriptors = providers.listBuiltins();
+	const builtinDescriptors = listLuaBuiltinFunctions();
 	const apiData = getApiCompletionData();
 
 	const aggregated: EditorDiagnostic[] = [];
@@ -36,7 +36,7 @@ export function computeAggregatedEditorDiagnostics(
 		const ctx = contexts[i];
 		const path = ctx.path;
 		const source = ctx.source;
-		const globalSymbols = providers.listGlobalSymbols(ctx.domain);
+		const globalSymbols = listGlobalLuaSymbols(bridge, ctx.domain);
 		const parseEntry = getCachedLuaParse({
 			path,
 			source,
@@ -46,8 +46,8 @@ export function computeAggregatedEditorDiagnostics(
 		const baseLines = parseEntry.lines;
 		const parsed = parseEntry.parsed;
 		cacheRuntimeSemanticParseState(ctx.domain, path, source, baseLines, parsed);
-		const localSymbols = providers.listLocalSymbols(ctx.domain, path);
-		const luaDiagnostics = computeLuaDiagnostics({
+		const localSymbols = listLuaSymbols(bridge, ctx.domain, path);
+		const luaDiagnostics = computeLuaDiagnostics(bridge, {
 			source,
 			domain: ctx.domain,
 			path,

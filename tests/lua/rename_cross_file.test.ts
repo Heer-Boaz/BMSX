@@ -11,7 +11,7 @@ import { codeTabSessionState } from '../../ide/workbench/ui/code_tab/session_sta
 import { tabSessionState } from '../../ide/workbench/ui/tab/session_state';
 import { SYSTEM_RESOURCE_DOMAIN } from '../../ide/common/resource';
 import { registerLuaSourceRecord, type LuaSourceRegistry } from '../../machine/ts/lua/source_registry';
-import { runtimeWorkbenchState } from '../../ide/runtime/workbench_state';
+import { createTestRuntimeSourceState } from '../helpers/runtime_sources';
 
 function codeContext(descriptor: ResourceDescriptor, source: string): CodeTabContext {
 	const buffer = new PieceTreeBuffer(source);
@@ -56,10 +56,6 @@ test('cross file rename updates an existing code tab and semantic workspace', ()
 	]);
 	const mainSource = files.get('main.lua')!;
 	const usageSource = files.get('usage.lua')!;
-
-	const workspace = new LuaSemanticWorkspace();
-	workspace.updateFile('main.lua', mainSource);
-	workspace.updateFile('usage.lua', usageSource);
 	const registry: LuaSourceRegistry = {
 		records: [],
 		path2lua: {},
@@ -77,17 +73,19 @@ test('cross file rename updates an existing code tab and semantic workspace', ()
 		module_path: 'usage',
 		src: usageSource,
 		base_src: usageSource,
+		base_update_timestamp: 0,
 		update_timestamp: 0,
+		generated: false,
 	});
-	runtimeWorkbenchState.sources = {
-		systemLuaSources: registry,
-		activeLuaSources: registry,
-		activeCartridgeSlot: SYSTEM_RESOURCE_DOMAIN,
-		cartridgeSlots: [null, null],
-		luaSourceRegistries: [registry],
-		moduleCompileLuaSources: [registry],
-	};
+	const sources = createTestRuntimeSourceState(
+		registry,
+		[null, null],
+		SYSTEM_RESOURCE_DOMAIN,
+	);
 
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('main.lua', mainSource);
+	workspace.updateFile('usage.lua', usageSource);
 	clearCodeTabContexts();
 	tabSessionState.tabs.length = 0;
 	codeTabSessionState.activeContextId = null;
@@ -119,7 +117,7 @@ test('cross file rename updates an existing code tab and semantic workspace', ()
 		.map(ref => ref.range);
 	assert.ok(otherRanges.length > 0);
 
-	const manager = new CrossFileRenameManager();
+	const manager = new CrossFileRenameManager(sources);
 	const replacements = manager.applyRenameToChunk(
 		SYSTEM_RESOURCE_DOMAIN,
 		'usage.lua',

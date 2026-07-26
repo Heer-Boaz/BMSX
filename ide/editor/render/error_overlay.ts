@@ -3,7 +3,7 @@ import type { EditorFont } from '../ui/view/font';
 import { drawEditorText } from './text_renderer';
 import { computeRuntimeErrorOverlayMaxWidth, ensureVisualLines, measureText, writeWrappedOverlayLine } from '../common/text/layout';
 import type { RuntimeErrorDetails, RuntimeErrorOverlay } from '../../common/models';
-import type { StackTraceFrame } from '../../../machine/ts/lua/value';
+import type { StackTraceFrame } from '../../language/lua/interpreter/value';
 import type { RectBounds } from '../../../machine/ts/rompack/format';
 import { point_in_rect } from '../../../machine/ts/common/rect';
 import { api } from '../../runtime/overlay_api';

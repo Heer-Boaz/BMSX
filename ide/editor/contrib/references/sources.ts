@@ -1,67 +1,48 @@
 import { clamp } from '../../../../machine/ts/common/clamp';
-import type { LuaDefinitionLocation, LuaSymbolEntry } from '../../../../machine/ts/lua/semantic_contracts';
+import type { LuaDefinitionLocation } from '../../../../machine/ts/lua/semantic_contracts';
 import {
 	SYSTEM_RESOURCE_DOMAIN,
-	type ResourceDescriptor,
 } from '../../../common/resource';
-import type { CodeTabContext, SearchMatch, SymbolSearchResult } from '../../../common/models';
+import type { CodeTabContext, SearchMatch, SymbolCatalogEntry, SymbolSearchResult } from '../../../common/models';
 import { parseLuaIdentifierChain } from '../../../language/lua/identifier_chain';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
 import { createEditorSemanticFrontend } from '../intellisense/frontend';
 import { LuaSemanticWorkspace } from '../intellisense/semantic/workspace/index';
 import { syncSemanticWorkspacePaths, type SemanticWorkspacePathInput } from '../intellisense/semantic/workspace/state';
-import { ReferenceState, type ReferenceMatchInfo } from './state';
+import type { ReferenceMatchInfo } from './state';
 import { splitText } from '../../../../machine/ts/common/text_lines';
 import { getLinesSnapshot, getTextSnapshot } from '../../text/source_text';
 import { listResources } from '../../../workspace/workspace';
 import type { Decl, LuaSemanticWorkspaceSnapshot } from '../../../../machine/ts/lua/semantic/model';
 import { computeSourceLabel } from '../../../common/paths';
-import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
-
-export type ProjectReferenceEnvironment = {
-	runtime: Runtime;
-	activeContext: CodeTabContext;
-	activeSource: string;
-	activeLines: readonly string[];
-	codeTabContexts: Iterable<CodeTabContext>;
-	listResources?: () => ResourceDescriptor[];
-	loadLuaResource?: (asset_id: string) => string;
-};
-
-export type ReferenceSymbolEntry = LuaSymbolEntry & {
-	__referenceMatch: SearchMatch;
-	__referenceIndex: number;
-	__referenceColumn: number;
-};
-
-export type ReferenceCatalogEntry = {
-	symbol: ReferenceSymbolEntry;
-	displayName: string;
-	searchKey: string;
-	line: number;
-	kindLabel: string;
-	sourceLabel: string;
-};
+import type { RuntimeNativeBridge } from '../../../runtime/native_bridge';
 
 type FileMetadata = {
 	path: string;
 	lines: readonly string[];
 	sourceLabel: string;
-	asset_id?: string;
 };
 
-export function buildReferenceCatalogForExpression(options: {
+export function buildReferenceCatalogForExpression(bridge: RuntimeNativeBridge, options: {
 	workspace: LuaSemanticWorkspace;
 	info: ReferenceMatchInfo;
 	source: string;
 	lines: readonly string[];
 	path: string;
-	environment: ProjectReferenceEnvironment;
-}): ReferenceCatalogEntry[] {
-	const { metadata, frontend } = prepareProjectSemanticFrontend(options.workspace, options.environment, options.path, options.source, options.lines);
-	const entries: ReferenceCatalogEntry[] = [];
+	activeContext: CodeTabContext;
+	codeTabContexts: Iterable<CodeTabContext>;
+}): SymbolCatalogEntry[] {
+	const { metadata, frontend } = prepareProjectSemanticFrontend(
+		bridge,
+		options.workspace,
+		options.activeContext,
+		options.codeTabContexts,
+		options.path,
+		options.source,
+		options.lines,
+	);
+	const entries: SymbolCatalogEntry[] = [];
 	const existingKeys = new Set<string>();
-	let nextIndex = 0;
 
 	const baseMeta = metadata.get(options.path);
 	if (baseMeta) {
@@ -80,10 +61,8 @@ export function buildReferenceCatalogForExpression(options: {
 					},
 				},
 				expression: options.info.expression,
-				referenceIndex: nextIndex,
 			});
 			appendCatalogEntry(entries, existingKeys, entry);
-			nextIndex += 1;
 		}
 	}
 
@@ -96,12 +75,10 @@ export function buildReferenceCatalogForExpression(options: {
 				const entry = createCatalogEntry({
 					meta,
 					match,
-					location: toDefinitionLocation(decl.range, meta.asset_id),
+					location: toDefinitionLocation(decl.range),
 					expression: options.info.expression,
-					referenceIndex: nextIndex,
 				});
 				appendCatalogEntry(entries, existingKeys, entry);
-				nextIndex += 1;
 			}
 		}
 	}
@@ -120,19 +97,18 @@ export function buildReferenceCatalogForExpression(options: {
 		const entry = createCatalogEntry({
 			meta,
 			match,
-			location: toDefinitionLocation(reference.range, meta.asset_id),
+			location: toDefinitionLocation(reference.range),
 			expression: options.info.expression,
-			referenceIndex: nextIndex,
 		});
 		appendCatalogEntry(entries, existingKeys, entry);
-		nextIndex += 1;
 	}
 	return entries;
 }
 
-export function resolveDefinitionLocationForExpression(options: {
+export function resolveDefinitionLocationForExpression(bridge: RuntimeNativeBridge, options: {
 	expression: string;
-	environment: ProjectReferenceEnvironment;
+	activeContext: CodeTabContext;
+	codeTabContexts: Iterable<CodeTabContext>;
 	workspace: LuaSemanticWorkspace;
 	currentPath: string;
 	currentSource: string;
@@ -142,7 +118,15 @@ export function resolveDefinitionLocationForExpression(options: {
 	if (!namePath || namePath.length === 0) {
 		return null;
 	}
-	const { metadata, frontend } = prepareProjectSemanticFrontend(options.workspace, options.environment, options.currentPath, options.currentSource, options.currentLines);
+	const { frontend } = prepareProjectSemanticFrontend(
+		bridge,
+		options.workspace,
+		options.activeContext,
+		options.codeTabContexts,
+		options.currentPath,
+		options.currentSource,
+		options.currentLines,
+	);
 	const candidates = frontend.findDeclarationsByNamePath(namePath);
 	let best: Decl = null;
 	let bestScore = Number.NEGATIVE_INFINITY;
@@ -157,14 +141,13 @@ export function resolveDefinitionLocationForExpression(options: {
 	if (!best) {
 		return null;
 	}
-	const meta = metadata.get(best.file);
-	return toDefinitionLocation(best.range, meta?.asset_id);
+	return toDefinitionLocation(best.range);
 }
 
 export function filterReferenceCatalog(options: {
-	catalog: readonly ReferenceCatalogEntry[];
+	catalog: readonly SymbolCatalogEntry[];
 	query: string;
-	state: ReferenceState;
+	activeCatalogIndex: number;
 	pageSize: number;
 }): {
 	matches: SymbolSearchResult[];
@@ -177,19 +160,24 @@ export function filterReferenceCatalog(options: {
 		const entry = options.catalog[index];
 		const matchIndex = normalized.length === 0 ? 0 : entry.searchKey.indexOf(normalized);
 		if (normalized.length === 0 || matchIndex !== -1) {
-			matches.push({ entry, matchIndex: matchIndex === -1 ? Number.MAX_SAFE_INTEGER : matchIndex });
+			matches.push({
+				entry,
+				matchIndex: matchIndex === -1 ? Number.MAX_SAFE_INTEGER : matchIndex,
+				catalogIndex: index,
+			});
 		}
 	}
 	if (matches.length === 0) {
-		options.state.setActiveIndex(-1);
 		return { matches: [], selectionIndex: -1, displayOffset: 0 };
 	}
 	matches.sort(compareReferenceSearchResult);
-	let selectionIndex = options.state.getActiveIndex();
-	if (selectionIndex < 0 || selectionIndex >= matches.length) {
-		selectionIndex = 0;
+	let selectionIndex = 0;
+	for (let index = 0; index < matches.length; index += 1) {
+		if (matches[index].catalogIndex === options.activeCatalogIndex) {
+			selectionIndex = index;
+			break;
+		}
 	}
-	options.state.setActiveIndex(selectionIndex);
 	// start value-or-boundary -- reference result window offset is bounded once against the current filtered list.
 	let displayOffset = clamp(selectionIndex - Math.floor(options.pageSize / 2), 0, Math.max(0, matches.length - options.pageSize));
 	// end value-or-boundary
@@ -200,8 +188,10 @@ export function filterReferenceCatalog(options: {
 }
 
 function prepareProjectSemanticFrontend(
+	bridge: RuntimeNativeBridge,
 	workspace: LuaSemanticWorkspace,
-	environment: ProjectReferenceEnvironment,
+	activeContext: CodeTabContext,
+	codeTabContexts: Iterable<CodeTabContext>,
 	currentPath: string,
 	currentSource: string,
 	currentLines: readonly string[],
@@ -214,13 +204,13 @@ function prepareProjectSemanticFrontend(
 	const inputs: SemanticWorkspacePathInput[] = [];
 	registerProjectFile(inputs, metadata, currentPath, currentSource, currentLines);
 
-	const activeDomain = environment.activeContext.descriptor.domain;
+	const activeDomain = activeContext.descriptor.domain;
 	const sourceDomains = activeDomain === SYSTEM_RESOURCE_DOMAIN
 		? [activeDomain]
 		: [activeDomain, SYSTEM_RESOURCE_DOMAIN] as const;
 	for (let domainIndex = 0; domainIndex < sourceDomains.length; domainIndex += 1) {
 		const domain = sourceDomains[domainIndex];
-		for (const context of environment.codeTabContexts) {
+		for (const context of codeTabContexts) {
 			if (context.descriptor.domain !== domain) {
 				continue;
 			}
@@ -228,17 +218,17 @@ function prepareProjectSemanticFrontend(
 			if (metadata.has(path)) {
 				continue;
 			}
-			const source = context === environment.activeContext
-				? environment.activeSource
+			const source = context === activeContext
+				? currentSource
 				: getTextSnapshot(context.buffer);
-			const lines = context === environment.activeContext
-				? environment.activeLines
+			const lines = context === activeContext
+				? currentLines
 				: getLinesSnapshot(context.buffer);
 			registerProjectFile(inputs, metadata, path, source, lines);
 		}
 	}
 
-	const resources = environment.listResources ? environment.listResources() : listResources();
+	const resources = listResources(bridge.sources);
 	for (let domainIndex = 0; domainIndex < sourceDomains.length; domainIndex += 1) {
 		const domain = sourceDomains[domainIndex];
 		for (let index = 0; index < resources.length; index += 1) {
@@ -248,11 +238,9 @@ function prepareProjectSemanticFrontend(
 				|| metadata.has(descriptor.path)) {
 				continue;
 			}
-			const source = environment.loadLuaResource && descriptor.asset_id
-				? environment.loadLuaResource(descriptor.asset_id)
-				: luaPipeline.resourceSourceForChunk(descriptor);
+			const source = luaPipeline.resourceSourceForChunk(bridge.sources, descriptor);
 			const lines = splitText(source);
-			registerProjectFile(inputs, metadata, descriptor.path, source, lines, descriptor.asset_id);
+			registerProjectFile(inputs, metadata, descriptor.path, source, lines);
 		}
 	}
 	const snapshot = syncSemanticWorkspacePaths(inputs, workspace);
@@ -260,7 +248,7 @@ function prepareProjectSemanticFrontend(
 	return {
 		metadata,
 		snapshot,
-		frontend: createEditorSemanticFrontend(snapshot),
+		frontend: createEditorSemanticFrontend(bridge, snapshot),
 	};
 }
 
@@ -270,7 +258,6 @@ function registerProjectFile(
 	path: string,
 	source: string,
 	lines: readonly string[],
-	asset_id?: string,
 ): void {
 	if (metadata.has(path)) {
 		return;
@@ -280,15 +267,13 @@ function registerProjectFile(
 		path,
 		lines,
 		sourceLabel: computeSourceLabel(path),
-		asset_id,
 	});
 }
 
 function toDefinitionLocation(
 	range: { path: string; start: { line: number; column: number }; end: { line: number; column: number } },
-	asset_id?: string,
 ): LuaDefinitionLocation {
-	const location = {
+	return {
 		path: range.path,
 		range: {
 			startLine: range.start.line,
@@ -296,11 +281,7 @@ function toDefinitionLocation(
 			endLine: range.end.line,
 			endColumn: range.end.column,
 		},
-	} as LuaDefinitionLocation & { asset_id?: string };
-	if (asset_id) {
-		location.asset_id = asset_id;
-	}
-	return location;
+	};
 }
 
 function rangeToSearchMatch(
@@ -321,8 +302,7 @@ function createCatalogEntry(args: {
 	match: SearchMatch;
 	location: LuaDefinitionLocation;
 	expression: string;
-	referenceIndex: number;
-}): ReferenceCatalogEntry {
+}): SymbolCatalogEntry {
 	const snippet = buildReferenceSnippet(args.meta.lines, args.match);
 	const symbolName = args.expression.length > 0 ? args.expression : snippet;
 	return {
@@ -331,9 +311,6 @@ function createCatalogEntry(args: {
 			path: args.meta.sourceLabel,
 			kind: 'assignment',
 			location: args.location,
-			__referenceMatch: args.match,
-			__referenceIndex: args.referenceIndex,
-			__referenceColumn: args.match.start + 1,
 		},
 		displayName: snippet,
 		searchKey: [snippet, symbolName, args.meta.sourceLabel].join(' ').trim(),
@@ -351,7 +328,7 @@ function buildReferenceSnippet(lines: readonly string[], match: SearchMatch): st
 	return snippet.length > 0 ? snippet : line.trim();
 }
 
-function appendCatalogEntry(entries: ReferenceCatalogEntry[], existingKeys: Set<string>, entry: ReferenceCatalogEntry): void {
+function appendCatalogEntry(entries: SymbolCatalogEntry[], existingKeys: Set<string>, entry: SymbolCatalogEntry): void {
 	const key = `${entry.symbol.location.path}:${entry.symbol.location.range.startLine}:${entry.symbol.location.range.startColumn}`;
 	if (existingKeys.has(key)) {
 		return;
@@ -392,13 +369,13 @@ function compareReferenceSearchResult(left: SymbolSearchResult, right: SymbolSea
 	if (left.matchIndex !== right.matchIndex) {
 		return left.matchIndex - right.matchIndex;
 	}
-	const leftSymbol = left.entry.symbol as ReferenceSymbolEntry;
-	const rightSymbol = right.entry.symbol as ReferenceSymbolEntry;
+	const leftSymbol = left.entry.symbol;
+	const rightSymbol = right.entry.symbol;
 	if (leftSymbol.location.range.startLine !== rightSymbol.location.range.startLine) {
 		return leftSymbol.location.range.startLine - rightSymbol.location.range.startLine;
 	}
-	if (leftSymbol.__referenceColumn !== rightSymbol.__referenceColumn) {
-		return leftSymbol.__referenceColumn - rightSymbol.__referenceColumn;
+	if (leftSymbol.location.range.startColumn !== rightSymbol.location.range.startColumn) {
+		return leftSymbol.location.range.startColumn - rightSymbol.location.range.startColumn;
 	}
 	return left.entry.displayName.localeCompare(right.entry.displayName);
 }

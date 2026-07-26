@@ -1,11 +1,13 @@
-import { RectRenderKind, TextAlign, TextBaseline, type GlyphRenderSubmission, type RectRenderSubmission } from '../render/shared/submissions';
-import { LAYER_2D_IDE } from '../render/shared/layers';
-import type { Host2DKind, Host2DRef } from '../render/shared/submissions';
-import { machineManager } from './machine_manager';
-import { Input } from '../input/manager';
-import type { PlayerInput } from '../input/player';
-import type { DeviceQuantizeMode } from '../render/post/device_quantize/mode';
-import { clearHostMenuFrame, publishHostMenuFrame, type HostMenuFrame } from '../render/host_overlay/overlay_queue';
+import { RectRenderKind, TextAlign, TextBaseline, type GlyphRenderSubmission, type RectRenderSubmission } from '../machine/ts/render/shared/submissions';
+import { LAYER_2D_IDE } from '../machine/ts/render/shared/layers';
+import type { Host2DKind, Host2DRef } from '../machine/ts/render/shared/submissions';
+import { machineManager } from '../machine/ts/core/machine_manager';
+import { Input } from '../machine/ts/input/manager';
+import type { PlayerInput } from '../machine/ts/input/player';
+import type { DeviceQuantizeMode } from '../machine/ts/render/post/device_quantize/mode';
+import { clearHostMenuFrame, publishHostMenuFrame, type HostMenuFrame } from '../machine/ts/render/host_overlay/overlay_queue';
+import type { RuntimeIdeState } from '../ide/runtime/state';
+import { rebootPreparedRuntime } from '../ide/workbench/blua32_boot';
 
 type HostMenuValue = {
 	readonly label: string;
@@ -19,10 +21,15 @@ type HostMenuValueOption = {
 	setIndex(index: number): void;
 };
 
+const enum HostMenuAction {
+	RebootCart,
+	ExitGame,
+}
+
 type HostMenuActionOption = {
 	readonly kind: 'action';
 	readonly label: string;
-	execute(): void;
+	readonly action: HostMenuAction;
 };
 
 type HostMenuOption = HostMenuValueOption | HostMenuActionOption;
@@ -267,16 +274,16 @@ export class HostOverlayMenu {
 		{
 			kind: 'action',
 			label: 'REBOOT CART',
-			execute: () => { void machineManager.rebootToBootRom(); },
+			action: HostMenuAction.RebootCart,
 		},
 		{
 			kind: 'action',
 			label: 'EXIT GAME',
-			execute: () => { machineManager.platform.requestShutdown(); },
+			action: HostMenuAction.ExitGame,
 		},
 	];
 
-	constructor() {
+	public constructor(private readonly ide: RuntimeIdeState) {
 		this.optionGlyphs = new Array(this.options.length);
 		for (let index = 0; index < this.options.length; index += 1) {
 			this.optionGlyphs[index] = { x: 0, y: 0, z: 922, items: '', item_start: 0, item_end: 0, font: null, color: COLOR_TEXT, has_background_color: false, background_color: 0xff000000, wrap_chars: 0, center_block_width: 0, align: TextAlign.Start, baseline: TextBaseline.Alphabetic, layer: LAYER_2D_IDE };
@@ -455,13 +462,13 @@ export class HostOverlayMenu {
 		return queued;
 	}
 
-	private queueUsageBar(index: number, used: number, total: number, font: NonNullable<GlyphRenderSubmission['font']>, colorOverride?: number): void {
+	private queueUsageBar(index: number, used: number, total: number, font: NonNullable<GlyphRenderSubmission['font']>): void {
 		const ratio = used / total;
 		const fillWidth = usageFillWidth(used, total);
 		const fill = this.usageBarFills[index];
 		const percentCode = usagePercentCode(used, total);
 		fill.area.right = USAGE_BAR_X + fillWidth;
-		fill.color = colorOverride === undefined ? usageColor(ratio) : colorOverride;
+		fill.color = usageColor(ratio);
 		this.usageLabels[index].font = font;
 		const pct = this.usagePercents[index];
 		pct.font = font;
@@ -505,7 +512,21 @@ export class HostOverlayMenu {
 
 	private executeAction(option: HostMenuActionOption): void {
 		this.close();
-		option.execute();
+		switch (option.action) {
+			case HostMenuAction.RebootCart:
+				void rebootPreparedRuntime(
+					this.ide.sources,
+					this.ide.fault,
+					this.ide.nativeBridge,
+					this.ide.editor,
+					this.ide.luaGate,
+					this.ide.overlayRenderer,
+					machineManager.runtime,
+				);
+				return;
+			case HostMenuAction.ExitGame:
+				machineManager.platform.requestShutdown();
+		}
 	}
 
 	private close(): void {
@@ -529,5 +550,3 @@ export class HostOverlayMenu {
 		this.dirtyText = false;
 	}
 }
-
-export const hostOverlayMenu = new HostOverlayMenu();

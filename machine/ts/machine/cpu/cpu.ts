@@ -85,7 +85,6 @@ import {
 	createDecodedInstructionPage,
 	type Blua32ExecutionImage,
 	type Blua32RuntimeFunction,
-	type CpuInstructionTrace,
 	type DecodedInstructionPage,
 	type TableLoadInlineCache,
 } from './execution_image';
@@ -137,7 +136,7 @@ function createNativeObject(hashId: number, raw: object, handlers: {
 export type CpuFrameSnapshot = {
 	functionAddress: number;
 	functionIndex: number;
-	slot: number;
+	slot: ExecutionDomainId;
 	textAddress: number;
 	pc: number;
 	registers: Value[];
@@ -146,7 +145,7 @@ export type CpuFrameSnapshot = {
 export type CpuCallStackEntry = {
 	functionAddress: number;
 	functionIndex: number;
-	slot: number;
+	slot: ExecutionDomainId;
 	textAddress: number;
 	pc: number;
 };
@@ -265,12 +264,16 @@ const enum TableIndexKeyKind {
 
 export type CpuRawFrameContinuation = {
 	frameIndex: number;
-	slot: number;
+	slot: ExecutionDomainId;
 	functionIndex: number;
 	pc: number;
 	callSitePc: number | null;
 	epcWord: number | null;
 	nmiReturnEpcWord: number | null;
+};
+
+export type CpuExecutionObserver = {
+	onInstruction(executionDomainId: ExecutionDomainId, pc: number, opcode: number): void;
 };
 
 // Pool constant for frame reuse
@@ -314,7 +317,7 @@ export class CPU {
 	private arrayNativeArgsScratchIndex = 0;
 	private readonly debugRegistersScratch: Value[] = [];
 	private readonly nativeReturnScratch = new ScratchArrayStack<Value>();
-	private instructionTrace: CpuInstructionTrace | null = null;
+	private executionObserver: CpuExecutionObserver | null = null;
 	private externalReturnSink: Value[] | null = null;
 	private readonly executionAddressSpace: ExecutionAddressSpace;
 	private readonly executionImages: Blua32ExecutionImage[] = [];
@@ -840,12 +843,8 @@ export class CPU {
 		}
 	}
 
-	public currentExecutionImages(): readonly Blua32ExecutionImage[] {
-		return this.executionImages;
-	}
-
-	public setInstructionTrace(trace: CpuInstructionTrace | null): void {
-		this.instructionTrace = trace;
+	public setExecutionObserver(observer: CpuExecutionObserver | null): void {
+		this.executionObserver = observer;
 	}
 
 	private exceptionOwnerFrameIndices(): { epcOwnerFrameIndex: number; nmiReturnEpcOwnerFrameIndex: number } {
@@ -1305,7 +1304,7 @@ export class CPU {
 	public runUntilDepth(targetDepth: number, instructionBudget: number): RunResult {
 		this.instructionBudgetRemaining = instructionBudget;
 		const frames = this.frames;
-		const instructionTrace = this.instructionTrace;
+		const executionObserver = this.executionObserver;
 		const baseCycles = BASE_CYCLES;
 		while (frames.length > targetDepth) {
 			try {
@@ -1345,8 +1344,8 @@ export class CPU {
 					frame.pc = pc + (width * INSTRUCTION_BYTES);
 					this.lastPc = pc + ((width - 1) * INSTRUCTION_BYTES);
 					this.lastInstruction = page.words[pageOffset];
-					if (instructionTrace !== null) {
-						instructionTrace.recordInstruction(image, wordIndex, op);
+					if (executionObserver) {
+						executionObserver.onInstruction(image.executionDomainId, pc, op);
 					}
 					this.instructionBudgetRemaining -= baseCycles[op];
 					this.executeInstruction(
@@ -1429,7 +1428,7 @@ export class CPU {
 			this.hardHalt();
 			return;
 		}
-		const instructionTrace = this.instructionTrace;
+		const executionObserver = this.executionObserver;
 		const page = this.decodedPageAt(image, wordIndex);
 		const pageOffset = wordIndex & DECODED_PAGE_MASK;
 		const width = page.widths[pageOffset];
@@ -1438,8 +1437,8 @@ export class CPU {
 		frame.pc = pc + (width * INSTRUCTION_BYTES);
 		this.lastPc = pc + ((width - 1) * INSTRUCTION_BYTES);
 		this.lastInstruction = page.words[pageOffset];
-		if (instructionTrace !== null) {
-			instructionTrace.recordInstruction(image, wordIndex, op);
+		if (executionObserver) {
+			executionObserver.onInstruction(image.executionDomainId, pc, op);
 		}
 		this.charge(BASE_CYCLES[op]);
 		try {
@@ -1469,7 +1468,7 @@ export class CPU {
 
 	public getDebugState(): {
 		image: Blua32ImageLayout | null;
-		slot: number;
+		slot: ExecutionDomainId;
 		pc: number;
 		instr: number;
 		registers: Value[];

@@ -1,4 +1,4 @@
-import { runtimeWorkbenchState } from '../../runtime/workbench_state';
+import type { CartEditor } from '../../cart_editor';
 import { setCursorPosition } from '../../editor/ui/view/caret/caret';
 import { setSingleCursorSelectionAnchor } from '../../editor/editing/cursor/state';
 import { focusEditorFromSearch } from '../../editor/contrib/find/search';
@@ -9,18 +9,18 @@ import { focusEditorFromResourceSearch } from '../contrib/resources/search/index
 import { focusEditorFromSymbolSearch } from '../../editor/contrib/symbols/shared';
 import { editorDocumentState } from '../../editor/editing/document_state';
 
-export function focusPrimaryEditorSurface(): void {
+export function focusPrimaryEditorSurface(editor: CartEditor): void {
 	clearReferenceHighlights();
-	runtimeWorkbenchState.ide.editor.resourcePanel.setFocused(false);
+	editor.resourcePanel.setFocused(false);
 	focusEditorFromLineJump();
 	focusEditorFromSearch();
 	focusEditorFromResourceSearch();
 	focusEditorFromSymbolSearch();
-	runtimeWorkbenchState.ide.editor.completion.closeSession();
+	editor.completion.closeSession();
 }
 
-export function focusEditorAtPosition(row: number, column: number): void {
-	focusPrimaryEditorSurface();
+export function focusEditorAtPosition(editor: CartEditor, row: number, column: number): void {
+	focusPrimaryEditorSurface(editor);
 	setSingleCursorSelectionAnchor(editorDocumentState, row, column);
 	setCursorPosition(row, column);
 	resetBlink();

@@ -20,6 +20,7 @@ import { drawProblemsPanelSurface } from './render';
 import { handleProblemsPanelKeyboardInput } from './keyboard';
 import { handleProblemsPanelNavigationCommand, type ProblemsPanelCommand } from './navigation';
 import { handleProblemsPanelPointerInput, handleProblemsPanelWheelInput } from './pointer';
+import type { ResourcePanelController } from '../../resources/panel/controller';
 
 export {
 	getProblemsPanelBounds,
@@ -164,20 +165,29 @@ export class ProblemsPanelController {
 		);
 	}
 
-	public handlePointer(snapshot: PointerSnapshot, justPressed: boolean, _justReleased: boolean, bounds: RectBounds): boolean {
-		return handleProblemsPanelPointerInput(this, snapshot, justPressed, bounds);
+	public handlePointer(
+		resourcePanel: ResourcePanelController,
+		snapshot: PointerSnapshot,
+		justPressed: boolean,
+		_justReleased: boolean,
+		bounds: RectBounds,
+	): boolean {
+		return handleProblemsPanelPointerInput(this, resourcePanel, snapshot, justPressed, bounds);
 	}
 
 	public handlePointerWheel(direction: number, steps: number): boolean {
 		return handleProblemsPanelWheelInput(this, direction, steps);
 	}
 
-	public handleKeyboard(): void {
-		handleProblemsPanelKeyboardInput(this);
+	public handleKeyboard(resourcePanel: ResourcePanelController): void {
+		handleProblemsPanelKeyboardInput(this, resourcePanel);
 	}
 
-	public handleKeyboardCommand(command: ProblemsPanelCommand): boolean {
-		return handleProblemsPanelNavigationCommand(this, command);
+	public handleKeyboardCommand(
+		resourcePanel: ResourcePanelController,
+		command: ProblemsPanelCommand,
+	): boolean {
+		return handleProblemsPanelNavigationCommand(this, resourcePanel, command);
 	}
 
 	public setFixedHeightPx(height: number): void { this.fixedHeightPx = height > 0 ? height : null; this.cachedLayout = null; }

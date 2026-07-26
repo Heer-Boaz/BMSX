@@ -79,6 +79,17 @@ auto decodeBlua32BootHeader(std::span<const u8> bytes) -> Blua32BootHeader {
 	return header;
 }
 
+auto decodeBlua32RomImage(std::span<const u8> bytes, u32 romBaseAddress) -> std::optional<Blua32ImageLayout> {
+	const Blua32BootHeader boot = decodeBlua32BootHeader(bytes);
+	if (boot.imageOffset == 0u) {
+		return std::nullopt;
+	}
+	return decodeBlua32Image(
+		bytes.subspan(boot.imageOffset, boot.imageByteCount),
+		romBaseAddress + boot.imageOffset
+	);
+}
+
 auto decodeBlua32Image(std::span<const u8> bytes, u32 imageAddress) -> Blua32ImageLayout {
 	if (bytes.size() < BLUA32_IMAGE_HEADER_SIZE) {
 		throw BMSX_RUNTIME_ERROR("BLua32 image is smaller than its header.");

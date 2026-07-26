@@ -3,7 +3,7 @@ import type {
 	RuntimeErrorOverlay,
 	RuntimeErrorOverlayLineDescriptor
 } from '../../../common/models';
-import type { StackTraceFrame } from '../../../../machine/ts/lua/value';
+import type { StackTraceFrame } from '../../../language/lua/interpreter/value';
 import { collectRuntimeStackFrames, formatRuntimeStackFrame } from '../../../common/runtime_error_format';
 import { setActiveRuntimeErrorOverlay } from './navigation';
 import { runtimeErrorState } from './state';

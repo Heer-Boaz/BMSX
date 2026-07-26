@@ -1,16 +1,22 @@
-import { runtimeWorkbenchState } from '../../../runtime/workbench_state';
+import type { IdeCommandController } from '../../../commands/controller';
+import type { CartEditor } from '../../../cart_editor';
 import { focusEditorAtPosition } from '../../ui/focus';
 import { writeClipboard } from '../../../editor/editing/text_editing_and_selection';
 import type { EditorContextMenuAction, EditorContextToken } from '../../../common/models';
 
-export function executeEditorContextMenuAction(action: EditorContextMenuAction, token: EditorContextToken): void {
+export function executeEditorContextMenuAction(
+	editor: CartEditor,
+	commands: IdeCommandController,
+	action: EditorContextMenuAction,
+	token: EditorContextToken,
+): void {
 	switch (action) {
 		case 'goToDefinition':
 			case 'referenceSearch':
 			case 'callHierarchy':
 			case 'rename':
-				focusEditorAtPosition(token.row, token.startColumn);
-				runtimeWorkbenchState.ide.editor.commands.execute(action);
+				focusEditorAtPosition(editor, token.row, token.startColumn);
+				commands.execute(action);
 				return;
 		case 'copy_token':
 			void writeClipboard(token.expression ?? token.text, 'Copied token to clipboard');

@@ -1,4 +1,4 @@
-import { runtimeWorkbenchState } from '../../../runtime/workbench_state';
+import type { RuntimeSourceState } from '../../../runtime/sources';
 import { clamp } from '../../../../machine/ts/common/clamp';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
 import type { ResourceDescriptor } from '../../../common/resource';
@@ -38,7 +38,7 @@ const resourceViewerLayout: ResourceViewerLayout = {
 	textCapacity: 0,
 };
 
-export function buildResourceViewerState(descriptor: ResourceDescriptor): ResourceViewerState {
+export function buildResourceViewerState(sources: RuntimeSourceState, descriptor: ResourceDescriptor): ResourceViewerState {
 	const title = computeResourceTabTitle(descriptor);
 	const lines: string[] = [
 		`Path: ${descriptor.path || '<none>'}`,
@@ -53,11 +53,11 @@ export function buildResourceViewerState(descriptor: ResourceDescriptor): Resour
 		scroll: 0,
 	};
 	let error: string = null;
-	const activePackage = runtimeWorkbenchState.sources.activePackage;
+	const activePackage = sources.activePackage;
 	lines.push('');
 	switch (descriptor.type) {
 		case 'lua': {
-			const source = luaPipeline.resourceSourceForChunk(descriptor);
+			const source = luaPipeline.resourceSourceForChunk(sources, descriptor);
 			appendResourceViewerLine(lines, '-- Lua Source --');
 			lines.push('');
 			appendTextLines(lines, source);

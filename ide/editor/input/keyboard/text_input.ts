@@ -1,17 +1,18 @@
 import { machineManager } from '../../../../machine/ts/core/machine_manager';
 import { insertText } from '../../editing/text_editing_and_selection';
-import { handleEditorDebuggerInput } from '../../../input/keyboard/debug_input';
+import { handleEditorBreakpointInput } from '../../../input/keyboard/debug_input';
 import { handleEditorNavigationKeys } from './navigation_input';
 import { handleEditorEditingKeys } from './editing_input';
 import { handleEditorCharacterInput } from './character_input';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown } from '../../../input/keyboard/key_input';
+import type { CartEditor } from '../../../cart_editor';
 
 export class InputController {
-	public handleEditorInput(): void {
-		if (handleEditorDebuggerInput()) {
+	public handleEditorInput(editor: CartEditor): void {
+		if (handleEditorBreakpointInput(editor.breakpoints)) {
 			return;
 		}
-		handleEditorNavigationKeys();
+		handleEditorNavigationKeys(editor.navigation);
 		handleEditorEditingKeys();
 		const ctrlDown = isCtrlDown();
 		const metaDown = isMetaDown();

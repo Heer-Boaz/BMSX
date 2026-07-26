@@ -1,7 +1,7 @@
 import * as constants from '../../../../common/constants';
 import { showEditorMessage } from '../../../../common/feedback_state';
 import type { ReferenceMatchInfo } from '../state';
-import type { CodeTabContext } from '../../../../common/models';
+import type { CodeTabContext, SymbolCatalogEntry } from '../../../../common/models';
 import { symbolSearchPageSize } from '../../../ui/view/view';
 import { getLinesSnapshot, getTextSnapshot } from '../../../text/source_text';
 import { editorDocumentState } from '../../../editing/document_state';
@@ -11,30 +11,22 @@ import { referenceState } from '../state';
 import {
 	buildReferenceCatalogForExpression as buildProjectReferenceCatalog,
 	filterReferenceCatalog,
-	type ProjectReferenceEnvironment,
-	type ReferenceCatalogEntry,
 } from '../sources';
 import { getOrCreateSemanticWorkspace } from '../../intellisense/semantic/workspace/state';
-import type { Runtime } from '../../../../../machine/ts/machine/runtime/runtime';
+import type { RuntimeNativeBridge } from '../../../../runtime/native_bridge';
 
-export function buildReferenceSearchCatalog(runtime: Runtime, info: ReferenceMatchInfo, context: CodeTabContext): ReferenceCatalogEntry[] {
+export function buildReferenceSearchCatalog(bridge: RuntimeNativeBridge, info: ReferenceMatchInfo, context: CodeTabContext): SymbolCatalogEntry[] {
 	const path = context.descriptor.path;
 	const activeSource = getTextSnapshot(editorDocumentState.buffer);
 	const activeLines = getLinesSnapshot(editorDocumentState.buffer);
-	const environment: ProjectReferenceEnvironment = {
-		runtime,
-		activeContext: context,
-		activeSource,
-		activeLines,
-		codeTabContexts: getCodeTabContexts(),
-	};
-	return buildProjectReferenceCatalog({
+	return buildProjectReferenceCatalog(bridge, {
 		workspace: getOrCreateSemanticWorkspace(context.descriptor.domain),
 		info,
 		source: activeSource,
 		lines: activeLines,
 		path,
-		environment,
+		activeContext: context,
+		codeTabContexts: getCodeTabContexts(),
 	});
 }
 
@@ -42,7 +34,7 @@ export function updateReferenceSearchMatches(): void {
 	const { matches, selectionIndex, displayOffset } = filterReferenceCatalog({
 		catalog: symbolSearchState.referenceCatalog,
 		query: symbolSearchState.query,
-		state: referenceState,
+		activeCatalogIndex: referenceState.getActiveIndex(),
 		pageSize: symbolSearchPageSize(),
 	});
 	symbolSearchState.matches = matches;

@@ -4,7 +4,7 @@ import {
 	LuaUnaryOperator,
 	LuaTableFieldKind,
 	LuaAssignmentOperator,
-} from './syntax/ast';
+} from '../../../../machine/ts/lua/syntax/ast';
 import type {
 	LuaAssignableExpression,
 	LuaAssignmentStatement,
@@ -34,10 +34,17 @@ import type {
 	LuaWhileStatement,
 	LuaSourceRange,
 	LuaDefinitionInfo,
-} from './syntax/ast';
+} from '../../../../machine/ts/lua/syntax/ast';
 import { LuaEnvironment } from './environment';
-import { LuaRuntimeError, LuaSyntaxError } from './errors';
-import { LuaFunctionValue, LuaValue, LuaTable, LuaNativeValue, type LuaCallResult, isLuaCallSignal, isLuaFunctionValue } from './value';
+import { LuaRuntimeError, LuaSyntaxError } from '../../../../machine/ts/lua/errors';
+import {
+	LuaFunctionValue,
+	LuaValue,
+	LuaTable,
+	LuaNativeValue,
+	type LuaCallResult,
+	isLuaFunctionValue,
+} from './value';
 import {
 	createLuaNativeMemberHandle,
 	createLuaTable,
@@ -48,15 +55,13 @@ import {
 	resolveNativeTypeName,
 	type LuaNativeMemberHandle
 } from './value';
-import { LuaDebuggerController, type LuaDebuggerPauseReason } from './debugger';
 import { isLuaHandlerFunction } from './handler_cache';
 import type { LuaInteropAdapter } from './interop';
-import { getCachedLuaParse } from './analysis/cache';
-import { ScratchBuffer } from '../common/scratchbuffer';
-import { luaModulo } from './numeric';
+import { getCachedLuaParse } from '../../../../machine/ts/lua/analysis/cache';
+import { ScratchBuffer } from '../../../../machine/ts/common/scratchbuffer';
+import { luaModulo } from '../../../../machine/ts/lua/numeric';
 
 type ExecutionFrame = any;
-type StatementsFrame = any;
 type LabelScope = any;
 type FrameBoundary = 'path' | 'function';
 type LuaInstruction = any;
@@ -75,8 +80,7 @@ const NIL_VALUE_RESULT: LuaValue[] = Object.freeze([null]) as unknown as LuaValu
 export const enum SliceResult {
 	Done = 0,
 	Yield = 1,
-	Pause = 2,
-	Fault = 3,
+	Fault = 2,
 }
 
 export type ExecutionSignal =
@@ -90,18 +94,8 @@ export type ExecutionSignal =
 		readonly callStack: ReadonlyArray<LuaCallFrame>;
 		readonly resume: (instructionBudget: number) => ExecutionSignal;
 	}
-	| {
-		readonly kind: 'pause';
-		readonly reason: LuaDebuggerPauseReason;
-		readonly location: { path: string; line: number; column: number };
-		readonly callStack: ReadonlyArray<LuaCallFrame>;
-		readonly exception?: LuaRuntimeError | LuaSyntaxError;
-		readonly message?: string;
-		readonly toString?: () => string;
-		readonly resume: () => ExecutionSignal;
-	};
+	;
 
-type PauseSignal = Extract<ExecutionSignal, { kind: 'pause' }>;
 type YieldSignal = Extract<ExecutionSignal, { kind: 'yield' }>;
 type MutableYieldSignal = {
 	kind: 'yield';
@@ -138,7 +132,6 @@ const RETURN_SIGNAL: ExecutionSignal = Object.freeze({ kind: 'return' } as const
 export class LuaExecutionThread {
 	private readonly runImpl: (instructionBudget: number | null) => ExecutionSignal;
 	private yielded: YieldSignal = null;
-	private paused: PauseSignal = null;
 	private fault: Error = null;
 
 	constructor(runImpl: (instructionBudget: number | null) => ExecutionSignal) {
@@ -179,9 +172,6 @@ export class LuaExecutionThread {
 			case 'yield':
 				this.yielded = signal as YieldSignal;
 				return SliceResult.Yield;
-			case 'pause':
-				this.paused = signal as PauseSignal;
-				return SliceResult.Pause;
 			default:
 				return SliceResult.Done;
 		}
@@ -191,20 +181,12 @@ export class LuaExecutionThread {
 		return this.yielded !== null;
 	}
 
-	public takePause(): PauseSignal {
-		const signal = this.paused;
-		this.paused = null;
-		return signal;
-	}
-
 	public takeFault(): Error {
 		const fault = this.fault;
 		this.fault = null;
 		return fault;
 	}
 }
-
-export type LuaExceptionResumeStrategy = 'propagate' | 'skip_statement';
 
 export class LuaNativeFunction implements LuaFunctionValue {
 	public readonly name: string;
@@ -261,13 +243,9 @@ export class LuaInterpreter {
 	private _pathEnvironment: LuaEnvironment = null;
 	private readonly pathDefinitions: Map<string, ReadonlyArray<LuaDefinitionInfo>> = new Map();
 	private _lastFaultEnvironment: LuaEnvironment = null;
-	private _debuggerController: LuaDebuggerController = null;
 	private _lastFaultCallStack: LuaCallFrame[] = [];
 	private valueNameCache = new WeakMap<object | Function, string>();
 	private lastFaultDepth: number = 0;
-	private _pendingDebuggerException: LuaRuntimeError | LuaSyntaxError = null;
-	private _exceptionResumeStrategy: LuaExceptionResumeStrategy = 'propagate';
-	private pendingExceptionFrame: { frame: StatementsFrame; index: number } = null;
 	private yieldTargetDepth = 0;
 	private readonly yieldLocation = { path: '<path>', line: 0, column: 0 };
 	private readonly yieldSignal: MutableYieldSignal;
@@ -292,7 +270,6 @@ export class LuaInterpreter {
 	private programCounterStack: number[] = [];
 	private lastStatementRange: LuaSourceRange = null;
 	private activeStatementRange: LuaSourceRange = null;
-	private activeStatementFrame: StatementsFrame = null;
 
 	public constructor(adapter: LuaInteropAdapter) {
 		this.globals = LuaEnvironment.createRoot();
@@ -342,14 +319,6 @@ export class LuaInterpreter {
 
 	public set hostAdapter(adapter: LuaInteropAdapter) {
 		this.adapter = adapter;
-	}
-
-	public attachDebugger(controller: LuaDebuggerController): void {
-		this._debuggerController = controller;
-	}
-
-	public get debuggerController(): LuaDebuggerController | null {
-		return this._debuggerController;
 	}
 
 	public get packageLoadedTable(): LuaTable {
@@ -500,18 +469,6 @@ export class LuaInterpreter {
 			if (signal !== null && signal.kind === 'goto') {
 				throw this.runtimeErrorAt(signal.originRange, `Label '${signal.label}' not found.`);
 			}
-			if (signal !== null && signal.kind === 'pause') {
-				suspended = true;
-				return this.wrapPauseSignal(signal, (resumed) => {
-					if (resumed !== null && resumed.kind === 'pause') {
-						return resumed;
-					}
-					if (resumed !== null && resumed.kind === 'yield') {
-						return this.wrapYieldSignal(resumed as YieldSignal, context);
-					}
-					return this.handleChunkContinuation(resumed, context);
-				});
-			}
 			if (signal !== null && signal.kind === 'yield') {
 				suspended = true;
 				return this.wrapYieldSignal(signal as YieldSignal, context);
@@ -606,14 +563,6 @@ export class LuaInterpreter {
 		}
 	}
 
-	public get pendingDebuggerException(): LuaRuntimeError | LuaSyntaxError {
-		return this._pendingDebuggerException;
-	}
-
-	public set debuggerResumeStrategy(strategy: LuaExceptionResumeStrategy) {
-		this._exceptionResumeStrategy = strategy;
-	}
-
 	public recordFaultCallStack(): void {
 		const depth = this.callStack.length;
 		if (depth === 0) {
@@ -644,14 +593,7 @@ export class LuaInterpreter {
 		if (this._lastFaultCallStack.length > 0 && snapshotDepth < this.lastFaultDepth) {
 			return;
 		}
-		const controller = this._debuggerController;
-		const decorated = controller ? controller.decorateCallStack(snapshot, { consume: false }) : snapshot;
-		this._lastFaultCallStack = decorated.map(frame => ({
-			functionName: frame.functionName,
-			source: frame.source,
-			line: frame.line,
-			column: frame.column,
-		}));
+		this._lastFaultCallStack = snapshot;
 		this.lastFaultDepth = snapshotDepth;
 	}
 
@@ -715,18 +657,11 @@ export class LuaInterpreter {
 				} catch (error) {
 					if (error instanceof LuaRuntimeError || error instanceof LuaSyntaxError) {
 						this.markFaultEnvironment();
-						this.markPendingException(error);
-						const range = this.activeStatementRange ?? this.lastStatementRange ?? this.fallbackSourceRange();
-						const pause = this.createPauseSignal('exception', range, error);
-						return this.bindPauseResume(pause, targetDepth);
 					}
 					throw error;
 				} finally {
 					this.luaValueListScratchIndex = scratchIndex;
 					this.luaTableListScratchIndex = tableScratchIndex;
-				}
-				if (signal !== null && signal.kind === 'pause') {
-					return this.bindPauseResume(signal as PauseSignal, targetDepth);
 				}
 				if (signal === null) {
 					if (this.instructionBudgetRemaining !== null && this.instructionBudgetRemaining <= 0) {
@@ -735,9 +670,6 @@ export class LuaInterpreter {
 					continue;
 				}
 				const processed = this.processSignal(signal);
-				if (processed !== null && processed.kind === 'pause') {
-					return this.bindPauseResume(processed as PauseSignal, targetDepth);
-				}
 				if (processed === null) {
 					if (this.instructionBudgetRemaining !== null && this.instructionBudgetRemaining <= 0) {
 						return this.createYieldSignal(targetDepth);
@@ -759,9 +691,6 @@ export class LuaInterpreter {
 		while (true) {
 			if (current === null) {
 				return NORMAL_SIGNAL;
-			}
-			if (current.kind === 'pause') {
-				return current;
 			}
 			if (current.kind === 'return') {
 				this.popUntilBoundary();
@@ -792,29 +721,7 @@ export class LuaInterpreter {
 			line: frame.line,
 			column: frame.column,
 		}));
-		const controller = this._debuggerController;
-		const decorated = controller ? controller.decorateCallStack(snapshot, { consume: true }) : snapshot;
-		return decorated.map(frame => ({
-			functionName: frame.functionName,
-			source: frame.source,
-			line: frame.line,
-			column: frame.column,
-		}));
-	}
-
-	public createPauseSignal(reason: LuaDebuggerPauseReason, range: LuaSourceRange, exception: LuaRuntimeError | LuaSyntaxError = null): PauseSignal {
-		const location = { path: range.path, line: range.start.line, column: range.start.column };
-		const message = exception ? exception.message : `${reason} at ${location.path}:${location.line}:${location.column}`;
-		return {
-			kind: 'pause',
-			reason,
-			location,
-			callStack: this.snapshotCallStack(),
-			exception,
-			message,
-			toString: () => message,
-			resume: () => NORMAL_SIGNAL,
-		};
+		return snapshot;
 	}
 
 	private createYieldSignal(targetDepth: number): YieldSignal {
@@ -825,25 +732,6 @@ export class LuaInterpreter {
 		this.yieldLocation.column = range.start.column;
 		this.yieldSignal.callStack = this.snapshotCallStack();
 		return this.yieldSignal;
-	}
-
-	private wrapPauseSignal(signal: PauseSignal, continuation: (resumed: ExecutionSignal) => ExecutionSignal): PauseSignal {
-		return {
-			kind: 'pause',
-			reason: signal.reason,
-			location: signal.location,
-			callStack: signal.callStack,
-			exception: signal.exception,
-			message: signal.message,
-			toString: signal.toString,
-			resume: () => {
-				const resumed = signal.resume();
-				if (resumed !== null && resumed.kind === 'pause') {
-					return resumed;
-				}
-				return continuation(resumed);
-			},
-		};
 	}
 
 	private wrapYieldSignal(signal: YieldSignal, context: ChunkExecutionContext): YieldSignal {
@@ -859,52 +747,6 @@ export class LuaInterpreter {
 				return this.handleChunkContinuation(resumed, context);
 			},
 		};
-	}
-
-	private bindPauseResume(signal: PauseSignal, targetDepth: number): ExecutionSignal {
-		return {
-			kind: 'pause',
-			reason: signal.reason,
-			location: signal.location,
-			callStack: signal.callStack,
-			exception: signal.exception,
-			message: signal.message,
-			toString: signal.toString,
-			resume: () => this.resumeFromPause(targetDepth),
-		};
-	}
-
-	public resumeFromPause(targetDepth: number): ExecutionSignal {
-		const pending = this._pendingDebuggerException;
-		const strategy = this._exceptionResumeStrategy;
-		this._pendingDebuggerException = null;
-		this._exceptionResumeStrategy = 'propagate';
-		if (pending !== null) {
-			if (strategy === 'propagate') {
-				this.pendingExceptionFrame = null;
-				throw pending;
-			}
-			if (strategy === 'skip_statement') {
-				this.skipPendingExceptionFrame();
-			}
-		}
-		return this.runFrameLoop(targetDepth);
-	}
-
-	public markPendingException(error: LuaRuntimeError | LuaSyntaxError): void {
-		this._pendingDebuggerException = error;
-		const frame = this.activeStatementFrame;
-		this.pendingExceptionFrame = frame ? { frame, index: frame.index } : null;
-	}
-
-	private skipPendingExceptionFrame(): void {
-		if (this.pendingExceptionFrame !== null) {
-			const { frame, index } = this.pendingExceptionFrame;
-			if (this.frameStack.includes(frame)) {
-				frame.index = index + 1;
-			}
-			this.pendingExceptionFrame = null;
-		}
 	}
 
 	private finalizeFunctionExecution(startingDepth: number): void {
@@ -1295,9 +1137,6 @@ export class LuaInterpreter {
 					const lenArgs = this.allocateValueList();
 					lenArgs.push(operand);
 					const metamethodResult = this.invokeMetamethod(operand, '__len', lenArgs);
-					if (isLuaCallSignal(metamethodResult)) {
-						return metamethodResult as any;
-					}
 					if (metamethodResult !== null) {
 						const first = metamethodResult.length > 0 ? metamethodResult[0] : null;
 						return this.expectNumber(first, 'Metamethod __len must return a number.', expression.range);
@@ -1529,10 +1368,7 @@ export class LuaInterpreter {
 			args.push(receiver);
 			args.push(key);
 			args.push(value);
-			const result = functionValue.call(args);
-			if (isLuaCallSignal(result)) {
-				return;
-			}
+			functionValue.call(args);
 		}
 
 		private getTableValueWithMetamethod(table: LuaTable, key: LuaValue, range: LuaSourceRange): LuaValue {
@@ -1904,9 +1740,6 @@ export class LuaInterpreter {
 			args.push(left);
 			args.push(right);
 			const result = handler.call(args);
-			if (isLuaCallSignal(result)) {
-				return result as any;
-			}
 			const first = result.length > 0 ? result[0] : null;
 			return this.expectBoolean(first, '__eq metamethod must return a boolean.', expression.range);
 		}
@@ -1938,9 +1771,6 @@ export class LuaInterpreter {
 			args.push(metaLeft);
 			args.push(metaRight);
 			const result = handler.call(args);
-			if (isLuaCallSignal(result)) {
-				return result as any;
-			}
 			const first = result.length > 0 ? result[0] : null;
 			return this.expectBoolean(first, LuaInterpreter.buildMetamethodMustReturnBooleanMessage, metamethodName, expression.range);
 		}
@@ -2033,9 +1863,6 @@ export class LuaInterpreter {
 	}
 
 	private firstCallValue(result: LuaCallResult): LuaValue {
-		if (isLuaCallSignal(result)) {
-			return result as any;
-		}
 		return result.length > 0 ? result[0] : null;
 	}
 
@@ -2055,9 +1882,6 @@ export class LuaInterpreter {
 	}
 
 	private protectedCallSuccess(result: LuaCallResult): LuaCallResult {
-		if (isLuaCallSignal(result)) {
-			return result;
-		}
 		const values = this.allocateValueList();
 		values.push(true);
 		for (let index = 0; index < result.length; index += 1) {
@@ -2662,11 +2486,7 @@ export class LuaInterpreter {
 				});
 
 				try {
-					const result = functionValue.call(args);
-					if (isLuaCallSignal(result)) {
-						return result as any;
-					}
-					return result;
+					return functionValue.call(args);
 				} catch (error) {
 					this.recordFaultCallStack();
 					throw error;
@@ -2696,8 +2516,8 @@ export class LuaInterpreter {
 	public createFunctionExecutionThread(functionValue: LuaFunctionValue, args: ReadonlyArray<LuaValue>): LuaExecutionThread {
 		if (functionValue instanceof LuaNativeFunction) {
 			return new LuaExecutionThread(() => {
-				const result = functionValue.call(args);
-				return isLuaCallSignal(result) ? result : NORMAL_SIGNAL;
+				functionValue.call(args);
+				return NORMAL_SIGNAL;
 			});
 		}
 		if (functionValue instanceof LuaScriptFunction) {
@@ -2758,8 +2578,8 @@ export class LuaInterpreter {
 		}
 
 		return new LuaExecutionThread(() => {
-			const result = functionValue.call(args);
-			return isLuaCallSignal(result) ? result : NORMAL_SIGNAL;
+			functionValue.call(args);
+			return NORMAL_SIGNAL;
 		});
 	}
 
@@ -2778,33 +2598,14 @@ export class LuaInterpreter {
 			callRange,
 			callName: name,
 		});
-		let suspended = false;
 		try {
 			const signal = this.runFrameLoop(startingDepth);
-			if (signal?.kind === 'pause') {
-				suspended = true;
-				return this.wrapPauseSignal(signal, (resumed) => {
-					if (!resumed) return resumed;
-					switch (resumed.kind) {
-						case 'return':
-							return resumed;
-						case 'break':
-							throw this.runtimeErrorAt(expression.range, `Cannot break from function '${name}'.`);
-						case 'goto':
-							throw this.runtimeErrorAt(resumed.originRange, `Label '${resumed.label}' not found in function '${name}'.`);
-						default:
-							return resumed;
-					}
-				});
-			}
 			return this.resolveFunctionSignal(signal, expression, name);
 		} catch (error) {
 			this.recordFaultCallStack();
 			throw error;
 		} finally {
-			if (!suspended) {
-				this.finalizeFunctionExecution(startingDepth);
-			}
+			this.finalizeFunctionExecution(startingDepth);
 		}
 	}
 
@@ -3123,9 +2924,6 @@ export class LuaInterpreter {
 				const handlerArgs = this.allocateValueList();
 				handlerArgs.push(formatted);
 				const handlerResult = messageHandler.call(handlerArgs);
-				if (isLuaCallSignal(handlerResult)) {
-					return handlerResult;
-				}
 				const first = handlerResult.length > 0 ? handlerResult[0] : null;
 				const values = this.allocateValueList();
 				values.push(false);
@@ -4296,9 +4094,6 @@ export class LuaInterpreter {
 					comparatorArgs![0] = left;
 					comparatorArgs![1] = right;
 					const response = comparator.call(comparatorArgs!);
-					if (isLuaCallSignal(response)) {
-						return 1;
-					}
 					const first = response.length > 0 ? response[0] : null;
 						return this.isTruthy(first) ? -1 : 1;
 				}
@@ -4322,9 +4117,6 @@ export class LuaInterpreter {
 				const metaArgs = this.allocateValueList();
 				metaArgs.push(target);
 				const result = pairsMetamethod.call(metaArgs);
-				if (isLuaCallSignal(result)) {
-					return result;
-				}
 					if (result.length < 2) {
 						throw this.runtimeError('__pairs metamethod must return at least two values.');
 					}
@@ -4351,9 +4143,6 @@ export class LuaInterpreter {
 				const metaArgs = this.allocateValueList();
 				metaArgs.push(target);
 				const result = ipairsMetamethod.call(metaArgs);
-				if (isLuaCallSignal(result)) {
-					return result;
-				}
 					if (result.length < 2) {
 						throw this.runtimeError('__ipairs metamethod must return at least two values.');
 					}

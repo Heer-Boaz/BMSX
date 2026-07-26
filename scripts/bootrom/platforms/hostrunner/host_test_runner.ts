@@ -1,6 +1,6 @@
 import * as path from 'node:path';
 
-import { extractErrorMessage } from '../../../../machine/ts/lua/value';
+import { extractErrorMessage } from '../../../../ide/language/lua/interpreter/value';
 import type { Closure } from '../../../../machine/ts/machine/cpu/closure';
 import { Table } from '../../../../machine/ts/machine/cpu/table';
 import { EMPTY_CALL_ARGS, asStringId, valueIsString, valueIsTable, type StringValue, type Value } from '../../../../machine/ts/machine/cpu/value';

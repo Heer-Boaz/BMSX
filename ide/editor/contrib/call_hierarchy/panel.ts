@@ -1,8 +1,8 @@
-import { runtimeWorkbenchState } from '../../../runtime/workbench_state';
 import type { CallHierarchyView } from './view';
 import { closeSymbolSearch } from '../symbols/shared';
+import type { ResourcePanelController } from '../../../workbench/contrib/resources/panel/controller';
 
-export function showCallHierarchyView(view: CallHierarchyView): void {
+export function showCallHierarchyView(resourcePanel: ResourcePanelController, view: CallHierarchyView): void {
 	closeSymbolSearch(false);
-	runtimeWorkbenchState.ide.editor.resourcePanel.showCallHierarchy(view);
+	resourcePanel.showCallHierarchy(view);
 }

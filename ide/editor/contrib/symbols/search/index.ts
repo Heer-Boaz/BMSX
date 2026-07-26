@@ -1,6 +1,5 @@
 import { scheduleMicrotask } from '../../../../../machine/ts/platform/platform';
 import * as constants from '../../../../common/constants';
-import { renameController } from '../../rename/controller';
 import { showEditorMessage } from '../../../../common/feedback_state';
 import { clearReferenceHighlights } from '../../intellisense/engine';
 import { navigateToLuaDefinition } from '../../../../workbench/ui/code_tab/activation';
@@ -17,9 +16,12 @@ import {
 	closeSymbolSearch,
 } from '../shared';
 import { symbolSearchState } from './state';
-import type { Runtime } from '../../../../../machine/ts/machine/runtime/runtime';
+import type { RuntimeNativeBridge } from '../../../../runtime/native_bridge';
+import type { RuntimeSourceState } from '../../../../runtime/sources';
+import type { RenameController } from '../../rename/controller';
+import type { CartEditor } from '../../../../cart_editor';
 
-export function openSymbolSearch(initialQuery: string = ''): void {
+export function openSymbolSearch(bridge: RuntimeNativeBridge, rename: RenameController, initialQuery: string = ''): void {
 	if (getActiveCodeTabContext().mode !== 'lua') {
 		return;
 	}
@@ -27,20 +29,20 @@ export function openSymbolSearch(initialQuery: string = ''): void {
 	closeSearch(false, true);
 	closeLineJump(false);
 	closeResourceSearch(false);
-	renameController.cancel();
+	rename.cancel();
 	symbolSearchState.mode = 'symbols';
 	symbolSearchState.referenceCatalog = [];
 	symbolSearchState.global = false;
 	symbolSearchState.visible = true;
 	symbolSearchState.active = true;
 	applySymbolSearchFieldText(initialQuery, true);
-	refreshSymbolCatalog(true);
-	updateSymbolSearchMatches();
+	refreshSymbolCatalog(bridge, true);
+	updateSymbolSearchMatches(bridge);
 	symbolSearchState.hoverIndex = -1;
 	resetBlink();
 }
 
-export function openGlobalSymbolSearch(initialQuery: string = ''): void {
+export function openGlobalSymbolSearch(bridge: RuntimeNativeBridge, rename: RenameController, initialQuery: string = ''): void {
 	if (getActiveCodeTabContext().mode !== 'lua') {
 		return;
 	}
@@ -48,31 +50,35 @@ export function openGlobalSymbolSearch(initialQuery: string = ''): void {
 	closeSearch(false, true);
 	closeLineJump(false);
 	closeResourceSearch(false);
-	renameController.cancel();
+	rename.cancel();
 	symbolSearchState.mode = 'symbols';
 	symbolSearchState.referenceCatalog = [];
 	symbolSearchState.global = true;
 	symbolSearchState.visible = true;
 	symbolSearchState.active = true;
 	applySymbolSearchFieldText(initialQuery, true);
-	refreshSymbolCatalog(true);
-	updateSymbolSearchMatches();
+	refreshSymbolCatalog(bridge, true);
+	updateSymbolSearchMatches(bridge);
 	symbolSearchState.hoverIndex = -1;
 	resetBlink();
 }
 
-export function applySymbolSearchSelection(runtime: Runtime, index: number): void {
+export function applySymbolSearchSelection(
+	editor: CartEditor,
+	sources: RuntimeSourceState,
+	index: number,
+): void {
 	if (index < 0 || index >= symbolSearchState.matches.length) {
 		showEditorMessage('Symbol not found', constants.COLOR_STATUS_WARNING, 1.5);
 		return;
 	}
 	if (symbolSearchState.mode === 'references') {
-		applyReferenceSearchSelection(runtime, index);
+		applyReferenceSearchSelection(editor, sources, index);
 		return;
 	}
 	const location = symbolSearchState.matches[index].entry.symbol.location;
 	closeSymbolSearch(true);
 	scheduleMicrotask(() => {
-		navigateToLuaDefinition(runtime, location);
+		navigateToLuaDefinition(editor, sources, location);
 	});
 }

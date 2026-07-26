@@ -5,8 +5,13 @@ import { closeCreateResourcePrompt } from '../../../workbench/contrib/resources/
 import { confirmCreateResourcePrompt, isValidCreateResourceCharacter } from '../../../workbench/contrib/resources/create/operation';
 import { consumeIdeKey, isKeyJustPressed } from '../../keyboard/key_input';
 import { createResourceState } from '../../../workbench/contrib/resources/widget_state';
+import type { RuntimeSourceState } from '../../../runtime/sources';
+import type { ResourcePanelController } from '../../../workbench/contrib/resources/panel/controller';
 
-export function handleCreateResourceInput(): void {
+export function handleCreateResourceInput(
+	sources: RuntimeSourceState,
+	resourcePanel: ResourcePanelController,
+): void {
 	if (isKeyJustPressed('Escape')) {
 		consumeIdeKey('Escape');
 		closeCreateResourcePrompt(true);
@@ -15,7 +20,7 @@ export function handleCreateResourceInput(): void {
 	if (!createResourceState.working && (isKeyJustPressed('Enter') || isKeyJustPressed('NumpadEnter'))) {
 		consumeIdeKey('Enter');
 		consumeIdeKey('NumpadEnter');
-		void confirmCreateResourcePrompt();
+			void confirmCreateResourcePrompt(sources, resourcePanel);
 		return;
 	}
 	if (createResourceState.working) {

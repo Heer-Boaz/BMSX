@@ -5,7 +5,7 @@ import type {
 	LuaSymbolEntry,
 } from '../../machine/ts/lua/semantic_contracts';
 import type { ResourceDescriptor, ResourceDomain } from './resource';
-import type { StackTraceFrame } from '../../machine/ts/lua/value';
+import type { StackTraceFrame } from '../language/lua/interpreter/value';
 import type { EditorCommandId } from './commands';
 import { RectBounds } from '../../machine/ts/rompack/format';
 import type { TextBuffer } from '../editor/text/text_buffer';
@@ -76,6 +76,7 @@ export type SymbolCatalogEntry = {
 export type SymbolSearchResult = {
 	entry: SymbolCatalogEntry;
 	matchIndex: number;
+	catalogIndex: number;
 };
 
 export type ResourceCatalogEntry = {
@@ -348,7 +349,7 @@ export type SymbolSearchState = {
 	global: boolean;
 	mode: 'symbols' | 'references';
 	catalog: SymbolCatalogEntry[];
-	referenceCatalog: import('../editor/contrib/references/sources').ReferenceCatalogEntry[];
+	referenceCatalog: SymbolCatalogEntry[];
 	catalogContext: { scope: 'local' | 'global'; domain: ResourceDomain; path: string };
 	matches: SymbolSearchResult[];
 	selectionIndex: number;
@@ -477,8 +478,6 @@ export type FaultSnapshot = {
 	line: number;
 	column: number;
 	details: RuntimeErrorDetails;
-	timestampMs?: number;
-	fromDebugger: boolean;
 };
 
 export type RuntimeErrorOverlay = {

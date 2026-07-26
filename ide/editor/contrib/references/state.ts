@@ -51,13 +51,6 @@ export class ReferenceState {
 		this.definitionKey = info.definitionKey;
 	}
 
-	public setActiveIndex(index: number): void {
-		if (this.matches.length === 0) {
-			this.activeIndex = -1;
-			return;
-		}
-		this.activeIndex = clamp(index, 0, this.matches.length - 1);
-	}
 }
 
 export const referenceState = new ReferenceState();

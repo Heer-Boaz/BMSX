@@ -14,6 +14,12 @@ import {
 	type ResourceDomain,
 	type ResourceIdentity,
 } from '../common/resource';
+import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/machine/memory/map';
+import {
+	loadBlua32ToolingImage,
+	type Blua32ToolingImage,
+	type Blua32ToolingMedia,
+} from './blua32_media';
 
 export type RuntimeCartridgeSourceState = {
 	domain: 0 | 1;
@@ -42,6 +48,7 @@ export type RuntimeSourceState = {
 	systemBlua32MediaDirty: boolean;
 	cartridgeBlua32MediaDirty: [boolean, boolean];
 	systemInstalledBlua32Sources: ReadonlyMap<string, string>;
+	currentBlua32Media: Blua32ToolingMedia;
 };
 
 export type RuntimeLuaSourceMatch = LuaSourceMatch & {
@@ -67,6 +74,7 @@ export function createRuntimeSourceState(
 	const moduleCompileLuaSources: LuaSourceRegistry[] = [];
 	const systemProjectRootPath = systemLuaSources.projectRootPath || DEFAULT_SYSTEM_PROJECT_ROOT_PATH;
 	const cartridgeSlots: [RuntimeCartridgeSourceState | null, RuntimeCartridgeSourceState | null] = [null, null];
+	const cartridgeToolingImages: [Blua32ToolingImage | null, Blua32ToolingImage | null] = [null, null];
 	for (const slot of CARTRIDGE_RESOURCE_DOMAINS) {
 		const cartLayer = cartridgeLayers[slot];
 		if (cartLayer === null) {
@@ -88,6 +96,11 @@ export function createRuntimeSourceState(
 			projectRootPath: cartLayer.index.projectRootPath,
 			installedBlua32Sources: indexInstalledBlua32Sources(cartLuaSources),
 		};
+		cartridgeToolingImages[slot] = loadBlua32ToolingImage(
+			cartLayer,
+			cartRomSource,
+			CART_ROM_BASE,
+		);
 	}
 	const state: RuntimeSourceState = {
 		systemRom: systemLayer,
@@ -106,6 +119,10 @@ export function createRuntimeSourceState(
 		systemBlua32MediaDirty: false,
 		cartridgeBlua32MediaDirty: [false, false],
 		systemInstalledBlua32Sources: indexInstalledBlua32Sources(systemLuaSources),
+		currentBlua32Media: {
+			system: loadBlua32ToolingImage(systemLayer, systemSource, SYSTEM_ROM_BASE),
+			cartridgeSlots: cartridgeToolingImages,
+		},
 	};
 	enterSystemSources(state);
 	return state;

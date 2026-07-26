@@ -3,7 +3,7 @@ import type { ReferenceMatchInfo } from '../references/state';
 import type { LuaSourceRange } from '../../../../machine/ts/lua/syntax/ast/index';
 import { clamp } from '../../../../machine/ts/common/clamp';
 import { createLuaCodeTabContext, findCodeTabContext, getActiveCodeTabContext } from '../../../workbench/ui/code_tab/contexts';
-import { findResourceDescriptorForContext } from '../../../workbench/contrib/resources/lookup';
+import { resolveResourceDescriptorForContext } from '../../../workbench/contrib/resources/lookup';
 import { getLinesSnapshot, getTextSnapshot } from '../../text/source_text';
 import { syncSemanticWorkspacePath, getOrCreateSemanticWorkspace } from '../intellisense/semantic/workspace/state';
 import { markTextMutated } from '../../common/text/runtime';
@@ -17,8 +17,10 @@ import { editorDocumentState } from '../../editing/document_state';
 import { registerCodeTabContext, setTabDirty } from '../../../workbench/ui/code_tab/contexts';
 import { editorViewState } from '../../ui/view/state';
 import type { ResourceDomain } from '../../../common/resource';
+import type { RuntimeSourceState } from '../../../runtime/sources';
 
 export function commitRename(
+	crossFileRename: CrossFileRenameManager,
 	matches: readonly SearchMatch[],
 	newName: string,
 	activeIndex: number,
@@ -84,7 +86,7 @@ export function commitRename(
 	}
 
 	for (const bucket of rangeMap.values()) {
-		const replacements = crossFileRenameManager.applyRenameToChunk(
+		const replacements = crossFileRename.applyRenameToChunk(
 			activeDomain,
 			bucket.path,
 			bucket.ranges,
@@ -100,7 +102,7 @@ export function commitRename(
 }
 
 export class CrossFileRenameManager {
-	public constructor() {}
+	public constructor(private readonly sources: RuntimeSourceState) {}
 
 	public applyRenameToChunk(
 		domain: ResourceDomain,
@@ -160,14 +162,10 @@ export class CrossFileRenameManager {
 		domain: ResourceDomain,
 		path: string,
 	): CodeTabContext {
-		const descriptor = findResourceDescriptorForContext(domain, path)!;
-		const existing = findCodeTabContext(descriptor);
-		if (existing) {
-			return existing;
-		}
+		const descriptor = resolveResourceDescriptorForContext(this.sources, domain, path);
 		let context = findCodeTabContext(descriptor);
 		if (!context) {
-			context = createLuaCodeTabContext(descriptor);
+			context = createLuaCodeTabContext(this.sources, descriptor);
 			registerCodeTabContext(context);
 			this.markContextTabDirty(context.id, context.dirty);
 		}
@@ -178,8 +176,6 @@ export class CrossFileRenameManager {
 		setTabDirty(contextId, dirty);
 	}
 }
-
-export const crossFileRenameManager = new CrossFileRenameManager();
 
 export function convertRangeToSearchMatch(range: LuaSourceRange): SearchMatch {
 	const row = range.start.line - 1;

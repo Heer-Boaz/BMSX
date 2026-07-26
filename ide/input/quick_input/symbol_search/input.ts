@@ -7,9 +7,15 @@ import { closeSymbolSearch, ensureSymbolSearchSelectionVisible } from '../../../
 import { consumeIdeKey, isKeyJustPressed, isShiftDown, shouldRepeatKeyFromPlayer } from '../../keyboard/key_input';
 import { symbolSearchPageSize } from '../../../editor/ui/view/view';
 import { symbolSearchState } from '../../../editor/contrib/symbols/search/state';
-import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
+import type { CartEditor } from '../../../cart_editor';
+import type { RuntimeSourceState } from '../../../runtime/sources';
+import type { RuntimeNativeBridge } from '../../../runtime/native_bridge';
 
-export function handleSymbolSearchInput(runtime: Runtime): void {
+export function handleSymbolSearchInput(
+	editor: CartEditor,
+	sources: RuntimeSourceState,
+	bridge: RuntimeNativeBridge,
+): void {
 	const shiftDown = isShiftDown();
 	if (isKeyJustPressed('Enter')) {
 		consumeIdeKey('Enter');
@@ -18,7 +24,7 @@ export function handleSymbolSearchInput(runtime: Runtime): void {
 			return;
 		}
 		if (symbolSearchState.selectionIndex >= 0) {
-			applySymbolSearchSelection(runtime, symbolSearchState.selectionIndex);
+			applySymbolSearchSelection(editor, sources, symbolSearchState.selectionIndex);
 		} else {
 			showEditorMessage('No symbol selected', constants.COLOR_STATUS_WARNING, 1.5);
 		}
@@ -66,6 +72,6 @@ export function handleSymbolSearchInput(runtime: Runtime): void {
 	});
 	symbolSearchState.query = symbolSearchState.field.text;
 	if (textChanged) {
-		updateSymbolSearchMatches();
+			updateSymbolSearchMatches(bridge);
 	}
 }

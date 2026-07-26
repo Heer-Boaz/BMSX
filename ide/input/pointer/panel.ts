@@ -11,9 +11,14 @@ export function handleEditorPanelResizePointer(resourcePanel: ResourcePanelContr
 	return handleProblemsPanelResizePointer(snapshot, justPressed);
 }
 
-export function handleEditorPanelPointer(snapshot: PointerSnapshot, justPressed: boolean, justReleased: boolean): boolean {
-	if (handleResourcePanelPointer(snapshot, justPressed)) {
+export function handleEditorPanelPointer(
+	resourcePanel: ResourcePanelController,
+	snapshot: PointerSnapshot,
+	justPressed: boolean,
+	justReleased: boolean,
+): boolean {
+	if (handleResourcePanelPointer(resourcePanel, snapshot, justPressed)) {
 		return true;
 	}
-	return handleProblemsPanelPointer(snapshot, justPressed, justReleased);
+	return handleProblemsPanelPointer(resourcePanel, snapshot, justPressed, justReleased);
 }

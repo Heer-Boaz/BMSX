@@ -12,6 +12,12 @@ import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import { save } from '../../ui/code_tab/io';
 import { editorDocumentState } from '../../../editor/editing/document_state';
 import type { FontVariant } from '../../../../machine/ts/render/shared/bmsx_font';
+import type { CartEditor } from '../../../cart_editor';
+import type { RuntimeSourceState } from '../../../runtime/sources';
+import type { RuntimeFaultState } from '../../../runtime/fault_state';
+import type { RuntimeNativeBridge } from '../../../runtime/native_bridge';
+import type { GateGroup } from '../../../../machine/ts/common/taskgate';
+import type { OverlayRenderer } from '../../../runtime/overlay_renderer';
 
 type ActionPromptUiState = {
 	prompt: ActionPromptState | null;
@@ -190,12 +196,25 @@ export function findActionPromptChoiceAt(x: number, y: number): ActionPromptChoi
 	return null;
 }
 
-async function attemptPromptSave(runtime: Runtime): Promise<boolean> {
-	await save(runtime);
-	return editorDocumentState.dirty === false;
+async function attemptPromptSave(
+	editor: CartEditor,
+	sources: RuntimeSourceState,
+	runtime: Runtime,
+): Promise<boolean> {
+	await save(editor, sources, runtime);
+	return !editorDocumentState.dirty;
 }
 
-async function handleActionPromptSelection(runtime: Runtime, choice: ActionPromptChoice): Promise<void> {
+async function handleActionPromptSelection(
+	editor: CartEditor,
+	sources: RuntimeSourceState,
+	fault: RuntimeFaultState,
+	nativeBridge: RuntimeNativeBridge,
+	luaGate: GateGroup,
+	overlayRenderer: OverlayRenderer,
+	runtime: Runtime,
+	choice: ActionPromptChoice,
+): Promise<void> {
 	const prompt = actionPromptState.prompt;
 	if (!prompt) {
 		return;
@@ -205,31 +224,75 @@ async function handleActionPromptSelection(runtime: Runtime, choice: ActionPromp
 		return;
 	}
 	if (choice === 'save-continue') {
-		const saved = await attemptPromptSave(runtime);
+		const saved = await attemptPromptSave(editor, sources, runtime);
 		if (!saved) {
 			return;
 		}
 	}
-	if (performEditorAction(runtime, prompt.action)) {
+	if (performEditorAction(
+		editor,
+		sources,
+		fault,
+		nativeBridge,
+		luaGate,
+		overlayRenderer,
+		runtime,
+		prompt.action,
+	)) {
 		closeActionPrompt();
 	}
 }
 
-export function handleActionPromptInput(runtime: Runtime): void {
+export function handleActionPromptInput(
+	editor: CartEditor,
+	sources: RuntimeSourceState,
+	fault: RuntimeFaultState,
+	nativeBridge: RuntimeNativeBridge,
+	luaGate: GateGroup,
+	overlayRenderer: OverlayRenderer,
+	runtime: Runtime,
+): void {
 	if (!hasActionPrompt()) {
 		return;
 	}
 	if (isKeyJustPressed('Enter') || isKeyJustPressed('NumpadEnter')) {
 		consumeIdeKey('Enter');
 		consumeIdeKey('NumpadEnter');
-		void handleActionPromptSelection(runtime, 'save-continue');
+		void handleActionPromptSelection(
+			editor,
+			sources,
+			fault,
+			nativeBridge,
+			luaGate,
+			overlayRenderer,
+			runtime,
+			'save-continue',
+		);
 	}
 }
 
-export function handleActionPromptPointer(runtime: Runtime, snapshot: PointerSnapshot): void {
+export function handleActionPromptPointer(
+	editor: CartEditor,
+	sources: RuntimeSourceState,
+	fault: RuntimeFaultState,
+	nativeBridge: RuntimeNativeBridge,
+	luaGate: GateGroup,
+	overlayRenderer: OverlayRenderer,
+	runtime: Runtime,
+	snapshot: PointerSnapshot,
+): void {
 	const choice = findActionPromptChoiceAt(snapshot.viewportX, snapshot.viewportY);
 	if (choice) {
-		void handleActionPromptSelection(runtime, choice);
+		void handleActionPromptSelection(
+			editor,
+			sources,
+			fault,
+			nativeBridge,
+			luaGate,
+			overlayRenderer,
+			runtime,
+			choice,
+		);
 	}
 }
 

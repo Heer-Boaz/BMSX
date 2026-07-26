@@ -44,6 +44,17 @@ export function decodeBlua32BootHeader(payload: Uint8Array, byteOffset = 0): Blu
 	};
 }
 
+export function decodeBlua32RomImage(payload: Uint8Array, romBaseAddress: number): Blua32ImageLayout | null {
+	const boot = decodeBlua32BootHeader(payload);
+	if (boot.imageOffset === 0) {
+		return null;
+	}
+	return decodeBlua32Image(
+		payload.subarray(boot.imageOffset, boot.imageOffset + boot.imageByteCount),
+		romBaseAddress + boot.imageOffset,
+	);
+}
+
 export const enum Blua32ConstantTag {
 	Nil,
 	False,

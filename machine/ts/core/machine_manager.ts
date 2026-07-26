@@ -30,18 +30,13 @@ import {
 } from '../machine/devices/cartridge/contracts';
 import { SYSTEM_BOOT_ENTRY_PATH, SYSTEM_MACHINE_MANIFEST } from './system';
 
-const globalScope: any = typeof window !== 'undefined' ? window : globalThis;
-global = globalScope; // Ensure global is defined
 const systemOutputDecoder = new TextDecoder('utf-8', { fatal: true });
 const EMPTY_CARTRIDGE_ROM = new Uint8Array(0);
 
-export interface MachineLaunchOptions {
+export interface MachineInitializationOptions {
 	systemRom: Uint8Array;
 	cartridgeSlots: [Uint8Array | null, Uint8Array | null];
-	sndcontext?: AudioContext;
-	gainnode?: GainNode;
 	debug?: boolean;
-	autoStart?: boolean;
 	startingGamepadIndex?: number;
 	enableOnscreenGamepad?: boolean;
 	platform: Platform;
@@ -53,18 +48,14 @@ export type MachineBootMedia = {
 	cartridgeLayers: readonly [RuntimeRomLayer | null, RuntimeRomLayer | null];
 };
 
-export interface MachineBootOptions extends MachineLaunchOptions {
-	initializeRuntime(runtime: Runtime, media: MachineBootMedia): Promise<void>;
-	runHostFrame(runtime: Runtime, currentTime: number, runReady: boolean): void;
-	rebootRuntime(runtime: Runtime): Promise<void>;
-}
+export type MachineInitialization = MachineBootMedia & {
+	runtime: Runtime;
+};
 
 const DEFAULT_MASTER_VOLUME = 1;
 
 export class MachineManager {
 	private initialized = false;
-	private hostFrameRunner!: MachineBootOptions['runHostFrame'];
-	private runtimeRebooter!: MachineBootOptions['rebootRuntime'];
 
 	/**
 	 * Indicates whether debug mode is enabled.
@@ -215,8 +206,8 @@ export class MachineManager {
 		};
 	}
 
-	public async boot(options: MachineBootOptions): Promise<Runtime> {
-		const { systemRom, cartridgeSlots, debug = false, autoStart = true, startingGamepadIndex = null, enableOnscreenGamepad = false, platform, viewHost } = options;
+	public async initialize(options: MachineInitializationOptions): Promise<MachineInitialization> {
+		const { systemRom, cartridgeSlots, debug = false, startingGamepadIndex = null, enableOnscreenGamepad = false, platform, viewHost } = options;
 		if (!platform) {
 			throw new Error('[MachineManager] Platform services not provided.');
 		}
@@ -226,8 +217,6 @@ export class MachineManager {
 		}
 		const bootPlan = await this.buildBootPlan(systemRom, cartridgeSlots);
 		const { systemLayer, cartridgeLayers, cartridgeMedia } = bootPlan;
-		this.hostFrameRunner = options.runHostFrame;
-		this.runtimeRebooter = options.rebootRuntime;
 		configureRuntimeMemoryMap();
 		const memory = new Memory({
 			systemRom: systemLayer.payload,
@@ -290,25 +279,16 @@ export class MachineManager {
 
 		await gview.initializeDefaultTextures();
 		this.view.default_font = new Font();
-		await options.initializeRuntime(runtime, {
-			systemLayer,
-			cartridgeLayers,
-		});
-		this.flushSystemOutput(runtime);
 
 		if (this.debug) {
 			Input.instance.enableDebugMode(this.view.surface);
 		}
 		this.initialized = true;
-		this.bootstrapStartupAudio();
-		if (autoStart) {
-			this.start();
-		}
-		return runtime;
-	}
-
-	public async rebootToBootRom(): Promise<void> {
-		await this.runtimeRebooter(this.runtime);
+		return {
+			runtime,
+			systemLayer,
+			cartridgeLayers,
+		};
 	}
 
 	public async refreshRenderSurfaces(): Promise<void> {
@@ -352,14 +332,10 @@ export class MachineManager {
 		if (!this.initialized) {
 			throw new Error('Game not initialized. Call init() before starting the game!');
 		}
-		const platform = this.platform;
-		const now = platform.clock.now();
+		const now = this.platform.clock.now();
 		const runtime = this.runtime;
 		runtime.frameLoop.currentTimeMs = now;
 		runtime.frameScheduler.clearQueuedTime();
-		platform.frames.start((currentTime: number) => {
-			this.hostFrameRunner(runtime, currentTime, runGate.ready);
-		});
 		this.running = true;
 	}
 
@@ -377,7 +353,4 @@ export class MachineManager {
 
 }
 
-export var machineManager: MachineManager = new MachineManager()!;
-
-// Browser and node-headless boot glue share this global machine manager handle.
-(globalScope as any).machineManager = machineManager;
+export const machineManager = new MachineManager();

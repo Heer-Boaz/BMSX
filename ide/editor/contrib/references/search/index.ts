@@ -1,5 +1,4 @@
 import * as constants from '../../../../common/constants';
-import { renameController } from '../../rename/controller';
 import { showEditorMessage } from '../../../../common/feedback_state';
 import { navigateToLuaDefinition } from '../../../../workbench/ui/code_tab/activation';
 import { getActiveCodeTabContext } from '../../../../workbench/ui/code_tab/contexts';
@@ -9,14 +8,13 @@ import { resolveReferenceLookup } from '../lookup';
 import { editorDocumentState } from '../../../editing/document_state';
 import { symbolSearchState } from '../../symbols/search/state';
 import { referenceState } from '../state';
-import {
-	type ReferenceCatalogEntry,
-	type ReferenceSymbolEntry,
-} from '../sources';
 import { buildReferenceSearchCatalog, showReferenceSearchStatusMessage, updateReferenceSearchMatches } from './catalog';
-import type { Runtime } from '../../../../../machine/ts/machine/runtime/runtime';
+import type { RuntimeNativeBridge } from '../../../../runtime/native_bridge';
+import type { RuntimeSourceState } from '../../../../runtime/sources';
+import type { RenameController } from '../../rename/controller';
+import type { CartEditor } from '../../../../cart_editor';
 
-export function openReferenceSearchPopup(runtime: Runtime): void {
+export function openReferenceSearchPopup(bridge: RuntimeNativeBridge, rename: RenameController): void {
 	const context = getActiveCodeTabContext();
 	if (context.mode !== 'lua') {
 		return;
@@ -24,9 +22,8 @@ export function openReferenceSearchPopup(runtime: Runtime): void {
 	if (symbolSearchState.visible || symbolSearchState.active) {
 		closeSymbolSearch(false);
 	}
-	renameController.cancel();
-	const result = resolveReferenceLookup({
-		runtime,
+	rename.cancel();
+	const result = resolveReferenceLookup(bridge, {
 		buffer: editorDocumentState.buffer,
 		textVersion: editorDocumentState.textVersion,
 		cursorRow: editorDocumentState.cursorRow,
@@ -39,7 +36,7 @@ export function openReferenceSearchPopup(runtime: Runtime): void {
 	}
 	const { info, initialIndex } = result;
 	referenceState.apply(info, initialIndex);
-	symbolSearchState.referenceCatalog = buildReferenceSearchCatalog(runtime, info, context);
+	symbolSearchState.referenceCatalog = buildReferenceSearchCatalog(bridge, info, context);
 	if (symbolSearchState.referenceCatalog.length === 0) {
 		showEditorMessage('No references found', constants.COLOR_STATUS_WARNING, 1.6);
 		return;
@@ -57,23 +54,22 @@ export function openReferenceSearchPopup(runtime: Runtime): void {
 	showReferenceSearchStatusMessage();
 }
 
-export function applyReferenceSearchSelection(runtime: Runtime, index: number): void {
+export function applyReferenceSearchSelection(
+	editor: CartEditor,
+	sources: RuntimeSourceState,
+	index: number,
+): void {
 	if (index < 0 || index >= symbolSearchState.matches.length) {
 		showEditorMessage('Symbol not found', constants.COLOR_STATUS_WARNING, 1.5);
 		return;
 	}
 	const match = symbolSearchState.matches[index];
-	const referenceEntry = match.entry as ReferenceCatalogEntry;
-	const symbol = referenceEntry.symbol as ReferenceSymbolEntry;
-	const entryIndex = symbolSearchState.referenceCatalog.indexOf(referenceEntry);
+	const symbol = match.entry.symbol;
+	const entryIndex = match.catalogIndex;
 	const total = symbolSearchState.referenceCatalog.length;
 	const expressionLabel = referenceState.getExpression() ?? symbol.name;
 	closeSymbolSearch(true);
 	referenceState.clear();
-	navigateToLuaDefinition(runtime, symbol.location);
-	if (entryIndex >= 0 && total > 0) {
-		showEditorMessage(`Reference ${entryIndex + 1}/${total} for ${expressionLabel}`, constants.COLOR_STATUS_SUCCESS, 1.6);
-		return;
-	}
-	showEditorMessage('Jumped to reference', constants.COLOR_STATUS_SUCCESS, 1.6);
+	navigateToLuaDefinition(editor, sources, symbol.location);
+	showEditorMessage(`Reference ${entryIndex + 1}/${total} for ${expressionLabel}`, constants.COLOR_STATUS_SUCCESS, 1.6);
 }

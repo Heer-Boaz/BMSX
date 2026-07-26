@@ -6,13 +6,14 @@ import { refreshSymbolCatalog } from '../catalog';
 import type { SymbolSearchResult } from '../../../../common/models';
 import { ensureSymbolSearchSelectionVisible } from '../shared';
 import { symbolSearchState } from './state';
+import type { RuntimeNativeBridge } from '../../../../runtime/native_bridge';
 
-export function updateSymbolSearchMatches(): void {
+export function updateSymbolSearchMatches(bridge: RuntimeNativeBridge): void {
 	if (symbolSearchState.mode === 'references') {
 		updateReferenceSearchMatches();
 		return;
 	}
-	refreshSymbolCatalog(false);
+	refreshSymbolCatalog(bridge, false);
 	symbolSearchState.matches = [];
 	symbolSearchState.selectionIndex = -1;
 	symbolSearchState.displayOffset = 0;
@@ -22,19 +23,24 @@ export function updateSymbolSearchMatches(): void {
 	}
 	const query = symbolSearchState.query.trim().toLowerCase();
 	if (query.length === 0) {
-		symbolSearchState.matches = symbolSearchState.catalog.map(entry => ({ entry, matchIndex: 0 }));
+		symbolSearchState.matches = symbolSearchState.catalog.map((entry, catalogIndex) => ({
+			entry,
+			matchIndex: 0,
+			catalogIndex,
+		}));
 		if (symbolSearchState.matches.length > 0) {
 			symbolSearchState.selectionIndex = 0;
 		}
 		return;
 	}
 	const matches: SymbolSearchResult[] = [];
-	for (const entry of symbolSearchState.catalog) {
+	for (let catalogIndex = 0; catalogIndex < symbolSearchState.catalog.length; catalogIndex += 1) {
+		const entry = symbolSearchState.catalog[catalogIndex];
 		const idx = entry.searchKey.indexOf(query);
 		if (idx === -1) {
 			continue;
 		}
-		matches.push({ entry, matchIndex: idx });
+		matches.push({ entry, matchIndex: idx, catalogIndex });
 	}
 	if (matches.length === 0) {
 		symbolSearchState.matches = [];

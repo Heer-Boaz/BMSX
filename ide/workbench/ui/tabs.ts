@@ -18,11 +18,10 @@ import {
 } from './code_tab/contexts';
 import { activateCodeEditorTab, applyActiveCodeTabSelection, storeActiveCodeTabContext, type CodeTabSelection } from './code_tab/activation';
 import { endTabDrag } from './tab/drag';
+import type { RuntimeSourceState } from '../../runtime/sources';
 import { codeTabSessionState } from './code_tab/session_state';
 import { tabSessionState } from './tab/session_state';
 import type { ResourcePanelController } from '../contrib/resources/panel/controller';
-
-let resourcePanelForTabs: ResourcePanelController = undefined!;
 
 function activateResourceViewerTab(tab: EditorTabDescriptor): void {
 	closeSearch(false, true);
@@ -38,32 +37,35 @@ function activateResourceViewerTab(tab: EditorTabDescriptor): void {
 	clampResourceViewerScroll(tab.resource, getCodeAreaBounds(), editorViewState.lineHeight);
 }
 
-export function initializeTabs(initialContext: CodeTabContext, resourcePanel: ResourcePanelController): void {
-	resourcePanelForTabs = resourcePanel;
+export function initializeTabs(initialContext: CodeTabContext): void {
 	tabSessionState.tabs = [];
 	editorChromeState.tabHoverId = null;
 	editorChromeState.tabDragState = null;
 	editorChromeState.tabButtonBounds.clear();
 	editorChromeState.tabCloseButtonBounds.clear();
-	const context = initialContext;
-	codeTabSessionState.contexts.set(context.id, context);
-	upsertCodeEditorTab(context);
-	tabSessionState.activeTabId = context.id;
-	codeTabSessionState.activeContextId = context.id;
-	activateCodeEditorTab(context.id);
+	codeTabSessionState.contexts.set(initialContext.id, initialContext);
+	upsertCodeEditorTab(initialContext);
+	tabSessionState.activeTabId = initialContext.id;
+	codeTabSessionState.activeContextId = initialContext.id;
+	activateCodeEditorTab(initialContext.id);
 }
 
 function getActiveTabKind(): EditorTabKind {
-	const active = tabSessionState.tabs.find(tab => tab.id === tabSessionState.activeTabId)!;
-	return active.kind;
+	const index = tabSessionState.tabs.findIndex(tab => tab.id === tabSessionState.activeTabId);
+	return tabSessionState.tabs[index].kind;
 }
 
 export function isResourceViewActive(): boolean {
 	return getActiveTabKind() === 'resource_view';
 }
 
-export function setActiveTab(tabId: string, selection?: CodeTabSelection): void {
-	const tab = tabSessionState.tabs.find(candidate => candidate.id === tabId)!;
+export function setActiveTab(
+	resourcePanel: ResourcePanelController,
+	tabId: string,
+	selection?: CodeTabSelection,
+): void {
+	const tabIndex = tabSessionState.tabs.findIndex(candidate => candidate.id === tabId);
+	const tab = tabSessionState.tabs[tabIndex];
 	const isSameTab = tabSessionState.activeTabId === tabId;
 	const navigationCheckpoint = tab.kind === 'code_editor' && (!isSameTab || selection)
 		? beginNavigationCapture()
@@ -87,7 +89,7 @@ export function setActiveTab(tabId: string, selection?: CodeTabSelection): void 
 		activateResourceViewerTab(tab);
 		return;
 	}
-	resourcePanelForTabs.hide();
+	resourcePanel.hide();
 	editorChromeState.resourcePanelResizing = false;
 	activateCodeEditorTab(tab.id, selection);
 	if (navigationCheckpoint) {
@@ -95,9 +97,10 @@ export function setActiveTab(tabId: string, selection?: CodeTabSelection): void 
 	}
 }
 
-export function activateCodeTab(): void {
-	const codeTab = tabSessionState.tabs.find(candidate => candidate.kind === 'code_editor')!;
-	setActiveTab(codeTab.id);
+export function activateCodeTab(resourcePanel: ResourcePanelController): void {
+	const codeTabIndex = tabSessionState.tabs.findIndex(candidate => candidate.kind === 'code_editor');
+	const codeTab = tabSessionState.tabs[codeTabIndex];
+	setActiveTab(resourcePanel, codeTab.id);
 }
 
 export function getTabs(): readonly EditorTabDescriptor[] {
@@ -116,7 +119,11 @@ export function isTabActive(tabId: string): boolean {
 	return tabSessionState.activeTabId === tabId;
 }
 
-export function closeTab(tabId: string): void {
+export function closeTab(
+	resourcePanel: ResourcePanelController,
+	sources: RuntimeSourceState,
+	tabId: string,
+): void {
 	const index = tabSessionState.tabs.findIndex(tab => tab.id === tabId);
 	const tab = tabSessionState.tabs[index];
 	if (!tab.closable) {
@@ -127,8 +134,10 @@ export function closeTab(tabId: string): void {
 	}
 	const isActive = tabSessionState.activeTabId === tabId;
 	if (isActive && tabSessionState.tabs.length > 1) {
-		const fallback = tabSessionState.tabs[index - 1] ?? tabSessionState.tabs[index + 1];
-		setActiveTab(fallback.id);
+		const fallback = index > 0
+			? tabSessionState.tabs[index - 1]
+			: tabSessionState.tabs[index + 1];
+		setActiveTab(resourcePanel, fallback.id);
 	} else if (isActive && tab.kind === 'code_editor') {
 		storeActiveCodeTabContext();
 	}
@@ -138,11 +147,11 @@ export function closeTab(tabId: string): void {
 		editorDiagnosticsState.diagnosticsCache.delete(tab.id);
 	}
 	if (tabSessionState.tabs.length === 0) {
-		initializeTabs(createEntryTabContext(), resourcePanelForTabs);
+		initializeTabs(createEntryTabContext(sources));
 	}
 }
 
-export function cycleTab(direction: number): void {
+export function cycleTab(resourcePanel: ResourcePanelController, direction: number): void {
 	if (tabSessionState.tabs.length <= 1 || direction === 0) {
 		return;
 	}
@@ -154,16 +163,19 @@ export function cycleTab(direction: number): void {
 		return;
 	}
 	const target = tabSessionState.tabs[nextIndex];
-	setActiveTab(target.id);
+	setActiveTab(resourcePanel, target.id);
 }
 
 export function isActive(): boolean {
 	return editorRuntimeState.active;
 }
 
-export function closeActiveTab(): void {
+export function closeActiveTab(
+	resourcePanel: ResourcePanelController,
+	sources: RuntimeSourceState,
+): void {
 	if (!tabSessionState.activeTabId) {
 		return;
 	}
-	closeTab(tabSessionState.activeTabId);
+	closeTab(resourcePanel, sources, tabSessionState.activeTabId);
 }

@@ -1,7 +1,5 @@
-import { runtimeWorkbenchState } from './workbench_state';
-import { machineManager } from '../../machine/ts/core/machine_manager';
 import type { LuaChunk } from '../../machine/ts/lua/syntax/ast/index';
-import { LuaInterpreter } from '../../machine/ts/lua/runtime';
+import { LuaInterpreter } from '../language/lua/interpreter/interpreter';
 import { getReservedLuaIdentifiers, registerLuaInterpreterBuiltins } from './lua_builtins';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject, type ProgramCompileDomain } from '../../machine/ts/lua/compiler';
 import type { ProgramMetadata } from '../../machine/ts/lua/compiler/program';
@@ -10,35 +8,28 @@ import { toLuaModulePath } from '../../machine/ts/lua/module_path';
 import { readWorkspaceLuaSourceText } from '../workspace/files';
 import type { RuntimeSymbolEntry, RuntimeSymbolKind } from './symbols';
 import { resolveLuaSourceRecord, type LuaSourceRegistry } from '../../machine/ts/lua/source_registry';
-import { logDebugState } from './debug_state';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/machine/memory/map';
 import { resetHandledLuaErrors } from './fault_state';
-import {
-	BLUA32_IMAGE_ID,
-	BLUA32_SYMBOLS_IMAGE_ID,
-	decodeBlua32Image,
-	type Blua32ImageLayout,
-} from '../../machine/ts/machine/cpu/blua32_image';
-import {
-	decodeBlua32SymbolsImage,
-	type Blua32SymbolsImage,
-} from '../../machine/ts/machine/cpu/blua32_symbols';
+import type { Blua32ImageLayout } from '../../machine/ts/machine/cpu/blua32_image';
+import type { Blua32SymbolsImage } from '../../machine/ts/machine/cpu/blua32_symbols';
 import { asStringId, valueIsString, valueTag, ValueTag, type Value } from '../../machine/ts/machine/cpu/value';
-import type { Blua32MediaSymbols } from '../../machine/ts/machine/cpu/blua32_symbols';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import {
 	installRuntimeRomLayers,
 	resolveRuntimeLuaSource,
+	type RuntimeSourceState,
 } from './sources';
-import { LogLevel } from '../../machine/ts/platform/platform';
 import {
 	linkCartBlua32Image,
 	linkSystemBlua32Image,
 	type LinkedBlua32Image,
 } from '../../machine/ts/rompack/tooling/blua32_linker';
 import { buildBlua32Tail } from '../../machine/ts/rompack/tooling/blua32_tail';
-import type { RawRomSource, RomSourceLayer } from '../../machine/ts/rompack/source';
+import type { RomSourceLayer } from '../../machine/ts/rompack/source';
 import type { ResourceIdentity } from '../common/resource';
+import type { RuntimeFaultState } from './fault_state';
+import type { RuntimeNativeBridge } from './native_bridge';
+import type { Blua32ToolingImage } from './blua32_media';
 
 export type RebuiltBlua32Image = {
 	linked: LinkedBlua32Image;
@@ -52,12 +43,14 @@ export type RebuiltBlua32Media = {
 	cartridgeSlots: [RebuiltBlua32Image | null, RebuiltBlua32Image | null];
 };
 
-function installFreshLuaInterpreter(runtime: Runtime): LuaInterpreter {
-	resetHandledLuaErrors();
-	const bridge = runtimeWorkbenchState.ide.nativeBridge;
+function installFreshLuaInterpreter(
+	fault: RuntimeFaultState,
+	bridge: RuntimeNativeBridge,
+	runtime: Runtime,
+): LuaInterpreter {
+	resetHandledLuaErrors(fault);
 	const interpreter = new LuaInterpreter(bridge.luaJsBridge);
 	bridge.luaInterpreter = interpreter;
-	interpreter.attachDebugger(runtimeWorkbenchState.ide.debugger.controller);
 	interpreter.clearLastFaultEnvironment();
 	registerLuaInterpreterBuiltins(interpreter);
 	interpreter.setReservedIdentifiers(getReservedLuaIdentifiers());
@@ -106,9 +99,8 @@ function buildSymbolModuleSlotPrefix(modulePath: string): string {
 	return prefix;
 }
 
-function collectHiddenSymbolPrefixes(): Set<string> {
+function collectHiddenSymbolPrefixes(sources: RuntimeSourceState): Set<string> {
 	const prefixes = new Set<string>();
-	const sources = runtimeWorkbenchState.sources;
 	for (let registryIndex = 0; registryIndex < sources.luaSourceRegistries.length; registryIndex += 1) {
 		const registry = sources.luaSourceRegistries[registryIndex];
 		for (let assetIndex = 0; assetIndex < registry.records.length; assetIndex += 1) {
@@ -127,9 +119,9 @@ function shouldHideGeneratedModuleSymbolName(name: string, hiddenPrefixes: Reado
 	return false;
 }
 
-export function listSymbols(runtime: Runtime): RuntimeSymbolEntry[] {
+export function listSymbols(sources: RuntimeSourceState, runtime: Runtime): RuntimeSymbolEntry[] {
 	runtime.machine.cpu.syncGlobalSlotsToTable();
-	const hiddenPrefixes = collectHiddenSymbolPrefixes();
+	const hiddenPrefixes = collectHiddenSymbolPrefixes(sources);
 	const symbolsByName = new Map<string, RuntimeSymbolEntry>();
 	runtime.machine.cpu.globals.forEachEntry((key, value) => {
 		if (!valueIsString(key)) {
@@ -148,24 +140,6 @@ export function listSymbols(runtime: Runtime): RuntimeSymbolEntry[] {
 		});
 	});
 	return Array.from(symbolsByName.values());
-}
-
-export function loadBlua32Image(
-	romSource: RawRomSource,
-	romBaseAddress: number,
-	imageOffset: number,
-): { image: Blua32ImageLayout; symbols: Blua32SymbolsImage | null } {
-	const imageEntry = romSource.getEntry(BLUA32_IMAGE_ID)!;
-	const image = decodeBlua32Image(
-		romSource.getBytesView(imageEntry),
-		romBaseAddress + imageOffset,
-	);
-	const symbolsEntry = romSource.getEntry(BLUA32_SYMBOLS_IMAGE_ID);
-	let symbols: Blua32SymbolsImage | null = null;
-	if (symbolsEntry) {
-		symbols = decodeBlua32SymbolsImage(romSource.getBytesView(symbolsEntry));
-	}
-	return { image, symbols };
 }
 
 function buildModuleChunks(
@@ -194,6 +168,7 @@ function buildModuleChunks(
 }
 
 function compileRegistryProgramObject(
+	sources: RuntimeSourceState,
 	registry: LuaSourceRegistry,
 	interpreter: LuaInterpreter,
 	programDomain: ProgramCompileDomain,
@@ -212,13 +187,13 @@ function compileRegistryProgramObject(
 	const entrySource = readWorkspaceLuaSourceText(registry, entryRecord);
 	const entryChunk = interpreter.compileChunk(entrySource, entryPath);
 	const modules = buildModuleChunks(entryPath, [registry], interpreter);
-	const sources = new Map<string, string>();
-	sources.set(entryPath, entrySource);
+	const compiledSources = new Map<string, string>();
+	compiledSources.set(entryPath, entrySource);
 	for (let index = 0; index < modules.length; index += 1) {
-		sources.set(modules[index].path, modules[index].source);
+		compiledSources.set(modules[index].path, modules[index].source);
 	}
 	const compiled = compileLuaChunkToProgram(entryChunk, modules, {
-		optLevel: runtimeWorkbenchState.sources.realtimeCompileOptLevel,
+		optLevel: sources.realtimeCompileOptLevel,
 		entrySource,
 		externalModules,
 		programDomain,
@@ -227,16 +202,16 @@ function compileRegistryProgramObject(
 		object: encodeCompiledProgramObject(compiled),
 		metadata: compiled.metadata,
 		modules,
-		sources,
+		sources: compiledSources,
 	};
 }
 
 export function buildBlua32Media(
+	sources: RuntimeSourceState,
 	interpreter: LuaInterpreter,
 	rebuildSystem: boolean,
 	rebuildCartridgeSlots: readonly [boolean, boolean],
 ): RebuiltBlua32Media {
-	const sources = runtimeWorkbenchState.sources;
 	const systemRegistry = sources.systemLuaSources;
 	const cartridgeImageOffsets: [number, number] = [0, 0];
 	let rebuildAnyCartridge = false;
@@ -248,28 +223,24 @@ export function buildBlua32Media(
 			rebuildAnyCartridge = true;
 		}
 	}
-	const installedSystem = loadBlua32Image(
-		sources.systemRomSource,
-		SYSTEM_ROM_BASE,
-		sources.systemRom.header.blua32ImageOffset,
-	);
-	let systemImage = installedSystem.image;
+	const installedSystem = sources.currentBlua32Media.system!;
+	let systemImage = installedSystem.layout;
 	let systemSymbols = installedSystem.symbols;
 	let rebuiltSystem: RebuiltBlua32Image | null = null;
 	let systemModules: ReadonlyArray<{ path: string; chunk: LuaChunk; source: string }> = [];
 	if (rebuildSystem) {
-		const compiledSystem = compileRegistryProgramObject(systemRegistry, interpreter, 'system', []);
+		const compiledSystem = compileRegistryProgramObject(sources, systemRegistry, interpreter, 'system', []);
 		const linked = linkSystemBlua32Image(
 			compiledSystem.object,
 			compiledSystem.metadata,
 			SYSTEM_ROM_BASE + sources.systemRom.header.blua32ImageOffset,
-			{ image: installedSystem.image, symbols: installedSystem.symbols! },
+			{ image: installedSystem.layout, symbols: installedSystem.symbols! },
 		);
 		systemImage = linked.layout;
 		systemSymbols = linked.symbols;
 		rebuiltSystem = {
 			linked,
-			previousImage: installedSystem.image,
+			previousImage: installedSystem.layout,
 			previousSymbols: installedSystem.symbols!,
 			sources: compiledSystem.sources,
 		};
@@ -290,24 +261,25 @@ export function buildBlua32Media(
 		}
 		const cartridge = sources.cartridgeSlots[slot]!;
 		const compiled = compileRegistryProgramObject(
+			sources,
 			cartridge.luaSources,
 			interpreter,
 			'cart',
 			systemModules,
 		);
 		const imageAddress = CART_ROM_BASE + imageOffset;
-		const installed = loadBlua32Image(cartridge.romSource, CART_ROM_BASE, imageOffset);
+		const installed = sources.currentBlua32Media.cartridgeSlots[slot]!;
 		const linked = linkCartBlua32Image(
 			systemImage,
 			systemSymbols,
 			compiled.object,
 			compiled.metadata,
 			imageAddress,
-			{ image: installed.image, symbols: installed.symbols! },
+			{ image: installed.layout, symbols: installed.symbols! },
 		);
 		rebuiltCartridgeSlots[slot] = {
 			linked,
-			previousImage: installed.image,
+			previousImage: installed.layout,
 			previousSymbols: installed.symbols!,
 			sources: compiled.sources,
 		};
@@ -318,8 +290,11 @@ export function buildBlua32Media(
 	};
 }
 
-export function installBlua32Media(runtime: Runtime, rebuilt: RebuiltBlua32Media): void {
-	const sources = runtimeWorkbenchState.sources;
+export function installBlua32Media(
+	sources: RuntimeSourceState,
+	runtime: Runtime,
+	rebuilt: RebuiltBlua32Media,
+): void {
 	let systemLayer: RomSourceLayer | null = null;
 	const cartridgeLayers: [RomSourceLayer | null, RomSourceLayer | null] = [null, null];
 	if (rebuilt.system !== null) {
@@ -332,10 +307,20 @@ export function installBlua32Media(runtime: Runtime, rebuilt: RebuiltBlua32Media
 		}
 	}
 	installRuntimeRomLayers(sources, systemLayer, cartridgeLayers);
+	const currentMedia = sources.currentBlua32Media;
+	let systemImage = currentMedia.system;
+	const cartridgeImages: [Blua32ToolingImage | null, Blua32ToolingImage | null] = [
+		currentMedia.cartridgeSlots[0],
+		currentMedia.cartridgeSlots[1],
+	];
 	if (systemLayer !== null) {
 		runtime.machine.memory.installSystemRom(systemLayer.payload);
 		sources.systemInstalledBlua32Sources = rebuilt.system!.sources;
 		sources.systemBlua32MediaDirty = false;
+		systemImage = {
+			layout: rebuilt.system!.linked.layout,
+			symbols: rebuilt.system!.linked.symbols,
+		};
 	}
 	for (let slot = 0; slot < cartridgeLayers.length; slot += 1) {
 		const layer = cartridgeLayers[slot];
@@ -345,75 +330,39 @@ export function installBlua32Media(runtime: Runtime, rebuilt: RebuiltBlua32Media
 		runtime.machine.memory.cartridgeController.installRom(slot, layer.payload);
 		sources.cartridgeSlots[slot]!.installedBlua32Sources = rebuilt.cartridgeSlots[slot]!.sources;
 		sources.cartridgeBlua32MediaDirty[slot] = false;
+		cartridgeImages[slot] = {
+			layout: rebuilt.cartridgeSlots[slot]!.linked.layout,
+			symbols: rebuilt.cartridgeSlots[slot]!.linked.symbols,
+		};
 	}
-}
-
-export function loadBlua32MediaSymbols(): Blua32MediaSymbols {
-	const sources = runtimeWorkbenchState.sources;
-	const system = loadBlua32Image(
-		sources.systemRomSource,
-		SYSTEM_ROM_BASE,
-		sources.systemRom.header.blua32ImageOffset,
-	);
-	const cartridgeSymbols: [Blua32SymbolsImage | null, Blua32SymbolsImage | null] = [null, null];
-	for (let slot = 0; slot < sources.cartridgeSlots.length; slot += 1) {
-		const cartridge = sources.cartridgeSlots[slot];
-		if (cartridge && cartridge.rom.header.blua32ImageOffset) {
-			cartridgeSymbols[slot] = loadBlua32Image(
-				cartridge.romSource,
-				CART_ROM_BASE,
-				cartridge.rom.header.blua32ImageOffset,
-			).symbols;
-		}
-	}
-	return {
-		system: system.symbols,
-		cartridgeSlots: cartridgeSymbols,
+	sources.currentBlua32Media = {
+		system: systemImage,
+		cartridgeSlots: cartridgeImages,
 	};
 }
 
-export function blua32SymbolsForSlot(symbols: Blua32MediaSymbols, slot: number): Blua32SymbolsImage | null {
-	return slot < 0 ? symbols.system : symbols.cartridgeSlots[slot];
-}
-
-// Debug-symbol consumers (stack traces, hover/intellisense, the editor's symbols-available
-// gate) need this on every interaction, not just at boot — re-decoding a full ROM container's
-// TOC on every hover would be wasteful, and CPU itself never holds Blua32SymbolsImage at all.
-// Updated explicitly at the only two points the installed media actually changes (boot,
-// hot-resume); everything else reads this cheap, already-decoded snapshot.
-let activeMediaSymbolsSnapshot: Blua32MediaSymbols = { system: null, cartridgeSlots: [null, null] };
-
-export function setActiveBlua32MediaSymbols(symbols: Blua32MediaSymbols): void {
-	activeMediaSymbolsSnapshot = symbols;
-}
-
-export function activeBlua32MediaSymbols(): Blua32MediaSymbols {
-	return activeMediaSymbolsSnapshot;
-}
-
-export function bootActiveBlua32Media(runtime: Runtime, rebuildBlua32Media: boolean): void {
-	const interpreter = installFreshLuaInterpreter(runtime);
+export function bootActiveBlua32Media(
+	sources: RuntimeSourceState,
+	fault: RuntimeFaultState,
+	nativeBridge: RuntimeNativeBridge,
+	runtime: Runtime,
+	rebuildBlua32Media: boolean,
+): void {
+	const interpreter = installFreshLuaInterpreter(fault, nativeBridge, runtime);
 	if (rebuildBlua32Media) {
-		const sources = runtimeWorkbenchState.sources;
-		installBlua32Media(runtime, buildBlua32Media(
+		installBlua32Media(sources, runtime, buildBlua32Media(
+			sources,
 			interpreter,
 			sources.systemBlua32MediaDirty,
 			sources.cartridgeBlua32MediaDirty,
 		));
 	}
 	runtime.resetForSystemBoot();
-	try {
-		runtime.boot();
-	} catch (error) {
-		machineManager.platform.log(LogLevel.Error, 'BLua32 boot failed.');
-		logDebugState(runtime, machineManager.platform);
-		throw error;
-	}
-	setActiveBlua32MediaSymbols(loadBlua32MediaSymbols());
+	runtime.boot();
 }
 
-export function resourceSourceForChunk(identity: ResourceIdentity): string {
-	const luaSource = resolveRuntimeLuaSource(runtimeWorkbenchState.sources, identity);
+export function resourceSourceForChunk(sources: RuntimeSourceState, identity: ResourceIdentity): string {
+	const luaSource = resolveRuntimeLuaSource(sources, identity);
 	if (!luaSource) {
 		throw new Error(`Missing Lua source for '${identity.path}'.`);
 	}

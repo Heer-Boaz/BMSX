@@ -1,42 +1,13 @@
-import { BASE_CYCLES, OPCODE_CATEGORY, OPCODE_COUNT, OpCode, getOpcodeName } from './opcode_info';
-import { INSTRUCTION_BYTES } from './instruction_format';
+import { BASE_CYCLES, OPCODE_CATEGORY, OPCODE_COUNT, OpCode, getOpcodeName } from '../../machine/ts/machine/cpu/opcode_info';
+import { INSTRUCTION_BYTES } from '../../machine/ts/machine/cpu/instruction_format';
+import type { CPU, CpuExecutionObserver } from '../../machine/ts/machine/cpu/cpu';
+import type { ExecutionDomainId } from '../../machine/ts/machine/cpu/execution_address_space';
+import type { SourceRange } from '../../machine/ts/machine/cpu/blua32_symbols';
 import {
-	DECODED_PAGE_SHIFT,
-	DECODED_PAGE_WORDS,
-	type Blua32ExecutionImage,
-	type CpuInstructionTrace,
-} from './execution_image';
-import type { CPU } from './cpu';
-import type { ExecutionDomainId } from './execution_address_space';
-
-export type CpuProfilerSourcePosition = {
-	line: number;
-	column: number;
-};
-
-export type CpuProfilerSourceRange = {
-	path: string;
-	start: CpuProfilerSourcePosition;
-	end: CpuProfilerSourcePosition;
-};
-
-export type CpuProfilerFunction = {
-	address: number;
-	codeAddress: number;
-	codeByteCount: number;
-};
-
-export type CpuProfilerMetadata = {
-	debugRanges: ReadonlyArray<CpuProfilerSourceRange | null>;
-};
-
-export type CpuProfilerImage = {
-	textAddress: number;
-	functions: ReadonlyArray<CpuProfilerFunction>;
-	functionIds: ReadonlyArray<string>;
-	metadata: CpuProfilerMetadata | null;
-	opcodeByWord: Uint8Array;
-};
+	blua32ToolingImageForDomain,
+	type Blua32ToolingMedia,
+} from '../../ide/runtime/blua32_media';
+import type { RuntimeSourceState } from '../../ide/runtime/sources';
 
 export type CpuProfilerSnapshot = {
 	totalInstructions: number;
@@ -47,7 +18,7 @@ export type CpuProfilerSnapshot = {
 	opcodeByWord: Uint8Array;
 	functionByWord: Int32Array;
 	functionIds: string[];
-	debugRanges: Array<CpuProfilerSourceRange | null>;
+	debugRanges: Array<SourceRange | null>;
 };
 
 export type CpuProfilerHotOpcode = {
@@ -117,7 +88,7 @@ export type CpuProfilerHotPc = {
 	percent: number;
 	functionIndex: number;
 	functionId: string;
-	range: CpuProfilerSourceRange | null;
+	range: SourceRange | null;
 };
 
 export type CpuProfilerReportOptions = {
@@ -127,9 +98,7 @@ export type CpuProfilerReportOptions = {
 	topPcs?: number;
 };
 
-const EMPTY_U32 = new Uint32Array(0);
-const EMPTY_U8 = new Uint8Array(0);
-const EMPTY_I32 = new Int32Array(0);
+const PROFILE_EXECUTION_DOMAINS: readonly ExecutionDomainId[] = [-1, 0, 1];
 
 function percent(count: number, total: number): number {
 	return total === 0 ? 0 : ((count / total) * 100);
@@ -149,7 +118,7 @@ function visitCountedFunctionWords(snapshot: CpuProfilerSnapshot, visit: (wordIn
 	}
 }
 
-function formatLocation(range: CpuProfilerSourceRange | null, functionId: string, pc: number): string {
+function formatLocation(range: SourceRange | null, functionId: string, pc: number): string {
 	if (range === null) {
 		return `${functionId} @ pc=${pc}`;
 	}
@@ -209,80 +178,126 @@ function collectTopOpcodesFromCounts(counts: Uint32Array, totalInstructions: num
 	return rows.slice(0, limit);
 }
 
-export class CpuExecutionProfiler {
+export class CpuProfilerSession implements CpuExecutionObserver {
 	private totalInstructions = 0;
-	private opcodeCounts = new Uint32Array(OPCODE_COUNT);
-	private pcCounts = EMPTY_U32;
-	private pcByWord = EMPTY_U32;
-	private opcodeByWord = EMPTY_U8;
-	private functionByWord = EMPTY_I32;
-	private functionIds: string[] = [];
-	private debugRanges: Array<CpuProfilerSourceRange | null> = [];
-	private imageWordOffsets = EMPTY_I32;
+	private readonly opcodeCounts = new Uint32Array(OPCODE_COUNT);
+	private pcCounts!: Uint32Array;
+	private pcByWord!: Uint32Array;
+	private opcodeByWord!: Uint8Array;
+	private functionByWord!: Int32Array;
+	private functionIds!: string[];
+	private debugRanges!: Array<SourceRange | null>;
+	private readonly wordBaseByDomain = new Int32Array(PROFILE_EXECUTION_DOMAINS.length);
+	private readonly textAddressByDomain = new Uint32Array(PROFILE_EXECUTION_DOMAINS.length);
+	private readonly functionBaseByDomain = new Int32Array(PROFILE_EXECUTION_DOMAINS.length);
+	private media: Blua32ToolingMedia;
 
-	public configureImages(images: ReadonlyArray<CpuProfilerImage>): void {
-		let instructionCount = 0;
+	public constructor(
+		private readonly cpu: CPU,
+		private readonly sources: RuntimeSourceState,
+	) {
+		this.media = sources.currentBlua32Media;
+		this.configureMedia(this.media);
+	}
+
+	private configureMedia(media: Blua32ToolingMedia): void {
+		this.media = media;
+		this.wordBaseByDomain.fill(0);
+		this.textAddressByDomain.fill(0);
+		this.functionBaseByDomain.fill(0);
+		let instructionWordCount = 0;
 		let functionCount = 0;
-		for (let imageIndex = 0; imageIndex < images.length; imageIndex += 1) {
-			instructionCount += images[imageIndex].opcodeByWord.length;
-			functionCount += images[imageIndex].functions.length;
+		for (let domainIndex = 0; domainIndex < PROFILE_EXECUTION_DOMAINS.length; domainIndex += 1) {
+			const executionDomainId = PROFILE_EXECUTION_DOMAINS[domainIndex];
+			const image = blua32ToolingImageForDomain(media, executionDomainId);
+			if (!image) {
+				continue;
+			}
+			this.wordBaseByDomain[domainIndex] = instructionWordCount;
+			this.textAddressByDomain[domainIndex] = image.layout.header.textAddress;
+			this.functionBaseByDomain[domainIndex] = functionCount;
+			instructionWordCount += image.layout.header.textByteCount / INSTRUCTION_BYTES;
+			functionCount += image.layout.functions.length;
 		}
-		if (this.pcCounts.length !== instructionCount) {
-			this.pcCounts = new Uint32Array(instructionCount);
-			this.pcByWord = new Uint32Array(instructionCount);
-			this.opcodeByWord = new Uint8Array(instructionCount);
-			this.functionByWord = new Int32Array(instructionCount);
-		}
-		if (this.imageWordOffsets.length !== images.length) {
-			this.imageWordOffsets = new Int32Array(images.length);
-		}
-		this.reset();
+		this.pcCounts = new Uint32Array(instructionWordCount);
+		this.pcByWord = new Uint32Array(instructionWordCount);
+		this.opcodeByWord = new Uint8Array(instructionWordCount);
+		this.functionByWord = new Int32Array(instructionWordCount);
 		this.functionByWord.fill(-1);
-		this.functionIds = new Array(functionCount);
-		this.debugRanges = new Array<CpuProfilerSourceRange | null>(instructionCount);
-		let wordBase = 0;
-		let functionBase = 0;
-		for (let imageIndex = 0; imageIndex < images.length; imageIndex += 1) {
-			const image = images[imageIndex];
-			this.imageWordOffsets[imageIndex] = wordBase;
-			this.opcodeByWord.set(image.opcodeByWord, wordBase);
-			for (let functionIndex = 0; functionIndex < image.functions.length; functionIndex += 1) {
-				const fn = image.functions[functionIndex];
-				const startWord = wordBase + (fn.codeAddress - image.textAddress) / INSTRUCTION_BYTES;
+		this.functionIds = new Array<string>(functionCount);
+		this.debugRanges = new Array<SourceRange | null>(instructionWordCount).fill(null);
+		for (let domainIndex = 0; domainIndex < PROFILE_EXECUTION_DOMAINS.length; domainIndex += 1) {
+			const executionDomainId = PROFILE_EXECUTION_DOMAINS[domainIndex];
+			const image = blua32ToolingImageForDomain(media, executionDomainId);
+			if (!image) {
+				continue;
+			}
+			const wordBase = this.wordBaseByDomain[domainIndex];
+			const functionBase = this.functionBaseByDomain[domainIndex];
+			const wordCount = image.layout.header.textByteCount / INSTRUCTION_BYTES;
+			for (let localWord = 0; localWord < wordCount; localWord += 1) {
+				this.pcByWord[wordBase + localWord] = image.layout.header.textAddress + localWord * INSTRUCTION_BYTES;
+			}
+			for (let functionIndex = 0; functionIndex < image.layout.functions.length; functionIndex += 1) {
+				const fn = image.layout.functions[functionIndex];
+				const startWord = wordBase + (fn.codeAddress - image.layout.header.textAddress) / INSTRUCTION_BYTES;
 				const endWord = startWord + fn.codeByteCount / INSTRUCTION_BYTES;
 				for (let wordIndex = startWord; wordIndex < endWord; wordIndex += 1) {
 					this.functionByWord[wordIndex] = functionBase + functionIndex;
 				}
-				this.functionIds[functionBase + functionIndex] = image.functionIds[functionIndex];
+				this.functionIds[functionBase + functionIndex] = image.symbols
+					? image.symbols.metadata.functionIds[functionIndex]
+					: `function@${fn.address.toString(16)}`;
 			}
-			for (let localWord = 0; localWord < image.opcodeByWord.length; localWord += 1) {
-				this.pcByWord[wordBase + localWord] = image.textAddress + localWord * INSTRUCTION_BYTES;
-				this.debugRanges[wordBase + localWord] = image.metadata !== null
-					? image.metadata.debugRanges[localWord]
-					: null;
+			if (image.symbols) {
+				const ranges = image.symbols.metadata.debugRanges;
+				for (let wordIndex = 0; wordIndex < ranges.length; wordIndex += 1) {
+					this.debugRanges[wordBase + wordIndex] = ranges[wordIndex];
+				}
 			}
-			wordBase += image.opcodeByWord.length;
-			functionBase += image.functions.length;
 		}
+		this.resetCounters();
 	}
 
-	public reset(): void {
+	private resetCounters(): void {
 		this.totalInstructions = 0;
 		this.opcodeCounts.fill(0);
 		this.pcCounts.fill(0);
 	}
 
-	public record(imageIndex: number, wordIndex: number, opcode: number): void {
+	public enable(): void {
+		if (this.media !== this.sources.currentBlua32Media) {
+			this.configureMedia(this.sources.currentBlua32Media);
+		} else {
+			this.resetCounters();
+		}
+		this.cpu.setExecutionObserver(this);
+	}
+
+	public disable(): void {
+		this.cpu.setExecutionObserver(null);
+	}
+
+	public onInstruction(executionDomainId: ExecutionDomainId, pc: number, opcode: number): void {
+		if (this.media !== this.sources.currentBlua32Media) {
+			this.configureMedia(this.sources.currentBlua32Media);
+		}
+		const domainIndex = executionDomainId + 1;
+		const wordIndex = this.wordBaseByDomain[domainIndex]
+			+ (pc - this.textAddressByDomain[domainIndex]) / INSTRUCTION_BYTES;
 		this.totalInstructions += 1;
 		this.opcodeCounts[opcode] += 1;
-		this.pcCounts[this.imageWordOffsets[imageIndex] + wordIndex] += 1;
+		this.pcCounts[wordIndex] += 1;
+		this.opcodeByWord[wordIndex] = opcode;
 	}
 
 	public snapshot(): CpuProfilerSnapshot {
-		const totalBaseCycles = sumBaseCycles(this.opcodeCounts);
+		if (this.media !== this.sources.currentBlua32Media) {
+			this.configureMedia(this.sources.currentBlua32Media);
+		}
 		return {
 			totalInstructions: this.totalInstructions,
-			totalBaseCycles,
+			totalBaseCycles: sumBaseCycles(this.opcodeCounts),
 			opcodeCounts: this.opcodeCounts.slice(),
 			pcCounts: this.pcCounts.slice(),
 			pcByWord: this.pcByWord.slice(),
@@ -292,101 +307,6 @@ export class CpuExecutionProfiler {
 			debugRanges: this.debugRanges.slice(),
 		};
 	}
-}
-
-export class CpuProfilerSession implements CpuInstructionTrace {
-	public readonly profiler = new CpuExecutionProfiler();
-	private readonly functionIdsByDomain = new Map<ExecutionDomainId, ReadonlyArray<string>>();
-	private readonly metadataByDomain = new Map<ExecutionDomainId, CpuProfilerMetadata | null>();
-	private readonly imageIndexes = new Map<Blua32ExecutionImage, number>();
-	private enabled = false;
-
-	public constructor(private readonly cpu: CPU) {
-	}
-
-	public attachDebugInfo(
-		executionDomainId: ExecutionDomainId,
-		functionIds: ReadonlyArray<string>,
-		metadata: CpuProfilerMetadata | null,
-	): void {
-		this.functionIdsByDomain.set(executionDomainId, functionIds);
-		this.metadataByDomain.set(executionDomainId, metadata);
-		if (this.enabled) {
-			this.configureImages();
-		}
-	}
-
-	public enable(): void {
-		if (this.enabled) {
-			this.profiler.reset();
-			return;
-		}
-		this.configureImages();
-		this.cpu.setInstructionTrace(this);
-		this.enabled = true;
-	}
-
-	public disable(): void {
-		if (!this.enabled) {
-			return;
-		}
-		this.cpu.setInstructionTrace(null);
-		this.enabled = false;
-	}
-
-	public recordInstruction(image: Blua32ExecutionImage, wordIndex: number, opcode: number): void {
-		let imageIndex = this.imageIndexes.get(image);
-		if (imageIndex === undefined) {
-			this.configureImages();
-			imageIndex = this.cpu.currentExecutionImages().indexOf(image);
-		}
-		this.profiler.record(imageIndex, wordIndex, opcode);
-	}
-
-	private configureImages(): void {
-		const images = this.cpu.currentExecutionImages();
-		const descriptors = new Array<CpuProfilerImage>(images.length);
-		this.imageIndexes.clear();
-		for (let imageIndex = 0; imageIndex < images.length; imageIndex += 1) {
-			const image = images[imageIndex];
-			this.imageIndexes.set(image, imageIndex);
-			const attachedFunctionIds = this.functionIdsByDomain.get(image.executionDomainId);
-			let functionIds: ReadonlyArray<string>;
-			if (attachedFunctionIds === undefined) {
-				const generatedFunctionIds = new Array<string>(image.functions.length);
-				for (let functionIndex = 0; functionIndex < image.functions.length; functionIndex += 1) {
-					generatedFunctionIds[functionIndex] = `function@${image.functions[functionIndex].address.toString(16)}`;
-				}
-				functionIds = generatedFunctionIds;
-			} else {
-				functionIds = attachedFunctionIds;
-			}
-			const attachedMetadata = this.metadataByDomain.get(image.executionDomainId);
-			descriptors[imageIndex] = {
-				textAddress: image.layout.header.textAddress,
-				functions: image.functions,
-				functionIds,
-				metadata: attachedMetadata === undefined ? null : attachedMetadata,
-				opcodeByWord: buildProfilerOpcodeByWord(image),
-			};
-		}
-		this.profiler.configureImages(descriptors);
-	}
-}
-
-function buildProfilerOpcodeByWord(image: Blua32ExecutionImage): Uint8Array {
-	const opcodeByWord = new Uint8Array(image.decodedWordCount);
-	const decodedPages = image.decodedPages;
-	for (let pageIndex = 0; pageIndex < decodedPages.length; pageIndex += 1) {
-		const page = decodedPages[pageIndex];
-		const pageStart = pageIndex << DECODED_PAGE_SHIFT;
-		const remainingWords = opcodeByWord.length - pageStart;
-		const pageWords = remainingWords < DECODED_PAGE_WORDS ? remainingWords : DECODED_PAGE_WORDS;
-		for (let offset = 0; offset < pageWords; offset += 1) {
-			opcodeByWord[pageStart + offset] = page.ops[offset];
-		}
-	}
-	return opcodeByWord;
 }
 
 export function collectCpuProfilerHotPaths(snapshot: CpuProfilerSnapshot, limit = 16): CpuProfilerHotPath[] {

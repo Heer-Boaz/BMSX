@@ -1,6 +1,4 @@
-import { LuaError, LuaRuntimeError, LuaSyntaxError } from './errors';
-import type { ExecutionSignal } from './runtime';
-
+import { LuaError, LuaRuntimeError, LuaSyntaxError } from '../../../../machine/ts/lua/errors';
 export type LuaValue = null | boolean | number | string | LuaTable | LuaFunctionValue | LuaNativeValue;
 
 export interface LuaFunctionValue {
@@ -8,8 +6,7 @@ export interface LuaFunctionValue {
 	call(args: ReadonlyArray<LuaValue>): LuaCallResult;
 }
 
-export type LuaCallSignal = Extract<ExecutionSignal, { kind: 'pause'; }>;
-export type LuaCallResult = ReadonlyArray<LuaValue> | LuaCallSignal;
+export type LuaCallResult = ReadonlyArray<LuaValue>;
 
 export class LuaNativeValue {
 	public metatable: LuaTable = null;
@@ -328,24 +325,6 @@ Object.defineProperties(luaTablePrototype, {
 	numericLength: { value: tableNumericLength, enumerable: false, configurable: false },
 	metatable: { get: tableGetMetatable, set: tableSetMetatable, enumerable: false, configurable: false },
 });
-
-export type LuaDebuggerPauseSignal = Extract<ExecutionSignal, { kind: 'pause'; }>;
-
-export function isLuaDebuggerPauseSignal(value: unknown): value is LuaDebuggerPauseSignal {
-	if (typeof value !== 'object' || value === null) {
-		return false;
-	}
-	const candidate = value as Partial<LuaDebuggerPauseSignal>;
-	return candidate.kind === 'pause' && isHostCallable(candidate.resume);
-}
-
-export function isLuaCallSignal(value: unknown): value is LuaCallSignal {
-	if (typeof value !== 'object' || value === null) {
-		return false;
-	}
-	const candidate = value as { kind?: unknown };
-	return candidate.kind === 'pause';
-}
 
 export function isLuaFunctionValue(value: unknown): value is LuaFunctionValue {
 	if (!value || typeof value !== 'object') {

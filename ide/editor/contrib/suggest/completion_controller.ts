@@ -44,6 +44,8 @@ import { createResourceState, resourceSearchState } from '../../../workbench/con
 import { editorRuntimeState } from '../../common/runtime_state';
 import { editorSearchState, lineJumpState } from '../find/widget_state';
 import { symbolSearchState } from '../symbols/search/state';
+import type { RuntimeNativeBridge } from '../../../runtime/native_bridge';
+import type { RuntimeFaultState } from '../../../runtime/fault_state';
 
 type LocalCompletionCacheEntry = {
 	parsedVersion: number;
@@ -55,7 +57,11 @@ type LocalCompletionCacheEntry = {
 const KEYWORD_COMPLETION_ITEMS: LuaCompletionItem[] = getKeywordCompletions();
 
 export class CompletionController {
-	public constructor(protected readonly runtime: Runtime) {}
+	public constructor(
+		protected readonly bridge: RuntimeNativeBridge,
+		protected readonly fault: RuntimeFaultState,
+		protected readonly runtime: Runtime,
+	) {}
 
 	public get session(): CompletionSession | null { return this.completionSession; }
 	public get hint(): ParameterHintState | null { return this.parameterHint; }
@@ -89,7 +95,7 @@ export class CompletionController {
 			return false;
 		}
 		const lastEditAt = editorDocumentState.lastContentEditAtMs;
-		if (lastEditAt === undefined) {
+		if (lastEditAt < 0) {
 			return false;
 		}
 		const now = editorRuntimeState.clockNow();
@@ -569,7 +575,7 @@ export class CompletionController {
 			};
 			appendItems(this.getModuleMemberCompletionItems(context));
 			const path = this.getActivePath();
-			const runtimeItems = buildMemberCompletionItems(this.runtime, context.objectName, context.operator, path);
+			const runtimeItems = buildMemberCompletionItems(this.bridge, this.fault, this.runtime, context.objectName, context.operator, path);
 			appendItems(runtimeItems);
 			if (merged.length > 0) {
 				return buildCanonicalCompletionItems(merged);
@@ -649,7 +655,7 @@ export class CompletionController {
 			&& this.cachedGlobalCompletionDomain === domain) {
 			return this.cachedGlobalCompletionItems;
 		}
-		const entries = listGlobalLuaSymbols(domain);
+		const entries = listGlobalLuaSymbols(this.bridge, domain);
 		const items = this.buildSymbolCompletionItems(entries, 'global');
 		const apiItem: LuaCompletionItem = { label: 'api', insertText: 'api', sortKey: 'global:api', kind: 'global', detail: 'Runtime API root' };
 		items.push(apiItem);
@@ -808,7 +814,7 @@ export class CompletionController {
 		}
 		let symbols: LuaSymbolEntry[] = [];
 		try {
-			symbols = listLuaSymbols(this.getActiveDomain(), moduleAlias.module);
+			symbols = listLuaSymbols(this.bridge, this.getActiveDomain(), moduleAlias.module);
 		} catch {
 			symbols = [];
 		}
@@ -1460,8 +1466,8 @@ export class EditorCompletionController extends CompletionController {
 	private readonly unsubscribeCursorMoved: () => void;
 	private readonly unsubscribeTextMutated: () => void;
 
-	public constructor(runtime: Runtime) {
-		super(runtime);
+	public constructor(bridge: RuntimeNativeBridge, fault: RuntimeFaultState, runtime: Runtime) {
+		super(bridge, fault, runtime);
 		this.unsubscribeCursorMoved = editorDocumentState.onCursorMoved(() => this.onCursorMoved());
 		this.unsubscribeTextMutated = editorDocumentState.onTextMutated(edit => this.updateAfterEdit(edit));
 	}

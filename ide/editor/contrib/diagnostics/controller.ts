@@ -1,9 +1,8 @@
 import { clamp } from '../../../../machine/ts/common/clamp';
 import type { TimerHandle } from '../../../../machine/ts/platform/platform';
-import { computeAggregatedEditorDiagnostics, markDiagnosticsDirty, type DiagnosticContextInput, type DiagnosticProviders } from './analysis';
+import { computeAggregatedEditorDiagnostics, markDiagnosticsDirty, type DiagnosticContextInput } from './analysis';
 import { editorRuntimeState } from '../../common/runtime_state';
 import type { EditorDiagnostic, CodeTabContext } from '../../../common/models';
-import { listLuaSymbols, listGlobalLuaSymbols, listLuaBuiltinFunctions } from '../intellisense/engine';
 import { getLinesSnapshot, getTextSnapshot } from '../../text/source_text';
 import { enqueueBackgroundTask, scheduleIdeOnce } from '../../../common/background_tasks';
 import {
@@ -21,25 +20,12 @@ import { diagnosticsDebounceMs, editorDiagnosticsState, EMPTY_DIAGNOSTICS } from
 import { editorDocumentState } from '../../editing/document_state';
 import { editorViewState } from '../../ui/view/state';
 import { problemsPanel } from '../../../workbench/contrib/problems/panel/controller';
-import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
+import type { RuntimeNativeBridge } from '../../../runtime/native_bridge';
 
 const diagnosticsMinIntervalMs = 600;
 let diagnosticsTimer: TimerHandle | null = null;
 let diagnosticsScheduledForMs = 0;
 let lastDiagnosticsRunMs = 0;
-export function createDiagnosticProviders(): DiagnosticProviders {
-	return {
-		listLocalSymbols: (domain, path) => {
-			return listLuaSymbols(domain, path);
-		},
-		listGlobalSymbols: (domain) => {
-			return listGlobalLuaSymbols(domain);
-		},
-		listBuiltins: () => {
-			return listLuaBuiltinFunctions();
-		},
-	};
-}
 
 function cancelDiagnosticsTimer(): void {
 	if (diagnosticsTimer) {
@@ -50,7 +36,7 @@ function cancelDiagnosticsTimer(): void {
 	editorDiagnosticsState.diagnosticsComputationScheduled = false;
 }
 
-export function processDiagnosticsQueue(runtime: Runtime, now: number): void {
+export function processDiagnosticsQueue(bridge: RuntimeNativeBridge, now: number): void {
 	if (!editorDiagnosticsState.diagnosticsDirty) {
 		return;
 	}
@@ -70,10 +56,10 @@ export function processDiagnosticsQueue(runtime: Runtime, now: number): void {
 	if (editorDiagnosticsState.diagnosticsDueAtMs === null) {
 		editorDiagnosticsState.diagnosticsDueAtMs = now + diagnosticsDebounceMs;
 	}
-	scheduleDiagnosticsComputation(runtime);
+	scheduleDiagnosticsComputation(bridge);
 }
 
-export function scheduleDiagnosticsComputation(runtime: Runtime): void {
+export function scheduleDiagnosticsComputation(bridge: RuntimeNativeBridge): void {
 	const now = editorRuntimeState.clockNow();
 	const dueAt = editorDiagnosticsState.diagnosticsDueAtMs ?? now + diagnosticsDebounceMs;
 	const spacedDueAt = Math.max(dueAt, lastDiagnosticsRunMs + diagnosticsMinIntervalMs);
@@ -89,11 +75,11 @@ export function scheduleDiagnosticsComputation(runtime: Runtime): void {
 		diagnosticsTimer = null;
 		diagnosticsScheduledForMs = 0;
 		editorDiagnosticsState.diagnosticsComputationScheduled = false;
-		executeDiagnosticsComputation(runtime);
+		executeDiagnosticsComputation(bridge);
 	});
 }
 
-export function executeDiagnosticsComputation(runtime: Runtime): void {
+export function executeDiagnosticsComputation(bridge: RuntimeNativeBridge): void {
 	if (!editorDiagnosticsState.diagnosticsDirty) {
 		editorDiagnosticsState.diagnosticsDueAtMs = null;
 		cancelDiagnosticsTimer();
@@ -112,17 +98,17 @@ export function executeDiagnosticsComputation(runtime: Runtime): void {
 		return;
 	}
 	if (editorDiagnosticsState.diagnosticsTaskPending) {
-		scheduleDiagnosticsComputation(runtime);
+		scheduleDiagnosticsComputation(bridge);
 		return;
 	}
 	const now = editorRuntimeState.clockNow();
 	if (editorDiagnosticsState.diagnosticsDueAtMs === null) {
 		editorDiagnosticsState.diagnosticsDueAtMs = now + diagnosticsDebounceMs;
-		scheduleDiagnosticsComputation(runtime);
+		scheduleDiagnosticsComputation(bridge);
 		return;
 	}
 	if (now < editorDiagnosticsState.diagnosticsDueAtMs) {
-		scheduleDiagnosticsComputation(runtime);
+		scheduleDiagnosticsComputation(bridge);
 		return;
 	}
 	const batch = collectDiagnosticsBatch();
@@ -132,16 +118,16 @@ export function executeDiagnosticsComputation(runtime: Runtime): void {
 		cancelDiagnosticsTimer();
 		return;
 	}
-	enqueueDiagnosticsJob(runtime, batch);
+	enqueueDiagnosticsJob(bridge, batch);
 }
 
-export function enqueueDiagnosticsJob(runtime: Runtime, contextIds: readonly string[]): void {
+export function enqueueDiagnosticsJob(bridge: RuntimeNativeBridge, contextIds: readonly string[]): void {
 	if (contextIds.length === 0) {
 		return;
 	}
 	editorDiagnosticsState.diagnosticsTaskPending = true;
 	enqueueBackgroundTask(() => {
-		runDiagnosticsForContexts(contextIds);
+		runDiagnosticsForContexts(bridge, contextIds);
 		editorDiagnosticsState.diagnosticsTaskPending = false;
 		lastDiagnosticsRunMs = editorRuntimeState.clockNow();
 		if (editorDiagnosticsState.dirtyDiagnosticContexts.size === 0) {
@@ -151,7 +137,7 @@ export function enqueueDiagnosticsJob(runtime: Runtime, contextIds: readonly str
 		} else {
 			const now = editorRuntimeState.clockNow();
 			editorDiagnosticsState.diagnosticsDueAtMs = now + diagnosticsDebounceMs;
-			processDiagnosticsQueue(runtime, now);
+			processDiagnosticsQueue(bridge, now);
 		}
 		return false;
 	});
@@ -165,7 +151,7 @@ export function collectDiagnosticsBatch(): string[] {
 	return [];
 }
 
-export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
+export function runDiagnosticsForContexts(bridge: RuntimeNativeBridge, contextIds: readonly string[]): void {
 	if (contextIds.length === 0) {
 		return;
 	}
@@ -215,7 +201,7 @@ export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
 		updateDiagnosticsAggregates();
 		return;
 	}
-	const diagnostics = computeAggregatedEditorDiagnostics(inputs, createDiagnosticProviders());
+	const diagnostics = computeAggregatedEditorDiagnostics(bridge, inputs);
 	const byContext = new Map<string, EditorDiagnostic[]>();
 	for (let index = 0; index < diagnostics.length; index += 1) {
 		const diag = diagnostics[index];

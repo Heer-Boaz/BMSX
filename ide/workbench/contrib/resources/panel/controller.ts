@@ -42,8 +42,9 @@ import {
 	refreshResourcePanelResourceState,
 } from './refresh';
 import { handleResourcePanelKeyboardInput } from './keyboard';
-import type { Runtime } from '../../../../../machine/ts/machine/runtime/runtime';
 import type { ResourceIdentity } from '../../../../common/resource';
+import type { CartEditor } from '../../../../cart_editor';
+import type { RuntimeSourceState } from '../../../../runtime/sources';
 
 export type ResourcePanelItemMetrics = {
 	item: ResourceBrowserItem;
@@ -102,7 +103,11 @@ export class ResourcePanelController {
 	public readonly resourceVertical: Scrollbar;
 	public readonly resourceHorizontal: Scrollbar;
 
-	constructor(private readonly runtime: Runtime, scrollbars: ResourcePanelScrollbars) {
+	constructor(
+		private readonly editor: CartEditor,
+		private readonly sources: RuntimeSourceState,
+		scrollbars: ResourcePanelScrollbars,
+	) {
 		this.lineHeight = editorViewState.lineHeight;
 		this.charAdvance = editorViewState.charAdvance;
 		this.widthRatio = defaultResourcePanelRatio();
@@ -248,14 +253,19 @@ export class ResourcePanelController {
 			this.activateSelectedCallHierarchy();
 			return;
 		}
-		openSelectedResourcePanelItem(this.items, this.selectionIndex);
+		openSelectedResourcePanelItem(this.editor, this.sources, this.items, this.selectionIndex);
 	}
 
 	openSelectedCallHierarchyLocation(): void {
 		if (this.mode !== 'command') {
 			return;
 		}
-		openSelectedResourcePanelCallHierarchyLocation(this.runtime, this.items, this.selectionIndex);
+		openSelectedResourcePanelCallHierarchyLocation(
+			this.editor,
+			this.sources,
+			this.items,
+			this.selectionIndex,
+		);
 	}
 
 	getHorizontalScrollStep(): number {
@@ -305,7 +315,7 @@ export class ResourcePanelController {
 				? this.items[this.selectionIndex].descriptor
 				: null;
 		this.applyRefreshResult(refreshResourcePanelResourceState({
-			runtime: this.runtime,
+			sources: this.sources,
 			filterMode: this.filterMode,
 			bounds,
 			lineHeight: this.lineHeight,
@@ -462,7 +472,8 @@ export class ResourcePanelController {
 
 	private activateSelectedCallHierarchy(): void {
 		const toggledNodeId = activateSelectedCallHierarchyItem(
-			this.runtime,
+			this.editor,
+			this.sources,
 			this.items,
 			this.selectionIndex,
 			this.callHierarchyExpandedNodeIds,

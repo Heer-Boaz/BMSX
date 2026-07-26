@@ -1,4 +1,7 @@
-import { runtimeWorkbenchState } from '../../../runtime/workbench_state';
+import type { RuntimeSourceState } from '../../../runtime/sources';
+import type { RuntimeNativeBridge } from '../../../runtime/native_bridge';
+import type { RuntimeFaultState } from '../../../runtime/fault_state';
+import type { CartEditor } from '../../../cart_editor';
 // disable cross_layer_import_pattern -- code-tab activation owns the editor/workbench state handoff during tab switches, saves, and result navigation.
 import type { CodeTabContext } from '../../../common/models';
 import { editorDocumentState, restoreDocumentStateFromContext, storeDocumentStateInContext } from '../../../editor/editing/document_state';
@@ -7,7 +10,7 @@ import { editorViewState } from '../../../editor/ui/view/state';
 import { syncRuntimeErrorOverlayFromContext } from '../../../runtime_error/navigation';
 import type { LuaDefinitionLocation } from '../../../../machine/ts/lua/semantic_contracts';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
-import { extractErrorMessage } from '../../../../machine/ts/lua/value';
+import { extractErrorMessage } from '../../../language/lua/interpreter/value';
 import { ensureCursorVisible, updateDesiredColumn } from '../../../editor/ui/view/caret/caret';
 import { editorCaretState } from '../../../editor/ui/view/caret/state';
 import { refreshActiveDiagnostics } from '../../../editor/contrib/diagnostics/controller';
@@ -94,9 +97,8 @@ export function captureActiveCodeTabSource(): string {
 	return getTextSnapshot(context.buffer);
 }
 
-export function capturePendingLuaCodeTabSources(): LuaCodeTabSourceSnapshot[] {
+export function capturePendingLuaCodeTabSources(sources: RuntimeSourceState): LuaCodeTabSourceSnapshot[] {
 	const snapshots: LuaCodeTabSourceSnapshot[] = [];
-	const sources = runtimeWorkbenchState.sources;
 	for (const context of codeTabSessionState.contexts.values()) {
 		if (context.mode !== 'lua') {
 			continue;
@@ -193,28 +195,43 @@ export function activateCodeEditorTab(tabId: string, selection?: CodeTabSelectio
 	refreshActiveDiagnostics();
 }
 
-export function gotoDefinitionAt(runtime: Runtime, row: number, column: number): boolean {
-	const definition = resolveDefinitionAt(runtime, getActiveCodeTabContext(), row, column);
+export function gotoDefinitionAt(
+	bridge: RuntimeNativeBridge,
+	fault: RuntimeFaultState,
+	editor: CartEditor,
+	sources: RuntimeSourceState,
+	runtime: Runtime,
+	row: number,
+	column: number,
+): boolean {
+	const definition = resolveDefinitionAt(bridge, fault, runtime, getActiveCodeTabContext(), row, column);
 	if (!definition) {
 		return false;
 	}
-	navigateToLuaDefinition(runtime, definition);
+	navigateToLuaDefinition(editor, sources, definition);
 	return true;
 }
 
-export function navigateToLuaDefinition(runtime: Runtime, definition: LuaDefinitionLocation): void {
+export function navigateToLuaDefinition(
+	editor: CartEditor,
+	sources: RuntimeSourceState,
+	definition: LuaDefinitionLocation,
+): void {
 	const navigationCheckpoint = beginNavigationCapture();
 	clearReferenceHighlights();
 	let targetContextId: string = null;
 	try {
 		const activeDomain = getActiveCodeTabContext().descriptor.domain;
 		const source = resolveRuntimeLuaSourceForContext(
-			runtimeWorkbenchState.sources,
+			sources,
 			activeDomain,
 			definition.path,
-		)!;
+		);
+		if (!source) {
+			throw new Error(`Lua source '${definition.path}' is not installed.`);
+		}
 		const identity = { domain: source.domain, path: source.record.source_path };
-		focusChunkSource(runtime, identity);
+		focusChunkSource(editor, sources, identity);
 		const context = findCodeTabContext(identity);
 		if (context) {
 			targetContextId = context.id;
@@ -225,9 +242,9 @@ export function navigateToLuaDefinition(runtime: Runtime, definition: LuaDefinit
 		return;
 	}
 	if (targetContextId) {
-		setActiveTab(targetContextId);
+		setActiveTab(editor.resourcePanel, targetContextId);
 	} else {
-		activateCodeTab();
+		activateCodeTab(editor.resourcePanel);
 	}
 	applyDefinitionSelection(definition.range);
 	editorCaretState.cursorRevealSuspended = false;

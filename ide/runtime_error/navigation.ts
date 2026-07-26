@@ -1,5 +1,4 @@
-import { runtimeWorkbenchState } from '../runtime/workbench_state';
-import { centerCursorVertically, setCursorPosition } from '../editor/ui/view/caret/caret';
+import { centerCursorVertically, ensureCursorVisible, setCursorPosition } from '../editor/ui/view/caret/caret';
 import { beginNavigationCapture, completeNavigation } from '../navigation/navigation_history';
 import { activateCodeTab, isTabActive, setActiveTab } from '../workbench/ui/tabs';
 import { getActiveCodeTabContext, getCodeTabContexts } from '../workbench/ui/code_tab/contexts';
@@ -20,6 +19,17 @@ import {
 	setActiveRuntimeErrorOverlay,
 	setExecutionStopHighlight as setEditorExecutionStopHighlight,
 } from '../editor/contrib/runtime_error/navigation';
+import { LuaError } from '../../machine/ts/lua/errors';
+import type { StackTraceFrame } from '../language/lua/interpreter/value';
+import { extractErrorMessage } from '../language/lua/interpreter/value';
+import { clamp } from '../../machine/ts/common/clamp';
+import type { CartEditor } from '../cart_editor';
+import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
+import type { RuntimeSourceState } from '../runtime/sources';
+import type { ResourcePanelController } from '../workbench/contrib/resources/panel/controller';
+import { focusChunkSourceForContext } from '../workbench/contrib/resources/navigation';
+import { findFunctionDefinitionRowInActiveFile } from '../editor/contrib/intellisense/engine';
+import { resetPointerClickTracking } from '../input/pointer/state';
 
 type RuntimeErrorOverlayTarget = { context: CodeTabContext; overlay: RuntimeErrorOverlay };
 
@@ -36,25 +46,25 @@ function resolveRuntimeErrorOverlayTarget(): RuntimeErrorOverlayTarget {
 	return null;
 }
 
-function ensureActiveContext(target: CodeTabContext): void {
+function ensureActiveContext(resourcePanel: ResourcePanelController, target: CodeTabContext): void {
 	if (!target) {
 		return;
 	}
 	if (!isTabActive(target.id)) {
-		setActiveTab(target.id);
+		setActiveTab(resourcePanel, target.id);
 		return;
 	}
 	syncRuntimeErrorOverlayFromContext(target);
 }
 
-export function focusRuntimeErrorOverlay(): boolean {
+export function focusRuntimeErrorOverlay(resourcePanel: ResourcePanelController): boolean {
 	const target = resolveRuntimeErrorOverlayTarget();
 	if (!target) {
 		return false;
 	}
-	ensureActiveContext(target.context);
+	ensureActiveContext(resourcePanel, target.context);
 	if (!getActiveCodeTabContext()) {
-		activateCodeTab();
+		activateCodeTab(resourcePanel);
 	}
 	const overlay = target.context.runtimeErrorOverlay;
 	if (!overlay) {
@@ -142,33 +152,60 @@ export function syncRuntimeErrorOverlayFromContext(context: CodeTabContext): voi
 	clearExecutionStopHighlight();
 }
 
-export function showLuaErrorOverlay(error: unknown): boolean {
-	let candidate: { line?: unknown; column?: unknown; path?: unknown; message?: unknown };
-	if (typeof error === 'string') {
-		candidate = { message: error };
-	} else if (error && typeof error === 'object') {
-		candidate = error as { line?: unknown; column?: unknown; path?: unknown; message?: unknown };
-	} else {
-		throw new Error('[CartEditor] Lua error payload is neither an object nor a string.');
-	}
-	const rawLine = candidate.line as number;
-	const rawColumn = candidate.column as number;
-	const path = candidate.path as string;
-	const messageText = candidate.message as string;
-	const hasLine = rawLine !== null && rawLine > 0;
-	const hasColumn = rawColumn !== null && rawColumn > 0;
-	if (!hasLine && !hasColumn) {
-		if (messageText) {
-			showEditorMessage(messageText, constants.COLOR_STATUS_ERROR, 4.0);
-			return true;
-		}
+export function showLuaErrorOverlay(editor: CartEditor, error: unknown): boolean {
+	if (!(error instanceof LuaError)) {
 		return false;
 	}
-	const safeLine = hasLine ? rawLine : 0;
-	const safeColumn = hasColumn ? rawColumn : 0;
-	const baseMessage = messageText ?? 'Unprintable error';
-	runtimeWorkbenchState.ide.editor.showRuntimeErrorInChunk(path, safeLine, safeColumn, baseMessage);
+	if (error.line <= 0 && error.column <= 0) {
+		showEditorMessage(error.message, constants.COLOR_STATUS_ERROR, 4.0);
+		return true;
+	}
+	editor.showRuntimeErrorInChunk(error.path, error.line, error.column, error.message);
 	return true;
+}
+
+export function navigateToRuntimeErrorFrameTarget(
+	editor: CartEditor,
+	sources: RuntimeSourceState,
+	runtime: Runtime,
+	frame: StackTraceFrame,
+): void {
+	if (frame.origin !== 'lua') {
+		return;
+	}
+	try {
+		focusChunkSourceForContext(editor, sources, runtime.machine.cpu.activeCartridgeSlot(), frame.source);
+	} catch (error) {
+		showEditorMessage(
+			`Failed to open runtime path: ${extractErrorMessage(error)}`,
+			constants.COLOR_STATUS_ERROR,
+			1.6,
+		);
+		return;
+	}
+	const lastRowIndex = editorDocumentState.buffer.getLineCount() - 1;
+	let targetRow = frame.line > 0 ? clamp(frame.line - 1, 0, lastRowIndex) : -1;
+	if (targetRow < 0 && frame.functionName) {
+		targetRow = findFunctionDefinitionRowInActiveFile(frame.functionName);
+	}
+	if (targetRow < 0) {
+		targetRow = 0;
+	}
+	const targetLine = editorDocumentState.buffer.getLineContent(targetRow);
+	let targetColumn = frame.column > 0 ? clamp(frame.column - 1, 0, targetLine.length) : 0;
+	if (targetColumn === 0 && frame.functionName) {
+		const nameIndex = targetLine.indexOf(frame.functionName);
+		if (nameIndex >= 0) {
+			targetColumn = nameIndex;
+		}
+	}
+	editorDocumentState.selectionAnchor = null;
+	editorPointerState.pointerSelecting = false;
+	resetPointerClickTracking();
+	setCursorPosition(targetRow, targetColumn);
+	editorCaretState.cursorRevealSuspended = false;
+	centerCursorVertically();
+	ensureCursorVisible();
 }
 
 export { clearRuntimeErrorOverlay };

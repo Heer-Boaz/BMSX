@@ -1,6 +1,6 @@
-import { LuaEnvironment } from '../../machine/ts/lua/environment';
-import { LuaInterpreter } from '../../machine/ts/lua/runtime';
-import { createLuaTable, LuaValue } from '../../machine/ts/lua/value';
+import { LuaEnvironment } from '../language/lua/interpreter/environment';
+import { LuaInterpreter } from '../language/lua/interpreter/interpreter';
+import { createLuaTable, LuaValue } from '../language/lua/interpreter/value';
 import { DEFAULT_LUA_BUILTIN_FUNCTIONS } from '../../machine/ts/lua/builtin_descriptors';
 import type { LuaBuiltinDescriptor } from '../../machine/ts/lua/semantic_contracts';
 

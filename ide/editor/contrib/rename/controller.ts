@@ -11,9 +11,10 @@ import { setSingleCursorSelectionAnchor } from '../../editing/cursor/state';
 import { commitRename } from './operations';
 import { handleRenameControllerInput } from './input';
 import { validateRenameIdentifier } from './validation';
-import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
+import type { RuntimeNativeBridge } from '../../../runtime/native_bridge';
+import type { CrossFileRenameManager } from './operations';
 
-export type RenameStartOptions = Omit<ReferenceLookupOptions, 'runtime'>;
+export type RenameStartOptions = ReferenceLookupOptions;
 
 const EMPTY_RENAME_MATCHES: SearchMatch[] = [];
 
@@ -37,8 +38,8 @@ export class RenameController {
 		return LuaLexer.isIdentifierPart(value.charAt(0));
 	};
 
-	public begin(runtime: Runtime, options: RenameStartOptions): boolean {
-		const lookup = resolveReferenceLookup({ ...options, runtime });
+	public begin(bridge: RuntimeNativeBridge, options: RenameStartOptions): boolean {
+		const lookup = resolveReferenceLookup(bridge, options);
 		if (lookup.kind === 'error') {
 			showEditorMessage(lookup.message, constants.COLOR_STATUS_WARNING, lookup.duration);
 			return false;
@@ -73,11 +74,11 @@ export class RenameController {
 		this.close();
 	}
 
-	public handleInput(): void {
+	public handleInput(crossFileRename: CrossFileRenameManager): void {
 		if (!this.active) {
 			return;
 		}
-		handleRenameControllerInput(this);
+		handleRenameControllerInput(this, crossFileRename);
 	}
 
 	public getField(): TextField {
@@ -112,7 +113,7 @@ export class RenameController {
 		return this.matches;
 	}
 
-	public commit(): void {
+	public commit(crossFileRename: CrossFileRenameManager): void {
 		if (!this.active || !this.info) {
 			return;
 		}
@@ -131,7 +132,7 @@ export class RenameController {
 				this.close();
 				return;
 		}
-		const updatedMatches = commitRename(this.matches, nextName, this.activeIndex, this.info);
+		const updatedMatches = commitRename(crossFileRename, this.matches, nextName, this.activeIndex, this.info);
 		showEditorMessage(`Renamed ${updatedMatches} reference${updatedMatches === 1 ? '' : 's'} to ${nextName}`, constants.COLOR_STATUS_SUCCESS, 1.6);
 		this.close();
 	}

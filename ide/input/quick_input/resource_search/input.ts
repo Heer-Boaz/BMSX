@@ -9,8 +9,17 @@ import { ensureResourceSearchSelectionVisible, moveResourceSearchSelection, upda
 import { openGlobalSymbolSearch, openSymbolSearch } from '../../../editor/contrib/symbols/search/index';
 import { lineJumpState } from '../../../editor/contrib/find/widget_state';
 import { resourceSearchState } from '../../../workbench/contrib/resources/widget_state';
+import type { RuntimeNativeBridge } from '../../../runtime/native_bridge';
+import type { RenameController } from '../../../editor/contrib/rename/controller';
+import type { CartEditor } from '../../../cart_editor';
+import type { RuntimeSourceState } from '../../../runtime/sources';
 
-export function handleResourceSearchInput(): void {
+export function handleResourceSearchInput(
+	editor: CartEditor,
+	sources: RuntimeSourceState,
+	bridge: RuntimeNativeBridge,
+	rename: RenameController,
+): void {
 	const shiftDown = isShiftDown();
 	if (isKeyJustPressed('Enter') || isKeyJustPressed('NumpadEnter')) {
 		consumeIdeKey('Enter');
@@ -20,7 +29,7 @@ export function handleResourceSearchInput(): void {
 			return;
 		}
 		if (resourceSearchState.selectionIndex >= 0) {
-			applyResourceSearchSelection(resourceSearchState.selectionIndex);
+			applyResourceSearchSelection(editor, sources, resourceSearchState.selectionIndex);
 			return;
 		}
 		const trimmed = resourceSearchState.query.trim();
@@ -81,13 +90,13 @@ export function handleResourceSearchInput(): void {
 	if (prefix === '@') {
 		const query = resourceSearchState.query.slice(1).trimStart();
 		closeResourceSearch(true);
-		openSymbolSearch(query);
+			openSymbolSearch(bridge, rename, query);
 		return;
 	}
 	if (prefix === '#') {
 		const query = resourceSearchState.query.slice(1).trimStart();
 		closeResourceSearch(true);
-		openGlobalSymbolSearch(query);
+			openGlobalSymbolSearch(bridge, rename, query);
 		return;
 	}
 	if (prefix === ':') {

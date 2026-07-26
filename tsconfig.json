@@ -2,7 +2,8 @@
 	"files": [],
 	"references": [
 		{ "path": "./machine/ts" },
-		{ "path": "./ide" }
+		{ "path": "./ide" },
+		{ "path": "./runtime" }
 	],
 	"exclude": [
 		"./tests/**.*",

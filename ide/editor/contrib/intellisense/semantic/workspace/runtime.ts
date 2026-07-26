@@ -1,7 +1,5 @@
-import { runtimeWorkbenchState } from '../../../../../runtime/workbench_state';
 import type { ParsedLuaChunk } from '../../../../../../machine/ts/lua/analysis/parse';
 import { splitText } from '../../../../../../machine/ts/common/text_lines';
-import * as luaPipeline from '../../../../../runtime/lua_pipeline';
 import { getOrCreateSemanticWorkspace, syncSemanticWorkspacePath, type SemanticWorkspacePathInput } from './state';
 import type { LuaDefinitionInfo } from '../../../../../../machine/ts/lua/syntax/ast/index';
 import type { FileSemanticData, LuaSemanticModel, LuaSemanticWorkspace, LuaSemanticWorkspaceSnapshot } from '../../../../../../machine/ts/lua/semantic/model';
@@ -11,6 +9,8 @@ import {
 	type ResourceDomain,
 } from '../../../../../common/resource';
 import { runtimeLuaSourceRegistry } from '../../../../../runtime/sources';
+import type { RuntimeSourceState } from '../../../../../runtime/sources';
+import { readWorkspaceLuaSourceText } from '../../../../../workspace/files';
 
 export type RuntimeSemanticCacheEntry = {
 	source: string;
@@ -86,10 +86,10 @@ export function syncRuntimeSemanticWorkspacePath(
 }
 
 export function primeRuntimeSemanticWorkspaceProjectSources(
+	sources: RuntimeSourceState,
 	domain: ResourceDomain,
 	workspace: LuaSemanticWorkspace = getOrCreateSemanticWorkspace(domain),
 ): LuaSemanticWorkspace {
-	const sources = runtimeWorkbenchState.sources;
 	const primaryRegistry = runtimeLuaSourceRegistry(sources, domain)!;
 	const systemRegistry = sources.systemLuaSources;
 	const primed = primedWorkspaceStates.get(workspace);
@@ -107,7 +107,6 @@ export function primeRuntimeSemanticWorkspaceProjectSources(
 	const seenPaths = new Set<string>();
 	for (let registryIndex = 0; registryIndex < registries.length; registryIndex += 1) {
 		const registry = registries[registryIndex];
-		const sourceDomain = registry === systemRegistry ? SYSTEM_RESOURCE_DOMAIN : domain;
 		for (let recordIndex = 0; recordIndex < registry.records.length; recordIndex += 1) {
 			const path = registry.records[recordIndex].source_path;
 			if (seenPaths.has(path)) {
@@ -115,7 +114,7 @@ export function primeRuntimeSemanticWorkspaceProjectSources(
 			}
 			seenPaths.add(path);
 			const cacheEntry = cache.get(path);
-			const source = luaPipeline.resourceSourceForChunk({ domain: sourceDomain, path });
+			const source = readWorkspaceLuaSourceText(registry, registry.records[recordIndex]);
 			const existing = workspace.getFileData(path);
 			if (existing && existing.source === source) {
 				continue;
@@ -138,11 +137,12 @@ export function primeRuntimeSemanticWorkspaceProjectSources(
 }
 
 export function prepareRuntimeSemanticWorkspaceForEditorBuffer(
+	sources: RuntimeSourceState,
 	domain: ResourceDomain,
 	input: SemanticWorkspacePathInput,
 ): LuaSemanticWorkspaceSnapshot {
 	const workspace = getOrCreateSemanticWorkspace(domain);
 	syncRuntimeSemanticWorkspacePath(domain, input, workspace);
-	primeRuntimeSemanticWorkspaceProjectSources(domain, workspace);
+	primeRuntimeSemanticWorkspaceProjectSources(sources, domain, workspace);
 	return workspace.getSnapshot();
 }

@@ -1,4 +1,4 @@
-import { runtimeWorkbenchState } from '../../runtime/workbench_state';
+import type { ResourcePanelController } from '../contrib/resources/panel/controller';
 import * as constants from '../../common/constants';
 import { getActiveSymbolSearchMatch } from '../../editor/contrib/symbols/shared';
 import { statusAreaHeight, getStatusMessageLines } from '../common/layout';
@@ -16,9 +16,8 @@ import { problemsPanel } from '../contrib/problems/panel/controller';
 import { symbolSearchState } from '../../editor/contrib/symbols/search/state';
 import type { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 
-export function renderStatusBar(runtime: Runtime): void {
+export function renderStatusBar(resourcePanel: ResourcePanelController, runtime: Runtime): void {
 	const runtimeFaulted = runtime.hasRuntimeFailed;
-	const resourcePanel = runtimeWorkbenchState.ide.editor.resourcePanel;
 	const statusTop = editorViewState.viewportHeight - statusAreaHeight();
 	const statusBottom = editorViewState.viewportHeight;
 	const statusBackground = constants.COLOR_STATUS_BACKGROUND;

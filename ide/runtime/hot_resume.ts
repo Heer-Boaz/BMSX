@@ -1,5 +1,4 @@
-import { runtimeWorkbenchState } from './workbench_state';
-import { convertToError } from '../../machine/ts/lua/value';
+import { convertToError } from '../language/lua/interpreter/value';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { EMPTY_CALL_ARGS } from '../../machine/ts/machine/cpu/value';
 import type { Blua32ImageLayout } from '../../machine/ts/machine/cpu/blua32_image';
@@ -13,15 +12,16 @@ import {
 	type Blua32ExecutionImageRevision,
 } from '../../machine/ts/rompack/tooling/blua32_revision';
 import { callClosureIntoSuspended } from './closure_executor';
-import { clearRuntimeDebuggerPause } from './debug_pause';
 import { clearFaultSnapshot, resetHandledLuaErrors } from './fault_state';
 import {
 	buildBlua32Media,
 	installBlua32Media,
-	loadBlua32MediaSymbols,
-	setActiveBlua32MediaSymbols,
 } from './lua_pipeline';
 import { CARTRIDGE_RESOURCE_DOMAINS } from '../common/resource';
+import type { RuntimeSourceState } from './sources';
+import type { RuntimeNativeBridge } from './native_bridge';
+import type { RuntimeFaultState } from './fault_state';
+import type { CartEditor } from '../cart_editor';
 
 type TargetRevision = {
 	previousImage: Blua32ImageLayout;
@@ -29,18 +29,21 @@ type TargetRevision = {
 };
 
 export function hotResume(
+	sources: RuntimeSourceState,
+	nativeBridge: RuntimeNativeBridge,
+	fault: RuntimeFaultState,
+	editor: CartEditor,
 	runtime: Runtime,
 	rebuildSystem: boolean,
 	rebuildCartridgeSlots: readonly [boolean, boolean],
 ): void {
-	const interpreter = runtimeWorkbenchState.ide.nativeBridge.luaInterpreter;
+	const interpreter = nativeBridge.luaInterpreter;
 	try {
 		const rebuildMedia = rebuildSystem
 			|| rebuildCartridgeSlots[0]
 			|| rebuildCartridgeSlots[1];
 		if (rebuildMedia) {
-			const sourceState = runtimeWorkbenchState.sources;
-			const rebuilt = buildBlua32Media(interpreter, rebuildSystem, rebuildCartridgeSlots);
+			const rebuilt = buildBlua32Media(sources, interpreter, rebuildSystem, rebuildCartridgeSlots);
 			const revisionsBySlot = new Map<number, TargetRevision>();
 			if (rebuilt.system !== null) {
 				revisionsBySlot.set(-1, {
@@ -48,7 +51,7 @@ export function hotResume(
 					revision: buildBlua32ExecutionRevision(
 						rebuilt.system.previousImage,
 						rebuilt.system.previousSymbols,
-						sourceState.systemInstalledBlua32Sources,
+						sources.systemInstalledBlua32Sources,
 						rebuilt.system.linked,
 						rebuilt.system.sources,
 					),
@@ -59,7 +62,7 @@ export function hotResume(
 				if (image === null) {
 					continue;
 				}
-				const cartridge = sourceState.cartridgeSlots[slot]!;
+				const cartridge = sources.cartridgeSlots[slot]!;
 				revisionsBySlot.set(slot, {
 					previousImage: image.previousImage,
 					revision: buildBlua32ExecutionRevision(
@@ -72,7 +75,7 @@ export function hotResume(
 				});
 			}
 
-			installBlua32Media(runtime, rebuilt);
+			installBlua32Media(sources, runtime, rebuilt);
 
 			const cpu = runtime.machine.cpu;
 			if (rebuilt.system !== null) {
@@ -87,7 +90,7 @@ export function hotResume(
 			let unmappedCount = 0;
 			for (const continuation of cpu.rawContinuations()) {
 				const target = revisionsBySlot.get(continuation.slot);
-				if (target === undefined) {
+				if (!target) {
 					continue;
 				}
 				const pc = relocatedContinuationPc(target.revision, target.previousImage, continuation.pc);
@@ -115,14 +118,12 @@ export function hotResume(
 					`Hot resume could not relocate ${unmappedCount} active continuation(s) after an incompatible edit.`,
 				);
 			}
-			setActiveBlua32MediaSymbols(loadBlua32MediaSymbols());
-			runtimeWorkbenchState.ide.editor.clearNativeMemberCompletionCache();
+			editor.clearNativeMemberCompletionCache();
 		}
 
-		clearRuntimeDebuggerPause(runtime);
 		interpreter.clearLastFaultEnvironment();
-		clearFaultSnapshot();
-		resetHandledLuaErrors();
+		clearFaultSnapshot(fault);
+		resetHandledLuaErrors(fault);
 		runtime.luaRuntimeFailed = false;
 		clearOverlayFrame();
 

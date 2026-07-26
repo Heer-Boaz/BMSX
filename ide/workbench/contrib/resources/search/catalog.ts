@@ -1,41 +1,28 @@
-import * as constants from '../../../../common/constants';
-import { showEditorMessage } from '../../../../common/feedback_state';
 import { listResourcesStrict } from '../catalog';
 import { clampQuickInputDisplayOffset, advanceQuickInputSelection } from '../../../../editor/navigation/quick_input_navigation';
 import { resetBlink } from '../../../../editor/render/caret';
 import { resourceSearchWindowCapacity } from '../../../../editor/ui/view/view';
 import { resourceSearchState } from '../widget_state';
+import type { RuntimeSourceState } from '../../../../runtime/sources';
 
-export function refreshResourceCatalog(): void {
-	try {
-		const descriptors = listResourcesStrict();
-		resourceSearchState.catalog = descriptors.map((descriptor) => {
-			const displayPathSource = descriptor.path.length > 0 ? descriptor.path : (descriptor.asset_id ?? '');
-			const displayPath = displayPathSource.length > 0 ? displayPathSource : '<unnamed>';
-			const typeLabel = descriptor.type ? descriptor.type.toUpperCase() : '';
-			const assetLabel = descriptor.asset_id && descriptor.asset_id !== displayPath ? descriptor.asset_id : null;
-			const searchKey = [displayPath, descriptor.asset_id ?? '', descriptor.type ?? '']
-				.filter(part => part.length > 0)
-				.map(part => part.toLowerCase())
-				.join(' ');
-			return {
-				descriptor,
-				displayPath,
-				searchKey,
-				typeLabel,
-				assetLabel,
-			};
-		});
-		resourceSearchState.catalog.sort((a, b) => a.displayPath.localeCompare(b.displayPath));
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		resourceSearchState.catalog = [];
-		resourceSearchState.matches = [];
-		resourceSearchState.selectionIndex = -1;
-		resourceSearchState.displayOffset = 0;
-		resourceSearchState.hoverIndex = -1;
-		showEditorMessage(`Failed to list resources: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);
-	}
+export function refreshResourceCatalog(sources: RuntimeSourceState): void {
+	const descriptors = listResourcesStrict(sources);
+	resourceSearchState.catalog = descriptors.map((descriptor) => {
+		const displayPath = descriptor.path || descriptor.asset_id || '<unnamed>';
+		const assetLabel = descriptor.asset_id && descriptor.asset_id !== displayPath ? descriptor.asset_id : null;
+		const searchKey = [displayPath, descriptor.asset_id, descriptor.type]
+			.filter(part => part.length > 0)
+			.map(part => part.toLowerCase())
+			.join(' ');
+		return {
+			descriptor,
+			displayPath,
+			searchKey,
+			typeLabel: descriptor.type.toUpperCase(),
+			assetLabel,
+		};
+	});
+	resourceSearchState.catalog.sort((a, b) => a.displayPath.localeCompare(b.displayPath));
 }
 
 export function updateResourceSearchMatches(): void {

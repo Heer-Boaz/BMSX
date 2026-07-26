@@ -149,6 +149,57 @@ struct CpuTestMachine {
 	}
 };
 
+class TestExecutionObserver final : public bmsx::CpuExecutionObserver {
+public:
+	std::array<bmsx::u32, 3> textAddresses{};
+	std::array<std::vector<bmsx::u32>, 3> instructionCounts;
+	std::array<std::vector<bmsx::u8>, 3> opcodeByWord;
+
+	void configure(int executionDomainId, const bmsx::Blua32ImageLayout& layout) {
+		const size_t domainIndex = static_cast<size_t>(executionDomainId + 1);
+		textAddresses[domainIndex] = layout.header.textAddress;
+		instructionCounts[domainIndex].resize(layout.header.textByteCount / bmsx::INSTRUCTION_BYTES);
+		opcodeByWord[domainIndex].resize(layout.header.textByteCount / bmsx::INSTRUCTION_BYTES);
+	}
+
+	void onInstruction(int executionDomainId, bmsx::u32 pc, bmsx::u8 opcode) override {
+		const size_t domainIndex = static_cast<size_t>(executionDomainId + 1);
+		const size_t wordIndex = (pc - textAddresses[domainIndex]) / bmsx::INSTRUCTION_BYTES;
+		instructionCounts[domainIndex][wordIndex] += 1u;
+		opcodeByWord[domainIndex][wordIndex] = opcode;
+	}
+};
+
+void testExecutionObserverReceivesPhysicalInstructionFacts() {
+	CpuTestMachine machine(makeSupervisorSystemImage());
+	const std::optional<bmsx::Blua32ImageLayout> systemLayout =
+		bmsx::decodeBlua32RomImage(machine.systemRom.bytes, bmsx::SYSTEM_ROM_BASE);
+	require(systemLayout.has_value(), "BLua32 ROM decode exposes its physical execution layout");
+	TestExecutionObserver observer;
+	observer.configure(bmsx::SYSTEM_EXECUTION_DOMAIN_ID, *systemLayout);
+	machine.cpu.setExecutionObserver(&observer);
+	machine.cpu.start(
+		machine.systemRom.functionAddresses[SYSTEM_CP0_FUNCTION],
+		{},
+		bmsx::CPU_STATUS_SYSTEM_ENTRY
+	);
+	require(machine.cpu.run(100) == bmsx::RunResult::Halted, "observed test function completes");
+	machine.cpu.setExecutionObserver(nullptr);
+	const std::vector<bmsx::u32>& systemCounts = observer.instructionCounts[0];
+	require(systemCounts[6] == 1u, "execution observer receives the physical MFC0 word");
+	require(systemCounts[7] == 1u, "execution observer receives the physical MTC0 word");
+	require(systemCounts[8] == 1u, "execution observer receives the physical RET word");
+	require(observer.opcodeByWord[0][6] == static_cast<bmsx::u8>(bmsx::OpCode::MFC0), "execution observer receives the physical opcode");
+
+	machine.cpu.start(
+		machine.systemRom.functionAddresses[SYSTEM_CP0_FUNCTION],
+		{},
+		bmsx::CPU_STATUS_SYSTEM_ENTRY
+	);
+	require(machine.cpu.run(100) == bmsx::RunResult::Halted, "unobserved test function completes");
+	require(systemCounts[6] == 1u, "detached execution observer receives no instructions");
+}
+
 void testManualNmiAndSaveStateReturn() {
 	CpuTestMachine machine(makeSupervisorSystemImage());
 	machine.cpu.start(machine.cartRom.functionAddresses[CART_USER_HALT_FUNCTION]);
@@ -646,6 +697,7 @@ void testProtectedCallMicrocodePreemptsSavesAndHandlesLuaErrors() {
 } // namespace
 
 int main() {
+	testExecutionObserverReceivesPhysicalInstructionFacts();
 	testManualNmiAndSaveStateReturn();
 	testPrivilegeVectorRoutingAndCp0Fault();
 	testSystemAndOrdinaryGlobalRegisterfilesStayDistinct();

@@ -1,9 +1,9 @@
-import { runtimeWorkbenchState } from './workbench_state';
-import { machineManager } from '../../machine/ts/core/machine_manager';
-import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import type { TickCompletion } from '../../machine/ts/machine/scheduler/frame';
-import * as workbenchMode from '../workbench/mode';
-import { commitGxGpuViewSnapshot } from '../../machine/ts/render/gx/view_snapshot';
+import { machineManager } from '../machine/ts/core/machine_manager';
+import type { Runtime } from '../machine/ts/machine/runtime/runtime';
+import type { TickCompletion } from '../machine/ts/machine/scheduler/frame';
+import * as workbenchMode from '../ide/workbench/mode';
+import { commitGxGpuViewSnapshot } from '../machine/ts/render/gx/view_snapshot';
+import type { RuntimeIdeState } from '../ide/runtime/state';
 
 export type RenderPresentationMode = 'partial' | 'completed';
 
@@ -13,18 +13,12 @@ type RenderPresentation = {
 };
 
 export class RenderPresentationState {
+	public constructor(private readonly ide: RuntimeIdeState) {
+	}
+
 	private pendingPresentation = false;
 	private presentationMode: RenderPresentationMode = 'completed';
 	private presentationCommitFrame = false;
-	private debugPresentReportAtMs = 0;
-	private debugPresentHostFrames = 0;
-	private debugPresentTickCompleted = 0;
-	private debugPresentTickCommitted = 0;
-	private debugPresentTickDeferred = 0;
-	private debugPresentPartialPresents = 0;
-	private debugPresentCommitPresents = 0;
-	private debugPresentHoldPresents = 0;
-	private debugPresentPausedPresents = 0;
 	private readonly presentationScratch: RenderPresentation = {
 		mode: 'completed',
 		commitFrame: false,
@@ -34,49 +28,6 @@ export class RenderPresentationState {
 		remaining: 0,
 		visualCommitted: true,
 	};
-
-	private recordTickCompletion(visualCommitted: boolean): void {
-		if (!Boolean((globalThis as any).__bmsx_debug_presentrate)) {
-			return;
-		}
-		this.debugPresentTickCompleted += 1;
-		if (visualCommitted) {
-			this.debugPresentTickCommitted += 1;
-		} else {
-			this.debugPresentTickDeferred += 1;
-		}
-	}
-
-	private recordPresentation(mode: RenderPresentationMode, commitFrame: boolean): void {
-		if (!Boolean((globalThis as any).__bmsx_debug_presentrate)) {
-			return;
-		}
-		if (machineManager.paused) {
-			this.debugPresentPausedPresents += 1;
-			return;
-		}
-		if (mode === 'partial') {
-			this.debugPresentPartialPresents += 1;
-			return;
-		}
-		if (commitFrame) {
-			this.debugPresentCommitPresents += 1;
-			return;
-		}
-		this.debugPresentHoldPresents += 1;
-	}
-
-	private resetDebugCounters(reportAtMs: number): void {
-		this.debugPresentReportAtMs = reportAtMs;
-		this.debugPresentHostFrames = 0;
-		this.debugPresentTickCompleted = 0;
-		this.debugPresentTickCommitted = 0;
-		this.debugPresentTickDeferred = 0;
-		this.debugPresentPartialPresents = 0;
-		this.debugPresentCommitPresents = 0;
-		this.debugPresentHoldPresents = 0;
-		this.debugPresentPausedPresents = 0;
-	}
 
 	private presentFrame(runtime: Runtime, hostDeltaMs: number, mode: RenderPresentationMode, commitFrame: boolean): void {
 		machineManager.deltatime = hostDeltaMs;
@@ -90,7 +41,6 @@ export class RenderPresentationState {
 			view.setRenderTargetSize(width, height);
 		}
 		view.configurePresentation(mode, commitFrame);
-		this.recordPresentation(mode, commitFrame);
 		machineManager.sndmaster.finishFrame();
 		machineManager.view.drawgame();
 		if (commitFrame) {
@@ -114,22 +64,12 @@ export class RenderPresentationState {
 		if (!this.pendingPresentation) {
 			return false;
 		}
-		const overlayActive = runtimeWorkbenchState.ide.overlayActive;
+		const overlayActive = this.ide.overlayRenderer.active;
 		out.mode = this.presentationMode;
 		out.commitFrame = overlayActive ? false : this.presentationCommitFrame;
-		workbenchMode.tickIDEDraw(runtime);
+		workbenchMode.tickIDEDraw(this.ide, runtime);
 		this.clearPresentation();
 		return true;
-	}
-
-	public beginHostFrame(currentTime: number): void {
-		if (!Boolean((globalThis as any).__bmsx_debug_presentrate)) {
-			return;
-		}
-		if (this.debugPresentReportAtMs === 0) {
-			this.debugPresentReportAtMs = currentTime;
-		}
-		this.debugPresentHostFrames += 1;
 	}
 
 	public clearPresentation(): void {
@@ -138,18 +78,13 @@ export class RenderPresentationState {
 		this.presentationCommitFrame = false;
 	}
 
-	public reset(): void {
-		this.clearPresentation();
-		this.resetDebugCounters(0);
-	}
-
 	public runOverlay(runtime: Runtime): void {
 		this.clearPresentation();
 		if (runtime.frameLoop.frameActive) {
 			runtime.frameLoop.abandonFrameState();
 		}
 		runtime.frameScheduler.clearQueuedTime();
-		workbenchMode.tickIDE(runtime);
+		workbenchMode.tickIDE(this.ide, runtime);
 		this.markPresentation('completed', false);
 	}
 
@@ -159,21 +94,19 @@ export class RenderPresentationState {
 			if (this.tickCompletionScratch.visualCommitted) {
 				tickVisualCommitted = true;
 			}
-			this.recordTickCompletion(this.tickCompletionScratch.visualCommitted);
 		}
-		if (runtimeWorkbenchState.ide.overlayActive) {
+		if (this.ide.overlayRenderer.active) {
 			runtime.frameScheduler.clearQueuedTime();
 			this.markPresentation('completed', false);
 		} else if (runtime.frameScheduler.lastTickSequence !== previousTickSequence) {
 			this.markPresentation('completed', tickVisualCommitted);
-		} else if (runtime.isDrawPending || runtimeWorkbenchState.fault.faultSnapshot !== null) {
+		} else if (runtime.isDrawPending) {
 			this.markPresentation('partial', false);
 		}
 	}
 
-
 	public presentPausedFrame(runtime: Runtime, hostDeltaMs: number): void {
-		if (runtimeWorkbenchState.ide.overlayActive) {
+		if (this.ide.overlayRenderer.active) {
 			this.runOverlay(runtime);
 			this.consumePresentation(runtime, this.presentationScratch);
 			this.presentFrame(runtime, hostDeltaMs, this.presentationScratch.mode, this.presentationScratch.commitFrame);
@@ -193,38 +126,11 @@ export class RenderPresentationState {
 	}
 
 	public presentErrorOverlay(runtime: Runtime, hostDeltaMs: number): void {
-		if (!runtimeWorkbenchState.ide.overlayActive) {
+		if (!this.ide.overlayRenderer.active) {
 			return;
 		}
 		this.runOverlay(runtime);
 		this.consumePresentation(runtime, this.presentationScratch);
 		this.presentFrame(runtime, hostDeltaMs, this.presentationScratch.mode, this.presentationScratch.commitFrame);
 	}
-
-	public flushDebugReport(currentTime: number, runtime: Runtime): void {
-		if (!Boolean((globalThis as any).__bmsx_debug_presentrate)) {
-			return;
-		}
-		if (this.debugPresentReportAtMs === 0) {
-			this.debugPresentReportAtMs = currentTime;
-			return;
-		}
-		const elapsedMs = currentTime - this.debugPresentReportAtMs;
-		if (elapsedMs < 1000) {
-			return;
-		}
-		const scale = 1000 / elapsedMs;
-		const hostFps = this.debugPresentHostFrames * scale;
-		console.warn(
-			`[BMSX][present] host_frames=${this.debugPresentHostFrames} host_fps=${hostFps.toFixed(2)} ufps=${runtime.timing.ufps.toFixed(2)} `
-			+ `tick_completed=${this.debugPresentTickCompleted} tick_committed=${this.debugPresentTickCommitted} `
-			+ `tick_deferred=${this.debugPresentTickDeferred} `
-			+ `present_partial=${this.debugPresentPartialPresents} present_commit=${this.debugPresentCommitPresents} `
-			+ `present_hold=${this.debugPresentHoldPresents} present_paused=${this.debugPresentPausedPresents} `
-			+ `draw_pending=${runtime.isDrawPending || runtimeWorkbenchState.fault.faultSnapshot !== null ? 1 : 0} active_tick=${runtime.frameLoop.frameActive ? 1 : 0}`
-		);
-		this.resetDebugCounters(currentTime);
-	}
 }
-
-export const renderPresentationState = new RenderPresentationState();

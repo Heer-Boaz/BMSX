@@ -3,6 +3,7 @@
 		"machine/ts",
 		"machine/cpp",
 		"ide",
+		"runtime",
 		"hosts/browser",
 		"hosts/node",
 		"hosts/libretro"
@@ -27,6 +28,7 @@
 		{ "name": "ts-runtime-api", "paths": ["machine/ts/*.ts"] },
 		{ "name": "ts-core", "paths": ["machine/ts/core/**"] },
 		{ "name": "ts-ide", "paths": ["ide/**"] },
+		{ "name": "ts-composition", "paths": ["runtime/**"] },
 		{ "name": "ts-render", "paths": ["machine/ts/render/**"] },
 		{ "name": "ts-platform", "paths": ["machine/ts/platform/**"] },
 		{ "name": "ts-input", "paths": ["machine/ts/input/**"] },
@@ -51,7 +53,7 @@
 	"rules": [
 		{
 			"from": "ts-gx-machine",
-			"deny": ["ts-core", "ts-ide", "ts-render", "ts-gx-webgl-render", "ts-software-render", "ts-platform", "ts-input", "ts-audio", "ts-language"],
+			"deny": ["ts-core", "ts-ide", "ts-composition", "ts-render", "ts-gx-webgl-render", "ts-software-render", "ts-platform", "ts-input", "ts-audio", "ts-language"],
 			"reason": "TS GX machine code must emit the GPU command contract, not depend on render backends."
 		},
 		{
@@ -61,28 +63,33 @@
 		},
 		{
 			"from": "ts-machine",
-			"deny": ["ts-core", "ts-ide", "ts-render", "ts-gx-webgl-render", "ts-software-render", "ts-platform", "ts-input", "ts-audio", "ts-language"],
+			"deny": ["ts-core", "ts-ide", "ts-composition", "ts-render", "ts-gx-webgl-render", "ts-software-render", "ts-platform", "ts-input", "ts-audio", "ts-language"],
 			"reason": "TS machine code must stay below host, IDE, render, input, audio, and language layers."
 		},
 		{
 			"from": "ts-rompack",
-			"deny": ["ts-core", "ts-ide", "ts-render", "ts-gx-webgl-render", "ts-software-render", "ts-platform", "ts-input", "ts-audio", "ts-language"],
+			"deny": ["ts-core", "ts-ide", "ts-composition", "ts-render", "ts-gx-webgl-render", "ts-software-render", "ts-platform", "ts-input", "ts-audio", "ts-language"],
 			"reason": "TS ROM wire-format code must not depend on host, IDE, render, input, audio, or language layers."
 		},
 		{
 			"from": "ts-core",
-			"deny": ["ts-ide"],
-			"reason": "TS host-core orchestration must expose physical runtime lifecycle hooks instead of importing IDE policy."
+			"deny": ["ts-ide", "ts-composition"],
+			"reason": "TS core owns machine construction and state directly; application and IDE policy compose above it."
 		},
 		{
 			"from": "ts-runtime-api",
-			"deny": ["ts-ide"],
+			"deny": ["ts-ide", "ts-composition"],
 			"reason": "TS runtime entrypoints must stay below the IDE composition layer."
 		},
 		{
 			"from": "ts-render",
-			"deny": ["ts-ide"],
+			"deny": ["ts-ide", "ts-composition"],
 			"reason": "TS render primitives and backends must not depend on IDE presentation policy."
+		},
+		{
+			"from": "ts-ide",
+			"deny": ["ts-composition"],
+			"reason": "IDE features receive their session dependencies from the application composition owner; they do not reach back into it."
 		},
 		{
 			"from": "cpp-gx-machine",

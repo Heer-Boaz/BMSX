@@ -1,6 +1,7 @@
 import Module from 'node:module';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import { HeadlessPlatformServices } from '../../hosts/node/headless/platform_headless';
 
 class TestRegistry {
 	static instance = new TestRegistry();
@@ -59,7 +60,7 @@ const eventEmitterStub = {
 const gameStub = {
 	registry: TestRegistry.instance,
 	world: worldStub,
-	platform: { clock: { now: () => 0 } },
+	platform: new HeadlessPlatformServices({ unpaced: true }),
 	event_emitter: eventEmitterStub,
 	emitPresentation: () => {},
 	emitGameplay: () => {},

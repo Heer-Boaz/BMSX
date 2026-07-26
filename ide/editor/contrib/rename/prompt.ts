@@ -1,4 +1,4 @@
-import { renameController } from './controller';
+import type { RenameController } from './controller';
 import { closeSearch } from '../find/search';
 import { getActiveCodeTabContext, isEditableCodeTab } from '../../../workbench/ui/code_tab/contexts';
 import { closeResourceSearch } from '../../../workbench/contrib/resources/search/index';
@@ -10,9 +10,9 @@ import { closeSymbolSearch } from '../symbols/shared';
 import { editorCaretState } from '../../ui/view/caret/state';
 import { editorDocumentState } from '../../editing/document_state';
 import { createResourceState } from '../../../workbench/contrib/resources/widget_state';
-import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
+import type { RuntimeNativeBridge } from '../../../runtime/native_bridge';
 
-export function openRenamePrompt(runtime: Runtime): void {
+export function openRenamePrompt(bridge: RuntimeNativeBridge, rename: RenameController): void {
 	if (!isEditableCodeTab()) {
 		notifyReadOnlyEdit();
 		return;
@@ -26,7 +26,7 @@ export function openRenamePrompt(runtime: Runtime): void {
 	if (context.mode !== 'lua') {
 		return;
 	}
-	const started = renameController.begin(runtime, {
+	const started = rename.begin(bridge, {
 		buffer: editorDocumentState.buffer,
 		textVersion: editorDocumentState.textVersion,
 		cursorRow: editorDocumentState.cursorRow,

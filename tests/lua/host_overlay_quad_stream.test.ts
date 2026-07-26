@@ -113,7 +113,7 @@ test('host overlay quad stream emits glyph backgrounds before atlas glyphs with 
 	assert.equal(stream.floatData[secondGlyphBase + 2], secondGlyph.width);
 });
 
-test('host menu queue retains producer arrays across the global publication boundary', () => {
+test('host menu queue retains producer arrays across the publication boundary', () => {
 	const command = {
 		kind: RectRenderKind.Fill,
 		area: { left: 0, top: 0, right: 1, bottom: 1, z: 0 },

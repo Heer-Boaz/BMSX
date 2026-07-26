@@ -1,10 +1,15 @@
 import { clamp } from '../../../../../machine/ts/common/clamp';
 import { gotoDiagnostic } from '../../../../editor/contrib/diagnostics/navigation';
 import type { ProblemsPanelController } from './controller';
+import type { ResourcePanelController } from '../../resources/panel/controller';
 
 export type ProblemsPanelCommand = 'up' | 'down' | 'page-up' | 'page-down' | 'home' | 'end' | 'activate';
 
-export function handleProblemsPanelNavigationCommand(controller: ProblemsPanelController, command: ProblemsPanelCommand): boolean {
+export function handleProblemsPanelNavigationCommand(
+	controller: ProblemsPanelController,
+	resourcePanel: ResourcePanelController,
+	command: ProblemsPanelCommand,
+): boolean {
 	if (!controller.isVisible || !controller.isFocused) {
 		return false;
 	}
@@ -19,7 +24,7 @@ export function handleProblemsPanelNavigationCommand(controller: ProblemsPanelCo
 			if (!diagnostic) {
 				return false;
 			}
-			gotoDiagnostic(diagnostic);
+			gotoDiagnostic(resourcePanel, diagnostic);
 			return true;
 		}
 		case 'home':

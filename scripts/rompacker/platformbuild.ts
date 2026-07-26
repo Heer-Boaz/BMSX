@@ -2,8 +2,8 @@ import pc from 'picocolors';
 
 import {
 	buildBrowserHost,
-	buildBootromScriptIfNewer,
 	buildMachineRuntime,
+	buildNodeHost,
 	buildGameHtmlAndManifest,
 	getBrowserHostFilename,
 	getMachineRuntimeFilename,
@@ -187,7 +187,7 @@ export async function runPlatformBuild(options: PlatformBuildOptions, logger: Bu
 		return;
 	}
 
-	if (platform === 'browser' || platform === 'headless' || platform === 'cli') {
+	if (platform === 'browser') {
 		await runStep('Build machine runtime', async () => {
 			const machineRuntimeOut = `./dist/${getMachineRuntimeFilename(debug)}`;
 			const runtimeNeedsRebuild = force || await isMachineRuntimeRebuildRequired(machineRuntimeOut);
@@ -213,14 +213,12 @@ export async function runPlatformBuild(options: PlatformBuildOptions, logger: Bu
 		});
 	}
 	await runStep('Build platform artifacts', async () => {
-		await buildBootromScriptIfNewer({ debug, forceBuild: force, platform });
-		logger.ok('Boot ROM ready');
-
 		if (platform === 'browser') {
 			await buildGameHtmlAndManifest('', 'BMSX', 'BMSX', debug, false);
 			logger.ok(`Browser loader → ${pc.white('dist/index.html')}`);
 			logger.ok(`Manifest → ${pc.white('dist/manifest.webmanifest')}`);
-		} else {
+		} else if (platform === 'cli' || platform === 'headless') {
+			await buildNodeHost({ debug, forceBuild: force, platform });
 			const launcherName = getNodeLauncherFilename(platform, debug);
 			logger.ok(`Node launcher → ${pc.white(`dist/${launcherName}`)}`);
 		}
@@ -275,7 +273,6 @@ export async function runBrowserDeploy(options: BrowserDeployOptions, logger: Bu
 		logger.ok(`Browser host ready -> ${pc.white(browserHostOut.replace('./dist/', 'dist/'))}`);
 	}
 
-	await buildBootromScriptIfNewer({ debug, forceBuild: force, platform });
 	await buildGameHtmlAndManifest(romName, resolvedTitle, short_name, debug, true);
 	logger.ok(`Browser loader → ${pc.white('dist/index.html')}`);
 	logger.ok(`Manifest → ${pc.white('dist/manifest.webmanifest')}`);

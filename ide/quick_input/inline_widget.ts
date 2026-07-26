@@ -10,6 +10,10 @@ import { handleSearchInput } from '../input/quick_input/search/input';
 import { handleSymbolSearchInput } from '../input/quick_input/symbol_search/input';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { createResourceState, resourceSearchState } from '../workbench/contrib/resources/widget_state';
+import type { CrossFileRenameManager } from '../editor/contrib/rename/operations';
+import type { CartEditor } from '../cart_editor';
+import type { RuntimeSourceState } from '../runtime/sources';
+import type { RuntimeNativeBridge } from '../runtime/native_bridge';
 
 export function isInlineWidgetFocused(): boolean {
 	return editorSearchState.active
@@ -20,21 +24,32 @@ export function isInlineWidgetFocused(): boolean {
 		|| renameController.isActive();
 }
 
-export function handleInlineWidgetInput(runtime: Runtime): boolean {
+export function handleInlineWidgetInput(
+	editor: CartEditor,
+	sources: RuntimeSourceState,
+	nativeBridge: RuntimeNativeBridge,
+	crossFileRename: CrossFileRenameManager,
+	runtime: Runtime,
+): boolean {
 	if (createResourceState.active) {
-		handleCreateResourceInput();
+		handleCreateResourceInput(sources, editor.resourcePanel);
 		return true;
 	}
 	if (renameController.isActive()) {
-		renameController.handleInput();
+		renameController.handleInput(crossFileRename);
 		return true;
 	}
 	if (resourceSearchState.active) {
-		handleResourceSearchInput();
+		handleResourceSearchInput(
+			editor,
+			sources,
+			nativeBridge,
+			renameController,
+		);
 		return true;
 	}
 	if (symbolSearchState.active) {
-		handleSymbolSearchInput(runtime);
+		handleSymbolSearchInput(editor, sources, nativeBridge);
 		return true;
 	}
 	if (lineJumpState.active) {
@@ -42,7 +57,7 @@ export function handleInlineWidgetInput(runtime: Runtime): boolean {
 		return true;
 	}
 	if (editorSearchState.active) {
-		handleSearchInput(runtime);
+		handleSearchInput(editor, sources, runtime);
 		return true;
 	}
 	return false;

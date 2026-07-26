@@ -2,31 +2,39 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { machineManager } from '../../machine/ts/core/machine_manager';
-import type { GxGpuDeviceOutput } from '../../machine/ts/machine/devices/gx/device_output';
-import { RenderPresentationState } from '../../ide/runtime/presentation_state';
-import { runtimeWorkbenchState } from '../../ide/runtime/workbench_state';
+import { RenderPresentationState } from '../../runtime/presentation_state';
+import { RuntimeIdeState } from '../../ide/runtime/state';
+import type { LuaSourceRegistry } from '../../machine/ts/lua/source_registry';
+import {
+	createTestRuntime,
+	createTestRuntimeRomPayload,
+	createTestRuntimeSourceState,
+} from '../helpers/runtime_sources';
+import { SYSTEM_RESOURCE_DOMAIN } from '../../ide/common/resource';
 
 test('PCRTC revision drives render-target changes without overwriting the IDE target', () => {
-	const scanout = {
-		revision: 7,
-		outputActive: true,
-		outputWidth: 256,
-		outputHeight: 192,
+	const systemLuaSources: LuaSourceRegistry = {
+		records: [],
+		path2lua: {},
+		module2lua: {},
+		entry_path: '',
+		namespace: 'test',
+		projectRootPath: '',
+		can_boot_from_source: false,
+		revision: 0,
 	};
-	const output = {
-		commandBuffer: {},
-		readbackPort: {},
-		statusWord: 0,
-		displayModeWord: 0,
-		displayStartWord: 0,
-		vramYAddressExtensionWord: 0,
-		horizontalDisplayRangeWord: 0,
-		verticalDisplayRangeWord: 0,
-		pcrtcScanout: scanout,
-		vramSnapshotBytes: new Uint8Array(0),
-		vramSnapshotSerial: 0n,
-		vramReplacementSerial: 0n,
-	} as GxGpuDeviceOutput;
+	const runtime = createTestRuntime(createTestRuntimeRomPayload());
+	const ide = new RuntimeIdeState(
+		runtime,
+		{ width: 384, height: 288 },
+		createTestRuntimeSourceState(systemLuaSources, [null, null], SYSTEM_RESOURCE_DOMAIN),
+	);
+	ide.overlayRenderer.active = true;
+	const scanout = runtime.machine.gxGpu.readDeviceOutput().pcrtcScanout;
+	scanout.revision = 7;
+	scanout.outputActive = true;
+	scanout.outputWidth = 256;
+	scanout.outputHeight = 192;
 	const renderTargetChanges: Array<[number, number]> = [];
 	const view = {
 		gxGpuPcrtcScanoutRevision: scanout.revision,
@@ -45,30 +53,18 @@ test('PCRTC revision drives render-target changes without overwriting the IDE ta
 	};
 	manager.paused = false;
 	manager.view = view;
-	runtimeWorkbenchState.ide = {
-		overlayActive: true,
-		editor: { blocksRuntimePipeline: false, isActive: false },
-	} as never;
 	manager.sndmaster = { finishFrame(): void {} };
-	const runtime = {
-		machine: {
-			gxGpu: {
-				readDeviceOutput: () => output,
-				retirePresentedCommands(): void {},
-			},
-		},
-	};
-	const presentation = new RenderPresentationState();
+	const presentation = new RenderPresentationState(ide);
 
 	presentation.requestHeldPresentation();
-	assert.equal(presentation.presentPending(runtime as never, 20), true);
+	assert.equal(presentation.presentPending(runtime, 20), true);
 	assert.deepEqual(renderTargetChanges, []);
 
 	scanout.revision += 1;
 	scanout.outputWidth = 320;
 	scanout.outputHeight = 240;
 	presentation.requestHeldPresentation();
-	assert.equal(presentation.presentPending(runtime as never, 20), true);
+	assert.equal(presentation.presentPending(runtime, 20), true);
 	assert.deepEqual(renderTargetChanges, [[320, 240]]);
 	assert.equal(view.gxGpuPcrtcScanoutRevision, scanout.revision);
 
@@ -77,7 +73,7 @@ test('PCRTC revision drives render-target changes without overwriting the IDE ta
 	scanout.outputWidth = 0;
 	scanout.outputHeight = 0;
 	presentation.requestHeldPresentation();
-	assert.equal(presentation.presentPending(runtime as never, 20), true);
+	assert.equal(presentation.presentPending(runtime, 20), true);
 	assert.deepEqual(renderTargetChanges, [[320, 240]]);
 	assert.equal(view.gxGpuPcrtcScanoutRevision, scanout.revision);
 });

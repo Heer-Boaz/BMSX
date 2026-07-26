@@ -3,6 +3,8 @@ import type { EditorTabId, ResourceViewerState } from '../../../common/models';
 import { setActiveTab } from '../../ui/tabs';
 import { tabSessionState } from '../../ui/tab/session_state';
 import { buildResourceViewerState } from './viewer';
+import type { RuntimeSourceState } from '../../../runtime/sources';
+import type { ResourcePanelController } from './panel/controller';
 
 export function getActiveResourceViewer(): ResourceViewerState {
 	for (let index = 0; index < tabSessionState.tabs.length; index += 1) {
@@ -15,7 +17,11 @@ export function getActiveResourceViewer(): ResourceViewerState {
 	return null;
 }
 
-export function openResourceViewerTab(descriptor: ResourceDescriptor): void {
+export function openResourceViewerTab(
+	resourcePanel: ResourcePanelController,
+	sources: RuntimeSourceState,
+	descriptor: ResourceDescriptor,
+): void {
 	const tabId: EditorTabId = `resource:${resourceIdentityKey(descriptor)}`;
 	let tab = null;
 	for (let index = 0; index < tabSessionState.tabs.length; index += 1) {
@@ -25,12 +31,12 @@ export function openResourceViewerTab(descriptor: ResourceDescriptor): void {
 			break;
 		}
 	}
-	const state = buildResourceViewerState(descriptor);
+	const state = buildResourceViewerState(sources, descriptor);
 	if (tab) {
 		tab.title = state.title;
 		tab.resource = state;
 		tab.dirty = false;
-		setActiveTab(tabId);
+		setActiveTab(resourcePanel, tabId);
 		return;
 	}
 	tab = {
@@ -42,5 +48,5 @@ export function openResourceViewerTab(descriptor: ResourceDescriptor): void {
 		resource: state,
 	};
 	tabSessionState.tabs.push(tab);
-	setActiveTab(tabId);
+	setActiveTab(resourcePanel, tabId);
 }

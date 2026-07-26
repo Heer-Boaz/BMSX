@@ -3,15 +3,14 @@ export interface BootAudioState {
 	snd_unlocked: boolean;
 }
 
-export function removeEventListeners(): void {
-	document.removeEventListener('keyup', onStart, true);
-	document.removeEventListener('touchend', onStart, true);
+declare global {
+	interface Window {
+		webkitAudioContext?: typeof AudioContext;
+	}
 }
 
 export function startAudioOnIos(state: BootAudioState): void {
-	if (!state.sndcontext) return;
 	if (state.snd_unlocked) {
-		removeEventListeners();
 		return;
 	}
 	const source = state.sndcontext.createBufferSource();
@@ -20,15 +19,14 @@ export function startAudioOnIos(state: BootAudioState): void {
 	source.start(0, 0, 0);
 
 	if (state.sndcontext.state === 'running') {
-		removeEventListeners();
 		state.snd_unlocked = true;
 	}
 }
 
 export function createAudioContext(state: BootAudioState): void {
 	if (state.sndcontext) return;
-	const AContext = window.AudioContext || (global as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-	let context: AudioContext = new AContext({ latencyHint: 0.005, sampleRate: 44100 }) as AudioContext;
+	const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
+	let context = new AudioContextConstructor({ latencyHint: 0.005, sampleRate: 44100 });
 	if (/(iPhone|iPad)/i.test(navigator.userAgent) && context.sampleRate !== 44100) {
 		const buffer = context.createBuffer(1, 1, 44100), dummy = context.createBufferSource();
 		dummy.buffer = buffer;
@@ -36,11 +34,7 @@ export function createAudioContext(state: BootAudioState): void {
 		dummy.start(0);
 		dummy.disconnect();
 		context.close();
-		context = new AContext();
+		context = new AudioContextConstructor();
 	}
 	state.sndcontext = context;
-}
-
-function onStart(_e: Event) {
-	/* placeholder to satisfy removeEventListeners references */
 }

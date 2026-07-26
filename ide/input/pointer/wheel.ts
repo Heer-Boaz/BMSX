@@ -1,4 +1,4 @@
-import { runtimeWorkbenchState } from '../../runtime/workbench_state';
+import type { CartEditor } from '../../cart_editor';
 import { machineManager } from '../../../machine/ts/core/machine_manager';
 import { point_in_rect } from '../../../machine/ts/common/rect';
 import * as constants from '../../common/constants';
@@ -19,7 +19,7 @@ import { intellisenseUiState } from '../../editor/contrib/intellisense/ui_state'
 import { editorViewState } from '../../editor/ui/view/state';
 import { resourceSearchState } from '../../workbench/contrib/resources/widget_state';
 
-export function handleEditorWheelInput(): void {
+export function handleEditorWheelInput(editor: CartEditor): void {
 	const playerInput = machineManager.input.getPlayerInput(1);
 	const wheelState = playerInput.getRawButtonState('pointer_wheel', 'pointer');
 	if (wheelState.consumed) {
@@ -40,13 +40,13 @@ export function handleEditorWheelInput(): void {
 	if (handleResourceSearchWheel(direction, steps, activePointer, playerInput)) {
 		return;
 	}
-	if (handleResourcePanelWheel(runtimeWorkbenchState.ide.editor.resourcePanel, direction, steps, activePointer, playerInput)) {
+	if (handleResourcePanelWheel(editor.resourcePanel, direction, steps, activePointer, playerInput)) {
 		return;
 	}
-	if (handleProblemsPanelWheel(direction, steps, activePointer, playerInput)) {
+	if (handleProblemsPanelWheel(editor.resourcePanel, direction, steps, activePointer, playerInput)) {
 		return;
 	}
-	if (runtimeWorkbenchState.ide.editor.completion.handlePointerWheel(direction, steps, activePointer !== null ? { x: activePointer.viewportX, y: activePointer.viewportY } : null)) {
+	if (editor.completion.handlePointerWheel(direction, steps, activePointer ? { x: activePointer.viewportX, y: activePointer.viewportY } : null)) {
 		playerInput.consumeRawButton('pointer_wheel', 'pointer');
 		return;
 	}
@@ -139,6 +139,7 @@ function handleResourcePanelWheel(
 }
 
 function handleProblemsPanelWheel(
+	resourcePanel: ResourcePanelController,
 	direction: number,
 	steps: number,
 	activePointer: PointerSnapshot,
@@ -159,7 +160,7 @@ function handleProblemsPanelWheel(
 	}
 	if (problemsPanel.isFocused) {
 		for (let i = 0; i < steps; i += 1) {
-			void problemsPanel.handleKeyboardCommand(direction > 0 ? 'down' : 'up');
+			void problemsPanel.handleKeyboardCommand(resourcePanel, direction > 0 ? 'down' : 'up');
 		}
 		playerInput.consumeRawButton('pointer_wheel', 'pointer');
 		return true;

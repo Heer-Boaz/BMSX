@@ -16,61 +16,43 @@ export type HostMenuFrame = {
 	commandCount: number;
 };
 
-const HOST_OVERLAY_QUEUE_GLOBAL = '__bmsxHostOverlayQueue';
-
-type HostOverlayQueueState = {
-	pendingFrame: HostOverlayFrame;
-	pendingMenuFrame: HostMenuFrame;
-};
-
-type HostOverlayQueueGlobal = typeof globalThis & {
-	__bmsxHostOverlayQueue?: HostOverlayQueueState;
-};
-
-function hostOverlayQueueState(): HostOverlayQueueState {
-	const globalScope = globalThis as HostOverlayQueueGlobal;
-	let state = globalScope[HOST_OVERLAY_QUEUE_GLOBAL];
-	if (state === undefined) {
-		state = { pendingFrame: null, pendingMenuFrame: null };
-		globalScope[HOST_OVERLAY_QUEUE_GLOBAL] = state;
-	}
-	return state;
-}
+let pendingFrame: HostOverlayFrame;
+let hasPendingFrame = false;
+let pendingMenuFrame: HostMenuFrame;
+let hasPendingMenuFrame = false;
 
 export function publishOverlayFrame(frame: HostOverlayFrame): void {
-	hostOverlayQueueState().pendingFrame = frame;
+	pendingFrame = frame;
+	hasPendingFrame = true;
 }
 
 export function hasPendingOverlayFrame(): boolean {
-	return hostOverlayQueueState().pendingFrame !== null;
+	return hasPendingFrame;
 }
 
 export function consumeOverlayFrame(): HostOverlayFrame {
-	const state = hostOverlayQueueState();
-	const frame = state.pendingFrame;
-	state.pendingFrame = null;
-	return frame;
+	hasPendingFrame = false;
+	return pendingFrame;
 }
 
 export function clearOverlayFrame(): void {
-	hostOverlayQueueState().pendingFrame = null;
+	hasPendingFrame = false;
 }
 
 export function publishHostMenuFrame(frame: HostMenuFrame): void {
-	hostOverlayQueueState().pendingMenuFrame = frame;
+	pendingMenuFrame = frame;
+	hasPendingMenuFrame = true;
 }
 
 export function hasPendingHostMenuFrame(): boolean {
-	return hostOverlayQueueState().pendingMenuFrame !== null;
+	return hasPendingMenuFrame;
 }
 
 export function consumeHostMenuFrame(): HostMenuFrame {
-	const state = hostOverlayQueueState();
-	const frame = state.pendingMenuFrame;
-	state.pendingMenuFrame = null;
-	return frame;
+	hasPendingMenuFrame = false;
+	return pendingMenuFrame;
 }
 
 export function clearHostMenuFrame(): void {
-	hostOverlayQueueState().pendingMenuFrame = null;
+	hasPendingMenuFrame = false;
 }

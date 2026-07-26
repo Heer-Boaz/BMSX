@@ -46,10 +46,6 @@ export type Blua32ExecutionImage = Blua32DecodedExecutionImage & {
 	staticClosures: Closure[];
 };
 
-export type CpuInstructionTrace = {
-	recordInstruction(image: Blua32ExecutionImage, wordIndex: number, opcode: number): void;
-};
-
 export function createDecodedInstructionPage(): DecodedInstructionPage {
 	const page: DecodedInstructionPage = {
 		widths: new Uint8Array(DECODED_PAGE_WORDS),

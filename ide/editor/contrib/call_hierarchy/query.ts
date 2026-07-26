@@ -4,28 +4,25 @@ import { buildEditorSemanticSnapshot, createEditorSemanticFrontend } from '../in
 import { extractHoverExpression } from '../intellisense/engine';
 import { buildIncomingCallHierarchyView, type CallHierarchyView } from './view';
 import { editorDocumentState } from '../../editing/document_state';
-import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import { SYSTEM_RESOURCE_DOMAIN } from '../../../common/resource';
+import type { RuntimeNativeBridge } from '../../../runtime/native_bridge';
 
 export type CallHierarchyQueryResult =
 	| { kind: 'success'; view: CallHierarchyView; }
 	| { kind: 'missing_definition'; }
 	| { kind: 'no_calls'; expression: string; };
 
-export function resolveCallHierarchyViewAt(runtime: Runtime, row: number, column: number): CallHierarchyQueryResult {
+export function resolveCallHierarchyViewAt(bridge: RuntimeNativeBridge, row: number, column: number): CallHierarchyQueryResult {
 	const context = getActiveCodeTabContext();
-	if (!context) {
-		return { kind: 'missing_definition' };
-	}
 	const path = context.descriptor.path;
-	const snapshot = buildEditorSemanticSnapshot(context.descriptor, editorDocumentState.buffer, editorDocumentState.textVersion);
-	const frontend = createEditorSemanticFrontend(snapshot);
+	const snapshot = buildEditorSemanticSnapshot(bridge, context.descriptor, editorDocumentState.buffer, editorDocumentState.textVersion);
+	const frontend = createEditorSemanticFrontend(bridge, snapshot);
 	const resolution = frontend.findReferencesByPosition(path, row + 1, column + 1);
 	const expression = extractHoverExpression(row, column, path)?.expression;
 	if (!resolution || !expression) {
 		return { kind: 'missing_definition' };
 	}
-	const descriptors = listResources();
+	const descriptors = listResources(bridge.sources);
 	let rootReadOnly = false;
 	for (let index = 0; index < descriptors.length; index += 1) {
 		const descriptor = descriptors[index];
@@ -45,8 +42,7 @@ export function resolveCallHierarchyViewAt(runtime: Runtime, row: number, column
 		}
 	}
 	allowedPaths.add(path);
-	const view = buildIncomingCallHierarchyView({
-		runtime,
+	const view = buildIncomingCallHierarchyView(bridge, {
 		snapshot,
 		rootSymbolId: resolution.id,
 		rootExpression: expression,

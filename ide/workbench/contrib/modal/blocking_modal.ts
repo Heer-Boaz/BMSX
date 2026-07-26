@@ -7,6 +7,12 @@ import {
 	handleActionPromptPointer,
 	hasActionPrompt,
 } from './action_prompt';
+import type { CartEditor } from '../../../cart_editor';
+import type { RuntimeSourceState } from '../../../runtime/sources';
+import type { RuntimeFaultState } from '../../../runtime/fault_state';
+import type { RuntimeNativeBridge } from '../../../runtime/native_bridge';
+import type { GateGroup } from '../../../../machine/ts/common/taskgate';
+import type { OverlayRenderer } from '../../../runtime/overlay_renderer';
 
 export function hasBlockingWorkbenchModal(): boolean {
 	return hasActionPrompt();
@@ -20,17 +26,51 @@ export function closeBlockingWorkbenchModal(): boolean {
 	return false;
 }
 
-export function handleBlockingWorkbenchModalInput(runtime: Runtime): void {
+export function handleBlockingWorkbenchModalInput(
+	editor: CartEditor,
+	sources: RuntimeSourceState,
+	nativeBridge: RuntimeNativeBridge,
+	fault: RuntimeFaultState,
+	luaGate: GateGroup,
+	overlayRenderer: OverlayRenderer,
+	runtime: Runtime,
+): void {
 	if (hasActionPrompt()) {
-		handleActionPromptInput(runtime);
+		handleActionPromptInput(
+			editor,
+			sources,
+			fault,
+			nativeBridge,
+			luaGate,
+			overlayRenderer,
+			runtime,
+		);
 	}
 }
 
-export function handleBlockingWorkbenchModalPointer(runtime: Runtime, snapshot: PointerSnapshot): boolean {
+export function handleBlockingWorkbenchModalPointer(
+	editor: CartEditor,
+	sources: RuntimeSourceState,
+	nativeBridge: RuntimeNativeBridge,
+	fault: RuntimeFaultState,
+	luaGate: GateGroup,
+	overlayRenderer: OverlayRenderer,
+	runtime: Runtime,
+	snapshot: PointerSnapshot,
+): boolean {
 	if (!hasActionPrompt()) {
 		return false;
 	}
-	handleActionPromptPointer(runtime, snapshot);
+	handleActionPromptPointer(
+		editor,
+		sources,
+		fault,
+		nativeBridge,
+		luaGate,
+		overlayRenderer,
+		runtime,
+		snapshot,
+	);
 	return true;
 }
 

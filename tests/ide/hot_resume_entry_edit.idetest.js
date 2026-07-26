@@ -1,7 +1,6 @@
 await t.waitForCart();
 await t.frames(20);
 
-const machineManager = globalThis.bmsx.machineManager;
 const revisionSource = (record, revision) => record.base_src.replace(
 	'\t-- hot-resume-edit-point\n',
 	`\thot_resume_entry_edit_probe = ${revision}\n\tif hot_resume_print_revision ~= ${revision} then\n\t\thot_resume_print_revision = ${revision}\n\t\tprint('hot-resume-revision-${revision}')\n\tend\n`,
@@ -81,7 +80,7 @@ t.assert(runtime.machine.memory.systemRomRevision() === initialSystemMediaRevisi
 t.assert(runtime.machine.memory.cartridgeController.romRevision(cpu.activeCartridgeSlot()) === initialCartMediaRevision + 2, 'second cartridge-ROM revision was not installed');
 t.assert(runtime.machine.memory.cartridgeController.romRevision(dataOnlySlot) === initialDataOnlyMediaRevision, 'second Hot Resume replaced the data-only cartridge');
 
-await machineManager.rebootToBootRom();
+await t.reboot();
 await t.waitForCart();
 await t.frames(20);
 

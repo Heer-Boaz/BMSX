@@ -3,8 +3,10 @@ import * as fs from 'node:fs/promises';
 
 import { createCanvas, Image, loadImage } from 'canvas';
 
-import { type MachineLaunchOptions } from '../../../machine/ts/core/machine_manager';
-import { CpuProfilerSession, formatCpuProfilerReport } from '../../../machine/ts/machine/cpu/profiler';
+import { machineManager, type MachineInitializationOptions } from '../../../machine/ts/core/machine_manager';
+import { prepareMachineRuntime, startMachineHostFrames } from '../../../runtime/machine_runtime';
+import { createHeadlessIdeHarness } from '../../../ide/testing/headless_harness';
+import { CpuProfilerSession, formatCpuProfilerReport } from '../cpu_profiler';
 import { HEADLESS_DEFAULT_FRAME_INTERVAL_MS, HeadlessPlatformServices } from '../../../hosts/node/headless/platform_headless';
 import { CLIPlatformServices } from '../../../hosts/node/cli/platform_cli';
 import type { Platform, InputEvt } from 'bmsx/platform';
@@ -27,20 +29,9 @@ interface LaunchOptions {
 	testPath?: string;
 	ideTestPath?: string;
 	ttlMs?: number;
-	machineRuntimePath?: string;
 	systemRomPath?: string;
 	cpuProfile?: boolean;
 }
-
-interface BootGlobals {
-	bmsx?: MachineNamespace;
-}
-
-type MachineNamespace = {
-	machineManager: typeof import('../../../machine/ts/core/machine_manager').machineManager;
-	bootMachine: (options: MachineLaunchOptions) => Promise<import('../../../machine/ts/machine/runtime/runtime').Runtime>;
-	ide: import('../../../ide/testing/headless_harness').HeadlessIdeHarness;
-};
 
 interface InputTimelineEntry {
 	frame?: number;
@@ -316,7 +307,6 @@ function printHelp(): void {
 	console.log('  --input-timeline <file>  JSON timeline of InputEvt entries to schedule; headless capture markers write screenshots next to the timeline.');
 	console.log('  --test <file>            Host test file executed by the headless test runner.');
 	console.log('  --ide-test <file>        Host-side IDE test (JS) driving editor and hot-resume.');
-	console.log('  --machine-runtime <path> JS machine runtime bundle (defaults to dist/libbmsx(.debug).js).');
 	console.log('  --system-rom <path>      System ROM (defaults to dist/bmsx-bios(.debug).rom).');
 	console.log('  --cpu-profile            Enable fantasy CPU profiling and print a report on exit.');
 	console.log('  --help, -h               Show this help message.');
@@ -406,13 +396,6 @@ function parseArgs(argv: string[]): LaunchOptions {
 			const next = argv[index + 1];
 			if (!next) throw new Error('Expected path after --ide-test.');
 			options.ideTestPath = next;
-			index += 2;
-			continue;
-		}
-		if (arg === '--machine-runtime') {
-			const next = argv[index + 1];
-			if (!next) throw new Error(`Expected path after ${arg}.`);
-			options.machineRuntimePath = next;
 			index += 2;
 			continue;
 		}
@@ -828,30 +811,6 @@ function sanitizeTime(value: number, index: number): number {
 	return value;
 }
 
-function getMachineRuntimeFilename(debug: boolean): string {
-	return debug ? 'libbmsx.debug.js' : 'libbmsx.js';
-}
-
-async function loadMachineRuntimeFromFile(filePath: string): Promise<void> {
-	try {
-		const script = await fs.readFile(filePath, 'utf8');
-		const wrapped = new Function('globalScope', `${script}\n//# sourceURL=${filePath}`);
-		wrapped(globalThis as Record<string, unknown>);
-	} catch (err: any) {
-		throw new Error(`Failed to load machine runtime from "${filePath}": ${err?.message ?? err}`);
-	}
-}
-
-function ensureHostEnvironment(): void {
-	const globals = globalThis as Record<string, unknown>;
-	if (globals.window === undefined) {
-		globals.window = globals;
-	}
-	if (globals.navigator === undefined) {
-		globals.navigator = { userAgent: 'node' };
-	}
-}
-
 function createProcessExitController(getCaptureCoordinator: () => HeadlessCaptureCoordinator | null): (code: number) => void {
 	let exitRequested = false;
 	let exitCode = 0;
@@ -945,38 +904,17 @@ function createPlatform(frameIntervalMs: number): Platform {
 	throw new Error(`Unsupported boot platform: ${__BOOTROM_TARGET__}`);
 }
 
-async function prepareRuntime(cliOptions: LaunchOptions, romPath: string, debugFlag: boolean): Promise<MachineNamespace> {
-	ensureHostEnvironment();
-	const globals = globalThis as unknown as BootGlobals;
-	const romDirectory = path.resolve(path.dirname(romPath));
-	const machineRuntimePath = cliOptions.machineRuntimePath
-		? path.resolve(cliOptions.machineRuntimePath)
-		: path.join(romDirectory, getMachineRuntimeFilename(debugFlag));
-
-	await loadMachineRuntimeFromFile(machineRuntimePath);
-	const runtime = globals.bmsx;
-	if (!runtime) {
-		throw new Error('Machine runtime did not register the bmsx namespace.');
-	}
-	return runtime;
-}
-
 async function main(): Promise<void> {
 	const cliOptions = parseArgs(process.argv.slice(2));
-	let debugFlag = __BOOTROM_DEBUG__;
-	if (cliOptions.debugOverride !== undefined) {
-		debugFlag = cliOptions.debugOverride;
-	}
+	const debugFlag = cliOptions.debugOverride ?? __BOOTROM_DEBUG__;
 	const romPath = resolveRomPath(cliOptions, debugFlag);
 	const frameInterval = cliOptions.frameIntervalMs ?? HEADLESS_DEFAULT_FRAME_INTERVAL_MS;
 
 	console.log(`[bootrom:${__BOOTROM_TARGET__}] Loading ROM: ${romPath}`);
-	const machineRuntime = await prepareRuntime(cliOptions, romPath, debugFlag);
 	const romDirectory = path.resolve(path.dirname(romPath));
 	const systemRomPath = cliOptions.systemRomPath
 		? path.resolve(cliOptions.systemRomPath)
 		: path.join(romDirectory, debugFlag ? 'bmsx-bios.debug.rom' : 'bmsx-bios.rom');
-	assertDebugArtifacts('Machine runtime', debugFlag, cliOptions.machineRuntimePath ?? path.join(romDirectory, getMachineRuntimeFilename(debugFlag)));
 	assertDebugArtifacts('System ROM', debugFlag, systemRomPath);
 	const workspaceRoot = path.resolve(romDirectory, '..');
 	console.log(`[bootrom:${__BOOTROM_TARGET__}] Loading system ROM: ${systemRomPath}`);
@@ -1009,10 +947,6 @@ async function main(): Promise<void> {
 	const postInput = (event: InputEvt) => {
 		platform.input.post(event);
 	};
-	if (__BOOTROM_TARGET__ === 'headless') {
-		const globals = globalThis as Record<string, unknown>;
-		globals.postHeadlessInput = postInput;
-	}
 	const inputLogger = (message: string) => console.log(`[bootrom:${__BOOTROM_TARGET__}:input] ${message}`);
 	const romFolder = cliOptions.romFolder;
 	const autoTimelinePath = await resolveAutoTimelinePath(romFolder);
@@ -1078,32 +1012,31 @@ async function main(): Promise<void> {
 	const canCaptureImmediately = (): boolean => {
 		return captureCoordinator ? captureCoordinator.canCaptureNow() : !!headlessHost?.getPresentedFrameSnapshot();
 	};
-	const bootArgs: MachineLaunchOptions = {
+	const bootArgs: MachineInitializationOptions = {
 		cartridgeSlots: [buffer, slot1Buffer],
 		systemRom: systemRomBuffer,
+		debug: debugFlag,
 		platform,
 		viewHost: platform.gameviewHost,
 	};
-	if (deferStartForTimeline) {
-		bootArgs.autoStart = false;
-	}
-	if (debugFlag) {
-		bootArgs.debug = true;
-	}
 
 	console.log(`[bootrom:${__BOOTROM_TARGET__}] Starting game (debug=${debugFlag}, frameIntervalMs=${frameInterval}).`);
-	const runtime = await machineRuntime.bootMachine(bootArgs);
+	const runtimeIde = await prepareMachineRuntime(bootArgs);
+	const runtime = machineManager.runtime;
+	if (!deferStartForTimeline) {
+		startMachineHostFrames(runtimeIde);
+	}
 	const requestExit = (code: number): void => {
-		if (!cpuProfileDumped && cpuProfilerSession !== null) {
+		if (!cpuProfileDumped && cpuProfilerSession) {
 			cpuProfileDumped = true;
 			console.log(`[bootrom:${__BOOTROM_TARGET__}] Fantasy CPU profiler report:`);
-			console.log(formatCpuProfilerReport(cpuProfilerSession.profiler.snapshot()));
+			console.log(formatCpuProfilerReport(cpuProfilerSession.snapshot()));
 		}
 		baseRequestExit(code);
 	};
 	processExitController = requestExit;
 	if (cliOptions.cpuProfile) {
-		cpuProfilerSession = new CpuProfilerSession(runtime.machine.cpu);
+		cpuProfilerSession = new CpuProfilerSession(runtime.machine.cpu, runtimeIde.sources);
 		cpuProfilerSession.enable();
 		console.log(`[bootrom:${__BOOTROM_TARGET__}] Fantasy CPU profiler enabled.`);
 	}
@@ -1112,10 +1045,7 @@ async function main(): Promise<void> {
 	};
 	let scheduledTimeline = false;
 	if (cliOptions.ideTestPath) {
-		const ide = machineRuntime.ide;
-		if (!ide) {
-			throw new Error('Machine runtime did not expose the IDE harness (bmsx.ide).');
-		}
+		const ide = createHeadlessIdeHarness(runtimeIde, runtime);
 		await runIdeTest({
 			testPath: cliOptions.ideTestPath,
 			frameIntervalMs: frameInterval,
@@ -1153,7 +1083,7 @@ async function main(): Promise<void> {
 		scheduledTimeline = true;
 	}
 	if (deferStartForTimeline) {
-		machineRuntime.machineManager.start();
+		startMachineHostFrames(runtimeIde);
 	}
 	const hasTimelineRun = scheduledTimeline;
 	const defaultTtl = hostTestRunState || hasTimelineRun || cliOptions.ideTestPath ? 60_000 : 1_000;

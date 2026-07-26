@@ -1,15 +1,19 @@
-import { runtimeWorkbenchState } from '../../../runtime/workbench_state';
+import type { CartEditor } from '../../../cart_editor';
 import type { ResourceDescriptor } from '../../../common/models';
 import { prepareEditorForSourceFocus, releaseResourcePanelFocus } from '../../../navigation/source_focus';
 import { findResourceDescriptorForChunk } from './lookup';
 import { openResourceViewerTab } from './view_tabs';
 import { openCodeTabForDescriptor } from '../../ui/code_tab/io';
-import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import type { ResourceDomain, ResourceIdentity } from '../../../common/resource';
 import { resolveRuntimeLuaSourceForContext } from '../../../runtime/sources';
+import type { RuntimeSourceState } from '../../../runtime/sources';
 
-export function openResourceDescriptor(descriptor: ResourceDescriptor): void {
-	const resourcePanel = runtimeWorkbenchState.ide.editor.resourcePanel;
+export function openResourceDescriptor(
+	editor: CartEditor,
+	sources: RuntimeSourceState,
+	descriptor: ResourceDescriptor,
+): void {
+	const resourcePanel = editor.resourcePanel;
 	if (descriptor.asset_id && descriptor.asset_id.length > 0) {
 		resourcePanel.queuePendingSelection(descriptor);
 		if (resourcePanel.isVisible()) {
@@ -17,35 +21,40 @@ export function openResourceDescriptor(descriptor: ResourceDescriptor): void {
 		}
 	}
 	if (descriptor.type === 'lua' || descriptor.type === 'aem') {
-		void openCodeTabForDescriptor(descriptor);
+		void openCodeTabForDescriptor(resourcePanel, sources, descriptor);
 	} else {
-		openResourceViewerTab(descriptor);
+		openResourceViewerTab(resourcePanel, sources, descriptor);
 	}
 	releaseResourcePanelFocus(resourcePanel);
 }
 
-export function focusChunkSource(runtime: Runtime, identity: ResourceIdentity): void {
-	prepareEditorForSourceFocus(runtime);
+export function focusChunkSource(
+	editor: CartEditor,
+	sources: RuntimeSourceState,
+	identity: ResourceIdentity,
+): void {
+	prepareEditorForSourceFocus();
 	if (!identity.path) {
 		return;
 	}
-	const descriptor = findResourceDescriptorForChunk(identity);
+	const descriptor = findResourceDescriptorForChunk(sources, identity);
 	if (!descriptor) {
 		return;
 	}
-	openResourceDescriptor(descriptor);
+	openResourceDescriptor(editor, sources, descriptor);
 }
 
 export function focusChunkSourceForContext(
-	runtime: Runtime,
+	editor: CartEditor,
+	sources: RuntimeSourceState,
 	domain: ResourceDomain,
 	path: string,
 ): ResourceIdentity | null {
-	const source = resolveRuntimeLuaSourceForContext(runtimeWorkbenchState.sources, domain, path);
-	if (source === null) {
+	const source = resolveRuntimeLuaSourceForContext(sources, domain, path);
+	if (!source) {
 		return null;
 	}
 	const identity = { domain: source.domain, path: source.record.source_path };
-	focusChunkSource(runtime, identity);
+	focusChunkSource(editor, sources, identity);
 	return identity;
 }

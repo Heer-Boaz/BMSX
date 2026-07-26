@@ -1,4 +1,4 @@
-import { runtimeWorkbenchState } from '../../../runtime/workbench_state';
+import type { RuntimeSourceState } from '../../../runtime/sources';
 // disable cross_layer_import_pattern -- code-tab contexts own editable buffer instances stored in workbench tab state.
 import { editorDocumentState } from '../../../editor/editing/document_state';
 import type {
@@ -21,8 +21,8 @@ import {
 	type ResourceIdentity,
 } from '../../../common/resource';
 
-function resolveLuaSource(descriptor: ResourceDescriptor): string {
-	return luaPipeline.resourceSourceForChunk(descriptor);
+function resolveLuaSource(sources: RuntimeSourceState, descriptor: ResourceDescriptor): string {
+	return luaPipeline.resourceSourceForChunk(sources, descriptor);
 }
 
 function createCodeTabContext(descriptor: ResourceDescriptor, initialSource: string, mode: CodeTabMode): CodeTabContext {
@@ -94,18 +94,17 @@ export function upsertCodeEditorTab(context: CodeTabContext): EditorTabDescripto
 	return tab;
 }
 
-export function createEntryTabContext(): CodeTabContext {
-	const luaDescriptors = listResources().filter(r => r.type === 'lua');
-	const sources = runtimeWorkbenchState.sources;
+export function createEntryTabContext(sources: RuntimeSourceState): CodeTabContext {
+	const luaDescriptors = listResources(sources).filter(r => r.type === 'lua');
 	const descriptor = luaDescriptors.find(r =>
 		r.domain === sources.activeCartridgeSlot
 		&& r.path === sources.activeLuaSources.entry_path
 	)!;
-	return createLuaCodeTabContext(descriptor);
+	return createLuaCodeTabContext(sources, descriptor);
 }
 
-export function createLuaCodeTabContext(descriptor: ResourceDescriptor): CodeTabContext {
-	return createCodeTabContext(descriptor, resolveLuaSource(descriptor), 'lua');
+export function createLuaCodeTabContext(sources: RuntimeSourceState, descriptor: ResourceDescriptor): CodeTabContext {
+	return createCodeTabContext(descriptor, resolveLuaSource(sources, descriptor), 'lua');
 }
 
 export function createAemCodeTabContext(descriptor: ResourceDescriptor, source: string): CodeTabContext {

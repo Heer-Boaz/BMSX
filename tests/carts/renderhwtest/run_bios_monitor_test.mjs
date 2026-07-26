@@ -19,7 +19,6 @@ function run(command, args) {
 
 run(process.execPath, [
 	'dist/host_headless.debug.js',
-	'--machine-runtime', 'dist/libbmsx.debug.js',
 	'--system-rom', 'dist/bmsx-bios.debug.rom',
 	'--input-timeline', timelinePath,
 	'renderhwtest',

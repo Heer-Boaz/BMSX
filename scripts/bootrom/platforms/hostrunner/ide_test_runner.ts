@@ -1,7 +1,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
-import { extractErrorMessage } from '../../../../machine/ts/lua/value';
+import { extractErrorMessage } from '../../../../ide/language/lua/interpreter/value';
 import type { HeadlessIdeHarness } from '../../../../ide/testing/headless_harness';
 
 export interface IdeTestRunnerOptions {
@@ -67,6 +67,7 @@ export async function runIdeTest(options: IdeTestRunnerOptions): Promise<void> {
 		frames: waitFrames,
 		hotResume: () => options.ide.hotResumeCore(),
 		performHotResume: () => options.ide.performHotResume(),
+		reboot: () => options.ide.reboot(),
 		openLuaSource: (path: string) => options.ide.openLuaSource(path),
 		replaceActiveCodeSource: (source: string) => options.ide.replaceActiveCodeSource(source),
 	};
