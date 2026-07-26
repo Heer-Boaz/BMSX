@@ -280,7 +280,6 @@ public:
 	CpuRuntimeState captureRuntimeState() const;
 	void restoreRuntimeState(const CpuRuntimeState& state);
 	void requestYield();
-	void clearYieldRequest();
 	void haltUntilIrq();
 	void clearHaltUntilIrq();
 	bool isHaltedUntilIrq() const { return m_haltedUntilIrq; }
@@ -315,7 +314,6 @@ public:
 	NativeLocalRootsScope acquireNativeLocalRoots();
 
 	int getFrameDepth() const { return static_cast<int>(m_frames.size()); }
-	bool hasFrames() const { return !m_frames.empty(); }
 	int readFrameExecutionDomain(int frameIndex) const;
 	int readLastExecutionDomain() const;
 	u32 readFrameFunctionAddress(int frameIndex) const;
