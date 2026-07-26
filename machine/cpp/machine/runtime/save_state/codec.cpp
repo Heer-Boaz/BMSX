@@ -1654,7 +1654,6 @@ BinValue encodeCpuRuntimeState(const CpuRuntimeState& state) {
 	});
 	object["lastExecutionDomainId"] = static_cast<i64>(state.lastExecutionDomainId);
 	object["lastPc"] = static_cast<i64>(state.lastPc);
-	object["lastInstruction"] = static_cast<i64>(state.lastInstruction);
 	object["instructionBudgetRemaining"] = static_cast<i64>(state.instructionBudgetRemaining);
 	object["haltedUntilIrq"] = state.haltedUntilIrq;
 	object["interruptEventPending"] = state.interruptEventPending;
@@ -1714,7 +1713,6 @@ CpuRuntimeState decodeCpuRuntimeState(const BinValue& value, const char* label) 
 		"cpuState.lastExecutionDomainId"
 	);
 	state.lastPc = requireU32(requireField(object, "lastPc", label), "cpuState.lastPc");
-	state.lastInstruction = requireU32(requireField(object, "lastInstruction", label), "cpuState.lastInstruction");
 	state.instructionBudgetRemaining = requireI32(requireField(object, "instructionBudgetRemaining", label), "cpuState.instructionBudgetRemaining");
 	state.haltedUntilIrq = requireBool(requireField(object, "haltedUntilIrq", label), "cpuState.haltedUntilIrq");
 	state.interruptEventPending = requireBool(requireField(object, "interruptEventPending", label), "cpuState.interruptEventPending");

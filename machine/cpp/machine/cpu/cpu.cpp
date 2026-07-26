@@ -936,7 +936,6 @@ CpuRuntimeState CPU::captureRuntimeState() const {
 	state.objects = std::move(objects);
 	state.lastExecutionDomainId = m_lastExecutionDomainId;
 	state.lastPc = lastPc;
-	state.lastInstruction = lastInstruction;
 	state.instructionBudgetRemaining = instructionBudgetRemaining;
 	state.haltedUntilIrq = m_haltedUntilIrq;
 	state.interruptEventPending = m_interruptEventPending;
@@ -1165,7 +1164,6 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	}
 	m_lastExecutionDomainId = state.lastExecutionDomainId;
 	lastPc = state.lastPc;
-	lastInstruction = state.lastInstruction;
 	instructionBudgetRemaining = state.instructionBudgetRemaining;
 	m_haltedUntilIrq = state.haltedUntilIrq;
 	m_interruptEventPending = state.interruptEventPending;
@@ -1776,7 +1774,6 @@ dispatch_loop_check:
 		frame->pc = pc + (static_cast<u32>(decoded->width) * INSTRUCTION_BYTES);
 		m_lastExecutionDomainId = image->executionDomainId;
 		lastPc = pc + ((static_cast<u32>(decoded->width) - 1u) * INSTRUCTION_BYTES);
-	lastInstruction = decoded->word;
 	instructionBudgetRemaining -= static_cast<int>(BASE_CYCLES[decoded->op]);
 	a = decoded->a;
 	b = decoded->b;

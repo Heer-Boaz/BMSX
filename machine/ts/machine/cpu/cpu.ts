@@ -209,7 +209,6 @@ export type CpuRuntimeState = {
 	openUpvalues: number[];
 	lastExecutionDomainId: ExecutionDomainId;
 	lastPc: number;
-	lastInstruction: number;
 	instructionBudgetRemaining: number;
 	haltedUntilIrq: boolean;
 	interruptEventPending: boolean;
@@ -256,7 +255,6 @@ export class CPU {
 	public instructionBudgetRemaining: number = 0;
 	public completionValues: Value[] = [];
 	public lastPc: number = 0;
-	public lastInstruction: number = 0;
 	public readonly globals: Table;
 	public readonly memory: Memory;
 
@@ -1219,7 +1217,6 @@ export class CPU {
 					frame.pc = pc + (width * INSTRUCTION_BYTES);
 					this.lastExecutionDomainId = image.executionDomainId;
 					this.lastPc = pc + ((width - 1) * INSTRUCTION_BYTES);
-					this.lastInstruction = page.words[pageOffset];
 					if (executionObserver) {
 						executionObserver.onInstruction(image.executionDomainId, pc, op);
 					}
@@ -2974,7 +2971,6 @@ export class CPU {
 			openUpvalues,
 			lastExecutionDomainId: this.lastExecutionDomainId,
 			lastPc: this.lastPc,
-			lastInstruction: this.lastInstruction,
 			instructionBudgetRemaining: this.instructionBudgetRemaining,
 			haltedUntilIrq: this.haltedUntilIrq,
 			interruptEventPending: this.interruptEventPending,
@@ -3163,7 +3159,6 @@ export class CPU {
 		}
 		this.lastExecutionDomainId = state.lastExecutionDomainId;
 		this.lastPc = state.lastPc;
-		this.lastInstruction = state.lastInstruction;
 		this.instructionBudgetRemaining = state.instructionBudgetRemaining;
 		this.haltedUntilIrq = state.haltedUntilIrq;
 		this.interruptEventPending = state.interruptEventPending;

@@ -51,7 +51,6 @@ for (let frameIndex = 0; frameIndex < frameDepthBeforeRejectedEdit; frameIndex +
 }
 const lastExecutionDomainBeforeRejectedEdit = cpu.readLastExecutionDomain();
 const lastPcBeforeRejectedEdit = cpu.lastPc;
-const lastInstructionBeforeRejectedEdit = cpu.lastInstruction;
 const initCountBeforeRejectedEdit = cpu.getGlobalByKey(runtime.internString('hot_resume_init_count'));
 t.openLuaSource('entry.lua');
 t.replaceActiveCodeSource(entryRecord.base_src.replace(
@@ -83,9 +82,8 @@ t.assert(
 );
 t.assert(
 	cpu.readLastExecutionDomain() === lastExecutionDomainBeforeRejectedEdit
-		&& cpu.lastPc === lastPcBeforeRejectedEdit
-		&& cpu.lastInstruction === lastInstructionBeforeRejectedEdit,
-	'rejected edit changed the last-instruction latch',
+		&& cpu.lastPc === lastPcBeforeRejectedEdit,
+	'rejected edit changed the last-execution latch',
 );
 
 const installRevision = (revision) => {

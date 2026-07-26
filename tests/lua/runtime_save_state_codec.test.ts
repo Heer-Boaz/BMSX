@@ -506,7 +506,6 @@ function createRuntimeSaveState(): RuntimeSaveState {
 			openUpvalues: [],
 			lastExecutionDomainId: 0,
 			lastPc: 0,
-			lastInstruction: 0,
 			instructionBudgetRemaining: 0,
 			haltedUntilIrq: false,
 			interruptEventPending: false,

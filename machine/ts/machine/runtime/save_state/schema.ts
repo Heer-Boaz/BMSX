@@ -52,7 +52,6 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'key',
 	'kind',
 	'lastExecutionDomainId',
-	'lastInstruction',
 	'lastPc',
 	'completionValues',
 	'lastTickBudgetGranted',

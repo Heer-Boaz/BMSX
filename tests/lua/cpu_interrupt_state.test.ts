@@ -9,7 +9,6 @@ import { Table } from '../../machine/ts/machine/cpu/table';
 import { BuiltinFunctionId, EMPTY_CALL_ARGS, createBuiltinFunction, StringValue, type Value } from '../../machine/ts/machine/cpu/value';
 import {
 	INSTRUCTION_BYTES,
-	readInstructionWord,
 	writeInstruction,
 } from '../../machine/ts/machine/cpu/instruction_format';
 import { BASE_CYCLES, encodeFixedCallArgCount } from '../../machine/ts/machine/cpu/opcode_info';
@@ -1034,30 +1033,22 @@ wait()
 	assert.equal(cpu.readFrameUpvalue(frameIndex, 0), 42);
 });
 
-test('Hot Resume updates the physical last-instruction latch with its relocated PC', () => {
+test('Hot Resume updates the physical last-PC latch', () => {
 	const { cpu, haltFunctionAddress } = makeHaltCpu();
 	cpu.start(haltFunctionAddress);
 	assert.equal(cpu.runUntilDepth(0, 1), RunResult.Halted);
-	const freshTextBytes = HALT_TEST_IMAGE.image.textBytes.slice();
 	const lastWordIndex = (
 		cpu.lastPc - HALT_TEST_IMAGE.image.header.textAddress
 	) / INSTRUCTION_BYTES;
-	writeInstruction(freshTextBytes, lastWordIndex, OpCode.RET, 0, 0, 0, 0);
 	const target = identityHotResumeRevision(HALT_TEST_IMAGE.image);
-	const freshImage = {
-		...target.freshImage,
-		textBytes: freshTextBytes,
-	};
+	const relocatedPc = cpu.lastPc + INSTRUCTION_BYTES;
+	target.revision.pcAddresses[lastWordIndex] = relocatedPc;
 
 	applyHotResumeRelocation(
 		cpu,
-		buildHotResumeRelocation(cpu, [{
-			...target,
-			freshImage,
-		}, null, null]),
+		buildHotResumeRelocation(cpu, [target, null, null]),
 	);
-	assert.equal(cpu.lastPc, HALT_TEST_IMAGE.image.header.textAddress + lastWordIndex * INSTRUCTION_BYTES);
-	assert.equal(cpu.lastInstruction, readInstructionWord(freshTextBytes, lastWordIndex));
+	assert.equal(cpu.lastPc, relocatedPc);
 });
 
 test('BLua32 branches cannot enter adjacent function text', () => {

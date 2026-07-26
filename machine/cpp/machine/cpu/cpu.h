@@ -147,7 +147,6 @@ struct CpuRuntimeState {
 	std::vector<int> openUpvalues;
 	int lastExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	u32 lastPc = 0;
-	uint32_t lastInstruction = 0;
 	int instructionBudgetRemaining = 0;
 	bool haltedUntilIrq = false;
 	bool interruptEventPending = false;
@@ -336,7 +335,6 @@ public:
 	int instructionBudgetRemaining = 0;
 	std::vector<Value> completionValues;
 	u32 lastPc = 0;
-	uint32_t lastInstruction = 0;
 	Table* globals = nullptr;
 
 private:

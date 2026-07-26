@@ -9,10 +9,6 @@ import {
 	relocatedInstructionPc,
 	type Blua32ExecutionImageRevision,
 } from '../../machine/ts/rompack/tooling/blua32_revision';
-import {
-	INSTRUCTION_BYTES,
-	readInstructionWord,
-} from '../../machine/ts/machine/cpu/instruction_format';
 
 export type HotResumeRevision = {
 	readonly previousImage: Blua32ImageLayout;
@@ -41,8 +37,7 @@ const NMI_RETURN_EPC_WRITE = 2;
 const NMI_RETURN_EPC_WORD = 3;
 const LAST_PC_WRITE = 4;
 const LAST_PC_WORD = 5;
-const LAST_INSTRUCTION_WORD = 6;
-const LATCH_WORDS = 7;
+const LATCH_WORDS = 6;
 
 export function buildHotResumeRelocation(
 	cpu: CPU,
@@ -155,12 +150,12 @@ export function buildHotResumeRelocation(
 		}
 	}
 
-	const lastInstructionTarget = revisions[cpu.readLastExecutionDomain() + 1];
-	if (lastInstructionTarget !== null) {
+	const lastPcTarget = revisions[cpu.readLastExecutionDomain() + 1];
+	if (lastPcTarget !== null) {
 		const pc = relocatedInstructionPc(
-			lastInstructionTarget.revision,
-			lastInstructionTarget.previousImage,
-			lastInstructionTarget.freshImage,
+			lastPcTarget.revision,
+			lastPcTarget.previousImage,
+			lastPcTarget.freshImage,
 			cpu.lastPc,
 		);
 		if (pc < 0) {
@@ -168,10 +163,6 @@ export function buildHotResumeRelocation(
 		} else {
 			relocation[latchBase + LAST_PC_WRITE] = 1;
 			relocation[latchBase + LAST_PC_WORD] = pc;
-			relocation[latchBase + LAST_INSTRUCTION_WORD] = readInstructionWord(
-				lastInstructionTarget.freshImage.textBytes,
-				(pc - lastInstructionTarget.freshImage.header.textAddress) / INSTRUCTION_BYTES,
-			);
 		}
 	}
 
@@ -236,6 +227,5 @@ export function applyHotResumeRelocation(cpu: CPU, relocation: Uint32Array): voi
 	}
 	if (relocation[latchBase + LAST_PC_WRITE] !== 0) {
 		cpu.lastPc = relocation[latchBase + LAST_PC_WORD];
-		cpu.lastInstruction = relocation[latchBase + LAST_INSTRUCTION_WORD];
 	}
 }

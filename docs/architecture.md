@@ -743,9 +743,8 @@ heap. Before the ROM owner installs any rebuilt bytes, IDE tooling walks the
 suspended CPU through scalar physical-state primitives and proves a complete
 relocation for every active frame function address and continuation PC, every
 child-frame callsite in its parent execution domain, the active exception
-`EPC`, a nested NMI return `EPC`, and the latched instruction
-domain/PC/word triple. A missing map rejects the edit before any media or CPU
-state write.
+`EPC`, a nested NMI return `EPC`, and the latched instruction domain/PC pair.
+A missing map rejects the edit before any media or CPU state write.
 
 After that proof, the ROM owner installs the rebuilt physical media. IDE
 tooling reads CPU-owned execution-domain residency before asking the
@@ -868,7 +867,7 @@ rompacker, TOC and host do not maintain a second module-name or attribute list.
 - Emulator tooling may inspect or edit a suspended CPU through allocation-free
   scalar primitives for raw frame domains, function-record addresses,
   continuation and callsite PCs, exception-frame flags, live registers,
-  resolved upvalues, the last fetched instruction's raw domain/PC/word latches,
+  resolved upvalues, the last fetched instruction's raw domain/PC latches,
   and exception-return latches. The CPU does not allocate a debug snapshot,
   derive function indexes or source locations, format a stack trace, retain
   symbols, or know why tooling writes those physical words.
