@@ -1072,6 +1072,16 @@
 				"machine/cpp/machine/cpu/source_text.cpp"
 			],
 			"reason": "blua32_source_diagnostics_must_remain_outside_machine_cpu_and_core"
+		},
+		{
+			"present": [
+				"scripts/bootrom/cpu_profiler.ts"
+			],
+			"absent": [
+				"machine/cpp/machine/cpu/profiler.h",
+				"machine/cpp/machine/cpu/profiler.cpp"
+			],
+			"reason": "cpu_profiler_is_an_opt_in_ts_host_feature_without_a_native_runtime_mirror"
 		}
 	],
 	"strict_file_pair_parity": [

@@ -2793,6 +2793,12 @@ authoring-tool responsibilities under `machine/ts/lua`. Native machine code
 executes the already-linked physical BLua32 image and therefore has no parallel
 C++ source lexer, parser, AST, or runtime source-compilation path.
 
+Instruction profiling is an opt-in Node host feature. Its TypeScript session
+attaches a raw execution observer only while `--cpu-profile` is active and owns
+all counters, symbols, and report formatting outside the machine. The native
+runtime has no profiler consumer and therefore exposes no dormant observer
+interface or per-instruction observer branch.
+
 ## Host presentation and frontend lifecycle
 
 `overlay_queue` is the retained publication boundary between host-UI producers

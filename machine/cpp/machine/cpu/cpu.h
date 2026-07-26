@@ -54,12 +54,6 @@ private:
 	NativeResults* m_out = nullptr;
 };
 
-class CpuExecutionObserver {
-public:
-	virtual ~CpuExecutionObserver() = default;
-	virtual void onInstruction(int executionDomainId, u32 pc, u8 opcode) = 0;
-};
-
 enum class RunResult {
 	Halted,
 	Yielded,
@@ -304,7 +298,6 @@ public:
 	void unwindToDepth(int targetDepth);
 	void step();
 	void collectHeap();
-	void setExecutionObserver(CpuExecutionObserver* observer) { m_executionObserver = observer; }
 	class NativeLocalRootsScope {
 	public:
 		NativeLocalRootsScope(const NativeLocalRootsScope&) = delete;
@@ -437,7 +430,6 @@ private:
 	void markRoots(GcHeap& heap);
 
 	std::vector<std::unique_ptr<Blua32ExecutionImage>> m_executionImages;
-	CpuExecutionObserver* m_executionObserver = nullptr;
 	Blua32ExecutionImage* m_systemImage = nullptr;
 	Blua32ExecutionImage* m_activeExecutionImage = nullptr;
 	std::vector<std::unique_ptr<CallFrame>> m_frames;
