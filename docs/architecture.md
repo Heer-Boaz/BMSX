@@ -747,10 +747,11 @@ child-frame callsite in its parent execution domain, the active exception
 domain/PC/word triple. A missing map rejects the edit before any media or CPU
 state write.
 
-After that proof, the ROM owner installs the rebuilt physical media. The
-machine-owned execution address space decodes only affected domains that were
-already resolved, the CPU replaces their derived execution state, and IDE
-tooling applies the precomputed raw frame and latch words. Compatible active
+After that proof, the ROM owner installs the rebuilt physical media. IDE
+tooling reads CPU-owned execution-domain residency before asking the
+machine-owned execution address space to decode an affected domain, the CPU
+replaces that domain's derived execution state, and IDE tooling applies the
+precomputed raw frame and latch words. Compatible active
 frames bind to the new physical function records and grow register storage when
 required. The CPU fetch path remains the ordinary physical-address path and
 gains no authoring-time branch, source revision, linker baseline, lookup,

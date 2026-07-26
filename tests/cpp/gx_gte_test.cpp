@@ -63,7 +63,7 @@ struct GteHarness {
 		, cpu(memory, irq, executionAddressSpace)
 		, scheduler(cpu)
 		, gte(memory, cpu, scheduler) {
-		cpu.resetExecutionImages(executionAddressSpace.reset());
+		cpu.resetExecutionImages(executionAddressSpace.resolveSystemDomain());
 	}
 };
 

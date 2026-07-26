@@ -782,7 +782,7 @@ return wait_cart
 	const irqController = new IrqController(memory);
 	const executionAddressSpace = new ExecutionAddressSpace(memory);
 	const cpu = new CPU(memory, irqController, executionAddressSpace);
-	cpu.resetExecutionImages(executionAddressSpace.reset());
+	cpu.resetExecutionImages(executionAddressSpace.resolveSystemDomain());
 	cpu.start(linked.systemVectors.startupFunctionAddress, EMPTY_CALL_ARGS, CPU_STATUS_SYSTEM_ENTRY);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	const systemWaiter = cpu.completionValues[0] as Closure;
@@ -956,7 +956,7 @@ halt_until_irq
 	const irqController = new IrqController(memory);
 	const executionAddressSpace = new ExecutionAddressSpace(memory);
 	const cpu = new CPU(memory, irqController, executionAddressSpace);
-	cpu.resetExecutionImages(executionAddressSpace.reset());
+	cpu.resetExecutionImages(executionAddressSpace.resolveSystemDomain());
 	cpu.start(linked.cartVectors.startupFunctionAddress, EMPTY_CALL_ARGS, CPU_STATUS_CART_ENTRY);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
 	const interruptedFrameDepth = cpu.getFrameDepth();
@@ -1182,7 +1182,7 @@ cross_image_stack.caller()
 	});
 	const executionAddressSpace = new ExecutionAddressSpace(memory);
 	const cpu = new CPU(memory, new IrqController(memory), executionAddressSpace);
-	cpu.resetExecutionImages(executionAddressSpace.reset());
+	cpu.resetExecutionImages(executionAddressSpace.resolveSystemDomain());
 
 	cpu.start(linked.cartVectors.startupFunctionAddress, EMPTY_CALL_ARGS, CPU_STATUS_CART_ENTRY);
 	assert.equal(cpu.runUntilDepth(0, 10_000), RunResult.Halted);
@@ -1535,7 +1535,7 @@ test('CPU execution stops at the device deadline that activates GPUREAD', () => 
 		functionIds: ['gpu_read_deadline'],
 	});
 	machine.memory.installSystemRom(image.romBytes);
-	cpu.resetExecutionImages(machine.executionAddressSpace.reset());
+	cpu.resetExecutionImages(machine.executionAddressSpace.resolveSystemDomain());
 	cpu.start(image.vectors.startupFunctionAddress);
 	machine.gxGpu.writeGp0(GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24);
 	machine.gxGpu.writeGp0(0);

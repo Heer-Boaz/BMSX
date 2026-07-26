@@ -458,6 +458,10 @@ void CPU::replaceExecutionImage(Blua32DecodedExecutionImage&& decodedImage) {
 	}
 }
 
+bool CPU::isExecutionDomainResident(int executionDomainId) const {
+	return residentExecutionImage(executionDomainId) != nullptr;
+}
+
 Closure* CPU::staticClosureAtAddress(u32 address) {
 	auto [entry, inserted] = m_staticClosuresByAddress.try_emplace(address);
 	Closure& closure = entry->second;

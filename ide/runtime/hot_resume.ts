@@ -1,7 +1,6 @@
 import { convertToError } from '../language/lua/interpreter/value';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { EMPTY_CALL_ARGS } from '../../machine/ts/machine/cpu/value';
-import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/machine/execution_address_space';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { clearOverlayFrame } from '../../machine/ts/render/host_overlay/overlay_queue';
 import {
@@ -83,14 +82,16 @@ export function hotResume(
 			installBlua32Media(sources, runtime, rebuilt);
 
 			if (rebuilt.system !== null) {
-				cpu.replaceExecutionImage(executionAddressSpace.reloadDomain(SYSTEM_EXECUTION_DOMAIN_ID)!);
+				cpu.replaceExecutionImage(executionAddressSpace.resolveSystemDomain());
 			}
 			for (const slot of CARTRIDGE_RESOURCE_DOMAINS) {
-				if (rebuilt.cartridgeSlots[slot] !== null) {
-					const image = executionAddressSpace.reloadDomain(slot);
-					if (image) {
-						cpu.replaceExecutionImage(image);
+				if (rebuilt.cartridgeSlots[slot] !== null
+					&& cpu.isExecutionDomainResident(slot)) {
+					const image = executionAddressSpace.resolveDomain(slot);
+					if (!image) {
+						throw new Error('Active execution domain has no BLua32 executable image.');
 					}
+					cpu.replaceExecutionImage(image);
 				}
 			}
 			applyHotResumeRelocation(cpu, relocation);

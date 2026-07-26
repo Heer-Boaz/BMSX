@@ -159,7 +159,7 @@ function createIntellisenseRuntime(source: string) {
 function runtimeWithPausedCpuLocal(source: string) {
 	const harness = createIntellisenseRuntime(source);
 	const cpu = harness.runtime.machine.cpu;
-	cpu.resetExecutionImages(harness.runtime.machine.executionAddressSpace.reset());
+	cpu.resetExecutionImages(harness.runtime.machine.executionAddressSpace.resolveSystemDomain());
 	cpu.start(harness.image.vectors.startupFunctionAddress);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
 	return {
@@ -284,7 +284,7 @@ test('intellisense resolves captured fault upvalues after the CPU stack is repla
 	].join('\n');
 	const { bridge, image, runtime, sourcePath } = createIntellisenseRuntime(source);
 	const cpu = runtime.machine.cpu;
-	cpu.resetExecutionImages(runtime.machine.executionAddressSpace.reset());
+	cpu.resetExecutionImages(runtime.machine.executionAddressSpace.resolveSystemDomain());
 	cpu.start(image.vectors.startupFunctionAddress);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
 	assert.equal(cpu.getFrameDepth(), 0);

@@ -460,7 +460,7 @@ return imgdec
 		const cpu = new CPU(memory, new IrqController(memory), executionAddressSpace);
 		const cartSymbolsEntry = loaded.entries.find(asset => asset.resid === BLUA32_SYMBOLS_IMAGE_ID)!;
 		const cartSymbols = decodeBlua32SymbolsImage(rom.subarray(cartSymbolsEntry.start, cartSymbolsEntry.end));
-		cpu.resetExecutionImages(executionAddressSpace.reset());
+		cpu.resetExecutionImages(executionAddressSpace.resolveSystemDomain());
 		for (let index = 0; index < LUA_BOOT_PRIMITIVES.length; index += 1) {
 			const primitive = LUA_BOOT_PRIMITIVES[index];
 			cpu.setSystemGlobalByKey(

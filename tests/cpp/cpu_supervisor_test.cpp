@@ -147,7 +147,7 @@ struct CpuTestMachine {
 		irq.reset();
 		dma.reset();
 		memory.cartridgeController().reset();
-		cpu.resetExecutionImages(executionAddressSpace.reset());
+		cpu.resetExecutionImages(executionAddressSpace.resolveSystemDomain());
 	}
 };
 
@@ -222,7 +222,7 @@ void testSystemAndOrdinaryGlobalRegisterfilesStayDistinct() {
 	machine.cpu.setGlobalByKey(irqKey, bmsx::valueNumber(22.0));
 
 	machine.cpu.replaceExecutionImage(
-		std::move(*machine.executionAddressSpace.reloadDomain(bmsx::SYSTEM_EXECUTION_DOMAIN_ID))
+		machine.executionAddressSpace.resolveSystemDomain()
 	);
 	const bmsx::CpuRuntimeState saved = machine.cpu.captureRuntimeState();
 	require(saved.systemGlobals.size() == 1u && saved.systemGlobals[0].name == "irq" && saved.systemGlobals[0].value.numberValue == 11.0, "media remount preserves the system registerfile");
@@ -239,12 +239,15 @@ void testSystemAndOrdinaryGlobalRegisterfilesStayDistinct() {
 
 void testCp0ExecTransfersToTheSelectedPhysicalCartridgeImage() {
 	CpuTestMachine machine(makeSupervisorSystemImage());
+	require(machine.cpu.isExecutionDomainResident(bmsx::SYSTEM_EXECUTION_DOMAIN_ID), "system execution domain is resident after reset");
+	require(!machine.cpu.isExecutionDomainResident(0), "unexecuted cartridge domain is not resident");
 	machine.cpu.start(
 		machine.systemRom.functionAddresses[EXEC_CART_FUNCTION],
 		{},
 		bmsx::CPU_STATUS_SYSTEM_ENTRY
 	);
 	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "CP0.EXEC transfers execution to cartridge bytecode");
+	require(machine.cpu.isExecutionDomainResident(0), "CP0.EXEC makes the selected cartridge domain resident");
 	const bmsx::CpuRuntimeState state = machine.cpu.captureRuntimeState();
 	require(state.executionCartridgeSlot == 0, "CP0.EXEC selects the cartridge in the physical bus socket");
 	require(state.frames.size() == 1u, "CP0.EXEC replaces the system root instead of stacking a host call");

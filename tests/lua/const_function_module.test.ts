@@ -67,7 +67,7 @@ function runColdPair(systemCompiled: CompiledProgram, cartCompiled: CompiledProg
 	const memory = new Memory({ systemRom: finalized.systemRomBytes, cartridgeSlots: cartridgeSlots(finalized.cartRomBytes) });
 	const executionAddressSpace = new ExecutionAddressSpace(memory);
 	const cpu = new CPU(memory, new IrqController(memory), executionAddressSpace);
-	cpu.resetExecutionImages(executionAddressSpace.reset());
+	cpu.resetExecutionImages(executionAddressSpace.resolveSystemDomain());
 	cpu.start(finalized.systemVectors.startupFunctionAddress, [], CPU_STATUS_SYSTEM_ENTRY);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	cpu.start(finalized.cartVectors.startupFunctionAddress, [], CPU_STATUS_CART_ENTRY);

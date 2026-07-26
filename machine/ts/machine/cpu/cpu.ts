@@ -810,6 +810,10 @@ export class CPU {
 		}
 	}
 
+	public isExecutionDomainResident(executionDomainId: ExecutionDomainId): boolean {
+		return this.residentExecutionImage(executionDomainId) !== null;
+	}
+
 	public setExecutionObserver(observer: CpuExecutionObserver | null): void {
 		this.executionObserver = observer;
 	}

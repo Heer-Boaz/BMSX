@@ -24,15 +24,11 @@ public:
 	}
 
 	std::optional<int> domainIdOnBus(u32 address) const;
-	Blua32DecodedExecutionImage reset();
-	std::optional<Blua32DecodedExecutionImage> resolveDomain(int executionDomainId);
-	std::optional<Blua32DecodedExecutionImage> reloadDomain(int executionDomainId) const;
+	Blua32DecodedExecutionImage resolveSystemDomain() const;
+	std::optional<Blua32DecodedExecutionImage> resolveDomain(int executionDomainId) const;
 
 private:
-	std::optional<Blua32DecodedExecutionImage> decodeDomain(int executionDomainId) const;
-
 	Memory& m_memory;
-	uint8_t m_resolvedDomainMask = 0;
 };
 
 } // namespace bmsx

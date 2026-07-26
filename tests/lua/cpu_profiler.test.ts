@@ -134,7 +134,7 @@ test('CPU profiler starts a new profiling epoch when IDE tooling media changes',
 	assert.equal(profilerSession.snapshot().totalInstructions, 4);
 
 	memory.installSystemRom(reloaded.romBytes);
-	cpu.replaceExecutionImage(executionAddressSpace.reloadDomain(-1)!);
+	cpu.replaceExecutionImage(executionAddressSpace.resolveSystemDomain());
 	sources.currentBlua32Media = {
 		system: { layout: reloaded.image, symbols: reloaded.symbols },
 		cartridgeSlots: [null, null],

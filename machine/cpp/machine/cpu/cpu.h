@@ -247,6 +247,7 @@ public:
 
 	void resetExecutionImages(Blua32DecodedExecutionImage&& systemImage);
 	void replaceExecutionImage(Blua32DecodedExecutionImage&& decodedImage);
+	bool isExecutionDomainResident(int executionDomainId) const;
 	void clearExecutionEnvironment();
 	u32 systemStartupFunctionAddress() const { return m_systemImage->boot.startupFunctionAddress; }
 	bool isCartridgeExecutionActive() const { return m_activeExecutionImage->executionDomainId >= 0; }

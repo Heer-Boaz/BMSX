@@ -153,7 +153,7 @@ function installGtePlusBurstProgram(
 		functionIds: ['gte_plus_burst'],
 	});
 	cpu.memory.installSystemRom(image.romBytes);
-	cpu.resetExecutionImages(executionAddressSpace.reset());
+	cpu.resetExecutionImages(executionAddressSpace.resolveSystemDomain());
 	return image.vectors.startupFunctionAddress;
 }
 

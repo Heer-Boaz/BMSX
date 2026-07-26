@@ -363,7 +363,7 @@ export function createTestSystemCpu(
 	const irqController = new IrqController(memory);
 	const executionAddressSpace = new ExecutionAddressSpace(memory);
 	const cpu = new CPU(memory, irqController, executionAddressSpace);
-	cpu.resetExecutionImages(executionAddressSpace.reset());
+	cpu.resetExecutionImages(executionAddressSpace.resolveSystemDomain());
 	return { cpu, memory, irqController, executionAddressSpace };
 }
 
