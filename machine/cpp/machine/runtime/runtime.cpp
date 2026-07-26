@@ -71,7 +71,6 @@ Runtime::Runtime(
 		options.cartridgeSlots
 	})
 	, machine(m_memory, input)
-	, hostFault(*this)
 {
 	resetLuaHeapUsageHooks();
 	resetTrackedLuaHeapBytes();
@@ -80,7 +79,6 @@ Runtime::Runtime(
 	machine.memory.mapIoRead(IO_SYS_FRAME_MS, this, &Runtime::onFrameMsReadThunk);
 	machine.memory.mapIoRead(IO_SYS_CYCLES_PER_FRAME, this, &Runtime::onCyclesPerFrameReadThunk);
 	machine.memory.mapIoWrite(IO_GX_GPU_GP1, this, &Runtime::onGxGpuGp1WriteThunk);
-	machine.initializeSystemIo();
 	machine.resetDevices();
 	refreshDeviceTimings(*this, machine.scheduler.currentNowCycles());
 	machine.runDeviceService(DEVICE_SERVICE_GPU);
@@ -328,7 +326,6 @@ void Runtime::rebootSystem() {
 }
 
 void Runtime::enterFaultState() {
-	hostFault.publishStartup();
 	machine.cpu.clearHaltUntilIrq();
 	machine.inputController.cancelSampleArm();
 	m_pendingCall = PendingCall::None;
@@ -342,10 +339,8 @@ void Runtime::resetForSystemBoot() {
 	m_runtimeFailed = false;
 	m_luaInitialized = false;
 	m_pendingCall = PendingCall::None;
-	hostFault.clear();
 	machine.cpu.clearExecutionEnvironment();
 	machine.memory.clearIoSlots();
-	machine.initializeSystemIo();
 	resetHardwareState();
 }
 

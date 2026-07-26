@@ -24,8 +24,8 @@ assert(gx_gte_plus[5] == 0xffe60006 and gx_gte_plus[6] == 32, 'GTE+ result latch
 assert(gx_gte_plus[7] == 0 and gx_gte_plus[9] == 5, 'GTE+ completion latches mismatch')
 cartlib_test_gte_plus_ready = true
 
-local irq_mask_register<const>: *word = 0x08000010
-local input_control_register<const>: *word = 0x0800006c
+local irq_mask_register<const>: *word = 0x08000008
+local input_control_register<const>: *word = 0x08000064
 local irq_vblank<const> = 0x0004
 local vblank_count = 0
 cartlib_test_ready = false

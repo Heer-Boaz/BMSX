@@ -97,14 +97,14 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					channels: [
 						{
 							readAddressWord: 0x01002010,
-							writeAddressWord: 0x08010240,
+							writeAddressWord: 0x08010238,
 							transferCountWord: 5,
 							controlWord: 5,
 							statusWord: DMA_STATUS_BUSY,
 						},
 						{
-							readAddressWord: 0x08010418,
-							writeAddressWord: 0x08010240,
+							readAddressWord: 0x08010410,
+							writeAddressWord: 0x08010238,
 							transferCountWord: 11,
 							controlWord: 0x00003c58,
 							statusWord: DMA_STATUS_BUSY,
@@ -115,7 +115,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					scheduledBlockWords: 5,
 					scheduledBlockCycles: 17,
 					scheduledReadAddressWord: 0x01002010,
-					scheduledWriteAddressWord: 0x08010240,
+					scheduledWriteAddressWord: 0x08010238,
 					scheduledTransferCountWord: 5,
 					scheduledControlWord: 5,
 					supervisorQuiesceRequested: true,
@@ -123,7 +123,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					userChannels: [
 						{
 							readAddressWord: 0x01002020,
-							writeAddressWord: 0x08010240,
+							writeAddressWord: 0x08010238,
 							transferCountWord: 9,
 							controlWord: 4,
 							statusWord: DMA_STATUS_BUSY,

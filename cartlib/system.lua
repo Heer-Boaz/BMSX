@@ -29,7 +29,7 @@ local gx_image<const> = require('cartlib/gx/image')
 local cart_input<const> = require('cartlib/input/player')
 local collision2d<const> = require('cartlib/collision2d')
 
-local irq_ack_addr<const> = 0x0800000c
+local irq_ack_addr<const> = 0x08000004
 local irq_geo_done_error<const> = 0x0018
 local irq_apu<const> = 0x0020
 

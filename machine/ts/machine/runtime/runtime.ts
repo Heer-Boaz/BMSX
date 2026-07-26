@@ -10,7 +10,6 @@ import { DEVICE_SERVICE_GPU } from '../scheduler/device';
 import { TimingState } from './timing/state';
 import { VblankState } from './vblank';
 import { advanceRuntimeTime, CpuExecutionState, MAX_CPU_SLICE_CYCLES, runDueRuntimeTimers } from './cpu_executor';
-import { HostFaultState } from './host_fault';
 import { LuaScratchState } from './lua_scratch';
 import { refreshDeviceTimings } from './timing/config';
 import { HZ_SCALE } from './timing/constants';
@@ -91,7 +90,6 @@ export class Runtime {
 	public readonly vblank: VblankState;
 	public readonly cpuExecution: CpuExecutionState;
 	public readonly luaScratch = new LuaScratchState();
-	public readonly hostFault: HostFaultState;
 	public readonly machine: Machine;
 
 	public resetHardwareState(): void {
@@ -108,10 +106,8 @@ export class Runtime {
 		this.luaRuntimeFailed = false;
 		this.luaInitialized = false;
 		this.pendingCall = null;
-		this.hostFault.clear();
 		this.machine.cpu.clearExecutionEnvironment();
 		this.machine.memory.clearIoSlots();
-		this.machine.initializeSystemIo();
 		this.resetHardwareState();
 		resetTrackedLuaHeapBytes();
 		addTrackedLuaHeapBytes(this.machine.cpu.globals.getTrackedHeapBytes());
@@ -131,7 +127,6 @@ export class Runtime {
 	}
 
 	public enterFaultState(): void {
-		this.hostFault.publishStartup();
 		this.machine.cpu.clearHaltUntilIrq();
 		this.machine.inputController.cancelSampleArm();
 		this.pendingCall = null;
@@ -254,7 +249,6 @@ export class Runtime {
 		this.frameLoop = new FrameLoopState(this);
 		this.vblank = new VblankState(this);
 		this.cpuExecution = new CpuExecutionState(this);
-		this.hostFault = new HostFaultState(this);
 		this.timing = new TimingState(
 			options.pcrtcRunning,
 			options.ufpsScaled,
@@ -273,7 +267,6 @@ export class Runtime {
 		this.machine.memory.mapIoRead(IO_SYS_FRAME_MS, this, Runtime.onFrameMsReadThunk);
 		this.machine.memory.mapIoRead(IO_SYS_CYCLES_PER_FRAME, this, Runtime.onCyclesPerFrameReadThunk);
 		this.machine.memory.mapIoWrite(IO_GX_GPU_GP1, this, Runtime.onGxGpuGp1WriteThunk);
-		this.machine.initializeSystemIo();
 		this.machine.resetDevices();
 		refreshDeviceTimings(this, this.machine.scheduler.currentNowCycles());
 		this.machine.runDeviceService(DEVICE_SERVICE_GPU);

@@ -19,8 +19,8 @@ local terminal<const> = require('bios/terminal')
 local terminal_layout<const> = require('bios/terminal_layout')
 local vblank<const> = require('bios/vblank')
 
-local irq_mask<const>: *word = 0x08000010
-local input_control<const>: *word = 0x0800006c
+local irq_mask<const>: *word = 0x08000008
+local input_control<const>: *word = 0x08000064
 
 local cart_rom_magic<const> = 0x58534d42
 local cart_rom_base_header_size<const> = 32

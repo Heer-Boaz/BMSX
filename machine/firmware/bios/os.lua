@@ -3,7 +3,7 @@
 
 local numeric<const> = require('bios/common/numeric')
 local trunc<const> = numeric.trunc
-local time_ms<const>: *word = 0x0801022c
+local time_ms<const>: *word = 0x08010224
 
 local seconds_per_day<const> = 86400
 local lua_civil_int_min<const> = -0x80000000

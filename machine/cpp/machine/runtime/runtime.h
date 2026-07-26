@@ -19,7 +19,6 @@
 #include "machine/memory/bus_signals.h"
 #include "machine/memory/memory.h"
 #include "machine/runtime/frame/loop.h"
-#include "machine/runtime/host_fault.h"
 #include "machine/runtime/input.h"
 #include "machine/scheduler/frame.h"
 #include "machine/memory/map.h"
@@ -130,7 +129,6 @@ private:
 
 public:
 	Machine machine;
-	HostFaultState hostFault;
 
 private:
 	// State flags

@@ -1,19 +1,19 @@
 local dma<const> = require('system/dma')
 
-local irq_mask_register<const>: *word = 0x08000010
-local irq_ack_register<const>: *word = 0x0800000c
-local inp_keys<const>: *word[8] = 0x08000074
-local inp_ctrl_register<const>: *word = 0x0800006c
-local gp0<const>: *word = 0x08010240
-local gp1<const>: *word = 0x08010244
-local pcrtc_pmode<const>: *word = 0x08010358
-local pcrtc_dispfb1_low<const>: *word = 0x08010360
-local pcrtc_dispfb1_high<const>: *word = 0x08010364
-local pcrtc_display1_low<const>: *word = 0x08010368
-local pcrtc_display1_high<const>: *word = 0x0801036c
-local gte_data<const>: *word[32] = 0x08010248
-local gte_control<const>: *word[32] = 0x080102c8
-local gte_command<const>: *word = 0x08010348
+local irq_mask_register<const>: *word = 0x08000008
+local irq_ack_register<const>: *word = 0x08000004
+local inp_keys<const>: *word[8] = 0x0800006c
+local inp_ctrl_register<const>: *word = 0x08000064
+local gp0<const>: *word = 0x08010238
+local gp1<const>: *word = 0x0801023c
+local pcrtc_pmode<const>: *word = 0x08010350
+local pcrtc_dispfb1_low<const>: *word = 0x08010358
+local pcrtc_dispfb1_high<const>: *word = 0x0801035c
+local pcrtc_display1_low<const>: *word = 0x08010360
+local pcrtc_display1_high<const>: *word = 0x08010364
+local gte_data<const>: *word[32] = 0x08010240
+local gte_control<const>: *word[32] = 0x080102c0
+local gte_command<const>: *word = 0x08010340
 
 local irq_dma_done<const> = 0x0001
 local irq_vblank<const> = 0x0004

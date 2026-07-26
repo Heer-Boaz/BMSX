@@ -97,7 +97,6 @@ struct AudioMachineHarness {
 	explicit AudioMachineHarness(bmsx::i64 cpuHz = bmsx::APU_SAMPLE_RATE_HZ)
 		: memory(bmsx::MemoryInit{{emptyRom.data(), 0u}, bmsx::test::cartridgeSlots()})
 		, machine(memory, input) {
-		machine.initializeSystemIo();
 		machine.resetDevices();
 		const bmsx::u32 smode1Address = bmsx::gxGpuPcrtcRegisterAddress(bmsx::GX_GPU_PCRTC_SMODE1_LOW);
 		memory.writeMappedU32LE(smode1Address, memory.readMappedU32LE(smode1Address) | bmsx::GX_GPU_PCRTC_SMODE1_SINT);

@@ -130,7 +130,6 @@ function makeMachine(): Machine {
 		input as never,
 		INLINE_MICROTASKS,
 	);
-	machine.initializeSystemIo();
 	machine.resetDevices();
 	return machine;
 }

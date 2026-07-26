@@ -1,6 +1,6 @@
 local system<const> = {}
 local irq_handlers<const> = {}
-local irq_ack_addr<const> = 0x0800000c
+local irq_ack_addr<const> = 0x08000004
 
 function system.irq(flags)
 	local ack = 0

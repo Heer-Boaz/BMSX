@@ -216,11 +216,6 @@
 			"reason": "host_render_graph_not_core"
 		},
 		{
-			"pattern": "machine/ts/machine/runtime/host_fault.ts",
-			"category": "host",
-			"reason": "ts_host_fault_bridge_not_cpp_file_parity_surface"
-		},
-		{
 			"pattern": "machine/ts/machine/bus/registers.ts",
 			"category": "compiler_tooling",
 			"reason": "compiler_mmio_metadata_not_runtime_core"
@@ -611,14 +606,6 @@
 				"machine/cpp/machine/devices/irq/save_state.cpp"
 			],
 			"reason": "irq_controller_registerfile_contract"
-		},
-		{
-			"ts": "machine/ts/machine/runtime/host_fault.ts",
-			"cpp": [
-				"machine/cpp/machine/runtime/host_fault.h",
-				"machine/cpp/machine/runtime/host_fault.cpp"
-			],
-			"reason": "runtime_host_fault_contract"
 		},
 		{
 			"ts": "machine/ts/machine/devices/audio/pcm_decoder_hot_path.ts",

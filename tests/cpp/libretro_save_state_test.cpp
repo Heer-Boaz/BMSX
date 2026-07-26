@@ -268,12 +268,12 @@ void testLibretroFaultDiagnosticsStayAtHostBoundary() {
 		platform.machineManager()->loadSystemRomOwned(
 			bmsx::test::makeMinimalDiagnosticBootRom(bmsx::RomImageDomain::System)
 		),
-		"libretro should load symbol-bearing system firmware for host fault diagnostics");
+		"libretro should load symbol-bearing system firmware for runtime diagnostics");
 	const std::vector<bmsx::u8> rom =
 		bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::Cartridge);
 	require(
 		platform.loadRom(rom.data(), rom.size()),
-		"libretro should boot symbol-bearing firmware for host fault diagnostics");
+		"libretro should boot symbol-bearing firmware for runtime diagnostics");
 
 	bmsx::Runtime& runtime = platform.machineManager()->runtime();
 	platform.microtaskQueue()->queueMicrotask([] {

@@ -143,7 +143,6 @@ export function clearFaultSnapshot(fault: RuntimeFaultState): void {
 
 export function clearRuntimeFault(fault: RuntimeFaultState, runtime: Runtime): void {
 	runtime.luaRuntimeFailed = false;
-	runtime.hostFault.clear();
 	clearFaultSnapshot(fault);
 }
 

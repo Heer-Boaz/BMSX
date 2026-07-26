@@ -4340,10 +4340,10 @@ void testPcrtcPublishesRawWordsAndMapsRetainedUserCircuitOneUnderSupervisor() {
 	GpuHarness harness;
 	bmsx::GxGpu& gpu = harness.gpu;
 	bmsx::Memory& memory = harness.memory;
-	require(bmsx::IO_GX_GTE_PLUS_BASE == 0x08010388u, "GTE+ keeps its accepted MMIO base");
-	require(bmsx::gxGpuPcrtcRegisterAddress(bmsx::GX_GPU_PCRTC_PMODE_LOW) == 0x08010358u, "PCRTC PMODE keeps its accepted MMIO address");
-	require(bmsx::gxGpuPcrtcRegisterAddress(bmsx::GX_GPU_PCRTC_DISPFB1_LOW) == 0x08010360u, "PCRTC DISPFB1 keeps its accepted MMIO address");
-	require(bmsx::IO_GX_PCRTC_TIMING_BASE == 0x080103b0u, "PCRTC timing registers follow the accepted GTE+ aperture");
+	require(bmsx::IO_GX_GTE_PLUS_BASE == 0x08010380u, "GTE+ keeps its accepted MMIO base");
+	require(bmsx::gxGpuPcrtcRegisterAddress(bmsx::GX_GPU_PCRTC_PMODE_LOW) == 0x08010350u, "PCRTC PMODE keeps its accepted MMIO address");
+	require(bmsx::gxGpuPcrtcRegisterAddress(bmsx::GX_GPU_PCRTC_DISPFB1_LOW) == 0x08010358u, "PCRTC DISPFB1 keeps its accepted MMIO address");
+	require(bmsx::IO_GX_PCRTC_TIMING_BASE == 0x080103a8u, "PCRTC timing registers follow the accepted GTE+ aperture");
 	require(bmsx::gxGpuPcrtcRegisterAddress(bmsx::GX_GPU_PCRTC_SMODE1_LOW) == bmsx::IO_GX_PCRTC_TIMING_BASE, "PCRTC SMODE1 starts the timing aperture");
 	constexpr bmsx::u32 userDispFbLow = 7u | (16u << 9u) | (bmsx::GX_GPU_PSMGX16 << 15u);
 	constexpr bmsx::u32 userDispFbHigh = 0x0012389au;

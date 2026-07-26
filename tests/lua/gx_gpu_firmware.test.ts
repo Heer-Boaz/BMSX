@@ -39,8 +39,8 @@ elseif *mode_selector == 6 then
 elseif *mode_selector == 7 then
 	gx_gpu.reset_640x512i()
 else
-	local smode1_low<const>: *word = 0x080103b0
-	local display2_low<const>: *word = 0x08010378
+	local smode1_low<const>: *word = 0x080103a8
+	local display2_low<const>: *word = 0x08010370
 	*smode1_low = 0x40200504
 	*display2_low = 420 | (40 << 12)
 	gx_gpu.prepare_supervisor_256x192(0)

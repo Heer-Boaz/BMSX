@@ -9,8 +9,8 @@ local vm_select<const> = __bmsx_select
 local vm_error<const> = __bmsx_error
 local vm_pcall<const> = __bmsx_pcall
 local vm_xpcall<const> = __bmsx_xpcall
-local print_char<const>: *word = 0x08010234
-local print_flush<const>: *word = 0x08010238
+local print_char<const>: *word = 0x0801022c
+local print_flush<const>: *word = 0x08010230
 
 local ascii_tab<const> = 9
 local ascii_carriage_return<const> = 13

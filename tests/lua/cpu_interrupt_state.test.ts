@@ -302,7 +302,6 @@ function makeMachine(
 		beginFrame: () => {},
 	};
 	const machine = new Machine(memory, input as never);
-	machine.initializeSystemIo();
 	machine.resetDevices();
 	return machine;
 }
@@ -734,8 +733,8 @@ test('frame loop vectors a pending IRQ above a halted cart frame', () => {
 
 test('compiled IRQ vector dispatches through cart irq and acknowledges the device line', () => {
 	const source = `
-local irq_ack_addr<const> = 0x0800000c
-local irq_mask_addr<const> = 0x08000010
+local irq_ack_addr<const> = 0x08000004
+local irq_mask_addr<const> = 0x08000008
 local irq_vblank<const> = 0x0004
 irq_seen = 0
 function irq(flags)
@@ -756,8 +755,8 @@ end
 
 test('IRQ closures preserve snapshots of captured locals at every optimization level', () => {
 	const source = `
-local irq_ack_addr<const> = 0x0800000c
-local irq_mask_addr<const> = 0x08000010
+local irq_ack_addr<const> = 0x08000004
+local irq_mask_addr<const> = 0x08000008
 local irq_vblank<const> = 0x0004
 local sequence = 0
 function irq(flags)
@@ -785,8 +784,8 @@ test('linked system and cart handlers remain distinct across CPU save-state', ()
 	const systemSeenAddress = DYNAMIC_RAM_BASE + 0x2100;
 	const cartSeenAddress = systemSeenAddress + 4;
 	const systemSource = `
-local irq_ack_addr<const> = 0x0800000c
-local irq_mask_addr<const> = 0x08000010
+local irq_ack_addr<const> = 0x08000004
+local irq_mask_addr<const> = 0x08000008
 local irq_vblank<const> = 0x0004
 function irq(flags)
 	mem[${systemSeenAddress}] = flags
@@ -798,8 +797,8 @@ halt_until_irq
 cop0.exec = mem[${CART_ROM_BASE + BLUA32_BOOT_STARTUP_FUNCTION_ADDRESS_OFFSET}]
 `;
 	const cartSource = `
-local irq_ack_addr<const> = 0x0800000c
-local irq_mask_addr<const> = 0x08000010
+local irq_ack_addr<const> = 0x08000004
+local irq_mask_addr<const> = 0x08000008
 local irq_vblank<const> = 0x0004
 function irq(flags)
 	mem[${cartSeenAddress}] = flags
@@ -842,7 +841,7 @@ halt_until_irq
 
 test('compiled IRQ vector storms on an unacknowledged level line', () => {
 	const source = `
-local irq_mask_addr<const> = 0x08000010
+local irq_mask_addr<const> = 0x08000008
 local irq_vblank<const> = 0x0004
 irq_seen = 0
 function irq(flags)
@@ -860,8 +859,8 @@ end
 
 test('IRQ_MASK accepts pending IRQ at the next guest instruction boundary', () => {
 	const source = `
-local irq_ack_addr<const> = 0x0800000c
-local irq_mask_addr<const> = 0x08000010
+local irq_ack_addr<const> = 0x08000004
+local irq_mask_addr<const> = 0x08000008
 local irq_vblank<const> = 0x0004
 irq_seen = 0
 after_enable = 0

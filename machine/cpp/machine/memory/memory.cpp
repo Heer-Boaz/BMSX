@@ -698,8 +698,6 @@ bool Memory::isReadOnlyIoAddress(uint32_t addr) const {
 		case IO_SYS_BUS_FAULT_CODE:
 		case IO_SYS_BUS_FAULT_ADDR:
 		case IO_SYS_BUS_FAULT_ACCESS:
-		case IO_SYS_HOST_FAULT_FLAGS:
-		case IO_SYS_HOST_FAULT_STAGE:
 		case IO_SYS_TIME_MS:
 		case IO_SYS_FRAME_MS:
 		case IO_SYS_CYCLES_PER_FRAME:

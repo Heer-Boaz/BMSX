@@ -34,12 +34,6 @@ Machine::Machine(Memory& memoryRef, InputControllerInputSource& input)
 	);
 }
 
-void Machine::initializeSystemIo() {
-	memory.clearBusFault();
-	memory.writeValue(IO_SYS_HOST_FAULT_FLAGS, valueNumber(0.0));
-	memory.writeValue(IO_SYS_HOST_FAULT_STAGE, valueNumber(static_cast<double>(HOST_FAULT_STAGE_NONE)));
-}
-
 void Machine::resetDevices() {
 	irqController.reset();
 	inputController.reset();

@@ -216,7 +216,6 @@ const SILENT_INPUT_SOURCE: InputControllerInputSource = {
 
 function createAudioMachine(): Machine {
 	const machine = new Machine(new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }), SILENT_INPUT_SOURCE);
-	machine.initializeSystemIo();
 	machine.resetDevices();
 	machine.audioController.setTiming(APU_SAMPLE_RATE_HZ, 0);
 	return machine;

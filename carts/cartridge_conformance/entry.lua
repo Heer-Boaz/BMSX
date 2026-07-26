@@ -10,7 +10,7 @@ rodata transfer_source: word[4] = {
 }
 bss transfer_result: word[4]
 
-local irq_mask<const>: *word = 0x08000010
+local irq_mask<const>: *word = 0x08000008
 local cart_select<const>: *word = cartridge.select_addr
 local cart_status<const>: *word = cartridge.status_addr
 local slot0_board<const>: *word = cartridge.slot0_board_addr

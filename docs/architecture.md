@@ -50,7 +50,7 @@ is not a design source or a compatibility route for any of them.
 #### GTE+ VMAD3 datapath
 
 GTE+ revision 1 adds one raw ten-word MMIO register block at
-`IO_GX_GTE_PLUS_BASE` (`0x08010388`). It is adjacent machine hardware, not an
+`IO_GX_GTE_PLUS_BASE` (`0x08010380`). It is adjacent machine hardware, not an
 alternate view of the 32 PSX data registers, 32 PSX control registers or the PSX
 command port.
 
@@ -1038,10 +1038,10 @@ Bus fault registers:
 
 | Register | Address | Meaning |
 | --- | ---: | --- |
-| `BUS_FAULT_CODE` | `0x0801020c` | Sticky fault code for the first visible bus fault. |
-| `BUS_FAULT_ADDR` | `0x08010210` | Address captured with the sticky bus fault. |
-| `BUS_FAULT_ACCESS` | `0x08010214` | Access flags captured with the sticky bus fault. |
-| `BUS_FAULT_ACK` | `0x08010218` | Write nonzero to clear the sticky bus fault. |
+| `BUS_FAULT_CODE` | `0x08010204` | Sticky fault code for the first visible bus fault. |
+| `BUS_FAULT_ADDR` | `0x08010208` | Address captured with the sticky bus fault. |
+| `BUS_FAULT_ACCESS` | `0x0801020c` | Access flags captured with the sticky bus fault. |
+| `BUS_FAULT_ACK` | `0x08010210` | Write nonzero to clear the sticky bus fault. |
 
 Bus fault code values:
 
@@ -1070,36 +1070,6 @@ host load used to carry its bits. A mapped `F32LE` transaction therefore
 latches `BUS_FAULT_ACCESS_F32`, and either 32-bit bus cycle of an `F64LE`
 transaction latches `BUS_FAULT_ACCESS_F64`. An `F64LE` transaction does not
 issue its second bus cycle when the first cycle faults.
-
-### Host fault publication
-
-The host fault registers publish host startup fault state into the machine
-without making the host own cart-observable behavior. The host writes only the
-fault flags and stage MMIO words; it does not publish a Lua message global.
-Register addresses, flag values, and stage values are machine ABI values. Firmware
-names the words it owns locally or consumes them through owner-owned
-BIOS/system helpers; the emulator does not inject them as Lua globals.
-
-Host fault registers:
-
-| Register | Address | Meaning |
-| --- | ---: | --- |
-| `HOST_FAULT_FLAGS` | `0x08000000` | Sticky host fault flags published by the host runtime during startup. |
-| `HOST_FAULT_STAGE` | `0x08000004` | Host startup fault stage code. |
-
-Host fault flag values:
-
-| Name | Value | Meaning |
-| --- | ---: | --- |
-| `HOST_FAULT_FLAG_ACTIVE` | `0x0001` | A host fault is currently published. |
-| `HOST_FAULT_FLAG_STARTUP_BLOCKING` | `0x0002` | The published fault blocks startup. |
-
-Host fault stage values:
-
-| Name | Value | Meaning |
-| --- | ---: | --- |
-| `HOST_FAULT_STAGE_NONE` | `0` | No host fault stage is active. |
-| `HOST_FAULT_STAGE_STARTUP_AUDIO_REFRESH` | `1` | Deferred startup audio-refresh failure. |
 
 ### IRQ
 
@@ -1165,9 +1135,9 @@ discarded by the emulator.
 
 | Register | Address | Meaning |
 | --- | ---: | --- |
-| `IRQ_FLAGS` | `0x08000008` | Read pending IRQ bits. |
-| `IRQ_ACK` | `0x0800000c` | Write bits to clear. |
-| `IRQ_MASK` | `0x08000010` | Read/write per-source vector mask; bit set means that pending source may vector. Reset `0`. |
+| `IRQ_FLAGS` | `0x08000000` | Read pending IRQ bits. |
+| `IRQ_ACK` | `0x08000004` | Write bits to clear. |
+| `IRQ_MASK` | `0x08000008` | Read/write per-source vector mask; bit set means that pending source may vector. Reset `0`. |
 
 | Name | Value | Meaning |
 | --- | ---: | --- |
@@ -1385,8 +1355,8 @@ System control is a small privileged registerfile rather than a host callback:
 
 | Register | Address | Meaning |
 | --- | ---: | --- |
-| `SYS_CONTROL` | `0x08010350` | Write-only command bits: machine reset `0x1`, enter fenced supervisor context `0x2`, leave resumable supervisor context `0x4`, destructive fault takeover `0x8`. It reads back as zero. Supervisor commands are accepted only in supervisor mode. |
-| `SYS_STATUS` | `0x08010354` | Read-only raw bits: supervisor transition/context active `0x1`, exit requested `0x2`, context resumable `0x4`. |
+| `SYS_CONTROL` | `0x08010348` | Write-only command bits: machine reset `0x1`, enter fenced supervisor context `0x2`, leave resumable supervisor context `0x4`, destructive fault takeover `0x8`. It reads back as zero. Supervisor commands are accepted only in supervisor mode. |
+| `SYS_STATUS` | `0x0801034c` | Read-only raw bits: supervisor transition/context active `0x1`, exit requested `0x2`, context resumable `0x4`. |
 
 A supervisor-request edge in user mode starts a dependency-ordered hardware
 fence. The first stage closes GP1 writes, DMA triggers, IMGDEC configuration and

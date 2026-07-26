@@ -1,9 +1,4 @@
 import { ApuOutputMixer } from './devices/audio/output';
-import {
-	HOST_FAULT_STAGE_NONE,
-	IO_SYS_HOST_FAULT_FLAGS,
-	IO_SYS_HOST_FAULT_STAGE,
-} from './bus/io';
 import { CPU } from './cpu/cpu';
 import { ExecutionAddressSpace } from './execution_address_space';
 import { AudioController } from './devices/audio/controller';
@@ -95,12 +90,6 @@ export class Machine {
 			PSX_MACHINE_SPEC.dmaCartRomBurstSetupCycles,
 			this.scheduler.currentNowCycles(),
 		);
-	}
-
-	public initializeSystemIo(): void {
-		this.memory.clearBusFault();
-		this.memory.writeValue(IO_SYS_HOST_FAULT_FLAGS, 0);
-		this.memory.writeValue(IO_SYS_HOST_FAULT_STAGE, HOST_FAULT_STAGE_NONE);
 	}
 
 	public resetDevices(): void {

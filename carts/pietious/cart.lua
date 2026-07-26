@@ -36,7 +36,7 @@ local castle_map<const> = require('castle/map')
 local init_epoch = 0
 local pending_title_boot_epoch = -1
 
-local irq_mask_addr<const> = 0x08000010
+local irq_mask_addr<const> = 0x08000008
 local irq_vblank<const> = 0x0004
 local irq_geo_done_error<const> = 0x0018
 local irq_apu<const> = 0x0020
@@ -209,7 +209,7 @@ init()
 gx_texture.upload(gx_image.rect('pietolon_stand_r').texture, texture_layout.gameplay, texture_layout.gameplay_clut)
 mem[irq_mask_addr] = irq_vblank | irq_geo_done_error | irq_apu | irq_gpu
 new_game()
-mem[0x0800006c] = 0x00000001
+mem[0x08000064] = 0x00000001
 wait_vblank_after(vblank_sequence)
 
 while true do
@@ -222,7 +222,7 @@ while true do
 	gx_gpu.request_irq()
 	wait_gpu_after(completion_sequence)
 
-	mem[0x0800006c] = 0x00000001
+	mem[0x08000064] = 0x00000001
 	gx_gpu.display_origin(back_framebuffer)
 	local flip_vblank_sequence<const> = vblank_sequence
 	wait_vblank_after(flip_vblank_sequence)

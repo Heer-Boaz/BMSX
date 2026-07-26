@@ -10,13 +10,13 @@ local romdir<const> = require('system/romdir')
 local byte<const> = __bmsx_string_byte
 local monitor<const> = {}
 
-local irq_mask<const>: *word = 0x08000010
-local input_control<const>: *word = 0x0800006c
-local input_keys<const>: *word[8] = 0x08000074
-local system_print_data<const>: *word = 0x08010234
-local system_print_count<const>: *word = 0x08010238
-local system_control<const>: *word = 0x08010350
-local system_status<const>: *word = 0x08010354
+local irq_mask<const>: *word = 0x08000008
+local input_control<const>: *word = 0x08000064
+local input_keys<const>: *word[8] = 0x0800006c
+local system_print_data<const>: *word = 0x0801022c
+local system_print_count<const>: *word = 0x08010230
+local system_control<const>: *word = 0x08010348
+local system_status<const>: *word = 0x0801034c
 
 local irq_vblank<const> = 0x0004
 local irq_dma_done<const> = 0x0001

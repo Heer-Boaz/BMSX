@@ -307,7 +307,6 @@ add_library(bmsx_core STATIC
 	machine/save_state.cpp
 	machine/scheduler/device.cpp
 	machine/runtime/runtime.cpp
-	machine/runtime/host_fault.cpp
 	machine/runtime/machine_state.cpp
 	machine/runtime/save_machine_state.cpp
 	machine/runtime/save_state.cpp

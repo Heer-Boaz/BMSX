@@ -45,7 +45,6 @@ public:
 	SystemController systemController;
 	InputController inputController;
 
-	void initializeSystemIo();
 	void resetDevices();
 	void refreshDeviceTimings(const MachineTiming& timing, i64 nowCycles);
 	void advanceDevices(int cycles);

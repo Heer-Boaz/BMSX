@@ -1,10 +1,10 @@
 local gx_gte<const> = {}
 
-local data<const>: *word[32] = 0x08010248
-local control<const>: *word[32] = 0x080102c8
-local command<const>: *word = 0x08010348
-local cycles<const>: *word = 0x0801034c
-local plus<const>: *word[10] = 0x08010388
+local data<const>: *word[32] = 0x08010240
+local control<const>: *word[32] = 0x080102c0
+local command<const>: *word = 0x08010340
+local cycles<const>: *word = 0x08010344
+local plus<const>: *word[10] = 0x08010380
 
 local opcode_rtsf<const> = 0x00080000
 local opcode_rtps<const> = 0x00000001

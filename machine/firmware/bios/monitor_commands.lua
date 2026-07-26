@@ -4,7 +4,7 @@ local layout<const> = require('bios/terminal_layout')
 local byte<const> = __bmsx_string_byte
 
 local monitor_commands<const> = {}
-local system_control<const>: *word = 0x08010350
+local system_control<const>: *word = 0x08010348
 
 local command_not_found<const> = 0xffffffff
 local producer_unknown<const> = 0xfffffffe

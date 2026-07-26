@@ -4042,10 +4042,10 @@ test('GX-GPU MMIO uses PSX GP0 data and GP1 status addresses', () => {
 
 test('GX-GPU PCRTC publishes raw words and maps retained user circuit one under the supervisor', () => {
 	const { gpu, memory } = createGpu();
-	assert.equal(IO_GX_GTE_PLUS_BASE, 0x08010388);
-	assert.equal(gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_PMODE_LOW), 0x08010358);
-	assert.equal(gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_DISPFB1_LOW), 0x08010360);
-	assert.equal(IO_GX_PCRTC_TIMING_BASE, 0x080103b0);
+	assert.equal(IO_GX_GTE_PLUS_BASE, 0x08010380);
+	assert.equal(gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_PMODE_LOW), 0x08010350);
+	assert.equal(gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_DISPFB1_LOW), 0x08010358);
+	assert.equal(IO_GX_PCRTC_TIMING_BASE, 0x080103a8);
 	assert.equal(gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_SMODE1_LOW), IO_GX_PCRTC_TIMING_BASE);
 	const userDispFbLow = 7 | (16 << 9) | (GX_GPU_PSMGX16 << 15);
 	const userDispFbHigh = 0x0012389a;

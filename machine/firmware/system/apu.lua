@@ -35,9 +35,9 @@ local apu<const> = {}
 local output_sample_rate_hz<const> = 0x0000ac44
 local filter_coefficient_one<const> = 0x00004000
 
-local command_registers<const>: *apu_command_registers = 0x08000128
-local transfer_address<const>: *word = 0x080001f0
-local transfer_control<const>: *word = 0x080001f8
+local command_registers<const>: *apu_command_registers = 0x08000120
+local transfer_address<const>: *word = 0x080001e8
+local transfer_control<const>: *word = 0x080001f0
 local transfer_mode_stop<const> = 0x00000000
 local transfer_mode_dma_write<const> = 0x00000002
 local transfer_mode_dma_read<const> = 0x00000003

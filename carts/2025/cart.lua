@@ -8,8 +8,8 @@ require('globals')
 local story<const> = require('story')
 local start_node<const> = 'title'
 -- local start_node<const> = 'combat_wekker'
-local irq_mask_register<const>: *word = 0x08000010
-local input_control_register<const>: *word = 0x0800006c
+local irq_mask_register<const>: *word = 0x08000008
+local input_control_register<const>: *word = 0x08000064
 local irq_imgdec<const> = 0x0080
 local irq_vblank<const> = 0x0004
 local irq_apu<const> = 0x0020

@@ -3,8 +3,8 @@ gx_gpu.reset_320x240()
 require('cartlib/prelude')
 local hot_value<const> = require('value')
 
-local irq_mask_register<const>: *word = 0x08000010
-local input_control_register<const>: *word = 0x0800006c
+local irq_mask_register<const>: *word = 0x08000008
+local input_control_register<const>: *word = 0x08000064
 local irq_vblank<const> = 0x0004
 local irq_apu<const> = 0x0020
 local vblank_count = 0
