@@ -10,6 +10,12 @@ horen niet in deze lijst.
 | --- | --- | --- |
 | `PERF-RUNTIME-01` | Kies per iteratie één gemeten hot-pathowner en verwijder daar herhaalde decode, conversie, validatie, allocatie of dispatch bij de producer. Dit is een paraplu, geen enkele megaslice. | Analyzers blokkeren nieuwe overtredingen, parity blijft exact en representatieve low-end hardware houdt 50 Hz zonder oplopende backlog. |
 
+## IDE resource-identiteit
+
+| ID | Opdracht | Klaar wanneer |
+| --- | --- | --- |
+| `IDE-RESOURCE-01` | Verwijder de bullshitterige `ResourceDescriptor`-DTO-stroom: callers kopiëren nu steeds `domain`, `path`, `type`, `asset_id` en `readOnly` naar nieuwe objecten, verbergen daarmee de echte resource-eigenaar en veroorzaken nutteloze GC-churn. Kies één retained resource-identiteit bij de catalogus/source-owner en geef die direct door; voeg geen descriptorfacade, normalisatielaag of compatibility-pad toe. | Navigatie, tabs, workspace restore, zoekresultaten en resourcepanelen gebruiken dezelfde retained identiteit zonder per-call descriptorallocaties of veld-voor-veld kopieën. |
+
 ## Uitgesteld tot een echte backend of target beschikbaar is
 
 | ID | Nog te bewijzen | Vereist |
