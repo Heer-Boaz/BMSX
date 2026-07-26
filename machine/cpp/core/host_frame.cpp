@@ -99,10 +99,10 @@ bool MachineManager::runHostFrame(
 		}
 	} catch (const std::exception& e) {
 		runtime.frameLoop.abandonFrameState(runtime);
-		runtime.handleLuaError(e.what());
+		reportRuntimeError(runtime, e.what());
 	} catch (...) {
 		runtime.frameLoop.abandonFrameState(runtime);
-		runtime.handleLuaError("Unhandled host frame exception.");
+		reportRuntimeError(runtime, "Unhandled host frame exception.");
 	}
 	flushSystemOutput(runtime);
 	return rendered;

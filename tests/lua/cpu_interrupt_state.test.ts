@@ -6,7 +6,11 @@ import { AcceptedInterruptKind, CPU, OpCode, RunResult } from '../../machine/ts/
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { Table } from '../../machine/ts/machine/cpu/table';
 import { BuiltinFunctionId, EMPTY_CALL_ARGS, createBuiltinFunction, StringValue, type Value } from '../../machine/ts/machine/cpu/value';
-import { writeInstruction, INSTRUCTION_BYTES } from '../../machine/ts/machine/cpu/instruction_format';
+import {
+	INSTRUCTION_BYTES,
+	readInstructionWord,
+	writeInstruction,
+} from '../../machine/ts/machine/cpu/instruction_format';
 import { BASE_CYCLES, encodeFixedCallArgCount } from '../../machine/ts/machine/cpu/opcode_info';
 import {
 	COP0_CAUSE,
@@ -42,9 +46,15 @@ import { captureMachineSaveState, captureMachineState, restoreMachineSaveState, 
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { MemoryAccessKind } from '../../machine/ts/machine/memory/access_kind';
 import { CART_ROM_BASE, IO_WORD_SIZE, DYNAMIC_RAM_BASE } from '../../machine/ts/machine/memory/map';
+import type { Blua32ImageLayout } from '../../machine/ts/machine/cpu/blua32_image';
 import { compileLuaChunkToProgram } from '../../machine/ts/lua/compiler';
 import type { OptimizationLevel } from '../../machine/ts/lua/compiler/optimizer';
 import { callClosureIntoWithScheduler } from '../../ide/runtime/closure_executor';
+import {
+	applyHotResumeRelocation,
+	buildHotResumeRelocation,
+	type HotResumeRevision,
+} from '../../ide/runtime/hot_resume_relocation';
 import { CpuExecutionState, runDueRuntimeTimers } from '../../machine/ts/machine/runtime/cpu_executor';
 import { FrameLoopState } from '../../machine/ts/machine/runtime/frame/loop';
 import { FrameSchedulerState } from '../../machine/ts/machine/scheduler/frame';
@@ -83,6 +93,22 @@ function makeHaltTestImage(): TestBlua32Image {
 }
 
 const HALT_TEST_IMAGE = makeHaltTestImage();
+
+function identityHotResumeRevision(image: Blua32ImageLayout): HotResumeRevision {
+	const functionAddresses = new Uint32Array(image.functions.length);
+	for (let index = 0; index < image.functions.length; index += 1) {
+		functionAddresses[index] = image.functions[index].address;
+	}
+	const pcAddresses = new Int32Array(image.header.textByteCount / INSTRUCTION_BYTES);
+	for (let index = 0; index < pcAddresses.length; index += 1) {
+		pcAddresses[index] = image.header.textAddress + index * INSTRUCTION_BYTES;
+	}
+	return {
+		previousImage: image,
+		freshImage: image,
+		revision: { functionAddresses, pcAddresses },
+	};
+}
 
 function makeHaltCpu(): {
 	memory: Memory;
@@ -348,8 +374,15 @@ function assertVblankIrqAsserted(memory: Memory, irqController: IrqController): 
 	assert.equal(memory.readIoU32(IO_IRQ_MASK), IRQ_VBLANK);
 }
 
-function assertInterruptFrameActive(cpu: CPU, irqController: IrqController): void {
-	assert.deepEqual(cpu.getCallStack().map(frame => frame.functionAddress), [
+function assertFrameFunctionAddresses(cpu: CPU, expected: readonly number[]): void {
+	assert.equal(cpu.getFrameDepth(), expected.length);
+	for (let frameIndex = 0; frameIndex < expected.length; frameIndex += 1) {
+		assert.equal(cpu.readFrameFunctionAddress(frameIndex), expected[frameIndex]);
+	}
+}
+
+function assertInterruptFrameActive(cpu: CPU): void {
+	assertFrameFunctionAddresses(cpu, [
 		HALT_TEST_IMAGE.symbols.functionAddresses[0],
 		HALT_TEST_IMAGE.symbols.functionAddresses[2],
 	]);
@@ -612,7 +645,7 @@ test('frame loop vectors a pending IRQ above a halted cart frame', () => {
 	assert.equal(tickCompleted, false);
 	assert.equal(cpu.isHaltedUntilIrq(), false);
 	assert.equal(cpu.getFrameDepth(), 2);
-	assertInterruptFrameActive(cpu, irqController);
+	assertInterruptFrameActive(cpu);
 
 	returnFromInterruptFrame(runtime, state, cpu, irqController);
 	assert.equal(cpu.isHaltedUntilIrq(), false);
@@ -793,11 +826,11 @@ test('CPU save-state captured inside an interrupt frame restores and returns to 
 	irqController.raise(IRQ_VBLANK);
 	const state = makeFrameState();
 	runtime.cpuExecution.runStoppedCpu(state);
-	assertInterruptFrameActive(cpu, irqController);
+	assertInterruptFrameActive(cpu);
 
 	const snapshot = cpu.captureRuntimeState();
 	cpu.restoreRuntimeState(snapshot);
-	assertInterruptFrameActive(cpu, irqController);
+	assertInterruptFrameActive(cpu);
 
 	returnFromInterruptFrame(runtime, state, cpu, irqController);
 	irqController.raise(IRQ_VBLANK);
@@ -838,6 +871,160 @@ resumed = 1
 	assert.equal(cpu.captureRuntimeState().statusWord, CPU_STATUS_CART_ENTRY);
 });
 
+test('Hot Resume relocates exception callsites and EPC as interrupted continuation words', () => {
+	const { cpu, haltFunctionAddress } = makeHaltCpu();
+	cpu.start(haltFunctionAddress);
+	assert.equal(cpu.runUntilDepth(0, 1), RunResult.Halted);
+	cpu.requestNonMaskableInterrupt();
+	assert.equal(cpu.enterPendingInterrupt(), true);
+	assert.equal(cpu.getFrameDepth(), 2);
+	assert.equal(cpu.isExceptionFrame(1), true);
+
+	const target = identityHotResumeRevision(HALT_TEST_IMAGE.image);
+	const epcWord = cpu.readEpcWord();
+	const epcWordIndex = (epcWord - HALT_TEST_IMAGE.image.header.textAddress) / INSTRUCTION_BYTES;
+	const relocatedEpcWord = HALT_TEST_IMAGE.image.functions[1].codeAddress;
+	target.revision.pcAddresses[epcWordIndex] = relocatedEpcWord;
+	target.revision.pcAddresses[epcWordIndex + 1]
+		= HALT_TEST_IMAGE.image.functions[2].codeAddress;
+
+	applyHotResumeRelocation(
+		cpu,
+		buildHotResumeRelocation(cpu, [target, null, null]),
+	);
+	assert.equal(cpu.readEpcWord(), relocatedEpcWord);
+	assert.equal(cpu.readFrameCallSitePc(1), relocatedEpcWord);
+});
+
+test('Hot Resume relocates the saved EPC beneath a nested NMI through its interrupted owner frame', () => {
+	const systemSource = `
+function irq() end
+function exception() end
+`;
+	const cartSource = `
+function irq() end
+function exception() end
+halt_until_irq
+`;
+	const system = compileLuaChunkToProgram(parseLuaChunk(systemSource, 'system.lua'), [], {
+		entrySource: systemSource,
+		programDomain: 'system',
+	});
+	const cart = compileLuaChunkToProgram(parseLuaChunk(cartSource, 'cart.lua'), [], {
+		entrySource: cartSource,
+		programDomain: 'cart',
+	});
+	const linked = linkTestBlua32Pair(system, cart);
+	const memory = new Memory({
+		systemRom: linked.systemRomBytes,
+		cartridgeSlots: cartridgeSlots(linked.cartRomBytes),
+	});
+	const irqController = new IrqController(memory);
+	const cpu = new CPU(memory, irqController);
+	cpu.mountExecutionImages();
+	cpu.start(linked.cartVectors.startupFunctionAddress, EMPTY_CALL_ARGS, CPU_STATUS_CART_ENTRY);
+	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	const interruptedFrameDepth = cpu.getFrameDepth();
+	memory.writeValue(IO_IRQ_MASK, IRQ_VBLANK);
+	irqController.raise(IRQ_VBLANK);
+	assert.equal(cpu.enterPendingInterrupt(), true);
+	const irqFrameIndex = interruptedFrameDepth;
+	assert.equal(cpu.getFrameDepth(), interruptedFrameDepth + 1);
+	assert.equal(cpu.isExceptionFrame(irqFrameIndex), true);
+	assert.equal(cpu.isNonMaskableExceptionFrame(irqFrameIndex), false);
+	assert.equal(cpu.readFrameExecutionDomain(irqFrameIndex - 1), 0);
+	assert.equal(cpu.readFrameExecutionDomain(irqFrameIndex), 0);
+
+	cpu.requestNonMaskableInterrupt();
+	assert.equal(cpu.enterPendingInterrupt(), true);
+	const nmiFrameIndex = irqFrameIndex + 1;
+	assert.equal(cpu.getFrameDepth(), interruptedFrameDepth + 2);
+	assert.equal(cpu.isNonMaskableExceptionFrame(nmiFrameIndex), true);
+	assert.equal(cpu.readFrameExecutionDomain(nmiFrameIndex), -1);
+	assert.equal(cpu.readLastExecutionDomain(), 0);
+
+	const nmiReturnEpcWord = cpu.readNmiReturnEpcWord();
+	applyHotResumeRelocation(
+		cpu,
+		buildHotResumeRelocation(cpu, [
+			identityHotResumeRevision(linked.systemImage),
+			identityHotResumeRevision(linked.cartImage),
+			null,
+		]),
+	);
+	assert.equal(cpu.readNmiReturnEpcWord(), nmiReturnEpcWord);
+});
+
+test('Hot Resume rejects an unmapped continuation before any physical state write', () => {
+	const { memory, cpu, haltFunctionAddress } = makeHaltCpu();
+	cpu.start(haltFunctionAddress);
+	assert.equal(cpu.runUntilDepth(0, 1), RunResult.Halted);
+	const target = identityHotResumeRevision(HALT_TEST_IMAGE.image);
+	target.revision.pcAddresses.fill(-1);
+	const mediaRevision = memory.systemRomRevision();
+	const functionAddress = cpu.readFrameFunctionAddress(0);
+	const framePc = cpu.readFramePc(0);
+	const lastPc = cpu.lastPc;
+
+	assert.throws(
+		() => buildHotResumeRelocation(cpu, [target, null, null]),
+		/Hot resume could not relocate/,
+	);
+	assert.equal(memory.systemRomRevision(), mediaRevision);
+	assert.equal(cpu.readFrameFunctionAddress(0), functionAddress);
+	assert.equal(cpu.readFramePc(0), framePc);
+	assert.equal(cpu.lastPc, lastPc);
+});
+
+test('Hot Resume preserves captured slots on static-identity closures', () => {
+	const source = `
+local captured = 42
+local wait<const> = function()
+	halt_until_irq
+	return captured
+end
+wait()
+`;
+	const { cpu, image } = makeCompiledCpu(source);
+	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	const frameIndex = cpu.getFrameDepth() - 1;
+	assert.equal(cpu.getFrameUpvalueCount(frameIndex), 1);
+	assert.equal(cpu.readFrameUpvalue(frameIndex, 0), 42);
+
+	applyHotResumeRelocation(
+		cpu,
+		buildHotResumeRelocation(cpu, [identityHotResumeRevision(image.image), null, null]),
+	);
+	assert.equal(cpu.getFrameUpvalueCount(frameIndex), 1);
+	assert.equal(cpu.readFrameUpvalue(frameIndex, 0), 42);
+});
+
+test('Hot Resume updates the physical last-instruction latch with its relocated PC', () => {
+	const { cpu, haltFunctionAddress } = makeHaltCpu();
+	cpu.start(haltFunctionAddress);
+	assert.equal(cpu.runUntilDepth(0, 1), RunResult.Halted);
+	const freshTextBytes = HALT_TEST_IMAGE.image.textBytes.slice();
+	const lastWordIndex = (
+		cpu.lastPc - HALT_TEST_IMAGE.image.header.textAddress
+	) / INSTRUCTION_BYTES;
+	writeInstruction(freshTextBytes, lastWordIndex, OpCode.RET, 0, 0, 0, 0);
+	const target = identityHotResumeRevision(HALT_TEST_IMAGE.image);
+	const freshImage = {
+		...target.freshImage,
+		textBytes: freshTextBytes,
+	};
+
+	applyHotResumeRelocation(
+		cpu,
+		buildHotResumeRelocation(cpu, [{
+			...target,
+			freshImage,
+		}, null, null]),
+	);
+	assert.equal(cpu.lastPc, HALT_TEST_IMAGE.image.header.textAddress + lastWordIndex * INSTRUCTION_BYTES);
+	assert.equal(cpu.lastInstruction, readInstructionWord(freshTextBytes, lastWordIndex));
+});
+
 test('BLua32 branches cannot enter adjacent function text', () => {
 	const cases = [
 		{ op: OpCode.JMP, initializeTrue: false },
@@ -866,7 +1053,7 @@ test('BLua32 branches cannot enter adjacent function text', () => {
 
 		cpu.start(image.symbols.functionAddresses[0]);
 		assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
-		assert.deepEqual(cpu.getCallStack().map(frame => frame.functionAddress), [
+		assertFrameFunctionAddresses(cpu, [
 			image.symbols.functionAddresses[0],
 		]);
 	}
@@ -883,7 +1070,7 @@ test('invalid CLOSURE targets hard-halt without entering host error handling', (
 
 	cpu.start(image.symbols.functionAddresses[0]);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
-	assert.deepEqual(cpu.getCallStack().map(frame => frame.functionAddress), [
+	assertFrameFunctionAddresses(cpu, [
 		image.symbols.functionAddresses[0],
 	]);
 });
@@ -903,10 +1090,14 @@ nothing()
 	const { cpu, image } = makeCompiledCpu(source);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
 	assert.equal(cpu.isHaltedUntilIrq(), true);
-	assert.equal(
-		cpu.getCallStack().some(frame => frame.functionAddress === image.vectors.exceptionFunctionAddress),
-		true,
-	);
+	let exceptionFrameFound = false;
+	for (let frameIndex = 0; frameIndex < cpu.getFrameDepth(); frameIndex += 1) {
+		if (cpu.readFrameFunctionAddress(frameIndex) === image.vectors.exceptionFunctionAddress) {
+			exceptionFrameFound = true;
+			break;
+		}
+	}
+	assert.equal(exceptionFrameFound, true);
 	assert.equal(
 		cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('exception_cause'))),
 		CPU_CAUSE_CODE_TRAP,
@@ -959,17 +1150,33 @@ cross_image_stack.caller()
 
 	cpu.start(linked.cartVectors.startupFunctionAddress, EMPTY_CALL_ARGS, CPU_STATUS_CART_ENTRY);
 	assert.equal(cpu.runUntilDepth(0, 10_000), RunResult.Halted);
-	const stack = cpu.getCallStack();
-	assert.equal(stack.length >= 3, true);
-	for (const frame of stack) {
-		const image = frame.functionAddress >= CART_ROM_BASE ? linked.cartImage : linked.systemImage;
-		assert.equal(frame.textAddress, image.header.textAddress);
+	const frameDepth = cpu.getFrameDepth();
+	assert.equal(frameDepth >= 3, true);
+	for (let frameIndex = 0; frameIndex < frameDepth; frameIndex += 1) {
+		const image = cpu.readFrameExecutionDomain(frameIndex) < 0
+			? linked.systemImage
+			: linked.cartImage;
+		const pc = frameIndex + 1 < frameDepth
+			? cpu.readFrameCallSitePc(frameIndex + 1)
+			: cpu.lastPc;
 		assert.equal(
-			frame.pc >= image.header.textAddress
-				&& frame.pc < image.header.textAddress + image.header.textByteCount,
+			pc >= image.header.textAddress
+				&& pc < image.header.textAddress + image.header.textByteCount,
 			true,
 		);
 	}
+	const callSitePc = cpu.readFrameCallSitePc(1);
+	const relocation = buildHotResumeRelocation(cpu, [
+		identityHotResumeRevision(linked.systemImage),
+		identityHotResumeRevision(linked.cartImage),
+		null,
+	]);
+	applyHotResumeRelocation(cpu, relocation);
+	assert.equal(
+		cpu.readFrameCallSitePc(1),
+		callSitePc,
+		'Hot Resume relocates a system child callsite through its cart parent domain',
+	);
 });
 
 test('RFE cannot resume outside the interrupted function record', () => {
@@ -983,7 +1190,7 @@ test('RFE cannot resume outside the interrupted function record', () => {
 	state.epcWord = HALT_TEST_IMAGE.image.functions[1].codeAddress;
 	cpu.restoreRuntimeState(state);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
-	assert.deepEqual(cpu.getCallStack().map(frame => frame.functionAddress), [
+	assertFrameFunctionAddresses(cpu, [
 		haltFunctionAddress,
 		interruptReturnFunctionAddress,
 	]);

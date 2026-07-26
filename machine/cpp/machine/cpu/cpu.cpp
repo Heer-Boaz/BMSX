@@ -913,6 +913,7 @@ CpuRuntimeState CPU::captureRuntimeState() const {
 		state.openUpvalues.push_back(ensureObjectId(entry.upvalue));
 	}
 	state.objects = std::move(objects);
+	state.lastExecutionDomainId = m_lastExecutionDomainId;
 	state.lastPc = lastPc;
 	state.lastInstruction = lastInstruction;
 	state.instructionBudgetRemaining = instructionBudgetRemaining;
@@ -1142,6 +1143,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	for (const CpuValueState& valueState : state.lastReturnValues) {
 		lastReturnValues.push_back(restoreValue(valueState));
 	}
+	m_lastExecutionDomainId = state.lastExecutionDomainId;
 	lastPc = state.lastPc;
 	lastInstruction = state.lastInstruction;
 	instructionBudgetRemaining = state.instructionBudgetRemaining;
@@ -1755,6 +1757,7 @@ dispatch_loop_check:
 		decoded = &decodedAtWordIndex(*image, wordIndex);
 		m_currentInstructionPc = pc;
 		frame->pc = pc + (static_cast<u32>(decoded->width) * INSTRUCTION_BYTES);
+		m_lastExecutionDomainId = image->executionDomainId;
 		lastPc = pc + ((static_cast<u32>(decoded->width) - 1u) * INSTRUCTION_BYTES);
 	lastInstruction = decoded->word;
 	if (executionObserver) {
@@ -1920,6 +1923,7 @@ dispatch_loop_check:
 		decoded = &decodedAtWordIndex(*image, wordIndex);
 		m_currentInstructionPc = pc;
 		frame->pc = pc + (static_cast<u32>(decoded->width) * INSTRUCTION_BYTES);
+		m_lastExecutionDomainId = image->executionDomainId;
 		lastPc = pc + ((static_cast<u32>(decoded->width) - 1u) * INSTRUCTION_BYTES);
 	lastInstruction = decoded->word;
 	if (executionObserver) {
@@ -2075,6 +2079,7 @@ void CPU::step() {
 	CpuExecutionObserver* const executionObserver = m_executionObserver;
 	m_currentInstructionPc = pc;
 	frame.pc = pc + (static_cast<u32>(decoded.width) * INSTRUCTION_BYTES);
+	m_lastExecutionDomainId = image.executionDomainId;
 	lastPc = pc + ((static_cast<u32>(decoded.width) - 1u) * INSTRUCTION_BYTES);
 	lastInstruction = decoded.word;
 	if (executionObserver) {
@@ -2094,34 +2099,32 @@ void CPU::step() {
 	}
 }
 
-CpuDebugState CPU::getDebugState() const {
-	const Blua32ExecutionImage* image = m_frames.empty()
-		? m_activeExecutionImage
-		: m_frames.back()->functionRecord->image;
-	return CpuDebugState{
-		image ? &image->layout : nullptr,
-		image ? image->executionDomainId : SYSTEM_EXECUTION_DOMAIN_ID,
-		lastPc,
-		lastInstruction,
-	};
+int CPU::readFrameExecutionDomain(int frameIndex) const {
+	return m_frames[static_cast<size_t>(frameIndex)]->functionRecord->image->executionDomainId;
 }
 
-std::vector<CpuCallStackEntry> CPU::getCallStack() const {
-	std::vector<CpuCallStackEntry> stack;
-	stack.reserve(m_frames.size());
-	int topIndex = static_cast<int>(m_frames.size()) - 1;
-	for (int i = 0; i < static_cast<int>(m_frames.size()); ++i) {
-		const auto& frame = m_frames[i];
-		const u32 pc = (i == topIndex) ? lastPc : m_frames[static_cast<size_t>(i + 1)]->callSitePc;
-		stack.push_back(CpuCallStackEntry{
-			&frame->functionRecord->image->layout,
-			frame->functionRecord->image->executionDomainId,
-			frame->functionAddress,
-			frame->functionRecord->index,
-			pc,
-		});
-	}
-	return stack;
+int CPU::readLastExecutionDomain() const {
+	return m_lastExecutionDomainId;
+}
+
+u32 CPU::readFrameFunctionAddress(int frameIndex) const {
+	return m_frames[static_cast<size_t>(frameIndex)]->functionAddress;
+}
+
+u32 CPU::readFramePc(int frameIndex) const {
+	return m_frames[static_cast<size_t>(frameIndex)]->pc;
+}
+
+u32 CPU::readFrameCallSitePc(int childFrameIndex) const {
+	return m_frames[static_cast<size_t>(childFrameIndex)]->callSitePc;
+}
+
+bool CPU::isExceptionFrame(int frameIndex) const {
+	return m_frames[static_cast<size_t>(frameIndex)]->isExceptionFrame;
+}
+
+bool CPU::isNonMaskableExceptionFrame(int frameIndex) const {
+	return m_frames[static_cast<size_t>(frameIndex)]->isNonMaskableExceptionFrame;
 }
 
 int CPU::getFrameRegisterCount(int frameIndex) const {
@@ -2133,14 +2136,56 @@ Value CPU::readFrameRegister(int frameIndex, int registerIndex) const {
 	return frame.registers[static_cast<size_t>(registerIndex)];
 }
 
-bool CPU::hasFrameUpvalue(int frameIndex, int upvalueIndex) const {
+int CPU::getFrameUpvalueCount(int frameIndex) const {
 	const CallFrame& frame = *m_frames[static_cast<size_t>(frameIndex)];
-	return upvalueIndex >= 0 && upvalueIndex < static_cast<int>(frame.closure->upvalueCount);
+	return static_cast<int>(frame.closure->upvalueCount);
 }
 
 Value CPU::readFrameUpvalue(int frameIndex, int upvalueIndex) const {
 	const CallFrame& frame = *m_frames[static_cast<size_t>(frameIndex)];
 	return const_cast<CPU*>(this)->readUpvalue(frame.closure->upvalues[static_cast<size_t>(upvalueIndex)]);
+}
+
+u32 CPU::readEpcWord() const {
+	return m_epcWord;
+}
+
+void CPU::writeEpcWord(u32 value) {
+	m_epcWord = value;
+}
+
+u32 CPU::readNmiReturnEpcWord() const {
+	return m_nmiReturnEpcWord;
+}
+
+void CPU::writeNmiReturnEpcWord(u32 value) {
+	m_nmiReturnEpcWord = value;
+}
+
+void CPU::writeFrameExecution(
+	int frameIndex,
+	int executionDomainId,
+	u32 functionAddress,
+	u32 pc
+) {
+	Blua32ExecutionImage& image = *executionImageForDomain(executionDomainId);
+	Blua32RuntimeFunction& functionRecord = *functionRecordInImage(image, functionAddress);
+	CallFrame& frame = *m_frames[static_cast<size_t>(frameIndex)];
+	if (functionRecord.maxStack > static_cast<u32>(frame.stackCapacity)) {
+		ensureRegisterCapacity(frame, static_cast<int>(functionRecord.maxStack) - 1);
+	}
+	if (functionRecord.staticClosure && functionRecord.upvalues.empty()) {
+		frame.closure = image.staticClosures[functionRecord.index];
+	} else {
+		frame.closure->functionAddress = functionRecord.address;
+	}
+	frame.functionAddress = functionRecord.address;
+	frame.functionRecord = &functionRecord;
+	frame.pc = pc;
+}
+
+void CPU::writeFrameCallSitePc(int childFrameIndex, u32 pc) {
+	m_frames[static_cast<size_t>(childFrameIndex)]->callSitePc = pc;
 }
 
 void CPU::executeInstruction(CallFrame& frame, const DecodedInstruction& decoded) {

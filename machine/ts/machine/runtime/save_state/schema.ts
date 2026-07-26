@@ -51,6 +51,7 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'isNonMaskableExceptionFrame',
 	'key',
 	'kind',
+	'lastExecutionDomainId',
 	'lastInstruction',
 	'lastPc',
 	'lastReturnValues',

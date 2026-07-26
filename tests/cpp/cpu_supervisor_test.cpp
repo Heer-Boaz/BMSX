@@ -214,9 +214,12 @@ void testManualNmiAndSaveStateReturn() {
 	require(active.causeWord == bmsx::CPU_CAUSE_NMI, "NMI latches CAUSE.NMI");
 	require(active.epcWord == machine.cartRom.textAddress + bmsx::INSTRUCTION_BYTES, "asynchronous EPC points after HALT");
 	require(active.statusWord == (bmsx::CPU_STATUS_CART_ENTRY << 2u), "exception entry pushes the raw STATUS mode stack");
+	require(active.lastExecutionDomainId == 0, "NMI entry preserves the cart domain of the last fetched instruction");
+	require(machine.cpu.readLastExecutionDomain() == 0, "CPU exposes the raw last-instruction domain");
 
 	machine.cpu.restoreRuntimeState(active);
 	require(machine.cpu.run(1) == bmsx::RunResult::Yielded, "MFC0 consumes one instruction before RFE");
+	require(machine.cpu.readLastExecutionDomain() == bmsx::SYSTEM_EXECUTION_DOMAIN_ID, "system exception execution replaces the last-instruction domain");
 	require(bmsx::asNumber(machine.cpu.readFrameRegister(1, 0)) == bmsx::CPU_CAUSE_NMI, "MFC0 reads the raw CAUSE latch");
 	require(machine.cpu.run(100) == bmsx::RunResult::Halted, "RFE resumes and completes the retained user frame");
 	require(machine.cpu.lastReturnValues.size() == 1u && bmsx::asNumber(machine.cpu.lastReturnValues[0]) == 1.0, "RFE resumes at EPC");
@@ -411,13 +414,33 @@ void testCrossImageCallStackPcsBelongToTheirFrames() {
 	CpuTestMachine machine(std::move(system), std::move(cart));
 	machine.cpu.start(machine.cartRom.functionAddresses[0]);
 	require(machine.cpu.run(100) == bmsx::RunResult::Halted, "cross-image leaf reaches HALT");
-	const std::vector<bmsx::CpuCallStackEntry> stack = machine.cpu.getCallStack();
-	require(stack.size() == 3u, "cross-image call stack retains cart caller and two system frames");
-	require(stack[0].image != stack[1].image && stack[1].image == stack[2].image, "cross-image call stack retains each frame image");
-	for (const bmsx::CpuCallStackEntry& frame : stack) {
+	const std::optional<bmsx::Blua32ImageLayout> systemLayout =
+		bmsx::decodeBlua32RomImage(machine.systemRom.bytes, bmsx::SYSTEM_ROM_BASE);
+	const std::optional<bmsx::Blua32ImageLayout> cartLayout =
+		bmsx::decodeBlua32RomImage(machine.cartRom.bytes, bmsx::CART_ROM_BASE);
+	require(systemLayout.has_value() && cartLayout.has_value(), "fixture ROMs expose physical execution layouts");
+	const std::array<const bmsx::Blua32ImageLayout*, 2> layoutsByDomain{{
+		&*systemLayout,
+		&*cartLayout,
+	}};
+	const int frameDepth = machine.cpu.getFrameDepth();
+	require(frameDepth == 3, "cross-image call stack retains cart caller and two system frames");
+	require(
+		machine.cpu.readFrameExecutionDomain(0) == 0
+			&& machine.cpu.readFrameExecutionDomain(1) == bmsx::SYSTEM_EXECUTION_DOMAIN_ID
+			&& machine.cpu.readFrameExecutionDomain(2) == bmsx::SYSTEM_EXECUTION_DOMAIN_ID,
+		"cross-image call stack retains each raw execution domain"
+	);
+	for (int frameIndex = 0; frameIndex < frameDepth; ++frameIndex) {
+		const int executionDomainId = machine.cpu.readFrameExecutionDomain(frameIndex);
+		const bmsx::Blua32ImageLayout& layout =
+			*layoutsByDomain[static_cast<size_t>(executionDomainId + 1)];
+		const bmsx::u32 pc = frameIndex + 1 < frameDepth
+			? machine.cpu.readFrameCallSitePc(frameIndex + 1)
+			: machine.cpu.lastPc;
 		require(
-			frame.pc >= frame.image->header.textAddress
-				&& frame.pc < frame.image->header.textAddress + frame.image->header.textByteCount,
+			pc >= layout.header.textAddress
+				&& pc < layout.header.textAddress + layout.header.textByteCount,
 			"call-stack PC belongs to the frame image"
 		);
 	}

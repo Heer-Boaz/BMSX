@@ -204,6 +204,7 @@ add_library(bmsx_core STATIC
 	common/vector.cpp
 	core/machine_manager.cpp
 	core/host_frame.cpp
+	core/runtime_error.cpp
 	core/host_overlay_menu.cpp
 	core/system.cpp
 	common/registry.cpp
@@ -329,7 +330,6 @@ add_library(bmsx_core STATIC
 	machine/runtime/timing/state.cpp
 	machine/runtime/timing/config.cpp
 	machine/runtime/vblank.cpp
-	machine/runtime/debug.cpp
 	machine/memory/access_kind.cpp
 	machine/memory/memory.cpp
 	machine/memory/map.cpp

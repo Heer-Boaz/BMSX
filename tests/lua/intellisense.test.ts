@@ -13,9 +13,10 @@ import {
 	type LuaSourceRecord,
 	type LuaSourceRegistry,
 } from '../../machine/ts/lua/source_registry';
-import { createRuntimeFaultState } from '../../ide/runtime/fault_state';
+import { createRuntimeFaultState, recordLuaError } from '../../ide/runtime/fault_state';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { LuaInterpreter } from '../../ide/language/lua/interpreter/interpreter';
+import { valueIsClosure } from '../../machine/ts/machine/cpu/value';
 import { SYSTEM_RESOURCE_DOMAIN } from '../../ide/common/resource';
 import { RuntimeNativeBridge } from '../../ide/runtime/native_bridge';
 import type { RuntimeSourceState } from '../../ide/runtime/sources';
@@ -109,7 +110,7 @@ function parseLuaChunk(source: string, path: string) {
 	return parser.parseChunk();
 }
 
-function runtimeWithPausedCpuLocal(source: string) {
+function createIntellisenseRuntime(source: string) {
 	const sourcePath = 'cart.lua';
 	const modulePath = 'cart';
 	const compiled = compileLuaChunkToProgram(parseLuaChunk(source, modulePath), [], {
@@ -118,10 +119,6 @@ function runtimeWithPausedCpuLocal(source: string) {
 	});
 	const image = linkTestSystemBlua32(compiled);
 	const runtime = createTestRuntime(image.romBytes);
-	const cpu = runtime.machine.cpu;
-	cpu.mountExecutionImages();
-	cpu.start(image.vectors.startupFunctionAddress);
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
 	const record: LuaSourceRecord = {
 		resid: sourcePath,
 		type: 'lua',
@@ -153,9 +150,21 @@ function runtimeWithPausedCpuLocal(source: string) {
 	bridge.luaInterpreter = new LuaInterpreter(bridge.luaJsBridge);
 	return {
 		bridge,
-		fault: createRuntimeFaultState(),
+		image,
 		runtime,
 		sourcePath,
+	};
+}
+
+function runtimeWithPausedCpuLocal(source: string) {
+	const harness = createIntellisenseRuntime(source);
+	const cpu = harness.runtime.machine.cpu;
+	cpu.mountExecutionImages();
+	cpu.start(harness.image.vectors.startupFunctionAddress);
+	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	return {
+		...harness,
+		fault: createRuntimeFaultState(),
 	};
 }
 
@@ -262,6 +271,53 @@ test('intellisense live locals resolve editor source paths against CPU module pa
 	assert.equal(definition.path, sourcePath);
 	assert.equal(definition.range.startLine, 1);
 	assert.equal(definition.range.startColumn, counterColumn);
+});
+
+test('intellisense resolves captured fault upvalues after the CPU stack is replaced', async () => {
+	const { resolveLuaChainValue } = await intellisenseEngineModulePromise;
+	const source = [
+		'local captured = { value = 42 }',
+		'return function()',
+		'\thalt_until_irq',
+		'\treturn captured',
+		'end',
+	].join('\n');
+	const { bridge, image, runtime, sourcePath } = createIntellisenseRuntime(source);
+	const cpu = runtime.machine.cpu;
+	cpu.mountExecutionImages();
+	cpu.start(image.vectors.startupFunctionAddress);
+	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	assert.equal(cpu.getFrameDepth(), 0);
+	const closure = cpu.lastReturnValues[0];
+	assert.ok(valueIsClosure(closure));
+	cpu.call(closure);
+	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	assert.equal(cpu.getFrameDepth(), 1);
+
+	const fault = createRuntimeFaultState();
+	recordLuaError(fault, bridge.sources, runtime, new Error('fault snapshot'));
+	assert.equal(fault.lastCpuFaultSnapshot.length, 1);
+	assert.equal(fault.lastCpuFaultSnapshot[0].upvalues.length, 1);
+
+	cpu.start(image.vectors.startupFunctionAddress);
+	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	assert.equal(cpu.getFrameDepth(), 0);
+
+	const usageColumn = source.split('\n')[3].indexOf('captured') + 1;
+	const resolved = resolveLuaChainValue(
+		bridge,
+		fault,
+		runtime,
+		['captured', 'value'],
+		sourcePath,
+		4,
+		usageColumn,
+	);
+	assert.ok(resolved);
+	assert.equal(resolved.kind, 'value');
+	if (resolved.kind === 'value') {
+		assert.equal(resolved.value, 42);
+	}
 });
 
 test('intellisense preserves shadowed local bindings during workspace retargeting', async () => {

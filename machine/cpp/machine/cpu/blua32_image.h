@@ -100,6 +100,13 @@ struct Blua32ImageLayout {
 	std::span<const u8> textBytes;
 };
 
+inline auto blua32FunctionIndexAtAddress(
+	const Blua32ImageLayout& image,
+	u32 functionAddress
+) -> u32 {
+	return (functionAddress - image.header.functionTableAddress) / BLUA32_FUNCTION_RECORD_SIZE;
+}
+
 auto decodeBlua32BootHeader(std::span<const u8> bytes) -> Blua32BootHeader;
 auto decodeBlua32RomImage(std::span<const u8> bytes, u32 romBaseAddress) -> std::optional<Blua32ImageLayout>;
 auto decodeBlua32Image(std::span<const u8> bytes, u32 imageAddress) -> Blua32ImageLayout;

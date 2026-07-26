@@ -7,7 +7,8 @@ import type {
 	SourceRange,
 } from '../../machine/cpu/blua32_symbols';
 import { arrays_equal } from '../../common/arrays_equal';
-import { INSTRUCTION_BYTES } from '../../machine/cpu/instruction_format';
+import { INSTRUCTION_BYTES, readInstructionWord } from '../../machine/cpu/instruction_format';
+import { OpCode } from '../../machine/cpu/opcode_info';
 import { compareSourcePosition, sourcePositionInRange, sourceRangeKey } from '../../lua/semantic/source_range';
 import type { LinkedBlua32Image } from './blua32_linker';
 
@@ -267,6 +268,27 @@ export function relocatedCallSitePc(
 ): number {
 	const returnPc = relocatedContinuationPc(revision, previousImage, callSitePc + INSTRUCTION_BYTES);
 	return returnPc < 0 ? -1 : returnPc - INSTRUCTION_BYTES;
+}
+
+export function relocatedInstructionPc(
+	revision: Blua32ExecutionImageRevision,
+	previousImage: Blua32ImageLayout,
+	freshImage: Blua32ImageLayout,
+	pc: number,
+): number {
+	const previousWordIndex = (pc - previousImage.header.textAddress) / INSTRUCTION_BYTES;
+	const previousInstructionPc = previousWordIndex > 0
+		&& ((readInstructionWord(previousImage.textBytes, previousWordIndex - 1) >>> 18) & 0x3f) === OpCode.WIDE
+		? pc - INSTRUCTION_BYTES
+		: pc;
+	const freshInstructionPc = relocatedContinuationPc(revision, previousImage, previousInstructionPc);
+	if (freshInstructionPc < 0) {
+		return -1;
+	}
+	const freshWordIndex = (freshInstructionPc - freshImage.header.textAddress) / INSTRUCTION_BYTES;
+	return ((readInstructionWord(freshImage.textBytes, freshWordIndex) >>> 18) & 0x3f) === OpCode.WIDE
+		? freshInstructionPc + INSTRUCTION_BYTES
+		: freshInstructionPc;
 }
 
 export function buildBlua32ExecutionRevision(

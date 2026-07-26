@@ -1652,6 +1652,7 @@ BinValue encodeCpuRuntimeState(const CpuRuntimeState& state) {
 	object["openUpvalues"] = encodeVector(state.openUpvalues, [](int value) {
 		return BinValue(static_cast<i64>(value));
 	});
+	object["lastExecutionDomainId"] = static_cast<i64>(state.lastExecutionDomainId);
 	object["lastPc"] = static_cast<i64>(state.lastPc);
 	object["lastInstruction"] = static_cast<i64>(state.lastInstruction);
 	object["instructionBudgetRemaining"] = static_cast<i64>(state.instructionBudgetRemaining);
@@ -1708,6 +1709,10 @@ CpuRuntimeState decodeCpuRuntimeState(const BinValue& value, const char* label) 
 		[](const BinValue& entryValue, size_t) {
 			return requireI32(entryValue, "cpuState.openUpvalues[]");
 		});
+	state.lastExecutionDomainId = requireI32(
+		requireField(object, "lastExecutionDomainId", label),
+		"cpuState.lastExecutionDomainId"
+	);
 	state.lastPc = requireU32(requireField(object, "lastPc", label), "cpuState.lastPc");
 	state.lastInstruction = requireU32(requireField(object, "lastInstruction", label), "cpuState.lastInstruction");
 	state.instructionBudgetRemaining = requireI32(requireField(object, "instructionBudgetRemaining", label), "cpuState.instructionBudgetRemaining");

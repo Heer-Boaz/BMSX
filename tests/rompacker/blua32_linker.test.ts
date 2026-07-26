@@ -36,7 +36,10 @@ import {
 	linkCartBlua32Image,
 	linkSystemBlua32Image,
 } from '../../machine/ts/rompack/tooling/blua32_linker';
-import { buildBlua32ExecutionRevision } from '../../machine/ts/rompack/tooling/blua32_revision';
+import {
+	buildBlua32ExecutionRevision,
+	relocatedInstructionPc,
+} from '../../machine/ts/rompack/tooling/blua32_revision';
 import { parseLuaChunk } from '../lua/cpu_test_harness';
 
 type EncodedWord = {
@@ -481,6 +484,68 @@ test('BLua32 hot revision maps unchanged physical function code one word at a ti
 		fresh.layout.functions[0].codeAddress,
 		fresh.layout.functions[0].codeAddress + INSTRUCTION_BYTES,
 	]);
+});
+
+test('BLua32 hot revision relocates the latched opcode word across WIDE encoding changes', () => {
+	const range: SourceRange = {
+		path: 'entry',
+		start: { line: 1, column: 1 },
+		end: { line: 1, column: 7 },
+	};
+	const previousObject = makeObject([
+		{ op: OpCode.WIDE, a: 0, b: 0, c: 0 },
+		{ op: OpCode.RET, a: 0, b: 1, c: 0 },
+	]);
+	previousObject.metadata.debugRanges = [range, range];
+	previousObject.metadata.resumePointsByProto = [[{
+		wordOffset: 0,
+		range,
+		op: OpCode.RET,
+		liveRegisters: [],
+		uses: [],
+		defs: [],
+	}]];
+	const previous = linkSystemBlua32Image(
+		previousObject.object,
+		previousObject.metadata,
+		SYSTEM_ROM_BASE + 0x100,
+	);
+
+	const freshObject = makeObject([
+		{ op: OpCode.RET, a: 0, b: 1, c: 0 },
+	]);
+	freshObject.metadata.debugRanges = [range];
+	freshObject.metadata.resumePointsByProto = [[{
+		wordOffset: 0,
+		range,
+		op: OpCode.RET,
+		liveRegisters: [],
+		uses: [],
+		defs: [],
+	}]];
+	const fresh = linkSystemBlua32Image(
+		freshObject.object,
+		freshObject.metadata,
+		SYSTEM_ROM_BASE + 0x100,
+		{ image: previous.layout, symbols: previous.symbols },
+	);
+	const revision = buildBlua32ExecutionRevision(
+		previous.layout,
+		previous.symbols,
+		NO_SOURCES,
+		fresh,
+		NO_SOURCES,
+	);
+
+	assert.equal(
+		relocatedInstructionPc(
+			revision,
+			previous.layout,
+			fresh.layout,
+			previous.layout.functions[0].codeAddress + INSTRUCTION_BYTES,
+		),
+		fresh.layout.functions[0].codeAddress,
+	);
 });
 
 test('BLua32 hot revision translates unchanged suffix sequence points into changed physical text', () => {

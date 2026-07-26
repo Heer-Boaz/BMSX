@@ -392,18 +392,10 @@ void testGuestExecutionSelectionAndClosureIdentitySurviveTheSaveStateWireFormat(
 	const bmsx::Value slot1ClosureValue = cpu.lastReturnValues[0];
 	require(bmsx::asClosure(slot1ClosureValue) == slot0Closure, "one raw physical function address has one canonical static closure");
 	require(bmsx::asNumber(closureTable->get(slot1ClosureValue)) == 77.0, "canonical closure identity remains a stable table key across cartridge slots");
-	const bmsx::CpuDebugState slot1DebugState = cpu.getDebugState();
-	require(
-		slot1DebugState.image
-			&& std::get<bmsx::f64>(slot1DebugState.image->constants[0]) == 222.0,
-		"post-unwind debug state retains the CP0.EXEC-latched cartridge image"
-	);
 	runtime.machine.memory.writeMappedU32LE(bmsx::IO_CART_SELECT, 0u);
-	const bmsx::CpuDebugState selectedSlot0DebugState = cpu.getDebugState();
 	require(
-		selectedSlot0DebugState.image
-			&& std::get<bmsx::f64>(selectedSlot0DebugState.image->constants[0]) == 222.0,
-		"data-bus cartridge selection does not replace the post-unwind execution image"
+		cpu.activeCartridgeSlot() == 1,
+		"data-bus cartridge selection does not replace the post-unwind execution domain"
 	);
 
 	const std::vector<bmsx::u8> saveBytes = bmsx::captureRuntimeSaveStateBytes(runtime);

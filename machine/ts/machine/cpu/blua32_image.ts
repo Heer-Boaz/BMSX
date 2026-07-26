@@ -123,6 +123,10 @@ export type Blua32ImageLayout = {
 	textBytes: Uint8Array;
 };
 
+export function blua32FunctionIndexAtAddress(image: Blua32ImageLayout, functionAddress: number): number {
+	return (functionAddress - image.header.functionTableAddress) / BLUA32_FUNCTION_RECORD_SIZE;
+}
+
 const stringDecoder = new TextDecoder('utf-8', { fatal: true });
 
 function imageOffset(address: number, byteCount: number, imageAddress: number, imageByteCount: number): number {

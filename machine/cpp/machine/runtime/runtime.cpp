@@ -5,7 +5,6 @@
 #include "machine/runtime/input.h"
 #include "machine/scheduler/device.h"
 #include "machine/runtime/timing/config.h"
-#include <iostream>
 #include <limits>
 #include <stdexcept>
 #include <utility>
@@ -243,10 +242,6 @@ void Runtime::boot() {
 	startSystemFirmware();
 }
 
-void Runtime::setBlua32MediaSymbols(Blua32MediaSymbols symbols) {
-	m_blua32MediaSymbols = std::move(symbols);
-}
-
 void Runtime::startSystemFirmware() {
 	machine.cpu.start(
 		machine.cpu.systemStartupFunctionAddress(),
@@ -265,50 +260,8 @@ void Runtime::rebootSystem() {
 	startSystemFirmware();
 }
 
-void Runtime::logLuaCallStack() const {
-	const auto stack = machine.cpu.getCallStack();
-	if (stack.empty()) {
-		const CpuDebugState debug = machine.cpu.getDebugState();
-		const Blua32SymbolsImage* symbols = blua32SymbolsForSlot(m_blua32MediaSymbols, debug.slot);
-		const std::optional<SourceRange> range = (symbols && debug.image)
-			? blua32SourceRangeAtPc(*symbols, debug.image->header.textAddress, machine.cpu.lastPc)
-			: std::nullopt;
-		if (range.has_value()) {
-			std::cout << "  at <current> (" << range->path << ':'
-				<< range->start.line << ':' << range->start.column << ')' << std::endl;
-		} else {
-			std::cout << "  at <current> (pc=0x" << std::hex
-				<< machine.cpu.lastPc << std::dec << ')' << std::endl;
-		}
-		return;
-	}
-	for (const CpuCallStackEntry& frame : stack) {
-		const Blua32SymbolsImage* symbols = blua32SymbolsForSlot(m_blua32MediaSymbols, frame.slot);
-		if (symbols) {
-			std::cout << "  at " << symbols->metadata.functionIds[frame.functionIndex];
-			const std::optional<SourceRange> range = blua32SourceRangeAtPc(
-				*symbols,
-				frame.image->header.textAddress,
-				frame.pc
-			);
-			if (range.has_value()) {
-				std::cout << " (" << range->path << ':'
-					<< range->start.line << ':' << range->start.column << ')' << std::endl;
-				continue;
-			}
-		} else {
-			std::cout << "  at function@0x" << std::hex
-				<< frame.functionAddress << std::dec;
-		}
-		std::cout << " (pc=0x" << std::hex << frame.pc << std::dec << ')' << std::endl;
-	}
-}
-
-void Runtime::handleLuaError(const std::string& message) {
+void Runtime::enterFaultState() {
 	hostFault.publishStartup();
-	std::cout << "Runtime error: " << message << std::endl;
-	logDebugState();
-	logLuaCallStack();
 	machine.cpu.clearHaltUntilIrq();
 	machine.inputController.cancelSampleArm();
 	m_pendingCall = PendingCall::None;

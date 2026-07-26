@@ -327,17 +327,23 @@ test('guest cartridge selection and EXEC-latched closures survive the runtime sa
 	const slot1Closure = cpu.lastReturnValues[0] as Closure;
 	assert.equal(slot1Closure, slot0Closure);
 	assert.equal(closureTable.get(slot1Closure), 77);
-	assert.equal(cpu.getDebugState().slot, 1);
-	assert.equal(
-		blua32SourceRangeAtPc(slot1.cartSymbols, cpu.getDebugState().image!.header.textAddress, cpu.lastPc)!.path,
-		'slot1.lua',
+	assert.equal(cpu.activeCartridgeSlot(), 1);
+	const slot1SourceRange = blua32SourceRangeAtPc(
+		slot1.cartSymbols,
+		slot1.cartImage.header.textAddress,
+		cpu.lastPc,
 	);
+	assert.ok(slot1SourceRange);
+	assert.equal(slot1SourceRange.path, 'slot1.lua');
 	runtime.machine.memory.writeMappedU32LE(IO_CART_SELECT, 0);
-	assert.equal(cpu.getDebugState().slot, 1);
-	assert.equal(
-		blua32SourceRangeAtPc(slot1.cartSymbols, cpu.getDebugState().image!.header.textAddress, cpu.lastPc)!.path,
-		'slot1.lua',
+	assert.equal(cpu.activeCartridgeSlot(), 1);
+	const sourceRangeAfterBusSelection = blua32SourceRangeAtPc(
+		slot1.cartSymbols,
+		slot1.cartImage.header.textAddress,
+		cpu.lastPc,
 	);
+	assert.ok(sourceRangeAfterBusSelection);
+	assert.equal(sourceRangeAfterBusSelection.path, 'slot1.lua');
 
 	const saveBytes = captureRuntimeSaveStateBytes(runtime);
 	cpu.start(

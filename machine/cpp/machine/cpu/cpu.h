@@ -54,21 +54,6 @@ private:
 	NativeResults* m_out = nullptr;
 };
 
-struct CpuDebugState {
-	const Blua32ImageLayout* image = nullptr;
-	int slot = -1;
-	u32 pc = 0;
-	u32 instruction = 0;
-};
-
-struct CpuCallStackEntry {
-	const Blua32ImageLayout* image = nullptr;
-	int slot = -1;
-	u32 functionAddress = 0;
-	u32 functionIndex = 0;
-	u32 pc = 0;
-};
-
 class CpuExecutionObserver {
 public:
 	virtual ~CpuExecutionObserver() = default;
@@ -166,6 +151,7 @@ struct CpuRuntimeState {
 	std::vector<CpuValueState> lastReturnValues;
 	std::vector<CpuObjectState> objects;
 	std::vector<int> openUpvalues;
+	int lastExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	u32 lastPc = 0;
 	uint32_t lastInstruction = 0;
 	int instructionBudgetRemaining = 0;
@@ -339,12 +325,23 @@ public:
 
 	int getFrameDepth() const { return static_cast<int>(m_frames.size()); }
 	bool hasFrames() const { return !m_frames.empty(); }
-	CpuDebugState getDebugState() const;
-	std::vector<CpuCallStackEntry> getCallStack() const;
+	int readFrameExecutionDomain(int frameIndex) const;
+	int readLastExecutionDomain() const;
+	u32 readFrameFunctionAddress(int frameIndex) const;
+	u32 readFramePc(int frameIndex) const;
+	u32 readFrameCallSitePc(int childFrameIndex) const;
+	bool isExceptionFrame(int frameIndex) const;
+	bool isNonMaskableExceptionFrame(int frameIndex) const;
 	int getFrameRegisterCount(int frameIndex) const;
 	Value readFrameRegister(int frameIndex, int registerIndex) const;
-	bool hasFrameUpvalue(int frameIndex, int upvalueIndex) const;
+	int getFrameUpvalueCount(int frameIndex) const;
 	Value readFrameUpvalue(int frameIndex, int upvalueIndex) const;
+	u32 readEpcWord() const;
+	void writeEpcWord(u32 value);
+	u32 readNmiReturnEpcWord() const;
+	void writeNmiReturnEpcWord(u32 value);
+	void writeFrameExecution(int frameIndex, int executionDomainId, u32 functionAddress, u32 pc);
+	void writeFrameCallSitePc(int childFrameIndex, u32 pc);
 
 	int instructionBudgetRemaining = 0;
 	std::vector<Value> lastReturnValues;
@@ -452,6 +449,7 @@ private:
 	bool m_memoryWriteBlocked = false;
 	uint32_t m_memoryWriteBlockedAddress = 0;
 	u32 m_currentInstructionPc = 0;
+	int m_lastExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	bool m_hardHalted = false;
 	u32 m_statusWord = CPU_STATUS_CART_ENTRY;
 	u32 m_causeWord = 0;

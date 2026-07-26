@@ -13,18 +13,33 @@ import {
 	sanitizeLuaErrorMessage,
 } from '../common/runtime_error_format';
 import { buildLuaStackFrames } from './stack_trace';
-import type { CpuFrameSnapshot } from '../../machine/ts/machine/cpu/cpu';
+import { blua32FunctionIndexAtAddress } from '../../machine/ts/machine/cpu/blua32_image';
+import type { ExecutionDomainId } from '../../machine/ts/machine/cpu/execution_address_space';
+import type { Value } from '../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { resolveWorkspacePath } from '../workspace/path';
+import { blua32ToolingImageForDomain } from './blua32_media';
 import type { RuntimeSourceState } from './sources';
 
 type RuntimeErrorLocation = { path: string; line: number; column: number };
 export type RecordedRuntimeLuaError = { error: Error; stackText: string };
 
+export type RuntimeCpuFaultFrame = {
+	readonly executionDomainId: ExecutionDomainId;
+	readonly functionAddress: number;
+	readonly functionIndex: number;
+	readonly textAddress: number;
+	readonly tracePc: number;
+	readonly registers: readonly Value[];
+	readonly upvalues: readonly Value[];
+};
+
 export type RuntimeFaultState = {
 	handledLuaErrors: WeakSet<object>;
 	lastLuaCallStack: StackTraceFrame[];
-	lastCpuFaultSnapshot: CpuFrameSnapshot[];
+	lastCpuFaultSnapshot: RuntimeCpuFaultFrame[];
+	lastCpuFaultExecutionDomainId: ExecutionDomainId;
+	lastCpuFaultPc: number;
 	faultSnapshot: FaultSnapshot;
 	faultOverlayNeedsFlush: boolean;
 };
@@ -37,6 +52,8 @@ export function createRuntimeFaultState(): RuntimeFaultState {
 		handledLuaErrors: new WeakSet<object>(),
 		lastLuaCallStack: [],
 		lastCpuFaultSnapshot: [],
+		lastCpuFaultExecutionDomainId: -1,
+		lastCpuFaultPc: 0,
 		faultSnapshot: null,
 		faultOverlayNeedsFlush: false,
 	};
@@ -119,6 +136,8 @@ function errorStackFunctionName(callFrames: ReadonlyArray<LuaCallFrame>, luaFram
 export function clearFaultSnapshot(fault: RuntimeFaultState): void {
 	fault.faultSnapshot = null;
 	fault.lastCpuFaultSnapshot = [];
+	fault.lastCpuFaultExecutionDomainId = -1;
+	fault.lastCpuFaultPc = 0;
 	fault.faultOverlayNeedsFlush = false;
 }
 
@@ -139,6 +158,53 @@ function setRuntimeFault(fault: RuntimeFaultState, runtime: Runtime, payload: {
 	fault.faultOverlayNeedsFlush = true;
 }
 
+function captureRuntimeCpuFaultFrames(
+	sources: RuntimeSourceState,
+	runtime: Runtime,
+	lastExecutionDomainId: ExecutionDomainId,
+	lastPc: number,
+): RuntimeCpuFaultFrame[] {
+	const cpu = runtime.machine.cpu;
+	const frameDepth = cpu.getFrameDepth();
+	const frames = new Array<RuntimeCpuFaultFrame>(frameDepth);
+	for (let frameIndex = 0; frameIndex < frameDepth; frameIndex += 1) {
+		const executionDomainId = cpu.readFrameExecutionDomain(frameIndex);
+		const image = blua32ToolingImageForDomain(sources.currentBlua32Media, executionDomainId);
+		if (!image) {
+			throw new Error('Active BLua32 frame has no tooling image.');
+		}
+		const functionAddress = cpu.readFrameFunctionAddress(frameIndex);
+		const functionIndex = blua32FunctionIndexAtAddress(image.layout, functionAddress);
+		const functionRecord = image.layout.functions[functionIndex];
+		const registerCount = cpu.getFrameRegisterCount(frameIndex);
+		const registers = new Array<Value>(registerCount);
+		for (let registerIndex = 0; registerIndex < registerCount; registerIndex += 1) {
+			registers[registerIndex] = cpu.readFrameRegister(frameIndex, registerIndex);
+		}
+		const upvalueCount = cpu.getFrameUpvalueCount(frameIndex);
+		const upvalues = new Array<Value>(upvalueCount);
+		for (let upvalueIndex = 0; upvalueIndex < upvalueCount; upvalueIndex += 1) {
+			upvalues[upvalueIndex] = cpu.readFrameUpvalue(frameIndex, upvalueIndex);
+		}
+		frames[frameIndex] = {
+			executionDomainId,
+			functionAddress,
+			functionIndex,
+			textAddress: image.layout.header.textAddress,
+			tracePc: frameIndex + 1 < frameDepth
+				? cpu.readFrameCallSitePc(frameIndex + 1)
+				: lastExecutionDomainId === executionDomainId
+					&& lastPc >= functionRecord.codeAddress
+					&& lastPc < functionRecord.codeAddress + functionRecord.codeByteCount
+					? lastPc
+					: cpu.readFramePc(frameIndex),
+			registers,
+			upvalues,
+		};
+	}
+	return frames;
+}
+
 export function recordLuaError(
 	fault: RuntimeFaultState,
 	sources: RuntimeSourceState,
@@ -149,8 +215,18 @@ export function recordLuaError(
 	if (fault.handledLuaErrors.has(error)) {
 		return null;
 	}
-	fault.lastCpuFaultSnapshot = runtime.machine.cpu.snapshotCallStack();
-	fault.lastLuaCallStack = buildLuaStackFrames(sources, runtime);
+	const cpu = runtime.machine.cpu;
+	const lastExecutionDomainId = cpu.readLastExecutionDomain();
+	const lastPc = cpu.lastPc;
+	fault.lastCpuFaultExecutionDomainId = lastExecutionDomainId;
+	fault.lastCpuFaultPc = lastPc;
+	fault.lastCpuFaultSnapshot = captureRuntimeCpuFaultFrames(
+		sources,
+		runtime,
+		lastExecutionDomainId,
+		lastPc,
+	);
+	fault.lastLuaCallStack = buildLuaStackFrames(sources, fault.lastCpuFaultSnapshot);
 	const message = sanitizeLuaErrorMessage(extractErrorMessage(error));
 	const location = resolveRuntimeErrorLocation(fault, sources, error);
 	const runtimeDetails = buildRuntimeErrorDetailsForEditor(fault, sources, error, message);

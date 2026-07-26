@@ -1,7 +1,6 @@
 #pragma once
 
 #include "machine/cpu/cpu.h"
-#include "machine/cpu/blua32_symbols.h"
 #include "machine/devices/dma/controller.h"
 #include "machine/devices/geometry/controller.h"
 #include "machine/devices/input/controller.h"
@@ -59,8 +58,7 @@ public:
 	auto operator=(const Runtime&) -> Runtime& = delete;
 
 	void boot();
-	void setBlua32MediaSymbols(Blua32MediaSymbols symbols);
-	void handleLuaError(const std::string& message);
+	void enterFaultState();
 
 	/**
 	 * Check if the runtime is initialized.
@@ -122,8 +120,6 @@ private:
 	};
 	void setupBuiltins();
 	void startSystemFirmware();
-	void logDebugState() const;
-	void logLuaCallStack() const;
 
 	RuntimeInputSource& m_input;
 
@@ -136,7 +132,6 @@ public:
 
 private:
 	// State flags
-	Blua32MediaSymbols m_blua32MediaSymbols;
 	bool m_luaInitialized = false;
 	bool m_runtimeFailed = false;
 	static size_t getBaseRamUsedBytesThunk(void* context);

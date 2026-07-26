@@ -1,4 +1,3 @@
-import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { StackTraceFrame } from '../language/lua/interpreter/value';
 import { buildLuaFrameRawLabel } from '../../machine/ts/lua/stack_frame_label';
 import {
@@ -6,6 +5,7 @@ import {
 	type Blua32SymbolsImage,
 } from '../../machine/ts/machine/cpu/blua32_symbols';
 import { blua32ToolingImageForDomain } from './blua32_media';
+import type { RuntimeCpuFaultFrame } from './fault_state';
 import type { RuntimeSourceState } from './sources';
 
 function resolveLuaFunctionName(
@@ -40,17 +40,19 @@ function resolveLuaFunctionName(
 	}
 }
 
-export function buildLuaStackFrames(sources: RuntimeSourceState, runtime: Runtime): StackTraceFrame[] {
-	const callStack = runtime.machine.cpu.getCallStack();
+export function buildLuaStackFrames(
+	sources: RuntimeSourceState,
+	faultFrames: readonly RuntimeCpuFaultFrame[],
+): StackTraceFrame[] {
 	const media = sources.currentBlua32Media;
 	const frames: StackTraceFrame[] = [];
-	for (let index = callStack.length - 1; index >= 0; index -= 1) {
-		const entry = callStack[index];
-		const image = blua32ToolingImageForDomain(media, entry.slot);
+	for (let index = faultFrames.length - 1; index >= 0; index -= 1) {
+		const entry = faultFrames[index];
+		const image = blua32ToolingImageForDomain(media, entry.executionDomainId);
 		const symbols = image ? image.symbols : null;
 		const range = symbols === null
 			? null
-			: blua32SourceRangeAtPc(symbols, entry.textAddress, entry.pc);
+			: blua32SourceRangeAtPc(symbols, entry.textAddress, entry.tracePc);
 		const source = range ? range.path : sources.activeLuaSources.entry_path;
 		const line = range ? range.start.line : 0;
 		const column = range ? range.start.column : 0;

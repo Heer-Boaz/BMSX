@@ -7,10 +7,11 @@ import type { SourceRange } from '../../machine/ts/machine/cpu/blua32_symbols';
 import { valueToString, type Value } from '../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { LogLevel } from '../../machine/ts/platform/platform';
-import { recordLuaError } from '../runtime/fault_state';
+import { recordLuaError, type RuntimeFaultState } from '../runtime/fault_state';
 import { blua32ToolingImageForDomain } from '../runtime/blua32_media';
 import type { RuntimeSourceState } from '../runtime/sources';
-import type { RuntimeFaultState } from '../runtime/fault_state';
+
+const EMPTY_REGISTER_VALUES: readonly Value[] = [];
 
 function formatInstructionOperandDebug(
 	runtime: Runtime,
@@ -28,20 +29,38 @@ function formatDebugSourceLine(range: SourceRange): string {
 	return `${range.path}:${range.start.line}:${range.start.column}`;
 }
 
-function logDebugState(sources: RuntimeSourceState, runtime: Runtime): void {
-	const cpu = runtime.machine.cpu;
-	const debug = cpu.getDebugState();
-	const image = blua32ToolingImageForDomain(sources.currentBlua32Media, debug.slot);
+function logFaultInstruction(
+	fault: RuntimeFaultState,
+	sources: RuntimeSourceState,
+	runtime: Runtime,
+): void {
+	const snapshot = fault.lastCpuFaultSnapshot;
+	const executionDomainId = fault.lastCpuFaultExecutionDomainId;
+	const pc = fault.lastCpuFaultPc;
+	const image = blua32ToolingImageForDomain(sources.currentBlua32Media, executionDomainId);
 	if (!image) {
-		return;
+		throw new Error('Captured BLua32 fault frame has no tooling image.');
+	}
+	let registers = EMPTY_REGISTER_VALUES;
+	for (let frameIndex = snapshot.length - 1; frameIndex >= 0; frameIndex -= 1) {
+		const frame = snapshot[frameIndex];
+		if (frame.executionDomainId !== executionDomainId) {
+			continue;
+		}
+		const functionRecord = image.layout.functions[frame.functionIndex];
+		if (pc >= functionRecord.codeAddress
+			&& pc < functionRecord.codeAddress + functionRecord.codeByteCount) {
+			registers = frame.registers;
+			break;
+		}
 	}
 	const instruction = describeBlua32InstructionAtPc(
 		image.layout,
 		image.symbols,
-		debug.pc,
+		pc,
 	);
 	const operandSummary = instruction.operands
-		.map(operand => formatInstructionOperandDebug(runtime, operand, debug.registers))
+		.map(operand => formatInstructionOperandDebug(runtime, operand, registers))
 		.join(' ');
 	machineManager.platform.log(
 		LogLevel.Error,
@@ -62,6 +81,6 @@ export function handleLuaError(
 	const recorded = recordLuaError(fault, sources, runtime, whatever);
 	if (recorded) {
 		machineManager.platform.log(LogLevel.Error, recorded.stackText);
-		logDebugState(sources, runtime);
+		logFaultInstruction(fault, sources, runtime);
 	}
 }

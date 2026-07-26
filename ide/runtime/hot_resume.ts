@@ -1,15 +1,11 @@
 import { convertToError } from '../language/lua/interpreter/value';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { EMPTY_CALL_ARGS } from '../../machine/ts/machine/cpu/value';
-import type { Blua32ImageLayout } from '../../machine/ts/machine/cpu/blua32_image';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/machine/cpu/execution_address_space';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { clearOverlayFrame } from '../../machine/ts/render/host_overlay/overlay_queue';
 import {
 	buildBlua32ExecutionRevision,
-	relocatedCallSitePc,
-	relocatedContinuationPc,
-	type Blua32ExecutionImageRevision,
 } from '../../machine/ts/rompack/tooling/blua32_revision';
 import { callClosureIntoSuspended } from './closure_executor';
 import { clearFaultSnapshot, resetHandledLuaErrors } from './fault_state';
@@ -22,11 +18,11 @@ import type { RuntimeSourceState } from './sources';
 import type { RuntimeNativeBridge } from './native_bridge';
 import type { RuntimeFaultState } from './fault_state';
 import type { CartEditor } from '../cart_editor';
-
-type TargetRevision = {
-	previousImage: Blua32ImageLayout;
-	revision: Blua32ExecutionImageRevision;
-};
+import {
+	applyHotResumeRelocation,
+	buildHotResumeRelocation,
+	type HotResumeRevision,
+} from './hot_resume_relocation';
 
 export function hotResume(
 	sources: RuntimeSourceState,
@@ -44,10 +40,15 @@ export function hotResume(
 			|| rebuildCartridgeSlots[1];
 		if (rebuildMedia) {
 			const rebuilt = buildBlua32Media(sources, interpreter, rebuildSystem, rebuildCartridgeSlots);
-			const revisionsBySlot = new Map<number, TargetRevision>();
+			const revisions: [
+				HotResumeRevision | null,
+				HotResumeRevision | null,
+				HotResumeRevision | null,
+			] = [null, null, null];
 			if (rebuilt.system !== null) {
-				revisionsBySlot.set(-1, {
+				revisions[0] = {
 					previousImage: rebuilt.system.previousImage,
+					freshImage: rebuilt.system.linked.layout,
 					revision: buildBlua32ExecutionRevision(
 						rebuilt.system.previousImage,
 						rebuilt.system.previousSymbols,
@@ -55,7 +56,7 @@ export function hotResume(
 						rebuilt.system.linked,
 						rebuilt.system.sources,
 					),
-				});
+				};
 			}
 			for (const slot of CARTRIDGE_RESOURCE_DOMAINS) {
 				const image = rebuilt.cartridgeSlots[slot];
@@ -63,8 +64,9 @@ export function hotResume(
 					continue;
 				}
 				const cartridge = sources.cartridgeSlots[slot]!;
-				revisionsBySlot.set(slot, {
+				revisions[slot + 1] = {
 					previousImage: image.previousImage,
+					freshImage: image.linked.layout,
 					revision: buildBlua32ExecutionRevision(
 						image.previousImage,
 						image.previousSymbols,
@@ -72,12 +74,13 @@ export function hotResume(
 						image.linked,
 						image.sources,
 					),
-				});
+				};
 			}
 
+			const cpu = runtime.machine.cpu;
+			const relocation = buildHotResumeRelocation(cpu, revisions);
 			installBlua32Media(sources, runtime, rebuilt);
 
-			const cpu = runtime.machine.cpu;
 			if (rebuilt.system !== null) {
 				cpu.reloadExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID);
 			}
@@ -86,38 +89,7 @@ export function hotResume(
 					cpu.reloadExecutionDomain(slot);
 				}
 			}
-
-			let unmappedCount = 0;
-			for (const continuation of cpu.rawContinuations()) {
-				const target = revisionsBySlot.get(continuation.slot);
-				if (!target) {
-					continue;
-				}
-				const pc = relocatedContinuationPc(target.revision, target.previousImage, continuation.pc);
-				const callSitePc = continuation.callSitePc === null ? null
-					: relocatedCallSitePc(target.revision, target.previousImage, continuation.callSitePc);
-				const epcWord = continuation.epcWord === null ? null
-					: relocatedContinuationPc(target.revision, target.previousImage, continuation.epcWord);
-				const nmiReturnEpcWord = continuation.nmiReturnEpcWord === null ? null
-					: relocatedContinuationPc(target.revision, target.previousImage, continuation.nmiReturnEpcWord);
-				if (pc < 0 || callSitePc === -1 || epcWord === -1 || nmiReturnEpcWord === -1) {
-					unmappedCount += 1;
-					continue;
-				}
-				cpu.relocateFrame(
-					continuation.frameIndex,
-					target.revision.functionAddresses[continuation.functionIndex],
-					pc,
-					callSitePc,
-					epcWord,
-					nmiReturnEpcWord,
-				);
-			}
-			if (unmappedCount > 0) {
-				throw new Error(
-					`Hot resume could not relocate ${unmappedCount} active continuation(s) after an incompatible edit.`,
-				);
-			}
+			applyHotResumeRelocation(cpu, relocation);
 			editor.clearNativeMemberCompletionCache();
 		}
 

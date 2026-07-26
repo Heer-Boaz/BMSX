@@ -1,5 +1,5 @@
 import type { RuntimeNativeBridge } from '../../../runtime/native_bridge';
-import type { RuntimeFaultState } from '../../../runtime/fault_state';
+import type { RuntimeCpuFaultFrame, RuntimeFaultState } from '../../../runtime/fault_state';
 import type { LuaDefinitionInfo, LuaDefinitionKind, LuaSourceRange } from '../../../../machine/ts/lua/syntax/ast/index';
 import { LuaEnvironment } from '../../../language/lua/interpreter/environment';
 import { LuaLexer } from '../../../../machine/ts/lua/syntax/lexer';
@@ -10,9 +10,9 @@ import { getCachedLuaParse } from '../../../../machine/ts/lua/analysis/cache';
 import { LuaInterpreter } from '../../../language/lua/interpreter/interpreter';
 import { extractErrorMessage, isLuaFunctionValue, isLuaTable, LuaFunctionValue, LuaNativeValue, LuaTable, LuaValue, resolveNativeTypeName } from '../../../language/lua/interpreter/value';
 import { API_METHOD_METADATA, type ApiMethodMetadata } from '../../../../machine/ts/language/lua/api_metadata';
-import type { CpuFrameSnapshot } from '../../../../machine/ts/machine/cpu/cpu';
+import { blua32FunctionIndexAtAddress } from '../../../../machine/ts/machine/cpu/blua32_image';
 import { Table } from '../../../../machine/ts/machine/cpu/table';
-import { asStringId, valueIsString, type Value } from '../../../../machine/ts/machine/cpu/value';
+import { asStringId, valueTag, ValueTag, type StringValue, type Value } from '../../../../machine/ts/machine/cpu/value';
 import {
 	blua32SourceRangeAtPc,
 	type Blua32LocalSlotDebug,
@@ -24,7 +24,7 @@ import { buildMarshalContext, toNativeValue } from '../../../runtime/native_brid
 import { buildLuaSemanticFrontend } from '../../../../machine/ts/lua/semantic/frontend';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
-import { blua32ToolingImageForDomain } from '../../../runtime/blua32_media';
+import { blua32ToolingImageForDomain, type Blua32ToolingImage } from '../../../runtime/blua32_media';
 import {
 	resolveRuntimeLuaSourceForContext,
 } from '../../../runtime/sources';
@@ -1673,11 +1673,23 @@ function wrapHostValueForIntellisense(bridge: RuntimeNativeBridge, value: unknow
 }
 
 function wrapRuntimeValueForIntellisense(bridge: RuntimeNativeBridge, runtime: Runtime, value: Value): LuaValue {
-	if (value === null || typeof value === 'boolean' || typeof value === 'number') {
-		return value as LuaValue;
-	}
-	if (valueIsString(value)) {
-		return runtime.machine.cpu.stringPool.toString(asStringId(value));
+	switch (valueTag(value)) {
+		case ValueTag.Nil:
+			return null;
+		case ValueTag.False:
+			return false;
+		case ValueTag.True:
+			return true;
+		case ValueTag.Number:
+			return value as number;
+		case ValueTag.String:
+			return runtime.machine.cpu.stringPool.toString(asStringId(value as StringValue));
+		case ValueTag.Table:
+		case ValueTag.Closure:
+		case ValueTag.BuiltinFunction:
+		case ValueTag.NativeFunction:
+		case ValueTag.NativeObject:
+			break;
 	}
 	const marshalContext = buildMarshalContext(bridge.sources);
 	const native = toNativeValue(bridge, value, marshalContext, new WeakMap<Table, unknown>());
@@ -1689,15 +1701,15 @@ export type FrameLocal = {
 	value: LuaValue;
 };
 
-export function collectFrameLocals(bridge: RuntimeNativeBridge, runtime: Runtime, snapshot: CpuFrameSnapshot[], cpuFrameIndex: number): FrameLocal[] {
+export function collectFrameLocals(bridge: RuntimeNativeBridge, runtime: Runtime, snapshot: readonly RuntimeCpuFaultFrame[], cpuFrameIndex: number): FrameLocal[] {
 	const frame = snapshot[cpuFrameIndex];
-	const image = blua32ToolingImageForDomain(bridge.sources.currentBlua32Media, frame.slot);
+	const image = blua32ToolingImageForDomain(bridge.sources.currentBlua32Media, frame.executionDomainId);
 	const symbols = image ? image.symbols : null;
 	if (symbols === null) {
 		return [];
 	}
 	const metadata = symbols.metadata;
-	const frameRange = blua32SourceRangeAtPc(symbols, frame.textAddress, frame.pc);
+	const frameRange = blua32SourceRangeAtPc(symbols, frame.textAddress, frame.tracePc);
 	if (!frameRange) {
 		return [];
 	}
@@ -1796,34 +1808,60 @@ function resolveRuntimeLocalChainValue(
 		requestedPath = requestedSource.record.module_path;
 	}
 	const cpu = runtime.machine.cpu;
-	// Use the fault snapshot when the fault overlay is active — by hover time, the crash
-	// frame has been popped from the live CPU stack, so we must use the saved registers.
 	const useFaultSnapshot = Boolean(fault.faultSnapshot);
-	const callStack = useFaultSnapshot
-		? fault.lastCpuFaultSnapshot
-		: cpu.getCallStack();
-	if (callStack.length === 0) {
+	const faultFrames = fault.lastCpuFaultSnapshot;
+	const frameDepth = useFaultSnapshot ? faultFrames.length : cpu.getFrameDepth();
+	if (frameDepth === 0) {
 		return null;
 	}
 	const media = bridge.sources.currentBlua32Media;
 	const rootName = parts[0];
 	let selectedFrameIndex = -1;
 	let selectedSlot: Blua32LocalSlotDebug = null;
-	for (let frameIndex = callStack.length - 1; frameIndex >= 0; frameIndex -= 1) {
-		const frame = callStack[frameIndex];
-		const image = blua32ToolingImageForDomain(media, frame.slot);
-		const symbols = image ? image.symbols : null;
-		if (symbols === null) {
+	let upvalueFound = false;
+	let rawUpvalue: Value = null;
+	for (let frameIndex = frameDepth - 1; frameIndex >= 0; frameIndex -= 1) {
+		let functionIndex: number;
+		let textAddress: number;
+		let tracePc: number;
+		let image: Blua32ToolingImage | null;
+		if (useFaultSnapshot) {
+			const frame = faultFrames[frameIndex];
+			functionIndex = frame.functionIndex;
+			textAddress = frame.textAddress;
+			tracePc = frame.tracePc;
+			image = blua32ToolingImageForDomain(media, frame.executionDomainId);
+		} else {
+			const executionDomainId = cpu.readFrameExecutionDomain(frameIndex);
+			image = blua32ToolingImageForDomain(media, executionDomainId);
+			if (!image) {
+				continue;
+			}
+			functionIndex = blua32FunctionIndexAtAddress(
+				image.layout,
+				cpu.readFrameFunctionAddress(frameIndex),
+			);
+			textAddress = image.layout.header.textAddress;
+			if (frameIndex + 1 < frameDepth) {
+				tracePc = cpu.readFrameCallSitePc(frameIndex + 1);
+			} else {
+				const functionRecord = image.layout.functions[functionIndex];
+				tracePc = cpu.readLastExecutionDomain() === executionDomainId
+					&& cpu.lastPc >= functionRecord.codeAddress
+					&& cpu.lastPc < functionRecord.codeAddress + functionRecord.codeByteCount
+					? cpu.lastPc
+					: cpu.readFramePc(frameIndex);
+			}
+		}
+		if (!image || image.symbols === null) {
 			continue;
 		}
-		const frameRange = blua32SourceRangeAtPc(symbols, frame.textAddress, frame.pc);
+		const symbols = image.symbols;
+		const frameRange = blua32SourceRangeAtPc(symbols, textAddress, tracePc);
 		if (!isFrameRangeForPath(frameRange, requestedPath)) {
 			continue;
 		}
-		const slots = symbols.metadata.localSlotsByFunction[frame.functionIndex];
-		if (slots.length === 0) {
-			continue;
-		}
+		const slots = symbols.metadata.localSlotsByFunction[functionIndex];
 		let frameBest: Blua32LocalSlotDebug = null;
 		for (let slotIndex = 0; slotIndex < slots.length; slotIndex += 1) {
 			const slot = slots[slotIndex];
@@ -1836,7 +1874,7 @@ function resolveRuntimeLocalChainValue(
 			const usageInScope = positionWithinRange(usageRow, usageColumn, slotScope);
 			const usageAfterDef = positionAfterOrEqual(usageRow, usageColumn, slot.definition.start);
 			const frameInScope = positionWithinRange(frameRow, frameColumn, slotScope);
-			const isTopFrame = frameIndex === callStack.length - 1;
+			const isTopFrame = frameIndex === frameDepth - 1;
 			const frameAfterDef = positionAfterOrEqual(frameRow, frameColumn, slot.definition.start);
 			if (!usageInScope || !usageAfterDef || !frameInScope || (isTopFrame && !frameAfterDef)) {
 				continue;
@@ -1850,25 +1888,28 @@ function resolveRuntimeLocalChainValue(
 			selectedSlot = frameBest;
 			break;
 		}
+		if (!upvalueFound) {
+			const frameUpvalueNames = symbols.metadata.upvalueNamesByFunction[functionIndex];
+			const upvalueIndex = frameUpvalueNames.indexOf(rootName);
+			const upvalueCount = useFaultSnapshot
+				? faultFrames[frameIndex].upvalues.length
+				: cpu.getFrameUpvalueCount(frameIndex);
+			if (upvalueIndex >= 0 && upvalueIndex < upvalueCount) {
+				rawUpvalue = useFaultSnapshot
+					? faultFrames[frameIndex].upvalues[upvalueIndex]
+					: cpu.readFrameUpvalue(frameIndex, upvalueIndex);
+				upvalueFound = true;
+			}
+		}
 	}
 	if (selectedFrameIndex < 0 || !selectedSlot) {
-		for (let frameIndex = callStack.length - 1; frameIndex >= 0; frameIndex -= 1) {
-			const frame = callStack[frameIndex];
-			const image = blua32ToolingImageForDomain(media, frame.slot);
-			const symbols = image ? image.symbols : null;
-			if (symbols === null) {
-				continue;
-			}
-			const frameRange = blua32SourceRangeAtPc(symbols, frame.textAddress, frame.pc);
-			if (!isFrameRangeForPath(frameRange, requestedPath)) {
-				continue;
-			}
-			const frameUpvalueNames = symbols.metadata.upvalueNamesByFunction[frame.functionIndex];
-			const upvalueIndex = frameUpvalueNames.indexOf(rootName);
-			if (upvalueIndex === -1 || !cpu.hasFrameUpvalue(frameIndex, upvalueIndex)) {
-				continue;
-			}
-			const chained = walkValueChain(bridge, wrapRuntimeValueForIntellisense(bridge, runtime, cpu.readFrameUpvalue(frameIndex, upvalueIndex)), parts, 1);
+		if (upvalueFound) {
+			const chained = walkValueChain(
+				bridge,
+				wrapRuntimeValueForIntellisense(bridge, runtime, rawUpvalue),
+				parts,
+				1,
+			);
 			if (chained === null) {
 				return { kind: 'not_defined' };
 			}
@@ -1877,7 +1918,7 @@ function resolveRuntimeLocalChainValue(
 		return null;
 	}
 	const rawRegValue = useFaultSnapshot
-		? fault.lastCpuFaultSnapshot[selectedFrameIndex].registers[selectedSlot.registerIndex]
+		? faultFrames[selectedFrameIndex].registers[selectedSlot.registerIndex]
 		: cpu.readFrameRegister(selectedFrameIndex, selectedSlot.registerIndex);
 	const chained = walkValueChain(bridge, wrapRuntimeValueForIntellisense(bridge, runtime, rawRegValue), parts, 1);
 	if (chained === null) {

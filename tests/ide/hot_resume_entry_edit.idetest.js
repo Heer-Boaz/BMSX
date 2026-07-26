@@ -40,6 +40,54 @@ const initialDataOnlyMediaRevision = runtime.machine.memory.cartridgeController.
 t.assert(dataOnlyCartridge !== null, 'second cartridge is not installed');
 t.assert(dataOnlyCartridge.rom.header.blua32ImageOffset === 0, 'second cartridge unexpectedly contains executable BLua32');
 
+const originalMedia = sourceState.currentBlua32Media;
+const frameDepthBeforeRejectedEdit = cpu.getFrameDepth();
+const frameWordsBeforeRejectedEdit = new Uint32Array(frameDepthBeforeRejectedEdit * 3);
+for (let frameIndex = 0; frameIndex < frameDepthBeforeRejectedEdit; frameIndex += 1) {
+	const wordOffset = frameIndex * 3;
+	frameWordsBeforeRejectedEdit[wordOffset] = cpu.readFrameFunctionAddress(frameIndex);
+	frameWordsBeforeRejectedEdit[wordOffset + 1] = cpu.readFramePc(frameIndex);
+	frameWordsBeforeRejectedEdit[wordOffset + 2] = cpu.readFrameCallSitePc(frameIndex);
+}
+const lastExecutionDomainBeforeRejectedEdit = cpu.readLastExecutionDomain();
+const lastPcBeforeRejectedEdit = cpu.lastPc;
+const lastInstructionBeforeRejectedEdit = cpu.lastInstruction;
+const initCountBeforeRejectedEdit = cpu.getGlobalByKey(runtime.internString('hot_resume_init_count'));
+t.openLuaSource('entry.lua');
+t.replaceActiveCodeSource(entryRecord.base_src.replace(
+	'\trepeat\n\t\thalt_until_irq\n\tuntil vblank_count ~= 0\n\tvblank_count = vblank_count - 1\n',
+	'\tvblank_count = 0\n',
+));
+t.performHotResume();
+await t.frames(60);
+
+t.assert(sourceState.currentBlua32Media === originalMedia, 'rejected edit replaced tooling media');
+t.assert(runtime.machine.memory.systemRomRevision() === initialSystemMediaRevision, 'rejected edit replaced system ROM');
+t.assert(
+	runtime.machine.memory.cartridgeController.romRevision(cpu.activeCartridgeSlot()) === initialCartMediaRevision,
+	'rejected edit replaced cartridge ROM',
+);
+t.assert(cpu.getFrameDepth() === frameDepthBeforeRejectedEdit, 'rejected edit changed frame depth');
+for (let frameIndex = 0; frameIndex < frameDepthBeforeRejectedEdit; frameIndex += 1) {
+	const wordOffset = frameIndex * 3;
+	t.assert(
+		cpu.readFrameFunctionAddress(frameIndex) === frameWordsBeforeRejectedEdit[wordOffset]
+			&& cpu.readFramePc(frameIndex) === frameWordsBeforeRejectedEdit[wordOffset + 1]
+			&& cpu.readFrameCallSitePc(frameIndex) === frameWordsBeforeRejectedEdit[wordOffset + 2],
+		`rejected edit changed frame ${frameIndex}`,
+	);
+}
+t.assert(
+	cpu.getGlobalByKey(runtime.internString('hot_resume_init_count')) === initCountBeforeRejectedEdit,
+	'rejected edit reran init',
+);
+t.assert(
+	cpu.readLastExecutionDomain() === lastExecutionDomainBeforeRejectedEdit
+		&& cpu.lastPc === lastPcBeforeRejectedEdit
+		&& cpu.lastInstruction === lastInstructionBeforeRejectedEdit,
+	'rejected edit changed the last-instruction latch',
+);
+
 const installRevision = (revision) => {
 	t.openLuaSource('entry.lua');
 	t.replaceActiveCodeSource(revisionSource(entryRecord, revision));

@@ -133,23 +133,6 @@ function createNativeObject(hashId: number, raw: object, handlers: {
 	return { [VALUE_TAG]: ValueTag.NativeObject, hashId, raw, get: handlers.get, set: handlers.set, len: handlers.len, nextEntry: handlers.nextEntry, metatable: null };
 }
 
-export type CpuFrameSnapshot = {
-	functionAddress: number;
-	functionIndex: number;
-	slot: ExecutionDomainId;
-	textAddress: number;
-	pc: number;
-	registers: Value[];
-};
-
-export type CpuCallStackEntry = {
-	functionAddress: number;
-	functionIndex: number;
-	slot: ExecutionDomainId;
-	textAddress: number;
-	pc: number;
-};
-
 export type CpuValueState =
 	| { tag: 'nil' }
 	| { tag: 'false' }
@@ -224,6 +207,7 @@ export type CpuRuntimeState = {
 	lastReturnValues: CpuValueState[];
 	objects: CpuObjectState[];
 	openUpvalues: number[];
+	lastExecutionDomainId: ExecutionDomainId;
 	lastPc: number;
 	lastInstruction: number;
 	instructionBudgetRemaining: number;
@@ -262,16 +246,6 @@ const enum TableIndexKeyKind {
 	Field,
 }
 
-export type CpuRawFrameContinuation = {
-	frameIndex: number;
-	slot: ExecutionDomainId;
-	functionIndex: number;
-	pc: number;
-	callSitePc: number | null;
-	epcWord: number | null;
-	nmiReturnEpcWord: number | null;
-};
-
 export type CpuExecutionObserver = {
 	onInstruction(executionDomainId: ExecutionDomainId, pc: number, opcode: number): void;
 };
@@ -293,6 +267,7 @@ export class CPU {
 	private memoryWriteBlocked = false;
 	private memoryWriteBlockedAddress = 0;
 	private currentInstructionPc = 0;
+	private lastExecutionDomainId: ExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	private hardHalted = false;
 	private statusWord = CPU_STATUS_CART_ENTRY;
 	private causeWord = 0;
@@ -315,7 +290,6 @@ export class CPU {
 	private registerNativeArgsScratchIndex = 0;
 	private readonly arrayNativeArgsScratch = new ScratchBuffer<ArrayNativeArgsView>(() => new ArrayNativeArgsView());
 	private arrayNativeArgsScratchIndex = 0;
-	private readonly debugRegistersScratch: Value[] = [];
 	private readonly nativeReturnScratch = new ScratchArrayStack<Value>();
 	private executionObserver: CpuExecutionObserver | null = null;
 	private externalReturnSink: Value[] | null = null;
@@ -847,82 +821,6 @@ export class CPU {
 		this.executionObserver = observer;
 	}
 
-	private exceptionOwnerFrameIndices(): { epcOwnerFrameIndex: number; nmiReturnEpcOwnerFrameIndex: number } {
-		let activeExceptionFrameIndex = -1;
-		for (let frameIndex = this.frames.length - 1; frameIndex >= 0; frameIndex -= 1) {
-			if (this.frames[frameIndex].isExceptionFrame) {
-				activeExceptionFrameIndex = frameIndex;
-				break;
-			}
-		}
-		const epcOwnerFrameIndex = activeExceptionFrameIndex - 1;
-		let nmiReturnEpcOwnerFrameIndex = -1;
-		if (activeExceptionFrameIndex >= 0
-			&& this.frames[activeExceptionFrameIndex].isNonMaskableExceptionFrame) {
-			for (let frameIndex = activeExceptionFrameIndex - 1; frameIndex >= 0; frameIndex -= 1) {
-				if (this.frames[frameIndex].isExceptionFrame) {
-					nmiReturnEpcOwnerFrameIndex = frameIndex - 1;
-					break;
-				}
-			}
-		}
-		return { epcOwnerFrameIndex, nmiReturnEpcOwnerFrameIndex };
-	}
-
-	public rawContinuations(): CpuRawFrameContinuation[] {
-		const { epcOwnerFrameIndex, nmiReturnEpcOwnerFrameIndex } = this.exceptionOwnerFrameIndices();
-		const topIndex = this.frames.length - 1;
-		const continuations: CpuRawFrameContinuation[] = new Array(this.frames.length);
-		for (let frameIndex = 0; frameIndex <= topIndex; frameIndex += 1) {
-			const frame = this.frames[frameIndex];
-			const childFrame = this.frames[frameIndex + 1];
-			continuations[frameIndex] = {
-				frameIndex,
-				slot: frame.functionRecord.image.executionDomainId,
-				functionIndex: frame.functionRecord.index,
-				pc: frame.pc,
-				callSitePc: childFrame ? childFrame.callSitePc : null,
-				epcWord: frameIndex === epcOwnerFrameIndex ? this.epcWord : null,
-				nmiReturnEpcWord: frameIndex === nmiReturnEpcOwnerFrameIndex ? this.nmiReturnEpcWord : null,
-			};
-		}
-		return continuations;
-	}
-
-	public relocateFrame(
-		frameIndex: number,
-		functionAddress: number,
-		pc: number,
-		callSitePc: number | null,
-		epcWord: number | null,
-		nmiReturnEpcWord: number | null,
-	): void {
-		const frame = this.frames[frameIndex];
-		const image = this.executionImageForDomain(
-			frame.functionRecord.image.executionDomainId,
-		)!;
-		const functionRecord = this.functionRecordInImage(image, functionAddress);
-		if (!functionRecord) {
-			this.hardHalt();
-			return;
-		}
-		frame.functionAddress = functionAddress;
-		frame.functionRecord = functionRecord;
-		frame.pc = pc;
-		if (callSitePc !== null) {
-			this.frames[frameIndex + 1].callSitePc = callSitePc;
-		}
-		if (epcWord !== null) {
-			this.epcWord = epcWord;
-		}
-		if (nmiReturnEpcWord !== null) {
-			this.nmiReturnEpcWord = nmiReturnEpcWord;
-		}
-		if (functionRecord.maxStack > frame.stackCapacity) {
-			this.ensureRegisterCapacity(frame, functionRecord.maxStack - 1);
-		}
-	}
-
 	private decodeText(
 		layout: Blua32ImageLayout,
 		globalSlots: Uint32Array,
@@ -1342,6 +1240,7 @@ export class CPU {
 					const op = page.ops[pageOffset];
 					this.currentInstructionPc = pc;
 					frame.pc = pc + (width * INSTRUCTION_BYTES);
+					this.lastExecutionDomainId = image.executionDomainId;
 					this.lastPc = pc + ((width - 1) * INSTRUCTION_BYTES);
 					this.lastInstruction = page.words[pageOffset];
 					if (executionObserver) {
@@ -1435,6 +1334,7 @@ export class CPU {
 		const op = page.ops[pageOffset];
 		this.currentInstructionPc = pc;
 		frame.pc = pc + (width * INSTRUCTION_BYTES);
+		this.lastExecutionDomainId = image.executionDomainId;
 		this.lastPc = pc + ((width - 1) * INSTRUCTION_BYTES);
 		this.lastInstruction = page.words[pageOffset];
 		if (executionObserver) {
@@ -1466,92 +1366,90 @@ export class CPU {
 		}
 	}
 
-	public getDebugState(): {
-		image: Blua32ImageLayout | null;
-		slot: ExecutionDomainId;
-		pc: number;
-		instr: number;
-		registers: Value[];
-	} {
-		const frame = this.frames[this.frames.length - 1];
-		if (!frame) {
-			return {
-				image: this.activeExecutionImage.layout,
-				slot: this.activeExecutionImage.executionDomainId,
-				pc: this.lastPc,
-				instr: this.lastInstruction,
-				registers: [],
-			};
-		}
-		const registers = this.debugRegistersScratch;
-		frame.registers.copyTo(registers, frame.top);
-		return {
-			image: frame.functionRecord.image.layout,
-			slot: frame.functionRecord.image.executionDomainId,
-			pc: this.lastPc,
-			instr: this.lastInstruction,
-			registers,
-		};
+	public readFrameExecutionDomain(frameIndex: number): ExecutionDomainId {
+		return this.frames[frameIndex].functionRecord.image.executionDomainId;
 	}
 
-	public getCallStack(): ReadonlyArray<CpuCallStackEntry> {
-		const frames = this.frames;
-		const stack = new Array<CpuCallStackEntry>(frames.length);
-		const topIndex = frames.length - 1;
-		for (let index = 0; index < frames.length; index += 1) {
-			const frame = frames[index];
-			const pc = index === topIndex ? this.lastPc : frames[index + 1].callSitePc;
-			stack[index] = {
-				functionAddress: frame.functionAddress,
-				functionIndex: frame.functionRecord.index,
-				slot: frame.functionRecord.image.executionDomainId,
-				textAddress: frame.functionRecord.image.layout.header.textAddress,
-				pc,
-			};
-		}
-		return stack;
+	public readLastExecutionDomain(): ExecutionDomainId {
+		return this.lastExecutionDomainId;
 	}
 
-	public snapshotCallStack(): CpuFrameSnapshot[] {
-		const frames = this.frames;
-		const topIndex = frames.length - 1;
-		const result: CpuFrameSnapshot[] = [];
-		for (let index = 0; index < frames.length; index += 1) {
-			const frame = frames[index];
-			const pc = index === topIndex ? this.lastPc : frames[index + 1].callSitePc;
-			const registers: Value[] = new Array(frame.functionRecord.maxStack);
-			for (let r = 0; r < frame.functionRecord.maxStack; r += 1) {
-				registers[r] = frame.registers.get(r);
-			}
-			result.push({
-				functionAddress: frame.functionAddress,
-				functionIndex: frame.functionRecord.index,
-				slot: frame.functionRecord.image.executionDomainId,
-				textAddress: frame.functionRecord.image.layout.header.textAddress,
-				pc,
-				registers,
-			});
-		}
-		return result;
+	public readFrameFunctionAddress(frameIndex: number): number {
+		return this.frames[frameIndex].functionAddress;
+	}
+
+	public readFramePc(frameIndex: number): number {
+		return this.frames[frameIndex].pc;
+	}
+
+	public readFrameCallSitePc(childFrameIndex: number): number {
+		return this.frames[childFrameIndex].callSitePc;
+	}
+
+	public isExceptionFrame(frameIndex: number): boolean {
+		return this.frames[frameIndex].isExceptionFrame;
+	}
+
+	public isNonMaskableExceptionFrame(frameIndex: number): boolean {
+		return this.frames[frameIndex].isNonMaskableExceptionFrame;
+	}
+
+	public getFrameRegisterCount(frameIndex: number): number {
+		return this.frames[frameIndex].top;
 	}
 
 	public readFrameRegister(frameIndex: number, registerIndex: number): Value {
-		const frame = this.frames[frameIndex];
-		return frame.registers.get(registerIndex);
+		return this.frames[frameIndex].registers.get(registerIndex);
+	}
+
+	public getFrameUpvalueCount(frameIndex: number): number {
+		return this.frames[frameIndex].closure.upvalues.length;
 	}
 
 	public readFrameUpvalue(frameIndex: number, upvalueIndex: number): Value {
-		const frame = this.frames[frameIndex];
-		const upvalue = frame.closure.upvalues[upvalueIndex];
-		if (upvalue.open) {
-			return upvalue.frame.registers.get(upvalue.index);
-		}
-		return upvalue.value;
+		return this.readUpvalue(this.frames[frameIndex].closure.upvalues[upvalueIndex]);
 	}
 
-	public hasFrameUpvalue(frameIndex: number, upvalueIndex: number): boolean {
+	public readEpcWord(): number {
+		return this.epcWord;
+	}
+
+	public writeEpcWord(value: number): void {
+		this.epcWord = value;
+	}
+
+	public readNmiReturnEpcWord(): number {
+		return this.nmiReturnEpcWord;
+	}
+
+	public writeNmiReturnEpcWord(value: number): void {
+		this.nmiReturnEpcWord = value;
+	}
+
+	public writeFrameExecution(
+		frameIndex: number,
+		executionDomainId: ExecutionDomainId,
+		functionAddress: number,
+		pc: number,
+	): void {
+		const image = this.executionImageForDomain(executionDomainId)!;
+		const functionRecord = this.functionRecordInImage(image, functionAddress)!;
 		const frame = this.frames[frameIndex];
-		return frame.closure.upvalues[upvalueIndex] !== undefined;
+		if (functionRecord.maxStack > frame.stackCapacity) {
+			this.ensureRegisterCapacity(frame, functionRecord.maxStack - 1);
+		}
+		if (functionRecord.staticClosure && functionRecord.upvalues.length === 0) {
+			frame.closure = image.staticClosures[functionRecord.index];
+		} else {
+			frame.closure.functionAddress = functionRecord.address;
+		}
+		frame.functionAddress = functionRecord.address;
+		frame.functionRecord = functionRecord;
+		frame.pc = pc;
+	}
+
+	public writeFrameCallSitePc(childFrameIndex: number, pc: number): void {
+		this.frames[childFrameIndex].callSitePc = pc;
 	}
 
 	public setGlobalByKey(key: StringValue, value: Value): void {
@@ -3156,6 +3054,7 @@ export class CPU {
 			lastReturnValues,
 			objects,
 			openUpvalues,
+			lastExecutionDomainId: this.lastExecutionDomainId,
 			lastPc: this.lastPc,
 			lastInstruction: this.lastInstruction,
 			instructionBudgetRemaining: this.instructionBudgetRemaining,
@@ -3345,6 +3244,7 @@ export class CPU {
 		for (let index = 0; index < state.lastReturnValues.length; index += 1) {
 			this.lastReturnValues[index] = restoreValue(state.lastReturnValues[index]);
 		}
+		this.lastExecutionDomainId = state.lastExecutionDomainId;
 		this.lastPc = state.lastPc;
 		this.lastInstruction = state.lastInstruction;
 		this.instructionBudgetRemaining = state.instructionBudgetRemaining;

@@ -2,6 +2,7 @@ import { decodeBinaryWithPropTable, encodeBinaryWithPropTable, requireObject, re
 import { IO_DMA_CHANNEL_COUNT, SYS_PRINT_BUFFER_BYTES } from '../../bus/io';
 import type { MachineSaveState } from '../../save_state';
 import type { CpuFrameState, CpuObjectState, CpuProtectedCallState, CpuRootValueState, CpuRuntimeState, CpuValueState } from '../../cpu/cpu';
+import type { ExecutionDomainId } from '../../cpu/execution_address_space';
 import type { BuiltinFunctionId } from '../../cpu/value';
 import type { IrqControllerState } from '../../devices/irq/save_state';
 import type { AudioControllerState } from '../../devices/audio/save_state';
@@ -1548,6 +1549,7 @@ function encodeCpuRuntimeState(state: CpuRuntimeState): CpuRuntimeState {
 		lastReturnValues: encodeVector(state.lastReturnValues, encodeCpuValueState),
 		objects: encodeVector(state.objects, encodeCpuObjectState),
 		openUpvalues: encodeVector(state.openUpvalues, (value) => value),
+		lastExecutionDomainId: state.lastExecutionDomainId,
 		lastPc: state.lastPc,
 		lastInstruction: state.lastInstruction,
 		instructionBudgetRemaining: state.instructionBudgetRemaining,
@@ -1617,6 +1619,12 @@ function decodeCpuRuntimeState(value: unknown, label: string): CpuRuntimeState {
 			'cpuState.openUpvalues',
 			(entry) => entry as number,
 		),
+		lastExecutionDomainId: requireObjectKey(
+			object,
+			'lastExecutionDomainId',
+			label,
+			'cpuState.lastExecutionDomainId',
+		) as ExecutionDomainId,
 		lastPc: requireObjectKey(object, 'lastPc', label, 'cpuState.lastPc') as number,
 		lastInstruction: requireObjectKey(object, 'lastInstruction', label, 'cpuState.lastInstruction') as number,
 		instructionBudgetRemaining: requireObjectKey(object, 'instructionBudgetRemaining', label, 'cpuState.instructionBudgetRemaining') as number,

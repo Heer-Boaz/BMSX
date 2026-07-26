@@ -2183,23 +2183,7 @@
 				"setGlobal"
 			],
 			"reason": "runtime_lifecycle_and_external_closure_method_contract",
-			"compare_public": true,
-			"cpp_exclusions": [
-				{
-					"name": "handleLuaError",
-					"reason": "cpp_libretro_runtime_publishes_host_faults_directly_ts_ide_owns_fault_presentation_outside_machine_runtime"
-				},
-				{
-					"name": "setBlua32MediaSymbols",
-					"reason": "cpp_has_no_separate_ide_layer_so_runtime_retains_debug_symbols_directly_for_its_own_crash_logging_ts_ide_owns_the_equivalent_cache_outside_machine_runtime"
-				}
-			]
-		}
-	],
-	"cpp_missing_ts_exclusions": [
-		{
-			"cpp": "machine/cpp/machine/runtime/debug.cpp",
-			"reason": "C++ runtime logs native startup faults internally; TypeScript host/IDE fault presentation lives under ide/workbench/runtime_errors.ts and must not be mirrored back into machine runtime."
+			"compare_public": true
 		}
 	]
 }

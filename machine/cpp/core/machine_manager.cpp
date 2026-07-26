@@ -327,16 +327,24 @@ bool MachineManager::bootSystemFirmware() {
 	rt.resetForSystemBoot();
 	m_screen.reset();
 	refreshRenderSurfaces();
-	Blua32MediaSymbols symbols;
-	symbols.system = loadBlua32SymbolsImage(m_system_rom_image);
+	m_systemBlua32Layout = decodeBlua32RomImage(
+		m_system_rom_image.bytes,
+		SYSTEM_ROM_BASE
+	);
+	m_blua32MediaSymbols = {};
+	m_blua32MediaSymbols.system = loadBlua32SymbolsImage(m_system_rom_image);
+	m_cartridgeBlua32Layouts = {};
 	for (u32 slot = 0; slot < CARTRIDGE_SLOT_COUNT; ++slot) {
 		const RomImage& image = m_cartridge_slots[slot].image;
 		if (!image.bytes.empty()) {
-			symbols.cartridgeSlots[slot] = loadBlua32SymbolsImage(image);
+			m_cartridgeBlua32Layouts[slot] = decodeBlua32RomImage(
+				image.bytes,
+				CART_ROM_BASE
+			);
+			m_blua32MediaSymbols.cartridgeSlots[slot] = loadBlua32SymbolsImage(image);
 		}
 	}
 	rt.boot();
-	rt.setBlua32MediaSymbols(std::move(symbols));
 	flushSystemOutput(rt);
 	return true;
 }
@@ -423,6 +431,9 @@ void MachineManager::unloadRom() {
 	}
 	m_runtime.reset();
 	m_cartridge_media = {};
+	m_systemBlua32Layout.reset();
+	m_cartridgeBlua32Layouts = {};
+	m_blua32MediaSymbols = {};
 	for (LoadedCartridgeSlot& slot : m_cartridge_slots) {
 		slot.clear();
 	}

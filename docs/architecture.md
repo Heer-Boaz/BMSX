@@ -730,15 +730,23 @@ ROM build has no previous lineage and emits a compact table.
 
 The tooling sidecar maps only compatible sequence points into the revised text.
 Closure addresses do not move and the CPU does not traverse or rewrite the Lua
-heap. Compatible active continuations receive the new physical PC, function
-record and register capacity. Unmatched active continuations continue in
-retained old development-tail bytes. The CPU fetch path remains the ordinary
-physical-address path and gains no authoring-time branch, lookup, parser, or
-allocation. Those retained bytes belong only to the live IDE session and are
-not save-state payload. A save captured with such a continuation retains its raw
-function-record address and PC; restore reconnects both to the currently
-inserted ROM revision, exactly like any other physical ROM address, and never
-resurrects an earlier development tail.
+heap. Before the ROM owner installs any rebuilt bytes, IDE tooling walks the
+suspended CPU through scalar physical-state primitives and proves a complete
+relocation for every active frame function address and continuation PC, every
+child-frame callsite in its parent execution domain, the active exception
+`EPC`, a nested NMI return `EPC`, and the latched instruction
+domain/PC/word triple. A missing map rejects the edit before any media or CPU
+state write.
+
+After that proof, the ROM owner installs the rebuilt physical media, the CPU
+reloads the affected ordinary execution domains, and IDE tooling applies the
+precomputed raw frame and latch words. Compatible active frames bind to the new
+physical function records and grow register storage when required. The CPU
+fetch path remains the ordinary physical-address path and gains no
+authoring-time branch, source revision, linker baseline, lookup, parser, or
+allocation. No old executable image or development-tail buffer remains an
+execution owner. Save-state retains only the current raw machine state and
+restores it against the media inserted at restore time.
 
 Hot Resume does not perform a cold boot, run the startup vector, section
 initialization, static module initialization, or `new_game`. It reruns `init`
@@ -834,6 +842,13 @@ rompacker, TOC and host do not maintain a second module-name or attribute list.
   inside an executing instruction. Scheduler-aware external execution owns its
   own ordinary CPU slices and device deadlines instead of crossing an APU,
   GPU, DMA, or IRQ edge on a nested host stack.
+- Emulator tooling may inspect or edit a suspended CPU through allocation-free
+  scalar primitives for raw frame domains, function-record addresses,
+  continuation and callsite PCs, exception-frame flags, live registers,
+  resolved upvalues, the last fetched instruction's raw domain/PC/word latches,
+  and exception-return latches. The CPU does not allocate a debug snapshot,
+  derive function indexes or source locations, format a stack trace, retain
+  symbols, or know why tooling writes those physical words.
 - The frame scheduler owns CPU/device advancement. Each accepted host delta is
   granted once as exact rational CPU cycles, with both the fractional remainder
   and unused whole-cycle carry retained; PCRTC frequency or `SINT` never becomes

@@ -34,4 +34,3 @@ horen niet in deze lijst.
 | --- | --- |
 | `GX-SW-01` | Een profiel op representatieve low-end ARM-hardware een concrete software-rasterizerhotspot aanwijst. |
 | `BIOS-TERM-EXT-01` | Er een concrete behoefte is en de command-, call/return- en terminal-output-ABI voor een door firmware geselecteerde developer-cartridge is ontworpen. |
-| `IDE-HR-01` | De fysieke BLua32-kern is afgerond; verplaats dan linker-baselines, revisiesymbolen en PC-relocatie volledig naar IDE/debugtooling zonder heap, globals, RAM, devices, audio of de bestaande herhaalde Hot-Resume-flow te verliezen. |
