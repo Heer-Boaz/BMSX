@@ -21,6 +21,7 @@ void require(bool condition, const char* message) {
 struct CartridgeHarness {
 	bmsx::Memory memory;
 	bmsx::IrqController irq;
+	bmsx::ExecutionAddressSpace executionAddressSpace;
 	bmsx::CPU cpu;
 	bmsx::DeviceScheduler scheduler;
 	bmsx::DmaController dma;
@@ -28,7 +29,8 @@ struct CartridgeHarness {
 	explicit CartridgeHarness(const bmsx::CartridgeSlotMediaPair& slots)
 		: memory(bmsx::MemoryInit{ {}, slots })
 		, irq(memory)
-		, cpu(memory, irq)
+		, executionAddressSpace(memory)
+		, cpu(memory, irq, executionAddressSpace)
 		, scheduler(cpu)
 		, dma(memory, cpu, irq, scheduler) {
 		memory.cartridgeController().connect(memory, irq, dma);

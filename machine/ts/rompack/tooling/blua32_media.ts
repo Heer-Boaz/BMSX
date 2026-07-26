@@ -7,7 +7,7 @@ import {
 	decodeBlua32SymbolsImage,
 	type Blua32SymbolsImage,
 } from './blua32_symbols';
-import type { ExecutionDomainId } from '../../machine/cpu/execution_address_space';
+import type { ExecutionDomainId } from '../../machine/execution_address_space';
 import type { RuntimeRomLayer } from '../loader';
 import type { RawRomSource } from '../source';
 

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { AcceptedInterruptKind, CPU, OpCode, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { Table } from '../../machine/ts/machine/cpu/table';
 import { BuiltinFunctionId, EMPTY_CALL_ARGS, createBuiltinFunction, StringValue, type Value } from '../../machine/ts/machine/cpu/value';
@@ -747,8 +748,9 @@ return wait_cart
 	const linked = linkTestBlua32Pair(system, cart);
 	const memory = new Memory({ systemRom: linked.systemRomBytes, cartridgeSlots: cartridgeSlots(linked.cartRomBytes) });
 	const irqController = new IrqController(memory);
-	const cpu = new CPU(memory, irqController);
-	cpu.mountExecutionImages();
+	const executionAddressSpace = new ExecutionAddressSpace(memory);
+	const cpu = new CPU(memory, irqController, executionAddressSpace);
+	cpu.resetExecutionImages(executionAddressSpace.reset());
 	cpu.start(linked.systemVectors.startupFunctionAddress, EMPTY_CALL_ARGS, CPU_STATUS_SYSTEM_ENTRY);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	const systemWaiter = cpu.lastReturnValues[0] as Closure;
@@ -920,8 +922,9 @@ halt_until_irq
 		cartridgeSlots: cartridgeSlots(linked.cartRomBytes),
 	});
 	const irqController = new IrqController(memory);
-	const cpu = new CPU(memory, irqController);
-	cpu.mountExecutionImages();
+	const executionAddressSpace = new ExecutionAddressSpace(memory);
+	const cpu = new CPU(memory, irqController, executionAddressSpace);
+	cpu.resetExecutionImages(executionAddressSpace.reset());
 	cpu.start(linked.cartVectors.startupFunctionAddress, EMPTY_CALL_ARGS, CPU_STATUS_CART_ENTRY);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
 	const interruptedFrameDepth = cpu.getFrameDepth();
@@ -1145,8 +1148,9 @@ cross_image_stack.caller()
 		systemRom: linked.systemRomBytes,
 		cartridgeSlots: cartridgeSlots(linked.cartRomBytes),
 	});
-	const cpu = new CPU(memory, new IrqController(memory));
-	cpu.mountExecutionImages();
+	const executionAddressSpace = new ExecutionAddressSpace(memory);
+	const cpu = new CPU(memory, new IrqController(memory), executionAddressSpace);
+	cpu.resetExecutionImages(executionAddressSpace.reset());
 
 	cpu.start(linked.cartVectors.startupFunctionAddress, EMPTY_CALL_ARGS, CPU_STATUS_CART_ENTRY);
 	assert.equal(cpu.runUntilDepth(0, 10_000), RunResult.Halted);
@@ -1499,7 +1503,7 @@ test('CPU execution stops at the device deadline that activates GPUREAD', () => 
 		functionIds: ['gpu_read_deadline'],
 	});
 	machine.memory.installSystemRom(image.romBytes);
-	cpu.mountExecutionImages();
+	cpu.resetExecutionImages(machine.executionAddressSpace.reset());
 	cpu.start(image.vectors.startupFunctionAddress);
 	machine.gxGpu.writeGp0(GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24);
 	machine.gxGpu.writeGp0(0);

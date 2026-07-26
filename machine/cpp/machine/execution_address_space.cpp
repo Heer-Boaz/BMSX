@@ -1,7 +1,9 @@
-#include "machine/cpu/execution_address_space.h"
+#include "machine/execution_address_space.h"
 
 #include "machine/memory/map.h"
 #include "machine/memory/memory.h"
+
+#include <utility>
 
 namespace bmsx {
 
@@ -15,7 +17,41 @@ std::optional<int> ExecutionAddressSpace::domainIdOnBus(u32 address) const {
 	return static_cast<int>(m_memory.cartridgeController().selectedSlot());
 }
 
-std::optional<Blua32DecodedExecutionImage> ExecutionAddressSpace::loadDomain(
+Blua32DecodedExecutionImage ExecutionAddressSpace::reset() {
+	m_resolvedDomainMask = 0;
+	std::optional<Blua32DecodedExecutionImage> systemImage =
+		decodeDomain(SYSTEM_EXECUTION_DOMAIN_ID);
+	if (!systemImage) {
+		throw BMSX_RUNTIME_ERROR("System ROM has no BLua32 executable image.");
+	}
+	m_resolvedDomainMask = 1;
+	return std::move(*systemImage);
+}
+
+std::optional<Blua32DecodedExecutionImage> ExecutionAddressSpace::resolveDomain(
+	int executionDomainId
+) {
+	std::optional<Blua32DecodedExecutionImage> image = decodeDomain(executionDomainId);
+	if (image) {
+		m_resolvedDomainMask |= static_cast<uint8_t>(1u << (executionDomainId + 1));
+	}
+	return image;
+}
+
+std::optional<Blua32DecodedExecutionImage> ExecutionAddressSpace::reloadDomain(
+	int executionDomainId
+) const {
+	if ((m_resolvedDomainMask & static_cast<uint8_t>(1u << (executionDomainId + 1))) == 0u) {
+		return {};
+	}
+	std::optional<Blua32DecodedExecutionImage> image = decodeDomain(executionDomainId);
+	if (!image) {
+		throw BMSX_RUNTIME_ERROR("Active execution domain has no BLua32 executable image.");
+	}
+	return image;
+}
+
+std::optional<Blua32DecodedExecutionImage> ExecutionAddressSpace::decodeDomain(
 	int executionDomainId
 ) const {
 	const u32 romBaseAddress = executionDomainId == SYSTEM_EXECUTION_DOMAIN_ID

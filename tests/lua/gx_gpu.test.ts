@@ -244,6 +244,7 @@ import {
 } from '../../machine/ts/machine/devices/gx/gp0';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
+import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
@@ -588,7 +589,7 @@ function gxGpuVramDigest(bytes: Uint8Array): number {
 function createGpu(): { memory: Memory; cpu: CPU; scheduler: DeviceScheduler; dma: DmaController; gpu: GxGpu } {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
 	const irq = new IrqController(memory);
-	const cpu = new CPU(memory, irq);
+	const cpu = new CPU(memory, irq, new ExecutionAddressSpace(memory));
 	const scheduler = new DeviceScheduler(cpu);
 	const dma = new DmaController(memory, cpu, irq, scheduler);
 	const gpu = new GxGpu(memory, cpu, irq, scheduler, dma);

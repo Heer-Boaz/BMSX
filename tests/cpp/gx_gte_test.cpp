@@ -43,6 +43,7 @@ struct GteHarness {
 	bmsx::test::Blua32TestRom systemRom;
 	bmsx::Memory memory;
 	bmsx::IrqController irq;
+	bmsx::ExecutionAddressSpace executionAddressSpace;
 	bmsx::CPU cpu;
 	bmsx::DeviceScheduler scheduler;
 	bmsx::GxGte gte;
@@ -58,10 +59,11 @@ struct GteHarness {
 		))
 		, memory(bmsx::MemoryInit{systemRom.bytes, bmsx::test::cartridgeSlots()})
 		, irq(memory)
-		, cpu(memory, irq)
+		, executionAddressSpace(memory)
+		, cpu(memory, irq, executionAddressSpace)
 		, scheduler(cpu)
 		, gte(memory, cpu, scheduler) {
-		cpu.mountExecutionImages();
+		cpu.resetExecutionImages(executionAddressSpace.reset());
 	}
 };
 

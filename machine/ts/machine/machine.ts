@@ -5,6 +5,7 @@ import {
 	IO_SYS_HOST_FAULT_STAGE,
 } from './bus/io';
 import { CPU } from './cpu/cpu';
+import { ExecutionAddressSpace } from './execution_address_space';
 import { AudioController } from './devices/audio/controller';
 import type { CartridgeController } from './devices/cartridge/controller';
 import { DmaController } from './devices/dma/controller';
@@ -37,6 +38,7 @@ export type MachineTiming = {
 
 export class Machine {
 	public readonly cpu: CPU;
+	public readonly executionAddressSpace: ExecutionAddressSpace;
 	public readonly scheduler: DeviceScheduler;
 	public readonly irqController: IrqController;
 	public readonly systemController: SystemController;
@@ -56,7 +58,8 @@ export class Machine {
 	) {
 		this.cartridgeController = this.memory.cartridgeController;
 		this.irqController = new IrqController(this.memory);
-		this.cpu = new CPU(this.memory, this.irqController);
+		this.executionAddressSpace = new ExecutionAddressSpace(this.memory);
+		this.cpu = new CPU(this.memory, this.irqController, this.executionAddressSpace);
 		this.scheduler = new DeviceScheduler(this.cpu);
 		this.audioOutput = new ApuOutputMixer();
 		this.dmaController = new DmaController(this.memory, this.cpu, this.irqController, this.scheduler);

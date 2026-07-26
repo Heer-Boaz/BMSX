@@ -28,6 +28,7 @@ import {
 	IRQ_CARTRIDGE_SLOT1,
 } from '../../machine/ts/machine/bus/io';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
+import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import {
 	CARTRIDGE_BOARD_MAILBOX,
 	CARTRIDGE_BOARD_RAM,
@@ -73,7 +74,7 @@ function createHarness(cartridgeSlots: CartridgeSlotMediaPair): CartridgeHarness
 		cartridgeSlots,
 	});
 	const irq = new IrqController(memory);
-	const cpu = new CPU(memory, irq);
+	const cpu = new CPU(memory, irq, new ExecutionAddressSpace(memory));
 	const scheduler = new DeviceScheduler(cpu);
 	const dma = new DmaController(memory, cpu, irq, scheduler);
 	memory.cartridgeController.connect(memory, irq, dma);

@@ -1,7 +1,7 @@
 import { convertToError } from '../language/lua/interpreter/value';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { EMPTY_CALL_ARGS } from '../../machine/ts/machine/cpu/value';
-import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/machine/cpu/execution_address_space';
+import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/machine/execution_address_space';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { clearOverlayFrame } from '../../machine/ts/render/host_overlay/overlay_queue';
 import {
@@ -78,15 +78,19 @@ export function hotResume(
 			}
 
 			const cpu = runtime.machine.cpu;
+			const executionAddressSpace = runtime.machine.executionAddressSpace;
 			const relocation = buildHotResumeRelocation(cpu, revisions);
 			installBlua32Media(sources, runtime, rebuilt);
 
 			if (rebuilt.system !== null) {
-				cpu.reloadExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID);
+				cpu.replaceExecutionImage(executionAddressSpace.reloadDomain(SYSTEM_EXECUTION_DOMAIN_ID)!);
 			}
 			for (const slot of CARTRIDGE_RESOURCE_DOMAINS) {
 				if (rebuilt.cartridgeSlots[slot] !== null) {
-					cpu.reloadExecutionDomain(slot);
+					const image = executionAddressSpace.reloadDomain(slot);
+					if (image) {
+						cpu.replaceExecutionImage(image);
+					}
 				}
 			}
 			applyHotResumeRelocation(cpu, relocation);

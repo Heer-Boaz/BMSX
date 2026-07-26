@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import {
 	CPU,
 } from '../../machine/ts/machine/cpu/cpu';
+import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { Closure } from '../../machine/ts/machine/cpu/closure';
 import { Table } from '../../machine/ts/machine/cpu/table';
 import {
@@ -25,7 +26,7 @@ import { runCompiledLua } from './cpu_test_harness';
 
 test('runtime values expose one numeric representation tag', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
-	const cpu = new CPU(memory, new IrqController(memory));
+	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
 	const stringValue = StringValue.get(cpu.stringPool.intern('tagged'));
 	const table = cpu.createTable(0, 0);
 	const closure = new Closure(0x1000, [], 0);
@@ -75,7 +76,7 @@ test('Table stores sparse unsigned integer keys in the hash part', () => {
 
 test('Table hashes runtime object keys from value-owned identity', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
-	const cpu = new CPU(memory, new IrqController(memory));
+	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
 	const table = cpu.createTable(0, 4);
 	const tableKey = cpu.createTable(0, 0);
 	const nativeFnKey = cpu.createNativeFunction('key_fn', () => {});
@@ -122,7 +123,7 @@ return -1 % 0x100000000, (0x84222325 ~ 0x61) % 0x100000000
 
 test('string.byte nil position uses default', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
-	const cpu = new CPU(memory, new IrqController(memory));
+	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
 	const stringByteId = BuiltinFunctionId.StringByte;
 
 	const out: Value[] = [];

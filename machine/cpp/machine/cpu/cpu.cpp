@@ -246,11 +246,15 @@ CPU::NativeLocalRootsScope::~NativeLocalRootsScope() {
 	}
 }
 
-CPU::CPU(Memory& memory, IrqController& irqController)
+CPU::CPU(
+	Memory& memory,
+	IrqController& irqController,
+	ExecutionAddressSpace& executionAddressSpace
+)
 	: m_protectedCallContinuations(MAX_POOLED_FRAMES)
 	, m_memory(memory)
 	, m_irqController(irqController)
-	, m_executionAddressSpace(memory)
+	, m_executionAddressSpace(executionAddressSpace)
 	, m_stringPool(true)
 	, m_heap(m_stringPool) {
 	m_executionImages.reserve(3);
@@ -326,16 +330,11 @@ Closure* CPU::createTrackedClosure(
 	return closure;
 }
 
-void CPU::mountExecutionImages() {
+void CPU::resetExecutionImages(Blua32DecodedExecutionImage&& systemImage) {
 	m_staticClosuresByAddress.clear();
 	m_executionImages.clear();
-	std::optional<Blua32DecodedExecutionImage> systemImage =
-		m_executionAddressSpace.loadDomain(SYSTEM_EXECUTION_DOMAIN_ID);
-	if (!systemImage) {
-		throw BMSX_RUNTIME_ERROR("System ROM has no BLua32 executable image.");
-	}
 	std::unique_ptr<Blua32ExecutionImage> activatedSystemImage =
-		activateExecutionImage(std::move(*systemImage));
+		activateExecutionImage(std::move(systemImage));
 	m_systemImage = activatedSystemImage.get();
 	m_executionImages.push_back(std::move(activatedSystemImage));
 	m_systemExceptionFunctionAddress = m_systemImage->boot.exceptionFunctionAddress;
@@ -415,14 +414,21 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 	return image;
 }
 
-Blua32ExecutionImage* CPU::executionImageForDomain(int executionDomainId) {
+Blua32ExecutionImage* CPU::residentExecutionImage(int executionDomainId) const {
 	for (const std::unique_ptr<Blua32ExecutionImage>& image : m_executionImages) {
 		if (image->executionDomainId == executionDomainId) {
 			return image.get();
 		}
 	}
+	return nullptr;
+}
+
+Blua32ExecutionImage* CPU::executionImageForDomain(int executionDomainId) {
+	if (Blua32ExecutionImage* image = residentExecutionImage(executionDomainId)) {
+		return image;
+	}
 	std::optional<Blua32DecodedExecutionImage> decodedImage =
-		m_executionAddressSpace.loadDomain(executionDomainId);
+		m_executionAddressSpace.resolveDomain(executionDomainId);
 	if (!decodedImage) {
 		return nullptr;
 	}
@@ -431,6 +437,25 @@ Blua32ExecutionImage* CPU::executionImageForDomain(int executionDomainId) {
 	Blua32ExecutionImage* activatedImage = image.get();
 	m_executionImages.push_back(std::move(image));
 	return activatedImage;
+}
+
+void CPU::replaceExecutionImage(Blua32DecodedExecutionImage&& decodedImage) {
+	auto imageEntry = m_executionImages.begin();
+	while ((*imageEntry)->executionDomainId != decodedImage.executionDomainId) {
+		++imageEntry;
+	}
+	Blua32ExecutionImage* previousImage = imageEntry->get();
+	std::unique_ptr<Blua32ExecutionImage> image =
+		activateExecutionImage(std::move(decodedImage));
+	Blua32ExecutionImage* activatedImage = image.get();
+	*imageEntry = std::move(image);
+	if (activatedImage->executionDomainId == SYSTEM_EXECUTION_DOMAIN_ID) {
+		m_systemImage = activatedImage;
+		m_systemExceptionFunctionAddress = activatedImage->boot.exceptionFunctionAddress;
+	}
+	if (m_activeExecutionImage == previousImage) {
+		m_activeExecutionImage = activatedImage;
+	}
 }
 
 Closure* CPU::staticClosureAtAddress(u32 address) {

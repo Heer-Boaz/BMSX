@@ -18,6 +18,7 @@ import {
 	CPU,
 	RunResult,
 } from '../../machine/ts/machine/cpu/cpu';
+import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { describeBlua32InstructionAtPc } from '../../machine/ts/rompack/tooling/disassembler';
 import { INSTRUCTION_BYTES, readInstructionWord } from '../../machine/ts/machine/cpu/instruction_format';
 import { OpCode } from '../../machine/ts/machine/cpu/opcode_info';
@@ -357,12 +358,13 @@ export function linkTestBlua32Pair(
 
 export function createTestSystemCpu(
 	finalized: TestBlua32Image,
-): { cpu: CPU; memory: Memory; irqController: IrqController } {
+): { cpu: CPU; memory: Memory; irqController: IrqController; executionAddressSpace: ExecutionAddressSpace } {
 	const memory = new Memory({ systemRom: finalized.romBytes, cartridgeSlots: cartridgeSlots() });
 	const irqController = new IrqController(memory);
-	const cpu = new CPU(memory, irqController);
-	cpu.mountExecutionImages();
-	return { cpu, memory, irqController };
+	const executionAddressSpace = new ExecutionAddressSpace(memory);
+	const cpu = new CPU(memory, irqController, executionAddressSpace);
+	cpu.resetExecutionImages(executionAddressSpace.reset());
+	return { cpu, memory, irqController, executionAddressSpace };
 }
 
 export function runCompiledTestSystem(compiled: CompiledProgram, cycleBudget: number): CPU {

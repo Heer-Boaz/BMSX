@@ -20,7 +20,7 @@
 #include "machine/cpu/blua32_image.h"
 #include "machine/cpu/call_state.h"
 #include "machine/cpu/closure.h"
-#include "machine/cpu/execution_address_space.h"
+#include "machine/execution_address_space.h"
 #include "machine/cpu/errors.h"
 #include "machine/cpu/instruction_format.h"
 #include "machine/cpu/execution_image.h"
@@ -239,9 +239,14 @@ private:
 
 class CPU {
 public:
-	CPU(Memory& memory, IrqController& irqController);
+	CPU(
+		Memory& memory,
+		IrqController& irqController,
+		ExecutionAddressSpace& executionAddressSpace
+	);
 
-	void mountExecutionImages();
+	void resetExecutionImages(Blua32DecodedExecutionImage&& systemImage);
+	void replaceExecutionImage(Blua32DecodedExecutionImage&& decodedImage);
 	void clearExecutionEnvironment();
 	u32 systemStartupFunctionAddress() const { return m_systemImage->boot.startupFunctionAddress; }
 	bool isCartridgeExecutionActive() const { return m_activeExecutionImage->executionDomainId >= 0; }
@@ -368,6 +373,7 @@ private:
 	void runHousekeeping();
 	std::vector<u32> registerGlobalNames(const std::vector<std::string>& names, bool system);
 	std::unique_ptr<Blua32ExecutionImage> activateExecutionImage(Blua32DecodedExecutionImage&& decodedImage);
+	Blua32ExecutionImage* residentExecutionImage(int executionDomainId) const;
 	Blua32ExecutionImage* executionImageForDomain(int executionDomainId);
 	void decodeImageText(Blua32ExecutionImage& image);
 	Closure* staticClosureAtAddress(u32 address);
@@ -458,7 +464,7 @@ private:
 	bool m_hostExternalCallActive = false;
 	Memory& m_memory;
 	IrqController& m_irqController;
-	ExecutionAddressSpace m_executionAddressSpace;
+	ExecutionAddressSpace& m_executionAddressSpace;
 	StringPool m_stringPool;
 	GcHeap m_heap;
 	std::unordered_map<u32, Closure> m_staticClosuresByAddress;

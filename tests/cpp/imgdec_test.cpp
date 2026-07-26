@@ -39,6 +39,7 @@ struct ImgDecHarness {
 	std::array<bmsx::u8, 4096u> cartRom{};
 	bmsx::Memory memory;
 	bmsx::IrqController irq;
+	bmsx::ExecutionAddressSpace executionAddressSpace;
 	bmsx::CPU cpu;
 	bmsx::DeviceScheduler scheduler;
 	bmsx::DmaController dma;
@@ -50,7 +51,8 @@ struct ImgDecHarness {
 	ImgDecHarness()
 		: memory(bmsx::MemoryInit{ {}, bmsx::test::cartridgeSlots(cartRom) })
 		, irq(memory)
-		, cpu(memory, irq)
+		, executionAddressSpace(memory)
+		, cpu(memory, irq, executionAddressSpace)
 		, scheduler(cpu)
 		, dma(memory, cpu, irq, scheduler)
 		, geometry(memory, irq, scheduler)

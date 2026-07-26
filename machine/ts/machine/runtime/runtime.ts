@@ -118,14 +118,14 @@ export class Runtime {
 	}
 
 	public boot(): void {
-		this.machine.cpu.mountExecutionImages();
+		this.machine.cpu.resetExecutionImages(this.machine.executionAddressSpace.reset());
 		seedLuaGlobals(this);
 		this.startSystemFirmware();
 	}
 
 	public rebootSystem(): void {
 		this.resetForSystemBoot();
-		this.machine.cpu.mountExecutionImages();
+		this.machine.cpu.resetExecutionImages(this.machine.executionAddressSpace.reset());
 		seedLuaGlobals(this);
 		this.startSystemFirmware();
 	}

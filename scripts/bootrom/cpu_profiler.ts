@@ -1,7 +1,7 @@
 import { BASE_CYCLES, OPCODE_CATEGORY, OPCODE_COUNT, OpCode, getOpcodeName } from '../../machine/ts/machine/cpu/opcode_info';
 import { INSTRUCTION_BYTES } from '../../machine/ts/machine/cpu/instruction_format';
 import type { CPU, CpuExecutionObserver } from '../../machine/ts/machine/cpu/cpu';
-import type { ExecutionDomainId } from '../../machine/ts/machine/cpu/execution_address_space';
+import type { ExecutionDomainId } from '../../machine/ts/machine/execution_address_space';
 import type { SourceRange } from '../../machine/ts/rompack/tooling/blua32_symbols';
 import {
 	blua32ToolingImageForDomain,

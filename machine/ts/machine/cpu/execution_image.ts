@@ -1,6 +1,6 @@
 import type { Blua32FunctionRecord } from './blua32_image';
 import type { Closure } from './closure';
-import type { Blua32DecodedExecutionImage } from './execution_address_space';
+import type { Blua32DecodedExecutionImage } from '../execution_address_space';
 import { OpCode } from './opcode_info';
 import type { Table } from './table';
 import type { Value } from './value';

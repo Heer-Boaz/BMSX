@@ -124,7 +124,7 @@ test('CPU profiler report resolves hot PCs back to opcode and source location', 
 test('CPU profiler starts a new profiling epoch when IDE tooling media changes', () => {
 	const initial = makeProfilerImage();
 	const reloaded = makeReloadedProfilerImage();
-	const { cpu, memory } = createTestSystemCpu(initial);
+	const { cpu, memory, executionAddressSpace } = createTestSystemCpu(initial);
 	const sources = makeProfilerSources(initial);
 	const profilerSession = new CpuProfilerSession(cpu, sources);
 	profilerSession.enable();
@@ -134,7 +134,7 @@ test('CPU profiler starts a new profiling epoch when IDE tooling media changes',
 	assert.equal(profilerSession.snapshot().totalInstructions, 4);
 
 	memory.installSystemRom(reloaded.romBytes);
-	cpu.reloadExecutionDomain(-1);
+	cpu.replaceExecutionImage(executionAddressSpace.reloadDomain(-1)!);
 	sources.currentBlua32Media = {
 		system: { layout: reloaded.image, symbols: reloaded.symbols },
 		cartridgeSlots: [null, null],

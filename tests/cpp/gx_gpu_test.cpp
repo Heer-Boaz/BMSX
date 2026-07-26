@@ -29,6 +29,7 @@ struct GpuHarness {
 	std::array<uint8_t, 1> emptyRom{{0}};
 	bmsx::Memory memory;
 	bmsx::IrqController irq;
+	bmsx::ExecutionAddressSpace executionAddressSpace;
 	bmsx::CPU cpu;
 	bmsx::DeviceScheduler scheduler;
 	bmsx::DmaController dma;
@@ -37,7 +38,8 @@ struct GpuHarness {
 	GpuHarness()
 		: memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, bmsx::test::cartridgeSlots() })
 		, irq(memory)
-		, cpu(memory, irq)
+		, executionAddressSpace(memory)
+		, cpu(memory, irq, executionAddressSpace)
 		, scheduler(cpu)
 		, dma(memory, cpu, irq, scheduler)
 		, gpu(memory, cpu, irq, scheduler, dma) {
@@ -53,6 +55,7 @@ struct CommandBufferDmaHarness {
 	std::array<uint8_t, 1> emptyRom{{0}};
 	bmsx::Memory memory;
 	bmsx::IrqController irq;
+	bmsx::ExecutionAddressSpace executionAddressSpace;
 	bmsx::CPU cpu;
 	bmsx::DeviceScheduler scheduler;
 	bmsx::DmaController dma;
@@ -60,7 +63,8 @@ struct CommandBufferDmaHarness {
 	CommandBufferDmaHarness()
 		: memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, bmsx::test::cartridgeSlots() })
 		, irq(memory)
-		, cpu(memory, irq)
+		, executionAddressSpace(memory)
+		, cpu(memory, irq, executionAddressSpace)
 		, scheduler(cpu)
 		, dma(memory, cpu, irq, scheduler) {
 		memory.cartridgeController().connect(memory, irq, dma);

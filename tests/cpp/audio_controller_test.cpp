@@ -33,6 +33,7 @@ struct AudioHarness {
 	std::array<bmsx::u8, 4> auxiliaryCartRom{{0xffu, 0xffu, 0xffu, 0xffu}};
 	bmsx::Memory memory;
 	bmsx::IrqController irq;
+	bmsx::ExecutionAddressSpace executionAddressSpace;
 	bmsx::CPU cpu;
 	bmsx::DeviceScheduler scheduler;
 	bmsx::ApuOutputMixer output;
@@ -55,7 +56,8 @@ struct AudioHarness {
 				}}
 				: bmsx::test::cartridgeSlots(cartRom)})
 		, irq(memory)
-		, cpu(memory, irq)
+		, executionAddressSpace(memory)
+		, cpu(memory, irq, executionAddressSpace)
 		, scheduler(cpu)
 		, output()
 		, dma(memory, cpu, irq, scheduler)

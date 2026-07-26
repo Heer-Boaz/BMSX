@@ -7,7 +7,7 @@
 
 #include "common/primitives.h"
 #include "machine/cpu/blua32_image.h"
-#include "machine/cpu/execution_address_space.h"
+#include "machine/execution_address_space.h"
 #include "machine/cpu/value.h"
 
 namespace bmsx {

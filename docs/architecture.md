@@ -625,17 +625,20 @@ contains the existing BLua32 instruction words unchanged. `.bss` owns no ROM
 payload.
 
 The emulator consumes those physical bytes directly. `Memory` binds retained
-views into the installed system ROM and both cartridge ROMs. The CPU parses a
-guest-inert media layout for the system ROM and each populated cartridge. It
-activates the system image at reset and activates a cartridge image only when
-execution first targets the currently selected socket. Activation binds
-constant strings, global slots, static closures and dense decoded instruction
-pages. Merely inserting an unexecuted second cartridge therefore cannot consume
-guest string or object identities or change table iteration. A call frame
-retains its physical function-record address and physical PC. Instruction fetch
-subtracts that frame's retained text base and indexes the activated dense
-decoded page. It performs no memory-map classification, TOC lookup, string
-lookup, allocation, parser work or activation check per instruction.
+views into the installed system ROM and both cartridge ROMs. `Machine` owns one
+`ExecutionAddressSpace`, wired directly to `Memory` and borrowed by the CPU. It
+owns executable bus-domain selection and parses a guest-inert media layout only
+when that physical domain is resolved. The CPU takes that decoded layout into
+its execution state: it activates the system image at reset and a cartridge
+image only when execution first targets the currently selected socket.
+Activation binds constant strings, global slots, static closures and dense
+decoded instruction pages. Merely inserting or replacing an unexecuted second
+cartridge therefore cannot consume guest string or object identities or change
+table iteration. A call frame retains its physical function-record address and
+physical PC. Instruction fetch subtracts that frame's retained text base and
+indexes the activated dense decoded page. It performs no memory-map
+classification, TOC lookup, string lookup, allocation, parser work or
+activation check per instruction.
 
 `CLOSURE` resolves its physical record address arithmetically against the
 system or execution-latched cartridge function table. `LOADK` and RK operands
@@ -744,15 +747,16 @@ child-frame callsite in its parent execution domain, the active exception
 domain/PC/word triple. A missing map rejects the edit before any media or CPU
 state write.
 
-After that proof, the ROM owner installs the rebuilt physical media, the CPU
-reloads the affected ordinary execution domains, and IDE tooling applies the
-precomputed raw frame and latch words. Compatible active frames bind to the new
-physical function records and grow register storage when required. The CPU
-fetch path remains the ordinary physical-address path and gains no
-authoring-time branch, source revision, linker baseline, lookup, parser, or
-allocation. No old executable image or development-tail buffer remains an
-execution owner. Save-state retains only the current raw machine state and
-restores it against the media inserted at restore time.
+After that proof, the ROM owner installs the rebuilt physical media. The
+machine-owned execution address space decodes only affected domains that were
+already resolved, the CPU replaces their derived execution state, and IDE
+tooling applies the precomputed raw frame and latch words. Compatible active
+frames bind to the new physical function records and grow register storage when
+required. The CPU fetch path remains the ordinary physical-address path and
+gains no authoring-time branch, source revision, linker baseline, lookup,
+parser, or allocation. No old executable image or development-tail buffer
+remains an execution owner. Save-state retains only the current raw machine
+state and restores it against the media inserted at restore time.
 
 Hot Resume does not perform a cold boot, run the startup vector, section
 initialization, static module initialization, or `new_game`. It reruns `init`

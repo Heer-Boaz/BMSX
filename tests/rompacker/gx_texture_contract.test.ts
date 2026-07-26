@@ -8,6 +8,7 @@ import { test } from 'node:test';
 import { createCanvas } from 'canvas';
 
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { StringValue, createBuiltinFunction } from '../../machine/ts/machine/cpu/value';
 import { CPU_STATUS_SYSTEM_ENTRY } from '../../machine/ts/machine/cpu/cop0';
 import {
@@ -455,10 +456,11 @@ return imgdec
 		assert.deepEqual(Array.from(secondView.previewSections[0].rgba.subarray(0, 4)), [0, 255, 0, 255]);
 
 		const memory = new Memory({ systemRom, cartridgeSlots: cartridgeSlots(rom) });
-		const cpu = new CPU(memory, new IrqController(memory));
+		const executionAddressSpace = new ExecutionAddressSpace(memory);
+		const cpu = new CPU(memory, new IrqController(memory), executionAddressSpace);
 		const cartSymbolsEntry = loaded.entries.find(asset => asset.resid === BLUA32_SYMBOLS_IMAGE_ID)!;
 		const cartSymbols = decodeBlua32SymbolsImage(rom.subarray(cartSymbolsEntry.start, cartSymbolsEntry.end));
-		cpu.mountExecutionImages();
+		cpu.resetExecutionImages(executionAddressSpace.reset());
 		for (let index = 0; index < LUA_BOOT_PRIMITIVES.length; index += 1) {
 			const primitive = LUA_BOOT_PRIMITIVES[index];
 			cpu.setSystemGlobalByKey(

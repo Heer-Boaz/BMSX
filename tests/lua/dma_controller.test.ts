@@ -30,6 +30,7 @@ import {
 	IRQ_DMA1_DONE,
 } from '../../machine/ts/machine/bus/io';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
 import {
 	GX_GPU_COMMAND_FILL_RECTANGLE,
@@ -77,6 +78,7 @@ import { compileLuaSource } from './cpu_test_harness';
 type DmaGpuFixture = {
 	memory: Memory;
 	cpu: CPU;
+	executionAddressSpace: ExecutionAddressSpace;
 	dma: DmaController;
 	gpu: GxGpu;
 	scheduler: DeviceScheduler;
@@ -98,7 +100,8 @@ function createDmaGpuFixture(): DmaGpuFixture {
 		cartridgeSlots: cartridgeSlots(new Uint8Array([0x44, 0x33, 0x22, 0x11, 0x88, 0x77, 0x66, 0x55])),
 	});
 	const irq = new IrqController(memory);
-	const cpu = new CPU(memory, irq);
+	const executionAddressSpace = new ExecutionAddressSpace(memory);
+	const cpu = new CPU(memory, irq, executionAddressSpace);
 	const scheduler = new DeviceScheduler(cpu);
 	const dma = new DmaController(memory, cpu, irq, scheduler);
 	const gpu = new GxGpu(memory, cpu, irq, scheduler, dma);
@@ -109,7 +112,7 @@ function createDmaGpuFixture(): DmaGpuFixture {
 	const smode1Address = gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_SMODE1_LOW);
 	memory.writeMappedU32LE(smode1Address, memory.readMappedU32LE(smode1Address) | GX_GPU_PCRTC_SMODE1_SINT);
 	gpu.onService(0);
-	return { memory, cpu, dma, gpu, scheduler };
+	return { memory, cpu, executionAddressSpace, dma, gpu, scheduler };
 }
 
 test('region-aware DMA charges one RAM burst setup and combines both block sides once', () => {
@@ -676,7 +679,7 @@ test('advancing a DMA port address releases blocked CPU writes after the block',
 
 test('a DMA address write wakes only the CPU store whose endpoint reservation was released', () => {
 	const fixture = createDmaGpuFixture();
-	const { memory, cpu } = fixture;
+	const { memory, cpu, executionAddressSpace } = fixture;
 	const source = DYNAMIC_RAM_BASE + 0x7c0;
 	const replacementReadAddress = DYNAMIC_RAM_BASE + 0x8c0;
 	const replacementWriteAddress = DYNAMIC_RAM_BASE + 0x9c0;
@@ -686,7 +689,7 @@ local gp0<const>: *word = ${IO_GX_GPU_GP0}
 	`);
 	const finalized = linkTestSystemBlua32(compiled);
 	memory.installSystemRom(finalized.romBytes);
-	cpu.mountExecutionImages();
+	cpu.resetExecutionImages(executionAddressSpace.reset());
 	cpu.start(finalized.vectors.startupFunctionAddress);
 
 	programTransfer(memory, source, IO_GX_GPU_GP0, 1, DMA_DISABLED_CONTROL);

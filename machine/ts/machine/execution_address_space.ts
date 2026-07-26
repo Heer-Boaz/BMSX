@@ -4,9 +4,9 @@ import {
 	decodeBlua32Image,
 	type Blua32BootHeader,
 	type Blua32ImageLayout,
-} from './blua32_image';
-import type { Memory, RomByteView } from '../memory/memory';
-import { CART_ROM_BASE, RAM_BASE, SYSTEM_ROM_BASE } from '../memory/map';
+} from './cpu/blua32_image';
+import type { Memory, RomByteView } from './memory/memory';
+import { CART_ROM_BASE, RAM_BASE, SYSTEM_ROM_BASE } from './memory/map';
 
 export const SYSTEM_EXECUTION_DOMAIN_ID = -1;
 export type ExecutionDomainId = -1 | 0 | 1;
@@ -20,6 +20,7 @@ export type Blua32DecodedExecutionImage = {
 const EMPTY_ROM_BYTES = new Uint8Array(0);
 
 export class ExecutionAddressSpace {
+	private resolvedDomainMask = 0;
 	private readonly headerView: RomByteView = {
 		bytes: EMPTY_ROM_BYTES,
 		byteOffset: 0,
@@ -44,7 +45,36 @@ export class ExecutionAddressSpace {
 		return this.memory.cartridgeController.selectedSlot();
 	}
 
-	public loadDomain(executionDomainId: ExecutionDomainId): Blua32DecodedExecutionImage | null {
+	public reset(): Blua32DecodedExecutionImage {
+		this.resolvedDomainMask = 0;
+		const systemImage = this.decodeDomain(SYSTEM_EXECUTION_DOMAIN_ID);
+		if (!systemImage) {
+			throw new Error('System ROM has no BLua32 executable image.');
+		}
+		this.resolvedDomainMask = 1;
+		return systemImage;
+	}
+
+	public resolveDomain(executionDomainId: ExecutionDomainId): Blua32DecodedExecutionImage | null {
+		const image = this.decodeDomain(executionDomainId);
+		if (image) {
+			this.resolvedDomainMask |= 1 << (executionDomainId + 1);
+		}
+		return image;
+	}
+
+	public reloadDomain(executionDomainId: ExecutionDomainId): Blua32DecodedExecutionImage | null {
+		if ((this.resolvedDomainMask & (1 << (executionDomainId + 1))) === 0) {
+			return null;
+		}
+		const image = this.decodeDomain(executionDomainId);
+		if (!image) {
+			throw new Error('Active execution domain has no BLua32 executable image.');
+		}
+		return image;
+	}
+
+	private decodeDomain(executionDomainId: ExecutionDomainId): Blua32DecodedExecutionImage | null {
 		const romBaseAddress = executionDomainId === SYSTEM_EXECUTION_DOMAIN_ID
 			? SYSTEM_ROM_BASE
 			: CART_ROM_BASE;

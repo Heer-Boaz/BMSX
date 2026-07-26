@@ -46,7 +46,7 @@ import {
 	SYSTEM_EXECUTION_DOMAIN_ID,
 	type Blua32DecodedExecutionImage,
 	type ExecutionDomainId,
-} from './execution_address_space';
+} from '../execution_address_space';
 import { MEMORY_ACCESS_KIND_ALIGNMENT_MASKS, MemoryAccessKind } from '../memory/access_kind';
 import { ScratchBuffer } from '../../common/scratchbuffer';
 import { ScratchArrayStack } from '../../common/scratchstack';
@@ -293,7 +293,6 @@ export class CPU {
 	private readonly nativeReturnScratch = new ScratchArrayStack<Value>();
 	private executionObserver: CpuExecutionObserver | null = null;
 	private externalReturnSink: Value[] | null = null;
-	private readonly executionAddressSpace: ExecutionAddressSpace;
 	private readonly executionImages: Blua32ExecutionImage[] = [];
 	private systemImage!: Blua32ExecutionImage;
 	private activeExecutionImage!: Blua32ExecutionImage;
@@ -310,9 +309,12 @@ export class CPU {
 	private stackTop = 0;
 	private nextObjectHashId = 1;
 
-	constructor(memory: Memory, private readonly irqController: IrqController) {
+	constructor(
+		memory: Memory,
+		private readonly irqController: IrqController,
+		private readonly executionAddressSpace: ExecutionAddressSpace,
+	) {
 		this.memory = memory;
-		this.executionAddressSpace = new ExecutionAddressSpace(memory);
 		this.stringPool = new StringPool(true);
 		this.globals = this.createTable(0, 0);
 		this.stringIndexTable = this.createTable(0, 0);
@@ -657,13 +659,9 @@ export class CPU {
 		this.stackTop = 0;
 	}
 
-	public mountExecutionImages(): void {
+	public resetExecutionImages(systemImage: Blua32DecodedExecutionImage): void {
 		this.staticClosuresByAddress.clear();
 		this.executionImages.length = 0;
-		const systemImage = this.executionAddressSpace.loadDomain(SYSTEM_EXECUTION_DOMAIN_ID);
-		if (systemImage === null) {
-			throw new Error('System ROM has no BLua32 executable image.');
-		}
 		this.systemImage = this.activateExecutionImage(systemImage);
 		this.executionImages.push(this.systemImage);
 		this.systemExceptionFunctionAddress = this.systemImage.boot.exceptionFunctionAddress;
@@ -754,14 +752,22 @@ export class CPU {
 		return image;
 	}
 
-	private executionImageForDomain(executionDomainId: ExecutionDomainId): Blua32ExecutionImage | null {
+	private residentExecutionImage(executionDomainId: ExecutionDomainId): Blua32ExecutionImage | null {
 		for (let index = 0; index < this.executionImages.length; index += 1) {
 			const image = this.executionImages[index];
 			if (image.executionDomainId === executionDomainId) {
 				return image;
 			}
 		}
-		const decodedImage = this.executionAddressSpace.loadDomain(executionDomainId);
+		return null;
+	}
+
+	private executionImageForDomain(executionDomainId: ExecutionDomainId): Blua32ExecutionImage | null {
+		const residentImage = this.residentExecutionImage(executionDomainId);
+		if (residentImage) {
+			return residentImage;
+		}
+		const decodedImage = this.executionAddressSpace.resolveDomain(executionDomainId);
 		if (decodedImage === null) {
 			return null;
 		}
@@ -790,25 +796,15 @@ export class CPU {
 		}
 	}
 
-	public reloadExecutionDomain(executionDomainId: ExecutionDomainId): void {
-		let imageIndex = -1;
-		for (let index = 0; index < this.executionImages.length; index += 1) {
-			if (this.executionImages[index].executionDomainId === executionDomainId) {
-				imageIndex = index;
-				break;
-			}
-		}
-		if (imageIndex < 0) {
-			return;
-		}
-		const decodedImage = this.executionAddressSpace.loadDomain(executionDomainId);
-		if (decodedImage === null) {
-			throw new Error('Active execution domain has no BLua32 executable image.');
+	public replaceExecutionImage(decodedImage: Blua32DecodedExecutionImage): void {
+		let imageIndex = 0;
+		while (this.executionImages[imageIndex].executionDomainId !== decodedImage.executionDomainId) {
+			imageIndex += 1;
 		}
 		const previousImage = this.executionImages[imageIndex];
 		const image = this.activateExecutionImage(decodedImage);
 		this.executionImages[imageIndex] = image;
-		if (executionDomainId === SYSTEM_EXECUTION_DOMAIN_ID) {
+		if (decodedImage.executionDomainId === SYSTEM_EXECUTION_DOMAIN_ID) {
 			this.systemImage = image;
 			this.systemExceptionFunctionAddress = image.boot.exceptionFunctionAddress;
 		}

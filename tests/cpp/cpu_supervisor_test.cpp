@@ -117,6 +117,7 @@ struct CpuTestMachine {
 	bmsx::test::Blua32TestRom cartRom;
 	bmsx::Memory memory;
 	bmsx::IrqController irq;
+	bmsx::ExecutionAddressSpace executionAddressSpace;
 	bmsx::CPU cpu;
 	bmsx::DeviceScheduler scheduler;
 	bmsx::DmaController dma;
@@ -138,14 +139,15 @@ struct CpuTestMachine {
 			bmsx::test::cartridgeSlots(cartRom.bytes),
 		})
 		, irq(memory)
-		, cpu(memory, irq)
+		, executionAddressSpace(memory)
+		, cpu(memory, irq, executionAddressSpace)
 		, scheduler(cpu)
 		, dma(memory, cpu, irq, scheduler) {
 		memory.cartridgeController().connect(memory, irq, dma);
 		irq.reset();
 		dma.reset();
 		memory.cartridgeController().reset();
-		cpu.mountExecutionImages();
+		cpu.resetExecutionImages(executionAddressSpace.reset());
 	}
 };
 
@@ -219,7 +221,9 @@ void testSystemAndOrdinaryGlobalRegisterfilesStayDistinct() {
 	machine.cpu.setSystemGlobalByKey(irqKey, bmsx::valueNumber(11.0));
 	machine.cpu.setGlobalByKey(irqKey, bmsx::valueNumber(22.0));
 
-	machine.cpu.mountExecutionImages();
+	machine.cpu.replaceExecutionImage(
+		std::move(*machine.executionAddressSpace.reloadDomain(bmsx::SYSTEM_EXECUTION_DOMAIN_ID))
+	);
 	const bmsx::CpuRuntimeState saved = machine.cpu.captureRuntimeState();
 	require(saved.systemGlobals.size() == 1u && saved.systemGlobals[0].name == "irq" && saved.systemGlobals[0].value.numberValue == 11.0, "media remount preserves the system registerfile");
 	require(saved.globals.size() == 1u && saved.globals[0].name == "irq" && saved.globals[0].value.numberValue == 22.0, "media remount preserves the ordinary global table");
