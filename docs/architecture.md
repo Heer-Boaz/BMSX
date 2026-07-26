@@ -329,9 +329,9 @@ Current artifact roles:
   the frame loop through static composition.
 - `libbmsx.a` in its CMake build tree: C++ machine/runtime static library. It
   retains physical ROM bytes and executable-image decode state, but does not
-  compile BLua32 source-range extraction, symbol sidecars, disassembly, or
-  formatted fault presentation. Build trees never share this target-specific
-  archive.
+  compile the Lua source lexer/parser, BLua32 source-range extraction, symbol
+  sidecars, disassembly, or formatted fault presentation. Build trees never
+  share this target-specific archive.
 - `bmsx_blua32_tooling` in native diagnostics-enabled builds: BLua32 source,
   symbol-sidecar, and disassembly tooling. It depends downward on `bmsx_core`;
   the machine/runtime archive never depends on it.
@@ -2787,6 +2787,11 @@ presentation joins those optional symbols with allocation-free scalar CPU
 state reads only after an exception reaches the libretro host boundary.
 `MachineManager`, `Runtime`, CPU state, and `libbmsx.a` retain no source paths,
 symbol caches, disassembler objects, or formatted diagnostic records.
+
+Lua source lexing, parsing, semantic analysis, and compilation are TypeScript
+authoring-tool responsibilities under `machine/ts/lua`. Native machine code
+executes the already-linked physical BLua32 image and therefore has no parallel
+C++ source lexer, parser, AST, or runtime source-compilation path.
 
 ## Host presentation and frontend lifecycle
 

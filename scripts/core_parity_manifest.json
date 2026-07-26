@@ -1014,6 +1014,8 @@
 		},
 		{
 			"present": [
+				"machine/ts/lua/syntax/lexer.ts",
+				"machine/ts/lua/syntax/parser.ts",
 				"machine/ts/lua/compiler.ts",
 				"machine/ts/lua/compiler/program_object.ts",
 				"machine/ts/lua/compiler/passes",
@@ -1027,6 +1029,7 @@
 				"machine/ts/rompack/tooling/rom_prefix_layout.ts"
 			],
 			"absent": [
+				"machine/cpp/lua/syntax",
 				"machine/ts/machine/program",
 				"machine/cpp/machine/program",
 				"machine/ts/machine/firmware/system_boot_symbols.ts",
@@ -1037,7 +1040,7 @@
 				"machine/ts/machine/runtime/host/native_bridge.ts",
 				"machine/ts/machine/runtime/resume_snapshot.ts"
 			],
-			"reason": "source_compiler_and_pack_time_linker_must_stay_outside_machine_runtime_core"
+			"reason": "source_frontend_compiler_and_pack_time_linker_must_stay_outside_machine_runtime_core"
 		},
 		{
 			"present": [

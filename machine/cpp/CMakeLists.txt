@@ -282,8 +282,6 @@ add_library(bmsx_core STATIC
 	machine/cpu/opcode_info.cpp
 	machine/cpu/instruction_format.cpp
 	render/shared/bmsx_font.cpp
-	lua/syntax/lexer.cpp
-	lua/syntax/parser.cpp
 	machine/devices/cartridge/controller.cpp
 	machine/devices/dma/controller.cpp
 	machine/devices/imgdec/controller.cpp
