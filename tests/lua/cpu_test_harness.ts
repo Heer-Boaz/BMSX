@@ -19,5 +19,5 @@ export function compileLuaSource(source: string, path = 'test.lua', optLevel: Op
 export function runCompiledLua(source: string, path = 'test.lua', optLevel: OptimizationLevel = 0): Value[] {
 	const compiled = compileLuaSource(source, path, optLevel);
 	const cpu = runCompiledTestSystem(compiled, 100000);
-	return Array.from(cpu.lastReturnValues);
+	return Array.from(cpu.completionValues);
 }

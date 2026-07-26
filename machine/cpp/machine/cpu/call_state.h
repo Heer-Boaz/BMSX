@@ -29,7 +29,7 @@ struct CallFrame {
 	int returnBase = 0;
 	int returnCount = 0;
 	int top = 0;
-	bool captureReturns = false;
+	bool returnToCompletionLatch = false;
 	u32 callSitePc = 0;
 	bool isExceptionFrame = false;
 	bool isNonMaskableExceptionFrame = false;

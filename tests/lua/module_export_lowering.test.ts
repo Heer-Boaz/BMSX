@@ -101,7 +101,7 @@ test('dynamic module calls observe replaced direct and method fields at every op
 		assert.equal(compiled.metadata.exportProtoIdBySlot.foo__read, undefined);
 		assert.equal(compiled.metadata.exportProtoIdBySlot.foo__method, undefined);
 		const cpu = runCompiledTestSystem(compiled, 100000);
-		assert.deepEqual(Array.from(cpu.lastReturnValues), [9, 11]);
+		assert.deepEqual(Array.from(cpu.completionValues), [9, 11]);
 	}
 });
 
@@ -119,7 +119,7 @@ test('explicit const-module functions call sibling exports through link symbols'
 	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'foo__twice'), true);
 	assert.doesNotMatch(compiled.disasm, /\bNEWT\b/, 'const-module exports do not materialize a runtime table');
 	const cpu = runCompiledTestSystem(compiled.compiled, 100000);
-	assert.deepEqual(Array.from(cpu.lastReturnValues), [6]);
+	assert.deepEqual(Array.from(cpu.completionValues), [6]);
 });
 
 test('bios easing calls through its live runtime table', () => {
@@ -134,7 +134,7 @@ test('bios easing calls through its live runtime table', () => {
 	assert.match(compiled.disasm, /\bGETFIELD\b/, 'runtime module calls load the current table field');
 	assert.match(compiled.disasm, /\bNEWT\b/, 'public easing table remains available for Lua API consumers');
 	const cpu = runCompiledTestSystem(compiled.compiled, 100000);
-	assert.deepEqual(Array.from(cpu.lastReturnValues), [0.5]);
+	assert.deepEqual(Array.from(cpu.completionValues), [0.5]);
 });
 
 test('dynamic module data reads observe table mutations at every optimization level', () => {
@@ -152,7 +152,7 @@ test('dynamic module data reads observe table mutations at every optimization le
 		assert.equal(constRelocs.some(reloc => reloc.kind === 'module' && reloc.symbol === 'foo__value'), false, 'mutable fields must not read stale initialization-time export slots');
 		assert.match(disasm, /\bGETFIELD\b/, 'mutable fields must be read from the live module table');
 		const cpu = runCompiledTestSystem(compiled, 100000);
-		assert.deepEqual(Array.from(cpu.lastReturnValues), [1, 1]);
+		assert.deepEqual(Array.from(cpu.completionValues), [1, 1]);
 	}
 });
 
@@ -167,7 +167,7 @@ test('dynamic module function value reads use the live table, not export-proto r
 	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'module' && reloc.symbol === 'foo__read'), false, 'function value read must not target an initialization-time export slot');
 	assert.match(compiled.disasm, /\bGETFIELD\b/, 'function value read must use the live module table');
 	const cpu = runCompiledTestSystem(compiled.compiled, 100000);
-	assert.deepEqual(Array.from(cpu.lastReturnValues), [7]);
+	assert.deepEqual(Array.from(cpu.completionValues), [7]);
 });
 
 test('optimizer preserves a sibling closure upvalue environment', () => {
@@ -184,7 +184,7 @@ test('optimizer preserves a sibling closure upvalue environment', () => {
 	].join('\n');
 	const { compiled } = compileWithModule('local api<const> = require("foo")\nreturn api.apply(41)', 'foo', moduleSource, [], 3);
 	const cpu = runCompiledTestSystem(compiled, 100000);
-	assert.deepEqual(Array.from(cpu.lastReturnValues), [41, null]);
+	assert.deepEqual(Array.from(cpu.completionValues), [41, null]);
 });
 
 // Nested namespaces in dynamic modules remain ordinary runtime-table paths.
@@ -227,7 +227,7 @@ test('dynamic root-function modules remain runtime values', () => {
 	}
 	assert.equal(hasRootModuleReloc, true, 'const local require must read the root function value from the export slot');
 	const cpu = runCompiledTestSystem(compiled, 100000);
-	assert.deepEqual(Array.from(cpu.lastReturnValues), [5]);
+	assert.deepEqual(Array.from(cpu.completionValues), [5]);
 });
 
 test('const modules inline export constants without runtime module state', () => {

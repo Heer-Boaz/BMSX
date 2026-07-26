@@ -221,12 +221,12 @@ test('restored static closures reuse the static proto cache', () => {
 	].join('\n'));
 	cpu.start(startupFunctionAddress);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
-	const closure = cpu.lastReturnValues[0];
+	const closure = cpu.completionValues[0];
 	const before = cpu.collectTrackedHeapBytes();
 
 	cpu.restoreRuntimeState(cpu.captureRuntimeState());
 
-	assert.equal(cpu.lastReturnValues[0], closure);
+	assert.equal(cpu.completionValues[0], closure);
 	assert.equal(cpu.collectTrackedHeapBytes(), before);
 });
 

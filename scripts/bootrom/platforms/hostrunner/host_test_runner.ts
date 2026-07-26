@@ -4,7 +4,7 @@ import { extractErrorMessage } from '../../../../ide/language/lua/interpreter/va
 import type { Closure } from '../../../../machine/ts/machine/cpu/closure';
 import { Table } from '../../../../machine/ts/machine/cpu/table';
 import { EMPTY_CALL_ARGS, asStringId, valueIsString, valueIsTable, type StringValue, type Value } from '../../../../machine/ts/machine/cpu/value';
-import { callClosureIntoSuspended } from '../../../../ide/runtime/closure_executor';
+import { callClosureSuspended } from '../../../../ide/runtime/closure_executor';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import type { InputEvt } from 'bmsx/platform';
 import { HOST_TEST_LOADER_GLOBAL } from './host_test_cartridge';
@@ -142,12 +142,7 @@ class HostTestRunner {
 		const runtime = this.options.runtime;
 		const cpu = runtime.machine.cpu;
 		const loader = cpu.getGlobalByKey(runtime.internString(HOST_TEST_LOADER_GLOBAL)) as Closure;
-		const results = runtime.luaScratch.values.acquire();
-		try {
-			callClosureIntoSuspended(runtime, loader, EMPTY_CALL_ARGS, results);
-		} finally {
-			runtime.luaScratch.values.release(results);
-		}
+		callClosureSuspended(runtime, loader, EMPTY_CALL_ARGS);
 		const testTable = cpu.getGlobalByKey(runtime.internString(HOST_TEST_GLOBAL)) as Table;
 		this.ready = testTable.getStringKey(runtime.internString('ready')) as Closure;
 		this.setup = testTable.getStringKey(runtime.internString('setup')) as Closure;
@@ -166,14 +161,8 @@ class HostTestRunner {
 	}
 
 	private callGuest(fn: Closure, args: ReadonlyArray<Value>): Value {
-		const runtime = this.options.runtime;
-		const results = runtime.luaScratch.values.acquire();
-		try {
-			callClosureIntoSuspended(runtime, fn, args, results);
-			return results.length === 0 ? null : results[0];
-		} finally {
-			runtime.luaScratch.values.release(results);
-		}
+		const results = callClosureSuspended(this.options.runtime, fn, args);
+		return results.length === 0 ? null : results[0];
 	}
 
 	private applyCommands(value: Value): void {

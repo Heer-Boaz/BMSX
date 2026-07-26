@@ -60,7 +60,7 @@ test('CPU executes displaced memory load/store opcodes', () => {
 	cpu.start(finalized.vectors.startupFunctionAddress);
 
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
-	assert.deepEqual(Array.from(cpu.lastReturnValues), [0x22222222]);
+	assert.deepEqual(Array.from(cpu.completionValues), [0x22222222]);
 	assert.equal(memory.readMappedU32LE(TEST_RAM_BASE), 0x11111111);
 	assert.equal(memory.readMappedU32LE(TEST_RAM_BASE + 48), 0x22222222);
 	assert.equal(memory.readMappedU32LE(TEST_RAM_BASE + 64), 0x33333333);

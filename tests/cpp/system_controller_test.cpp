@@ -249,6 +249,33 @@ auto makeExternalClosureSystemImage() -> bmsx::test::Blua32TestImage {
 	return image;
 }
 
+auto makeCompletionLatchSystemImage() -> bmsx::test::Blua32TestImage {
+	bmsx::test::Blua32TestImage image;
+	image.text.resize(6u * bmsx::INSTRUCTION_BYTES);
+	std::span<bmsx::u8> code(image.text);
+	bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
+	bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 0, 0, 1);
+	bmsx::writeInstruction(code, 2, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 1, 0);
+	bmsx::writeInstruction(code, 3, static_cast<bmsx::u8>(bmsx::OpCode::NEWT), 0, 0, 0);
+	bmsx::writeInstruction(code, 4, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 1, 0);
+	bmsx::writeInstruction(code, 5, static_cast<bmsx::u8>(bmsx::OpCode::RFE), 0, 0, 0);
+	image.functions = {
+		{.firstWord = 0u, .wordCount = 3u},
+		{.firstWord = 3u, .wordCount = 2u, .maxStack = 1u, .staticClosure = true},
+		{.firstWord = 5u, .wordCount = 1u},
+	};
+	image.closureRelocations = {{
+		1u,
+		bmsx::test::blua32TestFunctionAddress(bmsx::RomImageDomain::System, 1u),
+	}};
+	image.irqFunctionIndex = 2u;
+	image.exceptionFunctionIndex = 2u;
+	for (const bmsx::LuaBootPrimitive& primitive : bmsx::LUA_BOOT_PRIMITIVES) {
+		image.systemGlobalNames.emplace_back(primitive.name);
+	}
+	return image;
+}
+
 struct SystemRuntimeFixture {
 	bmsx::test::Blua32TestRom systemRom;
 	bmsx::test::Blua32TestRom cartRom;
@@ -316,9 +343,9 @@ struct ExternalClosureFixture {
 		, runtime(system.runtime)
 		, cpu(runtime.machine.cpu) {
 		require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "system startup returns external-call test closures");
-		require(cpu.lastReturnValues.size() == closures.size(), "system startup returns all external-call test closures");
+		require(cpu.completionValues.size() == closures.size(), "system startup returns all external-call test closures");
 		for (size_t index = 0; index < closures.size(); ++index) {
-			closures[index] = bmsx::asClosure(cpu.lastReturnValues[index]);
+			closures[index] = bmsx::asClosure(cpu.completionValues[index]);
 		}
 	}
 };
@@ -473,8 +500,8 @@ void testGuestExecutionSelectionAndClosureIdentitySurviveTheSaveStateWireFormat(
 
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "guest system code selects cartridge slot 0 through MMIO and CP0.EXEC");
 	require(cpu.activeCartridgeSlot() == 0, "CP0.EXEC latches guest-selected cartridge slot 0");
-	require(cpu.lastReturnValues.size() == 1u, "slot 0 startup returns one static closure");
-	const bmsx::Value slot0ClosureValue = cpu.lastReturnValues[0];
+	require(cpu.completionValues.size() == 1u, "slot 0 startup returns one static closure");
+	const bmsx::Value slot0ClosureValue = cpu.completionValues[0];
 	bmsx::Closure* slot0Closure = bmsx::asClosure(slot0ClosureValue);
 	const bmsx::Value savedClosureName = bmsx::valueString(cpu.stringPool().intern("saved_closure"));
 	const bmsx::Value closureTableName = bmsx::valueString(cpu.stringPool().intern("closure_table"));
@@ -490,8 +517,8 @@ void testGuestExecutionSelectionAndClosureIdentitySurviveTheSaveStateWireFormat(
 	);
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "guest system code selects cartridge slot 1 through MMIO and CP0.EXEC");
 	require(cpu.activeCartridgeSlot() == 1, "CP0.EXEC latches guest-selected cartridge slot 1");
-	require(cpu.lastReturnValues.size() == 1u, "slot 1 startup returns one static closure");
-	const bmsx::Value slot1ClosureValue = cpu.lastReturnValues[0];
+	require(cpu.completionValues.size() == 1u, "slot 1 startup returns one static closure");
+	const bmsx::Value slot1ClosureValue = cpu.completionValues[0];
 	require(bmsx::asClosure(slot1ClosureValue) == slot0Closure, "one raw physical function address has one canonical static closure");
 	require(bmsx::asNumber(closureTable->get(slot1ClosureValue)) == 77.0, "canonical closure identity remains a stable table key across cartridge slots");
 	runtime.machine.memory.writeMappedU32LE(bmsx::IO_CART_SELECT, 0u);
@@ -510,8 +537,8 @@ void testGuestExecutionSelectionAndClosureIdentitySurviveTheSaveStateWireFormat(
 	cpu.call(*slot0Closure);
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "the canonical raw closure executes against the slot 0 latch");
 	require(
-		cpu.lastReturnValues.size() == 1u
-			&& bmsx::asNumber(cpu.lastReturnValues[0]) == 111.0,
+		cpu.completionValues.size() == 1u
+			&& bmsx::asNumber(cpu.completionValues[0]) == 111.0,
 		"slot 0 supplies the code behind the raw closure address"
 	);
 
@@ -523,8 +550,8 @@ void testGuestExecutionSelectionAndClosureIdentitySurviveTheSaveStateWireFormat(
 	cpu.call(*bmsx::asClosure(restoredClosureValue));
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "restored closure executes through the restored CP0.EXEC latch");
 	require(
-		cpu.lastReturnValues.size() == 1u
-			&& bmsx::asNumber(cpu.lastReturnValues[0]) == 222.0,
+		cpu.completionValues.size() == 1u
+			&& bmsx::asNumber(cpu.completionValues[0]) == 222.0,
 		"wire restore preserves slot 1 as the physical execution source"
 	);
 }
@@ -538,7 +565,7 @@ void testDistinctNonStaticClosuresRemainDistinctTableKeysThroughTheSaveStateWire
 	bmsx::CPU& cpu = runtime.machine.cpu;
 
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "cartridge startup returns the first non-static closure");
-	const bmsx::Value firstClosureValue = cpu.lastReturnValues[0];
+	const bmsx::Value firstClosureValue = cpu.completionValues[0];
 	bmsx::Closure* firstClosure = bmsx::asClosure(firstClosureValue);
 	cpu.start(
 		fixture.systemRom.functionAddresses[0],
@@ -546,7 +573,7 @@ void testDistinctNonStaticClosuresRemainDistinctTableKeysThroughTheSaveStateWire
 		bmsx::CPU_STATUS_SYSTEM_ENTRY
 	);
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "cartridge startup returns the second non-static closure");
-	const bmsx::Value secondClosureValue = cpu.lastReturnValues[0];
+	const bmsx::Value secondClosureValue = cpu.completionValues[0];
 	bmsx::Closure* secondClosure = bmsx::asClosure(secondClosureValue);
 	require(firstClosure != secondClosure, "non-static closure creation retains object identity");
 	require(firstClosure->functionAddress == secondClosure->functionAddress, "non-static closures share one physical function record");
@@ -585,7 +612,7 @@ void testMixedStaticAndNonStaticCartridgeClosuresKeepIdentityAcrossEitherSaveSta
 	bmsx::CPU& cpu = runtime.machine.cpu;
 
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "slot 0 returns the dynamic closure");
-	const bmsx::Value dynamicClosureValue = cpu.lastReturnValues[0];
+	const bmsx::Value dynamicClosureValue = cpu.completionValues[0];
 	bmsx::Closure* dynamicClosure = bmsx::asClosure(dynamicClosureValue);
 	cpu.start(
 		fixture.systemRom.functionAddresses[1],
@@ -593,7 +620,7 @@ void testMixedStaticAndNonStaticCartridgeClosuresKeepIdentityAcrossEitherSaveSta
 		bmsx::CPU_STATUS_SYSTEM_ENTRY
 	);
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "slot 1 returns the canonical closure");
-	const bmsx::Value canonicalClosureValue = cpu.lastReturnValues[0];
+	const bmsx::Value canonicalClosureValue = cpu.completionValues[0];
 	bmsx::Closure* canonicalClosure = bmsx::asClosure(canonicalClosureValue);
 	require(dynamicClosure != canonicalClosure, "mixed cartridge closure modes retain distinct object identities");
 	require(dynamicClosure->functionAddress == canonicalClosure->functionAddress, "mixed cartridge closure modes share one raw address");
@@ -636,8 +663,8 @@ void testMixedStaticAndNonStaticCartridgeClosuresKeepIdentityAcrossEitherSaveSta
 		bmsx::CPU_STATUS_SYSTEM_ENTRY
 	);
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "guest switches the execution latch back to the static cartridge");
-	require(bmsx::asClosure(cpu.lastReturnValues[0]) == bmsx::asClosure(restoredCanonicalValue), "future static closure creation reuses the restored canonical identity");
-	require(bmsx::asNumber(restoredTable->get(cpu.lastReturnValues[0])) == 22.0, "future canonical closure remains the restored table key");
+	require(bmsx::asClosure(cpu.completionValues[0]) == bmsx::asClosure(restoredCanonicalValue), "future static closure creation reuses the restored canonical identity");
+	require(bmsx::asNumber(restoredTable->get(cpu.completionValues[0])) == 22.0, "future canonical closure remains the restored table key");
 }
 
 void testExternalClosureThrowRestoresRuntimeExecutionState() {
@@ -666,14 +693,11 @@ void testExternalClosureThrowRestoresRuntimeExecutionState() {
 		bmsx::BASE_CYCLES[static_cast<size_t>(bmsx::OpCode::GETGL)]
 		+ bmsx::BASE_CYCLES[static_cast<size_t>(bmsx::OpCode::CALL)]
 		+ 7;
-	bmsx::NativeResults previousSink;
-	bmsx::NativeResults out;
-	require(cpu.swapExternalReturnSink(&previousSink) == nullptr, "external-call test begins without an installed return sink");
 	cpu.instructionBudgetRemaining = 100;
 
 	bool threwNativeError = false;
 	try {
-		runtime.callClosureInto(*fixture.closures[0], {}, out);
+		runtime.callClosure(*fixture.closures[0]);
 	} catch (const std::runtime_error& error) {
 		threwNativeError = std::string_view(error.what()) == "native boom";
 	}
@@ -681,10 +705,42 @@ void testExternalClosureThrowRestoresRuntimeExecutionState() {
 	require(threwNativeError, "external closure propagates the native callback failure");
 	require(!runtime.machine.scheduler.isCpuSliceActive(), "external closure failure ends the active CPU scheduler slice");
 	require(cpu.getFrameDepth() == depthBefore + 1, "external closure failure retains the physical call frame");
-	require(cpu.swapExternalReturnSink(nullptr) == &previousSink, "external closure failure restores the previous return sink");
-	require(out.empty(), "external closure failure publishes no return values");
+	require(cpu.completionValues.empty(), "external closure failure publishes no completion values");
 	require(cpu.instructionBudgetRemaining == 100, "external closure failure restores the suspended CPU budget");
 	require(runtime.machine.scheduler.nowCycles() == cycleBefore + expectedCycles, "external closure failure advances physical machine time by spent cycles");
+}
+
+void testCompletionCallReturnLatchSurvivesSaveStateAndGc() {
+	SystemRuntimeFixture fixture(
+		makeCompletionLatchSystemImage(),
+		makeRuntimeImage(bmsx::OpCode::RET)
+	);
+	bmsx::CPU& cpu = fixture.runtime.machine.cpu;
+	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "completion-latch startup returns its callable closure");
+	bmsx::Closure* closure = bmsx::asClosure(cpu.completionValues[0]);
+	const bmsx::Value closureKey = bmsx::valueString(cpu.stringPool().intern("completion_call"));
+	cpu.setGlobalByKey(closureKey, bmsx::valueClosure(closure));
+
+	cpu.beginCompletionCall(*closure);
+	require(cpu.runUntilDepth(0, 1) == bmsx::RunResult::Yielded, "completion call remains in flight before RET");
+	const bmsx::CpuRuntimeState state = cpu.captureRuntimeState();
+	require(
+		state.frames.size() == 1u && state.frames.back().returnToCompletionLatch,
+		"save-state retains the physical completion-latch return route"
+	);
+
+	cpu.restoreRuntimeState(state);
+	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "restored completion call returns through its retained route");
+	bmsx::Table* restoredTable = bmsx::asTable(cpu.completionValues[0]);
+	cpu.collectHeap();
+	require(bmsx::asTable(cpu.completionValues[0]) == restoredTable, "completion latch roots its restored heap result");
+
+	bmsx::Closure* restoredClosure = bmsx::asClosure(cpu.getGlobalByKey(closureKey));
+	const std::span<const bmsx::Value> results = fixture.runtime.callClosure(*restoredClosure);
+	require(results.data() == cpu.completionValues.data(), "Runtime borrows the CPU completion latch without copying");
+	bmsx::Table* borrowedTable = bmsx::asTable(results[0]);
+	cpu.collectHeap();
+	require(bmsx::asTable(results[0]) == borrowedTable, "borrowed completion results remain rooted by the CPU latch");
 }
 
 void testExternalClosureAdvancesToGteInterlockDeadline() {
@@ -696,10 +752,9 @@ void testExternalClosureAdvancesToGteInterlockDeadline() {
 		+ static_cast<int>(bmsx::GX_GTE_PLUS_CYCLES_VMAD3)
 		+ bmsx::BASE_CYCLES[static_cast<size_t>(bmsx::OpCode::STORE_MEM)]
 		+ bmsx::BASE_CYCLES[static_cast<size_t>(bmsx::OpCode::RET)];
-	bmsx::NativeResults out;
 	fixture.cpu.instructionBudgetRemaining = 100;
 
-	fixture.runtime.callClosureInto(*fixture.closures[1], {}, out);
+	const std::span<const bmsx::Value> out = fixture.runtime.callClosure(*fixture.closures[1]);
 
 	require(fixture.runtime.machine.scheduler.nowCycles() == cycleBefore + expectedCycles, "external closure advances through the scheduled GTE completion deadline");
 	require(fixture.cpu.instructionBudgetRemaining == 100, "external closure restores the suspended CPU budget after the GTE wait");
@@ -720,10 +775,9 @@ void testExternalClosureAdvancesToGteInterlockDeadline() {
 void testExternalClosureVectorsPendingNmiThroughCpuEntry() {
 	ExternalClosureFixture fixture;
 	const bmsx::i64 cycleBefore = fixture.runtime.machine.scheduler.nowCycles();
-	bmsx::NativeResults out;
 	fixture.cpu.requestNonMaskableInterrupt();
 
-	fixture.runtime.callClosureInto(*fixture.closures[2], {}, out);
+	const std::span<const bmsx::Value> out = fixture.runtime.callClosure(*fixture.closures[2]);
 
 	require(
 		fixture.runtime.machine.scheduler.nowCycles()
@@ -807,6 +861,7 @@ int main() {
 	testDistinctNonStaticClosuresRemainDistinctTableKeysThroughTheSaveStateWireFormat();
 	testMixedStaticAndNonStaticCartridgeClosuresKeepIdentityAcrossEitherSaveStateLatch();
 	testExternalClosureThrowRestoresRuntimeExecutionState();
+	testCompletionCallReturnLatchSurvivesSaveStateAndGc();
 	testExternalClosureAdvancesToGteInterlockDeadline();
 	testExternalClosureVectorsPendingNmiThroughCpuEntry();
 	testRuntimeRestorePreservesInFlightFrameBudgetAndResetsHostClock();

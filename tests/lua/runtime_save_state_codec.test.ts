@@ -501,7 +501,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 				returnCount: 3,
 				handlerRegister: 7,
 			}],
-			lastReturnValues: [],
+			completionValues: [],
 			objects: [],
 			openUpvalues: [],
 			lastExecutionDomainId: 0,
@@ -622,7 +622,7 @@ test('runtime save-state codec preserves exception frame metadata', () => {
 		returnBase: 1,
 		returnCount: 0,
 		top: 1,
-		captureReturns: false,
+		returnToCompletionLatch: false,
 		callSitePc: 41,
 		isExceptionFrame: true,
 		isNonMaskableExceptionFrame: true,
@@ -638,14 +638,14 @@ test('runtime save-state codec preserves builtin VM primitive ids', () => {
 	state.cpuState.globals = [
 		{ name: 'foo', value: { tag: 'builtin', id: BuiltinFunctionId.Next } },
 	];
-	state.cpuState.lastReturnValues = [
+	state.cpuState.completionValues = [
 		{ tag: 'builtin', id: BuiltinFunctionId.StringChar },
 	];
 
 	const decoded = decodeRuntimeSaveState(encodeRuntimeSaveState(state), cartridgeRamByteCount(state));
 
 	assert.deepEqual(decoded.cpuState.globals, state.cpuState.globals);
-	assert.deepEqual(decoded.cpuState.lastReturnValues, state.cpuState.lastReturnValues);
+	assert.deepEqual(decoded.cpuState.completionValues, state.cpuState.completionValues);
 });
 
 test('runtime save-state bytes start at the current property-table payload', () => {

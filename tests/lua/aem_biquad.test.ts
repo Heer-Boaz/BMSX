@@ -35,7 +35,7 @@ return control, b0_b1, b2_a1, a2, numeric.encode_signed_q14(-3), numeric.encode_
 	});
 	const compiled = compileLuaChunkToProgram(parseLuaChunk(entrySource, 'entry.lua'), modules, { entrySource, optLevel: 3 });
 	const cpu = runCompiledTestSystem(compiled, 100000);
-	assert.deepEqual(Array.from(cpu.lastReturnValues, value => (value as number) >>> 0), [
+	assert.deepEqual(Array.from(cpu.completionValues, value => (value as number) >>> 0), [
 		0x00000001,
 		0x0097004c,
 		0x8cdc004c,

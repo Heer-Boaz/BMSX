@@ -1554,7 +1554,7 @@ BinValue encodeCpuFrameState(const CpuFrameState& state) {
 	object["returnBase"] = static_cast<i64>(state.returnBase);
 	object["returnCount"] = static_cast<i64>(state.returnCount);
 	object["top"] = static_cast<i64>(state.top);
-	object["captureReturns"] = state.captureReturns;
+	object["returnToCompletionLatch"] = state.returnToCompletionLatch;
 	object["callSitePc"] = static_cast<i64>(state.callSitePc);
 	object["isExceptionFrame"] = state.isExceptionFrame;
 	object["isNonMaskableExceptionFrame"] = state.isNonMaskableExceptionFrame;
@@ -1581,7 +1581,7 @@ CpuFrameState decodeCpuFrameState(const BinValue& value, const char* label) {
 	state.returnBase = requireI32(requireField(object, "returnBase", label), "cpuFrameState.returnBase");
 	state.returnCount = requireI32(requireField(object, "returnCount", label), "cpuFrameState.returnCount");
 	state.top = requireI32(requireField(object, "top", label), "cpuFrameState.top");
-	state.captureReturns = requireBool(requireField(object, "captureReturns", label), "cpuFrameState.captureReturns");
+	state.returnToCompletionLatch = requireBool(requireField(object, "returnToCompletionLatch", label), "cpuFrameState.returnToCompletionLatch");
 	state.callSitePc = requireU32(requireField(object, "callSitePc", label), "cpuFrameState.callSitePc");
 	state.isExceptionFrame = requireBool(requireField(object, "isExceptionFrame", label), "cpuFrameState.isExceptionFrame");
 	state.isNonMaskableExceptionFrame = requireBool(requireField(object, "isNonMaskableExceptionFrame", label), "cpuFrameState.isNonMaskableExceptionFrame");
@@ -1643,7 +1643,7 @@ BinValue encodeCpuRuntimeState(const CpuRuntimeState& state) {
 	object["protectedCalls"] = encodeVector(state.protectedCalls, [](const CpuProtectedCallState& value) {
 		return encodeCpuProtectedCallState(value);
 	});
-	object["lastReturnValues"] = encodeVector(state.lastReturnValues, [](const CpuValueState& value) {
+	object["completionValues"] = encodeVector(state.completionValues, [](const CpuValueState& value) {
 		return encodeCpuValueState(value);
 	});
 	object["objects"] = encodeVector(state.objects, [](const CpuObjectState& value) {
@@ -1697,9 +1697,9 @@ CpuRuntimeState decodeCpuRuntimeState(const BinValue& value, const char* label) 
 		[](const BinValue& entryValue, size_t) {
 			return decodeCpuProtectedCallState(entryValue, "cpuState.protectedCalls[]");
 		});
-	state.lastReturnValues = decodeVector<CpuValueState>(requireField(object, "lastReturnValues", label), "cpuState.lastReturnValues",
+	state.completionValues = decodeVector<CpuValueState>(requireField(object, "completionValues", label), "cpuState.completionValues",
 		[](const BinValue& entryValue, size_t) {
-			return decodeCpuValueState(entryValue, "cpuState.lastReturnValues[]");
+			return decodeCpuValueState(entryValue, "cpuState.completionValues[]");
 		});
 	state.objects = decodeVector<CpuObjectState>(requireField(object, "objects", label), "cpuState.objects",
 		[](const BinValue& entryValue, size_t) {

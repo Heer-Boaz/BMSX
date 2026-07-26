@@ -21,7 +21,7 @@ export type CallFrame = {
 	returnBase: number;
 	returnCount: number;
 	top: number;
-	captureReturns: boolean;
+	returnToCompletionLatch: boolean;
 	callSitePc: number;
 	isExceptionFrame: boolean;
 	isNonMaskableExceptionFrame: boolean;

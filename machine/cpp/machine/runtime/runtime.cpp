@@ -95,7 +95,7 @@ Runtime::~Runtime() {
 	resetTrackedLuaHeapBytes();
 }
 
-void Runtime::callClosureInto(Closure& fn, NativeArgsView args, NativeResults& out) {
+auto Runtime::callClosure(Closure& fn, NativeArgsView args) -> std::span<const Value> {
 	CPU& cpu = machine.cpu;
 	DeviceScheduler& scheduler = machine.scheduler;
 	if (scheduler.isCpuSliceActive()) {
@@ -103,10 +103,8 @@ void Runtime::callClosureInto(Closure& fn, NativeArgsView args, NativeResults& o
 	}
 	const int depthBefore = cpu.getFrameDepth();
 	const int previousBudget = cpu.instructionBudgetRemaining;
-	NativeResults* previousSink = cpu.swapExternalReturnSink(&out);
-	out.clear();
 	try {
-		cpu.callExternal(fn, args);
+		cpu.beginCompletionCall(fn, args);
 		runDueRuntimeTimers(*this);
 		while (cpu.getFrameDepth() > depthBefore) {
 			if (machine.gxGpu.backendReadbackBlocksMachine()) {
@@ -199,11 +197,10 @@ void Runtime::callClosureInto(Closure& fn, NativeArgsView args, NativeResults& o
 		}
 	} catch (...) {
 		cpu.instructionBudgetRemaining = previousBudget;
-		cpu.swapExternalReturnSink(previousSink);
 		throw;
 	}
 	cpu.instructionBudgetRemaining = previousBudget;
-	cpu.swapExternalReturnSink(previousSink);
+	return std::span<const Value>(cpu.completionValues);
 }
 
 auto Runtime::machineTimeMs() const -> uint32_t {

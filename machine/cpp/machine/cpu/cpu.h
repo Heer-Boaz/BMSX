@@ -115,7 +115,7 @@ struct CpuFrameState {
 	int returnBase = 0;
 	int returnCount = 0;
 	int top = 0;
-	bool captureReturns = false;
+	bool returnToCompletionLatch = false;
 	u32 callSitePc = 0;
 	bool isExceptionFrame = false;
 	bool isNonMaskableExceptionFrame = false;
@@ -142,7 +142,7 @@ struct CpuRuntimeState {
 	std::vector<CpuRootValueState> globals;
 	std::vector<CpuFrameState> frames;
 	std::vector<CpuProtectedCallState> protectedCalls;
-	std::vector<CpuValueState> lastReturnValues;
+	std::vector<CpuValueState> completionValues;
 	std::vector<CpuObjectState> objects;
 	std::vector<int> openUpvalues;
 	int lastExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
@@ -276,8 +276,7 @@ public:
 
 	void start(u32 functionAddress, NativeArgsView args = {}, u32 statusWord = CPU_STATUS_CART_ENTRY);
 	void call(Closure& closure, NativeArgsView args = {}, int returnCount = 0);
-	void callExternal(Closure& closure, NativeArgsView args = {});
-	NativeResults* swapExternalReturnSink(NativeResults* sink);
+	void beginCompletionCall(Closure& closure, NativeArgsView args = {});
 	CpuRuntimeState captureRuntimeState() const;
 	void restoreRuntimeState(const CpuRuntimeState& state);
 	void requestYield();
@@ -338,7 +337,7 @@ public:
 	void writeFrameCallSitePc(int childFrameIndex, u32 pc);
 
 	int instructionBudgetRemaining = 0;
-	std::vector<Value> lastReturnValues;
+	std::vector<Value> completionValues;
 	u32 lastPc = 0;
 	uint32_t lastInstruction = 0;
 	Table* globals = nullptr;
@@ -379,9 +378,9 @@ private:
 	Blua32RuntimeFunction* functionRecordOnSelectedBus(u32 address);
 	void executeFunctionAddress(u32 functionAddress);
 	CallFrame* pushFrame(CallFrame& caller, Closure* closure, int argBase, int argCount,
-		int returnBase, int returnCount, bool captureReturns, u32 callSitePc);
+		int returnBase, int returnCount, bool returnToCompletionLatch, u32 callSitePc);
 	CallFrame* pushFrame(Closure* closure, const Value* args, size_t argCount,
-		int returnBase, int returnCount, bool captureReturns);
+		int returnBase, int returnCount, bool returnToCompletionLatch);
 	Closure* createTrackedClosure(u32 functionAddress, size_t upvalueCount);
 	Closure* createClosure(CallFrame& frame, Blua32RuntimeFunction& functionRecord);
 	void closeUpvalues(CallFrame& frame);
@@ -465,7 +464,6 @@ private:
 	GcHeap m_heap;
 	std::unordered_map<u32, Closure> m_staticClosuresByAddress;
 	std::array<BuiltinFunction, BUILTIN_FUNCTION_COUNT> m_builtinFunctions;
-	NativeResults* m_externalReturnSink = nullptr;
 
 	ScratchBuffer<NativeResults> m_nativeReturnScratch;
 	size_t m_nativeReturnScratchIndex = 0;

@@ -475,9 +475,8 @@ Closure* CPU::staticClosureAtAddress(u32 address) {
 }
 
 void CPU::clearExecutionEnvironment() {
-	lastReturnValues.clear();
+	completionValues.clear();
 	clearCallStack();
-	m_externalReturnSink = nullptr;
 	clearGlobalSlots();
 	globals->clear();
 }
@@ -670,7 +669,7 @@ Blua32RuntimeFunction* CPU::functionRecordOnSelectedBus(u32 address) {
 }
 
 void CPU::start(u32 functionAddress, NativeArgsView args, u32 statusWord) {
-	lastReturnValues.clear();
+	completionValues.clear();
 	clearCallStack();
 	m_haltedUntilIrq = false;
 	m_interruptEventPending = false;
@@ -717,21 +716,15 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 }
 
 void CPU::call(Closure& closure, NativeArgsView args, int returnCount) {
-	lastReturnValues.clear();
+	completionValues.clear();
 	m_yieldRequested = false;
 	pushFrame(&closure, args.data(), args.size(), 0, returnCount, false);
 }
 
-void CPU::callExternal(Closure& closure, NativeArgsView args) {
-	lastReturnValues.clear();
+void CPU::beginCompletionCall(Closure& closure, NativeArgsView args) {
+	completionValues.clear();
 	m_yieldRequested = false;
 	pushFrame(&closure, args.data(), args.size(), 0, 0, true);
-}
-
-NativeResults* CPU::swapExternalReturnSink(NativeResults* sink) {
-	NativeResults* previous = m_externalReturnSink;
-	m_externalReturnSink = sink;
-	return previous;
 }
 
 CpuRuntimeState CPU::captureRuntimeState() const {
@@ -894,7 +887,7 @@ CpuRuntimeState CPU::captureRuntimeState() const {
 		frameState.returnBase = frame.returnBase;
 		frameState.returnCount = frame.returnCount;
 		frameState.top = frame.top;
-		frameState.captureReturns = frame.captureReturns;
+		frameState.returnToCompletionLatch = frame.returnToCompletionLatch;
 		frameState.callSitePc = frame.callSitePc;
 		frameState.isExceptionFrame = frame.isExceptionFrame;
 		frameState.isNonMaskableExceptionFrame = frame.isNonMaskableExceptionFrame;
@@ -928,9 +921,9 @@ CpuRuntimeState CPU::captureRuntimeState() const {
 		}
 		state.protectedCalls.push_back(continuationState);
 	}
-	state.lastReturnValues.reserve(lastReturnValues.size());
-	for (const Value& value : lastReturnValues) {
-		state.lastReturnValues.push_back(captureValueState(value));
+	state.completionValues.reserve(completionValues.size());
+	for (const Value& value : completionValues) {
+		state.completionValues.push_back(captureValueState(value));
 	}
 	state.openUpvalues.reserve(m_openUpvalues.size());
 	for (const OpenUpvalueSlot& entry : m_openUpvalues) {
@@ -1080,9 +1073,8 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 		}
 	}
 
-	lastReturnValues.clear();
+	completionValues.clear();
 	clearCallStack();
-	m_externalReturnSink = nullptr;
 	globals->clear();
 	m_activeExecutionImage = executionImage;
 	for (Value& value : m_systemGlobalValues) {
@@ -1104,7 +1096,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 		frame->closure = restoredObjects[static_cast<size_t>(frameState.closureRef)].closure;
 		frame->returnBase = frameState.returnBase;
 		frame->returnCount = frameState.returnCount;
-		frame->captureReturns = frameState.captureReturns;
+		frame->returnToCompletionLatch = frameState.returnToCompletionLatch;
 		frame->callSitePc = frameState.callSitePc;
 		frame->isExceptionFrame = frameState.isExceptionFrame;
 		frame->isNonMaskableExceptionFrame = frameState.isNonMaskableExceptionFrame;
@@ -1163,9 +1155,9 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	for (const CpuRootValueState& entry : state.globals) {
 		setGlobalByKey(valueString(m_stringPool.intern(entry.name)), restoreValue(entry.value));
 	}
-	lastReturnValues.reserve(state.lastReturnValues.size());
-	for (const CpuValueState& valueState : state.lastReturnValues) {
-		lastReturnValues.push_back(restoreValue(valueState));
+	completionValues.reserve(state.completionValues.size());
+	for (const CpuValueState& valueState : state.completionValues) {
+		completionValues.push_back(restoreValue(valueState));
 	}
 	m_lastExecutionDomainId = state.lastExecutionDomainId;
 	lastPc = state.lastPc;
@@ -2304,7 +2296,7 @@ void CPU::writeUpvalue(Upvalue* upvalue, const Value& value) {
 }
 
 CallFrame* CPU::pushFrame(CallFrame& caller, Closure* closure, int argBase, int argCount,
-	int returnBase, int returnCount, bool captureReturns, u32 callSitePc) {
+	int returnBase, int returnCount, bool returnToCompletionLatch, u32 callSitePc) {
 	Blua32RuntimeFunction* functionRecord = functionRecordInExecutionDomain(
 		*m_activeExecutionImage,
 		closure->functionAddress
@@ -2321,7 +2313,7 @@ CallFrame* CPU::pushFrame(CallFrame& caller, Closure* closure, int argBase, int 
 	frame->closure = closure;
 	frame->returnBase = returnBase;
 	frame->returnCount = returnCount;
-	frame->captureReturns = captureReturns;
+	frame->returnToCompletionLatch = returnToCompletionLatch;
 	frame->callSitePc = callSitePc;
 	frame->varargBase = m_stackTop;
 	frame->varargCount = functionRecord->isVararg
@@ -2358,7 +2350,7 @@ CallFrame* CPU::pushFrame(CallFrame& caller, Closure* closure, int argBase, int 
 }
 
 CallFrame* CPU::pushFrame(Closure* closure, const Value* args, size_t argCount,
-	int returnBase, int returnCount, bool captureReturns) {
+	int returnBase, int returnCount, bool returnToCompletionLatch) {
 	Blua32RuntimeFunction* functionRecord = functionRecordInExecutionDomain(
 		*m_activeExecutionImage,
 		closure->functionAddress
@@ -2380,7 +2372,7 @@ CallFrame* CPU::pushFrame(Closure* closure, const Value* args, size_t argCount,
 	frame->closure = closure;
 	frame->returnBase = returnBase;
 	frame->returnCount = returnCount;
-	frame->captureReturns = captureReturns;
+	frame->returnToCompletionLatch = returnToCompletionLatch;
 	frame->callSitePc = functionRecord->codeAddress;
 	frame->varargBase = m_stackTop;
 	frame->varargCount = functionRecord->isVararg
@@ -2858,13 +2850,8 @@ void CPU::markRoots(GcHeap& heap) {
 	heap.markValue(m_indexKey);
 	heap.markObject(m_stringIndexTable);
 	m_memory.markRoots(heap);
-	for (const auto& value : lastReturnValues) {
+	for (const auto& value : completionValues) {
 		heap.markValue(value);
-	}
-	if (m_externalReturnSink) {
-		for (size_t i = 0; i < m_externalReturnSink->size(); ++i) {
-			heap.markValue((*m_externalReturnSink)[i]);
-		}
 	}
 	for (size_t scratchIndex = 0; scratchIndex < m_nativeReturnScratchIndex; ++scratchIndex) {
 		NativeResults& scratch = m_nativeReturnScratch.get(scratchIndex);

@@ -265,7 +265,6 @@ export class RuntimeNativeBridge {
 
 	private invokeClosureHandler(fn: Closure, thisArg: unknown, args: ReadonlyArray<unknown>): unknown {
 		const callArgs = this.runtime.luaScratch.values.acquire();
-		const results = this.runtime.luaScratch.values.acquire();
 		try {
 			if (thisArg !== undefined) {
 				callArgs.push(toRuntimeValue(this, thisArg));
@@ -273,14 +272,13 @@ export class RuntimeNativeBridge {
 			for (let index = 0; index < args.length; index += 1) {
 				callArgs.push(toRuntimeValue(this, args[index]));
 			}
-			this.runtime.callClosureInto(fn, callArgs, results);
+			const results = this.runtime.callClosure(fn, callArgs);
 			if (results.length === 0) {
 				return undefined;
 			}
 			const ctx = buildMarshalContext(this.sources);
 			return toNativeValue(this, results[0], ctx, new WeakMap());
 		} finally {
-			this.runtime.luaScratch.values.release(results);
 			this.runtime.luaScratch.values.release(callArgs);
 		}
 	}

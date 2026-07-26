@@ -126,7 +126,7 @@ function makeHaltCpu(): {
 		memory,
 		cpu,
 		irqController,
-		haltClosure: cpu.lastReturnValues[0] as Closure,
+		haltClosure: cpu.completionValues[0] as Closure,
 		haltFunctionAddress: HALT_TEST_IMAGE.symbols.functionAddresses[0],
 		idleFunctionAddress: HALT_TEST_IMAGE.symbols.functionAddresses[1],
 		interruptReturnFunctionAddress: HALT_TEST_IMAGE.symbols.functionAddresses[2],
@@ -161,6 +161,30 @@ function makeNativeCallTestImage(): TestBlua32Image {
 
 const NATIVE_CALL_TEST_IMAGE = makeNativeCallTestImage();
 
+function makeCompletionLatchTestImage(): TestBlua32Image {
+	const code = new Uint8Array(6 * INSTRUCTION_BYTES);
+	writeInstruction(code, 0, OpCode.WIDE, 0, 0, 0, 0);
+	writeInstruction(code, 1, OpCode.CLOSURE, 0, 0, 1, 0);
+	writeInstruction(code, 2, OpCode.RET, 0, 1, 0, 0);
+	writeInstruction(code, 3, OpCode.NEWT, 0, 0, 0, 0);
+	writeInstruction(code, 4, OpCode.RET, 0, 1, 0, 0);
+	writeInstruction(code, 5, OpCode.RFE, 0, 0, 0, 0);
+	return linkRawTestSystemBlua32({
+		text: code,
+		functions: [
+			{ firstWord: 0, wordCount: 3 },
+			{ firstWord: 3, wordCount: 2, maxStack: 1 },
+			{ firstWord: 5, wordCount: 1 },
+		],
+		functionIds: ['return_function', 'return_table', 'interrupt_return'],
+		startupFunctionIndex: 0,
+		irqFunctionIndex: 2,
+		exceptionFunctionIndex: 2,
+	});
+}
+
+const COMPLETION_LATCH_TEST_IMAGE = makeCompletionLatchTestImage();
+
 function makeNativeCallCpu(nativeFunction: (cpu: CPU) => Value): {
 	cpu: CPU;
 	irqController: IrqController;
@@ -177,8 +201,8 @@ function makeNativeCallCpu(nativeFunction: (cpu: CPU) => Value): {
 	return {
 		cpu,
 		irqController,
-		callClosure: cpu.lastReturnValues[0] as Closure,
-		idleClosure: cpu.lastReturnValues[1] as Closure,
+		callClosure: cpu.completionValues[0] as Closure,
+		idleClosure: cpu.completionValues[1] as Closure,
 	};
 }
 
@@ -217,7 +241,7 @@ function makeRuntime(cpu: CPU, irqController: IrqController, sliceStats?: { begi
 		vblank: {
 			tickCompleted: false,
 		},
-		callClosureInto: Runtime.prototype.callClosureInto,
+		callClosure: Runtime.prototype.callClosure,
 	} as unknown as Runtime;
 }
 
@@ -469,10 +493,9 @@ test('CPU closure calls that execute HALT without a scheduled interrupt park wit
 	const { cpu, irqController, haltClosure, idleFunctionAddress } = makeHaltCpu();
 	cpu.start(idleFunctionAddress);
 	const runtime = makeRuntime(cpu, irqController);
-	const out: Value[] = [];
 	cpu.instructionBudgetRemaining = 73;
 
-	runtime.callClosureInto(haltClosure, EMPTY_CALL_ARGS, out);
+	const out = runtime.callClosure(haltClosure, EMPTY_CALL_ARGS);
 
 	assert.equal(cpu.isHaltedUntilIrq(), true);
 	assert.equal(cpu.getFrameDepth(), 2);
@@ -488,8 +511,7 @@ test('external closure execution vectors a pending NMI through the physical CPU 
 	const runtime = makeRuntime(cpu, irqController);
 	cpu.requestNonMaskableInterrupt();
 
-	const out: Value[] = [];
-	runtime.callClosureInto(callClosure, EMPTY_CALL_ARGS, out);
+	const out = runtime.callClosure(callClosure, EMPTY_CALL_ARGS);
 
 	assert.deepEqual(out, []);
 	assert.equal(cpu.getFrameDepth(), 1);
@@ -523,14 +545,41 @@ test('CPU closure calls continue after scheduler yield requests and restore the 
 	));
 	cpu.start(idleClosure.functionAddress);
 	const runtime = makeRuntime(cpu, irqController);
-	const out: Value[] = [];
 
 	cpu.instructionBudgetRemaining = 100;
-	runtime.callClosureInto(callClosure, EMPTY_CALL_ARGS, out);
+	const out = runtime.callClosure(callClosure, EMPTY_CALL_ARGS);
 
 	assert.deepEqual(out, []);
 	assert.equal(cpu.instructionBudgetRemaining, 100);
 	assert.equal(cpu.getFrameDepth(), 1);
+});
+
+test('completion-call return routing survives save-state and exposes the CPU latch without copying', () => {
+	const { cpu, irqController } = createTestSystemCpu(COMPLETION_LATCH_TEST_IMAGE);
+	cpu.start(COMPLETION_LATCH_TEST_IMAGE.vectors.startupFunctionAddress);
+	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	const closure = cpu.completionValues[0] as Closure;
+	const closureKey = StringValue.get(cpu.stringPool.intern('completion_call'));
+	cpu.setGlobalByKey(closureKey, closure);
+
+	cpu.beginCompletionCall(closure);
+	assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
+	const state = cpu.captureRuntimeState();
+	assert.equal(state.frames.length, 1);
+	assert.equal(state.frames[0].returnToCompletionLatch, true);
+
+	cpu.restoreRuntimeState(state);
+	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	const restoredTable = cpu.completionValues[0] as Table;
+	cpu.collectTrackedHeapBytes();
+	assert.equal(cpu.completionValues[0], restoredTable);
+
+	const restoredClosure = cpu.getGlobalByKey(closureKey) as Closure;
+	const results = makeRuntime(cpu, irqController).callClosure(restoredClosure);
+	assert.equal(results, cpu.completionValues);
+	const borrowedTable = results[0];
+	cpu.collectTrackedHeapBytes();
+	assert.equal(results[0], borrowedTable);
 });
 
 test('CPU external closure host failures retain physical frames and restore the suspended budget', () => {
@@ -545,11 +594,10 @@ test('CPU external closure host failures retain physical frames and restore the 
 	cpu.start(idleClosure.functionAddress);
 	const sliceStats = { begin: 0, end: 0 };
 	const runtime = makeRuntime(cpu, irqController, sliceStats);
-	const out: Value[] = [];
 
 	cpu.instructionBudgetRemaining = 100;
 	assert.throws(
-		() => runtime.callClosureInto(callClosure, EMPTY_CALL_ARGS, out),
+		() => runtime.callClosure(callClosure, EMPTY_CALL_ARGS),
 		/native boom/,
 	);
 	assert.equal(cpu.instructionBudgetRemaining, 100);
@@ -562,7 +610,7 @@ test('CPU frame executor rejects native Lua re-entry and closes the scheduler sl
 	let idleClosure!: Closure;
 	const fixture = makeNativeCallCpu(cpu => cpu.createNativeFunction(
 		'reentering_native',
-		() => runtime.callClosureInto(idleClosure, EMPTY_CALL_ARGS, []),
+		() => runtime.callClosure(idleClosure, EMPTY_CALL_ARGS),
 		{ base: 7, perArg: 0, perRet: 0 },
 	));
 	const { cpu, irqController, callClosure } = fixture;
@@ -737,10 +785,10 @@ return wait_cart
 	cpu.resetExecutionImages(executionAddressSpace.reset());
 	cpu.start(linked.systemVectors.startupFunctionAddress, EMPTY_CALL_ARGS, CPU_STATUS_SYSTEM_ENTRY);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
-	const systemWaiter = cpu.lastReturnValues[0] as Closure;
+	const systemWaiter = cpu.completionValues[0] as Closure;
 	cpu.start(linked.cartVectors.startupFunctionAddress, EMPTY_CALL_ARGS, CPU_STATUS_CART_ENTRY);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
-	const cartWaiter = cpu.lastReturnValues[0] as Closure;
+	const cartWaiter = cpu.completionValues[0] as Closure;
 	const saved = cpu.captureRuntimeState();
 	assert.equal(saved.systemGlobals.some(entry => entry.name === 'irq'), true);
 	assert.equal(saved.globals.some(entry => entry.name === 'irq'), true);
@@ -1306,7 +1354,7 @@ test('CPU mapped bus errors enter the system exception vector without committing
 	loadFault.epcWord += INSTRUCTION_BYTES;
 	cpu.restoreRuntimeState(loadFault);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
-	assert.deepEqual(cpu.lastReturnValues, [1]);
+	assert.deepEqual(cpu.completionValues, [1]);
 
 	memory.writeMappedU32LE(IO_SYS_BUS_FAULT_ACK, 1);
 	memory.readMappedU8(unmappedAddress);
@@ -1352,7 +1400,7 @@ test('CPU mapped memory accepts byte addresses and four-byte-aligned f64 address
 
 	cpu.start(image.vectors.startupFunctionAddress);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
-	assert.deepEqual(cpu.lastReturnValues, [0x5a, Math.PI]);
+	assert.deepEqual(cpu.completionValues, [0x5a, Math.PI]);
 });
 
 test('CPU address errors vector before any mapped-memory bus cycle or destination commit', () => {

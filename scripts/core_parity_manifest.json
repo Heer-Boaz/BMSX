@@ -2255,7 +2255,7 @@
 				"rebootSystem",
 				"resetHardwareState",
 				"resetForSystemBoot",
-				"callClosureInto",
+				"callClosure",
 				"machineTimeMs",
 				"machineElapsedMs",
 				"baseRamUsedBytes",

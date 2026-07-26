@@ -227,7 +227,7 @@ test('debug package source boot resolves the persisted GX texture layout module'
 
 	assert.equal(registry.module2lua[GX_TEXTURE_LAYOUT_MODULE_PATH].src, layoutSource);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
-	assert.deepEqual(Array.from(cpu.lastReturnValues), [64 | (256 << 16)]);
+	assert.deepEqual(Array.from(cpu.completionValues), [64 | (256 << 16)]);
 });
 
 test('ROM TOC decode gives Lua assets an explicit zero update timestamp', () => {

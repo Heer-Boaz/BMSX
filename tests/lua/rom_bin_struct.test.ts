@@ -25,7 +25,7 @@ function runStructRead(packedWords: number[], snippet: string): Value[] {
 	}
 	cpu.start(image.vectors.startupFunctionAddress);
 	assert.equal(cpu.runUntilDepth(0, 1000000), RunResult.Halted);
-	return Array.from(cpu.lastReturnValues);
+	return Array.from(cpu.completionValues);
 }
 
 test('a packed struct-array in ROM-mapped memory is read field-wise via a typed pointer (the .bin consumer pattern)', () => {

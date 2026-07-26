@@ -312,7 +312,7 @@ test('guest cartridge selection and EXEC-latched closures survive the runtime sa
 
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
 	assert.equal(cpu.activeCartridgeSlot(), 0);
-	const slot0Closure = cpu.lastReturnValues[0] as Closure;
+	const slot0Closure = cpu.completionValues[0] as Closure;
 	const savedClosureName = StringValue.get(cpu.stringPool.intern('saved_closure'));
 	const closureTableName = StringValue.get(cpu.stringPool.intern('closure_table'));
 	const closureTable = cpu.createTable();
@@ -327,7 +327,7 @@ test('guest cartridge selection and EXEC-latched closures survive the runtime sa
 	);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
 	assert.equal(cpu.activeCartridgeSlot(), 1);
-	const slot1Closure = cpu.lastReturnValues[0] as Closure;
+	const slot1Closure = cpu.completionValues[0] as Closure;
 	assert.equal(slot1Closure, slot0Closure);
 	assert.equal(closureTable.get(slot1Closure), 77);
 	assert.equal(cpu.activeCartridgeSlot(), 1);
@@ -357,7 +357,7 @@ test('guest cartridge selection and EXEC-latched closures survive the runtime sa
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
 	cpu.call(slot0Closure);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
-	assert.equal(cpu.lastReturnValues[0], 111);
+	assert.equal(cpu.completionValues[0], 111);
 
 	applyRuntimeSaveStateBytes(runtime, saveBytes);
 	const restoredClosure = cpu.getGlobalByKey(savedClosureName) as Closure;
@@ -366,7 +366,7 @@ test('guest cartridge selection and EXEC-latched closures survive the runtime sa
 	assert.equal(restoredTable.get(restoredClosure), 77);
 	cpu.call(restoredClosure);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
-	assert.equal(cpu.lastReturnValues[0], 222);
+	assert.equal(cpu.completionValues[0], 222);
 });
 
 test('distinct non-static closures remain distinct table keys through the runtime save-state wire format', () => {
@@ -379,14 +379,14 @@ test('distinct non-static closures remain distinct table keys through the runtim
 	const cpu = runtime.machine.cpu;
 
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
-	const firstClosure = cpu.lastReturnValues[0] as Closure;
+	const firstClosure = cpu.completionValues[0] as Closure;
 	cpu.start(
 		blua32TestFunctionAddress(SYSTEM_ROM_BASE, 0),
 		EMPTY_CALL_ARGS,
 		CPU_STATUS_SYSTEM_ENTRY,
 	);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
-	const secondClosure = cpu.lastReturnValues[0] as Closure;
+	const secondClosure = cpu.completionValues[0] as Closure;
 	assert.notEqual(firstClosure, secondClosure);
 	assert.equal(firstClosure.functionAddress, secondClosure.functionAddress);
 
@@ -431,14 +431,14 @@ test('mixed static and non-static cartridge closures keep their identities acros
 	const cpu = runtime.machine.cpu;
 
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
-	const dynamicClosure = cpu.lastReturnValues[0] as Closure;
+	const dynamicClosure = cpu.completionValues[0] as Closure;
 	cpu.start(
 		blua32TestFunctionAddress(SYSTEM_ROM_BASE, 1),
 		EMPTY_CALL_ARGS,
 		CPU_STATUS_SYSTEM_ENTRY,
 	);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
-	const canonicalClosure = cpu.lastReturnValues[0] as Closure;
+	const canonicalClosure = cpu.completionValues[0] as Closure;
 	assert.notEqual(dynamicClosure, canonicalClosure);
 	assert.equal(dynamicClosure.functionAddress, canonicalClosure.functionAddress);
 
@@ -480,6 +480,6 @@ test('mixed static and non-static cartridge closures keep their identities acros
 		CPU_STATUS_SYSTEM_ENTRY,
 	);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
-	assert.equal(cpu.lastReturnValues[0], restoredCanonical);
-	assert.equal(restoredTable.get(cpu.lastReturnValues[0]), 22);
+	assert.equal(cpu.completionValues[0], restoredCanonical);
+	assert.equal(restoredTable.get(cpu.completionValues[0]), 22);
 });

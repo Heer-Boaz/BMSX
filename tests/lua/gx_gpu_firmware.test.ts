@@ -94,7 +94,7 @@ test('GX firmware programs native PSX widths and PS2 SD interlaced outputs', () 
 	for (let modeIndex = 0; modeIndex < FIRMWARE_MODES.length; modeIndex += 1) {
 		const expected = FIRMWARE_MODES[modeIndex]!;
 		const { memory, cpu } = runFirmwareMode(modeIndex);
-		assert.deepEqual(Array.from(cpu.lastReturnValues), [expected.width, expected.height]);
+		assert.deepEqual(Array.from(cpu.completionValues), [expected.width, expected.height]);
 		const words = new Uint32Array(GX_GPU_PCRTC_CONFIG_WORD_COUNT);
 		for (let wordIndex = 0; wordIndex < words.length; wordIndex += 1) {
 			words[wordIndex] = memory.readMappedU32LE(gxGpuPcrtcRegisterAddress(wordIndex));
@@ -115,7 +115,7 @@ test('GX firmware programs native PSX widths and PS2 SD interlaced outputs', () 
 
 test('GX firmware aligns the supervisor circuit to a retained PS2 DTV origin', () => {
 	const { memory, cpu } = runFirmwareMode(FIRMWARE_MODES.length);
-	assert.deepEqual(Array.from(cpu.lastReturnValues), [256, 192]);
+	assert.deepEqual(Array.from(cpu.completionValues), [256, 192]);
 	assert.equal(memory.readMappedU32LE(gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_DISPLAY1_LOW)), 420 | (40 << 12));
 	assert.equal(memory.readMappedU32LE(gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_DISPLAY1_HIGH)), 255 | (191 << 12));
 });

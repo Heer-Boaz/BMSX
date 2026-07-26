@@ -288,7 +288,7 @@ test('intellisense resolves captured fault upvalues after the CPU stack is repla
 	cpu.start(image.vectors.startupFunctionAddress);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
 	assert.equal(cpu.getFrameDepth(), 0);
-	const closure = cpu.lastReturnValues[0];
+	const closure = cpu.completionValues[0];
 	assert.ok(valueIsClosure(closure));
 	cpu.call(closure);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);

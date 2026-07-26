@@ -479,7 +479,7 @@ return imgdec
 			CPU_STATUS_SYSTEM_ENTRY,
 		);
 		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
-		assert.deepEqual(Array.from(cpu.lastReturnValues, value => (value as number) >>> 0), [
+		assert.deepEqual(Array.from(cpu.completionValues, value => (value as number) >>> 0), [
 			1,
 			CART_ROM_BASE + loadedTexture.start!,
 			(loadedTexture.end! - loadedTexture.start!) >> 2,

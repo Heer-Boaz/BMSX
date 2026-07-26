@@ -860,6 +860,10 @@ rompacker, TOC and host do not maintain a second module-name or attribute list.
   execution advances physical machine time without consuming the suspended
   slice's retained instruction budget. A host failure ends the scheduler slice
   but does not unwind physical call or exception frames as rollback.
+- A completion call sets a physical return-route bit on its call frame. `RET`
+  writes the CPU-owned retained completion latch, and `Runtime` exposes only a
+  borrowed read-only view of that latch. The route bit and latch are save-state
+  data; the CPU never retains or GC-marks a host result buffer.
 - Emulator tooling may inspect or edit a suspended CPU through allocation-free
   scalar primitives for raw frame domains, function-record addresses,
   continuation and callsite PCs, exception-frame flags, live registers,
@@ -1108,10 +1112,10 @@ boundary, an asserted unmasked maskable IRQ line makes the CPU push the selected
 generated IRQ root above the interrupted frame. That root calls the image's
 `irq(flags)` handler and ends
 in `RFE`; an ordinary Lua return only returns to the root. Host/debugger closure
-calls may wake from a pending IRQ, but they do not consume or vector it. The NMI
-line and system exception vector exist at the CPU boundary; the ICU asserts the
-manual system line from the rising edge of its dedicated supervisor-request
-input at VBlank.
+calls obey the same pending IRQ/NMI entry before their next instruction; they do
+not bypass or suppress physical vectors. The NMI line and system exception
+vector exist at the CPU boundary; the ICU asserts the manual system line from
+the rising edge of its dedicated supervisor-request input at VBlank.
 
 The cart-facing IRQ gate is `IRQ_MASK`, a per-source bitmask with the same bit
 layout as `IRQ_FLAGS`. It resets to `0`, so cold boot starts with no source

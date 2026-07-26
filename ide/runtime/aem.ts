@@ -25,17 +25,11 @@ function buildRuntimeAemValidationLookup(sources: RuntimeSourceState) {
 }
 
 function reloadAem(runtime: Runtime): void {
-	const results = runtime.luaScratch.values.acquire();
-	try {
-		const resourceId = runtime.internString('aem');
-		const rget = runtime.machine.cpu.getGlobalByKey(runtime.internString('rget')) as Closure;
-		runtime.callClosureInto(rget, [resourceId], results);
-		const resource = results[0] as Table;
-		const reload = resource.getStringKey(runtime.internString('reload')) as Closure;
-		runtime.callClosureInto(reload, [resource], results);
-	} finally {
-		runtime.luaScratch.values.release(results);
-	}
+	const resourceId = runtime.internString('aem');
+	const rget = runtime.machine.cpu.getGlobalByKey(runtime.internString('rget')) as Closure;
+	const resource = runtime.callClosure(rget, [resourceId])[0] as Table;
+	const reload = resource.getStringKey(runtime.internString('reload')) as Closure;
+	runtime.callClosure(reload, [resource]);
 }
 
 export function applyAemSourceToRuntime(

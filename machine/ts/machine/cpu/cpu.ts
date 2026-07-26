@@ -177,7 +177,7 @@ export type CpuFrameState = {
 	returnBase: number;
 	returnCount: number;
 	top: number;
-	captureReturns: boolean;
+	returnToCompletionLatch: boolean;
 	callSitePc: number;
 	isExceptionFrame: boolean;
 	isNonMaskableExceptionFrame: boolean;
@@ -204,7 +204,7 @@ export type CpuRuntimeState = {
 	globals: CpuRootValueState[];
 	frames: CpuFrameState[];
 	protectedCalls: CpuProtectedCallState[];
-	lastReturnValues: CpuValueState[];
+	completionValues: CpuValueState[];
 	objects: CpuObjectState[];
 	openUpvalues: number[];
 	lastExecutionDomainId: ExecutionDomainId;
@@ -254,7 +254,7 @@ export type CpuExecutionObserver = {
 const MAX_POOLED_FRAMES = 32;
 export class CPU {
 	public instructionBudgetRemaining: number = 0;
-	public lastReturnValues: Value[] = [];
+	public completionValues: Value[] = [];
 	public lastPc: number = 0;
 	public lastInstruction: number = 0;
 	public readonly globals: Table;
@@ -291,7 +291,6 @@ export class CPU {
 	private arrayNativeArgsScratchIndex = 0;
 	private readonly nativeReturnScratch = new ScratchArrayStack<Value>();
 	private executionObserver: CpuExecutionObserver | null = null;
-	private externalReturnSink: Value[] | null = null;
 	private readonly executionImages: Blua32ExecutionImage[] = [];
 	private systemImage!: Blua32ExecutionImage;
 	private activeExecutionImage!: Blua32ExecutionImage;
@@ -622,7 +621,7 @@ export class CPU {
 			returnBase: 0,
 			returnCount: 0,
 			top: 0,
-			captureReturns: false,
+			returnToCompletionLatch: false,
 			callSitePc: 0,
 			isExceptionFrame: false,
 			isNonMaskableExceptionFrame: false,
@@ -669,9 +668,8 @@ export class CPU {
 	}
 
 	public clearExecutionEnvironment(): void {
-		this.lastReturnValues.length = 0;
+		this.completionValues.length = 0;
 		this.clearCallStack();
-		this.externalReturnSink = null;
 		this.clearGlobalSlots();
 		this.globals.clear();
 	}
@@ -951,7 +949,7 @@ export class CPU {
 	}
 
 	public start(functionAddress: number, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS, statusWord = CPU_STATUS_CART_ENTRY): void {
-		this.lastReturnValues.length = 0;
+		this.completionValues.length = 0;
 		this.clearCallStack();
 		this.haltedUntilIrq = false;
 		this.interruptEventPending = false;
@@ -998,13 +996,13 @@ export class CPU {
 	}
 
 	public call(closure: Closure, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS, returnCount: number = 0): void {
-		this.lastReturnValues.length = 0;
+		this.completionValues.length = 0;
 		this.yieldRequested = false;
 		this.pushFrame(closure, args, 0, returnCount, false);
 	}
 
-	public callExternal(closure: Closure, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS): void {
-		this.lastReturnValues.length = 0;
+	public beginCompletionCall(closure: Closure, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS): void {
+		this.completionValues.length = 0;
 		this.yieldRequested = false;
 		this.pushFrame(closure, args, 0, 0, true);
 	}
@@ -1169,12 +1167,6 @@ export class CPU {
 	private clearHaltAfterAcceptedInterrupt(): void {
 		this.haltedUntilIrq = false;
 		this.yieldRequested = false;
-	}
-
-	public swapExternalReturnSink(sink: Value[] | null): Value[] | null {
-		const previous = this.externalReturnSink;
-		this.externalReturnSink = sink;
-		return previous;
 	}
 
 	public getFrameDepth(): number {
@@ -1906,23 +1898,15 @@ export class CPU {
 							return;
 						}
 					}
-					if (frame.captureReturns) {
-						if (this.externalReturnSink !== null) {
-							this.captureValuesIntoArrayFromRegisters(this.externalReturnSink, registers, a, total);
-						} else {
-							this.captureValuesIntoArrayFromRegisters(this.lastReturnValues, registers, a, total);
-						}
+					if (frame.returnToCompletionLatch) {
+						this.captureValuesIntoArrayFromRegisters(this.completionValues, registers, a, total);
 						this.frames.pop();
 						this.stackTop = frame.varargBase;
 						this.releaseFrame(frame);
 						return;
 					}
 					if (frameIndex === 0) {
-						if (this.externalReturnSink !== null) {
-							this.captureValuesIntoArrayFromRegisters(this.externalReturnSink, registers, a, total);
-						} else {
-							this.captureValuesIntoArrayFromRegisters(this.lastReturnValues, registers, a, total);
-						}
+						this.captureValuesIntoArrayFromRegisters(this.completionValues, registers, a, total);
 						this.frames.pop();
 						this.stackTop = frame.varargBase;
 						this.releaseFrame(frame);
@@ -2136,7 +2120,7 @@ export class CPU {
 		args: ReadonlyArray<Value>,
 		returnBase: number,
 		returnCount: number,
-		captureReturns: boolean,
+		returnToCompletionLatch: boolean,
 	): CallFrame | null {
 		const functionRecord = this.functionRecordInExecutionDomain(
 			this.activeExecutionImage,
@@ -2154,7 +2138,7 @@ export class CPU {
 		frame.returnBase = returnBase;
 		frame.returnCount = returnCount;
 		frame.top = functionRecord.numParams;
-		frame.captureReturns = captureReturns;
+		frame.returnToCompletionLatch = returnToCompletionLatch;
 		frame.callSitePc = functionRecord.codeAddress;
 		frame.varargBase = this.stackTop;
 		frame.varargCount = functionRecord.isVararg ? Math.max(args.length - functionRecord.numParams, 0) : 0;
@@ -2174,7 +2158,7 @@ export class CPU {
 		return frame;
 	}
 
-	private pushFrameFromCaller(caller: CallFrame, closure: Closure, argBase: number, argCount: number, returnBase: number, returnCount: number, captureReturns: boolean, callSitePc: number): CallFrame | null {
+	private pushFrameFromCaller(caller: CallFrame, closure: Closure, argBase: number, argCount: number, returnBase: number, returnCount: number, returnToCompletionLatch: boolean, callSitePc: number): CallFrame | null {
 		const functionRecord = this.functionRecordInExecutionDomain(
 			this.activeExecutionImage,
 			closure.functionAddress,
@@ -2191,7 +2175,7 @@ export class CPU {
 		frame.returnBase = returnBase;
 		frame.returnCount = returnCount;
 		frame.top = functionRecord.numParams;
-		frame.captureReturns = captureReturns;
+		frame.returnToCompletionLatch = returnToCompletionLatch;
 		frame.callSitePc = callSitePc;
 		frame.varargBase = this.stackTop;
 		frame.varargCount = functionRecord.isVararg ? Math.max(argCount - functionRecord.numParams, 0) : 0;
@@ -2995,7 +2979,7 @@ export class CPU {
 				returnBase: frame.returnBase,
 				returnCount: frame.returnCount,
 				top: frame.top,
-				captureReturns: frame.captureReturns,
+				returnToCompletionLatch: frame.returnToCompletionLatch,
 				callSitePc: frame.callSitePc,
 				isExceptionFrame: frame.isExceptionFrame,
 				isNonMaskableExceptionFrame: frame.isNonMaskableExceptionFrame,
@@ -3016,9 +3000,9 @@ export class CPU {
 			};
 		}
 
-		const lastReturnValues = new Array<CpuValueState>(this.lastReturnValues.length);
-		for (let index = 0; index < this.lastReturnValues.length; index += 1) {
-			lastReturnValues[index] = captureValueState(this.lastReturnValues[index]);
+		const completionValues = new Array<CpuValueState>(this.completionValues.length);
+		for (let index = 0; index < this.completionValues.length; index += 1) {
+			completionValues[index] = captureValueState(this.completionValues[index]);
 		}
 
 		const openUpvalues = new Array<number>(this.openUpvalues.length);
@@ -3032,7 +3016,7 @@ export class CPU {
 			globals,
 			frames,
 			protectedCalls,
-			lastReturnValues,
+			completionValues,
 			objects,
 			openUpvalues,
 			lastExecutionDomainId: this.lastExecutionDomainId,
@@ -3156,9 +3140,8 @@ export class CPU {
 			}
 		}
 
-		this.lastReturnValues.length = 0;
+		this.completionValues.length = 0;
 		this.clearCallStack();
-		this.externalReturnSink = null;
 		this.globals.clear();
 		this.activeExecutionImage = executionImage;
 		this.systemGlobalValues.fill(null);
@@ -3174,7 +3157,7 @@ export class CPU {
 			frame.closure = restoredObjects[frameState.closureRef] as Closure;
 			frame.returnBase = frameState.returnBase;
 			frame.returnCount = frameState.returnCount;
-			frame.captureReturns = frameState.captureReturns;
+			frame.returnToCompletionLatch = frameState.returnToCompletionLatch;
 			frame.callSitePc = frameState.callSitePc;
 			frame.isExceptionFrame = frameState.isExceptionFrame;
 			frame.isNonMaskableExceptionFrame = frameState.isNonMaskableExceptionFrame;
@@ -3222,8 +3205,8 @@ export class CPU {
 			const entry = state.globals[index];
 			this.setGlobalByKey(StringValue.get(this.stringPool.intern(entry.name)), restoreValue(entry.value));
 		}
-		for (let index = 0; index < state.lastReturnValues.length; index += 1) {
-			this.lastReturnValues[index] = restoreValue(state.lastReturnValues[index]);
+		for (let index = 0; index < state.completionValues.length; index += 1) {
+			this.completionValues[index] = restoreValue(state.completionValues[index]);
 		}
 		this.lastExecutionDomainId = state.lastExecutionDomainId;
 		this.lastPc = state.lastPc;
@@ -3291,13 +3274,8 @@ export class CPU {
 		}
 		pushValue(this.stringIndexTable);
 		this.memory.collectRootValues(pushValue);
-		for (let index = 0; index < this.lastReturnValues.length; index += 1) {
-			pushValue(this.lastReturnValues[index]);
-		}
-		if (this.externalReturnSink !== null) {
-			for (let index = 0; index < this.externalReturnSink.length; index += 1) {
-				pushValue(this.externalReturnSink[index]);
-			}
+		for (let index = 0; index < this.completionValues.length; index += 1) {
+			pushValue(this.completionValues[index]);
 		}
 		for (let index = 0; index < this.executionImages.length; index += 1) {
 			pushImage(this.executionImages[index]);

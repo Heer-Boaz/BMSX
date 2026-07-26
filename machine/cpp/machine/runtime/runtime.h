@@ -26,6 +26,7 @@
 #include "common/primitives.h"
 #include <cstddef>
 #include <memory>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -83,9 +84,10 @@ public:
 	auto vramTotalBytes() const -> uint32_t;
 
 	/**
-	 * Call a CPU closure from native code.
+	 * Call a CPU closure from native code. The returned span is invalidated by
+	 * subsequent CPU execution, call entry, reset, or state restore.
 	 */
-	void callClosureInto(Closure& fn, NativeArgsView args, NativeResults& out);
+	auto callClosure(Closure& fn, NativeArgsView args = {}) -> std::span<const Value>;
 
 	/**
 	 * Set a global variable.

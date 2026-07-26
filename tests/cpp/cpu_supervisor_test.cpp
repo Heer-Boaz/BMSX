@@ -173,7 +173,7 @@ void testManualNmiAndSaveStateReturn() {
 	require(machine.cpu.readLastExecutionDomain() == bmsx::SYSTEM_EXECUTION_DOMAIN_ID, "system exception execution replaces the last-instruction domain");
 	require(bmsx::asNumber(machine.cpu.readFrameRegister(1, 0)) == bmsx::CPU_CAUSE_NMI, "MFC0 reads the raw CAUSE latch");
 	require(machine.cpu.run(100) == bmsx::RunResult::Halted, "RFE resumes and completes the retained user frame");
-	require(machine.cpu.lastReturnValues.size() == 1u && bmsx::asNumber(machine.cpu.lastReturnValues[0]) == 1.0, "RFE resumes at EPC");
+	require(machine.cpu.completionValues.size() == 1u && bmsx::asNumber(machine.cpu.completionValues[0]) == 1.0, "RFE resumes at EPC");
 	require(machine.cpu.captureRuntimeState().statusWord == bmsx::CPU_STATUS_CART_ENTRY, "RFE pops the raw STATUS mode stack");
 }
 
@@ -204,7 +204,7 @@ void testPrivilegeVectorRoutingAndCp0Fault() {
 	fault.epcWord += bmsx::INSTRUCTION_BYTES;
 	machine.cpu.restoreRuntimeState(fault);
 	require(machine.cpu.run(100) == bmsx::RunResult::Halted, "edited EPC skips the faulting instruction on RFE");
-	require(machine.cpu.lastReturnValues.size() == 1u && bmsx::asNumber(machine.cpu.lastReturnValues[0]) == 1.0, "fault handler resumes the selected user instruction");
+	require(machine.cpu.completionValues.size() == 1u && bmsx::asNumber(machine.cpu.completionValues[0]) == 1.0, "fault handler resumes the selected user instruction");
 
 	machine.cpu.start(
 		machine.systemRom.functionAddresses[SYSTEM_CP0_FUNCTION],
@@ -429,7 +429,7 @@ void testMappedBusErrorsEnterTheSystemExceptionVector() {
 	loadFault.epcWord += bmsx::INSTRUCTION_BYTES;
 	machine.cpu.restoreRuntimeState(loadFault);
 	require(machine.cpu.run(100) == bmsx::RunResult::Halted, "RFE can skip the faulting mapped load");
-	require(machine.cpu.lastReturnValues.size() == 1u && bmsx::asNumber(machine.cpu.lastReturnValues[0]) == 1.0, "mapped load resume retains the destination value");
+	require(machine.cpu.completionValues.size() == 1u && bmsx::asNumber(machine.cpu.completionValues[0]) == 1.0, "mapped load resume retains the destination value");
 
 	machine.memory.writeMappedU32LE(bmsx::IO_SYS_BUS_FAULT_ACK, 1u);
 	machine.memory.readMappedU8(UNMAPPED_ADDRESS);
@@ -479,9 +479,9 @@ void testMappedMemoryAlignmentContract() {
 	machine.memory.writeMappedF64LE(F64_ADDRESS, F64_VALUE);
 	machine.cpu.start(machine.systemRom.functionAddresses[0]);
 	require(machine.cpu.run(100) == bmsx::RunResult::Halted, "aligned mapped loads complete");
-	require(machine.cpu.lastReturnValues.size() == 2u, "aligned mapped loads return both values");
-	require(bmsx::asNumber(machine.cpu.lastReturnValues[0]) == 0x5a, "byte access accepts an odd address");
-	require(bmsx::asNumber(machine.cpu.lastReturnValues[1]) == F64_VALUE, "f64 access accepts four-byte alignment");
+	require(machine.cpu.completionValues.size() == 2u, "aligned mapped loads return both values");
+	require(bmsx::asNumber(machine.cpu.completionValues[0]) == 0x5a, "byte access accepts an odd address");
+	require(bmsx::asNumber(machine.cpu.completionValues[1]) == F64_VALUE, "f64 access accepts four-byte alignment");
 }
 
 void testAddressErrorsPrecedeMappedMemoryBusCycles() {
@@ -644,30 +644,30 @@ void testProtectedCallMicrocodePreemptsSavesAndHandlesLuaErrors() {
 	require(state.protectedCalls.size() == 1u, "save state should retain the active protected call");
 	machine.cpu.restoreRuntimeState(state);
 	require(machine.cpu.run(100) == bmsx::RunResult::Halted, "restored pcall should complete");
-	require(machine.cpu.lastReturnValues.size() == 3u && bmsx::isTruthy(machine.cpu.lastReturnValues[0]), "pcall should return success");
-	require(bmsx::asNumber(machine.cpu.lastReturnValues[1]) == 3.0 && bmsx::asNumber(machine.cpu.lastReturnValues[2]) == 4.0, "pcall should preserve multiple results");
+	require(machine.cpu.completionValues.size() == 3u && bmsx::isTruthy(machine.cpu.completionValues[0]), "pcall should return success");
+	require(bmsx::asNumber(machine.cpu.completionValues[1]) == 3.0 && bmsx::asNumber(machine.cpu.completionValues[2]) == 4.0, "pcall should preserve multiple results");
 
 	machine.cpu.start(machine.systemRom.functionAddresses[2]);
 	require(machine.cpu.run(100) == bmsx::RunResult::Halted, "xpcall error path should complete");
-	require(machine.cpu.lastReturnValues.size() == 2u && !bmsx::isTruthy(machine.cpu.lastReturnValues[0]), "xpcall should return failure");
-	require(bmsx::asNumber(machine.cpu.lastReturnValues[1]) == 42.0, "xpcall handler should receive the thrown Lua value");
+	require(machine.cpu.completionValues.size() == 2u && !bmsx::isTruthy(machine.cpu.completionValues[0]), "xpcall should return failure");
+	require(bmsx::asNumber(machine.cpu.completionValues[1]) == 42.0, "xpcall handler should receive the thrown Lua value");
 
 	machine.cpu.start(machine.systemRom.functionAddresses[6]);
 	require(machine.cpu.run(100) == bmsx::RunResult::Halted, "invalid xpcall handler should be caught by the outer pcall");
-	require(machine.cpu.lastReturnValues.size() == 2u && !bmsx::isTruthy(machine.cpu.lastReturnValues[0]), "xpcall should validate its handler before running the body");
-	require(bmsx::valueIsString(machine.cpu.lastReturnValues[1]), "invalid xpcall handler should return a Lua error value");
+	require(machine.cpu.completionValues.size() == 2u && !bmsx::isTruthy(machine.cpu.completionValues[0]), "xpcall should validate its handler before running the body");
+	require(bmsx::valueIsString(machine.cpu.completionValues[1]), "invalid xpcall handler should return a Lua error value");
 
 	machine.cpu.start(machine.systemRom.functionAddresses[7]);
 	require(machine.cpu.run(100) == bmsx::RunResult::Halted, "xpcall handler failure should complete");
-	require(machine.cpu.lastReturnValues.size() == 2u && !bmsx::isTruthy(machine.cpu.lastReturnValues[0]), "xpcall handler failure should return failure");
-	require(bmsx::valueIsString(machine.cpu.lastReturnValues[1]), "xpcall handler failure should return the Lua error-in-handler value");
-	require(machine.cpu.stringPool().toString(bmsx::asStringId(machine.cpu.lastReturnValues[1])) == "error in error handling", "xpcall should hide the handler's replacement error");
+	require(machine.cpu.completionValues.size() == 2u && !bmsx::isTruthy(machine.cpu.completionValues[0]), "xpcall handler failure should return failure");
+	require(bmsx::valueIsString(machine.cpu.completionValues[1]), "xpcall handler failure should return the Lua error-in-handler value");
+	require(machine.cpu.stringPool().toString(bmsx::asStringId(machine.cpu.completionValues[1])) == "error in error handling", "xpcall should hide the handler's replacement error");
 
 	machine.cpu.start(machine.systemRom.functionAddresses[5]);
 	require(machine.cpu.run(100) == bmsx::RunResult::Halted, "nested pcall should complete");
-	require(machine.cpu.lastReturnValues.size() == 4u, "nested pcall should preserve the open result sequence");
-	require(bmsx::isTruthy(machine.cpu.lastReturnValues[0]) && bmsx::isTruthy(machine.cpu.lastReturnValues[1]), "nested pcall should prefix both success values");
-	require(bmsx::asNumber(machine.cpu.lastReturnValues[2]) == 3.0 && bmsx::asNumber(machine.cpu.lastReturnValues[3]) == 4.0, "nested pcall should preserve child results");
+	require(machine.cpu.completionValues.size() == 4u, "nested pcall should preserve the open result sequence");
+	require(bmsx::isTruthy(machine.cpu.completionValues[0]) && bmsx::isTruthy(machine.cpu.completionValues[1]), "nested pcall should prefix both success values");
+	require(bmsx::asNumber(machine.cpu.completionValues[2]) == 3.0 && bmsx::asNumber(machine.cpu.completionValues[3]) == 4.0, "nested pcall should preserve child results");
 }
 
 } // namespace

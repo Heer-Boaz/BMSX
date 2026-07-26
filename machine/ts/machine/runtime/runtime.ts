@@ -152,7 +152,8 @@ export class Runtime {
 
 
 	// start repeated-sequence-acceptable -- External closure calls keep frame/budget restore code direct instead of routing through callback plumbing.
-	public callClosureInto(fn: Closure, args: ReadonlyArray<Value>, out: Value[]): void {
+	/** The borrowed result view is invalidated by subsequent CPU execution, call entry, reset, or state restore. */
+	public callClosure(fn: Closure, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS): ReadonlyArray<Value> {
 		const machine = this.machine;
 		const cpu = machine.cpu;
 		const scheduler = machine.scheduler;
@@ -161,10 +162,8 @@ export class Runtime {
 		}
 		const depth = cpu.getFrameDepth();
 		const previousBudget = cpu.instructionBudgetRemaining;
-		const previousSink = cpu.swapExternalReturnSink(out);
-		out.length = 0;
 		try {
-			cpu.callExternal(fn, args);
+			cpu.beginCompletionCall(fn, args);
 			runDueRuntimeTimers(this);
 			while (cpu.getFrameDepth() > depth) {
 				if (machine.gxGpu.backendReadbackBlocksMachine()) {
@@ -245,8 +244,8 @@ export class Runtime {
 					runDueRuntimeTimers(this);
 				}
 			}
+			return cpu.completionValues;
 		} finally {
-			cpu.swapExternalReturnSink(previousSink);
 			cpu.instructionBudgetRemaining = previousBudget;
 		}
 	}

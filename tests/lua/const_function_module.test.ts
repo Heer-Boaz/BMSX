@@ -59,7 +59,7 @@ function compileWithModule(entrySource: string, modulePath: string, moduleSource
 
 function runColdCompiled(compiled: CompiledProgram) {
 	const cpu = runCompiledTestSystem(compiled, 100000);
-	return Array.from(cpu.lastReturnValues);
+	return Array.from(cpu.completionValues);
 }
 
 function runColdPair(systemCompiled: CompiledProgram, cartCompiled: CompiledProgram) {
@@ -72,7 +72,7 @@ function runColdPair(systemCompiled: CompiledProgram, cartCompiled: CompiledProg
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	cpu.start(finalized.cartVectors.startupFunctionAddress, [], CPU_STATUS_CART_ENTRY);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
-	return Array.from(cpu.lastReturnValues);
+	return Array.from(cpu.completionValues);
 }
 
 function disassembleConstExport(compiled: CompiledProgram, slotName: string): string {
