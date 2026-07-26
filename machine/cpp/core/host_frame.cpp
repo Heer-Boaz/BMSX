@@ -5,31 +5,11 @@
 #include "input/manager.h"
 #include "machine/runtime/runtime.h"
 
-#include <array>
 #include <chrono>
 
 namespace bmsx {
 namespace {
 constexpr double MAX_FRAME_DELTA_MS = 250.0;
-}
-
-void MachineManager::flushSystemOutput(Runtime& runtime) {
-	SystemController& output = runtime.machine.systemController;
-	const u32 byteCount = output.hostOutputAvailableByteCount();
-	if (byteCount == 0u) {
-		return;
-	}
-	std::array<char, SYS_PRINT_BUFFER_BYTES> bytes;
-	for (u32 index = 0u; index < byteCount; ++index) {
-		bytes[index] = static_cast<char>(output.readHostOutputByte());
-	}
-	size_t lineStart = 0u;
-	for (u32 index = 0u; index < byteCount; ++index) {
-		if (bytes[index] == '\n') {
-			m_platform->log(LogLevel::Info, std::string_view(bytes.data() + lineStart, static_cast<size_t>(index) - lineStart));
-			lineStart = static_cast<size_t>(index) + 1u;
-		}
-	}
 }
 
 bool MachineManager::runHostFrame(
@@ -42,69 +22,60 @@ bool MachineManager::runHostFrame(
 		return false;
 	}
 	bool rendered = false;
-	try {
-		const auto tickStart = std::chrono::steady_clock::now();
-		m_screen.recordHostFrame();
+	const auto tickStart = std::chrono::steady_clock::now();
+	m_screen.recordHostFrame();
 
-		double hostDeltaMs = deltaTime * 1000.0;
-		if (hostDeltaMs > MAX_FRAME_DELTA_MS) {
-			hostDeltaMs = MAX_FRAME_DELTA_MS;
-		}
-		const double hostDeltaSeconds = hostDeltaMs / 1000.0;
-		m_delta_time = hostDeltaSeconds;
-		m_total_time += hostDeltaSeconds;
-		m_frame_count += 1;
-		runtime.frameLoop.currentTimeSeconds = m_total_time;
-		m_fps = 1.0 / hostDeltaSeconds;
+	double hostDeltaMs = deltaTime * 1000.0;
+	if (hostDeltaMs > MAX_FRAME_DELTA_MS) {
+		hostDeltaMs = MAX_FRAME_DELTA_MS;
+	}
+	const double hostDeltaSeconds = hostDeltaMs / 1000.0;
+	m_delta_time = hostDeltaSeconds;
+	m_total_time += hostDeltaSeconds;
+	m_frame_count += 1;
+	runtime.frameLoop.currentTimeSeconds = m_total_time;
+	m_fps = 1.0 / hostDeltaSeconds;
 
-		Input::instance().pollInput();
-		const bool hostMenuActive = hostOverlayMenu().tickInput(*this);
-		bool frameReady = true;
+	Input::instance().pollInput();
+	const bool hostMenuActive = hostOverlayMenu().tickInput(*this);
+	bool frameReady = true;
 
-		m_screen.clearPresentation();
-		if (!platformPaused && !hostMenuActive) {
-			m_delta_time = runtime.timing.frameDurationMs / 1000.0;
-			if (frameReady) {
-				const i64 previousTickSequence = runtime.frameScheduler.lastTickSequence;
-				runtime.frameScheduler.run(runtime, hostDeltaMs);
-				while (runtime.machine.gxGpu.backendReadbackPending()) {
-					m_view->backend()->executeGxGpuReadback(runtime.machine.gxGpu);
-					runtime.frameScheduler.run(runtime, 0.0);
-				}
-				syncRuntimeAudioTiming();
-				m_screen.syncAfterRuntimeUpdate(runtime, previousTickSequence);
-			}
-		} else {
-			runtime.frameScheduler.clearQueuedTime();
-		}
-		m_delta_time = hostDeltaSeconds;
-
-		microtasks.flush();
-
-		m_last_tick_timing.totalMs = to_ms(std::chrono::steady_clock::now() - tickStart);
-
+	m_screen.clearPresentation();
+	if (!platformPaused && !hostMenuActive) {
+		m_delta_time = runtime.timing.frameDurationMs / 1000.0;
 		if (frameReady) {
-			if (hostMenuActive && m_view) {
-				hostOverlayMenu().queueRenderCommands(*this, *m_view);
-			} else {
-				const bool hostOverlayQueued = m_view && hostOverlayMenu().queueFrameOverlayCommands(*this, *m_view);
-				if (hostOverlayQueued) {
-					m_screen.requestHeldPresentation();
-				}
+			const i64 previousTickSequence = runtime.frameScheduler.lastTickSequence;
+			runtime.frameScheduler.run(runtime, hostDeltaMs);
+			while (runtime.machine.gxGpu.backendReadbackPending()) {
+				m_view->backend()->executeGxGpuReadback(runtime.machine.gxGpu);
+				runtime.frameScheduler.run(runtime, 0.0);
 			}
-			if (hostMenuActive) {
+			syncRuntimeAudioTiming();
+			m_screen.syncAfterRuntimeUpdate(runtime, previousTickSequence);
+		}
+	} else {
+		runtime.frameScheduler.clearQueuedTime();
+	}
+	m_delta_time = hostDeltaSeconds;
+
+	microtasks.flush();
+
+	m_last_tick_timing.totalMs = to_ms(std::chrono::steady_clock::now() - tickStart);
+
+	if (frameReady) {
+		if (hostMenuActive && m_view) {
+			hostOverlayMenu().queueRenderCommands(*this, *m_view);
+		} else {
+			const bool hostOverlayQueued = m_view && hostOverlayMenu().queueFrameOverlayCommands(*this, *m_view);
+			if (hostOverlayQueued) {
 				m_screen.requestHeldPresentation();
 			}
-			rendered = m_screen.render(*this, runtime, platformPaused);
 		}
-	} catch (const std::exception& e) {
-		runtime.frameLoop.abandonFrameState(runtime);
-		reportRuntimeError(runtime, e.what());
-	} catch (...) {
-		runtime.frameLoop.abandonFrameState(runtime);
-		reportRuntimeError(runtime, "Unhandled host frame exception.");
+		if (hostMenuActive) {
+			m_screen.requestHeldPresentation();
+		}
+		rendered = m_screen.render(*this, runtime, platformPaused);
 	}
-	flushSystemOutput(runtime);
 	return rendered;
 }
 

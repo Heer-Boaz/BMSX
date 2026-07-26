@@ -48,14 +48,14 @@ import { collectCartSourceFiles } from './cart_source_files';
 import { CART_ROM_BASE, CART_ROM_SIZE, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE } from '../../machine/ts/machine/memory/map';
 import {
 	BLUA32_IMAGE_ID,
-	BLUA32_SYMBOLS_IMAGE_ID,
 	type Blua32BootHeader,
 	type Blua32ImageLayout,
 } from '../../machine/ts/machine/cpu/blua32_image';
 import {
+	BLUA32_SYMBOLS_IMAGE_ID,
 	encodeBlua32SymbolsImage,
 	type Blua32SymbolsImage,
-} from '../../machine/ts/machine/cpu/blua32_symbols';
+} from '../../machine/ts/rompack/tooling/blua32_symbols';
 // @ts-ignore
 const { build } = require('esbuild');
 // @ts-ignore

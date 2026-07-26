@@ -5,7 +5,7 @@ import type {
 	Blua32SymbolsImage,
 	SourcePosition,
 	SourceRange,
-} from '../../machine/cpu/blua32_symbols';
+} from './blua32_symbols';
 import { arrays_equal } from '../../common/arrays_equal';
 import { INSTRUCTION_BYTES, readInstructionWord } from '../../machine/cpu/instruction_format';
 import { OpCode } from '../../machine/cpu/opcode_info';

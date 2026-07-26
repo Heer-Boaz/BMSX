@@ -2,11 +2,11 @@ import { BASE_CYCLES, OPCODE_CATEGORY, OPCODE_COUNT, OpCode, getOpcodeName } fro
 import { INSTRUCTION_BYTES } from '../../machine/ts/machine/cpu/instruction_format';
 import type { CPU, CpuExecutionObserver } from '../../machine/ts/machine/cpu/cpu';
 import type { ExecutionDomainId } from '../../machine/ts/machine/cpu/execution_address_space';
-import type { SourceRange } from '../../machine/ts/machine/cpu/blua32_symbols';
+import type { SourceRange } from '../../machine/ts/rompack/tooling/blua32_symbols';
 import {
 	blua32ToolingImageForDomain,
 	type Blua32ToolingMedia,
-} from '../../ide/runtime/blua32_media';
+} from '../../machine/ts/rompack/tooling/blua32_media';
 import type { RuntimeSourceState } from '../../ide/runtime/sources';
 
 export type CpuProfilerSnapshot = {

@@ -3,8 +3,8 @@ import { buildLuaFrameRawLabel } from '../../machine/ts/lua/stack_frame_label';
 import {
 	blua32SourceRangeAtPc,
 	type Blua32SymbolsImage,
-} from '../../machine/ts/machine/cpu/blua32_symbols';
-import { blua32ToolingImageForDomain } from './blua32_media';
+} from '../../machine/ts/rompack/tooling/blua32_symbols';
+import { blua32ToolingImageForDomain } from '../../machine/ts/rompack/tooling/blua32_media';
 import type { RuntimeCpuFaultFrame } from './fault_state';
 import type { RuntimeSourceState } from './sources';
 

@@ -265,7 +265,7 @@ void Runtime::enterFaultState() {
 	machine.cpu.clearHaltUntilIrq();
 	machine.inputController.cancelSampleArm();
 	m_pendingCall = PendingCall::None;
-	frameLoop.frameActive = false;
+	frameLoop.abandonFrameState(*this);
 	m_runtimeFailed = true;
 }
 

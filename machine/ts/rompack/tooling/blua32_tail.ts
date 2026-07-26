@@ -1,8 +1,8 @@
+import { BLUA32_IMAGE_ID } from '../../machine/cpu/blua32_image';
 import {
-	BLUA32_IMAGE_ID,
 	BLUA32_SYMBOLS_IMAGE_ID,
-} from '../../machine/cpu/blua32_image';
-import { encodeBlua32SymbolsImage } from '../../machine/cpu/blua32_symbols';
+	encodeBlua32SymbolsImage,
+} from './blua32_symbols';
 import type { LinkedBlua32Image } from './blua32_linker';
 import {
 	CART_ROM_HEADER_SIZE,

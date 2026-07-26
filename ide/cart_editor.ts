@@ -3,7 +3,7 @@ import type { Runtime } from '../machine/ts/machine/runtime/runtime';
 import type { GateGroup } from '../machine/ts/common/taskgate';
 import { LogLevel } from '../machine/ts/platform/index';
 import { developmentCartridgeSource, type RuntimeSourceState } from './runtime/sources';
-import { blua32ToolingImageForDomain } from './runtime/blua32_media';
+import { blua32ToolingImageForDomain } from '../machine/ts/rompack/tooling/blua32_media';
 import type { Viewport } from '../machine/ts/rompack/format';
 import { api } from './runtime/overlay_api';
 import * as constants from './common/constants';

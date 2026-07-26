@@ -1,18 +1,18 @@
 import { OpCode } from '../../machine/ts/machine/cpu/cpu';
 import {
 	BLUA32_IMAGE_ID,
-	BLUA32_SYMBOLS_IMAGE_ID,
 	decodeBlua32Image,
 	type Blua32ImageLayout,
 } from '../../machine/ts/machine/cpu/blua32_image';
 import {
+	BLUA32_SYMBOLS_IMAGE_ID,
 	decodeBlua32SymbolsImage,
 	type Blua32SymbolsImage,
-} from '../../machine/ts/machine/cpu/blua32_symbols';
+} from '../../machine/ts/rompack/tooling/blua32_symbols';
 import {
 	describeBlua32InstructionAtPc,
 	formatSourceSnippet,
-} from '../../machine/ts/machine/cpu/disassembler';
+} from '../../machine/ts/rompack/tooling/disassembler';
 import {
 	INSTRUCTION_BYTES,
 	readInstructionWord,

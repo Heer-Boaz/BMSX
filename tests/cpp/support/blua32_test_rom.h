@@ -27,6 +27,7 @@ struct Blua32TestClosureRelocation {
 
 struct Blua32TestImage {
 	std::vector<u8> text;
+	std::vector<u8> toolingSymbols;
 	std::vector<Blua32TestFunction> functions;
 	std::vector<Blua32EncodedConstant> constants;
 	std::vector<std::string> globalNames;

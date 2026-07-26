@@ -1,6 +1,6 @@
-import type { SourcePosition, SourceRange } from '../../machine/cpu/blua32_symbols';
+import type { SourcePosition, SourceRange } from '../../rompack/tooling/blua32_symbols';
 
-export type { SourcePosition, SourceRange } from '../../machine/cpu/blua32_symbols';
+export type { SourcePosition, SourceRange } from '../../rompack/tooling/blua32_symbols';
 
 export type SourceLocation = {
 	readonly path: string;

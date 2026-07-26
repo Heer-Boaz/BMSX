@@ -6,10 +6,12 @@ import { splitText } from '../../../../machine/ts/common/text_lines';
 import { parseLuaChunk } from '../../../../machine/ts/lua/analysis/parse';
 import {
 	BLUA32_IMAGE_ID,
-	BLUA32_SYMBOLS_IMAGE_ID,
 	decodeBlua32Image,
 } from '../../../../machine/ts/machine/cpu/blua32_image';
-import { decodeBlua32SymbolsImage } from '../../../../machine/ts/machine/cpu/blua32_symbols';
+import {
+	BLUA32_SYMBOLS_IMAGE_ID,
+	decodeBlua32SymbolsImage,
+} from '../../../../machine/ts/rompack/tooling/blua32_symbols';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../../../machine/ts/machine/memory/map';
 import { buildBlua32Tail } from '../../../../machine/ts/rompack/tooling/blua32_tail';
 import { buildBlua32Image } from '../../../rompacker/blua32_image_builder';

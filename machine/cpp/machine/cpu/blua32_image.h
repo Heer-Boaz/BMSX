@@ -11,7 +11,6 @@
 namespace bmsx {
 
 constexpr const char* BLUA32_IMAGE_ID = "__blua32__";
-constexpr const char* BLUA32_SYMBOLS_IMAGE_ID = "__blua32_symbols__";
 
 constexpr u32 BLUA32_IMAGE_MAGIC = 0x32334c42u;
 constexpr u32 BLUA32_BOOT_HEADER_SIZE = 60u;

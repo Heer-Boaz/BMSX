@@ -1,4 +1,4 @@
-import type { SourceRange } from '../../machine/cpu/blua32_symbols';
+import type { SourceRange } from '../../rompack/tooling/blua32_symbols';
 import type { LocalSlotDebug, ProgramResumePoint } from './program';
 import { sourcePositionInRange } from '../semantic/source_range';
 import type { Instruction } from './optimizer';

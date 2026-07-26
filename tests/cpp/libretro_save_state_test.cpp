@@ -22,10 +22,14 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdarg>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <limits>
 #include <stdexcept>
+#include <string>
+#include <string_view>
 #include <vector>
 
 namespace {
@@ -37,6 +41,26 @@ void require(bool condition, const char* message) {
 }
 
 void discardRetroLog(enum retro_log_level, const char*, ...) {
+}
+
+std::vector<std::string> capturedLogs;
+
+void captureRetroLog(enum retro_log_level, const char* format, ...) {
+	std::array<char, 4096> buffer;
+	va_list args;
+	va_start(args, format);
+	std::vsnprintf(buffer.data(), buffer.size(), format, args);
+	va_end(args);
+	capturedLogs.emplace_back(buffer.data());
+}
+
+bool capturedLogContains(std::string_view text) {
+	for (const std::string& line : capturedLogs) {
+		if (line.find(text) != std::string::npos) {
+			return true;
+		}
+	}
+	return false;
 }
 
 void discardInputPoll() {
@@ -227,6 +251,51 @@ void testLibretroSaveStateRoundTrip() {
 	const bmsx::GxGpuCommandBuffer& restoredCommands = runtime.machine.gxGpu.readDeviceOutput().commandBuffer;
 	require(restoredCommands.commandKind[restoredCommands.commandCount - 1u] == bmsx::GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM, "restored DMA should complete the retained GX-GPU packet");
 
+}
+
+void testLibretroFaultDiagnosticsStayAtHostBoundary() {
+	retro_system_av_info avInfo{};
+	bmsx::LibretroPlatform platform(
+		bmsx::BackendType::Software,
+		avInfo,
+		readSupervisorRequestLine,
+		false);
+	platform.setLogCallback(captureRetroLog);
+	platform.setInputPollCallback(discardInputPoll);
+	platform.setInputStateCallback(discardInputState);
+	capturedLogs.clear();
+	require(
+		platform.machineManager()->loadSystemRomOwned(
+			bmsx::test::makeMinimalDiagnosticBootRom(bmsx::RomImageDomain::System)
+		),
+		"libretro should load symbol-bearing system firmware for host fault diagnostics");
+	const std::vector<bmsx::u8> rom =
+		bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::Cartridge);
+	require(
+		platform.loadRom(rom.data(), rom.size()),
+		"libretro should boot symbol-bearing firmware for host fault diagnostics");
+
+	bmsx::Runtime& runtime = platform.machineManager()->runtime();
+	platform.microtaskQueue()->queueMicrotask([] {
+		throw std::runtime_error("injected native frame fault");
+	});
+	require(!platform.runFrame(), "a faulted libretro frame should not report a presentation");
+	require(runtime.hasRuntimeFailed(), "the native runtime should enter its physical fault state");
+	require(
+		capturedLogContains("Runtime error: injected native frame fault"),
+		"the libretro host should log the native exception");
+	require(
+		capturedLogContains("debug: pc=") && capturedLogContains(" op=HALT"),
+		"the libretro host should disassemble the faulting instruction");
+	require(
+		capturedLogContains("debug: instr="),
+		"the libretro host should log the complete faulting instruction");
+	require(
+		capturedLogContains("debug: source=test/boot.lua:3:5"),
+		"the libretro host should resolve the optional source symbols");
+	require(
+		capturedLogContains("at test.boot (test/boot.lua:3:5)"),
+		"the libretro host should format the physical CPU frame with tooling symbols");
 }
 
 void testGpureadCodecStoresReadyBytesAndRejectsBackendPhase() {
@@ -587,6 +656,7 @@ void testPhysicalPcrtcTimingPublishesAtServiceAndPresentationAtVblank() {
 
 int main() {
 	testLibretroSaveStateRoundTrip();
+	testLibretroFaultDiagnosticsStayAtHostBoundary();
 	testGpureadCodecStoresReadyBytesAndRejectsBackendPhase();
 	testLibretroStateEnvelopeSupportsMaximumGpuread();
 	testInputSnapshotReflectsHeldKey();

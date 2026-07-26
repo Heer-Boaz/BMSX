@@ -261,7 +261,6 @@
 		"machine/ts/core/machine_manager.ts",
 		"machine/ts/core/rom_boot_manager.ts",
 		"machine/ts/core/system.ts",
-		"machine/ts/machine/cpu/disassembler.ts",
 		"machine/ts/machine/firmware/globals.ts",
 		"machine/ts/machine/machine.ts",
 		"machine/ts/machine/memory/specs.ts",
@@ -670,12 +669,12 @@
 			"reason": "runtime_boot_timing_resolution_contract"
 		},
 		{
-			"ts": "machine/ts/machine/cpu/source_text.ts",
+			"ts": "machine/ts/rompack/tooling/source_text.ts",
 			"cpp": [
-				"machine/cpp/machine/cpu/source_text.h",
-				"machine/cpp/machine/cpu/source_text.cpp"
+				"machine/cpp/rompack/tooling/source_text.h",
+				"machine/cpp/rompack/tooling/source_text.cpp"
 			],
-			"reason": "cpu_source_range_text_extraction_contract"
+			"reason": "blua32_tooling_source_range_text_extraction_contract"
 		}
 	],
 	"strict_runtime_shape_parity": [
@@ -1039,6 +1038,37 @@
 				"machine/ts/machine/runtime/resume_snapshot.ts"
 			],
 			"reason": "source_compiler_and_pack_time_linker_must_stay_outside_machine_runtime_core"
+		},
+		{
+			"present": [
+				"machine/ts/rompack/tooling/blua32_media.ts",
+				"machine/ts/rompack/tooling/blua32_symbols.ts",
+				"machine/ts/rompack/tooling/disassembler.ts",
+				"machine/ts/rompack/tooling/source_text.ts",
+				"machine/cpp/rompack/tooling/blua32_media.h",
+				"machine/cpp/rompack/tooling/blua32_media.cpp",
+				"machine/cpp/rompack/tooling/blua32_symbols.h",
+				"machine/cpp/rompack/tooling/blua32_symbols.cpp",
+				"machine/cpp/rompack/tooling/disassembler.h",
+				"machine/cpp/rompack/tooling/disassembler.cpp",
+				"machine/cpp/rompack/tooling/source_text.h",
+				"machine/cpp/rompack/tooling/source_text.cpp",
+				"hosts/libretro/runtime_error.cpp"
+			],
+			"absent": [
+				"ide/runtime/blua32_media.ts",
+				"machine/ts/machine/cpu/blua32_symbols.ts",
+				"machine/ts/machine/cpu/disassembler.ts",
+				"machine/ts/machine/cpu/source_text.ts",
+				"machine/cpp/core/runtime_error.cpp",
+				"machine/cpp/machine/cpu/blua32_symbols.h",
+				"machine/cpp/machine/cpu/blua32_symbols.cpp",
+				"machine/cpp/machine/cpu/disassembler.h",
+				"machine/cpp/machine/cpu/disassembler.cpp",
+				"machine/cpp/machine/cpu/source_text.h",
+				"machine/cpp/machine/cpu/source_text.cpp"
+			],
+			"reason": "blua32_source_diagnostics_must_remain_outside_machine_cpu_and_core"
 		}
 	],
 	"strict_file_pair_parity": [
@@ -1142,6 +1172,38 @@
 				"machine/cpp/render/backend/software/gx_gpu_scanout.cpp"
 			],
 			"reason": "gx_gpu_software_scanout_filename_parity"
+		},
+		{
+			"ts": "machine/ts/rompack/tooling/blua32_media.ts",
+			"cpp": [
+				"machine/cpp/rompack/tooling/blua32_media.h",
+				"machine/cpp/rompack/tooling/blua32_media.cpp"
+			],
+			"reason": "blua32_tooling_media_filename_parity"
+		},
+		{
+			"ts": "machine/ts/rompack/tooling/blua32_symbols.ts",
+			"cpp": [
+				"machine/cpp/rompack/tooling/blua32_symbols.h",
+				"machine/cpp/rompack/tooling/blua32_symbols.cpp"
+			],
+			"reason": "blua32_tooling_symbols_filename_parity"
+		},
+		{
+			"ts": "machine/ts/rompack/tooling/disassembler.ts",
+			"cpp": [
+				"machine/cpp/rompack/tooling/disassembler.h",
+				"machine/cpp/rompack/tooling/disassembler.cpp"
+			],
+			"reason": "blua32_tooling_disassembler_filename_parity"
+		},
+		{
+			"ts": "machine/ts/rompack/tooling/source_text.ts",
+			"cpp": [
+				"machine/cpp/rompack/tooling/source_text.h",
+				"machine/cpp/rompack/tooling/source_text.cpp"
+			],
+			"reason": "blua32_tooling_source_text_filename_parity"
 		}
 	],
 	"strict_generated_ts_parity_exclusions": [
@@ -1320,12 +1382,23 @@
 			"reason": "physical_blua32_executable_image_contract"
 		},
 		{
-			"ts": "machine/ts/machine/cpu/blua32_symbols.ts",
+			"ts": "machine/ts/rompack/tooling/blua32_symbols.ts",
 			"cpp": [
-				"machine/cpp/machine/cpu/blua32_symbols.h",
-				"machine/cpp/machine/cpu/blua32_symbols.cpp"
+				"machine/cpp/rompack/tooling/blua32_symbols.h",
+				"machine/cpp/rompack/tooling/blua32_symbols.cpp"
 			],
 			"reason": "blua32_tooling_symbols_contract"
+		},
+		{
+			"ts": "machine/ts/rompack/tooling/blua32_media.ts",
+			"cpp": [
+				"machine/cpp/rompack/tooling/blua32_media.h"
+			],
+			"symbols": [
+				"Blua32ToolingImage",
+				"Blua32ToolingMedia"
+			],
+			"reason": "blua32_tooling_media_shape_contract"
 		},
 		{
 			"ts": "machine/ts/common/arrays_equal.ts",

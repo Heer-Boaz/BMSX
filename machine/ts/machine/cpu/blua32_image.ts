@@ -1,7 +1,6 @@
 import { readLE32 } from '../../common/endian';
 
 export const BLUA32_IMAGE_ID = '__blua32__';
-export const BLUA32_SYMBOLS_IMAGE_ID = '__blua32_symbols__';
 
 export const BLUA32_IMAGE_MAGIC = 0x32334c42;
 export const BLUA32_BOOT_HEADER_SIZE = 60;

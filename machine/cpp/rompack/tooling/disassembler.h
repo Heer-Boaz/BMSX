@@ -1,7 +1,7 @@
 #pragma once
 
 #include "machine/cpu/blua32_image.h"
-#include "machine/cpu/blua32_symbols.h"
+#include "rompack/tooling/blua32_symbols.h"
 #include "machine/cpu/opcode_info.h"
 
 #include <optional>
@@ -26,7 +26,7 @@ struct InstructionDebugInfo {
 	std::optional<SourceRange> sourceRange;
 };
 
-auto describeInstructionAtPc(
+auto describeBlua32InstructionAtPc(
 	const Blua32ImageLayout& image,
 	const Blua32SymbolsImage* symbols,
 	u32 pc

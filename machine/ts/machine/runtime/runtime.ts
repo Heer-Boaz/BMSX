@@ -130,6 +130,15 @@ export class Runtime {
 		this.startSystemFirmware();
 	}
 
+	public enterFaultState(): void {
+		this.hostFault.publishStartup();
+		this.machine.cpu.clearHaltUntilIrq();
+		this.machine.inputController.cancelSampleArm();
+		this.pendingCall = null;
+		this.frameLoop.abandonFrameState();
+		this.luaRuntimeFailed = true;
+	}
+
 	private startSystemFirmware(): void {
 		this.machine.cpu.start(
 			this.machine.cpu.systemStartupFunctionAddress(),

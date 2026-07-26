@@ -25,7 +25,7 @@ import {
 	BLUA32_IMAGE_ID,
 	decodeBlua32Image,
 } from '../../machine/ts/machine/cpu/blua32_image';
-import { decodeBlua32SymbolsImage } from '../../machine/ts/machine/cpu/blua32_symbols';
+import { decodeBlua32SymbolsImage } from '../../machine/ts/rompack/tooling/blua32_symbols';
 import { SYSTEM_ROM_BASE } from '../../machine/ts/machine/memory/map';
 
 import { join } from 'node:path';

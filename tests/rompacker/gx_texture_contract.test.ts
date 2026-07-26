@@ -12,10 +12,12 @@ import { StringValue, createBuiltinFunction } from '../../machine/ts/machine/cpu
 import { CPU_STATUS_SYSTEM_ENTRY } from '../../machine/ts/machine/cpu/cop0';
 import {
 	BLUA32_IMAGE_ID,
-	BLUA32_SYMBOLS_IMAGE_ID,
 	decodeBlua32Image,
 } from '../../machine/ts/machine/cpu/blua32_image';
-import { decodeBlua32SymbolsImage } from '../../machine/ts/machine/cpu/blua32_symbols';
+import {
+	BLUA32_SYMBOLS_IMAGE_ID,
+	decodeBlua32SymbolsImage,
+} from '../../machine/ts/rompack/tooling/blua32_symbols';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { LUA_BOOT_PRIMITIVES } from '../../machine/ts/machine/firmware/boot_primitives';
 import { Memory } from '../../machine/ts/machine/memory/memory';

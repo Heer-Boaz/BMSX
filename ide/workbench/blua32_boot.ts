@@ -117,7 +117,6 @@ async function bootPreparedBlua32Media(
 ): Promise<void> {
 	const gateToken = luaGate.begin({ blocking: true, tag: 'boot' });
 	try {
-		runtime.hostFault.clear();
 		clearRuntimeFault(fault, runtime);
 		clearLuaBootState(editor, runtime);
 		bootActiveBlua32Media(

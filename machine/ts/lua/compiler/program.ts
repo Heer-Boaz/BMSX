@@ -1,5 +1,5 @@
 import type { Value } from '../../machine/cpu/value';
-import type { SourceRange } from '../../machine/cpu/blua32_symbols';
+import type { SourceRange } from '../../rompack/tooling/blua32_symbols';
 import type { OpCode } from '../../machine/cpu/opcode_info';
 import type { StringPool } from '../../machine/cpu/string_pool';
 

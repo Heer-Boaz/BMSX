@@ -5,7 +5,7 @@ import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../mac
 import type { LuaChunk } from '../../machine/ts/lua/syntax/ast';
 import { toLuaModulePath } from '../../machine/ts/lua/module_path';
 import type { Blua32ImageLayout } from '../../machine/ts/machine/cpu/blua32_image';
-import type { Blua32SymbolsImage } from '../../machine/ts/machine/cpu/blua32_symbols';
+import type { Blua32SymbolsImage } from '../../machine/ts/rompack/tooling/blua32_symbols';
 import type { RomAsset } from '../../machine/ts/rompack/format';
 import {
 	linkCartBlua32Image,

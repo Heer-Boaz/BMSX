@@ -1,7 +1,8 @@
 import { decodeBinary, encodeBinary } from '../../common/serializer/binencoder';
-import { INSTRUCTION_BYTES } from './instruction_format';
-import type { OpCode } from './opcode_info';
+import { INSTRUCTION_BYTES } from '../../machine/cpu/instruction_format';
+import type { OpCode } from '../../machine/cpu/opcode_info';
 
+export const BLUA32_SYMBOLS_IMAGE_ID = '__blua32_symbols__';
 export const BLUA32_SYMBOLS_VERSION = 1;
 
 export type Blua32StaticLayoutToken = {
@@ -59,11 +60,6 @@ export type Blua32SymbolsImage = {
 	moduleFunctions: Blua32ModuleFunction[];
 	staticLayoutToken: Blua32StaticLayoutToken;
 	metadata: Blua32DebugMetadata;
-};
-
-export type Blua32MediaSymbols = {
-	system: Blua32SymbolsImage | null;
-	cartridgeSlots: [Blua32SymbolsImage | null, Blua32SymbolsImage | null];
 };
 
 export function encodeBlua32SymbolsImage(symbols: Blua32SymbolsImage): Uint8Array {

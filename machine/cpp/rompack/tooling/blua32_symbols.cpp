@@ -1,4 +1,4 @@
-#include "machine/cpu/blua32_symbols.h"
+#include "rompack/tooling/blua32_symbols.h"
 
 #include "common/serializer/binencoder.h"
 #include "machine/cpu/instruction_format.h"
@@ -180,7 +180,7 @@ auto encodeMetadata(const Blua32DebugMetadata& metadata) -> BinValue {
 	BinArray debugRanges;
 	debugRanges.reserve(metadata.debugRanges.size());
 	for (const std::optional<SourceRange>& range : metadata.debugRanges) {
-		if (range.has_value()) {
+		if (range) {
 			debugRanges.push_back(encodeSourceRange(*range));
 		} else {
 			debugRanges.emplace_back(nullptr);
@@ -293,16 +293,6 @@ auto blua32SourceRangeAtPc(
 ) -> std::optional<SourceRange> {
 	const size_t wordIndex = static_cast<size_t>((pc - textAddress) / INSTRUCTION_BYTES);
 	return symbols.metadata.debugRanges[wordIndex];
-}
-
-auto blua32SymbolsForSlot(
-	const Blua32MediaSymbols& symbols,
-	int slot
-) -> const Blua32SymbolsImage* {
-	if (slot < 0) {
-		return symbols.system.get();
-	}
-	return symbols.cartridgeSlots[static_cast<size_t>(slot)].get();
 }
 
 } // namespace bmsx

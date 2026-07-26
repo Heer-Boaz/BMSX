@@ -1,4 +1,4 @@
-#include "machine/cpu/source_text.h"
+#include "rompack/tooling/source_text.h"
 
 namespace bmsx {
 

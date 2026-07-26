@@ -12,8 +12,6 @@
 #include "common/mmap_file.h"
 #include "common/primitives.h"
 #include "common/registry.h"
-#include "machine/cpu/blua32_image.h"
-#include "machine/cpu/blua32_symbols.h"
 #include "machine/devices/cartridge/contracts.h"
 #include "rompack/format.h"
 #include "rompack/loader.h"
@@ -24,9 +22,7 @@
 #include <array>
 #include <chrono>
 #include <memory>
-#include <optional>
 #include <string>
-#include <string_view>
 #include <vector>
 
 namespace bmsx {
@@ -127,6 +123,10 @@ public:
 	bool bootWithoutCart();
 	bool romLoaded() const { return m_rom_loaded; }
 	bool systemRomLoaded() const { return m_system_rom_loaded; }
+	const RomImage& systemRomImage() const { return m_system_rom_image; }
+	const RomImage& cartridgeRomImage(u32 slot) const {
+		return m_cartridge_slots[static_cast<size_t>(slot)].image;
+	}
 
 	// Time
 	f64 totalTime() const { return m_total_time; }
@@ -177,17 +177,11 @@ private:
 	std::vector<u8> m_system_rom_owned;
 	bool m_rom_loaded = false;
 	bool m_system_rom_loaded = false;
-	std::optional<Blua32ImageLayout> m_systemBlua32Layout;
-	std::array<std::optional<Blua32ImageLayout>, CARTRIDGE_SLOT_COUNT> m_cartridgeBlua32Layouts;
-	Blua32MediaSymbols m_blua32MediaSymbols;
 
 	void configureViewForGpuReset();
 	bool loadSystemRomInternal(const u8* data, size_t size);
 	bool bootLoadedCartridgeSlots();
 	bool bootSystemFirmware();
-	void flushSystemOutput(Runtime& runtime);
-	void reportRuntimeError(Runtime& runtime, std::string_view message);
-	const Blua32ImageLayout& blua32LayoutForDomain(int executionDomainId) const;
 
 	MachineManagerState m_state = MachineManagerState::Uninitialized;
 

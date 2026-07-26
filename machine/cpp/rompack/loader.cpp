@@ -997,24 +997,6 @@ RomImage parseRomImage(const u8* buffer, size_t size, RomImageDomain domain) {
 	return RomImage{std::span<const u8>(buffer, size), parseCartHeader(buffer, size)};
 }
 
-auto loadBlua32SymbolsImage(const RomImage& image) -> std::unique_ptr<Blua32SymbolsImage> {
-	const RomTocPayload toc = decodeRomToc(
-		image.bytes.data() + image.header.tocOffset,
-		image.header.tocLength
-	);
-	for (const RomSourceEntry& entry : toc.entries) {
-		if (entry.resid != BLUA32_SYMBOLS_IMAGE_ID) {
-			continue;
-		}
-		const size_t start = static_cast<size_t>(*entry.rom.start);
-		const size_t byteCount = static_cast<size_t>(*entry.rom.end - *entry.rom.start);
-		return std::make_unique<Blua32SymbolsImage>(
-			decodeBlua32SymbolsImage(image.bytes.subspan(start, byteCount))
-		);
-	}
-	return nullptr;
-}
-
 static void decodeCartridgeMetadata(const u8* romData, const CartRomHeader& header, RuntimeRomPackage& romPackage) {
 	if (header.manifestLength == 0) {
 		throw BMSX_RUNTIME_ERROR("ROM header is missing manifest payload.");

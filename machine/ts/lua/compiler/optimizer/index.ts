@@ -1,6 +1,6 @@
 import { OpCode } from '../../../machine/cpu/cpu';
 import { valueIsString, type Value } from '../../../machine/cpu/value';
-import type { SourceRange } from '../../../machine/cpu/blua32_symbols';
+import type { SourceRange } from '../../../rompack/tooling/blua32_symbols';
 import type { Proto, UpvalueDesc } from '../program';
 import { decodeCallArgCount } from '../../../machine/cpu/opcode_info';
 import { MAX_EXT_CONST } from '../../../machine/cpu/instruction_format';

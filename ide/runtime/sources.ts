@@ -19,7 +19,7 @@ import {
 	loadBlua32ToolingImage,
 	type Blua32ToolingImage,
 	type Blua32ToolingMedia,
-} from './blua32_media';
+} from '../../machine/ts/rompack/tooling/blua32_media';
 
 export type RuntimeCartridgeSourceState = {
 	domain: 0 | 1;

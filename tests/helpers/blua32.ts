@@ -11,15 +11,14 @@ import {
 	type Blua32ImageLayout,
 } from '../../machine/ts/machine/cpu/blua32_image';
 import {
-	type Blua32MediaSymbols,
 	type Blua32SymbolsImage,
 	type SourceRange,
-} from '../../machine/ts/machine/cpu/blua32_symbols';
+} from '../../machine/ts/rompack/tooling/blua32_symbols';
 import {
 	CPU,
 	RunResult,
 } from '../../machine/ts/machine/cpu/cpu';
-import { describeBlua32InstructionAtPc } from '../../machine/ts/machine/cpu/disassembler';
+import { describeBlua32InstructionAtPc } from '../../machine/ts/rompack/tooling/disassembler';
 import { INSTRUCTION_BYTES, readInstructionWord } from '../../machine/ts/machine/cpu/instruction_format';
 import { OpCode } from '../../machine/ts/machine/cpu/opcode_info';
 import type { ProgramMetadata, Proto } from '../../machine/ts/lua/compiler/program';

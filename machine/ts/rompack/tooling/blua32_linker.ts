@@ -29,7 +29,7 @@ import {
 	type Blua32ModuleFunction,
 	type Blua32StaticLayoutToken,
 	type Blua32SymbolsImage,
-} from '../../machine/cpu/blua32_symbols';
+} from './blua32_symbols';
 import type {
 	ProgramBssSymbol,
 	ProgramConstReloc,

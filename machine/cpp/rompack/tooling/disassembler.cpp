@@ -1,7 +1,7 @@
-#include "machine/cpu/disassembler.h"
+#include "rompack/tooling/disassembler.h"
 #include "machine/cpu/instruction_format.h"
 #include "machine/cpu/opcode_info.h"
-#include "machine/cpu/source_text.h"
+#include "rompack/tooling/source_text.h"
 #include "machine/common/number_format.h"
 
 #include <algorithm>
@@ -505,7 +505,7 @@ std::string compactWhitespace(std::string_view value) {
 
 } // namespace
 
-auto describeInstructionAtPc(
+auto describeBlua32InstructionAtPc(
 	const Blua32ImageLayout& image,
 	const Blua32SymbolsImage* symbols,
 	u32 pc

@@ -327,8 +327,14 @@ Current artifact roles:
 - `dist/engine.js` / `.debug.js`: browser host/bootstrap artifact. It wires
   browser video, audio, input, view-host construction, runtime preparation, and
   the frame loop through static composition.
-- `libbmsx.a` in its CMake build tree: C++ machine/runtime static library. Build
-  trees never share this target-specific archive.
+- `libbmsx.a` in its CMake build tree: C++ machine/runtime static library. It
+  retains physical ROM bytes and executable-image decode state, but does not
+  compile BLua32 source-range extraction, symbol sidecars, disassembly, or
+  formatted fault presentation. Build trees never share this target-specific
+  archive.
+- `bmsx_blua32_tooling` in native diagnostics-enabled builds: BLua32 source,
+  symbol-sidecar, and disassembly tooling. It depends downward on `bmsx_core`;
+  the machine/runtime archive never depends on it.
 - `dist/libretro_bmsx.so` / `.dll` / `.dylib`: libretro core entrypoint around the C++ machine runtime.
 - `bmsx_libretro_host`: local frontend executable that loads a libretro core and
   owns SDL, ALSA, EGL/fbdev, input devices, screenshots, and the process loop.
@@ -2772,6 +2778,15 @@ edges. It must not be imported by machine devices or become the cart-visible
 source of truth. Runtime and tooling diagnostics use the platform logging and
 IDE error owners; they are not BIOS monitor commands and must not be swallowed
 by deferred host code.
+
+BLua32 source tooling is mirrored under `machine/{ts,cpp}/rompack/tooling`.
+Browser IDE state retains decoded tooling images there. Native libretro builds
+link `bmsx_blua32_tooling`, and `LibretroPlatform` retains the decoded tooling
+image for each inserted physical ROM only while that media is loaded. Fault
+presentation joins those optional symbols with allocation-free scalar CPU
+state reads only after an exception reaches the libretro host boundary.
+`MachineManager`, `Runtime`, CPU state, and `libbmsx.a` retain no source paths,
+symbol caches, disassembler objects, or formatted diagnostic records.
 
 ## Host presentation and frontend lifecycle
 

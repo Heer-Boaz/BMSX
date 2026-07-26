@@ -6,7 +6,6 @@
 #define BMSX_ROMPACK_PACKAGE_H
 
 #include "common/primitives.h"
-#include "machine/cpu/blua32_symbols.h"
 #include "rompack/format.h"
 #include "rompack/assets.h"
 #include "common/serializer/binencoder.h"
@@ -107,7 +106,6 @@ struct RomImage {
  * ============================================================================ */
 
 RomImage parseRomImage(const u8* buffer, size_t size, RomImageDomain domain);
-auto loadBlua32SymbolsImage(const RomImage& image) -> std::unique_ptr<Blua32SymbolsImage>;
 
 // Load a cart image into RuntimeRomPackage, including cart metadata, machine spec, and entry point.
 void loadCartRomPackage(const RomImage& image,

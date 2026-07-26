@@ -1,15 +1,15 @@
 import {
-	BLUA32_SYMBOLS_IMAGE_ID,
 	decodeBlua32RomImage,
 	type Blua32ImageLayout,
-} from '../../machine/ts/machine/cpu/blua32_image';
+} from '../../machine/cpu/blua32_image';
 import {
+	BLUA32_SYMBOLS_IMAGE_ID,
 	decodeBlua32SymbolsImage,
 	type Blua32SymbolsImage,
-} from '../../machine/ts/machine/cpu/blua32_symbols';
-import type { ExecutionDomainId } from '../../machine/ts/machine/cpu/execution_address_space';
-import type { RuntimeRomLayer } from '../../machine/ts/rompack/loader';
-import type { RawRomSource } from '../../machine/ts/rompack/source';
+} from './blua32_symbols';
+import type { ExecutionDomainId } from '../../machine/cpu/execution_address_space';
+import type { RuntimeRomLayer } from '../loader';
+import type { RawRomSource } from '../source';
 
 export type Blua32ToolingImage = {
 	readonly layout: Blua32ImageLayout;

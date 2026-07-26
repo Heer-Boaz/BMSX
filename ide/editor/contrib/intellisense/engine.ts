@@ -17,14 +17,14 @@ import {
 	blua32SourceRangeAtPc,
 	type Blua32LocalSlotDebug,
 	type SourceRange,
-} from '../../../../machine/ts/machine/cpu/blua32_symbols';
+} from '../../../../machine/ts/rompack/tooling/blua32_symbols';
 import { DEFAULT_LUA_BUILTIN_FUNCTIONS, DEFAULT_LUA_BUILTIN_NAMES } from '../../../../machine/ts/lua/builtin_descriptors';
 import { luaBuiltinMetadata } from '../../../runtime/lua_builtins';
 import { buildMarshalContext, toNativeValue } from '../../../runtime/native_bridge';
 import { buildLuaSemanticFrontend } from '../../../../machine/ts/lua/semantic/frontend';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
-import { blua32ToolingImageForDomain, type Blua32ToolingImage } from '../../../runtime/blua32_media';
+import { blua32ToolingImageForDomain, type Blua32ToolingImage } from '../../../../machine/ts/rompack/tooling/blua32_media';
 import {
 	resolveRuntimeLuaSourceForContext,
 } from '../../../runtime/sources';

@@ -18,7 +18,7 @@ import type { ExecutionDomainId } from '../../machine/ts/machine/cpu/execution_a
 import type { Value } from '../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { resolveWorkspacePath } from '../workspace/path';
-import { blua32ToolingImageForDomain } from './blua32_media';
+import { blua32ToolingImageForDomain } from '../../machine/ts/rompack/tooling/blua32_media';
 import type { RuntimeSourceState } from './sources';
 
 type RuntimeErrorLocation = { path: string; line: number; column: number };
@@ -143,6 +143,7 @@ export function clearFaultSnapshot(fault: RuntimeFaultState): void {
 
 export function clearRuntimeFault(fault: RuntimeFaultState, runtime: Runtime): void {
 	runtime.luaRuntimeFailed = false;
+	runtime.hostFault.clear();
 	clearFaultSnapshot(fault);
 }
 

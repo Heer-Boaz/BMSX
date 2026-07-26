@@ -11,7 +11,7 @@ import { insertText } from '../editor/editing/text_editing_and_selection';
 import { resolveResourceDescriptorForContext } from '../workbench/contrib/resources/lookup';
 import type { RuntimeSourceState } from '../runtime/sources';
 import type { RuntimeIdeState } from '../runtime/state';
-import { blua32ToolingImageForDomain } from '../runtime/blua32_media';
+import { blua32ToolingImageForDomain } from '../../machine/ts/rompack/tooling/blua32_media';
 
 /**
  * Host-side test surface for the IDE/runtime. The headless composition root creates

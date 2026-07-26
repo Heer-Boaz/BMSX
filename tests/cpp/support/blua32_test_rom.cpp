@@ -6,6 +6,7 @@
 #include "machine/cpu/opcode_info.h"
 #include "machine/memory/map.h"
 #include "rompack/toc.h"
+#include "rompack/tooling/blua32_symbols.h"
 
 #include <algorithm>
 #include <bit>
@@ -209,6 +210,7 @@ auto encodeImage(
 auto encodeRom(
 	RomImageDomain domain,
 	std::span<const u8> image,
+	std::span<const u8> toolingSymbols,
 	const Blua32BootHeader& boot,
 	u32 cartridgeBoardWord,
 	u32 cartridgeRamByteCount
@@ -224,15 +226,33 @@ auto encodeRom(
 		rom.end = static_cast<i32>(BLUA32_TEST_IMAGE_OFFSET + image.size());
 		tocPayload.entries.push_back(RomSourceEntry{BLUA32_IMAGE_ID, std::move(rom)});
 	}
+	const u32 symbolsOffset = alignOffset(
+		BLUA32_TEST_IMAGE_OFFSET + static_cast<u32>(image.size()),
+		0u,
+		CART_ROM_WORD_ALIGNMENT
+	);
+	if (!toolingSymbols.empty()) {
+		RomAssetInfo rom;
+		rom.type = "code";
+		rom.start = static_cast<i32>(symbolsOffset);
+		rom.end = static_cast<i32>(symbolsOffset + toolingSymbols.size());
+		tocPayload.entries.push_back(RomSourceEntry{BLUA32_SYMBOLS_IMAGE_ID, std::move(rom)});
+	}
 	const std::vector<u8> toc = encodeRomToc(tocPayload);
-	const u32 payloadEnd = image.empty()
+	const u32 imageEnd = image.empty()
 		? CART_ROM_HEADER_SIZE + static_cast<u32>(manifest.size())
 		: BLUA32_TEST_IMAGE_OFFSET + static_cast<u32>(image.size());
+	const u32 payloadEnd = toolingSymbols.empty()
+		? imageEnd
+		: symbolsOffset + static_cast<u32>(toolingSymbols.size());
 	const u32 tocOffset = alignOffset(payloadEnd, 0u, CART_ROM_WORD_ALIGNMENT);
 	std::vector<u8> rom(tocOffset + toc.size());
 	std::copy(manifest.begin(), manifest.end(), rom.begin() + CART_ROM_HEADER_SIZE);
 	if (!image.empty()) {
 		std::copy(image.begin(), image.end(), rom.begin() + BLUA32_TEST_IMAGE_OFFSET);
+	}
+	if (!toolingSymbols.empty()) {
+		std::copy(toolingSymbols.begin(), toolingSymbols.end(), rom.begin() + symbolsOffset);
 	}
 	std::copy(toc.begin(), toc.end(), rom.begin() + tocOffset);
 
@@ -277,6 +297,7 @@ auto encodeBlua32TestRom(
 	rom.bytes = encodeRom(
 		domain,
 		executable,
+		image.toolingSymbols,
 		rom.boot,
 		cartridgeBoardWord,
 		cartridgeRamByteCount
@@ -290,6 +311,7 @@ auto encodeBlua32TestDataRom(
 ) -> std::vector<u8> {
 	return encodeRom(
 		RomImageDomain::Cartridge,
+		{},
 		{},
 		{},
 		cartridgeBoardWord,

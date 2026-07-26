@@ -1,4 +1,4 @@
-import { blua32ToolingImageForDomain } from '../runtime/blua32_media';
+import { blua32ToolingImageForDomain } from '../../machine/ts/rompack/tooling/blua32_media';
 import { machineManager } from '../../machine/ts/core/machine_manager';
 import { Input } from '../../machine/ts/input/manager';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';

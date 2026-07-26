@@ -2,8 +2,6 @@
 
 #include "common/primitives.h"
 
-#include <array>
-#include <memory>
 #include <optional>
 #include <span>
 #include <string>
@@ -12,6 +10,7 @@
 
 namespace bmsx {
 
+constexpr const char* BLUA32_SYMBOLS_IMAGE_ID = "__blua32_symbols__";
 constexpr u32 BLUA32_SYMBOLS_VERSION = 1u;
 
 struct SourcePosition {
@@ -71,11 +70,6 @@ struct Blua32SymbolsImage {
 	Blua32DebugMetadata metadata;
 };
 
-struct Blua32MediaSymbols {
-	std::unique_ptr<Blua32SymbolsImage> system;
-	std::array<std::unique_ptr<Blua32SymbolsImage>, 2> cartridgeSlots;
-};
-
 auto decodeBlua32SymbolsImage(std::span<const u8> bytes) -> Blua32SymbolsImage;
 auto encodeBlua32SymbolsImage(const Blua32SymbolsImage& symbols) -> std::vector<u8>;
 auto blua32SourceRangeAtPc(
@@ -83,9 +77,5 @@ auto blua32SourceRangeAtPc(
 	u32 textAddress,
 	u32 pc
 ) -> std::optional<SourceRange>;
-auto blua32SymbolsForSlot(
-	const Blua32MediaSymbols& symbols,
-	int slot
-) -> const Blua32SymbolsImage*;
 
 } // namespace bmsx

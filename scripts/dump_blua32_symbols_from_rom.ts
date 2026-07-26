@@ -1,6 +1,8 @@
 import fs from 'fs';
-import { BLUA32_SYMBOLS_IMAGE_ID } from '../machine/ts/machine/cpu/blua32_image';
-import { decodeBlua32SymbolsImage } from '../machine/ts/machine/cpu/blua32_symbols';
+import {
+	BLUA32_SYMBOLS_IMAGE_ID,
+	decodeBlua32SymbolsImage,
+} from '../machine/ts/rompack/tooling/blua32_symbols';
 import { parseCartHeader } from '../machine/ts/rompack/format';
 import { decodeRomToc } from '../machine/ts/rompack/toc';
 

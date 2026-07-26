@@ -22,7 +22,7 @@ import { OpCode, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { Table } from '../../machine/ts/machine/cpu/table';
 import { EMPTY_CALL_ARGS, StringValue } from '../../machine/ts/machine/cpu/value';
-import { blua32SourceRangeAtPc } from '../../machine/ts/machine/cpu/blua32_symbols';
+import { blua32SourceRangeAtPc } from '../../machine/ts/rompack/tooling/blua32_symbols';
 import { COP0_EXEC, CPU_STATUS_SYSTEM_ENTRY } from '../../machine/ts/machine/cpu/cop0';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/machine/cpu/instruction_format';
 import { LUA_BOOT_PRIMITIVES } from '../../machine/ts/machine/firmware/boot_primitives';

@@ -11,7 +11,7 @@ import { replaceWithJump, replaceWithMov } from '../../machine/ts/lua/compiler/o
 import {
 	OpCode,
 } from '../../machine/ts/machine/cpu/cpu';
-import type { SourceRange } from '../../machine/ts/machine/cpu/blua32_symbols';
+import type { SourceRange } from '../../machine/ts/rompack/tooling/blua32_symbols';
 import type {
 	ProgramMetadata,
 	ProgramRuntimeSymbols,

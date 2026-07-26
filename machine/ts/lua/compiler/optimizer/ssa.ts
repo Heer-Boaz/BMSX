@@ -2,7 +2,7 @@
 // start normalized-body-acceptable -- SSA value rewrites intentionally mirror non-SSA rewrites without sharing mutable pass internals.
 import { OpCode } from '../../../machine/cpu/cpu';
 import { valueIsString, type Value } from '../../../machine/cpu/value';
-import type { SourceRange } from '../../../machine/cpu/blua32_symbols';
+import type { SourceRange } from '../../../rompack/tooling/blua32_symbols';
 import { MAX_EXT_CONST } from '../../../machine/cpu/instruction_format';
 import { buildBasicBlocks, buildBlockGraph, getJumpTarget, isJump, remapInstructions, type Block } from '../control_flow';
 import type { Instruction, InstructionSet, OptimizationContext } from './index';

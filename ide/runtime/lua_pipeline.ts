@@ -11,7 +11,7 @@ import { resolveLuaSourceRecord, type LuaSourceRegistry } from '../../machine/ts
 import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/machine/memory/map';
 import { resetHandledLuaErrors } from './fault_state';
 import type { Blua32ImageLayout } from '../../machine/ts/machine/cpu/blua32_image';
-import type { Blua32SymbolsImage } from '../../machine/ts/machine/cpu/blua32_symbols';
+import type { Blua32SymbolsImage } from '../../machine/ts/rompack/tooling/blua32_symbols';
 import { asStringId, valueIsString, valueTag, ValueTag, type Value } from '../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import {
@@ -29,7 +29,7 @@ import type { RomSourceLayer } from '../../machine/ts/rompack/source';
 import type { ResourceIdentity } from '../common/resource';
 import type { RuntimeFaultState } from './fault_state';
 import type { RuntimeNativeBridge } from './native_bridge';
-import type { Blua32ToolingImage } from './blua32_media';
+import type { Blua32ToolingImage } from '../../machine/ts/rompack/tooling/blua32_media';
 
 export type RebuiltBlua32Image = {
 	linked: LinkedBlua32Image;
