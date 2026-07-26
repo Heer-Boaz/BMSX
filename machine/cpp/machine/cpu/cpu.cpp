@@ -1915,37 +1915,6 @@ void CPU::runHousekeeping() {
 	}
 }
 
-void CPU::step() {
-	if (m_frames.empty()) return;
-	if (m_hardHalted || m_haltedUntilIrq || m_memoryWriteBlocked) return;
-	CallFrame& frame = *m_frames.back();
-	Blua32ExecutionImage& image = *frame.functionRecord->image;
-	const u32 pc = frame.pc;
-	const size_t wordIndex = (pc - image.layout.header.textAddress) / INSTRUCTION_BYTES;
-	if (wordIndex >= image.decodedWordCount) {
-		hardHalt();
-		return;
-	}
-	const DecodedInstruction& decoded = decodedAtWordIndex(image, wordIndex);
-	m_currentInstructionPc = pc;
-	frame.pc = pc + (static_cast<u32>(decoded.width) * INSTRUCTION_BYTES);
-	m_lastExecutionDomainId = image.executionDomainId;
-	lastPc = pc + ((static_cast<u32>(decoded.width) - 1u) * INSTRUCTION_BYTES);
-	lastInstruction = decoded.word;
-	instructionBudgetRemaining -= static_cast<int>(BASE_CYCLES[decoded.op]);
-	try {
-		executeInstruction(frame, decoded);
-	} catch (const LuaThrownValueError& error) {
-		if (!handleProtectedCallError(error.value)) {
-			enterLuaFaultException(LUA_FAULT_REASON_EXPLICIT_ERROR);
-		}
-	} catch (const LuaExecutionError& error) {
-		if (!handleProtectedCallError(valueString(m_stringPool.intern(error.what())))) {
-			enterLuaFaultException(error.reason);
-		}
-	}
-}
-
 int CPU::readFrameExecutionDomain(int frameIndex) const {
 	return m_frames[static_cast<size_t>(frameIndex)]->functionRecord->image->executionDomainId;
 }
@@ -2033,51 +2002,6 @@ void CPU::writeFrameExecution(
 
 void CPU::writeFrameCallSitePc(int childFrameIndex, u32 pc) {
 	m_frames[static_cast<size_t>(childFrameIndex)]->callSitePc = pc;
-}
-
-void CPU::executeInstruction(CallFrame& frame, const DecodedInstruction& decoded) {
-	const int a = decoded.a;
-	const int b = decoded.b;
-	const int c = decoded.c;
-	const uint32_t bx = decoded.bx;
-	const int sbx = decoded.sbx;
-	const int rkB = decoded.rkB;
-	const int rkC = decoded.rkC;
-	const int disp = decoded.disp;
-	Value* registers = frame.registers;
-	Blua32ExecutionImage& image = *frame.functionRecord->image;
-
-#define FRAME frame
-#define IMAGE image
-#define REG(index) registers[static_cast<size_t>(index)]
-#define CYCLES_ADD(n) do { instructionBudgetRemaining -= (n); } while (0)
-#define SET_REGISTER_FAST(index, valueExpr) do { \
-	REG(index) = (valueExpr); \
-	const int nextTop = (index) + 1; \
-	if (nextTop > FRAME.top) { \
-		FRAME.top = nextTop; \
-	} \
-} while (0)
-#define SKIP_NEXT_INSTRUCTION() do { \
-	skipNextInstruction(FRAME); \
-} while (0)
-#define TABLE_CACHE_INDEX() (decoded.tableCacheIndex)
-#define DISPATCH_LABEL(name) case OpCode::name:
-#define DISPATCH_CONTINUE() do { return; } while (0)
-#define DISPATCH_BLOCKED() do { return; } while (0)
-	switch (static_cast<OpCode>(decoded.op)) {
-#include "machine/cpu/cpu_dispatch.inl"
-	}
-#undef DISPATCH_BLOCKED
-#undef DISPATCH_CONTINUE
-#undef SKIP_NEXT_INSTRUCTION
-#undef TABLE_CACHE_INDEX
-#undef DISPATCH_LABEL
-#undef SET_REGISTER_FAST
-#undef CYCLES_ADD
-#undef REG
-#undef IMAGE
-#undef FRAME
 }
 
 Upvalue* CPU::findOpenUpvalue(const CallFrame& frame, int index) const {

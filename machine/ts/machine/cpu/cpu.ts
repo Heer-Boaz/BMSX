@@ -1288,57 +1288,6 @@ export class CPU {
 		frame.pc = nextPc;
 	}
 
-	public step(): void {
-		if (this.hardHalted || this.haltedUntilIrq || this.memoryWriteBlocked) {
-			return;
-		}
-		const frame = this.frames[this.frames.length - 1];
-		const image = frame.functionRecord.image;
-		const pc = frame.pc;
-		const wordIndex = (pc - image.layout.header.textAddress) / INSTRUCTION_BYTES;
-		if ((wordIndex >>> 0) >= image.decodedWordCount) {
-			this.hardHalt();
-			return;
-		}
-		const executionObserver = this.executionObserver;
-		const page = this.decodedPageAt(image, wordIndex);
-		const pageOffset = wordIndex & DECODED_PAGE_MASK;
-		const width = page.widths[pageOffset];
-		const op = page.ops[pageOffset];
-		this.currentInstructionPc = pc;
-		frame.pc = pc + (width * INSTRUCTION_BYTES);
-		this.lastExecutionDomainId = image.executionDomainId;
-		this.lastPc = pc + ((width - 1) * INSTRUCTION_BYTES);
-		this.lastInstruction = page.words[pageOffset];
-		if (executionObserver) {
-			executionObserver.onInstruction(image.executionDomainId, pc, op);
-		}
-		this.charge(BASE_CYCLES[op]);
-		try {
-			this.executeInstruction(
-				frame,
-				page.tableCacheIndexes[pageOffset],
-				op,
-				page.a[pageOffset],
-				page.b[pageOffset],
-				page.c[pageOffset],
-				page.bx[pageOffset],
-				page.sbx[pageOffset],
-				page.rkB[pageOffset],
-				page.rkC[pageOffset],
-				page.disp[pageOffset],
-			);
-		} catch (error) {
-			if (!this.handleProtectedCallError(error)) {
-				if (error instanceof LuaExecutionError || error instanceof LuaThrownValueError) {
-					this.enterLuaFaultException(error);
-				} else {
-					throw error;
-				}
-			}
-		}
-	}
-
 	public readFrameExecutionDomain(frameIndex: number): ExecutionDomainId {
 		return this.frames[frameIndex].functionRecord.image.executionDomainId;
 	}

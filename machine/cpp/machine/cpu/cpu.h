@@ -295,7 +295,6 @@ public:
 	AcceptedInterruptKind peekPendingInterrupt() const;
 	bool enterPendingInterrupt();
 	RunResult runUntilDepth(int targetDepth, int instructionBudget);
-	void step();
 	void collectHeap();
 	class NativeLocalRootsScope {
 	public:
@@ -345,7 +344,6 @@ private:
 	friend class NativeResultsScratchScope;
 	template <bool RootBoundary>
 	RunResult runLoop(int targetDepth, int instructionBudget);
-	void executeInstruction(CallFrame& frame, const DecodedInstruction& decoded);
 	void runBuiltinFunction(BuiltinFunction& fn, CallFrame& frame, int callBase, int returnCount, int argCount);
 	void runBuiltinNextValue(Value target, Value key, NativeResults& out);
 	void runBuiltinSetMetatable(NativeArgsView args, NativeResults& out);

@@ -453,9 +453,7 @@ test('GX-GTE+ CPU burst interlock is atomic across save, restore and command res
 		GX_GTE_PLUS_FN_VMAD3,
 	];
 	first.cpu.start(installGtePlusBurstProgram(first.cpu, first.executionAddressSpace, burstWords));
-	for (let index = 0; index < burstWords.length + 1; index += 1) {
-		first.cpu.step();
-	}
+	assert.equal(first.cpu.runUntilDepth(0, burstWords.length + 1), RunResult.Yielded);
 	first.memory.writeMappedU32LE(commandAddress, GX_GTE_PLUS_FN_VMAD3);
 	first.scheduler.beginCpuSlice(10);
 	assert.equal(first.cpu.runUntilDepth(0, 10), RunResult.Halted);

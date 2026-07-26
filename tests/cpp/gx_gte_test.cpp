@@ -410,9 +410,7 @@ void testPlusCpuBurstSaveRestoreInterlock() {
 	GteHarness first(makeGtePlusBurstImage(burstWords));
 	first.memory.writeMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_ADD_XY * bmsx::IO_WORD_SIZE, firstAddXy);
 	first.cpu.start(first.systemRom.functionAddresses[0]);
-	for (size_t index = 0u; index < burstWords.size() + 1u; index += 1u) {
-		first.cpu.step();
-	}
+	require(first.cpu.runUntilDepth(0, static_cast<int>(burstWords.size() + 1u)) == bmsx::RunResult::Yielded, "GTE+ burst setup stops before the mapped write");
 	first.memory.writeMappedU32LE(commandAddress, bmsx::GX_GTE_PLUS_FN_VMAD3);
 	first.scheduler.beginCpuSlice(10);
 	require(first.cpu.runUntilDepth(0, 10) == bmsx::RunResult::Halted, "GTE+ burst blocks the CPU");
