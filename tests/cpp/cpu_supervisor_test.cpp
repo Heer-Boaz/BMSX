@@ -147,7 +147,7 @@ struct CpuTestMachine {
 		irq.reset();
 		dma.reset();
 		memory.cartridgeController().reset();
-		cpu.resetExecutionImages(executionAddressSpace.resolveSystemDomain());
+		cpu.reset();
 	}
 };
 

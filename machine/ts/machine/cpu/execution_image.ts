@@ -1,6 +1,6 @@
-import type { Blua32FunctionRecord } from './blua32_image';
+import type { Blua32FunctionRecord, Blua32ImageLayout } from './blua32_image';
 import type { Closure } from './closure';
-import type { Blua32DecodedExecutionImage } from '../execution_address_space';
+import type { ExecutionDomainId } from '../execution_address_space';
 import { OpCode } from './opcode_info';
 import type { Table } from './table';
 import type { Value } from './value';
@@ -35,7 +35,10 @@ export type Blua32RuntimeFunction = Blua32FunctionRecord & {
 	index: number;
 };
 
-export type Blua32ExecutionImage = Blua32DecodedExecutionImage & {
+export type Blua32ExecutionImage = {
+	layout: Blua32ImageLayout;
+	executionDomainId: ExecutionDomainId;
+	irqFunctionAddress: number;
 	functions: Blua32RuntimeFunction[];
 	constPool: Value[];
 	globalSlots: Uint32Array;

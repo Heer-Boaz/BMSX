@@ -13,8 +13,10 @@ constexpr int SYSTEM_EXECUTION_DOMAIN_ID = -1;
 
 struct Blua32DecodedExecutionImage {
 	Blua32ImageLayout layout;
-	Blua32BootHeader boot;
 	int executionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
+	u32 startupFunctionAddress = 0;
+	u32 irqFunctionAddress = 0;
+	u32 exceptionFunctionAddress = 0;
 };
 
 class ExecutionAddressSpace {

@@ -244,11 +244,10 @@ public:
 		ExecutionAddressSpace& executionAddressSpace
 	);
 
-	void resetExecutionImages(Blua32DecodedExecutionImage&& systemImage);
+	void reset();
 	void replaceExecutionImage(Blua32DecodedExecutionImage&& decodedImage);
 	bool isExecutionDomainResident(int executionDomainId) const;
 	void clearExecutionEnvironment();
-	u32 systemStartupFunctionAddress() const { return m_systemImage->boot.startupFunctionAddress; }
 	bool isCartridgeExecutionActive() const { return m_activeExecutionImage->executionDomainId >= 0; }
 	int activeCartridgeSlot() const { return m_activeExecutionImage->executionDomainId; }
 	StringPool& stringPool() { return m_stringPool; }
@@ -405,6 +404,8 @@ private:
 	std::unique_ptr<CallFrame> acquireFrame();
 	void releaseFrame(std::unique_ptr<CallFrame> frame);
 	void clearCallStack();
+	void prepareRootExecution(u32 statusWord);
+	void enterRootExecution(u32 functionAddress, NativeArgsView args);
 	void ensureStackSize(size_t size);
 	void refreshFrameRegisterPointers();
 	NativeResultsScratchScope acquireNativeReturnScratch();

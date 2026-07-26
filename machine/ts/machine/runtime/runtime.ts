@@ -1,10 +1,9 @@
 import { RunResult } from '../cpu/cpu';
 import type { Closure } from '../cpu/closure';
 import { EMPTY_CALL_ARGS, StringValue, type Value } from '../cpu/value';
-import { CPU_STATUS_SYSTEM_ENTRY } from '../cpu/cop0';
 import { seedLuaGlobals } from '../firmware/globals';
 import type { RuntimeOptions } from './options';
-import { addTrackedLuaHeapBytes, configureLuaHeapUsage, getTrackedLuaHeapBytes, resetTrackedLuaHeapBytes } from '../memory/lua_heap_usage';
+import { addTrackedLuaHeapBytes, configureLuaHeapUsage, enforceLuaHeapBudget, getTrackedLuaHeapBytes, resetTrackedLuaHeapBytes } from '../memory/lua_heap_usage';
 import { FrameLoopState } from './frame/loop';
 import { FrameSchedulerState } from '../scheduler/frame';
 import { DEVICE_SERVICE_GPU } from '../scheduler/device';
@@ -119,16 +118,16 @@ export class Runtime {
 	}
 
 	public boot(): void {
-		this.machine.cpu.resetExecutionImages(this.machine.executionAddressSpace.resolveSystemDomain());
+		this.machine.cpu.reset();
 		seedLuaGlobals(this);
-		this.startSystemFirmware();
+		this.finishSystemBoot();
 	}
 
 	public rebootSystem(): void {
 		this.resetForSystemBoot();
-		this.machine.cpu.resetExecutionImages(this.machine.executionAddressSpace.resolveSystemDomain());
+		this.machine.cpu.reset();
 		seedLuaGlobals(this);
-		this.startSystemFirmware();
+		this.finishSystemBoot();
 	}
 
 	public enterFaultState(): void {
@@ -140,12 +139,8 @@ export class Runtime {
 		this.luaRuntimeFailed = true;
 	}
 
-	private startSystemFirmware(): void {
-		this.machine.cpu.start(
-			this.machine.cpu.systemStartupFunctionAddress(),
-			EMPTY_CALL_ARGS,
-			CPU_STATUS_SYSTEM_ENTRY,
-		);
+	private finishSystemBoot(): void {
+		enforceLuaHeapBudget();
 		this.pendingCall = 'entry';
 		this.luaInitialized = true;
 	}

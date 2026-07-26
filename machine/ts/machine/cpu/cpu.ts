@@ -655,14 +655,19 @@ export class CPU {
 		this.stackTop = 0;
 	}
 
-	public resetExecutionImages(systemImage: Blua32DecodedExecutionImage): void {
+	public reset(): void {
+		const systemImage = this.executionAddressSpace.resolveSystemDomain();
+		this.prepareRootExecution(CPU_STATUS_SYSTEM_ENTRY);
 		this.staticClosuresByAddress.clear();
 		this.executionImages.length = 0;
 		this.systemImage = this.activateExecutionImage(systemImage);
 		this.executionImages.push(this.systemImage);
-		this.systemExceptionFunctionAddress = this.systemImage.boot.exceptionFunctionAddress;
-		this.hardHalted = false;
+		this.systemExceptionFunctionAddress = systemImage.exceptionFunctionAddress;
 		this.activeExecutionImage = this.systemImage;
+		this.enterRootExecution(
+			systemImage.startupFunctionAddress,
+			EMPTY_CALL_ARGS,
+		);
 	}
 
 	public clearExecutionEnvironment(): void {
@@ -718,7 +723,9 @@ export class CPU {
 		const systemGlobalSlots = this.registerGlobalNames(layout.systemGlobalNames, true);
 		const decoded = this.decodeText(layout, globalSlots, systemGlobalSlots);
 		const image: Blua32ExecutionImage = {
-			...decodedImage,
+			layout,
+			executionDomainId: decodedImage.executionDomainId,
+			irqFunctionAddress: decodedImage.irqFunctionAddress,
 			functions: new Array(layout.functions.length),
 			constPool,
 			globalSlots,
@@ -737,12 +744,16 @@ export class CPU {
 			image.functions[index] = functionRecord;
 		}
 		this.bindStaticClosures(image);
-		const startup = this.functionRecordInImage(image, decodedImage.boot.startupFunctionAddress);
-		const irq = this.functionRecordInImage(image, decodedImage.boot.irqFunctionAddress);
-		const exception = this.functionRecordInImage(image, decodedImage.boot.exceptionFunctionAddress);
-		if (!startup || !irq || !exception
-			|| !startup.staticClosure || !irq.staticClosure || !exception.staticClosure) {
-			throw new Error('BLua32 boot vector does not name a static function record.');
+		const irq = this.functionRecordInImage(image, decodedImage.irqFunctionAddress);
+		if (!irq || !irq.staticClosure) {
+			throw new Error('BLua32 IRQ vector does not name a static function record.');
+		}
+		if (decodedImage.executionDomainId === SYSTEM_EXECUTION_DOMAIN_ID) {
+			const startup = this.functionRecordInImage(image, decodedImage.startupFunctionAddress);
+			const exception = this.functionRecordInImage(image, decodedImage.exceptionFunctionAddress);
+			if (!startup || !exception || !startup.staticClosure || !exception.staticClosure) {
+				throw new Error('BLua32 system vector does not name a static function record.');
+			}
 		}
 		return image;
 	}
@@ -801,7 +812,7 @@ export class CPU {
 		this.executionImages[imageIndex] = image;
 		if (decodedImage.executionDomainId === SYSTEM_EXECUTION_DOMAIN_ID) {
 			this.systemImage = image;
-			this.systemExceptionFunctionAddress = image.boot.exceptionFunctionAddress;
+			this.systemExceptionFunctionAddress = decodedImage.exceptionFunctionAddress;
 		}
 		if (this.activeExecutionImage === previousImage) {
 			this.activeExecutionImage = image;
@@ -938,10 +949,6 @@ export class CPU {
 		return image === null ? null : this.functionRecordInImage(image, address);
 	}
 
-	public systemStartupFunctionAddress(): number {
-		return this.systemImage.boot.startupFunctionAddress;
-	}
-
 	public isCartridgeExecutionActive(): boolean {
 		return this.activeExecutionImage.executionDomainId >= 0;
 	}
@@ -951,6 +958,11 @@ export class CPU {
 	}
 
 	public start(functionAddress: number, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS, statusWord = CPU_STATUS_CART_ENTRY): void {
+		this.prepareRootExecution(statusWord);
+		this.enterRootExecution(functionAddress, args);
+	}
+
+	private prepareRootExecution(statusWord: number): void {
 		this.completionValues.length = 0;
 		this.clearCallStack();
 		this.haltedUntilIrq = false;
@@ -969,6 +981,9 @@ export class CPU {
 		this.nmiReturnLuaFaultReasonWord = 0;
 		this.nonMaskableInterruptPending = false;
 		this.yieldRequested = false;
+	}
+
+	private enterRootExecution(functionAddress: number, args: ReadonlyArray<Value>): void {
 		const functionRecord = this.functionRecordOnSelectedBus(functionAddress)!;
 		this.activeExecutionImage = functionRecord.image;
 		const closure = functionRecord.image.staticClosures[functionRecord.index];
@@ -1121,7 +1136,7 @@ export class CPU {
 			const wasHalted = this.haltedUntilIrq;
 			this.enterException(
 				image,
-				image.boot.irqFunctionAddress,
+				image.irqFunctionAddress,
 				CPU_CAUSE_IRQ,
 				this.frames[this.frames.length - 1].pc,
 			);

@@ -108,7 +108,6 @@ const GTE_SF = 1 << 19;
 function createGte(): {
 	memory: Memory;
 	cpu: CPU;
-	executionAddressSpace: ExecutionAddressSpace;
 	gte: GxGte;
 	scheduler: DeviceScheduler;
 } {
@@ -117,7 +116,7 @@ function createGte(): {
 	const executionAddressSpace = new ExecutionAddressSpace(memory);
 	const cpu = new CPU(memory, irq, executionAddressSpace);
 	const scheduler = new DeviceScheduler(cpu);
-	return { memory, cpu, executionAddressSpace, gte: new GxGte(memory, cpu, scheduler), scheduler };
+	return { memory, cpu, gte: new GxGte(memory, cpu, scheduler), scheduler };
 }
 
 function completeGtePlus(memory: Memory, scheduler: DeviceScheduler, cycles: number): void {
@@ -135,7 +134,6 @@ function serviceScheduledGtePlus(gte: GxGte, scheduler: DeviceScheduler, cycles:
 
 function installGtePlusBurstProgram(
 	cpu: CPU,
-	executionAddressSpace: ExecutionAddressSpace,
 	words: readonly number[],
 ): number {
 	const instructionCount = words.length + 3;
@@ -153,7 +151,7 @@ function installGtePlusBurstProgram(
 		functionIds: ['gte_plus_burst'],
 	});
 	cpu.memory.installSystemRom(image.romBytes);
-	cpu.resetExecutionImages(executionAddressSpace.resolveSystemDomain());
+	cpu.reset();
 	return image.vectors.startupFunctionAddress;
 }
 
@@ -452,7 +450,7 @@ test('GX-GTE+ CPU burst interlock is atomic across save, restore and command res
 		0,
 		GX_GTE_PLUS_FN_VMAD3,
 	];
-	first.cpu.start(installGtePlusBurstProgram(first.cpu, first.executionAddressSpace, burstWords));
+	first.cpu.start(installGtePlusBurstProgram(first.cpu, burstWords));
 	assert.equal(first.cpu.runUntilDepth(0, burstWords.length + 1), RunResult.Yielded);
 	first.memory.writeMappedU32LE(commandAddress, GX_GTE_PLUS_FN_VMAD3);
 	first.scheduler.beginCpuSlice(10);
@@ -472,7 +470,7 @@ test('GX-GTE+ CPU burst interlock is atomic across save, restore and command res
 	assert.equal(gteState.plusInterlockArmed, true);
 
 	const restored = createGte();
-	installGtePlusBurstProgram(restored.cpu, restored.executionAddressSpace, burstWords);
+	installGtePlusBurstProgram(restored.cpu, burstWords);
 	restored.scheduler.setNowCycles(100);
 	restored.gte.restoreState(gteState);
 	restored.cpu.restoreRuntimeState(cpuState);

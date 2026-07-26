@@ -679,7 +679,7 @@ test('advancing a DMA port address releases blocked CPU writes after the block',
 
 test('a DMA address write wakes only the CPU store whose endpoint reservation was released', () => {
 	const fixture = createDmaGpuFixture();
-	const { memory, cpu, executionAddressSpace } = fixture;
+	const { memory, cpu } = fixture;
 	const source = DYNAMIC_RAM_BASE + 0x7c0;
 	const replacementReadAddress = DYNAMIC_RAM_BASE + 0x8c0;
 	const replacementWriteAddress = DYNAMIC_RAM_BASE + 0x9c0;
@@ -689,7 +689,7 @@ local gp0<const>: *word = ${IO_GX_GPU_GP0}
 	`);
 	const finalized = linkTestSystemBlua32(compiled);
 	memory.installSystemRom(finalized.romBytes);
-	cpu.resetExecutionImages(executionAddressSpace.resolveSystemDomain());
+	cpu.reset();
 	cpu.start(finalized.vectors.startupFunctionAddress);
 
 	programTransfer(memory, source, IO_GX_GPU_GP0, 1, DMA_DISABLED_CONTROL);

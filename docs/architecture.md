@@ -627,10 +627,15 @@ payload.
 The emulator consumes those physical bytes directly. `Memory` binds retained
 views into the installed system ROM and both cartridge ROMs. `Machine` owns one
 `ExecutionAddressSpace`, wired directly to `Memory` and borrowed by the CPU. It
-owns executable bus-domain selection and parses a guest-inert media layout only
-when that physical domain is resolved. The CPU takes that decoded layout into
-its execution state: it activates the system image at reset and a cartridge
-image only when execution first targets the currently selected socket.
+owns executable bus-domain selection and transiently parses the boot record and
+guest-inert media layout only when that physical domain is resolved. The CPU
+takes the decoded layout and raw vector words into its execution state: it
+consumes the system reset word directly into root execution state, retains the
+system exception word as a CPU latch, retains only the raw IRQ word with each
+resident domain, activates the system image at reset, and activates a cartridge
+image only when execution first targets the currently selected socket. The
+resident execution image never retains the outer ROM boot record's image
+offset, image byte count, or static-layout token.
 Activation binds constant strings, global slots, static closures and dense
 decoded instruction pages. Merely inserting or replacing an unexecuted second
 cartridge therefore cannot consume guest string or object identities or change
@@ -719,7 +724,10 @@ separate physical domains.
 The compiler emits a startup function that performs section initialization,
 initializes statically required modules in dependency order, clears the
 firmware-only boot primitives where applicable, calls the source entry, and
-returns. Cold reset starts the system startup vector from the system ROM header.
+returns. On cold reset the CPU resolves and activates the system domain and
+enters the raw reset-vector word in supervisor mode. Host runtime code
+may bind native primitives before scheduling that frame, but it never reads,
+returns, or passes the startup address.
 Firmware inspects the raw cartridge headers through `CART_SELECT` and transfers
 to the selected cartridge startup address through the privileged `CP0.EXEC`
 control word. The host never calls a cartridge entry or assembles a combined

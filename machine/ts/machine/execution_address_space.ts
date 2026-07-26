@@ -2,7 +2,6 @@ import {
 	BLUA32_BOOT_HEADER_SIZE,
 	decodeBlua32BootHeader,
 	decodeBlua32Image,
-	type Blua32BootHeader,
 	type Blua32ImageLayout,
 } from './cpu/blua32_image';
 import type { Memory, RomByteView } from './memory/memory';
@@ -13,8 +12,10 @@ export type ExecutionDomainId = -1 | 0 | 1;
 
 export type Blua32DecodedExecutionImage = {
 	layout: Blua32ImageLayout;
-	boot: Blua32BootHeader;
 	executionDomainId: ExecutionDomainId;
+	startupFunctionAddress: number;
+	irqFunctionAddress: number;
+	exceptionFunctionAddress: number;
 };
 
 const EMPTY_ROM_BYTES = new Uint8Array(0);
@@ -88,8 +89,10 @@ export class ExecutionAddressSpace {
 				),
 				imageAddress,
 			),
-			boot,
 			executionDomainId,
+			startupFunctionAddress: boot.startupFunctionAddress,
+			irqFunctionAddress: boot.irqFunctionAddress,
+			exceptionFunctionAddress: boot.exceptionFunctionAddress,
 		};
 	}
 }

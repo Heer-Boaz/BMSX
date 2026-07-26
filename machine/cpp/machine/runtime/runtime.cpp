@@ -309,17 +309,12 @@ uint32_t Runtime::vramTotalBytes() const {
 }
 
 void Runtime::boot() {
-	machine.cpu.resetExecutionImages(machine.executionAddressSpace.resolveSystemDomain());
+	machine.cpu.reset();
 	setupBuiltins();
-	startSystemFirmware();
+	finishSystemBoot();
 }
 
-void Runtime::startSystemFirmware() {
-	machine.cpu.start(
-		machine.cpu.systemStartupFunctionAddress(),
-		NativeArgsView(),
-		CPU_STATUS_SYSTEM_ENTRY
-	);
+void Runtime::finishSystemBoot() {
 	enforceLuaHeapBudget();
 	m_pendingCall = PendingCall::Entry;
 	m_luaInitialized = true;
@@ -327,9 +322,9 @@ void Runtime::startSystemFirmware() {
 
 void Runtime::rebootSystem() {
 	resetForSystemBoot();
-	machine.cpu.resetExecutionImages(machine.executionAddressSpace.resolveSystemDomain());
+	machine.cpu.reset();
 	setupBuiltins();
-	startSystemFirmware();
+	finishSystemBoot();
 }
 
 void Runtime::enterFaultState() {

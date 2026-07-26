@@ -363,14 +363,13 @@ export function createTestSystemCpu(
 	const irqController = new IrqController(memory);
 	const executionAddressSpace = new ExecutionAddressSpace(memory);
 	const cpu = new CPU(memory, irqController, executionAddressSpace);
-	cpu.resetExecutionImages(executionAddressSpace.resolveSystemDomain());
+	cpu.reset();
 	return { cpu, memory, irqController, executionAddressSpace };
 }
 
 export function runCompiledTestSystem(compiled: CompiledProgram, cycleBudget: number): CPU {
 	const finalized = linkTestSystemBlua32(compiled);
 	const cpu = createTestSystemCpu(finalized).cpu;
-	cpu.start(finalized.vectors.startupFunctionAddress);
 	assert.equal(cpu.runUntilDepth(0, cycleBudget), RunResult.Halted);
 	return cpu;
 }

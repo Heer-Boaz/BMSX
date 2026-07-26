@@ -330,16 +330,21 @@ Closure* CPU::createTrackedClosure(
 	return closure;
 }
 
-void CPU::resetExecutionImages(Blua32DecodedExecutionImage&& systemImage) {
+void CPU::reset() {
+	Blua32DecodedExecutionImage systemImage =
+		m_executionAddressSpace.resolveSystemDomain();
+	const u32 systemResetFunctionAddress = systemImage.startupFunctionAddress;
+	const u32 systemExceptionFunctionAddress = systemImage.exceptionFunctionAddress;
+	prepareRootExecution(CPU_STATUS_SYSTEM_ENTRY);
 	m_staticClosuresByAddress.clear();
 	m_executionImages.clear();
 	std::unique_ptr<Blua32ExecutionImage> activatedSystemImage =
 		activateExecutionImage(std::move(systemImage));
 	m_systemImage = activatedSystemImage.get();
 	m_executionImages.push_back(std::move(activatedSystemImage));
-	m_systemExceptionFunctionAddress = m_systemImage->boot.exceptionFunctionAddress;
+	m_systemExceptionFunctionAddress = systemExceptionFunctionAddress;
 	m_activeExecutionImage = m_systemImage;
-	m_hardHalted = false;
+	enterRootExecution(systemResetFunctionAddress, NativeArgsView());
 }
 
 std::vector<u32> CPU::registerGlobalNames(const std::vector<std::string>& names, bool system) {
@@ -366,8 +371,8 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 ) {
 	auto image = std::make_unique<Blua32ExecutionImage>();
 	image->layout = std::move(decodedImage.layout);
-	image->boot = decodedImage.boot;
 	image->executionDomainId = decodedImage.executionDomainId;
+	image->irqFunctionAddress = decodedImage.irqFunctionAddress;
 	image->constPool.reserve(image->layout.constants.size());
 	for (const Blua32EncodedConstant& constant : image->layout.constants) {
 		if (std::holds_alternative<std::monostate>(constant)) {
@@ -404,12 +409,18 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 		}
 	}
 
-	Blua32RuntimeFunction* startup = functionRecordInImage(*image, decodedImage.boot.startupFunctionAddress);
-	Blua32RuntimeFunction* irq = functionRecordInImage(*image, decodedImage.boot.irqFunctionAddress);
-	Blua32RuntimeFunction* exception = functionRecordInImage(*image, decodedImage.boot.exceptionFunctionAddress);
-	if (!startup || !irq || !exception
-		|| !startup->staticClosure || !irq->staticClosure || !exception->staticClosure) {
-		throw BMSX_RUNTIME_ERROR("BLua32 boot vector does not name a static function record.");
+	Blua32RuntimeFunction* irq = functionRecordInImage(*image, decodedImage.irqFunctionAddress);
+	if (!irq || !irq->staticClosure) {
+		throw BMSX_RUNTIME_ERROR("BLua32 IRQ vector does not name a static function record.");
+	}
+	if (decodedImage.executionDomainId == SYSTEM_EXECUTION_DOMAIN_ID) {
+		Blua32RuntimeFunction* startup =
+			functionRecordInImage(*image, decodedImage.startupFunctionAddress);
+		Blua32RuntimeFunction* exception =
+			functionRecordInImage(*image, decodedImage.exceptionFunctionAddress);
+		if (!startup || !exception || !startup->staticClosure || !exception->staticClosure) {
+			throw BMSX_RUNTIME_ERROR("BLua32 system vector does not name a static function record.");
+		}
 	}
 	return image;
 }
@@ -440,6 +451,7 @@ Blua32ExecutionImage* CPU::executionImageForDomain(int executionDomainId) {
 }
 
 void CPU::replaceExecutionImage(Blua32DecodedExecutionImage&& decodedImage) {
+	const u32 systemExceptionFunctionAddress = decodedImage.exceptionFunctionAddress;
 	auto imageEntry = m_executionImages.begin();
 	while ((*imageEntry)->executionDomainId != decodedImage.executionDomainId) {
 		++imageEntry;
@@ -451,7 +463,7 @@ void CPU::replaceExecutionImage(Blua32DecodedExecutionImage&& decodedImage) {
 	*imageEntry = std::move(image);
 	if (activatedImage->executionDomainId == SYSTEM_EXECUTION_DOMAIN_ID) {
 		m_systemImage = activatedImage;
-		m_systemExceptionFunctionAddress = activatedImage->boot.exceptionFunctionAddress;
+		m_systemExceptionFunctionAddress = systemExceptionFunctionAddress;
 	}
 	if (m_activeExecutionImage == previousImage) {
 		m_activeExecutionImage = activatedImage;
@@ -673,6 +685,11 @@ Blua32RuntimeFunction* CPU::functionRecordOnSelectedBus(u32 address) {
 }
 
 void CPU::start(u32 functionAddress, NativeArgsView args, u32 statusWord) {
+	prepareRootExecution(statusWord);
+	enterRootExecution(functionAddress, args);
+}
+
+void CPU::prepareRootExecution(u32 statusWord) {
 	completionValues.clear();
 	clearCallStack();
 	m_haltedUntilIrq = false;
@@ -691,6 +708,9 @@ void CPU::start(u32 functionAddress, NativeArgsView args, u32 statusWord) {
 	m_nmiReturnLuaFaultReasonWord = 0u;
 	m_nonMaskableInterruptPending = false;
 	m_yieldRequested = false;
+}
+
+void CPU::enterRootExecution(u32 functionAddress, NativeArgsView args) {
 	Blua32RuntimeFunction& function = *functionRecordOnSelectedBus(functionAddress);
 	m_activeExecutionImage = function.image;
 	Closure* closure = function.image->staticClosures[function.index];
@@ -1637,7 +1657,7 @@ bool CPU::enterPendingInterrupt() {
 	if (canAcceptMaskableInterruptLine()) {
 		Blua32ExecutionImage& image = isUserMode() ? *m_activeExecutionImage : *m_systemImage;
 		const bool wasHalted = m_haltedUntilIrq;
-		enterException(image, image.boot.irqFunctionAddress, CPU_CAUSE_IRQ, m_frames.back()->pc);
+		enterException(image, image.irqFunctionAddress, CPU_CAUSE_IRQ, m_frames.back()->pc);
 		if (!wasHalted) m_interruptEventPending = true;
 		return true;
 	}

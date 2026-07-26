@@ -121,7 +121,7 @@ private:
 		Entry,
 	};
 	void setupBuiltins();
-	void startSystemFirmware();
+	void finishSystemBoot();
 
 	RuntimeInputSource& m_input;
 

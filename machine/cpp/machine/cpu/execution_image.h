@@ -60,8 +60,8 @@ struct DecodedInstructionPage {
 
 struct Blua32ExecutionImage {
 	Blua32ImageLayout layout;
-	Blua32BootHeader boot;
 	int executionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
+	u32 irqFunctionAddress = 0;
 	std::vector<Blua32RuntimeFunction> functions;
 	std::vector<Value> constPool;
 	std::vector<u32> globalSlots;
