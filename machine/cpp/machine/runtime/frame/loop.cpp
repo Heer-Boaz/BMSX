@@ -124,7 +124,6 @@ bool FrameLoopState::tickUpdate(Runtime& runtime) {
 	const i64 previousRemaining = previousFrameActive ? frameState.cycleBudgetRemaining : -1;
 	const bool previousPending = runtime.m_pendingCall == PendingCall::Entry;
 	const i64 previousSequence = runtime.frameScheduler.lastTickSequence;
-	const bool startedFrame = !frameActive;
 	if (frameActive) {
 		if (frameState.cycleBudgetRemaining <= 0 && !runtime.frameScheduler.refillFrameBudget(runtime, frameState)) {
 			return false;
@@ -133,10 +132,6 @@ bool FrameLoopState::tickUpdate(Runtime& runtime) {
 		if (!runtime.frameScheduler.startScheduledFrame(runtime)) {
 			return false;
 		}
-	}
-
-	if (startedFrame) {
-		runtime.m_debugUpdateCountTotal += 1;
 	}
 
 	runActiveFrameState(runtime);

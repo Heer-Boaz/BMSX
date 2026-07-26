@@ -146,8 +146,6 @@ private:
 	Value onCyclesPerFrameRead(uint32_t addr) const;
 	static void onGxGpuGp1WriteThunk(void* context, uint32_t addr, Value value, MappedBusSignals busSignals);
 	PendingCall m_pendingCall = PendingCall::None;
-
-	i64 m_debugUpdateCountTotal = 0;
 };
 
 } // namespace bmsx
