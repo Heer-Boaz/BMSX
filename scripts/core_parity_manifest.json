@@ -263,7 +263,6 @@
 		"machine/ts/core/system.ts",
 		"machine/ts/machine/firmware/globals.ts",
 		"machine/ts/machine/machine.ts",
-		"machine/ts/machine/memory/specs.ts",
 		"machine/ts/machine/runtime/boot_timing.ts",
 		"machine/ts/machine/runtime/machine_state.ts",
 		"machine/ts/machine/runtime/runtime.ts",
@@ -364,14 +363,6 @@
 				"machine/cpp/machine/model_registry.cpp"
 			],
 			"reason": "machine_model_registry_hardware_spec_contract"
-		},
-		{
-			"ts": "machine/ts/machine/memory/specs.ts",
-			"cpp": [
-				"machine/cpp/machine/memory/specs.h",
-				"machine/cpp/machine/memory/specs.cpp"
-			],
-			"reason": "memory_map_specs_runtime_contract"
 		},
 		{
 			"ts": "machine/ts/machine/runtime/timing/config.ts",

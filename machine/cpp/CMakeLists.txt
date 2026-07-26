@@ -318,7 +318,6 @@ add_library(bmsx_core STATIC
 	machine/runtime/frame/loop.cpp
 	machine/runtime/lua_scratch.cpp
 	machine/scheduler/frame.cpp
-	machine/memory/specs.cpp
 	render/presentation_state.cpp
 	machine/runtime/timing/index.cpp
 	machine/runtime/timing/state.cpp

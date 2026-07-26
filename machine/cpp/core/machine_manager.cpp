@@ -11,7 +11,6 @@
 #include "machine/model_registry.h"
 #include "machine/devices/gx/gpu_display.h"
 #include "machine/memory/map.h"
-#include "machine/memory/specs.h"
 #include "machine/runtime/boot_timing.h"
 #include "render/shared/bmsx_font.h"
 #include "rompack/format.h"
@@ -309,7 +308,7 @@ bool MachineManager::bootSystemFirmware() {
 	if (m_system_rom_image.header.blua32ImageOffset == 0u) return false;
 
 	const ResolvedRuntimeTiming timing = resolveRuntimeTiming(PSX_MACHINE_SPEC.cpuFreqHz);
-	configureRuntimeMemoryMap();
+	configureMemoryMap(static_cast<uint32_t>(PSX_MACHINE_SPEC.ramBytes));
 	configureViewForGpuReset();
 
 	Runtime& rt = ensureRuntime(RuntimeOptions{

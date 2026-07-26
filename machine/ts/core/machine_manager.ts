@@ -11,7 +11,7 @@ import { HZ_SCALE } from '../machine/runtime/timing/constants';
 import { renderGate, runGate } from '../common/taskgate';
 import { Runtime } from '../machine/runtime/runtime';
 import { Memory } from '../machine/memory/memory';
-import { configureRuntimeMemoryMap } from '../machine/memory/specs';
+import { configureMemoryMap } from '../machine/memory/map';
 import { resolveRuntimeTiming } from '../machine/runtime/boot_timing';
 import type { GPUBackend } from '../render/backend/backend';
 import { clearOverlayFrame } from '../render/host_overlay/overlay_queue';
@@ -217,7 +217,7 @@ export class MachineManager {
 		}
 		const bootPlan = await this.buildBootPlan(systemRom, cartridgeSlots);
 		const { systemLayer, cartridgeLayers, cartridgeMedia } = bootPlan;
-		configureRuntimeMemoryMap();
+		configureMemoryMap(PSX_MACHINE_SPEC.ramBytes);
 		const memory = new Memory({
 			systemRom: systemLayer.payload,
 			cartridgeSlots: cartridgeMedia,
