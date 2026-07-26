@@ -41,10 +41,10 @@ addressed three-lane fixed-Q12 `VMAD3` implementation. Later depth, local-memory
 and packet-emission work remains separate rather than being implied by this
 first extension.
 
-The terminal remains BIOS firmware. Its later `CALL` extension path is supplied
-by a real second cartridge slot and a Lua developer cartridge, not by moving IDE
-objects into firmware or injecting host callbacks. `CART-EXP-01` owns the slot
-bus first; `BIOS-TERM-EXT-01` owns the command ABI after that.
+The raw dual-slot cartridge bus is complete. Both sockets can supply BLua32
+through the same selected physical aperture; firmware chooses a socket and
+transfers to its physical startup function. `BIOS-TERM-EXT-01` remains parked
+until a concrete need justifies its command and call/return ABI.
 
 Completion means all of these are true:
 
@@ -1275,34 +1275,13 @@ merge model rather than a terminal-shaped approximation.
 - [x] Keep unselected BSX extensions behind reviewed hardware contracts. PCRTC
   proceeded through `GX-PCRTC-01`, not through a compatibility display mode.
 
-### 7a. Two cartridge slots and terminal `CALL`
+### 7a. Two cartridge slots
 
-This is a machine-bus slice followed by a firmware/developer-cart slice. The
-terminal remains BIOS firmware throughout.
-
-- [ ] Freeze `CART-EXP-01`: two physical slot identities, ROM/device chip
-  selects, address decode and arbitration, executable boot selection, discovery,
-  reset, IRQ/DMA wiring, insertion policy and save-state. Follow the real-device
-  expansion shape visible in openMSX's slot manager and RAM/audio/video carts;
-  do not copy MSX paging or expose host extension objects.
-- [ ] Extend ROM loading, machine construction, direct/libretro/browser/headless
-  host inputs and both save-state owners with the same two raw slot inputs. A
-  minimal ROM/Lua cart, RAM cart and MMIO/IRQ device cart must prove the bus
-  before terminal integration.
-- [ ] Freeze `BIOS-TERM-EXT-01`: raw extension descriptors and Lua entry words,
-  deterministic slot/name resolution, argument/result memory, call/return and
-  timing, help/completion metadata and fixed row/pager output.
-- [ ] Add one built-in `CALL <name> [arguments]` dispatcher to the existing BIOS
-  command owner. Extensions execute cart-resident Lua and feed the existing
-  retained terminal; they do not register host callbacks, replace input/editor
-  state or own another renderer.
-- [ ] Build the developer cartridge above that ABI. Move editor, compiler,
-  symbol and workspace-like behavior into its Lua only when the required RAM,
-  persistent storage or debug access exists as concrete cartridge hardware.
-  BIOS and host IDE code are not providers for missing device capabilities.
-- [ ] Validate reset, missing/duplicate names, both slot orders, nested IRQs,
-  save/restore during an extension call, bounded output and terminal rendering
-  in TS/C++ headless plus the relevant accelerated visible run.
+`CART-EXP-01` is complete and its raw bus, firmware boot selection, host-media
+and save-state contract lives in `docs/architecture.md`. Either socket can
+supply BLua32 through the shared selected aperture. The separate
+terminal-extension idea remains parked until `BIOS-TERM-EXT-01` has a concrete
+use case and an explicit command/call ABI.
 
 ## Recommended next functional slices
 
@@ -1317,14 +1296,9 @@ deferred live slices.
    owner from a profile or direct repeated-work audit, correct it in all mirrored
    consumers, prove exact output, review the immutable commit, then freeze it
    before selecting the next owner.
-2. **Two-slot expansion bus (`CART-EXP-01`)**: specify and implement the physical
-   slot/bus/save-state boundary before any terminal command extension.
-3. **Terminal extension and developer cart (`BIOS-TERM-EXT-01`)**: add the BIOS
-   `CALL` dispatcher over the reviewed cartridge ABI, then move developer
-   functionality into cart Lua backed by real extension hardware.
-4. **Visible GX migration regressions**: finish live host-UI and accelerated
+2. **Visible GX migration regressions**: finish live host-UI and accelerated
    browser scanout proof when a real browser is available.
-5. **Accelerated feedback performance**: run the frontend-resolved NV barrier
+3. **Accelerated feedback performance**: run the frontend-resolved NV barrier
    path in the real Windows RetroArch context. If that concrete context does not
    expose NV texture barrier, measure its actual extensions and ordering before
    choosing another GPU feedback mechanism; do not infer one from the GPU name

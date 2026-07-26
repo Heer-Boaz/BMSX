@@ -2767,7 +2767,7 @@ export class CPU {
 		out.push(null);
 	}
 
-	private runBuiltinStringChar(args: NativeArgs, out: Value[]): void {
+	private runBuiltinStringChar(args: NativeArgs, out: Value[]): void { // TODO: Check whether this is a performance bottleneck and optimize if necessary and do the same for the C++-version.
 		let result = '';
 		for (let index = 0; index < args.length; index += 1) {
 			result += String.fromCodePoint(Math.trunc(args.get(index) as number));

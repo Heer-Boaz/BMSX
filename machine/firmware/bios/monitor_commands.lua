@@ -106,7 +106,7 @@ rodata lua_fault_reason_registry: lua_fault_reason_entry[] = {
 	{ code = lua_fault_reason_explicit_error, description = 'UNHANDLED error() CALL' },
 }
 
-local lua_fault_reason_description<const> = function(reason)
+local lua_fault_reason_description<const> = function(reason) -- WHY DO WE NEED TO LOOP THROUGH THE TABLE?
 	for index = 0, #lua_fault_reason_registry - 1 do
 		if lua_fault_reason_registry[index].code == reason then
 			return lua_fault_reason_registry[index].description
