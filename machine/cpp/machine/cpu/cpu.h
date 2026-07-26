@@ -294,7 +294,6 @@ public:
 	bool canAcceptMaskableInterruptLine() const;
 	AcceptedInterruptKind peekPendingInterrupt() const;
 	bool enterPendingInterrupt();
-	RunResult run(int instructionBudget);
 	RunResult runUntilDepth(int targetDepth, int instructionBudget);
 	void step();
 	void collectHeap();
@@ -344,6 +343,8 @@ public:
 
 private:
 	friend class NativeResultsScratchScope;
+	template <bool RootBoundary>
+	RunResult runLoop(int targetDepth, int instructionBudget);
 	void executeInstruction(CallFrame& frame, const DecodedInstruction& decoded);
 	void runBuiltinFunction(BuiltinFunction& fn, CallFrame& frame, int callBase, int returnCount, int argCount);
 	void runBuiltinNextValue(Value target, Value key, NativeResults& out);

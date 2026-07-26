@@ -1701,7 +1701,8 @@ void CPU::resumeMemoryWrite(uint32_t address) {
 	}
 }
 
-RunResult CPU::run(int instructionBudget) {
+template <bool RootBoundary>
+RunResult CPU::runLoop(int targetDepth, int instructionBudget) {
 	instructionBudgetRemaining = instructionBudget;
 	auto& frames = m_frames;
 	CallFrame* frame = nullptr;
@@ -1731,8 +1732,14 @@ RunResult CPU::run(int instructionBudget) {
 	for (;;) {
 		try {
 dispatch_loop_check:
-	if (frames.empty()) {
-		return RunResult::Halted;
+	if constexpr (RootBoundary) {
+		if (frames.empty()) {
+			return RunResult::Halted;
+		}
+	} else {
+		if (static_cast<int>(frames.size()) <= targetDepth) {
+			return RunResult::Halted;
+		}
 	}
 	if (m_hardHalted || m_haltedUntilIrq || m_memoryWriteBlocked) {
 		return RunResult::Halted;
@@ -1863,164 +1870,10 @@ dispatch_continue:
 }
 
 RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget) {
-	instructionBudgetRemaining = instructionBudget;
-	auto& frames = m_frames;
-	CallFrame* frame = nullptr;
-	Blua32ExecutionImage* image = nullptr;
-	const DecodedInstruction* decoded;
-	u32 pc = 0;
-	size_t wordIndex = 0;
-	int a = 0;
-	int b = 0;
-	int c = 0;
-	uint32_t bx = 0;
-	int sbx = 0;
-	int rkB = 0;
-	int rkC = 0;
-	int disp = 0;
-	Value* registers = nullptr;
-#if BMSX_USE_COMPUTED_GOTO
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wpedantic"
-	static void* const kDispatchTargets[OPCODE_COUNT] = {
-#define OP(name) &&dispatch_##name,
-#include "machine/cpu/cpu_opcode_list.inl"
-#undef OP
-	};
-#pragma GCC diagnostic pop
-#endif
-	for (;;) {
-		try {
-dispatch_loop_check:
-	if (static_cast<int>(frames.size()) <= targetDepth) {
-		return RunResult::Halted;
+	if (targetDepth == 0) {
+		return runLoop<true>(targetDepth, instructionBudget);
 	}
-	if (m_hardHalted || m_haltedUntilIrq || m_memoryWriteBlocked) {
-		return RunResult::Halted;
-	}
-	if (m_yieldRequested) {
-		m_yieldRequested = false;
-		return RunResult::Yielded;
-	}
-	if (instructionBudgetRemaining <= 0) {
-		return RunResult::Yielded;
-	}
-	if (m_nonMaskableInterruptPending
-		|| ((m_statusWord & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
-			&& m_irqController.hasAssertedMaskableInterruptLine())
-	) {
-		enterPendingInterrupt();
-		goto dispatch_loop_check;
-	}
-		frame = frames.back().get();
-		image = frame->functionRecord->image;
-		registers = frame->registers;
-		pc = frame->pc;
-		wordIndex = (pc - image->layout.header.textAddress) / INSTRUCTION_BYTES;
-		if (wordIndex >= image->decodedWordCount) {
-			hardHalt();
-			return RunResult::Halted;
-		}
-		decoded = &decodedAtWordIndex(*image, wordIndex);
-		m_currentInstructionPc = pc;
-		frame->pc = pc + (static_cast<u32>(decoded->width) * INSTRUCTION_BYTES);
-		m_lastExecutionDomainId = image->executionDomainId;
-		lastPc = pc + ((static_cast<u32>(decoded->width) - 1u) * INSTRUCTION_BYTES);
-	lastInstruction = decoded->word;
-	instructionBudgetRemaining -= static_cast<int>(BASE_CYCLES[decoded->op]);
-	a = decoded->a;
-	b = decoded->b;
-	c = decoded->c;
-	bx = decoded->bx;
-	sbx = decoded->sbx;
-	rkB = decoded->rkB;
-	rkC = decoded->rkC;
-	disp = decoded->disp;
-
-	#define FRAME (*frame)
-	#define IMAGE (*image)
-	#define REG(index) registers[static_cast<size_t>(index)]
-#define CYCLES_ADD(n) do { instructionBudgetRemaining -= (n); } while (0)
-#define SET_REGISTER_FAST(index, valueExpr) do { \
-	REG(index) = (valueExpr); \
-	const int nextTop = (index) + 1; \
-	if (nextTop > FRAME.top) { \
-		FRAME.top = nextTop; \
-	} \
-} while (0)
-#define SKIP_NEXT_INSTRUCTION() do { \
-	skipNextInstruction(FRAME); \
-} while (0)
-#define TABLE_CACHE_INDEX() (decoded->tableCacheIndex)
-#define DISPATCH_CONTINUE() do { goto dispatch_continue; } while (0)
-#define DISPATCH_BLOCKED() do { return RunResult::Halted; } while (0)
-
-#if BMSX_USE_COMPUTED_GOTO
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wpedantic"
-	goto *kDispatchTargets[decoded->op];
-#pragma GCC diagnostic pop
-#else
-	switch (static_cast<OpCode>(decoded->op)) {
-#define DISPATCH_LABEL(name) case OpCode::name:
-#include "machine/cpu/cpu_dispatch.inl"
-#undef DISPATCH_LABEL
-	}
-#endif
-
-dispatch_continue:
-#undef DISPATCH_BLOCKED
-#undef DISPATCH_CONTINUE
-#undef SKIP_NEXT_INSTRUCTION
-#undef TABLE_CACHE_INDEX
-#undef SET_REGISTER_FAST
-#undef CYCLES_ADD
-	#undef REG
-	#undef IMAGE
-	#undef FRAME
-	goto dispatch_loop_check;
-
-#if BMSX_USE_COMPUTED_GOTO
-	#define FRAME (*frame)
-	#define IMAGE (*image)
-	#define REG(index) registers[static_cast<size_t>(index)]
-#define CYCLES_ADD(n) do { instructionBudgetRemaining -= (n); } while (0)
-#define SET_REGISTER_FAST(index, valueExpr) do { \
-	REG(index) = (valueExpr); \
-	const int nextTop = (index) + 1; \
-	if (nextTop > FRAME.top) { \
-		FRAME.top = nextTop; \
-	} \
-} while (0)
-#define SKIP_NEXT_INSTRUCTION() do { \
-	skipNextInstruction(FRAME); \
-} while (0)
-#define TABLE_CACHE_INDEX() (decoded->tableCacheIndex)
-#define DISPATCH_LABEL(name) dispatch_##name:
-#define DISPATCH_CONTINUE() do { goto dispatch_continue; } while (0)
-#define DISPATCH_BLOCKED() do { return RunResult::Halted; } while (0)
-#include "machine/cpu/cpu_dispatch.inl"
-#undef DISPATCH_BLOCKED
-#undef DISPATCH_CONTINUE
-#undef SKIP_NEXT_INSTRUCTION
-#undef TABLE_CACHE_INDEX
-#undef DISPATCH_LABEL
-#undef SET_REGISTER_FAST
-#undef CYCLES_ADD
-	#undef REG
-	#undef IMAGE
-	#undef FRAME
-#endif
-		} catch (const LuaThrownValueError& error) {
-			if (!handleProtectedCallError(error.value)) {
-				enterLuaFaultException(LUA_FAULT_REASON_EXPLICIT_ERROR);
-			}
-		} catch (const LuaExecutionError& error) {
-			if (!handleProtectedCallError(valueString(m_stringPool.intern(error.what())))) {
-				enterLuaFaultException(error.reason);
-			}
-		}
-	}
+	return runLoop<false>(targetDepth, instructionBudget);
 }
 
 void CPU::unwindToDepth(int targetDepth) {

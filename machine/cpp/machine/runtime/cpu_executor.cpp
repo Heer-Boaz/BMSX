@@ -128,7 +128,7 @@ RunResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState& frameSt
 		}
 		scheduler.beginCpuSlice(sliceBudget);
 		try {
-			result = cpu.run(sliceBudget);
+			result = cpu.runUntilDepth(0, sliceBudget);
 		} catch (...) {
 			scheduler.endCpuSlice();
 			throw;

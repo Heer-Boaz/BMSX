@@ -154,7 +154,7 @@ struct CpuTestMachine {
 void testManualNmiAndSaveStateReturn() {
 	CpuTestMachine machine(makeSupervisorSystemImage());
 	machine.cpu.start(machine.cartRom.functionAddresses[CART_USER_HALT_FUNCTION]);
-	require(machine.cpu.run(100) == bmsx::RunResult::Halted, "HALT parks the user frame");
+	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "HALT parks the user frame");
 	machine.cpu.requestNonMaskableInterrupt();
 	require(machine.cpu.enterPendingInterrupt(), "NMI enters through the CPU interrupt boundary");
 
@@ -169,10 +169,10 @@ void testManualNmiAndSaveStateReturn() {
 	require(machine.cpu.readLastExecutionDomain() == 0, "CPU exposes the raw last-instruction domain");
 
 	machine.cpu.restoreRuntimeState(active);
-	require(machine.cpu.run(1) == bmsx::RunResult::Yielded, "MFC0 consumes one instruction before RFE");
+	require(machine.cpu.runUntilDepth(0, 1) == bmsx::RunResult::Yielded, "MFC0 consumes one instruction before RFE");
 	require(machine.cpu.readLastExecutionDomain() == bmsx::SYSTEM_EXECUTION_DOMAIN_ID, "system exception execution replaces the last-instruction domain");
 	require(bmsx::asNumber(machine.cpu.readFrameRegister(1, 0)) == bmsx::CPU_CAUSE_NMI, "MFC0 reads the raw CAUSE latch");
-	require(machine.cpu.run(100) == bmsx::RunResult::Halted, "RFE resumes and completes the retained user frame");
+	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "RFE resumes and completes the retained user frame");
 	require(machine.cpu.completionValues.size() == 1u && bmsx::asNumber(machine.cpu.completionValues[0]) == 1.0, "RFE resumes at EPC");
 	require(machine.cpu.captureRuntimeState().statusWord == bmsx::CPU_STATUS_CART_ENTRY, "RFE pops the raw STATUS mode stack");
 }
@@ -196,14 +196,14 @@ void testPrivilegeVectorRoutingAndCp0Fault() {
 
 	machine.irq.reset();
 	machine.cpu.start(machine.systemRom.functionAddresses[USER_CP0_FUNCTION]);
-	require(machine.cpu.run(1) == bmsx::RunResult::Yielded, "user MFC0 vectors synchronously");
+	require(machine.cpu.runUntilDepth(0, 1) == bmsx::RunResult::Yielded, "user MFC0 vectors synchronously");
 	bmsx::CpuRuntimeState fault = machine.cpu.captureRuntimeState();
 	require(fault.causeWord == bmsx::CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE, "user CP0 access latches the privileged-instruction cause");
 	require(fault.epcWord == machine.systemRom.textAddress + 3u * bmsx::INSTRUCTION_BYTES, "synchronous EPC identifies the physical faulting instruction");
 	require(fault.frames.back().functionAddress == machine.systemRom.functionAddresses[SYSTEM_EXCEPTION_FUNCTION], "user CP0 fault selects the system exception vector");
 	fault.epcWord += bmsx::INSTRUCTION_BYTES;
 	machine.cpu.restoreRuntimeState(fault);
-	require(machine.cpu.run(100) == bmsx::RunResult::Halted, "edited EPC skips the faulting instruction on RFE");
+	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "edited EPC skips the faulting instruction on RFE");
 	require(machine.cpu.completionValues.size() == 1u && bmsx::asNumber(machine.cpu.completionValues[0]) == 1.0, "fault handler resumes the selected user instruction");
 
 	machine.cpu.start(
@@ -211,7 +211,7 @@ void testPrivilegeVectorRoutingAndCp0Fault() {
 		{},
 		bmsx::CPU_STATUS_SYSTEM_ENTRY
 	);
-	require(machine.cpu.run(100) == bmsx::RunResult::Halted, "supervisor CP0 code completes");
+	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "supervisor CP0 code completes");
 	require(machine.cpu.captureRuntimeState().epcWord == bmsx::CPU_STATUS_SYSTEM_ENTRY, "MTC0 writes the raw EPC word");
 }
 
@@ -244,7 +244,7 @@ void testCp0ExecTransfersToTheSelectedPhysicalCartridgeImage() {
 		{},
 		bmsx::CPU_STATUS_SYSTEM_ENTRY
 	);
-	require(machine.cpu.run(100) == bmsx::RunResult::Halted, "CP0.EXEC transfers execution to cartridge bytecode");
+	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "CP0.EXEC transfers execution to cartridge bytecode");
 	const bmsx::CpuRuntimeState state = machine.cpu.captureRuntimeState();
 	require(state.executionCartridgeSlot == 0, "CP0.EXEC selects the cartridge in the physical bus socket");
 	require(state.frames.size() == 1u, "CP0.EXEC replaces the system root instead of stacking a host call");
@@ -297,7 +297,7 @@ void testControlFlowCannotLeaveTheActiveFunctionRecord() {
 		CpuTestMachine machine(std::move(image));
 
 		machine.cpu.start(machine.systemRom.functionAddresses[0]);
-		require(machine.cpu.run(100) == bmsx::RunResult::Halted, testCase.name);
+		require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, testCase.name);
 		const bmsx::CpuRuntimeState state = machine.cpu.captureRuntimeState();
 		require(state.frames.size() == 1u, "branch hard-halts before entering adjacent function text");
 		require(state.frames.back().functionAddress == machine.systemRom.functionAddresses[0], "branch retains the active function record");
@@ -319,7 +319,7 @@ void testInvalidClosureTargetHardHalts() {
 	CpuTestMachine machine(std::move(image));
 
 	machine.cpu.start(machine.systemRom.functionAddresses[0]);
-	require(machine.cpu.run(100) == bmsx::RunResult::Halted, "invalid CLOSURE target hard-halts");
+	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "invalid CLOSURE target hard-halts");
 	const bmsx::CpuRuntimeState state = machine.cpu.captureRuntimeState();
 	require(state.frames.size() == 1u, "invalid CLOSURE target retains the active frame");
 	require(state.frames.back().functionAddress == machine.systemRom.functionAddresses[0], "invalid CLOSURE target does not enter host state");
@@ -366,7 +366,7 @@ void testCrossImageCallStackPcsBelongToTheirFrames() {
 
 	CpuTestMachine machine(std::move(system), std::move(cart));
 	machine.cpu.start(machine.cartRom.functionAddresses[0]);
-	require(machine.cpu.run(100) == bmsx::RunResult::Halted, "cross-image leaf reaches HALT");
+	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "cross-image leaf reaches HALT");
 	const std::optional<bmsx::Blua32ImageLayout> systemLayout =
 		bmsx::decodeBlua32RomImage(machine.systemRom.bytes, bmsx::SYSTEM_ROM_BASE);
 	const std::optional<bmsx::Blua32ImageLayout> cartLayout =
@@ -402,14 +402,14 @@ void testCrossImageCallStackPcsBelongToTheirFrames() {
 void testRfeCannotResumeOutsideTheInterruptedFunctionRecord() {
 	CpuTestMachine machine(makeSupervisorSystemImage());
 	machine.cpu.start(machine.cartRom.functionAddresses[CART_USER_HALT_FUNCTION]);
-	require(machine.cpu.run(1) == bmsx::RunResult::Halted, "cart reaches HALT before NMI");
+	require(machine.cpu.runUntilDepth(0, 1) == bmsx::RunResult::Halted, "cart reaches HALT before NMI");
 	machine.cpu.requestNonMaskableInterrupt();
 	require(machine.cpu.enterPendingInterrupt(), "NMI enters the system exception vector");
 
 	bmsx::CpuRuntimeState state = machine.cpu.captureRuntimeState();
 	state.epcWord = machine.cartRom.textAddress + 3u * bmsx::INSTRUCTION_BYTES;
 	machine.cpu.restoreRuntimeState(state);
-	require(machine.cpu.run(100) == bmsx::RunResult::Halted, "invalid RFE target hard-halts");
+	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "invalid RFE target hard-halts");
 	state = machine.cpu.captureRuntimeState();
 	require(state.frames.size() == 2u, "invalid RFE target retains both frames");
 	require(state.frames.front().functionAddress == machine.cartRom.functionAddresses[CART_USER_HALT_FUNCTION], "invalid RFE target does not replace the interrupted frame");
@@ -419,7 +419,7 @@ void testRfeCannotResumeOutsideTheInterruptedFunctionRecord() {
 void testMappedBusErrorsEnterTheSystemExceptionVector() {
 	CpuTestMachine machine(makeSupervisorSystemImage());
 	machine.cpu.start(machine.systemRom.functionAddresses[USER_BUS_LOAD_FUNCTION]);
-	require(machine.cpu.run(4) == bmsx::RunResult::Yielded, "faulting mapped load enters the exception root");
+	require(machine.cpu.runUntilDepth(0, 4) == bmsx::RunResult::Yielded, "faulting mapped load enters the exception root");
 	bmsx::CpuRuntimeState loadFault = machine.cpu.captureRuntimeState();
 	require(loadFault.causeWord == bmsx::CPU_CAUSE_CODE_DATA_BUS_ERROR, "mapped load latches DBE");
 	require(loadFault.epcWord == machine.systemRom.textAddress + 11u * bmsx::INSTRUCTION_BYTES, "mapped load EPC identifies the physical faulting instruction");
@@ -428,7 +428,7 @@ void testMappedBusErrorsEnterTheSystemExceptionVector() {
 	require(bmsx::asNumber(machine.cpu.readFrameRegister(0, 1)) == 1.0, "faulting load does not commit its destination register");
 	loadFault.epcWord += bmsx::INSTRUCTION_BYTES;
 	machine.cpu.restoreRuntimeState(loadFault);
-	require(machine.cpu.run(100) == bmsx::RunResult::Halted, "RFE can skip the faulting mapped load");
+	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "RFE can skip the faulting mapped load");
 	require(machine.cpu.completionValues.size() == 1u && bmsx::asNumber(machine.cpu.completionValues[0]) == 1.0, "mapped load resume retains the destination value");
 
 	machine.memory.writeMappedU32LE(bmsx::IO_SYS_BUS_FAULT_ACK, 1u);
@@ -438,7 +438,7 @@ void testMappedBusErrorsEnterTheSystemExceptionVector() {
 		{},
 		bmsx::CPU_STATUS_SYSTEM_ENTRY
 	);
-	require(machine.cpu.run(10) == bmsx::RunResult::Yielded, "supervisor burst fault enters a nested exception root");
+	require(machine.cpu.runUntilDepth(0, 10) == bmsx::RunResult::Yielded, "supervisor burst fault enters a nested exception root");
 	const bmsx::CpuRuntimeState burstFault = machine.cpu.captureRuntimeState();
 	require(burstFault.causeWord == bmsx::CPU_CAUSE_CODE_DATA_BUS_ERROR, "supervisor burst latches DBE");
 	require(burstFault.epcWord == machine.systemRom.textAddress + 19u * bmsx::INSTRUCTION_BYTES, "supervisor burst EPC identifies the physical faulting instruction");
@@ -478,7 +478,7 @@ void testMappedMemoryAlignmentContract() {
 	machine.memory.writeMappedU8(BYTE_ADDRESS, 0x5au);
 	machine.memory.writeMappedF64LE(F64_ADDRESS, F64_VALUE);
 	machine.cpu.start(machine.systemRom.functionAddresses[0]);
-	require(machine.cpu.run(100) == bmsx::RunResult::Halted, "aligned mapped loads complete");
+	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "aligned mapped loads complete");
 	require(machine.cpu.completionValues.size() == 2u, "aligned mapped loads return both values");
 	require(bmsx::asNumber(machine.cpu.completionValues[0]) == 0x5a, "byte access accepts an odd address");
 	require(bmsx::asNumber(machine.cpu.completionValues[1]) == F64_VALUE, "f64 access accepts four-byte alignment");
@@ -538,7 +538,7 @@ void testAddressErrorsPrecedeMappedMemoryBusCycles() {
 		const bmsx::u32 faultSequence = machine.memory.readBusFaultSequence();
 
 		machine.cpu.start(machine.systemRom.functionAddresses[1]);
-		require(machine.cpu.run(100) == bmsx::RunResult::Halted, testCase.name);
+		require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, testCase.name);
 		const bmsx::CpuRuntimeState state = machine.cpu.captureRuntimeState();
 		require(state.causeWord == testCase.cause, testCase.name);
 		require(state.epcWord == machine.systemRom.textAddress + memoryInstruction * bmsx::INSTRUCTION_BYTES, testCase.name);
@@ -639,32 +639,32 @@ void testProtectedCallMicrocodePreemptsSavesAndHandlesLuaErrors() {
 	}
 
 	machine.cpu.start(machine.systemRom.functionAddresses[0]);
-	require(machine.cpu.run(3) == bmsx::RunResult::Yielded, "pcall body should remain preemptible");
+	require(machine.cpu.runUntilDepth(0, 3) == bmsx::RunResult::Yielded, "pcall body should remain preemptible");
 	bmsx::CpuRuntimeState state = machine.cpu.captureRuntimeState();
 	require(state.protectedCalls.size() == 1u, "save state should retain the active protected call");
 	machine.cpu.restoreRuntimeState(state);
-	require(machine.cpu.run(100) == bmsx::RunResult::Halted, "restored pcall should complete");
+	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "restored pcall should complete");
 	require(machine.cpu.completionValues.size() == 3u && bmsx::isTruthy(machine.cpu.completionValues[0]), "pcall should return success");
 	require(bmsx::asNumber(machine.cpu.completionValues[1]) == 3.0 && bmsx::asNumber(machine.cpu.completionValues[2]) == 4.0, "pcall should preserve multiple results");
 
 	machine.cpu.start(machine.systemRom.functionAddresses[2]);
-	require(machine.cpu.run(100) == bmsx::RunResult::Halted, "xpcall error path should complete");
+	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "xpcall error path should complete");
 	require(machine.cpu.completionValues.size() == 2u && !bmsx::isTruthy(machine.cpu.completionValues[0]), "xpcall should return failure");
 	require(bmsx::asNumber(machine.cpu.completionValues[1]) == 42.0, "xpcall handler should receive the thrown Lua value");
 
 	machine.cpu.start(machine.systemRom.functionAddresses[6]);
-	require(machine.cpu.run(100) == bmsx::RunResult::Halted, "invalid xpcall handler should be caught by the outer pcall");
+	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "invalid xpcall handler should be caught by the outer pcall");
 	require(machine.cpu.completionValues.size() == 2u && !bmsx::isTruthy(machine.cpu.completionValues[0]), "xpcall should validate its handler before running the body");
 	require(bmsx::valueIsString(machine.cpu.completionValues[1]), "invalid xpcall handler should return a Lua error value");
 
 	machine.cpu.start(machine.systemRom.functionAddresses[7]);
-	require(machine.cpu.run(100) == bmsx::RunResult::Halted, "xpcall handler failure should complete");
+	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "xpcall handler failure should complete");
 	require(machine.cpu.completionValues.size() == 2u && !bmsx::isTruthy(machine.cpu.completionValues[0]), "xpcall handler failure should return failure");
 	require(bmsx::valueIsString(machine.cpu.completionValues[1]), "xpcall handler failure should return the Lua error-in-handler value");
 	require(machine.cpu.stringPool().toString(bmsx::asStringId(machine.cpu.completionValues[1])) == "error in error handling", "xpcall should hide the handler's replacement error");
 
 	machine.cpu.start(machine.systemRom.functionAddresses[5]);
-	require(machine.cpu.run(100) == bmsx::RunResult::Halted, "nested pcall should complete");
+	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "nested pcall should complete");
 	require(machine.cpu.completionValues.size() == 4u, "nested pcall should preserve the open result sequence");
 	require(bmsx::isTruthy(machine.cpu.completionValues[0]) && bmsx::isTruthy(machine.cpu.completionValues[1]), "nested pcall should prefix both success values");
 	require(bmsx::asNumber(machine.cpu.completionValues[2]) == 3.0 && bmsx::asNumber(machine.cpu.completionValues[3]) == 4.0, "nested pcall should preserve child results");

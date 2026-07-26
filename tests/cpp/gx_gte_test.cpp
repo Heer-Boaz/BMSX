@@ -415,7 +415,7 @@ void testPlusCpuBurstSaveRestoreInterlock() {
 	}
 	first.memory.writeMappedU32LE(commandAddress, bmsx::GX_GTE_PLUS_FN_VMAD3);
 	first.scheduler.beginCpuSlice(10);
-	require(first.cpu.run(10) == bmsx::RunResult::Halted, "GTE+ burst blocks the CPU");
+	require(first.cpu.runUntilDepth(0, 10) == bmsx::RunResult::Halted, "GTE+ burst blocks the CPU");
 	first.scheduler.endCpuSlice();
 	require(first.cpu.isMemoryWriteBlocked(), "GTE+ burst records CPU interlock");
 	const bmsx::CpuRuntimeState blockedCpuState = first.cpu.captureRuntimeState();
@@ -436,13 +436,13 @@ void testPlusCpuBurstSaveRestoreInterlock() {
 	restored.cpu.restoreRuntimeState(cpuState);
 	require(restored.scheduler.nextDeadline() == 103, "GTE+ blocked restore rearms its interlock edge");
 	restored.scheduler.advanceTo(102);
-	require(restored.cpu.run(100) == bmsx::RunResult::Halted, "GTE+ restored CPU remains blocked before edge");
+	require(restored.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "GTE+ restored CPU remains blocked before edge");
 	require(restored.cpu.isMemoryWriteBlocked(), "GTE+ restored interlock remains asserted");
 	require(restored.memory.readMappedU32LE(bmsx::IO_GX_GTE_PLUS_BASE + bmsx::GX_GTE_PLUS_ADD_XY * bmsx::IO_WORD_SIZE) == firstAddXy, "GTE+ restored blocked burst remains atomic");
 	serviceScheduledGtePlus(restored, 1);
 	require(!restored.cpu.isMemoryWriteBlocked(), "GTE+ completion releases restored CPU store");
 	restored.scheduler.beginCpuSlice(100);
-	require(restored.cpu.run(100) == bmsx::RunResult::Halted, "GTE+ resumed burst reaches return");
+	require(restored.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "GTE+ resumed burst reaches return");
 	const int retryCycles = 100 - restored.cpu.instructionBudgetRemaining;
 	restored.scheduler.endCpuSlice();
 	restored.scheduler.advanceTo(restored.scheduler.nowCycles() + retryCycles);
