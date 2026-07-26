@@ -295,12 +295,8 @@ public:
 	bool canAcceptMaskableInterruptLine() const;
 	AcceptedInterruptKind peekPendingInterrupt() const;
 	bool enterPendingInterrupt();
-	void enterHostExternalCall();
-	void leaveHostExternalCall();
-	bool isHostExternalCallActive() const { return m_hostExternalCallActive; }
 	RunResult run(int instructionBudget);
 	RunResult runUntilDepth(int targetDepth, int instructionBudget);
-	void unwindToDepth(int targetDepth);
 	void step();
 	void collectHeap();
 	class NativeLocalRootsScope {
@@ -370,6 +366,7 @@ private:
 	int writeProtectedResults(ProtectedCallContinuation& continuation, bool prefix, CallFrame& source, int sourceBase, int sourceCount);
 	void finishProtectedContinuation(size_t continuationIndex, int resultCount);
 	bool handleProtectedCallError(Value errorValue);
+	void unwindToDepth(int targetDepth);
 	void runHousekeeping();
 	std::vector<u32> registerGlobalNames(const std::vector<std::string>& names, bool system);
 	std::unique_ptr<Blua32ExecutionImage> activateExecutionImage(Blua32DecodedExecutionImage&& decodedImage);
@@ -461,7 +458,6 @@ private:
 	bool m_nonMaskableInterruptPending = false;
 	u32 m_systemExceptionFunctionAddress = 0;
 	bool m_yieldRequested = false;
-	bool m_hostExternalCallActive = false;
 	Memory& m_memory;
 	IrqController& m_irqController;
 	ExecutionAddressSpace& m_executionAddressSpace;

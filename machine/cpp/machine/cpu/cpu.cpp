@@ -688,7 +688,6 @@ void CPU::start(u32 functionAddress, NativeArgsView args, u32 statusWord) {
 	m_nmiReturnLuaFaultReasonWord = 0u;
 	m_nonMaskableInterruptPending = false;
 	m_yieldRequested = false;
-	m_hostExternalCallActive = false;
 	Blua32RuntimeFunction& function = *functionRecordOnSelectedBus(functionAddress);
 	m_activeExecutionImage = function.image;
 	Closure* closure = function.image->staticClosures[function.index];
@@ -1691,14 +1690,6 @@ void CPU::enterException(
 	frame->isExceptionFrame = true;
 }
 
-void CPU::enterHostExternalCall() {
-	m_hostExternalCallActive = true;
-}
-
-void CPU::leaveHostExternalCall() {
-	m_hostExternalCallActive = false;
-}
-
 void CPU::clearHaltAfterAcceptedInterrupt() {
 	m_haltedUntilIrq = false;
 	m_yieldRequested = false;
@@ -1761,10 +1752,9 @@ dispatch_loop_check:
 	if (instructionBudgetRemaining <= 0) {
 		return RunResult::Yielded;
 	}
-	if (!m_hostExternalCallActive
-		&& (m_nonMaskableInterruptPending
-			|| ((m_statusWord & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
-				&& m_irqController.hasAssertedMaskableInterruptLine()))
+	if (m_nonMaskableInterruptPending
+		|| ((m_statusWord & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
+			&& m_irqController.hasAssertedMaskableInterruptLine())
 	) {
 		enterPendingInterrupt();
 		goto dispatch_loop_check;
@@ -1923,10 +1913,9 @@ dispatch_loop_check:
 	if (instructionBudgetRemaining <= 0) {
 		return RunResult::Yielded;
 	}
-	if (!m_hostExternalCallActive
-		&& (m_nonMaskableInterruptPending
-			|| ((m_statusWord & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
-				&& m_irqController.hasAssertedMaskableInterruptLine()))
+	if (m_nonMaskableInterruptPending
+		|| ((m_statusWord & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
+			&& m_irqController.hasAssertedMaskableInterruptLine())
 	) {
 		enterPendingInterrupt();
 		goto dispatch_loop_check;

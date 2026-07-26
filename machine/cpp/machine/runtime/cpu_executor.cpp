@@ -10,8 +10,6 @@
 namespace bmsx {
 namespace {
 
-constexpr i64 MAX_CPU_SLICE_CYCLES = std::numeric_limits<int>::max();
-
 void dispatchRuntimeTimer(Runtime& runtime, uint8_t kind, uint8_t payload) {
 	switch (kind) {
 		case TIMER_KIND_DEVICE_SERVICE: {

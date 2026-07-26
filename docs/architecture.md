@@ -849,9 +849,17 @@ rompacker, TOC and host do not maintain a second module-name or attribute list.
   stable Lua error value `error in error handling`.
 - Host/IDE closure entry is permitted only while the CPU is suspended outside
   an active scheduler slice. Native code cannot recursively run the Lua CPU
-  inside an executing instruction. Scheduler-aware external execution owns its
-  own ordinary CPU slices and device deadlines instead of crossing an APU,
-  GPU, DMA, or IRQ edge on a nested host stack.
+  inside an executing instruction. `Runtime` is the sole owner of
+  scheduler-aware external execution: it grants ordinary CPU slices and
+  advances device deadlines. IDE tooling invokes that core primitive and never
+  runs a second scheduler loop that can cross an APU, GPU, DMA, or IRQ edge
+  differently. External slices obey the system-controller CPU hold, GPU
+  machine-block fence, MMIO interlocks, and ordinary CPU interrupt entry.
+  Interrupts therefore vector through the retained `STATUS`, `CAUSE`, and
+  `EPC` words; the CPU has no host-call mode that suppresses them. External
+  execution advances physical machine time without consuming the suspended
+  slice's retained instruction budget. A host failure ends the scheduler slice
+  but does not unwind physical call or exception frames as rollback.
 - Emulator tooling may inspect or edit a suspended CPU through allocation-free
   scalar primitives for raw frame domains, function-record addresses,
   continuation and callsite PCs, exception-frame flags, live registers,

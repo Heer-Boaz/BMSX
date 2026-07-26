@@ -8,7 +8,6 @@ import {
 	parseStructuredTextDocument,
 } from '../../machine/ts/rompack/tooling/aem';
 import type { ResourceDescriptor } from '../common/resource';
-import { callClosureIntoWithScheduler } from './closure_executor';
 import type { RuntimeSourceState } from './sources';
 
 function buildRuntimeAemValidationLookup(sources: RuntimeSourceState) {
@@ -30,10 +29,10 @@ function reloadAem(runtime: Runtime): void {
 	try {
 		const resourceId = runtime.internString('aem');
 		const rget = runtime.machine.cpu.getGlobalByKey(runtime.internString('rget')) as Closure;
-		callClosureIntoWithScheduler(runtime, rget, [resourceId], results);
+		runtime.callClosureInto(rget, [resourceId], results);
 		const resource = results[0] as Table;
 		const reload = resource.getStringKey(runtime.internString('reload')) as Closure;
-		callClosureIntoWithScheduler(runtime, reload, [resource], results);
+		runtime.callClosureInto(reload, [resource], results);
 	} finally {
 		runtime.luaScratch.values.release(results);
 	}

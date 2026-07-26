@@ -280,7 +280,6 @@ export class CPU {
 	private nmiReturnLuaFaultReasonWord = 0;
 	private nonMaskableInterruptPending = false;
 	private systemExceptionFunctionAddress = 0;
-	private hostExternalCallActive = false;
 	private yieldRequested = false;
 	private readonly frames: CallFrame[] = [];
 	private readonly protectedCallContinuations = new ScratchBuffer<ProtectedCallContinuation>(() => new ProtectedCallContinuation(), MAX_POOLED_FRAMES);
@@ -969,7 +968,6 @@ export class CPU {
 		this.nmiReturnBadAddressWord = 0;
 		this.nmiReturnLuaFaultReasonWord = 0;
 		this.nonMaskableInterruptPending = false;
-		this.hostExternalCallActive = false;
 		this.yieldRequested = false;
 		const functionRecord = this.functionRecordOnSelectedBus(functionAddress)!;
 		this.activeExecutionImage = functionRecord.image;
@@ -1003,18 +1001,6 @@ export class CPU {
 		this.lastReturnValues.length = 0;
 		this.yieldRequested = false;
 		this.pushFrame(closure, args, 0, returnCount, false);
-	}
-
-	public enterHostExternalCall(): void {
-		this.hostExternalCallActive = true;
-	}
-
-	public leaveHostExternalCall(): void {
-		this.hostExternalCallActive = false;
-	}
-
-	public isHostExternalCallActive(): boolean {
-		return this.hostExternalCallActive;
 	}
 
 	public callExternal(closure: Closure, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS): void {
@@ -1213,10 +1199,9 @@ export class CPU {
 					if (this.instructionBudgetRemaining <= 0) {
 						return RunResult.Yielded;
 					}
-					if (!this.hostExternalCallActive
-						&& (this.nonMaskableInterruptPending
-							|| ((this.statusWord & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) !== 0
-								&& this.irqController.hasAssertedMaskableInterruptLine()))
+					if (this.nonMaskableInterruptPending
+						|| ((this.statusWord & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) !== 0
+							&& this.irqController.hasAssertedMaskableInterruptLine())
 					) {
 						this.enterPendingInterrupt();
 						continue;
@@ -1270,7 +1255,7 @@ export class CPU {
 		return RunResult.Halted;
 	}
 
-	public unwindToDepth(targetDepth: number): void {
+	private unwindToDepth(targetDepth: number): void {
 		while (this.frames.length > targetDepth) {
 			const frame = this.frames.pop()!;
 			this.closeUpvalues(frame);

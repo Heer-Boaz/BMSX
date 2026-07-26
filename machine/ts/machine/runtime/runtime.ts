@@ -1,7 +1,4 @@
-import {
-	AcceptedInterruptKind,
-	RunResult,
-} from '../cpu/cpu';
+import { RunResult } from '../cpu/cpu';
 import type { Closure } from '../cpu/closure';
 import { EMPTY_CALL_ARGS, StringValue, type Value } from '../cpu/value';
 import { CPU_STATUS_SYSTEM_ENTRY } from '../cpu/cop0';
@@ -13,7 +10,7 @@ import { FrameSchedulerState } from '../scheduler/frame';
 import { DEVICE_SERVICE_GPU } from '../scheduler/device';
 import { TimingState } from './timing/state';
 import { VblankState } from './vblank';
-import { advanceRuntimeTime, CpuExecutionState, runDueRuntimeTimers } from './cpu_executor';
+import { advanceRuntimeTime, CpuExecutionState, MAX_CPU_SLICE_CYCLES, runDueRuntimeTimers } from './cpu_executor';
 import { HostFaultState } from './host_fault';
 import { LuaScratchState } from './lua_scratch';
 import { refreshDeviceTimings } from './timing/config';
@@ -29,35 +26,39 @@ import {
 } from '../memory/map';
 
 
-function runHaltedClosureUntilInterrupt(runtime: Runtime): number {
-	const cpu = runtime.machine.cpu;
-	const scheduler = runtime.machine.scheduler;
-	let consumed = 0;
+function runHaltedClosureUntilInterrupt(runtime: Runtime): void {
+	const machine = runtime.machine;
+	const cpu = machine.cpu;
+	const scheduler = machine.scheduler;
 	let advancedDeadline = false;
 	while (cpu.isHaltedUntilIrq()) {
-		if (cpu.peekPendingInterrupt() !== AcceptedInterruptKind.None) {
-			cpu.clearHaltUntilIrq();
-			return consumed;
+		if (machine.gxGpu.backendReadbackBlocksMachine()) {
+			return;
 		}
-		if (advancedDeadline) {
-			return consumed;
+		const cpuHeld = machine.systemController.cpuHeld();
+		if (!cpuHeld && cpu.enterPendingInterrupt()) {
+			return;
+		}
+		if (!cpuHeld && advancedDeadline) {
+			return;
 		}
 		const nextDeadline = scheduler.nextDeadline();
 		if (nextDeadline === Number.MAX_SAFE_INTEGER) {
-			return consumed;
+			return;
 		}
-		const idleCycles = nextDeadline - scheduler.nowCycles;
-		if (idleCycles <= 0) {
+		const cyclesToDeadline = nextDeadline - scheduler.nowCycles;
+		if (cyclesToDeadline <= 0) {
 			if (runDueRuntimeTimers(runtime)) {
-				return consumed;
+				return;
 			}
 			continue;
 		}
+		const idleCycles = cyclesToDeadline < MAX_CPU_SLICE_CYCLES
+			? cyclesToDeadline
+			: MAX_CPU_SLICE_CYCLES;
 		advanceRuntimeTime(runtime, idleCycles);
-		consumed += idleCycles;
-		advancedDeadline = true;
+		advancedDeadline = idleCycles === cyclesToDeadline;
 	}
-	return consumed;
 }
 
 export class Runtime {
@@ -152,42 +153,101 @@ export class Runtime {
 
 	// start repeated-sequence-acceptable -- External closure calls keep frame/budget restore code direct instead of routing through callback plumbing.
 	public callClosureInto(fn: Closure, args: ReadonlyArray<Value>, out: Value[]): void {
-		const cpu = this.machine.cpu;
-		if (this.machine.scheduler.isCpuSliceActive() || cpu.isHostExternalCallActive()) {
+		const machine = this.machine;
+		const cpu = machine.cpu;
+		const scheduler = machine.scheduler;
+		if (scheduler.isCpuSliceActive()) {
 			throw new Error('External Lua closure execution requires a suspended CPU.');
 		}
 		const depth = cpu.getFrameDepth();
 		const previousBudget = cpu.instructionBudgetRemaining;
-		const budgetSentinel = Number.MAX_SAFE_INTEGER;
 		const previousSink = cpu.swapExternalReturnSink(out);
-		let spentBudget = 0;
-		let activeBudget = 0;
 		out.length = 0;
-		cpu.enterHostExternalCall();
 		try {
 			cpu.callExternal(fn, args);
+			runDueRuntimeTimers(this);
 			while (cpu.getFrameDepth() > depth) {
-				activeBudget = budgetSentinel;
-				const result = cpu.runUntilDepth(depth, budgetSentinel);
-				spentBudget += activeBudget - cpu.instructionBudgetRemaining;
-				activeBudget = 0;
-				if (cpu.getFrameDepth() > depth && result === RunResult.Halted) {
-					spentBudget += runHaltedClosureUntilInterrupt(this);
+				if (machine.gxGpu.backendReadbackBlocksMachine()) {
+					break;
+				}
+				if (machine.systemController.cpuHeld()) {
+					const nextDeadline = scheduler.nextDeadline();
+					if (nextDeadline === Number.MAX_SAFE_INTEGER) {
+						break;
+					}
+					let waitCycles = nextDeadline - scheduler.nowCycles;
+					if (waitCycles <= 0) {
+						runDueRuntimeTimers(this);
+						continue;
+					}
+					if (waitCycles > MAX_CPU_SLICE_CYCLES) {
+						waitCycles = MAX_CPU_SLICE_CYCLES;
+					}
+					advanceRuntimeTime(this, waitCycles);
+					continue;
+				}
+				if (cpu.isMemoryWriteBlocked()) {
+					const nextDeadline = scheduler.nextDeadline();
+					let waitCycles = nextDeadline - scheduler.nowCycles;
+					if (waitCycles <= 0) {
+						runDueRuntimeTimers(this);
+						continue;
+					}
+					if (waitCycles > MAX_CPU_SLICE_CYCLES) {
+						waitCycles = MAX_CPU_SLICE_CYCLES;
+					}
+					// External closures obey the same hardware wait contract as the
+					// frame executor: only the scheduled device edge releases the store.
+					advanceRuntimeTime(this, waitCycles);
+					continue;
+				}
+				let sliceBudget = MAX_CPU_SLICE_CYCLES;
+				const nextDeadline = scheduler.nextDeadline();
+				if (nextDeadline !== Number.MAX_SAFE_INTEGER) {
+					const deadlineBudget = nextDeadline - scheduler.nowCycles;
+					if (deadlineBudget <= 0) {
+						runDueRuntimeTimers(this);
+						continue;
+					}
+					if (deadlineBudget < sliceBudget) {
+						sliceBudget = deadlineBudget;
+					}
+				}
+				scheduler.beginCpuSlice(sliceBudget);
+				let result = RunResult.Yielded;
+				let consumed = 0;
+				try {
+					result = cpu.runUntilDepth(depth, sliceBudget);
+				} finally {
+					scheduler.endCpuSlice();
+					consumed = sliceBudget - cpu.instructionBudgetRemaining;
+					if (consumed > 0) {
+						advanceRuntimeTime(this, consumed);
+					}
+				}
+				if (cpu.getFrameDepth() <= depth) {
+					break;
+				}
+				if (cpu.isMemoryWriteBlocked()) {
+					continue;
+				}
+				if (result === RunResult.Halted) {
+					if (!cpu.isHaltedUntilIrq()) {
+						break;
+					}
+					runHaltedClosureUntilInterrupt(this);
 					if (cpu.isHaltedUntilIrq()) {
 						break;
 					}
+					continue;
+				}
+				if (consumed <= 0) {
+					runDueRuntimeTimers(this);
 				}
 			}
-		} catch (error) {
-			cpu.unwindToDepth(depth);
-			throw error;
 		} finally {
-			if (activeBudget > 0) {
-				spentBudget += activeBudget - cpu.instructionBudgetRemaining;
-			}
 			cpu.swapExternalReturnSink(previousSink);
-			cpu.instructionBudgetRemaining = previousBudget - spentBudget;
-			cpu.leaveHostExternalCall();
+			cpu.instructionBudgetRemaining = previousBudget;
 		}
 	}
 	// end repeated-sequence-acceptable

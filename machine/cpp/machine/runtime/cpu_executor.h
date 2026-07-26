@@ -9,6 +9,8 @@ namespace bmsx {
 
 class Runtime;
 
+constexpr int MAX_CPU_SLICE_CYCLES = 0x7fffffff;
+
 class CpuExecutionState {
 public:
 	bool runStoppedCpu(Runtime& runtime, FrameState& frameState);

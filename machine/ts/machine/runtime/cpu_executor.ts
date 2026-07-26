@@ -7,7 +7,7 @@ import {
 import type { FrameState } from './frame/state';
 import { Runtime } from './runtime';
 
-const MAX_CPU_SLICE_CYCLES = 0x7fffffff;
+export const MAX_CPU_SLICE_CYCLES = 0x7fffffff;
 
 export class CpuExecutionState {
 	constructor(private readonly runtime: Runtime) {

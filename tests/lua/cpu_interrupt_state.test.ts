@@ -50,7 +50,6 @@ import { CART_ROM_BASE, IO_WORD_SIZE, DYNAMIC_RAM_BASE } from '../../machine/ts/
 import type { Blua32ImageLayout } from '../../machine/ts/machine/cpu/blua32_image';
 import { compileLuaChunkToProgram } from '../../machine/ts/lua/compiler';
 import type { OptimizationLevel } from '../../machine/ts/lua/compiler/optimizer';
-import { callClosureIntoWithScheduler } from '../../ide/runtime/closure_executor';
 import {
 	applyHotResumeRelocation,
 	buildHotResumeRelocation,
@@ -139,7 +138,7 @@ function makeNativeCallTestImage(): TestBlua32Image {
 	writeInstruction(code, 0, OpCode.GETGL, 0, 0, 0, 0);
 	writeInstruction(code, 1, OpCode.CALL, 0, encodeFixedCallArgCount(0), 0, 0);
 	writeInstruction(code, 2, OpCode.RET, 0, 0, 0, 0);
-	writeInstruction(code, 3, OpCode.RET, 0, 0, 0, 0);
+	writeInstruction(code, 3, OpCode.RFE, 0, 0, 0, 0);
 	writeInstruction(code, 4, OpCode.WIDE, 0, 0, 0, 0);
 	writeInstruction(code, 5, OpCode.CLOSURE, 0, 0, 0, 0);
 	writeInstruction(code, 6, OpCode.WIDE, 0, 0, 0, 0);
@@ -466,40 +465,36 @@ nested_outer, nested_inner, nested_a, nested_b = pcall(pcall, succeed)
 	assert.deepEqual(cpu.captureRuntimeState().protectedCalls, []);
 });
 
-function callClosureInto(runtime: Runtime, fn: Closure, args: ReadonlyArray<Value>, out: Value[]): void {
-	runtime.callClosureInto(fn, args, out);
-}
-
 test('CPU closure calls that execute HALT without a scheduled interrupt park without host exception', () => {
-	for (const run of [callClosureInto, callClosureIntoWithScheduler]) {
-		const { cpu, irqController, haltClosure, idleFunctionAddress } = makeHaltCpu();
-		cpu.start(idleFunctionAddress);
-		const runtime = makeRuntime(cpu, irqController);
-		const out: Value[] = [];
-		cpu.instructionBudgetRemaining = 73;
-
-		run(runtime, haltClosure, EMPTY_CALL_ARGS, out);
-
-		assert.equal(cpu.isHaltedUntilIrq(), true);
-		assert.equal(cpu.getFrameDepth(), 2);
-		assert.deepEqual(out, []);
-	}
-});
-
-test('host external closure calls wake from pending IRQ without vectoring', () => {
 	const { cpu, irqController, haltClosure, idleFunctionAddress } = makeHaltCpu();
 	cpu.start(idleFunctionAddress);
 	const runtime = makeRuntime(cpu, irqController);
-	runtime.machine.irqController.raise(IRQ_VBLANK);
-	runtime.machine.memory.writeValue(IO_IRQ_MASK, IRQ_VBLANK);
+	const out: Value[] = [];
+	cpu.instructionBudgetRemaining = 73;
+
+	runtime.callClosureInto(haltClosure, EMPTY_CALL_ARGS, out);
+
+	assert.equal(cpu.isHaltedUntilIrq(), true);
+	assert.equal(cpu.getFrameDepth(), 2);
+	assert.deepEqual(out, []);
+});
+
+test('external closure execution vectors a pending NMI through the physical CPU exception entry', () => {
+	const { cpu, irqController, callClosure, idleClosure } = makeNativeCallCpu(cpu => cpu.createNativeFunction(
+		'no_op_native',
+		() => {},
+	));
+	cpu.start(idleClosure.functionAddress);
+	const runtime = makeRuntime(cpu, irqController);
+	cpu.requestNonMaskableInterrupt();
 
 	const out: Value[] = [];
-	callClosureInto(runtime, haltClosure, EMPTY_CALL_ARGS, out);
+	runtime.callClosureInto(callClosure, EMPTY_CALL_ARGS, out);
 
 	assert.deepEqual(out, []);
 	assert.equal(cpu.getFrameDepth(), 1);
 	assert.equal(cpu.isHaltedUntilIrq(), false);
-	assert.equal((runtime.machine.irqController.captureState().pendingFlags & IRQ_VBLANK) !== 0, true);
+	assert.equal(cpu.peekPendingInterrupt(), AcceptedInterruptKind.None);
 });
 
 test('IRQ mask starts closed and gates pending maskable IRQs', () => {
@@ -519,7 +514,7 @@ test('IRQ mask starts closed and gates pending maskable IRQs', () => {
 	assert.equal(cpu.canAcceptMaskableInterruptLine(), false);
 });
 
-test('CPU closure calls continue after scheduler yield requests', () => {
+test('CPU closure calls continue after scheduler yield requests and restore the suspended budget', () => {
 	const nativeCost = 7;
 	const { cpu, irqController, callClosure, idleClosure } = makeNativeCallCpu(cpu => cpu.createNativeFunction(
 		'yielding_native',
@@ -527,19 +522,18 @@ test('CPU closure calls continue after scheduler yield requests', () => {
 		{ base: nativeCost, perArg: 0, perRet: 0 },
 	));
 	cpu.start(idleClosure.functionAddress);
-	const spent = BASE_CYCLES[OpCode.GETGL] + BASE_CYCLES[OpCode.CALL] + nativeCost + BASE_CYCLES[OpCode.RET];
 	const runtime = makeRuntime(cpu, irqController);
 	const out: Value[] = [];
 
 	cpu.instructionBudgetRemaining = 100;
-	callClosureInto(runtime, callClosure, EMPTY_CALL_ARGS, out);
+	runtime.callClosureInto(callClosure, EMPTY_CALL_ARGS, out);
 
 	assert.deepEqual(out, []);
-	assert.equal(cpu.instructionBudgetRemaining, 100 - spent);
+	assert.equal(cpu.instructionBudgetRemaining, 100);
 	assert.equal(cpu.getFrameDepth(), 1);
 });
 
-test('CPU external closure calls that throw after executing preserve spent budget', () => {
+test('CPU external closure host failures retain physical frames and restore the suspended budget', () => {
 	const nativeCost = 7;
 	const { cpu, irqController, callClosure, idleClosure } = makeNativeCallCpu(cpu => cpu.createNativeFunction(
 		'throwing_native',
@@ -549,28 +543,18 @@ test('CPU external closure calls that throw after executing preserve spent budge
 		{ base: nativeCost, perArg: 0, perRet: 0 },
 	));
 	cpu.start(idleClosure.functionAddress);
-	const spent = BASE_CYCLES[OpCode.GETGL] + BASE_CYCLES[OpCode.CALL] + nativeCost;
-	const directRuntime = makeRuntime(cpu, irqController);
+	const sliceStats = { begin: 0, end: 0 };
+	const runtime = makeRuntime(cpu, irqController, sliceStats);
 	const out: Value[] = [];
 
 	cpu.instructionBudgetRemaining = 100;
 	assert.throws(
-		() => callClosureInto(directRuntime, callClosure, EMPTY_CALL_ARGS, out),
+		() => runtime.callClosureInto(callClosure, EMPTY_CALL_ARGS, out),
 		/native boom/,
 	);
-	assert.equal(cpu.instructionBudgetRemaining, 100 - spent);
-	assert.equal(cpu.getFrameDepth(), 1);
-
-	const sliceStats = { begin: 0, end: 0 };
-	const schedulerRuntime = makeRuntime(cpu, irqController, sliceStats);
-	cpu.instructionBudgetRemaining = 100;
-	assert.throws(
-		() => callClosureIntoWithScheduler(schedulerRuntime, callClosure, EMPTY_CALL_ARGS, out),
-		/native boom/,
-	);
-	assert.equal(cpu.instructionBudgetRemaining, 100 - spent);
+	assert.equal(cpu.instructionBudgetRemaining, 100);
 	assert.deepEqual(sliceStats, { begin: 1, end: 1 });
-	assert.equal(cpu.getFrameDepth(), 1);
+	assert.equal(cpu.getFrameDepth(), 2);
 });
 
 test('CPU frame executor rejects native Lua re-entry and closes the scheduler slice', () => {

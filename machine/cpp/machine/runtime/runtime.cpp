@@ -13,35 +13,41 @@ namespace bmsx {
 
 namespace {
 
-int runHaltedClosureUntilInterrupt(Runtime& runtime) {
-	CPU& cpu = runtime.machine.cpu;
-	DeviceScheduler& scheduler = runtime.machine.scheduler;
-	int consumed = 0;
+void runHaltedClosureUntilInterrupt(Runtime& runtime) {
+	Machine& machine = runtime.machine;
+	CPU& cpu = machine.cpu;
+	DeviceScheduler& scheduler = machine.scheduler;
 	bool advancedDeadline = false;
 	while (cpu.isHaltedUntilIrq()) {
-		if (cpu.peekPendingInterrupt() != AcceptedInterruptKind::None) {
-			cpu.clearHaltUntilIrq();
-			return consumed;
+		if (machine.gxGpu.backendReadbackBlocksMachine()) {
+			return;
 		}
-		if (advancedDeadline) {
-			return consumed;
+		const bool cpuHeld = machine.systemController.cpuHeld();
+		if (!cpuHeld && cpu.enterPendingInterrupt()) {
+			return;
+		}
+		if (!cpuHeld && advancedDeadline) {
+			return;
 		}
 		const i64 nextDeadline = scheduler.nextDeadline();
 		if (nextDeadline == std::numeric_limits<i64>::max()) {
-			return consumed;
+			return;
 		}
-		const i64 idleCycles = nextDeadline - scheduler.nowCycles();
-		if (idleCycles <= 0) {
+		const i64 cyclesToDeadline = nextDeadline - scheduler.nowCycles();
+		if (cyclesToDeadline <= 0) {
 			if (runDueRuntimeTimers(runtime)) {
-				return consumed;
+				return;
 			}
 			continue;
 		}
-		advanceRuntimeTime(runtime, static_cast<int>(idleCycles));
-		consumed += static_cast<int>(idleCycles);
-		advancedDeadline = true;
+		const int idleCycles = static_cast<int>(
+			cyclesToDeadline < MAX_CPU_SLICE_CYCLES
+				? cyclesToDeadline
+				: MAX_CPU_SLICE_CYCLES
+		);
+		advanceRuntimeTime(runtime, idleCycles);
+		advancedDeadline = idleCycles == cyclesToDeadline;
 	}
-	return consumed;
 }
 
 } // namespace
@@ -91,44 +97,113 @@ Runtime::~Runtime() {
 
 void Runtime::callClosureInto(Closure& fn, NativeArgsView args, NativeResults& out) {
 	CPU& cpu = machine.cpu;
-	if (machine.scheduler.isCpuSliceActive() || cpu.isHostExternalCallActive()) {
+	DeviceScheduler& scheduler = machine.scheduler;
+	if (scheduler.isCpuSliceActive()) {
 		throw std::runtime_error("External Lua closure execution requires a suspended CPU.");
 	}
 	const int depthBefore = cpu.getFrameDepth();
 	const int previousBudget = cpu.instructionBudgetRemaining;
-	const int budgetSentinel = std::numeric_limits<int>::max();
 	NativeResults* previousSink = cpu.swapExternalReturnSink(&out);
-	int spentBudget = 0;
-	int activeBudget = 0;
 	out.clear();
-	cpu.enterHostExternalCall();
 	try {
 		cpu.callExternal(fn, args);
+		runDueRuntimeTimers(*this);
 		while (cpu.getFrameDepth() > depthBefore) {
-			activeBudget = budgetSentinel;
-			const RunResult result = cpu.runUntilDepth(depthBefore, budgetSentinel);
-			spentBudget += activeBudget - cpu.instructionBudgetRemaining;
-			activeBudget = 0;
-			if (cpu.getFrameDepth() > depthBefore && result == RunResult::Halted) {
-				spentBudget += runHaltedClosureUntilInterrupt(*this);
+			if (machine.gxGpu.backendReadbackBlocksMachine()) {
+				break;
+			}
+			if (machine.systemController.cpuHeld()) {
+				const i64 nextDeadline = scheduler.nextDeadline();
+				if (nextDeadline == std::numeric_limits<i64>::max()) {
+					break;
+				}
+				const i64 waitBudget = nextDeadline - scheduler.nowCycles();
+				if (waitBudget <= 0) {
+					runDueRuntimeTimers(*this);
+					continue;
+				}
+				const int waitCycles = static_cast<int>(
+					waitBudget < MAX_CPU_SLICE_CYCLES
+						? waitBudget
+						: MAX_CPU_SLICE_CYCLES
+				);
+				advanceRuntimeTime(*this, waitCycles);
+				continue;
+			}
+			if (cpu.isMemoryWriteBlocked()) {
+				const i64 nextDeadline = scheduler.nextDeadline();
+				const i64 waitBudget = nextDeadline - scheduler.nowCycles();
+				if (waitBudget <= 0) {
+					runDueRuntimeTimers(*this);
+					continue;
+				}
+				// External closures obey the same hardware wait contract as the
+				// frame executor: only the scheduled device edge releases the store.
+				const int waitCycles = static_cast<int>(
+					waitBudget < MAX_CPU_SLICE_CYCLES
+						? waitBudget
+						: MAX_CPU_SLICE_CYCLES
+				);
+				advanceRuntimeTime(*this, waitCycles);
+				continue;
+			}
+			int sliceBudget = MAX_CPU_SLICE_CYCLES;
+			const i64 nextDeadline = scheduler.nextDeadline();
+			if (nextDeadline != std::numeric_limits<i64>::max()) {
+				const i64 deadlineBudget = nextDeadline - scheduler.nowCycles();
+				if (deadlineBudget <= 0) {
+					runDueRuntimeTimers(*this);
+					continue;
+				}
+				if (deadlineBudget < sliceBudget) {
+					sliceBudget = static_cast<int>(deadlineBudget);
+				}
+			}
+			scheduler.beginCpuSlice(sliceBudget);
+			RunResult result = RunResult::Yielded;
+			int consumed = 0;
+			try {
+				result = cpu.runUntilDepth(depthBefore, sliceBudget);
+			} catch (...) {
+				scheduler.endCpuSlice();
+				consumed = sliceBudget - cpu.instructionBudgetRemaining;
+				if (consumed > 0) {
+					advanceRuntimeTime(*this, consumed);
+				}
+				throw;
+			}
+			scheduler.endCpuSlice();
+			consumed = sliceBudget - cpu.instructionBudgetRemaining;
+			if (consumed > 0) {
+				advanceRuntimeTime(*this, consumed);
+			}
+			if (cpu.getFrameDepth() <= depthBefore) {
+				break;
+			}
+			if (cpu.isMemoryWriteBlocked()) {
+				continue;
+			}
+			if (result == RunResult::Halted) {
+				if (!cpu.isHaltedUntilIrq()) {
+					break;
+				}
+				runHaltedClosureUntilInterrupt(*this);
 				if (cpu.isHaltedUntilIrq()) {
 					break;
 				}
+				continue;
+			}
+			if (consumed <= 0) {
+				runDueRuntimeTimers(*this);
 			}
 		}
 	} catch (...) {
-		if (activeBudget > 0) {
-			spentBudget += activeBudget - cpu.instructionBudgetRemaining;
-		}
-		cpu.unwindToDepth(depthBefore);
-		cpu.instructionBudgetRemaining = previousBudget - spentBudget;
+		cpu.instructionBudgetRemaining = previousBudget;
 		cpu.swapExternalReturnSink(previousSink);
-		cpu.leaveHostExternalCall();
 		throw;
 	}
-	cpu.instructionBudgetRemaining = previousBudget - spentBudget;
+	cpu.instructionBudgetRemaining = previousBudget;
 	cpu.swapExternalReturnSink(previousSink);
-	cpu.leaveHostExternalCall();
 }
 
 auto Runtime::machineTimeMs() const -> uint32_t {
