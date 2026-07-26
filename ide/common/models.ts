@@ -4,13 +4,13 @@ import type {
 	LuaDefinitionLocation,
 	LuaSymbolEntry,
 } from '../../machine/ts/lua/semantic_contracts';
-import type { ResourceDescriptor, ResourceDomain } from './resource';
+import type { ResourceDomain, RuntimeResource } from './resource';
 import type { StackTraceFrame } from '../language/lua/interpreter/value';
 import type { EditorCommandId } from './commands';
 import { RectBounds } from '../../machine/ts/rompack/format';
 import type { TextBuffer } from '../editor/text/text_buffer';
 import type { EditorUndoRecord } from '../editor/text/undo';
-export type { ResourceDescriptor } from './resource';
+export type { RuntimeResource } from './resource';
 
 export type Position = { row: number; column: number };
 
@@ -46,7 +46,7 @@ export type SearchMatch = {
 };
 
 export type GlobalSearchMatch = {
-	descriptor: ResourceDescriptor;
+	resource: RuntimeResource;
 	pathLabel: string;
 	row: number;
 	start: number;
@@ -80,7 +80,7 @@ export type SymbolSearchResult = {
 };
 
 export type ResourceCatalogEntry = {
-	descriptor: ResourceDescriptor;
+	resource: RuntimeResource;
 	displayPath: string;
 	searchKey: string;
 	typeLabel: string;
@@ -238,7 +238,7 @@ export type CodeHoverTooltip = {
 };
 
 export type ResourceViewerState = {
-	descriptor: ResourceDescriptor;
+	resource: RuntimeResource;
 	lines: string[];
 	error: string;
 	title: string;
@@ -278,7 +278,7 @@ export type CrtOptionsSnapshot = {
 export type ResourceBrowserItem = {
 	line: string;
 	contentStartColumn: number;
-	descriptor: ResourceDescriptor;
+	resource: RuntimeResource;
 	location?: LuaDefinitionLocation;
 	callHierarchyNodeId?: string;
 	callHierarchyNodeKind?: 'root' | 'caller' | 'call';
@@ -289,7 +289,7 @@ export type ResourceBrowserItem = {
 export type CodeTabContext = {
 	id: string;
 	title: string;
-	descriptor: ResourceDescriptor;
+	resource: RuntimeResource;
 	mode: CodeTabMode;
 	buffer: TextBuffer;
 	cursorRow: number;
@@ -310,7 +310,6 @@ export type CodeTabContext = {
 	executionStopRow: number;
 	runtimeSyncState: EditorRuntimeSyncState;
 	runtimeSyncMessage: string;
-	readOnly?: boolean;
 	textVersion: number;
 };
 
@@ -516,8 +515,8 @@ export type SearchComputationJob = {
 
 export type GlobalSearchJob = {
 	query: string;
-	descriptors: ResourceDescriptor[];
-	descriptorIndex: number;
+	resources: RuntimeResource[];
+	resourceIndex: number;
 	currentLines: string[];
 	nextRow: number;
 	matches: GlobalSearchMatch[];

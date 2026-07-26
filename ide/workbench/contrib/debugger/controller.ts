@@ -11,7 +11,7 @@ export class BreakpointController {
 		if (row < 0 || row >= editorDocumentState.buffer.getLineCount()) {
 			return false;
 		}
-		const path = getActiveCodeTabContext().descriptor.path;
+		const path = getActiveCodeTabContext().resource.path;
 		if (!path) {
 			showEditorMessage('No active path available for breakpoints.', constants.COLOR_STATUS_WARNING, 1.6);
 			return false;

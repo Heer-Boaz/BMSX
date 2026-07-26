@@ -85,8 +85,8 @@ export function renderStatusBar(resourcePanel: ResourcePanelController, runtime:
 
 	if (isResourceViewActive()) {
 		const viewer = getActiveResourceViewer();
-		const info = viewer ? `${viewer.descriptor.type.toUpperCase()} ${viewer.descriptor.asset_id}` : 'RESOURCE';
-		const detail = viewer ? viewer.descriptor.path : '';
+		const info = viewer ? `${viewer.resource.source.type.toUpperCase()} ${viewer.resource.source.resid}` : 'RESOURCE';
+		const detail = viewer ? viewer.resource.path : '';
 		drawEditorText(editorViewState.font, info, 4, statusTop + 2, 0, statusTextColor);
 		if (detail.length > 0) {
 			drawEditorText(editorViewState.font, detail, editorViewState.viewportWidth - measureText(detail) - 4, statusTop + 2, 0, statusTextColor);

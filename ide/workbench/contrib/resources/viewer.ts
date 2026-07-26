@@ -1,7 +1,7 @@
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import { clamp } from '../../../../machine/ts/common/clamp';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
-import type { ResourceDescriptor } from '../../../common/resource';
+import type { RuntimeResource } from '../../../common/resource';
 import * as constants from '../../../common/constants';
 import { computeResourceTabTitle } from '../../ui/tab/titles';
 import { appendTextLines } from '../../../../machine/ts/common/text_lines';
@@ -38,15 +38,16 @@ const resourceViewerLayout: ResourceViewerLayout = {
 	textCapacity: 0,
 };
 
-export function buildResourceViewerState(sources: RuntimeSourceState, descriptor: ResourceDescriptor): ResourceViewerState {
-	const title = computeResourceTabTitle(descriptor);
+export function buildResourceViewerState(sources: RuntimeSourceState, resource: RuntimeResource): ResourceViewerState {
+	const asset = resource.source;
+	const title = computeResourceTabTitle(resource);
 	const lines: string[] = [
-		`Path: ${descriptor.path || '<none>'}`,
-		`Type: ${descriptor.type}`,
-		`Asset ID: ${descriptor.asset_id || '<none>'}`,
+		`Path: ${resource.path || '<none>'}`,
+		`Type: ${asset.type}`,
+		`Asset ID: ${asset.resid || '<none>'}`,
 	];
 	const state: ResourceViewerState = {
-		descriptor,
+		resource,
 		lines,
 		error: null,
 		title,
@@ -55,35 +56,35 @@ export function buildResourceViewerState(sources: RuntimeSourceState, descriptor
 	let error: string = null;
 	const activePackage = sources.activePackage;
 	lines.push('');
-	switch (descriptor.type) {
+	switch (asset.type) {
 		case 'lua': {
-			const source = luaPipeline.resourceSourceForChunk(sources, descriptor);
+			const source = luaPipeline.resourceSourceForChunk(sources, resource);
 			appendResourceViewerLine(lines, '-- Lua Source --');
 			lines.push('');
 			appendTextLines(lines, source);
 			break;
 		}
 		case 'data': {
-			const dataEntry = activePackage.data?.[descriptor.asset_id];
+			const dataEntry = activePackage.data?.[asset.resid];
 			if (dataEntry !== undefined) {
 				appendResourceViewerLine(lines, '-- Data --');
 				lines.push('');
 				appendTextLines(lines, safeJsonStringify(dataEntry));
 			} else {
-				error = `Data asset '${descriptor.asset_id}' not found.`;
+				error = `Data asset '${asset.resid}' not found.`;
 			}
 			break;
 		}
 		case 'image':
 		case 'romlabel': {
-			const image = activePackage.img?.[descriptor.asset_id];
+			const image = activePackage.img?.[asset.resid];
 			if (!image) {
-				error = `Image asset '${descriptor.asset_id}' not found.`;
+				error = `Image asset '${asset.resid}' not found.`;
 				break;
 			}
 			const meta = image.imgmeta;
 			state.image = {
-				asset_id: descriptor.asset_id,
+				asset_id: asset.resid,
 				width: meta.width,
 				height: meta.height,
 			};
@@ -101,9 +102,9 @@ export function buildResourceViewerState(sources: RuntimeSourceState, descriptor
 			break;
 		}
 		case 'audio': {
-			const audio = activePackage.audio?.[descriptor.asset_id];
+			const audio = activePackage.audio?.[asset.resid];
 			if (!audio) {
-				error = `Audio asset '${descriptor.asset_id}' not found.`;
+				error = `Audio asset '${asset.resid}' not found.`;
 				break;
 			}
 			appendResourceViewerLine(lines, '-- Audio Metadata --');
@@ -120,9 +121,9 @@ export function buildResourceViewerState(sources: RuntimeSourceState, descriptor
 			break;
 		}
 		case 'model': {
-			const model = activePackage.model?.[descriptor.asset_id];
+			const model = activePackage.model?.[asset.resid];
 			if (!model) {
-				error = `Model asset '${descriptor.asset_id}' not found.`;
+				error = `Model asset '${asset.resid}' not found.`;
 				break;
 			}
 			appendResourceViewerLine(lines, '-- Model Metadata --');
@@ -130,9 +131,9 @@ export function buildResourceViewerState(sources: RuntimeSourceState, descriptor
 			break;
 		}
 		case 'aem': {
-			const events = activePackage.audioevents?.[descriptor.asset_id];
+			const events = activePackage.audioevents?.[asset.resid];
 			if (!events) {
-				error = `Audio event map '${descriptor.asset_id}' not found.`;
+				error = `Audio event map '${asset.resid}' not found.`;
 				break;
 			}
 			appendResourceViewerLine(lines, '-- Audio Events --');

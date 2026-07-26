@@ -107,14 +107,14 @@ export function createNavigationEntry(): NavigationHistoryEntry {
 	if (!context) {
 		return null;
 	}
-	const path = context.descriptor.path;
+	const path = context.resource.path;
 	const maxRowIndex = Math.max(0, editorDocumentState.buffer.getLineCount() - 1);
 	const row = clamp(editorDocumentState.cursorRow, 0, maxRowIndex);
 	const lineLen = editorDocumentState.buffer.getLineEndOffset(row) - editorDocumentState.buffer.getLineStartOffset(row);
 	const column = clamp(editorDocumentState.cursorColumn, 0, lineLen);
 	return {
 		contextId: context.id,
-		domain: context.descriptor.domain,
+		domain: context.resource.domain,
 		path,
 		row,
 		column,

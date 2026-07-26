@@ -399,7 +399,7 @@ export class RuntimeCartEditor implements CartEditor {
 				cursorActive,
 				getBreakpointsForChunk(
 					this.debuggerState,
-					getActiveCodeTabContext().descriptor.path,
+					getActiveCodeTabContext().resource.path,
 				),
 			);
 			renderEditorContextMenu(codeAreaViewport);

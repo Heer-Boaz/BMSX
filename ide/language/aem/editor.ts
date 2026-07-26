@@ -1,28 +1,5 @@
-import type { RuntimeSourceState } from '../../runtime/sources';
 import { aemDocumentFormat, parseStructuredTextDocument } from '../../../machine/ts/rompack/tooling/aem';
-import type { ResourceDescriptor } from '../../common/resource';
 import { formatAemYamlDocument } from './yaml_formatter';
-
-export function listAemResourceDescriptors(sources: RuntimeSourceState): ResourceDescriptor[] {
-	const romSource = sources.activeRomSource;
-	const records = romSource.list('aem');
-	const descriptors: ResourceDescriptor[] = [];
-	const domain = sources.activeCartridgeSlot;
-	for (let index = 0; index < records.length; index += 1) {
-		const record = records[index]!;
-		if (!record.source_path) {
-			continue;
-		}
-		descriptors.push({
-			domain,
-			path: record.source_path,
-			type: record.type,
-			asset_id: record.resid,
-		});
-	}
-	descriptors.sort((left, right) => left.path.localeCompare(right.path));
-	return descriptors;
-}
 
 export function formatAemDocument(source: string, path: string, lines: readonly string[]): string {
 	if (source.length === 0) {

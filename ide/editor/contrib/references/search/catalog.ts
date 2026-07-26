@@ -16,11 +16,11 @@ import { getOrCreateSemanticWorkspace } from '../../intellisense/semantic/worksp
 import type { RuntimeNativeBridge } from '../../../../runtime/native_bridge';
 
 export function buildReferenceSearchCatalog(bridge: RuntimeNativeBridge, info: ReferenceMatchInfo, context: CodeTabContext): SymbolCatalogEntry[] {
-	const path = context.descriptor.path;
+	const path = context.resource.path;
 	const activeSource = getTextSnapshot(editorDocumentState.buffer);
 	const activeLines = getLinesSnapshot(editorDocumentState.buffer);
 	return buildProjectReferenceCatalog(bridge, {
-		workspace: getOrCreateSemanticWorkspace(context.descriptor.domain),
+		workspace: getOrCreateSemanticWorkspace(context.resource.domain),
 		info,
 		source: activeSource,
 		lines: activeLines,

@@ -5,6 +5,7 @@ import type { CodeTabContext } from '../../ide/common/models';
 import {
 	type ResourceIdentity,
 	type ResourceDomain,
+	type RuntimeResource,
 } from '../../ide/common/resource';
 import type { StorageService } from '../../machine/ts/platform/platform';
 import { machineManager } from '../../machine/ts/core/machine_manager';
@@ -31,7 +32,10 @@ import {
 	setOpenWorkspaceDocumentDirty,
 } from '../../ide/workspace/open_dirty';
 import { codeTabSessionState } from '../../ide/workbench/ui/code_tab/session_state';
-import { buildCodeTabId } from '../../ide/workbench/ui/code_tab/contexts';
+import {
+	buildCodeTabId,
+	findCodeTabContext,
+} from '../../ide/workbench/ui/code_tab/contexts';
 import { tabSessionState } from '../../ide/workbench/ui/tab/session_state';
 import { collectDirtyContextEntries, persistDirtyContextEntries } from '../../ide/workbench/workspace/autosave';
 import {
@@ -42,7 +46,11 @@ import {
 	writeWorkspaceFile,
 	writeWorkspaceStateFile,
 } from '../../ide/workbench/workspace/io';
-import { hydrateDirtyFiles } from '../../ide/workbench/workspace/restore';
+import {
+	applyWorkspaceAutosavePayload,
+	hydrateDirtyFiles,
+} from '../../ide/workbench/workspace/restore';
+import { WORKSPACE_AUTOSAVE_VERSION } from '../../ide/workbench/workspace/models';
 import {
 	captureActiveCodeTabSource,
 	capturePendingLuaCodeTabSources,
@@ -51,10 +59,14 @@ import {
 } from '../../ide/workbench/ui/code_tab/activation';
 import { captureContextText } from '../../ide/workbench/workspace/context_snapshot';
 import { editorDocumentState } from '../../ide/editor/editing/document_state';
+import { configureFontVariant } from '../../ide/editor/ui/view/view';
+import { DEFAULT_FONT_VARIANT } from '../../machine/ts/render/shared/bmsx_font';
+import { editorRuntimeState } from '../../ide/editor/common/runtime_state';
 import { registerLuaSourceRecord, type LuaSourceRegistry } from '../../machine/ts/lua/source_registry';
 import { applyWorkspaceOverridesToRegistry, saveLuaResourceSource } from '../../ide/workspace/workspace';
 import {
 	resolveRuntimeLuaSource,
+	resolveRuntimeResource,
 } from '../../ide/runtime/sources';
 import {
 	primeRuntimeSemanticWorkspaceProjectSources,
@@ -107,8 +119,6 @@ function createPlatformStub(storage: MockStorage) {
 const ORIGINAL_PLATFORM = (machineManager as any).platform;
 const ORIGINAL_FETCH = globalThis.fetch;
 const TEST_DOMAIN = 0;
-// disable-next-line legacy_sentinel_string_pattern -- seeds and verifies removal of the obsolete local-only workspace marker.
-const LEGACY_LOCAL_WORKSPACE_MARKER = '__marker__';
 
 function useOfflinePlatform(storage: MockStorage): void {
 	const platformStub = createPlatformStub(storage);
@@ -139,13 +149,30 @@ function installOfflineWorkspace(t: TestContext, storage: MockStorage): void {
 	t.after(() => resetEnvironment(storage));
 }
 
+function testResource(
+	path: string,
+	domain: ResourceDomain = TEST_DOMAIN,
+	type: RuntimeResource['source']['type'] = 'lua',
+): RuntimeResource {
+	return {
+		domain,
+		path,
+		source: {
+			resid: path,
+			type,
+			source_path: path,
+			generated: false,
+		},
+	};
+}
+
 function installCodeContext(path: string, source: string, domain: ResourceDomain = TEST_DOMAIN): CodeTabContext {
 	const buffer = new PieceTreeBuffer(source);
-	const descriptor = { domain, path, type: 'lua' };
+	const resource = testResource(path, domain);
 	const context: CodeTabContext = {
-		id: buildCodeTabId(descriptor),
+		id: buildCodeTabId(resource),
 		title: path,
-		descriptor,
+		resource,
 		mode: 'lua',
 		buffer,
 		cursorRow: 0,
@@ -274,13 +301,10 @@ test('workspace file cache keys identical resource paths by physical project pat
 test('workspace state falls back to local storage when remote backend is unavailable', async (t) => {
 	const storage = new MockStorage();
 	installOfflineWorkspace(t, storage);
-	const legacyMarkerKey = buildWorkspaceStorageKey('offline-cart', LEGACY_LOCAL_WORKSPACE_MARKER);
-	storage.setItem(legacyMarkerKey, 'ready');
 
 	await configureWorkspaceStorage('offline-cart');
 	const markerPath = joinWorkspacePaths('offline-cart', WORKSPACE_METADATA_DIR, WORKSPACE_MARKER_FILE);
 	assert.equal(storage.getItem(buildWorkspaceStorageKey('offline-cart', markerPath)), '');
-	assert.equal(storage.getItem(legacyMarkerKey), null);
 	await writeWorkspaceStateFile('{"session":"offline"}');
 
 	await configureWorkspaceStorage(null);
@@ -341,6 +365,10 @@ test('dirty autosave writes storage before marking source cache', async (t) => {
 
 	const dirtyPath = buildDirtyFilePath({ domain: TEST_DOMAIN, path: 'src/foo.lua' });
 	const entries = collectDirtyContextEntries();
+	assert.deepEqual(entries.get(dirtyPath)!.resource, {
+		domain: TEST_DOMAIN,
+		path: 'src/foo.lua',
+	});
 	assert.equal(workspaceFileCache.get(dirtyPath), undefined);
 
 	await persistDirtyContextEntries(entries);
@@ -384,13 +412,8 @@ test('dirty restore keeps autosave contents authoritative over canonical source'
 		throw new Error('unexpected workspace fetch');
 	};
 
-	const sources = createTestRuntimeSourceState(
-		sourceRegistry('-- system source'),
-		[sourceRegistry('-- clean source'), null],
-		TEST_DOMAIN,
-	);
 	await hydrateDirtyFiles([{
-		descriptor: { domain: TEST_DOMAIN, path: 'src/foo.lua', type: 'lua' },
+		resource: { domain: TEST_DOMAIN, path: 'src/foo.lua' },
 		dirtyPath,
 		cursorRow: 0,
 		cursorColumn: 0,
@@ -404,6 +427,49 @@ test('dirty restore keeps autosave contents authoritative over canonical source'
 	assert.equal(context.dirty, true);
 	assert.equal(storage.getItem(buildWorkspaceStorageKey('offline-cart', dirtyPath)), '-- restored dirty edit');
 	assert.equal(workspaceFileCache.get('src/foo.lua'), undefined);
+});
+
+test('workspace restore resolves persisted identity to the retained runtime resource', async (t) => {
+	const storage = new MockStorage();
+	installOfflineWorkspace(t, storage);
+	await configureWorkspaceStorage('offline-cart');
+	const sources = createTestRuntimeSourceState(
+		sourceRegistry('-- system source'),
+		[sourceRegistry('-- cart source'), null],
+		TEST_DOMAIN,
+	);
+	const retained = resolveRuntimeResource(sources, {
+		domain: TEST_DOMAIN,
+		path: 'entry.lua',
+	})!;
+	const dirtyPath = buildDirtyFilePath(retained);
+	await writeWorkspaceFile(dirtyPath, '-- restored edit');
+	editorRuntimeState.clockNow = () => 0;
+	configureFontVariant(DEFAULT_FONT_VARIANT, null);
+
+	await applyWorkspaceAutosavePayload(
+		null,
+		sources,
+		{ breakpoints: new Map() },
+		null,
+		{
+			version: WORKSPACE_AUTOSAVE_VERSION,
+			savedAt: 42,
+			dirtyFiles: [{
+				resource: { domain: TEST_DOMAIN, path: retained.path },
+				dirtyPath,
+				cursorRow: 0,
+				cursorColumn: 0,
+				scrollRow: 0,
+				scrollColumn: 0,
+				selectionAnchor: null,
+			}],
+		},
+	);
+
+	const context = findCodeTabContext(retained)!;
+	assert.strictEqual(context.resource, retained);
+	assert.equal(context.buffer.getText(), '-- restored edit');
 });
 
 test('workspace override application keeps dirty and canonical in separate namespaces', async () => {
@@ -643,7 +709,7 @@ test('successful runtime update applies only captured Lua generations without to
 		...activeLua,
 		id: 'code:src/bar.lua',
 		title: 'src/bar.lua',
-		descriptor: { domain: TEST_DOMAIN, path: 'src/bar.lua', type: 'lua' },
+		resource: testResource('src/bar.lua'),
 		saveGeneration: 5,
 		appliedGeneration: 4,
 	};
@@ -651,7 +717,7 @@ test('successful runtime update applies only captured Lua generations without to
 		...activeLua,
 		id: 'code:audio.aem',
 		title: 'audio.aem',
-		descriptor: { domain: TEST_DOMAIN, path: 'audio.aem', type: 'aem' },
+		resource: testResource('audio.aem', TEST_DOMAIN, 'aem'),
 		mode: 'aem',
 		saveGeneration: 7,
 		appliedGeneration: 6,
@@ -666,8 +732,8 @@ test('successful runtime update applies only captured Lua generations without to
 	editorDocumentState.appliedGeneration = 2;
 
 	const appliedSnapshots: LuaCodeTabSourceSnapshot[] = [
-		{ contextId: activeLua.id, generation: 3, domain: TEST_DOMAIN, path: activeLua.descriptor.path, source: '-- saved source' },
-		{ contextId: backgroundLua.id, generation: 5, domain: TEST_DOMAIN, path: backgroundLua.descriptor.path, source: '-- saved source' },
+		{ contextId: activeLua.id, generation: 3, domain: TEST_DOMAIN, path: activeLua.resource.path, source: '-- saved source' },
+		{ contextId: backgroundLua.id, generation: 5, domain: TEST_DOMAIN, path: backgroundLua.resource.path, source: '-- saved source' },
 	];
 	backgroundLua.saveGeneration = 6;
 	markLuaCodeTabsAppliedToRuntime(appliedSnapshots);

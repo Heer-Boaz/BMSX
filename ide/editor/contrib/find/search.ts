@@ -8,7 +8,6 @@ import * as luaPipeline from '../../../runtime/lua_pipeline';
 import { enqueueBackgroundTask } from '../../../common/background_tasks';
 import { beginNavigationCapture, completeNavigation } from '../../../navigation/navigation_history';
 import { updateDesiredColumn } from '../../ui/view/caret/caret';
-import { listResources } from '../../../workspace/workspace';
 import { closeLineJump } from './line_jump';
 import { closeSymbolSearch } from '../symbols/shared';
 import { clearReferenceHighlights } from '../intellisense/engine';
@@ -285,11 +284,10 @@ function ensureLocalJobCompleted(): void {
 function startGlobalSearchJob(sources: RuntimeSourceState): void {
 	cancelGlobalSearchJob();
 
-	const descriptors = listResources(sources).filter(entry => entry.type === 'lua');
 	const job: GlobalSearchJob = {
 		query: normalizeQuery(editorSearchState.query),
-		descriptors,
-		descriptorIndex: 0,
+		resources: sources.luaResources,
+		resourceIndex: 0,
 		currentLines: null,
 		nextRow: 0,
 		matches: [],
@@ -311,10 +309,10 @@ function runGlobalSearchSlice(sources: RuntimeSourceState, job: GlobalSearchJob)
 	}
 
 	let processed = 0;
-	while (job.descriptorIndex < job.descriptors.length && processed < GLOBAL_ROWS_PER_SLICE && !job.limitHit) {
+	while (job.resourceIndex < job.resources.length && processed < GLOBAL_ROWS_PER_SLICE && !job.limitHit) {
 			if (job.currentLines === null) {
-				const descriptor = job.descriptors[job.descriptorIndex];
-				const source = luaPipeline.resourceSourceForChunk(sources, descriptor);
+				const resource = job.resources[job.resourceIndex];
+				const source = luaPipeline.resourceSourceForChunk(sources, resource);
 				job.currentLines = splitText(source);
 				job.nextRow = 0;
 			}
@@ -328,15 +326,15 @@ function runGlobalSearchSlice(sources: RuntimeSourceState, job: GlobalSearchJob)
 			if (line.length === 0) continue;
 			forEachMatchInLine(line, job.query, (start, end) => {
 				if (job.limitHit) return;
-				const descriptor = job.descriptors[job.descriptorIndex];
+				const resource = job.resources[job.resourceIndex];
 				const match: GlobalSearchMatch = {
-					descriptor,
-					pathLabel: descriptor.path.replace(/\\\\/g, '/'),
+					resource,
+					pathLabel: resource.path.replace(/\\\\/g, '/'),
 					row,
 					start,
 					end,
 					snippet: buildSnippet(line, start, end),
-					path: descriptor.path,
+					path: resource.path,
 				};
 				job.matches.push(match);
 				if (job.matches.length >= constants.GLOBAL_SEARCH_RESULT_LIMIT) {
@@ -348,11 +346,11 @@ function runGlobalSearchSlice(sources: RuntimeSourceState, job: GlobalSearchJob)
 		if (job.nextRow >= lines.length) {
 			job.currentLines = null;
 			job.nextRow = 0;
-			job.descriptorIndex += 1;
+			job.resourceIndex += 1;
 		}
 	}
 
-	if (job.limitHit || job.descriptorIndex >= job.descriptors.length) {
+	if (job.limitHit || job.resourceIndex >= job.resources.length) {
 		completeGlobalSearchJob(job);
 		return false;
 	}

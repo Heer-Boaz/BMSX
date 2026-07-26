@@ -73,7 +73,6 @@ export function initializeWorkspaceStorage(
 				sources,
 				debuggerState,
 				overlayRenderer,
-				projectRootPath,
 			);
 			workspaceState.autosaveSignature = signature;
 			workspaceState.serverConnected = isWorkspaceServerAvailable();

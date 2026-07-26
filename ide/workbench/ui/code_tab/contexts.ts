@@ -6,11 +6,9 @@ import type {
 	CodeTabMode,
 	EditorRuntimeSyncState,
 	EditorTabDescriptor,
-	ResourceDescriptor,
 } from '../../../common/models';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
 import { PieceTreeBuffer } from '../../../editor/text/piece_tree_buffer';
-import { listResources } from '../../../workspace/workspace';
 import { clearOpenWorkspaceDocumentDirtyState, setOpenWorkspaceDocumentDirty } from '../../../workspace/open_dirty';
 import { computeResourceTabTitle } from '../tab/titles';
 import { codeTabSessionState } from './session_state';
@@ -19,19 +17,20 @@ import {
 	resourceIdentityEquals,
 	resourceIdentityKey,
 	type ResourceIdentity,
+	type RuntimeResource,
 } from '../../../common/resource';
 
-function resolveLuaSource(sources: RuntimeSourceState, descriptor: ResourceDescriptor): string {
-	return luaPipeline.resourceSourceForChunk(sources, descriptor);
+function resolveLuaSource(sources: RuntimeSourceState, resource: RuntimeResource): string {
+	return luaPipeline.resourceSourceForChunk(sources, resource);
 }
 
-function createCodeTabContext(descriptor: ResourceDescriptor, initialSource: string, mode: CodeTabMode): CodeTabContext {
-	const title = computeResourceTabTitle(descriptor);
+function createCodeTabContext(resource: RuntimeResource, initialSource: string, mode: CodeTabMode): CodeTabContext {
+	const title = computeResourceTabTitle(resource);
 	const buffer = new PieceTreeBuffer(initialSource);
 	return {
-		id: buildCodeTabId(descriptor),
+		id: buildCodeTabId(resource),
 		title,
-		descriptor,
+		resource,
 		mode,
 		buffer,
 		cursorRow: 0,
@@ -52,13 +51,12 @@ function createCodeTabContext(descriptor: ResourceDescriptor, initialSource: str
 		executionStopRow: null,
 		runtimeSyncState: 'synced',
 		runtimeSyncMessage: null,
-		readOnly: !!descriptor.readOnly,
 		textVersion: buffer.version,
 	};
 }
 
-export function buildCodeTabId(descriptor: ResourceDescriptor): string {
-	return `code:${resourceIdentityKey(descriptor)}`;
+export function buildCodeTabId(resource: ResourceIdentity): string {
+	return `code:${resourceIdentityKey(resource)}`;
 }
 
 export function setTabRuntimeSyncState(tabId: string, runtimeSyncState: EditorRuntimeSyncState, runtimeSyncMessage: string): void {
@@ -95,20 +93,20 @@ export function upsertCodeEditorTab(context: CodeTabContext): EditorTabDescripto
 }
 
 export function createEntryTabContext(sources: RuntimeSourceState): CodeTabContext {
-	const luaDescriptors = listResources(sources).filter(r => r.type === 'lua');
-	const descriptor = luaDescriptors.find(r =>
+	const resource = sources.activeResources.find(r =>
 		r.domain === sources.activeCartridgeSlot
 		&& r.path === sources.activeLuaSources.entry_path
+		&& r.source.type === 'lua'
 	)!;
-	return createLuaCodeTabContext(sources, descriptor);
+	return createLuaCodeTabContext(sources, resource);
 }
 
-export function createLuaCodeTabContext(sources: RuntimeSourceState, descriptor: ResourceDescriptor): CodeTabContext {
-	return createCodeTabContext(descriptor, resolveLuaSource(sources, descriptor), 'lua');
+export function createLuaCodeTabContext(sources: RuntimeSourceState, resource: RuntimeResource): CodeTabContext {
+	return createCodeTabContext(resource, resolveLuaSource(sources, resource), 'lua');
 }
 
-export function createAemCodeTabContext(descriptor: ResourceDescriptor, source: string): CodeTabContext {
-	return createCodeTabContext(descriptor, source, 'aem');
+export function createAemCodeTabContext(resource: RuntimeResource, source: string): CodeTabContext {
+	return createCodeTabContext(resource, source, 'aem');
 }
 
 export function getActiveCodeTabContext(): CodeTabContext {
@@ -137,7 +135,7 @@ export function getCodeTabContexts(): Iterable<CodeTabContext> {
 
 export function registerCodeTabContext(context: CodeTabContext): void {
 	codeTabSessionState.contexts.set(context.id, context);
-	setOpenWorkspaceDocumentDirty(context.descriptor, context.dirty);
+	setOpenWorkspaceDocumentDirty(context.resource, context.dirty);
 }
 
 export function clearCodeTabContexts(): void {
@@ -150,7 +148,7 @@ export function setTabDirty(tabId: string, dirty: boolean): void {
 	tab.dirty = dirty;
 	const context = codeTabSessionState.contexts.get(tabId);
 	if (context) {
-		setOpenWorkspaceDocumentDirty(context.descriptor, dirty);
+		setOpenWorkspaceDocumentDirty(context.resource, dirty);
 	}
 }
 
@@ -179,7 +177,7 @@ export function isEditableCodeTab(): boolean {
 
 export function findCodeTabContext(identity: ResourceIdentity): CodeTabContext {
 	for (const context of codeTabSessionState.contexts.values()) {
-		if (resourceIdentityEquals(context.descriptor, identity)) {
+		if (resourceIdentityEquals(context.resource, identity)) {
 			return context;
 		}
 	}

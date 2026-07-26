@@ -8,7 +8,7 @@ export function openGlobalSearchMatch(
 	sources: RuntimeSourceState,
 	match: GlobalSearchMatch,
 ): void {
-	openLuaCodeTab(resourcePanel, sources, match.descriptor, {
+	openLuaCodeTab(resourcePanel, sources, match.resource, {
 		row: match.row,
 		startColumn: match.start,
 		endColumn: match.end,

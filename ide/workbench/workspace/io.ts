@@ -22,8 +22,6 @@ let serverBackendFailureNotified = false;
 let localBackend: LocalWorkspaceBackend = null;
 let serverRetryScheduled = false;
 let serverRetryHandle: TimerHandle = null;
-// disable-next-line legacy_sentinel_string_pattern -- removes the obsolete local-only readiness marker from older workspace storage.
-const LEGACY_LOCAL_WORKSPACE_MARKER = '__marker__';
 
 function resetWorkspaceBackends(): void {
 	serverBackend = null;
@@ -57,7 +55,6 @@ class LocalWorkspaceBackend {
 
 	async ensureReady(): Promise<void> {
 		const markerPath = joinWorkspacePaths(this.projectRootPath, WORKSPACE_METADATA_DIR, WORKSPACE_MARKER_FILE);
-		this.storage.removeItem(buildWorkspaceStorageKey(this.projectRootPath, LEGACY_LOCAL_WORKSPACE_MARKER));
 		this.storage.setItem(buildWorkspaceStorageKey(this.projectRootPath, markerPath), '');
 	}
 

@@ -1,9 +1,9 @@
-import type { ResourceDescriptor } from '../../../common/models';
+import type { RuntimeResource } from '../../../common/models';
 
-export function computeResourceTabTitle(descriptor: ResourceDescriptor): string {
-	const parts = descriptor.path.split('/').filter(part => part.length > 0);
+export function computeResourceTabTitle(resource: RuntimeResource): string {
+	const parts = resource.path.split('/').filter(part => part.length > 0);
 	if (parts.length > 0) {
 		return parts[parts.length - 1];
 	}
-	return descriptor.type.toUpperCase();
+	return resource.source.type.toUpperCase();
 }

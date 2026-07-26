@@ -3,7 +3,7 @@ import type { ReferenceMatchInfo } from '../references/state';
 import type { LuaSourceRange } from '../../../../machine/ts/lua/syntax/ast/index';
 import { clamp } from '../../../../machine/ts/common/clamp';
 import { createLuaCodeTabContext, findCodeTabContext, getActiveCodeTabContext } from '../../../workbench/ui/code_tab/contexts';
-import { resolveResourceDescriptorForContext } from '../../../workbench/contrib/resources/lookup';
+import { resolveRuntimeResourceForContext } from '../../../runtime/sources';
 import { getLinesSnapshot, getTextSnapshot } from '../../text/source_text';
 import { syncSemanticWorkspacePath, getOrCreateSemanticWorkspace } from '../intellisense/semantic/workspace/state';
 import { markTextMutated } from '../../common/text/runtime';
@@ -27,8 +27,8 @@ export function commitRename(
 	info: ReferenceMatchInfo,
 ): number {
 	const activeContext = getActiveCodeTabContext();
-	const activePath = activeContext.descriptor.path;
-	const activeDomain = activeContext.descriptor.domain;
+	const activePath = activeContext.resource.path;
+	const activeDomain = activeContext.resource.domain;
 	const workspace = getOrCreateSemanticWorkspace(activeDomain);
 	const sortedMatches = matches.slice();
 	sortedMatches.sort((a, b) => a.row !== b.row ? a.row - b.row : a.start - b.start);
@@ -115,7 +115,7 @@ export class CrossFileRenameManager {
 			return 0;
 		}
 		const context = this.ensureCodeTabContextForChunk(domain, path);
-		if (context.readOnly === true) {
+		if (context.resource.source.generated) {
 			return 0;
 		}
 		const matches = new Array<SearchMatch>(ranges.length);
@@ -162,10 +162,10 @@ export class CrossFileRenameManager {
 		domain: ResourceDomain,
 		path: string,
 	): CodeTabContext {
-		const descriptor = resolveResourceDescriptorForContext(this.sources, domain, path);
-		let context = findCodeTabContext(descriptor);
+		const resource = resolveRuntimeResourceForContext(this.sources, domain, path)!;
+		let context = findCodeTabContext(resource);
 		if (!context) {
-			context = createLuaCodeTabContext(this.sources, descriptor);
+			context = createLuaCodeTabContext(this.sources, resource);
 			registerCodeTabContext(context);
 			this.markContextTabDirty(context.id, context.dirty);
 		}

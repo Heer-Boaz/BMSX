@@ -5,16 +5,14 @@ import type { StorageService } from '../../machine/ts/platform/index';
 import { ROM_GENERATED_MODULE_PATHS } from '../../machine/ts/rompack/format';
 import {
 	CARTRIDGE_RESOURCE_DOMAINS,
-	SYSTEM_RESOURCE_DOMAIN,
 	type LuaResourceCreationRequest,
-	type ResourceDescriptor,
 	type ResourceDomain,
 	type ResourceIdentity,
+	type RuntimeResource,
 } from '../common/resource';
 import { joinWorkspacePaths, resolveWorkspacePath } from './path';
 import {
 	applyWorkspaceSourceOverrides,
-	collectScratchWorkspaceDirtyPaths,
 	deleteWorkspaceServerFile,
 	persistWorkspaceSourceFile,
 	buildWorkspaceDirtyEntryPath,
@@ -33,6 +31,7 @@ import { runtimeSemanticCache } from '../editor/contrib/intellisense/semantic/wo
 import {
 	developmentCartridgeSource,
 	resolveRuntimeLuaSource,
+	registerRuntimeLuaResource,
 	runtimeLuaSourceDomain,
 	type RuntimeSourceState,
 } from '../runtime/sources';
@@ -110,8 +109,8 @@ export async function saveLuaResourceSource(sources: RuntimeSourceState, identit
 	deleteWorkspaceLuaSourceOverride(registry, sourcePath);
 }
 
-export async function createLuaResource(sources: RuntimeSourceState, request: LuaResourceCreationRequest): Promise<ResourceDescriptor> {
-	const contents = typeof request.contents === 'string' ? request.contents : '';
+export async function createLuaResource(sources: RuntimeSourceState, request: LuaResourceCreationRequest): Promise<RuntimeResource> {
+	const contents = request.contents;
 	const path = request.path;
 	const slashIndex = path.lastIndexOf('/');
 	const fileName = slashIndex === -1 ? path : path.slice(slashIndex + 1);
@@ -138,12 +137,12 @@ export async function createLuaResource(sources: RuntimeSourceState, request: Lu
 		: resolveEditableCartLuaSources(sources);
 	const domain = runtimeLuaSourceDomain(sources, registry);
 	registerLuaSourceRecord(registry, asset);
+	const resource = registerRuntimeLuaResource(sources, domain, asset);
 	registry.can_boot_from_source = true;
 	markLuaSourceRegistryChanged(sources, registry);
 	const filesystemPath = asset.source_path;
 	await persistWorkspaceSourceFile(filesystemPath, contents, registry.projectRootPath);
-	const descriptor: ResourceDescriptor = { domain, path: asset.source_path, type: 'lua' };
-	return descriptor;
+	return resource;
 }
 
 export async function applyWorkspaceOverridesToRegistry(sources: RuntimeSourceState, params: {
@@ -212,17 +211,11 @@ async function clearWorkspaceDirtyFiles(
 ): Promise<void> {
 	const root = cart.projectRootPath;
 	const domain = runtimeLuaSourceDomain(sources, cart);
-	const scratchPaths = await collectScratchWorkspaceDirtyPaths(root);
 	for (const asset of cart.records) {
 		if (asset.generated) {
 			continue;
 		}
 		await discardWorkspaceDirtyPath(storage, root, domain, asset.source_path);
-	}
-	for (const dirtyPath of scratchPaths) {
-		const storageKey = buildWorkspaceStorageKey(root, dirtyPath);
-		storage.removeItem(storageKey);
-		await deleteWorkspaceServerFile(dirtyPath);
 	}
 }
 
@@ -254,35 +247,4 @@ export async function nukeWorkspaceState(sources: RuntimeSourceState): Promise<v
 	const registry = resolveEditableCartLuaSources(sources);
 	await clearWorkspaceArtifacts(sources, registry, machineManager.platform.storage);
 	await reapplyWorkspaceBaseline(sources, registry);
-}
-
-export function listResources(sources: RuntimeSourceState): ResourceDescriptor[] {
-	const descriptors: ResourceDescriptor[] = [];
-	for (const domain of CARTRIDGE_RESOURCE_DOMAINS) {
-		const cartridge = sources.cartridgeSlots[domain];
-		if (cartridge === null) {
-			continue;
-		}
-		const registry = cartridge.luaSources;
-		for (const asset of registry.records) {
-			descriptors.push({
-				domain,
-				path: asset.source_path,
-				type: asset.type,
-				asset_id: asset.resid,
-				readOnly: asset.generated,
-			});
-		}
-	}
-	for (const asset of sources.systemLuaSources.records) {
-		descriptors.push({
-			domain: SYSTEM_RESOURCE_DOMAIN,
-			path: asset.source_path,
-			type: asset.type,
-			asset_id: asset.resid,
-			readOnly: asset.generated,
-		});
-	}
-	descriptors.sort((left, right) => left.path.localeCompare(right.path) || left.domain - right.domain);
-	return descriptors;
 }

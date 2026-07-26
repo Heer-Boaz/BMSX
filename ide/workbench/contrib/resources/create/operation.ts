@@ -35,14 +35,14 @@ export async function confirmCreateResourcePrompt(
 	resetBlink();
 	const contents = constants.DEFAULT_NEW_LUA_RESOURCE_CONTENT;
 	try {
-		const descriptor = await createLuaResource(sources, { path: resourcePath, contents });
+		const resource = await createLuaResource(sources, { path: resourcePath, contents });
 		createResourceState.lastDirectory = directory;
-		resourcePanel.queuePendingSelection(descriptor);
+		resourcePanel.queuePendingSelection(resource);
 		if (resourcePanel.isVisible()) {
 			resourcePanel.refresh();
 		}
-		openLuaCodeTab(resourcePanel, sources, descriptor);
-		showEditorMessage(`Created ${descriptor.path} (asset ${descriptor.asset_id})`, constants.COLOR_STATUS_SUCCESS, 2.5);
+		openLuaCodeTab(resourcePanel, sources, resource);
+		showEditorMessage(`Created ${resource.path} (asset ${resource.source.resid})`, constants.COLOR_STATUS_SUCCESS, 2.5);
 		closeCreateResourcePrompt(false);
 	} catch (error) {
 		const message = extractErrorMessage(error);
@@ -72,11 +72,9 @@ export function isValidCreateResourceCharacter(value: string): boolean {
 	return value === '_' || value === '-' || value === '.' || value === '/';
 }
 
-export function parseCreateResourceRequest(rawPath: string): { path: string; asset_id: string; directory: string } {
+export function parseCreateResourceRequest(rawPath: string): { path: string; directory: string } {
 	const candidate = rawPath;
 	const slashIndex = candidate.lastIndexOf('/');
 	const directory = slashIndex === -1 ? '' : candidate.slice(0, slashIndex + 1);
-	const fileName = slashIndex === -1 ? candidate : candidate.slice(slashIndex + 1);
-	const baseName = fileName.endsWith('.lua') ? fileName.slice(0, -4) : fileName;
-	return { path: candidate, asset_id: baseName, directory: ensureDirectorySuffix(directory) };
+	return { path: candidate, directory: ensureDirectorySuffix(directory) };
 }

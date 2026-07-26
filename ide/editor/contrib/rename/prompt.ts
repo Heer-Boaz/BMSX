@@ -31,7 +31,7 @@ export function openRenamePrompt(bridge: RuntimeNativeBridge, rename: RenameCont
 		textVersion: editorDocumentState.textVersion,
 		cursorRow: editorDocumentState.cursorRow,
 		cursorColumn: editorDocumentState.cursorColumn,
-		identity: context.descriptor,
+		identity: context.resource,
 	});
 	if (started) {
 		editorCaretState.cursorVisible = true;

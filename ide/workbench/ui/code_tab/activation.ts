@@ -62,7 +62,7 @@ function setCodeTabDiagnosticsState(): void {
 		const cached = editorDiagnosticsState.diagnosticsCache.get(context.id);
 		const cachedVersion = cached?.version ?? -1;
 		const cachedChunk = cached?.path;
-		const path = context.descriptor.path;
+		const path = context.resource.path;
 		if (!cached || cachedVersion !== editorDocumentState.textVersion || cachedChunk !== path) {
 			markDiagnosticsDirty(context.id);
 		}
@@ -71,7 +71,7 @@ function setCodeTabDiagnosticsState(): void {
 	editorDiagnosticsState.dirtyDiagnosticContexts.delete(context.id);
 	editorDiagnosticsState.diagnosticsCache.set(context.id, {
 		contextId: context.id,
-		path: context.descriptor.path,
+		path: context.resource.path,
 		diagnostics: [],
 		version: editorDocumentState.textVersion,
 		source: getTextSnapshot(editorDocumentState.buffer),
@@ -104,7 +104,7 @@ export function capturePendingLuaCodeTabSources(sources: RuntimeSourceState): Lu
 			continue;
 		}
 		const source = getTextSnapshot(context.buffer);
-		const match = resolveRuntimeLuaSource(sources, context.descriptor)!;
+		const match = resolveRuntimeLuaSource(sources, context.resource)!;
 		const installedSources = match.domain === SYSTEM_RESOURCE_DOMAIN
 			? sources.systemInstalledBlua32Sources
 			: sources.cartridgeSlots[match.domain]!.installedBlua32Sources;
@@ -115,8 +115,8 @@ export function capturePendingLuaCodeTabSources(sources: RuntimeSourceState): Lu
 		snapshots.push({
 			contextId: context.id,
 			generation: context.saveGeneration,
-			domain: context.descriptor.domain,
-			path: context.descriptor.path,
+			domain: context.resource.domain,
+			path: context.resource.path,
 			source,
 		});
 	}
@@ -172,7 +172,7 @@ export function applyActiveCodeTabSelection(selection: CodeTabSelection): void {
 export function activateCodeEditorTab(tabId: string, selection?: CodeTabSelection): void {
 	codeTabSessionState.activeContextId = tabId;
 	const context = getActiveCodeTabContext();
-	codeTabSessionState.activeContextReadOnly = !!context.readOnly;
+	codeTabSessionState.activeContextReadOnly = !!context.resource.source.generated;
 	restoreDocumentStateFromContext(context);
 	editorViewState.scrollRow = context.scrollRow;
 	editorViewState.scrollColumn = context.scrollColumn;
@@ -221,7 +221,7 @@ export function navigateToLuaDefinition(
 	clearReferenceHighlights();
 	let targetContextId: string = null;
 	try {
-		const activeDomain = getActiveCodeTabContext().descriptor.domain;
+		const activeDomain = getActiveCodeTabContext().resource.domain;
 		const source = resolveRuntimeLuaSourceForContext(
 			sources,
 			activeDomain,

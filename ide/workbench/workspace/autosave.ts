@@ -27,10 +27,10 @@ import {
 	WORKSPACE_AUTOSAVE_VERSION,
 	type DirtyContextEntry,
 	type PersistedDirtyEntry,
-	type SerializedDescriptor,
 	type WorkspaceAutosavePayload,
 } from './models';
 import type { CartEditor } from '../../cart_editor';
+import type { ResourceIdentity } from '../../common/resource';
 
 export function collectDirtyContextEntries(): Map<string, DirtyContextEntry> {
 	if (!hasWorkspaceStorage()) {
@@ -41,18 +41,15 @@ export function collectDirtyContextEntries(): Map<string, DirtyContextEntry> {
 		if (!context.dirty) {
 			continue;
 		}
-		const descriptor: SerializedDescriptor = {
-			domain: context.descriptor.domain,
-			path: context.descriptor.path,
-			type: context.descriptor.type,
-			asset_id: context.descriptor.asset_id,
-			readOnly: context.descriptor.readOnly,
+		const resource: ResourceIdentity = {
+			domain: context.resource.domain,
+			path: context.resource.path,
 		};
 		const metadata = captureContextSnapshotMetadata(context);
-		const dirtyPath = buildDirtyFilePath(descriptor);
+		const dirtyPath = buildDirtyFilePath(resource);
 		const text = captureContextText(context);
 		entries.set(dirtyPath, {
-			descriptor,
+			resource,
 			dirtyPath,
 			cursorRow: metadata.cursorRow,
 			cursorColumn: metadata.cursorColumn,
@@ -77,7 +74,7 @@ export function buildWorkspaceAutosavePayload(
 	const dirtyFiles: PersistedDirtyEntry[] = [];
 	for (const entry of entries.values()) {
 		dirtyFiles.push({
-			descriptor: entry.descriptor,
+			resource: entry.resource,
 			dirtyPath: entry.dirtyPath,
 			cursorRow: entry.cursorRow,
 			cursorColumn: entry.cursorColumn,
@@ -100,10 +97,10 @@ export function buildWorkspaceAutosaveSignature(payload: WorkspaceAutosavePayloa
 	const dirtyParts = payload.dirtyFiles
 		.map((dirty) => {
 			const selection = dirty.selectionAnchor ? `${dirty.selectionAnchor.row}:${dirty.selectionAnchor.column}` : '';
-			const descriptorKey = `${dirty.descriptor.domain}:${dirty.descriptor.path}:${dirty.descriptor.type}`;
+			const resourceKey = `${dirty.resource.domain}:${dirty.resource.path}`;
 			return [
 				dirty.dirtyPath,
-				descriptorKey,
+				resourceKey,
 				dirty.cursorRow,
 				dirty.cursorColumn,
 				dirty.scrollRow,
@@ -148,12 +145,12 @@ export async function persistDirtyContextEntries(entries: Map<string, DirtyConte
 	}
 }
 
-export function loadCleanSrc(sources: RuntimeSourceState, descriptor: SerializedDescriptor): string {
-	const context = findCodeTabContext(descriptor);
+export function loadCleanSrc(sources: RuntimeSourceState, resource: ResourceIdentity): string {
+	const context = findCodeTabContext(resource);
 	if (context && context.mode === 'aem') {
 		return context.lastSavedSource;
 	}
-	return luaPipeline.resourceSourceForChunk(sources, descriptor);
+	return luaPipeline.resourceSourceForChunk(sources, resource);
 }
 
 export function clearWorkspaceDirtyBuffers(sources: RuntimeSourceState): void {
@@ -161,7 +158,7 @@ export function clearWorkspaceDirtyBuffers(sources: RuntimeSourceState): void {
 	workspaceState.autosaveSignature = null;
 	resetWorkspaceActiveDocumentDirtyBufferState();
 	for (const context of getCodeTabContexts()) {
-		resetWorkspaceContextToCleanSource(context, loadCleanSrc(sources, context.descriptor));
+		resetWorkspaceContextToCleanSource(context, loadCleanSrc(sources, context.resource));
 	}
 }
 

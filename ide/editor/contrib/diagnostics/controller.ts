@@ -169,7 +169,7 @@ export function runDiagnosticsForContexts(bridge: RuntimeNativeBridge, contextId
 			const source = contextId === activeId ? getTextSnapshot(editorDocumentState.buffer) : getTextSnapshot(context.buffer);
 			editorDiagnosticsState.diagnosticsCache.set(context.id, {
 				contextId: context.id,
-				path: context.descriptor.path,
+				path: context.resource.path,
 				diagnostics: [],
 				version: contextId === activeId ? editorDocumentState.buffer.version : context.buffer.version,
 				source,
@@ -177,7 +177,7 @@ export function runDiagnosticsForContexts(bridge: RuntimeNativeBridge, contextId
 			editorDiagnosticsState.dirtyDiagnosticContexts.delete(contextId);
 			continue;
 		}
-		const path = context.descriptor.path;
+		const path = context.resource.path;
 		const isActive = activeId && contextId === activeId;
 		const cached = editorDiagnosticsState.diagnosticsCache.get(contextId);
 		const buffer = isActive ? editorDocumentState.buffer : context.buffer;
@@ -189,7 +189,7 @@ export function runDiagnosticsForContexts(bridge: RuntimeNativeBridge, contextId
 		const source = getTextSnapshot(buffer);
 		const input: DiagnosticContextInput = {
 			id: context.id,
-			domain: context.descriptor.domain,
+			domain: context.resource.domain,
 			path,
 			source,
 			lines: getLinesSnapshot(buffer),
@@ -285,19 +285,19 @@ export function getActiveSemanticDefinitions(): readonly LuaDefinitionInfo[] {
 	return editorViewState.layout.getSemanticDefinitions(
 		editorDocumentState.buffer,
 		editorDocumentState.textVersion,
-		context.descriptor,
+		context.resource,
 	);
 }
 
 export function getLuaModuleAliases(path: string): Map<string, ModuleAliasEntry> {
 	const activeContext = getActiveCodeTabContext();
-	const targetChunk = path || activeContext.descriptor.path;
+	const targetChunk = path || activeContext.resource.path;
 	editorViewState.layout.getSemanticDefinitions(
 		editorDocumentState.buffer,
 		editorDocumentState.textVersion,
-		{ domain: activeContext.descriptor.domain, path: targetChunk },
+		{ domain: activeContext.resource.domain, path: targetChunk },
 	);
-	const data = getOrCreateSemanticWorkspace(activeContext.descriptor.domain)
+	const data = getOrCreateSemanticWorkspace(activeContext.resource.domain)
 		.getSnapshot()
 		.getFileData(targetChunk);
 	if (!data || data.moduleAliases.length === 0) {
@@ -313,7 +313,7 @@ export function getLuaModuleAliases(path: string): Map<string, ModuleAliasEntry>
 
 export function findContextByChunk(path: string): CodeTabContext {
 	return findCodeTabContext({
-		domain: getActiveCodeTabContext().descriptor.domain,
+		domain: getActiveCodeTabContext().resource.domain,
 		path,
 	});
 }

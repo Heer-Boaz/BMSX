@@ -993,7 +993,7 @@ export function applyDocumentFormatting(): void {
 	try {
 		const formatted = context.mode === 'lua'
 			? formatLuaDocument(originalSource, originalLines)
-			: formatAemDocument(originalSource, context.descriptor.path, originalLines);
+			: formatAemDocument(originalSource, context.resource.path, originalLines);
 		if (formatted === originalSource) {
 			showEditorMessage('Document already formatted', constants.COLOR_STATUS_TEXT, 1.5);
 			return;

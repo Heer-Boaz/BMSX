@@ -4,7 +4,7 @@ import { renameController } from '../../../../editor/contrib/rename/controller';
 import { showEditorMessage } from '../../../../common/feedback_state';
 import { clearReferenceHighlights } from '../../../../editor/contrib/intellisense/engine';
 import { closeSearch } from '../../../../editor/contrib/find/search';
-import { openResourceDescriptor } from '../navigation';
+import { openResource } from '../navigation';
 import { resetBlink } from '../../../../editor/render/caret';
 import { setFieldText } from '../../../../editor/ui/inline/text_field';
 import { closeSymbolSearch } from '../../../../editor/contrib/symbols/shared';
@@ -72,7 +72,7 @@ export function applyResourceSearchSelection(
 	const match = resourceSearchState.matches[index];
 	closeResourceSearch(true);
 	scheduleMicrotask(() => {
-		openResourceDescriptor(editor, sources, match.entry.descriptor);
+		openResource(editor, sources, match.entry.resource);
 	});
 }
 

@@ -28,7 +28,7 @@ export function openReferenceSearchPopup(bridge: RuntimeNativeBridge, rename: Re
 		textVersion: editorDocumentState.textVersion,
 		cursorRow: editorDocumentState.cursorRow,
 		cursorColumn: editorDocumentState.cursorColumn,
-		identity: context.descriptor,
+		identity: context.resource,
 	});
 	if (result.kind === 'error') {
 		showEditorMessage(result.message, constants.COLOR_STATUS_WARNING, result.duration);

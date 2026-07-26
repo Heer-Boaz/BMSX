@@ -1,4 +1,3 @@
-import { listResourcesStrict } from '../catalog';
 import { clampQuickInputDisplayOffset, advanceQuickInputSelection } from '../../../../editor/navigation/quick_input_navigation';
 import { resetBlink } from '../../../../editor/render/caret';
 import { resourceSearchWindowCapacity } from '../../../../editor/ui/view/view';
@@ -6,19 +5,16 @@ import { resourceSearchState } from '../widget_state';
 import type { RuntimeSourceState } from '../../../../runtime/sources';
 
 export function refreshResourceCatalog(sources: RuntimeSourceState): void {
-	const descriptors = listResourcesStrict(sources);
-	resourceSearchState.catalog = descriptors.map((descriptor) => {
-		const displayPath = descriptor.path || descriptor.asset_id || '<unnamed>';
-		const assetLabel = descriptor.asset_id && descriptor.asset_id !== displayPath ? descriptor.asset_id : null;
-		const searchKey = [displayPath, descriptor.asset_id, descriptor.type]
-			.filter(part => part.length > 0)
-			.map(part => part.toLowerCase())
-			.join(' ');
+	resourceSearchState.catalog = sources.activeResources.map((resource) => {
+		const asset = resource.source;
+		const displayPath = resource.path || asset.resid || '<unnamed>';
+		const assetLabel = asset.resid && asset.resid !== displayPath ? asset.resid : null;
+		const searchKey = `${displayPath} ${asset.resid} ${asset.type}`.toLowerCase();
 		return {
-			descriptor,
+			resource,
 			displayPath,
 			searchKey,
-			typeLabel: descriptor.type.toUpperCase(),
+			typeLabel: asset.type.toUpperCase(),
 			assetLabel,
 		};
 	});

@@ -309,17 +309,17 @@ export class ResourcePanelController {
 			this.refreshCallHierarchyContents();
 			return;
 		}
-		const previousDescriptor = this.pendingSelectionIdentity
+		const previousResource = this.pendingSelectionIdentity
 			? null
 			: (this.selectionIndex >= 0 && this.selectionIndex < this.items.length)
-				? this.items[this.selectionIndex].descriptor
+				? this.items[this.selectionIndex].resource
 				: null;
 		this.applyRefreshResult(refreshResourcePanelResourceState({
 			sources: this.sources,
 			filterMode: this.filterMode,
 			bounds,
 			lineHeight: this.lineHeight,
-			previousDescriptor,
+			previousResource,
 			targetIdentity: this.pendingSelectionIdentity,
 			previousIndex: this.selectionIndex,
 			previousScroll: this.scroll,

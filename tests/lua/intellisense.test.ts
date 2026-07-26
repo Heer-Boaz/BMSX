@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { CodeTabContext, ResourceDescriptor } from '../../ide/common/models';
+import type { CodeTabContext } from '../../ide/common/models';
 import { splitText } from '../../machine/ts/common/text_lines';
 import { PieceTreeBuffer } from '../../ide/editor/text/piece_tree_buffer';
 import { LuaLexer } from '../../machine/ts/lua/syntax/lexer';
@@ -17,7 +17,10 @@ import { createRuntimeFaultState, recordLuaError } from '../../ide/runtime/fault
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { LuaInterpreter } from '../../ide/language/lua/interpreter/interpreter';
 import { valueIsClosure } from '../../machine/ts/machine/cpu/value';
-import { SYSTEM_RESOURCE_DOMAIN } from '../../ide/common/resource';
+import {
+	SYSTEM_RESOURCE_DOMAIN,
+	type RuntimeResource,
+} from '../../ide/common/resource';
 import { RuntimeNativeBridge } from '../../ide/runtime/native_bridge';
 import type { RuntimeSourceState } from '../../ide/runtime/sources';
 import {
@@ -74,11 +77,24 @@ function createIntellisenseBridge(files: Record<string, string> = {}): RuntimeNa
 	return bridge;
 }
 
-function codeContext(descriptor: ResourceDescriptor, source: string): CodeTabContext {
+function testLuaResource(path: string): RuntimeResource {
 	return {
-		id: descriptor.asset_id ?? descriptor.path,
-		title: descriptor.path,
-		descriptor,
+		domain: SYSTEM_RESOURCE_DOMAIN,
+		path,
+		source: {
+			resid: path,
+			type: 'lua',
+			source_path: path,
+			generated: false,
+		},
+	};
+}
+
+function codeContext(resource: RuntimeResource, source: string): CodeTabContext {
+	return {
+		id: resource.source.resid,
+		title: resource.path,
+		resource,
 		mode: 'lua',
 		buffer: new PieceTreeBuffer(source),
 		cursorRow: 0,
@@ -461,9 +477,9 @@ test('project reference catalog resolves globals across paths', async () => {
 	workspace.updateFile('parameter.lua', parameterSource);
 	workspace.updateFile('local.lua', localSource);
 
-	const usageDescriptor: ResourceDescriptor = { domain: SYSTEM_RESOURCE_DOMAIN, path: 'usage.lua', type: 'lua', asset_id: 'usage' };
+	const usageResource = testLuaResource('usage.lua');
 
-	const usageContext = codeContext(usageDescriptor, usageSource);
+	const usageContext = codeContext(usageResource, usageSource);
 
 	const usageLines = usageSource.split('\n');
 	const bridge = createIntellisenseBridge({
@@ -531,9 +547,9 @@ test('project definition resolver locates global across paths', async () => {
 	workspace.updateFile('usage.lua', usageSource);
 	workspace.updateFile('global.lua', globalSource);
 
-	const usageDescriptor: ResourceDescriptor = { domain: SYSTEM_RESOURCE_DOMAIN, path: 'usage.lua', type: 'lua', asset_id: 'usage' };
+	const usageResource = testLuaResource('usage.lua');
 
-	const usageContext = codeContext(usageDescriptor, usageSource);
+	const usageContext = codeContext(usageResource, usageSource);
 
 	const usageLines = usageSource.split('\n');
 
@@ -543,7 +559,7 @@ test('project definition resolver locates global across paths', async () => {
 		activeContext: usageContext,
 		codeTabContexts: [usageContext],
 		workspace,
-		currentPath: usageDescriptor.path,
+		currentPath: usageResource.path,
 		currentSource: usageSource,
 		currentLines: usageLines,
 	});
@@ -670,9 +686,9 @@ test('intellisense recognizes global variable from another file', async () => {
 	workspace.updateFile('usage.lua', usageSource);
 	workspace.updateFile('global.lua', globalSource);
 
-	const usageDescriptor: ResourceDescriptor = { domain: SYSTEM_RESOURCE_DOMAIN, path: 'usage.lua', type: 'lua', asset_id: 'usage' };
+	const usageResource = testLuaResource('usage.lua');
 
-	const usageContext = codeContext(usageDescriptor, usageSource);
+	const usageContext = codeContext(usageResource, usageSource);
 
 	const usageLines = usageSource.split('\n');
 

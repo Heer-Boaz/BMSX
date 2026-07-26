@@ -29,7 +29,7 @@ export function symbolSourceLabel(entry: LuaSymbolEntry): string | null {
 
 export function refreshSymbolCatalog(bridge: RuntimeNativeBridge, force: boolean): void {
 	const scope: 'local' | 'global' = symbolSearchState.global ? 'global' : 'local';
-	const descriptor = getActiveCodeTabContext().descriptor;
+	const descriptor = getActiveCodeTabContext().resource;
 	const path = scope === 'local' ? descriptor.path : null;
 	const existing = symbolSearchState.catalogContext;
 	const unchanged = existing !== null

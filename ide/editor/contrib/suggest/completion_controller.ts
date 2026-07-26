@@ -111,11 +111,11 @@ export class CompletionController {
 	}
 
 	protected getActivePath(): string {
-		return getActiveCodeTabContext().descriptor.path;
+		return getActiveCodeTabContext().resource.path;
 	}
 
 	protected getActiveDomain() {
-		return getActiveCodeTabContext().descriptor.domain;
+		return getActiveCodeTabContext().resource.domain;
 	}
 
 	protected getSemanticDefinitions(): readonly LuaDefinitionInfo[] {
@@ -623,7 +623,7 @@ export class CompletionController {
 	}
 
 	private ensureLocalCompletionCache(): LocalCompletionCacheEntry {
-		const descriptor = getActiveCodeTabContext().descriptor;
+		const descriptor = getActiveCodeTabContext().resource;
 		const key = resourceIdentityKey(descriptor);
 		const path = this.getActivePath();
 		const currentVersion = this.getTextVersion();

@@ -12,7 +12,6 @@ import { syncSemanticWorkspacePaths, type SemanticWorkspacePathInput } from '../
 import type { ReferenceMatchInfo } from './state';
 import { splitText } from '../../../../machine/ts/common/text_lines';
 import { getLinesSnapshot, getTextSnapshot } from '../../text/source_text';
-import { listResources } from '../../../workspace/workspace';
 import type { Decl, LuaSemanticWorkspaceSnapshot } from '../../../../machine/ts/lua/semantic/model';
 import { computeSourceLabel } from '../../../common/paths';
 import type { RuntimeNativeBridge } from '../../../runtime/native_bridge';
@@ -204,17 +203,17 @@ function prepareProjectSemanticFrontend(
 	const inputs: SemanticWorkspacePathInput[] = [];
 	registerProjectFile(inputs, metadata, currentPath, currentSource, currentLines);
 
-	const activeDomain = activeContext.descriptor.domain;
+	const activeDomain = activeContext.resource.domain;
 	const sourceDomains = activeDomain === SYSTEM_RESOURCE_DOMAIN
 		? [activeDomain]
 		: [activeDomain, SYSTEM_RESOURCE_DOMAIN] as const;
 	for (let domainIndex = 0; domainIndex < sourceDomains.length; domainIndex += 1) {
 		const domain = sourceDomains[domainIndex];
 		for (const context of codeTabContexts) {
-			if (context.descriptor.domain !== domain) {
+			if (context.resource.domain !== domain) {
 				continue;
 			}
-			const path = context.descriptor.path;
+			const path = context.resource.path;
 			if (metadata.has(path)) {
 				continue;
 			}
@@ -228,19 +227,17 @@ function prepareProjectSemanticFrontend(
 		}
 	}
 
-	const resources = listResources(bridge.sources);
+	const resources = bridge.sources.luaResources;
 	for (let domainIndex = 0; domainIndex < sourceDomains.length; domainIndex += 1) {
 		const domain = sourceDomains[domainIndex];
 		for (let index = 0; index < resources.length; index += 1) {
-			const descriptor = resources[index];
-			if (descriptor.domain !== domain
-				|| !(descriptor.type === 'lua' || descriptor.path.endsWith('.lua'))
-				|| metadata.has(descriptor.path)) {
+			const resource = resources[index];
+			if (resource.domain !== domain || metadata.has(resource.path)) {
 				continue;
 			}
-			const source = luaPipeline.resourceSourceForChunk(bridge.sources, descriptor);
+			const source = luaPipeline.resourceSourceForChunk(bridge.sources, resource);
 			const lines = splitText(source);
-			registerProjectFile(inputs, metadata, descriptor.path, source, lines);
+			registerProjectFile(inputs, metadata, resource.path, source, lines);
 		}
 	}
 	const snapshot = syncSemanticWorkspacePaths(inputs, workspace);

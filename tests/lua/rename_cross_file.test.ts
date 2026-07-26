@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { CodeTabContext, ResourceDescriptor, SearchMatch } from '../../ide/common/models';
+import type { CodeTabContext, SearchMatch } from '../../ide/common/models';
 import { PieceTreeBuffer } from '../../ide/editor/text/piece_tree_buffer';
 import { createLuaSemanticFrontendFromSnapshot, LuaSemanticWorkspace } from '../../ide/editor/contrib/intellisense/semantic/workspace/index';
 import { getOrCreateSemanticWorkspace, resetSemanticWorkspace } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
@@ -9,16 +9,20 @@ import { CrossFileRenameManager, convertRangeToSearchMatch } from '../../ide/edi
 import { buildCodeTabId, clearCodeTabContexts, registerCodeTabContext } from '../../ide/workbench/ui/code_tab/contexts';
 import { codeTabSessionState } from '../../ide/workbench/ui/code_tab/session_state';
 import { tabSessionState } from '../../ide/workbench/ui/tab/session_state';
-import { SYSTEM_RESOURCE_DOMAIN } from '../../ide/common/resource';
+import {
+	SYSTEM_RESOURCE_DOMAIN,
+	type RuntimeResource,
+} from '../../ide/common/resource';
 import { registerLuaSourceRecord, type LuaSourceRegistry } from '../../machine/ts/lua/source_registry';
 import { createTestRuntimeSourceState } from '../helpers/runtime_sources';
+import { resolveRuntimeResource } from '../../ide/runtime/sources';
 
-function codeContext(descriptor: ResourceDescriptor, source: string): CodeTabContext {
+function codeContext(resource: RuntimeResource, source: string): CodeTabContext {
 	const buffer = new PieceTreeBuffer(source);
 	return {
-		id: buildCodeTabId(descriptor),
-		title: descriptor.path,
-		descriptor,
+		id: buildCodeTabId(resource),
+		title: resource.path,
+		resource,
 		mode: 'lua',
 		buffer,
 		cursorRow: 0,
@@ -92,13 +96,11 @@ test('cross file rename updates an existing code tab and semantic workspace', ()
 	tabSessionState.activeTabId = null;
 	resetSemanticWorkspace(SYSTEM_RESOURCE_DOMAIN);
 
-	const usageDescriptor: ResourceDescriptor = {
+	const usageResource = resolveRuntimeResource(sources, {
 		domain: SYSTEM_RESOURCE_DOMAIN,
 		path: 'usage.lua',
-		type: 'lua',
-		asset_id: 'usage.lua',
-	};
-	const usageContext = codeContext(usageDescriptor, usageSource);
+	})!;
+	const usageContext = codeContext(usageResource, usageSource);
 	registerCodeTabContext(usageContext);
 	tabSessionState.tabs.push({
 		id: usageContext.id,

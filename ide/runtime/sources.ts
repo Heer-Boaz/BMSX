@@ -5,6 +5,7 @@ import {
 	buildLuaSources,
 	resolveLuaSourceRecord,
 	type LuaSourceMatch,
+	type LuaSourceRecord,
 	type LuaSourceRegistry,
 	DEFAULT_SYSTEM_PROJECT_ROOT_PATH,
 } from '../../machine/ts/lua/source_registry';
@@ -13,6 +14,9 @@ import {
 	SYSTEM_RESOURCE_DOMAIN,
 	type ResourceDomain,
 	type ResourceIdentity,
+	type RuntimeResource,
+	resourceIdentityKey,
+	resourceIdentityKeyFromParts,
 } from '../common/resource';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/machine/memory/map';
 import {
@@ -29,6 +33,7 @@ export type RuntimeCartridgeSourceState = {
 	romSource: RawRomSource;
 	projectRootPath: string;
 	installedBlua32Sources: ReadonlyMap<string, string>;
+	aemResources: RuntimeResource[];
 };
 
 export type RuntimeSourceState = {
@@ -42,6 +47,10 @@ export type RuntimeSourceState = {
 	moduleCompileLuaSources: LuaSourceRegistry[];
 	systemRomSource: RawRomSource;
 	activeRomSource: RawRomSource;
+	resourceByIdentity: Map<string, RuntimeResource>;
+	luaResources: RuntimeResource[];
+	systemAemResources: RuntimeResource[];
+	activeResources: RuntimeResource[];
 	systemProjectRootPath: string;
 	activeCartridgeSlot: ResourceDomain;
 	realtimeCompileOptLevel: 0 | 1 | 2 | 3;
@@ -95,6 +104,7 @@ export function createRuntimeSourceState(
 			romSource: cartRomSource,
 			projectRootPath: cartLayer.index.projectRootPath,
 			installedBlua32Sources: indexInstalledBlua32Sources(cartLuaSources),
+			aemResources: [],
 		};
 		cartridgeToolingImages[slot] = loadBlua32ToolingImage(
 			cartLayer,
@@ -113,6 +123,10 @@ export function createRuntimeSourceState(
 		moduleCompileLuaSources,
 		systemRomSource: systemSource,
 		activeRomSource: systemSource,
+		resourceByIdentity: new Map(),
+		luaResources: [],
+		systemAemResources: [],
+		activeResources: [],
 		systemProjectRootPath,
 		activeCartridgeSlot: SYSTEM_RESOURCE_DOMAIN,
 		realtimeCompileOptLevel: 3,
@@ -124,6 +138,7 @@ export function createRuntimeSourceState(
 			cartridgeSlots: cartridgeToolingImages,
 		},
 	};
+	rebuildRuntimeSourceResources(state);
 	enterSystemSources(state);
 	return state;
 }
@@ -133,6 +148,7 @@ export function enterSystemSources(state: RuntimeSourceState): void {
 	state.activePackage = state.systemPackage;
 	state.activeLuaSources = state.systemLuaSources;
 	state.activeRomSource = state.systemRomSource;
+	refreshActiveResources(state, state.systemAemResources);
 	rebuildLuaSourceOrders(state);
 }
 
@@ -142,6 +158,7 @@ export function enterCartridgeSources(state: RuntimeSourceState, slot: 0 | 1): v
 	state.activePackage = cartridge.package;
 	state.activeLuaSources = cartridge.luaSources;
 	state.activeRomSource = cartridge.romSource;
+	refreshActiveResources(state, cartridge.aemResources);
 	rebuildLuaSourceOrders(state);
 }
 
@@ -204,6 +221,7 @@ export function installRuntimeRomLayers(
 	state.activeRomSource = state.activeCartridgeSlot === SYSTEM_RESOURCE_DOMAIN
 		? state.systemRomSource
 		: state.cartridgeSlots[state.activeCartridgeSlot]!.romSource;
+	rebuildRuntimeSourceResources(state);
 }
 
 export function runtimeLuaSourceRegistry(
@@ -278,6 +296,169 @@ export function resolveRuntimeLuaSourceForContext(
 		return source;
 	}
 	return resolveRuntimeLuaSource(state, { domain: SYSTEM_RESOURCE_DOMAIN, path });
+}
+
+export function resolveRuntimeResource(
+	state: RuntimeSourceState,
+	identity: ResourceIdentity,
+): RuntimeResource | undefined {
+	return state.resourceByIdentity.get(resourceIdentityKey(identity));
+}
+
+export function resolveRuntimeResourceForContext(
+	state: RuntimeSourceState,
+	domain: ResourceDomain,
+	path: string,
+): RuntimeResource | undefined {
+	const resource = state.resourceByIdentity.get(resourceIdentityKeyFromParts(domain, path));
+	if (resource || domain === SYSTEM_RESOURCE_DOMAIN) {
+		return resource;
+	}
+	return state.resourceByIdentity.get(resourceIdentityKeyFromParts(SYSTEM_RESOURCE_DOMAIN, path));
+}
+
+export function registerRuntimeLuaResource(
+	state: RuntimeSourceState,
+	domain: ResourceDomain,
+	source: LuaSourceRecord,
+): RuntimeResource {
+	const key = resourceIdentityKeyFromParts(domain, source.source_path);
+	const previous = state.resourceByIdentity.get(key);
+	if (previous) {
+		previous.source = source;
+		return previous;
+	}
+	const resource = retainRuntimeResource(
+		state.resourceByIdentity,
+		state.resourceByIdentity,
+		domain,
+		source.source_path,
+		source,
+	);
+	state.luaResources.push(resource);
+	sortRuntimeResources(state.luaResources);
+	refreshActiveResources(
+		state,
+		state.activeCartridgeSlot === SYSTEM_RESOURCE_DOMAIN
+			? state.systemAemResources
+			: state.cartridgeSlots[state.activeCartridgeSlot]!.aemResources,
+	);
+	return resource;
+}
+
+export function rebuildRuntimeSourceResources(state: RuntimeSourceState): void {
+	const previousResources = state.resourceByIdentity;
+	const resources = new Map<string, RuntimeResource>();
+	state.resourceByIdentity = resources;
+
+	state.luaResources.length = 0;
+	for (const domain of CARTRIDGE_RESOURCE_DOMAINS) {
+		const cartridge = state.cartridgeSlots[domain];
+		if (!cartridge) {
+			continue;
+		}
+		retainLuaResources(previousResources, resources, state.luaResources, domain, cartridge.luaSources);
+		rebuildAemResources(previousResources, resources, cartridge.aemResources, domain, cartridge.romSource);
+	}
+	retainLuaResources(
+		previousResources,
+		resources,
+		state.luaResources,
+		SYSTEM_RESOURCE_DOMAIN,
+		state.systemLuaSources,
+	);
+	rebuildAemResources(
+		previousResources,
+		resources,
+		state.systemAemResources,
+		SYSTEM_RESOURCE_DOMAIN,
+		state.systemRomSource,
+	);
+	sortRuntimeResources(state.luaResources);
+	refreshActiveResources(
+		state,
+		state.activeCartridgeSlot === SYSTEM_RESOURCE_DOMAIN
+			? state.systemAemResources
+			: state.cartridgeSlots[state.activeCartridgeSlot]!.aemResources,
+	);
+}
+
+function retainRuntimeResource(
+	previousResources: ReadonlyMap<string, RuntimeResource>,
+	resources: Map<string, RuntimeResource>,
+	domain: ResourceDomain,
+	path: string,
+	source: RuntimeResource['source'],
+): RuntimeResource {
+	const key = resourceIdentityKeyFromParts(domain, path);
+	const retained = previousResources.get(key);
+	if (retained) {
+		retained.source = source;
+		resources.set(key, retained);
+		return retained;
+	}
+	const resource: RuntimeResource = { domain, path, source };
+	resources.set(key, resource);
+	return resource;
+}
+
+function retainLuaResources(
+	previousResources: ReadonlyMap<string, RuntimeResource>,
+	resources: Map<string, RuntimeResource>,
+	luaResources: RuntimeResource[],
+	domain: ResourceDomain,
+	registry: LuaSourceRegistry,
+): void {
+	for (let index = 0; index < registry.records.length; index += 1) {
+		const source = registry.records[index];
+		luaResources.push(retainRuntimeResource(
+			previousResources,
+			resources,
+			domain,
+			source.source_path,
+			source,
+		));
+	}
+}
+
+function rebuildAemResources(
+	previousResources: ReadonlyMap<string, RuntimeResource>,
+	resources: Map<string, RuntimeResource>,
+	aemResources: RuntimeResource[],
+	domain: ResourceDomain,
+	romSource: RawRomSource,
+): void {
+	aemResources.length = 0;
+	const records = romSource.list('aem');
+	for (let index = 0; index < records.length; index += 1) {
+		const source = records[index];
+		if (!source.source_path) {
+			continue;
+		}
+		aemResources.push(retainRuntimeResource(
+			previousResources,
+			resources,
+			domain,
+			source.source_path,
+			source,
+		));
+	}
+	sortRuntimeResources(aemResources);
+}
+
+function refreshActiveResources(state: RuntimeSourceState, aemResources: readonly RuntimeResource[]): void {
+	state.activeResources.length = 0;
+	for (let index = 0; index < state.luaResources.length; index += 1) {
+		state.activeResources.push(state.luaResources[index]);
+	}
+	for (let index = 0; index < aemResources.length; index += 1) {
+		state.activeResources.push(aemResources[index]);
+	}
+	sortRuntimeResources(state.activeResources);
+}
+
+function sortRuntimeResources(resources: RuntimeResource[]): void {
+	resources.sort((left, right) => left.path.localeCompare(right.path) || left.domain - right.domain);
 }
 
 function rebuildLuaSourceOrders(state: RuntimeSourceState): void {

@@ -8,8 +8,10 @@ import { editorDocumentState } from '../editor/editing/document_state';
 import { activateEditor } from '../workbench/overlay_modes';
 import { selectAllSingleCursor } from '../editor/editing/cursor/state';
 import { insertText } from '../editor/editing/text_editing_and_selection';
-import { resolveResourceDescriptorForContext } from '../workbench/contrib/resources/lookup';
-import type { RuntimeSourceState } from '../runtime/sources';
+import {
+	resolveRuntimeResourceForContext,
+	type RuntimeSourceState,
+} from '../runtime/sources';
 import type { RuntimeIdeState } from '../runtime/state';
 import { blua32ToolingImageForDomain } from '../../machine/ts/rompack/tooling/blua32_media';
 
@@ -90,12 +92,12 @@ export function createHeadlessIdeHarness(ide: RuntimeIdeState, runtime: Runtime)
 		),
 		openLuaSource: (path: string) => {
 			activateEditor(ide.editor, ide.sources, ide.overlayRenderer, runtime);
-			const descriptor = resolveResourceDescriptorForContext(
+			const resource = resolveRuntimeResourceForContext(
 				ide.sources,
 				ide.sources.activeCartridgeSlot,
 				path,
-			);
-			openLuaCodeTab(ide.editor.resourcePanel, ide.sources, descriptor);
+			)!;
+			openLuaCodeTab(ide.editor.resourcePanel, ide.sources, resource);
 		},
 		replaceActiveCodeSource: (source: string) => {
 			const buffer = editorDocumentState.buffer;

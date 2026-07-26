@@ -2,12 +2,11 @@ import {
 	CARTRIDGE_RESOURCE_DOMAINS,
 	resourceIdentityEquals,
 	SYSTEM_RESOURCE_DOMAIN,
-	type ResourceDescriptor,
+	type RuntimeResource,
 	type ResourceIdentity,
 } from '../../../../common/resource';
 import { measureTextRange } from '../../../../editor/common/text/layout';
 import type { ResourceBrowserItem } from '../../../../common/models';
-import { listResourcesStrict } from '../catalog';
 import type { CallHierarchyView, CallHierarchyViewNode } from '../../../../editor/contrib/call_hierarchy/view';
 import type { RuntimeSourceState } from '../../../../runtime/sources';
 
@@ -16,22 +15,17 @@ export type ResourcePanelFilterMode = 'lua_only' | 'all';
 type ResourceDirectory = {
 	name: string;
 	children: Map<string, ResourceDirectory>;
-	files: { name: string; descriptor: ResourceDescriptor }[];
+	files: { name: string; resource: RuntimeResource }[];
 };
 
 export function buildResourcePanelItems(
 	sources: RuntimeSourceState,
 	filterMode: ResourcePanelFilterMode,
 ): ResourceBrowserItem[] {
-	const descriptors = collectResourcePanelDescriptors(sources);
-	const filtered: ResourceDescriptor[] = [];
-	for (let index = 0; index < descriptors.length; index += 1) {
-		const descriptor = descriptors[index];
-		if (matchesResourcePanelFilter(descriptor, filterMode)) {
-			filtered.push(descriptor);
-		}
-	}
-	return buildResourceTreeItems(filtered, filterMode);
+	return buildResourceTreeItems(
+		filterMode === 'lua_only' ? sources.luaResources : sources.activeResources,
+		filterMode,
+	);
 }
 
 export function buildCallHierarchyPanelItems(view: CallHierarchyView, expandedNodeIds: ReadonlySet<string>): ResourceBrowserItem[] {
@@ -39,7 +33,7 @@ export function buildCallHierarchyPanelItems(view: CallHierarchyView, expandedNo
 		return [{
 			line: '<no call hierarchy>',
 			contentStartColumn: 0,
-			descriptor: null,
+			resource: null,
 		}];
 	}
 	const items: ResourceBrowserItem[] = [];
@@ -64,8 +58,8 @@ export function findResourcePanelIndexByIdentity(
 	identity: ResourceIdentity,
 ): number {
 	for (let index = 0; index < items.length; index += 1) {
-		const descriptor = items[index].descriptor;
-		if (descriptor && resourceIdentityEquals(descriptor, identity)) {
+		const resource = items[index].resource;
+		if (resource && resourceIdentityEquals(resource, identity)) {
 			return index;
 		}
 	}
@@ -81,29 +75,18 @@ export function findResourcePanelIndexByCallHierarchyNodeId(items: readonly Reso
 	return -1;
 }
 
-function collectResourcePanelDescriptors(sources: RuntimeSourceState): ResourceDescriptor[] {
-	return listResourcesStrict(sources);
-}
-
-function matchesResourcePanelFilter(descriptor: ResourceDescriptor, filterMode: ResourcePanelFilterMode): boolean {
-	if (filterMode !== 'lua_only') {
-		return true;
-	}
-	return descriptor.type === 'lua';
-}
-
-function buildResourceTreeItems(entries: readonly ResourceDescriptor[], filterMode: ResourcePanelFilterMode): ResourceBrowserItem[] {
+function buildResourceTreeItems(entries: readonly RuntimeResource[], filterMode: ResourcePanelFilterMode): ResourceBrowserItem[] {
 	const items: ResourceBrowserItem[] = [];
 	if (entries.length === 0) {
 		items.push({
 			line: filterMode === 'lua_only' ? '<no lua resources>' : '<no resources>',
 			contentStartColumn: 0,
-			descriptor: null,
+			resource: null,
 		});
 		return items;
 	}
 	const domains = [SYSTEM_RESOURCE_DOMAIN, ...CARTRIDGE_RESOURCE_DOMAINS] as const;
-	items.push({ line: './', contentStartColumn: 0, descriptor: null });
+	items.push({ line: './', contentStartColumn: 0, resource: null });
 	for (let domainIndex = 0; domainIndex < domains.length; domainIndex += 1) {
 		const domain = domains[domainIndex];
 		const root: ResourceDirectory = { name: '.', children: new Map(), files: [] };
@@ -115,7 +98,7 @@ function buildResourceTreeItems(entries: readonly ResourceDescriptor[], filterMo
 			const path = entry.path;
 			const parts = path.split('/').filter(part => part.length > 0 && part !== '.');
 			if (parts.length === 0) {
-				root.files.push({ name: path, descriptor: entry });
+				root.files.push({ name: path, resource: entry });
 				continue;
 			}
 			let directory = root;
@@ -123,7 +106,7 @@ function buildResourceTreeItems(entries: readonly ResourceDescriptor[], filterMo
 				const part = parts[partIndex];
 				const isLeaf = partIndex === parts.length - 1;
 				if (isLeaf) {
-					directory.files.push({ name: part, descriptor: entry });
+					directory.files.push({ name: part, resource: entry });
 					continue;
 				}
 				let child = directory.children.get(part);
@@ -138,7 +121,7 @@ function buildResourceTreeItems(entries: readonly ResourceDescriptor[], filterMo
 			continue;
 		}
 		const label = domain === SYSTEM_RESOURCE_DOMAIN ? 'system' : `slot${domain}`;
-		items.push({ line: `${label}/`, contentStartColumn: 0, descriptor: null });
+		items.push({ line: `${label}/`, contentStartColumn: 0, resource: null });
 		appendResourceDirectory(items, root, 1);
 	}
 	return items;
@@ -154,7 +137,7 @@ function appendResourceDirectory(items: ResourceBrowserItem[], directory: Resour
 		items.push({
 			line: `${indent}${compact.label}/`,
 			contentStartColumn: indent.length,
-			descriptor: null,
+			resource: null,
 		});
 		appendResourceDirectory(items, compact.terminal, depth + 1);
 	}
@@ -164,7 +147,7 @@ function appendResourceDirectory(items: ResourceBrowserItem[], directory: Resour
 		items.push({
 			line: `${indent}${file.name}`,
 			contentStartColumn: indent.length,
-			descriptor: file.descriptor,
+			resource: file.resource,
 		});
 	}
 }
@@ -190,7 +173,7 @@ function appendCallHierarchyNode(items: ResourceBrowserItem[], node: CallHierarc
 	items.push({
 		line: `${indent}${marker}${node.label}`,
 		contentStartColumn: indent.length + marker.length,
-		descriptor: null,
+		resource: null,
 		location: node.location,
 		callHierarchyNodeId: node.id,
 		callHierarchyNodeKind: node.kind,

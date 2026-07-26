@@ -7,7 +7,7 @@ import {
 	buildAemValidationLookup,
 	parseStructuredTextDocument,
 } from '../../machine/ts/rompack/tooling/aem';
-import type { ResourceDescriptor } from '../common/resource';
+import type { RuntimeResource } from '../common/resource';
 import type { RuntimeSourceState } from './sources';
 
 function buildRuntimeAemValidationLookup(sources: RuntimeSourceState) {
@@ -35,12 +35,12 @@ function reloadAem(runtime: Runtime): void {
 export function applyAemSourceToRuntime(
 	sources: RuntimeSourceState,
 	runtime: Runtime,
-	descriptor: ResourceDescriptor,
+	resource: RuntimeResource,
 	source: string,
 ): void {
-	const assetId = descriptor.asset_id!;
-	const doc = parseStructuredTextDocument(source, aemDocumentFormat(descriptor.path), `AEM file '${descriptor.path}'`);
-	assertValidAemDocument(doc, buildRuntimeAemValidationLookup(sources), descriptor.path);
+	const assetId = resource.source.resid;
+	const doc = parseStructuredTextDocument(source, aemDocumentFormat(resource.path), `AEM file '${resource.path}'`);
+	assertValidAemDocument(doc, buildRuntimeAemValidationLookup(sources), resource.path);
 	sources.activePackage.audioevents[assetId] = doc as Record<string, unknown>;
 	reloadAem(runtime);
 }

@@ -6,7 +6,6 @@ import { getActiveCodeTabContext } from '../../../ui/code_tab/contexts';
 import { resetBlink } from '../../../../editor/render/caret';
 import { focusEditorFromSearch } from '../../../../editor/contrib/find/search';
 import { focusEditorFromLineJump } from '../../../../editor/contrib/find/line_jump';
-import { listResources } from '../../../../workspace/workspace';
 import { editorCaretState } from '../../../../editor/ui/view/caret/state';
 import { renameController } from '../../../../editor/contrib/rename/controller';
 import { createResourceState } from '../widget_state';
@@ -53,16 +52,16 @@ export function determineCreateResourceDefaultPath(sources: RuntimeSourceState):
 		return lastDirectory;
 	}
 	const activeContext = getActiveCodeTabContext();
-	const activePath = activeContext.descriptor.path;
+	const activePath = activeContext.resource.path;
 	if (activePath.length > 0) {
 		return ensureDirectorySuffix(activePath);
 	}
-	const descriptors = listResources(sources);
-	const firstEditableLua = descriptors.find(entry => entry.type === 'lua' && entry.readOnly !== true && entry.path.length > 0);
+	const resources = sources.luaResources;
+	const firstEditableLua = resources.find(entry => !entry.source.generated && entry.path.length > 0);
 	if (firstEditableLua) {
 		return ensureDirectorySuffix(firstEditableLua.path);
 	}
-	const firstLua = descriptors.find(entry => entry.type === 'lua' && entry.path.length > 0);
+	const firstLua = resources.find(entry => entry.path.length > 0);
 	if (firstLua) {
 		return ensureDirectorySuffix(firstLua.path);
 	}

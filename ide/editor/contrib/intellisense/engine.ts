@@ -559,7 +559,7 @@ export function updateHoverTooltip(
 	const pointer = resolvePointerTextPosition(snapshot.viewportX, snapshot.viewportY, bounds);
 	const row = pointer.row;
 	const column = pointer.column;
-	const path = context.descriptor.path;
+	const path = context.resource.path;
 	const token = extractHoverExpression(row, column, path);
 	if (!token) {
 		clearHoverTooltip();
@@ -666,7 +666,7 @@ export function requestSemanticRefresh(context: CodeTabContext): void {
 	editorViewState.layout.requestSemanticUpdate(
 		editorDocumentState.buffer,
 		editorDocumentState.textVersion,
-		context.descriptor,
+		context.resource,
 	);
 }
 export function resolveSemanticDefinitionLocation(
@@ -675,8 +675,8 @@ export function resolveSemanticDefinitionLocation(
 	usageRow: number,
 	usageColumn: number,
 ): LuaDefinitionLocation {
-	const frontend = buildEditorSemanticFrontend(bridge, context.descriptor, editorDocumentState.buffer, editorDocumentState.textVersion);
-	const hoverPath = context.descriptor.path;
+	const frontend = buildEditorSemanticFrontend(bridge, context.resource, editorDocumentState.buffer, editorDocumentState.textVersion);
+	const hoverPath = context.resource.path;
 	const file = frontend.files.get(hoverPath);
 	if (!file) {
 		return null;
@@ -1052,7 +1052,7 @@ export function refreshGotoHoverHighlight(
 		clearGotoHoverHighlight();
 		return;
 	}
-	const path = context.descriptor.path;
+	const path = context.resource.path;
 	const semanticDefinition = resolveSemanticDefinitionLocation(bridge, context, row + 1, column + 1);
 	const token = extractHoverExpression(row, column, path);
 	if (!semanticDefinition && !token) {
@@ -1119,7 +1119,7 @@ export function resolveDefinitionAt(
 	if (definition) {
 		return definition;
 	}
-	const path = context.descriptor.path;
+	const path = context.resource.path;
 	const token = extractHoverExpression(row, column, path);
 	if (!token) {
 		showEditorMessage('Definition not found', constants.COLOR_STATUS_WARNING, 1.6);
@@ -1380,9 +1380,9 @@ export function findStaticDefinitionLocation(bridge: RuntimeNativeBridge, chain:
 		return null;
 	}
 	if (preferredChunk) {
-		if (activeContext.descriptor.path === preferredChunk) {
+		if (activeContext.resource.path === preferredChunk) {
 			const source = getTextSnapshot(editorDocumentState.buffer);
-			prepareRuntimeSemanticWorkspaceForEditorBuffer(bridge.sources, activeContext.descriptor.domain, {
+			prepareRuntimeSemanticWorkspaceForEditorBuffer(bridge.sources, activeContext.resource.domain, {
 				path: preferredChunk,
 				source,
 				lines: getLinesSnapshot(editorDocumentState.buffer),
@@ -1391,11 +1391,11 @@ export function findStaticDefinitionLocation(bridge: RuntimeNativeBridge, chain:
 		} else {
 			primeRuntimeSemanticWorkspaceProjectSources(
 				bridge.sources,
-				activeContext.descriptor.domain,
-				getOrCreateSemanticWorkspace(activeContext.descriptor.domain),
+				activeContext.resource.domain,
+				getOrCreateSemanticWorkspace(activeContext.resource.domain),
 			);
 		}
-		const workspaceSymbol = getOrCreateSemanticWorkspace(activeContext.descriptor.domain)
+		const workspaceSymbol = getOrCreateSemanticWorkspace(activeContext.resource.domain)
 			.getSnapshot()
 			.symbolAt(preferredChunk, usageRow, usageColumn);
 		if (workspaceSymbol) {
@@ -1407,7 +1407,7 @@ export function findStaticDefinitionLocation(bridge: RuntimeNativeBridge, chain:
 		}
 		return null;
 	}
-	const bundle = getStaticDefinitions(bridge, activeContext.descriptor.domain, preferredChunk);
+	const bundle = getStaticDefinitions(bridge, activeContext.resource.domain, preferredChunk);
 	if (!bundle || bundle.definitions.length === 0) {
 		return null;
 	}
@@ -1418,7 +1418,7 @@ export function findStaticDefinitionLocation(bridge: RuntimeNativeBridge, chain:
 		if (!model) {
 			const sourceMatch = resolveRuntimeLuaSourceForContext(
 				bridge.sources,
-				activeContext.descriptor.domain,
+				activeContext.resource.domain,
 				path.path,
 			)!;
 			const source = luaPipeline.resourceSourceForChunk(bridge.sources, {

@@ -19,8 +19,6 @@ export const WORKSPACE_MARKER_FILE = '~workspace';
 
 export type WorkspaceOverrideRecord = { source: string; path: string; cartPath: string; updatedAt?: number };
 export type WorkspaceStoragePayload = { contents: string; updatedAt: number };
-export type WorkspaceTextStorageEntry = { contents: string; updatedAt: number | null };
-type WorkspaceStatePayload = { dirtyFiles: Array<{ dirtyPath: string; descriptor: unknown }> };
 type WorkspaceWinnerKind = 'dirty' | 'canonical' | 'rom';
 
 export function buildWorkspaceDirtyEntryPath(
@@ -67,32 +65,6 @@ export function readWorkspaceStoragePayload(storage: StorageService, storageKey:
 	}
 	// end fallible-boundary
 	return payload;
-}
-
-export function readWorkspaceTextStorageEntry(storage: StorageService, storageKey: string): WorkspaceTextStorageEntry | null {
-	const raw = storage.getItem(storageKey);
-	if (raw === null) {
-		return null;
-	}
-	let parsed: unknown;
-	// start fallible-boundary -- workspace file storage is external persisted text; raw legacy text entries remain valid terminal/debug payloads.
-	try {
-		parsed = JSON.parse(raw);
-	} catch {
-		return { contents: raw, updatedAt: null };
-	}
-	// end fallible-boundary
-	if (!parsed || typeof parsed !== 'object') {
-		return { contents: raw, updatedAt: null };
-	}
-	const payload = parsed as { contents?: unknown; updatedAt?: unknown };
-	if (typeof payload.contents !== 'string') {
-		return { contents: raw, updatedAt: null };
-	}
-	return {
-		contents: payload.contents,
-		updatedAt: typeof payload.updatedAt === 'number' ? payload.updatedAt : null,
-	};
 }
 
 function collectWorkspaceDirtyOverrides(params: {
@@ -260,33 +232,6 @@ async function fetchWorkspaceCanonicalLua(cart: LuaSourceRegistry, root: string)
 		records.set(record.cartPath, record);
 	}
 	return records;
-}
-
-export async function collectScratchWorkspaceDirtyPaths(root: string): Promise<Set<string>> {
-	const paths = new Set<string>();
-	const statePath = joinWorkspacePaths(root, WORKSPACE_METADATA_DIR, WORKSPACE_STATE_FILE);
-	const payload = await fetchWorkspaceFile(statePath);
-	if (!payload) {
-		return paths;
-	}
-	let parsed: WorkspaceStatePayload;
-	// start fallible-boundary -- workspace state is persisted user data; malformed state means no scratch dirty paths.
-	try {
-		parsed = JSON.parse(payload.contents) as WorkspaceStatePayload;
-	} catch {
-		return paths;
-	}
-	// end fallible-boundary
-	for (let i = 0; i < parsed.dirtyFiles.length; i += 1) {
-		const entry = parsed.dirtyFiles[i];
-		if (entry.descriptor) {
-			continue;
-		}
-		if (entry.dirtyPath.length > 0) {
-			paths.add(entry.dirtyPath);
-		}
-	}
-	return paths;
 }
 
 export async function fetchWorkspaceFile(path: string): Promise<{ contents: string; updatedAt?: number }> {

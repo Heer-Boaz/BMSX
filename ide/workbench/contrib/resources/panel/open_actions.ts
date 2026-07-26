@@ -1,20 +1,20 @@
 import type { ResourceBrowserItem } from '../../../../common/models';
-import { openResourceDescriptor, focusChunkSourceForContext } from '../navigation';
+import { openResource, focusChunkSourceForContext } from '../navigation';
 import { getActiveCodeTabContext } from '../../../ui/code_tab/contexts';
 import { applyDefinitionSelection } from '../../../../editor/contrib/intellisense/engine';
 import { toggleSelectedCallHierarchyExpansion } from './navigation';
 import type { CartEditor } from '../../../../cart_editor';
 import type { RuntimeSourceState } from '../../../../runtime/sources';
 
-export function openResourcePanelDescriptorItem(
+export function openResourcePanelItem(
 	editor: CartEditor,
 	sources: RuntimeSourceState,
 	item: ResourceBrowserItem,
 ): boolean {
-	if (!item?.descriptor) {
+	if (!item?.resource) {
 		return false;
 	}
-	openResourceDescriptor(editor, sources, item.descriptor);
+	openResource(editor, sources, item.resource);
 	return true;
 }
 
@@ -29,7 +29,7 @@ export function openResourcePanelCallHierarchyLocation(
 	focusChunkSourceForContext(
 		editor,
 		sources,
-		getActiveCodeTabContext().descriptor.domain,
+		getActiveCodeTabContext().resource.domain,
 		item.location.path,
 	);
 	applyDefinitionSelection(item.location.range);
@@ -42,7 +42,7 @@ export function openSelectedResourcePanelItem(
 	selectionIndex: number,
 ): void {
 	const item = items[selectionIndex];
-	if (openResourcePanelDescriptorItem(editor, sources, item)) {
+	if (openResourcePanelItem(editor, sources, item)) {
 		return;
 	}
 }

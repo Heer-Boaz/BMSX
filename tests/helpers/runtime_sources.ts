@@ -7,6 +7,7 @@ import {
 	createRuntimeSourceState,
 	enterCartridgeSources,
 	enterSystemSources,
+	rebuildRuntimeSourceResources,
 	type RuntimeSourceState,
 } from '../../ide/runtime/sources';
 import type { LuaSourceRegistry } from '../../machine/ts/lua/source_registry';
@@ -158,6 +159,7 @@ function installSourceRegistries(
 		cartridge.projectRootPath = registry.projectRootPath;
 		cartridge.installedBlua32Sources = installedSources(registry);
 	}
+	rebuildRuntimeSourceResources(sources);
 	switch (activeDomain) {
 		case 0:
 		case 1:

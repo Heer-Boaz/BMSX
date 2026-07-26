@@ -2787,6 +2787,16 @@ authoring-tool responsibilities under `machine/ts/lua`. Native machine code
 executes the already-linked physical BLua32 image and therefore has no parallel
 C++ source lexer, parser, AST, or runtime source-compilation path.
 
+`RuntimeSourceState` owns one retained IDE resource identity per installed
+`(domain, path)`. That identity points at the owning `RomAsset` or
+`LuaSourceRecord`; tabs, navigation, search, workspace restore, and resource
+panels consume the same object and read type, asset id, and generated state
+directly from its source record. Source installation and activation publish the
+retained Lua and active-domain catalogs. Listing and lookup code does not copy
+resource metadata into descriptor DTOs. Workspace state persists only
+`(domain, path)` and resolves it through `RuntimeSourceState`; its versioned
+format has no legacy descriptor migration path.
+
 Instruction profiling is an opt-in Node host feature. Its TypeScript session
 attaches a raw execution observer only while `--cpu-profile` is active and owns
 all counters, symbols, and report formatting outside the machine. The native

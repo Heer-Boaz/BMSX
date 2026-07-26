@@ -11,87 +11,38 @@ import {
 	createEntryTabContext,
 	findCodeTabContext,
 } from '../ui/code_tab/contexts';
-import { openCodeTabForDescriptor } from '../ui/code_tab/io';
+import { openCodeTabForResource } from '../ui/code_tab/io';
 import { workspaceFileCache } from '../../workspace/cache';
 import { readWorkspaceFile, readWorkspaceStateFile } from './io';
 import { restoreWorkspaceContextSource } from './context_snapshot';
 import { buildWorkspaceAutosaveSignature } from './autosave';
 import {
 	WORKSPACE_AUTOSAVE_VERSION,
-	type LegacyWorkspaceAutosavePayload,
 	type PersistedDirtyEntry,
-	type StoredWorkspaceAutosavePayload,
 	type WorkspaceAutosavePayload,
 } from './models';
-import {
-	resolveRuntimeLuaSourceForContext,
-	runtimeSourceDomainForProjectRootPath,
-} from '../../runtime/sources';
-
-function migrateLegacyWorkspaceAutosavePayload(
-	sourceState: RuntimeSourceState,
-	payload: LegacyWorkspaceAutosavePayload,
-	projectRootPath: string,
-): WorkspaceAutosavePayload {
-	const workspaceDomain = runtimeSourceDomainForProjectRootPath(sourceState, projectRootPath);
-	const dirtyFiles: PersistedDirtyEntry[] = payload.dirtyFiles.map(entry => {
-		const domain = entry.descriptor.type === 'lua'
-			? resolveRuntimeLuaSourceForContext(sourceState, workspaceDomain, entry.descriptor.path)!.domain
-			: workspaceDomain;
-		return {
-			descriptor: {
-				domain,
-				path: entry.descriptor.path,
-				type: entry.descriptor.type,
-				asset_id: entry.descriptor.asset_id,
-				readOnly: entry.descriptor.readOnly,
-			},
-			dirtyPath: entry.dirtyPath,
-			cursorRow: entry.cursorRow,
-			cursorColumn: entry.cursorColumn,
-			scrollRow: entry.scrollRow,
-			scrollColumn: entry.scrollColumn,
-			selectionAnchor: entry.selectionAnchor,
-		};
-	});
-	return {
-		version: WORKSPACE_AUTOSAVE_VERSION,
-		savedAt: payload.savedAt,
-		dirtyFiles,
-		breakpoints: payload.breakpoints,
-		fontVariant: payload.fontVariant,
-		overlayResolutionMode: payload.overlayResolutionMode,
-	};
-}
+import { resolveRuntimeResource } from '../../runtime/sources';
 
 export async function restoreWorkspaceSessionFromDisk(
 	editor: CartEditor,
 	sources: RuntimeSourceState,
 	debuggerState: RuntimeDebuggerState,
 	overlayRenderer: OverlayRenderer,
-	projectRootPath: string,
 ): Promise<string> {
 	const stateText = await readWorkspaceStateFile();
 	if (!stateText) {
 		return null;
 	}
-	let storedPayload: StoredWorkspaceAutosavePayload = null;
+	let payload: WorkspaceAutosavePayload;
 	try {
-		storedPayload = JSON.parse(stateText) as StoredWorkspaceAutosavePayload;
+		payload = JSON.parse(stateText);
 	} catch (error) {
 		console.warn('[CartEditor] Failed to parse workspace session state:', error);
 		return null;
 	}
-	if (!storedPayload) {
-		return null;
+	if (payload.version !== WORKSPACE_AUTOSAVE_VERSION) {
+		throw new Error(`Unsupported workspace autosave version '${payload.version}'.`);
 	}
-	const storedVersion: number | undefined = storedPayload.version;
-	if (storedVersion && storedVersion !== WORKSPACE_AUTOSAVE_VERSION) {
-		throw new Error(`Unsupported workspace autosave version '${storedVersion}'.`);
-	}
-	const payload = storedVersion
-		? storedPayload as WorkspaceAutosavePayload
-		: migrateLegacyWorkspaceAutosavePayload(sources, storedPayload as LegacyWorkspaceAutosavePayload, projectRootPath);
 	await applyWorkspaceAutosavePayload(editor, sources, debuggerState, overlayRenderer, payload);
 	return buildWorkspaceAutosaveSignature(payload);
 }
@@ -127,17 +78,21 @@ async function openDirtyFileTabs(
 	entries: PersistedDirtyEntry[],
 ): Promise<void> {
 	for (const entry of entries) {
-		if (!findCodeTabContext(entry.descriptor)) {
-			await openCodeTabForDescriptor(editor.resourcePanel, sources, entry.descriptor);
+		const resource = resolveRuntimeResource(sources, entry.resource);
+		if (!resource) {
+			throw new Error(`Workspace resource '${entry.resource.path}' is not installed for domain '${entry.resource.domain}'.`);
+		}
+		if (!findCodeTabContext(resource)) {
+			await openCodeTabForResource(editor.resourcePanel, sources, resource);
 		}
 	}
 }
 
 export async function hydrateDirtyFiles(entries: PersistedDirtyEntry[]): Promise<void> {
 	for (const entry of entries) {
-		const context = findCodeTabContext(entry.descriptor);
+		const context = findCodeTabContext(entry.resource);
 		if (!context) {
-			throw new Error(`Failed to restore code tab context for '${entry.descriptor.path}'.`);
+			throw new Error(`Failed to restore code tab context for '${entry.resource.path}'.`);
 		}
 		const contents = await readWorkspaceFile(entry.dirtyPath);
 		if (contents === null) {
