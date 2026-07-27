@@ -142,7 +142,6 @@ private:
 	Value onFrameMsRead(uint32_t addr) const;
 	static Value onCyclesPerFrameReadThunk(void* context, uint32_t addr, MappedBusSignals busSignals);
 	Value onCyclesPerFrameRead(uint32_t addr) const;
-	static void onGxGpuGp1WriteThunk(void* context, uint32_t addr, Value value, MappedBusSignals busSignals);
 	PendingCall m_pendingCall = PendingCall::None;
 };
 

@@ -78,7 +78,6 @@ Runtime::Runtime(
 	machine.memory.mapIoRead(IO_SYS_TIME_MS, this, &Runtime::onTimeMsReadThunk);
 	machine.memory.mapIoRead(IO_SYS_FRAME_MS, this, &Runtime::onFrameMsReadThunk);
 	machine.memory.mapIoRead(IO_SYS_CYCLES_PER_FRAME, this, &Runtime::onCyclesPerFrameReadThunk);
-	machine.memory.mapIoWrite(IO_GX_GPU_GP1, this, &Runtime::onGxGpuGp1WriteThunk);
 	machine.resetDevices();
 	refreshDeviceTimings(*this, machine.scheduler.currentNowCycles());
 	machine.runDeviceService(DEVICE_SERVICE_GPU);
@@ -236,12 +235,6 @@ Value Runtime::onCyclesPerFrameReadThunk(void* context, uint32_t addr, MappedBus
 
 Value Runtime::onCyclesPerFrameRead([[maybe_unused]] uint32_t addr) const {
 	return valueNumber(static_cast<double>(timing.cycleBudgetPerFrame));
-}
-
-void Runtime::onGxGpuGp1WriteThunk(void* context, uint32_t addr, Value value, MappedBusSignals) {
-	auto* runtime = static_cast<Runtime*>(context);
-	(void)addr;
-	runtime->machine.gxGpu.writeGp1(toU32(value));
 }
 
 void Runtime::applyUfpsScaled(i64 ufpsScaled) {

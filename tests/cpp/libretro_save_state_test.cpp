@@ -652,6 +652,24 @@ void testPhysicalPcrtcTimingPublishesAtServiceAndPresentationAtVblank() {
 	require(runtime.timing.cycleBudgetPerFrame == slowCycleBudget, "legacy GP1 display words cannot alter the runtime PCRTC budget");
 }
 
+void testRuntimePreservesGxGpuGp1ReadinessBinding() {
+	retro_system_av_info avInfo{};
+	bmsx::LibretroPlatform platform(
+		bmsx::BackendType::Software,
+		avInfo,
+		readSupervisorRequestLine,
+		false);
+	platform.setLogCallback(discardRetroLog);
+	require(platform.machineManager()->loadSystemRomOwned(bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::System)), "libretro should load the system firmware ROM for GP1 readiness validation");
+	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::Cartridge);
+	require(platform.loadRom(rom.data(), rom.size()), "libretro should load a program cart ROM for GP1 readiness validation");
+
+	bmsx::Runtime& runtime = platform.machineManager()->runtime();
+	require(runtime.machine.memory.mappedWriteReady(bmsx::IO_GX_GPU_GP1), "GP1 should accept writes before supervisor quiesce");
+	runtime.machine.gxGpu.beginSupervisorControlQuiesce();
+	require(!runtime.machine.memory.mappedWriteReady(bmsx::IO_GX_GPU_GP1), "the GX-GPU GP1 owner should close writes during supervisor quiesce");
+}
+
 } // namespace
 
 int main() {
@@ -663,5 +681,6 @@ int main() {
 	testLibretroSupervisorRequestIsSeparateFromGameplay();
 	testLibretroTracksPublishedNativeOutputGeometry();
 	testPhysicalPcrtcTimingPublishesAtServiceAndPresentationAtVblank();
+	testRuntimePreservesGxGpuGp1ReadinessBinding();
 	return 0;
 }

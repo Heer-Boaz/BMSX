@@ -15,7 +15,7 @@ import { refreshDeviceTimings } from './timing/config';
 import { HZ_SCALE } from './timing/constants';
 import type { GxGpuPcrtcTiming } from '../devices/gx/gpu_pcrtc';
 import { GX_GPU_VRAM_BYTE_COUNT } from '../devices/gx/vram_address';
-import { IO_GX_GPU_GP1, IO_SYS_CYCLES_PER_FRAME, IO_SYS_FRAME_MS, IO_SYS_TIME_MS } from '../bus/io';
+import { IO_SYS_CYCLES_PER_FRAME, IO_SYS_FRAME_MS, IO_SYS_TIME_MS } from '../bus/io';
 import { Machine } from '../machine';
 import type { RuntimeInputSource } from './input';
 import {
@@ -266,7 +266,6 @@ export class Runtime {
 		this.machine.memory.mapIoRead(IO_SYS_TIME_MS, this, Runtime.onTimeMsReadThunk);
 		this.machine.memory.mapIoRead(IO_SYS_FRAME_MS, this, Runtime.onFrameMsReadThunk);
 		this.machine.memory.mapIoRead(IO_SYS_CYCLES_PER_FRAME, this, Runtime.onCyclesPerFrameReadThunk);
-		this.machine.memory.mapIoWrite(IO_GX_GPU_GP1, this, Runtime.onGxGpuGp1WriteThunk);
 		this.machine.resetDevices();
 		refreshDeviceTimings(this, this.machine.scheduler.currentNowCycles());
 		this.machine.runDeviceService(DEVICE_SERVICE_GPU);
@@ -295,11 +294,6 @@ export class Runtime {
 	private static onCyclesPerFrameReadThunk(context: Runtime, addr: number): Value {
 		void addr;
 		return context.timing.cycleBudgetPerFrame;
-	}
-
-	private static onGxGpuGp1WriteThunk(context: Runtime, addr: number, value: Value): void {
-		void addr;
-		context.machine.gxGpu.writeGp1(value as number);
 	}
 
 	public baseRamUsedBytes(): number {

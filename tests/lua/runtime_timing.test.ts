@@ -225,6 +225,15 @@ test('legacy GP1 display words cannot drive the PCRTC clock', () => {
 	assert.equal(runtime.timing.cycleBudgetPerFrame, 100_480);
 });
 
+test('runtime preserves the GX-GPU-owned GP1 readiness binding', () => {
+	const runtime = createTimingRuntime();
+	cancelAudioServices(runtime);
+
+	assert.equal(runtime.machine.memory.mappedWriteReady(IO_GX_GPU_GP1), true);
+	runtime.machine.gxGpu.beginSupervisorControlQuiesce();
+	assert.equal(runtime.machine.memory.mappedWriteReady(IO_GX_GPU_GP1), false);
+});
+
 test('runtime restore preserves physical beam phase and a pending presentation timing write', () => {
 	const runtime = createTimingRuntime();
 	cancelAudioServices(runtime);
