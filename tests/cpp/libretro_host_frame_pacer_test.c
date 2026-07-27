@@ -27,5 +27,17 @@ int main(void) {
 	bmsx_frame_pacer_complete(&pacer, 1050000000u, false, 16683333u);
 	CHECK(pacer.next_deadline_ns == 1050000000u);
 
+	decision = bmsx_frame_pacer_begin(&pacer, 2050000000u);
+	CHECK(decision.elapsed_ns == 1005000000u);
+	CHECK(!decision.drop_presentation);
+	CHECK(pacer.next_deadline_ns == 2050000000u);
+	bmsx_frame_pacer_complete(&pacer, 2055000000u, true, 20000000u);
+	CHECK(pacer.next_deadline_ns == 2070000000u);
+
+	decision = bmsx_frame_pacer_begin(&pacer, 2070000000u);
+	CHECK(!decision.drop_presentation);
+	bmsx_frame_pacer_complete(&pacer, 2200000000u, true, 20000000u);
+	CHECK(pacer.next_deadline_ns == 2200000000u);
+
 	return 0;
 }

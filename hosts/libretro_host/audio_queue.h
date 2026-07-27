@@ -17,7 +17,6 @@ typedef struct BmsxAudioQueue {
 	unsigned channels;
 	pthread_mutex_t mutex;
 	pthread_cond_t can_read;
-	pthread_cond_t can_write;
 	bool running;
 	bool track_high_water;
 } BmsxAudioQueue;

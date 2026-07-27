@@ -338,7 +338,6 @@ int main(int argc, char** argv) {
 				session.frame_period_usec);
 	}
 	const bool unpaced_timeline = input_timeline_is_active() && !paced_timeline;
-	const bool audio_master = !audio_disabled && !unpaced_timeline;
 	BmsxFramePacer frame_pacer;
 	bmsx_frame_pacer_init(
 			&frame_pacer,
@@ -351,7 +350,7 @@ int main(int argc, char** argv) {
 			!runloop_quit_requested &&
 			!input_devices_quit_requested()) {
 		uint64_t now_ns = monotonic_ns();
-		if (!unpaced_timeline && !audio_master && now_ns < frame_pacer.next_deadline_ns) {
+		if (!unpaced_timeline && now_ns < frame_pacer.next_deadline_ns) {
 			struct timespec ts;
 			ts.tv_sec = (time_t)(frame_pacer.next_deadline_ns / BMSX_HOST_NSEC_PER_SECOND);
 			ts.tv_nsec = (long)(frame_pacer.next_deadline_ns % BMSX_HOST_NSEC_PER_SECOND);
@@ -363,7 +362,7 @@ int main(int argc, char** argv) {
 		/* Missed deadlines are caught up by subsequent host-loop iterations.
 		 * Drop their presentation and advance exactly one machine frame per call. */
 		const bool drop_video =
-				!unpaced_timeline && !audio_master && pacing.drop_presentation;
+				!unpaced_timeline && pacing.drop_presentation;
 		frame_timing.record_frame =
 				frame_timing.enabled &&
 				run_frame_count >= frame_timing.warmup_frames;
@@ -421,7 +420,7 @@ int main(int argc, char** argv) {
 		bmsx_frame_pacer_complete(
 				&frame_pacer,
 				now_ns,
-				!unpaced_timeline && !audio_master,
+				!unpaced_timeline,
 				session.frame_period_ns);
 	}
 	if (frame_timing.enabled) {

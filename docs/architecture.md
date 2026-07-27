@@ -2869,10 +2869,11 @@ local memory or an IMGDEC stream.
 One libretro `retro_run()` advances exactly one machine-timed frame. Frontend
 wall time is not fed back into the machine scheduler. A direct host may skip an
 overdue host presentation while catching up, but it still advances machine and
-audio state. When physical audio output is active, its fixed-capacity blocking
-queue is the host pacing master; a second deadline pacer must not compete with
-it, and push/pop/callback paths must not allocate or report dropped samples as
-consumed.
+audio state. The direct host deadline clock remains the pacing master with or
+without physical audio output. Its fixed-capacity audio queue never blocks the
+machine thread: when the sink falls behind, the queue discards its oldest
+presentation frames and retains the newest audio. Push/pop/callback paths do
+not allocate, and audio transport timing never changes machine cadence.
 
 The direct Linux host keeps platform video resources in the concrete
 `video_context` owner. That owner contains the fbdev mapping, SDL window,

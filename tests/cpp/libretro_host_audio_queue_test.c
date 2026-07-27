@@ -30,6 +30,29 @@ int main(void) {
 	const int16_t expected[] = {5, 6, 7, 8, 9, 10, 11, 12};
 	CHECK(memcmp(output, expected, sizeof(expected)) == 0);
 
+	const int16_t queued_frames[] = {13, 14, 15, 16, 17, 18};
+	const int16_t overflow_frames[] = {19, 20, 21, 22, 23, 24};
+	bmsx_audio_queue_push(&queue, queued_frames, 3u);
+	bmsx_audio_queue_push(&queue, overflow_frames, 3u);
+	CHECK(queue.used_frames == 4u);
+	CHECK(bmsx_audio_queue_read(&queue, output, 4u) == 4u);
+	const int16_t retained_frames[] = {17, 18, 19, 20, 21, 22, 23, 24};
+	CHECK(memcmp(output, retained_frames, sizeof(retained_frames)) == 0);
+
+	const int16_t oversized_frames[] = {
+		25, 26,
+		27, 28,
+		29, 30,
+		31, 32,
+		33, 34,
+		35, 36,
+	};
+	bmsx_audio_queue_push(&queue, oversized_frames, 6u);
+	CHECK(queue.used_frames == 4u);
+	CHECK(bmsx_audio_queue_read(&queue, output, 4u) == 4u);
+	const int16_t oversized_retained_frames[] = {29, 30, 31, 32, 33, 34, 35, 36};
+	CHECK(memcmp(output, oversized_retained_frames, sizeof(oversized_retained_frames)) == 0);
+
 	bmsx_audio_queue_stop(&queue);
 	bmsx_audio_queue_push(&queue, first_frames, 1u);
 	CHECK(bmsx_audio_queue_pop_wait(&queue, output, 4u, 1u) == 0u);
