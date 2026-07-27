@@ -58,7 +58,7 @@ export function drawCursor(info: CursorScreenInfo, textX: number, active: boolea
 	const caretValue = resolveThemeTokenColor(constants.CARET_COLOR);
 	if (active) {
 		api.fill_rect_color(caretLeft, caretTop, caretRight, caretBottom, 0, caretValue);
-		drawEditorText(editorViewState.font, caretGlyph, cursorX, caretTop, 0, 1, { preserveCase: true });
+		drawEditorText(editorViewState.font, caretGlyph, cursorX, caretTop, 0, invertThemeToken(info.baseColor), { preserveCase: true });
 		return;
 	}
 	drawRectOutlineColor(caretLeft, caretTop, caretRight, caretBottom, 0, caretValue);
