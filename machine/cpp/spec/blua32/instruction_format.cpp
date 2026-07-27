@@ -1,4 +1,4 @@
-#include "machine/cpu/instruction_format.h"
+#include "spec/blua32/instruction_format.h"
 #include <cstddef>
 
 namespace bmsx {

@@ -279,8 +279,8 @@ add_library(bmsx_core STATIC
 	machine/cpu/value.cpp
 	machine/cpu/blua32_image.cpp
 	machine/execution_address_space.cpp
-	machine/cpu/opcode_info.cpp
-	machine/cpu/instruction_format.cpp
+	spec/blua32/opcode.cpp
+	spec/blua32/instruction_format.cpp
 	render/shared/bmsx_font.cpp
 	machine/devices/cartridge/controller.cpp
 	machine/devices/dma/controller.cpp
@@ -322,7 +322,6 @@ add_library(bmsx_core STATIC
 	machine/runtime/timing/state.cpp
 	machine/runtime/timing/config.cpp
 	machine/runtime/vblank.cpp
-	machine/memory/access_kind.cpp
 	machine/memory/memory.cpp
 	machine/memory/map.cpp
 	machine/devices/gx/gpu.cpp
@@ -380,6 +379,7 @@ if(BMSX_BUILD_LIBRETRO OR BMSX_BUILD_TESTS)
 	add_library(bmsx_blua32_tooling STATIC
 		rompack/tooling/blua32_symbols.cpp
 		rompack/tooling/blua32_media.cpp
+		rompack/tooling/opcode_metadata.cpp
 		rompack/tooling/source_text.cpp
 		rompack/tooling/disassembler.cpp
 	)

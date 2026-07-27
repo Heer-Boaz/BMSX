@@ -1,7 +1,7 @@
 #include "machine/devices/gx/gte.h"
 #include "machine/bus/io.h"
 #include "machine/cpu/cpu.h"
-#include "machine/cpu/instruction_format.h"
+#include "spec/blua32/instruction_format.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/bus_signals.h"
 #include "machine/memory/memory.h"

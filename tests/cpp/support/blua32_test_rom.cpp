@@ -2,8 +2,8 @@
 
 #include "common/endian.h"
 #include "common/serializer/binencoder.h"
-#include "machine/cpu/instruction_format.h"
-#include "machine/cpu/opcode_info.h"
+#include "spec/blua32/instruction_format.h"
+#include "spec/blua32/opcode.h"
 #include "machine/memory/map.h"
 #include "rompack/toc.h"
 #include "rompack/tooling/blua32_symbols.h"

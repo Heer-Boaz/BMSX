@@ -1,4 +1,4 @@
-import { OpCode } from '../../machine/ts/machine/cpu/cpu';
+import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import {
 	BLUA32_IMAGE_ID,
 	decodeBlua32Image,
@@ -16,7 +16,7 @@ import {
 import {
 	INSTRUCTION_BYTES,
 	readInstructionWord,
-} from '../../machine/ts/machine/cpu/instruction_format';
+} from '../../machine/ts/spec/blua32/instruction_format';
 import { toLuaModulePath } from '../../machine/ts/lua/module_path';
 import {
 	CART_ROM_BASE,

@@ -332,7 +332,7 @@ over alle call sites).
 inline in de `CPU`-klasse. In C++ zit het equivalent **niet** in
 `cpu.cpp`/`cpu.h` — het is al gefactored in aparte bestanden
 `cpu_dispatch.inl` (720 regels, per-opcode-handlerbodies, bijv.
-`DISPATCH_LABEL(CLOSURE)`) en `cpu_opcode_list.inl` (64 regels, X-macro
+`DISPATCH_LABEL(CLOSURE)`) en `spec/blua32/opcode_list.inl` (64 regels, X-macro
 opcode-lijst), die 6× met verschillende macrocontext worden geïncluded
 vanuit `cpu.cpp` (regels 2430-2879) om zowel de dispatchtabel als andere
 afgeleide structuren te genereren. Dat is een bestaand, gangbaar

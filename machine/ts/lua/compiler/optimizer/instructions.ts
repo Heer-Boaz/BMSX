@@ -1,4 +1,4 @@
-import { OpCode } from '../../../machine/cpu/cpu';
+import { OpCode } from '../../../spec/blua32/opcode';
 import type { Instruction } from './index';
 
 const RK_B = 1;

@@ -1,7 +1,7 @@
 #include "rompack/tooling/blua32_symbols.h"
 
 #include "common/serializer/binencoder.h"
-#include "machine/cpu/instruction_format.h"
+#include "spec/blua32/instruction_format.h"
 
 #include <utility>
 

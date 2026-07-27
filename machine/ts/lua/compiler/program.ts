@@ -1,6 +1,6 @@
 import type { Value } from '../../machine/cpu/value';
 import type { SourceRange } from '../../rompack/tooling/blua32_symbols';
-import type { OpCode } from '../../machine/cpu/opcode_info';
+import type { OpCode } from '../../spec/blua32/opcode';
 import type { StringPool } from '../../machine/cpu/string_pool';
 
 export type ProgramRuntimeSymbols = {

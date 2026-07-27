@@ -8,9 +8,7 @@ import type {
 } from '../../machine/ts/lua/compiler/program_object';
 import type { Instruction } from '../../machine/ts/lua/compiler/optimizer';
 import { replaceWithJump, replaceWithMov } from '../../machine/ts/lua/compiler/optimizer/values';
-import {
-	OpCode,
-} from '../../machine/ts/machine/cpu/cpu';
+import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import type { SourceRange } from '../../machine/ts/rompack/tooling/blua32_symbols';
 import type {
 	ProgramMetadata,
@@ -25,7 +23,7 @@ import {
 	INSTRUCTION_BYTES,
 	readInstructionWord,
 	writeInstruction,
-} from '../../machine/ts/machine/cpu/instruction_format';
+} from '../../machine/ts/spec/blua32/instruction_format';
 import {
 	CART_ROM_BASE,
 	DYNAMIC_RAM_BASE,

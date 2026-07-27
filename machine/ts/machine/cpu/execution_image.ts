@@ -1,7 +1,7 @@
 import type { Blua32FunctionRecord, Blua32ImageLayout } from './blua32_image';
 import type { Closure } from './closure';
 import type { ExecutionDomainId } from '../execution_address_space';
-import { OpCode } from './opcode_info';
+import { OpCode } from '../../spec/blua32/opcode';
 import type { Table } from './table';
 import type { Value } from './value';
 

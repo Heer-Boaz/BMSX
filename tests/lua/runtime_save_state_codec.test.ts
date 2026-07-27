@@ -36,7 +36,7 @@ import { decodeBinaryWithPropTable } from '../../machine/ts/common/serializer/bi
 import { RUNTIME_SAVE_STATE_PROP_NAMES } from '../../machine/ts/machine/runtime/save_state/schema';
 import { ProtectedCallKind } from '../../machine/ts/machine/cpu/call_state';
 import { BuiltinFunctionId } from '../../machine/ts/machine/cpu/value';
-import { CPU_STATUS_CART_ENTRY } from '../../machine/ts/machine/cpu/cop0';
+import { CPU_STATUS_CART_ENTRY } from '../../machine/ts/spec/blua32/cop0';
 import { DMA_STATUS_BUSY, SYS_PRINT_BUFFER_BYTES } from '../../machine/ts/machine/bus/io';
 import { RAM_BASE, RAM_END } from '../../machine/ts/machine/memory/map';
 

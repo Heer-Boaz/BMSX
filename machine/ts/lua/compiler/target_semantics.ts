@@ -7,7 +7,8 @@ import {
 	type LuaUnaryExpression,
 } from '../syntax/ast';
 import type { LuaBoundReference, LuaSemanticFrontendFile } from '../semantic/frontend';
-import { getMemoryAccessKindForName, MemoryAccessKind } from '../../machine/memory/access_kind';
+import { MemoryAccessKind } from '../../spec/blua32/memory_access_kind';
+import { getMemoryAccessKindForName } from '../memory_access_syntax';
 import {
 	getBoundIdentifierReference,
 	getFunctionDeclarationBoundReferences,

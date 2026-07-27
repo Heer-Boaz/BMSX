@@ -212,7 +212,7 @@ This is a **mirrored ISA change** and must land in both cores simultaneously.
 
 | File | Change |
 |------|--------|
-| `machine/ts/machine/cpu/opcode_info.ts` | Replace the 7 dead slots (see Opcode cleanup section) |
+| `machine/ts/spec/blua32/opcode.ts` | Replace the 7 dead slots (see Opcode cleanup section) |
 | `machine/ts/machine/cpu/cpu.ts` | Remove 7 dead dispatch cases; add dispatch for `LOAD_MEM_D`, `STORE_MEM_D`, `STORE_MEM_WORDS_D`: decode `ext` as displacement, compute `base + (ext << 2)`, dispatch to existing memory access helpers |
 | `machine/ts/machine/cpu/disassembler.ts` | Replace name/format entries for all removed opcodes |
 | `machine/ts/machine/cpu/profiler.ts` | Include new memory opcodes in memory-opcode detection |
@@ -224,7 +224,7 @@ This is a **mirrored ISA change** and must land in both cores simultaneously.
 
 | File | Change |
 |------|--------|
-| `machine/cpp/machine/cpu/opcode_info.h` | Same replacements |
+| `machine/cpp/spec/blua32/opcode.h` | Same replacements |
 | `machine/cpp/machine/cpu/cpu.cpp` | Same dispatch changes |
 
 ### Tests

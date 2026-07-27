@@ -18,14 +18,14 @@ import {
 	BLUA32_BOOT_STARTUP_FUNCTION_ADDRESS_OFFSET,
 	decodeBlua32BootHeader,
 } from '../../machine/ts/machine/cpu/blua32_image';
-import { OpCode, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
-import { encodeFixedCallArgCount } from '../../machine/ts/machine/cpu/opcode_info';
+import { OpCode, encodeFixedCallArgCount } from '../../machine/ts/spec/blua32/opcode';
 import { Table } from '../../machine/ts/machine/cpu/table';
 import { StringValue } from '../../machine/ts/machine/cpu/value';
 import { blua32SourceRangeAtPc } from '../../machine/ts/rompack/tooling/blua32_symbols';
-import { COP0_EXEC } from '../../machine/ts/machine/cpu/cop0';
-import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/machine/cpu/instruction_format';
+import { COP0_EXEC } from '../../machine/ts/spec/blua32/cop0';
+import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { LUA_BOOT_PRIMITIVES } from '../../machine/ts/machine/firmware/boot_primitives';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { CART_ROM_BASE, DYNAMIC_RAM_BASE } from '../../machine/ts/machine/memory/map';

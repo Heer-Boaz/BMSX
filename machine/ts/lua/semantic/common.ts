@@ -1,4 +1,4 @@
-import { MEMORY_ACCESS_KIND_NAMES } from '../../machine/memory/access_kind';
+import { getMemoryAccessKindForName } from '../memory_access_syntax';
 import type { LuaSymbolKind } from '../semantic_contracts';
 import type { SemanticSymbolKind } from './symbols';
 
@@ -24,12 +24,7 @@ export function semanticSymbolKindToLuaSymbolKind(kind: SemanticSymbolKind): Lua
 }
 
 export function isReservedMemoryMapName(name: string): boolean {
-	for (let index = 0; index < MEMORY_ACCESS_KIND_NAMES.length; index += 1) {
-		if (MEMORY_ACCESS_KIND_NAMES[index] === name) {
-			return true;
-		}
-	}
-	return false;
+	return getMemoryAccessKindForName(name) !== null;
 }
 
 export function isReservedIntrinsicName(name: string): boolean {

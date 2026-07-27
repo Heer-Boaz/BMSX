@@ -1,75 +1,8 @@
-#include "machine/cpu/opcode_info.h"
+#include "spec/blua32/opcode.h"
 
 namespace bmsx {
 
-const std::array<const char*, OPCODE_COUNT> OPCODE_NAMES{
-	"WIDE",
-	"MOV",
-	"LOADK",
-	"LOADNIL",
-	"LOAD_MEM_D",
-	"KNIL",
-	"KFALSE",
-	"KTRUE",
-	"K0",
-	"K1",
-	"KM1",
-	"KSMI",
-	"STORE_MEM_D",
-	"STORE_MEM_WORDS_D",
-	"GETT",
-	"SETT",
-	"NEWT",
-	"ADD",
-	"SUB",
-	"MUL",
-	"DIV",
-	"MOD",
-	"FLOORDIV",
-	"POW",
-	"BAND",
-	"BOR",
-	"BXOR",
-	"SHL",
-	"SHR",
-	"CONCAT",
-	"CONCATN",
-	"UNM",
-	"NOT",
-	"LEN",
-	"BNOT",
-	"EQ",
-	"LT",
-	"LE",
-	"MFC0",
-	"MTC0",
-	"JMP",
-	"JMPIF",
-	"JMPIFNOT",
-	"CLOSURE",
-	"GETUP",
-	"SETUP",
-	"VARARG",
-	"CALL",
-	"RET",
-	"LOAD_MEM",
-	"STORE_MEM",
-	"STORE_MEM_WORDS",
-	"RFE",
-	"LOADKR",
-	"GETSYS",
-	"SETSYS",
-	"GETGL",
-	"SETGL",
-	"GETI",
-	"SETI",
-	"GETFIELD",
-	"SETFIELD",
-	"SELF",
-	"HALT",
-};
-
-const std::array<u8, OPCODE_COUNT> BASE_CYCLES{
+const std::array<uint8_t, OPCODE_COUNT> BASE_CYCLES{
 	0u, // WIDE
 	1u, // MOV
 	1u, // LOADK
@@ -136,7 +69,7 @@ const std::array<u8, OPCODE_COUNT> BASE_CYCLES{
 	1u, // HALT
 };
 
-const std::array<u8, OPCODE_COUNT> OPCODE_USES_BX{
+const std::array<uint8_t, OPCODE_COUNT> OPCODE_USES_BX{
 	0u, // WIDE
 	0u, // MOV
 	1u, // LOADK
@@ -203,7 +136,7 @@ const std::array<u8, OPCODE_COUNT> OPCODE_USES_BX{
 	0u, // HALT
 };
 
-const std::array<u8, OPCODE_COUNT> OPCODE_USES_DISP{
+const std::array<uint8_t, OPCODE_COUNT> OPCODE_USES_DISP{
 	0u, // WIDE
 	0u, // MOV
 	0u, // LOADK
@@ -269,76 +202,5 @@ const std::array<u8, OPCODE_COUNT> OPCODE_USES_DISP{
 	0u, // SELF
 	0u, // HALT
 };
-
-const std::array<const char*, OPCODE_COUNT> OPCODE_CATEGORY{
-	"wide prefix",
-	"load/move",
-	"load/move",
-	"load/move",
-	"memory I/O",
-	"load/move",
-	"load/move",
-	"load/move",
-	"load/move",
-	"load/move",
-	"load/move",
-	"load/move",
-	"memory I/O",
-	"memory I/O",
-	"table get/set",
-	"table get/set",
-	"table creation",
-	"arithmetic",
-	"arithmetic",
-	"arithmetic",
-	"arithmetic",
-	"arithmetic",
-	"arithmetic",
-	"arithmetic",
-	"bitwise",
-	"bitwise",
-	"bitwise",
-	"bitwise",
-	"bitwise",
-	"string concat",
-	"string concat",
-	"arithmetic",
-	"logical",
-	"length",
-	"bitwise",
-	"comparison",
-	"comparison",
-	"comparison",
-	"system control",
-	"system control",
-	"branch/jump",
-	"branch/jump",
-	"branch/jump",
-	"closure creation",
-	"upvalue",
-	"upvalue",
-	"vararg",
-	"call/return",
-	"call/return",
-	"memory I/O",
-	"memory I/O",
-	"memory I/O",
-	"system control",
-	"reserved",
-	"global/sys access",
-	"global/sys access",
-	"global/sys access",
-	"global/sys access",
-	"table get/set",
-	"table get/set",
-	"table get/set",
-	"table get/set",
-	"table get/set",
-	"sleep/halt",
-};
-
-const char* getOpcodeName(OpCode opcode) {
-	return OPCODE_NAMES[static_cast<size_t>(opcode)];
-}
 
 } // namespace bmsx

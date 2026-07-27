@@ -12,9 +12,10 @@ import {
 import { IO_WORD_SIZE } from '../../machine/ts/machine/memory/map';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { MAPPED_BUS_MASTER_DMA } from '../../machine/ts/machine/memory/bus_signals';
-import { CPU, OpCode, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
-import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/machine/cpu/instruction_format';
+import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import {
 	DEVICE_SERVICE_GTE,

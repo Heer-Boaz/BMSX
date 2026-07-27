@@ -1,5 +1,5 @@
 import { ceilLog2, nextPowerOfTwo } from '../common/numeric';
-import { LUA_FAULT_REASON_INDEX_NIL } from './cop0';
+import { LUA_FAULT_REASON_INDEX_NIL } from '../../spec/blua32/cop0';
 import { LuaExecutionError } from './errors';
 import { addTrackedLuaHeapBytes } from '../memory/lua_heap_usage';
 import {

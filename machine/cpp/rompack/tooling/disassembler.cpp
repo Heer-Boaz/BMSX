@@ -1,6 +1,6 @@
 #include "rompack/tooling/disassembler.h"
-#include "machine/cpu/instruction_format.h"
-#include "machine/cpu/opcode_info.h"
+#include "spec/blua32/instruction_format.h"
+#include "rompack/tooling/opcode_metadata.h"
 #include "rompack/tooling/source_text.h"
 #include "machine/common/number_format.h"
 
@@ -305,18 +305,18 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 		case OpCode::SHL:
 		case OpCode::SHR:
 		case OpCode::CONCAT:
-			return std::string(getOpcodeName(decoded.op)) + " r" + std::to_string(decoded.a) + ", " + describeRkValue(image, static_cast<uint32_t>(decoded.b), decoded.rkBitsB).text + ", " + describeRkValue(image, static_cast<uint32_t>(decoded.c), decoded.rkBitsC).text;
+			return std::string(OPCODE_NAMES[static_cast<size_t>(decoded.op)]) + " r" + std::to_string(decoded.a) + ", " + describeRkValue(image, static_cast<uint32_t>(decoded.b), decoded.rkBitsB).text + ", " + describeRkValue(image, static_cast<uint32_t>(decoded.c), decoded.rkBitsC).text;
 		case OpCode::CONCATN:
 			return "CONCATN r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.b) + ", " + std::to_string(decoded.c);
 		case OpCode::UNM:
 		case OpCode::NOT:
 		case OpCode::LEN:
 		case OpCode::BNOT:
-			return std::string(getOpcodeName(decoded.op)) + " r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.b);
+			return std::string(OPCODE_NAMES[static_cast<size_t>(decoded.op)]) + " r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.b);
 		case OpCode::EQ:
 		case OpCode::LT:
 		case OpCode::LE:
-			return std::string(getOpcodeName(decoded.op)) + " " + formatBoolLiteral(decoded.a) + ", " + describeRkValue(image, static_cast<uint32_t>(decoded.b), decoded.rkBitsB).text + ", " + describeRkValue(image, static_cast<uint32_t>(decoded.c), decoded.rkBitsC).text;
+			return std::string(OPCODE_NAMES[static_cast<size_t>(decoded.op)]) + " " + formatBoolLiteral(decoded.a) + ", " + describeRkValue(image, static_cast<uint32_t>(decoded.b), decoded.rkBitsB).text + ", " + describeRkValue(image, static_cast<uint32_t>(decoded.c), decoded.rkBitsC).text;
 		case OpCode::JMP:
 			return "JMP " + formatJumpTarget(decoded.pc, decoded.sbx, pcWidth);
 		case OpCode::JMPIF:
@@ -520,7 +520,7 @@ auto describeBlua32InstructionAtPc(
 		decoded.pc,
 		formatPcHex(decoded.pc, pcWidth),
 		decoded.op,
-		getOpcodeName(decoded.op),
+		OPCODE_NAMES[static_cast<size_t>(decoded.op)],
 		formatInstructionText(decoded, image, symbols, pcWidth),
 		buildInstructionOperands(decoded, image, symbols, pcWidth),
 		sourceRange,

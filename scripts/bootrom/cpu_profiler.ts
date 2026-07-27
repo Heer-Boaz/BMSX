@@ -1,5 +1,6 @@
-import { BASE_CYCLES, OPCODE_CATEGORY, OPCODE_COUNT, OpCode, getOpcodeName } from '../../machine/ts/machine/cpu/opcode_info';
-import { INSTRUCTION_BYTES } from '../../machine/ts/machine/cpu/instruction_format';
+import { BASE_CYCLES, OPCODE_COUNT, OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { OPCODE_CATEGORY, OPCODE_NAMES } from '../../machine/ts/rompack/tooling/opcode_metadata';
+import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
 import type { CPU, CpuExecutionObserver } from '../../machine/ts/machine/cpu/cpu';
 import type { ExecutionDomainId } from '../../machine/ts/machine/execution_address_space';
 import type { SourceRange } from '../../machine/ts/rompack/tooling/blua32_symbols';
@@ -157,7 +158,7 @@ function collectTopOpcodesFromCounts(counts: Uint32Array, totalInstructions: num
 		const cycles = count * baseCost;
 		rows.push({
 			opcode,
-			name: getOpcodeName(opcode as OpCode),
+			name: OPCODE_NAMES[opcode as OpCode],
 			count,
 			percent: percent(count, totalInstructions),
 			baseCost,
@@ -445,7 +446,7 @@ export function collectCpuProfilerHotPcs(snapshot: CpuProfilerSnapshot, limit = 
 			wordIndex,
 			pc: snapshot.pcByWord[wordIndex],
 			opcode,
-				opcodeName: getOpcodeName(opcode as OpCode),
+				opcodeName: OPCODE_NAMES[opcode as OpCode],
 			count,
 			percent: percent(count, snapshot.totalInstructions),
 			functionIndex,

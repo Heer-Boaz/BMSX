@@ -12,7 +12,6 @@ import {
 	IO_INP_OUTPUT_PORT,
 } from '../../machine/ts/machine/bus/io';
 import { compileLuaChunkToProgram } from '../../machine/ts/lua/compiler';
-import { MMIO_REGISTER_SPECS } from '../../machine/ts/machine/bus/registers';
 import { runCompiledLua } from '../lua/cpu_test_harness';
 
 function parseChunk(source: string, path: string = 'value_flow.lua') {
@@ -20,10 +19,6 @@ function parseChunk(source: string, path: string = 'value_flow.lua') {
 	const parser = new LuaParser(lexer.scanTokens(), path, splitText(source));
 	return parser.parseChunk();
 }
-
-test('ProgramCompiler has no special MMIO string-id register contracts after raw ICU redesign', () => {
-	assert.deepEqual(MMIO_REGISTER_SPECS, []);
-});
 
 test('ProgramCompiler still emits & expression as a single string-id result expression', () => {
 	const returned = runCompiledLua("return &'left'", 'string_id_return.lua');

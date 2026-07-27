@@ -487,10 +487,39 @@ The exception is firmware/source material that ships with the machine runtime:
 BIOS, firmware helpers, and default boot/source assets belong under the
 machine firmware owner. That is not a general cart collection.
 
+## Machine specification owner
+
+`machine/ts/spec` and `machine/cpp/spec` own the mirrored numeric contracts
+shared by machine implementations and build-time producers. Specification files
+are dependency leaves: they contain raw words, addresses, bit layouts, opcodes,
+register indexes, and architectural timing tables, but no emulator objects,
+source-language parsing, diagnostics, host policy, or compatibility facade.
+Compiler, linker, disassembler, and CPU consumers import/include these contracts
+directly.
+
+The BLua32 ISA contract is:
+
+- instruction-word layout and byte encoding:
+  `machine/{ts,cpp}/spec/blua32/instruction_format.*`;
+- opcode numbers, decode flags, call-operand encoding, and architectural base
+  cycles: `machine/{ts,cpp}/spec/blua32/opcode.*`;
+- typed-memory operand numbers and alignment masks:
+  `machine/{ts,cpp}/spec/blua32/memory_access_kind.*`;
+- CP0 register indexes, status/cause words, and Lua-fault reason words:
+  `machine/{ts,cpp}/spec/blua32/cop0.*`.
+
+Human-readable opcode names and profiler categories are tooling metadata under
+`machine/{ts,cpp}/rompack/tooling/opcode_metadata.*`; loading the emulator does
+not construct those string tables. BLua source spellings for typed-memory
+intrinsics belong to the Lua frontend, not to the numeric machine contract.
+`audit:core-parity` compares the TS opcode order, the C++ X-macro order, all
+three decode/timing tables, and both tooling string tables entry for entry.
+
 ## Mirrored core contract
 
-The TypeScript core under `machine/ts/machine` and the C++ core under
-`machine/cpp/machine` are mirrored implementations of the same machine.
+The TypeScript core under `machine/ts/machine`, the C++ core under
+`machine/cpp/machine`, and their specification owners are mirrored
+implementations of the same machine.
 
 Rules:
 

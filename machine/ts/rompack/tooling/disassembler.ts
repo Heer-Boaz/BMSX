@@ -1,6 +1,7 @@
 import { extractSourceRangeText } from './source_text';
-import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord, signExtend } from '../../machine/cpu/instruction_format';
-import { OpCode, OPCODE_USES_BX, OPCODE_USES_DISP, decodeCallArgCount, getOpcodeName } from '../../machine/cpu/opcode_info';
+import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord, signExtend } from '../../spec/blua32/instruction_format';
+import { OpCode, OPCODE_USES_BX, OPCODE_USES_DISP, decodeCallArgCount } from '../../spec/blua32/opcode';
+import { OPCODE_NAMES } from './opcode_metadata';
 import { formatNumber } from '../../machine/common/number_format';
 import {
 	BLUA32_FUNCTION_RECORD_SIZE,
@@ -77,8 +78,6 @@ const normalizeOptions = ({
 };
 
 const SOURCE_COMMENT_MAX_CHARS = 120;
-
-const getOpName = (op: OpCode): string => getOpcodeName(op);
 
 const formatBool = (value: number): string => (value !== 0 ? 'true' : 'false');
 
@@ -475,7 +474,7 @@ export const describeBlua32InstructionAtPc = (
 		pc: decoded.pc,
 		pcText: formatPc(decoded.pc, pcWidth, opts),
 		op: decoded.op,
-		opName: getOpName(decoded.op),
+		opName: OPCODE_NAMES[decoded.op],
 		instructionText: formatInstruction(decoded, source, opts, pcWidth),
 		operands: buildInstructionOperands(decoded, source, opts, pcWidth),
 		sourceRange: sourceRangeAtPc(source, decoded.pc),

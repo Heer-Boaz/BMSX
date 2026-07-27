@@ -2,7 +2,8 @@ import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { AcceptedInterruptKind, CPU, OpCode, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { AcceptedInterruptKind, CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { Table } from '../../machine/ts/machine/cpu/table';
@@ -10,8 +11,8 @@ import { BuiltinFunctionId, EMPTY_CALL_ARGS, createBuiltinFunction, StringValue,
 import {
 	INSTRUCTION_BYTES,
 	writeInstruction,
-} from '../../machine/ts/machine/cpu/instruction_format';
-import { BASE_CYCLES, encodeFixedCallArgCount } from '../../machine/ts/machine/cpu/opcode_info';
+} from '../../machine/ts/spec/blua32/instruction_format';
+import { BASE_CYCLES, encodeFixedCallArgCount } from '../../machine/ts/spec/blua32/opcode';
 import {
 	COP0_CAUSE,
 	COP0_EXEC,
@@ -24,7 +25,7 @@ import {
 	CPU_STATUS_CART_ENTRY,
 	CPU_STATUS_SYSTEM_ENTRY,
 	LUA_FAULT_REASON_CALL_NON_FUNCTION,
-} from '../../machine/ts/machine/cpu/cop0';
+} from '../../machine/ts/spec/blua32/cop0';
 import {
 	BUS_FAULT_ACCESS_READ,
 	BUS_FAULT_ACCESS_U8,
@@ -45,7 +46,7 @@ import { Machine } from '../../machine/ts/machine/machine';
 import type { MicrotaskQueue } from '../../machine/ts/machine/scheduler/microtask_queue';
 import { captureMachineSaveState, captureMachineState, restoreMachineSaveState, restoreMachineState } from '../../machine/ts/machine/save_state';
 import { Memory } from '../../machine/ts/machine/memory/memory';
-import { MemoryAccessKind } from '../../machine/ts/machine/memory/access_kind';
+import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { CART_ROM_BASE, IO_WORD_SIZE, DYNAMIC_RAM_BASE } from '../../machine/ts/machine/memory/map';
 import {
 	BLUA32_BOOT_STARTUP_FUNCTION_ADDRESS_OFFSET,

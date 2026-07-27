@@ -39,7 +39,7 @@ import {
 	type LuaWhileStatement,
 	type LuaGotoStatement,
 } from './syntax/ast';
-import { OpCode } from '../machine/cpu/cpu';
+import { OpCode, encodeFixedCallArgCount } from '../spec/blua32/opcode';
 import { StringValue, asStringId, isTruthyValue, valueIsString, type Value } from '../machine/cpu/value';
 import type { SourceRange } from '../rompack/tooling/blua32_symbols';
 import type {
@@ -52,7 +52,7 @@ import type {
 	Proto,
 	UpvalueDesc,
 } from './compiler/program';
-import { encodeFixedCallArgCount, getOpcodeName } from '../machine/cpu/opcode_info';
+import { OPCODE_NAMES } from '../rompack/tooling/opcode_metadata';
 import { optimizeInstructions, type Instruction, type InstructionSet, type OptimizationLevel } from './compiler/optimizer';
 import {
 	buildModuleCompileContext,
@@ -80,9 +80,8 @@ import {
 	type ProgramObjectImage,
 } from './compiler/program_object';
 import { StringPool } from '../machine/cpu/string_pool';
-import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_EXT_CONST, MAX_EXT_REGISTER_BC, MAX_OPERAND_BITS, MAX_SIGNED_BX, MIN_SIGNED_BX, writeInstruction } from '../machine/cpu/instruction_format';
+import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_EXT_CONST, MAX_EXT_REGISTER_BC, MAX_OPERAND_BITS, MAX_SIGNED_BX, MIN_SIGNED_BX, writeInstruction } from '../spec/blua32/instruction_format';
 import { buildLuaSemanticFrontend, type LuaBoundReference, type LuaSemanticFrontend, type LuaSemanticFrontendFile } from './semantic/frontend';
-import { MMIO_REGISTER_SPEC_BY_ADDRESS, MMIO_REGISTER_SPEC_BY_NAME, type MmioWriteRequirement } from '../machine/bus/registers';
 import { ValueKindFlowAnalyzer, type SymbolFlowState } from './compiler/compile_value_flow';
 import { evaluateCompileTimeNumberBinaryOperator } from './compiler/compile_time_number';
 import { SYSTEM_ROM_BOOT_PRIMITIVE_NAMES, SYSTEM_ROM_BOOT_SYMBOL_NAMES, SYSTEM_ROM_BOOT_SYMBOL_NAME_SET, SYSTEM_ROM_VECTOR_HANDLER_NAME_SET } from './compiler/system_boot_symbols';
@@ -97,11 +96,12 @@ import {
 	classifyAssignmentTargetPreparation,
 	classifyFunctionDeclarationTarget,
 } from './compiler/target_semantics';
-import { getMemoryAccessKindForName, MemoryAccessKind } from '../machine/memory/access_kind';
+import { MemoryAccessKind } from '../spec/blua32/memory_access_kind';
+import { getMemoryAccessKindForName } from './memory_access_syntax';
 import { writeLE16, writeLE32 } from '../common/endian';
 import { isReservedIntrinsicName } from './semantic/common';
 import { IO_IRQ_FLAGS } from '../machine/bus/io';
-import { COP0_BAD_ADDRESS, COP0_CAUSE, COP0_EPC, COP0_EXEC, COP0_LUA_FAULT_REASON, COP0_STATUS } from '../machine/cpu/cop0';
+import { COP0_BAD_ADDRESS, COP0_CAUSE, COP0_EPC, COP0_EXEC, COP0_LUA_FAULT_REASON, COP0_STATUS } from '../spec/blua32/cop0';
 import { buildProgramResumePoints } from './compiler/resume_points';
 
 export type CompiledProgram = {
@@ -321,7 +321,7 @@ type AssignmentTarget =
 	| { kind: 'global'; slot: number; system: boolean }
 	| { kind: 'table'; tableReg: number; keyConst?: number; keyReg?: number }
 	| { kind: 'cop0'; register: number }
-	| { kind: 'memory'; accessKind: MemoryAccessKind; addrConst?: number; addrReg?: number; addrOffsetBytes?: number; validateAddress?: LuaExpression };
+	| { kind: 'memory'; accessKind: MemoryAccessKind; addrConst?: number; addrReg?: number; addrOffsetBytes?: number };
 
 const RK_B = 1;
 const RK_C = 2;
@@ -2664,7 +2664,7 @@ class FunctionBuilder {
 		}
 		const reason = staticLaneForbiddenOpcodeReason(op) ?? this.staticCallTargetForbiddenLoadKReason(op, bx, symbolicReloc);
 		if (reason !== null) {
-			throw new Error(`Static function export '${this.protoId}' cannot emit forbidden static opcode ${getOpcodeName(op)} (${reason}). Static function exports use numeric and boolean constants, parameters, function-local words, static calls, branches, and memory loads/stores only.`);
+			throw new Error(`Static function export '${this.protoId}' cannot emit forbidden static opcode ${OPCODE_NAMES[op]} (${reason}). Static function exports use numeric and boolean constants, parameters, function-local words, static calls, branches, and memory loads/stores only.`);
 		}
 	}
 
@@ -3565,14 +3565,6 @@ class FunctionBuilder {
 
 	private compileAssignment(statement: LuaAssignmentStatement): void {
 		const targets = this.compileAssignmentTargets(statement.left);
-		if (statement.operator === LuaAssignmentOperator.Assign) {
-			for (let i = 0; i < targets.length; i += 1) {
-				const target = targets[i];
-				if (target.kind === 'memory' && target.validateAddress !== undefined && i < statement.right.length) {
-					this.validateMemoryStore(target.validateAddress, statement.right[i]);
-				}
-			}
-		}
 		const targetPaths: Array<string[] | null> = new Array(statement.left.length);
 		for (let index = 0; index < statement.left.length; index += 1) {
 			targetPaths[index] = extractAssignmentPath(statement.left[index] as LuaAssignableExpression);
@@ -4390,7 +4382,7 @@ class FunctionBuilder {
 	private compileMemoryTarget(target: Extract<ReturnType<typeof classifyAssignmentTargetPreparation>, { kind: 'memory' }>): Extract<AssignmentTarget, { kind: 'memory' }> {
 		const addrConst = this.getNumericConstIndex(target.index);
 		if (addrConst !== undefined) {
-			return { kind: 'memory', accessKind: target.accessKind, addrConst, validateAddress: target.index };
+			return { kind: 'memory', accessKind: target.accessKind, addrConst };
 		}
 		const displaced = this.compileDisplacedAddress(target.index);
 		if (displaced !== null) {
@@ -4399,12 +4391,11 @@ class FunctionBuilder {
 				accessKind: target.accessKind,
 				addrReg: displaced.baseReg,
 				addrOffsetBytes: displaced.byteOffset,
-				validateAddress: target.index,
 			};
 		}
 		const addrReg = this.allocTemp();
 		this.compileExpressionInto(target.index, addrReg, 1);
-		return { kind: 'memory', accessKind: target.accessKind, addrReg, validateAddress: target.index };
+		return { kind: 'memory', accessKind: target.accessKind, addrReg };
 	}
 
 	private compileStructIndexAddress(base: StructAddress, indexExpression: LuaExpression): StructAddress {
@@ -4642,56 +4633,6 @@ class FunctionBuilder {
 			return;
 		}
 		this.emitABC(OpCode.STORE_MEM, valueReg, this.emitOffsetAddress(addrReg!, byteOffset), accessKind, 0);
-	}
-
-	private resolveMemoryStoreRequirement(addressExpression: LuaExpression): MmioWriteRequirement {
-		const address = this.evaluateCompileTimeNumber(addressExpression);
-		if (address || address === 0) {
-			const spec = MMIO_REGISTER_SPEC_BY_ADDRESS.get(address);
-			if (spec) return spec.writeRequirement;
-			return 'any';
-		}
-		if (addressExpression.kind === LuaSyntaxKind.IdentifierExpression) {
-			const reference = getResolvedIdentifierReference(this.semantics, addressExpression as LuaIdentifierExpression);
-			if (reference.kind === 'global') {
-				const name = this.getReferenceName(reference);
-				const spec = MMIO_REGISTER_SPEC_BY_NAME.get(name);
-				if (spec) return spec.writeRequirement;
-			}
-		}
-		return 'any';
-	}
-
-	private resolveMemoryStoreRegisterName(addressExpression: LuaExpression): string | undefined {
-		const address = this.evaluateCompileTimeNumber(addressExpression);
-		if (address || address === 0) {
-			const spec = MMIO_REGISTER_SPEC_BY_ADDRESS.get(address);
-			if (spec) return spec.name;
-			return;
-		}
-		if (addressExpression.kind === LuaSyntaxKind.IdentifierExpression) {
-			const reference = getResolvedIdentifierReference(this.semantics, addressExpression as LuaIdentifierExpression);
-			if (reference.kind === 'global') {
-				const name = this.getReferenceName(reference);
-				if (MMIO_REGISTER_SPEC_BY_NAME.has(name)) return name;
-			}
-		}
-		return undefined;
-	}
-
-	private validateMemoryStore(addressExpression: LuaExpression, valueExpression: LuaExpression): void {
-		const requirement = this.resolveMemoryStoreRequirement(addressExpression);
-		if (requirement === 'any') return;
-		const valueKind = this.flowAnalysis!.evaluateExpressionValueKind(valueExpression, this.currentFlowState);
-		if (valueKind === 'string_id') return;
-		const registerName = this.resolveMemoryStoreRegisterName(addressExpression);
-		const target = registerName ? `Register '${registerName}'` : 'This memory-mapped register';
-		throw new LuaSyntaxError(
-			`${target} requires an interned string-id value (&expr). The expression at this point is not proven to be an interned string id (got: ${valueKind}).`,
-			valueExpression.range.path,
-			valueExpression.range.start.line,
-			valueExpression.range.start.column,
-		);
 	}
 
 	private compileStringIdUnaryExpression(expression: LuaUnaryExpression, target: number, resultCount: number): void {

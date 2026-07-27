@@ -1,8 +1,8 @@
 #include "boot_rom_fixture.h"
 
 #include "blua32_test_rom.h"
-#include "machine/cpu/instruction_format.h"
-#include "machine/cpu/opcode_info.h"
+#include "spec/blua32/instruction_format.h"
+#include "spec/blua32/opcode.h"
 #include "machine/firmware/boot_primitives.h"
 #include "rompack/tooling/blua32_symbols.h"
 

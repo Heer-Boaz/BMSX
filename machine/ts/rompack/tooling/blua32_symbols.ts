@@ -1,6 +1,6 @@
 import { decodeBinary, encodeBinary } from '../../common/serializer/binencoder';
-import { INSTRUCTION_BYTES } from '../../machine/cpu/instruction_format';
-import type { OpCode } from '../../machine/cpu/opcode_info';
+import { INSTRUCTION_BYTES } from '../../spec/blua32/instruction_format';
+import type { OpCode } from '../../spec/blua32/opcode';
 
 export const BLUA32_SYMBOLS_IMAGE_ID = '__blua32_symbols__';
 export const BLUA32_SYMBOLS_VERSION = 1;

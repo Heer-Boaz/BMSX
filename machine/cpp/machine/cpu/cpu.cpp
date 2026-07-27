@@ -1728,7 +1728,7 @@ RunResult CPU::runLoop(int targetDepth, int instructionBudget) {
 #pragma GCC diagnostic ignored "-Wpedantic"
 	static void* const kDispatchTargets[OPCODE_COUNT] = {
 #define OP(name) &&dispatch_##name,
-#include "machine/cpu/cpu_opcode_list.inl"
+#include "spec/blua32/opcode_list.inl"
 #undef OP
 	};
 #pragma GCC diagnostic pop

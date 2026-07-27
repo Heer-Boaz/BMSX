@@ -1,4 +1,4 @@
-import { OpCode } from '../../machine/cpu/cpu';
+import { OpCode } from '../../spec/blua32/opcode';
 import type { SourceRange } from '../../rompack/tooling/blua32_symbols';
 import type { Instruction, InstructionSet } from './optimizer';
 

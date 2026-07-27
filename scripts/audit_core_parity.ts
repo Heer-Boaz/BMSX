@@ -34,6 +34,22 @@ type StrictRuntimeNoChurnEntry = { files: string[]; reason: string };
 type StrictRuntimeNoHeapFunctionEntry = { file: string; functions: string[]; reason: string };
 type StrictLuaNoHeapFunctionEntry = { file: string; functions: string[]; top_level_loops?: boolean; reason: string };
 type StrictRpuTableParityEntry = { ts: string; cpp: string; tables: string[]; reason: string };
+type StrictBlua32IsaParityEntry = {
+	ts_cop0: string;
+	cpp_cop0: string;
+	ts_instruction_format: string;
+	cpp_instruction_format: string;
+	ts_memory_access: string;
+	cpp_memory_access: string;
+	ts_opcode: string;
+	ts_metadata: string;
+	cpp_opcode_list: string;
+	cpp_opcode_tables: string;
+	cpp_metadata: string;
+	numeric_tables: string[];
+	string_tables: string[];
+	reason: string;
+};
 type StrictFileLayoutEntry = { present?: string[]; absent?: string[]; reason: string };
 type StrictFilePairParityEntry = { ts: string; cpp: string[]; reason: string };
 type StrictGeneratedTsParityExclusion = { ts: string; generator: string; reason: string };
@@ -51,6 +67,7 @@ type Manifest = {
 	strict_runtime_no_heap_functions?: StrictRuntimeNoHeapFunctionEntry[];
 	strict_lua_no_heap_functions?: StrictLuaNoHeapFunctionEntry[];
 	strict_rpu_table_parity?: StrictRpuTableParityEntry[];
+	strict_blua32_isa_parity: StrictBlua32IsaParityEntry[];
 	strict_file_layout?: StrictFileLayoutEntry[];
 	strict_file_pair_parity?: StrictFilePairParityEntry[];
 	strict_generated_ts_parity_exclusions?: StrictGeneratedTsParityExclusion[];
@@ -1135,6 +1152,163 @@ function auditStrictRpuTableParity(manifest: Manifest): string[] {
 	return errors;
 }
 
+function tsEnumItems(file: string, symbol: string): string[] | null {
+	const text = fs.readFileSync(path.join(repoRoot, file), 'utf8');
+	const enumIndex = text.indexOf(`enum ${symbol}`);
+	if (enumIndex < 0) return null;
+	const openIndex = text.indexOf('{', enumIndex);
+	if (openIndex < 0) return null;
+	return readBalancedBody(text, openIndex)
+		.split(',')
+		.map((item) => stripLineComment(item).trim())
+		.filter((item) => item.length > 0)
+		.map((item) => item.split('=')[0].trim());
+}
+
+function cppOpcodeListItems(file: string): string[] {
+	const text = fs.readFileSync(path.join(repoRoot, file), 'utf8');
+	return [...text.matchAll(/^\s*OP\(([A-Z][A-Z0-9_]*)\)\s*$/gm)].map((match) => match[1]);
+}
+
+function numericTableItems(file: string, symbol: string, openChar: '[' | '{'): string[] | null {
+	const text = fs.readFileSync(path.join(repoRoot, file), 'utf8');
+	const symbolIndex = text.indexOf(symbol);
+	if (symbolIndex < 0) return null;
+	const openIndex = text.indexOf(openChar, symbolIndex);
+	if (openIndex < 0) return null;
+	const body = readBalancedBody(text, openIndex).replace(/\/\/.*$/gm, '');
+	return [...body.matchAll(/\b(?:0x[0-9a-fA-F]+|\d+)[uU]?\b/g)]
+		.map((match) => BigInt(match[0].replace(/[uU]$/, '')).toString());
+}
+
+function compareOrderedItems(label: string, tsItems: readonly string[], cppItems: readonly string[]): string[] {
+	const errors: string[] = [];
+	if (tsItems.length !== cppItems.length) {
+		errors.push(`${label}: TS length ${tsItems.length} differs from C++ ${cppItems.length}`);
+	}
+	const count = tsItems.length < cppItems.length ? tsItems.length : cppItems.length;
+	for (let index = 0; index < count; index += 1) {
+		if (tsItems[index] !== cppItems[index]) {
+			errors.push(`${label}[${index}]: TS ${tsItems[index]} differs from C++ ${cppItems[index]}`);
+		}
+	}
+	return errors;
+}
+
+function explicitEnumItems(file: string, symbol: string): string[] | null {
+	const text = fs.readFileSync(path.join(repoRoot, file), 'utf8');
+	const enumIndex = text.search(new RegExp(`\\benum(?:\\s+class)?\\s+${symbol}\\b`));
+	if (enumIndex < 0) return null;
+	const openIndex = text.indexOf('{', enumIndex);
+	if (openIndex < 0) return null;
+	const items: string[] = [];
+	for (const rawItem of readBalancedBody(text, openIndex).split(',')) {
+		const item = stripLineComment(rawItem).trim();
+		if (item.length === 0) continue;
+		const match = /^([A-Za-z_]\w*)\s*=\s*(0x[0-9a-fA-F]+|\d+)[uU]?$/.exec(item);
+		if (!match) return null;
+		items.push(`${match[1]}=${BigInt(match[2]).toString()}`);
+	}
+	return items;
+}
+
+function compareScalarConstantValues(label: string, tsFile: string, cppFile: string): string[] {
+	const errors: string[] = [];
+	const tsValues = collectTsStrictSymbols(tsFile).constantValues;
+	const cppValues = collectCppStrictSymbols([cppFile]).constantValues;
+	for (const [name, tsValue] of tsValues) {
+		if (!cppValues.has(name)) {
+			errors.push(`${cppFile}: scalar constant ${name} missing (${label})`);
+			continue;
+		}
+		const cppValue = cppValues.get(name);
+		if (tsValue !== cppValue) {
+			errors.push(`${name}: TS ${tsValue} differs from C++ ${cppValue} (${label})`);
+		}
+	}
+	for (const name of cppValues.keys()) {
+		if (!tsValues.has(name)) {
+			errors.push(`${tsFile}: scalar constant ${name} missing (${label})`);
+		}
+	}
+	return errors;
+}
+
+function auditStrictBlua32IsaParity(manifest: Manifest): string[] {
+	const errors: string[] = [];
+	for (const entry of manifest.strict_blua32_isa_parity) {
+		errors.push(...compareScalarConstantValues(
+			'BLua32 COP0',
+			entry.ts_cop0,
+			entry.cpp_cop0,
+		));
+		errors.push(...compareScalarConstantValues(
+			'BLua32 instruction format',
+			entry.ts_instruction_format,
+			entry.cpp_instruction_format,
+		));
+		const tsMemoryAccessKinds = explicitEnumItems(entry.ts_memory_access, 'MemoryAccessKind');
+		const cppMemoryAccessKinds = explicitEnumItems(entry.cpp_memory_access, 'MemoryAccessKind');
+		if (tsMemoryAccessKinds === null) {
+			errors.push(`${entry.ts_memory_access}: explicit MemoryAccessKind enum missing (${entry.reason})`);
+		} else if (cppMemoryAccessKinds === null) {
+			errors.push(`${entry.cpp_memory_access}: explicit MemoryAccessKind enum missing (${entry.reason})`);
+		} else {
+			errors.push(...compareOrderedItems('BLua32 MemoryAccessKind', tsMemoryAccessKinds, cppMemoryAccessKinds));
+		}
+		const tsAlignmentMasks = numericTableItems(
+			entry.ts_memory_access,
+			'MEMORY_ACCESS_KIND_ALIGNMENT_MASKS',
+			'[',
+		);
+		const cppAlignmentMasks = numericTableItems(
+			entry.cpp_memory_access,
+			'MEMORY_ACCESS_KIND_ALIGNMENT_MASKS',
+			'{',
+		);
+		if (tsAlignmentMasks === null) {
+			errors.push(`${entry.ts_memory_access}: MEMORY_ACCESS_KIND_ALIGNMENT_MASKS missing (${entry.reason})`);
+		} else if (cppAlignmentMasks === null) {
+			errors.push(`${entry.cpp_memory_access}: MEMORY_ACCESS_KIND_ALIGNMENT_MASKS missing (${entry.reason})`);
+		} else {
+			errors.push(...compareOrderedItems(
+				'BLua32 MEMORY_ACCESS_KIND_ALIGNMENT_MASKS',
+				tsAlignmentMasks,
+				cppAlignmentMasks,
+			));
+		}
+		const tsOpcodes = tsEnumItems(entry.ts_opcode, 'OpCode');
+		if (tsOpcodes === null) {
+			errors.push(`${entry.ts_opcode}: OpCode enum missing (${entry.reason})`);
+		} else {
+			errors.push(...compareOrderedItems('BLua32 OpCode', tsOpcodes, cppOpcodeListItems(entry.cpp_opcode_list)));
+		}
+		for (const table of entry.numeric_tables) {
+			const tsItems = numericTableItems(entry.ts_opcode, table, '[');
+			const cppItems = numericTableItems(entry.cpp_opcode_tables, table, '{');
+			if (tsItems === null) {
+				errors.push(`${entry.ts_opcode}: numeric table ${table} missing (${entry.reason})`);
+			} else if (cppItems === null) {
+				errors.push(`${entry.cpp_opcode_tables}: numeric table ${table} missing (${entry.reason})`);
+			} else {
+				errors.push(...compareOrderedItems(`BLua32 ${table}`, tsItems, cppItems));
+			}
+		}
+		for (const table of entry.string_tables) {
+			const tsItems = tsStringArrayLiteralItems(entry.ts_metadata, table);
+			const cppItems = cppStringVectorLiteralItems(entry.cpp_metadata, table);
+			if (tsItems === null) {
+				errors.push(`${entry.ts_metadata}: string table ${table} missing (${entry.reason})`);
+			} else if (cppItems === null) {
+				errors.push(`${entry.cpp_metadata}: string table ${table} missing (${entry.reason})`);
+			} else {
+				errors.push(...compareOrderedItems(`BLua32 ${table}`, tsItems, cppItems));
+			}
+		}
+	}
+	return errors;
+}
+
 function auditStrictFileLayout(manifest: Manifest): string[] {
 	const errors: string[] = [];
 	for (const entry of manifest.strict_file_layout ?? []) {
@@ -1274,6 +1448,7 @@ function main(): void {
 	const strictRuntimeNoHeapFunctionErrors = auditStrictRuntimeNoHeapFunctions(manifest);
 	const strictLuaNoHeapFunctionErrors = auditStrictLuaNoHeapFunctions(manifest);
 	const strictRpuTableParityErrors = auditStrictRpuTableParity(manifest);
+	const strictBlua32IsaParityErrors = auditStrictBlua32IsaParity(manifest);
 	const strictFileLayoutErrors = auditStrictFileLayout(manifest);
 	const strictFilePairParityErrors = auditStrictFilePairParity(manifest);
 	const strictSaveStateSchemaParityErrors = auditStrictSaveStateSchemaParity(manifest);
@@ -1366,6 +1541,11 @@ function main(): void {
 		hasErrors = true;
 		console.error(`\nStrict RPU table parity errors (${strictRpuTableParityErrors.length}):`);
 		for (const item of strictRpuTableParityErrors) console.error(`  ${item}`);
+	}
+	if (strictBlua32IsaParityErrors.length > 0) {
+		hasErrors = true;
+		console.error(`\nStrict BLua32 ISA parity errors (${strictBlua32IsaParityErrors.length}):`);
+		for (const item of strictBlua32IsaParityErrors) console.error(`  ${item}`);
 	}
 	if (strictFileLayoutErrors.length > 0) {
 		hasErrors = true;

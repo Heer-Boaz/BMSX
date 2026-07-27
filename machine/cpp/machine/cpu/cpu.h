@@ -22,13 +22,13 @@
 #include "machine/cpu/closure.h"
 #include "machine/execution_address_space.h"
 #include "machine/cpu/errors.h"
-#include "machine/cpu/instruction_format.h"
+#include "spec/blua32/instruction_format.h"
 #include "machine/cpu/execution_image.h"
-#include "machine/cpu/cop0.h"
-#include "machine/cpu/opcode_info.h"
+#include "spec/blua32/cop0.h"
+#include "spec/blua32/opcode.h"
 #include "machine/cpu/table.h"
 #include "machine/cpu/value.h"
-#include "machine/memory/access_kind.h"
+#include "spec/blua32/memory_access_kind.h"
 
 namespace bmsx {
 

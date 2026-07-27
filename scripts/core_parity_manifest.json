@@ -211,11 +211,6 @@
 			"reason": "host_render_graph_not_core"
 		},
 		{
-			"pattern": "machine/ts/machine/bus/registers.ts",
-			"category": "compiler_tooling",
-			"reason": "compiler_mmio_metadata_not_runtime_core"
-		},
-		{
 			"pattern": "machine/ts/machine/cpu/register_file.ts",
 			"category": "cpu_interpreter_exception",
 			"reason": "ts_soa_register_storage_cpp_uses_qnan_boxed_value_words_directly"
@@ -290,9 +285,11 @@
 		"machine/ts/machine/devices/audio/output.ts",
 		"machine/ts/machine/devices/gx/gpu_display.ts",
 		"machine/ts/machine/devices/gx/gte.ts",
-		"machine/ts/machine/memory/access_kind.ts",
+		"machine/ts/spec/blua32/cop0.ts",
+		"machine/ts/spec/blua32/instruction_format.ts",
+		"machine/ts/spec/blua32/memory_access_kind.ts",
 		"machine/ts/machine/cpu/string_pool.ts",
-		"machine/ts/machine/cpu/opcode_info.ts",
+		"machine/ts/spec/blua32/opcode.ts",
 		"machine/ts/machine/runtime/timing/state.ts",
 		"machine/ts/render/runtime_state.ts",
 		"machine/ts/rompack/tokens.ts",
@@ -448,28 +445,42 @@
 			"reason": "audio_service_clock_contract"
 		},
 		{
-			"ts": "machine/ts/machine/cpu/instruction_format.ts",
+			"ts": "machine/ts/spec/blua32/instruction_format.ts",
 			"cpp": [
-				"machine/cpp/machine/cpu/instruction_format.h",
-				"machine/cpp/machine/cpu/instruction_format.cpp"
+				"machine/cpp/spec/blua32/instruction_format.h",
+				"machine/cpp/spec/blua32/instruction_format.cpp"
 			],
-			"reason": "cpu_instruction_word_encoding_contract"
+			"reason": "blua32_instruction_word_encoding_contract"
 		},
 		{
-			"ts": "machine/ts/machine/cpu/opcode_info.ts",
+			"ts": "machine/ts/spec/blua32/cop0.ts",
 			"cpp": [
-				"machine/cpp/machine/cpu/opcode_info.h",
-				"machine/cpp/machine/cpu/opcode_info.cpp"
+				"machine/cpp/spec/blua32/cop0.h"
 			],
-			"reason": "cpu_opcode_metadata_contract"
+			"reason": "blua32_cop0_register_word_contract"
 		},
 		{
-			"ts": "machine/ts/machine/memory/access_kind.ts",
+			"ts": "machine/ts/spec/blua32/opcode.ts",
 			"cpp": [
-				"machine/cpp/machine/memory/access_kind.h",
-				"machine/cpp/machine/memory/access_kind.cpp"
+				"machine/cpp/spec/blua32/opcode.h",
+				"machine/cpp/spec/blua32/opcode.cpp"
 			],
-			"reason": "memory_access_kind_contract"
+			"reason": "blua32_opcode_and_timing_contract"
+		},
+		{
+			"ts": "machine/ts/spec/blua32/memory_access_kind.ts",
+			"cpp": [
+				"machine/cpp/spec/blua32/memory_access_kind.h"
+			],
+			"reason": "blua32_memory_access_operand_contract"
+		},
+		{
+			"ts": "machine/ts/rompack/tooling/opcode_metadata.ts",
+			"cpp": [
+				"machine/cpp/rompack/tooling/opcode_metadata.h",
+				"machine/cpp/rompack/tooling/opcode_metadata.cpp"
+			],
+			"reason": "blua32_tooling_opcode_metadata_contract"
 		},
 		{
 			"ts": "machine/ts/machine/runtime/save_machine_state.ts",
@@ -801,6 +812,31 @@
 		}
 	],
 	"strict_rpu_table_parity": [],
+	"strict_blua32_isa_parity": [
+		{
+			"ts_cop0": "machine/ts/spec/blua32/cop0.ts",
+			"cpp_cop0": "machine/cpp/spec/blua32/cop0.h",
+			"ts_instruction_format": "machine/ts/spec/blua32/instruction_format.ts",
+			"cpp_instruction_format": "machine/cpp/spec/blua32/instruction_format.h",
+			"ts_memory_access": "machine/ts/spec/blua32/memory_access_kind.ts",
+			"cpp_memory_access": "machine/cpp/spec/blua32/memory_access_kind.h",
+			"ts_opcode": "machine/ts/spec/blua32/opcode.ts",
+			"ts_metadata": "machine/ts/rompack/tooling/opcode_metadata.ts",
+			"cpp_opcode_list": "machine/cpp/spec/blua32/opcode_list.inl",
+			"cpp_opcode_tables": "machine/cpp/spec/blua32/opcode.cpp",
+			"cpp_metadata": "machine/cpp/rompack/tooling/opcode_metadata.cpp",
+			"numeric_tables": [
+				"BASE_CYCLES",
+				"OPCODE_USES_BX",
+				"OPCODE_USES_DISP"
+			],
+			"string_tables": [
+				"OPCODE_NAMES",
+				"OPCODE_CATEGORY"
+			],
+			"reason": "blua32_opcode_numbers_decode_tables_and_tooling_names_must_match_exactly"
+		}
+	],
 	"strict_file_layout": [
 		{
 			"absent": [
@@ -1417,15 +1453,28 @@
 			]
 		},
 		{
-			"ts": "machine/ts/machine/memory/access_kind.ts",
+			"ts": "machine/ts/spec/blua32/cop0.ts",
 			"cpp": [
-				"machine/cpp/machine/memory/access_kind.h"
+				"machine/cpp/spec/blua32/cop0.h"
 			]
 		},
 		{
-			"ts": "machine/ts/machine/cpu/opcode_info.ts",
+			"ts": "machine/ts/spec/blua32/instruction_format.ts",
 			"cpp": [
-				"machine/cpp/machine/cpu/opcode_info.h"
+				"machine/cpp/spec/blua32/instruction_format.h",
+				"machine/cpp/spec/blua32/instruction_format.cpp"
+			]
+		},
+		{
+			"ts": "machine/ts/spec/blua32/memory_access_kind.ts",
+			"cpp": [
+				"machine/cpp/spec/blua32/memory_access_kind.h"
+			]
+		},
+		{
+			"ts": "machine/ts/spec/blua32/opcode.ts",
+			"cpp": [
+				"machine/cpp/spec/blua32/opcode.h"
 			],
 			"exclude": [
 				{
@@ -1433,6 +1482,13 @@
 					"symbol": "OPCODE",
 					"reason": "TS emits OPCODE as a runtime value table for const-enum consumers; C++ exposes the same opcode values through enum class OpCode."
 				}
+			]
+		},
+		{
+			"ts": "machine/ts/rompack/tooling/opcode_metadata.ts",
+			"cpp": [
+				"machine/cpp/rompack/tooling/opcode_metadata.h",
+				"machine/cpp/rompack/tooling/opcode_metadata.cpp"
 			]
 		},
 		{

@@ -3,8 +3,8 @@ import { test } from 'node:test';
 
 import { writeLE32 } from '../../machine/ts/common/endian';
 import { decodeBlua32Image } from '../../machine/ts/machine/cpu/blua32_image';
-import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/machine/cpu/instruction_format';
-import { OpCode } from '../../machine/ts/machine/cpu/opcode_info';
+import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
+import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { linkRawTestSystemBlua32 } from '../helpers/blua32';
 
 test('BLua32 decoder rejects function text above the image text span', () => {

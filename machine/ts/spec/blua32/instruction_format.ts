@@ -38,11 +38,11 @@ export function signExtend(value: number, bits: number): number {
 }
 
 export function packInstructionWord(op: number, a: number, b: number, c: number, ext: number = 0): number {
-	return ((ext & 0xff) << 24)
+	return (((ext & 0xff) << 24)
 		| ((op & 0x3f) << 18)
 		| ((a & 0x3f) << 12)
 		| ((b & 0x3f) << 6)
-		| (c & 0x3f);
+		| (c & 0x3f)) >>> 0;
 }
 
 export function writeInstruction(code: Uint8Array, index: number, op: number, a: number, b: number, c: number, ext: number = 0): void {
@@ -60,8 +60,8 @@ export function writeInstructionWord(code: Uint8Array, index: number, word: numb
 
 export function readInstructionWord(code: Uint8Array, index: number): number {
 	const offset = index * INSTRUCTION_BYTES;
-	return (code[offset] << 24)
+	return ((code[offset] << 24)
 		| (code[offset + 1] << 16)
 		| (code[offset + 2] << 8)
-		| code[offset + 3];
+		| code[offset + 3]) >>> 0;
 }

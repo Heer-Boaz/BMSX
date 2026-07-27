@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { OpCode, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import {
 	CpuProfilerSession,
 	collectCpuProfilerHotPcs,
 	formatCpuProfilerReport,
 } from '../../scripts/bootrom/cpu_profiler';
-import { writeInstruction, INSTRUCTION_BYTES } from '../../machine/ts/machine/cpu/instruction_format';
+import { writeInstruction, INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
 import {
 	createTestSystemCpu,
 	linkRawTestSystemBlua32,

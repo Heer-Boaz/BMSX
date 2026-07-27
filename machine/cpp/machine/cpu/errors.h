@@ -5,7 +5,7 @@
 #include <string>
 
 #include "common/primitives.h"
-#include "machine/cpu/cop0.h"
+#include "spec/blua32/cop0.h"
 #include "machine/cpu/value.h"
 
 namespace bmsx {

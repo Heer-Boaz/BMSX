@@ -7,8 +7,8 @@ import type {
 	SourceRange,
 } from './blua32_symbols';
 import { arrays_equal } from '../../common/arrays_equal';
-import { INSTRUCTION_BYTES, readInstructionWord } from '../../machine/cpu/instruction_format';
-import { OpCode } from '../../machine/cpu/opcode_info';
+import { INSTRUCTION_BYTES, readInstructionWord } from '../../spec/blua32/instruction_format';
+import { OpCode } from '../../spec/blua32/opcode';
 import { compareSourcePosition, sourcePositionInRange, sourceRangeKey } from '../../lua/semantic/source_range';
 import type { LinkedBlua32Image } from './blua32_linker';
 

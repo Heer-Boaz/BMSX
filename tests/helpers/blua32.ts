@@ -20,8 +20,8 @@ import {
 } from '../../machine/ts/machine/cpu/cpu';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { describeBlua32InstructionAtPc } from '../../machine/ts/rompack/tooling/disassembler';
-import { INSTRUCTION_BYTES, readInstructionWord } from '../../machine/ts/machine/cpu/instruction_format';
-import { OpCode } from '../../machine/ts/machine/cpu/opcode_info';
+import { INSTRUCTION_BYTES, readInstructionWord } from '../../machine/ts/spec/blua32/instruction_format';
+import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import type { ProgramMetadata, Proto } from '../../machine/ts/lua/compiler/program';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';

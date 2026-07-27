@@ -1,15 +1,4 @@
-export const enum MemoryAccessKind {
-	Word,
-	U8,
-	U16LE,
-	U32LE,
-	F32LE,
-	F64LE,
-}
-
-export const MEMORY_ACCESS_KIND_NAMES = ['mem', 'mem8', 'mem16le', 'mem32le', 'memf32le', 'memf64le'] as const;
-
-export const MEMORY_ACCESS_KIND_ALIGNMENT_MASKS = [3, 0, 1, 3, 3, 3] as const;
+import { MemoryAccessKind } from '../spec/blua32/memory_access_kind';
 
 export function getMemoryAccessKindForName(name: string): MemoryAccessKind | null {
 	switch (name) {

@@ -1,7 +1,7 @@
 // start normalized-body-acceptable -- Value-folding helpers mirror opcode cases; sharing them would hide the rewrite intent.
-import { OpCode } from '../../../machine/cpu/cpu';
+import { OpCode } from '../../../spec/blua32/opcode';
 import { asStringId, isTruthyValue, valueIsString, type Value } from '../../../machine/cpu/value';
-import { MAX_SIGNED_BX, MIN_SIGNED_BX } from '../../../machine/cpu/instruction_format';
+import { MAX_SIGNED_BX, MIN_SIGNED_BX } from '../../../spec/blua32/instruction_format';
 import type { Instruction, OptimizationContext } from './index';
 import { luaModulo } from '../../numeric';
 

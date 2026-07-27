@@ -1,4 +1,4 @@
-import { OpCode } from '../../machine/cpu/cpu';
+import { OpCode } from '../../spec/blua32/opcode';
 import {
 	BASE_BX_BITS,
 	INSTRUCTION_BYTES,
@@ -7,7 +7,7 @@ import {
 	MAX_LOW_BX,
 	readInstructionWord,
 	writeInstruction,
-} from '../../machine/cpu/instruction_format';
+} from '../../spec/blua32/instruction_format';
 import {
 	BLUA32_CONSTANT_RECORD_SIZE,
 	BLUA32_FUNCTION_ALIGNMENT,

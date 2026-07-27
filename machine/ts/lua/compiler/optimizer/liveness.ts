@@ -1,5 +1,4 @@
-import { OpCode } from '../../../machine/cpu/cpu';
-import { decodeCallArgCount } from '../../../machine/cpu/opcode_info';
+import { OpCode, decodeCallArgCount } from '../../../spec/blua32/opcode';
 import { buildBasicBlocks, buildBlockGraph, type Block } from '../control_flow';
 import type { Instruction } from './index';
 import { isRegisterOperand } from './instructions';

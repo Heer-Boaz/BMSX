@@ -1,77 +1,3 @@
-export const enum OpCode {
-	WIDE,
-	MOV,
-	LOADK,
-	LOADNIL,
-	LOAD_MEM_D,
-	KNIL,
-	KFALSE,
-	KTRUE,
-	K0,
-	K1,
-	KM1,
-	KSMI,
-	STORE_MEM_D,
-	STORE_MEM_WORDS_D,
-	GETT,
-	SETT,
-	NEWT,
-	ADD,
-	SUB,
-	MUL,
-	DIV,
-	MOD,
-	FLOORDIV,
-	POW,
-	BAND,
-	BOR,
-	BXOR,
-	SHL,
-	SHR,
-	CONCAT,
-	CONCATN,
-	UNM,
-	NOT,
-	LEN,
-	BNOT,
-	EQ,
-	LT,
-	LE,
-	MFC0,
-	MTC0,
-	JMP,
-	JMPIF,
-	JMPIFNOT,
-	CLOSURE,
-	GETUP,
-	SETUP,
-	VARARG,
-	CALL,
-	RET,
-	LOAD_MEM,
-	STORE_MEM,
-	STORE_MEM_WORDS,
-	RFE,
-	LOADKR,
-	GETSYS,
-	SETSYS,
-	GETGL,
-	SETGL,
-	GETI,
-	SETI,
-	GETFIELD,
-	SETFIELD,
-	SELF,
-	HALT,
-}
-
-export const OPCODE_COUNT = 64;
-
-export const encodeFixedCallArgCount = (argCount: number): number => argCount + 1;
-
-export const decodeCallArgCount = (operand: number, openArgCount: number): number =>
-	operand === 0 ? openArgCount : operand - 1;
-
 export const OPCODE_NAMES: ReadonlyArray<string> = [
 	'WIDE',
 	'MOV',
@@ -139,39 +65,6 @@ export const OPCODE_NAMES: ReadonlyArray<string> = [
 	'HALT',
 ];
 
-export const BASE_CYCLES = new Uint8Array([
-	0, 1, 1, 1, 2, 1, 1, 1,
-	1, 1, 1, 1, 2, 2, 1, 2,
-	1, 1, 1, 1, 1, 1, 1, 1,
-	1, 1, 1, 1, 1, 1, 2, 1,
-	1, 1, 1, 1, 1, 1, 1, 1,
-	1, 1, 1, 1, 1, 2, 2, 2,
-	2, 2, 2, 2, 1, 1, 1, 2,
-	1, 2, 1, 2, 1, 2, 1, 1,
-]);
-
-export const OPCODE_USES_BX = new Uint8Array([
-	0, 0, 1, 0, 0, 0, 0, 0,
-	0, 0, 0, 1, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0,
-	1, 1, 1, 1, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, 0, 1, 1,
-	1, 1, 0, 0, 0, 0, 0, 0,
-]);
-
-export const OPCODE_USES_DISP = new Uint8Array([
-	0, 0, 0, 0, 1, 0, 0, 0,
-	0, 0, 0, 0, 1, 1, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0,
-]);
-
 export const OPCODE_CATEGORY: ReadonlyArray<string> = [
 	'wide prefix', 'load/move', 'load/move', 'load/move', 'memory I/O', 'load/move', 'load/move', 'load/move',
 	'load/move', 'load/move', 'load/move', 'load/move', 'memory I/O', 'memory I/O', 'table get/set', 'table get/set',
@@ -182,7 +75,3 @@ export const OPCODE_CATEGORY: ReadonlyArray<string> = [
 	'call/return', 'memory I/O', 'memory I/O', 'memory I/O', 'system control', 'load/move', 'global/sys access', 'global/sys access',
 	'global/sys access', 'global/sys access', 'table get/set', 'table get/set', 'table get/set', 'table get/set', 'table get/set', 'sleep/halt',
 ];
-
-export function getOpcodeName(opcode: OpCode): string {
-	return OPCODE_NAMES[opcode];
-}

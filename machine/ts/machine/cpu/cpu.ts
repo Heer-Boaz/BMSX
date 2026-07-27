@@ -6,7 +6,7 @@ import {
 	collectTrackedLuaHeapBytes as refreshTrackedLuaHeapBytes,
 	enforceLuaHeapBudget
 } from '../memory/lua_heap_usage';
-import { BASE_CYCLES, OPCODE_USES_BX, OPCODE_USES_DISP, OpCode } from './opcode_info';
+import { BASE_CYCLES, OPCODE_USES_BX, OPCODE_USES_DISP, OpCode } from '../../spec/blua32/opcode';
 import {
 	COP0_BAD_ADDRESS,
 	COP0_CAUSE,
@@ -34,8 +34,8 @@ import {
 	LUA_FAULT_REASON_ITERATE_NON_TABLE,
 	LUA_FAULT_REASON_METATABLE_LOOP,
 	LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION,
-} from './cop0';
-import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord, signExtend } from './instruction_format';
+} from '../../spec/blua32/cop0';
+import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord, signExtend } from '../../spec/blua32/instruction_format';
 import {
 	BLUA32_FUNCTION_RECORD_SIZE,
 	Blua32ConstantTag,
@@ -47,7 +47,7 @@ import {
 	type Blua32DecodedExecutionImage,
 	type ExecutionDomainId,
 } from '../execution_address_space';
-import { MEMORY_ACCESS_KIND_ALIGNMENT_MASKS, MemoryAccessKind } from '../memory/access_kind';
+import { MEMORY_ACCESS_KIND_ALIGNMENT_MASKS, MemoryAccessKind } from '../../spec/blua32/memory_access_kind';
 import { ScratchBuffer } from '../../common/scratchbuffer';
 import { ScratchArrayStack } from '../../common/scratchstack';
 import { luaFloorDivide, luaModulo } from '../../lua/numeric';
@@ -89,8 +89,6 @@ import {
 	type TableLoadInlineCache,
 } from './execution_image';
 import { ProtectedCallContinuation, ProtectedCallKind, type CallFrame } from './call_state';
-
-export { OpCode } from './opcode_info';
 
 // start repeated-sequence-acceptable -- Lua VM/table/register hot paths deliberately keep short copy/update sequences inline.
 // start normalized-body-acceptable -- Specialized Lua VM accessors stay split so the fast paths avoid dispatch helpers.

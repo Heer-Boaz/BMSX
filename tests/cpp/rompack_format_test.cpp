@@ -1,5 +1,5 @@
 #include "common/endian.h"
-#include "machine/cpu/instruction_format.h"
+#include "spec/blua32/instruction_format.h"
 #include "machine/memory/map.h"
 #include "rompack/loader.h"
 #include "support/blua32_test_rom.h"
@@ -10,6 +10,19 @@
 #include <stdexcept>
 
 int main() {
+	const bmsx::u32 instructionWord = bmsx::packInstructionWord(0x3fu, 0x3fu, 0x3fu, 0x3fu, 0xffu);
+	if (instructionWord != 0xffffffffu) {
+		throw std::runtime_error("BLua32 instruction fields did not pack to one raw word");
+	}
+	std::array<bmsx::u8, bmsx::INSTRUCTION_BYTES> instructionBytes{};
+	bmsx::writeInstructionWord(instructionBytes, 0, instructionWord);
+	if (instructionBytes != std::array<bmsx::u8, bmsx::INSTRUCTION_BYTES>{0xffu, 0xffu, 0xffu, 0xffu}) {
+		throw std::runtime_error("BLua32 instruction word was not written big-endian");
+	}
+	if (bmsx::readInstructionWord(instructionBytes, 0) != instructionWord) {
+		throw std::runtime_error("BLua32 instruction word did not round-trip");
+	}
+
 	std::array<bmsx::u8, bmsx::CART_ROM_HEADER_SIZE - 1u> truncated{};
 	for (const size_t size : {size_t{32}, size_t{76}, truncated.size()}) {
 		bool rejected = false;

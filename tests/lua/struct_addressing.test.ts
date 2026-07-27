@@ -4,9 +4,10 @@ import { test } from 'node:test';
 import { splitText } from '../../machine/ts/common/text_lines';
 import { LuaLexer } from '../../machine/ts/lua/syntax/lexer';
 import { LuaParser } from '../../machine/ts/lua/syntax/parser';
-import { OpCode, RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { writeInstruction, INSTRUCTION_BYTES } from '../../machine/ts/machine/cpu/instruction_format';
-import { MemoryAccessKind } from '../../machine/ts/machine/memory/access_kind';
+import { RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { writeInstruction, INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
+import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { RAM_BASE } from '../../machine/ts/machine/memory/map';
 import { compileLuaChunkToProgram, type CompiledProgram } from '../../machine/ts/lua/compiler';
 import {
