@@ -8,7 +8,6 @@ namespace {
 static_assert(GX_GPU_PCRTC_WORD_COUNT == IO_GX_PCRTC_WORD_COUNT + IO_GX_PCRTC_TIMING_WORD_COUNT);
 
 constexpr i64 PCRTC_REFERENCE_CLOCK_HZ = 13'500'000;
-constexpr i64 PCRTC_HZ_SCALE = 1'000'000;
 constexpr u32 PCRTC_SOURCE_DIVISION_SCALE = 1u << GX_GPU_PCRTC_SOURCE_DIVISION_SHIFT;
 constexpr u32 GX_GPU_PCRTC_VERTICAL_STAGE_VBLANK_BEGIN = 0u;
 constexpr u32 GX_GPU_PCRTC_VERTICAL_STAGE_VSYNC = 1u;
@@ -134,10 +133,14 @@ void GxGpuPcrtcTiming::update(const std::array<u32, GX_GPU_PCRTC_CONFIG_WORD_COU
 		&& halfLineClockDenominator != 0u
 		&& totalHalfLines != 0u;
 	if (running) {
-		refreshUfpsScaled = static_cast<i64>(halfLineClockDenominator) * PCRTC_HZ_SCALE
+		refreshUfpsScaled = static_cast<i64>(halfLineClockDenominator) * GX_GPU_PCRTC_HZ_SCALE
 			/ (static_cast<i64>(halfLineClockNumerator) * totalHalfLines);
+		frameDurationMs = 1000.0 / (
+			static_cast<f64>(refreshUfpsScaled) / static_cast<f64>(GX_GPU_PCRTC_HZ_SCALE)
+		);
 	} else {
 		refreshUfpsScaled = 0;
+		frameDurationMs = 0.0;
 	}
 	fieldToggles = cmod != 0u && (vfp & 1u) != 0u;
 	revision += 1u;

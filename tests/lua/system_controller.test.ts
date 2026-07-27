@@ -4,8 +4,11 @@ import { test } from 'node:test';
 
 import {
 	IO_SYS_CONTROL,
+	IO_SYS_CYCLES_PER_FRAME,
+	IO_SYS_FRAME_MS,
 	IO_SYS_PRINT_CHAR,
 	IO_SYS_PRINT_FLUSH,
+	IO_SYS_TIME_MS,
 	IO_CART_SELECT,
 	IO_IRQ_ACK,
 	IO_IRQ_MASK,
@@ -14,6 +17,12 @@ import {
 	SYS_PRINT_BUFFER_BYTES,
 } from '../../machine/ts/machine/bus/io';
 import { Machine } from '../../machine/ts/machine/machine';
+import { PSX_MACHINE_SPEC } from '../../machine/ts/machine/model_registry';
+import {
+	GX_GPU_PCRTC_SMODE1_LOW,
+	GX_GPU_PCRTC_SMODE1_SINT,
+	gxGpuPcrtcRegisterAddress,
+} from '../../machine/ts/machine/devices/gx/gpu_pcrtc';
 import { decodeBlua32BootHeader } from '../../machine/ts/machine/cpu/blua32_image';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
@@ -140,6 +149,43 @@ test('system control reset command is write-only, self-clearing, and save-state 
 	controller.restoreState(state);
 	assert.equal(controller.takeResetRequest(), true);
 	assert.equal(controller.takeResetRequest(), false);
+});
+
+test('system timing registers consume scheduler and PCRTC device state without Runtime mappings', () => {
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
+	const machine = new Machine(memory, new SystemResetInputSource());
+	const timing = resolveRuntimeTiming(5_000_000);
+	machine.resetDevices();
+	machine.scheduler.setNowCycles(PSX_MACHINE_SPEC.cpuFreqHz);
+	assert.equal(memory.readMappedValue(IO_SYS_TIME_MS), 1000);
+	machine.scheduler.setNowCycles(0);
+	machine.refreshDeviceTimings({
+		cpuHz: timing.cpuHz,
+		geoWorkUnitsPerSec: timing.geoWorkUnitsPerSec,
+	}, machine.scheduler.currentNowCycles());
+
+	assert.equal(memory.readMappedValue(IO_SYS_TIME_MS), 0);
+	assert.equal(
+		memory.readMappedValue(IO_SYS_FRAME_MS),
+		machine.gxGpu.readPcrtcTiming().frameDurationMs,
+	);
+	assert.equal(
+		memory.readMappedValue(IO_SYS_CYCLES_PER_FRAME),
+		machine.gxGpu.readPcrtcTiming().nextVblankCycleBudget,
+	);
+
+	machine.scheduler.setNowCycles(12_500_001);
+	assert.equal(memory.readMappedValue(IO_SYS_TIME_MS), 2500);
+	assert.equal(machine.systemController.elapsedMilliseconds(), 2500.0002);
+
+	const smode1Address = gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_SMODE1_LOW);
+	const smode1 = memory.readMappedU32LE(smode1Address);
+	memory.writeMappedU32LE(smode1Address, smode1 | GX_GPU_PCRTC_SMODE1_SINT);
+	assert.equal(memory.readMappedValue(IO_SYS_FRAME_MS), 0);
+	assert.equal(memory.readMappedValue(IO_SYS_CYCLES_PER_FRAME), 0);
+
+	machine.scheduler.setNowCycles(9_000_006_099_639_999);
+	assert.equal(memory.readMappedValue(IO_SYS_TIME_MS), 409_922_903);
 });
 
 test('system print registers retain firmware output and publish complete host lines', () => {

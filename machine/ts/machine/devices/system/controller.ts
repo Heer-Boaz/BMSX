@@ -1,8 +1,11 @@
 import {
 	IO_SYS_CONTROL,
+	IO_SYS_CYCLES_PER_FRAME,
+	IO_SYS_FRAME_MS,
 	IO_SYS_PRINT_CHAR,
 	IO_SYS_PRINT_FLUSH,
 	IO_SYS_STATUS,
+	IO_SYS_TIME_MS,
 	SYS_PRINT_BUFFER_BYTES,
 	SYS_CONTROL_RESET,
 	SYS_CONTROL_SUPERVISOR_ENTER,
@@ -71,9 +74,13 @@ export class SystemController {
 		private readonly geometry: GeometryController,
 		private readonly gpu: GxGpu,
 		private readonly imgdec: ImgDecController,
+		private cpuHz: number,
 	) {
 		memory.mapIoWrite(IO_SYS_CONTROL, this, SystemController.writeControl);
 		memory.mapIoRead(IO_SYS_STATUS, this, SystemController.readStatus);
+		memory.mapIoRead(IO_SYS_TIME_MS, this, SystemController.readTimeMilliseconds);
+		memory.mapIoRead(IO_SYS_FRAME_MS, this, SystemController.readFrameMilliseconds);
+		memory.mapIoRead(IO_SYS_CYCLES_PER_FRAME, this, SystemController.readCyclesPerFrame);
 		memory.mapIoRead(IO_SYS_PRINT_CHAR, this, SystemController.readPrintChar);
 		memory.mapIoWrite(IO_SYS_PRINT_CHAR, this, SystemController.writePrintChar);
 		memory.mapIoRead(IO_SYS_PRINT_FLUSH, this, SystemController.readPrintByteCount);
@@ -95,8 +102,36 @@ export class SystemController {
 		this.writeStatusIo();
 	}
 
+	public setTiming(cpuHz: number): void {
+		this.cpuHz = cpuHz;
+	}
+
+	public elapsedMilliseconds(): number {
+		return this.scheduler.currentNowCycles() * 1000 / this.cpuHz;
+	}
+
 	private static readStatus(context: SystemController): Value {
 		return context.statusWord();
+	}
+
+	private static readTimeMilliseconds(context: SystemController): Value {
+		const cycles = context.scheduler.currentNowCycles();
+		const cycleRemainder = cycles % context.cpuHz;
+		const wholeSeconds = (cycles - cycleRemainder) / context.cpuHz;
+		const millisecondNumerator = cycleRemainder * 1000;
+		const millisecondRemainder = millisecondNumerator % context.cpuHz;
+		return (
+			wholeSeconds * 1000
+			+ (millisecondNumerator - millisecondRemainder) / context.cpuHz
+		) >>> 0;
+	}
+
+	private static readFrameMilliseconds(context: SystemController): Value {
+		return context.gpu.readPcrtcTiming().frameDurationMs;
+	}
+
+	private static readCyclesPerFrame(context: SystemController): Value {
+		return context.gpu.readPcrtcTiming().nextVblankCycleBudget;
 	}
 
 	private static readPrintChar(context: SystemController): Value {

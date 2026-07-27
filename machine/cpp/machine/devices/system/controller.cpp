@@ -20,7 +20,8 @@ SystemController::SystemController(
 	DmaController& dma,
 	GeometryController& geometry,
 	GxGpu& gpu,
-	ImgDecController& imgDec)
+	ImgDecController& imgDec,
+	i64 cpuHz)
 	: m_memory(memory)
 	, m_cpu(cpu)
 	, m_scheduler(scheduler)
@@ -28,9 +29,13 @@ SystemController::SystemController(
 	, m_dma(dma)
 	, m_geometry(geometry)
 	, m_gpu(gpu)
-	, m_imgDec(imgDec) {
+	, m_imgDec(imgDec)
+	, m_cpuHz(cpuHz) {
 	memory.mapIoWrite<&SystemController::writeControl>(IO_SYS_CONTROL, *this);
 	memory.mapIoRead<&SystemController::readStatus>(IO_SYS_STATUS, *this);
+	memory.mapIoRead<&SystemController::readTimeMilliseconds>(IO_SYS_TIME_MS, *this);
+	memory.mapIoRead<&SystemController::readFrameMilliseconds>(IO_SYS_FRAME_MS, *this);
+	memory.mapIoRead<&SystemController::readCyclesPerFrame>(IO_SYS_CYCLES_PER_FRAME, *this);
 	memory.mapIoRead<&SystemController::readPrintChar>(IO_SYS_PRINT_CHAR, *this);
 	memory.mapIoWrite<&SystemController::writePrintChar>(IO_SYS_PRINT_CHAR, *this);
 	memory.mapIoRead<&SystemController::readPrintByteCount>(IO_SYS_PRINT_FLUSH, *this);
@@ -52,8 +57,28 @@ void SystemController::reset() {
 	writeStatusIo();
 }
 
+f64 SystemController::elapsedMilliseconds() const {
+	return static_cast<f64>(m_scheduler.currentNowCycles()) * 1000.0 / static_cast<f64>(m_cpuHz);
+}
+
 Value SystemController::readStatus([[maybe_unused]] u32 address) {
 	return valueNumber(static_cast<f64>(statusWord()));
+}
+
+Value SystemController::readTimeMilliseconds([[maybe_unused]] u32 address) const {
+	const u64 cycles = static_cast<u64>(m_scheduler.currentNowCycles());
+	const u64 cpuHz = static_cast<u64>(m_cpuHz);
+	return valueNumber(static_cast<f64>(
+		static_cast<u32>((cycles / cpuHz) * 1000u + ((cycles % cpuHz) * 1000u) / cpuHz)
+	));
+}
+
+Value SystemController::readFrameMilliseconds([[maybe_unused]] u32 address) const {
+	return valueNumber(m_gpu.readPcrtcTiming().frameDurationMs);
+}
+
+Value SystemController::readCyclesPerFrame([[maybe_unused]] u32 address) const {
+	return valueNumber(static_cast<f64>(m_gpu.readPcrtcTiming().nextVblankCycleBudget));
 }
 
 Value SystemController::readPrintChar([[maybe_unused]] u32 address) {

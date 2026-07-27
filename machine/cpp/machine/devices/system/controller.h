@@ -46,8 +46,11 @@ public:
 		DmaController& dma,
 		GeometryController& geometry,
 		GxGpu& gpu,
-		ImgDecController& imgDec);
+		ImgDecController& imgDec,
+		i64 cpuHz);
 	void reset();
+	void setTiming(i64 cpuHz) { m_cpuHz = cpuHz; }
+	f64 elapsedMilliseconds() const;
 	void requestSupervisorLineEdge();
 	void onService();
 	bool cpuHeld() const {
@@ -64,6 +67,9 @@ public:
 
 private:
 	Value readStatus(u32 address);
+	Value readTimeMilliseconds(u32 address) const;
+	Value readFrameMilliseconds(u32 address) const;
+	Value readCyclesPerFrame(u32 address) const;
 	Value readPrintChar(u32 address);
 	Value readPrintByteCount(u32 address) const;
 	void writeControl(u32 address, Value value);
@@ -101,6 +107,7 @@ private:
 	u32 m_hostOutputCompleteByteCount = 0u;
 	bool m_hostOutputLineOverflowed = false;
 	std::array<u8, 4> m_printEncodingBytes{};
+	i64 m_cpuHz;
 };
 
 } // namespace bmsx

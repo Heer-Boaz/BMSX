@@ -55,7 +55,10 @@ export class VblankState {
 		const runtime = this.runtime;
 		this.vblankSequence += 1;
 		runtime.machine.gxGpu.presentReadyFrameOnVblankEdge();
-		runtime.machine.inputController.onVblankEdge(runtime.machineElapsedMs(), runtime.machine.scheduler.nowCycles);
+		runtime.machine.inputController.onVblankEdge(
+			runtime.machine.systemController.elapsedMilliseconds(),
+			runtime.machine.scheduler.nowCycles,
+		);
 		runtime.machine.irqController.raise(IRQ_VBLANK);
 		if (runtime.frameLoop.frameActive) {
 			this.completeTickIfPending(runtime.frameLoop.frameState, this.vblankSequence);

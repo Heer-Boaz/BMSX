@@ -96,6 +96,7 @@ constexpr u32 GX_GPU_PCRTC_RESET_IMR_WORD = 0x00007f00u;
 constexpr i64 GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED = 49'761'146;
 constexpr u32 GX_GPU_PCRTC_RESET_TOTAL_HALF_LINES = 628u;
 constexpr u32 GX_GPU_PCRTC_RESET_ACTIVE_DISPLAY_HALF_LINES = 576u;
+constexpr i64 GX_GPU_PCRTC_HZ_SCALE = 1'000'000;
 constexpr u32 GX_GPU_PCRTC_SOURCE_DIVISION_SHIFT = 18u;
 
 constexpr u32 GX_GPU_PCRTC_RUNTIME_EDGE_NONE = 0u;
@@ -169,6 +170,10 @@ struct GxGpuPcrtcTiming {
 	u32 vsyncHalfLine = 585u;
 	i64 nextVblankCycleBudget = 1;
 	i64 refreshUfpsScaled = GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED;
+	f64 frameDurationMs = 1000.0 / (
+		static_cast<f64>(GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED)
+			/ static_cast<f64>(GX_GPU_PCRTC_HZ_SCALE)
+	);
 	bool fieldToggles = true;
 	bool running = true;
 	u32 revision = 0u;

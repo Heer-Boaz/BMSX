@@ -172,6 +172,11 @@ test('core golden: the GPU VBlank edge presents and completes the active runtime
 					gxPresentCount += 1;
 				},
 			},
+			systemController: {
+				elapsedMilliseconds() {
+					return scheduler.currentNowCycles() * 1000 / 5000;
+				},
+			},
 		},
 		frameLoop: {
 			frameActive: true,
@@ -181,9 +186,6 @@ test('core golden: the GPU VBlank edge presents and completes the active runtime
 			enqueueTickCompletion(completed: unknown) {
 				completedFrames.push(completed);
 			},
-		},
-		machineElapsedMs() {
-			return scheduler.currentNowCycles() * 1000 / 5000;
 		},
 	} as unknown as Runtime;
 	const vblank = new VblankState(runtime);

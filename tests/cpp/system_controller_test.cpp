@@ -363,6 +363,50 @@ void testResetCommandLatch() {
 	require(!controller.takeResetRequest(), "consuming a system reset clears the latch");
 }
 
+void testSystemTimingRegisters() {
+	std::array<bmsx::u8, 1> emptyRom{{0}};
+	bmsx::Memory memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, bmsx::test::cartridgeSlots() });
+	SystemResetInputSource input;
+	bmsx::Machine machine(memory, input);
+	const bmsx::ResolvedRuntimeTiming timing = bmsx::resolveRuntimeTiming(5'000'000);
+	machine.resetDevices();
+	machine.scheduler.setNowCycles(bmsx::PSX_MACHINE_SPEC.cpuFreqHz);
+	require(
+		memory.readMappedU32LE(bmsx::IO_SYS_TIME_MS) == 1000u,
+		"system time has the physical model clock from device construction"
+	);
+	machine.scheduler.setNowCycles(0);
+	machine.refreshDeviceTimings(
+		bmsx::MachineTiming{timing.cpuHz, timing.geoWorkUnitsPerSec},
+		machine.scheduler.currentNowCycles()
+	);
+
+	require(memory.readMappedU32LE(bmsx::IO_SYS_TIME_MS) == 0u, "system time starts at the scheduler reset epoch");
+	require(
+		bmsx::asNumber(memory.readMappedValue(bmsx::IO_SYS_FRAME_MS))
+			== machine.gxGpu.readPcrtcTiming().frameDurationMs,
+		"system frame period is decoded from the retained PCRTC timing signal"
+	);
+	require(
+		bmsx::asNumber(memory.readMappedValue(bmsx::IO_SYS_CYCLES_PER_FRAME))
+			== static_cast<bmsx::f64>(machine.gxGpu.readPcrtcTiming().nextVblankCycleBudget),
+		"system frame-cycle count is read directly from the retained PCRTC timing signal"
+	);
+
+	machine.scheduler.setNowCycles(12'500'001);
+	require(memory.readMappedU32LE(bmsx::IO_SYS_TIME_MS) == 2500u, "system time exposes whole elapsed machine milliseconds");
+	require(machine.systemController.elapsedMilliseconds() == 2500.0002, "system controller exposes the exact VBlank sample timestamp");
+
+	const bmsx::u32 smode1Address = bmsx::gxGpuPcrtcRegisterAddress(bmsx::GX_GPU_PCRTC_SMODE1_LOW);
+	const bmsx::u32 smode1 = memory.readMappedU32LE(smode1Address);
+	memory.writeMappedU32LE(smode1Address, smode1 | bmsx::GX_GPU_PCRTC_SMODE1_SINT);
+	require(bmsx::asNumber(memory.readMappedValue(bmsx::IO_SYS_FRAME_MS)) == 0.0, "stopped PCRTC publishes zero frame duration");
+	require(bmsx::asNumber(memory.readMappedValue(bmsx::IO_SYS_CYCLES_PER_FRAME)) == 0.0, "stopped PCRTC publishes zero frame-cycle budget");
+
+	machine.scheduler.setNowCycles(9'000'006'099'639'999);
+	require(memory.readMappedU32LE(bmsx::IO_SYS_TIME_MS) == 409'922'903u, "system time retains exact low-u32 milliseconds near the TS integer boundary");
+}
+
 void testSystemPrintRegisters() {
 	std::array<bmsx::u8, 1> emptyRom{{0}};
 	bmsx::Memory memory(bmsx::MemoryInit{ { emptyRom.data(), 0u }, bmsx::test::cartridgeSlots() });
@@ -833,6 +877,7 @@ void testRuntimeRestorePreservesInFlightFrameBudgetAndResetsHostClock() {
 
 int main() {
 	testResetCommandLatch();
+	testSystemTimingRegisters();
 	testSystemPrintRegisters();
 	testRuntimeSystemRebootBoundary();
 	testUnexecutedSecondCartridgeDoesNotAlterGuestIdentity();

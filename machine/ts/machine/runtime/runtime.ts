@@ -15,7 +15,6 @@ import { refreshDeviceTimings } from './timing/config';
 import { HZ_SCALE } from './timing/constants';
 import type { GxGpuPcrtcTiming } from '../devices/gx/gpu_pcrtc';
 import { GX_GPU_VRAM_BYTE_COUNT } from '../devices/gx/vram_address';
-import { IO_SYS_CYCLES_PER_FRAME, IO_SYS_FRAME_MS, IO_SYS_TIME_MS } from '../bus/io';
 import { Machine } from '../machine';
 import type { RuntimeInputSource } from './input';
 import { BASE_RAM_USED_SIZE } from '../../spec/bmsx/memory_map';
@@ -261,37 +260,11 @@ export class Runtime {
 			input,
 		);
 		this.machine.memory.clearIoSlots();
-		this.machine.memory.mapIoRead(IO_SYS_TIME_MS, this, Runtime.onTimeMsReadThunk);
-		this.machine.memory.mapIoRead(IO_SYS_FRAME_MS, this, Runtime.onFrameMsReadThunk);
-		this.machine.memory.mapIoRead(IO_SYS_CYCLES_PER_FRAME, this, Runtime.onCyclesPerFrameReadThunk);
 		this.machine.resetDevices();
 		refreshDeviceTimings(this, this.machine.scheduler.currentNowCycles());
 		this.machine.runDeviceService(DEVICE_SERVICE_GPU);
 		this.applyPublishedGxGpuPcrtcTiming(this.machine.gxGpu.readDeviceOutput().pcrtcTiming);
 		configureLuaHeapUsage(this, Runtime.getBaseRamUsedBytesThunk, Runtime.collectTrackedHeapBytesThunk);
-	}
-
-	public machineTimeMs(): number {
-		return (this.machine.scheduler.currentNowCycles() * 1000 / this.timing.cpuHz) >>> 0;
-	}
-
-	public machineElapsedMs(): number {
-		return this.machine.scheduler.currentNowCycles() * 1000 / this.timing.cpuHz;
-	}
-
-	private static onTimeMsReadThunk(context: Runtime, addr: number): Value {
-		void addr;
-		return context.machineTimeMs();
-	}
-
-	private static onFrameMsReadThunk(context: Runtime, addr: number): Value {
-		void addr;
-		return context.timing.frameDurationMs;
-	}
-
-	private static onCyclesPerFrameReadThunk(context: Runtime, addr: number): Value {
-		void addr;
-		return context.timing.cycleBudgetPerFrame;
 	}
 
 	public baseRamUsedBytes(): number {
@@ -323,14 +296,6 @@ export class Runtime {
 		return GX_GPU_VRAM_BYTE_COUNT;
 	}
 
-	public applyUfpsScaled(ufpsScaled: number): void {
-		const timing = this.timing;
-		timing.ufpsScaled = ufpsScaled;
-		timing.ufps = ufpsScaled / HZ_SCALE;
-		timing.frameDurationMs = 1000 / timing.ufps;
-		this.input.setRuntimeInputFrameDurationMs(timing.frameDurationMs);
-	}
-
 	public applyPublishedGxGpuPcrtcTiming(pcrtcTiming: GxGpuPcrtcTiming): void {
 		const timing = this.timing;
 		if (timing.pcrtcRevision === pcrtcTiming.revision
@@ -354,7 +319,10 @@ export class Runtime {
 			return;
 		}
 		timing.cycleBudgetPerFrame = pcrtcTiming.nextVblankCycleBudget;
-		this.applyUfpsScaled(pcrtcTiming.refreshUfpsScaled);
+		timing.ufpsScaled = pcrtcTiming.refreshUfpsScaled;
+		timing.ufps = pcrtcTiming.refreshUfpsScaled / HZ_SCALE;
+		timing.frameDurationMs = pcrtcTiming.frameDurationMs;
+		this.input.setRuntimeInputFrameDurationMs(pcrtcTiming.frameDurationMs);
 	}
 
 	// disable-next-line single_line_method_pattern -- runtime string interning is the public CPU string-pool boundary.

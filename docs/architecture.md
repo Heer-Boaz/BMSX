@@ -1244,6 +1244,21 @@ terminal is firmware-ROM code, not a host overlay. This first hardware version
 deliberately uses a compact R3000-style exception model without an MMU, MPU,
 protected heap, or supervisor-only RAM.
 
+The system controller also owns the cart-visible machine clock registerfile.
+`SYS_TIME_MS` decodes the scheduler's current machine-cycle count through the
+configured CPU clock and returns the low 32 bits of elapsed whole milliseconds.
+`SYS_FRAME_MS` decodes the retained current GX PCRTC microhertz timing into a
+frame period, and `SYS_CYCLES_PER_FRAME` exposes that same PCRTC datapath's next
+VBlank cycle budget. A stopped PCRTC drives zero on both frame registers. These
+reads consume retained machine-device state directly; `Runtime` neither maps
+the addresses nor supplies a parallel cart clock.
+
+| Register | Address | Meaning |
+| --- | ---: | --- |
+| `SYS_TIME_MS` | `0x08010224` | Read low-u32 elapsed whole machine milliseconds. |
+| `SYS_FRAME_MS` | `0x08010228` | Read current PCRTC frame duration in milliseconds; zero while stopped. |
+| `SYS_CYCLES_PER_FRAME` | `0x08010234` | Read the current PCRTC next-VBlank cycle budget; zero while stopped. |
+
 Cart and firmware `print()` use the system debug-output register pair. A write
 to `SYS_PRINT_CHAR` supplies one Unicode codepoint. The system controller maps
 `0..255` directly into an 8192-byte circular BIOS-glyph history and maps wider

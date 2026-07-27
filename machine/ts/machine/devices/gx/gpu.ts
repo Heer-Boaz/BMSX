@@ -116,6 +116,7 @@ import {
 	GxGpuPcrtc,
 	gxGpuPcrtcRegisterAddress,
 	type GxGpuPcrtcState,
+	type GxGpuPcrtcTiming,
 } from './gpu_pcrtc';
 
 let gxGpuNextVramSnapshotSerial = 0n;
@@ -1428,6 +1429,10 @@ export class GxGpu {
 
 	public readGpuReadWord(): number {
 		return this.gpuReadWord;
+	}
+
+	public readPcrtcTiming(): GxGpuPcrtcTiming {
+		return this.pcrtc.timing;
 	}
 
 	public readDeviceOutput(): GxGpuDeviceOutput {

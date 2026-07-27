@@ -20,7 +20,17 @@ Machine::Machine(Memory& memoryRef, InputControllerInputSource& input)
 	, gxGpu(memory, cpu, irqController, scheduler, dmaController)
 	, imgDecController(memory, cpu, irqController, scheduler, dmaController, PSX_MACHINE_SPEC.imgDecCyclesPerOutputWord)
 	, gxGte(memory, cpu, scheduler)
-	, systemController(memory, cpu, scheduler, irqController, dmaController, geometryController, gxGpu, imgDecController)
+	, systemController(
+		memory,
+		cpu,
+		scheduler,
+		irqController,
+		dmaController,
+		geometryController,
+		gxGpu,
+		imgDecController,
+		PSX_MACHINE_SPEC.cpuFreqHz
+	)
 	, inputController(memory, input, systemController)
 {
 	cartridgeController.connect(memory, irqController, dmaController);
@@ -48,6 +58,7 @@ void Machine::resetDevices() {
 }
 
 void Machine::refreshDeviceTimings(const MachineTiming& timing, i64 nowCycles) {
+	systemController.setTiming(timing.cpuHz);
 	geometryController.setTiming(timing.cpuHz, timing.geoWorkUnitsPerSec, nowCycles);
 	audioController.setTiming(timing.cpuHz, nowCycles);
 	gxGpu.setTiming(timing.cpuHz, nowCycles);

@@ -231,6 +231,7 @@ public:
 	void writeDisplayModeWord(u32 word);
 	void setTiming(i64 cpuHz, i64 nowCycles);
 	u32 readGpuReadWord() const;
+	const GxGpuPcrtcTiming& readPcrtcTiming() const { return m_pcrtc.timing; }
 	const GxGpuDeviceOutput& readDeviceOutput();
 	bool backendReadbackPending() const { return m_commandBuffer.readback.phase() == GX_GPU_READBACK_PENDING; }
 	bool backendReadbackBlocksMachine() const {

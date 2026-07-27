@@ -80,6 +80,7 @@ export class Machine {
 			this.geometryController,
 			this.gxGpu,
 			this.imgDecController,
+			PSX_MACHINE_SPEC.cpuFreqHz,
 		);
 		this.inputController = new InputController(this.memory, input, this.systemController);
 		this.dmaController.setTiming(
@@ -106,6 +107,7 @@ export class Machine {
 	}
 
 	public refreshDeviceTimings(timing: MachineTiming, nowCycles: number): void {
+		this.systemController.setTiming(timing.cpuHz);
 		this.geometryController.setTiming(timing.cpuHz, timing.geoWorkUnitsPerSec, nowCycles);
 		this.audioController.setTiming(timing.cpuHz, nowCycles);
 		this.gxGpu.setTiming(timing.cpuHz, nowCycles);

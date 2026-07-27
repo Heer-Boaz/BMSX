@@ -1,5 +1,4 @@
 #include "machine/runtime/runtime.h"
-#include "machine/bus/io.h"
 #include "machine/memory/lua_heap_usage.h"
 #include "machine/memory/map.h"
 #include "spec/bmsx/memory_map.h"
@@ -76,9 +75,6 @@ Runtime::Runtime(
 	resetLuaHeapUsageHooks();
 	resetTrackedLuaHeapBytes();
 	machine.memory.clearIoSlots();
-	machine.memory.mapIoRead(IO_SYS_TIME_MS, this, &Runtime::onTimeMsReadThunk);
-	machine.memory.mapIoRead(IO_SYS_FRAME_MS, this, &Runtime::onFrameMsReadThunk);
-	machine.memory.mapIoRead(IO_SYS_CYCLES_PER_FRAME, this, &Runtime::onCyclesPerFrameReadThunk);
 	machine.resetDevices();
 	refreshDeviceTimings(*this, machine.scheduler.currentNowCycles());
 	machine.runDeviceService(DEVICE_SERVICE_GPU);
@@ -201,50 +197,6 @@ auto Runtime::callClosure(Closure& fn, NativeArgsView args) -> std::span<const V
 	return std::span<const Value>(cpu.completionValues);
 }
 
-auto Runtime::machineTimeMs() const -> uint32_t {
-	const uint64_t cycles = static_cast<uint64_t>(machine.scheduler.currentNowCycles());
-	const uint64_t cpuHz = static_cast<uint64_t>(timing.cpuHz);
-	return static_cast<uint32_t>((cycles / cpuHz) * 1000ULL + ((cycles % cpuHz) * 1000ULL) / cpuHz);
-}
-
-auto Runtime::machineElapsedMs() const -> f64 {
-	return static_cast<f64>(machine.scheduler.currentNowCycles()) * 1000.0 / static_cast<f64>(timing.cpuHz);
-}
-
-Value Runtime::onTimeMsReadThunk(void* context, uint32_t addr, MappedBusSignals) {
-	const auto* runtime = static_cast<Runtime*>(context);
-	return runtime->onTimeMsRead(addr);
-}
-
-Value Runtime::onTimeMsRead([[maybe_unused]] uint32_t addr) const {
-	return valueNumber(static_cast<double>(machineTimeMs()));
-}
-
-Value Runtime::onFrameMsReadThunk(void* context, uint32_t addr, MappedBusSignals) {
-	const auto* runtime = static_cast<Runtime*>(context);
-	return runtime->onFrameMsRead(addr);
-}
-
-Value Runtime::onFrameMsRead([[maybe_unused]] uint32_t addr) const {
-	return valueNumber(timing.frameDurationMs);
-}
-
-Value Runtime::onCyclesPerFrameReadThunk(void* context, uint32_t addr, MappedBusSignals) {
-	const auto* runtime = static_cast<Runtime*>(context);
-	return runtime->onCyclesPerFrameRead(addr);
-}
-
-Value Runtime::onCyclesPerFrameRead([[maybe_unused]] uint32_t addr) const {
-	return valueNumber(static_cast<double>(timing.cycleBudgetPerFrame));
-}
-
-void Runtime::applyUfpsScaled(i64 ufpsScaled) {
-	timing.ufpsScaled = ufpsScaled;
-	timing.ufps = static_cast<f64>(ufpsScaled) / static_cast<f64>(HZ_SCALE);
-	timing.frameDurationMs = 1000.0 / timing.ufps;
-	m_input.setRuntimeInputFrameDurationMs(timing.frameDurationMs);
-}
-
 void Runtime::applyPublishedGxGpuPcrtcTiming(const GxGpuPcrtcTiming& pcrtcTiming) {
 	if (timing.pcrtcRevision == pcrtcTiming.revision
 		&& timing.pcrtcRunning == pcrtcTiming.running
@@ -267,7 +219,10 @@ void Runtime::applyPublishedGxGpuPcrtcTiming(const GxGpuPcrtcTiming& pcrtcTiming
 		return;
 	}
 	timing.cycleBudgetPerFrame = pcrtcTiming.nextVblankCycleBudget;
-	applyUfpsScaled(pcrtcTiming.refreshUfpsScaled);
+	timing.ufpsScaled = pcrtcTiming.refreshUfpsScaled;
+	timing.ufps = static_cast<f64>(pcrtcTiming.refreshUfpsScaled) / static_cast<f64>(HZ_SCALE);
+	timing.frameDurationMs = pcrtcTiming.frameDurationMs;
+	m_input.setRuntimeInputFrameDurationMs(pcrtcTiming.frameDurationMs);
 }
 
 uint32_t Runtime::baseRamUsedBytes() const {

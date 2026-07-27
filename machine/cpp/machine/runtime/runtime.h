@@ -6,7 +6,6 @@
 #include "machine/devices/input/controller.h"
 #include "machine/devices/audio/controller.h"
 #include "machine/devices/irq/controller.h"
-#include "machine/bus/io.h"
 #include "machine/machine.h"
 #include "machine/scheduler/device.h"
 #include "machine/runtime/timing/index.h"
@@ -16,7 +15,6 @@
 #include "machine/runtime/options.h"
 #include "machine/runtime/save_state.h"
 #include "machine/runtime/lua_scratch.h"
-#include "machine/memory/bus_signals.h"
 #include "machine/memory/memory.h"
 #include "machine/runtime/frame/loop.h"
 #include "machine/runtime/input.h"
@@ -71,9 +69,6 @@ public:
 
 	void rebootSystem();
 
-	auto machineTimeMs() const -> uint32_t;
-	auto machineElapsedMs() const -> f64;
-	void applyUfpsScaled(i64 ufpsScaled);
 	void applyPublishedGxGpuPcrtcTiming(const GxGpuPcrtcTiming& pcrtcTiming);
 	auto baseRamUsedBytes() const -> uint32_t;
 	auto ramUsedBytes() const -> uint32_t;
@@ -135,12 +130,6 @@ private:
 	bool m_runtimeFailed = false;
 	static size_t getBaseRamUsedBytesThunk(void* context);
 	static size_t collectTrackedHeapBytesThunk(void* context);
-	static Value onTimeMsReadThunk(void* context, uint32_t addr, MappedBusSignals busSignals);
-	Value onTimeMsRead(uint32_t addr) const;
-	static Value onFrameMsReadThunk(void* context, uint32_t addr, MappedBusSignals busSignals);
-	Value onFrameMsRead(uint32_t addr) const;
-	static Value onCyclesPerFrameReadThunk(void* context, uint32_t addr, MappedBusSignals busSignals);
-	Value onCyclesPerFrameRead(uint32_t addr) const;
 	PendingCall m_pendingCall = PendingCall::None;
 };
 
