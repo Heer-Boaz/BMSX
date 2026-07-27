@@ -3,10 +3,10 @@ import type { HttpResponse, StorageService } from '../../machine/ts/platform/pla
 import { joinWorkspacePaths } from './path';
 
 export const WORKSPACE_FILE_ENDPOINT = '/__bmsx__/lua';
-export const WORKSPACE_STORAGE_PREFIX = 'bmsx.workspace';
+export const WORKSPACE_STORAGE_PREFIX = 'bmsx.workspace.records';
 export const WORKSPACE_METADATA_DIR = '.bmsx';
 export const WORKSPACE_DIRTY_DIR = 'dirty';
-export const WORKSPACE_STATE_FILE = 'ide-state.json';
+export const WORKSPACE_STATE_FILE = 'workspace.json';
 export const WORKSPACE_MARKER_FILE = '~workspace';
 
 export type WorkspaceRecord = {

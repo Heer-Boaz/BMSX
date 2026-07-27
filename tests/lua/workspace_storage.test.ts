@@ -674,6 +674,14 @@ test('required local workspace storage remains authoritative while remote is off
 	assert.equal(workspaceRecordState.connected, false);
 });
 
+test('workspace records own their local namespace and session path', () => {
+	assert.equal(
+		buildWorkspaceStorageKey('cart', 'cart/.bmsx/workspace.json'),
+		'bmsx.workspace.records:cart:cart/.bmsx/workspace.json',
+	);
+	assert.equal(WORKSPACE_STATE_FILE, 'workspace.json');
+});
+
 test('workspace initialization does not hide a missing required local storage owner', async (t) => {
 	const storage = new MockStorage();
 	installOfflineWorkspace(t, storage);
