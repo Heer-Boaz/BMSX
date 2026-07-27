@@ -24,7 +24,7 @@ import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_addres
 import { describeBlua32InstructionAtPc } from '../../machine/ts/rompack/tooling/disassembler';
 import { INSTRUCTION_BYTES, readInstructionWord } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
-import type { ProgramMetadata, Proto } from '../../machine/ts/lua/compiler/program';
+import type { ProgramMetadata, Proto, UpvalueDesc } from '../../machine/ts/lua/compiler/program';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
@@ -82,6 +82,7 @@ export type TestBlua32Function = {
 	maxStack?: number;
 	isVararg?: boolean;
 	staticClosure?: boolean;
+	upvalueDescs?: ReadonlyArray<UpvalueDesc>;
 };
 
 export type TestBlua32Source = {
@@ -162,7 +163,9 @@ function createRawTestBlua32Object(source: TestBlua32Source): RawTestBlua32Objec
 			maxStack: functionSource.maxStack ?? 1,
 			isVararg: functionSource.isVararg ?? false,
 			staticClosure: functionSource.staticClosure ?? true,
-			upvalueDescs: [],
+			upvalueDescs: functionSource.upvalueDescs
+				? Array.from(functionSource.upvalueDescs)
+				: [],
 		};
 	}
 	const functionIds = source.functionIds

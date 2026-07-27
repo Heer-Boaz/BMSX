@@ -374,9 +374,8 @@ DISPATCH_LABEL(MTC0) {
 
 DISPATCH_LABEL(JMP) {
 	const u32 targetPc = FRAME.pc + sbx * INSTRUCTION_BYTES;
-	const Blua32RuntimeFunction& function = *FRAME.functionRecord;
-	if (targetPc < function.codeAddress
-		|| targetPc >= function.codeAddress + function.codeByteCount) {
+	if (targetPc < FRAME.codeAddress
+		|| targetPc >= FRAME.codeAddress + FRAME.codeByteCount) {
 		hardHalt();
 		DISPATCH_CONTINUE();
 	}
@@ -387,9 +386,8 @@ DISPATCH_LABEL(JMP) {
 DISPATCH_LABEL(JMPIF) {
 	if (isTruthy(REG(a))) {
 		const u32 targetPc = FRAME.pc + sbx * INSTRUCTION_BYTES;
-		const Blua32RuntimeFunction& function = *FRAME.functionRecord;
-		if (targetPc < function.codeAddress
-			|| targetPc >= function.codeAddress + function.codeByteCount) {
+		if (targetPc < FRAME.codeAddress
+			|| targetPc >= FRAME.codeAddress + FRAME.codeByteCount) {
 			hardHalt();
 			DISPATCH_CONTINUE();
 		}
@@ -401,9 +399,8 @@ DISPATCH_LABEL(JMPIF) {
 DISPATCH_LABEL(JMPIFNOT) {
 	if (!isTruthy(REG(a))) {
 		const u32 targetPc = FRAME.pc + sbx * INSTRUCTION_BYTES;
-		const Blua32RuntimeFunction& function = *FRAME.functionRecord;
-		if (targetPc < function.codeAddress
-			|| targetPc >= function.codeAddress + function.codeByteCount) {
+		if (targetPc < FRAME.codeAddress
+			|| targetPc >= FRAME.codeAddress + FRAME.codeByteCount) {
 			hardHalt();
 			DISPATCH_CONTINUE();
 		}
@@ -413,15 +410,14 @@ DISPATCH_LABEL(JMPIFNOT) {
 }
 
 DISPATCH_LABEL(CLOSURE) {
-	Blua32RuntimeFunction* functionRecord = functionRecordInExecutionDomain(
-		*FRAME.functionRecord->image,
+	if (!readFunctionRecordInExecutionDomain(
+		*FRAME.executionImage,
 		bx * BLUA32_FUNCTION_ALIGNMENT
-	);
-	if (!functionRecord) {
+	)) {
 		hardHalt();
 		DISPATCH_CONTINUE();
 	}
-	Closure* closure = createClosure(FRAME, *functionRecord);
+	Closure* closure = createClosure(FRAME);
 	SET_REGISTER_FAST(a, valueClosure(closure));
 	runHousekeeping();
 	DISPATCH_CONTINUE();
@@ -677,9 +673,9 @@ DISPATCH_LABEL(RFE) {
 	const bool returnFromNmi = FRAME.isNonMaskableExceptionFrame;
 	const u32 returnPc = m_epcWord;
 	if (m_frames.size() > 1u) {
-		const Blua32RuntimeFunction& callerFunction = *m_frames[m_frames.size() - 2u]->functionRecord;
-		if (returnPc < callerFunction.codeAddress
-			|| returnPc >= callerFunction.codeAddress + callerFunction.codeByteCount) {
+		const CallFrame& callerFrame = *m_frames[m_frames.size() - 2u];
+		if (returnPc < callerFrame.codeAddress
+			|| returnPc >= callerFrame.codeAddress + callerFrame.codeByteCount) {
 			hardHalt();
 			DISPATCH_CONTINUE();
 		}

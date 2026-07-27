@@ -19,6 +19,7 @@ struct Blua32TestFunction {
 	u32 maxStack = 1;
 	bool isVararg = false;
 	bool staticClosure = true;
+	std::vector<Blua32UpvalueRecord> upvalues{};
 };
 
 struct Blua32TestClosureRelocation {

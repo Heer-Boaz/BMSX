@@ -366,16 +366,18 @@ private:
 	Blua32ExecutionImage* executionImageForDomain(int executionDomainId);
 	void decodeImageText(Blua32ExecutionImage& image);
 	Closure* staticClosureAtAddress(u32 address);
-	Blua32RuntimeFunction* functionRecordInImage(Blua32ExecutionImage& image, u32 address) const;
-	Blua32RuntimeFunction* functionRecordInExecutionDomain(Blua32ExecutionImage& executionImage, u32 address) const;
-	Blua32RuntimeFunction* functionRecordOnSelectedBus(u32 address);
+	bool readFunctionRecordInImage(Blua32ExecutionImage& image, u32 address);
+	bool readFunctionRecordInExecutionDomain(Blua32ExecutionImage& executionImage, u32 address);
+	bool readFunctionRecordOnSelectedBus(u32 address);
 	void executeFunctionAddress(u32 functionAddress);
 	CallFrame* pushFrame(CallFrame& caller, Closure* closure, int argBase, int argCount,
 		int returnBase, int returnCount, bool returnToCompletionLatch, u32 callSitePc);
 	CallFrame* pushFrame(Closure* closure, const Value* args, size_t argCount,
 		int returnBase, int returnCount, bool returnToCompletionLatch);
+	CallFrame* pushLatchedFrame(Closure* closure, const Value* args, size_t argCount,
+		int returnBase, int returnCount, bool returnToCompletionLatch);
 	Closure* createTrackedClosure(u32 functionAddress, size_t upvalueCount);
-	Closure* createClosure(CallFrame& frame, Blua32RuntimeFunction& functionRecord);
+	Closure* createClosure(CallFrame& frame);
 	void closeUpvalues(CallFrame& frame);
 	Upvalue* findOpenUpvalue(const CallFrame& frame, int index) const;
 	const Value& readUpvalue(Upvalue* upvalue);
@@ -418,7 +420,7 @@ private:
 	void clearHaltAfterAcceptedInterrupt();
 	void enterSynchronousException(CallFrame& interruptedFrame, u32 causeWord);
 	void enterSynchronousAddressException(CallFrame& interruptedFrame, u32 causeWord, u32 address);
-	void enterException(Blua32ExecutionImage& image, u32 functionAddress, u32 causeWord, u32 epcWord);
+	void enterException(u32 functionAddress, u32 causeWord, u32 epcWord);
 	void enterLuaFaultException(u32 reason);
 	void hardHalt();
 	void blockMappedWrite(CallFrame& frame, uint32_t address);
@@ -453,6 +455,8 @@ private:
 	Memory& m_memory;
 	IrqController& m_irqController;
 	ExecutionAddressSpace& m_executionAddressSpace;
+	Span<const u8> m_executionReadView;
+	Blua32FunctionRecordLatch m_functionRecordLatch;
 	StringPool m_stringPool;
 	GcHeap m_heap;
 	std::unordered_map<u32, Closure> m_staticClosuresByAddress;

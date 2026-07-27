@@ -12,8 +12,6 @@
 
 namespace bmsx {
 
-struct Closure;
-
 struct DecodedInstruction {
 	uint32_t word = 0;
 	uint32_t bx = 0;
@@ -31,17 +29,16 @@ struct DecodedInstruction {
 
 struct Blua32ExecutionImage;
 
-struct Blua32RuntimeFunction {
+struct Blua32FunctionRecordLatch {
+	Blua32ExecutionImage* image = nullptr;
 	u32 address = 0;
 	u32 codeAddress = 0;
 	u32 codeByteCount = 0;
 	u32 numParams = 0;
 	u32 maxStack = 0;
-	bool isVararg = false;
-	bool staticClosure = false;
-	std::vector<Blua32UpvalueRecord> upvalues;
-	Blua32ExecutionImage* image = nullptr;
-	u32 index = 0;
+	u32 flags = 0;
+	u32 upvalueTableAddress = 0;
+	u32 upvalueCount = 0;
 };
 
 struct TableLoadInlineCache {
@@ -62,14 +59,12 @@ struct Blua32ExecutionImage {
 	Blua32ImageLayout layout;
 	int executionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	u32 irqFunctionAddress = 0;
-	std::vector<Blua32RuntimeFunction> functions;
 	std::vector<Value> constPool;
 	std::vector<u32> globalSlots;
 	std::vector<u32> systemGlobalSlots;
 	std::vector<DecodedInstructionPage> decodedPages;
 	size_t decodedWordCount = 0;
 	std::vector<TableLoadInlineCache> tableLoadCaches;
-	std::vector<Closure*> staticClosures;
 };
 
 } // namespace bmsx

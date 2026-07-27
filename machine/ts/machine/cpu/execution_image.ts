@@ -1,5 +1,4 @@
-import type { Blua32FunctionRecord, Blua32ImageLayout } from './blua32_image';
-import type { Closure } from './closure';
+import type { Blua32ImageLayout } from './blua32_image';
 import type { ExecutionDomainId } from '../execution_address_space';
 import { OpCode } from '../../spec/blua32/opcode';
 import type { Table } from './table';
@@ -30,23 +29,28 @@ export type DecodedInstructionPage = {
 	tableCacheIndexes: Uint32Array;
 };
 
-export type Blua32RuntimeFunction = Blua32FunctionRecord & {
-	image: Blua32ExecutionImage;
-	index: number;
-};
-
 export type Blua32ExecutionImage = {
 	layout: Blua32ImageLayout;
 	executionDomainId: ExecutionDomainId;
 	irqFunctionAddress: number;
-	functions: Blua32RuntimeFunction[];
 	constPool: Value[];
 	globalSlots: Uint32Array;
 	systemGlobalSlots: Uint32Array;
 	decodedPages: DecodedInstructionPage[];
 	decodedWordCount: number;
 	tableLoadCaches: TableLoadInlineCache[];
-	staticClosures: Closure[];
+};
+
+export type Blua32FunctionRecordLatch = {
+	image: Blua32ExecutionImage;
+	address: number;
+	codeAddress: number;
+	codeByteCount: number;
+	numParams: number;
+	maxStack: number;
+	flags: number;
+	upvalueTableAddress: number;
+	upvalueCount: number;
 };
 
 export function createDecodedInstructionPage(): DecodedInstructionPage {

@@ -7,7 +7,7 @@
 
 namespace bmsx {
 
-struct Blua32RuntimeFunction;
+struct Blua32ExecutionImage;
 struct Closure;
 
 enum class ProtectedCallKind : uint8_t {
@@ -18,7 +18,9 @@ enum class ProtectedCallKind : uint8_t {
 
 struct CallFrame {
 	u32 functionAddress = 0;
-	Blua32RuntimeFunction* functionRecord = nullptr;
+	Blua32ExecutionImage* executionImage = nullptr;
+	u32 codeAddress = 0;
+	u32 codeByteCount = 0;
 	u32 pc = 0;
 	int varargBase = 0;
 	int varargCount = 0;

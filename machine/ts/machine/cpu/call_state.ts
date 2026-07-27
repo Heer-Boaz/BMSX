@@ -1,5 +1,5 @@
 import type { Closure } from './closure';
-import type { Blua32RuntimeFunction } from './execution_image';
+import type { Blua32ExecutionImage } from './execution_image';
 import type { RegisterFile } from './register_file';
 
 export const enum ProtectedCallKind {
@@ -10,7 +10,9 @@ export const enum ProtectedCallKind {
 
 export type CallFrame = {
 	functionAddress: number;
-	functionRecord: Blua32RuntimeFunction;
+	executionImage: Blua32ExecutionImage;
+	codeAddress: number;
+	codeByteCount: number;
 	pc: number;
 	varargBase: number;
 	varargCount: number;

@@ -53,7 +53,11 @@ auto encodeImage(
 	offset = functionTableOffset
 		+ static_cast<u32>(source.functions.size()) * BLUA32_FUNCTION_RECORD_SIZE;
 	const u32 upvalueTableOffset = alignOffset(offset, imageAddress, BLUA32_UPVALUE_RECORD_SIZE);
-	offset = upvalueTableOffset;
+	u32 upvalueCount = 0;
+	for (const Blua32TestFunction& function : source.functions) {
+		upvalueCount += static_cast<u32>(function.upvalues.size());
+	}
+	offset = upvalueTableOffset + upvalueCount * BLUA32_UPVALUE_RECORD_SIZE;
 	const u32 constantTableOffset = alignOffset(offset, imageAddress, 4u);
 	offset = constantTableOffset
 		+ static_cast<u32>(source.constants.size()) * BLUA32_CONSTANT_RECORD_SIZE;
@@ -190,6 +194,7 @@ auto encodeImage(
 		static_cast<u32>(text.size())
 	);
 
+	u32 upvalueIndex = 0;
 	for (u32 index = 0; index < source.functions.size(); ++index) {
 		const Blua32TestFunction& function = source.functions[index];
 		u8* record = bytes.data() + functionTableOffset + index * BLUA32_FUNCTION_RECORD_SIZE;
@@ -210,9 +215,20 @@ auto encodeImage(
 		);
 		writeLE32(
 			record + BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET,
-			imageAddress + upvalueTableOffset
+			imageAddress + upvalueTableOffset + upvalueIndex * BLUA32_UPVALUE_RECORD_SIZE
 		);
-		writeLE32(record + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET, 0u);
+		writeLE32(
+			record + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET,
+			static_cast<u32>(function.upvalues.size())
+		);
+		for (const Blua32UpvalueRecord& upvalue : function.upvalues) {
+			writeLE32(
+				bytes.data() + upvalueTableOffset + upvalueIndex * BLUA32_UPVALUE_RECORD_SIZE,
+				(upvalue.inStack ? BLUA32_UPVALUE_IN_STACK_MASK : 0u)
+					| (upvalue.index & BLUA32_UPVALUE_INDEX_MASK)
+			);
+			upvalueIndex += 1u;
+		}
 	}
 
 	for (u32 index = 0; index < source.constants.size(); ++index) {

@@ -45,6 +45,20 @@ export class ExecutionAddressSpace {
 		return this.memory.cartridgeController.selectedSlot();
 	}
 
+	public bindReadOnlyView(
+		executionDomainId: ExecutionDomainId,
+		address: number,
+		byteLength: number,
+		out: RomByteView,
+	): void {
+		const cartridgeSlot = executionDomainId === SYSTEM_EXECUTION_DOMAIN_ID
+			? 0
+			: executionDomainId;
+		if (!this.memory.bindRomByteView(address, byteLength, cartridgeSlot, out)) {
+			throw new Error('BLua32 execution read is not backed by the installed ROM.');
+		}
+	}
+
 	public resolveSystemDomain(): Blua32DecodedExecutionImage {
 		const systemImage = this.resolveDomain(SYSTEM_EXECUTION_DOMAIN_ID);
 		if (!systemImage) {

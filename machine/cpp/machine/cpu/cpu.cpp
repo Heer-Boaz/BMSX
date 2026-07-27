@@ -1,4 +1,5 @@
 #include "machine/cpu/cpu.h"
+#include "common/endian.h"
 #include "machine/common/numeric.h"
 #include "lua/numeric.h"
 #include "machine/devices/irq/controller.h"
@@ -362,10 +363,7 @@ void CPU::reset() {
 	m_executionImages.push_back(std::move(activatedSystemImage));
 	m_systemExceptionFunctionAddress = systemExceptionFunctionAddress;
 	m_activeExecutionImage = m_systemImage;
-	Blua32RuntimeFunction& systemResetFunction =
-		*functionRecordInImage(*m_systemImage, systemResetFunctionAddress);
-	Closure* systemResetClosure =
-		m_systemImage->staticClosures[systemResetFunction.index];
+	Closure* systemResetClosure = &m_staticClosuresByAddress.at(systemResetFunctionAddress);
 	pushFrame(systemResetClosure, nullptr, 0u, 0, 0, false);
 	runHousekeeping();
 }
@@ -412,36 +410,26 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 	image->systemGlobalSlots = registerGlobalNames(image->layout.systemGlobalNames, true);
 	decodeImageText(*image);
 
-	image->functions.resize(image->layout.functions.size());
-	image->staticClosures.resize(image->layout.functions.size());
-	for (size_t index = 0; index < image->layout.functions.size(); ++index) {
-		const Blua32FunctionRecord& source = image->layout.functions[index];
-		Blua32RuntimeFunction& function = image->functions[index];
-		function.address = source.address;
-		function.codeAddress = source.codeAddress;
-		function.codeByteCount = source.codeByteCount;
-		function.numParams = source.numParams;
-		function.maxStack = source.maxStack;
-		function.isVararg = source.isVararg;
-		function.staticClosure = source.staticClosure;
-		function.upvalues = source.upvalues;
-		function.image = image.get();
-		function.index = static_cast<u32>(index);
-		if (function.staticClosure) {
-			image->staticClosures[index] = staticClosureAtAddress(function.address);
+	for (u32 index = 0; index < image->layout.header.functionCount; ++index) {
+		const u32 address = image->layout.header.functionTableAddress
+			+ index * BLUA32_FUNCTION_RECORD_SIZE;
+		readFunctionRecordInImage(*image, address);
+		if ((m_functionRecordLatch.flags & BLUA32_FUNCTION_STATIC) != 0u) {
+			staticClosureAtAddress(address);
 		}
 	}
 
-	Blua32RuntimeFunction* irq = functionRecordInImage(*image, decodedImage.irqFunctionAddress);
-	if (!irq || !irq->staticClosure) {
+	if (!readFunctionRecordInImage(*image, decodedImage.irqFunctionAddress)
+		|| (m_functionRecordLatch.flags & BLUA32_FUNCTION_STATIC) == 0u) {
 		throw BMSX_RUNTIME_ERROR("BLua32 IRQ vector does not name a static function record.");
 	}
 	if (decodedImage.executionDomainId == SYSTEM_EXECUTION_DOMAIN_ID) {
-		Blua32RuntimeFunction* startup =
-			functionRecordInImage(*image, decodedImage.startupFunctionAddress);
-		Blua32RuntimeFunction* exception =
-			functionRecordInImage(*image, decodedImage.exceptionFunctionAddress);
-		if (!startup || !exception || !startup->staticClosure || !exception->staticClosure) {
+		if (!readFunctionRecordInImage(*image, decodedImage.startupFunctionAddress)
+			|| (m_functionRecordLatch.flags & BLUA32_FUNCTION_STATIC) == 0u) {
+			throw BMSX_RUNTIME_ERROR("BLua32 system vector does not name a static function record.");
+		}
+		if (!readFunctionRecordInImage(*image, decodedImage.exceptionFunctionAddress)
+			|| (m_functionRecordLatch.flags & BLUA32_FUNCTION_STATIC) == 0u) {
 			throw BMSX_RUNTIME_ERROR("BLua32 system vector does not name a static function record.");
 		}
 	}
@@ -656,7 +644,7 @@ DecodedInstruction& CPU::decodedSlotForWrite(Blua32ExecutionImage& image, size_t
 }
 
 void CPU::skipNextInstruction(CallFrame& frame) {
-	Blua32ExecutionImage& image = *frame.functionRecord->image;
+	Blua32ExecutionImage& image = *frame.executionImage;
 	const size_t wordIndex = (frame.pc - image.layout.header.textAddress) / INSTRUCTION_BYTES;
 	if (wordIndex >= image.decodedWordCount) {
 		hardHalt();
@@ -664,58 +652,87 @@ void CPU::skipNextInstruction(CallFrame& frame) {
 	}
 	const DecodedInstruction& decoded = decodedAtWordIndex(image, wordIndex);
 	const u32 nextPc = frame.pc + static_cast<u32>(decoded.width) * INSTRUCTION_BYTES;
-	if (nextPc < frame.functionRecord->codeAddress
-		|| nextPc >= frame.functionRecord->codeAddress + frame.functionRecord->codeByteCount) {
+	if (nextPc < frame.codeAddress
+		|| nextPc >= frame.codeAddress + frame.codeByteCount) {
 		hardHalt();
 		return;
 	}
 	frame.pc = nextPc;
 }
 
-Blua32RuntimeFunction* CPU::functionRecordInImage(Blua32ExecutionImage& image, u32 address) const {
+bool CPU::readFunctionRecordInImage(Blua32ExecutionImage& image, u32 address) {
 	if (address < image.layout.header.functionTableAddress) {
-		return nullptr;
+		return false;
 	}
 	const u32 offset = address - image.layout.header.functionTableAddress;
 	if ((offset & (BLUA32_FUNCTION_RECORD_SIZE - 1u)) != 0u
-		|| offset >= image.functions.size() * BLUA32_FUNCTION_RECORD_SIZE) {
-		return nullptr;
+		|| offset >= image.layout.header.functionCount * BLUA32_FUNCTION_RECORD_SIZE) {
+		return false;
 	}
-	return &image.functions[offset / BLUA32_FUNCTION_RECORD_SIZE];
+	m_executionAddressSpace.bindReadOnlyView(
+		image.executionDomainId,
+		address,
+		BLUA32_FUNCTION_RECORD_SIZE,
+		m_executionReadView
+	);
+	m_functionRecordLatch.image = &image;
+	m_functionRecordLatch.address = address;
+	m_functionRecordLatch.codeAddress = readLE32(
+		m_executionReadView.data() + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET
+	);
+	m_functionRecordLatch.codeByteCount = readLE32(
+		m_executionReadView.data() + BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET
+	);
+	m_functionRecordLatch.numParams = readLE32(
+		m_executionReadView.data() + BLUA32_FUNCTION_NUM_PARAMS_OFFSET
+	);
+	m_functionRecordLatch.maxStack = readLE32(
+		m_executionReadView.data() + BLUA32_FUNCTION_MAX_STACK_OFFSET
+	);
+	m_functionRecordLatch.flags = readLE32(
+		m_executionReadView.data() + BLUA32_FUNCTION_FLAGS_OFFSET
+	);
+	m_functionRecordLatch.upvalueTableAddress = readLE32(
+		m_executionReadView.data() + BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET
+	);
+	m_functionRecordLatch.upvalueCount = readLE32(
+		m_executionReadView.data() + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET
+	);
+	return true;
 }
 
-Blua32RuntimeFunction* CPU::functionRecordInExecutionDomain(
+bool CPU::readFunctionRecordInExecutionDomain(
 	Blua32ExecutionImage& executionImage,
 	u32 address
-) const {
+) {
 	if (address >= CART_ROM_BASE) {
-		return functionRecordInImage(executionImage, address);
+		return readFunctionRecordInImage(executionImage, address);
 	}
 	if (address >= RAM_BASE) {
-		return nullptr;
+		return false;
 	}
-	return functionRecordInImage(*m_systemImage, address);
+	return readFunctionRecordInImage(*m_systemImage, address);
 }
 
-Blua32RuntimeFunction* CPU::functionRecordOnSelectedBus(u32 address) {
+bool CPU::readFunctionRecordOnSelectedBus(u32 address) {
 	const std::optional<int> executionDomainId =
 		m_executionAddressSpace.domainIdOnBus(address);
 	if (!executionDomainId) {
-		return nullptr;
+		return false;
 	}
 	Blua32ExecutionImage* image = executionImageForDomain(*executionDomainId);
-	return image ? functionRecordInImage(*image, address) : nullptr;
+	return image && readFunctionRecordInImage(*image, address);
 }
 
 void CPU::executeFunctionAddress(u32 functionAddress) {
-	Blua32RuntimeFunction* function = functionRecordOnSelectedBus(functionAddress);
-	if (!function || !function->staticClosure) {
+	if (!readFunctionRecordOnSelectedBus(functionAddress)
+		|| (m_functionRecordLatch.flags & BLUA32_FUNCTION_STATIC) == 0u) {
 		hardHalt();
 		return;
 	}
 	clearCallStack();
-	m_activeExecutionImage = function->image;
-	m_statusWord = function->image->executionDomainId >= 0
+	m_activeExecutionImage = m_functionRecordLatch.image;
+	m_statusWord = m_functionRecordLatch.image->executionDomainId >= 0
 		? CPU_STATUS_CART_ENTRY
 		: CPU_STATUS_SYSTEM_ENTRY;
 	m_haltedUntilIrq = false;
@@ -724,8 +741,8 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 	m_memoryWriteBlockedAddress = 0u;
 	m_hardHalted = false;
 	m_yieldRequested = false;
-	Closure* closure = function->image->staticClosures[function->index];
-	pushFrame(closure, nullptr, 0, 0, 0, false);
+	Closure* closure = &m_staticClosuresByAddress.at(functionAddress);
+	pushLatchedFrame(closure, nullptr, 0, 0, 0, false);
 }
 
 void CPU::beginCompletionCall(Closure& closure, NativeArgsView args) {
@@ -1091,13 +1108,16 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	}
 
 	for (const CpuFrameState& frameState : state.frames) {
-		Blua32RuntimeFunction* functionRecord = functionRecordInExecutionDomain(
+		readFunctionRecordInExecutionDomain(
 			*executionImage,
 			frameState.functionAddress
 		);
+		const Blua32FunctionRecordLatch& functionRecord = m_functionRecordLatch;
 		auto frame = acquireFrame();
 		frame->functionAddress = frameState.functionAddress;
-		frame->functionRecord = functionRecord;
+		frame->executionImage = functionRecord.image;
+		frame->codeAddress = functionRecord.codeAddress;
+		frame->codeByteCount = functionRecord.codeByteCount;
 		frame->pc = frameState.pc;
 		frame->closure = restoredObjects[static_cast<size_t>(frameState.closureRef)].closure;
 		frame->returnBase = frameState.returnBase;
@@ -1109,7 +1129,9 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 		frame->varargBase = m_stackTop;
 		frame->varargCount = static_cast<int>(frameState.varargs.size());
 		frame->stackBase = frame->varargBase + frame->varargCount;
-		size_t targetCapacity = nextPowerOfTwo(static_cast<size_t>(std::max(functionRecord->maxStack, 1u)));
+		size_t targetCapacity = nextPowerOfTwo(
+			static_cast<size_t>(std::max(functionRecord.maxStack, 1u))
+		);
 		if (targetCapacity < 8) {
 			targetCapacity = 8;
 		}
@@ -1624,7 +1646,6 @@ bool CPU::enterPendingInterrupt() {
 		const u32 returnBadAddressWord = m_badAddressWord;
 		const u32 returnLuaFaultReasonWord = m_luaFaultReasonWord;
 		enterException(
-			*m_systemImage,
 			m_systemExceptionFunctionAddress,
 			CPU_CAUSE_NMI,
 			m_frames.back()->pc
@@ -1640,7 +1661,7 @@ bool CPU::enterPendingInterrupt() {
 	if (canAcceptMaskableInterruptLine()) {
 		Blua32ExecutionImage& image = isUserMode() ? *m_activeExecutionImage : *m_systemImage;
 		const bool wasHalted = m_haltedUntilIrq;
-		enterException(image, image.irqFunctionAddress, CPU_CAUSE_IRQ, m_frames.back()->pc);
+		enterException(image.irqFunctionAddress, CPU_CAUSE_IRQ, m_frames.back()->pc);
 		if (!wasHalted) m_interruptEventPending = true;
 		return true;
 	}
@@ -1649,7 +1670,7 @@ bool CPU::enterPendingInterrupt() {
 
 void CPU::enterSynchronousException(CallFrame& interruptedFrame, u32 causeWord) {
 	interruptedFrame.pc = m_currentInstructionPc;
-	enterException(*m_systemImage, m_systemExceptionFunctionAddress, causeWord, m_currentInstructionPc);
+	enterException(m_systemExceptionFunctionAddress, causeWord, m_currentInstructionPc);
 }
 
 void CPU::enterSynchronousAddressException(CallFrame& interruptedFrame, u32 causeWord, u32 address) {
@@ -1663,7 +1684,6 @@ void CPU::enterLuaFaultException(u32 reason) {
 }
 
 void CPU::enterException(
-	Blua32ExecutionImage& image,
 	u32 functionAddress,
 	u32 causeWord,
 	u32 epcWord
@@ -1673,8 +1693,7 @@ void CPU::enterException(
 	m_statusWord = (m_statusWord & ~CPU_STATUS_MODE_STACK_MASK)
 		| ((m_statusWord << 2u) & CPU_STATUS_MODE_STACK_MASK);
 	clearHaltAfterAcceptedInterrupt();
-	Blua32RuntimeFunction& functionRecord = *functionRecordInImage(image, functionAddress);
-	Closure* closure = image.staticClosures[functionRecord.index];
+	Closure* closure = &m_staticClosuresByAddress.at(functionAddress);
 	CallFrame* frame = pushFrame(
 		closure,
 		nullptr,
@@ -1764,7 +1783,7 @@ dispatch_loop_check:
 		goto dispatch_loop_check;
 	}
 		frame = frames.back().get();
-		image = frame->functionRecord->image;
+		image = frame->executionImage;
 		registers = frame->registers;
 		pc = frame->pc;
 		wordIndex = (pc - image->layout.header.textAddress) / INSTRUCTION_BYTES;
@@ -1920,7 +1939,7 @@ void CPU::runHousekeeping() {
 }
 
 int CPU::readFrameExecutionDomain(int frameIndex) const {
-	return m_frames[static_cast<size_t>(frameIndex)]->functionRecord->image->executionDomainId;
+	return m_frames[static_cast<size_t>(frameIndex)]->executionImage->executionDomainId;
 }
 
 int CPU::readLastExecutionDomain() const {
@@ -1989,18 +2008,22 @@ void CPU::writeFrameExecution(
 	u32 pc
 ) {
 	Blua32ExecutionImage& image = *executionImageForDomain(executionDomainId);
-	Blua32RuntimeFunction& functionRecord = *functionRecordInImage(image, functionAddress);
+	readFunctionRecordInImage(image, functionAddress);
+	const Blua32FunctionRecordLatch& functionRecord = m_functionRecordLatch;
 	CallFrame& frame = *m_frames[static_cast<size_t>(frameIndex)];
 	if (functionRecord.maxStack > static_cast<u32>(frame.stackCapacity)) {
 		ensureRegisterCapacity(frame, static_cast<int>(functionRecord.maxStack) - 1);
 	}
-	if (functionRecord.staticClosure && functionRecord.upvalues.empty()) {
-		frame.closure = image.staticClosures[functionRecord.index];
+	if ((functionRecord.flags & BLUA32_FUNCTION_STATIC) != 0u
+		&& functionRecord.upvalueCount == 0u) {
+		frame.closure = &m_staticClosuresByAddress.at(functionRecord.address);
 	} else {
 		frame.closure->functionAddress = functionRecord.address;
 	}
 	frame.functionAddress = functionRecord.address;
-	frame.functionRecord = &functionRecord;
+	frame.executionImage = functionRecord.image;
+	frame.codeAddress = functionRecord.codeAddress;
+	frame.codeByteCount = functionRecord.codeByteCount;
 	frame.pc = pc;
 }
 
@@ -2017,29 +2040,42 @@ Upvalue* CPU::findOpenUpvalue(const CallFrame& frame, int index) const {
 	return nullptr;
 }
 
-Closure* CPU::createClosure(CallFrame& frame, Blua32RuntimeFunction& functionRecord) {
-	if (functionRecord.staticClosure && functionRecord.upvalues.empty()) {
-		return functionRecord.image->staticClosures[functionRecord.index];
+Closure* CPU::createClosure(CallFrame& frame) {
+	const Blua32FunctionRecordLatch& functionRecord = m_functionRecordLatch;
+	if ((functionRecord.flags & BLUA32_FUNCTION_STATIC) != 0u
+		&& functionRecord.upvalueCount == 0u) {
+		return &m_staticClosuresByAddress.at(functionRecord.address);
 	}
 	auto* closure = createTrackedClosure(
 		functionRecord.address,
-		functionRecord.upvalues.size()
+		functionRecord.upvalueCount
 	);
-	for (size_t index = 0; index < functionRecord.upvalues.size(); ++index) {
-		const Blua32UpvalueRecord& upvalueRecord = functionRecord.upvalues[index];
-		if (upvalueRecord.inStack) {
-			Upvalue* upvalue = findOpenUpvalue(frame, static_cast<int>(upvalueRecord.index));
+	if (functionRecord.upvalueCount != 0u) {
+		m_executionAddressSpace.bindReadOnlyView(
+			functionRecord.image->executionDomainId,
+			functionRecord.upvalueTableAddress,
+			static_cast<size_t>(functionRecord.upvalueCount) * BLUA32_UPVALUE_RECORD_SIZE,
+			m_executionReadView
+		);
+	}
+	for (u32 index = 0; index < functionRecord.upvalueCount; ++index) {
+		const u32 upvalueWord = readLE32(
+			m_executionReadView.data() + index * BLUA32_UPVALUE_RECORD_SIZE
+		);
+		const u32 upvalueIndex = upvalueWord & BLUA32_UPVALUE_INDEX_MASK;
+		if ((upvalueWord & BLUA32_UPVALUE_IN_STACK_MASK) != 0u) {
+			Upvalue* upvalue = findOpenUpvalue(frame, static_cast<int>(upvalueIndex));
 			if (!upvalue) {
 				upvalue = m_heap.allocate<Upvalue>(ObjType::Upvalue);
 				addTrackedLuaHeapBytes(kUpvalueHeapBytes);
 				upvalue->open = true;
-				upvalue->index = static_cast<int>(upvalueRecord.index);
+				upvalue->index = static_cast<int>(upvalueIndex);
 				upvalue->frame = &frame;
 				m_openUpvalues.push_back(OpenUpvalueSlot{ &frame, upvalue->index, upvalue });
 			}
 			closure->upvalues[index] = upvalue;
 		} else {
-			closure->upvalues[index] = frame.closure->upvalues[upvalueRecord.index];
+			closure->upvalues[index] = frame.closure->upvalues[upvalueIndex];
 		}
 	}
 	return closure;
@@ -2078,30 +2114,34 @@ void CPU::writeUpvalue(Upvalue* upvalue, const Value& value) {
 
 CallFrame* CPU::pushFrame(CallFrame& caller, Closure* closure, int argBase, int argCount,
 	int returnBase, int returnCount, bool returnToCompletionLatch, u32 callSitePc) {
-	Blua32RuntimeFunction* functionRecord = functionRecordInExecutionDomain(
+	if (!readFunctionRecordInExecutionDomain(
 		*m_activeExecutionImage,
 		closure->functionAddress
-	);
-	if (!functionRecord) {
+	)) {
 		hardHalt();
 		return nullptr;
 	}
+	const Blua32FunctionRecordLatch& functionRecord = m_functionRecordLatch;
 	const int callerArgBase = caller.stackBase + argBase;
 	auto frame = acquireFrame();
 	frame->functionAddress = closure->functionAddress;
-	frame->functionRecord = functionRecord;
-	frame->pc = functionRecord->codeAddress;
+	frame->executionImage = functionRecord.image;
+	frame->codeAddress = functionRecord.codeAddress;
+	frame->codeByteCount = functionRecord.codeByteCount;
+	frame->pc = functionRecord.codeAddress;
 	frame->closure = closure;
 	frame->returnBase = returnBase;
 	frame->returnCount = returnCount;
 	frame->returnToCompletionLatch = returnToCompletionLatch;
 	frame->callSitePc = callSitePc;
 	frame->varargBase = m_stackTop;
-	frame->varargCount = functionRecord->isVararg
-		? std::max(argCount - static_cast<int>(functionRecord->numParams), 0)
+	frame->varargCount = (functionRecord.flags & BLUA32_FUNCTION_VARARG) != 0u
+		? std::max(argCount - static_cast<int>(functionRecord.numParams), 0)
 		: 0;
 	frame->stackBase = frame->varargBase + frame->varargCount;
-	size_t targetCapacity = nextPowerOfTwo(static_cast<size_t>(std::max(functionRecord->maxStack, 1u)));
+	size_t targetCapacity = nextPowerOfTwo(
+		static_cast<size_t>(std::max(functionRecord.maxStack, 1u))
+	);
 	if (targetCapacity < 8) {
 		targetCapacity = 8;
 	}
@@ -2109,19 +2149,19 @@ CallFrame* CPU::pushFrame(CallFrame& caller, Closure* closure, int argBase, int 
 	m_stackTop = frame->stackBase + frame->stackCapacity;
 	ensureStackSize(static_cast<size_t>(m_stackTop));
 	frame->registers = m_stack.data() + frame->stackBase;
-	frame->top = static_cast<int>(functionRecord->numParams);
+	frame->top = static_cast<int>(functionRecord.numParams);
 
-	for (int i = 0; i < static_cast<int>(functionRecord->numParams); ++i) {
+	for (int i = 0; i < static_cast<int>(functionRecord.numParams); ++i) {
 		if (i < argCount) {
 			frame->registers[static_cast<size_t>(i)] = m_stack[static_cast<size_t>(callerArgBase + i)];
 		} else {
 			frame->registers[static_cast<size_t>(i)] = valueNil();
 		}
 	}
-	if (functionRecord->isVararg) {
+	if ((functionRecord.flags & BLUA32_FUNCTION_VARARG) != 0u) {
 		for (int i = 0; i < frame->varargCount; ++i) {
 			m_stack[static_cast<size_t>(frame->varargBase + i)] = m_stack[
-				static_cast<size_t>(callerArgBase + static_cast<int>(functionRecord->numParams) + i)
+				static_cast<size_t>(callerArgBase + static_cast<int>(functionRecord.numParams) + i)
 			];
 		}
 	}
@@ -2132,14 +2172,32 @@ CallFrame* CPU::pushFrame(CallFrame& caller, Closure* closure, int argBase, int 
 
 CallFrame* CPU::pushFrame(Closure* closure, const Value* args, size_t argCount,
 	int returnBase, int returnCount, bool returnToCompletionLatch) {
-	Blua32RuntimeFunction* functionRecord = functionRecordInExecutionDomain(
+	if (!readFunctionRecordInExecutionDomain(
 		*m_activeExecutionImage,
 		closure->functionAddress
-	);
-	if (!functionRecord) {
+	)) {
 		hardHalt();
 		return nullptr;
 	}
+	return pushLatchedFrame(
+		closure,
+		args,
+		argCount,
+		returnBase,
+		returnCount,
+		returnToCompletionLatch
+	);
+}
+
+CallFrame* CPU::pushLatchedFrame(
+	Closure* closure,
+	const Value* args,
+	size_t argCount,
+	int returnBase,
+	int returnCount,
+	bool returnToCompletionLatch
+) {
+	const Blua32FunctionRecordLatch& functionRecord = m_functionRecordLatch;
 	const uintptr_t stackBegin = reinterpret_cast<uintptr_t>(m_stack.data());
 	const uintptr_t stackEnd = stackBegin + m_stack.size() * sizeof(Value);
 	const uintptr_t argsBegin = reinterpret_cast<uintptr_t>(args);
@@ -2148,19 +2206,23 @@ CallFrame* CPU::pushFrame(Closure* closure, const Value* args, size_t argCount,
 	const ptrdiff_t argsOffset = argsInStack ? static_cast<ptrdiff_t>((argsBegin - stackBegin) / sizeof(Value)) : 0;
 	auto frame = acquireFrame();
 	frame->functionAddress = closure->functionAddress;
-	frame->functionRecord = functionRecord;
-	frame->pc = functionRecord->codeAddress;
+	frame->executionImage = functionRecord.image;
+	frame->codeAddress = functionRecord.codeAddress;
+	frame->codeByteCount = functionRecord.codeByteCount;
+	frame->pc = functionRecord.codeAddress;
 	frame->closure = closure;
 	frame->returnBase = returnBase;
 	frame->returnCount = returnCount;
 	frame->returnToCompletionLatch = returnToCompletionLatch;
-	frame->callSitePc = functionRecord->codeAddress;
+	frame->callSitePc = functionRecord.codeAddress;
 	frame->varargBase = m_stackTop;
-	frame->varargCount = functionRecord->isVararg
-		? std::max(static_cast<int>(argCount) - static_cast<int>(functionRecord->numParams), 0)
+	frame->varargCount = (functionRecord.flags & BLUA32_FUNCTION_VARARG) != 0u
+		? std::max(static_cast<int>(argCount) - static_cast<int>(functionRecord.numParams), 0)
 		: 0;
 	frame->stackBase = frame->varargBase + frame->varargCount;
-	size_t targetCapacity = nextPowerOfTwo(static_cast<size_t>(std::max(functionRecord->maxStack, 1u)));
+	size_t targetCapacity = nextPowerOfTwo(
+		static_cast<size_t>(std::max(functionRecord.maxStack, 1u))
+	);
 	if (targetCapacity < 8) {
 		targetCapacity = 8;
 	}
@@ -2168,20 +2230,20 @@ CallFrame* CPU::pushFrame(Closure* closure, const Value* args, size_t argCount,
 	m_stackTop = frame->stackBase + frame->stackCapacity;
 	ensureStackSize(static_cast<size_t>(m_stackTop));
 	frame->registers = m_stack.data() + frame->stackBase;
-	frame->top = static_cast<int>(functionRecord->numParams);
+	frame->top = static_cast<int>(functionRecord.numParams);
 	const Value* sourceArgs = argsInStack ? m_stack.data() + argsOffset : args;
 
-	for (int i = 0; i < static_cast<int>(functionRecord->numParams); ++i) {
+	for (int i = 0; i < static_cast<int>(functionRecord.numParams); ++i) {
 		if (i < static_cast<int>(argCount)) {
 			frame->registers[static_cast<size_t>(i)] = sourceArgs[i];
 		} else {
 			frame->registers[static_cast<size_t>(i)] = valueNil();
 		}
 	}
-	if (functionRecord->isVararg) {
+	if ((functionRecord.flags & BLUA32_FUNCTION_VARARG) != 0u) {
 		for (int i = 0; i < frame->varargCount; ++i) {
 			m_stack[static_cast<size_t>(frame->varargBase + i)] = sourceArgs[
-				static_cast<size_t>(functionRecord->numParams) + static_cast<size_t>(i)
+				static_cast<size_t>(functionRecord.numParams) + static_cast<size_t>(i)
 			];
 		}
 	}
@@ -2273,7 +2335,7 @@ void CPU::writeMappedWordSequence(CallFrame& frame, uint32_t addr, int valueBase
 const Value& CPU::readRK(CallFrame& frame, int rk) {
 	if (rk < 0) {
 		const int index = -1 - rk;
-		return frame.functionRecord->image->constPool[static_cast<size_t>(index)];
+		return frame.executionImage->constPool[static_cast<size_t>(index)];
 	}
 	return frame.registers[static_cast<size_t>(rk)];
 }

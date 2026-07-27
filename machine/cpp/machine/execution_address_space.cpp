@@ -18,6 +18,20 @@ std::optional<int> ExecutionAddressSpace::domainIdOnBus(u32 address) const {
 	return static_cast<int>(m_memory.cartridgeController().selectedSlot());
 }
 
+void ExecutionAddressSpace::bindReadOnlyView(
+	int executionDomainId,
+	u32 address,
+	size_t byteCount,
+	Span<const u8>& out
+) const {
+	const u32 cartridgeSlot = executionDomainId == SYSTEM_EXECUTION_DOMAIN_ID
+		? 0u
+		: static_cast<u32>(executionDomainId);
+	if (!m_memory.bindRomByteView(address, byteCount, cartridgeSlot, out)) {
+		throw BMSX_RUNTIME_ERROR("BLua32 execution read is not backed by the installed ROM.");
+	}
+}
+
 Blua32DecodedExecutionImage ExecutionAddressSpace::resolveSystemDomain() const {
 	std::optional<Blua32DecodedExecutionImage> systemImage =
 		resolveDomain(SYSTEM_EXECUTION_DOMAIN_ID);

@@ -26,6 +26,12 @@ public:
 	}
 
 	std::optional<int> domainIdOnBus(u32 address) const;
+	void bindReadOnlyView(
+		int executionDomainId,
+		u32 address,
+		size_t byteCount,
+		Span<const u8>& out
+	) const;
 	Blua32DecodedExecutionImage resolveSystemDomain() const;
 	std::optional<Blua32DecodedExecutionImage> resolveDomain(int executionDomainId) const;
 
