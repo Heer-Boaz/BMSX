@@ -60,8 +60,6 @@ export async function rebootPreparedRuntime(
 ): Promise<void> {
 	const gateToken = luaGate.begin({ blocking: true, tag: 'reboot_bootrom' });
 	try {
-		overlayRenderer.abandonFrame();
-		await machineManager.resetRuntime();
 		const rebuildBlua32Media = await prepareRebootToBootRom(
 			sources,
 			fault,
@@ -69,7 +67,6 @@ export async function rebootPreparedRuntime(
 			overlayRenderer,
 			runtime,
 		);
-		machineManager.bootstrapStartupAudio();
 		try {
 			bootActiveBlua32Media(
 				sources,
@@ -82,6 +79,7 @@ export async function rebootPreparedRuntime(
 			handleLuaError(fault, sources, runtime, error);
 			throw error;
 		}
+		machineManager.bootstrapStartupAudio();
 		machineManager.flushSystemOutput(runtime);
 	} finally {
 		luaGate.end(gateToken);

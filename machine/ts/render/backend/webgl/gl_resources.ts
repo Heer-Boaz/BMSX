@@ -1,7 +1,7 @@
 // Centralized low-level WebGL helper & resource creation utilities.
 // Moved out of backend.ts to keep backend focused on orchestration.
 import { machineManager } from '../../../core/machine_manager';
-import { RGBA8_SRGB_TEXTURE_PARAMS, type TextureParams } from '../texture_params';
+import type { TextureParams } from '../texture_params';
 
 function getRenderContext() {
 	return machineManager.view;
@@ -84,30 +84,6 @@ export function glLoadShader(
 	return shader;
 }
 
-export function glCreateTexture(
-	gl: WebGL2RenderingContext,
-	img?: ImageBitmap,
-	size?: { x: number; y: number },
-	unit: number = null,
-): WebGLTexture {
-	const tex = gl.createTexture()!;
-	if (unit != null) gl.activeTexture(gl.TEXTURE0 + unit);
-	gl.bindTexture(gl.TEXTURE_2D, tex);
-
-	if (img) {
-		gl.texImage2D(gl.TEXTURE_2D, 0, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, img);
-		const backend = getRenderContext().backend;
-		backend.accountUpload('texture', img.width * img.height * 4);
-	} else if (size) {
-		gl.texImage2D(gl.TEXTURE_2D, 0, gl.SRGB8_ALPHA8, size.x, size.y, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-		const backend = getRenderContext().backend;
-		backend.accountUpload('texture', size.x * size.y * 4);
-	}
-
-	glSetTexture2DParams(gl, RGBA8_SRGB_TEXTURE_PARAMS);
-	return tex;
-}
-
 export function glSetTexture2DParams(gl: WebGL2RenderingContext, desc: TextureParams): void {
 	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, desc.wrapS);
 	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, desc.wrapT);
@@ -123,20 +99,4 @@ export function glSetTextureCubeParams(gl: WebGL2RenderingContext, desc: Texture
 	gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_S, desc.wrapS);
 	gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_T, desc.wrapT);
 	gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE);
-}
-
-export function glCreateTextureFromImage(
-	gl: WebGL2RenderingContext,
-	img: ImageBitmap,
-	desc: TextureParams,
-	unit: number = null,
-): WebGLTexture {
-	const tex = gl.createTexture()!;
-	if (!img) throw new Error('Image is not defined');
-	if (img.width === 0 || img.height === 0) throw new Error(`Image has invalid dimensions: ${img.width}x${img.height}`);
-	if (unit != null) gl.activeTexture(gl.TEXTURE0 + unit);
-	gl.bindTexture(gl.TEXTURE_2D, tex);
-	gl.texImage2D(gl.TEXTURE_2D, 0, desc.srgb ? gl.SRGB8_ALPHA8 : gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, img);
-	glSetTexture2DParams(gl, desc);
-	return tex;
 }

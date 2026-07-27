@@ -14,7 +14,6 @@ import { Memory } from '../machine/memory/memory';
 import { configureMemoryMap } from '../machine/memory/map';
 import { resolveRuntimeTiming } from '../machine/runtime/boot_timing';
 import type { GPUBackend } from '../render/backend/backend';
-import { clearOverlayFrame } from '../render/host_overlay/overlay_queue';
 import { captureRuntimeSaveStateBytes } from '../machine/runtime/save_state/codec';
 import { gxGpuDisplayModeScreenWidth, gxGpuVerticalVisibleLines } from '../machine/devices/gx/gpu_display';
 import { commitGxGpuViewSnapshot } from '../render/gx/view_snapshot';
@@ -100,11 +99,6 @@ export class MachineManager {
 			this.sndmaster.resume();
 		}
 	}
-
-	/**
-	 * Indicates whether the game should run a single frame and then pause for debugging purposes.
-	 */
-	public debug_runSingleFrameAndPause!: boolean;
 
 	public get view(): GameView { return this._view; }
 
@@ -294,34 +288,6 @@ export class MachineManager {
 	public async refreshRenderSurfaces(): Promise<void> {
 		this.texmanager.setBackend(this.view.backend);
 		await this.view.initializeDefaultTextures();
-	}
-
-	public async resetRuntime(preserveTextures = false): Promise<void> {
-		if (!this.initialized) {
-			throw new Error('[MachineManager] Cannot reset runtime before initialization.');
-		}
-		const gateToken = renderGate.begin({ blocking: true, tag: 'runtime-reset' });
-		const runToken = runGate.begin({ blocking: true, tag: 'runtime-reset' });
-		try {
-			const runtime = this.runtime;
-			this.sndmaster.resetPlaybackState();
-			this.debug_runSingleFrameAndPause = false;
-			clearOverlayFrame();
-
-			runtime.frameScheduler.clearQueuedTime();
-			runtime.frameLoop.abandonFrameState();
-			runtime.machine.cpu.clearHaltUntilIrq();
-			runtime.vblank.reset();
-
-			if (!preserveTextures) {
-				this.texmanager.clear();
-				await this.refreshRenderSurfaces();
-			}
-		}
-		finally {
-			renderGate.end(gateToken);
-			runGate.end(runToken);
-		}
 	}
 
 	/**

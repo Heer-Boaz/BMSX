@@ -325,7 +325,6 @@ bool MachineManager::bootSystemFirmware() {
 	syncAudioTiming();
 	rt.resetForSystemBoot();
 	m_screen.reset();
-	refreshRenderSurfaces();
 	rt.boot();
 	return true;
 }
@@ -420,11 +419,6 @@ void MachineManager::unloadRom() {
 
 bool MachineManager::rebootLoadedRom() {
 	if (!m_rom_loaded) return false;
-
-	if (m_texture_manager) m_texture_manager->clear();
-	if (m_view && m_view->backend()->readyForTextureUpload()) {
-		m_view->initializeDefaultTextures();
-	}
 
 	return bootSystemFirmware();
 }

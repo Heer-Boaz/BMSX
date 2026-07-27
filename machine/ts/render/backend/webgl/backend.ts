@@ -120,10 +120,9 @@ export class WebGLBackend implements GPUBackend {
 	}
 
 	private bindTexture2DForUpload(texture: WebGLTexture, desc: TextureParams): void {
-		const gl = this.gl;
-		gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_UPLOAD);
-		gl.bindTexture(gl.TEXTURE_2D, texture);
-		GLR.glSetTexture2DParams(gl, desc);
+		this.setActiveTexture(TEXTURE_UNIT_UPLOAD);
+		this.bindTexture2D(texture);
+		GLR.glSetTexture2DParams(this.gl, desc);
 	}
 
 	createTexture(data: Uint8Array, width: number, height: number, desc: TextureParams): WebGLTexture {
@@ -133,7 +132,6 @@ export class WebGLBackend implements GPUBackend {
 		const tex = gl.createTexture()!;
 		this.bindTexture2DForUpload(tex, desc);
 		gl.texImage2D(gl.TEXTURE_2D, 0, internalFormat, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
-		gl.bindTexture(gl.TEXTURE_2D, null);
 		this.texInfo.set(tex, { w: width, h: height, srgb });
 		this.accountUpload('texture', width * height * 4);
 		return tex;
@@ -153,7 +151,6 @@ export class WebGLBackend implements GPUBackend {
 		}
 		this.texInfo.set(handle, { w: width, h: height, srgb });
 		this.accountUpload('texture', width * height * 4);
-		gl.bindTexture(gl.TEXTURE_2D, null);
 	}
 
 	resizeTexture(handle: WebGLTexture, width: number, height: number, desc: TextureParams): WebGLTexture {
@@ -163,7 +160,6 @@ export class WebGLBackend implements GPUBackend {
 		this.bindTexture2DForUpload(handle, desc);
 		gl.texImage2D(gl.TEXTURE_2D, 0, internalFormat, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
 		this.texInfo.set(handle, { w: width, h: height, srgb });
-		gl.bindTexture(gl.TEXTURE_2D, null);
 		return handle;
 	}
 
@@ -172,7 +168,6 @@ export class WebGLBackend implements GPUBackend {
 		this.bindTexture2DForUpload(handle, desc);
 		gl.texSubImage2D(gl.TEXTURE_2D, 0, x, y, width, height, gl.RGBA, gl.UNSIGNED_BYTE, data, sourceOffset);
 		this.accountUpload('texture', width * height * 4);
-		gl.bindTexture(gl.TEXTURE_2D, null);
 	}
 
 	readTextureRegion(handle: WebGLTexture, out: Uint8Array, width: number, height: number, x: number, y: number, _desc: TextureParams): void {
@@ -195,33 +190,30 @@ export class WebGLBackend implements GPUBackend {
 
 	createSolidTexture2D(width: number, height: number, color: number, desc: TextureParams): WebGLTexture {
 		const gl = this.gl;
-		gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_UPLOAD);
 		const tex = gl.createTexture()!;
-		gl.bindTexture(gl.TEXTURE_2D, tex);
+		this.setActiveTexture(TEXTURE_UNIT_UPLOAD);
+		this.bindTexture2D(tex);
 		const data = createSolidRgba8Pixels(width, height, color);
 		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
 		this.accountUpload('texture', width * height * 4);
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_BASE_LEVEL, 0);
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAX_LEVEL, 0);
 		GLR.glSetTexture2DParams(gl, desc);
-		gl.bindTexture(gl.TEXTURE_2D, null);
 		this.texInfo.set(tex, { w: width, h: height, srgb: false });
 		return tex;
 	}
 
 
 	private createCubemapStorage(): WebGLTexture {
-		const gl = this.gl;
-		gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_CUBEMAP);
-		const tex = gl.createTexture()!;
-		gl.bindTexture(gl.TEXTURE_CUBE_MAP, tex);
+		const tex = this.gl.createTexture()!;
+		this.setActiveTexture(TEXTURE_UNIT_CUBEMAP);
+		this.bindTextureCube(tex);
 		return tex;
 	}
 
 	private bindCubemapStorage(cubemap: WebGLTexture): void {
-		const gl = this.gl;
-		gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_CUBEMAP);
-		gl.bindTexture(gl.TEXTURE_CUBE_MAP, cubemap);
+		this.setActiveTexture(TEXTURE_UNIT_CUBEMAP);
+		this.bindTextureCube(cubemap);
 	}
 
 	private cubemapFaceTarget(face: number): GLenum {
@@ -240,9 +232,7 @@ export class WebGLBackend implements GPUBackend {
 	}
 
 	private finishCubemapStorage(desc: TextureParams): void {
-		const gl = this.gl;
-		GLR.glSetTextureCubeParams(gl, desc);
-		gl.bindTexture(gl.TEXTURE_CUBE_MAP, null);
+		GLR.glSetTextureCubeParams(this.gl, desc);
 	}
 
 	createCubemapFromSources(faces: readonly [TextureSource, TextureSource, TextureSource, TextureSource, TextureSource, TextureSource], desc: TextureParams): WebGLTexture {
@@ -275,10 +265,8 @@ export class WebGLBackend implements GPUBackend {
 		return tex;
 	}
 	uploadCubemapFace(cubemap: WebGLTexture, face: number, src: TextureSource): void {
-		const gl = this.gl;
 		this.bindCubemapStorage(cubemap);
 		this.uploadCubemapSource(this.cubemapFaceTarget(face), src);
-		gl.bindTexture(gl.TEXTURE_CUBE_MAP, null);
 	}
 	destroyTexture(handle: WebGLTexture): void {
 		const textureId = this.texIds.get(handle);
@@ -305,19 +293,11 @@ export class WebGLBackend implements GPUBackend {
 		this.gl.deleteTexture(handle);
 	}
 
-	invalidateTextureBindingCache(): void {
-		this.currentActiveTexUnit = -1;
-		for (let unit = 0; unit < this.boundTex2D.length; unit += 1) {
-			this.boundTex2D[unit] = null;
-			this.boundTexCube[unit] = null;
-		}
-	}
-
 	createColorTexture(desc: { width: number; height: number; format?: GLenum; initialClearColor?: color_arr }): WebGLTexture {
 		const gl = this.gl;
 		const tex = gl.createTexture()!;
-		gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_UPLOAD);
-		gl.bindTexture(gl.TEXTURE_2D, tex);
+		this.setActiveTexture(TEXTURE_UNIT_UPLOAD);
+		this.bindTexture2D(tex);
 		// Use RGBA8 when no explicit format was requested; invalid explicit formats must fail in GL.
 		const internal = (desc.format === undefined ? gl.RGBA8 : desc.format) as GLenum;
 		gl.texImage2D(gl.TEXTURE_2D, 0, internal, desc.width, desc.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
@@ -330,15 +310,14 @@ export class WebGLBackend implements GPUBackend {
 			gl.clear(gl.COLOR_BUFFER_BIT);
 			gl.deleteFramebuffer(fbo);
 		}
-		gl.bindTexture(gl.TEXTURE_2D, null);
 		this.texInfo.set(tex, { w: desc.width, h: desc.height, srgb: false });
 		return tex;
 	}
 	createDepthTexture(desc: { width: number; height: number }): WebGLTexture {
 		const gl = this.gl;
 		const tex = gl.createTexture()!;
-		gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_UPLOAD);
-		gl.bindTexture(gl.TEXTURE_2D, tex);
+		this.setActiveTexture(TEXTURE_UNIT_UPLOAD);
+		this.bindTexture2D(tex);
 		gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT16, desc.width, desc.height, 0, gl.DEPTH_COMPONENT, gl.UNSIGNED_SHORT, null);
 		this.accountUpload('texture', desc.width * desc.height * 2);
 		GLR.glSetTexture2DParams(gl, RGBA8_LINEAR_TEXTURE_PARAMS);

@@ -272,5 +272,6 @@ export class OverlayRenderer {
 		buffer.rectCount = 0;
 		buffer.imageCount = 0;
 		buffer.itemCount = 0;
+		clearOverlayFrame();
 	}
 }
