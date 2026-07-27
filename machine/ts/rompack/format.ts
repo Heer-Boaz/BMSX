@@ -4,8 +4,14 @@ import {
 	CARTRIDGE_BOARD_RAM,
 } from '../machine/devices/cartridge/contracts';
 import {
-	decodeBlua32BootHeader,
-} from '../machine/cpu/blua32_image';
+	BMSX_ROM_HEADER_BLUA32_EXCEPTION_FUNCTION_ADDRESS_OFFSET,
+	BMSX_ROM_HEADER_BLUA32_IMAGE_BYTE_COUNT_OFFSET,
+	BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET,
+	BMSX_ROM_HEADER_BLUA32_IRQ_FUNCTION_ADDRESS_OFFSET,
+	BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET,
+	BMSX_ROM_HEADER_BLUA32_STATIC_LAYOUT_TOKEN_HI_OFFSET,
+	BMSX_ROM_HEADER_BLUA32_STATIC_LAYOUT_TOKEN_LO_OFFSET,
+} from '../spec/bmsx/rom_header';
 import { CART_RAM_SIZE } from '../spec/bmsx/memory_map';
 import { formatNumberAsHex } from '../common/byte_hex_string';
 
@@ -75,7 +81,6 @@ export function parseCartHeader(payload: Uint8Array): CartRomHeader {
 	const tocLength = view.getUint32(20, true);
 	const dataOffset = view.getUint32(24, true);
 	const dataLength = view.getUint32(28, true);
-	const blua32 = decodeBlua32BootHeader(payload);
 	const metadataOffset = view.getUint32(64, true);
 	const metadataLength = view.getUint32(68, true);
 	const vdpClassWord = view.getUint32(72, true);
@@ -103,13 +108,13 @@ export function parseCartHeader(payload: Uint8Array): CartRomHeader {
 		tocLength,
 		dataOffset,
 		dataLength,
-		blua32ImageOffset: blua32.imageOffset,
-		blua32ImageByteCount: blua32.imageByteCount,
-		blua32StartupFunctionAddress: blua32.startupFunctionAddress,
-		blua32IrqFunctionAddress: blua32.irqFunctionAddress,
-		blua32ExceptionFunctionAddress: blua32.exceptionFunctionAddress,
-		blua32StaticLayoutTokenLo: blua32.staticLayoutTokenLo,
-		blua32StaticLayoutTokenHi: blua32.staticLayoutTokenHi,
+		blua32ImageOffset: view.getUint32(BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET, true),
+		blua32ImageByteCount: view.getUint32(BMSX_ROM_HEADER_BLUA32_IMAGE_BYTE_COUNT_OFFSET, true),
+		blua32StartupFunctionAddress: view.getUint32(BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET, true),
+		blua32IrqFunctionAddress: view.getUint32(BMSX_ROM_HEADER_BLUA32_IRQ_FUNCTION_ADDRESS_OFFSET, true),
+		blua32ExceptionFunctionAddress: view.getUint32(BMSX_ROM_HEADER_BLUA32_EXCEPTION_FUNCTION_ADDRESS_OFFSET, true),
+		blua32StaticLayoutTokenLo: view.getUint32(BMSX_ROM_HEADER_BLUA32_STATIC_LAYOUT_TOKEN_LO_OFFSET, true),
+		blua32StaticLayoutTokenHi: view.getUint32(BMSX_ROM_HEADER_BLUA32_STATIC_LAYOUT_TOKEN_HI_OFFSET, true),
 		metadataOffset,
 		metadataLength,
 		vdpClass: 'psx',

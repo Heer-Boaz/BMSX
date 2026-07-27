@@ -1,4 +1,5 @@
 #include "common/endian.h"
+#include "spec/blua32/image_format.h"
 #include "spec/blua32/instruction_format.h"
 #include "spec/bmsx/memory_map.h"
 #include "rompack/loader.h"
@@ -37,8 +38,14 @@ int main() {
 	}
 
 	std::array<bmsx::u8, bmsx::BLUA32_IMAGE_HEADER_SIZE> unsupportedBlua32{};
-	bmsx::writeLE32(unsupportedBlua32.data(), bmsx::BLUA32_IMAGE_MAGIC);
-	bmsx::writeLE32(unsupportedBlua32.data() + 4u, bmsx::BLUA32_IMAGE_VERSION + 1u);
+	bmsx::writeLE32(
+		unsupportedBlua32.data() + bmsx::BLUA32_IMAGE_MAGIC_OFFSET,
+		bmsx::BLUA32_IMAGE_MAGIC
+	);
+	bmsx::writeLE32(
+		unsupportedBlua32.data() + bmsx::BLUA32_IMAGE_VERSION_OFFSET,
+		bmsx::BLUA32_IMAGE_VERSION + 1u
+	);
 	bool unsupportedRejected = false;
 	try {
 		bmsx::decodeBlua32Image(unsupportedBlua32, bmsx::SYSTEM_ROM_BASE);
@@ -63,7 +70,9 @@ int main() {
 	const bmsx::u32 functionRecordOffset = functionRangeRom.functionAddresses[0]
 		- (bmsx::SYSTEM_ROM_BASE + bmsx::test::BLUA32_TEST_IMAGE_OFFSET);
 	bmsx::writeLE32(
-		functionRangeImage.data() + functionRecordOffset,
+		functionRangeImage.data()
+			+ functionRecordOffset
+			+ bmsx::BLUA32_FUNCTION_CODE_ADDRESS_OFFSET,
 		functionRangeRom.textAddress + 2u * bmsx::INSTRUCTION_BYTES
 	);
 	bool functionRangeRejected = false;

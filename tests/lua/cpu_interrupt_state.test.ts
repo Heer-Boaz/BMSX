@@ -48,10 +48,8 @@ import { captureMachineSaveState, captureMachineState, restoreMachineSaveState, 
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { CART_ROM_BASE, IO_WORD_SIZE, DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import {
-	BLUA32_BOOT_STARTUP_FUNCTION_ADDRESS_OFFSET,
-	type Blua32ImageLayout,
-} from '../../machine/ts/machine/cpu/blua32_image';
+import type { Blua32ImageLayout } from '../../machine/ts/machine/cpu/blua32_image';
+import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { compileLuaChunkToProgram } from '../../machine/ts/lua/compiler';
 import type { OptimizationLevel } from '../../machine/ts/lua/compiler/optimizer';
 import {
@@ -87,7 +85,7 @@ const CART_LAUNCHER_SYSTEM_IMAGE_SOURCE: TestBlua32Source = {
 		{ firstWord: 0, wordCount: 3 },
 		{ firstWord: 3, wordCount: 1 },
 	],
-	constants: [CART_ROM_BASE + BLUA32_BOOT_STARTUP_FUNCTION_ADDRESS_OFFSET],
+	constants: [CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET],
 	startupFunctionIndex: 0,
 	irqFunctionIndex: 1,
 	exceptionFunctionIndex: 1,
@@ -368,7 +366,7 @@ function makeHaltFrameRuntime(): Runtime {
 const CART_LAUNCHER_SYSTEM_LUA_SOURCE = `
 function irq() end
 function exception() end
-cop0.exec = mem[${CART_ROM_BASE + BLUA32_BOOT_STARTUP_FUNCTION_ADDRESS_OFFSET}]
+cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]
 `;
 
 function makeCompiledCartCpu(
@@ -795,7 +793,7 @@ end
 function exception() end
 mem[irq_mask_addr] = irq_vblank
 halt_until_irq
-cop0.exec = mem[${CART_ROM_BASE + BLUA32_BOOT_STARTUP_FUNCTION_ADDRESS_OFFSET}]
+cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]
 `;
 	const cartSource = `
 local irq_ack_addr<const> = 0x08000004
@@ -914,7 +912,7 @@ function exception()
 	mem[${exceptionEpcAddress}] = cop0.epc
 	mem[${exceptionStatusAddress}] = cop0.status
 end
-cop0.exec = mem[${CART_ROM_BASE + BLUA32_BOOT_STARTUP_FUNCTION_ADDRESS_OFFSET}]
+cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]
 `;
 	const cartSource = `
 halt_until_irq
@@ -971,7 +969,7 @@ test('Hot Resume relocates the saved EPC beneath a nested NMI through its interr
 	const systemSource = `
 function irq() end
 function exception() end
-cop0.exec = mem[${CART_ROM_BASE + BLUA32_BOOT_STARTUP_FUNCTION_ADDRESS_OFFSET}]
+cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]
 `;
 	const cartSource = `
 function irq() end
@@ -1155,7 +1153,7 @@ function exception()
 	mem[${exceptionReasonAddress}] = cop0.lua_fault_reason
 	halt_until_irq
 end
-cop0.exec = mem[${CART_ROM_BASE + BLUA32_BOOT_STARTUP_FUNCTION_ADDRESS_OFFSET}]
+cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]
 `;
 	const cartSource = `
 local nothing = nil
@@ -1193,7 +1191,7 @@ return { caller = caller, leaf = leaf }
 		chunk: parseLuaChunk(moduleSource, `${modulePath}.lua`),
 		source: moduleSource,
 	};
-	const systemSource = `cop0.exec = mem[${CART_ROM_BASE + BLUA32_BOOT_STARTUP_FUNCTION_ADDRESS_OFFSET}]`;
+	const systemSource = `cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]`;
 	const system = compileLuaChunkToProgram(
 		parseLuaChunk(systemSource, 'system.lua'),
 		[module],
@@ -1271,7 +1269,7 @@ function irq() end
 function exception()
 	mem[${exceptionCountAddress}] = mem[${exceptionCountAddress}] + 1
 end
-cop0.exec = mem[${CART_ROM_BASE + BLUA32_BOOT_STARTUP_FUNCTION_ADDRESS_OFFSET}]
+cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]
 `;
 	const cartSource = `
 local irq_ack_addr<const> = ${IO_IRQ_ACK}
@@ -1329,7 +1327,7 @@ function exception()
 	mem[${faultCauseAddress}] = cop0.cause
 	cop0.epc = cop0.epc + 4
 end
-cop0.exec = mem[${CART_ROM_BASE + BLUA32_BOOT_STARTUP_FUNCTION_ADDRESS_OFFSET}]
+cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]
 `;
 	const cartSource = `
 fault_value = cop0.status
@@ -1364,7 +1362,7 @@ test('CPU mapped bus errors enter the system exception vector without committing
 	const systemSource: TestBlua32Source = {
 		text: systemCode,
 		constants: [
-			CART_ROM_BASE + BLUA32_BOOT_STARTUP_FUNCTION_ADDRESS_OFFSET,
+			CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET,
 			IO_SYS_BUS_FAULT_CODE - IO_WORD_SIZE,
 		],
 		functions: [

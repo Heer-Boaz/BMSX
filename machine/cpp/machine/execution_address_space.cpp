@@ -1,6 +1,7 @@
 #include "machine/execution_address_space.h"
 
 #include "spec/bmsx/memory_map.h"
+#include "spec/bmsx/rom_header.h"
 #include "machine/memory/memory.h"
 
 #include <utility>
@@ -38,7 +39,7 @@ std::optional<Blua32DecodedExecutionImage> ExecutionAddressSpace::resolveDomain(
 	Span<const u8> headerBytes;
 	if (!m_memory.bindRomByteView(
 		romBaseAddress,
-		BLUA32_BOOT_HEADER_SIZE,
+		BMSX_ROM_BOOT_HEADER_SIZE,
 		cartridgeSlot,
 		headerBytes
 	)) {

@@ -467,7 +467,8 @@ Een eerdere tussenimplementatie voegde een 64-byte
 laag boven de bestaande ROM-header en is verwijderd.
 
 De huidige bootvelden staan rechtstreeks in de fysieke ROM-header; zie
-`BLUA32_BOOT_HEADER_SIZE = 60`.
+`machine/{ts,cpp}/spec/bmsx/rom_header.*` en
+`BMSX_ROM_BOOT_HEADER_SIZE = 60`.
 
 Let op: het **BLua32-imageformat zelf** bevat nog wel magic/version en de
 runtime-decoders gooien bij ongeldige images host-errors. Dat resterende

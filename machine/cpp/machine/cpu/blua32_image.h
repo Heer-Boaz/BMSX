@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/primitives.h"
+#include "spec/blua32/image_format.h"
 
 #include <optional>
 #include <span>
@@ -12,20 +13,6 @@ namespace bmsx {
 
 constexpr const char* BLUA32_IMAGE_ID = "__blua32__";
 
-constexpr u32 BLUA32_IMAGE_MAGIC = 0x32334c42u;
-constexpr u32 BLUA32_BOOT_HEADER_SIZE = 60u;
-constexpr u32 BLUA32_BOOT_STARTUP_FUNCTION_ADDRESS_OFFSET = 40u;
-constexpr u32 BLUA32_IMAGE_VERSION = 1u;
-constexpr u32 BLUA32_IMAGE_HEADER_SIZE = 96u;
-constexpr u32 BLUA32_FUNCTION_RECORD_SIZE = 32u;
-constexpr u32 BLUA32_FUNCTION_ALIGNMENT = 16u;
-constexpr u32 BLUA32_UPVALUE_RECORD_SIZE = 4u;
-constexpr u32 BLUA32_CONSTANT_RECORD_SIZE = 16u;
-constexpr u32 BLUA32_GLOBAL_NAME_RECORD_SIZE = 8u;
-
-constexpr u32 BLUA32_FUNCTION_VARARG = 1u << 0u;
-constexpr u32 BLUA32_FUNCTION_STATIC = 1u << 1u;
-
 struct Blua32BootHeader {
 	u32 imageOffset = 0;
 	u32 imageByteCount = 0;
@@ -34,14 +21,6 @@ struct Blua32BootHeader {
 	u32 exceptionFunctionAddress = 0;
 	u32 staticLayoutTokenLo = 0;
 	u32 staticLayoutTokenHi = 0;
-};
-
-enum class Blua32ConstantTag : u32 {
-	Nil,
-	False,
-	True,
-	Number,
-	String,
 };
 
 struct Blua32ImageHeader {

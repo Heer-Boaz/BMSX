@@ -1,11 +1,11 @@
 import {
-	BLUA32_BOOT_HEADER_SIZE,
 	decodeBlua32BootHeader,
 	decodeBlua32Image,
 	type Blua32ImageLayout,
 } from './cpu/blua32_image';
 import type { Memory, RomByteView } from './memory/memory';
 import { CART_ROM_BASE, RAM_BASE, SYSTEM_ROM_BASE } from '../spec/bmsx/memory_map';
+import { BMSX_ROM_BOOT_HEADER_SIZE } from '../spec/bmsx/rom_header';
 
 export const SYSTEM_EXECUTION_DOMAIN_ID = -1;
 export type ExecutionDomainId = -1 | 0 | 1;
@@ -62,7 +62,7 @@ export class ExecutionAddressSpace {
 			: executionDomainId;
 		if (!this.memory.bindRomByteView(
 			romBaseAddress,
-			BLUA32_BOOT_HEADER_SIZE,
+			BMSX_ROM_BOOT_HEADER_SIZE,
 			cartridgeSlot,
 			this.headerView,
 		)) {

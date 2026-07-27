@@ -519,6 +519,12 @@ The BLua32 ISA contract is:
 - CP0 register indexes, status/cause words, and Lua-fault reason words:
   `machine/{ts,cpp}/spec/blua32/cop0.*`.
 
+The BLua32 executable-image wire records live in
+`machine/{ts,cpp}/spec/blua32/image_format.*`. The BMSX ROM boot-header fields
+that locate and enter such an image live in
+`machine/{ts,cpp}/spec/bmsx/rom_header.*`. Packers, decoders, and machine
+consumers use those numeric contracts directly.
+
 Human-readable opcode names and profiler categories are tooling metadata under
 `machine/{ts,cpp}/rompack/tooling/opcode_metadata.*`; loading the emulator does
 not construct those string tables. BLua source spellings for typed-memory
@@ -557,7 +563,13 @@ Owners:
   `machine/cpp/rompack/toc.h/.cpp`.
 - Layered ROM lookup: `machine/ts/rompack/source.ts` and
   `machine/cpp/rompack/source.h/.cpp`.
-- BLua32 executable-image layout and CPU-side decode:
+- BLua32 executable-image wire records:
+  `machine/ts/spec/blua32/image_format.ts` and
+  `machine/cpp/spec/blua32/image_format.h`.
+- BMSX ROM boot-header fields for BLua32 images:
+  `machine/ts/spec/bmsx/rom_header.ts` and
+  `machine/cpp/spec/bmsx/rom_header.h`.
+- Current decoded image graph and CPU-side decode:
   `machine/ts/machine/cpu/blua32_image.ts` and
   `machine/cpp/machine/cpu/blua32_image.h/.cpp`.
 - Build-time Lua source compilation and Lua source registries:
@@ -574,6 +586,11 @@ Owners:
 
 The ROM package and BLua32 image use the current wire records only. There is no
 old-format reader and no decode path for obsolete records.
+
+`Blua32ImageLayout` remains a CPU-side host object graph in the current
+implementation. Extracting its raw wire constants does not make that graph a
+physical CPU datapath or remove it as execution authority; that is tracked as
+`CPU-IMAGE-DATAPATH-01`.
 
 Every top-level ROM section and every independently stored main, compiled,
 texture, and collision payload begins on a four-byte boundary. The producer inserts zero padding
@@ -690,18 +707,19 @@ not on edits that add functions, constants, global names, or text. Text
 contains the existing BLua32 instruction words unchanged. `.bss` owns no ROM
 payload.
 
-The emulator consumes those physical bytes directly. `Memory` binds retained
-views into the installed system ROM and both cartridge ROMs. `Machine` owns one
+The current emulator does not yet consume every executable record through a
+physical memory datapath. `Memory` binds retained views into the installed
+system ROM and both cartridge ROMs. `Machine` owns one
 `ExecutionAddressSpace`, wired directly to `Memory` and borrowed by the CPU. It
-owns executable bus-domain selection and transiently parses the boot record and
-guest-inert media layout only when that physical domain is resolved. The CPU
-takes the decoded layout and raw vector words into its execution state: it
-consumes the system reset word directly into root execution state, retains the
-system exception word as a CPU latch, retains only the raw IRQ word with each
-resident domain, activates the system image at reset, and activates a cartridge
-image only when execution first targets the currently selected socket. The
-resident execution image never retains the outer ROM boot record's image
-offset, image byte count, or static-layout token.
+selects the executable bus domain, reads the raw boot words, and decodes the
+complete image into a host `Blua32ImageLayout` when that domain is resolved.
+The CPU then copies that decoded graph and the raw vector words into resident
+execution state. It consumes the system reset word into root execution state,
+retains the system exception word as a CPU latch, retains the raw IRQ word with
+each resident domain, activates the system image at reset, and activates a
+cartridge image only when execution first targets the currently selected
+socket. The resident execution image does not retain the outer ROM boot
+record's image offset, image byte count, or static-layout token.
 Activation binds constant strings, global slots, static closures and dense
 decoded instruction pages. Merely inserting or replacing an unexecuted second
 cartridge therefore cannot consume guest string or object identities or change
@@ -712,13 +730,15 @@ classification, TOC lookup, string lookup, allocation, parser work or
 activation check per instruction.
 
 `CLOSURE` resolves its physical record address arithmetically against the
-system or execution-latched cartridge function table. `LOADK` and RK operands
-index the constant table owned by the frame's image. Static closures are
-retained CPU objects keyed by physical function-record address. Table-load
-inline caches are allocated only for actual table-load instructions. Decode
-images, static closure indexes, and inline caches are derived runtime
-infrastructure: they are invalidated when their ROM owner publishes a new media
-revision and are never serialized.
+decoded system or execution-latched cartridge function array. `LOADK` and RK
+operands index the decoded constant array owned by the frame's resident image.
+Static closures are retained CPU objects keyed by physical function-record
+address. Table-load inline caches are allocated only for actual table-load
+instructions. The decoded image graph, static closure indexes, and inline
+caches are invalidated when their ROM owner publishes a new media revision and
+are never serialized, but the decoded graph still determines CPU behavior
+while resident. `CPU-IMAGE-DATAPATH-01` must replace that authority with reads
+of the raw physical records.
 
 A closure value owns only its raw physical function-record address and captured
 upvalues. Entering a cartridge closure resolves that address once through the

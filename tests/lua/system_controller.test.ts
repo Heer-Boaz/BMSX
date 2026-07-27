@@ -14,13 +14,11 @@ import {
 	SYS_PRINT_BUFFER_BYTES,
 } from '../../machine/ts/machine/bus/io';
 import { Machine } from '../../machine/ts/machine/machine';
-import {
-	BLUA32_BOOT_STARTUP_FUNCTION_ADDRESS_OFFSET,
-	decodeBlua32BootHeader,
-} from '../../machine/ts/machine/cpu/blua32_image';
+import { decodeBlua32BootHeader } from '../../machine/ts/machine/cpu/blua32_image';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { OpCode, encodeFixedCallArgCount } from '../../machine/ts/spec/blua32/opcode';
+import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { Table } from '../../machine/ts/machine/cpu/table';
 import { StringValue } from '../../machine/ts/machine/cpu/value';
 import { blua32SourceRangeAtPc } from '../../machine/ts/rompack/tooling/blua32_symbols';
@@ -214,7 +212,7 @@ test('runtime reset boundary restarts system firmware and preserves cartridge en
 data marker: word = 41
 *marker = *marker + 1
 mem[${IO_IRQ_MASK}] = ${IRQ_VBLANK}
-cop0.exec = mem[${CART_ROM_BASE + BLUA32_BOOT_STARTUP_FUNCTION_ADDRESS_OFFSET}]
+cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]
 `;
 	const system = compileLuaChunkToProgram(parseLuaChunk(systemSource, 'system_reset_system.lua'), [], { entrySource: systemSource, programDomain: 'system' });
 	const cartSource = `

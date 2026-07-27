@@ -18,7 +18,7 @@ import type {
 import {
 	BLUA32_FUNCTION_RECORD_SIZE,
 	Blua32ConstantTag,
-} from '../../machine/ts/machine/cpu/blua32_image';
+} from '../../machine/ts/spec/blua32/image_format';
 import {
 	INSTRUCTION_BYTES,
 	readInstructionWord,

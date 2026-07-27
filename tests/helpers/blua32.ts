@@ -5,11 +5,13 @@ import type {
 	ProgramConstReloc,
 	ProgramObjectImage,
 } from '../../machine/ts/lua/compiler/program_object';
+import type {
+	Blua32ImageLayout,
+} from '../../machine/ts/machine/cpu/blua32_image';
 import {
 	BLUA32_FUNCTION_RECORD_SIZE,
 	BLUA32_IMAGE_HEADER_SIZE,
-	type Blua32ImageLayout,
-} from '../../machine/ts/machine/cpu/blua32_image';
+} from '../../machine/ts/spec/blua32/image_format';
 import {
 	type Blua32SymbolsImage,
 	type SourceRange,

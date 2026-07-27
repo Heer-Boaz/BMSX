@@ -286,7 +286,9 @@
 		"machine/ts/machine/devices/gx/gpu_display.ts",
 		"machine/ts/machine/devices/gx/gte.ts",
 		"machine/ts/spec/bmsx/memory_map.ts",
+		"machine/ts/spec/bmsx/rom_header.ts",
 		"machine/ts/spec/blua32/cop0.ts",
+		"machine/ts/spec/blua32/image_format.ts",
 		"machine/ts/spec/blua32/instruction_format.ts",
 		"machine/ts/spec/blua32/memory_access_kind.ts",
 		"machine/ts/machine/cpu/string_pool.ts",
@@ -350,6 +352,13 @@
 				"machine/cpp/spec/bmsx/memory_map.h"
 			],
 			"reason": "bmsx_fixed_physical_address_map_contract"
+		},
+		{
+			"ts": "machine/ts/spec/bmsx/rom_header.ts",
+			"cpp": [
+				"machine/cpp/spec/bmsx/rom_header.h"
+			],
+			"reason": "bmsx_rom_boot_header_wire_contract"
 		},
 		{
 			"ts": "machine/ts/machine/memory/map.ts",
@@ -470,6 +479,13 @@
 				"machine/cpp/spec/blua32/instruction_format.cpp"
 			],
 			"reason": "blua32_instruction_word_encoding_contract"
+		},
+		{
+			"ts": "machine/ts/spec/blua32/image_format.ts",
+			"cpp": [
+				"machine/cpp/spec/blua32/image_format.h"
+			],
+			"reason": "blua32_executable_image_wire_contract"
 		},
 		{
 			"ts": "machine/ts/spec/blua32/cop0.ts",
@@ -835,6 +851,8 @@
 		{
 			"ts_cop0": "machine/ts/spec/blua32/cop0.ts",
 			"cpp_cop0": "machine/cpp/spec/blua32/cop0.h",
+			"ts_image_format": "machine/ts/spec/blua32/image_format.ts",
+			"cpp_image_format": "machine/cpp/spec/blua32/image_format.h",
 			"ts_instruction_format": "machine/ts/spec/blua32/instruction_format.ts",
 			"cpp_instruction_format": "machine/cpp/spec/blua32/instruction_format.h",
 			"ts_memory_access": "machine/ts/spec/blua32/memory_access_kind.ts",
@@ -853,7 +871,7 @@
 				"OPCODE_NAMES",
 				"OPCODE_CATEGORY"
 			],
-			"reason": "blua32_opcode_numbers_decode_tables_and_tooling_names_must_match_exactly"
+			"reason": "blua32_wire_words_opcode_numbers_decode_tables_and_tooling_names_must_match_exactly"
 		}
 	],
 	"strict_file_layout": [
@@ -1182,6 +1200,20 @@
 				"machine/cpp/common/fixed_point.h"
 			],
 			"reason": "common_fixed_point_decode_filename_parity"
+		},
+		{
+			"ts": "machine/ts/spec/bmsx/rom_header.ts",
+			"cpp": [
+				"machine/cpp/spec/bmsx/rom_header.h"
+			],
+			"reason": "bmsx_rom_boot_header_wire_filename_parity"
+		},
+		{
+			"ts": "machine/ts/spec/blua32/image_format.ts",
+			"cpp": [
+				"machine/cpp/spec/blua32/image_format.h"
+			],
+			"reason": "blua32_executable_image_wire_filename_parity"
 		},
 		{
 			"ts": "machine/ts/machine/scheduler/microtask_queue.ts",

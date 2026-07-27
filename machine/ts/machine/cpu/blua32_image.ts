@@ -1,20 +1,66 @@
 import { readLE32 } from '../../common/endian';
+import {
+	Blua32ConstantTag,
+	BLUA32_CONSTANT_PAYLOAD_OFFSET,
+	BLUA32_CONSTANT_RECORD_SIZE,
+	BLUA32_CONSTANT_STRING_BYTE_COUNT_OFFSET,
+	BLUA32_CONSTANT_TAG_OFFSET,
+	BLUA32_FUNCTION_ALIGNMENT,
+	BLUA32_FUNCTION_CODE_ADDRESS_OFFSET,
+	BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET,
+	BLUA32_FUNCTION_FLAGS_OFFSET,
+	BLUA32_FUNCTION_MAX_STACK_OFFSET,
+	BLUA32_FUNCTION_NUM_PARAMS_OFFSET,
+	BLUA32_FUNCTION_RECORD_SIZE,
+	BLUA32_FUNCTION_STATIC,
+	BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET,
+	BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET,
+	BLUA32_FUNCTION_VARARG,
+	BLUA32_GLOBAL_NAME_ADDRESS_OFFSET,
+	BLUA32_GLOBAL_NAME_BYTE_COUNT_OFFSET,
+	BLUA32_GLOBAL_NAME_RECORD_SIZE,
+	BLUA32_IMAGE_BSS_ADDRESS_OFFSET,
+	BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET,
+	BLUA32_IMAGE_BYTE_COUNT_OFFSET,
+	BLUA32_IMAGE_CONSTANT_COUNT_OFFSET,
+	BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET,
+	BLUA32_IMAGE_DATA_ADDRESS_OFFSET,
+	BLUA32_IMAGE_DATA_BYTE_COUNT_OFFSET,
+	BLUA32_IMAGE_DATA_LOAD_ADDRESS_OFFSET,
+	BLUA32_IMAGE_FLAGS_OFFSET,
+	BLUA32_IMAGE_FUNCTION_COUNT_OFFSET,
+	BLUA32_IMAGE_FUNCTION_TABLE_ADDRESS_OFFSET,
+	BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET,
+	BLUA32_IMAGE_GLOBAL_NAME_TABLE_ADDRESS_OFFSET,
+	BLUA32_IMAGE_HEADER_SIZE,
+	BLUA32_IMAGE_MAGIC,
+	BLUA32_IMAGE_MAGIC_OFFSET,
+	BLUA32_IMAGE_RODATA_ADDRESS_OFFSET,
+	BLUA32_IMAGE_RODATA_BYTE_COUNT_OFFSET,
+	BLUA32_IMAGE_STRING_ADDRESS_OFFSET,
+	BLUA32_IMAGE_STRING_BYTE_COUNT_OFFSET,
+	BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET,
+	BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_TABLE_ADDRESS_OFFSET,
+	BLUA32_IMAGE_TEXT_ADDRESS_OFFSET,
+	BLUA32_IMAGE_TEXT_BYTE_COUNT_OFFSET,
+	BLUA32_IMAGE_VERSION,
+	BLUA32_IMAGE_VERSION_OFFSET,
+	BLUA32_UPVALUE_INDEX_MASK,
+	BLUA32_UPVALUE_IN_STACK_MASK,
+	BLUA32_UPVALUE_RECORD_SIZE,
+} from '../../spec/blua32/image_format';
+import {
+	BMSX_ROM_BOOT_HEADER_SIZE,
+	BMSX_ROM_HEADER_BLUA32_EXCEPTION_FUNCTION_ADDRESS_OFFSET,
+	BMSX_ROM_HEADER_BLUA32_IMAGE_BYTE_COUNT_OFFSET,
+	BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET,
+	BMSX_ROM_HEADER_BLUA32_IRQ_FUNCTION_ADDRESS_OFFSET,
+	BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET,
+	BMSX_ROM_HEADER_BLUA32_STATIC_LAYOUT_TOKEN_HI_OFFSET,
+	BMSX_ROM_HEADER_BLUA32_STATIC_LAYOUT_TOKEN_LO_OFFSET,
+} from '../../spec/bmsx/rom_header';
 
 export const BLUA32_IMAGE_ID = '__blua32__';
-
-export const BLUA32_IMAGE_MAGIC = 0x32334c42;
-export const BLUA32_BOOT_HEADER_SIZE = 60;
-export const BLUA32_BOOT_STARTUP_FUNCTION_ADDRESS_OFFSET = 40;
-export const BLUA32_IMAGE_VERSION = 1;
-export const BLUA32_IMAGE_HEADER_SIZE = 96;
-export const BLUA32_FUNCTION_RECORD_SIZE = 32;
-export const BLUA32_FUNCTION_ALIGNMENT = 16;
-export const BLUA32_UPVALUE_RECORD_SIZE = 4;
-export const BLUA32_CONSTANT_RECORD_SIZE = 16;
-export const BLUA32_GLOBAL_NAME_RECORD_SIZE = 8;
-
-export const BLUA32_FUNCTION_VARARG = 1 << 0;
-export const BLUA32_FUNCTION_STATIC = 1 << 1;
 
 export type Blua32BootHeader = {
 	imageOffset: number;
@@ -30,16 +76,16 @@ export function decodeBlua32BootHeader(payload: Uint8Array, byteOffset = 0): Blu
 	const view = new DataView(
 		payload.buffer,
 		payload.byteOffset + byteOffset,
-		BLUA32_BOOT_HEADER_SIZE,
+		BMSX_ROM_BOOT_HEADER_SIZE,
 	);
 	return {
-		imageOffset: view.getUint32(32, true),
-		imageByteCount: view.getUint32(36, true),
-		startupFunctionAddress: view.getUint32(BLUA32_BOOT_STARTUP_FUNCTION_ADDRESS_OFFSET, true),
-		irqFunctionAddress: view.getUint32(44, true),
-		exceptionFunctionAddress: view.getUint32(48, true),
-		staticLayoutTokenLo: view.getUint32(52, true),
-		staticLayoutTokenHi: view.getUint32(56, true),
+		imageOffset: view.getUint32(BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET, true),
+		imageByteCount: view.getUint32(BMSX_ROM_HEADER_BLUA32_IMAGE_BYTE_COUNT_OFFSET, true),
+		startupFunctionAddress: view.getUint32(BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET, true),
+		irqFunctionAddress: view.getUint32(BMSX_ROM_HEADER_BLUA32_IRQ_FUNCTION_ADDRESS_OFFSET, true),
+		exceptionFunctionAddress: view.getUint32(BMSX_ROM_HEADER_BLUA32_EXCEPTION_FUNCTION_ADDRESS_OFFSET, true),
+		staticLayoutTokenLo: view.getUint32(BMSX_ROM_HEADER_BLUA32_STATIC_LAYOUT_TOKEN_LO_OFFSET, true),
+		staticLayoutTokenHi: view.getUint32(BMSX_ROM_HEADER_BLUA32_STATIC_LAYOUT_TOKEN_HI_OFFSET, true),
 	};
 }
 
@@ -52,14 +98,6 @@ export function decodeBlua32RomImage(payload: Uint8Array, romBaseAddress: number
 		payload.subarray(boot.imageOffset, boot.imageOffset + boot.imageByteCount),
 		romBaseAddress + boot.imageOffset,
 	);
-}
-
-export const enum Blua32ConstantTag {
-	Nil,
-	False,
-	True,
-	Number,
-	String,
 }
 
 export type Blua32ImageHeader = {
@@ -139,34 +177,34 @@ export function decodeBlua32Image(bytes: Uint8Array, imageAddress: number): Blua
 	if (bytes.byteLength < BLUA32_IMAGE_HEADER_SIZE) {
 		throw new Error('BLua32 image is smaller than its header.');
 	}
-	if (readLE32(bytes, 0) !== BLUA32_IMAGE_MAGIC) {
+	if (readLE32(bytes, BLUA32_IMAGE_MAGIC_OFFSET) !== BLUA32_IMAGE_MAGIC) {
 		throw new Error('BLua32 image magic is invalid.');
 	}
-	if (readLE32(bytes, 4) !== BLUA32_IMAGE_VERSION) {
+	if (readLE32(bytes, BLUA32_IMAGE_VERSION_OFFSET) !== BLUA32_IMAGE_VERSION) {
 		throw new Error('BLua32 image version is unsupported.');
 	}
 	const header: Blua32ImageHeader = {
-		imageByteCount: readLE32(bytes, 8),
-		flags: readLE32(bytes, 12),
-		functionTableAddress: readLE32(bytes, 16),
-		functionCount: readLE32(bytes, 20),
-		constantTableAddress: readLE32(bytes, 24),
-		constantCount: readLE32(bytes, 28),
-		globalNameTableAddress: readLE32(bytes, 32),
-		globalNameCount: readLE32(bytes, 36),
-		systemGlobalNameTableAddress: readLE32(bytes, 40),
-		systemGlobalNameCount: readLE32(bytes, 44),
-		stringAddress: readLE32(bytes, 48),
-		stringByteCount: readLE32(bytes, 52),
-		rodataAddress: readLE32(bytes, 56),
-		rodataByteCount: readLE32(bytes, 60),
-		dataLoadAddress: readLE32(bytes, 64),
-		dataByteCount: readLE32(bytes, 68),
-		dataAddress: readLE32(bytes, 72),
-		bssAddress: readLE32(bytes, 76),
-		bssByteCount: readLE32(bytes, 80),
-		textAddress: readLE32(bytes, 84),
-		textByteCount: readLE32(bytes, 88),
+		imageByteCount: readLE32(bytes, BLUA32_IMAGE_BYTE_COUNT_OFFSET),
+		flags: readLE32(bytes, BLUA32_IMAGE_FLAGS_OFFSET),
+		functionTableAddress: readLE32(bytes, BLUA32_IMAGE_FUNCTION_TABLE_ADDRESS_OFFSET),
+		functionCount: readLE32(bytes, BLUA32_IMAGE_FUNCTION_COUNT_OFFSET),
+		constantTableAddress: readLE32(bytes, BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET),
+		constantCount: readLE32(bytes, BLUA32_IMAGE_CONSTANT_COUNT_OFFSET),
+		globalNameTableAddress: readLE32(bytes, BLUA32_IMAGE_GLOBAL_NAME_TABLE_ADDRESS_OFFSET),
+		globalNameCount: readLE32(bytes, BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET),
+		systemGlobalNameTableAddress: readLE32(bytes, BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_TABLE_ADDRESS_OFFSET),
+		systemGlobalNameCount: readLE32(bytes, BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET),
+		stringAddress: readLE32(bytes, BLUA32_IMAGE_STRING_ADDRESS_OFFSET),
+		stringByteCount: readLE32(bytes, BLUA32_IMAGE_STRING_BYTE_COUNT_OFFSET),
+		rodataAddress: readLE32(bytes, BLUA32_IMAGE_RODATA_ADDRESS_OFFSET),
+		rodataByteCount: readLE32(bytes, BLUA32_IMAGE_RODATA_BYTE_COUNT_OFFSET),
+		dataLoadAddress: readLE32(bytes, BLUA32_IMAGE_DATA_LOAD_ADDRESS_OFFSET),
+		dataByteCount: readLE32(bytes, BLUA32_IMAGE_DATA_BYTE_COUNT_OFFSET),
+		dataAddress: readLE32(bytes, BLUA32_IMAGE_DATA_ADDRESS_OFFSET),
+		bssAddress: readLE32(bytes, BLUA32_IMAGE_BSS_ADDRESS_OFFSET),
+		bssByteCount: readLE32(bytes, BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET),
+		textAddress: readLE32(bytes, BLUA32_IMAGE_TEXT_ADDRESS_OFFSET),
+		textByteCount: readLE32(bytes, BLUA32_IMAGE_TEXT_BYTE_COUNT_OFFSET),
 	};
 	if (header.imageByteCount !== bytes.byteLength) {
 		throw new Error('BLua32 image byte count does not match its ROM record.');
@@ -196,11 +234,11 @@ export function decodeBlua32Image(bytes: Uint8Array, imageAddress: number): Blua
 	for (let index = 0; index < functions.length; index += 1) {
 		const offset = functionTableOffset + index * BLUA32_FUNCTION_RECORD_SIZE;
 		const address = header.functionTableAddress + index * BLUA32_FUNCTION_RECORD_SIZE;
-		const codeAddress = view.getUint32(offset, true);
-		const codeByteCount = view.getUint32(offset + 4, true);
-		const flags = view.getUint32(offset + 16, true);
-		const upvalueTableAddress = view.getUint32(offset + 20, true);
-		const upvalueCount = view.getUint32(offset + 24, true);
+		const codeAddress = view.getUint32(offset + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, true);
+		const codeByteCount = view.getUint32(offset + BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET, true);
+		const flags = view.getUint32(offset + BLUA32_FUNCTION_FLAGS_OFFSET, true);
+		const upvalueTableAddress = view.getUint32(offset + BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET, true);
+		const upvalueCount = view.getUint32(offset + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET, true);
 		if ((codeAddress & 3) !== 0 || (codeByteCount & 3) !== 0
 			|| codeAddress < header.textAddress
 			|| codeAddress + codeByteCount > header.textAddress + header.textByteCount) {
@@ -216,16 +254,16 @@ export function decodeBlua32Image(bytes: Uint8Array, imageAddress: number): Blua
 		for (let upvalueIndex = 0; upvalueIndex < upvalueCount; upvalueIndex += 1) {
 			const word = view.getUint32(upvalueTableOffset + upvalueIndex * BLUA32_UPVALUE_RECORD_SIZE, true);
 			upvalues[upvalueIndex] = {
-				inStack: (word & 0x80000000) !== 0,
-				index: word & 0x7fffffff,
+				inStack: (word & BLUA32_UPVALUE_IN_STACK_MASK) !== 0,
+				index: word & BLUA32_UPVALUE_INDEX_MASK,
 			};
 		}
 		functions[index] = {
 			address,
 			codeAddress,
 			codeByteCount,
-			numParams: view.getUint32(offset + 8, true),
-			maxStack: view.getUint32(offset + 12, true),
+			numParams: view.getUint32(offset + BLUA32_FUNCTION_NUM_PARAMS_OFFSET, true),
+			maxStack: view.getUint32(offset + BLUA32_FUNCTION_MAX_STACK_OFFSET, true),
 			isVararg: (flags & BLUA32_FUNCTION_VARARG) !== 0,
 			staticClosure: (flags & BLUA32_FUNCTION_STATIC) !== 0,
 			upvalues,
@@ -244,7 +282,7 @@ export function decodeBlua32Image(bytes: Uint8Array, imageAddress: number): Blua
 	const constants = new Array<Blua32EncodedConstant>(header.constantCount);
 	for (let index = 0; index < constants.length; index += 1) {
 		const offset = constantTableOffset + index * BLUA32_CONSTANT_RECORD_SIZE;
-		const tag = view.getUint32(offset, true);
+		const tag = view.getUint32(offset + BLUA32_CONSTANT_TAG_OFFSET, true);
 		switch (tag) {
 			case Blua32ConstantTag.Nil:
 				constants[index] = { tag };
@@ -256,12 +294,15 @@ export function decodeBlua32Image(bytes: Uint8Array, imageAddress: number): Blua
 				constants[index] = { tag };
 				break;
 			case Blua32ConstantTag.Number:
-				constants[index] = { tag, value: view.getFloat64(offset + 4, true) };
+				constants[index] = { tag, value: view.getFloat64(offset + BLUA32_CONSTANT_PAYLOAD_OFFSET, true) };
 				break;
 			case Blua32ConstantTag.String:
 				constants[index] = {
 					tag,
-					value: decodeString(view.getUint32(offset + 4, true), view.getUint32(offset + 8, true)),
+					value: decodeString(
+						view.getUint32(offset + BLUA32_CONSTANT_PAYLOAD_OFFSET, true),
+						view.getUint32(offset + BLUA32_CONSTANT_STRING_BYTE_COUNT_OFFSET, true),
+					),
 				};
 				break;
 			default:
@@ -274,7 +315,10 @@ export function decodeBlua32Image(bytes: Uint8Array, imageAddress: number): Blua
 		const names = new Array<string>(count);
 		for (let index = 0; index < count; index += 1) {
 			const offset = tableOffset + index * BLUA32_GLOBAL_NAME_RECORD_SIZE;
-			names[index] = decodeString(view.getUint32(offset, true), view.getUint32(offset + 4, true));
+			names[index] = decodeString(
+				view.getUint32(offset + BLUA32_GLOBAL_NAME_ADDRESS_OFFSET, true),
+				view.getUint32(offset + BLUA32_GLOBAL_NAME_BYTE_COUNT_OFFSET, true),
+			);
 		}
 		return names;
 	};

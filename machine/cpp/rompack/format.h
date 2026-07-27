@@ -6,7 +6,6 @@
 #define BMSX_ROMPACK_H
 
 #include "common/primitives.h"
-#include "machine/cpu/blua32_image.h"
 #include "machine/model_registry.h"
 #include <array>
 #include <cstddef>

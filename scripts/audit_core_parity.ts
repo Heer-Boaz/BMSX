@@ -42,6 +42,8 @@ type StrictRpuTableParityEntry = { ts: string; cpp: string; tables: string[]; re
 type StrictBlua32IsaParityEntry = {
 	ts_cop0: string;
 	cpp_cop0: string;
+	ts_image_format: string;
+	cpp_image_format: string;
 	ts_instruction_format: string;
 	cpp_instruction_format: string;
 	ts_memory_access: string;
@@ -1324,6 +1326,15 @@ function auditStrictBlua32IsaParity(manifest: Manifest): string[] {
 			entry.ts_instruction_format,
 			entry.cpp_instruction_format,
 		));
+		const tsConstantTags = explicitEnumItems(entry.ts_image_format, 'Blua32ConstantTag');
+		const cppConstantTags = explicitEnumItems(entry.cpp_image_format, 'Blua32ConstantTag');
+		if (tsConstantTags === null) {
+			errors.push(`${entry.ts_image_format}: explicit Blua32ConstantTag enum missing (${entry.reason})`);
+		} else if (cppConstantTags === null) {
+			errors.push(`${entry.cpp_image_format}: explicit Blua32ConstantTag enum missing (${entry.reason})`);
+		} else {
+			errors.push(...compareOrderedItems('BLua32 constant tag', tsConstantTags, cppConstantTags));
+		}
 		const tsMemoryAccessKinds = explicitEnumItems(entry.ts_memory_access, 'MemoryAccessKind');
 		const cppMemoryAccessKinds = explicitEnumItems(entry.cpp_memory_access, 'MemoryAccessKind');
 		if (tsMemoryAccessKinds === null) {

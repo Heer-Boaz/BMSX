@@ -4,11 +4,13 @@ import { OpCode, OPCODE_USES_BX, OPCODE_USES_DISP, decodeCallArgCount } from '..
 import { OPCODE_NAMES } from './opcode_metadata';
 import { formatNumber } from '../../machine/common/number_format';
 import {
-	BLUA32_FUNCTION_RECORD_SIZE,
-	Blua32ConstantTag,
 	type Blua32EncodedConstant,
 	type Blua32ImageLayout,
 } from '../../machine/cpu/blua32_image';
+import {
+	BLUA32_FUNCTION_RECORD_SIZE,
+	Blua32ConstantTag,
+} from '../../spec/blua32/image_format';
 import {
 	blua32SourceRangeAtPc,
 	type SourceRange,

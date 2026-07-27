@@ -1,4 +1,5 @@
 #include "rompack/tooling/disassembler.h"
+#include "spec/blua32/image_format.h"
 #include "spec/blua32/instruction_format.h"
 #include "rompack/tooling/opcode_metadata.h"
 #include "rompack/tooling/source_text.h"

@@ -5,6 +5,7 @@
 #include "format.h"
 #include "common/endian.h"
 #include "spec/bmsx/memory_map.h"
+#include "spec/bmsx/rom_header.h"
 #include <algorithm>
 #include <cstring>
 
@@ -28,13 +29,31 @@ void writeCartRomHeader(u8* data, const CartRomHeader& header) {
 	writeLE32(data + 20, header.tocLength);
 	writeLE32(data + 24, header.dataOffset);
 	writeLE32(data + 28, header.dataLength);
-	writeLE32(data + 32, header.blua32ImageOffset);
-	writeLE32(data + 36, header.blua32ImageByteCount);
-	writeLE32(data + 40, header.blua32StartupFunctionAddress);
-	writeLE32(data + 44, header.blua32IrqFunctionAddress);
-	writeLE32(data + 48, header.blua32ExceptionFunctionAddress);
-	writeLE32(data + 52, header.blua32StaticLayoutTokenLo);
-	writeLE32(data + 56, header.blua32StaticLayoutTokenHi);
+	writeLE32(data + BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET, header.blua32ImageOffset);
+	writeLE32(
+		data + BMSX_ROM_HEADER_BLUA32_IMAGE_BYTE_COUNT_OFFSET,
+		header.blua32ImageByteCount
+	);
+	writeLE32(
+		data + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET,
+		header.blua32StartupFunctionAddress
+	);
+	writeLE32(
+		data + BMSX_ROM_HEADER_BLUA32_IRQ_FUNCTION_ADDRESS_OFFSET,
+		header.blua32IrqFunctionAddress
+	);
+	writeLE32(
+		data + BMSX_ROM_HEADER_BLUA32_EXCEPTION_FUNCTION_ADDRESS_OFFSET,
+		header.blua32ExceptionFunctionAddress
+	);
+	writeLE32(
+		data + BMSX_ROM_HEADER_BLUA32_STATIC_LAYOUT_TOKEN_LO_OFFSET,
+		header.blua32StaticLayoutTokenLo
+	);
+	writeLE32(
+		data + BMSX_ROM_HEADER_BLUA32_STATIC_LAYOUT_TOKEN_HI_OFFSET,
+		header.blua32StaticLayoutTokenHi
+	);
 	writeLE32(data + 60, 0u);
 	writeLE32(data + 64, header.metadataOffset);
 	writeLE32(data + 68, header.metadataLength);
@@ -68,13 +87,25 @@ CartRomHeader parseCartHeader(const u8* data, size_t size) {
 	header.tocLength = readLE32(data + 20);
 	header.dataOffset = readLE32(data + 24);
 	header.dataLength = readLE32(data + 28);
-	header.blua32ImageOffset = readLE32(data + 32);
-	header.blua32ImageByteCount = readLE32(data + 36);
-	header.blua32StartupFunctionAddress = readLE32(data + 40);
-	header.blua32IrqFunctionAddress = readLE32(data + 44);
-	header.blua32ExceptionFunctionAddress = readLE32(data + 48);
-	header.blua32StaticLayoutTokenLo = readLE32(data + 52);
-	header.blua32StaticLayoutTokenHi = readLE32(data + 56);
+	header.blua32ImageOffset = readLE32(data + BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET);
+	header.blua32ImageByteCount = readLE32(
+		data + BMSX_ROM_HEADER_BLUA32_IMAGE_BYTE_COUNT_OFFSET
+	);
+	header.blua32StartupFunctionAddress = readLE32(
+		data + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET
+	);
+	header.blua32IrqFunctionAddress = readLE32(
+		data + BMSX_ROM_HEADER_BLUA32_IRQ_FUNCTION_ADDRESS_OFFSET
+	);
+	header.blua32ExceptionFunctionAddress = readLE32(
+		data + BMSX_ROM_HEADER_BLUA32_EXCEPTION_FUNCTION_ADDRESS_OFFSET
+	);
+	header.blua32StaticLayoutTokenLo = readLE32(
+		data + BMSX_ROM_HEADER_BLUA32_STATIC_LAYOUT_TOKEN_LO_OFFSET
+	);
+	header.blua32StaticLayoutTokenHi = readLE32(
+		data + BMSX_ROM_HEADER_BLUA32_STATIC_LAYOUT_TOKEN_HI_OFFSET
+	);
 	header.metadataOffset = readLE32(data + 64);
 	header.metadataLength = readLE32(data + 68);
 	const u32 vdpClassWord = readLE32(data + 72);

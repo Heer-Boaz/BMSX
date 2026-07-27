@@ -36,11 +36,11 @@ import {
 	LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION,
 } from '../../spec/blua32/cop0';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord, signExtend } from '../../spec/blua32/instruction_format';
+import type { Blua32ImageLayout } from './blua32_image';
 import {
 	BLUA32_FUNCTION_RECORD_SIZE,
 	Blua32ConstantTag,
-	type Blua32ImageLayout,
-} from './blua32_image';
+} from '../../spec/blua32/image_format';
 import {
 	ExecutionAddressSpace,
 	SYSTEM_EXECUTION_DOMAIN_ID,

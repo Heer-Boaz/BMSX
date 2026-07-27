@@ -11,11 +11,11 @@ import {
 	CPU,
 	RunResult,
 } from '../../machine/ts/machine/cpu/cpu';
-import { BLUA32_BOOT_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/machine/cpu/blua32_image';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import type { ProgramMetadata } from '../../machine/ts/lua/compiler/program';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
+import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject, type CompiledProgram } from '../../machine/ts/lua/compiler';
 import type { OptimizationLevel } from '../../machine/ts/lua/compiler/optimizer';
@@ -34,7 +34,7 @@ const CLAMP_PATH = 'bios/util/clamp';
 const RECT_OVERLAPS_PATH = 'bios/util/rect_overlaps';
 const SINCOS_TURN32_PATH = 'bios/util/sincos_turn32';
 const STATIC_FORBIDDEN_OPCODE_PATTERN = /\b(?:GETSYS|SETSYS|GETGL|SETGL|NEWT|GETT|SETT|GETI|SETI|GETFIELD|SETFIELD|SELF|LEN|CLOSURE|VARARG|CONCAT|CONCATN)\b/;
-const CART_BOOT_SOURCE = `cop0.exec = mem[${CART_ROM_BASE + BLUA32_BOOT_STARTUP_FUNCTION_ADDRESS_OFFSET}]`;
+const CART_BOOT_SOURCE = `cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]`;
 
 const buildExpectedSineQuarter = (): number[] => {
 	const out: number[] = [];

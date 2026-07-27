@@ -2,6 +2,7 @@
 
 #include "common/endian.h"
 #include "common/serializer/binencoder.h"
+#include "spec/blua32/image_format.h"
 #include "spec/blua32/instruction_format.h"
 #include "spec/blua32/opcode.h"
 #include "spec/bmsx/memory_map.h"
@@ -129,66 +130,127 @@ auto encodeImage(
 	}
 
 	std::vector<u8> bytes(imageByteCount);
-	writeLE32(bytes.data(), BLUA32_IMAGE_MAGIC);
-	writeLE32(bytes.data() + 4u, BLUA32_IMAGE_VERSION);
-	writeLE32(bytes.data() + 8u, imageByteCount);
-	writeLE32(bytes.data() + 12u, 0u);
-	writeLE32(bytes.data() + 16u, functionTableAddress);
-	writeLE32(bytes.data() + 20u, static_cast<u32>(source.functions.size()));
-	writeLE32(bytes.data() + 24u, imageAddress + constantTableOffset);
-	writeLE32(bytes.data() + 28u, static_cast<u32>(source.constants.size()));
-	writeLE32(bytes.data() + 32u, imageAddress + globalNameTableOffset);
-	writeLE32(bytes.data() + 36u, static_cast<u32>(source.globalNames.size()));
-	writeLE32(bytes.data() + 40u, imageAddress + systemGlobalNameTableOffset);
-	writeLE32(bytes.data() + 44u, static_cast<u32>(source.systemGlobalNames.size()));
-	writeLE32(bytes.data() + 48u, stringAddress);
-	writeLE32(bytes.data() + 52u, static_cast<u32>(strings.size()));
-	writeLE32(bytes.data() + 56u, textAddress);
-	writeLE32(bytes.data() + 60u, 0u);
-	writeLE32(bytes.data() + 64u, textAddress);
-	writeLE32(bytes.data() + 68u, 0u);
-	writeLE32(bytes.data() + 72u, RAM_BASE + MIN_RAM_SIZE);
-	writeLE32(bytes.data() + 76u, RAM_BASE + MIN_RAM_SIZE);
-	writeLE32(bytes.data() + 80u, 0u);
-	writeLE32(bytes.data() + 84u, textAddress);
-	writeLE32(bytes.data() + 88u, static_cast<u32>(text.size()));
-	writeLE32(bytes.data() + 92u, 0u);
+	writeLE32(bytes.data() + BLUA32_IMAGE_MAGIC_OFFSET, BLUA32_IMAGE_MAGIC);
+	writeLE32(bytes.data() + BLUA32_IMAGE_VERSION_OFFSET, BLUA32_IMAGE_VERSION);
+	writeLE32(bytes.data() + BLUA32_IMAGE_BYTE_COUNT_OFFSET, imageByteCount);
+	writeLE32(bytes.data() + BLUA32_IMAGE_FLAGS_OFFSET, 0u);
+	writeLE32(
+		bytes.data() + BLUA32_IMAGE_FUNCTION_TABLE_ADDRESS_OFFSET,
+		functionTableAddress
+	);
+	writeLE32(
+		bytes.data() + BLUA32_IMAGE_FUNCTION_COUNT_OFFSET,
+		static_cast<u32>(source.functions.size())
+	);
+	writeLE32(
+		bytes.data() + BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET,
+		imageAddress + constantTableOffset
+	);
+	writeLE32(
+		bytes.data() + BLUA32_IMAGE_CONSTANT_COUNT_OFFSET,
+		static_cast<u32>(source.constants.size())
+	);
+	writeLE32(
+		bytes.data() + BLUA32_IMAGE_GLOBAL_NAME_TABLE_ADDRESS_OFFSET,
+		imageAddress + globalNameTableOffset
+	);
+	writeLE32(
+		bytes.data() + BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET,
+		static_cast<u32>(source.globalNames.size())
+	);
+	writeLE32(
+		bytes.data() + BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_TABLE_ADDRESS_OFFSET,
+		imageAddress + systemGlobalNameTableOffset
+	);
+	writeLE32(
+		bytes.data() + BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET,
+		static_cast<u32>(source.systemGlobalNames.size())
+	);
+	writeLE32(bytes.data() + BLUA32_IMAGE_STRING_ADDRESS_OFFSET, stringAddress);
+	writeLE32(
+		bytes.data() + BLUA32_IMAGE_STRING_BYTE_COUNT_OFFSET,
+		static_cast<u32>(strings.size())
+	);
+	writeLE32(bytes.data() + BLUA32_IMAGE_RODATA_ADDRESS_OFFSET, textAddress);
+	writeLE32(bytes.data() + BLUA32_IMAGE_RODATA_BYTE_COUNT_OFFSET, 0u);
+	writeLE32(bytes.data() + BLUA32_IMAGE_DATA_LOAD_ADDRESS_OFFSET, textAddress);
+	writeLE32(bytes.data() + BLUA32_IMAGE_DATA_BYTE_COUNT_OFFSET, 0u);
+	writeLE32(
+		bytes.data() + BLUA32_IMAGE_DATA_ADDRESS_OFFSET,
+		RAM_BASE + MIN_RAM_SIZE
+	);
+	writeLE32(
+		bytes.data() + BLUA32_IMAGE_BSS_ADDRESS_OFFSET,
+		RAM_BASE + MIN_RAM_SIZE
+	);
+	writeLE32(bytes.data() + BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET, 0u);
+	writeLE32(bytes.data() + BLUA32_IMAGE_TEXT_ADDRESS_OFFSET, textAddress);
+	writeLE32(
+		bytes.data() + BLUA32_IMAGE_TEXT_BYTE_COUNT_OFFSET,
+		static_cast<u32>(text.size())
+	);
 
 	for (u32 index = 0; index < source.functions.size(); ++index) {
 		const Blua32TestFunction& function = source.functions[index];
 		u8* record = bytes.data() + functionTableOffset + index * BLUA32_FUNCTION_RECORD_SIZE;
-		writeLE32(record, textAddress + function.firstWord * INSTRUCTION_BYTES);
-		writeLE32(record + 4u, function.wordCount * INSTRUCTION_BYTES);
-		writeLE32(record + 8u, function.numParams);
-		writeLE32(record + 12u, function.maxStack);
 		writeLE32(
-			record + 16u,
+			record + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET,
+			textAddress + function.firstWord * INSTRUCTION_BYTES
+		);
+		writeLE32(
+			record + BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET,
+			function.wordCount * INSTRUCTION_BYTES
+		);
+		writeLE32(record + BLUA32_FUNCTION_NUM_PARAMS_OFFSET, function.numParams);
+		writeLE32(record + BLUA32_FUNCTION_MAX_STACK_OFFSET, function.maxStack);
+		writeLE32(
+			record + BLUA32_FUNCTION_FLAGS_OFFSET,
 			(function.isVararg ? BLUA32_FUNCTION_VARARG : 0u)
 				| (function.staticClosure ? BLUA32_FUNCTION_STATIC : 0u)
 		);
-		writeLE32(record + 20u, imageAddress + upvalueTableOffset);
-		writeLE32(record + 24u, 0u);
-		writeLE32(record + 28u, 0u);
+		writeLE32(
+			record + BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET,
+			imageAddress + upvalueTableOffset
+		);
+		writeLE32(record + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET, 0u);
 	}
 
 	for (u32 index = 0; index < source.constants.size(); ++index) {
 		const Blua32EncodedConstant& constant = source.constants[index];
 		u8* record = bytes.data() + constantTableOffset + index * BLUA32_CONSTANT_RECORD_SIZE;
 		if (std::holds_alternative<std::monostate>(constant)) {
-			writeLE32(record, static_cast<u32>(Blua32ConstantTag::Nil));
+			writeLE32(
+				record + BLUA32_CONSTANT_TAG_OFFSET,
+				static_cast<u32>(Blua32ConstantTag::Nil)
+			);
 		} else if (const auto* boolean = std::get_if<bool>(&constant)) {
 			writeLE32(
-				record,
+				record + BLUA32_CONSTANT_TAG_OFFSET,
 				static_cast<u32>(*boolean ? Blua32ConstantTag::True : Blua32ConstantTag::False)
 			);
 		} else if (const auto* number = std::get_if<f64>(&constant)) {
-			writeLE32(record, static_cast<u32>(Blua32ConstantTag::Number));
-			writeLE64(record + 4u, std::bit_cast<u64>(*number));
+			writeLE32(
+				record + BLUA32_CONSTANT_TAG_OFFSET,
+				static_cast<u32>(Blua32ConstantTag::Number)
+			);
+			writeLE64(
+				record + BLUA32_CONSTANT_PAYLOAD_OFFSET,
+				std::bit_cast<u64>(*number)
+			);
 		} else {
 			const StringRecord string = stringRecords.at(std::get<std::string>(constant));
-			writeLE32(record, static_cast<u32>(Blua32ConstantTag::String));
-			writeLE32(record + 4u, stringAddress + string.offset);
-			writeLE32(record + 8u, string.byteCount);
+			writeLE32(
+				record + BLUA32_CONSTANT_TAG_OFFSET,
+				static_cast<u32>(Blua32ConstantTag::String)
+			);
+			writeLE32(
+				record + BLUA32_CONSTANT_PAYLOAD_OFFSET,
+				stringAddress + string.offset
+			);
+			writeLE32(
+				record + BLUA32_CONSTANT_STRING_BYTE_COUNT_OFFSET,
+				string.byteCount
+			);
 		}
 	}
 
@@ -196,8 +258,14 @@ auto encodeImage(
 		for (u32 index = 0; index < names.size(); ++index) {
 			const StringRecord string = stringRecords.at(names[index]);
 			u8* record = bytes.data() + tableOffset + index * BLUA32_GLOBAL_NAME_RECORD_SIZE;
-			writeLE32(record, stringAddress + string.offset);
-			writeLE32(record + 4u, string.byteCount);
+			writeLE32(
+				record + BLUA32_GLOBAL_NAME_ADDRESS_OFFSET,
+				stringAddress + string.offset
+			);
+			writeLE32(
+				record + BLUA32_GLOBAL_NAME_BYTE_COUNT_OFFSET,
+				string.byteCount
+			);
 		}
 	};
 	writeNameTable(globalNameTableOffset, source.globalNames);
@@ -288,7 +356,7 @@ auto encodeBlua32TestRom(
 ) -> Blua32TestRom {
 	Blua32TestRom rom;
 	const std::vector<u8> executable = encodeImage(domain, image, rom.functionAddresses);
-	rom.textAddress = readLE32(executable.data() + 84u);
+	rom.textAddress = readLE32(executable.data() + BLUA32_IMAGE_TEXT_ADDRESS_OFFSET);
 	rom.boot.imageOffset = BLUA32_TEST_IMAGE_OFFSET;
 	rom.boot.imageByteCount = static_cast<u32>(executable.size());
 	rom.boot.startupFunctionAddress = rom.functionAddresses[image.startupFunctionIndex];
