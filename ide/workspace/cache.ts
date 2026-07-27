@@ -1,6 +1,6 @@
 import type { LuaSourceRegistry } from '../../machine/ts/lua/source_registry';
 
-export const workspaceFileCache = new Map<string, string>();
+export const workspaceCanonicalSourceCache = new Map<string, string>();
 
 const luaSourceOverrides = new Map<LuaSourceRegistry, Map<string, string>>();
 
@@ -46,7 +46,7 @@ export function deleteWorkspaceLuaSourceOverride(
 }
 
 export function clearWorkspaceSourceCaches(): void {
-	workspaceFileCache.clear();
+	workspaceCanonicalSourceCache.clear();
 	for (const registry of luaSourceOverrides.keys()) {
 		registry.revision += 1;
 	}

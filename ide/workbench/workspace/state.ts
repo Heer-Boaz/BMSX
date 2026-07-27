@@ -1,11 +1,41 @@
-import type { TimerHandle } from '../../../machine/ts/platform/platform';
+import type {
+	SubscriptionHandle,
+	TimerHandle,
+} from '../../../machine/ts/platform/platform';
+import type { WorkspaceRecord } from '../../workspace/records';
+import {
+	WorkspaceAutosaveChange,
+	type WorkspaceAutosavePayload,
+	type WorkspaceSessionGeneration,
+} from './models';
 
-export const workspaceState = {
-	autosaveEnabled: false,
-	autosaveSignature: null as string,
-	autosaveHandle: null as TimerHandle | { cancel(): void },
-	autosaveRunning: false,
-	autosaveQueued: false,
-	disposeExitListener: null as { unsubscribe(): void },
-	serverConnected: false,
+type WorkspaceState = {
+	projectRootPath: string | null;
+	autosaveHandle: TimerHandle | null;
+	autosaveTask: Promise<void> | null;
+	requestedRevision: number;
+	localRevision: number;
+	remoteRevision: number;
+	localGeneration: WorkspaceSessionGeneration | null;
+	remotePayload: WorkspaceAutosavePayload | null;
+	remoteDirtyRecords: ReadonlyMap<string, WorkspaceRecord> | null;
+	pendingChanges: WorkspaceAutosaveChange;
+	disposeExitListener: SubscriptionHandle | null;
+};
+
+export const workspaceDirtyRecords = new Map<string, WorkspaceRecord>();
+export const workspacePendingMetadataContextIds = new Set<string>();
+
+export const workspaceState: WorkspaceState = {
+	projectRootPath: null,
+	autosaveHandle: null,
+	autosaveTask: null,
+	requestedRevision: 0,
+	localRevision: 0,
+	remoteRevision: -1,
+	localGeneration: null,
+	remotePayload: null,
+	remoteDirtyRecords: null,
+	pendingChanges: WorkspaceAutosaveChange.None,
+	disposeExitListener: null,
 };

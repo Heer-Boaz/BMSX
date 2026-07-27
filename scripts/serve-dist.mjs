@@ -3,7 +3,7 @@
 // Usage: node scripts/serve-dist.mjs [--dir dist] [--port 8080] [--host 0.0.0.0] [--spa] [--cache <seconds|no-store>]
 
 import { createServer } from 'node:http';
-import { stat, access, readFile, writeFile, readdir, mkdir, unlink } from 'node:fs/promises';
+import { stat, access, readFile, writeFile, readdir, mkdir, unlink, utimes } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -100,62 +100,13 @@ async function readRequestBody(req) {
 	});
 }
 
-async function handleWorkspaceApi(req, res, url) {
-	if (url.pathname !== '/__bmsx__/workspace') {
-		return false;
-	}
-	if (req.method === 'OPTIONS') {
-		res.writeHead(204, {
-			'Access-Control-Allow-Methods': 'POST,OPTIONS',
-			'Access-Control-Allow-Headers': 'Content-Type',
-		}).end();
-		return true;
-	}
-	if (req.method !== 'POST') {
-		res.writeHead(405, { 'Allow': 'POST' }).end();
-		return true;
-	}
-	const rawBody = await readRequestBody(req);
-	let payload;
-	try {
-		payload = JSON.parse(rawBody);
-	} catch {
-		res.writeHead(400, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: 'Request body must be valid JSON.' }));
-		return true;
-	}
-	const projectRootPath = typeof payload?.projectRootPath === 'string' ? payload.projectRootPath : '';
-	if (!projectRootPath) {
-		res.writeHead(400, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: 'Missing "projectRootPath".' }));
-		return true;
-	}
-	let resolvedRoot;
-	try {
-		resolvedRoot = resolveWorkspacePath(projectRootPath);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		res.writeHead(400, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: message }));
-		return true;
-	}
-	const metadataDir = path.join(resolvedRoot, '.bmsx');
-	const dirtyDir = path.join(metadataDir, 'dirty');
-	try {
-		await mkdir(metadataDir, { recursive: true });
-		await mkdir(dirtyDir, { recursive: true });
-		res.writeHead(204).end();
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		res.writeHead(500, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: message }));
-	}
-	return true;
-}
-
 async function handleLuaApi(req, res, url) {
 	if (url.pathname !== '/__bmsx__/lua') {
 		return false;
 	}
 	if (req.method === 'OPTIONS') {
 		res.writeHead(204, {
-			'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+			'Access-Control-Allow-Methods': 'GET,PUT,DELETE,OPTIONS',
 			'Access-Control-Allow-Headers': 'Content-Type',
 		}).end();
 		return true;
@@ -186,39 +137,17 @@ async function handleLuaApi(req, res, url) {
 		res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({
 			path: targetPath,
 			contents,
-			updatedAt: stats?.mtimeMs,
+			updatedAt: Math.round(stats.mtimeMs),
 		}));
 		return true;
 	}
-	if (req.method === 'POST') {
-		const rawBody = await readRequestBody(req);
-		let payload;
-		try {
-			payload = JSON.parse(rawBody);
-		} catch {
-			res.writeHead(400, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: 'Request body must be valid JSON.' }));
-			return true;
-		}
-		const targetPath = payload && typeof payload.path === 'string' ? payload.path : '';
-		const contents = payload && typeof payload.contents === 'string' ? payload.contents : null;
-		if (!targetPath || contents === null) {
-			res.writeHead(400, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: 'Both "path" (string) and "contents" (string) are required.' }));
-			return true;
-		}
-		let absolutePath;
-		try {
-			absolutePath = resolveWorkspacePath(targetPath);
-		} catch (err) {
-			const message = err instanceof Error ? err.message : String(err);
-			res.writeHead(400, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: message }));
-			return true;
-		}
-		try {
-			await mkdir(path.dirname(absolutePath), { recursive: true });
-		} catch {
-			// directory creation best-effort
-		}
-		await writeFile(absolutePath, contents, 'utf8');
+	if (req.method === 'PUT') {
+		const payload = JSON.parse(await readRequestBody(req));
+		const absolutePath = resolveWorkspacePath(payload.path);
+		await mkdir(path.dirname(absolutePath), { recursive: true });
+		await writeFile(absolutePath, payload.contents, 'utf8');
+		const modifiedSeconds = payload.updatedAt / 1000;
+		await utimes(absolutePath, modifiedSeconds, modifiedSeconds);
 		res.writeHead(204).end();
 		return true;
 	}
@@ -250,7 +179,7 @@ async function handleLuaApi(req, res, url) {
 		res.writeHead(204).end();
 		return true;
 	}
-	res.writeHead(405, { 'Allow': 'GET,POST,DELETE,OPTIONS' }).end();
+	res.writeHead(405, { 'Allow': 'GET,PUT,DELETE,OPTIONS' }).end();
 	return true;
 }
 
@@ -337,9 +266,6 @@ const server = createServer(async (req, res) => {
 		// (optional) Basic CORS for your internal API endpoints
 		res.setHeader('Access-Control-Allow-Origin', '*');
 
-		if (await handleWorkspaceApi(req, res, requestUrl)) {
-			return;
-		}
 		if (await handleLuaApi(req, res, requestUrl)) {
 			return;
 		}

@@ -2594,6 +2594,7 @@ export function applyDefinitionSelection(range: LuaDefinitionLocation['range']):
 	resetBlink();
 	editorCaretState.cursorRevealSuspended = false;
 	ensureCursorVisible();
+	editorDocumentState.emitCursorMoved();
 }
 
 export function findFunctionDefinitionRowInActiveFile(functionName: string): number {

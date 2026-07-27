@@ -12,8 +12,6 @@ import { utf8FatalDecoder } from '../common/serializer/binencoder';
 import { buildRomAssetSymbolModuleSource } from '../rompack/asset_symbols';
 import { toLuaModulePath } from './module_path';
 
-export const DEFAULT_SYSTEM_PROJECT_ROOT_PATH = 'machine/ts';
-
 export type LuaSourceRecord = RomLuaAsset & { base_src: string; base_update_timestamp: number; module_path: string; generated: boolean };
 type PackedLuaSourceAsset = RomLuaAsset & { source_path: string; payload_id: CartridgeLayerId };
 

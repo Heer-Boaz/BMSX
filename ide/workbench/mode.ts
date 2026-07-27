@@ -8,8 +8,23 @@ import { EDITOR_TOGGLE_GAMEPAD_BUTTONS, EDITOR_TOGGLE_KEY, GAME_PAUSE_KEY } from
 import { toggleDebuggerControls } from '../debugger_activation';
 import { seedDefaultLuaBuiltins } from '../runtime/lua_builtins';
 import { api as overlay_api } from '../runtime/overlay_api';
-import type { RuntimeSourceState } from '../runtime/sources';
+import {
+	developmentCartridgeSource,
+	runtimeSourcesSupportIde,
+	type RuntimeSourceState,
+} from '../runtime/sources';
 import { RuntimeIdeState } from '../runtime/state';
+import {
+	initializeWorkspaceStorage,
+	restoreWorkspaceStorageSession,
+	shutdownWorkspaceStorage,
+} from './workspace/storage';
+import {
+	applyAllWorkspaceSourceOverrides,
+} from '../workspace/workspace';
+import {
+	workspaceDirtyRecords,
+} from './workspace/state';
 import { handleLuaError } from './runtime_errors';
 import {
 	editorBlocksRuntimePipeline,
@@ -17,21 +32,42 @@ import {
 	updateGamePipelineExts,
 } from './overlay_modes';
 
-export function initializeIdeFeatures(
+export async function initializeIdeFeatures(
 	runtime: Runtime,
 	viewport: Viewport,
 	sources: RuntimeSourceState,
-): RuntimeIdeState {
+): Promise<RuntimeIdeState> {
 	constants.setIdeThemeVariant(constants.DEFAULT_THEME);
+	const editorAvailable = runtimeSourcesSupportIde(sources);
+	let workspacePayload = null;
+	if (editorAvailable) {
+		const cartridge = developmentCartridgeSource(sources);
+		workspacePayload = await initializeWorkspaceStorage(
+			cartridge ? cartridge.projectRootPath : sources.systemProjectRootPath,
+			sources,
+		);
+	} else {
+		await shutdownWorkspaceStorage();
+	}
+	const rejectedDirtyPaths = await applyAllWorkspaceSourceOverrides(
+		sources,
+		workspaceDirtyRecords,
+	);
 	const state = new RuntimeIdeState(runtime, viewport, sources);
 	seedDefaultLuaBuiltins();
 	updateGamePipelineExts(state.editor, state.overlayRenderer);
-	const editorAvailable = state.editor.isAvailable;
 	Input.instance.setKeyboardCapture(EDITOR_TOGGLE_KEY, editorAvailable);
 	if (!editorAvailable) {
 		disposeShortcutHandlers(state);
 		return state;
 	}
+	await restoreWorkspaceStorageSession(
+		state.editor,
+		sources,
+		state.debugger,
+		workspacePayload,
+		rejectedDirtyPaths,
+	);
 	registerRuntimeShortcuts(state, runtime);
 	return state;
 }

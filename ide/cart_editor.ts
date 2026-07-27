@@ -2,7 +2,7 @@ import { machineManager } from '../machine/ts/core/machine_manager';
 import type { Runtime } from '../machine/ts/machine/runtime/runtime';
 import type { GateGroup } from '../machine/ts/common/taskgate';
 import { LogLevel } from '../machine/ts/platform/index';
-import { developmentCartridgeSource, type RuntimeSourceState } from './runtime/sources';
+import { runtimeSourcesSupportIde, type RuntimeSourceState } from './runtime/sources';
 import { blua32ToolingImageForDomain } from '../machine/ts/rompack/tooling/blua32_media';
 import type { Viewport } from '../machine/ts/rompack/format';
 import { api } from './runtime/overlay_api';
@@ -12,7 +12,6 @@ import type { RuntimeFaultState } from './runtime/fault_state';
 import type { RuntimeNativeBridge } from './runtime/native_bridge';
 import type { RuntimeDebuggerState } from './runtime/debugger_state';
 import type { OverlayRenderer } from './runtime/overlay_renderer';
-import { SYSTEM_RESOURCE_DOMAIN } from './common/resource';
 import { showEditorMessage, updateEditorMessage, setEditorFeedbackActive, editorFeedbackState } from './common/feedback_state';
 import { clearBackgroundTasks } from './common/background_tasks';
 import { editorRuntimeState } from './editor/common/runtime_state';
@@ -64,9 +63,13 @@ import { clearEditorPointerSelectionState, editorPointerState } from './input/po
 import { handleEditorWheelInput } from './input/pointer/wheel';
 import { getActiveCodeTabContext, getActiveCodeTabContextId, createEntryTabContext } from './workbench/ui/code_tab/contexts';
 import { storeActiveCodeTabContext } from './workbench/ui/code_tab/activation';
-import { initializeWorkspaceStorage, runWorkspaceAutosaveTick, stopWorkspaceAutosaveLoop } from './workbench/workspace/storage';
-import { workspaceState } from './workbench/workspace/state';
-import { clearWorkspaceSourceCaches } from './workspace/cache';
+import {
+	cancelWorkspaceAutosave,
+	requestWorkspaceAutosave,
+	runWorkspaceAutosaveTick,
+	shutdownWorkspaceStorage,
+} from './workbench/workspace/storage';
+import { WorkspaceAutosaveChange } from './workbench/workspace/models';
 import { BreakpointController, getBreakpointsForChunk } from './workbench/contrib/debugger/controller';
 import { closeBlockingWorkbenchModal, drawBlockingWorkbenchModal, handleBlockingWorkbenchModalInput, hasBlockingWorkbenchModal } from './workbench/contrib/modal/blocking_modal';
 import { drawProblemsPanel, problemsPanel } from './workbench/contrib/problems/panel/controller';
@@ -126,7 +129,7 @@ export type CartEditor = {
 	tickInput: () => void;
 	update: (deltaSeconds: number) => void;
 	draw: () => void;
-	shutdown: () => void;
+	shutdown: () => Promise<void>;
 	updateViewport: (viewport: Viewport) => void;
 	setFontVariant: (variant: Parameters<typeof setFontVariant>[0]) => void;
 	showRuntimeErrorInChunk: (path: string, line: number, column: number, message: string, details?: RuntimeErrorDetails) => void;
@@ -163,6 +166,8 @@ export class RuntimeCartEditor implements CartEditor {
 	private readonly debuggerState: RuntimeDebuggerState;
 	private readonly luaGate: GateGroup;
 	private readonly overlayRenderer: OverlayRenderer;
+	private readonly unsubscribeWorkspaceCursorMoved: () => void;
+	private readonly unsubscribeWorkspaceTextMutated: () => void;
 	private readonly chromeRenderContext: ChromeRenderContext = {
 		get viewportWidth(): number { return editorViewState.viewportWidth; },
 		get headerHeight(): number { return editorViewState.headerHeight; },
@@ -193,12 +198,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.debuggerState = debuggerState;
 		this.luaGate = luaGate;
 		this.overlayRenderer = overlayRenderer;
-		const sourceState = this.sources;
-		const activeCartridge = sourceState.activeCartridgeSlot !== SYSTEM_RESOURCE_DOMAIN
-			? sourceState.cartridgeSlots[sourceState.activeCartridgeSlot]
-			: null;
-		this.isAvailable = sourceState.systemLuaSources.can_boot_from_source
-			&& (!activeCartridge || activeCartridge.luaSources.can_boot_from_source);
+		this.isAvailable = runtimeSourcesSupportIde(this.sources);
 		this.commands = new IdeCommandController(
 			this,
 			sources,
@@ -215,6 +215,14 @@ export class RuntimeCartEditor implements CartEditor {
 		this.search = new EditorSearchController(this.sources, renameController);
 		this.breakpoints = new BreakpointController(debuggerState);
 		this.clearNativeMemberCompletionCache = clearNativeMemberCompletionCache;
+		this.unsubscribeWorkspaceCursorMoved = editorDocumentState.onCursorMoved(() => {
+			if (editorDocumentState.dirty) {
+				requestWorkspaceAutosave(WorkspaceAutosaveChange.ActiveEditor);
+			}
+		});
+		this.unsubscribeWorkspaceTextMutated = editorDocumentState.onTextMutated(() => {
+			requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
+		});
 	}
 
 	public get isActive(): boolean { return editorRuntimeState.active; }
@@ -324,6 +332,9 @@ export class RuntimeCartEditor implements CartEditor {
 
 	public tickInput(): void {
 		const runtime = this.runtime;
+		const scrollRow = editorViewState.scrollRow;
+		const scrollColumn = editorViewState.scrollColumn;
+		const breakpointRevision = this.breakpoints.revision;
 		handleEditorWheelInput(this);
 		handleTextEditorPointerInput(
 			this,
@@ -352,6 +363,18 @@ export class RuntimeCartEditor implements CartEditor {
 			this.nativeBridge,
 			runtime,
 		);
+		let workspaceChanges = WorkspaceAutosaveChange.None;
+		if (this.breakpoints.revision !== breakpointRevision) {
+			workspaceChanges |= WorkspaceAutosaveChange.Breakpoints;
+		}
+		if ((editorViewState.scrollRow !== scrollRow
+			|| editorViewState.scrollColumn !== scrollColumn)
+			&& editorDocumentState.dirty) {
+			workspaceChanges |= WorkspaceAutosaveChange.ActiveEditor;
+		}
+		if (workspaceChanges) {
+			requestWorkspaceAutosave(workspaceChanges);
+		}
 	}
 
 	public update(deltaSeconds: number): void {
@@ -412,7 +435,7 @@ export class RuntimeCartEditor implements CartEditor {
 		}
 	}
 
-	public shutdown(): void {
+	public async shutdown(): Promise<void> {
 		this.completion.dispose();
 		clearExecutionStopHighlights();
 		if (this.isAvailable) {
@@ -424,27 +447,18 @@ export class RuntimeCartEditor implements CartEditor {
 		}
 		editorRuntimeState.active = false;
 		setEditorFeedbackActive(false);
-		if (workspaceState.autosaveEnabled) {
-			stopWorkspaceAutosaveLoop();
-			void runWorkspaceAutosaveTick(
-				this,
-				this.sources,
-				this.debuggerState,
-				this.overlayRenderer,
-				this.runtime,
-			);
+		requestWorkspaceAutosave(WorkspaceAutosaveChange.All);
+		cancelWorkspaceAutosave();
+		try {
+			await runWorkspaceAutosaveTick();
+		} finally {
+			try {
+				await shutdownWorkspaceStorage();
+			} finally {
+				this.unsubscribeWorkspaceCursorMoved();
+				this.unsubscribeWorkspaceTextMutated();
+			}
 		}
-		workspaceState.autosaveEnabled = false;
-		clearWorkspaceSourceCaches();
-		workspaceState.autosaveSignature = null;
-		initializeWorkspaceStorage(
-			this,
-			this.sources,
-			this.debuggerState,
-			this.overlayRenderer,
-			this.runtime,
-			null,
-		);
 		clearEditorPointerSelectionState();
 		clearGotoHoverHighlight();
 		editorCaretState.cursorRevealSuspended = false;
@@ -476,6 +490,7 @@ export class RuntimeCartEditor implements CartEditor {
 		if (!this.isAvailable) {
 			return;
 		}
+		const previousVariant = editorViewState.fontVariant;
 		const activeContext = getActiveCodeTabContext();
 		let activeCodeTabMode: CodeTabMode | null = null;
 		if (activeContext) {
@@ -483,6 +498,9 @@ export class RuntimeCartEditor implements CartEditor {
 		}
 		setFontVariant(variant, activeCodeTabMode, getActiveCodeTabContextId());
 		this.resourcePanel.setFontMetrics(editorViewState.lineHeight, editorViewState.charAdvance);
+		if (editorViewState.fontVariant !== previousVariant) {
+			requestWorkspaceAutosave(WorkspaceAutosaveChange.Font);
+		}
 	}
 
 	public showRuntimeErrorInChunk(path: string, line: number, column: number, message: string, details?: RuntimeErrorDetails): void {
@@ -560,7 +578,6 @@ export class RuntimeCartEditor implements CartEditor {
 	}
 
 	private initialize(viewport: Viewport, fontVariant: Parameters<typeof setFontVariant>[0]): ResourcePanelController {
-		const runtime = this.runtime;
 		editorViewState.fontVariant = fontVariant;
 		constants.setIdeThemeVariant(constants.DEFAULT_THEME);
 		editorRuntimeState.themeVariant = constants.getActiveIdeThemeVariant();
@@ -586,26 +603,9 @@ export class RuntimeCartEditor implements CartEditor {
 		if (!this.isAvailable) {
 			configureFontVariant(editorViewState.fontVariant, null);
 			resourcePanel.setFontMetrics(editorViewState.lineHeight, editorViewState.charAdvance);
-			initializeWorkspaceStorage(
-				this,
-				this.sources,
-				this.debuggerState,
-				this.overlayRenderer,
-				runtime,
-				null,
-			);
 			editorRuntimeState.initialized = false;
 			return resourcePanel;
 		}
-		const cartridge = developmentCartridgeSource(this.sources);
-		initializeWorkspaceStorage(
-			this,
-			this.sources,
-			this.debuggerState,
-			this.overlayRenderer,
-			runtime,
-			cartridge ? cartridge.projectRootPath : this.sources.systemProjectRootPath,
-		);
 		const initialContext = createEntryTabContext(this.sources);
 		configureFontVariant(editorViewState.fontVariant, initialContext.mode);
 		resourcePanel.setFontMetrics(editorViewState.lineHeight, editorViewState.charAdvance);

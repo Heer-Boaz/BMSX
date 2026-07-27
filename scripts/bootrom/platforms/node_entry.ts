@@ -428,70 +428,30 @@ function parseArgs(argv: string[]): LaunchOptions {
 	return options;
 }
 
-type WorkspaceFetchDescriptor = {
-	url: URL;
-	method: string;
-	bodyText: string;
-};
-
 function installWorkspaceFetchBridge(workspaceRoot: string): void {
 	if (workspaceFetchBridgeInstalled) {
 		return;
 	}
-	const existingFetch: ((input: any, init?: any) => Promise<Response>) =
-		typeof (globalThis as any).fetch === 'function'
-			? (globalThis as any).fetch.bind(globalThis)
-			: null;
-	const bridge = async (input: any, init?: any): Promise<Response> => {
-		const descriptor = normalizeWorkspaceFetchRequest(input, init);
-		if (!descriptor || descriptor.url.pathname !== WORKSPACE_FILE_ENDPOINT) {
-			if (existingFetch) {
-				return existingFetch(input, init);
-			}
-			throw new TypeError('Fetch is not supported in this environment.');
+	const existingFetch = globalThis.fetch.bind(globalThis);
+	globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+		let url: URL = null;
+		if (typeof input === 'string') {
+			url = new URL(input, 'http://workspace.local');
+		} else if (input instanceof URL) {
+			url = input;
 		}
-		return await handleWorkspaceFetch(descriptor, workspaceRoot);
+		if (!url || url.pathname !== WORKSPACE_FILE_ENDPOINT) {
+			return existingFetch(input, init);
+		}
+		return handleWorkspaceFetch(
+			url,
+			init!.method!,
+			init!.body as string,
+			workspaceRoot,
+		);
 	};
-	(globalThis as any).fetch = bridge;
 	console.log(`[bootrom:${__BOOTROM_TARGET__}] Workspace fetch bridge mounted (${workspaceRoot}).`);
 	workspaceFetchBridgeInstalled = true;
-}
-
-function normalizeWorkspaceFetchRequest(input: any, init?: any): WorkspaceFetchDescriptor {
-	if (typeof Request !== 'undefined' && input instanceof Request) {
-		return null;
-	}
-	let urlString: string = null;
-	if (typeof input === 'string') {
-		urlString = input;
-	} else if (typeof URL !== 'undefined' && input instanceof URL) {
-		urlString = input.toString();
-	} else if (input && typeof input.href === 'string') {
-		urlString = input.href;
-	}
-	if (!urlString) {
-		return null;
-	}
-	const url = urlString.includes('://')
-		? new URL(urlString)
-		: new URL(urlString, 'http://workspace.local');
-	const method = typeof init?.method === 'string'
-		? init.method.toUpperCase()
-		: 'GET';
-	let bodyText: string = null;
-	const body = init?.body;
-	if (typeof body === 'string') {
-		bodyText = body;
-	} else if (body instanceof URLSearchParams) {
-		bodyText = body.toString();
-	} else if (body instanceof ArrayBuffer) {
-		bodyText = Buffer.from(body).toString('utf8');
-	} else if (ArrayBuffer.isView(body)) {
-		bodyText = Buffer.from(body.buffer, body.byteOffset, body.byteLength).toString('utf8');
-	} else if (body !== undefined && body !== null && typeof body.toString === 'function') {
-		bodyText = body.toString();
-	}
-	return { url, method, bodyText };
 }
 
 function toErrorMessage(error: unknown): string {
@@ -514,17 +474,20 @@ function resolveWorkspaceFilePath(workspaceRoot: string, relativePath: string): 
 	return target;
 }
 
-function jsonResponse(status: number, payload: unknown, extraHeaders?: Record<string, string>): Response {
-	const headers = {
-		'Content-Type': 'application/json',
-		...(extraHeaders ?? {}),
-	};
+function jsonResponse(status: number, payload: unknown): Response {
 	const body = payload === null ? null : JSON.stringify(payload);
-	return new Response(body, { status, headers });
+	return new Response(body, {
+		status,
+		headers: { 'Content-Type': 'application/json' },
+	});
 }
 
-async function handleWorkspaceFetch(descriptor: WorkspaceFetchDescriptor, workspaceRoot: string): Promise<Response> {
-	const { method, url, bodyText } = descriptor;
+async function handleWorkspaceFetch(
+	url: URL,
+	method: string,
+	bodyText: string,
+	workspaceRoot: string,
+): Promise<Response> {
 	if (method === 'GET') {
 		const targetPath = url.searchParams.get('path');
 		if (!targetPath) {
@@ -534,7 +497,11 @@ async function handleWorkspaceFetch(descriptor: WorkspaceFetchDescriptor, worksp
 			const filePath = resolveWorkspaceFilePath(workspaceRoot, targetPath);
 			const stats = await fs.stat(filePath);
 			const contents = await fs.readFile(filePath, 'utf8');
-			return jsonResponse(200, { path: targetPath, contents, updatedAt: stats.mtimeMs });
+			return jsonResponse(200, {
+				path: targetPath,
+				contents,
+				updatedAt: Math.round(stats.mtimeMs),
+			});
 		} catch (error) {
 			const message = toErrorMessage(error);
 			if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') {
@@ -543,29 +510,14 @@ async function handleWorkspaceFetch(descriptor: WorkspaceFetchDescriptor, worksp
 			return jsonResponse(500, { error: message });
 		}
 	}
-	if (method === 'POST') {
-		if (!bodyText) {
-			return jsonResponse(400, { error: 'Request body is required.' });
-		}
-		let payload: { path?: string; contents?: string } = null;
-		try {
-			payload = JSON.parse(bodyText) as { path?: string; contents?: string };
-		} catch {
-			return jsonResponse(400, { error: 'Request body must be valid JSON.' });
-		}
-		const targetPath = typeof payload?.path === 'string' ? payload.path : '';
-		const contents = typeof payload?.contents === 'string' ? payload.contents : null;
-		if (!targetPath || contents === null) {
-			return jsonResponse(400, { error: 'Both "path" and "contents" must be provided.' });
-		}
-		try {
-			const filePath = resolveWorkspaceFilePath(workspaceRoot, targetPath);
-			await fs.mkdir(path.dirname(filePath), { recursive: true });
-			await fs.writeFile(filePath, contents, 'utf8');
-			return jsonResponse(204, null);
-		} catch (error) {
-			return jsonResponse(500, { error: toErrorMessage(error) });
-		}
+	if (method === 'PUT') {
+		const payload = JSON.parse(bodyText);
+		const filePath = resolveWorkspaceFilePath(workspaceRoot, payload.path);
+		await fs.mkdir(path.dirname(filePath), { recursive: true });
+		await fs.writeFile(filePath, payload.contents, 'utf8');
+		const modifiedSeconds = payload.updatedAt / 1000;
+		await fs.utimes(filePath, modifiedSeconds, modifiedSeconds);
+		return jsonResponse(204, null);
 	}
 	if (method === 'DELETE') {
 		const targetPath = url.searchParams.get('path');
@@ -583,7 +535,7 @@ async function handleWorkspaceFetch(descriptor: WorkspaceFetchDescriptor, worksp
 			return jsonResponse(500, { error: toErrorMessage(error) });
 		}
 	}
-	return new Response(null, { status: 405, headers: { Allow: 'GET,POST,DELETE' } });
+	return new Response(null, { status: 405, headers: { Allow: 'GET,PUT,DELETE' } });
 }
 
 function resolveRomPath(options: LaunchOptions, debugFlag: boolean): string {

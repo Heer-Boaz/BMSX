@@ -1,175 +1,261 @@
-import type { RuntimeSourceState } from '../../runtime/sources';
+import {
+	runtimeSourceProjectRootPath,
+	type RuntimeSourceState,
+} from '../../runtime/sources';
 import type { RuntimeDebuggerState } from '../../runtime/debugger_state';
-import type { OverlayRenderer } from '../../runtime/overlay_renderer';
-import { machineManager } from '../../../machine/ts/core/machine_manager';
-import * as luaPipeline from '../../runtime/lua_pipeline';
 import {
-	clearWorkspaceSourceCaches,
-	workspaceFileCache,
-} from '../../workspace/cache';
-import { resetNavigationHistoryState } from '../../navigation/navigation_history';
-import {
-	findCodeTabContext,
+	getCodeTabContextById,
 	getCodeTabContexts,
 } from '../ui/code_tab/contexts';
 import { serializeBreakpoints } from '../contrib/debugger/controller';
-import { buildDirtyFilePath, deleteWorkspaceFile, getWorkspaceDirtyDirSegment, hasWorkspaceStorage, writeWorkspaceFile } from './io';
-import { workspaceState } from './state';
+import {
+	buildWorkspaceDirtyEntryPath,
+	buildWorkspaceDirtyRecordPath,
+} from '../../workspace/files';
+import {
+	WORKSPACE_METADATA_DIR,
+	WORKSPACE_STATE_FILE,
+	createWorkspaceRecord,
+	deleteLocalWorkspaceRecord,
+	deleteRemoteWorkspaceRecord,
+	writeLocalWorkspaceRecord,
+	writeRemoteWorkspaceRecord,
+	type WorkspaceRecord,
+} from '../../workspace/records';
+import { joinWorkspacePaths } from '../../workspace/path';
+import {
+	workspaceDirtyRecords,
+	workspaceState,
+} from './state';
 import {
 	captureContextSnapshotMetadata,
 	captureContextText,
-	clearWorkspaceActiveDocumentSessionState,
-	clearWorkspaceContextSessionState,
-	resetWorkspaceActiveDocumentDirtyBufferState,
-	resetWorkspaceContextToCleanSource,
 } from './context_snapshot';
 import {
-	WORKSPACE_AUTOSAVE_VERSION,
-	type DirtyContextEntry,
 	type PersistedDirtyEntry,
+	WorkspaceAutosaveChange,
 	type WorkspaceAutosavePayload,
+	type WorkspaceSessionGeneration,
 } from './models';
 import type { CartEditor } from '../../cart_editor';
-import type { ResourceIdentity } from '../../common/resource';
+import { machineManager } from '../../../machine/ts/core/machine_manager';
 
-export function collectDirtyContextEntries(): Map<string, DirtyContextEntry> {
-	if (!hasWorkspaceStorage()) {
-		return new Map();
-	}
-	const entries = new Map<string, DirtyContextEntry>();
-	for (const context of getCodeTabContexts()) {
-		if (!context.dirty) {
-			continue;
-		}
-		const resource: ResourceIdentity = {
-			domain: context.resource.domain,
-			path: context.resource.path,
-		};
-		const metadata = captureContextSnapshotMetadata(context);
-		const dirtyPath = buildDirtyFilePath(resource);
-		const text = captureContextText(context);
-		entries.set(dirtyPath, {
-			resource,
-			dirtyPath,
-			cursorRow: metadata.cursorRow,
-			cursorColumn: metadata.cursorColumn,
-			scrollRow: metadata.scrollRow,
-			scrollColumn: metadata.scrollColumn,
-			selectionAnchor: metadata.selectionAnchor ? { row: metadata.selectionAnchor.row, column: metadata.selectionAnchor.column } : null,
-			text,
-		});
-	}
-	return entries;
-}
-
-export function buildWorkspaceAutosavePayload(
+export function commitWorkspaceSessionLocally(
 	editor: CartEditor,
+	sources: RuntimeSourceState,
 	debuggerState: RuntimeDebuggerState,
-	overlayRenderer: OverlayRenderer,
-	entries: Map<string, DirtyContextEntry>,
-): WorkspaceAutosavePayload {
-	if (!workspaceState.autosaveEnabled) {
-		return null;
+	changes: WorkspaceAutosaveChange,
+	metadataContextIds: ReadonlySet<string>,
+): WorkspaceSessionGeneration {
+	const previousGeneration = workspaceState.localGeneration;
+	const rebuildDirtyFiles = !previousGeneration || (changes & WorkspaceAutosaveChange.DirtyFiles);
+	let dirtyFiles: PersistedDirtyEntry[];
+	let generationDirtyRecords: ReadonlyMap<string, WorkspaceRecord>;
+	if (rebuildDirtyFiles) {
+		dirtyFiles = [];
+		const records = new Map<string, WorkspaceRecord>();
+		generationDirtyRecords = records;
+		for (const context of getCodeTabContexts()) {
+			if (!context.dirty) {
+				continue;
+			}
+			const projectRootPath = runtimeSourceProjectRootPath(sources, context.resource.domain);
+			const dirtyPath = buildWorkspaceDirtyEntryPath(
+				projectRootPath,
+				context.resource.domain,
+				context.resource.path,
+			);
+			const metadata = captureContextSnapshotMetadata(context);
+			const text = captureContextText(context);
+			let record = workspaceDirtyRecords.get(dirtyPath);
+			if (!record || record.contents !== text) {
+				record = createWorkspaceRecord(text);
+				writeLocalWorkspaceRecord(
+					machineManager.platform.storage,
+					projectRootPath,
+					buildWorkspaceDirtyRecordPath(dirtyPath, record.updatedAt),
+					record,
+				);
+				workspaceDirtyRecords.set(dirtyPath, record);
+			}
+			dirtyFiles.push({
+				domain: context.resource.domain,
+				path: context.resource.path,
+				updatedAt: record.updatedAt,
+				cursorRow: metadata.cursorRow,
+				cursorColumn: metadata.cursorColumn,
+				scrollRow: metadata.scrollRow,
+				scrollColumn: metadata.scrollColumn,
+				selectionAnchor: metadata.selectionAnchor,
+			});
+			records.set(dirtyPath, record);
+		}
+	} else {
+		dirtyFiles = previousGeneration.payload.dirtyFiles;
+		generationDirtyRecords = previousGeneration.dirtyRecords;
+		if (changes & WorkspaceAutosaveChange.ActiveEditor) {
+			dirtyFiles = captureDirtyEntryMetadata(dirtyFiles, metadataContextIds);
+		}
 	}
-	const dirtyFiles: PersistedDirtyEntry[] = [];
-	for (const entry of entries.values()) {
-		dirtyFiles.push({
-			resource: entry.resource,
-			dirtyPath: entry.dirtyPath,
-			cursorRow: entry.cursorRow,
-			cursorColumn: entry.cursorColumn,
-			scrollRow: entry.scrollRow,
-			scrollColumn: entry.scrollColumn,
-			selectionAnchor: entry.selectionAnchor ? { row: entry.selectionAnchor.row, column: entry.selectionAnchor.column } : null,
-		});
+
+	const breakpoints = !previousGeneration || (changes & WorkspaceAutosaveChange.Breakpoints)
+		? serializeBreakpoints(debuggerState)
+		: previousGeneration.payload.breakpoints;
+	const fontVariant = !previousGeneration || (changes & WorkspaceAutosaveChange.Font)
+		? editor.fontVariant
+		: previousGeneration.payload.fontVariant;
+	if (previousGeneration
+		&& dirtyFiles === previousGeneration.payload.dirtyFiles
+		&& breakpoints === previousGeneration.payload.breakpoints
+		&& fontVariant === previousGeneration.payload.fontVariant) {
+		return previousGeneration;
 	}
-	return {
-		version: WORKSPACE_AUTOSAVE_VERSION,
-		savedAt: machineManager.platform.clock.dateNow(),
+	const payload: WorkspaceAutosavePayload = {
 		dirtyFiles,
-		breakpoints: serializeBreakpoints(debuggerState),
-		fontVariant: editor.fontVariant,
-		overlayResolutionMode: overlayRenderer.resolutionMode,
+		breakpoints,
+		fontVariant,
 	};
-}
+	const statePath = joinWorkspacePaths(
+		workspaceState.projectRootPath,
+		WORKSPACE_METADATA_DIR,
+		WORKSPACE_STATE_FILE,
+	);
+	const stateRecord = createWorkspaceRecord(JSON.stringify(payload));
+	writeLocalWorkspaceRecord(
+		machineManager.platform.storage,
+		workspaceState.projectRootPath,
+		statePath,
+		stateRecord,
+	);
 
-export function buildWorkspaceAutosaveSignature(payload: WorkspaceAutosavePayload): string {
-	const dirtyParts = payload.dirtyFiles
-		.map((dirty) => {
-			const selection = dirty.selectionAnchor ? `${dirty.selectionAnchor.row}:${dirty.selectionAnchor.column}` : '';
-			const resourceKey = `${dirty.resource.domain}:${dirty.resource.path}`;
-			return [
-				dirty.dirtyPath,
-				resourceKey,
-				dirty.cursorRow,
-				dirty.cursorColumn,
-				dirty.scrollRow,
-				dirty.scrollColumn,
-				selection,
-			].join(':');
-		})
-		.sort();
-	const breakpointEntries = payload.breakpoints
-		? Object.keys(payload.breakpoints)
-			.sort()
-			.map(path => `${path}:${payload.breakpoints[path].join(',')}`)
-		: [];
-	return [
-		payload.fontVariant ? `font:${payload.fontVariant}` : 'font:unset',
-		payload.overlayResolutionMode ? `overlay:${payload.overlayResolutionMode}` : 'overlay:unset',
-		dirtyParts.join('|'),
-		breakpointEntries.join('|'),
-	].join('#');
-}
-
-export async function persistDirtyContextEntries(entries: Map<string, DirtyContextEntry>): Promise<void> {
-	const activeDirtyPaths = new Set<string>();
-	for (const [dirtyPath, entry] of entries) {
-		activeDirtyPaths.add(dirtyPath);
-		const cached = workspaceFileCache.get(dirtyPath);
-		if (cached === entry.text) {
-			continue;
+	if (rebuildDirtyFiles && previousGeneration) {
+		for (const entry of previousGeneration.payload.dirtyFiles) {
+			const projectRootPath = runtimeSourceProjectRootPath(sources, entry.domain);
+			const dirtyPath = buildWorkspaceDirtyEntryPath(
+				projectRootPath,
+				entry.domain,
+				entry.path,
+			);
+			const currentRecord = generationDirtyRecords.get(dirtyPath);
+			if (currentRecord?.updatedAt === entry.updatedAt) {
+				continue;
+			}
+			deleteLocalWorkspaceRecord(
+				machineManager.platform.storage,
+				projectRootPath,
+				buildWorkspaceDirtyRecordPath(dirtyPath, entry.updatedAt),
+			);
+			if (!currentRecord) {
+				workspaceDirtyRecords.delete(dirtyPath);
+			}
 		}
-		await writeWorkspaceFile(dirtyPath, entry.text);
-		workspaceFileCache.set(dirtyPath, entry.text);
 	}
-	for (const cachedPath of workspaceFileCache.keys()) {
-		if (!cachedPath.includes(`/${getWorkspaceDirtyDirSegment()}/`)) {
-			continue;
+	return { payload, stateRecord, dirtyRecords: generationDirtyRecords };
+}
+
+function captureDirtyEntryMetadata(
+	dirtyFiles: PersistedDirtyEntry[],
+	contextIds: ReadonlySet<string>,
+): PersistedDirtyEntry[] {
+	let updatedDirtyFiles = dirtyFiles;
+	for (const contextId of contextIds) {
+		const context = getCodeTabContextById(contextId);
+		const metadata = captureContextSnapshotMetadata(context);
+		let found = false;
+		for (let index = 0; index < dirtyFiles.length; index += 1) {
+			const entry = dirtyFiles[index];
+			if (entry.domain !== context.resource.domain || entry.path !== context.resource.path) {
+				continue;
+			}
+			found = true;
+			if (dirtyEntryMetadataEquals(entry, metadata)) {
+				break;
+			}
+			if (updatedDirtyFiles === dirtyFiles) {
+				updatedDirtyFiles = dirtyFiles.slice();
+			}
+			updatedDirtyFiles[index] = {
+				domain: entry.domain,
+				path: entry.path,
+				updatedAt: entry.updatedAt,
+				cursorRow: metadata.cursorRow,
+				cursorColumn: metadata.cursorColumn,
+				scrollRow: metadata.scrollRow,
+				scrollColumn: metadata.scrollColumn,
+				selectionAnchor: metadata.selectionAnchor,
+			};
+			break;
 		}
-		if (activeDirtyPaths.has(cachedPath)) {
-			continue;
+		if (!found) {
+			throw new Error(`Dirty editor '${context.resource.path}' is missing from the retained workspace generation.`);
 		}
-		await deleteWorkspaceFile(cachedPath);
-		workspaceFileCache.delete(cachedPath);
 	}
+	return updatedDirtyFiles;
 }
 
-export function loadCleanSrc(sources: RuntimeSourceState, resource: ResourceIdentity): string {
-	const context = findCodeTabContext(resource);
-	if (context && context.mode === 'aem') {
-		return context.lastSavedSource;
+function dirtyEntryMetadataEquals(
+	entry: PersistedDirtyEntry,
+	metadata: ReturnType<typeof captureContextSnapshotMetadata>,
+): boolean {
+	if (entry.cursorRow !== metadata.cursorRow
+		|| entry.cursorColumn !== metadata.cursorColumn
+		|| entry.scrollRow !== metadata.scrollRow
+		|| entry.scrollColumn !== metadata.scrollColumn) {
+		return false;
 	}
-	return luaPipeline.resourceSourceForChunk(sources, resource);
+	if (!entry.selectionAnchor) {
+		return !metadata.selectionAnchor;
+	}
+	if (!metadata.selectionAnchor) {
+		return false;
+	}
+	return entry.selectionAnchor.row === metadata.selectionAnchor.row
+		&& entry.selectionAnchor.column === metadata.selectionAnchor.column;
 }
 
-export function clearWorkspaceDirtyBuffers(sources: RuntimeSourceState): void {
-	clearWorkspaceSourceCaches();
-	workspaceState.autosaveSignature = null;
-	resetWorkspaceActiveDocumentDirtyBufferState();
-	for (const context of getCodeTabContexts()) {
-		resetWorkspaceContextToCleanSource(context, loadCleanSrc(sources, context.resource));
+export async function syncWorkspaceSessionRemotely(
+	sources: RuntimeSourceState,
+	generation: WorkspaceSessionGeneration,
+): Promise<void> {
+	const dirtyRecordsChanged = workspaceState.remoteDirtyRecords !== generation.dirtyRecords;
+	let remoteDirtyVersions: Map<string, number>;
+	if (dirtyRecordsChanged) {
+		remoteDirtyVersions = new Map<string, number>();
+		if (workspaceState.remotePayload) {
+			for (const entry of workspaceState.remotePayload.dirtyFiles) {
+				const projectRootPath = runtimeSourceProjectRootPath(sources, entry.domain);
+				const dirtyPath = buildWorkspaceDirtyEntryPath(
+					projectRootPath,
+					entry.domain,
+					entry.path,
+				);
+				remoteDirtyVersions.set(dirtyPath, entry.updatedAt);
+			}
+		}
+		for (const [dirtyPath, record] of generation.dirtyRecords) {
+			if (remoteDirtyVersions.get(dirtyPath) !== record.updatedAt) {
+				await writeRemoteWorkspaceRecord(
+					buildWorkspaceDirtyRecordPath(dirtyPath, record.updatedAt),
+					record,
+				);
+			}
+		}
 	}
-}
 
-export function clearWorkspaceSessionStateData(debuggerState: RuntimeDebuggerState): void {
-	clearWorkspaceActiveDocumentSessionState();
-	for (const context of getCodeTabContexts()) {
-		clearWorkspaceContextSessionState(context);
+	const statePath = joinWorkspacePaths(
+		workspaceState.projectRootPath,
+		WORKSPACE_METADATA_DIR,
+		WORKSPACE_STATE_FILE,
+	);
+	await writeRemoteWorkspaceRecord(statePath, generation.stateRecord);
+
+	if (dirtyRecordsChanged) {
+		for (const [dirtyPath, updatedAt] of remoteDirtyVersions!) {
+			if (generation.dirtyRecords.get(dirtyPath)?.updatedAt !== updatedAt) {
+				await deleteRemoteWorkspaceRecord(
+					buildWorkspaceDirtyRecordPath(dirtyPath, updatedAt),
+				);
+			}
+		}
 	}
-	resetNavigationHistoryState();
-	debuggerState.breakpoints.clear();
-	workspaceState.autosaveSignature = null;
-	workspaceState.autosaveQueued = false;
-	workspaceState.autosaveRunning = false;
 }

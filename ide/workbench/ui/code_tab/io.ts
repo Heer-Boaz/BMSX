@@ -6,7 +6,7 @@ import * as constants from '../../../common/constants';
 import { showLuaErrorOverlay } from '../../../runtime_error/navigation';
 import { saveLuaResourceSource } from '../../../workspace/workspace';
 import { loadWorkspaceSourceFile, persistWorkspaceSourceFile } from '../../../workspace/files';
-import { workspaceFileCache } from '../../../workspace/cache';
+import { workspaceCanonicalSourceCache } from '../../../workspace/cache';
 import { resolveWorkspacePath } from '../../../workspace/path';
 import { applyAemSourceToRuntime } from '../../../runtime/aem';
 import { extractErrorMessage } from '../../../language/lua/interpreter/value';
@@ -31,6 +31,8 @@ import {
 import { codeTabSessionState } from './session_state';
 import { runtimeSourceProjectRootPath } from '../../../runtime/sources';
 import type { ResourcePanelController } from '../../contrib/resources/panel/controller';
+import { requestWorkspaceAutosave } from '../../workspace/storage';
+import { WorkspaceAutosaveChange } from '../../workspace/models';
 
 function applyCodeTabResource(context: CodeTabContext, resource: RuntimeResource, mode: CodeTabMode): void {
 	context.resource = resource;
@@ -113,16 +115,17 @@ export async function save(
 				context.resource.domain,
 			);
 			await persistWorkspaceSourceFile(targetPath, source, projectRootPath);
-			workspaceFileCache.set(resolveWorkspacePath(targetPath, projectRootPath), source);
+			workspaceCanonicalSourceCache.set(resolveWorkspacePath(targetPath, projectRootPath), source);
 		}
 		commitActiveCodeTabSave(context, source);
+			requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
 		if (context.mode === 'lua') {
 			setContextRuntimeSyncState(context, 'runtime_update_pending', null);
 			showEditorMessage(`${context.title} saved (runtime update pending)`, constants.COLOR_STATUS_SUCCESS, 2.5);
 			return;
 		}
 		try {
-				applyAemSourceToRuntime(sources, runtime, context.resource, source);
+			applyAemSourceToRuntime(sources, runtime, context.resource, source);
 			setActiveCodeTabAppliedGeneration(context, context.saveGeneration);
 			setContextRuntimeSyncState(context, 'synced', null);
 			showEditorMessage(`${context.title} saved`, constants.COLOR_STATUS_SUCCESS, 2.5);

@@ -82,6 +82,7 @@ export function commitRename(
 		resetBlink();
 		editorCaretState.cursorRevealSuspended = false;
 		ensureCursorVisible();
+		editorDocumentState.emitCursorMoved();
 		updatedTotal += sortedMatches.length;
 	}
 

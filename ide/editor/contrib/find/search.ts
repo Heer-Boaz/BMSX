@@ -99,6 +99,7 @@ export class EditorSearchController {
 				applySearchFieldText(selected, true);
 				editorDocumentState.cursorRow = range.start.row;
 				editorDocumentState.cursorColumn = range.start.column;
+				editorDocumentState.emitCursorMoved();
 			}
 		}
 
@@ -159,7 +160,7 @@ export function closeSearch(clearQuery: boolean, forceHide = false): void {
 		onLocalSearchQueryChanged();
 	}
 
-	editorDocumentState.selectionAnchor = null;
+	clearEditorSearchSelection();
 	resetBlink();
 }
 
@@ -184,7 +185,7 @@ function onLocalSearchQueryChanged(): void {
 		cancelSearchJob();
 		editorSearchState.matches = [];
 		editorSearchState.currentIndex = -1;
-		editorDocumentState.selectionAnchor = null;
+		clearEditorSearchSelection();
 		editorSearchState.displayOffset = 0;
 		return;
 	}
@@ -198,7 +199,7 @@ export function startSearchJob(): void {
 	editorSearchState.hoverIndex = -1;
 	editorSearchState.currentIndex = -1;
 	editorSearchState.matches = [];
-	editorDocumentState.selectionAnchor = null;
+	clearEditorSearchSelection();
 
 	const job: LocalSearchJob = {
 		query: normalizeQuery(editorSearchState.query),
@@ -256,7 +257,7 @@ function completeLocalSearchJob(job: LocalSearchJob): void {
 
 	if (job.matches.length === 0) {
 		editorSearchState.currentIndex = -1;
-		editorDocumentState.selectionAnchor = null;
+		clearEditorSearchSelection();
 		editorSearchState.displayOffset = 0;
 		return;
 	}
@@ -271,6 +272,14 @@ function completeLocalSearchJob(job: LocalSearchJob): void {
 
 export function cancelSearchJob(): void {
 	editorSearchState.job = null;
+}
+
+function clearEditorSearchSelection(): void {
+	if (!editorDocumentState.selectionAnchor) {
+		return;
+	}
+	editorDocumentState.selectionAnchor = null;
+	editorDocumentState.emitCursorMoved();
 }
 
 function ensureLocalJobCompleted(): void {
@@ -384,6 +393,7 @@ function focusLocalMatch(index: number, recordNavigation: boolean): void {
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
+	editorDocumentState.emitCursorMoved();
 	if (recordNavigation) {
 		completeNavigation(navigationCheckpoint);
 	}

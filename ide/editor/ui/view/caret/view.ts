@@ -78,6 +78,7 @@ export function setCursorFromVisualIndex(visualIndex: number, desiredColumnHint?
 		editorDocumentState.cursorRow = 0;
 		editorDocumentState.cursorColumn = 0;
 		updateDesiredColumn();
+		editorDocumentState.emitCursorMoved();
 		return;
 	}
 	const clampedIndex = editorViewState.layout.clampVisualIndex(visualLines.length, visualIndex);
@@ -141,6 +142,7 @@ export function setCursorFromVisualIndex(visualIndex: number, desiredColumnHint?
 	if (editorDocumentState.desiredDisplayOffset < 0) {
 		editorDocumentState.desiredDisplayOffset = 0;
 	}
+	editorDocumentState.emitCursorMoved();
 }
 
 export function updateDesiredColumn(): void {

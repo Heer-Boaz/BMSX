@@ -1,19 +1,59 @@
 import { machineManager } from '../../../machine/ts/core/machine_manager';
+import type { TimerHandle } from '../../../machine/ts/platform/platform';
 import { scheduleIdeOnce } from '../../common/background_tasks';
-import { taskGate } from '../../../machine/ts/common/taskgate';
-import type { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { clearWorkspaceSourceCaches } from '../../workspace/cache';
-import { workspaceState } from './state';
-import { clearWorkspaceStorageConfiguration, configureWorkspaceStorage, isWorkspaceServerAvailable, scheduleWorkspaceServerRetry, writeWorkspaceStateFile } from './io';
-import { restoreWorkspaceSessionFromDisk } from './restore';
-import { buildWorkspaceAutosavePayload, buildWorkspaceAutosaveSignature, clearWorkspaceSessionStateData, collectDirtyContextEntries, persistDirtyContextEntries } from './autosave';
+import {
+	buildWorkspaceDirtyEntryPath,
+	buildWorkspaceDirtyRecordPath,
+} from '../../workspace/files';
+import {
+	WORKSPACE_METADATA_DIR,
+	WORKSPACE_STATE_FILE,
+	closeWorkspaceRecords,
+	deleteLocalWorkspaceRecord,
+	disconnectWorkspaceRecords,
+	openWorkspaceRecords,
+	readLocalWorkspaceRecord,
+	readRemoteWorkspaceRecord,
+	readWorkspaceRecordVersion,
+	reconnectWorkspaceRecords,
+	selectNewestWorkspaceRecord,
+	workspaceRecordState,
+	workspaceRecordsEqual,
+	writeLocalWorkspaceRecord,
+	type WorkspaceRecord,
+} from '../../workspace/records';
+import { joinWorkspacePaths } from '../../workspace/path';
+import {
+	workspaceDirtyRecords,
+	workspacePendingMetadataContextIds,
+	workspaceState,
+} from './state';
+import { applyWorkspaceAutosavePayload } from './restore';
+import {
+	commitWorkspaceSessionLocally,
+	syncWorkspaceSessionRemotely,
+} from './autosave';
 import type { CartEditor } from '../../cart_editor';
-import type { RuntimeSourceState } from '../../runtime/sources';
+import {
+	runtimeSourceProjectRootPath,
+	type RuntimeSourceState,
+} from '../../runtime/sources';
 import type { RuntimeDebuggerState } from '../../runtime/debugger_state';
-import type { OverlayRenderer } from '../../runtime/overlay_renderer';
+import {
+	WorkspaceAutosaveChange,
+	type WorkspaceAutosavePayload,
+} from './models';
+import { getActiveCodeTabContext } from '../ui/code_tab/contexts';
 
-const WORKSPACE_AUTOSAVE_INTERVAL_MS = 2500;
-const workspaceRestoreGate = taskGate.group('restore');
+const WORKSPACE_AUTOSAVE_DELAY_MS = 2500;
+const WORKSPACE_RECONNECT_DELAY_MS = WORKSPACE_AUTOSAVE_DELAY_MS * 4;
+
+let reconnectHandle: TimerHandle = null;
+let reconnectTask: Promise<void> = null;
+let editor: CartEditor = null;
+let sources: RuntimeSourceState = null;
+let debuggerState: RuntimeDebuggerState = null;
 
 function detachWorkspaceExitHandler(): void {
 	if (workspaceState.disposeExitListener) {
@@ -22,149 +62,370 @@ function detachWorkspaceExitHandler(): void {
 	}
 }
 
-function attachWorkspaceExitHandler(
-	editor: CartEditor,
-	sources: RuntimeSourceState,
-	debuggerState: RuntimeDebuggerState,
-	overlayRenderer: OverlayRenderer,
-	runtime: Runtime,
-): void {
+function attachWorkspaceExitHandler(): void {
 	detachWorkspaceExitHandler();
 	workspaceState.disposeExitListener = machineManager.platform.lifecycle.onWillExit(() => {
-		if (!workspaceState.autosaveEnabled) {
-			return;
-		}
-		void runWorkspaceAutosaveTick(editor, sources, debuggerState, overlayRenderer, runtime);
+		persistWorkspaceSessionLocally();
 	});
 }
 
-function disableWorkspacePersistence(): void {
-	workspaceState.autosaveEnabled = false;
-	clearWorkspaceStorageConfiguration();
+function cancelWorkspaceReconnect(): void {
+	reconnectHandle?.cancel();
+	reconnectHandle = null;
+}
+
+export async function shutdownWorkspaceStorage(): Promise<void> {
+	cancelWorkspaceAutosave();
+	cancelWorkspaceReconnect();
 	detachWorkspaceExitHandler();
-}
-
-export function initializeWorkspaceStorage(
-	editor: CartEditor,
-	sources: RuntimeSourceState,
-	debuggerState: RuntimeDebuggerState,
-	overlayRenderer: OverlayRenderer,
-	runtime: Runtime,
-	projectRootPath: string | null,
-): void {
-	stopWorkspaceAutosaveLoop();
-	workspaceState.autosaveSignature = null;
-	clearWorkspaceSourceCaches();
-	if (!projectRootPath || projectRootPath.length === 0) {
-		workspaceState.autosaveEnabled = false;
-		clearWorkspaceStorageConfiguration();
-		detachWorkspaceExitHandler();
-		workspaceState.serverConnected = false;
-		return;
-	}
-	workspaceState.autosaveEnabled = true;
-	attachWorkspaceExitHandler(editor, sources, debuggerState, overlayRenderer, runtime);
-	const token = workspaceRestoreGate.begin({ blocking: true, tag: 'restore' });
-	(async () => {
+	try {
+		if (workspaceState.autosaveTask) {
+			await workspaceState.autosaveTask;
+		}
+		if (reconnectTask) {
+			await reconnectTask;
+		}
+		cancelWorkspaceAutosave();
+		cancelWorkspaceReconnect();
+		const task = runWorkspaceAutosaveTick();
+		if (task) {
+			await task;
+		}
+	} finally {
+		cancelWorkspaceAutosave();
+		cancelWorkspaceReconnect();
 		try {
-			await configureWorkspaceStorage(projectRootPath);
-			const signature = await restoreWorkspaceSessionFromDisk(
-				editor,
-				sources,
-				debuggerState,
-				overlayRenderer,
-			);
-			workspaceState.autosaveSignature = signature;
-			workspaceState.serverConnected = isWorkspaceServerAvailable();
-		} catch (error) {
-			console.warn('[CartEditor] Workspace persistence disabled:', error);
-			disableWorkspacePersistence();
-			return;
+			if (editor && workspaceState.requestedRevision !== workspaceState.localRevision) {
+				commitRequestedWorkspaceSessionLocally();
+			}
 		} finally {
-			workspaceRestoreGate.end(token);
+			workspaceState.projectRootPath = null;
+			workspaceState.requestedRevision = 0;
+			workspaceState.localRevision = 0;
+			workspaceState.remoteRevision = -1;
+			workspaceState.localGeneration = null;
+			workspaceState.remotePayload = null;
+			workspaceState.remoteDirtyRecords = null;
+			workspaceState.pendingChanges = WorkspaceAutosaveChange.None;
+			workspaceDirtyRecords.clear();
+			workspacePendingMetadataContextIds.clear();
+			editor = null;
+			sources = null;
+			debuggerState = null;
+			clearWorkspaceSourceCaches();
+			closeWorkspaceRecords();
 		}
-		if (workspaceState.autosaveEnabled) {
-			scheduleWorkspaceAutosaveLoop(editor, sources, debuggerState, overlayRenderer, runtime);
-		}
-		if (workspaceState.autosaveQueued) {
-			workspaceState.autosaveQueued = false;
-			void runWorkspaceAutosaveTick(editor, sources, debuggerState, overlayRenderer, runtime);
-		}
-	})().catch((error) => {
-		console.warn('[CartEditor] Workspace restore failed:', error);
-	});
+	}
 }
 
-export function scheduleWorkspaceAutosaveLoop(
-	editor: CartEditor,
-	sources: RuntimeSourceState,
-	debuggerState: RuntimeDebuggerState,
-	overlayRenderer: OverlayRenderer,
-	runtime: Runtime,
-): void {
-	if (!workspaceState.autosaveEnabled || workspaceState.autosaveHandle) {
+export async function initializeWorkspaceStorage(
+	projectRootPath: string,
+	runtimeSources: RuntimeSourceState,
+): Promise<WorkspaceAutosavePayload | null> {
+	await shutdownWorkspaceStorage();
+	workspaceState.projectRootPath = projectRootPath;
+	await openWorkspaceRecords(machineManager.platform.storage, projectRootPath);
+	const statePath = joinWorkspacePaths(
+		projectRootPath,
+		WORKSPACE_METADATA_DIR,
+		WORKSPACE_STATE_FILE,
+	);
+	const localRecord = readLocalWorkspaceRecord(
+		machineManager.platform.storage,
+		projectRootPath,
+		statePath,
+	);
+	let remoteRecord: WorkspaceRecord = null;
+	if (workspaceRecordState.connected) {
+		try {
+			remoteRecord = await readRemoteWorkspaceRecord(statePath);
+		} catch (error) {
+			disconnectWorkspaceRecords(error);
+		}
+	}
+	const record = selectNewestWorkspaceRecord(localRecord, remoteRecord);
+	const payload = record ? JSON.parse(record.contents) as WorkspaceAutosavePayload : null;
+	const replacedLocalPayload = record === remoteRecord && localRecord
+		? JSON.parse(localRecord.contents) as WorkspaceAutosavePayload
+		: null;
+	const generationDirtyRecords = new Map<string, WorkspaceRecord>();
+	if (payload) {
+		const loads = new Array<Promise<readonly [string, WorkspaceRecord]>>(payload.dirtyFiles.length);
+		for (let index = 0; index < payload.dirtyFiles.length; index += 1) {
+			const entry = payload.dirtyFiles[index];
+			const dirtyProjectRootPath = runtimeSourceProjectRootPath(runtimeSources, entry.domain);
+			const dirtyPath = buildWorkspaceDirtyEntryPath(
+				dirtyProjectRootPath,
+				entry.domain,
+				entry.path,
+			);
+			loads[index] = readWorkspaceRecordVersion(
+				machineManager.platform.storage,
+				dirtyProjectRootPath,
+				buildWorkspaceDirtyRecordPath(dirtyPath, entry.updatedAt),
+				entry.updatedAt,
+			).then(dirtyRecord => {
+				if (!dirtyRecord) {
+					throw new Error(`Persisted dirty file '${dirtyPath}' does not match the workspace session.`);
+				}
+				return [dirtyPath, dirtyRecord] as const;
+			});
+		}
+		const loadedRecords = await Promise.all(loads);
+		for (let index = 0; index < loadedRecords.length; index += 1) {
+			const [dirtyPath, dirtyRecord] = loadedRecords[index];
+			generationDirtyRecords.set(dirtyPath, dirtyRecord);
+		}
+	}
+	const obsoleteLocalDirtyRecords: Array<readonly [string, string]> = [];
+	if (replacedLocalPayload) {
+		for (const entry of replacedLocalPayload.dirtyFiles) {
+			const dirtyProjectRootPath = runtimeSourceProjectRootPath(runtimeSources, entry.domain);
+			const dirtyPath = buildWorkspaceDirtyEntryPath(
+				dirtyProjectRootPath,
+				entry.domain,
+				entry.path,
+			);
+			if (generationDirtyRecords.get(dirtyPath)?.updatedAt === entry.updatedAt) {
+				continue;
+			}
+			obsoleteLocalDirtyRecords.push([
+				dirtyProjectRootPath,
+				buildWorkspaceDirtyRecordPath(dirtyPath, entry.updatedAt),
+			]);
+		}
+	}
+	if (remoteRecord && record === remoteRecord) {
+		writeLocalWorkspaceRecord(
+			machineManager.platform.storage,
+			projectRootPath,
+			statePath,
+			remoteRecord,
+		);
+		for (const [dirtyProjectRootPath, dirtyRecordPath] of obsoleteLocalDirtyRecords) {
+			deleteLocalWorkspaceRecord(
+				machineManager.platform.storage,
+				dirtyProjectRootPath,
+				dirtyRecordPath,
+			);
+		}
+	}
+	workspaceDirtyRecords.clear();
+	for (const [dirtyPath, dirtyRecord] of generationDirtyRecords) {
+		workspaceDirtyRecords.set(dirtyPath, dirtyRecord);
+	}
+	workspaceState.localGeneration = record
+		? { payload, stateRecord: record, dirtyRecords: generationDirtyRecords }
+		: null;
+	workspaceState.remotePayload = remoteRecord
+		? workspaceRecordsEqual(record, remoteRecord)
+			? payload
+			: JSON.parse(remoteRecord.contents) as WorkspaceAutosavePayload
+		: null;
+	workspaceState.remoteDirtyRecords = remoteRecord
+		&& workspaceRecordsEqual(record, remoteRecord)
+		? generationDirtyRecords
+		: null;
+	workspaceState.remoteRevision = workspaceRecordState.connected
+		&& workspaceRecordsEqual(record, remoteRecord)
+		? 0
+		: -1;
+	return payload;
+}
+
+export async function restoreWorkspaceStorageSession(
+	workspaceEditor: CartEditor,
+	runtimeSources: RuntimeSourceState,
+	runtimeDebuggerState: RuntimeDebuggerState,
+	payload: WorkspaceAutosavePayload | null,
+	rejectedDirtyPaths: ReadonlySet<string>,
+): Promise<void> {
+	let restorePayload = payload;
+	if (payload && rejectedDirtyPaths.size !== 0) {
+		const dirtyFiles = [];
+		for (const entry of payload.dirtyFiles) {
+			const root = runtimeSourceProjectRootPath(runtimeSources, entry.domain);
+			const dirtyPath = buildWorkspaceDirtyEntryPath(
+				root,
+				entry.domain,
+				entry.path,
+			);
+			if (!rejectedDirtyPaths.has(dirtyPath)) {
+				dirtyFiles.push(entry);
+			}
+		}
+		restorePayload = {
+			dirtyFiles,
+			breakpoints: payload.breakpoints,
+			fontVariant: payload.fontVariant,
+		};
+	}
+	if (restorePayload) {
+		await applyWorkspaceAutosavePayload(
+			workspaceEditor,
+			runtimeSources,
+			runtimeDebuggerState,
+			restorePayload,
+		);
+	}
+	editor = workspaceEditor;
+	sources = runtimeSources;
+	debuggerState = runtimeDebuggerState;
+	attachWorkspaceExitHandler();
+	if (restorePayload !== payload) {
+		requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
+	}
+	if (workspaceState.requestedRevision !== workspaceState.localRevision
+		|| (workspaceRecordState.connected
+			&& workspaceState.remoteRevision !== workspaceState.localRevision)) {
+		scheduleWorkspaceAutosave();
+	}
+	if (!workspaceRecordState.connected) {
+		scheduleWorkspaceReconnect();
+	}
+}
+
+export function requestWorkspaceAutosave(changes: WorkspaceAutosaveChange): void {
+	if (!editor) {
 		return;
 	}
-	workspaceState.autosaveHandle = scheduleIdeOnce(WORKSPACE_AUTOSAVE_INTERVAL_MS, () => {
+	if (changes & WorkspaceAutosaveChange.ActiveEditor) {
+		workspacePendingMetadataContextIds.add(getActiveCodeTabContext().id);
+	}
+	workspaceState.pendingChanges |= changes;
+	workspaceState.requestedRevision += 1;
+	scheduleWorkspaceAutosave();
+}
+
+function scheduleWorkspaceAutosave(delayMs: number = WORKSPACE_AUTOSAVE_DELAY_MS): void {
+	if (!editor || workspaceState.autosaveHandle || workspaceState.autosaveTask) {
+		return;
+	}
+	workspaceState.autosaveHandle = scheduleIdeOnce(delayMs, () => {
 		workspaceState.autosaveHandle = null;
-		void runWorkspaceAutosaveTick(editor, sources, debuggerState, overlayRenderer, runtime);
-		scheduleWorkspaceAutosaveLoop(editor, sources, debuggerState, overlayRenderer, runtime);
+		void runWorkspaceAutosaveTick();
 	});
 }
 
-export function stopWorkspaceAutosaveLoop(): void {
-	if (!workspaceState.autosaveHandle) {
-		return;
-	}
-	workspaceState.autosaveHandle.cancel();
+export function cancelWorkspaceAutosave(): void {
+	workspaceState.autosaveHandle?.cancel();
 	workspaceState.autosaveHandle = null;
 }
 
-export async function runWorkspaceAutosaveTick(
-	editor: CartEditor,
-	sources: RuntimeSourceState,
-	debuggerState: RuntimeDebuggerState,
-	overlayRenderer: OverlayRenderer,
-	runtime: Runtime,
-): Promise<void> {
-	if (!workspaceState.autosaveEnabled) {
+export function runWorkspaceAutosaveTick(): Promise<void> | void {
+	if (!editor) {
 		return;
 	}
-	if (!isWorkspaceServerAvailable()) {
-		scheduleWorkspaceServerRetry(WORKSPACE_AUTOSAVE_INTERVAL_MS * 4);
+	if (workspaceState.autosaveTask) {
+		return workspaceState.autosaveTask;
 	}
-	if (!workspaceRestoreGate.ready) {
-		workspaceState.autosaveQueued = true;
-		return;
-	}
-	if (workspaceState.autosaveRunning) {
-		workspaceState.autosaveQueued = true;
-		return;
-	}
-	workspaceState.autosaveRunning = true;
-	try {
-		const dirtyEntries = collectDirtyContextEntries();
-		const payload = buildWorkspaceAutosavePayload(editor, debuggerState, overlayRenderer, dirtyEntries);
-		await persistDirtyContextEntries(dirtyEntries);
-		if (payload) {
-			const signature = buildWorkspaceAutosaveSignature(payload);
-			if (signature !== workspaceState.autosaveSignature) {
-				await writeWorkspaceStateFile(JSON.stringify(payload));
-				workspaceState.autosaveSignature = signature;
-			}
+	if (workspaceState.requestedRevision === workspaceState.localRevision
+		&& (!workspaceRecordState.connected
+			|| workspaceState.remoteRevision === workspaceState.localRevision)) {
+		if (!workspaceRecordState.connected) {
+			scheduleWorkspaceReconnect();
 		}
+		return;
+	}
+	const targetRevision = workspaceState.requestedRevision;
+	if (targetRevision !== workspaceState.localRevision) {
+		const previousLocalRevision = workspaceState.localRevision;
+		const previousGeneration = workspaceState.localGeneration;
+		const changes = workspaceState.pendingChanges;
+		const generation = commitWorkspaceSessionLocally(
+			editor,
+			sources,
+			debuggerState,
+			changes,
+			workspacePendingMetadataContextIds,
+		);
+		workspaceState.localGeneration = generation;
+		workspaceState.localRevision = targetRevision;
+		workspaceState.pendingChanges &= ~changes;
+		workspacePendingMetadataContextIds.clear();
+		if (generation === previousGeneration
+			&& workspaceState.remoteRevision === previousLocalRevision) {
+			workspaceState.remoteRevision = targetRevision;
+		}
+	}
+	if (!workspaceRecordState.connected) {
+		scheduleWorkspaceReconnect();
+		return;
+	}
+	if (workspaceState.remoteRevision === workspaceState.localRevision
+		|| !workspaceState.localGeneration) {
+		return;
+	}
+	const task = syncWorkspaceAutosave();
+	workspaceState.autosaveTask = task;
+	return task;
+}
+
+async function syncWorkspaceAutosave(): Promise<void> {
+	try {
+		const targetRevision = workspaceState.localRevision;
+		const generation = workspaceState.localGeneration;
+		await syncWorkspaceSessionRemotely(sources, generation);
+		workspaceState.remotePayload = generation.payload;
+		workspaceState.remoteDirtyRecords = generation.dirtyRecords;
+		workspaceState.remoteRevision = targetRevision;
 	} catch (error) {
-		console.warn('[CartEditor] Workspace autosave failed:', error);
+		disconnectWorkspaceRecords(error);
+		workspaceState.remoteRevision = -1;
+		scheduleWorkspaceReconnect();
 	} finally {
-		workspaceState.autosaveRunning = false;
-		if (workspaceState.autosaveQueued) {
-			workspaceState.autosaveQueued = false;
-			await runWorkspaceAutosaveTick(editor, sources, debuggerState, overlayRenderer, runtime);
+		workspaceState.autosaveTask = null;
+		if (workspaceState.requestedRevision !== workspaceState.localRevision
+			|| (workspaceRecordState.connected
+				&& workspaceState.remoteRevision !== workspaceState.localRevision)) {
+			scheduleWorkspaceAutosave();
 		}
 	}
 }
 
-export function clearWorkspaceSessionState(debuggerState: RuntimeDebuggerState): void {
-	stopWorkspaceAutosaveLoop();
-	clearWorkspaceSessionStateData(debuggerState);
+function persistWorkspaceSessionLocally(): void {
+	if (!editor) {
+		return;
+	}
+	workspaceState.pendingChanges |= WorkspaceAutosaveChange.All;
+	workspaceState.requestedRevision += 1;
+	commitRequestedWorkspaceSessionLocally();
+}
+
+function commitRequestedWorkspaceSessionLocally(): void {
+	workspaceState.localGeneration = commitWorkspaceSessionLocally(
+		editor,
+		sources,
+		debuggerState,
+		workspaceState.pendingChanges,
+		workspacePendingMetadataContextIds,
+	);
+	workspaceState.localRevision = workspaceState.requestedRevision;
+	workspaceState.pendingChanges = WorkspaceAutosaveChange.None;
+	workspacePendingMetadataContextIds.clear();
+}
+
+function scheduleWorkspaceReconnect(): void {
+	if (workspaceRecordState.connected
+		|| reconnectHandle
+		|| reconnectTask
+		|| !workspaceState.projectRootPath) {
+		return;
+	}
+	reconnectHandle = scheduleIdeOnce(WORKSPACE_RECONNECT_DELAY_MS, () => {
+		reconnectHandle = null;
+		reconnectTask = reconnectAndSyncWorkspace();
+		void reconnectTask;
+	});
+}
+
+async function reconnectAndSyncWorkspace(): Promise<void> {
+	await reconnectWorkspaceRecords(workspaceState.projectRootPath);
+	reconnectTask = null;
+	if (workspaceRecordState.connected) {
+		workspaceState.remoteRevision = -1;
+		scheduleWorkspaceAutosave(0);
+	} else {
+		scheduleWorkspaceReconnect();
+	}
 }

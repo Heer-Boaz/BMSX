@@ -1,24 +1,25 @@
+import { machineManager } from '../../machine/ts/core/machine_manager';
 import type { LuaSourceRecord, LuaSourceRegistry } from '../../machine/ts/lua/source_registry';
-import type { HttpResponse, StorageService } from '../../machine/ts/platform/index';
+import type { StorageService } from '../../machine/ts/platform/platform';
 import {
 	deleteWorkspaceLuaSourceOverride,
 	getWorkspaceLuaSourceOverride,
 	setWorkspaceLuaSourceOverride,
-	workspaceFileCache,
+	workspaceCanonicalSourceCache,
 } from './cache';
+import {
+	WORKSPACE_DIRTY_DIR,
+	WORKSPACE_METADATA_DIR,
+	createWorkspaceRecord,
+	readWorkspaceRecord,
+	writeWorkspaceRecord,
+	type WorkspaceRecord,
+} from './records';
 import { joinWorkspacePaths, resolveWorkspacePath, stripProjectRootPrefix } from './path';
-export { joinWorkspacePaths } from './path';
 import type { ResourceDomain } from '../common/resource';
 
-export const WORKSPACE_FILE_ENDPOINT = '/__bmsx__/lua';
-export const WORKSPACE_STORAGE_PREFIX = 'bmsx.workspace';
-export const WORKSPACE_METADATA_DIR = '.bmsx';
-export const WORKSPACE_DIRTY_DIR = 'dirty';
-export const WORKSPACE_STATE_FILE = 'ide-state.json';
-export const WORKSPACE_MARKER_FILE = '~workspace';
+export { joinWorkspacePaths } from './path';
 
-export type WorkspaceOverrideRecord = { source: string; path: string; cartPath: string; updatedAt?: number };
-export type WorkspaceStoragePayload = { contents: string; updatedAt: number };
 type WorkspaceWinnerKind = 'dirty' | 'canonical' | 'rom';
 
 export function buildWorkspaceDirtyEntryPath(
@@ -36,6 +37,13 @@ export function buildWorkspaceDirtyEntryPath(
 	return joinWorkspacePaths(projectRootPath, WORKSPACE_METADATA_DIR, WORKSPACE_DIRTY_DIR, ...segments);
 }
 
+export function buildWorkspaceDirtyRecordPath(
+	dirtyEntryPath: string,
+	updatedAt: number,
+): string {
+	return `${dirtyEntryPath}.${updatedAt}`;
+}
+
 export function readWorkspaceLuaSourceText(registry: LuaSourceRegistry, record: LuaSourceRecord): string {
 	if (!record.generated) {
 		const source = getWorkspaceLuaSourceOverride(registry, record.source_path);
@@ -46,418 +54,128 @@ export function readWorkspaceLuaSourceText(registry: LuaSourceRegistry, record: 
 	return record.src;
 }
 
-export function buildWorkspaceStorageKey(projectRootPath: string, relativePath: string): string {
-	return `${WORKSPACE_STORAGE_PREFIX}:${projectRootPath}:${relativePath}`;
+export async function persistWorkspaceSourceFile(
+	path: string,
+	source: string,
+	projectRootPath: string,
+): Promise<WorkspaceRecord> {
+	const relativePath = resolveWorkspacePath(path, projectRootPath);
+	const record = createWorkspaceRecord(source);
+	await writeWorkspaceRecord(
+		machineManager.platform.storage,
+		projectRootPath,
+		relativePath,
+		record,
+	);
+	return record;
 }
 
-export function readWorkspaceStoragePayload(storage: StorageService, storageKey: string): WorkspaceStoragePayload | null {
-	const raw = storage.getItem(storageKey);
-	if (raw === null) {
-		return null;
-	}
-	let payload: WorkspaceStoragePayload;
-	// start fallible-boundary -- local workspace storage is external persisted data and malformed payloads are discarded at this owner boundary.
-	try {
-		payload = JSON.parse(raw) as WorkspaceStoragePayload;
-	} catch {
-		storage.removeItem(storageKey);
-		return null;
-	}
-	// end fallible-boundary
-	return payload;
-}
-
-function collectWorkspaceDirtyOverrides(params: {
-	cart: LuaSourceRegistry;
-	domain: ResourceDomain;
-	projectRootPath: string;
-	storage: StorageService;
-}): Map<string, WorkspaceOverrideRecord> {
-	const overrides = new Map<string, WorkspaceOverrideRecord>();
-	const root = params.projectRootPath;
-	const storage = params.storage;
-	for (const asset of params.cart.records) {
-		if (asset.generated) {
-			continue;
-		}
-		const cartPath = asset.source_path;
-		const dirtyPath = buildWorkspaceDirtyEntryPath(root, params.domain, cartPath);
-		const storageKey = buildWorkspaceStorageKey(root, dirtyPath);
-		const storedDirty = readWorkspaceStoragePayload(storage, storageKey);
-		if (storedDirty === null) {
-			continue;
-		}
-		if (storedDirty.updatedAt <= asset.base_update_timestamp) {
-			storage.removeItem(storageKey);
-			continue;
-		}
-		overrides.set(cartPath, { source: storedDirty.contents, path: dirtyPath, cartPath, updatedAt: storedDirty.updatedAt });
-	}
-	return overrides;
-}
-
-export function collectWorkspaceOverrides(params: { cart: LuaSourceRegistry; projectRootPath: string; storage: StorageService; }): Map<string, WorkspaceOverrideRecord> {
-	const overrides = new Map<string, WorkspaceOverrideRecord>();
-	const root = params.projectRootPath;
-	const storage = params.storage;
-	for (const asset of params.cart.records) {
-		if (asset.generated) {
-			continue;
-		}
-		const cartPath = asset.source_path;
-		const canonicalKey = buildWorkspaceStorageKey(root, cartPath);
-		const storedCanonical = readWorkspaceStoragePayload(storage, canonicalKey);
-		if (storedCanonical === null) {
-			continue;
-		}
-		if (storedCanonical.updatedAt <= asset.base_update_timestamp) {
-			storage.removeItem(canonicalKey);
-			continue;
-		}
-		if (storedCanonical.contents === asset.base_src) {
-			storage.removeItem(canonicalKey);
-			continue;
-		}
-		overrides.set(cartPath, { source: storedCanonical.contents, path: cartPath, cartPath, updatedAt: storedCanonical.updatedAt });
-	}
-	return overrides;
-}
-
-function resolveOverrideUpdatedAt(record: WorkspaceOverrideRecord, fallback: number): number {
-	return typeof record.updatedAt === 'number' ? record.updatedAt : fallback;
-}
-
-export async function persistWorkspaceSourceFile(path: string, source: string, projectRootPath: string): Promise<void> {
-	let response: HttpResponse;
-	try {
-		response = await fetch(WORKSPACE_FILE_ENDPOINT, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ path: resolveWorkspacePath(path, projectRootPath), contents: source }),
-		});
-	} catch (error) {
-		throw new Error(`Failed to reach save endpoint for '${path}': ${error}`);
-	}
-	if (!response.ok) {
-		let detail: string;
-		try {
-			detail = await response.text();
-		} catch (textError) {
-			throw new Error(`Save rejected for '${path}' (response body read failed): ${textError}`);
-		}
-		const finalDetail = detail.length > 0 ? detail : response.statusText;
-		throw new Error(`Save rejected for '${path}': ${finalDetail}`);
-	}
-}
-
-export async function loadWorkspaceSourceFile(path: string, projectRootPath: string): Promise<string> {
-	const filePath = resolveWorkspacePath(path, projectRootPath);
-	const cached = workspaceFileCache.get(filePath);
+export async function loadWorkspaceSourceFile(path: string, projectRootPath: string): Promise<string | null> {
+	const relativePath = resolveWorkspacePath(path, projectRootPath);
+	const cached = workspaceCanonicalSourceCache.get(relativePath);
 	if (cached !== undefined) {
 		return cached;
 	}
-	const file = await fetchWorkspaceFile(filePath);
-	if (file !== null) {
-		return file.contents;
-	}
-	return null;
-}
-
-export async function fetchWorkspaceDirtyLuaOverrides(
-	cart: LuaSourceRegistry,
-	root: string,
-	domain: ResourceDomain,
-): Promise<Map<string, WorkspaceOverrideRecord>> {
-	const tasks: Array<Promise<{ contents: string; path: string; filePath: string; updatedAt?: number }>> = [];
-	// Fetching dirty files from backend is best-effort. Missing files do NOT mean we should
-	// discard in-memory dirty edits; they simply yield no extra overrides.
-	for (const asset of cart.records) {
-		if (asset.generated) {
-			continue;
-		}
-		const filePath = asset.source_path;
-		const dirtyPath = buildWorkspaceDirtyEntryPath(root, domain, filePath);
-		tasks.push(fetchWorkspaceFile(dirtyPath).then((result) => {
-			if (result === null) {
-				return null;
-			}
-			return { contents: result.contents, path: dirtyPath, filePath, updatedAt: result.updatedAt };
-		}));
-	}
-	const results = await Promise.all(tasks);
-	const overrides = new Map<string, WorkspaceOverrideRecord>();
-	for (let index = 0; index < results.length; index += 1) {
-		const result = results[index];
-		if (!result) {
-			continue;
-		}
-		overrides.set(result.filePath, { source: result.contents, path: result.path, cartPath: result.filePath, updatedAt: result.updatedAt });
-	}
-	return overrides;
-}
-
-async function fetchWorkspaceCanonicalLua(cart: LuaSourceRegistry, root: string): Promise<Map<string, WorkspaceOverrideRecord>> {
-	const tasks: Array<Promise<WorkspaceOverrideRecord>> = [];
-	for (const asset of cart.records) {
-		if (asset.generated) {
-			continue;
-		}
-		const canonicalPath = resolveWorkspacePath(asset.source_path, root);
-		tasks.push(fetchWorkspaceFile(canonicalPath).then((result) => {
-			if (!result) {
-				return null;
-			}
-			if (result.contents === asset.base_src) {
-				return null;
-			}
-			const updatedAt = typeof result.updatedAt === 'number' ? result.updatedAt : 0;
-			if (updatedAt <= asset.base_update_timestamp) {
-				return null;
-			}
-			return {
-				source: result.contents,
-				path: asset.source_path,
-				cartPath: asset.source_path,
-				updatedAt,
-			};
-		}));
-	}
-	const results = await Promise.all(tasks);
-	const records = new Map<string, WorkspaceOverrideRecord>();
-	for (let index = 0; index < results.length; index += 1) {
-		const record = results[index];
-		if (!record) {
-			continue;
-		}
-		records.set(record.cartPath, record);
-	}
-	return records;
-}
-
-export async function fetchWorkspaceFile(path: string): Promise<{ contents: string; updatedAt?: number }> {
-	const url = `${WORKSPACE_FILE_ENDPOINT}?path=${encodeURIComponent(path)}`;
-	let response: HttpResponse;
-	// start fallible-boundary -- workspace backend is optional; unavailable or malformed responses yield no server override.
-	try {
-		response = await fetch(url, { method: 'GET', cache: 'no-store' });
-	} catch {
-		console.info(`Failed to fetch workspace file '${path}'. No server response.`);
+	const record = await readWorkspaceRecord(
+		machineManager.platform.storage,
+		projectRootPath,
+		relativePath,
+	);
+	if (!record) {
 		return null;
 	}
-	if (response.status === 404) {
-		return null;
-	}
-	if (!response.ok) {
-		console.info(`Workspace file request failed for '${path}' (HTTP ${response.status}).`);
-		return null;
-	}
-	let payload: unknown;
-	try {
-		payload = await response.json();
-	} catch {
-		console.warn(`Failed to parse workspace file response JSON for '${path}'.`);
-		return null;
-	}
-	// end fallible-boundary
-	const record = payload as { contents: string; updatedAt?: number };
-	return { contents: record.contents, updatedAt: typeof record.updatedAt === 'number' ? record.updatedAt : undefined };
+	workspaceCanonicalSourceCache.set(relativePath, record.contents);
+	return record.contents;
 }
 
-function selectDirtyOverride(
-	local: WorkspaceOverrideRecord,
-	remote: WorkspaceOverrideRecord,
-	romTimestamp: number
-): { record: WorkspaceOverrideRecord; updatedAt: number } {
-	const localUpdatedAt = local ? resolveOverrideUpdatedAt(local, romTimestamp) : -1;
-	const remoteUpdatedAt = remote ? resolveOverrideUpdatedAt(remote, romTimestamp) : -1;
-	if (remote && (remoteUpdatedAt > localUpdatedAt || !local)) {
-		return { record: remote, updatedAt: remoteUpdatedAt };
-	}
-	if (local) {
-		return { record: local, updatedAt: localUpdatedAt };
-	}
-	return null;
-}
-
-function selectWorkspaceWinner(options: {
-	romTimestamp: number;
-	dirtyCandidate?: { record: WorkspaceOverrideRecord; updatedAt: number };
-	canonicalCandidate?: WorkspaceOverrideRecord;
-}): { kind: WorkspaceWinnerKind; record: WorkspaceOverrideRecord; updatedAt: number } {
-	let winnerKind: WorkspaceWinnerKind = 'rom';
-	let winner: WorkspaceOverrideRecord = null;
-	let winnerUpdatedAt = options.romTimestamp;
-	let winnerPriority = 0; // rom=0, canonical=1, override=2
-
-	const dirtyCandidate = options.dirtyCandidate;
-	if (dirtyCandidate) {
-		const dirtyUpdatedAt = dirtyCandidate.updatedAt;
-		const dirtyPriority = 2;
-		if (dirtyUpdatedAt > winnerUpdatedAt || (dirtyUpdatedAt === winnerUpdatedAt && dirtyPriority > winnerPriority)) {
-			winnerKind = 'dirty';
-			winner = dirtyCandidate.record;
-			winnerUpdatedAt = dirtyUpdatedAt;
-			winnerPriority = dirtyPriority;
-		}
-	}
-
-	const canonicalCandidate = options.canonicalCandidate;
-	if (canonicalCandidate) {
-		const canonicalUpdatedAt = resolveOverrideUpdatedAt(canonicalCandidate, options.romTimestamp);
-		const canonicalPriority = 1;
-		if (canonicalUpdatedAt > winnerUpdatedAt || (canonicalUpdatedAt === winnerUpdatedAt && canonicalPriority > winnerPriority)) {
-			winnerKind = 'canonical';
-			winner = canonicalCandidate;
-			winnerUpdatedAt = canonicalUpdatedAt;
-			winnerPriority = canonicalPriority;
-		}
-	}
-
-	return { kind: winnerKind, record: winner, updatedAt: winnerUpdatedAt };
-}
-
-export async function deleteWorkspaceServerFile(path: string): Promise<void> {
-	const url = `${WORKSPACE_FILE_ENDPOINT}?path=${encodeURIComponent(path)}`;
-	// start fallible-boundary -- deleting remote workspace scratch files is best-effort cleanup.
-	try {
-		await fetch(url, { method: 'DELETE' });
-	} catch {
-		console.info('Failed to delete workspace file:', url);
-		return;
-	}
-	// end fallible-boundary
-}
-
-async function persistWorkspaceFileToServer(root: string, path: string, source: string): Promise<void> {
-	const resolvedPath = resolveWorkspacePath(path, root);
-	try {
-		const response = await fetch(WORKSPACE_FILE_ENDPOINT, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ path: resolvedPath, contents: source }),
-		});
-		if (!response.ok) {
-			console.warn(`[BmsxWorkspace] Failed to push workspace file '${resolvedPath}' (HTTP ${response.status}).`);
-		}
-	} catch (error) {
-		console.warn(`[BmsxWorkspace] Failed to push workspace file '${resolvedPath}'.`, error);
-	}
-}
-
-export function persistWorkspaceOverridesToLocalStorage(storage: StorageService, root: string, overrides: Map<string, WorkspaceOverrideRecord>, timestampNow: number): void {
-	for (const record of overrides.values()) {
-		const storageKey = buildWorkspaceStorageKey(root, record.path);
-		const payload = {
-			contents: record.source,
-			updatedAt: record.updatedAt ?? timestampNow,
-		};
-		storage.setItem(storageKey, JSON.stringify(payload));
-	}
-}
-
-// Workspace sync flow:
-// - Dirty Lua writes are staged locally and, when available, mirrored to the workspace backend.
-// - On boot we gather three sources per asset: local dirty storage, server dirty storage, and the canonical file on
-//   disk (server). We deterministically pick the freshest by timestamp with a priority order of dirty > canonical > ROM.
-// - Dirty content only ever persists on the dirty path. Canonical storage is reserved for explicit saves.
-// - If the canonical winner is fresher than the remote canonical file we push it back to disk to converge the saved state.
 export async function applyWorkspaceSourceOverrides(params: {
+	dirtyRecords: ReadonlyMap<string, WorkspaceRecord>;
 	domain: ResourceDomain;
 	registry: LuaSourceRegistry;
 	storage: StorageService;
-	timestampNow: number;
-	includeServer?: boolean;
 	projectRootPath: string;
 }): Promise<Set<string>> {
-	const { registry, storage } = params;
-	const includeServer = params.includeServer !== false;
-	const changed = new Set<string>();
+	const rejectedDirtyPaths = new Set<string>();
+	const registry = params.registry;
 	const root = params.projectRootPath;
+	const revision = registry.revision;
+	const records = registry.records;
+	const canonicalPaths = new Array<string>(records.length);
+	const canonicalRecords = new Array<WorkspaceRecord | null>(records.length);
+	const reads: Promise<void>[] = [];
+	let changed = false;
 
-	const localDirtyOverrides = collectWorkspaceDirtyOverrides({
-		cart: registry,
-		domain: params.domain,
-		projectRootPath: root,
-		storage,
-	});
-	const localCanonicalOverrides = collectWorkspaceOverrides({ cart: registry, projectRootPath: root, storage });
-	let serverOverrides = new Map<string, WorkspaceOverrideRecord>();
-	let canonicalOverrides = new Map<string, WorkspaceOverrideRecord>();
-	if (includeServer) {
-		serverOverrides = await fetchWorkspaceDirtyLuaOverrides(registry, root, params.domain);
-		canonicalOverrides = await fetchWorkspaceCanonicalLua(registry, root);
-	}
-
-	for (const asset of registry.records) {
+	for (let index = 0; index < records.length; index += 1) {
+		const asset = records[index];
 		if (asset.generated) {
 			continue;
 		}
 		const filePath = asset.source_path;
-		const persistedBaselineTimestamp = asset.base_update_timestamp;
-		const localDirty = localDirtyOverrides.get(filePath);
-		const serverDirty = serverOverrides.get(filePath);
-		const dirtyCandidate = selectDirtyOverride(localDirty, serverDirty, persistedBaselineTimestamp);
-		const remoteCanonicalCandidate = canonicalOverrides.get(filePath);
-		const canonicalCandidate = remoteCanonicalCandidate ?? localCanonicalOverrides.get(filePath);
-		const remoteCanonicalUpdatedAt = remoteCanonicalCandidate ? resolveOverrideUpdatedAt(remoteCanonicalCandidate, persistedBaselineTimestamp) : -1;
+		const canonicalPath = resolveWorkspacePath(filePath, root);
+		canonicalPaths[index] = canonicalPath;
+		reads.push(readWorkspaceRecord(
+			params.storage,
+			root,
+			canonicalPath,
+		).then(canonicalRecord => {
+			canonicalRecords[index] = canonicalRecord;
+		}));
+	}
+	await Promise.all(reads);
 
-		const winner = selectWorkspaceWinner({
-			romTimestamp: persistedBaselineTimestamp,
-			dirtyCandidate,
-			canonicalCandidate,
-		});
+	for (let index = 0; index < records.length; index += 1) {
+		const asset = records[index];
+		if (asset.generated) {
+			continue;
+		}
+		const filePath = asset.source_path;
 		const dirtyPath = buildWorkspaceDirtyEntryPath(root, params.domain, filePath);
-		const canonicalCachePath = resolveWorkspacePath(filePath, root);
-		const dirtyKey = buildWorkspaceStorageKey(root, dirtyPath);
-		const canonicalKey = buildWorkspaceStorageKey(root, filePath);
+		const dirtyRecord = params.dirtyRecords.get(dirtyPath);
+		const canonicalPath = canonicalPaths[index];
+		const canonicalRecord = canonicalRecords[index];
+		if (canonicalRecord) {
+			workspaceCanonicalSourceCache.set(canonicalPath, canonicalRecord.contents);
+		} else {
+			workspaceCanonicalSourceCache.delete(canonicalPath);
+		}
 
-		if (winner.kind === 'rom') {
-			if (asset.src !== asset.base_src) {
-				changed.add(filePath);
-			}
-			asset.src = asset.base_src;
-			asset.update_timestamp = persistedBaselineTimestamp;
-			storage.removeItem(dirtyKey);
-			storage.removeItem(canonicalKey);
-			workspaceFileCache.delete(dirtyPath);
-			workspaceFileCache.delete(canonicalCachePath);
-			deleteWorkspaceLuaSourceOverride(registry, filePath);
+		let winnerKind: WorkspaceWinnerKind = 'rom';
+		let winnerSource = asset.base_src;
+		let winnerUpdatedAt = asset.base_update_timestamp;
+		if (canonicalRecord && canonicalRecord.updatedAt > winnerUpdatedAt) {
+			winnerKind = 'canonical';
+			winnerSource = canonicalRecord.contents;
+			winnerUpdatedAt = canonicalRecord.updatedAt;
+		}
+		if (dirtyRecord && dirtyRecord.updatedAt >= winnerUpdatedAt) {
+			winnerKind = 'dirty';
+			winnerSource = dirtyRecord.contents;
+			winnerUpdatedAt = dirtyRecord.updatedAt;
+		}
+
+		if (dirtyRecord && winnerKind !== 'dirty') {
+			rejectedDirtyPaths.add(dirtyPath);
+		}
+		if (asset.src !== winnerSource) {
+			changed = true;
+		}
+		asset.src = winnerSource;
+		asset.update_timestamp = winnerUpdatedAt;
+
+		if (winnerKind === 'dirty') {
+			setWorkspaceLuaSourceOverride(registry, filePath, winnerSource);
 			continue;
 		}
 
-		const nextSource = winner.record.source;
-		if (asset.src !== nextSource) {
-			changed.add(filePath);
-		}
-		asset.src = nextSource;
-		const updatedAt = winner.updatedAt >= 0 ? winner.updatedAt : params.timestampNow;
-		asset.update_timestamp = updatedAt;
-
-		if (winner.kind === 'dirty') {
-			const dirtyRecord: WorkspaceOverrideRecord = { ...winner.record, path: dirtyPath, cartPath: filePath, updatedAt };
-			persistWorkspaceOverridesToLocalStorage(storage, root, new Map([[filePath, dirtyRecord]]), params.timestampNow);
-			workspaceFileCache.set(dirtyPath, nextSource);
-			workspaceFileCache.delete(canonicalCachePath);
-			setWorkspaceLuaSourceOverride(registry, filePath, nextSource);
-		} else {
-			asset.base_src = nextSource;
-			asset.base_update_timestamp = updatedAt;
-			const canonicalRecord: WorkspaceOverrideRecord = { ...winner.record, path: filePath, cartPath: filePath, updatedAt };
-			persistWorkspaceOverridesToLocalStorage(storage, root, new Map([[filePath, canonicalRecord]]), params.timestampNow);
-			storage.removeItem(dirtyKey);
-			workspaceFileCache.delete(dirtyPath);
-			workspaceFileCache.set(canonicalCachePath, nextSource);
-			deleteWorkspaceLuaSourceOverride(registry, filePath);
-		}
-
-		if (winner.kind === 'canonical' && includeServer && remoteCanonicalUpdatedAt < updatedAt) {
-			await persistWorkspaceFileToServer(root, filePath, winner.record.source);
-			const canonicalSynced: WorkspaceOverrideRecord = { ...winner.record, path: filePath, cartPath: filePath, updatedAt };
-			persistWorkspaceOverridesToLocalStorage(storage, root, new Map([[filePath, canonicalSynced]]), params.timestampNow);
+		deleteWorkspaceLuaSourceOverride(registry, filePath);
+		if (winnerKind === 'canonical') {
+			asset.base_src = winnerSource;
+			asset.base_update_timestamp = winnerUpdatedAt;
 		}
 	}
-	if (changed.size !== 0) {
+
+	if (changed && registry.revision === revision) {
 		registry.revision += 1;
 	}
-	return changed;
+	return rejectedDirtyPaths;
 }

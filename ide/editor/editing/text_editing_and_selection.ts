@@ -116,6 +116,7 @@ export function collapseSelectionTo(target: 'start' | 'end'): void {
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
+	editorDocumentState.emitCursorMoved();
 }
 
 /**
@@ -140,6 +141,7 @@ export function selectWordAtPosition(row: number, column: number): void {
 		updateDesiredColumn();
 		resetBlink();
 		revealCursor();
+		editorDocumentState.emitCursorMoved();
 		return;
 	}
 	const bounds = findWordBoundsInLine(line, column);
@@ -148,6 +150,7 @@ export function selectWordAtPosition(row: number, column: number): void {
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
+	editorDocumentState.emitCursorMoved();
 }
 
 /**

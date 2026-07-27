@@ -1,7 +1,7 @@
-import { machineManager } from '../../machine/ts/core/machine_manager';
 import { editorRuntimeState } from '../editor/common/runtime_state';
 import { scheduleRuntimeTask } from '../common/background_tasks';
-import { applyLuaCodeTabSources, applyWorkspaceOverridesToRegistry } from '../workspace/workspace';
+import { applyAllWorkspaceSourceOverrides, applyLuaCodeTabSources } from '../workspace/workspace';
+import { workspaceDirtyRecords } from '../workbench/workspace/state';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { hotResume } from '../runtime/hot_resume';
 import { deactivateEditor } from '../workbench/overlay_modes';
@@ -67,24 +67,7 @@ export function performHotResume(
 	console.log('Performing hot resume.');
 	const pendingSources = capturePendingLuaCodeTabSources(sources);
 	scheduleRuntimeTask(async () => {
-		for (let slot = 0; slot < sources.cartridgeSlots.length; slot += 1) {
-			const cartridge = sources.cartridgeSlots[slot];
-			if (cartridge === null) {
-				continue;
-			}
-			await applyWorkspaceOverridesToRegistry(sources, {
-				registry: cartridge.luaSources,
-				storage: machineManager.platform.storage,
-				includeServer: true,
-				projectRootPath: cartridge.projectRootPath,
-			});
-		}
-		await applyWorkspaceOverridesToRegistry(sources, {
-			registry: sources.systemLuaSources,
-			storage: machineManager.platform.storage,
-			includeServer: true,
-			projectRootPath: sources.systemProjectRootPath,
-		});
+		await applyAllWorkspaceSourceOverrides(sources, workspaceDirtyRecords);
 		applyLuaCodeTabSources(sources, pendingSources);
 		hotResume(
 			sources,

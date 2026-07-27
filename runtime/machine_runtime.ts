@@ -21,7 +21,7 @@ export async function prepareMachineRuntime(
 		initialized.cartridgeLayers,
 	);
 	const viewport = machineManager.view.viewportSize;
-	const ide = workbenchMode.initializeIdeFeatures(
+	const ide = await workbenchMode.initializeIdeFeatures(
 		runtime,
 		{ width: viewport.x, height: viewport.y },
 		sources,

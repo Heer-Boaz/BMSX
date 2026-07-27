@@ -190,6 +190,7 @@ export function undo(): void {
 		context.saveGeneration = editorDocumentState.saveGeneration;
 		context.textVersion = editorDocumentState.textVersion;
 	}
+	editorDocumentState.emitTextMutated(null);
 	breakUndoSequence();
 }
 
@@ -259,6 +260,7 @@ export function redo(): void {
 		context.saveGeneration = editorDocumentState.saveGeneration;
 		context.textVersion = editorDocumentState.textVersion;
 	}
+	editorDocumentState.emitTextMutated(null);
 	breakUndoSequence();
 }
 

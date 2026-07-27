@@ -76,7 +76,6 @@ export function moveCursorVertical(delta: number): void {
 	setCursorFromVisualIndex(targetIndex, desired, desiredDisplay);
 	resetBlink();
 	revealCursor();
-	editorDocumentState.emitCursorMoved();
 }
 
 /**
@@ -305,6 +304,7 @@ export function moveCursorHome(): void {
 	resetBlink();
 	breakUndoSequence();
 	revealCursor();
+	editorDocumentState.emitCursorMoved();
 }
 
 /**
@@ -342,6 +342,7 @@ export function moveCursorEnd(): void {
 	resetBlink();
 	breakUndoSequence();
 	revealCursor();
+	editorDocumentState.emitCursorMoved();
 }
 
 /**

@@ -7,7 +7,6 @@ import {
 	type LuaSourceMatch,
 	type LuaSourceRecord,
 	type LuaSourceRegistry,
-	DEFAULT_SYSTEM_PROJECT_ROOT_PATH,
 } from '../../machine/ts/lua/source_registry';
 import {
 	CARTRIDGE_RESOURCE_DOMAINS,
@@ -24,6 +23,8 @@ import {
 	type Blua32ToolingImage,
 	type Blua32ToolingMedia,
 } from '../../machine/ts/rompack/tooling/blua32_media';
+
+const SYSTEM_PROJECT_ROOT_PATH = 'machine/firmware';
 
 export type RuntimeCartridgeSourceState = {
 	domain: 0 | 1;
@@ -81,7 +82,7 @@ export function createRuntimeSourceState(
 	const systemLuaSources = buildLuaSources(systemSource, systemSource, systemLayer.index, ['system']);
 	const luaSourceRegistries: LuaSourceRegistry[] = [];
 	const moduleCompileLuaSources: LuaSourceRegistry[] = [];
-	const systemProjectRootPath = systemLuaSources.projectRootPath || DEFAULT_SYSTEM_PROJECT_ROOT_PATH;
+	const systemProjectRootPath = systemLuaSources.projectRootPath || SYSTEM_PROJECT_ROOT_PATH;
 	const cartridgeSlots: [RuntimeCartridgeSourceState | null, RuntimeCartridgeSourceState | null] = [null, null];
 	const cartridgeToolingImages: [Blua32ToolingImage | null, Blua32ToolingImage | null] = [null, null];
 	for (const slot of CARTRIDGE_RESOURCE_DOMAINS) {
@@ -186,6 +187,14 @@ export function developmentCartridgeSource(state: RuntimeSourceState): RuntimeCa
 		}
 	}
 	return null;
+}
+
+export function runtimeSourcesSupportIde(state: RuntimeSourceState): boolean {
+	const activeCartridge = state.activeCartridgeSlot !== SYSTEM_RESOURCE_DOMAIN
+		? state.cartridgeSlots[state.activeCartridgeSlot]
+		: null;
+	return state.systemLuaSources.can_boot_from_source
+		&& (!activeCartridge || activeCartridge.luaSources.can_boot_from_source);
 }
 
 export function installRuntimeRomLayers(

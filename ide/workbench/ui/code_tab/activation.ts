@@ -167,6 +167,7 @@ export function applyActiveCodeTabSelection(selection: CodeTabSelection): void {
 	editorPointerState.pointerPrimaryWasPressed = false;
 	ensureCursorVisible();
 	resetBlink();
+	editorDocumentState.emitCursorMoved();
 }
 
 export function activateCodeEditorTab(tabId: string, selection?: CodeTabSelection): void {

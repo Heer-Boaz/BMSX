@@ -5,6 +5,8 @@ import * as constants from '../../../common/constants';
 import { editorDocumentState } from '../../../editor/editing/document_state';
 
 export class BreakpointController {
+	public revision = 0;
+
 	public constructor(private readonly state: RuntimeDebuggerState) {}
 
 	public toggleBreakpointForEditorRow(row: number = editorDocumentState.cursorRow): boolean {
@@ -21,6 +23,7 @@ export class BreakpointController {
 		if (result === 'unchanged') {
 			return false;
 		}
+		this.revision += 1;
 		const verb = result === 'added' ? 'set' : 'cleared';
 		showEditorMessage(`Breakpoint ${verb} at ${path}:${lineNumber}`, constants.COLOR_STATUS_TEXT, 1.4);
 		return true;
@@ -93,12 +96,9 @@ export function serializeBreakpoints(debuggerState: RuntimeDebuggerState): Seria
 
 export function restoreBreakpointsFromPayload(
 	debuggerState: RuntimeDebuggerState,
-	payload: SerializedBreakpointMap | null,
+	payload: SerializedBreakpointMap,
 ): void {
 	debuggerState.breakpoints.clear();
-	if (!payload) {
-		return;
-	}
 	for (const path in payload) {
 		const lineEntries = payload[path];
 		if (lineEntries.length === 0) {

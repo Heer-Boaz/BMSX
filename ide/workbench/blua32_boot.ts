@@ -10,36 +10,18 @@ import type { RuntimeNativeBridge } from '../runtime/native_bridge';
 import type { CartEditor } from '../cart_editor';
 import type { GateGroup } from '../../machine/ts/common/taskgate';
 import type { OverlayRenderer } from '../runtime/overlay_renderer';
-import { applyWorkspaceOverridesToRegistry } from '../workspace/workspace';
+import { applyAllWorkspaceSourceOverrides } from '../workspace/workspace';
+import { workspaceDirtyRecords } from './workspace/state';
 import { deactivateEditor } from './overlay_modes';
 import { handleLuaError } from './runtime_errors';
 
-async function applyBlua32MediaOverrides(sources: RuntimeSourceState): Promise<boolean> {
-	for (let slot = 0; slot < sources.cartridgeSlots.length; slot += 1) {
-		const cartridge = sources.cartridgeSlots[slot];
-		if (!cartridge || !cartridge.projectRootPath) {
-			continue;
-		}
-		await applyWorkspaceOverridesToRegistry(sources, {
-			registry: cartridge.luaSources,
-			storage: machineManager.platform.storage,
-			includeServer: true,
-			projectRootPath: cartridge.projectRootPath,
-		});
-	}
-	await applyWorkspaceOverridesToRegistry(sources, {
-		registry: sources.systemLuaSources,
-		storage: machineManager.platform.storage,
-		includeServer: true,
-		projectRootPath: sources.systemProjectRootPath,
-	});
+function blua32MediaOverridesRequireRebuild(sources: RuntimeSourceState): boolean {
 	return sources.systemBlua32MediaDirty
 		|| sources.cartridgeBlua32MediaDirty[0]
 		|| sources.cartridgeBlua32MediaDirty[1];
 }
 
 export async function startPreparedRuntime(state: RuntimeIdeState, runtime: Runtime): Promise<void> {
-	const rebuildBlua32Media = await applyBlua32MediaOverrides(state.sources);
 	enterSystemSources(state.sources);
 	await bootPreparedBlua32Media(
 		state.sources,
@@ -48,7 +30,7 @@ export async function startPreparedRuntime(state: RuntimeIdeState, runtime: Runt
 		state.editor,
 		state.luaGate,
 		runtime,
-		rebuildBlua32Media,
+		blua32MediaOverridesRequireRebuild(state.sources),
 	);
 }
 
@@ -62,9 +44,9 @@ async function prepareRebootToBootRom(
 	clearRuntimeFault(fault, runtime);
 	deactivateEditor(editor, overlayRenderer);
 	clearLuaBootState(editor, runtime);
-	const rebuildBlua32Media = await applyBlua32MediaOverrides(sources);
+	await applyAllWorkspaceSourceOverrides(sources, workspaceDirtyRecords);
 	enterSystemSources(sources);
-	return rebuildBlua32Media;
+	return blua32MediaOverridesRequireRebuild(sources);
 }
 
 export async function rebootPreparedRuntime(

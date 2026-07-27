@@ -2794,8 +2794,44 @@ panels consume the same object and read type, asset id, and generated state
 directly from its source record. Source installation and activation publish the
 retained Lua and active-domain catalogs. Listing and lookup code does not copy
 resource metadata into descriptor DTOs. Workspace state persists only
-`(domain, path)` and resolves it through `RuntimeSourceState`; its versioned
-format has no legacy descriptor migration path.
+`(domain, path)` and resolves it through `RuntimeSourceState`. Local workspace
+files have one owner representation, `{ contents, updatedAt }`; autosave,
+explicit source saves, cold-boot source arbitration, and the local transport
+all consume that same record. Each dirty source record is stored under the
+project root owned by its resource domain at an immutable path derived from its
+record timestamp; the active workbench root owns only the session record. Every
+session entry names that exact dirty-record generation, so the session record
+is the commit marker: new dirty records are published without overwriting the
+previous generation, then the session record is published, and records no
+longer referenced by it are deleted afterwards.
+Unreferenced files are unreachable orphans, not restore candidates. Remote
+workspace replication uses the same order and preserves integer-millisecond
+timestamps instead of restamping received content. Remote operations are
+serialized per resource while unrelated source reads run concurrently.
+Workbench composition awaits old-session shutdown and storage configuration,
+loads every manifest-referenced dirty record once into the retained session,
+arbitrates source records, then constructs and restores the editor before guest
+boot. A newer remote manifest is published locally only after all of its dirty
+records are present; only then are records belonging exclusively to the
+replaced local generation removed. A dirty record rejected by source
+arbitration is not hydrated and is removed by the next session commit. The
+current session schema has no version field or migration path. Missing storage
+is absence; malformed BMSX-owned records and session entries whose dirty
+timestamp is absent fail without deletion or repair.
+
+Workspace autosave is mutation-driven. Text, dirty cursor/scroll state,
+breakpoints, explicit saves, and font changes advance a retained revision and
+arm one debounce callback with exact change bits. A completely idle workspace
+has no autosave timer, does not enumerate tabs, and allocates nothing. Content
+changes rebuild the dirty-file generation; cursor and scroll changes retain the
+affected context identities and replace only their session metadata. They reuse
+the dirty-record map, unchanged background entries, and serialized breakpoint
+state. A commit writes changed dirty content locally, then the session record,
+then obsolete dirty records. Remote acknowledgement advances only after the
+same record-before-session sequence succeeds; metadata-only replication skips
+dirty-record indexing and transfer when the retained map is already remote.
+Remote failure leaves the local commit authoritative, schedules reconnect, and
+does not abort editor shutdown or workspace reconfiguration.
 
 Instruction profiling is an opt-in Node host feature. Its TypeScript session
 attaches a raw execution observer only while `--cpu-profile` is active and owns

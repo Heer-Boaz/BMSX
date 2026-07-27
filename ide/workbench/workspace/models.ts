@@ -1,16 +1,8 @@
 import type { Position } from '../../common/models';
 import type { FontVariant } from '../../../machine/ts/render/shared/bmsx_font';
 import type { SerializedBreakpointMap } from '../contrib/debugger/controller';
-import type { ResourceIdentity } from '../../common/resource';
-
-export const WORKSPACE_AUTOSAVE_VERSION = 2;
-
-export type WorkspaceStoragePaths = {
-	projectRootPath: string;
-	metadataDir: string;
-	dirtyDir: string;
-	stateFile: string;
-};
+import type { ResourceDomain } from '../../common/resource';
+import type { WorkspaceRecord } from '../../workspace/records';
 
 export type SnapshotMetadata = {
 	cursorRow: number;
@@ -22,8 +14,9 @@ export type SnapshotMetadata = {
 };
 
 export type PersistedDirtyEntry = {
-	resource: ResourceIdentity;
-	dirtyPath: string;
+	domain: ResourceDomain;
+	path: string;
+	updatedAt: number;
 	cursorRow: number;
 	cursorColumn: number;
 	scrollRow: number;
@@ -32,12 +25,22 @@ export type PersistedDirtyEntry = {
 };
 
 export type WorkspaceAutosavePayload = {
-	version: typeof WORKSPACE_AUTOSAVE_VERSION;
-	savedAt: number;
 	dirtyFiles: PersistedDirtyEntry[];
-	breakpoints?: SerializedBreakpointMap;
-	fontVariant?: FontVariant;
-	overlayResolutionMode?: 'offscreen' | 'viewport';
+	breakpoints: SerializedBreakpointMap;
+	fontVariant: FontVariant;
 };
 
-export type DirtyContextEntry = PersistedDirtyEntry & { text: string };
+export const enum WorkspaceAutosaveChange {
+	None = 0,
+	DirtyFiles = 1 << 0,
+	ActiveEditor = 1 << 1,
+	Breakpoints = 1 << 2,
+	Font = 1 << 3,
+	All = DirtyFiles | ActiveEditor | Breakpoints | Font,
+}
+
+export type WorkspaceSessionGeneration = {
+	payload: WorkspaceAutosavePayload;
+	stateRecord: WorkspaceRecord;
+	dirtyRecords: ReadonlyMap<string, WorkspaceRecord>;
+};

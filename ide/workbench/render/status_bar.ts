@@ -9,7 +9,7 @@ import { getActiveResourceViewer } from '../contrib/resources/view_tabs';
 import { drawEditorText } from '../../editor/render/text_renderer';
 import { measureText, truncateTextToWidth } from '../../editor/common/text/layout';
 import { api } from '../../runtime/overlay_api';
-import { workspaceState } from '../workspace/state';
+import { workspaceRecordState } from '../../workspace/records';
 import { editorDocumentState } from '../../editor/editing/document_state';
 import { editorViewState } from '../../editor/ui/view/state';
 import { problemsPanel } from '../contrib/problems/panel/controller';
@@ -98,7 +98,7 @@ export function renderStatusBar(resourcePanel: ResourcePanelController, runtime:
 	// const filenameInfo = `${ide_state.metadata.title || 'UNTITLED'}.lua`;
 	const leftX = 0;
 	const itemSize = measureText('•');
-	const indicatorColor = workspaceState.serverConnected ? constants.COLOR_SERVER_STATUS_CONNECTED : constants.COLOR_SERVER_STATUS_DISCONNECTED;
+	const indicatorColor = workspaceRecordState.connected ? constants.COLOR_SERVER_STATUS_CONNECTED : constants.COLOR_SERVER_STATUS_DISCONNECTED;
 	drawEditorText(editorViewState.font, '•', leftX, statusTop + 2, 0, indicatorColor);
 	let textX = leftX + itemSize;
 	if (statusLeftInfo && statusLeftInfo.length > 0) {

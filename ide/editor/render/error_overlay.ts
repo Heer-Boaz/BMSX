@@ -505,6 +505,7 @@ export function applyRuntimeErrorOverlay(
 	updateDesiredColumn();
 	revealCursor();
 	resetBlink();
+	editorDocumentState.emitCursorMoved();
 	const normalizedMessage = message && message.length > 0 ? message.trim() : 'Runtime error';
 	const locationLabel = formatRuntimeErrorLocation(path, line, column);
 	const overlayMessage = locationLabel ? `${locationLabel}: ${normalizedMessage}` : normalizedMessage;
