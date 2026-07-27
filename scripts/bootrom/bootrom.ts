@@ -3,11 +3,10 @@ import { constructPlatformFromViewHostHandle } from '../../hosts/browser/platfor
 import { prepareMachineRuntime, startMachineHostFrames } from '../../runtime/machine_runtime';
 import { parseCartHeader } from '../../machine/ts/rompack/format';
 import { decodeRomToc } from '../../machine/ts/rompack/toc';
-import { createAudioContext, startAudioOnIos, type BootAudioState } from './bootaudio';
+import { createAudioContext, resumeAudio, type BootAudioState } from './bootaudio';
 
 const audioState: BootAudioState = {
 	sndcontext: null,
-	snd_unlocked: false,
 };
 
 let bootAnimationComplete = false;
@@ -108,7 +107,7 @@ async function loadCart(url: string, slot: 0 | 1, debug: boolean): Promise<Uint8
 	await awaitBootComplete(debug);
 	replaceBmsxImageWithRomLabel(romLabelUrl);
 	if (debug) {
-		startAudioOnIos(audioState);
+		armAudioUnlock();
 		return loadedRom;
 	}
 	setLoaderText('Press any key, button or touch screen to start...');
@@ -167,18 +166,12 @@ async function awaitPressedAnyKey(): Promise<void> {
 	await new Promise<void>((resolve, reject) => {
 		let animationFrameId = 0;
 
-		const unlockAudio = (): void => {
-			startAudioOnIos(audioState);
-		};
 		const cleanup = (): void => {
-			document.removeEventListener('keyup', unlockAudio, true);
-			document.removeEventListener('touchend', unlockAudio, true);
 			document.body.removeEventListener('keyup', onUserInteraction);
 			document.body.removeEventListener('touchend', onUserInteraction);
 			window.cancelAnimationFrame(animationFrameId);
 		};
 		const startGame = (): void => {
-			unlockAudio();
 			cleanup();
 			resolve();
 		};
@@ -196,6 +189,7 @@ async function awaitPressedAnyKey(): Promise<void> {
 					if (gamepad.buttons.some(button => button.pressed)
 						|| gamepad.axes.some(axis => Math.abs(axis) > 0.5)) {
 						startingGamepadIndex = gamepad.index;
+						armAudioUnlock();
 						startGame();
 						return;
 					}
@@ -207,29 +201,40 @@ async function awaitPressedAnyKey(): Promise<void> {
 			}
 		};
 		const onUserInteraction = (event: UIEvent): void => {
-			try {
-				if (!audioState.snd_unlocked || !bootAnimationComplete) {
-					return;
-				}
+			if (!bootAnimationComplete) {
+				return;
+			}
+			cleanup();
+			void resumeAudio(audioState).then(() => {
 				if (event.type === 'touchend') {
 					document.documentElement.style.touchAction = 'none';
 					enableOnscreenGamepad = true;
 				}
-				startGame();
-			} catch (error) {
-				cleanup();
-				reject(error);
-			}
+				resolve();
+			}, reject);
 		};
 
-		document.addEventListener('keyup', unlockAudio, true);
-		document.addEventListener('touchend', unlockAudio, true);
 		document.body.addEventListener('keyup', onUserInteraction, { passive: false });
 		document.body.addEventListener('touchend', onUserInteraction, { passive: false });
 		if (navigator.getGamepads) {
 			animationFrameId = window.requestAnimationFrame(pollGamepads);
 		}
 	});
+}
+
+function armAudioUnlock(): void {
+	const cleanup = (): void => {
+		document.removeEventListener('keyup', unlockAudio, true);
+		document.removeEventListener('touchend', unlockAudio, true);
+		document.removeEventListener('click', unlockAudio, true);
+	};
+	const unlockAudio = (): void => {
+		cleanup();
+		void resumeAudio(audioState);
+	};
+	document.addEventListener('keyup', unlockAudio, true);
+	document.addEventListener('touchend', unlockAudio, true);
+	document.addEventListener('click', unlockAudio, true);
 }
 
 function setLoaderText(text: string): void {

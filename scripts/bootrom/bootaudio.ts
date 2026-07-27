@@ -1,6 +1,5 @@
 export interface BootAudioState {
 	sndcontext: AudioContext;
-	snd_unlocked: boolean;
 }
 
 declare global {
@@ -9,18 +8,14 @@ declare global {
 	}
 }
 
-export function startAudioOnIos(state: BootAudioState): void {
-	if (state.snd_unlocked) {
-		return;
-	}
-	const source = state.sndcontext.createBufferSource();
-	source.buffer = state.sndcontext.createBuffer(1, 1, 44100);
-	source.connect(state.sndcontext.destination);
+export async function resumeAudio(state: BootAudioState): Promise<void> {
+	const context = state.sndcontext;
+	const resumed = context.resume();
+	const source = context.createBufferSource();
+	source.buffer = context.createBuffer(1, 1, 44100);
+	source.connect(context.destination);
 	source.start(0, 0, 0);
-
-	if (state.sndcontext.state === 'running') {
-		state.snd_unlocked = true;
-	}
+	await resumed;
 }
 
 export function createAudioContext(state: BootAudioState): void {
