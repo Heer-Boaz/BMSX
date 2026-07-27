@@ -1,4 +1,3 @@
-import type { Blua32ImageLayout } from './blua32_image';
 import type { ExecutionDomainId } from '../execution_address_space';
 import { OpCode } from '../../spec/blua32/opcode';
 import type { Table } from './table';
@@ -30,9 +29,10 @@ export type DecodedInstructionPage = {
 };
 
 export type Blua32ExecutionImage = {
-	layout: Blua32ImageLayout;
 	executionDomainId: ExecutionDomainId;
 	irqFunctionAddress: number;
+	functionTableAddress: number;
+	functionCount: number;
 	textAddress: number;
 	textByteCount: number;
 	constPool: Value[];

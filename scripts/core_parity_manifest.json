@@ -1447,10 +1447,10 @@
 			"reason": "cpu_string_pool_save_state_shape_contract"
 		},
 		{
-			"ts": "machine/ts/machine/cpu/blua32_image.ts",
+			"ts": "machine/ts/rompack/tooling/blua32_image.ts",
 			"cpp": [
-				"machine/cpp/machine/cpu/blua32_image.h",
-				"machine/cpp/machine/cpu/blua32_image.cpp"
+				"machine/cpp/rompack/tooling/blua32_image.h",
+				"machine/cpp/rompack/tooling/blua32_image.cpp"
 			],
 			"reason": "physical_blua32_executable_image_contract"
 		},

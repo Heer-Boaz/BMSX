@@ -1,7 +1,7 @@
 import {
 	decodeBlua32RomImage,
 	type Blua32ImageLayout,
-} from '../../machine/cpu/blua32_image';
+} from './blua32_image';
 import {
 	BLUA32_SYMBOLS_IMAGE_ID,
 	decodeBlua32SymbolsImage,

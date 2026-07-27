@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { writeLE32 } from '../../machine/ts/common/endian';
-import { decodeBlua32Image } from '../../machine/ts/machine/cpu/blua32_image';
+import { decodeBlua32Image } from '../../machine/ts/rompack/tooling/blua32_image';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { linkRawTestSystemBlua32 } from '../helpers/blua32';

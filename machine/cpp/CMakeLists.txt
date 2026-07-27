@@ -277,7 +277,6 @@ add_library(bmsx_core STATIC
 	machine/cpu/errors.cpp
 	machine/cpu/table.cpp
 	machine/cpu/value.cpp
-	machine/cpu/blua32_image.cpp
 	machine/execution_address_space.cpp
 	spec/blua32/opcode.cpp
 	spec/blua32/instruction_format.cpp
@@ -377,6 +376,7 @@ endif()
 
 if(BMSX_BUILD_LIBRETRO OR BMSX_BUILD_TESTS)
 	add_library(bmsx_blua32_tooling STATIC
+		rompack/tooling/blua32_image.cpp
 		rompack/tooling/blua32_symbols.cpp
 		rompack/tooling/blua32_media.cpp
 		rompack/tooling/opcode_metadata.cpp
@@ -610,7 +610,7 @@ if(BMSX_BUILD_TESTS)
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/rompack_format_test.cpp
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/support/blua32_test_rom.cpp
 	)
-	target_link_libraries(bmsx_rompack_format_tests PRIVATE bmsx_core)
+	target_link_libraries(bmsx_rompack_format_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_rompack_format_tests COMMAND bmsx_rompack_format_tests)
 
 	add_executable(bmsx_imgdec_tests
@@ -635,7 +635,7 @@ if(BMSX_BUILD_TESTS)
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/cpu_supervisor_test.cpp
 		${BMSX_TEST_ROM_SOURCE}
 	)
-	target_link_libraries(bmsx_cpu_supervisor_tests PRIVATE bmsx_core)
+	target_link_libraries(bmsx_cpu_supervisor_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_cpu_supervisor_tests COMMAND bmsx_cpu_supervisor_tests)
 
 	add_executable(bmsx_input_controller_tests

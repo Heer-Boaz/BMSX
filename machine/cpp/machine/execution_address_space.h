@@ -1,7 +1,6 @@
 #pragma once
 
 #include "common/primitives.h"
-#include "machine/cpu/blua32_image.h"
 
 #include <optional>
 
@@ -11,8 +10,7 @@ class Memory;
 
 constexpr int SYSTEM_EXECUTION_DOMAIN_ID = -1;
 
-struct Blua32DecodedExecutionImage {
-	Blua32ImageLayout layout;
+struct Blua32ExecutionBoot {
 	u32 imageAddress = 0;
 	int executionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	u32 startupFunctionAddress = 0;
@@ -33,8 +31,8 @@ public:
 		size_t byteCount,
 		Span<const u8>& out
 	) const;
-	Blua32DecodedExecutionImage resolveSystemDomain() const;
-	std::optional<Blua32DecodedExecutionImage> resolveDomain(int executionDomainId) const;
+	Blua32ExecutionBoot resolveSystemDomain() const;
+	std::optional<Blua32ExecutionBoot> resolveDomain(int executionDomainId) const;
 
 private:
 	Memory& m_memory;

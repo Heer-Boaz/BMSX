@@ -60,7 +60,7 @@ import {
 import {
 	decodeBlua32Image,
 	type Blua32ImageLayout,
-} from '../../machine/cpu/blua32_image';
+} from './blua32_image';
 import {
 	BLUA32_SYMBOLS_VERSION,
 	type Blua32DebugMetadata,

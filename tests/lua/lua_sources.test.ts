@@ -19,7 +19,7 @@ import { buildLuaSources } from '../../machine/ts/lua/source_registry';
 import { compileLuaChunkToProgram } from '../../machine/ts/lua/compiler';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
-import { BLUA32_IMAGE_ID } from '../../machine/ts/machine/cpu/blua32_image';
+import { BLUA32_IMAGE_ID } from '../../machine/ts/rompack/tooling/blua32_image';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { toLuaModulePath } from '../../machine/ts/lua/module_path';

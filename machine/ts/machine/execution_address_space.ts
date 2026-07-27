@@ -1,17 +1,18 @@
-import {
-	decodeBlua32BootHeader,
-	decodeBlua32Image,
-	type Blua32ImageLayout,
-} from './cpu/blua32_image';
+import { readLE32 } from '../common/endian';
 import type { Memory, RomByteView } from './memory/memory';
 import { CART_ROM_BASE, RAM_BASE, SYSTEM_ROM_BASE } from '../spec/bmsx/memory_map';
-import { BMSX_ROM_BOOT_HEADER_SIZE } from '../spec/bmsx/rom_header';
+import {
+	BMSX_ROM_BOOT_HEADER_SIZE,
+	BMSX_ROM_HEADER_BLUA32_EXCEPTION_FUNCTION_ADDRESS_OFFSET,
+	BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET,
+	BMSX_ROM_HEADER_BLUA32_IRQ_FUNCTION_ADDRESS_OFFSET,
+	BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET,
+} from '../spec/bmsx/rom_header';
 
 export const SYSTEM_EXECUTION_DOMAIN_ID = -1;
 export type ExecutionDomainId = -1 | 0 | 1;
 
-export type Blua32DecodedExecutionImage = {
-	layout: Blua32ImageLayout;
+export type Blua32ExecutionBoot = {
 	imageAddress: number;
 	executionDomainId: ExecutionDomainId;
 	startupFunctionAddress: number;
@@ -27,12 +28,6 @@ export class ExecutionAddressSpace {
 		byteOffset: 0,
 		byteLength: 0,
 	};
-	private readonly imageView: RomByteView = {
-		bytes: EMPTY_ROM_BYTES,
-		byteOffset: 0,
-		byteLength: 0,
-	};
-
 	public constructor(private readonly memory: Memory) {
 	}
 
@@ -60,7 +55,7 @@ export class ExecutionAddressSpace {
 		}
 	}
 
-	public resolveSystemDomain(): Blua32DecodedExecutionImage {
+	public resolveSystemDomain(): Blua32ExecutionBoot {
 		const systemImage = this.resolveDomain(SYSTEM_EXECUTION_DOMAIN_ID);
 		if (!systemImage) {
 			throw new Error('System ROM has no BLua32 executable image.');
@@ -68,7 +63,7 @@ export class ExecutionAddressSpace {
 		return systemImage;
 	}
 
-	public resolveDomain(executionDomainId: ExecutionDomainId): Blua32DecodedExecutionImage | null {
+	public resolveDomain(executionDomainId: ExecutionDomainId): Blua32ExecutionBoot | null {
 		const romBaseAddress = executionDomainId === SYSTEM_EXECUTION_DOMAIN_ID
 			? SYSTEM_ROM_BASE
 			: CART_ROM_BASE;
@@ -83,32 +78,30 @@ export class ExecutionAddressSpace {
 		)) {
 			return null;
 		}
-		const boot = decodeBlua32BootHeader(this.headerView.bytes, this.headerView.byteOffset);
-		if (boot.imageOffset === 0) {
+		const bytes = this.headerView.bytes;
+		const byteOffset = this.headerView.byteOffset;
+		const imageOffset = readLE32(
+			bytes,
+			byteOffset + BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET,
+		);
+		if (imageOffset === 0) {
 			return null;
 		}
-		const imageAddress = romBaseAddress + boot.imageOffset;
-		if (!this.memory.bindRomByteView(
-			imageAddress,
-			boot.imageByteCount,
-			cartridgeSlot,
-			this.imageView,
-		)) {
-			throw new Error('BLua32 image is not backed by the installed ROM.');
-		}
 		return {
-			layout: decodeBlua32Image(
-				this.imageView.bytes.subarray(
-					this.imageView.byteOffset,
-					this.imageView.byteOffset + this.imageView.byteLength,
-				),
-				imageAddress,
-			),
-			imageAddress,
+			imageAddress: romBaseAddress + imageOffset,
 			executionDomainId,
-			startupFunctionAddress: boot.startupFunctionAddress,
-			irqFunctionAddress: boot.irqFunctionAddress,
-			exceptionFunctionAddress: boot.exceptionFunctionAddress,
+			startupFunctionAddress: readLE32(
+				bytes,
+				byteOffset + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET,
+			),
+			irqFunctionAddress: readLE32(
+				bytes,
+				byteOffset + BMSX_ROM_HEADER_BLUA32_IRQ_FUNCTION_ADDRESS_OFFSET,
+			),
+			exceptionFunctionAddress: readLE32(
+				bytes,
+				byteOffset + BMSX_ROM_HEADER_BLUA32_EXCEPTION_FUNCTION_ADDRESS_OFFSET,
+			),
 		};
 	}
 }

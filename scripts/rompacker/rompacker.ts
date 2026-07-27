@@ -24,7 +24,7 @@ import { layoutRomPrefix } from '../../machine/ts/rompack/tooling/rom_prefix_lay
 import {
 	BLUA32_IMAGE_ID,
 	decodeBlua32Image,
-} from '../../machine/ts/machine/cpu/blua32_image';
+} from '../../machine/ts/rompack/tooling/blua32_image';
 import { decodeBlua32SymbolsImage } from '../../machine/ts/rompack/tooling/blua32_symbols';
 import { SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 

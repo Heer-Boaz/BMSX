@@ -1,7 +1,7 @@
 import {
 	blua32FunctionIndexAtAddress,
 	type Blua32ImageLayout,
-} from '../../machine/ts/machine/cpu/blua32_image';
+} from '../../machine/ts/rompack/tooling/blua32_image';
 import type { CPU } from '../../machine/ts/machine/cpu/cpu';
 import {
 	relocatedCallSitePc,

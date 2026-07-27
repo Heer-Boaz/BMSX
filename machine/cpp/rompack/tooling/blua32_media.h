@@ -1,6 +1,6 @@
 #pragma once
 
-#include "machine/cpu/blua32_image.h"
+#include "rompack/tooling/blua32_image.h"
 #include "machine/devices/cartridge/contracts.h"
 #include "rompack/tooling/blua32_symbols.h"
 

@@ -569,9 +569,9 @@ Owners:
 - BMSX ROM boot-header fields for BLua32 images:
   `machine/ts/spec/bmsx/rom_header.ts` and
   `machine/cpp/spec/bmsx/rom_header.h`.
-- Current decoded image graph and CPU-side decode:
-  `machine/ts/machine/cpu/blua32_image.ts` and
-  `machine/cpp/machine/cpu/blua32_image.h/.cpp`.
+- Tooling-only decoded image graph:
+  `machine/ts/rompack/tooling/blua32_image.ts` and
+  `machine/cpp/rompack/tooling/blua32_image.h/.cpp`.
 - Build-time Lua source compilation and Lua source registries:
   `machine/ts/lua/compiler.ts`, `machine/ts/lua/compiler/*`, and
   `machine/ts/lua/source_registry.ts`.
@@ -587,12 +587,9 @@ Owners:
 The ROM package and BLua32 image use the current wire records only. There is no
 old-format reader and no decode path for obsolete records.
 
-`Blua32ImageLayout` remains a CPU-side host object graph for activation-time
-constants, names, function-table enumeration, and tooling views in the current
-implementation. Function records, upvalue records, text bounds, and instruction
-words no longer execute from its decoded arrays, header fields, or byte view.
-Removing the remaining graph as execution authority is still tracked as
-`CPU-IMAGE-DATAPATH-01`.
+`Blua32ImageLayout` is a tooling representation for inspection, disassembly,
+linking, and hot-resume relocation. It is not part of the runtime execution
+address space or either CPU implementation.
 
 Every top-level ROM section and every independently stored main, compiled,
 texture, and collision payload begins on a four-byte boundary. The producer inserts zero padding
@@ -709,48 +706,45 @@ not on edits that add functions, constants, global names, or text. Text
 contains the existing BLua32 instruction words unchanged. `.bss` owns no ROM
 payload.
 
-The current emulator does not yet consume every executable record through a
-physical memory datapath. `Memory` binds retained views into the installed
-system ROM and both cartridge ROMs. `Machine` owns one
+`Memory` owns the installed system ROM and both cartridge ROMs and binds direct
+read-only views into those regions. `Machine` owns one
 `ExecutionAddressSpace`, wired directly to `Memory` and borrowed by the CPU. It
-selects the executable bus domain, reads the raw boot words, and currently
-decodes the complete image into a host `Blua32ImageLayout` when that domain is
-resolved. The CPU consumes the system reset word into root execution state,
-retains the system exception word as a CPU latch, retains the raw IRQ word with
-each resident domain, activates the system image at reset, and activates a
+selects the executable bus domain and reads only the raw outer boot words. The
+CPU consumes the system reset word into root execution state, retains the
+system exception word as a CPU latch, retains the raw IRQ word with each
+resident domain, activates the system image at reset, and activates a
 cartridge image only when execution first targets the currently selected
-socket. The resident execution image does not retain the outer ROM boot
-record's image offset, image byte count, or static-layout token.
+socket. The resident execution image does not retain an outer ROM DTO, image
+byte copy, decoded layout, or static-layout token.
 
-Activation binds the fixed physical image header once and latches its raw text
-address and byte count on the resident execution image. It binds the complete
-physical text span once and derives dense decoded instruction pages directly
-from those instruction words; no copied raw instruction buffer remains.
-Activation still interns constants and names from decoded host arrays into
-runtime pools and global slots. It scans function records through an
-execution-domain-locked physical ROM view to create canonical static closures.
-Merely inserting or replacing an unexecuted second cartridge therefore cannot
-consume guest string or object identities or change table iteration. A call
-frame retains its physical function-record address, physical PC, execution
-domain, and the raw code bounds latched from that function record. Instruction
-fetch subtracts the resident image's latched raw text address and indexes the
-activated dense decoded page. It performs no memory-map classification, TOC
-lookup, string lookup, allocation, parser work or activation check per
-instruction.
+Activation binds the fixed physical image header once and latches its raw
+function-table and text addresses and counts on the resident execution image.
+It binds the physical constant and global-name record tables and materializes
+only the guest constant registerfile and immutable instruction-operand-to-global
+slot maps. String payloads are interned from their physical ROM addresses. It
+binds the complete physical text span once and derives dense decoded instruction
+pages directly from those instruction words; no copied raw instruction buffer
+remains. It scans physical function records to create canonical static
+closures. Merely inserting or replacing an unexecuted second cartridge
+therefore cannot consume guest string or object identities or change table
+iteration. A call frame retains its physical function-record address, physical
+PC, execution domain, and the raw code bounds latched from that function
+record. Instruction fetch subtracts the resident image's latched raw text
+address and indexes the activated dense decoded page. It performs no memory-map
+classification, TOC lookup, string lookup, allocation, parser work or
+activation check per instruction.
 
 Function entry and `CLOSURE` bind one complete raw function record through the
 physical execution address space into one CPU-owned scratch latch; `CLOSURE`
 likewise binds its complete raw upvalue table once. There is no resident
 runtime-function array or per-image static-closure index. `LOADK` and RK
-operands still index the decoded constant array owned by the frame's resident
-image, and image activation still consumes decoded name arrays. Static closures
-are retained CPU objects keyed by physical function-record address. Table-load
-inline caches are allocated only for actual table-load instructions. Decoded
-image state and inline caches are invalidated when their ROM owner publishes a
-new media revision and are never serialized. `CPU-IMAGE-DATAPATH-01` remains
-open until constants, names, and the remaining image/function-table activation
-state also consume the physical record datapath without a parallel decoded host
-graph.
+operands index the guest constant registerfile owned by the frame's resident
+image. Static closures are retained CPU objects keyed by physical
+function-record address. Table-load inline caches are allocated only for actual
+table-load instructions. Guest constant registers, global-slot maps, decoded
+instruction pages, and inline caches are regenerated when their ROM owner
+publishes a new media revision and are never serialized. No decoded host image
+graph determines CPU execution.
 
 A closure value owns only its raw physical function-record address and captured
 upvalues. Entering a cartridge closure resolves that address once through the

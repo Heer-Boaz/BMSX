@@ -38,6 +38,10 @@ import {
 } from '../../spec/blua32/cop0';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord, signExtend } from '../../spec/blua32/instruction_format';
 import {
+	BLUA32_CONSTANT_PAYLOAD_OFFSET,
+	BLUA32_CONSTANT_RECORD_SIZE,
+	BLUA32_CONSTANT_STRING_BYTE_COUNT_OFFSET,
+	BLUA32_CONSTANT_TAG_OFFSET,
 	BLUA32_FUNCTION_CODE_ADDRESS_OFFSET,
 	BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET,
 	BLUA32_FUNCTION_FLAGS_OFFSET,
@@ -48,7 +52,18 @@ import {
 	BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET,
 	BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET,
 	BLUA32_FUNCTION_VARARG,
+	BLUA32_GLOBAL_NAME_ADDRESS_OFFSET,
+	BLUA32_GLOBAL_NAME_BYTE_COUNT_OFFSET,
+	BLUA32_GLOBAL_NAME_RECORD_SIZE,
+	BLUA32_IMAGE_CONSTANT_COUNT_OFFSET,
+	BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET,
+	BLUA32_IMAGE_FUNCTION_COUNT_OFFSET,
+	BLUA32_IMAGE_FUNCTION_TABLE_ADDRESS_OFFSET,
+	BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET,
+	BLUA32_IMAGE_GLOBAL_NAME_TABLE_ADDRESS_OFFSET,
 	BLUA32_IMAGE_HEADER_SIZE,
+	BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET,
+	BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_TABLE_ADDRESS_OFFSET,
 	BLUA32_IMAGE_TEXT_ADDRESS_OFFSET,
 	BLUA32_IMAGE_TEXT_BYTE_COUNT_OFFSET,
 	BLUA32_UPVALUE_INDEX_MASK,
@@ -59,7 +74,7 @@ import {
 import {
 	ExecutionAddressSpace,
 	SYSTEM_EXECUTION_DOMAIN_ID,
-	type Blua32DecodedExecutionImage,
+	type Blua32ExecutionBoot,
 	type ExecutionDomainId,
 } from '../execution_address_space';
 import { MEMORY_ACCESS_KIND_ALIGNMENT_MASKS, MemoryAccessKind } from '../../spec/blua32/memory_access_kind';
@@ -107,6 +122,8 @@ import { ProtectedCallContinuation, ProtectedCallKind, type CallFrame } from './
 
 // start repeated-sequence-acceptable -- Lua VM/table/register hot paths deliberately keep short copy/update sequences inline.
 // start normalized-body-acceptable -- Specialized Lua VM accessors stay split so the fast paths avoid dispatch helpers.
+
+const executionStringDecoder = new TextDecoder('utf-8', { fatal: true });
 
 const DEFAULT_NATIVE_COST: NativeFnCost = { base: 1, perArg: 0, perRet: 0 };
 
@@ -317,6 +334,11 @@ export class CPU {
 		upvalueCount: 0,
 	};
 	private readonly executionReadView: RomByteView = {
+		bytes: new Uint8Array(0),
+		byteOffset: 0,
+		byteLength: 0,
+	};
+	private readonly executionTableView: RomByteView = {
 		bytes: new Uint8Array(0),
 		byteOffset: 0,
 		byteLength: 0,
@@ -687,8 +709,8 @@ export class CPU {
 	}
 
 	public reset(): void {
-		const systemImage = this.executionAddressSpace.resolveSystemDomain();
-		const systemResetFunctionAddress = systemImage.startupFunctionAddress;
+		const systemBoot = this.executionAddressSpace.resolveSystemDomain();
+		const systemResetFunctionAddress = systemBoot.startupFunctionAddress;
 		this.completionValues.length = 0;
 		this.clearCallStack();
 		this.haltedUntilIrq = false;
@@ -709,9 +731,9 @@ export class CPU {
 		this.yieldRequested = false;
 		this.staticClosuresByAddress.clear();
 		this.executionImages.length = 0;
-		this.systemImage = this.activateExecutionImage(systemImage);
+		this.systemImage = this.activateExecutionImage(systemBoot);
 		this.executionImages.push(this.systemImage);
-		this.systemExceptionFunctionAddress = systemImage.exceptionFunctionAddress;
+		this.systemExceptionFunctionAddress = systemBoot.exceptionFunctionAddress;
 		this.activeExecutionImage = this.systemImage;
 		this.pushFrame(
 			this.staticClosuresByAddress.get(systemResetFunctionAddress)!,
@@ -730,13 +752,112 @@ export class CPU {
 		this.globals.clear();
 	}
 
-	private registerGlobalNames(names: ReadonlyArray<string>, system: boolean): Uint32Array {
+	private internExecutionString(
+		executionDomainId: ExecutionDomainId,
+		address: number,
+		byteLength: number,
+	): StringId {
+		if (byteLength === 0) {
+			return this.stringPool.intern('', false);
+		}
+		this.executionAddressSpace.bindReadOnlyView(
+			executionDomainId,
+			address,
+			byteLength,
+			this.executionReadView,
+		);
+		return this.stringPool.intern(
+			executionStringDecoder.decode(this.executionReadView.bytes.subarray(
+				this.executionReadView.byteOffset,
+				this.executionReadView.byteOffset + this.executionReadView.byteLength,
+			)),
+			false,
+		);
+	}
+
+	private decodeConstantPool(
+		executionDomainId: ExecutionDomainId,
+		tableAddress: number,
+		constantCount: number,
+	): Value[] {
+		const constPool = new Array<Value>(constantCount);
+		if (constantCount === 0) {
+			return constPool;
+		}
+		this.executionAddressSpace.bindReadOnlyView(
+			executionDomainId,
+			tableAddress,
+			constantCount * BLUA32_CONSTANT_RECORD_SIZE,
+			this.executionTableView,
+		);
+		const bytes = this.executionTableView.bytes;
+		const byteOffset = this.executionTableView.byteOffset;
+		const numberView = new DataView(
+			bytes.buffer,
+			bytes.byteOffset + byteOffset,
+			this.executionTableView.byteLength,
+		);
+		for (let index = 0; index < constantCount; index += 1) {
+			const recordOffset = index * BLUA32_CONSTANT_RECORD_SIZE;
+			const recordByteOffset = byteOffset + recordOffset;
+			switch (readLE32(bytes, recordByteOffset + BLUA32_CONSTANT_TAG_OFFSET)) {
+				case Blua32ConstantTag.Nil:
+					constPool[index] = null;
+					break;
+				case Blua32ConstantTag.False:
+					constPool[index] = false;
+					break;
+				case Blua32ConstantTag.True:
+					constPool[index] = true;
+					break;
+				case Blua32ConstantTag.Number:
+					constPool[index] = numberView.getFloat64(
+						recordOffset + BLUA32_CONSTANT_PAYLOAD_OFFSET,
+						true,
+					);
+					break;
+				case Blua32ConstantTag.String:
+					constPool[index] = StringValue.get(this.internExecutionString(
+						executionDomainId,
+						readLE32(bytes, recordByteOffset + BLUA32_CONSTANT_PAYLOAD_OFFSET),
+						readLE32(bytes, recordByteOffset + BLUA32_CONSTANT_STRING_BYTE_COUNT_OFFSET),
+					));
+					break;
+				default:
+					throw new Error('BLua32 constant tag is invalid.');
+			}
+		}
+		return constPool;
+	}
+
+	private registerGlobalNames(
+		executionDomainId: ExecutionDomainId,
+		tableAddress: number,
+		nameCount: number,
+		system: boolean,
+	): Uint32Array {
 		const slotByKey = system ? this.systemGlobalSlotByKey : this.globalSlotByKey;
 		const registeredNames = system ? this.systemGlobalNames : this.globalNames;
 		const values = system ? this.systemGlobalValues : this.globalValues;
-		const slots = new Uint32Array(names.length);
-		for (let index = 0; index < names.length; index += 1) {
-			const key = this.stringPool.intern(names[index], false);
+		const slots = new Uint32Array(nameCount);
+		if (nameCount === 0) {
+			return slots;
+		}
+		this.executionAddressSpace.bindReadOnlyView(
+			executionDomainId,
+			tableAddress,
+			nameCount * BLUA32_GLOBAL_NAME_RECORD_SIZE,
+			this.executionTableView,
+		);
+		const bytes = this.executionTableView.bytes;
+		const byteOffset = this.executionTableView.byteOffset;
+		for (let index = 0; index < nameCount; index += 1) {
+			const recordByteOffset = byteOffset + index * BLUA32_GLOBAL_NAME_RECORD_SIZE;
+			const key = this.internExecutionString(
+				executionDomainId,
+				readLE32(bytes, recordByteOffset + BLUA32_GLOBAL_NAME_ADDRESS_OFFSET),
+				readLE32(bytes, recordByteOffset + BLUA32_GLOBAL_NAME_BYTE_COUNT_OFFSET),
+			);
 			let slot = slotByKey.get(key);
 			if (slot === undefined) {
 				slot = registeredNames.length;
@@ -749,56 +870,84 @@ export class CPU {
 		return slots;
 	}
 
-	private activateExecutionImage(decodedImage: Blua32DecodedExecutionImage): Blua32ExecutionImage {
-		const layout = decodedImage.layout;
+	private activateExecutionImage(executionBoot: Blua32ExecutionBoot): Blua32ExecutionImage {
 		this.executionAddressSpace.bindReadOnlyView(
-			decodedImage.executionDomainId,
-			decodedImage.imageAddress,
+			executionBoot.executionDomainId,
+			executionBoot.imageAddress,
 			BLUA32_IMAGE_HEADER_SIZE,
 			this.executionReadView,
 		);
+		const headerBytes = this.executionReadView.bytes;
+		const headerByteOffset = this.executionReadView.byteOffset;
+		const functionTableAddress = readLE32(
+			headerBytes,
+			headerByteOffset + BLUA32_IMAGE_FUNCTION_TABLE_ADDRESS_OFFSET,
+		);
+		const functionCount = readLE32(
+			headerBytes,
+			headerByteOffset + BLUA32_IMAGE_FUNCTION_COUNT_OFFSET,
+		);
+		const constantTableAddress = readLE32(
+			headerBytes,
+			headerByteOffset + BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET,
+		);
+		const constantCount = readLE32(
+			headerBytes,
+			headerByteOffset + BLUA32_IMAGE_CONSTANT_COUNT_OFFSET,
+		);
+		const globalNameTableAddress = readLE32(
+			headerBytes,
+			headerByteOffset + BLUA32_IMAGE_GLOBAL_NAME_TABLE_ADDRESS_OFFSET,
+		);
+		const globalNameCount = readLE32(
+			headerBytes,
+			headerByteOffset + BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET,
+		);
+		const systemGlobalNameTableAddress = readLE32(
+			headerBytes,
+			headerByteOffset + BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_TABLE_ADDRESS_OFFSET,
+		);
+		const systemGlobalNameCount = readLE32(
+			headerBytes,
+			headerByteOffset + BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET,
+		);
 		const textAddress = readLE32(
-			this.executionReadView.bytes,
-			this.executionReadView.byteOffset + BLUA32_IMAGE_TEXT_ADDRESS_OFFSET,
+			headerBytes,
+			headerByteOffset + BLUA32_IMAGE_TEXT_ADDRESS_OFFSET,
 		);
 		const textByteCount = readLE32(
-			this.executionReadView.bytes,
-			this.executionReadView.byteOffset + BLUA32_IMAGE_TEXT_BYTE_COUNT_OFFSET,
+			headerBytes,
+			headerByteOffset + BLUA32_IMAGE_TEXT_BYTE_COUNT_OFFSET,
 		);
-		const constPool = new Array<Value>(layout.constants.length);
-		for (let index = 0; index < layout.constants.length; index += 1) {
-			const constant = layout.constants[index];
-			switch (constant.tag) {
-				case Blua32ConstantTag.Nil:
-					constPool[index] = null;
-					break;
-				case Blua32ConstantTag.False:
-					constPool[index] = false;
-					break;
-				case Blua32ConstantTag.True:
-					constPool[index] = true;
-					break;
-				case Blua32ConstantTag.Number:
-					constPool[index] = constant.value;
-					break;
-				case Blua32ConstantTag.String:
-					constPool[index] = StringValue.get(this.stringPool.intern(constant.value, false));
-					break;
-			}
-		}
-		const globalSlots = this.registerGlobalNames(layout.globalNames, false);
-		const systemGlobalSlots = this.registerGlobalNames(layout.systemGlobalNames, true);
+		const constPool = this.decodeConstantPool(
+			executionBoot.executionDomainId,
+			constantTableAddress,
+			constantCount,
+		);
+		const globalSlots = this.registerGlobalNames(
+			executionBoot.executionDomainId,
+			globalNameTableAddress,
+			globalNameCount,
+			false,
+		);
+		const systemGlobalSlots = this.registerGlobalNames(
+			executionBoot.executionDomainId,
+			systemGlobalNameTableAddress,
+			systemGlobalNameCount,
+			true,
+		);
 		const decoded = this.decodeText(
-			decodedImage.executionDomainId,
+			executionBoot.executionDomainId,
 			textAddress,
 			textByteCount,
 			globalSlots,
 			systemGlobalSlots,
 		);
 		const image: Blua32ExecutionImage = {
-			layout,
-			executionDomainId: decodedImage.executionDomainId,
-			irqFunctionAddress: decodedImage.irqFunctionAddress,
+			executionDomainId: executionBoot.executionDomainId,
+			irqFunctionAddress: executionBoot.irqFunctionAddress,
+			functionTableAddress,
+			functionCount,
 			textAddress,
 			textByteCount,
 			constPool,
@@ -809,16 +958,16 @@ export class CPU {
 			tableLoadCaches: decoded.tableLoadCaches,
 		};
 		this.bindStaticClosures(image);
-		if (!this.readFunctionRecordInImage(image, decodedImage.irqFunctionAddress)
+		if (!this.readFunctionRecordInImage(image, executionBoot.irqFunctionAddress)
 			|| (this.functionRecordLatch.flags & BLUA32_FUNCTION_STATIC) === 0) {
 			throw new Error('BLua32 IRQ vector does not name a static function record.');
 		}
-		if (decodedImage.executionDomainId === SYSTEM_EXECUTION_DOMAIN_ID) {
-			if (!this.readFunctionRecordInImage(image, decodedImage.startupFunctionAddress)
+		if (executionBoot.executionDomainId === SYSTEM_EXECUTION_DOMAIN_ID) {
+			if (!this.readFunctionRecordInImage(image, executionBoot.startupFunctionAddress)
 				|| (this.functionRecordLatch.flags & BLUA32_FUNCTION_STATIC) === 0) {
 				throw new Error('BLua32 system vector does not name a static function record.');
 			}
-			if (!this.readFunctionRecordInImage(image, decodedImage.exceptionFunctionAddress)
+			if (!this.readFunctionRecordInImage(image, executionBoot.exceptionFunctionAddress)
 				|| (this.functionRecordLatch.flags & BLUA32_FUNCTION_STATIC) === 0) {
 				throw new Error('BLua32 system vector does not name a static function record.');
 			}
@@ -841,11 +990,11 @@ export class CPU {
 		if (residentImage) {
 			return residentImage;
 		}
-		const decodedImage = this.executionAddressSpace.resolveDomain(executionDomainId);
-		if (decodedImage === null) {
+		const executionBoot = this.executionAddressSpace.resolveDomain(executionDomainId);
+		if (!executionBoot) {
 			return null;
 		}
-		const image = this.activateExecutionImage(decodedImage);
+		const image = this.activateExecutionImage(executionBoot);
 		this.executionImages.push(image);
 		return image;
 	}
@@ -862,9 +1011,8 @@ export class CPU {
 	}
 
 	private bindStaticClosures(image: Blua32ExecutionImage): void {
-		const functionTableAddress = image.layout.header.functionTableAddress;
-		for (let index = 0; index < image.layout.header.functionCount; index += 1) {
-			const functionAddress = functionTableAddress + index * BLUA32_FUNCTION_RECORD_SIZE;
+		for (let index = 0; index < image.functionCount; index += 1) {
+			const functionAddress = image.functionTableAddress + index * BLUA32_FUNCTION_RECORD_SIZE;
 			this.readFunctionRecordInImage(image, functionAddress);
 			if ((this.functionRecordLatch.flags & BLUA32_FUNCTION_STATIC) !== 0) {
 				this.staticClosureAtAddress(functionAddress);
@@ -872,17 +1020,17 @@ export class CPU {
 		}
 	}
 
-	public replaceExecutionImage(decodedImage: Blua32DecodedExecutionImage): void {
+	public replaceExecutionImage(executionBoot: Blua32ExecutionBoot): void {
 		let imageIndex = 0;
-		while (this.executionImages[imageIndex].executionDomainId !== decodedImage.executionDomainId) {
+		while (this.executionImages[imageIndex].executionDomainId !== executionBoot.executionDomainId) {
 			imageIndex += 1;
 		}
 		const previousImage = this.executionImages[imageIndex];
-		const image = this.activateExecutionImage(decodedImage);
+		const image = this.activateExecutionImage(executionBoot);
 		this.executionImages[imageIndex] = image;
-		if (decodedImage.executionDomainId === SYSTEM_EXECUTION_DOMAIN_ID) {
+		if (executionBoot.executionDomainId === SYSTEM_EXECUTION_DOMAIN_ID) {
 			this.systemImage = image;
-			this.systemExceptionFunctionAddress = decodedImage.exceptionFunctionAddress;
+			this.systemExceptionFunctionAddress = executionBoot.exceptionFunctionAddress;
 		}
 		if (this.activeExecutionImage === previousImage) {
 			this.activeExecutionImage = image;
@@ -996,10 +1144,12 @@ export class CPU {
 	}
 
 	private readFunctionRecordInImage(image: Blua32ExecutionImage, address: number): boolean {
-		const offset = address - image.layout.header.functionTableAddress;
+		if (address < image.functionTableAddress) {
+			return false;
+		}
+		const offset = address - image.functionTableAddress;
 		if ((offset & (BLUA32_FUNCTION_RECORD_SIZE - 1)) !== 0
-			|| offset < 0
-			|| offset >= image.layout.header.functionCount * BLUA32_FUNCTION_RECORD_SIZE) {
+			|| offset >= image.functionCount * BLUA32_FUNCTION_RECORD_SIZE) {
 			return false;
 		}
 		const latch = this.functionRecordLatch;

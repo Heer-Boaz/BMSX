@@ -23,7 +23,7 @@ import {
 	GX_GPU_PCRTC_SMODE1_SINT,
 	gxGpuPcrtcRegisterAddress,
 } from '../../machine/ts/machine/devices/gx/gpu_pcrtc';
-import { decodeBlua32BootHeader } from '../../machine/ts/machine/cpu/blua32_image';
+import { decodeBlua32BootHeader } from '../../machine/ts/rompack/tooling/blua32_image';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { OpCode, encodeFixedCallArgCount } from '../../machine/ts/spec/blua32/opcode';

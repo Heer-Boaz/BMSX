@@ -6,7 +6,7 @@ import { formatNumber } from '../../machine/common/number_format';
 import {
 	type Blua32EncodedConstant,
 	type Blua32ImageLayout,
-} from '../../machine/cpu/blua32_image';
+} from './blua32_image';
 import {
 	BLUA32_FUNCTION_RECORD_SIZE,
 	Blua32ConstantTag,

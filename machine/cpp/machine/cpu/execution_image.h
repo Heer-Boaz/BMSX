@@ -6,7 +6,6 @@
 #include <vector>
 
 #include "common/primitives.h"
-#include "machine/cpu/blua32_image.h"
 #include "machine/execution_address_space.h"
 #include "machine/cpu/value.h"
 
@@ -56,9 +55,10 @@ struct DecodedInstructionPage {
 };
 
 struct Blua32ExecutionImage {
-	Blua32ImageLayout layout;
 	int executionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	u32 irqFunctionAddress = 0;
+	u32 functionTableAddress = 0;
+	u32 functionCount = 0;
 	u32 textAddress = 0;
 	u32 textByteCount = 0;
 	std::vector<Value> constPool;

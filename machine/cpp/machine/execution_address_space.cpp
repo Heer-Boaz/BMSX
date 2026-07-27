@@ -1,10 +1,9 @@
 #include "machine/execution_address_space.h"
 
+#include "common/endian.h"
 #include "spec/bmsx/memory_map.h"
 #include "spec/bmsx/rom_header.h"
 #include "machine/memory/memory.h"
-
-#include <utility>
 
 namespace bmsx {
 
@@ -32,16 +31,16 @@ void ExecutionAddressSpace::bindReadOnlyView(
 	}
 }
 
-Blua32DecodedExecutionImage ExecutionAddressSpace::resolveSystemDomain() const {
-	std::optional<Blua32DecodedExecutionImage> systemImage =
+Blua32ExecutionBoot ExecutionAddressSpace::resolveSystemDomain() const {
+	std::optional<Blua32ExecutionBoot> systemImage =
 		resolveDomain(SYSTEM_EXECUTION_DOMAIN_ID);
 	if (!systemImage) {
 		throw BMSX_RUNTIME_ERROR("System ROM has no BLua32 executable image.");
 	}
-	return std::move(*systemImage);
+	return *systemImage;
 }
 
-std::optional<Blua32DecodedExecutionImage> ExecutionAddressSpace::resolveDomain(
+std::optional<Blua32ExecutionBoot> ExecutionAddressSpace::resolveDomain(
 	int executionDomainId
 ) const {
 	const u32 romBaseAddress = executionDomainId == SYSTEM_EXECUTION_DOMAIN_ID
@@ -59,32 +58,24 @@ std::optional<Blua32DecodedExecutionImage> ExecutionAddressSpace::resolveDomain(
 	)) {
 		return {};
 	}
-	const Blua32BootHeader boot = decodeBlua32BootHeader(
-		std::span<const u8>(headerBytes.data(), headerBytes.size())
+	const u32 imageOffset = readLE32(
+		headerBytes.data() + BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET
 	);
-	if (boot.imageOffset == 0u) {
+	if (imageOffset == 0u) {
 		return {};
 	}
-	const u32 imageAddress = romBaseAddress + boot.imageOffset;
-	Span<const u8> imageBytes;
-	if (!m_memory.bindRomByteView(
-		imageAddress,
-		boot.imageByteCount,
-		cartridgeSlot,
-		imageBytes
-	)) {
-		throw BMSX_RUNTIME_ERROR("BLua32 image is not backed by the installed ROM.");
-	}
-	return Blua32DecodedExecutionImage{
-		.layout = decodeBlua32Image(
-			std::span<const u8>(imageBytes.data(), imageBytes.size()),
-			imageAddress
-		),
-		.imageAddress = imageAddress,
+	return Blua32ExecutionBoot{
+		.imageAddress = romBaseAddress + imageOffset,
 		.executionDomainId = executionDomainId,
-		.startupFunctionAddress = boot.startupFunctionAddress,
-		.irqFunctionAddress = boot.irqFunctionAddress,
-		.exceptionFunctionAddress = boot.exceptionFunctionAddress,
+		.startupFunctionAddress = readLE32(
+			headerBytes.data() + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET
+		),
+		.irqFunctionAddress = readLE32(
+			headerBytes.data() + BMSX_ROM_HEADER_BLUA32_IRQ_FUNCTION_ADDRESS_OFFSET
+		),
+		.exceptionFunctionAddress = readLE32(
+			headerBytes.data() + BMSX_ROM_HEADER_BLUA32_EXCEPTION_FUNCTION_ADDRESS_OFFSET
+		),
 	};
 }
 

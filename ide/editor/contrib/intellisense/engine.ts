@@ -10,7 +10,7 @@ import { getCachedLuaParse } from '../../../../machine/ts/lua/analysis/cache';
 import { LuaInterpreter } from '../../../language/lua/interpreter/interpreter';
 import { extractErrorMessage, isLuaFunctionValue, isLuaTable, LuaFunctionValue, LuaNativeValue, LuaTable, LuaValue, resolveNativeTypeName } from '../../../language/lua/interpreter/value';
 import { API_METHOD_METADATA, type ApiMethodMetadata } from '../../../../machine/ts/language/lua/api_metadata';
-import { blua32FunctionIndexAtAddress } from '../../../../machine/ts/machine/cpu/blua32_image';
+import { blua32FunctionIndexAtAddress } from '../../../../machine/ts/rompack/tooling/blua32_image';
 import { Table } from '../../../../machine/ts/machine/cpu/table';
 import { asStringId, valueTag, ValueTag, type StringValue, type Value } from '../../../../machine/ts/machine/cpu/value';
 import {

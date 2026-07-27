@@ -17,7 +17,6 @@
 
 #include "common/scratchbuffer.h"
 #include "common/primitives.h"
-#include "machine/cpu/blua32_image.h"
 #include "machine/cpu/call_state.h"
 #include "machine/cpu/closure.h"
 #include "machine/execution_address_space.h"
@@ -245,7 +244,7 @@ public:
 	);
 
 	void reset();
-	void replaceExecutionImage(Blua32DecodedExecutionImage&& decodedImage);
+	void replaceExecutionImage(Blua32ExecutionBoot executionBoot);
 	bool isExecutionDomainResident(int executionDomainId) const;
 	void clearExecutionEnvironment();
 	bool isCartridgeExecutionActive() const { return m_activeExecutionImage->executionDomainId >= 0; }
@@ -360,8 +359,15 @@ private:
 	bool handleProtectedCallError(Value errorValue);
 	void unwindToDepth(int targetDepth);
 	void runHousekeeping();
-	std::vector<u32> registerGlobalNames(const std::vector<std::string>& names, bool system);
-	std::unique_ptr<Blua32ExecutionImage> activateExecutionImage(Blua32DecodedExecutionImage&& decodedImage);
+	StringId internExecutionString(int executionDomainId, u32 address, u32 byteCount);
+	std::vector<Value> decodeConstantPool(int executionDomainId, u32 tableAddress, u32 constantCount);
+	std::vector<u32> registerGlobalNames(
+		int executionDomainId,
+		u32 tableAddress,
+		u32 nameCount,
+		bool system
+	);
+	std::unique_ptr<Blua32ExecutionImage> activateExecutionImage(Blua32ExecutionBoot executionBoot);
 	Blua32ExecutionImage* residentExecutionImage(int executionDomainId) const;
 	Blua32ExecutionImage* executionImageForDomain(int executionDomainId);
 	void decodeImageText(Blua32ExecutionImage& image);
@@ -456,6 +462,7 @@ private:
 	IrqController& m_irqController;
 	ExecutionAddressSpace& m_executionAddressSpace;
 	Span<const u8> m_executionReadView;
+	Span<const u8> m_executionTableView;
 	Blua32FunctionRecordLatch m_functionRecordLatch;
 	StringPool m_stringPool;
 	GcHeap m_heap;

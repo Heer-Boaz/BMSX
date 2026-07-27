@@ -13,7 +13,7 @@ import {
 	sanitizeLuaErrorMessage,
 } from '../common/runtime_error_format';
 import { buildLuaStackFrames } from './stack_trace';
-import { blua32FunctionIndexAtAddress } from '../../machine/ts/machine/cpu/blua32_image';
+import { blua32FunctionIndexAtAddress } from '../../machine/ts/rompack/tooling/blua32_image';
 import type { ExecutionDomainId } from '../../machine/ts/machine/execution_address_space';
 import type { Value } from '../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';

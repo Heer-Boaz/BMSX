@@ -1,4 +1,4 @@
-import type { Blua32FunctionRecord, Blua32ImageLayout } from '../../machine/cpu/blua32_image';
+import type { Blua32FunctionRecord, Blua32ImageLayout } from './blua32_image';
 import type {
 	Blua32LocalSlotDebug,
 	Blua32ResumePoint,

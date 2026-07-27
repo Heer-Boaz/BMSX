@@ -9,6 +9,7 @@
 #include "machine/memory/memory.h"
 #include "common/utf8.h"
 #include <algorithm>
+#include <bit>
 #include <cctype>
 #include <stdexcept>
 #include <unordered_set>
@@ -333,10 +334,10 @@ Closure* CPU::createTrackedClosure(
 }
 
 void CPU::reset() {
-	Blua32DecodedExecutionImage systemImage =
+	const Blua32ExecutionBoot systemBoot =
 		m_executionAddressSpace.resolveSystemDomain();
-	const u32 systemResetFunctionAddress = systemImage.startupFunctionAddress;
-	const u32 systemExceptionFunctionAddress = systemImage.exceptionFunctionAddress;
+	const u32 systemResetFunctionAddress = systemBoot.startupFunctionAddress;
+	const u32 systemExceptionFunctionAddress = systemBoot.exceptionFunctionAddress;
 	completionValues.clear();
 	clearCallStack();
 	m_haltedUntilIrq = false;
@@ -358,7 +359,7 @@ void CPU::reset() {
 	m_staticClosuresByAddress.clear();
 	m_executionImages.clear();
 	std::unique_ptr<Blua32ExecutionImage> activatedSystemImage =
-		activateExecutionImage(std::move(systemImage));
+		activateExecutionImage(systemBoot);
 	m_systemImage = activatedSystemImage.get();
 	m_executionImages.push_back(std::move(activatedSystemImage));
 	m_systemExceptionFunctionAddress = systemExceptionFunctionAddress;
@@ -368,13 +369,105 @@ void CPU::reset() {
 	runHousekeeping();
 }
 
-std::vector<u32> CPU::registerGlobalNames(const std::vector<std::string>& names, bool system) {
+StringId CPU::internExecutionString(
+	int executionDomainId,
+	u32 address,
+	u32 byteCount
+) {
+	if (byteCount == 0u) {
+		return m_stringPool.intern({}, false);
+	}
+	m_executionAddressSpace.bindReadOnlyView(
+		executionDomainId,
+		address,
+		byteCount,
+		m_executionReadView
+	);
+	return m_stringPool.intern(
+		std::string_view(
+			reinterpret_cast<const char*>(m_executionReadView.data()),
+			m_executionReadView.size()
+		),
+		false
+	);
+}
+
+std::vector<Value> CPU::decodeConstantPool(
+	int executionDomainId,
+	u32 tableAddress,
+	u32 constantCount
+) {
+	std::vector<Value> constPool(constantCount);
+	if (constantCount == 0u) {
+		return constPool;
+	}
+	m_executionAddressSpace.bindReadOnlyView(
+		executionDomainId,
+		tableAddress,
+		static_cast<size_t>(constantCount) * BLUA32_CONSTANT_RECORD_SIZE,
+		m_executionTableView
+	);
+	for (u32 index = 0; index < constantCount; ++index) {
+		const u8* record = m_executionTableView.data()
+			+ static_cast<size_t>(index) * BLUA32_CONSTANT_RECORD_SIZE;
+		switch (static_cast<Blua32ConstantTag>(
+			readLE32(record + BLUA32_CONSTANT_TAG_OFFSET)
+		)) {
+			case Blua32ConstantTag::Nil:
+				constPool[index] = valueNil();
+				break;
+			case Blua32ConstantTag::False:
+				constPool[index] = valueBool(false);
+				break;
+			case Blua32ConstantTag::True:
+				constPool[index] = valueBool(true);
+				break;
+			case Blua32ConstantTag::Number:
+				constPool[index] = valueNumber(std::bit_cast<f64>(
+					readLE64(record + BLUA32_CONSTANT_PAYLOAD_OFFSET)
+				));
+				break;
+			case Blua32ConstantTag::String:
+				constPool[index] = valueString(internExecutionString(
+					executionDomainId,
+					readLE32(record + BLUA32_CONSTANT_PAYLOAD_OFFSET),
+					readLE32(record + BLUA32_CONSTANT_STRING_BYTE_COUNT_OFFSET)
+				));
+				break;
+			default:
+				throw BMSX_RUNTIME_ERROR("BLua32 constant tag is invalid.");
+		}
+	}
+	return constPool;
+}
+
+std::vector<u32> CPU::registerGlobalNames(
+	int executionDomainId,
+	u32 tableAddress,
+	u32 nameCount,
+	bool system
+) {
 	auto& slotByKey = system ? m_systemGlobalSlotByKey : m_globalSlotByKey;
 	auto& registeredNames = system ? m_systemGlobalNames : m_globalNames;
 	auto& values = system ? m_systemGlobalValues : m_globalValues;
-	std::vector<u32> slots(names.size());
-	for (size_t index = 0; index < names.size(); ++index) {
-		const StringId key = m_stringPool.intern(names[index], false);
+	std::vector<u32> slots(nameCount);
+	if (nameCount == 0u) {
+		return slots;
+	}
+	m_executionAddressSpace.bindReadOnlyView(
+		executionDomainId,
+		tableAddress,
+		static_cast<size_t>(nameCount) * BLUA32_GLOBAL_NAME_RECORD_SIZE,
+		m_executionTableView
+	);
+	for (u32 index = 0; index < nameCount; ++index) {
+		const u8* record = m_executionTableView.data()
+			+ static_cast<size_t>(index) * BLUA32_GLOBAL_NAME_RECORD_SIZE;
+		const StringId key = internExecutionString(
+			executionDomainId,
+			readLE32(record + BLUA32_GLOBAL_NAME_ADDRESS_OFFSET),
+			readLE32(record + BLUA32_GLOBAL_NAME_BYTE_COUNT_OFFSET)
+		);
 		auto slot = slotByKey.find(key);
 		if (slot == slotByKey.end()) {
 			const size_t slotIndex = registeredNames.size();
@@ -388,42 +481,69 @@ std::vector<u32> CPU::registerGlobalNames(const std::vector<std::string>& names,
 }
 
 std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
-	Blua32DecodedExecutionImage&& decodedImage
+	Blua32ExecutionBoot executionBoot
 ) {
 	auto image = std::make_unique<Blua32ExecutionImage>();
-	image->layout = std::move(decodedImage.layout);
-	image->executionDomainId = decodedImage.executionDomainId;
-	image->irqFunctionAddress = decodedImage.irqFunctionAddress;
+	image->executionDomainId = executionBoot.executionDomainId;
+	image->irqFunctionAddress = executionBoot.irqFunctionAddress;
 	m_executionAddressSpace.bindReadOnlyView(
-		decodedImage.executionDomainId,
-		decodedImage.imageAddress,
+		executionBoot.executionDomainId,
+		executionBoot.imageAddress,
 		BLUA32_IMAGE_HEADER_SIZE,
 		m_executionReadView
 	);
+	const u8* header = m_executionReadView.data();
+	image->functionTableAddress = readLE32(
+		header + BLUA32_IMAGE_FUNCTION_TABLE_ADDRESS_OFFSET
+	);
+	image->functionCount = readLE32(
+		header + BLUA32_IMAGE_FUNCTION_COUNT_OFFSET
+	);
+	const u32 constantTableAddress = readLE32(
+		header + BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET
+	);
+	const u32 constantCount = readLE32(
+		header + BLUA32_IMAGE_CONSTANT_COUNT_OFFSET
+	);
+	const u32 globalNameTableAddress = readLE32(
+		header + BLUA32_IMAGE_GLOBAL_NAME_TABLE_ADDRESS_OFFSET
+	);
+	const u32 globalNameCount = readLE32(
+		header + BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET
+	);
+	const u32 systemGlobalNameTableAddress = readLE32(
+		header + BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_TABLE_ADDRESS_OFFSET
+	);
+	const u32 systemGlobalNameCount = readLE32(
+		header + BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET
+	);
 	image->textAddress = readLE32(
-		m_executionReadView.data() + BLUA32_IMAGE_TEXT_ADDRESS_OFFSET
+		header + BLUA32_IMAGE_TEXT_ADDRESS_OFFSET
 	);
 	image->textByteCount = readLE32(
-		m_executionReadView.data() + BLUA32_IMAGE_TEXT_BYTE_COUNT_OFFSET
+		header + BLUA32_IMAGE_TEXT_BYTE_COUNT_OFFSET
 	);
-	image->constPool.reserve(image->layout.constants.size());
-	for (const Blua32EncodedConstant& constant : image->layout.constants) {
-		if (std::holds_alternative<std::monostate>(constant)) {
-			image->constPool.push_back(valueNil());
-		} else if (const auto* boolean = std::get_if<bool>(&constant)) {
-			image->constPool.push_back(valueBool(*boolean));
-		} else if (const auto* number = std::get_if<f64>(&constant)) {
-			image->constPool.push_back(valueNumber(*number));
-		} else {
-			image->constPool.push_back(valueString(m_stringPool.intern(std::get<std::string>(constant), false)));
-		}
-	}
-	image->globalSlots = registerGlobalNames(image->layout.globalNames, false);
-	image->systemGlobalSlots = registerGlobalNames(image->layout.systemGlobalNames, true);
+	image->constPool = decodeConstantPool(
+		executionBoot.executionDomainId,
+		constantTableAddress,
+		constantCount
+	);
+	image->globalSlots = registerGlobalNames(
+		executionBoot.executionDomainId,
+		globalNameTableAddress,
+		globalNameCount,
+		false
+	);
+	image->systemGlobalSlots = registerGlobalNames(
+		executionBoot.executionDomainId,
+		systemGlobalNameTableAddress,
+		systemGlobalNameCount,
+		true
+	);
 	decodeImageText(*image);
 
-	for (u32 index = 0; index < image->layout.header.functionCount; ++index) {
-		const u32 address = image->layout.header.functionTableAddress
+	for (u32 index = 0; index < image->functionCount; ++index) {
+		const u32 address = image->functionTableAddress
 			+ index * BLUA32_FUNCTION_RECORD_SIZE;
 		readFunctionRecordInImage(*image, address);
 		if ((m_functionRecordLatch.flags & BLUA32_FUNCTION_STATIC) != 0u) {
@@ -431,16 +551,16 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 		}
 	}
 
-	if (!readFunctionRecordInImage(*image, decodedImage.irqFunctionAddress)
+	if (!readFunctionRecordInImage(*image, executionBoot.irqFunctionAddress)
 		|| (m_functionRecordLatch.flags & BLUA32_FUNCTION_STATIC) == 0u) {
 		throw BMSX_RUNTIME_ERROR("BLua32 IRQ vector does not name a static function record.");
 	}
-	if (decodedImage.executionDomainId == SYSTEM_EXECUTION_DOMAIN_ID) {
-		if (!readFunctionRecordInImage(*image, decodedImage.startupFunctionAddress)
+	if (executionBoot.executionDomainId == SYSTEM_EXECUTION_DOMAIN_ID) {
+		if (!readFunctionRecordInImage(*image, executionBoot.startupFunctionAddress)
 			|| (m_functionRecordLatch.flags & BLUA32_FUNCTION_STATIC) == 0u) {
 			throw BMSX_RUNTIME_ERROR("BLua32 system vector does not name a static function record.");
 		}
-		if (!readFunctionRecordInImage(*image, decodedImage.exceptionFunctionAddress)
+		if (!readFunctionRecordInImage(*image, executionBoot.exceptionFunctionAddress)
 			|| (m_functionRecordLatch.flags & BLUA32_FUNCTION_STATIC) == 0u) {
 			throw BMSX_RUNTIME_ERROR("BLua32 system vector does not name a static function record.");
 		}
@@ -461,32 +581,31 @@ Blua32ExecutionImage* CPU::executionImageForDomain(int executionDomainId) {
 	if (Blua32ExecutionImage* image = residentExecutionImage(executionDomainId)) {
 		return image;
 	}
-	std::optional<Blua32DecodedExecutionImage> decodedImage =
+	std::optional<Blua32ExecutionBoot> executionBoot =
 		m_executionAddressSpace.resolveDomain(executionDomainId);
-	if (!decodedImage) {
+	if (!executionBoot) {
 		return nullptr;
 	}
 	std::unique_ptr<Blua32ExecutionImage> image =
-		activateExecutionImage(std::move(*decodedImage));
+		activateExecutionImage(*executionBoot);
 	Blua32ExecutionImage* activatedImage = image.get();
 	m_executionImages.push_back(std::move(image));
 	return activatedImage;
 }
 
-void CPU::replaceExecutionImage(Blua32DecodedExecutionImage&& decodedImage) {
-	const u32 systemExceptionFunctionAddress = decodedImage.exceptionFunctionAddress;
+void CPU::replaceExecutionImage(Blua32ExecutionBoot executionBoot) {
 	auto imageEntry = m_executionImages.begin();
-	while ((*imageEntry)->executionDomainId != decodedImage.executionDomainId) {
+	while ((*imageEntry)->executionDomainId != executionBoot.executionDomainId) {
 		++imageEntry;
 	}
 	Blua32ExecutionImage* previousImage = imageEntry->get();
 	std::unique_ptr<Blua32ExecutionImage> image =
-		activateExecutionImage(std::move(decodedImage));
+		activateExecutionImage(executionBoot);
 	Blua32ExecutionImage* activatedImage = image.get();
 	*imageEntry = std::move(image);
 	if (activatedImage->executionDomainId == SYSTEM_EXECUTION_DOMAIN_ID) {
 		m_systemImage = activatedImage;
-		m_systemExceptionFunctionAddress = systemExceptionFunctionAddress;
+		m_systemExceptionFunctionAddress = executionBoot.exceptionFunctionAddress;
 	}
 	if (m_activeExecutionImage == previousImage) {
 		m_activeExecutionImage = activatedImage;
@@ -675,12 +794,12 @@ void CPU::skipNextInstruction(CallFrame& frame) {
 }
 
 bool CPU::readFunctionRecordInImage(Blua32ExecutionImage& image, u32 address) {
-	if (address < image.layout.header.functionTableAddress) {
+	if (address < image.functionTableAddress) {
 		return false;
 	}
-	const u32 offset = address - image.layout.header.functionTableAddress;
+	const u32 offset = address - image.functionTableAddress;
 	if ((offset & (BLUA32_FUNCTION_RECORD_SIZE - 1u)) != 0u
-		|| offset >= image.layout.header.functionCount * BLUA32_FUNCTION_RECORD_SIZE) {
+		|| offset >= image.functionCount * BLUA32_FUNCTION_RECORD_SIZE) {
 		return false;
 	}
 	m_executionAddressSpace.bindReadOnlyView(

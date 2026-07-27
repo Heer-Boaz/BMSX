@@ -1,6 +1,6 @@
 #pragma once
 
-#include "machine/cpu/blua32_image.h"
+#include "rompack/tooling/blua32_image.h"
 #include "spec/blua32/image_format.h"
 #include "spec/bmsx/memory_map.h"
 #include "rompack/format.h"

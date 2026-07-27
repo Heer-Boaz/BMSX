@@ -10,7 +10,7 @@ import type { RuntimeSymbolEntry, RuntimeSymbolKind } from './symbols';
 import { resolveLuaSourceRecord, type LuaSourceRegistry } from '../../machine/ts/lua/source_registry';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { resetHandledLuaErrors } from './fault_state';
-import type { Blua32ImageLayout } from '../../machine/ts/machine/cpu/blua32_image';
+import type { Blua32ImageLayout } from '../../machine/ts/rompack/tooling/blua32_image';
 import type { Blua32SymbolsImage } from '../../machine/ts/rompack/tooling/blua32_symbols';
 import { asStringId, valueIsString, valueTag, ValueTag, type Value } from '../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';

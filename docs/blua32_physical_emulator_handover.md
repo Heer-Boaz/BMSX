@@ -169,7 +169,7 @@ ownergrens nog niet zuiver.
 
 TypeScript:
 
-- `machine/ts/machine/cpu/blua32_image.ts`
+- `machine/ts/rompack/tooling/blua32_image.ts`
 - `machine/ts/machine/cpu/blua32_symbols.ts`
 - `machine/ts/lua/compiler/program.ts`
 - `machine/ts/lua/module_path.ts`
@@ -182,7 +182,7 @@ TypeScript:
 
 C++:
 
-- `machine/cpp/machine/cpu/blua32_image.h/.cpp`
+- `machine/cpp/rompack/tooling/blua32_image.h/.cpp`
 - `machine/cpp/machine/cpu/blua32_symbols.h/.cpp`
 - `machine/cpp/lua/module_path.h/.cpp`
 - `machine/cpp/machine/runtime/lua_scratch.h/.cpp`
@@ -247,7 +247,7 @@ een gecombineerd host-`protoIndex`.
 Eigenaren:
 
 - binary decode:
-  `machine/{ts,cpp}/machine/cpu/blua32_image.*`;
+  `machine/{ts,cpp}/rompack/tooling/blua32_image.*`;
 - linking:
   `machine/ts/rompack/tooling/blua32_linker.ts`;
 - ROM-tail:
@@ -374,7 +374,7 @@ De huidige C++-decoder splitst dit op:
 3. controleer `offset > imageByteCount`;
 4. controleer `byteCount > imageByteCount - offset`.
 
-Zie `machine/cpp/machine/cpu/blua32_image.cpp::imageOffset`.
+Zie `machine/cpp/rompack/tooling/blua32_image.cpp::imageOffset`.
 
 ### 6.2 Ongeldig `CLOSURE`-doel gaf TS TypeError of native UB
 

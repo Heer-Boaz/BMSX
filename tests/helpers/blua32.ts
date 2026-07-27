@@ -7,7 +7,7 @@ import type {
 } from '../../machine/ts/lua/compiler/program_object';
 import type {
 	Blua32ImageLayout,
-} from '../../machine/ts/machine/cpu/blua32_image';
+} from '../../machine/ts/rompack/tooling/blua32_image';
 import {
 	BLUA32_FUNCTION_RECORD_SIZE,
 	BLUA32_IMAGE_HEADER_SIZE,

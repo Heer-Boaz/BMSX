@@ -48,7 +48,7 @@ import {
 	BLUA32_IMAGE_ID,
 	type Blua32BootHeader,
 	type Blua32ImageLayout,
-} from '../../machine/ts/machine/cpu/blua32_image';
+} from '../../machine/ts/rompack/tooling/blua32_image';
 import {
 	BLUA32_SYMBOLS_IMAGE_ID,
 	encodeBlua32SymbolsImage,

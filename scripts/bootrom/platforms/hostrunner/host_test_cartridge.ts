@@ -7,7 +7,7 @@ import { parseLuaChunk } from '../../../../machine/ts/lua/analysis/parse';
 import {
 	BLUA32_IMAGE_ID,
 	decodeBlua32Image,
-} from '../../../../machine/ts/machine/cpu/blua32_image';
+} from '../../../../machine/ts/rompack/tooling/blua32_image';
 import {
 	BLUA32_SYMBOLS_IMAGE_ID,
 	decodeBlua32SymbolsImage,

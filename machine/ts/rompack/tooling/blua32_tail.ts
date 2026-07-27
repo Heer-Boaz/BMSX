@@ -1,4 +1,4 @@
-import { BLUA32_IMAGE_ID } from '../../machine/cpu/blua32_image';
+import { BLUA32_IMAGE_ID } from './blua32_image';
 import {
 	BLUA32_SYMBOLS_IMAGE_ID,
 	encodeBlua32SymbolsImage,
