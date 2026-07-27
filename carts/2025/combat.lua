@@ -551,7 +551,7 @@ function combat.define_fsm()
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
-			['b[jp]'] = '/combat_done',
+			['b[jp]'] = '/combat_round',
 		},
 		leaving_state = function(self)
 			local monster<const> = oget(combat_monster_id)
