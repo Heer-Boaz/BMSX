@@ -497,6 +497,17 @@ source-language parsing, diagnostics, host policy, or compatibility facade.
 Compiler, linker, disassembler, and CPU consumers import/include these contracts
 directly.
 
+The fixed BMSX physical address contract lives in
+`machine/{ts,cpp}/spec/bmsx/memory_map.*`. It owns the raw 32-bit ROM, RAM
+aperture, cartridge-bus and MMIO addresses plus the fixed reserved-RAM layout.
+Selected-model RAM capacity and its derived live end remain machine
+configuration in `machine/{ts,cpp}/machine/memory/map.*`; that module does not
+re-export the fixed map. Datapaths and ROM tooling therefore consume fixed
+addresses directly from the specification owner without a CPU, Memory or
+tooling facade. `audit:core-parity` compares every fixed map constant and the
+mutable RAM-configuration declarations, initial expressions and configuration
+writes across TypeScript and C++.
+
 The BLua32 ISA contract is:
 
 - instruction-word layout and byte encoding:

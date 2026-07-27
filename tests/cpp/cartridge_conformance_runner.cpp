@@ -1,6 +1,6 @@
 #include "core/machine_manager.h"
 #include "machine/devices/cartridge/contracts.h"
-#include "machine/memory/map.h"
+#include "spec/bmsx/memory_map.h"
 #include "machine/memory/memory.h"
 #include "machine/runtime/runtime.h"
 #include "platform.h"

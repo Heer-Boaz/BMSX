@@ -10,7 +10,7 @@
 #include "machine/devices/gx/gpu_display.h"
 #include "machine/devices/gx/gte.h"
 #include "machine/model_registry.h"
-#include "machine/memory/map.h"
+#include "spec/bmsx/memory_map.h"
 #include "machine/runtime/boot_timing.h"
 #include "machine/runtime/cpu_executor.h"
 #include "machine/runtime/runtime.h"

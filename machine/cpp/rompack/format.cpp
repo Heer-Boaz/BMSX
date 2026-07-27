@@ -4,7 +4,7 @@
 
 #include "format.h"
 #include "common/endian.h"
-#include "machine/memory/map.h"
+#include "spec/bmsx/memory_map.h"
 #include <algorithm>
 #include <cstring>
 

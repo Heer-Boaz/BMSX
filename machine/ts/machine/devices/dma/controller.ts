@@ -28,7 +28,7 @@ import {
 } from '../../bus/io';
 import type { CPU } from '../../cpu/cpu';
 import type { Value } from '../../cpu/value';
-import { IO_WORD_SIZE } from '../../memory/map';
+import { IO_WORD_SIZE } from '../../../spec/bmsx/memory_map';
 import {
 	MAPPED_BUS_CARTRIDGE_SLOT1,
 	MAPPED_BUS_CARTRIDGE_SLOT_OVERRIDE,

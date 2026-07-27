@@ -1,4 +1,4 @@
-import { IO_BASE, IO_WORD_SIZE } from '../memory/map';
+import { IO_BASE, IO_WORD_SIZE } from '../../spec/bmsx/memory_map';
 
 export const IO_SYS_BASE_INDEX = 0;
 export const IO_IRQ_BASE_INDEX = IO_SYS_BASE_INDEX;

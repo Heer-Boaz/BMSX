@@ -7,7 +7,7 @@
 #include "common/endian.h"
 #include "common/mem_snapshot.h"
 #include "lua/module_path.h"
-#include "machine/memory/map.h"
+#include "spec/bmsx/memory_map.h"
 #include "rompack/format.h"
 #include "rompack/metadata.h"
 #include "rompack/toc.h"

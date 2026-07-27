@@ -43,7 +43,8 @@ import type {
 	ProgramMetadata,
 	ProgramRuntimeSymbols,
 } from '../../lua/compiler/program';
-import { DYNAMIC_RAM_BASE, RAM_END } from '../../machine/memory/map';
+import { RAM_END } from '../../machine/memory/map';
+import { DYNAMIC_RAM_BASE } from '../../spec/bmsx/memory_map';
 import { writeLE32 } from '../../common/endian';
 import { fmix32 } from '../../machine/common/hash';
 import { hashAssetId } from '../tokens';

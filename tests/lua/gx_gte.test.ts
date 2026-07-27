@@ -9,7 +9,7 @@ import {
 	IO_GX_GTE_DATA0,
 	IO_GX_GTE_PLUS_BASE,
 } from '../../machine/ts/machine/bus/io';
-import { IO_WORD_SIZE } from '../../machine/ts/machine/memory/map';
+import { IO_WORD_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { MAPPED_BUS_MASTER_DMA } from '../../machine/ts/machine/memory/bus_signals';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';

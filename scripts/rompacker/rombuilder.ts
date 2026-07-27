@@ -43,7 +43,7 @@ import { collectGLTFExternalBufferFileSet, loadGLTFModel } from './gltfloader';
 import type { TextureAtlasResource, ImageResource, Resource, resourcetype } from './rompacker.rompack';
 import { collectSourceFiles } from '../tooling/file_scan';
 import { collectCartSourceFiles } from './cart_source_files';
-import { CART_ROM_BASE, CART_ROM_SIZE, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE } from '../../machine/ts/machine/memory/map';
+import { CART_ROM_BASE, CART_ROM_SIZE, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import {
 	BLUA32_IMAGE_ID,
 	type Blua32BootHeader,

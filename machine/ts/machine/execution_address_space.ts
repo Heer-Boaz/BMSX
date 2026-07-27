@@ -5,7 +5,7 @@ import {
 	type Blua32ImageLayout,
 } from './cpu/blua32_image';
 import type { Memory, RomByteView } from './memory/memory';
-import { CART_ROM_BASE, RAM_BASE, SYSTEM_ROM_BASE } from './memory/map';
+import { CART_ROM_BASE, RAM_BASE, SYSTEM_ROM_BASE } from '../spec/bmsx/memory_map';
 
 export const SYSTEM_EXECUTION_DOMAIN_ID = -1;
 export type ExecutionDomainId = -1 | 0 | 1;

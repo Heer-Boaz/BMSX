@@ -51,7 +51,7 @@ import {
 	CART_MMIO_BASE,
 	CART_RAM_BASE,
 	CART_ROM_BASE,
-} from '../../machine/ts/machine/memory/map';
+} from '../../machine/ts/spec/bmsx/memory_map';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 

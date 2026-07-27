@@ -3,7 +3,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
 
-import { CART_ROM_BASE } from '../../machine/ts/machine/memory/map';
+import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { buildRomAssetSymbolModuleSource, collectRomAssetSymbols } from '../../machine/ts/rompack/asset_symbols';
 import { layoutRomAssetPayloads } from '../../machine/ts/rompack/asset_layout';
 import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES, CART_ROM_WORD_ALIGNMENT, type RomAsset } from '../../machine/ts/rompack/format';

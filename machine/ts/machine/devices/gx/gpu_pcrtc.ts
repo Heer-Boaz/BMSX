@@ -5,7 +5,7 @@ import {
 	IO_GX_PCRTC_WORD_COUNT,
 } from '../../bus/io';
 import { multiplyHighU32 } from '../../common/numeric';
-import { IO_WORD_SIZE } from '../../memory/map';
+import { IO_WORD_SIZE } from '../../../spec/bmsx/memory_map';
 import {
 	GX_GPU_PSGPU24,
 	GX_GPU_PSMCT16,

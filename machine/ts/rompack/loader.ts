@@ -20,7 +20,7 @@ import { decodeBinary, decodeBinaryWithPropTable, toF32, typedArrayFromBytes } f
 import { parseRomMetadataSection } from './metadata';
 import { RomSourceStack, type RawRomSource } from './source';
 import { decodeRomToc } from './toc';
-import { CART_ROM_SIZE, SYSTEM_ROM_SIZE } from '../machine/memory/map';
+import { CART_ROM_SIZE, SYSTEM_ROM_SIZE } from '../spec/bmsx/memory_map';
 
 const utf8Decoder = new TextDecoder();
 

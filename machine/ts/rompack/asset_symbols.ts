@@ -1,5 +1,5 @@
 import { type CartridgeLayerId, type RomAsset } from './format';
-import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../machine/memory/map';
+import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../spec/bmsx/memory_map';
 
 export type RomAssetSymbol = {
 	name: string;

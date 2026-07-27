@@ -1,7 +1,7 @@
 #pragma once
 
 #include "machine/cpu/blua32_image.h"
-#include "machine/memory/map.h"
+#include "spec/bmsx/memory_map.h"
 #include "rompack/format.h"
 
 #include <string>

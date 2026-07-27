@@ -1,6 +1,6 @@
 #include "machine/execution_address_space.h"
 
-#include "machine/memory/map.h"
+#include "spec/bmsx/memory_map.h"
 #include "machine/memory/memory.h"
 
 #include <utility>

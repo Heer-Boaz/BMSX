@@ -22,7 +22,7 @@ import {
 	IO_INP_POINTER_Y,
 	IO_INP_STATUS,
 } from '../../machine/ts/machine/bus/io';
-import { IO_WORD_SIZE } from '../../machine/ts/machine/memory/map';
+import { IO_WORD_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { encodeSignedFix16 } from '../../machine/ts/machine/common/numeric';
 import { AcceptedInterruptKind } from '../../machine/ts/machine/cpu/cpu';
 import { InputController } from '../../machine/ts/machine/devices/input/controller';

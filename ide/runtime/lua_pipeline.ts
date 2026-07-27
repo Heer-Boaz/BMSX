@@ -8,7 +8,7 @@ import { toLuaModulePath } from '../../machine/ts/lua/module_path';
 import { readWorkspaceLuaSourceText } from '../workspace/files';
 import type { RuntimeSymbolEntry, RuntimeSymbolKind } from './symbols';
 import { resolveLuaSourceRecord, type LuaSourceRegistry } from '../../machine/ts/lua/source_registry';
-import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/machine/memory/map';
+import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { resetHandledLuaErrors } from './fault_state';
 import type { Blua32ImageLayout } from '../../machine/ts/machine/cpu/blua32_image';
 import type { Blua32SymbolsImage } from '../../machine/ts/rompack/tooling/blua32_symbols';

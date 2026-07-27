@@ -21,7 +21,7 @@ import { toLuaModulePath } from '../../machine/ts/lua/module_path';
 import {
 	CART_ROM_BASE,
 	SYSTEM_ROM_BASE,
-} from '../../machine/ts/machine/memory/map';
+} from '../../machine/ts/spec/bmsx/memory_map';
 import {
 	parseCartHeader,
 	type CartRomHeader,

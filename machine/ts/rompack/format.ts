@@ -6,7 +6,7 @@ import {
 import {
 	decodeBlua32BootHeader,
 } from '../machine/cpu/blua32_image';
-import { CART_RAM_SIZE } from '../machine/memory/map';
+import { CART_RAM_SIZE } from '../spec/bmsx/memory_map';
 import { formatNumberAsHex } from '../common/byte_hex_string';
 
 export const CART_ROM_MAGIC = 0x58534D42;

@@ -24,7 +24,7 @@ import {
 	CART_MMIO_BASE,
 	CART_RAM_BASE,
 	CART_ROM_BASE,
-} from '../../memory/map';
+} from '../../../spec/bmsx/memory_map';
 import type { Memory } from '../../memory/memory';
 import type { DmaController } from '../dma/controller';
 import type { IrqController } from '../irq/controller';

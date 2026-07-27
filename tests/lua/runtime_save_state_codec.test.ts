@@ -38,7 +38,8 @@ import { ProtectedCallKind } from '../../machine/ts/machine/cpu/call_state';
 import { BuiltinFunctionId } from '../../machine/ts/machine/cpu/value';
 import { CPU_STATUS_CART_ENTRY } from '../../machine/ts/spec/blua32/cop0';
 import { DMA_STATUS_BUSY, SYS_PRINT_BUFFER_BYTES } from '../../machine/ts/machine/bus/io';
-import { RAM_BASE, RAM_END } from '../../machine/ts/machine/memory/map';
+import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { RAM_END } from '../../machine/ts/machine/memory/map';
 
 const codecTestGxVram = new Uint8Array(GX_GPU_VRAM_BYTE_COUNT);
 codecTestGxVram[0] = 0x34;

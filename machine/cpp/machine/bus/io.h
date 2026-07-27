@@ -1,6 +1,6 @@
 #pragma once
 
-#include "machine/memory/map.h"
+#include "spec/bmsx/memory_map.h"
 
 #include <array>
 

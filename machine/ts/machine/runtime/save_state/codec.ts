@@ -65,7 +65,8 @@ import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT, GX_GTE_PLUS_
 import type { GeometryJobState } from '../../devices/geometry/job';
 import type { GeometryControllerState } from '../../devices/geometry/save_state';
 import type { MemorySaveState } from '../../memory/memory';
-import { RAM_BASE, RAM_END } from '../../memory/map';
+import { RAM_BASE } from '../../../spec/bmsx/memory_map';
+import { RAM_END } from '../../memory/map';
 import type { FrameSchedulerStateSnapshot } from '../../scheduler/frame';
 import type { FrameLoopStateSnapshot } from '../frame/loop';
 import type { RuntimeSaveMachineState } from '../save_machine_state';

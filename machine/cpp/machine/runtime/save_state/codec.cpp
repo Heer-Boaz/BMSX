@@ -7,6 +7,7 @@
 #include "machine/devices/gx/gte.h"
 #include "machine/devices/input/contracts.h"
 #include "machine/memory/map.h"
+#include "spec/bmsx/memory_map.h"
 #include "machine/runtime/runtime.h"
 #include "machine/runtime/save_state/schema.h"
 #include <algorithm>

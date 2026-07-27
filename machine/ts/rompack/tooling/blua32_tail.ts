@@ -11,7 +11,7 @@ import {
 } from '../format';
 import { alignRomAssetOffset } from '../asset_layout';
 import type { RomSourceLayer } from '../source';
-import { CART_ROM_SIZE, SYSTEM_ROM_SIZE } from '../../machine/memory/map';
+import { CART_ROM_SIZE, SYSTEM_ROM_SIZE } from '../../spec/bmsx/memory_map';
 import { writeCartRomHeader } from './header_encode';
 import { encodeRomToc } from './toc_encode';
 

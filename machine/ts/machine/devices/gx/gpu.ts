@@ -11,7 +11,7 @@ import {
 	IRQ_GX_PCRTC,
 } from '../../bus/io';
 import type { Memory } from '../../memory/memory';
-import { IO_WORD_SIZE } from '../../memory/map';
+import { IO_WORD_SIZE } from '../../../spec/bmsx/memory_map';
 import {
 	MAPPED_BUS_DMA_BLOCK_END,
 	MAPPED_BUS_MASTER_CPU,

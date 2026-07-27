@@ -4,7 +4,7 @@
 #include "machine/bus/io.h"
 #include "machine/devices/dma/controller.h"
 #include "machine/devices/irq/controller.h"
-#include "machine/memory/map.h"
+#include "spec/bmsx/memory_map.h"
 #include "machine/memory/memory.h"
 
 #include <algorithm>

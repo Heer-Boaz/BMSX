@@ -1,6 +1,6 @@
 #include "common/endian.h"
 #include "spec/blua32/instruction_format.h"
-#include "machine/memory/map.h"
+#include "spec/bmsx/memory_map.h"
 #include "rompack/loader.h"
 #include "support/blua32_test_rom.h"
 

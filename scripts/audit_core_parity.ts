@@ -18,7 +18,12 @@ import { parseLuaChunk } from '../machine/ts/lua/analysis/parse';
 
 type Category = 'core' | 'host' | 'ide' | 'language' | 'compiler_tooling' | 'rompacker_tooling' | 'cpu_interpreter_exception' | 'barrel';
 type ManifestPattern = { pattern: string; category: Category; reason: string };
-type StrictRuntimeSymbolParityEntry = { ts: string; cpp: string[]; reason: string };
+type StrictRuntimeSymbolParityEntry = {
+	ts: string;
+	cpp: string[];
+	exact_function_bodies?: string[];
+	reason: string;
+};
 type StrictRuntimeShapeParityEntry = { ts: string; cpp: string[]; symbols: string[]; reason: string };
 type StrictRuntimeMethodExclusion = { name: string; reason: string };
 type StrictRuntimeMethodParityEntry = {
@@ -55,7 +60,14 @@ type StrictFilePairParityEntry = { ts: string; cpp: string[]; reason: string };
 type StrictGeneratedTsParityExclusion = { ts: string; generator: string; reason: string };
 type StrictSaveStateSchemaParityEntry = { ts: string; cpp: string; symbol: string; reason: string };
 type CppMissingTsExclusion = { cpp: string; reason: string };
-type StrictRuntimeSymbols = { constants: Map<string, string>; constantValues: Map<string, string>; functions: Map<string, string[]> };
+type StrictRuntimeSymbols = {
+	constants: Map<string, string>;
+	constantValues: Map<string, string>;
+	variables: Map<string, string>;
+	variableValues: Map<string, string>;
+	functions: Map<string, string[]>;
+	functionBodies: Map<string, string>;
+};
 type Manifest = {
 	patterns: ManifestPattern[];
 	core_roots?: string[];
@@ -459,7 +471,10 @@ function collectTsStrictSymbols(file: string): StrictRuntimeSymbols {
 	const text = fs.readFileSync(path.join(repoRoot, file), 'utf8');
 	const constants = new Map<string, string>();
 	const constantValues = new Map<string, string>();
+	const variables = new Map<string, string>();
+	const variableValues = new Map<string, string>();
 	const functions = new Map<string, string[]>();
+	const functionBodies = new Map<string, string>();
 	for (const match of text.matchAll(/^export const\s+([A-Z0-9_]+)(?:\s*:[^\n=]+)?\s*=\s*([\s\S]*?);/gm)) {
 		const name = match[1];
 		const expression = match[2].trim();
@@ -467,6 +482,12 @@ function collectTsStrictSymbols(file: string): StrictRuntimeSymbols {
 		if (!expression.startsWith('[') && !expression.startsWith('{') && !expression.startsWith('new ')) {
 			constantValues.set(name, normalizeStrictConstantExpression(expression));
 		}
+	}
+	for (const match of text.matchAll(/^export\s+(?:let|var)\s+([A-Z0-9_]+)\b/gm)) {
+		variables.set(match[1], file);
+	}
+	for (const match of text.matchAll(/^export\s+(?:let|var)\s+([A-Z0-9_]+)(?:\s*:[^\n=]+)?\s*=\s*([\s\S]*?);/gm)) {
+		variableValues.set(match[1], normalizeStrictConstantExpression(match[2].trim()));
 	}
 	for (const match of text.matchAll(/^export const\s+([A-Za-z_]\w*)\s*=\s*\(/gm)) {
 		const openIndex = match.index! + match[0].length - 1;
@@ -483,6 +504,10 @@ function collectTsStrictSymbols(file: string): StrictRuntimeSymbols {
 		const after = text.slice(closeIndex + 1, closeIndex + 160);
 		const hasBody = /^\s*(?::[^={;]+)?\{/.test(after);
 		if (match[1].endsWith('Thunk')) continue;
+		if (hasBody) {
+			const openBraceIndex = closeIndex + 1 + after.indexOf('{');
+			functionBodies.set(match[1], readBalancedBody(text, openBraceIndex));
+		}
 		if (!hasBody || !hasStrictFunction(functions, match[1])) {
 			putStrictFunction(functions, match[1], tsParameterNames(parameters));
 		}
@@ -509,24 +534,35 @@ function collectTsStrictSymbols(file: string): StrictRuntimeSymbols {
 		if (match[1].endsWith('Thunk')) continue;
 		putStrictFunction(functions, match[1], []);
 	}
-	return { constants, constantValues, functions };
+	return { constants, constantValues, variables, variableValues, functions, functionBodies };
 }
 
 function collectCppStrictSymbols(files: readonly string[]): StrictRuntimeSymbols {
 	const constants = new Map<string, string>();
 	const constantValues = new Map<string, string>();
+	const variables = new Map<string, string>();
+	const variableValues = new Map<string, string>();
 	const functions = new Map<string, string[]>();
+	const functionBodies = new Map<string, string>();
 	const classNames = new Set<string>();
 	for (const file of files) {
 		const text = fs.readFileSync(path.join(repoRoot, file), 'utf8');
 		for (const match of text.matchAll(/\b(?:class|struct)\s+([A-Za-z_]\w*)\b/gm)) {
 			classNames.add(match[1]);
 		}
+		for (const match of text.matchAll(/^extern[ \t]+(?!const\b)[A-Za-z_][\w:<>,*& \t]*[ \t]+([A-Z0-9_]+)\s*;/gm)) {
+			variables.set(match[1], file);
+		}
 	}
 	for (const file of files) {
 		const text = fs.readFileSync(path.join(repoRoot, file), 'utf8');
 		for (const match of text.matchAll(/^extern[ \t]+const[ \t]+[A-Za-z_][\w:<>,*& \t]*[ \t]+([A-Z0-9_]+)\s*;/gm)) {
 			constants.set(match[1], file);
+		}
+		for (const match of text.matchAll(/^(?!(?:extern|const|constexpr)\b)(?:inline[ \t]+)?[A-Za-z_][\w:<>,*& \t]*[ \t]+([A-Z0-9_]+)\s*=\s*([^;\n]+);/gm)) {
+			if (variables.has(match[1])) {
+				variableValues.set(match[1], normalizeStrictConstantExpression(match[2].trim()));
+			}
 		}
 		for (const match of text.matchAll(/^(?:inline[ \t]+)?const[ \t]+[A-Za-z_][\w:<>,*& \t]*[ \t]+([A-Z0-9_]+)\s*\[[^\]\n]*\]\s*=\s*\{/gm)) {
 			constants.set(match[1], file);
@@ -548,6 +584,8 @@ function collectCppStrictSymbols(files: readonly string[]): StrictRuntimeSymbols
 			const after = text.slice(closeIndex + 1, closeIndex + 80);
 			if (!/^\s*(?:const\s*)?(?:->[^{]+)?\{/.test(after)) continue;
 			putStrictFunction(functions, name, cppParameterNames(readParameterList(text, openIndex)));
+			const openBraceIndex = closeIndex + 1 + after.indexOf('{');
+			functionBodies.set(name, readBalancedBody(text, openBraceIndex));
 		}
 		for (const className of classNames) {
 			const escapedClassName = escapedRegExpLiteral(className);
@@ -558,7 +596,7 @@ function collectCppStrictSymbols(files: readonly string[]): StrictRuntimeSymbols
 			}
 		}
 	}
-	return { constants, constantValues, functions };
+	return { constants, constantValues, variables, variableValues, functions, functionBodies };
 }
 
 function collectTsClassPublicMethods(file: string, className: string): Set<string> {
@@ -653,6 +691,28 @@ function auditStrictRuntimeSymbolParity(manifest: Manifest): string[] {
 		for (const name of cppSymbols.constants.keys()) {
 			if (!tsSymbols.constants.has(name)) errors.push(`${entry.cpp.join(', ')}: constant ${name} missing from ${entry.ts}`);
 		}
+		for (const name of tsSymbols.variables.keys()) {
+			if (!cppSymbols.variables.has(name)) {
+				errors.push(`${entry.ts}: variable ${name} missing from ${entry.cpp.join(', ')}`);
+				continue;
+			}
+			if (!tsSymbols.variableValues.has(name)) {
+				errors.push(`${entry.ts}: variable ${name} has no initializer`);
+				continue;
+			}
+			if (!cppSymbols.variableValues.has(name)) {
+				errors.push(`${entry.cpp.join(', ')}: variable ${name} has no initializer`);
+				continue;
+			}
+			const tsValue = tsSymbols.variableValues.get(name);
+			const cppValue = cppSymbols.variableValues.get(name);
+			if (tsValue !== cppValue) {
+				errors.push(`${entry.ts}: variable ${name} initializer (${tsValue}) differs from C++ (${cppValue})`);
+			}
+		}
+		for (const name of cppSymbols.variables.keys()) {
+			if (!tsSymbols.variables.has(name)) errors.push(`${entry.cpp.join(', ')}: variable ${name} missing from ${entry.ts}`);
+		}
 		for (const [name, tsValue] of tsSymbols.constantValues) {
 			const cppValue = cppSymbols.constantValues.get(name);
 			if (cppValue && tsValue !== cppValue) {
@@ -671,6 +731,23 @@ function auditStrictRuntimeSymbolParity(manifest: Manifest): string[] {
 		}
 		for (const name of cppSymbols.functions.keys()) {
 			if (!tsSymbols.functions.has(name)) errors.push(`${entry.cpp.join(', ')}: function ${name} missing from ${entry.ts}`);
+		}
+		if (entry.exact_function_bodies) {
+			for (const name of entry.exact_function_bodies) {
+				if (!tsSymbols.functionBodies.has(name)) {
+					errors.push(`${entry.ts}: function body ${name} missing`);
+					continue;
+				}
+				if (!cppSymbols.functionBodies.has(name)) {
+					errors.push(`${entry.cpp.join(', ')}: function body ${name} missing`);
+					continue;
+				}
+				const tsBody = tsSymbols.functionBodies.get(name);
+				const cppBody = cppSymbols.functionBodies.get(name);
+				if (tsBody !== cppBody) {
+					errors.push(`${entry.ts}: function body ${name} differs from C++`);
+				}
+			}
 		}
 	}
 	return errors;

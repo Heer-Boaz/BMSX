@@ -10,7 +10,7 @@ import {
 	IO_GX_GTE_PLUS_BASE,
 	IO_GX_GTE_PLUS_WORD_COUNT as IO_GX_GTE_PLUS_WORDS,
 } from '../../bus/io';
-import { IO_WORD_SIZE } from '../../memory/map';
+import { IO_WORD_SIZE } from '../../../spec/bmsx/memory_map';
 import type { Memory } from '../../memory/memory';
 import { MAPPED_BUS_MASTER_DMA, type MappedBusSignals } from '../../memory/bus_signals';
 import { highSignedHalfword, lowSignedHalfword, shiftRightSigned, wrapI32 } from '../../common/numeric';

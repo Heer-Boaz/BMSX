@@ -12,7 +12,7 @@ import {
 	IO_INP_POINTER_X,
 	IO_INP_POINTER_Y,
 } from '../../bus/io';
-import { IO_WORD_SIZE } from '../../memory/map';
+import { IO_WORD_SIZE } from '../../../spec/bmsx/memory_map';
 import { encodeSignedFix16 } from '../../common/numeric';
 import type { Value } from '../../cpu/value';
 import { Memory } from '../../memory/memory';

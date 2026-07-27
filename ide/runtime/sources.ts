@@ -17,7 +17,7 @@ import {
 	resourceIdentityKey,
 	resourceIdentityKeyFromParts,
 } from '../common/resource';
-import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/machine/memory/map';
+import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import {
 	loadBlua32ToolingImage,
 	type Blua32ToolingImage,

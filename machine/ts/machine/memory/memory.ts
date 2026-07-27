@@ -9,10 +9,10 @@ import {
 	IO_BASE,
 	IO_WORD_SIZE,
 	RAM_BASE,
-	RAM_END,
 	SYSTEM_ROM_BASE,
 	SYSTEM_ROM_SIZE,
-} from './map';
+} from '../../spec/bmsx/memory_map';
+import { RAM_END } from './map';
 import { CartridgeController } from '../devices/cartridge/controller';
 import type { CartridgeSlotMediaPair } from '../devices/cartridge/contracts';
 import {

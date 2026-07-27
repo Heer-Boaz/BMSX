@@ -6,7 +6,7 @@
 #include "machine/devices/dma/controller.h"
 #include "machine/devices/irq/controller.h"
 #include "spec/blua32/memory_access_kind.h"
-#include "machine/memory/map.h"
+#include "spec/bmsx/memory_map.h"
 #include "machine/memory/memory.h"
 #include "machine/scheduler/device.h"
 #include "support/blua32_test_rom.h"

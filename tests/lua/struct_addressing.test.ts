@@ -8,7 +8,7 @@ import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { writeInstruction, INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
-import { RAM_BASE } from '../../machine/ts/machine/memory/map';
+import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { compileLuaChunkToProgram, type CompiledProgram } from '../../machine/ts/lua/compiler';
 import {
 	createTestSystemCpu,

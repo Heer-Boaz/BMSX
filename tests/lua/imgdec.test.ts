@@ -72,7 +72,7 @@ import type { InputControllerInputSource, InputControllerSnapshot } from '../../
 import { Machine } from '../../machine/ts/machine/machine';
 import { MAPPED_BUS_DMA_BLOCK_END, MAPPED_BUS_MASTER_DMA } from '../../machine/ts/machine/memory/bus_signals';
 import { Memory } from '../../machine/ts/machine/memory/memory';
-import { CART_ROM_BASE } from '../../machine/ts/machine/memory/map';
+import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { captureMachineState, restoreMachineState, type MachineState } from '../../machine/ts/machine/save_state';
 import { encodeImgDecStream } from '../../machine/ts/rompack/tooling/imgdec_codec';
 

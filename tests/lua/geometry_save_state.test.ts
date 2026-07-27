@@ -103,7 +103,7 @@ import { Machine } from '../../machine/ts/machine/machine';
 import type { MicrotaskQueue } from '../../machine/ts/machine/scheduler/microtask_queue';
 import { captureMachineSaveState, restoreMachineSaveState } from '../../machine/ts/machine/save_state';
 import { Memory } from '../../machine/ts/machine/memory/memory';
-import { RAM_BASE } from '../../machine/ts/machine/memory/map';
+import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import type { GeometryController } from '../../machine/ts/machine/devices/geometry/controller';
 import type { GeometryControllerState } from '../../machine/ts/machine/devices/geometry/save_state';
 

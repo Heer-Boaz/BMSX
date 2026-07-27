@@ -4,7 +4,7 @@
 #include "common/serializer/binencoder.h"
 #include "spec/blua32/instruction_format.h"
 #include "spec/blua32/opcode.h"
-#include "machine/memory/map.h"
+#include "spec/bmsx/memory_map.h"
 #include "rompack/toc.h"
 #include "rompack/tooling/blua32_symbols.h"
 

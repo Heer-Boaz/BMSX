@@ -27,9 +27,9 @@ import {
 import {
 	CART_ROM_BASE,
 	DYNAMIC_RAM_BASE,
-	RAM_END,
 	SYSTEM_ROM_BASE,
-} from '../../machine/ts/machine/memory/map';
+} from '../../machine/ts/spec/bmsx/memory_map';
+import { RAM_END } from '../../machine/ts/machine/memory/map';
 import {
 	linkCartBlua32Image,
 	linkSystemBlua32Image,

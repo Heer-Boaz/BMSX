@@ -66,9 +66,9 @@ import {
 	IO_BASE,
 	IO_WORD_SIZE,
 	DYNAMIC_RAM_BASE,
-	RAM_END,
 	SYSTEM_ROM_BASE,
-} from '../../machine/ts/machine/memory/map';
+} from '../../machine/ts/spec/bmsx/memory_map';
+import { RAM_END } from '../../machine/ts/machine/memory/map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/machine/model_registry';
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 import { cartridgeSlots } from '../helpers/cartridge';

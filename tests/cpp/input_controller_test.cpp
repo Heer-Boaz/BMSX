@@ -1,6 +1,6 @@
 #include "machine/bus/io.h"
 #include "machine/machine.h"
-#include "machine/memory/map.h"
+#include "spec/bmsx/memory_map.h"
 #include "machine/memory/memory.h"
 #include "support/cartridge_fixture.h"
 

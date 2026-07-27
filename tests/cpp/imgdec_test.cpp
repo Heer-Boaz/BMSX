@@ -12,7 +12,7 @@
 #include "machine/devices/irq/controller.h"
 #include "machine/devices/system/controller.h"
 #include "machine/memory/bus_signals.h"
-#include "machine/memory/map.h"
+#include "spec/bmsx/memory_map.h"
 #include "machine/memory/memory.h"
 #include "machine/model_registry.h"
 #include "machine/scheduler/device.h"

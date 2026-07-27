@@ -8,7 +8,7 @@
 #include "machine/cpu/value.h"
 #include "machine/devices/cartridge/controller.h"
 #include "machine/memory/bus_signals.h"
-#include "machine/memory/map.h"
+#include "spec/bmsx/memory_map.h"
 #include "machine/bus/io.h"
 #include "common/primitives.h"
 

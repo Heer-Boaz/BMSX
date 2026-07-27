@@ -3,7 +3,7 @@
 #include "lua/numeric.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/lua_heap_usage.h"
-#include "machine/memory/map.h"
+#include "spec/bmsx/memory_map.h"
 #include "machine/memory/memory.h"
 #include "common/utf8.h"
 #include <algorithm>

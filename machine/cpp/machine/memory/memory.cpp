@@ -2,6 +2,7 @@
 #include "machine/cpu/cpu.h"
 #include "common/endian.h"
 #include "machine/devices/cartridge/controller.h"
+#include "machine/memory/map.h"
 
 #include <cstring>
 

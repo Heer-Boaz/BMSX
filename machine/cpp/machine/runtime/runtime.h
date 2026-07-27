@@ -21,7 +21,6 @@
 #include "machine/runtime/frame/loop.h"
 #include "machine/runtime/input.h"
 #include "machine/scheduler/frame.h"
-#include "machine/memory/map.h"
 #include "common/primitives.h"
 #include <cstddef>
 #include <memory>

@@ -52,7 +52,7 @@ import { ScratchBuffer } from '../../common/scratchbuffer';
 import { ScratchArrayStack } from '../../common/scratchstack';
 import { luaFloorDivide, luaModulo } from '../../lua/numeric';
 import { ceilDiv4 } from '../common/numeric';
-import { CART_ROM_BASE, RAM_BASE } from '../memory/map';
+import { CART_ROM_BASE, RAM_BASE } from '../../spec/bmsx/memory_map';
 import {
 	BuiltinFunctionId,
 	EMPTY_CALL_ARGS,

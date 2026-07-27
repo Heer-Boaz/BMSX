@@ -6,7 +6,7 @@ import {
 	CARTRIDGE_BOARD_MAILBOX,
 	CARTRIDGE_BOARD_RAM,
 } from '../../machine/ts/machine/devices/cartridge/contracts';
-import { CART_RAM_SIZE } from '../../machine/ts/machine/memory/map';
+import { CART_RAM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { parseCartHeader } from '../../machine/ts/rompack/format';
 import { parseCartridgeIndex } from '../../machine/ts/rompack/loader';
 import { writeCartRomHeader } from '../../machine/ts/rompack/tooling/header_encode';

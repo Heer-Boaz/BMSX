@@ -2,6 +2,7 @@
 #include "machine/bus/io.h"
 #include "machine/memory/lua_heap_usage.h"
 #include "machine/memory/map.h"
+#include "spec/bmsx/memory_map.h"
 #include "machine/runtime/input.h"
 #include "machine/scheduler/device.h"
 #include "machine/runtime/timing/config.h"

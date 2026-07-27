@@ -18,10 +18,8 @@ import { GX_GPU_VRAM_BYTE_COUNT } from '../devices/gx/vram_address';
 import { IO_SYS_CYCLES_PER_FRAME, IO_SYS_FRAME_MS, IO_SYS_TIME_MS } from '../bus/io';
 import { Machine } from '../machine';
 import type { RuntimeInputSource } from './input';
-import {
-	BASE_RAM_USED_SIZE,
-	RAM_SIZE,
-} from '../memory/map';
+import { BASE_RAM_USED_SIZE } from '../../spec/bmsx/memory_map';
+import { RAM_SIZE } from '../memory/map';
 
 
 function runHaltedClosureUntilInterrupt(runtime: Runtime): void {

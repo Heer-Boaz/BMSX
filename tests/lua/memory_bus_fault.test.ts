@@ -14,7 +14,7 @@ import {
 	IO_SYS_BUS_FAULT_CODE,
 	IO_SLOT_COUNT,
 } from '../../machine/ts/machine/bus/io';
-import { IO_BASE, IO_WORD_SIZE } from '../../machine/ts/machine/memory/map';
+import { IO_BASE, IO_WORD_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { Memory, NO_BLOCKED_MAPPED_WRITE } from '../../machine/ts/machine/memory/memory';
 
 const UNMAPPED_ADDRESS = 0x06000000;

@@ -12,7 +12,7 @@ import {
 	BLUA32_SYMBOLS_IMAGE_ID,
 	decodeBlua32SymbolsImage,
 } from '../../../../machine/ts/rompack/tooling/blua32_symbols';
-import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../../../machine/ts/machine/memory/map';
+import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../../../machine/ts/spec/bmsx/memory_map';
 import { buildBlua32Tail } from '../../../../machine/ts/rompack/tooling/blua32_tail';
 import { buildBlua32Image } from '../../../rompacker/blua32_image_builder';
 

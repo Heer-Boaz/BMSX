@@ -47,7 +47,7 @@ import type { MicrotaskQueue } from '../../machine/ts/machine/scheduler/microtas
 import { captureMachineSaveState, captureMachineState, restoreMachineSaveState, restoreMachineState } from '../../machine/ts/machine/save_state';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
-import { CART_ROM_BASE, IO_WORD_SIZE, DYNAMIC_RAM_BASE } from '../../machine/ts/machine/memory/map';
+import { CART_ROM_BASE, IO_WORD_SIZE, DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import {
 	BLUA32_BOOT_STARTUP_FUNCTION_ADDRESS_OFFSET,
 	type Blua32ImageLayout,
