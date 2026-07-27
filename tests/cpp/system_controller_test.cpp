@@ -32,8 +32,7 @@ namespace {
 
 constexpr std::string_view TEST_CARTRIDGE_CLOSURE_GLOBAL = "test_cartridge_closure";
 constexpr std::string_view TEST_CARTRIDGE_VALUE_GLOBAL = "test_cartridge_value";
-constexpr std::array<std::string_view, 3> TEST_EXTERNAL_CLOSURE_GLOBALS{{
-	"test_external_throw",
+constexpr std::array<std::string_view, 2> TEST_EXTERNAL_CLOSURE_GLOBALS{{
 	"test_external_gte",
 	"test_external_return",
 }};
@@ -159,55 +158,41 @@ auto makeClosureCartImage(
 
 auto makeExternalClosureSystemImage() -> bmsx::test::Blua32TestImage {
 	bmsx::test::Blua32TestImage image;
-	image.text.resize(20u * bmsx::INSTRUCTION_BYTES);
+	image.text.resize(14u * bmsx::INSTRUCTION_BYTES);
 	std::span<bmsx::u8> code(image.text);
 	bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
 	bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 0, 0, 1);
 	bmsx::writeInstruction(code, 2, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
 	bmsx::writeInstruction(code, 3, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 1, 0, 2);
-	bmsx::writeInstruction(code, 4, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
-	bmsx::writeInstruction(code, 5, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 2, 0, 3);
-	bmsx::writeInstruction(code, 6, static_cast<bmsx::u8>(bmsx::OpCode::SETGL), 0, 0, 1);
-	bmsx::writeInstruction(code, 7, static_cast<bmsx::u8>(bmsx::OpCode::SETGL), 1, 0, 2);
-	bmsx::writeInstruction(code, 8, static_cast<bmsx::u8>(bmsx::OpCode::SETGL), 2, 0, 3);
-	bmsx::writeInstruction(code, 9, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
-	bmsx::writeInstruction(code, 10, static_cast<bmsx::u8>(bmsx::OpCode::GETGL), 0, 0, 0);
+	bmsx::writeInstruction(code, 4, static_cast<bmsx::u8>(bmsx::OpCode::SETGL), 0, 0, 0);
+	bmsx::writeInstruction(code, 5, static_cast<bmsx::u8>(bmsx::OpCode::SETGL), 1, 0, 1);
+	bmsx::writeInstruction(code, 6, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
+	bmsx::writeInstruction(code, 7, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 0);
+	bmsx::writeInstruction(code, 8, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 1, 0, 1);
 	bmsx::writeInstruction(
 		code,
-		11,
-		static_cast<bmsx::u8>(bmsx::OpCode::CALL),
+		9,
+		static_cast<bmsx::u8>(bmsx::OpCode::STORE_MEM),
 		0,
-		bmsx::encodeFixedCallArgCount(0),
-		0
+		1,
+		static_cast<bmsx::u8>(bmsx::MemoryAccessKind::U32LE)
 	);
+	bmsx::writeInstruction(
+		code,
+		10,
+		static_cast<bmsx::u8>(bmsx::OpCode::STORE_MEM),
+		0,
+		1,
+		static_cast<bmsx::u8>(bmsx::MemoryAccessKind::U32LE)
+	);
+	bmsx::writeInstruction(code, 11, static_cast<bmsx::u8>(bmsx::OpCode::RET), 2, 0, 0);
 	bmsx::writeInstruction(code, 12, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
-	bmsx::writeInstruction(code, 13, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 0);
-	bmsx::writeInstruction(code, 14, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 1, 0, 1);
-	bmsx::writeInstruction(
-		code,
-		15,
-		static_cast<bmsx::u8>(bmsx::OpCode::STORE_MEM),
-		0,
-		1,
-		static_cast<bmsx::u8>(bmsx::MemoryAccessKind::U32LE)
-	);
-	bmsx::writeInstruction(
-		code,
-		16,
-		static_cast<bmsx::u8>(bmsx::OpCode::STORE_MEM),
-		0,
-		1,
-		static_cast<bmsx::u8>(bmsx::MemoryAccessKind::U32LE)
-	);
-	bmsx::writeInstruction(code, 17, static_cast<bmsx::u8>(bmsx::OpCode::RET), 2, 0, 0);
-	bmsx::writeInstruction(code, 18, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 0, 0);
-	bmsx::writeInstruction(code, 19, static_cast<bmsx::u8>(bmsx::OpCode::RFE), 0, 0, 0);
+	bmsx::writeInstruction(code, 13, static_cast<bmsx::u8>(bmsx::OpCode::RFE), 0, 0, 0);
 	image.functions = {
-		{.firstWord = 0u, .wordCount = 10u, .maxStack = 3u},
-		{.firstWord = 10u, .wordCount = 3u, .staticClosure = true},
-		{.firstWord = 13u, .wordCount = 5u, .maxStack = 2u, .staticClosure = true},
-		{.firstWord = 18u, .wordCount = 1u, .staticClosure = true},
-		{.firstWord = 19u, .wordCount = 1u},
+		{.firstWord = 0u, .wordCount = 7u, .maxStack = 2u},
+		{.firstWord = 7u, .wordCount = 5u, .maxStack = 2u, .staticClosure = true},
+		{.firstWord = 12u, .wordCount = 1u, .staticClosure = true},
+		{.firstWord = 13u, .wordCount = 1u},
 	};
 	image.constants = {
 		static_cast<bmsx::f64>(bmsx::GX_GTE_PLUS_FN_VMAD3),
@@ -216,7 +201,6 @@ auto makeExternalClosureSystemImage() -> bmsx::test::Blua32TestImage {
 				+ bmsx::GX_GTE_PLUS_COMMAND * bmsx::IO_WORD_SIZE
 		),
 	};
-	image.globalNames.emplace_back("native_callback");
 	for (std::string_view name : TEST_EXTERNAL_CLOSURE_GLOBALS) {
 		image.globalNames.emplace_back(name);
 	}
@@ -229,13 +213,9 @@ auto makeExternalClosureSystemImage() -> bmsx::test::Blua32TestImage {
 			3u,
 			bmsx::test::blua32TestFunctionAddress(bmsx::RomImageDomain::System, 2u),
 		},
-		{
-			5u,
-			bmsx::test::blua32TestFunctionAddress(bmsx::RomImageDomain::System, 3u),
-		},
 	};
-	image.irqFunctionIndex = 4u;
-	image.exceptionFunctionIndex = 4u;
+	image.irqFunctionIndex = 3u;
+	image.exceptionFunctionIndex = 3u;
 	for (const bmsx::LuaBootPrimitive& primitive : bmsx::LUA_BOOT_PRIMITIVES) {
 		image.systemGlobalNames.emplace_back(primitive.name);
 	}
@@ -326,7 +306,7 @@ struct ExternalClosureFixture {
 	SystemRuntimeFixture system;
 	bmsx::Runtime& runtime;
 	bmsx::CPU& cpu;
-	std::array<bmsx::Closure*, 3> closures{};
+	std::array<bmsx::Closure*, 2> closures{};
 
 	ExternalClosureFixture()
 		: system(
@@ -335,7 +315,7 @@ struct ExternalClosureFixture {
 		)
 		, runtime(system.runtime)
 		, cpu(runtime.machine.cpu) {
-		require(cpu.runUntilDepth(0, 9) == bmsx::RunResult::Yielded, "system firmware publishes external-call test closures");
+		require(cpu.runUntilDepth(0, 6) == bmsx::RunResult::Yielded, "system firmware publishes external-call test closures");
 		for (size_t index = 0; index < closures.size(); ++index) {
 			const bmsx::Value name =
 				bmsx::valueString(cpu.stringPool().intern(TEST_EXTERNAL_CLOSURE_GLOBALS[index]));
@@ -695,44 +675,6 @@ void testMixedStaticAndNonStaticCartridgeClosuresKeepIdentityAcrossEitherSaveSta
 	require(bmsx::asNumber(restoredTable->get(futureCanonicalValue)) == 22.0, "future canonical closure remains the restored table key");
 }
 
-void testExternalClosureThrowRestoresRuntimeExecutionState() {
-	ExternalClosureFixture fixture;
-	bmsx::Runtime& runtime = fixture.runtime;
-	bmsx::CPU& cpu = fixture.cpu;
-	runtime.setGlobal(
-		"native_callback",
-		cpu.createNativeFunction(
-			"throwing_native",
-			[](bmsx::NativeArgsView, bmsx::NativeResults&) {
-				throw std::runtime_error("native boom");
-			},
-			bmsx::NativeFnCost{7u, 0u, 0u}
-		)
-	);
-
-	const int depthBefore = cpu.getFrameDepth();
-	const bmsx::i64 cycleBefore = runtime.machine.scheduler.nowCycles();
-	const int expectedCycles =
-		bmsx::BASE_CYCLES[static_cast<size_t>(bmsx::OpCode::GETGL)]
-		+ bmsx::BASE_CYCLES[static_cast<size_t>(bmsx::OpCode::CALL)]
-		+ 7;
-	cpu.instructionBudgetRemaining = 100;
-
-	bool threwNativeError = false;
-	try {
-		runtime.callClosure(*fixture.closures[0]);
-	} catch (const std::runtime_error& error) {
-		threwNativeError = std::string_view(error.what()) == "native boom";
-	}
-
-	require(threwNativeError, "external closure propagates the native callback failure");
-	require(!runtime.machine.scheduler.isCpuSliceActive(), "external closure failure ends the active CPU scheduler slice");
-	require(cpu.getFrameDepth() == depthBefore + 1, "external closure failure retains the physical call frame");
-	require(cpu.completionValues.empty(), "external closure failure publishes no completion values");
-	require(cpu.instructionBudgetRemaining == 100, "external closure failure restores the suspended CPU budget");
-	require(runtime.machine.scheduler.nowCycles() == cycleBefore + expectedCycles, "external closure failure advances physical machine time by spent cycles");
-}
-
 void testCompletionCallReturnLatchSurvivesSaveStateAndGc() {
 	SystemRuntimeFixture fixture(
 		makeCompletionLatchSystemImage(),
@@ -777,7 +719,7 @@ void testExternalClosureAdvancesToGteInterlockDeadline() {
 		+ bmsx::BASE_CYCLES[static_cast<size_t>(bmsx::OpCode::RET)];
 	fixture.cpu.instructionBudgetRemaining = 100;
 
-	const std::span<const bmsx::Value> out = fixture.runtime.callClosure(*fixture.closures[1]);
+	const std::span<const bmsx::Value> out = fixture.runtime.callClosure(*fixture.closures[0]);
 
 	require(fixture.runtime.machine.scheduler.nowCycles() == cycleBefore + expectedCycles, "external closure advances through the scheduled GTE completion deadline");
 	require(fixture.cpu.instructionBudgetRemaining == 100, "external closure restores the suspended CPU budget after the GTE wait");
@@ -800,7 +742,7 @@ void testExternalClosureVectorsPendingNmiThroughCpuEntry() {
 	const bmsx::i64 cycleBefore = fixture.runtime.machine.scheduler.nowCycles();
 	fixture.cpu.requestNonMaskableInterrupt();
 
-	const std::span<const bmsx::Value> out = fixture.runtime.callClosure(*fixture.closures[2]);
+	const std::span<const bmsx::Value> out = fixture.runtime.callClosure(*fixture.closures[1]);
 
 	require(
 		fixture.runtime.machine.scheduler.nowCycles()
@@ -884,7 +826,6 @@ int main() {
 	testGuestExecutionSelectionAndClosureIdentitySurviveTheSaveStateWireFormat();
 	testDistinctNonStaticClosuresRemainDistinctTableKeysThroughTheSaveStateWireFormat();
 	testMixedStaticAndNonStaticCartridgeClosuresKeepIdentityAcrossEitherSaveStateLatch();
-	testExternalClosureThrowRestoresRuntimeExecutionState();
 	testCompletionCallReturnLatchSurvivesSaveStateAndGc();
 	testExternalClosureAdvancesToGteInterlockDeadline();
 	testExternalClosureVectorsPendingNmiThroughCpuEntry();

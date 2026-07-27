@@ -12,7 +12,7 @@ import { diagnosticsDebounceMs, editorDiagnosticsState } from './state';
 import { cacheRuntimeSemanticParseState } from '../intellisense/semantic/workspace/runtime';
 import { getCodeTabContexts } from '../../../workbench/ui/code_tab/contexts';
 import type { ResourceDomain } from '../../../common/resource';
-import type { RuntimeNativeBridge } from '../../../runtime/native_bridge';
+import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 
 export type DiagnosticContextInput = {
 	id: string;
@@ -24,7 +24,7 @@ export type DiagnosticContextInput = {
 };
 
 export function computeAggregatedEditorDiagnostics(
-	bridge: RuntimeNativeBridge,
+	bridge: RuntimeLuaTooling,
 	contexts: ReadonlyArray<DiagnosticContextInput>,
 ): EditorDiagnostic[] {
 	if (contexts.length === 0) return [];

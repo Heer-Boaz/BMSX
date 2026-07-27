@@ -3,7 +3,7 @@ import type { LuaDefinitionLocation } from '../../../../machine/ts/lua/semantic_
 import { createEditorSemanticFrontend } from '../intellisense/frontend';
 import type { LuaSemanticWorkspaceSnapshot, SymbolID } from '../../../../machine/ts/lua/semantic/model';
 import { computeSourceLabel } from '../../../common/paths';
-import type { RuntimeNativeBridge } from '../../../runtime/native_bridge';
+import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 
 export type CallHierarchyViewNodeKind = 'root' | 'caller' | 'call';
 
@@ -20,7 +20,7 @@ export type CallHierarchyView = {
 	root: CallHierarchyViewNode;
 };
 
-export function buildIncomingCallHierarchyView(bridge: RuntimeNativeBridge, options: {
+export function buildIncomingCallHierarchyView(bridge: RuntimeLuaTooling, options: {
 	snapshot: LuaSemanticWorkspaceSnapshot;
 	rootSymbolId: SymbolID;
 	rootExpression: string;

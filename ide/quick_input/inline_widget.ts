@@ -13,7 +13,7 @@ import { createResourceState, resourceSearchState } from '../workbench/contrib/r
 import type { CrossFileRenameManager } from '../editor/contrib/rename/operations';
 import type { CartEditor } from '../cart_editor';
 import type { RuntimeSourceState } from '../runtime/sources';
-import type { RuntimeNativeBridge } from '../runtime/native_bridge';
+import type { RuntimeLuaTooling } from '../runtime/lua_tooling';
 
 export function isInlineWidgetFocused(): boolean {
 	return editorSearchState.active
@@ -27,7 +27,7 @@ export function isInlineWidgetFocused(): boolean {
 export function handleInlineWidgetInput(
 	editor: CartEditor,
 	sources: RuntimeSourceState,
-	nativeBridge: RuntimeNativeBridge,
+	luaTooling: RuntimeLuaTooling,
 	crossFileRename: CrossFileRenameManager,
 	runtime: Runtime,
 ): boolean {
@@ -43,13 +43,13 @@ export function handleInlineWidgetInput(
 		handleResourceSearchInput(
 			editor,
 			sources,
-			nativeBridge,
+			luaTooling,
 			renameController,
 		);
 		return true;
 	}
 	if (symbolSearchState.active) {
-		handleSymbolSearchInput(editor, sources, nativeBridge);
+		handleSymbolSearchInput(editor, sources, luaTooling);
 		return true;
 	}
 	if (lineJumpState.active) {

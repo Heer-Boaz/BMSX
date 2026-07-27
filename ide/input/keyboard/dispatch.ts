@@ -1,7 +1,7 @@
 import { editorInput } from '../../editor/input/keyboard/text_input';
 import type { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import type { RuntimeSourceState } from '../../runtime/sources';
-import type { RuntimeNativeBridge } from '../../runtime/native_bridge';
+import type { RuntimeLuaTooling } from '../../runtime/lua_tooling';
 import type { CartEditor } from '../../cart_editor';
 import type { ResourcePanelController } from '../../workbench/contrib/resources/panel/controller';
 import { isResourceViewActive } from '../../workbench/ui/tabs';
@@ -19,7 +19,7 @@ import {
 export function handleEditorInput(
 	editor: CartEditor,
 	sources: RuntimeSourceState,
-	nativeBridge: RuntimeNativeBridge,
+	luaTooling: RuntimeLuaTooling,
 	runtime: Runtime,
 ): void {
 	if (handleFocusedResourcePanelInput(editor.resourcePanel)) {
@@ -35,7 +35,7 @@ export function handleEditorInput(
 	if (handleEditorPromptBindings(editor)) {
 		return;
 	}
-	if (handleInlineWidgetInput(editor, sources, nativeBridge, editor.crossFileRename, runtime)) {
+	if (handleInlineWidgetInput(editor, sources, luaTooling, editor.crossFileRename, runtime)) {
 		return;
 	}
 	if (handleFocusedProblemsPanelInput(editor.resourcePanel)) {

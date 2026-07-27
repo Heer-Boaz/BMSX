@@ -1021,9 +1021,9 @@ Snapshot object ids are reserved before an object's child values are captured,
 so cyclic/shared Lua table graphs stay object graphs rather than path lookups or
 duplicated tree materialisation.
 Object-key hashing follows the value representation. Runtime objects receive a
-producer-owned identity word when the table, closure, upvalue, native function,
-or native object is created; save-state restores that identity for CPU-owned
-objects. Table lookup and snapshot traversal do not keep separate side tables.
+producer-owned identity word when the table, closure, or upvalue is created;
+save-state restores that identity for CPU-owned objects. Table lookup and
+snapshot traversal do not keep separate side tables.
 Table save-state stores the table hash columns and free cursor because Lua
 iteration observes the current bucket walk. Restore rehydrates the owner-owned
 columns directly so `next` resumes the same table order after state replay.
@@ -1033,12 +1033,15 @@ other BIOS-captured primitives) are fixed VM primitive slots/singletons. They
 are not native host callbacks, are not GC heap allocations, and do not
 contribute to Lua heap accounting; guest-visible names are ordinary globals
 pointing at those fixed VM primitive values. Save-state serializes their
-`BuiltinFunctionId`, not a global/module path. Host-native bridge values are
-runtime infrastructure, not CPU state: they are neither path-stabilized nor
-restored by save-state.
-Native/builtin argument transport is a borrowed VM register/result view. C++
-`NativeArgsView` exposes direct indexed access over the caller-owned value span;
-it does not carry a checked `at()`/exception path in builtin dispatch.
+`BuiltinFunctionId`, not a global/module path. The CPU value set is closed:
+arbitrary host functions and host objects have no value tag, allocation path,
+dispatch branch, GC path, or save-state representation. Studio language tooling
+may copy plain data into ordinary guest tables and inspect guest tables and
+closures, but it cannot inject host callbacks or opaque host objects into the
+machine.
+Builtin argument transport is a borrowed VM register/result view. C++
+`BuiltinArgsView` exposes direct indexed access over the caller-owned value
+span; it does not carry a checked `at()`/exception path in builtin dispatch.
 TypeScript uses a pooled borrowed view with `get(index)`, not a `Proxy`-backed
 array facade. Both views expose Lua's nil-filled argument lane for reads beyond
 the supplied argument count without materializing an argument array per call.
@@ -1095,8 +1098,7 @@ Not saved:
 
 - host windows, WebGL/SDL handles, browser objects, editor state, build caches,
   parser caches, derived lookup tables, scratch arrays that are fully rebuilt
-  from saved device state, host-native bridge callbacks/objects, and output
-  queues that belong only to a host backend.
+  from saved device state, and output queues that belong only to a host backend.
 
 Save-state bytes start with the current property-table payload. There is no
 format-version field, old reader, or migration path. Aggregate machine

@@ -14,7 +14,7 @@ import {
 } from './lua_pipeline';
 import { CARTRIDGE_RESOURCE_DOMAINS } from '../common/resource';
 import type { RuntimeSourceState } from './sources';
-import type { RuntimeNativeBridge } from './native_bridge';
+import type { RuntimeLuaTooling } from './lua_tooling';
 import type { RuntimeFaultState } from './fault_state';
 import type { CartEditor } from '../cart_editor';
 import {
@@ -25,14 +25,14 @@ import {
 
 export function hotResume(
 	sources: RuntimeSourceState,
-	nativeBridge: RuntimeNativeBridge,
+	luaTooling: RuntimeLuaTooling,
 	fault: RuntimeFaultState,
 	editor: CartEditor,
 	runtime: Runtime,
 	rebuildSystem: boolean,
 	rebuildCartridgeSlots: readonly [boolean, boolean],
 ): void {
-	const interpreter = nativeBridge.luaInterpreter;
+	const interpreter = luaTooling.luaInterpreter;
 	try {
 		const rebuildMedia = rebuildSystem
 			|| rebuildCartridgeSlots[0]

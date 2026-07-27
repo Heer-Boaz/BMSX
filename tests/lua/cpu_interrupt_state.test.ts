@@ -7,12 +7,12 @@ import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { Table } from '../../machine/ts/machine/cpu/table';
-import { BuiltinFunctionId, EMPTY_CALL_ARGS, createBuiltinFunction, StringValue, type Value } from '../../machine/ts/machine/cpu/value';
+import { BuiltinFunctionId, EMPTY_CALL_ARGS, createBuiltinFunction, StringValue } from '../../machine/ts/machine/cpu/value';
 import {
 	INSTRUCTION_BYTES,
 	writeInstruction,
 } from '../../machine/ts/spec/blua32/instruction_format';
-import { BASE_CYCLES, encodeFixedCallArgCount } from '../../machine/ts/spec/blua32/opcode';
+import { BASE_CYCLES } from '../../machine/ts/spec/blua32/opcode';
 import {
 	COP0_CAUSE,
 	COP0_EXEC,
@@ -157,38 +157,6 @@ function makeHaltCpu(): {
 	};
 }
 
-function makeNativeCallTestImages(startupFunctionIndex: number): TestBlua32ImagePair {
-	const code = new Uint8Array(9 * INSTRUCTION_BYTES);
-	writeInstruction(code, 0, OpCode.GETGL, 0, 0, 0, 0);
-	writeInstruction(code, 1, OpCode.CALL, 0, encodeFixedCallArgCount(0), 0, 0);
-	writeInstruction(code, 2, OpCode.RET, 0, 0, 0, 0);
-	writeInstruction(code, 3, OpCode.RFE, 0, 0, 0, 0);
-	writeInstruction(code, 4, OpCode.WIDE, 0, 0, 0, 0);
-	writeInstruction(code, 5, OpCode.CLOSURE, 0, 0, 0, 0);
-	writeInstruction(code, 6, OpCode.WIDE, 0, 0, 0, 0);
-	writeInstruction(code, 7, OpCode.CLOSURE, 1, 0, 1, 0);
-	writeInstruction(code, 8, OpCode.RET, 0, 2, 0, 0);
-	return linkRawTestBlua32Pair(
-		CART_LAUNCHER_SYSTEM_IMAGE_SOURCE,
-		{
-			text: code,
-			functions: [
-				{ firstWord: 0, wordCount: 3 },
-				{ firstWord: 3, wordCount: 1 },
-				{ firstWord: 4, wordCount: 5, maxStack: 2 },
-			],
-			globalNames: ['native_callback'],
-			functionIds: ['call_native', 'idle', 'return_functions'],
-			startupFunctionIndex,
-			irqFunctionIndex: 1,
-			exceptionFunctionIndex: 1,
-		},
-	);
-}
-
-const NATIVE_CALL_TEST_IMAGES = makeNativeCallTestImages(2);
-const NATIVE_CALL_ENTRY_TEST_IMAGES = makeNativeCallTestImages(0);
-
 function makeCompletionLatchTestImage(): TestBlua32Image {
 	const code = new Uint8Array(6 * INSTRUCTION_BYTES);
 	writeInstruction(code, 0, OpCode.WIDE, 0, 0, 0, 0);
@@ -212,26 +180,6 @@ function makeCompletionLatchTestImage(): TestBlua32Image {
 }
 
 const COMPLETION_LATCH_TEST_IMAGE = makeCompletionLatchTestImage();
-
-function makeNativeCallCpu(nativeFunction: (cpu: CPU) => Value): {
-	cpu: CPU;
-	irqController: IrqController;
-	callClosure: Closure;
-	idleClosure: Closure;
-} {
-	const { cpu, irqController } = createTestBlua32PairCpu(NATIVE_CALL_TEST_IMAGES);
-	cpu.setGlobalByKey(
-		StringValue.get(cpu.stringPool.intern('native_callback')),
-		nativeFunction(cpu),
-	);
-	assert.equal(cpu.runUntilDepth(0, 6), RunResult.Yielded);
-	return {
-		cpu,
-		irqController,
-		callClosure: cpu.readFrameRegister(0, 0) as Closure,
-		idleClosure: cpu.readFrameRegister(0, 1) as Closure,
-	};
-}
 
 function makeRuntime(cpu: CPU, irqController: IrqController, sliceStats?: { begin: number; end: number }): Runtime {
 	let cpuSliceActive = false;
@@ -549,22 +497,6 @@ test('CPU closure calls that execute HALT without a scheduled interrupt park wit
 	assert.deepEqual(out, []);
 });
 
-test('external closure execution vectors a pending NMI through the physical CPU exception entry', () => {
-	const { cpu, irqController, callClosure } = makeNativeCallCpu(cpu => cpu.createNativeFunction(
-		'no_op_native',
-		() => {},
-	));
-	const runtime = makeRuntime(cpu, irqController);
-	cpu.requestNonMaskableInterrupt();
-
-	const out = runtime.callClosure(callClosure, EMPTY_CALL_ARGS);
-
-	assert.deepEqual(out, []);
-	assert.equal(cpu.getFrameDepth(), 1);
-	assert.equal(cpu.isHaltedUntilIrq(), false);
-	assert.equal(cpu.peekPendingInterrupt(), AcceptedInterruptKind.None);
-});
-
 test('IRQ mask starts closed and gates pending maskable IRQs', () => {
 	const { memory, cpu, irqController: irq } = makeHaltCpu();
 
@@ -579,23 +511,6 @@ test('IRQ mask starts closed and gates pending maskable IRQs', () => {
 	memory.writeValue(IO_IRQ_MASK, 0);
 	assert.equal(memory.readIoU32(IO_IRQ_MASK), 0);
 	assert.equal(cpu.canAcceptMaskableInterruptLine(), false);
-});
-
-test('CPU closure calls continue after scheduler yield requests and restore the suspended budget', () => {
-	const nativeCost = 7;
-	const { cpu, irqController, callClosure } = makeNativeCallCpu(cpu => cpu.createNativeFunction(
-		'yielding_native',
-		() => cpu.requestYield(),
-		{ base: nativeCost, perArg: 0, perRet: 0 },
-	));
-	const runtime = makeRuntime(cpu, irqController);
-
-	cpu.instructionBudgetRemaining = 100;
-	const out = runtime.callClosure(callClosure, EMPTY_CALL_ARGS);
-
-	assert.deepEqual(out, []);
-	assert.equal(cpu.instructionBudgetRemaining, 100);
-	assert.equal(cpu.getFrameDepth(), 1);
 });
 
 test('completion-call return routing survives save-state and exposes the CPU latch without copying', () => {
@@ -623,58 +538,6 @@ test('completion-call return routing survives save-state and exposes the CPU lat
 	const borrowedTable = results[0];
 	cpu.collectTrackedHeapBytes();
 	assert.equal(results[0], borrowedTable);
-});
-
-test('CPU external closure host failures retain physical frames and restore the suspended budget', () => {
-	const nativeCost = 7;
-	const { cpu, irqController, callClosure } = makeNativeCallCpu(cpu => cpu.createNativeFunction(
-		'throwing_native',
-		() => {
-			throw new Error('native boom');
-		},
-		{ base: nativeCost, perArg: 0, perRet: 0 },
-	));
-	const sliceStats = { begin: 0, end: 0 };
-	const runtime = makeRuntime(cpu, irqController, sliceStats);
-
-	cpu.instructionBudgetRemaining = 100;
-	assert.throws(
-		() => runtime.callClosure(callClosure, EMPTY_CALL_ARGS),
-		/native boom/,
-	);
-	assert.equal(cpu.instructionBudgetRemaining, 100);
-	assert.deepEqual(sliceStats, { begin: 1, end: 1 });
-	assert.equal(cpu.getFrameDepth(), 2);
-});
-
-test('CPU frame executor rejects native Lua re-entry and closes the scheduler slice', () => {
-	let runtime!: Runtime;
-	let idleClosure!: Closure;
-	const fixture = makeNativeCallCpu(cpu => cpu.createNativeFunction(
-		'reentering_native',
-		() => runtime.callClosure(idleClosure, EMPTY_CALL_ARGS),
-		{ base: 7, perArg: 0, perRet: 0 },
-	));
-	const { cpu, irqController } = fixture;
-	idleClosure = fixture.idleClosure;
-	cpu.memory.cartridgeController.installRom(0, NATIVE_CALL_ENTRY_TEST_IMAGES.cartRomBytes);
-	cpu.reset();
-
-	const sliceStats = { begin: 0, end: 0 };
-	runtime = makeRuntime(cpu, irqController, sliceStats);
-	const executor = new CpuExecutionState(runtime);
-	assert.throws(
-		() => executor.runWithBudget({
-			updateExecuted: false,
-			luaFaulted: false,
-			cycleBudgetRemaining: 100,
-			cycleBudgetGranted: 100,
-			cycleCarryGranted: 0,
-			activeCpuUsedCycles: 0,
-		}),
-		/External Lua closure execution requires a suspended CPU/,
-	);
-	assert.deepEqual(sliceStats, { begin: 1, end: 1 });
 });
 
 test('frame loop yields after HALT instead of continuing in the same host slice', () => {

@@ -4,14 +4,14 @@ import { extractHoverExpression } from '../intellisense/engine';
 import { buildIncomingCallHierarchyView, type CallHierarchyView } from './view';
 import { editorDocumentState } from '../../editing/document_state';
 import { SYSTEM_RESOURCE_DOMAIN } from '../../../common/resource';
-import type { RuntimeNativeBridge } from '../../../runtime/native_bridge';
+import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 
 export type CallHierarchyQueryResult =
 	| { kind: 'success'; view: CallHierarchyView; }
 	| { kind: 'missing_definition'; }
 	| { kind: 'no_calls'; expression: string; };
 
-export function resolveCallHierarchyViewAt(bridge: RuntimeNativeBridge, row: number, column: number): CallHierarchyQueryResult {
+export function resolveCallHierarchyViewAt(bridge: RuntimeLuaTooling, row: number, column: number): CallHierarchyQueryResult {
 	const context = getActiveCodeTabContext();
 	const path = context.resource.path;
 	const snapshot = buildEditorSemanticSnapshot(bridge, context.resource, editorDocumentState.buffer, editorDocumentState.textVersion);

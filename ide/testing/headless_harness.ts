@@ -63,7 +63,7 @@ export function createHeadlessIdeHarness(ide: RuntimeIdeState, runtime: Runtime)
 			const slot = runtime.machine.cpu.activeCartridgeSlot();
 			hotResume(
 				ide.sources,
-				ide.nativeBridge,
+				ide.luaTooling,
 				ide.fault,
 				ide.editor,
 				runtime,
@@ -76,7 +76,7 @@ export function createHeadlessIdeHarness(ide: RuntimeIdeState, runtime: Runtime)
 				ide.editor,
 				ide.sources,
 				ide.fault,
-				ide.nativeBridge,
+				ide.luaTooling,
 				ide.overlayRenderer,
 				runtime,
 			);
@@ -84,7 +84,7 @@ export function createHeadlessIdeHarness(ide: RuntimeIdeState, runtime: Runtime)
 		reboot: () => rebootPreparedRuntime(
 			ide.sources,
 			ide.fault,
-			ide.nativeBridge,
+			ide.luaTooling,
 			ide.editor,
 			ide.luaGate,
 			ide.overlayRenderer,

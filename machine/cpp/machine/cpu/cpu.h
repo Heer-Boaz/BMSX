@@ -6,11 +6,8 @@
 #include <functional>
 #include <memory>
 #include <new>
-#include <optional>
 #include <stdexcept>
 #include <string>
-#include <string_view>
-#include <tuple>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -37,20 +34,20 @@ class IrqController;
 class Memory;
 
 struct Table;
-class NativeResultsScratchScope {
+class BuiltinResultsScratchScope {
 public:
-	NativeResultsScratchScope(CPU& cpu, NativeResults& out) noexcept;
-	NativeResultsScratchScope(const NativeResultsScratchScope&) = delete;
-	NativeResultsScratchScope& operator=(const NativeResultsScratchScope&) = delete;
-	NativeResultsScratchScope(NativeResultsScratchScope&& other) noexcept;
-	NativeResultsScratchScope& operator=(NativeResultsScratchScope&& other) = delete;
-	~NativeResultsScratchScope();
+	BuiltinResultsScratchScope(CPU& cpu, BuiltinResults& out) noexcept;
+	BuiltinResultsScratchScope(const BuiltinResultsScratchScope&) = delete;
+	BuiltinResultsScratchScope& operator=(const BuiltinResultsScratchScope&) = delete;
+	BuiltinResultsScratchScope(BuiltinResultsScratchScope&& other) noexcept;
+	BuiltinResultsScratchScope& operator=(BuiltinResultsScratchScope&& other) = delete;
+	~BuiltinResultsScratchScope();
 
-	NativeResults& get() noexcept { return *m_out; }
+	BuiltinResults& get() noexcept { return *m_out; }
 
 private:
 	CPU* m_cpu = nullptr;
-	NativeResults* m_out = nullptr;
+	BuiltinResults* m_out = nullptr;
 };
 
 enum class RunResult {
@@ -261,18 +258,10 @@ public:
 	void syncGlobalSlotsToTable();
 
 	Value createBuiltinFunction(BuiltinFunctionId id);
-	void callBuiltinFunction(BuiltinFunction& fn, NativeArgsView args, NativeResults& out);
-	Value createNativeFunction(std::string_view name, NativeFunctionInvoke fn, std::optional<NativeFnCost> cost = std::nullopt);
-	Value createNativeObject(
-		void* raw,
-		std::function<Value(const Value&)> get,
-		std::function<void(const Value&, const Value&)> set,
-		std::function<int()> len,
-		std::function<std::optional<std::pair<Value, Value>>(const Value&)> nextEntry
-	);
+	void callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, BuiltinResults& out);
 	Table* createTable(int arraySize = 0, int hashSize = 0);
 
-	void beginCompletionCall(Closure& closure, NativeArgsView args = {});
+	void beginCompletionCall(Closure& closure, BuiltinArgsView args = {});
 	CpuRuntimeState captureRuntimeState() const;
 	void restoreRuntimeState(const CpuRuntimeState& state);
 	void requestYield();
@@ -291,23 +280,23 @@ public:
 	bool enterPendingInterrupt();
 	RunResult runUntilDepth(int targetDepth, int instructionBudget);
 	void collectHeap();
-	class NativeLocalRootsScope {
+	class LocalRootsScope {
 	public:
-		NativeLocalRootsScope(const NativeLocalRootsScope&) = delete;
-		NativeLocalRootsScope& operator=(const NativeLocalRootsScope&) = delete;
-		NativeLocalRootsScope(NativeLocalRootsScope&& other) noexcept;
-		NativeLocalRootsScope& operator=(NativeLocalRootsScope&& other) = delete;
-		~NativeLocalRootsScope();
+		LocalRootsScope(const LocalRootsScope&) = delete;
+		LocalRootsScope& operator=(const LocalRootsScope&) = delete;
+		LocalRootsScope(LocalRootsScope&& other) noexcept;
+		LocalRootsScope& operator=(LocalRootsScope&& other) = delete;
+		~LocalRootsScope();
 
 	private:
 		friend class CPU;
 
-		explicit NativeLocalRootsScope(CPU& cpu) noexcept;
+		explicit LocalRootsScope(CPU& cpu) noexcept;
 
 		CPU* m_cpu = nullptr;
 		size_t m_base = 0;
 	};
-	NativeLocalRootsScope acquireNativeLocalRoots();
+	LocalRootsScope acquireLocalRoots();
 
 	int getFrameDepth() const { return static_cast<int>(m_frames.size()); }
 	int readFrameExecutionDomain(int frameIndex) const;
@@ -334,19 +323,19 @@ public:
 	Table* globals = nullptr;
 
 private:
-	friend class NativeResultsScratchScope;
+	friend class BuiltinResultsScratchScope;
 	template <bool RootBoundary>
 	RunResult runLoop(int targetDepth, int instructionBudget);
 	void runBuiltinFunction(BuiltinFunction& fn, CallFrame& frame, int callBase, int returnCount, int argCount);
-	void runBuiltinNextValue(Value target, Value key, NativeResults& out);
-	void runBuiltinSetMetatable(NativeArgsView args, NativeResults& out);
-	void runBuiltinGetMetatable(NativeArgsView args, NativeResults& out);
-	void runBuiltinRawGet(NativeArgsView args, NativeResults& out);
-	void runBuiltinRawSet(NativeArgsView args, NativeResults& out);
-	void runBuiltinSelect(NativeArgsView args, NativeResults& out);
-	void runBuiltinStringByte(NativeArgsView args, NativeResults& out);
-	void runBuiltinStringChar(NativeArgsView args, NativeResults& out);
-	void runBuiltinError(NativeArgsView args);
+	void runBuiltinNextValue(Value target, Value key, BuiltinResults& out);
+	void runBuiltinSetMetatable(BuiltinArgsView args, BuiltinResults& out);
+	void runBuiltinGetMetatable(BuiltinArgsView args, BuiltinResults& out);
+	void runBuiltinRawGet(BuiltinArgsView args, BuiltinResults& out);
+	void runBuiltinRawSet(BuiltinArgsView args, BuiltinResults& out);
+	void runBuiltinSelect(BuiltinArgsView args, BuiltinResults& out);
+	void runBuiltinStringByte(BuiltinArgsView args, BuiltinResults& out);
+	void runBuiltinStringChar(BuiltinArgsView args, BuiltinResults& out);
+	void runBuiltinError(BuiltinArgsView args);
 	void startProtectedCall(BuiltinFunctionId id, CallFrame& caller, int callBase, int returnCount,
 		int argumentBase, int argumentCount, bool returnsToProtectedParent);
 	void invokeProtectedTarget(size_t continuationIndex, Value target, int argumentBase, int argumentCount);
@@ -412,10 +401,10 @@ private:
 	void clearCallStack();
 	void ensureStackSize(size_t size);
 	void refreshFrameRegisterPointers();
-	NativeResultsScratchScope acquireNativeReturnScratch();
-	void releaseNativeReturnScratch(NativeResults& out);
-	void releaseNativeLocalRoots(size_t base);
-	void trackNativeLocalRoot(Value value);
+	BuiltinResultsScratchScope acquireBuiltinResultScratch();
+	void releaseBuiltinResultScratch(BuiltinResults& out);
+	void releaseLocalRoots(size_t base);
+	void trackLocalRoot(Value value);
 
 	DecodedInstruction& decodedSlotForWrite(Blua32ExecutionImage& image, size_t wordIndex);
 	const DecodedInstruction& decodedAtWordIndex(const Blua32ExecutionImage& image, size_t wordIndex) const {
@@ -469,10 +458,10 @@ private:
 	std::unordered_map<u32, Closure> m_staticClosuresByAddress;
 	std::array<BuiltinFunction, BUILTIN_FUNCTION_COUNT> m_builtinFunctions;
 
-	ScratchBuffer<NativeResults> m_nativeReturnScratch;
-	size_t m_nativeReturnScratchIndex = 0;
-	std::vector<Value> m_nativeLocalRoots;
-	int m_nativeLocalRootScopeDepth = 0;
+	ScratchBuffer<BuiltinResults> m_builtinResultScratch;
+	size_t m_builtinResultScratchIndex = 0;
+	std::vector<Value> m_localRoots;
+	int m_localRootScopeDepth = 0;
 
 	std::vector<std::unique_ptr<CallFrame>> m_framePool;
 	static constexpr int MAX_POOLED_FRAMES = 32;

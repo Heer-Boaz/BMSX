@@ -10,7 +10,7 @@ import {
 import type { CartEditor } from '../../../cart_editor';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { RuntimeFaultState } from '../../../runtime/fault_state';
-import type { RuntimeNativeBridge } from '../../../runtime/native_bridge';
+import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import type { GateGroup } from '../../../../machine/ts/common/taskgate';
 import type { OverlayRenderer } from '../../../runtime/overlay_renderer';
 
@@ -29,7 +29,7 @@ export function closeBlockingWorkbenchModal(): boolean {
 export function handleBlockingWorkbenchModalInput(
 	editor: CartEditor,
 	sources: RuntimeSourceState,
-	nativeBridge: RuntimeNativeBridge,
+	luaTooling: RuntimeLuaTooling,
 	fault: RuntimeFaultState,
 	luaGate: GateGroup,
 	overlayRenderer: OverlayRenderer,
@@ -40,7 +40,7 @@ export function handleBlockingWorkbenchModalInput(
 			editor,
 			sources,
 			fault,
-			nativeBridge,
+			luaTooling,
 			luaGate,
 			overlayRenderer,
 			runtime,
@@ -51,7 +51,7 @@ export function handleBlockingWorkbenchModalInput(
 export function handleBlockingWorkbenchModalPointer(
 	editor: CartEditor,
 	sources: RuntimeSourceState,
-	nativeBridge: RuntimeNativeBridge,
+	luaTooling: RuntimeLuaTooling,
 	fault: RuntimeFaultState,
 	luaGate: GateGroup,
 	overlayRenderer: OverlayRenderer,
@@ -65,7 +65,7 @@ export function handleBlockingWorkbenchModalPointer(
 		editor,
 		sources,
 		fault,
-		nativeBridge,
+		luaTooling,
 		luaGate,
 		overlayRenderer,
 		runtime,

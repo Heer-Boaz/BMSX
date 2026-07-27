@@ -9,12 +9,12 @@ import { editorDocumentState } from '../../../editing/document_state';
 import { symbolSearchState } from '../../symbols/search/state';
 import { referenceState } from '../state';
 import { buildReferenceSearchCatalog, showReferenceSearchStatusMessage, updateReferenceSearchMatches } from './catalog';
-import type { RuntimeNativeBridge } from '../../../../runtime/native_bridge';
+import type { RuntimeLuaTooling } from '../../../../runtime/lua_tooling';
 import type { RuntimeSourceState } from '../../../../runtime/sources';
 import type { RenameController } from '../../rename/controller';
 import type { CartEditor } from '../../../../cart_editor';
 
-export function openReferenceSearchPopup(bridge: RuntimeNativeBridge, rename: RenameController): void {
+export function openReferenceSearchPopup(bridge: RuntimeLuaTooling, rename: RenameController): void {
 	const context = getActiveCodeTabContext();
 	if (context.mode !== 'lua') {
 		return;

@@ -28,7 +28,7 @@ import { buildBlua32Tail } from '../../machine/ts/rompack/tooling/blua32_tail';
 import type { RomSourceLayer } from '../../machine/ts/rompack/source';
 import type { ResourceIdentity } from '../common/resource';
 import type { RuntimeFaultState } from './fault_state';
-import type { RuntimeNativeBridge } from './native_bridge';
+import type { RuntimeLuaTooling } from './lua_tooling';
 import type { Blua32ToolingImage } from '../../machine/ts/rompack/tooling/blua32_media';
 
 export type RebuiltBlua32Image = {
@@ -45,7 +45,7 @@ export type RebuiltBlua32Media = {
 
 function installFreshLuaInterpreter(
 	fault: RuntimeFaultState,
-	bridge: RuntimeNativeBridge,
+	bridge: RuntimeLuaTooling,
 	runtime: Runtime,
 ): LuaInterpreter {
 	resetHandledLuaErrors(fault);
@@ -75,10 +75,6 @@ function describeSymbolValue(value: Value): { kind: RuntimeSymbolKind; valueType
 			return { kind: 'constant', valueType: 'string' };
 		case ValueTag.Table:
 			return { kind: 'table', valueType: 'table' };
-		case ValueTag.NativeFunction:
-			return { kind: 'function', valueType: 'native_function' };
-		case ValueTag.NativeObject:
-			return { kind: 'table', valueType: 'native_object' };
 		case ValueTag.Closure:
 		case ValueTag.BuiltinFunction:
 			return { kind: 'function', valueType: 'function' };
@@ -344,11 +340,11 @@ export function installBlua32Media(
 export function bootActiveBlua32Media(
 	sources: RuntimeSourceState,
 	fault: RuntimeFaultState,
-	nativeBridge: RuntimeNativeBridge,
+	luaTooling: RuntimeLuaTooling,
 	runtime: Runtime,
 	rebuildBlua32Media: boolean,
 ): void {
-	const interpreter = installFreshLuaInterpreter(fault, nativeBridge, runtime);
+	const interpreter = installFreshLuaInterpreter(fault, luaTooling, runtime);
 	if (rebuildBlua32Media) {
 		installBlua32Media(sources, runtime, buildBlua32Media(
 			sources,

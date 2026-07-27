@@ -12,14 +12,14 @@ import { editorPointerState, stopPointerSelectionAndResetClicks } from '../state
 import { editorDocumentState } from '../../../editor/editing/document_state';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import type { CartEditor } from '../../../cart_editor';
-import type { RuntimeNativeBridge } from '../../../runtime/native_bridge';
+import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import type { RuntimeFaultState } from '../../../runtime/fault_state';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 
 export function handleCodeAreaPrimaryPressPointer(
 	editor: CartEditor,
 	sources: RuntimeSourceState,
-	bridge: RuntimeNativeBridge,
+	bridge: RuntimeLuaTooling,
 	fault: RuntimeFaultState,
 	runtime: Runtime,
 	snapshot: PointerSnapshot,

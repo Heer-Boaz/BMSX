@@ -34,6 +34,7 @@ import {
 	LUA_FAULT_REASON_INDEX_NON_TABLE,
 	LUA_FAULT_REASON_ITERATE_NON_TABLE,
 	LUA_FAULT_REASON_METATABLE_LOOP,
+	LUA_FAULT_REASON_UNKNOWN,
 	LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION,
 } from '../../spec/blua32/cop0';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord, signExtend } from '../../spec/blua32/instruction_format';
@@ -87,7 +88,6 @@ import {
 	BuiltinFunctionId,
 	EMPTY_CALL_ARGS,
 	StringValue,
-	VALUE_TAG,
 	ValueTag,
 	asStringId,
 	createBuiltinFunction,
@@ -95,19 +95,15 @@ import {
 	valueIsTable,
 	valueTag,
 	valueToString,
-	valueTypeName,
 	valueTypeNameForLua,
 	type BuiltinFunction,
-	type NativeArgs,
-	type NativeFnCost,
-	type NativeFunction,
-	type NativeObject,
+	type BuiltinArgs,
 	type Value,
 } from './value';
 import { LuaExecutionError, LuaThrownValueError } from './errors';
 import { Table } from './table';
 import { Closure, EMPTY_CLOSURE_UPVALUES, type OpenUpvalueSlot, type Upvalue } from './closure';
-import { ArrayNativeArgsView, RegisterFile, RegisterNativeArgsView } from './register_file';
+import { ArrayBuiltinArgsView, RegisterFile, RegisterBuiltinArgsView } from './register_file';
 import {
 	DECODED_PAGE_MASK,
 	DECODED_PAGE_SHIFT,
@@ -125,43 +121,9 @@ import { ProtectedCallContinuation, ProtectedCallKind, type CallFrame } from './
 
 const executionStringDecoder = new TextDecoder('utf-8', { fatal: true });
 
-const DEFAULT_NATIVE_COST: NativeFnCost = { base: 1, perArg: 0, perRet: 0 };
-
 const CLOSURE_HEAP_BYTES = 16;
 const CLOSURE_UPVALUE_SLOT_HEAP_BYTES = 8;
-const NATIVE_FUNCTION_HEAP_BYTES = 16;
-const NATIVE_OBJECT_HEAP_BYTES = 24;
 const UPVALUE_HEAP_BYTES = 24;
-
-function createNativeFunction(
-	hashId: number,
-	name: string,
-	invoke: (args: NativeArgs, out: Value[]) => void,
-	cost?: NativeFnCost,
-): NativeFunction {
-	const resolvedCost = cost ?? DEFAULT_NATIVE_COST;
-	addTrackedLuaHeapBytes(NATIVE_FUNCTION_HEAP_BYTES);
-	return {
-		[VALUE_TAG]: ValueTag.NativeFunction,
-		hashId,
-		name,
-		cost: resolvedCost,
-		invoke: (args, out) => {
-			out.length = 0;
-			invoke(args, out);
-		},
-	};
-}
-
-function createNativeObject(hashId: number, raw: object, handlers: {
-	get: (key: Value) => Value;
-	set: (key: Value, value: Value) => void;
-	len: () => number;
-	nextEntry: (after: Value) => [Value, Value] | null;
-}): NativeObject {
-	addTrackedLuaHeapBytes(NATIVE_OBJECT_HEAP_BYTES);
-	return { [VALUE_TAG]: ValueTag.NativeObject, hashId, raw, get: handlers.get, set: handlers.set, len: handlers.len, nextEntry: handlers.nextEntry, metatable: null };
-}
 
 export type CpuValueState =
 	| { tag: 'nil' }
@@ -313,11 +275,11 @@ export class CPU {
 	private readonly protectedCallContinuations = new ScratchBuffer<ProtectedCallContinuation>(() => new ProtectedCallContinuation(), MAX_POOLED_FRAMES);
 	private protectedCallDepth = 0;
 	private readonly openUpvalues: OpenUpvalueSlot[] = [];
-	private readonly registerNativeArgsScratch = new ScratchBuffer<RegisterNativeArgsView>(() => new RegisterNativeArgsView());
-	private registerNativeArgsScratchIndex = 0;
-	private readonly arrayNativeArgsScratch = new ScratchBuffer<ArrayNativeArgsView>(() => new ArrayNativeArgsView());
-	private arrayNativeArgsScratchIndex = 0;
-	private readonly nativeReturnScratch = new ScratchArrayStack<Value>();
+	private readonly registerBuiltinArgsScratch = new ScratchBuffer<RegisterBuiltinArgsView>(() => new RegisterBuiltinArgsView());
+	private registerBuiltinArgsScratchIndex = 0;
+	private readonly arrayBuiltinArgsScratch = new ScratchBuffer<ArrayBuiltinArgsView>(() => new ArrayBuiltinArgsView());
+	private arrayBuiltinArgsScratchIndex = 0;
+	private readonly builtinReturnScratch = new ScratchArrayStack<Value>();
 	private executionObserver: CpuExecutionObserver | null = null;
 	private readonly executionImages: Blua32ExecutionImage[] = [];
 	private systemImage!: Blua32ExecutionImage;
@@ -386,19 +348,6 @@ export class CPU {
 		return table;
 	}
 
-	public createNativeFunction(name: string, invoke: (args: NativeArgs, out: Value[]) => void, cost?: NativeFnCost): NativeFunction {
-		return createNativeFunction(this.allocateObjectHashId(), name, invoke, cost);
-	}
-
-	public createNativeObject(raw: object, handlers: {
-		get: (key: Value) => Value;
-		set: (key: Value, value: Value) => void;
-		len: () => number;
-		nextEntry: (after: Value) => [Value, Value] | null;
-	}): NativeObject {
-		return createNativeObject(this.allocateObjectHashId(), raw, handlers);
-	}
-
 	private ensureStackCapacity(size: number): void {
 		const stack = this.stackRegisters;
 		if (size <= stack.capacity()) {
@@ -423,27 +372,27 @@ export class CPU {
 		}
 	}
 
-	private acquireRegisterNativeArgs(): RegisterNativeArgsView {
-		const args = this.registerNativeArgsScratch.get(this.registerNativeArgsScratchIndex);
-		this.registerNativeArgsScratchIndex += 1;
+	private acquireRegisterBuiltinArgs(): RegisterBuiltinArgsView {
+		const args = this.registerBuiltinArgsScratch.get(this.registerBuiltinArgsScratchIndex);
+		this.registerBuiltinArgsScratchIndex += 1;
 		return args;
 	}
 
-	private releaseRegisterNativeArgs(args: RegisterNativeArgsView): void {
+	private releaseRegisterBuiltinArgs(args: RegisterBuiltinArgsView): void {
 		args.clear();
-		this.registerNativeArgsScratchIndex -= 1;
+		this.registerBuiltinArgsScratchIndex -= 1;
 	}
 
-	private acquireArrayNativeArgs(values: ReadonlyArray<Value>): ArrayNativeArgsView {
-		const args = this.arrayNativeArgsScratch.get(this.arrayNativeArgsScratchIndex);
-		this.arrayNativeArgsScratchIndex += 1;
+	private acquireArrayBuiltinArgs(values: ReadonlyArray<Value>): ArrayBuiltinArgsView {
+		const args = this.arrayBuiltinArgsScratch.get(this.arrayBuiltinArgsScratchIndex);
+		this.arrayBuiltinArgsScratchIndex += 1;
 		args.bind(values);
 		return args;
 	}
 
-	private releaseArrayNativeArgs(args: ArrayNativeArgsView): void {
+	private releaseArrayBuiltinArgs(args: ArrayBuiltinArgsView): void {
 		args.clear();
-		this.arrayNativeArgsScratchIndex -= 1;
+		this.arrayBuiltinArgsScratchIndex -= 1;
 	}
 
 	private findOpenUpvalue(frame: CallFrame, index: number): Upvalue | null {
@@ -497,19 +446,6 @@ export class CPU {
 				}
 				return this.resolveTableIndexChain(table, key, TableIndexKeyKind.Value);
 			}
-			case ValueTag.NativeObject: {
-				const nativeObject = base as NativeObject;
-				const directValue = nativeObject.get(key);
-				const metatable = nativeObject.metatable;
-				if (directValue !== null || metatable === null) {
-					return directValue;
-				}
-				const indexer = metatable.getStringKey(this.indexKey);
-				if (valueIsTable(indexer)) {
-					return this.resolveTableIndexChain(indexer, key, TableIndexKeyKind.Value);
-				}
-				return null;
-			}
 			default:
 				throw new LuaExecutionError('Attempted to index field on a non-table value.', LUA_FAULT_REASON_INDEX_NON_TABLE);
 		}
@@ -548,18 +484,6 @@ export class CPU {
 				}
 				return this.resolveTableIndexChain(table, index, indexKind);
 			}
-			case ValueTag.NativeObject: {
-				const nativeObject = base as NativeObject;
-				const directValue = nativeObject.get(index);
-				if (directValue !== null || nativeObject.metatable === null) {
-					return directValue;
-				}
-				const indexer = nativeObject.metatable.getStringKey(this.indexKey);
-				if (valueIsTable(indexer)) {
-					return this.resolveTableIndexChain(indexer, index, indexKind);
-				}
-				return directValue;
-			}
 			default:
 				throw new LuaExecutionError('Attempted to index field on a non-table value.', LUA_FAULT_REASON_INDEX_NON_TABLE);
 		}
@@ -597,18 +521,6 @@ export class CPU {
 				}
 				return this.resolveTableIndexChain(table, key, TableIndexKeyKind.Field);
 			}
-			case ValueTag.NativeObject: {
-				const nativeObject = base as NativeObject;
-				const directValue = nativeObject.get(key);
-				if (directValue !== null || nativeObject.metatable === null) {
-					return directValue;
-				}
-				const indexer = nativeObject.metatable.getStringKey(this.indexKey);
-				if (valueIsTable(indexer)) {
-					return this.resolveTableIndexChain(indexer, key, TableIndexKeyKind.Field);
-				}
-				return directValue;
-			}
 			default:
 				throw new LuaExecutionError('Attempted to index field on a non-table value.', LUA_FAULT_REASON_INDEX_NON_TABLE);
 		}
@@ -618,9 +530,6 @@ export class CPU {
 		switch (valueTag(base)) {
 			case ValueTag.Table:
 				(base as Table).set(key, value);
-				return;
-			case ValueTag.NativeObject:
-				(base as NativeObject).set(key, value);
 				return;
 			default:
 				throw new LuaExecutionError('Attempted to assign to a non-table value.', LUA_FAULT_REASON_ASSIGN_NON_TABLE);
@@ -632,9 +541,6 @@ export class CPU {
 			case ValueTag.Table:
 				(base as Table).setInteger(index, value);
 				return;
-			case ValueTag.NativeObject:
-				(base as NativeObject).set(index, value);
-				return;
 			default:
 				throw new LuaExecutionError('Attempted to assign to a non-table value.', LUA_FAULT_REASON_ASSIGN_NON_TABLE);
 		}
@@ -644,9 +550,6 @@ export class CPU {
 		switch (valueTag(base)) {
 			case ValueTag.Table:
 				(base as Table).setStringKey(key, value);
-				return;
-			case ValueTag.NativeObject:
-				(base as NativeObject).set(key, value);
 				return;
 			default:
 				throw new LuaExecutionError('Attempted to assign to a non-table value.', LUA_FAULT_REASON_ASSIGN_NON_TABLE);
@@ -1838,8 +1741,10 @@ export class CPU {
 							this.setRegisterNumberFast(frame, registers, a, (value as Table).arrayLength);
 							return;
 						default:
-							this.setRegisterNumberFast(frame, registers, a, (value as NativeObject).len());
-							return;
+							throw new LuaExecutionError(
+								'Attempted to get length of an unsupported value.',
+								LUA_FAULT_REASON_UNKNOWN,
+							);
 					}
 				}
 				case OpCode.BNOT: {
@@ -2025,24 +1930,6 @@ export class CPU {
 						case ValueTag.BuiltinFunction:
 							this.runBuiltinFunction(callee as BuiltinFunction, frame, a, c, argCount);
 							return;
-						case ValueTag.NativeFunction: {
-							const nativeFunction = callee as NativeFunction;
-							this.charge(nativeFunction.cost.base);
-							const nativeArgs = this.acquireRegisterNativeArgs();
-							const results = this.nativeReturnScratch.acquire();
-							try {
-								nativeArgs.bind(registers, a + 1, argCount);
-								nativeFunction.invoke(nativeArgs, results);
-								if (this.frames.length > 0 && this.frames[this.frames.length - 1] === frame) {
-									this.writeReturnValues(frame, a, c, results);
-								}
-								enforceLuaHeapBudget();
-							} finally {
-								this.releaseRegisterNativeArgs(nativeArgs);
-								this.nativeReturnScratch.release(results);
-							}
-							return;
-						}
 						case ValueTag.Closure:
 							this.pushFrameFromCaller(frame, callee as Closure, a + 1, argCount, a, c, false, frame.pc - INSTRUCTION_BYTES);
 							return;
@@ -2609,15 +2496,15 @@ export class CPU {
 	}
 
 	public callBuiltinFunction(fn: BuiltinFunction, args: ReadonlyArray<Value>, out: Value[]): void {
-		const nativeArgs = this.acquireArrayNativeArgs(args);
+		const builtinArgs = this.acquireArrayBuiltinArgs(args);
 		try {
-			this.callBuiltinFunctionView(fn, nativeArgs, out);
+			this.callBuiltinFunctionView(fn, builtinArgs, out);
 		} finally {
-			this.releaseArrayNativeArgs(nativeArgs);
+			this.releaseArrayBuiltinArgs(builtinArgs);
 		}
 	}
 
-	private callBuiltinFunctionView(fn: BuiltinFunction, args: NativeArgs, out: Value[]): void {
+	private callBuiltinFunctionView(fn: BuiltinFunction, args: BuiltinArgs, out: Value[]): void {
 		out.length = 0;
 		switch (fn.id) {
 			case BuiltinFunctionId.Next:
@@ -2662,17 +2549,17 @@ export class CPU {
 			this.startProtectedCall(fn.id, frame, callBase, returnCount, callBase + 1, argCount, false);
 			return;
 		}
-		const nativeArgs = this.acquireRegisterNativeArgs();
-		const results = this.nativeReturnScratch.acquire();
+		const builtinArgs = this.acquireRegisterBuiltinArgs();
+		const results = this.builtinReturnScratch.acquire();
 		try {
-			nativeArgs.bind(frame.registers, callBase + 1, argCount);
-			this.callBuiltinFunctionView(fn, nativeArgs, results);
+			builtinArgs.bind(frame.registers, callBase + 1, argCount);
+			this.callBuiltinFunctionView(fn, builtinArgs, results);
 			if (this.frames.length > 0 && this.frames[this.frames.length - 1] === frame) {
 				this.writeReturnValues(frame, callBase, returnCount, results);
 			}
 		} finally {
-			this.releaseRegisterNativeArgs(nativeArgs);
-			this.nativeReturnScratch.release(results);
+			this.releaseRegisterBuiltinArgs(builtinArgs);
+			this.builtinReturnScratch.release(results);
 		}
 	}
 
@@ -2689,8 +2576,7 @@ export class CPU {
 			const handler = argumentCount > 1 ? caller.registers.get(argumentBase + 1) : null;
 			const handlerTag = valueTag(handler);
 			if (handlerTag !== ValueTag.Closure
-				&& handlerTag !== ValueTag.BuiltinFunction
-				&& handlerTag !== ValueTag.NativeFunction) {
+				&& handlerTag !== ValueTag.BuiltinFunction) {
 				throw new LuaExecutionError('xpcall error handler must be a function.', LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION);
 			}
 		}
@@ -2737,31 +2623,15 @@ export class CPU {
 					this.startProtectedCall(builtinFunction.id, caller, continuation.callBase, 0, argumentBase, argumentCount, true);
 					return;
 				}
-				const nativeArgs = this.acquireRegisterNativeArgs();
-				const results = this.nativeReturnScratch.acquire();
+				const builtinArgs = this.acquireRegisterBuiltinArgs();
+				const results = this.builtinReturnScratch.acquire();
 				try {
-					nativeArgs.bind(caller.registers, argumentBase, argumentCount);
-					this.callBuiltinFunctionView(builtinFunction, nativeArgs, results);
+					builtinArgs.bind(caller.registers, argumentBase, argumentCount);
+					this.callBuiltinFunctionView(builtinFunction, builtinArgs, results);
 					this.finishProtectedCallFromArray(continuationIndex, results);
 				} finally {
-					this.releaseRegisterNativeArgs(nativeArgs);
-					this.nativeReturnScratch.release(results);
-				}
-				return;
-			}
-			case ValueTag.NativeFunction: {
-				const nativeFunction = target as NativeFunction;
-				this.charge(nativeFunction.cost.base);
-				const nativeArgs = this.acquireRegisterNativeArgs();
-				const results = this.nativeReturnScratch.acquire();
-				try {
-					nativeArgs.bind(caller.registers, argumentBase, argumentCount);
-					nativeFunction.invoke(nativeArgs, results);
-					enforceLuaHeapBudget();
-					this.finishProtectedCallFromArray(continuationIndex, results);
-				} finally {
-					this.releaseRegisterNativeArgs(nativeArgs);
-					this.nativeReturnScratch.release(results);
+					this.releaseRegisterBuiltinArgs(builtinArgs);
+					this.builtinReturnScratch.release(results);
 				}
 				return;
 			}
@@ -2932,15 +2802,6 @@ export class CPU {
 				out.push(entry[0], entry[1]);
 				return;
 			}
-			case ValueTag.NativeObject: {
-				const entry = (target as NativeObject).nextEntry(keyValue);
-				if (entry === null) {
-					out.push(null);
-					return;
-				}
-				out.push(entry[0], entry[1]);
-				return;
-			}
 			default:
 				throw new LuaExecutionError('Attempted to iterate a non-table value.', LUA_FAULT_REASON_ITERATE_NON_TABLE);
 		}
@@ -2950,38 +2811,28 @@ export class CPU {
 		out.push(StringValue.get(this.stringPool.intern(valueTypeNameForLua(value))));
 	}
 
-	private runBuiltinSetMetatable(args: NativeArgs, out: Value[]): void {
-		const target = args.get(0);
+	private runBuiltinSetMetatable(args: BuiltinArgs, out: Value[]): void {
+		const target = args.get(0) as Table;
 		const metatable = args.get(1) as Table | null;
-		if (valueIsTable(target)) {
-			target.metatable = metatable;
-			out.push(target);
-			return;
-		}
-		(target as NativeObject).metatable = metatable;
+		target.metatable = metatable;
 		out.push(target);
 	}
 
-	private runBuiltinGetMetatable(args: NativeArgs, out: Value[]): void {
-		const target = args.get(0);
-		if (valueIsTable(target)) {
-			out.push(target.metatable);
-			return;
-		}
-		out.push((target as NativeObject).metatable);
+	private runBuiltinGetMetatable(args: BuiltinArgs, out: Value[]): void {
+		out.push((args.get(0) as Table).metatable);
 	}
 
-	private runBuiltinRawGet(args: NativeArgs, out: Value[]): void {
+	private runBuiltinRawGet(args: BuiltinArgs, out: Value[]): void {
 		out.push((args.get(0) as Table).get(args.get(1)));
 	}
 
-	private runBuiltinRawSet(args: NativeArgs, out: Value[]): void {
+	private runBuiltinRawSet(args: BuiltinArgs, out: Value[]): void {
 		const target = args.get(0) as Table;
 		target.set(args.get(1), args.get(2));
 		out.push(target);
 	}
 
-	private runBuiltinSelect(args: NativeArgs, out: Value[]): void {
+	private runBuiltinSelect(args: BuiltinArgs, out: Value[]): void {
 		const selector = args.get(0);
 		const count = args.length - 1;
 		if (valueIsString(selector) && this.stringPool.toString(asStringId(selector)) === '#') {
@@ -2999,7 +2850,7 @@ export class CPU {
 		}
 	}
 
-	private runBuiltinStringByte(args: NativeArgs, out: Value[]): void {
+	private runBuiltinStringByte(args: BuiltinArgs, out: Value[]): void {
 		const source = this.stringPool.toString(asStringId(args.get(0) as StringValue));
 		let position = 1;
 		if (args.length > 1) {
@@ -3023,7 +2874,7 @@ export class CPU {
 		out.push(null);
 	}
 
-	private runBuiltinStringChar(args: NativeArgs, out: Value[]): void { // TODO: Check whether this is a performance bottleneck and optimize if necessary and do the same for the C++-version.
+	private runBuiltinStringChar(args: BuiltinArgs, out: Value[]): void { // TODO: Check whether this is a performance bottleneck and optimize if necessary and do the same for the C++-version.
 		let result = '';
 		for (let index = 0; index < args.length; index += 1) {
 			result += String.fromCodePoint(Math.trunc(args.get(index) as number));
@@ -3031,7 +2882,7 @@ export class CPU {
 		out.push(StringValue.get(this.stringPool.intern(result)));
 	}
 
-	private runBuiltinError(args: NativeArgs): never {
+	private runBuiltinError(args: BuiltinArgs): never {
 		const value = args.get(0);
 		throw new LuaThrownValueError(value, valueToString(value, this.stringPool));
 	}
@@ -3070,9 +2921,6 @@ export class CPU {
 					return { tag: 'ref', id: ensureObjectId(value as Table, 'table') };
 				case ValueTag.Closure:
 					return { tag: 'ref', id: ensureObjectId(value as Closure, 'closure') };
-				case ValueTag.NativeFunction:
-				case ValueTag.NativeObject:
-					throw new Error(`Runtime snapshot cannot preserve ${valueTypeName(value)} value.`);
 			}
 		};
 
@@ -3141,10 +2989,6 @@ export class CPU {
 		const systemGlobals: CpuRootValueState[] = [];
 		for (let slot = 0; slot < this.systemGlobalNames.length; slot += 1) {
 			const value = this.systemGlobalValues[slot];
-			const tag = valueTag(value);
-			if (tag === ValueTag.NativeFunction || tag === ValueTag.NativeObject) {
-				continue;
-			}
 			systemGlobals.push({
 				name: this.stringPool.toString(this.systemGlobalNames[slot]),
 				value: captureValueState(value),
@@ -3154,10 +2998,6 @@ export class CPU {
 		const globals: CpuRootValueState[] = [];
 		this.globals.forEachEntry((key, value) => {
 			if (!valueIsString(key)) {
-				return;
-			}
-			const tag = valueTag(value);
-			if (tag === ValueTag.NativeFunction || tag === ValueTag.NativeObject) {
 				return;
 			}
 			globals.push({
@@ -3462,8 +3302,12 @@ export class CPU {
 				case ValueTag.String:
 					this.stringPool.markReachable(asStringId(value as StringValue));
 					return;
-				default:
+				case ValueTag.Table:
+				case ValueTag.Closure:
 					valueStack.push(value);
+					return;
+				case ValueTag.BuiltinFunction:
+					return;
 			}
 		};
 		const pushImage = (image: Blua32ExecutionImage): void => {
@@ -3534,35 +3378,6 @@ export class CPU {
 					seen.add(table);
 					total += table.getTrackedHeapBytes();
 					table.walkTrackedValues(pushValue);
-					continue;
-				}
-				case ValueTag.BuiltinFunction: {
-					const builtinFunction = value as BuiltinFunction;
-					if (seen.has(builtinFunction)) {
-						continue;
-					}
-					seen.add(builtinFunction);
-					continue;
-				}
-				case ValueTag.NativeFunction: {
-					const nativeFunction = value as NativeFunction;
-					if (seen.has(nativeFunction)) {
-						continue;
-					}
-					seen.add(nativeFunction);
-					total += NATIVE_FUNCTION_HEAP_BYTES;
-					continue;
-				}
-				case ValueTag.NativeObject: {
-					const nativeObject = value as NativeObject;
-					if (seen.has(nativeObject)) {
-						continue;
-					}
-					seen.add(nativeObject);
-					total += NATIVE_OBJECT_HEAP_BYTES;
-					if (nativeObject.metatable !== null) {
-						pushValue(nativeObject.metatable);
-					}
 					continue;
 				}
 				case ValueTag.Closure: {

@@ -11,7 +11,7 @@ import { setSingleCursorSelectionAnchor } from '../../editing/cursor/state';
 import { commitRename } from './operations';
 import { handleRenameControllerInput } from './input';
 import { validateRenameIdentifier } from './validation';
-import type { RuntimeNativeBridge } from '../../../runtime/native_bridge';
+import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import type { CrossFileRenameManager } from './operations';
 
 export type RenameStartOptions = ReferenceLookupOptions;
@@ -38,7 +38,7 @@ export class RenameController {
 		return LuaLexer.isIdentifierPart(value.charAt(0));
 	};
 
-	public begin(bridge: RuntimeNativeBridge, options: RenameStartOptions): boolean {
+	public begin(bridge: RuntimeLuaTooling, options: RenameStartOptions): boolean {
 		const lookup = resolveReferenceLookup(bridge, options);
 		if (lookup.kind === 'error') {
 			showEditorMessage(lookup.message, constants.COLOR_STATUS_WARNING, lookup.duration);

@@ -26,7 +26,7 @@ function executeWorkbenchHostMenuAction(
 			void rebootPreparedRuntime(
 				ide.sources,
 				ide.fault,
-				ide.nativeBridge,
+				ide.luaTooling,
 				ide.editor,
 				ide.luaGate,
 				ide.overlayRenderer,

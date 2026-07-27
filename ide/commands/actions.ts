@@ -16,7 +16,7 @@ import { capturePendingLuaCodeTabSources, markLuaCodeTabsAppliedToRuntime } from
 import type { CartEditor } from '../cart_editor';
 import type { RuntimeSourceState } from '../runtime/sources';
 import type { RuntimeFaultState } from '../runtime/fault_state';
-import type { RuntimeNativeBridge } from '../runtime/native_bridge';
+import type { RuntimeLuaTooling } from '../runtime/lua_tooling';
 import type { GateGroup } from '../../machine/ts/common/taskgate';
 import type { OverlayRenderer } from '../runtime/overlay_renderer';
 
@@ -24,7 +24,7 @@ export function performEditorAction(
 	editor: CartEditor,
 	sources: RuntimeSourceState,
 	fault: RuntimeFaultState,
-	nativeBridge: RuntimeNativeBridge,
+	luaTooling: RuntimeLuaTooling,
 	luaGate: GateGroup,
 	overlayRenderer: OverlayRenderer,
 	runtime: Runtime,
@@ -32,13 +32,13 @@ export function performEditorAction(
 ): boolean {
 	switch (action) {
 		case 'hot-resume':
-			return performHotResume(editor, sources, fault, nativeBridge, overlayRenderer, runtime);
+			return performHotResume(editor, sources, fault, luaTooling, overlayRenderer, runtime);
 		case 'reboot':
 			return performReboot(
 				editor,
 				sources,
 				fault,
-				nativeBridge,
+				luaTooling,
 				luaGate,
 				overlayRenderer,
 				runtime,
@@ -58,7 +58,7 @@ export function performHotResume(
 	editor: CartEditor,
 	sources: RuntimeSourceState,
 	fault: RuntimeFaultState,
-	nativeBridge: RuntimeNativeBridge,
+	luaTooling: RuntimeLuaTooling,
 	overlayRenderer: OverlayRenderer,
 	runtime: Runtime,
 ): boolean {
@@ -71,7 +71,7 @@ export function performHotResume(
 		applyLuaCodeTabSources(sources, pendingSources);
 		hotResume(
 			sources,
-			nativeBridge,
+			luaTooling,
 			fault,
 			editor,
 			runtime,
@@ -91,7 +91,7 @@ export function performReboot(
 	editor: CartEditor,
 	sources: RuntimeSourceState,
 	fault: RuntimeFaultState,
-	nativeBridge: RuntimeNativeBridge,
+	luaTooling: RuntimeLuaTooling,
 	luaGate: GateGroup,
 	overlayRenderer: OverlayRenderer,
 	runtime: Runtime,
@@ -105,7 +105,7 @@ export function performReboot(
 		await rebootPreparedRuntime(
 			sources,
 			fault,
-			nativeBridge,
+			luaTooling,
 			editor,
 			luaGate,
 			overlayRenderer,

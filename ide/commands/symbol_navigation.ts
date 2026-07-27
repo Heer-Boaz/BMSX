@@ -5,7 +5,7 @@ import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { EditorCommandId, EditorSymbolNavigationCommandId } from '../common/commands';
 import type { CartEditor } from '../cart_editor';
 import type { RuntimeSourceState } from '../runtime/sources';
-import type { RuntimeNativeBridge } from '../runtime/native_bridge';
+import type { RuntimeLuaTooling } from '../runtime/lua_tooling';
 import type { RuntimeFaultState } from '../runtime/fault_state';
 
 export function isEditorSymbolNavigationCommand(command: EditorCommandId): command is EditorSymbolNavigationCommandId {
@@ -16,7 +16,7 @@ export function isEditorSymbolNavigationCommand(command: EditorCommandId): comma
 export function executeEditorSymbolNavigationCommand(
 	editor: CartEditor,
 	sources: RuntimeSourceState,
-	nativeBridge: RuntimeNativeBridge,
+	luaTooling: RuntimeLuaTooling,
 	fault: RuntimeFaultState,
 	runtime: Runtime,
 	command: EditorSymbolNavigationCommandId,
@@ -24,7 +24,7 @@ export function executeEditorSymbolNavigationCommand(
 	switch (command) {
 		case 'goToDefinition':
 			gotoDefinitionAt(
-				nativeBridge,
+				luaTooling,
 				fault,
 				editor,
 				sources,
@@ -35,7 +35,7 @@ export function executeEditorSymbolNavigationCommand(
 			return;
 		case 'callHierarchy':
 			executeEditorCallHierarchyAt(
-				nativeBridge,
+				luaTooling,
 				editor.resourcePanel,
 				editorDocumentState.cursorRow,
 				editorDocumentState.cursorColumn,

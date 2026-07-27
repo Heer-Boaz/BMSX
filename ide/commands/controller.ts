@@ -12,7 +12,7 @@ import { isCodeTabActive } from '../workbench/ui/code_tab/contexts';
 import { executeEditorWorkspaceCommand, isEditorWorkspaceCommand } from './workspace';
 import type { RuntimeSourceState } from '../runtime/sources';
 import type { RuntimeFaultState } from '../runtime/fault_state';
-import type { RuntimeNativeBridge } from '../runtime/native_bridge';
+import type { RuntimeLuaTooling } from '../runtime/lua_tooling';
 import type { GateGroup } from '../../machine/ts/common/taskgate';
 import type { OverlayRenderer } from '../runtime/overlay_renderer';
 
@@ -21,7 +21,7 @@ export class IdeCommandController {
 		private readonly editor: CartEditor,
 		private readonly sources: RuntimeSourceState,
 		private readonly fault: RuntimeFaultState,
-		private readonly nativeBridge: RuntimeNativeBridge,
+		private readonly luaTooling: RuntimeLuaTooling,
 		private readonly luaGate: GateGroup,
 		private readonly overlayRenderer: OverlayRenderer,
 		private readonly runtime: Runtime,
@@ -33,7 +33,7 @@ export class IdeCommandController {
 			executeEditorSymbolNavigationCommand(
 				this.editor,
 				this.sources,
-				this.nativeBridge,
+				this.luaTooling,
 				this.fault,
 				this.runtime,
 				command,
@@ -41,7 +41,7 @@ export class IdeCommandController {
 			return;
 		}
 		if (isEditorSearchCommand(command)) {
-			executeEditorSearchCommand(this.editor, this.sources, this.nativeBridge, renameController, command);
+			executeEditorSearchCommand(this.editor, this.sources, this.luaTooling, renameController, command);
 			return;
 		}
 		if (isEditorViewCommand(command)) {
@@ -53,7 +53,7 @@ export class IdeCommandController {
 				this.editor,
 				this.sources,
 				this.fault,
-				this.nativeBridge,
+				this.luaTooling,
 				this.luaGate,
 				this.overlayRenderer,
 				this.runtime,

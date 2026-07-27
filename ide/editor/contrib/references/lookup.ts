@@ -4,7 +4,7 @@ import type { ReferenceMatchInfo } from './state';
 import type { TextBuffer } from '../../text/text_buffer';
 import type { SearchMatch } from '../../../common/models';
 import type { ResourceIdentity } from '../../../common/resource';
-import type { RuntimeNativeBridge } from '../../../runtime/native_bridge';
+import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 
 export type ReferenceLookupOptions = {
 	buffer: TextBuffer;
@@ -18,7 +18,7 @@ export type ReferenceLookupResult =
 	| { kind: 'success'; info: ReferenceMatchInfo; initialIndex: number; }
 	| { kind: 'error'; message: string; duration: number; };
 
-export function resolveReferenceLookup(bridge: RuntimeNativeBridge, options: ReferenceLookupOptions): ReferenceLookupResult {
+export function resolveReferenceLookup(bridge: RuntimeLuaTooling, options: ReferenceLookupOptions): ReferenceLookupResult {
 	const path = options.identity.path;
 	const identifier = extractHoverExpressionFromBuffer(options.buffer, options.cursorRow, options.cursorColumn, path);
 	if (!identifier) {

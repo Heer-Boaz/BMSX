@@ -2,11 +2,11 @@ import * as constants from '../../../common/constants';
 import { showEditorMessage } from '../../../common/feedback_state';
 import { showCallHierarchyView } from './panel';
 import { resolveCallHierarchyViewAt } from './query';
-import type { RuntimeNativeBridge } from '../../../runtime/native_bridge';
+import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import type { ResourcePanelController } from '../../../workbench/contrib/resources/panel/controller';
 
 export function executeEditorCallHierarchyAt(
-	bridge: RuntimeNativeBridge,
+	bridge: RuntimeLuaTooling,
 	resourcePanel: ResourcePanelController,
 	row: number,
 	column: number,

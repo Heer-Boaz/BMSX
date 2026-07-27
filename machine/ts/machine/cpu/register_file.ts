@@ -4,10 +4,8 @@ import {
 	EMPTY_CALL_ARGS,
 	ValueTag,
 	valueTag,
+	type BuiltinArgs,
 	type BuiltinFunction,
-	type NativeArgs,
-	type NativeFunction,
-	type NativeObject,
 	type StringValue,
 	type Value,
 } from './value';
@@ -144,8 +142,6 @@ export class RegisterFile {
 			case ValueTag.Table:
 			case ValueTag.Closure:
 			case ValueTag.BuiltinFunction:
-			case ValueTag.NativeFunction:
-			case ValueTag.NativeObject:
 				return this.refs[slot];
 			default:
 				throw new Error('Invalid register tag.');
@@ -195,18 +191,6 @@ export class RegisterFile {
 		this.refs[slot] = value;
 	}
 
-	public setNativeFunction(index: number, value: NativeFunction): void {
-		const slot = this.base + index;
-		this.tags[slot] = ValueTag.NativeFunction;
-		this.refs[slot] = value;
-	}
-
-	public setNativeObject(index: number, value: NativeObject): void {
-		const slot = this.base + index;
-		this.tags[slot] = ValueTag.NativeObject;
-		this.refs[slot] = value;
-	}
-
 	public set(index: number, value: Value): void {
 		const slot = this.base + index;
 		const tag = valueTag(value);
@@ -224,7 +208,7 @@ export class RegisterFile {
 
 const EMPTY_REGISTER_FILE = new RegisterFile(0);
 
-export class ArrayNativeArgsView implements NativeArgs {
+export class ArrayBuiltinArgsView implements BuiltinArgs {
 	private values: ReadonlyArray<Value> = EMPTY_CALL_ARGS;
 	public length = 0;
 
@@ -243,7 +227,7 @@ export class ArrayNativeArgsView implements NativeArgs {
 	}
 }
 
-export class RegisterNativeArgsView implements NativeArgs {
+export class RegisterBuiltinArgsView implements BuiltinArgs {
 	private registers = EMPTY_REGISTER_FILE;
 	private base = 0;
 	public length = 0;

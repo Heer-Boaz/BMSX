@@ -20,7 +20,7 @@ import { diagnosticsDebounceMs, editorDiagnosticsState, EMPTY_DIAGNOSTICS } from
 import { editorDocumentState } from '../../editing/document_state';
 import { editorViewState } from '../../ui/view/state';
 import { problemsPanel } from '../../../workbench/contrib/problems/panel/controller';
-import type { RuntimeNativeBridge } from '../../../runtime/native_bridge';
+import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 
 const diagnosticsMinIntervalMs = 600;
 let diagnosticsTimer: TimerHandle | null = null;
@@ -36,7 +36,7 @@ function cancelDiagnosticsTimer(): void {
 	editorDiagnosticsState.diagnosticsComputationScheduled = false;
 }
 
-export function processDiagnosticsQueue(bridge: RuntimeNativeBridge, now: number): void {
+export function processDiagnosticsQueue(bridge: RuntimeLuaTooling, now: number): void {
 	if (!editorDiagnosticsState.diagnosticsDirty) {
 		return;
 	}
@@ -59,7 +59,7 @@ export function processDiagnosticsQueue(bridge: RuntimeNativeBridge, now: number
 	scheduleDiagnosticsComputation(bridge);
 }
 
-export function scheduleDiagnosticsComputation(bridge: RuntimeNativeBridge): void {
+export function scheduleDiagnosticsComputation(bridge: RuntimeLuaTooling): void {
 	const now = editorRuntimeState.clockNow();
 	const dueAt = editorDiagnosticsState.diagnosticsDueAtMs ?? now + diagnosticsDebounceMs;
 	const spacedDueAt = Math.max(dueAt, lastDiagnosticsRunMs + diagnosticsMinIntervalMs);
@@ -79,7 +79,7 @@ export function scheduleDiagnosticsComputation(bridge: RuntimeNativeBridge): voi
 	});
 }
 
-export function executeDiagnosticsComputation(bridge: RuntimeNativeBridge): void {
+export function executeDiagnosticsComputation(bridge: RuntimeLuaTooling): void {
 	if (!editorDiagnosticsState.diagnosticsDirty) {
 		editorDiagnosticsState.diagnosticsDueAtMs = null;
 		cancelDiagnosticsTimer();
@@ -121,7 +121,7 @@ export function executeDiagnosticsComputation(bridge: RuntimeNativeBridge): void
 	enqueueDiagnosticsJob(bridge, batch);
 }
 
-export function enqueueDiagnosticsJob(bridge: RuntimeNativeBridge, contextIds: readonly string[]): void {
+export function enqueueDiagnosticsJob(bridge: RuntimeLuaTooling, contextIds: readonly string[]): void {
 	if (contextIds.length === 0) {
 		return;
 	}
@@ -151,7 +151,7 @@ export function collectDiagnosticsBatch(): string[] {
 	return [];
 }
 
-export function runDiagnosticsForContexts(bridge: RuntimeNativeBridge, contextIds: readonly string[]): void {
+export function runDiagnosticsForContexts(bridge: RuntimeLuaTooling, contextIds: readonly string[]): void {
 	if (contextIds.length === 0) {
 		return;
 	}

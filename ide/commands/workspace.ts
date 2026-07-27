@@ -8,7 +8,7 @@ import { editorDocumentState } from '../editor/editing/document_state';
 import type { CartEditor } from '../cart_editor';
 import type { RuntimeSourceState } from '../runtime/sources';
 import type { RuntimeFaultState } from '../runtime/fault_state';
-import type { RuntimeNativeBridge } from '../runtime/native_bridge';
+import type { RuntimeLuaTooling } from '../runtime/lua_tooling';
 import type { GateGroup } from '../../machine/ts/common/taskgate';
 import type { OverlayRenderer } from '../runtime/overlay_renderer';
 
@@ -28,7 +28,7 @@ export function executeEditorWorkspaceCommand(
 	editor: CartEditor,
 	sources: RuntimeSourceState,
 	fault: RuntimeFaultState,
-	nativeBridge: RuntimeNativeBridge,
+	luaTooling: RuntimeLuaTooling,
 	luaGate: GateGroup,
 	overlayRenderer: OverlayRenderer,
 	runtime: Runtime,
@@ -51,7 +51,7 @@ export function executeEditorWorkspaceCommand(
 				editor,
 				sources,
 				fault,
-				nativeBridge,
+				luaTooling,
 				luaGate,
 				overlayRenderer,
 				runtime,
@@ -64,7 +64,7 @@ export function executeEditorWorkspaceCommand(
 				editor,
 				sources,
 				fault,
-				nativeBridge,
+				luaTooling,
 				luaGate,
 				overlayRenderer,
 				runtime,

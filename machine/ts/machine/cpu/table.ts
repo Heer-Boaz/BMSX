@@ -8,8 +8,6 @@ import {
 	valueIsNumber,
 	valueTag,
 	type BuiltinFunction,
-	type NativeFunction,
-	type NativeObject,
 	type StringValue,
 	type Value,
 } from './value';
@@ -405,9 +403,7 @@ export class Table {
 				return (((key as BuiltinFunction).id + 1) * 0x27d4eb2d) >>> 0;
 			case ValueTag.Table:
 			case ValueTag.Closure:
-			case ValueTag.NativeFunction:
-			case ValueTag.NativeObject:
-				return ((key as Table | Closure | NativeFunction | NativeObject).hashId * 2654435761) >>> 0;
+				return ((key as Table | Closure).hashId * 2654435761) >>> 0;
 			case ValueTag.Nil:
 				return 0x27d4eb2d;
 		}

@@ -9,7 +9,7 @@ import { api } from './runtime/overlay_api';
 import * as constants from './common/constants';
 import type { CodeTabMode, FaultSnapshot, RuntimeErrorDetails } from './common/models';
 import type { RuntimeFaultState } from './runtime/fault_state';
-import type { RuntimeNativeBridge } from './runtime/native_bridge';
+import type { RuntimeLuaTooling } from './runtime/lua_tooling';
 import type { RuntimeDebuggerState } from './runtime/debugger_state';
 import type { OverlayRenderer } from './runtime/overlay_renderer';
 import { showEditorMessage, updateEditorMessage, setEditorFeedbackActive, editorFeedbackState } from './common/feedback_state';
@@ -162,7 +162,7 @@ export class RuntimeCartEditor implements CartEditor {
 	private readonly runtime: Runtime;
 	private readonly sources: RuntimeSourceState;
 	private readonly fault: RuntimeFaultState;
-	private readonly nativeBridge: RuntimeNativeBridge;
+	private readonly luaTooling: RuntimeLuaTooling;
 	private readonly debuggerState: RuntimeDebuggerState;
 	private readonly luaGate: GateGroup;
 	private readonly overlayRenderer: OverlayRenderer;
@@ -186,7 +186,7 @@ export class RuntimeCartEditor implements CartEditor {
 		fontVariant: Parameters<typeof setFontVariant>[0],
 		sources: RuntimeSourceState,
 		fault: RuntimeFaultState,
-		nativeBridge: RuntimeNativeBridge,
+		luaTooling: RuntimeLuaTooling,
 		debuggerState: RuntimeDebuggerState,
 		luaGate: GateGroup,
 		overlayRenderer: OverlayRenderer,
@@ -194,7 +194,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.runtime = runtime;
 		this.sources = sources;
 		this.fault = fault;
-		this.nativeBridge = nativeBridge;
+		this.luaTooling = luaTooling;
 		this.debuggerState = debuggerState;
 		this.luaGate = luaGate;
 		this.overlayRenderer = overlayRenderer;
@@ -203,12 +203,12 @@ export class RuntimeCartEditor implements CartEditor {
 			this,
 			sources,
 			fault,
-			nativeBridge,
+			luaTooling,
 			luaGate,
 			overlayRenderer,
 			runtime,
 		);
-		this.completion = new EditorCompletionController(nativeBridge, fault, runtime);
+		this.completion = new EditorCompletionController(luaTooling, fault, runtime);
 		this.resourcePanel = this.initialize(viewport, fontVariant);
 		this.navigation = new EditorNavigationController(this, this.sources, this.resourcePanel);
 		this.crossFileRename = new CrossFileRenameManager(this.sources);
@@ -339,7 +339,7 @@ export class RuntimeCartEditor implements CartEditor {
 		handleTextEditorPointerInput(
 			this,
 			this.sources,
-			this.nativeBridge,
+			this.luaTooling,
 			this.fault,
 			this.luaGate,
 			this.overlayRenderer,
@@ -349,7 +349,7 @@ export class RuntimeCartEditor implements CartEditor {
 			handleBlockingWorkbenchModalInput(
 				this,
 				this.sources,
-				this.nativeBridge,
+				this.luaTooling,
 				this.fault,
 				this.luaGate,
 				this.overlayRenderer,
@@ -360,7 +360,7 @@ export class RuntimeCartEditor implements CartEditor {
 		handleEditorInput(
 			this,
 			this.sources,
-			this.nativeBridge,
+			this.luaTooling,
 			runtime,
 		);
 		let workspaceChanges = WorkspaceAutosaveChange.None;
@@ -390,7 +390,7 @@ export class RuntimeCartEditor implements CartEditor {
 			editorRuntimeState.lastReportedSemanticError = null;
 		}
 		if (editorDiagnosticsState.diagnosticsDirty) {
-			processDiagnosticsQueue(this.nativeBridge, editorRuntimeState.clockNow());
+			processDiagnosticsQueue(this.luaTooling, editorRuntimeState.clockNow());
 		}
 	}
 

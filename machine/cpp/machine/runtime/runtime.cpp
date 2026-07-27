@@ -89,7 +89,7 @@ Runtime::~Runtime() {
 	resetTrackedLuaHeapBytes();
 }
 
-auto Runtime::callClosure(Closure& fn, NativeArgsView args) -> std::span<const Value> {
+auto Runtime::callClosure(Closure& fn, BuiltinArgsView args) -> std::span<const Value> {
 	CPU& cpu = machine.cpu;
 	DeviceScheduler& scheduler = machine.scheduler;
 	if (scheduler.isCpuSliceActive()) {

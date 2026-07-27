@@ -44,7 +44,7 @@ import { createResourceState, resourceSearchState } from '../../../workbench/con
 import { editorRuntimeState } from '../../common/runtime_state';
 import { editorSearchState, lineJumpState } from '../find/widget_state';
 import { symbolSearchState } from '../symbols/search/state';
-import type { RuntimeNativeBridge } from '../../../runtime/native_bridge';
+import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import type { RuntimeFaultState } from '../../../runtime/fault_state';
 
 type LocalCompletionCacheEntry = {
@@ -58,7 +58,7 @@ const KEYWORD_COMPLETION_ITEMS: LuaCompletionItem[] = getKeywordCompletions();
 
 export class CompletionController {
 	public constructor(
-		protected readonly bridge: RuntimeNativeBridge,
+		protected readonly bridge: RuntimeLuaTooling,
 		protected readonly fault: RuntimeFaultState,
 		protected readonly runtime: Runtime,
 	) {}
@@ -1466,7 +1466,7 @@ export class EditorCompletionController extends CompletionController {
 	private readonly unsubscribeCursorMoved: () => void;
 	private readonly unsubscribeTextMutated: () => void;
 
-	public constructor(bridge: RuntimeNativeBridge, fault: RuntimeFaultState, runtime: Runtime) {
+	public constructor(bridge: RuntimeLuaTooling, fault: RuntimeFaultState, runtime: Runtime) {
 		super(bridge, fault, runtime);
 		this.unsubscribeCursorMoved = editorDocumentState.onCursorMoved(() => this.onCursorMoved());
 		this.unsubscribeTextMutated = editorDocumentState.onTextMutated(edit => this.updateAfterEdit(edit));

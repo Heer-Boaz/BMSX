@@ -5,11 +5,11 @@ import type { CodeAreaBounds } from '../../../editor/ui/view/view';
 import type { CodeTabContext, PointerSnapshot } from '../../../common/models';
 import { isAltDown } from '../../keyboard/key_input';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
-import type { RuntimeNativeBridge } from '../../../runtime/native_bridge';
+import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import type { RuntimeFaultState } from '../../../runtime/fault_state';
 
 export function updateCodeAreaPointerFeedback(
-	bridge: RuntimeNativeBridge,
+	bridge: RuntimeLuaTooling,
 	fault: RuntimeFaultState,
 	runtime: Runtime,
 	snapshot: PointerSnapshot,

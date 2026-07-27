@@ -6,7 +6,7 @@ import { enterSystemSources } from '../runtime/sources';
 import type { RuntimeIdeState } from '../runtime/state';
 import type { RuntimeSourceState } from '../runtime/sources';
 import type { RuntimeFaultState } from '../runtime/fault_state';
-import type { RuntimeNativeBridge } from '../runtime/native_bridge';
+import type { RuntimeLuaTooling } from '../runtime/lua_tooling';
 import type { CartEditor } from '../cart_editor';
 import type { GateGroup } from '../../machine/ts/common/taskgate';
 import type { OverlayRenderer } from '../runtime/overlay_renderer';
@@ -26,7 +26,7 @@ export async function startPreparedRuntime(state: RuntimeIdeState, runtime: Runt
 	await bootPreparedBlua32Media(
 		state.sources,
 		state.fault,
-		state.nativeBridge,
+		state.luaTooling,
 		state.editor,
 		state.luaGate,
 		runtime,
@@ -52,7 +52,7 @@ async function prepareRebootToBootRom(
 export async function rebootPreparedRuntime(
 	sources: RuntimeSourceState,
 	fault: RuntimeFaultState,
-	nativeBridge: RuntimeNativeBridge,
+	luaTooling: RuntimeLuaTooling,
 	editor: CartEditor,
 	luaGate: GateGroup,
 	overlayRenderer: OverlayRenderer,
@@ -71,7 +71,7 @@ export async function rebootPreparedRuntime(
 			bootActiveBlua32Media(
 				sources,
 				fault,
-				nativeBridge,
+				luaTooling,
 				runtime,
 				rebuildBlua32Media,
 			);
@@ -89,7 +89,7 @@ export async function rebootPreparedRuntime(
 async function bootPreparedBlua32Media(
 	sources: RuntimeSourceState,
 	fault: RuntimeFaultState,
-	nativeBridge: RuntimeNativeBridge,
+	luaTooling: RuntimeLuaTooling,
 	editor: CartEditor,
 	luaGate: GateGroup,
 	runtime: Runtime,
@@ -102,7 +102,7 @@ async function bootPreparedBlua32Media(
 		bootActiveBlua32Media(
 			sources,
 			fault,
-			nativeBridge,
+			luaTooling,
 			runtime,
 			rebuildBlua32Media,
 		);

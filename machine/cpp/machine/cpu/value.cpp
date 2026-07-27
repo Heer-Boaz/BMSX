@@ -16,8 +16,6 @@ std::string valueToString(Value value, const StringPool& stringPool) {
 			case ValueTag::Table: return "table";
 			case ValueTag::Closure: return "function";
 			case ValueTag::BuiltinFunction: return "function";
-			case ValueTag::NativeFunction: return "function";
-			case ValueTag::NativeObject: return "native";
 			case ValueTag::Upvalue: return "upvalue";
 			case ValueTag::Nil: return "nil";
 			default: return "unknown";

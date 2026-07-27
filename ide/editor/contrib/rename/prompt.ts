@@ -10,9 +10,9 @@ import { closeSymbolSearch } from '../symbols/shared';
 import { editorCaretState } from '../../ui/view/caret/state';
 import { editorDocumentState } from '../../editing/document_state';
 import { createResourceState } from '../../../workbench/contrib/resources/widget_state';
-import type { RuntimeNativeBridge } from '../../../runtime/native_bridge';
+import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 
-export function openRenamePrompt(bridge: RuntimeNativeBridge, rename: RenameController): void {
+export function openRenamePrompt(bridge: RuntimeLuaTooling, rename: RenameController): void {
 	if (!isEditableCodeTab()) {
 		notifyReadOnlyEdit();
 		return;

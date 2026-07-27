@@ -9,12 +9,12 @@ import { symbolSearchPageSize } from '../../../editor/ui/view/view';
 import { symbolSearchState } from '../../../editor/contrib/symbols/search/state';
 import type { CartEditor } from '../../../cart_editor';
 import type { RuntimeSourceState } from '../../../runtime/sources';
-import type { RuntimeNativeBridge } from '../../../runtime/native_bridge';
+import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 
 export function handleSymbolSearchInput(
 	editor: CartEditor,
 	sources: RuntimeSourceState,
-	bridge: RuntimeNativeBridge,
+	bridge: RuntimeLuaTooling,
 ): void {
 	const shiftDown = isShiftDown();
 	if (isKeyJustPressed('Enter')) {

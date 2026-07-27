@@ -9,7 +9,7 @@ import type { EditorCommandId, EditorSearchCommandId } from '../common/commands'
 import type { RenameController } from '../editor/contrib/rename/controller';
 import type { CartEditor } from '../cart_editor';
 import type { RuntimeSourceState } from '../runtime/sources';
-import type { RuntimeNativeBridge } from '../runtime/native_bridge';
+import type { RuntimeLuaTooling } from '../runtime/lua_tooling';
 
 export function isEditorSearchCommand(command: EditorCommandId): command is EditorSearchCommandId {
 	switch (command) {
@@ -32,16 +32,16 @@ export function isEditorSearchCommand(command: EditorCommandId): command is Edit
 export function executeEditorSearchCommand(
 	editor: CartEditor,
 	sources: RuntimeSourceState,
-	nativeBridge: RuntimeNativeBridge,
+	luaTooling: RuntimeLuaTooling,
 	rename: RenameController,
 	command: EditorSearchCommandId,
 ): void {
 	switch (command) {
 		case 'symbolSearch':
-			openSymbolSearch(nativeBridge, rename);
+			openSymbolSearch(luaTooling, rename);
 			return;
 		case 'symbolSearchGlobal':
-			openGlobalSymbolSearch(nativeBridge, rename);
+			openGlobalSymbolSearch(luaTooling, rename);
 			return;
 		case 'resourceSearch':
 			openResourceSearch(sources);
@@ -64,10 +64,10 @@ export function executeEditorSearchCommand(
 			openLineJump();
 			return;
 		case 'referenceSearch':
-			openReferenceSearchPopup(nativeBridge, rename);
+			openReferenceSearchPopup(luaTooling, rename);
 			return;
 		case 'rename':
-			openRenamePrompt(nativeBridge, rename);
+			openRenamePrompt(luaTooling, rename);
 			return;
 	}
 }

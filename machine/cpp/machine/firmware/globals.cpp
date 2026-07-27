@@ -5,7 +5,7 @@ namespace bmsx {
 
 void Runtime::setupBuiltins() {
 	CPU& cpu = machine.cpu;
-	auto builtinRoots = cpu.acquireNativeLocalRoots();
+	auto builtinRoots = cpu.acquireLocalRoots();
 
 	for (const LuaBootPrimitive& primitive : LUA_BOOT_PRIMITIVES) {
 		cpu.setSystemGlobalByKey(valueString(cpu.stringPool().intern(primitive.name)), cpu.createBuiltinFunction(primitive.id));

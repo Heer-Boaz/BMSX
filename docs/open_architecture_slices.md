@@ -15,7 +15,6 @@ horen niet in deze lijst.
 | ID | Opdracht | Klaar wanneer |
 | --- | --- | --- |
 | `SOLUTION-WIRE-01` | Trek de gedeelde ROM-, BLua32-, register- en andere wire-contracten uit implementatiepaden naar hun specificatie-owner. | Toolchain hangt alleen van wire/ABI-contracten af en niet van TS- of C++-emulatorimplementatie. |
-| `CPU-HOST-FFI-01` | Verwijder `NativeFunction`, `NativeObject` en de IDE-native bridge volledig uit de CPU/guest-valuerepresentatie. Geen compatibiliteitspad of vervangende host-callbacklaag; het expliciet geaccepteerde functieverlies is onderdeel van de slice. | Beide CPU's hebben uitsluitend machine/guest-waardetags en de player- en Studio-producten bevatten geen generieke CPU-host-FFI. |
 | `CPU-OBSERVER-01` | Verwijder de TS-only instruction-observerdispatch uit de CPU-hotloop en ontwerp profiling uitsluitend als tooling boven een eerlijke machinegrens. | Normale TS- en C++-CPU-hotloops hebben dezelfde architecturale dispatch en geen dormant host-observerbranch. |
 
 ## Uitgesteld tot een echte backend of target beschikbaar is

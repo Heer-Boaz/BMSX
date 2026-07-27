@@ -11,14 +11,14 @@ import { updateCodeAreaPointerFeedback } from './feedback';
 import { handleCodeAreaSelectionPointer } from './selection';
 import { editorPointerState } from '../state';
 import type { CartEditor } from '../../../cart_editor';
-import type { RuntimeNativeBridge } from '../../../runtime/native_bridge';
+import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import type { RuntimeFaultState } from '../../../runtime/fault_state';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 
 export function handleCodeAreaPointerInput(
 	editor: CartEditor,
 	sources: RuntimeSourceState,
-	bridge: RuntimeNativeBridge,
+	bridge: RuntimeLuaTooling,
 	fault: RuntimeFaultState,
 	runtime: Runtime,
 	snapshot: PointerSnapshot,

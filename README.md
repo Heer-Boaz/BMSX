@@ -177,7 +177,7 @@ Important:
 - the ordinary player never scans `tests/` or auto-loads `<cart>_demo.json`
 - headless tooling timelines run unpaced, so the full scenario completes as fast as the emulator can simulate it
 - `headless:test` and `headless:forcebuildalltest` are the explicit host-test paths
-- Lua host tests run through `scripts/bootrom/platforms/hostrunner/host_test_runner.lua`; TypeScript only installs the native bridge and schedules ticks. The Lua runner exposes `host.press(code, frames)`, `host.down(code)`, `host.up(code)`, `host.at(frame, command)`, `host.capture(label)`, and `host.log(message)` for simple Lua-built input timelines
+- Lua host tests run through `scripts/bootrom/platforms/hostrunner/host_test_runner.lua`; TypeScript schedules the machine and drives the explicit runner protocol. The Lua runner exposes `host.press(code, frames)`, `host.down(code)`, `host.up(code)`, `host.at(frame, command)`, `host.capture(label)`, and `host.log(message)` for simple Lua-built input timelines
 
 ## Libretro / Custom Host
 

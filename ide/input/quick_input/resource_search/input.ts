@@ -9,7 +9,7 @@ import { ensureResourceSearchSelectionVisible, moveResourceSearchSelection, upda
 import { openGlobalSymbolSearch, openSymbolSearch } from '../../../editor/contrib/symbols/search/index';
 import { lineJumpState } from '../../../editor/contrib/find/widget_state';
 import { resourceSearchState } from '../../../workbench/contrib/resources/widget_state';
-import type { RuntimeNativeBridge } from '../../../runtime/native_bridge';
+import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import type { RenameController } from '../../../editor/contrib/rename/controller';
 import type { CartEditor } from '../../../cart_editor';
 import type { RuntimeSourceState } from '../../../runtime/sources';
@@ -17,7 +17,7 @@ import type { RuntimeSourceState } from '../../../runtime/sources';
 export function handleResourceSearchInput(
 	editor: CartEditor,
 	sources: RuntimeSourceState,
-	bridge: RuntimeNativeBridge,
+	bridge: RuntimeLuaTooling,
 	rename: RenameController,
 ): void {
 	const shiftDown = isShiftDown();

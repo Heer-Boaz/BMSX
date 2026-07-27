@@ -1,5 +1,5 @@
 import type { RuntimeSourceState } from '../../../runtime/sources';
-import type { RuntimeNativeBridge } from '../../../runtime/native_bridge';
+import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import type { RuntimeFaultState } from '../../../runtime/fault_state';
 import type { CartEditor } from '../../../cart_editor';
 // disable cross_layer_import_pattern -- code-tab activation owns the editor/workbench state handoff during tab switches, saves, and result navigation.
@@ -197,7 +197,7 @@ export function activateCodeEditorTab(tabId: string, selection?: CodeTabSelectio
 }
 
 export function gotoDefinitionAt(
-	bridge: RuntimeNativeBridge,
+	bridge: RuntimeLuaTooling,
 	fault: RuntimeFaultState,
 	editor: CartEditor,
 	sources: RuntimeSourceState,

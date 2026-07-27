@@ -1,4 +1,4 @@
-import type { RuntimeNativeBridge } from '../../../runtime/native_bridge';
+import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import type { RuntimeCpuFaultFrame, RuntimeFaultState } from '../../../runtime/fault_state';
 import type { LuaDefinitionInfo, LuaDefinitionKind, LuaSourceRange } from '../../../../machine/ts/lua/syntax/ast/index';
 import { LuaEnvironment } from '../../../language/lua/interpreter/environment';
@@ -12,7 +12,7 @@ import { extractErrorMessage, isLuaFunctionValue, isLuaTable, LuaFunctionValue, 
 import { API_METHOD_METADATA, type ApiMethodMetadata } from '../../../../machine/ts/language/lua/api_metadata';
 import { blua32FunctionIndexAtAddress } from '../../../../machine/ts/rompack/tooling/blua32_image';
 import { Table } from '../../../../machine/ts/machine/cpu/table';
-import { asStringId, valueTag, ValueTag, type StringValue, type Value } from '../../../../machine/ts/machine/cpu/value';
+import { asStringId, valueTag, ValueTag, type BuiltinFunction, type StringValue, type Value } from '../../../../machine/ts/machine/cpu/value';
 import {
 	blua32SourceRangeAtPc,
 	type Blua32LocalSlotDebug,
@@ -20,7 +20,7 @@ import {
 } from '../../../../machine/ts/rompack/tooling/blua32_symbols';
 import { DEFAULT_LUA_BUILTIN_FUNCTIONS, DEFAULT_LUA_BUILTIN_NAMES } from '../../../../machine/ts/lua/builtin_descriptors';
 import { luaBuiltinMetadata } from '../../../runtime/lua_builtins';
-import { buildMarshalContext, toNativeValue } from '../../../runtime/native_bridge';
+import { buildMarshalContext, runtimeValueToHost } from '../../../runtime/lua_tooling';
 import { buildLuaSemanticFrontend } from '../../../../machine/ts/lua/semantic/frontend';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
@@ -158,7 +158,7 @@ function resolveTableChain(table: LuaTable): LuaTable[] {
 	return chain;
 }
 
-function resolveTableTypeName(bridge: RuntimeNativeBridge, table: LuaTable): string {
+function resolveTableTypeName(bridge: RuntimeLuaTooling, table: LuaTable): string {
 	const chain = resolveTableChain(table);
 	for (let i = 0; i < chain.length; i += 1) {
 		const direct = bridge.luaInterpreter.resolveValueName(chain[i]);
@@ -473,7 +473,7 @@ function resolveSemanticDataForDiagnostics(input: SemanticResolutionInput): File
 	return null;
 }
 
-export function computeLuaDiagnostics(bridge: RuntimeNativeBridge, options: LuaDiagnosticOptions): LuaDiagnostic[] {
+export function computeLuaDiagnostics(bridge: RuntimeLuaTooling, options: LuaDiagnosticOptions): LuaDiagnostic[] {
 	clearLuaDiagnosticSlots();
 	const parseEntry = getCachedLuaParse({
 		path: options.path,
@@ -549,7 +549,7 @@ export function buildHoverContentLines(result: LuaHoverResult): string[] {
 }
 
 export function updateHoverTooltip(
-	bridge: RuntimeNativeBridge,
+	bridge: RuntimeLuaTooling,
 	fault: RuntimeFaultState,
 	runtime: Runtime,
 	snapshot: PointerSnapshot,
@@ -629,7 +629,7 @@ export function clearHoverTooltip(): void {
 	intellisenseUiState.lastInspectorResult = null;
 }
 
-export function buildMemberCompletionItems(bridge: RuntimeNativeBridge, fault: RuntimeFaultState, runtime: Runtime, objectName: string, operator: '.' | ':', path: string): LuaCompletionItem[] {
+export function buildMemberCompletionItems(bridge: RuntimeLuaTooling, fault: RuntimeFaultState, runtime: Runtime, objectName: string, operator: '.' | ':', path: string): LuaCompletionItem[] {
 	if (objectName.length === 0) {
 		return [];
 	}
@@ -670,7 +670,7 @@ export function requestSemanticRefresh(context: CodeTabContext): void {
 	);
 }
 export function resolveSemanticDefinitionLocation(
-	bridge: RuntimeNativeBridge,
+	bridge: RuntimeLuaTooling,
 	context: CodeTabContext,
 	usageRow: number,
 	usageColumn: number,
@@ -1041,7 +1041,7 @@ export function resolveContextMenuToken(row: number, column: number, path: strin
 }
 
 export function refreshGotoHoverHighlight(
-	bridge: RuntimeNativeBridge,
+	bridge: RuntimeLuaTooling,
 	fault: RuntimeFaultState,
 	runtime: Runtime,
 	row: number,
@@ -1105,7 +1105,7 @@ export function clearReferenceHighlights(): void {
 }
 
 export function resolveDefinitionAt(
-	bridge: RuntimeNativeBridge,
+	bridge: RuntimeLuaTooling,
 	fault: RuntimeFaultState,
 	runtime: Runtime,
 	context: CodeTabContext,
@@ -1143,7 +1143,7 @@ export function resolveDefinitionAt(
 	return definition;
 }
 
-export function inspectLuaExpression(bridge: RuntimeNativeBridge, fault: RuntimeFaultState, runtime: Runtime, expression: string, path: string, row: number, column: number, activeContext: CodeTabContext): LuaHoverResult {
+export function inspectLuaExpression(bridge: RuntimeLuaTooling, fault: RuntimeFaultState, runtime: Runtime, expression: string, path: string, row: number, column: number, activeContext: CodeTabContext): LuaHoverResult {
 	const trimmed = expression.trim();
 	if (trimmed.length === 0) {
 		return null;
@@ -1207,7 +1207,7 @@ export function inspectLuaExpression(bridge: RuntimeNativeBridge, fault: Runtime
 	};
 }
 
-export function listLuaObjectMembers(bridge: RuntimeNativeBridge, fault: RuntimeFaultState, runtime: Runtime, expression: string, path: string, operator: '.' | ':'): LuaMemberCompletion[] {
+export function listLuaObjectMembers(bridge: RuntimeLuaTooling, fault: RuntimeFaultState, runtime: Runtime, expression: string, path: string, operator: '.' | ':'): LuaMemberCompletion[] {
 	const trimmed = expression.trim();
 	if (trimmed.length === 0) {
 		return [];
@@ -1234,7 +1234,7 @@ export function listLuaObjectMembers(bridge: RuntimeNativeBridge, fault: Runtime
 	return [];
 }
 
-export function resolveLuaDefinitionMetadata(bridge: RuntimeNativeBridge, range: LuaSourceRange): LuaDefinitionLocation {
+export function resolveLuaDefinitionMetadata(bridge: RuntimeLuaTooling, range: LuaSourceRange): LuaDefinitionLocation {
 	if (!range) {
 		return null;
 	}
@@ -1267,7 +1267,7 @@ export function buildDefinitionLocationFromRange(range: LuaSourceRange): LuaDefi
 	return location;
 }
 
-export function listLuaSymbols(bridge: RuntimeNativeBridge, domain: ResourceDomain, path: string): LuaSymbolEntry[] {
+export function listLuaSymbols(bridge: RuntimeLuaTooling, domain: ResourceDomain, path: string): LuaSymbolEntry[] {
 	const bundle = getStaticDefinitions(bridge, domain, path);
 	if (!bundle || bundle.definitions.length === 0) {
 		return [];
@@ -1337,7 +1337,7 @@ export function listLuaBuiltinFunctions(): LuaBuiltinDescriptor[] {
 	return result;
 }
 
-export function listGlobalLuaSymbols(bridge: RuntimeNativeBridge, domain: ResourceDomain): LuaSymbolEntry[] {
+export function listGlobalLuaSymbols(bridge: RuntimeLuaTooling, domain: ResourceDomain): LuaSymbolEntry[] {
 	const workspace = getOrCreateSemanticWorkspace(domain);
 	primeRuntimeSemanticWorkspaceProjectSources(bridge.sources, domain, workspace);
 	const snapshot = workspace.getSnapshot();
@@ -1375,7 +1375,7 @@ export function listGlobalLuaSymbols(bridge: RuntimeNativeBridge, domain: Resour
 	return entries;
 }
 
-export function findStaticDefinitionLocation(bridge: RuntimeNativeBridge, chain: ReadonlyArray<string>, usageRow: number, usageColumn: number, preferredChunk: string, activeContext: CodeTabContext): LuaDefinitionLocation {
+export function findStaticDefinitionLocation(bridge: RuntimeLuaTooling, chain: ReadonlyArray<string>, usageRow: number, usageColumn: number, preferredChunk: string, activeContext: CodeTabContext): LuaDefinitionLocation {
 	if (chain.length === 0) {
 		return null;
 	}
@@ -1492,7 +1492,7 @@ export function findStaticDefinitionLocation(bridge: RuntimeNativeBridge, chain:
 }
 
 export function getStaticDefinitions(
-	bridge: RuntimeNativeBridge,
+	bridge: RuntimeLuaTooling,
 	domain: ResourceDomain,
 	preferredChunk: string,
 ): { definitions: ReadonlyArray<LuaDefinitionInfo>; paths: Array<{ path: string; info: { asset_id: string; path?: string } }>; models: Map<string, LuaSemanticModel> } {
@@ -1542,7 +1542,7 @@ export function getStaticDefinitions(
 	return { definitions: Array.from(byKey.values()), paths: matchingChunks, models };
 }
 
-export function buildSemanticModelForChunk(bridge: RuntimeNativeBridge, domain: ResourceDomain, path: string): LuaSemanticModel {
+export function buildSemanticModelForChunk(bridge: RuntimeLuaTooling, domain: ResourceDomain, path: string): LuaSemanticModel {
 	const sourceMatch = resolveRuntimeLuaSourceForContext(bridge.sources, domain, path)!;
 	const source = luaPipeline.resourceSourceForChunk(bridge.sources, {
 		domain: sourceMatch.domain,
@@ -1655,8 +1655,8 @@ function resolveNativePropertyNameForIntellisense(target: object | Function, pro
 	return null;
 }
 
-function wrapHostValueForIntellisense(bridge: RuntimeNativeBridge, value: unknown): LuaValue {
-	if (value === null || value === undefined) {
+function wrapHostValueForIntellisense(bridge: RuntimeLuaTooling, value: unknown): LuaValue {
+	if (value == null) {
 		return null;
 	}
 	if (typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string') {
@@ -1672,7 +1672,7 @@ function wrapHostValueForIntellisense(bridge: RuntimeNativeBridge, value: unknow
 	return null;
 }
 
-function wrapRuntimeValueForIntellisense(bridge: RuntimeNativeBridge, runtime: Runtime, value: Value): LuaValue {
+function wrapRuntimeValueForIntellisense(bridge: RuntimeLuaTooling, runtime: Runtime, value: Value): LuaValue {
 	switch (valueTag(value)) {
 		case ValueTag.Nil:
 			return null;
@@ -1684,16 +1684,16 @@ function wrapRuntimeValueForIntellisense(bridge: RuntimeNativeBridge, runtime: R
 			return value as number;
 		case ValueTag.String:
 			return runtime.machine.cpu.stringPool.toString(asStringId(value as StringValue));
-		case ValueTag.Table:
 		case ValueTag.Closure:
-		case ValueTag.BuiltinFunction:
-		case ValueTag.NativeFunction:
-		case ValueTag.NativeObject:
 			break;
+		case ValueTag.Table:
+			break;
+		case ValueTag.BuiltinFunction:
+			return bridge.luaInterpreter.getOrCreateNativeValue(value as BuiltinFunction, 'builtin_function');
 	}
 	const marshalContext = buildMarshalContext(bridge.sources);
-	const native = toNativeValue(bridge, value, marshalContext, new WeakMap<Table, unknown>());
-	return wrapHostValueForIntellisense(bridge, native);
+	const hostValue = runtimeValueToHost(bridge, value, marshalContext, new WeakMap<Table, unknown>());
+	return wrapHostValueForIntellisense(bridge, hostValue);
 }
 
 export type FrameLocal = {
@@ -1701,7 +1701,7 @@ export type FrameLocal = {
 	value: LuaValue;
 };
 
-export function collectFrameLocals(bridge: RuntimeNativeBridge, runtime: Runtime, snapshot: readonly RuntimeCpuFaultFrame[], cpuFrameIndex: number): FrameLocal[] {
+export function collectFrameLocals(bridge: RuntimeLuaTooling, runtime: Runtime, snapshot: readonly RuntimeCpuFaultFrame[], cpuFrameIndex: number): FrameLocal[] {
 	const frame = snapshot[cpuFrameIndex];
 	const image = blua32ToolingImageForDomain(bridge.sources.currentBlua32Media, frame.executionDomainId);
 	const symbols = image ? image.symbols : null;
@@ -1736,7 +1736,7 @@ export function collectFrameLocals(bridge: RuntimeNativeBridge, runtime: Runtime
 	return result;
 }
 
-export function resolveSnapshotExpression(bridge: RuntimeNativeBridge, fault: RuntimeFaultState, runtime: Runtime, expression: string): LuaValue | null {
+export function resolveSnapshotExpression(bridge: RuntimeLuaTooling, fault: RuntimeFaultState, runtime: Runtime, expression: string): LuaValue | null {
 	const parts = parseLuaIdentifierChain(expression);
 	if (!parts || parts.length === 0) {
 		return null;
@@ -1768,7 +1768,7 @@ export function resolveSnapshotExpression(bridge: RuntimeNativeBridge, fault: Ru
 	return null;
 }
 
-function walkValueChain(bridge: RuntimeNativeBridge, root: LuaValue, parts: ReadonlyArray<string>, startIndex: number): LuaValue | null {
+function walkValueChain(bridge: RuntimeLuaTooling, root: LuaValue, parts: ReadonlyArray<string>, startIndex: number): LuaValue | null {
 	let current: LuaValue = root;
 	for (let index = startIndex; index < parts.length; index += 1) {
 		const part = parts[index];
@@ -1787,7 +1787,7 @@ function walkValueChain(bridge: RuntimeNativeBridge, root: LuaValue, parts: Read
 }
 
 function resolveRuntimeLocalChainValue(
-	bridge: RuntimeNativeBridge,
+	bridge: RuntimeLuaTooling,
 	fault: RuntimeFaultState,
 	runtime: Runtime,
 	parts: ReadonlyArray<string>,
@@ -1931,7 +1931,7 @@ function resolveRuntimeLocalChainValue(
 	};
 }
 
-function resolveRuntimeGlobalChainValue(bridge: RuntimeNativeBridge, runtime: Runtime, parts: ReadonlyArray<string>): ({ kind: 'value'; value: LuaValue } | { kind: 'not_defined' }) | null {
+function resolveRuntimeGlobalChainValue(bridge: RuntimeLuaTooling, runtime: Runtime, parts: ReadonlyArray<string>): ({ kind: 'value'; value: LuaValue } | { kind: 'not_defined' }) | null {
 	const cpu = runtime.machine.cpu;
 	const rootRaw = cpu.getGlobalByKey(runtime.internString(parts[0]));
 	if (rootRaw === null) {
@@ -1944,7 +1944,7 @@ function resolveRuntimeGlobalChainValue(bridge: RuntimeNativeBridge, runtime: Ru
 	return { kind: 'value', value: chained };
 }
 
-function resolveNativeChainMemberValue(bridge: RuntimeNativeBridge, target: LuaNativeValue, key: string): LuaValue {
+function resolveNativeChainMemberValue(bridge: RuntimeLuaTooling, target: LuaNativeValue, key: string): LuaValue {
 	const metatable = target.metatable;
 	if (metatable) {
 		const indexHandler = metatable.get('__index');
@@ -1963,7 +1963,7 @@ function resolveNativeChainMemberValue(bridge: RuntimeNativeBridge, target: LuaN
 }
 
 export function resolveLuaChainValue(
-	bridge: RuntimeNativeBridge,
+	bridge: RuntimeLuaTooling,
 	fault: RuntimeFaultState,
 	runtime: Runtime,
 	parts: string[],
@@ -2045,7 +2045,7 @@ export function resolveIdentifierThroughChain(environment: LuaEnvironment, name:
 	return null;
 }
 
-export function describeLuaValueForInspector(bridge: RuntimeNativeBridge, value: LuaValue): { lines: string[]; valueType: string; isFunction: boolean } {
+export function describeLuaValueForInspector(bridge: RuntimeLuaTooling, value: LuaValue): { lines: string[]; valueType: string; isFunction: boolean } {
 	const resolvedName = bridge.luaInterpreter.resolveValueName(value);
 	if (value === null) {
 		return { lines: ['Nil'], valueType: 'nil', isFunction: false };
@@ -2093,7 +2093,7 @@ export function describeLuaValueForInspector(bridge: RuntimeNativeBridge, value:
 	return { lines: [summary], valueType: 'unknown', isFunction: false };
 }
 
-export function getNativeMemberCompletionEntries(bridge: RuntimeNativeBridge, value: LuaNativeValue, operator: '.' | ':'): LuaMemberCompletion[] {
+export function getNativeMemberCompletionEntries(bridge: RuntimeLuaTooling, value: LuaNativeValue, operator: '.' | ':'): LuaMemberCompletion[] {
 	const native = value.native;
 	const typeName = value.typeName && value.typeName.length > 0 ? value.typeName : resolveNativeTypeName(native);
 	const registry = new Map<string, LuaMemberCompletion>();

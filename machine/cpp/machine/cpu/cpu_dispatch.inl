@@ -276,9 +276,10 @@ DISPATCH_LABEL(LEN) {
 		SET_REGISTER_FAST(a, valueNumber(static_cast<double>(asTable(val)->length())));
 		DISPATCH_CONTINUE();
 	}
-	auto* obj = asNativeObject(val);
-	SET_REGISTER_FAST(a, valueNumber(static_cast<double>(obj->len())));
-	DISPATCH_CONTINUE();
+	throw LuaExecutionError(
+		"Attempted to get length of an unsupported value.",
+		LUA_FAULT_REASON_UNKNOWN
+	);
 }
 
 DISPATCH_LABEL(BNOT) {
@@ -460,19 +461,6 @@ DISPATCH_LABEL(CALL) {
 		runBuiltinFunction(*asBuiltinFunction(callee), FRAME, a, retCount, argCount);
 		DISPATCH_CONTINUE();
 	}
-	if (valueIsNativeFunction(callee)) {
-		NativeFunction* fn = asNativeFunction(callee);
-		CYCLES_ADD(static_cast<int>(fn->cycleBase));
-		const NativeArgsView args(FRAME.registers + static_cast<size_t>(a + 1), static_cast<size_t>(argCount));
-		auto outScratch = acquireNativeReturnScratch();
-		NativeResults& out = outScratch.get();
-		fn->invoke(args, out);
-		if (!m_frames.empty() && m_frames.back().get() == &FRAME) {
-			writeReturnValues(FRAME, a, retCount, out.data(), static_cast<int>(out.size()));
-		}
-		runHousekeeping();
-		DISPATCH_CONTINUE();
-	}
 	throw LuaExecutionError("Attempted to call a non-function value.");
 }
 
@@ -513,8 +501,8 @@ DISPATCH_LABEL(RET) {
 	CallFrame& caller = *m_frames.back();
 	const int writeCount = finished->returnCount == 0 ? count : finished->returnCount;
 	if (writeCount > 0 && finished->returnBase + writeCount > caller.stackCapacity) {
-		auto resultsScratch = acquireNativeReturnScratch();
-		NativeResults& scratch = resultsScratch.get();
+		auto resultsScratch = acquireBuiltinResultScratch();
+		BuiltinResults& scratch = resultsScratch.get();
 		scratch.append(results, static_cast<size_t>(count));
 		ensureRegisterCapacity(caller, finished->returnBase + writeCount - 1);
 		writeReturnValues(caller, finished->returnBase, finished->returnCount, scratch.data(), static_cast<int>(scratch.size()));

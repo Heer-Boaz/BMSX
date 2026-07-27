@@ -4,14 +4,14 @@ import { prepareRuntimeSemanticWorkspaceForEditorBuffer } from './semantic/works
 import { getLinesSnapshot, getTextSnapshot } from '../../text/source_text';
 import type { TextBuffer } from '../../text/text_buffer';
 import type { ResourceIdentity } from '../../../common/resource';
-import type { RuntimeNativeBridge } from '../../../runtime/native_bridge';
+import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 
-export function runtimeSemanticExtraGlobalNames(bridge: RuntimeNativeBridge): string[] {
+export function runtimeSemanticExtraGlobalNames(bridge: RuntimeLuaTooling): string[] {
 	return Array.from(bridge.luaInterpreter.globalEnvironment.keys());
 }
 
 export function buildEditorSemanticSnapshot(
-	bridge: RuntimeNativeBridge,
+	bridge: RuntimeLuaTooling,
 	identity: ResourceIdentity,
 	buffer: TextBuffer,
 	textVersion: number,
@@ -25,14 +25,14 @@ export function buildEditorSemanticSnapshot(
 	});
 }
 
-export function createEditorSemanticFrontend(bridge: RuntimeNativeBridge, snapshot: LuaSemanticWorkspaceSnapshot): ReturnType<typeof createLuaSemanticFrontendFromSnapshot> {
+export function createEditorSemanticFrontend(bridge: RuntimeLuaTooling, snapshot: LuaSemanticWorkspaceSnapshot): ReturnType<typeof createLuaSemanticFrontendFromSnapshot> {
 	return createLuaSemanticFrontendFromSnapshot(snapshot, {
 		extraGlobalNames: runtimeSemanticExtraGlobalNames(bridge),
 	});
 }
 
 export function buildEditorSemanticFrontend(
-	bridge: RuntimeNativeBridge,
+	bridge: RuntimeLuaTooling,
 	identity: ResourceIdentity,
 	buffer: TextBuffer,
 	textVersion: number,

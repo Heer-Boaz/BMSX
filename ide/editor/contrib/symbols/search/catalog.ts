@@ -6,9 +6,9 @@ import { refreshSymbolCatalog } from '../catalog';
 import type { SymbolSearchResult } from '../../../../common/models';
 import { ensureSymbolSearchSelectionVisible } from '../shared';
 import { symbolSearchState } from './state';
-import type { RuntimeNativeBridge } from '../../../../runtime/native_bridge';
+import type { RuntimeLuaTooling } from '../../../../runtime/lua_tooling';
 
-export function updateSymbolSearchMatches(bridge: RuntimeNativeBridge): void {
+export function updateSymbolSearchMatches(bridge: RuntimeLuaTooling): void {
 	if (symbolSearchState.mode === 'references') {
 		updateReferenceSearchMatches();
 		return;

@@ -7,7 +7,7 @@ import { listGlobalLuaSymbols, listLuaSymbols } from '../intellisense/engine';
 import { symbolKindLabel } from '../../../../machine/ts/lua/semantic/model';
 import { extractErrorMessage } from '../../../language/lua/interpreter/value';
 import { symbolSearchState } from './search/state';
-import type { RuntimeNativeBridge } from '../../../runtime/native_bridge';
+import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 
 export function symbolCatalogDedupKey(entry: LuaSymbolEntry): string {
 	const { location, kind, name } = entry;
@@ -27,7 +27,7 @@ export function symbolSourceLabel(entry: LuaSymbolEntry): string | null {
 	return computeSourceLabel(path);
 }
 
-export function refreshSymbolCatalog(bridge: RuntimeNativeBridge, force: boolean): void {
+export function refreshSymbolCatalog(bridge: RuntimeLuaTooling, force: boolean): void {
 	const scope: 'local' | 'global' = symbolSearchState.global ? 'global' : 'local';
 	const descriptor = getActiveCodeTabContext().resource;
 	const path = scope === 'local' ? descriptor.path : null;

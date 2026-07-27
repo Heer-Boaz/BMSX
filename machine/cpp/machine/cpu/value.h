@@ -5,10 +5,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <functional>
 #include <iterator>
 #include <memory>
-#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -21,7 +19,7 @@ struct Table;
 struct Closure;
 struct Upvalue;
 
-struct NativeFnCost {
+struct BuiltinFunctionCost {
 	uint16_t base = 1;
 	uint8_t perArg = 0;
 	uint8_t perRet = 0;
@@ -37,16 +35,12 @@ enum class ValueTag : uint8_t {
 	Table = 4,
 	Closure = 5,
 	BuiltinFunction = 6,
-	NativeFunction = 7,
-	NativeObject = 8,
-	Upvalue = 9,
+	Upvalue = 7,
 };
 
 enum class ObjType : uint8_t {
 	Table,
 	Closure,
-	NativeFunction,
-	NativeObject,
 	Upvalue,
 };
 
@@ -81,7 +75,7 @@ struct BuiltinFunction {
 	uint8_t cyclePerRet = 0;
 };
 
-inline constexpr std::array<NativeFnCost, BUILTIN_FUNCTION_COUNT> BUILTIN_FUNCTION_COSTS {{
+inline constexpr std::array<BuiltinFunctionCost, BUILTIN_FUNCTION_COUNT> BUILTIN_FUNCTION_COSTS {{
 	{ 1, 0, 0 },
 	{ 1, 0, 0 },
 	{ 2, 0, 0 },
@@ -95,9 +89,6 @@ inline constexpr std::array<NativeFnCost, BUILTIN_FUNCTION_COUNT> BUILTIN_FUNCTI
 	{ 4, 0, 0 },
 	{ 4, 0, 0 },
 }};
-
-struct NativeFunction;
-struct NativeObject;
 
 constexpr uint64_t VALUE_QNAN_MASK = 0x7ff8000000000000ULL;
 constexpr uint64_t VALUE_SIGN_BIT = 0x8000000000000000ULL;
@@ -178,14 +169,6 @@ inline Value valueBuiltinFunction(BuiltinFunction* fn) {
 	return valueFromTag(ValueTag::BuiltinFunction, reinterpret_cast<uint64_t>(fn));
 }
 
-inline Value valueNativeFunction(NativeFunction* fn) {
-	return valueFromTag(ValueTag::NativeFunction, reinterpret_cast<uint64_t>(fn));
-}
-
-inline Value valueNativeObject(NativeObject* obj) {
-	return valueFromTag(ValueTag::NativeObject, reinterpret_cast<uint64_t>(obj));
-}
-
 inline Value valueUpvalue(Upvalue* upvalue) {
 	return valueFromTag(ValueTag::Upvalue, reinterpret_cast<uint64_t>(upvalue));
 }
@@ -235,14 +218,6 @@ inline BuiltinFunction* asBuiltinFunction(Value v) {
 	return reinterpret_cast<BuiltinFunction*>(valuePayload(v));
 }
 
-inline NativeFunction* asNativeFunction(Value v) {
-	return reinterpret_cast<NativeFunction*>(valuePayload(v));
-}
-
-inline NativeObject* asNativeObject(Value v) {
-	return reinterpret_cast<NativeObject*>(valuePayload(v));
-}
-
 inline Upvalue* asUpvalue(Value v) {
 	return reinterpret_cast<Upvalue*>(valuePayload(v));
 }
@@ -273,14 +248,6 @@ inline bool valueIsClosure(Value v) {
 
 inline bool valueIsBuiltinFunction(Value v) {
 	return valueIsTagged(v) && valueTag(v) == ValueTag::BuiltinFunction;
-}
-
-inline bool valueIsNativeFunction(Value v) {
-	return valueIsTagged(v) && valueTag(v) == ValueTag::NativeFunction;
-}
-
-inline bool valueIsNativeObject(Value v) {
-	return valueIsTagged(v) && valueTag(v) == ValueTag::NativeObject;
 }
 
 inline bool valueIsUpvalue(Value v) {
@@ -318,7 +285,7 @@ struct ValueHash {
 		if (valueIsBuiltinFunction(v)) {
 			return static_cast<size_t>(valueBuiltinFunctionHashId(v) * 0x27d4eb2du);
 		}
-		if (valueIsTable(v) || valueIsClosure(v) || valueIsNativeFunction(v) || valueIsNativeObject(v) || valueIsUpvalue(v)) {
+		if (valueIsTable(v) || valueIsClosure(v) || valueIsUpvalue(v)) {
 			return static_cast<size_t>(static_cast<uint64_t>(valueObjectHashId(v)) * 2654435761ULL);
 		}
 		const uint64_t payload = valuePayload(v);
@@ -335,14 +302,14 @@ struct ValueEq {
 	}
 };
 
-class NativeArgsView {
+class BuiltinArgsView {
 public:
-	NativeArgsView() = default;
-	NativeArgsView(const Value* data, size_t size)
+	BuiltinArgsView() = default;
+	BuiltinArgsView(const Value* data, size_t size)
 		: m_data(data)
 		, m_size(size) {
 	}
-	NativeArgsView(const std::vector<Value>& values)
+	BuiltinArgsView(const std::vector<Value>& values)
 		: m_data(values.data())
 		, m_size(values.size()) {
 	}
@@ -353,8 +320,8 @@ public:
 	const Value* begin() const noexcept { return m_data; }
 	const Value* end() const noexcept { return m_size == 0 ? m_data : m_data + m_size; }
 	Value operator[](size_t index) const noexcept { return index < m_size ? m_data[index] : valueNil(); }
-	NativeArgsView tailFrom(size_t index) const noexcept {
-		return index < m_size ? NativeArgsView(m_data + index, m_size - index) : NativeArgsView(m_data + m_size, 0);
+	BuiltinArgsView tailFrom(size_t index) const noexcept {
+		return index < m_size ? BuiltinArgsView(m_data + index, m_size - index) : BuiltinArgsView(m_data + m_size, 0);
 	}
 
 private:
@@ -362,7 +329,7 @@ private:
 	size_t m_size = 0;
 };
 
-class NativeResults {
+class BuiltinResults {
 public:
 	class iterator {
 	public:
@@ -381,11 +348,11 @@ public:
 		Position m_position;
 	};
 
-	NativeResults() = default;
-	NativeResults(NativeResults&&) noexcept = default;
-	NativeResults& operator=(NativeResults&&) noexcept = default;
-	NativeResults(const NativeResults&) = delete;
-	NativeResults& operator=(const NativeResults&) = delete;
+	BuiltinResults() = default;
+	BuiltinResults(BuiltinResults&&) noexcept = default;
+	BuiltinResults& operator=(BuiltinResults&&) noexcept = default;
+	BuiltinResults(const BuiltinResults&) = delete;
+	BuiltinResults& operator=(const BuiltinResults&) = delete;
 
 	void clear() noexcept { m_size = 0; }
 	size_t size() const noexcept { return m_size; }
@@ -471,25 +438,6 @@ private:
 	size_t m_capacity = 0;
 };
 
-using NativeFunctionInvoke = std::function<void(NativeArgsView, NativeResults&)>;
-
-struct NativeFunction : GCObject {
-	std::string name;
-	NativeFunctionInvoke invoke;
-	uint16_t cycleBase = 1;
-	uint8_t cyclePerArg = 0;
-	uint8_t cyclePerRet = 0;
-};
-
-struct NativeObject : GCObject {
-	void* raw = nullptr;
-	std::function<Value(const Value&)> get;
-	std::function<void(const Value&, const Value&)> set;
-	std::function<int()> len;
-	std::function<std::optional<std::pair<Value, Value>>(const Value&)> nextEntry;
-	Table* metatable = nullptr;
-};
-
 std::string valueToString(Value value, const StringPool& stringPool);
 
 inline const char* valueTypeName(Value value) {
@@ -503,8 +451,6 @@ inline const char* valueTypeName(Value value) {
 		case ValueTag::Table: return "table";
 		case ValueTag::Closure: return "closure";
 		case ValueTag::BuiltinFunction: return "builtin_function";
-		case ValueTag::NativeFunction: return "native_function";
-		case ValueTag::NativeObject: return "native_object";
 		case ValueTag::Upvalue: return "upvalue";
 		default: return "unknown";
 	}
@@ -516,7 +462,6 @@ inline const char* valueTypeNameForLua(Value value) {
 	if (valueIsNumber(value)) return "number";
 	if (valueIsString(value)) return "string";
 	if (valueIsTable(value)) return "table";
-	if (valueIsNativeObject(value)) return "native";
 	return "function";
 }
 

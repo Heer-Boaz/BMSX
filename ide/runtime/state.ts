@@ -7,7 +7,7 @@ import { taskGate } from '../../machine/ts/common/taskgate';
 import { RuntimeCartEditor, type CartEditor } from '../cart_editor';
 import { createRuntimeDebuggerState, type RuntimeDebuggerState } from './debugger_state';
 import { createRuntimeFaultState, type RuntimeFaultState } from './fault_state';
-import { RuntimeNativeBridge } from './native_bridge';
+import { RuntimeLuaTooling } from './lua_tooling';
 import { OverlayRenderer } from './overlay_renderer';
 import type { RuntimeSourceState } from './sources';
 
@@ -21,7 +21,7 @@ export class RuntimeIdeState {
 	public readonly debugger: RuntimeDebuggerState = createRuntimeDebuggerState();
 	public shortcutDisposers: Array<() => void> = [];
 	public readonly luaGate: GateGroup = taskGate.group('ide:lua');
-	public readonly nativeBridge: RuntimeNativeBridge;
+	public readonly luaTooling: RuntimeLuaTooling;
 	public readonly fault: RuntimeFaultState = createRuntimeFaultState();
 
 	public constructor(
@@ -29,14 +29,14 @@ export class RuntimeIdeState {
 		viewport: Viewport,
 		public readonly sources: RuntimeSourceState,
 	) {
-		this.nativeBridge = new RuntimeNativeBridge(runtime, sources);
+		this.luaTooling = new RuntimeLuaTooling(runtime, sources);
 		this.editor = new RuntimeCartEditor(
 			runtime,
 			viewport,
 			DEFAULT_IDE_FONT_VARIANT,
 			sources,
 			this.fault,
-			this.nativeBridge,
+			this.luaTooling,
 			this.debugger,
 			this.luaGate,
 			this.overlayRenderer,

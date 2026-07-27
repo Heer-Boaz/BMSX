@@ -80,7 +80,7 @@ public:
 	 * Call a CPU closure from native code. The returned span is invalidated by
 	 * subsequent CPU execution, call entry, reset, or state restore.
 	 */
-	auto callClosure(Closure& fn, NativeArgsView args = {}) -> std::span<const Value>;
+	auto callClosure(Closure& fn, BuiltinArgsView args = {}) -> std::span<const Value>;
 
 	/**
 	 * Set a global variable.

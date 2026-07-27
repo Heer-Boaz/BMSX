@@ -1067,7 +1067,7 @@
 				"machine/ts/lua/compiler/passes",
 				"machine/ts/lua/compiler/optimizer",
 				"machine/ts/lua/source_registry.ts",
-				"ide/runtime/native_bridge.ts",
+				"ide/runtime/lua_tooling.ts",
 				"ide/runtime/sources.ts",
 				"machine/ts/rompack/tooling/blua32_linker.ts",
 				"machine/ts/rompack/tooling/blua32_revision.ts",
@@ -1083,6 +1083,7 @@
 				"machine/ts/machine/firmware/builtins.ts",
 				"machine/ts/machine/firmware/devtools.ts",
 				"machine/ts/machine/firmware/handler_registry.ts",
+				"ide/runtime/native_bridge.ts",
 				"machine/ts/machine/runtime/host/native_bridge.ts",
 				"machine/ts/machine/runtime/resume_snapshot.ts"
 			],

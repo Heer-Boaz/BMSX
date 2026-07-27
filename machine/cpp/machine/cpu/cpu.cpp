@@ -25,12 +25,8 @@ namespace bmsx {
 // start repeated-sequence-acceptable -- CPU interpreter hot paths keep duplicated opcode/register statements inline.
 
 namespace {
-static constexpr NativeFnCost kDefaultNativeCost { 1, 0, 0 };
-
 constexpr size_t kClosureHeapBytes = 16;
 constexpr size_t kClosureUpvalueSlotHeapBytes = 8;
-constexpr ptrdiff_t kNativeFunctionHeapBytes = 16;
-constexpr ptrdiff_t kNativeObjectHeapBytes = 24;
 constexpr ptrdiff_t kUpvalueHeapBytes = 24;
 static inline size_t trackedClosureBytes(const Closure& closure) {
 	return closure.trackedHeapBytes;
@@ -54,12 +50,6 @@ void GcHeap::markValue(Value v) {
 			markClosure(asClosure(v));
 			break;
 		case ValueTag::BuiltinFunction:
-			break;
-		case ValueTag::NativeFunction:
-			markObject(asNativeFunction(v));
-			break;
-		case ValueTag::NativeObject:
-			markObject(asNativeObject(v));
 			break;
 		case ValueTag::Upvalue:
 			markObject(asUpvalue(v));
@@ -131,15 +121,6 @@ void GcHeap::trace() {
 				}
 				break;
 			}
-			case ObjType::NativeFunction:
-				break;
-			case ObjType::NativeObject: {
-				auto* native = static_cast<NativeObject*>(obj);
-				if (native->metatable) {
-					markObject(native->metatable);
-				}
-				break;
-			}
 			case ObjType::Upvalue: {
 				auto* upvalue = static_cast<Upvalue*>(obj);
 				if (!upvalue->open) {
@@ -173,16 +154,6 @@ void GcHeap::sweep() {
 				static_cast<Closure*>(obj)->~Closure();
 				::operator delete(obj);
 				break;
-			case ObjType::NativeFunction:
-				m_bytesAllocated -= sizeof(NativeFunction);
-				addTrackedLuaHeapBytes(-kNativeFunctionHeapBytes);
-				delete static_cast<NativeFunction*>(obj);
-				break;
-			case ObjType::NativeObject:
-				m_bytesAllocated -= sizeof(NativeObject);
-				addTrackedLuaHeapBytes(-kNativeObjectHeapBytes);
-				delete static_cast<NativeObject*>(obj);
-				break;
 			case ObjType::Upvalue:
 				m_bytesAllocated -= sizeof(Upvalue);
 				addTrackedLuaHeapBytes(-kUpvalueHeapBytes);
@@ -212,40 +183,40 @@ void GcHeap::collect() {
 	m_nextGC = m_bytesAllocated * 2;
 }
 
-NativeResultsScratchScope::NativeResultsScratchScope(CPU& cpu, NativeResults& out) noexcept
+BuiltinResultsScratchScope::BuiltinResultsScratchScope(CPU& cpu, BuiltinResults& out) noexcept
 	: m_cpu(&cpu)
 	, m_out(&out) {
 }
 
-NativeResultsScratchScope::NativeResultsScratchScope(NativeResultsScratchScope&& other) noexcept
+BuiltinResultsScratchScope::BuiltinResultsScratchScope(BuiltinResultsScratchScope&& other) noexcept
 	: m_cpu(other.m_cpu)
 	, m_out(other.m_out) {
 	other.m_cpu = nullptr;
 	other.m_out = nullptr;
 }
 
-NativeResultsScratchScope::~NativeResultsScratchScope() {
+BuiltinResultsScratchScope::~BuiltinResultsScratchScope() {
 	if (m_cpu) {
-		m_cpu->releaseNativeReturnScratch(*m_out);
+		m_cpu->releaseBuiltinResultScratch(*m_out);
 	}
 }
 
-CPU::NativeLocalRootsScope::NativeLocalRootsScope(CPU& cpu) noexcept
+CPU::LocalRootsScope::LocalRootsScope(CPU& cpu) noexcept
 	: m_cpu(&cpu)
-	, m_base(cpu.m_nativeLocalRoots.size()) {
-	cpu.m_nativeLocalRootScopeDepth += 1;
+	, m_base(cpu.m_localRoots.size()) {
+	cpu.m_localRootScopeDepth += 1;
 }
 
-CPU::NativeLocalRootsScope::NativeLocalRootsScope(NativeLocalRootsScope&& other) noexcept
+CPU::LocalRootsScope::LocalRootsScope(LocalRootsScope&& other) noexcept
 	: m_cpu(other.m_cpu)
 	, m_base(other.m_base) {
 	other.m_cpu = nullptr;
 	other.m_base = 0;
 }
 
-CPU::NativeLocalRootsScope::~NativeLocalRootsScope() {
+CPU::LocalRootsScope::~LocalRootsScope() {
 	if (m_cpu) {
-		m_cpu->releaseNativeLocalRoots(m_base);
+		m_cpu->releaseLocalRoots(m_base);
 	}
 }
 
@@ -263,7 +234,7 @@ CPU::CPU(
 	m_executionImages.reserve(3);
 	for (size_t index = 0; index < m_builtinFunctions.size(); ++index) {
 		BuiltinFunction& builtin = m_builtinFunctions[index];
-		const NativeFnCost cost = BUILTIN_FUNCTION_COSTS[index];
+		const BuiltinFunctionCost cost = BUILTIN_FUNCTION_COSTS[index];
 		builtin.id = static_cast<BuiltinFunctionId>(index);
 		builtin.cycleBase = cost.base;
 		builtin.cyclePerArg = cost.perArg;
@@ -279,46 +250,9 @@ Value CPU::createBuiltinFunction(BuiltinFunctionId id) {
 	return valueBuiltinFunction(&m_builtinFunctions[static_cast<size_t>(id)]);
 }
 
-Value CPU::createNativeFunction(std::string_view name, NativeFunctionInvoke fn, std::optional<NativeFnCost> cost) {
-	const NativeFnCost resolvedCost = cost ? *cost : kDefaultNativeCost;
-	auto* native = m_heap.allocate<NativeFunction>(ObjType::NativeFunction);
-	addTrackedLuaHeapBytes(kNativeFunctionHeapBytes);
-	native->name = std::string(name);
-	native->cycleBase = resolvedCost.base;
-	native->cyclePerArg = resolvedCost.perArg;
-	native->cyclePerRet = resolvedCost.perRet;
-	native->invoke = [this, invoke = std::move(fn)](NativeArgsView args, NativeResults& out) {
-		auto localRoots = acquireNativeLocalRoots();
-		out.clear();
-		invoke(args, out);
-	};
-	const Value value = valueNativeFunction(native);
-	trackNativeLocalRoot(value);
-	return value;
-}
-
-Value CPU::createNativeObject(
-	void* raw,
-	std::function<Value(const Value&)> get,
-	std::function<void(const Value&, const Value&)> set,
-	std::function<int()> len,
-	std::function<std::optional<std::pair<Value, Value>>(const Value&)> nextEntry
-) {
-	auto* native = m_heap.allocate<NativeObject>(ObjType::NativeObject);
-	addTrackedLuaHeapBytes(kNativeObjectHeapBytes);
-	native->raw = raw;
-	native->get = std::move(get);
-	native->set = std::move(set);
-	native->len = std::move(len);
-	native->nextEntry = std::move(nextEntry);
-	const Value value = valueNativeObject(native);
-	trackNativeLocalRoot(value);
-	return value;
-}
-
 Table* CPU::createTable(int arraySize, int hashSize) {
 	Table* table = m_heap.allocate<Table>(ObjType::Table, arraySize, hashSize);
-	trackNativeLocalRoot(valueTable(table));
+	trackLocalRoot(valueTable(table));
 	return table;
 }
 
@@ -878,7 +812,7 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 	pushLatchedFrame(closure, nullptr, 0, 0, 0, false);
 }
 
-void CPU::beginCompletionCall(Closure& closure, NativeArgsView args) {
+void CPU::beginCompletionCall(Closure& closure, BuiltinArgsView args) {
 	completionValues.clear();
 	m_yieldRequested = false;
 	pushFrame(&closure, args.data(), args.size(), 0, 0, true);
@@ -1013,9 +947,6 @@ CpuRuntimeState CPU::captureRuntimeState() const {
 	state.systemGlobals.reserve(m_systemGlobalNames.size());
 	for (size_t index = 0; index < m_systemGlobalNames.size(); ++index) {
 		const Value value = m_systemGlobalValues[index];
-		if (valueIsNativeFunction(value) || valueIsNativeObject(value)) {
-			continue;
-		}
 		state.systemGlobals.push_back(CpuRootValueState{
 			m_stringPool.toString(m_systemGlobalNames[index]),
 			captureValueState(value),
@@ -1023,9 +954,6 @@ CpuRuntimeState CPU::captureRuntimeState() const {
 	}
 	globals->forEachEntry([&](Value key, Value value) {
 		if (!valueIsString(key)) {
-			return;
-		}
-		if (valueIsNativeFunction(value) || valueIsNativeObject(value)) {
 			return;
 		}
 		state.globals.push_back(CpuRootValueState{
@@ -1362,7 +1290,7 @@ void CPU::hardHalt() {
 }
 
 
-void CPU::callBuiltinFunction(BuiltinFunction& fn, NativeArgsView args, NativeResults& out) {
+void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, BuiltinResults& out) {
 	out.clear();
 	switch (fn.id) {
 		case BuiltinFunctionId::Next:
@@ -1407,9 +1335,9 @@ void CPU::runBuiltinFunction(BuiltinFunction& fn, CallFrame& frame, int callBase
 		startProtectedCall(fn.id, frame, callBase, returnCount, callBase + 1, argCount, false);
 		return;
 	}
-	auto outScratch = acquireNativeReturnScratch();
-	NativeResults& out = outScratch.get();
-	const NativeArgsView args(frame.registers + static_cast<size_t>(callBase + 1), static_cast<size_t>(argCount));
+	auto outScratch = acquireBuiltinResultScratch();
+	BuiltinResults& out = outScratch.get();
+	const BuiltinArgsView args(frame.registers + static_cast<size_t>(callBase + 1), static_cast<size_t>(argCount));
 	callBuiltinFunction(fn, args, out);
 	if (!m_frames.empty() && m_frames.back().get() == &frame) {
 		writeReturnValues(frame, callBase, returnCount, out.data(), static_cast<int>(out.size()));
@@ -1422,7 +1350,7 @@ void CPU::startProtectedCall(BuiltinFunctionId id, CallFrame& caller, int callBa
 		const Value handler = argumentCount > 1
 			? caller.registers[static_cast<size_t>(argumentBase + 1)]
 			: valueNil();
-		if (!valueIsClosure(handler) && !valueIsBuiltinFunction(handler) && !valueIsNativeFunction(handler)) {
+		if (!valueIsClosure(handler) && !valueIsBuiltinFunction(handler)) {
 			throw LuaExecutionError("xpcall error handler must be a function.", LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION);
 		}
 	}
@@ -1460,26 +1388,13 @@ void CPU::invokeProtectedTarget(size_t continuationIndex, Value target, int argu
 			startProtectedCall(builtin.id, caller, continuation.callBase, 0, argumentBase, argumentCount, true);
 			return;
 		}
-		auto resultsScratch = acquireNativeReturnScratch();
-		NativeResults& results = resultsScratch.get();
+		auto resultsScratch = acquireBuiltinResultScratch();
+		BuiltinResults& results = resultsScratch.get();
 		callBuiltinFunction(
 			builtin,
-			NativeArgsView(caller.registers + static_cast<size_t>(argumentBase), static_cast<size_t>(argumentCount)),
+			BuiltinArgsView(caller.registers + static_cast<size_t>(argumentBase), static_cast<size_t>(argumentCount)),
 			results
 		);
-		finishProtectedCall(continuationIndex, results.data(), static_cast<int>(results.size()));
-		return;
-	}
-	if (valueIsNativeFunction(target)) {
-		NativeFunction* function = asNativeFunction(target);
-		instructionBudgetRemaining -= static_cast<int>(function->cycleBase);
-		auto resultsScratch = acquireNativeReturnScratch();
-		NativeResults& results = resultsScratch.get();
-		function->invoke(
-			NativeArgsView(caller.registers + static_cast<size_t>(argumentBase), static_cast<size_t>(argumentCount)),
-			results
-		);
-		runHousekeeping();
 		finishProtectedCall(continuationIndex, results.data(), static_cast<int>(results.size()));
 		return;
 	}
@@ -1625,23 +1540,12 @@ bool CPU::handleProtectedCallError(Value errorValue) {
 	}
 }
 
-void CPU::runBuiltinNextValue(Value target, Value key, NativeResults& out) {
+void CPU::runBuiltinNextValue(Value target, Value key, BuiltinResults& out) {
 	out.clear();
-	if (valueIsTable(target)) {
-		auto entry = asTable(target)->nextEntry(key);
-		if (!entry.has_value()) {
-			out.push_back(valueNil());
-			return;
-		}
-		out.push_back(entry->first);
-		out.push_back(entry->second);
-		return;
-	}
-	if (!valueIsNativeObject(target)) {
+	if (!valueIsTable(target)) {
 		throw LuaExecutionError("Attempted to iterate a non-table value.", LUA_FAULT_REASON_ITERATE_NON_TABLE);
 	}
-	auto* obj = asNativeObject(target);
-	auto entry = obj->nextEntry(key);
+	auto entry = asTable(target)->nextEntry(key);
 	if (!entry.has_value()) {
 		out.push_back(valueNil());
 		return;
@@ -1650,43 +1554,32 @@ void CPU::runBuiltinNextValue(Value target, Value key, NativeResults& out) {
 	out.push_back(entry->second);
 }
 
-void CPU::runBuiltinSetMetatable(NativeArgsView args, NativeResults& out) {
+void CPU::runBuiltinSetMetatable(BuiltinArgsView args, BuiltinResults& out) {
 	Table* metatable = asTable(args[1]);
 	const Value target = args[0];
-	if (valueIsTable(target)) {
-		Table* table = asTable(target);
-		table->metatable = metatable;
-		table->bumpVersion();
-		out.push_back(target);
-		return;
-	}
-	asNativeObject(target)->metatable = metatable;
+	Table* table = asTable(target);
+	table->metatable = metatable;
+	table->bumpVersion();
 	out.push_back(target);
 }
 
-void CPU::runBuiltinGetMetatable(NativeArgsView args, NativeResults& out) {
-	const Value target = args[0];
-	if (valueIsTable(target)) {
-		Table* metatable = asTable(target)->metatable;
-		out.push_back(metatable ? valueTable(metatable) : valueNil());
-		return;
-	}
-	Table* metatable = asNativeObject(target)->metatable;
+void CPU::runBuiltinGetMetatable(BuiltinArgsView args, BuiltinResults& out) {
+	Table* metatable = asTable(args[0])->metatable;
 	out.push_back(metatable ? valueTable(metatable) : valueNil());
 }
 
-void CPU::runBuiltinRawGet(NativeArgsView args, NativeResults& out) {
+void CPU::runBuiltinRawGet(BuiltinArgsView args, BuiltinResults& out) {
 	Table* table = asTable(args[0]);
 	out.push_back(table->get(args[1]));
 }
 
-void CPU::runBuiltinRawSet(NativeArgsView args, NativeResults& out) {
+void CPU::runBuiltinRawSet(BuiltinArgsView args, BuiltinResults& out) {
 	Table* table = asTable(args[0]);
 	table->set(args[1], args[2]);
 	out.push_back(valueTable(table));
 }
 
-void CPU::runBuiltinSelect(NativeArgsView args, NativeResults& out) {
+void CPU::runBuiltinSelect(BuiltinArgsView args, BuiltinResults& out) {
 	const Value selector = args[0];
 	if (valueIsString(selector) && m_stringPool.toString(asStringId(selector)) == "#") {
 		out.push_back(valueNumber(static_cast<double>(args.size() - 1)));
@@ -1704,7 +1597,7 @@ void CPU::runBuiltinSelect(NativeArgsView args, NativeResults& out) {
 	}
 }
 
-void CPU::runBuiltinStringByte(NativeArgsView args, NativeResults& out) {
+void CPU::runBuiltinStringByte(BuiltinArgsView args, BuiltinResults& out) {
 	const std::string& source = m_stringPool.toString(asStringId(args[0]));
 	int position = 1;
 	if (args.size() > 1) {
@@ -1730,7 +1623,7 @@ void CPU::runBuiltinStringByte(NativeArgsView args, NativeResults& out) {
 	out.push_back(valueNil());
 }
 
-void CPU::runBuiltinStringChar(NativeArgsView args, NativeResults& out) {
+void CPU::runBuiltinStringChar(BuiltinArgsView args, BuiltinResults& out) {
 	std::string result;
 	result.reserve(args.size());
 	for (const auto& arg : args) {
@@ -1739,7 +1632,7 @@ void CPU::runBuiltinStringChar(NativeArgsView args, NativeResults& out) {
 	out.push_back(valueString(m_stringPool.intern(result)));
 }
 
-void CPU::runBuiltinError(NativeArgsView args) {
+void CPU::runBuiltinError(BuiltinArgsView args) {
 	const Value value = args[0];
 	throw LuaThrownValueError(value, m_stringPool);
 }
@@ -2526,18 +2419,6 @@ Value CPU::loadTableIndex(const Value& base, const Value& key) {
 		}
 		return resolveTableIndex(m_stringIndexTable, key);
 	}
-	if (valueIsNativeObject(base)) {
-		auto* native = asNativeObject(base);
-		Value directValue = native->get(key);
-		if (!isNil(directValue) || !native->metatable) {
-			return directValue;
-		}
-		Value indexerValue = native->metatable->getStringKey(asStringId(m_indexKey));
-		if (valueIsTable(indexerValue)) {
-			return resolveTableIndex(asTable(indexerValue), key);
-		}
-		return directValue;
-	}
 	throw LuaExecutionError("Attempted to index field on a non-table value.", LUA_FAULT_REASON_INDEX_NON_TABLE);
 }
 
@@ -2576,18 +2457,6 @@ Value CPU::loadTableIntegerIndexCached(
 		}
 		return resolveTableIntegerIndex(m_stringIndexTable, index);
 	}
-	if (valueIsNativeObject(base)) {
-		auto* native = asNativeObject(base);
-		Value directValue = native->get(valueNumber(static_cast<double>(index)));
-		if (!isNil(directValue) || !native->metatable) {
-			return directValue;
-		}
-		Value indexerValue = native->metatable->getStringKey(asStringId(m_indexKey));
-		if (valueIsTable(indexerValue)) {
-			return resolveTableIntegerIndex(asTable(indexerValue), index);
-		}
-		return directValue;
-	}
 	throw LuaExecutionError("Attempted to index field on a non-table value.", LUA_FAULT_REASON_INDEX_NON_TABLE);
 }
 
@@ -2604,18 +2473,6 @@ Value CPU::loadTableIntegerIndex(const Value& base, int index) {
 			return m_stringIndexTable->getInteger(index);
 		}
 		return resolveTableIntegerIndex(m_stringIndexTable, index);
-	}
-	if (valueIsNativeObject(base)) {
-		auto* native = asNativeObject(base);
-		Value directValue = native->get(valueNumber(static_cast<double>(index)));
-		if (!isNil(directValue) || !native->metatable) {
-			return directValue;
-		}
-		Value indexerValue = native->metatable->getStringKey(asStringId(m_indexKey));
-		if (valueIsTable(indexerValue)) {
-			return resolveTableIntegerIndex(asTable(indexerValue), index);
-		}
-		return directValue;
 	}
 	throw LuaExecutionError("Attempted to index field on a non-table value.", LUA_FAULT_REASON_INDEX_NON_TABLE);
 }
@@ -2655,18 +2512,6 @@ Value CPU::loadTableFieldIndexCached(
 		}
 		return resolveTableFieldIndex(m_stringIndexTable, key);
 	}
-	if (valueIsNativeObject(base)) {
-		auto* native = asNativeObject(base);
-		Value directValue = native->get(valueString(key));
-		if (!isNil(directValue) || !native->metatable) {
-			return directValue;
-		}
-		Value indexerValue = native->metatable->getStringKey(asStringId(m_indexKey));
-		if (valueIsTable(indexerValue)) {
-			return resolveTableFieldIndex(asTable(indexerValue), key);
-		}
-		return directValue;
-	}
 	throw LuaExecutionError("Attempted to index field on a non-table value.", LUA_FAULT_REASON_INDEX_NON_TABLE);
 }
 
@@ -2684,28 +2529,12 @@ Value CPU::loadTableFieldIndex(const Value& base, StringId key) {
 		}
 		return resolveTableFieldIndex(m_stringIndexTable, key);
 	}
-	if (valueIsNativeObject(base)) {
-		auto* native = asNativeObject(base);
-		Value directValue = native->get(valueString(key));
-		if (!isNil(directValue) || !native->metatable) {
-			return directValue;
-		}
-		Value indexerValue = native->metatable->getStringKey(asStringId(m_indexKey));
-		if (valueIsTable(indexerValue)) {
-			return resolveTableFieldIndex(asTable(indexerValue), key);
-		}
-		return directValue;
-	}
 	throw LuaExecutionError("Attempted to index field on a non-table value.", LUA_FAULT_REASON_INDEX_NON_TABLE);
 }
 
 void CPU::storeTableIndex(const Value& base, const Value& key, const Value& value) {
 	if (valueIsTable(base)) {
 		asTable(base)->set(key, value);
-		return;
-	}
-	if (valueIsNativeObject(base)) {
-		asNativeObject(base)->set(key, value);
 		return;
 	}
 	throw LuaExecutionError("Attempted to assign to a non-table value.", LUA_FAULT_REASON_ASSIGN_NON_TABLE);
@@ -2716,20 +2545,12 @@ void CPU::storeTableIntegerIndex(const Value& base, int index, const Value& valu
 		asTable(base)->setInteger(index, value);
 		return;
 	}
-	if (valueIsNativeObject(base)) {
-		asNativeObject(base)->set(valueNumber(static_cast<double>(index)), value);
-		return;
-	}
 	throw LuaExecutionError("Attempted to assign to a non-table value.", LUA_FAULT_REASON_ASSIGN_NON_TABLE);
 }
 
 void CPU::storeTableFieldIndex(const Value& base, StringId key, const Value& value) {
 	if (valueIsTable(base)) {
 		asTable(base)->setStringKey(key, value);
-		return;
-	}
-	if (valueIsNativeObject(base)) {
-		asNativeObject(base)->set(valueString(key), value);
 		return;
 	}
 	throw LuaExecutionError("Attempted to assign to a non-table value.", LUA_FAULT_REASON_ASSIGN_NON_TABLE);
@@ -2793,30 +2614,30 @@ void CPU::refreshFrameRegisterPointers() {
 	}
 }
 
-NativeResultsScratchScope CPU::acquireNativeReturnScratch() {
-	NativeResults& out = m_nativeReturnScratch.get(m_nativeReturnScratchIndex);
-	m_nativeReturnScratchIndex += 1;
+BuiltinResultsScratchScope CPU::acquireBuiltinResultScratch() {
+	BuiltinResults& out = m_builtinResultScratch.get(m_builtinResultScratchIndex);
+	m_builtinResultScratchIndex += 1;
 	out.clear();
-	return NativeResultsScratchScope(*this, out);
+	return BuiltinResultsScratchScope(*this, out);
 }
 
-void CPU::releaseNativeReturnScratch(NativeResults& out) {
+void CPU::releaseBuiltinResultScratch(BuiltinResults& out) {
 	out.clear();
-	m_nativeReturnScratchIndex -= 1;
+	m_builtinResultScratchIndex -= 1;
 }
 
-CPU::NativeLocalRootsScope CPU::acquireNativeLocalRoots() {
-	return NativeLocalRootsScope(*this);
+CPU::LocalRootsScope CPU::acquireLocalRoots() {
+	return LocalRootsScope(*this);
 }
 
-void CPU::releaseNativeLocalRoots(size_t base) {
-	m_nativeLocalRoots.resize(base);
-	m_nativeLocalRootScopeDepth -= 1;
+void CPU::releaseLocalRoots(size_t base) {
+	m_localRoots.resize(base);
+	m_localRootScopeDepth -= 1;
 }
 
-void CPU::trackNativeLocalRoot(Value value) {
-	if (m_nativeLocalRootScopeDepth > 0) {
-		m_nativeLocalRoots.push_back(value);
+void CPU::trackLocalRoot(Value value) {
+	if (m_localRootScopeDepth > 0) {
+		m_localRoots.push_back(value);
 	}
 }
 
@@ -2829,13 +2650,13 @@ void CPU::markRoots(GcHeap& heap) {
 	for (const auto& value : completionValues) {
 		heap.markValue(value);
 	}
-	for (size_t scratchIndex = 0; scratchIndex < m_nativeReturnScratchIndex; ++scratchIndex) {
-		NativeResults& scratch = m_nativeReturnScratch.get(scratchIndex);
+	for (size_t scratchIndex = 0; scratchIndex < m_builtinResultScratchIndex; ++scratchIndex) {
+		BuiltinResults& scratch = m_builtinResultScratch.get(scratchIndex);
 		for (size_t valueIndex = 0; valueIndex < scratch.size(); ++valueIndex) {
 			heap.markValue(scratch[valueIndex]);
 		}
 	}
-	for (const Value value : m_nativeLocalRoots) {
+	for (const Value value : m_localRoots) {
 		heap.markValue(value);
 	}
 	for (const auto& value : m_systemGlobalValues) {

@@ -14,7 +14,7 @@ import { splitText } from '../../../../machine/ts/common/text_lines';
 import { getLinesSnapshot, getTextSnapshot } from '../../text/source_text';
 import type { Decl, LuaSemanticWorkspaceSnapshot } from '../../../../machine/ts/lua/semantic/model';
 import { computeSourceLabel } from '../../../common/paths';
-import type { RuntimeNativeBridge } from '../../../runtime/native_bridge';
+import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 
 type FileMetadata = {
 	path: string;
@@ -22,7 +22,7 @@ type FileMetadata = {
 	sourceLabel: string;
 };
 
-export function buildReferenceCatalogForExpression(bridge: RuntimeNativeBridge, options: {
+export function buildReferenceCatalogForExpression(bridge: RuntimeLuaTooling, options: {
 	workspace: LuaSemanticWorkspace;
 	info: ReferenceMatchInfo;
 	source: string;
@@ -104,7 +104,7 @@ export function buildReferenceCatalogForExpression(bridge: RuntimeNativeBridge, 
 	return entries;
 }
 
-export function resolveDefinitionLocationForExpression(bridge: RuntimeNativeBridge, options: {
+export function resolveDefinitionLocationForExpression(bridge: RuntimeLuaTooling, options: {
 	expression: string;
 	activeContext: CodeTabContext;
 	codeTabContexts: Iterable<CodeTabContext>;
@@ -187,7 +187,7 @@ export function filterReferenceCatalog(options: {
 }
 
 function prepareProjectSemanticFrontend(
-	bridge: RuntimeNativeBridge,
+	bridge: RuntimeLuaTooling,
 	workspace: LuaSemanticWorkspace,
 	activeContext: CodeTabContext,
 	codeTabContexts: Iterable<CodeTabContext>,

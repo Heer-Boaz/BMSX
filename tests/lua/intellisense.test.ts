@@ -21,7 +21,7 @@ import {
 	SYSTEM_RESOURCE_DOMAIN,
 	type RuntimeResource,
 } from '../../ide/common/resource';
-import { RuntimeNativeBridge } from '../../ide/runtime/native_bridge';
+import { RuntimeLuaTooling } from '../../ide/runtime/lua_tooling';
 import type { RuntimeSourceState } from '../../ide/runtime/sources';
 import {
 	createTestRuntime,
@@ -70,9 +70,9 @@ function createSourceState(files: Record<string, string>, systemRom: Uint8Array)
 	return createTestSystemImageRuntimeSourceState(systemRom, systemLuaSources);
 }
 
-function createIntellisenseBridge(files: Record<string, string> = {}): RuntimeNativeBridge {
+function createIntellisenseBridge(files: Record<string, string> = {}): RuntimeLuaTooling {
 	const runtime = createTestRuntime(EMPTY_ROM_PAYLOAD);
-	const bridge = new RuntimeNativeBridge(runtime, createSourceState(files, EMPTY_ROM_PAYLOAD));
+	const bridge = new RuntimeLuaTooling(runtime, createSourceState(files, EMPTY_ROM_PAYLOAD));
 	bridge.luaInterpreter = new LuaInterpreter(bridge.luaJsBridge);
 	return bridge;
 }
@@ -162,7 +162,7 @@ function createIntellisenseRuntime(source: string) {
 		system: { layout: image.image, symbols: image.symbols },
 		cartridgeSlots: [null, null],
 	};
-	const bridge = new RuntimeNativeBridge(runtime, sources);
+	const bridge = new RuntimeLuaTooling(runtime, sources);
 	bridge.luaInterpreter = new LuaInterpreter(bridge.luaJsBridge);
 	return {
 		bridge,

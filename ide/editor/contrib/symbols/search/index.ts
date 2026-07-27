@@ -16,12 +16,12 @@ import {
 	closeSymbolSearch,
 } from '../shared';
 import { symbolSearchState } from './state';
-import type { RuntimeNativeBridge } from '../../../../runtime/native_bridge';
+import type { RuntimeLuaTooling } from '../../../../runtime/lua_tooling';
 import type { RuntimeSourceState } from '../../../../runtime/sources';
 import type { RenameController } from '../../rename/controller';
 import type { CartEditor } from '../../../../cart_editor';
 
-export function openSymbolSearch(bridge: RuntimeNativeBridge, rename: RenameController, initialQuery: string = ''): void {
+export function openSymbolSearch(bridge: RuntimeLuaTooling, rename: RenameController, initialQuery: string = ''): void {
 	if (getActiveCodeTabContext().mode !== 'lua') {
 		return;
 	}
@@ -42,7 +42,7 @@ export function openSymbolSearch(bridge: RuntimeNativeBridge, rename: RenameCont
 	resetBlink();
 }
 
-export function openGlobalSymbolSearch(bridge: RuntimeNativeBridge, rename: RenameController, initialQuery: string = ''): void {
+export function openGlobalSymbolSearch(bridge: RuntimeLuaTooling, rename: RenameController, initialQuery: string = ''): void {
 	if (getActiveCodeTabContext().mode !== 'lua') {
 		return;
 	}

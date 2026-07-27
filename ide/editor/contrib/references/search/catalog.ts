@@ -13,9 +13,9 @@ import {
 	filterReferenceCatalog,
 } from '../sources';
 import { getOrCreateSemanticWorkspace } from '../../intellisense/semantic/workspace/state';
-import type { RuntimeNativeBridge } from '../../../../runtime/native_bridge';
+import type { RuntimeLuaTooling } from '../../../../runtime/lua_tooling';
 
-export function buildReferenceSearchCatalog(bridge: RuntimeNativeBridge, info: ReferenceMatchInfo, context: CodeTabContext): SymbolCatalogEntry[] {
+export function buildReferenceSearchCatalog(bridge: RuntimeLuaTooling, info: ReferenceMatchInfo, context: CodeTabContext): SymbolCatalogEntry[] {
 	const path = context.resource.path;
 	const activeSource = getTextSnapshot(editorDocumentState.buffer);
 	const activeLines = getLinesSnapshot(editorDocumentState.buffer);

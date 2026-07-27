@@ -32,10 +32,9 @@ function collectHeapDeltaAfterRun(source: string): { before: number; after: numb
 	return { before, after: cpu.collectTrackedHeapBytes() };
 }
 
-test('tracked heap bytes include rooted tables and native arrays', () => {
+test('tracked heap bytes include rooted tables', () => {
 	const { cpu } = createTestSystemCpu(EMPTY_TEST_IMAGE);
 	const key = StringValue.get(cpu.stringPool.intern('state'));
-	const listKey = StringValue.get(cpu.stringPool.intern('list'));
 
 	const before = cpu.collectTrackedHeapBytes();
 
@@ -47,54 +46,11 @@ test('tracked heap bytes include rooted tables and native arrays', () => {
 	const afterTable = cpu.collectTrackedHeapBytes();
 	assert.ok(afterTable > before, `expected table bytes to increase heap usage (${afterTable} <= ${before})`);
 
-	const raw = [3, 5];
-	const nativeArray = cpu.createNativeObject(raw, {
-		get: (entryKey) => {
-			if (typeof entryKey === 'number' && Number.isInteger(entryKey) && entryKey >= 1) {
-				const value = raw[entryKey - 1];
-				return value !== undefined ? value : null;
-			}
-			return null;
-		},
-		set: (entryKey, value) => {
-			if (typeof entryKey !== 'number' || !Number.isInteger(entryKey) || entryKey < 1) {
-				throw new Error('array expects integer keys');
-			}
-			raw[entryKey - 1] = value as number;
-		},
-		len: () => raw.length,
-		nextEntry: () => null,
-	});
-	cpu.globals.set(listKey, nativeArray);
-
-	const afterArray = cpu.collectTrackedHeapBytes();
-	assert.ok(afterArray > afterTable, `expected native array bytes to increase heap usage (${afterArray} <= ${afterTable})`);
-
 	cpu.globals.set(key, null);
-	cpu.globals.set(listKey, null);
 
 	const afterCleanup = cpu.collectTrackedHeapBytes();
-	assert.ok(afterCleanup < afterArray, `expected cleanup to drop rooted heap usage (${afterCleanup} >= ${afterArray})`);
+	assert.ok(afterCleanup < afterTable, `expected cleanup to drop rooted heap usage (${afterCleanup} >= ${afterTable})`);
 	assert.ok(afterCleanup >= before, `expected table capacity growth to remain tracked (${afterCleanup} < ${before})`);
-});
-
-test('tracked heap bytes include explicit extra roots for native functions and handles', () => {
-	const { cpu } = createTestSystemCpu(EMPTY_TEST_IMAGE);
-
-	const nativeFn = cpu.createNativeFunction('external.iterator', () => {});
-	const handle = cpu.createNativeObject({}, {
-		get: () => null,
-		set: () => {
-			throw new Error('read-only');
-		},
-		len: () => 0,
-		nextEntry: () => null,
-	});
-
-	const before = cpu.collectTrackedHeapBytes();
-	const after = cpu.collectTrackedHeapBytes([nativeFn, handle]);
-
-	assert.ok(after > before, `expected explicit extra roots to increase tracked heap usage (${after} <= ${before})`);
 });
 
 test('builtin primitives are static VM slots outside Lua heap accounting', () => {
@@ -121,40 +77,6 @@ test('builtin primitive save-state uses VM id instead of stable global path', ()
 		restoredCpu.globals.getStringKey(StringValue.get(restoredCpu.stringPool.intern('foo'))),
 		createBuiltinFunction(BuiltinFunctionId.Next),
 	);
-});
-
-test('CPU save-state leaves host-native bridge values out of CPU roots', () => {
-	const { cpu } = createTestSystemCpu(EMPTY_TEST_IMAGE);
-	cpu.globals.setStringKey(StringValue.get(cpu.stringPool.intern('native')), cpu.createNativeFunction('native_bridge', () => {}));
-
-	assert.deepEqual(cpu.captureRuntimeState().globals, []);
-});
-
-test('tracked heap bytes do not include raw js array capacity without native iteration entries', () => {
-	const { cpu } = createTestSystemCpu(EMPTY_TEST_IMAGE);
-
-	const before = cpu.collectTrackedHeapBytes();
-	const raw = new Array(1024).fill(7);
-	const nativeArray = cpu.createNativeObject(raw, {
-		get: (entryKey) => {
-			if (typeof entryKey !== 'number' || !Number.isInteger(entryKey) || entryKey < 1 || entryKey > raw.length) {
-				return null;
-			}
-			const value = raw[entryKey - 1];
-			return value !== undefined ? value : null;
-		},
-		set: (entryKey, value) => {
-			if (typeof entryKey !== 'number' || !Number.isInteger(entryKey) || entryKey < 1) {
-				throw new Error('array expects integer keys');
-			}
-			raw[entryKey - 1] = value as number;
-		},
-		len: () => raw.length,
-		nextEntry: () => null,
-	});
-
-	const after = cpu.collectTrackedHeapBytes([nativeArray]);
-	assert.equal(after - before, 24, `expected native object accounting to ignore raw js array capacity (${after - before} != 24)`);
 });
 
 test('BLua32 image literals and debug names stay in ROM accounting', () => {
