@@ -394,6 +394,18 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 	image->layout = std::move(decodedImage.layout);
 	image->executionDomainId = decodedImage.executionDomainId;
 	image->irqFunctionAddress = decodedImage.irqFunctionAddress;
+	m_executionAddressSpace.bindReadOnlyView(
+		decodedImage.executionDomainId,
+		decodedImage.imageAddress,
+		BLUA32_IMAGE_HEADER_SIZE,
+		m_executionReadView
+	);
+	image->textAddress = readLE32(
+		m_executionReadView.data() + BLUA32_IMAGE_TEXT_ADDRESS_OFFSET
+	);
+	image->textByteCount = readLE32(
+		m_executionReadView.data() + BLUA32_IMAGE_TEXT_BYTE_COUNT_OFFSET
+	);
 	image->constPool.reserve(image->layout.constants.size());
 	for (const Blua32EncodedConstant& constant : image->layout.constants) {
 		if (std::holds_alternative<std::monostate>(constant)) {
@@ -552,11 +564,13 @@ void CPU::syncGlobalSlotsToTable() {
 
 
 void CPU::decodeImageText(Blua32ExecutionImage& image) {
-	const size_t codeOffset = image.layout.header.textAddress - image.layout.address;
-	const std::span<const u8> code = image.layout.bytes.subspan(
-		codeOffset,
-		image.layout.header.textByteCount
+	m_executionAddressSpace.bindReadOnlyView(
+		image.executionDomainId,
+		image.textAddress,
+		image.textByteCount,
+		m_executionReadView
 	);
+	const std::span<const u8> code(m_executionReadView.data(), m_executionReadView.size());
 	image.decodedWordCount = code.size() / INSTRUCTION_BYTES;
 	const size_t pageCount = (image.decodedWordCount + DECODED_PAGE_WORDS - 1u) >> DECODED_PAGE_SHIFT;
 	image.decodedPages.resize(pageCount);
@@ -645,7 +659,7 @@ DecodedInstruction& CPU::decodedSlotForWrite(Blua32ExecutionImage& image, size_t
 
 void CPU::skipNextInstruction(CallFrame& frame) {
 	Blua32ExecutionImage& image = *frame.executionImage;
-	const size_t wordIndex = (frame.pc - image.layout.header.textAddress) / INSTRUCTION_BYTES;
+	const size_t wordIndex = (frame.pc - image.textAddress) / INSTRUCTION_BYTES;
 	if (wordIndex >= image.decodedWordCount) {
 		hardHalt();
 		return;
@@ -1786,7 +1800,7 @@ dispatch_loop_check:
 		image = frame->executionImage;
 		registers = frame->registers;
 		pc = frame->pc;
-		wordIndex = (pc - image->layout.header.textAddress) / INSTRUCTION_BYTES;
+		wordIndex = (pc - image->textAddress) / INSTRUCTION_BYTES;
 		if (wordIndex >= image->decodedWordCount) {
 			hardHalt();
 			return RunResult::Halted;

@@ -33,6 +33,8 @@ export type Blua32ExecutionImage = {
 	layout: Blua32ImageLayout;
 	executionDomainId: ExecutionDomainId;
 	irqFunctionAddress: number;
+	textAddress: number;
+	textByteCount: number;
 	constPool: Value[];
 	globalSlots: Uint32Array;
 	systemGlobalSlots: Uint32Array;

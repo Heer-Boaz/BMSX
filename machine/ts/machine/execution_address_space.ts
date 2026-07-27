@@ -12,6 +12,7 @@ export type ExecutionDomainId = -1 | 0 | 1;
 
 export type Blua32DecodedExecutionImage = {
 	layout: Blua32ImageLayout;
+	imageAddress: number;
 	executionDomainId: ExecutionDomainId;
 	startupFunctionAddress: number;
 	irqFunctionAddress: number;
@@ -103,6 +104,7 @@ export class ExecutionAddressSpace {
 				),
 				imageAddress,
 			),
+			imageAddress,
 			executionDomainId,
 			startupFunctionAddress: boot.startupFunctionAddress,
 			irqFunctionAddress: boot.irqFunctionAddress,

@@ -59,6 +59,8 @@ struct Blua32ExecutionImage {
 	Blua32ImageLayout layout;
 	int executionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	u32 irqFunctionAddress = 0;
+	u32 textAddress = 0;
+	u32 textByteCount = 0;
 	std::vector<Value> constPool;
 	std::vector<u32> globalSlots;
 	std::vector<u32> systemGlobalSlots;

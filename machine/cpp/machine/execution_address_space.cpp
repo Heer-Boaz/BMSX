@@ -80,6 +80,7 @@ std::optional<Blua32DecodedExecutionImage> ExecutionAddressSpace::resolveDomain(
 			std::span<const u8>(imageBytes.data(), imageBytes.size()),
 			imageAddress
 		),
+		.imageAddress = imageAddress,
 		.executionDomainId = executionDomainId,
 		.startupFunctionAddress = boot.startupFunctionAddress,
 		.irqFunctionAddress = boot.irqFunctionAddress,

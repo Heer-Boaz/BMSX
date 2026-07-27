@@ -14,6 +14,55 @@ import {
 	linkRawTestSystemBlua32,
 } from '../helpers/blua32';
 
+test('CPU instruction cache and text bounds come from physical ROM instead of the decoded host graph', () => {
+	const text = new Uint8Array(4 * INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.KTRUE, 0, 0, 0, 0);
+	writeInstruction(text, 1, OpCode.SETGL, 0, 0, 0, 0);
+	writeInstruction(text, 2, OpCode.HALT, 0, 0, 0, 0);
+	writeInstruction(text, 3, OpCode.RFE, 0, 0, 0, 0);
+	const image = linkRawTestSystemBlua32({
+		text,
+		functions: [
+			{ firstWord: 0, wordCount: 3, maxStack: 1 },
+			{ firstWord: 3, wordCount: 1 },
+		],
+		globalNames: ['physical_text_seen'],
+		startupFunctionIndex: 0,
+		irqFunctionIndex: 1,
+		exceptionFunctionIndex: 1,
+	});
+	const { cpu, executionAddressSpace } = createTestSystemCpu(image);
+	const startupFunction = image.image.functions[0];
+	const decodedImage = executionAddressSpace.resolveSystemDomain();
+	const hostBytes = decodedImage.layout.bytes.slice();
+	writeInstruction(
+		hostBytes,
+		(decodedImage.layout.header.textAddress - decodedImage.imageAddress) / INSTRUCTION_BYTES,
+		OpCode.HALT,
+		0,
+		0,
+		0,
+		0,
+	);
+	decodedImage.layout.bytes = hostBytes;
+	decodedImage.layout.header.textAddress += INSTRUCTION_BYTES;
+	decodedImage.layout.header.textByteCount -= INSTRUCTION_BYTES;
+
+	cpu.replaceExecutionImage(decodedImage);
+	cpu.writeFrameExecution(
+		0,
+		SYSTEM_EXECUTION_DOMAIN_ID,
+		startupFunction.address,
+		startupFunction.codeAddress,
+	);
+
+	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	assert.equal(
+		cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('physical_text_seen'))),
+		true,
+	);
+});
+
 test('CPU function bounds come from the physical function record instead of the decoded host graph', () => {
 	const text = new Uint8Array(5 * INSTRUCTION_BYTES);
 	writeInstruction(text, 0, OpCode.JMP, 0, 0, 0, 0);

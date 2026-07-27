@@ -254,6 +254,61 @@ void testSystemAndOrdinaryGlobalRegisterfilesStayDistinct() {
 	require(bmsx::asNumber(machine.cpu.getGlobalByKey(irqKey)) == 22.0, "save-state restores the ordinary global independently");
 }
 
+void testPhysicalTextRemainsExecutionAuthority() {
+	std::vector<bmsx::u8> hostBytes;
+	bmsx::test::Blua32TestImage image;
+	image.text.resize(4u * bmsx::INSTRUCTION_BYTES);
+	image.globalNames = {"physical_text_seen"};
+	std::span<bmsx::u8> code(image.text);
+	bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::KTRUE), 0, 0, 0);
+	bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::SETGL), 0, 0, 0);
+	bmsx::writeInstruction(code, 2, static_cast<bmsx::u8>(bmsx::OpCode::HALT), 0, 0, 0);
+	bmsx::writeInstruction(code, 3, static_cast<bmsx::u8>(bmsx::OpCode::RFE), 0, 0, 0);
+	image.functions = {
+		{.firstWord = 0u, .wordCount = 3u},
+		{.firstWord = 3u, .wordCount = 1u},
+	};
+	image.irqFunctionIndex = 1u;
+	image.exceptionFunctionIndex = 1u;
+
+	CpuTestMachine machine(std::move(image));
+	bmsx::Blua32DecodedExecutionImage decoded =
+		machine.executionAddressSpace.resolveSystemDomain();
+	hostBytes.assign(decoded.layout.bytes.begin(), decoded.layout.bytes.end());
+	bmsx::writeInstruction(
+		std::span<bmsx::u8>(hostBytes),
+		static_cast<int>(
+			(decoded.layout.header.textAddress - decoded.imageAddress)
+				/ bmsx::INSTRUCTION_BYTES
+		),
+		static_cast<bmsx::u8>(bmsx::OpCode::HALT),
+		0,
+		0,
+		0
+	);
+	decoded.layout.bytes = hostBytes;
+	decoded.layout.header.textAddress += bmsx::INSTRUCTION_BYTES;
+	decoded.layout.header.textByteCount -= bmsx::INSTRUCTION_BYTES;
+	machine.cpu.replaceExecutionImage(std::move(decoded));
+	machine.cpu.writeFrameExecution(
+		0,
+		bmsx::SYSTEM_EXECUTION_DOMAIN_ID,
+		machine.systemRom.functionAddresses[0],
+		machine.systemRom.textAddress
+	);
+
+	require(
+		machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted,
+		"physical text fixture reaches HALT"
+	);
+	const bmsx::Value key =
+		bmsx::valueString(machine.cpu.stringPool().intern("physical_text_seen"));
+	require(
+		machine.cpu.getGlobalByKey(key) == bmsx::valueBool(true),
+		"instruction decode and PC mapping read physical text state instead of the host decode"
+	);
+}
+
 void testPhysicalFunctionRecordsRemainExecutionAuthority() {
 	CpuTestMachine machine(makeSupervisorSystemImage());
 	bmsx::Blua32DecodedExecutionImage decoded =
@@ -787,6 +842,7 @@ int main() {
 	testManualNmiAndSaveStateReturn();
 	testPrivilegeVectorRoutingAndCp0Fault();
 	testSystemAndOrdinaryGlobalRegisterfilesStayDistinct();
+	testPhysicalTextRemainsExecutionAuthority();
 	testPhysicalFunctionRecordsRemainExecutionAuthority();
 	testPhysicalUpvalueRecordsRemainExecutionAuthority();
 	testCp0ExecTransfersToTheSelectedPhysicalCartridgeImage();

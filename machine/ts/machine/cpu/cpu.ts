@@ -37,7 +37,6 @@ import {
 	LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION,
 } from '../../spec/blua32/cop0';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord, signExtend } from '../../spec/blua32/instruction_format';
-import type { Blua32ImageLayout } from './blua32_image';
 import {
 	BLUA32_FUNCTION_CODE_ADDRESS_OFFSET,
 	BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET,
@@ -49,6 +48,9 @@ import {
 	BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET,
 	BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET,
 	BLUA32_FUNCTION_VARARG,
+	BLUA32_IMAGE_HEADER_SIZE,
+	BLUA32_IMAGE_TEXT_ADDRESS_OFFSET,
+	BLUA32_IMAGE_TEXT_BYTE_COUNT_OFFSET,
 	BLUA32_UPVALUE_INDEX_MASK,
 	BLUA32_UPVALUE_IN_STACK_MASK,
 	BLUA32_UPVALUE_RECORD_SIZE,
@@ -749,6 +751,20 @@ export class CPU {
 
 	private activateExecutionImage(decodedImage: Blua32DecodedExecutionImage): Blua32ExecutionImage {
 		const layout = decodedImage.layout;
+		this.executionAddressSpace.bindReadOnlyView(
+			decodedImage.executionDomainId,
+			decodedImage.imageAddress,
+			BLUA32_IMAGE_HEADER_SIZE,
+			this.executionReadView,
+		);
+		const textAddress = readLE32(
+			this.executionReadView.bytes,
+			this.executionReadView.byteOffset + BLUA32_IMAGE_TEXT_ADDRESS_OFFSET,
+		);
+		const textByteCount = readLE32(
+			this.executionReadView.bytes,
+			this.executionReadView.byteOffset + BLUA32_IMAGE_TEXT_BYTE_COUNT_OFFSET,
+		);
 		const constPool = new Array<Value>(layout.constants.length);
 		for (let index = 0; index < layout.constants.length; index += 1) {
 			const constant = layout.constants[index];
@@ -772,16 +788,24 @@ export class CPU {
 		}
 		const globalSlots = this.registerGlobalNames(layout.globalNames, false);
 		const systemGlobalSlots = this.registerGlobalNames(layout.systemGlobalNames, true);
-		const decoded = this.decodeText(layout, globalSlots, systemGlobalSlots);
+		const decoded = this.decodeText(
+			decodedImage.executionDomainId,
+			textAddress,
+			textByteCount,
+			globalSlots,
+			systemGlobalSlots,
+		);
 		const image: Blua32ExecutionImage = {
 			layout,
 			executionDomainId: decodedImage.executionDomainId,
 			irqFunctionAddress: decodedImage.irqFunctionAddress,
+			textAddress,
+			textByteCount,
 			constPool,
 			globalSlots,
 			systemGlobalSlots,
 			decodedPages: decoded.pages,
-			decodedWordCount: layout.header.textByteCount / INSTRUCTION_BYTES,
+			decodedWordCount: textByteCount / INSTRUCTION_BYTES,
 			tableLoadCaches: decoded.tableLoadCaches,
 		};
 		this.bindStaticClosures(image);
@@ -874,16 +898,24 @@ export class CPU {
 	}
 
 	private decodeText(
-		layout: Blua32ImageLayout,
+		executionDomainId: ExecutionDomainId,
+		textAddress: number,
+		textByteCount: number,
 		globalSlots: Uint32Array,
 		systemGlobalSlots: Uint32Array,
 	): {
 		pages: DecodedInstructionPage[];
 		tableLoadCaches: TableLoadInlineCache[];
 	} {
-		const codeOffset = layout.header.textAddress - layout.address;
-		const code = layout.bytes.subarray(codeOffset, codeOffset + layout.header.textByteCount);
-		const instructionCount = code.length / INSTRUCTION_BYTES;
+		this.executionAddressSpace.bindReadOnlyView(
+			executionDomainId,
+			textAddress,
+			textByteCount,
+			this.executionReadView,
+		);
+		const code = this.executionReadView.bytes;
+		const codeWordOffset = this.executionReadView.byteOffset / INSTRUCTION_BYTES;
+		const instructionCount = textByteCount / INSTRUCTION_BYTES;
 		const decodedPages = new Array<DecodedInstructionPage>((instructionCount + DECODED_PAGE_WORDS - 1) >> DECODED_PAGE_SHIFT);
 		for (let pageIndex = 0; pageIndex < decodedPages.length; pageIndex += 1) {
 			decodedPages[pageIndex] = createDecodedInstructionPage();
@@ -896,7 +928,7 @@ export class CPU {
 			let wideA = 0;
 			let wideB = 0;
 			let wideC = 0;
-			let instr = readInstructionWord(code, wordIndex);
+			let instr = readInstructionWord(code, codeWordOffset + wordIndex);
 			let op = (instr >>> 18) & 0x3f;
 			let ext = instr >>> 24;
 			if (op === OpCode.WIDE && wordIndex + 1 < instructionCount) {
@@ -904,7 +936,7 @@ export class CPU {
 				wideA = (instr >>> 12) & 0x3f;
 				wideB = (instr >>> 6) & 0x3f;
 				wideC = instr & 0x3f;
-				instr = readInstructionWord(code, wordIndex + 1);
+				instr = readInstructionWord(code, codeWordOffset + wordIndex + 1);
 				op = (instr >>> 18) & 0x3f;
 				ext = instr >>> 24;
 			}
@@ -1239,7 +1271,7 @@ export class CPU {
 					const frame = frames[frames.length - 1];
 					const image = frame.executionImage;
 					const pc = frame.pc;
-					const wordIndex = (pc - image.layout.header.textAddress) / INSTRUCTION_BYTES;
+					const wordIndex = (pc - image.textAddress) / INSTRUCTION_BYTES;
 					if ((wordIndex >>> 0) >= image.decodedWordCount) {
 						this.hardHalt();
 						return RunResult.Halted;
@@ -1308,7 +1340,7 @@ export class CPU {
 
 	private skipNextInstruction(frame: CallFrame): void {
 		const image = frame.executionImage;
-		const wordIndex = (frame.pc - image.layout.header.textAddress) / INSTRUCTION_BYTES;
+		const wordIndex = (frame.pc - image.textAddress) / INSTRUCTION_BYTES;
 		if ((wordIndex >>> 0) >= image.decodedWordCount) {
 			this.hardHalt();
 			return;
