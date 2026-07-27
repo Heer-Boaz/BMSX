@@ -1,9 +1,9 @@
 // IMPORTANT: IMPORTS TO `bmsx/blabla` ARE NOT ALLOWED!!!!!! THIS WILL CAUSE PROBLEMS WITH .GLSL FILES BEING INCLUDED AND THE ROMPACKER CANNOT HANDLE THIS!!!!!
-import { constructPlatformFromViewHostHandle } from '../../hosts/browser/platform';
-import { prepareMachineRuntime, startMachineHostFrames } from '../../runtime/machine_runtime';
+import type { MachineInitializationOptions } from '../../machine/ts/core/machine_manager';
 import { parseCartHeader } from '../../machine/ts/rompack/format';
 import { decodeRomToc } from '../../machine/ts/rompack/toc';
-import { createAudioContext, resumeAudio, type BootAudioState } from './bootaudio';
+import { constructPlatformFromViewHostHandle } from './platform';
+import { createAudioContext, resumeAudio, type BootAudioState } from './boot_audio';
 
 const audioState: BootAudioState = {
 	sndcontext: null,
@@ -13,33 +13,21 @@ let bootAnimationComplete = false;
 let startingGamepadIndex: number;
 let enableOnscreenGamepad = false;
 
-export async function bootBrowserRom(
+export async function loadBrowserMachine(
 	debug: boolean,
 	systemRomPath: string,
 	defaultRom: string,
-): Promise<void> {
-	try {
-		const romUrl = getRomFromUrlParameter() || defaultRom;
-		if (!romUrl) {
-			throw new Error('Missing required URL parameter: ?rom=<path-to-rom>');
-		}
-		const systemRom = await fetchBuffer(systemRomPath);
-		const slot1Url = getRomFromUrlParameter(1);
-		const [slot0Rom, slot1Rom] = await Promise.all([
-			loadCart(`./${romUrl}`, 0, debug),
-			slot1Url ? loadCart(`./${slot1Url}`, 1, debug) : Promise.resolve(null),
-		]);
-		await startMachine(systemRom, [slot0Rom, slot1Rom], debug);
-	} catch (error) {
-		outputError(error);
+): Promise<MachineInitializationOptions> {
+	const romUrl = getRomFromUrlParameter() || defaultRom;
+	if (!romUrl) {
+		throw new Error('Missing required URL parameter: ?rom=<path-to-rom>');
 	}
-}
-
-async function startMachine(
-	systemRom: Uint8Array,
-	cartridgeSlots: [Uint8Array, Uint8Array | null],
-	debug: boolean,
-): Promise<void> {
+	const systemRom = await fetchBuffer(systemRomPath);
+	const slot1Url = getRomFromUrlParameter(1);
+	const [slot0Rom, slot1Rom] = await Promise.all([
+		loadCart(`./${romUrl}`, 0, debug),
+		slot1Url ? loadCart(`./${slot1Url}`, 1, debug) : Promise.resolve(null),
+	]);
 	createAudioContext(audioState);
 	const gamescreen = document.getElementById('gamescreen');
 	if (!(gamescreen instanceof HTMLCanvasElement)) {
@@ -51,20 +39,18 @@ async function startMachine(
 		audioContext: audioState.sndcontext,
 		debug,
 	});
-	const ide = await prepareMachineRuntime({
-		cartridgeSlots,
+	return {
+		cartridgeSlots: [slot0Rom, slot1Rom],
 		systemRom,
 		debug,
 		startingGamepadIndex,
 		enableOnscreenGamepad,
 		platform,
 		viewHost: platform.gameviewHost,
-	});
-	startMachineHostFrames(ide);
-	wrapUpLoader();
+	};
 }
 
-function wrapUpLoader(): void {
+export function completeBrowserBoot(): void {
 	window.removeEventListener('resize', resizeLoaderMessage);
 	document.getElementById('msx').remove();
 	document.getElementById('hidor').remove();
@@ -122,7 +108,7 @@ function replaceBmsxImageWithRomLabel(romLabelUrl: string): void {
 	document.querySelector<HTMLImageElement>('#msx').src = romLabelUrl;
 }
 
-function outputError(error: unknown): void {
+export function showBrowserBootError(error: unknown): void {
 	console.error(error);
 	bootAnimationComplete = true;
 	document.getElementById('loading').hidden = false;

@@ -13,11 +13,7 @@ export function normalizePathKey(candidate: string): string {
 }
 
 export function isDirectoryPath(candidate: string): boolean {
-	try {
-		return statSync(candidate).isDirectory();
-	} catch {
-		return false;
-	}
+	return existsSync(candidate) && statSync(candidate).isDirectory();
 }
 
 export function findExistingDirectory(candidates: Array<string>): string {
@@ -54,6 +50,15 @@ export function getParamOrEnv(
 	fallback: string,
 	knownFlags?: ReadonlySet<string>,
 ): string {
+	return getOptionalParamOrEnv(args, flag, envVar, knownFlags) || fallback;
+}
+
+export function getOptionalParamOrEnv(
+	args: string[],
+	flag: string,
+	envVar: string,
+	knownFlags?: ReadonlySet<string>,
+): string | undefined {
 	const idx = args.indexOf(flag);
 	if (idx !== -1) {
 		const valueIdx = idx + 1;
@@ -68,5 +73,5 @@ export function getParamOrEnv(
 	}
 	const envValue = process.env[envVar];
 	if (envValue && envValue.length > 0) return envValue;
-	return fallback;
+	return undefined;
 }

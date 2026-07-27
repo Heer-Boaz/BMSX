@@ -10,6 +10,16 @@ horen niet in deze lijst.
 | --- | --- | --- |
 | `PERF-RUNTIME-01` | Kies per iteratie één gemeten hot-pathowner en verwijder daar herhaalde decode, conversie, validatie, allocatie of dispatch bij de producer. Dit is een paraplu, geen enkele megaslice. | Analyzers blokkeren nieuwe overtredingen, parity blijft exact en representatieve low-end hardware houdt 50 Hz zonder oplopende backlog. |
 
+## Solution- en productgrenzen
+
+| ID | Opdracht | Klaar wanneer |
+| --- | --- | --- |
+| `SOLUTION-WIRE-01` | Trek de gedeelde ROM-, BLua32-, register- en andere wire-contracten uit implementatiepaden naar hun specificatie-owner. | Toolchain hangt alleen van wire/ABI-contracten af en niet van TS- of C++-emulatorimplementatie. |
+| `CPU-HOST-FFI-01` | Verwijder `NativeFunction`, `NativeObject` en de IDE-native bridge volledig uit de CPU/guest-valuerepresentatie. Geen compatibiliteitspad of vervangende host-callbacklaag; het expliciet geaccepteerde functieverlies is onderdeel van de slice. | Beide CPU's hebben uitsluitend machine/guest-waardetags en de player- en Studio-producten bevatten geen generieke CPU-host-FFI. |
+| `CPU-OBSERVER-01` | Verwijder de TS-only instruction-observerdispatch uit de CPU-hotloop en ontwerp profiling uitsluitend als tooling boven een eerlijke machinegrens. | Normale TS- en C++-CPU-hotloops hebben dezelfde architecturale dispatch en geen dormant host-observerbranch. |
+| `RUNTIME-TIMING-01` | Verplaats cart-zichtbare systeemtijdregisters uit de host/runtimecontainer naar een echt machine-device. | Tijd-MMIO is gemirrord machine-state en `Runtime` publiceert geen cart-zichtbare hostfaciliteit. |
+| `HOST-DESCRIPTOR-GC-01` | Verwijder gekopieerde resource-descriptor-DTO's en andere per-actie/per-frame metadatareconstructie; consumers gebruiken de retained owner-records rechtstreeks. | Geen descriptorcopy zoals `{ domain, path, type, asset_id, readOnly }`, geen extra identity-map en geen vermijdbare allocatie in IDE- of hostflows. |
+
 ## Uitgesteld tot een echte backend of target beschikbaar is
 
 | ID | Nog te bewijzen | Vereist |

@@ -6,8 +6,6 @@ import { Input } from '../machine/ts/input/manager';
 import type { PlayerInput } from '../machine/ts/input/player';
 import type { DeviceQuantizeMode } from '../machine/ts/render/post/device_quantize/mode';
 import { clearHostMenuFrame, publishHostMenuFrame, type HostMenuFrame } from '../machine/ts/render/host_overlay/overlay_queue';
-import type { RuntimeIdeState } from '../ide/runtime/state';
-import { rebootPreparedRuntime } from '../ide/workbench/blua32_boot';
 
 type HostMenuValue = {
 	readonly label: string;
@@ -21,7 +19,9 @@ type HostMenuValueOption = {
 	setIndex(index: number): void;
 };
 
-const enum HostMenuAction {
+export const enum HostMenuInput {
+	Inactive,
+	Active,
 	RebootCart,
 	ExitGame,
 }
@@ -29,7 +29,7 @@ const enum HostMenuAction {
 type HostMenuActionOption = {
 	readonly kind: 'action';
 	readonly label: string;
-	readonly action: HostMenuAction;
+	readonly action: HostMenuInput.RebootCart | HostMenuInput.ExitGame;
 };
 
 type HostMenuOption = HostMenuValueOption | HostMenuActionOption;
@@ -274,16 +274,16 @@ export class HostOverlayMenu {
 		{
 			kind: 'action',
 			label: 'REBOOT CART',
-			action: HostMenuAction.RebootCart,
+			action: HostMenuInput.RebootCart,
 		},
 		{
 			kind: 'action',
 			label: 'EXIT GAME',
-			action: HostMenuAction.ExitGame,
+			action: HostMenuInput.ExitGame,
 		},
 	];
 
-	public constructor(private readonly ide: RuntimeIdeState) {
+	public constructor() {
 		this.optionGlyphs = new Array(this.options.length);
 		for (let index = 0; index < this.options.length; index += 1) {
 			this.optionGlyphs[index] = { x: 0, y: 0, z: 922, items: '', item_start: 0, item_end: 0, font: null, color: COLOR_TEXT, has_background_color: false, background_color: 0xff000000, wrap_chars: 0, center_block_width: 0, align: TextAlign.Start, baseline: TextBaseline.Alphabetic, layer: LAYER_2D_IDE };
@@ -300,11 +300,7 @@ export class HostOverlayMenu {
 		}
 	}
 
-	public get isActive(): boolean {
-		return this.active;
-	}
-
-	public tickInput(): boolean {
+	public tickInput(): HostMenuInput {
 		const player = Input.instance.getPlayerInput(1);
 		const comboEdge = buttonPressed(player, BUTTON_START)
 			&& buttonPressed(player, BUTTON_SELECT)
@@ -322,13 +318,13 @@ export class HostOverlayMenu {
 		}
 		Input.instance.setGameplayCaptureEnabled(!this.active);
 		if (!this.active) {
-			return false;
+			return HostMenuInput.Inactive;
 		}
 		if (buttonJustPressed(player, BUTTON_B)) {
 			this.toggle();
 			consumeButtons(player, MENU_NAV_BUTTONS);
 			Input.instance.setGameplayCaptureEnabled(true);
-			return false;
+			return HostMenuInput.Inactive;
 		}
 		if (buttonEdge(player, BUTTON_UP)) {
 			this.selected = this.selected === 0 ? this.options.length - 1 : this.selected - 1;
@@ -344,11 +340,11 @@ export class HostOverlayMenu {
 		if (buttonEdge(player, BUTTON_RIGHT)) {
 			this.changeSelected(1);
 		}
-		if (buttonJustPressed(player, BUTTON_A)) {
-			this.activateSelected();
-		}
+		const result = buttonJustPressed(player, BUTTON_A)
+			? this.activateSelected()
+			: HostMenuInput.Active;
 		consumeButtons(player, MENU_NAV_BUTTONS);
-		return true;
+		return result;
 	}
 
 	private clearRenderCommands(): void {
@@ -503,30 +499,13 @@ export class HostOverlayMenu {
 		this.dirtyText = true;
 	}
 
-	private activateSelected(): void {
+	private activateSelected(): HostMenuInput {
 		const option = this.options[this.selected];
 		if (option.kind === 'action') {
-			this.executeAction(option);
+			this.close();
+			return option.action;
 		}
-	}
-
-	private executeAction(option: HostMenuActionOption): void {
-		this.close();
-		switch (option.action) {
-			case HostMenuAction.RebootCart:
-				void rebootPreparedRuntime(
-					this.ide.sources,
-					this.ide.fault,
-					this.ide.nativeBridge,
-					this.ide.editor,
-					this.ide.luaGate,
-					this.ide.overlayRenderer,
-					machineManager.runtime,
-				);
-				return;
-			case HostMenuAction.ExitGame:
-				machineManager.platform.requestShutdown();
-		}
+		return HostMenuInput.Active;
 	}
 
 	private close(): void {

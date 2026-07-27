@@ -3,14 +3,14 @@ import * as path from 'node:path';
 
 import { extractErrorMessage } from '../../../../ide/language/lua/interpreter/value';
 import type { HeadlessIdeHarness } from '../../../../ide/testing/headless_harness';
+import type { HostClock } from 'bmsx/platform';
 
 export interface IdeTestRunnerOptions {
 	testPath: string;
 	frameIntervalMs: number;
 	ide: HeadlessIdeHarness;
 	logger: (msg: string) => void;
-	scheduleOnce: (delayMs: number, cb: () => void) => void;
-	requestExit: (code: number) => void;
+	clock: HostClock;
 }
 
 /**
@@ -25,16 +25,20 @@ export async function runIdeTest(options: IdeTestRunnerOptions): Promise<void> {
 	const log = (msg: unknown): void => options.logger(`idetest:${label} ${String(msg)}`);
 
 	const waitFrames = (count: number): Promise<void> => new Promise((resolve) => {
-		let remaining = Math.max(0, Math.floor(count));
+		if (count === 0) {
+			resolve();
+			return;
+		}
+		let remaining = count;
 		const step = (): void => {
-			if (remaining <= 0) {
+			remaining -= 1;
+			if (remaining === 0) {
 				resolve();
 				return;
 			}
-			remaining -= 1;
-			options.scheduleOnce(options.frameIntervalMs, step);
+			options.clock.scheduleOnce(options.frameIntervalMs, step);
 		};
-		options.scheduleOnce(options.frameIntervalMs, step);
+		options.clock.scheduleOnce(options.frameIntervalMs, step);
 	});
 
 	const waitForCart = async (timeoutFrames = 1200): Promise<void> => {
@@ -73,18 +77,16 @@ export async function runIdeTest(options: IdeTestRunnerOptions): Promise<void> {
 	};
 
 	log('starting');
+	// eslint-disable-next-line no-new-func -- dev-only headless IDE test scenario.
+	const factory = new Function('t', 'assert', `"use strict"; return (async () => {\n${source}\n})();`) as (
+		ctx: typeof t,
+		assertFn: typeof assert,
+	) => Promise<void>;
 	try {
-		// eslint-disable-next-line no-new-func -- dev-only headless IDE test scenario.
-		const factory = new Function('t', 'assert', `"use strict"; return (async () => {\n${source}\n})();`) as (
-			ctx: typeof t,
-			assertFn: typeof assert,
-		) => Promise<void>;
 		await factory(t, assert);
-		log(`passed (${assertCount} assertions)`);
-		options.requestExit(0);
 	} catch (error) {
 		log(`FAILED: ${extractErrorMessage(error)}`);
-		console.error(`[bootrom:idetest] ${label} failed:`, error);
-		options.requestExit(1);
+		throw error;
 	}
+	log(`passed (${assertCount} assertions)`);
 }

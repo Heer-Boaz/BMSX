@@ -1,9 +1,7 @@
 import { machineManager } from '../machine/ts/core/machine_manager';
 import type { Runtime } from '../machine/ts/machine/runtime/runtime';
 import type { TickCompletion } from '../machine/ts/machine/scheduler/frame';
-import * as workbenchMode from '../ide/workbench/mode';
 import { commitGxGpuViewSnapshot } from '../machine/ts/render/gx/view_snapshot';
-import type { RuntimeIdeState } from '../ide/runtime/state';
 
 export type RenderPresentationMode = 'partial' | 'completed';
 
@@ -13,9 +11,6 @@ type RenderPresentation = {
 };
 
 export class RenderPresentationState {
-	public constructor(private readonly ide: RuntimeIdeState) {
-	}
-
 	private pendingPresentation = false;
 	private presentationMode: RenderPresentationMode = 'completed';
 	private presentationCommitFrame = false;
@@ -28,6 +23,10 @@ export class RenderPresentationState {
 		remaining: 0,
 		visualCommitted: true,
 	};
+
+	public get pending(): boolean {
+		return this.pendingPresentation;
+	}
 
 	private presentFrame(runtime: Runtime, hostDeltaMs: number, mode: RenderPresentationMode, commitFrame: boolean): void {
 		machineManager.deltatime = hostDeltaMs;
@@ -60,14 +59,12 @@ export class RenderPresentationState {
 		}
 	}
 
-	private consumePresentation(runtime: Runtime, out: RenderPresentation): boolean {
+	private consumePresentation(out: RenderPresentation): boolean {
 		if (!this.pendingPresentation) {
 			return false;
 		}
-		const overlayActive = this.ide.overlayRenderer.active;
 		out.mode = this.presentationMode;
-		out.commitFrame = overlayActive ? false : this.presentationCommitFrame;
-		workbenchMode.tickIDEDraw(this.ide, runtime);
+		out.commitFrame = this.presentationCommitFrame;
 		this.clearPresentation();
 		return true;
 	}
@@ -78,16 +75,6 @@ export class RenderPresentationState {
 		this.presentationCommitFrame = false;
 	}
 
-	public runOverlay(runtime: Runtime): void {
-		this.clearPresentation();
-		if (runtime.frameLoop.frameActive) {
-			runtime.frameLoop.abandonFrameState();
-		}
-		runtime.frameScheduler.clearQueuedTime();
-		workbenchMode.tickIDE(this.ide, runtime);
-		this.markPresentation('completed', false);
-	}
-
 	public syncAfterRuntimeUpdate(runtime: Runtime, previousTickSequence: number): void {
 		let tickVisualCommitted = runtime.frameScheduler.lastTickVisualFrameCommitted;
 		while (runtime.frameScheduler.consumeTickCompletion(this.tickCompletionScratch)) {
@@ -95,10 +82,7 @@ export class RenderPresentationState {
 				tickVisualCommitted = true;
 			}
 		}
-		if (this.ide.overlayRenderer.active) {
-			runtime.frameScheduler.clearQueuedTime();
-			this.markPresentation('completed', false);
-		} else if (runtime.frameScheduler.lastTickSequence !== previousTickSequence) {
+		if (runtime.frameScheduler.lastTickSequence !== previousTickSequence) {
 			this.markPresentation('completed', tickVisualCommitted);
 		} else if (runtime.isDrawPending) {
 			this.markPresentation('partial', false);
@@ -106,31 +90,16 @@ export class RenderPresentationState {
 	}
 
 	public presentPausedFrame(runtime: Runtime, hostDeltaMs: number): void {
-		if (this.ide.overlayRenderer.active) {
-			this.runOverlay(runtime);
-			this.consumePresentation(runtime, this.presentationScratch);
-			this.presentFrame(runtime, hostDeltaMs, this.presentationScratch.mode, this.presentationScratch.commitFrame);
-			return;
-		}
 		runtime.frameScheduler.clearQueuedTime();
 		this.clearPresentation();
 		this.presentFrame(runtime, hostDeltaMs, 'completed', false);
 	}
 
 	public presentPending(runtime: Runtime, hostDeltaMs: number): boolean {
-		if (!this.consumePresentation(runtime, this.presentationScratch)) {
+		if (!this.consumePresentation(this.presentationScratch)) {
 			return false;
 		}
 		this.presentFrame(runtime, hostDeltaMs, this.presentationScratch.mode, this.presentationScratch.commitFrame);
 		return true;
-	}
-
-	public presentErrorOverlay(runtime: Runtime, hostDeltaMs: number): void {
-		if (!this.ide.overlayRenderer.active) {
-			return;
-		}
-		this.runOverlay(runtime);
-		this.consumePresentation(runtime, this.presentationScratch);
-		this.presentFrame(runtime, hostDeltaMs, this.presentationScratch.mode, this.presentationScratch.commitFrame);
 	}
 }

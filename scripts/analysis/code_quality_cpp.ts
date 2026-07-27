@@ -3,7 +3,7 @@ import { isAbsolute, relative } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 import { loadAnalysisConfig, type AnalysisConfig } from './config';
-import { collectSourceFiles, resolveInputPath } from './file_scan';
+import { collectSourceFiles, resolveInputPath } from '../tooling/file_scan';
 import { analyzeFiles } from './cpp_quality/analyzer';
 import { type DuplicateGroup } from './cpp_quality/diagnostics';
 import { printQualityLedger, qualityLedgerEntries, type QualityLedger } from './quality_ledger';

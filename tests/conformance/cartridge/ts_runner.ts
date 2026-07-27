@@ -54,15 +54,14 @@ async function main(): Promise<void> {
 		readFile(bootableCartPath),
 	]);
 	const platform = new ConformancePlatform();
-	const ide = await prepareMachineRuntime({
+	const runtime = await prepareMachineRuntime({
 		systemRom,
 		cartridgeSlots: [dataRom, bootableCartRom],
 		platform,
 		viewHost: platform.gameviewHost,
 	});
-	const runtime = machineManager.runtime;
-	const presentation = new RenderPresentationState(ide);
-	const hostOverlayMenu = new HostOverlayMenu(ide);
+	const presentation = new RenderPresentationState();
+	const hostOverlayMenu = new HostOverlayMenu();
 	machineManager.start();
 	runtime.frameLoop.currentTimeMs = 0;
 	let currentTimeMs = 0;
@@ -82,7 +81,6 @@ async function main(): Promise<void> {
 			}
 			currentTimeMs += runtime.timing.frameDurationMs;
 			runMachineHostFrame(
-				ide,
 				presentation,
 				hostOverlayMenu,
 				runtime,

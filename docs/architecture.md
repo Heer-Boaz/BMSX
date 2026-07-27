@@ -318,15 +318,21 @@ Ownership terms are architectural roles, not interchangeable directory labels:
   input, audio/video presentation, external ABI callbacks, and execution loop.
 - `mode` is a behavior variant inside one host. A mode may choose pacing,
   capture, CLI, headless, or test-runner behavior; it is not a separate machine.
+- `Studio` is an authoring product above a host. It may compose IDE and compiler
+  tooling, but the player composition and platform services never import it.
 
 Current artifact roles:
 
 - `dist/libbmsx.js` / `.debug.js`: importable JavaScript machine/runtime
   artifact. It exposes `MachineManager.initialize(...)`; it does not own browser,
   Node, SDL, ALSA, EGL, IDE, or libretro host services.
-- `dist/engine.js` / `.debug.js`: browser host/bootstrap artifact. It wires
+- `dist/engine.js` / `.debug.js`: browser player/bootstrap artifact. It wires
   browser video, audio, input, view-host construction, runtime preparation, and
-  the frame loop through static composition.
+  the frame loop through static composition. Its bundle contains no IDE,
+  compiler, or ROM-tooling source.
+- `dist/studio.js` / `.debug.js` with `dist/studio.html`: browser Studio
+  artifact. This is the explicit composition root that adds workbench,
+  workspace, compiler, and source tooling to the browser host.
 - `libbmsx.a` in its CMake build tree: C++ machine/runtime static library. It
   retains physical ROM bytes and executable-image decode state, but does not
   compile the Lua source lexer/parser, BLua32 source-range extraction, symbol
@@ -339,8 +345,28 @@ Current artifact roles:
 - `bmsx_libretro_host`: local frontend executable that loads a libretro core and
   owns SDL, ALSA, EGL/fbdev, input devices, screenshots, and the process loop.
 - `dist/host_headless.js` / `.debug.js` and `dist/host_cli.js` / `.debug.js`:
-  Node host executables/modes that statically compose the machine runtime and
-  own their process/runtime environment.
+  Node player executables/modes that statically compose the machine runtime and
+  own their process/runtime environment. Their bundles contain no IDE,
+  compiler, ROM tooling, capture runner, or host-test runner.
+- `dist/host_headless_tooling.js` / `.debug.js`: explicit Node validation and
+  Studio-tooling executable. Timelines, screenshots, host tests, IDE tests, and
+  source-aware profiling live here rather than in the ordinary headless player.
+
+The player lifecycle and frame loop are owned by `runtime/`. The browser and
+Node player entrypoints import that lifecycle directly. Studio owns its separate
+composition in `ide/workbench/`; only Studio and IDE-test entrypoints import it.
+This is a static dependency boundary, not an optional IDE parameter, callback
+provider, or runtime feature switch.
+
+Deployable artifact construction is owned by `scripts/products/`. Browser
+player, browser Studio, Node player, Node tooling, machine-library, and
+libretro builds are independently invokable product targets; there is no
+platform meta-target that silently links player and authoring products
+together. Browser deployment builds only the player and a selected prebuilt
+cart. `scripts/rompacker/` owns BIOS/cart source compilation, linking, assets,
+and ROM emission and imports no host, IDE, runtime-composition, or product-build
+module. Shared CLI and source-scan mechanics live under `scripts/tooling/`
+rather than either solution owner.
 
 Do not use `platform` as an architecture category for both `libretro` and
 `libretro_host`. `hosts/libretro` is the libretro core entrypoint;
@@ -2833,7 +2859,7 @@ dirty-record indexing and transfer when the retained map is already remote.
 Remote failure leaves the local commit authoritative, schedules reconnect, and
 does not abort editor shutdown or workspace reconfiguration.
 
-Instruction profiling is an opt-in Node host feature. Its TypeScript session
+Instruction profiling is an opt-in Node tooling-host feature. Its TypeScript session
 attaches a raw execution observer only while `--cpu-profile` is active and owns
 all counters, symbols, and report formatting outside the machine. The native
 runtime has no profiler consumer and therefore exposes no dormant observer

@@ -39,9 +39,8 @@ async function hash(path) {
 }
 
 try {
-	run('headless platform build', 'npm', ['run', 'build:platform:headless', '--', '--force']);
-	run('BIOS build', 'npm', ['run', 'build:bios', '--', '--force']);
-	run('conformance cartridge build', 'npm', ['run', 'build:game', '--', 'cartridge_conformance', '--force']);
+	run('BIOS build', 'npm', ['run', 'build:toolchain:bios', '--', '--force']);
+	run('conformance cartridge build', 'npm', ['run', 'build:toolchain:cart', '--', 'cartridge_conformance', '--force']);
 	run('native test configure', 'cmake', [
 		'-S', 'machine/cpp',
 		'-B', 'build-cpp-tests',

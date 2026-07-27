@@ -3,32 +3,29 @@ import * as path from 'node:path';
 import { extractErrorMessage } from '../../../../ide/language/lua/interpreter/value';
 import type { Closure } from '../../../../machine/ts/machine/cpu/closure';
 import { Table } from '../../../../machine/ts/machine/cpu/table';
-import { EMPTY_CALL_ARGS, asStringId, valueIsString, valueIsTable, type StringValue, type Value } from '../../../../machine/ts/machine/cpu/value';
+import {
+	EMPTY_CALL_ARGS,
+	asStringId,
+	valueIsString,
+	valueIsTable,
+	type StringValue,
+	type Value,
+} from '../../../../machine/ts/machine/cpu/value';
 import { callClosureSuspended } from '../../../../ide/runtime/closure_executor';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
-import type { InputEvt } from 'bmsx/platform';
+import type { HostClock, InputHub, TimerHandle } from 'bmsx/platform';
+import { HeadlessCaptureCoordinator } from '../headless_capture';
 import { HOST_TEST_LOADER_GLOBAL } from './host_test_cartridge';
-
-export interface HostTestRunnerClock {
-	scheduleOnce(delayMs: number, cb: (timestampMs: number) => void): void;
-}
-
-export interface HostTestRunnerState {
-	assertCount: number;
-	finished: boolean;
-}
 
 export interface HostTestRunnerOptions {
 	testPath: string;
 	frameIntervalMs: number;
+	ttlMs: number;
 	logger: (msg: string) => void;
 	runtime: Runtime;
-	postInput: (event: InputEvt) => void;
-	requestExit: (code: number) => void;
-	scheduler: HostTestRunnerClock;
-	runState: HostTestRunnerState | null;
-	captureNow: ((description: string) => void) | null;
-	canCaptureNow: (() => boolean) | null;
+	input: InputHub;
+	clock: HostClock;
+	capture: HeadlessCaptureCoordinator;
 }
 
 type ScheduledHostCommand = {
@@ -45,7 +42,7 @@ const HOST_TEST_GLOBAL = '__bmsx_host_test';
 const CART_SETTLE_FRAMES = 5;
 const GAMEPLAY_SETTLE_FRAMES = 50;
 
-class HostTestRunner {
+export class HostTestRunner {
 	private readonly label: string;
 	private readonly scheduledCommands = new Map<number, ScheduledHostCommand[]>();
 	private readonly updateArgs: Value[] = [0];
@@ -68,28 +65,41 @@ class HostTestRunner {
 	private tickTimestampMs = 0;
 	private installed = false;
 	private stopped = false;
+	private readonly completion: Promise<void>;
+	private readonly resolveCompletion: () => void;
+	private readonly rejectCompletion: (error: unknown) => void;
+	private deadline!: TimerHandle;
 	private readonly tickCallback = (timestampMs: number): void => this.tick(timestampMs);
 
 	constructor(private readonly options: HostTestRunnerOptions) {
 		this.label = path.basename(options.testPath);
+		let resolveCompletion!: () => void;
+		let rejectCompletion!: (error: unknown) => void;
+		this.completion = new Promise((resolve, reject) => {
+			resolveCompletion = resolve;
+			rejectCompletion = reject;
+		});
+		this.resolveCompletion = resolveCompletion;
+		this.rejectCompletion = rejectCompletion;
 	}
 
-	public start(): void {
+	public run(): Promise<void> {
 		this.options.logger(`test:${this.label} waiting for cart`);
-		this.options.scheduler.scheduleOnce(this.options.frameIntervalMs, this.tickCallback);
+		this.options.clock.scheduleOnce(this.options.frameIntervalMs, this.tickCallback);
+		this.deadline = this.options.clock.scheduleOnce(this.options.ttlMs, () => {
+			this.fail(new Error(`Host test '${this.label}' did not finish before TTL.`));
+		});
+		return this.completion;
 	}
 
 	private tick(timestampMs: number): void {
 		try {
 			this.tickUnsafe(timestampMs);
 		} catch (error) {
-			this.capture(`test_fail:${this.label}`);
-			console.error('[bootrom:hostrunner] Fatal error:', error);
-			this.options.requestExit(1);
-			return;
+			this.fail(error);
 		}
 		if (!this.stopped) {
-			this.options.scheduler.scheduleOnce(this.options.frameIntervalMs, this.tickCallback);
+			this.options.clock.scheduleOnce(this.options.frameIntervalMs, this.tickCallback);
 		}
 	}
 
@@ -141,7 +151,9 @@ class HostTestRunner {
 	private install(): void {
 		const runtime = this.options.runtime;
 		const cpu = runtime.machine.cpu;
-		const loader = cpu.getGlobalByKey(runtime.internString(HOST_TEST_LOADER_GLOBAL)) as Closure;
+		const loader = cpu.getGlobalByKey(
+			runtime.internString(HOST_TEST_LOADER_GLOBAL),
+		) as Closure;
 		callClosureSuspended(runtime, loader, EMPTY_CALL_ARGS);
 		const testTable = cpu.getGlobalByKey(runtime.internString(HOST_TEST_GLOBAL)) as Table;
 		this.ready = testTable.getStringKey(runtime.internString('ready')) as Closure;
@@ -192,9 +204,15 @@ class HostTestRunner {
 			}
 			return;
 		}
-		const press = pressValue === null ? null : stringPool.toString(asStringId(pressValue as StringValue));
-		const down = downValue === null ? null : stringPool.toString(asStringId(downValue as StringValue));
-		const up = upValue === null ? null : stringPool.toString(asStringId(upValue as StringValue));
+		const press = pressValue === null
+			? null
+			: stringPool.toString(asStringId(pressValue as StringValue));
+		const down = downValue === null
+			? null
+			: stringPool.toString(asStringId(downValue as StringValue));
+		const up = upValue === null
+			? null
+			: stringPool.toString(asStringId(upValue as StringValue));
 		let capture: string | null = null;
 		switch (captureValue) {
 			case null:
@@ -205,7 +223,9 @@ class HostTestRunner {
 			default:
 				capture = `test:${stringPool.toString(asStringId(captureValue as StringValue))}`;
 		}
-		const log = logValue === null ? null : stringPool.toString(asStringId(logValue as StringValue));
+		const log = logValue === null
+			? null
+			: stringPool.toString(asStringId(logValue as StringValue));
 		const holdFrames = holdFramesValue === null ? 1 : holdFramesValue as number;
 		const newGame = newGameValue === true;
 		if (frameValue !== null && (frameValue as number) > 0) {
@@ -263,7 +283,7 @@ class HostTestRunner {
 	}
 
 	private postKey(code: string, down: boolean): void {
-		this.options.postInput({
+		this.options.input.post({
 			type: 'button',
 			deviceId: 'keyboard:0',
 			code,
@@ -273,30 +293,25 @@ class HostTestRunner {
 	}
 
 	private capture(description: string): void {
-		if (this.options.captureNow && (!this.options.canCaptureNow || this.options.canCaptureNow())) {
-			this.options.captureNow(description);
-		}
+		this.options.capture.captureNow(description, `host:${this.label}`);
 	}
 
 	private pass(): void {
 		this.stopped = true;
-		if (this.options.runState) {
-			this.options.runState.assertCount += 1;
-			this.options.runState.finished = true;
-		}
+		this.deadline.cancel();
 		this.capture(`test_pass:${this.label}`);
 		this.options.logger(`test:${this.label} passed`);
-		this.options.requestExit(0);
+		this.resolveCompletion();
 	}
 
-}
-
-export function runHostTest(options: HostTestRunnerOptions): void {
-	try {
-		new HostTestRunner(options).start();
-	} catch (error) {
-		options.captureNow?.(`test_fail:${path.basename(options.testPath)}: ${extractErrorMessage(error)}`);
-		console.error('[bootrom:hostrunner] Fatal error:', error);
-		options.requestExit(1);
+	private fail(error: unknown): void {
+		if (this.stopped) {
+			return;
+		}
+		this.stopped = true;
+		this.deadline.cancel();
+		this.capture(`test_fail:${this.label}: ${extractErrorMessage(error)}`);
+		this.rejectCompletion(error);
 	}
+
 }

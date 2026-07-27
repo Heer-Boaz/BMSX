@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import * as ts from 'typescript';
-import { collectSourceFiles } from './file_scan';
+import { collectSourceFiles } from '../tooling/file_scan';
 
 type Mode = 'dry-run' | 'write';
 

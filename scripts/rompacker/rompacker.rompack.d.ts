@@ -6,7 +6,6 @@ import type { Canvas, Image as NodeCanvasImage } from 'canvas';
 import type { NativeGxTexture } from '../../machine/ts/rompack/tooling/gx_texture_codec';
 import type { asset_type, GxTexturePageTile } from '../../machine/ts/rompack/format';
 
-export type RomPackerTarget = 'browser' | 'cli' | 'headless' | 'libretro-wsl' | 'libretro-win' | 'libretro-snesmini';
 export type RomPackerMode = 'rompack' | 'bios';
 
 export interface RomPackerOptions {
@@ -17,7 +16,6 @@ export interface RomPackerOptions {
 	outputDirectory: string;
 	force: boolean;
 	debug: boolean;
-	platform: RomPackerTarget;
 	/** Accepted for CLI parity; rompack mode no longer type-checks TypeScript games. */
 	skipTypecheck?: boolean;
 	/** VM optimizer level. */

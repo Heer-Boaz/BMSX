@@ -3,33 +3,13 @@ import test from 'node:test';
 
 import { machineManager } from '../../machine/ts/core/machine_manager';
 import { RenderPresentationState } from '../../runtime/presentation_state';
-import { RuntimeIdeState } from '../../ide/runtime/state';
-import type { LuaSourceRegistry } from '../../machine/ts/lua/source_registry';
 import {
 	createTestRuntime,
 	createTestRuntimeRomPayload,
-	createTestRuntimeSourceState,
 } from '../helpers/runtime_sources';
-import { SYSTEM_RESOURCE_DOMAIN } from '../../ide/common/resource';
 
-test('PCRTC revision drives render-target changes without overwriting the IDE target', () => {
-	const systemLuaSources: LuaSourceRegistry = {
-		records: [],
-		path2lua: {},
-		module2lua: {},
-		entry_path: '',
-		namespace: 'test',
-		projectRootPath: '',
-		can_boot_from_source: false,
-		revision: 0,
-	};
+test('PCRTC revision drives render-target changes', () => {
 	const runtime = createTestRuntime(createTestRuntimeRomPayload());
-	const ide = new RuntimeIdeState(
-		runtime,
-		{ width: 384, height: 288 },
-		createTestRuntimeSourceState(systemLuaSources, [null, null], SYSTEM_RESOURCE_DOMAIN),
-	);
-	ide.overlayRenderer.active = true;
 	const scanout = runtime.machine.gxGpu.readDeviceOutput().pcrtcScanout;
 	scanout.revision = 7;
 	scanout.outputActive = true;
@@ -54,7 +34,7 @@ test('PCRTC revision drives render-target changes without overwriting the IDE ta
 	manager.paused = false;
 	manager.view = view;
 	manager.sndmaster = { finishFrame(): void {} };
-	const presentation = new RenderPresentationState(ide);
+	const presentation = new RenderPresentationState();
 
 	presentation.requestHeldPresentation();
 	assert.equal(presentation.presentPending(runtime, 20), true);

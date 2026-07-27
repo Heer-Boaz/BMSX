@@ -46,11 +46,6 @@
 			"reason": "ts_compiler_boot_symbol_metadata_no_cpp_runtime"
 		},
 		{
-			"pattern": "hosts/browser/engine.ts",
-			"category": "compiler_tooling",
-			"reason": "compiler_tooling_browser_engine_not_runtime_core"
-		},
-		{
 			"pattern": "machine/ts/index.ts",
 			"category": "barrel",
 			"reason": "machine_runtime_public_barrel"

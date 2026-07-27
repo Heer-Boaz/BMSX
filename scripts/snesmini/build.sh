@@ -26,7 +26,7 @@ fi
 if [ "$MODE" = "build" ]; then
 	(
 		cd "$ROOT_DIR"
-		npm run build:host-system-atlas
+		npm run build:toolchain:host-system-atlas
 	)
 fi
 
@@ -106,8 +106,8 @@ fi
 if [ "$PUBLISH_KIND" = "core" ]; then
 	(
 		cd "$ROOT_DIR"
-		npm run build:bios -- --force --output-dir "$INPUT_ROOT"
-		npm run build:game -- bare_metal_cart --force --output-dir "$INPUT_ROOT"
+		npm run build:toolchain:bios -- --force --output-dir "$INPUT_ROOT"
+		npm run build:toolchain:cart -- bare_metal_cart --force --output-dir "$INPUT_ROOT"
 	)
 fi
 docker run --rm \

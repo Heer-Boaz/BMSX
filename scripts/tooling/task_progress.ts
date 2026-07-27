@@ -2,7 +2,7 @@ import pc from 'picocolors';
 import stringWidth from 'string-width';
 
 import { renderProgressBar } from '../rominspector/asciiart';
-import type { CliTerminal } from './terminal';
+import type { CliTerminal } from './cli_terminal';
 
 function timer(ms: number) {
 	return new Promise(res => setTimeout(res, ms));
@@ -70,7 +70,13 @@ export function renderTaskProgressLine(state: TaskProgressLineState): string {
 	let barSize = Math.min(maxBarSize, availableWidth);
 	let statusWidth = 0;
 	if (fullStatusWidth > 0 && availableWidth > minBarSize + 1) {
-		const targetStatusWidth = Math.min(fullStatusWidth, Math.max(1, Math.round(state.lineWidth * 0.35)));
+		let targetStatusWidth = state.lineWidth * 0.35;
+		if (targetStatusWidth < 1) {
+			targetStatusWidth = 1;
+		} else if (targetStatusWidth > fullStatusWidth) {
+			targetStatusWidth = fullStatusWidth;
+		}
+		targetStatusWidth = Math.round(targetStatusWidth);
 		const barCandidate = availableWidth - targetStatusWidth - 1;
 		if (barCandidate >= minBarSize) {
 			barSize = Math.min(maxBarSize, barCandidate);
@@ -106,12 +112,8 @@ export class TaskProgressReporter {
 		this.terminal = terminal;
 	}
 
-	private currentTask(): string {
-		return this.tasks[0] as string;
-	}
-
-	public getCurrentTask(): string {
-		return this.currentTask();
+	public currentTask(): string {
+		return this.tasks[0];
 	}
 
 	private recalcTotals(): void {

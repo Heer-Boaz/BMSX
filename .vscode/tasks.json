@@ -60,12 +60,12 @@
 			}
 		},
 		{
-			"label": "PLATFORM BUILD: browser",
+			"label": "PRODUCT BUILD: browser player",
 			"type": "shell",
 			"command": "npm",
 			"args": [
 				"run",
-				"build:platform:browser"
+				"build:product:browser-player"
 			],
 			"problemMatcher": [],
 			"group": "build",
@@ -81,16 +81,41 @@
 				"showReuseMessage": false,
 				"clear": true,
 				"revealProblems": "onProblem",
-				"group": "PLATFORM BUILD"
+				"group": "PRODUCT BUILD"
 			}
 		},
 		{
-			"label": "PLATFORM BUILD: browser (debug)",
+			"label": "PRODUCT BUILD: browser Studio",
 			"type": "shell",
 			"command": "npm",
 			"args": [
 				"run",
-				"build:platform:browser",
+				"build:product:browser-studio"
+			],
+			"problemMatcher": [],
+			"group": "build",
+			"icon": {
+				"id": "globe",
+				"color": "terminal.ansiCyan"
+			},
+			"presentation": {
+				"echo": false,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": false,
+				"clear": true,
+				"revealProblems": "onProblem",
+				"group": "PRODUCT BUILD"
+			}
+		},
+		{
+			"label": "PRODUCT BUILD: browser Studio (debug)",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build:product:browser-studio",
 				"--",
 				"--debug"
 			],
@@ -108,7 +133,7 @@
 				"showReuseMessage": false,
 				"clear": true,
 				"revealProblems": "onProblem",
-				"group": "PLATFORM BUILD"
+				"group": "PRODUCT BUILD"
 			}
 		},
 		{
@@ -142,7 +167,7 @@
 			"command": "npm",
 			"args": [
 				"run",
-				"build:game",
+				"build:toolchain:cart",
 				"--",
 				"${input:romtobuild}"
 			],
@@ -174,7 +199,7 @@
 			"command": "npm",
 			"args": [
 				"run",
-				"build:game",
+				"build:toolchain:cart",
 				"--",
 				"${input:romtobuild}",
 				"--debug"
@@ -204,7 +229,7 @@
 			"command": "bash",
 			"args": [
 				"-lc",
-				"npm run build:platform:browser -- --debug --force && npm run build:bios -- --debug --force && npm run build:game -- \"${input:romtobuild}\" --debug --force"
+				"npm run build:product:browser-studio -- --debug --force && npm run build:toolchain:bios -- --debug --force && npm run build:toolchain:cart -- \"${input:romtobuild}\" --debug --force"
 			],
 			"problemMatcher": [],
 			"group": "build",
@@ -224,12 +249,12 @@
 			}
 		},
 		{
-			"label": "PLATFORM BUILD: headless (debug)",
+			"label": "PRODUCT BUILD: Node headless player (debug)",
 			"type": "shell",
 			"command": "npm",
 			"args": [
 				"run",
-				"build:platform:headless",
+				"build:product:node-headless-player",
 				"--",
 				"--debug"
 			],
@@ -247,16 +272,16 @@
 				"showReuseMessage": false,
 				"clear": true,
 				"revealProblems": "onProblem",
-				"group": "PLATFORM BUILD"
+				"group": "PRODUCT BUILD"
 			}
 		},
 		{
-			"label": "PLATFORM BUILD: cli (debug)",
+			"label": "PRODUCT BUILD: Node CLI player (debug)",
 			"type": "shell",
 			"command": "npm",
 			"args": [
 				"run",
-				"build:platform:cli",
+				"build:product:node-cli-player",
 				"--",
 				"--debug"
 			],
@@ -274,7 +299,7 @@
 				"showReuseMessage": false,
 				"clear": true,
 				"revealProblems": "onProblem",
-				"group": "PLATFORM BUILD"
+				"group": "PRODUCT BUILD"
 			}
 		},
 		{
@@ -284,7 +309,7 @@
 			"dependsOn": [
 				"GAME ROMPACK BUILD",
 				"BIOS: build",
-				"PLATFORM BUILD: browser"
+				"PRODUCT BUILD: browser player"
 			],
 			"problemMatcher": [],
 			"group": "build",
@@ -334,7 +359,7 @@
 			"command": "npm",
 			"args": [
 				"run",
-				"build:bios"
+				"build:toolchain:bios"
 			],
 			"problemMatcher": [
 				"$tsc"
@@ -361,7 +386,7 @@
 			"command": "npm",
 			"args": [
 				"run",
-				"build:bios",
+				"build:toolchain:bios",
 				"--",
 				"--debug"
 			],
@@ -390,7 +415,7 @@
 			"command": "npm",
 			"args": [
 				"run",
-				"validate:bios"
+				"validate:toolchain:bios"
 			],
 			"problemMatcher": [
 				"$tsc"
@@ -452,7 +477,7 @@
 			"command": "npm",
 			"args": [
 				"run",
-				"build:platform:libretro-wsl"
+				"build:product:libretro-wsl"
 			],
 			"problemMatcher": [
 				"$tsc"
@@ -479,7 +504,7 @@
 			"command": "npm",
 			"args": [
 				"run",
-				"build:platform:libretro-wsl",
+				"build:product:libretro-wsl",
 				"--",
 				"--debug"
 			],
@@ -508,7 +533,7 @@
 			"command": "npm",
 			"args": [
 				"run",
-				"build:platform:libretro-win"
+				"build:product:libretro-win"
 			],
 			"problemMatcher": [
 				"$tsc"

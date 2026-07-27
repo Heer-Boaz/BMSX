@@ -32,8 +32,9 @@ See `docs/architecture.md` for the machine/host boundary rules.
 - `hosts/libretro`: libretro core host entrypoint for BMSX
 - `hosts/libretro_host`: local libretro frontend executable, an alternative to RetroArch
 - `carts`: Lua cart software for the machine and cart-local resources
-- `scripts/rompacker`: BIOS/cart/platform builders
-- `scripts/bootrom`: browser and Node boot entrypoints
+- `scripts/rompacker`: BIOS/cart compiler, linker, asset, and ROM builders
+- `scripts/products`: deployable player, Studio, Node, and libretro product builders
+- `scripts/bootrom`: Node player and tooling entrypoints
 - `dist`: generated ROMs and runtime artifacts
 
 ## Build Model
@@ -43,7 +44,7 @@ See `docs/architecture.md` for the machine/host boundary rules.
 - shared cart Lua lives in `cartlib`
 - current carts live in `carts/<cart-folder>`
 - current cart resources live in `carts/<cart-folder>/res`
-- `build:game` takes the cart folder name, not the ROM manifest name
+- `build:toolchain:cart` takes the cart folder name, not the ROM manifest name
 - headless/CLI use debug artifacts
 - libretro/custom-host runs require non-debug BIOS and non-debug cart ROMs
 
@@ -74,10 +75,12 @@ The host may accelerate implementation details, but it must not own the semantic
 Current artifact names encode that split:
 
 - `dist/libbmsx.js`: importable JavaScript machine/runtime library.
-- `dist/engine.js`: browser host/bootstrap with its statically linked runtime composition.
+- `dist/engine.js`: IDE-free browser player/bootstrap with its statically linked runtime composition.
+- `dist/studio.js`: browser Studio composition with IDE and compiler tooling.
 - `libbmsx.a` in its CMake build tree: C++ machine/runtime.
 - `dist/libretro_bmsx.so`: libretro core built around the C++ machine runtime.
-- `dist/host_headless.js` and `dist/host_cli.js`: Node host modes with their statically linked runtime composition.
+- `dist/host_headless.js` and `dist/host_cli.js`: IDE-free Node player modes with their statically linked runtime composition.
+- `dist/host_headless_tooling.js`: Node timelines, captures, host tests, IDE tests, and profiling.
 
 ## Runtime Timing
 
@@ -112,25 +115,32 @@ facade.
 Build BIOS debug artifacts:
 
 ```bash
-npm run build:bios -- --debug --force
+npm run build:toolchain:bios -- --debug --force
 ```
 
 Build a cart debug ROM:
 
 ```bash
-npm run build:game -- pietious --debug --force
+npm run build:toolchain:cart -- pietious --debug --force
 ```
 
-Build browser artifacts:
+Build the browser player:
 
 ```bash
-npm run build:platform:browser -- --debug --force
+npm run build:product:browser-player -- --debug --force
 ```
 
-Build headless artifacts:
+Build browser Studio:
 
 ```bash
-npm run build:platform:headless -- --debug --force
+npm run build:product:browser-studio -- --debug --force
+```
+
+Build the headless player or the separate validation tooling:
+
+```bash
+npm run build:product:node-headless-player -- --debug --force
+npm run build:product:node-headless-tooling -- --debug --force
 ```
 
 Force-build headless + BIOS + cart and run:
@@ -162,9 +172,10 @@ Important:
 - `headless:forcebuildallrun` and `headless:game` take the cart folder name
 - `headless:bare-metal` force-builds and runs `bare_metal_cart` through TS headless and the C++ libretro host
 - headless runs `dist/host_headless.debug.js` with `dist/bmsx-bios.debug.rom`; it does not dynamically load `dist/libbmsx.debug.js`
+- `headless:tooling` runs the separate `dist/host_headless_tooling.debug.js` validation product
 - host tests are always explicit; `headless:game` does not auto-load assert modules
-- if no explicit test is provided, `headless:game` falls back to `<cart>_demo.json`
-- headless timelines run unpaced, so the full scenario completes as fast as the emulator can simulate it
+- the ordinary player never scans `tests/` or auto-loads `<cart>_demo.json`
+- headless tooling timelines run unpaced, so the full scenario completes as fast as the emulator can simulate it
 - `headless:test` and `headless:forcebuildalltest` are the explicit host-test paths
 - Lua host tests run through `scripts/bootrom/platforms/hostrunner/host_test_runner.lua`; TypeScript only installs the native bridge and schedules ticks. The Lua runner exposes `host.press(code, frames)`, `host.down(code)`, `host.up(code)`, `host.at(frame, command)`, `host.capture(label)`, and `host.log(message)` for simple Lua-built input timelines
 
@@ -175,14 +186,14 @@ Libretro requires non-debug BIOS and non-debug cart ROMs. Do not run it against 
 Build the non-debug BIOS and cart ROM:
 
 ```bash
-npm run build:bios -- --force
-npm run build:game -- pietious --force
+npm run build:toolchain:bios -- --force
+npm run build:toolchain:cart -- pietious --force
 ```
 
 Build the libretro core:
 
 ```bash
-npm run build:platform:libretro-wsl
+npm run build:product:libretro-wsl
 ```
 
 Build the custom WSL libretro host:
@@ -251,7 +262,7 @@ at a glance.
 
 ## Notes
 
-- `build:game` means “build a BLua cartridge ROM”
+- `build:toolchain:cart` means “build a BLua cartridge ROM”
 - cart folder resolution is `carts/<name>`
 - old TypeScript full-game projects were removed instead of being kept as compatibility fallbacks
 - the last complete branch that still contains the old TypeScript full-game runtime lives at `archive/ts-full-engine`

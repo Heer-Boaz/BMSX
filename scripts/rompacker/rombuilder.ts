@@ -1,5 +1,3 @@
-import { glsl } from "esbuild-plugin-glsl";
-import type { BuildOptions } from 'esbuild';
 // @ts-ignore
 import type { Stats } from 'fs';
 import { encodeBinary } from '../../machine/ts/common/serializer/binencoder';
@@ -42,8 +40,8 @@ import {
 } from './gx_texture_layout';
 import { BoundingBoxExtractor } from './boundingbox_extractor';
 import { collectGLTFExternalBufferFileSet, loadGLTFModel } from './gltfloader';
-import type { TextureAtlasResource, ImageResource, Resource, resourcetype, RomPackerTarget } from './rompacker.rompack';
-import { collectSourceFiles } from '../analysis/file_scan';
+import type { TextureAtlasResource, ImageResource, Resource, resourcetype } from './rompacker.rompack';
+import { collectSourceFiles } from '../tooling/file_scan';
 import { collectCartSourceFiles } from './cart_source_files';
 import { CART_ROM_BASE, CART_ROM_SIZE, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE } from '../../machine/ts/machine/memory/map';
 import {
@@ -57,12 +55,10 @@ import {
 	type Blua32SymbolsImage,
 } from '../../machine/ts/rompack/tooling/blua32_symbols';
 // @ts-ignore
-const { build } = require('esbuild');
-// @ts-ignore
 const { join, parse, relative, resolve, sep } = require('path');
 
 // @ts-ignore
-const { access, mkdir, mkdtemp, readdir, readFile, rename, rm, stat, writeFile, copyFile, open } = require('fs/promises');
+const { access, mkdir, mkdtemp, readdir, readFile, rename, rm, stat, writeFile, open } = require('fs/promises');
 // @ts-ignore
 const { createWriteStream, readFileSync, statSync } = require('fs');
 // @ts-ignore
@@ -81,10 +77,6 @@ const { isLuaCompileError } = require('../../machine/ts/lua/compiler');
 const {
 	toLuaModulePath,
 } = require('../../machine/ts/lua/module_path');
-// @ts-ignore
-const { minify } = require('@node-minify/core');
-// @ts-ignore
-const { cleanCss: cleanCSS } = require('@node-minify/clean-css');
 // @ts-ignore
 const { loadImage } = require('canvas');
 // @ts-ignore
@@ -121,53 +113,6 @@ type ImageCollisionBuild = {
 	hitpolygons: CompleteHitPolygonsPrecalc | undefined;
 	collisionbin: Buffer;
 };
-
-export const NODE_HOST_ENTRY_RELATIVE_PATH = '../../scripts/bootrom/platforms/node_entry.ts';
-export const MACHINE_RUNTIME_BASENAME = 'libbmsx';
-const MACHINE_RUNTIME_SOURCE_ROOTS = ['machine/ts'] as const;
-const BROWSER_HOST_SOURCE_ROOTS = [
-	'hosts/browser',
-	'ide',
-	'machine/ts',
-	'runtime',
-	'scripts/bootrom/bootaudio.ts',
-	'scripts/bootrom/bootrom.ts',
-] as const;
-const NODE_HOST_SOURCE_ROOTS = [
-	'hosts/node',
-	'ide',
-	'machine/ts',
-	'runtime',
-	'scripts/bootrom',
-] as const;
-export const BROWSER_HOST_BASENAME = 'engine';
-export const NODE_HEADLESS_HOST_BASENAME = 'host_headless';
-export const NODE_CLI_HOST_BASENAME = 'host_cli';
-
-export function getMachineRuntimeFilename(debug: boolean): string {
-	return debug ? `${MACHINE_RUNTIME_BASENAME}.debug.js` : `${MACHINE_RUNTIME_BASENAME}.js`;
-}
-
-export function getBrowserHostFilename(debug: boolean): string {
-	return debug ? `${BROWSER_HOST_BASENAME}.debug.js` : `${BROWSER_HOST_BASENAME}.js`;
-}
-
-export function getNodeLauncherFilename(platform: RomPackerTarget, debug: boolean): string {
-	switch (platform) {
-		case 'headless':
-			return debug ? `${NODE_HEADLESS_HOST_BASENAME}.debug.js` : `${NODE_HEADLESS_HOST_BASENAME}.js`;
-		case 'cli':
-			return debug ? `${NODE_CLI_HOST_BASENAME}.debug.js` : `${NODE_CLI_HOST_BASENAME}.js`;
-		case 'browser':
-			throw new Error('Browser platform does not require a Node launcher filename.');
-		default:
-			throw new Error(`Unsupported platform "${platform}" for Node launcher filename resolution.`);
-	}
-}
-
-declare global {
-	var __dirname: string;
-}
 
 export function normalizeWorkspacePath(input: string): string {
 	const replaced = input.replace(/\\/g, '/').trim();
@@ -320,200 +265,6 @@ export async function getRomManifest(dirPath: string): Promise<RomBuildManifest 
 		return manifest;
 	}
 	else return null;
-}
-
-async function buildBrowserBundle(
-	entryPoint: string,
-	outfile: string,
-	debug: boolean,
-	format: 'esm' | 'iife',
-): Promise<void> {
-	await build({
-		entryPoints: [entryPoint],
-		bundle: true,
-		platform: 'browser',
-		format,
-		target: 'es2020',
-		outfile,
-		keepNames: true,
-		minify: !debug,
-		sourcemap: debug ? 'inline' : false,
-		sourcesContent: debug,
-		define: {
-			'process.env.NODE_ENV': debug ? '"development"' : '"production"',
-			'__BMSX_BROWSER_DEBUG__': debug ? 'true' : 'false',
-		},
-		plugins: [
-			glsl({ minify: !debug }),
-		],
-		loader: {
-			'.png': 'dataurl',
-			'.glsl': 'text',
-			'.wgsl': 'text',
-			'.json': 'json',
-			'.html': 'text',
-		},
-	});
-}
-
-export async function buildMachineRuntime(debug: boolean): Promise<void> {
-	await mkdir('./rom', { recursive: true });
-	await mkdir('./dist', { recursive: true });
-
-	const runtimeFilename = getMachineRuntimeFilename(debug);
-	const runtimeRomPath = `./rom/${runtimeFilename}`;
-	const runtimeDistPath = `./dist/${runtimeFilename}`;
-	await buildBrowserBundle('./machine/ts/index.ts', runtimeRomPath, debug, 'esm');
-	await copyFile(runtimeRomPath, runtimeDistPath);
-}
-
-export async function buildBrowserHost(debug: boolean): Promise<void> {
-	await mkdir('./rom', { recursive: true });
-	await mkdir('./dist', { recursive: true });
-
-	const hostFilename = getBrowserHostFilename(debug);
-	const hostRomPath = `./rom/${hostFilename}`;
-	const hostDistPath = `./dist/${hostFilename}`;
-	await buildBrowserBundle('./hosts/browser/engine.ts', hostRomPath, debug, 'iife');
-	await copyFile(hostRomPath, hostDistPath);
-}
-
-/**
- * Applies a set of replacements to a given string.
- *
- * @param str - The string to apply replacements to.
- * @param replacements - An object mapping placeholders to their replacement values.
- * @returns The string with replacements applied.
- */
-export function applyStringReplacements(str: string, replacements: { [key: string]: string }): string {
-	let result = str;
-	for (const [key, value] of Object.entries(replacements)) {
-		result = result.split(key).join(value);
-	}
-	return result;
-}
-
-/**
- * Builds the game HTML and manifest files for the specified ROM.
- * @param {string} rom_name - The name of the ROM.
- * @param {string} title - The title of the game.
- * @param {string} short_name - The short name of the game.
- * @returns {Promise<any>} A promise that resolves when the game HTML and manifest files have been built.
- */
-export async function buildGameHtmlAndManifest(rom_name: string, title: string, short_name: string, debug: boolean, deploy: boolean): Promise<any> {
-	const IMAGE_PATHS = [
-		'./rom/bmsx.png',
-		'./rom/d-pad-neutral.png',
-		'./rom/d-pad-u.png',
-		'./rom/d-pad-ru.png',
-		'./rom/d-pad-r.png',
-		'./rom/d-pad-rd.png',
-		'./rom/d-pad-d.png',
-		'./rom/d-pad-ld.png',
-		'./rom/d-pad-l.png',
-		'./rom/d-pad-lu.png'
-	];
-
-	/**
-	 * Loads an image from the specified file path and converts it to a base64 string.
-	 *
-	 * @param filepath - The path of the image file to load.
-	 * @returns A promise that resolves to the base64 string representation of the image.
-	 * @throws An error if there is an issue reading the file.
-	 */
-	async function loadImgAndConvertToBase64String(filepath: string): Promise<string> {
-		try {
-			const image = await readFile(filepath);
-			return image.toString('base64');
-		} catch (error) {
-			throw new Error(`Error reading file "${__dirname}${filepath}": ${error.message}`);
-		}
-	}
-
-	/**
-	 * Loads multiple images and converts them to base64 strings.
-	 *
-	 * @param paths - An array of image file paths to load.
-	 * @returns A promise that resolves to an object mapping file paths to base64 strings.
-	 */
-	async function loadImages(paths: string[]): Promise<{ [key: string]: string }> {
-		const images: { [key: string]: string } = {};
-		if (paths.length === 0) {
-			return images;
-		}
-		let cursor = 0;
-		const concurrency = Math.min(8, paths.length);
-		const workers = Array.from({ length: concurrency }, async () => {
-			while (true) {
-				const index = cursor;
-				cursor += 1;
-				if (index >= paths.length) {
-					break;
-				}
-				const path = paths[index];
-				const base64 = await loadImgAndConvertToBase64String(path);
-				images[path] = base64;
-			}
-		});
-		await Promise.all(workers);
-		return images;
-	}
-
-	/**
-	 * Transforms the HTML template by replacing placeholders with actual values.
-	 *
-	 * @param htmlToTransform - The HTML template to transform.
-	 * @param cssMinified - The minified CSS string.
-	 * @param debug - A boolean indicating whether to include debug information.
-	 * @returns A promise that resolves to the transformed HTML string.
-	 */
-	async function transformHtml(htmlToTransform: string, cssMinified: string, debug: boolean): Promise<string> {
-		const imgPrefix = 'data:image/png;base64,';
-		const defaultRom = deploy ? `${rom_name}.${debug ? 'debug.' : ''}rom` : '';
-		const replacements = {
-			'/*#css*/': cssMinified,
-			'#title': title,
-			'#browserhostjs': getBrowserHostFilename(debug),
-			'__DEFAULT_ROM__': defaultRom,
-			'@@BMSX_LOGO@@': `${imgPrefix}${images['./rom/bmsx.png']}`,
-			'@@DPAD_D@@': `${imgPrefix}${images['./rom/d-pad-d.png']}`,
-			'@@DPAD_L@@': `${imgPrefix}${images['./rom/d-pad-l.png']}`,
-			'@@DPAD_LD@@': `${imgPrefix}${images['./rom/d-pad-ld.png']}`,
-			'@@DPAD_LU@@': `${imgPrefix}${images['./rom/d-pad-lu.png']}`,
-			'@@DPAD_NEUTRAL@@': `${imgPrefix}${images['./rom/d-pad-neutral.png']}`,
-			'@@DPAD_R@@': `${imgPrefix}${images['./rom/d-pad-r.png']}`,
-			'@@DPAD_RD@@': `${imgPrefix}${images['./rom/d-pad-rd.png']}`,
-			'@@DPAD_RU@@': `${imgPrefix}${images['./rom/d-pad-ru.png']}`,
-			'@@DPAD_U@@': `${imgPrefix}${images['./rom/d-pad-u.png']}`,
-		};
-
-		return applyStringReplacements(htmlToTransform, replacements);
-	}
-
-	let html: string;
-	try {
-		html = await readFile("./gamebase.html", 'utf8');
-	} catch (error) {
-		throw new Error(`Error reading files while building HTML and Manifest files: ${error.message}`);
-	}
-
-	const images = await loadImages(IMAGE_PATHS);
-
-	const cssMinified = await minify({
-		compressor: cleanCSS,
-		input: "./gamebase.css",
-		output: "./rom/gamebase.min.css",
-	});
-
-	const transformedHtml = await transformHtml(html, cssMinified, debug);
-	await writeFile(`./dist/index.html`, transformedHtml);
-
-	// Write the PWA manifest to dist-folder. Keep it generic unless we explicitly deploy a game.
-	const manifestTemplate = await readFile("./rom/manifest.json", 'utf8');
-	const appName = deploy ? title : 'BMSX';
-	const appShortName = deploy ? short_name : 'BMSX';
-	const manifest = manifestTemplate.replace('#title', appName).replace('#short_name', appShortName);
-	await writeFile("./dist/manifest.webmanifest", manifest);
 }
 
 /**
@@ -1812,66 +1563,6 @@ export async function finalizeRompack(
 	}
 }
 
-export async function deployToServer(_rom_name: string, _title: string) {
-	throw new Error('Deploy is not implemented yet!');
-}
-
-/**
- * Builds the statically composed Node host when its owned sources changed.
- *
- * @throws {Error} Will throw if the loader file does not exist or if compilation fails.
- * @returns {Promise<void>} A promise that resolves once the compilation process is complete
- *                         or if no action is needed.
- */
-export interface NodeHostBuildOptions {
-	debug: boolean;
-	forceBuild: boolean;
-	platform: 'cli' | 'headless';
-}
-
-export async function buildNodeHost(options: NodeHostBuildOptions): Promise<void> {
-	const romTsPath = join(__dirname, NODE_HOST_ENTRY_RELATIVE_PATH);
-	try {
-		await access(romTsPath);
-	} catch {
-		throw new Error(`Node boot entry could not be found at "${romTsPath}"`);
-	}
-
-	const outfileName = getNodeLauncherFilename(options.platform, options.debug);
-	const outPath = join(process.cwd(), 'dist', outfileName);
-	const rebuild = options.forceBuild || await isNodeHostRebuildRequired(outPath);
-	if (!rebuild) {
-		return;
-	}
-
-	await mkdir(join(process.cwd(), 'dist'), { recursive: true });
-
-	const define = {
-		'__BOOTROM_TARGET__': JSON.stringify(options.platform),
-		'__BOOTROM_DEBUG__': options.debug ? 'true' : 'false',
-	};
-
-	const esbuildOptions: BuildOptions = {
-		entryPoints: [romTsPath],
-		bundle: true,
-		platform: 'node',
-		target: 'node22',
-		format: 'cjs',
-		minify: !options.debug,
-		keepNames: true,
-		define,
-		external: ['canvas'],
-		sourcemap: options.debug ? 'inline' : false,
-		sourcesContent: options.debug,
-		outfile: outPath,
-	};
-	try {
-		await build(esbuildOptions);
-	} catch (e) {
-		throw new Error(`Error while compiling Node boot entry for platform "${options.platform}": ${e?.message ?? e}`);
-	}
-}
-
 const codeFileExtensions = ['.ts', '.glsl', '.js', '.jsx', '.tsx', '.html', '.css', '.json', '.xml', '.lua'];
 const CODE_FILE_EXTENSION_SET = new Set(codeFileExtensions);
 
@@ -1989,52 +1680,11 @@ export async function isRebuildRequired(romname: string, bootloaderPath: string,
 
 	const bootloaderNeedsRebuild = cartProject ? false : await anyFileNewerThan(collectSourceFiles([bootloaderPath], CODE_FILE_EXTENSION_SET), romMtimeMs);
 	const resNeedsRebuild = await anyFileNewerThan(await getFiles(resPath), romMtimeMs);
-	const machineRuntimeNeedsRebuild = cartProject ? false : await anyFileNewerThan(collectSourceFiles(MACHINE_RUNTIME_SOURCE_ROOTS, CODE_FILE_EXTENSION_SET), romMtimeMs);
-
 	return extraNeedsRebuild ||
 		bootloaderNeedsRebuild ||
-		resNeedsRebuild ||
-		machineRuntimeNeedsRebuild;
+		resNeedsRebuild;
 }
 
-export async function isMachineRuntimeRebuildRequired(outFilePath: string = `./dist/${getMachineRuntimeFilename(false)}`): Promise<boolean> {
-	let outputStats: Stats;
-	try {
-		outputStats = await stat(outFilePath);
-	} catch {
-		return true;
-	}
-
-	return anyFileNewerThan(collectSourceFiles(MACHINE_RUNTIME_SOURCE_ROOTS, CODE_FILE_EXTENSION_SET), outputStats.mtimeMs);
-}
-
-export async function isBrowserHostRebuildRequired(outFilePath: string = `./dist/${getBrowserHostFilename(false)}`): Promise<boolean> {
-	let outputStats: Stats;
-	try {
-		outputStats = await stat(outFilePath);
-	} catch {
-		return true;
-	}
-
-	return anyFileNewerThan(
-		collectSourceFiles(BROWSER_HOST_SOURCE_ROOTS, CODE_FILE_EXTENSION_SET),
-		outputStats.mtimeMs,
-	);
-}
-
-export async function isNodeHostRebuildRequired(outFilePath: string): Promise<boolean> {
-	let outputStats: Stats;
-	try {
-		outputStats = await stat(outFilePath);
-	} catch {
-		return true;
-	}
-
-	return anyFileNewerThan(
-		collectSourceFiles(NODE_HOST_SOURCE_ROOTS, CODE_FILE_EXTENSION_SET),
-		outputStats.mtimeMs,
-	);
-}
 // Define common assets path
 export const commonResPath = `./machine/firmware/res`;
 const DEFAULT_SYSTEM_RESOURCE_ROOTS: readonly string[] = [commonResPath];

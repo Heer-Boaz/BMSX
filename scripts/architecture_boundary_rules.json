@@ -6,7 +6,11 @@
 		"runtime",
 		"hosts/browser",
 		"hosts/node",
-		"hosts/libretro"
+		"hosts/libretro",
+		"scripts/bootrom/platforms",
+		"scripts/products",
+		"scripts/rompacker",
+		"scripts/tooling"
 	],
 	"tsAliases": [
 		{ "from": "bmsx", "to": "machine/ts/index.ts" },
@@ -24,11 +28,22 @@
 		{ "name": "ts-gx-webgl-render", "paths": ["machine/ts/render/backend/webgl/gx_gpu.ts"] },
 		{ "name": "ts-software-render", "paths": ["machine/ts/render/backend/software/**"] },
 		{ "name": "ts-machine", "paths": ["machine/ts/machine/**"] },
+		{ "name": "ts-rompack-tooling", "paths": ["machine/ts/rompack/tooling/**"] },
 		{ "name": "ts-rompack", "paths": ["machine/ts/rompack/**"] },
+		{ "name": "ts-lua-compiler", "paths": ["machine/ts/lua/compiler.ts", "machine/ts/lua/compiler/**"] },
 		{ "name": "ts-runtime-api", "paths": ["machine/ts/*.ts"] },
 		{ "name": "ts-core", "paths": ["machine/ts/core/**"] },
+		{ "name": "ts-studio-composition", "paths": ["ide/browser/**", "ide/workbench/machine_runtime.ts", "ide/workbench/host_frame.ts"] },
 		{ "name": "ts-ide", "paths": ["ide/**"] },
 		{ "name": "ts-composition", "paths": ["runtime/**"] },
+		{ "name": "ts-browser-host", "paths": ["hosts/browser/**"] },
+		{ "name": "ts-node-launch", "paths": ["scripts/bootrom/platforms/node_launch.ts", "scripts/bootrom/platforms/node_option_values.ts"] },
+		{ "name": "ts-node-player-entry", "paths": ["scripts/bootrom/platforms/node_entry.ts"] },
+		{ "name": "ts-node-tooling", "paths": ["scripts/bootrom/platforms/node_tooling_entry.ts", "scripts/bootrom/platforms/node_tooling_options.ts", "scripts/bootrom/platforms/node_workspace_bridge.ts", "scripts/bootrom/platforms/input_timeline.ts", "scripts/bootrom/platforms/headless_capture.ts", "scripts/bootrom/platforms/hostrunner/**"] },
+		{ "name": "ts-node-host", "paths": ["hosts/node/**"] },
+		{ "name": "ts-product-build", "paths": ["scripts/products/**"] },
+		{ "name": "ts-rompacker-tool", "paths": ["scripts/rompacker/**"] },
+		{ "name": "ts-tooling-common", "paths": ["scripts/tooling/**"] },
 		{ "name": "ts-render", "paths": ["machine/ts/render/**"] },
 		{ "name": "ts-platform", "paths": ["machine/ts/platform/**"] },
 		{ "name": "ts-input", "paths": ["machine/ts/input/**"] },
@@ -90,6 +105,36 @@
 			"from": "ts-ide",
 			"deny": ["ts-composition"],
 			"reason": "IDE features receive their session dependencies from the application composition owner; they do not reach back into it."
+		},
+		{
+			"from": "ts-composition",
+			"deny": ["ts-ide", "ts-studio-composition", "ts-lua-compiler", "ts-rompack-tooling", "ts-node-tooling"],
+			"reason": "The player composition must not depend on Studio, IDE, compiler, or tooling implementation."
+		},
+		{
+			"from": "ts-browser-host",
+			"deny": ["ts-ide", "ts-studio-composition", "ts-lua-compiler", "ts-rompack-tooling", "ts-node-tooling"],
+			"reason": "The browser player host must remain usable without Studio, IDE, compiler, or tooling implementation."
+		},
+		{
+			"from": "ts-node-launch",
+			"deny": ["ts-ide", "ts-studio-composition", "ts-lua-compiler", "ts-rompack-tooling", "ts-node-tooling"],
+			"reason": "Shared Node launch parsing and artifact selection must stay independent from Studio and validation tooling."
+		},
+		{
+			"from": "ts-node-player-entry",
+			"deny": ["ts-ide", "ts-studio-composition", "ts-lua-compiler", "ts-rompack-tooling", "ts-node-tooling"],
+			"reason": "The Node player entrypoint must remain usable without Studio, IDE, compiler, or test-tooling implementation."
+		},
+		{
+			"from": "ts-node-host",
+			"deny": ["ts-ide", "ts-studio-composition", "ts-lua-compiler", "ts-rompack-tooling", "ts-node-tooling"],
+			"reason": "Node platform services must not depend on Studio, IDE, compiler, or test-tooling implementation."
+		},
+		{
+			"from": "ts-rompacker-tool",
+			"deny": ["ts-product-build", "ts-ide", "ts-studio-composition", "ts-composition", "ts-browser-host", "ts-node-launch", "ts-node-player-entry", "ts-node-tooling", "ts-node-host"],
+			"reason": "ROM and source tooling must not depend on deployable products, hosts, runtime composition, Studio, or host validation tooling."
 		},
 		{
 			"from": "cpp-gx-machine",

@@ -3,13 +3,13 @@
 import pc from 'picocolors';
 
 import { SYSTEM_BOOT_ENTRY_PATH, SYSTEM_ROM_NAME } from '../../machine/ts/core/system';
-import { findExistingDirectory, getParamOrEnv, normalizePathKey, parseArgsVector } from './cli';
-import { createCliUi } from './display';
+import { findExistingDirectory, getParamOrEnv, normalizePathKey, parseArgsVector } from '../tooling/cli_arguments';
+import { createCliUi } from '../tooling/cli_ui';
 import { validateAudioEventReferences } from './audioeventvalidator';
 import { lintCartSources } from './cart_lua_linter_runtime';
 import { biosLuaPath, BLUA32_SYMBOLS_SIDECAR_SUFFIX, buildBluaSourceContextAssets, buildRomBlua32Tail, commonResPath, cartlibLuaPath, systemLuaPath, compileLuaChunkBuffer, createTextureAtlases, finalizeRompack, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired } from './rombuilder';
 import { buildGxTextureLayoutModuleSource } from './gx_texture_layout';
-import type { TaskProgressReporter as ProgressReporter } from './progress';
+import type { TaskProgressReporter as ProgressReporter } from '../tooling/task_progress';
 import type { RomPackerOptions } from './rompacker.rompack';
 import { buildRomAssetSymbolModuleSourceFromSymbols, collectRomAssetSymbols } from '../../machine/ts/rompack/asset_symbols';
 import {
@@ -250,7 +250,6 @@ function parseOptions(args: string[]): ParsedOptions {
 		force,
 		debug,
 		skipTypecheck,
-		platform: 'browser',
 		optLevel,
 		mode,
 		shouldBundleCartCode: false,
@@ -634,7 +633,7 @@ async function main() {
 		if (progress) {
 			progress.stop();
 			await progress.pulse();
-			const failedTask = progress.getCurrentTask();
+			const failedTask = progress.currentTask();
 			const summary = e instanceof LuaError
 				? `${resolveLuaSourcePath(e.path, luaErrorVirtualRoots)}:${e.line}:${e.column}: ${e.message}`
 				: detailLines[0] ?? String(e);

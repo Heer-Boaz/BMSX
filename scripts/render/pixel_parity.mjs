@@ -111,7 +111,7 @@ function assertSamePixels(name, referencePng, candidatePng, candidateLabel) {
 
 try {
 	runCapture('TS software', 'node', [
-		'dist/host_headless.js',
+		'dist/host_headless_tooling.js',
 		'--system-rom', 'dist/bmsx-bios.rom',
 		'--input-timeline', referenceTimeline,
 		cartName,

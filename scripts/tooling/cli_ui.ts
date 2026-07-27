@@ -1,7 +1,7 @@
 import pc from 'picocolors';
 
-import { TaskProgressReporter } from './progress';
-import { CliTerminal } from './terminal';
+import { TaskProgressReporter } from './task_progress';
+import { CliTerminal } from './cli_terminal';
 
 export type LogEntryType = undefined | 'error' | 'warning';
 
@@ -43,7 +43,7 @@ export function createCliUi(options: { bannerTitle: string; labelWidth?: number;
 		const top = '╔════════════════════════════════════════════════════════════════════════════════╗';
 		const innerWidth = 78;
 		const text = `${options.bannerTitle} by Boaz©®℗™`;
-		const left = Math.max(0, Math.floor((innerWidth - text.length) / 2));
+		const left = Math.max(0, (innerWidth - text.length) >> 1);
 		const right = Math.max(0, innerWidth - text.length - left);
 		const middle = `║${' '.repeat(left)}${pc.white(text)}${' '.repeat(right)}║`;
 		const bottom = '╚════════════════════════════════════════════════════════════════════════════════╝';
