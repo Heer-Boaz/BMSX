@@ -1,4 +1,4 @@
-import { scheduleMicrotask } from '../../../../../machine/ts/platform/platform';
+import type { MicrotaskQueue } from '../../../../../machine/ts/platform/platform';
 import * as constants from '../../../../common/constants';
 import { renameController } from '../../../../editor/contrib/rename/controller';
 import { showEditorMessage } from '../../../../common/feedback_state';
@@ -60,6 +60,7 @@ export function focusEditorFromResourceSearch(): void {
 }
 
 export function applyResourceSearchSelection(
+	microtasks: MicrotaskQueue,
 	editor: CartEditor,
 	index: number,
 ): void {
@@ -69,7 +70,7 @@ export function applyResourceSearchSelection(
 	}
 	const match = resourceSearchState.matches[index];
 	closeResourceSearch(true);
-	scheduleMicrotask(() => {
+	microtasks.queueMicrotask(() => {
 		editor.navigation.openResource(match.entry.resource);
 	});
 }

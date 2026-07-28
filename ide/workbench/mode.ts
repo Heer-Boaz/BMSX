@@ -7,6 +7,7 @@ import type {
 	HostClock,
 	Lifecycle,
 	LogOutput,
+	MicrotaskQueue,
 	StorageService,
 } from '../../machine/ts/platform/platform';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
@@ -48,7 +49,9 @@ export async function initializeIdeFeatures(
 	clock: HostClock,
 	lifecycle: Lifecycle,
 	clipboard: ClipboardService,
+	microtasks: MicrotaskQueue,
 	logOutput: LogOutput,
+	resourcePanelWidthRatio: number,
 	viewport: Viewport,
 	sources: RuntimeSourceState,
 ): Promise<RuntimeIdeState> {
@@ -80,7 +83,9 @@ export async function initializeIdeFeatures(
 		storage,
 		clock,
 		clipboard,
+		microtasks,
 		logOutput,
+		resourcePanelWidthRatio,
 		viewport,
 		sources,
 	);

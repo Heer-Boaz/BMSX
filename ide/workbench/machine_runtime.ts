@@ -15,6 +15,7 @@ import {
 
 export async function prepareWorkbenchRuntime(
 	options: MachineHostInitializationOptions,
+	resourcePanelWidthRatio: number,
 ): Promise<readonly [MachineHost, RuntimeIdeState]> {
 	const media = await loadRomToolingMedia(
 		options.systemRom,
@@ -36,7 +37,9 @@ export async function prepareWorkbenchRuntime(
 		host.platform.clock,
 		host.platform.lifecycle,
 		host.platform.clipboard,
+		host.platform.microtasks,
 		host.platform,
+		resourcePanelWidthRatio,
 		{ width: viewport.x, height: viewport.y },
 		sources,
 	);

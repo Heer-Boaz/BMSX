@@ -11,11 +11,15 @@ import type { CartEditor } from '../../../cart_editor';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import type { PlayerInput } from '../../../../machine/ts/input/player';
-import type { ClipboardService } from '../../../../machine/ts/platform/platform';
+import type {
+	ClipboardService,
+	MicrotaskQueue,
+} from '../../../../machine/ts/platform/platform';
 
 export function handleSymbolSearchInput(
 	playerInput: PlayerInput,
 	clipboard: ClipboardService,
+	microtasks: MicrotaskQueue,
 	editor: CartEditor,
 	sources: RuntimeSourceState,
 	bridge: RuntimeLuaTooling,
@@ -28,7 +32,7 @@ export function handleSymbolSearchInput(
 			return;
 		}
 		if (symbolSearchState.selectionIndex >= 0) {
-			applySymbolSearchSelection(editor, sources, symbolSearchState.selectionIndex);
+			applySymbolSearchSelection(microtasks, editor, sources, symbolSearchState.selectionIndex);
 		} else {
 			showEditorMessage('No symbol selected', constants.COLOR_STATUS_WARNING, 1.5);
 		}

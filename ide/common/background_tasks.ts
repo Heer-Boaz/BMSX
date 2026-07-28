@@ -1,8 +1,8 @@
 import type { SoundMaster } from '../../machine/ts/audio/soundmaster';
 import { runGate } from '../../machine/ts/common/taskgate';
 import {
-	scheduleMicrotask,
 	type HostClock,
+	type MicrotaskQueue,
 } from '../../machine/ts/platform/platform';
 
 export type BackgroundTask = () => boolean;
@@ -45,6 +45,7 @@ export function clearBackgroundTasks(): void {
 }
 
 export function scheduleRuntimeTask(
+	microtasks: MicrotaskQueue,
 	soundMaster: SoundMaster,
 	task: () => void | Promise<void>,
 	onError: (error: unknown) => void,
@@ -60,7 +61,7 @@ export function scheduleRuntimeTask(
 		category: RUNTIME_TASK_CATEGORY,
 		tag: RUNTIME_TASK_CATEGORY,
 	});
-	scheduleMicrotask(() => {
+	microtasks.queueMicrotask(() => {
 		runtimeTaskTail = runtimeTaskTail.then(async () => {
 			let succeeded = false;
 			try {

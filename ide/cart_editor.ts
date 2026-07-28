@@ -6,6 +6,7 @@ import type {
 	ClipboardService,
 	HostClock,
 	LogOutput,
+	MicrotaskQueue,
 	StorageService,
 } from '../machine/ts/platform/platform';
 import type { VideoPresenter } from '../machine/ts/render/video_presenter';
@@ -159,6 +160,7 @@ export class RuntimeCartEditor implements CartEditor {
 	private readonly storage: StorageService;
 	private readonly clock: HostClock;
 	private readonly clipboard: ClipboardService;
+	private readonly microtasks: MicrotaskQueue;
 	private readonly sources: RuntimeSourceState;
 	private readonly fault: RuntimeFaultState;
 	private readonly luaTooling: RuntimeLuaTooling;
@@ -186,7 +188,9 @@ export class RuntimeCartEditor implements CartEditor {
 		storage: StorageService,
 		clock: HostClock,
 		clipboard: ClipboardService,
+		microtasks: MicrotaskQueue,
 		logOutput: LogOutput,
+		resourcePanelWidthRatio: number,
 		viewport: Viewport,
 		fontVariant: Parameters<typeof setFontVariant>[1],
 		sources: RuntimeSourceState,
@@ -202,6 +206,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.storage = storage;
 		this.clock = clock;
 		this.clipboard = clipboard;
+		this.microtasks = microtasks;
 		this.sources = sources;
 		this.fault = fault;
 		this.luaTooling = luaTooling;
@@ -218,12 +223,13 @@ export class RuntimeCartEditor implements CartEditor {
 			runtime,
 			input,
 			soundMaster,
+			microtasks,
 			storage,
 			clock,
 			logOutput,
 		);
 		this.completion = new EditorCompletionController(luaTooling, fault, runtime);
-		this.resourcePanel = this.initialize(viewport, fontVariant);
+		this.resourcePanel = this.initialize(resourcePanelWidthRatio, viewport, fontVariant);
 		this.navigation = new EditorNavigationController(
 			this,
 			this.sources,
@@ -361,6 +367,7 @@ export class RuntimeCartEditor implements CartEditor {
 			playerInput,
 			editorRuntimeState.currentTimeMs,
 			this.clipboard,
+			this.microtasks,
 			this,
 			this.sources,
 			this.luaTooling,
@@ -377,6 +384,7 @@ export class RuntimeCartEditor implements CartEditor {
 		handleEditorInput(
 			playerInput,
 			this.clipboard,
+			this.microtasks,
 			this.storage,
 			this.clock,
 			this,
@@ -598,7 +606,11 @@ export class RuntimeCartEditor implements CartEditor {
 		editorSearchState.scope = 'local';
 	}
 
-	private initialize(viewport: Viewport, fontVariant: Parameters<typeof setFontVariant>[1]): ResourcePanelController {
+	private initialize(
+		resourcePanelWidthRatio: number,
+		viewport: Viewport,
+		fontVariant: Parameters<typeof setFontVariant>[1],
+	): ResourcePanelController {
 		editorViewState.fontVariant = fontVariant;
 		constants.setIdeThemeVariant(constants.DEFAULT_THEME);
 		editorRuntimeState.themeVariant = constants.getActiveIdeThemeVariant();
@@ -619,7 +631,7 @@ export class RuntimeCartEditor implements CartEditor {
 		const resourcePanel = new ResourcePanelController(this, this.sources, {
 			resourceVertical: editorViewState.scrollbars.resourceVertical,
 			resourceHorizontal: editorViewState.scrollbars.resourceHorizontal,
-		});
+		}, resourcePanelWidthRatio);
 		if (!this.isAvailable) {
 			configureFontVariant(this.clock, editorViewState.fontVariant, null);
 			resourcePanel.setFontMetrics(editorViewState.lineHeight, editorViewState.charAdvance);

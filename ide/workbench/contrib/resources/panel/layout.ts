@@ -6,8 +6,7 @@ import { codeViewportTop } from '../../../../editor/ui/view/view';
 import { bottomMargin } from '../../../common/layout';
 import { editorViewState } from '../../../../editor/ui/view/state';
 
-export function defaultResourcePanelRatio(): number {
-	const screenRelativeWidth = window.innerWidth / window.screen.width;
+export function defaultResourcePanelRatio(screenRelativeWidth: number): number {
 	const relative = screenRelativeWidth < 1 ? screenRelativeWidth : 1;
 	const responsiveness = 1 - relative;
 	const minRatio = constants.RESOURCE_PANEL_MIN_RATIO;

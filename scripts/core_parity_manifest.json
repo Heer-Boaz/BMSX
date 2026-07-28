@@ -1493,12 +1493,6 @@
 			"ts": "machine/ts/machine/machine.ts",
 			"cpp": [
 				"machine/cpp/machine/machine.h"
-			],
-			"shape_exclude": [
-				{
-					"symbol": "Machine.constructor",
-					"reason": "C++ Machine receives the native MicrotaskQueue owner explicitly; TS owns the same microtask runtime outside the Machine constructor in the host event loop."
-				}
 			]
 		},
 		{

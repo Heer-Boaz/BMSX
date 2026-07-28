@@ -13,11 +13,15 @@ import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import type { RenameController } from '../../../editor/contrib/rename/controller';
 import type { CartEditor } from '../../../cart_editor';
 import type { PlayerInput } from '../../../../machine/ts/input/player';
-import type { ClipboardService } from '../../../../machine/ts/platform/platform';
+import type {
+	ClipboardService,
+	MicrotaskQueue,
+} from '../../../../machine/ts/platform/platform';
 
 export function handleResourceSearchInput(
 	playerInput: PlayerInput,
 	clipboard: ClipboardService,
+	microtasks: MicrotaskQueue,
 	editor: CartEditor,
 	bridge: RuntimeLuaTooling,
 	rename: RenameController,
@@ -31,7 +35,7 @@ export function handleResourceSearchInput(
 			return;
 		}
 		if (resourceSearchState.selectionIndex >= 0) {
-			applyResourceSearchSelection(editor, resourceSearchState.selectionIndex);
+			applyResourceSearchSelection(microtasks, editor, resourceSearchState.selectionIndex);
 			return;
 		}
 		const trimmed = resourceSearchState.query.trim();

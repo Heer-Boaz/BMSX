@@ -7,6 +7,7 @@ import type { SoundMaster } from '../../machine/ts/audio/soundmaster';
 import type { Input } from '../../machine/ts/input/manager';
 import type {
 	LogOutput,
+	MicrotaskQueue,
 	StorageService,
 } from '../../machine/ts/platform/platform';
 import { hotResume } from '../runtime/hot_resume';
@@ -36,6 +37,7 @@ export function performEditorAction(
 	runtime: Runtime,
 	input: Input,
 	soundMaster: SoundMaster,
+	microtasks: MicrotaskQueue,
 	storage: StorageService,
 	logOutput: LogOutput,
 	action: ActionPromptAction,
@@ -51,6 +53,7 @@ export function performEditorAction(
 				runtime,
 				input,
 				soundMaster,
+				microtasks,
 				storage,
 				logOutput,
 			);
@@ -65,6 +68,7 @@ export function performEditorAction(
 				runtime,
 				input,
 				soundMaster,
+				microtasks,
 				storage,
 				logOutput,
 			);
@@ -88,6 +92,7 @@ export function performHotResume(
 	runtime: Runtime,
 	input: Input,
 	soundMaster: SoundMaster,
+	microtasks: MicrotaskQueue,
 	storage: StorageService,
 	logOutput: LogOutput,
 ): boolean {
@@ -95,7 +100,7 @@ export function performHotResume(
 	deactivateEditor(editor, overlayRenderer, input, soundMaster);
 	console.log('Performing hot resume.');
 	const pendingSources = capturePendingLuaCodeTabSources(sources);
-	scheduleRuntimeTask(soundMaster, async () => {
+	scheduleRuntimeTask(microtasks, soundMaster, async () => {
 		await applyAllWorkspaceSourceOverrides(
 			storage,
 			sources,
@@ -130,13 +135,14 @@ export function performReboot(
 	runtime: Runtime,
 	input: Input,
 	soundMaster: SoundMaster,
+	microtasks: MicrotaskQueue,
 	storage: StorageService,
 	logOutput: LogOutput,
 ): boolean {
 	clearExecutionStopHighlights();
 	deactivateEditor(editor, overlayRenderer, input, soundMaster);
 	const pendingSources = capturePendingLuaCodeTabSources(sources);
-	scheduleRuntimeTask(soundMaster, async () => {
+	scheduleRuntimeTask(microtasks, soundMaster, async () => {
 		console.info('[IDE] Performing cold reboot through bootrom');
 		applyLuaCodeTabSources(sources, pendingSources);
 		await rebootPreparedRuntime(

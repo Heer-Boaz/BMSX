@@ -4,6 +4,7 @@ import type { Input } from '../../machine/ts/input/manager';
 import type {
 	HostClock,
 	LogOutput,
+	MicrotaskQueue,
 	StorageService,
 } from '../../machine/ts/platform/platform';
 import type { CartEditor } from '../cart_editor';
@@ -37,6 +38,7 @@ export class IdeCommandController {
 		private readonly runtime: Runtime,
 		private readonly input: Input,
 		private readonly soundMaster: SoundMaster,
+		private readonly microtasks: MicrotaskQueue,
 		private readonly storage: StorageService,
 		private readonly clock: HostClock,
 		private readonly logOutput: LogOutput,
@@ -74,6 +76,7 @@ export class IdeCommandController {
 				this.runtime,
 				this.input,
 				this.soundMaster,
+				this.microtasks,
 				this.storage,
 				this.clock,
 				this.logOutput,
@@ -110,6 +113,7 @@ export class IdeCommandController {
 			this.runtime,
 			this.input,
 			this.soundMaster,
+			this.microtasks,
 			this.storage,
 			this.logOutput,
 			action,

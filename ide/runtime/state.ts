@@ -10,6 +10,7 @@ import type {
 	ClipboardService,
 	HostClock,
 	LogOutput,
+	MicrotaskQueue,
 	StorageService,
 } from '../../machine/ts/platform/platform';
 import { RuntimeCartEditor, type CartEditor } from '../cart_editor';
@@ -40,7 +41,9 @@ export class RuntimeIdeState {
 		storage: StorageService,
 		clock: HostClock,
 		clipboard: ClipboardService,
+		microtasks: MicrotaskQueue,
 		logOutput: LogOutput,
+		resourcePanelWidthRatio: number,
 		viewport: Viewport,
 		public readonly sources: RuntimeSourceState,
 	) {
@@ -53,7 +56,9 @@ export class RuntimeIdeState {
 			storage,
 			clock,
 			clipboard,
+			microtasks,
 			logOutput,
+			resourcePanelWidthRatio,
 			viewport,
 			DEFAULT_IDE_FONT_VARIANT,
 			sources,

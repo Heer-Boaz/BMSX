@@ -18,6 +18,7 @@ import type { RuntimeLuaTooling } from '../../runtime/lua_tooling';
 import type { RuntimeFaultState } from '../../runtime/fault_state';
 import type {
 	ClipboardService,
+	MicrotaskQueue,
 	VideoSurface,
 } from '../../../machine/ts/platform/platform';
 
@@ -26,6 +27,7 @@ export function handleTextEditorPointerInput(
 	playerInput: PlayerInput,
 	now: number,
 	clipboard: ClipboardService,
+	microtasks: MicrotaskQueue,
 	editor: CartEditor,
 	sources: RuntimeSourceState,
 	luaTooling: RuntimeLuaTooling,
@@ -71,7 +73,7 @@ export function handleTextEditorPointerInput(
 	)) {
 		return;
 	}
-	if (handleQuickInputPointer(editor, sources, snapshot, justPressed)) {
+	if (handleQuickInputPointer(microtasks, editor, sources, snapshot, justPressed)) {
 		return;
 	}
 	handleCodeAreaPointerInput(

@@ -19,7 +19,6 @@ import {
 	clampResourcePanelRatio,
 	createResourcePanelLayout,
 	writeResourcePanelBounds,
-	defaultResourcePanelRatio,
 	writeResourcePanelLayout,
 	type ResourcePanelLayout,
 } from './layout';
@@ -108,10 +107,11 @@ export class ResourcePanelController {
 		private readonly editor: CartEditor,
 		private readonly sources: RuntimeSourceState,
 		scrollbars: ResourcePanelScrollbars,
+		initialWidthRatio: number,
 	) {
 		this.lineHeight = editorViewState.lineHeight;
 		this.charAdvance = editorViewState.charAdvance;
-		this.widthRatio = defaultResourcePanelRatio();
+		this.widthRatio = initialWidthRatio;
 		this.resourceVertical = scrollbars.resourceVertical;
 		this.resourceHorizontal = scrollbars.resourceHorizontal;
 	}

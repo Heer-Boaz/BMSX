@@ -18,7 +18,7 @@ import {
 	Platform,
 	StorageService,
 	MicrotaskQueue,
-	defaultMicrotaskQueue,
+	DefaultMicrotaskQueue,
 	ClipboardService,
 	ClipboardPermissionState,
 	VibrationParams,
@@ -396,7 +396,7 @@ export class HeadlessPlatformServices implements Platform {
 		this.lifecycle = new HeadlessLifecycle();
 		this.input = new HeadlessInputHub();
 		this.storage = new MemoryStorage();
-		this.microtasks = defaultMicrotaskQueue;
+		this.microtasks = new DefaultMicrotaskQueue();
 		this.clipboard = new HeadlessClipboardService();
 		this.hid = new UnsupportedHID();
 		this.onscreenGamepad = new HeadlessOnscreenGamepadPlatform();

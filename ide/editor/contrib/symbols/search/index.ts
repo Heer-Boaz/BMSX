@@ -1,4 +1,4 @@
-import { scheduleMicrotask } from '../../../../../machine/ts/platform/platform';
+import type { MicrotaskQueue } from '../../../../../machine/ts/platform/platform';
 import * as constants from '../../../../common/constants';
 import { showEditorMessage } from '../../../../common/feedback_state';
 import { clearReferenceHighlights } from '../../intellisense/engine';
@@ -64,6 +64,7 @@ export function openGlobalSymbolSearch(bridge: RuntimeLuaTooling, rename: Rename
 }
 
 export function applySymbolSearchSelection(
+	microtasks: MicrotaskQueue,
 	editor: CartEditor,
 	sources: RuntimeSourceState,
 	index: number,
@@ -78,7 +79,7 @@ export function applySymbolSearchSelection(
 	}
 	const location = symbolSearchState.matches[index].entry.symbol.location;
 	closeSymbolSearch(true);
-	scheduleMicrotask(() => {
+	microtasks.queueMicrotask(() => {
 		navigateToLuaDefinition(editor, sources, location);
 	});
 }

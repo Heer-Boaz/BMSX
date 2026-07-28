@@ -9,7 +9,7 @@ import { captureRuntimeSaveStateBytes } from '../machine/ts/machine/runtime/save
 import { gxGpuDisplayModeScreenWidth, gxGpuVerticalVisibleLines } from '../machine/ts/machine/devices/gx/gpu_display';
 import { Input } from '../machine/ts/input/manager';
 import type { GamepadInput } from '../machine/ts/input/gamepad';
-import { LogLevel, setMicrotaskQueue, type Platform } from '../machine/ts/platform/platform';
+import { LogLevel, type Platform } from '../machine/ts/platform/platform';
 import { RenderPassLibrary } from '../machine/ts/render/backend/pass/library';
 import { Font } from '../machine/ts/render/shared/bmsx_font';
 import { VideoPresenter } from '../machine/ts/render/video_presenter';
@@ -159,7 +159,6 @@ export async function initializeMachineHost(
 	if (options.enableOnscreenGamepad) {
 		input.enableOnscreenGamepad();
 	}
-	setMicrotaskQueue(options.platform.microtasks);
 	const machineManager = new MachineManager();
 	const runtime = machineManager.initialize({
 		systemRom: options.systemRom,

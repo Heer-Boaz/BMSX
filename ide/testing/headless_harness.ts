@@ -6,6 +6,7 @@ import type { SoundMaster } from '../../machine/ts/audio/soundmaster';
 import type { Input } from '../../machine/ts/input/manager';
 import type {
 	LogOutput,
+	MicrotaskQueue,
 	StorageService,
 } from '../../machine/ts/platform/platform';
 import { openLuaCodeTab } from '../workbench/ui/code_tab/io';
@@ -63,6 +64,7 @@ export function createHeadlessIdeHarness(
 	runtime: Runtime,
 	input: Input,
 	soundMaster: SoundMaster,
+	microtasks: MicrotaskQueue,
 	storage: StorageService,
 	logOutput: LogOutput,
 ): HeadlessIdeHarness {
@@ -93,6 +95,7 @@ export function createHeadlessIdeHarness(
 				runtime,
 				input,
 				soundMaster,
+				microtasks,
 				storage,
 				logOutput,
 			);

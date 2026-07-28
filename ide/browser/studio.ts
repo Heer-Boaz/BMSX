@@ -9,6 +9,7 @@ import {
 } from '../workbench/machine_runtime';
 import { bindBrowserFullscreenShortcut } from '../../hosts/browser/fullscreen';
 import { bindBrowserDebuggerPauseShortcut } from './debugger_pause';
+import { defaultResourcePanelRatio } from '../workbench/contrib/resources/panel/layout';
 
 declare const BMSX_BROWSER_DEBUG: boolean;
 
@@ -20,7 +21,10 @@ async function startBrowserStudio(): Promise<void> {
 			systemRomPath,
 			document.body.dataset.defaultRom,
 		);
-		const [host, ide] = await prepareWorkbenchRuntime(options);
+		const [host, ide] = await prepareWorkbenchRuntime(
+			options,
+			defaultResourcePanelRatio(window.innerWidth / window.screen.width),
+		);
 		bindBrowserFullscreenShortcut(host);
 		bindBrowserDebuggerPauseShortcut(host.input, host.soundMaster);
 		startWorkbenchHostFrames(host, ide);

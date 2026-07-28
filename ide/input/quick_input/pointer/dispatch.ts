@@ -7,8 +7,10 @@ import { handleSymbolSearchPointer } from '../symbol_search/pointer';
 import { handleRenamePointer } from '../rename/pointer';
 import { handleLineJumpPointer } from '../line_jump/pointer';
 import { handleSearchPointer } from '../search/pointer';
+import type { MicrotaskQueue } from '../../../../machine/ts/platform/platform';
 
 export function handleQuickInputPointer(
+	microtasks: MicrotaskQueue,
 	editor: CartEditor,
 	sources: RuntimeSourceState,
 	snapshot: PointerSnapshot,
@@ -18,10 +20,10 @@ export function handleQuickInputPointer(
 	if (handleCreateResourcePointer(resourcePanel, snapshot, justPressed)) {
 		return true;
 	}
-	if (handleResourceSearchPointer(editor, resourcePanel, snapshot, justPressed)) {
+	if (handleResourceSearchPointer(microtasks, editor, resourcePanel, snapshot, justPressed)) {
 		return true;
 	}
-	if (handleSymbolSearchPointer(resourcePanel, editor, sources, snapshot, justPressed)) {
+	if (handleSymbolSearchPointer(microtasks, resourcePanel, editor, sources, snapshot, justPressed)) {
 		return true;
 	}
 	if (handleRenamePointer(resourcePanel, snapshot, justPressed)) {

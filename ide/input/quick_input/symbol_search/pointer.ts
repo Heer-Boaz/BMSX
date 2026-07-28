@@ -12,8 +12,10 @@ import { editorViewState } from '../../../editor/ui/view/state';
 import { symbolSearchState } from '../../../editor/contrib/symbols/search/state';
 import type { CartEditor } from '../../../cart_editor';
 import type { RuntimeSourceState } from '../../../runtime/sources';
+import type { MicrotaskQueue } from '../../../../machine/ts/platform/platform';
 
 export function handleSymbolSearchPointer(
+	microtasks: MicrotaskQueue,
 	resourcePanel: ResourcePanelController,
 	editor: CartEditor,
 	sources: RuntimeSourceState,
@@ -53,7 +55,7 @@ export function handleSymbolSearchPointer(
 			symbolSearchState.selectionIndex = hoverIndex;
 			ensureSymbolSearchSelectionVisible();
 		}
-			applySymbolSearchSelection(editor, sources, hoverIndex);
+		applySymbolSearchSelection(microtasks, editor, sources, hoverIndex);
 		finishQuickInputPointer(snapshot);
 		return true;
 	}

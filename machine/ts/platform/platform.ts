@@ -81,38 +81,28 @@ export function createSubscriptionHandle(cleanup: () => void): SubscriptionHandl
 	};
 }
 
-let defaultMicrotaskQueueTasks: Array<() => void> = [];
-let defaultMicrotaskQueueDrainTasks: Array<() => void> = [];
+export class DefaultMicrotaskQueue implements MicrotaskQueue {
+	private tasks: Array<() => void> = [];
+	private drainTasks: Array<() => void> = [];
 
-export const defaultMicrotaskQueue: MicrotaskQueue = {
-	queueMicrotask: (task: () => void) => {
-		defaultMicrotaskQueueTasks.push(task);
-	},
-	flush: () => {
-		while (defaultMicrotaskQueueTasks.length > 0) {
-			const tasks = defaultMicrotaskQueueTasks;
-			defaultMicrotaskQueueTasks = defaultMicrotaskQueueDrainTasks;
-			defaultMicrotaskQueueDrainTasks = tasks;
+	public queueMicrotask(task: () => void): void {
+		this.tasks.push(task);
+	}
+
+	public flush(): void {
+		while (this.tasks.length > 0) {
+			const tasks = this.tasks;
+			this.tasks = this.drainTasks;
+			this.drainTasks = tasks;
 			try {
-				for (let index = 0; index < defaultMicrotaskQueueDrainTasks.length; index += 1) {
-					defaultMicrotaskQueueDrainTasks[index]();
+				for (let index = 0; index < this.drainTasks.length; index += 1) {
+					this.drainTasks[index]();
 				}
 			} finally {
-				defaultMicrotaskQueueDrainTasks.length = 0;
+				this.drainTasks.length = 0;
 			}
 		}
-	},
-};
-
-let activeMicrotaskQueue: MicrotaskQueue = defaultMicrotaskQueue;
-
-export function setMicrotaskQueue(queue: MicrotaskQueue): void {
-	activeMicrotaskQueue = queue;
-}
-
-// disable-next-line single_line_method_pattern -- callers schedule through the active queue selected by the host composition root.
-export function scheduleMicrotask(task: () => void): void {
-	activeMicrotaskQueue.queueMicrotask(task);
+	}
 }
 
 export interface TimerHandle {

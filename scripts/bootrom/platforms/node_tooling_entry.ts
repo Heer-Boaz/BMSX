@@ -5,6 +5,7 @@ import {
 	prepareWorkbenchRuntime,
 	startWorkbenchHostFrames,
 } from '../../../ide/workbench/machine_runtime';
+import { RESOURCE_PANEL_DEFAULT_RATIO } from '../../../ide/common/constants';
 import { createHeadlessIdeHarness } from '../../../ide/testing/headless_harness';
 import {
 	HEADLESS_DEFAULT_FRAME_INTERVAL_MS,
@@ -148,7 +149,10 @@ async function main(): Promise<void> {
 		switch (options.mode.kind) {
 			case 'ide-test': {
 				installNodeWorkspaceBridge(path.resolve(path.dirname(options.romPath), '..'));
-				const [ideHost, ide] = await prepareWorkbenchRuntime(bootOptions);
+				const [ideHost, ide] = await prepareWorkbenchRuntime(
+					bootOptions,
+					RESOURCE_PANEL_DEFAULT_RATIO,
+				);
 				const runtime = ideHost.runtime;
 				startWorkbenchHostFrames(ideHost, ide);
 				await Promise.race([
@@ -160,6 +164,7 @@ async function main(): Promise<void> {
 							runtime,
 							ideHost.input,
 							ideHost.soundMaster,
+							ideHost.platform.microtasks,
 							ideHost.platform.storage,
 							ideHost.platform,
 						),

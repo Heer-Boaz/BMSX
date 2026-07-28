@@ -25,7 +25,7 @@ import {
 	PlatformHIDDevice,
 	PlatformHIDDeviceRequestOptions,
 	MicrotaskQueue,
-	defaultMicrotaskQueue,
+	DefaultMicrotaskQueue,
 	SubscriptionHandle,
 	createSubscriptionHandle,
 } from 'bmsx/platform';
@@ -93,7 +93,7 @@ export class BrowserPlatform implements Platform {
 		this.frames = new BrowserFrameLoop();
 		this.lifecycle = new BrowserLifecycle();
 		this.storage = new BrowserStorage();
-		this.microtasks = defaultMicrotaskQueue;
+		this.microtasks = new DefaultMicrotaskQueue();
 		this.ufpsScaled = options.ufpsScaled ?? 0;
 		this.clipboard = new BrowserClipboardService(surface);
 		this.input = new BrowserInputHub(surface, this.clock);

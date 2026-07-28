@@ -18,12 +18,14 @@ import type { PlayerInput } from '../../../machine/ts/input/player';
 import type {
 	ClipboardService,
 	HostClock,
+	MicrotaskQueue,
 	StorageService,
 } from '../../../machine/ts/platform/platform';
 
 export function handleEditorInput(
 	playerInput: PlayerInput,
 	clipboard: ClipboardService,
+	microtasks: MicrotaskQueue,
 	storage: StorageService,
 	clock: HostClock,
 	editor: CartEditor,
@@ -46,6 +48,7 @@ export function handleEditorInput(
 	if (handleInlineWidgetInput(
 		playerInput,
 		clipboard,
+		microtasks,
 		storage,
 		clock,
 		editor,

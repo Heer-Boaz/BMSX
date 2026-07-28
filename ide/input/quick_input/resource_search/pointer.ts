@@ -12,8 +12,10 @@ import { activateQuickInputField, finishQuickInputPointer, quickInputTextLeft } 
 import { editorViewState } from '../../../editor/ui/view/state';
 import { resourceSearchState } from '../../../workbench/contrib/resources/widget_state';
 import type { CartEditor } from '../../../cart_editor';
+import type { MicrotaskQueue } from '../../../../machine/ts/platform/platform';
 
 export function handleResourceSearchPointer(
+	microtasks: MicrotaskQueue,
 	editor: CartEditor,
 	resourcePanel: ResourcePanelController,
 	snapshot: PointerSnapshot,
@@ -52,7 +54,7 @@ export function handleResourceSearchPointer(
 			resourceSearchState.selectionIndex = hoverIndex;
 			ensureResourceSearchSelectionVisible();
 		}
-		applyResourceSearchSelection(editor, hoverIndex);
+		applyResourceSearchSelection(microtasks, editor, hoverIndex);
 		finishQuickInputPointer(snapshot);
 		return true;
 	}

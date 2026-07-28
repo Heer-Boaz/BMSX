@@ -8,6 +8,7 @@ import type { Input } from '../../machine/ts/input/manager';
 import type {
 	HostClock,
 	LogOutput,
+	MicrotaskQueue,
 	StorageService,
 } from '../../machine/ts/platform/platform';
 import type { EditorCommandId, EditorWorkspaceCommandId } from '../common/commands';
@@ -41,6 +42,7 @@ export function executeEditorWorkspaceCommand(
 	runtime: Runtime,
 	input: Input,
 	soundMaster: SoundMaster,
+	microtasks: MicrotaskQueue,
 	storage: StorageService,
 	clock: HostClock,
 	logOutput: LogOutput,
@@ -75,6 +77,7 @@ export function executeEditorWorkspaceCommand(
 				runtime,
 				input,
 				soundMaster,
+				microtasks,
 				storage,
 				logOutput,
 				command,
@@ -92,6 +95,7 @@ export function executeEditorWorkspaceCommand(
 				runtime,
 				input,
 				soundMaster,
+				microtasks,
 				storage,
 				logOutput,
 				command,

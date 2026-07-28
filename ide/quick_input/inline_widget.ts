@@ -17,6 +17,7 @@ import type { PlayerInput } from '../../machine/ts/input/player';
 import type {
 	ClipboardService,
 	HostClock,
+	MicrotaskQueue,
 	StorageService,
 } from '../../machine/ts/platform/platform';
 
@@ -32,6 +33,7 @@ export function isInlineWidgetFocused(): boolean {
 export function handleInlineWidgetInput(
 	playerInput: PlayerInput,
 	clipboard: ClipboardService,
+	microtasks: MicrotaskQueue,
 	storage: StorageService,
 	clock: HostClock,
 	editor: CartEditor,
@@ -51,6 +53,7 @@ export function handleInlineWidgetInput(
 		handleResourceSearchInput(
 			playerInput,
 			clipboard,
+			microtasks,
 			editor,
 			luaTooling,
 			renameController,
@@ -58,7 +61,7 @@ export function handleInlineWidgetInput(
 		return true;
 	}
 	if (symbolSearchState.active) {
-		handleSymbolSearchInput(playerInput, clipboard, editor, sources, luaTooling);
+		handleSymbolSearchInput(playerInput, clipboard, microtasks, editor, sources, luaTooling);
 		return true;
 	}
 	if (lineJumpState.active) {
