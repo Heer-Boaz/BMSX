@@ -558,6 +558,8 @@ The BLua32 ISA contract is:
   cycles: `machine/{ts,cpp}/spec/blua32/opcode.*`;
 - typed-memory operand numbers and alignment masks:
   `machine/{ts,cpp}/spec/blua32/memory_access_kind.*`;
+- numeric `MOD` and `FLOORDIV` opcode semantics shared by CPU execution and
+  compile-time folding: `machine/{ts,cpp}/spec/blua32/numeric.*`;
 - CP0 register indexes, status/cause words, and Lua-fault reason words:
   `machine/{ts,cpp}/spec/blua32/cop0.*`.
 

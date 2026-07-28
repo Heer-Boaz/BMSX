@@ -4,11 +4,12 @@ Dit bestand is alleen de werkvoorraad. Afgeronde hardwarecontracten horen in
 [`architecture.md`](architecture.md); testuitslagen en implementatiegeschiedenis
 horen niet in deze lijst.
 
-## Eerstvolgende architectuurgate
+## Bewezen solutiongrenzen
 
 | ID | Opdracht | Klaar wanneer |
 | --- | --- | --- |
-| `ARCH-REVIEW-01` | Beantwoord op de live dependency graph drie vragen: (1) waar bestaat nog host-magie in de emulatiemachine, (2) waar wijken TS en C++ semantisch, qua API of datastructuur af, en (3) zijn `machine`, hosts, IDE/Studio, compiler, rompacker en diagnostics in de juiste solutionrichting gescheiden? Dit is eerst een blockers-only audit; codewijzigingen volgen alleen uit bewezen blockers. | Het rapport noemt per blocker de concrete eigenaar, beide runtimepaden en hot-pathimpact. Geen generieke aanbevelingen, cosmetische moves, wrappers of speculatieve slices. |
+| `NATIVE-MEDIA-01` | Verwijder bestandspaden, mmap en bytebuffer-eigendom uit de C++ `MachineManager`. De libretro-host behoudt de backing storage; de machine consumeert uitsluitend stabiele ROM-byteviews, gelijk aan de TypeScript-initialisatiegrens. | `MachineManager` importeert geen file- of mmap-owner, heeft geen path-load-API en kopieert geen hostmedia. Reboot en source-aware diagnostics blijven dezelfde fysieke bytes gebruiken zonder extra kopie. |
+| `NATIVE-TARGET-01` | Splits de native CMake-linkgrens: `bmsx_core` bevat alleen machine/runtime en de lage wire-formatdependencies; platform, host-input, output-resampling, presentatie, overlays en GLES2 leven in een host-supporttarget boven de core. | De core archive bevat geen host/platform/render/input/audio-transport/mmap objecten en linkt geen GLES2, `dl` of zlib voor hostpresentatie. Libretro, de directe host en diagnostics behouden alle huidige features door expliciete compositie boven `bmsx_core`. |
 
 ## Doorlopende performance-audit
 
