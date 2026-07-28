@@ -180,9 +180,7 @@ export class AudioController {
 
 	public onService(nowCycles: number): void {
 		this.serviceClock.synchronize(nowCycles);
-		if (!this.commandFifo.empty) {
-			this.commandExecutor.drainCommandFifo();
-		}
+		this.commandExecutor.drainCommandFifo();
 		this.serviceClock.scheduleNext(nowCycles);
 	}
 

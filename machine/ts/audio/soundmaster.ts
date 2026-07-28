@@ -32,11 +32,6 @@ export class SoundMaster {
 		this.mixTargetAheadSec = (HZ_SCALE / this.mixUfpsScaled) + this.profileOverheadSec();
 	}
 
-	private get A(): AudioService {
-		if (!this.audio) throw new Error('[SoundMaster] Audio service not initialized. Call bootstrapRuntimeAudio() first.');
-		return this.audio;
-	}
-
 	private isRuntimeAudioAvailable(): boolean {
 		return !!this.audio && this.audio.available;
 	}
@@ -46,14 +41,14 @@ export class SoundMaster {
 		this.setMixerUfpsScaled(ufpsScaled);
 		this.volume = clamp01(startingVolume);
 		this.startMixer();
-		void this.A.resume();
+		void this.audio.resume();
 	}
 
 	public resetPlaybackState(): void {
 		this.outputResampler.reset();
 		machineManager.runtime.machine.audioOutput.outputRing.clear();
 		if (this.audio) {
-			this.A.clearRuntimeAudioTransport();
+			this.audio.clearRuntimeAudioTransport();
 		}
 	}
 
@@ -79,7 +74,7 @@ export class SoundMaster {
 		const frameTimeSec = HZ_SCALE / this.mixUfpsScaled;
 		this.mixTargetAheadSec = frameTimeSec + this.profileOverheadSec();
 		if (this.audio && this.globalSuspensions.size === 0) {
-			this.A.setFrameTimeSec(this.mixTargetAheadSec);
+			this.audio.setFrameTimeSec(this.mixTargetAheadSec);
 		}
 	}
 
@@ -87,35 +82,29 @@ export class SoundMaster {
 		if (!this.isRuntimeAudioAvailable() || this.globalSuspensions.size !== 0) {
 			return;
 		}
-		this.A.pumpRuntimeAudio();
+		this.audio.pumpRuntimeAudio();
 	}
 
 	private startMixer(): void {
 		this.outputResampler.reset();
 		machineManager.runtime.machine.audioOutput.outputRing.clear();
-		this.A.clearRuntimeAudioTransport();
-		this.A.setFrameTimeSec(this.mixTargetAheadSec);
-		this.A.setRuntimeAudioPuller(this.pullRuntimeOutput);
+		this.audio.clearRuntimeAudioTransport();
+		this.audio.setFrameTimeSec(this.mixTargetAheadSec);
+		this.audio.setRuntimeAudioPuller(this.pullRuntimeOutput);
 	}
 
 	private stopMixer(): void {
-		this.A.setRuntimeAudioPuller(null);
-		this.A.clearRuntimeAudioTransport();
+		this.audio.setRuntimeAudioPuller(null);
+		this.audio.clearRuntimeAudioTransport();
 		this.outputResampler.reset();
 		machineManager.runtime.machine.audioOutput.outputRing.clear();
 	}
 
 	public pause(): void {
-		if (!this.isRuntimeAudioAvailable()) {
-			return;
-		}
 		this.suspendAll('pause');
 	}
 
 	public resume(): void {
-		if (!this.isRuntimeAudioAvailable()) {
-			return;
-		}
 		this.resumeAll('pause');
 	}
 
@@ -129,7 +118,7 @@ export class SoundMaster {
 		this.globalSuspensions.add(tag);
 		if (this.globalSuspensions.size === 1) {
 			this.stopMixer();
-			void this.A.suspend();
+			void this.audio.suspend();
 		}
 	}
 
@@ -141,16 +130,16 @@ export class SoundMaster {
 			return;
 		}
 		if (this.globalSuspensions.size === 0) {
-			void this.A.resume();
+			void this.audio.resume();
 			this.startMixer();
 		}
 	}
 
 	public get volume(): number {
-		return this.A.getMasterGain();
+		return this.audio.getMasterGain();
 	}
 
 	public set volume(value: number) {
-		this.A.setMasterGain(value);
+		this.audio.setMasterGain(value);
 	}
 }
