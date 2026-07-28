@@ -7,7 +7,12 @@ import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { Table } from '../../machine/ts/machine/cpu/table';
-import { BuiltinFunctionId, EMPTY_CALL_ARGS, createBuiltinFunction, StringValue } from '../../machine/ts/machine/cpu/value';
+import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
+import {
+	EMPTY_CALL_ARGS,
+	createBuiltinFunction,
+	StringValue,
+} from '../../machine/ts/machine/cpu/value';
 import {
 	INSTRUCTION_BYTES,
 	writeInstruction,
@@ -39,9 +44,9 @@ import {
 	IO_SYS_BUS_FAULT_ADDR,
 	IO_SYS_BUS_FAULT_CODE,
 	IRQ_VBLANK,
-} from '../../machine/ts/machine/bus/io';
+} from '../../machine/ts/spec/bmsx/io';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
-import { GX_GPU_GP0_VRAM_TO_CPU_FIRST } from '../../machine/ts/machine/devices/gx/gp0';
+import { GX_GPU_GP0_VRAM_TO_CPU_FIRST } from '../../machine/ts/spec/gx/gp0';
 import { Machine } from '../../machine/ts/machine/machine';
 import type { MicrotaskQueue } from '../../machine/ts/machine/scheduler/microtask_queue';
 import { captureMachineSaveState, captureMachineState, restoreMachineSaveState, restoreMachineState } from '../../machine/ts/machine/save_state';

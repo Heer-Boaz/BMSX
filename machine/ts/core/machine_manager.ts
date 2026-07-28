@@ -17,17 +17,11 @@ import type { GPUBackend } from '../render/backend/backend';
 import { captureRuntimeSaveStateBytes } from '../machine/runtime/save_state/codec';
 import { gxGpuDisplayModeScreenWidth, gxGpuVerticalVisibleLines } from '../machine/devices/gx/gpu_display';
 import { commitGxGpuViewSnapshot } from '../render/gx/view_snapshot';
-import { SYS_PRINT_BUFFER_BYTES } from '../machine/bus/io';
-import {
-	buildRuntimeRomLayer,
-	buildSystemRuntimeRomLayer,
-	parseRomImage,
-	type RuntimeRomLayer,
-} from '../rompack/loader';
+import { SYS_PRINT_BUFFER_BYTES } from '../spec/bmsx/io';
+import { parseRomImage } from '../rompack/image';
 import {
 	type CartridgeSlotMediaPair,
 } from '../machine/devices/cartridge/contracts';
-import { SYSTEM_BOOT_ENTRY_PATH, SYSTEM_MACHINE_MANIFEST } from './system';
 
 const systemOutputDecoder = new TextDecoder('utf-8', { fatal: true });
 const EMPTY_CARTRIDGE_ROM = new Uint8Array(0);
@@ -41,15 +35,6 @@ export interface MachineInitializationOptions {
 	platform: Platform;
 	viewHost?: GameViewHost;
 }
-
-export type MachineBootMedia = {
-	systemLayer: RuntimeRomLayer;
-	cartridgeLayers: readonly [RuntimeRomLayer | null, RuntimeRomLayer | null];
-};
-
-export type MachineInitialization = MachineBootMedia & {
-	runtime: Runtime;
-};
 
 const DEFAULT_MASTER_VOLUME = 1;
 
@@ -151,10 +136,15 @@ export class MachineManager {
 		this.sndmaster.bootstrapRuntimeAudio(this.runtime.timing.ufpsScaled, DEFAULT_MASTER_VOLUME);
 	}
 
-	private async buildBootPlan(
-		systemRom: Uint8Array,
-		cartridgeSlots: [Uint8Array | null, Uint8Array | null],
-	) {
+	public async initialize(options: MachineInitializationOptions): Promise<Runtime> {
+		const { systemRom, cartridgeSlots, debug = false, startingGamepadIndex = null, enableOnscreenGamepad = false, platform, viewHost } = options;
+		if (!platform) {
+			throw new Error('[MachineManager] Platform services not provided.');
+		}
+		const resolvedViewHost = viewHost ?? platform.gameviewHost;
+		if (!resolvedViewHost) {
+			throw new Error('[MachineManager] Platform did not expose a GameViewHost.');
+		}
 		const systemImage = parseRomImage(systemRom, 'system');
 		const cartridgeImages = [
 			cartridgeSlots[0] ? parseRomImage(cartridgeSlots[0], 'cart') : null,
@@ -178,42 +168,15 @@ export class MachineManager {
 			const image = cartridgeImages[slotIndex];
 			if (!image) continue;
 			cartridgeMedia[slotIndex] = {
-				rom: image.payload,
+				rom: image.bytes,
 				boardWord: image.header.cartridgeBoardWord,
 				ramByteCount: image.header.cartridgeRamByteCount,
 				present: true,
 			};
 		}
-		const [systemLayer, slot0Layer, slot1Layer] = await Promise.all([
-			buildSystemRuntimeRomLayer({
-				image: systemImage,
-				machine: SYSTEM_MACHINE_MANIFEST,
-				entry_path: SYSTEM_BOOT_ENTRY_PATH,
-			}),
-			cartridgeImages[0] ? buildRuntimeRomLayer({ image: cartridgeImages[0], id: 'cart' }) : null,
-			cartridgeImages[1] ? buildRuntimeRomLayer({ image: cartridgeImages[1], id: 'cart' }) : null,
-		]);
-		return {
-			systemLayer,
-			cartridgeLayers: [slot0Layer, slot1Layer] as const,
-			cartridgeMedia,
-		};
-	}
-
-	public async initialize(options: MachineInitializationOptions): Promise<MachineInitialization> {
-		const { systemRom, cartridgeSlots, debug = false, startingGamepadIndex = null, enableOnscreenGamepad = false, platform, viewHost } = options;
-		if (!platform) {
-			throw new Error('[MachineManager] Platform services not provided.');
-		}
-		const resolvedViewHost = viewHost ?? platform.gameviewHost;
-		if (!resolvedViewHost) {
-			throw new Error('[MachineManager] Platform did not expose a GameViewHost.');
-		}
-		const bootPlan = await this.buildBootPlan(systemRom, cartridgeSlots);
-		const { systemLayer, cartridgeLayers, cartridgeMedia } = bootPlan;
 		configureMemoryMap(PSX_MACHINE_SPEC.ramBytes);
 		const memory = new Memory({
-			systemRom: systemLayer.payload,
+			systemRom: systemImage.bytes,
 			cartridgeSlots: cartridgeMedia,
 		});
 		platform.gameviewHost = resolvedViewHost;
@@ -278,11 +241,7 @@ export class MachineManager {
 			Input.instance.enableDebugMode(this.view.surface);
 		}
 		this.initialized = true;
-		return {
-			runtime,
-			systemLayer,
-			cartridgeLayers,
-		};
+		return runtime;
 	}
 
 	public async refreshRenderSurfaces(): Promise<void> {

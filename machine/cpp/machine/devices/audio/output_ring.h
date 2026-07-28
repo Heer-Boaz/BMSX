@@ -1,7 +1,7 @@
 #pragma once
 
 #include "common/types.h"
-#include "machine/devices/audio/contracts.h"
+#include "spec/audio/apu.h"
 
 #include <array>
 #include <cstddef>

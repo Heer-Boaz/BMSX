@@ -1,29 +1,13 @@
 #pragma once
 
 #include "common/primitives.h"
+#include "spec/bmsx/cartridge.h"
 
 #include <array>
 #include <span>
 #include <vector>
 
 namespace bmsx {
-
-constexpr u32 CARTRIDGE_SLOT_COUNT = 2u;
-constexpr u32 CARTRIDGE_BOARD_RAM = 1u << 0;
-constexpr u32 CARTRIDGE_BOARD_MAILBOX = 1u << 1;
-
-constexpr u32 CARTRIDGE_STATUS_SLOT0_PRESENT = 1u << 0;
-constexpr u32 CARTRIDGE_STATUS_SLOT1_PRESENT = 1u << 1;
-constexpr u32 CARTRIDGE_STATUS_SELECTED_SLOT1 = 1u << 16;
-
-constexpr u32 CARTRIDGE_MAILBOX_DATA_OFFSET = 0x00u;
-constexpr u32 CARTRIDGE_MAILBOX_CONTROL_OFFSET = 0x04u;
-constexpr u32 CARTRIDGE_MAILBOX_STATUS_OFFSET = 0x08u;
-constexpr u32 CARTRIDGE_MAILBOX_IRQ_ACK_OFFSET = 0x0cu;
-constexpr u32 CARTRIDGE_MAILBOX_CONTROL_IRQ_TRIGGER = 1u << 0;
-constexpr u32 CARTRIDGE_MAILBOX_CONTROL_DREQ_READ = 1u << 1;
-constexpr u32 CARTRIDGE_MAILBOX_CONTROL_DREQ_WRITE = 1u << 2;
-constexpr u32 CARTRIDGE_MAILBOX_STATUS_IRQ_PENDING = 1u << 0;
 
 struct CartridgeSlotMedia {
 	std::span<const u8> rom;

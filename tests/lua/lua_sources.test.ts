@@ -5,9 +5,12 @@ import { test } from 'node:test';
 import { encodeBinary } from '../../machine/ts/common/serializer/binencoder';
 import { RomSourceStack, type RawRomSource } from '../../machine/ts/rompack/source';
 import {
+	CART_ROM_HEADER_MAGIC_OFFSET,
 	CART_ROM_HEADER_SIZE,
-	CART_ROM_MAGIC_BYTES,
+	CART_ROM_MAGIC,
 	CART_VDP_CLASS_PSX,
+} from '../../machine/ts/spec/bmsx/rom_package';
+import {
 	GX_TEXTURE_LAYOUT_MODULE_PATH,
 	GX_TEXTURE_LAYOUT_SOURCE_PATH,
 	ROM_ASSET_SYMBOL_MODULE_PATH,
@@ -24,8 +27,12 @@ import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { toLuaModulePath } from '../../machine/ts/lua/module_path';
 import { parseCartridgeIndex } from '../../machine/ts/rompack/loader';
-import { SYSTEM_BOOT_ENTRY_PATH } from '../../machine/ts/core/system';
-import { decodeRomToc, ROM_TOC_HEADER_SIZE, ROM_TOC_INVALID_U32 } from '../../machine/ts/rompack/toc';
+import { SYSTEM_BOOT_ENTRY_PATH } from '../../machine/ts/rompack/system';
+import {
+	ROM_TOC_HEADER_SIZE,
+	ROM_TOC_INVALID_U32,
+} from '../../machine/ts/spec/bmsx/rom_toc';
+import { decodeRomToc } from '../../machine/ts/rompack/toc';
 import { encodeRomToc } from '../../machine/ts/rompack/tooling/toc_encode';
 import { buildGxTextureLayoutModuleSource, type GxTextureLayout } from '../../scripts/rompacker/gx_texture_layout';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
@@ -185,12 +192,12 @@ test('debug package source boot resolves the persisted GX texture layout module'
 	const toc = encodeRomToc({ entries: [cartEntry, layoutEntry], projectRootPath: 'carts/source_boot_test' });
 	const tocStart = manifestStart + manifest.byteLength;
 	const payload = new Uint8Array(tocStart + toc.byteLength);
-	payload.set(CART_ROM_MAGIC_BYTES, 0);
 	payload.set(cartBytes, cartStart);
 	payload.set(layoutBytes, layoutStart);
 	payload.set(manifest, manifestStart);
 	payload.set(toc, tocStart);
 	const header = new DataView(payload.buffer);
+	header.setUint32(CART_ROM_HEADER_MAGIC_OFFSET, CART_ROM_MAGIC, true);
 	header.setUint32(4, CART_ROM_HEADER_SIZE, true);
 	header.setUint32(8, manifestStart, true);
 	header.setUint32(12, manifest.byteLength, true);

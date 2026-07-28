@@ -2,7 +2,7 @@ import {
 	IO_APU_TRANSFER_ADDRESS,
 	IO_APU_TRANSFER_CONTROL,
 	IO_APU_TRANSFER_DATA,
-} from '../../bus/io';
+} from '../../../spec/bmsx/io';
 import type { Value } from '../../cpu/value';
 import {
 	MAPPED_BUS_MASTER_DMA,
@@ -15,7 +15,7 @@ import { DEVICE_SERVICE_APU, type DeviceScheduler } from '../../scheduler/device
 import type { DmaController } from '../dma/controller';
 import type { ApuActiveSlots } from './active_slots';
 import type { ApuCommandFifo } from './command_fifo';
-import { APU_SAMPLE_RATE_HZ } from './contracts';
+import { APU_SAMPLE_RATE_HZ } from '../../../spec/audio/apu';
 import { ApuOutputMixer } from './output';
 import type { ApuSampleMemory } from './sample_memory';
 import type { ApuSampleTransferState } from './save_state';

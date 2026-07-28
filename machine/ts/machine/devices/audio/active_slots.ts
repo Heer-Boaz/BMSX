@@ -1,4 +1,4 @@
-import { IO_APU_ACTIVE_MASK } from '../../bus/io';
+import { IO_APU_ACTIVE_MASK } from '../../../spec/bmsx/io';
 import type { Memory } from '../../memory/memory';
 import type { ApuEventLatch } from './event_latch';
 import type { ApuOutputMixer } from './output';
@@ -7,6 +7,8 @@ import type { ApuSlotBank } from './slot_bank';
 import {
 	APU_EVENT_SLOT_ENDED,
 	APU_SLOT_COUNT,
+} from '../../../spec/audio/apu';
+import {
 	APU_SLOT_PHASE_IDLE,
 	type ApuAudioSlot,
 	type ApuParameterRegisterWords,

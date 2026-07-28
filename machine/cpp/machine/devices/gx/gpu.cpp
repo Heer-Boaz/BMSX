@@ -1,6 +1,6 @@
 #include "machine/devices/gx/gpu.h"
 
-#include "machine/bus/io.h"
+#include "spec/bmsx/io.h"
 #include "machine/cpu/cpu.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/devices/gx/gpu_command_timing.h"

@@ -1,6 +1,5 @@
 import {
 	machineManager,
-	type MachineInitialization,
 	type MachineInitializationOptions,
 } from '../machine/ts/core/machine_manager';
 import { runGate } from '../machine/ts/common/taskgate';
@@ -11,14 +10,13 @@ import { RenderPresentationState } from './presentation_state';
 
 export async function prepareMachineRuntime(
 	options: MachineInitializationOptions,
-): Promise<MachineInitialization> {
-	const initialized = await machineManager.initialize(options);
-	const runtime = initialized.runtime;
+): Promise<Runtime> {
+	const runtime = await machineManager.initialize(options);
 	runtime.resetForSystemBoot();
 	runtime.boot();
 	machineManager.flushSystemOutput(runtime);
 	machineManager.bootstrapStartupAudio();
-	return initialized;
+	return runtime;
 }
 
 export function startMachineHostFrames(runtime: Runtime): void {

@@ -3,7 +3,11 @@ import assert from 'node:assert/strict';
 
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { BuiltinFunctionId, StringValue, createBuiltinFunction } from '../../machine/ts/machine/cpu/value';
+import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
+import {
+	StringValue,
+	createBuiltinFunction,
+} from '../../machine/ts/machine/cpu/value';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import {
 	createTestSystemCpu,

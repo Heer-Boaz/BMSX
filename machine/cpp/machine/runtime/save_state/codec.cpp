@@ -1,10 +1,11 @@
 #include "machine/runtime/save_state/codec.h"
 
 #include "common/serializer/binencoder.h"
-#include "machine/bus/io.h"
+#include "spec/bmsx/io.h"
 #include "machine/devices/dma/controller.h"
 #include "machine/devices/gx/gpu.h"
 #include "machine/devices/gx/gte.h"
+#include "machine/devices/imgdec/controller.h"
 #include "machine/devices/input/contracts.h"
 #include "machine/memory/map.h"
 #include "spec/bmsx/memory_map.h"

@@ -24,6 +24,7 @@ import {
 	loadBlua32ToolingImage,
 	type Blua32ToolingImage,
 } from '../../../machine/ts/rompack/tooling/blua32_media';
+import { loadRomToolingMedia } from '../../../machine/ts/rompack/tooling/media';
 import { RomSourceStack } from '../../../machine/ts/rompack/source';
 import {
 	CART_ROM_BASE,
@@ -109,16 +110,17 @@ async function main(): Promise<void> {
 		session: CpuProfilerSession;
 	} | null = null;
 	if (options.cpuProfile) {
-		const initialized = await prepareMachineRuntime(bootOptions);
-		const systemLayer = initialized.systemLayer;
+		const media = await loadRomToolingMedia(systemRom, [slot0Rom, slot1Rom]);
+		const runtime = await prepareMachineRuntime(bootOptions);
+		const systemLayer = media.system;
 		const systemSource = new RomSourceStack([{
 			id: systemLayer.id,
 			index: systemLayer.index,
 			payload: systemLayer.payload,
 		}]);
 		const cartridgeImages: [Blua32ToolingImage | null, Blua32ToolingImage | null] = [null, null];
-		for (let slot = 0; slot < initialized.cartridgeLayers.length; slot += 1) {
-			const cartridgeLayer = initialized.cartridgeLayers[slot];
+		for (let slot = 0; slot < media.cartridgeSlots.length; slot += 1) {
+			const cartridgeLayer = media.cartridgeSlots[slot];
 			if (!cartridgeLayer) {
 				continue;
 			}
@@ -141,7 +143,7 @@ async function main(): Promise<void> {
 			),
 			cartridgeSlots: cartridgeImages,
 		});
-		profile = { runtime: initialized.runtime, session };
+		profile = { runtime, session };
 		console.log('[bootrom:headless] Fantasy CPU profiler enabled.');
 	}
 
@@ -179,7 +181,7 @@ async function main(): Promise<void> {
 				);
 				let passed = false;
 				try {
-					const { runtime } = await prepareMachineRuntime(bootOptions);
+					const runtime = await prepareMachineRuntime(bootOptions);
 					startMachineHostFrames(runtime);
 					await new HostTestRunner({
 						testPath: options.mode.path,
@@ -220,7 +222,7 @@ async function main(): Promise<void> {
 					if (profile) {
 						startCpuProfileHostFrames(profile.runtime, profile.session);
 					} else {
-						const { runtime } = await prepareMachineRuntime(bootOptions);
+						const runtime = await prepareMachineRuntime(bootOptions);
 						startMachineHostFrames(runtime);
 					}
 					await Promise.race([
@@ -243,7 +245,7 @@ async function main(): Promise<void> {
 				if (profile) {
 					startCpuProfileHostFrames(profile.runtime, profile.session);
 				} else {
-					const { runtime } = await prepareMachineRuntime(bootOptions);
+					const runtime = await prepareMachineRuntime(bootOptions);
 					startMachineHostFrames(runtime);
 				}
 				await new Promise<void>((resolve) => {

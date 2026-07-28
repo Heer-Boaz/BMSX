@@ -1,6 +1,6 @@
 #pragma once
 
-#include "machine/bus/io.h"
+#include "spec/bmsx/io.h"
 #include "machine/memory/memory.h"
 
 #include <array>

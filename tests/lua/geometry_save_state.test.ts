@@ -23,7 +23,7 @@ import {
 	IO_GEO_STRIDE2,
 	IO_IRQ_FLAGS,
 	IRQ_GEO_DONE,
-} from '../../machine/ts/machine/bus/io';
+} from '../../machine/ts/spec/bmsx/io';
 import {
 	GEO_CTRL_ABORT,
 	GEOMETRY_CONTROLLER_PHASE_BUSY,

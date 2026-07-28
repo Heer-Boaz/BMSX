@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "machine/cpu/string_pool.h"
+#include "spec/blua32/builtin.h"
 
 namespace bmsx {
 
@@ -50,23 +51,6 @@ struct GCObject {
 	uint32_t hashId = 0;
 	GCObject* next = nullptr;
 };
-
-enum class BuiltinFunctionId : uint8_t {
-	Next = 0,
-	Type = 1,
-	SetMetatable = 2,
-	GetMetatable = 3,
-	RawGet = 4,
-	RawSet = 5,
-	Select = 6,
-	StringByte = 7,
-	StringChar = 8,
-	Error = 9,
-	PCall = 10,
-	XPCall = 11,
-};
-
-constexpr size_t BUILTIN_FUNCTION_COUNT = 12;
 
 struct BuiltinFunction {
 	BuiltinFunctionId id = BuiltinFunctionId::Next;

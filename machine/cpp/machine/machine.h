@@ -1,6 +1,6 @@
 #pragma once
 
-#include "machine/bus/io.h"
+#include "spec/bmsx/io.h"
 #include "machine/cpu/cpu.h"
 #include "machine/execution_address_space.h"
 #include "machine/devices/audio/controller.h"

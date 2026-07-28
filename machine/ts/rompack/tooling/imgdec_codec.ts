@@ -12,7 +12,7 @@ import {
 	IMGDEC_TOKEN_KIND_SHIFT,
 	IMGDEC_TOKEN_KIND_ZERO,
 	IMGDEC_TOKEN_RUN_LENGTH_MASK,
-} from '../../machine/devices/imgdec/contracts';
+} from '../../spec/imgdec/stream';
 
 export type DecodedImgDecStream = {
 	payload: Buffer;

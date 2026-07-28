@@ -28,7 +28,7 @@ import type { ProgramMetadata, Proto, UpvalueDesc } from '../../machine/ts/lua/c
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { CART_ROM_HEADER_SIZE } from '../../machine/ts/rompack/format';
+import { CART_ROM_HEADER_SIZE } from '../../machine/ts/spec/bmsx/rom_package';
 import { writeCartRomHeader } from '../../machine/ts/rompack/tooling/header_encode';
 import {
 	linkCartBlua32Image,

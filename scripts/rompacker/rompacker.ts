@@ -2,7 +2,7 @@
 
 import pc from 'picocolors';
 
-import { SYSTEM_BOOT_ENTRY_PATH, SYSTEM_ROM_NAME } from '../../machine/ts/core/system';
+import { SYSTEM_BOOT_ENTRY_PATH, SYSTEM_ROM_NAME } from '../../machine/ts/rompack/system';
 import { findExistingDirectory, getParamOrEnv, normalizePathKey, parseArgsVector } from '../tooling/cli_arguments';
 import { createCliUi } from '../tooling/cli_ui';
 import { validateAudioEventReferences } from './audioeventvalidator';

@@ -1,35 +1,32 @@
 /*
- * package.h - Decoded ROM package records for BMSX
+ * loader.h - Decoded ROM tooling package records
  */
 
-#ifndef BMSX_ROMPACK_PACKAGE_H
-#define BMSX_ROMPACK_PACKAGE_H
+#ifndef BMSX_ROMPACK_LOADER_H
+#define BMSX_ROMPACK_LOADER_H
 
 #include "common/primitives.h"
 #include "rompack/format.h"
+#include "rompack/image.h"
 #include "rompack/assets.h"
 #include "common/serializer/binencoder.h"
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include <memory>
 #include <optional>
-#include <array>
-#include <algorithm>
-#include <functional>
 
 namespace bmsx {
 
 /* ============================================================================
- * RuntimeRomPackage - decoded ROM package
+ * RomToolingPackage - decoded ROM package
  * ============================================================================ */
 
-class RuntimeRomPackage {
+class RomToolingPackage {
 public:
-	RuntimeRomPackage() = default;
-	~RuntimeRomPackage() = default;
-	RuntimeRomPackage(RuntimeRomPackage&&) = default;
-	RuntimeRomPackage& operator=(RuntimeRomPackage&&) = default;
+	RomToolingPackage() = default;
+	~RomToolingPackage() = default;
+	RomToolingPackage(RomToolingPackage&&) = default;
+	RomToolingPackage& operator=(RomToolingPackage&&) = default;
 
 	// Decoded ROM record storage.
 	std::unordered_map<AssetToken, ImgAsset> img;
@@ -87,38 +84,20 @@ private:
 	std::unordered_map<AssetToken, AssetToken> m_luaSourceToModule;
 };
 
-struct AssetLoadCallbacks {
-	// Return true to keep a copy of pixel data in ImgAsset, false to skip.
-	std::function<bool(const std::string& assetId,
-					ImgAsset& asset,
-					const u8* rgba,
-					i32 width,
-					i32 height)> onImageDecoded;
-};
-
-struct RomImage {
-	std::span<const u8> bytes;
-	CartRomHeader header;
-};
-
 /* ============================================================================
  * ROM loader functions
  * ============================================================================ */
 
-RomImage parseRomImage(const u8* buffer, size_t size, RomImageDomain domain);
-
-// Load a cart image into RuntimeRomPackage, including cart metadata, machine spec, and entry point.
-void loadCartRomPackage(const RomImage& image,
-					RuntimeRomPackage& romPackage,
-					const AssetLoadCallbacks* callbacks = nullptr,
+// Load a cart image into RomToolingPackage, including cart metadata, machine spec, and entry point.
+void loadCartRomToolingPackage(const RomImage& image,
+					RomToolingPackage& romPackage,
 					const char* payloadId = "cart");
 
-// Load only the ROM package asset payload into RuntimeRomPackage. Does not decode cart metadata.
-void loadSystemRomPackage(const RomImage& image,
-					RuntimeRomPackage& romPackage,
-					const AssetLoadCallbacks* callbacks = nullptr,
+// Load only the ROM package asset payload into RomToolingPackage. Does not decode cart metadata.
+void loadSystemRomToolingPackage(const RomImage& image,
+					RomToolingPackage& romPackage,
 					const char* payloadId = "system");
 
 } // namespace bmsx
 
-#endif // BMSX_ROMPACK_PACKAGE_H
+#endif // BMSX_ROMPACK_LOADER_H

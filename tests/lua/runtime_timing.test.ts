@@ -14,13 +14,13 @@ import {
 	IO_APU_SOURCE_LOOP_END_SAMPLE,
 	IO_APU_SOURCE_SAMPLE_RATE_HZ,
 	IO_GX_GPU_GP1,
-} from '../../machine/ts/machine/bus/io';
+} from '../../machine/ts/spec/bmsx/io';
 import {
 	APU_CMD_PLAY,
 	APU_GAIN_Q12_ONE,
 	APU_GENERATOR_SQUARE,
 	APU_RATE_STEP_Q16_ONE,
-} from '../../machine/ts/machine/devices/audio/contracts';
+} from '../../machine/ts/spec/audio/apu';
 import {
 	GX_GPU_GP1_DISPLAY_MODE,
 	GX_GPU_GP1_VERTICAL_DISPLAY_RANGE,

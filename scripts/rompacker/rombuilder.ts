@@ -1,7 +1,10 @@
 // @ts-ignore
 import type { Stats } from 'fs';
 import { encodeBinary } from '../../machine/ts/common/serializer/binencoder';
-import { CART_ROM_HEADER_SIZE, CART_ROM_WORD_ALIGNMENT } from '../../machine/ts/rompack/format';
+import {
+	CART_ROM_HEADER_SIZE,
+	CART_ROM_WORD_ALIGNMENT,
+} from '../../machine/ts/spec/bmsx/rom_package';
 import type { AudioMeta, BoundingBoxPrecalc, GLTFMesh, HitPolygonsPrecalc, ImgMeta, Polygon, RectBounds, RomAsset, RomManifest, TextureMeta, vec2arr } from '../../machine/ts/rompack/format';
 import { alignRomAssetOffset, layoutRomAssetPayloads, type RomAssetPayloadLayout, type RomAssetPayloadRange } from '../../machine/ts/rompack/asset_layout';
 import { writeCartRomHeader } from '../../machine/ts/rompack/tooling/header_encode';

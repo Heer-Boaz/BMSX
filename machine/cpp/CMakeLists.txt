@@ -80,7 +80,7 @@ elseif(MSVC)
 endif()
 
 # =============================================================================
-# Machine library (static)
+# Shared wire-format libraries
 # =============================================================================
 
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
@@ -195,6 +195,29 @@ configure_file(
 	@ONLY
 )
 
+add_library(bmsx_binary_codec STATIC
+	common/serializer/binencoder.cpp
+)
+
+add_library(bmsx_rom_image STATIC
+	rompack/format.cpp
+	rompack/image.cpp
+)
+
+foreach(target bmsx_binary_codec bmsx_rom_image)
+	set_target_properties(${target} PROPERTIES
+		POSITION_INDEPENDENT_CODE ON
+	)
+	target_include_directories(${target} PUBLIC
+		${CMAKE_CURRENT_SOURCE_DIR}
+		${CMAKE_CURRENT_SOURCE_DIR}/..
+	)
+endforeach()
+
+# =============================================================================
+# Machine library (static)
+# =============================================================================
+
 add_library(bmsx_core STATIC
 	# Platform abstraction
 	platform/platform.cpp
@@ -205,21 +228,12 @@ add_library(bmsx_core STATIC
 	core/machine_manager.cpp
 	core/host_frame.cpp
 	core/host_overlay_menu.cpp
-	core/system.cpp
 	common/registry.cpp
-	rompack/loader.cpp
-	rompack/tokens.cpp
-	rompack/toc.cpp
-	rompack/metadata.cpp
-	rompack/source.cpp
 	rompack/host_system_atlas.cpp
 	rompack/host_system_atlas.generated.cpp
-	common/serializer/binencoder.cpp
-	rompack/format.cpp
 	render/shared/bitmap_font.cpp
 	common/taskgate.cpp
 	common/byte_hex_string.cpp
-	common/mem_snapshot.cpp
 	common/mmap_file.cpp
 	common/scratchbuffer.cpp
 
@@ -328,9 +342,8 @@ add_library(bmsx_core STATIC
 	machine/devices/gx/gpu_command_timing.cpp
 	machine/devices/gx/vram_power_on.cpp
 	machine/devices/gx/gte.cpp
-	machine/common/hash.cpp
+	common/hash.cpp
 	machine/cpu/string_pool.cpp
-	lua/module_path.cpp
 )
 
 
@@ -349,6 +362,11 @@ target_include_directories(bmsx_core PUBLIC
 target_compile_definitions(bmsx_core PUBLIC
 	BMSX_ENABLE_GLES2=$<BOOL:${BMSX_ENABLE_GLES2}>
 	BMSX_ENABLE_ZLIB=$<BOOL:${BMSX_ENABLE_ZLIB}>
+)
+
+target_link_libraries(bmsx_core PUBLIC
+	bmsx_binary_codec
+	bmsx_rom_image
 )
 
 if(BMSX_ENABLE_GLES2)
@@ -371,10 +389,29 @@ if(BMSX_ENABLE_ZLIB)
 endif()
 
 # =============================================================================
-# BLua32 source diagnostics tooling
+# ROM and BLua32 source diagnostics tooling
 # =============================================================================
 
 if(BMSX_BUILD_LIBRETRO OR BMSX_BUILD_TESTS)
+	add_library(bmsx_rom_tooling STATIC
+		common/mem_snapshot.cpp
+		rompack/loader.cpp
+		rompack/tokens.cpp
+		rompack/toc.cpp
+		rompack/metadata.cpp
+		rompack/source.cpp
+		lua/module_path.cpp
+	)
+
+	set_target_properties(bmsx_rom_tooling PROPERTIES
+		POSITION_INDEPENDENT_CODE ON
+	)
+
+	target_link_libraries(bmsx_rom_tooling PUBLIC
+		bmsx_binary_codec
+		bmsx_rom_image
+	)
+
 	add_library(bmsx_blua32_tooling STATIC
 		rompack/tooling/blua32_image.cpp
 		rompack/tooling/blua32_symbols.cpp
@@ -388,7 +425,7 @@ if(BMSX_BUILD_LIBRETRO OR BMSX_BUILD_TESTS)
 		POSITION_INDEPENDENT_CODE ON
 	)
 
-	target_link_libraries(bmsx_blua32_tooling PUBLIC bmsx_core)
+	target_link_libraries(bmsx_blua32_tooling PUBLIC bmsx_rom_tooling)
 endif()
 
 # =============================================================================
@@ -573,7 +610,7 @@ if(BMSX_BUILD_TESTS)
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/gx_gte_test.cpp
 		${BMSX_TEST_ROM_SOURCE}
 	)
-	target_link_libraries(bmsx_gx_gte_tests PRIVATE bmsx_core)
+	target_link_libraries(bmsx_gx_gte_tests PRIVATE bmsx_core bmsx_rom_tooling)
 	add_test(NAME bmsx_gx_gte_tests COMMAND bmsx_gx_gte_tests)
 
 	add_executable(bmsx_gx_gpu_tests
@@ -648,7 +685,7 @@ if(BMSX_BUILD_TESTS)
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/system_controller_test.cpp
 		${BMSX_TEST_ROM_SOURCE}
 	)
-	target_link_libraries(bmsx_system_controller_tests PRIVATE bmsx_core)
+	target_link_libraries(bmsx_system_controller_tests PRIVATE bmsx_core bmsx_rom_tooling)
 	add_test(NAME bmsx_system_controller_tests COMMAND bmsx_system_controller_tests)
 
 	add_executable(bmsx_host_overlay_queue_tests
@@ -708,7 +745,10 @@ endif()
 # Installation
 # =============================================================================
 
-install(TARGETS bmsx_core
+install(TARGETS
+	bmsx_binary_codec
+	bmsx_rom_image
+	bmsx_core
 	ARCHIVE DESTINATION lib
 	LIBRARY DESTINATION lib
 )

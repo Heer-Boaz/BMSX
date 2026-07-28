@@ -1,5 +1,5 @@
 #include "machine/devices/irq/controller.h"
-#include "machine/bus/io.h"
+#include "spec/bmsx/io.h"
 
 namespace bmsx {
 

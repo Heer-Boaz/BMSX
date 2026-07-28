@@ -1,6 +1,6 @@
 #include "machine/devices/audio/event_latch.h"
 
-#include "machine/bus/io.h"
+#include "spec/bmsx/io.h"
 #include "machine/cpu/value.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/memory.h"

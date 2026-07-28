@@ -2,13 +2,13 @@
 
 #include "common/primitives.h"
 #include "machine/runtime/timing/constants.h"
+#include "spec/bmsx/memory_map.h"
 
 namespace bmsx {
 
 // Console-model registry: the machine owns fixed PSX-class raster hardware,
 // PS2-class PCRTC presentation aspect, and device throughput/timing parameters.
 
-enum class MachineVdpClass { Psx };
 enum class PsxGpuVideoStandard { Pal, Ntsc };
 
 constexpr i64 PSX_CPU_FREQ_HZ = 33868800; // 44100 * 768, the real PS1 CPU clock
@@ -18,7 +18,6 @@ constexpr i64 PSX_DMA_SYSTEM_ROM_CYCLES_PER_WORD = 1;
 constexpr i64 PSX_DMA_CART_ROM_CYCLES_PER_WORD = 8;
 constexpr i64 PSX_DMA_CART_ROM_BURST_SETUP_CYCLES = 4;
 constexpr i64 PSX_IMGDEC_CYCLES_PER_OUTPUT_WORD = 2;
-constexpr i64 PSX_RAM_BYTES = 0x00400000;
 constexpr i32 GX_GPU_DISPLAY_ASPECT_WIDTH = 4;
 constexpr i32 GX_GPU_DISPLAY_ASPECT_HEIGHT = 3;
 
@@ -58,7 +57,7 @@ inline constexpr MachineModelSpec PSX_MACHINE_SPEC = {
 	PSX_DMA_CART_ROM_CYCLES_PER_WORD,
 	PSX_DMA_CART_ROM_BURST_SETUP_CYCLES,
 	PSX_IMGDEC_CYCLES_PER_OUTPUT_WORD,
-	PSX_RAM_BYTES,
+	BMSX_RAM_BYTES,
 	PSX_GEO_WORK_UNITS_PER_SEC,
 };
 

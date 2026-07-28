@@ -10,18 +10,20 @@ import {
 	APU_PARAMETER_SLOT_INDEX,
 	APU_PARAMETER_SOURCE_ADDR_INDEX,
 	APU_SLOT_COUNT,
-	APU_SLOT_PHASE_FADING,
-	APU_SLOT_PHASE_IDLE,
-	APU_SLOT_PHASE_PLAYING,
 	APU_SLOT_REGISTER_WORD_COUNT,
 	APU_TRANSFER_FIFO_WORD_CAPACITY,
 	apuSlotRegisterWordIndex,
+} from '../../machine/ts/spec/audio/apu';
+import {
+	APU_SLOT_PHASE_FADING,
+	APU_SLOT_PHASE_IDLE,
+	APU_SLOT_PHASE_PLAYING,
 } from '../../machine/ts/machine/devices/audio/contracts';
 import { GEOMETRY_CONTROLLER_PHASE_BUSY, GEOMETRY_CONTROLLER_REGISTER_COUNT } from '../../machine/ts/machine/devices/geometry/contracts';
-import { GX_GPU_GP0_INGRESS_POLYLINE_PAYLOAD } from '../../machine/ts/machine/devices/gx/gp0';
+import { GX_GPU_GP0_INGRESS_POLYLINE_PAYLOAD } from '../../machine/ts/machine/devices/gx/gpu';
 import { GX_GPU_READBACK_READY, GX_GPU_READBACK_SUBMITTED } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
 import { GX_GPU_PCRTC_COMPOSITION_WORD_COUNT, GX_GPU_PCRTC_CONFIG_WORD_COUNT } from '../../machine/ts/machine/devices/gx/gpu_pcrtc';
-import { GX_GPU_VRAM_BYTE_COUNT } from '../../machine/ts/machine/devices/gx/vram_address';
+import { GX_GPU_VRAM_BYTE_COUNT } from '../../machine/ts/spec/gx/vram';
 import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT, GX_GTE_PLUS_REGISTER_COUNT } from '../../machine/ts/machine/devices/gx/gte';
 import { INPUT_CONTROLLER_KEY_WORD_COUNT, INPUT_CONTROLLER_PAD_AXIS_COUNT, INPUT_CONTROLLER_PAD_COUNT } from '../../machine/ts/machine/devices/input/contracts';
 import { PSX_GPU_DISPLAY_MODE_PAL_WORD } from '../../machine/ts/machine/model_registry';
@@ -35,9 +37,9 @@ import {
 import { decodeBinaryWithPropTable } from '../../machine/ts/common/serializer/binencoder';
 import { RUNTIME_SAVE_STATE_PROP_NAMES } from '../../machine/ts/machine/runtime/save_state/schema';
 import { ProtectedCallKind } from '../../machine/ts/machine/cpu/call_state';
-import { BuiltinFunctionId } from '../../machine/ts/machine/cpu/value';
+import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { CPU_STATUS_CART_ENTRY } from '../../machine/ts/spec/blua32/cop0';
-import { DMA_STATUS_BUSY, SYS_PRINT_BUFFER_BYTES } from '../../machine/ts/machine/bus/io';
+import { DMA_STATUS_BUSY, SYS_PRINT_BUFFER_BYTES } from '../../machine/ts/spec/bmsx/io';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { RAM_END } from '../../machine/ts/machine/memory/map';
 

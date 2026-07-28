@@ -1,6 +1,7 @@
 #pragma once
 
 #include "machine/devices/audio/contracts.h"
+#include "spec/audio/apu.h"
 
 namespace bmsx {
 

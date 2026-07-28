@@ -9,7 +9,7 @@
 #include "machine/devices/cartridge/controller.h"
 #include "machine/memory/bus_signals.h"
 #include "spec/bmsx/memory_map.h"
-#include "machine/bus/io.h"
+#include "spec/bmsx/io.h"
 #include "common/primitives.h"
 
 namespace bmsx {

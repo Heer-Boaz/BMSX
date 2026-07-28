@@ -2,7 +2,7 @@ import { extractSourceRangeText } from './source_text';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord, signExtend } from '../../spec/blua32/instruction_format';
 import { OpCode, OPCODE_USES_BX, OPCODE_USES_DISP, decodeCallArgCount } from '../../spec/blua32/opcode';
 import { OPCODE_NAMES } from './opcode_metadata';
-import { formatNumber } from '../../machine/common/number_format';
+import { formatNumber } from '../../common/number_format';
 import {
 	type Blua32EncodedConstant,
 	type Blua32ImageLayout,

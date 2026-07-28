@@ -10,7 +10,7 @@ import {
 	IO_INP_CTRL,
 	IO_INP_OUTPUT_DURATION_MS,
 	IO_INP_OUTPUT_PORT,
-} from '../../machine/ts/machine/bus/io';
+} from '../../machine/ts/spec/bmsx/io';
 import { compileLuaChunkToProgram } from '../../machine/ts/lua/compiler';
 import { runCompiledLua } from '../lua/cpu_test_harness';
 

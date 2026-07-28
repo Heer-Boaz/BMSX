@@ -2,7 +2,7 @@ import {
 	IO_APU_CMD_CAPACITY,
 	IO_APU_CMD_FREE,
 	IO_APU_CMD_QUEUED,
-} from '../../bus/io';
+} from '../../../spec/bmsx/io';
 import type { ApuCommandFifo } from './command_fifo';
 
 export class ApuQueueStatusRegisters {

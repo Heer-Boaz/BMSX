@@ -63,7 +63,7 @@ import {
 	IO_SYS_FRAME_MS,
 	IO_SYS_CYCLES_PER_FRAME,
 	IO_SYS_TIME_MS,
-} from '../bus/io';
+} from '../../spec/bmsx/io';
 import { readLE16, readLE32, writeLE16, writeLE32 } from '../../common/endian';
 import {
 	MAPPED_BUS_MASTER_CPU,

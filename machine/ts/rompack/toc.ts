@@ -1,21 +1,52 @@
 import type { asset_type, RomAsset } from './format';
-
-export const ROM_TOC_MAGIC = 0x434f5442; // 'BTOC' little-endian
-export const ROM_TOC_HEADER_SIZE = 48;
-export const ROM_TOC_ENTRY_SIZE = 88;
-export const ROM_TOC_INVALID_U32 = 0xffffffff;
-export const ROM_TOC_OP_NONE = 0;
-export const ROM_TOC_OP_DELETE = 1;
-export const ROM_TOC_ASSET_TYPE_IMAGE = 1;
-export const ROM_TOC_ASSET_TYPE_AUDIO = 2;
-export const ROM_TOC_ASSET_TYPE_DATA = 3;
-export const ROM_TOC_ASSET_TYPE_BIN = 4;
-export const ROM_TOC_ASSET_TYPE_ROMLABEL = 6;
-export const ROM_TOC_ASSET_TYPE_MODEL = 7;
-export const ROM_TOC_ASSET_TYPE_AEM = 8;
-export const ROM_TOC_ASSET_TYPE_LUA = 9;
-export const ROM_TOC_ASSET_TYPE_CODE = 10;
-export const ROM_TOC_ASSET_TYPE_TEXTURE = 11;
+import {
+	ROM_TOC_ASSET_TYPE_AEM,
+	ROM_TOC_ASSET_TYPE_AUDIO,
+	ROM_TOC_ASSET_TYPE_BIN,
+	ROM_TOC_ASSET_TYPE_CODE,
+	ROM_TOC_ASSET_TYPE_DATA,
+	ROM_TOC_ASSET_TYPE_IMAGE,
+	ROM_TOC_ASSET_TYPE_LUA,
+	ROM_TOC_ASSET_TYPE_MODEL,
+	ROM_TOC_ASSET_TYPE_ROMLABEL,
+	ROM_TOC_ASSET_TYPE_TEXTURE,
+	ROM_TOC_ENTRY_ASSET_TYPE_OFFSET,
+	ROM_TOC_ENTRY_COLLISION_BIN_END_OFFSET,
+	ROM_TOC_ENTRY_COLLISION_BIN_START_OFFSET,
+	ROM_TOC_ENTRY_COMPILED_END_OFFSET,
+	ROM_TOC_ENTRY_COMPILED_START_OFFSET,
+	ROM_TOC_ENTRY_DATA_END_OFFSET,
+	ROM_TOC_ENTRY_DATA_START_OFFSET,
+	ROM_TOC_ENTRY_METADATA_END_OFFSET,
+	ROM_TOC_ENTRY_METADATA_START_OFFSET,
+	ROM_TOC_ENTRY_MODEL_TEXTURE_END_OFFSET,
+	ROM_TOC_ENTRY_MODEL_TEXTURE_START_OFFSET,
+	ROM_TOC_ENTRY_NORMALIZED_SOURCE_PATH_LENGTH_OFFSET,
+	ROM_TOC_ENTRY_NORMALIZED_SOURCE_PATH_OFFSET,
+	ROM_TOC_ENTRY_OPERATION_OFFSET,
+	ROM_TOC_ENTRY_RESID_LENGTH_OFFSET,
+	ROM_TOC_ENTRY_RESID_OFFSET,
+	ROM_TOC_ENTRY_SIZE,
+	ROM_TOC_ENTRY_SOURCE_PATH_LENGTH_OFFSET,
+	ROM_TOC_ENTRY_SOURCE_PATH_OFFSET,
+	ROM_TOC_ENTRY_TOKEN_HI_OFFSET,
+	ROM_TOC_ENTRY_TOKEN_LO_OFFSET,
+	ROM_TOC_ENTRY_UPDATE_TIMESTAMP_HI_OFFSET,
+	ROM_TOC_ENTRY_UPDATE_TIMESTAMP_LO_OFFSET,
+	ROM_TOC_HEADER_ENTRY_COUNT_OFFSET,
+	ROM_TOC_HEADER_ENTRY_SIZE_OFFSET,
+	ROM_TOC_HEADER_ENTRY_TABLE_OFFSET,
+	ROM_TOC_HEADER_MAGIC_OFFSET,
+	ROM_TOC_HEADER_PROJECT_ROOT_LENGTH_OFFSET,
+	ROM_TOC_HEADER_PROJECT_ROOT_OFFSET,
+	ROM_TOC_HEADER_SIZE,
+	ROM_TOC_HEADER_SIZE_OFFSET,
+	ROM_TOC_HEADER_STRING_TABLE_LENGTH_OFFSET,
+	ROM_TOC_HEADER_STRING_TABLE_OFFSET,
+	ROM_TOC_INVALID_U32,
+	ROM_TOC_MAGIC,
+	ROM_TOC_OP_DELETE,
+} from '../spec/bmsx/rom_toc';
 const utf8Decoder = new TextDecoder();
 
 export type RomTocPayload = {
@@ -121,24 +152,24 @@ export function decodeRomToc(buffer: Uint8Array): RomTocPayload {
 		throw new Error('ROM TOC buffer is too small.');
 	}
 	const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
-	const magic = view.getUint32(0, true);
+	const magic = view.getUint32(ROM_TOC_HEADER_MAGIC_OFFSET, true);
 	if (magic !== ROM_TOC_MAGIC) {
 		throw new Error('Invalid ROM TOC magic.');
 	}
-	const headerSize = view.getUint32(4, true);
+	const headerSize = view.getUint32(ROM_TOC_HEADER_SIZE_OFFSET, true);
 	if (headerSize !== ROM_TOC_HEADER_SIZE) {
 		throw new Error(`Unexpected ROM TOC header size ${headerSize}.`);
 	}
-	const entrySize = view.getUint32(8, true);
+	const entrySize = view.getUint32(ROM_TOC_HEADER_ENTRY_SIZE_OFFSET, true);
 	if (entrySize !== ROM_TOC_ENTRY_SIZE) {
 		throw new Error(`Unexpected ROM TOC entry size ${entrySize}.`);
 	}
-	const entryCount = view.getUint32(12, true);
-	const entryOffset = view.getUint32(16, true);
-	const stringTableOffset = view.getUint32(20, true);
-	const stringTableLength = view.getUint32(24, true);
-	const projectRootOffset = view.getUint32(28, true);
-	const projectRootLength = view.getUint32(32, true);
+	const entryCount = view.getUint32(ROM_TOC_HEADER_ENTRY_COUNT_OFFSET, true);
+	const entryOffset = view.getUint32(ROM_TOC_HEADER_ENTRY_TABLE_OFFSET, true);
+	const stringTableOffset = view.getUint32(ROM_TOC_HEADER_STRING_TABLE_OFFSET, true);
+	const stringTableLength = view.getUint32(ROM_TOC_HEADER_STRING_TABLE_LENGTH_OFFSET, true);
+	const projectRootOffset = view.getUint32(ROM_TOC_HEADER_PROJECT_ROOT_OFFSET, true);
+	const projectRootLength = view.getUint32(ROM_TOC_HEADER_PROJECT_ROOT_LENGTH_OFFSET, true);
 	if (entryOffset !== ROM_TOC_HEADER_SIZE) {
 		throw new Error(`Unexpected ROM TOC entry offset ${entryOffset}.`);
 	}
@@ -154,29 +185,29 @@ export function decodeRomToc(buffer: Uint8Array): RomTocPayload {
 	const entries: RomAsset[] = [];
 	for (let i = 0; i < entryCount; i += 1) {
 		const base = entryOffset + i * entrySize;
-		const tokenLo = view.getUint32(base + 0, true);
-		const tokenHi = view.getUint32(base + 4, true);
-		const typeId = view.getUint32(base + 8, true);
-		const opId = view.getUint32(base + 12, true);
-		const residOffset = view.getUint32(base + 16, true);
-		const residLength = view.getUint32(base + 20, true);
-		const sourceOffset = view.getUint32(base + 24, true);
-		const sourceLength = view.getUint32(base + 28, true);
-		const normalizedOffset = view.getUint32(base + 32, true);
-		const normalizedLength = view.getUint32(base + 36, true);
+		const tokenLo = view.getUint32(base + ROM_TOC_ENTRY_TOKEN_LO_OFFSET, true);
+		const tokenHi = view.getUint32(base + ROM_TOC_ENTRY_TOKEN_HI_OFFSET, true);
+		const typeId = view.getUint32(base + ROM_TOC_ENTRY_ASSET_TYPE_OFFSET, true);
+		const opId = view.getUint32(base + ROM_TOC_ENTRY_OPERATION_OFFSET, true);
+		const residOffset = view.getUint32(base + ROM_TOC_ENTRY_RESID_OFFSET, true);
+		const residLength = view.getUint32(base + ROM_TOC_ENTRY_RESID_LENGTH_OFFSET, true);
+		const sourceOffset = view.getUint32(base + ROM_TOC_ENTRY_SOURCE_PATH_OFFSET, true);
+		const sourceLength = view.getUint32(base + ROM_TOC_ENTRY_SOURCE_PATH_LENGTH_OFFSET, true);
+		const normalizedOffset = view.getUint32(base + ROM_TOC_ENTRY_NORMALIZED_SOURCE_PATH_OFFSET, true);
+		const normalizedLength = view.getUint32(base + ROM_TOC_ENTRY_NORMALIZED_SOURCE_PATH_LENGTH_OFFSET, true);
 
-		const start = view.getUint32(base + 40, true);
-		const end = view.getUint32(base + 44, true);
-		const compiledStart = view.getUint32(base + 48, true);
-		const compiledEnd = view.getUint32(base + 52, true);
-		const metaStart = view.getUint32(base + 56, true);
-		const metaEnd = view.getUint32(base + 60, true);
-		const modelTextureStart = view.getUint32(base + 64, true);
-		const modelTextureEnd = view.getUint32(base + 68, true);
-		const collisionBinStart = view.getUint32(base + 72, true);
-		const collisionBinEnd = view.getUint32(base + 76, true);
-		const updateLo = view.getUint32(base + 80, true);
-		const updateHi = view.getUint32(base + 84, true);
+		const start = view.getUint32(base + ROM_TOC_ENTRY_DATA_START_OFFSET, true);
+		const end = view.getUint32(base + ROM_TOC_ENTRY_DATA_END_OFFSET, true);
+		const compiledStart = view.getUint32(base + ROM_TOC_ENTRY_COMPILED_START_OFFSET, true);
+		const compiledEnd = view.getUint32(base + ROM_TOC_ENTRY_COMPILED_END_OFFSET, true);
+		const metaStart = view.getUint32(base + ROM_TOC_ENTRY_METADATA_START_OFFSET, true);
+		const metaEnd = view.getUint32(base + ROM_TOC_ENTRY_METADATA_END_OFFSET, true);
+		const modelTextureStart = view.getUint32(base + ROM_TOC_ENTRY_MODEL_TEXTURE_START_OFFSET, true);
+		const modelTextureEnd = view.getUint32(base + ROM_TOC_ENTRY_MODEL_TEXTURE_END_OFFSET, true);
+		const collisionBinStart = view.getUint32(base + ROM_TOC_ENTRY_COLLISION_BIN_START_OFFSET, true);
+		const collisionBinEnd = view.getUint32(base + ROM_TOC_ENTRY_COLLISION_BIN_END_OFFSET, true);
+		const updateLo = view.getUint32(base + ROM_TOC_ENTRY_UPDATE_TIMESTAMP_LO_OFFSET, true);
+		const updateHi = view.getUint32(base + ROM_TOC_ENTRY_UPDATE_TIMESTAMP_HI_OFFSET, true);
 		if ((start === ROM_TOC_INVALID_U32) !== (end === ROM_TOC_INVALID_U32)
 			|| (compiledStart === ROM_TOC_INVALID_U32) !== (compiledEnd === ROM_TOC_INVALID_U32)
 			|| (metaStart === ROM_TOC_INVALID_U32) !== (metaEnd === ROM_TOC_INVALID_U32)

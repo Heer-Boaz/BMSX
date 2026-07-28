@@ -1,7 +1,7 @@
 import { OpCode } from '../../../spec/blua32/opcode';
 import { OPCODE_NAMES } from '../../../rompack/tooling/opcode_metadata';
-import { valueIsString, type Value } from '../../../machine/cpu/value';
 import type { Instruction, InstructionSet } from '../optimizer';
+import type { ProgramConstant } from '../program';
 
 export const staticLaneForbiddenOpcodeReason = (op: OpCode): string | null => {
 	switch (op) {
@@ -38,7 +38,7 @@ export const staticLaneForbiddenOpcodeReason = (op: OpCode): string | null => {
 	}
 };
 
-const instructionLoadKReason = (instruction: Instruction, constPool: ReadonlyArray<Value>): string | null => {
+const instructionLoadKReason = (instruction: Instruction, constPool: ReadonlyArray<ProgramConstant>): string | null => {
 	if (instruction.op !== OpCode.LOADK) {
 		return null;
 	}
@@ -48,14 +48,14 @@ const instructionLoadKReason = (instruction: Instruction, constPool: ReadonlyArr
 	if (instruction.symbolicReloc !== undefined) {
 		return null;
 	}
-	return valueIsString(constPool[instruction.b]) ? 'Lua string constant' : null;
+	return typeof constPool[instruction.b] === 'string' ? 'Lua string constant' : null;
 };
 
 export const assertStaticFunctionInstructionSet = (
 	modulePath: string,
 	symbolHandle: string,
 	instructionSet: InstructionSet,
-	constPool: ReadonlyArray<Value>,
+	constPool: ReadonlyArray<ProgramConstant>,
 ): void => {
 	const instructions = instructionSet.instructions;
 	for (let index = 0; index < instructions.length; index += 1) {

@@ -1,7 +1,7 @@
 #include "machine/devices/audio/controller.h"
 #include "machine/devices/audio/output.h"
 
-#include "machine/bus/io.h"
+#include "spec/bmsx/io.h"
 #include "machine/cpu/value.h"
 #include "machine/scheduler/device.h"
 

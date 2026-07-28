@@ -4,8 +4,8 @@ import {
 	encodeBlua32SymbolsImage,
 } from './blua32_symbols';
 import type { LinkedBlua32Image } from './blua32_linker';
+import { CART_ROM_HEADER_SIZE } from '../../spec/bmsx/rom_package';
 import {
-	CART_ROM_HEADER_SIZE,
 	parseCartHeader,
 	type RomAsset,
 } from '../format';

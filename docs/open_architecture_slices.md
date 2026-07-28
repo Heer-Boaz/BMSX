@@ -10,12 +10,6 @@ horen niet in deze lijst.
 | --- | --- | --- |
 | `PERF-RUNTIME-01` | Kies per iteratie één gemeten hot-pathowner en verwijder daar herhaalde decode, conversie, validatie, allocatie of dispatch bij de producer. Dit is een paraplu, geen enkele megaslice. | Analyzers blokkeren nieuwe overtredingen, parity blijft exact en representatieve low-end hardware houdt 50 Hz zonder oplopende backlog. |
 
-## Solution- en productgrenzen
-
-| ID | Opdracht | Klaar wanneer |
-| --- | --- | --- |
-| `SOLUTION-WIRE-01` | Trek de gedeelde ROM-, BLua32-, register- en andere wire-contracten uit implementatiepaden naar hun specificatie-owner. | Toolchain hangt alleen van wire/ABI-contracten af en niet van TS- of C++-emulatorimplementatie. |
-
 ## Uitgesteld tot een echte backend of target beschikbaar is
 
 | ID | Nog te bewijzen | Vereist |

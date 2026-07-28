@@ -25,7 +25,7 @@ import {
 	IO_DMA_WRITE_ADDRS,
 	IRQ_DMA0_DONE,
 	IRQ_DMA1_DONE,
-} from '../../bus/io';
+} from '../../../spec/bmsx/io';
 import type { CPU } from '../../cpu/cpu';
 import type { Value } from '../../cpu/value';
 import { IO_WORD_SIZE } from '../../../spec/bmsx/memory_map';

@@ -1,7 +1,7 @@
 import type { GxGpuPipelineState } from '../backend';
 import type { GxGpu } from '../../../machine/devices/gx/gpu';
 import type { GxGpuCommandBufferView, GxGpuReadbackPortView } from '../../../machine/devices/gx/gpu_command_buffer';
-import { GX_GPU_VRAM_WIDTH, gxGpuVramYAddress } from '../../../machine/devices/gx/vram_address';
+import { GX_GPU_VRAM_WIDTH, gxGpuVramYAddress } from '../../../spec/gx/vram';
 import { executeGxGpuSoftwareCommands } from './gx_gpu_commands';
 import { scanoutGxGpuSoftwareVram } from './gx_gpu_scanout';
 import { GX_GPU_SOFTWARE_VRAM_WORDS, gxGpuSoftwareVram, loadGxGpuSoftwareVramBytes } from './gx_gpu_vram';

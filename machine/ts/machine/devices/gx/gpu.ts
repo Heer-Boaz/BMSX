@@ -9,7 +9,7 @@ import {
 	IO_GX_PCRTC_WORD_COUNT,
 	IRQ_GPU,
 	IRQ_GX_PCRTC,
-} from '../../bus/io';
+} from '../../../spec/bmsx/io';
 import type { Memory } from '../../memory/memory';
 import { IO_WORD_SIZE } from '../../../spec/bmsx/memory_map';
 import {
@@ -25,6 +25,15 @@ import type { IrqController } from '../irq/controller';
 import { WordFifo } from '../word_fifo';
 import type { GxGpuDeviceOutput } from './device_output';
 import {
+	GX_GPU_DRAW_MODE_DRAW_TO_DISPLAYED_FIELD,
+	GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_HIGH,
+	gxGpuPolygonDrawModeWord,
+	gxGpuPolygonTexturePageWordIndex,
+	gxGpuTextureAttribute,
+	gxGpuTransferHeight,
+	gxGpuTransferWidth,
+} from '../../../spec/gx/gp0';
+import {
 	GX_GPU_COMMAND_COPY_VRAM_TO_VRAM,
 	GX_GPU_COMMAND_DRAW_LINE,
 	GX_GPU_COMMAND_DRAW_POLYGON,
@@ -38,18 +47,11 @@ import {
 	GX_GPU_READBACK_PENDING,
 	GX_GPU_READBACK_READY,
 	GX_GPU_READBACK_SUBMITTED,
-	GX_GPU_DRAW_MODE_DRAW_TO_DISPLAYED_FIELD,
-	GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_HIGH,
 	GX_GPU_SKIPPED_LINE_NONE,
 	GxGpuCommandBuffer,
 	type GxGpuCommandBufferState,
-	gxGpuPolygonDrawModeWord,
-	gxGpuPolygonTexturePageWordIndex,
-	gxGpuTextureAttribute,
-	gxGpuTransferHeight,
-	gxGpuTransferWidth,
 } from './gpu_command_buffer';
-import { GX_GPU_VRAM_BYTE_COUNT } from './vram_address';
+import { GX_GPU_VRAM_BYTE_COUNT } from '../../../spec/gx/vram';
 import {
 	GX_GPU_COMMAND_TICKS_PER_CPU_CYCLE,
 	gxGpuCommandTicks,
@@ -68,12 +70,6 @@ import {
 	GX_GPU_GP0_DRAWING_OFFSET,
 	GX_GPU_GP0_DRAW_MODE,
 	GX_GPU_GP0_FILL_RECTANGLE,
-	GX_GPU_GP0_INGRESS_COMMAND,
-	GX_GPU_GP0_INGRESS_FIXED,
-	GX_GPU_GP0_INGRESS_IMAGE_HEADER,
-	GX_GPU_GP0_INGRESS_IMAGE_PAYLOAD,
-	GX_GPU_GP0_INGRESS_POLYLINE_HEADER,
-	GX_GPU_GP0_INGRESS_POLYLINE_PAYLOAD,
 	GX_GPU_GP0_IRQ_REQUEST,
 	GX_GPU_GP0_LINE_FIRST,
 	GX_GPU_GP0_LINE_LAST,
@@ -93,7 +89,7 @@ import {
 	GX_GPU_GP0_VRAM_TO_CPU_LAST,
 	GX_GPU_GP0_VRAM_TO_VRAM_FIRST,
 	GX_GPU_GP0_VRAM_TO_VRAM_LAST,
-} from './gp0';
+} from '../../../spec/gx/gp0';
 import {
 	GX_GPU_RESET_HORIZONTAL_DISPLAY_RANGE_WORD,
 	GX_GPU_RESET_DISPLAY_MODE_WORD,
@@ -125,12 +121,12 @@ let gxGpuNextVramReplacementSerial = 0n;
 export const GX_GPU_SERVICE_RUNTIME_EDGE_MASK = 0x3;
 export const GX_GPU_SERVICE_TIMING_PUBLISHED = 1 << 2;
 
-export {
-	GX_GPU_DRAW_MODE_DITHER_ENABLED,
-	GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_HIGH,
-	GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP,
-	GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP,
-} from './gpu_command_buffer';
+export const GX_GPU_GP0_INGRESS_COMMAND = 0;
+export const GX_GPU_GP0_INGRESS_FIXED = 1;
+export const GX_GPU_GP0_INGRESS_IMAGE_HEADER = 2;
+export const GX_GPU_GP0_INGRESS_IMAGE_PAYLOAD = 3;
+export const GX_GPU_GP0_INGRESS_POLYLINE_HEADER = 4;
+export const GX_GPU_GP0_INGRESS_POLYLINE_PAYLOAD = 5;
 
 export const GX_GPU_GP1_RESET = 0x00;
 export const GX_GPU_GP1_CLEAR_FIFO = 0x01;

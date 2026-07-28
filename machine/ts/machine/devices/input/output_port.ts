@@ -1,4 +1,4 @@
-import { IO_INP_OUTPUT_CTRL } from '../../bus/io';
+import { IO_INP_OUTPUT_CTRL } from '../../../spec/bmsx/io';
 import type { Value } from '../../cpu/value';
 import { Memory } from '../../memory/memory';
 import { InputControllerRegisterFile } from './registers';

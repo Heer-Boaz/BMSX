@@ -1,7 +1,7 @@
 #include "machine/devices/cartridge/controller.h"
 
 #include "common/endian.h"
-#include "machine/bus/io.h"
+#include "spec/bmsx/io.h"
 #include "machine/devices/dma/controller.h"
 #include "machine/devices/irq/controller.h"
 #include "spec/bmsx/memory_map.h"

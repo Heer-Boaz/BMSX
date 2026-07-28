@@ -12,7 +12,7 @@ import {
 	IO_CART_STATUS,
 	IRQ_CARTRIDGE_SLOT0,
 	IRQ_CARTRIDGE_SLOT1,
-} from '../../bus/io';
+} from '../../../spec/bmsx/io';
 import type { Value } from '../../cpu/value';
 import {
 	MAPPED_BUS_CARTRIDGE_SLOT1,
@@ -42,11 +42,13 @@ import {
 	CARTRIDGE_STATUS_SELECTED_SLOT1,
 	CARTRIDGE_STATUS_SLOT0_PRESENT,
 	CARTRIDGE_STATUS_SLOT1_PRESENT,
+	type CartridgeSlotIndex,
+} from '../../../spec/bmsx/cartridge';
+import {
 	type CartridgeByteView,
 	type CartridgeControllerState,
 	type CartridgeSlotMedia,
 	type CartridgeSlotMediaPair,
-	type CartridgeSlotIndex,
 	type CartridgeSlotState,
 } from './contracts';
 

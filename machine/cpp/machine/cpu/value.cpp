@@ -2,7 +2,7 @@
 
 #include <cmath>
 
-#include "machine/common/number_format.h"
+#include "common/number_format.h"
 
 namespace bmsx {
 

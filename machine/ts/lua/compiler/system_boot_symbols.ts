@@ -1,4 +1,4 @@
-import { LUA_BOOT_PRIMITIVES } from '../../machine/firmware/boot_primitives';
+import { LUA_BOOT_PRIMITIVES } from '../../spec/blua32/builtin';
 
 export const SYSTEM_ROM_BOOT_HELPER_NAMES = [
 	'clock_now',

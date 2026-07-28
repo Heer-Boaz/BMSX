@@ -3,7 +3,7 @@ import {
 	APU_FILTER_COEFFICIENT_FRACTION_BITS,
 	APU_FILTER_COEFFICIENT_ONE,
 	APU_FILTER_CONTROL_ENABLE,
-} from './contracts';
+} from '../../../spec/audio/apu';
 
 function saturateFilterSample(value: number): number {
 	if (value < -0x8000) {

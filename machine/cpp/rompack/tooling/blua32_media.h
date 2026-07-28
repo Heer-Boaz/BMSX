@@ -1,7 +1,8 @@
 #pragma once
 
 #include "rompack/tooling/blua32_image.h"
-#include "machine/devices/cartridge/contracts.h"
+#include "spec/bmsx/cartridge.h"
+#include "spec/blua32/execution_domain.h"
 #include "rompack/tooling/blua32_symbols.h"
 
 #include <array>
@@ -28,7 +29,7 @@ auto loadBlua32ToolingImage(
 
 auto blua32ToolingImageForDomain(
 	const Blua32ToolingMedia& media,
-	int executionDomainId
+	ExecutionDomainId executionDomainId
 ) -> const Blua32ToolingImage*;
 
 } // namespace bmsx

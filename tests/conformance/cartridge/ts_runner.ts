@@ -54,7 +54,7 @@ async function main(): Promise<void> {
 		readFile(bootableCartPath),
 	]);
 	const platform = new ConformancePlatform();
-	const { runtime } = await prepareMachineRuntime({
+	const runtime = await prepareMachineRuntime({
 		systemRom,
 		cartridgeSlots: [dataRom, bootableCartRom],
 		platform,

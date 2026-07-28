@@ -6,8 +6,8 @@
 #include <vector>
 
 #include "common/primitives.h"
-#include "machine/execution_address_space.h"
 #include "machine/cpu/value.h"
+#include "spec/blua32/execution_domain.h"
 
 namespace bmsx {
 
@@ -55,7 +55,7 @@ struct DecodedInstructionPage {
 };
 
 struct Blua32ExecutionImage {
-	int executionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
+	ExecutionDomainId executionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	u32 irqFunctionAddress = 0;
 	u32 functionTableAddress = 0;
 	u32 functionCount = 0;

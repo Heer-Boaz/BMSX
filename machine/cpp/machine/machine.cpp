@@ -1,8 +1,6 @@
 #include "machine/machine.h"
 
 #include "machine/model_registry.h"
-#include "rompack/format.h"
-
 #include <stdexcept>
 
 namespace bmsx {

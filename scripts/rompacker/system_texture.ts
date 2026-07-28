@@ -1,4 +1,4 @@
-import { GX_GPU_VRAM_HEIGHT, GX_GPU_VRAM_WIDTH } from '../../machine/ts/machine/devices/gx/vram_address';
+import { GX_GPU_VRAM_HEIGHT, GX_GPU_VRAM_WIDTH } from '../../machine/ts/spec/gx/vram';
 
 export const GX_SYSTEM_TEXTURE_ASSET_ID = 'gx_system_texture';
 export const GX_SYSTEM_VRAM_WIDTH = 256;

@@ -4,7 +4,7 @@ import {
 	IO_APU_TRANSFER_ADDRESS,
 	IO_APU_TRANSFER_CONTROL,
 	IO_APU_TRANSFER_DATA,
-} from '../../bus/io';
+} from '../../../spec/bmsx/io';
 import type { Memory } from '../../memory/memory';
 import { cyclesUntilBudgetUnits } from '../../scheduler/budget';
 import { DEVICE_SERVICE_APU_TRANSFER, type DeviceScheduler } from '../../scheduler/device';
@@ -22,7 +22,7 @@ import {
 	APU_TRANSFER_MODE_MASK,
 	APU_TRANSFER_MODE_STOP,
 	APU_TRANSFER_WORDS_PER_SECOND,
-} from './contracts';
+} from '../../../spec/audio/apu';
 import type { ApuSampleMemory } from './sample_memory';
 import type { ApuSampleTransferState } from './save_state';
 

@@ -1,6 +1,6 @@
 #include "machine/devices/gx/vram_power_on.h"
 
-#include "machine/common/hash.h"
+#include "common/hash.h"
 #include "machine/devices/gx/gpu_command_buffer.h"
 
 namespace bmsx {

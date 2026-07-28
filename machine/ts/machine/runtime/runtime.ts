@@ -14,7 +14,7 @@ import { LuaScratchState } from './lua_scratch';
 import { refreshDeviceTimings } from './timing/config';
 import { HZ_SCALE } from './timing/constants';
 import type { GxGpuPcrtcTiming } from '../devices/gx/gpu_pcrtc';
-import { GX_GPU_VRAM_BYTE_COUNT } from '../devices/gx/vram_address';
+import { GX_GPU_VRAM_BYTE_COUNT } from '../../spec/gx/vram';
 import { Machine } from '../machine';
 import type { RuntimeInputSource } from './input';
 import { BASE_RAM_USED_SIZE } from '../../spec/bmsx/memory_map';

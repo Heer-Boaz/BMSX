@@ -1,14 +1,12 @@
-import {
-	APU_EVENT_NONE,
-	type ApuAudioSlot,
-} from './contracts';
+import { APU_EVENT_NONE } from '../../../spec/audio/apu';
+import { type ApuAudioSlot } from './contracts';
 import {
 	IO_APU_EVENT_KIND,
 	IO_APU_EVENT_SEQ,
 	IO_APU_EVENT_SLOT,
 	IO_APU_EVENT_SOURCE_ADDR,
 	IRQ_APU,
-} from '../../bus/io';
+} from '../../../spec/bmsx/io';
 import type { Memory } from '../../memory/memory';
 import type { IrqController } from '../irq/controller';
 

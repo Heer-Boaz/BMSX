@@ -1,7 +1,7 @@
 #include "audio/output_resampler.h"
 
 #include "machine/common/numeric.h"
-#include "machine/devices/audio/contracts.h"
+#include "spec/audio/apu.h"
 #include "machine/devices/audio/output_ring.h"
 
 namespace bmsx {

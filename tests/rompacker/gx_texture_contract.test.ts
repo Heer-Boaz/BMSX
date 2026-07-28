@@ -19,7 +19,7 @@ import {
 	decodeBlua32SymbolsImage,
 } from '../../machine/ts/rompack/tooling/blua32_symbols';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
-import { LUA_BOOT_PRIMITIVES } from '../../machine/ts/machine/firmware/boot_primitives';
+import { LUA_BOOT_PRIMITIVES } from '../../machine/ts/spec/blua32/builtin';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { layoutRomAssetPayloads } from '../../machine/ts/rompack/asset_layout';

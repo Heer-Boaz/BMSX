@@ -1,13 +1,11 @@
-import { asStringId, valueIsString } from '../../machine/cpu/value';
 import type {
 	Program,
+	ProgramConstant,
 	ProgramModuleExport,
 	ProgramModuleProto,
 	ProgramRuntimeSymbols,
 	Proto,
 } from './program';
-
-export type ProgramObjectConstant = null | boolean | number | string;
 
 export type ProgramObjectVectorTable = {
 	resetProtoIndex: number;
@@ -43,7 +41,7 @@ export type ProgramObjectSections = {
 		protos: Proto[];
 	};
 	rodata: {
-		constPool: ProgramObjectConstant[];
+		constPool: ProgramConstant[];
 		moduleProtos: ProgramModuleProto[];
 		moduleExports: ProgramModuleExport[];
 		staticModulePaths: string[];
@@ -92,17 +90,10 @@ export function encodeProgramObjectSections(
 	rodataBytes: Uint8Array,
 	rodataSymbols: ProgramRodataSymbol[],
 ): ProgramObjectSections {
-	const constPool: ProgramObjectConstant[] = new Array(program.constPool.length);
-	for (let index = 0; index < program.constPool.length; index += 1) {
-		const value = program.constPool[index];
-		constPool[index] = valueIsString(value)
-			? program.constPoolStringPool.toString(asStringId(value))
-			: value as ProgramObjectConstant;
-	}
 	return {
 		text: { code: program.code, protos: program.protos },
 		rodata: {
-			constPool,
+			constPool: program.constPool,
 			moduleProtos: program.moduleProtos,
 			moduleExports: program.moduleExports,
 			staticModulePaths,

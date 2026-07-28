@@ -1,6 +1,6 @@
 #include "rompack/tooling/blua32_media.h"
 
-#include "rompack/loader.h"
+#include "rompack/image.h"
 #include "rompack/toc.h"
 
 #include <utility>
@@ -40,7 +40,7 @@ auto loadBlua32ToolingImage(
 
 auto blua32ToolingImageForDomain(
 	const Blua32ToolingMedia& media,
-	int executionDomainId
+	ExecutionDomainId executionDomainId
 ) -> const Blua32ToolingImage* {
 	if (executionDomainId < 0) {
 		return media.system ? &*media.system : nullptr;

@@ -27,7 +27,7 @@ import {
 	IO_SYS_BUS_FAULT_ADDR,
 	IO_SYS_BUS_FAULT_CODE,
 	IRQ_VBLANK,
-} from '../../machine/ts/machine/bus/io';
+} from '../../machine/ts/spec/bmsx/io';
 import { transformFixed16 } from '../../machine/ts/machine/common/numeric';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';

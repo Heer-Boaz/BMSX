@@ -1,4 +1,4 @@
-import { gxGpuVramYAddress } from './vram_address';
+import { gxGpuVramYAddress } from '../../../spec/gx/vram';
 
 export const GX_GPU_RESET_DISPLAY_MODE_WORD = 0x00000009;
 export const GX_GPU_RESET_HORIZONTAL_DISPLAY_RANGE_WORD = 0x00c60260;

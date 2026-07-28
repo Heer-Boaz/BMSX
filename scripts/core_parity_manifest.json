@@ -239,13 +239,17 @@
 			"pattern": "machine/ts/rompack/asset_layout.ts",
 			"category": "rompacker_tooling",
 			"reason": "rompacker_payload_layout_for_generated_cart_asset_symbols_native_consumes_compiled_rom"
+		},
+		{
+			"pattern": "machine/ts/rompack/system.ts",
+			"category": "rompacker_tooling",
+			"reason": "system_rom_build_identity_and_ts_host_asset_layer_metadata_native_executes_compiled_system_rom_directly"
 		}
 	],
 	"core_roots": [
 		"machine/ts/common/taskgate.ts",
 		"machine/ts/core/machine_manager.ts",
 		"machine/ts/core/rom_boot_manager.ts",
-		"machine/ts/core/system.ts",
 		"machine/ts/machine/firmware/globals.ts",
 		"machine/ts/machine/machine.ts",
 		"machine/ts/machine/runtime/boot_timing.ts",
@@ -279,20 +283,31 @@
 		"machine/ts/common/vector.ts",
 		"machine/ts/common/lower_bound.ts",
 		"machine/ts/common/scratchstack.ts",
-		"machine/ts/machine/common/hash.ts",
+		"machine/ts/common/hash.ts",
 		"machine/ts/machine/model_registry.ts",
 		"machine/ts/machine/devices/audio/biquad_filter.ts",
 		"machine/ts/machine/devices/audio/output.ts",
 		"machine/ts/machine/devices/gx/gpu_display.ts",
 		"machine/ts/machine/devices/gx/gte.ts",
 		"machine/ts/spec/bmsx/memory_map.ts",
+		"machine/ts/spec/bmsx/cartridge.ts",
+		"machine/ts/spec/bmsx/io.ts",
 		"machine/ts/spec/bmsx/rom_header.ts",
+		"machine/ts/spec/bmsx/rom_package.ts",
+		"machine/ts/spec/bmsx/rom_toc.ts",
+		"machine/ts/spec/audio/apu.ts",
+		"machine/ts/spec/blua32/builtin.ts",
 		"machine/ts/spec/blua32/cop0.ts",
+		"machine/ts/spec/blua32/execution_domain.ts",
 		"machine/ts/spec/blua32/image_format.ts",
 		"machine/ts/spec/blua32/instruction_format.ts",
 		"machine/ts/spec/blua32/memory_access_kind.ts",
 		"machine/ts/machine/cpu/string_pool.ts",
 		"machine/ts/spec/blua32/opcode.ts",
+		"machine/ts/spec/gx/gp0.ts",
+		"machine/ts/spec/gx/vram.ts",
+		"machine/ts/spec/imgdec/registers.ts",
+		"machine/ts/spec/imgdec/stream.ts",
 		"machine/ts/machine/runtime/timing/state.ts",
 		"machine/ts/render/runtime_state.ts",
 		"machine/ts/rompack/tokens.ts",
@@ -310,11 +325,74 @@
 			"reason": "gx_gpu_raw_display_register_decode_contract"
 		},
 		{
-			"ts": "machine/ts/machine/devices/gx/gp0.ts",
+			"ts": "machine/ts/spec/gx/gp0.ts",
 			"cpp": [
-				"machine/cpp/machine/devices/gx/gp0.h"
+				"machine/cpp/spec/gx/gp0.h"
 			],
 			"reason": "gx_gp0_protocol_contract"
+		},
+		{
+			"ts": "machine/ts/spec/gx/vram.ts",
+			"cpp": [
+				"machine/cpp/spec/gx/vram.h"
+			],
+			"reason": "gx_vram_physical_geometry_and_address_contract"
+		},
+		{
+			"ts": "machine/ts/spec/bmsx/cartridge.ts",
+			"cpp": [
+				"machine/cpp/spec/bmsx/cartridge.h"
+			],
+			"reason": "cartridge_socket_board_and_mailbox_wire_contract"
+		},
+		{
+			"ts": "machine/ts/spec/audio/apu.ts",
+			"cpp": [
+				"machine/cpp/spec/audio/apu.h"
+			],
+			"reason": "apu_register_fifo_fixed_point_and_event_wire_contract"
+		},
+		{
+			"ts": "machine/ts/spec/imgdec/registers.ts",
+			"cpp": [
+				"machine/cpp/spec/imgdec/registers.h"
+			],
+			"reason": "imgdec_register_and_fifo_wire_contract"
+		},
+		{
+			"ts": "machine/ts/spec/imgdec/stream.ts",
+			"cpp": [
+				"machine/cpp/spec/imgdec/stream.h"
+			],
+			"reason": "imgdec_stream_token_and_history_contract"
+		},
+		{
+			"ts": "machine/ts/spec/blua32/builtin.ts",
+			"cpp": [
+				"machine/cpp/spec/blua32/builtin.h"
+			],
+			"reason": "blua32_builtin_id_and_firmware_global_abi_contract"
+		},
+		{
+			"ts": "machine/ts/spec/blua32/execution_domain.ts",
+			"cpp": [
+				"machine/cpp/spec/blua32/execution_domain.h"
+			],
+			"reason": "blua32_physical_execution_domain_identifier_contract"
+		},
+		{
+			"ts": "machine/ts/spec/bmsx/rom_package.ts",
+			"cpp": [
+				"machine/cpp/spec/bmsx/rom_package.h"
+			],
+			"reason": "rom_package_header_wire_layout_contract"
+		},
+		{
+			"ts": "machine/ts/spec/bmsx/rom_toc.ts",
+			"cpp": [
+				"machine/cpp/spec/bmsx/rom_toc.h"
+			],
+			"reason": "rom_toc_header_entry_and_asset_type_wire_layout_contract"
 		},
 		{
 			"ts": "machine/ts/machine/devices/gx/gte.ts",
@@ -396,9 +474,9 @@
 			"reason": "runtime_timing_state_contract"
 		},
 		{
-			"ts": "machine/ts/machine/bus/io.ts",
+			"ts": "machine/ts/spec/bmsx/io.ts",
 			"cpp": [
-				"machine/cpp/machine/bus/io.h"
+				"machine/cpp/spec/bmsx/io.h"
 			],
 			"reason": "machine_io_register_map_contract"
 		},
@@ -410,10 +488,10 @@
 			"reason": "runtime_timing_constants_contract"
 		},
 		{
-			"ts": "machine/ts/machine/common/hash.ts",
+			"ts": "machine/ts/common/hash.ts",
 			"cpp": [
-				"machine/cpp/machine/common/hash.h",
-				"machine/cpp/machine/common/hash.cpp"
+				"machine/cpp/common/hash.h",
+				"machine/cpp/common/hash.cpp"
 			],
 			"reason": "common_hash_contract"
 		},
@@ -911,14 +989,14 @@
 			"present": [
 				"machine/firmware/system/imgdec.lua",
 				"machine/ts/machine/devices/imgdec/controller.ts",
-				"machine/ts/machine/devices/imgdec/contracts.ts",
-				"machine/ts/machine/devices/gx/gp0.ts",
+				"machine/ts/spec/imgdec/stream.ts",
+				"machine/ts/spec/gx/gp0.ts",
 				"machine/ts/rompack/tooling/gx_texture_codec.ts",
 				"machine/ts/rompack/tooling/imgdec_codec.ts",
 				"machine/cpp/machine/devices/imgdec/controller.h",
 				"machine/cpp/machine/devices/imgdec/controller.cpp",
-				"machine/cpp/machine/devices/imgdec/contracts.h",
-				"machine/cpp/machine/devices/gx/gp0.h"
+				"machine/cpp/spec/imgdec/stream.h",
+				"machine/cpp/spec/gx/gp0.h"
 			],
 			"absent": [
 				"scripts/rompacker/gx_texture.ts",
@@ -1500,9 +1578,9 @@
 			]
 		},
 		{
-			"ts": "machine/ts/machine/common/hash.ts",
+			"ts": "machine/ts/common/hash.ts",
 			"cpp": [
-				"machine/cpp/machine/common/hash.h"
+				"machine/cpp/common/hash.h"
 			]
 		},
 		{

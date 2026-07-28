@@ -1,4 +1,4 @@
-import { IRQ_VBLANK } from '../bus/io';
+import { IRQ_VBLANK } from '../../spec/bmsx/io';
 import {
 	GX_GPU_PCRTC_RUNTIME_EDGE_VBLANK_BEGIN,
 	GX_GPU_PCRTC_RUNTIME_EDGE_VBLANK_END,

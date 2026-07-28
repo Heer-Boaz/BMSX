@@ -1,10 +1,10 @@
 #include "machine/devices/audio/service_clock.h"
 
-#include "machine/bus/io.h"
+#include "spec/bmsx/io.h"
 #include "machine/cpu/value.h"
 #include "machine/devices/audio/active_slots.h"
 #include "machine/devices/audio/command_fifo.h"
-#include "machine/devices/audio/contracts.h"
+#include "spec/audio/apu.h"
 #include "machine/devices/audio/output.h"
 #include "machine/devices/audio/sample_memory.h"
 #include "machine/devices/dma/controller.h"

@@ -1,4 +1,4 @@
-import { IO_IRQ_ACK, IO_IRQ_FLAGS, IO_IRQ_MASK } from '../../bus/io';
+import { IO_IRQ_ACK, IO_IRQ_FLAGS, IO_IRQ_MASK } from '../../../spec/bmsx/io';
 import type { Value } from '../../cpu/value';
 import { Memory } from '../../memory/memory';
 import type { IrqControllerState } from './save_state';

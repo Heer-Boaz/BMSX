@@ -1,7 +1,7 @@
 #include "machine/devices/system/controller.h"
 
 #include "common/utf8.h"
-#include "machine/bus/io.h"
+#include "spec/bmsx/io.h"
 #include "machine/cpu/cpu.h"
 #include "machine/devices/dma/controller.h"
 #include "machine/devices/geometry/controller.h"

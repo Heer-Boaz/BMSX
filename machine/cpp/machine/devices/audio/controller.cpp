@@ -2,7 +2,7 @@
 
 #include "machine/devices/audio/command_latch.h"
 
-#include "machine/bus/io.h"
+#include "spec/bmsx/io.h"
 #include "machine/cpu/value.h"
 #include "machine/devices/dma/controller.h"
 #include "machine/devices/irq/controller.h"

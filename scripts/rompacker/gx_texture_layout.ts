@@ -1,14 +1,14 @@
 import {
 	GX_GPU_VRAM_HEIGHT,
 	GX_GPU_VRAM_WIDTH,
-} from '../../machine/ts/machine/devices/gx/vram_address';
+} from '../../machine/ts/spec/gx/vram';
 import {
 	GX_SYSTEM_VRAM_HEIGHT,
 	GX_SYSTEM_VRAM_WIDTH,
 	GX_SYSTEM_VRAM_X,
 	GX_SYSTEM_VRAM_Y,
 } from './system_texture';
-import { GX_GPU_CLUT_4BIT_WORDS } from '../../machine/ts/machine/devices/gx/gp0';
+import { GX_GPU_CLUT_4BIT_WORDS } from '../../machine/ts/spec/gx/gp0';
 import { GX_CART_TEXTURE_GROUP_ID_LIMIT } from './texture_atlas_contract';
 
 export type GxTextureBuildMode = 'direct16' | 'palette4';

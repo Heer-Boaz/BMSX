@@ -1,6 +1,6 @@
 import { load as loadYaml } from 'js-yaml';
 
-import { APU_SAMPLE_RATE_HZ } from '../../machine/devices/audio/contracts';
+import { APU_SAMPLE_RATE_HZ } from '../../spec/audio/apu';
 
 // Authoring-time AEM schema and validation. AEM may describe audio behavior,
 // but it is not the machine audio device or a host-side shortcut around MMIO.

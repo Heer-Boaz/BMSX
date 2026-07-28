@@ -50,7 +50,7 @@ See `docs/architecture.md` for the machine/host boundary rules.
 
 ## Architecture Doctrine
 
-BMSX can be playful at the product level, but the machine layer is not a service grab bag. New cart-visible hardware should be represented as memory-mapped devices under `machine/devices`, with register addresses in `machine/bus/io`.
+BMSX can be playful at the product level, but the machine layer is not a service grab bag. New cart-visible hardware should be represented as memory-mapped devices under `machine/devices`, with register addresses in `spec/bmsx/io`.
 
 The documentation is the hardware manual. Machine ABI values such as register
 addresses, status bits, IRQ flags, packet fields, opcodes, fixed-point words,

@@ -1,10 +1,10 @@
 #include "machine/devices/dma/controller.h"
 
-#include "machine/bus/io.h"
+#include "spec/bmsx/io.h"
 #include "machine/cpu/cpu.h"
 #include "machine/devices/gx/gpu.h"
 #include "machine/devices/gx/gpu_command_buffer.h"
-#include "machine/devices/gx/gp0.h"
+#include "spec/gx/gp0.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/map.h"
 #include "spec/bmsx/memory_map.h"

@@ -26,7 +26,7 @@ import {
 	gxGpuLocalMemoryAddressGpu24,
 	gxGpuLocalMemoryAddressGx16,
 } from '../../../machine/devices/gx/gpu_local_memory';
-import { GX_GPU_VRAM_WORD_COUNT } from '../../../machine/devices/gx/vram_address';
+import { GX_GPU_VRAM_WORD_COUNT } from '../../../spec/gx/vram';
 import type { GxGpuPipelineState } from '../backend';
 import { gxGpuSoftwareRgb555ChannelTo8, gxGpuSoftwareVram } from './gx_gpu_vram';
 

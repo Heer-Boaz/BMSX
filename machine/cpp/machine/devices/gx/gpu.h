@@ -2,7 +2,7 @@
 
 #include "common/primitives.h"
 #include "machine/devices/gx/device_output.h"
-#include "machine/devices/gx/gp0.h"
+#include "spec/gx/gp0.h"
 #include "machine/devices/gx/gpu_command_buffer.h"
 #include "machine/devices/gx/gpu_display.h"
 #include "machine/devices/gx/gpu_pcrtc.h"
@@ -17,6 +17,13 @@ namespace bmsx {
 
 constexpr u32 GX_GPU_SERVICE_RUNTIME_EDGE_MASK = 0x3u;
 constexpr u32 GX_GPU_SERVICE_TIMING_PUBLISHED = 1u << 2u;
+
+constexpr u32 GX_GPU_GP0_INGRESS_COMMAND = 0u;
+constexpr u32 GX_GPU_GP0_INGRESS_FIXED = 1u;
+constexpr u32 GX_GPU_GP0_INGRESS_IMAGE_HEADER = 2u;
+constexpr u32 GX_GPU_GP0_INGRESS_IMAGE_PAYLOAD = 3u;
+constexpr u32 GX_GPU_GP0_INGRESS_POLYLINE_HEADER = 4u;
+constexpr u32 GX_GPU_GP0_INGRESS_POLYLINE_PAYLOAD = 5u;
 
 class Memory;
 class CPU;

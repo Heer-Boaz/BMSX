@@ -1,13 +1,13 @@
 import {
 	GX_GPU_TEXTURE_MODE_PALETTE4,
 	GX_GPU_TEXTURE_MODE_PALETTE8,
-	type GxGpuCommandBufferView,
 	gxGpuDrawingAreaBottomExclusive,
 	gxGpuDrawingAreaLeft,
 	gxGpuDrawingAreaRightExclusive,
 	gxGpuDrawingAreaTop,
 	gxGpuSigned11,
-} from '../../../machine/devices/gx/gpu_command_buffer';
+} from '../../../spec/gx/gp0';
+import { type GxGpuCommandBufferView } from '../../../machine/devices/gx/gpu_command_buffer';
 import {
 	GX_GPU_TRIANGLE_ATTRIBUTE_FRACTION_BITS,
 	GX_GPU_TRIANGLE_ATTRIBUTE_PLANE_PHASES,

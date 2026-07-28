@@ -1,7 +1,7 @@
 #include "machine/devices/audio/status_register.h"
 
 #include "machine/devices/audio/command_fifo.h"
-#include "machine/devices/audio/contracts.h"
+#include "spec/audio/apu.h"
 #include "machine/devices/audio/service_clock.h"
 #include "machine/devices/audio/slot_bank.h"
 #include "machine/devices/device_status.h"

@@ -1,6 +1,6 @@
 #include "machine/devices/audio/command_fifo.h"
 
-#include "machine/bus/io.h"
+#include "spec/bmsx/io.h"
 #include "machine/memory/memory.h"
 
 namespace bmsx {

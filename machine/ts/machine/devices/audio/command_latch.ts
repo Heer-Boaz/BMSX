@@ -4,7 +4,7 @@ import {
 	APU_GAIN_Q12_ONE,
 	APU_GENERATOR_NONE,
 	APU_RATE_STEP_Q16_ONE,
-} from './contracts';
+} from '../../../spec/audio/apu';
 import {
 	IO_APU_CMD,
 	IO_APU_FADE_SAMPLES,
@@ -28,7 +28,7 @@ import {
 	IO_APU_SOURCE_LOOP_START_SAMPLE,
 	IO_APU_SOURCE_SAMPLE_RATE_HZ,
 	IO_APU_START_SAMPLE,
-} from '../../bus/io';
+} from '../../../spec/bmsx/io';
 import type { Memory } from '../../memory/memory';
 
 function resetApuCommandLatch(memory: Memory): void {

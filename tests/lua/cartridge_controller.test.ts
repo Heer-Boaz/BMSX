@@ -26,7 +26,7 @@ import {
 	IO_IRQ_FLAGS,
 	IRQ_CARTRIDGE_SLOT0,
 	IRQ_CARTRIDGE_SLOT1,
-} from '../../machine/ts/machine/bus/io';
+} from '../../machine/ts/spec/bmsx/io';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import {
@@ -43,8 +43,8 @@ import {
 	CARTRIDGE_STATUS_SELECTED_SLOT1,
 	CARTRIDGE_STATUS_SLOT0_PRESENT,
 	CARTRIDGE_STATUS_SLOT1_PRESENT,
-	type CartridgeSlotMediaPair,
-} from '../../machine/ts/machine/devices/cartridge/contracts';
+} from '../../machine/ts/spec/bmsx/cartridge';
+import { type CartridgeSlotMediaPair } from '../../machine/ts/machine/devices/cartridge/contracts';
 import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import {

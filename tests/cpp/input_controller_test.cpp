@@ -1,4 +1,4 @@
-#include "machine/bus/io.h"
+#include "spec/bmsx/io.h"
 #include "machine/machine.h"
 #include "spec/bmsx/memory_map.h"
 #include "machine/memory/memory.h"

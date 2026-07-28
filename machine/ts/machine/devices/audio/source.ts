@@ -12,6 +12,8 @@ import {
 	APU_PARAMETER_SOURCE_SAMPLE_RATE_HZ_INDEX,
 	APU_PARAMETER_GENERATOR_DUTY_Q12_INDEX,
 	APU_PARAMETER_GENERATOR_KIND_INDEX,
+} from '../../../spec/audio/apu';
+import {
 	type ApuAudioSource,
 	type ApuParameterRegisterWords,
 } from './contracts';

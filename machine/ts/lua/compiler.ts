@@ -40,11 +40,11 @@ import {
 	type LuaGotoStatement,
 } from './syntax/ast';
 import { OpCode, encodeFixedCallArgCount } from '../spec/blua32/opcode';
-import { StringValue, asStringId, isTruthyValue, valueIsString, type Value } from '../machine/cpu/value';
 import type { SourceRange } from '../rompack/tooling/blua32_symbols';
 import type {
 	LocalSlotDebug,
 	Program,
+	ProgramConstant,
 	ProgramMetadata,
 	ProgramModuleExport,
 	ProgramModuleProto,
@@ -79,7 +79,6 @@ import {
 	type ProgramRodataSymbol,
 	type ProgramObjectImage,
 } from './compiler/program_object';
-import { StringPool } from '../machine/cpu/string_pool';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_EXT_CONST, MAX_EXT_REGISTER_BC, MAX_OPERAND_BITS, MAX_SIGNED_BX, MIN_SIGNED_BX, writeInstruction } from '../spec/blua32/instruction_format';
 import { buildLuaSemanticFrontend, type LuaBoundReference, type LuaSemanticFrontend, type LuaSemanticFrontendFile } from './semantic/frontend';
 import { ValueKindFlowAnalyzer, type SymbolFlowState } from './compiler/compile_value_flow';
@@ -99,8 +98,9 @@ import {
 import { MemoryAccessKind } from '../spec/blua32/memory_access_kind';
 import { getMemoryAccessKindForName } from './memory_access_syntax';
 import { writeLE16, writeLE32 } from '../common/endian';
+import { utf8CodepointCount } from '../common/utf8';
 import { isReservedIntrinsicName } from './semantic/common';
-import { IO_IRQ_FLAGS } from '../machine/bus/io';
+import { IO_IRQ_FLAGS } from '../spec/bmsx/io';
 import { COP0_BAD_ADDRESS, COP0_CAUSE, COP0_EPC, COP0_EXEC, COP0_LUA_FAULT_REASON, COP0_STATUS } from '../spec/blua32/cop0';
 import { buildProgramResumePoints } from './compiler/resume_points';
 
@@ -196,7 +196,7 @@ type LocalBinding = {
 	name: string;
 	reg: number;
 	kind: LocalBindingKind;
-	constValue: Value | null;
+	constValue: ProgramConstant | null;
 	hasConstValue: boolean;
 	constNumberValue: number;
 	hasConstNumberValue: boolean;
@@ -376,10 +376,9 @@ const isSmallSignedImmediate = (value: number): boolean =>
 	Number.isInteger(value) && value >= MIN_SIGNED_BX && value <= MAX_SIGNED_BX;
 
 class ProgramBuilder {
-	public readonly constPool: Value[];
-	public readonly stringPool: StringPool;
+	public readonly constPool: ProgramConstant[];
 	public readonly optLevel: OptimizationLevel;
-	private readonly constSlotByKey: Map<string, number>;
+	private readonly constSlotByValue: Map<ProgramConstant, number>;
 	private readonly systemGlobalNameSet: Set<string>;
 	private readonly systemGlobalNames: string[] = [];
 	private readonly systemGlobalSlotByName: Map<string, number> = new Map();
@@ -427,10 +426,9 @@ class ProgramBuilder {
 		programDomain: ProgramCompileDomain,
 	) {
 		this.constPool = [];
-		this.stringPool = new StringPool();
 		this.optLevel = optLevel;
 		this.programDomain = programDomain;
-		this.constSlotByKey = new Map<string, number>();
+		this.constSlotByValue = new Map<ProgramConstant, number>();
 		this.systemGlobalNameSet = new Set(SYSTEM_ROM_BOOT_SYMBOL_NAME_SET);
 		if (programDomain === 'system') {
 			for (let index = 0; index < SYSTEM_ROM_BOOT_PRIMITIVE_NAMES.length; index += 1) {
@@ -439,23 +437,14 @@ class ProgramBuilder {
 		}
 	}
 
-	public internString(value: string): StringValue {
-		return StringValue.get(this.stringPool.intern(value));
-	}
-
-	public constIndexString(value: string): number {
-		return this.constIndex(this.internString(value));
-	}
-
-	public constIndex(value: Value): number {
-		const key = this.makeConstKey(value);
-		const slot = this.constSlotByKey.get(key);
+	public constIndex(value: ProgramConstant): number {
+		const slot = this.constSlotByValue.get(value);
 		if (slot) {
 			return slot - 1;
 		}
 		const index = this.constPool.length;
 		this.constPool.push(value);
-		this.constSlotByKey.set(key, index + 1);
+		this.constSlotByValue.set(value, index + 1);
 		return index;
 	}
 
@@ -899,8 +888,6 @@ class ProgramBuilder {
 				moduleProtos: this.moduleProtoEntries,
 				moduleExports: this.moduleExportEntries,
 				moduleProtoMap,
-				stringPool: this.stringPool,
-				constPoolStringPool: this.stringPool,
 			},
 			metadata,
 			constRelocs: fullConstRelocs,
@@ -914,13 +901,6 @@ class ProgramBuilder {
 		};
 	}
 
-	private makeConstKey(value: Value): string {
-		if (value === null) return 'nil';
-		if (typeof value === 'number') return `n:${value}`;
-		if (valueIsString(value)) return `s:${value.id}`;
-		if (typeof value === 'boolean') return `b:${value ? 1 : 0}`;
-		return `o:${String(value)}`;
-	}
 }
 
 function recordModuleExportContracts(programBuilder: ProgramBuilder, moduleCompileContext: ModuleCompileContext): void {
@@ -1050,13 +1030,13 @@ class FunctionBuilder {
 	private currentFlowState: SymbolFlowState = new Map();
 	private exportRootSymbolHandleResolved = false;
 	private exportRootSymbolHandleCache: string | null = null;
-	private compileTimeValue: Value = null;
+	private compileTimeValue: ProgramConstant = null;
 	private compileTimeNumberValue = 0;
 	private compileTimeHasNumberValue = false;
 	private compileTimeBooleanValue = false;
 	private compileTimeHasBooleanValue = false;
 	private readonly initializerFlags: number[] = [];
-	private readonly initializerValues: Value[] = [];
+	private readonly initializerValues: ProgramConstant[] = [];
 	private readonly initializerNumberValues: number[] = [];
 	private readonly initializerBooleanValues: boolean[] = [];
 	private readonly initializerValueRegs: number[] = [];
@@ -1570,9 +1550,8 @@ class FunctionBuilder {
 		if (this.program.optLevel > 0) {
 			const optimized = optimizeInstructions(this.code, this.ranges, this.program.optLevel, {
 				constPool: this.program.constPool,
-				stringPool: this.program.stringPool,
 				relocatedConstIndices: this.program.relocatedConstIndexSet(),
-				constIndex: (value: Value) => this.program.constIndex(value),
+				constIndex: (value: ProgramConstant) => this.program.constIndex(value),
 				getClosureUpvalues: (protoIndex: number) => {
 					const proto = this.program.protos[protoIndex];
 					if (!proto) {
@@ -1869,7 +1848,7 @@ class FunctionBuilder {
 		definitionRange: LuaSourceRange,
 		scopeRange?: LuaSourceRange,
 		kind: LocalBindingKind = 'local',
-		constValue: Value | null = null,
+		constValue: ProgramConstant | null = null,
 		hasConstValue = false,
 		constClosureProtoIndex: number | null = null,
 		moduleBinding: ModuleBinding | null = null,
@@ -1927,7 +1906,7 @@ class FunctionBuilder {
 		decl: Decl,
 		definitionRange: LuaSourceRange,
 		scopeRange?: LuaSourceRange,
-		constValue: Value | null = null,
+		constValue: ProgramConstant | null = null,
 		hasConstValue = false,
 		constClosureProtoIndex: number | null = null,
 		moduleBinding: ModuleBinding | null = null,
@@ -2359,7 +2338,7 @@ class FunctionBuilder {
 				this.emitLoadConst(target, value.value);
 				return;
 			case 'string':
-				this.emitLoadConst(target, this.program.internString(value.value));
+				this.emitLoadConst(target, value.value);
 				return;
 			case 'bss_addr': {
 				const binding = this.program.bssBindingsBySymbolHandle.get(value.symbolHandle);
@@ -2655,7 +2634,7 @@ class FunctionBuilder {
 		if (symbolicReloc) {
 			return null;
 		}
-		return valueIsString(this.program.constPool[bx]) ? 'Lua string constant' : null;
+		return typeof this.program.constPool[bx] === 'string' ? 'Lua string constant' : null;
 	}
 
 	private assertStaticCallTargetCanEmit(op: OpCode, bx: number = 0, symbolicReloc?: Instruction['symbolicReloc']): void {
@@ -2733,26 +2712,56 @@ class FunctionBuilder {
 
 	private emitTableGetConst(target: number, tableReg: number, keyConst: number): void {
 		const keyValue = this.program.constPool[keyConst];
-		if (typeof keyValue === 'number' && Number.isInteger(keyValue) && keyValue >= 1 && keyValue <= MAX_SPECIALIZED_TABLE_OPERAND) {
-			this.emitABC(OpCode.GETI, target, tableReg, keyValue);
+		if (typeof keyValue === 'string') {
+			if (keyConst <= MAX_SPECIALIZED_TABLE_OPERAND) {
+				this.emitABC(OpCode.GETFIELD, target, tableReg, keyConst);
+				return;
+			}
+			this.emitABC(OpCode.GETT, target, tableReg, this.encodeConstOperand(keyConst), RK_C);
 			return;
 		}
-		if (valueIsString(keyValue) && keyConst <= MAX_SPECIALIZED_TABLE_OPERAND) {
-			this.emitABC(OpCode.GETFIELD, target, tableReg, keyConst);
-			return;
+		switch (keyValue) {
+			case null:
+			case false:
+			case true:
+				break;
+			default:
+				if (
+					Number.isInteger(keyValue)
+					&& keyValue >= 1
+					&& keyValue <= MAX_SPECIALIZED_TABLE_OPERAND
+				) {
+					this.emitABC(OpCode.GETI, target, tableReg, keyValue);
+					return;
+				}
 		}
 		this.emitABC(OpCode.GETT, target, tableReg, this.encodeConstOperand(keyConst), RK_C);
 	}
 
 	private emitTableSetConst(tableReg: number, keyConst: number, valueReg: number): void {
 		const keyValue = this.program.constPool[keyConst];
-		if (typeof keyValue === 'number' && Number.isInteger(keyValue) && keyValue >= 1 && keyValue <= MAX_SPECIALIZED_TABLE_OPERAND) {
-			this.emitABC(OpCode.SETI, tableReg, keyValue, valueReg, RK_C);
+		if (typeof keyValue === 'string') {
+			if (keyConst <= MAX_SPECIALIZED_TABLE_OPERAND) {
+				this.emitABC(OpCode.SETFIELD, tableReg, keyConst, valueReg, RK_C);
+				return;
+			}
+			this.emitABC(OpCode.SETT, tableReg, this.encodeConstOperand(keyConst), valueReg, RK_B | RK_C);
 			return;
 		}
-		if (valueIsString(keyValue) && keyConst <= MAX_SPECIALIZED_TABLE_OPERAND) {
-			this.emitABC(OpCode.SETFIELD, tableReg, keyConst, valueReg, RK_C);
-			return;
+		switch (keyValue) {
+			case null:
+			case false:
+			case true:
+				break;
+			default:
+				if (
+					Number.isInteger(keyValue)
+					&& keyValue >= 1
+					&& keyValue <= MAX_SPECIALIZED_TABLE_OPERAND
+				) {
+					this.emitABC(OpCode.SETI, tableReg, keyValue, valueReg, RK_C);
+					return;
+				}
 		}
 		this.emitABC(OpCode.SETT, tableReg, this.encodeConstOperand(keyConst), valueReg, RK_B | RK_C);
 	}
@@ -2799,35 +2808,36 @@ class FunctionBuilder {
 		this.emitABC(value ? OpCode.KTRUE : OpCode.KFALSE, target, 0, 0);
 	}
 
-	private emitLoadConst(target: number, value: Value): void {
-		const normalizedValue = typeof value === 'string' ? this.program.internString(value) : value;
-		if (normalizedValue === null) {
+	private emitLoadConst(target: number, value: ProgramConstant): void {
+		if (value === null) {
 			this.emitABC(OpCode.KNIL, target, 0, 0);
 			return;
 		}
-		if (typeof normalizedValue === 'boolean') {
-			this.emitABC(normalizedValue ? OpCode.KTRUE : OpCode.KFALSE, target, 0, 0);
+		if (typeof value === 'boolean') {
+			this.emitABC(value ? OpCode.KTRUE : OpCode.KFALSE, target, 0, 0);
 			return;
 		}
-		if (typeof normalizedValue === 'number') {
-			if (normalizedValue === 0) {
-				this.emitABC(OpCode.K0, target, 0, 0);
-				return;
-			}
-			if (normalizedValue === 1) {
-				this.emitABC(OpCode.K1, target, 0, 0);
-				return;
-			}
-			if (normalizedValue === -1) {
-				this.emitABC(OpCode.KM1, target, 0, 0);
-				return;
-			}
-			if (isSmallSignedImmediate(normalizedValue)) {
-				this.emitABx(OpCode.KSMI, target, normalizedValue);
-				return;
-			}
+		if (typeof value === 'string') {
+			this.emitABx(OpCode.LOADK, target, this.program.constIndex(value));
+			return;
 		}
-		const index = this.program.constIndex(normalizedValue);
+		if (value === 0) {
+			this.emitABC(OpCode.K0, target, 0, 0);
+			return;
+		}
+		if (value === 1) {
+			this.emitABC(OpCode.K1, target, 0, 0);
+			return;
+		}
+		if (value === -1) {
+			this.emitABC(OpCode.KM1, target, 0, 0);
+			return;
+		}
+		if (isSmallSignedImmediate(value)) {
+			this.emitABx(OpCode.KSMI, target, value);
+			return;
+		}
+		const index = this.program.constIndex(value);
 		this.emitABx(OpCode.LOADK, target, index);
 	}
 
@@ -2871,7 +2881,7 @@ class FunctionBuilder {
 		return closureProtoIndex;
 	}
 
-	private setCompileTimeValue(value: Value): boolean {
+	private setCompileTimeValue(value: ProgramConstant): boolean {
 		this.compileTimeValue = value;
 		this.compileTimeHasNumberValue = false;
 		this.compileTimeHasBooleanValue = false;
@@ -2912,7 +2922,7 @@ class FunctionBuilder {
 			case 'number':
 				return this.setCompileTimeNumberValue(value.value);
 			case 'string':
-				return this.setCompileTimeValue(this.program.internString(value.value));
+				return this.setCompileTimeValue(value.value);
 			case 'bss_addr':
 			case 'data_addr':
 			case 'rodata_addr':
@@ -2925,7 +2935,7 @@ class FunctionBuilder {
 			case LuaSyntaxKind.NumericLiteralExpression:
 				return this.setCompileTimeNumberValue((expression as LuaNumericLiteralExpression).value);
 			case LuaSyntaxKind.StringLiteralExpression:
-				return this.setCompileTimeValue(this.program.internString((expression as LuaStringLiteralExpression).value));
+				return this.setCompileTimeValue((expression as LuaStringLiteralExpression).value);
 			case LuaSyntaxKind.BooleanLiteralExpression:
 				return this.setCompileTimeBooleanValue((expression as LuaBooleanLiteralExpression).value);
 			case LuaSyntaxKind.NilLiteralExpression:
@@ -2962,22 +2972,22 @@ class FunctionBuilder {
 			}
 			case LuaUnaryOperator.Not:
 				return this.evaluateCompileTimeExpression(expression.operand)
-					&& this.setCompileTimeBooleanValue(!isTruthyValue(this.compileTimeValue));
+					&& this.setCompileTimeBooleanValue(this.compileTimeValue === null || this.compileTimeValue === false);
 			case LuaUnaryOperator.Length: {
 				const arrayLength = this.resolveStaticStorageArrayLength(expression.operand);
 				if (arrayLength !== undefined) {
 					return this.setCompileTimeNumberValue(arrayLength);
 				}
 				return this.evaluateCompileTimeExpression(expression.operand)
-					&& valueIsString(this.compileTimeValue)
-					&& this.setCompileTimeNumberValue(this.program.stringPool.codepointCount(asStringId(this.compileTimeValue)));
+					&& typeof this.compileTimeValue === 'string'
+					&& this.setCompileTimeNumberValue(utf8CodepointCount(this.compileTimeValue));
 			}
 			case LuaUnaryOperator.BitwiseNot: {
 				const value = this.evaluateCompileTimeNumber(expression.operand);
 				return (value || value === 0) && this.setCompileTimeNumberValue(~value);
 			}
 			case LuaUnaryOperator.StringId:
-				return this.evaluateCompileTimeExpression(expression.operand) && valueIsString(this.compileTimeValue);
+				return this.evaluateCompileTimeExpression(expression.operand) && typeof this.compileTimeValue === 'string';
 			default:
 				return false;
 		}
@@ -3017,8 +3027,8 @@ class FunctionBuilder {
 						if (arrayLength !== undefined) {
 							return arrayLength;
 						}
-						if (this.evaluateCompileTimeExpression(unary.operand) && valueIsString(this.compileTimeValue)) {
-							return this.program.stringPool.codepointCount(asStringId(this.compileTimeValue));
+						if (this.evaluateCompileTimeExpression(unary.operand) && typeof this.compileTimeValue === 'string') {
+							return utf8CodepointCount(this.compileTimeValue);
 						}
 						return;
 					}
@@ -3075,10 +3085,10 @@ class FunctionBuilder {
 		switch (expression.operator) {
 			case LuaBinaryOperator.And:
 				return this.evaluateCompileTimeExpression(expression.left)
-					&& (!isTruthyValue(this.compileTimeValue) || this.evaluateCompileTimeExpression(expression.right));
+					&& ((this.compileTimeValue === null || this.compileTimeValue === false) || this.evaluateCompileTimeExpression(expression.right));
 			case LuaBinaryOperator.Or:
 				return this.evaluateCompileTimeExpression(expression.left)
-					&& (isTruthyValue(this.compileTimeValue) || this.evaluateCompileTimeExpression(expression.right));
+					&& ((this.compileTimeValue !== null && this.compileTimeValue !== false) || this.evaluateCompileTimeExpression(expression.right));
 			case LuaBinaryOperator.Equal: {
 				const equal = this.evaluateCompileTimeEquality(expression.left, expression.right);
 				return (equal || equal === false) && this.setCompileTimeBooleanValue(equal);
@@ -3117,13 +3127,24 @@ class FunctionBuilder {
 		const left = this.compileTimeValue;
 		const leftNumber = this.compileTimeNumberValue;
 		const leftHasNumber = this.compileTimeHasNumberValue;
-		if (!this.isCompileTimeConcatValue(left, leftHasNumber)) return false;
+		let leftText: string;
+		if (leftHasNumber) {
+			leftText = String(leftNumber);
+		} else if (typeof left === 'string') {
+			leftText = left;
+		} else {
+			return false;
+		}
 		if (!this.evaluateCompileTimeExpression(rightExpression)) return false;
-		if (!this.isCompileTimeConcatValue(this.compileTimeValue, this.compileTimeHasNumberValue)) return false;
-		return this.setCompileTimeValue(this.program.internString(
-			this.toCompileTimeString(left, leftNumber, leftHasNumber)
-			+ this.toCompileTimeString(this.compileTimeValue, this.compileTimeNumberValue, this.compileTimeHasNumberValue),
-		));
+		let rightText: string;
+		if (this.compileTimeHasNumberValue) {
+			rightText = String(this.compileTimeNumberValue);
+		} else if (typeof this.compileTimeValue === 'string') {
+			rightText = this.compileTimeValue;
+		} else {
+			return false;
+		}
+		return this.setCompileTimeValue(leftText + rightText);
 	}
 
 	private evaluateCompileTimeEquality(leftExpression: LuaExpression, rightExpression: LuaExpression): boolean | undefined {
@@ -3137,8 +3158,8 @@ class FunctionBuilder {
 		if (leftHasNumber) {
 			return this.compileTimeHasNumberValue && leftNumber === this.compileTimeNumberValue;
 		}
-		if (valueIsString(left)) {
-			return valueIsString(this.compileTimeValue) && this.program.stringPool.toString(asStringId(left)) === this.program.stringPool.toString(asStringId(this.compileTimeValue));
+		if (typeof left === 'string') {
+			return typeof this.compileTimeValue === 'string' && left === this.compileTimeValue;
 		}
 		if (leftHasBoolean) {
 			return this.compileTimeHasBooleanValue && leftBoolean === this.compileTimeBooleanValue;
@@ -3155,21 +3176,13 @@ class FunctionBuilder {
 		if (leftHasNumber && this.compileTimeHasNumberValue) {
 			return this.evaluateCompileTimeNumberOrStringRelational(expression.operator, leftNumber, this.compileTimeNumberValue);
 		}
-		if (valueIsString(left) && valueIsString(this.compileTimeValue)) {
+		if (typeof left === 'string' && typeof this.compileTimeValue === 'string') {
 			return this.evaluateCompileTimeNumberOrStringRelational(
 				expression.operator,
-				this.program.stringPool.toString(asStringId(left)),
-				this.program.stringPool.toString(asStringId(this.compileTimeValue)),
+				left,
+				this.compileTimeValue,
 			);
 		}
-	}
-
-	private isCompileTimeConcatValue(value: Value, hasNumberValue: boolean): boolean {
-		return hasNumberValue || valueIsString(value);
-	}
-
-	private toCompileTimeString(value: Value, numberValue: number, hasNumberValue: boolean): string {
-		return hasNumberValue ? String(numberValue) : this.program.stringPool.toString(asStringId(value as StringValue));
 	}
 
 	private compileStatement(statement: LuaStatement): void {
@@ -3356,7 +3369,7 @@ class FunctionBuilder {
 			if (sectionName !== '.rodata') {
 				throw new Error(`Static string fields are only valid in .rodata storage.`);
 			}
-			if (!this.evaluateCompileTimeExpression(expression) || !valueIsString(this.compileTimeValue)) {
+			if (!this.evaluateCompileTimeExpression(expression) || typeof this.compileTimeValue !== 'string') {
 				throw new Error('.rodata string initializer must be a compile-time string.');
 			}
 			const constIndex = this.program.constIndex(this.compileTimeValue);
@@ -3365,10 +3378,10 @@ class FunctionBuilder {
 			return;
 		}
 		const value = this.evaluateCompileTimeNumber(expression);
-		if (!Number.isInteger(value)) {
+		if (value === undefined || !Number.isInteger(value)) {
 			throw new Error(`${sectionName} primitive initializer must be a compile-time integer.`);
 		}
-		const word = value as number;
+		const word = value;
 		switch (type.access.memoryKind) {
 			case MemoryAccessKind.U8:
 				out[byteOffset] = word & 0xff;
@@ -3511,7 +3524,7 @@ class FunctionBuilder {
 					initializerModuleBinding = this.initializerModuleBindings[i];
 				}
 			}
-			let constValue: Value | null = null;
+			let constValue: ProgramConstant | null = null;
 			let initializerNumberValue = 0;
 			let initializerHasNumberValue = false;
 			let initializerBooleanValue = false;
@@ -3671,7 +3684,7 @@ class FunctionBuilder {
 				const member = expr as LuaMemberExpression;
 				const baseReg = this.allocTemp();
 				this.compileExpressionInto(targetPreparation.base, baseReg, 1);
-				const keyConst = this.program.constIndexString(member.identifier);
+				const keyConst = this.program.constIndex(member.identifier);
 				targets.push({ kind: 'table', tableReg: baseReg, keyConst });
 				continue;
 			}
@@ -4113,13 +4126,13 @@ class FunctionBuilder {
 		}
 		this.emitReferenceLoad(target.baseReference, baseReg);
 		for (let i = 0; i < target.intermediateKeys.length; i += 1) {
-			const key = this.program.constIndexString(target.intermediateKeys[i]);
+			const key = this.program.constIndex(target.intermediateKeys[i]);
 			const nextReg = this.allocTemp();
 			this.emitTableGetConst(nextReg, baseReg, key);
 			this.emitABC(OpCode.MOV, baseReg, nextReg, 0);
 		}
 		const keyName = target.finalKey;
-		const keyConst = this.program.constIndexString(keyName);
+		const keyConst = this.program.constIndex(keyName);
 		this.emitTableSetConst(baseReg, keyConst, closureReg);
 	}
 
@@ -4151,7 +4164,7 @@ class FunctionBuilder {
 					this.emitLoadConst(target, expression.value);
 					return;
 				case LuaSyntaxKind.StringLiteralExpression:
-					this.emitLoadConst(target, this.program.internString(expression.value));
+					this.emitLoadConst(target, expression.value);
 					return;
 				case LuaSyntaxKind.BooleanLiteralExpression:
 					this.emitLoadBool(target, expression.value);
@@ -4229,7 +4242,7 @@ class FunctionBuilder {
 		}
 		const baseReg = this.allocTemp();
 		this.compileExpressionInto(expression.base, baseReg, 1);
-		const key = this.program.constIndexString(expression.identifier);
+		const key = this.program.constIndex(expression.identifier);
 		this.emitTableGetConst(target, baseReg, key);
 	}
 
@@ -4317,7 +4330,7 @@ class FunctionBuilder {
 			if (field.kind === LuaTableFieldKind.IdentifierKey) {
 				const valueReg = this.allocTemp();
 				this.compileExpressionInto(field.value, valueReg, 1);
-				const keyConst = this.program.constIndexString(field.name);
+				const keyConst = this.program.constIndex(field.name);
 				this.emitTableSetConst(target, keyConst, valueReg);
 				this.tempTop = tempBase;
 				continue;
@@ -4956,7 +4969,7 @@ class FunctionBuilder {
 		if (methodName) {
 			this.reserveTempRange(callBase, 2);
 			this.compileExpressionInto(expression.callee, callBase, 1);
-			const methodKey = this.program.constIndexString(methodName);
+			const methodKey = this.program.constIndex(methodName);
 			this.emitSelf(callBase, callBase, methodKey);
 		} else if (moduleCallSlot !== undefined) {
 			this.emitModuleExportCallTargetLoad(moduleCallSlot, callBase);

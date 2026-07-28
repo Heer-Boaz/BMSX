@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { AudioOutputResampler } from '../../machine/ts/audio/output_resampler';
-import { APU_SAMPLE_RATE_HZ } from '../../machine/ts/machine/devices/audio/contracts';
+import { APU_SAMPLE_RATE_HZ } from '../../machine/ts/spec/audio/apu';
 import { APU_OUTPUT_RING_CAPACITY_FRAMES, ApuOutputRing } from '../../machine/ts/machine/devices/audio/output_ring';
 
 function sourceFrames(frameCount: number): Int16Array {

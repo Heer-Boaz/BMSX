@@ -1,4 +1,4 @@
-import { IO_APU_CMD } from '../../bus/io';
+import { IO_APU_CMD } from '../../../spec/bmsx/io';
 import type { Memory } from '../../memory/memory';
 import type { DeviceScheduler } from '../../scheduler/device';
 import type { DeviceStatusLatch } from '../device_status';
@@ -10,7 +10,7 @@ import {
 	APU_CMD_SET_SLOT_GAIN,
 	APU_CMD_STOP_SLOT,
 	APU_FAULT_BAD_CMD,
-} from './contracts';
+} from '../../../spec/audio/apu';
 import type { ApuServiceClock } from './service_clock';
 
 export class ApuCommandIngress {

@@ -13,7 +13,6 @@
 #include "machine/memory/map.h"
 #include "machine/runtime/boot_timing.h"
 #include "render/shared/bmsx_font.h"
-#include "rompack/format.h"
 #include <cstdio>
 #include <cstdlib>
 #include <chrono>

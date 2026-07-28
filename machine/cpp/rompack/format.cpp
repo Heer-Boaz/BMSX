@@ -6,8 +6,6 @@
 #include "common/endian.h"
 #include "spec/bmsx/memory_map.h"
 #include "spec/bmsx/rom_header.h"
-#include <algorithm>
-#include <cstring>
 
 namespace bmsx {
 namespace {
@@ -21,14 +19,14 @@ void assertSectionRange(size_t offset, size_t length, size_t total, const char* 
 } // namespace
 
 void writeCartRomHeader(u8* data, const CartRomHeader& header) {
-	std::copy(CART_ROM_MAGIC_BYTES.begin(), CART_ROM_MAGIC_BYTES.end(), data);
-	writeLE32(data + 4, header.headerSize);
-	writeLE32(data + 8, header.manifestOffset);
-	writeLE32(data + 12, header.manifestLength);
-	writeLE32(data + 16, header.tocOffset);
-	writeLE32(data + 20, header.tocLength);
-	writeLE32(data + 24, header.dataOffset);
-	writeLE32(data + 28, header.dataLength);
+	writeLE32(data + CART_ROM_HEADER_MAGIC_OFFSET, CART_ROM_MAGIC);
+	writeLE32(data + CART_ROM_HEADER_SIZE_OFFSET, header.headerSize);
+	writeLE32(data + CART_ROM_HEADER_MANIFEST_OFFSET, header.manifestOffset);
+	writeLE32(data + CART_ROM_HEADER_MANIFEST_LENGTH_OFFSET, header.manifestLength);
+	writeLE32(data + CART_ROM_HEADER_TOC_OFFSET, header.tocOffset);
+	writeLE32(data + CART_ROM_HEADER_TOC_LENGTH_OFFSET, header.tocLength);
+	writeLE32(data + CART_ROM_HEADER_DATA_OFFSET, header.dataOffset);
+	writeLE32(data + CART_ROM_HEADER_DATA_LENGTH_OFFSET, header.dataLength);
 	writeLE32(data + BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET, header.blua32ImageOffset);
 	writeLE32(
 		data + BMSX_ROM_HEADER_BLUA32_IMAGE_BYTE_COUNT_OFFSET,
@@ -54,39 +52,39 @@ void writeCartRomHeader(u8* data, const CartRomHeader& header) {
 		data + BMSX_ROM_HEADER_BLUA32_STATIC_LAYOUT_TOKEN_HI_OFFSET,
 		header.blua32StaticLayoutTokenHi
 	);
-	writeLE32(data + 60, 0u);
-	writeLE32(data + 64, header.metadataOffset);
-	writeLE32(data + 68, header.metadataLength);
+	writeLE32(data + CART_ROM_HEADER_RESERVED_OFFSET, 0u);
+	writeLE32(data + CART_ROM_HEADER_METADATA_OFFSET, header.metadataOffset);
+	writeLE32(data + CART_ROM_HEADER_METADATA_LENGTH_OFFSET, header.metadataLength);
 	switch (header.vdpClass) {
 	case MachineVdpClass::Psx:
-		writeLE32(data + 72, CART_VDP_CLASS_PSX);
+		writeLE32(data + CART_ROM_HEADER_VDP_CLASS_OFFSET, CART_VDP_CLASS_PSX);
 		break;
 	}
-	writeLE32(data + 76, header.cartridgeBoardWord);
-	writeLE32(data + 80, header.cartridgeRamByteCount);
+	writeLE32(data + CART_ROM_HEADER_CARTRIDGE_BOARD_OFFSET, header.cartridgeBoardWord);
+	writeLE32(data + CART_ROM_HEADER_CARTRIDGE_RAM_BYTES_OFFSET, header.cartridgeRamByteCount);
 }
 
 CartRomHeader parseCartHeader(const u8* data, size_t size) {
 	if (size < CART_ROM_HEADER_SIZE) {
 		throw BMSX_RUNTIME_ERROR("ROM payload is too small for cart header.");
 	}
-	if (std::memcmp(data, CART_ROM_MAGIC_BYTES.data(), CART_ROM_MAGIC_BYTES.size()) != 0) {
+	if (readLE32(data + CART_ROM_HEADER_MAGIC_OFFSET) != CART_ROM_MAGIC) {
 		throw BMSX_RUNTIME_ERROR("Invalid ROM cart header.");
 	}
 	CartRomHeader header{};
-	header.headerSize = readLE32(data + 4);
+	header.headerSize = readLE32(data + CART_ROM_HEADER_SIZE_OFFSET);
 	if (header.headerSize < CART_ROM_HEADER_SIZE) {
 		throw BMSX_RUNTIME_ERROR("ROM header size is too small.");
 	}
 	if (header.headerSize > size) {
 		throw BMSX_RUNTIME_ERROR("ROM header size exceeds payload length.");
 	}
-	header.manifestOffset = readLE32(data + 8);
-	header.manifestLength = readLE32(data + 12);
-	header.tocOffset = readLE32(data + 16);
-	header.tocLength = readLE32(data + 20);
-	header.dataOffset = readLE32(data + 24);
-	header.dataLength = readLE32(data + 28);
+	header.manifestOffset = readLE32(data + CART_ROM_HEADER_MANIFEST_OFFSET);
+	header.manifestLength = readLE32(data + CART_ROM_HEADER_MANIFEST_LENGTH_OFFSET);
+	header.tocOffset = readLE32(data + CART_ROM_HEADER_TOC_OFFSET);
+	header.tocLength = readLE32(data + CART_ROM_HEADER_TOC_LENGTH_OFFSET);
+	header.dataOffset = readLE32(data + CART_ROM_HEADER_DATA_OFFSET);
+	header.dataLength = readLE32(data + CART_ROM_HEADER_DATA_LENGTH_OFFSET);
 	header.blua32ImageOffset = readLE32(data + BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET);
 	header.blua32ImageByteCount = readLE32(
 		data + BMSX_ROM_HEADER_BLUA32_IMAGE_BYTE_COUNT_OFFSET
@@ -106,15 +104,15 @@ CartRomHeader parseCartHeader(const u8* data, size_t size) {
 	header.blua32StaticLayoutTokenHi = readLE32(
 		data + BMSX_ROM_HEADER_BLUA32_STATIC_LAYOUT_TOKEN_HI_OFFSET
 	);
-	header.metadataOffset = readLE32(data + 64);
-	header.metadataLength = readLE32(data + 68);
-	const u32 vdpClassWord = readLE32(data + 72);
+	header.metadataOffset = readLE32(data + CART_ROM_HEADER_METADATA_OFFSET);
+	header.metadataLength = readLE32(data + CART_ROM_HEADER_METADATA_LENGTH_OFFSET);
+	const u32 vdpClassWord = readLE32(data + CART_ROM_HEADER_VDP_CLASS_OFFSET);
 	if (vdpClassWord != CART_VDP_CLASS_PSX) {
 		throw BMSX_RUNTIME_ERROR("Unsupported ROM VDP class marker.");
 	}
 	header.vdpClass = MachineVdpClass::Psx;
-	header.cartridgeBoardWord = readLE32(data + 76);
-	header.cartridgeRamByteCount = readLE32(data + 80);
+	header.cartridgeBoardWord = readLE32(data + CART_ROM_HEADER_CARTRIDGE_BOARD_OFFSET);
+	header.cartridgeRamByteCount = readLE32(data + CART_ROM_HEADER_CARTRIDGE_RAM_BYTES_OFFSET);
 	if (header.cartridgeRamByteCount > CART_RAM_SIZE) {
 		throw BMSX_RUNTIME_ERROR("Cartridge RAM byte count exceeds the socket aperture.");
 	}

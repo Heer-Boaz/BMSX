@@ -1,4 +1,4 @@
-import { GX_GPU_GP0_CPU_TO_VRAM_FIRST } from '../../machine/devices/gx/gp0';
+import { GX_GPU_GP0_CPU_TO_VRAM_FIRST } from '../../spec/gx/gp0';
 import type { Direct16GxTexture } from './gx_texture_codec';
 
 export const GX_GPU_CPU_TO_VRAM_HEADER_BYTES = 12;

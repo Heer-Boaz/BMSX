@@ -5,7 +5,12 @@ import { test } from 'node:test';
 
 import { SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { BLUA32_IMAGE_ID } from '../../machine/ts/rompack/tooling/blua32_image';
-import { CART_ROM_HEADER_SIZE, parseCartHeader, type RomAsset, type RomManifest } from '../../machine/ts/rompack/format';
+import { CART_ROM_HEADER_SIZE } from '../../machine/ts/spec/bmsx/rom_package';
+import {
+	parseCartHeader,
+	type RomAsset,
+	type RomManifest,
+} from '../../machine/ts/rompack/format';
 import { parseCartridgeIndex } from '../../machine/ts/rompack/loader';
 import { BLUA32_SYMBOLS_IMAGE_ID } from '../../machine/ts/rompack/tooling/blua32_symbols';
 import { buildBlua32Tail } from '../../machine/ts/rompack/tooling/blua32_tail';

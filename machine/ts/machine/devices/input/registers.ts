@@ -11,7 +11,7 @@ import {
 	IO_INP_POINTER_WHEEL,
 	IO_INP_POINTER_X,
 	IO_INP_POINTER_Y,
-} from '../../bus/io';
+} from '../../../spec/bmsx/io';
 import { IO_WORD_SIZE } from '../../../spec/bmsx/memory_map';
 import { encodeSignedFix16 } from '../../common/numeric';
 import type { Value } from '../../cpu/value';

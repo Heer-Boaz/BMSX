@@ -4,7 +4,7 @@ import {
 	INSTRUCTION_BYTES,
 	readInstructionWord,
 } from '../../machine/ts/spec/blua32/instruction_format';
-import type { ExecutionDomainId } from '../../machine/ts/machine/execution_address_space';
+import type { ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
 import type { SourceRange } from '../../machine/ts/rompack/tooling/blua32_symbols';
 import {
 	blua32ToolingImageForDomain,

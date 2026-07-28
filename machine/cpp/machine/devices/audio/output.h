@@ -5,6 +5,7 @@
 #include "machine/devices/audio/badp_decoder.h"
 #include "machine/devices/audio/biquad_filter.h"
 #include "machine/devices/audio/contracts.h"
+#include "spec/audio/apu.h"
 #include "machine/devices/audio/output_ring.h"
 #include "machine/devices/audio/playback.h"
 #include "machine/devices/audio/save_state.h"

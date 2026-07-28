@@ -1,7 +1,7 @@
 #pragma once
 
 #include "common/primitives.h"
-#include "machine/bus/io.h"
+#include "spec/bmsx/io.h"
 #include "machine/memory/bus_signals.h"
 
 #include <array>

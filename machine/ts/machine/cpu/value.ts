@@ -1,4 +1,5 @@
-import { formatNumber } from '../common/number_format';
+import { formatNumber } from '../../common/number_format';
+import { BuiltinFunctionId } from '../../spec/blua32/builtin';
 import type { Closure } from './closure';
 import type { StringId, StringPool } from './string_pool';
 import type { Table } from './table';
@@ -79,21 +80,6 @@ export type BuiltinFunctionCost = {
 	perArg: number;
 	perRet: number;
 };
-
-export const enum BuiltinFunctionId {
-	Next,
-	Type,
-	SetMetatable,
-	GetMetatable,
-	RawGet,
-	RawSet,
-	Select,
-	StringByte,
-	StringChar,
-	Error,
-	PCall,
-	XPCall,
-}
 
 export type BuiltinFunction = {
 	readonly [VALUE_TAG]: ValueTag.BuiltinFunction;

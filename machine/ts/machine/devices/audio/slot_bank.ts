@@ -2,10 +2,12 @@ import {
 	APU_PARAMETER_REGISTER_COUNT,
 	APU_PARAMETER_SOURCE_ADDR_INDEX,
 	APU_SLOT_COUNT,
-	APU_SLOT_PHASE_IDLE,
-	APU_SLOT_PHASE_PLAYING,
 	APU_SLOT_REGISTER_WORD_COUNT,
 	apuSlotRegisterWordIndex,
+} from '../../../spec/audio/apu';
+import {
+	APU_SLOT_PHASE_IDLE,
+	APU_SLOT_PHASE_PLAYING,
 	type ApuAudioSlot,
 	type ApuParameterRegisterWords,
 	type ApuSlotPhase,

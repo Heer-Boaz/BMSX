@@ -3,7 +3,7 @@
 
 namespace bmsx {
 
-uint32_t RAM_SIZE = DEFAULT_RAM_SIZE;
+uint32_t RAM_SIZE = BMSX_RAM_BYTES;
 uint32_t RAM_END = RAM_BASE + RAM_SIZE;
 
 void configureMemoryMap(uint32_t ramBytes) {

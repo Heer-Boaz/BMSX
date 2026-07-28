@@ -15,16 +15,16 @@ import { Memory } from '../../machine/ts/machine/memory/memory';
 import { resolveRuntimeTiming } from '../../machine/ts/machine/runtime/boot_timing';
 import type { RuntimeInputSource } from '../../machine/ts/machine/runtime/input';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
+import { CART_ROM_HEADER_SIZE } from '../../machine/ts/spec/bmsx/rom_package';
 import {
-	CART_ROM_HEADER_SIZE,
 	parseCartHeader,
 	type CartridgeIndex,
 	type CartRomHeader,
 	type CartridgeLayerId,
 	type MachineManifest,
-	type RuntimeRomPackage,
+	type RomToolingPackage,
 } from '../../machine/ts/rompack/format';
-import type { RuntimeRomLayer } from '../../machine/ts/rompack/loader';
+import type { RomToolingLayer } from '../../machine/ts/rompack/loader';
 import { writeCartRomHeader } from '../../machine/ts/rompack/tooling/header_encode';
 import { cartridgeSlots } from './cartridge';
 
@@ -62,7 +62,7 @@ export function createTestRuntime(systemRom: Uint8Array): Runtime {
 	}, new TestRuntimeInputSource());
 }
 
-function runtimePackage(projectRootPath: string): RuntimeRomPackage {
+function toolingPackage(projectRootPath: string): RomToolingPackage {
 	return {
 		img: {},
 		audio: {},
@@ -111,17 +111,17 @@ function emptyRomHeader(): CartRomHeader {
 	};
 }
 
-function runtimeRomLayer(
+function romToolingLayer(
 	id: CartridgeLayerId,
 	projectRootPath: string,
 	payload: Uint8Array,
-): RuntimeRomLayer {
+): RomToolingLayer {
 	return {
 		id,
 		header: parseCartHeader(payload),
 		index: cartridgeIndex(projectRootPath),
 		payload,
-		package: runtimePackage(projectRootPath),
+		package: toolingPackage(projectRootPath),
 	};
 }
 
@@ -177,16 +177,16 @@ export function createTestRuntimeSourceState(
 	cartridgeLuaSources: readonly [LuaSourceRegistry | null, LuaSourceRegistry | null],
 	activeDomain: ResourceDomain,
 ): RuntimeSourceState {
-	const cartridgeLayers: [RuntimeRomLayer | null, RuntimeRomLayer | null] = [
+	const cartridgeLayers: [RomToolingLayer | null, RomToolingLayer | null] = [
 		cartridgeLuaSources[0]
-			? runtimeRomLayer('cart', cartridgeLuaSources[0].projectRootPath, createTestRuntimeRomPayload())
+			? romToolingLayer('cart', cartridgeLuaSources[0].projectRootPath, createTestRuntimeRomPayload())
 			: null,
 		cartridgeLuaSources[1]
-			? runtimeRomLayer('cart', cartridgeLuaSources[1].projectRootPath, createTestRuntimeRomPayload())
+			? romToolingLayer('cart', cartridgeLuaSources[1].projectRootPath, createTestRuntimeRomPayload())
 			: null,
 	];
 	const sources = createRuntimeSourceState(
-		runtimeRomLayer('system', systemLuaSources.projectRootPath, createTestRuntimeRomPayload()),
+		romToolingLayer('system', systemLuaSources.projectRootPath, createTestRuntimeRomPayload()),
 		cartridgeLayers,
 	);
 	return installSourceRegistries(sources, systemLuaSources, cartridgeLuaSources, activeDomain);
@@ -197,7 +197,7 @@ export function createTestSystemImageRuntimeSourceState(
 	systemLuaSources: LuaSourceRegistry,
 ): RuntimeSourceState {
 	const sources = createRuntimeSourceState(
-		runtimeRomLayer('system', systemLuaSources.projectRootPath, systemRom),
+		romToolingLayer('system', systemLuaSources.projectRootPath, systemRom),
 		[null, null],
 	);
 	return installSourceRegistries(

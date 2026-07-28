@@ -1,14 +1,48 @@
 import type { RomAsset } from '../format';
 import { hashAssetId } from '../tokens';
+import { assetTypeToId } from '../toc';
 import {
-	assetTypeToId,
+	ROM_TOC_ENTRY_ASSET_TYPE_OFFSET,
+	ROM_TOC_ENTRY_COLLISION_BIN_END_OFFSET,
+	ROM_TOC_ENTRY_COLLISION_BIN_START_OFFSET,
+	ROM_TOC_ENTRY_COMPILED_END_OFFSET,
+	ROM_TOC_ENTRY_COMPILED_START_OFFSET,
+	ROM_TOC_ENTRY_DATA_END_OFFSET,
+	ROM_TOC_ENTRY_DATA_START_OFFSET,
 	ROM_TOC_ENTRY_SIZE,
+	ROM_TOC_ENTRY_METADATA_END_OFFSET,
+	ROM_TOC_ENTRY_METADATA_START_OFFSET,
+	ROM_TOC_ENTRY_MODEL_TEXTURE_END_OFFSET,
+	ROM_TOC_ENTRY_MODEL_TEXTURE_START_OFFSET,
+	ROM_TOC_ENTRY_NORMALIZED_SOURCE_PATH_LENGTH_OFFSET,
+	ROM_TOC_ENTRY_NORMALIZED_SOURCE_PATH_OFFSET,
+	ROM_TOC_ENTRY_OPERATION_OFFSET,
+	ROM_TOC_ENTRY_RESID_LENGTH_OFFSET,
+	ROM_TOC_ENTRY_RESID_OFFSET,
+	ROM_TOC_ENTRY_SOURCE_PATH_LENGTH_OFFSET,
+	ROM_TOC_ENTRY_SOURCE_PATH_OFFSET,
+	ROM_TOC_ENTRY_TOKEN_HI_OFFSET,
+	ROM_TOC_ENTRY_TOKEN_LO_OFFSET,
+	ROM_TOC_ENTRY_UPDATE_TIMESTAMP_HI_OFFSET,
+	ROM_TOC_ENTRY_UPDATE_TIMESTAMP_LO_OFFSET,
+	ROM_TOC_HEADER_ENTRY_COUNT_OFFSET,
+	ROM_TOC_HEADER_ENTRY_SIZE_OFFSET,
+	ROM_TOC_HEADER_ENTRY_TABLE_OFFSET,
+	ROM_TOC_HEADER_MAGIC_OFFSET,
+	ROM_TOC_HEADER_PROJECT_ROOT_LENGTH_OFFSET,
+	ROM_TOC_HEADER_PROJECT_ROOT_OFFSET,
+	ROM_TOC_HEADER_RESERVED_0_OFFSET,
+	ROM_TOC_HEADER_RESERVED_1_OFFSET,
+	ROM_TOC_HEADER_RESERVED_2_OFFSET,
 	ROM_TOC_HEADER_SIZE,
+	ROM_TOC_HEADER_SIZE_OFFSET,
+	ROM_TOC_HEADER_STRING_TABLE_LENGTH_OFFSET,
+	ROM_TOC_HEADER_STRING_TABLE_OFFSET,
 	ROM_TOC_INVALID_U32,
 	ROM_TOC_MAGIC,
 	ROM_TOC_OP_DELETE,
 	ROM_TOC_OP_NONE,
-} from '../toc';
+} from '../../spec/bmsx/rom_toc';
 
 type TocStringSlice = { offset: number; length: number };
 
@@ -77,28 +111,28 @@ export function encodeRomToc(params: { entries: RomAsset[]; projectRootPath?: st
 		const updateLo = updateTimestamp >>> 0;
 		const updateHi = Math.floor(updateTimestamp / 0x100000000) >>> 0;
 
-		writeU32(entryView, base + 0, token.lo);
-		writeU32(entryView, base + 4, token.hi);
-		writeU32(entryView, base + 8, typeId);
-		writeU32(entryView, base + 12, opId);
-		writeU32(entryView, base + 16, residRef.offset);
-		writeU32(entryView, base + 20, residRef.length);
-		writeU32(entryView, base + 24, sourceRef.offset);
-		writeU32(entryView, base + 28, sourceRef.length);
-		writeU32(entryView, base + 32, normalizedRef.offset);
-		writeU32(entryView, base + 36, normalizedRef.length);
-		writeU32(entryView, base + 40, asU32(entry.start));
-		writeU32(entryView, base + 44, asU32(entry.end));
-		writeU32(entryView, base + 48, asU32(entry.compiled_start));
-		writeU32(entryView, base + 52, asU32(entry.compiled_end));
-		writeU32(entryView, base + 56, asU32(entry.metabuffer_start));
-		writeU32(entryView, base + 60, asU32(entry.metabuffer_end));
-		writeU32(entryView, base + 64, asU32(entry.model_texture_start));
-		writeU32(entryView, base + 68, asU32(entry.model_texture_end));
-		writeU32(entryView, base + 72, asU32(entry.collision_bin_start));
-		writeU32(entryView, base + 76, asU32(entry.collision_bin_end));
-		writeU32(entryView, base + 80, updateLo);
-		writeU32(entryView, base + 84, updateHi);
+		writeU32(entryView, base + ROM_TOC_ENTRY_TOKEN_LO_OFFSET, token.lo);
+		writeU32(entryView, base + ROM_TOC_ENTRY_TOKEN_HI_OFFSET, token.hi);
+		writeU32(entryView, base + ROM_TOC_ENTRY_ASSET_TYPE_OFFSET, typeId);
+		writeU32(entryView, base + ROM_TOC_ENTRY_OPERATION_OFFSET, opId);
+		writeU32(entryView, base + ROM_TOC_ENTRY_RESID_OFFSET, residRef.offset);
+		writeU32(entryView, base + ROM_TOC_ENTRY_RESID_LENGTH_OFFSET, residRef.length);
+		writeU32(entryView, base + ROM_TOC_ENTRY_SOURCE_PATH_OFFSET, sourceRef.offset);
+		writeU32(entryView, base + ROM_TOC_ENTRY_SOURCE_PATH_LENGTH_OFFSET, sourceRef.length);
+		writeU32(entryView, base + ROM_TOC_ENTRY_NORMALIZED_SOURCE_PATH_OFFSET, normalizedRef.offset);
+		writeU32(entryView, base + ROM_TOC_ENTRY_NORMALIZED_SOURCE_PATH_LENGTH_OFFSET, normalizedRef.length);
+		writeU32(entryView, base + ROM_TOC_ENTRY_DATA_START_OFFSET, asU32(entry.start));
+		writeU32(entryView, base + ROM_TOC_ENTRY_DATA_END_OFFSET, asU32(entry.end));
+		writeU32(entryView, base + ROM_TOC_ENTRY_COMPILED_START_OFFSET, asU32(entry.compiled_start));
+		writeU32(entryView, base + ROM_TOC_ENTRY_COMPILED_END_OFFSET, asU32(entry.compiled_end));
+		writeU32(entryView, base + ROM_TOC_ENTRY_METADATA_START_OFFSET, asU32(entry.metabuffer_start));
+		writeU32(entryView, base + ROM_TOC_ENTRY_METADATA_END_OFFSET, asU32(entry.metabuffer_end));
+		writeU32(entryView, base + ROM_TOC_ENTRY_MODEL_TEXTURE_START_OFFSET, asU32(entry.model_texture_start));
+		writeU32(entryView, base + ROM_TOC_ENTRY_MODEL_TEXTURE_END_OFFSET, asU32(entry.model_texture_end));
+		writeU32(entryView, base + ROM_TOC_ENTRY_COLLISION_BIN_START_OFFSET, asU32(entry.collision_bin_start));
+		writeU32(entryView, base + ROM_TOC_ENTRY_COLLISION_BIN_END_OFFSET, asU32(entry.collision_bin_end));
+		writeU32(entryView, base + ROM_TOC_ENTRY_UPDATE_TIMESTAMP_LO_OFFSET, updateLo);
+		writeU32(entryView, base + ROM_TOC_ENTRY_UPDATE_TIMESTAMP_HI_OFFSET, updateHi);
 	}
 
 	const stringTable = concatArrays(stringChunks, stringTableLength);
@@ -107,18 +141,18 @@ export function encodeRomToc(params: { entries: RomAsset[]; projectRootPath?: st
 	const entryTableSize = entryBuffer.byteLength;
 	const stringTableOffset = ROM_TOC_HEADER_SIZE + entryTableSize;
 
-	writeU32(headerView, 0, ROM_TOC_MAGIC);
-	writeU32(headerView, 4, ROM_TOC_HEADER_SIZE);
-	writeU32(headerView, 8, ROM_TOC_ENTRY_SIZE);
-	writeU32(headerView, 12, entries.length);
-	writeU32(headerView, 16, ROM_TOC_HEADER_SIZE);
-	writeU32(headerView, 20, stringTableOffset);
-	writeU32(headerView, 24, stringTable.byteLength);
-	writeU32(headerView, 28, projectRootRef.offset);
-	writeU32(headerView, 32, projectRootRef.length);
-	writeU32(headerView, 36, 0);
-	writeU32(headerView, 40, 0);
-	writeU32(headerView, 44, 0);
+	writeU32(headerView, ROM_TOC_HEADER_MAGIC_OFFSET, ROM_TOC_MAGIC);
+	writeU32(headerView, ROM_TOC_HEADER_SIZE_OFFSET, ROM_TOC_HEADER_SIZE);
+	writeU32(headerView, ROM_TOC_HEADER_ENTRY_SIZE_OFFSET, ROM_TOC_ENTRY_SIZE);
+	writeU32(headerView, ROM_TOC_HEADER_ENTRY_COUNT_OFFSET, entries.length);
+	writeU32(headerView, ROM_TOC_HEADER_ENTRY_TABLE_OFFSET, ROM_TOC_HEADER_SIZE);
+	writeU32(headerView, ROM_TOC_HEADER_STRING_TABLE_OFFSET, stringTableOffset);
+	writeU32(headerView, ROM_TOC_HEADER_STRING_TABLE_LENGTH_OFFSET, stringTable.byteLength);
+	writeU32(headerView, ROM_TOC_HEADER_PROJECT_ROOT_OFFSET, projectRootRef.offset);
+	writeU32(headerView, ROM_TOC_HEADER_PROJECT_ROOT_LENGTH_OFFSET, projectRootRef.length);
+	writeU32(headerView, ROM_TOC_HEADER_RESERVED_0_OFFSET, 0);
+	writeU32(headerView, ROM_TOC_HEADER_RESERVED_1_OFFSET, 0);
+	writeU32(headerView, ROM_TOC_HEADER_RESERVED_2_OFFSET, 0);
 
 	return concatArrays([headerBuffer, entryBuffer, stringTable], stringTableOffset + stringTable.byteLength);
 }

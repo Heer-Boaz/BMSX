@@ -2,7 +2,7 @@ import {
 	APU_STATUS_BUSY,
 	APU_STATUS_CMD_FIFO_EMPTY,
 	APU_STATUS_CMD_FIFO_FULL,
-} from './contracts';
+} from '../../../spec/audio/apu';
 import type { DeviceScheduler } from '../../scheduler/device';
 import type { ApuCommandFifo } from './command_fifo';
 import type { ApuServiceClock } from './service_clock';

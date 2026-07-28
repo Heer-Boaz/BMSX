@@ -3,7 +3,7 @@
 #include "blua32_test_rom.h"
 #include "spec/blua32/instruction_format.h"
 #include "spec/blua32/opcode.h"
-#include "machine/firmware/boot_primitives.h"
+#include "spec/blua32/builtin.h"
 #include "rompack/tooling/blua32_symbols.h"
 
 #include <span>

@@ -5,7 +5,7 @@ import { encodeBinary } from '../../machine/ts/common/serializer/binencoder';
 import {
 	CARTRIDGE_BOARD_MAILBOX,
 	CARTRIDGE_BOARD_RAM,
-} from '../../machine/ts/machine/devices/cartridge/contracts';
+} from '../../machine/ts/spec/bmsx/cartridge';
 import { CART_RAM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { parseCartHeader } from '../../machine/ts/rompack/format';
 import { parseCartridgeIndex } from '../../machine/ts/rompack/loader';
@@ -14,6 +14,8 @@ import { encodeRomToc } from '../../machine/ts/rompack/tooling/toc_encode';
 import {
 	CART_ROM_HEADER_SIZE,
 	CART_VDP_CLASS_PSX,
+} from '../../machine/ts/spec/bmsx/rom_package';
+import {
 	resolveCartridgeHeaderWords,
 	type CartManifest,
 	type CartRomHeader,

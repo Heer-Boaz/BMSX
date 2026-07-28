@@ -1,5 +1,5 @@
 import { toSignedWord } from '../../common/numeric';
-import { APU_SAMPLE_RATE_HZ } from './contracts';
+import { APU_SAMPLE_RATE_HZ } from '../../../spec/audio/apu';
 
 const U16_BASE = 0x1_0000;
 const U16_BASE_SQUARED = 0x1_0000_0000;

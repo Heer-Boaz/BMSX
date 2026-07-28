@@ -3,7 +3,7 @@ import {
 	IO_GX_PCRTC_TIMING_BASE,
 	IO_GX_PCRTC_TIMING_WORD_COUNT,
 	IO_GX_PCRTC_WORD_COUNT,
-} from '../../bus/io';
+} from '../../../spec/bmsx/io';
 import { multiplyHighU32 } from '../../common/numeric';
 import { IO_WORD_SIZE } from '../../../spec/bmsx/memory_map';
 import {

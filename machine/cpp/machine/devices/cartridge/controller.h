@@ -1,6 +1,7 @@
 #pragma once
 
 #include "machine/devices/cartridge/contracts.h"
+#include "spec/bmsx/cartridge.h"
 #include "machine/memory/bus_signals.h"
 
 #include <array>

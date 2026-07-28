@@ -18,7 +18,7 @@ import {
 	APU_FAULT_NONE,
 	APU_PARAMETER_REGISTER_COUNT,
 	APU_STATUS_FAULT,
-} from './contracts';
+} from '../../../spec/audio/apu';
 import {
 	IO_APU_CMD,
 	IO_APU_CMD_CAPACITY,
@@ -32,7 +32,7 @@ import {
 	IO_APU_SLOT,
 	IO_APU_STATUS,
 	IO_ARG_STRIDE,
-} from '../../bus/io';
+} from '../../../spec/bmsx/io';
 import { Memory } from '../../memory/memory';
 import { DeviceStatusLatch, type DeviceStatusRegisters } from '../device_status';
 import type { IrqController } from '../irq/controller';

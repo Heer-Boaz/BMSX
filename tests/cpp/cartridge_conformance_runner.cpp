@@ -1,5 +1,5 @@
 #include "core/machine_manager.h"
-#include "machine/devices/cartridge/contracts.h"
+#include "spec/bmsx/cartridge.h"
 #include "spec/bmsx/memory_map.h"
 #include "machine/memory/memory.h"
 #include "machine/runtime/runtime.h"

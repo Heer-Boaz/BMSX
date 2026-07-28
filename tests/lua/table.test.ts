@@ -8,8 +8,8 @@ import {
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { Closure } from '../../machine/ts/machine/cpu/closure';
 import { Table } from '../../machine/ts/machine/cpu/table';
+import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import {
-	BuiltinFunctionId,
 	StringValue,
 	createBuiltinFunction,
 	ValueTag,

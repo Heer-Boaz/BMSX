@@ -1,20 +1,20 @@
 // start repeated-sequence-acceptable -- SSA optimizer keeps instruction rewrites inline for compile-time throughput and readable opcode cases.
 // start normalized-body-acceptable -- SSA value rewrites intentionally mirror non-SSA rewrites without sharing mutable pass internals.
 import { OpCode } from '../../../spec/blua32/opcode';
-import { valueIsString, type Value } from '../../../machine/cpu/value';
 import type { SourceRange } from '../../../rompack/tooling/blua32_symbols';
 import { MAX_EXT_CONST } from '../../../spec/blua32/instruction_format';
 import { buildBasicBlocks, buildBlockGraph, getJumpTarget, isJump, remapInstructions, type Block } from '../control_flow';
+import type { ProgramConstant } from '../program';
 import type { Instruction, InstructionSet, OptimizationContext } from './index';
 import { cloneInstruction, computeMaxRegister, isPureInstruction } from './instructions';
 import { collectInstructionDefs, collectInstructionUses, computeBlockLiveOut } from './liveness';
 import {
+	ConstValueKind,
+	constValueForOptimization,
 	evaluateBinary,
 	evaluateComparison,
 	evaluateUnary,
 	getImmediateConstValue,
-	isConstPoolValue,
-	isTruthy,
 	replaceWithConst,
 	replaceWithJump,
 	replaceWithMov,
@@ -56,7 +56,7 @@ const EMPTY_DEF_SLOTS: DefSlot[] = [];
 const RK_B = 1;
 const RK_C = 2;
 
-const inlineConstEquals = (constant: ConstValue | null, value: Value): boolean =>
+const inlineConstEquals = (constant: ConstValue | null, value: ProgramConstant): boolean =>
 	!!constant && constant.value === value;
 const SCCP_UNDEF = 0;
 const SCCP_CONST = 1;
@@ -215,7 +215,8 @@ const simplifyBranches = (
 				if (!value) {
 					break;
 				}
-				const truthy = isTruthy(value.value);
+				const truthy = value.kind !== ConstValueKind.Nil
+					&& !(value.kind === ConstValueKind.Boolean && !value.value);
 				const shouldJump = instruction.op === OpCode.JMPIF ? truthy : !truthy;
 				if (shouldJump) {
 					replaceWithJump(instruction, getJumpTarget(instruction));
@@ -235,7 +236,7 @@ const simplifyBranches = (
 				if (!left || !right) {
 					break;
 				}
-				const result = evaluateComparison(instruction.op, left.value, right.value, context);
+				const result = evaluateComparison(instruction.op, left, right);
 				if (result === null) {
 					break;
 				}
@@ -393,7 +394,10 @@ const evaluateSccpDef = (
 			return value ? { kind: SCCP_CONST, constVal: value } : { kind: SCCP_OVERDEFINED, constVal: null };
 		}
 		case OpCode.LOADNIL:
-			return { kind: SCCP_CONST, constVal: { value: null, constIndex: context.constIndex(null) } };
+			return {
+				kind: SCCP_CONST,
+				constVal: constValueForOptimization(null, context.constIndex(null)),
+			};
 		case OpCode.MOV: {
 			if (!uses || uses.length === 0) {
 				throw new Error('[ProgramOptimizer] Missing MOV operand.');
@@ -418,9 +422,12 @@ const evaluateSccpDef = (
 			}
 			const operand = getSccpOperand(instruction, 'b', uses[0], context, valueKind, valueConst);
 			if (operand.kind === SCCP_CONST && operand.constVal) {
-				const result = evaluateUnary(instruction.op, operand.constVal.value, context);
-				if (result !== null && isConstPoolValue(result)) {
-					return { kind: SCCP_CONST, constVal: { value: result, constIndex: context.constIndex(result) } };
+				const result = evaluateUnary(instruction.op, operand.constVal);
+				if (result !== null) {
+					return {
+						kind: SCCP_CONST,
+						constVal: constValueForOptimization(result, context.constIndex(result)),
+					};
 				}
 				return { kind: SCCP_OVERDEFINED, constVal: null };
 			}
@@ -459,9 +466,12 @@ const evaluateSccpDef = (
 			if (!left.constVal || !right.constVal) {
 				throw new Error('[ProgramOptimizer] Missing SCCP constants.');
 			}
-			const result = evaluateBinary(instruction.op, left.constVal.value, right.constVal.value);
-			if (result !== null && isConstPoolValue(result)) {
-				return { kind: SCCP_CONST, constVal: { value: result, constIndex: context.constIndex(result) } };
+			const result = evaluateBinary(instruction.op, left.constVal, right.constVal);
+			if (result !== null) {
+				return {
+					kind: SCCP_CONST,
+					constVal: constValueForOptimization(result, context.constIndex(result)),
+				};
 			}
 			return { kind: SCCP_OVERDEFINED, constVal: null };
 		}
@@ -619,7 +629,8 @@ const runSccp = (
 					const kind = valueKind[slot.valueId];
 					if (kind === SCCP_CONST) {
 						const constVal = requireSccpConstValue(valueConst, slot);
-						const truthy = isTruthy(constVal.value);
+						const truthy = constVal.kind !== ConstValueKind.Nil
+							&& !(constVal.kind === ConstValueKind.Boolean && !constVal.value);
 						const takeJump = last.op === OpCode.JMPIF ? truthy : !truthy;
 						if (takeJump) {
 							markReachable(jumpBlock);
@@ -647,7 +658,7 @@ const runSccp = (
 					const left = getSccpOperand(last, 'b', slotB, context, valueKind, valueConst);
 					const right = getSccpOperand(last, 'c', slotC, context, valueKind, valueConst);
 					if (left.kind === SCCP_CONST && right.kind === SCCP_CONST && left.constVal && right.constVal) {
-						const result = evaluateComparison(last.op, left.constVal.value, right.constVal.value, context);
+						const result = evaluateComparison(last.op, left.constVal, right.constVal);
 						if (result !== null) {
 							const expected = last.a !== 0;
 							const shouldSkip = result !== expected;
@@ -1044,9 +1055,8 @@ const simplifyAlgebraic = (instructions: Instruction[], context: OptimizationCon
 
 	const replaceWithNegatedOperand = (instruction: Instruction, field: 'b' | 'c', constant: ConstValue | null): void => {
 		if (constant) {
-			const result = evaluateBinary(OpCode.SUB, 0, constant.value);
-			if (result || result === 0) {
-				replaceWithConst(instruction, instruction.a, result, context);
+			if (constant.kind === ConstValueKind.Number) {
+				replaceWithConst(instruction, instruction.a, -constant.value, context);
 			}
 			return;
 		}
@@ -1529,9 +1539,6 @@ const unrollNumericForLoops = (set: InstructionSet, context: OptimizationContext
 	let changed = true;
 	const maxUnroll = 8;
 
-	const isNumeric = (value: Value): value is number => typeof value === 'number';
-	const isConstZero = (value: Value | null): boolean => value === 0;
-
 	while (changed) {
 		changed = false;
 		const { instructions, ranges } = current;
@@ -1583,7 +1590,7 @@ const unrollNumericForLoops = (set: InstructionSet, context: OptimizationContext
 			}
 			const zeroIndex = -1 - lt0.b;
 			const zeroValue = constPoolValueForOptimization(context, zeroIndex);
-			if (!zeroValue || !isConstZero(zeroValue.value)) {
+			if (!zeroValue || zeroValue.value !== 0) {
 				continue;
 			}
 			if (ltPos.b < 0 || ltPos.c < 0 || ltNeg.b < 0 || ltNeg.c < 0) {
@@ -1639,7 +1646,7 @@ const unrollNumericForLoops = (set: InstructionSet, context: OptimizationContext
 				continue;
 			}
 
-			const findConstBefore = (reg: number): Value | null => {
+			const findConstBefore = (reg: number): ConstValue | null => {
 				for (let i = loopStart - 1; i >= 0 && i >= loopStart - 16; i -= 1) {
 					const instr = instructions[i];
 					if (isControlFlowInstruction(instr)) {
@@ -1651,33 +1658,9 @@ const unrollNumericForLoops = (set: InstructionSet, context: OptimizationContext
 							continue;
 						}
 						if (instr.op === OpCode.LOADK) {
-							return loadKConstValueForOptimization(instr, context)?.value;
+							return loadKConstValueForOptimization(instr, context);
 						}
-						if (instr.op === OpCode.KNIL) {
-							return null;
-						}
-						if (instr.op === OpCode.KFALSE) {
-							return false;
-						}
-						if (instr.op === OpCode.KTRUE) {
-							return true;
-						}
-						if (instr.op === OpCode.K0) {
-							return 0;
-						}
-						if (instr.op === OpCode.K1) {
-							return 1;
-						}
-						if (instr.op === OpCode.KM1) {
-							return -1;
-						}
-						if (instr.op === OpCode.KSMI) {
-							return instr.b;
-						}
-						if (instr.op === OpCode.LOADNIL) {
-							return null;
-						}
-						return null;
+						return getImmediateConstValue(instr, context);
 					}
 				}
 				return null;
@@ -1686,25 +1669,33 @@ const unrollNumericForLoops = (set: InstructionSet, context: OptimizationContext
 			const startConst = findConstBefore(indexReg);
 			const limitConst = findConstBefore(limitReg);
 			const stepConst = findConstBefore(stepReg);
-			if (!isNumeric(startConst) || !isNumeric(limitConst) || !isNumeric(stepConst)) {
+			if (
+				startConst?.kind !== ConstValueKind.Number
+				|| limitConst?.kind !== ConstValueKind.Number
+				|| stepConst?.kind !== ConstValueKind.Number
+			) {
 				continue;
 			}
-			if (stepConst === 0) {
+			const start = startConst.value;
+			const limit = limitConst.value;
+			const step = stepConst.value;
+			if (step === 0) {
 				continue;
 			}
 			let iterations = 0;
-			if (stepConst > 0) {
-				if (startConst > limitConst) {
-					continue;
+			let loopValue = start;
+			if (step > 0) {
+				while (iterations <= maxUnroll && loopValue <= limit) {
+					iterations += 1;
+					loopValue += step;
 				}
-				iterations = Math.floor((limitConst - startConst) / stepConst) + 1;
 			} else {
-				if (startConst < limitConst) {
-					continue;
+				while (iterations <= maxUnroll && loopValue >= limit) {
+					iterations += 1;
+					loopValue += step;
 				}
-				iterations = Math.floor((startConst - limitConst) / -stepConst) + 1;
 			}
-			if (!Number.isFinite(iterations) || iterations <= 0 || iterations > maxUnroll) {
+			if (iterations === 0 || iterations > maxUnroll) {
 				continue;
 			}
 
@@ -2342,7 +2333,7 @@ export const applyGlobalOptimizations = (
 			// CONCAT is currently the only value-numberable string-producing op in this pass.
 			// If we add new string-producing opcodes, extend this exclusion so we don't
 			// materialize stale or semantically wrong constants through LOADK.
-			if (constVal && !(instruction.op === OpCode.CONCAT && valueIsString(constVal.value))) {
+			if (constVal && !(instruction.op === OpCode.CONCAT && constVal.kind === ConstValueKind.String)) {
 				replaceWithConst(instruction, instruction.a, constVal.value, context);
 				instrUses[i] = [];
 				replacedWithConst = true;
@@ -2367,7 +2358,7 @@ export const applyGlobalOptimizations = (
 			if (
 				constVal
 				&& slot.allowRk
-				&& !valueIsString(constVal.value)
+				&& constVal.kind !== ConstValueKind.String
 				&& constVal.constIndex <= MAX_EXT_CONST
 				&& slot.rkMaskBit !== null
 			) {

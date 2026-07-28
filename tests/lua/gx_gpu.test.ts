@@ -12,7 +12,26 @@ import {
 	IRQ_GPU,
 	IRQ_GX_PCRTC,
 	IRQ_VBLANK,
-} from '../../machine/ts/machine/bus/io';
+} from '../../machine/ts/spec/bmsx/io';
+import {
+	GX_GPU_DRAW_MODE_DITHER_ENABLED,
+	GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_HIGH,
+	GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP,
+	GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP,
+	GX_GPU_TEXTURE_MODE_DIRECT16,
+	GX_GPU_TEXTURE_MODE_PALETTE4,
+	GX_GPU_TEXTURE_MODE_PALETTE8,
+	gxGpuPolygonDrawModeWord,
+	gxGpuPolygonTexturePageWordIndex,
+	gxGpuTextureAttribute,
+	gxGpuTransferHeight,
+	gxGpuTransferWidth,
+	gxGpuDrawingAreaBottomExclusive,
+	gxGpuDrawingAreaLeft,
+	gxGpuDrawingAreaRightExclusive,
+	gxGpuDrawingAreaTop,
+	gxGpuSigned11,
+} from '../../machine/ts/spec/gx/gp0';
 import {
 	GX_GPU_COMMAND_COPY_VRAM_TO_VRAM,
 	GX_GPU_COMMAND_DRAW_POLYGON,
@@ -26,23 +45,10 @@ import {
 	GX_GPU_READBACK_PENDING,
 	GX_GPU_READBACK_READY,
 	GX_GPU_READBACK_SUBMITTED,
-	GX_GPU_TEXTURE_MODE_DIRECT16,
-	GX_GPU_TEXTURE_MODE_PALETTE4,
-	GX_GPU_TEXTURE_MODE_PALETTE8,
-	gxGpuPolygonDrawModeWord,
-	gxGpuPolygonTexturePageWordIndex,
-	gxGpuTextureAttribute,
-	gxGpuTransferHeight,
-	gxGpuTransferWidth,
 	GxGpuCommandBuffer,
-	gxGpuDrawingAreaBottomExclusive,
-	gxGpuDrawingAreaLeft,
-	gxGpuDrawingAreaRightExclusive,
-	gxGpuDrawingAreaTop,
-	gxGpuSigned11,
 } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
-import { GX_GPU_VRAM_BYTE_COUNT, GX_GPU_VRAM_WIDTH } from '../../machine/ts/machine/devices/gx/vram_address';
-import { GX_GPU_COMMAND_FIFO_WORD_CAPACITY } from '../../machine/ts/machine/devices/gx/gp0';
+import { GX_GPU_VRAM_BYTE_COUNT, GX_GPU_VRAM_WIDTH } from '../../machine/ts/spec/gx/vram';
+import { GX_GPU_COMMAND_FIFO_WORD_CAPACITY } from '../../machine/ts/spec/gx/gp0';
 import {
 	GX_GPU_PCRTC_BGCOLOR_LOW,
 	GX_GPU_PCRTC_CONFIG_WORD_COUNT,
@@ -178,12 +184,8 @@ import {
 	GX_GPU_DISPLAY_MODE_MASK,
 	GX_GPU_DRAWING_AREA_MASK,
 	GX_GPU_DRAWING_OFFSET_MASK,
-	GX_GPU_DRAW_MODE_DITHER_ENABLED,
 	GX_GPU_DRAW_MODE_GPUSTAT_MASK,
 	GX_GPU_DRAW_MODE_MASK,
-	GX_GPU_DRAW_MODE_TEXTURE_PAGE_Y_HIGH,
-	GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_X_FLIP,
-	GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP,
 	GX_GPU_INFO_GPU_TYPE_V2,
 	GX_GPU_GP1_RESET,
 	GX_GPU_GP1_CLEAR_FIFO,
@@ -241,7 +243,7 @@ import {
 	GX_GPU_GP0_TEXTURE_WINDOW,
 	GX_GPU_GP0_VRAM_TO_CPU_FIRST,
 	GX_GPU_GP0_VRAM_TO_VRAM_FIRST,
-} from '../../machine/ts/machine/devices/gx/gp0';
+} from '../../machine/ts/spec/gx/gp0';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';

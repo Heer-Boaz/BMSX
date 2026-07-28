@@ -11,6 +11,8 @@ constexpr uint32_t SYSTEM_ROM_SIZE = 0x01000000u; // 16 MB
 
 constexpr uint32_t RAM_BASE = 0x08000000u;
 constexpr uint32_t MAX_RAM_SIZE = 0x08000000u; // 128 MB address window
+constexpr uint32_t BMSX_RAM_BYTES = 0x00400000u;
+constexpr uint32_t BMSX_RAM_END = RAM_BASE + BMSX_RAM_BYTES;
 
 constexpr uint32_t CART_ROM_BASE = RAM_BASE + MAX_RAM_SIZE;
 constexpr uint32_t CART_ROM_SIZE = 0x20000000u; // 512 MB address window

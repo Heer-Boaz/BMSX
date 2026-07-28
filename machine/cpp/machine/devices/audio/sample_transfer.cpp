@@ -1,6 +1,6 @@
 #include "machine/devices/audio/sample_transfer.h"
 
-#include "machine/bus/io.h"
+#include "spec/bmsx/io.h"
 #include "machine/cpu/value.h"
 #include "machine/devices/audio/sample_memory.h"
 #include "machine/devices/dma/controller.h"

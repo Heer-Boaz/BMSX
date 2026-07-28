@@ -1,4 +1,19 @@
-import { BuiltinFunctionId } from '../cpu/value';
+export const enum BuiltinFunctionId {
+	Next = 0,
+	Type = 1,
+	SetMetatable = 2,
+	GetMetatable = 3,
+	RawGet = 4,
+	RawSet = 5,
+	Select = 6,
+	StringByte = 7,
+	StringChar = 8,
+	Error = 9,
+	PCall = 10,
+	XPCall = 11,
+}
+
+export const BUILTIN_FUNCTION_COUNT = 12;
 
 export interface LuaBootPrimitive {
 	readonly name: string;

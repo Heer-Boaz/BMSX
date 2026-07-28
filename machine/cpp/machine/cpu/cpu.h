@@ -25,6 +25,7 @@
 #include "machine/cpu/table.h"
 #include "machine/cpu/value.h"
 #include "spec/blua32/memory_access_kind.h"
+#include "spec/blua32/execution_domain.h"
 
 namespace bmsx {
 
@@ -133,7 +134,7 @@ struct CpuRootValueState {
 };
 
 struct CpuRuntimeState {
-	int executionCartridgeSlot = -1;
+	ExecutionDomainId executionCartridgeSlot = SYSTEM_EXECUTION_DOMAIN_ID;
 	std::vector<CpuRootValueState> systemGlobals;
 	std::vector<CpuRootValueState> globals;
 	std::vector<CpuFrameState> frames;
@@ -141,7 +142,7 @@ struct CpuRuntimeState {
 	std::vector<CpuValueState> completionValues;
 	std::vector<CpuObjectState> objects;
 	std::vector<int> openUpvalues;
-	int lastExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
+	ExecutionDomainId lastExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	u32 lastPc = 0;
 	int instructionBudgetRemaining = 0;
 	bool haltedUntilIrq = false;
@@ -242,10 +243,10 @@ public:
 
 	void reset();
 	void replaceExecutionImage(Blua32ExecutionBoot executionBoot);
-	bool isExecutionDomainResident(int executionDomainId) const;
+	bool isExecutionDomainResident(ExecutionDomainId executionDomainId) const;
 	void clearExecutionEnvironment();
 	bool isCartridgeExecutionActive() const { return m_activeExecutionImage->executionDomainId >= 0; }
-	int activeCartridgeSlot() const { return m_activeExecutionImage->executionDomainId; }
+	ExecutionDomainId activeCartridgeSlot() const { return m_activeExecutionImage->executionDomainId; }
 	StringPool& stringPool() { return m_stringPool; }
 	const StringPool& stringPool() const { return m_stringPool; }
 	Memory& memory() { return m_memory; }
@@ -299,8 +300,8 @@ public:
 	LocalRootsScope acquireLocalRoots();
 
 	int getFrameDepth() const { return static_cast<int>(m_frames.size()); }
-	int readFrameExecutionDomain(int frameIndex) const;
-	int readLastExecutionDomain() const;
+	ExecutionDomainId readFrameExecutionDomain(int frameIndex) const;
+	ExecutionDomainId readLastExecutionDomain() const;
 	u32 readFrameFunctionAddress(int frameIndex) const;
 	u32 readFramePc(int frameIndex) const;
 	u32 readFrameCallSitePc(int childFrameIndex) const;
@@ -314,7 +315,12 @@ public:
 	void writeEpcWord(u32 value);
 	u32 readNmiReturnEpcWord() const;
 	void writeNmiReturnEpcWord(u32 value);
-	void writeFrameExecution(int frameIndex, int executionDomainId, u32 functionAddress, u32 pc);
+	void writeFrameExecution(
+		int frameIndex,
+		ExecutionDomainId executionDomainId,
+		u32 functionAddress,
+		u32 pc
+	);
 	void writeFrameCallSitePc(int childFrameIndex, u32 pc);
 
 	int instructionBudgetRemaining = 0;
@@ -348,17 +354,25 @@ private:
 	bool handleProtectedCallError(Value errorValue);
 	void unwindToDepth(int targetDepth);
 	void runHousekeeping();
-	StringId internExecutionString(int executionDomainId, u32 address, u32 byteCount);
-	std::vector<Value> decodeConstantPool(int executionDomainId, u32 tableAddress, u32 constantCount);
+	StringId internExecutionString(
+		ExecutionDomainId executionDomainId,
+		u32 address,
+		u32 byteCount
+	);
+	std::vector<Value> decodeConstantPool(
+		ExecutionDomainId executionDomainId,
+		u32 tableAddress,
+		u32 constantCount
+	);
 	std::vector<u32> registerGlobalNames(
-		int executionDomainId,
+		ExecutionDomainId executionDomainId,
 		u32 tableAddress,
 		u32 nameCount,
 		bool system
 	);
 	std::unique_ptr<Blua32ExecutionImage> activateExecutionImage(Blua32ExecutionBoot executionBoot);
-	Blua32ExecutionImage* residentExecutionImage(int executionDomainId) const;
-	Blua32ExecutionImage* executionImageForDomain(int executionDomainId);
+	Blua32ExecutionImage* residentExecutionImage(ExecutionDomainId executionDomainId) const;
+	Blua32ExecutionImage* executionImageForDomain(ExecutionDomainId executionDomainId);
 	void decodeImageText(Blua32ExecutionImage& image);
 	Closure* staticClosureAtAddress(u32 address);
 	bool readFunctionRecordInImage(Blua32ExecutionImage& image, u32 address);
@@ -433,7 +447,7 @@ private:
 	bool m_memoryWriteBlocked = false;
 	uint32_t m_memoryWriteBlockedAddress = 0;
 	u32 m_currentInstructionPc = 0;
-	int m_lastExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
+	ExecutionDomainId m_lastExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	bool m_hardHalted = false;
 	u32 m_statusWord = CPU_STATUS_CART_ENTRY;
 	u32 m_causeWord = 0;

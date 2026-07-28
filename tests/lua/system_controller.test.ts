@@ -15,7 +15,7 @@ import {
 	IRQ_VBLANK,
 	SYS_CONTROL_RESET,
 	SYS_PRINT_BUFFER_BYTES,
-} from '../../machine/ts/machine/bus/io';
+} from '../../machine/ts/spec/bmsx/io';
 import { Machine } from '../../machine/ts/machine/machine';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/machine/model_registry';
 import {
@@ -33,7 +33,7 @@ import { StringValue } from '../../machine/ts/machine/cpu/value';
 import { blua32SourceRangeAtPc } from '../../machine/ts/rompack/tooling/blua32_symbols';
 import { COP0_EXEC } from '../../machine/ts/spec/blua32/cop0';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
-import { LUA_BOOT_PRIMITIVES } from '../../machine/ts/machine/firmware/boot_primitives';
+import { LUA_BOOT_PRIMITIVES } from '../../machine/ts/spec/blua32/builtin';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { CART_ROM_BASE, DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { resolveRuntimeTiming } from '../../machine/ts/machine/runtime/boot_timing';

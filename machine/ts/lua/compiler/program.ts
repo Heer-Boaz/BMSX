@@ -1,7 +1,7 @@
-import type { Value } from '../../machine/cpu/value';
 import type { SourceRange } from '../../rompack/tooling/blua32_symbols';
 import type { OpCode } from '../../spec/blua32/opcode';
-import type { StringPool } from '../../machine/cpu/string_pool';
+
+export type ProgramConstant = null | boolean | number | string;
 
 export type ProgramRuntimeSymbols = {
 	protoIds: string[];
@@ -35,13 +35,11 @@ export type ProgramMetadata = ProgramRuntimeSymbols & {
 
 export type Program = {
 	code: Uint8Array<ArrayBuffer>;
-	constPool: Value[];
+	constPool: ProgramConstant[];
 	protos: Proto[];
 	moduleProtos: ProgramModuleProto[];
 	moduleExports: ProgramModuleExport[];
 	moduleProtoMap: Map<string, number>;
-	stringPool: StringPool;
-	constPoolStringPool: StringPool;
 };
 
 export type ProgramModuleProto = {

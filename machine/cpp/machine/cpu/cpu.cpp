@@ -304,7 +304,7 @@ void CPU::reset() {
 }
 
 StringId CPU::internExecutionString(
-	int executionDomainId,
+	ExecutionDomainId executionDomainId,
 	u32 address,
 	u32 byteCount
 ) {
@@ -327,7 +327,7 @@ StringId CPU::internExecutionString(
 }
 
 std::vector<Value> CPU::decodeConstantPool(
-	int executionDomainId,
+	ExecutionDomainId executionDomainId,
 	u32 tableAddress,
 	u32 constantCount
 ) {
@@ -376,7 +376,7 @@ std::vector<Value> CPU::decodeConstantPool(
 }
 
 std::vector<u32> CPU::registerGlobalNames(
-	int executionDomainId,
+	ExecutionDomainId executionDomainId,
 	u32 tableAddress,
 	u32 nameCount,
 	bool system
@@ -502,7 +502,9 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 	return image;
 }
 
-Blua32ExecutionImage* CPU::residentExecutionImage(int executionDomainId) const {
+Blua32ExecutionImage* CPU::residentExecutionImage(
+	ExecutionDomainId executionDomainId
+) const {
 	for (const std::unique_ptr<Blua32ExecutionImage>& image : m_executionImages) {
 		if (image->executionDomainId == executionDomainId) {
 			return image.get();
@@ -511,7 +513,9 @@ Blua32ExecutionImage* CPU::residentExecutionImage(int executionDomainId) const {
 	return nullptr;
 }
 
-Blua32ExecutionImage* CPU::executionImageForDomain(int executionDomainId) {
+Blua32ExecutionImage* CPU::executionImageForDomain(
+	ExecutionDomainId executionDomainId
+) {
 	if (Blua32ExecutionImage* image = residentExecutionImage(executionDomainId)) {
 		return image;
 	}
@@ -546,7 +550,7 @@ void CPU::replaceExecutionImage(Blua32ExecutionBoot executionBoot) {
 	}
 }
 
-bool CPU::isExecutionDomainResident(int executionDomainId) const {
+bool CPU::isExecutionDomainResident(ExecutionDomainId executionDomainId) const {
 	return residentExecutionImage(executionDomainId) != nullptr;
 }
 
@@ -782,7 +786,7 @@ bool CPU::readFunctionRecordInExecutionDomain(
 }
 
 bool CPU::readFunctionRecordOnSelectedBus(u32 address) {
-	const std::optional<int> executionDomainId =
+	const std::optional<ExecutionDomainId> executionDomainId =
 		m_executionAddressSpace.domainIdOnBus(address);
 	if (!executionDomainId) {
 		return false;
@@ -1964,11 +1968,11 @@ void CPU::runHousekeeping() {
 	}
 }
 
-int CPU::readFrameExecutionDomain(int frameIndex) const {
+ExecutionDomainId CPU::readFrameExecutionDomain(int frameIndex) const {
 	return m_frames[static_cast<size_t>(frameIndex)]->executionImage->executionDomainId;
 }
 
-int CPU::readLastExecutionDomain() const {
+ExecutionDomainId CPU::readLastExecutionDomain() const {
 	return m_lastExecutionDomainId;
 }
 
@@ -2029,7 +2033,7 @@ void CPU::writeNmiReturnEpcWord(u32 value) {
 
 void CPU::writeFrameExecution(
 	int frameIndex,
-	int executionDomainId,
+	ExecutionDomainId executionDomainId,
 	u32 functionAddress,
 	u32 pc
 ) {

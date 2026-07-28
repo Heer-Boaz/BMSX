@@ -1,4 +1,4 @@
-#include "machine/common/hash.h"
+#include "common/hash.h"
 
 namespace bmsx {
 

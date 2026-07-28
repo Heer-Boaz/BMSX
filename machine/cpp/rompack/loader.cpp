@@ -1,5 +1,5 @@
 /*
- * romPackage.cpp - Runtime asset management implementation
+ * loader.cpp - Decoded ROM tooling package implementation
  */
 
 #include "rompack/loader.h"
@@ -7,7 +7,6 @@
 #include "common/endian.h"
 #include "common/mem_snapshot.h"
 #include "lua/module_path.h"
-#include "spec/bmsx/memory_map.h"
 #include "rompack/format.h"
 #include "rompack/metadata.h"
 #include "rompack/toc.h"
@@ -49,7 +48,7 @@ static const BinValue* findObjectField(const BinObject& obj, const char* key);
 static std::string parseRequiredString(const BinObject& obj, const char* key, const char* label) {
 	auto it = obj.find(key);
 	if (it == obj.end() || !it->second.isString()) {
-		throw std::runtime_error(std::string("[RuntimeRomPackage] ") + label + " is required.");
+		throw std::runtime_error(std::string("[RomToolingPackage] ") + label + " is required.");
 	}
 	return it->second.asString();
 }
@@ -59,7 +58,7 @@ static MachineVdpClass parseMachineVdpClass(const BinObject& machineObj) {
 	if (vdpClass == "psx") {
 		return MachineVdpClass::Psx;
 	}
-	throw std::runtime_error("[RuntimeRomPackage] Unsupported machine.vdp_class.");
+	throw std::runtime_error("[RomToolingPackage] Unsupported machine.vdp_class.");
 }
 
 static void logMemSnapshot(const char* label) {
@@ -760,50 +759,50 @@ static ModelAsset parseModelAsset(const std::string& assetId, const BinValue& va
 }
 
 /* ============================================================================
- * RuntimeRomPackage implementation
+ * RomToolingPackage implementation
  * ============================================================================ */
 
-ImgAsset* RuntimeRomPackage::getImg(const AssetId& id) {
+ImgAsset* RomToolingPackage::getImg(const AssetId& id) {
 	return findAssetValue(img, id);
 }
 
-const ImgAsset* RuntimeRomPackage::getImg(const AssetId& id) const {
+const ImgAsset* RomToolingPackage::getImg(const AssetId& id) const {
 	return findAssetValue(img, id);
 }
 
-AudioAsset* RuntimeRomPackage::getAudio(const AssetId& id) {
+AudioAsset* RomToolingPackage::getAudio(const AssetId& id) {
 	return findAssetValue(audio, id);
 }
 
-const AudioAsset* RuntimeRomPackage::getAudio(const AssetId& id) const {
+const AudioAsset* RomToolingPackage::getAudio(const AssetId& id) const {
 	return findAssetValue(audio, id);
 }
 
-ModelAsset* RuntimeRomPackage::getModel(const AssetId& id) {
+ModelAsset* RomToolingPackage::getModel(const AssetId& id) {
 	return findAssetValue(model, id);
 }
 
-const ModelAsset* RuntimeRomPackage::getModel(const AssetId& id) const {
+const ModelAsset* RomToolingPackage::getModel(const AssetId& id) const {
 	return findAssetValue(model, id);
 }
 
-const BinValue* RuntimeRomPackage::getData(const AssetId& id) const {
+const BinValue* RomToolingPackage::getData(const AssetId& id) const {
 	return findAssetPayloadValue(data, id);
 }
 
-BinAsset* RuntimeRomPackage::getBin(const AssetId& id) {
+BinAsset* RomToolingPackage::getBin(const AssetId& id) {
 	return findAssetValue(bin, id);
 }
 
-const BinAsset* RuntimeRomPackage::getBin(const AssetId& id) const {
+const BinAsset* RomToolingPackage::getBin(const AssetId& id) const {
 	return findAssetValue(bin, id);
 }
 
-const LuaSourceAsset* RuntimeRomPackage::getLuaModule(const AssetId& modulePath) const {
+const LuaSourceAsset* RomToolingPackage::getLuaModule(const AssetId& modulePath) const {
 	return findAssetValue(m_lua, modulePath);
 }
 
-const LuaSourceAsset* RuntimeRomPackage::getLuaSource(const AssetId& sourcePath) const {
+const LuaSourceAsset* RomToolingPackage::getLuaSource(const AssetId& sourcePath) const {
 	const auto it = m_luaSourceToModule.find(hashAssetToken(sourcePath));
 	if (it == m_luaSourceToModule.end()) {
 		return nullptr;
@@ -815,11 +814,11 @@ const LuaSourceAsset* RuntimeRomPackage::getLuaSource(const AssetId& sourcePath)
 	return &luaIt->second;
 }
 
-const std::unordered_map<AssetToken, LuaSourceAsset>& RuntimeRomPackage::luaSources() const {
+const std::unordered_map<AssetToken, LuaSourceAsset>& RomToolingPackage::luaSources() const {
 	return m_lua;
 }
 
-void RuntimeRomPackage::insertLuaSource(LuaSourceAsset asset) {
+void RomToolingPackage::insertLuaSource(LuaSourceAsset asset) {
 	const AssetToken moduleToken = hashAssetToken(asset.modulePath);
 	const auto existing = m_lua.find(moduleToken);
 	if (existing != m_lua.end()) {
@@ -829,39 +828,39 @@ void RuntimeRomPackage::insertLuaSource(LuaSourceAsset asset) {
 	m_lua[moduleToken] = std::move(asset);
 }
 
-const BinValue* RuntimeRomPackage::getAudioEvent(const AssetId& id) const {
+const BinValue* RomToolingPackage::getAudioEvent(const AssetId& id) const {
 	return findAssetPayloadValue(audioevents, id);
 }
 
-bool RuntimeRomPackage::hasImg(const AssetId& id) const {
+bool RomToolingPackage::hasImg(const AssetId& id) const {
 	return getImg(id) != nullptr;
 }
 
-bool RuntimeRomPackage::hasModel(const AssetId& id) const {
+bool RomToolingPackage::hasModel(const AssetId& id) const {
 	return getModel(id) != nullptr;
 }
 
-bool RuntimeRomPackage::hasData(const AssetId& id) const {
+bool RomToolingPackage::hasData(const AssetId& id) const {
 	return getData(id) != nullptr;
 }
 
-bool RuntimeRomPackage::hasBin(const AssetId& id) const {
+bool RomToolingPackage::hasBin(const AssetId& id) const {
 	return getBin(id) != nullptr;
 }
 
-bool RuntimeRomPackage::hasLuaModule(const AssetId& modulePath) const {
+bool RomToolingPackage::hasLuaModule(const AssetId& modulePath) const {
 	return getLuaModule(modulePath) != nullptr;
 }
 
-bool RuntimeRomPackage::hasLuaSource(const AssetId& sourcePath) const {
+bool RomToolingPackage::hasLuaSource(const AssetId& sourcePath) const {
 	return getLuaSource(sourcePath) != nullptr;
 }
 
-bool RuntimeRomPackage::hasAudioEvent(const AssetId& id) const {
+bool RomToolingPackage::hasAudioEvent(const AssetId& id) const {
 	return getAudioEvent(id) != nullptr;
 }
 
-void RuntimeRomPackage::clear() {
+void RomToolingPackage::clear() {
 	img.clear();
 	audio.clear();
 	model.clear();
@@ -986,18 +985,7 @@ static BadpMetadata parseBadpMetadata(const u8* data, size_t size) {
 	return metadata;
 }
 
-RomImage parseRomImage(const u8* buffer, size_t size, RomImageDomain domain) {
-	const size_t capacity = domain == RomImageDomain::System ? SYSTEM_ROM_SIZE : CART_ROM_SIZE;
-	if (size > capacity) {
-		throw BMSX_RUNTIME_ERROR(
-			domain == RomImageDomain::System
-				? "System ROM payload exceeds its address window."
-				: "Cartridge ROM payload exceeds its address window.");
-	}
-	return RomImage{std::span<const u8>(buffer, size), parseCartHeader(buffer, size)};
-}
-
-static void decodeCartridgeMetadata(const u8* romData, const CartRomHeader& header, RuntimeRomPackage& romPackage) {
+static void decodeCartridgeMetadata(const u8* romData, const CartRomHeader& header, RomToolingPackage& romPackage) {
 	if (header.manifestLength == 0) {
 		throw BMSX_RUNTIME_ERROR("ROM header is missing manifest payload.");
 	}
@@ -1019,7 +1007,7 @@ static void decodeCartridgeMetadata(const u8* romData, const CartRomHeader& head
 	romPackage.machine.namespaceName = machineObj.at("namespace").asString();
 	const MachineVdpClass manifestVdpClass = parseMachineVdpClass(machineObj);
 	if (manifestVdpClass != header.vdpClass) {
-		throw std::runtime_error("[RuntimeRomPackage] ROM header VDP class does not match manifest machine.vdp_class.");
+		throw std::runtime_error("[RomToolingPackage] ROM header VDP class does not match manifest machine.vdp_class.");
 	}
 	romPackage.machine.vdpClass = header.vdpClass;
 	cartManifest.machine = romPackage.machine;
@@ -1033,8 +1021,7 @@ static void decodeCartridgeMetadata(const u8* romData, const CartRomHeader& head
 static void loadRomAssetPayloadInternal(const u8* romData,
 						size_t,
 						const CartRomHeader& header,
-						RuntimeRomPackage& romPackage,
-						const AssetLoadCallbacks*,
+						RomToolingPackage& romPackage,
 	const char* payloadId,
 	bool loadProjectRoot) {
 	const RomTocPayload toc = decodeRomToc(romData + header.tocOffset, header.tocLength);
@@ -1282,9 +1269,8 @@ static void loadRomAssetPayloadInternal(const u8* romData,
 	logMemSnapshot("rom-package:end");
 }
 
-static void loadRomPackageFromImage(const RomImage& image,
-							RuntimeRomPackage& romPackage,
-							const AssetLoadCallbacks* callbacks,
+static void loadRomToolingPackageFromImage(const RomImage& image,
+							RomToolingPackage& romPackage,
 							const char* payloadId,
 		bool decodeMetadata,
 		bool cartPayload) {
@@ -1294,21 +1280,19 @@ static void loadRomPackageFromImage(const RomImage& image,
 	if (decodeMetadata) {
 		decodeCartridgeMetadata(image.bytes.data(), image.header, romPackage);
 	}
-	loadRomAssetPayloadInternal(image.bytes.data(), image.bytes.size(), image.header, romPackage, callbacks, payloadId, cartPayload);
+	loadRomAssetPayloadInternal(image.bytes.data(), image.bytes.size(), image.header, romPackage, payloadId, cartPayload);
 }
 
-void loadCartRomPackage(const RomImage& image,
-							RuntimeRomPackage& romPackage,
-							const AssetLoadCallbacks* callbacks,
+void loadCartRomToolingPackage(const RomImage& image,
+							RomToolingPackage& romPackage,
 							const char* payloadId) {
-	loadRomPackageFromImage(image, romPackage, callbacks, payloadId, true, true);
+	loadRomToolingPackageFromImage(image, romPackage, payloadId, true, true);
 }
 
-void loadSystemRomPackage(const RomImage& image,
-							RuntimeRomPackage& romPackage,
-							const AssetLoadCallbacks* callbacks,
+void loadSystemRomToolingPackage(const RomImage& image,
+							RomToolingPackage& romPackage,
 							const char* payloadId) {
-	loadRomPackageFromImage(image, romPackage, callbacks, payloadId, false, false);
+	loadRomToolingPackageFromImage(image, romPackage, payloadId, false, false);
 }
 
 } // namespace bmsx

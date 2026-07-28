@@ -7,18 +7,18 @@
 
 namespace bmsx {
 
-std::optional<int> ExecutionAddressSpace::domainIdOnBus(u32 address) const {
+std::optional<ExecutionDomainId> ExecutionAddressSpace::domainIdOnBus(u32 address) const {
 	if (address < RAM_BASE) {
 		return SYSTEM_EXECUTION_DOMAIN_ID;
 	}
 	if (address < CART_ROM_BASE) {
 		return {};
 	}
-	return static_cast<int>(m_memory.cartridgeController().selectedSlot());
+	return static_cast<ExecutionDomainId>(m_memory.cartridgeController().selectedSlot());
 }
 
 void ExecutionAddressSpace::bindReadOnlyView(
-	int executionDomainId,
+	ExecutionDomainId executionDomainId,
 	u32 address,
 	size_t byteCount,
 	Span<const u8>& out
@@ -41,7 +41,7 @@ Blua32ExecutionBoot ExecutionAddressSpace::resolveSystemDomain() const {
 }
 
 std::optional<Blua32ExecutionBoot> ExecutionAddressSpace::resolveDomain(
-	int executionDomainId
+	ExecutionDomainId executionDomainId
 ) const {
 	const u32 romBaseAddress = executionDomainId == SYSTEM_EXECUTION_DOMAIN_ID
 		? SYSTEM_ROM_BASE

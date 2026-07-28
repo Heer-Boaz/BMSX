@@ -7,8 +7,8 @@ import {
 	decodeBlua32SymbolsImage,
 	type Blua32SymbolsImage,
 } from './blua32_symbols';
-import type { ExecutionDomainId } from '../../machine/execution_address_space';
-import type { RuntimeRomLayer } from '../loader';
+import type { ExecutionDomainId } from '../../spec/blua32/execution_domain';
+import type { RomToolingLayer } from '../loader';
 import type { RawRomSource } from '../source';
 
 export type Blua32ToolingImage = {
@@ -25,7 +25,7 @@ export type Blua32ToolingMedia = {
 };
 
 export function loadBlua32ToolingImage(
-	rom: RuntimeRomLayer,
+	rom: RomToolingLayer,
 	romSource: RawRomSource,
 	romBaseAddress: number,
 ): Blua32ToolingImage | null {

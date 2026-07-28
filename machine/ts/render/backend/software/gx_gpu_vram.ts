@@ -1,4 +1,4 @@
-import { GX_GPU_VRAM_HEIGHT, GX_GPU_VRAM_WIDTH } from '../../../machine/devices/gx/vram_address';
+import { GX_GPU_VRAM_HEIGHT, GX_GPU_VRAM_WIDTH } from '../../../spec/gx/vram';
 
 export const GX_GPU_SOFTWARE_VRAM_WORDS = GX_GPU_VRAM_WIDTH * GX_GPU_VRAM_HEIGHT;
 export const gxGpuSoftwareVram = new Uint16Array(GX_GPU_SOFTWARE_VRAM_WORDS);

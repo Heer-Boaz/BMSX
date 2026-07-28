@@ -1,6 +1,6 @@
 # BMSX Architecture Contract
 
-Last checked: 2026-07-21.
+Last checked: 2026-07-28.
 
 This document is the current machine/host boundary contract. It is not a work
 log, a prompt, or a migration diary. If implementation changes land, this file
@@ -324,23 +324,34 @@ Ownership terms are architectural roles, not interchangeable directory labels:
 Current artifact roles:
 
 - `dist/libbmsx.js` / `.debug.js`: importable JavaScript machine/runtime
-  artifact. It exposes `MachineManager.initialize(...)`; it does not own browser,
-  Node, SDL, ALSA, EGL, IDE, or libretro host services.
+  artifact. It exposes `MachineManager.initialize(...)`, which consumes raw ROM
+  bytes and returns the machine `Runtime` directly; it does not own browser,
+  Node, SDL, ALSA, EGL, IDE, ROM authoring records, or libretro host services.
 - `dist/engine.js` / `.debug.js`: browser player/bootstrap artifact. It wires
   browser video, audio, input, view-host construction, runtime preparation, and
   the frame loop through static composition. Its bundle contains no IDE,
-  compiler, or ROM-tooling source.
+  compiler, or ROM authoring/source-tooling code. The browser boot host may
+  inspect the raw TOC for its ROM-label presentation.
 - `dist/studio.js` / `.debug.js` with `dist/studio.html`: browser Studio
   artifact. This is the explicit composition root that adds workbench,
   workspace, compiler, and source tooling to the browser host.
+- `bmsx_binary_codec` and `bmsx_rom_image`: lower native wire-format targets
+  shared by machine and tooling products. They own the binary codec and physical
+  ROM header/image admission respectively; neither depends on the machine core.
 - `libbmsx.a` in its CMake build tree: C++ machine/runtime static library. It
   retains physical ROM bytes and executable-image decode state, but does not
-  compile the Lua source lexer/parser, BLua32 source-range extraction, symbol
-  sidecars, disassembly, or formatted fault presentation. Build trees never
-  share this target-specific archive.
+  compile ROM TOC/manifest/asset package loading, Lua module-path tooling, the
+  Lua source lexer/parser, BLua32 source-range extraction, symbol sidecars,
+  disassembly, or formatted fault presentation. Its CMake target depends only on
+  the lower wire-format targets, never on either tooling target. Build trees
+  never share this target-specific archive.
+- `bmsx_rom_tooling` in native diagnostics/tests builds: decoded ROM
+  TOC/manifest/asset packages and module-path tooling. It depends only on the
+  lower wire-format targets; neither it nor its consumers acquire the machine
+  core through this dependency.
 - `bmsx_blua32_tooling` in native diagnostics-enabled builds: BLua32 source,
-  symbol-sidecar, and disassembly tooling. It depends downward on `bmsx_core`;
-  the machine/runtime archive never depends on it.
+  symbol-sidecar, and disassembly tooling. It depends on `bmsx_rom_tooling`, not
+  on the machine core.
 - `dist/libretro_bmsx.so` / `.dll` / `.dylib`: libretro core entrypoint around the C++ machine runtime.
 - `bmsx_libretro_host`: local frontend executable that loads a libretro core and
   owns SDL, ALSA, EGL/fbdev, input devices, screenshots, and the process loop.
@@ -358,6 +369,13 @@ composition in `ide/workbench/`; only Studio and IDE-test entrypoints import it.
 This is a static dependency boundary, not an optional IDE parameter, callback
 provider, or runtime feature switch.
 
+`MachineManager` parses only the outer physical ROM image/header needed to bind
+system and cartridge bytes to `Memory`. It never decodes TOC assets, manifests,
+source registries, symbols, or authoring packages. Studio and source-aware
+profiling explicitly call `rompack/tooling/media.ts` above that machine
+initialization boundary. Ordinary browser and Node players therefore neither
+allocate authoring layers nor link their decoder graph.
+
 Deployable artifact construction is owned by `scripts/products/`. Browser
 player, browser Studio, Node player, Node tooling, machine-library, and
 libretro builds are independently invokable product targets; there is no
@@ -367,6 +385,14 @@ cart. `scripts/rompacker/` owns BIOS/cart source compilation, linking, assets,
 and ROM emission and imports no host, IDE, runtime-composition, or product-build
 module. Shared CLI and source-scan mechanics live under `scripts/tooling/`
 rather than either solution owner.
+
+The compiler and ROM producer depend downward on `machine/{ts,cpp}/spec` and
+shared low-level code only. They never import/include `machine/**` or `core/**`
+emulator implementation to obtain register words, image layouts, model
+constants, CPU values, or firmware identities. The emulator consumes the same
+specification leaves independently. This dependency direction is enforced by
+`audit:architecture-boundaries:strict`; it is not maintained through re-export
+files or an emulator facade.
 
 Do not use `platform` as an architecture category for both `libretro` and
 `libretro_host`. `hosts/libretro` is the libretro core entrypoint;
@@ -499,14 +525,30 @@ directly.
 
 The fixed BMSX physical address contract lives in
 `machine/{ts,cpp}/spec/bmsx/memory_map.*`. It owns the raw 32-bit ROM, RAM
-aperture, cartridge-bus and MMIO addresses plus the fixed reserved-RAM layout.
-Selected-model RAM capacity and its derived live end remain machine
-configuration in `machine/{ts,cpp}/machine/memory/map.*`; that module does not
-re-export the fixed map. Datapaths and ROM tooling therefore consume fixed
-addresses directly from the specification owner without a CPU, Memory or
-tooling facade. `audit:core-parity` compares every fixed map constant and the
-mutable RAM-configuration declarations, initial expressions and configuration
-writes across TypeScript and C++.
+aperture, fixed BMSX RAM capacity, cartridge-bus and MMIO addresses plus
+the fixed reserved-RAM layout. Runtime memory configuration in
+`machine/{ts,cpp}/machine/memory/map.*` binds the selected machine instance; it
+does not own or re-export the physical map. Datapaths, linkers, and ROM tooling
+therefore consume fixed addresses directly from the specification owner without
+a CPU, Memory, or tooling facade.
+
+Other numeric specification leaves are split by physical contract:
+
+- BMSX MMIO indexes, cartridge words, ROM package fields, and TOC records:
+  `spec/bmsx/io.*`, `cartridge.*`, `rom_package.*`, and `rom_toc.*`;
+- BLua32 builtin identities and signed execution-domain ids:
+  `spec/blua32/builtin.*` and `execution_domain.*`;
+- GX GP0 packet fields and VRAM geometry:
+  `spec/gx/gp0.*` and `vram.*`;
+- APU register, FIFO, and fixed-point words: `spec/audio/apu.*`;
+- IMGDEC register/FIFO words and compressed stream grammar:
+  `spec/imgdec/registers.*` and `stream.*`.
+
+Decoded device state, controller phases, parsers, compiler objects, ROM package
+objects, diagnostics, and authoring records remain with their behavior owners.
+They are not moved into specification files merely because they consume a wire
+constant. `audit:core-parity` compares the mirrored numeric leaves as well as
+the runtime surfaces that consume them.
 
 The BLua32 ISA contract is:
 
@@ -557,9 +599,13 @@ ROM data is CPU-visible source material.
 
 Owners:
 
-- ROM package wire layout: `machine/ts/rompack/format.ts` and
+- Raw ROM package layout: `machine/{ts,cpp}/spec/bmsx/rom_package.*`.
+- Raw ROM TOC layout: `machine/{ts,cpp}/spec/bmsx/rom_toc.*`.
+- ROM package parsing and semantic records: `machine/ts/rompack/format.ts` and
   `machine/cpp/rompack/format.h/.cpp`.
-- ROM TOC wire layout: `machine/ts/rompack/toc.ts` and
+- Physical ROM image/header admission: `machine/ts/rompack/image.ts` and
+  `machine/cpp/rompack/image.h/.cpp`.
+- ROM TOC decoding and semantic records: `machine/ts/rompack/toc.ts` and
   `machine/cpp/rompack/toc.h/.cpp`.
 - Layered ROM lookup: `machine/ts/rompack/source.ts` and
   `machine/cpp/rompack/source.h/.cpp`.
@@ -572,6 +618,8 @@ Owners:
 - Tooling-only decoded image graph:
   `machine/ts/rompack/tooling/blua32_image.ts` and
   `machine/cpp/rompack/tooling/blua32_image.h/.cpp`.
+- Tooling-only system/cartridge package composition:
+  `machine/ts/rompack/tooling/media.ts`.
 - Build-time Lua source compilation and Lua source registries:
   `machine/ts/lua/compiler.ts`, `machine/ts/lua/compiler/*`, and
   `machine/ts/lua/source_registry.ts`.
@@ -603,15 +651,16 @@ through little-endian byte reads. Values inside an individual packed format
 likewise remain byte-packed. The producer does not insert padding inside a
 format, and consumers do not weaken CPU alignment or infer alternate layouts.
 
-Runtime package records describe ROM payloads; they do not own duplicate audio,
-atlas, or binary payload bytes. The browser IDE may decode package records for
-authoring views, but the native machine manager does not construct a parallel
-system or cartridge host package. The active machine keeps one CPU-visible ROM
-backing per loaded medium. Native path-based libretro loads use read-only mapped
-files for that backing; memory-buffer frontends provide data that the core owns
-once for lifetime safety. Node headless consumes the `fs.readFile` buffer
-directly. Guest code moves bytes from ROM to RAM/VRAM/APU through the machine;
-the Lua engine must not cache asset payload copies behind the cart's back.
+ROM tooling package records describe ROM payloads; they do not own duplicate
+audio, atlas, or binary payload bytes. Studio may decode those records for
+authoring views. Neither TS nor C++ `MachineManager` constructs a parallel
+system or cartridge tooling package: the active machine keeps one CPU-visible
+ROM backing per loaded medium. Native path-based libretro loads use read-only
+mapped files for that backing; memory-buffer frontends provide data that the
+core owns once for lifetime safety. Node headless consumes the `fs.readFile`
+buffer directly. Guest code moves bytes from ROM to RAM/VRAM/APU through the
+machine; the Lua engine must not cache asset payload copies behind the cart's
+back.
 Every ROM file starts with the current BMSX header at byte zero and remains its
 exact raw file length in memory. There is no prepended ROM-label PNG, whole-ROM
 compression, normalize/decompress stage, or allocation sized to the address
@@ -621,8 +670,11 @@ datapaths do not turn the complete cartridge into a compressed container.
 
 Compiled BLua is executable source material, not mutable machine state. BLua is
 the source dialect; BLua32 is BMSX's 32-bit instruction set and is not PUC-Lua
-bytecode. The compiler emits a tooling-owned BLua32 object with relocations. The
-ROM packer resolves those relocations at the actual physical `SYSTEM_ROM` or
+bytecode. Compiler constants are the source-level scalar set
+`nil | boolean | number | string`; the compiler never constructs CPU `Value`
+objects, uses the runtime string pool, or classifies values through host object
+identity. It emits a tooling-owned BLua32 object with relocations. The ROM
+packer resolves those relocations at the actual physical `SYSTEM_ROM` or
 `CART_ROM` addresses and emits the final bytes; neither runtime owns a linker.
 
 The packer emits one immutable prefix: ordinary asset payload spans, per-entry
@@ -2883,11 +2935,12 @@ IDE error owners; they are not BIOS monitor commands and must not be swallowed
 by deferred host code.
 
 BLua32 source tooling is mirrored under `machine/{ts,cpp}/rompack/tooling`.
-Browser IDE state retains decoded tooling images there. Native libretro builds
-link `bmsx_blua32_tooling`, and `LibretroPlatform` retains the decoded tooling
-image for each inserted physical ROM only while that media is loaded. Fault
-presentation joins those optional symbols with allocation-free scalar CPU
-state reads only after an exception reaches the libretro host boundary.
+Browser IDE state retains decoded tooling images there. Native tooling starts
+with `bmsx_rom_tooling`; diagnostics-enabled libretro builds additionally link
+`bmsx_blua32_tooling`. `LibretroPlatform` retains the decoded tooling image for
+each inserted physical ROM only while that media is loaded. Fault presentation
+joins those optional symbols with allocation-free scalar CPU state reads only
+after an exception reaches the libretro host boundary.
 `MachineManager`, `Runtime`, CPU state, and `libbmsx.a` retain no source paths,
 symbol caches, disassembler objects, or formatted diagnostic records.
 

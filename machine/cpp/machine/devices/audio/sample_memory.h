@@ -1,7 +1,7 @@
 #pragma once
 
 #include "common/primitives.h"
-#include "machine/devices/audio/contracts.h"
+#include "spec/audio/apu.h"
 #include "machine/devices/audio/source.h"
 
 #include <array>

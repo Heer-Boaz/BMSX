@@ -1,4 +1,5 @@
-import { parseRomImage, parseCartridgeIndex } from '../../machine/ts/rompack/loader';
+import { parseRomImage } from '../../machine/ts/rompack/image';
+import { parseCartridgeIndex } from '../../machine/ts/rompack/loader';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -10,8 +11,8 @@ async function main(): Promise<void> {
 	}
 	const absoluteRomPath = path.resolve(romPath);
 	const romBuffer = await readFile(absoluteRomPath);
-	const { payload } = parseRomImage(romBuffer, 'cart');
-	const { entries, projectRootPath } = await parseCartridgeIndex(payload);
+	const { bytes } = parseRomImage(romBuffer, 'cart');
+	const { entries, projectRootPath } = await parseCartridgeIndex(bytes);
 
 	console.log(`ROM: ${absoluteRomPath}`);
 	console.log(`projectRootPath: ${projectRootPath ?? '<none>'}`);

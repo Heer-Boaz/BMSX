@@ -1,4 +1,4 @@
-import { APU_SAMPLE_RATE_HZ } from '../machine/devices/audio/contracts';
+import { APU_SAMPLE_RATE_HZ } from '../spec/audio/apu';
 import type { ApuOutputRing } from '../machine/devices/audio/output_ring';
 
 export class AudioOutputResampler {

@@ -1,20 +1,18 @@
 import { OpCode, decodeCallArgCount } from '../../../spec/blua32/opcode';
-import { valueIsString, type Value } from '../../../machine/cpu/value';
 import type { SourceRange } from '../../../rompack/tooling/blua32_symbols';
-import type { Proto, UpvalueDesc } from '../program';
+import type { ProgramConstant, Proto, UpvalueDesc } from '../program';
 import { MAX_EXT_CONST } from '../../../spec/blua32/instruction_format';
-import type { StringPool } from '../../../machine/cpu/string_pool';
 import { buildBasicBlocks, buildBlockGraph, getJumpTarget, isJump, remapInstructions, type Block } from '../control_flow';
 import { cloneInstruction, computeMaxRegister, isPureInstruction } from './instructions';
 import { applyGlobalOptimizations } from './ssa';
 import { collectInstructionDefs, collectInstructionUses, computeBlockLiveOut } from './liveness';
 import {
+	ConstValueKind,
+	constValueForOptimization,
 	evaluateBinary,
 	evaluateComparison,
 	evaluateUnary,
 	getImmediateConstValue,
-	isConstPoolValue,
-	isTruthy,
 	replaceWithConst,
 	replaceWithJump,
 	type ConstValue,
@@ -43,9 +41,8 @@ export type OptimizationLevel = 0 | 1 | 2 | 3;
 type OptimizationProtoMeta = Pick<Proto, 'numParams' | 'isVararg' | 'maxStack' | 'upvalueDescs'>;
 
 export type OptimizationContext = {
-	constPool: ReadonlyArray<Value>;
-	stringPool: StringPool;
-	constIndex: (value: Value) => number;
+	constPool: ReadonlyArray<ProgramConstant>;
+	constIndex: (value: ProgramConstant) => number;
 	getClosureUpvalues: (protoIndex: number) => ReadonlyArray<UpvalueDesc>;
 	getProtoMeta: (protoIndex: number) => OptimizationProtoMeta;
 	getProtoInstructionSet: (protoIndex: number) => InstructionSet | null;
@@ -381,7 +378,7 @@ const computeBlockConstantIn = (
 		inMaps[i] = new Map();
 		outMaps[i] = new Map();
 	}
-	const nilConst: ConstValue = { value: null, constIndex: context.constIndex(null) };
+	const nilConst = constValueForOptimization(null, context.constIndex(null));
 
 	let changed = true;
 	while (changed) {
@@ -435,9 +432,14 @@ const computeBlockConstantIn = (
 					case OpCode.LEN: {
 						const operand = constants.get(instruction.b);
 						if (operand) {
-							const result = evaluateUnary(instruction.op, operand.value, context);
-							if (result !== null && isConstPoolValue(result)) {
-								recordRegisterConstant(constants, context, instruction.a, { value: result, constIndex: context.constIndex(result) });
+							const result = evaluateUnary(instruction.op, operand);
+							if (result !== null) {
+								recordRegisterConstant(
+									constants,
+									context,
+									instruction.a,
+									constValueForOptimization(result, context.constIndex(result)),
+								);
 								break;
 							}
 						}
@@ -459,9 +461,14 @@ const computeBlockConstantIn = (
 						const left = getConstForOperand(instruction.b, (instruction.rkMask & RK_B) !== 0, constants, context);
 						const right = getConstForOperand(instruction.c, (instruction.rkMask & RK_C) !== 0, constants, context);
 						if (left && right) {
-							const result = evaluateBinary(instruction.op, left.value, right.value);
-							if (result !== null && isConstPoolValue(result)) {
-								recordRegisterConstant(constants, context, instruction.a, { value: result, constIndex: context.constIndex(result) });
+							const result = evaluateBinary(instruction.op, left, right);
+							if (result !== null) {
+								recordRegisterConstant(
+									constants,
+									context,
+									instruction.a,
+									constValueForOptimization(result, context.constIndex(result)),
+								);
 								break;
 							}
 						}
@@ -520,7 +527,7 @@ const foldConstants = (set: InstructionSet, context: OptimizationContext): Instr
 	const keep = new Array<boolean>(count).fill(true);
 	let removed = 0;
 	const blocks = buildBasicBlocks(instructions);
-	const nilConst: ConstValue = { value: null, constIndex: context.constIndex(null) };
+	const nilConst = constValueForOptimization(null, context.constIndex(null));
 	const blockConstIn = computeBlockConstantIn(instructions, context);
 
 	for (let blockIndex = 0; blockIndex < blocks.length; blockIndex += 1) {
@@ -537,7 +544,8 @@ const foldConstants = (set: InstructionSet, context: OptimizationContext): Instr
 			if (instruction.op === OpCode.JMPIF || instruction.op === OpCode.JMPIFNOT) {
 				const value = constants.get(instruction.a);
 				if (value) {
-					const truthy = isTruthy(value.value);
+					const truthy = value.kind !== ConstValueKind.Nil
+						&& !(value.kind === ConstValueKind.Boolean && !value.value);
 					const shouldJump = instruction.op === OpCode.JMPIF ? truthy : !truthy;
 					if (shouldJump) {
 						replaceWithJump(instruction, getJumpTarget(instruction));
@@ -552,7 +560,7 @@ const foldConstants = (set: InstructionSet, context: OptimizationContext): Instr
 				const left = getConstForOperand(instruction.b, (instruction.rkMask & RK_B) !== 0, constants, context);
 				const right = getConstForOperand(instruction.c, (instruction.rkMask & RK_C) !== 0, constants, context);
 				if (left && right) {
-					const result = evaluateComparison(instruction.op, left.value, right.value, context);
+					const result = evaluateComparison(instruction.op, left, right);
 					if (result !== null) {
 						const expected = instruction.a !== 0;
 						const shouldSkip = result !== expected;
@@ -570,8 +578,8 @@ const foldConstants = (set: InstructionSet, context: OptimizationContext): Instr
 			if (instruction.op === OpCode.UNM || instruction.op === OpCode.BNOT || instruction.op === OpCode.NOT || instruction.op === OpCode.LEN) {
 				const operand = constants.get(instruction.b);
 				if (operand) {
-					const result = evaluateUnary(instruction.op, operand.value, context);
-					if (result !== null && isConstPoolValue(result)) {
+					const result = evaluateUnary(instruction.op, operand);
+					if (result !== null) {
 						const folded = replaceWithConst(instruction, instruction.a, result, context);
 						recordRegisterConstant(constants, context, instruction.a, folded);
 						continue;
@@ -596,8 +604,8 @@ const foldConstants = (set: InstructionSet, context: OptimizationContext): Instr
 				const left = getConstForOperand(instruction.b, (instruction.rkMask & RK_B) !== 0, constants, context);
 				const right = getConstForOperand(instruction.c, (instruction.rkMask & RK_C) !== 0, constants, context);
 				if (left && right) {
-					const result = evaluateBinary(instruction.op, left.value, right.value);
-					if (result !== null && isConstPoolValue(result)) {
+					const result = evaluateBinary(instruction.op, left, right);
+					if (result !== null) {
 						const folded = replaceWithConst(instruction, instruction.a, result, context);
 						recordRegisterConstant(constants, context, instruction.a, folded);
 						continue;
@@ -712,7 +720,7 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 	}
 	const blocks = buildBasicBlocks(instructions);
 	const blockConstIn = computeBlockConstantIn(instructions, context);
-	const nilConst: ConstValue = { value: null, constIndex: context.constIndex(null) };
+	const nilConst = constValueForOptimization(null, context.constIndex(null));
 
 	const invalidateCopiesUsing = (copies: Map<number, number>, register: number): void => {
 		let updated = true;
@@ -787,7 +795,7 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 			// Keep RK replacement for non-string constants only.
 			// While the string-producing path in this pass is currently limited (notably CONCAT),
 			// don't emit RK string constants for STORE_MEM_WORDS; those must stay register-based.
-			&& !(instruction.op === OpCode.STORE_MEM_WORDS && valueIsString(constant.value))
+			&& !(instruction.op === OpCode.STORE_MEM_WORDS && constant.kind === ConstValueKind.String)
 		) {
 			return -1 - constant.constIndex;
 		}
@@ -831,7 +839,7 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 					case OpCode.MOV: {
 						rewriteCopyInstructionOperand(instruction, 'b', copies);
 						const constant = constants.get(instruction.b);
-						if (constant && isConstPoolValue(constant.value) && !valueIsString(constant.value)) {
+						if (constant && constant.kind !== ConstValueKind.String) {
 							replaceWithConst(instruction, instruction.a, constant.value, context);
 							// The MOV is now an immediate const load. The tracking switch below
 							// dispatches on the rewritten opcode (e.g. K0/KSMI) and would not
@@ -962,9 +970,14 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 				case OpCode.LEN: {
 					const operand = constants.get(instruction.b);
 					if (operand) {
-						const result = evaluateUnary(instruction.op, operand.value, context);
+						const result = evaluateUnary(instruction.op, operand);
 						if (result !== null) {
-							setConst(constants, copies, instruction.a, { value: result, constIndex: context.constIndex(result) });
+							setConst(
+								constants,
+								copies,
+								instruction.a,
+								constValueForOptimization(result, context.constIndex(result)),
+							);
 							break;
 						}
 					}
@@ -986,9 +999,14 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 					const left = getConstForOperand(instruction.b, (instruction.rkMask & RK_B) !== 0, constants, context);
 					const right = getConstForOperand(instruction.c, (instruction.rkMask & RK_C) !== 0, constants, context);
 					if (left && right) {
-						const result = evaluateBinary(instruction.op, left.value, right.value);
+						const result = evaluateBinary(instruction.op, left, right);
 						if (result !== null) {
-							setConst(constants, copies, instruction.a, { value: result, constIndex: context.constIndex(result) });
+							setConst(
+								constants,
+								copies,
+								instruction.a,
+								constValueForOptimization(result, context.constIndex(result)),
+							);
 							break;
 						}
 					}

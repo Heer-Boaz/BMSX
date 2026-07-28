@@ -1,16 +1,16 @@
 import { decodeBinaryWithPropTable, encodeBinaryWithPropTable, requireObject, requireObjectKey } from '../../../common/serializer/binencoder';
-import { IO_DMA_CHANNEL_COUNT, SYS_PRINT_BUFFER_BYTES } from '../../bus/io';
+import { IO_DMA_CHANNEL_COUNT, SYS_PRINT_BUFFER_BYTES } from '../../../spec/bmsx/io';
 import type { MachineSaveState } from '../../save_state';
 import type { CpuFrameState, CpuObjectState, CpuProtectedCallState, CpuRootValueState, CpuRuntimeState, CpuValueState } from '../../cpu/cpu';
-import type { ExecutionDomainId } from '../../execution_address_space';
-import type { BuiltinFunctionId } from '../../cpu/value';
+import type { ExecutionDomainId } from '../../../spec/blua32/execution_domain';
+import type { BuiltinFunctionId } from '../../../spec/blua32/builtin';
 import type { IrqControllerState } from '../../devices/irq/save_state';
 import type { AudioControllerState } from '../../devices/audio/save_state';
 import type {
 	CartridgeControllerState,
 	CartridgeSlotState,
 } from '../../devices/cartridge/contracts';
-import { CARTRIDGE_SLOT_COUNT } from '../../devices/cartridge/contracts';
+import { CARTRIDGE_SLOT_COUNT } from '../../../spec/bmsx/cartridge';
 import type { DmaChannelState, DmaControllerState } from '../../devices/dma/controller';
 import type {
 	ApuBadpDecoderSaveState,
@@ -20,16 +20,27 @@ import type {
 } from '../../devices/audio/save_state';
 import type { ApuCommandFifoState } from '../../devices/audio/command_fifo';
 import type { ApuSampleTransferState } from '../../devices/audio/save_state';
-import { APU_COMMAND_FIFO_CAPACITY, APU_COMMAND_FIFO_REGISTER_WORD_COUNT, APU_PARAMETER_REGISTER_COUNT, APU_SAMPLE_RAM_ADDRESS_MASK, APU_SAMPLE_RAM_BYTES, APU_SLOT_COUNT, APU_SLOT_REGISTER_WORD_COUNT, APU_TRANSFER_FIFO_WORD_CAPACITY } from '../../devices/audio/contracts';
+import {
+	APU_COMMAND_FIFO_CAPACITY,
+	APU_COMMAND_FIFO_REGISTER_WORD_COUNT,
+	APU_PARAMETER_REGISTER_COUNT,
+	APU_SAMPLE_RAM_ADDRESS_MASK,
+	APU_SAMPLE_RAM_BYTES,
+	APU_SLOT_COUNT,
+	APU_SLOT_REGISTER_WORD_COUNT,
+	APU_TRANSFER_FIFO_WORD_CAPACITY,
+} from '../../../spec/audio/apu';
 import type { StringPoolState, StringPoolStateEntry } from '../../cpu/string_pool';
 import type { InputControllerState } from '../../devices/input/save_state';
 import type { ImgDecControllerState } from '../../devices/imgdec/controller';
+import { IMGDEC_DECODE_BATCH_WORDS } from '../../devices/imgdec/controller';
 import {
 	IMGDEC_HISTORY_WORD_CAPACITY,
+} from '../../../spec/imgdec/stream';
+import {
 	IMGDEC_INPUT_FIFO_WORD_CAPACITY,
 	IMGDEC_OUTPUT_FIFO_WORD_CAPACITY,
-	IMGDEC_DECODE_BATCH_WORDS,
-} from '../../devices/imgdec/contracts';
+} from '../../../spec/imgdec/registers';
 import { INPUT_CONTROLLER_KEY_WORD_COUNT, INPUT_CONTROLLER_PAD_AXIS_COUNT, INPUT_CONTROLLER_PAD_COUNT } from '../../devices/input/contracts';
 import {
 	SYSTEM_SUPERVISOR_PHASE_GPU_QUIESCE,
@@ -42,6 +53,7 @@ import {
 	type GeometryControllerPhase,
 } from '../../devices/geometry/contracts';
 import {
+	GX_GPU_GP0_INGRESS_POLYLINE_PAYLOAD,
 	type GxGpuIngressContextState,
 	type GxGpuRegisterContextState,
 	type GxGpuSaveState,
@@ -51,14 +63,20 @@ import {
 	GX_GPU_COMMAND_FIFO_WORD_CAPACITY,
 	GX_GPU_DMA_INGRESS_WORD_CAPACITY,
 	GX_GPU_GP0_COMMAND_BUFFER_WORDS,
-	GX_GPU_GP0_INGRESS_POLYLINE_PAYLOAD,
-} from '../../devices/gx/gp0';
-import { GX_GPU_COMMAND_CAPACITY, GX_GPU_COMMAND_WORD_CAPACITY, GX_GPU_READBACK_READY, GX_GPU_READBACK_SUBMITTED, GX_GPU_TRANSFER_MAX_HEIGHT, type GxGpuCommandBufferState } from '../../devices/gx/gpu_command_buffer';
+} from '../../../spec/gx/gp0';
+import { GX_GPU_TRANSFER_MAX_HEIGHT } from '../../../spec/gx/gp0';
+import {
+	GX_GPU_COMMAND_CAPACITY,
+	GX_GPU_COMMAND_WORD_CAPACITY,
+	GX_GPU_READBACK_READY,
+	GX_GPU_READBACK_SUBMITTED,
+	type GxGpuCommandBufferState,
+} from '../../devices/gx/gpu_command_buffer';
 import {
 	GX_GPU_VRAM_BYTE_COUNT,
 	GX_GPU_VRAM_WIDTH,
 	GX_GPU_VRAM_Y_ADDRESS_PERIOD,
-} from '../../devices/gx/vram_address';
+} from '../../../spec/gx/vram';
 import { GX_GPU_PCRTC_COMPOSITION_WORD_COUNT, GX_GPU_PCRTC_CONFIG_WORD_COUNT, type GxGpuPcrtcState } from '../../devices/gx/gpu_pcrtc';
 import type { GxGteState } from '../../devices/gx/gte';
 import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT, GX_GTE_PLUS_REGISTER_COUNT } from '../../devices/gx/gte';

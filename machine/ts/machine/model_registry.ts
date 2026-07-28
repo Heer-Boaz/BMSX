@@ -1,9 +1,9 @@
 import { HZ_SCALE } from './runtime/timing/constants';
+import { BMSX_RAM_BYTES } from '../spec/bmsx/memory_map';
 
 // Console-model registry: the machine owns fixed PSX-class raster hardware,
 // PS2-class PCRTC presentation aspect, and device throughput/timing parameters.
 
-export type MachineVdpClass = 'psx';
 export type PsxGpuVideoStandard = 'pal' | 'ntsc';
 
 export const PSX_CPU_FREQ_HZ = 33_868_800; // 44100 * 768, the real PS1 CPU clock
@@ -13,7 +13,6 @@ export const PSX_DMA_SYSTEM_ROM_CYCLES_PER_WORD = 1;
 export const PSX_DMA_CART_ROM_CYCLES_PER_WORD = 8;
 export const PSX_DMA_CART_ROM_BURST_SETUP_CYCLES = 4;
 export const PSX_IMGDEC_CYCLES_PER_OUTPUT_WORD = 2;
-export const PSX_RAM_BYTES = 0x00400000;
 export const GX_GPU_DISPLAY_ASPECT_WIDTH = 4;
 export const GX_GPU_DISPLAY_ASPECT_HEIGHT = 3;
 
@@ -53,7 +52,7 @@ export const PSX_MACHINE_SPEC: MachineModelSpec = {
 	dmaCartRomCyclesPerWord: PSX_DMA_CART_ROM_CYCLES_PER_WORD,
 	dmaCartRomBurstSetupCycles: PSX_DMA_CART_ROM_BURST_SETUP_CYCLES,
 	imgDecCyclesPerOutputWord: PSX_IMGDEC_CYCLES_PER_OUTPUT_WORD,
-	ramBytes: PSX_RAM_BYTES,
+	ramBytes: BMSX_RAM_BYTES,
 	geoWorkUnitsPerSec: PSX_GEO_WORK_UNITS_PER_SEC,
 };
 

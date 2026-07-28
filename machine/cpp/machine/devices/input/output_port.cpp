@@ -1,6 +1,6 @@
 #include "machine/devices/input/output_port.h"
 
-#include "machine/bus/io.h"
+#include "spec/bmsx/io.h"
 #include "machine/devices/input/contracts.h"
 #include "machine/devices/input/registers.h"
 #include "machine/memory/memory.h"

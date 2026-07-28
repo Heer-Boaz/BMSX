@@ -7,7 +7,7 @@ import {
 	IO_INP_OUTPUT_INTENSITY_Q16,
 	IO_INP_OUTPUT_PORT,
 	IO_INP_STATUS,
-} from '../../bus/io';
+} from '../../../spec/bmsx/io';
 import type { Value } from '../../cpu/value';
 import { Memory } from '../../memory/memory';
 import type { SystemController } from '../system/controller';

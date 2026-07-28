@@ -5,7 +5,7 @@ import {
 	IMGDEC_STREAM_MAGIC,
 	IMGDEC_TOKEN_KIND_SHIFT,
 	IMGDEC_TOKEN_KIND_ZERO,
-} from '../../machine/ts/machine/devices/imgdec/contracts';
+} from '../../machine/ts/spec/imgdec/stream';
 import { decodeImgDecStream, encodeImgDecStream } from '../../machine/ts/rompack/tooling/imgdec_codec';
 
 test('IMGDEC word stream round-trips literal, repeat, zero, and overlapping back-reference runs', () => {

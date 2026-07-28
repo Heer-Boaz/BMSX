@@ -1,5 +1,5 @@
 #include "machine/devices/gx/gte.h"
-#include "machine/bus/io.h"
+#include "spec/bmsx/io.h"
 #include "machine/cpu/cpu.h"
 #include "spec/blua32/instruction_format.h"
 #include "machine/devices/irq/controller.h"

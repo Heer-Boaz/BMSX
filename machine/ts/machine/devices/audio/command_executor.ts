@@ -1,4 +1,4 @@
-import { IO_APU_SELECTED_SLOT_REG0, IO_APU_SLOT, IO_ARG_STRIDE } from '../../bus/io';
+import { IO_APU_SELECTED_SLOT_REG0, IO_APU_SLOT, IO_ARG_STRIDE } from '../../../spec/bmsx/io';
 import type { Value } from '../../cpu/value';
 import type { Memory } from '../../memory/memory';
 import type { DeviceScheduler } from '../../scheduler/device';
@@ -28,6 +28,8 @@ import {
 	APU_PARAMETER_REGISTER_COUNT,
 	APU_PARAMETER_SLOT_INDEX,
 	APU_SLOT_INDEX_MASK,
+} from '../../../spec/audio/apu';
+import {
 	APU_SLOT_PHASE_FADING,
 	type ApuAudioSlot,
 	type ApuAudioSource,

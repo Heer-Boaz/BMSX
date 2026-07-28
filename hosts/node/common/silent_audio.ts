@@ -1,5 +1,5 @@
 import { type AudioOutputPuller, type AudioService } from 'bmsx/platform';
-import { APU_SAMPLE_RATE_HZ } from 'bmsx/machine/devices/audio/contracts';
+import { APU_SAMPLE_RATE_HZ } from 'bmsx/spec/audio/apu';
 
 export class SilentAudioService implements AudioService {
 	readonly available = true;

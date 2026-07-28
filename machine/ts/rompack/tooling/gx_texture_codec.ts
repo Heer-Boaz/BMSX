@@ -1,8 +1,8 @@
 import {
 	GX_GPU_TEXTURE_MODE_DIRECT16,
 	GX_GPU_TEXTURE_MODE_PALETTE4,
-} from '../../machine/devices/gx/gpu_command_buffer';
-import { GX_GPU_CLUT_4BIT_WORDS } from '../../machine/devices/gx/gp0';
+} from '../../spec/gx/gp0';
+import { GX_GPU_CLUT_4BIT_WORDS } from '../../spec/gx/gp0';
 const GX_PALETTE4_PIXELS_PER_WORD = 4;
 
 export type GxTextureShape = {

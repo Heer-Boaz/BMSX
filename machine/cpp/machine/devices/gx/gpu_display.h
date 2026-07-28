@@ -1,7 +1,7 @@
 #pragma once
 
 #include "common/primitives.h"
-#include "machine/devices/gx/vram_address.h"
+#include "spec/gx/vram.h"
 
 namespace bmsx {
 

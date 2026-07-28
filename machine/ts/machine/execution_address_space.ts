@@ -2,15 +2,16 @@ import { readLE32 } from '../common/endian';
 import type { Memory, RomByteView } from './memory/memory';
 import { CART_ROM_BASE, RAM_BASE, SYSTEM_ROM_BASE } from '../spec/bmsx/memory_map';
 import {
+	SYSTEM_EXECUTION_DOMAIN_ID,
+	type ExecutionDomainId,
+} from '../spec/blua32/execution_domain';
+import {
 	BMSX_ROM_BOOT_HEADER_SIZE,
 	BMSX_ROM_HEADER_BLUA32_EXCEPTION_FUNCTION_ADDRESS_OFFSET,
 	BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET,
 	BMSX_ROM_HEADER_BLUA32_IRQ_FUNCTION_ADDRESS_OFFSET,
 	BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET,
 } from '../spec/bmsx/rom_header';
-
-export const SYSTEM_EXECUTION_DOMAIN_ID = -1;
-export type ExecutionDomainId = -1 | 0 | 1;
 
 export type Blua32ExecutionBoot = {
 	imageAddress: number;

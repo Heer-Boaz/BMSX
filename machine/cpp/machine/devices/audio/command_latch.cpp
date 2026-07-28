@@ -1,7 +1,7 @@
 #include "machine/devices/audio/command_latch.h"
 
-#include "machine/bus/io.h"
-#include "machine/devices/audio/contracts.h"
+#include "spec/bmsx/io.h"
+#include "spec/audio/apu.h"
 #include "machine/memory/memory.h"
 
 namespace bmsx {

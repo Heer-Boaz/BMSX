@@ -1,18 +1,35 @@
 #pragma once
 
-#include "machine/cpu/value.h"
-
 #include <array>
+#include <cstddef>
+#include <cstdint>
 #include <string_view>
 
 namespace bmsx {
+
+enum class BuiltinFunctionId : uint8_t {
+	Next = 0,
+	Type = 1,
+	SetMetatable = 2,
+	GetMetatable = 3,
+	RawGet = 4,
+	RawSet = 5,
+	Select = 6,
+	StringByte = 7,
+	StringChar = 8,
+	Error = 9,
+	PCall = 10,
+	XPCall = 11,
+};
+
+constexpr size_t BUILTIN_FUNCTION_COUNT = 12u;
 
 struct LuaBootPrimitive {
 	std::string_view name;
 	BuiltinFunctionId id;
 };
 
-inline constexpr std::array<LuaBootPrimitive, 12> LUA_BOOT_PRIMITIVES{{
+inline constexpr std::array<LuaBootPrimitive, BUILTIN_FUNCTION_COUNT> LUA_BOOT_PRIMITIVES{{
 	{ "__bmsx_next", BuiltinFunctionId::Next },
 	{ "__bmsx_type", BuiltinFunctionId::Type },
 	{ "__bmsx_setmetatable", BuiltinFunctionId::SetMetatable },

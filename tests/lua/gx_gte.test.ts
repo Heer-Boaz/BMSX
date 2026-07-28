@@ -8,7 +8,7 @@ import {
 	IO_GX_GTE_CYCLES,
 	IO_GX_GTE_DATA0,
 	IO_GX_GTE_PLUS_BASE,
-} from '../../machine/ts/machine/bus/io';
+} from '../../machine/ts/spec/bmsx/io';
 import { IO_WORD_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { MAPPED_BUS_MASTER_DMA } from '../../machine/ts/machine/memory/bus_signals';

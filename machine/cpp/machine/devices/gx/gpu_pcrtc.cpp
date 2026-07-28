@@ -1,6 +1,6 @@
 #include "machine/devices/gx/gpu_pcrtc.h"
 
-#include "machine/bus/io.h"
+#include "spec/bmsx/io.h"
 
 namespace bmsx {
 namespace {

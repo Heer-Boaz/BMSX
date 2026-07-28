@@ -10,7 +10,7 @@
 #define BMSX_LIBRETRO_PLATFORM_H
 
 #include "bmsx_libretro.h"
-#include "machine/devices/cartridge/contracts.h"
+#include "spec/bmsx/cartridge.h"
 #include "platform/platform.h"
 #include "render/backend/backend.h"
 #include "render/post/device_quantize/mode.h"

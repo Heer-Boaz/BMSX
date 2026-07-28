@@ -1,6 +1,7 @@
-#include "machine/bus/io.h"
+#include "spec/bmsx/io.h"
 #include "machine/cpu/cpu.h"
 #include "machine/devices/cartridge/contracts.h"
+#include "spec/bmsx/cartridge.h"
 #include "machine/devices/dma/controller.h"
 #include "machine/devices/irq/controller.h"
 #include "spec/bmsx/memory_map.h"

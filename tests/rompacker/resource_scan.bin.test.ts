@@ -6,7 +6,12 @@ import { test } from 'node:test';
 import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { buildRomAssetSymbolModuleSource, collectRomAssetSymbols } from '../../machine/ts/rompack/asset_symbols';
 import { layoutRomAssetPayloads } from '../../machine/ts/rompack/asset_layout';
-import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES, CART_ROM_WORD_ALIGNMENT, type RomAsset } from '../../machine/ts/rompack/format';
+import {
+	CART_ROM_HEADER_SIZE,
+	CART_ROM_MAGIC,
+	CART_ROM_WORD_ALIGNMENT,
+} from '../../machine/ts/spec/bmsx/rom_package';
+import { type RomAsset } from '../../machine/ts/rompack/format';
 import { loadRomAssetList } from '../../machine/ts/rompack/loader';
 import { layoutRomPrefix } from '../../machine/ts/rompack/tooling/rom_prefix_layout';
 import { buildRomBlua32Tail, compileLuaChunkBuffer, finalizeRompack, getResMetaList } from '../../scripts/rompacker/rombuilder';
@@ -121,7 +126,7 @@ test('ROM writer materializes word-aligned payload ranges', async () => {
 		assert.equal(sprite.collision_bin_end, ranges[2].end);
 		assert.equal(label.start, ranges[3].start);
 		assert.equal(label.end, ranges[3].end);
-		assert.deepEqual(rom.subarray(0, CART_ROM_MAGIC_BYTES.byteLength), Buffer.from(CART_ROM_MAGIC_BYTES));
+		assert.equal(rom.readUInt32LE(0), CART_ROM_MAGIC);
 		for (let index = 0; index < ranges.length; index += 1) {
 			const range = ranges[index];
 			assert.equal(range.start & (CART_ROM_WORD_ALIGNMENT - 1), 0);

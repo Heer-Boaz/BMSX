@@ -1,5 +1,5 @@
 #include "machine/runtime/runtime.h"
-#include "machine/firmware/boot_primitives.h"
+#include "spec/blua32/builtin.h"
 
 namespace bmsx {
 

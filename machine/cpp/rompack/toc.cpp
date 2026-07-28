@@ -151,25 +151,25 @@ RomTocPayload decodeRomToc(const u8* data, size_t size) {
 	if (size < ROM_TOC_HEADER_SIZE) {
 		throw BMSX_RUNTIME_ERROR("ROM TOC is too small.");
 	}
-	if (readLE32(data + 0) != ROM_TOC_MAGIC) {
+	if (readLE32(data + ROM_TOC_HEADER_MAGIC_OFFSET) != ROM_TOC_MAGIC) {
 		throw BMSX_RUNTIME_ERROR("Invalid ROM TOC magic.");
 	}
-	if (readLE32(data + 4) != ROM_TOC_HEADER_SIZE) {
+	if (readLE32(data + ROM_TOC_HEADER_SIZE_OFFSET) != ROM_TOC_HEADER_SIZE) {
 		throw BMSX_RUNTIME_ERROR("Unexpected ROM TOC header size.");
 	}
-	const u32 entrySize = readLE32(data + 8);
+	const u32 entrySize = readLE32(data + ROM_TOC_HEADER_ENTRY_SIZE_OFFSET);
 	if (entrySize != ROM_TOC_ENTRY_SIZE) {
 		throw BMSX_RUNTIME_ERROR("Unexpected ROM TOC entry size.");
 	}
-	const u32 entryCount = readLE32(data + 12);
-	const u32 entryOffset = readLE32(data + 16);
+	const u32 entryCount = readLE32(data + ROM_TOC_HEADER_ENTRY_COUNT_OFFSET);
+	const u32 entryOffset = readLE32(data + ROM_TOC_HEADER_ENTRY_TABLE_OFFSET);
 	if (entryOffset != ROM_TOC_HEADER_SIZE) {
 		throw BMSX_RUNTIME_ERROR("Unexpected ROM TOC entry offset.");
 	}
-	const u32 stringTableOffset = readLE32(data + 20);
-	const u32 stringTableLength = readLE32(data + 24);
-	const u32 projectRootOffset = readLE32(data + 28);
-	const u32 projectRootLength = readLE32(data + 32);
+	const u32 stringTableOffset = readLE32(data + ROM_TOC_HEADER_STRING_TABLE_OFFSET);
+	const u32 stringTableLength = readLE32(data + ROM_TOC_HEADER_STRING_TABLE_LENGTH_OFFSET);
+	const u32 projectRootOffset = readLE32(data + ROM_TOC_HEADER_PROJECT_ROOT_OFFSET);
+	const u32 projectRootLength = readLE32(data + ROM_TOC_HEADER_PROJECT_ROOT_LENGTH_OFFSET);
 	const size_t entriesBytes = static_cast<size_t>(entryCount) * static_cast<size_t>(entrySize);
 	const size_t expectedStringOffset = static_cast<size_t>(entryOffset) + entriesBytes;
 	if (static_cast<size_t>(stringTableOffset) != expectedStringOffset) {
@@ -190,19 +190,19 @@ RomTocPayload decodeRomToc(const u8* data, size_t size) {
 
 	for (u32 index = 0; index < entryCount; index += 1) {
 		const u8* entry = data + entryOffset + (index * entrySize);
-		const u32 tokenLo = readLE32(entry + 0);
-		const u32 tokenHi = readLE32(entry + 4);
+		const u32 tokenLo = readLE32(entry + ROM_TOC_ENTRY_TOKEN_LO_OFFSET);
+		const u32 tokenHi = readLE32(entry + ROM_TOC_ENTRY_TOKEN_HI_OFFSET);
 		const AssetToken assetToken = makeAssetToken(tokenLo, tokenHi);
-		const u32 typeId = readLE32(entry + 8);
-		const u32 opId = readLE32(entry + 12);
-		const u32 residOffset = readLE32(entry + 16);
-		const u32 residLength = readLE32(entry + 20);
-		const u32 sourceOffset = readLE32(entry + 24);
-		const u32 sourceLength = readLE32(entry + 28);
-		const u32 normalizedOffset = readLE32(entry + 32);
-		const u32 normalizedLength = readLE32(entry + 36);
-		const u32 updateLo = readLE32(entry + 80);
-		const u32 updateHi = readLE32(entry + 84);
+		const u32 typeId = readLE32(entry + ROM_TOC_ENTRY_ASSET_TYPE_OFFSET);
+		const u32 opId = readLE32(entry + ROM_TOC_ENTRY_OPERATION_OFFSET);
+		const u32 residOffset = readLE32(entry + ROM_TOC_ENTRY_RESID_OFFSET);
+		const u32 residLength = readLE32(entry + ROM_TOC_ENTRY_RESID_LENGTH_OFFSET);
+		const u32 sourceOffset = readLE32(entry + ROM_TOC_ENTRY_SOURCE_PATH_OFFSET);
+		const u32 sourceLength = readLE32(entry + ROM_TOC_ENTRY_SOURCE_PATH_LENGTH_OFFSET);
+		const u32 normalizedOffset = readLE32(entry + ROM_TOC_ENTRY_NORMALIZED_SOURCE_PATH_OFFSET);
+		const u32 normalizedLength = readLE32(entry + ROM_TOC_ENTRY_NORMALIZED_SOURCE_PATH_LENGTH_OFFSET);
+		const u32 updateLo = readLE32(entry + ROM_TOC_ENTRY_UPDATE_TIMESTAMP_LO_OFFSET);
+		const u32 updateHi = readLE32(entry + ROM_TOC_ENTRY_UPDATE_TIMESTAMP_HI_OFFSET);
 
 		const std::optional<std::string> assetId = decodeTocString(stringTable, stringTableSize, residOffset, residLength);
 		if (!assetId.has_value()) {
@@ -217,16 +217,16 @@ RomTocPayload decodeRomToc(const u8* data, size_t size) {
 		if (opId == ROM_TOC_OP_DELETE) {
 			romInfo.op = std::string("delete");
 		}
-		romInfo.start = optionalI32FromU32(readLE32(entry + 40));
-		romInfo.end = optionalI32FromU32(readLE32(entry + 44));
-		romInfo.compiledStart = optionalI32FromU32(readLE32(entry + 48));
-		romInfo.compiledEnd = optionalI32FromU32(readLE32(entry + 52));
-		romInfo.metabufferStart = optionalI32FromU32(readLE32(entry + 56));
-		romInfo.metabufferEnd = optionalI32FromU32(readLE32(entry + 60));
-		romInfo.modelTextureStart = optionalI32FromU32(readLE32(entry + 64));
-		romInfo.modelTextureEnd = optionalI32FromU32(readLE32(entry + 68));
-		romInfo.collisionBinStart = optionalI32FromU32(readLE32(entry + 72));
-		romInfo.collisionBinEnd = optionalI32FromU32(readLE32(entry + 76));
+		romInfo.start = optionalI32FromU32(readLE32(entry + ROM_TOC_ENTRY_DATA_START_OFFSET));
+		romInfo.end = optionalI32FromU32(readLE32(entry + ROM_TOC_ENTRY_DATA_END_OFFSET));
+		romInfo.compiledStart = optionalI32FromU32(readLE32(entry + ROM_TOC_ENTRY_COMPILED_START_OFFSET));
+		romInfo.compiledEnd = optionalI32FromU32(readLE32(entry + ROM_TOC_ENTRY_COMPILED_END_OFFSET));
+		romInfo.metabufferStart = optionalI32FromU32(readLE32(entry + ROM_TOC_ENTRY_METADATA_START_OFFSET));
+		romInfo.metabufferEnd = optionalI32FromU32(readLE32(entry + ROM_TOC_ENTRY_METADATA_END_OFFSET));
+		romInfo.modelTextureStart = optionalI32FromU32(readLE32(entry + ROM_TOC_ENTRY_MODEL_TEXTURE_START_OFFSET));
+		romInfo.modelTextureEnd = optionalI32FromU32(readLE32(entry + ROM_TOC_ENTRY_MODEL_TEXTURE_END_OFFSET));
+		romInfo.collisionBinStart = optionalI32FromU32(readLE32(entry + ROM_TOC_ENTRY_COLLISION_BIN_START_OFFSET));
+		romInfo.collisionBinEnd = optionalI32FromU32(readLE32(entry + ROM_TOC_ENTRY_COLLISION_BIN_END_OFFSET));
 		romInfo.sourcePath = decodeTocString(stringTable, stringTableSize, sourceOffset, sourceLength);
 		romInfo.normalizedSourcePath = decodeTocString(stringTable, stringTableSize, normalizedOffset, normalizedLength);
 		const u64 updateTimestamp = (static_cast<u64>(updateHi) << 32) | updateLo;
@@ -250,18 +250,18 @@ std::vector<u8> encodeRomToc(const RomTocPayload& payload) {
 	const TocStringSlice projectRoot = internTocString(stringTable, stringIndex, payload.projectRootPath);
 
 	std::vector<u8> out(ROM_TOC_HEADER_SIZE + (entries.size() * ROM_TOC_ENTRY_SIZE));
-	writeLE32(out.data() + 0, ROM_TOC_MAGIC);
-	writeLE32(out.data() + 4, ROM_TOC_HEADER_SIZE);
-	writeLE32(out.data() + 8, ROM_TOC_ENTRY_SIZE);
-	writeLE32(out.data() + 12, static_cast<u32>(entries.size()));
-	writeLE32(out.data() + 16, ROM_TOC_HEADER_SIZE);
-	writeLE32(out.data() + 20, ROM_TOC_HEADER_SIZE + static_cast<u32>(entries.size() * ROM_TOC_ENTRY_SIZE));
-	writeLE32(out.data() + 24, 0u);
-	writeLE32(out.data() + 28, projectRoot.offset);
-	writeLE32(out.data() + 32, projectRoot.length);
-	writeLE32(out.data() + 36, 0u);
-	writeLE32(out.data() + 40, 0u);
-	writeLE32(out.data() + 44, 0u);
+	writeLE32(out.data() + ROM_TOC_HEADER_MAGIC_OFFSET, ROM_TOC_MAGIC);
+	writeLE32(out.data() + ROM_TOC_HEADER_SIZE_OFFSET, ROM_TOC_HEADER_SIZE);
+	writeLE32(out.data() + ROM_TOC_HEADER_ENTRY_SIZE_OFFSET, ROM_TOC_ENTRY_SIZE);
+	writeLE32(out.data() + ROM_TOC_HEADER_ENTRY_COUNT_OFFSET, static_cast<u32>(entries.size()));
+	writeLE32(out.data() + ROM_TOC_HEADER_ENTRY_TABLE_OFFSET, ROM_TOC_HEADER_SIZE);
+	writeLE32(out.data() + ROM_TOC_HEADER_STRING_TABLE_OFFSET, ROM_TOC_HEADER_SIZE + static_cast<u32>(entries.size() * ROM_TOC_ENTRY_SIZE));
+	writeLE32(out.data() + ROM_TOC_HEADER_STRING_TABLE_LENGTH_OFFSET, 0u);
+	writeLE32(out.data() + ROM_TOC_HEADER_PROJECT_ROOT_OFFSET, projectRoot.offset);
+	writeLE32(out.data() + ROM_TOC_HEADER_PROJECT_ROOT_LENGTH_OFFSET, projectRoot.length);
+	writeLE32(out.data() + ROM_TOC_HEADER_RESERVED_0_OFFSET, 0u);
+	writeLE32(out.data() + ROM_TOC_HEADER_RESERVED_1_OFFSET, 0u);
+	writeLE32(out.data() + ROM_TOC_HEADER_RESERVED_2_OFFSET, 0u);
 
 	for (size_t index = 0; index < entries.size(); ++index) {
 		const RomSourceEntry& source = entries[index];
@@ -271,31 +271,31 @@ std::vector<u8> encodeRomToc(const RomTocPayload& payload) {
 		const AssetTokenParts token = splitAssetToken(hashAssetToken(source.resid));
 		const u32 opId = source.rom.op == "delete" ? ROM_TOC_OP_DELETE : ROM_TOC_OP_NONE;
 		u8* entry = out.data() + ROM_TOC_HEADER_SIZE + (index * ROM_TOC_ENTRY_SIZE);
-		writeLE32(entry + 0, token.lo);
-		writeLE32(entry + 4, token.hi);
-		writeLE32(entry + 8, assetTypeToId(source.rom.type));
-		writeLE32(entry + 12, opId);
-		writeLE32(entry + 16, resid.offset);
-		writeLE32(entry + 20, resid.length);
-		writeLE32(entry + 24, sourcePath.offset);
-		writeLE32(entry + 28, sourcePath.length);
-		writeLE32(entry + 32, normalizedSourcePath.offset);
-		writeLE32(entry + 36, normalizedSourcePath.length);
-		writeLE32(entry + 40, tocFieldValue(source.rom.start));
-		writeLE32(entry + 44, tocFieldValue(source.rom.end));
-		writeLE32(entry + 48, tocFieldValue(source.rom.compiledStart));
-		writeLE32(entry + 52, tocFieldValue(source.rom.compiledEnd));
-		writeLE32(entry + 56, tocFieldValue(source.rom.metabufferStart));
-		writeLE32(entry + 60, tocFieldValue(source.rom.metabufferEnd));
-		writeLE32(entry + 64, tocFieldValue(source.rom.modelTextureStart));
-		writeLE32(entry + 68, tocFieldValue(source.rom.modelTextureEnd));
-		writeLE32(entry + 72, tocFieldValue(source.rom.collisionBinStart));
-		writeLE32(entry + 76, tocFieldValue(source.rom.collisionBinEnd));
-		writeLE32(entry + 80, tocUpdateLo(source.rom.updateTimestamp));
-		writeLE32(entry + 84, tocUpdateHi(source.rom.updateTimestamp));
+		writeLE32(entry + ROM_TOC_ENTRY_TOKEN_LO_OFFSET, token.lo);
+		writeLE32(entry + ROM_TOC_ENTRY_TOKEN_HI_OFFSET, token.hi);
+		writeLE32(entry + ROM_TOC_ENTRY_ASSET_TYPE_OFFSET, assetTypeToId(source.rom.type));
+		writeLE32(entry + ROM_TOC_ENTRY_OPERATION_OFFSET, opId);
+		writeLE32(entry + ROM_TOC_ENTRY_RESID_OFFSET, resid.offset);
+		writeLE32(entry + ROM_TOC_ENTRY_RESID_LENGTH_OFFSET, resid.length);
+		writeLE32(entry + ROM_TOC_ENTRY_SOURCE_PATH_OFFSET, sourcePath.offset);
+		writeLE32(entry + ROM_TOC_ENTRY_SOURCE_PATH_LENGTH_OFFSET, sourcePath.length);
+		writeLE32(entry + ROM_TOC_ENTRY_NORMALIZED_SOURCE_PATH_OFFSET, normalizedSourcePath.offset);
+		writeLE32(entry + ROM_TOC_ENTRY_NORMALIZED_SOURCE_PATH_LENGTH_OFFSET, normalizedSourcePath.length);
+		writeLE32(entry + ROM_TOC_ENTRY_DATA_START_OFFSET, tocFieldValue(source.rom.start));
+		writeLE32(entry + ROM_TOC_ENTRY_DATA_END_OFFSET, tocFieldValue(source.rom.end));
+		writeLE32(entry + ROM_TOC_ENTRY_COMPILED_START_OFFSET, tocFieldValue(source.rom.compiledStart));
+		writeLE32(entry + ROM_TOC_ENTRY_COMPILED_END_OFFSET, tocFieldValue(source.rom.compiledEnd));
+		writeLE32(entry + ROM_TOC_ENTRY_METADATA_START_OFFSET, tocFieldValue(source.rom.metabufferStart));
+		writeLE32(entry + ROM_TOC_ENTRY_METADATA_END_OFFSET, tocFieldValue(source.rom.metabufferEnd));
+		writeLE32(entry + ROM_TOC_ENTRY_MODEL_TEXTURE_START_OFFSET, tocFieldValue(source.rom.modelTextureStart));
+		writeLE32(entry + ROM_TOC_ENTRY_MODEL_TEXTURE_END_OFFSET, tocFieldValue(source.rom.modelTextureEnd));
+		writeLE32(entry + ROM_TOC_ENTRY_COLLISION_BIN_START_OFFSET, tocFieldValue(source.rom.collisionBinStart));
+		writeLE32(entry + ROM_TOC_ENTRY_COLLISION_BIN_END_OFFSET, tocFieldValue(source.rom.collisionBinEnd));
+		writeLE32(entry + ROM_TOC_ENTRY_UPDATE_TIMESTAMP_LO_OFFSET, tocUpdateLo(source.rom.updateTimestamp));
+		writeLE32(entry + ROM_TOC_ENTRY_UPDATE_TIMESTAMP_HI_OFFSET, tocUpdateHi(source.rom.updateTimestamp));
 	}
 
-	writeLE32(out.data() + 24, static_cast<u32>(stringTable.size()));
+	writeLE32(out.data() + ROM_TOC_HEADER_STRING_TABLE_LENGTH_OFFSET, static_cast<u32>(stringTable.size()));
 	out.insert(out.end(), stringTable.begin(), stringTable.end());
 	return out;
 }

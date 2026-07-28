@@ -35,9 +35,6 @@ import {
 	APU_PARAMETER_SOURCE_SAMPLE_RATE_HZ_INDEX,
 	APU_SAMPLE_RATE_HZ,
 	APU_SLOT_INDEX_MASK,
-	APU_SLOT_PHASE_FADING,
-	APU_SLOT_PHASE_IDLE,
-	APU_SLOT_PHASE_PLAYING,
 	APU_STATUS_BUSY,
 	APU_STATUS_CMD_FIFO_EMPTY,
 	APU_STATUS_CMD_FIFO_FULL,
@@ -51,6 +48,11 @@ import {
 	APU_TRANSFER_MODE_MANUAL_WRITE,
 	APU_TRANSFER_WORDS_PER_SECOND,
 	apuSlotRegisterWordIndex,
+} from '../../machine/ts/spec/audio/apu';
+import {
+	APU_SLOT_PHASE_FADING,
+	APU_SLOT_PHASE_IDLE,
+	APU_SLOT_PHASE_PLAYING,
 } from '../../machine/ts/machine/devices/audio/contracts';
 import {
 	DMA_STATUS_BUSY,
@@ -106,7 +108,7 @@ import {
 	IO_DMA0_WRITE_ADDR,
 	IO_IRQ_FLAGS,
 	IRQ_APU,
-} from '../../machine/ts/machine/bus/io';
+} from '../../machine/ts/spec/bmsx/io';
 import { AudioController } from '../../machine/ts/machine/devices/audio/controller';
 import { BiquadFilterState, configureBiquadFilter } from '../../machine/ts/machine/devices/audio/biquad_filter';
 import { ApuOutputMixer } from '../../machine/ts/machine/devices/audio/output';

@@ -4,12 +4,12 @@ import {
 	GX_GPU_DRAW_MODE_TEXTURE_RECTANGLE_Y_FLIP,
 	gxGpuSigned11,
 	gxGpuTextureAttribute,
-} from '../../machine/devices/gx/gpu_command_buffer';
+} from '../../spec/gx/gp0';
 import {
 	GX_GPU_VRAM_WIDTH,
 	gxGpuVramYAddress,
 	gxGpuVramYAddressMask,
-} from '../../machine/devices/gx/vram_address';
+} from '../../spec/gx/vram';
 
 export const GX_GPU_MAX_PRIMITIVE_WIDTH = 1024;
 export const GX_GPU_MAX_PRIMITIVE_HEIGHT = 512;

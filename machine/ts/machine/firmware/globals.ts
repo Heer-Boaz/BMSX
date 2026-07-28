@@ -1,6 +1,6 @@
 import { createBuiltinFunction } from '../cpu/value';
 import type { Runtime } from '../runtime/runtime';
-import { LUA_BOOT_PRIMITIVES } from './boot_primitives';
+import { LUA_BOOT_PRIMITIVES } from '../../spec/blua32/builtin';
 
 export function seedLuaGlobals(runtime: Runtime): void {
 	for (let index = 0; index < LUA_BOOT_PRIMITIVES.length; index += 1) {

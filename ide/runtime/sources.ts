@@ -1,5 +1,5 @@
-import { parseCartHeader, type RuntimeRomPackage } from '../../machine/ts/rompack/format';
-import type { RuntimeRomLayer } from '../../machine/ts/rompack/loader';
+import { parseCartHeader, type RomToolingPackage } from '../../machine/ts/rompack/format';
+import type { RomToolingLayer } from '../../machine/ts/rompack/loader';
 import { RomSourceStack, type RawRomSource, type RomSourceLayer } from '../../machine/ts/rompack/source';
 import {
 	buildLuaSources,
@@ -28,8 +28,8 @@ const SYSTEM_PROJECT_ROOT_PATH = 'machine/firmware';
 
 export type RuntimeCartridgeSourceState = {
 	domain: 0 | 1;
-	rom: RuntimeRomLayer;
-	package: RuntimeRomPackage;
+	rom: RomToolingLayer;
+	package: RomToolingPackage;
 	luaSources: LuaSourceRegistry;
 	romSource: RawRomSource;
 	projectRootPath: string;
@@ -38,10 +38,10 @@ export type RuntimeCartridgeSourceState = {
 };
 
 export type RuntimeSourceState = {
-	systemRom: RuntimeRomLayer;
+	systemRom: RomToolingLayer;
 	cartridgeSlots: [RuntimeCartridgeSourceState | null, RuntimeCartridgeSourceState | null];
-	systemPackage: RuntimeRomPackage;
-	activePackage: RuntimeRomPackage;
+	systemPackage: RomToolingPackage;
+	activePackage: RomToolingPackage;
 	systemLuaSources: LuaSourceRegistry;
 	activeLuaSources: LuaSourceRegistry;
 	luaSourceRegistries: LuaSourceRegistry[];
@@ -75,8 +75,8 @@ function indexInstalledBlua32Sources(registry: LuaSourceRegistry): Map<string, s
 }
 
 export function createRuntimeSourceState(
-	systemLayer: RuntimeRomLayer,
-	cartridgeLayers: readonly [RuntimeRomLayer | null, RuntimeRomLayer | null],
+	systemLayer: RomToolingLayer,
+	cartridgeLayers: readonly [RomToolingLayer | null, RomToolingLayer | null],
 ): RuntimeSourceState {
 	const systemSource = new RomSourceStack([{ id: systemLayer.id, index: systemLayer.index, payload: systemLayer.payload }]);
 	const systemLuaSources = buildLuaSources(systemSource, systemSource, systemLayer.index, ['system']);

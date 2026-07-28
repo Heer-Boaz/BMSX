@@ -1,7 +1,8 @@
 #pragma once
 
 #include "common/primitives.h"
-#include "machine/devices/imgdec/contracts.h"
+#include "spec/imgdec/registers.h"
+#include "spec/imgdec/stream.h"
 #include "machine/devices/word_fifo.h"
 #include "machine/memory/bus_signals.h"
 
@@ -9,6 +10,8 @@
 #include <vector>
 
 namespace bmsx {
+
+constexpr u32 IMGDEC_DECODE_BATCH_WORDS = 16u;
 
 class CPU;
 class DeviceScheduler;

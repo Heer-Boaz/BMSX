@@ -4,7 +4,7 @@ import {
 	APU_SAMPLE_RAM_ADDRESS_MASK,
 	APU_SAMPLE_RAM_BASE,
 	APU_SAMPLE_RAM_BYTES,
-} from './contracts';
+} from '../../../spec/audio/apu';
 import type { ApuSourceByteView } from './source';
 
 export class ApuSampleMemory {

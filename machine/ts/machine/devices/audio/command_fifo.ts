@@ -1,12 +1,12 @@
-import { IO_APU_PARAMETER_REGISTER_ADDRS } from '../../bus/io';
+import { IO_APU_PARAMETER_REGISTER_ADDRS } from '../../../spec/bmsx/io';
 import type { Memory } from '../../memory/memory';
 import {
 	APU_CMD_NONE,
 	APU_COMMAND_FIFO_CAPACITY,
 	APU_COMMAND_FIFO_REGISTER_WORD_COUNT,
 	APU_PARAMETER_REGISTER_COUNT,
-	type ApuParameterRegisterWords,
-} from './contracts';
+} from '../../../spec/audio/apu';
+import { type ApuParameterRegisterWords } from './contracts';
 
 export type ApuCommandFifoState = {
 	commands: number[];

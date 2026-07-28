@@ -33,17 +33,17 @@ import {
 	IRQ_DMA0_DONE,
 	IRQ_DMA1_DONE,
 	IRQ_IMGDEC,
-} from '../../machine/ts/machine/bus/io';
+} from '../../machine/ts/spec/bmsx/io';
 import { IO_CMD_GEO_XFORM2_BATCH } from '../../machine/ts/machine/devices/geometry/contracts';
 import {
 	GX_GPU_GP1_DMA_DIRECTION,
+	GX_GPU_GP0_INGRESS_COMMAND,
+	GX_GPU_GP0_INGRESS_IMAGE_PAYLOAD,
 	GxGpu,
 } from '../../machine/ts/machine/devices/gx/gpu';
 import {
 	GX_GPU_DMA_DIRECTION_CPU_TO_GP0,
-	GX_GPU_GP0_INGRESS_COMMAND,
-	GX_GPU_GP0_INGRESS_IMAGE_PAYLOAD,
-} from '../../machine/ts/machine/devices/gx/gp0';
+} from '../../machine/ts/spec/gx/gp0';
 import {
 	GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
 } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
@@ -58,12 +58,14 @@ import {
 	IMGDEC_STATUS_BUSY,
 	IMGDEC_STATUS_DONE,
 	IMGDEC_STATUS_FORMAT_FAULT,
+} from '../../machine/ts/spec/imgdec/registers';
+import {
 	IMGDEC_STREAM_MAGIC,
 	IMGDEC_TOKEN_KIND_BACK_REFERENCE,
 	IMGDEC_TOKEN_KIND_REPEAT,
 	IMGDEC_TOKEN_KIND_SHIFT,
 	IMGDEC_TOKEN_KIND_ZERO,
-} from '../../machine/ts/machine/devices/imgdec/contracts';
+} from '../../machine/ts/spec/imgdec/stream';
 import {
 	SYSTEM_SUPERVISOR_PHASE_GPU_QUIESCE,
 	SYSTEM_SUPERVISOR_PHASE_ENTRY_VECTOR,

@@ -28,7 +28,7 @@ import {
 	IO_SYS_BUS_FAULT_CODE,
 	IRQ_DMA0_DONE,
 	IRQ_DMA1_DONE,
-} from '../../machine/ts/machine/bus/io';
+} from '../../machine/ts/spec/bmsx/io';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
@@ -51,7 +51,7 @@ import {
 	GX_GPU_GP0_CPU_TO_VRAM_FIRST,
 	GX_GPU_GP0_FILL_RECTANGLE,
 	GX_GPU_GP0_VRAM_TO_CPU_FIRST,
-} from '../../machine/ts/machine/devices/gx/gp0';
+} from '../../machine/ts/spec/gx/gp0';
 import {
 	GX_GPU_PCRTC_SMODE1_LOW,
 	GX_GPU_PCRTC_SMODE1_SINT,

@@ -74,18 +74,20 @@ import {
 } from '../../spec/blua32/image_format';
 import {
 	ExecutionAddressSpace,
-	SYSTEM_EXECUTION_DOMAIN_ID,
 	type Blua32ExecutionBoot,
-	type ExecutionDomainId,
 } from '../execution_address_space';
+import {
+	SYSTEM_EXECUTION_DOMAIN_ID,
+	type ExecutionDomainId,
+} from '../../spec/blua32/execution_domain';
 import { MEMORY_ACCESS_KIND_ALIGNMENT_MASKS, MemoryAccessKind } from '../../spec/blua32/memory_access_kind';
 import { ScratchBuffer } from '../../common/scratchbuffer';
 import { ScratchArrayStack } from '../../common/scratchstack';
 import { luaFloorDivide, luaModulo } from '../../lua/numeric';
 import { ceilDiv4 } from '../common/numeric';
 import { CART_ROM_BASE, RAM_BASE } from '../../spec/bmsx/memory_map';
+import { BuiltinFunctionId } from '../../spec/blua32/builtin';
 import {
-	BuiltinFunctionId,
 	EMPTY_CALL_ARGS,
 	StringValue,
 	ValueTag,

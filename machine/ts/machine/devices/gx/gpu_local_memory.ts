@@ -1,4 +1,4 @@
-import { GX_GPU_VRAM_WORD_COUNT } from './vram_address';
+import { GX_GPU_VRAM_WORD_COUNT } from '../../../spec/gx/vram';
 
 export const GX_GPU_PSMCT32 = 0;
 export const GX_GPU_PSMCT24 = 1;

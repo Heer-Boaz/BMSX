@@ -3,7 +3,17 @@ import type { GxGpuDeviceOutput } from '../../../machine/devices/gx/device_outpu
 import {
 	GX_GPU_CLUT_4BIT_WORDS,
 	GX_GPU_CLUT_8BIT_WORDS,
-} from '../../../machine/devices/gx/gp0';
+} from '../../../spec/gx/gp0';
+import {
+	GX_GPU_TRANSFER_MAX_HEIGHT,
+	gxGpuTransferHeight,
+	gxGpuTransferWidth,
+	gxGpuDrawingAreaBottomExclusive,
+	gxGpuDrawingAreaLeft,
+	gxGpuDrawingAreaRightExclusive,
+	gxGpuDrawingAreaTop,
+	gxGpuSigned11,
+} from '../../../spec/gx/gp0';
 import {
 	GX_GPU_COMMAND_CAPACITY,
 	GX_GPU_COMMAND_COPY_VRAM_TO_VRAM,
@@ -14,15 +24,7 @@ import {
 	GX_GPU_COMMAND_FILL_RECTANGLE,
 	GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
 	GX_GPU_SKIPPED_LINE_NONE,
-	GX_GPU_TRANSFER_MAX_HEIGHT,
-	gxGpuTransferHeight,
-	gxGpuTransferWidth,
 	type GxGpuCommandBufferView,
-	gxGpuDrawingAreaBottomExclusive,
-	gxGpuDrawingAreaLeft,
-	gxGpuDrawingAreaRightExclusive,
-	gxGpuDrawingAreaTop,
-	gxGpuSigned11,
 } from '../../../machine/devices/gx/gpu_command_buffer';
 import {
 	GX_GPU_PCRTC_SCANOUT_DRAW_BLEND_CONSTANT_RGBA,
@@ -98,7 +100,7 @@ import {
 	GX_GPU_VRAM_Y_ADDRESS_PERIOD,
 	gxGpuVramYAddress,
 	gxGpuVramYAddressMask,
-} from '../../../machine/devices/gx/vram_address';
+} from '../../../spec/gx/vram';
 import type { RenderPassLibrary } from '../pass/library';
 import type { RenderGraphPassContext, RenderPassStateRegistry } from '../backend';
 import { RGBA8_LINEAR_TEXTURE_PARAMS } from '../texture_params';

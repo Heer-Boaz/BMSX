@@ -13,7 +13,7 @@ import {
 	type GxDecodedImage,
 } from '../../machine/ts/rompack/tooling/gx_texture_codec';
 import { GX_GPU_CPU_TO_VRAM_HEADER_BYTES } from '../../machine/ts/rompack/tooling/gp0_encode';
-import { GX_GPU_TEXTURE_MODE_DIRECT16 } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
+import { GX_GPU_TEXTURE_MODE_DIRECT16 } from '../../machine/ts/spec/gx/gp0';
 import { decodeImgDecStream } from '../../machine/ts/rompack/tooling/imgdec_codec';
 import { GX_SYSTEM_TEXTURE_ASSET_ID } from '../rompacker/system_texture';
 import {

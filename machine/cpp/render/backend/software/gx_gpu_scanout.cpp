@@ -1,7 +1,7 @@
 #include "render/backend/software/gx_gpu_scanout.h"
 
 #include "machine/devices/gx/gpu_pcrtc.h"
-#include "machine/devices/gx/vram_address.h"
+#include "spec/gx/vram.h"
 #include "render/backend/backend.h"
 #include "render/backend/pass/library.h"
 #include "render/backend/software/gx_gpu_vram.h"

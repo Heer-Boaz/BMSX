@@ -1,4 +1,10 @@
 import {
+	GX_GPU_TRANSFER_MAX_PIXEL_COUNT,
+	gxGpuTransferHeight,
+	gxGpuTransferWidth,
+	gxGpuSigned11,
+} from '../../../spec/gx/gp0';
+import {
 	GX_GPU_COMMAND_COPY_VRAM_TO_VRAM,
 	GX_GPU_COMMAND_DRAW_LINE,
 	GX_GPU_COMMAND_DRAW_POLYGON,
@@ -6,11 +12,7 @@ import {
 	GX_GPU_COMMAND_DRAW_RECTANGLE,
 	GX_GPU_COMMAND_FILL_RECTANGLE,
 	GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
-	GX_GPU_TRANSFER_MAX_PIXEL_COUNT,
-	gxGpuTransferHeight,
-	gxGpuTransferWidth,
 	type GxGpuCommandBufferView,
-	gxGpuSigned11,
 } from '../../../machine/devices/gx/gpu_command_buffer';
 import {
 	gxGpuCommandGouraud,
@@ -33,7 +35,7 @@ import {
 	gxGpuTextureV,
 	gxGpuVertexY,
 } from '../gx_gpu_render_rules';
-import { gxGpuVramYAddress } from '../../../machine/devices/gx/vram_address';
+import { gxGpuVramYAddress } from '../../../spec/gx/vram';
 import {
 	gxGpuSoftwareRgb888WordToRgb555,
 	gxGpuSoftwareVram,

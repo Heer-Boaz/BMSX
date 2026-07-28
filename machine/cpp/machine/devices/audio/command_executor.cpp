@@ -1,6 +1,6 @@
 #include "machine/devices/audio/command_executor.h"
 
-#include "machine/bus/io.h"
+#include "spec/bmsx/io.h"
 #include "machine/common/numeric.h"
 #include "machine/devices/audio/active_slots.h"
 #include "machine/devices/audio/command_fifo.h"

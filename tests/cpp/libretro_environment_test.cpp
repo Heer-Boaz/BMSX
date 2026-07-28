@@ -1,7 +1,7 @@
 #include "bmsx_libretro.h"
 #include "common/endian.h"
 #include "input/manager.h"
-#include "machine/devices/cartridge/contracts.h"
+#include "spec/bmsx/cartridge.h"
 #include "machine/devices/gx/gpu_pcrtc.h"
 #include "machine/runtime/save_state/codec.h"
 #include "support/boot_rom_fixture.h"

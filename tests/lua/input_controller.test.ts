@@ -21,7 +21,7 @@ import {
 	IO_INP_POINTER_X,
 	IO_INP_POINTER_Y,
 	IO_INP_STATUS,
-} from '../../machine/ts/machine/bus/io';
+} from '../../machine/ts/spec/bmsx/io';
 import { IO_WORD_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { encodeSignedFix16 } from '../../machine/ts/machine/common/numeric';
 import { AcceptedInterruptKind } from '../../machine/ts/machine/cpu/cpu';

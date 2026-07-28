@@ -1,5 +1,5 @@
-import { fmix32, scramble32, signed8FromHash, xorshift32 } from '../../common/hash';
-import { GX_GPU_VRAM_BYTE_COUNT } from './vram_address';
+import { fmix32, scramble32, signed8FromHash, xorshift32 } from '../../../common/hash';
+import { GX_GPU_VRAM_BYTE_COUNT } from '../../../spec/gx/vram';
 
 const GX_GPU_VRAM_POWER_ON_BLOCK_BYTES = 32;
 const GX_GPU_VRAM_POWER_ON_BLOCK_WORDS = GX_GPU_VRAM_POWER_ON_BLOCK_BYTES >>> 2;

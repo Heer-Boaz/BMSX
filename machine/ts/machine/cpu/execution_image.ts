@@ -1,4 +1,4 @@
-import type { ExecutionDomainId } from '../execution_address_space';
+import type { ExecutionDomainId } from '../../spec/blua32/execution_domain';
 import { OpCode } from '../../spec/blua32/opcode';
 import type { Table } from './table';
 import type { Value } from './value';

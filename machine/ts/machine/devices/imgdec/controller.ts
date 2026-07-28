@@ -12,7 +12,7 @@ import {
 	IO_IMGDEC_TEXTURE_DESTINATION,
 	IO_IMGDEC_TEXTURE_SIZE,
 	IRQ_IMGDEC,
-} from '../../bus/io';
+} from '../../../spec/bmsx/io';
 import type { CPU } from '../../cpu/cpu';
 import type { Value } from '../../cpu/value';
 import {
@@ -27,14 +27,11 @@ import { WordFifo } from '../word_fifo';
 import {
 	GX_GPU_CLUT_4BIT_SIZE_WORD,
 	GX_GPU_GP0_CPU_TO_VRAM_FIRST,
-} from '../gx/gp0';
+} from '../../../spec/gx/gp0';
 import type { IrqController } from '../irq/controller';
 import {
 	IMGDEC_CONTROL_START,
-	IMGDEC_DECODE_BATCH_WORDS,
 	IMGDEC_DMA_BLOCK_WORDS,
-	IMGDEC_HISTORY_WORD_CAPACITY,
-	IMGDEC_HISTORY_WORD_MASK,
 	IMGDEC_INPUT_FIFO_WORD_CAPACITY,
 	IMGDEC_OUTPUT_FIFO_WORD_CAPACITY,
 	IMGDEC_STATUS_BUSY,
@@ -42,6 +39,10 @@ import {
 	IMGDEC_STATUS_FORMAT_FAULT,
 	IMGDEC_STATUS_INPUT_REQUEST,
 	IMGDEC_STATUS_OUTPUT_REQUEST,
+} from '../../../spec/imgdec/registers';
+import {
+	IMGDEC_HISTORY_WORD_CAPACITY,
+	IMGDEC_HISTORY_WORD_MASK,
 	IMGDEC_STREAM_MAGIC,
 	IMGDEC_TOKEN_BACK_REFERENCE_DISTANCE_MASK,
 	IMGDEC_TOKEN_BACK_REFERENCE_LENGTH_MASK,
@@ -53,7 +54,9 @@ import {
 	IMGDEC_TOKEN_KIND_SHIFT,
 	IMGDEC_TOKEN_KIND_ZERO,
 	IMGDEC_TOKEN_RUN_LENGTH_MASK,
-} from './contracts';
+} from '../../../spec/imgdec/stream';
+
+export const IMGDEC_DECODE_BATCH_WORDS = 16;
 
 const DECODE_MAGIC = 0;
 const DECODE_TEXTURE_WORD_COUNT = 1;

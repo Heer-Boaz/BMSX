@@ -1,8 +1,8 @@
 #include "machine/devices/audio/selected_slot_latch.h"
 
-#include "machine/bus/io.h"
+#include "spec/bmsx/io.h"
 #include "machine/cpu/value.h"
-#include "machine/devices/audio/contracts.h"
+#include "spec/audio/apu.h"
 #include "machine/devices/audio/slot_bank.h"
 #include "machine/devices/device_status.h"
 #include "machine/memory/memory.h"

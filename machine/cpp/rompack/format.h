@@ -6,8 +6,7 @@
 #define BMSX_ROMPACK_H
 
 #include "common/primitives.h"
-#include "machine/model_registry.h"
-#include <array>
+#include "spec/bmsx/rom_package.h"
 #include <cstddef>
 #include <optional>
 #include <span>
@@ -21,12 +20,8 @@ enum class RomImageDomain {
 	Cartridge,
 };
 
-constexpr u32 CART_ROM_MAGIC = 0x58534D42u;
-constexpr std::array<u8, 4> CART_ROM_MAGIC_BYTES = { 0x42, 0x4d, 0x53, 0x58 };
-constexpr size_t CART_ROM_METADATA_HEADER_SIZE = 72;
-constexpr size_t CART_ROM_HEADER_SIZE = 84;
-constexpr size_t CART_ROM_WORD_ALIGNMENT = 4;
-constexpr u32 CART_VDP_CLASS_PSX = 1;
+enum class MachineVdpClass { Psx };
+
 struct CartRomHeader {
 	u32 headerSize = 0;
 	u32 manifestOffset = 0;

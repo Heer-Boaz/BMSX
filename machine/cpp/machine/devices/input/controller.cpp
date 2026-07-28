@@ -1,6 +1,6 @@
 #include "machine/devices/input/controller.h"
 
-#include "machine/bus/io.h"
+#include "spec/bmsx/io.h"
 #include "machine/devices/system/controller.h"
 
 namespace bmsx {

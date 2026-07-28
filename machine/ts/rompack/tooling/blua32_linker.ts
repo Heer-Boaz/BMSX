@@ -81,10 +81,9 @@ import type {
 	ProgramMetadata,
 	ProgramRuntimeSymbols,
 } from '../../lua/compiler/program';
-import { RAM_END } from '../../machine/memory/map';
-import { DYNAMIC_RAM_BASE } from '../../spec/bmsx/memory_map';
+import { BMSX_RAM_END, DYNAMIC_RAM_BASE } from '../../spec/bmsx/memory_map';
 import { writeLE32 } from '../../common/endian';
-import { fmix32 } from '../../machine/common/hash';
+import { fmix32 } from '../../common/hash';
 import { hashAssetId } from '../tokens';
 
 export type LinkedBlua32Image = {
@@ -134,7 +133,7 @@ function alignImageOffset(offset: number, imageAddress: number, alignment: numbe
 }
 
 function assertStaticRamFits(baseAddress: number, byteCount: number): void {
-	if (baseAddress > RAM_END || byteCount > RAM_END - baseAddress) {
+	if (baseAddress > BMSX_RAM_END || byteCount > BMSX_RAM_END - baseAddress) {
 		throw new Error('BLua32 static storage exceeds RAM.');
 	}
 }

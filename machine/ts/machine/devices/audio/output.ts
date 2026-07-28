@@ -35,6 +35,8 @@ import {
 	APU_PARAMETER_START_SAMPLE_INDEX,
 	APU_RATE_STEP_Q16_ONE,
 	APU_SAMPLE_RATE_HZ,
+} from '../../../spec/audio/apu';
+import {
 	type ApuAudioSlot,
 	type ApuAudioSource,
 	type ApuParameterRegisterWords,

@@ -1,8 +1,7 @@
-import type { MachineVdpClass } from '../machine/model_registry';
 import {
 	CARTRIDGE_BOARD_MAILBOX,
 	CARTRIDGE_BOARD_RAM,
-} from '../machine/devices/cartridge/contracts';
+} from '../spec/bmsx/cartridge';
 import {
 	BMSX_ROM_HEADER_BLUA32_EXCEPTION_FUNCTION_ADDRESS_OFFSET,
 	BMSX_ROM_HEADER_BLUA32_IMAGE_BYTE_COUNT_OFFSET,
@@ -12,15 +11,27 @@ import {
 	BMSX_ROM_HEADER_BLUA32_STATIC_LAYOUT_TOKEN_HI_OFFSET,
 	BMSX_ROM_HEADER_BLUA32_STATIC_LAYOUT_TOKEN_LO_OFFSET,
 } from '../spec/bmsx/rom_header';
+import {
+	CART_ROM_HEADER_CARTRIDGE_BOARD_OFFSET,
+	CART_ROM_HEADER_CARTRIDGE_RAM_BYTES_OFFSET,
+	CART_ROM_HEADER_DATA_LENGTH_OFFSET,
+	CART_ROM_HEADER_DATA_OFFSET,
+	CART_ROM_HEADER_MANIFEST_LENGTH_OFFSET,
+	CART_ROM_HEADER_MANIFEST_OFFSET,
+	CART_ROM_HEADER_MAGIC_OFFSET,
+	CART_ROM_HEADER_METADATA_LENGTH_OFFSET,
+	CART_ROM_HEADER_METADATA_OFFSET,
+	CART_ROM_HEADER_SIZE,
+	CART_ROM_HEADER_SIZE_OFFSET,
+	CART_ROM_HEADER_TOC_LENGTH_OFFSET,
+	CART_ROM_HEADER_TOC_OFFSET,
+	CART_ROM_HEADER_VDP_CLASS_OFFSET,
+	CART_ROM_MAGIC,
+	CART_VDP_CLASS_PSX,
+} from '../spec/bmsx/rom_package';
 import { CART_RAM_SIZE } from '../spec/bmsx/memory_map';
 import { formatNumberAsHex } from '../common/byte_hex_string';
 
-export const CART_ROM_MAGIC = 0x58534D42;
-export const CART_ROM_MAGIC_BYTES = new Uint8Array([0x42, 0x4d, 0x53, 0x58]);
-export const CART_ROM_METADATA_HEADER_SIZE = 72;
-export const CART_ROM_HEADER_SIZE = 84;
-export const CART_ROM_WORD_ALIGNMENT = 4;
-export const CART_VDP_CLASS_PSX = 1;
 export const ROM_ASSET_SYMBOL_MODULE_PATH = 'bmsx/assets';
 export const ROM_ASSET_SYMBOL_SOURCE_PATH = `${ROM_ASSET_SYMBOL_MODULE_PATH}.lua`;
 export const GX_TEXTURE_LAYOUT_MODULE_PATH = 'bmsx/gx_texture_layout';
@@ -29,6 +40,8 @@ export const ROM_GENERATED_MODULE_PATHS: ReadonlyArray<string> = [
 	ROM_ASSET_SYMBOL_MODULE_PATH,
 	GX_TEXTURE_LAYOUT_MODULE_PATH,
 ];
+
+export type MachineVdpClass = 'psx';
 
 export type CartRomHeader = {
 	headerSize: number;
@@ -62,33 +75,31 @@ export function parseCartHeader(payload: Uint8Array): CartRomHeader {
 	if (payload.byteLength < CART_ROM_HEADER_SIZE) {
 		throw new Error('ROM payload is too small for cart header.');
 	}
-	for (let index = 0; index < CART_ROM_MAGIC_BYTES.length; index += 1) {
-		if (payload[index] !== CART_ROM_MAGIC_BYTES[index]) {
-			throw new Error('Invalid ROM cart header.');
-		}
-	}
 	const view = new DataView(payload.buffer, payload.byteOffset, CART_ROM_HEADER_SIZE);
-	const headerSize = view.getUint32(4, true);
+	if (view.getUint32(CART_ROM_HEADER_MAGIC_OFFSET, true) !== CART_ROM_MAGIC) {
+		throw new Error('Invalid ROM cart header.');
+	}
+	const headerSize = view.getUint32(CART_ROM_HEADER_SIZE_OFFSET, true);
 	if (headerSize < CART_ROM_HEADER_SIZE) {
 		throw new Error(`ROM header size is too small: ${headerSize}.`);
 	}
 	if (headerSize > payload.byteLength) {
 		throw new Error(`ROM header size exceeds payload length: ${headerSize}.`);
 	}
-	const manifestOffset = view.getUint32(8, true);
-	const manifestLength = view.getUint32(12, true);
-	const tocOffset = view.getUint32(16, true);
-	const tocLength = view.getUint32(20, true);
-	const dataOffset = view.getUint32(24, true);
-	const dataLength = view.getUint32(28, true);
-	const metadataOffset = view.getUint32(64, true);
-	const metadataLength = view.getUint32(68, true);
-	const vdpClassWord = view.getUint32(72, true);
+	const manifestOffset = view.getUint32(CART_ROM_HEADER_MANIFEST_OFFSET, true);
+	const manifestLength = view.getUint32(CART_ROM_HEADER_MANIFEST_LENGTH_OFFSET, true);
+	const tocOffset = view.getUint32(CART_ROM_HEADER_TOC_OFFSET, true);
+	const tocLength = view.getUint32(CART_ROM_HEADER_TOC_LENGTH_OFFSET, true);
+	const dataOffset = view.getUint32(CART_ROM_HEADER_DATA_OFFSET, true);
+	const dataLength = view.getUint32(CART_ROM_HEADER_DATA_LENGTH_OFFSET, true);
+	const metadataOffset = view.getUint32(CART_ROM_HEADER_METADATA_OFFSET, true);
+	const metadataLength = view.getUint32(CART_ROM_HEADER_METADATA_LENGTH_OFFSET, true);
+	const vdpClassWord = view.getUint32(CART_ROM_HEADER_VDP_CLASS_OFFSET, true);
 	if (vdpClassWord !== CART_VDP_CLASS_PSX) {
 		throw new Error(`Unsupported ROM VDP class marker: ${vdpClassWord}.`);
 	}
-	const cartridgeBoardWord = view.getUint32(76, true);
-	const cartridgeRamByteCount = view.getUint32(80, true);
+	const cartridgeBoardWord = view.getUint32(CART_ROM_HEADER_CARTRIDGE_BOARD_OFFSET, true);
+	const cartridgeRamByteCount = view.getUint32(CART_ROM_HEADER_CARTRIDGE_RAM_BYTES_OFFSET, true);
 	if (cartridgeRamByteCount > CART_RAM_SIZE) {
 		throw new Error(`Cartridge RAM byte count exceeds the ${CART_RAM_SIZE}-byte socket aperture.`);
 	}
@@ -127,7 +138,7 @@ export type CartridgeLayerId = 'system' | 'cart';
 
 export type RomAssetOp = 'delete';
 
-export interface RuntimeRomPackage {
+export interface RomToolingPackage {
 	// Decoded ROM package records. Raw cartridge bytes live outside of this structure.
 	img: id2imgres;
 	audio: id2res;

@@ -1,4 +1,14 @@
 import {
+	GX_GPU_TEXTURE_MODE_DIRECT16,
+	GX_GPU_TEXTURE_MODE_PALETTE4,
+	GX_GPU_TEXTURE_MODE_PALETTE8,
+	gxGpuDrawingAreaBottomExclusive,
+	gxGpuDrawingAreaLeft,
+	gxGpuDrawingAreaRightExclusive,
+	gxGpuDrawingAreaTop,
+	gxGpuSigned11,
+} from '../../../spec/gx/gp0';
+import {
 	GX_GPU_COMMAND_COPY_VRAM_TO_VRAM,
 	GX_GPU_COMMAND_DRAW_LINE,
 	GX_GPU_COMMAND_DRAW_POLYGON,
@@ -8,14 +18,6 @@ import {
 	GX_GPU_COMMAND_READ_VRAM_TO_CPU,
 	GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
 	GX_GPU_SKIPPED_LINE_NONE,
-	GX_GPU_TEXTURE_MODE_DIRECT16,
-	GX_GPU_TEXTURE_MODE_PALETTE4,
-	GX_GPU_TEXTURE_MODE_PALETTE8,
-	gxGpuDrawingAreaBottomExclusive,
-	gxGpuDrawingAreaLeft,
-	gxGpuDrawingAreaRightExclusive,
-	gxGpuDrawingAreaTop,
-	gxGpuSigned11,
 } from './gpu_command_buffer';
 
 export const GX_GPU_COMMAND_TICKS_PER_CPU_CYCLE = 2;

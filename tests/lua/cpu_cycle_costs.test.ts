@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { BuiltinFunctionId, createBuiltinFunction } from '../../machine/ts/machine/cpu/value';
+import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
+import { createBuiltinFunction } from '../../machine/ts/machine/cpu/value';
 
 test('builtin cost resolution uses fixed VM primitive tiers', () => {
 	assert.deepEqual(createBuiltinFunction(BuiltinFunctionId.Next).cost, { base: 1, perArg: 0, perRet: 0 });

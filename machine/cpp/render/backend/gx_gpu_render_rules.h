@@ -1,7 +1,7 @@
 #pragma once
 
 #include "machine/devices/gx/gpu_command_buffer.h"
-#include "machine/devices/gx/vram_address.h"
+#include "spec/gx/vram.h"
 #include "machine/devices/gx/gpu_display.h"
 
 namespace bmsx {

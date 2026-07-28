@@ -1,4 +1,4 @@
-#include "machine/bus/io.h"
+#include "spec/bmsx/io.h"
 #include "spec/blua32/cop0.h"
 #include "machine/cpu/cpu.h"
 #include "spec/blua32/instruction_format.h"

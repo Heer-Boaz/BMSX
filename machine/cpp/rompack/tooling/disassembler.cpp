@@ -3,7 +3,7 @@
 #include "spec/blua32/instruction_format.h"
 #include "rompack/tooling/opcode_metadata.h"
 #include "rompack/tooling/source_text.h"
-#include "machine/common/number_format.h"
+#include "common/number_format.h"
 
 #include <algorithm>
 #include <cctype>

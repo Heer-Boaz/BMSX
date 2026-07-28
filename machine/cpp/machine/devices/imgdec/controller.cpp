@@ -1,9 +1,9 @@
 #include "machine/devices/imgdec/controller.h"
 
-#include "machine/bus/io.h"
+#include "spec/bmsx/io.h"
 #include "machine/cpu/cpu.h"
 #include "machine/devices/dma/controller.h"
-#include "machine/devices/gx/gp0.h"
+#include "spec/gx/gp0.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/memory.h"
 #include "machine/scheduler/device.h"

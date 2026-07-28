@@ -19,7 +19,7 @@ import {
 	IO_GEO_STRIDE2,
 	IRQ_GEO_DONE,
 	IRQ_GEO_ERROR,
-} from '../../bus/io';
+} from '../../../spec/bmsx/io';
 import {
 	GEO_CTRL_ABORT,
 	GEO_FAULT_ABORTED_BY_HOST,
