@@ -13,11 +13,12 @@
 -- 2. USAGE PATTERN.
 --
 --    STEP 1 — define a program (rule list) and mount it onto a context:
---      local prog = progression.mount(castle, {
+--      progression.mount(castle, {
 --          { on = 'enemy.defeated', set = {{ key = 'kills', value = true }} },
 --          { on = 'item.collected', when_all = {{ key = 'kills' }},
 --            set = {{ key = 'bonus_active', value = true }} },
 --      })
+--    Unmount it from the context's unbind() teardown.
 --
 --    STEP 2 — events flow through automatically (no manual dispatch needed
 --    for events emitted to the global eventemitter; progression subscribes to
@@ -498,7 +499,7 @@ function progression.mount(ctx, program_or_rule_defs)
 end
 
 -- progression.unmount(ctx): detaches the progression runtime for ctx.
---   Call this in ondespawn() or when the context is no longer needed, otherwise
+--   Call this in unbind() or when the context is no longer needed, otherwise
 --   the runtime leaks and keeps responding to global events.
 function progression.unmount(ctx)
 	local rt<const> = progression._runtime_by_ctx[ctx]

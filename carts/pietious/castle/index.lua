@@ -2,6 +2,7 @@ require('constants')
 local castle_map<const> = require('castle/map')
 local progression<const> = require('cartlib/progression')
 local room_spawner<const> = require('room/spawner')
+local worldobject<const> = require('cartlib/world/object')
 
 local castle<const> = {}
 
@@ -524,6 +525,11 @@ function castle:ctor()
 	self.room_enter_pending = false
 	self:reset_room_encounter_tags()
 	progression.mount(self, build_progression_program())
+end
+
+function castle:unbind()
+	worldobject.unbind(self)
+	progression.unmount(self)
 end
 
 function castle:sync_world_entrance_states_for_room(room_state)
