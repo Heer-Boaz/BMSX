@@ -2,8 +2,9 @@
 
 #include "core/machine_manager.h"
 #include "machine/devices/system/controller.h"
-#include "rompack/tooling/disassembler.h"
 #include "machine/runtime/runtime.h"
+#include "rompack/tooling/blua32_media.h"
+#include "rompack/tooling/disassembler.h"
 
 #include <array>
 #include <iomanip>
@@ -11,22 +12,6 @@
 #include <sstream>
 
 namespace bmsx {
-
-void LibretroPlatform::refreshBlua32ToolingMedia() {
-	m_blua32_tooling_media.system = loadBlua32ToolingImage(
-		m_machine_manager->systemRomImage(),
-		SYSTEM_ROM_BASE
-	);
-	for (u32 slot = 0u; slot < CARTRIDGE_SLOT_COUNT; ++slot) {
-		const RomImage& image = m_machine_manager->cartridgeRomImage(slot);
-		if (image.bytes.empty()) {
-			m_blua32_tooling_media.cartridgeSlots[slot].reset();
-			continue;
-		}
-		m_blua32_tooling_media.cartridgeSlots[slot] =
-			loadBlua32ToolingImage(image, CART_ROM_BASE);
-	}
-}
 
 void LibretroPlatform::flushSystemOutput(Runtime& runtime) {
 	SystemController& output = runtime.machine.systemController;
@@ -60,11 +45,23 @@ void LibretroPlatform::reportRuntimeError(
 	log(LogLevel::Error, runtimeError.str());
 
 	CPU& cpu = runtime.machine.cpu;
+	Blua32ToolingMedia toolingMedia;
+	toolingMedia.system = loadBlua32ToolingImage(
+		m_machine_manager->systemRomImage(),
+		SYSTEM_ROM_BASE
+	);
+	for (u32 slot = 0u; slot < CARTRIDGE_SLOT_COUNT; ++slot) {
+		const RomImage& image = m_machine_manager->cartridgeRomImage(slot);
+		if (!image.bytes.empty()) {
+			toolingMedia.cartridgeSlots[slot] =
+				loadBlua32ToolingImage(image, CART_ROM_BASE);
+		}
+	}
 	const int frameDepth = cpu.getFrameDepth();
 	const int topFrameIndex = frameDepth - 1;
 	const int executionDomainId = cpu.readLastExecutionDomain();
 	const Blua32ToolingImage& toolingImage =
-		*blua32ToolingImageForDomain(m_blua32_tooling_media, executionDomainId);
+		*blua32ToolingImageForDomain(toolingMedia, executionDomainId);
 	const Blua32ImageLayout& image = toolingImage.layout;
 	const Blua32SymbolsImage* symbols =
 		toolingImage.symbols ? &*toolingImage.symbols : nullptr;
@@ -132,7 +129,7 @@ void LibretroPlatform::reportRuntimeError(
 	for (int frameIndex = 0; frameIndex < frameDepth; ++frameIndex) {
 		const int frameDomainId = cpu.readFrameExecutionDomain(frameIndex);
 		const Blua32ToolingImage& frameToolingImage =
-			*blua32ToolingImageForDomain(m_blua32_tooling_media, frameDomainId);
+			*blua32ToolingImageForDomain(toolingMedia, frameDomainId);
 		const Blua32ImageLayout& frameImage = frameToolingImage.layout;
 		const Blua32SymbolsImage* frameSymbols =
 			frameToolingImage.symbols ? &*frameToolingImage.symbols : nullptr;

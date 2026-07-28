@@ -406,7 +406,6 @@ bool LibretroPlatform::loadCartridgeSlotsOwned(std::array<std::vector<uint8_t>, 
 		log(RETRO_LOG_ERROR, "Failed to load cartridge slots\n");
 		return false;
 	}
-	refreshBlua32ToolingMedia();
 	flushSystemOutput(m_machine_manager->runtime());
 	setDeviceQuantizeMode(m_device_quantize_mode);
 #if defined(__GLIBC__)
@@ -471,7 +470,6 @@ bool LibretroPlatform::loadCartridgeSlotsFromPaths(const std::array<std::string,
 		log(RETRO_LOG_ERROR, "Failed to load cartridge slots\n");
 		return false;
 	}
-	refreshBlua32ToolingMedia();
 	flushSystemOutput(m_machine_manager->runtime());
 	setDeviceQuantizeMode(m_device_quantize_mode);
 #if defined(__GLIBC__)
@@ -519,7 +517,6 @@ bool LibretroPlatform::loadEmptyCart() {
 
 	// Boot system ROM (runs bootrom.lua)
 	if (systemRomLoaded && m_machine_manager && m_machine_manager->bootWithoutCart()) {
-		refreshBlua32ToolingMedia();
 		flushSystemOutput(m_machine_manager->runtime());
 		log(RETRO_LOG_INFO, "[BMSX] Booted system ROM firmware\n");
 		m_rom_loaded = true;
@@ -548,7 +545,6 @@ bool LibretroPlatform::loadSystemRomFromFile(const std::string& path) {
 void LibretroPlatform::unloadRom() {
 	if (m_rom_loaded) {
 		static_cast<LibretroInputHub*>(m_input_hub.get())->resetState();
-		m_blua32_tooling_media = {};
 		// Unload ROM from host core
 		if (m_machine_manager) {
 			m_machine_manager->unloadRom();

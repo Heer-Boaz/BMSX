@@ -2956,10 +2956,10 @@ by deferred host code.
 BLua32 source tooling is mirrored under `machine/{ts,cpp}/rompack/tooling`.
 Browser IDE state retains decoded tooling images there. Native tooling starts
 with `bmsx_rom_tooling`; diagnostics-enabled libretro builds additionally link
-`bmsx_blua32_tooling`. `LibretroPlatform` retains the decoded tooling image for
-each inserted physical ROM only while that media is loaded. Fault presentation
-joins those optional symbols with allocation-free scalar CPU state reads only
-after an exception reaches the libretro host boundary.
+`bmsx_blua32_tooling`. After an exception reaches the libretro host boundary,
+fault presentation decodes the tooling image directly from the inserted
+physical ROMs, joins optional symbols with allocation-free scalar CPU state
+reads, emits the diagnostic, and releases that tooling state.
 `MachineManager`, `Runtime`, CPU state, and `libbmsx.a` retain no source paths,
 symbol caches, disassembler objects, or formatted diagnostic records.
 

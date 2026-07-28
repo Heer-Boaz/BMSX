@@ -14,7 +14,6 @@
 #include "platform/platform.h"
 #include "render/backend/backend.h"
 #include "render/post/device_quantize/mode.h"
-#include "rompack/tooling/blua32_media.h"
 #include <array>
 #include <memory>
 #include <string>
@@ -222,7 +221,6 @@ private:
 	void pollInput();
 	void log(retro_log_level level, const char* fmt, ...);
 	bool loadSystemRomFromFile(const std::string& path);
-	void refreshBlua32ToolingMedia();
 	void flushSystemOutput(Runtime& runtime);
 	void reportRuntimeError(Runtime& runtime, std::string_view message);
 
@@ -246,7 +244,6 @@ private:
 
 	// Machine manager instance
 	std::unique_ptr<MachineManager> m_machine_manager;
-	Blua32ToolingMedia m_blua32_tooling_media;
 
 	// Platform components
 	std::unique_ptr<LibretroHostClock> m_clock;
