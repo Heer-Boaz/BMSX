@@ -63,7 +63,6 @@ export class HostTestRunner {
 	private gameplaySettleFrames = 0;
 	private updateFrames = 0;
 	private tickTimestampMs = 0;
-	private installed = false;
 	private stopped = false;
 	private readonly completion: Promise<void>;
 	private readonly resolveCompletion: () => void;
@@ -107,14 +106,12 @@ export class HostTestRunner {
 		if (!this.options.runtime.machine.cpu.isCartridgeExecutionActive() || !this.options.runtime.isInitialized) {
 			return;
 		}
-		if (!this.installed) {
-			this.install();
-		}
 		this.tickTimestampMs = timestampMs;
 		switch (this.phase) {
 			case 'cart':
 				this.cartSettleFrames += 1;
 				if (this.cartSettleFrames >= CART_SETTLE_FRAMES) {
+					this.install();
 					this.options.logger(`test:${this.label} cart active`);
 					this.phase = 'ready';
 				}
@@ -168,7 +165,6 @@ export class HostTestRunner {
 		this.logKey = runtime.internString('log');
 		this.newGameKey = runtime.internString('new_game');
 		this.doneKey = runtime.internString('done');
-		this.installed = true;
 		this.options.logger(`test:${this.label} loaded`);
 	}
 
