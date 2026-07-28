@@ -12,7 +12,7 @@
 
 namespace bmsx {
 
-class GameView;
+class VideoPresenter;
 
 f32 calculateCenteredBlockX(const std::vector<std::string>& lines, i32 charWidth, i32 blockWidth);
 std::vector<std::string> wrapGlyphs(const std::string& text, i32 maxLineLength);

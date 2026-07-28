@@ -121,9 +121,9 @@ void fillBackgroundRows(
 	u32* pixels,
 	i32 pixelsPerRow,
 	const GxGpuPipelineState& state,
+	const GxGpuPcrtcScanout& scanout,
 	i32 firstRow,
 	i32 rowStep) {
-	const GxGpuPcrtcScanout& scanout = *state.pcrtcScanout;
 	const u32 background = outputArgb(scanout.backgroundColor);
 	for (i32 outputY = firstRow; outputY < state.height; outputY += rowStep) {
 		u32* row = pixels + static_cast<size_t>(outputY) * static_cast<size_t>(pixelsPerRow);
@@ -135,11 +135,10 @@ template<Gx16CircuitOperation Operation>
 void writeGx16CircuitRows(
 	u32* pixels,
 	i32 pixelsPerRow,
-	const GxGpuPipelineState& state,
+	const GxGpuPcrtcScanout& scanout,
 	const GxGpuPcrtcCircuit& circuit) {
 	const u32 left = circuit.displayX;
 	const u32 right = circuit.displayRight;
-	const GxGpuPcrtcScanout& scanout = *state.pcrtcScanout;
 	u32 sourceY = circuit.linearFieldSourceY;
 	u32 y = circuit.fieldDisplayY;
 	for (u32 line = 0u; line < circuit.fieldDisplayLineCount; line += 1u) {
@@ -191,35 +190,35 @@ void writeGx16OutputRows(
 	u32* pixels,
 	i32 pixelsPerRow,
 	const GxGpuPipelineState& state,
+	const GxGpuPcrtcScanout& scanout,
 	i32 firstRow,
 	i32 rowStep) {
-	const GxGpuPcrtcScanout& scanout = *state.pcrtcScanout;
 	const GxGpuPcrtcCircuit& circuit1 = scanout.circuits[0u];
 	const GxGpuPcrtcCircuit& circuit2 = scanout.circuits[1u];
 	if (scanout.backgroundRequired != 0u) {
-		fillBackgroundRows(pixels, pixelsPerRow, state, firstRow, rowStep);
+		fillBackgroundRows(pixels, pixelsPerRow, state, scanout, firstRow, rowStep);
 	}
 	if (scanout.circuit2OutputPath == GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGB) {
-		writeGx16CircuitRows<Gx16CircuitOperation::WriteRgb>(pixels, pixelsPerRow, state, circuit2);
+		writeGx16CircuitRows<Gx16CircuitOperation::WriteRgb>(pixels, pixelsPerRow, scanout, circuit2);
 	} else if (scanout.circuit2OutputPath == GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGBA) {
-		writeGx16CircuitRows<Gx16CircuitOperation::WriteRgba>(pixels, pixelsPerRow, state, circuit2);
+		writeGx16CircuitRows<Gx16CircuitOperation::WriteRgba>(pixels, pixelsPerRow, scanout, circuit2);
 	} else if (scanout.circuit2OutputPath == GX_GPU_PCRTC_SCANOUT_DRAW_RAW_ALPHA) {
-		writeGx16CircuitRows<Gx16CircuitOperation::WriteAlpha>(pixels, pixelsPerRow, state, circuit2);
+		writeGx16CircuitRows<Gx16CircuitOperation::WriteAlpha>(pixels, pixelsPerRow, scanout, circuit2);
 	}
 	if (scanout.circuit1OutputPath == GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGB) {
-		writeGx16CircuitRows<Gx16CircuitOperation::WriteRgb>(pixels, pixelsPerRow, state, circuit1);
+		writeGx16CircuitRows<Gx16CircuitOperation::WriteRgb>(pixels, pixelsPerRow, scanout, circuit1);
 	} else if (scanout.circuit1OutputPath == GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGBA) {
-		writeGx16CircuitRows<Gx16CircuitOperation::WriteRgba>(pixels, pixelsPerRow, state, circuit1);
+		writeGx16CircuitRows<Gx16CircuitOperation::WriteRgba>(pixels, pixelsPerRow, scanout, circuit1);
 	} else if (scanout.circuit1OutputPath == GX_GPU_PCRTC_SCANOUT_DRAW_RAW_ALPHA) {
-		writeGx16CircuitRows<Gx16CircuitOperation::WriteAlpha>(pixels, pixelsPerRow, state, circuit1);
+		writeGx16CircuitRows<Gx16CircuitOperation::WriteAlpha>(pixels, pixelsPerRow, scanout, circuit1);
 	} else if (scanout.circuit1OutputPath == GX_GPU_PCRTC_SCANOUT_DRAW_BLEND_SOURCE_RGB) {
-		writeGx16CircuitRows<Gx16CircuitOperation::BlendSourceRgb>(pixels, pixelsPerRow, state, circuit1);
+		writeGx16CircuitRows<Gx16CircuitOperation::BlendSourceRgb>(pixels, pixelsPerRow, scanout, circuit1);
 	} else if (scanout.circuit1OutputPath == GX_GPU_PCRTC_SCANOUT_DRAW_BLEND_SOURCE_RGBA) {
-		writeGx16CircuitRows<Gx16CircuitOperation::BlendSourceRgba>(pixels, pixelsPerRow, state, circuit1);
+		writeGx16CircuitRows<Gx16CircuitOperation::BlendSourceRgba>(pixels, pixelsPerRow, scanout, circuit1);
 	} else if (scanout.circuit1OutputPath == GX_GPU_PCRTC_SCANOUT_DRAW_BLEND_CONSTANT_RGB) {
-		writeGx16CircuitRows<Gx16CircuitOperation::BlendConstantRgb>(pixels, pixelsPerRow, state, circuit1);
+		writeGx16CircuitRows<Gx16CircuitOperation::BlendConstantRgb>(pixels, pixelsPerRow, scanout, circuit1);
 	} else if (scanout.circuit1OutputPath == GX_GPU_PCRTC_SCANOUT_DRAW_BLEND_CONSTANT_RGBA) {
-		writeGx16CircuitRows<Gx16CircuitOperation::BlendConstantRgba>(pixels, pixelsPerRow, state, circuit1);
+		writeGx16CircuitRows<Gx16CircuitOperation::BlendConstantRgba>(pixels, pixelsPerRow, scanout, circuit1);
 	}
 }
 
@@ -227,14 +226,13 @@ template<u32 StoragePath, GenericCircuitOperation Operation>
 void writeGenericCircuitRows(
 	u32* pixels,
 	i32 pixelsPerRow,
-	const GxGpuPipelineState& state,
+	const GxGpuPcrtcScanout& scanout,
 	const GxGpuPcrtcCircuit& circuit) {
 	const u32 left = circuit.displayX;
 	const u32 right = circuit.displayRight;
 	const u32 sourceXStart = circuit.framebufferX
 		+ (circuit.sourcePhaseX * circuit.sourceDivisionMultiplierX >> GX_GPU_PCRTC_SOURCE_DIVISION_SHIFT);
 	const u32 sourceRemainderStart = circuit.sourcePhaseX % circuit.magnificationX;
-	const GxGpuPcrtcScanout& scanout = *state.pcrtcScanout;
 	u32 sourceYNumerator = circuit.fieldSourceNumeratorY;
 	u32 y = circuit.fieldDisplayY;
 	for (u32 line = 0u; line < circuit.fieldDisplayLineCount; line += 1u) {
@@ -286,29 +284,29 @@ template<GenericCircuitOperation Operation>
 void dispatchGenericCircuitRows(
 	u32* pixels,
 	i32 pixelsPerRow,
-	const GxGpuPipelineState& state,
+	const GxGpuPcrtcScanout& scanout,
 	const GxGpuPcrtcCircuit& circuit) {
 	switch (circuit.framebufferStoragePath) {
 		case GX_GPU_PCRTC_STORAGE_CT32:
-			writeGenericCircuitRows<GX_GPU_PCRTC_STORAGE_CT32, Operation>(pixels, pixelsPerRow, state, circuit);
+			writeGenericCircuitRows<GX_GPU_PCRTC_STORAGE_CT32, Operation>(pixels, pixelsPerRow, scanout, circuit);
 			return;
 		case GX_GPU_PCRTC_STORAGE_CT24:
-			writeGenericCircuitRows<GX_GPU_PCRTC_STORAGE_CT24, Operation>(pixels, pixelsPerRow, state, circuit);
+			writeGenericCircuitRows<GX_GPU_PCRTC_STORAGE_CT24, Operation>(pixels, pixelsPerRow, scanout, circuit);
 			return;
 		case GX_GPU_PCRTC_STORAGE_CT16:
-			writeGenericCircuitRows<GX_GPU_PCRTC_STORAGE_CT16, Operation>(pixels, pixelsPerRow, state, circuit);
+			writeGenericCircuitRows<GX_GPU_PCRTC_STORAGE_CT16, Operation>(pixels, pixelsPerRow, scanout, circuit);
 			return;
 		case GX_GPU_PCRTC_STORAGE_CT16S:
-			writeGenericCircuitRows<GX_GPU_PCRTC_STORAGE_CT16S, Operation>(pixels, pixelsPerRow, state, circuit);
+			writeGenericCircuitRows<GX_GPU_PCRTC_STORAGE_CT16S, Operation>(pixels, pixelsPerRow, scanout, circuit);
 			return;
 		case GX_GPU_PCRTC_STORAGE_GPU24:
-			writeGenericCircuitRows<GX_GPU_PCRTC_STORAGE_GPU24, Operation>(pixels, pixelsPerRow, state, circuit);
+			writeGenericCircuitRows<GX_GPU_PCRTC_STORAGE_GPU24, Operation>(pixels, pixelsPerRow, scanout, circuit);
 			return;
 		case GX_GPU_PCRTC_STORAGE_GX16:
-			writeGenericCircuitRows<GX_GPU_PCRTC_STORAGE_GX16, Operation>(pixels, pixelsPerRow, state, circuit);
+			writeGenericCircuitRows<GX_GPU_PCRTC_STORAGE_GX16, Operation>(pixels, pixelsPerRow, scanout, circuit);
 			return;
 		case GX_GPU_PCRTC_STORAGE_ZERO:
-			writeGenericCircuitRows<GX_GPU_PCRTC_STORAGE_ZERO, Operation>(pixels, pixelsPerRow, state, circuit);
+			writeGenericCircuitRows<GX_GPU_PCRTC_STORAGE_ZERO, Operation>(pixels, pixelsPerRow, scanout, circuit);
 			return;
 	}
 }
@@ -317,35 +315,35 @@ void writeGenericOutputRows(
 	u32* pixels,
 	i32 pixelsPerRow,
 	const GxGpuPipelineState& state,
+	const GxGpuPcrtcScanout& scanout,
 	i32 firstRow,
 	i32 rowStep) {
-	const GxGpuPcrtcScanout& scanout = *state.pcrtcScanout;
 	if (scanout.backgroundRequired != 0u) {
-		fillBackgroundRows(pixels, pixelsPerRow, state, firstRow, rowStep);
+		fillBackgroundRows(pixels, pixelsPerRow, state, scanout, firstRow, rowStep);
 	}
 	const GxGpuPcrtcCircuit& circuit2 = scanout.circuits[1u];
 	if (scanout.circuit2OutputPath == GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGB) {
-		dispatchGenericCircuitRows<GenericCircuitOperation::WriteRgb>(pixels, pixelsPerRow, state, circuit2);
+		dispatchGenericCircuitRows<GenericCircuitOperation::WriteRgb>(pixels, pixelsPerRow, scanout, circuit2);
 	} else if (scanout.circuit2OutputPath == GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGBA) {
-		dispatchGenericCircuitRows<GenericCircuitOperation::WriteRgba>(pixels, pixelsPerRow, state, circuit2);
+		dispatchGenericCircuitRows<GenericCircuitOperation::WriteRgba>(pixels, pixelsPerRow, scanout, circuit2);
 	} else if (scanout.circuit2OutputPath == GX_GPU_PCRTC_SCANOUT_DRAW_RAW_ALPHA) {
-		dispatchGenericCircuitRows<GenericCircuitOperation::WriteAlpha>(pixels, pixelsPerRow, state, circuit2);
+		dispatchGenericCircuitRows<GenericCircuitOperation::WriteAlpha>(pixels, pixelsPerRow, scanout, circuit2);
 	}
 	const GxGpuPcrtcCircuit& circuit1 = scanout.circuits[0u];
 	if (scanout.circuit1OutputPath == GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGB) {
-		dispatchGenericCircuitRows<GenericCircuitOperation::WriteRgb>(pixels, pixelsPerRow, state, circuit1);
+		dispatchGenericCircuitRows<GenericCircuitOperation::WriteRgb>(pixels, pixelsPerRow, scanout, circuit1);
 	} else if (scanout.circuit1OutputPath == GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGBA) {
-		dispatchGenericCircuitRows<GenericCircuitOperation::WriteRgba>(pixels, pixelsPerRow, state, circuit1);
+		dispatchGenericCircuitRows<GenericCircuitOperation::WriteRgba>(pixels, pixelsPerRow, scanout, circuit1);
 	} else if (scanout.circuit1OutputPath == GX_GPU_PCRTC_SCANOUT_DRAW_RAW_ALPHA) {
-		dispatchGenericCircuitRows<GenericCircuitOperation::WriteAlpha>(pixels, pixelsPerRow, state, circuit1);
+		dispatchGenericCircuitRows<GenericCircuitOperation::WriteAlpha>(pixels, pixelsPerRow, scanout, circuit1);
 	} else if (scanout.circuit1OutputPath == GX_GPU_PCRTC_SCANOUT_DRAW_BLEND_SOURCE_RGB) {
-		dispatchGenericCircuitRows<GenericCircuitOperation::BlendSourceRgb>(pixels, pixelsPerRow, state, circuit1);
+		dispatchGenericCircuitRows<GenericCircuitOperation::BlendSourceRgb>(pixels, pixelsPerRow, scanout, circuit1);
 	} else if (scanout.circuit1OutputPath == GX_GPU_PCRTC_SCANOUT_DRAW_BLEND_SOURCE_RGBA) {
-		dispatchGenericCircuitRows<GenericCircuitOperation::BlendSourceRgba>(pixels, pixelsPerRow, state, circuit1);
+		dispatchGenericCircuitRows<GenericCircuitOperation::BlendSourceRgba>(pixels, pixelsPerRow, scanout, circuit1);
 	} else if (scanout.circuit1OutputPath == GX_GPU_PCRTC_SCANOUT_DRAW_BLEND_CONSTANT_RGB) {
-		dispatchGenericCircuitRows<GenericCircuitOperation::BlendConstantRgb>(pixels, pixelsPerRow, state, circuit1);
+		dispatchGenericCircuitRows<GenericCircuitOperation::BlendConstantRgb>(pixels, pixelsPerRow, scanout, circuit1);
 	} else if (scanout.circuit1OutputPath == GX_GPU_PCRTC_SCANOUT_DRAW_BLEND_CONSTANT_RGBA) {
-		dispatchGenericCircuitRows<GenericCircuitOperation::BlendConstantRgba>(pixels, pixelsPerRow, state, circuit1);
+		dispatchGenericCircuitRows<GenericCircuitOperation::BlendConstantRgba>(pixels, pixelsPerRow, scanout, circuit1);
 	}
 }
 
@@ -353,28 +351,34 @@ void writeOutputRows(
 	u32* pixels,
 	i32 pixelsPerRow,
 	const GxGpuPipelineState& state,
+	const GxGpuPcrtcScanout& scanout,
 	i32 firstRow,
 	i32 rowStep) {
-	if (state.pcrtcScanout->compositionPath == GX_GPU_PCRTC_COMPOSE_GX16_DIRECT_CIRCUIT1) {
+	if (scanout.compositionPath == GX_GPU_PCRTC_COMPOSE_GX16_DIRECT_CIRCUIT1) {
 		writeGx16CircuitRows<Gx16CircuitOperation::WriteRgba>(
 			pixels,
 			pixelsPerRow,
-			state,
-			state.pcrtcScanout->circuits[0u]);
+			scanout,
+			scanout.circuits[0u]);
 		return;
 	}
-	if (state.pcrtcScanout->compositionPath == GX_GPU_PCRTC_COMPOSE_GX16) {
-		writeGx16OutputRows(pixels, pixelsPerRow, state, firstRow, rowStep);
+	if (scanout.compositionPath == GX_GPU_PCRTC_COMPOSE_GX16) {
+		writeGx16OutputRows(pixels, pixelsPerRow, state, scanout, firstRow, rowStep);
 		return;
 	}
-	writeGenericOutputRows(pixels, pixelsPerRow, state, firstRow, rowStep);
+	writeGenericOutputRows(pixels, pixelsPerRow, state, scanout, firstRow, rowStep);
 }
 
-void scanoutInterlacedVram(SoftwareBackend& backend, const GxGpuPipelineState& state) {
+void scanoutInterlacedVram(
+	SoftwareBackend& backend,
+	const GxGpuPipelineState& state,
+	const GxGpuPcrtcScanout& scanout,
+	u64 vramReplacementSerial
+) {
 	const bool geometryChanged = !g_interlacedScanout.valid
 		|| g_interlacedScanout.width != state.width
 		|| g_interlacedScanout.height != state.height
-		|| g_interlacedScanout.vramReplacementSerial != state.vramReplacementSerial;
+		|| g_interlacedScanout.vramReplacementSerial != vramReplacementSerial;
 	const size_t pixelCount = static_cast<size_t>(state.width) * static_cast<size_t>(state.height);
 	if (g_interlacedScanout.pixels.size() != pixelCount) {
 		g_interlacedScanout.pixels.resize(pixelCount);
@@ -383,17 +387,18 @@ void scanoutInterlacedVram(SoftwareBackend& backend, const GxGpuPipelineState& s
 		std::fill(
 			g_interlacedScanout.pixels.begin(),
 			g_interlacedScanout.pixels.end(),
-			outputArgb(state.pcrtcScanout->backgroundColor));
+			outputArgb(scanout.backgroundColor));
 		g_interlacedScanout.width = state.width;
 		g_interlacedScanout.height = state.height;
 		g_interlacedScanout.valid = true;
-		g_interlacedScanout.vramReplacementSerial = state.vramReplacementSerial;
+		g_interlacedScanout.vramReplacementSerial = vramReplacementSerial;
 	}
 	writeOutputRows(
 		g_interlacedScanout.pixels.data(),
 		state.width,
 		state,
-		static_cast<i32>(state.pcrtcScanout->field),
+		scanout,
+		static_cast<i32>(scanout.field),
 		2);
 	const i32 targetPixelsPerRow = backend.pitch() / static_cast<i32>(sizeof(u32));
 	for (i32 y = 0; y < state.height; y += 1) {
@@ -405,14 +410,19 @@ void scanoutInterlacedVram(SoftwareBackend& backend, const GxGpuPipelineState& s
 
 } // namespace
 
-void scanoutGxGpuSoftwareVram(SoftwareBackend& backend, const GxGpuPipelineState& state) {
-	if (state.pcrtcScanout->interlaced) {
-		scanoutInterlacedVram(backend, state);
+void scanoutGxGpuSoftwareVram(
+	SoftwareBackend& backend,
+	const GxGpuPipelineState& state,
+	const GxGpuPcrtcScanout& scanout,
+	u64 vramReplacementSerial
+) {
+	if (scanout.interlaced) {
+		scanoutInterlacedVram(backend, state, scanout, vramReplacementSerial);
 		return;
 	}
 	g_interlacedScanout.valid = false;
 	const i32 pixelsPerRow = backend.pitch() / static_cast<i32>(sizeof(u32));
-	writeOutputRows(backend.framebuffer(), pixelsPerRow, state, 0, 1);
+	writeOutputRows(backend.framebuffer(), pixelsPerRow, state, scanout, 0, 1);
 }
 
 } // namespace bmsx

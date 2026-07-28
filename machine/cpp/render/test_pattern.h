@@ -4,8 +4,8 @@
 
 namespace bmsx {
 
-class GameView;
+class VideoPresenter;
 
-void renderTestPattern(GameView& view, f64 totalTime);
+void renderTestPattern(VideoPresenter& presenter, f64 totalTime);
 
 } // namespace bmsx

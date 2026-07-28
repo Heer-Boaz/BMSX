@@ -1,8 +1,7 @@
 import type { RenderPassLibrary } from '../backend/pass/library';
 import type { GxGpuPipelineState, RenderPassStateRegistry } from '../backend/backend';
-import type { GameView } from '../gameview';
 import type { Host2DSubmission } from '../shared/submissions';
-import type { HeadlessPresentHost, HeadlessPresentedFrameBuffer } from './view';
+import type { HeadlessPresentedFrameBuffer, HeadlessVideoOutput } from './video_output';
 import type { HostMenuPipelineState } from '../backend/backend';
 import { renderHeadlessHost2DEntry, renderHeadlessHost2DSubmission } from './host_2d';
 import { renderGxGpuSoftwareFrame } from '../backend/software/gx_gpu';
@@ -16,14 +15,14 @@ export function registerHeadlessPasses(registry: RenderPassLibrary): void {
 	registerHeadlessDeviceQuantizePass(registry);
 }
 
-export function registerHeadlessPresentPass(registry: RenderPassLibrary): void {
+export function registerHeadlessPresentPass(registry: RenderPassLibrary, output: HeadlessVideoOutput): void {
 	registry.register({
 		id: 'headless_present',
 		name: 'HeadlessPresent',
-		stateOnly: true,
-		graph: { reads: ['frame_color'] },
-		exec: () => {
-			presentHeadlessFrame(registry.view as GameView);
+			stateOnly: true,
+			graph: { reads: ['frame_color'] },
+			exec: () => {
+				presentHeadlessFrame(output);
 		},
 	});
 }
@@ -35,8 +34,7 @@ function registerFramePasses(registry: RenderPassLibrary): void {
 		stateOnly: true,
 		graph: { skip: true },
 		exec: () => {
-			const view = registry.view as GameView;
-			resizeHeadlessFrame(view.offscreenCanvasSize.x, view.offscreenCanvasSize.y);
+			resizeHeadlessFrame(registry.presenter.offscreenCanvasSize.x, registry.presenter.offscreenCanvasSize.y);
 		},
 	});
 }
@@ -66,16 +64,6 @@ function registerHeadlessGxGpuPass(registry: RenderPassLibrary): void {
 	const state: GxGpuPipelineState = {
 		width: 0,
 		height: 0,
-		commandBuffer: registry.view.gxGpuCommandBuffer,
-		readbackPort: registry.view.gxGpuReadbackPort,
-		statusWord: registry.view.gxGpuStatusWord,
-		displayModeWord: registry.view.gxGpuDisplayModeWord,
-		displayStartWord: registry.view.gxGpuDisplayStartWord,
-		vramYAddressExtensionWord: registry.view.gxGpuVramYAddressExtensionWord,
-		pcrtcScanout: registry.view.gxGpuPcrtcScanout,
-		vramSnapshotBytes: registry.view.gxGpuVramSnapshotBytes,
-		vramSnapshotSerial: registry.view.gxGpuVramSnapshotSerial,
-		vramReplacementSerial: registry.view.gxGpuVramReplacementSerial,
 	};
 	registry.register<GxGpuPipelineState>({
 		id: 'gx_gpu',
@@ -85,23 +73,12 @@ function registerHeadlessGxGpuPass(registry: RenderPassLibrary): void {
 		graph: {
 			writes: ['frame_color'],
 			writeState: (ctx, gxGpuState) => {
-				const view = ctx.view;
-				gxGpuState.width = view.offscreenCanvasSize.x;
-				gxGpuState.height = view.offscreenCanvasSize.y;
-				gxGpuState.commandBuffer = view.gxGpuCommandBuffer;
-				gxGpuState.readbackPort = view.gxGpuReadbackPort;
-				gxGpuState.statusWord = view.gxGpuStatusWord;
-				gxGpuState.displayModeWord = view.gxGpuDisplayModeWord;
-				gxGpuState.displayStartWord = view.gxGpuDisplayStartWord;
-				gxGpuState.vramYAddressExtensionWord = view.gxGpuVramYAddressExtensionWord;
-				gxGpuState.pcrtcScanout = view.gxGpuPcrtcScanout;
-				gxGpuState.vramSnapshotBytes = view.gxGpuVramSnapshotBytes;
-				gxGpuState.vramSnapshotSerial = view.gxGpuVramSnapshotSerial;
-				gxGpuState.vramReplacementSerial = view.gxGpuVramReplacementSerial;
+				gxGpuState.width = ctx.presenter.offscreenCanvasSize.x;
+				gxGpuState.height = ctx.presenter.offscreenCanvasSize.y;
 			},
 		},
-		exec: (_backend, _fbo, state) => {
-			renderGxGpuSoftwareFrame(state, headlessCompositeWords);
+		exec: (_backend, _fbo, state, _pipelineHandle, output) => {
+			renderGxGpuSoftwareFrame(state, output, headlessCompositeWords);
 		},
 	});
 }
@@ -136,10 +113,9 @@ function registerHeadlessDeviceQuantizePass(registry: RenderPassLibrary): void {
 	});
 }
 
-function presentHeadlessFrame(view: GameView): void {
-	const host = view.host as unknown as HeadlessPresentHost;
+function presentHeadlessFrame(output: HeadlessVideoOutput): void {
 	headlessPresentedFrameBuffer.pixels = headlessCompositePixels;
 	headlessPresentedFrameBuffer.width = headlessFrameWidth;
 	headlessPresentedFrameBuffer.height = headlessFrameHeight;
-	host.presentFrameBuffer(headlessPresentedFrameBuffer);
+	output.presentFrameBuffer(headlessPresentedFrameBuffer);
 }

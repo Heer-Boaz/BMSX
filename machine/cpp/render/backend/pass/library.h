@@ -10,8 +10,6 @@
 #include "../backend.h"
 #include "../../graph/graph.h"
 #include "../../shared/submissions.h"
-#include "machine/devices/gx/gpu_command_buffer.h"
-#include "machine/devices/gx/gpu_pcrtc.h"
 #include "render/post/device_quantize/lut.h"
 #include <array>
 #include <string>
@@ -25,10 +23,9 @@
 
 namespace bmsx {
 
-class GameView;
+class VideoPresenter;
 class RenderGraphRuntime;
-class Runtime;
-struct GxGpuCommandBuffer;
+struct GxGpuDeviceOutput;
 enum class Host2DKind : u8;
 using Host2DRef = const void*;
 
@@ -39,16 +36,6 @@ using Host2DRef = const void*;
 struct GxGpuPipelineState {
 	i32 width = 0;
 	i32 height = 0;
-	const GxGpuCommandBuffer* commandBuffer = nullptr;
-	GxGpuReadbackPort* readbackPort = nullptr;
-	u32 statusWord = 0u;
-	u32 displayModeWord = 0u;
-	u32 displayStartWord = 0u;
-	u32 vramYAddressExtensionWord = 0u;
-	const GxGpuPcrtcScanout* pcrtcScanout = nullptr;
-	const std::array<u8, GX_GPU_VRAM_BYTE_COUNT>* vramSnapshotBytes = nullptr;
-	u64 vramSnapshotSerial = 0u;
-	u64 vramReplacementSerial = 0u;
 };
 
 struct CRTPipelineOptions {
@@ -156,10 +143,17 @@ struct RenderPassDef {
 	};
 	std::optional<RenderPassGraphDef> graph;
 
-	void (*exec)(GPUBackend*, GameView*, void*, RenderPassStateStorage&, void*) = nullptr;
+	void (*exec)(
+		GPUBackend*,
+		VideoPresenter*,
+		void*,
+		RenderPassStateStorage&,
+		void*,
+		const GxGpuDeviceOutput&
+	) = nullptr;
 	void (*bootstrap)(GPUBackend*, void*) = nullptr;
 	void (*teardown)(GPUBackend*, void*) = nullptr;
-	bool (*shouldExecute)(GameView*, void*) = nullptr;
+	bool (*shouldExecute)(VideoPresenter*, void*) = nullptr;
 	void* context = nullptr;
 
 	bool stateOnly = false;
@@ -170,14 +164,28 @@ struct RenderPassDef {
 };
 
 template<typename Backend, typename State, State RenderPassStateStorage::* StateMember, void (*Render)(Backend&, const State&)>
-void executeStateRenderPass(GPUBackend* backend, GameView*, void*, RenderPassStateStorage& state, void*) {
+void executeStateRenderPass(
+	GPUBackend* backend,
+	VideoPresenter*,
+	void*,
+	RenderPassStateStorage& state,
+	void*,
+	const GxGpuDeviceOutput&
+) {
 	auto& typedBackend = *static_cast<Backend*>(backend);
 	const auto& typedState = state.*StateMember;
 	Render(typedBackend, typedState);
 }
 
 template<typename Backend, typename Pipeline, typename State, State RenderPassStateStorage::* StateMember, void (*Render)(Backend&, Pipeline&, const State&)>
-void executePipelineRenderPass(GPUBackend* backend, GameView*, void*, RenderPassStateStorage& state, void* context) {
+void executePipelineRenderPass(
+	GPUBackend* backend,
+	VideoPresenter*,
+	void*,
+	RenderPassStateStorage& state,
+	void* context,
+	const GxGpuDeviceOutput&
+) {
 	auto& typedBackend = *static_cast<Backend*>(backend);
 	auto& typedPipeline = *static_cast<Pipeline*>(context);
 	const auto& typedState = state.*StateMember;
@@ -197,15 +205,15 @@ void teardownBackendRenderPass(GPUBackend* backend, void*) {
 }
 
 void setPresentationHistoryGraph(RenderPassDef& desc, RenderPassDef::RenderGraphSlot historySlot);
-bool shouldUpdatePresentationHistoryA(GameView* view, void* context);
-bool shouldUpdatePresentationHistoryB(GameView* view, void* context);
+bool shouldUpdatePresentationHistoryA(VideoPresenter* presenter, void* context);
+bool shouldUpdatePresentationHistoryB(VideoPresenter* presenter, void* context);
 void setGxGpuGraph(RenderPassDef& desc);
 void setAutoPresentGraph(RenderPassDef& desc);
 void setAutoCRTGraph(RenderPassDef& desc);
 void setDeviceQuantizeGraph(RenderPassDef& desc);
-bool shouldExecuteAutoPresentPass(GameView* view, void*);
-bool shouldExecuteAutoCRTPass(GameView* view, void*);
-bool shouldExecuteDeviceQuantizePass(GameView* view, void*);
+bool shouldExecuteAutoPresentPass(VideoPresenter* presenter, void*);
+bool shouldExecuteAutoCRTPass(VideoPresenter* presenter, void*);
+bool shouldExecuteDeviceQuantizePass(VideoPresenter* presenter, void*);
 void registerFrameResolvePass(RenderPassLibrary& registry);
 
 /* ============================================================================
@@ -214,10 +222,10 @@ void registerFrameResolvePass(RenderPassLibrary& registry);
 
 class RenderPassLibrary {
 public:
-	RenderPassLibrary(GPUBackend* backend, GameView* view);
+	RenderPassLibrary(GPUBackend* backend, VideoPresenter* presenter);
 	~RenderPassLibrary();
 
-	GameView* view() const { return m_view; }
+	VideoPresenter* presenter() const { return m_presenter; }
 
 	void registerPass(const RenderPassDef& desc);
 	bool has(const std::string& id) const;
@@ -231,8 +239,12 @@ public:
 		return stateRef<T>(it->second.state);
 	}
 
-	void execute(const std::string& id, void* fbo);
-	void writeGraphState(const std::string& id, const RenderPassDef::RenderGraphPassContext& ctx, void (*writeState)(const RenderGraphPassContext&, RenderPassStateStorage&));
+	void execute(const std::string& id, void* fbo, const GxGpuDeviceOutput& output);
+	void writeGraphState(
+		const std::string& id,
+		const RenderPassDef::RenderGraphPassContext& ctx,
+		void (*writeState)(const RenderGraphPassContext&, RenderPassStateStorage&)
+	);
 
 	const std::vector<RenderPassDef>& getPipelinePasses() const { return m_passes; }
 	i32 findPipelinePassIndex(const std::string& id) const;
@@ -245,7 +257,14 @@ public:
 private:
 	struct RegisteredPassRec {
 		std::string id;
-		void (*exec)(GPUBackend*, GameView*, void*, RenderPassStateStorage&, void*) = nullptr;
+		void (*exec)(
+			GPUBackend*,
+			VideoPresenter*,
+			void*,
+			RenderPassStateStorage&,
+			void*,
+			const GxGpuDeviceOutput&
+		) = nullptr;
 		void* context = nullptr;
 		RenderPassInstanceHandle pipelineHandle = nullptr;
 		RenderPassStateStorage state;
@@ -269,7 +288,7 @@ private:
 	}
 
 	GPUBackend* m_backend;
-	GameView* m_view;
+	VideoPresenter* m_presenter;
 	std::vector<RenderPassDef> m_passes;
 	std::unordered_map<std::string, RegisteredPassRec> m_registered;
 	std::unordered_map<std::string, bool> m_passEnabled;

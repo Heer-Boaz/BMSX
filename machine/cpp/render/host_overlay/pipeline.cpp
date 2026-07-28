@@ -1,7 +1,7 @@
 #include "render/host_overlay/pipeline.h"
 
 #include "core/machine_manager.h"
-#include "render/gameview.h"
+#include "render/video_presenter.h"
 #include "render/host_overlay/overlay_queue.h"
 
 namespace bmsx {
@@ -18,11 +18,11 @@ void writeHostOverlayState(HostOverlayPipelineState& state) {
 	state.commandCount = frame.commandCount;
 }
 
-void writeHostMenuState(HostMenuPipelineState& state, GameView& view) {
-	state.width = static_cast<i32>(view.offscreenCanvasSize.x);
-	state.height = static_cast<i32>(view.offscreenCanvasSize.y);
-	state.overlayWidth = static_cast<i32>(view.viewportSize.x);
-	state.overlayHeight = static_cast<i32>(view.viewportSize.y);
+void writeHostMenuState(HostMenuPipelineState& state, VideoPresenter& presenter) {
+	state.width = static_cast<i32>(presenter.offscreenCanvasSize.x);
+	state.height = static_cast<i32>(presenter.offscreenCanvasSize.y);
+	state.overlayWidth = static_cast<i32>(presenter.viewportSize.x);
+	state.overlayHeight = static_cast<i32>(presenter.viewportSize.y);
 	const HostMenuFrame frame = consumeHostMenuFrame();
 	state.commandKinds = frame.commandKinds;
 	state.commandRefs = frame.commandRefs;

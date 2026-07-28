@@ -1,11 +1,11 @@
 import { SoundMaster } from "../audio/soundmaster";
 import { Input } from "../input/manager";
-import { GameView } from "../render/gameview";
+import { VideoPresenter } from "../render/video_presenter";
 import { Font } from '../render/shared/bmsx_font';
 import { TextureManager } from "../render/texture_manager";
 import { RenderPassLibrary } from "../render/backend/pass/library";
 import { LogLevel, setMicrotaskQueue } from '../platform';
-import type { GameViewHost, Platform } from '../platform';
+import type { Platform } from '../platform';
 import { PAL_REFRESH_UFPS_SCALED, PSX_MACHINE_SPEC } from '../machine/model_registry';
 import { HZ_SCALE } from '../machine/runtime/timing/constants';
 import { renderGate, runGate } from '../common/taskgate';
@@ -13,10 +13,8 @@ import { Runtime } from '../machine/runtime/runtime';
 import { Memory } from '../machine/memory/memory';
 import { configureMemoryMap } from '../machine/memory/map';
 import { resolveRuntimeTiming } from '../machine/runtime/boot_timing';
-import type { GPUBackend } from '../render/backend/backend';
 import { captureRuntimeSaveStateBytes } from '../machine/runtime/save_state/codec';
 import { gxGpuDisplayModeScreenWidth, gxGpuVerticalVisibleLines } from '../machine/devices/gx/gpu_display';
-import { commitGxGpuViewSnapshot } from '../render/gx/view_snapshot';
 import { SYS_PRINT_BUFFER_BYTES } from '../spec/bmsx/io';
 import { parseRomImage } from '../rompack/image';
 import {
@@ -33,7 +31,6 @@ export interface MachineInitializationOptions {
 	startingGamepadIndex?: number;
 	enableOnscreenGamepad?: boolean;
 	platform: Platform;
-	viewHost?: GameViewHost;
 }
 
 const DEFAULT_MASTER_VOLUME = 1;
@@ -61,7 +58,7 @@ export class MachineManager {
 	/**
 	 * The ID of the animation frame request.
 	 */
-	private _view!: GameView;
+	private _videoPresenter!: VideoPresenter;
 	private _platform!: Platform;
 	private _runtime!: Runtime;
 	/**
@@ -85,7 +82,7 @@ export class MachineManager {
 		}
 	}
 
-	public get view(): GameView { return this._view; }
+	public get videoPresenter(): VideoPresenter { return this._videoPresenter; }
 
 	public get input(): Input { return Input.instance!; }
 	public get texmanager(): TextureManager { return TextureManager.instance!; }
@@ -137,14 +134,18 @@ export class MachineManager {
 	}
 
 	public async initialize(options: MachineInitializationOptions): Promise<Runtime> {
-		const { systemRom, cartridgeSlots, debug = false, startingGamepadIndex = null, enableOnscreenGamepad = false, platform, viewHost } = options;
+		const {
+			systemRom,
+			cartridgeSlots,
+			debug = false,
+			startingGamepadIndex = null,
+			enableOnscreenGamepad = false,
+			platform,
+		} = options;
 		if (!platform) {
 			throw new Error('[MachineManager] Platform services not provided.');
 		}
-		const resolvedViewHost = viewHost ?? platform.gameviewHost;
-		if (!resolvedViewHost) {
-			throw new Error('[MachineManager] Platform did not expose a GameViewHost.');
-		}
+		const videoOutput = platform.videoOutput;
 		const systemImage = parseRomImage(systemRom, 'system');
 		const cartridgeImages = [
 			cartridgeSlots[0] ? parseRomImage(cartridgeSlots[0], 'cart') : null,
@@ -179,7 +180,6 @@ export class MachineManager {
 			systemRom: systemImage.bytes,
 			cartridgeSlots: cartridgeMedia,
 		});
-		platform.gameviewHost = resolvedViewHost;
 		this._platform = platform;
 		setMicrotaskQueue(platform.microtasks);
 		this.running = false;
@@ -209,44 +209,38 @@ export class MachineManager {
 			x: gxGpuDisplayModeScreenWidth(gpuOutput.displayModeWord),
 			y: gxGpuVerticalVisibleLines(gpuOutput.verticalDisplayRangeWord, gpuOutput.displayModeWord),
 		};
-		const gview = new GameView({
-			viewportSize,
-			host: resolvedViewHost,
-		});
-		this._view = gview;
-		commitGxGpuViewSnapshot(gview, gpuOutput);
+		const gpuBackend = await videoOutput.createBackend();
+		const presenter = new VideoPresenter(
+			videoOutput,
+			gpuBackend,
+			viewportSize.x,
+			viewportSize.y,
+		);
+		this._videoPresenter = presenter;
 		this.syncAudioTiming();
-		const gpuBackend = await resolvedViewHost.createBackend() as GPUBackend;
-		gview.backend = gpuBackend;
 		new TextureManager(gpuBackend);
-		const pipelineRegistry = new RenderPassLibrary(gpuBackend, runtime, gview);
-		gview.pipelineRegistry = pipelineRegistry;
-		gview.applyPresentationPassState();
-		gview.init();
+		const pipelineRegistry = new RenderPassLibrary(gpuBackend, presenter);
+		presenter.initialize(pipelineRegistry);
 
-		resolvedViewHost.onResize((dims) => {
-			gview.viewportScale = dims.viewportScale;
-			gview.canvasScale = dims.canvasScale;
+		videoOutput.onResize((dims) => {
+			presenter.viewportScale = dims.viewportScale;
+			presenter.canvasScale = dims.canvasScale;
 		});
 
 		// Perform initial layout - this will call host.getSize which triggers browser layout
-		const initialDims = resolvedViewHost.getSize(viewportSize, gview.canvasSize);
-		gview.viewportScale = initialDims.viewportScale;
-		gview.canvasScale = initialDims.canvasScale;
+		const initialDims = videoOutput.getSize(viewportSize, presenter.canvasSize);
+		presenter.viewportScale = initialDims.viewportScale;
+		presenter.canvasScale = initialDims.canvasScale;
 
-		await gview.initializeDefaultTextures();
-		this.view.default_font = new Font();
+		presenter.initializeDefaultTextures();
+		this.videoPresenter.default_font = new Font();
 
-		if (this.debug) {
-			Input.instance.enableDebugMode(this.view.surface);
-		}
 		this.initialized = true;
 		return runtime;
 	}
 
-	public async refreshRenderSurfaces(): Promise<void> {
-		this.texmanager.setBackend(this.view.backend);
-		await this.view.initializeDefaultTextures();
+	public refreshRenderSurfaces(): void {
+		this.videoPresenter.initializeDefaultTextures();
 	}
 
 	/**
@@ -268,7 +262,7 @@ export class MachineManager {
 		const renderToken = renderGate.begin({ blocking: true, tag: 'save-state-capture' });
 		const runToken = runGate.begin({ blocking: true, tag: 'save-state-capture' });
 		try {
-			await this.view.captureGxGpuVramSnapshot(this.runtime.machine.gxGpu);
+			await this.videoPresenter.backend.captureGxGpuVramSnapshot(this.runtime.machine.gxGpu);
 			return captureRuntimeSaveStateBytes(this.runtime);
 		} finally {
 			renderGate.end(renderToken);

@@ -6,24 +6,37 @@
 
 namespace bmsx {
 
-inline void writeHostOverlayPassState(const RenderPassDef::RenderGraphPassContext&, RenderPassStateStorage& state) {
+inline void writeHostOverlayPassState(
+	const RenderPassDef::RenderGraphPassContext&,
+	RenderPassStateStorage& state
+) {
 	writeHostOverlayState(state.hostOverlay);
 }
 
-inline void writeHostMenuPassState(const RenderPassDef::RenderGraphPassContext& ctx, RenderPassStateStorage& state) {
-	writeHostMenuState(state.hostMenu, *ctx.view);
+inline void writeHostMenuPassState(
+	const RenderPassDef::RenderGraphPassContext& ctx,
+	RenderPassStateStorage& state
+) {
+	writeHostMenuState(state.hostMenu, *ctx.presenter);
 }
 
-inline bool shouldExecuteHostOverlayPass(GameView*, void*) {
+inline bool shouldExecuteHostOverlayPass(VideoPresenter*, void*) {
 	return hasPendingOverlayFrame();
 }
 
-inline bool shouldExecuteHostMenuPass(GameView*, void*) {
+inline bool shouldExecuteHostMenuPass(VideoPresenter*, void*) {
 	return hasPendingHostMenuFrame();
 }
 
 template<typename Backend, auto Begin, auto RenderEntry, auto End>
-void renderHostOverlayPass(GPUBackend* backend, GameView*, void*, RenderPassStateStorage& stateStorage, void*) {
+void renderHostOverlayPass(
+	GPUBackend* backend,
+	VideoPresenter*,
+	void*,
+	RenderPassStateStorage& stateStorage,
+	void*,
+	const GxGpuDeviceOutput&
+) {
 	Backend& typedBackend = *static_cast<Backend*>(backend);
 	const HostOverlayPipelineState& state = stateStorage.hostOverlay;
 	Begin(typedBackend, state);
@@ -34,7 +47,14 @@ void renderHostOverlayPass(GPUBackend* backend, GameView*, void*, RenderPassStat
 }
 
 template<typename Backend, auto Begin, auto RenderEntry, auto End>
-void renderHostMenuPass(GPUBackend* backend, GameView*, void*, RenderPassStateStorage& stateStorage, void*) {
+void renderHostMenuPass(
+	GPUBackend* backend,
+	VideoPresenter*,
+	void*,
+	RenderPassStateStorage& stateStorage,
+	void*,
+	const GxGpuDeviceOutput&
+) {
 	Backend& typedBackend = *static_cast<Backend*>(backend);
 	const HostMenuPipelineState& state = stateStorage.hostMenu;
 	Begin(typedBackend, state);

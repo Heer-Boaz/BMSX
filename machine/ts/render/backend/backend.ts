@@ -1,9 +1,8 @@
 import { type color_arr, type TextureSource, type vec2 } from '../../rompack/format';
 import type { GxGpu } from '../../machine/devices/gx/gpu';
-import type { GxGpuCommandBufferView, GxGpuReadbackPortView } from '../../machine/devices/gx/gpu_command_buffer';
-import type { GxGpuPcrtcScanout } from '../../machine/devices/gx/gpu_pcrtc';
+import type { GxGpuDeviceOutput } from '../../machine/devices/gx/device_output';
 import type { Host2DKind, Host2DRef, Host2DSubmission } from '../shared/submissions';
-import type { GameView } from '../gameview';
+import type { VideoPresenter } from '../video_presenter';
 import type { DeviceQuantizeLuts } from '../post/device_quantize/lut';
 import type { TextureParams } from './texture_params';
 import type { RenderPassLibrary } from './pass/library';
@@ -109,7 +108,7 @@ export interface GraphicsPipelineBindingLayout {
 export type RenderGraphSlot = 'frame_color' | 'frame_depth' | 'frame_history_a' | 'frame_history_b' | 'device_color';
 
 export interface RenderGraphPassContext {
-	view: RenderContext;
+	presenter: RenderContext;
 	frameIndex: number;
 	time: number;
 	delta: number;
@@ -160,14 +159,20 @@ export interface RenderPassDef<S = unknown> {
 	stateOnly?: boolean;
 	present?: boolean;
 	initialState?: S;
-	shouldExecute?(view: GameView): boolean;
+	shouldExecute?(presenter: VideoPresenter): boolean;
 	/**
 	 * Optional one-time initializer to create permanent GPU resources for this pass
 	 * (e.g., buffers, VAOs, default textures). Called once at registration time.
 	 */
 	bootstrap?: (backend: GPUBackend) => void;
 	teardown?: (backend: GPUBackend) => void;
-	exec: (backend: GPUBackend, fbo: unknown, state: S, pipelineHandle: RenderPassInstanceHandle | null) => void;
+	exec: (
+		backend: GPUBackend,
+		fbo: unknown,
+		state: S,
+		pipelineHandle: RenderPassInstanceHandle | null,
+		output: GxGpuDeviceOutput,
+	) => void;
 	prepare?: (backend: GPUBackend, state: S) => void;
 }
 
@@ -266,16 +271,6 @@ export type RenderPassStateId = keyof RenderPassStateRegistry;
 export type GxGpuPipelineState = {
 	width: number;
 	height: number;
-	commandBuffer: GxGpuCommandBufferView;
-	readbackPort: GxGpuReadbackPortView;
-	statusWord: number;
-	displayModeWord: number;
-	displayStartWord: number;
-	vramYAddressExtensionWord: number;
-	pcrtcScanout: GxGpuPcrtcScanout;
-	vramSnapshotBytes: Uint8Array;
-	vramSnapshotSerial: bigint;
-	vramReplacementSerial: bigint;
 	targetColorTex?: TextureHandle;
 };
 
@@ -300,25 +295,12 @@ export type HostMenuPipelineState = Host2DPipelineState & {
 
 export interface RenderContext {
 	viewportSize: { x: number; y: number };
-	backendType: 'webgpu' | 'webgl2' | 'headless';
 	offscreenCanvasSize: { x: number; y: number; };
 	backend: GPUBackend;
 	presentationMode: PresentationMode;
 	commitPresentationFrame: boolean;
 	presentationHistorySourceIndex: 0 | 1;
 	presentationHistoryDestinationIndex: 0 | 1;
-	gxGpuCommandBuffer: GxGpuCommandBufferView;
-	gxGpuReadbackPort: GxGpuReadbackPortView;
-	gxGpuStatusWord: number;
-	gxGpuDisplayModeWord: number;
-	gxGpuDisplayStartWord: number;
-	gxGpuVramYAddressExtensionWord: number;
-	gxGpuHorizontalDisplayRangeWord: number;
-	gxGpuVerticalDisplayRangeWord: number;
-	gxGpuPcrtcScanout: GxGpuPcrtcScanout;
-	gxGpuVramSnapshotBytes: Uint8Array;
-	gxGpuVramSnapshotSerial: bigint;
-	gxGpuVramReplacementSerial: bigint;
 }
 
 export type RenderingViewportType = 'viewport' | 'offscreen';

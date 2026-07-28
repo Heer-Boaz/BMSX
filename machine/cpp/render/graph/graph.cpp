@@ -4,7 +4,7 @@
 
 #include "graph.h"
 #include "../backend/pass/library.h"
-#include "../gameview.h"
+#include "../video_presenter.h"
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
@@ -135,8 +135,8 @@ void RenderGraphRuntime::addPass(const RenderGraphPass& pass) {
 void RenderGraphRuntime::setupPass(const RenderGraphPass& pass, RenderGraphIO& io, FrameData*) {
 	switch (pass.kind) {
 		case RenderGraphPass::Kind::FrameTargets: {
-			const i32 width = static_cast<i32>(pass.view->offscreenCanvasSize.x);
-			const i32 height = static_cast<i32>(pass.view->offscreenCanvasSize.y);
+			const i32 width = static_cast<i32>(pass.presenter->offscreenCanvasSize.x);
+			const i32 height = static_cast<i32>(pass.presenter->offscreenCanvasSize.y);
 			TexDesc colorDesc;
 			colorDesc.width = width;
 			colorDesc.height = height;
@@ -201,12 +201,17 @@ void RenderGraphRuntime::setupPass(const RenderGraphPass& pass, RenderGraphIO& i
 	}
 }
 
-void RenderGraphRuntime::executePass(RenderGraphPass& pass, RenderGraphContext& ctx, FrameData* frame) {
+void RenderGraphRuntime::executePass(
+	RenderGraphPass& pass,
+	RenderGraphContext& ctx,
+	FrameData* frame,
+	const GxGpuDeviceOutput& output
+) {
 	switch (pass.kind) {
 		case RenderGraphPass::Kind::FrameTargets:
 			break;
 		case RenderGraphPass::Kind::FrameClear: {
-			GPUBackend* backend = pass.view->backend();
+			GPUBackend* backend = &pass.presenter->backend();
 			RenderPassDesc clearDesc;
 			ColorAttachmentSpec colorSpec;
 			colorSpec.tex = ctx.getTexture(m_frameColorHandle);
@@ -221,15 +226,15 @@ void RenderGraphRuntime::executePass(RenderGraphPass& pass, RenderGraphContext& 
 			break;
 		}
 		case RenderGraphPass::Kind::FrameResolve:
-			pass.registry->execute("frame_resolve", nullptr);
+			pass.registry->execute("frame_resolve", nullptr, output);
 			break;
 		case RenderGraphPass::Kind::Registered: {
 			if (!pass.registry->isPassEnabled(pass.passId)) return;
-			if (pass.shouldExecute && !pass.shouldExecute(pass.view, pass.passContext)) return;
+			if (pass.shouldExecute && !pass.shouldExecute(pass.presenter, pass.passContext)) return;
 
 			if (pass.writeState) {
 				RenderGraphPassContext passCtx;
-				passCtx.view = pass.view;
+				passCtx.presenter = pass.presenter;
 				passCtx.time = frame->time;
 				passCtx.delta = frame->delta;
 				passCtx.frameIndex = frame->frameIndex;
@@ -246,7 +251,7 @@ void RenderGraphRuntime::executePass(RenderGraphPass& pass, RenderGraphContext& 
 			}
 
 			if (pass.isPresent || pass.isStateOnly) {
-				pass.registry->execute(pass.passId, nullptr);
+				pass.registry->execute(pass.passId, nullptr, output);
 				return;
 			}
 
@@ -260,7 +265,7 @@ void RenderGraphRuntime::executePass(RenderGraphPass& pass, RenderGraphContext& 
 					else colorHandle = graphHandle(slot);
 				}
 			}
-			pass.registry->execute(pass.passId, ctx.getFBO(colorHandle, depthHandle));
+			pass.registry->execute(pass.passId, ctx.getFBO(colorHandle, depthHandle), output);
 			break;
 		}
 	}
@@ -393,7 +398,7 @@ bool RenderGraphRuntime::resolveExecutablePass(i32 orderIndex, bool hasOrder, Ex
 	return true;
 }
 
-void RenderGraphRuntime::execute(FrameData* frame) {
+void RenderGraphRuntime::execute(FrameData* frame, const GxGpuDeviceOutput& output) {
 	if (!m_compiled) compile(frame);
 	if (!m_realized) realizeAll();
 
@@ -432,7 +437,7 @@ void RenderGraphRuntime::execute(FrameData* frame) {
 		}
 		didBegin = beginClearPass(colorHandle, depthHandle, exec.index, exec.pass->name, passEnc);
 
-		executePass(*exec.pass, ctx, frame);
+		executePass(*exec.pass, ctx, frame, output);
 		if (didBegin) {
 			m_backend->endRenderPass(passEnc);
 		}

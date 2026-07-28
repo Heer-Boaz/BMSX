@@ -12,6 +12,7 @@ import {
 	LogLevel,
 	MonoTime,
 	OnscreenGamepadPlatform,
+	OnscreenGamepadHandles,
 	OnscreenGamepadPlatformHooks,
 	OnscreenGamepadPlatformSession,
 	Platform,
@@ -25,18 +26,12 @@ import {
 	PlatformExitEvent,
 	PlatformHIDDevice,
 	PlatformHIDDeviceRequestOptions,
-	WindowEventHub,
-	HostWindowEventType,
-	HostEventListenerTarget,
-	HostEventOptions,
-	GameViewHostCapabilityId,
-	GameViewHostCapabilityMap,
 	SubscriptionHandle,
 	createSubscriptionHandle,
 } from 'bmsx/platform';
 import { HZ_SCALE } from 'bmsx/machine/runtime/timing/constants';
 import { GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED } from 'bmsx/machine/devices/gx/gpu_pcrtc';
-import { HeadlessGameViewHost } from 'bmsx/render/headless/view';
+import { HeadlessVideoOutput } from 'bmsx/render/headless/video_output';
 import { SilentAudioService } from '../common/silent_audio';
 
 export const HEADLESS_DEFAULT_FRAME_INTERVAL_MS = 1000 * HZ_SCALE / GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED;
@@ -198,6 +193,10 @@ class HeadlessLifecycle implements Lifecycle {
 		return createSubscriptionHandle(() => void 0);
 	}
 
+	onFocusChange(_cb: (focused: boolean) => void): SubscriptionHandle {
+		return createSubscriptionHandle(() => void 0);
+	}
+
 	onWillExit(cb: (event: PlatformExitEvent) => void): SubscriptionHandle {
 		this.exitHandlers.add(cb);
 		this.attachExitHooks();
@@ -323,6 +322,7 @@ class HeadlessOnscreenGamepadPlatform implements OnscreenGamepadPlatform {
 	attach(_hooks: OnscreenGamepadPlatformHooks): OnscreenGamepadPlatformSession {
 		return new NullOnscreenSession();
 	}
+	getLayoutHandles(): OnscreenGamepadHandles { return null; }
 	hideElements(_elementIds: string[]): void { }
 	collectElementIds(_x: number, _y: number, _kind: 'dpad' | 'action'): string[] { return []; }
 	setElementActive(_elementId: string, _active: boolean): void { }
@@ -354,23 +354,6 @@ export interface HeadlessPlatformOptions {
 	unpaced?: boolean;
 }
 
-class NoopWindowEventHub implements WindowEventHub {
-	subscribe(_type: HostWindowEventType, _listener: HostEventListenerTarget, _options?: HostEventOptions): SubscriptionHandle {
-		return createSubscriptionHandle(() => void 0);
-	}
-}
-
-class HeadlessGameViewHostWithWindowEvents extends HeadlessGameViewHost {
-	private readonly windowEvents = new NoopWindowEventHub();
-
-	override getCapability<T extends GameViewHostCapabilityId>(capability: T): GameViewHostCapabilityMap[T] {
-		if (capability === 'window-events') {
-			return this.windowEvents as GameViewHostCapabilityMap[T];
-		}
-		return super.getCapability(capability);
-	}
-}
-
 export class HeadlessPlatformServices implements Platform {
 	readonly clock: HostClock;
 	readonly frames: FrameLoop;
@@ -395,7 +378,7 @@ export class HeadlessPlatformServices implements Platform {
 	readonly onscreenGamepad: OnscreenGamepadPlatform;
 	readonly audio: AudioService;
 	readonly rng: RngService;
-	readonly gameviewHost: HeadlessGameViewHost;
+	readonly videoOutput: HeadlessVideoOutput;
 
 	constructor(options: HeadlessPlatformOptions = {}) {
 		const step = options.frameIntervalMs ?? HEADLESS_DEFAULT_FRAME_INTERVAL_MS;
@@ -419,6 +402,6 @@ export class HeadlessPlatformServices implements Platform {
 		this.onscreenGamepad = new HeadlessOnscreenGamepadPlatform();
 		this.audio = new SilentAudioService();
 		this.rng = new SeededRng(options.rngSeed ?? this.clock.now());
-		this.gameviewHost = new HeadlessGameViewHostWithWindowEvents(new_vec2(256, 212));
+		this.videoOutput = new HeadlessVideoOutput(new_vec2(256, 212));
 	}
 }

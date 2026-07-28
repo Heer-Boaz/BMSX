@@ -58,7 +58,6 @@ async function main(): Promise<void> {
 		systemRom,
 		cartridgeSlots: [dataRom, bootableCartRom],
 		platform,
-		viewHost: platform.gameviewHost,
 	});
 	const presentation = new RenderPresentationState();
 	const hostOverlayMenu = new HostOverlayMenu();

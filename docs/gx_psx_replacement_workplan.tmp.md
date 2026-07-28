@@ -425,7 +425,7 @@ WebGPU, including GPUREAD-to-RAM DMA. Live accelerated conformance remains open.
 - Every BMSX-owned result/staging/pack buffer, uniform, bind group and copy
   descriptor is retained. The WebGPU API's mapping promise and mapped typed view
   are consumed once with a bulkcopy. No full-frame CPU raster, CPU VRAM shadow,
-  fake sync, stale fallback or `GameView` readback facade is allowed.
+  fake sync, stale fallback or `VideoPresenter` readback facade is allowed.
 - Readback exchange and save state use the same little-endian pixel bytes, so
   restore bulk-copies the retained range instead of rebuilding u16 pixels in a
   host loop.

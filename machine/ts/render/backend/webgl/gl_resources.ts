@@ -4,7 +4,7 @@ import { machineManager } from '../../../core/machine_manager';
 import type { TextureParams } from '../texture_params';
 
 function getRenderContext() {
-	return machineManager.view;
+	return machineManager.videoPresenter;
 }
 
 export function glCreateBuffer(

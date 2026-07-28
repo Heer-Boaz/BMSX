@@ -67,6 +67,7 @@ public:
 class Lifecycle {
 public:
 	virtual ~Lifecycle() = default;
+	virtual auto onFocusChange(std::function<void(bool)> handler) -> SubscriptionHandle = 0;
 	virtual auto onWillExit(std::function<void()> handler) -> SubscriptionHandle = 0;
 };
 
@@ -81,21 +82,17 @@ public:
 };
 
 /* ============================================================================
- * GameViewHost - Rendering surface
+ * VideoOutput - Rendering surface
  * ============================================================================ */
 
-class GameViewHost {
+class VideoOutput {
 public:
-	virtual ~GameViewHost() = default;
-	virtual auto getCapability(std::string_view name) -> void* = 0;
+	virtual ~VideoOutput() = default;
 	virtual auto getSize(Vec2 viewportSize, Vec2 canvasSize) -> ViewportDimensions = 0;
 	virtual auto onResize(std::function<void(const ViewportDimensions&)> handler) -> SubscriptionHandle = 0;
-	virtual auto onFocusChange(std::function<void(bool)> handler) -> SubscriptionHandle = 0;
 	virtual void setRenderTargetSize(GPUBackend& backend, i32 width, i32 height) = 0;
 
-	// Create a GPU backend for rendering (platform-specific implementation)
-	// Returns nullptr if the platform doesn't provide its own backend
-	virtual auto createBackend() -> std::unique_ptr<GPUBackend> { return nullptr; } // Dummy implementation
+	virtual auto createBackend() -> std::unique_ptr<GPUBackend> = 0;
 };
 
 /* ============================================================================
@@ -110,7 +107,7 @@ public:
 	virtual auto frameLoop() -> FrameLoop* = 0;
 	virtual auto lifecycle() -> Lifecycle* = 0;
 	virtual auto inputHub() -> InputHub* = 0;
-	virtual auto gameviewHost() -> GameViewHost* = 0;
+	virtual auto videoOutput() -> VideoOutput& = 0;
 	virtual auto microtaskQueue() -> MicrotaskQueue* = 0;
 	virtual void requestShutdown() = 0;
 	virtual auto type() -> std::string_view = 0;
@@ -136,11 +133,14 @@ public:
 	DefaultLifecycle();
 	~DefaultLifecycle() override;
 
+	auto onFocusChange(std::function<void(bool)> handler) -> SubscriptionHandle override;
 	auto onWillExit(std::function<void()> handler) -> SubscriptionHandle override;
+	void triggerFocusChange(bool focused);
 	void triggerExit();
 
 private:
-	std::vector<SubscriptionEntry<std::function<void()>>> m_handlers;
+	std::vector<SubscriptionEntry<std::function<void(bool)>>> m_focus_handlers;
+	std::vector<SubscriptionEntry<std::function<void()>>> m_exit_handlers;
 	uint32_t m_next_handler_id = 1;
 };
 

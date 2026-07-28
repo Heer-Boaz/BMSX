@@ -94,7 +94,6 @@ async function main(): Promise<void> {
 		systemRom,
 		debug: options.debug,
 		platform,
-		viewHost: platform.gameviewHost,
 	};
 	const inputLogger = (message: string): void => {
 		console.log(`[bootrom:headless:input] ${message}`);
@@ -172,7 +171,7 @@ async function main(): Promise<void> {
 			}
 			case 'host-test': {
 				const capture = new HeadlessCaptureCoordinator(
-					platform.gameviewHost,
+					platform.videoOutput,
 					deriveHeadlessCaptureOutputDir(options.mode.path),
 					() => platform.clock.now(),
 				);
@@ -202,7 +201,7 @@ async function main(): Promise<void> {
 			}
 			case 'timeline': {
 				const capture = new HeadlessCaptureCoordinator(
-					platform.gameviewHost,
+					platform.videoOutput,
 					deriveHeadlessCaptureOutputDir(options.mode.path),
 					() => platform.clock.now(),
 				);
@@ -214,7 +213,7 @@ async function main(): Promise<void> {
 					const timeline = await InputTimeline.load(
 						options.mode.path,
 						options.frameIntervalMs,
-						platform.gameviewHost,
+						platform.videoOutput,
 						platform.input,
 						capture,
 						inputLogger,

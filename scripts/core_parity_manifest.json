@@ -260,8 +260,7 @@
 		"machine/ts/machine/runtime/save_state/codec.ts",
 		"machine/ts/machine/runtime/save_state/schema.ts",
 		"machine/ts/render/host_overlay/pipeline.ts",
-		"machine/ts/render/gameview.ts",
-		"machine/ts/render/gx/view_snapshot.ts",
+		"machine/ts/render/video_presenter.ts",
 		"machine/ts/render/post/device_quantize/lut.ts",
 		"machine/ts/render/post/device_quantize/mode.ts",
 		"machine/ts/render/runtime_state.ts",
@@ -919,7 +918,7 @@
 				"machine/ts/common/fixed_point.ts",
 				"machine/cpp/common/fixed_point.h",
 				"machine/ts/render/headless/passes.ts",
-				"machine/ts/render/headless/view.ts"
+				"machine/ts/render/headless/video_output.ts"
 			],
 			"reason": "cart_and_headless_hot_paths_must_not_allocate"
 		}
@@ -2068,12 +2067,11 @@
 			"reason": "headless_backend_frame_stats_reset_must_not_allocate_per_frame"
 		},
 		{
-			"file": "machine/ts/render/graph/graph.ts",
+			"file": "machine/ts/render/video_presenter.ts",
 			"functions": [
-				"updateExternalFrameTiming",
-				"buildFrameData"
+				"present"
 			],
-			"reason": "render_graph_frame_timing_must_mutate_retained_frame_object"
+			"reason": "video_presenter_frame_timing_must_mutate_retained_frame_object"
 		},
 		{
 			"file": "machine/ts/render/backend/webgl/backend.ts",
@@ -2097,7 +2095,7 @@
 			"reason": "headless_present_surface_must_expose_borrowed_pixels_without_copying"
 		},
 		{
-			"file": "machine/ts/render/headless/view.ts",
+			"file": "machine/ts/render/headless/video_output.ts",
 			"functions": [
 				"presentFrameBuffer"
 			],

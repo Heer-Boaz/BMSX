@@ -654,8 +654,8 @@ export class RuntimeCartEditor implements CartEditor {
 		if (this.crtPostprocessingEnabledBeforeEditor !== null) {
 			return;
 		}
-		this.crtPostprocessingEnabledBeforeEditor = machineManager.view.crt_postprocessing_enabled;
-		machineManager.view.crt_postprocessing_enabled = false;
+		this.crtPostprocessingEnabledBeforeEditor = machineManager.videoPresenter.crt_postprocessing_enabled;
+		machineManager.videoPresenter.crt_postprocessing_enabled = false;
 	}
 
 	private restoreCrtPostprocessingFromEditor(): void {
@@ -663,7 +663,7 @@ export class RuntimeCartEditor implements CartEditor {
 		if (enabled === null) {
 			return;
 		}
-		machineManager.view.crt_postprocessing_enabled = enabled;
+		machineManager.videoPresenter.crt_postprocessing_enabled = enabled;
 		this.crtPostprocessingEnabledBeforeEditor = null;
 	}
 
@@ -671,12 +671,12 @@ export class RuntimeCartEditor implements CartEditor {
 		if (this.editorRenderTargetBaselineActive) {
 			return;
 		}
-		const view = machineManager.view;
-		this.editorRenderTargetBaselineWidth = view.viewportSize.x;
-		this.editorRenderTargetBaselineHeight = view.viewportSize.y;
+		const presenter = machineManager.videoPresenter;
+		this.editorRenderTargetBaselineWidth = presenter.viewportSize.x;
+		this.editorRenderTargetBaselineHeight = presenter.viewportSize.y;
 		this.editorRenderTargetBaselineActive = true;
-		view.setRenderTargetSize(EDITOR_TARGET_WIDTH, EDITOR_TARGET_HEIGHT);
-		this.overlayRenderer.setRenderingViewportType(view, 'viewport');
+		presenter.setRenderTargetSize(EDITOR_TARGET_WIDTH, EDITOR_TARGET_HEIGHT);
+		this.overlayRenderer.setRenderingViewportType(presenter, 'viewport');
 		this.updateViewport(this.overlayRenderer.viewportSize);
 	}
 
@@ -684,12 +684,12 @@ export class RuntimeCartEditor implements CartEditor {
 		if (!this.editorRenderTargetBaselineActive) {
 			return;
 		}
-		const view = machineManager.view;
-		view.setRenderTargetSize(
+		const presenter = machineManager.videoPresenter;
+		presenter.setRenderTargetSize(
 			this.editorRenderTargetBaselineWidth,
 			this.editorRenderTargetBaselineHeight,
 		);
-		this.overlayRenderer.setRenderingViewportType(view, 'viewport');
+		this.overlayRenderer.setRenderingViewportType(presenter, 'viewport');
 		this.updateViewport(this.overlayRenderer.viewportSize);
 		this.editorRenderTargetBaselineActive = false;
 	}

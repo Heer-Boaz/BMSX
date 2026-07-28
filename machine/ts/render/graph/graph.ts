@@ -14,6 +14,7 @@ import type {
 	RenderTargetHandle,
 	TextureHandle,
 } from '../backend/backend';
+import type { GxGpuDeviceOutput } from '../../machine/devices/gx/device_output';
 
 // Internal graph texture handle. Named distinctly to avoid collision with existing TextureManager TextureHandle.
 export type RGTexHandle = number;
@@ -32,22 +33,6 @@ export interface FrameData {
 	frameIndex: number;
 	time: number;
 	delta: number;
-}
-
-const externalFrameData: FrameData = {
-	frameIndex: 0,
-	time: 0,
-	delta: 0,
-};
-
-export function updateExternalFrameTiming(frameIndex: number, timeSeconds: number, deltaSeconds: number): void {
-	externalFrameData.frameIndex = frameIndex;
-	externalFrameData.time = timeSeconds;
-	externalFrameData.delta = deltaSeconds;
-}
-
-export function buildFrameData(): FrameData {
-	return externalFrameData;
 }
 
 // Pass authoring interfaces -------------------------------------------------
@@ -69,7 +54,7 @@ export interface PassContext {
 export interface RenderPass<SetupOut = unknown> {
 	name: string;
 	setup(io: IOBuilder, frame: FrameData): SetupOut; // declare dependencies
-	execute(ctx: PassContext, frame: FrameData, data: SetupOut): void; // issue GL commands
+	execute(ctx: PassContext, frame: FrameData, data: SetupOut, output: GxGpuDeviceOutput): void; // issue GL commands
 	/**
 	 * Force execution even if the pass has no declared resource dependencies making it unreachable
 	 * from the exported backbuffer resource. Useful for passes that perform manual FBO rendering without declaring
@@ -319,7 +304,7 @@ export class RenderGraphRuntime {
 		this.compiled = true;
 	}
 
-	execute(frame: FrameData): void {
+	execute(frame: FrameData, output: GxGpuDeviceOutput): void {
 		if (!this.compiled) this.compile(frame);
 		const setupData: unknown[] = this._setupData;
 
@@ -370,7 +355,7 @@ export class RenderGraphRuntime {
 				passEnc = this.backend.beginRenderPass(desc);
 			}
 
-			pass.execute(this.passContext, frame, setupData[i]);
+			pass.execute(this.passContext, frame, setupData[i], output);
 			if (passEnc !== null) {
 				this.backend.endRenderPass(passEnc);
 			}

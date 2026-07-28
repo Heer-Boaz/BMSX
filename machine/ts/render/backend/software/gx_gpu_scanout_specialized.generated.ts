@@ -18,6 +18,7 @@ import {
 	GX_GPU_PCRTC_STORAGE_GX16,
 	GX_GPU_PCRTC_STORAGE_ZERO,
 	type GxGpuPcrtcCircuit,
+	type GxGpuPcrtcScanout,
 } from '../../../machine/devices/gx/gpu_pcrtc';
 import {
 	gxGpuLocalMemoryAddress16,
@@ -103,6 +104,7 @@ function circuitPixelGx16(circuit: GxGpuPcrtcCircuit, sourceX: number, sourceY: 
 function writeGx16RawRgbRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -120,7 +122,7 @@ function writeGx16RawRgbRows(
 			address += 1;
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceY += circuit.linearFieldSourceRowStep;
 	}
 }
@@ -128,6 +130,7 @@ function writeGx16RawRgbRows(
 function writeGx16RawRgbaRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -145,7 +148,7 @@ function writeGx16RawRgbaRows(
 			address += 1;
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceY += circuit.linearFieldSourceRowStep;
 	}
 }
@@ -153,6 +156,7 @@ function writeGx16RawRgbaRows(
 function writeGx16RawAlphaRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -169,7 +173,7 @@ function writeGx16RawAlphaRows(
 			address += 1;
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceY += circuit.linearFieldSourceRowStep;
 	}
 }
@@ -177,6 +181,7 @@ function writeGx16RawAlphaRows(
 function writeGx16BlendSourceRgbRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -197,7 +202,7 @@ function writeGx16BlendSourceRgbRows(
 			address += 1;
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceY += circuit.linearFieldSourceRowStep;
 	}
 }
@@ -205,6 +210,7 @@ function writeGx16BlendSourceRgbRows(
 function writeGx16BlendSourceRgbaRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -225,7 +231,7 @@ function writeGx16BlendSourceRgbaRows(
 			address += 1;
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceY += circuit.linearFieldSourceRowStep;
 	}
 }
@@ -233,11 +239,12 @@ function writeGx16BlendSourceRgbaRows(
 function writeGx16BlendConstantRgbRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
 	const right = circuit.displayRight;
-	const blendAlpha = state.pcrtcScanout.blendAlpha;
+	const blendAlpha = scanout.blendAlpha;
 	let sourceY = circuit.linearFieldSourceY;
 	let outputY = circuit.fieldDisplayY;
 	for (let line = 0; line < circuit.fieldDisplayLineCount; line += 1) {
@@ -252,7 +259,7 @@ function writeGx16BlendConstantRgbRows(
 			address += 1;
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceY += circuit.linearFieldSourceRowStep;
 	}
 }
@@ -260,11 +267,12 @@ function writeGx16BlendConstantRgbRows(
 function writeGx16BlendConstantRgbaRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
 	const right = circuit.displayRight;
-	const blendAlpha = state.pcrtcScanout.blendAlpha;
+	const blendAlpha = scanout.blendAlpha;
 	let sourceY = circuit.linearFieldSourceY;
 	let outputY = circuit.fieldDisplayY;
 	for (let line = 0; line < circuit.fieldDisplayLineCount; line += 1) {
@@ -283,7 +291,7 @@ function writeGx16BlendConstantRgbaRows(
 			address += 1;
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceY += circuit.linearFieldSourceRowStep;
 	}
 }
@@ -291,6 +299,7 @@ function writeGx16BlendConstantRgbaRows(
 function writeGenericCt32RawRgbRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -319,7 +328,7 @@ function writeGenericCt32RawRgbRows(
 			}
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceYNumerator += circuit.fieldSourceNumeratorStepY;
 	}
 }
@@ -327,6 +336,7 @@ function writeGenericCt32RawRgbRows(
 function writeGenericCt24RawRgbRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -355,7 +365,7 @@ function writeGenericCt24RawRgbRows(
 			}
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceYNumerator += circuit.fieldSourceNumeratorStepY;
 	}
 }
@@ -363,6 +373,7 @@ function writeGenericCt24RawRgbRows(
 function writeGenericCt16RawRgbRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -391,7 +402,7 @@ function writeGenericCt16RawRgbRows(
 			}
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceYNumerator += circuit.fieldSourceNumeratorStepY;
 	}
 }
@@ -399,6 +410,7 @@ function writeGenericCt16RawRgbRows(
 function writeGenericCt16SRawRgbRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -427,7 +439,7 @@ function writeGenericCt16SRawRgbRows(
 			}
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceYNumerator += circuit.fieldSourceNumeratorStepY;
 	}
 }
@@ -435,6 +447,7 @@ function writeGenericCt16SRawRgbRows(
 function writeGenericGpu24RawRgbRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -463,7 +476,7 @@ function writeGenericGpu24RawRgbRows(
 			}
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceYNumerator += circuit.fieldSourceNumeratorStepY;
 	}
 }
@@ -471,6 +484,7 @@ function writeGenericGpu24RawRgbRows(
 function writeGenericGx16RawRgbRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -499,7 +513,7 @@ function writeGenericGx16RawRgbRows(
 			}
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceYNumerator += circuit.fieldSourceNumeratorStepY;
 	}
 }
@@ -507,6 +521,7 @@ function writeGenericGx16RawRgbRows(
 function writeGenericZeroRawRgbRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -519,13 +534,14 @@ function writeGenericZeroRawRgbRows(
 			target[output] = (source & 0x00ffffff) | (target[output] & 0xff000000);
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 	}
 }
 
 function writeGenericCt32RawRgbaRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -553,7 +569,7 @@ function writeGenericCt32RawRgbaRows(
 			}
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceYNumerator += circuit.fieldSourceNumeratorStepY;
 	}
 }
@@ -561,6 +577,7 @@ function writeGenericCt32RawRgbaRows(
 function writeGenericCt24RawRgbaRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -588,7 +605,7 @@ function writeGenericCt24RawRgbaRows(
 			}
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceYNumerator += circuit.fieldSourceNumeratorStepY;
 	}
 }
@@ -596,6 +613,7 @@ function writeGenericCt24RawRgbaRows(
 function writeGenericCt16RawRgbaRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -623,7 +641,7 @@ function writeGenericCt16RawRgbaRows(
 			}
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceYNumerator += circuit.fieldSourceNumeratorStepY;
 	}
 }
@@ -631,6 +649,7 @@ function writeGenericCt16RawRgbaRows(
 function writeGenericCt16SRawRgbaRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -658,7 +677,7 @@ function writeGenericCt16SRawRgbaRows(
 			}
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceYNumerator += circuit.fieldSourceNumeratorStepY;
 	}
 }
@@ -666,6 +685,7 @@ function writeGenericCt16SRawRgbaRows(
 function writeGenericGpu24RawRgbaRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -693,7 +713,7 @@ function writeGenericGpu24RawRgbaRows(
 			}
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceYNumerator += circuit.fieldSourceNumeratorStepY;
 	}
 }
@@ -701,6 +721,7 @@ function writeGenericGpu24RawRgbaRows(
 function writeGenericGx16RawRgbaRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -728,7 +749,7 @@ function writeGenericGx16RawRgbaRows(
 			}
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceYNumerator += circuit.fieldSourceNumeratorStepY;
 	}
 }
@@ -736,6 +757,7 @@ function writeGenericGx16RawRgbaRows(
 function writeGenericZeroRawRgbaRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -747,13 +769,14 @@ function writeGenericZeroRawRgbaRows(
 			target[output] = 0 >>> 0;
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 	}
 }
 
 function writeGenericCt32RawAlphaRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -782,7 +805,7 @@ function writeGenericCt32RawAlphaRows(
 			}
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceYNumerator += circuit.fieldSourceNumeratorStepY;
 	}
 }
@@ -790,6 +813,7 @@ function writeGenericCt32RawAlphaRows(
 function writeGenericCt24RawAlphaRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -818,7 +842,7 @@ function writeGenericCt24RawAlphaRows(
 			}
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceYNumerator += circuit.fieldSourceNumeratorStepY;
 	}
 }
@@ -826,6 +850,7 @@ function writeGenericCt24RawAlphaRows(
 function writeGenericCt16RawAlphaRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -854,7 +879,7 @@ function writeGenericCt16RawAlphaRows(
 			}
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceYNumerator += circuit.fieldSourceNumeratorStepY;
 	}
 }
@@ -862,6 +887,7 @@ function writeGenericCt16RawAlphaRows(
 function writeGenericCt16SRawAlphaRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -890,7 +916,7 @@ function writeGenericCt16SRawAlphaRows(
 			}
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceYNumerator += circuit.fieldSourceNumeratorStepY;
 	}
 }
@@ -898,6 +924,7 @@ function writeGenericCt16SRawAlphaRows(
 function writeGenericGpu24RawAlphaRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -926,7 +953,7 @@ function writeGenericGpu24RawAlphaRows(
 			}
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceYNumerator += circuit.fieldSourceNumeratorStepY;
 	}
 }
@@ -934,6 +961,7 @@ function writeGenericGpu24RawAlphaRows(
 function writeGenericGx16RawAlphaRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -962,7 +990,7 @@ function writeGenericGx16RawAlphaRows(
 			}
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceYNumerator += circuit.fieldSourceNumeratorStepY;
 	}
 }
@@ -970,6 +998,7 @@ function writeGenericGx16RawAlphaRows(
 function writeGenericZeroRawAlphaRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -982,13 +1011,14 @@ function writeGenericZeroRawAlphaRows(
 			target[output] = (target[output] & 0x00ffffff) | (source & 0xff000000);
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 	}
 }
 
 function writeGenericCt32BlendSourceRgbRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -1020,7 +1050,7 @@ function writeGenericCt32BlendSourceRgbRows(
 			}
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceYNumerator += circuit.fieldSourceNumeratorStepY;
 	}
 }
@@ -1028,6 +1058,7 @@ function writeGenericCt32BlendSourceRgbRows(
 function writeGenericCt24BlendSourceRgbRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -1059,7 +1090,7 @@ function writeGenericCt24BlendSourceRgbRows(
 			}
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceYNumerator += circuit.fieldSourceNumeratorStepY;
 	}
 }
@@ -1067,6 +1098,7 @@ function writeGenericCt24BlendSourceRgbRows(
 function writeGenericCt16BlendSourceRgbRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -1098,7 +1130,7 @@ function writeGenericCt16BlendSourceRgbRows(
 			}
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceYNumerator += circuit.fieldSourceNumeratorStepY;
 	}
 }
@@ -1106,6 +1138,7 @@ function writeGenericCt16BlendSourceRgbRows(
 function writeGenericCt16SBlendSourceRgbRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -1137,7 +1170,7 @@ function writeGenericCt16SBlendSourceRgbRows(
 			}
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceYNumerator += circuit.fieldSourceNumeratorStepY;
 	}
 }
@@ -1145,6 +1178,7 @@ function writeGenericCt16SBlendSourceRgbRows(
 function writeGenericGpu24BlendSourceRgbRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -1176,7 +1210,7 @@ function writeGenericGpu24BlendSourceRgbRows(
 			}
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceYNumerator += circuit.fieldSourceNumeratorStepY;
 	}
 }
@@ -1184,6 +1218,7 @@ function writeGenericGpu24BlendSourceRgbRows(
 function writeGenericGx16BlendSourceRgbRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -1215,7 +1250,7 @@ function writeGenericGx16BlendSourceRgbRows(
 			}
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceYNumerator += circuit.fieldSourceNumeratorStepY;
 	}
 }
@@ -1223,6 +1258,7 @@ function writeGenericGx16BlendSourceRgbRows(
 function writeGenericZeroBlendSourceRgbRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -1238,13 +1274,14 @@ function writeGenericZeroBlendSourceRgbRows(
 			target[output] = blendOutputRgba(destination, source, blendAlpha, destination & 0xff000000);
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 	}
 }
 
 function writeGenericCt32BlendSourceRgbaRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -1275,7 +1312,7 @@ function writeGenericCt32BlendSourceRgbaRows(
 			}
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceYNumerator += circuit.fieldSourceNumeratorStepY;
 	}
 }
@@ -1283,6 +1320,7 @@ function writeGenericCt32BlendSourceRgbaRows(
 function writeGenericCt24BlendSourceRgbaRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -1313,7 +1351,7 @@ function writeGenericCt24BlendSourceRgbaRows(
 			}
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceYNumerator += circuit.fieldSourceNumeratorStepY;
 	}
 }
@@ -1321,6 +1359,7 @@ function writeGenericCt24BlendSourceRgbaRows(
 function writeGenericCt16BlendSourceRgbaRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -1351,7 +1390,7 @@ function writeGenericCt16BlendSourceRgbaRows(
 			}
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceYNumerator += circuit.fieldSourceNumeratorStepY;
 	}
 }
@@ -1359,6 +1398,7 @@ function writeGenericCt16BlendSourceRgbaRows(
 function writeGenericCt16SBlendSourceRgbaRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -1389,7 +1429,7 @@ function writeGenericCt16SBlendSourceRgbaRows(
 			}
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceYNumerator += circuit.fieldSourceNumeratorStepY;
 	}
 }
@@ -1397,6 +1437,7 @@ function writeGenericCt16SBlendSourceRgbaRows(
 function writeGenericGpu24BlendSourceRgbaRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -1427,7 +1468,7 @@ function writeGenericGpu24BlendSourceRgbaRows(
 			}
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceYNumerator += circuit.fieldSourceNumeratorStepY;
 	}
 }
@@ -1435,6 +1476,7 @@ function writeGenericGpu24BlendSourceRgbaRows(
 function writeGenericGx16BlendSourceRgbaRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -1465,7 +1507,7 @@ function writeGenericGx16BlendSourceRgbaRows(
 			}
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceYNumerator += circuit.fieldSourceNumeratorStepY;
 	}
 }
@@ -1473,6 +1515,7 @@ function writeGenericGx16BlendSourceRgbaRows(
 function writeGenericZeroBlendSourceRgbaRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -1487,13 +1530,14 @@ function writeGenericZeroBlendSourceRgbaRows(
 			target[output] = blendOutputRgba(target[output], source, blendAlpha, source & 0xff000000);
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 	}
 }
 
 function writeGenericCt32BlendConstantRgbRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -1501,7 +1545,7 @@ function writeGenericCt32BlendConstantRgbRows(
 	const sourceXStart = circuit.framebufferX
 		+ (circuit.sourcePhaseX * circuit.sourceDivisionMultiplierX >>> GX_GPU_PCRTC_SOURCE_DIVISION_SHIFT);
 	const sourceRemainderStart = circuit.sourcePhaseX % circuit.magnificationX;
-	const blendAlpha = state.pcrtcScanout.blendAlpha;
+	const blendAlpha = scanout.blendAlpha;
 	let sourceYNumerator = circuit.fieldSourceNumeratorY;
 	let outputY = circuit.fieldDisplayY;
 	for (let line = 0; line < circuit.fieldDisplayLineCount; line += 1) {
@@ -1524,7 +1568,7 @@ function writeGenericCt32BlendConstantRgbRows(
 			}
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceYNumerator += circuit.fieldSourceNumeratorStepY;
 	}
 }
@@ -1532,6 +1576,7 @@ function writeGenericCt32BlendConstantRgbRows(
 function writeGenericCt24BlendConstantRgbRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -1539,7 +1584,7 @@ function writeGenericCt24BlendConstantRgbRows(
 	const sourceXStart = circuit.framebufferX
 		+ (circuit.sourcePhaseX * circuit.sourceDivisionMultiplierX >>> GX_GPU_PCRTC_SOURCE_DIVISION_SHIFT);
 	const sourceRemainderStart = circuit.sourcePhaseX % circuit.magnificationX;
-	const blendAlpha = state.pcrtcScanout.blendAlpha;
+	const blendAlpha = scanout.blendAlpha;
 	let sourceYNumerator = circuit.fieldSourceNumeratorY;
 	let outputY = circuit.fieldDisplayY;
 	for (let line = 0; line < circuit.fieldDisplayLineCount; line += 1) {
@@ -1562,7 +1607,7 @@ function writeGenericCt24BlendConstantRgbRows(
 			}
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceYNumerator += circuit.fieldSourceNumeratorStepY;
 	}
 }
@@ -1570,6 +1615,7 @@ function writeGenericCt24BlendConstantRgbRows(
 function writeGenericCt16BlendConstantRgbRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -1577,7 +1623,7 @@ function writeGenericCt16BlendConstantRgbRows(
 	const sourceXStart = circuit.framebufferX
 		+ (circuit.sourcePhaseX * circuit.sourceDivisionMultiplierX >>> GX_GPU_PCRTC_SOURCE_DIVISION_SHIFT);
 	const sourceRemainderStart = circuit.sourcePhaseX % circuit.magnificationX;
-	const blendAlpha = state.pcrtcScanout.blendAlpha;
+	const blendAlpha = scanout.blendAlpha;
 	let sourceYNumerator = circuit.fieldSourceNumeratorY;
 	let outputY = circuit.fieldDisplayY;
 	for (let line = 0; line < circuit.fieldDisplayLineCount; line += 1) {
@@ -1600,7 +1646,7 @@ function writeGenericCt16BlendConstantRgbRows(
 			}
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceYNumerator += circuit.fieldSourceNumeratorStepY;
 	}
 }
@@ -1608,6 +1654,7 @@ function writeGenericCt16BlendConstantRgbRows(
 function writeGenericCt16SBlendConstantRgbRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -1615,7 +1662,7 @@ function writeGenericCt16SBlendConstantRgbRows(
 	const sourceXStart = circuit.framebufferX
 		+ (circuit.sourcePhaseX * circuit.sourceDivisionMultiplierX >>> GX_GPU_PCRTC_SOURCE_DIVISION_SHIFT);
 	const sourceRemainderStart = circuit.sourcePhaseX % circuit.magnificationX;
-	const blendAlpha = state.pcrtcScanout.blendAlpha;
+	const blendAlpha = scanout.blendAlpha;
 	let sourceYNumerator = circuit.fieldSourceNumeratorY;
 	let outputY = circuit.fieldDisplayY;
 	for (let line = 0; line < circuit.fieldDisplayLineCount; line += 1) {
@@ -1638,7 +1685,7 @@ function writeGenericCt16SBlendConstantRgbRows(
 			}
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceYNumerator += circuit.fieldSourceNumeratorStepY;
 	}
 }
@@ -1646,6 +1693,7 @@ function writeGenericCt16SBlendConstantRgbRows(
 function writeGenericGpu24BlendConstantRgbRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -1653,7 +1701,7 @@ function writeGenericGpu24BlendConstantRgbRows(
 	const sourceXStart = circuit.framebufferX
 		+ (circuit.sourcePhaseX * circuit.sourceDivisionMultiplierX >>> GX_GPU_PCRTC_SOURCE_DIVISION_SHIFT);
 	const sourceRemainderStart = circuit.sourcePhaseX % circuit.magnificationX;
-	const blendAlpha = state.pcrtcScanout.blendAlpha;
+	const blendAlpha = scanout.blendAlpha;
 	let sourceYNumerator = circuit.fieldSourceNumeratorY;
 	let outputY = circuit.fieldDisplayY;
 	for (let line = 0; line < circuit.fieldDisplayLineCount; line += 1) {
@@ -1676,7 +1724,7 @@ function writeGenericGpu24BlendConstantRgbRows(
 			}
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceYNumerator += circuit.fieldSourceNumeratorStepY;
 	}
 }
@@ -1684,6 +1732,7 @@ function writeGenericGpu24BlendConstantRgbRows(
 function writeGenericGx16BlendConstantRgbRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -1691,7 +1740,7 @@ function writeGenericGx16BlendConstantRgbRows(
 	const sourceXStart = circuit.framebufferX
 		+ (circuit.sourcePhaseX * circuit.sourceDivisionMultiplierX >>> GX_GPU_PCRTC_SOURCE_DIVISION_SHIFT);
 	const sourceRemainderStart = circuit.sourcePhaseX % circuit.magnificationX;
-	const blendAlpha = state.pcrtcScanout.blendAlpha;
+	const blendAlpha = scanout.blendAlpha;
 	let sourceYNumerator = circuit.fieldSourceNumeratorY;
 	let outputY = circuit.fieldDisplayY;
 	for (let line = 0; line < circuit.fieldDisplayLineCount; line += 1) {
@@ -1714,7 +1763,7 @@ function writeGenericGx16BlendConstantRgbRows(
 			}
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceYNumerator += circuit.fieldSourceNumeratorStepY;
 	}
 }
@@ -1722,11 +1771,12 @@ function writeGenericGx16BlendConstantRgbRows(
 function writeGenericZeroBlendConstantRgbRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
 	const right = circuit.displayRight;
-	const blendAlpha = state.pcrtcScanout.blendAlpha;
+	const blendAlpha = scanout.blendAlpha;
 	let outputY = circuit.fieldDisplayY;
 	for (let line = 0; line < circuit.fieldDisplayLineCount; line += 1) {
 		let output = outputY * state.width + left;
@@ -1736,13 +1786,14 @@ function writeGenericZeroBlendConstantRgbRows(
 			target[output] = blendOutputRgba(destination, source, blendAlpha, destination & 0xff000000);
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 	}
 }
 
 function writeGenericCt32BlendConstantRgbaRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -1750,7 +1801,7 @@ function writeGenericCt32BlendConstantRgbaRows(
 	const sourceXStart = circuit.framebufferX
 		+ (circuit.sourcePhaseX * circuit.sourceDivisionMultiplierX >>> GX_GPU_PCRTC_SOURCE_DIVISION_SHIFT);
 	const sourceRemainderStart = circuit.sourcePhaseX % circuit.magnificationX;
-	const blendAlpha = state.pcrtcScanout.blendAlpha;
+	const blendAlpha = scanout.blendAlpha;
 	let sourceYNumerator = circuit.fieldSourceNumeratorY;
 	let outputY = circuit.fieldDisplayY;
 	for (let line = 0; line < circuit.fieldDisplayLineCount; line += 1) {
@@ -1772,7 +1823,7 @@ function writeGenericCt32BlendConstantRgbaRows(
 			}
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceYNumerator += circuit.fieldSourceNumeratorStepY;
 	}
 }
@@ -1780,6 +1831,7 @@ function writeGenericCt32BlendConstantRgbaRows(
 function writeGenericCt24BlendConstantRgbaRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -1787,7 +1839,7 @@ function writeGenericCt24BlendConstantRgbaRows(
 	const sourceXStart = circuit.framebufferX
 		+ (circuit.sourcePhaseX * circuit.sourceDivisionMultiplierX >>> GX_GPU_PCRTC_SOURCE_DIVISION_SHIFT);
 	const sourceRemainderStart = circuit.sourcePhaseX % circuit.magnificationX;
-	const blendAlpha = state.pcrtcScanout.blendAlpha;
+	const blendAlpha = scanout.blendAlpha;
 	let sourceYNumerator = circuit.fieldSourceNumeratorY;
 	let outputY = circuit.fieldDisplayY;
 	for (let line = 0; line < circuit.fieldDisplayLineCount; line += 1) {
@@ -1809,7 +1861,7 @@ function writeGenericCt24BlendConstantRgbaRows(
 			}
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceYNumerator += circuit.fieldSourceNumeratorStepY;
 	}
 }
@@ -1817,6 +1869,7 @@ function writeGenericCt24BlendConstantRgbaRows(
 function writeGenericCt16BlendConstantRgbaRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -1824,7 +1877,7 @@ function writeGenericCt16BlendConstantRgbaRows(
 	const sourceXStart = circuit.framebufferX
 		+ (circuit.sourcePhaseX * circuit.sourceDivisionMultiplierX >>> GX_GPU_PCRTC_SOURCE_DIVISION_SHIFT);
 	const sourceRemainderStart = circuit.sourcePhaseX % circuit.magnificationX;
-	const blendAlpha = state.pcrtcScanout.blendAlpha;
+	const blendAlpha = scanout.blendAlpha;
 	let sourceYNumerator = circuit.fieldSourceNumeratorY;
 	let outputY = circuit.fieldDisplayY;
 	for (let line = 0; line < circuit.fieldDisplayLineCount; line += 1) {
@@ -1846,7 +1899,7 @@ function writeGenericCt16BlendConstantRgbaRows(
 			}
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceYNumerator += circuit.fieldSourceNumeratorStepY;
 	}
 }
@@ -1854,6 +1907,7 @@ function writeGenericCt16BlendConstantRgbaRows(
 function writeGenericCt16SBlendConstantRgbaRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -1861,7 +1915,7 @@ function writeGenericCt16SBlendConstantRgbaRows(
 	const sourceXStart = circuit.framebufferX
 		+ (circuit.sourcePhaseX * circuit.sourceDivisionMultiplierX >>> GX_GPU_PCRTC_SOURCE_DIVISION_SHIFT);
 	const sourceRemainderStart = circuit.sourcePhaseX % circuit.magnificationX;
-	const blendAlpha = state.pcrtcScanout.blendAlpha;
+	const blendAlpha = scanout.blendAlpha;
 	let sourceYNumerator = circuit.fieldSourceNumeratorY;
 	let outputY = circuit.fieldDisplayY;
 	for (let line = 0; line < circuit.fieldDisplayLineCount; line += 1) {
@@ -1883,7 +1937,7 @@ function writeGenericCt16SBlendConstantRgbaRows(
 			}
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceYNumerator += circuit.fieldSourceNumeratorStepY;
 	}
 }
@@ -1891,6 +1945,7 @@ function writeGenericCt16SBlendConstantRgbaRows(
 function writeGenericGpu24BlendConstantRgbaRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -1898,7 +1953,7 @@ function writeGenericGpu24BlendConstantRgbaRows(
 	const sourceXStart = circuit.framebufferX
 		+ (circuit.sourcePhaseX * circuit.sourceDivisionMultiplierX >>> GX_GPU_PCRTC_SOURCE_DIVISION_SHIFT);
 	const sourceRemainderStart = circuit.sourcePhaseX % circuit.magnificationX;
-	const blendAlpha = state.pcrtcScanout.blendAlpha;
+	const blendAlpha = scanout.blendAlpha;
 	let sourceYNumerator = circuit.fieldSourceNumeratorY;
 	let outputY = circuit.fieldDisplayY;
 	for (let line = 0; line < circuit.fieldDisplayLineCount; line += 1) {
@@ -1920,7 +1975,7 @@ function writeGenericGpu24BlendConstantRgbaRows(
 			}
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceYNumerator += circuit.fieldSourceNumeratorStepY;
 	}
 }
@@ -1928,6 +1983,7 @@ function writeGenericGpu24BlendConstantRgbaRows(
 function writeGenericGx16BlendConstantRgbaRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -1935,7 +1991,7 @@ function writeGenericGx16BlendConstantRgbaRows(
 	const sourceXStart = circuit.framebufferX
 		+ (circuit.sourcePhaseX * circuit.sourceDivisionMultiplierX >>> GX_GPU_PCRTC_SOURCE_DIVISION_SHIFT);
 	const sourceRemainderStart = circuit.sourcePhaseX % circuit.magnificationX;
-	const blendAlpha = state.pcrtcScanout.blendAlpha;
+	const blendAlpha = scanout.blendAlpha;
 	let sourceYNumerator = circuit.fieldSourceNumeratorY;
 	let outputY = circuit.fieldDisplayY;
 	for (let line = 0; line < circuit.fieldDisplayLineCount; line += 1) {
@@ -1957,7 +2013,7 @@ function writeGenericGx16BlendConstantRgbaRows(
 			}
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceYNumerator += circuit.fieldSourceNumeratorStepY;
 	}
 }
@@ -1965,11 +2021,12 @@ function writeGenericGx16BlendConstantRgbaRows(
 function writeGenericZeroBlendConstantRgbaRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
 	const right = circuit.displayRight;
-	const blendAlpha = state.pcrtcScanout.blendAlpha;
+	const blendAlpha = scanout.blendAlpha;
 	let outputY = circuit.fieldDisplayY;
 	for (let line = 0; line < circuit.fieldDisplayLineCount; line += 1) {
 		let output = outputY * state.width + left;
@@ -1978,13 +2035,14 @@ function writeGenericZeroBlendConstantRgbaRows(
 			target[output] = blendOutputRgba(target[output], source, blendAlpha, source & 0xff000000);
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 	}
 }
 
 export function writeGx16CircuitRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 	drawPath: number,
 ): void {
@@ -1992,25 +2050,25 @@ export function writeGx16CircuitRows(
 		case GX_GPU_PCRTC_SCANOUT_DRAW_NONE:
 			return;
 		case GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGB:
-			writeGx16RawRgbRows(state, target, circuit);
+			writeGx16RawRgbRows(state, target, scanout, circuit);
 			return;
 		case GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGBA:
-			writeGx16RawRgbaRows(state, target, circuit);
+			writeGx16RawRgbaRows(state, target, scanout, circuit);
 			return;
 		case GX_GPU_PCRTC_SCANOUT_DRAW_RAW_ALPHA:
-			writeGx16RawAlphaRows(state, target, circuit);
+			writeGx16RawAlphaRows(state, target, scanout, circuit);
 			return;
 		case GX_GPU_PCRTC_SCANOUT_DRAW_BLEND_SOURCE_RGB:
-			writeGx16BlendSourceRgbRows(state, target, circuit);
+			writeGx16BlendSourceRgbRows(state, target, scanout, circuit);
 			return;
 		case GX_GPU_PCRTC_SCANOUT_DRAW_BLEND_SOURCE_RGBA:
-			writeGx16BlendSourceRgbaRows(state, target, circuit);
+			writeGx16BlendSourceRgbaRows(state, target, scanout, circuit);
 			return;
 		case GX_GPU_PCRTC_SCANOUT_DRAW_BLEND_CONSTANT_RGB:
-			writeGx16BlendConstantRgbRows(state, target, circuit);
+			writeGx16BlendConstantRgbRows(state, target, scanout, circuit);
 			return;
 		case GX_GPU_PCRTC_SCANOUT_DRAW_BLEND_CONSTANT_RGBA:
-			writeGx16BlendConstantRgbaRows(state, target, circuit);
+			writeGx16BlendConstantRgbaRows(state, target, scanout, circuit);
 			return;
 	}
 }
@@ -2018,6 +2076,7 @@ export function writeGx16CircuitRows(
 export function writeGenericCircuitRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 	drawPath: number,
 ): void {
@@ -2027,175 +2086,175 @@ export function writeGenericCircuitRows(
 		case GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGB:
 			switch (circuit.framebufferStoragePath) {
 				case GX_GPU_PCRTC_STORAGE_CT32:
-					writeGenericCt32RawRgbRows(state, target, circuit);
+					writeGenericCt32RawRgbRows(state, target, scanout, circuit);
 					return;
 				case GX_GPU_PCRTC_STORAGE_CT24:
-					writeGenericCt24RawRgbRows(state, target, circuit);
+					writeGenericCt24RawRgbRows(state, target, scanout, circuit);
 					return;
 				case GX_GPU_PCRTC_STORAGE_CT16:
-					writeGenericCt16RawRgbRows(state, target, circuit);
+					writeGenericCt16RawRgbRows(state, target, scanout, circuit);
 					return;
 				case GX_GPU_PCRTC_STORAGE_CT16S:
-					writeGenericCt16SRawRgbRows(state, target, circuit);
+					writeGenericCt16SRawRgbRows(state, target, scanout, circuit);
 					return;
 				case GX_GPU_PCRTC_STORAGE_GPU24:
-					writeGenericGpu24RawRgbRows(state, target, circuit);
+					writeGenericGpu24RawRgbRows(state, target, scanout, circuit);
 					return;
 				case GX_GPU_PCRTC_STORAGE_GX16:
-					writeGenericGx16RawRgbRows(state, target, circuit);
+					writeGenericGx16RawRgbRows(state, target, scanout, circuit);
 					return;
 				case GX_GPU_PCRTC_STORAGE_ZERO:
-					writeGenericZeroRawRgbRows(state, target, circuit);
+					writeGenericZeroRawRgbRows(state, target, scanout, circuit);
 					return;
 			}
 			return;
 		case GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGBA:
 			switch (circuit.framebufferStoragePath) {
 				case GX_GPU_PCRTC_STORAGE_CT32:
-					writeGenericCt32RawRgbaRows(state, target, circuit);
+					writeGenericCt32RawRgbaRows(state, target, scanout, circuit);
 					return;
 				case GX_GPU_PCRTC_STORAGE_CT24:
-					writeGenericCt24RawRgbaRows(state, target, circuit);
+					writeGenericCt24RawRgbaRows(state, target, scanout, circuit);
 					return;
 				case GX_GPU_PCRTC_STORAGE_CT16:
-					writeGenericCt16RawRgbaRows(state, target, circuit);
+					writeGenericCt16RawRgbaRows(state, target, scanout, circuit);
 					return;
 				case GX_GPU_PCRTC_STORAGE_CT16S:
-					writeGenericCt16SRawRgbaRows(state, target, circuit);
+					writeGenericCt16SRawRgbaRows(state, target, scanout, circuit);
 					return;
 				case GX_GPU_PCRTC_STORAGE_GPU24:
-					writeGenericGpu24RawRgbaRows(state, target, circuit);
+					writeGenericGpu24RawRgbaRows(state, target, scanout, circuit);
 					return;
 				case GX_GPU_PCRTC_STORAGE_GX16:
-					writeGenericGx16RawRgbaRows(state, target, circuit);
+					writeGenericGx16RawRgbaRows(state, target, scanout, circuit);
 					return;
 				case GX_GPU_PCRTC_STORAGE_ZERO:
-					writeGenericZeroRawRgbaRows(state, target, circuit);
+					writeGenericZeroRawRgbaRows(state, target, scanout, circuit);
 					return;
 			}
 			return;
 		case GX_GPU_PCRTC_SCANOUT_DRAW_RAW_ALPHA:
 			switch (circuit.framebufferStoragePath) {
 				case GX_GPU_PCRTC_STORAGE_CT32:
-					writeGenericCt32RawAlphaRows(state, target, circuit);
+					writeGenericCt32RawAlphaRows(state, target, scanout, circuit);
 					return;
 				case GX_GPU_PCRTC_STORAGE_CT24:
-					writeGenericCt24RawAlphaRows(state, target, circuit);
+					writeGenericCt24RawAlphaRows(state, target, scanout, circuit);
 					return;
 				case GX_GPU_PCRTC_STORAGE_CT16:
-					writeGenericCt16RawAlphaRows(state, target, circuit);
+					writeGenericCt16RawAlphaRows(state, target, scanout, circuit);
 					return;
 				case GX_GPU_PCRTC_STORAGE_CT16S:
-					writeGenericCt16SRawAlphaRows(state, target, circuit);
+					writeGenericCt16SRawAlphaRows(state, target, scanout, circuit);
 					return;
 				case GX_GPU_PCRTC_STORAGE_GPU24:
-					writeGenericGpu24RawAlphaRows(state, target, circuit);
+					writeGenericGpu24RawAlphaRows(state, target, scanout, circuit);
 					return;
 				case GX_GPU_PCRTC_STORAGE_GX16:
-					writeGenericGx16RawAlphaRows(state, target, circuit);
+					writeGenericGx16RawAlphaRows(state, target, scanout, circuit);
 					return;
 				case GX_GPU_PCRTC_STORAGE_ZERO:
-					writeGenericZeroRawAlphaRows(state, target, circuit);
+					writeGenericZeroRawAlphaRows(state, target, scanout, circuit);
 					return;
 			}
 			return;
 		case GX_GPU_PCRTC_SCANOUT_DRAW_BLEND_SOURCE_RGB:
 			switch (circuit.framebufferStoragePath) {
 				case GX_GPU_PCRTC_STORAGE_CT32:
-					writeGenericCt32BlendSourceRgbRows(state, target, circuit);
+					writeGenericCt32BlendSourceRgbRows(state, target, scanout, circuit);
 					return;
 				case GX_GPU_PCRTC_STORAGE_CT24:
-					writeGenericCt24BlendSourceRgbRows(state, target, circuit);
+					writeGenericCt24BlendSourceRgbRows(state, target, scanout, circuit);
 					return;
 				case GX_GPU_PCRTC_STORAGE_CT16:
-					writeGenericCt16BlendSourceRgbRows(state, target, circuit);
+					writeGenericCt16BlendSourceRgbRows(state, target, scanout, circuit);
 					return;
 				case GX_GPU_PCRTC_STORAGE_CT16S:
-					writeGenericCt16SBlendSourceRgbRows(state, target, circuit);
+					writeGenericCt16SBlendSourceRgbRows(state, target, scanout, circuit);
 					return;
 				case GX_GPU_PCRTC_STORAGE_GPU24:
-					writeGenericGpu24BlendSourceRgbRows(state, target, circuit);
+					writeGenericGpu24BlendSourceRgbRows(state, target, scanout, circuit);
 					return;
 				case GX_GPU_PCRTC_STORAGE_GX16:
-					writeGenericGx16BlendSourceRgbRows(state, target, circuit);
+					writeGenericGx16BlendSourceRgbRows(state, target, scanout, circuit);
 					return;
 				case GX_GPU_PCRTC_STORAGE_ZERO:
-					writeGenericZeroBlendSourceRgbRows(state, target, circuit);
+					writeGenericZeroBlendSourceRgbRows(state, target, scanout, circuit);
 					return;
 			}
 			return;
 		case GX_GPU_PCRTC_SCANOUT_DRAW_BLEND_SOURCE_RGBA:
 			switch (circuit.framebufferStoragePath) {
 				case GX_GPU_PCRTC_STORAGE_CT32:
-					writeGenericCt32BlendSourceRgbaRows(state, target, circuit);
+					writeGenericCt32BlendSourceRgbaRows(state, target, scanout, circuit);
 					return;
 				case GX_GPU_PCRTC_STORAGE_CT24:
-					writeGenericCt24BlendSourceRgbaRows(state, target, circuit);
+					writeGenericCt24BlendSourceRgbaRows(state, target, scanout, circuit);
 					return;
 				case GX_GPU_PCRTC_STORAGE_CT16:
-					writeGenericCt16BlendSourceRgbaRows(state, target, circuit);
+					writeGenericCt16BlendSourceRgbaRows(state, target, scanout, circuit);
 					return;
 				case GX_GPU_PCRTC_STORAGE_CT16S:
-					writeGenericCt16SBlendSourceRgbaRows(state, target, circuit);
+					writeGenericCt16SBlendSourceRgbaRows(state, target, scanout, circuit);
 					return;
 				case GX_GPU_PCRTC_STORAGE_GPU24:
-					writeGenericGpu24BlendSourceRgbaRows(state, target, circuit);
+					writeGenericGpu24BlendSourceRgbaRows(state, target, scanout, circuit);
 					return;
 				case GX_GPU_PCRTC_STORAGE_GX16:
-					writeGenericGx16BlendSourceRgbaRows(state, target, circuit);
+					writeGenericGx16BlendSourceRgbaRows(state, target, scanout, circuit);
 					return;
 				case GX_GPU_PCRTC_STORAGE_ZERO:
-					writeGenericZeroBlendSourceRgbaRows(state, target, circuit);
+					writeGenericZeroBlendSourceRgbaRows(state, target, scanout, circuit);
 					return;
 			}
 			return;
 		case GX_GPU_PCRTC_SCANOUT_DRAW_BLEND_CONSTANT_RGB:
 			switch (circuit.framebufferStoragePath) {
 				case GX_GPU_PCRTC_STORAGE_CT32:
-					writeGenericCt32BlendConstantRgbRows(state, target, circuit);
+					writeGenericCt32BlendConstantRgbRows(state, target, scanout, circuit);
 					return;
 				case GX_GPU_PCRTC_STORAGE_CT24:
-					writeGenericCt24BlendConstantRgbRows(state, target, circuit);
+					writeGenericCt24BlendConstantRgbRows(state, target, scanout, circuit);
 					return;
 				case GX_GPU_PCRTC_STORAGE_CT16:
-					writeGenericCt16BlendConstantRgbRows(state, target, circuit);
+					writeGenericCt16BlendConstantRgbRows(state, target, scanout, circuit);
 					return;
 				case GX_GPU_PCRTC_STORAGE_CT16S:
-					writeGenericCt16SBlendConstantRgbRows(state, target, circuit);
+					writeGenericCt16SBlendConstantRgbRows(state, target, scanout, circuit);
 					return;
 				case GX_GPU_PCRTC_STORAGE_GPU24:
-					writeGenericGpu24BlendConstantRgbRows(state, target, circuit);
+					writeGenericGpu24BlendConstantRgbRows(state, target, scanout, circuit);
 					return;
 				case GX_GPU_PCRTC_STORAGE_GX16:
-					writeGenericGx16BlendConstantRgbRows(state, target, circuit);
+					writeGenericGx16BlendConstantRgbRows(state, target, scanout, circuit);
 					return;
 				case GX_GPU_PCRTC_STORAGE_ZERO:
-					writeGenericZeroBlendConstantRgbRows(state, target, circuit);
+					writeGenericZeroBlendConstantRgbRows(state, target, scanout, circuit);
 					return;
 			}
 			return;
 		case GX_GPU_PCRTC_SCANOUT_DRAW_BLEND_CONSTANT_RGBA:
 			switch (circuit.framebufferStoragePath) {
 				case GX_GPU_PCRTC_STORAGE_CT32:
-					writeGenericCt32BlendConstantRgbaRows(state, target, circuit);
+					writeGenericCt32BlendConstantRgbaRows(state, target, scanout, circuit);
 					return;
 				case GX_GPU_PCRTC_STORAGE_CT24:
-					writeGenericCt24BlendConstantRgbaRows(state, target, circuit);
+					writeGenericCt24BlendConstantRgbaRows(state, target, scanout, circuit);
 					return;
 				case GX_GPU_PCRTC_STORAGE_CT16:
-					writeGenericCt16BlendConstantRgbaRows(state, target, circuit);
+					writeGenericCt16BlendConstantRgbaRows(state, target, scanout, circuit);
 					return;
 				case GX_GPU_PCRTC_STORAGE_CT16S:
-					writeGenericCt16SBlendConstantRgbaRows(state, target, circuit);
+					writeGenericCt16SBlendConstantRgbaRows(state, target, scanout, circuit);
 					return;
 				case GX_GPU_PCRTC_STORAGE_GPU24:
-					writeGenericGpu24BlendConstantRgbaRows(state, target, circuit);
+					writeGenericGpu24BlendConstantRgbaRows(state, target, scanout, circuit);
 					return;
 				case GX_GPU_PCRTC_STORAGE_GX16:
-					writeGenericGx16BlendConstantRgbaRows(state, target, circuit);
+					writeGenericGx16BlendConstantRgbaRows(state, target, scanout, circuit);
 					return;
 				case GX_GPU_PCRTC_STORAGE_ZERO:
-					writeGenericZeroBlendConstantRgbaRows(state, target, circuit);
+					writeGenericZeroBlendConstantRgbaRows(state, target, scanout, circuit);
 					return;
 			}
 			return;

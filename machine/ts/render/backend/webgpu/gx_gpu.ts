@@ -2399,10 +2399,12 @@ function drawGxGpuScanoutCircuit(
 	drawGxGpuScanoutPass(pass, scanout, circuitIndex, drawPath, fieldProgram);
 }
 
-function scanoutProgressiveGxGpuVram(state: RenderPassStateRegistry['gx_gpu']): void {
+function scanoutProgressiveGxGpuVram(
+	state: RenderPassStateRegistry['gx_gpu'],
+	scanout: GxGpuPcrtcScanout,
+): void {
 	const target = state.targetColorTex as GPUTexture;
 	const device = gxGpuState.backend.device;
-	const scanout = state.pcrtcScanout;
 	if (gxGpuState.scanoutTargetTexture !== target) {
 		gxGpuState.scanoutTargetTexture = target;
 		gxGpuState.scanoutTargetView = target.createView();
@@ -2418,16 +2420,19 @@ function scanoutProgressiveGxGpuVram(state: RenderPassStateRegistry['gx_gpu']): 
 	device.queue.submit(gxGpuState.submitCommandBuffers);
 }
 
-function scanoutInterlacedGxGpuVram(state: RenderPassStateRegistry['gx_gpu']): void {
+function scanoutInterlacedGxGpuVram(
+	state: RenderPassStateRegistry['gx_gpu'],
+	scanout: GxGpuPcrtcScanout,
+	vramReplacementSerial: bigint,
+): void {
 	const target = state.targetColorTex as GPUTexture;
 	const device = gxGpuState.backend.device;
-	const scanout = state.pcrtcScanout;
 	const width = state.width;
 	const height = state.height;
 	const sizeChanged = gxGpuState.scanoutFieldsWidth !== width || gxGpuState.scanoutFieldsHeight !== height;
 	const invalid = !gxGpuState.scanoutFieldsValid
 		|| sizeChanged
-		|| gxGpuState.scanoutFieldsVramReplacementSerial !== state.vramReplacementSerial;
+		|| gxGpuState.scanoutFieldsVramReplacementSerial !== vramReplacementSerial;
 	if (sizeChanged) {
 		if (gxGpuState.scanoutFieldsTexture) {
 			gxGpuState.scanoutFieldsTexture.destroy();
@@ -2482,7 +2487,7 @@ function scanoutInterlacedGxGpuVram(state: RenderPassStateRegistry['gx_gpu']): v
 	drawGxGpuScanoutCircuit(fieldPass, scanout, 0, scanout.circuit1OutputPath, true, 2);
 	fieldPass.end();
 	gxGpuState.scanoutFieldsValid = true;
-	gxGpuState.scanoutFieldsVramReplacementSerial = state.vramReplacementSerial;
+	gxGpuState.scanoutFieldsVramReplacementSerial = vramReplacementSerial;
 
 	gxGpuState.scanoutColorAttachment.view = gxGpuState.scanoutTargetView;
 	gxGpuState.scanoutColorAttachment.loadOp = 'load';
@@ -2496,34 +2501,31 @@ function scanoutInterlacedGxGpuVram(state: RenderPassStateRegistry['gx_gpu']): v
 	device.queue.submit(gxGpuState.submitCommandBuffers);
 }
 
-function scanoutGxGpuVram(state: RenderPassStateRegistry['gx_gpu']): void {
-	prepareGxGpuScanoutState(state.pcrtcScanout);
-	if (state.pcrtcScanout.interlaced) {
-		scanoutInterlacedGxGpuVram(state);
+function scanoutGxGpuVram(
+	state: RenderPassStateRegistry['gx_gpu'],
+	output: GxGpuDeviceOutput,
+): void {
+	const scanout = output.pcrtcScanout;
+	prepareGxGpuScanoutState(scanout);
+	if (scanout.interlaced) {
+		scanoutInterlacedGxGpuVram(state, scanout, output.vramReplacementSerial);
 		return;
 	}
 	gxGpuState.scanoutFieldsValid = false;
-	scanoutProgressiveGxGpuVram(state);
+	scanoutProgressiveGxGpuVram(state, scanout);
 }
 
-function renderGxGpuPass(state: RenderPassStateRegistry['gx_gpu']): void {
-	executeGxGpuVramCommands(state, state.commandBuffer.presentCommandCount, false);
-	scanoutGxGpuVram(state);
+function renderGxGpuPass(
+	state: RenderPassStateRegistry['gx_gpu'],
+	output: GxGpuDeviceOutput,
+): void {
+	executeGxGpuVramCommands(output, output.commandBuffer.presentCommandCount, false);
+	scanoutGxGpuVram(state, output);
 }
 
 function writeGxGpuState(ctx: RenderGraphPassContext, state: RenderPassStateRegistry['gx_gpu']): void {
-	state.width = ctx.view.offscreenCanvasSize.x;
-	state.height = ctx.view.offscreenCanvasSize.y;
-	state.commandBuffer = ctx.view.gxGpuCommandBuffer;
-	state.readbackPort = ctx.view.gxGpuReadbackPort;
-	state.statusWord = ctx.view.gxGpuStatusWord;
-	state.displayModeWord = ctx.view.gxGpuDisplayModeWord;
-	state.displayStartWord = ctx.view.gxGpuDisplayStartWord;
-	state.vramYAddressExtensionWord = ctx.view.gxGpuVramYAddressExtensionWord;
-	state.pcrtcScanout = ctx.view.gxGpuPcrtcScanout;
-	state.vramSnapshotBytes = ctx.view.gxGpuVramSnapshotBytes;
-	state.vramSnapshotSerial = ctx.view.gxGpuVramSnapshotSerial;
-	state.vramReplacementSerial = ctx.view.gxGpuVramReplacementSerial;
+	state.width = ctx.presenter.offscreenCanvasSize.x;
+	state.height = ctx.presenter.offscreenCanvasSize.y;
 	state.targetColorTex = ctx.getTex('frame_color');
 }
 
@@ -2531,17 +2533,6 @@ export function registerGxGpuPass(registry: RenderPassLibrary): void {
 	const gxGpuPipelineState: RenderPassStateRegistry['gx_gpu'] = {
 		width: 0,
 		height: 0,
-		commandBuffer: registry.view.gxGpuCommandBuffer,
-		readbackPort: registry.view.gxGpuReadbackPort,
-		statusWord: registry.view.gxGpuStatusWord,
-		displayModeWord: registry.view.gxGpuDisplayModeWord,
-		displayStartWord: registry.view.gxGpuDisplayStartWord,
-		vramYAddressExtensionWord: registry.view.gxGpuVramYAddressExtensionWord,
-		pcrtcScanout: registry.view.gxGpuPcrtcScanout,
-		vramSnapshotBytes: registry.view.gxGpuVramSnapshotBytes,
-		vramSnapshotSerial: registry.view.gxGpuVramSnapshotSerial,
-		vramReplacementSerial: registry.view.gxGpuVramReplacementSerial,
-		targetColorTex: null,
 	};
 	registry.register({
 		id: 'gx_gpu',
@@ -2550,7 +2541,8 @@ export function registerGxGpuPass(registry: RenderPassLibrary): void {
 		initialState: gxGpuPipelineState,
 		graph: { writes: ['frame_color'], writeState: writeGxGpuState },
 		bootstrap: (backend) => bootstrapGxGpuPass(backend as WebGPUBackend),
-		exec: (_backend: WebGPUBackend, _fbo, state: RenderPassStateRegistry['gx_gpu']) => renderGxGpuPass(state),
+		exec: (_backend: WebGPUBackend, _fbo, state: RenderPassStateRegistry['gx_gpu'], _pipelineHandle, output) =>
+			renderGxGpuPass(state, output),
 	});
 }
 

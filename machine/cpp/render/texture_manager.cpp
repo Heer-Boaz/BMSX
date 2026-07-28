@@ -27,7 +27,7 @@ auto textureParamsKey(const TextureParams& desc) -> std::string {
 
 TextureManager* TextureManager::s_instance = nullptr;
 
-TextureManager::TextureManager(GPUBackend* backend)
+TextureManager::TextureManager(GPUBackend& backend)
 	: m_backend(backend) {
 	s_instance = this;
 }
@@ -41,13 +41,6 @@ TextureManager::~TextureManager() {
 
 auto TextureManager::instance() -> TextureManager& {
 	return *s_instance;
-}
-
-void TextureManager::setBackend(GPUBackend* backend) {
-	if (m_backend != backend) {
-		clear();
-	}
-	m_backend = backend;
 }
 
 auto TextureManager::makeKey(const std::string& uri, const TextureParams& desc) const -> TextureKey {
@@ -64,14 +57,14 @@ auto TextureManager::createTextureFromPixelsSync(const std::string& keyBase,
 	if (it != m_gpuCache.end()) {
 		return it->second.handle;
 	}
-	TextureHandle handle = m_backend->createTexture(pixels, width, height, desc);
+	TextureHandle handle = m_backend.createTexture(pixels, width, height, desc);
 	m_gpuCache.emplace(key, GPUCacheEntry{.handle=handle, .desc=desc});
 	return handle;
 }
 
 auto TextureManager::resizeTextureForKey(const std::string& keyBase, i32 width, i32 height, const TextureParams& desc) -> TextureHandle {
 	GPUCacheEntry& entry = m_gpuCache.at(makeKey(keyBase, desc));
-	entry.handle = m_backend->resizeTexture(entry.handle, width, height, entry.desc);
+	entry.handle = m_backend.resizeTexture(entry.handle, width, height, entry.desc);
 	return entry.handle;
 }
 
@@ -91,7 +84,7 @@ void TextureManager::swapTextureHandlesByUri(const std::string& uriA, const std:
 
 void TextureManager::clear() {
 	for (auto& kv : m_gpuCache) {
-		m_backend->destroyTexture(kv.second.handle);
+		m_backend.destroyTexture(kv.second.handle);
 	}
 	m_gpuCache.clear();
 }

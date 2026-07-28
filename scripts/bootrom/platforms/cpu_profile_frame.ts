@@ -28,7 +28,7 @@ function runCpuProfileHostFrame(
 	}
 	const hostDeltaMs = beginMachineHostFrame(runtime, currentTime);
 	const hostMenuInput = hostOverlayMenu.tickInput();
-	if (executeMachineHostMenuAction(hostMenuInput, runtime)) {
+	if (executeMachineHostMenuAction(hostMenuInput, screen, runtime)) {
 		return;
 	}
 	let action = prepareMachineHostPresentation(
@@ -57,7 +57,7 @@ function runCpuProfileHostFrame(
 			if (!runtime.machine.gxGpu.backendReadbackPending()) {
 				break;
 			}
-			manager.view.backend.executeGxGpuReadback(runtime.machine.gxGpu);
+			manager.videoPresenter.backend.executeGxGpuReadback(runtime.machine.gxGpu);
 		}
 		completeMachineHostUpdate(screen, runtime, previousTickSequence);
 		action = MachineHostFrameAction.PresentPending;

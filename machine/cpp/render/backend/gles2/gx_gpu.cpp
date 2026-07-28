@@ -3415,8 +3415,12 @@ void prepareGxGpuScanoutDraw() {
 	glVertexAttribPointer(kGxGpuScanoutPositionAttrib, 2, GL_FLOAT, GL_FALSE, kGxGpuScanoutVertexStride, nullptr);
 }
 
-void scanoutProgressiveGxGpuVram(GLuint frameFbo, const GxGpuPipelineState& state, GLuint& boundProgram) {
-	const GxGpuPcrtcScanout& scanout = *state.pcrtcScanout;
+void scanoutProgressiveGxGpuVram(
+	GLuint frameFbo,
+	const GxGpuPipelineState& state,
+	const GxGpuPcrtcScanout& scanout,
+	GLuint& boundProgram
+) {
 	g_gxGpu.backend->setRenderTarget(frameFbo, state.width, state.height);
 	prepareGxGpuScanoutDraw();
 	if (scanout.backgroundRequired != 0u) {
@@ -3431,8 +3435,13 @@ void scanoutProgressiveGxGpuVram(GLuint frameFbo, const GxGpuPipelineState& stat
 	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 }
 
-void scanoutInterlacedGxGpuVram(GLuint frameFbo, const GxGpuPipelineState& state, GLuint& boundProgram) {
-	const GxGpuPcrtcScanout& scanout = *state.pcrtcScanout;
+void scanoutInterlacedGxGpuVram(
+	GLuint frameFbo,
+	const GxGpuPipelineState& state,
+	const GxGpuPcrtcScanout& scanout,
+	u64 vramReplacementSerial,
+	GLuint& boundProgram
+) {
 	const i32 width = state.width;
 	const i32 height = state.height;
 	const i32 fieldHeight = static_cast<i32>(scanout.fieldHeight);
@@ -3440,7 +3449,7 @@ void scanoutInterlacedGxGpuVram(GLuint frameFbo, const GxGpuPipelineState& state
 	const bool sizeChanged = g_gxGpu.scanoutFieldsTexture.width != width || g_gxGpu.scanoutFieldsTexture.height != height;
 	const bool invalid = !g_gxGpu.scanoutFieldsValid
 		|| sizeChanged
-		|| g_gxGpu.scanoutFieldsVramReplacementSerial != state.vramReplacementSerial;
+		|| g_gxGpu.scanoutFieldsVramReplacementSerial != vramReplacementSerial;
 	if (sizeChanged) {
 		g_gxGpu.backend->setActiveTextureUnit(GLES2_TEXTURE_UNIT_GX_SCANOUT_FIELDS);
 		g_gxGpu.backend->bindTexture2D(&g_gxGpu.scanoutFieldsTexture);
@@ -3466,7 +3475,7 @@ void scanoutInterlacedGxGpuVram(GLuint frameFbo, const GxGpuPipelineState& state
 	drawGxGpuScanoutCircuit(scanout, 1u, scanout.circuit2OutputPath, true, boundProgram);
 	drawGxGpuScanoutCircuit(scanout, 0u, scanout.circuit1OutputPath, true, boundProgram);
 	g_gxGpu.scanoutFieldsValid = true;
-	g_gxGpu.scanoutFieldsVramReplacementSerial = state.vramReplacementSerial;
+	g_gxGpu.scanoutFieldsVramReplacementSerial = vramReplacementSerial;
 
 	g_gxGpu.backend->setRenderTarget(frameFbo, width, height);
 	glDisable(GL_SCISSOR_TEST);
@@ -3486,15 +3495,25 @@ void scanoutInterlacedGxGpuVram(GLuint frameFbo, const GxGpuPipelineState& state
 	glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(kGxGpuScanoutVertexCount));
 }
 
-void scanoutGxGpuVram(GLuint frameFbo, const GxGpuPipelineState& state) {
-	prepareGxGpuScanoutState(*state.pcrtcScanout);
+void scanoutGxGpuVram(
+	GLuint frameFbo,
+	const GxGpuPipelineState& state,
+	const GxGpuDeviceOutput& output
+) {
+	const GxGpuPcrtcScanout& scanout = output.pcrtcScanout;
+	prepareGxGpuScanoutState(scanout);
 	GLuint boundProgram = 0u;
-	if (state.pcrtcScanout->interlaced) {
-		scanoutInterlacedGxGpuVram(frameFbo, state, boundProgram);
+	if (scanout.interlaced) {
+		scanoutInterlacedGxGpuVram(
+			frameFbo,
+			state,
+			scanout,
+			output.vramReplacementSerial,
+			boundProgram);
 		return;
 	}
 	g_gxGpu.scanoutFieldsValid = false;
-	scanoutProgressiveGxGpuVram(frameFbo, state, boundProgram);
+	scanoutProgressiveGxGpuVram(frameFbo, state, scanout, boundProgram);
 }
 
 void executeGxGpuVramCommands(const GxGpuCommandBuffer& commandBuffer, GxGpuReadbackPort& readback, const std::array<u8, GX_GPU_VRAM_BYTE_COUNT>& snapshotBytes, u64 snapshotSerial, size_t commandLimit) {
@@ -3512,14 +3531,30 @@ void executeGxGpuVramCommands(const GxGpuCommandBuffer& commandBuffer, GxGpuRead
 	completeGxGpuReadback(commandLimit, readback);
 }
 
-void renderGxGpu(GLuint frameFbo, const GxGpuPipelineState& state) {
-	executeGxGpuVramCommands(*state.commandBuffer, *state.readbackPort, *state.vramSnapshotBytes, state.vramSnapshotSerial, state.commandBuffer->presentCommandCount);
-	scanoutGxGpuVram(frameFbo, state);
+void renderGxGpu(
+	GLuint frameFbo,
+	const GxGpuPipelineState& state,
+	const GxGpuDeviceOutput& output
+) {
+	executeGxGpuVramCommands(
+		output.commandBuffer,
+		output.readbackPort,
+		output.vramSnapshotBytes,
+		output.vramSnapshotSerial,
+		output.commandBuffer.presentCommandCount);
+	scanoutGxGpuVram(frameFbo, state, output);
 }
 
-void executeGxGpuPass(GPUBackend* backend, GameView*, void* fbo, RenderPassStateStorage& stateStorage, void*) {
+void executeGxGpuPass(
+	GPUBackend* backend,
+	VideoPresenter*,
+	void* fbo,
+	RenderPassStateStorage& stateStorage,
+	void*,
+	const GxGpuDeviceOutput& output
+) {
 	auto& gles = *static_cast<OpenGLES2Backend*>(backend);
-	renderGxGpu(gles.framebufferName(fbo), stateStorage.gxGpu);
+	renderGxGpu(gles.framebufferName(fbo), stateStorage.gxGpu, output);
 }
 
 } // namespace

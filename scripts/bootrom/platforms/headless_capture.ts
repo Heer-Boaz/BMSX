@@ -3,7 +3,7 @@ import * as path from 'node:path';
 import { PNG } from 'pngjs';
 
 import { taskGate } from '../../../machine/ts/common/taskgate';
-import { HeadlessGameViewHost, type HeadlessPresentedFrame } from '../../../machine/ts/render/headless/view';
+import { HeadlessVideoOutput, type HeadlessPresentedFrame } from '../../../machine/ts/render/headless/video_output';
 
 export interface ScheduledHeadlessCapture {
 	dueTimeMs: number;
@@ -65,7 +65,7 @@ export class HeadlessCaptureCoordinator {
 	private lastPresentedFrame: HeadlessPresentedFrame | null = null;
 
 	constructor(
-		private readonly host: HeadlessGameViewHost,
+		private readonly host: HeadlessVideoOutput,
 		public readonly outputDir: string,
 		private readonly nowMs: () => number,
 	) {

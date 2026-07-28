@@ -21,7 +21,6 @@ bool MachineManager::runHostFrame(
 	if (!acceptHostFrame(deltaTime)) {
 		return false;
 	}
-	bool rendered = false;
 	const auto tickStart = std::chrono::steady_clock::now();
 	m_screen.recordHostFrame();
 
@@ -38,21 +37,18 @@ bool MachineManager::runHostFrame(
 
 	Input::instance().pollInput();
 	const bool hostMenuActive = hostOverlayMenu().tickInput(*this);
-	bool frameReady = true;
 
 	m_screen.clearPresentation();
 	if (!platformPaused && !hostMenuActive) {
 		m_delta_time = runtime.timing.frameDurationMs / 1000.0;
-		if (frameReady) {
-			const i64 previousTickSequence = runtime.frameScheduler.lastTickSequence;
-			runtime.frameScheduler.run(runtime, hostDeltaMs);
-			while (runtime.machine.gxGpu.backendReadbackPending()) {
-				m_view->backend()->executeGxGpuReadback(runtime.machine.gxGpu);
-				runtime.frameScheduler.run(runtime, 0.0);
-			}
-			syncRuntimeAudioTiming();
-			m_screen.syncAfterRuntimeUpdate(runtime, previousTickSequence);
+		const i64 previousTickSequence = runtime.frameScheduler.lastTickSequence;
+		runtime.frameScheduler.run(runtime, hostDeltaMs);
+		while (runtime.machine.gxGpu.backendReadbackPending()) {
+			m_video_presenter->backend().executeGxGpuReadback(runtime.machine.gxGpu);
+			runtime.frameScheduler.run(runtime, 0.0);
 		}
+		syncRuntimeAudioTiming();
+		m_screen.syncAfterRuntimeUpdate(runtime, previousTickSequence);
 	} else {
 		runtime.frameScheduler.clearQueuedTime();
 	}
@@ -62,21 +58,13 @@ bool MachineManager::runHostFrame(
 
 	m_last_tick_timing.totalMs = to_ms(std::chrono::steady_clock::now() - tickStart);
 
-	if (frameReady) {
-		if (hostMenuActive && m_view) {
-			hostOverlayMenu().queueRenderCommands(*this, *m_view);
-		} else {
-			const bool hostOverlayQueued = m_view && hostOverlayMenu().queueFrameOverlayCommands(*this, *m_view);
-			if (hostOverlayQueued) {
-				m_screen.requestHeldPresentation();
-			}
-		}
-		if (hostMenuActive) {
-			m_screen.requestHeldPresentation();
-		}
-		rendered = m_screen.render(*this, runtime, platformPaused);
+	if (hostMenuActive) {
+		hostOverlayMenu().queueRenderCommands(*this, *m_video_presenter);
+		m_screen.requestHeldPresentation();
+	} else if (hostOverlayMenu().queueFrameOverlayCommands(*this, *m_video_presenter)) {
+		m_screen.requestHeldPresentation();
 	}
-	return rendered;
+	return m_screen.render(*this, runtime, platformPaused);
 }
 
 } // namespace bmsx

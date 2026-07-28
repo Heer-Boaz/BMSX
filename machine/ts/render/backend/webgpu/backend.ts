@@ -71,7 +71,7 @@ export class WebGPUBackend implements GPUBackend {
 			graph: { skip: true },
 			exec: () => { },
 			prepare: (backend) => {
-				const gv = registry.view;
+				const gv = registry.presenter;
 				updateAndBindFrameUniforms(backend, gv.offscreenCanvasSize.x, gv.offscreenCanvasSize.y, gv.viewportSize.x, gv.viewportSize.y);
 			},
 		});

@@ -64,7 +64,6 @@ async function main(): Promise<void> {
 		cartridgeSlots: [slot0Rom, slot1Rom],
 		debug,
 		platform,
-		viewHost: platform.gameviewHost,
 	});
 	startMachineHostFrames(runtime);
 	console.log(`[bootrom:${BMSX_BOOTROM_TARGET}] Game loop running.`);

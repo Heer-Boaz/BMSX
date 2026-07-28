@@ -99,12 +99,13 @@ function indent(text, tabs) {
 function genericFunction(operation, storage) {
 	const body = operation.generic.replaceAll('READ_PIXEL', storage.reader);
 	const blendAlpha = operation.name.startsWith('BlendConstant')
-		? '\tconst blendAlpha = state.pcrtcScanout.blendAlpha;\n'
+		? '\tconst blendAlpha = scanout.blendAlpha;\n'
 		: '';
 	if (storage.name === 'Zero') {
 		return `function writeGeneric${storage.name}${operation.name}Rows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -116,13 +117,14 @@ ${blendAlpha}\tlet outputY = circuit.fieldDisplayY;
 ${indent(body, 3)}
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 	}
 }`;
 	}
 	return `function writeGeneric${storage.name}${operation.name}Rows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -150,7 +152,7 @@ ${indent(body, 3)}
 			}
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceYNumerator += circuit.fieldSourceNumeratorStepY;
 	}
 }`;
@@ -158,11 +160,12 @@ ${indent(body, 3)}
 
 function gx16Function(operation) {
 	const blendAlpha = operation.name.startsWith('BlendConstant')
-		? '\tconst blendAlpha = state.pcrtcScanout.blendAlpha;\n'
+		? '\tconst blendAlpha = scanout.blendAlpha;\n'
 		: '';
 	return `function writeGx16${operation.name}Rows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 ): void {
 	const left = circuit.displayX;
@@ -179,7 +182,7 @@ ${indent(operation.gx16, 3)}
 			address += 1;
 			output += 1;
 		}
-		outputY += state.pcrtcScanout.outputRowStep;
+		outputY += scanout.outputRowStep;
 		sourceY += circuit.linearFieldSourceRowStep;
 	}
 }`;
@@ -190,11 +193,11 @@ const storageImports = storages.map(storage => `\t${storage.constant},`).join('\
 const gx16Functions = operations.map(gx16Function).join('\n\n');
 const genericFunctions = operations.flatMap(operation => storages.map(storage => genericFunction(operation, storage))).join('\n\n');
 const gx16Cases = operations.map(operation => `\t\tcase ${operation.constant}:
-			writeGx16${operation.name}Rows(state, target, circuit);
+			writeGx16${operation.name}Rows(state, target, scanout, circuit);
 			return;`).join('\n');
 const genericCases = operations.map(operation => {
 	const storageCases = storages.map(storage => `\t\t\t\tcase ${storage.constant}:
-					writeGeneric${storage.name}${operation.name}Rows(state, target, circuit);
+					writeGeneric${storage.name}${operation.name}Rows(state, target, scanout, circuit);
 					return;`).join('\n');
 	return `\t\tcase ${operation.constant}:
 			switch (circuit.framebufferStoragePath) {
@@ -211,6 +214,7 @@ ${imports}
 	GX_GPU_PCRTC_SOURCE_DIVISION_SHIFT,
 ${storageImports}
 	type GxGpuPcrtcCircuit,
+	type GxGpuPcrtcScanout,
 } from '../../../machine/devices/gx/gpu_pcrtc';
 import {
 	gxGpuLocalMemoryAddress16,
@@ -300,6 +304,7 @@ ${genericFunctions}
 export function writeGx16CircuitRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 	drawPath: number,
 ): void {
@@ -313,6 +318,7 @@ ${gx16Cases}
 export function writeGenericCircuitRows(
 	state: GxGpuPipelineState,
 	target: Uint32Array,
+	scanout: GxGpuPcrtcScanout,
 	circuit: GxGpuPcrtcCircuit,
 	drawPath: number,
 ): void {

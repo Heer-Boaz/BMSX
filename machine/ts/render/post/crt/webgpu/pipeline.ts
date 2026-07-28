@@ -1,7 +1,7 @@
 import type { ColorAttachmentSpec, GPUBackend, RenderGraphPassContext, RenderPassDesc, RenderPassStateRegistry, TextureHandle } from '../../../backend/backend';
 import type { RenderPassLibrary } from '../../../backend/pass/library';
 import type { WebGPUBackend, WebGPUPassEncoder } from '../../../backend/webgpu/backend';
-import type { GameView } from '../../../gameview';
+import type { VideoPresenter } from '../../../video_presenter';
 import { createCrtPassState, createPresentPassState, shouldExecuteAutoCrtPass, shouldExecuteAutoPresentPass, shouldUpdatePresentationHistoryA, shouldUpdatePresentationHistoryB, writeCrtPassState, writePresentPassState } from '../state';
 import fragmentShaderCRTCode from './shaders/crt.frag.wgsl';
 import fragmentShaderPresentCode from './shaders/present.frag.wgsl';
@@ -129,8 +129,8 @@ function renderFullscreen(backend: GPUBackend, pipeline: GPURenderPipeline, bind
 	wgpu.endRenderPass(pass);
 }
 
-function currentFrameSourceTexture(ctx: RenderGraphPassContext, view: GameView): TextureHandle {
-	return ctx.deviceColorEnabled && view.deviceQuantizeMode !== DeviceQuantizeMode.None ? ctx.getTex('device_color') : ctx.getTex('frame_color');
+function currentFrameSourceTexture(ctx: RenderGraphPassContext, presenter: VideoPresenter): TextureHandle {
+	return ctx.deviceColorEnabled && presenter.deviceQuantizeMode !== DeviceQuantizeMode.None ? ctx.getTex('device_color') : ctx.getTex('frame_color');
 }
 
 export function registerCRT(registry: RenderPassLibrary): void {
@@ -162,12 +162,12 @@ export function registerCRT(registry: RenderPassLibrary): void {
 	};
 
 	function writeHistoryState(ctx: RenderGraphPassContext, state: RenderPassStateRegistry['presentation_history_a'] | RenderPassStateRegistry['presentation_history_b'], targetSlot: 'frame_history_a' | 'frame_history_b'): void {
-		const view = ctx.view as GameView;
-		state.width = view.offscreenCanvasSize.x;
-		state.height = view.offscreenCanvasSize.y;
-		state.srcWidth = view.offscreenCanvasSize.x;
-		state.srcHeight = view.offscreenCanvasSize.y;
-		state.colorTex = currentFrameSourceTexture(ctx, view);
+		const presenter = ctx.presenter as VideoPresenter;
+		state.width = presenter.offscreenCanvasSize.x;
+		state.height = presenter.offscreenCanvasSize.y;
+		state.srcWidth = presenter.offscreenCanvasSize.x;
+		state.srcHeight = presenter.offscreenCanvasSize.y;
+		state.colorTex = currentFrameSourceTexture(ctx, presenter);
 		state.targetColorTex = ctx.getTex(targetSlot);
 	}
 

@@ -73,9 +73,6 @@ export class FrameLoopState {
 	}
 
 	public beginFrameState(budget: number, carry: number): FrameState {
-		if (this.frameActive) {
-			throw new Error('attempted to begin a new frame while another frame is active.');
-		}
 		const runtime = this.runtime;
 		this.frameDeltaMs = runtime.timing.frameDurationMs;
 		const state = this.frameState;

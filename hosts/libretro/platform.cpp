@@ -122,11 +122,9 @@ constexpr std::array<i16, RETROK_LAST> makeRetroKeyHidUsages() {
 
 constexpr std::array<i16, RETROK_LAST> kRetroKeyHidUsages = makeRetroKeyHidUsages();
 
-static void installBuiltinRenderPipeline(GameView* view, GPUBackend* backend) {
-	view->setPipelineRegistry(std::unique_ptr<RenderPassLibrary>());
-	auto registry = std::make_unique<RenderPassLibrary>(backend, view);
-	view->setPipelineRegistry(std::move(registry));
-	view->rebuildGraph();
+static void installBuiltinRenderPipeline(VideoPresenter* presenter, GPUBackend* backend) {
+	auto registry = std::make_unique<RenderPassLibrary>(backend, presenter);
+	presenter->installRenderPipeline(std::move(registry));
 }
 
 void appendPathSeparator(std::string& path) {
@@ -214,7 +212,7 @@ LibretroPlatform::LibretroPlatform(
 	m_lifecycle = std::make_unique<DefaultLifecycle>();
 	m_input_hub = std::make_unique<LibretroInputHub>(this, supervisorRequestLine);
 	m_audio_service = std::make_unique<LibretroAudioService>(this);
-	m_gameview_host = std::make_unique<LibretroGameViewHost>(
+	m_video_output = std::make_unique<LibretroVideoOutput>(
 		m_framebuffer,
 		m_backend_type,
 		av_info,
@@ -228,9 +226,9 @@ LibretroPlatform::LibretroPlatform(
 	m_machine_manager = std::make_unique<MachineManager>();
 	m_machine_manager->initialize(this);
 	if (m_backend_type == BackendType::Software) {
-		auto* view = m_machine_manager->view();
-		auto* backend = view->backend();
-		installBuiltinRenderPipeline(view, backend);
+		auto* presenter = m_machine_manager->videoPresenter();
+		auto* backend = &presenter->backend();
+		installBuiltinRenderPipeline(presenter, backend);
 	}
 
 	log(RETRO_LOG_INFO, "[BMSX] Platform initialized\n");
@@ -263,7 +261,7 @@ void LibretroPlatform::setInputStateCallback(retro_input_state_t cb) {
 void LibretroPlatform::setHwRenderCallbacks(retro_hw_get_current_framebuffer_t get_current_framebuffer,
 											retro_hw_get_proc_address_t get_proc_address) {
 #if BMSX_ENABLE_GLES2
-	auto* backend = static_cast<OpenGLES2Backend*>(m_machine_manager->view()->backend());
+	auto* backend = &static_cast<OpenGLES2Backend&>(m_machine_manager->videoPresenter()->backend());
 	backend->setContextCallbacks(get_current_framebuffer, get_proc_address);
 #else
 	(void)get_current_framebuffer;
@@ -275,15 +273,15 @@ void LibretroPlatform::setHwRenderCallbacks(retro_hw_get_current_framebuffer_t g
 void LibretroPlatform::onContextReset() {
 #if BMSX_ENABLE_GLES2
 	log(RETRO_LOG_INFO, "[BMSX] onContextReset: begin\n");
-	auto* view = m_machine_manager->view();
-	auto* backend = static_cast<OpenGLES2Backend*>(view->backend());
+	auto* presenter = m_machine_manager->videoPresenter();
+	auto* backend = &static_cast<OpenGLES2Backend&>(presenter->backend());
 	log(RETRO_LOG_INFO, "[BMSX] onContextReset: backend reset\n");
 	backend->setViewportSize(static_cast<i32>(m_framebuffer.width), static_cast<i32>(m_framebuffer.height));
 	backend->onContextReset();
 	m_machine_manager->texmanager()->clear();
 
 	log(RETRO_LOG_INFO, "[BMSX] onContextReset: rebuild render graph\n");
-	installBuiltinRenderPipeline(view, backend);
+	installBuiltinRenderPipeline(presenter, backend);
 	log(RETRO_LOG_INFO, "[BMSX] onContextReset: refresh render surfaces\n");
 	m_machine_manager->refreshRenderSurfaces();
 	log(RETRO_LOG_INFO, "[BMSX] onContextReset: done\n");
@@ -294,12 +292,12 @@ void LibretroPlatform::onContextReset() {
 
 void LibretroPlatform::onContextDestroy() {
 #if BMSX_ENABLE_GLES2
-	auto* view = m_machine_manager->view();
-	auto* backend = static_cast<OpenGLES2Backend*>(view->backend());
+	auto* presenter = m_machine_manager->videoPresenter();
+	auto* backend = &static_cast<OpenGLES2Backend&>(presenter->backend());
 	backend->captureGxGpuVramSnapshot(m_machine_manager->runtime().machine.gxGpu);
-	view->setPipelineRegistry(std::unique_ptr<RenderPassLibrary>());
+	presenter->releaseRenderPipeline();
 	m_machine_manager->texmanager()->clear();
-	view->clearTextures();
+	presenter->clearTextures();
 	backend->onContextDestroy();
 #else
 	throw BMSX_RUNTIME_ERROR("[LibretroPlatform] OpenGLES2 backend disabled at compile time.");
@@ -308,13 +306,13 @@ void LibretroPlatform::onContextDestroy() {
 
 void LibretroPlatform::onContextLost() {
 #if BMSX_ENABLE_GLES2
-	auto* view = m_machine_manager->view();
-	auto* backend = static_cast<OpenGLES2Backend*>(view->backend());
+	auto* presenter = m_machine_manager->videoPresenter();
+	auto* backend = &static_cast<OpenGLES2Backend&>(presenter->backend());
 	// Retire the generation before owners release handles: the replacement context may reuse the same numeric GL names.
 	backend->onContextLost();
-	view->setPipelineRegistry(std::unique_ptr<RenderPassLibrary>());
+	presenter->releaseRenderPipeline();
 	m_machine_manager->texmanager()->clear();
-	view->clearTextures();
+	presenter->clearTextures();
 #else
 	throw BMSX_RUNTIME_ERROR("[LibretroPlatform] OpenGLES2 backend disabled at compile time.");
 #endif
@@ -338,7 +336,7 @@ void LibretroPlatform::setAVInfo(const retro_system_av_info& info) {
 	);
 
 	if (m_framebuffer.width != baseWidth || m_framebuffer.height != baseHeight) {
-		m_machine_manager->view()->setRenderTargetSize(static_cast<i32>(baseWidth), static_cast<i32>(baseHeight));
+		m_machine_manager->videoPresenter()->setRenderTargetSize(static_cast<i32>(baseWidth), static_cast<i32>(baseHeight));
 	}
 
 	m_audio_service->setTiming(info.timing.sample_rate);
@@ -351,23 +349,23 @@ void LibretroPlatform::setCrtEffectOptions(bool applyNoise,
 											bool applyGlow,
 											bool applyFringing,
 											bool applyAperture) {
-	auto* view = m_machine_manager->view();
-	view->applyNoise = applyNoise;
-	view->applyColorBleed = applyColorBleed;
-	view->applyScanlines = applyScanlines;
-	view->applyBlur = applyBlur;
-	view->applyGlow = applyGlow;
-	view->applyFringing = applyFringing;
-	view->applyAperture = applyAperture;
+	auto* presenter = m_machine_manager->videoPresenter();
+	presenter->applyNoise = applyNoise;
+	presenter->applyColorBleed = applyColorBleed;
+	presenter->applyScanlines = applyScanlines;
+	presenter->applyBlur = applyBlur;
+	presenter->applyGlow = applyGlow;
+	presenter->applyFringing = applyFringing;
+	presenter->applyAperture = applyAperture;
 }
 
 void LibretroPlatform::setDeviceQuantizeMode(DeviceQuantizeMode mode) {
 	m_device_quantize_mode = mode;
-	m_machine_manager->view()->setDeviceQuantizeMode(mode);
+	m_machine_manager->videoPresenter()->setDeviceQuantizeMode(mode);
 }
 
 void LibretroPlatform::setResourceUsageGizmo(bool enabled) {
-	m_machine_manager->view()->showResourceUsageGizmo = enabled;
+	m_machine_manager->videoPresenter()->showResourceUsageGizmo = enabled;
 }
 
 void LibretroPlatform::requestShutdown() {
@@ -659,7 +657,7 @@ bool LibretroPlatform::saveState(void* data, size_t size) {
 		return false;
 	}
 	try {
-		m_machine_manager->view()->captureGxGpuVramSnapshot(runtime.machine.gxGpu);
+		m_machine_manager->videoPresenter()->backend().captureGxGpuVramSnapshot(runtime.machine.gxGpu);
 		const std::vector<u8> state = captureRuntimeSaveStateBytes(runtime);
 		u8* const envelope = static_cast<u8*>(data);
 		writeLE32(envelope, kSaveStateMagic);
@@ -1105,10 +1103,10 @@ void LibretroFrameLoop::stop() {
 }
 
 /* ============================================================================
- * LibretroGameViewHost implementation
+ * LibretroVideoOutput implementation
  * ============================================================================ */
 
-LibretroGameViewHost::LibretroGameViewHost(
+LibretroVideoOutput::LibretroVideoOutput(
 		Framebuffer& framebuffer,
 		BackendType backend_type,
 		retro_system_av_info& av_info,
@@ -1119,7 +1117,7 @@ LibretroGameViewHost::LibretroGameViewHost(
 	, m_profile_gx_uploads(profileGxUploads) {
 }
 
-std::unique_ptr<GPUBackend> LibretroGameViewHost::createBackend() {
+std::unique_ptr<GPUBackend> LibretroVideoOutput::createBackend() {
 	switch (m_backend_type) {
 		case BackendType::OpenGLES2:
 #if BMSX_ENABLE_GLES2
@@ -1129,7 +1127,7 @@ std::unique_ptr<GPUBackend> LibretroGameViewHost::createBackend() {
 				m_profile_gx_uploads
 			);
 #else
-			throw BMSX_RUNTIME_ERROR("[LibretroGameViewHost] OpenGLES2 backend disabled at compile time.");
+			throw BMSX_RUNTIME_ERROR("[LibretroVideoOutput] OpenGLES2 backend disabled at compile time.");
 #endif
 		case BackendType::Software:
 			return std::make_unique<SoftwareBackend>(
@@ -1139,11 +1137,11 @@ std::unique_ptr<GPUBackend> LibretroGameViewHost::createBackend() {
 				static_cast<i32>(m_framebuffer.pitch)
 			);
 		default:
-			throw BMSX_RUNTIME_ERROR("[LibretroGameViewHost] Unsupported backend type.");
+			throw BMSX_RUNTIME_ERROR("[LibretroVideoOutput] Unsupported backend type.");
 	}
 }
 
-void LibretroGameViewHost::setRenderTargetSize(GPUBackend& backend, i32 width, i32 height) {
+void LibretroVideoOutput::setRenderTargetSize(GPUBackend& backend, i32 width, i32 height) {
 	auto& geometry = m_av_info.geometry;
 	geometry.base_width = static_cast<unsigned>(width);
 	geometry.base_height = static_cast<unsigned>(height);
@@ -1159,7 +1157,7 @@ void LibretroGameViewHost::setRenderTargetSize(GPUBackend& backend, i32 width, i
 	}
 #else
 	if (backend.type() == BackendType::OpenGLES2) {
-		throw BMSX_RUNTIME_ERROR("[LibretroGameViewHost] OpenGLES2 backend disabled at compile time.");
+		throw BMSX_RUNTIME_ERROR("[LibretroVideoOutput] OpenGLES2 backend disabled at compile time.");
 	}
 #endif
 	auto& softBackend = static_cast<SoftwareBackend&>(backend);
@@ -1171,13 +1169,7 @@ void LibretroGameViewHost::setRenderTargetSize(GPUBackend& backend, i32 width, i
 	);
 }
 
-void* LibretroGameViewHost::getCapability(std::string_view name) {
-	// TODO: Return capabilities like viewport-metrics, etc.
-	(void)name;
-	return nullptr;
-}
-
-ViewportDimensions LibretroGameViewHost::getSize(Vec2 viewportSize, Vec2 canvasSize) {
+ViewportDimensions LibretroVideoOutput::getSize(Vec2 viewportSize, Vec2 canvasSize) {
 	(void)viewportSize;
 	(void)canvasSize;
 	ViewportDimensions dims;
@@ -1188,15 +1180,10 @@ ViewportDimensions LibretroGameViewHost::getSize(Vec2 viewportSize, Vec2 canvasS
 	return dims;
 }
 
-SubscriptionHandle LibretroGameViewHost::onResize(std::function<void(const ViewportDimensions&)> handler) {
+SubscriptionHandle LibretroVideoOutput::onResize(std::function<void(const ViewportDimensions&)> handler) {
 	// Libretro doesn't really have dynamic resizing, but we keep the interface
 	(void)handler;
 	return SubscriptionHandle::create([]() {});
-}
-
-SubscriptionHandle LibretroGameViewHost::onFocusChange(std::function<void(bool)> handler) {
-	(void)handler;
-	return {};
 }
 
 } // namespace bmsx

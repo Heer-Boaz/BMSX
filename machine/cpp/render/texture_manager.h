@@ -10,7 +10,7 @@ using TextureKey = std::string;
 
 class TextureManager {
 public:
-	explicit TextureManager(GPUBackend* backend);
+	explicit TextureManager(GPUBackend& backend);
 	~TextureManager();
 
 	// Non-copyable and non-movable
@@ -21,7 +21,6 @@ public:
 
 	static auto instance() -> TextureManager&;
 
-	void setBackend(GPUBackend* backend);
 	auto makeKey(const std::string& uri, const TextureParams& desc) const -> TextureKey;
 
 	auto createTextureFromPixelsSync(const std::string& keyBase,
@@ -41,7 +40,7 @@ private:
 		TextureParams desc;
 	};
 
-	GPUBackend* m_backend = nullptr;
+	GPUBackend& m_backend;
 	std::unordered_map<TextureKey, GPUCacheEntry> m_gpuCache;
 
 	static TextureManager* s_instance;

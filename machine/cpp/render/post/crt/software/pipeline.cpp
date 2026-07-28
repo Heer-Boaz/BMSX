@@ -12,7 +12,14 @@ namespace bmsx {
 namespace CRTPipeline {
 namespace {
 
-void renderPresentSoftware(GPUBackend* backend, GameView*, void* fbo, RenderPassStateStorage& state, void*) {
+void renderPresentSoftware(
+	GPUBackend* backend,
+	VideoPresenter*,
+	void* fbo,
+	RenderPassStateStorage& state,
+	void*,
+	const GxGpuDeviceOutput&
+) {
 	auto& software = *static_cast<SoftwareBackend*>(backend);
 	if (fbo != nullptr) {
 		auto* target = static_cast<SoftwareTexture*>(fbo);
@@ -29,7 +36,7 @@ void registerPresentationHistorySoftwarePass(
 	const char* id,
 	const char* name,
 	RenderPassDef::RenderGraphSlot historySlot,
-	bool (*shouldExecute)(GameView*, void*)) {
+	bool (*shouldExecute)(VideoPresenter*, void*)) {
 	RenderPassDef desc;
 	desc.id = id;
 	desc.name = name;

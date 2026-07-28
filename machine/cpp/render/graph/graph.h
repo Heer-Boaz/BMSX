@@ -42,9 +42,10 @@ struct TexDesc {
 using RenderGraphTexHandle = i32;
 
 class RenderGraphRuntime;
-class GameView;
+class VideoPresenter;
 class RenderPassLibrary;
 struct RenderPassStateStorage;
+struct GxGpuDeviceOutput;
 
 class RenderGraphIO {
 public:
@@ -92,7 +93,7 @@ enum class RenderGraphPresentInput {
 };
 
 struct RenderGraphPassContext {
-	GameView* view = nullptr;
+	VideoPresenter* presenter = nullptr;
 	f64 time = 0.0;
 	f64 delta = 0.0;
 	u32 frameIndex = 0;
@@ -120,11 +121,11 @@ struct RenderGraphPass {
 	std::string name;
 	bool alwaysExecute = false;
 	Kind kind = Kind::Registered;
-	GameView* view = nullptr;
+	VideoPresenter* presenter = nullptr;
 	RenderPassLibrary* registry = nullptr;
 	std::string passId;
 	void* passContext = nullptr;
-	bool (*shouldExecute)(GameView*, void*) = nullptr;
+	bool (*shouldExecute)(VideoPresenter*, void*) = nullptr;
 	void (*writeState)(const RenderGraphPassContext&, RenderPassStateStorage&) = nullptr;
 	std::vector<RenderGraphSlot> reads;
 	std::vector<RenderGraphSlot> writes;
@@ -149,7 +150,7 @@ public:
 
 	void addPass(const RenderGraphPass& pass);
 	void compile(FrameData* frame);
-	void execute(FrameData* frame);
+	void execute(FrameData* frame, const GxGpuDeviceOutput& output);
 	void invalidate();
 
 	size_t passCount() const { return m_passes.size(); }
@@ -195,7 +196,7 @@ private:
 	void realizeAll();
 	void destroyResources();
 	void setupPass(const RenderGraphPass& pass, RenderGraphIO& io, FrameData* frame);
-	void executePass(RenderGraphPass& pass, RenderGraphContext& ctx, FrameData* frame);
+	void executePass(RenderGraphPass& pass, RenderGraphContext& ctx, FrameData* frame, const GxGpuDeviceOutput& output);
 	RenderGraphTexHandle graphHandle(RenderGraphSlot slot) const;
 	bool resolveExecutablePass(i32 orderIndex, bool hasOrder, ExecutablePass& out);
 	WriteTargets writeTargetsForPass(i32 passIndex) const;

@@ -24,37 +24,38 @@ import {
 	PlatformExitEvent,
 	PlatformHIDDevice,
 	PlatformHIDDeviceRequestOptions,
-	ViewportMetrics,
 	MicrotaskQueue,
 	defaultMicrotaskQueue,
-	ViewportMetricsProvider,
-	OverlayManager,
-	WindowEventHub,
-	DisplayModeController,
-	OnscreenGamepadHandleProvider,
-	GameViewHostCapabilityId,
-	GameViewHostCapabilityMap,
 	SubscriptionHandle,
 	createSubscriptionHandle,
 } from 'bmsx/platform';
 import { HZ_SCALE } from 'bmsx/machine/runtime/timing/constants';
 import { GX_GPU_DISPLAY_ASPECT_HEIGHT, GX_GPU_DISPLAY_ASPECT_WIDTH } from 'bmsx/machine/model_registry';
-import { machineManager } from 'bmsx/core/machine_manager';
 import { createBrowserBackend } from 'bmsx/render/backend/browser_factory';
 import { WorkerStreamingAudioService } from './worker_audio';
-import { type GamepadControlHandle, type GameViewCanvas, type GameViewHost, type HostEventListenerTarget, type HostEventOptions, type HostWindowEventType, type OnscreenGamepadHandles, type OverlayHandle, type SurfaceBounds, type ViewportDimensions } from 'bmsx/platform';
+import { type GamepadControlHandle, type VideoSurface, type VideoOutput, type OnscreenGamepadHandles, type SurfaceBounds, type ViewportDimensions } from 'bmsx/platform';
 import { type vec2 } from 'bmsx/rompack/format';
 
 const ONSCREEN_LAYOUT_MODE: 'canvas' | 'gamepad' = 'canvas';
+
+interface BrowserViewportMetrics {
+	document: { width: number; height: number; };
+	windowInner: { width: number; height: number; };
+	screen: { width: number; height: number; };
+	visible: {
+		width: number;
+		height: number;
+		offsetTop: number;
+		offsetLeft: number;
+	};
+}
 
 /**
  * Platform wiring for the web-hosted runtime.
  *
  * This implementation maps the machine host platform contract to DOM-powered services and
- * provides the onscreen gamepad plumbing that the renderer relies on when the virtual controls are
- * active. Even though the integration lives inside a browser, we deliberately describe capabilities
- * in platform-neutral terms so higher layers can reason about clocks, storage, audio, and layout
- * without caring about underlying APIs.
+ * provides the onscreen gamepad plumbing used while the virtual controls are active. The machine-facing
+ * services remain platform-neutral; browser-only DOM layout stays inside BrowserVideoOutput.
  */
 export class BrowserPlatform implements Platform {
 	clock: HostClock;
@@ -80,13 +81,14 @@ export class BrowserPlatform implements Platform {
 	}
 	clipboard: ClipboardService;
 	hid: HIDService;
-	onscreenGamepad: OnscreenGamepadPlatform;
+	onscreenGamepad: BrowserOnscreenGamepadPlatform;
 	audio: AudioService;
 	rng: RngService;
-	gameviewHost: BrowserGameViewHost;
+	videoOutput: BrowserVideoOutput;
 	microtasks: MicrotaskQueue;
 
-	constructor(surface: HTMLElement, canvas: HTMLCanvasElement, options: BrowserPlatformOptions) {
+	constructor(canvas: HTMLCanvasElement, options: BrowserPlatformOptions) {
+		const surface = canvas;
 		this.clock = new BrowserHostClock();
 		this.frames = new BrowserFrameLoop();
 		this.lifecycle = new BrowserLifecycle();
@@ -114,7 +116,7 @@ export class BrowserPlatform implements Platform {
 			this.audio.setFrameTimeSec(HZ_SCALE / this.ufpsScaled);
 		}
 		this.rng = new BrowserRngService();
-		this.gameviewHost = new BrowserGameViewHost(canvas);
+		this.videoOutput = new BrowserVideoOutput(canvas, this.onscreenGamepad, options.enableOnscreenGamepad);
 
 		if (!options.debug) {
 			// Prevent the user from accidentally closing the game window if not in debug mode
@@ -130,6 +132,7 @@ export interface BrowserPlatformOptions {
 	ufpsScaled?: number;
 	audioContext: AudioContext;
 	debug: boolean;
+	enableOnscreenGamepad: boolean;
 }
 
 class BrowserHostClock implements HostClock {
@@ -199,6 +202,17 @@ class BrowserLifecycle implements Lifecycle {
 		document.addEventListener('visibilitychange', handler, { passive: true });
 		return createSubscriptionHandle(() => {
 			document.removeEventListener('visibilitychange', handler);
+		});
+	}
+
+	onFocusChange(cb: (focused: boolean) => void): SubscriptionHandle {
+		const focus = () => cb(true);
+		const blur = () => cb(false);
+		window.addEventListener('focus', focus);
+		window.addEventListener('blur', blur);
+		return createSubscriptionHandle(() => {
+			window.removeEventListener('focus', focus);
+			window.removeEventListener('blur', blur);
 		});
 	}
 
@@ -896,12 +910,12 @@ function removeDpadClasses(target: Element): void {
  *
  * The browser host treats this class as the authoritative bridge between machine output and whichever DOM
  * nodes represent the virtual controls. It is responsible for normalising pointer input, preserving
- * the canonical element identifiers, and ensuring the controls can be measured/scaled so the GameView
- * can negotiate space for them. When the onscreen gamepad is visible, every layout calculation in the
- * renderer assumes these handles are present and responsive.
+ * the canonical element identifiers, and ensuring the controls can be measured and scaled alongside
+ * the browser video target.
  */
 export class BrowserOnscreenGamepadPlatform implements OnscreenGamepadPlatform {
 	private readonly document: Document;
+	private layoutHandles: OnscreenGamepadHandles | null = null;
 
 	constructor(doc?: Document) {
 		if (doc) {
@@ -934,6 +948,22 @@ export class BrowserOnscreenGamepadPlatform implements OnscreenGamepadPlatform {
 		window.addEventListener('focus', focusHandler, { signal });
 		window.addEventListener('mouseout', outHandler, { signal });
 		return new BrowserOnscreenGamepadPlatformSession(controller);
+	}
+
+	getLayoutHandles(): OnscreenGamepadHandles | null {
+		if (this.layoutHandles) {
+			return this.layoutHandles;
+		}
+		const dpad = this.document.querySelector<HTMLElement>('#d-pad-controls');
+		const actionButtons = this.document.querySelector<HTMLElement>('#button-controls');
+		if (!dpad || !actionButtons) {
+			return null;
+		}
+		this.layoutHandles = {
+			dpad: new BrowserGamepadControlHandle('d-pad-svg', dpad),
+			actionButtons: new BrowserGamepadControlHandle('action-buttons-svg', actionButtons),
+		};
+		return this.layoutHandles;
 	}
 
 	hideElements(elementIds: string[]): void {
@@ -1140,7 +1170,7 @@ export const options: EventListenerOptions & { passive: boolean; once: boolean; 
 	once: false,
 };
 
-class BrowserGameViewCanvas implements GameViewCanvas {
+class BrowserVideoSurface implements VideoSurface {
 	public readonly handle: HTMLCanvasElement;
 
 	public constructor(canvas: HTMLCanvasElement) {
@@ -1200,162 +1230,59 @@ class BrowserGamepadControlHandle implements GamepadControlHandle {
 		this.element.style.transform = `scale(${scale})`;
 	}
 }
-class BrowserOverlayHandle implements OverlayHandle {
-	public constructor(private readonly element: HTMLElement, private readonly dispose: () => void) { }
 
-	public setText(text: string): void {
-		this.element.textContent = text;
-	}
-
-	public addClass(className: string): void {
-		this.element.classList.add(className);
-	}
-
-	public removeClass(className: string): void {
-		this.element.classList.remove(className);
-	}
-
-	public onAnimationEnd(callback: () => void): void {
-		const handler = (_event: AnimationEvent) => {
-			this.element.removeEventListener('animationend', handler);
-			callback();
-		};
-		this.element.addEventListener('animationend', handler, { once: true });
-	}
-
-	public forceReflow(): void {
-		void this.element.offsetWidth;
-	}
-
-	public remove(): void {
-		this.element.remove();
-		this.dispose();
-	}
-
-	public get native(): HTMLElement {
-		return this.element;
-	}
-}
-function toDomOptions(options?: HostEventOptions): boolean | AddEventListenerOptions {
-	if (options === undefined) return undefined;
-	if (typeof options === 'boolean') return options;
-	return options as AddEventListenerOptions;
-}
-
-/**
- * GameViewHost bound to DOM primitives.
- *
- * Besides exposing the canvas handle, this bridge packages up auxiliary capabilities such as viewport
- * metrics, overlay management, window events, display mode toggles, and onscreen gamepad handles.
- * The GameView never queries the DOM directly; it relies on this host to supply consistent, platform-
- * agnostic data about sizing and interactivity. That is especially important for the onscreen gamepad,
- * whose handles are surfaced here so the renderer can scale and reposition them alongside the canvas.
- */
-export class BrowserGameViewHost implements GameViewHost {
+/** Browser render target, backend, and canvas layout. */
+export class BrowserVideoOutput implements VideoOutput {
 	private static visualViewportForwardingInstalled = false;
-	private static viewportForwardingRafId: number = null;
+	private static viewportForwardingRafId = 0;
 	private static dispatchViewportChange(): void {
 		window.dispatchEvent(new Event('resize'));
 		window.dispatchEvent(new Event('orientationchange'));
 	}
 	private static forwardViewportChange(): void {
-		BrowserGameViewHost.dispatchViewportChange();
-		if (BrowserGameViewHost.viewportForwardingRafId === null) {
-			BrowserGameViewHost.viewportForwardingRafId = window.requestAnimationFrame(() => {
-				BrowserGameViewHost.viewportForwardingRafId = null;
-				BrowserGameViewHost.dispatchViewportChange();
+		BrowserVideoOutput.dispatchViewportChange();
+		if (!BrowserVideoOutput.viewportForwardingRafId) {
+			BrowserVideoOutput.viewportForwardingRafId = window.requestAnimationFrame(() => {
+				BrowserVideoOutput.viewportForwardingRafId = 0;
+				BrowserVideoOutput.dispatchViewportChange();
 			});
 		}
 	}
-	public readonly surface: BrowserGameViewCanvas;
-	private readonly overlays = new Map<string, BrowserOverlayHandle>();
-	private readonly listenerCache = new WeakMap<HostEventListenerTarget, EventListenerOrEventListenerObject>();
-	private readonly viewportCapability: ViewportMetricsProvider;
-	private readonly overlayCapability: OverlayManager;
-	private readonly windowEventsCapability: WindowEventHub;
-	private readonly displayModeCapability: DisplayModeController;
-	private readonly gamepadHandlesCapability: OnscreenGamepadHandleProvider;
+	public readonly surface: BrowserVideoSurface;
 
-	public constructor(canvas: HTMLCanvasElement) {
+	public constructor(
+		canvas: HTMLCanvasElement,
+		private readonly onscreenGamepad: BrowserOnscreenGamepadPlatform,
+		private readonly onscreenGamepadEnabled: boolean,
+	) {
 		if (!(canvas instanceof HTMLCanvasElement)) {
-			throw new Error('[BrowserGameViewHost] Provided canvas element was not an HTMLCanvasElement.');
+			throw new Error('[BrowserVideoOutput] Provided canvas element was not an HTMLCanvasElement.');
 		}
-		this.surface = new BrowserGameViewCanvas(canvas);
-		if (!BrowserGameViewHost.visualViewportForwardingInstalled) {
+		this.surface = new BrowserVideoSurface(canvas);
+		if (!BrowserVideoOutput.visualViewportForwardingInstalled) {
 			const visualViewport = window.visualViewport!;
-			const handler = BrowserGameViewHost.forwardViewportChange;
+			const handler = BrowserVideoOutput.forwardViewportChange;
 			visualViewport.addEventListener('resize', handler);
 			visualViewport.addEventListener('scroll', handler);
 			visualViewport.addEventListener('geometrychange', handler as EventListener);
-			BrowserGameViewHost.visualViewportForwardingInstalled = true;
+			BrowserVideoOutput.visualViewportForwardingInstalled = true;
 		}
-		this.viewportCapability = {
-			getViewportMetrics: () => this.computeViewportMetrics(),
-		};
-		this.overlayCapability = {
-			ensureOverlay: (id: string) => this.ensureOverlayInternal(id),
-			getOverlay: (id: string) => this.getOverlayInternal(id),
-		};
-		this.windowEventsCapability = {
-			subscribe: (type: HostWindowEventType, listener: HostEventListenerTarget, options?: HostEventOptions): SubscriptionHandle => {
-				const domListener = this.getDomListener(listener);
-				const domOptions = toDomOptions(options);
-				window.addEventListener(type, domListener, domOptions);
-				return createSubscriptionHandle(() => window.removeEventListener(type, domListener, domOptions));
-			},
-		};
-		this.displayModeCapability = {
-			isSupported: () => document.fullscreenEnabled ? true : false,
-			isFullscreen: () => document.fullscreenElement === document.documentElement,
-			setFullscreen: async (enabled: boolean) => {
-				if (enabled) {
-					await document.documentElement.requestFullscreen().catch((e) => { console.warn(`Failed to enter fullscreen mode: ${e}`); });
-				} else if (document.fullscreenElement) {
-					await document.exitFullscreen().catch((e) => { console.warn(`Failed to exit fullscreen mode: ${e}`); });
-				}
-			},
-			onChange: (listener: (isFullscreen: boolean) => void): SubscriptionHandle => {
-				const handler = () => listener(document.fullscreenElement === document.documentElement);
-				document.addEventListener('fullscreenchange', handler);
-				return createSubscriptionHandle(() => document.removeEventListener('fullscreenchange', handler));
-			},
-		};
-		this.gamepadHandlesCapability = {
-			getHandles: () => this.resolveOnscreenGamepadHandles(),
-		};
 	}
 
-	private getDomListener(listener: HostEventListenerTarget): EventListenerOrEventListenerObject {
-		let cached = this.listenerCache.get(listener);
-		if (cached) {
-			return cached;
-		}
-		if (typeof listener === 'function') {
-			const fn: EventListener = (event: Event) => listener(event);
-			this.listenerCache.set(listener, fn);
-			return fn;
-		}
-		const obj: EventListenerOrEventListenerObject = {
-			handleEvent: (event: Event) => listener.handleEvent(event),
-		};
-		this.listenerCache.set(listener, obj);
-		return obj;
-	}
-
-	private computeViewportMetrics(): ViewportMetrics {
-		const documentElement = document.documentElement!;
+	private computeViewportMetrics(): BrowserViewportMetrics {
+		const documentElement = document.documentElement;
 		const documentDimensions = {
 			width: documentElement.clientWidth,
 			height: documentElement.clientHeight,
-		} as any;
+		};
 		const windowDimensions = {
 			width: window.innerWidth,
 			height: window.innerHeight,
-		} as any;
+		};
 		const screenDimensions = {
 			width: window.screen.width,
 			height: window.screen.height,
-		} as any;
+		};
 		const visual = window.visualViewport!;
 		const visible = {
 			width: visual.width,
@@ -1369,54 +1296,6 @@ export class BrowserGameViewHost implements GameViewHost {
 			screen: screenDimensions,
 			visible,
 		};
-	}
-
-	private resolveOnscreenGamepadHandles(): OnscreenGamepadHandles {
-		const dpad = document.querySelector<HTMLElement>('#d-pad-controls');
-		const actionButtons = document.querySelector<HTMLElement>('#button-controls');
-		if (!dpad || !actionButtons) {
-			return null;
-		}
-		return {
-			dpad: new BrowserGamepadControlHandle('d-pad-svg', dpad),
-			actionButtons: new BrowserGamepadControlHandle('action-buttons-svg', actionButtons),
-		};
-	}
-
-	private ensureOverlayInternal(id: string): OverlayHandle {
-		let overlay = this.overlays.get(id);
-		if (!overlay) {
-			const element = document.createElement('div');
-			element.id = id;
-			if (!document.body) {
-				throw new Error('[BrowserGameViewHost] Document body not available while creating overlay element.');
-			}
-			document.body.appendChild(element);
-			overlay = new BrowserOverlayHandle(element, () => this.overlays.delete(id));
-			this.overlays.set(id, overlay);
-		}
-		return overlay;
-	}
-
-	private getOverlayInternal(id: string): OverlayHandle {
-		return this.overlays.get(id);
-	}
-
-	public getCapability<T extends GameViewHostCapabilityId>(capability: T): GameViewHostCapabilityMap[T] {
-		switch (capability) {
-			case 'viewport-metrics':
-				return this.viewportCapability as GameViewHostCapabilityMap[T];
-			case 'overlay':
-				return this.overlayCapability as GameViewHostCapabilityMap[T];
-			case 'window-events':
-				return this.windowEventsCapability as GameViewHostCapabilityMap[T];
-			case 'display-mode':
-				return this.displayModeCapability as GameViewHostCapabilityMap[T];
-			case 'onscreen-gamepad':
-				return this.gamepadHandlesCapability as GameViewHostCapabilityMap[T];
-			default:
-				return null;
-		}
 	}
 
 	private lastViewportSize: vec2 = { x: 320, y: 240 };
@@ -1450,9 +1329,7 @@ export class BrowserGameViewHost implements GameViewHost {
 	 *    available width if we do not pre-allocate "Lebensraum" for the gamepad.
 	 *  - Fixed clamping to 20% of the larger screen dimension keeps the control overlays legible on
 	 *    phones yet avoids dwarfing the canvas on tablets/desktops.
-	 *  - We deliberately avoid defensive null checks here: the platform layer guarantees that
-	 *    viewport metrics exist and that `OnscreenGamepadHandleProvider` returns handles while
-	 *    the onscreen gamepad is enabled.
+	 *  - The onscreen-gamepad platform owns its retained DOM layout handles.
 	 *
 	 * The landscape branch further subtracts the horizontal footprint of both control clusters when
 	 * the canvas is configured to "own" the shared space (`canvas_or_onscreen_gamepad_must_respect_lebensraum === 'canvas'`).
@@ -1490,11 +1367,10 @@ export class BrowserGameViewHost implements GameViewHost {
 		const viewportIsLandscape = viewportWidth > viewportHeight && viewportWidth !== 0 && viewportHeight !== 0;
 
 		let adjustedWidth = effectiveWidth;
-		const onscreenGamepadEnabled = machineManager.input?.isOnscreenGamepadEnabled;
-		if (onscreenGamepadEnabled
+		if (this.onscreenGamepadEnabled
 			&& ONSCREEN_LAYOUT_MODE === 'canvas'
 			&& viewportIsLandscape) {
-			const handles = this.resolveOnscreenGamepadHandles();
+			const handles = this.onscreenGamepad.getLayoutHandles();
 			if (handles) {
 				const referenceDimension = viewportWidth > viewportHeight ? viewportWidth : viewportHeight;
 				const maxControlScale = referenceDimension * 0.20 / 100;
@@ -1558,8 +1434,7 @@ export class BrowserGameViewHost implements GameViewHost {
 		if (displayLeft < 0) displayLeft = 0;
 
 		const isLandscape = size.width >= size.height;
-		const onscreenGamepadEnabled = machineManager.input?.isOnscreenGamepadEnabled;
-		let displayTop = isLandscape || !onscreenGamepadEnabled
+		let displayTop = isLandscape || !this.onscreenGamepadEnabled
 			? ~~((verticalContainer - displayHeight) / 2)
 			: 0;
 		if (displayTop < 0) displayTop = 0;
@@ -1567,8 +1442,8 @@ export class BrowserGameViewHost implements GameViewHost {
 		this.surface.setDisplaySize(displayWidth, displayHeight);
 		this.surface.setDisplayPosition(displayLeft, displayTop);
 
-		if (onscreenGamepadEnabled) {
-			const handles = this.resolveOnscreenGamepadHandles();
+		if (this.onscreenGamepadEnabled) {
+			const handles = this.onscreenGamepad.getLayoutHandles();
 			if (handles) {
 				const { dpad, actionButtons } = handles;
 				const referenceDimension = viewportWidth > viewportHeight ? viewportWidth : viewportHeight;
@@ -1624,17 +1499,6 @@ export class BrowserGameViewHost implements GameViewHost {
 				updateBottomPosition(actionButtons, actionSize, true);
 			}
 		}
-	}
-
-	public onFocusChange(handler: (focused: boolean) => void): SubscriptionHandle {
-		const focusListener = () => handler(true);
-		const blurListener = () => handler(false);
-		window.addEventListener('focus', focusListener);
-		window.addEventListener('blur', blurListener);
-		return createSubscriptionHandle(() => {
-			window.removeEventListener('focus', focusListener);
-			window.removeEventListener('blur', blurListener);
-		});
 	}
 
 	public async createBackend() {

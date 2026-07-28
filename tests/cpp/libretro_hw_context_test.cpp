@@ -32,7 +32,7 @@ int main() {
 		supervisorRequestLineLow,
 		false);
 	platform.setHwRenderCallbacks(frontendGetCurrentFramebuffer, frontendGetProcAddress);
-	auto* backend = static_cast<bmsx::OpenGLES2Backend*>(platform.machineManager()->view()->backend());
+	auto* backend = &static_cast<bmsx::OpenGLES2Backend&>(platform.machineManager()->videoPresenter()->backend());
 	if (backend->resolveProcAddress("glTextureBarrierNV") != frontendGlProc) {
 		throw std::runtime_error("libretro hardware context should own GL procedure resolution");
 	}

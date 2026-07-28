@@ -1,7 +1,7 @@
 import type { Viewport } from '../../machine/ts/rompack/format';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { FontVariant } from '../../machine/ts/render/shared/bmsx_font';
-import type { GameView } from '../../machine/ts/render/gameview';
+import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import type { GateGroup } from '../../machine/ts/common/taskgate';
 import { taskGate } from '../../machine/ts/common/taskgate';
 import { RuntimeCartEditor, type CartEditor } from '../cart_editor';
@@ -49,9 +49,9 @@ export class RuntimeIdeState {
 export function setOverlayResolutionMode(
 	renderer: OverlayRenderer,
 	editor: CartEditor,
-	view: GameView,
+	presenter: VideoPresenter,
 	value: OverlayResolutionMode,
 ): void {
-	renderer.setRenderingViewportType(view, value);
+	renderer.setRenderingViewportType(presenter, value);
 	editor.updateViewport(renderer.viewportSize);
 }

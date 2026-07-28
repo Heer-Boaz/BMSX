@@ -1,6 +1,6 @@
 #include "render/test_pattern.h"
 
-#include "render/gameview.h"
+#include "render/video_presenter.h"
 #include "render/host_overlay/commands.h"
 #include "render/host_overlay/overlay_queue.h"
 
@@ -60,13 +60,13 @@ void queueRect(const RectBounds& rect, RectRenderKind kind, u32 color) {
 
 } // namespace
 
-void renderTestPattern(GameView& view, f64 totalTime) {
+void renderTestPattern(VideoPresenter& presenter, f64 totalTime) {
 	s_commandCount = 0;
 	s_rectCount = 0;
 	s_polyCount = 0;
 	const f32 t = static_cast<f32>(totalTime);
-	const i32 w = static_cast<i32>(view.viewportSize.x);
-	const i32 h = static_cast<i32>(view.viewportSize.y);
+	const i32 w = static_cast<i32>(presenter.viewportSize.x);
+	const i32 h = static_cast<i32>(presenter.viewportSize.y);
 	const auto fillKind = RectRenderKind::Fill;
 	RectBounds rect;
 

@@ -56,46 +56,40 @@ bool MachineManager::initialize(Platform* platform) {
 	m_platform = platform;
 
 	// Get viewport size from platform
-	auto* host = platform->gameviewHost();
+	auto& host = platform->videoOutput();
 	Vec2 defaultViewport{
 		static_cast<f32>(gxGpuDisplayModeScreenWidth(GX_GPU_RESET_DISPLAY_MODE_WORD)),
 		static_cast<f32>(gxGpuVerticalVisibleLines(GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD, GX_GPU_RESET_DISPLAY_MODE_WORD))
 	};
-	ViewportDimensions dims = host->getSize(defaultViewport, defaultViewport);
+	ViewportDimensions dims = host.getSize(defaultViewport, defaultViewport);
 
-	// Create GameView with logical viewport
-	m_view = std::make_unique<GameView>(host, static_cast<i32>(defaultViewport.x), static_cast<i32>(defaultViewport.y));
-	m_view->viewportScale = dims.viewportScale;
-	m_view->canvasScale = dims.canvasScale;
+	// Create VideoPresenter with logical viewport
+	m_video_presenter = std::make_unique<VideoPresenter>(
+		host,
+		host.createBackend(),
+		static_cast<i32>(defaultViewport.x),
+		static_cast<i32>(defaultViewport.y)
+	);
+	m_video_presenter->viewportScale = dims.viewportScale;
+	m_video_presenter->canvasScale = dims.canvasScale;
 	m_viewport_scale = dims.viewportScale;
 	m_canvas_scale = dims.canvasScale;
 
 	// Subscribe to resize events
-	m_resize_sub = host->onResize([this](const ViewportDimensions& dims) {
+	m_resize_sub = host.onResize([this](const ViewportDimensions& dims) {
 		m_viewport_scale = dims.viewportScale;
 		m_canvas_scale = dims.canvasScale;
-		if (m_view) {
-			m_view->viewportScale = m_viewport_scale;
-			m_view->canvasScale = m_canvas_scale;
-		}
+		m_video_presenter->viewportScale = m_viewport_scale;
+		m_video_presenter->canvasScale = m_canvas_scale;
 	});
 
-	// Get backend from platform (SoftwareBackend for libretro)
-	if (host) {
-		auto backend = host->createBackend();
-		if (backend) {
-			m_view->setBackend(std::move(backend));
-		}
-	}
-	registry().registerObject(m_view.get());
-
-	m_texture_manager = std::make_unique<TextureManager>(m_view->backend());
-	if (m_view->backend()->readyForTextureUpload()) {
-		m_view->initializeDefaultTextures();
+	m_texture_manager = std::make_unique<TextureManager>(m_video_presenter->backend());
+	if (m_video_presenter->backend().readyForTextureUpload()) {
+		m_video_presenter->initializeDefaultTextures();
 	}
 
 	Input::instance().initialize();
-	m_focus_sub = host->onFocusChange([](bool) {
+	m_focus_sub = platform->lifecycle()->onFocusChange([](bool) {
 		Input::instance().resetInputState();
 		hostOverlayMenu().resetInputState();
 	});
@@ -120,11 +114,7 @@ void MachineManager::shutdown() {
 
 	m_texture_manager.reset();
 
-	// Dispose view
-	if (m_view) {
-		m_view->dispose();
-		m_view.reset();
-	}
+	m_video_presenter.reset();
 
 	// Clear registry (keeps persistent objects)
 	registry().deregister(m_sound_master.get(), true);
@@ -224,17 +214,10 @@ void MachineManager::syncRuntimeAudioTiming() {
 }
 
 void MachineManager::refreshRenderSurfaces() {
-	if (m_texture_manager) {
-		m_texture_manager->setBackend(m_view ? m_view->backend() : nullptr);
-	}
-	if (!m_view || !m_view->backend() || !m_texture_manager) {
+	if (!m_video_presenter->backend().readyForTextureUpload()) {
 		return;
 	}
-	auto* backend = m_view->backend();
-	if (!backend->readyForTextureUpload()) {
-		return;
-	}
-	m_view->initializeDefaultTextures();
+	m_video_presenter->initializeDefaultTextures();
 }
 
 void MachineManager::log(LogLevel level, const char* fmt, ...) {
@@ -284,21 +267,18 @@ Runtime& MachineManager::ensureRuntime(const RuntimeOptions& options) {
 // ROM loading and boot orchestration
 // ============================================================================
 
-void MachineManager::configureViewForGpuReset() {
-	m_view->setRenderTargetSize(
+void MachineManager::configureVideoForGpuReset() {
+	m_video_presenter->setRenderTargetSize(
 		static_cast<i32>(gxGpuDisplayModeScreenWidth(GX_GPU_RESET_DISPLAY_MODE_WORD)),
 		gxGpuVerticalVisibleLines(GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD, GX_GPU_RESET_DISPLAY_MODE_WORD)
 	);
 }
 
 bool MachineManager::loadSystemRomInternal(const u8* data, size_t size) {
-	if (m_texture_manager) {
-		m_texture_manager->setBackend(m_view ? m_view->backend() : nullptr);
-	}
 	m_system_rom_image = parseRomImage(data, size, RomImageDomain::System);
 	m_system_rom_loaded = true;
 	m_default_font = std::make_unique<Font>();
-	m_view->default_font = m_default_font.get();
+	m_video_presenter->default_font = m_default_font.get();
 	return true;
 }
 
@@ -308,7 +288,7 @@ bool MachineManager::bootSystemFirmware() {
 
 	const ResolvedRuntimeTiming timing = resolveRuntimeTiming(PSX_MACHINE_SPEC.cpuFreqHz);
 	configureMemoryMap(static_cast<uint32_t>(PSX_MACHINE_SPEC.ramBytes));
-	configureViewForGpuReset();
+	configureVideoForGpuReset();
 
 	Runtime& rt = ensureRuntime(RuntimeOptions{
 		m_system_rom_image.bytes,
@@ -329,9 +309,6 @@ bool MachineManager::bootSystemFirmware() {
 }
 
 bool MachineManager::bootLoadedCartridgeSlots() {
-	if (m_texture_manager) {
-		m_texture_manager->setBackend(m_view ? m_view->backend() : nullptr);
-	}
 	for (u32 slotIndex = 0; slotIndex < CARTRIDGE_SLOT_COUNT; ++slotIndex) {
 		const LoadedCartridgeSlot& slot = m_cartridge_slots[slotIndex];
 		if (slot.image.bytes.empty()) continue;

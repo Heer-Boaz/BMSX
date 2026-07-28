@@ -2,7 +2,7 @@
 
 #include "machine/scheduler/frame.h"
 #include "common/primitives.h"
-#include "render/gameview.h"
+#include "render/video_presenter.h"
 #include <chrono>
 
 namespace bmsx {
@@ -11,7 +11,7 @@ class MachineManager;
 class Runtime;
 
 struct RenderPresentation {
-	GameView::PresentationMode mode = GameView::PresentationMode::Completed;
+	VideoPresenter::PresentationMode mode = VideoPresenter::PresentationMode::Completed;
 	bool commitFrame = false;
 	f64 runtimeDrawMs = 0.0;
 	f64 workbenchModeDrawMs = 0.0;
@@ -28,14 +28,15 @@ public:
 
 private:
 	void recordTickCompletion(bool visualCommitted);
-	void recordPresentation(GameView::PresentationMode mode, bool commitFrame, bool paused);
+	void recordPresentation(VideoPresenter::PresentationMode mode, bool commitFrame, bool paused);
 	void flushDebugReport(const Runtime& runtime);
-	void markPresentation(GameView::PresentationMode mode, bool commitFrame);
+	void markPresentation(VideoPresenter::PresentationMode mode, bool commitFrame);
 	bool consumePresentation(RenderPresentation& outPresentation);
 
 	bool m_pendingPresentation = false;
-	GameView::PresentationMode m_presentationMode = GameView::PresentationMode::Completed;
+	VideoPresenter::PresentationMode m_presentationMode = VideoPresenter::PresentationMode::Completed;
 	bool m_presentationCommitFrame = false;
+	u32 m_pcrtcScanoutRevision = 0u;
 	bool m_debugPresentReportInitialized = false;
 	std::chrono::steady_clock::time_point m_debugPresentReportAt;
 	u64 m_debugPresentHostFrames = 0;

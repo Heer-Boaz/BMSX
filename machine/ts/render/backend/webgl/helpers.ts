@@ -7,7 +7,7 @@ export function checkWebGLError(infoText: string): number {
 	if (!CATCH_WEBGL_ERROR) {
 		return 0;
 	}
-	const gl = machineManager.view.nativeCtx as WebGLRenderingContext;
+	const gl = machineManager.videoPresenter.nativeCtx as WebGLRenderingContext;
 	const error = gl.getError();
 	if (error !== gl.NO_ERROR) {
 		console.error(`WebGL error: ${webGLErrorName(gl, error)}: ${infoText}`);

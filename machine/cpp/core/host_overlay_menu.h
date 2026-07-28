@@ -11,7 +11,7 @@
 namespace bmsx {
 
 class MachineManager;
-class GameView;
+class VideoPresenter;
 class Input;
 
 enum class HostMenuButtonId : u8 {
@@ -41,8 +41,8 @@ public:
 	HostOverlayMenu();
 	bool tickInput(MachineManager& manager);
 	void resetInputState();
-	void queueRenderCommands(MachineManager& manager, GameView& view);
-	bool queueFrameOverlayCommands(MachineManager& manager, GameView& view);
+	void queueRenderCommands(MachineManager& manager, VideoPresenter& presenter);
+	bool queueFrameOverlayCommands(MachineManager& manager, VideoPresenter& presenter);
 	bool active() const { return m_active; }
 
 private:
@@ -61,9 +61,9 @@ private:
 	void queueCommand(Host2DKind kind, Host2DRef ref);
 	void toggle();
 	void close();
-	void changeSelected(MachineManager& manager, GameView& view, i32 direction);
+	void changeSelected(MachineManager& manager, VideoPresenter& presenter, i32 direction);
 	void activateSelected(MachineManager& manager);
-	void rebuildText(MachineManager& manager, GameView& view);
+	void rebuildText(MachineManager& manager, VideoPresenter& presenter);
 	bool buttonPressed(const Input& input, HostMenuButtonId button) const;
 	bool buttonJustPressed(const Input& input, HostMenuButtonId button) const;
 	void latchButtonStates(const Input& input);

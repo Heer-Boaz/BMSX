@@ -9,7 +9,7 @@ import { GlobalShortcutRegistry } from './shortcuts';
 import { PendingAssignmentProcessor } from './host/assignment_processor';
 import { PlayerInput } from './player';
 import { PointerInput } from './pointer';
-import type { DeviceKind, InputDevice, InputEvt, SubscriptionHandle, GameViewCanvas } from '../platform';
+import type { DeviceKind, InputDevice, InputEvt, SubscriptionHandle } from '../platform';
 import {
 	INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_IDS,
 	INPUT_CONTROLLER_KEY_WORD_COUNT,
@@ -626,7 +626,6 @@ export class Input implements RegisterablePersistent, RuntimeInputSource {
 		}
 	};
 
-	private debugHotkeysEnabled = false;
 	public debugHotkeysPaused = false;
 	private gameplayCaptureEnabled = true;
 	private supervisorRequestLine = false;
@@ -700,8 +699,6 @@ export class Input implements RegisterablePersistent, RuntimeInputSource {
 
 	public static readonly KEYBOARDKEY2GAMEPADBUTTON = Object.freeze(Input.createKeyboardToGamepadMap(Input.DEFAULT_INPUT_MAPPING.keyboard));
 
-	private static readonly DEBUG_CAPTURE_KEYS = new Set(['F11']);
-
 	/**
 	 * Prevents the default action of a UI event based on the key pressed, except for certain keys when the game is running or not paused.
 	 * @param e The UI event to prevent the default action of.
@@ -743,10 +740,7 @@ export class Input implements RegisterablePersistent, RuntimeInputSource {
 	}
 
 	public shouldCaptureKey(code: string): boolean {
-		if (this.additionalCaptureKeys.has(code)) {
-			return true;
-		}
-		return this.debugHotkeysEnabled && !this.debugHotkeysPaused && Input.DEBUG_CAPTURE_KEYS.has(code);
+		return this.additionalCaptureKeys.has(code);
 	}
 
 	public setKeyboardCapture(code: string, enabled: boolean): void {
@@ -758,14 +752,6 @@ export class Input implements RegisterablePersistent, RuntimeInputSource {
 		} else {
 			this.additionalCaptureKeys.delete(code);
 		}
-	}
-
-	/**
-	 * Enables the debug mode for the game screen.
-	 * Attaches event listeners to the game screen element to handle debug events.
-	 */
-	public enableDebugMode(_surface: GameViewCanvas): void {
-		this.debugHotkeysEnabled = true;
 	}
 
 	/**
@@ -788,7 +774,6 @@ export class Input implements RegisterablePersistent, RuntimeInputSource {
 			Input._instance = undefined;
 			this.inputControllerKeyboardHandlers.length = 0;
 			this.inputControllerPointerHandlers.length = 0;
-			this.debugHotkeysEnabled = false;
 		this.debugHotkeysPaused = false;
 		this.supervisorRequestLine = false;
 		this.additionalCaptureKeys.clear();
@@ -807,7 +792,7 @@ export class Input implements RegisterablePersistent, RuntimeInputSource {
 		this.inputControllerPointerHandlers.push(pointer);
 		machineManager.platform.input.setKeyboardCapture(this.shouldCaptureKey.bind(this));
 		this.attachToPlatformInput();
-		this.focusChangeUnsubscribe = machineManager.platform.gameviewHost.onFocusChange(this.handleFocusChange);
+		this.focusChangeUnsubscribe = machineManager.platform.lifecycle.onFocusChange(this.handleFocusChange);
 	}
 
 	public setGameplayCaptureEnabled(enabled: boolean): void {
@@ -1072,7 +1057,6 @@ export class Input implements RegisterablePersistent, RuntimeInputSource {
 		const now = machineManager.platform.clock.now();
 		this.playerInputs.forEach(player => {
 			if (!player) return;
-			this.processDebugHotkeys(player);
 			player.pollInput(now);
 			player.update(now);
 			this.globalShortcuts.pollPlayer(player);
@@ -1173,27 +1157,6 @@ export class Input implements RegisterablePersistent, RuntimeInputSource {
 		}
 		return null;
 	}
-
-	private processDebugHotkeys(player: PlayerInput): void {
-		if (!this.debugHotkeysEnabled || this.debugHotkeysPaused) return;
-		if (player.playerIndex !== Input.DEFAULT_KEYBOARD_PLAYER_INDEX) return;
-		const keyboardHandler = player.inputHandlers['keyboard'];
-		if (!keyboardHandler) return;
-
-		const allowGlobalHotkeys = machineManager.running || !machineManager.paused;
-		if (allowGlobalHotkeys) {
-			const fullscreenToggle = keyboardHandler.getButtonState('F11');
-			if (fullscreenToggle?.justpressed) {
-				if (machineManager.view.fullscreen) {
-					machineManager.view.ToWindowed();
-				} else {
-					machineManager.view.toFullscreen();
-				}
-				keyboardHandler.consumeButton('F11');
-			}
-		}
-	}
-
 
 	/**
 	 * Checks if the specified player index is available for gamepad assignment.

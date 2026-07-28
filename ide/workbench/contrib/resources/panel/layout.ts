@@ -1,4 +1,3 @@
-import { machineManager } from '../../../../../machine/ts/core/machine_manager';
 import type { RectBounds } from '../../../../../machine/ts/rompack/format';
 import { clamp } from '../../../../../machine/ts/common/clamp';
 import { copy_rect_bounds, create_rect_bounds, write_rect_bounds } from '../../../../../machine/ts/common/rect';
@@ -8,8 +7,7 @@ import { bottomMargin } from '../../../common/layout';
 import { editorViewState } from '../../../../editor/ui/view/state';
 
 export function defaultResourcePanelRatio(): number {
-	const metrics = machineManager.platform.gameviewHost.getCapability('viewport-metrics').getViewportMetrics();
-	const screenRelativeWidth = metrics.windowInner.width / metrics.screen.width;
+	const screenRelativeWidth = window.innerWidth / window.screen.width;
 	const relative = screenRelativeWidth < 1 ? screenRelativeWidth : 1;
 	const responsiveness = 1 - relative;
 	const minRatio = constants.RESOURCE_PANEL_MIN_RATIO;

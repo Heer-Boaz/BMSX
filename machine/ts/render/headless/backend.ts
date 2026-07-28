@@ -12,6 +12,7 @@ import type { TextureParams } from '../backend/texture_params';
 import { createSolidRgba8Pixels, writeColorRgba8Pixels } from '../shared/solid_pixels';
 import type { RenderPassLibrary } from '../backend/pass/library';
 import { registerHeadlessPasses, registerHeadlessPresentPass } from './passes';
+import type { HeadlessVideoOutput } from './video_output';
 import { registerHostOverlayPass_Headless, registerHostMenuPass_Headless } from '../host_overlay/headless/pipeline';
 import { captureGxGpuVramSnapshot, executeGxGpuSoftwareVramCommands } from '../backend/software/gx_gpu';
 import type { GxGpu } from '../../machine/devices/gx/gpu';
@@ -97,11 +98,14 @@ export class HeadlessGPUBackend implements GPUBackend {
 	private readonly frameStats: HeadlessFrameStats = createFrameStats();
 	private readonly passEncoderScratch: PassEncoder = { fbo: null, desc: {} };
 
+	constructor(private readonly output: HeadlessVideoOutput) {
+	}
+
 	registerBuiltinPasses(registry: RenderPassLibrary): void {
 		registerHeadlessPasses(registry);
 		registerHostOverlayPass_Headless(registry);
 		registerHostMenuPass_Headless(registry);
-		registerHeadlessPresentPass(registry);
+		registerHeadlessPresentPass(registry, this.output);
 	}
 
 	private getTextureId(handle: TextureHandle): number {

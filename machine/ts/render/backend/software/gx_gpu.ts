@@ -1,5 +1,6 @@
 import type { GxGpuPipelineState } from '../backend';
 import type { GxGpu } from '../../../machine/devices/gx/gpu';
+import type { GxGpuDeviceOutput } from '../../../machine/devices/gx/device_output';
 import type { GxGpuCommandBufferView, GxGpuReadbackPortView } from '../../../machine/devices/gx/gpu_command_buffer';
 import { GX_GPU_VRAM_WIDTH, gxGpuVramYAddress } from '../../../spec/gx/vram';
 import { executeGxGpuSoftwareCommands } from './gx_gpu_commands';
@@ -48,9 +49,13 @@ export function executeGxGpuSoftwareVramCommands(source: GxGpuSoftwareVramSource
 	}
 }
 
-export function renderGxGpuSoftwareFrame(state: GxGpuPipelineState, target: Uint32Array): void {
-	executeGxGpuSoftwareVramCommands(state, state.commandBuffer.presentCommandCount);
-	scanoutGxGpuSoftwareVram(state, target);
+export function renderGxGpuSoftwareFrame(
+	state: GxGpuPipelineState,
+	output: GxGpuDeviceOutput,
+	target: Uint32Array,
+): void {
+	executeGxGpuSoftwareVramCommands(output, output.commandBuffer.presentCommandCount);
+	scanoutGxGpuSoftwareVram(state, output.pcrtcScanout, output.vramReplacementSerial, target);
 }
 
 export function captureGxGpuVramSnapshot(gxGpu: GxGpu, snapshotBytes: Uint8Array): void {

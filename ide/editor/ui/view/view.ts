@@ -176,11 +176,7 @@ export function refreshViewportLayout(): void {
 }
 
 export function mapScreenPointToViewport(screenX: number, screenY: number): { x: number; y: number; inside: boolean; valid: boolean } {
-	const view = machineManager.view;
-	if (!view) {
-		return { x: 0, y: 0, inside: false, valid: false };
-	}
-	const rect = view.surface.measureDisplay();
+	const rect = machineManager.videoPresenter.surface.measureDisplay();
 	if (rect.width <= 0 || rect.height <= 0) {
 		return { x: 0, y: 0, inside: false, valid: false };
 	}

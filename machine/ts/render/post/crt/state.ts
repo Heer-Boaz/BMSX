@@ -1,58 +1,58 @@
 import type { CRTPipelineState, PresentPipelineState, RenderGraphPassContext } from '../../backend/backend';
-import type { GameView } from '../../gameview';
+import type { VideoPresenter } from '../../video_presenter';
 import { DeviceQuantizeMode } from '../device_quantize/mode';
 
-export function shouldExecuteAutoPresentPass(view: GameView): boolean {
-	return !view.crt_postprocessing_enabled
-		|| (!view.enable_noise
-			&& !view.enable_colorbleed
-			&& !view.enable_scanlines
-			&& !view.enable_blur
-			&& !view.enable_glow
-			&& !view.enable_fringing
-			&& !view.enable_aperture);
+export function shouldExecuteAutoPresentPass(presenter: VideoPresenter): boolean {
+	return !presenter.crt_postprocessing_enabled
+		|| (!presenter.enable_noise
+			&& !presenter.enable_colorbleed
+			&& !presenter.enable_scanlines
+			&& !presenter.enable_blur
+			&& !presenter.enable_glow
+			&& !presenter.enable_fringing
+			&& !presenter.enable_aperture);
 }
 
-export function shouldExecuteAutoCrtPass(view: GameView): boolean {
-	return view.crt_postprocessing_enabled
-		&& (view.enable_noise
-			|| view.enable_colorbleed
-			|| view.enable_scanlines
-			|| view.enable_blur
-			|| view.enable_glow
-			|| view.enable_fringing
-			|| view.enable_aperture);
+export function shouldExecuteAutoCrtPass(presenter: VideoPresenter): boolean {
+	return presenter.crt_postprocessing_enabled
+		&& (presenter.enable_noise
+			|| presenter.enable_colorbleed
+			|| presenter.enable_scanlines
+			|| presenter.enable_blur
+			|| presenter.enable_glow
+			|| presenter.enable_fringing
+			|| presenter.enable_aperture);
 }
 
 
-function currentFrameSourceTexture(ctx: RenderGraphPassContext, view: GameView) {
-	return ctx.deviceColorEnabled && view.deviceQuantizeMode !== DeviceQuantizeMode.None ? ctx.getTex('device_color') : ctx.getTex('frame_color');
+function currentFrameSourceTexture(ctx: RenderGraphPassContext, presenter: VideoPresenter) {
+	return ctx.deviceColorEnabled && presenter.deviceQuantizeMode !== DeviceQuantizeMode.None ? ctx.getTex('device_color') : ctx.getTex('frame_color');
 }
 
 function presentationHistorySlot(index: 0 | 1): 'frame_history_a' | 'frame_history_b' {
 	return index === 0 ? 'frame_history_a' : 'frame_history_b';
 }
 
-function presentedHistoryTexture(ctx: RenderGraphPassContext, view: GameView) {
-	const historyIndex = view.commitPresentationFrame ? view.presentationHistoryDestinationIndex : view.presentationHistorySourceIndex;
+function presentedHistoryTexture(ctx: RenderGraphPassContext, presenter: VideoPresenter) {
+	const historyIndex = presenter.commitPresentationFrame ? presenter.presentationHistoryDestinationIndex : presenter.presentationHistorySourceIndex;
 	return ctx.getTex(presentationHistorySlot(historyIndex));
 }
 
-export function shouldUpdatePresentationHistoryA(view: GameView): boolean {
-	return view.commitPresentationFrame && view.presentationHistoryDestinationIndex === 0;
+export function shouldUpdatePresentationHistoryA(presenter: VideoPresenter): boolean {
+	return presenter.commitPresentationFrame && presenter.presentationHistoryDestinationIndex === 0;
 }
 
-export function shouldUpdatePresentationHistoryB(view: GameView): boolean {
-	return view.commitPresentationFrame && view.presentationHistoryDestinationIndex === 1;
+export function shouldUpdatePresentationHistoryB(presenter: VideoPresenter): boolean {
+	return presenter.commitPresentationFrame && presenter.presentationHistoryDestinationIndex === 1;
 }
 
 export function writePresentationHistoryPassState(ctx: RenderGraphPassContext, state: PresentPipelineState): void {
-	const view = ctx.view as GameView;
-	state.width = view.offscreenCanvasSize.x;
-	state.height = view.offscreenCanvasSize.y;
-	state.srcWidth = view.offscreenCanvasSize.x;
-	state.srcHeight = view.offscreenCanvasSize.y;
-	state.colorTex = currentFrameSourceTexture(ctx, view);
+	const presenter = ctx.presenter as VideoPresenter;
+	state.width = presenter.offscreenCanvasSize.x;
+	state.height = presenter.offscreenCanvasSize.y;
+	state.srcWidth = presenter.offscreenCanvasSize.x;
+	state.srcHeight = presenter.offscreenCanvasSize.y;
+	state.colorTex = currentFrameSourceTexture(ctx, presenter);
 }
 
 export function createPresentPassState(): PresentPipelineState {
@@ -66,12 +66,12 @@ export function createPresentPassState(): PresentPipelineState {
 }
 
 export function writePresentPassState(ctx: RenderGraphPassContext, state: PresentPipelineState): void {
-	const view = ctx.view as GameView;
-	state.width = view.canvasSize.x;
-	state.height = view.canvasSize.y;
-	state.srcWidth = view.offscreenCanvasSize.x;
-	state.srcHeight = view.offscreenCanvasSize.y;
-	state.colorTex = presentedHistoryTexture(ctx, view);
+	const presenter = ctx.presenter as VideoPresenter;
+	state.width = presenter.canvasSize.x;
+	state.height = presenter.canvasSize.y;
+	state.srcWidth = presenter.offscreenCanvasSize.x;
+	state.srcHeight = presenter.offscreenCanvasSize.y;
+	state.colorTex = presentedHistoryTexture(ctx, presenter);
 }
 
 export function createCrtPassState(): CRTPipelineState {
@@ -99,28 +99,28 @@ export function createCrtPassState(): CRTPipelineState {
 }
 
 export function writeCrtPassState(ctx: RenderGraphPassContext, state: CRTPipelineState): void {
-	const view = ctx.view as GameView;
-	const applyCrt = view.crt_postprocessing_enabled;
-	state.width = view.canvasSize.x;
-	state.height = view.canvasSize.y;
-	state.srcWidth = view.offscreenCanvasSize.x;
-	state.srcHeight = view.offscreenCanvasSize.y;
+	const presenter = ctx.presenter as VideoPresenter;
+	const applyCrt = presenter.crt_postprocessing_enabled;
+	state.width = presenter.canvasSize.x;
+	state.height = presenter.canvasSize.y;
+	state.srcWidth = presenter.offscreenCanvasSize.x;
+	state.srcHeight = presenter.offscreenCanvasSize.y;
 	state.time = ctx.time;
-	state.colorTex = presentedHistoryTexture(ctx, view);
+	state.colorTex = presentedHistoryTexture(ctx, presenter);
 	const options = state.options;
-	options.applyNoise = applyCrt && view.enable_noise;
-	options.applyColorBleed = applyCrt && view.enable_colorbleed;
-	options.applyScanlines = applyCrt && view.enable_scanlines;
-	options.applyBlur = applyCrt && view.enable_blur;
-	options.applyGlow = applyCrt && view.enable_glow;
-	options.applyFringing = applyCrt && view.enable_fringing;
-	options.applyAperture = applyCrt && view.enable_aperture;
-	options.noiseIntensity = view.noiseIntensity;
-	options.colorBleed[0] = view.colorBleed[0];
-	options.colorBleed[1] = view.colorBleed[1];
-	options.colorBleed[2] = view.colorBleed[2];
-	options.blurIntensity = view.blurIntensity;
-	options.glowColor[0] = view.glowColor[0];
-	options.glowColor[1] = view.glowColor[1];
-	options.glowColor[2] = view.glowColor[2];
+	options.applyNoise = applyCrt && presenter.enable_noise;
+	options.applyColorBleed = applyCrt && presenter.enable_colorbleed;
+	options.applyScanlines = applyCrt && presenter.enable_scanlines;
+	options.applyBlur = applyCrt && presenter.enable_blur;
+	options.applyGlow = applyCrt && presenter.enable_glow;
+	options.applyFringing = applyCrt && presenter.enable_fringing;
+	options.applyAperture = applyCrt && presenter.enable_aperture;
+	options.noiseIntensity = presenter.noiseIntensity;
+	options.colorBleed[0] = presenter.colorBleed[0];
+	options.colorBleed[1] = presenter.colorBleed[1];
+	options.colorBleed[2] = presenter.colorBleed[2];
+	options.blurIntensity = presenter.blurIntensity;
+	options.glowColor[0] = presenter.glowColor[0];
+	options.glowColor[1] = presenter.glowColor[1];
+	options.glowColor[2] = presenter.glowColor[2];
 }

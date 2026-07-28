@@ -16,7 +16,7 @@
 #include "spec/bmsx/cartridge.h"
 #include "rompack/image.h"
 #include "platform/platform.h"
-#include "render/gameview.h"
+#include "render/video_presenter.h"
 #include "render/presentation_state.h"
 #include "audio/soundmaster.h"
 #include <array>
@@ -104,7 +104,7 @@ public:
 
 	// Core host subsystems
 	Platform* platform() { return m_platform; }
-	GameView* view() { return m_view.get(); }
+	VideoPresenter* videoPresenter() { return m_video_presenter.get(); }
 	bool hasRuntime() const { return m_runtime != nullptr; }
 	Runtime& runtime();
 	const Runtime& runtime() const;
@@ -163,7 +163,7 @@ private:
 	};
 
 	Platform* m_platform = nullptr;
-	std::unique_ptr<GameView> m_view;
+	std::unique_ptr<VideoPresenter> m_video_presenter;
 	std::unique_ptr<BFont> m_default_font;
 	std::unique_ptr<SoundMaster> m_sound_master;
 	std::unique_ptr<TextureManager> m_texture_manager;
@@ -178,7 +178,7 @@ private:
 	bool m_rom_loaded = false;
 	bool m_system_rom_loaded = false;
 
-	void configureViewForGpuReset();
+	void configureVideoForGpuReset();
 	bool loadSystemRomInternal(const u8* data, size_t size);
 	bool bootLoadedCartridgeSlots();
 	bool bootSystemFirmware();

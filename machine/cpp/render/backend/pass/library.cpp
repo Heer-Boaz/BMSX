@@ -4,9 +4,9 @@
 
 #include "library.h"
 #include "common/primitives.h"
-#include "../../gameview.h"
+#include "../../video_presenter.h"
 #include "../../graph/graph.h"
-#include "machine/runtime/runtime.h"
+#include "machine/devices/gx/device_output.h"
 #include <algorithm>
 #include <stdexcept>
 #include <cstddef>
@@ -17,7 +17,14 @@ namespace bmsx {
 
 namespace {
 
-void noopRenderPass(GPUBackend*, GameView*, void*, RenderPassStateStorage&, void*) {
+void noopRenderPass(
+	GPUBackend*,
+	VideoPresenter*,
+	void*,
+	RenderPassStateStorage&,
+	void*,
+	const GxGpuDeviceOutput&
+) {
 }
 
 void setSkippedStatePass(RenderPassDef& desc, const char* id, const char* name) {
@@ -41,90 +48,97 @@ RenderGraphSlot presentationHistorySlot(u8 index) {
 }
 
 TextureHandle currentFrameSourceTexture(const RenderPassDef::RenderGraphPassContext& ctx) {
-	const GameView& view = *ctx.view;
-	return ctx.deviceColorEnabled && view.deviceQuantizeMode() != DeviceQuantizeMode::None
+	const VideoPresenter& presenter = *ctx.presenter;
+	return ctx.deviceColorEnabled && presenter.deviceQuantizeMode() != DeviceQuantizeMode::None
 		? ctx.getTexture(RenderPassDef::RenderGraphSlot::DeviceColor)
 		: ctx.getTexture(RenderPassDef::RenderGraphSlot::FrameColor);
 }
 
 TextureHandle presentedHistoryTexture(const RenderPassDef::RenderGraphPassContext& ctx) {
-	const GameView& view = *ctx.view;
-	const u8 historyIndex = view.commitPresentationFrame ? view.presentationHistoryDestinationIndex() : view.presentationHistorySourceIndex;
+	const VideoPresenter& presenter = *ctx.presenter;
+	const u8 historyIndex = presenter.commitPresentationFrame
+		? presenter.presentationHistoryDestinationIndex()
+		: presenter.presentationHistorySourceIndex;
 	return ctx.getTexture(presentationHistorySlot(historyIndex));
 }
 
-void writeAutoPresentPipelineState(const RenderPassDef::RenderGraphPassContext& ctx, RenderPassStateStorage& state) {
-	auto* view = ctx.view;
+void writeAutoPresentPipelineState(
+	const RenderPassDef::RenderGraphPassContext& ctx,
+	RenderPassStateStorage& state
+) {
+	auto* presenter = ctx.presenter;
 	PresentPipelineState& presentState = state.present;
-	presentState.width = static_cast<i32>(view->canvasSize.x);
-	presentState.height = static_cast<i32>(view->canvasSize.y);
-	presentState.srcWidth = static_cast<i32>(view->offscreenCanvasSize.x);
-	presentState.srcHeight = static_cast<i32>(view->offscreenCanvasSize.y);
+	presentState.width = static_cast<i32>(presenter->canvasSize.x);
+	presentState.height = static_cast<i32>(presenter->canvasSize.y);
+	presentState.srcWidth = static_cast<i32>(presenter->offscreenCanvasSize.x);
+	presentState.srcHeight = static_cast<i32>(presenter->offscreenCanvasSize.y);
 	presentState.colorTex = presentedHistoryTexture(ctx);
 }
 
 
-void writePresentationHistoryPipelineState(const RenderPassDef::RenderGraphPassContext& ctx, RenderPassStateStorage& state) {
-	auto* view = ctx.view;
+void writePresentationHistoryPipelineState(
+	const RenderPassDef::RenderGraphPassContext& ctx,
+	RenderPassStateStorage& state
+) {
+	auto* presenter = ctx.presenter;
 	PresentPipelineState& presentState = state.present;
-	presentState.width = static_cast<i32>(view->offscreenCanvasSize.x);
-	presentState.height = static_cast<i32>(view->offscreenCanvasSize.y);
-	presentState.srcWidth = static_cast<i32>(view->offscreenCanvasSize.x);
-	presentState.srcHeight = static_cast<i32>(view->offscreenCanvasSize.y);
+	presentState.width = static_cast<i32>(presenter->offscreenCanvasSize.x);
+	presentState.height = static_cast<i32>(presenter->offscreenCanvasSize.y);
+	presentState.srcWidth = static_cast<i32>(presenter->offscreenCanvasSize.x);
+	presentState.srcHeight = static_cast<i32>(presenter->offscreenCanvasSize.y);
 	presentState.colorTex = currentFrameSourceTexture(ctx);
 }
 
-void writeGxGpuPipelineState(const RenderPassDef::RenderGraphPassContext& ctx, RenderPassStateStorage& state) {
+void writeGxGpuPipelineState(
+	const RenderPassDef::RenderGraphPassContext& ctx,
+	RenderPassStateStorage& state
+) {
 	GxGpuPipelineState& gxGpuState = state.gxGpu;
-	gxGpuState.width = static_cast<i32>(ctx.view->offscreenCanvasSize.x);
-	gxGpuState.height = static_cast<i32>(ctx.view->offscreenCanvasSize.y);
-	gxGpuState.commandBuffer = ctx.view->gxGpuCommandBuffer;
-	gxGpuState.readbackPort = ctx.view->gxGpuReadbackPort;
-	gxGpuState.statusWord = ctx.view->gxGpuStatusWord;
-	gxGpuState.displayModeWord = ctx.view->gxGpuDisplayModeWord;
-	gxGpuState.displayStartWord = ctx.view->gxGpuDisplayStartWord;
-	gxGpuState.vramYAddressExtensionWord = ctx.view->gxGpuVramYAddressExtensionWord;
-	gxGpuState.pcrtcScanout = ctx.view->gxGpuPcrtcScanout;
-	gxGpuState.vramSnapshotBytes = ctx.view->gxGpuVramSnapshotBytes;
-	gxGpuState.vramSnapshotSerial = ctx.view->gxGpuVramSnapshotSerial;
-	gxGpuState.vramReplacementSerial = ctx.view->gxGpuVramReplacementSerial;
+	gxGpuState.width = static_cast<i32>(ctx.presenter->offscreenCanvasSize.x);
+	gxGpuState.height = static_cast<i32>(ctx.presenter->offscreenCanvasSize.y);
 }
 
-void writeAutoCRTPipelineState(const RenderPassDef::RenderGraphPassContext& ctx, RenderPassStateStorage& state) {
-	auto* view = ctx.view;
+void writeAutoCRTPipelineState(
+	const RenderPassDef::RenderGraphPassContext& ctx,
+	RenderPassStateStorage& state
+) {
+	auto* presenter = ctx.presenter;
 	CRTPipelineState& crtState = state.crt;
-	crtState.width = static_cast<i32>(view->canvasSize.x);
-	crtState.height = static_cast<i32>(view->canvasSize.y);
-	crtState.srcWidth = static_cast<i32>(view->offscreenCanvasSize.x);
-	crtState.srcHeight = static_cast<i32>(view->offscreenCanvasSize.y);
+	crtState.width = static_cast<i32>(presenter->canvasSize.x);
+	crtState.height = static_cast<i32>(presenter->canvasSize.y);
+	crtState.srcWidth = static_cast<i32>(presenter->offscreenCanvasSize.x);
+	crtState.srcHeight = static_cast<i32>(presenter->offscreenCanvasSize.y);
 	crtState.time = static_cast<f32>(ctx.time);
 
 	crtState.colorTex = presentedHistoryTexture(ctx);
 
-	const bool applyCrt = view->crt_postprocessing_enabled;
-	crtState.options.applyNoise = applyCrt && view->applyNoise;
-	crtState.options.noiseIntensity = view->noiseIntensity;
-	crtState.options.applyColorBleed = applyCrt && view->applyColorBleed;
-	crtState.options.colorBleed = view->colorBleed;
-	crtState.options.applyScanlines = applyCrt && view->applyScanlines;
-	crtState.options.applyBlur = applyCrt && view->applyBlur;
-	crtState.options.blurIntensity = view->blurIntensity;
-	crtState.options.applyGlow = applyCrt && view->applyGlow;
-	crtState.options.glowColor = view->glowColor;
-	crtState.options.applyFringing = applyCrt && view->applyFringing;
-	crtState.options.applyAperture = applyCrt && view->applyAperture;
+	const bool applyCrt = presenter->crt_postprocessing_enabled;
+	crtState.options.applyNoise = applyCrt && presenter->applyNoise;
+	crtState.options.noiseIntensity = presenter->noiseIntensity;
+	crtState.options.applyColorBleed = applyCrt && presenter->applyColorBleed;
+	crtState.options.colorBleed = presenter->colorBleed;
+	crtState.options.applyScanlines = applyCrt && presenter->applyScanlines;
+	crtState.options.applyBlur = applyCrt && presenter->applyBlur;
+	crtState.options.blurIntensity = presenter->blurIntensity;
+	crtState.options.applyGlow = applyCrt && presenter->applyGlow;
+	crtState.options.glowColor = presenter->glowColor;
+	crtState.options.applyFringing = applyCrt && presenter->applyFringing;
+	crtState.options.applyAperture = applyCrt && presenter->applyAperture;
 }
 
-void writeDeviceQuantizePipelineState(const RenderPassDef::RenderGraphPassContext& ctx, RenderPassStateStorage& state) {
-	auto* view = ctx.view;
+void writeDeviceQuantizePipelineState(
+	const RenderPassDef::RenderGraphPassContext& ctx,
+	RenderPassStateStorage& state
+) {
+	auto* presenter = ctx.presenter;
 	DeviceQuantizePipelineState& deviceQuantizeState = state.deviceQuantize;
-	const u64 configurationRevision = view->deviceQuantizeConfigurationRevision();
+	const u64 configurationRevision = presenter->deviceQuantizeConfigurationRevision();
 	if (deviceQuantizeState.configurationRevision != configurationRevision) {
-		deviceQuantizeState.width = static_cast<i32>(view->offscreenCanvasSize.x);
-		deviceQuantizeState.height = static_cast<i32>(view->offscreenCanvasSize.y);
+		deviceQuantizeState.width = static_cast<i32>(presenter->offscreenCanvasSize.x);
+		deviceQuantizeState.height = static_cast<i32>(presenter->offscreenCanvasSize.y);
 		deviceQuantizeState.colorTex = ctx.getTexture(RenderPassDef::RenderGraphSlot::FrameColor);
 		deviceQuantizeState.luts = &DEVICE_QUANTIZE_LUTS[
-			static_cast<u32>(view->deviceQuantizeMode()) - static_cast<u32>(DeviceQuantizeMode::Rgb565)];
+			static_cast<u32>(presenter->deviceQuantizeMode()) - static_cast<u32>(DeviceQuantizeMode::Rgb565)];
 		deviceQuantizeState.configurationRevision = configurationRevision;
 	}
 }
@@ -132,12 +146,12 @@ void writeDeviceQuantizePipelineState(const RenderPassDef::RenderGraphPassContex
 } // namespace
 
 
-bool shouldUpdatePresentationHistoryA(GameView* view, void*) {
-	return view->commitPresentationFrame && view->presentationHistoryDestinationIndex() == 0u;
+bool shouldUpdatePresentationHistoryA(VideoPresenter* presenter, void*) {
+	return presenter->commitPresentationFrame && presenter->presentationHistoryDestinationIndex() == 0u;
 }
 
-bool shouldUpdatePresentationHistoryB(GameView* view, void*) {
-	return view->commitPresentationFrame && view->presentationHistoryDestinationIndex() == 1u;
+bool shouldUpdatePresentationHistoryB(VideoPresenter* presenter, void*) {
+	return presenter->commitPresentationFrame && presenter->presentationHistoryDestinationIndex() == 1u;
 }
 
 void setPresentationHistoryGraph(RenderPassDef& desc, RenderPassDef::RenderGraphSlot historySlot) {
@@ -170,30 +184,30 @@ void setDeviceQuantizeGraph(RenderPassDef& desc) {
 	desc.graph->writeState = writeDeviceQuantizePipelineState;
 }
 
-bool shouldExecuteAutoPresentPass(GameView* view, void*) {
-	return !view->crt_postprocessing_enabled
-		|| (!view->applyNoise
-			&& !view->applyColorBleed
-			&& !view->applyScanlines
-			&& !view->applyBlur
-			&& !view->applyGlow
-			&& !view->applyFringing
-			&& !view->applyAperture);
+bool shouldExecuteAutoPresentPass(VideoPresenter* presenter, void*) {
+	return !presenter->crt_postprocessing_enabled
+		|| (!presenter->applyNoise
+			&& !presenter->applyColorBleed
+			&& !presenter->applyScanlines
+			&& !presenter->applyBlur
+			&& !presenter->applyGlow
+			&& !presenter->applyFringing
+			&& !presenter->applyAperture);
 }
 
-bool shouldExecuteAutoCRTPass(GameView* view, void*) {
-	return view->crt_postprocessing_enabled
-		&& (view->applyNoise
-			|| view->applyColorBleed
-			|| view->applyScanlines
-			|| view->applyBlur
-			|| view->applyGlow
-			|| view->applyFringing
-			|| view->applyAperture);
+bool shouldExecuteAutoCRTPass(VideoPresenter* presenter, void*) {
+	return presenter->crt_postprocessing_enabled
+		&& (presenter->applyNoise
+			|| presenter->applyColorBleed
+			|| presenter->applyScanlines
+			|| presenter->applyBlur
+			|| presenter->applyGlow
+			|| presenter->applyFringing
+			|| presenter->applyAperture);
 }
 
-bool shouldExecuteDeviceQuantizePass(GameView* view, void*) {
-	return view->deviceQuantizeMode() != DeviceQuantizeMode::None;
+bool shouldExecuteDeviceQuantizePass(VideoPresenter* presenter, void*) {
+	return presenter->deviceQuantizeMode() != DeviceQuantizeMode::None;
 }
 
 void registerFrameResolvePass(RenderPassLibrary& registry) {
@@ -203,9 +217,9 @@ void registerFrameResolvePass(RenderPassLibrary& registry) {
 	registry.registerPass(frameResolve);
 }
 
-RenderPassLibrary::RenderPassLibrary(GPUBackend* backend, GameView* view)
+RenderPassLibrary::RenderPassLibrary(GPUBackend* backend, VideoPresenter* presenter)
 	: m_backend(backend)
-	, m_view(view)
+	, m_presenter(presenter)
 {
 	m_backend->registerBuiltinPasses(*this);
 }
@@ -244,17 +258,25 @@ bool RenderPassLibrary::has(const std::string& id) const {
 	return m_registered.find(id) != m_registered.end();
 }
 
-void RenderPassLibrary::execute(const std::string& id, void* fbo) {
+void RenderPassLibrary::execute(
+	const std::string& id,
+	void* fbo,
+	const GxGpuDeviceOutput& output
+) {
 	auto it = m_registered.find(id);
 	if (it == m_registered.end()) {
 		throw BMSX_RUNTIME_ERROR("Render pass '" + id + "' not found");
 	}
 
 	auto& rec = it->second;
-	if (rec.exec) rec.exec(m_backend, m_view, fbo, rec.state, rec.context);
+	if (rec.exec) rec.exec(m_backend, m_presenter, fbo, rec.state, rec.context, output);
 }
 
-void RenderPassLibrary::writeGraphState(const std::string& id, const RenderPassDef::RenderGraphPassContext& ctx, void (*writeState)(const RenderGraphPassContext&, RenderPassStateStorage&)) {
+void RenderPassLibrary::writeGraphState(
+	const std::string& id,
+	const RenderPassDef::RenderGraphPassContext& ctx,
+	void (*writeState)(const RenderGraphPassContext&, RenderPassStateStorage&)
+) {
 	auto it = m_registered.find(id);
 	if (it == m_registered.end()) {
 		throw BMSX_RUNTIME_ERROR("Render pass '" + id + "' not found");
@@ -281,7 +303,7 @@ bool RenderPassLibrary::isPassEnabled(const std::string& id) const {
 }
 
 std::unique_ptr<RenderGraphRuntime> RenderPassLibrary::buildRenderGraph() {
-	GameView* view = m_view;
+	VideoPresenter* presenter = m_presenter;
 	auto rg = std::make_unique<RenderGraphRuntime>(m_backend);
 	std::vector<const RenderPassDef*> passList;
 	passList.reserve(m_passes.size());
@@ -300,7 +322,7 @@ std::unique_ptr<RenderGraphRuntime> RenderPassLibrary::buildRenderGraph() {
 		RenderGraphPass pass;
 		pass.name = "FrameTargets";
 		pass.kind = RenderGraphPass::Kind::FrameTargets;
-		pass.view = view;
+		pass.presenter = presenter;
 		pass.deviceColorEnabled = deviceColorEnabled;
 		rg->addPass(pass);
 	}
@@ -310,7 +332,7 @@ std::unique_ptr<RenderGraphRuntime> RenderPassLibrary::buildRenderGraph() {
 		pass.name = "FrameClear";
 		pass.alwaysExecute = true;
 		pass.kind = RenderGraphPass::Kind::FrameClear;
-		pass.view = view;
+		pass.presenter = presenter;
 		rg->addPass(pass);
 	}
 
@@ -330,7 +352,7 @@ std::unique_ptr<RenderGraphRuntime> RenderPassLibrary::buildRenderGraph() {
 		pass.alwaysExecute = desc.stateOnly;
 		pass.kind = RenderGraphPass::Kind::Registered;
 		pass.registry = this;
-		pass.view = view;
+		pass.presenter = presenter;
 		pass.passId = desc.id;
 		pass.passContext = desc.context;
 		pass.shouldExecute = desc.shouldExecute;

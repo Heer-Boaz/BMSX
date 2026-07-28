@@ -2,7 +2,7 @@
 import type { MachineInitializationOptions } from '../../machine/ts/core/machine_manager';
 import { parseCartHeader } from '../../machine/ts/rompack/format';
 import { decodeRomToc } from '../../machine/ts/rompack/toc';
-import { constructPlatformFromViewHostHandle } from './platform';
+import { BrowserPlatform } from './platform';
 import { createAudioContext, resumeAudio, type BootAudioState } from './boot_audio';
 
 const audioState: BootAudioState = {
@@ -13,7 +13,7 @@ let bootAnimationComplete = false;
 let startingGamepadIndex: number;
 let enableOnscreenGamepad = false;
 
-export async function loadBrowserMachine(
+export async function prepareBrowserStartup(
 	debug: boolean,
 	systemRomPath: string,
 	defaultRom: string,
@@ -35,9 +35,10 @@ export async function loadBrowserMachine(
 	}
 	gamescreen.hidden = false;
 	gamescreen.style.display = 'block';
-	const platform = constructPlatformFromViewHostHandle(gamescreen, {
+	const platform = new BrowserPlatform(gamescreen, {
 		audioContext: audioState.sndcontext,
 		debug,
+		enableOnscreenGamepad,
 	});
 	return {
 		cartridgeSlots: [slot0Rom, slot1Rom],
@@ -46,7 +47,6 @@ export async function loadBrowserMachine(
 		startingGamepadIndex,
 		enableOnscreenGamepad,
 		platform,
-		viewHost: platform.gameviewHost,
 	};
 }
 

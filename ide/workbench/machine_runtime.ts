@@ -24,7 +24,7 @@ export async function prepareWorkbenchRuntime(
 		media.system,
 		media.cartridgeSlots,
 	);
-	const viewport = machineManager.view.viewportSize;
+	const viewport = machineManager.videoPresenter.viewportSize;
 	const ide = await workbenchMode.initializeIdeFeatures(
 		runtime,
 		{ width: viewport.x, height: viewport.y },

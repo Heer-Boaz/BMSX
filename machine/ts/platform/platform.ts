@@ -1,5 +1,6 @@
 import { type vec2 } from 'bmsx/rompack/format';
 import type { MicrotaskQueue } from '../machine/scheduler/microtask_queue';
+import type { GPUBackend } from '../render/backend/backend';
 
 export type { MicrotaskQueue } from '../machine/scheduler/microtask_queue';
 export type MonoTime = number;
@@ -23,8 +24,7 @@ export interface StorageService {
  * Every host environment (desktop shell, mobile wrapper, browser runtime, etc.) wires BMSX
  * to native services by implementing this interface. The properties deliberately mirror the systems
  * the host owns at runtime: host timing (`clock`/`frames`), persistence (`storage`), audio,
- * human input, onscreen controls, and the high-level `gameviewHost` bridge that couples rendering
- * to the platform's windowing model.
+ * human input, onscreen controls, and the platform-owned video target.
  *
  * The onscreen gamepad is treated as a first-class surface here: when it is enabled the machine runtime
  * expects the platform to expose a concrete implementation capable of delivering pointer events,
@@ -141,7 +141,7 @@ export interface Platform {
 	onscreenGamepad: OnscreenGamepadPlatform;
 	audio: AudioService;
 	rng: RngService;
-	gameviewHost: GameViewHost;
+	videoOutput: VideoOutput;
 }
 
 export type AudioOutputPuller = (output: Int16Array, frameCount: number, sampleRate: number) => number;
@@ -236,6 +236,7 @@ export interface OnscreenGamepadPlatformSession {
  */
 export interface OnscreenGamepadPlatform {
 	attach(hooks: OnscreenGamepadPlatformHooks): OnscreenGamepadPlatformSession;
+	getLayoutHandles(): OnscreenGamepadHandles | null;
 	hideElements(elementIds: string[]): void;
 	collectElementIds(x: number, y: number, kind: OnscreenGamepadControlKind): string[];
 	setElementActive(elementId: string, active: boolean): void;
@@ -252,6 +253,7 @@ export interface PlatformExitEvent {
 
 export interface Lifecycle {
 	onVisibilityChange(cb: (visible: boolean) => void): SubscriptionHandle;
+	onFocusChange(cb: (focused: boolean) => void): SubscriptionHandle;
 	onWillExit(cb: (event: PlatformExitEvent) => void): SubscriptionHandle;
 }
 
@@ -311,7 +313,7 @@ export interface HIDService {
 	getDevices(): Promise<PlatformHIDDevice[]>;
 }
 
-export type GameViewHostHandle = unknown;
+export type VideoSurfaceHandle = unknown;
 
 export interface ViewportDimensions {
 	width: number;
@@ -320,48 +322,6 @@ export interface ViewportDimensions {
 	canvasScale: number;
 }
 
-export interface VisibleViewportMetrics {
-	width: number;
-	height: number;
-	offsetTop: number;
-	offsetLeft: number;
-}
-
-/**
- * Aggregated sizing data that the active platform reports to the renderer.
- *
- * The `document`, `windowInner`, and `screen` entries represent the platform's best knowledge of
- * total available space. `visible` captures the interactive sub-rectangle that remains once transient
- * chrome (virtual keyboards, system bars, gesture zones) reduces the actual presentation area.
- *
- * Implementations are free to approximate values when a concept does not exist natively (for instance,
- * a headless renderer can alias all fields to the backing surface bounds). The renderer treats these
- * numbers as authoritative when positioning the main canvas and the onscreen gamepad.
- */
-export interface ViewportMetrics {
-	document: { width: number; height: number; };
-	windowInner: { width: number; height: number; };
-	screen: { width: number; height: number; };
-	visible: VisibleViewportMetrics;
-}
-
-export type HostWindowEventType = 'resize' | 'orientationchange' | 'keyup' | 'keydown' | 'focus' | 'blur';
-
-export type HostEventListener = (event: unknown) => void;
-
-export interface HostEventListenerObject {
-	handleEvent(event: unknown): void;
-}
-
-export type HostEventListenerTarget = HostEventListener | HostEventListenerObject;
-
-export type HostEventOptions = boolean | {
-	capture?: boolean;
-	passive?: boolean;
-	once?: boolean;
-	[key: string]: unknown;
-};
-
 export interface SurfaceBounds {
 	width: number;
 	height: number;
@@ -369,8 +329,8 @@ export interface SurfaceBounds {
 	top: number;
 }
 
-export interface GameViewCanvas {
-	readonly handle: GameViewHostHandle;
+export interface VideoSurface {
+	readonly handle: VideoSurfaceHandle;
 	isVisible(): boolean;
 	setRenderTargetSize(width: number, height: number): void;
 	setDisplaySize(width: number, height: number): void;
@@ -378,11 +338,7 @@ export interface GameViewCanvas {
 	measureDisplay(): SurfaceBounds;
 }
 
-/**
- * Lightweight facade that lets the renderer manipulate the onscreen control visuals without coupling
- * to platform-native widget APIs. Measurements and mutations are expressed in abstract units so the
- * GameView can reason about scale and positioning uniformly across targets.
- */
+/** Host-native layout controls owned by the onscreen-gamepad platform. */
 export interface GamepadControlHandle {
 	readonly id: string;
 	getNumericAttribute(name: string): number | null;
@@ -401,69 +357,12 @@ export interface OnscreenGamepadHandles {
 	actionButtons: GamepadControlHandle;
 }
 
-export interface OverlayHandle {
-	setText(text: string): void;
-	addClass(className: string): void;
-	removeClass(className: string): void;
-	onAnimationEnd(callback: () => void): void;
-	forceReflow(): void;
-	remove(): void;
-}
-
-export interface ViewportMetricsProvider {
-	getViewportMetrics(): ViewportMetrics;
-}
-
-export interface OverlayManager {
-	ensureOverlay(id: string): OverlayHandle;
-	getOverlay(id: string): OverlayHandle;
-}
-
-export interface WindowEventHub {
-	subscribe(type: HostWindowEventType, listener: HostEventListenerTarget, options?: HostEventOptions): SubscriptionHandle;
-}
-
-export interface DisplayModeController {
-	isSupported(): boolean;
-	isFullscreen(): boolean;
-	setFullscreen(enabled: boolean): Promise<void>;
-	onChange(listener: (isFullscreen: boolean) => void): SubscriptionHandle;
-}
-
-export interface OnscreenGamepadHandleProvider {
-	getHandles(): OnscreenGamepadHandles;
-}
-
-export type GameViewHostCapabilityId =
-	| 'viewport-metrics'
-	| 'overlay'
-	| 'window-events'
-	| 'display-mode'
-	| 'onscreen-gamepad';
-
-export interface GameViewHostCapabilityMap {
-	'viewport-metrics': ViewportMetricsProvider;
-	'overlay': OverlayManager;
-	'window-events': WindowEventHub;
-	'display-mode': DisplayModeController;
-	'onscreen-gamepad': OnscreenGamepadHandleProvider;
-}
-
-/**
- * Platform-specific delegate that surfaces rendering and window-management affordances to the machine runtime.
- *
- * The GameView queries this host for capabilities rather than accessing global APIs directly. That
- * indirection keeps the renderer agnostic of how the host projects surfaces (DOM, native window, offscreen
- * framebuffer) while still allowing us to lean on specialised behaviour, such as onscreen gamepad handles
- * or fullscreen transitions, when the platform provides them.
- */
-export interface GameViewHost {
-	readonly surface: GameViewCanvas;
-	createBackend(): Promise<unknown>;
-	getCapability<T extends GameViewHostCapabilityId>(capability: T): GameViewHostCapabilityMap[T];
+/** Platform-owned render target and backend. */
+export interface VideoOutput {
+	readonly surface: VideoSurface;
+	createBackend(): Promise<GPUBackend>;
 	getSize(viewportSize: vec2, canvasSize: vec2): ViewportDimensions;
 	onResize(handler: (size: ViewportDimensions) => void): SubscriptionHandle;
-	onFocusChange(handler: (focused: boolean) => void): SubscriptionHandle;
 }
 
 export type HttpResponse = {

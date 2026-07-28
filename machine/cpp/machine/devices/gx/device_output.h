@@ -10,13 +10,14 @@ namespace bmsx {
 
 struct GxGpuDeviceOutput {
 	GxGpuDeviceOutput(
-		GxGpuCommandBuffer& commandBufferOwner,
+		const GxGpuCommandBuffer& commandBufferOwner,
+		GxGpuReadbackPort& readbackPortOwner,
 		const std::array<u32, GX_GPU_PCRTC_CONFIG_WORD_COUNT>& pcrtcWordsOwner,
 		const GxGpuPcrtcTiming& pcrtcTimingOwner,
 		const GxGpuPcrtcScanout& pcrtcScanoutOwner,
 		const std::array<u8, GX_GPU_VRAM_BYTE_COUNT>& vramSnapshotOwner)
 		: commandBuffer(commandBufferOwner)
-		, readbackPort(commandBufferOwner.readback)
+		, readbackPort(readbackPortOwner)
 		, pcrtcWords(pcrtcWordsOwner)
 		, pcrtcTiming(pcrtcTimingOwner)
 		, pcrtcScanout(pcrtcScanoutOwner)

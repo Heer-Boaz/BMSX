@@ -36,12 +36,22 @@ void DefaultMicrotaskQueue::flush() {
 DefaultLifecycle::DefaultLifecycle() = default;
 DefaultLifecycle::~DefaultLifecycle() = default;
 
+SubscriptionHandle DefaultLifecycle::onFocusChange(std::function<void(bool)> handler) {
+	return addSubscriptionHandler(m_focus_handlers, m_next_handler_id, std::move(handler));
+}
+
 SubscriptionHandle DefaultLifecycle::onWillExit(std::function<void()> handler) {
-	return addSubscriptionHandler(m_handlers, m_next_handler_id, std::move(handler));
+	return addSubscriptionHandler(m_exit_handlers, m_next_handler_id, std::move(handler));
+}
+
+void DefaultLifecycle::triggerFocusChange(bool focused) {
+	for (const auto& entry : m_focus_handlers) {
+		entry.handler(focused);
+	}
 }
 
 void DefaultLifecycle::triggerExit() {
-	for (const auto& entry : m_handlers) {
+	for (const auto& entry : m_exit_handlers) {
 		entry.handler();
 	}
 }

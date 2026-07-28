@@ -1,5 +1,5 @@
 import type { RenderGraphPassContext, RenderPassStateRegistry, TextureHandle } from '../../backend/backend';
-import type { GameView } from '../../gameview';
+import type { VideoPresenter } from '../../video_presenter';
 import { DeviceQuantizeMode } from './mode';
 import { DEVICE_QUANTIZE_LUTS, type DeviceQuantizeLuts } from './lut';
 
@@ -14,15 +14,15 @@ export function createDeviceQuantizeState(): RenderPassStateRegistry['device_qua
 }
 
 export function writeDeviceQuantizeState(ctx: RenderGraphPassContext, state: RenderPassStateRegistry['device_quantize']): boolean {
-	const view = ctx.view as GameView;
-	const configurationRevision = view.deviceQuantizeConfigurationRevision;
+	const presenter = ctx.presenter as VideoPresenter;
+	const configurationRevision = presenter.deviceQuantizeConfigurationRevision;
 	if (state.configurationRevision === configurationRevision) {
 		return false;
 	}
-	state.width = view.offscreenCanvasSize.x;
-	state.height = view.offscreenCanvasSize.y;
+	state.width = presenter.offscreenCanvasSize.x;
+	state.height = presenter.offscreenCanvasSize.y;
 	state.colorTex = ctx.getTex('frame_color');
-	state.luts = DEVICE_QUANTIZE_LUTS[view.deviceQuantizeMode - DeviceQuantizeMode.Rgb565];
+	state.luts = DEVICE_QUANTIZE_LUTS[presenter.deviceQuantizeMode - DeviceQuantizeMode.Rgb565];
 	state.configurationRevision = configurationRevision;
 	return true;
 }

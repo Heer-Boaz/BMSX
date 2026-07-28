@@ -52,22 +52,20 @@ private:
 };
 
 /* ============================================================================
- * LibretroGameViewHost - GameView host for libretro
+ * LibretroVideoOutput - VideoPresenter host for libretro
  * ============================================================================ */
 
-class LibretroGameViewHost : public GameViewHost {
+class LibretroVideoOutput : public VideoOutput {
 public:
-	LibretroGameViewHost(
+	LibretroVideoOutput(
 		Framebuffer& framebuffer,
 		BackendType backend_type,
 		retro_system_av_info& av_info,
 		bool profileGxUploads);
 
-	// GameViewHost interface
-	void* getCapability(std::string_view name) override;
+	// VideoOutput interface
 	ViewportDimensions getSize(Vec2 viewportSize, Vec2 canvasSize) override;
 	SubscriptionHandle onResize(std::function<void(const ViewportDimensions&)> handler) override;
-	SubscriptionHandle onFocusChange(std::function<void(bool)> handler) override;
 	void setRenderTargetSize(GPUBackend& backend, i32 width, i32 height) override;
 
 	// Create a backend for this platform
@@ -212,7 +210,7 @@ public:
 	FrameLoop* frameLoop() override { return m_frame_loop.get(); }
 	Lifecycle* lifecycle() override { return m_lifecycle.get(); }
 	InputHub* inputHub() override { return m_input_hub.get(); }
-	GameViewHost* gameviewHost() override { return m_gameview_host.get(); }
+	VideoOutput& videoOutput() override { return *m_video_output; }
 	MicrotaskQueue* microtaskQueue() override { return m_microtask_queue.get(); }
 	std::string_view type() override { return "libretro"; }
 	void log(LogLevel level, std::string_view message) override;
@@ -251,7 +249,7 @@ private:
 	std::unique_ptr<Lifecycle> m_lifecycle;
 	std::unique_ptr<InputHub> m_input_hub;
 	std::unique_ptr<LibretroAudioService> m_audio_service;
-	std::unique_ptr<LibretroGameViewHost> m_gameview_host;
+	std::unique_ptr<LibretroVideoOutput> m_video_output;
 	std::unique_ptr<MicrotaskQueue> m_microtask_queue;
 
 	// Save RAM

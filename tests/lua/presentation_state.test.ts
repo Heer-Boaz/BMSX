@@ -16,37 +16,40 @@ test('PCRTC revision drives render-target changes', () => {
 	scanout.outputWidth = 256;
 	scanout.outputHeight = 192;
 	const renderTargetChanges: Array<[number, number]> = [];
-	const view = {
-		gxGpuPcrtcScanoutRevision: scanout.revision,
+	const presenter = {
 		offscreenCanvasSize: { x: 384, y: 288 },
 		setRenderTargetSize(width: number, height: number): void {
+			if (this.offscreenCanvasSize.x === width && this.offscreenCanvasSize.y === height) {
+				return;
+			}
+			this.offscreenCanvasSize.x = width;
+			this.offscreenCanvasSize.y = height;
 			renderTargetChanges.push([width, height]);
 		},
 		configurePresentation(): void {},
-		drawgame(): void {},
+		present(): void {},
 	};
 	const manager = machineManager as unknown as {
 		deltatime: number;
 		paused: boolean;
-		view: typeof view;
+		videoPresenter: typeof presenter;
 		sndmaster: { finishFrame(): void };
 	};
 	manager.paused = false;
-	manager.view = view;
+	manager.videoPresenter = presenter;
 	manager.sndmaster = { finishFrame(): void {} };
 	const presentation = new RenderPresentationState();
 
 	presentation.requestHeldPresentation();
 	assert.equal(presentation.presentPending(runtime, 20), true);
-	assert.deepEqual(renderTargetChanges, []);
+	assert.deepEqual(renderTargetChanges, [[256, 192]]);
 
 	scanout.revision += 1;
 	scanout.outputWidth = 320;
 	scanout.outputHeight = 240;
 	presentation.requestHeldPresentation();
 	assert.equal(presentation.presentPending(runtime, 20), true);
-	assert.deepEqual(renderTargetChanges, [[320, 240]]);
-	assert.equal(view.gxGpuPcrtcScanoutRevision, scanout.revision);
+	assert.deepEqual(renderTargetChanges, [[256, 192], [320, 240]]);
 
 	scanout.revision += 1;
 	scanout.outputActive = false;
@@ -54,6 +57,5 @@ test('PCRTC revision drives render-target changes', () => {
 	scanout.outputHeight = 0;
 	presentation.requestHeldPresentation();
 	assert.equal(presentation.presentPending(runtime, 20), true);
-	assert.deepEqual(renderTargetChanges, [[320, 240]]);
-	assert.equal(view.gxGpuPcrtcScanoutRevision, scanout.revision);
+	assert.deepEqual(renderTargetChanges, [[256, 192], [320, 240]]);
 });

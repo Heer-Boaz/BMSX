@@ -271,7 +271,7 @@ add_library(bmsx_core STATIC
 	render/backend/software/gx_gpu_rasterizer.cpp
 	render/backend/software/gx_gpu_scanout.cpp
 	render/backend/software/gx_gpu_vram.cpp
-	render/gameview.cpp
+	render/video_presenter.cpp
 	render/post/crt/software/pipeline.cpp
 	render/post/crt/software/crt_processor.cpp
 	render/post/device_quantize/lut.cpp
@@ -281,7 +281,6 @@ add_library(bmsx_core STATIC
 	render/host_overlay/overlay_queue.cpp
 	render/host_overlay/software/renderer.cpp
 	render/host_overlay/gles2/pipeline.cpp
-	render/gx/view_snapshot.cpp
 	render/texture_manager.cpp
 	render/backend/pass/library.cpp
 	render/graph/graph.cpp

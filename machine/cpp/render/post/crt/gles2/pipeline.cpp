@@ -6,7 +6,7 @@
 
 #include "render/backend/gles2/backend.h"
 #include "render/backend/pass/library.h"
-#include "render/gameview.h"
+#include "render/video_presenter.h"
 #include "render/backend/gles2/fullscreen_quad.h"
 #include "render/backend/gles2/texture_units.h"
 #include "render/post/crt/gles2/shaders/crt_post_shaders.h"
@@ -150,7 +150,14 @@ void renderPresentTextureGLES2State(OpenGLES2Backend& backend, PresentGLES2State
 	glDrawArrays(GL_TRIANGLES, 0, 6);
 }
 
-void executePresentationHistoryGLES2Pass(GPUBackend* backend, GameView*, void* fbo, RenderPassStateStorage& state, void* context) {
+void executePresentationHistoryGLES2Pass(
+	GPUBackend* backend,
+	VideoPresenter*,
+	void* fbo,
+	RenderPassStateStorage& state,
+	void* context,
+	const GxGpuDeviceOutput&
+) {
 	auto& typedBackend = *static_cast<OpenGLES2Backend*>(backend);
 	auto& typedPipeline = *static_cast<PresentGLES2State*>(context);
 	renderPresentTextureGLES2State(typedBackend, typedPipeline, typedBackend.framebufferName(fbo), state.present);
@@ -220,7 +227,7 @@ void registerPresentationHistoryGLES2Pass(
 	const char* id,
 	const char* name,
 	RenderPassDef::RenderGraphSlot historySlot,
-	bool (*shouldExecute)(GameView*, void*)) {
+	bool (*shouldExecute)(VideoPresenter*, void*)) {
 	RenderPassDef desc;
 	desc.id = id;
 	desc.name = name;

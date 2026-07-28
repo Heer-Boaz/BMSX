@@ -17,6 +17,7 @@ import * as workbenchMode from './mode';
 
 function executeWorkbenchHostMenuAction(
 	ide: RuntimeIdeState,
+	screen: RenderPresentationState,
 	input: HostMenuInput,
 	runtime: Runtime,
 ): boolean {
@@ -25,6 +26,7 @@ function executeWorkbenchHostMenuAction(
 		case HostMenuInput.Active:
 			return false;
 		case HostMenuInput.RebootCart:
+			screen.reset();
 			void rebootPreparedRuntime(
 				ide.sources,
 				ide.fault,
@@ -113,7 +115,7 @@ export function runWorkbenchHostFrame(
 		hostDeltaMs = beginMachineHostFrame(runtime, currentTime);
 		workbenchMode.tickIdeInput(ide);
 		const hostMenuInput = hostOverlayMenu.tickInput();
-		if (executeWorkbenchHostMenuAction(ide, hostMenuInput, runtime)) {
+		if (executeWorkbenchHostMenuAction(ide, screen, hostMenuInput, runtime)) {
 			runtime.frameScheduler.clearQueuedTime();
 			manager.flushSystemOutput(runtime);
 			return;

@@ -15,19 +15,24 @@ export type MachineHostPresentation =
 	| MachineHostFrameAction.PresentPending
 	| MachineHostFrameAction.PresentPaused;
 
-function rebootMachine(runtime: Runtime): void {
+function rebootMachine(screen: RenderPresentationState, runtime: Runtime): void {
 	runtime.rebootSystem();
+	screen.reset();
 	machineManager.flushSystemOutput(runtime);
 	machineManager.bootstrapStartupAudio();
 }
 
-export function executeMachineHostMenuAction(input: HostMenuInput, runtime: Runtime): boolean {
+export function executeMachineHostMenuAction(
+	input: HostMenuInput,
+	screen: RenderPresentationState,
+	runtime: Runtime,
+): boolean {
 	switch (input) {
 		case HostMenuInput.Inactive:
 		case HostMenuInput.Active:
 			return false;
 		case HostMenuInput.RebootCart:
-			rebootMachine(runtime);
+			rebootMachine(screen, runtime);
 			return true;
 		case HostMenuInput.ExitGame:
 			machineManager.platform.requestShutdown();
@@ -110,7 +115,7 @@ export function executeMachineHostUpdate(
 	const previousTickSequence = beginMachineHostUpdate(runtime);
 	runtime.frameScheduler.run(hostDeltaMs);
 	while (runtime.machine.gxGpu.backendReadbackPending()) {
-		machineManager.view.backend.executeGxGpuReadback(runtime.machine.gxGpu);
+		machineManager.videoPresenter.backend.executeGxGpuReadback(runtime.machine.gxGpu);
 		runtime.frameScheduler.run(0);
 	}
 	completeMachineHostUpdate(screen, runtime, previousTickSequence);
@@ -145,7 +150,7 @@ export function runMachineHostFrame(
 	}
 	const hostDeltaMs = beginMachineHostFrame(runtime, currentTime);
 	const hostMenuInput = hostOverlayMenu.tickInput();
-	if (executeMachineHostMenuAction(hostMenuInput, runtime)) {
+	if (executeMachineHostMenuAction(hostMenuInput, screen, runtime)) {
 		return;
 	}
 	let action = prepareMachineHostPresentation(

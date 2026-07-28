@@ -1,7 +1,6 @@
 import { machineManager } from '../machine/ts/core/machine_manager';
 import type { Runtime } from '../machine/ts/machine/runtime/runtime';
 import type { TickCompletion } from '../machine/ts/machine/scheduler/frame';
-import { commitGxGpuViewSnapshot } from '../machine/ts/render/gx/view_snapshot';
 
 export type RenderPresentationMode = 'partial' | 'completed';
 
@@ -23,6 +22,7 @@ export class RenderPresentationState {
 		remaining: 0,
 		visualCommitted: true,
 	};
+	private pcrtcScanoutRevision = 0;
 
 	public get pending(): boolean {
 		return this.pendingPresentation;
@@ -30,18 +30,18 @@ export class RenderPresentationState {
 
 	private presentFrame(runtime: Runtime, hostDeltaMs: number, mode: RenderPresentationMode, commitFrame: boolean): void {
 		machineManager.deltatime = hostDeltaMs;
-		const view = machineManager.view;
+		const presenter = machineManager.videoPresenter;
 		const output = runtime.machine.gxGpu.readDeviceOutput();
 		const width = output.pcrtcScanout.outputWidth;
 		const height = output.pcrtcScanout.outputHeight;
-		const displayConfigurationChanged = view.gxGpuPcrtcScanoutRevision !== output.pcrtcScanout.revision;
-		commitGxGpuViewSnapshot(view, output);
+		const displayConfigurationChanged = this.pcrtcScanoutRevision !== output.pcrtcScanout.revision;
+		this.pcrtcScanoutRevision = output.pcrtcScanout.revision;
 		if (displayConfigurationChanged && output.pcrtcScanout.outputActive) {
-			view.setRenderTargetSize(width, height);
+			presenter.setRenderTargetSize(width, height);
 		}
-		view.configurePresentation(mode, commitFrame);
+		presenter.configurePresentation(mode, commitFrame);
 		machineManager.sndmaster.finishFrame();
-		machineManager.view.drawgame();
+		presenter.present(output, machineManager.platform.clock.now() / 1000, hostDeltaMs / 1000);
 		if (commitFrame) {
 			runtime.machine.gxGpu.retirePresentedCommands();
 		}
@@ -73,6 +73,11 @@ export class RenderPresentationState {
 		this.pendingPresentation = false;
 		this.presentationMode = 'completed';
 		this.presentationCommitFrame = false;
+	}
+
+	public reset(): void {
+		this.clearPresentation();
+		this.pcrtcScanoutRevision = 0;
 	}
 
 	public syncAfterRuntimeUpdate(runtime: Runtime, previousTickSequence: number): void {

@@ -198,71 +198,71 @@ export class HostOverlayMenu {
 			kind: 'value',
 			label: 'Show Usage Gizmo',
 			values: TOGGLE_VALUES,
-			getIndex: () => boolIndex(machineManager.view.show_resource_usage_gizmo),
-			setIndex: index => { machineManager.view.show_resource_usage_gizmo = boolFromIndex(index); },
+			getIndex: () => boolIndex(machineManager.videoPresenter.show_resource_usage_gizmo),
+			setIndex: index => { machineManager.videoPresenter.show_resource_usage_gizmo = boolFromIndex(index); },
 		},
 		{
 			kind: 'value',
 			label: 'CRT Post-processing',
 			values: TOGGLE_VALUES,
-			getIndex: () => boolIndex(machineManager.view.crt_postprocessing_enabled),
-			setIndex: index => { machineManager.view.crt_postprocessing_enabled = boolFromIndex(index); },
+			getIndex: () => boolIndex(machineManager.videoPresenter.crt_postprocessing_enabled),
+			setIndex: index => { machineManager.videoPresenter.crt_postprocessing_enabled = boolFromIndex(index); },
 		},
 		{
 			kind: 'value',
 			label: 'CRT Noise',
 			values: TOGGLE_VALUES,
-			getIndex: () => boolIndex(machineManager.view.enable_noise),
-			setIndex: index => { machineManager.view.enable_noise = boolFromIndex(index); },
+			getIndex: () => boolIndex(machineManager.videoPresenter.enable_noise),
+			setIndex: index => { machineManager.videoPresenter.enable_noise = boolFromIndex(index); },
 		},
 		{
 			kind: 'value',
 			label: 'CRT Color Bleed',
 			values: TOGGLE_VALUES,
-			getIndex: () => boolIndex(machineManager.view.enable_colorbleed),
-			setIndex: index => { machineManager.view.enable_colorbleed = boolFromIndex(index); },
+			getIndex: () => boolIndex(machineManager.videoPresenter.enable_colorbleed),
+			setIndex: index => { machineManager.videoPresenter.enable_colorbleed = boolFromIndex(index); },
 		},
 		{
 			kind: 'value',
 			label: 'CRT Scanlines',
 			values: TOGGLE_VALUES,
-			getIndex: () => boolIndex(machineManager.view.enable_scanlines),
-			setIndex: index => { machineManager.view.enable_scanlines = boolFromIndex(index); },
+			getIndex: () => boolIndex(machineManager.videoPresenter.enable_scanlines),
+			setIndex: index => { machineManager.videoPresenter.enable_scanlines = boolFromIndex(index); },
 		},
 		{
 			kind: 'value',
 			label: 'CRT Blur',
 			values: TOGGLE_VALUES,
-			getIndex: () => boolIndex(machineManager.view.enable_blur),
-			setIndex: index => { machineManager.view.enable_blur = boolFromIndex(index); },
+			getIndex: () => boolIndex(machineManager.videoPresenter.enable_blur),
+			setIndex: index => { machineManager.videoPresenter.enable_blur = boolFromIndex(index); },
 		},
 		{
 			kind: 'value',
 			label: 'CRT Glow',
 			values: TOGGLE_VALUES,
-			getIndex: () => boolIndex(machineManager.view.enable_glow),
-			setIndex: index => { machineManager.view.enable_glow = boolFromIndex(index); },
+			getIndex: () => boolIndex(machineManager.videoPresenter.enable_glow),
+			setIndex: index => { machineManager.videoPresenter.enable_glow = boolFromIndex(index); },
 		},
 		{
 			kind: 'value',
 			label: 'CRT Fringing',
 			values: TOGGLE_VALUES,
-			getIndex: () => boolIndex(machineManager.view.enable_fringing),
-			setIndex: index => { machineManager.view.enable_fringing = boolFromIndex(index); },
+			getIndex: () => boolIndex(machineManager.videoPresenter.enable_fringing),
+			setIndex: index => { machineManager.videoPresenter.enable_fringing = boolFromIndex(index); },
 		},
 		{
 			kind: 'value',
 			label: 'CRT Aperture',
 			values: TOGGLE_VALUES,
-			getIndex: () => boolIndex(machineManager.view.enable_aperture),
-			setIndex: index => { machineManager.view.enable_aperture = boolFromIndex(index); },
+			getIndex: () => boolIndex(machineManager.videoPresenter.enable_aperture),
+			setIndex: index => { machineManager.videoPresenter.enable_aperture = boolFromIndex(index); },
 		},
 		{
 			kind: 'value',
 			label: 'Output Quantize',
 			values: DEVICE_QUANTIZE_VALUES,
-			getIndex: () => machineManager.view.deviceQuantizeMode,
-			setIndex: index => { machineManager.view.deviceQuantizeMode = index as DeviceQuantizeMode; },
+			getIndex: () => machineManager.videoPresenter.deviceQuantizeMode,
+			setIndex: index => { machineManager.videoPresenter.deviceQuantizeMode = index as DeviceQuantizeMode; },
 		},
 		{
 			kind: 'value',
@@ -371,8 +371,8 @@ export class HostOverlayMenu {
 		if (this.dirtyText) {
 			this.rebuildText();
 		}
-		const view = machineManager.view;
-		const font = view.default_font;
+		const presenter = machineManager.videoPresenter;
+		const font = presenter.default_font;
 		const lineHeight = font.lineHeight > 10 ? 10 : font.lineHeight;
 		const padding = 4;
 		const titleHeight = lineHeight;
@@ -387,8 +387,8 @@ export class HostOverlayMenu {
 		boxWidth += padding * 2;
 		const boxHeight = this.options.length * lineHeight + padding * 2;
 		const totalHeight = titleHeight + titleGap + boxHeight;
-		const left = (view.viewportSize.x - boxWidth) / 2;
-		const top = (view.viewportSize.y - totalHeight) / 2;
+		const left = (presenter.viewportSize.x - boxWidth) / 2;
+		const top = (presenter.viewportSize.y - totalHeight) / 2;
 		const boxTop = top + titleHeight + titleGap;
 		this.panelRect.area.left = left;
 		this.panelRect.area.top = boxTop;
@@ -423,8 +423,8 @@ export class HostOverlayMenu {
 		if (this.active) {
 			return false;
 		}
-		const view = machineManager.view;
-		const font = view.default_font;
+		const presenter = machineManager.videoPresenter;
+		const font = presenter.default_font;
 		let queued = false;
 		if (machineManager.host_show_fps) {
 			const fpsTenths = ((machineManager.host_fps * 10) + 0.5) | 0;
@@ -439,12 +439,12 @@ export class HostOverlayMenu {
 				this.fpsGlyphs.item_end = text.length;
 				this.fpsTextWidth = font.measure(text);
 			}
-			this.fpsGlyphs.x = view.viewportSize.x - 8 - this.fpsTextWidth;
+			this.fpsGlyphs.x = presenter.viewportSize.x - 8 - this.fpsTextWidth;
 			this.fpsGlyphs.y = 8;
 			this.queueCommand('items', this.fpsGlyphs);
 			queued = true;
 		}
-		if (view.show_resource_usage_gizmo) {
+		if (presenter.show_resource_usage_gizmo) {
 			const runtime = machineManager.runtime;
 			this.queueCommand('rect', this.usagePanelRect);
 			this.queueUsageBar(0, runtime.cpuUsageCyclesUsed(), runtime.cpuUsageCyclesGranted(), font);

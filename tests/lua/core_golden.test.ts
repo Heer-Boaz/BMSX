@@ -44,6 +44,7 @@ import { VblankState } from '../../machine/ts/machine/runtime/vblank';
 import { cyclesUntilBudgetUnits } from '../../machine/ts/machine/scheduler/budget';
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 import { HeadlessGPUBackend } from '../../machine/ts/render/headless/backend';
+import { HeadlessVideoOutput } from '../../machine/ts/render/headless/video_output';
 import { TextureManager } from '../../machine/ts/render/texture_manager';
 
 const TRANSFORM_CASES: ReadonlyArray<readonly [number, number, number, number, number, number]> = [
@@ -203,7 +204,7 @@ test('core golden: the GPU VBlank edge presents and completes the active runtime
 });
 
 test('core golden: texture keys use the canonical direct string format', () => {
-	const manager = new TextureManager(new HeadlessGPUBackend());
+	const manager = new TextureManager(new HeadlessGPUBackend(new HeadlessVideoOutput({ x: 256, y: 212 })));
 	const key = (manager as any).makeKey('atlas/main', {
 		size: { x: 16, y: 8 },
 		srgb: false,

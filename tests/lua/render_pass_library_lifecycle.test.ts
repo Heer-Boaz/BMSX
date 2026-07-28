@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { RenderPassInstanceHandle } from '../../machine/ts/render/backend/backend';
 import { RenderPassLibrary } from '../../machine/ts/render/backend/pass/library';
-import type { GameView } from '../../machine/ts/render/gameview';
+import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import { HeadlessGPUBackend } from '../../machine/ts/render/headless/backend';
+import { HeadlessVideoOutput } from '../../machine/ts/render/headless/video_output';
 
 class LifecycleBackend extends HeadlessGPUBackend {
 	readonly destroyedPipelines: RenderPassInstanceHandle[] = [];
@@ -16,20 +16,9 @@ class LifecycleBackend extends HeadlessGPUBackend {
 }
 
 test('render pass disposal tears down in reverse order and destroys a shared pipeline once', () => {
-	const backend = new LifecycleBackend();
-	const view = {
-		gxGpuCommandBuffer: null,
-		gxGpuReadbackPort: null,
-		gxGpuPcrtcScanout: null,
-		gxGpuVramSnapshotBytes: new Uint8Array(0),
-		gxGpuVramSnapshotSerial: 0n,
-		gxGpuVramReplacementSerial: 0n,
-		gxGpuStatusWord: 0,
-		gxGpuDisplayModeWord: 0,
-		gxGpuDisplayStartWord: 0,
-		gxGpuVramYAddressExtensionWord: 0,
-	} as unknown as GameView;
-	const registry = new RenderPassLibrary(backend, null as Runtime, view);
+	const backend = new LifecycleBackend(new HeadlessVideoOutput({ x: 256, y: 212 }));
+	const presenter = {} as VideoPresenter;
+	const registry = new RenderPassLibrary(backend, presenter);
 	const teardownOrder: string[] = [];
 
 	registry.register({

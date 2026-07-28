@@ -14,15 +14,8 @@ export class TextureManager {
 
 	private gpuCache = new Map<TextureKey, GPUCacheEntry>();
 
-	constructor(private backend: GPUBackend) {
+	constructor(private readonly backend: GPUBackend) {
 		TextureManager._instance = this;
-	}
-
-	public setBackend(backend: GPUBackend): void {
-		if (this.backend !== backend) {
-			this.clear();
-		}
-		this.backend = backend;
 	}
 
 	private textureParamsKey(desc: TextureParams): string {

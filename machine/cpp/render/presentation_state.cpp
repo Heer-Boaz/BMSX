@@ -3,7 +3,6 @@
 #include "common/time.h"
 #include "machine/runtime/runtime.h"
 #include "render/backend/pass/library.h"
-#include "render/gx/view_snapshot.h"
 #include <cstdio>
 #include <cstdlib>
 
@@ -44,7 +43,7 @@ void RenderPresentationState::recordTickCompletion(bool visualCommitted) {
 	}
 }
 
-void RenderPresentationState::recordPresentation(GameView::PresentationMode mode, bool commitFrame, bool paused) {
+void RenderPresentationState::recordPresentation(VideoPresenter::PresentationMode mode, bool commitFrame, bool paused) {
 	if (!isPresentRateDebugEnabled()) {
 		return;
 	}
@@ -52,7 +51,7 @@ void RenderPresentationState::recordPresentation(GameView::PresentationMode mode
 		m_debugPresentPausedPresents += 1;
 		return;
 	}
-	if (mode == GameView::PresentationMode::Partial) {
+	if (mode == VideoPresenter::PresentationMode::Partial) {
 		m_debugPresentPartialPresents += 1;
 		return;
 	}
@@ -108,12 +107,13 @@ void RenderPresentationState::flushDebugReport(const Runtime& runtime) {
 
 void RenderPresentationState::clearPresentation() {
 	m_pendingPresentation = false;
-	m_presentationMode = GameView::PresentationMode::Completed;
+	m_presentationMode = VideoPresenter::PresentationMode::Completed;
 	m_presentationCommitFrame = false;
 }
 
 void RenderPresentationState::reset() {
 	clearPresentation();
+	m_pcrtcScanoutRevision = 0u;
 	m_debugPresentReportInitialized = false;
 	m_debugPresentHostFrames = 0;
 	m_debugPresentTickCompleted = 0;
@@ -125,7 +125,7 @@ void RenderPresentationState::reset() {
 	m_debugPresentPausedPresents = 0;
 }
 
-void RenderPresentationState::markPresentation(GameView::PresentationMode mode, bool commitFrame) {
+void RenderPresentationState::markPresentation(VideoPresenter::PresentationMode mode, bool commitFrame) {
 	m_pendingPresentation = true;
 	m_presentationMode = mode;
 	m_presentationCommitFrame = commitFrame;
@@ -133,7 +133,7 @@ void RenderPresentationState::markPresentation(GameView::PresentationMode mode, 
 
 void RenderPresentationState::requestHeldPresentation() {
 	if (!m_pendingPresentation) {
-		markPresentation(GameView::PresentationMode::Completed, false);
+		markPresentation(VideoPresenter::PresentationMode::Completed, false);
 	}
 }
 
@@ -157,9 +157,9 @@ void RenderPresentationState::syncAfterRuntimeUpdate(Runtime& runtime, i64 previ
 		recordTickCompletion(m_tickCompletionScratch.visualCommitted);
 	}
 	if (runtime.frameScheduler.lastTickSequence != previousTickSequence) {
-		markPresentation(GameView::PresentationMode::Completed, tickVisualCommitted);
+		markPresentation(VideoPresenter::PresentationMode::Completed, tickVisualCommitted);
 	} else if (runtime.isDrawPending()) {
-		markPresentation(GameView::PresentationMode::Partial, false);
+		markPresentation(VideoPresenter::PresentationMode::Partial, false);
 	}
 }
 
@@ -175,32 +175,30 @@ bool RenderPresentationState::render(MachineManager& manager, Runtime& runtime, 
 		return false;
 	}
 
-	if (manager.m_view) {
-		const GameView::PresentationMode presentMode = pausedPresent
-			? GameView::PresentationMode::Completed
-			: m_presentationScratch.mode;
-		const bool commitFrame = pausedPresent
-			? false
-			: m_presentationScratch.commitFrame;
-		recordPresentation(presentMode, commitFrame, pausedPresent);
+	const VideoPresenter::PresentationMode presentMode = pausedPresent
+		? VideoPresenter::PresentationMode::Completed
+		: m_presentationScratch.mode;
+	const bool commitFrame = pausedPresent
+		? false
+		: m_presentationScratch.commitFrame;
+	recordPresentation(presentMode, commitFrame, pausedPresent);
 
-		const GxGpuDeviceOutput& output = runtime.machine.gxGpu.readDeviceOutput();
-		const i32 width = static_cast<i32>(output.pcrtcScanout.outputWidth);
-		const i32 height = static_cast<i32>(output.pcrtcScanout.outputHeight);
-		const bool displayConfigurationChanged = manager.m_view->gxGpuPcrtcScanoutRevision != output.pcrtcScanout.revision;
-		commitGxGpuViewSnapshot(*manager.m_view, output);
-		if (displayConfigurationChanged && output.pcrtcScanout.outputActive) {
-			manager.m_view->setRenderTargetSize(width, height);
-		}
-		manager.m_view->configurePresentation(presentMode, commitFrame);
-		manager.m_view->drawgame();
-		if (commitFrame) {
-			runtime.machine.gxGpu.retirePresentedCommands();
-		}
+	const GxGpuDeviceOutput& output = runtime.machine.gxGpu.readDeviceOutput();
+	const i32 width = static_cast<i32>(output.pcrtcScanout.outputWidth);
+	const i32 height = static_cast<i32>(output.pcrtcScanout.outputHeight);
+	const bool displayConfigurationChanged = m_pcrtcScanoutRevision != output.pcrtcScanout.revision;
+	m_pcrtcScanoutRevision = output.pcrtcScanout.revision;
+	if (displayConfigurationChanged && output.pcrtcScanout.outputActive) {
+		manager.m_video_presenter->setRenderTargetSize(width, height);
+	}
+	manager.m_video_presenter->configurePresentation(presentMode, commitFrame);
+	manager.m_video_presenter->present(output, manager.totalTime(), manager.deltaTime());
+	if (commitFrame) {
+		runtime.machine.gxGpu.retirePresentedCommands();
 	}
 
 	flushDebugReport(runtime);
-	return manager.m_view != nullptr;
+	return true;
 }
 
 } // namespace bmsx

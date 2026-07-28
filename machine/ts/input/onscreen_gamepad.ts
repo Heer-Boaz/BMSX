@@ -6,7 +6,6 @@ import type { InputControllerPadSnapshot, InputControllerSnapshot } from '../mac
 
 import type {
 	OnscreenGamepadControlKind,
-	OnscreenGamepadHandleProvider,
 	OnscreenGamepadHandles,
 	OnscreenGamepadPlatform,
 	OnscreenGamepadPlatformHooks,
@@ -41,7 +40,6 @@ export class OnscreenGamepad implements InputHandler {
 	private gamepadButtonStates: KeyOrButtonId2ButtonState = {};
 	private inputControllerButtons = 0;
 	private nextPressId = 1;
-	private handlesProvider: OnscreenGamepadHandleProvider = null;
 
 	constructor(platform: OnscreenGamepadPlatform) {
 		this.platform = platform;
@@ -464,7 +462,6 @@ export class OnscreenGamepad implements InputHandler {
 			this.session = null;
 		}
 		this.reset();
-		this.handlesProvider = null;
 	}
 
 	public getLayoutMargins(viewportWidth: number, viewportHeight: number): OnscreenGamepadLayout {
@@ -514,16 +511,8 @@ export class OnscreenGamepad implements InputHandler {
 		};
 	}
 
-	private resolveHandles(): OnscreenGamepadHandles {
-		if (!this.handlesProvider) {
-			const host = machineManager.platform.gameviewHost;
-			if (!host) {
-				return null;
-			}
-			const provider = host.getCapability('onscreen-gamepad');
-			this.handlesProvider = provider ;
-		}
-		return this.handlesProvider?.getHandles() ;
+	private resolveHandles(): OnscreenGamepadHandles | null {
+		return this.platform.getLayoutHandles();
 	}
 
 	private static readonly EMPTY_LAYOUT: OnscreenGamepadLayout = Object.freeze({

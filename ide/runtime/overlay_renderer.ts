@@ -3,7 +3,7 @@ import { RectRenderKind, TextAlign, TextBaseline, type Host2DSubmission, type co
 import { LAYER_2D_IDE, type Layer2D } from '../../machine/ts/render/shared/layers';
 import { machineManager } from '../../machine/ts/core/machine_manager';
 import { clearOverlayFrame, publishOverlayFrame, type HostOverlayFrame } from '../../machine/ts/render/host_overlay/overlay_queue';
-import type { GameView } from '../../machine/ts/render/gameview';
+import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import type { Viewport } from '../../machine/ts/rompack/format';
 
 export type RenderCommand = Host2DSubmission;
@@ -105,18 +105,15 @@ export class OverlayRenderer {
 		this.overrideSize = { width: viewport.width, height: viewport.height };
 	}
 
-	public setRenderingViewportType(view: GameView, type: 'viewport' | 'offscreen'): void {
+	public setRenderingViewportType(presenter: VideoPresenter, type: 'viewport' | 'offscreen'): void {
 		this.resolutionMode = type;
 		let targetSize: Viewport;
 		switch (type) {
 			case 'viewport':
-				view.viewportTypeIde = 'viewport';
-				targetSize = { width: view.viewportSize.x, height: view.viewportSize.y };
+				targetSize = { width: presenter.viewportSize.x, height: presenter.viewportSize.y };
 				break;
 			case 'offscreen':
-				view.viewportTypeIde = 'offscreen';
-			default:
-				targetSize = { width: view.offscreenCanvasSize.x, height: view.offscreenCanvasSize.y };
+				targetSize = { width: presenter.offscreenCanvasSize.x, height: presenter.offscreenCanvasSize.y };
 				break;
 		}
 		this.setViewportSize(targetSize);
@@ -132,9 +129,9 @@ export class OverlayRenderer {
 		buffer.rectCount = 0;
 		buffer.imageCount = 0;
 		buffer.itemCount = 0;
-		const view = machineManager.view;
-		const offscreen = view.offscreenCanvasSize;
-		const logical = view.viewportSize;
+		const presenter = machineManager.videoPresenter;
+		const offscreen = presenter.offscreenCanvasSize;
+		const logical = presenter.viewportSize;
 		const renderWidth = this.overrideSize ? this.overrideSize.width : offscreen.x;
 		const renderHeight = this.overrideSize ? this.overrideSize.height : offscreen.y;
 		this.frameLogicalWidth = logical.x;

@@ -4,9 +4,9 @@
 
 namespace bmsx {
 
-class GameView;
+class VideoPresenter;
 
 void writeHostOverlayState(HostOverlayPipelineState& state);
-void writeHostMenuState(HostMenuPipelineState& state, GameView& view);
+void writeHostMenuState(HostMenuPipelineState& state, VideoPresenter& presenter);
 
 } // namespace bmsx

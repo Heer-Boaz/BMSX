@@ -3,9 +3,9 @@ import * as path from 'node:path';
 
 import type { InputEvt, InputHub, SubscriptionHandle } from 'bmsx/platform';
 import {
-	HeadlessGameViewHost,
+	HeadlessVideoOutput,
 	type HeadlessPresentedFrame,
-} from '../../../machine/ts/render/headless/view';
+} from '../../../machine/ts/render/headless/video_output';
 import { HeadlessCaptureCoordinator } from './headless_capture';
 
 type TimelineFrameSchedule = {
@@ -39,7 +39,7 @@ export class InputTimeline {
 	private completionFrame = 0;
 
 	private constructor(
-		host: HeadlessGameViewHost,
+		host: HeadlessVideoOutput,
 		private readonly input: InputHub,
 		capture: HeadlessCaptureCoordinator,
 		frameIntervalMs: number,
@@ -93,7 +93,7 @@ export class InputTimeline {
 	public static async load(
 		filePath: string,
 		frameIntervalMs: number,
-		host: HeadlessGameViewHost,
+		host: HeadlessVideoOutput,
 		input: InputHub,
 		capture: HeadlessCaptureCoordinator,
 		logger: (message: string) => void,

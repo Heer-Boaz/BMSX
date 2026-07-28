@@ -1,5 +1,5 @@
-import type { Runtime } from '../../../machine/runtime/runtime';
-import type { GameView } from '../../gameview';
+import type { GxGpuDeviceOutput } from '../../../machine/devices/gx/device_output';
+import type { VideoPresenter } from '../../video_presenter';
 import { RenderGraphRuntime, type PassContext } from '../../graph/graph';
 import type { color_arr } from '../../../rompack/format';
 import { GPUBackend, PassEncoder, RenderGraphPassContext, RenderGraphSlot, RenderPassDef, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, RenderPassStateRegistry } from '../backend';
@@ -8,7 +8,13 @@ const FRAME_CLEAR_COLOR: color_arr = [0, 0, 0, 1];
 
 interface RegisteredPassRec {
 	id: string;
-	exec: (backend: GPUBackend, fbo: unknown, state: unknown, pipelineHandle: RenderPassInstanceHandle | null) => void;
+	exec: (
+		backend: GPUBackend,
+		fbo: unknown,
+		state: unknown,
+		pipelineHandle: RenderPassInstanceHandle | null,
+		output: GxGpuDeviceOutput,
+	) => void;
 	prepare?: (backend: GPUBackend, state: unknown) => void;
 	teardown?: (backend: GPUBackend) => void;
 	pipelineHandle: RenderPassInstanceHandle | null;
@@ -23,7 +29,7 @@ export class RenderPassLibrary {
 	private passes: RenderPassDef[] = []; // Mutable list for ordering/scheduling
 	private passEnabled = new Map<string, boolean>();
 	private registered = new Map<string, RegisteredPassRec>();
-	constructor(private backend: GPUBackend, public readonly runtime: Runtime, public readonly view: GameView) {
+	constructor(private backend: GPUBackend, public readonly presenter: VideoPresenter) {
 		this.backend.registerBuiltinPasses(this);
 	}
 
@@ -101,7 +107,7 @@ export class RenderPassLibrary {
 		return pass.state as RenderPassStateRegistry[PState];
 	}
 
-	execute(id: string, fbo: unknown): void {
+	execute(id: string, fbo: unknown, output: GxGpuDeviceOutput): void {
 		const p = this.registered.get(String(id)); if (!p) throw new Error(`Render pass '${id}' not found`);
 		const backend = this.backend;
 		if (p.pipelineHandle) {
@@ -114,7 +120,7 @@ export class RenderPassLibrary {
 			}
 		}
 		p.prepare?.(backend, p.state);
-		p.exec(backend, fbo, p.state, p.pipelineHandle);
+		p.exec(backend, fbo, p.state, p.pipelineHandle, output);
 	}
 	has(id: string): boolean { return this.registered.has(String(id)); }
 
@@ -128,10 +134,10 @@ export class RenderPassLibrary {
 
 	// Build render graph from current pass registry with Clear/Present wiring
 	buildRenderGraph(): RenderGraphRuntime {
-		const view = this.view;
-		const rg = new RenderGraphRuntime(view.backend);
-		const offscreenWidth = view.offscreenCanvasSize.x;
-		const offscreenHeight = view.offscreenCanvasSize.y;
+		const presenter = this.presenter;
+		const rg = new RenderGraphRuntime(presenter.backend);
+		const offscreenWidth = presenter.offscreenCanvasSize.x;
+		const offscreenHeight = presenter.offscreenCanvasSize.y;
 		let frameColorHandle: number = null;
 		let frameDepthHandle: number = null;
 		let frameHistoryAHandle: number = null;
@@ -167,7 +173,7 @@ export class RenderPassLibrary {
 			io.readTex(getHandle(slot));
 		};
 		const graphCtx: RenderGraphPassContext = {
-			view,
+			presenter,
 			frameIndex: 0,
 			time: 0,
 			delta: 0,
@@ -212,8 +218,8 @@ export class RenderPassLibrary {
 			name: 'FrameResolve',
 			alwaysExecute: true,
 			setup: () => null,
-			execute: () => {
-				this.execute('frame_resolve', null);
+			execute: (_ctx, _frame, _data, output) => {
+				this.execute('frame_resolve', null, output);
 			},
 		});
 
@@ -239,9 +245,9 @@ export class RenderPassLibrary {
 					}
 					return { width: offscreenWidth, height: offscreenHeight, present: isPresent };
 				},
-				execute: (ctx, _frame, data: { width: number; height: number; present: boolean }) => {
+				execute: (ctx, _frame, data: { width: number; height: number; present: boolean }, output) => {
 					const enabled = this.isPassEnabled(desc.id);
-					const willRun = enabled && (!desc.shouldExecute || desc.shouldExecute(view));
+					const willRun = enabled && (!desc.shouldExecute || desc.shouldExecute(presenter));
 					if (!willRun) return;
 					const graph = desc.graph;
 					if (graph?.writeState) {
@@ -260,10 +266,10 @@ export class RenderPassLibrary {
 						this.setState(desc.id as RenderPassStateId, builtState);
 					}
 					if (data.present) {
-						this.execute(desc.id, null);
+						this.execute(desc.id, null, output);
 					} else if (isStateOnly) {
 						// Even for state-only passes, route through execute() to keep behavior uniform.
-						this.execute(desc.id, null);
+						this.execute(desc.id, null, output);
 					} else {
 						if (frameColorHandle == null || frameDepthHandle == null) return;
 						const needsDepth = desc.writesDepth || desc.depthTest;
@@ -284,7 +290,7 @@ export class RenderPassLibrary {
 						const fbo = depthHandle === 0
 							? ctx.getFBO(colorHandle)
 							: ctx.getFBO(colorHandle, depthHandle);
-						this.execute(desc.id, fbo as WebGLFramebuffer);
+						this.execute(desc.id, fbo as WebGLFramebuffer, output);
 					}
 				}
 			});
