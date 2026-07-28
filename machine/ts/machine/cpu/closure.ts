@@ -7,15 +7,10 @@ export type Upvalue = {
 	index: number;
 	frame: CallFrame;
 	value: Value;
+	nextOpen: Upvalue | null;
 };
 
 export const EMPTY_CLOSURE_UPVALUES: Upvalue[] = [];
-
-export type OpenUpvalueSlot = {
-	frame: CallFrame;
-	index: number;
-	upvalue: Upvalue;
-};
 
 export class Closure {
 	public readonly [VALUE_TAG] = ValueTag.Closure;

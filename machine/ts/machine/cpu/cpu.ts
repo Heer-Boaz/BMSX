@@ -104,7 +104,7 @@ import {
 } from './value';
 import { LuaExecutionError, LuaThrownValueError } from './errors';
 import { Table } from './table';
-import { Closure, EMPTY_CLOSURE_UPVALUES, type OpenUpvalueSlot, type Upvalue } from './closure';
+import { Closure, EMPTY_CLOSURE_UPVALUES, type Upvalue } from './closure';
 import { ArrayBuiltinArgsView, RegisterFile, RegisterBuiltinArgsView } from './register_file';
 import {
 	DECODED_PAGE_MASK,
@@ -278,7 +278,6 @@ export class CPU {
 	private readonly frames: CallFrame[] = [];
 	private readonly protectedCallContinuations = new ScratchBuffer<ProtectedCallContinuation>(() => new ProtectedCallContinuation(), MAX_POOLED_FRAMES);
 	private protectedCallDepth = 0;
-	private readonly openUpvalues: OpenUpvalueSlot[] = [];
 	private readonly registerBuiltinArgsScratch = new ScratchBuffer<RegisterBuiltinArgsView>(() => new RegisterBuiltinArgsView());
 	private registerBuiltinArgsScratchIndex = 0;
 	private readonly arrayBuiltinArgsScratch = new ScratchBuffer<ArrayBuiltinArgsView>(() => new ArrayBuiltinArgsView());
@@ -482,14 +481,29 @@ export class CPU {
 	}
 
 	private findOpenUpvalue(frame: CallFrame, index: number): Upvalue | null {
-		const openUpvalues = this.openUpvalues;
-		for (let slot = 0; slot < openUpvalues.length; slot += 1) {
-			const entry = openUpvalues[slot];
-			if (entry.frame === frame && entry.index === index) {
-				return entry.upvalue;
+		let upvalue = frame.openUpvalueHead;
+		while (upvalue && upvalue.index >= index) {
+			if (upvalue.index === index) {
+				return upvalue;
 			}
+			upvalue = upvalue.nextOpen;
 		}
 		return null;
+	}
+
+	private linkOpenUpvalue(frame: CallFrame, upvalue: Upvalue): void {
+		let previous: Upvalue | null = null;
+		let current = frame.openUpvalueHead;
+		while (current && current.index > upvalue.index) {
+			previous = current;
+			current = current.nextOpen;
+		}
+		upvalue.nextOpen = current;
+		if (!previous) {
+			frame.openUpvalueHead = upvalue;
+			return;
+		}
+		previous.nextOpen = upvalue;
 	}
 
 	private resolveTableIndexChain(table: Table, key: Value, kind: TableIndexKeyKind): Value {
@@ -665,6 +679,7 @@ export class CPU {
 			callSitePc: 0,
 			isExceptionFrame: false,
 			isNonMaskableExceptionFrame: false,
+			openUpvalueHead: null,
 		};
 	}
 
@@ -693,7 +708,6 @@ export class CPU {
 			this.closeUpvalues(frame);
 			this.releaseFrame(frame);
 		}
-		this.openUpvalues.length = 0;
 		this.stackTop = 0;
 	}
 
@@ -2380,8 +2394,15 @@ export class CPU {
 			if ((word & BLUA32_UPVALUE_IN_STACK_MASK) !== 0) {
 				let upvalue = this.findOpenUpvalue(frame, upvalueIndex);
 				if (!upvalue) {
-					upvalue = { hashId: this.allocateObjectHashId(), open: true, index: upvalueIndex, frame, value: null };
-					this.openUpvalues.push({ frame, index: upvalueIndex, upvalue });
+					upvalue = {
+						hashId: this.allocateObjectHashId(),
+						open: true,
+						index: upvalueIndex,
+						frame,
+						value: null,
+						nextOpen: null,
+					};
+					this.linkOpenUpvalue(frame, upvalue);
 					addTrackedLuaHeapBytes(UPVALUE_HEAP_BYTES);
 				}
 				upvalues[index] = upvalue;
@@ -2397,21 +2418,16 @@ export class CPU {
 	}
 
 	private closeUpvalues(frame: CallFrame): void {
-		const openUpvalues = this.openUpvalues;
-		let write = 0;
-		for (let index = 0; index < openUpvalues.length; index += 1) {
-			const entry = openUpvalues[index];
-			if (entry.frame === frame) {
-				const upvalue = entry.upvalue;
-				upvalue.value = frame.registers.get(upvalue.index);
-				upvalue.open = false;
-				upvalue.frame = null;
-				continue;
-			}
-			openUpvalues[write] = entry;
-			write += 1;
+		let upvalue = frame.openUpvalueHead;
+		frame.openUpvalueHead = null;
+		while (upvalue) {
+			const next = upvalue.nextOpen;
+			upvalue.value = frame.registers.get(upvalue.index);
+			upvalue.open = false;
+			upvalue.frame = null;
+			upvalue.nextOpen = null;
+			upvalue = next;
 		}
-		openUpvalues.length = write;
 	}
 
 	private readUpvalue(upvalue: Upvalue): Value {
@@ -3130,9 +3146,13 @@ export class CPU {
 			completionValues[index] = captureValueState(this.completionValues[index]);
 		}
 
-		const openUpvalues = new Array<number>(this.openUpvalues.length);
-		for (let index = 0; index < this.openUpvalues.length; index += 1) {
-			openUpvalues[index] = ensureObjectId(this.openUpvalues[index].upvalue, 'upvalue');
+		const openUpvalues: number[] = [];
+		for (let frameIndex = 0; frameIndex < this.frames.length; frameIndex += 1) {
+			let upvalue = this.frames[frameIndex].openUpvalueHead;
+			while (upvalue) {
+				openUpvalues.push(ensureObjectId(upvalue, 'upvalue'));
+				upvalue = upvalue.nextOpen;
+			}
 		}
 
 		return {
@@ -3202,7 +3222,14 @@ export class CPU {
 				}
 				case 'upvalue':
 					addTrackedLuaHeapBytes(UPVALUE_HEAP_BYTES);
-					restoredObjects[index] = { hashId: objectState.hashId, open: false, index: objectState.index, frame: null, value: null };
+					restoredObjects[index] = {
+						hashId: objectState.hashId,
+						open: false,
+						index: objectState.index,
+						frame: null,
+						value: null,
+						nextOpen: null,
+					};
 					break;
 			}
 		}
@@ -3324,7 +3351,7 @@ export class CPU {
 			upvalue.index = upvalueState.index;
 			upvalue.frame = frame;
 			upvalue.value = null;
-			this.openUpvalues.push({ frame, index: upvalue.index, upvalue });
+			this.linkOpenUpvalue(frame, upvalue);
 		}
 
 		for (let index = 0; index < state.systemGlobals.length; index += 1) {
@@ -3443,9 +3470,11 @@ export class CPU {
 			for (let index = 0; index < frame.varargCount; index += 1) {
 				this.pushHeapValue(this.stackRegisters.get(frame.varargBase + index));
 			}
-		}
-		for (let index = 0; index < this.openUpvalues.length; index += 1) {
-			upvalueStack.push(this.openUpvalues[index].upvalue);
+			let upvalue = frame.openUpvalueHead;
+			while (upvalue) {
+				upvalueStack.push(upvalue);
+				upvalue = upvalue.nextOpen;
+			}
 		}
 		for (let index = 0; index < extraRoots.length; index += 1) {
 			this.pushHeapValue(extraRoots[index]);

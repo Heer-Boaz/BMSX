@@ -1,4 +1,4 @@
-import type { Closure } from './closure';
+import type { Closure, Upvalue } from './closure';
 import type { Blua32ExecutionImage } from './execution_image';
 import type { RegisterFile } from './register_file';
 
@@ -27,6 +27,7 @@ export type CallFrame = {
 	callSitePc: number;
 	isExceptionFrame: boolean;
 	isNonMaskableExceptionFrame: boolean;
+	openUpvalueHead: Upvalue | null;
 };
 
 export class ProtectedCallContinuation {

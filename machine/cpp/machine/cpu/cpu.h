@@ -399,6 +399,7 @@ private:
 	Closure* createClosure(CallFrame& frame);
 	void closeUpvalues(CallFrame& frame);
 	Upvalue* findOpenUpvalue(const CallFrame& frame, int index) const;
+	void linkOpenUpvalue(CallFrame& frame, Upvalue* upvalue);
 	const Value& readUpvalue(Upvalue* upvalue);
 	void writeUpvalue(Upvalue* upvalue, const Value& value);
 	void writeReturnValues(CallFrame& frame, int base, int count, const Value* values, int valueCount);
@@ -451,7 +452,6 @@ private:
 	std::vector<std::unique_ptr<CallFrame>> m_frames;
 	ScratchBuffer<ProtectedCallContinuation> m_protectedCallContinuations;
 	size_t m_protectedCallDepth = 0;
-	std::vector<OpenUpvalueSlot> m_openUpvalues;
 	bool m_haltedUntilIrq = false;
 	bool m_interruptEventPending = false;
 	bool m_memoryWriteBlocked = false;

@@ -1111,9 +1111,10 @@ CpuRuntimeState CPU::captureRuntimeState() const {
 	for (const Value& value : completionValues) {
 		state.completionValues.push_back(captureValueState(value));
 	}
-	state.openUpvalues.reserve(m_openUpvalues.size());
-	for (const OpenUpvalueSlot& entry : m_openUpvalues) {
-		state.openUpvalues.push_back(ensureObjectId(entry.upvalue));
+	for (const auto& frame : m_frames) {
+		for (Upvalue* upvalue = frame->openUpvalueHead; upvalue; upvalue = upvalue->nextOpen) {
+			state.openUpvalues.push_back(ensureObjectId(upvalue));
+		}
 	}
 	state.objects = std::move(objects);
 	state.lastExecutionDomainId = m_lastExecutionDomainId;
@@ -1336,7 +1337,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 		upvalue->index = objectState.upvalueIndex;
 		upvalue->frame = frame;
 		upvalue->value = valueNil();
-		m_openUpvalues.push_back(OpenUpvalueSlot{ frame, upvalue->index, upvalue });
+		linkOpenUpvalue(*frame, upvalue);
 	}
 
 	for (const CpuRootValueState& entry : state.systemGlobals) {
@@ -2159,12 +2160,23 @@ void CPU::writeFrameCallSitePc(int childFrameIndex, u32 pc) {
 }
 
 Upvalue* CPU::findOpenUpvalue(const CallFrame& frame, int index) const {
-	for (const OpenUpvalueSlot& entry : m_openUpvalues) {
-		if (entry.frame == &frame && entry.index == index) {
-			return entry.upvalue;
+	Upvalue* upvalue = frame.openUpvalueHead;
+	while (upvalue && upvalue->index >= index) {
+		if (upvalue->index == index) {
+			return upvalue;
 		}
+		upvalue = upvalue->nextOpen;
 	}
 	return nullptr;
+}
+
+void CPU::linkOpenUpvalue(CallFrame& frame, Upvalue* upvalue) {
+	Upvalue** link = &frame.openUpvalueHead;
+	while (*link && (*link)->index > upvalue->index) {
+		link = &(*link)->nextOpen;
+	}
+	upvalue->nextOpen = *link;
+	*link = upvalue;
 }
 
 Closure* CPU::createClosure(CallFrame& frame) {
@@ -2198,7 +2210,7 @@ Closure* CPU::createClosure(CallFrame& frame) {
 				upvalue->open = true;
 				upvalue->index = static_cast<int>(upvalueIndex);
 				upvalue->frame = &frame;
-				m_openUpvalues.push_back(OpenUpvalueSlot{ &frame, upvalue->index, upvalue });
+				linkOpenUpvalue(frame, upvalue);
 			}
 			closure->upvalues[index] = upvalue;
 		} else {
@@ -2209,19 +2221,16 @@ Closure* CPU::createClosure(CallFrame& frame) {
 }
 
 void CPU::closeUpvalues(CallFrame& frame) {
-	size_t write = 0;
-	for (size_t index = 0; index < m_openUpvalues.size(); ++index) {
-		OpenUpvalueSlot entry = m_openUpvalues[index];
-		if (entry.frame == &frame) {
-			Upvalue* upvalue = entry.upvalue;
-			upvalue->value = frame.registers[static_cast<size_t>(upvalue->index)];
-			upvalue->open = false;
-			upvalue->frame = nullptr;
-			continue;
-		}
-		m_openUpvalues[write++] = entry;
+	Upvalue* upvalue = frame.openUpvalueHead;
+	frame.openUpvalueHead = nullptr;
+	while (upvalue) {
+		Upvalue* next = upvalue->nextOpen;
+		upvalue->value = frame.registers[static_cast<size_t>(upvalue->index)];
+		upvalue->open = false;
+		upvalue->frame = nullptr;
+		upvalue->nextOpen = nullptr;
+		upvalue = next;
 	}
-	m_openUpvalues.resize(write);
 }
 
 const Value& CPU::readUpvalue(Upvalue* upvalue) {
@@ -2693,7 +2702,6 @@ void CPU::clearCallStack() {
 		m_frames.pop_back();
 		releaseFrame(std::move(finished));
 	}
-	m_openUpvalues.clear();
 	m_stack.clear();
 	m_stackTop = 0;
 }
@@ -2786,10 +2794,10 @@ void CPU::markRoots(GcHeap& heap) {
 		for (int i = 0; i < frame->varargCount; ++i) {
 			heap.markValue(m_stack[static_cast<size_t>(frame->varargBase + i)]);
 		}
-	}
-	for (const auto& entry : m_openUpvalues) {
-		heap.markObject(entry.upvalue);
-		heap.markValue(entry.frame->registers[static_cast<size_t>(entry.index)]);
+		for (Upvalue* upvalue = frame->openUpvalueHead; upvalue; upvalue = upvalue->nextOpen) {
+			heap.markObject(upvalue);
+			heap.markValue(frame->registers[static_cast<size_t>(upvalue->index)]);
+		}
 	}
 }
 

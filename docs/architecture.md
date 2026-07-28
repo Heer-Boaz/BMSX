@@ -1083,6 +1083,11 @@ the CPU-owned canonical static closure or a dynamic closure, so cartridge
 slots with different function flags at the same raw address cannot merge or
 split object identity during restore. It does not expose either runtime's
 closure slot storage shape.
+Open upvalues form an intrusive list owned by the call frame whose registers
+they reference, ordered by register index. Capturing the same slot reuses that
+upvalue; frame exit detaches and closes only that frame's list. GC and
+save-state traverse the frame-owned links, so return dispatch never scans or
+compacts unrelated open upvalues.
 Snapshot object ids are reserved before an object's child values are captured,
 so cyclic/shared Lua table graphs stay object graphs rather than path lookups or
 duplicated tree materialisation.
