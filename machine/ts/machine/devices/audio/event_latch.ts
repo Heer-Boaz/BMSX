@@ -27,10 +27,10 @@ export class ApuEventLatch {
 
 	public reset(): void {
 		this.eventSequence = 0;
-		this.memory.writeValue(IO_APU_EVENT_KIND, APU_EVENT_NONE);
-		this.memory.writeValue(IO_APU_EVENT_SLOT, 0);
-		this.memory.writeValue(IO_APU_EVENT_SOURCE_ADDR, 0);
-		this.memory.writeValue(IO_APU_EVENT_SEQ, 0);
+		this.memory.writeIoU32(IO_APU_EVENT_KIND, APU_EVENT_NONE);
+		this.memory.writeIoU32(IO_APU_EVENT_SLOT, 0);
+		this.memory.writeIoU32(IO_APU_EVENT_SOURCE_ADDR, 0);
+		this.memory.writeIoU32(IO_APU_EVENT_SEQ, 0);
 	}
 
 	public captureState(): ApuEventLatchState {
@@ -44,18 +44,18 @@ export class ApuEventLatch {
 
 	public restoreState(state: ApuEventLatchState): void {
 		this.eventSequence = state.eventSequence >>> 0;
-		this.memory.writeValue(IO_APU_EVENT_KIND, state.eventKind);
-		this.memory.writeValue(IO_APU_EVENT_SLOT, state.eventSlot);
-		this.memory.writeValue(IO_APU_EVENT_SOURCE_ADDR, state.eventSourceAddr);
-		this.memory.writeValue(IO_APU_EVENT_SEQ, this.eventSequence);
+		this.memory.writeIoU32(IO_APU_EVENT_KIND, state.eventKind);
+		this.memory.writeIoU32(IO_APU_EVENT_SLOT, state.eventSlot);
+		this.memory.writeIoU32(IO_APU_EVENT_SOURCE_ADDR, state.eventSourceAddr);
+		this.memory.writeIoU32(IO_APU_EVENT_SEQ, this.eventSequence);
 	}
 
 	public emit(kind: number, slot: ApuAudioSlot, sourceAddr: number): void {
 		this.eventSequence = (this.eventSequence + 1) >>> 0;
-		this.memory.writeValue(IO_APU_EVENT_KIND, kind);
-		this.memory.writeValue(IO_APU_EVENT_SLOT, slot);
-		this.memory.writeValue(IO_APU_EVENT_SOURCE_ADDR, sourceAddr);
-		this.memory.writeValue(IO_APU_EVENT_SEQ, this.eventSequence);
+		this.memory.writeIoU32(IO_APU_EVENT_KIND, kind);
+		this.memory.writeIoU32(IO_APU_EVENT_SLOT, slot);
+		this.memory.writeIoU32(IO_APU_EVENT_SOURCE_ADDR, sourceAddr);
+		this.memory.writeIoU32(IO_APU_EVENT_SEQ, this.eventSequence);
 		this.irq.raiseUser(IRQ_APU);
 	}
 }

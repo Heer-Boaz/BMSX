@@ -1,5 +1,4 @@
 #include "machine/memory/memory.h"
-#include "machine/cpu/cpu.h"
 #include "common/endian.h"
 #include "machine/devices/cartridge/controller.h"
 #include "machine/memory/map.h"
@@ -92,7 +91,7 @@ Memory::Memory(const MemoryInit& init)
 	: m_systemRom(init.systemRom)
 	, m_cartridgeController(init.cartridgeSlots)
 	, m_ram(RAM_END - RAM_BASE)
-	, m_ioSlots(IO_SLOT_COUNT, valueNil())
+	, m_ioSlots(IO_SLOT_COUNT, 0u)
 	, m_ioReadHandlers(IO_SLOT_COUNT)
 	, m_ioWriteHandlers(IO_SLOT_COUNT) {
 	m_ioWriteHandlers[IO_SYS_BUS_FAULT_ACK_SLOT] = { this, &Memory::onBusFaultAckWriteThunk };
@@ -171,7 +170,7 @@ u8 Memory::readMainMemoryU8(uint32_t addr, uint32_t faultAccess) const {
 	return 0;
 }
 
-Value Memory::readIoSlotValue(int slot, uint32_t addr, MappedBusSignals busSignals) const {
+u32 Memory::readIoSlot(int slot, uint32_t addr, MappedBusSignals busSignals) const {
 	const IoReadBinding& binding = m_ioReadHandlers[static_cast<size_t>(slot)];
 	if (binding.handler != nullptr) {
 		return binding.handler(binding.context, addr, busSignals);
@@ -179,7 +178,7 @@ Value Memory::readIoSlotValue(int slot, uint32_t addr, MappedBusSignals busSigna
 	return m_ioSlots[static_cast<size_t>(slot)];
 }
 
-void Memory::writeIoSlotValue(int slot, uint32_t addr, Value value, MappedBusSignals busSignals) {
+void Memory::writeIoSlot(int slot, uint32_t addr, u32 value, MappedBusSignals busSignals) {
 	const size_t slotIndex = static_cast<size_t>(slot);
 	m_ioSlots[slotIndex] = value;
 	const IoWriteBinding& binding = m_ioWriteHandlers[slotIndex];
@@ -216,15 +215,9 @@ bool Memory::writeRamWordLE(uint32_t addr, size_t byteLength, uint32_t value) {
 	return true;
 }
 
-void Memory::markRoots(GcHeap& heap) const {
-	for (const Value& value : m_ioSlots) {
-		heap.markValue(value);
-	}
-}
-
 void Memory::clearIoSlots() {
-	for (Value& value : m_ioSlots) {
-		value = valueNil();
+	for (u32& value : m_ioSlots) {
+		value = 0u;
 	}
 	clearBusFault();
 }
@@ -236,75 +229,16 @@ void Memory::clearBusFault() {
 	writeBusFaultSlots();
 }
 
-Value Memory::readValue(uint32_t addr) const {
-	const int slot = ioAlignedSlot(addr);
-	if (slot >= 0) {
-		return readIoSlotValue(slot, addr, MAPPED_BUS_MASTER_CPU);
-	}
-	return valueFromNumber(static_cast<double>(readU32(addr)));
+u32 Memory::readMappedWord(uint32_t addr) const {
+	return readMappedBusU32LE(addr, BUS_ACCESS_READ_WORD, MAPPED_BUS_MASTER_CPU);
 }
 
-Value Memory::readMappedValue(uint32_t addr) const {
-	const int slot = ioAlignedSlot(addr);
-	if (slot >= 0) {
-		return readIoSlotValue(slot, addr, MAPPED_BUS_MASTER_CPU);
-	}
-	if (isIoRegionRange(addr, 4)) {
-		raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_ACCESS_READ_WORD);
-		return valueNumber(0.0);
-	}
-	if (addr < RAM_BASE) {
-		if (addr <= SYSTEM_ROM_SIZE - 4u) {
-			return valueNumber(static_cast<double>(readRomWindowU32LE(m_systemRom.data(), m_systemRom.size(), addr)));
-		}
-	} else if (addr < CART_ROM_BASE) {
-		const size_t offset = static_cast<size_t>(addr - RAM_BASE);
-		if (offset + 4u <= m_ram.size()) {
-			return valueNumber(static_cast<double>(readLE32(m_ram.data() + offset)));
-		}
-	} else if (addr <= CART_BUS_END - 4u) {
-		return valueNumber(static_cast<double>(m_cartridgeController.readU32(addr, MAPPED_BUS_MASTER_CPU)));
-	}
-	raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_READ_WORD);
-	return valueNumber(0.0);
-}
-
-void Memory::writeValue(uint32_t addr, Value value) {
-	const int slot = ioAlignedSlot(addr);
-	if (slot >= 0) {
-		writeIoSlotValue(slot, addr, value, MAPPED_BUS_MASTER_CPU);
-		return;
-	}
-	writeU32(addr, toU32(value));
-}
-
-void Memory::writeIoValue(uint32_t addr, Value value) {
+void Memory::writeIoU32(uint32_t addr, u32 value) {
 	m_ioSlots[static_cast<size_t>((addr - IO_BASE) / IO_WORD_SIZE)] = value;
 }
 
-void Memory::writeMappedValue(uint32_t addr, Value value) {
-	const int slot = ioAlignedSlot(addr);
-	if (slot >= 0) {
-		if (isReadOnlyIoAddress(addr)) {
-			raiseBusFault(BUS_FAULT_READ_ONLY, addr, BUS_ACCESS_WRITE_WORD);
-			return;
-		}
-		writeIoSlotValue(slot, addr, value, MAPPED_BUS_MASTER_CPU);
-		return;
-	}
-	if (isIoRegionRange(addr, 4)) {
-		raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_ACCESS_WRITE_WORD);
-		return;
-	}
-	if (addr < CART_ROM_BASE) {
-		if (writeRamWordLE(addr, 4, toU32(value))) {
-			return;
-		}
-	} else if (addr <= CART_BUS_END - 4u) {
-		m_cartridgeController.writeU32(addr, toU32(value), MAPPED_BUS_MASTER_CPU);
-		return;
-	}
-	raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_WRITE_WORD);
+void Memory::writeMappedWord(uint32_t addr, u32 value) {
+	writeMappedBusU32LE(addr, value, BUS_ACCESS_WRITE_WORD, MAPPED_BUS_MASTER_CPU);
 }
 
 u8 Memory::readU8(uint32_t addr) const {
@@ -314,7 +248,7 @@ u8 Memory::readU8(uint32_t addr) const {
 u8 Memory::readMappedU8(uint32_t addr) const {
 	const int slot = ioAlignedSlot(addr);
 	if (slot >= 0) {
-		return static_cast<u8>(toU32(readIoSlotValue(slot, addr, MAPPED_BUS_MASTER_CPU)) & 0xffu);
+		return static_cast<u8>(readIoSlot(slot, addr, MAPPED_BUS_MASTER_CPU) & 0xffu);
 	}
 	if (isIoRegionRange(addr, 1)) {
 		raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_ACCESS_READ_U8);
@@ -352,11 +286,7 @@ void Memory::writeMappedU8(uint32_t addr, u8 value) {
 }
 
 uint32_t Memory::readIoU32(uint32_t addr) const {
-	return toU32(readIoSlotValue(static_cast<int>((addr - IO_BASE) / IO_WORD_SIZE), addr, MAPPED_BUS_MASTER_CPU));
-}
-
-int32_t Memory::readIoI32(uint32_t addr) const {
-	return static_cast<int32_t>(toU32(readIoSlotValue(static_cast<int>((addr - IO_BASE) / IO_WORD_SIZE), addr, MAPPED_BUS_MASTER_CPU)));
+	return readIoSlot(static_cast<int>((addr - IO_BASE) / IO_WORD_SIZE), addr, MAPPED_BUS_MASTER_CPU);
 }
 
 uint32_t Memory::readU32(uint32_t addr) const {
@@ -408,7 +338,7 @@ uint32_t Memory::readMappedDmaU32LE(uint32_t addr, MappedBusSignals busSignals) 
 uint32_t Memory::readMappedBusU32LE(uint32_t addr, uint32_t faultAccess, MappedBusSignals busSignals) const {
 	const int slot = ioAlignedSlot(addr);
 	if (slot >= 0) {
-		return toU32(readIoSlotValue(slot, addr, busSignals));
+		return readIoSlot(slot, addr, busSignals);
 	}
 	if (isIoRegionRange(addr, 4)) {
 		raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, faultAccess);
@@ -502,8 +432,7 @@ void Memory::writeMappedBusU32LE(uint32_t addr, uint32_t value, uint32_t faultAc
 			&& !binding.ready(binding.context, addr, busSignals)) {
 			return;
 		}
-		const Value word = valueNumber(static_cast<double>(value));
-		writeIoSlotValue(slot, addr, word, busSignals);
+		writeIoSlot(slot, addr, value, busSignals);
 		return;
 	}
 	if (isIoRegionRange(addr, 4)) {
@@ -657,14 +586,14 @@ u32 Memory::mappedRegionWordSpan(u32 addr, u32 wordLimit, MemoryRegionKind regio
 	return regionWords < wordLimit ? static_cast<u32>(regionWords) : wordLimit;
 }
 
-void Memory::onBusFaultAckWriteThunk(void* context, uint32_t addr, Value value, MappedBusSignals) {
+void Memory::onBusFaultAckWriteThunk(void* context, uint32_t addr, u32 value, MappedBusSignals) {
 	Memory* memory = static_cast<Memory*>(context);
 	memory->onBusFaultAckWrite(addr, value);
 }
 
-void Memory::onBusFaultAckWrite(uint32_t addr, Value value) {
+void Memory::onBusFaultAckWrite(uint32_t addr, u32 value) {
 	(void)addr;
-	if (toU32(value) != 0u) {
+	if (value != 0u) {
 		clearBusFault();
 	}
 }
@@ -681,10 +610,10 @@ void Memory::raiseBusFault(uint32_t code, uint32_t addr, uint32_t access) const 
 }
 
 void Memory::writeBusFaultSlots() const {
-	m_ioSlots[IO_SYS_BUS_FAULT_CODE_SLOT] = valueNumber(static_cast<double>(m_busFaultCode));
-	m_ioSlots[IO_SYS_BUS_FAULT_ADDR_SLOT] = valueNumber(static_cast<double>(m_busFaultAddr));
-	m_ioSlots[IO_SYS_BUS_FAULT_ACCESS_SLOT] = valueNumber(static_cast<double>(m_busFaultAccess));
-	m_ioSlots[IO_SYS_BUS_FAULT_ACK_SLOT] = valueNumber(0.0);
+	m_ioSlots[IO_SYS_BUS_FAULT_CODE_SLOT] = m_busFaultCode;
+	m_ioSlots[IO_SYS_BUS_FAULT_ADDR_SLOT] = m_busFaultAddr;
+	m_ioSlots[IO_SYS_BUS_FAULT_ACCESS_SLOT] = m_busFaultAccess;
+	m_ioSlots[IO_SYS_BUS_FAULT_ACK_SLOT] = 0u;
 }
 
 bool Memory::isIoRegionRange(uint32_t addr, size_t length) const {
@@ -700,7 +629,7 @@ bool Memory::isReadOnlyIoAddress(uint32_t addr) const {
 		case IO_SYS_BUS_FAULT_ADDR:
 		case IO_SYS_BUS_FAULT_ACCESS:
 		case IO_SYS_TIME_MS:
-		case IO_SYS_FRAME_MS:
+		case IO_SYS_FRAME_MS_Q16:
 		case IO_SYS_CYCLES_PER_FRAME:
 		case IO_IRQ_FLAGS:
 		case IO_DMA0_STATUS:

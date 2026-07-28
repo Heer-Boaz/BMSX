@@ -3,7 +3,6 @@ import {
 	IO_APU_TRANSFER_CONTROL,
 	IO_APU_TRANSFER_DATA,
 } from '../../../spec/bmsx/io';
-import type { Value } from '../../cpu/value';
 import {
 	MAPPED_BUS_MASTER_DMA,
 	MAPPED_BUS_DMA_BLOCK_END,
@@ -114,10 +113,10 @@ export class ApuServiceClock {
 		);
 	}
 
-	private static transferAddressWriteThunk(context: ApuServiceClock, _addr: number, value: Value): void {
+	private static transferAddressWriteThunk(context: ApuServiceClock, _addr: number, value: number): void {
 		const nowCycles = context.scheduler.currentNowCycles();
 		context.synchronizeBeforeTransferAccess(nowCycles);
-		context.sampleTransfer.writeAddress(value as number);
+		context.sampleTransfer.writeAddress(value);
 		context.advanceVoicesTo(nowCycles);
 	}
 
@@ -131,13 +130,13 @@ export class ApuServiceClock {
 		return value;
 	}
 
-	private static transferDataWriteThunk(context: ApuServiceClock, _addr: number, value: Value, busSignals: MappedBusSignals): void {
+	private static transferDataWriteThunk(context: ApuServiceClock, _addr: number, value: number, busSignals: MappedBusSignals): void {
 		const nowCycles = context.scheduler.currentNowCycles();
 		context.synchronizeBeforeTransferAccess(nowCycles);
 		if ((busSignals & MAPPED_BUS_MASTER_DMA) !== 0) {
-			context.sampleTransfer.writeDmaData(value as number, (busSignals & MAPPED_BUS_DMA_BLOCK_END) !== 0);
+			context.sampleTransfer.writeDmaData(value, (busSignals & MAPPED_BUS_DMA_BLOCK_END) !== 0);
 		} else {
-			context.sampleTransfer.writeCpuData(value as number);
+			context.sampleTransfer.writeCpuData(value);
 		}
 		context.advanceVoicesTo(nowCycles);
 	}
@@ -154,10 +153,10 @@ export class ApuServiceClock {
 			&& !context.dma.ownsWritePort(IO_APU_TRANSFER_DATA);
 	}
 
-	private static transferControlWriteThunk(context: ApuServiceClock, _addr: number, value: Value): void {
+	private static transferControlWriteThunk(context: ApuServiceClock, _addr: number, value: number): void {
 		const nowCycles = context.scheduler.currentNowCycles();
 		context.synchronizeBeforeTransferAccess(nowCycles);
-		context.sampleTransfer.writeControl(value as number);
+		context.sampleTransfer.writeControl(value);
 		context.advanceVoicesTo(nowCycles);
 	}
 

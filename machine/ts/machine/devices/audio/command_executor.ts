@@ -1,5 +1,4 @@
 import { IO_APU_SELECTED_SLOT_REG0, IO_APU_SLOT, IO_ARG_STRIDE } from '../../../spec/bmsx/io';
-import type { Value } from '../../cpu/value';
 import type { Memory } from '../../memory/memory';
 import type { DeviceScheduler } from '../../scheduler/device';
 import type { DeviceStatusLatch } from '../device_status';
@@ -105,11 +104,11 @@ export class ApuCommandExecutor {
 		return context.slots.registerWord(slot, parameterIndex);
 	}
 
-	public static selectedSlotRegisterWriteThunk(context: ApuCommandExecutor, addr: number, value: Value): void {
+	public static selectedSlotRegisterWriteThunk(context: ApuCommandExecutor, addr: number, value: number): void {
 		const nowCycles = context.scheduler.currentNowCycles();
 		context.serviceClock.synchronize(nowCycles);
 		const slot = context.memory.readIoU32(IO_APU_SLOT) & APU_SLOT_INDEX_MASK;
-		context.writeSlotRegisterWord(slot, (addr - IO_APU_SELECTED_SLOT_REG0) / IO_ARG_STRIDE, (value as number) >>> 0);
+		context.writeSlotRegisterWord(slot, (addr - IO_APU_SELECTED_SLOT_REG0) / IO_ARG_STRIDE, value);
 		context.serviceClock.scheduleNext(nowCycles);
 	}
 

@@ -13,7 +13,6 @@ import {
 	IRQ_CARTRIDGE_SLOT0,
 	IRQ_CARTRIDGE_SLOT1,
 } from '../../../spec/bmsx/io';
-import type { Value } from '../../cpu/value';
 import {
 	MAPPED_BUS_CARTRIDGE_SLOT1,
 	MAPPED_BUS_CARTRIDGE_SLOT_OVERRIDE,
@@ -359,34 +358,34 @@ export class CartridgeController {
 		this.dma.setRequestLines(CARTRIDGE_DREQ_MASK, asserted);
 	}
 
-	private static readSelectionThunk(context: CartridgeController): Value {
+	private static readSelectionThunk(context: CartridgeController): number {
 		return context.selectionWord;
 	}
 
-	private static writeSelectionThunk(context: CartridgeController, _address: number, value: Value): void {
-		context.selectionWord = (value as number) >>> 0;
+	private static writeSelectionThunk(context: CartridgeController, _address: number, value: number): void {
+		context.selectionWord = value;
 	}
 
-	private static readStatusThunk(context: CartridgeController): Value {
+	private static readStatusThunk(context: CartridgeController): number {
 		let status = context.selectedSlot() === 1 ? CARTRIDGE_STATUS_SELECTED_SLOT1 : 0;
 		if (context.slots[0].media.present) status |= CARTRIDGE_STATUS_SLOT0_PRESENT;
 		if (context.slots[1].media.present) status |= CARTRIDGE_STATUS_SLOT1_PRESENT;
 		return status;
 	}
 
-	private static readSlot0BoardThunk(context: CartridgeController): Value {
+	private static readSlot0BoardThunk(context: CartridgeController): number {
 		return context.slots[0].media.boardWord;
 	}
 
-	private static readSlot0RamBytesThunk(context: CartridgeController): Value {
+	private static readSlot0RamBytesThunk(context: CartridgeController): number {
 		return context.slots[0].ram.byteLength;
 	}
 
-	private static readSlot1BoardThunk(context: CartridgeController): Value {
+	private static readSlot1BoardThunk(context: CartridgeController): number {
 		return context.slots[1].media.boardWord;
 	}
 
-	private static readSlot1RamBytesThunk(context: CartridgeController): Value {
+	private static readSlot1RamBytesThunk(context: CartridgeController): number {
 		return context.slots[1].ram.byteLength;
 	}
 }

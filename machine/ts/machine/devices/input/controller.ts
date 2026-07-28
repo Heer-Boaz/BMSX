@@ -8,7 +8,6 @@ import {
 	IO_INP_OUTPUT_PORT,
 	IO_INP_STATUS,
 } from '../../../spec/bmsx/io';
-import type { Value } from '../../cpu/value';
 import { Memory } from '../../memory/memory';
 import type { SystemController } from '../system/controller';
 import type { InputControllerState } from './save_state';
@@ -53,13 +52,13 @@ export class InputController {
 		this.lastSampleCycle = 0;
 		this.supervisorRequestLineWasHigh = false;
 		this.registers.reset();
-		this.memory.writeIoValue(IO_INP_OUTPUT_CTRL, 0);
+		this.memory.writeIoU32(IO_INP_OUTPUT_CTRL, 0);
 		this.registers.mirror(this.memory);
-		this.memory.writeIoValue(IO_INP_STATUS, this.sampleSequence);
+		this.memory.writeIoU32(IO_INP_STATUS, this.sampleSequence);
 	}
 
-	private static writeControl(context: InputController, _addr: number, value: Value): void {
-		context.registers.state.ctrl = (value as number) >>> 0;
+	private static writeControl(context: InputController, _addr: number, value: number): void {
+		context.registers.state.ctrl = value;
 		switch (context.registers.state.ctrl) {
 			case INP_CTRL_ARM:
 				context.sampleArmed = true;
@@ -70,7 +69,7 @@ export class InputController {
 				context.lastSampleCycle = 0;
 				context.registers.reset();
 				context.registers.mirror(context.memory);
-				context.memory.writeIoValue(IO_INP_STATUS, context.sampleSequence);
+				context.memory.writeIoU32(IO_INP_STATUS, context.sampleSequence);
 				return;
 		}
 	}
@@ -92,7 +91,7 @@ export class InputController {
 		this.sampleArmed = false;
 		this.registers.latchSnapshot(this.snapshot);
 		this.registers.mirror(this.memory);
-		this.memory.writeIoValue(IO_INP_STATUS, this.sampleSequence);
+		this.memory.writeIoU32(IO_INP_STATUS, this.sampleSequence);
 	}
 
 	public cancelSampleArm(): void {
@@ -115,8 +114,8 @@ export class InputController {
 		this.lastSampleCycle = state.lastSampleCycle;
 		this.supervisorRequestLineWasHigh = state.supervisorRequestLineHigh;
 		this.registers.restoreState(state.registers);
-		this.memory.writeIoValue(IO_INP_OUTPUT_CTRL, 0);
+		this.memory.writeIoU32(IO_INP_OUTPUT_CTRL, 0);
 		this.registers.mirror(this.memory);
-		this.memory.writeIoValue(IO_INP_STATUS, this.sampleSequence);
+		this.memory.writeIoU32(IO_INP_STATUS, this.sampleSequence);
 	}
 }

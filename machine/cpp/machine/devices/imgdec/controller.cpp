@@ -58,13 +58,13 @@ void ImgDecController::reset() {
 	m_dma.setRequestLines((1u << DMA_REQUEST_IMGDEC_WRITE) | (1u << DMA_REQUEST_IMGDEC_READ), 0u);
 	resetStreamState();
 	m_supervisorQuiesceRequested = false;
-	m_memory.writeIoValue(IO_IMGDEC_INPUT_WORD_COUNT, valueNumber(0.0));
-	m_memory.writeIoValue(IO_IMGDEC_TEXTURE_DESTINATION, valueNumber(0.0));
-	m_memory.writeIoValue(IO_IMGDEC_TEXTURE_SIZE, valueNumber(0.0));
-	m_memory.writeIoValue(IO_IMGDEC_CLUT_DESTINATION, valueNumber(0.0));
-	m_memory.writeIoValue(IO_IMGDEC_CONTROL, valueNumber(0.0));
-	m_memory.writeIoValue(IO_IMGDEC_STATUS, valueNumber(0.0));
-	m_memory.writeIoValue(IO_IMGDEC_DATA, valueNumber(0.0));
+	m_memory.writeIoU32(IO_IMGDEC_INPUT_WORD_COUNT, 0u);
+	m_memory.writeIoU32(IO_IMGDEC_TEXTURE_DESTINATION, 0u);
+	m_memory.writeIoU32(IO_IMGDEC_TEXTURE_SIZE, 0u);
+	m_memory.writeIoU32(IO_IMGDEC_CLUT_DESTINATION, 0u);
+	m_memory.writeIoU32(IO_IMGDEC_CONTROL, 0u);
+	m_memory.writeIoU32(IO_IMGDEC_STATUS, 0u);
+	m_memory.writeIoU32(IO_IMGDEC_DATA, 0u);
 }
 
 void ImgDecController::resetStreamState() {
@@ -125,13 +125,13 @@ auto ImgDecController::captureState() const -> ImgDecControllerState {
 
 void ImgDecController::restoreState(const ImgDecControllerState& state) {
 	m_scheduler.cancelDeviceService(DEVICE_SERVICE_IMGDEC);
-	m_memory.writeIoValue(IO_IMGDEC_INPUT_WORD_COUNT, valueNumber(static_cast<f64>(state.inputWordCountWord)));
-	m_memory.writeIoValue(IO_IMGDEC_TEXTURE_DESTINATION, valueNumber(static_cast<f64>(state.textureDestinationWord)));
-	m_memory.writeIoValue(IO_IMGDEC_TEXTURE_SIZE, valueNumber(static_cast<f64>(state.textureSizeWord)));
-	m_memory.writeIoValue(IO_IMGDEC_CLUT_DESTINATION, valueNumber(static_cast<f64>(state.clutDestinationWord)));
-	m_memory.writeIoValue(IO_IMGDEC_CONTROL, valueNumber(static_cast<f64>(state.controlWord)));
-	m_memory.writeIoValue(IO_IMGDEC_STATUS, valueNumber(static_cast<f64>(state.statusWord)));
-	m_memory.writeIoValue(IO_IMGDEC_DATA, valueNumber(static_cast<f64>(state.dataWord)));
+	m_memory.writeIoU32(IO_IMGDEC_INPUT_WORD_COUNT, state.inputWordCountWord);
+	m_memory.writeIoU32(IO_IMGDEC_TEXTURE_DESTINATION, state.textureDestinationWord);
+	m_memory.writeIoU32(IO_IMGDEC_TEXTURE_SIZE, state.textureSizeWord);
+	m_memory.writeIoU32(IO_IMGDEC_CLUT_DESTINATION, state.clutDestinationWord);
+	m_memory.writeIoU32(IO_IMGDEC_CONTROL, state.controlWord);
+	m_memory.writeIoU32(IO_IMGDEC_STATUS, state.statusWord);
+	m_memory.writeIoU32(IO_IMGDEC_DATA, state.dataWord);
 	m_inputWordsReceived = state.inputWordsReceived;
 	m_decodedWordCount = state.decodedWordCount;
 	m_textureWordCount = state.textureWordCount;
@@ -199,10 +199,10 @@ void ImgDecController::onService(i64 nowCycles) {
 void ImgDecController::start() {
 	resetStreamState();
 	m_active = true;
-	m_memory.writeIoValue(
+	m_memory.writeIoU32(
 		IO_IMGDEC_CONTROL,
-		valueNumber(static_cast<f64>(m_memory.readIoU32(IO_IMGDEC_CONTROL) & ~IMGDEC_CONTROL_START)));
-	m_memory.writeIoValue(IO_IMGDEC_STATUS, valueNumber(static_cast<f64>(IMGDEC_STATUS_BUSY)));
+		m_memory.readIoU32(IO_IMGDEC_CONTROL) & ~IMGDEC_CONTROL_START);
+	m_memory.writeIoU32(IO_IMGDEC_STATUS, IMGDEC_STATUS_BUSY);
 	scheduleDecode(m_scheduler.currentNowCycles());
 	updateDmaRequests();
 }
@@ -406,7 +406,7 @@ void ImgDecController::updateDmaRequests() {
 		| (inputReady ? IMGDEC_STATUS_INPUT_REQUEST : 0u)
 		| (outputReady ? IMGDEC_STATUS_OUTPUT_REQUEST : 0u);
 	if (nextStatus != status) {
-		m_memory.writeIoValue(IO_IMGDEC_STATUS, valueNumber(static_cast<f64>(nextStatus)));
+		m_memory.writeIoU32(IO_IMGDEC_STATUS, nextStatus);
 	}
 	if (inputReady && !m_dma.ownsWritePort(IO_IMGDEC_DATA)) {
 		m_cpu.resumeMemoryWrite(IO_IMGDEC_DATA);
@@ -432,7 +432,7 @@ void ImgDecController::stop(u32 statusWord) {
 	m_scheduledDecodeWords = 0u;
 	m_decodeDeadline = -1;
 	m_dma.setRequestLines((1u << DMA_REQUEST_IMGDEC_WRITE) | (1u << DMA_REQUEST_IMGDEC_READ), 0u);
-	m_memory.writeIoValue(IO_IMGDEC_STATUS, valueNumber(static_cast<f64>(statusWord)));
+	m_memory.writeIoU32(IO_IMGDEC_STATUS, statusWord);
 	resumeConfigWrites();
 	m_irq.raise(IRQ_IMGDEC);
 	notifySupervisorBoundary();
@@ -450,16 +450,16 @@ void ImgDecController::notifySupervisorBoundary() {
 	}
 }
 
-u64 ImgDecController::readProgressThunk(void* context, u32 address, MappedBusSignals) {
+u32 ImgDecController::readProgressThunk(void* context, u32 address, MappedBusSignals) {
 	auto& controller = *static_cast<ImgDecController*>(context);
-	return valueNumber(static_cast<f64>(address == IO_IMGDEC_INPUT_WORDS_RECEIVED
+	return address == IO_IMGDEC_INPUT_WORDS_RECEIVED
 		? controller.m_inputWordsReceived
-		: controller.m_decodedWordCount));
+		: controller.m_decodedWordCount;
 }
 
-void ImgDecController::writeConfigThunk(void* context, u32 address, u64 value, MappedBusSignals) {
+void ImgDecController::writeConfigThunk(void* context, u32 address, u32 value, MappedBusSignals) {
 	auto& controller = *static_cast<ImgDecController*>(context);
-	if (address == IO_IMGDEC_CONTROL && (toU32(value) & IMGDEC_CONTROL_START) != 0u) {
+	if (address == IO_IMGDEC_CONTROL && (value & IMGDEC_CONTROL_START) != 0u) {
 		controller.start();
 	}
 }
@@ -469,18 +469,18 @@ bool ImgDecController::configWriteReadyThunk(void* context, u32, MappedBusSignal
 	return !controller.m_active && !controller.m_supervisorQuiesceRequested;
 }
 
-u64 ImgDecController::readDataThunk(void* context, u32, MappedBusSignals busSignals) {
+u32 ImgDecController::readDataThunk(void* context, u32, MappedBusSignals busSignals) {
 	auto& controller = *static_cast<ImgDecController*>(context);
 	const bool dmaRead = (busSignals & MAPPED_BUS_MASTER_DMA) != 0u;
 	if (!dmaRead && controller.m_dma.ownsReadPort(IO_IMGDEC_DATA)) {
-		return valueNumber(static_cast<f64>(controller.m_dataWord));
+		return controller.m_dataWord;
 	}
 	if (!controller.m_outputFifo.empty()) {
 		controller.m_dataWord = controller.m_outputFifo.pop();
-		controller.m_memory.writeIoValue(IO_IMGDEC_DATA, valueNumber(static_cast<f64>(controller.m_dataWord)));
+		controller.m_memory.writeIoU32(IO_IMGDEC_DATA, controller.m_dataWord);
 		controller.m_outputWordsRead += 1u;
 	}
-	const u64 dataValue = valueNumber(static_cast<f64>(controller.m_dataWord));
+	const u32 dataValue = controller.m_dataWord;
 	if (dmaRead
 		&& (busSignals & MAPPED_BUS_DMA_BLOCK_END) == 0u) {
 		return dataValue;
@@ -496,9 +496,9 @@ u64 ImgDecController::readDataThunk(void* context, u32, MappedBusSignals busSign
 	return dataValue;
 }
 
-void ImgDecController::writeDataThunk(void* context, u32, u64 value, MappedBusSignals busSignals) {
+void ImgDecController::writeDataThunk(void* context, u32, u32 value, MappedBusSignals busSignals) {
 	auto& controller = *static_cast<ImgDecController*>(context);
-	controller.m_dataWord = toU32(value);
+	controller.m_dataWord = value;
 	if (!controller.m_inputFifo.full()) {
 		controller.m_inputFifo.writeWord(controller.m_dataWord);
 	}

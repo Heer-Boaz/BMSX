@@ -8,15 +8,15 @@ namespace bmsx {
 ApuQueueStatusRegisters::ApuQueueStatusRegisters(const ApuCommandFifo& commandFifo)
 	: m_commandFifo(commandFifo) {}
 
-Value ApuQueueStatusRegisters::readThunk(void* context, u32 addr, MappedBusSignals) {
+u32 ApuQueueStatusRegisters::readThunk(void* context, u32 addr, MappedBusSignals) {
 	auto& regs = *static_cast<ApuQueueStatusRegisters*>(context);
 	switch (addr) {
 		case IO_APU_CMD_QUEUED:
-			return valueNumber(static_cast<double>(regs.m_commandFifo.count()));
+			return regs.m_commandFifo.count();
 		case IO_APU_CMD_FREE:
-			return valueNumber(static_cast<double>(regs.m_commandFifo.free()));
+			return regs.m_commandFifo.free();
 		case IO_APU_CMD_CAPACITY:
-			return valueNumber(static_cast<double>(regs.m_commandFifo.capacity()));
+			return regs.m_commandFifo.capacity();
 	}
 	throw BMSX_RUNTIME_ERROR("[APU] Queue-status register read was mapped to an unknown address.");
 }

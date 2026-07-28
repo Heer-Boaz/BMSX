@@ -165,31 +165,31 @@ function writeOversizeXform2Record(memory: Memory, addr: number): void {
 }
 
 function writeXform2BatchRegisters(memory: Memory, jobBase: number, count: number): void {
-	memory.writeValue(IO_GEO_SRC0, jobBase);
-	memory.writeValue(IO_GEO_SRC1, jobBase + 0x100);
-	memory.writeValue(IO_GEO_SRC2, jobBase + 0x200);
-	memory.writeValue(IO_GEO_DST0, jobBase + 0x300);
-	memory.writeValue(IO_GEO_DST1, 0);
-	memory.writeValue(IO_GEO_COUNT, count);
-	memory.writeValue(IO_GEO_PARAM0, 0);
-	memory.writeValue(IO_GEO_PARAM1, 0);
-	memory.writeValue(IO_GEO_STRIDE0, GEO_XFORM2_RECORD_BYTES);
-	memory.writeValue(IO_GEO_STRIDE1, GEO_VERTEX2_BYTES);
-	memory.writeValue(IO_GEO_STRIDE2, GEO_XFORM2_MATRIX_BYTES);
+	memory.writeMappedWord(IO_GEO_SRC0, jobBase);
+	memory.writeMappedWord(IO_GEO_SRC1, jobBase + 0x100);
+	memory.writeMappedWord(IO_GEO_SRC2, jobBase + 0x200);
+	memory.writeMappedWord(IO_GEO_DST0, jobBase + 0x300);
+	memory.writeMappedWord(IO_GEO_DST1, 0);
+	memory.writeMappedWord(IO_GEO_COUNT, count);
+	memory.writeMappedWord(IO_GEO_PARAM0, 0);
+	memory.writeMappedWord(IO_GEO_PARAM1, 0);
+	memory.writeMappedWord(IO_GEO_STRIDE0, GEO_XFORM2_RECORD_BYTES);
+	memory.writeMappedWord(IO_GEO_STRIDE1, GEO_VERTEX2_BYTES);
+	memory.writeMappedWord(IO_GEO_STRIDE2, GEO_XFORM2_MATRIX_BYTES);
 }
 
 function writeSat2BatchRegisters(memory: Memory, pairBase: number, descBase: number, vertexBase: number, resultBase: number, count: number): void {
-	memory.writeValue(IO_GEO_SRC0, pairBase);
-	memory.writeValue(IO_GEO_SRC1, descBase);
-	memory.writeValue(IO_GEO_SRC2, vertexBase);
-	memory.writeValue(IO_GEO_DST0, resultBase);
-	memory.writeValue(IO_GEO_DST1, 0);
-	memory.writeValue(IO_GEO_COUNT, count);
-	memory.writeValue(IO_GEO_PARAM0, 0);
-	memory.writeValue(IO_GEO_PARAM1, 0);
-	memory.writeValue(IO_GEO_STRIDE0, GEO_SAT2_PAIR_BYTES);
-	memory.writeValue(IO_GEO_STRIDE1, GEO_SAT2_DESC_BYTES);
-	memory.writeValue(IO_GEO_STRIDE2, GEO_VERTEX2_BYTES);
+	memory.writeMappedWord(IO_GEO_SRC0, pairBase);
+	memory.writeMappedWord(IO_GEO_SRC1, descBase);
+	memory.writeMappedWord(IO_GEO_SRC2, vertexBase);
+	memory.writeMappedWord(IO_GEO_DST0, resultBase);
+	memory.writeMappedWord(IO_GEO_DST1, 0);
+	memory.writeMappedWord(IO_GEO_COUNT, count);
+	memory.writeMappedWord(IO_GEO_PARAM0, 0);
+	memory.writeMappedWord(IO_GEO_PARAM1, 0);
+	memory.writeMappedWord(IO_GEO_STRIDE0, GEO_SAT2_PAIR_BYTES);
+	memory.writeMappedWord(IO_GEO_STRIDE1, GEO_SAT2_DESC_BYTES);
+	memory.writeMappedWord(IO_GEO_STRIDE2, GEO_VERTEX2_BYTES);
 }
 
 function writeSat2Pair(memory: Memory, addr: number): void {
@@ -213,17 +213,17 @@ const OVERLAP2D_FULL_PASS_PARAM0 = GEO_OVERLAP2D_MODE_FULL_PASS
 	| GEO_OVERLAP2D_OUTPUT_POLICY_STOP_ON_OVERFLOW;
 
 function writeOverlap2dFullPassRegisters(memory: Memory, instanceBase: number, instanceCount: number, src2: number, dst0: number, resultCapacity: number): void {
-	memory.writeValue(IO_GEO_SRC0, instanceBase);
-	memory.writeValue(IO_GEO_SRC1, 0);
-	memory.writeValue(IO_GEO_SRC2, src2);
-	memory.writeValue(IO_GEO_DST0, dst0);
-	memory.writeValue(IO_GEO_DST1, instanceBase + 0x200);
-	memory.writeValue(IO_GEO_COUNT, instanceCount);
-	memory.writeValue(IO_GEO_PARAM0, OVERLAP2D_FULL_PASS_PARAM0);
-	memory.writeValue(IO_GEO_PARAM1, resultCapacity);
-	memory.writeValue(IO_GEO_STRIDE0, GEO_OVERLAP2D_INSTANCE_BYTES);
-	memory.writeValue(IO_GEO_STRIDE1, 0);
-	memory.writeValue(IO_GEO_STRIDE2, 0);
+	memory.writeMappedWord(IO_GEO_SRC0, instanceBase);
+	memory.writeMappedWord(IO_GEO_SRC1, 0);
+	memory.writeMappedWord(IO_GEO_SRC2, src2);
+	memory.writeMappedWord(IO_GEO_DST0, dst0);
+	memory.writeMappedWord(IO_GEO_DST1, instanceBase + 0x200);
+	memory.writeMappedWord(IO_GEO_COUNT, instanceCount);
+	memory.writeMappedWord(IO_GEO_PARAM0, OVERLAP2D_FULL_PASS_PARAM0);
+	memory.writeMappedWord(IO_GEO_PARAM1, resultCapacity);
+	memory.writeMappedWord(IO_GEO_STRIDE0, GEO_OVERLAP2D_INSTANCE_BYTES);
+	memory.writeMappedWord(IO_GEO_STRIDE1, 0);
+	memory.writeMappedWord(IO_GEO_STRIDE2, 0);
 }
 
 function writeOverlap2dInstance(memory: Memory, addr: number, shapeAddr: number): void {
@@ -257,7 +257,7 @@ function writeOverlapAabbShape(memory: Memory, shapeAddr: number, left: number, 
 }
 
 function startGeometryCommand(memory: Memory, geometry: GeometryController, command: number): GeometryControllerState {
-	memory.writeValue(IO_GEO_CMD, command);
+	memory.writeMappedWord(IO_GEO_CMD, command);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_BUSY);
 	const capturedGeometry = geometry.captureState();
 	assert.equal(capturedGeometry.phase, GEOMETRY_CONTROLLER_PHASE_BUSY);
@@ -298,7 +298,7 @@ test('GEO save-state restores in-flight command latch instead of aborting BUSY w
 	capturedGeometry = geometry.captureState();
 	assert.equal(capturedGeometry.phase, GEOMETRY_CONTROLLER_PHASE_BUSY);
 
-	memory.writeValue(IO_GEO_COUNT, 1);
+	memory.writeMappedWord(IO_GEO_COUNT, 1);
 	const saved = captureMachineSaveState(machine);
 
 	geometry.accrueCycles(8, 9);
@@ -362,7 +362,7 @@ test('GEO execution fault ack preserves completed command status', () => {
 
 	writeNoopXform2Record(memory, jobBase);
 	writeXform2BatchRegisters(memory, jobBase, 1);
-	memory.writeValue(IO_GEO_CMD, IO_CMD_GEO_XFORM2_BATCH);
+	memory.writeMappedWord(IO_GEO_CMD, IO_CMD_GEO_XFORM2_BATCH);
 	capturedGeometry = assertGeometryFaultLatch(
 		memory,
 		geometry,
@@ -371,7 +371,7 @@ test('GEO execution fault ack preserves completed command status', () => {
 		GEOMETRY_CONTROLLER_PHASE_ERROR,
 	);
 
-	memory.writeValue(IO_GEO_CTRL, GEO_CTRL_ABORT);
+	memory.writeMappedWord(IO_GEO_CTRL, GEO_CTRL_ABORT);
 	capturedGeometry = assertGeometryFaultLatch(
 		memory,
 		geometry,
@@ -380,7 +380,7 @@ test('GEO execution fault ack preserves completed command status', () => {
 		GEOMETRY_CONTROLLER_PHASE_ERROR,
 	);
 
-	memory.writeValue(IO_GEO_FAULT_ACK, 1);
+	memory.writeMappedWord(IO_GEO_FAULT_ACK, 1);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_DONE);
 	assert.equal(memory.readIoU32(IO_GEO_FAULT), 0);
 	assert.equal(memory.readIoU32(IO_GEO_FAULT_ACK), 0);
@@ -394,7 +394,7 @@ test('GEO rejected command is explicit controller phase state', () => {
 	const geometry = machine.geometryController;
 	const jobBase = RAM_BASE;
 
-	memory.writeValue(IO_GEO_CMD, 0xffff);
+	memory.writeMappedWord(IO_GEO_CMD, 0xffff);
 
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_REJECTED);
 	assert.notEqual(memory.readIoU32(IO_GEO_FAULT), 0);
@@ -409,7 +409,7 @@ test('GEO rejected command is explicit controller phase state', () => {
 
 	writeNoopXform2Record(memory, jobBase);
 	writeXform2BatchRegisters(memory, jobBase, 1);
-	memory.writeValue(IO_GEO_CMD, IO_CMD_GEO_XFORM2_BATCH);
+	memory.writeMappedWord(IO_GEO_CMD, IO_CMD_GEO_XFORM2_BATCH);
 	capturedGeometry = assertGeometryFaultLatch(
 		memory,
 		geometry,
@@ -418,7 +418,7 @@ test('GEO rejected command is explicit controller phase state', () => {
 		GEOMETRY_CONTROLLER_PHASE_REJECTED,
 	);
 
-	memory.writeValue(IO_GEO_CTRL, GEO_CTRL_ABORT);
+	memory.writeMappedWord(IO_GEO_CTRL, GEO_CTRL_ABORT);
 	capturedGeometry = assertGeometryFaultLatch(
 		memory,
 		geometry,
@@ -427,7 +427,7 @@ test('GEO rejected command is explicit controller phase state', () => {
 		GEOMETRY_CONTROLLER_PHASE_REJECTED,
 	);
 
-	memory.writeValue(IO_GEO_FAULT_ACK, 1);
+	memory.writeMappedWord(IO_GEO_FAULT_ACK, 1);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), 0);
 	assert.equal(memory.readIoU32(IO_GEO_FAULT), 0);
 	assert.equal(memory.readIoU32(IO_GEO_FAULT_ACK), 0);
@@ -443,7 +443,7 @@ test('GEO xform2 faults oversize vertex batches at the device record capacity', 
 
 	writeOversizeXform2Record(memory, jobBase);
 	writeXform2BatchRegisters(memory, jobBase, 1);
-	memory.writeValue(IO_GEO_CMD, IO_CMD_GEO_XFORM2_BATCH);
+	memory.writeMappedWord(IO_GEO_CMD, IO_CMD_GEO_XFORM2_BATCH);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_BUSY);
 	geometry.accrueCycles(1, 1);
 	geometry.onService(1);
@@ -465,7 +465,7 @@ test('GEO sat2 faults oversize convex polygons at the device scratch capacity', 
 	writeSat2Desc(memory, descBase, GEO_SAT2_MAX_POLY_VERTICES + 1, 0);
 	writeSat2Desc(memory, descBase + GEO_SAT2_DESC_BYTES, 3, GEO_VERTEX2_BYTES * 4);
 	writeSat2BatchRegisters(memory, pairBase, descBase, vertexBase, resultBase, 1);
-	memory.writeValue(IO_GEO_CMD, IO_CMD_GEO_SAT2_BATCH);
+	memory.writeMappedWord(IO_GEO_CMD, IO_CMD_GEO_SAT2_BATCH);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_BUSY);
 	geometry.accrueCycles(1, 1);
 	geometry.onService(1);
@@ -481,13 +481,13 @@ test('GEO overlap2d start consumes register words without submit preflight', () 
 	const jobBase = RAM_BASE + 0x900;
 
 	writeOverlap2dFullPassRegisters(memory, jobBase, 0, jobBase + 0x100, jobBase + 0x300, 1);
-	memory.writeValue(IO_GEO_CMD, IO_CMD_GEO_OVERLAP2D_PASS);
+	memory.writeMappedWord(IO_GEO_CMD, IO_CMD_GEO_OVERLAP2D_PASS);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_DONE);
 	assert.equal(memory.readIoU32(IO_GEO_FAULT), 0);
 	assert.equal(geometry.captureState().phase, GEOMETRY_CONTROLLER_PHASE_DONE);
 
 	writeOverlap2dFullPassRegisters(memory, jobBase, 0, 0, 0, 0);
-	memory.writeValue(IO_GEO_CMD, IO_CMD_GEO_OVERLAP2D_PASS);
+	memory.writeMappedWord(IO_GEO_CMD, IO_CMD_GEO_OVERLAP2D_PASS);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_DONE);
 	assert.equal(memory.readIoU32(IO_GEO_FAULT), 0);
 	assert.equal(geometry.captureState().phase, GEOMETRY_CONTROLLER_PHASE_DONE);
@@ -502,7 +502,7 @@ test('GEO overlap2d start consumes register words without submit preflight', () 
 	writeOverlapAabbShape(memory, shapeA, 0x0000_0000, 0x0000_0000, 0x3f80_0000, 0x3f80_0000);
 	writeOverlapAabbShape(memory, shapeB, 0x3f00_0000, 0x0000_0000, 0x3fc0_0000, 0x3f80_0000);
 	writeOverlap2dFullPassRegisters(memory, jobBase, 2, 0, resultBase, 1);
-	memory.writeValue(IO_GEO_CMD, IO_CMD_GEO_OVERLAP2D_PASS);
+	memory.writeMappedWord(IO_GEO_CMD, IO_CMD_GEO_OVERLAP2D_PASS);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_BUSY);
 	geometry.accrueCycles(2, 2);
 	geometry.onService(2);
@@ -520,21 +520,21 @@ test('GEO overlap2d start consumes register words without submit preflight', () 
 	writeOversizeOverlapPoly(memory, shapeA);
 	writeOversizeOverlapPoly(memory, shapeB);
 	writeOverlap2dFullPassRegisters(memory, jobBase, 2, 0, resultBase, 1);
-	memory.writeValue(IO_GEO_CMD, IO_CMD_GEO_OVERLAP2D_PASS);
+	memory.writeMappedWord(IO_GEO_CMD, IO_CMD_GEO_OVERLAP2D_PASS);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_BUSY);
 	geometry.accrueCycles(2, 2);
 	geometry.onService(2);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_DONE | GEO_STATUS_ERROR);
 	assert.equal(memory.readIoU32(IO_GEO_FAULT) >>> GEO_FAULT_CODE_SHIFT, GEO_FAULT_BAD_VERTEX_COUNT);
 
-	memory.writeValue(IO_GEO_FAULT_ACK, 1);
+	memory.writeMappedWord(IO_GEO_FAULT_ACK, 1);
 	writeOverlap2dInstance(memory, jobBase, shapeA);
 	writeOverlap2dInstance(memory, jobBase + GEO_OVERLAP2D_INSTANCE_BYTES, shapeB);
 	writeOverlapAabbShape(memory, shapeA, 0x0000_0000, 0x0000_0000, 0x3f80_0000, 0x3f80_0000);
 	writeOverlapAabbShape(memory, shapeB, 0x3f00_0000, 0x0000_0000, 0x3fc0_0000, 0x3f80_0000);
 	memory.writeU32(shapeA + GEO_OVERLAP2D_SHAPE_BOUNDS_OFFSET_OFFSET, GEO_OVERLAP2D_SHAPE_DESC_BYTES + 1);
 	writeOverlap2dFullPassRegisters(memory, jobBase, 2, 0, resultBase, 1);
-	memory.writeValue(IO_GEO_CMD, IO_CMD_GEO_OVERLAP2D_PASS);
+	memory.writeMappedWord(IO_GEO_CMD, IO_CMD_GEO_OVERLAP2D_PASS);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_BUSY);
 	geometry.accrueCycles(2, 2);
 	geometry.onService(2);
@@ -542,14 +542,14 @@ test('GEO overlap2d start consumes register words without submit preflight', () 
 	assert.equal(memory.readIoU32(IO_GEO_FAULT), 0);
 	assert.equal(geometry.captureState().phase, GEOMETRY_CONTROLLER_PHASE_DONE);
 
-	memory.writeValue(IO_GEO_FAULT_ACK, 1);
+	memory.writeMappedWord(IO_GEO_FAULT_ACK, 1);
 	writeOverlap2dInstance(memory, jobBase, shapeA);
 	writeOverlap2dInstance(memory, jobBase + GEO_OVERLAP2D_INSTANCE_BYTES, shapeB);
 	writeOverlapAabbShape(memory, shapeA, 0x0000_0000, 0x0000_0000, 0x3f80_0000, 0x3f80_0000);
 	writeOverlapAabbShape(memory, shapeB, 0x3f00_0000, 0x0000_0000, 0x3fc0_0000, 0x3f80_0000);
 	memory.writeU32(shapeA + GEO_OVERLAP2D_SHAPE_DATA_OFFSET_OFFSET, GEO_OVERLAP2D_SHAPE_DESC_BYTES + 1);
 	writeOverlap2dFullPassRegisters(memory, jobBase, 2, 0, resultBase, 1);
-	memory.writeValue(IO_GEO_CMD, IO_CMD_GEO_OVERLAP2D_PASS);
+	memory.writeMappedWord(IO_GEO_CMD, IO_CMD_GEO_OVERLAP2D_PASS);
 	assert.equal(memory.readIoU32(IO_GEO_STATUS), GEO_STATUS_BUSY);
 	geometry.accrueCycles(2, 2);
 	geometry.onService(2);

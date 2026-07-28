@@ -79,11 +79,11 @@ private:
 	void resumeConfigWrites();
 	void notifySupervisorBoundary();
 
-	static u64 readProgressThunk(void* context, u32 address, MappedBusSignals busSignals);
-	static void writeConfigThunk(void* context, u32 address, u64 value, MappedBusSignals busSignals);
+	static u32 readProgressThunk(void* context, u32 address, MappedBusSignals busSignals);
+	static void writeConfigThunk(void* context, u32 address, u32 value, MappedBusSignals busSignals);
 	static bool configWriteReadyThunk(void* context, u32 address, MappedBusSignals busSignals);
-	static u64 readDataThunk(void* context, u32 address, MappedBusSignals busSignals);
-	static void writeDataThunk(void* context, u32 address, u64 value, MappedBusSignals busSignals);
+	static u32 readDataThunk(void* context, u32 address, MappedBusSignals busSignals);
+	static void writeDataThunk(void* context, u32 address, u32 value, MappedBusSignals busSignals);
 	static bool dataWriteReadyThunk(void* context, u32 address, MappedBusSignals busSignals);
 
 	Memory& m_memory;

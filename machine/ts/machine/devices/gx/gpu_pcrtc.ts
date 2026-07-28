@@ -105,6 +105,7 @@ export const GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED = 49_761_146;
 export const GX_GPU_PCRTC_RESET_TOTAL_HALF_LINES = 628;
 export const GX_GPU_PCRTC_RESET_ACTIVE_DISPLAY_HALF_LINES = 576;
 export const GX_GPU_PCRTC_HZ_SCALE = 1_000_000;
+const GX_GPU_PCRTC_FRAME_MILLISECONDS_Q16_NUMERATOR = 1000 * GX_GPU_PCRTC_HZ_SCALE * 0x1_0000;
 
 export const GX_GPU_PCRTC_RUNTIME_EDGE_NONE = 0;
 export const GX_GPU_PCRTC_RUNTIME_EDGE_VBLANK_BEGIN = 1;
@@ -289,6 +290,10 @@ export class GxGpuPcrtcTiming {
 	public vsyncHalfLine = 585;
 	public nextVblankCycleBudget = 1;
 	public refreshUfpsScaled = GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED;
+	public frameDurationMillisecondsQ16 = (
+		GX_GPU_PCRTC_FRAME_MILLISECONDS_Q16_NUMERATOR
+		- GX_GPU_PCRTC_FRAME_MILLISECONDS_Q16_NUMERATOR % GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED
+	) / GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED;
 	public frameDurationMs = 1000 / (GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED / GX_GPU_PCRTC_HZ_SCALE);
 	public fieldToggles = true;
 	public running = true;
@@ -334,9 +339,14 @@ export class GxGpuPcrtcTiming {
 			const refreshNumerator = this.halfLineClockDenominator * GX_GPU_PCRTC_HZ_SCALE;
 			const refreshDenominator = this.halfLineClockNumerator * this.totalHalfLines;
 			this.refreshUfpsScaled = (refreshNumerator - refreshNumerator % refreshDenominator) / refreshDenominator;
+			this.frameDurationMillisecondsQ16 = (
+				GX_GPU_PCRTC_FRAME_MILLISECONDS_Q16_NUMERATOR
+				- GX_GPU_PCRTC_FRAME_MILLISECONDS_Q16_NUMERATOR % this.refreshUfpsScaled
+			) / this.refreshUfpsScaled;
 			this.frameDurationMs = 1000 / (this.refreshUfpsScaled / GX_GPU_PCRTC_HZ_SCALE);
 		} else {
 			this.refreshUfpsScaled = 0;
+			this.frameDurationMillisecondsQ16 = 0;
 			this.frameDurationMs = 0;
 		}
 		this.fieldToggles = cmod !== 0 && (vfp & 1) !== 0;

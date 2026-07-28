@@ -39,16 +39,16 @@ public:
 	void leaveSupervisorContext();
 
 private:
-	static void onCommandWriteThunk(void* context, uint32_t addr, Value value, MappedBusSignals busSignals);
+	static void onCommandWriteThunk(void* context, uint32_t addr, u32 value, MappedBusSignals busSignals);
 	static bool commandWriteReadyThunk(void* context, uint32_t addr, MappedBusSignals busSignals);
-	static void onCtrlWriteThunk(void* context, uint32_t addr, Value value, MappedBusSignals busSignals);
-	static void onFaultAckWriteThunk(void* context, uint32_t addr, Value value, MappedBusSignals busSignals);
+	static void onCtrlWriteThunk(void* context, uint32_t addr, u32 value, MappedBusSignals busSignals);
+	static void onFaultAckWriteThunk(void* context, uint32_t addr, u32 value, MappedBusSignals busSignals);
 
 	using GeoJob = GeometryJobState;
 	void onCommandDoorbell(int64_t nowCycles, uint32_t command);
 	void start(int64_t nowCycles, uint32_t command);
 	void scheduleNextService(int64_t nowCycles);
-	void onFaultAckWrite(Value value);
+	void onFaultAckWrite(u32 value);
 	void completeRecord(GeoJob& job);
 	void finishSuccess(uint32_t processed);
 	void finishError(uint32_t code, uint32_t recordIndex, bool signalIrq = true);

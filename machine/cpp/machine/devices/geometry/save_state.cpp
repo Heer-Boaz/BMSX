@@ -1,7 +1,6 @@
 #include "machine/devices/geometry/controller.h"
 
 #include "spec/bmsx/io.h"
-#include "machine/cpu/value.h"
 
 #include <cstddef>
 
@@ -22,14 +21,14 @@ GeometryControllerState GeometryController::captureState() const {
 
 void GeometryController::restoreState(const GeometryControllerState& state, int64_t nowCycles) {
 	for (size_t index = 0; index < GEOMETRY_CONTROLLER_REGISTER_COUNT; index += 1u) {
-		m_memory.writeIoValue(IO_GEO_REGISTER_ADDRS[index], valueNumber(static_cast<double>(state.registerWords[index])));
+		m_memory.writeIoU32(IO_GEO_REGISTER_ADDRS[index], state.registerWords[index]);
 	}
 	m_phase = state.phase;
 	m_activeJob = state.activeJob;
 	m_workCarry = state.workCarry;
 	m_availableWorkUnits = state.availableWorkUnits;
 	m_supervisorQuiesceRequested = state.supervisorQuiesceRequested;
-	m_memory.writeIoValue(IO_GEO_CTRL, valueNumber(static_cast<double>(m_memory.readIoU32(IO_GEO_CTRL) & ~GEO_CTRL_ABORT)));
+	m_memory.writeIoU32(IO_GEO_CTRL, m_memory.readIoU32(IO_GEO_CTRL) & ~GEO_CTRL_ABORT);
 	scheduleNextService(nowCycles);
 }
 

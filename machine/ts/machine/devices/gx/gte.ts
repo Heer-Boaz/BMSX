@@ -1,5 +1,4 @@
 import type { CPU } from '../../cpu/cpu';
-import type { Value } from '../../cpu/value';
 import {
 	IO_GX_GTE_COMMAND,
 	IO_GX_GTE_CONTROL0,
@@ -242,10 +241,10 @@ export class GxGte {
 		this.plusPendingFlag = 0;
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_GTE);
 		this.cpu.resumeMemoryWrite(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_COMMAND * IO_WORD_SIZE);
-		this.memory.writeIoValue(IO_GX_GTE_COMMAND, 0);
-		this.memory.writeIoValue(IO_GX_GTE_CYCLES, 0);
-		this.memory.writeIoValue(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_COMMAND * IO_WORD_SIZE, 0);
-		this.memory.writeIoValue(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_CYCLES * IO_WORD_SIZE, 0);
+		this.memory.writeIoU32(IO_GX_GTE_COMMAND, 0);
+		this.memory.writeIoU32(IO_GX_GTE_CYCLES, 0);
+		this.memory.writeIoU32(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_COMMAND * IO_WORD_SIZE, 0);
+		this.memory.writeIoU32(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_CYCLES * IO_WORD_SIZE, 0);
 		this.currentSf = 0;
 	}
 
@@ -326,49 +325,48 @@ export class GxGte {
 	}
 
 
-	private static readDataRegisterThunk(context: GxGte, addr: number): Value {
+	private static readDataRegisterThunk(context: GxGte, addr: number): number {
 		return context.readDataRegister(((addr - IO_GX_GTE_DATA0) / IO_WORD_SIZE) >>> 0);
 	}
 
-	private static writeDataRegisterThunk(context: GxGte, addr: number, value: Value): void {
-		context.writeDataRegister(((addr - IO_GX_GTE_DATA0) / IO_WORD_SIZE) >>> 0, value as number);
+	private static writeDataRegisterThunk(context: GxGte, addr: number, value: number): void {
+		context.writeDataRegister(((addr - IO_GX_GTE_DATA0) / IO_WORD_SIZE) >>> 0, value);
 	}
 
-	private static readControlRegisterThunk(context: GxGte, addr: number): Value {
+	private static readControlRegisterThunk(context: GxGte, addr: number): number {
 		return context.readControlRegister(((addr - IO_GX_GTE_CONTROL0) / IO_WORD_SIZE) >>> 0);
 	}
 
-	private static writeControlRegisterThunk(context: GxGte, addr: number, value: Value): void {
-		context.writeControlRegister(((addr - IO_GX_GTE_CONTROL0) / IO_WORD_SIZE) >>> 0, value as number);
+	private static writeControlRegisterThunk(context: GxGte, addr: number, value: number): void {
+		context.writeControlRegister(((addr - IO_GX_GTE_CONTROL0) / IO_WORD_SIZE) >>> 0, value);
 	}
 
-	private static writeCommandThunk(context: GxGte, _addr: number, value: Value): void {
-		context.lastCycles = context.execute(value as number);
-		context.memory.writeIoValue(IO_GX_GTE_CYCLES, context.lastCycles);
+	private static writeCommandThunk(context: GxGte, _addr: number, value: number): void {
+		context.lastCycles = context.execute(value);
+		context.memory.writeIoU32(IO_GX_GTE_CYCLES, context.lastCycles);
 	}
 
-	private static readCyclesThunk(context: GxGte, _addr: number): Value {
+	private static readCyclesThunk(context: GxGte, _addr: number): number {
 		return context.lastCycles;
 	}
 
-	private static readPlusRegisterThunk(context: GxGte, addr: number): Value {
+	private static readPlusRegisterThunk(context: GxGte, addr: number): number {
 		context.synchronizePlusCompletion();
 		return context.plusRegisterWords[((addr - IO_GX_GTE_PLUS_BASE) / IO_WORD_SIZE) >>> 0];
 	}
 
-	private static writePlusRegisterThunk(context: GxGte, addr: number, value: Value): void {
+	private static writePlusRegisterThunk(context: GxGte, addr: number, value: number): void {
 		context.synchronizePlusCompletion();
 		const index = ((addr - IO_GX_GTE_PLUS_BASE) / IO_WORD_SIZE) >>> 0;
-		const word = (value as number) >>> 0;
 		if (index === GX_GTE_PLUS_COMMAND) {
 			if (context.plusCompletionCycle !== 0) {
 				return;
 			}
-			context.plusRegisterWords[index] = word;
-			context.startPlusCommand(word);
+			context.plusRegisterWords[index] = value;
+			context.startPlusCommand(value);
 			return;
 		}
-		context.plusRegisterWords[index] = word;
+		context.plusRegisterWords[index] = value;
 	}
 
 	private static plusCommandWriteReadyThunk(

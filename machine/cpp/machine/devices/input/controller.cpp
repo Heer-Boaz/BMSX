@@ -23,12 +23,12 @@ void InputController::reset() {
 	m_lastSampleCycle = 0u;
 	m_supervisorRequestLineWasHigh = false;
 	m_registers.reset();
-	m_memory.writeIoValue(IO_INP_OUTPUT_CTRL, valueNumber(0.0));
+	m_memory.writeIoU32(IO_INP_OUTPUT_CTRL, 0u);
 	m_registers.mirror(m_memory);
-	m_memory.writeIoValue(IO_INP_STATUS, valueNumber(static_cast<double>(m_sampleSequence)));
+	m_memory.writeIoU32(IO_INP_STATUS, m_sampleSequence);
 }
 
-void InputController::writeControl([[maybe_unused]] u32 addr, Value value) {
+void InputController::writeControl([[maybe_unused]] u32 addr, u32 value) {
 	m_registers.write(IO_INP_CTRL, value);
 	switch (m_registers.state.ctrl) {
 		case INP_CTRL_ARM:
@@ -40,7 +40,7 @@ void InputController::writeControl([[maybe_unused]] u32 addr, Value value) {
 			m_lastSampleCycle = 0u;
 			m_registers.reset();
 			m_registers.mirror(m_memory);
-			m_memory.writeIoValue(IO_INP_STATUS, valueNumber(static_cast<double>(m_sampleSequence)));
+			m_memory.writeIoU32(IO_INP_STATUS, m_sampleSequence);
 			return;
 	}
 }
@@ -62,7 +62,7 @@ void InputController::onVblankEdge(f64 currentTimeMs, u32 nowCycles) {
 	m_sampleArmed = false;
 	m_registers.latchSnapshot(m_snapshot);
 	m_registers.mirror(m_memory);
-	m_memory.writeIoValue(IO_INP_STATUS, valueNumber(static_cast<double>(m_sampleSequence)));
+	m_memory.writeIoU32(IO_INP_STATUS, m_sampleSequence);
 }
 
 void InputController::cancelSampleArm() {

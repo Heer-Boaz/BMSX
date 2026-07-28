@@ -2137,7 +2137,7 @@ export class CPU {
 						const faultSequence = this.memory.readBusFaultSequence();
 						switch (c) {
 							case MemoryAccessKind.Word:
-								this.memory.writeMappedValue(addr, registers.get(a));
+								this.memory.writeMappedWord(addr, registers.getNumber(a) >>> 0);
 								break;
 							case MemoryAccessKind.U8:
 								this.memory.writeMappedU8(addr, registers.getNumber(a));
@@ -2164,7 +2164,7 @@ export class CPU {
 					let value: Value;
 					switch (c) {
 						case MemoryAccessKind.Word:
-							value = this.memory.readMappedValue(addr);
+							value = this.memory.readMappedWord(addr);
 							break;
 						case MemoryAccessKind.U8:
 							value = this.memory.readMappedU8(addr);
@@ -2199,7 +2199,7 @@ export class CPU {
 					let value: Value;
 					switch (c) {
 						case MemoryAccessKind.Word:
-							value = this.memory.readMappedValue(addr);
+							value = this.memory.readMappedWord(addr);
 							break;
 						case MemoryAccessKind.U8:
 							value = this.memory.readMappedU8(addr);
@@ -2237,7 +2237,7 @@ export class CPU {
 					const faultSequence = this.memory.readBusFaultSequence();
 					switch (c) {
 						case MemoryAccessKind.Word:
-							this.memory.writeMappedValue(addr, registers.get(a));
+							this.memory.writeMappedWord(addr, registers.getNumber(a) >>> 0);
 							break;
 						case MemoryAccessKind.U8:
 							this.memory.writeMappedU8(addr, registers.getNumber(a));
@@ -2617,7 +2617,7 @@ export class CPU {
 		const faultSequence = this.memory.readBusFaultSequence();
 		let writeAddr = addr;
 		for (let offset = 0; offset < valueCount; offset += 1) {
-			this.memory.writeMappedValue(writeAddr, frame.registers.get(valueBase + offset));
+			this.memory.writeMappedWord(writeAddr, frame.registers.getNumber(valueBase + offset) >>> 0);
 			if (this.memory.readBusFaultSequence() !== faultSequence) {
 				this.enterSynchronousException(frame, CPU_CAUSE_CODE_DATA_BUS_ERROR);
 				return;
@@ -3501,7 +3501,6 @@ export class CPU {
 			this.pushHeapValue(this.globalValues[slot]);
 		}
 		this.pushHeapValue(this.stringIndexTable);
-		this.memory.collectRootValues(this.pushHeapValue);
 		for (let index = 0; index < this.completionValues.length; index += 1) {
 			this.pushHeapValue(this.completionValues[index]);
 		}

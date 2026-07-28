@@ -4,13 +4,19 @@ Dit bestand is alleen de werkvoorraad. Afgeronde hardwarecontracten horen in
 [`architecture.md`](architecture.md); testuitslagen en implementatiegeschiedenis
 horen niet in deze lijst.
 
+## Eerstvolgende architectuurgate
+
+| ID | Opdracht | Klaar wanneer |
+| --- | --- | --- |
+| `ARCH-REVIEW-01` | Beantwoord op de live dependency graph drie vragen: (1) waar bestaat nog host-magie in de emulatiemachine, (2) waar wijken TS en C++ semantisch, qua API of datastructuur af, en (3) zijn `machine`, hosts, IDE/Studio, compiler, rompacker en diagnostics in de juiste solutionrichting gescheiden? Dit is eerst een blockers-only audit; codewijzigingen volgen alleen uit bewezen blockers. | Het rapport noemt per blocker de concrete eigenaar, beide runtimepaden en hot-pathimpact. Geen generieke aanbevelingen, cosmetische moves, wrappers of speculatieve slices. |
+
 ## Doorlopende performance-audit
 
 | ID | Opdracht | Klaar wanneer |
 | --- | --- | --- |
 | `PERF-RUNTIME-01` | Kies per iteratie één gemeten hot-pathowner en verwijder daar herhaalde decode, conversie, validatie, allocatie of dispatch bij de producer. Dit is een paraplu, geen enkele megaslice. | Analyzers blokkeren nieuwe overtredingen, parity blijft exact en representatieve low-end hardware houdt 50 Hz zonder oplopende backlog. |
 
-## Uitgesteld tot een echte backend of target beschikbaar is
+## Vereist een interactieve backend of fysieke target
 
 | ID | Nog te bewijzen | Vereist |
 | --- | --- | --- |

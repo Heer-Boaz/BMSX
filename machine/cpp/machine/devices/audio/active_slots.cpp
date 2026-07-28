@@ -1,7 +1,6 @@
 #include "machine/devices/audio/active_slots.h"
 
 #include "spec/bmsx/io.h"
-#include "machine/cpu/value.h"
 #include "machine/devices/audio/event_latch.h"
 #include "machine/devices/audio/output.h"
 #include "machine/devices/audio/selected_slot_latch.h"
@@ -22,7 +21,7 @@ ApuActiveSlots::ApuActiveSlots(Memory& memory,
 	, m_selectedSlotLatch(selectedSlotLatch) {}
 
 void ApuActiveSlots::writeActiveMask() {
-	m_memory.writeIoValue(IO_APU_ACTIVE_MASK, valueNumber(static_cast<double>(m_slots.activeMask())));
+	m_memory.writeIoU32(IO_APU_ACTIVE_MASK, m_slots.activeMask());
 	m_selectedSlotLatch.refresh();
 }
 

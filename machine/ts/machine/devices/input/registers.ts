@@ -14,7 +14,6 @@ import {
 } from '../../../spec/bmsx/io';
 import { IO_WORD_SIZE } from '../../../spec/bmsx/memory_map';
 import { encodeSignedFix16 } from '../../common/numeric';
-import type { Value } from '../../cpu/value';
 import { Memory } from '../../memory/memory';
 import {
 	INPUT_CONTROLLER_KEY_WORD_COUNT,
@@ -103,42 +102,42 @@ export class InputControllerRegisterFile {
 		}
 	}
 
-	public static writeThunk(context: InputControllerRegisterFile, addr: number, value: Value): void {
+	public static writeThunk(context: InputControllerRegisterFile, addr: number, value: number): void {
 		switch (addr) {
 			case IO_INP_CTRL:
-				context.state.ctrl = (value as number) >>> 0;
+				context.state.ctrl = value;
 				return;
 			case IO_INP_OUTPUT_PORT:
-				context.state.outputPort = (value as number) >>> 0;
+				context.state.outputPort = value;
 				return;
 			case IO_INP_OUTPUT_INTENSITY_Q16:
-				context.state.outputIntensityQ16 = (value as number) >>> 0;
+				context.state.outputIntensityQ16 = value;
 				return;
 			case IO_INP_OUTPUT_DURATION_MS:
-				context.state.outputDurationMs = (value as number) >>> 0;
+				context.state.outputDurationMs = value;
 				return;
 		}
 	}
 
 	public mirror(memory: Memory): void {
-		memory.writeIoValue(IO_INP_CTRL, this.state.ctrl);
+		memory.writeIoU32(IO_INP_CTRL, this.state.ctrl);
 		for (let i = 0; i < INPUT_CONTROLLER_KEY_WORD_COUNT; i += 1) {
-			memory.writeIoValue(IO_INP_KEYS + i * IO_WORD_SIZE, this.state.keyWords[i]);
+			memory.writeIoU32(IO_INP_KEYS + i * IO_WORD_SIZE, this.state.keyWords[i]);
 		}
-		memory.writeIoValue(IO_INP_POINTER_BUTTONS, this.state.pointerButtons);
-		memory.writeIoValue(IO_INP_POINTER_X, this.state.pointerXQ16);
-		memory.writeIoValue(IO_INP_POINTER_Y, this.state.pointerYQ16);
-		memory.writeIoValue(IO_INP_POINTER_WHEEL, this.state.pointerWheelQ16);
+		memory.writeIoU32(IO_INP_POINTER_BUTTONS, this.state.pointerButtons);
+		memory.writeIoU32(IO_INP_POINTER_X, this.state.pointerXQ16);
+		memory.writeIoU32(IO_INP_POINTER_Y, this.state.pointerYQ16);
+		memory.writeIoU32(IO_INP_POINTER_WHEEL, this.state.pointerWheelQ16);
 		for (let pad = 0; pad < INPUT_CONTROLLER_PAD_COUNT; pad += 1) {
 			const padBase = IO_INP_PADS + pad * IO_INP_PAD_WORD_COUNT * IO_WORD_SIZE;
-			memory.writeIoValue(padBase, this.state.padButtons[pad]);
+			memory.writeIoU32(padBase, this.state.padButtons[pad]);
 			for (let axis = 0; axis < INPUT_CONTROLLER_PAD_AXIS_COUNT; axis += 1) {
-				memory.writeIoValue(padBase + (axis + 1) * IO_WORD_SIZE, this.state.padAxesQ16[pad * INPUT_CONTROLLER_PAD_AXIS_COUNT + axis]);
+				memory.writeIoU32(padBase + (axis + 1) * IO_WORD_SIZE, this.state.padAxesQ16[pad * INPUT_CONTROLLER_PAD_AXIS_COUNT + axis]);
 			}
 		}
-		memory.writeIoValue(IO_INP_OUTPUT_PORT, this.state.outputPort);
-		memory.writeIoValue(IO_INP_OUTPUT_INTENSITY_Q16, this.state.outputIntensityQ16);
-		memory.writeIoValue(IO_INP_OUTPUT_DURATION_MS, this.state.outputDurationMs);
-		memory.writeIoValue(IO_INP_OUTPUT_STATUS, this.state.outputStatus);
+		memory.writeIoU32(IO_INP_OUTPUT_PORT, this.state.outputPort);
+		memory.writeIoU32(IO_INP_OUTPUT_INTENSITY_Q16, this.state.outputIntensityQ16);
+		memory.writeIoU32(IO_INP_OUTPUT_DURATION_MS, this.state.outputDurationMs);
+		memory.writeIoU32(IO_INP_OUTPUT_STATUS, this.state.outputStatus);
 	}
 }

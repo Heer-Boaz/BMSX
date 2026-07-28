@@ -1,5 +1,4 @@
 import { IO_INP_OUTPUT_CTRL } from '../../../spec/bmsx/io';
-import type { Value } from '../../cpu/value';
 import { Memory } from '../../memory/memory';
 import { InputControllerRegisterFile } from './registers';
 import {
@@ -15,15 +14,14 @@ export class InputControllerOutputPort {
 		private readonly memory: Memory,
 	) {}
 
-	public static writeOutputControlRegisterThunk(context: InputControllerOutputPort, _addr: number, value: Value): void {
-		const command = (value as number) >>> 0;
-		if (command === INP_OUTPUT_CTRL_APPLY) {
+	public static writeOutputControlRegisterThunk(context: InputControllerOutputPort, _addr: number, value: number): void {
+		if (value === INP_OUTPUT_CTRL_APPLY) {
 			context.input.applyInputControllerVibrationEffect(
 				context.registers.selectedPadIndex(),
 				context.registers.state.outputDurationMs,
 				decodeInputOutputIntensityQ16(context.registers.state.outputIntensityQ16),
 			);
 		}
-		context.memory.writeIoValue(IO_INP_OUTPUT_CTRL, 0);
+		context.memory.writeIoU32(IO_INP_OUTPUT_CTRL, 0);
 	}
 }

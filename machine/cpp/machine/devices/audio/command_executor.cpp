@@ -58,21 +58,21 @@ void ApuCommandExecutor::restoreOutputVoice(const ApuOutputVoiceState& state) {
 	);
 }
 
-Value ApuCommandExecutor::selectedSlotRegisterReadThunk(void* context, u32 addr, MappedBusSignals) {
+u32 ApuCommandExecutor::selectedSlotRegisterReadThunk(void* context, u32 addr, MappedBusSignals) {
 	auto& executor = *static_cast<ApuCommandExecutor*>(context);
 	const i64 nowCycles = executor.m_scheduler.currentNowCycles();
 	executor.m_serviceClock.synchronize(nowCycles);
 	const u32 slot = executor.m_memory.readIoU32(IO_APU_SLOT) & APU_SLOT_INDEX_MASK;
 	const u32 parameterIndex = (addr - IO_APU_SELECTED_SLOT_REG0) / IO_WORD_SIZE;
-	return valueNumber(static_cast<double>(executor.m_slots.registerWord(slot, parameterIndex)));
+	return executor.m_slots.registerWord(slot, parameterIndex);
 }
 
-void ApuCommandExecutor::selectedSlotRegisterWriteThunk(void* context, u32 addr, Value value, MappedBusSignals) {
+void ApuCommandExecutor::selectedSlotRegisterWriteThunk(void* context, u32 addr, u32 value, MappedBusSignals) {
 	auto& executor = *static_cast<ApuCommandExecutor*>(context);
 	const i64 nowCycles = executor.m_scheduler.currentNowCycles();
 	executor.m_serviceClock.synchronize(nowCycles);
 	const u32 slot = executor.m_memory.readIoU32(IO_APU_SLOT) & APU_SLOT_INDEX_MASK;
-	executor.writeSlotRegisterWord(slot, (addr - IO_APU_SELECTED_SLOT_REG0) / IO_WORD_SIZE, toU32(value));
+	executor.writeSlotRegisterWord(slot, (addr - IO_APU_SELECTED_SLOT_REG0) / IO_WORD_SIZE, value);
 	executor.m_serviceClock.scheduleNext(nowCycles);
 }
 

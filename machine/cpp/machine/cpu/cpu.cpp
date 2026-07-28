@@ -2509,7 +2509,7 @@ void CPU::writeMappedWordSequence(CallFrame& frame, uint32_t addr, int valueBase
 	const uint32_t faultSequence = m_memory.readBusFaultSequence();
 	uint32_t writeAddr = addr;
 	for (int offset = 0; offset < valueCount; ++offset) {
-		m_memory.writeMappedValue(writeAddr, frame.registers[static_cast<size_t>(valueBase + offset)]);
+		m_memory.writeMappedWord(writeAddr, toU32(frame.registers[static_cast<size_t>(valueBase + offset)]));
 		if (m_memory.readBusFaultSequence() != faultSequence) {
 			enterSynchronousException(frame, CPU_CAUSE_CODE_DATA_BUS_ERROR);
 			return;
@@ -2805,7 +2805,6 @@ void CPU::markRoots(GcHeap& heap) {
 	// Keep the interned "__index" key tracked even while no live metatable uses it.
 	heap.markValue(m_indexKey);
 	heap.markObject(m_stringIndexTable);
-	m_memory.markRoots(heap);
 	for (const auto& value : completionValues) {
 		heap.markValue(value);
 	}

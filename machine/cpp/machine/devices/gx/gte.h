@@ -237,14 +237,14 @@ private:
 	i32 sy(u32 index) const;
 	u32 sz(u32 index) const;
 
-	static u64 readDataRegisterThunk(void* context, u32 addr, MappedBusSignals busSignals);
-	static void writeDataRegisterThunk(void* context, u32 addr, u64 value, MappedBusSignals busSignals);
-	static u64 readControlRegisterThunk(void* context, u32 addr, MappedBusSignals busSignals);
-	static void writeControlRegisterThunk(void* context, u32 addr, u64 value, MappedBusSignals busSignals);
-	static void writeCommandThunk(void* context, u32 addr, u64 value, MappedBusSignals busSignals);
-	static u64 readCyclesThunk(void* context, u32 addr, MappedBusSignals busSignals);
-	static u64 readPlusRegisterThunk(void* context, u32 addr, MappedBusSignals busSignals);
-	static void writePlusRegisterThunk(void* context, u32 addr, u64 value, MappedBusSignals busSignals);
+	static u32 readDataRegisterThunk(void* context, u32 addr, MappedBusSignals busSignals);
+	static void writeDataRegisterThunk(void* context, u32 addr, u32 value, MappedBusSignals busSignals);
+	static u32 readControlRegisterThunk(void* context, u32 addr, MappedBusSignals busSignals);
+	static void writeControlRegisterThunk(void* context, u32 addr, u32 value, MappedBusSignals busSignals);
+	static void writeCommandThunk(void* context, u32 addr, u32 value, MappedBusSignals busSignals);
+	static u32 readCyclesThunk(void* context, u32 addr, MappedBusSignals busSignals);
+	static u32 readPlusRegisterThunk(void* context, u32 addr, MappedBusSignals busSignals);
+	static void writePlusRegisterThunk(void* context, u32 addr, u32 value, MappedBusSignals busSignals);
 	static bool plusCommandWriteReadyThunk(void* context, u32 addr, MappedBusSignals busSignals);
 	void synchronizePlusCompletion();
 	void publishPlusCompletion();

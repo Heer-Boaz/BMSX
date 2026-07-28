@@ -34,7 +34,7 @@ SystemController::SystemController(
 	memory.mapIoWrite<&SystemController::writeControl>(IO_SYS_CONTROL, *this);
 	memory.mapIoRead<&SystemController::readStatus>(IO_SYS_STATUS, *this);
 	memory.mapIoRead<&SystemController::readTimeMilliseconds>(IO_SYS_TIME_MS, *this);
-	memory.mapIoRead<&SystemController::readFrameMilliseconds>(IO_SYS_FRAME_MS, *this);
+	memory.mapIoRead<&SystemController::readFrameMillisecondsQ16>(IO_SYS_FRAME_MS_Q16, *this);
 	memory.mapIoRead<&SystemController::readCyclesPerFrame>(IO_SYS_CYCLES_PER_FRAME, *this);
 	memory.mapIoRead<&SystemController::readPrintChar>(IO_SYS_PRINT_CHAR, *this);
 	memory.mapIoWrite<&SystemController::writePrintChar>(IO_SYS_PRINT_CHAR, *this);
@@ -53,7 +53,7 @@ void SystemController::reset() {
 	m_printReadIndex = 0u;
 	m_printByteCount = 0u;
 	clearHostOutput();
-	m_memory.writeIoValue(IO_SYS_CONTROL, valueNumber(0.0));
+	m_memory.writeIoU32(IO_SYS_CONTROL, 0u);
 	writeStatusIo();
 }
 
@@ -61,44 +61,41 @@ f64 SystemController::elapsedMilliseconds() const {
 	return static_cast<f64>(m_scheduler.currentNowCycles()) * 1000.0 / static_cast<f64>(m_cpuHz);
 }
 
-Value SystemController::readStatus([[maybe_unused]] u32 address) {
-	return valueNumber(static_cast<f64>(statusWord()));
+u32 SystemController::readStatus([[maybe_unused]] u32 address) {
+	return statusWord();
 }
 
-Value SystemController::readTimeMilliseconds([[maybe_unused]] u32 address) const {
+u32 SystemController::readTimeMilliseconds([[maybe_unused]] u32 address) const {
 	const u64 cycles = static_cast<u64>(m_scheduler.currentNowCycles());
 	const u64 cpuHz = static_cast<u64>(m_cpuHz);
-	return valueNumber(static_cast<f64>(
-		static_cast<u32>((cycles / cpuHz) * 1000u + ((cycles % cpuHz) * 1000u) / cpuHz)
-	));
+	return static_cast<u32>((cycles / cpuHz) * 1000u + ((cycles % cpuHz) * 1000u) / cpuHz);
 }
 
-Value SystemController::readFrameMilliseconds([[maybe_unused]] u32 address) const {
-	return valueNumber(m_gpu.readPcrtcTiming().frameDurationMs);
+u32 SystemController::readFrameMillisecondsQ16([[maybe_unused]] u32 address) const {
+	return m_gpu.readPcrtcTiming().frameDurationMillisecondsQ16;
 }
 
-Value SystemController::readCyclesPerFrame([[maybe_unused]] u32 address) const {
-	return valueNumber(static_cast<f64>(m_gpu.readPcrtcTiming().nextVblankCycleBudget));
+u32 SystemController::readCyclesPerFrame([[maybe_unused]] u32 address) const {
+	return static_cast<u32>(m_gpu.readPcrtcTiming().nextVblankCycleBudget);
 }
 
-Value SystemController::readPrintChar([[maybe_unused]] u32 address) {
+u32 SystemController::readPrintChar([[maybe_unused]] u32 address) {
 	if (m_printByteCount == 0u) {
-		return valueNumber(0.0);
+		return 0u;
 	}
 	const u8 value = m_printBuffer[m_printReadIndex];
 	m_printReadIndex = (m_printReadIndex + 1u) & (SYS_PRINT_BUFFER_BYTES - 1u);
 	m_printByteCount -= 1u;
-	return valueNumber(static_cast<f64>(value));
+	return value;
 }
 
-Value SystemController::readPrintByteCount([[maybe_unused]] u32 address) const {
-	return valueNumber(static_cast<f64>(m_printByteCount));
+u32 SystemController::readPrintByteCount([[maybe_unused]] u32 address) const {
+	return m_printByteCount;
 }
 
-void SystemController::writePrintChar([[maybe_unused]] u32 address, Value value) {
-	const u32 codepoint = toU32(value);
-	const u32 byteCount = encodeUtf8Codepoint(codepoint, m_printEncodingBytes);
-	appendRingByte(static_cast<u8>(codepoint <= 0xFFu ? codepoint : static_cast<u32>('?')));
+void SystemController::writePrintChar([[maybe_unused]] u32 address, u32 value) {
+	const u32 byteCount = encodeUtf8Codepoint(value, m_printEncodingBytes);
+	appendRingByte(static_cast<u8>(value <= 0xFFu ? value : static_cast<u32>('?')));
 	if (!reserveHostOutputBytes(byteCount)) {
 		return;
 	}
@@ -107,7 +104,7 @@ void SystemController::writePrintChar([[maybe_unused]] u32 address, Value value)
 	}
 }
 
-void SystemController::flushPrintLine([[maybe_unused]] u32 address, [[maybe_unused]] Value value) {
+void SystemController::flushPrintLine([[maybe_unused]] u32 address, [[maybe_unused]] u32 value) {
 	appendRingByte(static_cast<u8>('\n'));
 	if (reserveHostOutputBytes(1u)) {
 		appendHostOutputByte(static_cast<u8>('\n'));
@@ -157,24 +154,23 @@ void SystemController::appendRingByte(u8 value) {
 	m_printByteCount += 1u;
 }
 
-void SystemController::writeControl([[maybe_unused]] u32 address, Value value) {
-	const u32 control = toU32(value);
-	if ((control & SYS_CONTROL_RESET) != 0u) {
+void SystemController::writeControl([[maybe_unused]] u32 address, u32 value) {
+	if ((value & SYS_CONTROL_RESET) != 0u) {
 		m_resetRequested = true;
 		m_cpu.requestYield();
 	}
 	if (!m_cpu.isUserMode()) {
-		if ((control & SYS_CONTROL_SUPERVISOR_ENTER) != 0u) {
+		if ((value & SYS_CONTROL_SUPERVISOR_ENTER) != 0u) {
 			activateSupervisorContext();
 		}
-		if ((control & SYS_CONTROL_SUPERVISOR_FAULT) != 0u) {
+		if ((value & SYS_CONTROL_SUPERVISOR_FAULT) != 0u) {
 			enterSupervisorFault();
 		}
-		if ((control & SYS_CONTROL_SUPERVISOR_LEAVE) != 0u) {
+		if ((value & SYS_CONTROL_SUPERVISOR_LEAVE) != 0u) {
 			beginSupervisorLeave();
 		}
 	}
-	m_memory.writeIoValue(IO_SYS_CONTROL, valueNumber(0.0));
+	m_memory.writeIoU32(IO_SYS_CONTROL, 0u);
 }
 
 void SystemController::requestSupervisorLineEdge() {
@@ -324,7 +320,7 @@ void SystemController::restoreState(const SystemControllerState& state) {
 	m_printReadIndex = state.printReadIndex;
 	m_printByteCount = state.printByteCount;
 	clearHostOutput();
-	m_memory.writeIoValue(IO_SYS_CONTROL, valueNumber(0.0));
+	m_memory.writeIoU32(IO_SYS_CONTROL, 0u);
 	writeStatusIo();
 }
 
@@ -351,7 +347,7 @@ u32 SystemController::statusWord() const {
 }
 
 void SystemController::writeStatusIo() {
-	m_memory.writeIoValue(IO_SYS_STATUS, valueNumber(static_cast<f64>(statusWord())));
+	m_memory.writeIoU32(IO_SYS_STATUS, statusWord());
 }
 
 } // namespace bmsx

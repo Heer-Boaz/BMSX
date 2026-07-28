@@ -1,7 +1,7 @@
 import {
 	IO_SYS_CONTROL,
 	IO_SYS_CYCLES_PER_FRAME,
-	IO_SYS_FRAME_MS,
+	IO_SYS_FRAME_MS_Q16,
 	IO_SYS_PRINT_CHAR,
 	IO_SYS_PRINT_FLUSH,
 	IO_SYS_STATUS,
@@ -16,7 +16,6 @@ import {
 	SYS_STATUS_SUPERVISOR_RESUMABLE,
 } from '../../../spec/bmsx/io';
 import type { CPU } from '../../cpu/cpu';
-import type { Value } from '../../cpu/value';
 import { encodeUtf8Codepoint } from '../../../common/utf8';
 import type { DmaController } from '../dma/controller';
 import type { GeometryController } from '../geometry/controller';
@@ -80,7 +79,7 @@ export class SystemController {
 		memory.mapIoWrite(IO_SYS_CONTROL, this, SystemController.writeControl);
 		memory.mapIoRead(IO_SYS_STATUS, this, SystemController.readStatus);
 		memory.mapIoRead(IO_SYS_TIME_MS, this, SystemController.readTimeMilliseconds);
-		memory.mapIoRead(IO_SYS_FRAME_MS, this, SystemController.readFrameMilliseconds);
+		memory.mapIoRead(IO_SYS_FRAME_MS_Q16, this, SystemController.readFrameMillisecondsQ16);
 		memory.mapIoRead(IO_SYS_CYCLES_PER_FRAME, this, SystemController.readCyclesPerFrame);
 		memory.mapIoRead(IO_SYS_PRINT_CHAR, this, SystemController.readPrintChar);
 		memory.mapIoWrite(IO_SYS_PRINT_CHAR, this, SystemController.writePrintChar);
@@ -99,7 +98,7 @@ export class SystemController {
 		this.printReadIndex = 0;
 		this.printByteCount = 0;
 		this.clearHostOutput();
-		this.memory.writeIoValue(IO_SYS_CONTROL, 0);
+		this.memory.writeIoU32(IO_SYS_CONTROL, 0);
 		this.writeStatusIo();
 	}
 
@@ -111,11 +110,11 @@ export class SystemController {
 		return this.scheduler.currentNowCycles() * 1000 / this.cpuHz;
 	}
 
-	private static readStatus(context: SystemController): Value {
+	private static readStatus(context: SystemController): number {
 		return context.statusWord();
 	}
 
-	private static readTimeMilliseconds(context: SystemController): Value {
+	private static readTimeMilliseconds(context: SystemController): number {
 		const cycles = context.scheduler.currentNowCycles();
 		const cycleRemainder = cycles % context.cpuHz;
 		const wholeSeconds = (cycles - cycleRemainder) / context.cpuHz;
@@ -127,15 +126,15 @@ export class SystemController {
 		) >>> 0;
 	}
 
-	private static readFrameMilliseconds(context: SystemController): Value {
-		return context.gpu.readPcrtcTiming().frameDurationMs;
+	private static readFrameMillisecondsQ16(context: SystemController): number {
+		return context.gpu.readPcrtcTiming().frameDurationMillisecondsQ16;
 	}
 
-	private static readCyclesPerFrame(context: SystemController): Value {
-		return context.gpu.readPcrtcTiming().nextVblankCycleBudget;
+	private static readCyclesPerFrame(context: SystemController): number {
+		return context.gpu.readPcrtcTiming().nextVblankCycleBudget >>> 0;
 	}
 
-	private static readPrintChar(context: SystemController): Value {
+	private static readPrintChar(context: SystemController): number {
 		if (context.printByteCount === 0) {
 			return 0;
 		}
@@ -145,14 +144,13 @@ export class SystemController {
 		return value;
 	}
 
-	private static readPrintByteCount(context: SystemController): Value {
+	private static readPrintByteCount(context: SystemController): number {
 		return context.printByteCount;
 	}
 
-	private static writePrintChar(context: SystemController, _address: number, value: Value): void {
-		const codepoint = (value as number) >>> 0;
-		const byteCount = encodeUtf8Codepoint(codepoint, context.printEncodingBytes);
-		context.appendRingByte(codepoint <= 0xff ? codepoint : 0x3f);
+	private static writePrintChar(context: SystemController, _address: number, value: number): void {
+		const byteCount = encodeUtf8Codepoint(value, context.printEncodingBytes);
+		context.appendRingByte(value <= 0xff ? value : 0x3f);
 		if (!context.reserveHostOutputBytes(byteCount)) {
 			return;
 		}
@@ -215,24 +213,23 @@ export class SystemController {
 		this.printByteCount += 1;
 	}
 
-	private static writeControl(context: SystemController, _address: number, value: Value): void {
-		const control = (value as number) >>> 0;
-		if ((control & SYS_CONTROL_RESET) !== 0) {
+	private static writeControl(context: SystemController, _address: number, value: number): void {
+		if ((value & SYS_CONTROL_RESET) !== 0) {
 			context.resetRequested = true;
 			context.cpu.requestYield();
 		}
 		if (!context.cpu.isUserMode()) {
-			if ((control & SYS_CONTROL_SUPERVISOR_ENTER) !== 0) {
+			if ((value & SYS_CONTROL_SUPERVISOR_ENTER) !== 0) {
 				context.activateSupervisorContext();
 			}
-			if ((control & SYS_CONTROL_SUPERVISOR_FAULT) !== 0) {
+			if ((value & SYS_CONTROL_SUPERVISOR_FAULT) !== 0) {
 				context.enterSupervisorFault();
 			}
-			if ((control & SYS_CONTROL_SUPERVISOR_LEAVE) !== 0) {
+			if ((value & SYS_CONTROL_SUPERVISOR_LEAVE) !== 0) {
 				context.beginSupervisorLeave();
 			}
 		}
-		context.memory.writeIoValue(IO_SYS_CONTROL, 0);
+		context.memory.writeIoU32(IO_SYS_CONTROL, 0);
 	}
 
 	public requestSupervisorLineEdge(): void {
@@ -388,7 +385,7 @@ export class SystemController {
 		this.printReadIndex = state.printReadIndex;
 		this.printByteCount = state.printByteCount;
 		this.clearHostOutput();
-		this.memory.writeIoValue(IO_SYS_CONTROL, 0);
+		this.memory.writeIoU32(IO_SYS_CONTROL, 0);
 		this.writeStatusIo();
 	}
 
@@ -415,6 +412,6 @@ export class SystemController {
 	}
 
 	private writeStatusIo(): void {
-		this.memory.writeIoValue(IO_SYS_STATUS, this.statusWord());
+		this.memory.writeIoU32(IO_SYS_STATUS, this.statusWord());
 	}
 }

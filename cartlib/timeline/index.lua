@@ -2,6 +2,7 @@
 -- timeline runtime for system rom
 --
 local clamp<const> = require('bios/util/clamp')
+local clock<const> = require('system/clock')
 local timeline_apply<const> = require('cartlib/timeline/apply')
 --
 -- DESIGN PRINCIPLES — timeline authoring
@@ -294,8 +295,7 @@ function timeline.new(def)
 	if def.ticks_per_frame ~= nil then
 		self.ticks_per_frame = def.ticks_per_frame
 	else
-		local frame_ms<const>: *word = 0x08010228
-		self.ticks_per_frame = *frame_ms
+		self.ticks_per_frame = clock.frame_milliseconds()
 	end
 	self.playback_mode = def.playback_mode or 'once'
 	if continuous == nil and frame_source == nil and self.tracks ~= nil then

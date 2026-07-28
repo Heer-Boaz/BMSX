@@ -1,5 +1,4 @@
 import { IO_IRQ_ACK, IO_IRQ_FLAGS, IO_IRQ_MASK } from '../../../spec/bmsx/io';
-import type { Value } from '../../cpu/value';
 import { Memory } from '../../memory/memory';
 import type { IrqControllerState } from './save_state';
 
@@ -23,14 +22,14 @@ export class IrqController {
 		this.userPendingFlags = 0;
 		this.userMask = 0;
 		this.supervisorContextActive = false;
-		this.memory.writeIoValue(IO_IRQ_ACK, 0);
-		this.memory.writeIoValue(IO_IRQ_MASK, 0);
+		this.memory.writeIoU32(IO_IRQ_ACK, 0);
+		this.memory.writeIoU32(IO_IRQ_MASK, 0);
 	}
 
 	public postLoad(): void {
 		const clearAck = 0;
-		this.memory.writeIoValue(IO_IRQ_ACK, clearAck);
-		this.memory.writeIoValue(IO_IRQ_MASK, this.mask);
+		this.memory.writeIoU32(IO_IRQ_ACK, clearAck);
+		this.memory.writeIoU32(IO_IRQ_MASK, this.mask);
 	}
 
 	public captureState(): IrqControllerState {
@@ -97,33 +96,32 @@ export class IrqController {
 				this.pendingFlags = next;
 			}
 		}
-		this.memory.writeIoValue(IO_IRQ_ACK, 0);
+		this.memory.writeIoU32(IO_IRQ_ACK, 0);
 	}
 
-	private static onFlagsReadThunk(context: IrqController, addr: number): Value {
+	private static onFlagsReadThunk(context: IrqController, addr: number): number {
 		void addr;
 		return context.pendingFlags;
 	}
 
-	private static onAckWriteThunk(context: IrqController, addr: number, value: Value): void {
+	private static onAckWriteThunk(context: IrqController, addr: number, value: number): void {
 		void addr;
-		const ack = (value as number) >>> 0;
-		if (ack !== 0) {
-			const next = (context.pendingFlags & ~ack) >>> 0;
+		if (value !== 0) {
+			const next = (context.pendingFlags & ~value) >>> 0;
 			if (next !== context.pendingFlags) {
 				context.pendingFlags = next;
 			}
 		}
-		context.memory.writeIoValue(IO_IRQ_ACK, 0);
+		context.memory.writeIoU32(IO_IRQ_ACK, 0);
 	}
 
-	private static onMaskReadThunk(context: IrqController, addr: number): Value {
+	private static onMaskReadThunk(context: IrqController, addr: number): number {
 		void addr;
 		return context.mask;
 	}
 
-	private static onMaskWriteThunk(context: IrqController, addr: number, value: Value): void {
+	private static onMaskWriteThunk(context: IrqController, addr: number, value: number): void {
 		void addr;
-		context.mask = (value as number) >>> 0;
+		context.mask = value;
 	}
 }

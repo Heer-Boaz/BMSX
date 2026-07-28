@@ -1,5 +1,5 @@
-local frame_ms<const>: *word = 0x08010228
-local frame_delta_ms<const> = *frame_ms
+local clock<const> = require('system/clock')
+local frame_delta_ms<const> = clock.frame_milliseconds()
 -- world.lua
 -- central world: owns all objects, spaces, and the ECS system manager
 --

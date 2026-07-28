@@ -519,7 +519,7 @@ DISPATCH_LABEL(LOAD_MEM_D) {
 	const uint32_t faultSequence = m_memory.readBusFaultSequence();
 	Value value;
 	switch (static_cast<MemoryAccessKind>(c)) {
-		case MemoryAccessKind::Word: value = m_memory.readMappedValue(addr); break;
+		case MemoryAccessKind::Word: value = valueNumber(static_cast<double>(m_memory.readMappedWord(addr))); break;
 		case MemoryAccessKind::U8: value = valueNumber(static_cast<double>(m_memory.readMappedU8(addr))); break;
 		case MemoryAccessKind::U16LE: value = valueNumber(static_cast<double>(m_memory.readMappedU16LE(addr))); break;
 		case MemoryAccessKind::U32LE: value = valueNumber(static_cast<double>(m_memory.readMappedU32LE(addr))); break;
@@ -548,7 +548,7 @@ DISPATCH_LABEL(STORE_MEM_D) {
 	const Value value = REG(a);
 	const uint32_t faultSequence = m_memory.readBusFaultSequence();
 	switch (static_cast<MemoryAccessKind>(c)) {
-		case MemoryAccessKind::Word: m_memory.writeMappedValue(addr, value); break;
+		case MemoryAccessKind::Word: m_memory.writeMappedWord(addr, toU32(value)); break;
 		case MemoryAccessKind::U8: m_memory.writeMappedU8(addr, static_cast<u8>(toU32(value))); break;
 		case MemoryAccessKind::U16LE: m_memory.writeMappedU16LE(addr, toU32(value)); break;
 		case MemoryAccessKind::U32LE: m_memory.writeMappedU32LE(addr, toU32(value)); break;
@@ -586,7 +586,7 @@ DISPATCH_LABEL(LOAD_MEM) {
 	const uint32_t faultSequence = m_memory.readBusFaultSequence();
 	Value value;
 	switch (static_cast<MemoryAccessKind>(c)) {
-		case MemoryAccessKind::Word: value = m_memory.readMappedValue(addr); break;
+		case MemoryAccessKind::Word: value = valueNumber(static_cast<double>(m_memory.readMappedWord(addr))); break;
 		case MemoryAccessKind::U8: value = valueNumber(static_cast<double>(m_memory.readMappedU8(addr))); break;
 		case MemoryAccessKind::U16LE: value = valueNumber(static_cast<double>(m_memory.readMappedU16LE(addr))); break;
 		case MemoryAccessKind::U32LE: value = valueNumber(static_cast<double>(m_memory.readMappedU32LE(addr))); break;
@@ -615,7 +615,7 @@ DISPATCH_LABEL(STORE_MEM) {
 	const Value value = REG(a);
 	const uint32_t faultSequence = m_memory.readBusFaultSequence();
 	switch (static_cast<MemoryAccessKind>(c)) {
-		case MemoryAccessKind::Word: m_memory.writeMappedValue(addr, value); break;
+		case MemoryAccessKind::Word: m_memory.writeMappedWord(addr, toU32(value)); break;
 		case MemoryAccessKind::U8: m_memory.writeMappedU8(addr, static_cast<u8>(toU32(value))); break;
 		case MemoryAccessKind::U16LE: m_memory.writeMappedU16LE(addr, toU32(value)); break;
 		case MemoryAccessKind::U32LE: m_memory.writeMappedU32LE(addr, toU32(value)); break;

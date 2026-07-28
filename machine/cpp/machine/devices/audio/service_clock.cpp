@@ -1,7 +1,6 @@
 #include "machine/devices/audio/service_clock.h"
 
 #include "spec/bmsx/io.h"
-#include "machine/cpu/value.h"
 #include "machine/devices/audio/active_slots.h"
 #include "machine/devices/audio/command_fifo.h"
 #include "spec/audio/apu.h"
@@ -36,7 +35,7 @@ ApuServiceClock::ApuServiceClock(
 	memory.mapIoWrite(IO_APU_TRANSFER_CONTROL, this, &ApuServiceClock::writeTransferControlThunk);
 }
 
-u64 ApuServiceClock::readTransferDataThunk(void* context, u32, MappedBusSignals busSignals) {
+u32 ApuServiceClock::readTransferDataThunk(void* context, u32, MappedBusSignals busSignals) {
 	auto& clock = *static_cast<ApuServiceClock*>(context);
 	const i64 nowCycles = clock.m_scheduler.currentNowCycles();
 	clock.synchronizeBeforeTransferAccess(nowCycles);
@@ -44,25 +43,25 @@ u64 ApuServiceClock::readTransferDataThunk(void* context, u32, MappedBusSignals 
 		? clock.m_sampleTransfer.readDmaData((busSignals & MAPPED_BUS_DMA_BLOCK_END) != 0u)
 		: clock.m_sampleTransfer.readCpuData();
 	clock.advanceVoicesTo(nowCycles);
-	return valueNumber(static_cast<f64>(word));
+	return word;
 }
 
-void ApuServiceClock::writeTransferAddressThunk(void* context, u32, u64 value, MappedBusSignals) {
+void ApuServiceClock::writeTransferAddressThunk(void* context, u32, u32 value, MappedBusSignals) {
 	auto& clock = *static_cast<ApuServiceClock*>(context);
 	const i64 nowCycles = clock.m_scheduler.currentNowCycles();
 	clock.synchronizeBeforeTransferAccess(nowCycles);
-	clock.m_sampleTransfer.writeAddress(toU32(value));
+	clock.m_sampleTransfer.writeAddress(value);
 	clock.advanceVoicesTo(nowCycles);
 }
 
-void ApuServiceClock::writeTransferDataThunk(void* context, u32, u64 value, MappedBusSignals busSignals) {
+void ApuServiceClock::writeTransferDataThunk(void* context, u32, u32 value, MappedBusSignals busSignals) {
 	auto& clock = *static_cast<ApuServiceClock*>(context);
 	const i64 nowCycles = clock.m_scheduler.currentNowCycles();
 	clock.synchronizeBeforeTransferAccess(nowCycles);
 	if ((busSignals & MAPPED_BUS_MASTER_DMA) != 0u) {
-		clock.m_sampleTransfer.writeDmaData(toU32(value), (busSignals & MAPPED_BUS_DMA_BLOCK_END) != 0u);
+		clock.m_sampleTransfer.writeDmaData(value, (busSignals & MAPPED_BUS_DMA_BLOCK_END) != 0u);
 	} else {
-		clock.m_sampleTransfer.writeCpuData(toU32(value));
+		clock.m_sampleTransfer.writeCpuData(value);
 	}
 	clock.advanceVoicesTo(nowCycles);
 }
@@ -76,11 +75,11 @@ bool ApuServiceClock::transferDataWriteReadyThunk(void* context, u32, MappedBusS
 		&& !clock.m_dma.ownsWritePort(IO_APU_TRANSFER_DATA);
 }
 
-void ApuServiceClock::writeTransferControlThunk(void* context, u32, u64 value, MappedBusSignals) {
+void ApuServiceClock::writeTransferControlThunk(void* context, u32, u32 value, MappedBusSignals) {
 	auto& clock = *static_cast<ApuServiceClock*>(context);
 	const i64 nowCycles = clock.m_scheduler.currentNowCycles();
 	clock.synchronizeBeforeTransferAccess(nowCycles);
-	clock.m_sampleTransfer.writeControl(toU32(value));
+	clock.m_sampleTransfer.writeControl(value);
 	clock.advanceVoicesTo(nowCycles);
 }
 

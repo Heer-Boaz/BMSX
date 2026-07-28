@@ -1,7 +1,6 @@
 #pragma once
 
 #include "common/types.h"
-#include "machine/cpu/value.h"
 #include "machine/devices/input/contracts.h"
 
 #include <array>
@@ -34,7 +33,7 @@ public:
 	void restoreState(const InputControllerRegisterState& restoredState);
 	i32 selectedPadIndex() const;
 	void latchSnapshot(const InputControllerSnapshot& snapshot);
-	void write(uint32_t addr, Value value);
+	void write(uint32_t addr, u32 value);
 	void mirror(Memory& memory) const;
 };
 

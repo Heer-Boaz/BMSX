@@ -14,7 +14,6 @@ import {
 	IRQ_IMGDEC,
 } from '../../../spec/bmsx/io';
 import type { CPU } from '../../cpu/cpu';
-import type { Value } from '../../cpu/value';
 import {
 	MAPPED_BUS_DMA_BLOCK_END,
 	MAPPED_BUS_MASTER_DMA,
@@ -148,13 +147,13 @@ export class ImgDecController {
 		this.dma.setRequestLines((1 << DMA_REQUEST_IMGDEC_WRITE) | (1 << DMA_REQUEST_IMGDEC_READ), 0);
 		this.resetStreamState();
 		this.supervisorQuiesceRequested = false;
-		this.memory.writeIoValue(IO_IMGDEC_INPUT_WORD_COUNT, 0);
-		this.memory.writeIoValue(IO_IMGDEC_TEXTURE_DESTINATION, 0);
-		this.memory.writeIoValue(IO_IMGDEC_TEXTURE_SIZE, 0);
-		this.memory.writeIoValue(IO_IMGDEC_CLUT_DESTINATION, 0);
-		this.memory.writeIoValue(IO_IMGDEC_CONTROL, 0);
-		this.memory.writeIoValue(IO_IMGDEC_STATUS, 0);
-		this.memory.writeIoValue(IO_IMGDEC_DATA, 0);
+		this.memory.writeIoU32(IO_IMGDEC_INPUT_WORD_COUNT, 0);
+		this.memory.writeIoU32(IO_IMGDEC_TEXTURE_DESTINATION, 0);
+		this.memory.writeIoU32(IO_IMGDEC_TEXTURE_SIZE, 0);
+		this.memory.writeIoU32(IO_IMGDEC_CLUT_DESTINATION, 0);
+		this.memory.writeIoU32(IO_IMGDEC_CONTROL, 0);
+		this.memory.writeIoU32(IO_IMGDEC_STATUS, 0);
+		this.memory.writeIoU32(IO_IMGDEC_DATA, 0);
 	}
 
 	private resetStreamState(): void {
@@ -216,13 +215,13 @@ export class ImgDecController {
 
 	public restoreState(state: ImgDecControllerState): void {
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_IMGDEC);
-		this.memory.writeIoValue(IO_IMGDEC_INPUT_WORD_COUNT, state.inputWordCountWord);
-		this.memory.writeIoValue(IO_IMGDEC_TEXTURE_DESTINATION, state.textureDestinationWord);
-		this.memory.writeIoValue(IO_IMGDEC_TEXTURE_SIZE, state.textureSizeWord);
-		this.memory.writeIoValue(IO_IMGDEC_CLUT_DESTINATION, state.clutDestinationWord);
-		this.memory.writeIoValue(IO_IMGDEC_CONTROL, state.controlWord);
-		this.memory.writeIoValue(IO_IMGDEC_STATUS, state.statusWord);
-		this.memory.writeIoValue(IO_IMGDEC_DATA, state.dataWord);
+		this.memory.writeIoU32(IO_IMGDEC_INPUT_WORD_COUNT, state.inputWordCountWord);
+		this.memory.writeIoU32(IO_IMGDEC_TEXTURE_DESTINATION, state.textureDestinationWord);
+		this.memory.writeIoU32(IO_IMGDEC_TEXTURE_SIZE, state.textureSizeWord);
+		this.memory.writeIoU32(IO_IMGDEC_CLUT_DESTINATION, state.clutDestinationWord);
+		this.memory.writeIoU32(IO_IMGDEC_CONTROL, state.controlWord);
+		this.memory.writeIoU32(IO_IMGDEC_STATUS, state.statusWord);
+		this.memory.writeIoU32(IO_IMGDEC_DATA, state.dataWord);
 		this.inputWordsReceived = state.inputWordsReceived;
 		this.decodedWordCount = state.decodedWordCount;
 		this.textureWordCount = state.textureWordCount;
@@ -293,11 +292,11 @@ export class ImgDecController {
 	private start(): void {
 		this.resetStreamState();
 		this.active = true;
-		this.memory.writeIoValue(
+		this.memory.writeIoU32(
 			IO_IMGDEC_CONTROL,
 			this.memory.readIoU32(IO_IMGDEC_CONTROL) & ~IMGDEC_CONTROL_START,
 		);
-		this.memory.writeIoValue(IO_IMGDEC_STATUS, IMGDEC_STATUS_BUSY);
+		this.memory.writeIoU32(IO_IMGDEC_STATUS, IMGDEC_STATUS_BUSY);
 		this.scheduleDecode(this.scheduler.currentNowCycles());
 		this.updateDmaRequests();
 	}
@@ -497,7 +496,7 @@ export class ImgDecController {
 			| (inputReady ? IMGDEC_STATUS_INPUT_REQUEST : 0)
 			| (outputReady ? IMGDEC_STATUS_OUTPUT_REQUEST : 0)) >>> 0;
 		if (nextStatus !== status) {
-			this.memory.writeIoValue(IO_IMGDEC_STATUS, nextStatus);
+			this.memory.writeIoU32(IO_IMGDEC_STATUS, nextStatus);
 		}
 		if (inputReady && !this.dma.ownsWritePort(IO_IMGDEC_DATA)) {
 			this.cpu.resumeMemoryWrite(IO_IMGDEC_DATA);
@@ -523,7 +522,7 @@ export class ImgDecController {
 		this.scheduledDecodeWords = 0;
 		this.decodeDeadline = -1;
 		this.dma.setRequestLines((1 << DMA_REQUEST_IMGDEC_WRITE) | (1 << DMA_REQUEST_IMGDEC_READ), 0);
-		this.memory.writeIoValue(IO_IMGDEC_STATUS, statusWord);
+		this.memory.writeIoU32(IO_IMGDEC_STATUS, statusWord);
 		this.resumeConfigWrites();
 		this.irq.raise(IRQ_IMGDEC);
 		this.notifySupervisorBoundary();
@@ -541,14 +540,14 @@ export class ImgDecController {
 		}
 	}
 
-	private static readProgressThunk(context: ImgDecController, address: number): Value {
+	private static readProgressThunk(context: ImgDecController, address: number): number {
 		return address === IO_IMGDEC_INPUT_WORDS_RECEIVED
 			? context.inputWordsReceived
 			: context.decodedWordCount;
 	}
 
-	private static writeConfigThunk(context: ImgDecController, address: number, value: Value): void {
-		if (address === IO_IMGDEC_CONTROL && ((value as number) & IMGDEC_CONTROL_START) !== 0) {
+	private static writeConfigThunk(context: ImgDecController, address: number, value: number): void {
+		if (address === IO_IMGDEC_CONTROL && (value & IMGDEC_CONTROL_START) !== 0) {
 			context.start();
 		}
 	}
@@ -557,14 +556,14 @@ export class ImgDecController {
 		return !context.active && !context.supervisorQuiesceRequested;
 	}
 
-	private static readDataThunk(context: ImgDecController, _address: number, busSignals: MappedBusSignals): Value {
+	private static readDataThunk(context: ImgDecController, _address: number, busSignals: MappedBusSignals): number {
 		const dmaRead = (busSignals & MAPPED_BUS_MASTER_DMA) !== 0;
 		if (!dmaRead && context.dma.ownsReadPort(IO_IMGDEC_DATA)) {
 			return context.dataWord;
 		}
 		if (!context.outputFifo.empty()) {
 			context.dataWord = context.outputFifo.pop();
-			context.memory.writeIoValue(IO_IMGDEC_DATA, context.dataWord);
+			context.memory.writeIoU32(IO_IMGDEC_DATA, context.dataWord);
 			context.outputWordsRead = (context.outputWordsRead + 1) >>> 0;
 		}
 		if (dmaRead
@@ -585,10 +584,10 @@ export class ImgDecController {
 	private static writeDataThunk(
 		context: ImgDecController,
 		_address: number,
-		value: Value,
+		value: number,
 		busSignals: MappedBusSignals,
 	): void {
-		context.dataWord = (value as number) >>> 0;
+		context.dataWord = value;
 		if (!context.inputFifo.full()) {
 			context.inputFifo.writeWord(context.dataWord);
 		}

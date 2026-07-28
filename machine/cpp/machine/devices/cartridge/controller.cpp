@@ -289,36 +289,36 @@ void CartridgeController::restoreSlot(Slot& slot, const CartridgeSlotState& stat
 	slot.mailboxIrqPending = state.mailboxIrqPending;
 }
 
-u64 CartridgeController::readSelectionThunk(void* context, u32, MappedBusSignals) {
-	return valueNumber(static_cast<f64>(static_cast<CartridgeController*>(context)->m_selectionWord));
+u32 CartridgeController::readSelectionThunk(void* context, u32, MappedBusSignals) {
+	return static_cast<CartridgeController*>(context)->m_selectionWord;
 }
 
-void CartridgeController::writeSelectionThunk(void* context, u32, u64 value, MappedBusSignals) {
-	static_cast<CartridgeController*>(context)->m_selectionWord = toU32(value);
+void CartridgeController::writeSelectionThunk(void* context, u32, u32 value, MappedBusSignals) {
+	static_cast<CartridgeController*>(context)->m_selectionWord = value;
 }
 
-u64 CartridgeController::readStatusThunk(void* context, u32, MappedBusSignals) {
+u32 CartridgeController::readStatusThunk(void* context, u32, MappedBusSignals) {
 	const CartridgeController& controller = *static_cast<CartridgeController*>(context);
 	u32 status = controller.selectedSlot() == 1u ? CARTRIDGE_STATUS_SELECTED_SLOT1 : 0u;
 	if (controller.m_slots[0].media.present) status |= CARTRIDGE_STATUS_SLOT0_PRESENT;
 	if (controller.m_slots[1].media.present) status |= CARTRIDGE_STATUS_SLOT1_PRESENT;
-	return valueNumber(static_cast<f64>(status));
+	return status;
 }
 
-u64 CartridgeController::readSlot0BoardThunk(void* context, u32, MappedBusSignals) {
-	return valueNumber(static_cast<f64>(static_cast<CartridgeController*>(context)->m_slots[0].media.boardWord));
+u32 CartridgeController::readSlot0BoardThunk(void* context, u32, MappedBusSignals) {
+	return static_cast<CartridgeController*>(context)->m_slots[0].media.boardWord;
 }
 
-u64 CartridgeController::readSlot0RamBytesThunk(void* context, u32, MappedBusSignals) {
-	return valueNumber(static_cast<f64>(static_cast<CartridgeController*>(context)->m_slots[0].ram.size()));
+u32 CartridgeController::readSlot0RamBytesThunk(void* context, u32, MappedBusSignals) {
+	return static_cast<u32>(static_cast<CartridgeController*>(context)->m_slots[0].ram.size());
 }
 
-u64 CartridgeController::readSlot1BoardThunk(void* context, u32, MappedBusSignals) {
-	return valueNumber(static_cast<f64>(static_cast<CartridgeController*>(context)->m_slots[1].media.boardWord));
+u32 CartridgeController::readSlot1BoardThunk(void* context, u32, MappedBusSignals) {
+	return static_cast<CartridgeController*>(context)->m_slots[1].media.boardWord;
 }
 
-u64 CartridgeController::readSlot1RamBytesThunk(void* context, u32, MappedBusSignals) {
-	return valueNumber(static_cast<f64>(static_cast<CartridgeController*>(context)->m_slots[1].ram.size()));
+u32 CartridgeController::readSlot1RamBytesThunk(void* context, u32, MappedBusSignals) {
+	return static_cast<u32>(static_cast<CartridgeController*>(context)->m_slots[1].ram.size());
 }
 
 } // namespace bmsx

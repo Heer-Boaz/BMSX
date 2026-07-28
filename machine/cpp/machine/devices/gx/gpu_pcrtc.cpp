@@ -135,11 +135,15 @@ void GxGpuPcrtcTiming::update(const std::array<u32, GX_GPU_PCRTC_CONFIG_WORD_COU
 	if (running) {
 		refreshUfpsScaled = static_cast<i64>(halfLineClockDenominator) * GX_GPU_PCRTC_HZ_SCALE
 			/ (static_cast<i64>(halfLineClockNumerator) * totalHalfLines);
+		frameDurationMillisecondsQ16 = static_cast<u32>(
+			GX_GPU_PCRTC_FRAME_MILLISECONDS_Q16_NUMERATOR / refreshUfpsScaled
+		);
 		frameDurationMs = 1000.0 / (
 			static_cast<f64>(refreshUfpsScaled) / static_cast<f64>(GX_GPU_PCRTC_HZ_SCALE)
 		);
 	} else {
 		refreshUfpsScaled = 0;
+		frameDurationMillisecondsQ16 = 0u;
 		frameDurationMs = 0.0;
 	}
 	fieldToggles = cmod != 0u && (vfp & 1u) != 0u;

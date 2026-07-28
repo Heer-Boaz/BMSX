@@ -42,13 +42,13 @@ private:
 		bool mailboxIrqPending = false;
 	};
 
-	static u64 readSelectionThunk(void* context, u32 address, MappedBusSignals busSignals);
-	static void writeSelectionThunk(void* context, u32 address, u64 value, MappedBusSignals busSignals);
-	static u64 readStatusThunk(void* context, u32 address, MappedBusSignals busSignals);
-	static u64 readSlot0BoardThunk(void* context, u32 address, MappedBusSignals busSignals);
-	static u64 readSlot0RamBytesThunk(void* context, u32 address, MappedBusSignals busSignals);
-	static u64 readSlot1BoardThunk(void* context, u32 address, MappedBusSignals busSignals);
-	static u64 readSlot1RamBytesThunk(void* context, u32 address, MappedBusSignals busSignals);
+	static u32 readSelectionThunk(void* context, u32 address, MappedBusSignals busSignals);
+	static void writeSelectionThunk(void* context, u32 address, u32 value, MappedBusSignals busSignals);
+	static u32 readStatusThunk(void* context, u32 address, MappedBusSignals busSignals);
+	static u32 readSlot0BoardThunk(void* context, u32 address, MappedBusSignals busSignals);
+	static u32 readSlot0RamBytesThunk(void* context, u32 address, MappedBusSignals busSignals);
+	static u32 readSlot1BoardThunk(void* context, u32 address, MappedBusSignals busSignals);
+	static u32 readSlot1RamBytesThunk(void* context, u32 address, MappedBusSignals busSignals);
 
 	u32 slotIndexForSignals(MappedBusSignals busSignals) const;
 	static u32 readU16From(std::span<const u8> bytes, size_t offset);

@@ -158,7 +158,7 @@ export class AudioController {
 	public restoreState(state: AudioControllerState, nowCycles: number): void {
 		this.audioOutput.resetPlaybackState();
 		for (let index = 0; index < APU_PARAMETER_REGISTER_COUNT; index += 1) {
-			this.memory.writeIoValue(IO_APU_PARAMETER_REGISTER_ADDRS[index]!, state.registerWords[index]!);
+			this.memory.writeIoU32(IO_APU_PARAMETER_REGISTER_ADDRS[index]!, state.registerWords[index]!);
 		}
 		this.commandFifo.restoreState(state.commandFifo);
 		this.eventLatch.restoreState(state);

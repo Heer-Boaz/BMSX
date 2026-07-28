@@ -1,7 +1,6 @@
 #pragma once
 
 #include "common/types.h"
-#include "machine/cpu/value.h"
 
 namespace bmsx {
 
@@ -13,7 +12,7 @@ class InputControllerOutputPort {
 public:
 	InputControllerOutputPort(InputControllerInputSource& input, const InputControllerRegisterFile& registers, Memory& memory);
 
-	void writeOutputControlRegisterThunk(u32 addr, Value value);
+	void writeOutputControlRegisterThunk(u32 addr, u32 value);
 
 private:
 	InputControllerInputSource& m_input;

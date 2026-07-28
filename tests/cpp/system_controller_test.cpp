@@ -363,13 +363,13 @@ void testSystemTimingRegisters() {
 
 	require(memory.readMappedU32LE(bmsx::IO_SYS_TIME_MS) == 0u, "system time starts at the scheduler reset epoch");
 	require(
-		bmsx::asNumber(memory.readMappedValue(bmsx::IO_SYS_FRAME_MS))
-			== machine.gxGpu.readPcrtcTiming().frameDurationMs,
+		memory.readMappedU32LE(bmsx::IO_SYS_FRAME_MS_Q16)
+			== machine.gxGpu.readPcrtcTiming().frameDurationMillisecondsQ16,
 		"system frame period is decoded from the retained PCRTC timing signal"
 	);
 	require(
-		bmsx::asNumber(memory.readMappedValue(bmsx::IO_SYS_CYCLES_PER_FRAME))
-			== static_cast<bmsx::f64>(machine.gxGpu.readPcrtcTiming().nextVblankCycleBudget),
+		memory.readMappedWord(bmsx::IO_SYS_CYCLES_PER_FRAME)
+			== static_cast<bmsx::u32>(machine.gxGpu.readPcrtcTiming().nextVblankCycleBudget),
 		"system frame-cycle count is read directly from the retained PCRTC timing signal"
 	);
 
@@ -380,8 +380,8 @@ void testSystemTimingRegisters() {
 	const bmsx::u32 smode1Address = bmsx::gxGpuPcrtcRegisterAddress(bmsx::GX_GPU_PCRTC_SMODE1_LOW);
 	const bmsx::u32 smode1 = memory.readMappedU32LE(smode1Address);
 	memory.writeMappedU32LE(smode1Address, smode1 | bmsx::GX_GPU_PCRTC_SMODE1_SINT);
-	require(bmsx::asNumber(memory.readMappedValue(bmsx::IO_SYS_FRAME_MS)) == 0.0, "stopped PCRTC publishes zero frame duration");
-	require(bmsx::asNumber(memory.readMappedValue(bmsx::IO_SYS_CYCLES_PER_FRAME)) == 0.0, "stopped PCRTC publishes zero frame-cycle budget");
+	require(memory.readMappedU32LE(bmsx::IO_SYS_FRAME_MS_Q16) == 0u, "stopped PCRTC publishes zero frame duration");
+	require(memory.readMappedWord(bmsx::IO_SYS_CYCLES_PER_FRAME) == 0u, "stopped PCRTC publishes zero frame-cycle budget");
 
 	machine.scheduler.setNowCycles(9'000'006'099'639'999);
 	require(memory.readMappedU32LE(bmsx::IO_SYS_TIME_MS) == 409'922'903u, "system time retains exact low-u32 milliseconds near the TS integer boundary");

@@ -59,10 +59,10 @@ public:
 	void leaveSupervisorContext();
 
 private:
-	static void onControlWriteThunk(void* context, u32 addr, u64 value, MappedBusSignals busSignals);
-	static void onAddressWriteThunk(void* context, u32 addr, u64 value, MappedBusSignals busSignals);
-	static void onTransferCountWriteThunk(void* context, u32 addr, u64 value, MappedBusSignals busSignals);
-	static void onTriggerWriteThunk(void* context, u32 addr, u64 value, MappedBusSignals busSignals);
+	static void onControlWriteThunk(void* context, u32 addr, u32 value, MappedBusSignals busSignals);
+	static void onAddressWriteThunk(void* context, u32 addr, u32 value, MappedBusSignals busSignals);
+	static void onTransferCountWriteThunk(void* context, u32 addr, u32 value, MappedBusSignals busSignals);
+	static void onTriggerWriteThunk(void* context, u32 addr, u32 value, MappedBusSignals busSignals);
 	static bool triggerWriteReadyThunk(void* context, u32 addr, MappedBusSignals busSignals);
 
 	void onTriggerWrite(u32 channel, u32 value);

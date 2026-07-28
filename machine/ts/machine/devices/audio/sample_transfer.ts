@@ -57,9 +57,9 @@ export class ApuSampleTransfer {
 		this.dataLatch = 0;
 		this.mode = APU_TRANSFER_MODE_STOP;
 		this.timingCarry = 0;
-		this.memory.writeIoValue(IO_APU_TRANSFER_ADDRESS, 0);
-		this.memory.writeIoValue(IO_APU_TRANSFER_DATA, 0);
-		this.memory.writeIoValue(IO_APU_TRANSFER_CONTROL, 0);
+		this.memory.writeIoU32(IO_APU_TRANSFER_ADDRESS, 0);
+		this.memory.writeIoU32(IO_APU_TRANSFER_DATA, 0);
+		this.memory.writeIoU32(IO_APU_TRANSFER_CONTROL, 0);
 		this.updateDmaRequests();
 	}
 
@@ -117,9 +117,9 @@ export class ApuSampleTransfer {
 		this.timingCarry = state.timingCarry;
 		this.scheduledWords = state.scheduledWords;
 		this.scheduledDeadline = nowCycles + state.scheduledCycles;
-		this.memory.writeIoValue(IO_APU_TRANSFER_ADDRESS, state.transferAddressWord);
-		this.memory.writeIoValue(IO_APU_TRANSFER_DATA, state.transferDataWord);
-		this.memory.writeIoValue(IO_APU_TRANSFER_CONTROL, state.transferControlWord);
+		this.memory.writeIoU32(IO_APU_TRANSFER_ADDRESS, state.transferAddressWord);
+		this.memory.writeIoU32(IO_APU_TRANSFER_DATA, state.transferDataWord);
+		this.memory.writeIoU32(IO_APU_TRANSFER_CONTROL, state.transferControlWord);
 		this.updateDmaRequests();
 		if (this.scheduledWords !== 0) {
 			this.scheduler.scheduleDeviceService(DEVICE_SERVICE_APU_TRANSFER, this.scheduledDeadline);
@@ -152,7 +152,7 @@ export class ApuSampleTransfer {
 	public readDmaData(blockEnd: boolean): number {
 		if (this.mode === APU_TRANSFER_MODE_DMA_READ && this.fifoCount !== 0) {
 			this.dataLatch = this.popFifo();
-			this.memory.writeIoValue(IO_APU_TRANSFER_DATA, this.dataLatch);
+			this.memory.writeIoU32(IO_APU_TRANSFER_DATA, this.dataLatch);
 			this.updateDmaRequests();
 			if (blockEnd) {
 				this.scheduleBatch(this.scheduler.currentNowCycles());

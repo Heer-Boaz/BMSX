@@ -27,7 +27,6 @@ import {
 	IRQ_DMA1_DONE,
 } from '../../../spec/bmsx/io';
 import type { CPU } from '../../cpu/cpu';
-import type { Value } from '../../cpu/value';
 import { IO_WORD_SIZE } from '../../../spec/bmsx/memory_map';
 import {
 	MAPPED_BUS_CARTRIDGE_SLOT1,
@@ -126,13 +125,13 @@ export class DmaController {
 		context.arbitrate(context.scheduler.currentNowCycles());
 	}
 
-	private static triggerWriteThunk(context: DmaController, address: number, value: Value): void {
+	private static triggerWriteThunk(context: DmaController, address: number, value: number): void {
 		const channel = address === IO_DMA_TRIGGERS[1] ? 1 : 0;
-		context.memory.writeIoValue(IO_DMA_TRIGGERS[channel]!, 0);
-		if (((value as number) & DMA_TRIGGER_START) === 0 || context.busy(channel)) {
+		context.memory.writeIoU32(IO_DMA_TRIGGERS[channel]!, 0);
+		if ((value & DMA_TRIGGER_START) === 0 || context.busy(channel)) {
 			return;
 		}
-		context.memory.writeIoValue(IO_DMA_STATUSES[channel]!, DMA_STATUS_BUSY);
+		context.memory.writeIoU32(IO_DMA_STATUSES[channel]!, DMA_STATUS_BUSY);
 		if (context.memory.readIoU32(IO_DMA_TRANSFER_COUNTS[channel]!) === 0) {
 			context.finishChannel(channel);
 		}
@@ -230,9 +229,9 @@ export class DmaController {
 			writeAddress = (writeAddress + writeStep) >>> 0;
 			transferCount = (transferCount - 1) >>> 0;
 		}
-		this.memory.writeIoValue(IO_DMA_READ_ADDRS[channel]!, readAddress);
-		this.memory.writeIoValue(IO_DMA_WRITE_ADDRS[channel]!, writeAddress);
-		this.memory.writeIoValue(IO_DMA_TRANSFER_COUNTS[channel]!, transferCount);
+		this.memory.writeIoU32(IO_DMA_READ_ADDRS[channel]!, readAddress);
+		this.memory.writeIoU32(IO_DMA_WRITE_ADDRS[channel]!, writeAddress);
+		this.memory.writeIoU32(IO_DMA_TRANSFER_COUNTS[channel]!, transferCount);
 		this.serviceActive = false;
 		this.clearAdmittedBlock();
 		this.resumeCpuWriteIfPortReleased(releasedReadAddress);
@@ -359,12 +358,12 @@ export class DmaController {
 	}
 
 	private restoreChannel(channel: number, state: DmaChannelState): void {
-		this.memory.writeIoValue(IO_DMA_READ_ADDRS[channel]!, state.readAddressWord);
-		this.memory.writeIoValue(IO_DMA_WRITE_ADDRS[channel]!, state.writeAddressWord);
-		this.memory.writeIoValue(IO_DMA_TRANSFER_COUNTS[channel]!, state.transferCountWord);
-		this.memory.writeIoValue(IO_DMA_CONTROLS[channel]!, state.controlWord);
-		this.memory.writeIoValue(IO_DMA_STATUSES[channel]!, state.statusWord);
-		this.memory.writeIoValue(IO_DMA_TRIGGERS[channel]!, 0);
+		this.memory.writeIoU32(IO_DMA_READ_ADDRS[channel]!, state.readAddressWord);
+		this.memory.writeIoU32(IO_DMA_WRITE_ADDRS[channel]!, state.writeAddressWord);
+		this.memory.writeIoU32(IO_DMA_TRANSFER_COUNTS[channel]!, state.transferCountWord);
+		this.memory.writeIoU32(IO_DMA_CONTROLS[channel]!, state.controlWord);
+		this.memory.writeIoU32(IO_DMA_STATUSES[channel]!, state.statusWord);
+		this.memory.writeIoU32(IO_DMA_TRIGGERS[channel]!, 0);
 	}
 
 	private clearLiveTransfer(): void {
@@ -374,12 +373,12 @@ export class DmaController {
 		this.serviceActive = false;
 		this.restorePending = false;
 		for (let channel = 0; channel < IO_DMA_CHANNEL_COUNT; channel += 1) {
-			this.memory.writeIoValue(IO_DMA_READ_ADDRS[channel]!, 0);
-			this.memory.writeIoValue(IO_DMA_WRITE_ADDRS[channel]!, 0);
-			this.memory.writeIoValue(IO_DMA_TRANSFER_COUNTS[channel]!, 0);
-			this.memory.writeIoValue(IO_DMA_CONTROLS[channel]!, 0);
-			this.memory.writeIoValue(IO_DMA_STATUSES[channel]!, 0);
-			this.memory.writeIoValue(IO_DMA_TRIGGERS[channel]!, 0);
+			this.memory.writeIoU32(IO_DMA_READ_ADDRS[channel]!, 0);
+			this.memory.writeIoU32(IO_DMA_WRITE_ADDRS[channel]!, 0);
+			this.memory.writeIoU32(IO_DMA_TRANSFER_COUNTS[channel]!, 0);
+			this.memory.writeIoU32(IO_DMA_CONTROLS[channel]!, 0);
+			this.memory.writeIoU32(IO_DMA_STATUSES[channel]!, 0);
+			this.memory.writeIoU32(IO_DMA_TRIGGERS[channel]!, 0);
 		}
 	}
 
@@ -408,7 +407,7 @@ export class DmaController {
 	private finishChannel(channel: number): void {
 		const readAddress = this.channelReadAddress(channel);
 		const writeAddress = this.channelWriteAddress(channel);
-		this.memory.writeIoValue(IO_DMA_STATUSES[channel]!, DMA_STATUS_DONE);
+		this.memory.writeIoU32(IO_DMA_STATUSES[channel]!, DMA_STATUS_DONE);
 		this.irq.raise(channel === 0 ? IRQ_DMA0_DONE : IRQ_DMA1_DONE);
 		this.resumeCpuWriteIfPortReleased(readAddress);
 		if (writeAddress !== readAddress) {

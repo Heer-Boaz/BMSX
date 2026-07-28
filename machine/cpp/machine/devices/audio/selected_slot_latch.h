@@ -1,6 +1,5 @@
 #pragma once
 
-#include "machine/cpu/value.h"
 #include "common/types.h"
 #include "machine/memory/bus_signals.h"
 
@@ -16,7 +15,7 @@ public:
 
 	void reset();
 	void refresh();
-	static void refreshThunk(void* context, u32 addr, Value value, MappedBusSignals busSignals);
+	static void refreshThunk(void* context, u32 addr, u32 value, MappedBusSignals busSignals);
 
 private:
 	Memory& m_memory;

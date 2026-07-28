@@ -22,7 +22,7 @@ ApuStatusRegister::ApuStatusRegister(
 	, m_serviceClock(serviceClock)
 	, m_scheduler(scheduler) {}
 
-Value ApuStatusRegister::readThunk(void* context, [[maybe_unused]] u32 addr, MappedBusSignals) {
+u32 ApuStatusRegister::readThunk(void* context, [[maybe_unused]] u32 addr, MappedBusSignals) {
 	auto& reg = *static_cast<ApuStatusRegister*>(context);
 	const i64 nowCycles = reg.m_scheduler.currentNowCycles();
 	reg.m_serviceClock.synchronize(nowCycles);
@@ -36,7 +36,7 @@ Value ApuStatusRegister::readThunk(void* context, [[maybe_unused]] u32 addr, Map
 	if (reg.m_commandFifo.full()) {
 		status |= APU_STATUS_CMD_FIFO_FULL;
 	}
-	return valueNumber(static_cast<double>(status));
+	return status;
 }
 
 } // namespace bmsx

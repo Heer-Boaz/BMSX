@@ -1,7 +1,6 @@
 #pragma once
 
 #include "common/types.h"
-#include "machine/cpu/value.h"
 #include "machine/memory/bus_signals.h"
 
 namespace bmsx {
@@ -22,7 +21,7 @@ public:
 		DeviceScheduler& scheduler
 	);
 
-	static Value readThunk(void* context, u32 addr, MappedBusSignals busSignals);
+	static u32 readThunk(void* context, u32 addr, MappedBusSignals busSignals);
 
 private:
 	const DeviceStatusLatch& m_fault;

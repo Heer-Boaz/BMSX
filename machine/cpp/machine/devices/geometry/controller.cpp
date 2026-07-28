@@ -38,18 +38,18 @@ bool GeometryController::commandWriteReadyThunk(void* context, uint32_t, MappedB
 	return !static_cast<GeometryController*>(context)->m_supervisorQuiesceRequested;
 }
 
-void GeometryController::onCommandWriteThunk(void* context, uint32_t, Value value, MappedBusSignals) {
+void GeometryController::onCommandWriteThunk(void* context, uint32_t, u32 value, MappedBusSignals) {
 	auto* controller = static_cast<GeometryController*>(context);
-	controller->onCommandDoorbell(controller->m_scheduler.currentNowCycles(), toU32(value));
+	controller->onCommandDoorbell(controller->m_scheduler.currentNowCycles(), value);
 }
 
 // disable-next-line normalized_ast_duplicate_pattern -- device MMIO thunks share callback shape while each device owns its scheduler timing.
-void GeometryController::onCtrlWriteThunk(void* context, uint32_t, Value, MappedBusSignals) {
+void GeometryController::onCtrlWriteThunk(void* context, uint32_t, u32, MappedBusSignals) {
 	auto* controller = static_cast<GeometryController*>(context);
 	controller->onCtrlWrite(controller->m_scheduler.currentNowCycles());
 }
 
-void GeometryController::onFaultAckWriteThunk(void* context, uint32_t, Value value, MappedBusSignals) {
+void GeometryController::onFaultAckWriteThunk(void* context, uint32_t, u32 value, MappedBusSignals) {
 	auto* controller = static_cast<GeometryController*>(context);
 	controller->onFaultAckWrite(value);
 }
@@ -99,23 +99,23 @@ void GeometryController::reset() {
 	m_activeJob.reset();
 	m_supervisorQuiesceRequested = false;
 	m_scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
-	m_memory.writeValue(IO_GEO_SRC0, valueNumber(static_cast<double>(0)));
-	m_memory.writeValue(IO_GEO_SRC1, valueNumber(static_cast<double>(0)));
-	m_memory.writeValue(IO_GEO_SRC2, valueNumber(static_cast<double>(0)));
-	m_memory.writeValue(IO_GEO_DST0, valueNumber(static_cast<double>(0)));
-	m_memory.writeValue(IO_GEO_DST1, valueNumber(static_cast<double>(0)));
-	m_memory.writeValue(IO_GEO_COUNT, valueNumber(static_cast<double>(0)));
-	m_memory.writeIoValue(IO_GEO_CMD, valueNumber(static_cast<double>(0)));
-	m_memory.writeIoValue(IO_GEO_CTRL, valueNumber(0.0));
-	m_memory.writeValue(IO_GEO_STATUS, valueNumber(static_cast<double>(0)));
-	m_memory.writeValue(IO_GEO_PARAM0, valueNumber(static_cast<double>(0)));
-	m_memory.writeValue(IO_GEO_PARAM1, valueNumber(static_cast<double>(0)));
-	m_memory.writeValue(IO_GEO_STRIDE0, valueNumber(static_cast<double>(0)));
-	m_memory.writeValue(IO_GEO_STRIDE1, valueNumber(static_cast<double>(0)));
-	m_memory.writeValue(IO_GEO_STRIDE2, valueNumber(static_cast<double>(0)));
-	m_memory.writeValue(IO_GEO_PROCESSED, valueNumber(static_cast<double>(0)));
-	m_memory.writeValue(IO_GEO_FAULT, valueNumber(static_cast<double>(0)));
-	m_memory.writeIoValue(IO_GEO_FAULT_ACK, valueNumber(0.0));
+	m_memory.writeIoU32(IO_GEO_SRC0, 0);
+	m_memory.writeIoU32(IO_GEO_SRC1, 0);
+	m_memory.writeIoU32(IO_GEO_SRC2, 0);
+	m_memory.writeIoU32(IO_GEO_DST0, 0);
+	m_memory.writeIoU32(IO_GEO_DST1, 0);
+	m_memory.writeIoU32(IO_GEO_COUNT, 0);
+	m_memory.writeIoU32(IO_GEO_CMD, 0);
+	m_memory.writeIoU32(IO_GEO_CTRL, 0u);
+	m_memory.writeIoU32(IO_GEO_STATUS, 0);
+	m_memory.writeIoU32(IO_GEO_PARAM0, 0);
+	m_memory.writeIoU32(IO_GEO_PARAM1, 0);
+	m_memory.writeIoU32(IO_GEO_STRIDE0, 0);
+	m_memory.writeIoU32(IO_GEO_STRIDE1, 0);
+	m_memory.writeIoU32(IO_GEO_STRIDE2, 0);
+	m_memory.writeIoU32(IO_GEO_PROCESSED, 0);
+	m_memory.writeIoU32(IO_GEO_FAULT, 0);
+	m_memory.writeIoU32(IO_GEO_FAULT_ACK, 0u);
 }
 
 void GeometryController::beginSupervisorQuiesce() {
@@ -139,7 +139,7 @@ void GeometryController::onCtrlWrite(int64_t) {
 	if (!abort) {
 		return;
 	}
-	m_memory.writeIoValue(IO_GEO_CTRL, valueNumber(static_cast<double>(ctrl & ~GEO_CTRL_ABORT)));
+	m_memory.writeIoU32(IO_GEO_CTRL, ctrl & ~GEO_CTRL_ABORT);
 	if (m_phase == GeometryControllerPhase::Error || m_phase == GeometryControllerPhase::Rejected) {
 		return;
 	}
@@ -228,9 +228,9 @@ void GeometryController::start(int64_t nowCycles, uint32_t command) {
 			finishRejected(GEO_FAULT_REJECT_BAD_CMD);
 			return;
 	}
-	m_memory.writeValue(IO_GEO_STATUS, valueNumber(static_cast<double>(0u)));
-	m_memory.writeValue(IO_GEO_PROCESSED, valueNumber(static_cast<double>(0u)));
-	m_memory.writeValue(IO_GEO_FAULT, valueNumber(static_cast<double>(0u)));
+	m_memory.writeIoU32(IO_GEO_STATUS, 0u);
+	m_memory.writeIoU32(IO_GEO_PROCESSED, 0u);
+	m_memory.writeIoU32(IO_GEO_FAULT, 0u);
 	if (job.cmd == IO_CMD_GEO_OVERLAP2D_PASS) {
 		job.resultCount = 0u;
 		job.exactPairCount = 0u;
@@ -245,18 +245,18 @@ void GeometryController::start(int64_t nowCycles, uint32_t command) {
 	m_availableWorkUnits = 0;
 	m_activeJob = job;
 	m_phase = GeometryControllerPhase::Busy;
-	m_memory.writeValue(IO_GEO_STATUS, valueNumber(static_cast<double>(GEO_STATUS_BUSY)));
+	m_memory.writeIoU32(IO_GEO_STATUS, GEO_STATUS_BUSY);
 	scheduleNextService(nowCycles);
 }
 
-void GeometryController::onFaultAckWrite(Value value) {
-	if (toU32(value) == 0u) {
+void GeometryController::onFaultAckWrite(u32 value) {
+	if (value == 0u) {
 		return;
 	}
 	const uint32_t status = m_memory.readIoU32(IO_GEO_STATUS) & ~(GEO_STATUS_ERROR | GEO_STATUS_REJECTED);
-	m_memory.writeIoValue(IO_GEO_STATUS, valueNumber(static_cast<double>(status)));
-	m_memory.writeIoValue(IO_GEO_FAULT, valueNumber(0.0));
-	m_memory.writeIoValue(IO_GEO_FAULT_ACK, valueNumber(0.0));
+	m_memory.writeIoU32(IO_GEO_STATUS, status);
+	m_memory.writeIoU32(IO_GEO_FAULT, 0u);
+	m_memory.writeIoU32(IO_GEO_FAULT_ACK, 0u);
 	if (m_phase == GeometryControllerPhase::Error) {
 		m_phase = GeometryControllerPhase::Done;
 	} else if (m_phase == GeometryControllerPhase::Rejected) {
@@ -280,7 +280,7 @@ void GeometryController::scheduleNextService(int64_t nowCycles) {
 
 void GeometryController::completeRecord(GeoJob& job) {
 	job.processed += 1u;
-	m_memory.writeValue(IO_GEO_PROCESSED, valueNumber(static_cast<double>(job.processed)));
+	m_memory.writeIoU32(IO_GEO_PROCESSED, job.processed);
 	if (job.processed >= job.count) {
 		finishSuccess(job.processed);
 	}
@@ -292,9 +292,9 @@ void GeometryController::finishSuccess(uint32_t processed) {
 	m_workCarry = 0;
 	m_availableWorkUnits = 0u;
 	m_scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
-	m_memory.writeValue(IO_GEO_STATUS, valueNumber(static_cast<double>(GEO_STATUS_DONE)));
-	m_memory.writeValue(IO_GEO_PROCESSED, valueNumber(static_cast<double>(processed)));
-	m_memory.writeValue(IO_GEO_FAULT, valueNumber(static_cast<double>(0u)));
+	m_memory.writeIoU32(IO_GEO_STATUS, GEO_STATUS_DONE);
+	m_memory.writeIoU32(IO_GEO_PROCESSED, processed);
+	m_memory.writeIoU32(IO_GEO_FAULT, 0u);
 	m_irq.raise(IRQ_GEO_DONE);
 	notifySupervisorBoundary();
 }
@@ -305,8 +305,8 @@ void GeometryController::finishError(uint32_t code, uint32_t recordIndex, bool s
 	m_workCarry = 0;
 	m_availableWorkUnits = 0u;
 	m_scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
-	m_memory.writeValue(IO_GEO_STATUS, valueNumber(static_cast<double>(GEO_STATUS_DONE | GEO_STATUS_ERROR)));
-	m_memory.writeValue(IO_GEO_FAULT, valueNumber(static_cast<double>(packFault(code, recordIndex))));
+	m_memory.writeIoU32(IO_GEO_STATUS, GEO_STATUS_DONE | GEO_STATUS_ERROR);
+	m_memory.writeIoU32(IO_GEO_FAULT, packFault(code, recordIndex));
 	if (signalIrq) {
 		m_irq.raise(IRQ_GEO_ERROR);
 	}
@@ -319,9 +319,9 @@ void GeometryController::finishRejected(uint32_t code) {
 	m_workCarry = 0;
 	m_availableWorkUnits = 0u;
 	m_scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
-	m_memory.writeValue(IO_GEO_STATUS, valueNumber(static_cast<double>(GEO_STATUS_REJECTED)));
-	m_memory.writeValue(IO_GEO_PROCESSED, valueNumber(static_cast<double>(0u)));
-	m_memory.writeValue(IO_GEO_FAULT, valueNumber(static_cast<double>(packFault(code, GEO_FAULT_RECORD_INDEX_NONE))));
+	m_memory.writeIoU32(IO_GEO_STATUS, GEO_STATUS_REJECTED);
+	m_memory.writeIoU32(IO_GEO_PROCESSED, 0u);
+	m_memory.writeIoU32(IO_GEO_FAULT, packFault(code, GEO_FAULT_RECORD_INDEX_NONE));
 	m_irq.raise(IRQ_GEO_ERROR);
 	notifySupervisorBoundary();
 }

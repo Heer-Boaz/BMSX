@@ -18,7 +18,7 @@ public:
 	void restoreState(const InputControllerState& state);
 
 private:
-	void writeControl(u32 addr, Value value);
+	void writeControl(u32 addr, u32 value);
 
 	Memory& m_memory;
 	InputControllerInputSource& m_input;

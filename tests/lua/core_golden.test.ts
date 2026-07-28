@@ -74,7 +74,7 @@ test('core golden: memory RAM, ROM, and numeric I/O words stay observable', () =
 	assert.equal(memory.readMappedU32LE(GEO_SCRATCH_BASE), 0x89abcdef);
 	memory.writeMappedU16LE(GEO_SCRATCH_BASE + 4, 0xf00d);
 	assert.equal(memory.readMappedU16LE(GEO_SCRATCH_BASE + 4), 0xf00d);
-	memory.writeValue(IO_DMA0_STATUS, 0xfeedcafe);
+	memory.writeIoU32(IO_DMA0_STATUS, 0xfeedcafe);
 	assert.equal(memory.readIoU32(IO_DMA0_STATUS), 0xfeedcafe);
 	assert.equal(memory.readMappedU32LE(IO_DMA0_STATUS), 0xfeedcafe);
 	memory.writeMappedU32LE(IO_DMA0_CONTROL, 0x13572468);
@@ -98,7 +98,7 @@ test('core golden: physical ROM windows zero-fill consistently across memory pat
 	const memory = new Memory({ systemRom, cartridgeSlots: cartridgeSlots(cartRom) });
 	const tailBytes = new Uint8Array(4);
 
-	assert.equal(memory.readValue(SYSTEM_ROM_BASE), 0x44332211);
+	assert.equal(memory.readU32(SYSTEM_ROM_BASE), 0x44332211);
 	assert.equal(memory.readMappedU32LE(SYSTEM_ROM_BASE), 0x44332211);
 	assert.equal(memory.readMappedU32LE(SYSTEM_ROM_BASE + 4), 0x00006655);
 	assert.equal(memory.readU8(SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE - 1), 0);

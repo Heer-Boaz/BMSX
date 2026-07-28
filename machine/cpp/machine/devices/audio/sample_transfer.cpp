@@ -1,7 +1,6 @@
 #include "machine/devices/audio/sample_transfer.h"
 
 #include "spec/bmsx/io.h"
-#include "machine/cpu/value.h"
 #include "machine/devices/audio/sample_memory.h"
 #include "machine/devices/dma/controller.h"
 #include "machine/memory/memory.h"
@@ -29,9 +28,9 @@ void ApuSampleTransfer::reset() {
 	m_dataLatch = 0u;
 	m_mode = APU_TRANSFER_MODE_STOP;
 	m_timingCarry = 0;
-	m_memory.writeIoValue(IO_APU_TRANSFER_ADDRESS, valueNumber(0.0));
-	m_memory.writeIoValue(IO_APU_TRANSFER_DATA, valueNumber(0.0));
-	m_memory.writeIoValue(IO_APU_TRANSFER_CONTROL, valueNumber(0.0));
+	m_memory.writeIoU32(IO_APU_TRANSFER_ADDRESS, 0u);
+	m_memory.writeIoU32(IO_APU_TRANSFER_DATA, 0u);
+	m_memory.writeIoU32(IO_APU_TRANSFER_CONTROL, 0u);
 	updateDmaRequests();
 }
 
@@ -98,9 +97,9 @@ void ApuSampleTransfer::restoreState(const ApuSampleTransferState& state, i64 no
 	m_timingCarry = state.timingCarry;
 	m_scheduledWords = state.scheduledWords;
 	m_serviceDeadline = nowCycles + state.scheduledCycles;
-	m_memory.writeIoValue(IO_APU_TRANSFER_ADDRESS, valueNumber(static_cast<f64>(state.transferAddressWord)));
-	m_memory.writeIoValue(IO_APU_TRANSFER_DATA, valueNumber(static_cast<f64>(state.transferDataWord)));
-	m_memory.writeIoValue(IO_APU_TRANSFER_CONTROL, valueNumber(static_cast<f64>(state.transferControlWord)));
+	m_memory.writeIoU32(IO_APU_TRANSFER_ADDRESS, state.transferAddressWord);
+	m_memory.writeIoU32(IO_APU_TRANSFER_DATA, state.transferDataWord);
+	m_memory.writeIoU32(IO_APU_TRANSFER_CONTROL, state.transferControlWord);
 	updateDmaRequests();
 	if (m_scheduledWords != 0u) {
 		m_scheduler.scheduleDeviceService(DEVICE_SERVICE_APU_TRANSFER, m_serviceDeadline);
@@ -118,7 +117,7 @@ auto ApuSampleTransfer::readCpuData() const -> u32 {
 auto ApuSampleTransfer::readDmaData(bool blockEnd) -> u32 {
 	if (m_mode == APU_TRANSFER_MODE_DMA_READ && m_fifoCount != 0u) {
 		m_dataLatch = popFifo();
-		m_memory.writeIoValue(IO_APU_TRANSFER_DATA, valueNumber(static_cast<f64>(m_dataLatch)));
+		m_memory.writeIoU32(IO_APU_TRANSFER_DATA, m_dataLatch);
 		updateDmaRequests();
 		if (blockEnd) {
 			scheduleBatch(m_scheduler.currentNowCycles());

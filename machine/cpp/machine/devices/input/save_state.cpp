@@ -1,7 +1,6 @@
 #include "machine/devices/input/controller.h"
 
 #include "spec/bmsx/io.h"
-#include "machine/cpu/value.h"
 
 namespace bmsx {
 
@@ -21,9 +20,9 @@ void InputController::restoreState(const InputControllerState& state) {
 	m_lastSampleCycle = state.lastSampleCycle;
 	m_supervisorRequestLineWasHigh = state.supervisorRequestLineHigh;
 	m_registers.restoreState(state.registers);
-	m_memory.writeIoValue(IO_INP_OUTPUT_CTRL, valueNumber(0.0));
+	m_memory.writeIoU32(IO_INP_OUTPUT_CTRL, 0u);
 	m_registers.mirror(m_memory);
-	m_memory.writeIoValue(IO_INP_STATUS, valueNumber(static_cast<double>(m_sampleSequence)));
+	m_memory.writeIoU32(IO_INP_STATUS, m_sampleSequence);
 }
 
 } // namespace bmsx

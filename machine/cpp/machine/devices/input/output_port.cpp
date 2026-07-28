@@ -13,16 +13,15 @@ InputControllerOutputPort::InputControllerOutputPort(InputControllerInputSource&
 	, m_memory(memory) {
 }
 
-void InputControllerOutputPort::writeOutputControlRegisterThunk([[maybe_unused]] u32 addr, Value value) {
-	const u32 command = toU32(value);
-	if (command == INP_OUTPUT_CTRL_APPLY) {
+void InputControllerOutputPort::writeOutputControlRegisterThunk([[maybe_unused]] u32 addr, u32 value) {
+	if (value == INP_OUTPUT_CTRL_APPLY) {
 		m_input.applyInputControllerVibrationEffect(
 			m_registers.selectedPadIndex(),
 			static_cast<f64>(m_registers.state.outputDurationMs),
 			decodeInputOutputIntensityQ16(m_registers.state.outputIntensityQ16)
 		);
 	}
-	m_memory.writeIoValue(IO_INP_OUTPUT_CTRL, valueNumber(0.0));
+	m_memory.writeIoU32(IO_INP_OUTPUT_CTRL, 0u);
 }
 
 } // namespace bmsx

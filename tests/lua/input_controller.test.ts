@@ -111,7 +111,7 @@ function createHarness(): {
 test('input controller latches one raw MMIO snapshot on armed VBlank', () => {
 	const live = createHarness();
 	live.setKey(HID_KEY_F2, true);
-	live.memory.writeValue(IO_INP_CTRL, INP_CTRL_ARM);
+	live.memory.writeMappedWord(IO_INP_CTRL, INP_CTRL_ARM);
 	live.controller.onVblankEdge(1000 / 60, 77);
 
 	assert.equal(live.samples(), 1);
@@ -130,11 +130,11 @@ test('input controller latches one raw MMIO snapshot on armed VBlank', () => {
 
 test('input controller save-state restores raw latch registers', () => {
 	const live = createHarness();
-	live.memory.writeValue(IO_INP_CTRL, INP_CTRL_ARM);
+	live.memory.writeMappedWord(IO_INP_CTRL, INP_CTRL_ARM);
 	live.controller.onVblankEdge(1000 / 60, 77);
-	live.memory.writeValue(IO_INP_OUTPUT_PORT, 2);
-	live.memory.writeValue(IO_INP_OUTPUT_INTENSITY_Q16, INPUT_CONTROLLER_OUTPUT_INTENSITY_Q16_ONE >>> 1);
-	live.memory.writeValue(IO_INP_OUTPUT_DURATION_MS, 120);
+	live.memory.writeMappedWord(IO_INP_OUTPUT_PORT, 2);
+	live.memory.writeMappedWord(IO_INP_OUTPUT_INTENSITY_Q16, INPUT_CONTROLLER_OUTPUT_INTENSITY_Q16_ONE >>> 1);
+	live.memory.writeMappedWord(IO_INP_OUTPUT_DURATION_MS, 120);
 
 	const savedInput = live.controller.captureState();
 	const restored = createHarness();
@@ -151,18 +151,18 @@ test('input controller save-state restores raw latch registers', () => {
 
 test('input controller output registers emit selected-pad vibration commands', () => {
 	const live = createHarness();
-	live.memory.writeValue(IO_INP_OUTPUT_PORT, 2);
-	live.memory.writeValue(IO_INP_OUTPUT_INTENSITY_Q16, INPUT_CONTROLLER_OUTPUT_INTENSITY_Q16_ONE >>> 1);
-	live.memory.writeValue(IO_INP_OUTPUT_DURATION_MS, 120);
+	live.memory.writeMappedWord(IO_INP_OUTPUT_PORT, 2);
+	live.memory.writeMappedWord(IO_INP_OUTPUT_INTENSITY_Q16, INPUT_CONTROLLER_OUTPUT_INTENSITY_Q16_ONE >>> 1);
+	live.memory.writeMappedWord(IO_INP_OUTPUT_DURATION_MS, 120);
 
-	live.memory.writeValue(IO_INP_OUTPUT_CTRL, INP_OUTPUT_CTRL_APPLY);
+	live.memory.writeMappedWord(IO_INP_OUTPUT_CTRL, INP_OUTPUT_CTRL_APPLY);
 	assert.deepEqual(live.vibrations, [{ padIndex: 2, durationMs: 120, intensity: 0.5 }]);
 	assert.equal(live.memory.readIoU32(IO_INP_OUTPUT_CTRL), 0);
 });
 
 test('input controller exposes the VBlank sample edge without leaking the sample latch', () => {
 	const harness = createHarness();
-	harness.memory.writeValue(IO_INP_CTRL, INP_CTRL_ARM);
+	harness.memory.writeMappedWord(IO_INP_CTRL, INP_CTRL_ARM);
 	assert.equal(harness.controller.captureState().sampleArmed, true);
 	harness.controller.cancelSampleArm();
 	assert.equal(harness.controller.captureState().sampleArmed, false);
@@ -180,7 +180,7 @@ test('input controller raises one supervisor request edge and the device fence v
 	assert.equal(harness.memory.readIoU32(IO_INP_STATUS), 0);
 	assert.equal(harness.memory.readIoU32(IO_INP_KEYS + (HID_KEY_F2 >>> 5) * IO_WORD_SIZE), 0);
 	assert.equal(harness.machine.cpu.peekPendingInterrupt(), AcceptedInterruptKind.None);
-	harness.memory.writeValue(IO_INP_CTRL, INP_CTRL_RESET);
+	harness.memory.writeMappedWord(IO_INP_CTRL, INP_CTRL_RESET);
 	harness.controller.onVblankEdge(2, 2);
 	assert.equal(harness.machine.cpu.peekPendingInterrupt(), AcceptedInterruptKind.None);
 

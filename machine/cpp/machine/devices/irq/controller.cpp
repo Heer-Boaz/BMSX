@@ -17,14 +17,13 @@ void IrqController::reset() {
 	m_userPendingFlags = 0;
 	m_userMask = 0;
 	m_supervisorContextActive = false;
-	m_memory.writeIoValue(IO_IRQ_ACK, valueNumber(0.0));
-	m_memory.writeIoValue(IO_IRQ_MASK, valueNumber(0.0));
+	m_memory.writeIoU32(IO_IRQ_ACK, 0u);
+	m_memory.writeIoU32(IO_IRQ_MASK, 0u);
 }
 
 void IrqController::postLoad() {
-	const Value clearAck = valueNumber(0.0);
-	m_memory.writeIoValue(IO_IRQ_ACK, clearAck);
-	m_memory.writeIoValue(IO_IRQ_MASK, valueNumber(static_cast<double>(m_mask)));
+	m_memory.writeIoU32(IO_IRQ_ACK, 0u);
+	m_memory.writeIoU32(IO_IRQ_MASK, m_mask);
 }
 
 void IrqController::raise(uint32_t mask) {
@@ -67,31 +66,30 @@ void IrqController::acknowledge(uint32_t mask) {
 			m_pendingFlags = next;
 		}
 	}
-	m_memory.writeIoValue(IO_IRQ_ACK, valueNumber(0.0));
+	m_memory.writeIoU32(IO_IRQ_ACK, 0u);
 }
 
-Value IrqController::onFlagsReadThunk(void* context, [[maybe_unused]] uint32_t addr, MappedBusSignals) {
-	return valueNumber(static_cast<double>(static_cast<IrqController*>(context)->m_pendingFlags));
+u32 IrqController::onFlagsReadThunk(void* context, [[maybe_unused]] uint32_t addr, MappedBusSignals) {
+	return static_cast<IrqController*>(context)->m_pendingFlags;
 }
 
-void IrqController::onAckWriteThunk(void* context, [[maybe_unused]] uint32_t addr, Value value, MappedBusSignals) {
+void IrqController::onAckWriteThunk(void* context, [[maybe_unused]] uint32_t addr, u32 value, MappedBusSignals) {
 	auto& irq = *static_cast<IrqController*>(context);
-	const uint32_t mask = toU32(value);
-	if (mask != 0u) {
-		const uint32_t next = irq.m_pendingFlags & ~mask;
+	if (value != 0u) {
+		const uint32_t next = irq.m_pendingFlags & ~value;
 		if (next != irq.m_pendingFlags) {
 			irq.m_pendingFlags = next;
 		}
 	}
-	irq.m_memory.writeIoValue(IO_IRQ_ACK, valueNumber(0.0));
+	irq.m_memory.writeIoU32(IO_IRQ_ACK, 0u);
 }
 
-Value IrqController::onMaskReadThunk(void* context, [[maybe_unused]] uint32_t addr, MappedBusSignals) {
-	return valueNumber(static_cast<double>(static_cast<IrqController*>(context)->m_mask));
+u32 IrqController::onMaskReadThunk(void* context, [[maybe_unused]] uint32_t addr, MappedBusSignals) {
+	return static_cast<IrqController*>(context)->m_mask;
 }
 
-void IrqController::onMaskWriteThunk(void* context, [[maybe_unused]] uint32_t addr, Value value, MappedBusSignals) {
-	static_cast<IrqController*>(context)->m_mask = toU32(value);
+void IrqController::onMaskWriteThunk(void* context, [[maybe_unused]] uint32_t addr, u32 value, MappedBusSignals) {
+	static_cast<IrqController*>(context)->m_mask = value;
 }
 
 } // namespace bmsx

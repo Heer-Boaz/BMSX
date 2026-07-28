@@ -2,7 +2,6 @@
 #include "machine/devices/audio/output.h"
 
 #include "spec/bmsx/io.h"
-#include "machine/cpu/value.h"
 #include "machine/scheduler/device.h"
 
 namespace bmsx {
@@ -103,7 +102,7 @@ AudioControllerState AudioController::captureState() {
 void AudioController::restoreState(const AudioControllerState& state, int64_t nowCycles) {
 	m_audioOutput.resetPlaybackState();
 	for (size_t index = 0; index < APU_PARAMETER_REGISTER_COUNT; index += 1u) {
-		m_memory.writeIoValue(IO_APU_PARAMETER_REGISTER_ADDRS[index], valueNumber(static_cast<double>(state.registerWords[index])));
+		m_memory.writeIoU32(IO_APU_PARAMETER_REGISTER_ADDRS[index], state.registerWords[index]);
 	}
 	m_commandFifo.restoreState(state.commandFifo);
 	m_eventLatch.restoreState({state.eventSequence, state.eventKind, state.eventSlot, state.eventSourceAddr});

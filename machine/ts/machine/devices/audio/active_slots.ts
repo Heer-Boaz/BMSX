@@ -25,7 +25,7 @@ export class ApuActiveSlots {
 	) {}
 
 	public writeActiveMask(): void {
-		this.memory.writeIoValue(IO_APU_ACTIVE_MASK, this.slots.activeMask);
+		this.memory.writeIoU32(IO_APU_ACTIVE_MASK, this.slots.activeMask);
 		this.selectedSlotLatch.refresh();
 	}
 

@@ -24,10 +24,10 @@ public:
 	void leaveSupervisorContext();
 
 private:
-	static Value onFlagsReadThunk(void* context, uint32_t addr, MappedBusSignals busSignals);
-	static void onAckWriteThunk(void* context, uint32_t addr, Value value, MappedBusSignals busSignals);
-	static Value onMaskReadThunk(void* context, uint32_t addr, MappedBusSignals busSignals);
-	static void onMaskWriteThunk(void* context, uint32_t addr, Value value, MappedBusSignals busSignals);
+	static u32 onFlagsReadThunk(void* context, uint32_t addr, MappedBusSignals busSignals);
+	static void onAckWriteThunk(void* context, uint32_t addr, u32 value, MappedBusSignals busSignals);
+	static u32 onMaskReadThunk(void* context, uint32_t addr, MappedBusSignals busSignals);
+	static void onMaskWriteThunk(void* context, uint32_t addr, u32 value, MappedBusSignals busSignals);
 
 	Memory& m_memory;
 	uint32_t m_pendingFlags = 0;

@@ -1,4 +1,3 @@
-import type { Value } from '../cpu/value';
 import {
 	CART_BUS_END,
 	CART_MMIO_END,
@@ -60,7 +59,7 @@ import {
 	IO_SYS_BUS_FAULT_ACK,
 	IO_SYS_BUS_FAULT_ADDR,
 	IO_SYS_BUS_FAULT_CODE,
-	IO_SYS_FRAME_MS,
+	IO_SYS_FRAME_MS_Q16,
 	IO_SYS_CYCLES_PER_FRAME,
 	IO_SYS_TIME_MS,
 } from '../../spec/bmsx/io';
@@ -86,15 +85,15 @@ const BUS_ACCESS_WRITE_U32 = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32;
 const BUS_ACCESS_WRITE_F32 = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_F32;
 const BUS_ACCESS_WRITE_F64 = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_F64;
 
-export type IoReadHandler<TContext> = (context: TContext, addr: number, busSignals: MappedBusSignals) => Value;
-export type IoWriteHandler<TContext> = (context: TContext, addr: number, value: Value, busSignals: MappedBusSignals) => void;
+export type IoReadHandler<TContext> = (context: TContext, addr: number, busSignals: MappedBusSignals) => number;
+export type IoWriteHandler<TContext> = (context: TContext, addr: number, value: number, busSignals: MappedBusSignals) => void;
 export type IoWriteReadyHandler<TContext> = (
 	context: TContext,
 	addr: number,
 	busSignals: MappedBusSignals,
 ) => boolean;
-type StoredIoReadHandler = (context: unknown, addr: number, busSignals: MappedBusSignals) => Value;
-type StoredIoWriteHandler = (context: unknown, addr: number, value: Value, busSignals: MappedBusSignals) => void;
+type StoredIoReadHandler = (context: unknown, addr: number, busSignals: MappedBusSignals) => number;
+type StoredIoWriteHandler = (context: unknown, addr: number, value: number, busSignals: MappedBusSignals) => void;
 type StoredIoWriteReadyHandler = (
 	context: unknown,
 	addr: number,
@@ -126,7 +125,7 @@ export class Memory {
 	private systemRomMediaRevision = 1;
 	public readonly cartridgeController: CartridgeController;
 	private readonly ram: Uint8Array;
-	private readonly ioSlots: Value[];
+	private readonly ioSlots: Uint32Array;
 	private readonly ioReadContexts: unknown[];
 	private readonly ioWriteContexts: unknown[];
 	private readonly ioReadHandlers: Array<StoredIoReadHandler | null>;
@@ -148,10 +147,7 @@ export class Memory {
 		this.systemRom = init.systemRom;
 		this.cartridgeController = new CartridgeController(init.cartridgeSlots);
 		this.ram = new Uint8Array(RAM_END - RAM_BASE);
-		this.ioSlots = new Array<Value>(IO_SLOT_COUNT);
-		for (let index = 0; index < this.ioSlots.length; index += 1) {
-			this.ioSlots[index] = null;
-		}
+		this.ioSlots = new Uint32Array(IO_SLOT_COUNT);
 		this.ioReadContexts = new Array<unknown>(IO_SLOT_COUNT);
 		this.ioWriteContexts = new Array<unknown>(IO_SLOT_COUNT);
 		this.ioReadHandlers = new Array<StoredIoReadHandler | null>(IO_SLOT_COUNT);
@@ -293,12 +289,12 @@ export class Memory {
 		return 0;
 	}
 
-	private readIoSlotValue(slot: number, addr: number, busSignals: MappedBusSignals): Value {
+	private readIoSlot(slot: number, addr: number, busSignals: MappedBusSignals): number {
 		const handler = this.ioReadHandlers[slot];
 		return handler !== null ? handler(this.ioReadContexts[slot], addr, busSignals) : this.ioSlots[slot];
 	}
 
-	private writeIoSlotValue(slot: number, addr: number, value: Value, busSignals: MappedBusSignals): void {
+	private writeIoSlot(slot: number, addr: number, value: number, busSignals: MappedBusSignals): void {
 		this.ioSlots[slot] = value;
 		const handler = this.ioWriteHandlers[slot];
 		if (handler !== null) {
@@ -335,7 +331,7 @@ export class Memory {
 	}
 
 	public clearIoSlots(): void {
-		this.ioSlots.fill(null);
+		this.ioSlots.fill(0);
 		this.clearBusFault();
 	}
 
@@ -346,81 +342,16 @@ export class Memory {
 		this.writeBusFaultSlots();
 	}
 
-	public collectRootValues(visit: (value: Value) => void): void {
-		for (let index = 0; index < this.ioSlots.length; index += 1) {
-			visit(this.ioSlots[index]);
-		}
+	public readMappedWord(addr: number): number {
+		return this.readMappedBusU32LE(addr, BUS_ACCESS_READ_WORD, MAPPED_BUS_MASTER_CPU);
 	}
 
-	public readValue(addr: number): Value {
-		const slot = this.ioAlignedSlot(addr);
-		if (slot >= 0) {
-			return this.readIoSlotValue(slot, addr, MAPPED_BUS_MASTER_CPU);
-		}
-		return this.readU32(addr);
-	}
-
-	public readMappedValue(addr: number): Value {
-		const slot = this.ioAlignedSlot(addr);
-		if (slot >= 0) {
-			return this.readIoSlotValue(slot, addr, MAPPED_BUS_MASTER_CPU);
-		}
-		if (this.isIoRegionRange(addr, 4)) {
-			this.raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_ACCESS_READ_WORD);
-			return 0;
-		}
-		if (addr < RAM_BASE) {
-			if (addr <= SYSTEM_ROM_SIZE - 4) {
-				return this.readRomWindowU32LE(this.systemRom, addr);
-			}
-		} else if (addr < CART_ROM_BASE) {
-			const ramOffset = addr - RAM_BASE;
-			if (ramOffset + 4 <= this.ram.byteLength) {
-				return readLE32(this.ram, ramOffset);
-			}
-		} else if (addr <= CART_BUS_END - 4) {
-			return this.cartridgeController.readU32(addr, MAPPED_BUS_MASTER_CPU);
-		}
-		this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_READ_WORD);
-		return 0;
-	}
-
-	public writeValue(addr: number, value: Value): void {
-		const slot = this.ioAlignedSlot(addr);
-		if (slot >= 0) {
-			this.writeIoSlotValue(slot, addr, value, MAPPED_BUS_MASTER_CPU);
-			return;
-		}
-		this.writeU32(addr, value as number);
-	}
-
-	public writeIoValue(addr: number, value: Value): void {
+	public writeIoU32(addr: number, value: number): void {
 		this.ioSlots[(addr - IO_BASE) / IO_WORD_SIZE] = value;
 	}
 
-	public writeMappedValue(addr: number, value: Value): void {
-		const slot = this.ioAlignedSlot(addr);
-		if (slot >= 0) {
-			if (this.isReadOnlyIoAddress(addr)) {
-				this.raiseBusFault(BUS_FAULT_READ_ONLY, addr, BUS_ACCESS_WRITE_WORD);
-				return;
-			}
-			this.writeIoSlotValue(slot, addr, value, MAPPED_BUS_MASTER_CPU);
-			return;
-		}
-		if (this.isIoRegionRange(addr, 4)) {
-			this.raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_ACCESS_WRITE_WORD);
-			return;
-		}
-		if (addr < CART_ROM_BASE) {
-			if (this.writeRamWordLE(addr, 4, value as number)) {
-				return;
-			}
-		} else if (addr <= CART_BUS_END - 4) {
-			this.cartridgeController.writeU32(addr, value as number, MAPPED_BUS_MASTER_CPU);
-			return;
-		}
-		this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_WRITE_WORD);
+	public writeMappedWord(addr: number, value: number): void {
+		this.writeMappedBusU32LE(addr, value, BUS_ACCESS_WRITE_WORD, MAPPED_BUS_MASTER_CPU);
 	}
 
 	public readU8(addr: number): number {
@@ -430,7 +361,7 @@ export class Memory {
 	public readMappedU8(addr: number): number {
 		const slot = this.ioAlignedSlot(addr);
 		if (slot >= 0) {
-			return (this.readIoSlotValue(slot, addr, MAPPED_BUS_MASTER_CPU) as number) & 0xff;
+			return this.readIoSlot(slot, addr, MAPPED_BUS_MASTER_CPU) & 0xff;
 		}
 		if (this.isIoRegionRange(addr, 1)) {
 			this.raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_ACCESS_READ_U8);
@@ -468,11 +399,7 @@ export class Memory {
 	}
 
 	public readIoU32(addr: number): number {
-		return (this.readIoSlotValue((addr - IO_BASE) / IO_WORD_SIZE, addr, MAPPED_BUS_MASTER_CPU) as number) >>> 0;
-	}
-
-	public readIoI32(addr: number): number {
-		return (this.readIoSlotValue((addr - IO_BASE) / IO_WORD_SIZE, addr, MAPPED_BUS_MASTER_CPU) as number) | 0;
+		return this.readIoSlot((addr - IO_BASE) / IO_WORD_SIZE, addr, MAPPED_BUS_MASTER_CPU);
 	}
 
 	public readU32(addr: number): number {
@@ -524,7 +451,7 @@ export class Memory {
 	private readMappedBusU32LE(addr: number, faultAccess: number, busSignals: MappedBusSignals): number {
 		const slot = this.ioAlignedSlot(addr);
 		if (slot >= 0) {
-			return (this.readIoSlotValue(slot, addr, busSignals) as number) >>> 0;
+			return this.readIoSlot(slot, addr, busSignals);
 		}
 		if (this.isIoRegionRange(addr, 4)) {
 			this.raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, faultAccess);
@@ -614,7 +541,7 @@ export class Memory {
 				&& !writeReady(this.ioWriteContexts[slot], addr, busSignals)) {
 				return;
 			}
-			this.writeIoSlotValue(slot, addr, word, busSignals);
+			this.writeIoSlot(slot, addr, word, busSignals);
 			return;
 		}
 		if (this.isIoRegionRange(addr, 4)) {
@@ -783,9 +710,9 @@ export class Memory {
 		this.writeBusFaultSlots();
 	}
 
-	private static onBusFaultAckWriteThunk(context: Memory, addr: number, value: Value): void {
+	private static onBusFaultAckWriteThunk(context: Memory, addr: number, value: number): void {
 		void addr;
-		if (((value as number) >>> 0) !== 0) {
+		if (value !== 0) {
 			context.clearBusFault();
 		}
 	}
@@ -822,7 +749,7 @@ export class Memory {
 			case IO_SYS_BUS_FAULT_ADDR:
 			case IO_SYS_BUS_FAULT_ACCESS:
 			case IO_SYS_TIME_MS:
-			case IO_SYS_FRAME_MS:
+			case IO_SYS_FRAME_MS_Q16:
 			case IO_SYS_CYCLES_PER_FRAME:
 			case IO_IRQ_FLAGS:
 			case IO_DMA0_STATUS:

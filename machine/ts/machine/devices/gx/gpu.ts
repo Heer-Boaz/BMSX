@@ -1,5 +1,4 @@
 import type { CPU } from '../../cpu/cpu';
-import type { Value } from '../../cpu/value';
 import {
 	DMA_REQUEST_GX_WRITE,
 	IO_GX_GPU_GP0,
@@ -717,7 +716,7 @@ export class GxGpu {
 		);
 		this.vramPresentationPending = context.vramPresentationPending;
 		this.updateScanoutStatusBits();
-		this.memory.writeIoValue(IO_GX_GPU_GP0, this.gp0Word);
+		this.memory.writeIoU32(IO_GX_GPU_GP0, this.gp0Word);
 		this.writeStatusIo();
 		if (((this.statusWord & GX_GPU_STATUS_DMA_DIRECTION_MASK) >>> GX_GPU_STATUS_DMA_DIRECTION_SHIFT)
 			=== GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU) {
@@ -764,7 +763,7 @@ export class GxGpu {
 		this.horizontalDisplayRangeWord = GX_GPU_RESET_HORIZONTAL_DISPLAY_RANGE_WORD;
 		this.verticalDisplayRangeWord = GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD;
 		this.updateDisplayModeStatusBits();
-		this.memory.writeIoValue(IO_GX_GPU_GP0, this.gpuReadWord);
+		this.memory.writeIoU32(IO_GX_GPU_GP0, this.gpuReadWord);
 		this.writeStatusIo();
 	}
 
@@ -889,7 +888,7 @@ export class GxGpu {
 		this.m_lastFrameCommitted = false;
 		this.rescheduleDeviceService(true);
 		this.updateScanoutStatusBits();
-		this.memory.writeIoValue(IO_GX_GPU_GP0, this.gp0Word);
+		this.memory.writeIoU32(IO_GX_GPU_GP0, this.gp0Word);
 		this.writeStatusIo();
 		if (((this.statusWord & GX_GPU_STATUS_DMA_DIRECTION_MASK) >>> GX_GPU_STATUS_DMA_DIRECTION_SHIFT)
 			=== GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU) {
@@ -1018,7 +1017,7 @@ export class GxGpu {
 			&& this.commandBuffer.readback.phase === GX_GPU_READBACK_READY) {
 			this.gpuReadWord = this.commandBuffer.readback.readWord();
 			this.processGp0Pipeline(nowCycles);
-			this.memory.writeIoValue(IO_GX_GPU_GP0, this.gpuReadWord);
+			this.memory.writeIoU32(IO_GX_GPU_GP0, this.gpuReadWord);
 		}
 		this.updateDynamicStatusBits();
 		this.notifySupervisorBoundary();
@@ -1042,7 +1041,7 @@ export class GxGpu {
 			this.gp0Word = word >>> 0;
 			this.acceptGp0Word(this.gp0Word);
 		}
-		this.memory.writeIoValue(IO_GX_GPU_GP0, this.gp0Word);
+		this.memory.writeIoU32(IO_GX_GPU_GP0, this.gp0Word);
 		this.processGp0Pipeline(nowCycles);
 		if (this.supervisorIngressQuiesceRequested
 			&& this.gp0IngressPhase === GX_GPU_GP0_INGRESS_COMMAND
@@ -1291,7 +1290,7 @@ export class GxGpu {
 		}
 		this.rescheduleDeviceService();
 		this.updateDynamicStatusBits();
-		this.memory.writeIoValue(IO_GX_GPU_GP1, this.statusWord);
+		this.memory.writeIoU32(IO_GX_GPU_GP1, this.statusWord);
 		if (runtimeEdge === GX_GPU_PCRTC_RUNTIME_EDGE_VBLANK_BEGIN) timingPublished = true;
 		return runtimeEdge | (timingPublished ? GX_GPU_SERVICE_TIMING_PUBLISHED : 0);
 	}
@@ -1796,7 +1795,7 @@ export class GxGpu {
 				this.gpuReadWord = 0;
 				break;
 		}
-		this.memory.writeIoValue(IO_GX_GPU_GP0, this.gpuReadWord);
+		this.memory.writeIoU32(IO_GX_GPU_GP0, this.gpuReadWord);
 		this.writeStatusIo();
 	}
 
@@ -1960,7 +1959,7 @@ export class GxGpu {
 
 	private writeStatusIo(): void {
 		this.updateDynamicStatusBits();
-		this.memory.writeIoValue(IO_GX_GPU_GP1, this.statusWord);
+		this.memory.writeIoU32(IO_GX_GPU_GP1, this.statusWord);
 	}
 
 	private gp0WriteReady(busSignals: MappedBusSignals): boolean {
@@ -1982,13 +1981,13 @@ export class GxGpu {
 	}
 
 	// disable-next-line single_line_method_pattern -- MMIO read thunk is the Memory-owned device callback ABI for GP0.
-	private static readGp0Thunk(context: GxGpu, _addr: number, busSignals: MappedBusSignals): Value {
+	private static readGp0Thunk(context: GxGpu, _addr: number, busSignals: MappedBusSignals): number {
 		return context.readGp0(busSignals);
 	}
 
 	// disable-next-line single_line_method_pattern -- MMIO write thunk is the Memory-owned device callback ABI for GP0.
-	private static writeGp0Thunk(context: GxGpu, _addr: number, value: Value, busSignals: MappedBusSignals): void {
-		context.writeGp0(value as number, busSignals);
+	private static writeGp0Thunk(context: GxGpu, _addr: number, value: number, busSignals: MappedBusSignals): void {
+		context.writeGp0(value, busSignals);
 	}
 
 	private static gp0WriteReadyThunk(context: GxGpu, _addr: number, busSignals: MappedBusSignals): boolean {
@@ -2000,26 +1999,26 @@ export class GxGpu {
 	}
 
 	// disable-next-line single_line_method_pattern -- MMIO read thunk is the Memory-owned device callback ABI for GPUSTAT.
-	private static readStatusThunk(context: GxGpu, _addr: number): Value {
+	private static readStatusThunk(context: GxGpu, _addr: number): number {
 		return context.readStatus();
 	}
 
 	// disable-next-line single_line_method_pattern -- MMIO write thunk is the Memory-owned device callback ABI for GP1.
-	private static writeGp1Thunk(context: GxGpu, _addr: number, value: Value): void {
-		context.writeGp1(value as number);
+	private static writeGp1Thunk(context: GxGpu, _addr: number, value: number): void {
+		context.writeGp1(value);
 	}
 
-	private static readPcrtcThunk(context: GxGpu, address: number): Value {
+	private static readPcrtcThunk(context: GxGpu, address: number): number {
 		const index = address < IO_GX_PCRTC_TIMING_BASE
 			? ((address - IO_GX_PCRTC_BASE) / IO_WORD_SIZE) >>> 0
 			: IO_GX_PCRTC_WORD_COUNT + (((address - IO_GX_PCRTC_TIMING_BASE) / IO_WORD_SIZE) >>> 0);
 		return context.pcrtc.readRegisterWord(index);
 	}
 
-	private static writePcrtcThunk(context: GxGpu, address: number, value: Value): void {
+	private static writePcrtcThunk(context: GxGpu, address: number, value: number): void {
 		const index = address < IO_GX_PCRTC_TIMING_BASE
 			? ((address - IO_GX_PCRTC_BASE) / IO_WORD_SIZE) >>> 0
 			: IO_GX_PCRTC_WORD_COUNT + (((address - IO_GX_PCRTC_TIMING_BASE) / IO_WORD_SIZE) >>> 0);
-		context.writePcrtcRegister(index, (value as number) >>> 0);
+		context.writePcrtcRegister(index, value);
 	}
 }

@@ -67,15 +67,15 @@ public:
 	u8 readHostOutputByte();
 
 private:
-	Value readStatus(u32 address);
-	Value readTimeMilliseconds(u32 address) const;
-	Value readFrameMilliseconds(u32 address) const;
-	Value readCyclesPerFrame(u32 address) const;
-	Value readPrintChar(u32 address);
-	Value readPrintByteCount(u32 address) const;
-	void writeControl(u32 address, Value value);
-	void writePrintChar(u32 address, Value value);
-	void flushPrintLine(u32 address, Value value);
+	u32 readStatus(u32 address);
+	u32 readTimeMilliseconds(u32 address) const;
+	u32 readFrameMillisecondsQ16(u32 address) const;
+	u32 readCyclesPerFrame(u32 address) const;
+	u32 readPrintChar(u32 address);
+	u32 readPrintByteCount(u32 address) const;
+	void writeControl(u32 address, u32 value);
+	void writePrintChar(u32 address, u32 value);
+	void flushPrintLine(u32 address, u32 value);
 	bool reserveHostOutputBytes(u32 byteCount);
 	void clearHostOutput();
 	void appendHostOutputByte(u8 value);

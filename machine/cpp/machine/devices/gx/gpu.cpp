@@ -140,7 +140,7 @@ void GxGpu::loadLiveRegisterContext(const GxGpuRegisterContextState& context) {
 		context.pcrtcPresentWords);
 	m_vramPresentationPending = context.vramPresentationPending;
 	updateScanoutStatusBits();
-	m_memory.writeIoValue(IO_GX_GPU_GP0, valueNumber(static_cast<double>(m_gp0Word)));
+	m_memory.writeIoU32(IO_GX_GPU_GP0, m_gp0Word);
 	writeStatusIo();
 	if (((m_statusWord & GX_GPU_STATUS_DMA_DIRECTION_MASK) >> GX_GPU_STATUS_DMA_DIRECTION_SHIFT)
 		== GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU) {
@@ -290,7 +290,7 @@ void GxGpu::resetGpuRegisters() {
 	m_horizontalDisplayRangeWord = GX_GPU_RESET_HORIZONTAL_DISPLAY_RANGE_WORD;
 	m_verticalDisplayRangeWord = GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD;
 	updateDisplayModeStatusBits();
-	m_memory.writeIoValue(IO_GX_GPU_GP0, valueNumber(static_cast<double>(m_gpuReadWord)));
+	m_memory.writeIoU32(IO_GX_GPU_GP0, m_gpuReadWord);
 	writeStatusIo();
 }
 
@@ -415,7 +415,7 @@ void GxGpu::restoreState(const GxGpuState& state) {
 	rescheduleDeviceService(true);
 	m_lastFrameCommitted = false;
 	updateScanoutStatusBits();
-	m_memory.writeIoValue(IO_GX_GPU_GP0, valueNumber(static_cast<double>(m_gp0Word)));
+	m_memory.writeIoU32(IO_GX_GPU_GP0, m_gp0Word);
 	writeStatusIo();
 	if (((m_statusWord & GX_GPU_STATUS_DMA_DIRECTION_MASK) >> GX_GPU_STATUS_DMA_DIRECTION_SHIFT)
 		== GX_GPU_DMA_DIRECTION_GPUREAD_TO_CPU) {
@@ -532,7 +532,7 @@ u32 GxGpu::readGp0(MappedBusSignals busSignals) {
 		&& m_commandBuffer.readback.phase() == GX_GPU_READBACK_READY) {
 		m_gpuReadWord = m_commandBuffer.readback.readWord();
 		processGp0Pipeline(nowCycles);
-		m_memory.writeIoValue(IO_GX_GPU_GP0, valueNumber(static_cast<double>(m_gpuReadWord)));
+		m_memory.writeIoU32(IO_GX_GPU_GP0, m_gpuReadWord);
 	}
 	updateDynamicStatusBits();
 	notifySupervisorBoundary();
@@ -556,7 +556,7 @@ void GxGpu::writeGp0(u32 word, MappedBusSignals busSignals) {
 		m_gp0Word = word;
 		acceptGp0Word(word);
 	}
-	m_memory.writeIoValue(IO_GX_GPU_GP0, valueNumber(static_cast<double>(m_gp0Word)));
+	m_memory.writeIoU32(IO_GX_GPU_GP0, m_gp0Word);
 	processGp0Pipeline(nowCycles);
 	if (m_supervisorIngressQuiesceRequested
 		&& m_gp0IngressPhase == GX_GPU_GP0_INGRESS_COMMAND
@@ -1290,7 +1290,7 @@ void GxGpu::writeGpuInfoQuery(u32 word) {
 		m_gpuReadWord = 0u;
 		break;
 	}
-	m_memory.writeIoValue(IO_GX_GPU_GP0, valueNumber(static_cast<double>(m_gpuReadWord)));
+	m_memory.writeIoU32(IO_GX_GPU_GP0, m_gpuReadWord);
 	writeStatusIo();
 }
 
@@ -1450,7 +1450,7 @@ void GxGpu::updateDisplayModeStatusBits() {
 
 void GxGpu::writeStatusIo() {
 	updateDynamicStatusBits();
-	m_memory.writeIoValue(IO_GX_GPU_GP1, valueNumber(static_cast<double>(m_statusWord)));
+	m_memory.writeIoU32(IO_GX_GPU_GP1, m_statusWord);
 }
 
 bool GxGpu::gp0WriteReady(MappedBusSignals busSignals) {
@@ -1471,16 +1471,16 @@ void GxGpu::notifySupervisorBoundary() {
 	}
 }
 
-u64 GxGpu::readGp0Thunk(void* context, u32 addr, MappedBusSignals busSignals) {
+u32 GxGpu::readGp0Thunk(void* context, u32 addr, MappedBusSignals busSignals) {
 	(void)addr;
 	GxGpu& gpu = *static_cast<GxGpu*>(context);
-	return valueNumber(static_cast<double>(gpu.readGp0(busSignals)));
+	return gpu.readGp0(busSignals);
 }
 
-void GxGpu::writeGp0Thunk(void* context, u32 addr, u64 value, MappedBusSignals busSignals) {
+void GxGpu::writeGp0Thunk(void* context, u32 addr, u32 value, MappedBusSignals busSignals) {
 	(void)addr;
 	GxGpu& gpu = *static_cast<GxGpu*>(context);
-	gpu.writeGp0(toU32(value), busSignals);
+	gpu.writeGp0(value, busSignals);
 }
 
 bool GxGpu::gp0WriteReadyThunk(void* context, u32 addr, MappedBusSignals busSignals) {
@@ -1493,30 +1493,30 @@ bool GxGpu::gp1WriteReadyThunk(void* context, u32 addr, MappedBusSignals) {
 	return !static_cast<GxGpu*>(context)->m_supervisorQuiesceRequested;
 }
 
-u64 GxGpu::readStatusThunk(void* context, u32 addr, MappedBusSignals) {
+u32 GxGpu::readStatusThunk(void* context, u32 addr, MappedBusSignals) {
 	(void)addr;
 	GxGpu& gpu = *static_cast<GxGpu*>(context);
-	return valueNumber(static_cast<double>(gpu.readStatus()));
+	return gpu.readStatus();
 }
 
-void GxGpu::writeGp1Thunk(void* context, u32 addr, u64 value, MappedBusSignals) {
+void GxGpu::writeGp1Thunk(void* context, u32 addr, u32 value, MappedBusSignals) {
 	(void)addr;
 	GxGpu& gpu = *static_cast<GxGpu*>(context);
-	gpu.writeGp1(toU32(value));
+	gpu.writeGp1(value);
 }
 
-u64 GxGpu::readPcrtcThunk(void* context, u32 address, MappedBusSignals) {
+u32 GxGpu::readPcrtcThunk(void* context, u32 address, MappedBusSignals) {
 	const u32 index = address < IO_GX_PCRTC_TIMING_BASE
 		? (address - IO_GX_PCRTC_BASE) / IO_WORD_SIZE
 		: IO_GX_PCRTC_WORD_COUNT + (address - IO_GX_PCRTC_TIMING_BASE) / IO_WORD_SIZE;
-	return valueNumber(static_cast<double>(static_cast<GxGpu*>(context)->m_pcrtc.readRegisterWord(index)));
+	return static_cast<GxGpu*>(context)->m_pcrtc.readRegisterWord(index);
 }
 
-void GxGpu::writePcrtcThunk(void* context, u32 address, u64 value, MappedBusSignals) {
+void GxGpu::writePcrtcThunk(void* context, u32 address, u32 value, MappedBusSignals) {
 	const u32 index = address < IO_GX_PCRTC_TIMING_BASE
 		? (address - IO_GX_PCRTC_BASE) / IO_WORD_SIZE
 		: IO_GX_PCRTC_WORD_COUNT + (address - IO_GX_PCRTC_TIMING_BASE) / IO_WORD_SIZE;
-	static_cast<GxGpu*>(context)->writePcrtcRegister(index, toU32(value));
+	static_cast<GxGpu*>(context)->writePcrtcRegister(index, value);
 }
 
 } // namespace bmsx

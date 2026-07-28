@@ -377,23 +377,23 @@ test('APU sample bus binds ROM directly, owns sample RAM, and rejects CPU memory
 });
 
 function writeSampleRamBytes(memory: Memory, bytes: Uint8Array): void {
-	memory.writeValue(IO_APU_TRANSFER_ADDRESS, 0);
-	memory.writeValue(IO_APU_TRANSFER_CONTROL, 1);
+	memory.writeMappedWord(IO_APU_TRANSFER_ADDRESS, 0);
+	memory.writeMappedWord(IO_APU_TRANSFER_CONTROL, 1);
 	for (let offset = 0; offset < bytes.byteLength; offset += 4) {
-		memory.writeValue(IO_APU_TRANSFER_DATA, readLE32(bytes, offset));
+		memory.writeMappedWord(IO_APU_TRANSFER_DATA, readLE32(bytes, offset));
 	}
-	memory.writeValue(IO_APU_TRANSFER_CONTROL, 0);
+	memory.writeMappedWord(IO_APU_TRANSFER_CONTROL, 0);
 }
 
 function writePcmSourceRegisters(memory: Memory, sourceAddr: number, sourceBytes: number): void {
-	memory.writeValue(IO_APU_SOURCE_ADDR, sourceAddr);
-	memory.writeValue(IO_APU_SOURCE_BYTES, sourceBytes);
-	memory.writeValue(IO_APU_SOURCE_SAMPLE_RATE_HZ, APU_SAMPLE_RATE_HZ);
-	memory.writeValue(IO_APU_SOURCE_CHANNELS, 1);
-	memory.writeValue(IO_APU_SOURCE_BITS_PER_SAMPLE, 8);
-	memory.writeValue(IO_APU_SOURCE_FRAME_COUNT, sourceBytes);
-	memory.writeValue(IO_APU_SOURCE_DATA_OFFSET, 0);
-	memory.writeValue(IO_APU_SOURCE_DATA_BYTES, sourceBytes);
+	memory.writeMappedWord(IO_APU_SOURCE_ADDR, sourceAddr);
+	memory.writeMappedWord(IO_APU_SOURCE_BYTES, sourceBytes);
+	memory.writeMappedWord(IO_APU_SOURCE_SAMPLE_RATE_HZ, APU_SAMPLE_RATE_HZ);
+	memory.writeMappedWord(IO_APU_SOURCE_CHANNELS, 1);
+	memory.writeMappedWord(IO_APU_SOURCE_BITS_PER_SAMPLE, 8);
+	memory.writeMappedWord(IO_APU_SOURCE_FRAME_COUNT, sourceBytes);
+	memory.writeMappedWord(IO_APU_SOURCE_DATA_OFFSET, 0);
+	memory.writeMappedWord(IO_APU_SOURCE_DATA_BYTES, sourceBytes);
 }
 
 function writeValidSourceRegisters(memory: Memory): void {
@@ -408,8 +408,8 @@ test('APU voices read cart sample ROM directly and reject CPU RAM addresses', ()
 	});
 	const cartHarness = createAudioControllerHarness(new ApuOutputMixer(), cartMemory);
 	writePcmSourceRegisters(cartMemory, CART_ROM_BASE, 4);
-	cartMemory.writeValue(IO_APU_SLOT, 1);
-	cartMemory.writeValue(IO_APU_CMD, APU_CMD_PLAY);
+	cartMemory.writeMappedWord(IO_APU_SLOT, 1);
+	cartMemory.writeMappedWord(IO_APU_CMD, APU_CMD_PLAY);
 	cartHarness.audio.onService(0);
 	const cartState = cartHarness.audio.captureState();
 	assert.equal(cartState.output.voices.length, 1);
@@ -419,8 +419,8 @@ test('APU voices read cart sample ROM directly and reject CPU RAM addresses', ()
 	const cpuHarness = createAudioHarness();
 	cpuHarness.memory.writeMappedU32LE(DYNAMIC_RAM_BASE, 0x11223344);
 	writePcmSourceRegisters(cpuHarness.memory, DYNAMIC_RAM_BASE, 4);
-	cpuHarness.memory.writeValue(IO_APU_SLOT, 1);
-	cpuHarness.memory.writeValue(IO_APU_CMD, APU_CMD_PLAY);
+	cpuHarness.memory.writeMappedWord(IO_APU_SLOT, 1);
+	cpuHarness.memory.writeMappedWord(IO_APU_CMD, APU_CMD_PLAY);
 	cpuHarness.audio.onService(0);
 	assertApuFaultLatch(cpuHarness.memory, APU_FAULT_SOURCE_RANGE);
 	assert.equal(cpuHarness.memory.readIoU32(IO_APU_ACTIVE_MASK), 0);
@@ -447,9 +447,9 @@ test('APU voices latch their cartridge socket across CPU selection changes and r
 	const harness = createRealAudioHarness(memory);
 	memory.writeMappedU32LE(IO_CART_SELECT, 1);
 	writePcmSourceRegisters(memory, CART_ROM_BASE, 4);
-	memory.writeValue(IO_APU_RATE_STEP_Q16, APU_RATE_STEP_Q16_ONE);
-	memory.writeValue(IO_APU_GAIN_Q12, APU_GAIN_Q12_ONE);
-	memory.writeValue(IO_APU_SLOT, 1);
+	memory.writeMappedWord(IO_APU_RATE_STEP_Q16, APU_RATE_STEP_Q16_ONE);
+	memory.writeMappedWord(IO_APU_GAIN_Q12, APU_GAIN_Q12_ONE);
+	memory.writeMappedWord(IO_APU_SLOT, 1);
 	writeApuCommand(memory, harness.audio, APU_CMD_PLAY);
 	const saved = harness.audio.captureState();
 	assert.equal(saved.output.voices[0]!.sourceCartridgeSlot, 1);
@@ -489,8 +489,8 @@ function createTransferEdgeHarness(): ReturnType<typeof createAudioControllerHar
 	harness.audio.setTiming(APU_TRANSFER_WORDS_PER_SECOND, 0);
 	writeSampleRamBytes(harness.memory, new Uint8Array([0x40, 0x40, 0x40, 0x40]));
 	writePcmSourceRegisters(harness.memory, APU_SAMPLE_RAM_BASE, 4);
-	harness.memory.writeValue(IO_APU_SLOT, 1);
-	harness.memory.writeValue(IO_APU_CMD, APU_CMD_PLAY);
+	harness.memory.writeMappedWord(IO_APU_SLOT, 1);
+	harness.memory.writeMappedWord(IO_APU_CMD, APU_CMD_PLAY);
 	harness.audio.onService(0);
 	const dmaSource = DYNAMIC_RAM_BASE + 0x300;
 	harness.memory.writeMappedU32LE(dmaSource, 0xc0c0c0c0);
@@ -540,8 +540,8 @@ test('APU manual RAM writes precede a same-cycle DAC sample', () => {
 	harness.audio.setTiming(APU_TRANSFER_WORDS_PER_SECOND, 0);
 	writeSampleRamBytes(harness.memory, new Uint8Array([0x40, 0x40, 0x40, 0x40]));
 	writePcmSourceRegisters(harness.memory, APU_SAMPLE_RAM_BASE, 4);
-	harness.memory.writeValue(IO_APU_SLOT, 1);
-	harness.memory.writeValue(IO_APU_CMD, APU_CMD_PLAY);
+	harness.memory.writeMappedWord(IO_APU_SLOT, 1);
+	harness.memory.writeMappedWord(IO_APU_CMD, APU_CMD_PLAY);
 	harness.audio.onService(0);
 	harness.memory.writeMappedU32LE(IO_APU_TRANSFER_ADDRESS, 0);
 	harness.memory.writeMappedU32LE(IO_APU_TRANSFER_CONTROL, APU_TRANSFER_MODE_MANUAL_WRITE);
@@ -675,25 +675,25 @@ test('APU transfer FIFO is not consumed by a forced wrong-direction DMA block', 
 });
 
 function writeSquareGeneratorRegisters(memory: Memory): void {
-	memory.writeValue(IO_APU_SOURCE_ADDR, 0);
-	memory.writeValue(IO_APU_SOURCE_BYTES, 0);
-	memory.writeValue(IO_APU_SOURCE_SAMPLE_RATE_HZ, APU_SAMPLE_RATE_HZ / 4);
-	memory.writeValue(IO_APU_SOURCE_CHANNELS, 1);
-	memory.writeValue(IO_APU_SOURCE_BITS_PER_SAMPLE, 0);
-	memory.writeValue(IO_APU_SOURCE_FRAME_COUNT, 2);
-	memory.writeValue(IO_APU_SOURCE_DATA_OFFSET, 0);
-	memory.writeValue(IO_APU_SOURCE_DATA_BYTES, 0);
-	memory.writeValue(IO_APU_SOURCE_LOOP_START_SAMPLE, 0);
-	memory.writeValue(IO_APU_SOURCE_LOOP_END_SAMPLE, 2);
-	memory.writeValue(IO_APU_GENERATOR_KIND, APU_GENERATOR_SQUARE);
-	memory.writeValue(IO_APU_GENERATOR_DUTY_Q12, 0x0800);
+	memory.writeMappedWord(IO_APU_SOURCE_ADDR, 0);
+	memory.writeMappedWord(IO_APU_SOURCE_BYTES, 0);
+	memory.writeMappedWord(IO_APU_SOURCE_SAMPLE_RATE_HZ, APU_SAMPLE_RATE_HZ / 4);
+	memory.writeMappedWord(IO_APU_SOURCE_CHANNELS, 1);
+	memory.writeMappedWord(IO_APU_SOURCE_BITS_PER_SAMPLE, 0);
+	memory.writeMappedWord(IO_APU_SOURCE_FRAME_COUNT, 2);
+	memory.writeMappedWord(IO_APU_SOURCE_DATA_OFFSET, 0);
+	memory.writeMappedWord(IO_APU_SOURCE_DATA_BYTES, 0);
+	memory.writeMappedWord(IO_APU_SOURCE_LOOP_START_SAMPLE, 0);
+	memory.writeMappedWord(IO_APU_SOURCE_LOOP_END_SAMPLE, 2);
+	memory.writeMappedWord(IO_APU_GENERATOR_KIND, APU_GENERATOR_SQUARE);
+	memory.writeMappedWord(IO_APU_GENERATOR_DUTY_Q12, 0x0800);
 }
 
 function startConstantSquareVoice(harness: ReturnType<typeof createRealAudioHarness>, slot: number, gainQ12Word: number): void {
 	writeSquareGeneratorRegisters(harness.memory);
-	harness.memory.writeValue(IO_APU_RATE_STEP_Q16, 0);
-	harness.memory.writeValue(IO_APU_GAIN_Q12, gainQ12Word);
-	harness.memory.writeValue(IO_APU_SLOT, slot);
+	harness.memory.writeMappedWord(IO_APU_RATE_STEP_Q16, 0);
+	harness.memory.writeMappedWord(IO_APU_GAIN_Q12, gainQ12Word);
+	harness.memory.writeMappedWord(IO_APU_SLOT, slot);
 	writeApuCommand(harness.memory, harness.audio, APU_CMD_PLAY);
 }
 
@@ -710,31 +710,31 @@ function writeBadpSourceRegisters(memory: Memory, sampleRateHz: number): void {
 	writeLE16(bytes, 52, 0);
 	bytes.set([0x11, 0x11, 0x11, 0x11], 56);
 	writeSampleRamBytes(memory, bytes);
-	memory.writeValue(IO_APU_SOURCE_ADDR, APU_SAMPLE_RAM_BASE);
-	memory.writeValue(IO_APU_SOURCE_BYTES, bytes.byteLength);
-	memory.writeValue(IO_APU_SOURCE_SAMPLE_RATE_HZ, sampleRateHz);
-	memory.writeValue(IO_APU_SOURCE_CHANNELS, 1);
-	memory.writeValue(IO_APU_SOURCE_BITS_PER_SAMPLE, 4);
-	memory.writeValue(IO_APU_SOURCE_FRAME_COUNT, 8);
-	memory.writeValue(IO_APU_SOURCE_DATA_OFFSET, 48);
-	memory.writeValue(IO_APU_SOURCE_DATA_BYTES, 12);
+	memory.writeMappedWord(IO_APU_SOURCE_ADDR, APU_SAMPLE_RAM_BASE);
+	memory.writeMappedWord(IO_APU_SOURCE_BYTES, bytes.byteLength);
+	memory.writeMappedWord(IO_APU_SOURCE_SAMPLE_RATE_HZ, sampleRateHz);
+	memory.writeMappedWord(IO_APU_SOURCE_CHANNELS, 1);
+	memory.writeMappedWord(IO_APU_SOURCE_BITS_PER_SAMPLE, 4);
+	memory.writeMappedWord(IO_APU_SOURCE_FRAME_COUNT, 8);
+	memory.writeMappedWord(IO_APU_SOURCE_DATA_OFFSET, 48);
+	memory.writeMappedWord(IO_APU_SOURCE_DATA_BYTES, 12);
 }
 
 function writeApuCommand(memory: Memory, audio: AudioController, command: number): void {
-	memory.writeValue(IO_APU_CMD, command);
+	memory.writeMappedWord(IO_APU_CMD, command);
 	audio.onService(0);
 }
 
 function beginApuPlay(memory: Memory, audio: AudioController, slot: number): void {
 	writeValidSourceRegisters(memory);
-	memory.writeValue(IO_APU_SLOT, slot);
+	memory.writeMappedWord(IO_APU_SLOT, slot);
 	writeApuCommand(memory, audio, APU_CMD_PLAY);
 }
 
 function enqueueApuPlayWithoutService(memory: Memory, slot: number): void {
 	writeValidSourceRegisters(memory);
-	memory.writeValue(IO_APU_SLOT, slot);
-	memory.writeValue(IO_APU_CMD, APU_CMD_PLAY);
+	memory.writeMappedWord(IO_APU_SLOT, slot);
+	memory.writeMappedWord(IO_APU_CMD, APU_CMD_PLAY);
 }
 
 async function playApuSlot(memory: Memory, audio: AudioController, slot: number): Promise<void> {
@@ -784,13 +784,13 @@ function assertApuSlotEndedEvent(memory: Memory, eventSequence: number): void {
 test('APU command faults latch in MMIO and ACK self-clears', () => {
 	const { memory, audio } = createAudioHarness();
 
-	assert.doesNotThrow(() => memory.writeValue(IO_APU_CMD, 0xffff));
+	assert.doesNotThrow(() => memory.writeMappedWord(IO_APU_CMD, 0xffff));
 	assertApuFaultLatch(memory, APU_FAULT_BAD_CMD);
 
 	writeApuCommand(memory, audio, APU_CMD_STOP_SLOT);
 	assert.equal(memory.readIoU32(IO_APU_FAULT_CODE), APU_FAULT_BAD_CMD, 'APU fault latch should be sticky-first until ACK');
 
-	memory.writeValue(IO_APU_FAULT_ACK, 1);
+	memory.writeMappedWord(IO_APU_FAULT_ACK, 1);
 	assert.equal(memory.readIoU32(IO_APU_FAULT_CODE), APU_FAULT_NONE);
 	assert.equal(memory.readIoU32(IO_APU_STATUS) & APU_STATUS_FAULT, 0);
 	assert.equal(memory.readIoU32(IO_APU_FAULT_ACK), 0);
@@ -812,7 +812,7 @@ test('APU command doorbell enqueues a device-owned FIFO snapshot', () => {
 	assert.equal(memory.readIoU32(IO_APU_SLOT), 0);
 
 	audio.onService(0);
-	memory.writeValue(IO_APU_SLOT, 1);
+	memory.writeMappedWord(IO_APU_SLOT, 1);
 	assert.equal(memory.readIoU32(IO_APU_CMD_QUEUED), 0);
 	assert.equal(memory.readIoU32(IO_APU_CMD_FREE), APU_COMMAND_FIFO_CAPACITY);
 	assert.equal(memory.readIoU32(IO_APU_STATUS) & APU_STATUS_CMD_FIFO_EMPTY, APU_STATUS_CMD_FIFO_EMPTY);
@@ -823,15 +823,15 @@ test('APU command FIFO full stays a deterministic ring write', () => {
 	const { memory, audio } = createAudioHarness();
 
 	for (let index = 0; index < APU_COMMAND_FIFO_CAPACITY; index += 1) {
-		memory.writeValue(IO_APU_SLOT, index);
-		memory.writeValue(IO_APU_CMD, APU_CMD_STOP_SLOT);
+		memory.writeMappedWord(IO_APU_SLOT, index);
+		memory.writeMappedWord(IO_APU_CMD, APU_CMD_STOP_SLOT);
 	}
 	assert.equal(memory.readIoU32(IO_APU_CMD_QUEUED), APU_COMMAND_FIFO_CAPACITY);
 	assert.equal(memory.readIoU32(IO_APU_CMD_FREE), 0);
 	assert.equal(memory.readIoU32(IO_APU_STATUS) & APU_STATUS_CMD_FIFO_FULL, APU_STATUS_CMD_FIFO_FULL);
 
-	memory.writeValue(IO_APU_SLOT, 1);
-	memory.writeValue(IO_APU_CMD, APU_CMD_STOP_SLOT);
+	memory.writeMappedWord(IO_APU_SLOT, 1);
+	memory.writeMappedWord(IO_APU_CMD, APU_CMD_STOP_SLOT);
 	assert.equal(memory.readIoU32(IO_APU_FAULT_CODE), APU_FAULT_NONE);
 	const state = audio.captureState().commandFifo;
 	assert.equal(state.count, APU_COMMAND_FIFO_CAPACITY);
@@ -857,7 +857,7 @@ test('APU save-state restores pending command FIFO work', () => {
 	assert.equal(restored.memory.readIoU32(IO_APU_CMD_QUEUED), 1);
 	assert.equal(restored.memory.readIoU32(IO_APU_ACTIVE_MASK), 0);
 	restored.audio.onService(0);
-	restored.memory.writeValue(IO_APU_SLOT, 1);
+	restored.memory.writeMappedWord(IO_APU_SLOT, 1);
 	assertApuSlotOneActiveReadback(restored.memory);
 });
 
@@ -865,10 +865,10 @@ test('APU output playback parameters flow as raw slot state', () => {
 	const { memory, audio } = createRealAudioHarness();
 
 	writeValidSourceRegisters(memory);
-	memory.writeValue(IO_APU_RATE_STEP_Q16, 0);
-	memory.writeValue(IO_APU_SLOT, 1);
+	memory.writeMappedWord(IO_APU_RATE_STEP_Q16, 0);
+	memory.writeMappedWord(IO_APU_SLOT, 1);
 	assert.doesNotThrow(() => writeApuCommand(memory, audio, APU_CMD_PLAY));
-	memory.writeValue(IO_APU_SLOT, 1);
+	memory.writeMappedWord(IO_APU_SLOT, 1);
 
 	assert.equal(memory.readIoU32(IO_APU_FAULT_CODE), APU_FAULT_NONE);
 	assertApuSlotOneActiveReadback(memory);
@@ -882,7 +882,7 @@ test('APU selected-slot active status is device-owned and saved', async () => {
 	const activeStatus = memory.readIoU32(IO_APU_STATUS);
 	assert.equal((activeStatus & APU_STATUS_BUSY) !== 0, true);
 	assertApuSelectedSlotInactive(memory);
-	memory.writeValue(IO_APU_SLOT, 1);
+	memory.writeMappedWord(IO_APU_SLOT, 1);
 	assertApuSlotOneActiveReadback(memory);
 	const activeState = audio.captureState();
 	assert.equal(activeState.registerWords[APU_PARAMETER_SLOT_INDEX], 1);
@@ -891,9 +891,9 @@ test('APU selected-slot active status is device-owned and saved', async () => {
 	assert.equal(activeState.slotRegisterWords[slotOneSourceRegister], APU_SAMPLE_RAM_BASE);
 	assert.deepEqual(Array.from(activeState.sampleRam.subarray(0, 4)), [0x44, 0x33, 0x22, 0x11]);
 
-	memory.writeValue(IO_APU_SLOT, 0);
+	memory.writeMappedWord(IO_APU_SLOT, 0);
 	assertApuSelectedSlotInactive(memory);
-	memory.writeValue(IO_APU_SLOT, 1);
+	memory.writeMappedWord(IO_APU_SLOT, 1);
 	assertApuSlotOneActiveReadback(memory);
 
 	const saved = audio.captureState();
@@ -929,34 +929,34 @@ test('APU slot selectors decode low register bits without bad-slot guards', () =
 	assert.equal(state.slotPhases[1], APU_SLOT_PHASE_PLAYING);
 	assert.equal(state.slotRegisterWords[apuSlotRegisterWordIndex(1, APU_PARAMETER_SLOT_INDEX)], rawSlotWord);
 
-	memory.writeValue(IO_APU_SLOT, rawSlotWord);
+	memory.writeMappedWord(IO_APU_SLOT, rawSlotWord);
 	assertApuSlotOneActiveReadback(memory, rawSlotWord);
 });
 
 test('APU parameter registerfile is device-owned and saved', () => {
 	const { memory, audio } = createAudioHarness();
 
-	memory.writeValue(IO_APU_SOURCE_ADDR, RAM_BASE + 0x80);
-	memory.writeValue(IO_APU_SOURCE_BYTES, 128);
-	memory.writeValue(IO_APU_SOURCE_SAMPLE_RATE_HZ, 22050);
-	memory.writeValue(IO_APU_SOURCE_CHANNELS, 2);
-	memory.writeValue(IO_APU_SOURCE_BITS_PER_SAMPLE, 16);
-	memory.writeValue(IO_APU_SOURCE_FRAME_COUNT, 32);
-	memory.writeValue(IO_APU_SOURCE_DATA_OFFSET, 12);
-	memory.writeValue(IO_APU_SOURCE_DATA_BYTES, 96);
-	memory.writeValue(IO_APU_SOURCE_LOOP_START_SAMPLE, 4);
-	memory.writeValue(IO_APU_SOURCE_LOOP_END_SAMPLE, 28);
-	memory.writeValue(IO_APU_SLOT, 3);
-	memory.writeValue(IO_APU_RATE_STEP_Q16, 0x18000);
-	memory.writeValue(IO_APU_GAIN_Q12, 0x0800);
-	memory.writeValue(IO_APU_START_SAMPLE, 6);
-	memory.writeValue(IO_APU_FILTER_CONTROL, 0xa5a50001);
-	memory.writeValue(IO_APU_FILTER_B0_B1, 0x1234abcd);
-	memory.writeValue(IO_APU_FILTER_B2_A1, 0x89abcdef);
-	memory.writeValue(IO_APU_FILTER_A2, 0x76543210);
-	memory.writeValue(IO_APU_FADE_SAMPLES, APU_SAMPLE_RATE_HZ);
-	memory.writeValue(IO_APU_GENERATOR_KIND, APU_GENERATOR_SQUARE);
-	memory.writeValue(IO_APU_GENERATOR_DUTY_Q12, 0x0800);
+	memory.writeMappedWord(IO_APU_SOURCE_ADDR, RAM_BASE + 0x80);
+	memory.writeMappedWord(IO_APU_SOURCE_BYTES, 128);
+	memory.writeMappedWord(IO_APU_SOURCE_SAMPLE_RATE_HZ, 22050);
+	memory.writeMappedWord(IO_APU_SOURCE_CHANNELS, 2);
+	memory.writeMappedWord(IO_APU_SOURCE_BITS_PER_SAMPLE, 16);
+	memory.writeMappedWord(IO_APU_SOURCE_FRAME_COUNT, 32);
+	memory.writeMappedWord(IO_APU_SOURCE_DATA_OFFSET, 12);
+	memory.writeMappedWord(IO_APU_SOURCE_DATA_BYTES, 96);
+	memory.writeMappedWord(IO_APU_SOURCE_LOOP_START_SAMPLE, 4);
+	memory.writeMappedWord(IO_APU_SOURCE_LOOP_END_SAMPLE, 28);
+	memory.writeMappedWord(IO_APU_SLOT, 3);
+	memory.writeMappedWord(IO_APU_RATE_STEP_Q16, 0x18000);
+	memory.writeMappedWord(IO_APU_GAIN_Q12, 0x0800);
+	memory.writeMappedWord(IO_APU_START_SAMPLE, 6);
+	memory.writeMappedWord(IO_APU_FILTER_CONTROL, 0xa5a50001);
+	memory.writeMappedWord(IO_APU_FILTER_B0_B1, 0x1234abcd);
+	memory.writeMappedWord(IO_APU_FILTER_B2_A1, 0x89abcdef);
+	memory.writeMappedWord(IO_APU_FILTER_A2, 0x76543210);
+	memory.writeMappedWord(IO_APU_FADE_SAMPLES, APU_SAMPLE_RATE_HZ);
+	memory.writeMappedWord(IO_APU_GENERATOR_KIND, APU_GENERATOR_SQUARE);
+	memory.writeMappedWord(IO_APU_GENERATOR_DUTY_Q12, 0x0800);
 
 	const saved = audio.captureState();
 	const restored = createAudioHarness();
@@ -993,7 +993,7 @@ test('APU same-source slot replay keeps the new voice latch active', async () =>
 	const selectedGainAddr = IO_APU_SELECTED_SLOT_REG0 + APU_PARAMETER_GAIN_Q12_INDEX * IO_ARG_STRIDE;
 
 	await playApuSlot(memory, audio, 1);
-	memory.writeValue(IO_APU_SLOT, 1);
+	memory.writeMappedWord(IO_APU_SLOT, 1);
 	assertApuSlotOneActiveReadback(memory);
 	memory.writeMappedU32LE(IO_APU_ACTIVE_MASK, 0xffffffff);
 	assert.equal(memory.readIoU32(IO_APU_ACTIVE_MASK), 2);
@@ -1003,7 +1003,7 @@ test('APU same-source slot replay keeps the new voice latch active', async () =>
 	assert.equal(selectedSlotWriteState.slotRegisterWords[slotOneGainRegister], 0x0800);
 
 	await playApuSlot(memory, audio, 1);
-	memory.writeValue(IO_APU_SLOT, 1);
+	memory.writeMappedWord(IO_APU_SLOT, 1);
 	assertApuSlotOneActiveReadback(memory);
 	const replayState = audio.captureState();
 	assert.equal(memory.readIoU32(IO_APU_ACTIVE_MASK), 2);
@@ -1013,7 +1013,7 @@ test('APU same-source slot replay keeps the new voice latch active', async () =>
 	assert.notEqual(staleVoice, null);
 	assert.equal((staleVoice as FakeVoiceInfo).registerWords[APU_PARAMETER_SLOT_INDEX], 1);
 	audio.restoreState(replayState, 0);
-	memory.writeValue(IO_APU_SLOT, 1);
+	memory.writeMappedWord(IO_APU_SLOT, 1);
 	assertApuSlotOneActiveReadback(memory);
 });
 
@@ -1021,11 +1021,11 @@ test('APU SET_SLOT_GAIN writes the device-owned current-gain latch directly', as
 	const { memory, audio, slotGainQ12 } = createActiveVoiceAudioHarness();
 
 	await playApuSlot(memory, audio, 1);
-	memory.writeValue(IO_APU_SLOT, 1);
-	memory.writeValue(IO_APU_FADE_SAMPLES, APU_SAMPLE_RATE_HZ);
-	memory.writeValue(IO_APU_GAIN_Q12, 0x0800);
+	memory.writeMappedWord(IO_APU_SLOT, 1);
+	memory.writeMappedWord(IO_APU_FADE_SAMPLES, APU_SAMPLE_RATE_HZ);
+	memory.writeMappedWord(IO_APU_GAIN_Q12, 0x0800);
 	writeApuCommand(memory, audio, APU_CMD_SET_SLOT_GAIN);
-	memory.writeValue(IO_APU_SLOT, 1);
+	memory.writeMappedWord(IO_APU_SLOT, 1);
 
 	assert.equal(slotGainQ12(), 0x0800);
 	assert.equal(memory.readIoU32(IO_APU_SELECTED_SLOT_REG0 + APU_PARAMETER_GAIN_Q12_INDEX * IO_ARG_STRIDE), 0x0800);
@@ -1054,17 +1054,17 @@ function programLongPcmVoice(memory: Memory, slot = 1): void {
 		bytes[frame] = (frame * 7 + 16) & 0xff;
 	}
 	writeSampleRamBytes(memory, bytes);
-	memory.writeValue(IO_APU_SOURCE_ADDR, APU_SAMPLE_RAM_BASE);
-	memory.writeValue(IO_APU_SOURCE_BYTES, bytes.byteLength);
-	memory.writeValue(IO_APU_SOURCE_SAMPLE_RATE_HZ, APU_SAMPLE_RATE_HZ);
-	memory.writeValue(IO_APU_SOURCE_CHANNELS, 1);
-	memory.writeValue(IO_APU_SOURCE_BITS_PER_SAMPLE, 8);
-	memory.writeValue(IO_APU_SOURCE_FRAME_COUNT, frames);
-	memory.writeValue(IO_APU_SOURCE_DATA_OFFSET, 0);
-	memory.writeValue(IO_APU_SOURCE_DATA_BYTES, bytes.byteLength);
-	memory.writeValue(IO_APU_RATE_STEP_Q16, APU_RATE_STEP_Q16_ONE);
-	memory.writeValue(IO_APU_GAIN_Q12, 0x1000);
-	memory.writeValue(IO_APU_SLOT, slot);
+	memory.writeMappedWord(IO_APU_SOURCE_ADDR, APU_SAMPLE_RAM_BASE);
+	memory.writeMappedWord(IO_APU_SOURCE_BYTES, bytes.byteLength);
+	memory.writeMappedWord(IO_APU_SOURCE_SAMPLE_RATE_HZ, APU_SAMPLE_RATE_HZ);
+	memory.writeMappedWord(IO_APU_SOURCE_CHANNELS, 1);
+	memory.writeMappedWord(IO_APU_SOURCE_BITS_PER_SAMPLE, 8);
+	memory.writeMappedWord(IO_APU_SOURCE_FRAME_COUNT, frames);
+	memory.writeMappedWord(IO_APU_SOURCE_DATA_OFFSET, 0);
+	memory.writeMappedWord(IO_APU_SOURCE_DATA_BYTES, bytes.byteLength);
+	memory.writeMappedWord(IO_APU_RATE_STEP_Q16, APU_RATE_STEP_Q16_ONE);
+	memory.writeMappedWord(IO_APU_GAIN_Q12, 0x1000);
+	memory.writeMappedWord(IO_APU_SLOT, slot);
 }
 
 function beginLongPcmVoice(harness: ReturnType<typeof createRealAudioHarness>): void {
@@ -1075,9 +1075,9 @@ function beginLongPcmVoice(harness: ReturnType<typeof createRealAudioHarness>): 
 test('APU machine clock advances voices and emits END without host pulls', () => {
 	const harness = createRealAudioHarness();
 	writeValidSourceRegisters(harness.memory);
-	harness.memory.writeValue(IO_APU_RATE_STEP_Q16, APU_RATE_STEP_Q16_ONE);
-	harness.memory.writeValue(IO_APU_GAIN_Q12, 0x1000);
-	harness.memory.writeValue(IO_APU_SLOT, 1);
+	harness.memory.writeMappedWord(IO_APU_RATE_STEP_Q16, APU_RATE_STEP_Q16_ONE);
+	harness.memory.writeMappedWord(IO_APU_GAIN_Q12, 0x1000);
+	harness.memory.writeMappedWord(IO_APU_SLOT, 1);
 	writeApuCommand(harness.memory, harness.audio, APU_CMD_PLAY);
 
 	assert.equal(harness.scheduler.nextDeadline(), 4);
@@ -1096,9 +1096,9 @@ test('APU machine clock advances voices and emits END without host pulls', () =>
 test('machine capture includes an APU END interrupt materialized at the capture cycle', () => {
 	const runtimeMachine = createAudioMachine();
 	writeValidSourceRegisters(runtimeMachine.memory);
-	runtimeMachine.memory.writeValue(IO_APU_RATE_STEP_Q16, APU_RATE_STEP_Q16_ONE);
-	runtimeMachine.memory.writeValue(IO_APU_GAIN_Q12, 0x1000);
-	runtimeMachine.memory.writeValue(IO_APU_SLOT, 1);
+	runtimeMachine.memory.writeMappedWord(IO_APU_RATE_STEP_Q16, APU_RATE_STEP_Q16_ONE);
+	runtimeMachine.memory.writeMappedWord(IO_APU_GAIN_Q12, 0x1000);
+	runtimeMachine.memory.writeMappedWord(IO_APU_SLOT, 1);
 	writeApuCommand(runtimeMachine.memory, runtimeMachine.audioController, APU_CMD_PLAY);
 	runtimeMachine.scheduler.advanceTo(4);
 	const runtimeState = captureMachineState(runtimeMachine);
@@ -1107,9 +1107,9 @@ test('machine capture includes an APU END interrupt materialized at the capture 
 
 	const saveMachine = createAudioMachine();
 	writeValidSourceRegisters(saveMachine.memory);
-	saveMachine.memory.writeValue(IO_APU_RATE_STEP_Q16, APU_RATE_STEP_Q16_ONE);
-	saveMachine.memory.writeValue(IO_APU_GAIN_Q12, 0x1000);
-	saveMachine.memory.writeValue(IO_APU_SLOT, 1);
+	saveMachine.memory.writeMappedWord(IO_APU_RATE_STEP_Q16, APU_RATE_STEP_Q16_ONE);
+	saveMachine.memory.writeMappedWord(IO_APU_GAIN_Q12, 0x1000);
+	saveMachine.memory.writeMappedWord(IO_APU_SLOT, 1);
 	writeApuCommand(saveMachine.memory, saveMachine.audioController, APU_CMD_PLAY);
 	saveMachine.scheduler.advanceTo(4);
 	const saveState = captureMachineSaveState(saveMachine);
@@ -1161,22 +1161,22 @@ test('APU host synchronization exposes every elapsed PAL sample without changing
 test('APU machine output preserves the silent interval between voices', () => {
 	const harness = createRealAudioHarness();
 	writeSquareGeneratorRegisters(harness.memory);
-	harness.memory.writeValue(IO_APU_RATE_STEP_Q16, APU_RATE_STEP_Q16_ONE);
-	harness.memory.writeValue(IO_APU_GAIN_Q12, 0x1000);
-	harness.memory.writeValue(IO_APU_SLOT, 1);
+	harness.memory.writeMappedWord(IO_APU_RATE_STEP_Q16, APU_RATE_STEP_Q16_ONE);
+	harness.memory.writeMappedWord(IO_APU_GAIN_Q12, 0x1000);
+	harness.memory.writeMappedWord(IO_APU_SLOT, 1);
 	writeApuCommand(harness.memory, harness.audio, APU_CMD_PLAY);
 	advanceRealApu(harness, 4);
 
-	harness.memory.writeValue(IO_APU_SLOT, 1);
-	harness.memory.writeValue(IO_APU_FADE_SAMPLES, 0);
-	harness.memory.writeValue(IO_APU_CMD, APU_CMD_STOP_SLOT);
+	harness.memory.writeMappedWord(IO_APU_SLOT, 1);
+	harness.memory.writeMappedWord(IO_APU_FADE_SAMPLES, 0);
+	harness.memory.writeMappedWord(IO_APU_CMD, APU_CMD_STOP_SLOT);
 	harness.audio.onService(4);
 	harness.scheduler.advanceTo(8);
 	writeSquareGeneratorRegisters(harness.memory);
-	harness.memory.writeValue(IO_APU_RATE_STEP_Q16, APU_RATE_STEP_Q16_ONE);
-	harness.memory.writeValue(IO_APU_GAIN_Q12, 0x1000);
-	harness.memory.writeValue(IO_APU_SLOT, 1);
-	harness.memory.writeValue(IO_APU_CMD, APU_CMD_PLAY);
+	harness.memory.writeMappedWord(IO_APU_RATE_STEP_Q16, APU_RATE_STEP_Q16_ONE);
+	harness.memory.writeMappedWord(IO_APU_GAIN_Q12, 0x1000);
+	harness.memory.writeMappedWord(IO_APU_SLOT, 1);
+	harness.memory.writeMappedWord(IO_APU_CMD, APU_CMD_PLAY);
 	harness.audio.onService(8);
 	advanceRealApu(harness, 12);
 
@@ -1245,9 +1245,9 @@ test('APU signed-Q12 gain, wide mixing, fade, and save restore follow exact raw 
 
 	const live = createRealAudioHarness();
 	startConstantSquareVoice(live, 1, 0xffff_efff);
-	live.memory.writeValue(IO_APU_SLOT, 1);
-	live.memory.writeValue(IO_APU_FADE_SAMPLES, 4);
-	live.memory.writeValue(IO_APU_CMD, APU_CMD_STOP_SLOT);
+	live.memory.writeMappedWord(IO_APU_SLOT, 1);
+	live.memory.writeMappedWord(IO_APU_FADE_SAMPLES, 4);
+	live.memory.writeMappedWord(IO_APU_CMD, APU_CMD_STOP_SLOT);
 	live.audio.onService(0);
 	advanceRealApu(live, 2);
 	assert.equal(live.audioOutput.outputRing.readFramePacked(), 0x8000_8000);
@@ -1308,9 +1308,9 @@ test('APU save restore resumes the exact future PCM phase while transport stays 
 test('APU BADP interpolation window and selected-slot seek survive save restore', () => {
 	const live = createRealAudioHarness();
 	writeBadpSourceRegisters(live.memory, APU_SAMPLE_RATE_HZ / 2);
-	live.memory.writeValue(IO_APU_RATE_STEP_Q16, APU_RATE_STEP_Q16_ONE);
-	live.memory.writeValue(IO_APU_GAIN_Q12, 0x1000);
-	live.memory.writeValue(IO_APU_SLOT, 1);
+	live.memory.writeMappedWord(IO_APU_RATE_STEP_Q16, APU_RATE_STEP_Q16_ONE);
+	live.memory.writeMappedWord(IO_APU_GAIN_Q12, 0x1000);
+	live.memory.writeMappedWord(IO_APU_SLOT, 1);
 	writeApuCommand(live.memory, live.audio, APU_CMD_PLAY);
 	advanceRealApu(live, 3);
 
@@ -1328,7 +1328,7 @@ test('APU BADP interpolation window and selected-slot seek survive save restore'
 		assert.equal(restored.audioOutput.outputRing.readFramePacked(), live.audioOutput.outputRing.readFramePacked());
 	}
 
-	restored.memory.writeValue(IO_APU_SLOT, 1);
+	restored.memory.writeMappedWord(IO_APU_SLOT, 1);
 	restored.memory.writeMappedU32LE(IO_APU_SELECTED_SLOT_REG0 + APU_PARAMETER_START_SAMPLE_INDEX * IO_ARG_STRIDE, 5);
 	const seekBadp = restored.audio.captureState().output.voices[0]!.badp;
 	assert.equal(seekBadp.decodedFrame, 5);
@@ -1350,17 +1350,17 @@ test('APU BADP interpolation window and selected-slot seek survive save restore'
 test('APU filter history and STOP fade resume at the exact saved sample', () => {
 	const live = createRealAudioHarness();
 	writeSquareGeneratorRegisters(live.memory);
-	live.memory.writeValue(IO_APU_RATE_STEP_Q16, APU_RATE_STEP_Q16_ONE);
-	live.memory.writeValue(IO_APU_GAIN_Q12, 0x1000);
-	live.memory.writeValue(IO_APU_FILTER_CONTROL, APU_FILTER_CONTROL_ENABLE);
-	live.memory.writeValue(IO_APU_FILTER_B0_B1, 0x10002000);
-	live.memory.writeValue(IO_APU_FILTER_B2_A1, 0xe000f000);
-	live.memory.writeValue(IO_APU_FILTER_A2, 0x0800);
-	live.memory.writeValue(IO_APU_SLOT, 1);
+	live.memory.writeMappedWord(IO_APU_RATE_STEP_Q16, APU_RATE_STEP_Q16_ONE);
+	live.memory.writeMappedWord(IO_APU_GAIN_Q12, 0x1000);
+	live.memory.writeMappedWord(IO_APU_FILTER_CONTROL, APU_FILTER_CONTROL_ENABLE);
+	live.memory.writeMappedWord(IO_APU_FILTER_B0_B1, 0x10002000);
+	live.memory.writeMappedWord(IO_APU_FILTER_B2_A1, 0xe000f000);
+	live.memory.writeMappedWord(IO_APU_FILTER_A2, 0x0800);
+	live.memory.writeMappedWord(IO_APU_SLOT, 1);
 	writeApuCommand(live.memory, live.audio, APU_CMD_PLAY);
 	advanceRealApu(live, 3);
 
-	live.memory.writeValue(IO_APU_SLOT, 1);
+	live.memory.writeMappedWord(IO_APU_SLOT, 1);
 	const history = live.audio.captureState().output.voices[0]!.filter;
 	live.memory.writeMappedU32LE(IO_APU_SELECTED_SLOT_REG0 + APU_PARAMETER_FILTER_B0_B1_INDEX * IO_ARG_STRIDE, 0x10002000);
 	assert.deepEqual(live.audio.captureState().output.voices[0]!.filter, history);
@@ -1370,8 +1370,8 @@ test('APU filter history and STOP fade resume at the exact saved sample', () => 
 	advanceRealApu(live, 4);
 	assert.deepEqual(live.audio.captureState().output.voices[0]!.filter, history);
 	live.memory.writeMappedU32LE(IO_APU_SELECTED_SLOT_REG0 + APU_PARAMETER_FILTER_CONTROL_INDEX * IO_ARG_STRIDE, APU_FILTER_CONTROL_ENABLE);
-	live.memory.writeValue(IO_APU_FADE_SAMPLES, 4);
-	live.memory.writeValue(IO_APU_CMD, APU_CMD_STOP_SLOT);
+	live.memory.writeMappedWord(IO_APU_FADE_SAMPLES, 4);
+	live.memory.writeMappedWord(IO_APU_CMD, APU_CMD_STOP_SLOT);
 	live.audio.onService(4);
 	advanceRealApu(live, 6);
 	const saved = live.audio.captureState();
@@ -1393,8 +1393,8 @@ test('APU fixed-point phase remainder is independent of synchronization batch si
 	const batched = createRealAudioHarness();
 	beginLongPcmVoice(split);
 	beginLongPcmVoice(batched);
-	split.memory.writeValue(IO_APU_SLOT, 1);
-	batched.memory.writeValue(IO_APU_SLOT, 1);
+	split.memory.writeMappedWord(IO_APU_SLOT, 1);
+	batched.memory.writeMappedWord(IO_APU_SLOT, 1);
 	split.memory.writeMappedU32LE(IO_APU_SELECTED_SLOT_REG0 + APU_PARAMETER_SOURCE_SAMPLE_RATE_HZ_INDEX * IO_ARG_STRIDE, APU_SAMPLE_RATE_HZ / 2);
 	batched.memory.writeMappedU32LE(IO_APU_SELECTED_SLOT_REG0 + APU_PARAMETER_SOURCE_SAMPLE_RATE_HZ_INDEX * IO_ARG_STRIDE, APU_SAMPLE_RATE_HZ / 2);
 
@@ -1420,9 +1420,9 @@ test('APU phase-step conversion preserves the signed register product', () => {
 test('APU output-ring overflow drops presentation history without stalling hardware', () => {
 	const harness = createRealAudioHarness();
 	writeSquareGeneratorRegisters(harness.memory);
-	harness.memory.writeValue(IO_APU_RATE_STEP_Q16, APU_RATE_STEP_Q16_ONE);
-	harness.memory.writeValue(IO_APU_GAIN_Q12, 0x1000);
-	harness.memory.writeValue(IO_APU_SLOT, 1);
+	harness.memory.writeMappedWord(IO_APU_RATE_STEP_Q16, APU_RATE_STEP_Q16_ONE);
+	harness.memory.writeMappedWord(IO_APU_GAIN_Q12, 0x1000);
+	harness.memory.writeMappedWord(IO_APU_SLOT, 1);
 	writeApuCommand(harness.memory, harness.audio, APU_CMD_PLAY);
 
 	advanceRealApu(harness, 20000);
@@ -1449,10 +1449,10 @@ test('APU output reaches a 48 kHz PAL host within the bounded presentation windo
 	assert.equal(harness.audioOutput.outputRing.queuedFrames(), APU_OUTPUT_RING_CAPACITY_FRAMES);
 
 	writeSquareGeneratorRegisters(harness.memory);
-	harness.memory.writeValue(IO_APU_RATE_STEP_Q16, APU_RATE_STEP_Q16_ONE);
-	harness.memory.writeValue(IO_APU_GAIN_Q12, 0x1000);
-	harness.memory.writeValue(IO_APU_SLOT, 1);
-	harness.memory.writeValue(IO_APU_CMD, APU_CMD_PLAY);
+	harness.memory.writeMappedWord(IO_APU_RATE_STEP_Q16, APU_RATE_STEP_Q16_ONE);
+	harness.memory.writeMappedWord(IO_APU_GAIN_Q12, 0x1000);
+	harness.memory.writeMappedWord(IO_APU_SLOT, 1);
+	harness.memory.writeMappedWord(IO_APU_CMD, APU_CMD_PLAY);
 	harness.audio.onService(playCycle);
 	const carry = harness.audio.captureState().sampleCarry;
 	advanceRealApu(harness, playCycle + cyclesUntilBudgetUnits(cpuHz, APU_SAMPLE_RATE_HZ, carry, 2));

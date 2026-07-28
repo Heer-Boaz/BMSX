@@ -5,7 +5,6 @@
 #include <span>
 #include <vector>
 
-#include "machine/cpu/value.h"
 #include "machine/devices/cartridge/controller.h"
 #include "machine/memory/bus_signals.h"
 #include "spec/bmsx/memory_map.h"
@@ -13,8 +12,6 @@
 #include "common/primitives.h"
 
 namespace bmsx {
-
-class GcHeap;
 
 enum class MemoryRegionKind { Ram, SystemRom, Cartridge, Io, Other };
 
@@ -34,8 +31,8 @@ constexpr u32 NO_BLOCKED_MAPPED_WRITE = 0xffffffffu;
 
 class Memory {
 public:
-	using IoReadHandler = Value (*)(void* context, uint32_t addr, MappedBusSignals busSignals);
-	using IoWriteHandler = void (*)(void* context, uint32_t addr, Value value, MappedBusSignals busSignals);
+	using IoReadHandler = u32 (*)(void* context, uint32_t addr, MappedBusSignals busSignals);
+	using IoWriteHandler = void (*)(void* context, uint32_t addr, u32 value, MappedBusSignals busSignals);
 	using IoWriteReadyHandler = bool (*)(void* context, uint32_t addr, MappedBusSignals busSignals);
 
 	explicit Memory(const MemoryInit& init);
@@ -57,11 +54,9 @@ public:
 	u32 firstBlockedMappedWordWrite(uint32_t addr, uint32_t wordCount);
 	uint32_t readBusFaultSequence() const { return m_busFaultSequence; }
 
-	Value readValue(uint32_t addr) const;
-	Value readMappedValue(uint32_t addr) const;
-	void writeValue(uint32_t addr, Value value);
-	void writeIoValue(uint32_t addr, Value value);
-	void writeMappedValue(uint32_t addr, Value value);
+	u32 readMappedWord(uint32_t addr) const;
+	void writeIoU32(uint32_t addr, u32 value);
+	void writeMappedWord(uint32_t addr, u32 value);
 
 	u8 readU8(uint32_t addr) const;
 	u8 readMappedU8(uint32_t addr) const;
@@ -69,7 +64,6 @@ public:
 	void writeMappedU8(uint32_t addr, u8 value);
 
 	uint32_t readIoU32(uint32_t addr) const;
-	int32_t readIoI32(uint32_t addr) const;
 	uint32_t readU32(uint32_t addr) const;
 	uint32_t readMappedU16LE(uint32_t addr) const;
 	uint32_t readMappedU32LE(uint32_t addr, uint32_t faultAccess = BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32) const;
@@ -95,8 +89,6 @@ public:
 	void restoreSaveState(const MemorySaveState& state);
 	void clearIoSlots();
 	void clearBusFault();
-	void markRoots(GcHeap& heap) const;
-
 private:
 	struct IoReadBinding {
 		void* context = nullptr;
@@ -110,7 +102,7 @@ private:
 	std::span<const u8> m_systemRom;
 	CartridgeController m_cartridgeController;
 	std::vector<u8> m_ram;
-	mutable std::vector<Value> m_ioSlots;
+	mutable std::vector<u32> m_ioSlots;
 	std::vector<IoReadBinding> m_ioReadHandlers;
 	std::vector<IoWriteBinding> m_ioWriteHandlers;
 	mutable uint32_t m_busFaultCode = BUS_FAULT_NONE;
@@ -127,22 +119,22 @@ private:
 		return static_cast<int>(delta / IO_WORD_SIZE);
 	}
 	bool isReadOnlyIoAddress(uint32_t addr) const;
-	Value readIoSlotValue(int slot, uint32_t addr, MappedBusSignals busSignals) const;
-	void writeIoSlotValue(int slot, uint32_t addr, Value value, MappedBusSignals busSignals);
+	u32 readIoSlot(int slot, uint32_t addr, MappedBusSignals busSignals) const;
+	void writeIoSlot(int slot, uint32_t addr, u32 value, MappedBusSignals busSignals);
 	uint32_t readMappedBusU32LE(uint32_t addr, uint32_t faultAccess, MappedBusSignals busSignals) const;
 	void writeMappedBusU32LE(uint32_t addr, uint32_t value, uint32_t faultAccess, MappedBusSignals busSignals);
 	bool writeRamU8(uint32_t addr, u8 value);
 	bool writeRamWordLE(uint32_t addr, size_t byteLength, uint32_t value);
 	template <auto Method, typename TObject>
-	static Value readMember(void* context, uint32_t addr, MappedBusSignals) {
+	static u32 readMember(void* context, uint32_t addr, MappedBusSignals) {
 		return (static_cast<TObject*>(context)->*Method)(addr);
 	}
 	template <auto Method, typename TObject>
-	static void writeMember(void* context, uint32_t addr, Value value, MappedBusSignals) {
+	static void writeMember(void* context, uint32_t addr, u32 value, MappedBusSignals) {
 		(static_cast<TObject*>(context)->*Method)(addr, value);
 	}
-	static void onBusFaultAckWriteThunk(void* context, uint32_t addr, Value value, MappedBusSignals busSignals);
-	void onBusFaultAckWrite(uint32_t addr, Value value);
+	static void onBusFaultAckWriteThunk(void* context, uint32_t addr, u32 value, MappedBusSignals busSignals);
+	void onBusFaultAckWrite(uint32_t addr, u32 value);
 	void raiseBusFault(uint32_t code, uint32_t addr, uint32_t access) const;
 	u8 readMainMemoryU8(uint32_t addr, uint32_t faultAccess) const;
 	void writeBusFaultSlots() const;

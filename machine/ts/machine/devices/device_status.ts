@@ -37,17 +37,17 @@ export class DeviceStatusLatch {
 	}
 
 	private writeRegisterState(): void {
-		this.memory.writeIoValue(this.registers.statusAddr, this.status);
-		this.memory.writeIoValue(this.registers.codeAddr, this.code);
-		this.memory.writeIoValue(this.registers.detailAddr, this.detail);
-		this.memory.writeIoValue(this.registers.ackAddr, 0);
+		this.memory.writeIoU32(this.registers.statusAddr, this.status);
+		this.memory.writeIoU32(this.registers.codeAddr, this.code);
+		this.memory.writeIoU32(this.registers.detailAddr, this.detail);
+		this.memory.writeIoU32(this.registers.ackAddr, 0);
 	}
 
 	public clear(): void {
 		this.code = this.registers.noneCode;
 		this.detail = 0;
-		this.memory.writeIoValue(this.registers.codeAddr, this.code);
-		this.memory.writeIoValue(this.registers.detailAddr, this.detail);
+		this.memory.writeIoU32(this.registers.codeAddr, this.code);
+		this.memory.writeIoU32(this.registers.detailAddr, this.detail);
 		this.setStatusFlag(this.registers.faultMask, false);
 	}
 
@@ -56,10 +56,10 @@ export class DeviceStatusLatch {
 			return;
 		}
 		this.clear();
-		this.memory.writeIoValue(this.registers.ackAddr, 0);
+		this.memory.writeIoU32(this.registers.ackAddr, 0);
 	}
 
-	public static acknowledgeWriteThunk(context: DeviceStatusLatch, addr: number, value: unknown): void {
+	public static acknowledgeWriteThunk(context: DeviceStatusLatch, addr: number, value: number): void {
 		void addr;
 		void value;
 		context.acknowledge();
@@ -71,7 +71,7 @@ export class DeviceStatusLatch {
 			return;
 		}
 		this.status = nextStatus >>> 0;
-		this.memory.writeIoValue(this.registers.statusAddr, this.status);
+		this.memory.writeIoU32(this.registers.statusAddr, this.status);
 	}
 
 	public raise(code: number, detail: number): void {
@@ -80,8 +80,8 @@ export class DeviceStatusLatch {
 		}
 		this.code = code >>> 0;
 		this.detail = detail >>> 0;
-		this.memory.writeIoValue(this.registers.codeAddr, this.code);
-		this.memory.writeIoValue(this.registers.detailAddr, this.detail);
+		this.memory.writeIoU32(this.registers.codeAddr, this.code);
+		this.memory.writeIoU32(this.registers.detailAddr, this.detail);
 		this.setStatusFlag(this.registers.faultMask, true);
 	}
 }

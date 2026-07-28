@@ -391,14 +391,14 @@ private:
 	void updateDisplayModeStatusBits();
 	void writeStatusIo();
 	bool gp0WriteReady(MappedBusSignals busSignals);
-	static u64 readGp0Thunk(void* context, u32 addr, MappedBusSignals busSignals);
-	static void writeGp0Thunk(void* context, u32 addr, u64 value, MappedBusSignals busSignals);
+	static u32 readGp0Thunk(void* context, u32 addr, MappedBusSignals busSignals);
+	static void writeGp0Thunk(void* context, u32 addr, u32 value, MappedBusSignals busSignals);
 	static bool gp0WriteReadyThunk(void* context, u32 addr, MappedBusSignals busSignals);
 	static bool gp1WriteReadyThunk(void* context, u32 addr, MappedBusSignals busSignals);
-	static u64 readStatusThunk(void* context, u32 addr, MappedBusSignals busSignals);
-	static void writeGp1Thunk(void* context, u32 addr, u64 value, MappedBusSignals busSignals);
-	static u64 readPcrtcThunk(void* context, u32 addr, MappedBusSignals busSignals);
-	static void writePcrtcThunk(void* context, u32 addr, u64 value, MappedBusSignals busSignals);
+	static u32 readStatusThunk(void* context, u32 addr, MappedBusSignals busSignals);
+	static void writeGp1Thunk(void* context, u32 addr, u32 value, MappedBusSignals busSignals);
+	static u32 readPcrtcThunk(void* context, u32 addr, MappedBusSignals busSignals);
+	static void writePcrtcThunk(void* context, u32 addr, u32 value, MappedBusSignals busSignals);
 };
 
 } // namespace bmsx

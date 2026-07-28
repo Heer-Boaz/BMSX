@@ -49,7 +49,6 @@ import { GeometrySat2Unit } from './sat2';
 import { GeometryXform2Unit } from './xform2';
 import type { GeometryJobState } from './job';
 import type { GeometryControllerState } from './save_state';
-import type { Value } from '../../cpu/value';
 import { Memory } from '../../memory/memory';
 import type { IrqController } from '../irq/controller';
 import { accrueBudgetUnits, cyclesUntilBudgetUnits, type BudgetAccrual } from '../../scheduler/budget';
@@ -93,22 +92,22 @@ export class GeometryController {
 		return !context.supervisorQuiesceRequested;
 	}
 
-	private static onCommandWrite(context: GeometryController, _addr: number, value: Value): void {
-		context.onCommandDoorbell(context.scheduler.currentNowCycles(), (value as number) >>> 0);
+	private static onCommandWrite(context: GeometryController, _addr: number, value: number): void {
+		context.onCommandDoorbell(context.scheduler.currentNowCycles(), value);
 	}
 
 	private static onCtrlRegisterWrite(context: GeometryController): void {
 		context.onCtrlWrite(context.scheduler.currentNowCycles());
 	}
 
-	private static onFaultAckWrite(context: GeometryController, _addr: number, value: Value): void {
-		if (((value as number) >>> 0) === 0) {
+	private static onFaultAckWrite(context: GeometryController, _addr: number, value: number): void {
+		if (value === 0) {
 			return;
 		}
 		const status = context.memory.readIoU32(IO_GEO_STATUS) & ~(GEO_STATUS_ERROR | GEO_STATUS_REJECTED);
-		context.memory.writeIoValue(IO_GEO_STATUS, status);
-		context.memory.writeIoValue(IO_GEO_FAULT, 0);
-		context.memory.writeIoValue(IO_GEO_FAULT_ACK, 0);
+		context.memory.writeIoU32(IO_GEO_STATUS, status);
+		context.memory.writeIoU32(IO_GEO_FAULT, 0);
+		context.memory.writeIoU32(IO_GEO_FAULT_ACK, 0);
 		if (context.phase === GEOMETRY_CONTROLLER_PHASE_ERROR) {
 			context.phase = GEOMETRY_CONTROLLER_PHASE_DONE;
 		} else if (context.phase === GEOMETRY_CONTROLLER_PHASE_REJECTED) {
@@ -208,23 +207,23 @@ export class GeometryController {
 		this.activeJob = null;
 		this.supervisorQuiesceRequested = false;
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
-		this.memory.writeValue(IO_GEO_SRC0, 0);
-		this.memory.writeValue(IO_GEO_SRC1, 0);
-		this.memory.writeValue(IO_GEO_SRC2, 0);
-		this.memory.writeValue(IO_GEO_DST0, 0);
-		this.memory.writeValue(IO_GEO_DST1, 0);
-		this.memory.writeValue(IO_GEO_COUNT, 0);
-		this.memory.writeIoValue(IO_GEO_CMD, 0);
-		this.memory.writeIoValue(IO_GEO_CTRL, 0);
-		this.memory.writeValue(IO_GEO_STATUS, 0);
-		this.memory.writeValue(IO_GEO_PARAM0, 0);
-		this.memory.writeValue(IO_GEO_PARAM1, 0);
-		this.memory.writeValue(IO_GEO_STRIDE0, 0);
-		this.memory.writeValue(IO_GEO_STRIDE1, 0);
-		this.memory.writeValue(IO_GEO_STRIDE2, 0);
-		this.memory.writeValue(IO_GEO_PROCESSED, 0);
-		this.memory.writeValue(IO_GEO_FAULT, 0);
-		this.memory.writeIoValue(IO_GEO_FAULT_ACK, 0);
+		this.memory.writeIoU32(IO_GEO_SRC0, 0);
+		this.memory.writeIoU32(IO_GEO_SRC1, 0);
+		this.memory.writeIoU32(IO_GEO_SRC2, 0);
+		this.memory.writeIoU32(IO_GEO_DST0, 0);
+		this.memory.writeIoU32(IO_GEO_DST1, 0);
+		this.memory.writeIoU32(IO_GEO_COUNT, 0);
+		this.memory.writeIoU32(IO_GEO_CMD, 0);
+		this.memory.writeIoU32(IO_GEO_CTRL, 0);
+		this.memory.writeIoU32(IO_GEO_STATUS, 0);
+		this.memory.writeIoU32(IO_GEO_PARAM0, 0);
+		this.memory.writeIoU32(IO_GEO_PARAM1, 0);
+		this.memory.writeIoU32(IO_GEO_STRIDE0, 0);
+		this.memory.writeIoU32(IO_GEO_STRIDE1, 0);
+		this.memory.writeIoU32(IO_GEO_STRIDE2, 0);
+		this.memory.writeIoU32(IO_GEO_PROCESSED, 0);
+		this.memory.writeIoU32(IO_GEO_FAULT, 0);
+		this.memory.writeIoU32(IO_GEO_FAULT_ACK, 0);
 	}
 
 	public captureState(): GeometryControllerState {
@@ -244,14 +243,14 @@ export class GeometryController {
 
 	public restoreState(state: GeometryControllerState, nowCycles: number): void {
 		for (let index = 0; index < GEOMETRY_CONTROLLER_REGISTER_COUNT; index += 1) {
-			this.memory.writeIoValue(IO_GEO_REGISTER_ADDRS[index]!, state.registerWords[index]!);
+			this.memory.writeIoU32(IO_GEO_REGISTER_ADDRS[index]!, state.registerWords[index]!);
 		}
 		this.phase = state.phase;
 		this.activeJob = state.activeJob === null ? null : { ...state.activeJob };
 		this.workCarry = state.workCarry;
 		this.availableWorkUnits = state.availableWorkUnits;
 		this.supervisorQuiesceRequested = state.supervisorQuiesceRequested;
-		this.memory.writeIoValue(IO_GEO_CTRL, this.memory.readIoU32(IO_GEO_CTRL) & ~GEO_CTRL_ABORT);
+		this.memory.writeIoU32(IO_GEO_CTRL, this.memory.readIoU32(IO_GEO_CTRL) & ~GEO_CTRL_ABORT);
 		this.scheduleNextService(nowCycles);
 	}
 
@@ -280,7 +279,7 @@ export class GeometryController {
 		if (!abort) {
 			return;
 		}
-		this.memory.writeIoValue(IO_GEO_CTRL, ctrl & ~GEO_CTRL_ABORT);
+		this.memory.writeIoU32(IO_GEO_CTRL, ctrl & ~GEO_CTRL_ABORT);
 		if (
 			this.phase === GEOMETRY_CONTROLLER_PHASE_ERROR ||
 			this.phase === GEOMETRY_CONTROLLER_PHASE_REJECTED
@@ -334,9 +333,9 @@ export class GeometryController {
 				this.finishRejected(GEO_FAULT_REJECT_BAD_CMD);
 				return;
 		}
-		this.memory.writeValue(IO_GEO_STATUS, 0);
-		this.memory.writeValue(IO_GEO_PROCESSED, 0);
-		this.memory.writeValue(IO_GEO_FAULT, 0);
+		this.memory.writeIoU32(IO_GEO_STATUS, 0);
+		this.memory.writeIoU32(IO_GEO_PROCESSED, 0);
+		this.memory.writeIoU32(IO_GEO_FAULT, 0);
 		if (job.cmd === IO_CMD_GEO_OVERLAP2D_PASS) {
 			this.overlap2d.writeSummary(job, 0);
 		}
@@ -348,7 +347,7 @@ export class GeometryController {
 		this.availableWorkUnits = 0;
 		this.activeJob = job;
 		this.phase = GEOMETRY_CONTROLLER_PHASE_BUSY;
-		this.memory.writeValue(IO_GEO_STATUS, GEO_STATUS_BUSY);
+		this.memory.writeIoU32(IO_GEO_STATUS, GEO_STATUS_BUSY);
 		this.scheduleNextService(nowCycles);
 	}
 
@@ -369,7 +368,7 @@ export class GeometryController {
 
 	private completeRecord(job: GeometryJobState): void {
 		job.processed += 1;
-		this.memory.writeValue(IO_GEO_PROCESSED, job.processed >>> 0);
+		this.memory.writeIoU32(IO_GEO_PROCESSED, job.processed >>> 0);
 		if (job.processed >= job.count) {
 			this.finishSuccess(job.processed);
 		}
@@ -381,9 +380,9 @@ export class GeometryController {
 		this.workCarry = 0;
 		this.availableWorkUnits = 0;
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
-		this.memory.writeValue(IO_GEO_STATUS, GEO_STATUS_DONE);
-		this.memory.writeValue(IO_GEO_PROCESSED, processed >>> 0);
-		this.memory.writeValue(IO_GEO_FAULT, 0);
+		this.memory.writeIoU32(IO_GEO_STATUS, GEO_STATUS_DONE);
+		this.memory.writeIoU32(IO_GEO_PROCESSED, processed >>> 0);
+		this.memory.writeIoU32(IO_GEO_FAULT, 0);
 		this.irq.raise(IRQ_GEO_DONE);
 		this.notifySupervisorBoundary();
 	}
@@ -394,8 +393,8 @@ export class GeometryController {
 		this.workCarry = 0;
 		this.availableWorkUnits = 0;
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
-		this.memory.writeValue(IO_GEO_STATUS, GEO_STATUS_DONE | GEO_STATUS_ERROR);
-		this.memory.writeValue(IO_GEO_FAULT, packFault(code, recordIndex));
+		this.memory.writeIoU32(IO_GEO_STATUS, GEO_STATUS_DONE | GEO_STATUS_ERROR);
+		this.memory.writeIoU32(IO_GEO_FAULT, packFault(code, recordIndex));
 		this.irq.raise(IRQ_GEO_ERROR);
 		this.notifySupervisorBoundary();
 	}
@@ -406,9 +405,9 @@ export class GeometryController {
 		this.workCarry = 0;
 		this.availableWorkUnits = 0;
 		this.scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
-		this.memory.writeValue(IO_GEO_STATUS, GEO_STATUS_REJECTED);
-		this.memory.writeValue(IO_GEO_PROCESSED, 0);
-		this.memory.writeValue(IO_GEO_FAULT, packFault(code, GEO_FAULT_RECORD_INDEX_NONE));
+		this.memory.writeIoU32(IO_GEO_STATUS, GEO_STATUS_REJECTED);
+		this.memory.writeIoU32(IO_GEO_PROCESSED, 0);
+		this.memory.writeIoU32(IO_GEO_FAULT, packFault(code, GEO_FAULT_RECORD_INDEX_NONE));
 		this.irq.raise(IRQ_GEO_ERROR);
 		this.notifySupervisorBoundary();
 	}

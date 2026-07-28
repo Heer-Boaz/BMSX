@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import {
 	IO_SYS_CONTROL,
 	IO_SYS_CYCLES_PER_FRAME,
-	IO_SYS_FRAME_MS,
+	IO_SYS_FRAME_MS_Q16,
 	IO_SYS_PRINT_CHAR,
 	IO_SYS_PRINT_FLUSH,
 	IO_SYS_TIME_MS,
@@ -157,35 +157,35 @@ test('system timing registers consume scheduler and PCRTC device state without R
 	const timing = resolveRuntimeTiming(5_000_000);
 	machine.resetDevices();
 	machine.scheduler.setNowCycles(PSX_MACHINE_SPEC.cpuFreqHz);
-	assert.equal(memory.readMappedValue(IO_SYS_TIME_MS), 1000);
+	assert.equal(memory.readMappedWord(IO_SYS_TIME_MS), 1000);
 	machine.scheduler.setNowCycles(0);
 	machine.refreshDeviceTimings({
 		cpuHz: timing.cpuHz,
 		geoWorkUnitsPerSec: timing.geoWorkUnitsPerSec,
 	}, machine.scheduler.currentNowCycles());
 
-	assert.equal(memory.readMappedValue(IO_SYS_TIME_MS), 0);
+	assert.equal(memory.readMappedWord(IO_SYS_TIME_MS), 0);
 	assert.equal(
-		memory.readMappedValue(IO_SYS_FRAME_MS),
-		machine.gxGpu.readPcrtcTiming().frameDurationMs,
+		memory.readMappedU32LE(IO_SYS_FRAME_MS_Q16),
+		machine.gxGpu.readPcrtcTiming().frameDurationMillisecondsQ16,
 	);
 	assert.equal(
-		memory.readMappedValue(IO_SYS_CYCLES_PER_FRAME),
+		memory.readMappedWord(IO_SYS_CYCLES_PER_FRAME),
 		machine.gxGpu.readPcrtcTiming().nextVblankCycleBudget,
 	);
 
 	machine.scheduler.setNowCycles(12_500_001);
-	assert.equal(memory.readMappedValue(IO_SYS_TIME_MS), 2500);
+	assert.equal(memory.readMappedWord(IO_SYS_TIME_MS), 2500);
 	assert.equal(machine.systemController.elapsedMilliseconds(), 2500.0002);
 
 	const smode1Address = gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_SMODE1_LOW);
 	const smode1 = memory.readMappedU32LE(smode1Address);
 	memory.writeMappedU32LE(smode1Address, smode1 | GX_GPU_PCRTC_SMODE1_SINT);
-	assert.equal(memory.readMappedValue(IO_SYS_FRAME_MS), 0);
-	assert.equal(memory.readMappedValue(IO_SYS_CYCLES_PER_FRAME), 0);
+	assert.equal(memory.readMappedU32LE(IO_SYS_FRAME_MS_Q16), 0);
+	assert.equal(memory.readMappedWord(IO_SYS_CYCLES_PER_FRAME), 0);
 
 	machine.scheduler.setNowCycles(9_000_006_099_639_999);
-	assert.equal(memory.readMappedValue(IO_SYS_TIME_MS), 409_922_903);
+	assert.equal(memory.readMappedWord(IO_SYS_TIME_MS), 409_922_903);
 });
 
 test('system print registers retain firmware output and publish complete host lines', () => {

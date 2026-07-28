@@ -40,43 +40,43 @@ void InputControllerRegisterFile::latchSnapshot(const InputControllerSnapshot& s
 	}
 }
 
-void InputControllerRegisterFile::write(uint32_t addr, Value value) {
+void InputControllerRegisterFile::write(uint32_t addr, u32 value) {
 	switch (addr) {
 		case IO_INP_CTRL:
-			state.ctrl = toU32(value);
+			state.ctrl = value;
 			return;
 		case IO_INP_OUTPUT_PORT:
-			state.outputPort = toU32(value);
+			state.outputPort = value;
 			return;
 		case IO_INP_OUTPUT_INTENSITY_Q16:
-			state.outputIntensityQ16 = toU32(value);
+			state.outputIntensityQ16 = value;
 			return;
 		case IO_INP_OUTPUT_DURATION_MS:
-			state.outputDurationMs = toU32(value);
+			state.outputDurationMs = value;
 			return;
 	}
 }
 
 void InputControllerRegisterFile::mirror(Memory& memory) const {
-	memory.writeIoValue(IO_INP_CTRL, valueNumber(static_cast<double>(state.ctrl)));
+	memory.writeIoU32(IO_INP_CTRL, state.ctrl);
 	for (int i = 0; i < INPUT_CONTROLLER_KEY_WORD_COUNT; i += 1) {
-		memory.writeIoValue(IO_INP_KEYS + static_cast<u32>(i) * IO_WORD_SIZE, valueNumber(static_cast<double>(state.keyWords[i])));
+		memory.writeIoU32(IO_INP_KEYS + static_cast<u32>(i) * IO_WORD_SIZE, state.keyWords[i]);
 	}
-	memory.writeIoValue(IO_INP_POINTER_BUTTONS, valueNumber(static_cast<double>(state.pointerButtons)));
-	memory.writeIoValue(IO_INP_POINTER_X, valueNumber(static_cast<double>(state.pointerXQ16)));
-	memory.writeIoValue(IO_INP_POINTER_Y, valueNumber(static_cast<double>(state.pointerYQ16)));
-	memory.writeIoValue(IO_INP_POINTER_WHEEL, valueNumber(static_cast<double>(state.pointerWheelQ16)));
+	memory.writeIoU32(IO_INP_POINTER_BUTTONS, state.pointerButtons);
+	memory.writeIoU32(IO_INP_POINTER_X, state.pointerXQ16);
+	memory.writeIoU32(IO_INP_POINTER_Y, state.pointerYQ16);
+	memory.writeIoU32(IO_INP_POINTER_WHEEL, state.pointerWheelQ16);
 	for (int pad = 0; pad < INPUT_CONTROLLER_PAD_COUNT; pad += 1) {
 		const u32 padBase = IO_INP_PADS + static_cast<u32>(pad) * IO_INP_PAD_STRIDE;
-		memory.writeIoValue(padBase, valueNumber(static_cast<double>(state.padButtons[pad])));
+		memory.writeIoU32(padBase, state.padButtons[pad]);
 		for (int axis = 0; axis < INPUT_CONTROLLER_PAD_AXIS_COUNT; axis += 1) {
-			memory.writeIoValue(padBase + static_cast<u32>(axis + 1) * IO_WORD_SIZE, valueNumber(static_cast<double>(state.padAxesQ16[pad * INPUT_CONTROLLER_PAD_AXIS_COUNT + axis])));
+			memory.writeIoU32(padBase + static_cast<u32>(axis + 1) * IO_WORD_SIZE, state.padAxesQ16[pad * INPUT_CONTROLLER_PAD_AXIS_COUNT + axis]);
 		}
 	}
-	memory.writeIoValue(IO_INP_OUTPUT_PORT, valueNumber(static_cast<double>(state.outputPort)));
-	memory.writeIoValue(IO_INP_OUTPUT_INTENSITY_Q16, valueNumber(static_cast<double>(state.outputIntensityQ16)));
-	memory.writeIoValue(IO_INP_OUTPUT_DURATION_MS, valueNumber(static_cast<double>(state.outputDurationMs)));
-	memory.writeIoValue(IO_INP_OUTPUT_STATUS, valueNumber(static_cast<double>(state.outputStatus)));
+	memory.writeIoU32(IO_INP_OUTPUT_PORT, state.outputPort);
+	memory.writeIoU32(IO_INP_OUTPUT_INTENSITY_Q16, state.outputIntensityQ16);
+	memory.writeIoU32(IO_INP_OUTPUT_DURATION_MS, state.outputDurationMs);
+	memory.writeIoU32(IO_INP_OUTPUT_STATUS, state.outputStatus);
 }
 
 } // namespace bmsx

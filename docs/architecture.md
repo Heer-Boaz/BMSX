@@ -959,6 +959,12 @@ rompacker, TOC and host do not maintain a second module-name or attribute list.
 ## Memory, CPU, and scheduler
 
 - `Memory` owns RAM, ROM windows, IO slots, and MMIO callback dispatch.
+- Every IO slot and device callback carries one raw unsigned 32-bit bus word.
+  IO state is therefore neither a Lua `Value` store nor a GC root set. A CPU
+  `Word` load boxes the returned register word once at the CPU boundary;
+  a CPU `Word` store converts its numeric register lane once before MMIO
+  dispatch. Typed `U32LE` and DMA transactions already cross that boundary as
+  raw words and do not box and unbox again inside devices.
 - The CPU consumes instruction words and runtime values directly from the mapped
   machine representation.
 - Reserved opcodes, malformed standalone `WIDE` prefix words, invalid physical
@@ -1331,8 +1337,8 @@ protected heap, or supervisor-only RAM.
 The system controller also owns the cart-visible machine clock registerfile.
 `SYS_TIME_MS` decodes the scheduler's current machine-cycle count through the
 configured CPU clock and returns the low 32 bits of elapsed whole milliseconds.
-`SYS_FRAME_MS` decodes the retained current GX PCRTC microhertz timing into a
-frame period, and `SYS_CYCLES_PER_FRAME` exposes that same PCRTC datapath's next
+`SYS_FRAME_MS_Q16` decodes the retained current GX PCRTC microhertz timing into
+an unsigned Q16.16 frame period, and `SYS_CYCLES_PER_FRAME` exposes that same PCRTC datapath's next
 VBlank cycle budget. A stopped PCRTC drives zero on both frame registers. These
 reads consume retained machine-device state directly; `Runtime` neither maps
 the addresses nor supplies a parallel cart clock.
@@ -1340,7 +1346,7 @@ the addresses nor supplies a parallel cart clock.
 | Register | Address | Meaning |
 | --- | ---: | --- |
 | `SYS_TIME_MS` | `0x08010224` | Read low-u32 elapsed whole machine milliseconds. |
-| `SYS_FRAME_MS` | `0x08010228` | Read current PCRTC frame duration in milliseconds; zero while stopped. |
+| `SYS_FRAME_MS_Q16` | `0x08010228` | Read current PCRTC frame duration as unsigned Q16.16 milliseconds; zero while stopped. |
 | `SYS_CYCLES_PER_FRAME` | `0x08010234` | Read the current PCRTC next-VBlank cycle budget; zero while stopped. |
 
 Cart and firmware `print()` use the system debug-output register pair. A write
