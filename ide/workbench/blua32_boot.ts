@@ -1,5 +1,5 @@
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import type { SoundMaster } from '../../machine/ts/audio/soundmaster';
+import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import type { Input } from '../../machine/ts/input/manager';
 import type {
 	LogOutput,
@@ -50,11 +50,11 @@ async function prepareRebootToBootRom(
 	editor: CartEditor,
 	overlayRenderer: OverlayRenderer,
 	input: Input,
-	soundMaster: SoundMaster,
+	audioOutput: HostAudioOutput,
 	storage: StorageService,
 ): Promise<boolean> {
 	clearFaultSnapshot(fault);
-	deactivateEditor(editor, overlayRenderer, input, soundMaster);
+	deactivateEditor(editor, overlayRenderer, input, audioOutput);
 	editor.clearRuntimeErrorOverlay();
 	await applyAllWorkspaceSourceOverrides(
 		storage,
@@ -74,7 +74,7 @@ export async function rebootPreparedRuntime(
 	overlayRenderer: OverlayRenderer,
 	runtime: Runtime,
 	input: Input,
-	soundMaster: SoundMaster,
+	audioOutput: HostAudioOutput,
 	storage: StorageService,
 	logOutput: LogOutput,
 ): Promise<void> {
@@ -86,7 +86,7 @@ export async function rebootPreparedRuntime(
 			editor,
 			overlayRenderer,
 			input,
-			soundMaster,
+			audioOutput,
 			storage,
 		);
 		try {
@@ -101,10 +101,7 @@ export async function rebootPreparedRuntime(
 			handleLuaError(logOutput, fault, sources, runtime, error);
 			throw error;
 		}
-		soundMaster.bootstrapRuntimeAudio(
-			runtime.timing.ufpsScaled,
-			soundMaster.volume,
-		);
+		audioOutput.restart(runtime.timing.ufpsScaled);
 	} finally {
 		luaGate.end(gateToken);
 	}

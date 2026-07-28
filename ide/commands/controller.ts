@@ -1,5 +1,5 @@
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import type { SoundMaster } from '../../machine/ts/audio/soundmaster';
+import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import type { Input } from '../../machine/ts/input/manager';
 import type {
 	HostClock,
@@ -37,7 +37,7 @@ export class IdeCommandController {
 		private readonly overlayRenderer: OverlayRenderer,
 		private readonly runtime: Runtime,
 		private readonly input: Input,
-		private readonly soundMaster: SoundMaster,
+		private readonly audioOutput: HostAudioOutput,
 		private readonly microtasks: MicrotaskQueue,
 		private readonly storage: StorageService,
 		private readonly clock: HostClock,
@@ -75,7 +75,7 @@ export class IdeCommandController {
 				this.overlayRenderer,
 				this.runtime,
 				this.input,
-				this.soundMaster,
+				this.audioOutput,
 				this.microtasks,
 				this.storage,
 				this.clock,
@@ -112,7 +112,7 @@ export class IdeCommandController {
 			this.overlayRenderer,
 			this.runtime,
 			this.input,
-			this.soundMaster,
+			this.audioOutput,
 			this.microtasks,
 			this.storage,
 			this.logOutput,

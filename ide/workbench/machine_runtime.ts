@@ -32,7 +32,7 @@ export async function prepareWorkbenchRuntime(
 		runtime,
 		host.presenter,
 		host.input,
-		host.soundMaster,
+		host.audioOutput,
 		host.platform.storage,
 		host.platform.clock,
 		host.platform.lifecycle,
@@ -45,7 +45,7 @@ export async function prepareWorkbenchRuntime(
 	);
 	await startPreparedRuntime(ide, runtime, host.platform);
 	host.flushSystemOutput();
-	host.bootstrapStartupAudio();
+	host.audioOutput.bootstrap();
 	return [host, ide];
 }
 

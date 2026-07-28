@@ -9,7 +9,7 @@
 #ifndef BMSX_LIBRETRO_PLATFORM_H
 #define BMSX_LIBRETRO_PLATFORM_H
 
-#include "audio/soundmaster.h"
+#include "audio_output.h"
 #include "bmsx_libretro.h"
 #include "host_overlay_menu.h"
 #include "spec/bmsx/cartridge.h"
@@ -24,10 +24,7 @@
 
 namespace bmsx {
 
-constexpr f64 DEFAULT_LIBRETRO_AUDIO_SAMPLE_RATE = 48000.0;
-
 class LibretroInputHub;
-class LibretroAudioService;
 class LibretroHostClock;
 class MachineManager;
 class Runtime;
@@ -83,36 +80,6 @@ private:
 	BackendType m_backend_type;
 	retro_system_av_info& m_av_info;
 	bool m_profile_gx_uploads;
-};
-
-/* ============================================================================
- * Audio buffer for audio output
- * ============================================================================ */
-
-struct AudioBuffer {
-	const int16_t* data = nullptr;
-	size_t samples = 0;
-
-	void clear() {
-		samples = 0;
-	}
-
-	int16_t* beginWrite(size_t num_samples) {
-		if (num_samples > buffer.size() / 2u) {
-			buffer.resize(num_samples * 2u);
-		}
-		data = buffer.data();
-		samples = 0;
-		return buffer.data();
-	}
-
-	// disable-next-line single_line_method_pattern -- audio buffer reserves stereo sample storage at the libretro audio boundary.
-	void reserve(size_t max_samples) {
-		buffer.resize(max_samples * 2); // stereo
-	}
-
-private:
-	std::vector<int16_t> buffer;
 };
 
 /* ============================================================================
@@ -193,7 +160,7 @@ public:
 
 	// State access
 	const Framebuffer& getFramebuffer() const { return m_framebuffer; }
-	const AudioBuffer& getAudioBuffer() const { return m_audio_buffer; }
+	const LibretroAudioOutput& audioOutput() const { return m_audio_output; }
 
 	// Machine manager access
 	MachineManager* machineManager() { return m_machine_manager.get(); }
@@ -245,7 +212,7 @@ private:
 
 	// Output buffers
 	Framebuffer m_framebuffer;
-	AudioBuffer m_audio_buffer;
+	LibretroAudioOutput m_audio_output;
 
 	double m_frame_time_sec;
 	BackendType m_backend_type = BackendType::Software;
@@ -262,8 +229,6 @@ private:
 	std::unique_ptr<Lifecycle> m_lifecycle;
 	std::unique_ptr<InputHub> m_input_hub;
 	std::unique_ptr<Input> m_input;
-	SoundMaster m_sound_master;
-	std::unique_ptr<LibretroAudioService> m_audio_service;
 	std::unique_ptr<LibretroVideoOutput> m_video_output;
 	std::unique_ptr<MicrotaskQueue> m_microtask_queue;
 	std::unique_ptr<VideoPresenter> m_video_presenter;
@@ -329,25 +294,6 @@ private:
 	bool m_keyboard_supervisor_request_high = false;
 	bool m_prev_supervisor_request_high = false;
 	std::array<bool, 256> m_pressed_keyboard_usages{};
-};
-
-/* ============================================================================
- * LibretroAudioService - Audio handling for libretro
- * ============================================================================ */
-
-class LibretroAudioService final {
-public:
-	explicit LibretroAudioService(SoundMaster& soundMaster);
-
-	void setTiming(double sampleRate);
-	void resetQueue();
-
-	void collectSamples(AudioController& audioController, AudioBuffer& buffer);
-
-private:
-	SoundMaster& m_sound_master;
-	double m_sample_rate = DEFAULT_LIBRETRO_AUDIO_SAMPLE_RATE;
-	double m_sample_accumulator = 0.0;
 };
 
 /* ============================================================================

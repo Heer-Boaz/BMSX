@@ -140,15 +140,12 @@ export interface Platform extends LogOutput {
 export type AudioOutputPuller = (output: Int16Array, frameCount: number, sampleRate: number) => number;
 
 export interface AudioService {
-	readonly available: boolean;
 	setRuntimeAudioPuller(puller: AudioOutputPuller | null): void;
 	clearRuntimeAudioTransport(): void;
 	pumpRuntimeAudio(): void;
 	resume(): Promise<void>;
 	suspend(): Promise<void>;
-	getMasterGain(): number;
-	setMasterGain(v: number): void;
-	setFrameTimeSec(seconds: number): void;
+	setEmulationFrameTimeSec(seconds: number): void;
 }
 
 export interface RngService {

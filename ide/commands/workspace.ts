@@ -3,7 +3,7 @@ import { save } from '../workbench/ui/code_tab/io';
 import { showActionPrompt } from '../workbench/contrib/modal/action_prompt';
 import { performEditorAction } from './actions';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import type { SoundMaster } from '../../machine/ts/audio/soundmaster';
+import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import type { Input } from '../../machine/ts/input/manager';
 import type {
 	HostClock,
@@ -41,7 +41,7 @@ export function executeEditorWorkspaceCommand(
 	overlayRenderer: OverlayRenderer,
 	runtime: Runtime,
 	input: Input,
-	soundMaster: SoundMaster,
+	audioOutput: HostAudioOutput,
 	microtasks: MicrotaskQueue,
 	storage: StorageService,
 	clock: HostClock,
@@ -76,7 +76,7 @@ export function executeEditorWorkspaceCommand(
 				overlayRenderer,
 				runtime,
 				input,
-				soundMaster,
+				audioOutput,
 				microtasks,
 				storage,
 				logOutput,
@@ -94,7 +94,7 @@ export function executeEditorWorkspaceCommand(
 				overlayRenderer,
 				runtime,
 				input,
-				soundMaster,
+				audioOutput,
 				microtasks,
 				storage,
 				logOutput,

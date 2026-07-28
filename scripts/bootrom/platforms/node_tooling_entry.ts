@@ -163,7 +163,7 @@ async function main(): Promise<void> {
 							ide,
 							runtime,
 							ideHost.input,
-							ideHost.soundMaster,
+							ideHost.audioOutput,
 							ideHost.platform.microtasks,
 							ideHost.platform.storage,
 							ideHost.platform,

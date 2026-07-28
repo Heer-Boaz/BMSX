@@ -29,7 +29,6 @@ import {
 	SubscriptionHandle,
 	createSubscriptionHandle,
 } from 'bmsx/platform';
-import { HZ_SCALE } from 'bmsx/machine/runtime/timing/constants';
 import { GX_GPU_DISPLAY_ASPECT_HEIGHT, GX_GPU_DISPLAY_ASPECT_WIDTH } from 'bmsx/machine/model_registry';
 import { createBrowserBackend } from 'bmsx/render/backend/browser_factory';
 import { WorkerStreamingAudioService } from './worker_audio';
@@ -63,7 +62,6 @@ export class BrowserPlatform implements Platform {
 	lifecycle: Lifecycle;
 	input: InputHub;
 	storage: StorageService;
-	ufpsScaled: number;
 	requestShutdown(): void {
 		const target = window;
 		target.close();
@@ -94,7 +92,6 @@ export class BrowserPlatform implements Platform {
 		this.lifecycle = new BrowserLifecycle();
 		this.storage = new BrowserStorage();
 		this.microtasks = new DefaultMicrotaskQueue();
-		this.ufpsScaled = options.ufpsScaled ?? 0;
 		this.clipboard = new BrowserClipboardService(surface);
 		this.input = new BrowserInputHub(surface, this.clock);
 		const ownerDoc = surface.ownerDocument;
@@ -112,9 +109,6 @@ export class BrowserPlatform implements Platform {
 			this.hid = new UnsupportedHID();
 		}
 		this.audio = new WorkerStreamingAudioService(options.audioContext);
-		if (this.ufpsScaled > 0) {
-			this.audio.setFrameTimeSec(HZ_SCALE / this.ufpsScaled);
-		}
 		this.rng = new BrowserRngService();
 		this.videoOutput = new BrowserVideoOutput(canvas, this.onscreenGamepad, options.enableOnscreenGamepad);
 
@@ -129,7 +123,6 @@ export class BrowserPlatform implements Platform {
 }
 
 export interface BrowserPlatformOptions {
-	ufpsScaled?: number;
 	audioContext: AudioContext;
 	debug: boolean;
 	enableOnscreenGamepad: boolean;

@@ -2,7 +2,7 @@ import { hotResume } from '../runtime/hot_resume';
 import { performHotResume } from '../commands/actions';
 import { rebootPreparedRuntime } from '../workbench/blua32_boot';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import type { SoundMaster } from '../../machine/ts/audio/soundmaster';
+import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import type { Input } from '../../machine/ts/input/manager';
 import type {
 	LogOutput,
@@ -63,7 +63,7 @@ export function createHeadlessIdeHarness(
 	ide: RuntimeIdeState,
 	runtime: Runtime,
 	input: Input,
-	soundMaster: SoundMaster,
+	audioOutput: HostAudioOutput,
 	microtasks: MicrotaskQueue,
 	storage: StorageService,
 	logOutput: LogOutput,
@@ -94,7 +94,7 @@ export function createHeadlessIdeHarness(
 				ide.overlayRenderer,
 				runtime,
 				input,
-				soundMaster,
+				audioOutput,
 				microtasks,
 				storage,
 				logOutput,
@@ -109,7 +109,7 @@ export function createHeadlessIdeHarness(
 			ide.overlayRenderer,
 			runtime,
 			input,
-			soundMaster,
+			audioOutput,
 			storage,
 			logOutput,
 		),
@@ -120,7 +120,7 @@ export function createHeadlessIdeHarness(
 				ide.overlayRenderer,
 				runtime,
 				input,
-				soundMaster,
+				audioOutput,
 			);
 			const resource = resolveRuntimeResourceForContext(
 				ide.sources,

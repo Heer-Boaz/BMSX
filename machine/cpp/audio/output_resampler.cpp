@@ -17,8 +17,7 @@ auto AudioOutputResampler::pull(
 	ApuOutputRing& ring,
 	i16* output,
 	size_t frameCount,
-	i32 outputSampleRate,
-	f32 outputGain
+	i32 outputSampleRate
 ) -> size_t {
 	if (m_outputRate != outputSampleRate) {
 		reset();
@@ -49,8 +48,8 @@ auto AudioOutputResampler::pull(
 			+ static_cast<f64>(m_nextLeft - m_currentLeft) * m_phase;
 		const f64 right = static_cast<f64>(m_currentRight)
 			+ static_cast<f64>(m_nextRight - m_currentRight) * m_phase;
-		output[outputIndex] = static_cast<i16>(roundI32(left * outputGain));
-		output[outputIndex + 1u] = static_cast<i16>(roundI32(right * outputGain));
+		output[outputIndex] = static_cast<i16>(roundI32(left));
+		output[outputIndex + 1u] = static_cast<i16>(roundI32(right));
 		outputIndex += 2u;
 		producedFrames += 1u;
 		m_phase += sourceStep;

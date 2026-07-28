@@ -1127,9 +1127,9 @@ test('APU state is invariant under host pull chunking and underflow', () => {
 
 	const first = new Int16Array(6);
 	const second = new Int16Array(4);
-	drained.hostOutput.pull(drained.audioOutput.outputRing, first, 3, 48000, 0.75);
-	drained.hostOutput.pull(drained.audioOutput.outputRing, second, 2, 48000, 0.75);
-	drained.hostOutput.pull(drained.audioOutput.outputRing, new Int16Array(128), 64, 48000, 0.75);
+	drained.hostOutput.pull(drained.audioOutput.outputRing, first, 3, 48000);
+	drained.hostOutput.pull(drained.audioOutput.outputRing, second, 2, 48000);
+	drained.hostOutput.pull(drained.audioOutput.outputRing, new Int16Array(128), 64, 48000);
 
 	assert.deepEqual(drained.audio.captureState(), untouched.audio.captureState());
 });
@@ -1300,8 +1300,8 @@ test('APU save restore resumes the exact future PCM phase while transport stays 
 
 	const liveOutput = new Int16Array(4);
 	const restoredOutput = new Int16Array(4);
-	live.hostOutput.pull(live.audioOutput.outputRing, liveOutput, 2, APU_SAMPLE_RATE_HZ, 1);
-	restored.hostOutput.pull(restored.audioOutput.outputRing, restoredOutput, 2, APU_SAMPLE_RATE_HZ, 1);
+	live.hostOutput.pull(live.audioOutput.outputRing, liveOutput, 2, APU_SAMPLE_RATE_HZ);
+	restored.hostOutput.pull(restored.audioOutput.outputRing, restoredOutput, 2, APU_SAMPLE_RATE_HZ);
 	assert.deepEqual(restoredOutput, liveOutput);
 });
 
@@ -1440,7 +1440,7 @@ test('APU output reaches a 48 kHz PAL host within the bounded presentation windo
 	const primeCycle = cyclesUntilBudgetUnits(cpuHz, APU_SAMPLE_RATE_HZ, 0, 2);
 	advanceRealApu(harness, primeCycle);
 	const primedOutput = new Int16Array(2);
-	assert.equal(harness.hostOutput.pull(harness.audioOutput.outputRing, primedOutput, 1, hostSampleRate, 1), 1);
+	assert.equal(harness.hostOutput.pull(harness.audioOutput.outputRing, primedOutput, 1, hostSampleRate), 1);
 	assert.deepEqual(primedOutput, new Int16Array(2));
 
 	const playCycle = primeCycle + cpuHz;
@@ -1464,7 +1464,7 @@ test('APU output reaches a 48 kHz PAL host within the bounded presentation windo
 	let publishedFrames = 0;
 	let firstAudibleFrame = -1;
 	while (publishedFrames < publicationBound && firstAudibleFrame < 0) {
-		const produced = harness.hostOutput.pull(harness.audioOutput.outputRing, output, hostFramesPerPalFrame, hostSampleRate, 1);
+		const produced = harness.hostOutput.pull(harness.audioOutput.outputRing, output, hostFramesPerPalFrame, hostSampleRate);
 		assert.notEqual(produced, 0, 'host drain must keep making progress through retained presentation');
 		for (let frame = 0; frame < produced; frame += 1) {
 			if (output[frame * 2] !== 0 || output[frame * 2 + 1] !== 0) {

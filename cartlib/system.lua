@@ -520,9 +520,7 @@ system.on_irq(irq_apu, function()
 end)
 aem.reload()
 
--- Register BIOS singletons as persistent registry entries.
--- This mirrors the TS system where all subsystems (PhysicsWorld, SoundMaster,
--- Input, Services, etc.) are registered so they are discoverable and inspectable.
+-- Register BIOS-owned subsystems as persistent guest registry entries.
 local registry_instance<const> = registry.instance
 local register_singleton<const> = function(obj, id, tn)
 	obj.id = id

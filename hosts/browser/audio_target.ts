@@ -1,7 +1,4 @@
 export function isIOSAudioTarget(): boolean {
-	if (typeof navigator === 'undefined') {
-		return false;
-	}
 	const platform = navigator.platform;
 	switch (platform) {
 		case 'iPhone':

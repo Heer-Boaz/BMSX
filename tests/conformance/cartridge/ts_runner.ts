@@ -60,7 +60,7 @@ async function main(): Promise<void> {
 		platform,
 	});
 	const runtime = host.runtime;
-	const presentation = new RenderPresentationState(host.soundMaster);
+	const presentation = new RenderPresentationState();
 	const hostOverlayMenu = new HostOverlayMenu(host.presenter, runtime, host.input);
 	host.start();
 	runtime.frameLoop.currentTimeMs = 0;

@@ -236,7 +236,6 @@ add_library(bmsx_core STATIC
 
 	# Audio systems
 	audio/output_resampler.cpp
-	audio/soundmaster.cpp
 	machine/devices/audio/active_slots.cpp
 	machine/devices/audio/badp_decoder.cpp
 	machine/devices/audio/biquad_filter.cpp
@@ -428,6 +427,7 @@ endif()
 set(BMSX_LIBRETRO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../hosts/libretro")
 set(BMSX_LIBRETRO_HOST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../hosts/libretro_host")
 set(BMSX_LIBRETRO_PLATFORM_SOURCES
+	${BMSX_LIBRETRO_DIR}/audio_output.cpp
 	${BMSX_LIBRETRO_DIR}/host_frame.cpp
 	${BMSX_LIBRETRO_DIR}/host_overlay_menu.cpp
 	${BMSX_LIBRETRO_DIR}/platform.cpp

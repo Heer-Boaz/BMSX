@@ -4,7 +4,7 @@ import type { FontVariant } from '../../machine/ts/render/shared/bmsx_font';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import type { GateGroup } from '../../machine/ts/common/taskgate';
 import { taskGate } from '../../machine/ts/common/taskgate';
-import type { SoundMaster } from '../../machine/ts/audio/soundmaster';
+import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import type { Input } from '../../machine/ts/input/manager';
 import type {
 	ClipboardService,
@@ -37,7 +37,7 @@ export class RuntimeIdeState {
 		runtime: Runtime,
 		presenter: VideoPresenter,
 		input: Input,
-		soundMaster: SoundMaster,
+		audioOutput: HostAudioOutput,
 		storage: StorageService,
 		clock: HostClock,
 		clipboard: ClipboardService,
@@ -52,7 +52,7 @@ export class RuntimeIdeState {
 			runtime,
 			presenter,
 			input,
-			soundMaster,
+			audioOutput,
 			storage,
 			clock,
 			clipboard,

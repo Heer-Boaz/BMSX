@@ -1,5 +1,4 @@
-import { clamp01 } from 'bmsx/common/clamp';
-import { isIOSAudioTarget } from 'bmsx/platform/browser_audio_target';
+import { isIOSAudioTarget } from './audio_target';
 import { type AudioOutputPuller, type AudioService } from 'bmsx/platform';
 
 const CORE_CTRL_READ_PTR = 0;
@@ -12,6 +11,8 @@ const CORE_CTRL_LENGTH = 5;
 const DEFAULT_CAPACITY_FRAMES = 16384;
 const DEFAULT_AUDIO_TARGET_AHEAD_SEC = 0.024;
 const IOS_AUDIO_TARGET_AHEAD_SEC = 0.036;
+const DEFAULT_AUDIO_TARGET_OVERHEAD_SEC = 0.004;
+const IOS_AUDIO_TARGET_OVERHEAD_SEC = 0.012;
 const WORKLET_TARGET_MIN_DEFAULT = 384;
 const WORKLET_TARGET_MAX_DEFAULT = 4096;
 const WORKLET_TARGET_MIN_IOS = 768;
@@ -21,17 +22,6 @@ const WORKLET_REARM_MARGIN_IOS = 256;
 const WORKLET_REQUEST_AHEAD_DEFAULT = 256;
 const WORKLET_REQUEST_AHEAD_IOS = 384;
 const NEED_PUMP_BUDGET_FRAMES = 8192;
-
-export interface WorkerStreamingAudioOptions {
-	capacityFrames?: number;
-	frameTimeSec?: number;
-}
-
-export function supportsWorkerStreamingAudio(): boolean {
-	return !!globalThis.crossOriginIsolated
-		&& 'SharedArrayBuffer' in globalThis
-		&& 'AudioWorkletNode' in globalThis;
-}
 
 function requireWorkerStreamingAudioSupport(): void {
 	if (!globalThis.crossOriginIsolated) {
@@ -60,20 +50,17 @@ type WorkletMessageToMain =
 	| { type: 'worklet_error'; message: string };
 
 type MainToWorkletMessage =
-	| { type: 'configure'; frameTimeSec: number; preferHighLead: boolean }
-	| { type: 'set_frame_time'; frameTimeSec: number }
-	| { type: 'set_master_gain'; gain: number };
+	| { type: 'configure'; targetAheadSec: number; preferHighLead: boolean }
+	| { type: 'set_target_ahead'; targetAheadSec: number };
 
 export class WorkerStreamingAudioService implements AudioService {
-	readonly available = true;
-
 	private readonly ctx: AudioContext;
 	private readonly coreStreamCapacityFrames: number;
 	private readonly coreStreamSamplesBuffer: SharedArrayBuffer;
 	private readonly coreStreamControlBuffer: SharedArrayBuffer;
 	private readonly coreStreamSamples: Int16Array;
 	private readonly coreStreamControl: Int32Array;
-	private frameTimeSec: number;
+	private targetAheadSec: number;
 	private readonly preferHighLead: boolean;
 
 	private workletNode: AudioWorkletNode | null = null;
@@ -83,22 +70,19 @@ export class WorkerStreamingAudioService implements AudioService {
 	private resolveReady: (() => void) | null = null;
 	private rejectReady: ((error: Error) => void) | null = null;
 
-	private masterGain = 1;
 	private runtimeAudioPuller: AudioOutputPuller | null = null;
 	private runtimeAudioPumping = false;
 	private runtimeOutputBuffer = new Int16Array(0);
-	private readonly msgSetMasterGain: { type: 'set_master_gain'; gain: number } = { type: 'set_master_gain', gain: 1 };
-	private readonly msgSetFrameTimeSec: { type: 'set_frame_time'; frameTimeSec: number } = { type: 'set_frame_time', frameTimeSec: DEFAULT_AUDIO_TARGET_AHEAD_SEC };
+	private readonly msgSetTargetAhead: { type: 'set_target_ahead'; targetAheadSec: number } = { type: 'set_target_ahead', targetAheadSec: DEFAULT_AUDIO_TARGET_AHEAD_SEC };
 
-	constructor(context: AudioContext, options: WorkerStreamingAudioOptions = {}) {
+	constructor(context: AudioContext) {
 		requireWorkerStreamingAudioSupport();
 
-		const requestedCapacity = options.capacityFrames ?? DEFAULT_CAPACITY_FRAMES;
 		this.preferHighLead = isIOSAudioTarget();
-		this.frameTimeSec = options.frameTimeSec ?? (this.preferHighLead ? IOS_AUDIO_TARGET_AHEAD_SEC : DEFAULT_AUDIO_TARGET_AHEAD_SEC);
+		this.targetAheadSec = this.preferHighLead ? IOS_AUDIO_TARGET_AHEAD_SEC : DEFAULT_AUDIO_TARGET_AHEAD_SEC;
 
 		this.ctx = context;
-		this.coreStreamCapacityFrames = requestedCapacity;
+		this.coreStreamCapacityFrames = DEFAULT_CAPACITY_FRAMES;
 		this.coreStreamSamplesBuffer = new SharedArrayBuffer(this.coreStreamCapacityFrames * 2 * Int16Array.BYTES_PER_ELEMENT);
 		this.coreStreamControlBuffer = new SharedArrayBuffer(CORE_CTRL_LENGTH * Int32Array.BYTES_PER_ELEMENT);
 		this.coreStreamSamples = new Int16Array(this.coreStreamSamplesBuffer);
@@ -131,7 +115,7 @@ export class WorkerStreamingAudioService implements AudioService {
 					coreSamplesBuffer: this.coreStreamSamplesBuffer,
 					coreControlBuffer: this.coreStreamControlBuffer,
 					coreCapacityFrames: this.coreStreamCapacityFrames,
-					frameTimeSec: this.frameTimeSec,
+					targetAheadSec: this.targetAheadSec,
 					preferHighLead: this.preferHighLead,
 				},
 			});
@@ -139,7 +123,7 @@ export class WorkerStreamingAudioService implements AudioService {
 			this.workletNode.connect(this.ctx.destination);
 			this.workletNode.port.postMessage({
 				type: 'configure',
-				frameTimeSec: this.frameTimeSec,
+				targetAheadSec: this.targetAheadSec,
 				preferHighLead: this.preferHighLead,
 			} satisfies MainToWorkletMessage);
 			if (this.resolveReady !== null) {
@@ -188,9 +172,8 @@ export class WorkerStreamingAudioService implements AudioService {
 			this.coreSamples = new Int16Array(processorOptions.coreSamplesBuffer);
 			this.coreControl = new Int32Array(processorOptions.coreControlBuffer);
 			this.coreCapacityFrames = processorOptions.coreCapacityFrames;
-			this.frameTimeSec = processorOptions.frameTimeSec;
+			this.targetAheadSec = processorOptions.targetAheadSec;
 			this.preferHighLead = processorOptions.preferHighLead === true;
-			this.masterGain = 1;
 			this.lastStatsMs = 0;
 			this.lastNeedMs = 0;
 			this.needArmed = true;
@@ -225,14 +208,11 @@ export class WorkerStreamingAudioService implements AudioService {
 				try {
 					switch (message.type) {
 						case 'configure':
-							this.frameTimeSec = message.frameTimeSec;
+							this.targetAheadSec = message.targetAheadSec;
 							this.preferHighLead = message.preferHighLead === true;
 							break;
-						case 'set_frame_time':
-							this.frameTimeSec = message.frameTimeSec;
-							break;
-						case 'set_master_gain':
-							this.masterGain = clamp(message.gain, 0, 1);
+						case 'set_target_ahead':
+							this.targetAheadSec = message.targetAheadSec;
 							break;
 						default:
 							this.needPortErrorMessage.reason = 'unsupported message type';
@@ -267,7 +247,7 @@ export class WorkerStreamingAudioService implements AudioService {
 		computeTargetFillFrames() {
 			const minTarget = this.preferHighLead ? WORKLET_TARGET_MIN_IOS : WORKLET_TARGET_MIN_DEFAULT;
 			const maxTarget = this.preferHighLead ? WORKLET_TARGET_MAX_IOS : WORKLET_TARGET_MAX_DEFAULT;
-			const requested = Math.ceil(sampleRate * this.frameTimeSec);
+			const requested = Math.ceil(sampleRate * this.targetAheadSec);
 			const target = clamp(requested, minTarget, maxTarget);
 			const capacityMax = this.coreCapacityFrames - 1;
 			return target > capacityMax ? capacityMax : target;
@@ -281,8 +261,6 @@ export class WorkerStreamingAudioService implements AudioService {
 			const left = output[0];
 			const right = output.length > 1 ? output[1] : output[0];
 			const frames = left.length;
-			const masterGain = this.masterGain;
-
 			const mixStartMs = currentTime * 1000;
 			const readPtr = Atomics.load(this.coreControl, CORE_CTRL_READ_PTR) >>> 0;
 			if (readPtr > this.readPos) {
@@ -312,8 +290,8 @@ export class WorkerStreamingAudioService implements AudioService {
 				let outR = 0;
 				if (frame < framesToRead) {
 					const src = (cursor % this.coreCapacityFrames) * 2;
-					const sampleL = this.coreSamples[src] * PCM_SCALE * masterGain;
-					const sampleR = this.coreSamples[src + 1] * PCM_SCALE * masterGain;
+					const sampleL = this.coreSamples[src] * PCM_SCALE;
+					const sampleR = this.coreSamples[src + 1] * PCM_SCALE;
 					outL = sampleL;
 					outR = sampleR;
 					if (this.concealMode === 1) {
@@ -419,7 +397,7 @@ export class WorkerStreamingAudioService implements AudioService {
 	private computeTargetFillFramesMain(): number {
 		const refillMargin = this.preferHighLead ? WORKLET_REARM_MARGIN_IOS : WORKLET_REARM_MARGIN_DEFAULT;
 		const requestAhead = this.preferHighLead ? WORKLET_REQUEST_AHEAD_IOS : WORKLET_REQUEST_AHEAD_DEFAULT;
-		const requested = Math.ceil(this.ctx.sampleRate * this.frameTimeSec) + requestAhead + refillMargin;
+		const requested = Math.ceil(this.ctx.sampleRate * this.targetAheadSec) + requestAhead + refillMargin;
 		const minTarget = this.preferHighLead ? WORKLET_TARGET_MIN_IOS : WORKLET_TARGET_MIN_DEFAULT;
 		const maxTarget = this.preferHighLead ? WORKLET_TARGET_MAX_IOS : WORKLET_TARGET_MAX_DEFAULT;
 		const target = requested < minTarget ? minTarget : (requested > maxTarget ? maxTarget : requested);
@@ -510,14 +488,6 @@ export class WorkerStreamingAudioService implements AudioService {
 		this.workletNode.port.postMessage(message);
 	}
 
-	public currentTime(): number {
-		return this.ctx.currentTime;
-	}
-
-	public outputSampleRate(): number {
-		return this.ctx.sampleRate;
-	}
-
 	public setRuntimeAudioPuller(puller: AudioOutputPuller | null): void {
 		this.runtimeAudioPuller = puller;
 		if (puller === null) {
@@ -591,24 +561,11 @@ export class WorkerStreamingAudioService implements AudioService {
 		}
 	}
 
-	public getMasterGain(): number {
-		return this.masterGain;
-	}
-
-	public setMasterGain(value: number): void {
-		const gain = clamp01(value);
-		this.masterGain = gain;
+	public setEmulationFrameTimeSec(seconds: number): void {
+		this.targetAheadSec = seconds + (this.preferHighLead ? IOS_AUDIO_TARGET_OVERHEAD_SEC : DEFAULT_AUDIO_TARGET_OVERHEAD_SEC);
 		if (this.workletNode !== null) {
-			this.msgSetMasterGain.gain = gain;
-			this.postWorkletMessage(this.msgSetMasterGain);
-		}
-	}
-
-	public setFrameTimeSec(seconds: number): void {
-		this.frameTimeSec = seconds;
-		if (this.workletNode !== null) {
-			this.msgSetFrameTimeSec.frameTimeSec = seconds;
-			this.postWorkletMessage(this.msgSetFrameTimeSec);
+			this.msgSetTargetAhead.targetAheadSec = this.targetAheadSec;
+			this.postWorkletMessage(this.msgSetTargetAhead);
 		}
 	}
 }

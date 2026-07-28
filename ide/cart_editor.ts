@@ -1,4 +1,4 @@
-import type { SoundMaster } from '../machine/ts/audio/soundmaster';
+import type { HostAudioOutput } from '../hosts/common/audio_output';
 import type { GateGroup } from '../machine/ts/common/taskgate';
 import type { Input } from '../machine/ts/input/manager';
 import type { Runtime } from '../machine/ts/machine/runtime/runtime';
@@ -184,7 +184,7 @@ export class RuntimeCartEditor implements CartEditor {
 		runtime: Runtime,
 		presenter: VideoPresenter,
 		input: Input,
-		soundMaster: SoundMaster,
+		audioOutput: HostAudioOutput,
 		storage: StorageService,
 		clock: HostClock,
 		clipboard: ClipboardService,
@@ -222,7 +222,7 @@ export class RuntimeCartEditor implements CartEditor {
 			overlayRenderer,
 			runtime,
 			input,
-			soundMaster,
+			audioOutput,
 			microtasks,
 			storage,
 			clock,

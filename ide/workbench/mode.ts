@@ -1,5 +1,5 @@
 import { KeyModifier } from '../../machine/ts/input/player';
-import type { SoundMaster } from '../../machine/ts/audio/soundmaster';
+import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import type { Input } from '../../machine/ts/input/manager';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type {
@@ -44,7 +44,7 @@ export async function initializeIdeFeatures(
 	runtime: Runtime,
 	presenter: VideoPresenter,
 	input: Input,
-	soundMaster: SoundMaster,
+	audioOutput: HostAudioOutput,
 	storage: StorageService,
 	clock: HostClock,
 	lifecycle: Lifecycle,
@@ -79,7 +79,7 @@ export async function initializeIdeFeatures(
 		runtime,
 		presenter,
 		input,
-		soundMaster,
+		audioOutput,
 		storage,
 		clock,
 		clipboard,
@@ -90,7 +90,7 @@ export async function initializeIdeFeatures(
 		sources,
 	);
 	seedDefaultLuaBuiltins();
-	updateGamePipelineExts(state.editor, state.overlayRenderer, input, soundMaster);
+	updateGamePipelineExts(state.editor, state.overlayRenderer, input, audioOutput);
 	input.setKeyboardCapture(EDITOR_TOGGLE_KEY, editorAvailable);
 	if (!editorAvailable) {
 		disposeShortcutHandlers(state);
@@ -103,7 +103,7 @@ export async function initializeIdeFeatures(
 		workspacePayload,
 		rejectedDirtyPaths,
 	);
-	registerRuntimeShortcuts(state, runtime, input, soundMaster);
+	registerRuntimeShortcuts(state, runtime, input, audioOutput);
 	return state;
 }
 
@@ -111,7 +111,7 @@ export function registerRuntimeShortcuts(
 	state: RuntimeIdeState,
 	runtime: Runtime,
 	input: Input,
-	soundMaster: SoundMaster,
+	audioOutput: HostAudioOutput,
 ): void {
 	disposeShortcutHandlers(state);
 	const registry = input.getGlobalShortcutRegistry();
@@ -124,7 +124,7 @@ export function registerRuntimeShortcuts(
 			state.overlayRenderer,
 			runtime,
 			input,
-			soundMaster,
+			audioOutput,
 		);
 	}));
 	disposers.push(registry.registerGamepadChord(
@@ -136,7 +136,7 @@ export function registerRuntimeShortcuts(
 			state.overlayRenderer,
 			runtime,
 			input,
-			soundMaster,
+			audioOutput,
 		),
 	));
 	disposers.push(registry.registerKeyboardShortcut(1, 'KeyT', () => {

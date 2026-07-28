@@ -26,7 +26,7 @@ async function startBrowserStudio(): Promise<void> {
 			defaultResourcePanelRatio(window.innerWidth / window.screen.width),
 		);
 		bindBrowserFullscreenShortcut(host);
-		bindBrowserDebuggerPauseShortcut(host.input, host.soundMaster);
+		bindBrowserDebuggerPauseShortcut(host.input, host.audioOutput);
 		startWorkbenchHostFrames(host, ide);
 		completeBrowserBoot();
 	} catch (error) {

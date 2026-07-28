@@ -18,7 +18,7 @@ function rebootMachine(screen: RenderPresentationState, host: MachineHost): void
 	host.runtime.rebootSystem();
 	screen.reset(host.presenter, host.runtime);
 	host.flushSystemOutput();
-	host.bootstrapStartupAudio();
+	host.audioOutput.restart(host.runtime.timing.ufpsScaled);
 }
 
 export function executeMachineHostMenuAction(
@@ -103,7 +103,7 @@ export function completeMachineHostUpdate(
 	screen: RenderPresentationState,
 	previousTickSequence: number,
 ): void {
-	host.syncRuntimeAudioTiming();
+	host.audioOutput.syncTiming(host.runtime.timing.ufpsScaled);
 	screen.syncAfterRuntimeUpdate(host.runtime, previousTickSequence);
 	host.platform.microtasks.flush();
 }
@@ -129,7 +129,7 @@ export function presentMachineHostPresentation(
 	screen: RenderPresentationState,
 	hostDeltaMs: number,
 ): void {
-	host.soundMaster.finishFrame();
+	host.platform.audio.pumpRuntimeAudio();
 	switch (action) {
 		case MachineHostFrameAction.PresentPending:
 			screen.presentPending(host.presenter, host.runtime, hostDeltaMs);

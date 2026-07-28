@@ -1,4 +1,4 @@
-import type { SoundMaster } from '../../machine/ts/audio/soundmaster';
+import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import { runGate } from '../../machine/ts/common/taskgate';
 import {
 	type HostClock,
@@ -14,7 +14,6 @@ let runtimeTaskQueueFailed = false;
 const backgroundTaskBudgetMs = 2.0;
 const RUNTIME_TASK_CATEGORY = 'ide-runtime-task';
 const RUNTIME_TASK_FAILURE_CATEGORY = 'ide-runtime-task-failure';
-const RUNTIME_TASK_AUDIO_SUSPENSION = 'runtime-task';
 
 export function enqueueBackgroundTask(task: BackgroundTask): void {
 	backgroundTasks.push(task);
@@ -46,14 +45,14 @@ export function clearBackgroundTasks(): void {
 
 export function scheduleRuntimeTask(
 	microtasks: MicrotaskQueue,
-	soundMaster: SoundMaster,
+	audioOutput: HostAudioOutput,
 	task: () => void | Promise<void>,
 	onError: (error: unknown) => void,
 ): void {
 	if (pendingRuntimeTasks === 0) {
 		runGate.endCategory(RUNTIME_TASK_FAILURE_CATEGORY);
 		runtimeTaskQueueFailed = false;
-		soundMaster.suspendAll(RUNTIME_TASK_AUDIO_SUSPENSION);
+		audioOutput.muteSystem(true);
 	}
 	pendingRuntimeTasks += 1;
 	const token = runGate.begin({
@@ -74,7 +73,7 @@ export function scheduleRuntimeTask(
 				pendingRuntimeTasks -= 1;
 				runGate.end(token);
 				if (succeeded && !runtimeTaskQueueFailed && pendingRuntimeTasks === 0) {
-					soundMaster.resumeAll(RUNTIME_TASK_AUDIO_SUSPENSION);
+					audioOutput.muteSystem(false);
 				} else if (runtimeTaskQueueFailed && pendingRuntimeTasks === 0) {
 					runGate.begin({
 						blocking: true,

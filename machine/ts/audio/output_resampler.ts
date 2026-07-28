@@ -24,7 +24,6 @@ export class AudioOutputResampler {
 		output: Int16Array,
 		frameCount: number,
 		outputSampleRate: number,
-		outputGain: number,
 	): number {
 		if (this.outputRate !== outputSampleRate) {
 			this.reset();
@@ -54,8 +53,8 @@ export class AudioOutputResampler {
 			}
 			const left = this.currentLeft + (this.nextLeft - this.currentLeft) * this.phase;
 			const right = this.currentRight + (this.nextRight - this.currentRight) * this.phase;
-			output[outputIndex] = Math.round(left * outputGain);
-			output[outputIndex + 1] = Math.round(right * outputGain);
+			output[outputIndex] = Math.round(left);
+			output[outputIndex + 1] = Math.round(right);
 			outputIndex += 2;
 			producedFrames += 1;
 			this.phase += sourceStep;

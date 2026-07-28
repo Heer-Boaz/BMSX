@@ -1425,9 +1425,9 @@ void retro_run(void) {
 	}
 
 	// Output audio
-	const auto& audio = g_platform->getAudioBuffer();
-	if (audio_batch_cb && audio.samples > 0) {
-		audio_batch_cb(audio.data, audio.samples);
+	const auto& audio = g_platform->audioOutput();
+	if (audio_batch_cb && audio.frameCount() > 0u) {
+		audio_batch_cb(audio.data(), audio.frameCount());
 	}
 }
 

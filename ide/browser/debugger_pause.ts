@@ -1,24 +1,23 @@
-import type { SoundMaster } from '../../machine/ts/audio/soundmaster';
+import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import { runGate } from '../../machine/ts/common/taskgate';
 import type { Input } from '../../machine/ts/input/manager';
 import { GAME_PAUSE_KEY } from '../common/constants';
 
 let debuggerControlsVisible = false;
 const DEBUGGER_PAUSE_CATEGORY = 'debugger-pause';
-const DEBUGGER_AUDIO_SUSPENSION = 'debugger';
 const pauseOverlay = document.createElement('div');
 pauseOverlay.id = 'pause-overlay';
 
-export function bindBrowserDebuggerPauseShortcut(input: Input, soundMaster: SoundMaster): void {
+export function bindBrowserDebuggerPauseShortcut(input: Input, audioOutput: HostAudioOutput): void {
 	input.getGlobalShortcutRegistry().registerKeyboardShortcut(1, GAME_PAUSE_KEY, () => {
-		toggleDebuggerControls(soundMaster);
+		toggleDebuggerControls(audioOutput);
 	});
 }
 
-function toggleDebuggerControls(soundMaster: SoundMaster): void {
+function toggleDebuggerControls(audioOutput: HostAudioOutput): void {
 	if (debuggerControlsVisible) {
 		runGate.endCategory(DEBUGGER_PAUSE_CATEGORY);
-		soundMaster.resumeAll(DEBUGGER_AUDIO_SUSPENSION);
+		audioOutput.muteDebugger(false);
 		hideDebuggerControls();
 	} else {
 		runGate.begin({
@@ -26,7 +25,7 @@ function toggleDebuggerControls(soundMaster: SoundMaster): void {
 			category: DEBUGGER_PAUSE_CATEGORY,
 			tag: DEBUGGER_PAUSE_CATEGORY,
 		});
-		soundMaster.suspendAll(DEBUGGER_AUDIO_SUSPENSION);
+		audioOutput.muteDebugger(true);
 		showDebuggerControls();
 	}
 }

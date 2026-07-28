@@ -869,9 +869,9 @@ void testResamplerChunkContinuityAndUnderrun() {
 	std::array<bmsx::i16, 34> splitFirst{};
 	std::array<bmsx::i16, 86> splitSecond{};
 	std::array<bmsx::i16, 120> batched{};
-	require(split.pull(splitRing, splitFirst.data(), splitFirst.size() / 2u, 48000, 0.75F) == splitFirst.size() / 2u, "first resampler chunk should be produced immediately");
-	require(split.pull(splitRing, splitSecond.data(), splitSecond.size() / 2u, 48000, 0.75F) == splitSecond.size() / 2u, "second resampler chunk should be complete");
-	require(batch.pull(batchRing, batched.data(), batched.size() / 2u, 48000, 0.75F) == batched.size() / 2u, "batched resampler pull should be complete");
+	require(split.pull(splitRing, splitFirst.data(), splitFirst.size() / 2u, 48000) == splitFirst.size() / 2u, "first resampler chunk should be produced immediately");
+	require(split.pull(splitRing, splitSecond.data(), splitSecond.size() / 2u, 48000) == splitSecond.size() / 2u, "second resampler chunk should be complete");
+	require(batch.pull(batchRing, batched.data(), batched.size() / 2u, 48000) == batched.size() / 2u, "batched resampler pull should be complete");
 	for (size_t index = 0u; index < splitFirst.size(); index += 1u) {
 		require(splitFirst[index] == batched[index], "resampler chunks should retain the same interpolation phase");
 	}
@@ -891,15 +891,15 @@ void testResamplerChunkContinuityAndUnderrun() {
 	bmsx::AudioOutputResampler reference;
 	std::array<bmsx::i16, (outputFramesPerPalFrame - 1u) * 2u> referenceFirst{};
 	std::array<bmsx::i16, outputFramesPerPalFrame * 2u> referenceSecond{};
-	require(reference.pull(referenceRing, referenceFirst.data(), referenceFirst.size() / 2u, 48000, 1.0F) == referenceFirst.size() / 2u, "reference PAL prefix should be complete");
-	require(reference.pull(referenceRing, referenceSecond.data(), referenceSecond.size() / 2u, 48000, 1.0F) == referenceSecond.size() / 2u, "reference second PAL frame should be complete");
+	require(reference.pull(referenceRing, referenceFirst.data(), referenceFirst.size() / 2u, 48000) == referenceFirst.size() / 2u, "reference PAL prefix should be complete");
+	require(reference.pull(referenceRing, referenceSecond.data(), referenceSecond.size() / 2u, 48000) == referenceSecond.size() / 2u, "reference second PAL frame should be complete");
 
 	bmsx::ApuOutputRing starvedRing;
 	starvedRing.write(palSource.data(), sourceFramesPerPalFrame, 0);
 	bmsx::AudioOutputResampler starved;
 	std::array<bmsx::i16, outputFramesPerPalFrame * 2u> starvedFirst{};
 	starvedFirst.fill(12345);
-	const size_t producedFirst = starved.pull(starvedRing, starvedFirst.data(), starvedFirst.size() / 2u, 48000, 1.0F);
+	const size_t producedFirst = starved.pull(starvedRing, starvedFirst.data(), starvedFirst.size() / 2u, 48000);
 	require(producedFirst == outputFramesPerPalFrame - 1u, "one PAL hardware frame should publish only its interpolable host frames");
 	for (size_t index = 0u; index < referenceFirst.size(); index += 1u) {
 		require(starvedFirst[index] == referenceFirst[index], "starved PAL output should match the uninterrupted prefix");
@@ -908,7 +908,7 @@ void testResamplerChunkContinuityAndUnderrun() {
 
 	starvedRing.write(palSource.data() + sourceFramesPerPalFrame * 2u, sourceFramesPerPalFrame, static_cast<bmsx::i64>(sourceFramesPerPalFrame));
 	std::array<bmsx::i16, outputFramesPerPalFrame * 2u> recoveredSecond{};
-	require(starved.pull(starvedRing, recoveredSecond.data(), recoveredSecond.size() / 2u, 48000, 1.0F) == recoveredSecond.size() / 2u, "resampler should resume with a complete second PAL frame");
+	require(starved.pull(starvedRing, recoveredSecond.data(), recoveredSecond.size() / 2u, 48000) == recoveredSecond.size() / 2u, "resampler should resume with a complete second PAL frame");
 	require(recoveredSecond == referenceSecond, "resampler should preserve interpolation phase across source starvation");
 }
 
@@ -918,7 +918,7 @@ void testResamplerDropsOverwrittenInterpolationEndpoints() {
 	ring.write(initial.data(), initial.size() / 2u, 0);
 	bmsx::AudioOutputResampler resampler;
 	std::array<bmsx::i16, 4> first{};
-	require(resampler.pull(ring, first.data(), 2u, 48000, 1.0F) == 2u, "initial output frames should be available");
+	require(resampler.pull(ring, first.data(), 2u, 48000) == 2u, "initial output frames should be available");
 	require(first[0] == 100 && first[1] == 100 && first[2] == 192 && first[3] == 192, "initial output should establish a non-zero fractional source phase");
 
 	std::array<bmsx::i16, bmsx::APU_OUTPUT_RING_CAPACITY_SAMPLES> retained{};
@@ -930,7 +930,7 @@ void testResamplerDropsOverwrittenInterpolationEndpoints() {
 	}
 	ring.write(retained.data(), bmsx::APU_OUTPUT_RING_CAPACITY_FRAMES, 3);
 	std::array<bmsx::i16, 2> afterOverwrite{};
-	require(resampler.pull(ring, afterOverwrite.data(), 1u, 48000, 1.0F) == 1u, "retained output frame should be available after overwrite");
+	require(resampler.pull(ring, afterOverwrite.data(), 1u, 48000) == 1u, "retained output frame should be available after overwrite");
 	require(afterOverwrite[0] == 1838 && afterOverwrite[1] == 1838, "resampler must discard stale endpoints while retaining only fractional output phase");
 }
 
@@ -944,7 +944,7 @@ void testOutputPresentationReachesPalHostAfterOneIdleSecond() {
 	harness.machine.audioController.onService(primeCycle);
 	bmsx::AudioOutputResampler hostOutput;
 	std::array<bmsx::i16, 2> primedOutput{};
-	require(hostOutput.pull(harness.machine.audioOutput.outputRing, primedOutput.data(), 1u, hostSampleRate, 1.0F) == 1u, "host resampler should prime from the initial silent DAC window");
+	require(hostOutput.pull(harness.machine.audioOutput.outputRing, primedOutput.data(), 1u, hostSampleRate) == 1u, "host resampler should prime from the initial silent DAC window");
 	require(primedOutput[0] == 0 && primedOutput[1] == 0, "initial DAC window should be silent");
 
 	const bmsx::i64 playCycle = primeCycle + cpuHz;
@@ -976,7 +976,7 @@ void testOutputPresentationReachesPalHostAfterOneIdleSecond() {
 	size_t publishedFrames = 0u;
 	size_t firstAudibleFrame = publicationBound;
 	while (publishedFrames < publicationBound && firstAudibleFrame == publicationBound) {
-		const size_t produced = hostOutput.pull(harness.machine.audioOutput.outputRing, output.data(), hostFramesPerPalFrame, hostSampleRate, 1.0F);
+		const size_t produced = hostOutput.pull(harness.machine.audioOutput.outputRing, output.data(), hostFramesPerPalFrame, hostSampleRate);
 		require(produced != 0u, "host drain should keep making progress through retained presentation");
 		for (size_t frame = 0u; frame < produced; frame += 1u) {
 			if (output[frame * 2u] != 0 || output[frame * 2u + 1u] != 0) {

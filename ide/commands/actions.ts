@@ -3,7 +3,7 @@ import { scheduleRuntimeTask } from '../common/background_tasks';
 import { applyAllWorkspaceSourceOverrides, applyLuaCodeTabSources } from '../workspace/workspace';
 import { workspaceDirtyRecords } from '../workbench/workspace/state';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import type { SoundMaster } from '../../machine/ts/audio/soundmaster';
+import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import type { Input } from '../../machine/ts/input/manager';
 import type {
 	LogOutput,
@@ -36,7 +36,7 @@ export function performEditorAction(
 	overlayRenderer: OverlayRenderer,
 	runtime: Runtime,
 	input: Input,
-	soundMaster: SoundMaster,
+	audioOutput: HostAudioOutput,
 	microtasks: MicrotaskQueue,
 	storage: StorageService,
 	logOutput: LogOutput,
@@ -52,7 +52,7 @@ export function performEditorAction(
 				overlayRenderer,
 				runtime,
 				input,
-				soundMaster,
+				audioOutput,
 				microtasks,
 				storage,
 				logOutput,
@@ -67,13 +67,13 @@ export function performEditorAction(
 				overlayRenderer,
 				runtime,
 				input,
-				soundMaster,
+				audioOutput,
 				microtasks,
 				storage,
 				logOutput,
 			);
 		case 'close':
-			deactivateEditor(editor, overlayRenderer, input, soundMaster);
+			deactivateEditor(editor, overlayRenderer, input, audioOutput);
 			return true;
 		case 'theme-toggle':
 			toggleThemeMode();
@@ -91,16 +91,16 @@ export function performHotResume(
 	overlayRenderer: OverlayRenderer,
 	runtime: Runtime,
 	input: Input,
-	soundMaster: SoundMaster,
+	audioOutput: HostAudioOutput,
 	microtasks: MicrotaskQueue,
 	storage: StorageService,
 	logOutput: LogOutput,
 ): boolean {
 	clearExecutionStopHighlights();
-	deactivateEditor(editor, overlayRenderer, input, soundMaster);
+	deactivateEditor(editor, overlayRenderer, input, audioOutput);
 	console.log('Performing hot resume.');
 	const pendingSources = capturePendingLuaCodeTabSources(sources);
-	scheduleRuntimeTask(microtasks, soundMaster, async () => {
+	scheduleRuntimeTask(microtasks, audioOutput, async () => {
 		await applyAllWorkspaceSourceOverrides(
 			storage,
 			sources,
@@ -134,15 +134,15 @@ export function performReboot(
 	overlayRenderer: OverlayRenderer,
 	runtime: Runtime,
 	input: Input,
-	soundMaster: SoundMaster,
+	audioOutput: HostAudioOutput,
 	microtasks: MicrotaskQueue,
 	storage: StorageService,
 	logOutput: LogOutput,
 ): boolean {
 	clearExecutionStopHighlights();
-	deactivateEditor(editor, overlayRenderer, input, soundMaster);
+	deactivateEditor(editor, overlayRenderer, input, audioOutput);
 	const pendingSources = capturePendingLuaCodeTabSources(sources);
-	scheduleRuntimeTask(microtasks, soundMaster, async () => {
+	scheduleRuntimeTask(microtasks, audioOutput, async () => {
 		console.info('[IDE] Performing cold reboot through bootrom');
 		applyLuaCodeTabSources(sources, pendingSources);
 		await rebootPreparedRuntime(
@@ -154,7 +154,7 @@ export function performReboot(
 			overlayRenderer,
 			runtime,
 			input,
-			soundMaster,
+			audioOutput,
 			storage,
 			logOutput,
 		);

@@ -2,7 +2,6 @@ import {
 	MachineManager,
 	type MachineInitializationOptions,
 } from '../machine/ts/core/machine_manager';
-import { SoundMaster } from '../machine/ts/audio/soundmaster';
 import { renderGate, runGate } from '../machine/ts/common/taskgate';
 import type { Runtime } from '../machine/ts/machine/runtime/runtime';
 import { captureRuntimeSaveStateBytes } from '../machine/ts/machine/runtime/save_state/codec';
@@ -13,13 +12,12 @@ import { LogLevel, type Platform } from '../machine/ts/platform/platform';
 import { RenderPassLibrary } from '../machine/ts/render/backend/pass/library';
 import { Font } from '../machine/ts/render/shared/bmsx_font';
 import { VideoPresenter } from '../machine/ts/render/video_presenter';
-import { HZ_SCALE } from '../machine/ts/machine/runtime/timing/constants';
 import { SYS_PRINT_BUFFER_BYTES } from '../machine/ts/spec/bmsx/io';
+import { HostAudioOutput } from '../hosts/common/audio_output';
 import { HostOverlayMenu } from './host_overlay_menu';
 import { runMachineHostFrame } from './host_frame';
 import { RenderPresentationState } from './presentation_state';
 
-const DEFAULT_MASTER_VOLUME = 1;
 const systemOutputDecoder = new TextDecoder('utf-8', { fatal: true });
 
 export interface MachineHostInitializationOptions extends MachineInitializationOptions {
@@ -32,7 +30,7 @@ export class MachineHost {
 	public running = false;
 	public hostFps = 0;
 	private pausedState = false;
-	private audioUfpsScaled: number;
+	public readonly audioOutput: HostAudioOutput;
 	private readonly systemOutputBytes = new Uint8Array(SYS_PRINT_BUFFER_BYTES);
 
 	public constructor(
@@ -40,10 +38,14 @@ export class MachineHost {
 		public readonly platform: Platform,
 		public readonly presenter: VideoPresenter,
 		public readonly input: Input,
-		public readonly soundMaster: SoundMaster,
 	) {
-		this.audioUfpsScaled = this.runtime.timing.ufpsScaled;
-		this.platform.audio.setFrameTimeSec(HZ_SCALE / this.audioUfpsScaled);
+		const runtime = this.runtime;
+		this.audioOutput = new HostAudioOutput(
+			platform.audio,
+			runtime.machine.audioController,
+			runtime.machine.audioOutput.outputRing,
+			runtime.timing.ufpsScaled,
+		);
 	}
 
 	public get runtime(): Runtime {
@@ -59,11 +61,7 @@ export class MachineHost {
 			return;
 		}
 		this.pausedState = value;
-		if (value) {
-			this.soundMaster.pause();
-		} else {
-			this.soundMaster.resume();
-		}
+		this.audioOutput.mutePause(value);
 	}
 
 	public start(): void {
@@ -114,24 +112,6 @@ export class MachineHost {
 		}
 	}
 
-	public syncRuntimeAudioTiming(): void {
-		if (this.runtime.timing.ufpsScaled === this.audioUfpsScaled) {
-			return;
-		}
-		this.syncAudioTiming();
-	}
-
-	public bootstrapStartupAudio(): void {
-		if (!this.platform.audio.available) {
-			return;
-		}
-		this.syncAudioTiming();
-		this.soundMaster.bootstrapRuntimeAudio(
-			this.runtime.timing.ufpsScaled,
-			DEFAULT_MASTER_VOLUME,
-		);
-	}
-
 	public async captureRuntimeSaveStateBytes(): Promise<Uint8Array> {
 		const renderToken = renderGate.begin({ blocking: true, tag: 'save-state-capture' });
 		const runToken = runGate.begin({ blocking: true, tag: 'save-state-capture' });
@@ -144,12 +124,6 @@ export class MachineHost {
 		}
 	}
 
-	private syncAudioTiming(): void {
-		const ufpsScaled = this.runtime.timing.ufpsScaled;
-		this.platform.audio.setFrameTimeSec(HZ_SCALE / ufpsScaled);
-		this.soundMaster.setMixerUfpsScaled(ufpsScaled);
-		this.audioUfpsScaled = ufpsScaled;
-	}
 }
 
 export async function initializeMachineHost(
@@ -188,17 +162,11 @@ export async function initializeMachineHost(
 	presenter.viewportScale = dimensions.viewportScale;
 	presenter.canvasScale = dimensions.canvasScale;
 	presenter.initializeDefaultTextures();
-	const soundMaster = new SoundMaster(
-		options.platform.audio,
-		runtime.machine.audioController,
-		runtime.machine.audioOutput.outputRing,
-	);
 	const host = new MachineHost(
 		machineManager,
 		options.platform,
 		presenter,
 		input,
-		soundMaster,
 	);
 	return host;
 }
@@ -211,7 +179,7 @@ export async function prepareMachineHost(
 	runtime.resetForSystemBoot();
 	runtime.boot();
 	host.flushSystemOutput();
-	host.bootstrapStartupAudio();
+	host.audioOutput.bootstrap();
 	return host;
 }
 

@@ -86,6 +86,11 @@
 			"reason": "host_platform_not_core"
 		},
 		{
+			"pattern": "hosts/common/audio_output.ts",
+			"category": "host",
+			"reason": "ts_browser_audio_context_and_ide_mute_lifecycle; libretro_frontend_owns_host_lifecycle_outside_the_cpp_machine_runtime"
+		},
+		{
 			"pattern": "machine/ts/audio/**",
 			"category": "host",
 			"reason": "host_audio_not_core"

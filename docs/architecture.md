@@ -2702,9 +2702,10 @@ The former AOUT occupancy MMIO words remain reserved address holes so the later
 APU register addresses do not move; APU status exposes command FIFO state, not
 host queue occupancy.
 
-`audio/SoundMaster` owns host master gain and the retained
-44.1-kHz-to-host-rate resampler. Browser and libretro transports request bounded
-chunks without choosing APU time or changing device cadence. Resampler phase
+`audio/AudioOutputResampler` owns retained 44.1-kHz-to-host-rate conversion.
+Browser and libretro output owners retain one resampler and own target buffering
+and underrun policy. They request bounded chunks without
+choosing APU time or changing device cadence. Resampler phase
 and boundary samples persist across callbacks and source starvation. If AOUT
 has overwritten the sequence following a retained interpolation endpoint, the
 resampler starts at the oldest still-present frame without resetting the
@@ -2721,6 +2722,14 @@ the frontend batch callback. Buffer targets and underrun policy therefore stay
 at the actual host transport rather than accumulating another frame of hidden
 machine-output latency. Clearing or underrunning host transport can produce
 silence only; it cannot backpressure the APU.
+
+`hosts/common/HostAudioOutput` owns the TypeScript browser/Node transport
+lifecycle and nested pause, Studio, debugger, and system-task mute reasons.
+Libretro has no browser audio context or Studio lifecycle:
+`hosts/libretro/LibretroAudioOutput` owns its frontend frame batch and fractional
+sample accumulator. This host-specific lifecycle difference stays outside the
+mirrored machine runtime; the resampler and APU/AOUT representations remain
+mirrored.
 
 Save-state first synchronizes the unified APU clock domain to the scheduler cycle, then
 captures the command FIFO, raw slot bank, internal sample-RAM and transfer unit,

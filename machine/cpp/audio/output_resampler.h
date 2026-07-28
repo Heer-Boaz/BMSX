@@ -15,8 +15,7 @@ public:
 		ApuOutputRing& ring,
 		i16* output,
 		size_t frameCount,
-		i32 outputSampleRate,
-		f32 outputGain
+		i32 outputSampleRate
 	) -> size_t;
 
 private:

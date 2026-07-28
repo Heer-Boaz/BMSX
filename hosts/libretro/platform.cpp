@@ -35,8 +35,6 @@
 namespace bmsx {
 namespace {
 constexpr double kFrameSpikeMultiplier = 1.2;
-constexpr size_t kAudioReserveVideoFrames = 10;
-constexpr size_t kAudioReserveFrames = static_cast<size_t>(DEFAULT_LIBRETRO_AUDIO_SAMPLE_RATE * static_cast<double>(HZ_SCALE) / static_cast<double>(PAL_REFRESH_UFPS_SCALED)) * kAudioReserveVideoFrames;
 constexpr const char* kReleaseSystemRomName = "bmsx-bios.rom";
 constexpr const char* kDebugSystemRomName = "bmsx-bios.debug.rom";
 constexpr const char* kDebugRomSuffix = ".debug.rom";
@@ -207,8 +205,6 @@ LibretroPlatform::LibretroPlatform(
 		static_cast<unsigned>(gxGpuVerticalVisibleLines(GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD, GX_GPU_RESET_DISPLAY_MODE_WORD))
 	);
 
-	m_audio_buffer.reserve(kAudioReserveFrames);
-
 	// Create platform components
 	m_clock = std::make_unique<LibretroHostClock>();
 	m_frame_loop = std::make_unique<LibretroFrameLoop>();
@@ -218,7 +214,6 @@ LibretroPlatform::LibretroPlatform(
 	m_input_focus_subscription = m_lifecycle->onFocusChange([this](bool) {
 		m_host_overlay_menu.resetInputState();
 	});
-	m_audio_service = std::make_unique<LibretroAudioService>(m_sound_master);
 	m_video_output = std::make_unique<LibretroVideoOutput>(
 		m_framebuffer,
 		m_backend_type,
@@ -369,7 +364,7 @@ void LibretroPlatform::setAVInfo(const retro_system_av_info& info) {
 		m_video_presenter->setRenderTargetSize(static_cast<i32>(baseWidth), static_cast<i32>(baseHeight));
 	}
 
-	m_audio_service->setTiming(info.timing.sample_rate);
+	m_audio_output.setSampleRate(info.timing.sample_rate);
 }
 
 void LibretroPlatform::setCrtEffectOptions(bool applyNoise,
@@ -593,8 +588,7 @@ void LibretroPlatform::reset() {
 }
 
 void LibretroPlatform::activateLoadedRuntime(Runtime& runtime) {
-	m_audio_service->resetQueue();
-	m_audio_buffer.clear();
+	m_audio_output.resetPlayback();
 	m_screen.reset(*m_video_presenter, runtime);
 	syncAudioTiming(runtime);
 	runtime.frameScheduler.clearQueuedTime();
@@ -604,7 +598,8 @@ void LibretroPlatform::activateLoadedRuntime(Runtime& runtime) {
 
 void LibretroPlatform::syncAudioTiming(Runtime& runtime) {
 	m_audio_ufps_scaled = runtime.timing.ufpsScaled;
-	m_sound_master.setMixerUfpsScaled(m_audio_ufps_scaled);
+	m_audio_output.setEmulationFrameTimeSec(
+		static_cast<f64>(HZ_SCALE) / static_cast<f64>(m_audio_ufps_scaled));
 }
 
 void LibretroPlatform::syncRuntimeAudioTiming(Runtime& runtime) {
@@ -615,9 +610,6 @@ void LibretroPlatform::syncRuntimeAudioTiming(Runtime& runtime) {
 
 bool LibretroPlatform::runFrame() {
 	if (!m_rom_loaded) return false;
-
-	// Clear audio buffer
-	m_audio_buffer.clear();
 
 	const f64 dt = m_frame_time_sec;
 
@@ -640,7 +632,7 @@ bool LibretroPlatform::runFrame() {
 	}
 	flushSystemOutput(runtime);
 	syncRuntimeAudioTiming(runtime);
-	m_audio_service->collectSamples(runtime.machine.audioController, m_audio_buffer);
+	m_audio_output.collectFrame(runtime.machine.audioController);
 	return presented;
 }
 
@@ -743,8 +735,7 @@ bool LibretroPlatform::loadState(const void* data, size_t size) {
 			return false;
 		}
 		applyRuntimeSaveStateBytes(runtime, envelope + kSaveStateHeaderBytes, payloadBytes);
-		m_audio_service->resetQueue();
-		m_audio_buffer.clear();
+		m_audio_output.resetPlayback();
 		return true;
 	}
 	catch (const std::exception& error) {
@@ -1084,43 +1075,6 @@ void LibretroInputHub::resetState() {
 
 SubscriptionHandle LibretroInputHub::subscribe(std::function<void(const InputEvt&)> handler) {
 	return addSubscriptionHandler(m_handlers, m_next_handler_id, std::move(handler));
-}
-
-/* ============================================================================
- * LibretroAudioService implementation
- * ============================================================================ */
-
-LibretroAudioService::LibretroAudioService(SoundMaster& soundMaster)
-	: m_sound_master(soundMaster) {
-}
-
-void LibretroAudioService::setTiming(double sampleRate) {
-	m_sample_rate = sampleRate;
-	m_sample_accumulator = 0.0;
-}
-
-void LibretroAudioService::resetQueue() {
-	m_sample_accumulator = 0.0;
-	m_sound_master.resetPlaybackState();
-}
-
-void LibretroAudioService::collectSamples(AudioController& audioController, AudioBuffer& buffer) {
-	const double samplesPerFrame = m_sample_rate * m_sound_master.mixFrameTimeSec();
-	m_sample_accumulator += samplesPerFrame;
-	const size_t frames = static_cast<size_t>(m_sample_accumulator);
-	if (frames == 0) {
-		buffer.clear();
-		return;
-	}
-	m_sample_accumulator -= frames;
-
-	int16_t* output = buffer.beginWrite(frames);
-	buffer.samples = m_sound_master.pullOutputFrames(
-		audioController,
-		output,
-		frames,
-		static_cast<i32>(m_sample_rate)
-	);
 }
 
 /* ============================================================================

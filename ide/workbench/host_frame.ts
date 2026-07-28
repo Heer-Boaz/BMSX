@@ -37,7 +37,7 @@ function executeWorkbenchHostMenuAction(
 				ide.overlayRenderer,
 				runtime,
 				host.input,
-				host.soundMaster,
+				host.audioOutput,
 				host.platform.storage,
 				host.platform,
 			).then(() => {
