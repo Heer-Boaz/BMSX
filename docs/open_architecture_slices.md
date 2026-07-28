@@ -4,13 +4,6 @@ Dit bestand is alleen de werkvoorraad. Afgeronde hardwarecontracten horen in
 [`architecture.md`](architecture.md); testuitslagen en implementatiegeschiedenis
 horen niet in deze lijst.
 
-## Bewezen solutiongrenzen
-
-| ID | Opdracht | Klaar wanneer |
-| --- | --- | --- |
-| `NATIVE-MEDIA-01` | Verwijder bestandspaden, mmap en bytebuffer-eigendom uit de C++ `MachineManager`. De libretro-host behoudt de backing storage; de machine consumeert uitsluitend stabiele ROM-byteviews, gelijk aan de TypeScript-initialisatiegrens. | `MachineManager` importeert geen file- of mmap-owner, heeft geen path-load-API en kopieert geen hostmedia. Reboot en source-aware diagnostics blijven dezelfde fysieke bytes gebruiken zonder extra kopie. |
-| `NATIVE-TARGET-01` | Splits de native CMake-linkgrens: `bmsx_core` bevat alleen machine/runtime en de lage wire-formatdependencies; platform, host-input, output-resampling, presentatie, overlays en GLES2 leven in een host-supporttarget boven de core. | De core archive bevat geen host/platform/render/input/audio-transport/mmap objecten en linkt geen GLES2, `dl` of zlib voor hostpresentatie. Libretro, de directe host en diagnostics behouden alle huidige features door expliciete compositie boven `bmsx_core`. |
-
 ## Doorlopende performance-audit
 
 | ID | Opdracht | Klaar wanneer |

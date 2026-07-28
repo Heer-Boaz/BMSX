@@ -339,12 +339,18 @@ Current artifact roles:
   shared by machine and tooling products. They own the binary codec and physical
   ROM header/image admission respectively; neither depends on the machine core.
 - `libbmsx.a` in its CMake build tree: C++ machine/runtime static library. It
-  retains physical ROM bytes and executable-image decode state, but does not
+  retains stable physical-ROM byte views and executable-image decode state, but
+  owns no path, file mapping or copied host-media buffer and does not
   compile ROM TOC/manifest/asset package loading, Lua module-path tooling, the
   Lua source lexer/parser, BLua32 source-range extraction, symbol sidecars,
   disassembly, or formatted fault presentation. Its CMake target depends only on
   the lower wire-format targets, never on either tooling target. Build trees
   never share this target-specific archive.
+- `bmsx_host_support`: native host/platform support above `libbmsx.a`. It owns
+  host input mapping, output resampling, presentation, overlays, software/GLES2
+  render backends, file mapping, and their platform dependencies. Libretro
+  composes this target with `bmsx_core`; none of these objects or link
+  dependencies enter the core archive.
 - `bmsx_rom_tooling` in native diagnostics/tests builds: decoded ROM
   TOC/manifest/asset packages and module-path tooling. It depends only on the
   lower wire-format targets; neither it nor its consumers acquire the machine

@@ -219,23 +219,9 @@ endforeach()
 # =============================================================================
 
 add_library(bmsx_core STATIC
-	# Platform abstraction
-	platform/platform.cpp
-	common/subscription.cpp
-
-	# Core systems
-	common/vector.cpp
 	core/machine_manager.cpp
-	render/host_overlay/atlas.cpp
-	render/host_overlay/atlas.generated.cpp
-	render/shared/bitmap_font.cpp
-	common/taskgate.cpp
-	common/byte_hex_string.cpp
-	common/mmap_file.cpp
 	common/scratchbuffer.cpp
 
-	# Audio systems
-	audio/output_resampler.cpp
 	machine/devices/audio/active_slots.cpp
 	machine/devices/audio/badp_decoder.cpp
 	machine/devices/audio/biquad_filter.cpp
@@ -257,30 +243,6 @@ add_library(bmsx_core STATIC
 	machine/devices/audio/output.cpp
 	machine/devices/audio/save_state.cpp
 
-	# Input systems
-	input/manager.cpp
-
-	# Render systems
-	render/backend/backend.cpp
-	render/backend/software/gx_gpu.cpp
-	render/backend/software/gx_gpu_commands.cpp
-	render/backend/software/gx_gpu_rasterizer.cpp
-	render/backend/software/gx_gpu_scanout.cpp
-	render/backend/software/gx_gpu_vram.cpp
-	render/video_presenter.cpp
-	render/post/crt/software/pipeline.cpp
-	render/post/crt/software/crt_processor.cpp
-	render/post/device_quantize/lut.cpp
-	render/post/device_quantize/software/pipeline.cpp
-	render/backend/frame_uniforms.cpp
-	render/host_overlay/pipeline.cpp
-	render/host_overlay/overlay_queue.cpp
-	render/host_overlay/software/renderer.cpp
-	render/host_overlay/gles2/pipeline.cpp
-	render/backend/pass/library.cpp
-	render/graph/graph.cpp
-
-	# Machine runtime (Lua bytecode interpreter)
 	machine/cpu/cpu.cpp
 	machine/cpu/lua_heap.cpp
 	machine/cpu/table.cpp
@@ -288,7 +250,6 @@ add_library(bmsx_core STATIC
 	machine/execution_address_space.cpp
 	spec/blua32/opcode.cpp
 	spec/blua32/instruction_format.cpp
-	render/shared/bmsx_font.cpp
 	machine/devices/cartridge/controller.cpp
 	machine/devices/dma/controller.cpp
 	machine/devices/imgdec/controller.cpp
@@ -348,12 +309,6 @@ set_target_properties(bmsx_core PROPERTIES
 target_include_directories(bmsx_core PUBLIC
 	${CMAKE_CURRENT_SOURCE_DIR}
 	${CMAKE_CURRENT_SOURCE_DIR}/..
-	${CMAKE_CURRENT_BINARY_DIR}/generated
-)
-
-target_compile_definitions(bmsx_core PUBLIC
-	BMSX_ENABLE_GLES2=$<BOOL:${BMSX_ENABLE_GLES2}>
-	BMSX_ENABLE_ZLIB=$<BOOL:${BMSX_ENABLE_ZLIB}>
 )
 
 target_link_libraries(bmsx_core PUBLIC
@@ -361,8 +316,61 @@ target_link_libraries(bmsx_core PUBLIC
 	bmsx_rom_image
 )
 
+# =============================================================================
+# Native host support (static)
+# =============================================================================
+
+add_library(bmsx_host_support STATIC
+	platform/platform.cpp
+	common/subscription.cpp
+	common/vector.cpp
+	common/taskgate.cpp
+	common/byte_hex_string.cpp
+	common/mmap_file.cpp
+	audio/output_resampler.cpp
+	input/manager.cpp
+	render/backend/backend.cpp
+	render/backend/software/gx_gpu.cpp
+	render/backend/software/gx_gpu_commands.cpp
+	render/backend/software/gx_gpu_rasterizer.cpp
+	render/backend/software/gx_gpu_scanout.cpp
+	render/backend/software/gx_gpu_vram.cpp
+	render/backend/frame_uniforms.cpp
+	render/backend/pass/library.cpp
+	render/graph/graph.cpp
+	render/host_overlay/atlas.cpp
+	render/host_overlay/atlas.generated.cpp
+	render/host_overlay/pipeline.cpp
+	render/host_overlay/overlay_queue.cpp
+	render/host_overlay/software/renderer.cpp
+	render/host_overlay/gles2/pipeline.cpp
+	render/post/crt/software/pipeline.cpp
+	render/post/crt/software/crt_processor.cpp
+	render/post/device_quantize/lut.cpp
+	render/post/device_quantize/software/pipeline.cpp
+	render/shared/bitmap_font.cpp
+	render/shared/bmsx_font.cpp
+	render/video_presenter.cpp
+)
+
+set_target_properties(bmsx_host_support PROPERTIES
+	POSITION_INDEPENDENT_CODE ON
+)
+
+target_include_directories(bmsx_host_support PUBLIC
+	${CMAKE_CURRENT_SOURCE_DIR}
+	${CMAKE_CURRENT_SOURCE_DIR}/..
+	${CMAKE_CURRENT_BINARY_DIR}/generated
+)
+
+target_compile_definitions(bmsx_host_support PUBLIC
+	BMSX_ENABLE_GLES2=$<BOOL:${BMSX_ENABLE_GLES2}>
+)
+
+target_link_libraries(bmsx_host_support PUBLIC bmsx_core)
+
 if(BMSX_ENABLE_GLES2)
-	target_sources(bmsx_core PRIVATE
+	target_sources(bmsx_host_support PRIVATE
 		render/backend/gles2/backend.cpp
 		render/backend/gles2/fullscreen_quad.cpp
 		render/backend/gles2/gx_gpu.cpp
@@ -370,14 +378,10 @@ if(BMSX_ENABLE_GLES2)
 		render/post/device_quantize/gles2/pipeline.cpp
 	)
 	find_library(GLESV2_LIBRARY GLESv2 REQUIRED)
-	target_link_libraries(bmsx_core PUBLIC ${GLESV2_LIBRARY})
+	target_link_libraries(bmsx_host_support PUBLIC ${GLESV2_LIBRARY})
 	if(UNIX AND NOT APPLE)
-		target_link_libraries(bmsx_core PUBLIC dl)
+		target_link_libraries(bmsx_host_support PUBLIC dl)
 	endif()
-endif()
-
-if(BMSX_ENABLE_ZLIB)
-	target_link_libraries(bmsx_core PUBLIC ZLIB::ZLIB)
 endif()
 
 # =============================================================================
@@ -441,7 +445,7 @@ if(BMSX_BUILD_LIBRETRO)
 		${BMSX_LIBRETRO_DIR}/entry.cpp
 	)
 
-	target_link_libraries(bmsx_libretro PRIVATE bmsx_core bmsx_blua32_tooling)
+	target_link_libraries(bmsx_libretro PRIVATE bmsx_host_support bmsx_blua32_tooling)
 	if(UNIX AND NOT APPLE AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 		target_link_options(bmsx_libretro PRIVATE
 			"-Wl,--no-undefined"
@@ -612,19 +616,19 @@ if(BMSX_BUILD_TESTS)
 	add_executable(bmsx_gx_gpu_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/gx_gpu_test.cpp
 	)
-	target_link_libraries(bmsx_gx_gpu_tests PRIVATE bmsx_core)
+	target_link_libraries(bmsx_gx_gpu_tests PRIVATE bmsx_host_support)
 	add_test(NAME bmsx_gx_gpu_tests COMMAND bmsx_gx_gpu_tests)
 
 	add_executable(bmsx_device_quantize_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/device_quantize_test.cpp
 	)
-	target_link_libraries(bmsx_device_quantize_tests PRIVATE bmsx_core)
+	target_link_libraries(bmsx_device_quantize_tests PRIVATE bmsx_host_support)
 	add_test(NAME bmsx_device_quantize_tests COMMAND bmsx_device_quantize_tests)
 
 	add_executable(bmsx_host_system_atlas_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/host_system_atlas_test.cpp
 	)
-	target_link_libraries(bmsx_host_system_atlas_tests PRIVATE bmsx_core)
+	target_link_libraries(bmsx_host_system_atlas_tests PRIVATE bmsx_host_support)
 	add_test(NAME bmsx_host_system_atlas_tests COMMAND bmsx_host_system_atlas_tests)
 
 	add_executable(bmsx_dma_controller_tests
@@ -655,7 +659,7 @@ if(BMSX_BUILD_TESTS)
 	add_executable(bmsx_audio_controller_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/audio_controller_test.cpp
 	)
-	target_link_libraries(bmsx_audio_controller_tests PRIVATE bmsx_core)
+	target_link_libraries(bmsx_audio_controller_tests PRIVATE bmsx_host_support)
 	add_test(NAME bmsx_audio_controller_tests COMMAND bmsx_audio_controller_tests)
 
 	add_executable(bmsx_memory_bus_fault_tests
@@ -687,7 +691,7 @@ if(BMSX_BUILD_TESTS)
 	add_executable(bmsx_host_overlay_queue_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/host_overlay_queue_test.cpp
 	)
-	target_link_libraries(bmsx_host_overlay_queue_tests PRIVATE bmsx_core)
+	target_link_libraries(bmsx_host_overlay_queue_tests PRIVATE bmsx_host_support)
 	add_test(NAME bmsx_host_overlay_queue_tests COMMAND bmsx_host_overlay_queue_tests)
 
 	add_executable(bmsx_libretro_save_state_tests
@@ -696,7 +700,7 @@ if(BMSX_BUILD_TESTS)
 		${BMSX_TEST_ROM_SOURCE}
 		${BMSX_LIBRETRO_PLATFORM_SOURCES}
 	)
-	target_link_libraries(bmsx_libretro_save_state_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+	target_link_libraries(bmsx_libretro_save_state_tests PRIVATE bmsx_host_support bmsx_blua32_tooling)
 	target_include_directories(bmsx_libretro_save_state_tests PRIVATE
 		${BMSX_LIBRETRO_DIR}
 	)
@@ -709,7 +713,7 @@ if(BMSX_BUILD_TESTS)
 		${BMSX_LIBRETRO_DIR}/entry.cpp
 		${BMSX_LIBRETRO_PLATFORM_SOURCES}
 	)
-	target_link_libraries(bmsx_libretro_environment_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+	target_link_libraries(bmsx_libretro_environment_tests PRIVATE bmsx_host_support bmsx_blua32_tooling)
 	target_include_directories(bmsx_libretro_environment_tests PRIVATE
 		${BMSX_LIBRETRO_DIR}
 	)
@@ -719,7 +723,7 @@ if(BMSX_BUILD_TESTS)
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/cartridge_conformance_runner.cpp
 		${BMSX_LIBRETRO_PLATFORM_SOURCES}
 	)
-	target_link_libraries(bmsx_cartridge_conformance_runner PRIVATE bmsx_core bmsx_blua32_tooling)
+	target_link_libraries(bmsx_cartridge_conformance_runner PRIVATE bmsx_host_support bmsx_blua32_tooling)
 	target_include_directories(bmsx_cartridge_conformance_runner PRIVATE
 		${BMSX_LIBRETRO_DIR}
 	)
@@ -729,7 +733,7 @@ if(BMSX_BUILD_TESTS)
 			${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_hw_context_test.cpp
 			${BMSX_LIBRETRO_PLATFORM_SOURCES}
 		)
-		target_link_libraries(bmsx_libretro_hw_context_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+		target_link_libraries(bmsx_libretro_hw_context_tests PRIVATE bmsx_host_support bmsx_blua32_tooling)
 		target_include_directories(bmsx_libretro_hw_context_tests PRIVATE
 			${BMSX_LIBRETRO_DIR}
 		)
@@ -745,6 +749,7 @@ install(TARGETS
 	bmsx_binary_codec
 	bmsx_rom_image
 	bmsx_core
+	bmsx_host_support
 	ARCHIVE DESTINATION lib
 	LIBRARY DESTINATION lib
 )
