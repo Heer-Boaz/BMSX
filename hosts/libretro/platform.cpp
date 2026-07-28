@@ -439,12 +439,7 @@ void LibretroPlatform::loadSystemRom(const char* romPath) {
 			return;
 		}
 	}
-
-	for (const auto& path : systemRomPaths) {
-		if (!path.empty()) {
-			log(RETRO_LOG_INFO, "[BMSX] No system ROM found at: %s (continuing without)\n", path.c_str());
-		}
-	}
+	log(RETRO_LOG_ERROR, "[BMSX] No system ROM found\n");
 }
 
 bool LibretroPlatform::loadRomFromPath(const char* path) {
@@ -509,23 +504,17 @@ bool LibretroPlatform::loadEmptyCart() {
 	}
 
 	if (!systemRomLoaded) {
-		for (const auto& path : systemRomPaths) {
-			log(RETRO_LOG_INFO, "[BMSX] No system ROM found at: %s\n", path.c_str());
-		}
-		log(RETRO_LOG_WARN, "[BMSX] No system ROM found, running without system firmware\n");
+		log(RETRO_LOG_ERROR, "[BMSX] No system ROM found\n");
+		return false;
 	}
 
 	// Boot system ROM (runs bootrom.lua)
-	if (systemRomLoaded && m_machine_manager && m_machine_manager->bootWithoutCart()) {
-		flushSystemOutput(m_machine_manager->runtime());
-		log(RETRO_LOG_INFO, "[BMSX] Booted system ROM firmware\n");
-		m_rom_loaded = true;
-		return true;
+	if (!m_machine_manager->bootWithoutCart()) {
+		return false;
 	}
-
-	// Fallback: just mark as loaded to show test pattern
+	flushSystemOutput(m_machine_manager->runtime());
+	log(RETRO_LOG_INFO, "[BMSX] Booted system ROM firmware\n");
 	m_rom_loaded = true;
-	log(RETRO_LOG_INFO, "[BMSX] Empty cart loaded (test pattern mode)\n");
 	return true;
 }
 
