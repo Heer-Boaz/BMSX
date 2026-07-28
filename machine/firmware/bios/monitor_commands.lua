@@ -49,16 +49,6 @@ local exception_code_trap<const> = 13
 local exception_nmi<const> = 0xfffffffb
 local exception_unknown<const> = 0xfffffffa
 
-local lua_fault_reason_call_non_function<const> = 1
-local lua_fault_reason_index_non_table<const> = 2
-local lua_fault_reason_assign_non_table<const> = 3
-local lua_fault_reason_index_nil<const> = 4
-local lua_fault_reason_metatable_loop<const> = 5
-local lua_fault_reason_iterate_non_table<const> = 6
-local lua_fault_reason_xpcall_handler_not_function<const> = 7
-local lua_fault_reason_explicit_error<const> = 8
-local lua_fault_reason_out_of_memory<const> = 9
-
 struct monitor_command
 	name: string
 	usage: string
@@ -91,34 +81,9 @@ rodata exception_registry: monitor_exception[] = {
 	{ code = exception_code_trap, mnemonic = 'TRAP', description = 'LUA RUNTIME FAULT', has_bad_address = 0 },
 }
 
-struct lua_fault_reason_entry
-	code: u8
-	description: string
-end
-
-rodata lua_fault_reason_registry: lua_fault_reason_entry[] = {
-	{ code = lua_fault_reason_call_non_function, description = 'ATTEMPT TO CALL A NON-FUNCTION VALUE' },
-	{ code = lua_fault_reason_index_non_table, description = 'ATTEMPT TO INDEX A NON-TABLE VALUE' },
-	{ code = lua_fault_reason_assign_non_table, description = 'ATTEMPT TO ASSIGN TO A NON-TABLE VALUE' },
-	{ code = lua_fault_reason_index_nil, description = 'TABLE INDEX IS NIL' },
-	{ code = lua_fault_reason_metatable_loop, description = 'METATABLE __INDEX LOOP DETECTED' },
-	{ code = lua_fault_reason_iterate_non_table, description = 'ATTEMPT TO ITERATE A NON-TABLE VALUE' },
-	{ code = lua_fault_reason_xpcall_handler_not_function, description = 'XPCALL ERROR HANDLER MUST BE A FUNCTION' },
-	{ code = lua_fault_reason_explicit_error, description = 'UNHANDLED error() CALL' },
-	{ code = lua_fault_reason_out_of_memory, description = 'OUT OF MEMORY' },
-}
-
-local lua_fault_reason_description<const> = function(reason) -- WHY DO WE NEED TO LOOP THROUGH THE TABLE?
-	for index = 0, #lua_fault_reason_registry - 1 do
-		if lua_fault_reason_registry[index].code == reason then
-			return lua_fault_reason_registry[index].description
-		end
-	end
-	return 'UNKNOWN'
-end
-
 bss monitor_command_producer: word
 bss monitor_command_cursor: word
+bss monitor_command_text_offset: word
 bss monitor_command_value: word
 bss monitor_command_address: word
 bss monitor_command_remaining: word
@@ -140,6 +105,9 @@ bss monitor_fault_lua_fault_reason: word
 bss monitor_fault_exception: word
 bss monitor_fault_has_bad_address: word
 bss monitor_fault_has_lua_fault_reason: word
+
+local monitor_entry_lua_fault_message
+local monitor_fault_lua_fault_message
 
 monitor_commands.action_none = action_none
 monitor_commands.action_output = action_output
@@ -309,6 +277,16 @@ local write_text<const> = function(row, column, text, palette)
 	return column
 end
 
+local write_text_slice<const> = function(row, column, text, offset, palette)
+	local target<const>: *word = row
+	while column < terminal_columns and offset < #text do
+		target[column] = byte(text, offset + 1) | (palette << 8)
+		column = column + 1
+		offset = offset + 1
+	end
+	return offset
+end
+
 local write_hex<const> = function(row, column, value, palette)
 	local target<const>: *word = row
 	for shift = 28, 0, -4 do
@@ -343,7 +321,7 @@ local arguments_end<const> = function(line, index, length)
 	return skip_spaces(line, index, length) == length
 end
 
-function monitor_commands.open(status, cause, epc, bad_address, lua_fault_reason, irq_mask)
+function monitor_commands.open(status, cause, epc, bad_address, lua_fault_reason, irq_mask, error_value)
 	*monitor_entry_status = status
 	*monitor_entry_cause = cause
 	*monitor_entry_epc = epc
@@ -357,6 +335,11 @@ function monitor_commands.open(status, cause, epc, bad_address, lua_fault_reason
 		*monitor_entry_has_bad_address = exception_registry[exception].has_bad_address
 		*monitor_entry_has_lua_fault_reason = exception_registry[exception].code == exception_code_trap and 1 or 0
 	end
+	if *monitor_entry_has_lua_fault_reason ~= 0 then
+		monitor_entry_lua_fault_message = type(error_value) == 'string' and error_value or tostring(error_value)
+	else
+		monitor_entry_lua_fault_message = nil
+	end
 	if exception ~= exception_nmi then
 		*monitor_fault_valid = 1
 		*monitor_fault_cause = cause
@@ -366,8 +349,10 @@ function monitor_commands.open(status, cause, epc, bad_address, lua_fault_reason
 		*monitor_fault_exception = exception
 		*monitor_fault_has_bad_address = *monitor_entry_has_bad_address
 		*monitor_fault_has_lua_fault_reason = *monitor_entry_has_lua_fault_reason
+		monitor_fault_lua_fault_message = monitor_entry_lua_fault_message
 	end
 	*monitor_command_producer = producer_none
+	*monitor_command_text_offset = 0
 end
 
 function monitor_commands.start_fault()
@@ -375,6 +360,7 @@ function monitor_commands.start_fault()
 		if command_registry[command].kind == command_fault then
 			*monitor_command_producer = command
 			*monitor_command_cursor = 0
+			*monitor_command_text_offset = 0
 			return
 		end
 	end
@@ -527,6 +513,7 @@ function monitor_commands.start(line, length)
 		if index == length then
 			*monitor_command_producer = command
 			*monitor_command_cursor = 0
+			*monitor_command_text_offset = 0
 			return action_output
 		end
 		local argument_end = index
@@ -540,6 +527,7 @@ function monitor_commands.start(line, length)
 			return start_usage(command)
 		end
 		*monitor_fault_valid = 0
+		monitor_fault_lua_fault_message = nil
 		return action_none
 	end
 	if entry.kind == command_registers then
@@ -548,6 +536,7 @@ function monitor_commands.start(line, length)
 		end
 		*monitor_command_producer = command
 		*monitor_command_cursor = 0
+		*monitor_command_text_offset = 0
 		return action_output
 	end
 	if entry.kind == command_help then
@@ -658,8 +647,29 @@ function monitor_commands.next_row(row)
 				write_hex(row, column, epc, palette_text)
 			elseif register_cursor == 2 then
 				if has_lua_fault_reason ~= 0 then
-					column = write_text(row, 0, 'LUAFAULT ', palette_accent)
-					write_text(row, column, lua_fault_reason_description(lua_fault_reason), palette_text)
+					local message = monitor_entry_lua_fault_message
+					if entry.kind == command_fault then
+						message = monitor_fault_lua_fault_message
+					end
+					local text_offset<const> = *monitor_command_text_offset
+					if text_offset == 0 then
+						column = write_text(row, 0, 'LUA     ', palette_accent)
+						column = write_hex(row, column, lua_fault_reason, palette_text)
+						local target<const>: *word = row
+						target[column] = ascii_space | (palette_text << 8)
+						column = column + 1
+					end
+					local next_text_offset<const> = write_text_slice(
+						row,
+						column,
+						message,
+						text_offset,
+						palette_error)
+					*monitor_command_text_offset = next_text_offset
+					if next_text_offset < #message then
+						return row_more
+					end
+					*monitor_command_text_offset = 0
 				else
 					column = write_text(row, 0, 'BADADDR ', palette_accent)
 					write_hex(row, column, bad_address, palette_text)

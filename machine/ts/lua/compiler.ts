@@ -1332,10 +1332,12 @@ class FunctionBuilder {
 
 	public compileExceptionEntry(range: LuaSourceRange): void {
 		this.withRange(range, () => {
-			const callBase = this.allocTemp();
+			this.reserveTempRange(0, 1);
+			const callBase = this.allocTempBlock(2);
 			const access = this.program.resolveGlobalAccess('exception');
 			this.emitABx(access.system ? OpCode.GETSYS : OpCode.GETGL, callBase, access.slot);
-			this.emitABC(OpCode.CALL, callBase, encodeFixedCallArgCount(0), 0);
+			this.emitABC(OpCode.MOV, callBase + 1, 0, 0);
+			this.emitABC(OpCode.CALL, callBase, encodeFixedCallArgCount(1), 0);
 			this.emitABC(OpCode.RFE, 0, 0, 0);
 		});
 		this.finalizeLabels();
@@ -5339,7 +5341,7 @@ function compileExceptionProto(
 	const protoIndex = program.addProto({
 		entryPC: 0,
 		codeLen: ranges.length * INSTRUCTION_BYTES,
-		numParams: 0,
+		numParams: 1,
 		isVararg: false,
 		maxStack: builder.getMaxStack(),
 		upvalueDescs: [],

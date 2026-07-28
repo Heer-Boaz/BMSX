@@ -387,7 +387,7 @@ local leave_monitor<const> = function(saved_status, saved_epc, owns_supervisor_c
 	end
 end
 
-function monitor.enter()
+function monitor.enter(error_value)
 	-- Nested VBlank IRQ entry overwrites CP0 latches, so preserve the interrupted
 	-- context before the monitor enables maskable supervisor interrupts.
 	local saved_status<const> = cop0.status
@@ -422,7 +422,8 @@ function monitor.enter()
 		saved_epc,
 		saved_bad_address,
 		saved_lua_fault_reason,
-		saved_irq_mask)
+		saved_irq_mask,
+		error_value)
 	gx_gpu.prepare_supervisor_256x192(layout.vram_origin) -- HUH?! Why hardcoded to 256x192? Should be layout.columns x layout.rows, but that is 80x25. Maybe this is a temporary hack for the monitor to work with the GPU in a specific mode.
 	local system_texture<const> = romdir.resource('gx_system_texture')
 	dma_transfer.copy_to_gp0(system_texture.addr, system_texture.len >> 2)

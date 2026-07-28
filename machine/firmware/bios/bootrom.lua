@@ -45,8 +45,8 @@ function irq(flags)
 	system.irq(flags)
 end
 
-function exception()
-	monitor.enter()
+function exception(error_value)
+	monitor.enter(error_value)
 end
 
 local scan_cartridges<const> = function()

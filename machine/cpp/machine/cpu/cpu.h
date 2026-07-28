@@ -430,7 +430,7 @@ private:
 	void enterSynchronousException(CallFrame& interruptedFrame, u32 causeWord);
 	void enterSynchronousAddressException(CallFrame& interruptedFrame, u32 causeWord, u32 address);
 	void enterException(u32 functionAddress, u32 causeWord, u32 epcWord);
-	void enterLuaFaultException(u32 reason);
+	void enterLuaFaultException(u32 reason, Value errorValue);
 	void hardHalt();
 	void blockMappedWrite(CallFrame& frame, uint32_t address);
 	void markRoots(GcHeap& heap);

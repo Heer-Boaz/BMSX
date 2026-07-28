@@ -90,7 +90,7 @@ export class Table {
 
 	public get(key: Value): Value {
 		if (key === null) {
-			throw new LuaExecutionError('Table index is nil.', LUA_FAULT_REASON_INDEX_NIL);
+			throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NIL);
 		}
 		const index = this.getArrayIndex(key);
 		if (index !== null && index < this.array.length) {
@@ -105,7 +105,7 @@ export class Table {
 
 	public set(key: Value, value: Value): void {
 		if (key === null) {
-			throw new LuaExecutionError('Table index is nil.', LUA_FAULT_REASON_INDEX_NIL);
+			throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NIL);
 		}
 		const index = this.getArrayIndex(key);
 		if (index !== null) {

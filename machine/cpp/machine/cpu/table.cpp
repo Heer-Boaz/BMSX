@@ -421,7 +421,7 @@ void Table::markHashNodeDead(size_t index) {
 
 Value Table::get(const Value& key) const {
 	if (isNil(key)) {
-		throw LuaExecutionError("Table index is nil.", LUA_FAULT_REASON_INDEX_NIL);
+		throw LuaExecutionError(LUA_FAULT_REASON_INDEX_NIL);
 	}
 	int index = 0;
 	if (getArrayIndex(key, index)) {
@@ -439,7 +439,7 @@ Value Table::get(const Value& key) const {
 
 void Table::set(const Value& key, const Value& value) {
 	if (isNil(key)) {
-		throw LuaExecutionError("Table index is nil.", LUA_FAULT_REASON_INDEX_NIL);
+		throw LuaExecutionError(LUA_FAULT_REASON_INDEX_NIL);
 	}
 	int index = 0;
 	bool isArrayKey = getArrayIndex(key, index);

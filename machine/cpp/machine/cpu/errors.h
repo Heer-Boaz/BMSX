@@ -1,9 +1,5 @@
 #pragma once
 
-#include <exception>
-#include <stdexcept>
-#include <string>
-
 #include "common/primitives.h"
 #include "spec/blua32/cop0.h"
 #include "machine/cpu/value.h"
@@ -12,18 +8,14 @@ namespace bmsx {
 
 struct LuaOutOfMemorySignal final {};
 
-struct LuaThrownValueError final : std::exception {
+struct LuaThrownValueError final {
 	Value value = valueNil();
-	std::string message;
-
-	LuaThrownValueError(Value value, const StringPool& stringPool);
-	const char* what() const noexcept override { return message.c_str(); }
+	explicit LuaThrownValueError(Value value) : value(value) {}
 };
 
-struct LuaExecutionError final : std::runtime_error {
+struct LuaExecutionError final {
 	u32 reason;
-	explicit LuaExecutionError(const std::string& message, u32 reason = LUA_FAULT_REASON_UNKNOWN)
-		: std::runtime_error(message), reason(reason) {}
+	explicit LuaExecutionError(u32 reason = LUA_FAULT_REASON_UNKNOWN) : reason(reason) {}
 };
 
 } // namespace bmsx

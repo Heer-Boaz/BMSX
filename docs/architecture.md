@@ -1472,6 +1472,14 @@ does not serialize, copy, unwind, or reconstruct the cart call stack. Only
 faults defined by the machine contract enter this path. Emulator invariant
 failures remain host failures.
 
+Exception-root register zero is the raw guest error-value channel. An
+unhandled Lua trap places its existing `Value` there; allocation failures use
+the CPU's preinterned guest string. The generated root forwards that value to
+the image-owned `exception(error_value)` handler. IRQ, NMI, address, bus and
+privilege entries leave the register `nil`. This is call-frame state covered by
+the ordinary CPU save-state contract, not a host exception string or diagnostic
+object.
+
 System and cartridge physical vectors remain distinct. A maskable IRQ
 selects its vector from the pre-entry `KUc`: user execution uses the cart IRQ
 vector, supervisor execution uses the BIOS IRQ vector. NMI and synchronous
@@ -1527,9 +1535,12 @@ release events participate in this boundary.
 Monitor entry snapshots the raw `STATUS`, `CAUSE`, `EPC`, `BAD_ADDRESS`, and IRQ
 mask words before enabling nested supervisor IRQs or changing IRQ/GPU
 ownership. The automatic fault output decodes the architectural cause from a
-firmware `.rodata` registry and includes `BAD_ADDRESS` only for address faults;
-`FAULT` and `REGS` retain the underlying raw words. Fault presentation therefore
-does not depend on host exception text or a frontend-owned terminal overlay.
+firmware `.rodata` registry, includes `BAD_ADDRESS` only for address faults, and
+prints the guest Lua error value supplied by the exception-root ABI for Lua
+traps. Long messages are consumed directly into fixed terminal rows without a
+substring or host-formatting allocation. `FAULT` and `REGS` retain the
+underlying raw words. Fault presentation therefore does not depend on host
+exception text or a frontend-owned terminal overlay.
 The firmware keeps the current monitor-entry registers separate from its last
 synchronous fault record. A supervisor-request NMI updates `REGS` but cannot
 replace that fault with `NMI SUPERVISOR REQUEST`; `FAULT` reports the retained
@@ -2971,7 +2982,9 @@ execution errors. An allocation failure therefore follows ordinary Lua
 protected-call semantics without allocating its error value; `pcall`/`xpcall`
 can receive `Out of memory.`. Only an unhandled allocation failure becomes
 `LUA_FAULT_REASON_OUT_OF_MEMORY` in CP0, after which the BIOS monitor presents
-the fault through guest firmware like every other synchronous Lua trap.
+the same preinterned guest string through the exception-root value register.
+Internal TS/C++ unwind signals carry only the raw guest value or numeric reason;
+they do not build parallel host error strings.
 
 The compact 4x6 `tiny_3b_font_*` glyph set is the BIOS-owned
 `font.get('default')` descriptor for boot and firmware text. The ROM producer

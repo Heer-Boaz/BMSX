@@ -542,7 +542,7 @@ export class CPU {
 			}
 			current = indexer;
 		}
-		throw new LuaExecutionError('Metatable __index loop detected.', LUA_FAULT_REASON_METATABLE_LOOP);
+		throw new LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
 	}
 
 	private loadTableIndex(base: Value, key: Value): Value {
@@ -562,7 +562,7 @@ export class CPU {
 				return this.resolveTableIndexChain(table, key, TableIndexKeyKind.Value);
 			}
 			default:
-				throw new LuaExecutionError('Attempted to index field on a non-table value.', LUA_FAULT_REASON_INDEX_NON_TABLE);
+				throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NON_TABLE);
 		}
 	}
 
@@ -600,7 +600,7 @@ export class CPU {
 				return this.resolveTableIndexChain(table, index, indexKind);
 			}
 			default:
-				throw new LuaExecutionError('Attempted to index field on a non-table value.', LUA_FAULT_REASON_INDEX_NON_TABLE);
+				throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NON_TABLE);
 		}
 	}
 
@@ -637,7 +637,7 @@ export class CPU {
 				return this.resolveTableIndexChain(table, key, TableIndexKeyKind.Field);
 			}
 			default:
-				throw new LuaExecutionError('Attempted to index field on a non-table value.', LUA_FAULT_REASON_INDEX_NON_TABLE);
+				throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NON_TABLE);
 		}
 	}
 
@@ -647,7 +647,7 @@ export class CPU {
 				(base as Table).set(key, value);
 				return;
 			default:
-				throw new LuaExecutionError('Attempted to assign to a non-table value.', LUA_FAULT_REASON_ASSIGN_NON_TABLE);
+				throw new LuaExecutionError(LUA_FAULT_REASON_ASSIGN_NON_TABLE);
 		}
 	}
 
@@ -657,7 +657,7 @@ export class CPU {
 				(base as Table).setInteger(index, value);
 				return;
 			default:
-				throw new LuaExecutionError('Attempted to assign to a non-table value.', LUA_FAULT_REASON_ASSIGN_NON_TABLE);
+				throw new LuaExecutionError(LUA_FAULT_REASON_ASSIGN_NON_TABLE);
 		}
 	}
 
@@ -667,7 +667,7 @@ export class CPU {
 				(base as Table).setStringKey(key, value);
 				return;
 			default:
-				throw new LuaExecutionError('Attempted to assign to a non-table value.', LUA_FAULT_REASON_ASSIGN_NON_TABLE);
+				throw new LuaExecutionError(LUA_FAULT_REASON_ASSIGN_NON_TABLE);
 		}
 	}
 
@@ -1375,9 +1375,10 @@ export class CPU {
 		this.enterSynchronousException(interruptedFrame, causeWord);
 	}
 
-	private enterLuaFaultException(reason: number): void {
+	private enterLuaFaultException(reason: number, errorValue: Value): void {
 		this.luaFaultReasonWord = reason;
 		this.enterSynchronousException(this.frames[this.frames.length - 1], CPU_CAUSE_CODE_TRAP);
+		this.frames[this.frames.length - 1].registers.set(0, errorValue);
 	}
 
 	private enterException(
@@ -1464,16 +1465,19 @@ export class CPU {
 			} catch (error) {
 				if (error === LUA_OUT_OF_MEMORY_SIGNAL) {
 					if (!this.handleProtectedCallError(this.luaFaultErrorValues[LUA_FAULT_REASON_OUT_OF_MEMORY])) {
-						this.enterLuaFaultException(LUA_FAULT_REASON_OUT_OF_MEMORY);
+						this.enterLuaFaultException(
+							LUA_FAULT_REASON_OUT_OF_MEMORY,
+							this.luaFaultErrorValues[LUA_FAULT_REASON_OUT_OF_MEMORY],
+						);
 					}
 				} else if (error instanceof LuaThrownValueError) {
 					if (!this.handleProtectedCallError(error.value)) {
-						this.enterLuaFaultException(LUA_FAULT_REASON_EXPLICIT_ERROR);
+						this.enterLuaFaultException(LUA_FAULT_REASON_EXPLICIT_ERROR, error.value);
 					}
 				} else if (error instanceof LuaExecutionError) {
 					const errorValue = this.luaFaultErrorValues[error.reason];
 					if (!this.handleProtectedCallError(errorValue)) {
-						this.enterLuaFaultException(error.reason);
+						this.enterLuaFaultException(error.reason, errorValue);
 					}
 				} else {
 					throw error;
@@ -1854,10 +1858,7 @@ export class CPU {
 							this.setRegisterNumberFast(frame, registers, a, (value as Table).arrayLength);
 							return;
 						default:
-							throw new LuaExecutionError(
-								'Attempted to get length of an unsupported value.',
-								LUA_FAULT_REASON_UNKNOWN,
-							);
+							throw new LuaExecutionError(LUA_FAULT_REASON_UNKNOWN);
 					}
 				}
 				case OpCode.BNOT: {
@@ -2046,7 +2047,7 @@ export class CPU {
 							this.pushFrameFromCaller(frame, callee as Closure, a + 1, argCount, a, c, false, frame.pc - INSTRUCTION_BYTES);
 							return;
 						default:
-							throw new LuaExecutionError('Attempted to call a non-function value.', LUA_FAULT_REASON_CALL_NON_FUNCTION);
+							throw new LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
 					}
 				}
 				case OpCode.RET: {
@@ -2703,7 +2704,7 @@ export class CPU {
 			const handlerTag = valueTag(handler);
 			if (handlerTag !== ValueTag.Closure
 				&& handlerTag !== ValueTag.BuiltinFunction) {
-				throw new LuaExecutionError('xpcall error handler must be a function.', LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION);
+				throw new LuaExecutionError(LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION);
 			}
 		}
 		const continuationIndex = this.protectedCallDepth;
@@ -2762,7 +2763,7 @@ export class CPU {
 				return;
 			}
 			default:
-				throw new LuaExecutionError('Attempted to call a non-function value.', LUA_FAULT_REASON_CALL_NON_FUNCTION);
+				throw new LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
 		}
 	}
 
@@ -2920,7 +2921,7 @@ export class CPU {
 				return;
 			}
 			default:
-				throw new LuaExecutionError('Attempted to iterate a non-table value.', LUA_FAULT_REASON_ITERATE_NON_TABLE);
+				throw new LuaExecutionError(LUA_FAULT_REASON_ITERATE_NON_TABLE);
 		}
 	}
 
@@ -3001,7 +3002,7 @@ export class CPU {
 
 	private runBuiltinError(args: BuiltinArgs): never {
 		const value = args.get(0);
-		throw new LuaThrownValueError(value, valueToString(value, this.stringPool));
+		throw new LuaThrownValueError(value);
 	}
 
 	public captureRuntimeState(): CpuRuntimeState {

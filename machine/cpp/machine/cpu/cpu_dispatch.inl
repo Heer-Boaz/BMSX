@@ -275,10 +275,7 @@ DISPATCH_LABEL(LEN) {
 		SET_REGISTER_FAST(a, valueNumber(static_cast<double>(asTable(val)->length())));
 		DISPATCH_CONTINUE();
 	}
-	throw LuaExecutionError(
-		"Attempted to get length of an unsupported value.",
-		LUA_FAULT_REASON_UNKNOWN
-	);
+	throw LuaExecutionError(LUA_FAULT_REASON_UNKNOWN);
 }
 
 DISPATCH_LABEL(BNOT) {
@@ -459,10 +456,7 @@ DISPATCH_LABEL(CALL) {
 		runBuiltinFunction(*asBuiltinFunction(callee), FRAME, a, retCount, argCount);
 		DISPATCH_CONTINUE();
 	}
-	throw LuaExecutionError(
-		"Attempted to call a non-function value.",
-		LUA_FAULT_REASON_CALL_NON_FUNCTION
-	);
+	throw LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
 }
 
 DISPATCH_LABEL(RET) {
