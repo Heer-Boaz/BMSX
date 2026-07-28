@@ -1,4 +1,3 @@
-import { machineManager } from '../../../../machine/ts/core/machine_manager';
 import { setCursorPosition } from '../../../editor/ui/view/caret/caret';
 import { setSingleCursorSelectionAnchor } from '../../../editor/editing/cursor/state';
 import { focusPrimaryEditorSurface } from '../../../workbench/ui/focus';
@@ -26,7 +25,8 @@ export function handleCodeAreaPrimaryPressPointer(
 	justPressed: boolean,
 	insideCodeArea: boolean,
 	gotoModifierActive: boolean,
-	bounds: CodeAreaBounds
+	bounds: CodeAreaBounds,
+	now: number,
 ): boolean {
 	if (!justPressed || !insideCodeArea) {
 		return false;
@@ -47,7 +47,7 @@ export function handleCodeAreaPrimaryPressPointer(
 		stopPointerSelectionAndResetClicks(snapshot);
 		return true;
 	}
-	if (registerCodePointerClick(targetRow, targetColumn)) {
+	if (registerCodePointerClick(targetRow, targetColumn, now)) {
 		TextEditing.selectWordAtPosition(targetRow, targetColumn);
 		editorPointerState.pointerSelecting = false;
 		return false;
@@ -58,8 +58,7 @@ export function handleCodeAreaPrimaryPressPointer(
 	return false;
 }
 
-function registerCodePointerClick(row: number, column: number): boolean {
-	const now = machineManager.platform.clock.now();
+function registerCodePointerClick(row: number, column: number, now: number): boolean {
 	const interval = now - editorPointerState.lastPointerClickTimeMs;
 	const sameRow = row === editorPointerState.lastPointerClickRow;
 	const columnDelta = Math.abs(column - editorPointerState.lastPointerClickColumn);

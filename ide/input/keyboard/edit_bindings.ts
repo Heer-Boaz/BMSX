@@ -12,13 +12,15 @@ import { isInlineWidgetFocused } from '../../quick_input/inline_widget';
 import { editorSearchState } from '../../editor/contrib/find/widget_state';
 import type { RuntimeSourceState } from '../../runtime/sources';
 import type { ResourcePanelController } from '../../workbench/contrib/resources/panel/controller';
+import type { PlayerInput } from '../../../machine/ts/input/player';
+import type { ClipboardService } from '../../../machine/ts/platform/platform';
 
-export function handleSearchNavigationKeybinding(): boolean {
-	if (editorSearchState.query.length === 0 || !isKeyJustPressed('F3')) {
+export function handleSearchNavigationKeybinding(playerInput: PlayerInput): boolean {
+	if (editorSearchState.query.length === 0 || !isKeyJustPressed('F3', playerInput)) {
 		return false;
 	}
-	consumeIdeKey('F3');
-	if (isShiftDown()) {
+	consumeIdeKey('F3', playerInput);
+	if (isShiftDown(playerInput)) {
 		jumpToPreviousMatch();
 	} else {
 		jumpToNextMatch();
@@ -26,16 +28,16 @@ export function handleSearchNavigationKeybinding(): boolean {
 	return true;
 }
 
-function handleUndoBinding(): boolean {
-	if (!(isCtrlDown() || isMetaDown()) || !shouldRepeatKeyFromPlayer('KeyZ')) {
+function handleUndoBinding(playerInput: PlayerInput): boolean {
+	if (!(isCtrlDown(playerInput) || isMetaDown(playerInput)) || !shouldRepeatKeyFromPlayer('KeyZ', playerInput)) {
 		return false;
 	}
-	consumeIdeKey('KeyZ');
+	consumeIdeKey('KeyZ', playerInput);
 	if (!isEditableCodeTab()) {
 		notifyReadOnlyEdit();
 		return true;
 	}
-	if (isShiftDown()) {
+	if (isShiftDown(playerInput)) {
 		redo();
 	} else {
 		undo();
@@ -43,11 +45,11 @@ function handleUndoBinding(): boolean {
 	return true;
 }
 
-function handleRedoBinding(): boolean {
-	if (!(isCtrlDown() || isMetaDown()) || !shouldRepeatKeyFromPlayer('KeyY')) {
+function handleRedoBinding(playerInput: PlayerInput): boolean {
+	if (!(isCtrlDown(playerInput) || isMetaDown(playerInput)) || !shouldRepeatKeyFromPlayer('KeyY', playerInput)) {
 		return false;
 	}
-	consumeIdeKey('KeyY');
+	consumeIdeKey('KeyY', playerInput);
 	if (!isEditableCodeTab()) {
 		notifyReadOnlyEdit();
 		return true;
@@ -57,22 +59,23 @@ function handleRedoBinding(): boolean {
 }
 
 function handleCloseTabBinding(
+	playerInput: PlayerInput,
 	resourcePanel: ResourcePanelController,
 	sources: RuntimeSourceState,
 ): boolean {
-	if (!(isCtrlDown() || isMetaDown()) || !isKeyJustPressed('KeyW')) {
+	if (!(isCtrlDown(playerInput) || isMetaDown(playerInput)) || !isKeyJustPressed('KeyW', playerInput)) {
 		return false;
 	}
-	consumeIdeKey('KeyW');
+	consumeIdeKey('KeyW', playerInput);
 	closeActiveTab(resourcePanel, sources);
 	return true;
 }
 
-function handleSaveBinding(commands: IdeCommandController): boolean {
-	if (!isCtrlDown() || isShiftDown() || !isKeyJustPressed('KeyS')) {
+function handleSaveBinding(playerInput: PlayerInput, commands: IdeCommandController): boolean {
+	if (!isCtrlDown(playerInput) || isShiftDown(playerInput) || !isKeyJustPressed('KeyS', playerInput)) {
 		return false;
 	}
-	consumeIdeKey('KeyS');
+	consumeIdeKey('KeyS', playerInput);
 	if (isReadOnlyCodeTab()) {
 		notifyReadOnlyEdit();
 		return true;
@@ -81,41 +84,41 @@ function handleSaveBinding(commands: IdeCommandController): boolean {
 	return true;
 }
 
-function handleCopyBinding(): boolean {
-	if (!isCtrlDown() || !isKeyJustPressed('KeyC')) {
+function handleCopyBinding(playerInput: PlayerInput, clipboard: ClipboardService): boolean {
+	if (!isCtrlDown(playerInput) || !isKeyJustPressed('KeyC', playerInput)) {
 		return false;
 	}
-	consumeIdeKey('KeyC');
-	void copySelectionToClipboard();
+	consumeIdeKey('KeyC', playerInput);
+	void copySelectionToClipboard(clipboard);
 	return true;
 }
 
-function handleCutBinding(): boolean {
-	if (!isCtrlDown() || !isKeyJustPressed('KeyX')) {
+function handleCutBinding(playerInput: PlayerInput, clipboard: ClipboardService): boolean {
+	if (!isCtrlDown(playerInput) || !isKeyJustPressed('KeyX', playerInput)) {
 		return false;
 	}
-	consumeIdeKey('KeyX');
+	consumeIdeKey('KeyX', playerInput);
 	if (isReadOnlyCodeTab()) {
 		if (TextEditing.hasSelection()) {
-			void copySelectionToClipboard();
+			void copySelectionToClipboard(clipboard);
 		} else {
 			notifyReadOnlyEdit();
 		}
 		return true;
 	}
 	if (TextEditing.hasSelection()) {
-		void cutSelectionToClipboard();
+		void cutSelectionToClipboard(clipboard);
 	} else {
-		void cutLineToClipboard();
+		void cutLineToClipboard(clipboard);
 	}
 	return true;
 }
 
-function handlePasteBinding(): boolean {
-	if (!isCtrlDown() || isShiftDown() || !isKeyJustPressed('KeyV')) {
+function handlePasteBinding(playerInput: PlayerInput): boolean {
+	if (!isCtrlDown(playerInput) || isShiftDown(playerInput) || !isKeyJustPressed('KeyV', playerInput)) {
 		return false;
 	}
-	consumeIdeKey('KeyV');
+	consumeIdeKey('KeyV', playerInput);
 	if (isReadOnlyCodeTab()) {
 		notifyReadOnlyEdit();
 		return true;
@@ -124,11 +127,11 @@ function handlePasteBinding(): boolean {
 	return true;
 }
 
-function handleEditableCodeBinding(code: string, matchesBinding: () => boolean, applyEdit: () => void): boolean {
+function handleEditableCodeBinding(playerInput: PlayerInput, code: string, matchesBinding: () => boolean, applyEdit: () => void): boolean {
 	if (!matchesBinding()) {
 		return false;
 	}
-	consumeIdeKey(code);
+	consumeIdeKey(code, playerInput);
 	if (!isEditableCodeTab()) {
 		notifyReadOnlyEdit();
 		return true;
@@ -137,48 +140,52 @@ function handleEditableCodeBinding(code: string, matchesBinding: () => boolean, 
 	return true;
 }
 
-function handleToggleCommentBinding(code: string): boolean {
+function handleToggleCommentBinding(playerInput: PlayerInput, code: string): boolean {
 	return handleEditableCodeBinding(
+		playerInput,
 		code,
-		() => (isCtrlDown() || isMetaDown()) && !isAltDown() && isKeyJustPressed(code),
+		() => (isCtrlDown(playerInput) || isMetaDown(playerInput)) && !isAltDown(playerInput) && isKeyJustPressed(code, playerInput),
 		toggleLineComments,
 	);
 }
 
-function handleIndentationBinding(code: string, applyEdit: () => void): boolean {
+function handleIndentationBinding(playerInput: PlayerInput, code: string, applyEdit: () => void): boolean {
 	return handleEditableCodeBinding(
+		playerInput,
 		code,
-		() => isCtrlDown() && isKeyJustPressed(code),
+		() => isCtrlDown(playerInput) && isKeyJustPressed(code, playerInput),
 		applyEdit,
 	);
 }
 
-export function handleCodeFormattingKeybinding(): boolean {
+export function handleCodeFormattingKeybinding(playerInput: PlayerInput): boolean {
 	if (!isCodeTabActive() || editorSearchState.active || isInlineWidgetFocused()) {
 		return false;
 	}
-	if (!isAltDown() || !isShiftDown() || isCtrlDown() || isMetaDown() || !isKeyJustPressed('KeyF')) {
+	if (!isAltDown(playerInput) || !isShiftDown(playerInput) || isCtrlDown(playerInput) || isMetaDown(playerInput) || !isKeyJustPressed('KeyF', playerInput)) {
 		return false;
 	}
-	consumeIdeKey('KeyF');
+	consumeIdeKey('KeyF', playerInput);
 	applyDocumentFormatting();
 	return true;
 }
 
 export function handleEditorClipboardAndCommandBindings(
+	playerInput: PlayerInput,
+	clipboard: ClipboardService,
 	resourcePanel: ResourcePanelController,
 	sources: RuntimeSourceState,
 	commands: IdeCommandController,
 ): boolean {
-	return handleUndoBinding()
-		|| handleRedoBinding()
-		|| handleCloseTabBinding(resourcePanel, sources)
-		|| handleSaveBinding(commands)
-		|| handleCopyBinding()
-		|| handleCutBinding()
-		|| handlePasteBinding()
-		|| handleToggleCommentBinding('Slash')
-		|| handleToggleCommentBinding('NumpadDivide')
-		|| handleIndentationBinding('BracketRight', TextEditing.indentSelectionOrLine)
-		|| handleIndentationBinding('BracketLeft', TextEditing.unindentSelectionOrLine);
+	return handleUndoBinding(playerInput)
+		|| handleRedoBinding(playerInput)
+		|| handleCloseTabBinding(playerInput, resourcePanel, sources)
+		|| handleSaveBinding(playerInput, commands)
+		|| handleCopyBinding(playerInput, clipboard)
+		|| handleCutBinding(playerInput, clipboard)
+		|| handlePasteBinding(playerInput)
+		|| handleToggleCommentBinding(playerInput, 'Slash')
+		|| handleToggleCommentBinding(playerInput, 'NumpadDivide')
+		|| handleIndentationBinding(playerInput, 'BracketRight', TextEditing.indentSelectionOrLine)
+		|| handleIndentationBinding(playerInput, 'BracketLeft', TextEditing.unindentSelectionOrLine);
 }

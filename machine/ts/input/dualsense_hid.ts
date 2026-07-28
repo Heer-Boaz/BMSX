@@ -6,10 +6,8 @@
  * 0x0DF2 = DualSense Edge
  * 0x09cc = DualShock 4
  */
-import { machineManager } from '../core/machine_manager';
 import type { Platform, PlatformHIDDevice, PlatformHIDInputReportEvent } from '../platform';
 import { formatNumberAsHex } from '../common/byte_hex_string';
-
 
 const SONY_VID = 0x054C;
 const DUALSENSE_EDGE_PID = 0x0DF2; // DualSense Edge
@@ -52,16 +50,10 @@ export class DualSenseHID {
 
 	private async requestHidPermission(ids?: { vendorId: number; productId: number }): Promise<PlatformHIDDevice[]> {
 		const hid = this.platform.hid;
-		if (!hid?.isSupported()) {
+		if (!hid.isSupported()) {
 			throw new Error('[DualSenseHID] HID API not available on this platform.');
 		}
 		if (!DualSenseHID.pendingRequest) {
-			// Pause the game while the browser permission dialog is visible
-			const wasPaused = machineManager.paused;
-			if (!wasPaused) {
-				machineManager.paused = true;
-			}
-
 			const filters = ids
 				? [{ vendorId: ids.vendorId, productId: ids.productId }]
 				: ACCEPTED_VENDORS_PRODUCTS.map(p => ({ vendorId: p.vendorId, productId: p.productId }));
@@ -69,9 +61,6 @@ export class DualSenseHID {
 			DualSenseHID.pendingRequest = hid.requestDevice({ filters })
 				.finally(() => {
 					DualSenseHID.pendingRequest = null;
-					if (!wasPaused) {
-						machineManager.paused = false;
-					}
 				});
 		}
 		return DualSenseHID.pendingRequest;
@@ -134,7 +123,7 @@ export class DualSenseHID {
 	/** Requests the Sony HID device and initializes it. */
 	public async initForDevice(gamepadIndex: number, description: string): Promise<void> {
 		const hid = this.platform.hid;
-		if (!hid?.isSupported()) {
+		if (!hid.isSupported()) {
 			console.warn("HID API not supported on this platform.");
 			return; // HID not supported (e.g. Safari)
 		}

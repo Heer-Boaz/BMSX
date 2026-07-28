@@ -62,7 +62,6 @@ async function main(): Promise<void> {
 	const host = await prepareMachineHost({
 		systemRom,
 		cartridgeSlots: [slot0Rom, slot1Rom],
-		debug,
 		startingGamepadIndex: -1,
 		enableOnscreenGamepad: false,
 		platform,

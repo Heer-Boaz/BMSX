@@ -1,13 +1,12 @@
 #include "render/host_overlay/pipeline.h"
 
-#include "core/machine_manager.h"
 #include "render/video_presenter.h"
 #include "render/host_overlay/overlay_queue.h"
 
 namespace bmsx {
-void writeHostOverlayState(HostOverlayPipelineState& state) {
-	state.time = MachineManager::instance().totalTime();
-	state.delta = MachineManager::instance().deltaTime();
+void writeHostOverlayState(HostOverlayPipelineState& state, f64 time, f64 delta) {
+	state.time = time;
+	state.delta = delta;
 	const HostOverlayFrame frame = consumeOverlayFrame();
 	state.width = frame.renderWidth;
 	state.height = frame.renderHeight;

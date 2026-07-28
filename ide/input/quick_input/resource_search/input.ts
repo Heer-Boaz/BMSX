@@ -12,24 +12,26 @@ import { resourceSearchState } from '../../../workbench/contrib/resources/widget
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import type { RenameController } from '../../../editor/contrib/rename/controller';
 import type { CartEditor } from '../../../cart_editor';
-import type { RuntimeSourceState } from '../../../runtime/sources';
+import type { PlayerInput } from '../../../../machine/ts/input/player';
+import type { ClipboardService } from '../../../../machine/ts/platform/platform';
 
 export function handleResourceSearchInput(
+	playerInput: PlayerInput,
+	clipboard: ClipboardService,
 	editor: CartEditor,
-	sources: RuntimeSourceState,
 	bridge: RuntimeLuaTooling,
 	rename: RenameController,
 ): void {
-	const shiftDown = isShiftDown();
-	if (isKeyJustPressed('Enter') || isKeyJustPressed('NumpadEnter')) {
-		consumeIdeKey('Enter');
-		consumeIdeKey('NumpadEnter');
+	const shiftDown = isShiftDown(playerInput);
+	if (isKeyJustPressed('Enter', playerInput) || isKeyJustPressed('NumpadEnter', playerInput)) {
+		consumeIdeKey('Enter', playerInput);
+		consumeIdeKey('NumpadEnter', playerInput);
 		if (shiftDown) {
 			moveResourceSearchSelection(-1);
 			return;
 		}
 		if (resourceSearchState.selectionIndex >= 0) {
-			applyResourceSearchSelection(editor, sources, resourceSearchState.selectionIndex);
+			applyResourceSearchSelection(editor, resourceSearchState.selectionIndex);
 			return;
 		}
 		const trimmed = resourceSearchState.query.trim();
@@ -41,45 +43,45 @@ export function handleResourceSearchInput(
 		}
 		return;
 	}
-	if (isKeyJustPressed('Escape')) {
-		consumeIdeKey('Escape');
+	if (isKeyJustPressed('Escape', playerInput)) {
+		consumeIdeKey('Escape', playerInput);
 		closeResourceSearch(true);
 		focusEditorFromResourceSearch();
 		return;
 	}
-	if (shouldRepeatKeyFromPlayer('ArrowUp')) {
-		consumeIdeKey('ArrowUp');
+	if (shouldRepeatKeyFromPlayer('ArrowUp', playerInput)) {
+		consumeIdeKey('ArrowUp', playerInput);
 		moveResourceSearchSelection(-1);
 		return;
 	}
-	if (shouldRepeatKeyFromPlayer('ArrowDown')) {
-		consumeIdeKey('ArrowDown');
+	if (shouldRepeatKeyFromPlayer('ArrowDown', playerInput)) {
+		consumeIdeKey('ArrowDown', playerInput);
 		moveResourceSearchSelection(1);
 		return;
 	}
-	if (shouldRepeatKeyFromPlayer('PageUp')) {
-		consumeIdeKey('PageUp');
+	if (shouldRepeatKeyFromPlayer('PageUp', playerInput)) {
+		consumeIdeKey('PageUp', playerInput);
 		moveResourceSearchSelection(-resourceSearchWindowCapacity());
 		return;
 	}
-	if (shouldRepeatKeyFromPlayer('PageDown')) {
-		consumeIdeKey('PageDown');
+	if (shouldRepeatKeyFromPlayer('PageDown', playerInput)) {
+		consumeIdeKey('PageDown', playerInput);
 		moveResourceSearchSelection(resourceSearchWindowCapacity());
 		return;
 	}
-	if (isKeyJustPressed('Home')) {
-		consumeIdeKey('Home');
+	if (isKeyJustPressed('Home', playerInput)) {
+		consumeIdeKey('Home', playerInput);
 		resourceSearchState.selectionIndex = resourceSearchState.matches.length > 0 ? 0 : -1;
 		ensureResourceSearchSelectionVisible();
 		return;
 	}
-	if (isKeyJustPressed('End')) {
-		consumeIdeKey('End');
+	if (isKeyJustPressed('End', playerInput)) {
+		consumeIdeKey('End', playerInput);
 		resourceSearchState.selectionIndex = resourceSearchState.matches.length > 0 ? resourceSearchState.matches.length - 1 : -1;
 		ensureResourceSearchSelectionVisible();
 		return;
 	}
-	const textChanged = applyInlineFieldEditing(resourceSearchState.field, {
+	const textChanged = applyInlineFieldEditing(playerInput, clipboard, resourceSearchState.field, {
 		allowSpace: true,
 	});
 	resourceSearchState.query = resourceSearchState.field.text;

@@ -43,7 +43,6 @@ export async function prepareBrowserStartup(
 	return {
 		cartridgeSlots: [slot0Rom, slot1Rom],
 		systemRom,
-		debug,
 		startingGamepadIndex,
 		enableOnscreenGamepad,
 		platform,

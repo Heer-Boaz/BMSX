@@ -30,7 +30,6 @@ import {
 	resolveRuntimeLuaSourceForContext,
 } from '../../../runtime/sources';
 import { SYSTEM_RESOURCE_DOMAIN, type ResourceDomain } from '../../../common/resource';
-import { focusChunkSource } from '../../contrib/resources/navigation';
 import {
 	findCodeTabContext,
 	getActiveCodeTabContext,
@@ -232,7 +231,7 @@ export function navigateToLuaDefinition(
 			throw new Error(`Lua source '${definition.path}' is not installed.`);
 		}
 		const identity = { domain: source.domain, path: source.record.source_path };
-		focusChunkSource(editor, sources, identity);
+		editor.navigation.focusChunkSource(identity);
 		const context = findCodeTabContext(identity);
 		if (context) {
 			targetContextId = context.id;

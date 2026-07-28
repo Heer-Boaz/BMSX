@@ -38,9 +38,11 @@ import {
 	type WorkspaceSessionGeneration,
 } from './models';
 import type { CartEditor } from '../../cart_editor';
-import { machineManager } from '../../../machine/ts/core/machine_manager';
+import type { HostClock, StorageService } from '../../../machine/ts/platform/platform';
 
 export function commitWorkspaceSessionLocally(
+	storage: StorageService,
+	clock: HostClock,
 	editor: CartEditor,
 	sources: RuntimeSourceState,
 	debuggerState: RuntimeDebuggerState,
@@ -69,9 +71,9 @@ export function commitWorkspaceSessionLocally(
 			const text = captureContextText(context);
 			let record = workspaceDirtyRecords.get(dirtyPath);
 			if (!record || record.contents !== text) {
-				record = createWorkspaceRecord(text);
+				record = createWorkspaceRecord(clock, text);
 				writeLocalWorkspaceRecord(
-					machineManager.platform.storage,
+					storage,
 					projectRootPath,
 					buildWorkspaceDirtyRecordPath(dirtyPath, record.updatedAt),
 					record,
@@ -120,9 +122,12 @@ export function commitWorkspaceSessionLocally(
 		WORKSPACE_METADATA_DIR,
 		WORKSPACE_STATE_FILE,
 	);
-	const stateRecord = createWorkspaceRecord(JSON.stringify(payload));
+	const stateRecord = createWorkspaceRecord(
+		clock,
+		JSON.stringify(payload),
+	);
 	writeLocalWorkspaceRecord(
-		machineManager.platform.storage,
+		storage,
 		workspaceState.projectRootPath,
 		statePath,
 		stateRecord,
@@ -141,7 +146,7 @@ export function commitWorkspaceSessionLocally(
 				continue;
 			}
 			deleteLocalWorkspaceRecord(
-				machineManager.platform.storage,
+				storage,
 				projectRootPath,
 				buildWorkspaceDirtyRecordPath(dirtyPath, entry.updatedAt),
 			);

@@ -1,5 +1,5 @@
 import type { CartEditor } from '../../cart_editor';
-import { machineManager } from '../../../machine/ts/core/machine_manager';
+import type { PlayerInput } from '../../../machine/ts/input/player';
 import { point_in_rect } from '../../../machine/ts/common/rect';
 import * as constants from '../../common/constants';
 import { problemsPanel } from '../../workbench/contrib/problems/panel/controller';
@@ -19,8 +19,7 @@ import { intellisenseUiState } from '../../editor/contrib/intellisense/ui_state'
 import { editorViewState } from '../../editor/ui/view/state';
 import { resourceSearchState } from '../../workbench/contrib/resources/widget_state';
 
-export function handleEditorWheelInput(editor: CartEditor): void {
-	const playerInput = machineManager.input.getPlayerInput(1);
+export function handleEditorWheelInput(editor: CartEditor, playerInput: PlayerInput): void {
 	const wheelState = playerInput.getRawButtonState('pointer_wheel', 'pointer');
 	if (wheelState.consumed) {
 		return;
@@ -71,7 +70,7 @@ function handleHoverTooltipWheel(
 	direction: number,
 	steps: number,
 	activePointer: PointerSnapshot,
-	playerInput: ReturnType<typeof machineManager.input.getPlayerInput>
+	playerInput: PlayerInput
 ): boolean {
 	if (!intellisenseUiState.hoverTooltip) {
 		return false;
@@ -95,7 +94,7 @@ function handleResourceSearchWheel(
 	direction: number,
 	steps: number,
 	activePointer: PointerSnapshot,
-	playerInput: ReturnType<typeof machineManager.input.getPlayerInput>
+	playerInput: PlayerInput
 ): boolean {
 	if (!resourceSearchState.visible) {
 		return false;
@@ -117,7 +116,7 @@ function handleResourcePanelWheel(
 	direction: number,
 	steps: number,
 	activePointer: PointerSnapshot,
-	playerInput: ReturnType<typeof machineManager.input.getPlayerInput>
+	playerInput: PlayerInput
 ): boolean {
 	const panelBounds = resourcePanel.getBounds();
 	const pointerInPanel = resourcePanel.isVisible()
@@ -127,7 +126,7 @@ function handleResourcePanelWheel(
 	if (!pointerInPanel) {
 		return false;
 	}
-	if (isShiftDown()) {
+	if (isShiftDown(playerInput)) {
 		const horizontalPixels = direction * steps * editorViewState.charAdvance * 4;
 		scrollResourceBrowserHorizontal(resourcePanel, horizontalPixels);
 		resourcePanel.ensureSelectionVisible();
@@ -143,7 +142,7 @@ function handleProblemsPanelWheel(
 	direction: number,
 	steps: number,
 	activePointer: PointerSnapshot,
-	playerInput: ReturnType<typeof machineManager.input.getPlayerInput>
+	playerInput: PlayerInput
 ): boolean {
 	if (!problemsPanel.isVisible) {
 		return false;

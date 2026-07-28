@@ -1,4 +1,4 @@
-import { machineManager } from '../../../../../machine/ts/core/machine_manager';
+import type { PlayerInput } from '../../../../../machine/ts/input/player';
 import { point_in_rect } from '../../../../../machine/ts/common/rect';
 import { editorChromeState } from '../../../ui/chrome_state';
 import type { PointerSnapshot } from '../../../../common/models';
@@ -44,7 +44,7 @@ export function handleTabBarMiddleClick(
 	resourcePanel: ResourcePanelController,
 	sources: RuntimeSourceState,
 	snapshot: PointerSnapshot,
-	playerInput: ReturnType<typeof machineManager.input.getPlayerInput>,
+	playerInput: PlayerInput,
 ): boolean {
 	const x = snapshot.viewportX;
 	const y = snapshot.viewportY;

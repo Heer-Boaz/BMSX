@@ -1,4 +1,3 @@
-import { machineManager } from '../../machine/ts/core/machine_manager';
 import {
 	describeBlua32InstructionAtPc,
 	type InstructionOperandDebugInfo,
@@ -6,7 +5,7 @@ import {
 import type { SourceRange } from '../../machine/ts/rompack/tooling/blua32_symbols';
 import { valueToString, type Value } from '../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import { LogLevel } from '../../machine/ts/platform/platform';
+import { LogLevel, type LogOutput } from '../../machine/ts/platform/platform';
 import { recordLuaError, type RuntimeFaultState } from '../runtime/fault_state';
 import { blua32ToolingImageForDomain } from '../../machine/ts/rompack/tooling/blua32_media';
 import type { RuntimeSourceState } from '../runtime/sources';
@@ -30,6 +29,7 @@ function formatDebugSourceLine(range: SourceRange): string {
 }
 
 function logFaultInstruction(
+	logOutput: LogOutput,
 	fault: RuntimeFaultState,
 	sources: RuntimeSourceState,
 	runtime: Runtime,
@@ -62,17 +62,18 @@ function logFaultInstruction(
 	const operandSummary = instruction.operands
 		.map(operand => formatInstructionOperandDebug(runtime, operand, registers))
 		.join(' ');
-	machineManager.platform.log(
+	logOutput.log(
 		LogLevel.Error,
 		`\tpc=${instruction.pcText} op=${instruction.opName}${operandSummary.length > 0 ? ` ${operandSummary}` : ''}`,
 	);
-	machineManager.platform.log(LogLevel.Error, `\tinstr=${instruction.pcText}: ${instruction.instructionText}`);
+	logOutput.log(LogLevel.Error, `\tinstr=${instruction.pcText}: ${instruction.instructionText}`);
 	if (instruction.sourceRange) {
-		machineManager.platform.log(LogLevel.Error, `\tsource=${formatDebugSourceLine(instruction.sourceRange)}`);
+		logOutput.log(LogLevel.Error, `\tsource=${formatDebugSourceLine(instruction.sourceRange)}`);
 	}
 }
 
 export function handleLuaError(
+	logOutput: LogOutput,
 	fault: RuntimeFaultState,
 	sources: RuntimeSourceState,
 	runtime: Runtime,
@@ -80,7 +81,7 @@ export function handleLuaError(
 ): void {
 	const recorded = recordLuaError(fault, sources, runtime, whatever);
 	if (recorded) {
-		machineManager.platform.log(LogLevel.Error, recorded.stackText);
-		logFaultInstruction(fault, sources, runtime);
+		logOutput.log(LogLevel.Error, recorded.stackText);
+		logFaultInstruction(logOutput, fault, sources, runtime);
 	}
 }

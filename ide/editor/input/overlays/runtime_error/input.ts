@@ -12,10 +12,20 @@ import {
 	updateRuntimeErrorOverlayPointerHover,
 } from './pointer/hover';
 import type { CartEditor } from '../../../../cart_editor';
-import type { RuntimeSourceState } from '../../../../runtime/sources';
 import type { Runtime } from '../../../../../machine/ts/machine/runtime/runtime';
+import type { ClipboardService } from '../../../../../machine/ts/platform/platform';
 
-export function processRuntimeErrorOverlayPointer(editor: CartEditor, sources: RuntimeSourceState, runtime: Runtime, snapshot: PointerSnapshot, justPressed: boolean, codeTop: number, codeRight: number, textLeft: number, contentBottom: number): boolean {
+export function processRuntimeErrorOverlayPointer(
+	clipboard: ClipboardService,
+	editor: CartEditor,
+	runtime: Runtime,
+	snapshot: PointerSnapshot,
+	justPressed: boolean,
+	codeTop: number,
+	codeRight: number,
+	textLeft: number,
+	contentBottom: number,
+): boolean {
 	const pointerHit = updateRuntimeErrorOverlayPointerHover(snapshot, codeTop, codeRight, textLeft, contentBottom);
 	if (pointerHit === RUNTIME_ERROR_OVERLAY_POINTER_NONE) {
 		return false;
@@ -35,11 +45,11 @@ export function processRuntimeErrorOverlayPointer(editor: CartEditor, sources: R
 	resetPointerClickTracking();
 	if (pointerHit === RUNTIME_ERROR_OVERLAY_POINTER_COPY_BUTTON) {
 		const payload = buildRuntimeErrorOverlayCopyText(overlay);
-		void writeClipboard(payload, 'Copied runtime error to clipboard');
+		void writeClipboard(clipboard, payload, 'Copied runtime error to clipboard');
 		return true;
 	}
 	if (pointerHit === RUNTIME_ERROR_OVERLAY_POINTER_BODY) {
-		handleRuntimeErrorOverlayPointerClick(editor, sources, runtime, overlay, overlay.hoverLine);
+		handleRuntimeErrorOverlayPointerClick(editor, runtime, overlay, overlay.hoverLine);
 	}
 	return true;
 }

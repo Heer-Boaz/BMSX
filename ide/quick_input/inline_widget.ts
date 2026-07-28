@@ -8,12 +8,17 @@ import { handleLineJumpInput } from '../input/quick_input/line_jump/input';
 import { handleResourceSearchInput } from '../input/quick_input/resource_search/input';
 import { handleSearchInput } from '../input/quick_input/search/input';
 import { handleSymbolSearchInput } from '../input/quick_input/symbol_search/input';
-import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { createResourceState, resourceSearchState } from '../workbench/contrib/resources/widget_state';
 import type { CrossFileRenameManager } from '../editor/contrib/rename/operations';
 import type { CartEditor } from '../cart_editor';
 import type { RuntimeSourceState } from '../runtime/sources';
 import type { RuntimeLuaTooling } from '../runtime/lua_tooling';
+import type { PlayerInput } from '../../machine/ts/input/player';
+import type {
+	ClipboardService,
+	HostClock,
+	StorageService,
+} from '../../machine/ts/platform/platform';
 
 export function isInlineWidgetFocused(): boolean {
 	return editorSearchState.active
@@ -25,39 +30,43 @@ export function isInlineWidgetFocused(): boolean {
 }
 
 export function handleInlineWidgetInput(
+	playerInput: PlayerInput,
+	clipboard: ClipboardService,
+	storage: StorageService,
+	clock: HostClock,
 	editor: CartEditor,
 	sources: RuntimeSourceState,
 	luaTooling: RuntimeLuaTooling,
 	crossFileRename: CrossFileRenameManager,
-	runtime: Runtime,
 ): boolean {
 	if (createResourceState.active) {
-		handleCreateResourceInput(sources, editor.resourcePanel);
+		handleCreateResourceInput(playerInput, clipboard, storage, clock, editor, sources);
 		return true;
 	}
 	if (renameController.isActive()) {
-		renameController.handleInput(crossFileRename);
+		renameController.handleInput(playerInput, clipboard, crossFileRename);
 		return true;
 	}
 	if (resourceSearchState.active) {
 		handleResourceSearchInput(
+			playerInput,
+			clipboard,
 			editor,
-			sources,
 			luaTooling,
 			renameController,
 		);
 		return true;
 	}
 	if (symbolSearchState.active) {
-		handleSymbolSearchInput(editor, sources, luaTooling);
+		handleSymbolSearchInput(playerInput, clipboard, editor, sources, luaTooling);
 		return true;
 	}
 	if (lineJumpState.active) {
-		handleLineJumpInput();
+		handleLineJumpInput(playerInput, clipboard);
 		return true;
 	}
 	if (editorSearchState.active) {
-		handleSearchInput(editor, sources, runtime);
+		handleSearchInput(playerInput, clipboard, editor, sources);
 		return true;
 	}
 	return false;

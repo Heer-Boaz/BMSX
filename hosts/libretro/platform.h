@@ -9,11 +9,14 @@
 #ifndef BMSX_LIBRETRO_PLATFORM_H
 #define BMSX_LIBRETRO_PLATFORM_H
 
+#include "audio/soundmaster.h"
 #include "bmsx_libretro.h"
+#include "host_overlay_menu.h"
 #include "spec/bmsx/cartridge.h"
 #include "platform/platform.h"
 #include "render/backend/backend.h"
 #include "render/post/device_quantize/mode.h"
+#include "presentation_state.h"
 #include <array>
 #include <memory>
 #include <string>
@@ -28,6 +31,8 @@ class LibretroAudioService;
 class LibretroHostClock;
 class MachineManager;
 class Runtime;
+class AudioController;
+class Input;
 class BFont;
 class VideoPresenter;
 
@@ -165,6 +170,7 @@ public:
 	void setDeviceQuantizeMode(DeviceQuantizeMode mode);
 	void setResourceUsageGizmo(bool enabled);
 	void setPlatformPaused(bool paused);
+	bool running() const { return m_running; }
 	bool platformPaused() const { return m_platform_paused; }
 	void requestShutdown() override;
 
@@ -220,6 +226,10 @@ public:
 
 private:
 	void pollInput();
+	bool runHostFrame(Runtime& runtime, f64 deltaTime);
+	void activateLoadedRuntime(Runtime& runtime);
+	void syncAudioTiming(Runtime& runtime);
+	void syncRuntimeAudioTiming(Runtime& runtime);
 	void log(retro_log_level level, const char* fmt, ...);
 	bool loadSystemRomFromFile(const std::string& path);
 	void flushSystemOutput(Runtime& runtime);
@@ -251,6 +261,8 @@ private:
 	std::unique_ptr<FrameLoop> m_frame_loop;
 	std::unique_ptr<Lifecycle> m_lifecycle;
 	std::unique_ptr<InputHub> m_input_hub;
+	std::unique_ptr<Input> m_input;
+	SoundMaster m_sound_master;
 	std::unique_ptr<LibretroAudioService> m_audio_service;
 	std::unique_ptr<LibretroVideoOutput> m_video_output;
 	std::unique_ptr<MicrotaskQueue> m_microtask_queue;
@@ -258,6 +270,8 @@ private:
 	std::unique_ptr<BFont> m_default_font;
 	SubscriptionHandle m_video_resize_subscription;
 	SubscriptionHandle m_input_focus_subscription;
+	HostOverlayMenu m_host_overlay_menu;
+	RenderPresentationState m_screen;
 
 	// Save RAM
 	std::vector<uint8_t> m_save_ram;
@@ -266,7 +280,12 @@ private:
 	std::vector<uint8_t> m_system_ram;
 
 	bool m_rom_loaded = false;
+	bool m_running = false;
 	bool m_platform_paused = false;
+	f64 m_total_time = 0.0;
+	f64 m_delta_time = 0.0;
+	f64 m_host_fps = 0.0;
+	i64 m_audio_ufps_scaled;
 	DeviceQuantizeMode m_device_quantize_mode = DeviceQuantizeMode::None;
 };
 
@@ -318,15 +337,15 @@ private:
 
 class LibretroAudioService final {
 public:
-	explicit LibretroAudioService(LibretroPlatform* platform);
+	explicit LibretroAudioService(SoundMaster& soundMaster);
 
 	void setTiming(double sampleRate);
 	void resetQueue();
 
-	void collectSamples(AudioBuffer& buffer);
+	void collectSamples(AudioController& audioController, AudioBuffer& buffer);
 
 private:
-	LibretroPlatform* m_platform;
+	SoundMaster& m_sound_master;
 	double m_sample_rate = DEFAULT_LIBRETRO_AUDIO_SAMPLE_RATE;
 	double m_sample_accumulator = 0.0;
 };

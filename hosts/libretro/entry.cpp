@@ -1406,7 +1406,6 @@ void retro_run(void) {
 	const int64_t runtime_ufps_scaled = g_platform->machineManager()->runtime().timing.ufpsScaled;
 	const bool timing_changed = runtime_ufps_scaled != g_current_ufps_scaled;
 	if (timing_changed) {
-		g_platform->machineManager()->syncRuntimeAudioTiming();
 		sync_current_av_info(runtime_ufps_scaled);
 	}
 	const AvInfoNotification av_info_notification = publish_pending_av_info();

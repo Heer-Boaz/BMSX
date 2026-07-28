@@ -1,7 +1,14 @@
-import { machineManager } from '../machine/ts/core/machine_manager';
-import type { Runtime } from '../machine/ts/machine/runtime/runtime';
+import type { SoundMaster } from '../machine/ts/audio/soundmaster';
 import type { GateGroup } from '../machine/ts/common/taskgate';
-import { LogLevel } from '../machine/ts/platform/index';
+import type { Input } from '../machine/ts/input/manager';
+import type { Runtime } from '../machine/ts/machine/runtime/runtime';
+import type {
+	ClipboardService,
+	HostClock,
+	LogOutput,
+	StorageService,
+} from '../machine/ts/platform/platform';
+import type { VideoPresenter } from '../machine/ts/render/video_presenter';
 import { runtimeSourcesSupportIde, type RuntimeSourceState } from './runtime/sources';
 import { blua32ToolingImageForDomain } from '../machine/ts/rompack/tooling/blua32_media';
 import type { Viewport } from '../machine/ts/rompack/format';
@@ -12,9 +19,8 @@ import type { RuntimeFaultState } from './runtime/fault_state';
 import type { RuntimeLuaTooling } from './runtime/lua_tooling';
 import type { RuntimeDebuggerState } from './runtime/debugger_state';
 import type { OverlayRenderer } from './runtime/overlay_renderer';
-import type { VideoPresenter } from '../machine/ts/render/video_presenter';
 import { showEditorMessage, updateEditorMessage, setEditorFeedbackActive, editorFeedbackState } from './common/feedback_state';
-import { clearBackgroundTasks } from './common/background_tasks';
+import { clearBackgroundTasks, runBackgroundTasks } from './common/background_tasks';
 import { editorRuntimeState } from './editor/common/runtime_state';
 import { bumpTextVersion } from './editor/common/text/runtime';
 import { assertMonospace, measureText } from './editor/common/text/layout';
@@ -79,20 +85,8 @@ import { applyCreateResourceFieldText, closeCreateResourcePrompt } from './workb
 import { createResourceState, resourceSearchState } from './workbench/contrib/resources/widget_state';
 import { applyResourceSearchFieldText } from './workbench/contrib/resources/search/index';
 import { IdeCommandController } from './commands/controller';
-import {
-	activateNavigationEntryContext,
-	applyNavigationEntryPosition,
-	completeNavigationHistoryJump,
-	initializeNavigationState,
-	takeBackwardNavigationEntry,
-	takeForwardNavigationEntry,
-	withNavigationCaptureSuspended,
-	type NavigationHistoryEntry,
-} from './navigation/navigation_history';
-import {
-	focusChunkSource,
-	focusChunkSourceForContext,
-} from './workbench/contrib/resources/navigation';
+import { initializeNavigationState } from './navigation/navigation_history';
+import { EditorNavigationController } from './workbench/contrib/resources/navigation';
 import { editorChromeState } from './workbench/ui/chrome_state';
 import { activateCodeTab, findTabById, initializeTabs, isResourceViewActive, setActiveTab } from './workbench/ui/tabs';
 import { drawResourcePanel, drawResourceViewer } from './workbench/render/resource_panel';
@@ -123,7 +117,7 @@ export type CartEditor = {
 	readonly navigation: EditorNavigationController;
 	readonly crossFileRename: CrossFileRenameManager;
 	isActive: boolean;
-	readonly fontVariant: Parameters<typeof setFontVariant>[0];
+	readonly fontVariant: Parameters<typeof setFontVariant>[1];
 	activate: () => void;
 	deactivate: () => void;
 	tickInput: () => void;
@@ -131,7 +125,7 @@ export type CartEditor = {
 	draw: () => void;
 	shutdown: () => Promise<void>;
 	updateViewport: (viewport: Viewport) => void;
-	setFontVariant: (variant: Parameters<typeof setFontVariant>[0]) => void;
+	setFontVariant: (variant: Parameters<typeof setFontVariant>[1]) => void;
 	showRuntimeErrorInChunk: (path: string, line: number, column: number, message: string, details?: RuntimeErrorDetails) => void;
 	showRuntimeError: (line: number, column: number, message: string, details?: RuntimeErrorDetails, path?: string) => void;
 	clearRuntimeErrorOverlay: typeof clearRuntimeErrorOverlay;
@@ -161,11 +155,14 @@ export class RuntimeCartEditor implements CartEditor {
 	private editorRenderTargetBaselineHeight = 0;
 	private readonly runtime: Runtime;
 	private readonly presenter: VideoPresenter;
+	private readonly input: Input;
+	private readonly storage: StorageService;
+	private readonly clock: HostClock;
+	private readonly clipboard: ClipboardService;
 	private readonly sources: RuntimeSourceState;
 	private readonly fault: RuntimeFaultState;
 	private readonly luaTooling: RuntimeLuaTooling;
 	private readonly debuggerState: RuntimeDebuggerState;
-	private readonly luaGate: GateGroup;
 	private readonly overlayRenderer: OverlayRenderer;
 	private readonly unsubscribeWorkspaceCursorMoved: () => void;
 	private readonly unsubscribeWorkspaceTextMutated: () => void;
@@ -184,8 +181,14 @@ export class RuntimeCartEditor implements CartEditor {
 	public constructor(
 		runtime: Runtime,
 		presenter: VideoPresenter,
+		input: Input,
+		soundMaster: SoundMaster,
+		storage: StorageService,
+		clock: HostClock,
+		clipboard: ClipboardService,
+		logOutput: LogOutput,
 		viewport: Viewport,
-		fontVariant: Parameters<typeof setFontVariant>[0],
+		fontVariant: Parameters<typeof setFontVariant>[1],
 		sources: RuntimeSourceState,
 		fault: RuntimeFaultState,
 		luaTooling: RuntimeLuaTooling,
@@ -195,11 +198,14 @@ export class RuntimeCartEditor implements CartEditor {
 	) {
 		this.runtime = runtime;
 		this.presenter = presenter;
+		this.input = input;
+		this.storage = storage;
+		this.clock = clock;
+		this.clipboard = clipboard;
 		this.sources = sources;
 		this.fault = fault;
 		this.luaTooling = luaTooling;
 		this.debuggerState = debuggerState;
-		this.luaGate = luaGate;
 		this.overlayRenderer = overlayRenderer;
 		this.isAvailable = runtimeSourcesSupportIde(this.sources);
 		this.commands = new IdeCommandController(
@@ -210,10 +216,20 @@ export class RuntimeCartEditor implements CartEditor {
 			luaGate,
 			overlayRenderer,
 			runtime,
+			input,
+			soundMaster,
+			storage,
+			clock,
+			logOutput,
 		);
 		this.completion = new EditorCompletionController(luaTooling, fault, runtime);
 		this.resourcePanel = this.initialize(viewport, fontVariant);
-		this.navigation = new EditorNavigationController(this, this.sources, this.resourcePanel);
+		this.navigation = new EditorNavigationController(
+			this,
+			this.sources,
+			this.resourcePanel,
+			storage,
+		);
 		this.crossFileRename = new CrossFileRenameManager(this.sources);
 		this.search = new EditorSearchController(this.sources, renameController);
 		this.breakpoints = new BreakpointController(debuggerState);
@@ -229,7 +245,7 @@ export class RuntimeCartEditor implements CartEditor {
 	}
 
 	public get isActive(): boolean { return editorRuntimeState.active; }
-	public get fontVariant(): Parameters<typeof setFontVariant>[0] { return editorViewState.fontVariant; }
+	public get fontVariant(): Parameters<typeof setFontVariant>[1] { return editorViewState.fontVariant; }
 
 	public activate(): void {
 		const runtime = this.runtime;
@@ -237,7 +253,7 @@ export class RuntimeCartEditor implements CartEditor {
 		if (!this.isAvailable || !blua32ToolingImageForDomain(this.sources.currentBlua32Media, activeSlot)?.symbols) {
 			return;
 		}
-		editorInput.applyOverrides(true, captureKeys);
+		editorInput.applyOverrides(this.input, true, captureKeys);
 		const activeContextId = getActiveCodeTabContextId();
 		if (activeContextId) {
 			const existingTab = findTabById(activeContextId);
@@ -308,7 +324,7 @@ export class RuntimeCartEditor implements CartEditor {
 			this.restoreCrtPostprocessingFromEditor();
 		}
 		this.completion.closeSession();
-		editorInput.applyOverrides(false, captureKeys);
+		editorInput.applyOverrides(this.input, false, captureKeys);
 		clearSingleCursorSelection(editorDocumentState);
 		clearEditorPointerSelectionState();
 		editorChromeState.tabDragState = null;
@@ -334,37 +350,38 @@ export class RuntimeCartEditor implements CartEditor {
 
 	public tickInput(): void {
 		const runtime = this.runtime;
+		const playerInput = this.input.getPlayerInput(1);
+		editorRuntimeState.currentTimeMs = this.clock.now();
 		const scrollRow = editorViewState.scrollRow;
 		const scrollColumn = editorViewState.scrollColumn;
 		const breakpointRevision = this.breakpoints.revision;
-		handleEditorWheelInput(this);
+		handleEditorWheelInput(this, playerInput);
 		handleTextEditorPointerInput(
 			this.presenter.surface,
+			playerInput,
+			editorRuntimeState.currentTimeMs,
+			this.clipboard,
 			this,
 			this.sources,
 			this.luaTooling,
 			this.fault,
-			this.luaGate,
-			this.overlayRenderer,
 			runtime,
 		);
 		if (hasBlockingWorkbenchModal()) {
 			handleBlockingWorkbenchModalInput(
+				playerInput,
 				this,
-				this.sources,
-				this.luaTooling,
-				this.fault,
-				this.luaGate,
-				this.overlayRenderer,
-				runtime,
 			);
 			return;
 		}
 		handleEditorInput(
+			playerInput,
+			this.clipboard,
+			this.storage,
+			this.clock,
 			this,
 			this.sources,
 			this.luaTooling,
-			runtime,
 		);
 		let workspaceChanges = WorkspaceAutosaveChange.None;
 		if (this.breakpoints.revision !== breakpointRevision) {
@@ -381,6 +398,8 @@ export class RuntimeCartEditor implements CartEditor {
 	}
 
 	public update(deltaSeconds: number): void {
+		editorRuntimeState.currentTimeMs = this.clock.now();
+		runBackgroundTasks(this.clock);
 		updateBlink(deltaSeconds);
 		updateEditorMessage(deltaSeconds);
 		updateRuntimeErrorOverlay(deltaSeconds);
@@ -393,7 +412,11 @@ export class RuntimeCartEditor implements CartEditor {
 			editorRuntimeState.lastReportedSemanticError = null;
 		}
 		if (editorDiagnosticsState.diagnosticsDirty) {
-			processDiagnosticsQueue(this.luaTooling, editorRuntimeState.clockNow());
+			processDiagnosticsQueue(
+				this.luaTooling,
+				this.clock,
+				editorRuntimeState.currentTimeMs,
+			);
 		}
 	}
 
@@ -443,7 +466,7 @@ export class RuntimeCartEditor implements CartEditor {
 		if (this.isAvailable) {
 			storeActiveCodeTabContext();
 		}
-		editorInput.applyOverrides(false, captureKeys);
+		editorInput.applyOverrides(this.input, false, captureKeys);
 		if (editorViewState.dimCrtInEditor) {
 			this.restoreCrtPostprocessingFromEditor();
 		}
@@ -488,7 +511,7 @@ export class RuntimeCartEditor implements CartEditor {
 		}
 	}
 
-	public setFontVariant(variant: Parameters<typeof setFontVariant>[0]): void {
+	public setFontVariant(variant: Parameters<typeof setFontVariant>[1]): void {
 		if (!this.isAvailable) {
 			return;
 		}
@@ -498,7 +521,7 @@ export class RuntimeCartEditor implements CartEditor {
 		if (activeContext) {
 			activeCodeTabMode = activeContext.mode;
 		}
-		setFontVariant(variant, activeCodeTabMode, getActiveCodeTabContextId());
+		setFontVariant(this.clock, variant, activeCodeTabMode, getActiveCodeTabContextId());
 		this.resourcePanel.setFontMetrics(editorViewState.lineHeight, editorViewState.charAdvance);
 		if (editorViewState.fontVariant !== previousVariant) {
 			requestWorkspaceAutosave(WorkspaceAutosaveChange.Font);
@@ -509,9 +532,7 @@ export class RuntimeCartEditor implements CartEditor {
 		if (!editorRuntimeState.active) {
 			this.activate();
 		}
-		focusChunkSourceForContext(
-			this,
-			this.sources,
+		this.navigation.focusChunkSourceForContext(
 			this.runtime.machine.cpu.activeCartridgeSlot(),
 			path,
 		);
@@ -565,10 +586,8 @@ export class RuntimeCartEditor implements CartEditor {
 
 	public handleRuntimeTaskError(error: unknown, fallbackMessage: string): void {
 		const errormsg = error instanceof Error ? error.message : String(error);
-		machineManager.paused = true;
 		this.activate();
 		const message = `${fallbackMessage}: ${errormsg}`;
-		machineManager.platform.log(LogLevel.Error, message);
 		showEditorMessage(message, constants.COLOR_STATUS_ERROR, 2.0);
 	}
 
@@ -579,7 +598,7 @@ export class RuntimeCartEditor implements CartEditor {
 		editorSearchState.scope = 'local';
 	}
 
-	private initialize(viewport: Viewport, fontVariant: Parameters<typeof setFontVariant>[0]): ResourcePanelController {
+	private initialize(viewport: Viewport, fontVariant: Parameters<typeof setFontVariant>[1]): ResourcePanelController {
 		editorViewState.fontVariant = fontVariant;
 		constants.setIdeThemeVariant(constants.DEFAULT_THEME);
 		editorRuntimeState.themeVariant = constants.getActiveIdeThemeVariant();
@@ -588,7 +607,6 @@ export class RuntimeCartEditor implements CartEditor {
 		setEditorCaseInsensitivity(editorRuntimeState.uppercaseDisplay);
 		editorDocumentState.preMutationSource = null;
 		applyViewportSize(viewport);
-		editorRuntimeState.clockNow = () => machineManager.platform.clock.now();
 		resetSemanticWorkspaces();
 		editorViewState.scrollbars = {
 			codeVertical: new Scrollbar('codeVertical', 'vertical'),
@@ -603,13 +621,13 @@ export class RuntimeCartEditor implements CartEditor {
 			resourceHorizontal: editorViewState.scrollbars.resourceHorizontal,
 		});
 		if (!this.isAvailable) {
-			configureFontVariant(editorViewState.fontVariant, null);
+			configureFontVariant(this.clock, editorViewState.fontVariant, null);
 			resourcePanel.setFontMetrics(editorViewState.lineHeight, editorViewState.charAdvance);
 			editorRuntimeState.initialized = false;
 			return resourcePanel;
 		}
 		const initialContext = createEntryTabContext(this.sources);
-		configureFontVariant(editorViewState.fontVariant, initialContext.mode);
+		configureFontVariant(this.clock, editorViewState.fontVariant, initialContext.mode);
 		resourcePanel.setFontMetrics(editorViewState.lineHeight, editorViewState.charAdvance);
 		editorSearchState.field = createInlineTextField();
 		symbolSearchState.field = createInlineTextField();
@@ -697,41 +715,5 @@ export class RuntimeCartEditor implements CartEditor {
 		this.overlayRenderer.setRenderingViewportType(presenter, 'viewport');
 		this.updateViewport(this.overlayRenderer.viewportSize);
 		this.editorRenderTargetBaselineActive = false;
-	}
-}
-
-export class EditorNavigationController {
-	public constructor(
-		private readonly editor: CartEditor,
-		private readonly sources: RuntimeSourceState,
-		private readonly resourcePanel: ResourcePanelController,
-	) {
-	}
-
-	public goBackward(): void {
-		const target = takeBackwardNavigationEntry();
-		if (!target) {
-			return;
-		}
-		this.openHistoryEntry(target);
-	}
-
-	public goForward(): void {
-		const target = takeForwardNavigationEntry();
-		if (!target) {
-			return;
-		}
-		this.openHistoryEntry(target);
-	}
-
-	private openHistoryEntry(target: NavigationHistoryEntry): void {
-		withNavigationCaptureSuspended(() => {
-			if (!activateNavigationEntryContext(this.resourcePanel, target)) {
-				focusChunkSource(this.editor, this.sources, target);
-				activateNavigationEntryContext(this.resourcePanel, target);
-			}
-			applyNavigationEntryPosition(this.resourcePanel, target);
-		});
-		completeNavigationHistoryJump(target);
 	}
 }

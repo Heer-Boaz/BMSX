@@ -1,4 +1,4 @@
-import { Input } from './manager';
+import type { Input } from './manager';
 import { KeyModifier, type PlayerInput } from './player';
 import type { ButtonState } from './models';
 
@@ -16,8 +16,11 @@ export class GlobalShortcutRegistry {
 	private readonly gamepadChords = new Map<number, Array<{ buttons: string[]; handler: () => void; latchKeys: string[] }>>();
 	private readonly latch = new Map<string, number | null>();
 
+	public constructor(private readonly input: Input) {
+	}
+
 	public registerKeyboardShortcut(playerIndex: number, key: string, handler: () => void, modifiers: KeyModifier = KeyModifier.none): ShortcutDisposer {
-		Input.instance.setKeyboardCapture(key, true);
+		this.input.setKeyboardCapture(key, true);
 		let shortcuts = this.keyboardShortcuts.get(playerIndex);
 		if (!shortcuts) {
 			shortcuts = [];

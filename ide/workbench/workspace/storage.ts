@@ -1,6 +1,9 @@
-import { machineManager } from '../../../machine/ts/core/machine_manager';
-import type { TimerHandle } from '../../../machine/ts/platform/platform';
-import { scheduleIdeOnce } from '../../common/background_tasks';
+import type {
+	HostClock,
+	Lifecycle,
+	StorageService,
+	TimerHandle,
+} from '../../../machine/ts/platform/platform';
 import { clearWorkspaceSourceCaches } from '../../workspace/cache';
 import {
 	buildWorkspaceDirtyEntryPath,
@@ -54,6 +57,9 @@ let reconnectTask: Promise<void> = null;
 let editor: CartEditor = null;
 let sources: RuntimeSourceState = null;
 let debuggerState: RuntimeDebuggerState = null;
+let storage: StorageService = null;
+let clock: HostClock = null;
+let lifecycle: Lifecycle = null;
 
 function detachWorkspaceExitHandler(): void {
 	if (workspaceState.disposeExitListener) {
@@ -64,7 +70,7 @@ function detachWorkspaceExitHandler(): void {
 
 function attachWorkspaceExitHandler(): void {
 	detachWorkspaceExitHandler();
-	workspaceState.disposeExitListener = machineManager.platform.lifecycle.onWillExit(() => {
+	workspaceState.disposeExitListener = lifecycle.onWillExit(() => {
 		persistWorkspaceSessionLocally();
 	});
 }
@@ -112,6 +118,9 @@ export async function shutdownWorkspaceStorage(): Promise<void> {
 			editor = null;
 			sources = null;
 			debuggerState = null;
+			storage = null;
+			clock = null;
+			lifecycle = null;
 			clearWorkspaceSourceCaches();
 			closeWorkspaceRecords();
 		}
@@ -119,19 +128,29 @@ export async function shutdownWorkspaceStorage(): Promise<void> {
 }
 
 export async function initializeWorkspaceStorage(
+	workspaceStorage: StorageService,
+	workspaceClock: HostClock,
+	workspaceLifecycle: Lifecycle,
 	projectRootPath: string,
 	runtimeSources: RuntimeSourceState,
 ): Promise<WorkspaceAutosavePayload | null> {
 	await shutdownWorkspaceStorage();
+	storage = workspaceStorage;
+	clock = workspaceClock;
+	lifecycle = workspaceLifecycle;
 	workspaceState.projectRootPath = projectRootPath;
-	await openWorkspaceRecords(machineManager.platform.storage, projectRootPath);
+	await openWorkspaceRecords(
+		storage,
+		clock,
+		projectRootPath,
+	);
 	const statePath = joinWorkspacePaths(
 		projectRootPath,
 		WORKSPACE_METADATA_DIR,
 		WORKSPACE_STATE_FILE,
 	);
 	const localRecord = readLocalWorkspaceRecord(
-		machineManager.platform.storage,
+		storage,
 		projectRootPath,
 		statePath,
 	);
@@ -160,7 +179,7 @@ export async function initializeWorkspaceStorage(
 				entry.path,
 			);
 			loads[index] = readWorkspaceRecordVersion(
-				machineManager.platform.storage,
+				storage,
 				dirtyProjectRootPath,
 				buildWorkspaceDirtyRecordPath(dirtyPath, entry.updatedAt),
 				entry.updatedAt,
@@ -197,14 +216,14 @@ export async function initializeWorkspaceStorage(
 	}
 	if (remoteRecord && record === remoteRecord) {
 		writeLocalWorkspaceRecord(
-			machineManager.platform.storage,
+			storage,
 			projectRootPath,
 			statePath,
 			remoteRecord,
 		);
 		for (const [dirtyProjectRootPath, dirtyRecordPath] of obsoleteLocalDirtyRecords) {
 			deleteLocalWorkspaceRecord(
-				machineManager.platform.storage,
+				storage,
 				dirtyProjectRootPath,
 				dirtyRecordPath,
 			);
@@ -262,6 +281,7 @@ export async function restoreWorkspaceStorageSession(
 	}
 	if (restorePayload) {
 		await applyWorkspaceAutosavePayload(
+			storage,
 			workspaceEditor,
 			runtimeSources,
 			runtimeDebuggerState,
@@ -301,7 +321,7 @@ function scheduleWorkspaceAutosave(delayMs: number = WORKSPACE_AUTOSAVE_DELAY_MS
 	if (!editor || workspaceState.autosaveHandle || workspaceState.autosaveTask) {
 		return;
 	}
-	workspaceState.autosaveHandle = scheduleIdeOnce(delayMs, () => {
+	workspaceState.autosaveHandle = clock.scheduleOnce(delayMs, () => {
 		workspaceState.autosaveHandle = null;
 		void runWorkspaceAutosaveTick();
 	});
@@ -333,6 +353,8 @@ export function runWorkspaceAutosaveTick(): Promise<void> | void {
 		const previousGeneration = workspaceState.localGeneration;
 		const changes = workspaceState.pendingChanges;
 		const generation = commitWorkspaceSessionLocally(
+			storage,
+			clock,
 			editor,
 			sources,
 			debuggerState,
@@ -394,6 +416,8 @@ function persistWorkspaceSessionLocally(): void {
 
 function commitRequestedWorkspaceSessionLocally(): void {
 	workspaceState.localGeneration = commitWorkspaceSessionLocally(
+		storage,
+		clock,
 		editor,
 		sources,
 		debuggerState,
@@ -412,7 +436,7 @@ function scheduleWorkspaceReconnect(): void {
 		|| !workspaceState.projectRootPath) {
 		return;
 	}
-	reconnectHandle = scheduleIdeOnce(WORKSPACE_RECONNECT_DELAY_MS, () => {
+	reconnectHandle = clock.scheduleOnce(WORKSPACE_RECONNECT_DELAY_MS, () => {
 		reconnectHandle = null;
 		reconnectTask = reconnectAndSyncWorkspace();
 		void reconnectTask;
@@ -420,7 +444,7 @@ function scheduleWorkspaceReconnect(): void {
 }
 
 async function reconnectAndSyncWorkspace(): Promise<void> {
-	await reconnectWorkspaceRecords(workspaceState.projectRootPath);
+	await reconnectWorkspaceRecords(clock, workspaceState.projectRootPath);
 	reconnectTask = null;
 	if (workspaceRecordState.connected) {
 		workspaceState.remoteRevision = -1;

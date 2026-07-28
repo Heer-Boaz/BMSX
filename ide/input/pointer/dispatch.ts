@@ -1,5 +1,5 @@
-import { machineManager } from '../../../machine/ts/core/machine_manager';
 import type { Runtime } from '../../../machine/ts/machine/runtime/runtime';
+import type { PlayerInput } from '../../../machine/ts/input/player';
 import { clearGotoHoverHighlight, clearHoverTooltip } from '../../editor/contrib/intellisense/engine';
 import { computeEditorPointerButtonMask, POINTER_AUX_JUST_PRESSED, POINTER_PRIMARY_JUST_PRESSED, POINTER_PRIMARY_JUST_RELEASED, POINTER_SECONDARY_JUST_PRESSED } from './buttons';
 import { handleCodeAreaPointerInput } from './code/index';
@@ -16,35 +16,43 @@ import type { CartEditor } from '../../cart_editor';
 import type { RuntimeSourceState } from '../../runtime/sources';
 import type { RuntimeLuaTooling } from '../../runtime/lua_tooling';
 import type { RuntimeFaultState } from '../../runtime/fault_state';
-import type { GateGroup } from '../../../machine/ts/common/taskgate';
-import type { OverlayRenderer } from '../../runtime/overlay_renderer';
-import type { VideoSurface } from '../../../machine/ts/platform/platform';
+import type {
+	ClipboardService,
+	VideoSurface,
+} from '../../../machine/ts/platform/platform';
 
 export function handleTextEditorPointerInput(
 	surface: VideoSurface,
+	playerInput: PlayerInput,
+	now: number,
+	clipboard: ClipboardService,
 	editor: CartEditor,
 	sources: RuntimeSourceState,
 	luaTooling: RuntimeLuaTooling,
 	fault: RuntimeFaultState,
-	luaGate: GateGroup,
-	overlayRenderer: OverlayRenderer,
 	runtime: Runtime,
 ): void {
-	const ctrlDown = isCtrlDown();
-	const metaDown = isMetaDown();
+	const ctrlDown = isCtrlDown(playerInput);
+	const metaDown = isMetaDown(playerInput);
 	const gotoModifierActive = ctrlDown || metaDown;
 	const activeContext = getActiveCodeTabContext();
-	const snapshot = readEditorPointerSnapshot(surface);
+	const snapshot = readEditorPointerSnapshot(surface, playerInput);
 	if (prepareEditorPointerFrame(editor.resourcePanel, snapshot, gotoModifierActive)) {
 		return;
 	}
-	const playerInput = machineManager.input.getPlayerInput(1);
 	const buttonMask = computeEditorPointerButtonMask(playerInput, snapshot.primaryPressed);
 	const justPressed = (buttonMask & POINTER_PRIMARY_JUST_PRESSED) !== 0;
 	const justReleased = (buttonMask & POINTER_PRIMARY_JUST_RELEASED) !== 0;
 	const pointerSecondaryJustPressed = (buttonMask & POINTER_SECONDARY_JUST_PRESSED) !== 0;
 	const pointerAuxJustPressed = (buttonMask & POINTER_AUX_JUST_PRESSED) !== 0;
-	if (handleEditorContextMenuPointer(editor, snapshot, justPressed, pointerSecondaryJustPressed, playerInput)) {
+	if (handleEditorContextMenuPointer(
+		clipboard,
+		editor,
+		snapshot,
+		justPressed,
+		pointerSecondaryJustPressed,
+		playerInput,
+	)) {
 		editorPointerState.pointerPrimaryWasPressed = snapshot.primaryPressed;
 		clearHoverTooltip();
 		clearGotoHoverHighlight();
@@ -58,12 +66,6 @@ export function handleTextEditorPointerInput(
 	}
 	if (handleEditorPointerGuards(
 		editor,
-		sources,
-		luaTooling,
-		fault,
-		luaGate,
-		overlayRenderer,
-		runtime,
 		snapshot,
 		justPressed,
 	)) {
@@ -84,5 +86,7 @@ export function handleTextEditorPointerInput(
 		activeContext,
 		pointerSecondaryJustPressed,
 		playerInput,
+		now,
+		clipboard,
 	);
 }

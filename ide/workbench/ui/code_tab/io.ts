@@ -33,6 +33,7 @@ import { runtimeSourceProjectRootPath } from '../../../runtime/sources';
 import type { ResourcePanelController } from '../../contrib/resources/panel/controller';
 import { requestWorkspaceAutosave } from '../../workspace/storage';
 import { WorkspaceAutosaveChange } from '../../workspace/models';
+import type { HostClock, StorageService } from '../../../../machine/ts/platform/platform';
 
 function applyCodeTabResource(context: CodeTabContext, resource: RuntimeResource, mode: CodeTabMode): void {
 	context.resource = resource;
@@ -57,16 +58,22 @@ export function openLuaCodeTab(
 }
 
 export async function openAemCodeTab(
-	resourcePanel: ResourcePanelController,
+	storage: StorageService,
+	editor: CartEditor,
 	sources: RuntimeSourceState,
 	resource: RuntimeResource,
 ): Promise<void> {
+	const resourcePanel = editor.resourcePanel;
 	const tabId = buildCodeTabId(resource);
 	try {
 		let context = codeTabSessionState.contexts.get(tabId);
 		if (!context) {
 			const projectRootPath = runtimeSourceProjectRootPath(sources, resource.domain);
-			const source = await loadWorkspaceSourceFile(resource.path, projectRootPath);
+			const source = await loadWorkspaceSourceFile(
+				storage,
+				resource.path,
+				projectRootPath,
+			);
 			if (source === null) {
 				throw new Error(`AEM resource '${resource.path}' is unavailable.`);
 			}
@@ -82,22 +89,26 @@ export async function openAemCodeTab(
 }
 
 export async function openCodeTabForResource(
-	resourcePanel: ResourcePanelController,
+	storage: StorageService,
+	editor: CartEditor,
 	sources: RuntimeSourceState,
 	resource: RuntimeResource,
 ): Promise<void> {
+	const resourcePanel = editor.resourcePanel;
 	if (resource.source.type === 'lua') {
 		openLuaCodeTab(resourcePanel, sources, resource);
 		return;
 	}
 	if (resource.source.type === 'aem') {
-		await openAemCodeTab(resourcePanel, sources, resource);
+		await openAemCodeTab(storage, editor, sources, resource);
 		return;
 	}
 	throw new Error(`Unsupported code tab resource type '${resource.source.type}' for '${resource.path}'.`);
 }
 
 export async function save(
+	storage: StorageService,
+	clock: HostClock,
 	editor: CartEditor,
 	sources: RuntimeSourceState,
 	runtime: Runtime,
@@ -108,13 +119,25 @@ export async function save(
 	const previousAppliedGeneration = context.appliedGeneration;
 	try {
 		if (context.mode === 'lua') {
-			await saveLuaResourceSource(sources, context.resource, source);
+			await saveLuaResourceSource(
+				storage,
+				clock,
+				sources,
+				context.resource,
+				source,
+			);
 		} else {
 			const projectRootPath = runtimeSourceProjectRootPath(
 				sources,
 				context.resource.domain,
 			);
-			await persistWorkspaceSourceFile(targetPath, source, projectRootPath);
+			await persistWorkspaceSourceFile(
+				storage,
+				clock,
+				targetPath,
+				source,
+				projectRootPath,
+			);
 			workspaceCanonicalSourceCache.set(resolveWorkspacePath(targetPath, projectRootPath), source);
 		}
 		commitActiveCodeTabSave(context, source);

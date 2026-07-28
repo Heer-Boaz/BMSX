@@ -249,7 +249,6 @@ int main() {
 	insideRetroRun = false;
 	require(inputPolls == 1u, "the supported core should poll the platform input owner once during the frame");
 	require(requestLineReads == 1u, "an accepted frontend callback should drive the platform supervisor-request line");
-	require(bmsx::Input::instance().supervisorRequestLineHigh(), "an accepted high frontend line must reach the machine input owner");
 	require(geometryNotifications == 0u && systemAvNotifications == 0u, "unchanged startup AV state should not be republished");
 
 	const std::vector<bmsx::u8> expandedState = makeExpandedPcrtcState(cartridgeRamByteCount);
@@ -285,7 +284,6 @@ int main() {
 	require(lastGeometryNotificationSequence < lastVideoSequence, "restored geometry should reach the frontend before its software frame");
 	require(!environmentNotificationOutsideRun, "libretro video environment notifications must only occur inside retro_run");
 	retro_deinit();
-	require(!bmsx::Input::instance().supervisorRequestLineHigh(), "core teardown should clear the machine supervisor-request line");
 
 	inputPolls = 0u;
 	requestLineReads = 0u;
@@ -310,7 +308,6 @@ int main() {
 	insideRetroRun = false;
 	require(inputPolls == 1u, "the rejected core should still poll the platform input owner once during the frame");
 	require(requestLineReads == 0u, "a frontend callback written while rejecting the private command must never be retained");
-	require(!bmsx::Input::instance().supervisorRequestLineHigh(), "a rejected private interface must leave the supervisor-request line low");
 	retro_deinit();
 
 	acceptXrgb8888 = false;

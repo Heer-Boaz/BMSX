@@ -10,15 +10,19 @@ import { symbolSearchState } from '../../../editor/contrib/symbols/search/state'
 import type { CartEditor } from '../../../cart_editor';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
+import type { PlayerInput } from '../../../../machine/ts/input/player';
+import type { ClipboardService } from '../../../../machine/ts/platform/platform';
 
 export function handleSymbolSearchInput(
+	playerInput: PlayerInput,
+	clipboard: ClipboardService,
 	editor: CartEditor,
 	sources: RuntimeSourceState,
 	bridge: RuntimeLuaTooling,
 ): void {
-	const shiftDown = isShiftDown();
-	if (isKeyJustPressed('Enter')) {
-		consumeIdeKey('Enter');
+	const shiftDown = isShiftDown(playerInput);
+	if (isKeyJustPressed('Enter', playerInput)) {
+		consumeIdeKey('Enter', playerInput);
 		if (shiftDown) {
 			moveSymbolSearchSelection(-1);
 			return;
@@ -30,44 +34,44 @@ export function handleSymbolSearchInput(
 		}
 		return;
 	}
-	if (isKeyJustPressed('Escape')) {
-		consumeIdeKey('Escape');
+	if (isKeyJustPressed('Escape', playerInput)) {
+		consumeIdeKey('Escape', playerInput);
 		closeSymbolSearch(true);
 		return;
 	}
-	if (shouldRepeatKeyFromPlayer('ArrowUp')) {
-		consumeIdeKey('ArrowUp');
+	if (shouldRepeatKeyFromPlayer('ArrowUp', playerInput)) {
+		consumeIdeKey('ArrowUp', playerInput);
 		moveSymbolSearchSelection(-1);
 		return;
 	}
-	if (shouldRepeatKeyFromPlayer('ArrowDown')) {
-		consumeIdeKey('ArrowDown');
+	if (shouldRepeatKeyFromPlayer('ArrowDown', playerInput)) {
+		consumeIdeKey('ArrowDown', playerInput);
 		moveSymbolSearchSelection(1);
 		return;
 	}
-	if (shouldRepeatKeyFromPlayer('PageUp')) {
-		consumeIdeKey('PageUp');
+	if (shouldRepeatKeyFromPlayer('PageUp', playerInput)) {
+		consumeIdeKey('PageUp', playerInput);
 		moveSymbolSearchSelection(-symbolSearchPageSize());
 		return;
 	}
-	if (shouldRepeatKeyFromPlayer('PageDown')) {
-		consumeIdeKey('PageDown');
+	if (shouldRepeatKeyFromPlayer('PageDown', playerInput)) {
+		consumeIdeKey('PageDown', playerInput);
 		moveSymbolSearchSelection(symbolSearchPageSize());
 		return;
 	}
-	if (isKeyJustPressed('Home')) {
-		consumeIdeKey('Home');
+	if (isKeyJustPressed('Home', playerInput)) {
+		consumeIdeKey('Home', playerInput);
 		symbolSearchState.selectionIndex = symbolSearchState.matches.length > 0 ? 0 : -1;
 		ensureSymbolSearchSelectionVisible();
 		return;
 	}
-	if (isKeyJustPressed('End')) {
-		consumeIdeKey('End');
+	if (isKeyJustPressed('End', playerInput)) {
+		consumeIdeKey('End', playerInput);
 		symbolSearchState.selectionIndex = symbolSearchState.matches.length > 0 ? symbolSearchState.matches.length - 1 : -1;
 		ensureSymbolSearchSelectionVisible();
 		return;
 	}
-	const textChanged = applyInlineFieldEditing(symbolSearchState.field, {
+	const textChanged = applyInlineFieldEditing(playerInput, clipboard, symbolSearchState.field, {
 		allowSpace: true,
 	});
 	symbolSearchState.query = symbolSearchState.field.text;

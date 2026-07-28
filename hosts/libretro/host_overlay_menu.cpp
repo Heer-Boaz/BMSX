@@ -1,11 +1,9 @@
-#include "core/host_overlay_menu.h"
+#include "host_overlay_menu.h"
 
-#include "core/machine_manager.h"
 #include "render/shared/bitmap_font.h"
 #include "input/hid_keys.h"
 #include "input/manager.h"
 #include "machine/runtime/runtime.h"
-#include "platform/platform.h"
 #include "render/video_presenter.h"
 #include "render/host_overlay/overlay_queue.h"
 #include <array>
@@ -113,7 +111,7 @@ bool boolFromIndex(i32 index) {
 	return index != 0;
 }
 
-i32 optionIndex(MachineManager& manager, VideoPresenter& presenter, i32 option) {
+i32 optionIndex(bool showFps, VideoPresenter& presenter, i32 option) {
 	switch (kOptions[static_cast<size_t>(option)].id) {
 		case HostMenuOptionId::ShowUsageGizmo: return boolIndex(presenter.showResourceUsageGizmo);
 		case HostMenuOptionId::CrtPost: return boolIndex(presenter.crt_postprocessing_enabled);
@@ -125,14 +123,14 @@ i32 optionIndex(MachineManager& manager, VideoPresenter& presenter, i32 option) 
 		case HostMenuOptionId::CrtFringing: return boolIndex(presenter.applyFringing);
 		case HostMenuOptionId::CrtAperture: return boolIndex(presenter.applyAperture);
 		case HostMenuOptionId::DeviceQuantize: return static_cast<i32>(presenter.deviceQuantizeMode());
-		case HostMenuOptionId::HostShowFps: return boolIndex(manager.hostShowFps);
+		case HostMenuOptionId::HostShowFps: return boolIndex(showFps);
 		case HostMenuOptionId::RebootCart: return 0;
 		case HostMenuOptionId::ExitGame: return 0;
 	}
 	return 0;
 }
 
-void setOptionIndex(MachineManager& manager, VideoPresenter& presenter, i32 option, i32 value) {
+void setOptionIndex(bool& showFps, VideoPresenter& presenter, i32 option, i32 value) {
 	switch (kOptions[static_cast<size_t>(option)].id) {
 		case HostMenuOptionId::ShowUsageGizmo: presenter.showResourceUsageGizmo = boolFromIndex(value); break;
 		case HostMenuOptionId::CrtPost: presenter.crt_postprocessing_enabled = boolFromIndex(value); break;
@@ -144,7 +142,7 @@ void setOptionIndex(MachineManager& manager, VideoPresenter& presenter, i32 opti
 		case HostMenuOptionId::CrtFringing: presenter.applyFringing = boolFromIndex(value); break;
 		case HostMenuOptionId::CrtAperture: presenter.applyAperture = boolFromIndex(value); break;
 		case HostMenuOptionId::DeviceQuantize: presenter.setDeviceQuantizeMode(static_cast<DeviceQuantizeMode>(value)); break;
-		case HostMenuOptionId::HostShowFps: manager.hostShowFps = boolFromIndex(value); break;
+		case HostMenuOptionId::HostShowFps: showFps = boolFromIndex(value); break;
 		case HostMenuOptionId::RebootCart: break;
 		case HostMenuOptionId::ExitGame: break;
 	}
@@ -259,11 +257,6 @@ HostOverlayMenu::HostOverlayMenu() {
 	}
 }
 
-HostOverlayMenu& hostOverlayMenu() {
-	static HostOverlayMenu menu;
-	return menu;
-}
-
 void HostOverlayMenu::clearRenderCommands() {
 	m_commandCount = 0;
 	clearHostMenuFrame();
@@ -279,8 +272,7 @@ void HostOverlayMenu::queueCommand(Host2DKind kind, Host2DRef ref) {
 	m_commandCount += 1;
 }
 
-bool HostOverlayMenu::tickInput(MachineManager& manager, VideoPresenter& presenter) {
-	const Input& input = Input::instance();
+HostMenuInput HostOverlayMenu::tickInput(const Input& input, VideoPresenter& presenter, f64 currentTimeMs) {
 	const bool comboEdge = buttonPressed(input, HostMenuButtonId::Start) &&
 		buttonPressed(input, HostMenuButtonId::Select) &&
 		buttonPressed(input, HostMenuButtonId::LeftBumper) &&
@@ -292,13 +284,12 @@ bool HostOverlayMenu::tickInput(MachineManager& manager, VideoPresenter& present
 	if (comboEdge) {
 		toggle();
 	}
-	bool capturesInput = m_active;
+	HostMenuInput result = m_active ? HostMenuInput::Active : HostMenuInput::Inactive;
 	if (m_active) {
 		if (buttonJustPressed(input, HostMenuButtonId::B)) {
 			toggle();
-			capturesInput = false;
+			result = HostMenuInput::Inactive;
 		} else {
-			const f64 currentTimeMs = manager.clock()->now();
 			const f64 frameDurationMs = input.frameDurationMs();
 			if (advanceButtonRepeat(
 				buttonPressed(input, HostMenuButtonId::Up),
@@ -327,7 +318,7 @@ bool HostOverlayMenu::tickInput(MachineManager& manager, VideoPresenter& present
 				currentTimeMs,
 				frameDurationMs
 			)) {
-				changeSelected(manager, presenter, -1);
+				changeSelected(presenter, -1);
 			}
 			if (advanceButtonRepeat(
 				buttonPressed(input, HostMenuButtonId::Right),
@@ -336,15 +327,15 @@ bool HostOverlayMenu::tickInput(MachineManager& manager, VideoPresenter& present
 				currentTimeMs,
 				frameDurationMs
 			)) {
-				changeSelected(manager, presenter, 1);
+				changeSelected(presenter, 1);
 			}
 			if (buttonJustPressed(input, HostMenuButtonId::A)) {
-				activateSelected(manager);
+				result = activateSelected();
 			}
 		}
 	}
 	latchButtonStates(input);
-	return capturesInput;
+	return result;
 }
 
 void HostOverlayMenu::resetInputState() {
@@ -352,12 +343,12 @@ void HostOverlayMenu::resetInputState() {
 	resetButtonRepeats();
 }
 
-void HostOverlayMenu::queueRenderCommands(MachineManager& manager, VideoPresenter& presenter) {
+void HostOverlayMenu::queueRenderCommands(VideoPresenter& presenter) {
 	clearRenderCommands();
 	const Host2DKind rectKind = Host2DKind::Rect;
 	const Host2DKind itemsKind = Host2DKind::Glyphs;
 	if (m_dirtyText) {
-		rebuildText(manager, presenter);
+		rebuildText(presenter);
 	}
 	BFont* font = presenter.default_font;
 	const i32 lineHeight = font->lineHeight() > 10 ? 10 : font->lineHeight();
@@ -399,7 +390,7 @@ void HostOverlayMenu::queueRenderCommands(MachineManager& manager, VideoPresente
 	publishRenderCommands();
 }
 
-bool HostOverlayMenu::queueFrameOverlayCommands(MachineManager& manager, VideoPresenter& presenter) {
+bool HostOverlayMenu::queueFrameOverlayCommands(Runtime& runtime, VideoPresenter& presenter, f64 hostFps) {
 	clearRenderCommands();
 	const Host2DKind rectKind = Host2DKind::Rect;
 	const Host2DKind itemsKind = Host2DKind::Glyphs;
@@ -408,8 +399,8 @@ bool HostOverlayMenu::queueFrameOverlayCommands(MachineManager& manager, VideoPr
 	}
 	bool queued = false;
 	BFont* font = presenter.default_font;
-	if (manager.hostShowFps) {
-		const i32 fpsTenths = static_cast<i32>((manager.fps() * 10.0) + 0.5);
+	if (m_showFps) {
+		const i32 fpsTenths = static_cast<i32>((hostFps * 10.0) + 0.5);
 		if (m_fpsTextTenths != fpsTenths || m_fpsGlyphs.font != font) {
 			m_fpsTextTenths = fpsTenths;
 			const i32 whole = fpsTenths / 10;
@@ -427,7 +418,6 @@ bool HostOverlayMenu::queueFrameOverlayCommands(MachineManager& manager, VideoPr
 		queued = true;
 	}
 	if (presenter.showResourceUsageGizmo) {
-		Runtime& runtime = manager.runtime();
 		const std::array<double, UsageBarCount> used{
 			static_cast<double>(runtime.cpuUsageCyclesUsed()),
 			static_cast<double>(runtime.ramUsedBytes()),
@@ -541,39 +531,37 @@ void HostOverlayMenu::resetButtonRepeats() {
 	m_buttonRepeats.fill({});
 }
 
-void HostOverlayMenu::changeSelected(MachineManager& manager, VideoPresenter& presenter, i32 direction) {
+void HostOverlayMenu::changeSelected(VideoPresenter& presenter, i32 direction) {
 	if (kOptions[static_cast<size_t>(m_selected)].valueCount == 0) {
 		return;
 	}
 	const i32 valueCount = kOptions[static_cast<size_t>(m_selected)].valueCount;
-	const i32 current = optionIndex(manager, presenter, m_selected);
+	const i32 current = optionIndex(m_showFps, presenter, m_selected);
 	const i32 next = (current + valueCount + direction) % valueCount;
-	setOptionIndex(manager, presenter, m_selected, next);
+	setOptionIndex(m_showFps, presenter, m_selected, next);
 	m_dirtyText = true;
 }
 
-void HostOverlayMenu::activateSelected(MachineManager& manager) {
+HostMenuInput HostOverlayMenu::activateSelected() {
 	switch (kOptions[static_cast<size_t>(m_selected)].id) {
 		case HostMenuOptionId::RebootCart:
 			close();
-			manager.rebootLoadedRom();
-			return;
+			return HostMenuInput::RebootCart;
 		case HostMenuOptionId::ExitGame:
 			close();
-			manager.platform()->requestShutdown();
-			return;
+			return HostMenuInput::ExitGame;
 		default:
-			return;
+			return HostMenuInput::Active;
 	}
 }
 
-void HostOverlayMenu::rebuildText(MachineManager& manager, VideoPresenter& presenter) {
+void HostOverlayMenu::rebuildText(VideoPresenter& presenter) {
 	for (i32 index = 0; index < kMenuOptionCount; index += 1) {
 		const HostMenuOptionDef& option = kOptions[static_cast<size_t>(index)];
 		if (option.valueCount == 0) {
 			m_lineText[static_cast<size_t>(index)] = option.label;
 		} else {
-			m_lineText[static_cast<size_t>(index)] = std::string(option.label) + "  " + option.values[optionIndex(manager, presenter, index)];
+			m_lineText[static_cast<size_t>(index)] = std::string(option.label) + "  " + option.values[optionIndex(m_showFps, presenter, index)];
 		}
 		GlyphRenderSubmission& items = m_optionGlyphs[static_cast<size_t>(index)];
 		items.items[0] = m_lineText[static_cast<size_t>(index)];

@@ -1,6 +1,6 @@
-#include "render/presentation_state.h"
-#include "core/machine_manager.h"
+#include "presentation_state.h"
 #include "common/time.h"
+#include "machine/devices/gx/gpu_display.h"
 #include "machine/runtime/runtime.h"
 #include "render/backend/pass/library.h"
 #include <cstdio>
@@ -111,9 +111,14 @@ void RenderPresentationState::clearPresentation() {
 	m_presentationCommitFrame = false;
 }
 
-void RenderPresentationState::reset() {
+void RenderPresentationState::reset(VideoPresenter& presenter, Runtime& runtime) {
 	clearPresentation();
 	m_pcrtcScanoutRevision = 0u;
+	const GxGpuDeviceOutput& output = runtime.machine.gxGpu.readDeviceOutput();
+	presenter.setRenderTargetSize(
+		static_cast<i32>(gxGpuDisplayModeScreenWidth(output.displayModeWord)),
+		gxGpuVerticalVisibleLines(output.verticalDisplayRangeWord, output.displayModeWord)
+	);
 	m_debugPresentReportInitialized = false;
 	m_debugPresentHostFrames = 0;
 	m_debugPresentTickCompleted = 0;
@@ -164,16 +169,11 @@ void RenderPresentationState::syncAfterRuntimeUpdate(Runtime& runtime, i64 previ
 }
 
 bool RenderPresentationState::render(
-	MachineManager& manager,
 	VideoPresenter& presenter,
 	Runtime& runtime,
-	bool heldPresent
+	f64 deltaTime,
+	bool pausedPresent
 ) {
-	if (manager.state() != MachineManagerState::Running && manager.state() != MachineManagerState::Paused) {
-		return false;
-	}
-
-	const bool pausedPresent = manager.state() == MachineManagerState::Paused || heldPresent;
 	const bool runtimePresentPending = !pausedPresent && consumePresentation(m_presentationScratch);
 	const bool shouldPresent = pausedPresent || runtimePresentPending;
 	if (!shouldPresent) {
@@ -197,7 +197,7 @@ bool RenderPresentationState::render(
 		presenter.setRenderTargetSize(width, height);
 	}
 	presenter.configurePresentation(presentMode, commitFrame);
-	presenter.present(output, runtime.frameLoop.currentTimeSeconds, manager.deltaTime());
+	presenter.present(output, runtime.frameLoop.currentTimeSeconds, deltaTime);
 	if (commitFrame) {
 		runtime.machine.gxGpu.retirePresentedCommands();
 	}

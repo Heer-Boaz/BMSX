@@ -3,6 +3,7 @@ import type { EditorCommandId } from '../../common/commands';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from './key_input';
 import { handleEscapeKey } from './modal_input';
 import { ESCAPE_KEY } from '../../common/constants';
+import type { PlayerInput } from '../../../machine/ts/input/player';
 
 type ModifierKey = 'ctrl' | 'meta' | 'shift' | 'alt';
 
@@ -34,20 +35,20 @@ const editorGlobalKeyBindings: readonly CommandKeyBinding[] = [
 	{ code: 'Comma', command: 'symbolSearchGlobal', modifiers: { allOf: ['alt'], noneOf: ['ctrl', 'meta'] } },
 ];
 
-function handleEscapeBinding(): boolean {
-	if (!isKeyJustPressed(ESCAPE_KEY) || !handleEscapeKey()) {
+function handleEscapeBinding(playerInput: PlayerInput): boolean {
+	if (!isKeyJustPressed(ESCAPE_KEY, playerInput) || !handleEscapeKey()) {
 		return false;
 	}
-	consumeIdeKey(ESCAPE_KEY);
+	consumeIdeKey(ESCAPE_KEY, playerInput);
 	return true;
 }
 
-function getModifierState(): ModifierState {
+function getModifierState(playerInput: PlayerInput): ModifierState {
 	return {
-		ctrl: isCtrlDown(),
-		meta: isMetaDown(),
-		shift: isShiftDown(),
-		alt: isAltDown(),
+		ctrl: isCtrlDown(playerInput),
+		meta: isMetaDown(playerInput),
+		shift: isShiftDown(playerInput),
+		alt: isAltDown(playerInput),
 	};
 }
 
@@ -93,22 +94,22 @@ function matchesModifierConstraint(constraint: ModifierConstraint, state: Modifi
 		&& !rejectsForbiddenModifier(constraint.noneOf, state);
 }
 
-function handleCommandKeyBinding(commands: IdeCommandController, binding: CommandKeyBinding, state: ModifierState): boolean {
-	if (!isKeyJustPressed(binding.code) || !matchesModifierConstraint(binding.modifiers, state)) {
+function handleCommandKeyBinding(playerInput: PlayerInput, commands: IdeCommandController, binding: CommandKeyBinding, state: ModifierState): boolean {
+	if (!isKeyJustPressed(binding.code, playerInput) || !matchesModifierConstraint(binding.modifiers, state)) {
 		return false;
 	}
-	consumeIdeKey(binding.code);
+	consumeIdeKey(binding.code, playerInput);
 	commands.execute(binding.command);
 	return true;
 }
 
-export function handleEditorGlobalBindings(commands: IdeCommandController): boolean {
-	if (handleEscapeBinding()) {
+export function handleEditorGlobalBindings(playerInput: PlayerInput, commands: IdeCommandController): boolean {
+	if (handleEscapeBinding(playerInput)) {
 		return true;
 	}
-	const state = getModifierState();
+	const state = getModifierState(playerInput);
 	for (let index = 0; index < editorGlobalKeyBindings.length; index += 1) {
-		if (handleCommandKeyBinding(commands, editorGlobalKeyBindings[index], state)) {
+		if (handleCommandKeyBinding(playerInput, commands, editorGlobalKeyBindings[index], state)) {
 			return true;
 		}
 	}

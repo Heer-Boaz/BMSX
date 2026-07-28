@@ -4,6 +4,14 @@ import type { FontVariant } from '../../machine/ts/render/shared/bmsx_font';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import type { GateGroup } from '../../machine/ts/common/taskgate';
 import { taskGate } from '../../machine/ts/common/taskgate';
+import type { SoundMaster } from '../../machine/ts/audio/soundmaster';
+import type { Input } from '../../machine/ts/input/manager';
+import type {
+	ClipboardService,
+	HostClock,
+	LogOutput,
+	StorageService,
+} from '../../machine/ts/platform/platform';
 import { RuntimeCartEditor, type CartEditor } from '../cart_editor';
 import { createRuntimeDebuggerState, type RuntimeDebuggerState } from './debugger_state';
 import { createRuntimeFaultState, type RuntimeFaultState } from './fault_state';
@@ -25,8 +33,14 @@ export class RuntimeIdeState {
 	public readonly fault: RuntimeFaultState = createRuntimeFaultState();
 
 	public constructor(
-		public readonly runtime: Runtime,
-		public readonly presenter: VideoPresenter,
+		runtime: Runtime,
+		presenter: VideoPresenter,
+		input: Input,
+		soundMaster: SoundMaster,
+		storage: StorageService,
+		clock: HostClock,
+		clipboard: ClipboardService,
+		logOutput: LogOutput,
 		viewport: Viewport,
 		public readonly sources: RuntimeSourceState,
 	) {
@@ -34,6 +48,12 @@ export class RuntimeIdeState {
 		this.editor = new RuntimeCartEditor(
 			runtime,
 			presenter,
+			input,
+			soundMaster,
+			storage,
+			clock,
+			clipboard,
+			logOutput,
 			viewport,
 			DEFAULT_IDE_FONT_VARIANT,
 			sources,

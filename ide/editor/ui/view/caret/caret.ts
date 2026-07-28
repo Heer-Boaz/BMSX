@@ -10,6 +10,7 @@ import { editorDocumentState } from '../../../editing/document_state';
 import { editorViewState } from '../state';
 import { caretNavigation } from './state';
 import { resolveCursorVisualIndex } from './visual_index';
+import type { PlayerInput } from '../../../../../machine/ts/input/player';
 
 export function resolveIndentAwareHome(line: string, segment: VisualLineSegment, currentColumn: number): number {
 	const lineLength = line.length;
@@ -182,9 +183,9 @@ export function moveWordRight(): void {
 /**
  * Move cursor left by character or word
  */
-export function moveCursorLeft(): void {
-	const select = isShiftDown();
-	const byWord = isCtrlDown();
+export function moveCursorLeft(playerInput: PlayerInput): void {
+	const select = isShiftDown(playerInput);
+	const byWord = isCtrlDown(playerInput);
 	if (select) {
 		ensureSingleCursorSelectionAnchor(editorDocumentState, editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
 	} else if (hasSelection()) {
@@ -207,9 +208,9 @@ export function moveCursorLeft(): void {
 /**
  * Move cursor right by character or word
  */
-export function moveCursorRight(): void {
-	const select = isShiftDown();
-	const byWord = isCtrlDown();
+export function moveCursorRight(playerInput: PlayerInput): void {
+	const select = isShiftDown(playerInput);
+	const byWord = isCtrlDown(playerInput);
 
 	if (select) {
 		ensureSingleCursorSelectionAnchor(editorDocumentState, editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
@@ -233,8 +234,8 @@ export function moveCursorRight(): void {
 /**
  * Move cursor up one line
  */
-export function moveCursorUp(): void {
-	const select = isShiftDown();
+export function moveCursorUp(playerInput: PlayerInput): void {
+	const select = isShiftDown(playerInput);
 	if (select) {
 		ensureSingleCursorSelectionAnchor(editorDocumentState, editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
 	} else if (hasSelection()) {
@@ -253,8 +254,8 @@ export function moveCursorUp(): void {
 /**
  * Move cursor down one line
  */
-export function moveCursorDown(): void {
-	const select = isShiftDown();
+export function moveCursorDown(playerInput: PlayerInput): void {
+	const select = isShiftDown(playerInput);
 	if (select) {
 		ensureSingleCursorSelectionAnchor(editorDocumentState, editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
 	} else if (hasSelection()) {
@@ -273,17 +274,17 @@ export function moveCursorDown(): void {
 /**
  * Move cursor to start of line or document
  */
-export function moveCursorHome(): void {
+export function moveCursorHome(playerInput: PlayerInput): void {
 	const previousOverride = caretNavigation.lookup(editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
 	caretNavigation.clear();
 	const buffer = editorDocumentState.buffer;
-	const select = isShiftDown();
+	const select = isShiftDown(playerInput);
 	if (select) {
 		ensureSingleCursorSelectionAnchor(editorDocumentState, editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
 	} else {
 		clearSelection();
 	}
-	const ctrlDown = isCtrlDown();
+	const ctrlDown = isCtrlDown(playerInput);
 	if (ctrlDown) {
 		editorDocumentState.cursorRow = 0;
 		editorDocumentState.cursorColumn = 0;
@@ -310,17 +311,17 @@ export function moveCursorHome(): void {
 /**
  * Move cursor to end of line or document
  */
-export function moveCursorEnd(): void {
+export function moveCursorEnd(playerInput: PlayerInput): void {
 	const previousOverride = caretNavigation.lookup(editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
 	caretNavigation.clear();
 	const buffer = editorDocumentState.buffer;
-	const select = isShiftDown();
+	const select = isShiftDown(playerInput);
 	if (select) {
 		ensureSingleCursorSelectionAnchor(editorDocumentState, editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
 	} else {
 		clearSelection();
 	}
-	const ctrlDown = isCtrlDown();
+	const ctrlDown = isCtrlDown(playerInput);
 	if (ctrlDown) {
 		const lastRow = buffer.getLineCount() - 1;
 		editorDocumentState.cursorRow = lastRow;
@@ -348,8 +349,8 @@ export function moveCursorEnd(): void {
 /**
  * Move cursor up one page
  */
-export function pageUp(): void {
-	const select = isShiftDown();
+export function pageUp(playerInput: PlayerInput): void {
+	const select = isShiftDown(playerInput);
 	if (select) {
 		ensureSingleCursorSelectionAnchor(editorDocumentState, editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
 	} else {
@@ -368,8 +369,8 @@ export function pageUp(): void {
 /**
  * Move cursor down one page
  */
-export function pageDown(): void {
-	const select = isShiftDown();
+export function pageDown(playerInput: PlayerInput): void {
+	const select = isShiftDown(playerInput);
 	if (select) {
 		ensureSingleCursorSelectionAnchor(editorDocumentState, editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
 	} else {

@@ -1,5 +1,5 @@
-import { machineManager } from '../../../../machine/ts/core/machine_manager';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
+import type { PlayerInput } from '../../../../machine/ts/input/player';
 import type { CodeTabContext, PointerSnapshot } from '../../../common/models';
 import * as constants from '../../../common/constants';
 import { getCodeAreaBounds } from '../../../editor/ui/view/view';
@@ -14,6 +14,7 @@ import type { CartEditor } from '../../../cart_editor';
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import type { RuntimeFaultState } from '../../../runtime/fault_state';
 import type { RuntimeSourceState } from '../../../runtime/sources';
+import type { ClipboardService } from '../../../../machine/ts/platform/platform';
 
 export function handleCodeAreaPointerInput(
 	editor: CartEditor,
@@ -26,13 +27,25 @@ export function handleCodeAreaPointerInput(
 	gotoModifierActive: boolean,
 	activeContext: CodeTabContext,
 	pointerSecondaryJustPressed: boolean,
-	playerInput: ReturnType<typeof machineManager.input.getPlayerInput>
+	playerInput: PlayerInput,
+	now: number,
+	clipboard: ClipboardService,
 ): void {
 	const bounds = getCodeAreaBounds();
 	const contentBottom = editorViewState.codeHorizontalScrollbarVisible
 		? bounds.codeBottom - constants.SCROLLBAR_WIDTH
 		: bounds.codeBottom;
-	if (handleCodeAreaPointerGuards(editor, sources, runtime, snapshot, justPressed, bounds.codeTop, bounds.codeRight, bounds.textLeft, contentBottom)) {
+	if (handleCodeAreaPointerGuards(
+		clipboard,
+		editor,
+		runtime,
+		snapshot,
+		justPressed,
+		bounds.codeTop,
+		bounds.codeRight,
+		bounds.textLeft,
+		contentBottom,
+	)) {
 		return;
 	}
 	const insideCodeArea = snapshot.viewportY >= bounds.codeTop
@@ -59,11 +72,13 @@ export function handleCodeAreaPointerInput(
 		insideCodeArea,
 		gotoModifierActive,
 		bounds,
+		now,
 	)) {
 		return;
 	}
 	handleCodeAreaSelectionPointer(snapshot, bounds);
 	updateCodeAreaPointerFeedback(
+		playerInput,
 		bridge,
 		fault,
 		runtime,

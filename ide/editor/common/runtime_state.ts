@@ -14,7 +14,7 @@ export const editorRuntimeState = {
 	caseInsensitive: false,
 	uppercaseDisplay: true,
 	builtinIdentifierCache: null as BuiltinIdentifierCache,
-	clockNow: null as () => number,
+	currentTimeMs: 0,
 	active: false,
 	crtOptionsSnapshot: null as CrtOptionsSnapshot,
 	pendingEditContext: null as EditContext,

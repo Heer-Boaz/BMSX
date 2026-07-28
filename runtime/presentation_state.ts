@@ -1,4 +1,7 @@
-import { machineManager } from '../machine/ts/core/machine_manager';
+import {
+	gxGpuDisplayModeScreenWidth,
+	gxGpuVerticalVisibleLines,
+} from '../machine/ts/machine/devices/gx/gpu_display';
 import type { Runtime } from '../machine/ts/machine/runtime/runtime';
 import type { TickCompletion } from '../machine/ts/machine/scheduler/frame';
 import type { VideoPresenter } from '../machine/ts/render/video_presenter';
@@ -36,7 +39,6 @@ export class RenderPresentationState {
 		mode: RenderPresentationMode,
 		commitFrame: boolean,
 	): void {
-		machineManager.deltatime = hostDeltaMs;
 		const output = runtime.machine.gxGpu.readDeviceOutput();
 		const width = output.pcrtcScanout.outputWidth;
 		const height = output.pcrtcScanout.outputHeight;
@@ -46,7 +48,6 @@ export class RenderPresentationState {
 			presenter.setRenderTargetSize(width, height);
 		}
 		presenter.configurePresentation(mode, commitFrame);
-		machineManager.sndmaster.finishFrame();
 		presenter.present(output, runtime.frameLoop.currentTimeMs / 1000, hostDeltaMs / 1000);
 		if (commitFrame) {
 			runtime.machine.gxGpu.retirePresentedCommands();
@@ -81,9 +82,17 @@ export class RenderPresentationState {
 		this.presentationCommitFrame = false;
 	}
 
-	public reset(): void {
+	public reset(presenter: VideoPresenter, runtime: Runtime): void {
 		this.clearPresentation();
 		this.pcrtcScanoutRevision = 0;
+		const output = runtime.machine.gxGpu.readDeviceOutput();
+		presenter.setRenderTargetSize(
+			gxGpuDisplayModeScreenWidth(output.displayModeWord),
+			gxGpuVerticalVisibleLines(
+				output.verticalDisplayRangeWord,
+				output.displayModeWord,
+			),
+		);
 	}
 
 	public syncAfterRuntimeUpdate(runtime: Runtime, previousTickSequence: number): void {

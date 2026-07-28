@@ -3,6 +3,12 @@ import { scheduleRuntimeTask } from '../common/background_tasks';
 import { applyAllWorkspaceSourceOverrides, applyLuaCodeTabSources } from '../workspace/workspace';
 import { workspaceDirtyRecords } from '../workbench/workspace/state';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
+import type { SoundMaster } from '../../machine/ts/audio/soundmaster';
+import type { Input } from '../../machine/ts/input/manager';
+import type {
+	LogOutput,
+	StorageService,
+} from '../../machine/ts/platform/platform';
 import { hotResume } from '../runtime/hot_resume';
 import { deactivateEditor } from '../workbench/overlay_modes';
 import { handleLuaError } from '../workbench/runtime_errors';
@@ -28,11 +34,26 @@ export function performEditorAction(
 	luaGate: GateGroup,
 	overlayRenderer: OverlayRenderer,
 	runtime: Runtime,
+	input: Input,
+	soundMaster: SoundMaster,
+	storage: StorageService,
+	logOutput: LogOutput,
 	action: ActionPromptAction,
 ): boolean {
 	switch (action) {
 		case 'hot-resume':
-			return performHotResume(editor, sources, fault, luaTooling, overlayRenderer, runtime);
+			return performHotResume(
+				editor,
+				sources,
+				fault,
+				luaTooling,
+				overlayRenderer,
+				runtime,
+				input,
+				soundMaster,
+				storage,
+				logOutput,
+			);
 		case 'reboot':
 			return performReboot(
 				editor,
@@ -42,9 +63,13 @@ export function performEditorAction(
 				luaGate,
 				overlayRenderer,
 				runtime,
+				input,
+				soundMaster,
+				storage,
+				logOutput,
 			);
 		case 'close':
-			deactivateEditor(editor, overlayRenderer);
+			deactivateEditor(editor, overlayRenderer, input, soundMaster);
 			return true;
 		case 'theme-toggle':
 			toggleThemeMode();
@@ -61,13 +86,21 @@ export function performHotResume(
 	luaTooling: RuntimeLuaTooling,
 	overlayRenderer: OverlayRenderer,
 	runtime: Runtime,
+	input: Input,
+	soundMaster: SoundMaster,
+	storage: StorageService,
+	logOutput: LogOutput,
 ): boolean {
 	clearExecutionStopHighlights();
-	deactivateEditor(editor, overlayRenderer);
+	deactivateEditor(editor, overlayRenderer, input, soundMaster);
 	console.log('Performing hot resume.');
 	const pendingSources = capturePendingLuaCodeTabSources(sources);
-	scheduleRuntimeTask(async () => {
-		await applyAllWorkspaceSourceOverrides(sources, workspaceDirtyRecords);
+	scheduleRuntimeTask(soundMaster, async () => {
+		await applyAllWorkspaceSourceOverrides(
+			storage,
+			sources,
+			workspaceDirtyRecords,
+		);
 		applyLuaCodeTabSources(sources, pendingSources);
 		hotResume(
 			sources,
@@ -81,7 +114,7 @@ export function performHotResume(
 		markLuaCodeTabsAppliedToRuntime(pendingSources);
 	}, (error) => {
 		console.error(error);
-		handleLuaError(fault, sources, runtime, error);
+		handleLuaError(logOutput, fault, sources, runtime, error);
 		editor.handleRuntimeTaskError(error, 'Failed to resume game');
 	});
 	return true;
@@ -95,11 +128,15 @@ export function performReboot(
 	luaGate: GateGroup,
 	overlayRenderer: OverlayRenderer,
 	runtime: Runtime,
+	input: Input,
+	soundMaster: SoundMaster,
+	storage: StorageService,
+	logOutput: LogOutput,
 ): boolean {
 	clearExecutionStopHighlights();
-	deactivateEditor(editor, overlayRenderer);
+	deactivateEditor(editor, overlayRenderer, input, soundMaster);
 	const pendingSources = capturePendingLuaCodeTabSources(sources);
-	scheduleRuntimeTask(async () => {
+	scheduleRuntimeTask(soundMaster, async () => {
 		console.info('[IDE] Performing cold reboot through bootrom');
 		applyLuaCodeTabSources(sources, pendingSources);
 		await rebootPreparedRuntime(
@@ -110,9 +147,14 @@ export function performReboot(
 			luaGate,
 			overlayRenderer,
 			runtime,
+			input,
+			soundMaster,
+			storage,
+			logOutput,
 		);
 		markLuaCodeTabsAppliedToRuntime(pendingSources);
 	}, (error) => {
+		handleLuaError(logOutput, fault, sources, runtime, error);
 		editor.handleRuntimeTaskError(error, 'Failed to reboot game');
 	});
 	return true;

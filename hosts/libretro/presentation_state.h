@@ -7,7 +7,6 @@
 
 namespace bmsx {
 
-class MachineManager;
 class Runtime;
 
 struct RenderPresentation {
@@ -21,14 +20,14 @@ class RenderPresentationState {
 public:
 	void recordHostFrame();
 	void clearPresentation();
-	void reset();
+	void reset(VideoPresenter& presenter, Runtime& runtime);
 	void requestHeldPresentation();
 	void syncAfterRuntimeUpdate(Runtime& runtime, i64 previousTickSequence);
 	bool render(
-		MachineManager& manager,
 		VideoPresenter& presenter,
 		Runtime& runtime,
-		bool heldPresent = false
+		f64 deltaTime,
+		bool pausedPresent
 	);
 
 private:

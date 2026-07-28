@@ -5,24 +5,18 @@
 
 namespace bmsx {
 
-Input& Input::instance() {
-	static Input input;
-	return input;
-}
-
-void Input::initialize(InputHub& inputHub, Lifecycle& lifecycle) {
-	m_platformInputSub = inputHub.subscribe([this](const InputEvt& event) {
+Input::Input(InputHub& inputHub, Lifecycle& lifecycle)
+	: m_platformInputSub(inputHub.subscribe([this](const InputEvt& event) {
 		handleInputEvent(event);
-	});
-	m_focusSub = lifecycle.onFocusChange([this](bool) {
+	}))
+	, m_focusSub(lifecycle.onFocusChange([this](bool) {
 		resetInputState();
-	});
+	})) {
 }
 
-void Input::shutdown() {
+Input::~Input() {
 	m_focusSub.unsubscribe();
 	m_platformInputSub.unsubscribe();
-	resetInputState();
 }
 
 void Input::pollInput() {

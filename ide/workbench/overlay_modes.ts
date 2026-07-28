@@ -1,6 +1,6 @@
 import { blua32ToolingImageForDomain } from '../../machine/ts/rompack/tooling/blua32_media';
-import { machineManager } from '../../machine/ts/core/machine_manager';
-import { Input } from '../../machine/ts/input/manager';
+import type { SoundMaster } from '../../machine/ts/audio/soundmaster';
+import type { Input } from '../../machine/ts/input/manager';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { CartEditor } from '../cart_editor';
 import type { RuntimeSourceState } from '../runtime/sources';
@@ -20,20 +20,19 @@ export function isManagedOverlayEditorActive(editor: CartEditor): boolean {
 export function updateGamePipelineExts(
 	editor: CartEditor,
 	overlayRenderer: OverlayRenderer,
+	input: Input,
+	soundMaster: SoundMaster,
 ): void {
 	const overlayActive = editor.blocksRuntimePipeline && overlayRenderer.active;
-	Input.instance.setGameplayCaptureEnabled(!overlayActive);
-	updateOverlayAudioSuspension(overlayActive);
+	input.setGameplayCaptureEnabled(!overlayActive);
+	updateOverlayAudioSuspension(soundMaster, overlayActive);
 }
 
-function updateOverlayAudioSuspension(overlayActive: boolean): void {
-	if (!machineManager.sndmaster.isRuntimeAudioReady()) {
-		return;
-	}
+function updateOverlayAudioSuspension(soundMaster: SoundMaster, overlayActive: boolean): void {
 	if (overlayActive) {
-		machineManager.sndmaster.suspendAll('overlay');
+		soundMaster.suspendAll('overlay');
 	} else {
-		machineManager.sndmaster.resumeAll('overlay');
+		soundMaster.resumeAll('overlay');
 	}
 }
 
@@ -42,12 +41,14 @@ export function toggleEditor(
 	sources: RuntimeSourceState,
 	overlayRenderer: OverlayRenderer,
 	runtime: Runtime,
+	input: Input,
+	soundMaster: SoundMaster,
 ): void {
 	if (editor.isActive) {
-		deactivateEditor(editor, overlayRenderer);
+		deactivateEditor(editor, overlayRenderer, input, soundMaster);
 		return;
 	}
-	activateEditor(editor, sources, overlayRenderer, runtime);
+	activateEditor(editor, sources, overlayRenderer, runtime, input, soundMaster);
 }
 
 export function activateEditor(
@@ -55,6 +56,8 @@ export function activateEditor(
 	sources: RuntimeSourceState,
 	overlayRenderer: OverlayRenderer,
 	runtime: Runtime,
+	input: Input,
+	soundMaster: SoundMaster,
 ): void {
 	if (!blua32ToolingImageForDomain(
 		sources.currentBlua32Media,
@@ -65,13 +68,18 @@ export function activateEditor(
 	if (!editor.isActive) {
 		editor.activate();
 	}
-	updateGamePipelineExts(editor, overlayRenderer);
+	updateGamePipelineExts(editor, overlayRenderer, input, soundMaster);
 }
 
-export function deactivateEditor(editor: CartEditor, overlayRenderer: OverlayRenderer): void {
+export function deactivateEditor(
+	editor: CartEditor,
+	overlayRenderer: OverlayRenderer,
+	input: Input,
+	soundMaster: SoundMaster,
+): void {
 	if (editor.isActive) {
 		editor.deactivate();
 	}
 	overlayRenderer.abandonFrame();
-	updateGamePipelineExts(editor, overlayRenderer);
+	updateGamePipelineExts(editor, overlayRenderer, input, soundMaster);
 }

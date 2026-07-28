@@ -1,5 +1,4 @@
 import { runGate } from '../../../machine/ts/common/taskgate';
-import { machineManager } from '../../../machine/ts/core/machine_manager';
 import { InstructionStepResult } from '../../../machine/ts/machine/runtime/frame/state';
 import type { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import type { MachineHost } from '../../../runtime/machine_runtime';
@@ -24,24 +23,23 @@ function runCpuProfileHostFrame(
 	session: CpuProfilerSession,
 	currentTime: number,
 ): void {
-	const manager = machineManager;
-	if (!manager.running) {
+	if (!host.running) {
 		return;
 	}
-	const hostDeltaMs = beginMachineHostFrame(runtime, currentTime);
+	const hostDeltaMs = beginMachineHostFrame(host, currentTime);
 	const hostMenuInput = hostOverlayMenu.tickInput();
-	if (executeMachineHostMenuAction(hostMenuInput, screen, runtime)) {
+	if (executeMachineHostMenuAction(hostMenuInput, screen, host)) {
 		return;
 	}
 	let action = prepareMachineHostPresentation(
+		host,
 		screen,
 		hostOverlayMenu,
-		runtime,
 		runGate.ready,
 		hostMenuInput,
 	);
 	if (action === MachineHostFrameAction.Execute) {
-		const previousTickSequence = beginMachineHostUpdate(runtime);
+		const previousTickSequence = beginMachineHostUpdate(host);
 		let stepDeltaMs = hostDeltaMs;
 		while (true) {
 			const result = runtime.frameScheduler.stepInstruction(stepDeltaMs);
@@ -61,11 +59,11 @@ function runCpuProfileHostFrame(
 			}
 			host.presenter.backend.executeGxGpuReadback(runtime.machine.gxGpu);
 		}
-		completeMachineHostUpdate(screen, runtime, previousTickSequence);
+		completeMachineHostUpdate(host, screen, previousTickSequence);
 		action = MachineHostFrameAction.PresentPending;
 	}
-	presentMachineHostPresentation(host.presenter, action, screen, runtime, hostDeltaMs);
-	manager.flushSystemOutput(runtime);
+	presentMachineHostPresentation(host, action, screen, hostDeltaMs);
+	host.flushSystemOutput();
 }
 
 export function startCpuProfileHostFrames(
@@ -73,9 +71,9 @@ export function startCpuProfileHostFrames(
 	session: CpuProfilerSession,
 ): void {
 	const runtime = host.runtime;
-	const presentation = new RenderPresentationState();
-	const hostOverlayMenu = new HostOverlayMenu(host.presenter);
-	machineManager.start();
+	const presentation = new RenderPresentationState(host.soundMaster);
+	const hostOverlayMenu = new HostOverlayMenu(host.presenter, runtime, host.input);
+	host.start();
 	host.platform.frames.start((currentTime) => {
 		runCpuProfileHostFrame(
 			host,

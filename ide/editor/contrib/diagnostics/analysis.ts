@@ -81,7 +81,7 @@ export function computeAggregatedEditorDiagnostics(
 export function markDiagnosticsDirty(contextId: string): void {
 	editorDiagnosticsState.diagnosticsDirty = true;
 	editorDiagnosticsState.dirtyDiagnosticContexts.add(contextId);
-	editorDiagnosticsState.diagnosticsDueAtMs = editorRuntimeState.clockNow() + diagnosticsDebounceMs;
+	editorDiagnosticsState.diagnosticsDueAtMs = editorRuntimeState.currentTimeMs + diagnosticsDebounceMs;
 }
 
 export function markAllDiagnosticsDirty(): void {
@@ -97,5 +97,5 @@ export function markAllDiagnosticsDirty(): void {
 		const contextId = contextIds[index];
 		editorDiagnosticsState.dirtyDiagnosticContexts.add(contextId);
 	}
-	editorDiagnosticsState.diagnosticsDueAtMs = editorRuntimeState.clockNow() + diagnosticsDebounceMs;
+	editorDiagnosticsState.diagnosticsDueAtMs = editorRuntimeState.currentTimeMs + diagnosticsDebounceMs;
 }

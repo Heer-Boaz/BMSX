@@ -8,6 +8,7 @@ import {
 	startWorkbenchHostFrames,
 } from '../workbench/machine_runtime';
 import { bindBrowserFullscreenShortcut } from '../../hosts/browser/fullscreen';
+import { bindBrowserDebuggerPauseShortcut } from './debugger_pause';
 
 declare const BMSX_BROWSER_DEBUG: boolean;
 
@@ -19,9 +20,10 @@ async function startBrowserStudio(): Promise<void> {
 			systemRomPath,
 			document.body.dataset.defaultRom,
 		);
-		const ide = await prepareWorkbenchRuntime(options);
-		bindBrowserFullscreenShortcut();
-		startWorkbenchHostFrames(options.platform, ide);
+		const [host, ide] = await prepareWorkbenchRuntime(options);
+		bindBrowserFullscreenShortcut(host);
+		bindBrowserDebuggerPauseShortcut(host.input, host.soundMaster);
+		startWorkbenchHostFrames(host, ide);
 		completeBrowserBoot();
 	} catch (error) {
 		showBrowserBootError(error);

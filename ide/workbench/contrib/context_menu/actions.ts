@@ -3,8 +3,10 @@ import type { CartEditor } from '../../../cart_editor';
 import { focusEditorAtPosition } from '../../ui/focus';
 import { writeClipboard } from '../../../editor/editing/text_editing_and_selection';
 import type { EditorContextMenuAction, EditorContextToken } from '../../../common/models';
+import type { ClipboardService } from '../../../../machine/ts/platform/platform';
 
 export function executeEditorContextMenuAction(
+	clipboard: ClipboardService,
 	editor: CartEditor,
 	commands: IdeCommandController,
 	action: EditorContextMenuAction,
@@ -19,7 +21,11 @@ export function executeEditorContextMenuAction(
 				commands.execute(action);
 				return;
 		case 'copy_token':
-			void writeClipboard(token.expression ?? token.text, 'Copied token to clipboard');
+			void writeClipboard(
+				clipboard,
+				token.expression ?? token.text,
+				'Copied token to clipboard',
+			);
 			return;
 	}
 }

@@ -279,7 +279,7 @@ void testLibretroFaultDiagnosticsStayAtHostBoundary() {
 	});
 	require(!platform.runFrame(), "a faulted libretro frame should not report a presentation");
 	require(
-		platform.machineManager()->state() == bmsx::MachineManagerState::Stopped,
+		!platform.running(),
 		"the libretro host should stop after a native frame exception");
 	require(
 		capturedLogContains("Runtime error: injected native frame fault"),
@@ -414,7 +414,7 @@ void testInputSnapshotReflectsHeldKey() {
 		false);
 	platform.setLogCallback(discardRetroLog);
 
-	bmsx::Input& input = bmsx::Input::instance();
+	bmsx::Input input(*platform.inputHub(), *platform.lifecycle());
 	auto& inputHub = *static_cast<bmsx::LibretroInputHub*>(platform.inputHub());
 	inputHub.postKeyboardEvent(RETROK_x, true);
 	input.pollInput();
@@ -438,7 +438,7 @@ void testLibretroSupervisorRequestIsSeparateFromGameplay() {
 	platform.setLogCallback(discardRetroLog);
 	platform.setInputPollCallback(discardInputPoll);
 	platform.setInputStateCallback(gamepadInputState);
-	bmsx::Input& input = bmsx::Input::instance();
+	bmsx::Input input(*platform.inputHub(), *platform.lifecycle());
 	auto& inputHub = *static_cast<bmsx::LibretroInputHub*>(platform.inputHub());
 	int requestEdgesDown = 0;
 	int requestEdgesUp = 0;
@@ -534,7 +534,6 @@ void testLibretroTracksPublishedNativeOutputGeometry() {
 	require(platform.machineManager()->loadSystemRomOwned(bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::System)), "libretro should load the system firmware ROM for native geometry validation");
 	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::Cartridge);
 	require(platform.loadRom(rom.data(), rom.size()), "libretro should load a program cart ROM for native geometry validation");
-	platform.machineManager()->start();
 	platform.setPlatformPaused(true);
 
 	bmsx::Runtime& runtime = platform.machineManager()->runtime();

@@ -1,4 +1,3 @@
-import { machineManager } from '../../machine/ts/core/machine_manager';
 import { runGate } from '../../machine/ts/common/taskgate';
 import { HostOverlayMenu } from '../../runtime/host_overlay_menu';
 import { RenderPresentationState } from '../../runtime/presentation_state';
@@ -10,13 +9,13 @@ import { runWorkbenchHostFrame } from './host_frame';
 import * as workbenchMode from './mode';
 import {
 	initializeMachineHost,
+	type MachineHost,
 	type MachineHostInitializationOptions,
 } from '../../runtime/machine_runtime';
-import type { Platform } from '../../machine/ts/platform/platform';
 
 export async function prepareWorkbenchRuntime(
 	options: MachineHostInitializationOptions,
-): Promise<RuntimeIdeState> {
+): Promise<readonly [MachineHost, RuntimeIdeState]> {
 	const media = await loadRomToolingMedia(
 		options.systemRom,
 		options.cartridgeSlots,
@@ -31,26 +30,33 @@ export async function prepareWorkbenchRuntime(
 	const ide = await workbenchMode.initializeIdeFeatures(
 		runtime,
 		host.presenter,
+		host.input,
+		host.soundMaster,
+		host.platform.storage,
+		host.platform.clock,
+		host.platform.lifecycle,
+		host.platform.clipboard,
+		host.platform,
 		{ width: viewport.x, height: viewport.y },
 		sources,
 	);
-	await startPreparedRuntime(ide, runtime);
-	machineManager.flushSystemOutput(runtime);
-	machineManager.bootstrapStartupAudio();
-	return ide;
+	await startPreparedRuntime(ide, runtime, host.platform);
+	host.flushSystemOutput();
+	host.bootstrapStartupAudio();
+	return [host, ide];
 }
 
-export function startWorkbenchHostFrames(platform: Platform, ide: RuntimeIdeState): void {
-	const runtime = ide.runtime;
+export function startWorkbenchHostFrames(host: MachineHost, ide: RuntimeIdeState): void {
+	const runtime = host.runtime;
 	const presentation = new RenderPresentationState();
-	const hostOverlayMenu = new HostOverlayMenu(ide.presenter);
-	machineManager.start();
-	platform.frames.start((currentTime) => {
+	const hostOverlayMenu = new HostOverlayMenu(host.presenter, runtime, host.input);
+	host.start();
+	host.platform.frames.start((currentTime) => {
 		runWorkbenchHostFrame(
+			host,
 			ide,
 			presentation,
 			hostOverlayMenu,
-			runtime,
 			currentTime,
 			runGate.ready,
 		);

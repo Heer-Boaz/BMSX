@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { machineManager } from '../../machine/ts/core/machine_manager';
 import { RenderPresentationState } from '../../runtime/presentation_state';
 import {
 	createTestRuntime,
@@ -29,13 +28,6 @@ test('PCRTC revision drives render-target changes', () => {
 		configurePresentation(): void {},
 		present(): void {},
 	};
-	const manager = machineManager as unknown as {
-		deltatime: number;
-		paused: boolean;
-		sndmaster: { finishFrame(): void };
-	};
-	manager.paused = false;
-	manager.sndmaster = { finishFrame(): void {} };
 	const presentation = new RenderPresentationState();
 
 	presentation.requestHeldPresentation();

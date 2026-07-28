@@ -12,6 +12,10 @@ export const enum LogLevel {
 	Error,
 }
 
+export interface LogOutput {
+	log(level: LogLevel, message: string): void;
+}
+
 export interface StorageService {
 	getItem(k: string): string;
 	setItem(k: string, v: string): void;
@@ -106,7 +110,7 @@ export function setMicrotaskQueue(queue: MicrotaskQueue): void {
 	activeMicrotaskQueue = queue;
 }
 
-// disable-next-line single_line_method_pattern -- callers schedule through the active platform microtask queue selected by MachineManager.
+// disable-next-line single_line_method_pattern -- callers schedule through the active queue selected by the host composition root.
 export function scheduleMicrotask(task: () => void): void {
 	activeMicrotaskQueue.queueMicrotask(task);
 }
@@ -127,7 +131,7 @@ export interface FrameLoop {
 	start(tick: (t: MonoTime) => void): { stop(): void };
 }
 
-export interface Platform {
+export interface Platform extends LogOutput {
 	clock: HostClock;
 	frames: FrameLoop;
 	lifecycle: Lifecycle;
@@ -135,7 +139,6 @@ export interface Platform {
 	storage: StorageService;
 	microtasks: MicrotaskQueue;
 	requestShutdown(): void;
-	log(level: LogLevel, message: string): void;
 	clipboard: ClipboardService;
 	hid: HIDService;
 	onscreenGamepad: OnscreenGamepadPlatform;

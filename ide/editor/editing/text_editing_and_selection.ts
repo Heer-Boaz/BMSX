@@ -11,7 +11,6 @@
  * - Multi-line editing with selection support
  */
 
-import { machineManager } from '../../../machine/ts/core/machine_manager';
 import { showEditorMessage } from '../../common/feedback_state';
 import type { EditContext, Position } from '../../common/models';
 import { getActiveCodeTabContext } from '../../workbench/ui/code_tab/contexts';
@@ -40,6 +39,7 @@ import {
 	setSingleCursorSelectionAnchor,
 } from './cursor/state';
 import { findWordBoundsInLine, findWordLeftOffset, findWordRightOffset } from './cursor/words';
+import type { ClipboardService } from '../../../machine/ts/platform/platform';
 
 const tmpPosition: MutableTextPosition = { row: 0, column: 0 };
 const wordPositionScratch: MutableTextPosition = { row: 0, column: 0 };
@@ -872,31 +872,31 @@ export function unindentSelectionOrLine(): void {
  * Copies the current selection to the clipboard.
  * Shows a message if nothing is selected.
  */
-export async function copySelectionToClipboard(): Promise<void> {
+export async function copySelectionToClipboard(clipboard: ClipboardService): Promise<void> {
 	const text = getSelectionText();
 	if (text === null) {
 		showEditorMessage('Nothing selected to copy', constants.COLOR_STATUS_WARNING, 1.5);
 		return;
 	}
-	await writeClipboard(text, 'Copied selection to clipboard');
+	await writeClipboard(clipboard, text, 'Copied selection to clipboard');
 }
 
 /**
  * Cuts the current selection to the clipboard (copy + delete).
  * Shows a message if nothing is selected.
  */
-export async function cutSelectionToClipboard(): Promise<void> {
+export async function cutSelectionToClipboard(clipboard: ClipboardService): Promise<void> {
 	const text = getSelectionText();
 	if (text === null) {
 		showEditorMessage('Nothing selected to cut', constants.COLOR_STATUS_WARNING, 1.5);
 		return;
 	}
 	if (!editorAllowsMutation()) {
-		await writeClipboard(text, 'Copied selection to clipboard');
+		await writeClipboard(clipboard, text, 'Copied selection to clipboard');
 		return;
 	}
 	prepareUndo('cut', false);
-	await writeClipboard(text, 'Cut selection to clipboard');
+	await writeClipboard(clipboard, text, 'Cut selection to clipboard');
 	replaceSelectionWith('');
 }
 
@@ -904,7 +904,7 @@ export async function cutSelectionToClipboard(): Promise<void> {
  * Cuts the current line to the clipboard.
  * Used when no selection is active.
  */
-export async function cutLineToClipboard(): Promise<void> {
+export async function cutLineToClipboard(clipboard: ClipboardService): Promise<void> {
 	const buffer = editorDocumentState.buffer;
 	const lineCount = buffer.getLineCount();
 	const row = editorDocumentState.cursorRow;
@@ -912,7 +912,7 @@ export async function cutLineToClipboard(): Promise<void> {
 	const isLastLine = row >= lineCount - 1;
 	const text = isLastLine ? currentLineValue : `${currentLineValue}\n`;
 	prepareUndo('cut-line', false);
-	await writeClipboard(text, 'Cut line to clipboard');
+	await writeClipboard(clipboard, text, 'Cut line to clipboard');
 	if (!editorAllowsMutation()) {
 		return;
 	}
@@ -971,9 +971,12 @@ export function pasteFromClipboard(): void {
  * @param text The text to write
  * @param successMessage Message to show on success
  */
-export async function writeClipboard(text: string, successMessage: string): Promise<void> {
+export async function writeClipboard(
+	clipboard: ClipboardService,
+	text: string,
+	successMessage: string,
+): Promise<void> {
 	editorDocumentState.customClipboard = text;
-	const clipboard = machineManager.platform.clipboard;
 	if (!clipboard.isSupported()) {
 		const message = successMessage + ' (Editor clipboard only)';
 		showEditorMessage(message, constants.COLOR_STATUS_SUCCESS, 1.5);

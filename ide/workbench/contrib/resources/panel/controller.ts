@@ -42,6 +42,7 @@ import {
 	refreshResourcePanelResourceState,
 } from './refresh';
 import { handleResourcePanelKeyboardInput } from './keyboard';
+import type { PlayerInput } from '../../../../../machine/ts/input/player';
 import type { ResourceIdentity } from '../../../../common/resource';
 import type { CartEditor } from '../../../../cart_editor';
 import type { RuntimeSourceState } from '../../../../runtime/sources';
@@ -189,8 +190,8 @@ export class ResourcePanelController {
 	}
 
 	// === Keyboard ===
-	handleKeyboard(): void {
-		handleResourcePanelKeyboardInput(this);
+	handleKeyboard(playerInput: PlayerInput): void {
+		handleResourcePanelKeyboardInput(playerInput, this);
 	}
 
 	// === Public helpers used by editor pointer logic ===
@@ -253,7 +254,7 @@ export class ResourcePanelController {
 			this.activateSelectedCallHierarchy();
 			return;
 		}
-		openSelectedResourcePanelItem(this.editor, this.sources, this.items, this.selectionIndex);
+		openSelectedResourcePanelItem(this.editor, this.items, this.selectionIndex);
 	}
 
 	openSelectedCallHierarchyLocation(): void {
@@ -262,7 +263,6 @@ export class ResourcePanelController {
 		}
 		openSelectedResourcePanelCallHierarchyLocation(
 			this.editor,
-			this.sources,
 			this.items,
 			this.selectionIndex,
 		);
@@ -473,7 +473,6 @@ export class ResourcePanelController {
 	private activateSelectedCallHierarchy(): void {
 		const toggledNodeId = activateSelectedCallHierarchyItem(
 			this.editor,
-			this.sources,
 			this.items,
 			this.selectionIndex,
 			this.callHierarchyExpandedNodeIds,

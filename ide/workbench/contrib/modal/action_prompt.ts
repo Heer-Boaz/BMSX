@@ -2,22 +2,14 @@ import { create_rect_bounds, point_in_rect, write_rect_bounds } from '../../../.
 import * as constants from '../../../common/constants';
 import { measureText } from '../../../editor/common/text/layout';
 import { drawEditorText } from '../../../editor/render/text_renderer';
-import { performEditorAction } from '../../../commands/actions';
 import { consumeIdeKey, isKeyJustPressed } from '../../../input/keyboard/key_input';
+import type { PlayerInput } from '../../../../machine/ts/input/player';
 import { writeCenteredDialogBounds } from '../../../editor/render/dialog_layout';
 import { api } from '../../../runtime/overlay_api';
 import { editorViewState } from '../../../editor/ui/view/state';
 import type { ActionPromptAction, ActionPromptLayout, ActionPromptState, PointerSnapshot } from '../../../common/models';
-import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
-import { save } from '../../ui/code_tab/io';
-import { editorDocumentState } from '../../../editor/editing/document_state';
 import type { FontVariant } from '../../../../machine/ts/render/shared/bmsx_font';
 import type { CartEditor } from '../../../cart_editor';
-import type { RuntimeSourceState } from '../../../runtime/sources';
-import type { RuntimeFaultState } from '../../../runtime/fault_state';
-import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
-import type { GateGroup } from '../../../../machine/ts/common/taskgate';
-import type { OverlayRenderer } from '../../../runtime/overlay_renderer';
 
 type ActionPromptUiState = {
 	prompt: ActionPromptState | null;
@@ -196,23 +188,8 @@ export function findActionPromptChoiceAt(x: number, y: number): ActionPromptChoi
 	return null;
 }
 
-async function attemptPromptSave(
-	editor: CartEditor,
-	sources: RuntimeSourceState,
-	runtime: Runtime,
-): Promise<boolean> {
-	await save(editor, sources, runtime);
-	return !editorDocumentState.dirty;
-}
-
 async function handleActionPromptSelection(
 	editor: CartEditor,
-	sources: RuntimeSourceState,
-	fault: RuntimeFaultState,
-	luaTooling: RuntimeLuaTooling,
-	luaGate: GateGroup,
-	overlayRenderer: OverlayRenderer,
-	runtime: Runtime,
 	choice: ActionPromptChoice,
 ): Promise<void> {
 	const prompt = actionPromptState.prompt;
@@ -223,49 +200,26 @@ async function handleActionPromptSelection(
 		closeActionPrompt();
 		return;
 	}
-	if (choice === 'save-continue') {
-		const saved = await attemptPromptSave(editor, sources, runtime);
-		if (!saved) {
-			return;
-		}
-	}
-	if (performEditorAction(
-		editor,
-		sources,
-		fault,
-		luaTooling,
-		luaGate,
-		overlayRenderer,
-		runtime,
+	if (await editor.commands.executeConfirmedAction(
 		prompt.action,
+		choice === 'save-continue',
 	)) {
 		closeActionPrompt();
 	}
 }
 
 export function handleActionPromptInput(
+	playerInput: PlayerInput,
 	editor: CartEditor,
-	sources: RuntimeSourceState,
-	fault: RuntimeFaultState,
-	luaTooling: RuntimeLuaTooling,
-	luaGate: GateGroup,
-	overlayRenderer: OverlayRenderer,
-	runtime: Runtime,
 ): void {
 	if (!hasActionPrompt()) {
 		return;
 	}
-	if (isKeyJustPressed('Enter') || isKeyJustPressed('NumpadEnter')) {
-		consumeIdeKey('Enter');
-		consumeIdeKey('NumpadEnter');
+	if (isKeyJustPressed('Enter', playerInput) || isKeyJustPressed('NumpadEnter', playerInput)) {
+		consumeIdeKey('Enter', playerInput);
+		consumeIdeKey('NumpadEnter', playerInput);
 		void handleActionPromptSelection(
 			editor,
-			sources,
-			fault,
-			luaTooling,
-			luaGate,
-			overlayRenderer,
-			runtime,
 			'save-continue',
 		);
 	}
@@ -273,24 +227,12 @@ export function handleActionPromptInput(
 
 export function handleActionPromptPointer(
 	editor: CartEditor,
-	sources: RuntimeSourceState,
-	fault: RuntimeFaultState,
-	luaTooling: RuntimeLuaTooling,
-	luaGate: GateGroup,
-	overlayRenderer: OverlayRenderer,
-	runtime: Runtime,
 	snapshot: PointerSnapshot,
 ): void {
 	const choice = findActionPromptChoiceAt(snapshot.viewportX, snapshot.viewportY);
 	if (choice) {
 		void handleActionPromptSelection(
 			editor,
-			sources,
-			fault,
-			luaTooling,
-			luaGate,
-			overlayRenderer,
-			runtime,
 			choice,
 		);
 	}

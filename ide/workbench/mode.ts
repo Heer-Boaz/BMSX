@@ -1,11 +1,18 @@
-import { machineManager } from '../../machine/ts/core/machine_manager';
-import { Input } from '../../machine/ts/input/manager';
 import { KeyModifier } from '../../machine/ts/input/player';
+import type { SoundMaster } from '../../machine/ts/audio/soundmaster';
+import type { Input } from '../../machine/ts/input/manager';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
+import type {
+	ClipboardService,
+	HostClock,
+	Lifecycle,
+	LogOutput,
+	StorageService,
+} from '../../machine/ts/platform/platform';
+import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import type { Viewport } from '../../machine/ts/rompack/format';
 import * as constants from '../common/constants';
-import { EDITOR_TOGGLE_GAMEPAD_BUTTONS, EDITOR_TOGGLE_KEY, GAME_PAUSE_KEY } from '../common/constants';
-import { toggleDebuggerControls } from '../debugger_activation';
+import { EDITOR_TOGGLE_GAMEPAD_BUTTONS, EDITOR_TOGGLE_KEY } from '../common/constants';
 import { seedDefaultLuaBuiltins } from '../runtime/lua_builtins';
 import { api as overlay_api } from '../runtime/overlay_api';
 import {
@@ -31,11 +38,17 @@ import {
 	toggleEditor,
 	updateGamePipelineExts,
 } from './overlay_modes';
-import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 
 export async function initializeIdeFeatures(
 	runtime: Runtime,
 	presenter: VideoPresenter,
+	input: Input,
+	soundMaster: SoundMaster,
+	storage: StorageService,
+	clock: HostClock,
+	lifecycle: Lifecycle,
+	clipboard: ClipboardService,
+	logOutput: LogOutput,
 	viewport: Viewport,
 	sources: RuntimeSourceState,
 ): Promise<RuntimeIdeState> {
@@ -45,6 +58,9 @@ export async function initializeIdeFeatures(
 	if (editorAvailable) {
 		const cartridge = developmentCartridgeSource(sources);
 		workspacePayload = await initializeWorkspaceStorage(
+			storage,
+			clock,
+			lifecycle,
 			cartridge ? cartridge.projectRootPath : sources.systemProjectRootPath,
 			sources,
 		);
@@ -52,13 +68,25 @@ export async function initializeIdeFeatures(
 		await shutdownWorkspaceStorage();
 	}
 	const rejectedDirtyPaths = await applyAllWorkspaceSourceOverrides(
+		storage,
 		sources,
 		workspaceDirtyRecords,
 	);
-	const state = new RuntimeIdeState(runtime, presenter, viewport, sources);
+	const state = new RuntimeIdeState(
+		runtime,
+		presenter,
+		input,
+		soundMaster,
+		storage,
+		clock,
+		clipboard,
+		logOutput,
+		viewport,
+		sources,
+	);
 	seedDefaultLuaBuiltins();
-	updateGamePipelineExts(state.editor, state.overlayRenderer);
-	Input.instance.setKeyboardCapture(EDITOR_TOGGLE_KEY, editorAvailable);
+	updateGamePipelineExts(state.editor, state.overlayRenderer, input, soundMaster);
+	input.setKeyboardCapture(EDITOR_TOGGLE_KEY, editorAvailable);
 	if (!editorAvailable) {
 		disposeShortcutHandlers(state);
 		return state;
@@ -70,26 +98,44 @@ export async function initializeIdeFeatures(
 		workspacePayload,
 		rejectedDirtyPaths,
 	);
-	registerRuntimeShortcuts(state, runtime);
+	registerRuntimeShortcuts(state, runtime, input, soundMaster);
 	return state;
 }
 
-export function registerRuntimeShortcuts(state: RuntimeIdeState, runtime: Runtime): void {
+export function registerRuntimeShortcuts(
+	state: RuntimeIdeState,
+	runtime: Runtime,
+	input: Input,
+	soundMaster: SoundMaster,
+): void {
 	disposeShortcutHandlers(state);
-	const registry = Input.instance.getGlobalShortcutRegistry();
+	const registry = input.getGlobalShortcutRegistry();
 	const disposers: Array<() => void> = [];
 	disposers.push(registry.registerKeyboardShortcut(1, EDITOR_TOGGLE_KEY, () => {
-		Input.instance.getPlayerInput(1).consumeRawButton(EDITOR_TOGGLE_KEY, 'keyboard');
-		toggleEditor(state.editor, state.sources, state.overlayRenderer, runtime);
+		input.getPlayerInput(1).consumeRawButton(EDITOR_TOGGLE_KEY, 'keyboard');
+		toggleEditor(
+			state.editor,
+			state.sources,
+			state.overlayRenderer,
+			runtime,
+			input,
+			soundMaster,
+		);
 	}));
 	disposers.push(registry.registerGamepadChord(
 		1,
 		EDITOR_TOGGLE_GAMEPAD_BUTTONS,
-		() => toggleEditor(state.editor, state.sources, state.overlayRenderer, runtime),
+		() => toggleEditor(
+			state.editor,
+			state.sources,
+			state.overlayRenderer,
+			runtime,
+			input,
+			soundMaster,
+		),
 	));
-	disposers.push(registry.registerKeyboardShortcut(1, GAME_PAUSE_KEY, () => toggleDebuggerControls()));
 	disposers.push(registry.registerKeyboardShortcut(1, 'KeyT', () => {
-		Input.instance.getPlayerInput(1).consumeRawButton('KeyT', 'keyboard');
+		input.getPlayerInput(1).consumeRawButton('KeyT', 'keyboard');
 		const next = state.editor.fontVariant === 'tiny' ? 'msx' : 'tiny';
 		state.editor.setFontVariant(next);
 	}, KeyModifier.ctrl | KeyModifier.shift));
@@ -106,11 +152,11 @@ export function disposeShortcutHandlers(state: RuntimeIdeState): void {
 	state.shortcutDisposers = [];
 }
 
-export function tickIdeInput(state: RuntimeIdeState): void {
+export function tickIdeInput(state: RuntimeIdeState, input: Input): void {
 	if (!editorBlocksRuntimePipeline(state.editor) || !state.editor.isActive) {
 		return;
 	}
-	const pollFrame = machineManager.input.getPlayerInput(1).pollFrame;
+	const pollFrame = input.getPlayerInput(1).pollFrame;
 	if (pollFrame === state.lastIdeInputFrame) {
 		return;
 	}
@@ -118,10 +164,15 @@ export function tickIdeInput(state: RuntimeIdeState): void {
 	state.editor.tickInput();
 }
 
-export function surfaceHostFrameError(state: RuntimeIdeState, runtime: Runtime, error: unknown): void {
+export function surfaceHostFrameError(
+	state: RuntimeIdeState,
+	logOutput: LogOutput,
+	runtime: Runtime,
+	error: unknown,
+): void {
 	state.overlayRenderer.abandonFrame();
 	state.fault.hostFrameFailed = true;
-	handleLuaError(state.fault, state.sources, runtime, error);
+	handleLuaError(logOutput, state.fault, state.sources, runtime, error);
 }
 
 export function tickIDE(state: RuntimeIdeState, deltaSeconds: number): void {
@@ -135,25 +186,26 @@ export function tickIDE(state: RuntimeIdeState, deltaSeconds: number): void {
 	state.overlayRenderer.drawFramePending = true;
 }
 
-export function tickIDEDraw(state: RuntimeIdeState, runtime: Runtime): void {
+export function tickIDEDraw(
+	state: RuntimeIdeState,
+	presenter: VideoPresenter,
+): void {
 	if (!editorBlocksRuntimePipeline(state.editor) || !state.editor.isActive) {
 		return;
 	}
 	try {
-		drawIde(state, runtime);
+		drawIde(state, presenter);
 	} finally {
 		state.overlayRenderer.drawFramePending = false;
 	}
 }
 
-export function drawIde(state: RuntimeIdeState, runtime: Runtime): void {
+export function drawIde(state: RuntimeIdeState, presenter: VideoPresenter): void {
 	const overlayRenderer = state.overlayRenderer;
 	try {
-		overlayRenderer.beginFrame(state.presenter);
+		overlayRenderer.beginFrame(presenter);
 		overlay_api.beginFrame(overlayRenderer);
 		state.editor.draw();
-	} catch (error) {
-		handleLuaError(state.fault, state.sources, runtime, error);
 	} finally {
 		overlayRenderer.endFrame();
 	}

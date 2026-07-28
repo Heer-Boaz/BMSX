@@ -1,16 +1,24 @@
-import { machineManager } from '../../../../machine/ts/core/machine_manager';
+import type { PlayerInput } from '../../../../machine/ts/input/player';
 import { CONTEXT_MENU_POINTER_CONSUME_PRIMARY, CONTEXT_MENU_POINTER_CONSUME_SECONDARY, CONTEXT_MENU_POINTER_IGNORED, handleEditorContextMenuPointerSession, openEditorContextMenuAtPointer } from './session';
 import type { PointerSnapshot } from '../../../common/models';
 import type { CartEditor } from '../../../cart_editor';
+import type { ClipboardService } from '../../../../machine/ts/platform/platform';
 
 export function handleEditorContextMenuPointer(
+	clipboard: ClipboardService,
 	editor: CartEditor,
 	snapshot: PointerSnapshot,
 	justPressed: boolean,
 	secondaryJustPressed: boolean,
-	playerInput: ReturnType<typeof machineManager.input.getPlayerInput>
+	playerInput: PlayerInput
 ): boolean {
-	const result = handleEditorContextMenuPointerSession(editor, snapshot, justPressed, secondaryJustPressed);
+	const result = handleEditorContextMenuPointerSession(
+		clipboard,
+		editor,
+		snapshot,
+		justPressed,
+		secondaryJustPressed,
+	);
 	if (result === CONTEXT_MENU_POINTER_IGNORED) {
 		return false;
 	}
@@ -25,7 +33,7 @@ export function handleEditorContextMenuPointer(
 	return true;
 }
 
-export function openEditorContextMenuFromPointer(snapshot: PointerSnapshot, playerInput: ReturnType<typeof machineManager.input.getPlayerInput>): boolean {
+export function openEditorContextMenuFromPointer(snapshot: PointerSnapshot, playerInput: PlayerInput): boolean {
 	if (!openEditorContextMenuAtPointer(snapshot)) {
 		return false;
 	}

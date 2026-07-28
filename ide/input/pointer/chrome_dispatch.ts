@@ -1,5 +1,5 @@
 import type { CartEditor } from '../../cart_editor';
-import { machineManager } from '../../../machine/ts/core/machine_manager';
+import type { PlayerInput } from '../../../machine/ts/input/player';
 import type { PointerSnapshot } from '../../common/models';
 import { handleInvalidEditorPointerSnapshot } from './invalid_snapshot';
 import { handleEditorPanelResizePointer } from './panel';
@@ -15,7 +15,7 @@ export function handleEditorChromePointerDispatch(
 	snapshot: PointerSnapshot,
 	justPressed: boolean,
 	pointerAuxJustPressed: boolean,
-	playerInput: ReturnType<typeof machineManager.input.getPlayerInput>
+	playerInput: PlayerInput
 ): boolean {
 	if (handleEditorTabDragPointer(snapshot)) {
 		return true;

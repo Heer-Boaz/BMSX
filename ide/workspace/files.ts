@@ -1,6 +1,5 @@
-import { machineManager } from '../../machine/ts/core/machine_manager';
 import type { LuaSourceRecord, LuaSourceRegistry } from '../../machine/ts/lua/source_registry';
-import type { StorageService } from '../../machine/ts/platform/platform';
+import type { HostClock, StorageService } from '../../machine/ts/platform/platform';
 import {
 	deleteWorkspaceLuaSourceOverride,
 	getWorkspaceLuaSourceOverride,
@@ -55,14 +54,16 @@ export function readWorkspaceLuaSourceText(registry: LuaSourceRegistry, record: 
 }
 
 export async function persistWorkspaceSourceFile(
+	storage: StorageService,
+	clock: HostClock,
 	path: string,
 	source: string,
 	projectRootPath: string,
 ): Promise<WorkspaceRecord> {
 	const relativePath = resolveWorkspacePath(path, projectRootPath);
-	const record = createWorkspaceRecord(source);
+	const record = createWorkspaceRecord(clock, source);
 	await writeWorkspaceRecord(
-		machineManager.platform.storage,
+		storage,
 		projectRootPath,
 		relativePath,
 		record,
@@ -70,14 +71,18 @@ export async function persistWorkspaceSourceFile(
 	return record;
 }
 
-export async function loadWorkspaceSourceFile(path: string, projectRootPath: string): Promise<string | null> {
+export async function loadWorkspaceSourceFile(
+	storage: StorageService,
+	path: string,
+	projectRootPath: string,
+): Promise<string | null> {
 	const relativePath = resolveWorkspacePath(path, projectRootPath);
 	const cached = workspaceCanonicalSourceCache.get(relativePath);
 	if (cached !== undefined) {
 		return cached;
 	}
 	const record = await readWorkspaceRecord(
-		machineManager.platform.storage,
+		storage,
 		projectRootPath,
 		relativePath,
 	);

@@ -527,14 +527,8 @@ export class InputStateManager {
 
 /**
  * Represents the Input class, which manages player inputs and gamepad assignments.
- * Implements the singleton pattern to ensure only one instance exists.
  */
 export class Input implements RuntimeInputSource {
-	/**
-	 * Represents the singleton instance of the Input class.
-	 */
-	private static _instance: Input;
-
 	/**
 	 * The maximum number of players allowed.
 	 */
@@ -553,19 +547,6 @@ export class Input implements RuntimeInputSource {
 	 * The default player index for the on-screen gamepad. Maps to player 1.
 	 */
 	public static readonly DEFAULT_ONSCREENGAMEPAD_PLAYER_INDEX = 1;
-
-	/**
-	 * Creates the process input owner for the active host.
-	 */
-	public static initialize(platform: Platform, startingGamepadIndex: number): Input {
-		Input._instance = new Input(platform, startingGamepadIndex);
-		Input._instance.bind();
-		return Input._instance;
-	}
-
-	public static get instance(): Input {
-		return Input._instance;
-	}
 
 	/**
 	 * An array of player inputs for each player.
@@ -593,6 +574,7 @@ export class Input implements RuntimeInputSource {
 
 	private platformInputUnsubscribe: SubscriptionHandle = null;
 	private focusChangeUnsubscribe: SubscriptionHandle = null;
+	private pendingHidGamepad: GamepadInput = null;
 	private nextPlatformPressId = 1;
 	private readonly platformPressIds = new Map<string, Map<string, number>>();
 	private readonly platformInputListener = (event: InputEvt): void => {
@@ -617,7 +599,7 @@ export class Input implements RuntimeInputSource {
 	private gameplayCaptureEnabled = true;
 	private supervisorRequestLine = false;
 	private readonly additionalCaptureKeys: Set<string> = new Set();
-	private readonly globalShortcuts = new GlobalShortcutRegistry();
+	private readonly globalShortcuts: GlobalShortcutRegistry;
 	private frameDurationMs = 1000 / 60;
 
 	/**
@@ -692,7 +674,7 @@ export class Input implements RuntimeInputSource {
 	 * @param key The key pressed that triggered the event.
 	 */
 
-	private constructor(
+	public constructor(
 		private readonly platform: Platform,
 		startingGamepadIndex: number,
 	) {
@@ -700,6 +682,20 @@ export class Input implements RuntimeInputSource {
 		for (let index = 0; index < Input.PLAYERS_MAX; index += 1) {
 			this.playerInputs[index] = new PlayerInput(index + 1, this.frameDurationMs);
 		}
+		this.globalShortcuts = new GlobalShortcutRegistry(this);
+		const defaultPlayerIndex = Input.DEFAULT_KEYBOARD_PLAYER_INDEX;
+		const player = this.getPlayerInput(defaultPlayerIndex);
+		const keyboard = new KeyboardInput(this.platform.clock, 'keyboard:0');
+		const pointer = new PointerInput(this.platform.clock, 'pointer:0');
+		player.inputHandlers['keyboard'] = keyboard;
+		player.inputHandlers['pointer'] = pointer;
+		this.deviceBindings.set('keyboard:0', { handler: keyboard, source: 'keyboard', assignedPlayer: defaultPlayerIndex, device: null });
+		this.deviceBindings.set('pointer:0', { handler: pointer, source: 'pointer', assignedPlayer: defaultPlayerIndex, device: null });
+		this.inputControllerKeyboardHandlers.push(keyboard);
+		this.inputControllerPointerHandlers.push(pointer);
+		this.platform.input.setKeyboardCapture(this.shouldCaptureKey.bind(this));
+		this.attachToPlatformInput();
+		this.focusChangeUnsubscribe = this.platform.lifecycle.onFocusChange(this.handleFocusChange);
 	}
 
 	/**
@@ -739,7 +735,6 @@ export class Input implements RuntimeInputSource {
 	/**
 	 * Disposes the input system by removing all pending gamepad assignments,
 	 * player inputs, event subscriptions, and deregistering the input system.
-	 * Also removes the input instance.
 	 */
 	public dispose(): void {
 		// Remove all pending gamepad assignments
@@ -752,28 +747,11 @@ export class Input implements RuntimeInputSource {
 			this.onscreenGamepad = null;
 		}
 		this.unbind();
-		Input._instance = undefined;
 		this.inputControllerKeyboardHandlers.length = 0;
 		this.inputControllerPointerHandlers.length = 0;
 		this.debugHotkeysPaused = false;
 		this.supervisorRequestLine = false;
 		this.additionalCaptureKeys.clear();
-	}
-
-	private bind(): void {
-		const defaultPlayerIndex = Input.DEFAULT_KEYBOARD_PLAYER_INDEX;
-		const player = this.getPlayerInput(defaultPlayerIndex);
-		const keyboard = new KeyboardInput(this.platform.clock, 'keyboard:0');
-		const pointer = new PointerInput(this.platform.clock, 'pointer:0');
-		player.inputHandlers['keyboard'] = keyboard;
-		player.inputHandlers['pointer'] = pointer;
-		this.deviceBindings.set('keyboard:0', { handler: keyboard, source: 'keyboard', assignedPlayer: defaultPlayerIndex, device: null });
-		this.deviceBindings.set('pointer:0', { handler: pointer, source: 'pointer', assignedPlayer: defaultPlayerIndex, device: null });
-		this.inputControllerKeyboardHandlers.push(keyboard);
-		this.inputControllerPointerHandlers.push(pointer);
-		this.platform.input.setKeyboardCapture(this.shouldCaptureKey.bind(this));
-		this.attachToPlatformInput();
-		this.focusChangeUnsubscribe = this.platform.lifecycle.onFocusChange(this.handleFocusChange);
 	}
 
 	public setGameplayCaptureEnabled(enabled: boolean): void {
@@ -951,7 +929,12 @@ export class Input implements RuntimeInputSource {
 	private onDeviceConnected(device: InputDevice): void {
 		const defaultPlayerIndex = Input.DEFAULT_KEYBOARD_PLAYER_INDEX;
 		if (device.kind === 'gamepad') {
-			const handler = new GamepadInput(this.platform, device.id, device.description, device);
+			const handler = new GamepadInput(
+				this.platform,
+				device.id,
+				device.description,
+				device,
+			);
 			handler.setDevice(device);
 			const binding: DeviceBinding = { handler, source: 'gamepad', assignedPlayer: null, device };
 			this.deviceBindings.set(device.id, binding);
@@ -959,9 +942,9 @@ export class Input implements RuntimeInputSource {
 			if (autoAssign) {
 				this.startupGamepadIndex = -1;
 				this.assignGamepadToPlayer(handler, defaultPlayerIndex);
-				void handler.init();
+				this.pendingHidGamepad = handler;
 			} else {
-				this.pendingGamepadAssignments.push(new PendingAssignmentProcessor(handler, null));
+				this.pendingGamepadAssignments.push(new PendingAssignmentProcessor(this, handler, null));
 			}
 			return;
 		}
@@ -1033,11 +1016,11 @@ export class Input implements RuntimeInputSource {
 	/**
 	 * Polls the input for each player and processes gamepad assignments.
 	 */
-	public pollInput(): void {
+	public pollInput(): GamepadInput | null {
 		this.pollPlatformDevices();
 		const now = this.platform.clock.now();
-		this.playerInputs.forEach(player => {
-			if (!player) return;
+		for (let index = 0; index < this.playerInputs.length; index += 1) {
+			const player = this.playerInputs[index];
 			player.pollInput(now);
 			player.update(now);
 			this.globalShortcuts.pollPlayer(player);
@@ -1047,11 +1030,22 @@ export class Input implements RuntimeInputSource {
 				if (buttonState.pressed && buttonState.presstime >= 50) {
 					gamepadInput.reset();
 					player.inputHandlers['gamepad'] = null;
-					this.pendingGamepadAssignments.push(new PendingAssignmentProcessor(gamepadInput, null));
+					this.pendingGamepadAssignments.push(new PendingAssignmentProcessor(this, gamepadInput, null));
 				}
 			}
-		});
-		this.pendingGamepadAssignments.forEach(pending => pending.run());
+		}
+		if (this.pendingHidGamepad) {
+			const gamepadInput = this.pendingHidGamepad;
+			this.pendingHidGamepad = null;
+			return gamepadInput;
+		}
+		for (let index = 0; index < this.pendingGamepadAssignments.length; index += 1) {
+			const gamepadInput = this.pendingGamepadAssignments[index].run();
+			if (gamepadInput) {
+				return gamepadInput;
+			}
+		}
+		return null;
 	}
 
 	public sampleInputControllerSnapshot(currentTime: number, snapshot: InputControllerSnapshot): void {

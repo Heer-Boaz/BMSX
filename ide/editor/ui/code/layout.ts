@@ -1,6 +1,6 @@
 // start hot-path -- visual line layout and syntax highlight caching are editor-frame hot paths.
 // start required-state editorDocumentState,editorViewState -- editor layout state roots are owned singletons in this module.
-import type { TimerHandle } from '../../../../machine/ts/platform/platform';
+import type { HostClock, TimerHandle } from '../../../../machine/ts/platform/platform';
 import { clamp } from '../../../../machine/ts/common/clamp';
 import { ScratchBuffer } from '../../../../machine/ts/common/scratchbuffer';
 import { highlightTextLine as highlightTextLineExternal } from '../../../language/lua/syntax_highlight';
@@ -10,7 +10,6 @@ import type { SemanticSymbolKind } from '../../../../machine/ts/lua/semantic/sym
 import type { SemanticAnnotations, TokenAnnotation } from '../../../../machine/ts/lua/semantic/tokens';
 import type { LuaDefinitionInfo } from '../../../../machine/ts/lua/syntax/ast/index';
 import type { CachedHighlight, CodeTabMode, HighlightLine, VisualLineSegment } from '../../../common/models';
-import { scheduleIdeOnce } from '../../../common/background_tasks';
 import { EditorFont } from '../view/font';
 import { getLinesSnapshot, getTextSnapshot } from '../../text/source_text';
 import {
@@ -133,7 +132,7 @@ export class CodeLayout {
 	private semanticPath: string = null;
 	private semanticBuffer: TextBuffer = null;
 	private readonly semanticDebounceMs: number;
-	private readonly clockNow: () => number;
+	private readonly clock: HostClock;
 	private readonly getBuiltinIdentifiers: () => BuiltinIdentifierSnapshot;
 	private readonly computeWrapWidth: () => number;
 	private pendingSemantic: PendingSemanticUpdate = null;
@@ -168,11 +167,11 @@ export class CodeLayout {
 
 	constructor(
 		private readonly font: EditorFont,
-		options: { maxHighlightCache: number; semanticDebounceMs: number; clockNow: () => number; getBuiltinIdentifiers: () => BuiltinIdentifierSnapshot; computeWrapWidth: () => number },
+		options: { maxHighlightCache: number; semanticDebounceMs: number; clock: HostClock; getBuiltinIdentifiers: () => BuiltinIdentifierSnapshot; computeWrapWidth: () => number },
 	) {
 		this.maxHighlightCache = options.maxHighlightCache;
 		this.semanticDebounceMs = options.semanticDebounceMs;
-		this.clockNow = options.clockNow;
+		this.clock = options.clock;
 		this.getBuiltinIdentifiers = options.getBuiltinIdentifiers;
 		this.computeWrapWidth = options.computeWrapWidth;
 		this.refreshBuiltinIdentifiers();
@@ -202,14 +201,14 @@ export class CodeLayout {
 		if (this.semanticUpdateScheduled) {
 			return;
 		}
-		const now = this.clockNow();
+		const now = this.clock.now();
 		const delay = this.semanticDueAtMs !== null ? clamp(this.semanticDueAtMs - now, 0, this.semanticDebounceMs) : 0;
 		if (this.semanticTimer) {
 			this.semanticTimer.cancel();
 			this.semanticTimer = null;
 		}
 		this.semanticUpdateScheduled = true;
-		this.semanticTimer = scheduleIdeOnce(delay, () => {
+		this.semanticTimer = this.clock.scheduleOnce(delay, () => {
 			this.semanticTimer = null;
 			this.semanticUpdateScheduled = false;
 			const pending = this.pendingSemantic;
@@ -217,7 +216,7 @@ export class CodeLayout {
 				return;
 			}
 			if (this.semanticDueAtMs !== null) {
-				const current = this.clockNow();
+				const current = this.clock.now();
 				if (current < this.semanticDueAtMs) {
 					this.scheduleSemanticUpdate();
 					return;
@@ -867,7 +866,7 @@ export class CodeLayout {
 			this.dispatchSemanticUpdate(pending, 'background');
 			return;
 		}
-		const now = this.clockNow();
+		const now = this.clock.now();
 		if (this.semanticDueAtMs === null || this.semanticDueAtMs < now + this.semanticDebounceMs) {
 			this.semanticDueAtMs = now + this.semanticDebounceMs;
 		}
@@ -932,7 +931,7 @@ export class CodeLayout {
 		if (this.semanticDispatchHandle) {
 			this.semanticDispatchHandle.cancel();
 		}
-		this.semanticDispatchHandle = scheduleIdeOnce(0, () => {
+		this.semanticDispatchHandle = this.clock.scheduleOnce(0, () => {
 			this.semanticDispatchHandle = null;
 			if (!this.pendingSemantic || this.pendingSemantic.requestId !== pending.requestId) {
 				return;

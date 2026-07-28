@@ -14,11 +14,6 @@ SoundMaster::SoundMaster()
 	: m_mixFrameTimeSec(static_cast<f64>(HZ_SCALE) / static_cast<f64>(PAL_REFRESH_UFPS_SCALED)) {
 }
 
-const Identifier& SoundMaster::registryId() const {
-	static const Identifier id = "sm";
-	return id;
-}
-
 void SoundMaster::setMasterVolume(f32 value) {
 	m_masterVolume = clampVolume(value);
 }

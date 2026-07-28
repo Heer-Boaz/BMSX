@@ -7,8 +7,10 @@ import { isAltDown } from '../../keyboard/key_input';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import type { RuntimeFaultState } from '../../../runtime/fault_state';
+import type { PlayerInput } from '../../../../machine/ts/input/player';
 
 export function updateCodeAreaPointerFeedback(
+	playerInput: PlayerInput,
 	bridge: RuntimeLuaTooling,
 	fault: RuntimeFaultState,
 	runtime: Runtime,
@@ -26,7 +28,7 @@ export function updateCodeAreaPointerFeedback(
 		clearGotoHoverHighlight();
 	}
 	if (isCodeTabActive()) {
-		const altDown = isAltDown();
+		const altDown = isAltDown(playerInput);
 		if (!snapshot.primaryPressed && !pointerSelecting && insideCodeArea && altDown) {
 				updateHoverTooltip(bridge, fault, runtime, snapshot, activeContext, bounds);
 		} else {

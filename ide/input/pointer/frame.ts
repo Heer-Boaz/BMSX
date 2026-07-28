@@ -1,4 +1,4 @@
-import { machineManager } from '../../../machine/ts/core/machine_manager';
+import type { PlayerInput } from '../../../machine/ts/input/player';
 import { applyScrollbarScroll } from './scrollbar';
 import { clearHoverTooltip, clearGotoHoverHighlight } from '../../editor/contrib/intellisense/engine';
 import { mapScreenPointToViewport } from '../../editor/ui/view/view';
@@ -12,8 +12,7 @@ import { createResourceState, resourceSearchState } from '../../workbench/contri
 import type { ResourcePanelController } from '../../workbench/contrib/resources/panel/controller';
 import type { VideoSurface } from '../../../machine/ts/platform/platform';
 
-export function readEditorPointerSnapshot(surface: VideoSurface): PointerSnapshot {
-	const playerInput = machineManager.input.getPlayerInput(1);
+export function readEditorPointerSnapshot(surface: VideoSurface, playerInput: PlayerInput): PointerSnapshot {
 	const primaryState = playerInput.getRawButtonState('pointer_primary', 'pointer');
 	const primaryPressed = primaryState.pressed && !primaryState.consumed;
 	const positionState = playerInput.getRawButtonState('pointer_position', 'pointer');

@@ -6,27 +6,37 @@ import { confirmCreateResourcePrompt, isValidCreateResourceCharacter } from '../
 import { consumeIdeKey, isKeyJustPressed } from '../../keyboard/key_input';
 import { createResourceState } from '../../../workbench/contrib/resources/widget_state';
 import type { RuntimeSourceState } from '../../../runtime/sources';
-import type { ResourcePanelController } from '../../../workbench/contrib/resources/panel/controller';
+import type { CartEditor } from '../../../cart_editor';
+import type { PlayerInput } from '../../../../machine/ts/input/player';
+import type {
+	ClipboardService,
+	HostClock,
+	StorageService,
+} from '../../../../machine/ts/platform/platform';
 
 export function handleCreateResourceInput(
+	playerInput: PlayerInput,
+	clipboard: ClipboardService,
+	storage: StorageService,
+	clock: HostClock,
+	editor: CartEditor,
 	sources: RuntimeSourceState,
-	resourcePanel: ResourcePanelController,
 ): void {
-	if (isKeyJustPressed('Escape')) {
-		consumeIdeKey('Escape');
+	if (isKeyJustPressed('Escape', playerInput)) {
+		consumeIdeKey('Escape', playerInput);
 		closeCreateResourcePrompt(true);
 		return;
 	}
-	if (!createResourceState.working && (isKeyJustPressed('Enter') || isKeyJustPressed('NumpadEnter'))) {
-		consumeIdeKey('Enter');
-		consumeIdeKey('NumpadEnter');
-			void confirmCreateResourcePrompt(sources, resourcePanel);
+	if (!createResourceState.working && (isKeyJustPressed('Enter', playerInput) || isKeyJustPressed('NumpadEnter', playerInput))) {
+		consumeIdeKey('Enter', playerInput);
+		consumeIdeKey('NumpadEnter', playerInput);
+		void confirmCreateResourcePrompt(storage, clock, editor, sources);
 		return;
 	}
 	if (createResourceState.working) {
 		return;
 	}
-	const textChanged = applyInlineFieldEditing(createResourceState.field, {
+	const textChanged = applyInlineFieldEditing(playerInput, clipboard, createResourceState.field, {
 		allowSpace: true,
 		characterFilter: (value: string): boolean => isValidCreateResourceCharacter(value),
 		maxLength: constants.CREATE_RESOURCE_MAX_PATH_LENGTH,

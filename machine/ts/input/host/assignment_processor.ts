@@ -57,7 +57,7 @@ export class PendingAssignmentProcessor {
 			}
 
 			// Find the next available player index for gamepad assignment
-			newProposedPlayerIndex = Input.instance.getFirstAvailablePlayerIndexForGamepadAssignment(newProposedPlayerIndex, increment < 0);
+			newProposedPlayerIndex = this.input.getFirstAvailablePlayerIndexForGamepadAssignment(newProposedPlayerIndex, increment < 0);
 
 			if (newProposedPlayerIndex !== null) {
 				this.proposedPlayerIndex = newProposedPlayerIndex;
@@ -79,7 +79,11 @@ export class PendingAssignmentProcessor {
 	 * This constructor sets up an event listener for the "gamepaddisconnected" event,
 	 * which handles the disconnection of gamepads and manages pending assignments.
 	 */
-	constructor(public inputHandler: InputHandler, public proposedPlayerIndex: number) {
+	constructor(
+		private readonly input: Input,
+		public inputHandler: InputHandler,
+		public proposedPlayerIndex: number,
+	) {
 		// Defer UI creation to ControllerAssignmentUI
 	}
 
@@ -89,8 +93,7 @@ export class PendingAssignmentProcessor {
 	 * If no gamepad is proposed, checks for the start button press to propose a gamepad for assignment.
 	 * Handles the movement of the joystick icon to change the proposed player index.
 	 */
-	async run(): Promise<void> {
-		const inputMaestro = Input.instance;
+	run(): GamepadInput | null {
 		const gamepadInput = this.inputHandler as GamepadInput;
 		gamepadInput.pollInput();
 
@@ -98,7 +101,7 @@ export class PendingAssignmentProcessor {
 		if (this.proposedPlayerIndex === null) {
 			if (this.checkNonConsumedPressed('start', gamepadInput)) {
 				gamepadInput.consumeButton('start');
-				const proposedPlayerIndex = inputMaestro.getFirstAvailablePlayerIndexForGamepadAssignment();
+				const proposedPlayerIndex = this.input.getFirstAvailablePlayerIndexForGamepadAssignment();
 
 				if (proposedPlayerIndex !== null) {
 					this.proposedPlayerIndex = proposedPlayerIndex;
@@ -111,12 +114,10 @@ export class PendingAssignmentProcessor {
 			if (this.checkNonConsumedPressed('a', gamepadInput)) {
 				// Assign gamepad to player and remove the joystick icon
 				gamepadInput.consumeButton('a');
-				inputMaestro.assignGamepadToPlayer(gamepadInput, this.proposedPlayerIndex);
-				// Initialize the HID pad for the gamepad input
-				await gamepadInput.init(); // *REQUIRES USER INPUT TO GRANT PERMISSION TO USE THE HID API!! THEREFORE, THIS FUNCTION SHOULD BE CALLED AS PART OF A USER INTERACTION!*
-				// Reset states so the confirming button does not leak into gameplay
+				this.input.assignGamepadToPlayer(gamepadInput, this.proposedPlayerIndex);
 				gamepadInput.reset();
-				inputMaestro.removePendingGamepadAssignment(this.inputHandler.gamepadIndex);
+				this.input.removePendingGamepadAssignment(this.inputHandler.gamepadIndex);
+				return gamepadInput;
 			}
 			else if (this.checkNonConsumedPressed('b', gamepadInput)) {
 				// Cancel assignment process for this gamepad and remove the joystick icon
@@ -136,6 +137,7 @@ export class PendingAssignmentProcessor {
 				}
 			}
 		}
+		return null;
 	}
 
 	// UI removal handled by UI controller

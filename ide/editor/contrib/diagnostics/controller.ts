@@ -1,10 +1,9 @@
 import { clamp } from '../../../../machine/ts/common/clamp';
-import type { TimerHandle } from '../../../../machine/ts/platform/platform';
+import type { HostClock, TimerHandle } from '../../../../machine/ts/platform/platform';
 import { computeAggregatedEditorDiagnostics, markDiagnosticsDirty, type DiagnosticContextInput } from './analysis';
-import { editorRuntimeState } from '../../common/runtime_state';
 import type { EditorDiagnostic, CodeTabContext } from '../../../common/models';
 import { getLinesSnapshot, getTextSnapshot } from '../../text/source_text';
-import { enqueueBackgroundTask, scheduleIdeOnce } from '../../../common/background_tasks';
+import { enqueueBackgroundTask } from '../../../common/background_tasks';
 import {
 	findCodeTabContext,
 	getActiveCodeTabContext,
@@ -36,7 +35,11 @@ function cancelDiagnosticsTimer(): void {
 	editorDiagnosticsState.diagnosticsComputationScheduled = false;
 }
 
-export function processDiagnosticsQueue(bridge: RuntimeLuaTooling, now: number): void {
+export function processDiagnosticsQueue(
+	bridge: RuntimeLuaTooling,
+	clock: HostClock,
+	now: number,
+): void {
 	if (!editorDiagnosticsState.diagnosticsDirty) {
 		return;
 	}
@@ -56,11 +59,11 @@ export function processDiagnosticsQueue(bridge: RuntimeLuaTooling, now: number):
 	if (editorDiagnosticsState.diagnosticsDueAtMs === null) {
 		editorDiagnosticsState.diagnosticsDueAtMs = now + diagnosticsDebounceMs;
 	}
-	scheduleDiagnosticsComputation(bridge);
+	scheduleDiagnosticsComputation(bridge, clock);
 }
 
-export function scheduleDiagnosticsComputation(bridge: RuntimeLuaTooling): void {
-	const now = editorRuntimeState.clockNow();
+export function scheduleDiagnosticsComputation(bridge: RuntimeLuaTooling, clock: HostClock): void {
+	const now = clock.now();
 	const dueAt = editorDiagnosticsState.diagnosticsDueAtMs ?? now + diagnosticsDebounceMs;
 	const spacedDueAt = Math.max(dueAt, lastDiagnosticsRunMs + diagnosticsMinIntervalMs);
 	editorDiagnosticsState.diagnosticsDueAtMs = spacedDueAt;
@@ -71,15 +74,15 @@ export function scheduleDiagnosticsComputation(bridge: RuntimeLuaTooling): void 
 	const delay = clamp(spacedDueAt - now, 0, diagnosticsMinIntervalMs + diagnosticsDebounceMs);
 	diagnosticsScheduledForMs = spacedDueAt;
 	editorDiagnosticsState.diagnosticsComputationScheduled = true;
-	diagnosticsTimer = scheduleIdeOnce(delay, () => {
+	diagnosticsTimer = clock.scheduleOnce(delay, () => {
 		diagnosticsTimer = null;
 		diagnosticsScheduledForMs = 0;
 		editorDiagnosticsState.diagnosticsComputationScheduled = false;
-		executeDiagnosticsComputation(bridge);
+		executeDiagnosticsComputation(bridge, clock);
 	});
 }
 
-export function executeDiagnosticsComputation(bridge: RuntimeLuaTooling): void {
+export function executeDiagnosticsComputation(bridge: RuntimeLuaTooling, clock: HostClock): void {
 	if (!editorDiagnosticsState.diagnosticsDirty) {
 		editorDiagnosticsState.diagnosticsDueAtMs = null;
 		cancelDiagnosticsTimer();
@@ -98,17 +101,17 @@ export function executeDiagnosticsComputation(bridge: RuntimeLuaTooling): void {
 		return;
 	}
 	if (editorDiagnosticsState.diagnosticsTaskPending) {
-		scheduleDiagnosticsComputation(bridge);
+		scheduleDiagnosticsComputation(bridge, clock);
 		return;
 	}
-	const now = editorRuntimeState.clockNow();
+	const now = clock.now();
 	if (editorDiagnosticsState.diagnosticsDueAtMs === null) {
 		editorDiagnosticsState.diagnosticsDueAtMs = now + diagnosticsDebounceMs;
-		scheduleDiagnosticsComputation(bridge);
+		scheduleDiagnosticsComputation(bridge, clock);
 		return;
 	}
 	if (now < editorDiagnosticsState.diagnosticsDueAtMs) {
-		scheduleDiagnosticsComputation(bridge);
+		scheduleDiagnosticsComputation(bridge, clock);
 		return;
 	}
 	const batch = collectDiagnosticsBatch();
@@ -118,10 +121,14 @@ export function executeDiagnosticsComputation(bridge: RuntimeLuaTooling): void {
 		cancelDiagnosticsTimer();
 		return;
 	}
-	enqueueDiagnosticsJob(bridge, batch);
+	enqueueDiagnosticsJob(bridge, clock, batch);
 }
 
-export function enqueueDiagnosticsJob(bridge: RuntimeLuaTooling, contextIds: readonly string[]): void {
+export function enqueueDiagnosticsJob(
+	bridge: RuntimeLuaTooling,
+	clock: HostClock,
+	contextIds: readonly string[],
+): void {
 	if (contextIds.length === 0) {
 		return;
 	}
@@ -129,15 +136,15 @@ export function enqueueDiagnosticsJob(bridge: RuntimeLuaTooling, contextIds: rea
 	enqueueBackgroundTask(() => {
 		runDiagnosticsForContexts(bridge, contextIds);
 		editorDiagnosticsState.diagnosticsTaskPending = false;
-		lastDiagnosticsRunMs = editorRuntimeState.clockNow();
+		lastDiagnosticsRunMs = clock.now();
 		if (editorDiagnosticsState.dirtyDiagnosticContexts.size === 0) {
 			editorDiagnosticsState.diagnosticsDirty = false;
 			editorDiagnosticsState.diagnosticsDueAtMs = null;
 			cancelDiagnosticsTimer();
 		} else {
-			const now = editorRuntimeState.clockNow();
+			const now = clock.now();
 			editorDiagnosticsState.diagnosticsDueAtMs = now + diagnosticsDebounceMs;
-			processDiagnosticsQueue(bridge, now);
+			processDiagnosticsQueue(bridge, clock, now);
 		}
 		return false;
 	});

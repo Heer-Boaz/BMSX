@@ -3,14 +3,21 @@ import { isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyF
 import { redo, undo } from '../../editing/undo_controller';
 import type { RenameController } from './controller';
 import type { CrossFileRenameManager } from './operations';
+import type { PlayerInput } from '../../../../machine/ts/input/player';
+import type { ClipboardService } from '../../../../machine/ts/platform/platform';
 
-export function handleRenameControllerInput(controller: RenameController, crossFileRename: CrossFileRenameManager): void {
-	const ctrlDown = isCtrlDown();
-	const metaDown = isMetaDown();
-	const shiftDown = isShiftDown();
+export function handleRenameControllerInput(
+	playerInput: PlayerInput,
+	clipboard: ClipboardService,
+	controller: RenameController,
+	crossFileRename: CrossFileRenameManager,
+): void {
+	const ctrlDown = isCtrlDown(playerInput);
+	const metaDown = isMetaDown(playerInput);
+	const shiftDown = isShiftDown(playerInput);
 
-	if ((ctrlDown || metaDown) && shouldRepeatKeyFromPlayer('KeyZ')) {
-		consumeIdeKey('KeyZ');
+	if ((ctrlDown || metaDown) && shouldRepeatKeyFromPlayer('KeyZ', playerInput)) {
+		consumeIdeKey('KeyZ', playerInput);
 		if (shiftDown) {
 			redo();
 		} else {
@@ -18,25 +25,25 @@ export function handleRenameControllerInput(controller: RenameController, crossF
 		}
 		return;
 	}
-	if ((ctrlDown || metaDown) && shouldRepeatKeyFromPlayer('KeyY')) {
-		consumeIdeKey('KeyY');
+	if ((ctrlDown || metaDown) && shouldRepeatKeyFromPlayer('KeyY', playerInput)) {
+		consumeIdeKey('KeyY', playerInput);
 		redo();
 		return;
 	}
-	if (isKeyJustPressed('Escape')) {
-		consumeIdeKey('Escape');
+	if (isKeyJustPressed('Escape', playerInput)) {
+		consumeIdeKey('Escape', playerInput);
 		controller.cancel();
 		return;
 	}
-	if (isKeyJustPressed('Enter')) {
-		consumeIdeKey('Enter');
+	if (isKeyJustPressed('Enter', playerInput)) {
+		consumeIdeKey('Enter', playerInput);
 		controller.commit(crossFileRename);
 		return;
 	}
-	if (isKeyJustPressed('NumpadEnter')) {
-		consumeIdeKey('NumpadEnter');
+	if (isKeyJustPressed('NumpadEnter', playerInput)) {
+		consumeIdeKey('NumpadEnter', playerInput);
 		controller.commit(crossFileRename);
 		return;
 	}
-	controller.applyFieldEditing();
+	controller.applyFieldEditing(playerInput, clipboard);
 }

@@ -40,6 +40,7 @@ import { ModuleAliasEntry } from '../../../../machine/ts/lua/semantic/model';
 import { getActiveSemanticDefinitions, getLuaModuleAliases } from '../diagnostics/controller';
 import { clearSingleCursorSelection, setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../editing/cursor/state';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
+import type { PlayerInput } from '../../../../machine/ts/input/player';
 import { createResourceState, resourceSearchState } from '../../../workbench/contrib/resources/widget_state';
 import { editorRuntimeState } from '../../common/runtime_state';
 import { editorSearchState, lineJumpState } from '../find/widget_state';
@@ -98,7 +99,7 @@ export class CompletionController {
 		if (lastEditAt < 0) {
 			return false;
 		}
-		const now = editorRuntimeState.clockNow();
+		const now = editorRuntimeState.currentTimeMs;
 		return now - lastEditAt <= constants.COMPLETION_TYPING_GRACE_MS;
 	}
 
@@ -394,16 +395,16 @@ export class CompletionController {
 		this.refreshParameterHint();
 	}
 
-	public handleKeybindings(): boolean {
+	public handleKeybindings(playerInput: PlayerInput): boolean {
 		if (!this.isCompletionContextActive()) {
 			this.closeSession();
 			this.cancelPendingCompletion();
 			this.parameterHint = null;
 			return false;
 		}
-		const { ctrlDown, altDown, metaDown, shiftDown } = { ctrlDown: isCtrlDown(), altDown: isAltDown(), metaDown: isMetaDown(), shiftDown: isShiftDown() };
-		if ((ctrlDown || metaDown) && !altDown && this.isCompletionReady() && isKeyJustPressed('Space')) {
-			consumeIdeKey('Space');
+		const { ctrlDown, altDown, metaDown, shiftDown } = { ctrlDown: isCtrlDown(playerInput), altDown: isAltDown(playerInput), metaDown: isMetaDown(playerInput), shiftDown: isShiftDown(playerInput) };
+		if ((ctrlDown || metaDown) && !altDown && this.isCompletionReady() && isKeyJustPressed('Space', playerInput)) {
+			consumeIdeKey('Space', playerInput);
 			const session = this.completionSession;
 			if (session) {
 				if (session.trigger === 'manual') {
@@ -421,14 +422,14 @@ export class CompletionController {
 		const session = this.completionSession;
 		if (!session) return false;
 		const manual = session.trigger === 'manual';
-		if (isKeyJustPressed('Escape')) {
-			consumeIdeKey('Escape');
+		if (isKeyJustPressed('Escape', playerInput)) {
+			consumeIdeKey('Escape', playerInput);
 			this.closeSession();
 			return true;
 		}
 		if (!manual) {
-			if (isKeyJustPressed('Tab')) {
-				consumeIdeKey('Tab');
+			if (isKeyJustPressed('Tab', playerInput)) {
+				consumeIdeKey('Tab', playerInput);
 				if (shiftDown) {
 					this.moveCompletionSelection(-1);
 				} else {
@@ -438,20 +439,20 @@ export class CompletionController {
 			}
 			return false;
 		}
-		if (this.handleNavigationKeys(session, ctrlDown || metaDown)) {
+		if (this.handleNavigationKeys(playerInput, session, ctrlDown || metaDown)) {
 			return true;
 		}
 		if (manual && this.enterCommitsCompletion) {
-			const enterPressed = isKeyJustPressed('Enter');
-			const numpadEnterPressed = isKeyJustPressed('NumpadEnter');
+			const enterPressed = isKeyJustPressed('Enter', playerInput);
+			const numpadEnterPressed = isKeyJustPressed('NumpadEnter', playerInput);
 			if (enterPressed || numpadEnterPressed) {
-				if (enterPressed) consumeIdeKey('Enter'); else consumeIdeKey('NumpadEnter');
+				if (enterPressed) consumeIdeKey('Enter', playerInput); else consumeIdeKey('NumpadEnter', playerInput);
 				this.applySelectedCompletion();
 				return true;
 			}
 		}
-		if (isKeyJustPressed('Tab')) {
-			consumeIdeKey('Tab');
+		if (isKeyJustPressed('Tab', playerInput)) {
+			consumeIdeKey('Tab', playerInput);
 			if (shiftDown) {
 				this.moveCompletionSelection(-1);
 			} else {
@@ -1166,30 +1167,30 @@ export class CompletionController {
 		this.ensureCompletionSelectionVisible(session);
 	}
 
-	private handleNavigationKeys(session: CompletionSession, allowHomeEnd: boolean): boolean {
+	private handleNavigationKeys(playerInput: PlayerInput, session: CompletionSession, allowHomeEnd: boolean): boolean {
 		let moved = false;
-		if (this.navigationActive('ArrowDown')) {
-			consumeIdeKey('ArrowDown');
+		if (this.navigationActive(playerInput, 'ArrowDown')) {
+			consumeIdeKey('ArrowDown', playerInput);
 			this.moveCompletionSelection(1);
 			moved = true;
 		}
-		if (this.navigationActive('ArrowUp')) {
-			consumeIdeKey('ArrowUp');
+		if (this.navigationActive(playerInput, 'ArrowUp')) {
+			consumeIdeKey('ArrowUp', playerInput);
 			this.moveCompletionSelection(-1);
 			moved = true;
 		}
-		if (this.navigationActive('PageDown')) {
-			consumeIdeKey('PageDown');
+		if (this.navigationActive(playerInput, 'PageDown')) {
+			consumeIdeKey('PageDown', playerInput);
 			this.moveCompletionSelection(session.maxVisibleItems);
 			moved = true;
 		}
-		if (this.navigationActive('PageUp')) {
-			consumeIdeKey('PageUp');
+		if (this.navigationActive(playerInput, 'PageUp')) {
+			consumeIdeKey('PageUp', playerInput);
 			this.moveCompletionSelection(-session.maxVisibleItems);
 			moved = true;
 		}
-		if (allowHomeEnd && this.navigationActive('Home')) {
-			consumeIdeKey('Home');
+		if (allowHomeEnd && this.navigationActive(playerInput, 'Home')) {
+			consumeIdeKey('Home', playerInput);
 			if (session.filteredItems.length > 0) {
 				session.selectionIndex = 0;
 				this.ensureCompletionSelectionVisible(session);
@@ -1197,8 +1198,8 @@ export class CompletionController {
 			}
 			moved = true;
 		}
-		if (allowHomeEnd && this.navigationActive('End')) {
-			consumeIdeKey('End');
+		if (allowHomeEnd && this.navigationActive(playerInput, 'End')) {
+			consumeIdeKey('End', playerInput);
 			if (session.filteredItems.length > 0) {
 				session.selectionIndex = session.filteredItems.length - 1;
 				this.ensureCompletionSelectionVisible(session);
@@ -1209,8 +1210,8 @@ export class CompletionController {
 		return moved;
 	}
 
-	private navigationActive(code: string): boolean {
-		return shouldRepeatKeyFromPlayer(code);
+	private navigationActive(playerInput: PlayerInput, code: string): boolean {
+		return shouldRepeatKeyFromPlayer(code, playerInput);
 	}
 
 	private ensureCompletionSelectionVisible(session: CompletionSession): void {

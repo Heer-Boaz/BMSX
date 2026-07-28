@@ -17,7 +17,7 @@ async function startBrowserPlayer(): Promise<void> {
 			document.body.dataset.defaultRom,
 		);
 		const host = await prepareMachineHost(options);
-		bindBrowserFullscreenShortcut();
+		bindBrowserFullscreenShortcut(host);
 		startMachineHostFrames(host);
 		completeBrowserBoot();
 	} catch (error) {

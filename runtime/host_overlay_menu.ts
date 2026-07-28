@@ -1,9 +1,9 @@
 import { RectRenderKind, TextAlign, TextBaseline, type GlyphRenderSubmission, type RectRenderSubmission } from '../machine/ts/render/shared/submissions';
 import { LAYER_2D_IDE } from '../machine/ts/render/shared/layers';
 import type { Host2DKind, Host2DRef } from '../machine/ts/render/shared/submissions';
-import { machineManager } from '../machine/ts/core/machine_manager';
-import { Input } from '../machine/ts/input/manager';
+import type { Input } from '../machine/ts/input/manager';
 import type { PlayerInput } from '../machine/ts/input/player';
+import type { Runtime } from '../machine/ts/machine/runtime/runtime';
 import type { DeviceQuantizeMode } from '../machine/ts/render/post/device_quantize/mode';
 import type { VideoPresenter } from '../machine/ts/render/video_presenter';
 import { clearHostMenuFrame, publishHostMenuFrame, type HostMenuFrame } from '../machine/ts/render/host_overlay/overlay_queue';
@@ -195,6 +195,7 @@ export class HostOverlayMenu {
 	private commandCount = 0;
 	private fpsTextTenths = FPS_TEXT_TENTHS_INVALID;
 	private fpsTextWidth = 0;
+	private showFps = false;
 	private readonly options: readonly HostMenuOption[] = [
 		{
 			kind: 'value',
@@ -270,8 +271,8 @@ export class HostOverlayMenu {
 			kind: 'value',
 			label: 'HOST: SHOW FPS',
 			values: TOGGLE_VALUES,
-			getIndex: () => boolIndex(machineManager.host_show_fps),
-			setIndex: index => { machineManager.host_show_fps = boolFromIndex(index); },
+			getIndex: () => boolIndex(this.showFps),
+			setIndex: index => { this.showFps = boolFromIndex(index); },
 		},
 		{
 			kind: 'action',
@@ -285,7 +286,11 @@ export class HostOverlayMenu {
 		},
 	];
 
-	public constructor(presenter: VideoPresenter) {
+	public constructor(
+		presenter: VideoPresenter,
+		private readonly runtime: Runtime,
+		private readonly input: Input,
+	) {
 		this.presenter = presenter;
 		this.optionGlyphs = new Array(this.options.length);
 		for (let index = 0; index < this.options.length; index += 1) {
@@ -304,7 +309,7 @@ export class HostOverlayMenu {
 	}
 
 	public tickInput(): HostMenuInput {
-		const player = Input.instance.getPlayerInput(1);
+		const player = this.input.getPlayerInput(1);
 		const comboEdge = buttonPressed(player, BUTTON_START)
 			&& buttonPressed(player, BUTTON_SELECT)
 			&& buttonPressed(player, BUTTON_LB)
@@ -319,14 +324,14 @@ export class HostOverlayMenu {
 			this.toggle();
 			consumeButtons(player, MENU_TOGGLE_BUTTONS);
 		}
-		Input.instance.setGameplayCaptureEnabled(!this.active);
+		this.input.setGameplayCaptureEnabled(!this.active);
 		if (!this.active) {
 			return HostMenuInput.Inactive;
 		}
 		if (buttonJustPressed(player, BUTTON_B)) {
 			this.toggle();
 			consumeButtons(player, MENU_NAV_BUTTONS);
-			Input.instance.setGameplayCaptureEnabled(true);
+			this.input.setGameplayCaptureEnabled(true);
 			return HostMenuInput.Inactive;
 		}
 		if (buttonEdge(player, BUTTON_UP)) {
@@ -421,7 +426,7 @@ export class HostOverlayMenu {
 		this.publishRenderCommands();
 	}
 
-	public queueFrameOverlayCommands(): boolean {
+	public queueFrameOverlayCommands(hostFps: number): boolean {
 		this.clearRenderCommands();
 		if (this.active) {
 			return false;
@@ -429,8 +434,8 @@ export class HostOverlayMenu {
 		const presenter = this.presenter;
 		const font = presenter.default_font;
 		let queued = false;
-		if (machineManager.host_show_fps) {
-			const fpsTenths = ((machineManager.host_fps * 10) + 0.5) | 0;
+		if (this.showFps) {
+			const fpsTenths = ((hostFps * 10) + 0.5) | 0;
 			const fpsTextChanged = this.fpsTextTenths !== fpsTenths || this.fpsGlyphs.font !== font;
 			this.fpsGlyphs.font = font;
 			if (fpsTextChanged) {
@@ -448,7 +453,7 @@ export class HostOverlayMenu {
 			queued = true;
 		}
 		if (presenter.show_resource_usage_gizmo) {
-			const runtime = machineManager.runtime;
+			const runtime = this.runtime;
 			this.queueCommand('rect', this.usagePanelRect);
 			this.queueUsageBar(0, runtime.cpuUsageCyclesUsed(), runtime.cpuUsageCyclesGranted(), font);
 			this.queueUsageBar(1, runtime.ramUsedBytes(), runtime.ramTotalBytes(), font);

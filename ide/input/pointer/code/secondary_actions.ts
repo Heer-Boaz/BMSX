@@ -1,4 +1,4 @@
-import { machineManager } from '../../../../machine/ts/core/machine_manager';
+import type { PlayerInput } from '../../../../machine/ts/input/player';
 import type { BreakpointController } from '../../../workbench/contrib/debugger/controller';
 import { resolvePointerRow } from '../../../editor/ui/view/view';
 import type { CodeAreaBounds } from '../../../editor/ui/view/view';
@@ -11,7 +11,7 @@ export function handleCodeAreaSecondaryPointer(
 	insideCodeArea: boolean,
 	inGutter: boolean,
 	pointerSecondaryJustPressed: boolean,
-	playerInput: ReturnType<typeof machineManager.input.getPlayerInput>
+	playerInput: PlayerInput
 ): boolean {
 	if (!pointerSecondaryJustPressed || !insideCodeArea || inGutter || !openEditorContextMenuFromPointer(snapshot, playerInput)) {
 		return false;

@@ -1,4 +1,3 @@
-import { machineManager } from '../../../machine/ts/core/machine_manager';
 import { EditorUndoRecord, TextUndoOp } from '../text/undo';
 import { PieceTreeBuffer } from '../text/piece_tree_buffer';
 import * as constants from '../../common/constants';
@@ -22,7 +21,7 @@ export function prepareUndo(key: string, allowMerge: boolean): void {
 		return;
 	}
 	capturePreMutationSource();
-	const now = machineManager.platform.clock.now();
+	const now = editorRuntimeState.currentTimeMs;
 	const shouldMerge = allowMerge
 		&& editorDocumentState.lastHistoryKey === key
 		&& now - editorDocumentState.lastHistoryTimestamp <= constants.UNDO_COALESCE_INTERVAL_MS;
@@ -270,7 +269,7 @@ export function breakUndoSequence(): void {
 }
 
 export function recordEditContext(kind: 'insert' | 'delete' | 'replace', text: string): void {
-	editorDocumentState.lastContentEditAtMs = editorRuntimeState.clockNow();
+	editorDocumentState.lastContentEditAtMs = editorRuntimeState.currentTimeMs;
 	editorRuntimeState.pendingEditContext = { kind, text };
 }
 

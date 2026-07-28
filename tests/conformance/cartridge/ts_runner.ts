@@ -16,7 +16,6 @@ async function main(): Promise<void> {
 	}
 
 	const [
-		{ machineManager },
 		{ prepareMachineHost },
 		{ runMachineHostFrame },
 		{ RenderPresentationState },
@@ -27,7 +26,6 @@ async function main(): Promise<void> {
 		{ CART_MMIO_BASE },
 		{ CARTRIDGE_MAILBOX_CONTROL_OFFSET, CARTRIDGE_MAILBOX_CONTROL_IRQ_TRIGGER },
 	] = await Promise.all([
-		import('../../../machine/ts/core/machine_manager'),
 		import('../../../runtime/machine_runtime'),
 		import('../../../runtime/host_frame'),
 		import('../../../runtime/presentation_state'),
@@ -62,9 +60,9 @@ async function main(): Promise<void> {
 		platform,
 	});
 	const runtime = host.runtime;
-	const presentation = new RenderPresentationState();
-	const hostOverlayMenu = new HostOverlayMenu(host.presenter);
-	machineManager.start();
+	const presentation = new RenderPresentationState(host.soundMaster);
+	const hostOverlayMenu = new HostOverlayMenu(host.presenter, runtime, host.input);
+	host.start();
 	runtime.frameLoop.currentTimeMs = 0;
 	let currentTimeMs = 0;
 	const transcriptCount = (entry: string): number => {
@@ -83,10 +81,9 @@ async function main(): Promise<void> {
 			}
 			currentTimeMs += runtime.timing.frameDurationMs;
 			runMachineHostFrame(
-				host.presenter,
+				host,
 				presentation,
 				hostOverlayMenu,
-				runtime,
 				currentTimeMs,
 				runGate.ready,
 			);
@@ -102,7 +99,7 @@ async function main(): Promise<void> {
 	applyRuntimeSaveStateBytes(runtime, saved);
 	runtime.machine.memory.writeMappedU32LE(mailboxControl, CARTRIDGE_MAILBOX_CONTROL_IRQ_TRIGGER);
 	runUntil('STEP1', 2);
-	machineManager.running = false;
+	host.stop();
 
 	process.stdout.write(`BMSX-CARTRIDGE-CONFORMANCE=${transcript.join('|')}\n`);
 }

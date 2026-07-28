@@ -7,9 +7,6 @@ import {
 } from '../../../ide/workbench/machine_runtime';
 import { createHeadlessIdeHarness } from '../../../ide/testing/headless_harness';
 import {
-	machineManager,
-} from '../../../machine/ts/core/machine_manager';
-import {
 	HEADLESS_DEFAULT_FRAME_INTERVAL_MS,
 	HeadlessPlatformServices,
 } from '../../../hosts/node/headless/platform_headless';
@@ -92,7 +89,6 @@ async function main(): Promise<void> {
 	const bootOptions: MachineHostInitializationOptions = {
 		cartridgeSlots: [slot0Rom, slot1Rom],
 		systemRom,
-		debug: options.debug,
 		startingGamepadIndex: -1,
 		enableOnscreenGamepad: false,
 		platform,
@@ -152,14 +148,21 @@ async function main(): Promise<void> {
 		switch (options.mode.kind) {
 			case 'ide-test': {
 				installNodeWorkspaceBridge(path.resolve(path.dirname(options.romPath), '..'));
-				const ide = await prepareWorkbenchRuntime(bootOptions);
-				const runtime = machineManager.runtime;
-				startWorkbenchHostFrames(platform, ide);
+				const [ideHost, ide] = await prepareWorkbenchRuntime(bootOptions);
+				const runtime = ideHost.runtime;
+				startWorkbenchHostFrames(ideHost, ide);
 				await Promise.race([
 					runIdeTest({
 						testPath: options.mode.path,
 						frameIntervalMs: options.frameIntervalMs,
-						ide: createHeadlessIdeHarness(ide, runtime),
+						ide: createHeadlessIdeHarness(
+							ide,
+							runtime,
+							ideHost.input,
+							ideHost.soundMaster,
+							ideHost.platform.storage,
+							ideHost.platform,
+						),
 						logger: inputLogger,
 						clock: platform.clock,
 					}),

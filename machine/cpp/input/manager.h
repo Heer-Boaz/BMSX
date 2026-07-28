@@ -14,10 +14,8 @@ class Lifecycle;
 
 class Input final : public RuntimeInputSource {
 public:
-	static Input& instance();
-
-	void initialize(InputHub& inputHub, Lifecycle& lifecycle);
-	void shutdown();
+	Input(InputHub& inputHub, Lifecycle& lifecycle);
+	~Input();
 	void resetInputState();
 	void pollInput();
 
@@ -31,7 +29,6 @@ public:
 	f64 frameDurationMs() const { return m_frameDurationMs; }
 
 private:
-	Input() = default;
 	Input(const Input&) = delete;
 	Input& operator=(const Input&) = delete;
 

@@ -1,12 +1,13 @@
 import { insertText } from '../../editing/text_editing_and_selection';
 import * as TextEditing from '../../editing/text_editing_and_selection';
 import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isShiftDown, shouldRepeatKeyFromPlayer } from '../../../input/keyboard/key_input';
+import type { PlayerInput } from '../../../../machine/ts/input/player';
 
-export function handleEditorEditingKeys(): void {
-	const ctrlDown = isCtrlDown();
-	const shiftDown = isShiftDown();
-	if (isKeyJustPressed('Tab')) {
-		consumeIdeKey('Tab');
+export function handleEditorEditingKeys(playerInput: PlayerInput): void {
+	const ctrlDown = isCtrlDown(playerInput);
+	const shiftDown = isShiftDown(playerInput);
+	if (isKeyJustPressed('Tab', playerInput)) {
+		consumeIdeKey('Tab', playerInput);
 		if (shiftDown) {
 			TextEditing.unindentSelectionOrLine();
 		} else {
@@ -14,8 +15,8 @@ export function handleEditorEditingKeys(): void {
 		}
 		return;
 	}
-	if (shouldRepeatKeyFromPlayer('Backspace')) {
-		consumeIdeKey('Backspace');
+	if (shouldRepeatKeyFromPlayer('Backspace', playerInput)) {
+		consumeIdeKey('Backspace', playerInput);
 		if (ctrlDown) {
 			TextEditing.deleteWordBackward();
 		} else if (!TextEditing.deleteSelectionIfPresent()) {
@@ -23,8 +24,8 @@ export function handleEditorEditingKeys(): void {
 		}
 		return;
 	}
-	if (shouldRepeatKeyFromPlayer('Delete')) {
-		consumeIdeKey('Delete');
+	if (shouldRepeatKeyFromPlayer('Delete', playerInput)) {
+		consumeIdeKey('Delete', playerInput);
 		if (shiftDown && !ctrlDown) {
 			TextEditing.deleteActiveLines();
 		} else if (ctrlDown) {
@@ -34,8 +35,8 @@ export function handleEditorEditingKeys(): void {
 		}
 		return;
 	}
-	if (isKeyJustPressed('Enter') || isKeyJustPressed('NumpadEnter')) {
-		consumeIdeKey('Enter');
+	if (isKeyJustPressed('Enter', playerInput) || isKeyJustPressed('NumpadEnter', playerInput)) {
+		consumeIdeKey('Enter', playerInput);
 		TextEditing.insertLineBreak();
 	}
 }

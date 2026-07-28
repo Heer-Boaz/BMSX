@@ -3,7 +3,6 @@
  */
 
 #include "platform.h"
-#include "core/host_overlay_menu.h"
 #include "core/machine_manager.h"
 #include "common/endian.h"
 #include "common/primitives.h"
@@ -201,7 +200,8 @@ LibretroPlatform::LibretroPlatform(
 	bmsx_supervisor_request_line_t supervisorRequestLine,
 	bool profileGxUploads)
 	: m_frame_time_sec(static_cast<double>(HZ_SCALE) / static_cast<double>(GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED))
-	, m_backend_type(backend_type) {
+	, m_backend_type(backend_type)
+	, m_audio_ufps_scaled(PAL_REFRESH_UFPS_SCALED) {
 	m_framebuffer.resize(
 		gxGpuDisplayModeScreenWidth(GX_GPU_RESET_DISPLAY_MODE_WORD),
 		static_cast<unsigned>(gxGpuVerticalVisibleLines(GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD, GX_GPU_RESET_DISPLAY_MODE_WORD))
@@ -214,11 +214,11 @@ LibretroPlatform::LibretroPlatform(
 	m_frame_loop = std::make_unique<LibretroFrameLoop>();
 	m_lifecycle = std::make_unique<DefaultLifecycle>();
 	m_input_hub = std::make_unique<LibretroInputHub>(this, supervisorRequestLine);
-	Input::instance().initialize(*m_input_hub, *m_lifecycle);
-	m_input_focus_subscription = m_lifecycle->onFocusChange([](bool) {
-		hostOverlayMenu().resetInputState();
+	m_input = std::make_unique<Input>(*m_input_hub, *m_lifecycle);
+	m_input_focus_subscription = m_lifecycle->onFocusChange([this](bool) {
+		m_host_overlay_menu.resetInputState();
 	});
-	m_audio_service = std::make_unique<LibretroAudioService>(this);
+	m_audio_service = std::make_unique<LibretroAudioService>(m_sound_master);
 	m_video_output = std::make_unique<LibretroVideoOutput>(
 		m_framebuffer,
 		m_backend_type,
@@ -254,8 +254,7 @@ LibretroPlatform::LibretroPlatform(
 	m_controller_devices.fill(RETRO_DEVICE_JOYPAD);
 
 	// Create and initialize the machine manager
-	m_machine_manager = std::make_unique<MachineManager>();
-	m_machine_manager->initialize(this);
+	m_machine_manager = std::make_unique<MachineManager>(*m_input);
 	if (m_backend_type == BackendType::Software) {
 		installBuiltinRenderPipeline(m_video_presenter.get(), &m_video_presenter->backend());
 		m_video_presenter->initializeDefaultTextures();
@@ -268,10 +267,9 @@ LibretroPlatform::~LibretroPlatform() {
 	unloadRom();
 
 	// Shutdown the machine manager before destroying platform components
-	m_machine_manager->shutdown();
 	m_machine_manager.reset();
 	m_input_focus_subscription.unsubscribe();
-	Input::instance().shutdown();
+	m_input.reset();
 	m_video_resize_subscription.unsubscribe();
 	m_video_presenter.reset();
 	m_default_font.reset();
@@ -436,7 +434,8 @@ bool LibretroPlatform::loadCartridgeSlotsOwned(std::array<std::vector<uint8_t>, 
 		log(RETRO_LOG_ERROR, "Failed to load cartridge slots\n");
 		return false;
 	}
-	flushSystemOutput(m_machine_manager->runtime());
+	Runtime& runtime = m_machine_manager->runtime();
+	activateLoadedRuntime(runtime);
 	setDeviceQuantizeMode(m_device_quantize_mode);
 #if defined(__GLIBC__)
 	malloc_trim(0);
@@ -495,7 +494,8 @@ bool LibretroPlatform::loadCartridgeSlotsFromPaths(const std::array<std::string,
 		log(RETRO_LOG_ERROR, "Failed to load cartridge slots\n");
 		return false;
 	}
-	flushSystemOutput(m_machine_manager->runtime());
+	Runtime& runtime = m_machine_manager->runtime();
+	activateLoadedRuntime(runtime);
 	setDeviceQuantizeMode(m_device_quantize_mode);
 #if defined(__GLIBC__)
 	malloc_trim(0);
@@ -542,7 +542,8 @@ bool LibretroPlatform::loadEmptyCart() {
 	if (!m_machine_manager->bootWithoutCart()) {
 		return false;
 	}
-	flushSystemOutput(m_machine_manager->runtime());
+	Runtime& runtime = m_machine_manager->runtime();
+	activateLoadedRuntime(runtime);
 	log(RETRO_LOG_INFO, "[BMSX] Booted system ROM firmware\n");
 	m_rom_loaded = true;
 	return true;
@@ -564,33 +565,52 @@ bool LibretroPlatform::loadSystemRomFromFile(const std::string& path) {
 void LibretroPlatform::unloadRom() {
 	if (m_rom_loaded) {
 		static_cast<LibretroInputHub*>(m_input_hub.get())->resetState();
-		// Unload ROM from host core
-		if (m_machine_manager) {
-			m_machine_manager->unloadRom();
-		}
+		m_input->resetInputState();
+		m_host_overlay_menu.resetInputState();
+		m_machine_manager->unloadRom();
+		m_screen.clearPresentation();
+		m_running = false;
 		m_rom_loaded = false;
 		log(RETRO_LOG_INFO, "[BMSX] ROM unloaded\n");
 	}
 }
 
 void LibretroPlatform::reset() {
-	m_machine_manager->stop();
-	m_audio_service->resetQueue();
-	m_audio_buffer.clear();
+	m_running = false;
 
-	if (m_machine_manager && m_machine_manager->romLoaded()) {
+	if (m_machine_manager->romLoaded()) {
 		if (!m_machine_manager->rebootLoadedRom()) {
 			log(RETRO_LOG_ERROR, "[BMSX] Reset failed: runtime reset failed\n");
 			return;
 		}
-		flushSystemOutput(m_machine_manager->runtime());
+		activateLoadedRuntime(m_machine_manager->runtime());
 	} else if (!loadEmptyCart()) {
 		log(RETRO_LOG_ERROR, "[BMSX] Reset failed: empty cart boot failed\n");
 		return;
 	}
 
-	m_machine_manager->start();
 	log(RETRO_LOG_INFO, "[BMSX] Game reset (runtime rebooted)\n");
+}
+
+void LibretroPlatform::activateLoadedRuntime(Runtime& runtime) {
+	m_audio_service->resetQueue();
+	m_audio_buffer.clear();
+	m_screen.reset(*m_video_presenter, runtime);
+	syncAudioTiming(runtime);
+	runtime.frameScheduler.clearQueuedTime();
+	m_running = true;
+	flushSystemOutput(runtime);
+}
+
+void LibretroPlatform::syncAudioTiming(Runtime& runtime) {
+	m_audio_ufps_scaled = runtime.timing.ufpsScaled;
+	m_sound_master.setMixerUfpsScaled(m_audio_ufps_scaled);
+}
+
+void LibretroPlatform::syncRuntimeAudioTiming(Runtime& runtime) {
+	if (runtime.timing.ufpsScaled != m_audio_ufps_scaled) {
+		syncAudioTiming(runtime);
+	}
 }
 
 bool LibretroPlatform::runFrame() {
@@ -605,10 +625,6 @@ bool LibretroPlatform::runFrame() {
 	m_clock->advanceFrame(1.0 / dt);
 	static_cast<LibretroFrameLoop*>(m_frame_loop.get())->runPushedFrame(m_clock->now(), dt);
 
-	if (!m_platform_paused) {
-		m_machine_manager->startLoadedRuntimeFrame(m_rom_loaded);
-	}
-
 	// Poll the platform hub before the runtime frame loop consumes and latches
 	// input for this host frame.
 	pollInput();
@@ -616,14 +632,15 @@ bool LibretroPlatform::runFrame() {
 	Runtime& runtime = m_machine_manager->runtime();
 	bool presented = false;
 	try {
-		presented = m_machine_manager->runHostFrame(runtime, *m_microtask_queue, *m_video_presenter, dt, m_platform_paused);
+		presented = runHostFrame(runtime, dt);
 	} catch (const std::exception& error) {
 		reportRuntimeError(runtime, error.what());
 	} catch (...) {
 		reportRuntimeError(runtime, "Unhandled host frame exception.");
 	}
 	flushSystemOutput(runtime);
-	m_audio_service->collectSamples(m_audio_buffer);
+	syncRuntimeAudioTiming(runtime);
+	m_audio_service->collectSamples(runtime.machine.audioController, m_audio_buffer);
 	return presented;
 }
 
@@ -632,7 +649,11 @@ void LibretroPlatform::setPlatformPaused(bool paused) {
 		return;
 	}
 	m_platform_paused = paused;
-	m_machine_manager->setHostPaused(paused, m_rom_loaded);
+	if (paused) {
+		m_screen.clearPresentation();
+	} else if (m_running) {
+		m_machine_manager->runtime().frameScheduler.clearQueuedTime();
+	}
 }
 
 // disable-next-line single_line_method_pattern -- frame input polling stays on the platform API while the libretro hub owns device polling.
@@ -1069,8 +1090,8 @@ SubscriptionHandle LibretroInputHub::subscribe(std::function<void(const InputEvt
  * LibretroAudioService implementation
  * ============================================================================ */
 
-LibretroAudioService::LibretroAudioService(LibretroPlatform* platform)
-	: m_platform(platform) {
+LibretroAudioService::LibretroAudioService(SoundMaster& soundMaster)
+	: m_sound_master(soundMaster) {
 }
 
 void LibretroAudioService::setTiming(double sampleRate) {
@@ -1080,12 +1101,11 @@ void LibretroAudioService::setTiming(double sampleRate) {
 
 void LibretroAudioService::resetQueue() {
 	m_sample_accumulator = 0.0;
-	m_platform->machineManager()->soundMaster()->resetPlaybackState();
+	m_sound_master.resetPlaybackState();
 }
 
-void LibretroAudioService::collectSamples(AudioBuffer& buffer) {
-	SoundMaster* soundMaster = m_platform->machineManager()->soundMaster();
-	const double samplesPerFrame = m_sample_rate * soundMaster->mixFrameTimeSec();
+void LibretroAudioService::collectSamples(AudioController& audioController, AudioBuffer& buffer) {
+	const double samplesPerFrame = m_sample_rate * m_sound_master.mixFrameTimeSec();
 	m_sample_accumulator += samplesPerFrame;
 	const size_t frames = static_cast<size_t>(m_sample_accumulator);
 	if (frames == 0) {
@@ -1095,8 +1115,8 @@ void LibretroAudioService::collectSamples(AudioBuffer& buffer) {
 	m_sample_accumulator -= frames;
 
 	int16_t* output = buffer.beginWrite(frames);
-	buffer.samples = soundMaster->pullOutputFrames(
-		m_platform->machineManager()->runtime().machine.audioController,
+	buffer.samples = m_sound_master.pullOutputFrames(
+		audioController,
 		output,
 		frames,
 		static_cast<i32>(m_sample_rate)

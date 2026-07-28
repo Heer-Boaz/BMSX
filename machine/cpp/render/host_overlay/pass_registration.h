@@ -7,10 +7,10 @@
 namespace bmsx {
 
 inline void writeHostOverlayPassState(
-	const RenderPassDef::RenderGraphPassContext&,
+	const RenderPassDef::RenderGraphPassContext& ctx,
 	RenderPassStateStorage& state
 ) {
-	writeHostOverlayState(state.hostOverlay);
+	writeHostOverlayState(state.hostOverlay, ctx.time, ctx.delta);
 }
 
 inline void writeHostMenuPassState(

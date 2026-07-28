@@ -3,24 +3,15 @@
  */
 
 #include "machine_manager.h"
-#include "host_overlay_menu.h"
-#include "input/manager.h"
 #include "../machine/runtime/runtime.h"
 #include "machine/model_registry.h"
 #include "machine/memory/map.h"
 #include "machine/runtime/boot_timing.h"
-#include <cstdio>
-#include <cstdlib>
-#include <chrono>
-#include <cstdarg>
-#include <iostream>
 #include <span>
 #include <stdexcept>
 #include <utility>
 
 namespace bmsx {
-
-MachineManager* MachineManager::s_instance = nullptr;
 
 void MachineManager::LoadedCartridgeSlot::clear() {
 	image = {};
@@ -28,166 +19,12 @@ void MachineManager::LoadedCartridgeSlot::clear() {
 	owned = std::vector<u8>();
 }
 
-MachineManager::MachineManager()
-	: m_audio_ufps_scaled(PAL_REFRESH_UFPS_SCALED) {
-	s_instance = this;
+MachineManager::MachineManager(RuntimeInputSource& input)
+	: m_input(input) {
 }
 
 MachineManager::~MachineManager() {
-	shutdown();
-	if (s_instance == this) {
-		s_instance = nullptr;
-	}
-}
-
-MachineManager& MachineManager::instance() {
-	return *s_instance;
-}
-
-bool MachineManager::initialize(Platform* platform) {
-	if (m_state != MachineManagerState::Uninitialized) {
-		return false;
-	}
-
-	m_platform = platform;
-
-	m_sound_master = std::make_unique<SoundMaster>();
-	registry().registerObject(m_sound_master.get());
-
-	m_state = MachineManagerState::Initialized;
-	return true;
-}
-
-void MachineManager::shutdown() {
-	if (m_state == MachineManagerState::Uninitialized) {
-		return;
-	}
-
-	stop();
 	unloadRom();
-	// Clear registry (keeps persistent objects)
-	registry().deregister(m_sound_master.get(), true);
-	m_sound_master.reset();
-	registry().clear();
-
-	m_platform = nullptr;
-	m_state = MachineManagerState::Uninitialized;
-}
-
-void MachineManager::start() {
-	switch (m_state) {
-		case MachineManagerState::Initialized:
-		case MachineManagerState::Stopped:
-			m_state = MachineManagerState::Running;
-			runtime().frameScheduler.clearQueuedTime();
-			break;
-		default:
-			break;
-	}
-}
-
-// start normalized-body-acceptable -- pause/resume deliberately mirror state-transition symmetry.
-void MachineManager::pause() {
-	switch (m_state) {
-		case MachineManagerState::Running:
-			m_state = MachineManagerState::Paused;
-			m_screen.clearPresentation();
-			break;
-		default:
-			break;
-	}
-}
-
-void MachineManager::resume() {
-	switch (m_state) {
-		case MachineManagerState::Paused:
-			m_state = MachineManagerState::Running;
-			runtime().frameScheduler.clearQueuedTime();
-			break;
-		default:
-			break;
-	}
-}
-// end normalized-body-acceptable
-
-void MachineManager::stop() {
-	switch (m_state) {
-		case MachineManagerState::Running:
-		case MachineManagerState::Paused:
-			m_state = MachineManagerState::Stopped;
-			break;
-		default:
-			break;
-	}
-}
-
-bool MachineManager::acceptHostFrame(f64 deltaTime) const {
-	switch (m_state) {
-		case MachineManagerState::Running:
-		case MachineManagerState::Paused:
-			return deltaTime > 0.0;
-		default:
-			return false;
-	}
-}
-
-void MachineManager::startLoadedRuntimeFrame(bool romLoaded) {
-	if (romLoaded && m_state == MachineManagerState::Initialized) {
-		start();
-	}
-}
-
-void MachineManager::setHostPaused(bool paused, bool romLoaded) {
-	if (paused) {
-		pause();
-		return;
-	}
-
-	if (m_state == MachineManagerState::Paused) {
-		resume();
-	} else {
-		startLoadedRuntimeFrame(romLoaded);
-	}
-}
-
-void MachineManager::syncAudioTiming() {
-	const i64 ufpsScaled = runtime().timing.ufpsScaled;
-	m_sound_master->setMixerUfpsScaled(ufpsScaled);
-	m_audio_ufps_scaled = ufpsScaled;
-}
-
-void MachineManager::syncRuntimeAudioTiming() {
-	if (runtime().timing.ufpsScaled != m_audio_ufps_scaled) {
-		syncAudioTiming();
-	}
-}
-
-void MachineManager::log(LogLevel level, const char* fmt, ...) {
-	va_list args;
-	va_start(args, fmt);
-	va_list args_copy;
-	va_copy(args_copy, args);
-
-	char stack_buffer[2048];
-	const int written = vsnprintf(stack_buffer, sizeof(stack_buffer), fmt, args);
-	va_end(args);
-
-	if (written >= 0 && static_cast<size_t>(written) < sizeof(stack_buffer)) {
-		va_end(args_copy);
-		m_platform->log(level, std::string_view(stack_buffer, static_cast<size_t>(written)));
-		return;
-	}
-
-	std::string message;
-	if (written < 0) {
-		message = "MachineManager::log: formatting error";
-	} else {
-		message.resize(static_cast<size_t>(written) + 1);
-		vsnprintf(message.data(), message.size(), fmt, args_copy);
-		message.resize(static_cast<size_t>(written));
-	}
-	va_end(args_copy);
-	m_platform->log(level, message);
 }
 
 Runtime& MachineManager::runtime() {
@@ -200,7 +37,7 @@ const Runtime& MachineManager::runtime() const {
 
 Runtime& MachineManager::ensureRuntime(const RuntimeOptions& options) {
 	if (!m_runtime) {
-		m_runtime = std::make_unique<Runtime>(options, Input::instance());
+		m_runtime = std::make_unique<Runtime>(options, m_input);
 	}
 	return *m_runtime;
 }
@@ -233,9 +70,7 @@ bool MachineManager::bootSystemFirmware() {
 		timing.activeDisplayHalfLines,
 		timing.geoWorkUnitsPerSec,
 	});
-	syncAudioTiming();
 	rt.resetForSystemBoot();
-	m_screen.reset();
 	rt.boot();
 	return true;
 }
@@ -309,11 +144,6 @@ bool MachineManager::loadCartridgeSlotFiles(const std::array<std::string, CARTRI
 }
 
 void MachineManager::unloadRom() {
-	if (m_rom_loaded) {
-		Input::instance().resetInputState();
-		hostOverlayMenu().resetInputState();
-		registry().clear();
-	}
 	m_runtime.reset();
 	m_cartridge_media = {};
 	for (LoadedCartridgeSlot& slot : m_cartridge_slots) {
@@ -339,7 +169,6 @@ bool MachineManager::bootWithoutCart() {
 		return false;
 	}
 	m_rom_loaded = true;
-	start();
 	return true;
 }
 

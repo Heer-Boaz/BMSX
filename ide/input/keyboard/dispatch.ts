@@ -1,5 +1,4 @@
 import { editorInput } from '../../editor/input/keyboard/text_input';
-import type { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import type { RuntimeSourceState } from '../../runtime/sources';
 import type { RuntimeLuaTooling } from '../../runtime/lua_tooling';
 import type { CartEditor } from '../../cart_editor';
@@ -15,59 +14,77 @@ import {
 	handleEditorClipboardAndCommandBindings,
 	handleSearchNavigationKeybinding,
 } from './edit_bindings';
+import type { PlayerInput } from '../../../machine/ts/input/player';
+import type {
+	ClipboardService,
+	HostClock,
+	StorageService,
+} from '../../../machine/ts/platform/platform';
 
 export function handleEditorInput(
+	playerInput: PlayerInput,
+	clipboard: ClipboardService,
+	storage: StorageService,
+	clock: HostClock,
 	editor: CartEditor,
 	sources: RuntimeSourceState,
 	luaTooling: RuntimeLuaTooling,
-	runtime: Runtime,
 ): void {
-	if (handleFocusedResourcePanelInput(editor.resourcePanel)) {
+	if (handleFocusedResourcePanelInput(playerInput, editor.resourcePanel)) {
 		return;
 	}
 	if (isResourceViewActive()) {
-		handleResourceViewerInput();
+		handleResourceViewerInput(playerInput);
 		return;
 	}
-	if (handleEditorGlobalBindings(editor.commands)) {
+	if (handleEditorGlobalBindings(playerInput, editor.commands)) {
 		return;
 	}
-	if (handleEditorPromptBindings(editor)) {
+	if (handleEditorPromptBindings(playerInput, editor)) {
 		return;
 	}
-	if (handleInlineWidgetInput(editor, sources, luaTooling, editor.crossFileRename, runtime)) {
+	if (handleInlineWidgetInput(
+		playerInput,
+		clipboard,
+		storage,
+		clock,
+		editor,
+		sources,
+		luaTooling,
+		editor.crossFileRename,
+	)) {
 		return;
 	}
-	if (handleFocusedProblemsPanelInput(editor.resourcePanel)) {
+	if (handleFocusedProblemsPanelInput(playerInput, editor.resourcePanel)) {
 		return;
 	}
-	if (handleSearchNavigationKeybinding()) {
+	if (handleSearchNavigationKeybinding(playerInput)) {
 		return;
 	}
-	if (handleEditorClipboardAndCommandBindings(editor.resourcePanel, sources, editor.commands)) {
+	if (handleEditorClipboardAndCommandBindings(playerInput, clipboard, editor.resourcePanel, sources, editor.commands)) {
 		return;
 	}
-	if (editor.completion.handleKeybindings()) {
+	if (editor.completion.handleKeybindings(playerInput)) {
 		return;
 	}
-	if (handleCodeFormattingKeybinding()) {
+	if (handleCodeFormattingKeybinding(playerInput)) {
 		return;
 	}
-	editorInput.handleEditorInput(editor);
+	editorInput.handleEditorInput(playerInput, editor);
 }
 
-function handleFocusedResourcePanelInput(resourcePanel: ResourcePanelController): boolean {
+function handleFocusedResourcePanelInput(playerInput: PlayerInput, resourcePanel: ResourcePanelController): boolean {
 	if (!resourcePanel.isVisible() || !resourcePanel.isFocused()) {
 		return false;
 	}
-	resourcePanel.handleKeyboard();
+	resourcePanel.handleKeyboard(playerInput);
 	return true;
 }
 
-function handleFocusedProblemsPanelInput(resourcePanel: ResourcePanelController): boolean {
+function handleFocusedProblemsPanelInput(playerInput: PlayerInput, resourcePanel: ResourcePanelController): boolean {
 	if (!problemsPanel.isVisible || !problemsPanel.isFocused) {
 		return false;
 	}
-	problemsPanel.handleKeyboard(resourcePanel);
+	problemsPanel.handleKeyboard(playerInput, resourcePanel);
 	return true;
 }

@@ -18,6 +18,7 @@ import {
 } from './layout';
 import { drawProblemsPanelSurface } from './render';
 import { handleProblemsPanelKeyboardInput } from './keyboard';
+import type { PlayerInput } from '../../../../../machine/ts/input/player';
 import { handleProblemsPanelNavigationCommand, type ProblemsPanelCommand } from './navigation';
 import { handleProblemsPanelPointerInput, handleProblemsPanelWheelInput } from './pointer';
 import type { ResourcePanelController } from '../../resources/panel/controller';
@@ -179,8 +180,8 @@ export class ProblemsPanelController {
 		return handleProblemsPanelWheelInput(this, direction, steps);
 	}
 
-	public handleKeyboard(resourcePanel: ResourcePanelController): void {
-		handleProblemsPanelKeyboardInput(this, resourcePanel);
+	public handleKeyboard(playerInput: PlayerInput, resourcePanel: ResourcePanelController): void {
+		handleProblemsPanelKeyboardInput(playerInput, this, resourcePanel);
 	}
 
 	public handleKeyboardCommand(

@@ -1,59 +1,96 @@
+import type { StorageService } from '../../../../machine/ts/platform/platform';
 import type { CartEditor } from '../../../cart_editor';
 import type { RuntimeResource } from '../../../common/models';
-import { prepareEditorForSourceFocus, releaseResourcePanelFocus } from '../../../navigation/source_focus';
-import { openResourceViewerTab } from './view_tabs';
-import { openCodeTabForResource } from '../../ui/code_tab/io';
 import type { ResourceDomain, ResourceIdentity } from '../../../common/resource';
+import {
+	activateNavigationEntryContext,
+	applyNavigationEntryPosition,
+	completeNavigationHistoryJump,
+	takeBackwardNavigationEntry,
+	takeForwardNavigationEntry,
+	withNavigationCaptureSuspended,
+	type NavigationHistoryEntry,
+} from '../../../navigation/navigation_history';
+import { prepareEditorForSourceFocus, releaseResourcePanelFocus } from '../../../navigation/source_focus';
 import {
 	resolveRuntimeResource,
 	resolveRuntimeResourceForContext,
+	type RuntimeSourceState,
 } from '../../../runtime/sources';
-import type { RuntimeSourceState } from '../../../runtime/sources';
+import { openCodeTabForResource } from '../../ui/code_tab/io';
+import type { ResourcePanelController } from './panel/controller';
+import { openResourceViewerTab } from './view_tabs';
 
-export function openResource(
-	editor: CartEditor,
-	sources: RuntimeSourceState,
-	resource: RuntimeResource,
-): void {
-	const resourcePanel = editor.resourcePanel;
-	resourcePanel.queuePendingSelection(resource);
-	if (resourcePanel.isVisible()) {
-		resourcePanel.applyPendingSelection();
+export class EditorNavigationController {
+	public constructor(
+		private readonly editor: CartEditor,
+		private readonly sources: RuntimeSourceState,
+		private readonly resourcePanel: ResourcePanelController,
+		private readonly storage: StorageService,
+	) {
 	}
-	if (resource.source.type === 'lua' || resource.source.type === 'aem') {
-		void openCodeTabForResource(resourcePanel, sources, resource);
-	} else {
-		openResourceViewerTab(resourcePanel, sources, resource);
-	}
-	releaseResourcePanelFocus(resourcePanel);
-}
 
-export function focusChunkSource(
-	editor: CartEditor,
-	sources: RuntimeSourceState,
-	identity: ResourceIdentity,
-): void {
-	prepareEditorForSourceFocus();
-	if (!identity.path) {
-		return;
+	public openResource(resource: RuntimeResource): void {
+		this.resourcePanel.queuePendingSelection(resource);
+		if (this.resourcePanel.isVisible()) {
+			this.resourcePanel.applyPendingSelection();
+		}
+		if (resource.source.type === 'lua' || resource.source.type === 'aem') {
+			void openCodeTabForResource(this.storage, this.editor, this.sources, resource);
+		} else {
+			openResourceViewerTab(this.resourcePanel, this.sources, resource);
+		}
+		releaseResourcePanelFocus(this.resourcePanel);
 	}
-	const resource = resolveRuntimeResource(sources, identity);
-	if (!resource) {
-		return;
-	}
-	openResource(editor, sources, resource);
-}
 
-export function focusChunkSourceForContext(
-	editor: CartEditor,
-	sources: RuntimeSourceState,
-	domain: ResourceDomain,
-	path: string,
-): ResourceIdentity | null {
-	const resource = resolveRuntimeResourceForContext(sources, domain, path);
-	if (!resource) {
-		return null;
+	public focusChunkSource(identity: ResourceIdentity): void {
+		prepareEditorForSourceFocus();
+		if (!identity.path) {
+			return;
+		}
+		const resource = resolveRuntimeResource(this.sources, identity);
+		if (!resource) {
+			return;
+		}
+		this.openResource(resource);
 	}
-	focusChunkSource(editor, sources, resource);
-	return resource;
+
+	public focusChunkSourceForContext(
+		domain: ResourceDomain,
+		path: string,
+	): ResourceIdentity | null {
+		const resource = resolveRuntimeResourceForContext(this.sources, domain, path);
+		if (!resource) {
+			return null;
+		}
+		this.focusChunkSource(resource);
+		return resource;
+	}
+
+	public goBackward(): void {
+		const target = takeBackwardNavigationEntry();
+		if (!target) {
+			return;
+		}
+		this.openHistoryEntry(target);
+	}
+
+	public goForward(): void {
+		const target = takeForwardNavigationEntry();
+		if (!target) {
+			return;
+		}
+		this.openHistoryEntry(target);
+	}
+
+	private openHistoryEntry(target: NavigationHistoryEntry): void {
+		withNavigationCaptureSuspended(() => {
+			if (!activateNavigationEntryContext(this.resourcePanel, target)) {
+				this.focusChunkSource(target);
+				activateNavigationEntryContext(this.resourcePanel, target);
+			}
+			applyNavigationEntryPosition(this.resourcePanel, target);
+		});
+		completeNavigationHistoryJump(target);
+	}
 }

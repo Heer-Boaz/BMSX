@@ -18,7 +18,7 @@ export function handleQuickInputPointer(
 	if (handleCreateResourcePointer(resourcePanel, snapshot, justPressed)) {
 		return true;
 	}
-	if (handleResourceSearchPointer(editor, sources, resourcePanel, snapshot, justPressed)) {
+	if (handleResourceSearchPointer(editor, resourcePanel, snapshot, justPressed)) {
 		return true;
 	}
 	if (handleSymbolSearchPointer(resourcePanel, editor, sources, snapshot, justPressed)) {

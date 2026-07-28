@@ -1,7 +1,5 @@
-import { machineManager } from '../machine/ts/core/machine_manager';
-import type { Runtime } from '../machine/ts/machine/runtime/runtime';
-import type { VideoPresenter } from '../machine/ts/render/video_presenter';
 import { HostMenuInput, type HostOverlayMenu } from './host_overlay_menu';
+import type { MachineHost } from './machine_runtime';
 import type { RenderPresentationState } from './presentation_state';
 
 const MAX_HOST_FRAME_DELTA_MS = 250;
@@ -16,69 +14,72 @@ export type MachineHostPresentation =
 	| MachineHostFrameAction.PresentPending
 	| MachineHostFrameAction.PresentPaused;
 
-function rebootMachine(screen: RenderPresentationState, runtime: Runtime): void {
-	runtime.rebootSystem();
-	screen.reset();
-	machineManager.flushSystemOutput(runtime);
-	machineManager.bootstrapStartupAudio();
+function rebootMachine(screen: RenderPresentationState, host: MachineHost): void {
+	host.runtime.rebootSystem();
+	screen.reset(host.presenter, host.runtime);
+	host.flushSystemOutput();
+	host.bootstrapStartupAudio();
 }
 
 export function executeMachineHostMenuAction(
 	input: HostMenuInput,
 	screen: RenderPresentationState,
-	runtime: Runtime,
+	host: MachineHost,
 ): boolean {
 	switch (input) {
 		case HostMenuInput.Inactive:
 		case HostMenuInput.Active:
 			return false;
 		case HostMenuInput.RebootCart:
-			rebootMachine(screen, runtime);
+			rebootMachine(screen, host);
 			return true;
 		case HostMenuInput.ExitGame:
-			machineManager.platform.requestShutdown();
+			host.platform.requestShutdown();
 			return true;
 	}
 }
 
 export function beginMachineHostFrame(
-	runtime: Runtime,
+	host: MachineHost,
 	currentTime: number,
 ): number {
-	const manager = machineManager;
-	manager.input.pollInput();
+	const runtime = host.runtime;
+	const hidInitialization = host.input.pollInput();
+	if (hidInitialization) {
+		void host.initializeGamepadHid(hidInitialization);
+	}
 	const hostDeltaMs = Math.min(
 		currentTime - runtime.frameLoop.currentTimeMs,
 		MAX_HOST_FRAME_DELTA_MS,
 	);
 	runtime.frameLoop.currentTimeMs = currentTime;
-	manager.host_fps = 1000 / hostDeltaMs;
+	host.hostFps = 1000 / hostDeltaMs;
 	return hostDeltaMs;
 }
 
 export function prepareMachineHostPresentation(
+	host: MachineHost,
 	screen: RenderPresentationState,
 	hostOverlayMenu: HostOverlayMenu,
-	runtime: Runtime,
 	runReady: boolean,
 	hostMenuInput: HostMenuInput,
 ): MachineHostFrameAction {
-	const manager = machineManager;
+	const runtime = host.runtime;
 	if (hostMenuInput === HostMenuInput.Active) {
 		screen.clearPresentation();
 		runtime.frameScheduler.clearQueuedTime();
 		hostOverlayMenu.queueRenderCommands();
 		screen.requestHeldPresentation();
-		manager.platform.microtasks.flush();
+		host.platform.microtasks.flush();
 		return MachineHostFrameAction.PresentPending;
 	}
-	if (manager.paused) {
-		hostOverlayMenu.queueFrameOverlayCommands();
-		manager.platform.microtasks.flush();
+	if (host.paused) {
+		hostOverlayMenu.queueFrameOverlayCommands(host.hostFps);
+		host.platform.microtasks.flush();
 		return MachineHostFrameAction.PresentPaused;
 	}
 
-	const hostOverlayQueued = hostOverlayMenu.queueFrameOverlayCommands();
+	const hostOverlayQueued = hostOverlayMenu.queueFrameOverlayCommands(host.hostFps);
 	screen.clearPresentation();
 	if (!runReady) {
 		runtime.frameScheduler.clearQueuedTime();
@@ -89,85 +90,82 @@ export function prepareMachineHostPresentation(
 	if (runReady) {
 		return MachineHostFrameAction.Execute;
 	}
-	manager.platform.microtasks.flush();
+	host.platform.microtasks.flush();
 	return MachineHostFrameAction.PresentPending;
 }
 
-export function beginMachineHostUpdate(runtime: Runtime): number {
-	machineManager.deltatime = runtime.timing.frameDurationMs;
-	return runtime.frameScheduler.lastTickSequence;
+export function beginMachineHostUpdate(host: MachineHost): number {
+	return host.runtime.frameScheduler.lastTickSequence;
 }
 
 export function completeMachineHostUpdate(
+	host: MachineHost,
 	screen: RenderPresentationState,
-	runtime: Runtime,
 	previousTickSequence: number,
 ): void {
-	machineManager.syncRuntimeAudioTiming();
-	screen.syncAfterRuntimeUpdate(runtime, previousTickSequence);
-	machineManager.platform.microtasks.flush();
+	host.syncRuntimeAudioTiming();
+	screen.syncAfterRuntimeUpdate(host.runtime, previousTickSequence);
+	host.platform.microtasks.flush();
 }
 
 export function executeMachineHostUpdate(
-	presenter: VideoPresenter,
+	host: MachineHost,
 	screen: RenderPresentationState,
-	runtime: Runtime,
 	hostDeltaMs: number,
 ): void {
-	const previousTickSequence = beginMachineHostUpdate(runtime);
+	const runtime = host.runtime;
+	const previousTickSequence = beginMachineHostUpdate(host);
 	runtime.frameScheduler.run(hostDeltaMs);
 	while (runtime.machine.gxGpu.backendReadbackPending()) {
-		presenter.backend.executeGxGpuReadback(runtime.machine.gxGpu);
+		host.presenter.backend.executeGxGpuReadback(runtime.machine.gxGpu);
 		runtime.frameScheduler.run(0);
 	}
-	completeMachineHostUpdate(screen, runtime, previousTickSequence);
+	completeMachineHostUpdate(host, screen, previousTickSequence);
 }
 
 export function presentMachineHostPresentation(
-	presenter: VideoPresenter,
+	host: MachineHost,
 	action: MachineHostPresentation,
 	screen: RenderPresentationState,
-	runtime: Runtime,
 	hostDeltaMs: number,
 ): void {
+	host.soundMaster.finishFrame();
 	switch (action) {
 		case MachineHostFrameAction.PresentPending:
-			screen.presentPending(presenter, runtime, hostDeltaMs);
+			screen.presentPending(host.presenter, host.runtime, hostDeltaMs);
 			return;
 		case MachineHostFrameAction.PresentPaused:
-			screen.presentPausedFrame(presenter, runtime, hostDeltaMs);
+			screen.presentPausedFrame(host.presenter, host.runtime, hostDeltaMs);
 			return;
 	}
 }
 
 export function runMachineHostFrame(
-	presenter: VideoPresenter,
+	host: MachineHost,
 	screen: RenderPresentationState,
 	hostOverlayMenu: HostOverlayMenu,
-	runtime: Runtime,
 	currentTime: number,
 	runReady: boolean,
 ): void {
-	const manager = machineManager;
-	if (!manager.running) {
+	if (!host.running) {
 		return;
 	}
-	const hostDeltaMs = beginMachineHostFrame(runtime, currentTime);
+	const hostDeltaMs = beginMachineHostFrame(host, currentTime);
 	const hostMenuInput = hostOverlayMenu.tickInput();
-	if (executeMachineHostMenuAction(hostMenuInput, screen, runtime)) {
+	if (executeMachineHostMenuAction(hostMenuInput, screen, host)) {
 		return;
 	}
 	let action = prepareMachineHostPresentation(
+		host,
 		screen,
 		hostOverlayMenu,
-		runtime,
 		runReady,
 		hostMenuInput,
 	);
 	if (action === MachineHostFrameAction.Execute) {
-		executeMachineHostUpdate(presenter, screen, runtime, hostDeltaMs);
+		executeMachineHostUpdate(host, screen, hostDeltaMs);
 		action = MachineHostFrameAction.PresentPending;
 	}
-	presentMachineHostPresentation(presenter, action, screen, runtime, hostDeltaMs);
-	manager.flushSystemOutput(runtime);
+	presentMachineHostPresentation(host, action, screen, hostDeltaMs);
+	host.flushSystemOutput();
 }

@@ -1,5 +1,5 @@
-import { machineManager } from '../../machine/ts/core/machine_manager';
 import { registerLuaSourceRecord, type LuaSourceRecord, type LuaSourceRegistry } from '../../machine/ts/lua/source_registry';
+import type { HostClock, StorageService } from '../../machine/ts/platform/platform';
 import { toLuaModulePath } from '../../machine/ts/lua/module_path';
 import { ROM_GENERATED_MODULE_PATHS } from '../../machine/ts/rompack/format';
 import {
@@ -76,6 +76,8 @@ export function applyLuaCodeTabSources(
 }
 
 export async function saveLuaResourceSource(
+	storage: StorageService,
+	clock: HostClock,
 	sources: RuntimeSourceState,
 	identity: ResourceIdentity,
 	source: string,
@@ -87,7 +89,13 @@ export async function saveLuaResourceSource(
 		throw new Error(`Generated Lua source '${identity.path}' is read-only.`);
 	}
 	const sourcePath = asset.source_path;
-	const record = await persistWorkspaceSourceFile(sourcePath, source, registry.projectRootPath);
+	const record = await persistWorkspaceSourceFile(
+		storage,
+		clock,
+		sourcePath,
+		source,
+		registry.projectRootPath,
+	);
 	asset.src = source;
 	asset.base_src = source;
 	asset.base_update_timestamp = record.updatedAt;
@@ -99,6 +107,8 @@ export async function saveLuaResourceSource(
 }
 
 export async function createLuaResource(
+	storage: StorageService,
+	clock: HostClock,
 	sources: RuntimeSourceState,
 	request: LuaResourceCreationRequest,
 ): Promise<RuntimeResource> {
@@ -115,7 +125,13 @@ export async function createLuaResource(
 	const registry = systemSource
 		? sources.systemLuaSources
 		: resolveEditableCartLuaSources(sources);
-	const record = await persistWorkspaceSourceFile(path, contents, registry.projectRootPath);
+	const record = await persistWorkspaceSourceFile(
+		storage,
+		clock,
+		path,
+		contents,
+		registry.projectRootPath,
+	);
 	const asset: LuaSourceRecord = {
 		resid: baseName,
 		type: 'lua',
@@ -136,6 +152,7 @@ export async function createLuaResource(
 }
 
 export async function applyWorkspaceOverridesToRegistry(
+	storage: StorageService,
 	sources: RuntimeSourceState,
 	params: {
 		dirtyRecords: ReadonlyMap<string, WorkspaceRecord>;
@@ -148,7 +165,7 @@ export async function applyWorkspaceOverridesToRegistry(
 		dirtyRecords: params.dirtyRecords,
 		domain: runtimeLuaSourceDomain(sources, params.registry),
 		registry: params.registry,
-		storage: machineManager.platform.storage,
+		storage,
 		projectRootPath: params.projectRootPath,
 	});
 	if (params.registry.revision !== revision) {
@@ -158,6 +175,7 @@ export async function applyWorkspaceOverridesToRegistry(
 }
 
 export async function applyAllWorkspaceSourceOverrides(
+	storage: StorageService,
 	sources: RuntimeSourceState,
 	dirtyRecords: ReadonlyMap<string, WorkspaceRecord>,
 ): Promise<Set<string>> {
@@ -167,7 +185,7 @@ export async function applyAllWorkspaceSourceOverrides(
 		if (!cartridge || !cartridge.projectRootPath) {
 			continue;
 		}
-		const rejected = await applyWorkspaceOverridesToRegistry(sources, {
+		const rejected = await applyWorkspaceOverridesToRegistry(storage, sources, {
 			dirtyRecords,
 			registry: cartridge.luaSources,
 			projectRootPath: cartridge.projectRootPath,
@@ -176,7 +194,7 @@ export async function applyAllWorkspaceSourceOverrides(
 			rejectedDirtyPaths.add(path);
 		}
 	}
-	const rejectedSystemPaths = await applyWorkspaceOverridesToRegistry(sources, {
+	const rejectedSystemPaths = await applyWorkspaceOverridesToRegistry(storage, sources, {
 		dirtyRecords,
 		registry: sources.systemLuaSources,
 		projectRootPath: sources.systemProjectRootPath,

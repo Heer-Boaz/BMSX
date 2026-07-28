@@ -2,12 +2,12 @@ import { activeSearchMatchCount, applySearchSelection, jumpToNextMatch, jumpToPr
 import { applyInlineFieldEditing } from '../../../editor/ui/inline/text_field';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from '../../keyboard/key_input';
 import { redo, undo } from '../../../editor/editing/undo_controller';
-import { save } from '../../../workbench/ui/code_tab/io';
 import { openGlobalSearchMatch } from '../../../workbench/contrib/find/global_search_navigation';
 import { editorSearchState } from '../../../editor/contrib/find/widget_state';
-import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import type { CartEditor } from '../../../cart_editor';
 import type { RuntimeSourceState } from '../../../runtime/sources';
+import type { PlayerInput } from '../../../../machine/ts/input/player';
+import type { ClipboardService } from '../../../../machine/ts/platform/platform';
 
 type SearchSelectionOptions = {
 	preview?: boolean;
@@ -49,27 +49,28 @@ function stepSearchSelectionFromInput(
 }
 
 export function handleSearchInput(
+	playerInput: PlayerInput,
+	clipboard: ClipboardService,
 	editor: CartEditor,
 	sources: RuntimeSourceState,
-	runtime: Runtime,
 ): void {
 	const search = editor.search;
-	const shiftDown = isShiftDown();
-	const ctrlDown = isCtrlDown();
-	const metaDown = isMetaDown();
-	const altDown = isAltDown();
-	if ((ctrlDown || metaDown) && shiftDown && !altDown && isKeyJustPressed('KeyF')) {
-		consumeIdeKey('KeyF');
+	const shiftDown = isShiftDown(playerInput);
+	const ctrlDown = isCtrlDown(playerInput);
+	const metaDown = isMetaDown(playerInput);
+	const altDown = isAltDown(playerInput);
+	if ((ctrlDown || metaDown) && shiftDown && !altDown && isKeyJustPressed('KeyF', playerInput)) {
+		consumeIdeKey('KeyF', playerInput);
 		search.openSearch(false, 'global');
 		return;
 	}
-	if ((ctrlDown || metaDown) && !altDown && isKeyJustPressed('KeyF')) {
-		consumeIdeKey('KeyF');
+	if ((ctrlDown || metaDown) && !altDown && isKeyJustPressed('KeyF', playerInput)) {
+		consumeIdeKey('KeyF', playerInput);
 		search.openSearch(false, 'local');
 		return;
 	}
-	if ((ctrlDown || metaDown) && shouldRepeatKeyFromPlayer('KeyZ')) {
-		consumeIdeKey('KeyZ');
+	if ((ctrlDown || metaDown) && shouldRepeatKeyFromPlayer('KeyZ', playerInput)) {
+		consumeIdeKey('KeyZ', playerInput);
 		if (shiftDown) {
 			redo();
 		} else {
@@ -77,20 +78,20 @@ export function handleSearchInput(
 		}
 		return;
 	}
-	if ((ctrlDown || metaDown) && shouldRepeatKeyFromPlayer('KeyY')) {
-		consumeIdeKey('KeyY');
+	if ((ctrlDown || metaDown) && shouldRepeatKeyFromPlayer('KeyY', playerInput)) {
+		consumeIdeKey('KeyY', playerInput);
 		redo();
 		return;
 	}
-	if (ctrlDown && isKeyJustPressed('KeyS')) {
-		consumeIdeKey('KeyS');
-		void save(editor, sources, runtime);
+	if (ctrlDown && isKeyJustPressed('KeyS', playerInput)) {
+		consumeIdeKey('KeyS', playerInput);
+		editor.commands.execute('save');
 		return;
 	}
 	const hasResults = activeSearchMatchCount() > 0;
 	const previewLocal = editorSearchState.scope === 'local';
-	if (isKeyJustPressed('Enter')) {
-		consumeIdeKey('Enter');
+	if (isKeyJustPressed('Enter', playerInput)) {
+		consumeIdeKey('Enter', playerInput);
 		if (hasResults) {
 			stepSearchSelectionFromInput(editor, sources, shiftDown ? -1 : 1, { wrap: true, keepSearchActive: true });
 		} else if (shiftDown) {
@@ -100,8 +101,8 @@ export function handleSearchInput(
 		}
 		return;
 	}
-	if (isKeyJustPressed('F3')) {
-		consumeIdeKey('F3');
+	if (isKeyJustPressed('F3', playerInput)) {
+		consumeIdeKey('F3', playerInput);
 		if (shiftDown) {
 			jumpToPreviousMatch();
 		} else {
@@ -110,38 +111,38 @@ export function handleSearchInput(
 		return;
 	}
 	if (hasResults) {
-		if (shouldRepeatKeyFromPlayer('ArrowUp')) {
-			consumeIdeKey('ArrowUp');
+		if (shouldRepeatKeyFromPlayer('ArrowUp', playerInput)) {
+			consumeIdeKey('ArrowUp', playerInput);
 			stepSearchSelectionFromInput(editor, sources, -1, { preview: previewLocal });
 			return;
 		}
-		if (shouldRepeatKeyFromPlayer('ArrowDown')) {
-			consumeIdeKey('ArrowDown');
+		if (shouldRepeatKeyFromPlayer('ArrowDown', playerInput)) {
+			consumeIdeKey('ArrowDown', playerInput);
 			stepSearchSelectionFromInput(editor, sources, 1, { preview: previewLocal });
 			return;
 		}
-		if (shouldRepeatKeyFromPlayer('PageUp')) {
-			consumeIdeKey('PageUp');
+		if (shouldRepeatKeyFromPlayer('PageUp', playerInput)) {
+			consumeIdeKey('PageUp', playerInput);
 			stepSearchSelectionFromInput(editor, sources, -searchPageSize(), { preview: previewLocal });
 			return;
 		}
-		if (shouldRepeatKeyFromPlayer('PageDown')) {
-			consumeIdeKey('PageDown');
+		if (shouldRepeatKeyFromPlayer('PageDown', playerInput)) {
+			consumeIdeKey('PageDown', playerInput);
 			stepSearchSelectionFromInput(editor, sources, searchPageSize(), { preview: previewLocal });
 			return;
 		}
-		if (isKeyJustPressed('Home')) {
-			consumeIdeKey('Home');
+		if (isKeyJustPressed('Home', playerInput)) {
+			consumeIdeKey('Home', playerInput);
 			applySearchSelectionFromInput(editor, sources, 0, { preview: true, keepSearchActive: true });
 			return;
 		}
-		if (isKeyJustPressed('End')) {
-			consumeIdeKey('End');
+		if (isKeyJustPressed('End', playerInput)) {
+			consumeIdeKey('End', playerInput);
 			applySearchSelectionFromInput(editor, sources, activeSearchMatchCount() - 1, { preview: true, keepSearchActive: true });
 			return;
 		}
 	}
-	const textChanged = applyInlineFieldEditing(editorSearchState.field, {
+	const textChanged = applyInlineFieldEditing(playerInput, clipboard, editorSearchState.field, {
 		allowSpace: true,
 	});
 	editorSearchState.query = editorSearchState.field.text;

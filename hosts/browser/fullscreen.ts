@@ -1,10 +1,9 @@
-import { machineManager } from '../../machine/ts/core/machine_manager';
-import { Input } from '../../machine/ts/input/manager';
 import { LogLevel } from '../../machine/ts/platform/platform';
+import type { MachineHost } from '../../runtime/machine_runtime';
 
-export function bindBrowserFullscreenShortcut(): void {
-	Input.instance.getGlobalShortcutRegistry().registerKeyboardShortcut(1, 'F11', () => {
-		if (Input.instance.debugHotkeysPaused) {
+export function bindBrowserFullscreenShortcut(host: MachineHost): void {
+	host.input.getGlobalShortcutRegistry().registerKeyboardShortcut(1, 'F11', () => {
+		if (host.input.debugHotkeysPaused) {
 			return;
 		}
 		const enterFullscreen = document.fullscreenElement !== document.documentElement;
@@ -13,7 +12,7 @@ export function bindBrowserFullscreenShortcut(): void {
 				return;
 			}
 			window.removeEventListener('keyup', onKeyUp);
-			machineManager.paused = true;
+			host.paused = true;
 			try {
 				if (enterFullscreen) {
 					await document.documentElement.requestFullscreen();
@@ -21,12 +20,12 @@ export function bindBrowserFullscreenShortcut(): void {
 					await document.exitFullscreen();
 				}
 			} catch (error) {
-				machineManager.platform.log(
+				host.platform.log(
 					LogLevel.Error,
 					error instanceof Error ? error.message : String(error),
 				);
 			} finally {
-				machineManager.paused = false;
+				host.paused = false;
 			}
 		};
 		window.addEventListener('keyup', onKeyUp);

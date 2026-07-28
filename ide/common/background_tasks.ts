@@ -1,28 +1,30 @@
-import { machineManager } from '../../machine/ts/core/machine_manager';
-import { scheduleMicrotask, type TimerHandle } from '../../machine/ts/platform/platform';
+import type { SoundMaster } from '../../machine/ts/audio/soundmaster';
+import { runGate } from '../../machine/ts/common/taskgate';
+import {
+	scheduleMicrotask,
+	type HostClock,
+} from '../../machine/ts/platform/platform';
 
 export type BackgroundTask = () => boolean;
 
 const backgroundTasks: BackgroundTask[] = [];
-let backgroundTaskHandle: TimerHandle = null;
 let runtimeTaskTail = Promise.resolve();
 let pendingRuntimeTasks = 0;
 let runtimeTaskQueueFailed = false;
 const backgroundTaskBudgetMs = 2.0;
+const RUNTIME_TASK_CATEGORY = 'ide-runtime-task';
+const RUNTIME_TASK_FAILURE_CATEGORY = 'ide-runtime-task-failure';
+const RUNTIME_TASK_AUDIO_SUSPENSION = 'runtime-task';
 
 export function enqueueBackgroundTask(task: BackgroundTask): void {
 	backgroundTasks.push(task);
-	if (backgroundTaskHandle === null) {
-		backgroundTaskHandle = scheduleIdeOnce(0, runBackgroundTasks);
-	}
 }
 
-export function runBackgroundTasks(): void {
-	backgroundTaskHandle = null;
+export function runBackgroundTasks(clock: HostClock): void {
 	if (backgroundTasks.length === 0) {
 		return;
 	}
-	const deadline = machineManager.platform.clock.now() + backgroundTaskBudgetMs;
+	const deadline = clock.now() + backgroundTaskBudgetMs;
 	const iterationsLimit = backgroundTasks.length * 2;
 	let iterations = 0;
 	while (backgroundTasks.length > 0) {
@@ -32,33 +34,32 @@ export function runBackgroundTasks(): void {
 			backgroundTasks.push(task);
 		}
 		iterations += 1;
-		if (machineManager.platform.clock.now() >= deadline || iterations >= iterationsLimit) {
+		if (clock.now() >= deadline || iterations >= iterationsLimit) {
 			break;
 		}
-	}
-	if (backgroundTasks.length > 0 && backgroundTaskHandle === null) {
-		backgroundTaskHandle = scheduleIdeOnce(0, runBackgroundTasks);
 	}
 }
 
 export function clearBackgroundTasks(): void {
 	backgroundTasks.length = 0;
-	if (backgroundTaskHandle) {
-		backgroundTaskHandle.cancel();
-		backgroundTaskHandle = null;
-	}
 }
 
-export function scheduleIdeOnce(delayMs: number, cb: () => void): TimerHandle {
-	return machineManager.platform.clock.scheduleOnce(delayMs, () => cb());
-}
-
-export function scheduleRuntimeTask(task: () => void | Promise<void>, onError: (error: unknown) => void): void {
+export function scheduleRuntimeTask(
+	soundMaster: SoundMaster,
+	task: () => void | Promise<void>,
+	onError: (error: unknown) => void,
+): void {
 	if (pendingRuntimeTasks === 0) {
+		runGate.endCategory(RUNTIME_TASK_FAILURE_CATEGORY);
 		runtimeTaskQueueFailed = false;
+		soundMaster.suspendAll(RUNTIME_TASK_AUDIO_SUSPENSION);
 	}
 	pendingRuntimeTasks += 1;
-	machineManager.paused = true;
+	const token = runGate.begin({
+		blocking: true,
+		category: RUNTIME_TASK_CATEGORY,
+		tag: RUNTIME_TASK_CATEGORY,
+	});
 	scheduleMicrotask(() => {
 		runtimeTaskTail = runtimeTaskTail.then(async () => {
 			let succeeded = false;
@@ -70,8 +71,15 @@ export function scheduleRuntimeTask(task: () => void | Promise<void>, onError: (
 				onError(error);
 			} finally {
 				pendingRuntimeTasks -= 1;
+				runGate.end(token);
 				if (succeeded && !runtimeTaskQueueFailed && pendingRuntimeTasks === 0) {
-					machineManager.paused = false;
+					soundMaster.resumeAll(RUNTIME_TASK_AUDIO_SUSPENSION);
+				} else if (runtimeTaskQueueFailed && pendingRuntimeTasks === 0) {
+					runGate.begin({
+						blocking: true,
+						category: RUNTIME_TASK_FAILURE_CATEGORY,
+						tag: RUNTIME_TASK_FAILURE_CATEGORY,
+					});
 				}
 			}
 		});

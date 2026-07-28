@@ -1,31 +1,135 @@
 import {
-	machineManager,
+	MachineManager,
 	type MachineInitializationOptions,
 } from '../machine/ts/core/machine_manager';
+import { SoundMaster } from '../machine/ts/audio/soundmaster';
 import { renderGate, runGate } from '../machine/ts/common/taskgate';
 import type { Runtime } from '../machine/ts/machine/runtime/runtime';
 import { captureRuntimeSaveStateBytes } from '../machine/ts/machine/runtime/save_state/codec';
 import { gxGpuDisplayModeScreenWidth, gxGpuVerticalVisibleLines } from '../machine/ts/machine/devices/gx/gpu_display';
 import { Input } from '../machine/ts/input/manager';
-import type { Platform } from '../machine/ts/platform/platform';
+import type { GamepadInput } from '../machine/ts/input/gamepad';
+import { LogLevel, setMicrotaskQueue, type Platform } from '../machine/ts/platform/platform';
 import { RenderPassLibrary } from '../machine/ts/render/backend/pass/library';
 import { Font } from '../machine/ts/render/shared/bmsx_font';
 import { VideoPresenter } from '../machine/ts/render/video_presenter';
+import { HZ_SCALE } from '../machine/ts/machine/runtime/timing/constants';
+import { SYS_PRINT_BUFFER_BYTES } from '../machine/ts/spec/bmsx/io';
 import { HostOverlayMenu } from './host_overlay_menu';
 import { runMachineHostFrame } from './host_frame';
 import { RenderPresentationState } from './presentation_state';
 
+const DEFAULT_MASTER_VOLUME = 1;
+const systemOutputDecoder = new TextDecoder('utf-8', { fatal: true });
+
 export interface MachineHostInitializationOptions extends MachineInitializationOptions {
 	startingGamepadIndex: number;
 	enableOnscreenGamepad: boolean;
+	platform: Platform;
 }
 
 export class MachineHost {
+	public running = false;
+	public hostFps = 0;
+	private pausedState = false;
+	private audioUfpsScaled: number;
+	private readonly systemOutputBytes = new Uint8Array(SYS_PRINT_BUFFER_BYTES);
+
 	public constructor(
-		public readonly runtime: Runtime,
+		private readonly machineManager: MachineManager,
 		public readonly platform: Platform,
 		public readonly presenter: VideoPresenter,
+		public readonly input: Input,
+		public readonly soundMaster: SoundMaster,
 	) {
+		this.audioUfpsScaled = this.runtime.timing.ufpsScaled;
+		this.platform.audio.setFrameTimeSec(HZ_SCALE / this.audioUfpsScaled);
+	}
+
+	public get runtime(): Runtime {
+		return this.machineManager.runtime;
+	}
+
+	public get paused(): boolean {
+		return this.pausedState;
+	}
+
+	public set paused(value: boolean) {
+		if (this.pausedState === value) {
+			return;
+		}
+		this.pausedState = value;
+		if (value) {
+			this.soundMaster.pause();
+		} else {
+			this.soundMaster.resume();
+		}
+	}
+
+	public start(): void {
+		this.runtime.frameLoop.currentTimeMs = this.platform.clock.now();
+		this.runtime.frameScheduler.clearQueuedTime();
+		this.running = true;
+	}
+
+	public stop(): void {
+		this.running = false;
+	}
+
+	public async initializeGamepadHid(gamepad: GamepadInput): Promise<void> {
+		const wasPaused = this.paused;
+		this.paused = true;
+		try {
+			await gamepad.init();
+		} catch (error) {
+			this.platform.log(
+				LogLevel.Error,
+				error instanceof Error ? error.message : String(error),
+			);
+		} finally {
+			if (!wasPaused) {
+				this.paused = false;
+			}
+		}
+	}
+
+	public flushSystemOutput(): void {
+		const output = this.runtime.machine.systemController;
+		const byteCount = output.hostOutputAvailableByteCount();
+		if (byteCount === 0) {
+			return;
+		}
+		for (let index = 0; index < byteCount; index += 1) {
+			this.systemOutputBytes[index] = output.readHostOutputByte();
+		}
+		let lineStart = 0;
+		for (let index = 0; index < byteCount; index += 1) {
+			if (this.systemOutputBytes[index] === 10) {
+				this.platform.log(
+					LogLevel.Info,
+					systemOutputDecoder.decode(this.systemOutputBytes.subarray(lineStart, index)),
+				);
+				lineStart = index + 1;
+			}
+		}
+	}
+
+	public syncRuntimeAudioTiming(): void {
+		if (this.runtime.timing.ufpsScaled === this.audioUfpsScaled) {
+			return;
+		}
+		this.syncAudioTiming();
+	}
+
+	public bootstrapStartupAudio(): void {
+		if (!this.platform.audio.available) {
+			return;
+		}
+		this.syncAudioTiming();
+		this.soundMaster.bootstrapRuntimeAudio(
+			this.runtime.timing.ufpsScaled,
+			DEFAULT_MASTER_VOLUME,
+		);
 	}
 
 	public async captureRuntimeSaveStateBytes(): Promise<Uint8Array> {
@@ -39,16 +143,28 @@ export class MachineHost {
 			runGate.end(runToken);
 		}
 	}
+
+	private syncAudioTiming(): void {
+		const ufpsScaled = this.runtime.timing.ufpsScaled;
+		this.platform.audio.setFrameTimeSec(HZ_SCALE / ufpsScaled);
+		this.soundMaster.setMixerUfpsScaled(ufpsScaled);
+		this.audioUfpsScaled = ufpsScaled;
+	}
 }
 
 export async function initializeMachineHost(
 	options: MachineHostInitializationOptions,
 ): Promise<MachineHost> {
-	const input = Input.initialize(options.platform, options.startingGamepadIndex);
+	const input = new Input(options.platform, options.startingGamepadIndex);
 	if (options.enableOnscreenGamepad) {
 		input.enableOnscreenGamepad();
 	}
-	const runtime = machineManager.initialize(options);
+	setMicrotaskQueue(options.platform.microtasks);
+	const machineManager = new MachineManager();
+	const runtime = machineManager.initialize({
+		systemRom: options.systemRom,
+		cartridgeSlots: options.cartridgeSlots,
+	}, input);
 	const output = options.platform.videoOutput;
 	const gpuOutput = runtime.machine.gxGpu.readDeviceOutput();
 	const viewportWidth = gxGpuDisplayModeScreenWidth(gpuOutput.displayModeWord);
@@ -73,7 +189,19 @@ export async function initializeMachineHost(
 	presenter.viewportScale = dimensions.viewportScale;
 	presenter.canvasScale = dimensions.canvasScale;
 	presenter.initializeDefaultTextures();
-	return new MachineHost(runtime, options.platform, presenter);
+	const soundMaster = new SoundMaster(
+		options.platform.audio,
+		runtime.machine.audioController,
+		runtime.machine.audioOutput.outputRing,
+	);
+	const host = new MachineHost(
+		machineManager,
+		options.platform,
+		presenter,
+		input,
+		soundMaster,
+	);
+	return host;
 }
 
 export async function prepareMachineHost(
@@ -83,22 +211,21 @@ export async function prepareMachineHost(
 	const runtime = host.runtime;
 	runtime.resetForSystemBoot();
 	runtime.boot();
-	machineManager.flushSystemOutput(runtime);
-	machineManager.bootstrapStartupAudio();
+	host.flushSystemOutput();
+	host.bootstrapStartupAudio();
 	return host;
 }
 
 export function startMachineHostFrames(host: MachineHost): void {
 	const runtime = host.runtime;
 	const presentation = new RenderPresentationState();
-	const hostOverlayMenu = new HostOverlayMenu(host.presenter);
-	machineManager.start();
+	const hostOverlayMenu = new HostOverlayMenu(host.presenter, runtime, host.input);
+	host.start();
 	host.platform.frames.start((currentTime) => {
 		runMachineHostFrame(
-			host.presenter,
+			host,
 			presentation,
 			hostOverlayMenu,
-			runtime,
 			currentTime,
 			runGate.ready,
 		);

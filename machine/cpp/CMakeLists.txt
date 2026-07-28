@@ -226,9 +226,6 @@ add_library(bmsx_core STATIC
 	# Core systems
 	common/vector.cpp
 	core/machine_manager.cpp
-	core/host_frame.cpp
-	core/host_overlay_menu.cpp
-	common/registry.cpp
 	render/host_overlay/atlas.cpp
 	render/host_overlay/atlas.generated.cpp
 	render/shared/bitmap_font.cpp
@@ -327,7 +324,6 @@ add_library(bmsx_core STATIC
 	machine/runtime/frame/loop.cpp
 	machine/runtime/lua_scratch.cpp
 	machine/scheduler/frame.cpp
-	render/presentation_state.cpp
 	machine/runtime/timing/index.cpp
 	machine/runtime/timing/state.cpp
 	machine/runtime/timing/config.cpp
@@ -432,7 +428,10 @@ endif()
 set(BMSX_LIBRETRO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../hosts/libretro")
 set(BMSX_LIBRETRO_HOST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../hosts/libretro_host")
 set(BMSX_LIBRETRO_PLATFORM_SOURCES
+	${BMSX_LIBRETRO_DIR}/host_frame.cpp
+	${BMSX_LIBRETRO_DIR}/host_overlay_menu.cpp
 	${BMSX_LIBRETRO_DIR}/platform.cpp
+	${BMSX_LIBRETRO_DIR}/presentation_state.cpp
 	${BMSX_LIBRETRO_DIR}/runtime_error.cpp
 )
 

@@ -2,12 +2,12 @@ import { processRuntimeErrorOverlayPointer } from '../../../editor/input/overlay
 import type { PointerSnapshot } from '../../../common/models';
 import { editorPointerState } from '../state';
 import type { CartEditor } from '../../../cart_editor';
-import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
+import type { ClipboardService } from '../../../../machine/ts/platform/platform';
 
 export function handleCodeAreaPointerGuards(
+	clipboard: ClipboardService,
 	editor: CartEditor,
-	sources: RuntimeSourceState,
 	runtime: Runtime,
 	snapshot: PointerSnapshot,
 	justPressed: boolean,
@@ -16,7 +16,17 @@ export function handleCodeAreaPointerGuards(
 	textLeft: number,
 	contentBottom: number
 ): boolean {
-	if (!processRuntimeErrorOverlayPointer(editor, sources, runtime, snapshot, justPressed, codeTop, codeRight, textLeft, contentBottom)) {
+	if (!processRuntimeErrorOverlayPointer(
+		clipboard,
+		editor,
+		runtime,
+		snapshot,
+		justPressed,
+		codeTop,
+		codeRight,
+		textLeft,
+		contentBottom,
+	)) {
 		return false;
 	}
 	editorPointerState.pointerPrimaryWasPressed = snapshot.primaryPressed;

@@ -25,9 +25,7 @@ import { extractErrorMessage } from '../language/lua/interpreter/value';
 import { clamp } from '../../machine/ts/common/clamp';
 import type { CartEditor } from '../cart_editor';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import type { RuntimeSourceState } from '../runtime/sources';
 import type { ResourcePanelController } from '../workbench/contrib/resources/panel/controller';
-import { focusChunkSourceForContext } from '../workbench/contrib/resources/navigation';
 import { findFunctionDefinitionRowInActiveFile } from '../editor/contrib/intellisense/engine';
 import { resetPointerClickTracking } from '../input/pointer/state';
 
@@ -166,7 +164,6 @@ export function showLuaErrorOverlay(editor: CartEditor, error: unknown): boolean
 
 export function navigateToRuntimeErrorFrameTarget(
 	editor: CartEditor,
-	sources: RuntimeSourceState,
 	runtime: Runtime,
 	frame: StackTraceFrame,
 ): void {
@@ -174,7 +171,10 @@ export function navigateToRuntimeErrorFrameTarget(
 		return;
 	}
 	try {
-		focusChunkSourceForContext(editor, sources, runtime.machine.cpu.activeCartridgeSlot(), frame.source);
+		editor.navigation.focusChunkSourceForContext(
+			runtime.machine.cpu.activeCartridgeSlot(),
+			frame.source,
+		);
 	} catch (error) {
 		showEditorMessage(
 			`Failed to open runtime path: ${extractErrorMessage(error)}`,

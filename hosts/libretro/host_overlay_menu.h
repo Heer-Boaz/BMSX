@@ -10,9 +10,16 @@
 
 namespace bmsx {
 
-class MachineManager;
+class Runtime;
 class VideoPresenter;
 class Input;
+
+enum class HostMenuInput : u8 {
+	Inactive,
+	Active,
+	RebootCart,
+	ExitGame,
+};
 
 enum class HostMenuButtonId : u8 {
 	Start,
@@ -39,10 +46,10 @@ enum class HostMenuRepeatId : u8 {
 class HostOverlayMenu {
 public:
 	HostOverlayMenu();
-	bool tickInput(MachineManager& manager, VideoPresenter& presenter);
+	HostMenuInput tickInput(const Input& input, VideoPresenter& presenter, f64 currentTimeMs);
 	void resetInputState();
-	void queueRenderCommands(MachineManager& manager, VideoPresenter& presenter);
-	bool queueFrameOverlayCommands(MachineManager& manager, VideoPresenter& presenter);
+	void queueRenderCommands(VideoPresenter& presenter);
+	bool queueFrameOverlayCommands(Runtime& runtime, VideoPresenter& presenter, f64 hostFps);
 	bool active() const { return m_active; }
 
 private:
@@ -61,9 +68,9 @@ private:
 	void queueCommand(Host2DKind kind, Host2DRef ref);
 	void toggle();
 	void close();
-	void changeSelected(MachineManager& manager, VideoPresenter& presenter, i32 direction);
-	void activateSelected(MachineManager& manager);
-	void rebuildText(MachineManager& manager, VideoPresenter& presenter);
+	void changeSelected(VideoPresenter& presenter, i32 direction);
+	HostMenuInput activateSelected();
+	void rebuildText(VideoPresenter& presenter);
 	bool buttonPressed(const Input& input, HostMenuButtonId button) const;
 	bool buttonJustPressed(const Input& input, HostMenuButtonId button) const;
 	void latchButtonStates(const Input& input);
@@ -71,6 +78,7 @@ private:
 	void resetButtonRepeats();
 
 	bool m_active = false;
+	bool m_showFps = false;
 	i32 m_selected = 0;
 	bool m_dirtyText = true;
 	std::array<std::string, OptionCount> m_lineText;
@@ -94,7 +102,5 @@ private:
 	i32 m_fpsTextTenths = -1;
 	i32 m_fpsTextWidth = 0;
 };
-
-HostOverlayMenu& hostOverlayMenu();
 
 } // namespace bmsx

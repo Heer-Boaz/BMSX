@@ -2,6 +2,7 @@ import type { VideoSurface } from '../../../../machine/ts/platform/platform';
 import { lower_bound } from '../../../../machine/ts/common/lower_bound';
 import { EditorFont } from './font';
 import type { FontVariant } from '../../../../machine/ts/render/shared/bmsx_font';
+import type { HostClock } from '../../../../machine/ts/platform/platform';
 import type { Viewport } from '../../../../machine/ts/rompack/format';
 import * as constants from '../../../common/constants';
 import type { CodeTabMode } from '../../../common/models';
@@ -18,7 +19,6 @@ import { editorViewState } from './state';
 import { editorSearchState, lineJumpState } from '../../contrib/find/widget_state';
 import { symbolSearchState } from '../../contrib/symbols/search/state';
 import { renameController } from '../../contrib/rename/controller';
-import { editorRuntimeState } from '../../common/runtime_state';
 import {
 	ensureVisualLines,
 } from '../../common/text/layout';
@@ -523,7 +523,11 @@ export function getSymbolSearchBarBounds(): BarBounds { return getInlineBarBound
 export function getRenameBarBounds(): BarBounds { return getInlineBarBounds(4); }
 export function getLineJumpBarBounds(): BarBounds { return getInlineBarBounds(5); }
 
-export function configureFontVariant(variant: FontVariant, activeCodeTabMode: CodeTabMode | null): void {
+export function configureFontVariant(
+	clock: HostClock,
+	variant: FontVariant,
+	activeCodeTabMode: CodeTabMode | null,
+): void {
 	editorViewState.fontVariant = variant;
 	editorViewState.font = new EditorFont(variant);
 	editorViewState.lineHeight = editorViewState.font.lineHeight;
@@ -538,7 +542,7 @@ export function configureFontVariant(variant: FontVariant, activeCodeTabMode: Co
 	editorViewState.layout = new CodeLayout(editorViewState.font, {
 		maxHighlightCache: 512,
 		semanticDebounceMs: 200,
-		clockNow: editorRuntimeState.clockNow,
+		clock,
 		getBuiltinIdentifiers: () => getBuiltinIdentifiersSnapshot(),
 		computeWrapWidth,
 	});
@@ -549,8 +553,13 @@ export function configureFontVariant(variant: FontVariant, activeCodeTabMode: Co
 	editorViewState.layout.markVisualLinesDirty();
 }
 
-export function setFontVariant(variant: FontVariant, activeCodeTabMode: CodeTabMode | null, activeContextId: string | null): void {
-	configureFontVariant(variant, activeCodeTabMode);
+export function setFontVariant(
+	clock: HostClock,
+	variant: FontVariant,
+	activeCodeTabMode: CodeTabMode | null,
+	activeContextId: string | null,
+): void {
+	configureFontVariant(clock, variant, activeCodeTabMode);
 	ensureVisualLines();
 	editorCaretState.cursorRevealSuspended = false;
 	ensureCursorVisible();

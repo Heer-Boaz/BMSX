@@ -7,49 +7,50 @@ import { resetBlink } from '../../../editor/render/caret';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from '../../../input/keyboard/key_input';
 import { isInlineWidgetFocused } from '../../../quick_input/inline_widget';
 import { editorDocumentState } from '../../../editor/editing/document_state';
+import type { PlayerInput } from '../../../../machine/ts/input/player';
 
-function handleCreateResourceBinding(editor: CartEditor): boolean {
-	if (!(isCtrlDown() || isMetaDown()) || !isKeyJustPressed('KeyN')) {
+function handleCreateResourceBinding(playerInput: PlayerInput, editor: CartEditor): boolean {
+	if (!(isCtrlDown(playerInput) || isMetaDown(playerInput)) || !isKeyJustPressed('KeyN', playerInput)) {
 		return false;
 	}
-	consumeIdeKey('KeyN');
+	consumeIdeKey('KeyN', playerInput);
 	editor.commands.execute('createResource');
 	return true;
 }
 
-function handleGlobalFindBinding(editor: CartEditor): boolean {
-	if (!(isCtrlDown() || isMetaDown()) || !isShiftDown() || isAltDown() || !isKeyJustPressed('KeyF')) {
+function handleGlobalFindBinding(playerInput: PlayerInput, editor: CartEditor): boolean {
+	if (!(isCtrlDown(playerInput) || isMetaDown(playerInput)) || !isShiftDown(playerInput) || isAltDown(playerInput) || !isKeyJustPressed('KeyF', playerInput)) {
 		return false;
 	}
-	consumeIdeKey('KeyF');
+	consumeIdeKey('KeyF', playerInput);
 	editor.commands.execute('findGlobal');
 	return true;
 }
 
-function handleLocalFindBinding(editor: CartEditor): boolean {
-	if (!(isCtrlDown() || isMetaDown()) || isShiftDown() || isAltDown() || !isKeyJustPressed('KeyF')) {
+function handleLocalFindBinding(playerInput: PlayerInput, editor: CartEditor): boolean {
+	if (!(isCtrlDown(playerInput) || isMetaDown(playerInput)) || isShiftDown(playerInput) || isAltDown(playerInput) || !isKeyJustPressed('KeyF', playerInput)) {
 		return false;
 	}
-	consumeIdeKey('KeyF');
+	consumeIdeKey('KeyF', playerInput);
 	editor.commands.execute('findLocal');
 	return true;
 }
 
-function handleCycleTabBinding(editor: CartEditor): boolean {
-	if (!(isCtrlDown() || isMetaDown()) || !isKeyJustPressed('Tab')) {
+function handleCycleTabBinding(playerInput: PlayerInput, editor: CartEditor): boolean {
+	if (!(isCtrlDown(playerInput) || isMetaDown(playerInput)) || !isKeyJustPressed('Tab', playerInput)) {
 		return false;
 	}
-	consumeIdeKey('Tab');
-	cycleTab(editor.resourcePanel, isShiftDown() ? -1 : 1);
+	consumeIdeKey('Tab', playerInput);
+	cycleTab(editor.resourcePanel, isShiftDown(playerInput) ? -1 : 1);
 	return true;
 }
 
-function handleDefinitionAndReferenceBinding(editor: CartEditor): boolean {
-	if (isInlineWidgetFocused() || !isKeyJustPressed('F12')) {
+function handleDefinitionAndReferenceBinding(playerInput: PlayerInput, editor: CartEditor): boolean {
+	if (isInlineWidgetFocused() || !isKeyJustPressed('F12', playerInput)) {
 		return false;
 	}
-	consumeIdeKey('F12');
-	if (isShiftDown()) {
+	consumeIdeKey('F12', playerInput);
+	if (isShiftDown(playerInput)) {
 		editor.commands.execute('referenceSearch');
 		return true;
 	}
@@ -57,14 +58,14 @@ function handleDefinitionAndReferenceBinding(editor: CartEditor): boolean {
 	return true;
 }
 
-function handleSelectAllBinding(editor: CartEditor): boolean {
-	if (!(isCtrlDown() || isMetaDown()) || isInlineWidgetFocused() || !isCodeTabActive() || !isKeyJustPressed('KeyA')) {
+function handleSelectAllBinding(playerInput: PlayerInput, editor: CartEditor): boolean {
+	if (!(isCtrlDown(playerInput) || isMetaDown(playerInput)) || isInlineWidgetFocused() || !isCodeTabActive() || !isKeyJustPressed('KeyA', playerInput)) {
 		return false;
 	}
 	if (editor.resourcePanel.isFocused()) {
 		return false;
 	}
-	consumeIdeKey('KeyA');
+	consumeIdeKey('KeyA', playerInput);
 	const lastRowIndex = editorDocumentState.buffer.getLineCount() - 1;
 	const lastColumn = editorDocumentState.buffer.getLineEndOffset(lastRowIndex) - editorDocumentState.buffer.getLineStartOffset(lastRowIndex);
 	selectAllSingleCursor(editorDocumentState, lastRowIndex, lastColumn);
@@ -74,21 +75,21 @@ function handleSelectAllBinding(editor: CartEditor): boolean {
 	return true;
 }
 
-function handleLineJumpBinding(editor: CartEditor): boolean {
-	if (!(isCtrlDown() || isMetaDown()) || !isKeyJustPressed('KeyL')) {
+function handleLineJumpBinding(playerInput: PlayerInput, editor: CartEditor): boolean {
+	if (!(isCtrlDown(playerInput) || isMetaDown(playerInput)) || !isKeyJustPressed('KeyL', playerInput)) {
 		return false;
 	}
-	consumeIdeKey('KeyL');
+	consumeIdeKey('KeyL', playerInput);
 	editor.commands.execute('lineJump');
 	return true;
 }
 
-export function handleEditorPromptBindings(editor: CartEditor): boolean {
-	return handleCreateResourceBinding(editor)
-		|| handleGlobalFindBinding(editor)
-		|| handleLocalFindBinding(editor)
-		|| handleCycleTabBinding(editor)
-		|| handleDefinitionAndReferenceBinding(editor)
-		|| handleSelectAllBinding(editor)
-		|| handleLineJumpBinding(editor);
+export function handleEditorPromptBindings(playerInput: PlayerInput, editor: CartEditor): boolean {
+	return handleCreateResourceBinding(playerInput, editor)
+		|| handleGlobalFindBinding(playerInput, editor)
+		|| handleLocalFindBinding(playerInput, editor)
+		|| handleCycleTabBinding(playerInput, editor)
+		|| handleDefinitionAndReferenceBinding(playerInput, editor)
+		|| handleSelectAllBinding(playerInput, editor)
+		|| handleLineJumpBinding(playerInput, editor);
 }

@@ -1,4 +1,3 @@
-import { machineManager } from '../../../../machine/ts/core/machine_manager';
 import { CHARACTER_CODES, CHARACTER_MAP } from '../../../common/character_map';
 import * as constants from '../../../common/constants';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from '../../../input/keyboard/key_input';
@@ -17,6 +16,9 @@ import {
 	setSingleCursorSelectionAnchor,
 } from '../../editing/cursor/state';
 import { findWordBoundsInLine, findWordLeftOffset, findWordRightOffset } from '../../editing/cursor/words';
+import { editorRuntimeState } from '../../common/runtime_state';
+import type { PlayerInput } from '../../../../machine/ts/input/player';
+import type { ClipboardService } from '../../../../machine/ts/platform/platform';
 
 export type InlineFieldMetrics = {
 	advanceChar: (ch: string) => number;
@@ -75,13 +77,9 @@ export function setSelectionAnchorPosition(field: TextField, row: number, column
 	setSingleCursorSelectionAnchor(field, row, column);
 }
 
-const writeInlineFieldClipboard = (payload: string): void => {
+const writeInlineFieldClipboard = (clipboard: ClipboardService, payload: string): void => {
 	editorDocumentState.customClipboard = payload;
-	try {
-		void machineManager.platform.clipboard.writeText(payload);
-	// disable-next-line empty_catch_pattern -- System clipboard write is best-effort; the editor clipboard already has the payload.
-	} catch {
-	}
+	void clipboard.writeText(payload);
 };
 
 const applyTextUpdate = (field: TextField, nextText: string, nextCursorOffset: number): void => {
@@ -390,7 +388,7 @@ export function resolveColumn(field: TextField, metrics: InlineFieldMetrics, tex
 }
 
 export function registerPointerClick(field: TextField, column: number, doubleClickInterval: number): boolean {
-	const timestamp = machineManager.platform.clock.now();
+	const timestamp = editorRuntimeState.currentTimeMs;
 	const interval = timestamp - field.lastPointerClickTimeMs;
 	const sameColumn = column === field.lastPointerClickColumn;
 	const isDouble = field.lastPointerClickTimeMs > 0
@@ -419,34 +417,36 @@ export function setFieldText(field: TextField, value: string, moveCursorToEnd: b
 }
 
 export function applyInlineFieldEditing(
+	playerInput: PlayerInput,
+	clipboard: ClipboardService,
 	field: TextField,
 	options: InlineInputOptions,
 ): boolean {
-	const ctrlDown = isCtrlDown();
-	const metaDown = isMetaDown();
-	const shiftDown = isShiftDown();
-	const altDown = isAltDown();
+	const ctrlDown = isCtrlDown(playerInput);
+	const metaDown = isMetaDown(playerInput);
+	const shiftDown = isShiftDown(playerInput);
+	const altDown = isAltDown(playerInput);
 	const { allowSpace } = options;
 	const characterFilter = options.characterFilter;
 	const maxLength = options.maxLength;
 	const useCtrl = ctrlDown || metaDown;
 	let textChanged = false;
 
-	if (useCtrl && isKeyJustPressed('KeyA')) {
-		consumeIdeKey('KeyA');
+	if (useCtrl && isKeyJustPressed('KeyA', playerInput)) {
+		consumeIdeKey('KeyA', playerInput);
 		selectAll(field);
 	}
 
-	if (useCtrl && isKeyJustPressed('KeyC')) {
+	if (useCtrl && isKeyJustPressed('KeyC', playerInput)) {
 		const selected = selectedText(field);
 		const payload = selected && selected.length > 0 ? selected : field.text;
 		if (payload.length > 0) {
-			writeInlineFieldClipboard(payload);
+			writeInlineFieldClipboard(clipboard, payload);
 		}
-		consumeIdeKey('KeyC');
+		consumeIdeKey('KeyC', playerInput);
 	}
 
-	if (useCtrl && isKeyJustPressed('KeyX')) {
+	if (useCtrl && isKeyJustPressed('KeyX', playerInput)) {
 		const selected = selectedText(field);
 		let payload = selected;
 		if (!payload || payload.length === 0) {
@@ -456,13 +456,13 @@ export function applyInlineFieldEditing(
 			}
 		}
 		if (payload && payload.length > 0) {
-			writeInlineFieldClipboard(payload);
+			writeInlineFieldClipboard(clipboard, payload);
 			textChanged = deleteSelection(field) || textChanged;
 		}
-		consumeIdeKey('KeyX');
+		consumeIdeKey('KeyX', playerInput);
 	}
 
-	if (useCtrl && isKeyJustPressed('KeyV')) {
+	if (useCtrl && isKeyJustPressed('KeyV', playerInput)) {
 		const clipboard = editorDocumentState.customClipboard;
 		if (clipboard.length > 0) {
 			let insertion = clipboard;
@@ -492,11 +492,11 @@ export function applyInlineFieldEditing(
 				}
 			}
 		}
-		consumeIdeKey('KeyV');
+		consumeIdeKey('KeyV', playerInput);
 	}
 
-	if (shouldRepeatKeyFromPlayer('Backspace')) {
-		consumeIdeKey('Backspace');
+	if (shouldRepeatKeyFromPlayer('Backspace', playerInput)) {
+		consumeIdeKey('Backspace', playerInput);
 		if (useCtrl) {
 			textChanged = deleteWordBackward(field) || textChanged;
 		} else {
@@ -504,8 +504,8 @@ export function applyInlineFieldEditing(
 		}
 	}
 
-	if (shouldRepeatKeyFromPlayer('Delete')) {
-		consumeIdeKey('Delete');
+	if (shouldRepeatKeyFromPlayer('Delete', playerInput)) {
+		consumeIdeKey('Delete', playerInput);
 		if (useCtrl) {
 			textChanged = deleteWordForward(field) || textChanged;
 		} else {
@@ -513,8 +513,8 @@ export function applyInlineFieldEditing(
 		}
 	}
 
-	if (shouldRepeatKeyFromPlayer('ArrowLeft')) {
-		consumeIdeKey('ArrowLeft');
+	if (shouldRepeatKeyFromPlayer('ArrowLeft', playerInput)) {
+		consumeIdeKey('ArrowLeft', playerInput);
 		if (useCtrl) {
 			moveWordLeft(field, shiftDown);
 		} else {
@@ -522,8 +522,8 @@ export function applyInlineFieldEditing(
 		}
 	}
 
-	if (shouldRepeatKeyFromPlayer('ArrowRight')) {
-		consumeIdeKey('ArrowRight');
+	if (shouldRepeatKeyFromPlayer('ArrowRight', playerInput)) {
+		consumeIdeKey('ArrowRight', playerInput);
 		if (useCtrl) {
 			moveWordRight(field, shiftDown);
 		} else {
@@ -531,18 +531,18 @@ export function applyInlineFieldEditing(
 		}
 	}
 
-	if (shouldRepeatKeyFromPlayer('Home')) {
-		consumeIdeKey('Home');
+	if (shouldRepeatKeyFromPlayer('Home', playerInput)) {
+		consumeIdeKey('Home', playerInput);
 		moveToStart(field, shiftDown);
 	}
 
-	if (shouldRepeatKeyFromPlayer('End')) {
-		consumeIdeKey('End');
+	if (shouldRepeatKeyFromPlayer('End', playerInput)) {
+		consumeIdeKey('End', playerInput);
 		moveToEnd(field, shiftDown);
 	}
 
-		if (allowSpace && !useCtrl && !metaDown && !altDown && shouldRepeatKeyFromPlayer('Space')) {
-			consumeIdeKey('Space');
+		if (allowSpace && !useCtrl && !metaDown && !altDown && shouldRepeatKeyFromPlayer('Space', playerInput)) {
+			consumeIdeKey('Space', playerInput);
 			if (maxLength === undefined) {
 				textChanged = insertValue(field, ' ') || textChanged;
 			} else {
@@ -557,17 +557,17 @@ export function applyInlineFieldEditing(
 	if (!useCtrl && !altDown) {
 		for (let i = 0; i < CHARACTER_CODES.length; i += 1) {
 			const code = CHARACTER_CODES[i];
-			if (!isKeyJustPressed(code)) {
+			if (!isKeyJustPressed(code, playerInput)) {
 				continue;
 			}
 			const entry = CHARACTER_MAP[code];
 			const value = shiftDown ? entry.shift : entry.normal;
 			if (value.length === 0) {
-				consumeIdeKey(code);
+				consumeIdeKey(code, playerInput);
 				continue;
 			}
 				if (characterFilter && !characterFilter(value)) {
-					consumeIdeKey(code);
+					consumeIdeKey(code, playerInput);
 					continue;
 				}
 				if (maxLength !== undefined) {
@@ -575,12 +575,12 @@ export function applyInlineFieldEditing(
 					const selectedLength = selectionLength(field);
 					const available = maxLength - (currentLength - selectedLength);
 					if (available <= 0) {
-						consumeIdeKey(code);
+						consumeIdeKey(code, playerInput);
 						continue;
 				}
 			}
 			textChanged = insertValue(field, value) || textChanged;
-			consumeIdeKey(code);
+			consumeIdeKey(code, playerInput);
 		}
 	}
 

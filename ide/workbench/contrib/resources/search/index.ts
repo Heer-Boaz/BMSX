@@ -4,7 +4,6 @@ import { renameController } from '../../../../editor/contrib/rename/controller';
 import { showEditorMessage } from '../../../../common/feedback_state';
 import { clearReferenceHighlights } from '../../../../editor/contrib/intellisense/engine';
 import { closeSearch } from '../../../../editor/contrib/find/search';
-import { openResource } from '../navigation';
 import { resetBlink } from '../../../../editor/render/caret';
 import { setFieldText } from '../../../../editor/ui/inline/text_field';
 import { closeSymbolSearch } from '../../../../editor/contrib/symbols/shared';
@@ -62,7 +61,6 @@ export function focusEditorFromResourceSearch(): void {
 
 export function applyResourceSearchSelection(
 	editor: CartEditor,
-	sources: RuntimeSourceState,
 	index: number,
 ): void {
 	if (index < 0 || index >= resourceSearchState.matches.length) {
@@ -72,7 +70,7 @@ export function applyResourceSearchSelection(
 	const match = resourceSearchState.matches[index];
 	closeResourceSearch(true);
 	scheduleMicrotask(() => {
-		openResource(editor, sources, match.entry.resource);
+		editor.navigation.openResource(match.entry.resource);
 	});
 }
 

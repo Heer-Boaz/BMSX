@@ -1,5 +1,4 @@
-import { machineManager } from '../../machine/ts/core/machine_manager';
-import type { HttpResponse, StorageService } from '../../machine/ts/platform/platform';
+import type { HostClock, HttpResponse, StorageService } from '../../machine/ts/platform/platform';
 import { joinWorkspacePaths } from './path';
 
 export const WORKSPACE_FILE_ENDPOINT = '/__bmsx__/lua';
@@ -32,8 +31,8 @@ export function buildWorkspaceStorageKey(projectRootPath: string, relativePath: 
 	return `${WORKSPACE_STORAGE_PREFIX}:${projectRootPath}:${relativePath}`;
 }
 
-export function createWorkspaceRecord(contents: string): WorkspaceRecord {
-	const clockTimestamp = machineManager.platform.clock.dateNow();
+export function createWorkspaceRecord(clock: HostClock, contents: string): WorkspaceRecord {
+	const clockTimestamp = clock.dateNow();
 	lastWorkspaceRecordTimestamp = clockTimestamp > lastWorkspaceRecordTimestamp
 		? clockTimestamp
 		: lastWorkspaceRecordTimestamp + 1;
@@ -223,6 +222,7 @@ export function deleteRemoteWorkspaceRecord(relativePath: string): Promise<void>
 
 export async function openWorkspaceRecords(
 	storage: StorageService,
+	clock: HostClock,
 	projectRootPath: string,
 ): Promise<void> {
 	const markerPath = joinWorkspacePaths(
@@ -230,7 +230,7 @@ export async function openWorkspaceRecords(
 		WORKSPACE_METADATA_DIR,
 		WORKSPACE_MARKER_FILE,
 	);
-	const marker = createWorkspaceRecord('');
+	const marker = createWorkspaceRecord(clock, '');
 	writeLocalWorkspaceRecord(storage, projectRootPath, markerPath, marker);
 	try {
 		await writeRemoteWorkspaceRecord(markerPath, marker);
@@ -245,14 +245,17 @@ export function closeWorkspaceRecords(): void {
 	workspaceRecordState.connected = false;
 }
 
-export async function reconnectWorkspaceRecords(projectRootPath: string): Promise<void> {
+export async function reconnectWorkspaceRecords(
+	clock: HostClock,
+	projectRootPath: string,
+): Promise<void> {
 	const markerPath = joinWorkspacePaths(
 		projectRootPath,
 		WORKSPACE_METADATA_DIR,
 		WORKSPACE_MARKER_FILE,
 	);
 	try {
-		await writeRemoteWorkspaceRecord(markerPath, createWorkspaceRecord(''));
+		await writeRemoteWorkspaceRecord(markerPath, createWorkspaceRecord(clock, ''));
 		await syncPendingRemoteWorkspaceRecords();
 		workspaceRecordState.connected = true;
 	} catch (error) {

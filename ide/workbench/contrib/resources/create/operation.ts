@@ -1,5 +1,4 @@
 import type { RuntimeSourceState } from '../../../../runtime/sources';
-import type { ResourcePanelController } from '../panel/controller';
 import * as constants from '../../../../common/constants';
 import { showEditorMessage } from '../../../../common/feedback_state';
 import { resetBlink } from '../../../../editor/render/caret';
@@ -8,11 +7,19 @@ import { createLuaResource } from '../../../../workspace/workspace';
 import { extractErrorMessage } from '../../../../language/lua/interpreter/value';
 import { applyCreateResourceFieldText, closeCreateResourcePrompt, ensureDirectorySuffix } from './index';
 import { createResourceState } from '../widget_state';
+import type { CartEditor } from '../../../../cart_editor';
+import type {
+	HostClock,
+	StorageService,
+} from '../../../../../machine/ts/platform/platform';
 
 export async function confirmCreateResourcePrompt(
+	storage: StorageService,
+	clock: HostClock,
+	editor: CartEditor,
 	sources: RuntimeSourceState,
-	resourcePanel: ResourcePanelController,
 ): Promise<void> {
+	const resourcePanel = editor.resourcePanel;
 	if (createResourceState.working) {
 		return;
 	}
@@ -35,7 +42,12 @@ export async function confirmCreateResourcePrompt(
 	resetBlink();
 	const contents = constants.DEFAULT_NEW_LUA_RESOURCE_CONTENT;
 	try {
-		const resource = await createLuaResource(sources, { path: resourcePath, contents });
+		const resource = await createLuaResource(
+			storage,
+			clock,
+			sources,
+			{ path: resourcePath, contents },
+		);
 		createResourceState.lastDirectory = directory;
 		resourcePanel.queuePendingSelection(resource);
 		if (resourcePanel.isVisible()) {

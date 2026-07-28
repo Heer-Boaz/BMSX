@@ -20,8 +20,10 @@ import {
 	type PersistedDirtyEntry,
 	type WorkspaceAutosavePayload,
 } from './models';
+import type { StorageService } from '../../../machine/ts/platform/platform';
 
 export async function applyWorkspaceAutosavePayload(
+	storage: StorageService,
 	editor: CartEditor,
 	sources: RuntimeSourceState,
 	debuggerState: RuntimeDebuggerState,
@@ -30,12 +32,13 @@ export async function applyWorkspaceAutosavePayload(
 	clearCodeTabContexts();
 	initializeTabs(createEntryTabContext(sources));
 	editor.setFontVariant(payload.fontVariant);
-	await openDirtyFileTabs(editor, sources, payload.dirtyFiles);
+	await openDirtyFileTabs(storage, editor, sources, payload.dirtyFiles);
 	hydrateDirtyFiles(sources, payload.dirtyFiles);
 	restoreBreakpointsFromPayload(debuggerState, payload.breakpoints);
 }
 
 async function openDirtyFileTabs(
+	storage: StorageService,
 	editor: CartEditor,
 	sources: RuntimeSourceState,
 	entries: PersistedDirtyEntry[],
@@ -46,7 +49,7 @@ async function openDirtyFileTabs(
 			throw new Error(`Workspace resource '${entry.path}' is not installed for domain '${entry.domain}'.`);
 		}
 		if (!findCodeTabContext(resource)) {
-			await openCodeTabForResource(editor.resourcePanel, sources, resource);
+			await openCodeTabForResource(storage, editor, sources, resource);
 		}
 	}
 }
