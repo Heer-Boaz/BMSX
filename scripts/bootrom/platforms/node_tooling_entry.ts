@@ -5,12 +5,12 @@ import {
 	prepareWorkbenchRuntime,
 	startWorkbenchHostFrames,
 } from '../../../ide/workbench/machine_runtime';
-import type { RuntimeIdeState } from '../../../ide/runtime/state';
 import { createHeadlessIdeHarness } from '../../../ide/testing/headless_harness';
 import {
 	machineManager,
 	type MachineInitializationOptions,
 } from '../../../machine/ts/core/machine_manager';
+import type { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import {
 	HEADLESS_DEFAULT_FRAME_INTERVAL_MS,
 	HeadlessPlatformServices,
@@ -20,6 +20,16 @@ import {
 	startMachineHostFrames,
 } from '../../../runtime/machine_runtime';
 import { CpuProfilerSession, formatCpuProfilerReport } from '../cpu_profiler';
+import {
+	loadBlua32ToolingImage,
+	type Blua32ToolingImage,
+} from '../../../machine/ts/rompack/tooling/blua32_media';
+import { RomSourceStack } from '../../../machine/ts/rompack/source';
+import {
+	CART_ROM_BASE,
+	SYSTEM_ROM_BASE,
+} from '../../../machine/ts/spec/bmsx/memory_map';
+import { startCpuProfileHostFrames } from './cpu_profile_frame';
 import {
 	HeadlessCaptureCoordinator,
 	deriveHeadlessCaptureOutputDir,
@@ -95,15 +105,43 @@ async function main(): Promise<void> {
 	console.log(`[bootrom:headless] TTL set to ${options.ttlMs}ms.`);
 
 	let profile: {
-		ide: RuntimeIdeState;
+		runtime: Runtime;
 		session: CpuProfilerSession;
 	} | null = null;
 	if (options.cpuProfile) {
-		installNodeWorkspaceBridge(path.resolve(path.dirname(options.romPath), '..'));
-		const ide = await prepareWorkbenchRuntime(bootOptions);
-		const session = new CpuProfilerSession(machineManager.runtime.machine.cpu, ide.sources);
-		session.enable();
-		profile = { ide, session };
+		const initialized = await prepareMachineRuntime(bootOptions);
+		const systemLayer = initialized.systemLayer;
+		const systemSource = new RomSourceStack([{
+			id: systemLayer.id,
+			index: systemLayer.index,
+			payload: systemLayer.payload,
+		}]);
+		const cartridgeImages: [Blua32ToolingImage | null, Blua32ToolingImage | null] = [null, null];
+		for (let slot = 0; slot < initialized.cartridgeLayers.length; slot += 1) {
+			const cartridgeLayer = initialized.cartridgeLayers[slot];
+			if (!cartridgeLayer) {
+				continue;
+			}
+			const cartridgeSource = new RomSourceStack([{
+				id: cartridgeLayer.id,
+				index: cartridgeLayer.index,
+				payload: cartridgeLayer.payload,
+			}]);
+			cartridgeImages[slot] = loadBlua32ToolingImage(
+				cartridgeLayer,
+				cartridgeSource,
+				CART_ROM_BASE,
+			);
+		}
+		const session = new CpuProfilerSession({
+			system: loadBlua32ToolingImage(
+				systemLayer,
+				systemSource,
+				SYSTEM_ROM_BASE,
+			),
+			cartridgeSlots: cartridgeImages,
+		});
+		profile = { runtime: initialized.runtime, session };
 		console.log('[bootrom:headless] Fantasy CPU profiler enabled.');
 	}
 
@@ -141,7 +179,7 @@ async function main(): Promise<void> {
 				);
 				let passed = false;
 				try {
-					const runtime = await prepareMachineRuntime(bootOptions);
+					const { runtime } = await prepareMachineRuntime(bootOptions);
 					startMachineHostFrames(runtime);
 					await new HostTestRunner({
 						testPath: options.mode.path,
@@ -180,9 +218,9 @@ async function main(): Promise<void> {
 						inputLogger,
 					);
 					if (profile) {
-						startWorkbenchHostFrames(profile.ide);
+						startCpuProfileHostFrames(profile.runtime, profile.session);
 					} else {
-						const runtime = await prepareMachineRuntime(bootOptions);
+						const { runtime } = await prepareMachineRuntime(bootOptions);
 						startMachineHostFrames(runtime);
 					}
 					await Promise.race([
@@ -203,9 +241,9 @@ async function main(): Promise<void> {
 			}
 			case 'plain': {
 				if (profile) {
-					startWorkbenchHostFrames(profile.ide);
+					startCpuProfileHostFrames(profile.runtime, profile.session);
 				} else {
-					const runtime = await prepareMachineRuntime(bootOptions);
+					const { runtime } = await prepareMachineRuntime(bootOptions);
 					startMachineHostFrames(runtime);
 				}
 				await new Promise<void>((resolve) => {

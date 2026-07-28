@@ -1,14 +1,15 @@
 import { BASE_CYCLES, OPCODE_COUNT, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { OPCODE_CATEGORY, OPCODE_NAMES } from '../../machine/ts/rompack/tooling/opcode_metadata';
-import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
-import type { CPU, CpuExecutionObserver } from '../../machine/ts/machine/cpu/cpu';
+import {
+	INSTRUCTION_BYTES,
+	readInstructionWord,
+} from '../../machine/ts/spec/blua32/instruction_format';
 import type { ExecutionDomainId } from '../../machine/ts/machine/execution_address_space';
 import type { SourceRange } from '../../machine/ts/rompack/tooling/blua32_symbols';
 import {
 	blua32ToolingImageForDomain,
 	type Blua32ToolingMedia,
 } from '../../machine/ts/rompack/tooling/blua32_media';
-import type { RuntimeSourceState } from '../../ide/runtime/sources';
 
 export type CpuProfilerSnapshot = {
 	totalInstructions: number;
@@ -179,33 +180,21 @@ function collectTopOpcodesFromCounts(counts: Uint32Array, totalInstructions: num
 	return rows.slice(0, limit);
 }
 
-export class CpuProfilerSession implements CpuExecutionObserver {
+export class CpuProfilerSession {
 	private totalInstructions = 0;
 	private readonly opcodeCounts = new Uint32Array(OPCODE_COUNT);
-	private pcCounts!: Uint32Array;
-	private pcByWord!: Uint32Array;
-	private opcodeByWord!: Uint8Array;
-	private functionByWord!: Int32Array;
-	private functionIds!: string[];
-	private debugRanges!: Array<SourceRange | null>;
+	private readonly pcCounts: Uint32Array;
+	private readonly pcByWord: Uint32Array;
+	private readonly opcodeByWord: Uint8Array;
+	private readonly functionByWord: Int32Array;
+	private readonly functionIds: string[];
+	private readonly debugRanges: Array<SourceRange | null>;
+	private readonly instructionWordByLastWord: Int32Array;
 	private readonly wordBaseByDomain = new Int32Array(PROFILE_EXECUTION_DOMAINS.length);
 	private readonly textAddressByDomain = new Uint32Array(PROFILE_EXECUTION_DOMAINS.length);
 	private readonly functionBaseByDomain = new Int32Array(PROFILE_EXECUTION_DOMAINS.length);
-	private media: Blua32ToolingMedia;
 
-	public constructor(
-		private readonly cpu: CPU,
-		private readonly sources: RuntimeSourceState,
-	) {
-		this.media = sources.currentBlua32Media;
-		this.configureMedia(this.media);
-	}
-
-	private configureMedia(media: Blua32ToolingMedia): void {
-		this.media = media;
-		this.wordBaseByDomain.fill(0);
-		this.textAddressByDomain.fill(0);
-		this.functionBaseByDomain.fill(0);
+	public constructor(media: Blua32ToolingMedia) {
 		let instructionWordCount = 0;
 		let functionCount = 0;
 		for (let domainIndex = 0; domainIndex < PROFILE_EXECUTION_DOMAINS.length; domainIndex += 1) {
@@ -225,6 +214,8 @@ export class CpuProfilerSession implements CpuExecutionObserver {
 		this.opcodeByWord = new Uint8Array(instructionWordCount);
 		this.functionByWord = new Int32Array(instructionWordCount);
 		this.functionByWord.fill(-1);
+		this.instructionWordByLastWord = new Int32Array(instructionWordCount);
+		this.instructionWordByLastWord.fill(-1);
 		this.functionIds = new Array<string>(functionCount);
 		this.debugRanges = new Array<SourceRange | null>(instructionWordCount).fill(null);
 		for (let domainIndex = 0; domainIndex < PROFILE_EXECUTION_DOMAINS.length; domainIndex += 1) {
@@ -238,6 +229,21 @@ export class CpuProfilerSession implements CpuExecutionObserver {
 			const wordCount = image.layout.header.textByteCount / INSTRUCTION_BYTES;
 			for (let localWord = 0; localWord < wordCount; localWord += 1) {
 				this.pcByWord[wordBase + localWord] = image.layout.header.textAddress + localWord * INSTRUCTION_BYTES;
+			}
+			let localWord = 0;
+			while (localWord < wordCount) {
+				const instructionWord = wordBase + localWord;
+				const opcode = (readInstructionWord(image.layout.textBytes, localWord) >>> 18) & 0x3f;
+				if (opcode === OpCode.WIDE && localWord + 1 < wordCount) {
+					this.instructionWordByLastWord[instructionWord + 1] = instructionWord;
+					this.opcodeByWord[instructionWord] =
+						(readInstructionWord(image.layout.textBytes, localWord + 1) >>> 18) & 0x3f;
+					localWord += 2;
+					continue;
+				}
+				this.instructionWordByLastWord[instructionWord] = instructionWord;
+				this.opcodeByWord[instructionWord] = opcode;
+				localWord += 1;
 			}
 			for (let functionIndex = 0; functionIndex < image.layout.functions.length; functionIndex += 1) {
 				const fn = image.layout.functions[functionIndex];
@@ -257,45 +263,20 @@ export class CpuProfilerSession implements CpuExecutionObserver {
 				}
 			}
 		}
-		this.resetCounters();
 	}
 
-	private resetCounters(): void {
-		this.totalInstructions = 0;
-		this.opcodeCounts.fill(0);
-		this.pcCounts.fill(0);
-	}
-
-	public enable(): void {
-		if (this.media !== this.sources.currentBlua32Media) {
-			this.configureMedia(this.sources.currentBlua32Media);
-		} else {
-			this.resetCounters();
-		}
-		this.cpu.setExecutionObserver(this);
-	}
-
-	public disable(): void {
-		this.cpu.setExecutionObserver(null);
-	}
-
-	public onInstruction(executionDomainId: ExecutionDomainId, pc: number, opcode: number): void {
-		if (this.media !== this.sources.currentBlua32Media) {
-			this.configureMedia(this.sources.currentBlua32Media);
-		}
+	public recordInstruction(executionDomainId: ExecutionDomainId, lastPc: number): void {
 		const domainIndex = executionDomainId + 1;
-		const wordIndex = this.wordBaseByDomain[domainIndex]
-			+ (pc - this.textAddressByDomain[domainIndex]) / INSTRUCTION_BYTES;
+		const lastWord = this.wordBaseByDomain[domainIndex]
+			+ (lastPc - this.textAddressByDomain[domainIndex]) / INSTRUCTION_BYTES;
+		const wordIndex = this.instructionWordByLastWord[lastWord];
+		const opcode = this.opcodeByWord[wordIndex];
 		this.totalInstructions += 1;
 		this.opcodeCounts[opcode] += 1;
 		this.pcCounts[wordIndex] += 1;
-		this.opcodeByWord[wordIndex] = opcode;
 	}
 
 	public snapshot(): CpuProfilerSnapshot {
-		if (this.media !== this.sources.currentBlua32Media) {
-			this.configureMedia(this.sources.currentBlua32Media);
-		}
 		return {
 			totalInstructions: this.totalInstructions,
 			totalBaseCycles: sumBaseCycles(this.opcodeCounts),

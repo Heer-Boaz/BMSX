@@ -2942,11 +2942,19 @@ dirty-record indexing and transfer when the retained map is already remote.
 Remote failure leaves the local commit authoritative, schedules reconnect, and
 does not abort editor shutdown or workspace reconfiguration.
 
-Instruction profiling is an opt-in Node tooling-host feature. Its TypeScript session
-attaches a raw execution observer only while `--cpu-profile` is active and owns
-all counters, symbols, and report formatting outside the machine. The native
-runtime has no profiler consumer and therefore exposes no dormant observer
-interface or per-instruction observer branch.
+Instruction profiling is an opt-in Node tooling-host feature. The TypeScript
+tool loads immutable BLua32 symbol media directly from the boot ROM layers and
+drives the same scheduler-safe single-instruction boundary exposed by both
+machine runtimes. After each executed scheduler quantum it reads only the CPU's
+raw last-domain and last-PC latches; retained tooling arrays map those words to
+predecoded opcodes, functions and source ranges. The normal TypeScript and C++
+CPU loops contain no profiler state, observer interface, host callback or
+per-instruction observer branch. Profiling does not initialize Studio or IDE
+source state, and the native runtime needs no report-formatting consumer. The
+step boundary retains the in-flight coarse scheduler budget between calls so
+device events observe the same frame state as an uninterrupted run; that
+transient executor latch is reset at boot and state-restore boundaries and is
+not serialized.
 
 ## Host presentation and frontend lifecycle
 

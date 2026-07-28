@@ -15,7 +15,7 @@ async function startBrowserPlayer(): Promise<void> {
 			systemRomPath,
 			document.body.dataset.defaultRom,
 		);
-		const runtime = await prepareMachineRuntime(options);
+		const { runtime } = await prepareMachineRuntime(options);
 		startMachineHostFrames(runtime);
 		completeBrowserBoot();
 	} catch (error) {

@@ -29,6 +29,11 @@ void dispatchRuntimeTimer(Runtime& runtime, uint8_t kind, uint8_t payload) {
 
 } // namespace
 
+void CpuExecutionState::reset() {
+	m_sliceCycleBudgetRemaining = 0;
+	m_instructionRunActive = false;
+}
+
 bool CpuExecutionState::runStoppedCpu(Runtime& runtime, FrameState& frameState) {
 	auto& cpu = runtime.machine.cpu;
 	auto& gxGpu = runtime.machine.gxGpu;
@@ -85,11 +90,81 @@ bool CpuExecutionState::runStoppedCpu(Runtime& runtime, FrameState& frameState) 
 }
 
 RunResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState& frameState) {
+	RunResult result = RunResult::Yielded;
+	auto& cpu = runtime.machine.cpu;
+	m_instructionRunActive = false;
+	m_sliceCycleBudgetRemaining = frameState.cycleBudgetRemaining;
+	bool running = true;
+	while (running) {
+		switch (runSlice(runtime, frameState, MAX_CPU_SLICE_CYCLES)) {
+			case CpuSliceResult::Advanced:
+				continue;
+			case CpuSliceResult::InstructionYielded:
+				result = RunResult::Yielded;
+				continue;
+			case CpuSliceResult::InstructionHalted:
+				result = RunResult::Halted;
+				if (cpu.isMemoryWriteBlocked()) {
+					continue;
+				}
+				running = false;
+				continue;
+			case CpuSliceResult::Halted:
+				result = RunResult::Halted;
+				running = false;
+				continue;
+			case CpuSliceResult::Blocked:
+				running = false;
+				continue;
+		}
+	}
+	frameState.cycleBudgetRemaining = m_sliceCycleBudgetRemaining;
+	return result;
+}
+
+InstructionStepResult CpuExecutionState::runInstruction(Runtime& runtime, FrameState& frameState) {
+	if (!m_instructionRunActive) {
+		m_sliceCycleBudgetRemaining = frameState.cycleBudgetRemaining;
+		m_instructionRunActive = true;
+	}
+	const CpuSliceResult result = runSlice(runtime, frameState, 1);
+	auto& cpu = runtime.machine.cpu;
+	const bool runCompleted = result == CpuSliceResult::Advanced
+		|| result == CpuSliceResult::Blocked
+		|| result == CpuSliceResult::Halted
+		|| (result == CpuSliceResult::InstructionHalted && !cpu.isMemoryWriteBlocked())
+		|| m_sliceCycleBudgetRemaining <= 0
+		|| runtime.vblank.tickCompleted()
+		|| runtime.machine.gxGpu.backendReadbackBlocksMachine()
+		|| runtime.machine.systemController.cpuHeld()
+		|| cpu.isHaltedUntilIrq();
+	if (runCompleted) {
+		frameState.cycleBudgetRemaining = m_sliceCycleBudgetRemaining;
+		m_instructionRunActive = false;
+	}
+	switch (result) {
+		case CpuSliceResult::Advanced:
+			return InstructionStepResult::Advanced;
+		case CpuSliceResult::InstructionYielded:
+		case CpuSliceResult::InstructionHalted:
+			return InstructionStepResult::Executed;
+		case CpuSliceResult::Blocked:
+		case CpuSliceResult::Halted:
+			return InstructionStepResult::Blocked;
+	}
+	__builtin_unreachable();
+}
+
+CpuExecutionState::CpuSliceResult CpuExecutionState::runSlice(
+	Runtime& runtime,
+	FrameState& frameState,
+	int maximumCpuCycles
+) {
 	auto& machine = runtime.machine;
 	auto& scheduler = machine.scheduler;
 	auto& cpu = machine.cpu;
-	i64 remaining = frameState.cycleBudgetRemaining;
-	RunResult result = RunResult::Yielded;
+	i64 remaining = m_sliceCycleBudgetRemaining;
+	bool advanced = scheduler.hasDueTimer();
 	bool tickCompleted = runDueRuntimeTimers(runtime);
 	while (remaining > 0
 		&& !tickCompleted
@@ -99,6 +174,7 @@ RunResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState& frameSt
 			const i64 nextDeadline = scheduler.nextDeadline();
 			const i64 deadlineBudget = nextDeadline - scheduler.nowCycles();
 			if (deadlineBudget <= 0) {
+				advanced = scheduler.hasDueTimer() || advanced;
 				tickCompleted = runDueRuntimeTimers(runtime);
 				continue;
 			}
@@ -109,16 +185,18 @@ RunResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState& frameSt
 			const int waitCycles = static_cast<int>(waitBudget);
 			remaining -= waitCycles;
 			frameState.activeCpuUsedCycles += waitCycles;
+			advanced = true;
 			tickCompleted = advanceRuntimeTime(runtime, waitCycles);
 			continue;
 		}
-		int sliceBudget = static_cast<int>(remaining > MAX_CPU_SLICE_CYCLES
-			? MAX_CPU_SLICE_CYCLES
+		int sliceBudget = static_cast<int>(remaining > maximumCpuCycles
+			? maximumCpuCycles
 			: remaining);
 		const i64 nextDeadline = scheduler.nextDeadline();
 		if (nextDeadline != std::numeric_limits<i64>::max()) {
 			const i64 deadlineBudget = nextDeadline - scheduler.nowCycles();
 			if (deadlineBudget <= 0) {
+				advanced = scheduler.hasDueTimer() || advanced;
 				tickCompleted = runDueRuntimeTimers(runtime);
 				continue;
 			}
@@ -126,6 +204,7 @@ RunResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState& frameSt
 				sliceBudget = static_cast<int>(deadlineBudget);
 			}
 		}
+		RunResult result;
 		scheduler.beginCpuSlice(sliceBudget);
 		try {
 			result = cpu.runUntilDepth(0, sliceBudget);
@@ -138,20 +217,32 @@ RunResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState& frameSt
 		if (consumed > 0) {
 			remaining -= consumed;
 			frameState.activeCpuUsedCycles += consumed;
+			advanced = true;
 			tickCompleted = advanceRuntimeTime(runtime, consumed);
 		}
 		if (cpu.isMemoryWriteBlocked()) {
+			if (consumed > 0) {
+				m_sliceCycleBudgetRemaining = remaining;
+				return result == RunResult::Halted
+					? CpuSliceResult::InstructionHalted
+					: CpuSliceResult::InstructionYielded;
+			}
 			continue;
 		}
+		if (consumed > 0) {
+			m_sliceCycleBudgetRemaining = remaining;
+			return result == RunResult::Halted
+				? CpuSliceResult::InstructionHalted
+				: CpuSliceResult::InstructionYielded;
+		}
 		if (cpu.isHaltedUntilIrq() || result == RunResult::Halted) {
-			break;
+			m_sliceCycleBudgetRemaining = remaining;
+			return advanced ? CpuSliceResult::Advanced : CpuSliceResult::Halted;
 		}
-		if (consumed <= 0) {
-			throw BMSX_RUNTIME_ERROR("CPU yielded without consuming cycles.");
-		}
+		throw BMSX_RUNTIME_ERROR("CPU yielded without consuming cycles.");
 	}
-	frameState.cycleBudgetRemaining = remaining;
-	return result;
+	m_sliceCycleBudgetRemaining = remaining;
+	return advanced ? CpuSliceResult::Advanced : CpuSliceResult::Blocked;
 }
 
 bool advanceRuntimeTime(Runtime& runtime, int cycles) {

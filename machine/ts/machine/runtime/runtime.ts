@@ -99,6 +99,7 @@ export class Runtime {
 	}
 
 	public resetForSystemBoot(): void {
+		this.cpuExecution.reset();
 		this.frameLoop.resetFrameState();
 		this.luaRuntimeFailed = false;
 		this.luaInitialized = false;

@@ -34,6 +34,26 @@ i64 FrameSchedulerState::takeScheduledCycleBudget(const Runtime& runtime) {
 	return budget;
 }
 
+bool FrameSchedulerState::beginHostExecution(Runtime& runtime, f64 hostDeltaMs) {
+	if (runtime.machine.gxGpu.backendReadbackBlocksMachine()) {
+		m_backendServiceSuspended = true;
+		return false;
+	}
+	if (m_backendServiceSuspended) {
+		// Backend submission/mapping latency is host time, not machine time.
+		m_backendServiceSuspended = false;
+		hostDeltaMs = 0.0;
+	}
+	accumulateHostTime(hostDeltaMs);
+	return true;
+}
+
+void FrameSchedulerState::endHostExecution(Runtime& runtime) {
+	if (runtime.machine.gxGpu.backendReadbackBlocksMachine()) {
+		m_backendServiceSuspended = true;
+	}
+}
+
 void FrameSchedulerState::clearQueuedTime() {
 	m_accumulatedHostTimeMs = 0.0;
 	m_carriedCycleBudget = 0;
@@ -150,26 +170,27 @@ bool FrameSchedulerState::startScheduledFrame(Runtime& runtime) {
 }
 
 void FrameSchedulerState::run(Runtime& runtime, f64 hostDeltaMs) {
-	if (runtime.machine.gxGpu.backendReadbackBlocksMachine()) {
-		m_backendServiceSuspended = true;
+	if (!beginHostExecution(runtime, hostDeltaMs)) {
 		return;
 	}
-	if (m_backendServiceSuspended) {
-		// Backend submission/mapping latency is host time, not machine time. Resume
-		// the in-flight machine frame without turning that latency into catch-up.
-		m_backendServiceSuspended = false;
-		hostDeltaMs = 0.0;
-	}
-	accumulateHostTime(hostDeltaMs);
 	while (canRunScheduledUpdate(runtime)) {
 		const bool progressed = runtime.frameLoop.tickUpdate(runtime);
 		if (runtime.frameLoop.frameActive && !progressed) {
 			break;
 		}
 	}
-	if (runtime.machine.gxGpu.backendReadbackBlocksMachine()) {
-		m_backendServiceSuspended = true;
+	endHostExecution(runtime);
+}
+
+InstructionStepResult FrameSchedulerState::stepInstruction(Runtime& runtime, f64 hostDeltaMs) {
+	if (!beginHostExecution(runtime, hostDeltaMs)) {
+		return InstructionStepResult::Blocked;
 	}
+	const InstructionStepResult result = canRunScheduledUpdate(runtime)
+		? runtime.frameLoop.tickInstruction(runtime)
+		: InstructionStepResult::Blocked;
+	endHostExecution(runtime);
+	return result;
 }
 
 } // namespace bmsx

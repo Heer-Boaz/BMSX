@@ -1122,13 +1122,14 @@
 		},
 		{
 			"present": [
-				"scripts/bootrom/cpu_profiler.ts"
+				"scripts/bootrom/cpu_profiler.ts",
+				"scripts/bootrom/platforms/cpu_profile_frame.ts"
 			],
 			"absent": [
 				"machine/cpp/machine/cpu/profiler.h",
 				"machine/cpp/machine/cpu/profiler.cpp"
 			],
-			"reason": "cpu_profiler_is_an_opt_in_ts_host_feature_without_a_native_runtime_mirror"
+			"reason": "node_cpu_profile_tooling_consumes_the_mirrored_scheduler_step_boundary_without_a_machine_profiler"
 		}
 	],
 	"strict_file_pair_parity": [

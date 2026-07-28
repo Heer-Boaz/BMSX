@@ -59,7 +59,7 @@ async function main(): Promise<void> {
 		options.slot1Path ? fs.readFile(path.resolve(options.slot1Path)) : Promise.resolve(null),
 	]);
 	const platform = createPlatform(options.frameIntervalMs);
-	const runtime = await prepareMachineRuntime({
+	const { runtime } = await prepareMachineRuntime({
 		systemRom,
 		cartridgeSlots: [slot0Rom, slot1Rom],
 		debug,

@@ -284,6 +284,7 @@ void Runtime::enterFaultState() {
 
 
 void Runtime::resetForSystemBoot() {
+	cpuExecution.reset();
 	frameLoop.resetFrameState(*this);
 	m_runtimeFailed = false;
 	m_luaInitialized = false;

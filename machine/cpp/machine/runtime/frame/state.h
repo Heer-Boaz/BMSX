@@ -1,6 +1,16 @@
 #pragma once
 
+#include "common/primitives.h"
+
+#include <cstdint>
+
 namespace bmsx {
+
+enum class InstructionStepResult : uint8_t {
+	Blocked,
+	Advanced,
+	Executed,
+};
 
 struct FrameState {
 	bool updateExecuted = false;

@@ -20,6 +20,7 @@ export function captureRuntimeMachineState(runtime: Runtime): RuntimeMachineStat
 }
 
 export function applyRuntimeMachineState(runtime: Runtime, state: RuntimeMachineState): void {
+	runtime.cpuExecution.reset();
 	runtime.frameScheduler.reset();
 	runtime.frameLoop.reset();
 	runtime.machine.scheduler.reset();

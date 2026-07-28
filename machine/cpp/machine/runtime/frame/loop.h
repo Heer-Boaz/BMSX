@@ -21,6 +21,7 @@ public:
 	void resetFrameState(Runtime& runtime);
 	void beginFrameState(Runtime& runtime, i64 budget, i64 carry);
 	bool tickUpdate(Runtime& runtime);
+	InstructionStepResult tickInstruction(Runtime& runtime);
 	void abandonFrameState(Runtime& runtime);
 
 	FrameState frameState;
@@ -29,8 +30,11 @@ public:
 	f64 currentTimeSeconds = 0.0;
 
 private:
+	bool prepareScheduledFrame(Runtime& runtime);
 	void runActiveFrameState(Runtime& runtime);
+	InstructionStepResult runActiveFrameInstruction(Runtime& runtime);
 	void runUpdatePhase(Runtime& runtime);
+	InstructionStepResult runUpdateInstruction(Runtime& runtime);
 	bool consumeSystemReset(Runtime& runtime);
 	void finalizeUpdateSlice(Runtime& runtime);
 };

@@ -4,13 +4,32 @@ import {
 	DEVICE_SERVICE_GPU,
 	TIMER_KIND_DEVICE_SERVICE,
 } from '../scheduler/device';
-import type { FrameState } from './frame/state';
+import {
+	InstructionStepResult,
+	type FrameState,
+} from './frame/state';
 import { Runtime } from './runtime';
 
 export const MAX_CPU_SLICE_CYCLES = 0x7fffffff;
 
+const enum CpuSliceResult {
+	Blocked,
+	Advanced,
+	InstructionYielded,
+	InstructionHalted,
+	Halted,
+}
+
 export class CpuExecutionState {
+	private sliceCycleBudgetRemaining = 0;
+	private instructionRunActive = false;
+
 	constructor(private readonly runtime: Runtime) {
+	}
+
+	public reset(): void {
+		this.sliceCycleBudgetRemaining = 0;
+		this.instructionRunActive = false;
 	}
 
 	public runStoppedCpu(state: FrameState): boolean {
@@ -69,13 +88,78 @@ export class CpuExecutionState {
 	}
 
 	public runWithBudget(state: FrameState): RunResult {
-		const runtime = this.runtime;
-		let remaining = state.cycleBudgetRemaining;
 		let result = RunResult.Yielded;
+		const cpu = this.runtime.machine.cpu;
+		this.instructionRunActive = false;
+		this.sliceCycleBudgetRemaining = state.cycleBudgetRemaining;
+		let running = true;
+		while (running) {
+			switch (this.runSlice(state, MAX_CPU_SLICE_CYCLES)) {
+				case CpuSliceResult.Advanced:
+					continue;
+				case CpuSliceResult.InstructionYielded:
+					result = RunResult.Yielded;
+					continue;
+				case CpuSliceResult.InstructionHalted:
+					result = RunResult.Halted;
+					if (cpu.isMemoryWriteBlocked()) {
+						continue;
+					}
+					running = false;
+					continue;
+				case CpuSliceResult.Halted:
+					result = RunResult.Halted;
+					running = false;
+					continue;
+				case CpuSliceResult.Blocked:
+					running = false;
+					continue;
+			}
+		}
+		state.cycleBudgetRemaining = this.sliceCycleBudgetRemaining;
+		return result;
+	}
+
+	public runInstruction(state: FrameState): InstructionStepResult {
+		if (!this.instructionRunActive) {
+			this.sliceCycleBudgetRemaining = state.cycleBudgetRemaining;
+			this.instructionRunActive = true;
+		}
+		const result = this.runSlice(state, 1);
+		const runtime = this.runtime;
+		const cpu = runtime.machine.cpu;
+		const runCompleted = result === CpuSliceResult.Advanced
+			|| result === CpuSliceResult.Blocked
+			|| result === CpuSliceResult.Halted
+			|| (result === CpuSliceResult.InstructionHalted && !cpu.isMemoryWriteBlocked())
+			|| this.sliceCycleBudgetRemaining <= 0
+			|| runtime.vblank.tickCompleted
+			|| runtime.machine.gxGpu.backendReadbackBlocksMachine()
+			|| runtime.machine.systemController.cpuHeld()
+			|| cpu.isHaltedUntilIrq();
+		if (runCompleted) {
+			state.cycleBudgetRemaining = this.sliceCycleBudgetRemaining;
+			this.instructionRunActive = false;
+		}
+		switch (result) {
+			case CpuSliceResult.Advanced:
+				return InstructionStepResult.Advanced;
+			case CpuSliceResult.InstructionYielded:
+			case CpuSliceResult.InstructionHalted:
+				return InstructionStepResult.Executed;
+			case CpuSliceResult.Blocked:
+			case CpuSliceResult.Halted:
+				return InstructionStepResult.Blocked;
+		}
+	}
+
+	private runSlice(state: FrameState, maximumCpuCycles: number): CpuSliceResult {
+		const runtime = this.runtime;
+		let remaining = this.sliceCycleBudgetRemaining;
 		const scheduler = runtime.machine.scheduler;
 		const cpu = runtime.machine.cpu;
+		let advanced = scheduler.hasDueTimer();
 		let tickCompleted = runDueRuntimeTimers(runtime);
-		// start repeated-sequence-acceptable -- CPU scheduler loop mirrors external-call scheduling without extracting a callback-heavy helper.
 		while (remaining > 0
 			&& !tickCompleted
 			&& !runtime.machine.gxGpu.backendReadbackBlocksMachine()
@@ -84,6 +168,7 @@ export class CpuExecutionState {
 				const nextDeadline = scheduler.nextDeadline();
 				const deadlineBudget = nextDeadline - scheduler.nowCycles;
 				if (deadlineBudget <= 0) {
+					advanced = scheduler.hasDueTimer() || advanced;
 					tickCompleted = runDueRuntimeTimers(runtime);
 					continue;
 				}
@@ -93,14 +178,16 @@ export class CpuExecutionState {
 				if (waitCycles > MAX_CPU_SLICE_CYCLES) waitCycles = MAX_CPU_SLICE_CYCLES;
 				remaining -= waitCycles;
 				state.activeCpuUsedCycles += waitCycles;
+				advanced = true;
 				tickCompleted = advanceRuntimeTime(runtime, waitCycles);
 				continue;
 			}
-			let sliceBudget = remaining > MAX_CPU_SLICE_CYCLES ? MAX_CPU_SLICE_CYCLES : remaining;
+			let sliceBudget = remaining > maximumCpuCycles ? maximumCpuCycles : remaining;
 			const nextDeadline = scheduler.nextDeadline();
 			if (nextDeadline !== Number.MAX_SAFE_INTEGER) {
 				const deadlineBudget = nextDeadline - scheduler.nowCycles;
 				if (deadlineBudget <= 0) {
+					advanced = scheduler.hasDueTimer() || advanced;
 					tickCompleted = runDueRuntimeTimers(runtime);
 					continue;
 				}
@@ -108,6 +195,7 @@ export class CpuExecutionState {
 					sliceBudget = deadlineBudget;
 				}
 			}
+			let result: RunResult;
 			scheduler.beginCpuSlice(sliceBudget);
 			try {
 				result = cpu.runUntilDepth(0, sliceBudget);
@@ -118,23 +206,33 @@ export class CpuExecutionState {
 			if (consumed > 0) {
 				remaining -= consumed;
 				state.activeCpuUsedCycles += consumed;
+				advanced = true;
 				tickCompleted = advanceRuntimeTime(runtime, consumed);
 			}
 			if (cpu.isMemoryWriteBlocked()) {
+				if (consumed > 0) {
+					this.sliceCycleBudgetRemaining = remaining;
+					return result === RunResult.Halted
+						? CpuSliceResult.InstructionHalted
+						: CpuSliceResult.InstructionYielded;
+				}
 				continue;
 			}
+			if (consumed > 0) {
+				this.sliceCycleBudgetRemaining = remaining;
+				return result === RunResult.Halted
+					? CpuSliceResult.InstructionHalted
+					: CpuSliceResult.InstructionYielded;
+			}
 			if (cpu.isHaltedUntilIrq() || result === RunResult.Halted) {
-				break;
+				this.sliceCycleBudgetRemaining = remaining;
+				return advanced ? CpuSliceResult.Advanced : CpuSliceResult.Halted;
 			}
-			if (consumed <= 0) {
-				throw new Error('CPU yielded without consuming cycles.');
-			}
+			throw new Error('CPU yielded without consuming cycles.');
 		}
-		// end repeated-sequence-acceptable
-		state.cycleBudgetRemaining = remaining;
-		return result;
+		this.sliceCycleBudgetRemaining = remaining;
+		return advanced ? CpuSliceResult.Advanced : CpuSliceResult.Blocked;
 	}
-
 }
 
 export function advanceRuntimeTime(runtime: Runtime, cycles: number): boolean {

@@ -3,7 +3,9 @@ import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { HostMenuInput, type HostOverlayMenu } from '../../runtime/host_overlay_menu';
 import {
 	beginMachineHostFrame,
-	MachineHostPresentation,
+	executeMachineHostUpdate,
+	MachineHostFrameAction,
+	type MachineHostPresentation,
 	prepareMachineHostPresentation,
 	presentMachineHostPresentation,
 } from '../../runtime/host_frame';
@@ -55,22 +57,22 @@ function runWorkbenchOverlay(
 
 function presentWorkbenchFrame(
 	ide: RuntimeIdeState,
-	presentation: MachineHostPresentation,
+	action: MachineHostPresentation,
 	screen: RenderPresentationState,
 	runtime: Runtime,
 	hostDeltaMs: number,
 ): void {
 	if (
-		presentation === MachineHostPresentation.Pending
+		action === MachineHostFrameAction.PresentPending
 		&& !screen.pending
 	) {
 		return;
 	}
-	if (presentation === MachineHostPresentation.Pending) {
+	if (action === MachineHostFrameAction.PresentPending) {
 		workbenchMode.tickIDEDraw(ide, runtime);
 	}
 	presentMachineHostPresentation(
-		presentation,
+		action,
 		screen,
 		runtime,
 		hostDeltaMs,
@@ -89,7 +91,7 @@ function presentWorkbenchError(
 	runWorkbenchOverlay(ide, screen, runtime);
 	presentWorkbenchFrame(
 		ide,
-		MachineHostPresentation.Pending,
+		MachineHostFrameAction.PresentPending,
 		screen,
 		runtime,
 		hostDeltaMs,
@@ -119,7 +121,7 @@ export function runWorkbenchHostFrame(
 			return;
 		}
 
-		let presentation: MachineHostPresentation;
+		let action: MachineHostFrameAction;
 		if (
 			hostMenuInput !== HostMenuInput.Active
 			&& ide.overlayRenderer.active
@@ -127,26 +129,29 @@ export function runWorkbenchHostFrame(
 			hostOverlayMenu.queueFrameOverlayCommands();
 			runWorkbenchOverlay(ide, screen, runtime);
 			manager.platform.microtasks.flush();
-			presentation = MachineHostPresentation.Pending;
+			action = MachineHostFrameAction.PresentPending;
 		} else {
 			const machineWillAdvance = (
 				hostMenuInput === HostMenuInput.Inactive
 				&& !manager.paused
 				&& runReady
 			);
-			presentation = prepareMachineHostPresentation(
+			action = prepareMachineHostPresentation(
 				screen,
 				hostOverlayMenu,
 				runtime,
-				hostDeltaMs,
 				runReady,
 				hostMenuInput,
 			);
+			if (action === MachineHostFrameAction.Execute) {
+				executeMachineHostUpdate(screen, runtime, hostDeltaMs);
+				action = MachineHostFrameAction.PresentPending;
+			}
 			if (machineWillAdvance) {
 				syncRuntimeSourceActivity(ide.sources, runtime.machine.cpu.activeCartridgeSlot());
 			}
 		}
-		presentWorkbenchFrame(ide, presentation, screen, runtime, hostDeltaMs);
+		presentWorkbenchFrame(ide, action, screen, runtime, hostDeltaMs);
 	} catch (error) {
 		workbenchMode.surfaceHostFrameError(ide, runtime, error);
 		presentWorkbenchError(ide, screen, runtime, hostDeltaMs);

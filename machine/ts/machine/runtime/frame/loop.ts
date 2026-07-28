@@ -1,4 +1,7 @@
-import type { FrameState } from './state';
+import {
+	InstructionStepResult,
+	type FrameState,
+} from './state';
 import { Runtime } from '../runtime';
 import { RunResult } from '../../cpu/cpu';
 
@@ -100,14 +103,8 @@ export class FrameLoopState {
 		const frameScheduler = runtime.frameScheduler;
 		const previousPendingEntry = runtime.pendingCall === 'entry';
 		const previousSequence = frameScheduler.lastTickSequence;
-		if (!this.frameActive) {
-			if (!frameScheduler.startScheduledFrame()) {
-				return false;
-			}
-		} else if (this.frameState.cycleBudgetRemaining <= 0) {
-			if (!frameScheduler.refillFrameBudget(this.frameState)) {
-				return false;
-			}
+		if (!this.prepareScheduledFrame()) {
+			return false;
 		}
 		this.runActiveFrameState();
 		if (this.frameActive
@@ -132,6 +129,31 @@ export class FrameLoopState {
 		return nextSequence !== previousSequence;
 	}
 
+	public tickInstruction(): InstructionStepResult {
+		const runtime = this.runtime;
+		if (this.consumeSystemReset()) {
+			return InstructionStepResult.Advanced;
+		}
+		const previousFrameActive = this.frameActive;
+		const previousRemaining = previousFrameActive ? this.frameState.cycleBudgetRemaining : -1;
+		const previousPendingEntry = runtime.pendingCall === 'entry';
+		const previousSequence = runtime.frameScheduler.lastTickSequence;
+		if (!this.prepareScheduledFrame()) {
+			return InstructionStepResult.Blocked;
+		}
+		const result = this.runActiveFrameInstruction();
+		if (result === InstructionStepResult.Executed) {
+			return result;
+		}
+		if (this.frameActive !== previousFrameActive
+			|| (this.frameActive && this.frameState.cycleBudgetRemaining !== previousRemaining)
+			|| ((runtime.pendingCall === 'entry') !== previousPendingEntry)
+			|| runtime.frameScheduler.lastTickSequence !== previousSequence) {
+			return InstructionStepResult.Advanced;
+		}
+		return result;
+	}
+
 	public abandonFrameState(): void {
 		this.frameActive = false;
 		const runtime = this.runtime;
@@ -147,6 +169,16 @@ export class FrameLoopState {
 		return true;
 	}
 
+	private prepareScheduledFrame(): boolean {
+		if (!this.frameActive) {
+			return this.runtime.frameScheduler.startScheduledFrame();
+		}
+		if (this.frameState.cycleBudgetRemaining <= 0) {
+			return this.runtime.frameScheduler.refillFrameBudget(this.frameState);
+		}
+		return true;
+	}
+
 	private runActiveFrameState(): void {
 		const runtime = this.runtime;
 		const state = this.frameState;
@@ -157,6 +189,18 @@ export class FrameLoopState {
 			return;
 		}
 		this.finalizeUpdateSlice();
+	}
+
+	private runActiveFrameInstruction(): InstructionStepResult {
+		const runtime = this.runtime;
+		if (runtime.pendingCall !== 'entry') {
+			this.finalizeUpdateSlice();
+			return InstructionStepResult.Advanced;
+		}
+		const result = this.runUpdateInstruction();
+		this.frameState.updateExecuted = runtime.pendingCall !== 'entry';
+		this.finalizeUpdateSlice();
+		return result;
 	}
 
 	private finalizeUpdateSlice(): void {
@@ -203,6 +247,42 @@ export class FrameLoopState {
 				}
 				return;
 			}
+		} catch (error) {
+			state.luaFaulted = true;
+			cpu.clearHaltUntilIrq();
+			runtime.pendingCall = null;
+			throw error;
+		}
+	}
+
+	private runUpdateInstruction(): InstructionStepResult {
+		const runtime = this.runtime;
+		const state = this.frameState;
+		const cpu = runtime.machine.cpu;
+		if (state.luaFaulted || runtime.luaRuntimeFailed) {
+			state.luaFaulted = true;
+			return InstructionStepResult.Blocked;
+		}
+		try {
+			if (cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld()) {
+				const previousRemaining = state.cycleBudgetRemaining;
+				const tickCompleted = runtime.cpuExecution.runStoppedCpu(state);
+				if (tickCompleted || cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld()) {
+					return tickCompleted || state.cycleBudgetRemaining !== previousRemaining
+						? InstructionStepResult.Advanced
+						: InstructionStepResult.Blocked;
+				}
+			}
+			if (runtime.pendingCall !== 'entry') {
+				return InstructionStepResult.Blocked;
+			}
+			const result = runtime.cpuExecution.runInstruction(state);
+			if (cpu.getFrameDepth() === 0) {
+				runtime.pendingCall = null;
+				runtime.frameScheduler.clearQueuedTime();
+				this.abandonFrameState();
+			}
+			return result;
 		} catch (error) {
 			state.luaFaulted = true;
 			cpu.clearHaltUntilIrq();

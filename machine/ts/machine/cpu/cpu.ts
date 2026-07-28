@@ -237,10 +237,6 @@ const enum TableIndexKeyKind {
 	Field,
 }
 
-export type CpuExecutionObserver = {
-	onInstruction(executionDomainId: ExecutionDomainId, pc: number, opcode: number): void;
-};
-
 // Pool constant for frame reuse
 const MAX_POOLED_FRAMES = 32;
 export class CPU {
@@ -280,7 +276,6 @@ export class CPU {
 	private readonly arrayBuiltinArgsScratch = new ScratchBuffer<ArrayBuiltinArgsView>(() => new ArrayBuiltinArgsView());
 	private arrayBuiltinArgsScratchIndex = 0;
 	private readonly builtinReturnScratch = new ScratchArrayStack<Value>();
-	private executionObserver: CpuExecutionObserver | null = null;
 	private readonly executionImages: Blua32ExecutionImage[] = [];
 	private systemImage!: Blua32ExecutionImage;
 	private activeExecutionImage!: Blua32ExecutionImage;
@@ -944,10 +939,6 @@ export class CPU {
 		return this.residentExecutionImage(executionDomainId) !== null;
 	}
 
-	public setExecutionObserver(observer: CpuExecutionObserver | null): void {
-		this.executionObserver = observer;
-	}
-
 	private decodeText(
 		executionDomainId: ExecutionDomainId,
 		textAddress: number,
@@ -1299,7 +1290,6 @@ export class CPU {
 	public runUntilDepth(targetDepth: number, instructionBudget: number): RunResult {
 		this.instructionBudgetRemaining = instructionBudget;
 		const frames = this.frames;
-		const executionObserver = this.executionObserver;
 		const baseCycles = BASE_CYCLES;
 		while (frames.length > targetDepth) {
 			try {
@@ -1338,9 +1328,6 @@ export class CPU {
 					frame.pc = pc + (width * INSTRUCTION_BYTES);
 					this.lastExecutionDomainId = image.executionDomainId;
 					this.lastPc = pc + ((width - 1) * INSTRUCTION_BYTES);
-					if (executionObserver) {
-						executionObserver.onInstruction(image.executionDomainId, pc, op);
-					}
 					this.instructionBudgetRemaining -= baseCycles[op];
 					this.executeInstruction(
 						frame,

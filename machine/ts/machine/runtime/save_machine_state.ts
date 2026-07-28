@@ -20,6 +20,7 @@ export function captureRuntimeSaveMachineState(runtime: Runtime): RuntimeSaveMac
 }
 
 export function applyRuntimeSaveMachineState(runtime: Runtime, state: RuntimeSaveMachineState): void {
+	runtime.cpuExecution.reset();
 	runtime.frameScheduler.reset();
 	runtime.frameLoop.reset();
 	runtime.machine.scheduler.reset();

@@ -5,10 +5,15 @@ import type { RenderPresentationState } from './presentation_state';
 
 const MAX_HOST_FRAME_DELTA_MS = 250;
 
-export const enum MachineHostPresentation {
-	Pending,
-	Paused,
+export const enum MachineHostFrameAction {
+	Execute,
+	PresentPending,
+	PresentPaused,
 }
+
+export type MachineHostPresentation =
+	| MachineHostFrameAction.PresentPending
+	| MachineHostFrameAction.PresentPaused;
 
 function rebootMachine(runtime: Runtime): void {
 	runtime.rebootSystem();
@@ -16,7 +21,7 @@ function rebootMachine(runtime: Runtime): void {
 	machineManager.bootstrapStartupAudio();
 }
 
-function executeHostMenuAction(input: HostMenuInput, runtime: Runtime): boolean {
+export function executeMachineHostMenuAction(input: HostMenuInput, runtime: Runtime): boolean {
 	switch (input) {
 		case HostMenuInput.Inactive:
 		case HostMenuInput.Active:
@@ -49,10 +54,9 @@ export function prepareMachineHostPresentation(
 	screen: RenderPresentationState,
 	hostOverlayMenu: HostOverlayMenu,
 	runtime: Runtime,
-	hostDeltaMs: number,
 	runReady: boolean,
 	hostMenuInput: HostMenuInput,
-): MachineHostPresentation {
+): MachineHostFrameAction {
 	const manager = machineManager;
 	if (hostMenuInput === HostMenuInput.Active) {
 		screen.clearPresentation();
@@ -60,47 +64,69 @@ export function prepareMachineHostPresentation(
 		hostOverlayMenu.queueRenderCommands();
 		screen.requestHeldPresentation();
 		manager.platform.microtasks.flush();
-		return MachineHostPresentation.Pending;
+		return MachineHostFrameAction.PresentPending;
 	}
 	if (manager.paused) {
 		hostOverlayMenu.queueFrameOverlayCommands();
 		manager.platform.microtasks.flush();
-		return MachineHostPresentation.Paused;
+		return MachineHostFrameAction.PresentPaused;
 	}
 
 	const hostOverlayQueued = hostOverlayMenu.queueFrameOverlayCommands();
 	screen.clearPresentation();
 	if (!runReady) {
 		runtime.frameScheduler.clearQueuedTime();
-	} else {
-		manager.deltatime = runtime.timing.frameDurationMs;
-		const previousTickSequence = runtime.frameScheduler.lastTickSequence;
-		runtime.frameScheduler.run(hostDeltaMs);
-		while (runtime.machine.gxGpu.backendReadbackPending()) {
-			manager.view.backend.executeGxGpuReadback(runtime.machine.gxGpu);
-			runtime.frameScheduler.run(0);
-		}
-		manager.syncRuntimeAudioTiming();
-		screen.syncAfterRuntimeUpdate(runtime, previousTickSequence);
 	}
 	if (hostOverlayQueued) {
 		screen.requestHeldPresentation();
 	}
+	if (runReady) {
+		return MachineHostFrameAction.Execute;
+	}
 	manager.platform.microtasks.flush();
-	return MachineHostPresentation.Pending;
+	return MachineHostFrameAction.PresentPending;
 }
 
-export function presentMachineHostPresentation(
-	presentation: MachineHostPresentation,
+export function beginMachineHostUpdate(runtime: Runtime): number {
+	machineManager.deltatime = runtime.timing.frameDurationMs;
+	return runtime.frameScheduler.lastTickSequence;
+}
+
+export function completeMachineHostUpdate(
+	screen: RenderPresentationState,
+	runtime: Runtime,
+	previousTickSequence: number,
+): void {
+	machineManager.syncRuntimeAudioTiming();
+	screen.syncAfterRuntimeUpdate(runtime, previousTickSequence);
+	machineManager.platform.microtasks.flush();
+}
+
+export function executeMachineHostUpdate(
 	screen: RenderPresentationState,
 	runtime: Runtime,
 	hostDeltaMs: number,
 ): void {
-	switch (presentation) {
-		case MachineHostPresentation.Pending:
+	const previousTickSequence = beginMachineHostUpdate(runtime);
+	runtime.frameScheduler.run(hostDeltaMs);
+	while (runtime.machine.gxGpu.backendReadbackPending()) {
+		machineManager.view.backend.executeGxGpuReadback(runtime.machine.gxGpu);
+		runtime.frameScheduler.run(0);
+	}
+	completeMachineHostUpdate(screen, runtime, previousTickSequence);
+}
+
+export function presentMachineHostPresentation(
+	action: MachineHostPresentation,
+	screen: RenderPresentationState,
+	runtime: Runtime,
+	hostDeltaMs: number,
+): void {
+	switch (action) {
+		case MachineHostFrameAction.PresentPending:
 			screen.presentPending(runtime, hostDeltaMs);
 			return;
-		case MachineHostPresentation.Paused:
+		case MachineHostFrameAction.PresentPaused:
 			screen.presentPausedFrame(runtime, hostDeltaMs);
 			return;
 	}
@@ -119,17 +145,20 @@ export function runMachineHostFrame(
 	}
 	const hostDeltaMs = beginMachineHostFrame(runtime, currentTime);
 	const hostMenuInput = hostOverlayMenu.tickInput();
-	if (executeHostMenuAction(hostMenuInput, runtime)) {
+	if (executeMachineHostMenuAction(hostMenuInput, runtime)) {
 		return;
 	}
-	const presentation = prepareMachineHostPresentation(
+	let action = prepareMachineHostPresentation(
 		screen,
 		hostOverlayMenu,
 		runtime,
-		hostDeltaMs,
 		runReady,
 		hostMenuInput,
 	);
-	presentMachineHostPresentation(presentation, screen, runtime, hostDeltaMs);
+	if (action === MachineHostFrameAction.Execute) {
+		executeMachineHostUpdate(screen, runtime, hostDeltaMs);
+		action = MachineHostFrameAction.PresentPending;
+	}
+	presentMachineHostPresentation(action, screen, runtime, hostDeltaMs);
 	manager.flushSystemOutput(runtime);
 }

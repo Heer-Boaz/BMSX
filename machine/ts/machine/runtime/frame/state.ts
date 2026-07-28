@@ -6,3 +6,9 @@ export type FrameState = {
 	cycleCarryGranted: number;
 	activeCpuUsedCycles: number;
 };
+
+export const enum InstructionStepResult {
+	Blocked,
+	Advanced,
+	Executed,
+}

@@ -1,4 +1,5 @@
 import { Runtime } from '../runtime/runtime';
+import { InstructionStepResult } from '../runtime/frame/state';
 
 export type TickCompletion = {
 	sequence: number;
@@ -76,6 +77,27 @@ export class FrameSchedulerState {
 		return budget;
 	}
 
+	private beginHostExecution(hostDeltaMs: number): boolean {
+		const runtime = this.runtime;
+		if (runtime.machine.gxGpu.backendReadbackBlocksMachine()) {
+			this.backendServiceSuspended = true;
+			return false;
+		}
+		if (this.backendServiceSuspended) {
+			// Backend submission/mapping latency is host time, not machine time.
+			this.backendServiceSuspended = false;
+			hostDeltaMs = 0;
+		}
+		this.accumulateHostTime(hostDeltaMs);
+		return true;
+	}
+
+	private endHostExecution(): void {
+		if (this.runtime.machine.gxGpu.backendReadbackBlocksMachine()) {
+			this.backendServiceSuspended = true;
+		}
+	}
+
 	public clearQueuedTime(): void {
 		this.accumulatedHostTimeMs = 0;
 		this.carriedCycleBudget = 0;
@@ -142,26 +164,27 @@ export class FrameSchedulerState {
 
 	public run(hostDeltaMs: number): void {
 		const runtime = this.runtime;
-		if (runtime.machine.gxGpu.backendReadbackBlocksMachine()) {
-			this.backendServiceSuspended = true;
+		if (!this.beginHostExecution(hostDeltaMs)) {
 			return;
 		}
-		if (this.backendServiceSuspended) {
-			// Backend submission/mapping latency is host time, not machine time. Resume
-			// the in-flight machine frame without turning that latency into catch-up.
-			this.backendServiceSuspended = false;
-			hostDeltaMs = 0;
-		}
-		this.accumulateHostTime(hostDeltaMs);
 		while (this.canRunScheduledUpdate()) {
 			const progressed = runtime.frameLoop.tickUpdate();
 			if (runtime.frameLoop.frameActive && !progressed) {
 				break;
 			}
 		}
-		if (runtime.machine.gxGpu.backendReadbackBlocksMachine()) {
-			this.backendServiceSuspended = true;
+		this.endHostExecution();
+	}
+
+	public stepInstruction(hostDeltaMs: number): InstructionStepResult {
+		if (!this.beginHostExecution(hostDeltaMs)) {
+			return InstructionStepResult.Blocked;
 		}
+		const result = this.canRunScheduledUpdate()
+			? this.runtime.frameLoop.tickInstruction()
+			: InstructionStepResult.Blocked;
+		this.endHostExecution();
+		return result;
 	}
 
 	public consumeTickCompletion(out: TickCompletion): boolean {

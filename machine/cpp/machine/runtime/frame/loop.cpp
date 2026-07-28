@@ -56,6 +56,16 @@ bool FrameLoopState::consumeSystemReset(Runtime& runtime) {
 	return true;
 }
 
+bool FrameLoopState::prepareScheduledFrame(Runtime& runtime) {
+	if (!frameActive) {
+		return runtime.frameScheduler.startScheduledFrame(runtime);
+	}
+	if (frameState.cycleBudgetRemaining <= 0) {
+		return runtime.frameScheduler.refillFrameBudget(runtime, frameState);
+	}
+	return true;
+}
+
 void FrameLoopState::finalizeUpdateSlice(Runtime& runtime) {
 	if (runtime.m_pendingCall == Runtime::PendingCall::Entry && !runtime.vblank.tickCompleted()) {
 		return;
@@ -71,6 +81,17 @@ void FrameLoopState::runActiveFrameState(Runtime& runtime) {
 		return;
 	}
 	finalizeUpdateSlice(runtime);
+}
+
+InstructionStepResult FrameLoopState::runActiveFrameInstruction(Runtime& runtime) {
+	if (runtime.m_pendingCall != Runtime::PendingCall::Entry) {
+		finalizeUpdateSlice(runtime);
+		return InstructionStepResult::Advanced;
+	}
+	const InstructionStepResult result = runUpdateInstruction(runtime);
+	frameState.updateExecuted = runtime.m_pendingCall != Runtime::PendingCall::Entry;
+	finalizeUpdateSlice(runtime);
+	return result;
 }
 
 void FrameLoopState::runUpdatePhase(Runtime& runtime) {
@@ -91,17 +112,51 @@ void FrameLoopState::runUpdatePhase(Runtime& runtime) {
 			if (consumeSystemReset(runtime)) {
 				return;
 			}
-		if (result == RunResult::Halted && cpu.getFrameDepth() == 0) {
-			runtime.m_pendingCall = Runtime::PendingCall::None;
-			runtime.frameScheduler.clearQueuedTime();
-			abandonFrameState(runtime);
-			return;
-		}
+			if (result == RunResult::Halted && cpu.getFrameDepth() == 0) {
+				runtime.m_pendingCall = Runtime::PendingCall::None;
+				runtime.frameScheduler.clearQueuedTime();
+				abandonFrameState(runtime);
+				return;
+			}
 			if (cpu.isHaltedUntilIrq()) {
 				return;
 			}
 			return;
 		}
+	} catch (...) {
+		frameState.luaFaulted = true;
+		cpu.clearHaltUntilIrq();
+		runtime.m_pendingCall = Runtime::PendingCall::None;
+		throw;
+	}
+}
+
+InstructionStepResult FrameLoopState::runUpdateInstruction(Runtime& runtime) {
+	auto& cpu = runtime.machine.cpu;
+	if (frameState.luaFaulted || runtime.m_runtimeFailed) {
+		frameState.luaFaulted = true;
+		return InstructionStepResult::Blocked;
+	}
+	try {
+		if (cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld()) {
+			const i64 previousRemaining = frameState.cycleBudgetRemaining;
+			const bool tickCompleted = runtime.cpuExecution.runStoppedCpu(runtime, frameState);
+			if (tickCompleted || cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld()) {
+				return tickCompleted || frameState.cycleBudgetRemaining != previousRemaining
+					? InstructionStepResult::Advanced
+					: InstructionStepResult::Blocked;
+			}
+		}
+		if (runtime.m_pendingCall != Runtime::PendingCall::Entry) {
+			return InstructionStepResult::Blocked;
+		}
+		const InstructionStepResult result = runtime.cpuExecution.runInstruction(runtime, frameState);
+		if (cpu.getFrameDepth() == 0) {
+			runtime.m_pendingCall = Runtime::PendingCall::None;
+			runtime.frameScheduler.clearQueuedTime();
+			abandonFrameState(runtime);
+		}
+		return result;
 	} catch (...) {
 		frameState.luaFaulted = true;
 		cpu.clearHaltUntilIrq();
@@ -124,14 +179,8 @@ bool FrameLoopState::tickUpdate(Runtime& runtime) {
 	const i64 previousRemaining = previousFrameActive ? frameState.cycleBudgetRemaining : -1;
 	const bool previousPending = runtime.m_pendingCall == PendingCall::Entry;
 	const i64 previousSequence = runtime.frameScheduler.lastTickSequence;
-	if (frameActive) {
-		if (frameState.cycleBudgetRemaining <= 0 && !runtime.frameScheduler.refillFrameBudget(runtime, frameState)) {
-			return false;
-		}
-	} else {
-		if (!runtime.frameScheduler.startScheduledFrame(runtime)) {
-			return false;
-		}
+	if (!prepareScheduledFrame(runtime)) {
+		return false;
 	}
 
 	runActiveFrameState(runtime);
@@ -153,5 +202,30 @@ bool FrameLoopState::tickUpdate(Runtime& runtime) {
 		return true;
 	}
 	return runtime.frameScheduler.lastTickSequence != previousSequence;
+}
+
+InstructionStepResult FrameLoopState::tickInstruction(Runtime& runtime) {
+	using PendingCall = Runtime::PendingCall;
+	if (consumeSystemReset(runtime)) {
+		return InstructionStepResult::Advanced;
+	}
+	const bool previousFrameActive = frameActive;
+	const i64 previousRemaining = previousFrameActive ? frameState.cycleBudgetRemaining : -1;
+	const bool previousPending = runtime.m_pendingCall == PendingCall::Entry;
+	const i64 previousSequence = runtime.frameScheduler.lastTickSequence;
+	if (!prepareScheduledFrame(runtime)) {
+		return InstructionStepResult::Blocked;
+	}
+	const InstructionStepResult result = runActiveFrameInstruction(runtime);
+	if (result == InstructionStepResult::Executed) {
+		return result;
+	}
+	if (frameActive != previousFrameActive
+		|| (frameActive && frameState.cycleBudgetRemaining != previousRemaining)
+		|| ((runtime.m_pendingCall == PendingCall::Entry) != previousPending)
+		|| runtime.frameScheduler.lastTickSequence != previousSequence) {
+		return InstructionStepResult::Advanced;
+	}
+	return result;
 }
 } // namespace bmsx
