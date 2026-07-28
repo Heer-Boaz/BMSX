@@ -36,7 +36,7 @@ async function main(): Promise<void> {
 		import('../../../hosts/node/headless/platform_headless'),
 		import('../../../machine/ts/machine/runtime/save_state/codec'),
 		import('../../../machine/ts/spec/bmsx/memory_map'),
-		import('../../../machine/ts/machine/devices/cartridge/contracts'),
+		import('../../../machine/ts/spec/bmsx/cartridge'),
 	]);
 
 	const transcript: string[] = [];
