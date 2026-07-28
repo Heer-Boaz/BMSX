@@ -107,7 +107,7 @@ void testLibretroSaveStateRoundTrip() {
 		false);
 	platform.setLogCallback(discardRetroLog);
 	require(platform.getStateSize() == 0u, "libretro state size should be zero before a ROM is loaded");
-	require(platform.machineManager()->loadSystemRomOwned(bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::System)), "libretro should load the system firmware ROM");
+	require(platform.loadSystemRomOwned(bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::System)), "libretro should load the system firmware ROM");
 
 	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalBootRom(
 		bmsx::RomImageDomain::Cartridge,
@@ -264,7 +264,7 @@ void testLibretroFaultDiagnosticsStayAtHostBoundary() {
 	platform.setInputStateCallback(discardInputState);
 	capturedLogs.clear();
 	require(
-		platform.machineManager()->loadSystemRomOwned(
+		platform.loadSystemRomOwned(
 			bmsx::test::makeMinimalDiagnosticBootRom(bmsx::RomImageDomain::System)
 		),
 		"libretro should load symbol-bearing system firmware for runtime diagnostics");
@@ -306,7 +306,7 @@ void testGpureadCodecStoresReadyBytesAndRejectsBackendPhase() {
 		readSupervisorRequestLine,
 		false);
 	platform.setLogCallback(discardRetroLog);
-	require(platform.machineManager()->loadSystemRomOwned(bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::System)), "libretro should load the system firmware ROM for GPUREAD codec validation");
+	require(platform.loadSystemRomOwned(bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::System)), "libretro should load the system firmware ROM for GPUREAD codec validation");
 	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::Cartridge);
 	require(platform.loadRom(rom.data(), rom.size()), "libretro should load a program cart ROM for GPUREAD codec validation");
 	const size_t cartridgeRamByteCount =
@@ -389,7 +389,7 @@ void testLibretroStateEnvelopeSupportsMaximumGpuread() {
 		readSupervisorRequestLine,
 		false);
 	platform.setLogCallback(discardRetroLog);
-	require(platform.machineManager()->loadSystemRomOwned(bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::System)), "libretro should load the system firmware ROM for GPUREAD envelope validation");
+	require(platform.loadSystemRomOwned(bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::System)), "libretro should load the system firmware ROM for GPUREAD envelope validation");
 	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::Cartridge);
 	require(platform.loadRom(rom.data(), rom.size()), "libretro should load a program cart ROM for GPUREAD envelope validation");
 	const size_t stateSize = platform.getStateSize();
@@ -531,7 +531,7 @@ void testLibretroTracksPublishedNativeOutputGeometry() {
 	platform.setLogCallback(discardRetroLog);
 	platform.setInputPollCallback(discardInputPoll);
 	platform.setInputStateCallback(discardInputState);
-	require(platform.machineManager()->loadSystemRomOwned(bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::System)), "libretro should load the system firmware ROM for native geometry validation");
+	require(platform.loadSystemRomOwned(bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::System)), "libretro should load the system firmware ROM for native geometry validation");
 	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::Cartridge);
 	require(platform.loadRom(rom.data(), rom.size()), "libretro should load a program cart ROM for native geometry validation");
 	platform.setPlatformPaused(true);
@@ -612,7 +612,7 @@ void testPhysicalPcrtcTimingPublishesAtServiceAndPresentationAtVblank() {
 		readSupervisorRequestLine,
 		false);
 	platform.setLogCallback(discardRetroLog);
-	require(platform.machineManager()->loadSystemRomOwned(bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::System)), "libretro should load the system firmware ROM for physical PCRTC timing validation");
+	require(platform.loadSystemRomOwned(bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::System)), "libretro should load the system firmware ROM for physical PCRTC timing validation");
 	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::Cartridge);
 	require(platform.loadRom(rom.data(), rom.size()), "libretro should load a program cart ROM for physical PCRTC timing validation");
 
@@ -659,7 +659,7 @@ void testRuntimePreservesGxGpuGp1ReadinessBinding() {
 		readSupervisorRequestLine,
 		false);
 	platform.setLogCallback(discardRetroLog);
-	require(platform.machineManager()->loadSystemRomOwned(bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::System)), "libretro should load the system firmware ROM for GP1 readiness validation");
+	require(platform.loadSystemRomOwned(bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::System)), "libretro should load the system firmware ROM for GP1 readiness validation");
 	const std::vector<bmsx::u8> rom = bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::Cartridge);
 	require(platform.loadRom(rom.data(), rom.size()), "libretro should load a program cart ROM for GP1 readiness validation");
 

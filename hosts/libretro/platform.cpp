@@ -24,6 +24,7 @@
 #include <cstdarg>
 #include <algorithm>
 #include <cmath>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -418,6 +419,12 @@ bool LibretroPlatform::loadCartridgeSlotsOwned(std::array<std::vector<uint8_t>, 
 	for (const std::vector<uint8_t>& slot : data) {
 		totalSize += slot.size();
 	}
+	m_cartridge_rom_owned = std::move(data);
+	std::array<std::span<const u8>, CARTRIDGE_SLOT_COUNT> slots;
+	for (u32 slotIndex = 0; slotIndex < CARTRIDGE_SLOT_COUNT; ++slotIndex) {
+		const std::vector<u8>& slot = m_cartridge_rom_owned[slotIndex];
+		slots[slotIndex] = std::span<const u8>(slot.data(), slot.size());
+	}
 	{
 		const std::string line = memSnapshotLine("libretro:before_loadRom");
 		if (!line.empty()) {
@@ -425,7 +432,7 @@ bool LibretroPlatform::loadCartridgeSlotsOwned(std::array<std::vector<uint8_t>, 
 		}
 	}
 
-	if (!m_machine_manager->loadCartridgeSlotsOwned(std::move(data))) {
+	if (!m_machine_manager->loadCartridgeSlots(slots)) {
 		log(RETRO_LOG_ERROR, "Failed to load cartridge slots\n");
 		return false;
 	}
@@ -485,7 +492,19 @@ bool LibretroPlatform::loadCartridgeSlotsFromPaths(const std::array<std::string,
 		}
 	}
 
-	if (!m_machine_manager->loadCartridgeSlotFiles(paths)) {
+	std::array<std::span<const u8>, CARTRIDGE_SLOT_COUNT> slots;
+	for (u32 slotIndex = 0; slotIndex < CARTRIDGE_SLOT_COUNT; ++slotIndex) {
+		if (paths[slotIndex].empty()) {
+			continue;
+		}
+		MmapFile& file = m_cartridge_rom_files[slotIndex];
+		if (!file.open(paths[slotIndex])) {
+			log(RETRO_LOG_ERROR, "Failed to map cartridge slot %u\n", slotIndex);
+			return false;
+		}
+		slots[slotIndex] = std::span<const u8>(file.data(), file.size());
+	}
+	if (!m_machine_manager->loadCartridgeSlots(slots)) {
 		log(RETRO_LOG_ERROR, "Failed to load cartridge slots\n");
 		return false;
 	}
@@ -545,10 +564,15 @@ bool LibretroPlatform::loadEmptyCart() {
 }
 
 bool LibretroPlatform::loadSystemRomFromFile(const std::string& path) {
-	if (!m_machine_manager->loadSystemRomFile(path)) {
+	MmapFile mapped;
+	if (!mapped.open(path)) {
 		log(RETRO_LOG_WARN, "[BMSX] Failed to load system ROM: %s\n", path.c_str());
 		return false;
 	}
+	m_machine_manager->loadSystemRom(
+		std::span<const u8>(mapped.data(), mapped.size()));
+	m_system_rom_owned.clear();
+	m_system_rom_file = std::move(mapped);
 #if defined(__GLIBC__)
 	malloc_trim(0);
 #endif
@@ -557,15 +581,30 @@ bool LibretroPlatform::loadSystemRomFromFile(const std::string& path) {
 	return true;
 }
 
+bool LibretroPlatform::loadSystemRomOwned(std::vector<uint8_t>&& data) {
+	std::vector<uint8_t> owned = std::move(data);
+	m_machine_manager->loadSystemRom(owned);
+	m_system_rom_file.close();
+	m_system_rom_owned = std::move(owned);
+	return true;
+}
+
 void LibretroPlatform::unloadRom() {
+	const bool wasLoaded = m_rom_loaded;
 	if (m_rom_loaded) {
 		static_cast<LibretroInputHub*>(m_input_hub.get())->resetState();
 		m_input->resetInputState();
 		m_host_overlay_menu.resetInputState();
-		m_machine_manager->unloadRom();
 		m_screen.clearPresentation();
 		m_running = false;
 		m_rom_loaded = false;
+	}
+	m_machine_manager->unloadRom();
+	for (MmapFile& file : m_cartridge_rom_files) {
+		file.close();
+	}
+	m_cartridge_rom_owned = {};
+	if (wasLoaded) {
 		log(RETRO_LOG_INFO, "[BMSX] ROM unloaded\n");
 	}
 }

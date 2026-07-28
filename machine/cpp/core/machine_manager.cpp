@@ -7,25 +7,15 @@
 #include "machine/model_registry.h"
 #include "machine/memory/map.h"
 #include "machine/runtime/boot_timing.h"
-#include <span>
 #include <stdexcept>
-#include <utility>
 
 namespace bmsx {
-
-void MachineManager::LoadedCartridgeSlot::clear() {
-	image = {};
-	file.close();
-	owned = std::vector<u8>();
-}
 
 MachineManager::MachineManager(RuntimeInputSource& input)
 	: m_input(input) {
 }
 
-MachineManager::~MachineManager() {
-	unloadRom();
-}
+MachineManager::~MachineManager() = default;
 
 Runtime& MachineManager::runtime() {
 	return *m_runtime;
@@ -42,12 +32,9 @@ Runtime& MachineManager::ensureRuntime(const RuntimeOptions& options) {
 	return *m_runtime;
 }
 
-// ============================================================================
-// ROM loading and boot orchestration
-// ============================================================================
-
-bool MachineManager::loadSystemRomInternal(const u8* data, size_t size) {
-	m_system_rom_image = parseRomImage(data, size, RomImageDomain::System);
+bool MachineManager::loadSystemRom(std::span<const u8> data) {
+	m_runtime.reset();
+	m_system_rom_image = parseRomImage(data.data(), data.size(), RomImageDomain::System);
 	m_system_rom_loaded = true;
 	return true;
 }
@@ -77,11 +64,11 @@ bool MachineManager::bootSystemFirmware() {
 
 bool MachineManager::bootLoadedCartridgeSlots() {
 	for (u32 slotIndex = 0; slotIndex < CARTRIDGE_SLOT_COUNT; ++slotIndex) {
-		const LoadedCartridgeSlot& slot = m_cartridge_slots[slotIndex];
-		if (slot.image.bytes.empty()) continue;
-		const CartRomHeader& header = slot.image.header;
+		const RomImage& slot = m_cartridge_slots[slotIndex];
+		if (slot.bytes.empty()) continue;
+		const CartRomHeader& header = slot.header;
 		m_cartridge_media[slotIndex] = CartridgeSlotMedia{
-			slot.image.bytes,
+			slot.bytes,
 			header.cartridgeBoardWord,
 			header.cartridgeRamByteCount,
 			true,
@@ -98,47 +85,16 @@ bool MachineManager::bootLoadedCartridgeSlots() {
 	return true;
 }
 
-bool MachineManager::loadSystemRomOwned(std::vector<u8>&& data) {
-	m_runtime.reset();
-	m_system_rom_file.close();
-	m_system_rom_owned = std::move(data);
-	return loadSystemRomInternal(m_system_rom_owned.data(), m_system_rom_owned.size());
-}
-
-bool MachineManager::loadSystemRomFile(const std::string& path) {
-	MmapFile mapped;
-	if (!mapped.open(path)) {
-		return false;
-	}
-	m_runtime.reset();
-	m_system_rom_owned = std::vector<u8>();
-	m_system_rom_file = std::move(mapped);
-	return loadSystemRomInternal(m_system_rom_file.data(), m_system_rom_file.size());
-}
-
-bool MachineManager::loadCartridgeSlotsOwned(std::array<std::vector<u8>, CARTRIDGE_SLOT_COUNT>&& data) {
+bool MachineManager::loadCartridgeSlots(
+	const std::array<std::span<const u8>, CARTRIDGE_SLOT_COUNT>& data
+) {
 	unloadRom();
 	for (u32 slotIndex = 0; slotIndex < CARTRIDGE_SLOT_COUNT; ++slotIndex) {
-		LoadedCartridgeSlot& slot = m_cartridge_slots[slotIndex];
-		slot.owned = std::move(data[slotIndex]);
-		if (!slot.owned.empty()) {
-			slot.image = parseRomImage(slot.owned.data(), slot.owned.size(), RomImageDomain::Cartridge);
+		const std::span<const u8> slot = data[slotIndex];
+		if (!slot.empty()) {
+			m_cartridge_slots[slotIndex] =
+				parseRomImage(slot.data(), slot.size(), RomImageDomain::Cartridge);
 		}
-	}
-	return bootLoadedCartridgeSlots();
-}
-
-bool MachineManager::loadCartridgeSlotFiles(const std::array<std::string, CARTRIDGE_SLOT_COUNT>& paths) {
-	unloadRom();
-	for (u32 slotIndex = 0; slotIndex < CARTRIDGE_SLOT_COUNT; ++slotIndex) {
-		if (paths[slotIndex].empty()) {
-			continue;
-		}
-		LoadedCartridgeSlot& slot = m_cartridge_slots[slotIndex];
-		if (!slot.file.open(paths[slotIndex])) {
-			return false;
-		}
-		slot.image = parseRomImage(slot.file.data(), slot.file.size(), RomImageDomain::Cartridge);
 	}
 	return bootLoadedCartridgeSlots();
 }
@@ -146,9 +102,7 @@ bool MachineManager::loadCartridgeSlotFiles(const std::array<std::string, CARTRI
 void MachineManager::unloadRom() {
 	m_runtime.reset();
 	m_cartridge_media = {};
-	for (LoadedCartridgeSlot& slot : m_cartridge_slots) {
-		slot.clear();
-	}
+	m_cartridge_slots = {};
 	m_rom_loaded = false;
 }
 

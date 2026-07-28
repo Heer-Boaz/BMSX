@@ -11,6 +11,7 @@
 
 #include "audio_output.h"
 #include "bmsx_libretro.h"
+#include "common/mmap_file.h"
 #include "host_overlay_menu.h"
 #include "spec/bmsx/cartridge.h"
 #include "platform/platform.h"
@@ -148,6 +149,7 @@ public:
 	// ROM management
 	bool loadRom(const uint8_t* data, size_t size);
 	bool loadRomFromPath(const char* path);
+	bool loadSystemRomOwned(std::vector<uint8_t>&& data);
 	bool loadCartridgeSlotsOwned(std::array<std::vector<uint8_t>, CARTRIDGE_SLOT_COUNT>&& data);
 	bool loadCartridgeSlotsFromPaths(const std::array<std::string, CARTRIDGE_SLOT_COUNT>& paths);
 	bool loadEmptyCart();
@@ -220,7 +222,11 @@ private:
 	// Controller configuration
 	std::array<unsigned, 4> m_controller_devices{};
 
-	// Machine manager instance
+	MmapFile m_system_rom_file;
+	std::vector<uint8_t> m_system_rom_owned;
+	std::array<MmapFile, CARTRIDGE_SLOT_COUNT> m_cartridge_rom_files;
+	std::array<std::vector<uint8_t>, CARTRIDGE_SLOT_COUNT> m_cartridge_rom_owned;
+
 	std::unique_ptr<MachineManager> m_machine_manager;
 
 	// Platform components
