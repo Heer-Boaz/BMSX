@@ -233,6 +233,10 @@ export class Runtime {
 			cpu.instructionBudgetRemaining = previousBudget;
 		}
 	}
+
+	public completionCallPending(): boolean {
+		return this.machine.cpu.completionCallPending();
+	}
 	// end repeated-sequence-acceptable
 
 	public constructor(

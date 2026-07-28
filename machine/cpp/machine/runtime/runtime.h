@@ -81,6 +81,7 @@ public:
 	 * subsequent CPU execution, call entry, reset, or state restore.
 	 */
 	auto callClosure(Closure& fn, BuiltinArgsView args = {}) -> std::span<const Value>;
+	bool completionCallPending() const;
 
 	/**
 	 * Set a global variable.

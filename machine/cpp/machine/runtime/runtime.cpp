@@ -189,6 +189,10 @@ auto Runtime::callClosure(Closure& fn, BuiltinArgsView args) -> std::span<const 
 	return std::span<const Value>(cpu.completionValues);
 }
 
+bool Runtime::completionCallPending() const {
+	return machine.cpu.completionCallPending();
+}
+
 void Runtime::applyPublishedGxGpuPcrtcTiming(const GxGpuPcrtcTiming& pcrtcTiming) {
 	if (timing.pcrtcRevision == pcrtcTiming.revision
 		&& timing.pcrtcRunning == pcrtcTiming.running

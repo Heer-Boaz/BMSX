@@ -45,9 +45,11 @@ export class HostTestRunner {
 	private readonly label: string;
 	private readonly scheduledCommands = new Map<number, ScheduledHostCommand[]>();
 	private readonly updateArgs: Value[] = [0];
+	private loader!: Closure;
 	private ready!: Closure;
 	private setup!: Closure;
 	private update!: Closure;
+	private newGame!: Closure;
 	private frameKey!: StringValue;
 	private pressKey!: StringValue;
 	private downKey!: StringValue;
@@ -57,10 +59,13 @@ export class HostTestRunner {
 	private logKey!: StringValue;
 	private newGameKey!: StringValue;
 	private doneKey!: StringValue;
-	private phase: 'cart' | 'ready' | 'setup' | 'update' = 'cart';
+	private phase: 'cart' | 'install' | 'ready' | 'setup' | 'update' = 'cart';
 	private cartSettleFrames = 0;
 	private gameplaySettleFrames = 0;
 	private updateFrames = 0;
+	private updateFramePrepared = false;
+	private guestCallPending = false;
+	private newGamePending = false;
 	private tickTimestampMs = 0;
 	private stopped = false;
 	private readonly completion: Promise<void>;
@@ -106,17 +111,36 @@ export class HostTestRunner {
 			return;
 		}
 		this.tickTimestampMs = timestampMs;
+		if (this.newGamePending) {
+			if (!this.guestCallCompleted(this.newGame, EMPTY_CALL_ARGS)) {
+				return;
+			}
+			this.newGamePending = false;
+		}
 		switch (this.phase) {
 			case 'cart':
 				this.cartSettleFrames += 1;
 				if (this.cartSettleFrames >= CART_SETTLE_FRAMES) {
-					this.install();
-					this.options.logger(`test:${this.label} cart active`);
-					this.phase = 'ready';
+					const runtime = this.options.runtime;
+					this.loader = runtime.machine.cpu.getGlobalByKey(
+						runtime.internString(HOST_TEST_LOADER_GLOBAL),
+					) as Closure;
+					this.phase = 'install';
 				}
 				return;
+			case 'install':
+				if (!this.guestCallCompleted(this.loader, EMPTY_CALL_ARGS)) {
+					return;
+				}
+				this.bindTest();
+				this.options.logger(`test:${this.label} cart active`);
+				this.phase = 'ready';
+				return;
 			case 'ready':
-				if (this.callGuest(this.ready, EMPTY_CALL_ARGS) !== true) {
+				if (!this.guestCallCompleted(this.ready, EMPTY_CALL_ARGS)) {
+					return;
+				}
+				if (this.guestResult() !== true) {
 					this.gameplaySettleFrames = 0;
 					return;
 				}
@@ -127,14 +151,27 @@ export class HostTestRunner {
 				}
 				return;
 			case 'setup':
-				this.applyCommands(this.callGuest(this.setup, EMPTY_CALL_ARGS));
+				if (!this.guestCallCompleted(this.setup, EMPTY_CALL_ARGS)) {
+					return;
+				}
+				this.applyCommands(this.guestResult());
 				this.phase = 'update';
 				return;
 			case 'update': {
-				this.updateFrames += 1;
-				this.applyScheduledCommands();
-				this.updateArgs[0] = this.updateFrames;
-				const result = this.callGuest(this.update, this.updateArgs);
+				if (!this.updateFramePrepared) {
+					this.updateFrames += 1;
+					this.updateFramePrepared = true;
+					this.applyScheduledCommands();
+					this.updateArgs[0] = this.updateFrames;
+					if (this.newGamePending) {
+						return;
+					}
+				}
+				if (!this.guestCallCompleted(this.update, this.updateArgs)) {
+					return;
+				}
+				const result = this.guestResult();
+				this.updateFramePrepared = false;
 				this.applyCommands(result);
 				if (result === true || (valueIsTable(result) && result.getStringKey(this.doneKey) === true)) {
 					this.pass();
@@ -144,17 +181,14 @@ export class HostTestRunner {
 		}
 	}
 
-	private install(): void {
+	private bindTest(): void {
 		const runtime = this.options.runtime;
 		const cpu = runtime.machine.cpu;
-		const loader = cpu.getGlobalByKey(
-			runtime.internString(HOST_TEST_LOADER_GLOBAL),
-		) as Closure;
-		runtime.callClosure(loader, EMPTY_CALL_ARGS);
 		const testTable = cpu.getGlobalByKey(runtime.internString(HOST_TEST_GLOBAL)) as Table;
 		this.ready = testTable.getStringKey(runtime.internString('ready')) as Closure;
 		this.setup = testTable.getStringKey(runtime.internString('setup')) as Closure;
 		this.update = testTable.getStringKey(runtime.internString('update')) as Closure;
+		this.newGame = cpu.getGlobalByKey(runtime.internString('new_game')) as Closure;
 		this.frameKey = runtime.internString('frame');
 		this.pressKey = runtime.internString('press');
 		this.downKey = runtime.internString('down');
@@ -167,8 +201,19 @@ export class HostTestRunner {
 		this.options.logger(`test:${this.label} loaded`);
 	}
 
-	private callGuest(fn: Closure, args: ReadonlyArray<Value>): Value {
-		const results = this.options.runtime.callClosure(fn, args);
+	private guestCallCompleted(fn: Closure, args: ReadonlyArray<Value>): boolean {
+		const runtime = this.options.runtime;
+		if (!this.guestCallPending) {
+			runtime.callClosure(fn, args);
+			this.guestCallPending = runtime.completionCallPending();
+			return !this.guestCallPending;
+		}
+		this.guestCallPending = runtime.completionCallPending();
+		return !this.guestCallPending;
+	}
+
+	private guestResult(): Value {
+		const results = this.options.runtime.machine.cpu.completionValues;
 		return results.length === 0 ? null : results[0];
 	}
 
@@ -272,8 +317,7 @@ export class HostTestRunner {
 			commands.push({ log: null, capture: null, down: null, up: press, press: null, holdFrames: 1, newGame: false });
 		}
 		if (newGame) {
-			const runtime = this.options.runtime;
-			this.callGuest(runtime.machine.cpu.getGlobalByKey(this.newGameKey) as Closure, EMPTY_CALL_ARGS);
+			this.newGamePending = !this.guestCallCompleted(this.newGame, EMPTY_CALL_ARGS);
 		}
 	}
 

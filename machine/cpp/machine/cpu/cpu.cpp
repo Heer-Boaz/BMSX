@@ -2110,6 +2110,15 @@ u32 CPU::readFrameCallSitePc(int childFrameIndex) const {
 	return m_frames[static_cast<size_t>(childFrameIndex)]->callSitePc;
 }
 
+bool CPU::completionCallPending() const {
+	for (auto frame = m_frames.rbegin(); frame != m_frames.rend(); ++frame) {
+		if ((*frame)->returnToCompletionLatch) {
+			return true;
+		}
+	}
+	return false;
+}
+
 bool CPU::isExceptionFrame(int frameIndex) const {
 	return m_frames[static_cast<size_t>(frameIndex)]->isExceptionFrame;
 }

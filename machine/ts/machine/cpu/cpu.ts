@@ -1547,6 +1547,15 @@ export class CPU {
 		return this.frames[childFrameIndex].callSitePc;
 	}
 
+	public completionCallPending(): boolean {
+		for (let frameIndex = this.frames.length - 1; frameIndex >= 0; frameIndex -= 1) {
+			if (this.frames[frameIndex].returnToCompletionLatch) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	public isExceptionFrame(frameIndex: number): boolean {
 		return this.frames[frameIndex].isExceptionFrame;
 	}

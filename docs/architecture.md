@@ -1014,8 +1014,9 @@ rompacker, TOC and host do not maintain a second module-name or attribute list.
   but does not unwind physical call or exception frames as rollback.
 - A completion call sets a physical return-route bit on its call frame. `RET`
   writes the CPU-owned retained completion latch, and `Runtime` exposes only a
-  borrowed read-only view of that latch. The route bit and latch are save-state
-  data; the CPU never retains or GC-marks a host result buffer.
+  borrowed read-only view of that latch plus whether its physical return route
+  is still present. The route bit and latch are save-state data; the CPU never
+  retains or GC-marks a host result buffer.
 - Emulator tooling may inspect or edit a suspended CPU through allocation-free
   scalar primitives for raw frame domains, function-record addresses,
   continuation and callsite PCs, exception-frame flags, live registers,

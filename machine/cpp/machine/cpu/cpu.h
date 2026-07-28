@@ -302,6 +302,7 @@ public:
 	u32 readFrameFunctionAddress(int frameIndex) const;
 	u32 readFramePc(int frameIndex) const;
 	u32 readFrameCallSitePc(int childFrameIndex) const;
+	bool completionCallPending() const;
 	bool isExceptionFrame(int frameIndex) const;
 	bool isNonMaskableExceptionFrame(int frameIndex) const;
 	int getFrameRegisterCount(int frameIndex) const;
