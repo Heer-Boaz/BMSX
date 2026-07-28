@@ -459,7 +459,6 @@ void testRuntimeSystemRebootBoundary() {
 	);
 	bmsx::Runtime& runtime = fixture.runtime;
 
-	require(runtime.isInitialized(), "physical system firmware initializes before the first frame");
 	require(!runtime.machine.cpu.isCartridgeExecutionActive(), "physical boot begins in system firmware");
 	bmsx::FrameSchedulerState& frameScheduler = runtime.frameScheduler;
 	const bmsx::f64 frameDurationMs = runtime.timing.frameDurationMs;
@@ -471,7 +470,6 @@ void testRuntimeSystemRebootBoundary() {
 	require(!runtime.machine.cpu.isCartridgeExecutionActive(), "system reset restarts physical system firmware before cartridge execution");
 	require(!runtime.machine.systemController.captureState().resetRequested, "runtime boundary consumes the system reset latch");
 	require(frameScheduler.lastTickSequence == 0, "system reset clears scheduler sequence state");
-	require(runtime.isInitialized(), "system firmware is pending after reset");
 
 	frameScheduler.run(runtime, frameDurationMs);
 	require(runtime.machine.cpu.isCartridgeExecutionActive(), "rebooted system firmware can execute the original cartridge entry address");

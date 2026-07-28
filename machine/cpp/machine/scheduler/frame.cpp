@@ -14,8 +14,7 @@ void FrameSchedulerState::accumulateHostTime(f64 deltaMs) {
 }
 
 bool FrameSchedulerState::canRunScheduledUpdate(const Runtime& runtime) const {
-	if (!runtime.m_luaInitialized
-		|| runtime.machine.gxGpu.backendReadbackBlocksMachine()) {
+	if (runtime.machine.gxGpu.backendReadbackBlocksMachine()) {
 		return false;
 	}
 	return (runtime.frameLoop.frameActive && runtime.frameLoop.frameState.cycleBudgetRemaining > 0)

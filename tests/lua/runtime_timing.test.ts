@@ -313,7 +313,6 @@ test('host machine-cycle grants remain exact while PCRTC is stopped', () => {
 	};
 	const runtime = {
 		timing: { cpuHz: 5_000_000, cpuCyclesPerMillisecond: 5_000, pcrtcRunning: false },
-		luaInitialized: true,
 		machine: {
 			gxGpu: {
 				backendReadbackBlocksMachine: () => false,

@@ -10,7 +10,6 @@ class Runtime;
 struct RuntimeSaveState {
 	RuntimeSaveMachineState machineState;
 	CpuRuntimeState cpuState;
-	bool luaInitialized = false;
 	bool pendingEntryCall = false;
 };
 

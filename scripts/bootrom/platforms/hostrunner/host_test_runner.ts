@@ -107,7 +107,7 @@ export class HostTestRunner {
 	}
 
 	private tickUnsafe(timestampMs: number): void {
-		if (!this.options.runtime.machine.cpu.isCartridgeExecutionActive() || !this.options.runtime.isInitialized) {
+		if (!this.options.runtime.machine.cpu.isCartridgeExecutionActive()) {
 			return;
 		}
 		this.tickTimestampMs = timestampMs;

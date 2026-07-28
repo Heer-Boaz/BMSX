@@ -56,7 +56,7 @@ export function createHeadlessIdeHarness(ide: RuntimeIdeState, runtime: Runtime)
 	return {
 		getRuntime: () => runtime,
 		getSourceState: () => ide.sources,
-		isCartActive: () => runtime.machine.cpu.isCartridgeExecutionActive() && runtime.isInitialized,
+		isCartActive: () => runtime.machine.cpu.isCartridgeExecutionActive(),
 		getTrackedLuaHeapBytes: () => runtime.machine.cpu.luaHeap.usedBytes(),
 		hotResumeCore: () => {
 			const slot = runtime.machine.cpu.activeCartridgeSlot();

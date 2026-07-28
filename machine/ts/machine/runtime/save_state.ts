@@ -6,7 +6,6 @@ import { applyRuntimeSaveMachineState, captureRuntimeSaveMachineState } from './
 export type RuntimeSaveState = {
 	machineState: RuntimeSaveMachineState;
 	cpuState: CpuRuntimeState;
-	luaInitialized: boolean;
 	pendingEntryCall: boolean;
 };
 
@@ -14,7 +13,6 @@ export function captureRuntimeSaveState(runtime: Runtime): RuntimeSaveState {
 	return {
 		machineState: captureRuntimeSaveMachineState(runtime),
 		cpuState: runtime.machine.cpu.captureRuntimeState(),
-		luaInitialized: runtime.luaInitialized,
 		pendingEntryCall: runtime.pendingCall === 'entry',
 	};
 }
@@ -22,6 +20,5 @@ export function captureRuntimeSaveState(runtime: Runtime): RuntimeSaveState {
 export function applyRuntimeSaveState(runtime: Runtime, state: RuntimeSaveState): void {
 	applyRuntimeSaveMachineState(runtime, state.machineState);
 	runtime.machine.cpu.restoreRuntimeState(state.cpuState);
-	runtime.luaInitialized = state.luaInitialized;
 	runtime.pendingCall = state.pendingEntryCall ? 'entry' : null;
 }

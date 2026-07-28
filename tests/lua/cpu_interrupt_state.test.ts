@@ -298,7 +298,6 @@ function makeHaltFrameRuntime(): Runtime {
 			cycleBudgetPerFrame: 100,
 			frameDurationMs: 20,
 		},
-		luaInitialized: true,
 		pendingCall: 'entry' as const,
 	} as unknown as Runtime;
 	runtime.frameLoop = new FrameLoopState(runtime);

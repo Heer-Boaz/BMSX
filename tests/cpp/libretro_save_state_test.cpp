@@ -118,7 +118,6 @@ void testLibretroSaveStateRoundTrip() {
 	require(platform.machineManager()->hasRuntime(), "MachineManager should own a runtime after cart boot");
 
 	bmsx::Runtime& runtime = platform.machineManager()->runtime();
-	require(runtime.isInitialized(), "cartridge boot should initialize the runtime");
 	auto& scheduler = runtime.machine.scheduler;
 	const size_t stateSize = platform.getStateSize();
 	require(

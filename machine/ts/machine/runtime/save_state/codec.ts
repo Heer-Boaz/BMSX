@@ -1665,7 +1665,6 @@ function encodeRuntimeSaveStateValue(state: RuntimeSaveState): RuntimeSaveState 
 	return {
 		machineState: encodeRuntimeSaveMachineState(state.machineState),
 		cpuState: encodeCpuRuntimeState(state.cpuState),
-		luaInitialized: state.luaInitialized,
 		pendingEntryCall: state.pendingEntryCall,
 	};
 }
@@ -1675,7 +1674,6 @@ function decodeRuntimeSaveStateValue(value: unknown, label: string): RuntimeSave
 	return {
 		machineState: decodeRuntimeSaveMachineState(requireObjectKey(object, 'machineState', label, 'runtimeSaveState.machineState'), 'runtimeSaveState.machineState'),
 		cpuState: decodeCpuRuntimeState(requireObjectKey(object, 'cpuState', label, 'runtimeSaveState.cpuState'), 'runtimeSaveState.cpuState'),
-		luaInitialized: requireObjectKey(object, 'luaInitialized', label, 'runtimeSaveState.luaInitialized') as boolean,
 		pendingEntryCall: requireObjectKey(object, 'pendingEntryCall', label, 'runtimeSaveState.pendingEntryCall') as boolean,
 	};
 }

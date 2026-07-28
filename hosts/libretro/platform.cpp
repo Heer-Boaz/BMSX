@@ -645,9 +645,6 @@ size_t LibretroPlatform::getStateSize() const {
 		return 0;
 	}
 	Runtime& runtime = m_machine_manager->runtime();
-	if (!runtime.isInitialized()) {
-		return 0;
-	}
 	return saveStateEnvelopeBytes(runtime);
 }
 
@@ -657,9 +654,6 @@ bool LibretroPlatform::saveState(void* data, size_t size) {
 		return false;
 	}
 	Runtime& runtime = m_machine_manager->runtime();
-	if (!runtime.isInitialized()) {
-		return false;
-	}
 	const size_t envelopeBytes = saveStateEnvelopeBytes(runtime);
 	if (size < envelopeBytes) {
 		return false;
@@ -685,9 +679,6 @@ bool LibretroPlatform::loadState(const void* data, size_t size) {
 		return false;
 	}
 	Runtime& runtime = m_machine_manager->runtime();
-	if (!runtime.isInitialized()) {
-		return false;
-	}
 	try {
 		if (size < saveStateEnvelopeBytes(runtime)) {
 			return false;

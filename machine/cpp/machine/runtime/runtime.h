@@ -56,11 +56,6 @@ public:
 
 	void boot();
 
-	/**
-	 * Check if the runtime is initialized.
-	 */
-	auto isInitialized() const -> bool { return m_luaInitialized; }
-
 	void rebootSystem();
 
 	void applyPublishedGxGpuPcrtcTiming(const GxGpuPcrtcTiming& pcrtcTiming);
@@ -120,8 +115,6 @@ public:
 	Machine machine;
 
 private:
-	// State flags
-	bool m_luaInitialized = false;
 	PendingCall m_pendingCall = PendingCall::None;
 };
 

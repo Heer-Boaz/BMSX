@@ -67,7 +67,6 @@ const std::vector<std::string> RUNTIME_SAVE_STATE_PROP_NAMES = {
 	"lastTickCpuUsedCycles",
 	"lastTickSequence",
 	"lastTickVisualFrameCommitted",
-	"luaInitialized",
 	"machine",
 	"machineState",
 	"mask",

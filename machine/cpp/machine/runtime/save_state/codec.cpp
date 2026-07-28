@@ -1736,7 +1736,6 @@ BinValue encodeRuntimeSaveStateValue(const RuntimeSaveState& state) {
 	BinObject object;
 	object["machineState"] = encodeRuntimeSaveMachineState(state.machineState);
 	object["cpuState"] = encodeCpuRuntimeState(state.cpuState);
-	object["luaInitialized"] = state.luaInitialized;
 	object["pendingEntryCall"] = state.pendingEntryCall;
 	return BinValue(std::move(object));
 }
@@ -1746,7 +1745,6 @@ RuntimeSaveState decodeRuntimeSaveStateValue(const BinValue& value, const char* 
 	RuntimeSaveState state;
 	state.machineState = decodeRuntimeSaveMachineState(requireField(object, "machineState", label), "runtimeSaveState.machineState");
 	state.cpuState = decodeCpuRuntimeState(requireField(object, "cpuState", label), "runtimeSaveState.cpuState");
-	state.luaInitialized = requireBool(requireField(object, "luaInitialized", label), "runtimeSaveState.luaInitialized");
 	state.pendingEntryCall = requireBool(requireField(object, "pendingEntryCall", label), "runtimeSaveState.pendingEntryCall");
 	return state;
 }

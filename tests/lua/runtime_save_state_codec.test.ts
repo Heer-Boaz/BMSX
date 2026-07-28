@@ -525,7 +525,6 @@ function createRuntimeSaveState(): RuntimeSaveState {
 			nonMaskableInterruptPending: false,
 			yieldRequested: false,
 		},
-			luaInitialized: true,
 		pendingEntryCall: false,
 	} as unknown as RuntimeSaveState;
 }

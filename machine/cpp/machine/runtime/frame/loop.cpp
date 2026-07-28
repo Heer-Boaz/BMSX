@@ -152,10 +152,6 @@ bool FrameLoopState::tickUpdate(Runtime& runtime) {
 	if (consumeSystemReset(runtime)) {
 		return true;
 	}
-	if (!runtime.m_luaInitialized) {
-		return false;
-	}
-
 
 	const bool previousFrameActive = frameActive;
 	const i64 previousRemaining = previousFrameActive ? frameState.cycleBudgetRemaining : -1;

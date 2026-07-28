@@ -72,10 +72,6 @@ export class Runtime {
 		return this.pendingCall === 'entry';
 	}
 
-	public luaInitialized = false;
-	public get isInitialized(): boolean {
-		return this.luaInitialized;
-	}
 	public readonly frameScheduler: FrameSchedulerState;
 	public readonly frameLoop: FrameLoopState;
 	public readonly vblank: VblankState;
@@ -95,7 +91,6 @@ export class Runtime {
 	public resetForSystemBoot(): void {
 		this.cpuExecution.reset();
 		this.frameLoop.resetFrameState();
-		this.luaInitialized = false;
 		this.pendingCall = null;
 		this.machine.cpu.clearExecutionEnvironment();
 		this.machine.memory.clearIoSlots();
@@ -117,9 +112,7 @@ export class Runtime {
 
 	private finishSystemBoot(): void {
 		this.pendingCall = 'entry';
-		this.luaInitialized = true;
 	}
-
 
 	// start repeated-sequence-acceptable -- External closure calls keep frame/budget restore code direct instead of routing through callback plumbing.
 	/** The borrowed result view is invalidated by subsequent CPU execution, call entry, reset, or state restore. */

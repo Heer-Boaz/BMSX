@@ -249,7 +249,6 @@ void Runtime::boot() {
 
 void Runtime::finishSystemBoot() {
 	m_pendingCall = PendingCall::Entry;
-	m_luaInitialized = true;
 }
 
 void Runtime::rebootSystem() {
@@ -262,7 +261,6 @@ void Runtime::rebootSystem() {
 void Runtime::resetForSystemBoot() {
 	cpuExecution.reset();
 	frameLoop.resetFrameState(*this);
-	m_luaInitialized = false;
 	m_pendingCall = PendingCall::None;
 	machine.cpu.clearExecutionEnvironment();
 	machine.memory.clearIoSlots();

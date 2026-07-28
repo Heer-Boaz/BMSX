@@ -62,7 +62,6 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'lastTickCpuUsedCycles',
 	'lastTickSequence',
 	'lastTickVisualFrameCommitted',
-	'luaInitialized',
 	'machine',
 	'machineState',
 	'mask',
