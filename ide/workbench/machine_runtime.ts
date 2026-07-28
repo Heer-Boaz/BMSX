@@ -11,6 +11,8 @@ import { loadRomToolingMedia } from '../../machine/ts/rompack/tooling/media';
 import { startPreparedRuntime } from './blua32_boot';
 import { runWorkbenchHostFrame } from './host_frame';
 import * as workbenchMode from './mode';
+import { initializeMachineHost } from '../../runtime/machine_runtime';
+import type { Platform } from '../../machine/ts/platform/platform';
 
 export async function prepareWorkbenchRuntime(
 	options: MachineInitializationOptions,
@@ -19,14 +21,16 @@ export async function prepareWorkbenchRuntime(
 		options.systemRom,
 		options.cartridgeSlots,
 	);
-	const runtime = await machineManager.initialize(options);
+	const host = await initializeMachineHost(options);
+	const runtime = host.runtime;
 	const sources = createRuntimeSourceState(
 		media.system,
 		media.cartridgeSlots,
 	);
-	const viewport = machineManager.videoPresenter.viewportSize;
+	const viewport = host.presenter.viewportSize;
 	const ide = await workbenchMode.initializeIdeFeatures(
 		runtime,
+		host.presenter,
 		{ width: viewport.x, height: viewport.y },
 		sources,
 	);
@@ -36,12 +40,12 @@ export async function prepareWorkbenchRuntime(
 	return ide;
 }
 
-export function startWorkbenchHostFrames(ide: RuntimeIdeState): void {
-	const runtime = machineManager.runtime;
+export function startWorkbenchHostFrames(platform: Platform, ide: RuntimeIdeState): void {
+	const runtime = ide.runtime;
 	const presentation = new RenderPresentationState();
-	const hostOverlayMenu = new HostOverlayMenu();
+	const hostOverlayMenu = new HostOverlayMenu(ide.presenter);
 	machineManager.start();
-	machineManager.platform.frames.start((currentTime) => {
+	platform.frames.start((currentTime) => {
 		runWorkbenchHostFrame(
 			ide,
 			presentation,

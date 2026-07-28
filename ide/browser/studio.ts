@@ -21,7 +21,7 @@ async function startBrowserStudio(): Promise<void> {
 		);
 		const ide = await prepareWorkbenchRuntime(options);
 		bindBrowserFullscreenShortcut();
-		startWorkbenchHostFrames(ide);
+		startWorkbenchHostFrames(options.platform, ide);
 		completeBrowserBoot();
 	} catch (error) {
 		showBrowserBootError(error);

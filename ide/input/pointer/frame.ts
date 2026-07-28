@@ -10,8 +10,9 @@ import { editorSearchState, lineJumpState } from '../../editor/contrib/find/widg
 import { symbolSearchState } from '../../editor/contrib/symbols/search/state';
 import { createResourceState, resourceSearchState } from '../../workbench/contrib/resources/widget_state';
 import type { ResourcePanelController } from '../../workbench/contrib/resources/panel/controller';
+import type { VideoSurface } from '../../../machine/ts/platform/platform';
 
-export function readEditorPointerSnapshot(): PointerSnapshot {
+export function readEditorPointerSnapshot(surface: VideoSurface): PointerSnapshot {
 	const playerInput = machineManager.input.getPlayerInput(1);
 	const primaryState = playerInput.getRawButtonState('pointer_primary', 'pointer');
 	const primaryPressed = primaryState.pressed && !primaryState.consumed;
@@ -26,7 +27,7 @@ export function readEditorPointerSnapshot(): PointerSnapshot {
 			primaryPressed,
 		};
 	}
-	const mapped = mapScreenPointToViewport(coords[0], coords[1]);
+	const mapped = mapScreenPointToViewport(surface, coords[0], coords[1]);
 	return {
 		viewportX: mapped.x,
 		viewportY: mapped.y,

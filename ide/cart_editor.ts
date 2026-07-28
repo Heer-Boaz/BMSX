@@ -12,6 +12,7 @@ import type { RuntimeFaultState } from './runtime/fault_state';
 import type { RuntimeLuaTooling } from './runtime/lua_tooling';
 import type { RuntimeDebuggerState } from './runtime/debugger_state';
 import type { OverlayRenderer } from './runtime/overlay_renderer';
+import type { VideoPresenter } from '../machine/ts/render/video_presenter';
 import { showEditorMessage, updateEditorMessage, setEditorFeedbackActive, editorFeedbackState } from './common/feedback_state';
 import { clearBackgroundTasks } from './common/background_tasks';
 import { editorRuntimeState } from './editor/common/runtime_state';
@@ -159,6 +160,7 @@ export class RuntimeCartEditor implements CartEditor {
 	private editorRenderTargetBaselineWidth = 0;
 	private editorRenderTargetBaselineHeight = 0;
 	private readonly runtime: Runtime;
+	private readonly presenter: VideoPresenter;
 	private readonly sources: RuntimeSourceState;
 	private readonly fault: RuntimeFaultState;
 	private readonly luaTooling: RuntimeLuaTooling;
@@ -181,6 +183,7 @@ export class RuntimeCartEditor implements CartEditor {
 
 	public constructor(
 		runtime: Runtime,
+		presenter: VideoPresenter,
 		viewport: Viewport,
 		fontVariant: Parameters<typeof setFontVariant>[0],
 		sources: RuntimeSourceState,
@@ -191,6 +194,7 @@ export class RuntimeCartEditor implements CartEditor {
 		overlayRenderer: OverlayRenderer,
 	) {
 		this.runtime = runtime;
+		this.presenter = presenter;
 		this.sources = sources;
 		this.fault = fault;
 		this.luaTooling = luaTooling;
@@ -335,6 +339,7 @@ export class RuntimeCartEditor implements CartEditor {
 		const breakpointRevision = this.breakpoints.revision;
 		handleEditorWheelInput(this);
 		handleTextEditorPointerInput(
+			this.presenter.surface,
 			this,
 			this.sources,
 			this.luaTooling,
@@ -654,8 +659,8 @@ export class RuntimeCartEditor implements CartEditor {
 		if (this.crtPostprocessingEnabledBeforeEditor !== null) {
 			return;
 		}
-		this.crtPostprocessingEnabledBeforeEditor = machineManager.videoPresenter.crt_postprocessing_enabled;
-		machineManager.videoPresenter.crt_postprocessing_enabled = false;
+		this.crtPostprocessingEnabledBeforeEditor = this.presenter.crt_postprocessing_enabled;
+		this.presenter.crt_postprocessing_enabled = false;
 	}
 
 	private restoreCrtPostprocessingFromEditor(): void {
@@ -663,7 +668,7 @@ export class RuntimeCartEditor implements CartEditor {
 		if (enabled === null) {
 			return;
 		}
-		machineManager.videoPresenter.crt_postprocessing_enabled = enabled;
+		this.presenter.crt_postprocessing_enabled = enabled;
 		this.crtPostprocessingEnabledBeforeEditor = null;
 	}
 
@@ -671,7 +676,7 @@ export class RuntimeCartEditor implements CartEditor {
 		if (this.editorRenderTargetBaselineActive) {
 			return;
 		}
-		const presenter = machineManager.videoPresenter;
+		const presenter = this.presenter;
 		this.editorRenderTargetBaselineWidth = presenter.viewportSize.x;
 		this.editorRenderTargetBaselineHeight = presenter.viewportSize.y;
 		this.editorRenderTargetBaselineActive = true;
@@ -684,7 +689,7 @@ export class RuntimeCartEditor implements CartEditor {
 		if (!this.editorRenderTargetBaselineActive) {
 			return;
 		}
-		const presenter = machineManager.videoPresenter;
+		const presenter = this.presenter;
 		presenter.setRenderTargetSize(
 			this.editorRenderTargetBaselineWidth,
 			this.editorRenderTargetBaselineHeight,

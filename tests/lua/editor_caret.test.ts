@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { machineManager } from '../../machine/ts/core/machine_manager';
 import { consumeOverlayFrame } from '../../machine/ts/render/host_overlay/overlay_queue';
 import type { Host2DSubmission } from '../../machine/ts/render/shared/submissions';
 import * as constants from '../../ide/common/constants';
@@ -13,7 +12,10 @@ import { invertThemeToken, resolveThemeTokenColor } from '../../ide/theme/tokens
 
 function renderActiveCursor(baseColor: number): readonly Host2DSubmission[] {
 	const renderer = new OverlayRenderer();
-	renderer.beginFrame();
+	renderer.beginFrame({
+		offscreenCanvasSize: { x: 64, y: 32 },
+		viewportSize: { x: 64, y: 32 },
+	});
 	api.beginFrame(renderer);
 	drawCursor({
 		row: 0,
@@ -32,20 +34,13 @@ function renderActiveCursor(baseColor: number): readonly Host2DSubmission[] {
 test('active code caret redraws the underlying glyph with its inverse color', (t) => {
 	const originalTheme = constants.getActiveIdeThemeVariant();
 	const originalFont = editorViewState.font;
-	const originalView = (machineManager as any).view;
 	t.after(() => {
 		constants.setIdeThemeVariant(originalTheme);
 		editorViewState.font = originalFont;
-		(machineManager as any).view = originalView;
 	});
 
 	constants.setIdeThemeVariant('light');
 	editorViewState.font = new EditorFont('msx');
-	(machineManager as any).view = {
-		offscreenCanvasSize: { x: 64, y: 32 },
-		viewportSize: { x: 64, y: 32 },
-	};
-
 	const darkBaseColor = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_FUNCTION_NAME;
 	const lightBaseColor = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_COMMENT;
 	const darkCommands = renderActiveCursor(darkBaseColor);

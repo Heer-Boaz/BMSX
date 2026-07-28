@@ -24,7 +24,12 @@ public:
 	void reset();
 	void requestHeldPresentation();
 	void syncAfterRuntimeUpdate(Runtime& runtime, i64 previousTickSequence);
-	bool render(MachineManager& manager, Runtime& runtime, bool heldPresent = false);
+	bool render(
+		MachineManager& manager,
+		VideoPresenter& presenter,
+		Runtime& runtime,
+		bool heldPresent = false
+	);
 
 private:
 	void recordTickCompletion(bool visualCommitted);

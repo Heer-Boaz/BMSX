@@ -1,37 +1,4 @@
-// Centralized low-level WebGL helper & resource creation utilities.
-// Moved out of backend.ts to keep backend focused on orchestration.
-import { machineManager } from '../../../core/machine_manager';
 import type { TextureParams } from '../texture_params';
-
-function getRenderContext() {
-	return machineManager.videoPresenter;
-}
-
-export function glCreateBuffer(
-	gl: WebGL2RenderingContext,
-	data?: ArrayBufferView,
-): WebGLBuffer {
-	const buffer = gl.createBuffer()!;
-	if (!data) return buffer;
-	gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-	gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
-	const backend = getRenderContext().backend;
-	backend.accountUpload('vertex', data.byteLength);
-	return buffer;
-}
-
-export function glCreateElementBuffer(
-	gl: WebGL2RenderingContext,
-	data?: Uint8Array | Uint16Array | Uint32Array,
-): WebGLBuffer {
-	const buffer = gl.createBuffer()!;
-	if (!data) return buffer;
-	gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffer);
-	gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
-	const backend = getRenderContext().backend;
-	backend.accountUpload('index', data.byteLength);
-	return buffer;
-}
 
 export function glSetupAttributeFloat(
 	gl: WebGL2RenderingContext,

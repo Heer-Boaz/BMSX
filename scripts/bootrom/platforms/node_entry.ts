@@ -2,7 +2,7 @@ import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
 
 import type { Platform } from 'bmsx/platform';
-import { prepareMachineRuntime, startMachineHostFrames } from '../../../runtime/machine_runtime';
+import { prepareMachineHost, startMachineHostFrames } from '../../../runtime/machine_runtime';
 import {
 	HEADLESS_DEFAULT_FRAME_INTERVAL_MS,
 	HeadlessPlatformServices,
@@ -59,13 +59,13 @@ async function main(): Promise<void> {
 		options.slot1Path ? fs.readFile(path.resolve(options.slot1Path)) : Promise.resolve(null),
 	]);
 	const platform = createPlatform(options.frameIntervalMs);
-	const runtime = await prepareMachineRuntime({
+	const host = await prepareMachineHost({
 		systemRom,
 		cartridgeSlots: [slot0Rom, slot1Rom],
 		debug,
 		platform,
 	});
-	startMachineHostFrames(runtime);
+	startMachineHostFrames(host);
 	console.log(`[bootrom:${BMSX_BOOTROM_TARGET}] Game loop running.`);
 	const ttlMs = options.ttlMs > 0 ? options.ttlMs : 1000;
 	platform.clock.scheduleOnce(ttlMs, () => {

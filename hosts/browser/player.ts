@@ -1,4 +1,4 @@
-import { prepareMachineRuntime, startMachineHostFrames } from '../../runtime/machine_runtime';
+import { prepareMachineHost, startMachineHostFrames } from '../../runtime/machine_runtime';
 import {
 	completeBrowserBoot,
 	prepareBrowserStartup,
@@ -16,9 +16,9 @@ async function startBrowserPlayer(): Promise<void> {
 			systemRomPath,
 			document.body.dataset.defaultRom,
 		);
-		const runtime = await prepareMachineRuntime(options);
+		const host = await prepareMachineHost(options);
 		bindBrowserFullscreenShortcut();
-		startMachineHostFrames(runtime);
+		startMachineHostFrames(host);
 		completeBrowserBoot();
 	} catch (error) {
 		showBrowserBootError(error);

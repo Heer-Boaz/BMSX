@@ -115,7 +115,7 @@ static bool RETRO_CALLCONV read_gx_upload_profile_frame(
 		uint64_t afterRenderFrameSerial,
 		BmsxGxUploadProfileFrameV1* frame) {
 	auto* backend = &static_cast<bmsx::OpenGLES2Backend&>(
-		g_platform->machineManager()->videoPresenter()->backend());
+		g_platform->videoPresenter().backend());
 	bmsx::GxCpuToVramProfileFrame profile;
 	if (!backend->readGxCpuToVramProfileFrame(afterRenderFrameSerial, profile)) {
 		return false;
@@ -1119,7 +1119,7 @@ void retro_init(void) {
 	g_platform->setVideoCallback(video_cb);
 	g_platform->setInputPollCallback(input_poll_cb);
 	g_platform->setInputStateCallback(input_state_cb);
-	g_platform->machineManager()->videoPresenter()->crt_postprocessing_enabled = g_crt_postprocessing_enabled;
+	g_platform->videoPresenter().crt_postprocessing_enabled = g_crt_postprocessing_enabled;
 	g_platform->setCrtEffectOptions(g_crt_noise_enabled,
 									g_crt_color_bleed_enabled,
 									g_crt_scanlines_enabled,
@@ -1343,7 +1343,7 @@ void retro_run(void) {
 		const bool new_crt = read_crt_postprocessing_enabled();
 		if (new_crt != g_crt_postprocessing_enabled) {
 			g_crt_postprocessing_enabled = new_crt;
-			g_platform->machineManager()->videoPresenter()->crt_postprocessing_enabled = g_crt_postprocessing_enabled;
+			g_platform->videoPresenter().crt_postprocessing_enabled = g_crt_postprocessing_enabled;
 		}
 		const bool new_crt_noise = read_crt_noise_enabled();
 		const bool new_crt_color_bleed = read_crt_color_bleed_enabled();

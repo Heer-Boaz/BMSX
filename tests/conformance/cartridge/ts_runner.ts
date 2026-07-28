@@ -17,7 +17,7 @@ async function main(): Promise<void> {
 
 	const [
 		{ machineManager },
-		{ prepareMachineRuntime },
+		{ prepareMachineHost },
 		{ runMachineHostFrame },
 		{ RenderPresentationState },
 		{ HostOverlayMenu },
@@ -54,13 +54,14 @@ async function main(): Promise<void> {
 		readFile(bootableCartPath),
 	]);
 	const platform = new ConformancePlatform();
-	const runtime = await prepareMachineRuntime({
+	const host = await prepareMachineHost({
 		systemRom,
 		cartridgeSlots: [dataRom, bootableCartRom],
 		platform,
 	});
+	const runtime = host.runtime;
 	const presentation = new RenderPresentationState();
-	const hostOverlayMenu = new HostOverlayMenu();
+	const hostOverlayMenu = new HostOverlayMenu(host.presenter);
 	machineManager.start();
 	runtime.frameLoop.currentTimeMs = 0;
 	let currentTimeMs = 0;
@@ -80,6 +81,7 @@ async function main(): Promise<void> {
 			}
 			currentTimeMs += runtime.timing.frameDurationMs;
 			runMachineHostFrame(
+				host.presenter,
 				presentation,
 				hostOverlayMenu,
 				runtime,
@@ -91,7 +93,7 @@ async function main(): Promise<void> {
 	};
 
 	runUntil('READY', 1);
-	const saved = await machineManager.captureRuntimeSaveStateBytes();
+	const saved = await host.captureRuntimeSaveStateBytes();
 	const mailboxControl = CART_MMIO_BASE + CARTRIDGE_MAILBOX_CONTROL_OFFSET;
 	runtime.machine.memory.writeMappedU32LE(mailboxControl, CARTRIDGE_MAILBOX_CONTROL_IRQ_TRIGGER);
 	runUntil('STEP1', 1);

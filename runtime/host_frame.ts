@@ -1,5 +1,6 @@
 import { machineManager } from '../machine/ts/core/machine_manager';
 import type { Runtime } from '../machine/ts/machine/runtime/runtime';
+import type { VideoPresenter } from '../machine/ts/render/video_presenter';
 import { HostMenuInput, type HostOverlayMenu } from './host_overlay_menu';
 import type { RenderPresentationState } from './presentation_state';
 
@@ -108,6 +109,7 @@ export function completeMachineHostUpdate(
 }
 
 export function executeMachineHostUpdate(
+	presenter: VideoPresenter,
 	screen: RenderPresentationState,
 	runtime: Runtime,
 	hostDeltaMs: number,
@@ -115,13 +117,14 @@ export function executeMachineHostUpdate(
 	const previousTickSequence = beginMachineHostUpdate(runtime);
 	runtime.frameScheduler.run(hostDeltaMs);
 	while (runtime.machine.gxGpu.backendReadbackPending()) {
-		machineManager.videoPresenter.backend.executeGxGpuReadback(runtime.machine.gxGpu);
+		presenter.backend.executeGxGpuReadback(runtime.machine.gxGpu);
 		runtime.frameScheduler.run(0);
 	}
 	completeMachineHostUpdate(screen, runtime, previousTickSequence);
 }
 
 export function presentMachineHostPresentation(
+	presenter: VideoPresenter,
 	action: MachineHostPresentation,
 	screen: RenderPresentationState,
 	runtime: Runtime,
@@ -129,15 +132,16 @@ export function presentMachineHostPresentation(
 ): void {
 	switch (action) {
 		case MachineHostFrameAction.PresentPending:
-			screen.presentPending(runtime, hostDeltaMs);
+			screen.presentPending(presenter, runtime, hostDeltaMs);
 			return;
 		case MachineHostFrameAction.PresentPaused:
-			screen.presentPausedFrame(runtime, hostDeltaMs);
+			screen.presentPausedFrame(presenter, runtime, hostDeltaMs);
 			return;
 	}
 }
 
 export function runMachineHostFrame(
+	presenter: VideoPresenter,
 	screen: RenderPresentationState,
 	hostOverlayMenu: HostOverlayMenu,
 	runtime: Runtime,
@@ -161,9 +165,9 @@ export function runMachineHostFrame(
 		hostMenuInput,
 	);
 	if (action === MachineHostFrameAction.Execute) {
-		executeMachineHostUpdate(screen, runtime, hostDeltaMs);
+		executeMachineHostUpdate(presenter, screen, runtime, hostDeltaMs);
 		action = MachineHostFrameAction.PresentPending;
 	}
-	presentMachineHostPresentation(action, screen, runtime, hostDeltaMs);
+	presentMachineHostPresentation(presenter, action, screen, runtime, hostDeltaMs);
 	manager.flushSystemOutput(runtime);
 }

@@ -2,6 +2,7 @@ import { runGate } from '../../../machine/ts/common/taskgate';
 import { machineManager } from '../../../machine/ts/core/machine_manager';
 import { InstructionStepResult } from '../../../machine/ts/machine/runtime/frame/state';
 import type { Runtime } from '../../../machine/ts/machine/runtime/runtime';
+import type { MachineHost } from '../../../runtime/machine_runtime';
 import {
 	beginMachineHostFrame,
 	beginMachineHostUpdate,
@@ -16,6 +17,7 @@ import { RenderPresentationState } from '../../../runtime/presentation_state';
 import type { CpuProfilerSession } from '../cpu_profiler';
 
 function runCpuProfileHostFrame(
+	host: MachineHost,
 	screen: RenderPresentationState,
 	hostOverlayMenu: HostOverlayMenu,
 	runtime: Runtime,
@@ -57,24 +59,26 @@ function runCpuProfileHostFrame(
 			if (!runtime.machine.gxGpu.backendReadbackPending()) {
 				break;
 			}
-			manager.videoPresenter.backend.executeGxGpuReadback(runtime.machine.gxGpu);
+			host.presenter.backend.executeGxGpuReadback(runtime.machine.gxGpu);
 		}
 		completeMachineHostUpdate(screen, runtime, previousTickSequence);
 		action = MachineHostFrameAction.PresentPending;
 	}
-	presentMachineHostPresentation(action, screen, runtime, hostDeltaMs);
+	presentMachineHostPresentation(host.presenter, action, screen, runtime, hostDeltaMs);
 	manager.flushSystemOutput(runtime);
 }
 
 export function startCpuProfileHostFrames(
-	runtime: Runtime,
+	host: MachineHost,
 	session: CpuProfilerSession,
 ): void {
+	const runtime = host.runtime;
 	const presentation = new RenderPresentationState();
-	const hostOverlayMenu = new HostOverlayMenu();
+	const hostOverlayMenu = new HostOverlayMenu(host.presenter);
 	machineManager.start();
-	machineManager.platform.frames.start((currentTime) => {
+	host.platform.frames.start((currentTime) => {
 		runCpuProfileHostFrame(
+			host,
 			presentation,
 			hostOverlayMenu,
 			runtime,

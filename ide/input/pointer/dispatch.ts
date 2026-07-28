@@ -18,8 +18,10 @@ import type { RuntimeLuaTooling } from '../../runtime/lua_tooling';
 import type { RuntimeFaultState } from '../../runtime/fault_state';
 import type { GateGroup } from '../../../machine/ts/common/taskgate';
 import type { OverlayRenderer } from '../../runtime/overlay_renderer';
+import type { VideoSurface } from '../../../machine/ts/platform/platform';
 
 export function handleTextEditorPointerInput(
+	surface: VideoSurface,
 	editor: CartEditor,
 	sources: RuntimeSourceState,
 	luaTooling: RuntimeLuaTooling,
@@ -32,7 +34,7 @@ export function handleTextEditorPointerInput(
 	const metaDown = isMetaDown();
 	const gotoModifierActive = ctrlDown || metaDown;
 	const activeContext = getActiveCodeTabContext();
-	const snapshot = readEditorPointerSnapshot();
+	const snapshot = readEditorPointerSnapshot(surface);
 	if (prepareEditorPointerFrame(editor.resourcePanel, snapshot, gotoModifierActive)) {
 		return;
 	}

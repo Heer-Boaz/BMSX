@@ -281,7 +281,6 @@ add_library(bmsx_core STATIC
 	render/host_overlay/overlay_queue.cpp
 	render/host_overlay/software/renderer.cpp
 	render/host_overlay/gles2/pipeline.cpp
-	render/texture_manager.cpp
 	render/backend/pass/library.cpp
 	render/graph/graph.cpp
 

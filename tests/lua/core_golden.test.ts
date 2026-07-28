@@ -43,9 +43,6 @@ import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { VblankState } from '../../machine/ts/machine/runtime/vblank';
 import { cyclesUntilBudgetUnits } from '../../machine/ts/machine/scheduler/budget';
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
-import { HeadlessGPUBackend } from '../../machine/ts/render/headless/backend';
-import { HeadlessVideoOutput } from '../../machine/ts/render/headless/video_output';
-import { TextureManager } from '../../machine/ts/render/texture_manager';
 
 const TRANSFORM_CASES: ReadonlyArray<readonly [number, number, number, number, number, number]> = [
 	[0, 0, 0, 0, 0, 0],
@@ -201,17 +198,4 @@ test('core golden: the GPU VBlank edge presents and completes the active runtime
 	vblank.handleGpuRuntimeEdge(GX_GPU_PCRTC_RUNTIME_EDGE_VBLANK_END);
 	assert.equal(gxPresentCount, 1);
 	assert.deepEqual(completedFrames, [frameState]);
-});
-
-test('core golden: texture keys use the canonical direct string format', () => {
-	const manager = new TextureManager(new HeadlessGPUBackend(new HeadlessVideoOutput({ x: 256, y: 212 })));
-	const key = (manager as any).makeKey('atlas/main', {
-		size: { x: 16, y: 8 },
-		srgb: false,
-		wrapS: 1,
-		wrapT: 2,
-		minFilter: 3,
-		magFilter: 4,
-	});
-	assert.equal(key, 'atlas/main|size=16.000x8.000|srgb=0|wrapS=1|wrapT=2|minFilter=3|magFilter=4');
 });

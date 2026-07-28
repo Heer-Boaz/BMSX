@@ -39,7 +39,7 @@ enum class HostMenuRepeatId : u8 {
 class HostOverlayMenu {
 public:
 	HostOverlayMenu();
-	bool tickInput(MachineManager& manager);
+	bool tickInput(MachineManager& manager, VideoPresenter& presenter);
 	void resetInputState();
 	void queueRenderCommands(MachineManager& manager, VideoPresenter& presenter);
 	bool queueFrameOverlayCommands(MachineManager& manager, VideoPresenter& presenter);

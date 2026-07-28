@@ -1,4 +1,4 @@
-import { machineManager } from '../../../../machine/ts/core/machine_manager';
+import type { VideoSurface } from '../../../../machine/ts/platform/platform';
 import { lower_bound } from '../../../../machine/ts/common/lower_bound';
 import { EditorFont } from './font';
 import type { FontVariant } from '../../../../machine/ts/render/shared/bmsx_font';
@@ -175,8 +175,12 @@ export function refreshViewportLayout(): void {
 	rewrapRuntimeErrorOverlays();
 }
 
-export function mapScreenPointToViewport(screenX: number, screenY: number): { x: number; y: number; inside: boolean; valid: boolean } {
-	const rect = machineManager.videoPresenter.surface.measureDisplay();
+export function mapScreenPointToViewport(
+	surface: VideoSurface,
+	screenX: number,
+	screenY: number,
+): { x: number; y: number; inside: boolean; valid: boolean } {
+	const rect = surface.measureDisplay();
 	if (rect.width <= 0 || rect.height <= 0) {
 		return { x: 0, y: 0, inside: false, valid: false };
 	}

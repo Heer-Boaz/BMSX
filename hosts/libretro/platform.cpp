@@ -10,7 +10,8 @@
 #include "input/hid_keys.h"
 #include "input/pointer_controls.h"
 #include "render/backend/pass/library.h"
-#include "render/texture_manager.h"
+#include "render/shared/bmsx_font.h"
+#include "render/video_presenter.h"
 #include "common/mem_snapshot.h"
 #include "machine/model_registry.h"
 #include "machine/runtime/runtime.h"
@@ -218,6 +219,30 @@ LibretroPlatform::LibretroPlatform(
 		av_info,
 		profileGxUploads);
 	m_microtask_queue = std::make_unique<DefaultMicrotaskQueue>();
+	const i32 viewportWidth = static_cast<i32>(
+		gxGpuDisplayModeScreenWidth(GX_GPU_RESET_DISPLAY_MODE_WORD));
+	const i32 viewportHeight = gxGpuVerticalVisibleLines(
+		GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD,
+		GX_GPU_RESET_DISPLAY_MODE_WORD);
+	const Vec2 viewportSize{
+		static_cast<f32>(viewportWidth),
+		static_cast<f32>(viewportHeight),
+	};
+	const ViewportDimensions viewportDimensions =
+		m_video_output->getSize(viewportSize, viewportSize);
+	m_video_presenter = std::make_unique<VideoPresenter>(
+		*m_video_output,
+		m_video_output->createBackend(),
+		viewportWidth,
+		viewportHeight);
+	m_video_presenter->viewportScale = viewportDimensions.viewportScale;
+	m_video_presenter->canvasScale = viewportDimensions.canvasScale;
+	m_default_font = std::make_unique<Font>();
+	m_video_presenter->default_font = m_default_font.get();
+	m_video_resize_subscription = m_video_output->onResize([this](const ViewportDimensions& dimensions) {
+		m_video_presenter->viewportScale = dimensions.viewportScale;
+		m_video_presenter->canvasScale = dimensions.canvasScale;
+	});
 
 	// Initialize controller devices
 	m_controller_devices.fill(RETRO_DEVICE_JOYPAD);
@@ -226,9 +251,8 @@ LibretroPlatform::LibretroPlatform(
 	m_machine_manager = std::make_unique<MachineManager>();
 	m_machine_manager->initialize(this);
 	if (m_backend_type == BackendType::Software) {
-		auto* presenter = m_machine_manager->videoPresenter();
-		auto* backend = &presenter->backend();
-		installBuiltinRenderPipeline(presenter, backend);
+		installBuiltinRenderPipeline(m_video_presenter.get(), &m_video_presenter->backend());
+		m_video_presenter->initializeDefaultTextures();
 	}
 
 	log(RETRO_LOG_INFO, "[BMSX] Platform initialized\n");
@@ -240,6 +264,9 @@ LibretroPlatform::~LibretroPlatform() {
 	// Shutdown the machine manager before destroying platform components
 	m_machine_manager->shutdown();
 	m_machine_manager.reset();
+	m_video_resize_subscription.unsubscribe();
+	m_video_presenter.reset();
+	m_default_font.reset();
 
 	log(RETRO_LOG_INFO, "[BMSX] Platform destroyed\n");
 }
@@ -261,7 +288,7 @@ void LibretroPlatform::setInputStateCallback(retro_input_state_t cb) {
 void LibretroPlatform::setHwRenderCallbacks(retro_hw_get_current_framebuffer_t get_current_framebuffer,
 											retro_hw_get_proc_address_t get_proc_address) {
 #if BMSX_ENABLE_GLES2
-	auto* backend = &static_cast<OpenGLES2Backend&>(m_machine_manager->videoPresenter()->backend());
+	auto* backend = &static_cast<OpenGLES2Backend&>(m_video_presenter->backend());
 	backend->setContextCallbacks(get_current_framebuffer, get_proc_address);
 #else
 	(void)get_current_framebuffer;
@@ -273,17 +300,16 @@ void LibretroPlatform::setHwRenderCallbacks(retro_hw_get_current_framebuffer_t g
 void LibretroPlatform::onContextReset() {
 #if BMSX_ENABLE_GLES2
 	log(RETRO_LOG_INFO, "[BMSX] onContextReset: begin\n");
-	auto* presenter = m_machine_manager->videoPresenter();
+	auto* presenter = m_video_presenter.get();
 	auto* backend = &static_cast<OpenGLES2Backend&>(presenter->backend());
 	log(RETRO_LOG_INFO, "[BMSX] onContextReset: backend reset\n");
 	backend->setViewportSize(static_cast<i32>(m_framebuffer.width), static_cast<i32>(m_framebuffer.height));
 	backend->onContextReset();
-	m_machine_manager->texmanager()->clear();
 
 	log(RETRO_LOG_INFO, "[BMSX] onContextReset: rebuild render graph\n");
 	installBuiltinRenderPipeline(presenter, backend);
 	log(RETRO_LOG_INFO, "[BMSX] onContextReset: refresh render surfaces\n");
-	m_machine_manager->refreshRenderSurfaces();
+	m_video_presenter->initializeDefaultTextures();
 	log(RETRO_LOG_INFO, "[BMSX] onContextReset: done\n");
 #else
 	throw BMSX_RUNTIME_ERROR("[LibretroPlatform] OpenGLES2 backend disabled at compile time.");
@@ -292,11 +318,10 @@ void LibretroPlatform::onContextReset() {
 
 void LibretroPlatform::onContextDestroy() {
 #if BMSX_ENABLE_GLES2
-	auto* presenter = m_machine_manager->videoPresenter();
+	auto* presenter = m_video_presenter.get();
 	auto* backend = &static_cast<OpenGLES2Backend&>(presenter->backend());
 	backend->captureGxGpuVramSnapshot(m_machine_manager->runtime().machine.gxGpu);
 	presenter->releaseRenderPipeline();
-	m_machine_manager->texmanager()->clear();
 	presenter->clearTextures();
 	backend->onContextDestroy();
 #else
@@ -306,12 +331,11 @@ void LibretroPlatform::onContextDestroy() {
 
 void LibretroPlatform::onContextLost() {
 #if BMSX_ENABLE_GLES2
-	auto* presenter = m_machine_manager->videoPresenter();
+	auto* presenter = m_video_presenter.get();
 	auto* backend = &static_cast<OpenGLES2Backend&>(presenter->backend());
 	// Retire the generation before owners release handles: the replacement context may reuse the same numeric GL names.
 	backend->onContextLost();
 	presenter->releaseRenderPipeline();
-	m_machine_manager->texmanager()->clear();
 	presenter->clearTextures();
 #else
 	throw BMSX_RUNTIME_ERROR("[LibretroPlatform] OpenGLES2 backend disabled at compile time.");
@@ -336,7 +360,7 @@ void LibretroPlatform::setAVInfo(const retro_system_av_info& info) {
 	);
 
 	if (m_framebuffer.width != baseWidth || m_framebuffer.height != baseHeight) {
-		m_machine_manager->videoPresenter()->setRenderTargetSize(static_cast<i32>(baseWidth), static_cast<i32>(baseHeight));
+		m_video_presenter->setRenderTargetSize(static_cast<i32>(baseWidth), static_cast<i32>(baseHeight));
 	}
 
 	m_audio_service->setTiming(info.timing.sample_rate);
@@ -349,7 +373,7 @@ void LibretroPlatform::setCrtEffectOptions(bool applyNoise,
 											bool applyGlow,
 											bool applyFringing,
 											bool applyAperture) {
-	auto* presenter = m_machine_manager->videoPresenter();
+	auto* presenter = m_video_presenter.get();
 	presenter->applyNoise = applyNoise;
 	presenter->applyColorBleed = applyColorBleed;
 	presenter->applyScanlines = applyScanlines;
@@ -361,11 +385,11 @@ void LibretroPlatform::setCrtEffectOptions(bool applyNoise,
 
 void LibretroPlatform::setDeviceQuantizeMode(DeviceQuantizeMode mode) {
 	m_device_quantize_mode = mode;
-	m_machine_manager->videoPresenter()->setDeviceQuantizeMode(mode);
+	m_video_presenter->setDeviceQuantizeMode(mode);
 }
 
 void LibretroPlatform::setResourceUsageGizmo(bool enabled) {
-	m_machine_manager->videoPresenter()->showResourceUsageGizmo = enabled;
+	m_video_presenter->showResourceUsageGizmo = enabled;
 }
 
 void LibretroPlatform::requestShutdown() {
@@ -584,7 +608,7 @@ bool LibretroPlatform::runFrame() {
 	Runtime& runtime = m_machine_manager->runtime();
 	bool presented = false;
 	try {
-		presented = m_machine_manager->runHostFrame(runtime, *m_microtask_queue, dt, m_platform_paused);
+		presented = m_machine_manager->runHostFrame(runtime, *m_microtask_queue, *m_video_presenter, dt, m_platform_paused);
 	} catch (const std::exception& error) {
 		reportRuntimeError(runtime, error.what());
 	} catch (...) {
@@ -657,7 +681,7 @@ bool LibretroPlatform::saveState(void* data, size_t size) {
 		return false;
 	}
 	try {
-		m_machine_manager->videoPresenter()->backend().captureGxGpuVramSnapshot(runtime.machine.gxGpu);
+		m_video_presenter->backend().captureGxGpuVramSnapshot(runtime.machine.gxGpu);
 		const std::vector<u8> state = captureRuntimeSaveStateBytes(runtime);
 		u8* const envelope = static_cast<u8*>(data);
 		writeLE32(envelope, kSaveStateMagic);

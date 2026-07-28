@@ -1,13 +1,10 @@
-import { machineManager } from '../../../core/machine_manager';
-
 // Global toggle for WebGL error checking. Disabled in normal builds.
 export const CATCH_WEBGL_ERROR = false;
 
-export function checkWebGLError(infoText: string): number {
+export function checkWebGLError(gl: WebGL2RenderingContext, infoText: string): number {
 	if (!CATCH_WEBGL_ERROR) {
 		return 0;
 	}
-	const gl = machineManager.videoPresenter.nativeCtx as WebGLRenderingContext;
 	const error = gl.getError();
 	if (error !== gl.NO_ERROR) {
 		console.error(`WebGL error: ${webGLErrorName(gl, error)}: ${infoText}`);
@@ -15,7 +12,7 @@ export function checkWebGLError(infoText: string): number {
 	return error;
 }
 
-function webGLErrorName(gl: WebGLRenderingContext, error: number): string {
+function webGLErrorName(gl: WebGL2RenderingContext, error: number): string {
 	switch (error) {
 		case gl.NO_ERROR: return 'NO_ERROR';
 		case gl.INVALID_ENUM: return 'INVALID_ENUM';

@@ -72,6 +72,7 @@ function presentWorkbenchFrame(
 		workbenchMode.tickIDEDraw(ide, runtime);
 	}
 	presentMachineHostPresentation(
+		ide.presenter,
 		action,
 		screen,
 		runtime,
@@ -145,7 +146,7 @@ export function runWorkbenchHostFrame(
 				hostMenuInput,
 			);
 			if (action === MachineHostFrameAction.Execute) {
-				executeMachineHostUpdate(screen, runtime, hostDeltaMs);
+				executeMachineHostUpdate(ide.presenter, screen, runtime, hostDeltaMs);
 				action = MachineHostFrameAction.PresentPending;
 			}
 			if (machineWillAdvance) {

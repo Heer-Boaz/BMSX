@@ -5,6 +5,7 @@ import { machineManager } from '../machine/ts/core/machine_manager';
 import { Input } from '../machine/ts/input/manager';
 import type { PlayerInput } from '../machine/ts/input/player';
 import type { DeviceQuantizeMode } from '../machine/ts/render/post/device_quantize/mode';
+import type { VideoPresenter } from '../machine/ts/render/video_presenter';
 import { clearHostMenuFrame, publishHostMenuFrame, type HostMenuFrame } from '../machine/ts/render/host_overlay/overlay_queue';
 
 type HostMenuValue = {
@@ -168,6 +169,7 @@ function usagePercentCodeText(code: number): string {
 }
 
 export class HostOverlayMenu {
+	private readonly presenter: VideoPresenter;
 	private active = false;
 	private selected = 0;
 	private dirtyText = true;
@@ -198,71 +200,71 @@ export class HostOverlayMenu {
 			kind: 'value',
 			label: 'Show Usage Gizmo',
 			values: TOGGLE_VALUES,
-			getIndex: () => boolIndex(machineManager.videoPresenter.show_resource_usage_gizmo),
-			setIndex: index => { machineManager.videoPresenter.show_resource_usage_gizmo = boolFromIndex(index); },
+			getIndex: () => boolIndex(this.presenter.show_resource_usage_gizmo),
+			setIndex: index => { this.presenter.show_resource_usage_gizmo = boolFromIndex(index); },
 		},
 		{
 			kind: 'value',
 			label: 'CRT Post-processing',
 			values: TOGGLE_VALUES,
-			getIndex: () => boolIndex(machineManager.videoPresenter.crt_postprocessing_enabled),
-			setIndex: index => { machineManager.videoPresenter.crt_postprocessing_enabled = boolFromIndex(index); },
+			getIndex: () => boolIndex(this.presenter.crt_postprocessing_enabled),
+			setIndex: index => { this.presenter.crt_postprocessing_enabled = boolFromIndex(index); },
 		},
 		{
 			kind: 'value',
 			label: 'CRT Noise',
 			values: TOGGLE_VALUES,
-			getIndex: () => boolIndex(machineManager.videoPresenter.enable_noise),
-			setIndex: index => { machineManager.videoPresenter.enable_noise = boolFromIndex(index); },
+			getIndex: () => boolIndex(this.presenter.enable_noise),
+			setIndex: index => { this.presenter.enable_noise = boolFromIndex(index); },
 		},
 		{
 			kind: 'value',
 			label: 'CRT Color Bleed',
 			values: TOGGLE_VALUES,
-			getIndex: () => boolIndex(machineManager.videoPresenter.enable_colorbleed),
-			setIndex: index => { machineManager.videoPresenter.enable_colorbleed = boolFromIndex(index); },
+			getIndex: () => boolIndex(this.presenter.enable_colorbleed),
+			setIndex: index => { this.presenter.enable_colorbleed = boolFromIndex(index); },
 		},
 		{
 			kind: 'value',
 			label: 'CRT Scanlines',
 			values: TOGGLE_VALUES,
-			getIndex: () => boolIndex(machineManager.videoPresenter.enable_scanlines),
-			setIndex: index => { machineManager.videoPresenter.enable_scanlines = boolFromIndex(index); },
+			getIndex: () => boolIndex(this.presenter.enable_scanlines),
+			setIndex: index => { this.presenter.enable_scanlines = boolFromIndex(index); },
 		},
 		{
 			kind: 'value',
 			label: 'CRT Blur',
 			values: TOGGLE_VALUES,
-			getIndex: () => boolIndex(machineManager.videoPresenter.enable_blur),
-			setIndex: index => { machineManager.videoPresenter.enable_blur = boolFromIndex(index); },
+			getIndex: () => boolIndex(this.presenter.enable_blur),
+			setIndex: index => { this.presenter.enable_blur = boolFromIndex(index); },
 		},
 		{
 			kind: 'value',
 			label: 'CRT Glow',
 			values: TOGGLE_VALUES,
-			getIndex: () => boolIndex(machineManager.videoPresenter.enable_glow),
-			setIndex: index => { machineManager.videoPresenter.enable_glow = boolFromIndex(index); },
+			getIndex: () => boolIndex(this.presenter.enable_glow),
+			setIndex: index => { this.presenter.enable_glow = boolFromIndex(index); },
 		},
 		{
 			kind: 'value',
 			label: 'CRT Fringing',
 			values: TOGGLE_VALUES,
-			getIndex: () => boolIndex(machineManager.videoPresenter.enable_fringing),
-			setIndex: index => { machineManager.videoPresenter.enable_fringing = boolFromIndex(index); },
+			getIndex: () => boolIndex(this.presenter.enable_fringing),
+			setIndex: index => { this.presenter.enable_fringing = boolFromIndex(index); },
 		},
 		{
 			kind: 'value',
 			label: 'CRT Aperture',
 			values: TOGGLE_VALUES,
-			getIndex: () => boolIndex(machineManager.videoPresenter.enable_aperture),
-			setIndex: index => { machineManager.videoPresenter.enable_aperture = boolFromIndex(index); },
+			getIndex: () => boolIndex(this.presenter.enable_aperture),
+			setIndex: index => { this.presenter.enable_aperture = boolFromIndex(index); },
 		},
 		{
 			kind: 'value',
 			label: 'Output Quantize',
 			values: DEVICE_QUANTIZE_VALUES,
-			getIndex: () => machineManager.videoPresenter.deviceQuantizeMode,
-			setIndex: index => { machineManager.videoPresenter.deviceQuantizeMode = index as DeviceQuantizeMode; },
+			getIndex: () => this.presenter.deviceQuantizeMode,
+			setIndex: index => { this.presenter.deviceQuantizeMode = index as DeviceQuantizeMode; },
 		},
 		{
 			kind: 'value',
@@ -283,7 +285,8 @@ export class HostOverlayMenu {
 		},
 	];
 
-	public constructor() {
+	public constructor(presenter: VideoPresenter) {
+		this.presenter = presenter;
 		this.optionGlyphs = new Array(this.options.length);
 		for (let index = 0; index < this.options.length; index += 1) {
 			this.optionGlyphs[index] = { x: 0, y: 0, z: 922, items: '', item_start: 0, item_end: 0, font: null, color: COLOR_TEXT, has_background_color: false, background_color: 0xff000000, wrap_chars: 0, center_block_width: 0, align: TextAlign.Start, baseline: TextBaseline.Alphabetic, layer: LAYER_2D_IDE };
@@ -371,7 +374,7 @@ export class HostOverlayMenu {
 		if (this.dirtyText) {
 			this.rebuildText();
 		}
-		const presenter = machineManager.videoPresenter;
+		const presenter = this.presenter;
 		const font = presenter.default_font;
 		const lineHeight = font.lineHeight > 10 ? 10 : font.lineHeight;
 		const padding = 4;
@@ -423,7 +426,7 @@ export class HostOverlayMenu {
 		if (this.active) {
 			return false;
 		}
-		const presenter = machineManager.videoPresenter;
+		const presenter = this.presenter;
 		const font = presenter.default_font;
 		let queued = false;
 		if (machineManager.host_show_fps) {

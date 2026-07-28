@@ -1,7 +1,6 @@
 import type { BFont } from '../../machine/ts/render/shared/bitmap_font';
 import { RectRenderKind, TextAlign, TextBaseline, type Host2DSubmission, type color } from '../../machine/ts/render/shared/submissions';
 import { LAYER_2D_IDE, type Layer2D } from '../../machine/ts/render/shared/layers';
-import { machineManager } from '../../machine/ts/core/machine_manager';
 import { clearOverlayFrame, publishOverlayFrame, type HostOverlayFrame } from '../../machine/ts/render/host_overlay/overlay_queue';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import type { Viewport } from '../../machine/ts/rompack/format';
@@ -123,13 +122,12 @@ export class OverlayRenderer {
 		return this.overrideSize;
 	}
 
-	public beginFrame(): void {
+	public beginFrame(presenter: VideoPresenter): void {
 		const buffer = this.activeBuffer;
 		buffer.commands.length = 0;
 		buffer.rectCount = 0;
 		buffer.imageCount = 0;
 		buffer.itemCount = 0;
-		const presenter = machineManager.videoPresenter;
 		const offscreen = presenter.offscreenCanvasSize;
 		const logical = presenter.viewportSize;
 		const renderWidth = this.overrideSize ? this.overrideSize.width : offscreen.x;

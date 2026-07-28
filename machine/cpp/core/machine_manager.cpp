@@ -4,15 +4,11 @@
 
 #include "machine_manager.h"
 #include "host_overlay_menu.h"
-#include "render/shared/bitmap_font.h"
 #include "input/manager.h"
-#include "render/texture_manager.h"
 #include "../machine/runtime/runtime.h"
 #include "machine/model_registry.h"
-#include "machine/devices/gx/gpu_display.h"
 #include "machine/memory/map.h"
 #include "machine/runtime/boot_timing.h"
-#include "render/shared/bmsx_font.h"
 #include <cstdio>
 #include <cstdlib>
 #include <chrono>
@@ -55,39 +51,6 @@ bool MachineManager::initialize(Platform* platform) {
 
 	m_platform = platform;
 
-	// Get viewport size from platform
-	auto& host = platform->videoOutput();
-	Vec2 defaultViewport{
-		static_cast<f32>(gxGpuDisplayModeScreenWidth(GX_GPU_RESET_DISPLAY_MODE_WORD)),
-		static_cast<f32>(gxGpuVerticalVisibleLines(GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD, GX_GPU_RESET_DISPLAY_MODE_WORD))
-	};
-	ViewportDimensions dims = host.getSize(defaultViewport, defaultViewport);
-
-	// Create VideoPresenter with logical viewport
-	m_video_presenter = std::make_unique<VideoPresenter>(
-		host,
-		host.createBackend(),
-		static_cast<i32>(defaultViewport.x),
-		static_cast<i32>(defaultViewport.y)
-	);
-	m_video_presenter->viewportScale = dims.viewportScale;
-	m_video_presenter->canvasScale = dims.canvasScale;
-	m_viewport_scale = dims.viewportScale;
-	m_canvas_scale = dims.canvasScale;
-
-	// Subscribe to resize events
-	m_resize_sub = host.onResize([this](const ViewportDimensions& dims) {
-		m_viewport_scale = dims.viewportScale;
-		m_canvas_scale = dims.canvasScale;
-		m_video_presenter->viewportScale = m_viewport_scale;
-		m_video_presenter->canvasScale = m_canvas_scale;
-	});
-
-	m_texture_manager = std::make_unique<TextureManager>(m_video_presenter->backend());
-	if (m_video_presenter->backend().readyForTextureUpload()) {
-		m_video_presenter->initializeDefaultTextures();
-	}
-
 	Input::instance().initialize();
 	m_focus_sub = platform->lifecycle()->onFocusChange([](bool) {
 		Input::instance().resetInputState();
@@ -108,13 +71,8 @@ void MachineManager::shutdown() {
 	stop();
 	unloadRom();
 	m_focus_sub.unsubscribe();
-	m_resize_sub.unsubscribe();
 	Input::instance().shutdown();
 	hostOverlayMenu().resetInputState();
-
-	m_texture_manager.reset();
-
-	m_video_presenter.reset();
 
 	// Clear registry (keeps persistent objects)
 	registry().deregister(m_sound_master.get(), true);
@@ -213,13 +171,6 @@ void MachineManager::syncRuntimeAudioTiming() {
 	}
 }
 
-void MachineManager::refreshRenderSurfaces() {
-	if (!m_video_presenter->backend().readyForTextureUpload()) {
-		return;
-	}
-	m_video_presenter->initializeDefaultTextures();
-}
-
 void MachineManager::log(LogLevel level, const char* fmt, ...) {
 	va_list args;
 	va_start(args, fmt);
@@ -267,18 +218,9 @@ Runtime& MachineManager::ensureRuntime(const RuntimeOptions& options) {
 // ROM loading and boot orchestration
 // ============================================================================
 
-void MachineManager::configureVideoForGpuReset() {
-	m_video_presenter->setRenderTargetSize(
-		static_cast<i32>(gxGpuDisplayModeScreenWidth(GX_GPU_RESET_DISPLAY_MODE_WORD)),
-		gxGpuVerticalVisibleLines(GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD, GX_GPU_RESET_DISPLAY_MODE_WORD)
-	);
-}
-
 bool MachineManager::loadSystemRomInternal(const u8* data, size_t size) {
 	m_system_rom_image = parseRomImage(data, size, RomImageDomain::System);
 	m_system_rom_loaded = true;
-	m_default_font = std::make_unique<Font>();
-	m_video_presenter->default_font = m_default_font.get();
 	return true;
 }
 
@@ -288,7 +230,6 @@ bool MachineManager::bootSystemFirmware() {
 
 	const ResolvedRuntimeTiming timing = resolveRuntimeTiming(PSX_MACHINE_SPEC.cpuFreqHz);
 	configureMemoryMap(static_cast<uint32_t>(PSX_MACHINE_SPEC.ramBytes));
-	configureVideoForGpuReset();
 
 	Runtime& rt = ensureRuntime(RuntimeOptions{
 		m_system_rom_image.bytes,
@@ -380,9 +321,6 @@ void MachineManager::unloadRom() {
 	if (m_rom_loaded) {
 		Input::instance().resetInputState();
 		hostOverlayMenu().resetInputState();
-		if (m_texture_manager) {
-			m_texture_manager->clear();
-		}
 		registry().clear();
 	}
 	m_runtime.reset();

@@ -10,14 +10,14 @@ import {
 	machineManager,
 	type MachineInitializationOptions,
 } from '../../../machine/ts/core/machine_manager';
-import type { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import {
 	HEADLESS_DEFAULT_FRAME_INTERVAL_MS,
 	HeadlessPlatformServices,
 } from '../../../hosts/node/headless/platform_headless';
 import {
-	prepareMachineRuntime,
+	prepareMachineHost,
 	startMachineHostFrames,
+	type MachineHost,
 } from '../../../runtime/machine_runtime';
 import { CpuProfilerSession, formatCpuProfilerReport } from '../cpu_profiler';
 import {
@@ -105,12 +105,12 @@ async function main(): Promise<void> {
 	console.log(`[bootrom:headless] TTL set to ${options.ttlMs}ms.`);
 
 	let profile: {
-		runtime: Runtime;
+		host: MachineHost;
 		session: CpuProfilerSession;
 	} | null = null;
 	if (options.cpuProfile) {
 		const media = await loadRomToolingMedia(systemRom, [slot0Rom, slot1Rom]);
-		const runtime = await prepareMachineRuntime(bootOptions);
+		const host = await prepareMachineHost(bootOptions);
 		const systemLayer = media.system;
 		const systemSource = new RomSourceStack([{
 			id: systemLayer.id,
@@ -142,7 +142,7 @@ async function main(): Promise<void> {
 			),
 			cartridgeSlots: cartridgeImages,
 		});
-		profile = { runtime, session };
+		profile = { host, session };
 		console.log('[bootrom:headless] Fantasy CPU profiler enabled.');
 	}
 
@@ -152,7 +152,7 @@ async function main(): Promise<void> {
 				installNodeWorkspaceBridge(path.resolve(path.dirname(options.romPath), '..'));
 				const ide = await prepareWorkbenchRuntime(bootOptions);
 				const runtime = machineManager.runtime;
-				startWorkbenchHostFrames(ide);
+				startWorkbenchHostFrames(platform, ide);
 				await Promise.race([
 					runIdeTest({
 						testPath: options.mode.path,
@@ -180,8 +180,9 @@ async function main(): Promise<void> {
 				);
 				let passed = false;
 				try {
-					const runtime = await prepareMachineRuntime(bootOptions);
-					startMachineHostFrames(runtime);
+					const host = await prepareMachineHost(bootOptions);
+					const runtime = host.runtime;
+					startMachineHostFrames(host);
 					await new HostTestRunner({
 						testPath: options.mode.path,
 						frameIntervalMs: options.frameIntervalMs,
@@ -219,10 +220,10 @@ async function main(): Promise<void> {
 						inputLogger,
 					);
 					if (profile) {
-						startCpuProfileHostFrames(profile.runtime, profile.session);
+						startCpuProfileHostFrames(profile.host, profile.session);
 					} else {
-						const runtime = await prepareMachineRuntime(bootOptions);
-						startMachineHostFrames(runtime);
+						const host = await prepareMachineHost(bootOptions);
+						startMachineHostFrames(host);
 					}
 					await Promise.race([
 						timeline.completion,
@@ -242,10 +243,10 @@ async function main(): Promise<void> {
 			}
 			case 'plain': {
 				if (profile) {
-					startCpuProfileHostFrames(profile.runtime, profile.session);
+					startCpuProfileHostFrames(profile.host, profile.session);
 				} else {
-					const runtime = await prepareMachineRuntime(bootOptions);
-					startMachineHostFrames(runtime);
+					const host = await prepareMachineHost(bootOptions);
+					startMachineHostFrames(host);
 				}
 				await new Promise<void>((resolve) => {
 					platform.clock.scheduleOnce(options.ttlMs, () => resolve());

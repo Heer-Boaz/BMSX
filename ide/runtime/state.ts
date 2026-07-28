@@ -25,13 +25,15 @@ export class RuntimeIdeState {
 	public readonly fault: RuntimeFaultState = createRuntimeFaultState();
 
 	public constructor(
-		runtime: Runtime,
+		public readonly runtime: Runtime,
+		public readonly presenter: VideoPresenter,
 		viewport: Viewport,
 		public readonly sources: RuntimeSourceState,
 	) {
 		this.luaTooling = new RuntimeLuaTooling(runtime, sources);
 		this.editor = new RuntimeCartEditor(
 			runtime,
+			presenter,
 			viewport,
 			DEFAULT_IDE_FONT_VARIANT,
 			sources,

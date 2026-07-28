@@ -16,7 +16,6 @@
 #include "spec/bmsx/cartridge.h"
 #include "rompack/image.h"
 #include "platform/platform.h"
-#include "render/video_presenter.h"
 #include "render/presentation_state.h"
 #include "audio/soundmaster.h"
 #include <array>
@@ -27,10 +26,9 @@
 
 namespace bmsx {
 
-class BFont;
 class MachineManager;
-class TextureManager;
 class Runtime;
+class VideoPresenter;
 struct RuntimeOptions;
 struct ResolvedRuntimeTiming;
 
@@ -53,7 +51,6 @@ enum class MachineManagerState {
 class MachineManager {
 public:
 	friend class FrameLoopState;
-	friend class RenderPresentationState;
 
 	struct TickTiming {
 		f64 totalMs = 0.0;
@@ -62,15 +59,6 @@ public:
 		f64 runtimeUpdateMs = 0.0;
 		f64 workbenchModeMs = 0.0;
 		f64 microtaskMs = 0.0;
-	};
-
-	struct RenderTiming {
-		f64 totalMs = 0.0;
-		f64 beginFrameMs = 0.0;
-		f64 testPatternMs = 0.0;
-		f64 runtimeDrawMs = 0.0;
-		f64 workbenchModeDrawMs = 0.0;
-		f64 endFrameMs = 0.0;
 	};
 
 	MachineManager();
@@ -91,6 +79,7 @@ public:
 	bool runHostFrame(
 		Runtime& runtime,
 		MicrotaskQueue& microtasks,
+		VideoPresenter& presenter,
 		f64 deltaTime,
 		bool platformPaused
 	);
@@ -104,7 +93,6 @@ public:
 
 	// Core host subsystems
 	Platform* platform() { return m_platform; }
-	VideoPresenter* videoPresenter() { return m_video_presenter.get(); }
 	bool hasRuntime() const { return m_runtime != nullptr; }
 	Runtime& runtime();
 	const Runtime& runtime() const;
@@ -112,7 +100,6 @@ public:
 	Registry& registry() { return Registry::instance(); }
 	HostClock* clock() { return m_platform->clock(); }
 	SoundMaster* soundMaster() { return m_sound_master.get(); }
-	TextureManager* texmanager() { return m_texture_manager.get(); }
 	// ROM loading and boot orchestration
 	bool loadSystemRomOwned(std::vector<u8>&& data);
 	bool loadSystemRomFile(const std::string& path);
@@ -135,9 +122,6 @@ public:
 	f64 fps() const { return m_fps; }
 	bool hostShowFps = false;
 	const TickTiming& lastTickTiming() const { return m_last_tick_timing; }
-	const RenderTiming& lastRenderTiming() const { return m_last_render_timing; }
-
-	void refreshRenderSurfaces();
 	void log(LogLevel level, const char* fmt, ...);
 
 	// Registry shortcuts
@@ -163,10 +147,7 @@ private:
 	};
 
 	Platform* m_platform = nullptr;
-	std::unique_ptr<VideoPresenter> m_video_presenter;
-	std::unique_ptr<BFont> m_default_font;
 	std::unique_ptr<SoundMaster> m_sound_master;
-	std::unique_ptr<TextureManager> m_texture_manager;
 	std::unique_ptr<Runtime> m_runtime;
 
 	// ROM state
@@ -178,7 +159,6 @@ private:
 	bool m_rom_loaded = false;
 	bool m_system_rom_loaded = false;
 
-	void configureVideoForGpuReset();
 	bool loadSystemRomInternal(const u8* data, size_t size);
 	bool bootLoadedCartridgeSlots();
 	bool bootSystemFirmware();
@@ -196,14 +176,10 @@ private:
 	u64 m_debugTickUpdates = 0;
 	i64 m_debugLastUpdateCountTotal = 0;
 	TickTiming m_last_tick_timing;
-	RenderTiming m_last_render_timing;
 	RenderPresentationState m_screen;
 
 	static MachineManager* s_instance;
 
-	f32 m_viewport_scale = 1.0f;
-	f32 m_canvas_scale = 1.0f;
-	SubscriptionHandle m_resize_sub;
 	SubscriptionHandle m_focus_sub;
 };
 

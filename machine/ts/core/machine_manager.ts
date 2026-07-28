@@ -1,20 +1,13 @@
 import { SoundMaster } from "../audio/soundmaster";
 import { Input } from "../input/manager";
-import { VideoPresenter } from "../render/video_presenter";
-import { Font } from '../render/shared/bmsx_font';
-import { TextureManager } from "../render/texture_manager";
-import { RenderPassLibrary } from "../render/backend/pass/library";
 import { LogLevel, setMicrotaskQueue } from '../platform';
 import type { Platform } from '../platform';
 import { PAL_REFRESH_UFPS_SCALED, PSX_MACHINE_SPEC } from '../machine/model_registry';
 import { HZ_SCALE } from '../machine/runtime/timing/constants';
-import { renderGate, runGate } from '../common/taskgate';
 import { Runtime } from '../machine/runtime/runtime';
 import { Memory } from '../machine/memory/memory';
 import { configureMemoryMap } from '../machine/memory/map';
 import { resolveRuntimeTiming } from '../machine/runtime/boot_timing';
-import { captureRuntimeSaveStateBytes } from '../machine/runtime/save_state/codec';
-import { gxGpuDisplayModeScreenWidth, gxGpuVerticalVisibleLines } from '../machine/devices/gx/gpu_display';
 import { SYS_PRINT_BUFFER_BYTES } from '../spec/bmsx/io';
 import { parseRomImage } from '../rompack/image';
 import {
@@ -58,7 +51,6 @@ export class MachineManager {
 	/**
 	 * The ID of the animation frame request.
 	 */
-	private _videoPresenter!: VideoPresenter;
 	private _platform!: Platform;
 	private _runtime!: Runtime;
 	/**
@@ -82,10 +74,7 @@ export class MachineManager {
 		}
 	}
 
-	public get videoPresenter(): VideoPresenter { return this._videoPresenter; }
-
 	public get input(): Input { return Input.instance!; }
-	public get texmanager(): TextureManager { return TextureManager.instance!; }
 	public get sndmaster(): SoundMaster { return SoundMaster.instance; }
 	public get platform(): Platform { return this._platform!; }
 	public get runtime(): Runtime { return this._runtime; }
@@ -133,7 +122,7 @@ export class MachineManager {
 		this.sndmaster.bootstrapRuntimeAudio(this.runtime.timing.ufpsScaled, DEFAULT_MASTER_VOLUME);
 	}
 
-	public async initialize(options: MachineInitializationOptions): Promise<Runtime> {
+	public initialize(options: MachineInitializationOptions): Runtime {
 		const {
 			systemRom,
 			cartridgeSlots,
@@ -142,10 +131,6 @@ export class MachineManager {
 			enableOnscreenGamepad = false,
 			platform,
 		} = options;
-		if (!platform) {
-			throw new Error('[MachineManager] Platform services not provided.');
-		}
-		const videoOutput = platform.videoOutput;
 		const systemImage = parseRomImage(systemRom, 'system');
 		const cartridgeImages = [
 			cartridgeSlots[0] ? parseRomImage(cartridgeSlots[0], 'cart') : null,
@@ -184,7 +169,7 @@ export class MachineManager {
 		setMicrotaskQueue(platform.microtasks);
 		this.running = false;
 		this._paused = false;
-		this._debug = debug ?? this._debug;
+		this._debug = debug;
 
 		Input.initialize(startingGamepadIndex); // Init input module
 		Input.instance.bind();
@@ -204,43 +189,10 @@ export class MachineManager {
 			geoWorkUnitsPerSec: timing.geoWorkUnitsPerSec,
 		}, Input.instance);
 		this._runtime = runtime;
-		const gpuOutput = runtime.machine.gxGpu.readDeviceOutput();
-		const viewportSize = {
-			x: gxGpuDisplayModeScreenWidth(gpuOutput.displayModeWord),
-			y: gxGpuVerticalVisibleLines(gpuOutput.verticalDisplayRangeWord, gpuOutput.displayModeWord),
-		};
-		const gpuBackend = await videoOutput.createBackend();
-		const presenter = new VideoPresenter(
-			videoOutput,
-			gpuBackend,
-			viewportSize.x,
-			viewportSize.y,
-		);
-		this._videoPresenter = presenter;
 		this.syncAudioTiming();
-		new TextureManager(gpuBackend);
-		const pipelineRegistry = new RenderPassLibrary(gpuBackend, presenter);
-		presenter.initialize(pipelineRegistry);
-
-		videoOutput.onResize((dims) => {
-			presenter.viewportScale = dims.viewportScale;
-			presenter.canvasScale = dims.canvasScale;
-		});
-
-		// Perform initial layout - this will call host.getSize which triggers browser layout
-		const initialDims = videoOutput.getSize(viewportSize, presenter.canvasSize);
-		presenter.viewportScale = initialDims.viewportScale;
-		presenter.canvasScale = initialDims.canvasScale;
-
-		presenter.initializeDefaultTextures();
-		this.videoPresenter.default_font = new Font();
 
 		this.initialized = true;
 		return runtime;
-	}
-
-	public refreshRenderSurfaces(): void {
-		this.videoPresenter.initializeDefaultTextures();
 	}
 
 	/**
@@ -256,18 +208,6 @@ export class MachineManager {
 		runtime.frameLoop.currentTimeMs = now;
 		runtime.frameScheduler.clearQueuedTime();
 		this.running = true;
-	}
-
-	public async captureRuntimeSaveStateBytes(): Promise<Uint8Array> {
-		const renderToken = renderGate.begin({ blocking: true, tag: 'save-state-capture' });
-		const runToken = runGate.begin({ blocking: true, tag: 'save-state-capture' });
-		try {
-			await this.videoPresenter.backend.captureGxGpuVramSnapshot(this.runtime.machine.gxGpu);
-			return captureRuntimeSaveStateBytes(this.runtime);
-		} finally {
-			renderGate.end(renderToken);
-			runGate.end(runToken);
-		}
 	}
 
 }

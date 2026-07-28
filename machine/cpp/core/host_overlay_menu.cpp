@@ -279,8 +279,7 @@ void HostOverlayMenu::queueCommand(Host2DKind kind, Host2DRef ref) {
 	m_commandCount += 1;
 }
 
-bool HostOverlayMenu::tickInput(MachineManager& manager) {
-	VideoPresenter* presenter = manager.videoPresenter();
+bool HostOverlayMenu::tickInput(MachineManager& manager, VideoPresenter& presenter) {
 	const Input& input = Input::instance();
 	const bool comboEdge = buttonPressed(input, HostMenuButtonId::Start) &&
 		buttonPressed(input, HostMenuButtonId::Select) &&
@@ -328,7 +327,7 @@ bool HostOverlayMenu::tickInput(MachineManager& manager) {
 				currentTimeMs,
 				frameDurationMs
 			)) {
-				changeSelected(manager, *presenter, -1);
+				changeSelected(manager, presenter, -1);
 			}
 			if (advanceButtonRepeat(
 				buttonPressed(input, HostMenuButtonId::Right),
@@ -337,7 +336,7 @@ bool HostOverlayMenu::tickInput(MachineManager& manager) {
 				currentTimeMs,
 				frameDurationMs
 			)) {
-				changeSelected(manager, *presenter, 1);
+				changeSelected(manager, presenter, 1);
 			}
 			if (buttonJustPressed(input, HostMenuButtonId::A)) {
 				activateSelected(manager);

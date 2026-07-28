@@ -16,7 +16,7 @@ import type {
 } from '../backend/backend';
 import type { GxGpuDeviceOutput } from '../../machine/devices/gx/device_output';
 
-// Internal graph texture handle. Named distinctly to avoid collision with existing TextureManager TextureHandle.
+// Internal graph texture handle, distinct from backend TextureHandle.
 export type RGTexHandle = number;
 
 export interface TexDesc {

@@ -31,9 +31,11 @@ import {
 	toggleEditor,
 	updateGamePipelineExts,
 } from './overlay_modes';
+import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 
 export async function initializeIdeFeatures(
 	runtime: Runtime,
+	presenter: VideoPresenter,
 	viewport: Viewport,
 	sources: RuntimeSourceState,
 ): Promise<RuntimeIdeState> {
@@ -53,7 +55,7 @@ export async function initializeIdeFeatures(
 		sources,
 		workspaceDirtyRecords,
 	);
-	const state = new RuntimeIdeState(runtime, viewport, sources);
+	const state = new RuntimeIdeState(runtime, presenter, viewport, sources);
 	seedDefaultLuaBuiltins();
 	updateGamePipelineExts(state.editor, state.overlayRenderer);
 	Input.instance.setKeyboardCapture(EDITOR_TOGGLE_KEY, editorAvailable);
@@ -147,7 +149,7 @@ export function tickIDEDraw(state: RuntimeIdeState, runtime: Runtime): void {
 export function drawIde(state: RuntimeIdeState, runtime: Runtime): void {
 	const overlayRenderer = state.overlayRenderer;
 	try {
-		overlayRenderer.beginFrame();
+		overlayRenderer.beginFrame(state.presenter);
 		overlay_api.beginFrame(overlayRenderer);
 		state.editor.draw();
 	} catch (error) {

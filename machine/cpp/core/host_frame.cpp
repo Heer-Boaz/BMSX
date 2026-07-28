@@ -4,6 +4,7 @@
 #include "common/time.h"
 #include "input/manager.h"
 #include "machine/runtime/runtime.h"
+#include "render/video_presenter.h"
 
 #include <chrono>
 
@@ -15,6 +16,7 @@ constexpr double MAX_FRAME_DELTA_MS = 250.0;
 bool MachineManager::runHostFrame(
 	Runtime& runtime,
 	MicrotaskQueue& microtasks,
+	VideoPresenter& presenter,
 	f64 deltaTime,
 	bool platformPaused
 ) {
@@ -36,7 +38,7 @@ bool MachineManager::runHostFrame(
 	m_fps = 1.0 / hostDeltaSeconds;
 
 	Input::instance().pollInput();
-	const bool hostMenuActive = hostOverlayMenu().tickInput(*this);
+	const bool hostMenuActive = hostOverlayMenu().tickInput(*this, presenter);
 
 	m_screen.clearPresentation();
 	if (!platformPaused && !hostMenuActive) {
@@ -44,7 +46,7 @@ bool MachineManager::runHostFrame(
 		const i64 previousTickSequence = runtime.frameScheduler.lastTickSequence;
 		runtime.frameScheduler.run(runtime, hostDeltaMs);
 		while (runtime.machine.gxGpu.backendReadbackPending()) {
-			m_video_presenter->backend().executeGxGpuReadback(runtime.machine.gxGpu);
+			presenter.backend().executeGxGpuReadback(runtime.machine.gxGpu);
 			runtime.frameScheduler.run(runtime, 0.0);
 		}
 		syncRuntimeAudioTiming();
@@ -59,12 +61,12 @@ bool MachineManager::runHostFrame(
 	m_last_tick_timing.totalMs = to_ms(std::chrono::steady_clock::now() - tickStart);
 
 	if (hostMenuActive) {
-		hostOverlayMenu().queueRenderCommands(*this, *m_video_presenter);
+		hostOverlayMenu().queueRenderCommands(*this, presenter);
 		m_screen.requestHeldPresentation();
-	} else if (hostOverlayMenu().queueFrameOverlayCommands(*this, *m_video_presenter)) {
+	} else if (hostOverlayMenu().queueFrameOverlayCommands(*this, presenter)) {
 		m_screen.requestHeldPresentation();
 	}
-	return m_screen.render(*this, runtime, platformPaused);
+	return m_screen.render(*this, presenter, runtime, platformPaused);
 }
 
 } // namespace bmsx

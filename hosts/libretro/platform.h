@@ -28,6 +28,8 @@ class LibretroAudioService;
 class LibretroHostClock;
 class MachineManager;
 class Runtime;
+class BFont;
+class VideoPresenter;
 
 /* ============================================================================
  * Framebuffer for video output
@@ -189,6 +191,7 @@ public:
 
 	// Machine manager access
 	MachineManager* machineManager() { return m_machine_manager.get(); }
+	VideoPresenter& videoPresenter() { return *m_video_presenter; }
 
 	// Save states
 	size_t getStateSize() const;
@@ -251,6 +254,9 @@ private:
 	std::unique_ptr<LibretroAudioService> m_audio_service;
 	std::unique_ptr<LibretroVideoOutput> m_video_output;
 	std::unique_ptr<MicrotaskQueue> m_microtask_queue;
+	std::unique_ptr<VideoPresenter> m_video_presenter;
+	std::unique_ptr<BFont> m_default_font;
+	SubscriptionHandle m_video_resize_subscription;
 
 	// Save RAM
 	std::vector<uint8_t> m_save_ram;

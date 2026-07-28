@@ -163,12 +163,17 @@ void RenderPresentationState::syncAfterRuntimeUpdate(Runtime& runtime, i64 previ
 	}
 }
 
-bool RenderPresentationState::render(MachineManager& manager, Runtime& runtime, bool heldPresent) {
-	if (manager.m_state != MachineManagerState::Running && manager.m_state != MachineManagerState::Paused) {
+bool RenderPresentationState::render(
+	MachineManager& manager,
+	VideoPresenter& presenter,
+	Runtime& runtime,
+	bool heldPresent
+) {
+	if (manager.state() != MachineManagerState::Running && manager.state() != MachineManagerState::Paused) {
 		return false;
 	}
 
-	const bool pausedPresent = manager.m_state == MachineManagerState::Paused || heldPresent;
+	const bool pausedPresent = manager.state() == MachineManagerState::Paused || heldPresent;
 	const bool runtimePresentPending = !pausedPresent && consumePresentation(m_presentationScratch);
 	const bool shouldPresent = pausedPresent || runtimePresentPending;
 	if (!shouldPresent) {
@@ -189,10 +194,10 @@ bool RenderPresentationState::render(MachineManager& manager, Runtime& runtime, 
 	const bool displayConfigurationChanged = m_pcrtcScanoutRevision != output.pcrtcScanout.revision;
 	m_pcrtcScanoutRevision = output.pcrtcScanout.revision;
 	if (displayConfigurationChanged && output.pcrtcScanout.outputActive) {
-		manager.m_video_presenter->setRenderTargetSize(width, height);
+		presenter.setRenderTargetSize(width, height);
 	}
-	manager.m_video_presenter->configurePresentation(presentMode, commitFrame);
-	manager.m_video_presenter->present(output, manager.totalTime(), manager.deltaTime());
+	presenter.configurePresentation(presentMode, commitFrame);
+	presenter.present(output, runtime.frameLoop.currentTimeSeconds, manager.deltaTime());
 	if (commitFrame) {
 		runtime.machine.gxGpu.retirePresentedCommands();
 	}

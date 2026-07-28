@@ -267,7 +267,6 @@
 		"machine/ts/render/shared/bmsx_font.ts",
 		"machine/ts/render/shared/glyph_runs.ts",
 		"machine/ts/render/shared/layers.ts",
-		"machine/ts/render/texture_manager.ts",
 		"machine/ts/rompack/format.ts",
 		"machine/ts/render/host_overlay/atlas.generated.ts",
 		"machine/ts/render/host_overlay/atlas.ts",

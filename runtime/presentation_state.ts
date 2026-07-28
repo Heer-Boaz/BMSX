@@ -1,6 +1,7 @@
 import { machineManager } from '../machine/ts/core/machine_manager';
 import type { Runtime } from '../machine/ts/machine/runtime/runtime';
 import type { TickCompletion } from '../machine/ts/machine/scheduler/frame';
+import type { VideoPresenter } from '../machine/ts/render/video_presenter';
 
 export type RenderPresentationMode = 'partial' | 'completed';
 
@@ -28,9 +29,14 @@ export class RenderPresentationState {
 		return this.pendingPresentation;
 	}
 
-	private presentFrame(runtime: Runtime, hostDeltaMs: number, mode: RenderPresentationMode, commitFrame: boolean): void {
+	private presentFrame(
+		presenter: VideoPresenter,
+		runtime: Runtime,
+		hostDeltaMs: number,
+		mode: RenderPresentationMode,
+		commitFrame: boolean,
+	): void {
 		machineManager.deltatime = hostDeltaMs;
-		const presenter = machineManager.videoPresenter;
 		const output = runtime.machine.gxGpu.readDeviceOutput();
 		const width = output.pcrtcScanout.outputWidth;
 		const height = output.pcrtcScanout.outputHeight;
@@ -41,7 +47,7 @@ export class RenderPresentationState {
 		}
 		presenter.configurePresentation(mode, commitFrame);
 		machineManager.sndmaster.finishFrame();
-		presenter.present(output, machineManager.platform.clock.now() / 1000, hostDeltaMs / 1000);
+		presenter.present(output, runtime.frameLoop.currentTimeMs / 1000, hostDeltaMs / 1000);
 		if (commitFrame) {
 			runtime.machine.gxGpu.retirePresentedCommands();
 		}
@@ -94,17 +100,23 @@ export class RenderPresentationState {
 		}
 	}
 
-	public presentPausedFrame(runtime: Runtime, hostDeltaMs: number): void {
+	public presentPausedFrame(presenter: VideoPresenter, runtime: Runtime, hostDeltaMs: number): void {
 		runtime.frameScheduler.clearQueuedTime();
 		this.clearPresentation();
-		this.presentFrame(runtime, hostDeltaMs, 'completed', false);
+		this.presentFrame(presenter, runtime, hostDeltaMs, 'completed', false);
 	}
 
-	public presentPending(runtime: Runtime, hostDeltaMs: number): boolean {
+	public presentPending(presenter: VideoPresenter, runtime: Runtime, hostDeltaMs: number): boolean {
 		if (!this.consumePresentation(this.presentationScratch)) {
 			return false;
 		}
-		this.presentFrame(runtime, hostDeltaMs, this.presentationScratch.mode, this.presentationScratch.commitFrame);
+		this.presentFrame(
+			presenter,
+			runtime,
+			hostDeltaMs,
+			this.presentationScratch.mode,
+			this.presentationScratch.commitFrame,
+		);
 		return true;
 	}
 }
