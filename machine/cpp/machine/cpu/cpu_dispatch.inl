@@ -511,7 +511,7 @@ DISPATCH_LABEL(RET) {
 }
 
 DISPATCH_LABEL(LOAD_MEM_D) {
-	const uint32_t addr = static_cast<uint32_t>(asNumber(REG(b))) + (static_cast<uint32_t>(disp) << 2);
+	const uint32_t addr = toU32(REG(b)) + (static_cast<uint32_t>(disp) << 2);
 	if ((addr & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[static_cast<size_t>(c)]) != 0u) {
 		enterSynchronousAddressException(FRAME, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, addr);
 		DISPATCH_CONTINUE();
@@ -536,7 +536,7 @@ DISPATCH_LABEL(LOAD_MEM_D) {
 }
 
 DISPATCH_LABEL(STORE_MEM_D) {
-	const uint32_t addr = static_cast<uint32_t>(asNumber(REG(b))) + (static_cast<uint32_t>(disp) << 2);
+	const uint32_t addr = toU32(REG(b)) + (static_cast<uint32_t>(disp) << 2);
 	if ((addr & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[static_cast<size_t>(c)]) != 0u) {
 		enterSynchronousAddressException(FRAME, CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, addr);
 		DISPATCH_CONTINUE();
@@ -549,9 +549,9 @@ DISPATCH_LABEL(STORE_MEM_D) {
 	const uint32_t faultSequence = m_memory.readBusFaultSequence();
 	switch (static_cast<MemoryAccessKind>(c)) {
 		case MemoryAccessKind::Word: m_memory.writeMappedValue(addr, value); break;
-		case MemoryAccessKind::U8: m_memory.writeMappedU8(addr, static_cast<u8>(toU32(asNumber(value)))); break;
-		case MemoryAccessKind::U16LE: m_memory.writeMappedU16LE(addr, toU32(asNumber(value))); break;
-		case MemoryAccessKind::U32LE: m_memory.writeMappedU32LE(addr, toU32(asNumber(value))); break;
+		case MemoryAccessKind::U8: m_memory.writeMappedU8(addr, static_cast<u8>(toU32(value))); break;
+		case MemoryAccessKind::U16LE: m_memory.writeMappedU16LE(addr, toU32(value)); break;
+		case MemoryAccessKind::U32LE: m_memory.writeMappedU32LE(addr, toU32(value)); break;
 		case MemoryAccessKind::F32LE: m_memory.writeMappedF32LE(addr, static_cast<float>(asNumber(value))); break;
 		case MemoryAccessKind::F64LE: m_memory.writeMappedF64LE(addr, asNumber(value)); break;
 	}
@@ -562,7 +562,7 @@ DISPATCH_LABEL(STORE_MEM_D) {
 }
 
 DISPATCH_LABEL(STORE_MEM_WORDS_D) {
-	const uint32_t addr = static_cast<uint32_t>(asNumber(REG(b))) + (static_cast<uint32_t>(disp) << 2);
+	const uint32_t addr = toU32(REG(b)) + (static_cast<uint32_t>(disp) << 2);
 	if ((addr & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[static_cast<size_t>(MemoryAccessKind::Word)]) != 0u) {
 		enterSynchronousAddressException(FRAME, CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, addr);
 		DISPATCH_CONTINUE();
@@ -578,7 +578,7 @@ DISPATCH_LABEL(STORE_MEM_WORDS_D) {
 }
 
 DISPATCH_LABEL(LOAD_MEM) {
-	const uint32_t addr = static_cast<uint32_t>(asNumber(readRK(FRAME, rkB)));
+	const uint32_t addr = toU32(readRK(FRAME, rkB));
 	if ((addr & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[static_cast<size_t>(c)]) != 0u) {
 		enterSynchronousAddressException(FRAME, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, addr);
 		DISPATCH_CONTINUE();
@@ -603,7 +603,7 @@ DISPATCH_LABEL(LOAD_MEM) {
 }
 
 DISPATCH_LABEL(STORE_MEM) {
-	const uint32_t addr = static_cast<uint32_t>(asNumber(readRK(FRAME, rkB)));
+	const uint32_t addr = toU32(readRK(FRAME, rkB));
 	if ((addr & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[static_cast<size_t>(c)]) != 0u) {
 		enterSynchronousAddressException(FRAME, CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, addr);
 		DISPATCH_CONTINUE();
@@ -616,9 +616,9 @@ DISPATCH_LABEL(STORE_MEM) {
 	const uint32_t faultSequence = m_memory.readBusFaultSequence();
 	switch (static_cast<MemoryAccessKind>(c)) {
 		case MemoryAccessKind::Word: m_memory.writeMappedValue(addr, value); break;
-		case MemoryAccessKind::U8: m_memory.writeMappedU8(addr, static_cast<u8>(toU32(asNumber(value)))); break;
-		case MemoryAccessKind::U16LE: m_memory.writeMappedU16LE(addr, toU32(asNumber(value))); break;
-		case MemoryAccessKind::U32LE: m_memory.writeMappedU32LE(addr, toU32(asNumber(value))); break;
+		case MemoryAccessKind::U8: m_memory.writeMappedU8(addr, static_cast<u8>(toU32(value))); break;
+		case MemoryAccessKind::U16LE: m_memory.writeMappedU16LE(addr, toU32(value)); break;
+		case MemoryAccessKind::U32LE: m_memory.writeMappedU32LE(addr, toU32(value)); break;
 		case MemoryAccessKind::F32LE: m_memory.writeMappedF32LE(addr, static_cast<float>(asNumber(value))); break;
 		case MemoryAccessKind::F64LE: m_memory.writeMappedF64LE(addr, asNumber(value)); break;
 	}
@@ -629,7 +629,7 @@ DISPATCH_LABEL(STORE_MEM) {
 }
 
 DISPATCH_LABEL(STORE_MEM_WORDS) {
-	const uint32_t addr = static_cast<uint32_t>(asNumber(readRK(FRAME, rkB)));
+	const uint32_t addr = toU32(readRK(FRAME, rkB));
 	if ((addr & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[static_cast<size_t>(MemoryAccessKind::Word)]) != 0u) {
 		enterSynchronousAddressException(FRAME, CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, addr);
 		DISPATCH_CONTINUE();

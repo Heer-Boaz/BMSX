@@ -36,6 +36,7 @@ export type Blua32ExecutionImage = {
 	textAddress: number;
 	textByteCount: number;
 	constPool: Value[];
+	constNumbers: Float64Array;
 	globalSlots: Uint32Array;
 	systemGlobalSlots: Uint32Array;
 	decodedPages: DecodedInstructionPage[];

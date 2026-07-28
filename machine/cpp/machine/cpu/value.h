@@ -1,7 +1,6 @@
 #pragma once
 
 #include <array>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -168,10 +167,24 @@ inline bool isTruthy(Value v) {
 }
 
 inline uint32_t toU32(double value) {
-	const double truncated = std::trunc(value);
-	const double mod = std::fmod(truncated, 4294967296.0);
-	const double normalized = mod < 0.0 ? (mod + 4294967296.0) : mod;
-	return static_cast<uint32_t>(normalized);
+	if (value >= -4294967296.0 && value < 4294967296.0) {
+		return static_cast<uint32_t>(static_cast<int64_t>(value));
+	}
+	uint64_t bits = 0;
+	std::memcpy(&bits, &value, sizeof(double));
+	const uint32_t encodedExponent = static_cast<uint32_t>((bits >> 52) & 0x7ffULL);
+	if (encodedExponent < 1023u || encodedExponent == 0x7ffu) {
+		return 0u;
+	}
+	const uint32_t exponent = encodedExponent - 1023u;
+	if (exponent >= 84u) {
+		return 0u;
+	}
+	const uint64_t significand = (bits & 0x000fffffffffffffULL) | 0x0010000000000000ULL;
+	const uint32_t word = exponent < 52u
+		? static_cast<uint32_t>(significand >> (52u - exponent))
+		: static_cast<uint32_t>(significand) << (exponent - 52u);
+	return (bits & VALUE_SIGN_BIT) == 0u ? word : 0u - word;
 }
 
 inline uint32_t toU32(Value value) {

@@ -23,6 +23,7 @@ export class RegisterFile {
 	constructor(size: number) {
 		this.tags = new Uint8Array(size);
 		this.numbers = new Float64Array(size);
+		this.numbers.fill(NaN);
 		this.refs = new Array<Value>(size);
 		this.size = size;
 		for (let index = 0; index < size; index += 1) {
@@ -46,6 +47,7 @@ export class RegisterFile {
 		const start = this.base;
 		const end = start + count;
 		this.tags.fill(ValueTag.Nil, start, end);
+		this.numbers.fill(NaN, start, end);
 		for (let slot = start; slot < end; slot += 1) {
 			this.refs[slot] = null;
 		}
@@ -151,12 +153,14 @@ export class RegisterFile {
 	public setNil(index: number): void {
 		const slot = this.base + index;
 		this.tags[slot] = ValueTag.Nil;
+		this.numbers[slot] = NaN;
 		this.refs[slot] = null;
 	}
 
 	public setBool(index: number, value: boolean): void {
 		const slot = this.base + index;
 		this.tags[slot] = value ? ValueTag.True : ValueTag.False;
+		this.numbers[slot] = NaN;
 		this.refs[slot] = null;
 	}
 
@@ -170,24 +174,28 @@ export class RegisterFile {
 	public setString(index: number, value: StringValue): void {
 		const slot = this.base + index;
 		this.tags[slot] = ValueTag.String;
+		this.numbers[slot] = NaN;
 		this.refs[slot] = value;
 	}
 
 	public setTable(index: number, value: Table): void {
 		const slot = this.base + index;
 		this.tags[slot] = ValueTag.Table;
+		this.numbers[slot] = NaN;
 		this.refs[slot] = value;
 	}
 
 	public setClosure(index: number, value: Closure): void {
 		const slot = this.base + index;
 		this.tags[slot] = ValueTag.Closure;
+		this.numbers[slot] = NaN;
 		this.refs[slot] = value;
 	}
 
 	public setBuiltinFunction(index: number, value: BuiltinFunction): void {
 		const slot = this.base + index;
 		this.tags[slot] = ValueTag.BuiltinFunction;
+		this.numbers[slot] = NaN;
 		this.refs[slot] = value;
 	}
 
@@ -198,10 +206,9 @@ export class RegisterFile {
 		if (tag === ValueTag.Number) {
 			this.numbers[slot] = value as number;
 			this.refs[slot] = null;
-		} else if (tag <= ValueTag.Number) {
-			this.refs[slot] = null;
 		} else {
-			this.refs[slot] = value;
+			this.numbers[slot] = NaN;
+			this.refs[slot] = tag <= ValueTag.Number ? null : value;
 		}
 	}
 }

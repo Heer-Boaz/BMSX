@@ -796,16 +796,16 @@ export class CPU {
 	private decodeConstantPool(
 		executionDomainId: ExecutionDomainId,
 		tableAddress: number,
-		constantCount: number,
-	): Value[] {
-		const constPool = new Array<Value>(constantCount);
-		if (constantCount === 0) {
-			return constPool;
+		constPool: Value[],
+		constNumbers: Float64Array,
+	): void {
+		if (constPool.length === 0) {
+			return;
 		}
 		this.executionAddressSpace.bindReadOnlyView(
 			executionDomainId,
 			tableAddress,
-			constantCount * BLUA32_CONSTANT_RECORD_SIZE,
+			constPool.length * BLUA32_CONSTANT_RECORD_SIZE,
 			this.executionTableView,
 		);
 		const bytes = this.executionTableView.bytes;
@@ -815,7 +815,8 @@ export class CPU {
 			bytes.byteOffset + byteOffset,
 			this.executionTableView.byteLength,
 		);
-		for (let index = 0; index < constantCount; index += 1) {
+		constNumbers.fill(NaN);
+		for (let index = 0; index < constPool.length; index += 1) {
 			const recordOffset = index * BLUA32_CONSTANT_RECORD_SIZE;
 			const recordByteOffset = byteOffset + recordOffset;
 			switch (readLE32(bytes, recordByteOffset + BLUA32_CONSTANT_TAG_OFFSET)) {
@@ -829,10 +830,11 @@ export class CPU {
 					constPool[index] = true;
 					break;
 				case Blua32ConstantTag.Number:
-					constPool[index] = numberView.getFloat64(
+					constNumbers[index] = numberView.getFloat64(
 						recordOffset + BLUA32_CONSTANT_PAYLOAD_OFFSET,
 						true,
 					);
+					constPool[index] = constNumbers[index];
 					break;
 				case Blua32ConstantTag.String:
 					constPool[index] = StringValue.get(this.internExecutionString(
@@ -845,7 +847,6 @@ export class CPU {
 					throw new Error('BLua32 constant tag is invalid.');
 			}
 		}
-		return constPool;
 	}
 
 	private registerGlobalNames(
@@ -937,10 +938,13 @@ export class CPU {
 			headerBytes,
 			headerByteOffset + BLUA32_IMAGE_TEXT_BYTE_COUNT_OFFSET,
 		);
-		const constPool = this.decodeConstantPool(
+		const constPool = new Array<Value>(constantCount);
+		const constNumbers = new Float64Array(constantCount);
+		this.decodeConstantPool(
 			executionBoot.executionDomainId,
 			constantTableAddress,
-			constantCount,
+			constPool,
+			constNumbers,
 		);
 		const globalSlots = this.registerGlobalNames(
 			executionBoot.executionDomainId,
@@ -969,6 +973,7 @@ export class CPU {
 			textAddress,
 			textByteCount,
 			constPool,
+			constNumbers,
 			globalSlots,
 			systemGlobalSlots,
 			decodedPages: decoded.pages,
@@ -1789,8 +1794,8 @@ export class CPU {
 				case OpCode.BXOR:
 				case OpCode.SHL:
 				case OpCode.SHR: {
-					const left = this.readRK(frame, rkB) as number;
-					const right = this.readRK(frame, rkC) as number;
+					const left = this.readRKNumber(frame, rkB);
+					const right = this.readRKNumber(frame, rkC);
 					switch (op) {
 						case OpCode.ADD:
 							this.setRegisterNumberFast(frame, registers, a, left + right);
@@ -1848,7 +1853,7 @@ export class CPU {
 					return;
 				}
 				case OpCode.UNM: {
-					const value = registers.get(b) as number;
+					const value = registers.getNumber(b);
 					this.setRegisterNumberFast(frame, registers, a, -value);
 					return;
 				}
@@ -1871,7 +1876,7 @@ export class CPU {
 					}
 				}
 				case OpCode.BNOT: {
-					const value = registers.get(b) as number;
+					const value = registers.getNumber(b);
 					this.setRegisterNumberFast(frame, registers, a, ~value);
 					return;
 				}
@@ -1889,7 +1894,7 @@ export class CPU {
 					const right = this.readRK(frame, rkC);
 					const ok = valueIsString(left) && valueIsString(right)
 						? this.stringPool.toString(asStringId(left)) < this.stringPool.toString(asStringId(right))
-						: (left as number) < (right as number);
+						: this.readRKNumber(frame, rkB) < this.readRKNumber(frame, rkC);
 					if (ok !== (a !== 0)) {
 						this.skipNextInstruction(frame);
 					}
@@ -1918,7 +1923,7 @@ export class CPU {
 						this.enterSynchronousException(frame, CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
 						return;
 					}
-					const value = (registers.get(a) as number) >>> 0;
+					const value = registers.getNumber(a) >>> 0;
 					switch (b) {
 						case COP0_STATUS: this.statusWord = value; return;
 						case COP0_EPC: this.epcWord = value; return;
@@ -1965,7 +1970,7 @@ export class CPU {
 					}
 					return;
 				case OpCode.LOADKR:
-					this.setRegisterFast(frame, registers, a, image.constPool[registers.get(b) as number]);
+					this.setRegisterFast(frame, registers, a, image.constPool[registers.getNumber(b)]);
 					return;
 
 				case OpCode.LE: {
@@ -1973,7 +1978,7 @@ export class CPU {
 					const right = this.readRK(frame, rkC);
 					const ok = valueIsString(left) && valueIsString(right)
 						? this.stringPool.toString(asStringId(left)) <= this.stringPool.toString(asStringId(right))
-						: (left as number) <= (right as number);
+						: this.readRKNumber(frame, rkB) <= this.readRKNumber(frame, rkC);
 					if (ok !== (a !== 0)) {
 						this.skipNextInstruction(frame);
 					}
@@ -2102,7 +2107,7 @@ export class CPU {
 				case OpCode.LOAD_MEM_D:
 				case OpCode.STORE_MEM_D:
 				case OpCode.STORE_MEM_WORDS_D: {
-					const addr = (registers.get(b) as number) + (disp << 2);
+					const addr = ((registers.getNumber(b) >>> 0) + (disp << 2)) >>> 0;
 					const alignmentMask = op === OpCode.STORE_MEM_WORDS_D
 						? MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[MemoryAccessKind.Word]
 						: MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[c as MemoryAccessKind];
@@ -2129,26 +2134,25 @@ export class CPU {
 							this.blockMappedWrite(frame, addr);
 							return;
 						}
-						const value = registers.get(a);
 						const faultSequence = this.memory.readBusFaultSequence();
 						switch (c) {
 							case MemoryAccessKind.Word:
-								this.memory.writeMappedValue(addr, value);
+								this.memory.writeMappedValue(addr, registers.get(a));
 								break;
 							case MemoryAccessKind.U8:
-								this.memory.writeMappedU8(addr, value as number);
+								this.memory.writeMappedU8(addr, registers.getNumber(a));
 								break;
 							case MemoryAccessKind.U16LE:
-								this.memory.writeMappedU16LE(addr, value as number);
+								this.memory.writeMappedU16LE(addr, registers.getNumber(a));
 								break;
 							case MemoryAccessKind.U32LE:
-								this.memory.writeMappedU32LE(addr, value as number);
+								this.memory.writeMappedU32LE(addr, registers.getNumber(a));
 								break;
 							case MemoryAccessKind.F32LE:
-								this.memory.writeMappedF32LE(addr, value as number);
+								this.memory.writeMappedF32LE(addr, registers.getNumber(a));
 								break;
 							case MemoryAccessKind.F64LE:
-								this.memory.writeMappedF64LE(addr, value as number);
+								this.memory.writeMappedF64LE(addr, registers.getNumber(a));
 								break;
 						}
 						if (this.memory.readBusFaultSequence() !== faultSequence) {
@@ -2186,7 +2190,7 @@ export class CPU {
 					return;
 				}
 				case OpCode.LOAD_MEM: {
-					const addr = this.readRK(frame, rkB) as number;
+					const addr = this.readRKNumber(frame, rkB) >>> 0;
 					if ((addr & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[c as MemoryAccessKind]) !== 0) {
 						this.enterSynchronousAddressException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, addr);
 						return;
@@ -2221,7 +2225,7 @@ export class CPU {
 					return;
 				}
 				case OpCode.STORE_MEM: {
-					const addr = this.readRK(frame, rkB) as number;
+					const addr = this.readRKNumber(frame, rkB) >>> 0;
 					if ((addr & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[c as MemoryAccessKind]) !== 0) {
 						this.enterSynchronousAddressException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, addr);
 						return;
@@ -2230,26 +2234,25 @@ export class CPU {
 						this.blockMappedWrite(frame, addr);
 						return;
 					}
-					const value = registers.get(a);
 					const faultSequence = this.memory.readBusFaultSequence();
 					switch (c) {
 						case MemoryAccessKind.Word:
-							this.memory.writeMappedValue(addr, value);
+							this.memory.writeMappedValue(addr, registers.get(a));
 							break;
 						case MemoryAccessKind.U8:
-							this.memory.writeMappedU8(addr, value as number);
+							this.memory.writeMappedU8(addr, registers.getNumber(a));
 							break;
 						case MemoryAccessKind.U16LE:
-							this.memory.writeMappedU16LE(addr, value as number);
+							this.memory.writeMappedU16LE(addr, registers.getNumber(a));
 							break;
 						case MemoryAccessKind.U32LE:
-							this.memory.writeMappedU32LE(addr, value as number);
+							this.memory.writeMappedU32LE(addr, registers.getNumber(a));
 							break;
 						case MemoryAccessKind.F32LE:
-							this.memory.writeMappedF32LE(addr, value as number);
+							this.memory.writeMappedF32LE(addr, registers.getNumber(a));
 							break;
 						case MemoryAccessKind.F64LE:
-							this.memory.writeMappedF64LE(addr, value as number);
+							this.memory.writeMappedF64LE(addr, registers.getNumber(a));
 							break;
 					}
 					if (this.memory.readBusFaultSequence() !== faultSequence) {
@@ -2258,7 +2261,7 @@ export class CPU {
 					return;
 				}
 				case OpCode.STORE_MEM_WORDS: {
-					const addr = this.readRK(frame, rkB) as number;
+					const addr = this.readRKNumber(frame, rkB) >>> 0;
 					if ((addr & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[MemoryAccessKind.Word]) !== 0) {
 						this.enterSynchronousAddressException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, addr);
 						return;
@@ -2619,7 +2622,7 @@ export class CPU {
 				this.enterSynchronousException(frame, CPU_CAUSE_CODE_DATA_BUS_ERROR);
 				return;
 			}
-			writeAddr += 4;
+			writeAddr = (writeAddr + 4) >>> 0;
 		}
 	}
 
@@ -2629,6 +2632,13 @@ export class CPU {
 			return frame.executionImage.constPool[index];
 		}
 		return frame.registers.get(rk);
+	}
+
+	private readRKNumber(frame: CallFrame, rk: number): number {
+		if (rk < 0) {
+			return frame.executionImage.constNumbers[-1 - rk];
+		}
+		return frame.registers.getNumber(rk);
 	}
 
 	public callBuiltinFunction(fn: BuiltinFunction, args: ReadonlyArray<Value>, out: Value[]): void {
