@@ -3,13 +3,8 @@
 #include "machine/cpu/cpu.h"
 
 #include <limits>
-#include <stdexcept>
-#include <string>
 
 namespace bmsx {
-namespace {
-constexpr uint8_t timerEventKindShift = 8;
-}
 
 DeviceScheduler::DeviceScheduler(CPU& cpu)
 	: m_cpu(cpu) {
@@ -58,7 +53,7 @@ void DeviceScheduler::advanceTo(i64 nowCycles) {
 
 i64 DeviceScheduler::nextDeadline() {
 	discardStaleTopTimers();
-	if (m_timerCount == 0u) {
+	if (m_timerDeadlines.empty()) {
 		return std::numeric_limits<i64>::max();
 	}
 	return m_timerDeadlines[0];
@@ -66,20 +61,19 @@ i64 DeviceScheduler::nextDeadline() {
 
 bool DeviceScheduler::hasDueTimer() {
 	discardStaleTopTimers();
-	return m_timerCount > 0u && m_timerDeadlines[0] <= m_schedulerNowCycles;
+	return !m_timerDeadlines.empty() && m_timerDeadlines[0] <= m_schedulerNowCycles;
 }
 
-uint16_t DeviceScheduler::popDueTimer() {
-	const uint8_t kind = m_timerKinds[0];
-	const uint8_t payload = m_timerPayloads[0];
+uint8_t DeviceScheduler::popDueTimer() {
+	const uint8_t deviceKind = m_timerDeviceKinds[0];
 	removeTopTimer();
-	return static_cast<uint16_t>((static_cast<uint16_t>(kind) << timerEventKindShift) | payload);
+	return deviceKind;
 }
 
 void DeviceScheduler::scheduleDeviceService(uint8_t deviceKind, i64 deadlineCycles) {
 	const uint32_t generation = nextTimerGeneration(m_deviceServiceTimerGeneration[deviceKind]);
 	m_deviceServiceTimerGeneration[deviceKind] = generation;
-	pushTimer(deadlineCycles, TIMER_KIND_DEVICE_SERVICE, deviceKind, generation);
+	pushTimer(deadlineCycles, deviceKind, generation);
 	requestYieldForEarlierDeadline(deadlineCycles);
 }
 
@@ -89,19 +83,15 @@ void DeviceScheduler::cancelDeviceService(uint8_t deviceKind) {
 }
 
 void DeviceScheduler::clearTimerHeap() {
-	m_timerCount = 0;
 	m_timerDeadlines.clear();
-	m_timerKinds.clear();
-	m_timerPayloads.clear();
+	m_timerDeviceKinds.clear();
 	m_timerGenerations.clear();
 }
 
-void DeviceScheduler::pushTimer(i64 deadline, uint8_t kind, uint8_t payload, uint32_t generation) {
-	size_t index = m_timerCount;
-	m_timerCount += 1;
+void DeviceScheduler::pushTimer(i64 deadline, uint8_t deviceKind, uint32_t generation) {
+	size_t index = m_timerDeadlines.size();
 	m_timerDeadlines.push_back(deadline);
-	m_timerKinds.push_back(kind);
-	m_timerPayloads.push_back(payload);
+	m_timerDeviceKinds.push_back(deviceKind);
 	m_timerGenerations.push_back(generation);
 	while (index > 0) {
 		const size_t parent = (index - 1u) >> 1u;
@@ -109,30 +99,22 @@ void DeviceScheduler::pushTimer(i64 deadline, uint8_t kind, uint8_t payload, uin
 			break;
 		}
 		m_timerDeadlines[index] = m_timerDeadlines[parent];
-		m_timerKinds[index] = m_timerKinds[parent];
-		m_timerPayloads[index] = m_timerPayloads[parent];
+		m_timerDeviceKinds[index] = m_timerDeviceKinds[parent];
 		m_timerGenerations[index] = m_timerGenerations[parent];
 		index = parent;
 	}
 	m_timerDeadlines[index] = deadline;
-	m_timerKinds[index] = kind;
-	m_timerPayloads[index] = payload;
+	m_timerDeviceKinds[index] = deviceKind;
 	m_timerGenerations[index] = generation;
 }
 
 void DeviceScheduler::removeTopTimer() {
-	if (m_timerCount == 0u) {
-		return;
-	}
-	const size_t lastIndex = m_timerCount - 1u;
+	const size_t lastIndex = m_timerDeadlines.size() - 1u;
 	const i64 deadline = m_timerDeadlines[lastIndex];
-	const uint8_t kind = m_timerKinds[lastIndex];
-	const uint8_t payload = m_timerPayloads[lastIndex];
+	const uint8_t deviceKind = m_timerDeviceKinds[lastIndex];
 	const uint32_t generation = m_timerGenerations[lastIndex];
-	m_timerCount = lastIndex;
 	m_timerDeadlines.pop_back();
-	m_timerKinds.pop_back();
-	m_timerPayloads.pop_back();
+	m_timerDeviceKinds.pop_back();
 	m_timerGenerations.pop_back();
 	if (lastIndex == 0u) {
 		return;
@@ -147,29 +129,18 @@ void DeviceScheduler::removeTopTimer() {
 			break;
 		}
 		m_timerDeadlines[index] = m_timerDeadlines[child];
-		m_timerKinds[index] = m_timerKinds[child];
-		m_timerPayloads[index] = m_timerPayloads[child];
+		m_timerDeviceKinds[index] = m_timerDeviceKinds[child];
 		m_timerGenerations[index] = m_timerGenerations[child];
 		index = child;
 	}
 	m_timerDeadlines[index] = deadline;
-	m_timerKinds[index] = kind;
-	m_timerPayloads[index] = payload;
+	m_timerDeviceKinds[index] = deviceKind;
 	m_timerGenerations[index] = generation;
 }
 
-bool DeviceScheduler::isTimerCurrent(uint8_t kind, uint8_t payload, uint32_t generation) const {
-	switch (kind) {
-		case TIMER_KIND_DEVICE_SERVICE:
-			return generation == m_deviceServiceTimerGeneration[payload];
-		default:
-			throw std::runtime_error("Runtime fault: unknown timer kind " + std::to_string(kind) + ".");
-	}
-}
-
 void DeviceScheduler::discardStaleTopTimers() {
-	while (m_timerCount > 0u) {
-		if (isTimerCurrent(m_timerKinds[0], m_timerPayloads[0], m_timerGenerations[0])) {
+	while (!m_timerDeadlines.empty()) {
+		if (m_timerGenerations[0] == m_deviceServiceTimerGeneration[m_timerDeviceKinds[0]]) {
 			return;
 		}
 		removeTopTimer();

@@ -10,8 +10,6 @@ namespace bmsx {
 
 class CPU;
 
-constexpr uint8_t TIMER_KIND_DEVICE_SERVICE = 1;
-
 constexpr uint8_t DEVICE_SERVICE_GEO = 1;
 constexpr uint8_t DEVICE_SERVICE_DMA = 2;
 constexpr uint8_t DEVICE_SERVICE_APU = 3;
@@ -36,7 +34,7 @@ public:
 	void advanceTo(i64 nowCycles);
 	i64 nextDeadline();
 	bool hasDueTimer();
-	uint16_t popDueTimer();
+	uint8_t popDueTimer();
 	void scheduleDeviceService(uint8_t deviceKind, i64 deadlineCycles);
 	void cancelDeviceService(uint8_t deviceKind);
 
@@ -44,9 +42,8 @@ private:
 	static uint32_t nextTimerGeneration(uint32_t value);
 
 	void clearTimerHeap();
-	void pushTimer(i64 deadline, uint8_t kind, uint8_t payload, uint32_t generation);
+	void pushTimer(i64 deadline, uint8_t deviceKind, uint32_t generation);
 	void removeTopTimer();
-	bool isTimerCurrent(uint8_t kind, uint8_t payload, uint32_t generation) const;
 	void discardStaleTopTimers();
 	void requestYieldForEarlierDeadline(i64 deadlineCycles);
 
@@ -57,10 +54,8 @@ private:
 	int m_activeSliceBudgetCycles = 0;
 	i64 m_activeSliceTargetCycle = 0;
 	std::vector<i64> m_timerDeadlines;
-	std::vector<uint8_t> m_timerKinds;
-	std::vector<uint8_t> m_timerPayloads;
+	std::vector<uint8_t> m_timerDeviceKinds;
 	std::vector<uint32_t> m_timerGenerations;
-	size_t m_timerCount = 0;
 	std::array<uint32_t, static_cast<size_t>(DeviceServiceKindCount)> m_deviceServiceTimerGeneration{};
 };
 

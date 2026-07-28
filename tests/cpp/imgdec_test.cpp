@@ -123,7 +123,7 @@ void runNextService(ImgDecHarness& harness) {
 	require(deadline != std::numeric_limits<bmsx::i64>::max(), "IMGDEC pipeline must retain a service deadline");
 	harness.scheduler.advanceTo(deadline);
 	while (harness.scheduler.hasDueTimer()) {
-		const bmsx::u8 device = static_cast<bmsx::u8>(harness.scheduler.popDueTimer() & 0xffu);
+		const bmsx::u8 device = harness.scheduler.popDueTimer();
 		switch (device) {
 		case bmsx::DEVICE_SERVICE_DMA:
 			harness.dma.onService(deadline);

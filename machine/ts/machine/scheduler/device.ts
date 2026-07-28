@@ -1,7 +1,5 @@
 import type { CPU } from '../cpu/cpu';
 
-export const TIMER_KIND_DEVICE_SERVICE = 1;
-
 export const DEVICE_SERVICE_GEO = 1;
 export const DEVICE_SERVICE_DMA = 2;
 export const DEVICE_SERVICE_APU = 3;
@@ -12,7 +10,6 @@ export const DEVICE_SERVICE_GTE = 7;
 export const DEVICE_SERVICE_IMGDEC = 8;
 
 const DEVICE_SERVICE_KIND_COUNT = DEVICE_SERVICE_IMGDEC + 1;
-const TIMER_EVENT_KIND_SHIFT = 8;
 
 function nextTimerGeneration(value: number): number {
 	const next = (value + 1) >>> 0;
@@ -26,10 +23,8 @@ export class DeviceScheduler {
 	private activeSliceBudgetCycles = 0;
 	private activeSliceTargetCycle = 0;
 	private readonly timerDeadlines: number[] = [];
-	private readonly timerKinds: number[] = [];
-	private readonly timerPayloads: number[] = [];
+	private readonly timerDeviceKinds: number[] = [];
 	private readonly timerGenerations: number[] = [];
-	private timerCount = 0;
 	private readonly deviceServiceTimerGeneration = new Uint32Array(DEVICE_SERVICE_KIND_COUNT);
 
 	public constructor(private readonly cpu: CPU) {
@@ -81,7 +76,7 @@ export class DeviceScheduler {
 
 	public nextDeadline(): number {
 		this.discardStaleTopTimers();
-		if (this.timerCount === 0) {
+		if (this.timerDeadlines.length === 0) {
 			return Number.MAX_SAFE_INTEGER;
 		}
 		return this.timerDeadlines[0]!;
@@ -89,20 +84,19 @@ export class DeviceScheduler {
 
 	public hasDueTimer(): boolean {
 		this.discardStaleTopTimers();
-		return this.timerCount > 0 && this.timerDeadlines[0]! <= this.schedulerNowCycles;
+		return this.timerDeadlines.length > 0 && this.timerDeadlines[0]! <= this.schedulerNowCycles;
 	}
 
 	public popDueTimer(): number {
-		const kind = this.timerKinds[0]!;
-		const payload = this.timerPayloads[0]!;
+		const deviceKind = this.timerDeviceKinds[0]!;
 		this.removeTopTimer();
-		return (kind << TIMER_EVENT_KIND_SHIFT) | payload;
+		return deviceKind;
 	}
 
 	public scheduleDeviceService(deviceKind: number, deadlineCycles: number): void {
 		const generation = nextTimerGeneration(this.deviceServiceTimerGeneration[deviceKind]!);
 		this.deviceServiceTimerGeneration[deviceKind] = generation;
-		this.pushTimer(deadlineCycles, TIMER_KIND_DEVICE_SERVICE, deviceKind, generation);
+		this.pushTimer(deadlineCycles, deviceKind, generation);
 		this.requestYieldForEarlierDeadline(deadlineCycles);
 	}
 
@@ -111,20 +105,16 @@ export class DeviceScheduler {
 	}
 
 	private clearTimerHeap(): void {
-		this.timerCount = 0;
 		this.timerDeadlines.length = 0;
-		this.timerKinds.length = 0;
-		this.timerPayloads.length = 0;
+		this.timerDeviceKinds.length = 0;
 		this.timerGenerations.length = 0;
 	}
 
-	// start repeated-sequence-acceptable -- Scheduler heap moves four parallel timer columns inline; helper calls would sit on the timer hot path.
-	private pushTimer(deadline: number, kind: number, payload: number, generation: number): void {
-		let index = this.timerCount;
-		this.timerCount += 1;
+	// start repeated-sequence-acceptable -- Scheduler heap moves three parallel timer columns inline; helper calls would sit on the timer hot path.
+	private pushTimer(deadline: number, deviceKind: number, generation: number): void {
+		let index = this.timerDeadlines.length;
 		this.timerDeadlines[index] = deadline;
-		this.timerKinds[index] = kind;
-		this.timerPayloads[index] = payload;
+		this.timerDeviceKinds[index] = deviceKind;
 		this.timerGenerations[index] = generation;
 		while (index > 0) {
 			const parent = (index - 1) >> 1;
@@ -132,30 +122,22 @@ export class DeviceScheduler {
 				break;
 			}
 			this.timerDeadlines[index] = this.timerDeadlines[parent]!;
-			this.timerKinds[index] = this.timerKinds[parent]!;
-			this.timerPayloads[index] = this.timerPayloads[parent]!;
+			this.timerDeviceKinds[index] = this.timerDeviceKinds[parent]!;
 			this.timerGenerations[index] = this.timerGenerations[parent]!;
 			index = parent;
 		}
 		this.timerDeadlines[index] = deadline;
-		this.timerKinds[index] = kind;
-		this.timerPayloads[index] = payload;
+		this.timerDeviceKinds[index] = deviceKind;
 		this.timerGenerations[index] = generation;
 	}
 
 	private removeTopTimer(): void {
-		const lastIndex = this.timerCount - 1;
-		if (lastIndex < 0) {
-			return;
-		}
+		const lastIndex = this.timerDeadlines.length - 1;
 		const deadline = this.timerDeadlines[lastIndex]!;
-		const kind = this.timerKinds[lastIndex]!;
-		const payload = this.timerPayloads[lastIndex]!;
+		const deviceKind = this.timerDeviceKinds[lastIndex]!;
 		const generation = this.timerGenerations[lastIndex]!;
-		this.timerCount = lastIndex;
 		this.timerDeadlines.length = lastIndex;
-		this.timerKinds.length = lastIndex;
-		this.timerPayloads.length = lastIndex;
+		this.timerDeviceKinds.length = lastIndex;
 		this.timerGenerations.length = lastIndex;
 		if (lastIndex === 0) {
 			return;
@@ -170,30 +152,19 @@ export class DeviceScheduler {
 				break;
 			}
 			this.timerDeadlines[index] = this.timerDeadlines[child]!;
-			this.timerKinds[index] = this.timerKinds[child]!;
-			this.timerPayloads[index] = this.timerPayloads[child]!;
+			this.timerDeviceKinds[index] = this.timerDeviceKinds[child]!;
 			this.timerGenerations[index] = this.timerGenerations[child]!;
 			index = child;
 		}
 		this.timerDeadlines[index] = deadline;
-		this.timerKinds[index] = kind;
-		this.timerPayloads[index] = payload;
+		this.timerDeviceKinds[index] = deviceKind;
 		this.timerGenerations[index] = generation;
 	}
 	// end repeated-sequence-acceptable
 
-	private isTimerCurrent(kind: number, payload: number, generation: number): boolean {
-		switch (kind) {
-			case TIMER_KIND_DEVICE_SERVICE:
-				return generation === this.deviceServiceTimerGeneration[payload];
-			default:
-				throw new Error(`Runtime fault: unknown timer kind ${kind}.`);
-		}
-	}
-
 	private discardStaleTopTimers(): void {
-		while (this.timerCount > 0) {
-			if (this.isTimerCurrent(this.timerKinds[0]!, this.timerPayloads[0]!, this.timerGenerations[0]!)) {
+		while (this.timerDeadlines.length > 0) {
+			if (this.timerGenerations[0] === this.deviceServiceTimerGeneration[this.timerDeviceKinds[0]!]) {
 				return;
 			}
 			this.removeTopTimer();

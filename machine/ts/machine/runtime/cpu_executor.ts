@@ -1,9 +1,6 @@
 import { RunResult } from '../cpu/cpu';
 import { GX_GPU_SERVICE_RUNTIME_EDGE_MASK, GX_GPU_SERVICE_TIMING_PUBLISHED } from '../devices/gx/gpu';
-import {
-	DEVICE_SERVICE_GPU,
-	TIMER_KIND_DEVICE_SERVICE,
-} from '../scheduler/device';
+import { DEVICE_SERVICE_GPU } from '../scheduler/device';
 import {
 	InstructionStepResult,
 	type FrameState,
@@ -243,25 +240,14 @@ export function advanceRuntimeTime(runtime: Runtime, cycles: number): boolean {
 export function runDueRuntimeTimers(runtime: Runtime): boolean {
 	const scheduler = runtime.machine.scheduler;
 	while (scheduler.hasDueTimer()) {
-		const event = scheduler.popDueTimer();
-		dispatchRuntimeTimer(runtime, event >> 8, event & 0xff);
+		const deviceKind = scheduler.popDueTimer();
+		const serviceResult = runtime.machine.runDeviceService(deviceKind);
+		if (deviceKind === DEVICE_SERVICE_GPU) {
+			if ((serviceResult & GX_GPU_SERVICE_TIMING_PUBLISHED) !== 0) {
+				runtime.applyPublishedGxGpuPcrtcTiming(runtime.machine.gxGpu.readDeviceOutput().pcrtcTiming);
+			}
+			runtime.vblank.handleGpuRuntimeEdge(serviceResult & GX_GPU_SERVICE_RUNTIME_EDGE_MASK);
+		}
 	}
 	return runtime.vblank.tickCompleted;
-}
-
-function dispatchRuntimeTimer(runtime: Runtime, kind: number, payload: number): void {
-	switch (kind) {
-		case TIMER_KIND_DEVICE_SERVICE: {
-			const serviceResult = runtime.machine.runDeviceService(payload);
-			if (payload === DEVICE_SERVICE_GPU) {
-				if ((serviceResult & GX_GPU_SERVICE_TIMING_PUBLISHED) !== 0) {
-					runtime.applyPublishedGxGpuPcrtcTiming(runtime.machine.gxGpu.readDeviceOutput().pcrtcTiming);
-				}
-				runtime.vblank.handleGpuRuntimeEdge(serviceResult & GX_GPU_SERVICE_RUNTIME_EDGE_MASK);
-			}
-			return;
-		}
-		default:
-			throw new Error(`unknown timer kind ${kind}.`);
-	}
 }

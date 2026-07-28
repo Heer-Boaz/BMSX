@@ -8,26 +8,6 @@
 #include <stdexcept>
 
 namespace bmsx {
-namespace {
-
-void dispatchRuntimeTimer(Runtime& runtime, uint8_t kind, uint8_t payload) {
-	switch (kind) {
-		case TIMER_KIND_DEVICE_SERVICE: {
-			const u32 serviceResult = runtime.machine.runDeviceService(payload);
-			if (payload == DEVICE_SERVICE_GPU) {
-				if ((serviceResult & GX_GPU_SERVICE_TIMING_PUBLISHED) != 0u) {
-					runtime.applyPublishedGxGpuPcrtcTiming(runtime.machine.gxGpu.readDeviceOutput().pcrtcTiming);
-				}
-				runtime.vblank.handleGpuRuntimeEdge(runtime, serviceResult & GX_GPU_SERVICE_RUNTIME_EDGE_MASK);
-			}
-			return;
-		}
-		default:
-			throw BMSX_RUNTIME_ERROR("unknown timer kind " + std::to_string(kind) + ".");
-	}
-}
-
-} // namespace
 
 void CpuExecutionState::reset() {
 	m_sliceCycleBudgetRemaining = 0;
@@ -253,8 +233,14 @@ bool advanceRuntimeTime(Runtime& runtime, int cycles) {
 bool runDueRuntimeTimers(Runtime& runtime) {
 	auto& scheduler = runtime.machine.scheduler;
 	while (scheduler.hasDueTimer()) {
-		const uint16_t event = scheduler.popDueTimer();
-		dispatchRuntimeTimer(runtime, static_cast<uint8_t>(event >> 8u), static_cast<uint8_t>(event & 0xffu));
+		const uint8_t deviceKind = scheduler.popDueTimer();
+		const u32 serviceResult = runtime.machine.runDeviceService(deviceKind);
+		if (deviceKind == DEVICE_SERVICE_GPU) {
+			if ((serviceResult & GX_GPU_SERVICE_TIMING_PUBLISHED) != 0u) {
+				runtime.applyPublishedGxGpuPcrtcTiming(runtime.machine.gxGpu.readDeviceOutput().pcrtcTiming);
+			}
+			runtime.vblank.handleGpuRuntimeEdge(runtime, serviceResult & GX_GPU_SERVICE_RUNTIME_EDGE_MASK);
+		}
 	}
 	return runtime.vblank.tickCompleted();
 }

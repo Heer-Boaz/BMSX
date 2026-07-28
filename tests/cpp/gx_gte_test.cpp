@@ -91,7 +91,7 @@ void serviceScheduledGtePlus(GteHarness& harness, bmsx::i64 cycles) {
 	harness.scheduler.advanceTo(harness.scheduler.nowCycles() + cycles);
 	require(harness.scheduler.hasDueTimer(), "GTE+ completion timer due");
 	require(
-		harness.scheduler.popDueTimer() == static_cast<uint16_t>((bmsx::TIMER_KIND_DEVICE_SERVICE << 8u) | bmsx::DEVICE_SERVICE_GTE),
+		harness.scheduler.popDueTimer() == bmsx::DEVICE_SERVICE_GTE,
 		"GTE+ completion service kind"
 	);
 	harness.gte.onService();

@@ -138,7 +138,7 @@ function runNextService(fixture: ImgDecFixture): void {
 	assert.notEqual(deadline, Number.MAX_SAFE_INTEGER);
 	machine.scheduler.advanceTo(deadline);
 	while (machine.scheduler.hasDueTimer()) {
-		machine.runDeviceService(machine.scheduler.popDueTimer() & 0xff);
+		machine.runDeviceService(machine.scheduler.popDueTimer());
 	}
 }
 

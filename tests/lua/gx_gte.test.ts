@@ -20,7 +20,6 @@ import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import {
 	DEVICE_SERVICE_GTE,
 	DeviceScheduler,
-	TIMER_KIND_DEVICE_SERVICE,
 } from '../../machine/ts/machine/scheduler/device';
 
 import {
@@ -129,7 +128,7 @@ function completeGtePlus(memory: Memory, scheduler: DeviceScheduler, cycles: num
 function serviceScheduledGtePlus(gte: GxGte, scheduler: DeviceScheduler, cycles: number): void {
 	scheduler.advanceTo(scheduler.nowCycles + cycles);
 	assert.equal(scheduler.hasDueTimer(), true);
-	assert.equal(scheduler.popDueTimer(), (TIMER_KIND_DEVICE_SERVICE << 8) | DEVICE_SERVICE_GTE);
+	assert.equal(scheduler.popDueTimer(), DEVICE_SERVICE_GTE);
 	gte.onService();
 }
 
