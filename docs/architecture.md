@@ -1054,6 +1054,20 @@ boundary, but steady-state table storage is columnar.
 Table rehash counts integer-key bins in VM-owned scratch/stack storage; growing
 or reshaping a table must not allocate a temporary count array/vector on every
 rehash.
+The collector consumes a table metatable's `__mode` directly. Weak values do
+not become roots, weak keys use ephemeron convergence, and strings retain
+Lua's non-removable weak-table behavior. Canonical static closures are
+CPU-owned non-heap values; only dynamic closures participate in heap
+liveness. Collector worklists are retained CPU/heap scratch, and decoded
+table-load caches are invalidated rather than becoming hidden roots.
+
+Clearing a weak hash entry preserves the hash chain and the identity needed by
+`next`. Non-object keys remain in the key column beside an empty value.
+Table, closure, and upvalue keys become a dead-key identity word in the
+otherwise hidden value column. Ordinary lookup and traversal skip both forms;
+`next` alone matches the dead identity, mutation compacts dead nodes before
+reclassifying array/hash ownership, and save-state preserves the raw columns
+and advances the object-id producer past both live and dead identities.
 
 Lua closures own their captured upvalue slots as VM closure storage. In C++,
 captured-closure upvalue pointers are tail storage in the same GC allocation as

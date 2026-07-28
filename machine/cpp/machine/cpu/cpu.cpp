@@ -28,6 +28,8 @@ namespace {
 constexpr size_t kClosureHeapBytes = 16;
 constexpr size_t kClosureUpvalueSlotHeapBytes = 8;
 constexpr ptrdiff_t kUpvalueHeapBytes = 24;
+constexpr uint8_t kTableWeakKeys = 1;
+constexpr uint8_t kTableWeakValues = 2;
 static inline size_t trackedClosureBytes(const Closure& closure) {
 	return closure.trackedHeapBytes;
 }
@@ -38,35 +40,32 @@ static inline size_t closureAllocationBytes(size_t upvalueCount) {
 
 } // namespace
 
-void GcHeap::markValue(Value v) {
+bool GcHeap::markValue(Value v) {
 	if (!valueIsTagged(v)) {
-		return;
+		return false;
 	}
 	switch (valueTag(v)) {
 		case ValueTag::Table:
-			markObject(asTable(v));
-			break;
+			return markObject(asTable(v));
 		case ValueTag::Closure:
-			markClosure(asClosure(v));
-			break;
+			return markClosure(asClosure(v));
 		case ValueTag::BuiltinFunction:
-			break;
+			return false;
 		case ValueTag::Upvalue:
-			markObject(asUpvalue(v));
-			break;
+			return markObject(asUpvalue(v));
 		case ValueTag::String:
 			m_stringPool.markReachable(asStringId(v));
-			break;
+			return false;
 		default:
-			break;
+			return false;
 	}
 }
 
-void GcHeap::markClosure(Closure* closure) {
+bool GcHeap::markClosure(Closure* closure) {
 	if (closure->trackedHeapBytes == 0) {
-		return;
+		return false;
 	}
-	markObject(closure);
+	return markObject(closure);
 }
 
 Closure* GcHeap::allocateClosure(size_t upvalueCount) {
@@ -90,12 +89,54 @@ Closure* GcHeap::allocateClosure(size_t upvalueCount) {
 	return closure;
 }
 
-void GcHeap::markObject(GCObject* obj) {
+bool GcHeap::markObject(GCObject* obj) {
 	if (!obj || obj->marked) {
-		return;
+		return false;
 	}
 	obj->marked = true;
 	m_grayStack.push_back(obj);
+	return true;
+}
+
+uint8_t GcHeap::tableWeakMode(const Table& table) const {
+	if (!table.metatable) {
+		return 0;
+	}
+	const Value modeValue = table.metatable->getStringKey(m_modeKey);
+	if (!valueIsString(modeValue)) {
+		return 0;
+	}
+	const std::string& mode = m_stringPool.toString(asStringId(modeValue));
+	uint8_t weakMode = 0;
+	for (char ch : mode) {
+		switch (ch) {
+			case 'k':
+				weakMode |= kTableWeakKeys;
+				break;
+			case 'v':
+				weakMode |= kTableWeakValues;
+				break;
+		}
+	}
+	return weakMode;
+}
+
+bool GcHeap::valueIsAlive(Value value) const {
+	if (!valueIsTagged(value)) {
+		return true;
+	}
+	switch (valueTag(value)) {
+		case ValueTag::Table:
+			return asTable(value)->marked;
+		case ValueTag::Closure: {
+			const Closure* closure = asClosure(value);
+			return closure->trackedHeapBytes == 0 || closure->marked;
+		}
+		case ValueTag::Upvalue:
+			return asUpvalue(value)->marked;
+		default:
+			return true;
+	}
 }
 
 void GcHeap::trace() {
@@ -108,10 +149,22 @@ void GcHeap::trace() {
 				if (table->metatable) {
 					markObject(table->metatable);
 				}
-				table->forEachEntry([this](Value key, Value value) {
-					markValue(key);
-					markValue(value);
-				});
+				const uint8_t weakMode = tableWeakMode(*table);
+				if (weakMode != 0) {
+					m_weakTables.push_back(table);
+					m_weakTableModes.push_back(weakMode);
+					if (weakMode == kTableWeakKeys) {
+						m_ephemeronTables.push_back(table);
+					}
+				}
+				if ((weakMode & kTableWeakKeys) == 0) {
+					table->forEachEntry([this, weakMode](Value key, Value value) {
+						markValue(key);
+						if (weakMode == 0) {
+							markValue(value);
+						}
+					});
+				}
 				break;
 			}
 			case ObjType::Closure: {
@@ -129,6 +182,41 @@ void GcHeap::trace() {
 				break;
 			}
 		}
+	}
+}
+
+void GcHeap::convergeEphemerons() {
+	bool changed = false;
+	do {
+		changed = false;
+		for (Table* table : m_ephemeronTables) {
+			table->forEachEntry([this, &changed](Value key, Value value) {
+				if (valueIsAlive(key) && markValue(value)) {
+					changed = true;
+				}
+			});
+		}
+		trace();
+	} while (changed);
+}
+
+void GcHeap::clearWeakTables() {
+	for (size_t index = 0; index < m_weakTables.size(); ++index) {
+		Table* table = m_weakTables[index];
+		const uint8_t weakMode = m_weakTableModes[index];
+		table->clearWeakEntries(
+			(weakMode & kTableWeakKeys) != 0,
+			(weakMode & kTableWeakValues) != 0,
+			[this](Value value) { return valueIsAlive(value); }
+		);
+		table->forEachEntry([this](Value key, Value value) {
+			if (valueIsString(key)) {
+				m_stringPool.markReachable(asStringId(key));
+			}
+			if (valueIsString(value)) {
+				m_stringPool.markReachable(asStringId(value));
+			}
+		});
 	}
 }
 
@@ -173,13 +261,22 @@ void GcHeap::collect() {
 		return;
 	}
 	m_collectRequested = false;
+	m_weakTables.clear();
+	m_weakTableModes.clear();
+	m_ephemeronTables.clear();
 	m_stringPool.beginReachabilityEpoch();
+	m_stringPool.markReachable(m_modeKey);
 	if (m_rootMarker) {
 		m_rootMarker(*this);
 	}
 	trace();
+	convergeEphemerons();
+	clearWeakTables();
 	sweep();
 	m_stringPool.reclaimUnreachableTracked();
+	m_weakTables.clear();
+	m_weakTableModes.clear();
+	m_ephemeronTables.clear();
 	m_nextGC = m_bytesAllocated * 2;
 }
 
@@ -230,7 +327,8 @@ CPU::CPU(
 	, m_irqController(irqController)
 	, m_executionAddressSpace(executionAddressSpace)
 	, m_stringPool(true)
-	, m_heap(m_stringPool) {
+	, m_indexKey(valueString(m_stringPool.intern("__index")))
+	, m_heap(m_stringPool, m_stringPool.intern("__mode")) {
 	m_executionImages.reserve(3);
 	for (size_t index = 0; index < m_builtinFunctions.size(); ++index) {
 		BuiltinFunction& builtin = m_builtinFunctions[index];
@@ -243,7 +341,6 @@ CPU::CPU(
 	m_heap.setRootMarker([this](GcHeap& heap) { markRoots(heap); });
 	globals = m_heap.allocate<Table>(ObjType::Table, 0, 0);
 	m_stringIndexTable = createTable();
-	m_indexKey = valueString(m_stringPool.intern("__index"));
 }
 
 Value CPU::createBuiltinFunction(BuiltinFunctionId id) {
@@ -1139,7 +1236,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 				if (!isNil(metatable)) {
 					tableState.metatable = asTable(metatable);
 				}
-				restoredObjects[index].table->restoreRuntimeState(tableState);
+				m_heap.observeHashId(restoredObjects[index].table->restoreRuntimeState(tableState));
 				break;
 			}
 			case CpuObjectState::Kind::Closure: {
@@ -2674,11 +2771,10 @@ void CPU::markRoots(GcHeap& heap) {
 		for (Value value : image->constPool) {
 			heap.markValue(value);
 		}
-		for (const TableLoadInlineCache& cache : image->tableLoadCaches) {
-			if (cache.table) {
-				heap.markObject(cache.table);
-			}
-			heap.markValue(cache.value);
+		for (TableLoadInlineCache& cache : image->tableLoadCaches) {
+			cache.table = nullptr;
+			cache.version = 0;
+			cache.value = valueNil();
 		}
 	}
 	for (const auto& framePtr : m_frames) {

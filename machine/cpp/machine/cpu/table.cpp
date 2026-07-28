@@ -15,6 +15,7 @@ namespace {
 constexpr size_t kTableHeapBytes = 32;
 constexpr size_t kTableArraySlotHeapBytes = 8;
 constexpr size_t kTableHashSlotHeapBytes = 20;
+constexpr int32_t kTableHashNextEnd = -1;
 } // namespace
 Table::Table(int arraySize, int hashSize) {
 	if (arraySize > 0) {
@@ -58,7 +59,8 @@ bool Table::hasArrayIndex(size_t index) const {
 		return false;
 	}
 	Value key = valueNumber(static_cast<double>(index + 1));
-	return findNodeIndex(key) >= 0;
+	const int nodeIndex = findNodeIndex(key);
+	return nodeIndex >= 0 && !isNil(m_hashValues[static_cast<size_t>(nodeIndex)]);
 }
 
 void Table::updateArrayLengthFrom(size_t startIndex) {
@@ -93,10 +95,45 @@ int Table::findNodeIndex(const Value& key) const {
 	return -1;
 }
 
+int Table::findNextLiveHashIndex(size_t start) const {
+	for (size_t index = start; index < m_hashSize; ++index) {
+		if (!isNil(m_hashKeys[index]) && !isNil(m_hashValues[index])) {
+			return static_cast<int>(index);
+		}
+	}
+	return -1;
+}
+
+int Table::findNodeIndexForNext(const Value& key) const {
+	if (m_hashSize == 0) {
+		return -1;
+	}
+	uint32_t deadKeyHashId = 0;
+	if (valueIsTable(key) || valueIsClosure(key) || valueIsUpvalue(key)) {
+		deadKeyHashId = valueObjectHashId(key);
+	}
+	const size_t mask = m_hashSize - 1;
+	int index = static_cast<int>(hashValue(key) & mask);
+	while (index >= 0) {
+		const size_t slot = static_cast<size_t>(index);
+		const Value nodeKey = m_hashKeys[slot];
+		if ((!isNil(nodeKey) && keyEquals(nodeKey, key))
+			|| (isNil(nodeKey)
+				&& deadKeyHashId != 0
+				&& valueIsNumber(m_hashValues[slot])
+				&& asNumber(m_hashValues[slot]) == static_cast<double>(deadKeyHashId))) {
+			return index;
+		}
+		index = m_hashNext[slot];
+	}
+	return -1;
+}
+
 int Table::getFreeIndex() {
 	int start = m_hashFree >= 0 ? m_hashFree : static_cast<int>(m_hashSize) - 1;
 	for (int i = start; i >= 0; --i) {
-		if (isNil(m_hashKeys[static_cast<size_t>(i)])) {
+		if (isNil(m_hashKeys[static_cast<size_t>(i)])
+			&& isNil(m_hashValues[static_cast<size_t>(i)])) {
 			m_hashFree = i - 1;
 			return i;
 		}
@@ -127,7 +164,7 @@ void Table::rehash(const Value& key) {
 	}
 	for (size_t i = 0; i < m_hashSize; ++i) {
 		const Value key = m_hashKeys[i];
-		if (!isNil(key)) {
+		if (!isNil(key) && !isNil(m_hashValues[i])) {
 			totalKeys += 1;
 			int index = 0;
 			if (getArrayIndex(key, index)) {
@@ -181,7 +218,7 @@ void Table::resize(size_t newArraySize, size_t newHashSize) {
 	}
 	for (size_t i = 0; i < oldHashSize; ++i) {
 		const Value key = oldHashKeys[i];
-		if (!isNil(key)) {
+		if (!isNil(key) && !isNil(oldHashValues[i])) {
 			rawSet(key, oldHashValues[i]);
 		}
 	}
@@ -191,6 +228,7 @@ void Table::resize(size_t newArraySize, size_t newHashSize) {
 
 void Table::allocateHash(size_t size) {
 	m_hashSize = size;
+	m_hashDeadCount = 0;
 	if (size == 0) {
 		m_hashStorage.reset();
 		m_hashKeys = nullptr;
@@ -205,7 +243,7 @@ void Table::allocateHash(size_t size) {
 	m_hashNext = reinterpret_cast<int32_t*>(m_hashValues + size);
 	std::fill(m_hashKeys, m_hashKeys + size, valueNil());
 	std::fill(m_hashValues, m_hashValues + size, valueNil());
-	std::fill(m_hashNext, m_hashNext + size, -1);
+	std::fill(m_hashNext, m_hashNext + size, kTableHashNextEnd);
 }
 
 void Table::rawSet(const Value& key, const Value& value) {
@@ -236,6 +274,11 @@ void Table::rawSet(const Value& key, const Value& value) {
 }
 
 void Table::insertHash(const Value& key, const Value& value) {
+	if (m_hashDeadCount > 0) {
+		rehash(key);
+		rawSet(key, value);
+		return;
+	}
 	if (m_hashSize == 0) {
 		rehash(key);
 		rawSet(key, value);
@@ -248,7 +291,7 @@ void Table::insertHash(const Value& key, const Value& value) {
 	if (isNil(mainKey)) {
 		m_hashKeys[mainSlot] = key;
 		m_hashValues[mainSlot] = value;
-		m_hashNext[mainSlot] = -1;
+		m_hashNext[mainSlot] = kTableHashNextEnd;
 		return;
 	}
 	int freeIndex = getFreeIndex();
@@ -270,7 +313,7 @@ void Table::insertHash(const Value& key, const Value& value) {
 		m_hashNext[static_cast<size_t>(prev)] = freeIndex;
 		m_hashKeys[mainSlot] = key;
 		m_hashValues[mainSlot] = value;
-		m_hashNext[mainSlot] = -1;
+		m_hashNext[mainSlot] = kTableHashNextEnd;
 		return;
 	}
 	m_hashKeys[freeSlot] = key;
@@ -280,6 +323,19 @@ void Table::insertHash(const Value& key, const Value& value) {
 }
 
 void Table::removeFromHash(const Value& key) {
+	const int existingIndex = findNodeIndex(key);
+	if (existingIndex < 0 || isNil(m_hashValues[static_cast<size_t>(existingIndex)])) {
+		return;
+	}
+	if (m_hashDeadCount > 0) {
+		rehash(valueNil());
+		int arrayIndex = 0;
+		if (getArrayIndex(key, arrayIndex)
+			&& static_cast<size_t>(arrayIndex) < m_array.size()) {
+			m_array[static_cast<size_t>(arrayIndex)] = valueNil();
+			return;
+		}
+	}
 	if (m_hashSize == 0) {
 		return;
 	}
@@ -296,7 +352,7 @@ void Table::removeFromHash(const Value& key) {
 				m_hashNext[static_cast<size_t>(prev)] = next;
 				m_hashKeys[slot] = valueNil();
 				m_hashValues[slot] = valueNil();
-				m_hashNext[slot] = -1;
+				m_hashNext[slot] = kTableHashNextEnd;
 				if (index > m_hashFree) {
 					m_hashFree = index;
 				}
@@ -309,7 +365,7 @@ void Table::removeFromHash(const Value& key) {
 				m_hashNext[slot] = m_hashNext[nextSlot];
 				m_hashKeys[nextSlot] = valueNil();
 				m_hashValues[nextSlot] = valueNil();
-				m_hashNext[nextSlot] = -1;
+				m_hashNext[nextSlot] = kTableHashNextEnd;
 				if (next > m_hashFree) {
 					m_hashFree = next;
 				}
@@ -317,7 +373,7 @@ void Table::removeFromHash(const Value& key) {
 			}
 			m_hashKeys[slot] = valueNil();
 			m_hashValues[slot] = valueNil();
-			m_hashNext[slot] = -1;
+			m_hashNext[slot] = kTableHashNextEnd;
 			if (index > m_hashFree) {
 				m_hashFree = index;
 			}
@@ -326,6 +382,19 @@ void Table::removeFromHash(const Value& key) {
 		prev = index;
 		index = m_hashNext[slot];
 	}
+}
+
+void Table::markHashNodeDead(size_t index) {
+	if (valueIsTable(m_hashKeys[index])
+		|| valueIsClosure(m_hashKeys[index])
+		|| valueIsUpvalue(m_hashKeys[index])) {
+		const uint32_t hashId = valueObjectHashId(m_hashKeys[index]);
+		m_hashKeys[index] = valueNil();
+		m_hashValues[index] = valueNumber(static_cast<double>(hashId));
+	} else {
+		m_hashValues[index] = valueNil();
+	}
+	++m_hashDeadCount;
 }
 
 Value Table::get(const Value& key) const {
@@ -387,6 +456,9 @@ void Table::set(const Value& key, const Value& value) {
 	}
 	int nodeIndex = findNodeIndex(key);
 	if (nodeIndex >= 0) {
+		if (isNil(m_hashValues[static_cast<size_t>(nodeIndex)])) {
+			--m_hashDeadCount;
+		}
 		m_hashValues[static_cast<size_t>(nodeIndex)] = value;
 		bumpVersion();
 		return;
@@ -440,6 +512,9 @@ void Table::setInteger(int indexValue, const Value& value) {
 	}
 	const int nodeIndex = findNodeIndex(key);
 	if (nodeIndex >= 0) {
+		if (isNil(m_hashValues[static_cast<size_t>(nodeIndex)])) {
+			--m_hashDeadCount;
+		}
 		m_hashValues[static_cast<size_t>(nodeIndex)] = value;
 		bumpVersion();
 		return;
@@ -468,6 +543,9 @@ void Table::setStringKey(StringId key, const Value& value) {
 	}
 	const int nodeIndex = findNodeIndex(keyValue);
 	if (nodeIndex >= 0) {
+		if (isNil(m_hashValues[static_cast<size_t>(nodeIndex)])) {
+			--m_hashDeadCount;
+		}
 		m_hashValues[static_cast<size_t>(nodeIndex)] = value;
 		bumpVersion();
 		return;
@@ -494,47 +572,39 @@ void Table::clear() {
 }
 
 std::optional<std::pair<Value, Value>> Table::nextEntry(const Value& after) const {
+	int hashIndex = -1;
 	if (isNil(after)) {
 		for (size_t i = 0; i < m_array.size(); ++i) {
 			if (!isNil(m_array[i])) {
 				return std::make_pair(valueNumber(static_cast<double>(i + 1)), m_array[i]);
 			}
 		}
-		for (size_t i = 0; i < m_hashSize; ++i) {
-			if (!isNil(m_hashKeys[i])) {
-				return std::make_pair(m_hashKeys[i], m_hashValues[i]);
-			}
-		}
-		return std::nullopt;
-	}
-	int index = 0;
-	if (getArrayIndex(after, index)) {
-		if (index < static_cast<int>(m_array.size())) {
-			if (isNil(m_array[static_cast<size_t>(index)])) {
-				return std::nullopt;
-			}
-			int startIndex = index + 1;
+		hashIndex = findNextLiveHashIndex(0);
+	} else {
+		int index = 0;
+		if (getArrayIndex(after, index)
+			&& index < static_cast<int>(m_array.size())) {
+			const int startIndex = index + 1;
 			for (int i = startIndex; i < static_cast<int>(m_array.size()); ++i) {
 				if (!isNil(m_array[static_cast<size_t>(i)])) {
-					return std::make_pair(valueNumber(static_cast<double>(i + 1)), m_array[static_cast<size_t>(i)]);
+					return std::make_pair(
+						valueNumber(static_cast<double>(i + 1)),
+						m_array[static_cast<size_t>(i)]
+					);
 				}
 			}
-			for (size_t i = 0; i < m_hashSize; ++i) {
-				if (!isNil(m_hashKeys[i])) {
-					return std::make_pair(m_hashKeys[i], m_hashValues[i]);
-				}
+			hashIndex = findNextLiveHashIndex(0);
+		} else {
+			const int nodeIndex = findNodeIndexForNext(after);
+			if (nodeIndex < 0) {
+				return std::nullopt;
 			}
-			return std::nullopt;
+			hashIndex = findNextLiveHashIndex(static_cast<size_t>(nodeIndex + 1));
 		}
 	}
-	int nodeIndex = findNodeIndex(after);
-	if (nodeIndex < 0) {
-		return std::nullopt;
-	}
-	for (size_t i = static_cast<size_t>(nodeIndex + 1); i < m_hashSize; ++i) {
-		if (!isNil(m_hashKeys[i])) {
-			return std::make_pair(m_hashKeys[i], m_hashValues[i]);
-		}
+	if (hashIndex >= 0) {
+		const size_t slot = static_cast<size_t>(hashIndex);
+		return std::make_pair(m_hashKeys[slot], m_hashValues[slot]);
 	}
 	return std::nullopt;
 }
@@ -547,14 +617,21 @@ std::optional<std::tuple<size_t, size_t, Value, Value>> Table::nextEntryFromCurs
 		}
 	}
 	const size_t hashStart = hashCursor > 0 ? hashCursor - 1 : 0;
-	for (size_t index = hashStart; index < m_hashSize; ++index) {
-		const Value key = m_hashKeys[index];
-		if (!isNil(key)) {
-			if (hashCursor > 0 && index == hashCursor - 1 && !isNil(previousHashKey) && keyEquals(key, previousHashKey)) {
-				continue;
-			}
-			return std::make_tuple(m_array.size(), index + 1, key, m_hashValues[index]);
-		}
+	int hashIndex = findNextLiveHashIndex(hashStart);
+	if (hashCursor > 0
+		&& hashIndex == static_cast<int>(hashCursor - 1)
+		&& !isNil(previousHashKey)
+		&& keyEquals(m_hashKeys[static_cast<size_t>(hashIndex)], previousHashKey)) {
+		hashIndex = findNextLiveHashIndex(static_cast<size_t>(hashIndex + 1));
+	}
+	if (hashIndex >= 0) {
+		const size_t slot = static_cast<size_t>(hashIndex);
+		return std::make_tuple(
+			m_array.size(),
+			slot + 1,
+			m_hashKeys[slot],
+			m_hashValues[slot]
+		);
 	}
 	return std::nullopt;
 }
@@ -572,21 +649,32 @@ TableRuntimeState Table::captureRuntimeState() const {
 	return state;
 }
 
-void Table::restoreRuntimeState(const TableRuntimeState& state) {
+uint32_t Table::restoreRuntimeState(const TableRuntimeState& state) {
 	const size_t previousBytes = trackedHeapBytes();
 	m_array = state.array;
 	m_arrayLength = state.arrayLength;
 	allocateHash(state.hash.size());
+	uint32_t maxDeadKeyHashId = 0;
 	for (size_t index = 0; index < state.hash.size(); ++index) {
 		const TableHashNodeState& node = state.hash[index];
 		m_hashKeys[index] = node.key;
 		m_hashValues[index] = node.value;
 		m_hashNext[index] = node.next;
+		if (isNil(node.key) != isNil(node.value)) {
+			++m_hashDeadCount;
+			if (isNil(node.key)) {
+				const uint32_t hashId = static_cast<uint32_t>(asNumber(node.value));
+				if (hashId > maxDeadKeyHashId) {
+					maxDeadKeyHashId = hashId;
+				}
+			}
+		}
 	}
 	m_hashFree = state.hashFree;
 	metatable = state.metatable;
 	bumpVersion();
 	addTrackedLuaHeapBytes(static_cast<ptrdiff_t>(trackedHeapBytes()) - static_cast<ptrdiff_t>(previousBytes));
+	return maxDeadKeyHashId;
 }
 
 size_t Table::trackedHeapBytes() const {

@@ -18,6 +18,7 @@ import type { Closure } from './closure';
 const TABLE_HEAP_BYTES = 32;
 const TABLE_ARRAY_SLOT_HEAP_BYTES = 8;
 const TABLE_HASH_SLOT_HEAP_BYTES = 20;
+const TABLE_HASH_NEXT_END = -1;
 const EMPTY_TABLE_HASH_NEXT = new Int32Array(0);
 
 type HashNode = {
@@ -43,6 +44,7 @@ export class Table {
 	private hashValues: Value[];
 	private hashNext: Int32Array;
 	private hashFree = -1;
+	private hashDeadCount = 0;
 	private tableMetatable: Table | null = null;
 	private version = 1;
 
@@ -60,7 +62,7 @@ export class Table {
 		this.hashValues = new Array<Value>(size);
 		this.hashValues.fill(null);
 		this.hashNext = new Int32Array(size);
-		this.hashNext.fill(-1);
+		this.hashNext.fill(TABLE_HASH_NEXT_END);
 		this.hashFree = size > 0 ? size - 1 : -1;
 		addTrackedLuaHeapBytes(this.getTrackedHeapBytes());
 	}
@@ -121,6 +123,9 @@ export class Table {
 			}
 			const nodeIndex = this.findNodeIndex(key);
 			if (nodeIndex >= 0) {
+				if (this.hashValues[nodeIndex] === null) {
+					this.hashDeadCount -= 1;
+				}
 				this.hashValues[nodeIndex] = value;
 				this.bumpVersion();
 				return;
@@ -139,6 +144,9 @@ export class Table {
 		}
 		const nodeIndex = this.findNodeIndex(key);
 		if (nodeIndex >= 0) {
+			if (this.hashValues[nodeIndex] === null) {
+				this.hashDeadCount -= 1;
+			}
 			this.hashValues[nodeIndex] = value;
 			this.bumpVersion();
 			return;
@@ -190,6 +198,9 @@ export class Table {
 		}
 		const nodeIndex = this.findNodeIndex(indexValue);
 		if (nodeIndex >= 0) {
+			if (this.hashValues[nodeIndex] === null) {
+				this.hashDeadCount -= 1;
+			}
 			this.hashValues[nodeIndex] = value;
 			this.bumpVersion();
 			return;
@@ -217,6 +228,9 @@ export class Table {
 		}
 		const nodeIndex = this.findNodeIndex(key);
 		if (nodeIndex >= 0) {
+			if (this.hashValues[nodeIndex] === null) {
+				this.hashDeadCount -= 1;
+			}
 			this.hashValues[nodeIndex] = value;
 			this.bumpVersion();
 			return;
@@ -236,6 +250,7 @@ export class Table {
 		this.hashValues.length = 0;
 		this.hashNext = EMPTY_TABLE_HASH_NEXT;
 		this.hashFree = -1;
+		this.hashDeadCount = 0;
 		this.bumpVersion();
 		addTrackedLuaHeapBytes(this.getTrackedHeapBytes() - previousBytes);
 	}
@@ -250,9 +265,48 @@ export class Table {
 		}
 		for (let index = 0; index < this.hashKeys.length; index += 1) {
 			const key = this.hashKeys[index];
-			if (key !== null) {
-				visitor(key, this.hashValues[index]);
+			const value = this.hashValues[index];
+			if (key !== null && value !== null) {
+				visitor(key, value);
 			}
+		}
+	}
+
+	public clearWeakEntries(
+		weakKeys: boolean,
+		weakValues: boolean,
+		valueIsAlive: (value: Value) => boolean,
+	): void {
+		let changed = false;
+		if (weakValues) {
+			for (let index = 0; index < this.array.length; index += 1) {
+				const value = this.array[index];
+				if (value === null || valueIsAlive(value)) {
+					continue;
+				}
+				this.array[index] = null;
+				if (index < this.arrayLength) {
+					this.arrayLength = index;
+				}
+				changed = true;
+			}
+		}
+		for (let index = 0; index < this.hashKeys.length; index += 1) {
+			const key = this.hashKeys[index];
+			const value = this.hashValues[index];
+			if (key === null || value === null) {
+				continue;
+			}
+			const keyIsAlive = !weakKeys || valueIsAlive(key);
+			const valueIsStillAlive = !weakValues || valueIsAlive(value);
+			if (keyIsAlive && valueIsStillAlive) {
+				continue;
+			}
+			this.markHashNodeDead(index);
+			changed = true;
+		}
+		if (changed) {
+			this.bumpVersion();
 		}
 	}
 
@@ -275,37 +329,35 @@ export class Table {
 		};
 	}
 
-	public restoreRuntimeState(state: TableRuntimeState): void {
+	public restoreRuntimeState(state: TableRuntimeState): number {
 		const previousBytes = this.getTrackedHeapBytes();
 		this.array = state.array.slice();
 		this.arrayLength = state.arrayLength;
 		this.hashKeys = new Array<Value>(state.hash.length);
 		this.hashValues = new Array<Value>(state.hash.length);
 		this.hashNext = new Int32Array(state.hash.length);
+		this.hashDeadCount = 0;
+		let maxDeadKeyHashId = 0;
 		for (let index = 0; index < state.hash.length; index += 1) {
 			const node = state.hash[index];
 			this.hashKeys[index] = node.key;
 			this.hashValues[index] = node.value;
 			this.hashNext[index] = node.next;
+			if ((node.key === null) !== (node.value === null)) {
+				this.hashDeadCount += 1;
+				if (node.key === null) {
+					const deadKeyHashId = node.value as number;
+					if (deadKeyHashId > maxDeadKeyHashId) {
+						maxDeadKeyHashId = deadKeyHashId;
+					}
+				}
+			}
 		}
 		this.hashFree = state.hashFree;
 		this.tableMetatable = state.metatable;
 		this.bumpVersion();
 		addTrackedLuaHeapBytes(this.getTrackedHeapBytes() - previousBytes);
-	}
-
-	public walkTrackedValues(visitor: (value: Value) => void): void {
-		visitor(this.tableMetatable);
-		for (let index = 0; index < this.array.length; index += 1) {
-			const value = this.array[index];
-			if (value !== null) {
-				visitor(value);
-			}
-		}
-		for (let index = 0; index < this.hashKeys.length; index += 1) {
-			visitor(this.hashKeys[index]);
-			visitor(this.hashValues[index]);
-		}
+		return maxDeadKeyHashId;
 	}
 
 	public getTrackedHeapBytes(): number {
@@ -315,6 +367,7 @@ export class Table {
 	}
 
 	public nextEntry(after: Value): [Value, Value] | null {
+		let hashIndex = -1;
 		if (after === null) {
 			for (let index = 0; index < this.array.length; index += 1) {
 				const value = this.array[index];
@@ -322,42 +375,27 @@ export class Table {
 					return [index + 1, value];
 				}
 			}
-			for (let index = 0; index < this.hashKeys.length; index += 1) {
-				const key = this.hashKeys[index];
-				if (key !== null) {
-					return [key, this.hashValues[index]];
+			hashIndex = this.findNextLiveHashIndex(0);
+		} else {
+			const index = this.getArrayIndex(after);
+			if (index !== null && index < this.array.length) {
+				for (let cursor = index + 1; cursor < this.array.length; cursor += 1) {
+					const value = this.array[cursor];
+					if (value !== null) {
+						return [cursor + 1, value];
+					}
 				}
-			}
-			return null;
-		}
-		const index = this.getArrayIndex(after);
-		if (index !== null && index < this.array.length) {
-			if (this.array[index] === null) {
-				return null;
-			}
-			for (let cursor = index + 1; cursor < this.array.length; cursor += 1) {
-				const value = this.array[cursor];
-				if (value !== null) {
-					return [cursor + 1, value];
+				hashIndex = this.findNextLiveHashIndex(0);
+			} else {
+				const nodeIndex = this.findNodeIndexForNext(after);
+				if (nodeIndex < 0) {
+					return null;
 				}
+				hashIndex = this.findNextLiveHashIndex(nodeIndex + 1);
 			}
-			for (let i = 0; i < this.hashKeys.length; i += 1) {
-				const key = this.hashKeys[i];
-				if (key !== null) {
-					return [key, this.hashValues[i]];
-				}
-			}
-			return null;
 		}
-		const nodeIndex = this.findNodeIndex(after);
-		if (nodeIndex < 0) {
-			return null;
-		}
-		for (let i = nodeIndex + 1; i < this.hashKeys.length; i += 1) {
-			const key = this.hashKeys[i];
-			if (key !== null) {
-				return [key, this.hashValues[i]];
-			}
+		if (hashIndex >= 0) {
+			return [this.hashKeys[hashIndex], this.hashValues[hashIndex]];
 		}
 		return null;
 	}
@@ -370,14 +408,20 @@ export class Table {
 			}
 		}
 		const hashStart = hashCursor > 0 ? hashCursor - 1 : 0;
-		for (let index = hashStart; index < this.hashKeys.length; index += 1) {
-			const key = this.hashKeys[index];
-			if (key !== null) {
-				if (hashCursor > 0 && index === hashCursor - 1 && previousHashKey !== null && this.keyEquals(key, previousHashKey)) {
-					continue;
-				}
-				return [this.array.length, index + 1, key, this.hashValues[index]];
-			}
+		let hashIndex = this.findNextLiveHashIndex(hashStart);
+		if (hashCursor > 0
+			&& hashIndex === hashCursor - 1
+			&& previousHashKey !== null
+			&& this.keyEquals(this.hashKeys[hashIndex], previousHashKey)) {
+			hashIndex = this.findNextLiveHashIndex(hashIndex + 1);
+		}
+		if (hashIndex >= 0) {
+			return [
+				this.array.length,
+				hashIndex + 1,
+				this.hashKeys[hashIndex],
+				this.hashValues[hashIndex],
+			];
 		}
 		return null;
 	}
@@ -443,10 +487,45 @@ export class Table {
 		return -1;
 	}
 
+	private findNextLiveHashIndex(start: number): number {
+		for (let index = start; index < this.hashKeys.length; index += 1) {
+			if (this.hashKeys[index] !== null && this.hashValues[index] !== null) {
+				return index;
+			}
+		}
+		return -1;
+	}
+
+	private findNodeIndexForNext(key: Value): number {
+		if (this.hashKeys.length === 0) {
+			return -1;
+		}
+		let deadKeyHashId = 0;
+		switch (valueTag(key)) {
+			case ValueTag.Table:
+			case ValueTag.Closure:
+				deadKeyHashId = (key as Table | Closure).hashId;
+				break;
+		}
+		const mask = this.hashKeys.length - 1;
+		let index = (this.hashValue(key) & mask) >>> 0;
+		while (index >= 0) {
+			const nodeKey = this.hashKeys[index];
+			if ((nodeKey !== null && this.keyEquals(nodeKey, key))
+				|| (nodeKey === null
+					&& deadKeyHashId !== 0
+					&& this.hashValues[index] === deadKeyHashId)) {
+				return index;
+			}
+			index = this.hashNext[index];
+		}
+		return -1;
+	}
+
 	private getFreeIndex(): number {
 		const start = this.hashFree >= 0 ? this.hashFree : this.hashKeys.length - 1;
 		for (let i = start; i >= 0; i -= 1) {
-			if (this.hashKeys[i] === null) {
+			if (this.hashKeys[i] === null && this.hashValues[i] === null) {
 				this.hashFree = i - 1;
 				return i;
 			}
@@ -468,7 +547,7 @@ export class Table {
 		}
 		for (let i = 0; i < this.hashKeys.length; i += 1) {
 			const key = this.hashKeys[i];
-			if (key !== null) {
+			if (key !== null && this.hashValues[i] !== null) {
 				totalKeys += 1;
 				const index = this.getArrayIndex(key);
 				if (index !== null) {
@@ -526,8 +605,9 @@ export class Table {
 		this.hashValues = new Array<Value>(newHashSize);
 		this.hashValues.fill(null);
 		this.hashNext = new Int32Array(newHashSize);
-		this.hashNext.fill(-1);
+		this.hashNext.fill(TABLE_HASH_NEXT_END);
 		this.hashFree = newHashSize > 0 ? newHashSize - 1 : -1;
+		this.hashDeadCount = 0;
 
 		for (let i = 0; i < oldArray.length; i += 1) {
 			if (oldArray[i] !== null) {
@@ -536,7 +616,7 @@ export class Table {
 		}
 		for (let i = 0; i < oldHashKeys.length; i += 1) {
 			const key = oldHashKeys[i];
-			if (key !== null) {
+			if (key !== null && oldHashValues[i] !== null) {
 				this.rawSet(key, oldHashValues[i]);
 			}
 		}
@@ -563,6 +643,11 @@ export class Table {
 	}
 
 	private insertHash(key: Value, value: Value): void {
+		if (this.hashDeadCount > 0) {
+			this.rehash(key);
+			this.rawSet(key, value);
+			return;
+		}
 		if (this.hashKeys.length === 0) {
 			this.rehash(key);
 			this.rawSet(key, value);
@@ -574,7 +659,7 @@ export class Table {
 		if (mainKey === null) {
 			this.hashKeys[mainIndex] = key;
 			this.hashValues[mainIndex] = value;
-			this.hashNext[mainIndex] = -1;
+			this.hashNext[mainIndex] = TABLE_HASH_NEXT_END;
 			return;
 		}
 		const freeIndex = this.getFreeIndex();
@@ -595,7 +680,7 @@ export class Table {
 			this.hashNext[prev] = freeIndex;
 			this.hashKeys[mainIndex] = key;
 			this.hashValues[mainIndex] = value;
-			this.hashNext[mainIndex] = -1;
+			this.hashNext[mainIndex] = TABLE_HASH_NEXT_END;
 			return;
 		}
 		this.hashKeys[freeIndex] = key;
@@ -605,6 +690,18 @@ export class Table {
 	}
 
 	private removeFromHash(key: Value): void {
+		const existingIndex = this.findNodeIndex(key);
+		if (existingIndex < 0 || this.hashValues[existingIndex] === null) {
+			return;
+		}
+		if (this.hashDeadCount > 0) {
+			this.rehash(null);
+			const arrayIndex = this.getArrayIndex(key);
+			if (arrayIndex !== null && arrayIndex < this.array.length) {
+				this.array[arrayIndex] = null;
+				return;
+			}
+		}
 		if (this.hashKeys.length === 0) {
 			return;
 		}
@@ -620,7 +717,7 @@ export class Table {
 					this.hashNext[prev] = next;
 					this.hashKeys[index] = null;
 					this.hashValues[index] = null;
-					this.hashNext[index] = -1;
+					this.hashNext[index] = TABLE_HASH_NEXT_END;
 					if (index > this.hashFree) {
 						this.hashFree = index;
 					}
@@ -632,7 +729,7 @@ export class Table {
 					this.hashNext[index] = this.hashNext[next];
 					this.hashKeys[next] = null;
 					this.hashValues[next] = null;
-					this.hashNext[next] = -1;
+					this.hashNext[next] = TABLE_HASH_NEXT_END;
 					if (next > this.hashFree) {
 						this.hashFree = next;
 					}
@@ -640,7 +737,7 @@ export class Table {
 				}
 				this.hashKeys[index] = null;
 				this.hashValues[index] = null;
-				this.hashNext[index] = -1;
+				this.hashNext[index] = TABLE_HASH_NEXT_END;
 				if (index > this.hashFree) {
 					this.hashFree = index;
 				}
@@ -649,6 +746,20 @@ export class Table {
 			prev = index;
 			index = this.hashNext[index];
 		}
+	}
+
+	private markHashNodeDead(index: number): void {
+		const key = this.hashKeys[index];
+		switch (valueTag(key)) {
+			case ValueTag.Table:
+			case ValueTag.Closure:
+				this.hashKeys[index] = null;
+				this.hashValues[index] = (key as Table | Closure).hashId;
+				break;
+			default:
+				this.hashValues[index] = null;
+		}
+		this.hashDeadCount += 1;
 	}
 
 	private getArrayIndex(key: Value): number | null {
@@ -673,7 +784,8 @@ export class Table {
 			return value !== null;
 		}
 		const key = index + 1;
-		return this.findNodeIndex(key) >= 0;
+		const nodeIndex = this.findNodeIndex(key);
+		return nodeIndex >= 0 && this.hashValues[nodeIndex] !== null;
 	}
 
 	private updateArrayLengthFrom(startIndex: number): void {

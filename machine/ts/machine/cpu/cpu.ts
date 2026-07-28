@@ -239,6 +239,11 @@ const enum TableIndexKeyKind {
 	Field,
 }
 
+const TABLE_WEAK_KEYS = 1;
+const TABLE_WEAK_VALUES = 2;
+const TABLE_WEAK_KEY_CODE_UNIT = 0x6b;
+const TABLE_WEAK_VALUE_CODE_UNIT = 0x76;
+
 // Pool constant for frame reuse
 const MAX_POOLED_FRAMES = 32;
 export class CPU {
@@ -249,7 +254,8 @@ export class CPU {
 	public readonly memory: Memory;
 
 	public readonly stringPool: StringPool;
-	private indexKey: StringValue = null;
+	private indexKey!: StringValue;
+	private modeKey!: StringValue;
 	private haltedUntilIrq = false;
 	private interruptEventPending = false;
 	private memoryWriteBlocked = false;
@@ -278,6 +284,88 @@ export class CPU {
 	private readonly arrayBuiltinArgsScratch = new ScratchBuffer<ArrayBuiltinArgsView>(() => new ArrayBuiltinArgsView());
 	private arrayBuiltinArgsScratchIndex = 0;
 	private readonly builtinReturnScratch = new ScratchArrayStack<Value>();
+	private readonly heapValueStack: Value[] = [];
+	private readonly heapUpvalueStack: Upvalue[] = [];
+	private readonly heapWeakTables: Table[] = [];
+	private readonly heapWeakTableModes: number[] = [];
+	private readonly heapEphemeronTables: Table[] = [];
+	private heapSeen!: WeakSet<object>;
+	private heapSeenImages!: WeakSet<object>;
+	private heapTableWeakMode = 0;
+	private heapEphemeronChanged = false;
+	private readonly pushHeapValue = (value: Value): void => {
+		switch (valueTag(value)) {
+			case ValueTag.Nil:
+			case ValueTag.False:
+			case ValueTag.True:
+			case ValueTag.Number:
+				return;
+			case ValueTag.String:
+				this.stringPool.markReachable(asStringId(value as StringValue));
+				return;
+			case ValueTag.Table:
+				this.heapValueStack.push(value);
+				return;
+			case ValueTag.Closure:
+				if ((value as Closure).heapBytes !== 0) {
+					this.heapValueStack.push(value);
+				}
+				return;
+			case ValueTag.BuiltinFunction:
+				return;
+		}
+	};
+	private readonly heapValueIsAlive = (value: Value): boolean => {
+		switch (valueTag(value)) {
+			case ValueTag.Table:
+				return this.heapSeen.has(value as Table);
+			case ValueTag.Closure: {
+				const closure = value as Closure;
+				return closure.heapBytes === 0 || this.heapSeen.has(closure);
+			}
+			default:
+				return true;
+		}
+	};
+	private readonly visitHeapTableEntry = (key: Value, value: Value): void => {
+		if ((this.heapTableWeakMode & TABLE_WEAK_KEYS) === 0) {
+			this.pushHeapValue(key);
+		}
+		if (this.heapTableWeakMode === 0) {
+			this.pushHeapValue(value);
+		}
+	};
+	private readonly visitHeapEphemeronEntry = (key: Value, value: Value): void => {
+		if (!this.heapValueIsAlive(key)) {
+			return;
+		}
+		switch (valueTag(value)) {
+			case ValueTag.Table:
+				if (!this.heapSeen.has(value as Table)) {
+					this.heapValueStack.push(value);
+					this.heapEphemeronChanged = true;
+				}
+				return;
+			case ValueTag.Closure: {
+				const closure = value as Closure;
+				if (closure.heapBytes !== 0 && !this.heapSeen.has(closure)) {
+					this.heapValueStack.push(value);
+					this.heapEphemeronChanged = true;
+				}
+				return;
+			}
+			default:
+				this.pushHeapValue(value);
+		}
+	};
+	private readonly markWeakEntryStrings = (key: Value, value: Value): void => {
+		if (valueIsString(key)) {
+			this.stringPool.markReachable(asStringId(key));
+		}
+		if (valueIsString(value)) {
+			this.stringPool.markReachable(asStringId(value));
+		}
+	};
 	private readonly executionImages: Blua32ExecutionImage[] = [];
 	private systemImage!: Blua32ExecutionImage;
 	private activeExecutionImage!: Blua32ExecutionImage;
@@ -325,6 +413,7 @@ export class CPU {
 		this.globals = this.createTable(0, 0);
 		this.stringIndexTable = this.createTable(0, 0);
 		this.indexKey = StringValue.get(this.stringPool.intern('__index'));
+		this.modeKey = StringValue.get(this.stringPool.intern('__mode'));
 	}
 
 	public allocateObjectHashId(): number {
@@ -3143,7 +3232,7 @@ export class CPU {
 			switch (objectState.kind) {
 				case 'table': {
 					const table = restoredObjects[index] as Table;
-					table.restoreRuntimeState({
+					this.observeObjectHashId(table.restoreRuntimeState({
 						array: objectState.array.map(restoreValue),
 						arrayLength: objectState.arrayLength,
 						hash: objectState.hash.map(node => ({
@@ -3153,7 +3242,7 @@ export class CPU {
 						})),
 						hashFree: objectState.hashFree,
 						metatable: restoreValue(objectState.metatable) as Table | null,
-					});
+					}));
 					break;
 				}
 				case 'closure': {
@@ -3270,123 +3359,176 @@ export class CPU {
 		refreshTrackedLuaHeapBytes();
 	}
 
-	public collectTrackedHeapBytes(extraRoots: ReadonlyArray<Value> = []): number {
-		const seen = new WeakSet<object>();
-		const seenImages = new WeakSet<object>();
-		let total = 0;
-		const valueStack: Value[] = [];
-		const upvalueStack: Upvalue[] = [];
-		this.stringPool.beginReachabilityEpoch();
-		if (this.indexKey !== null) {
-			this.stringPool.markReachable(asStringId(this.indexKey));
+	private tableWeakMode(table: Table): number {
+		const metatable = table.metatable;
+		if (!metatable) {
+			return 0;
 		}
+		const modeValue = metatable.getStringKey(this.modeKey);
+		if (!valueIsString(modeValue)) {
+			return 0;
+		}
+		const mode = this.stringPool.toString(asStringId(modeValue));
+		let weakMode = 0;
+		for (let index = 0; index < mode.length; index += 1) {
+			switch (mode.charCodeAt(index)) {
+				case TABLE_WEAK_KEY_CODE_UNIT:
+					weakMode |= TABLE_WEAK_KEYS;
+					break;
+				case TABLE_WEAK_VALUE_CODE_UNIT:
+					weakMode |= TABLE_WEAK_VALUES;
+					break;
+			}
+		}
+		return weakMode;
+	}
 
-		const pushValue = (value: Value): void => {
-			switch (valueTag(value)) {
-				case ValueTag.Nil:
-				case ValueTag.False:
-				case ValueTag.True:
-				case ValueTag.Number:
-					return;
-				case ValueTag.String:
-					this.stringPool.markReachable(asStringId(value as StringValue));
-					return;
-				case ValueTag.Table:
-				case ValueTag.Closure:
-					valueStack.push(value);
-					return;
-				case ValueTag.BuiltinFunction:
-					return;
-			}
-		};
-		const pushImage = (image: Blua32ExecutionImage): void => {
-			if (seenImages.has(image)) {
-				return;
-			}
-			seenImages.add(image);
-			for (let index = 0; index < image.constPool.length; index += 1) {
-				pushValue(image.constPool[index]);
-			}
-		};
+	private pushHeapImage(image: Blua32ExecutionImage): void {
+		if (this.heapSeenImages.has(image)) {
+			return;
+		}
+		this.heapSeenImages.add(image);
+		for (let index = 0; index < image.tableLoadCaches.length; index += 1) {
+			const cache = image.tableLoadCaches[index];
+			cache.table = null;
+			cache.version = 0;
+			cache.value = null;
+		}
+		for (let index = 0; index < image.constPool.length; index += 1) {
+			this.pushHeapValue(image.constPool[index]);
+		}
+	}
 
-		pushValue(this.globals);
+	public collectTrackedHeapBytes(extraRoots: ReadonlyArray<Value> = []): number {
+		this.heapSeen = new WeakSet<object>();
+		this.heapSeenImages = new WeakSet<object>();
+		const seen = this.heapSeen;
+		let total = 0;
+		const valueStack = this.heapValueStack;
+		const upvalueStack = this.heapUpvalueStack;
+		const weakTables = this.heapWeakTables;
+		const weakTableModes = this.heapWeakTableModes;
+		const ephemeronTables = this.heapEphemeronTables;
+		valueStack.length = 0;
+		upvalueStack.length = 0;
+		weakTables.length = 0;
+		weakTableModes.length = 0;
+		ephemeronTables.length = 0;
+		this.stringPool.beginReachabilityEpoch();
+		this.stringPool.markReachable(asStringId(this.indexKey));
+		this.stringPool.markReachable(asStringId(this.modeKey));
+
+		this.pushHeapValue(this.globals);
 		for (let slot = 0; slot < this.systemGlobalValues.length; slot += 1) {
-			pushValue(this.systemGlobalValues[slot]);
+			this.pushHeapValue(this.systemGlobalValues[slot]);
 		}
 		for (let slot = 0; slot < this.globalValues.length; slot += 1) {
-			pushValue(this.globalValues[slot]);
+			this.pushHeapValue(this.globalValues[slot]);
 		}
-		pushValue(this.stringIndexTable);
-		this.memory.collectRootValues(pushValue);
+		this.pushHeapValue(this.stringIndexTable);
+		this.memory.collectRootValues(this.pushHeapValue);
 		for (let index = 0; index < this.completionValues.length; index += 1) {
-			pushValue(this.completionValues[index]);
+			this.pushHeapValue(this.completionValues[index]);
 		}
 		for (let index = 0; index < this.executionImages.length; index += 1) {
-			pushImage(this.executionImages[index]);
+			this.pushHeapImage(this.executionImages[index]);
 		}
 		for (let frameIndex = 0; frameIndex < this.frames.length; frameIndex += 1) {
 			const frame = this.frames[frameIndex];
-			pushImage(frame.executionImage);
-			pushValue(frame.closure);
+			this.pushHeapImage(frame.executionImage);
+			this.pushHeapValue(frame.closure);
 			for (let registerIndex = 0; registerIndex < frame.top; registerIndex += 1) {
-				pushValue(frame.registers.get(registerIndex));
+				this.pushHeapValue(frame.registers.get(registerIndex));
 			}
 			for (let index = 0; index < frame.varargCount; index += 1) {
-				pushValue(this.stackRegisters.get(frame.varargBase + index));
+				this.pushHeapValue(this.stackRegisters.get(frame.varargBase + index));
 			}
 		}
 		for (let index = 0; index < this.openUpvalues.length; index += 1) {
 			upvalueStack.push(this.openUpvalues[index].upvalue);
 		}
 		for (let index = 0; index < extraRoots.length; index += 1) {
-			pushValue(extraRoots[index]);
+			this.pushHeapValue(extraRoots[index]);
 		}
-		while (valueStack.length > 0 || upvalueStack.length > 0) {
-			if (upvalueStack.length > 0) {
-				const upvalue = upvalueStack.pop()!;
-				if (seen.has(upvalue)) {
-					continue;
-				}
-				seen.add(upvalue);
-				total += UPVALUE_HEAP_BYTES;
-				if (upvalue.open) {
-					pushValue(upvalue.frame.registers.get(upvalue.index));
-				}
-				else {
-					pushValue(upvalue.value);
-				}
-				continue;
-			}
-			const value = valueStack.pop()!;
-			switch (valueTag(value)) {
-				case ValueTag.Table: {
-					const table = value as Table;
-					if (seen.has(table)) {
+		for (;;) {
+			while (valueStack.length > 0 || upvalueStack.length > 0) {
+				if (upvalueStack.length > 0) {
+					const upvalue = upvalueStack.pop()!;
+					if (seen.has(upvalue)) {
 						continue;
 					}
-					seen.add(table);
-					total += table.getTrackedHeapBytes();
-					table.walkTrackedValues(pushValue);
+					seen.add(upvalue);
+					total += UPVALUE_HEAP_BYTES;
+					if (upvalue.open) {
+						this.pushHeapValue(upvalue.frame.registers.get(upvalue.index));
+					}
+					else {
+						this.pushHeapValue(upvalue.value);
+					}
 					continue;
 				}
-				case ValueTag.Closure: {
-					const closure = value as Closure;
-					if (seen.has(closure)) {
+				const value = valueStack.pop()!;
+				switch (valueTag(value)) {
+					case ValueTag.Table: {
+						const table = value as Table;
+						if (seen.has(table)) {
+							continue;
+						}
+						seen.add(table);
+						total += table.getTrackedHeapBytes();
+						this.pushHeapValue(table.metatable);
+						this.heapTableWeakMode = this.tableWeakMode(table);
+						if (this.heapTableWeakMode !== 0) {
+							weakTables.push(table);
+							weakTableModes.push(this.heapTableWeakMode);
+							if (this.heapTableWeakMode === TABLE_WEAK_KEYS) {
+								ephemeronTables.push(table);
+							}
+						}
+						if ((this.heapTableWeakMode & TABLE_WEAK_KEYS) === 0) {
+							table.forEachEntry(this.visitHeapTableEntry);
+						}
 						continue;
 					}
-					seen.add(closure);
-					total += closure.heapBytes;
-					for (let index = 0; index < closure.upvalues.length; index += 1) {
-						upvalueStack.push(closure.upvalues[index]);
+					case ValueTag.Closure: {
+						const closure = value as Closure;
+						if (seen.has(closure)) {
+							continue;
+						}
+						seen.add(closure);
+						total += closure.heapBytes;
+						for (let index = 0; index < closure.upvalues.length; index += 1) {
+							upvalueStack.push(closure.upvalues[index]);
+						}
+						continue;
 					}
+					default:
 					continue;
 				}
-				default:
-					continue;
 			}
+			this.heapEphemeronChanged = false;
+			for (let index = 0; index < ephemeronTables.length; index += 1) {
+				ephemeronTables[index].forEachEntry(this.visitHeapEphemeronEntry);
+			}
+			if (!this.heapEphemeronChanged) {
+				break;
+			}
+		}
+		for (let index = 0; index < weakTables.length; index += 1) {
+			const weakMode = weakTableModes[index];
+			const table = weakTables[index];
+			table.clearWeakEntries(
+				(weakMode & TABLE_WEAK_KEYS) !== 0,
+				(weakMode & TABLE_WEAK_VALUES) !== 0,
+				this.heapValueIsAlive,
+			);
+			table.forEachEntry(this.markWeakEntryStrings);
 		}
 		this.stringPool.reclaimUnreachableTracked();
 		total += this.stringPool.trackedLuaHeapBytes();
+		weakTables.length = 0;
+		weakTableModes.length = 0;
+		ephemeronTables.length = 0;
 		return total;
 	}
 

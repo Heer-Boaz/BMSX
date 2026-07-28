@@ -174,7 +174,9 @@ public:
 	// reclaims their tracked-byte accounting by marking reachable ids during the
 	// mark phase and dropping the rest after the sweep. The pool outlives the heap
 	// (declared before it in CPU), so a reference is always valid.
-	explicit GcHeap(StringPool& stringPool) : m_stringPool(stringPool) {}
+	GcHeap(StringPool& stringPool, StringId modeKey)
+		: m_modeKey(modeKey)
+		, m_stringPool(stringPool) {}
 
 	template <typename T, typename... Args>
 	T* allocate(ObjType type, Args&&... args) {
@@ -212,23 +214,31 @@ public:
 		}
 	}
 
-	void markValue(Value v);
-	void markClosure(Closure* closure);
-	void markObject(GCObject* obj);
+	bool markValue(Value v);
+	bool markClosure(Closure* closure);
+	bool markObject(GCObject* obj);
 
 	void setRootMarker(std::function<void(GcHeap&)> marker) { m_rootMarker = std::move(marker); }
 
 private:
+	uint8_t tableWeakMode(const Table& table) const;
+	bool valueIsAlive(Value value) const;
 	void trace();
+	void convergeEphemerons();
+	void clearWeakTables();
 	void sweep();
 
 	GCObject* m_objects = nullptr;
 	std::vector<GCObject*> m_grayStack;
+	std::vector<Table*> m_weakTables;
+	std::vector<uint8_t> m_weakTableModes;
+	std::vector<Table*> m_ephemeronTables;
 	size_t m_bytesAllocated = 0;
 	size_t m_nextGC = 1024 * 1024;
 	uint32_t m_nextObjectHashId = 1;
 	bool m_collectRequested = false;
 	int m_collectionSuspendDepth = 0;
+	StringId m_modeKey;
 	std::function<void(GcHeap&)> m_rootMarker;
 	StringPool& m_stringPool;
 };
@@ -468,6 +478,7 @@ private:
 	Span<const u8> m_executionTableView;
 	Blua32FunctionRecordLatch m_functionRecordLatch;
 	StringPool m_stringPool;
+	Value m_indexKey;
 	GcHeap m_heap;
 	std::unordered_map<u32, Closure> m_staticClosuresByAddress;
 	std::array<BuiltinFunction, BUILTIN_FUNCTION_COUNT> m_builtinFunctions;
@@ -481,7 +492,6 @@ private:
 	static constexpr int MAX_POOLED_FRAMES = 32;
 	std::vector<Value> m_stack;
 	int m_stackTop = 0;
-	Value m_indexKey = valueNil();
 	std::vector<StringId> m_systemGlobalNames;
 	std::vector<Value> m_systemGlobalValues;
 	std::unordered_map<StringId, size_t> m_systemGlobalSlotByKey;

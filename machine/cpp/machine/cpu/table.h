@@ -46,15 +46,48 @@ public:
 			}
 		}
 		for (size_t i = 0; i < m_hashSize; ++i) {
-			if (!isNil(m_hashKeys[i])) {
+			if (!isNil(m_hashKeys[i]) && !isNil(m_hashValues[i])) {
 				fn(m_hashKeys[i], m_hashValues[i]);
 			}
+		}
+	}
+	template <typename ValueIsAlive>
+	void clearWeakEntries(bool weakKeys, bool weakValues, ValueIsAlive&& valueIsAlive) {
+		bool changed = false;
+		if (weakValues) {
+			for (size_t i = 0; i < m_array.size(); ++i) {
+				if (isNil(m_array[i]) || valueIsAlive(m_array[i])) {
+					continue;
+				}
+				m_array[i] = valueNil();
+				if (i < m_arrayLength) {
+					m_arrayLength = i;
+				}
+				changed = true;
+			}
+		}
+		for (size_t i = 0; i < m_hashSize; ++i) {
+			const Value key = m_hashKeys[i];
+			const Value value = m_hashValues[i];
+			if (isNil(key) || isNil(value)) {
+				continue;
+			}
+			const bool keyIsAlive = !weakKeys || valueIsAlive(key);
+			const bool valueIsStillAlive = !weakValues || valueIsAlive(value);
+			if (keyIsAlive && valueIsStillAlive) {
+				continue;
+			}
+			markHashNodeDead(i);
+			changed = true;
+		}
+		if (changed) {
+			bumpVersion();
 		}
 	}
 	std::optional<std::pair<Value, Value>> nextEntry(const Value& after) const;
 	std::optional<std::tuple<size_t, size_t, Value, Value>> nextEntryFromCursor(size_t arrayCursor, size_t hashCursor, const Value& previousHashKey = valueNil()) const;
 	TableRuntimeState captureRuntimeState() const;
-	void restoreRuntimeState(const TableRuntimeState& state);
+	uint32_t restoreRuntimeState(const TableRuntimeState& state);
 	size_t trackedHeapBytes() const;
 
 	Table* metatable = nullptr;
@@ -77,6 +110,8 @@ private:
 	size_t hashValue(const Value& key) const;
 	bool keyEquals(const Value& a, const Value& b) const;
 	int findNodeIndex(const Value& key) const;
+	int findNextLiveHashIndex(size_t start) const;
+	int findNodeIndexForNext(const Value& key) const;
 	int getFreeIndex();
 	void rehash(const Value& key);
 	void resize(size_t newArraySize, size_t newHashSize);
@@ -84,6 +119,7 @@ private:
 	void rawSet(const Value& key, const Value& value);
 	void insertHash(const Value& key, const Value& value);
 	void removeFromHash(const Value& key);
+	void markHashNodeDead(size_t index);
 
 	std::vector<Value> m_array;
 	size_t m_arrayLength = 0;
@@ -93,6 +129,7 @@ private:
 	int32_t* m_hashNext = nullptr;
 	size_t m_hashSize = 0;
 	int m_hashFree = -1;
+	size_t m_hashDeadCount = 0;
 	uint32_t m_version = 1;
 };
 
