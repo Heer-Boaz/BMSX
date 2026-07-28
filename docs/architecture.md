@@ -1530,6 +1530,13 @@ ownership. The automatic fault output decodes the architectural cause from a
 firmware `.rodata` registry and includes `BAD_ADDRESS` only for address faults;
 `FAULT` and `REGS` retain the underlying raw words. Fault presentation therefore
 does not depend on host exception text or a frontend-owned terminal overlay.
+The firmware keeps the current monitor-entry registers separate from its last
+synchronous fault record. A supervisor-request NMI updates `REGS` but cannot
+replace that fault with `NMI SUPERVISOR REQUEST`; `FAULT` reports the retained
+fault, or `NO SAVED FAULT` before one exists, and `FAULT CLEAR` explicitly
+invalidates it. `CONT` restores the current entry's saved `STATUS` and `EPC`, so
+continuing a synchronous fault retries the same guest instruction and may
+immediately raise the same fault again.
 
 System control is a small privileged registerfile rather than a host callback:
 
