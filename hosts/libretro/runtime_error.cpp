@@ -39,7 +39,7 @@ void LibretroPlatform::reportRuntimeError(
 	Runtime& runtime,
 	std::string_view message
 ) {
-	runtime.enterFaultState();
+	m_machine_manager->stop();
 	std::ostringstream runtimeError;
 	runtimeError << "Runtime error: " << message;
 	log(LogLevel::Error, runtimeError.str());

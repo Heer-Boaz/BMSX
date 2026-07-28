@@ -475,7 +475,6 @@ function createRuntimeSaveState(): RuntimeSaveState {
 			frameLoop: {
 				frameState: {
 					updateExecuted: true,
-					luaFaulted: false,
 					cycleBudgetRemaining: 12_345,
 					cycleBudgetGranted: 23_456,
 					cycleCarryGranted: 34_567,
@@ -527,7 +526,6 @@ function createRuntimeSaveState(): RuntimeSaveState {
 			yieldRequested: false,
 		},
 			luaInitialized: true,
-		luaRuntimeFailed: false,
 		pendingEntryCall: false,
 	} as unknown as RuntimeSaveState;
 }

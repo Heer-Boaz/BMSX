@@ -146,7 +146,6 @@ test('core golden: the GPU VBlank edge presents and completes the active runtime
 	let gxPresentCount = 0;
 	const frameState = {
 		updateExecuted: false,
-		luaFaulted: false,
 		cycleBudgetRemaining: 20,
 		cycleBudgetGranted: 100,
 		cycleCarryGranted: 0,

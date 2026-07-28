@@ -68,8 +68,6 @@ const std::vector<std::string> RUNTIME_SAVE_STATE_PROP_NAMES = {
 	"lastTickSequence",
 	"lastTickVisualFrameCommitted",
 	"luaInitialized",
-	"luaFaulted",
-	"luaRuntimeFailed",
 	"machine",
 	"machineState",
 	"mask",

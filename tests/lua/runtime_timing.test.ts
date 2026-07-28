@@ -265,7 +265,6 @@ test('runtime restore preserves an in-flight frame budget and resets only its ho
 	runtime.frameLoop.beginFrameState(23_456, 34_567);
 	const active = runtime.frameLoop.frameState;
 	active.updateExecuted = true;
-	active.luaFaulted = true;
 	active.cycleBudgetRemaining = 12_345;
 	active.activeCpuUsedCycles = 45_678;
 	runtime.frameLoop.frameDeltaMs = 20.096;
@@ -274,7 +273,6 @@ test('runtime restore preserves an in-flight frame budget and resets only its ho
 
 	runtime.frameLoop.frameActive = false;
 	active.updateExecuted = false;
-	active.luaFaulted = false;
 	active.cycleBudgetRemaining = 99;
 	active.cycleBudgetGranted = 98;
 	active.cycleCarryGranted = 97;
@@ -316,7 +314,6 @@ test('host machine-cycle grants remain exact while PCRTC is stopped', () => {
 	const runtime = {
 		timing: { cpuHz: 5_000_000, cpuCyclesPerMillisecond: 5_000, pcrtcRunning: false },
 		luaInitialized: true,
-		luaRuntimeFailed: false,
 		machine: {
 			gxGpu: {
 				backendReadbackBlocksMachine: () => false,

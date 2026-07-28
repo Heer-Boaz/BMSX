@@ -259,19 +259,9 @@ void Runtime::rebootSystem() {
 	finishSystemBoot();
 }
 
-void Runtime::enterFaultState() {
-	machine.cpu.clearHaltUntilIrq();
-	machine.inputController.cancelSampleArm();
-	m_pendingCall = PendingCall::None;
-	frameLoop.abandonFrameState(*this);
-	m_runtimeFailed = true;
-}
-
-
 void Runtime::resetForSystemBoot() {
 	cpuExecution.reset();
 	frameLoop.resetFrameState(*this);
-	m_runtimeFailed = false;
 	m_luaInitialized = false;
 	m_pendingCall = PendingCall::None;
 	machine.cpu.clearExecutionEnvironment();

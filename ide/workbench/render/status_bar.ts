@@ -14,10 +14,10 @@ import { editorDocumentState } from '../../editor/editing/document_state';
 import { editorViewState } from '../../editor/ui/view/state';
 import { problemsPanel } from '../contrib/problems/panel/controller';
 import { symbolSearchState } from '../../editor/contrib/symbols/search/state';
-import type { Runtime } from '../../../machine/ts/machine/runtime/runtime';
+import type { RuntimeFaultState } from '../../runtime/fault_state';
 
-export function renderStatusBar(resourcePanel: ResourcePanelController, runtime: Runtime): void {
-	const runtimeFaulted = runtime.hasRuntimeFailed;
+export function renderStatusBar(resourcePanel: ResourcePanelController, fault: RuntimeFaultState): void {
+	const runtimeFaulted = !!fault.faultSnapshot;
 	const statusTop = editorViewState.viewportHeight - statusAreaHeight();
 	const statusBottom = editorViewState.viewportHeight;
 	const statusBackground = constants.COLOR_STATUS_BACKGROUND;

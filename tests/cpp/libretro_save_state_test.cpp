@@ -275,12 +275,13 @@ void testLibretroFaultDiagnosticsStayAtHostBoundary() {
 		platform.loadRom(rom.data(), rom.size()),
 		"libretro should boot symbol-bearing firmware for runtime diagnostics");
 
-	bmsx::Runtime& runtime = platform.machineManager()->runtime();
 	platform.microtaskQueue()->queueMicrotask([] {
 		throw std::runtime_error("injected native frame fault");
 	});
 	require(!platform.runFrame(), "a faulted libretro frame should not report a presentation");
-	require(runtime.hasRuntimeFailed(), "the native runtime should enter its physical fault state");
+	require(
+		platform.machineManager()->state() == bmsx::MachineManagerState::Stopped,
+		"the libretro host should stop after a native frame exception");
 	require(
 		capturedLogContains("Runtime error: injected native frame fault"),
 		"the libretro host should log the native exception");

@@ -1,6 +1,6 @@
 import { machineManager } from '../../machine/ts/core/machine_manager';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import { clearRuntimeFault } from '../runtime/fault_state';
+import { clearFaultSnapshot } from '../runtime/fault_state';
 import { bootActiveBlua32Media } from '../runtime/lua_pipeline';
 import { enterSystemSources } from '../runtime/sources';
 import type { RuntimeIdeState } from '../runtime/state';
@@ -39,9 +39,8 @@ async function prepareRebootToBootRom(
 	fault: RuntimeFaultState,
 	editor: CartEditor,
 	overlayRenderer: OverlayRenderer,
-	runtime: Runtime,
 ): Promise<boolean> {
-	clearRuntimeFault(fault, runtime);
+	clearFaultSnapshot(fault);
 	deactivateEditor(editor, overlayRenderer);
 	editor.clearRuntimeErrorOverlay();
 	await applyAllWorkspaceSourceOverrides(sources, workspaceDirtyRecords);
@@ -65,7 +64,6 @@ export async function rebootPreparedRuntime(
 			fault,
 			editor,
 			overlayRenderer,
-			runtime,
 		);
 		try {
 			bootActiveBlua32Media(
@@ -97,7 +95,7 @@ async function bootPreparedBlua32Media(
 ): Promise<void> {
 	const gateToken = luaGate.begin({ blocking: true, tag: 'boot' });
 	try {
-		clearRuntimeFault(fault, runtime);
+		clearFaultSnapshot(fault);
 		editor.clearRuntimeErrorOverlay();
 		bootActiveBlua32Media(
 			sources,

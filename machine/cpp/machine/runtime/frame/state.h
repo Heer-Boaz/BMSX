@@ -14,7 +14,6 @@ enum class InstructionStepResult : uint8_t {
 
 struct FrameState {
 	bool updateExecuted = false;
-	bool luaFaulted = false;
 	i64 cycleBudgetRemaining = 0;
 	i64 cycleBudgetGranted = 0;
 	i64 cycleCarryGranted = 0;

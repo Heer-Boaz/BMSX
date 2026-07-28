@@ -789,7 +789,6 @@ void testRuntimeRestorePreservesInFlightFrameBudgetAndResetsHostClock() {
 	bmsx::FrameLoopState& frameLoop = runtime.frameLoop;
 	frameLoop.beginFrameState(runtime, 23'456, 34'567);
 	frameLoop.frameState.updateExecuted = true;
-	frameLoop.frameState.luaFaulted = true;
 	frameLoop.frameState.cycleBudgetRemaining = 12'345;
 	frameLoop.frameState.activeCpuUsedCycles = 45'678;
 	frameLoop.frameDeltaMs = 20.096;
@@ -797,7 +796,7 @@ void testRuntimeRestorePreservesInFlightFrameBudgetAndResetsHostClock() {
 	const bmsx::RuntimeMachineState snapshot = bmsx::captureRuntimeMachineState(runtime);
 
 	frameLoop.frameActive = false;
-	frameLoop.frameState = bmsx::FrameState{false, false, 99, 98, 97, 96};
+	frameLoop.frameState = bmsx::FrameState{false, 99, 98, 97, 96};
 	frameLoop.frameDeltaMs = 1.0;
 	frameLoop.currentTimeSeconds = 2.0;
 	bmsx::applyRuntimeMachineState(runtime, snapshot);
@@ -805,7 +804,6 @@ void testRuntimeRestorePreservesInFlightFrameBudgetAndResetsHostClock() {
 	const bmsx::FrameLoopStateSnapshot restored = frameLoop.captureState();
 	require(restored.frameActive == snapshot.frameLoop.frameActive, "runtime restore preserves in-flight frame activity");
 	require(restored.frameState.updateExecuted == snapshot.frameLoop.frameState.updateExecuted, "runtime restore preserves in-flight update completion");
-	require(restored.frameState.luaFaulted == snapshot.frameLoop.frameState.luaFaulted, "runtime restore preserves in-flight Lua fault state");
 	require(restored.frameState.cycleBudgetRemaining == snapshot.frameLoop.frameState.cycleBudgetRemaining, "runtime restore preserves remaining in-flight cycles");
 	require(restored.frameState.cycleBudgetGranted == snapshot.frameLoop.frameState.cycleBudgetGranted, "runtime restore preserves granted in-flight cycles");
 	require(restored.frameState.cycleCarryGranted == snapshot.frameLoop.frameState.cycleCarryGranted, "runtime restore preserves carried in-flight cycles");

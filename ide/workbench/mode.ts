@@ -117,8 +117,8 @@ export function tickIdeInput(state: RuntimeIdeState): void {
 }
 
 export function surfaceHostFrameError(state: RuntimeIdeState, runtime: Runtime, error: unknown): void {
-	runtime.enterFaultState();
 	state.overlayRenderer.abandonFrame();
+	state.fault.hostFrameFailed = true;
 	handleLuaError(state.fault, state.sources, runtime, error);
 }
 

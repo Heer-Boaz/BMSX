@@ -16,7 +16,6 @@ export class FrameLoopState {
 	public frameDeltaMs = 0;
 	public readonly frameState: FrameState = {
 		updateExecuted: false,
-		luaFaulted: false,
 		cycleBudgetRemaining: 0,
 		cycleBudgetGranted: 0,
 		cycleCarryGranted: 0,
@@ -38,7 +37,6 @@ export class FrameLoopState {
 		this.frameActive = false;
 		const state = this.frameState;
 		state.updateExecuted = false;
-		state.luaFaulted = false;
 		state.cycleBudgetRemaining = 0;
 		state.cycleBudgetGranted = 0;
 		state.cycleCarryGranted = 0;
@@ -57,7 +55,6 @@ export class FrameLoopState {
 		this.reset();
 		const state = this.frameState;
 		state.updateExecuted = snapshot.frameState.updateExecuted;
-		state.luaFaulted = snapshot.frameState.luaFaulted;
 		state.cycleBudgetRemaining = snapshot.frameState.cycleBudgetRemaining;
 		state.cycleBudgetGranted = snapshot.frameState.cycleBudgetGranted;
 		state.cycleCarryGranted = snapshot.frameState.cycleCarryGranted;
@@ -83,7 +80,6 @@ export class FrameLoopState {
 		this.frameDeltaMs = runtime.timing.frameDurationMs;
 		const state = this.frameState;
 		state.updateExecuted = false;
-		state.luaFaulted = runtime.luaRuntimeFailed;
 		state.cycleBudgetRemaining = budget;
 		state.cycleBudgetGranted = budget;
 		state.cycleCarryGranted = carry;
@@ -216,42 +212,31 @@ export class FrameLoopState {
 		const state = this.frameState;
 		const cpu = runtime.machine.cpu;
 		const cpuExecution = runtime.cpuExecution;
-		if (state.luaFaulted || runtime.luaRuntimeFailed) {
-			state.luaFaulted = true;
-			return;
-		}
-		try {
-			while (true) {
-				if (cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld()) {
-					const tickCompleted = cpuExecution.runStoppedCpu(state);
-					if (tickCompleted || cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld()) {
-						return;
-					}
-					continue;
-				}
-				if (runtime.pendingCall !== 'entry') {
+		while (true) {
+			if (cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld()) {
+				const tickCompleted = cpuExecution.runStoppedCpu(state);
+				if (tickCompleted || cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld()) {
 					return;
 				}
-				const result = runtime.cpuExecution.runWithBudget(state);
-				if (this.consumeSystemReset()) {
-					return;
-				}
-					if (result === RunResult.Halted && cpu.getFrameDepth() === 0) {
-						runtime.pendingCall = null;
-						runtime.frameScheduler.clearQueuedTime();
-						this.abandonFrameState();
-						return;
-					}
-				if (cpu.isHaltedUntilIrq()) {
-					return;
-				}
+				continue;
+			}
+			if (runtime.pendingCall !== 'entry') {
 				return;
 			}
-		} catch (error) {
-			state.luaFaulted = true;
-			cpu.clearHaltUntilIrq();
-			runtime.pendingCall = null;
-			throw error;
+			const result = runtime.cpuExecution.runWithBudget(state);
+			if (this.consumeSystemReset()) {
+				return;
+			}
+			if (result === RunResult.Halted && cpu.getFrameDepth() === 0) {
+				runtime.pendingCall = null;
+				runtime.frameScheduler.clearQueuedTime();
+				this.abandonFrameState();
+				return;
+			}
+			if (cpu.isHaltedUntilIrq()) {
+				return;
+			}
+			return;
 		}
 	}
 
@@ -259,35 +244,24 @@ export class FrameLoopState {
 		const runtime = this.runtime;
 		const state = this.frameState;
 		const cpu = runtime.machine.cpu;
-		if (state.luaFaulted || runtime.luaRuntimeFailed) {
-			state.luaFaulted = true;
+		if (cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld()) {
+			const previousRemaining = state.cycleBudgetRemaining;
+			const tickCompleted = runtime.cpuExecution.runStoppedCpu(state);
+			if (tickCompleted || cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld()) {
+				return tickCompleted || state.cycleBudgetRemaining !== previousRemaining
+					? InstructionStepResult.Advanced
+					: InstructionStepResult.Blocked;
+			}
+		}
+		if (runtime.pendingCall !== 'entry') {
 			return InstructionStepResult.Blocked;
 		}
-		try {
-			if (cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld()) {
-				const previousRemaining = state.cycleBudgetRemaining;
-				const tickCompleted = runtime.cpuExecution.runStoppedCpu(state);
-				if (tickCompleted || cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld()) {
-					return tickCompleted || state.cycleBudgetRemaining !== previousRemaining
-						? InstructionStepResult.Advanced
-						: InstructionStepResult.Blocked;
-				}
-			}
-			if (runtime.pendingCall !== 'entry') {
-				return InstructionStepResult.Blocked;
-			}
-			const result = runtime.cpuExecution.runInstruction(state);
-			if (cpu.getFrameDepth() === 0) {
-				runtime.pendingCall = null;
-				runtime.frameScheduler.clearQueuedTime();
-				this.abandonFrameState();
-			}
-			return result;
-		} catch (error) {
-			state.luaFaulted = true;
-			cpu.clearHaltUntilIrq();
+		const result = runtime.cpuExecution.runInstruction(state);
+		if (cpu.getFrameDepth() === 0) {
 			runtime.pendingCall = null;
-			throw error;
+			runtime.frameScheduler.clearQueuedTime();
+			this.abandonFrameState();
 		}
+		return result;
 	}
 }

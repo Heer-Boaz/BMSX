@@ -42,6 +42,7 @@ export type RuntimeFaultState = {
 	lastCpuFaultPc: number;
 	faultSnapshot: FaultSnapshot;
 	faultOverlayNeedsFlush: boolean;
+	hostFrameFailed: boolean;
 };
 
 const EMPTY_LUA_CALL_FRAMES: ReadonlyArray<LuaCallFrame> = [];
@@ -56,6 +57,7 @@ export function createRuntimeFaultState(): RuntimeFaultState {
 		lastCpuFaultPc: 0,
 		faultSnapshot: null,
 		faultOverlayNeedsFlush: false,
+		hostFrameFailed: false,
 	};
 }
 
@@ -139,21 +141,16 @@ export function clearFaultSnapshot(fault: RuntimeFaultState): void {
 	fault.lastCpuFaultExecutionDomainId = -1;
 	fault.lastCpuFaultPc = 0;
 	fault.faultOverlayNeedsFlush = false;
+	fault.hostFrameFailed = false;
 }
 
-export function clearRuntimeFault(fault: RuntimeFaultState, runtime: Runtime): void {
-	runtime.luaRuntimeFailed = false;
-	clearFaultSnapshot(fault);
-}
-
-function setRuntimeFault(fault: RuntimeFaultState, runtime: Runtime, payload: {
+function setRuntimeFault(fault: RuntimeFaultState, payload: {
 	message: string;
 	path: string;
 	line: number;
 	column: number;
 	details: RuntimeErrorDetails;
 }): void {
-	runtime.luaRuntimeFailed = true;
 	fault.faultSnapshot = payload;
 	fault.faultOverlayNeedsFlush = true;
 }
@@ -236,7 +233,7 @@ export function recordLuaError(
 		runtimeDetails,
 		false,
 	);
-	setRuntimeFault(fault, runtime, {
+	setRuntimeFault(fault, {
 		message,
 		path: location.path,
 		line: location.line,

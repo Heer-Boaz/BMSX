@@ -228,7 +228,6 @@ function makeRuntime(cpu: CPU, irqController: IrqController, sliceStats?: { begi
 function makeFrameState(): FrameState {
 	return {
 		updateExecuted: false,
-		luaFaulted: false,
 		cycleBudgetRemaining: 100,
 		cycleBudgetGranted: 100,
 		cycleCarryGranted: 0,
@@ -300,7 +299,6 @@ function makeHaltFrameRuntime(): Runtime {
 			frameDurationMs: 20,
 		},
 		luaInitialized: true,
-		luaRuntimeFailed: false,
 		pendingCall: 'entry' as const,
 	} as unknown as Runtime;
 	runtime.frameLoop = new FrameLoopState(runtime);

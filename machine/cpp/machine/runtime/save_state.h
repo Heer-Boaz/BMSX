@@ -11,7 +11,6 @@ struct RuntimeSaveState {
 	RuntimeSaveMachineState machineState;
 	CpuRuntimeState cpuState;
 	bool luaInitialized = false;
-	bool luaRuntimeFailed = false;
 	bool pendingEntryCall = false;
 };
 

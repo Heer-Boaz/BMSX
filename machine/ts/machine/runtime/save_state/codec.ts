@@ -277,7 +277,6 @@ function encodeFrameLoopState(state: FrameLoopStateSnapshot): FrameLoopStateSnap
 	return {
 		frameState: {
 			updateExecuted: state.frameState.updateExecuted,
-			luaFaulted: state.frameState.luaFaulted,
 			cycleBudgetRemaining: state.frameState.cycleBudgetRemaining,
 			cycleBudgetGranted: state.frameState.cycleBudgetGranted,
 			cycleCarryGranted: state.frameState.cycleCarryGranted,
@@ -294,7 +293,6 @@ function decodeFrameLoopState(value: unknown, label: string): FrameLoopStateSnap
 	return {
 		frameState: {
 			updateExecuted: requireBooleanValue(requireObjectKey(frameState, 'updateExecuted', label, `${label}.frameState.updateExecuted`), `${label}.frameState.updateExecuted`),
-			luaFaulted: requireBooleanValue(requireObjectKey(frameState, 'luaFaulted', label, `${label}.frameState.luaFaulted`), `${label}.frameState.luaFaulted`),
 			cycleBudgetRemaining: requireI64(requireObjectKey(frameState, 'cycleBudgetRemaining', label, `${label}.frameState.cycleBudgetRemaining`), `${label}.frameState.cycleBudgetRemaining`),
 			cycleBudgetGranted: requireI64(requireObjectKey(frameState, 'cycleBudgetGranted', label, `${label}.frameState.cycleBudgetGranted`), `${label}.frameState.cycleBudgetGranted`),
 			cycleCarryGranted: requireI64(requireObjectKey(frameState, 'cycleCarryGranted', label, `${label}.frameState.cycleCarryGranted`), `${label}.frameState.cycleCarryGranted`),
@@ -1668,7 +1666,6 @@ function encodeRuntimeSaveStateValue(state: RuntimeSaveState): RuntimeSaveState 
 		machineState: encodeRuntimeSaveMachineState(state.machineState),
 		cpuState: encodeCpuRuntimeState(state.cpuState),
 		luaInitialized: state.luaInitialized,
-		luaRuntimeFailed: state.luaRuntimeFailed,
 		pendingEntryCall: state.pendingEntryCall,
 	};
 }
@@ -1679,7 +1676,6 @@ function decodeRuntimeSaveStateValue(value: unknown, label: string): RuntimeSave
 		machineState: decodeRuntimeSaveMachineState(requireObjectKey(object, 'machineState', label, 'runtimeSaveState.machineState'), 'runtimeSaveState.machineState'),
 		cpuState: decodeCpuRuntimeState(requireObjectKey(object, 'cpuState', label, 'runtimeSaveState.cpuState'), 'runtimeSaveState.cpuState'),
 		luaInitialized: requireObjectKey(object, 'luaInitialized', label, 'runtimeSaveState.luaInitialized') as boolean,
-		luaRuntimeFailed: requireObjectKey(object, 'luaRuntimeFailed', label, 'runtimeSaveState.luaRuntimeFailed') as boolean,
 		pendingEntryCall: requireObjectKey(object, 'pendingEntryCall', label, 'runtimeSaveState.pendingEntryCall') as boolean,
 	};
 }

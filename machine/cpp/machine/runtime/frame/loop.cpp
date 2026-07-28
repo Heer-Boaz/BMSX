@@ -96,73 +96,55 @@ InstructionStepResult FrameLoopState::runActiveFrameInstruction(Runtime& runtime
 
 void FrameLoopState::runUpdatePhase(Runtime& runtime) {
 	auto& cpu = runtime.machine.cpu;
-	try {
-		while (true) {
-			if (cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld()) {
-				const bool tickCompleted = runtime.cpuExecution.runStoppedCpu(runtime, frameState);
-				if (tickCompleted || cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld()) {
-					return;
-				}
-				continue;
-			}
-			if (runtime.m_pendingCall != Runtime::PendingCall::Entry) {
+	while (true) {
+		if (cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld()) {
+			const bool tickCompleted = runtime.cpuExecution.runStoppedCpu(runtime, frameState);
+			if (tickCompleted || cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld()) {
 				return;
 			}
-			const RunResult result = runtime.cpuExecution.runWithBudget(runtime, frameState);
-			if (consumeSystemReset(runtime)) {
-				return;
-			}
-			if (result == RunResult::Halted && cpu.getFrameDepth() == 0) {
-				runtime.m_pendingCall = Runtime::PendingCall::None;
-				runtime.frameScheduler.clearQueuedTime();
-				abandonFrameState(runtime);
-				return;
-			}
-			if (cpu.isHaltedUntilIrq()) {
-				return;
-			}
+			continue;
+		}
+		if (runtime.m_pendingCall != Runtime::PendingCall::Entry) {
 			return;
 		}
-	} catch (...) {
-		frameState.luaFaulted = true;
-		cpu.clearHaltUntilIrq();
-		runtime.m_pendingCall = Runtime::PendingCall::None;
-		throw;
+		const RunResult result = runtime.cpuExecution.runWithBudget(runtime, frameState);
+		if (consumeSystemReset(runtime)) {
+			return;
+		}
+		if (result == RunResult::Halted && cpu.getFrameDepth() == 0) {
+			runtime.m_pendingCall = Runtime::PendingCall::None;
+			runtime.frameScheduler.clearQueuedTime();
+			abandonFrameState(runtime);
+			return;
+		}
+		if (cpu.isHaltedUntilIrq()) {
+			return;
+		}
+		return;
 	}
 }
 
 InstructionStepResult FrameLoopState::runUpdateInstruction(Runtime& runtime) {
 	auto& cpu = runtime.machine.cpu;
-	if (frameState.luaFaulted || runtime.m_runtimeFailed) {
-		frameState.luaFaulted = true;
+	if (cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld()) {
+		const i64 previousRemaining = frameState.cycleBudgetRemaining;
+		const bool tickCompleted = runtime.cpuExecution.runStoppedCpu(runtime, frameState);
+		if (tickCompleted || cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld()) {
+			return tickCompleted || frameState.cycleBudgetRemaining != previousRemaining
+				? InstructionStepResult::Advanced
+				: InstructionStepResult::Blocked;
+		}
+	}
+	if (runtime.m_pendingCall != Runtime::PendingCall::Entry) {
 		return InstructionStepResult::Blocked;
 	}
-	try {
-		if (cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld()) {
-			const i64 previousRemaining = frameState.cycleBudgetRemaining;
-			const bool tickCompleted = runtime.cpuExecution.runStoppedCpu(runtime, frameState);
-			if (tickCompleted || cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld()) {
-				return tickCompleted || frameState.cycleBudgetRemaining != previousRemaining
-					? InstructionStepResult::Advanced
-					: InstructionStepResult::Blocked;
-			}
-		}
-		if (runtime.m_pendingCall != Runtime::PendingCall::Entry) {
-			return InstructionStepResult::Blocked;
-		}
-		const InstructionStepResult result = runtime.cpuExecution.runInstruction(runtime, frameState);
-		if (cpu.getFrameDepth() == 0) {
-			runtime.m_pendingCall = Runtime::PendingCall::None;
-			runtime.frameScheduler.clearQueuedTime();
-			abandonFrameState(runtime);
-		}
-		return result;
-	} catch (...) {
-		frameState.luaFaulted = true;
-		cpu.clearHaltUntilIrq();
+	const InstructionStepResult result = runtime.cpuExecution.runInstruction(runtime, frameState);
+	if (cpu.getFrameDepth() == 0) {
 		runtime.m_pendingCall = Runtime::PendingCall::None;
-		throw;
+		runtime.frameScheduler.clearQueuedTime();
+		abandonFrameState(runtime);
 	}
+	return result;
 }
 
 bool FrameLoopState::tickUpdate(Runtime& runtime) {
@@ -170,7 +152,7 @@ bool FrameLoopState::tickUpdate(Runtime& runtime) {
 	if (consumeSystemReset(runtime)) {
 		return true;
 	}
-	if (!runtime.m_luaInitialized || runtime.m_runtimeFailed) {
+	if (!runtime.m_luaInitialized) {
 		return false;
 	}
 

@@ -69,17 +69,12 @@ export class Runtime {
 
 	public pendingCall: 'entry' | null = null;
 	public get isDrawPending(): boolean {
-		return this.pendingCall === 'entry'
-			|| this.luaRuntimeFailed;
+		return this.pendingCall === 'entry';
 	}
 
 	public luaInitialized = false;
 	public get isInitialized(): boolean {
 		return this.luaInitialized;
-	}
-	public luaRuntimeFailed = false;
-	public get hasRuntimeFailed(): boolean {
-		return this.luaRuntimeFailed;
 	}
 	public readonly frameScheduler: FrameSchedulerState;
 	public readonly frameLoop: FrameLoopState;
@@ -100,7 +95,6 @@ export class Runtime {
 	public resetForSystemBoot(): void {
 		this.cpuExecution.reset();
 		this.frameLoop.resetFrameState();
-		this.luaRuntimeFailed = false;
 		this.luaInitialized = false;
 		this.pendingCall = null;
 		this.machine.cpu.clearExecutionEnvironment();
@@ -119,14 +113,6 @@ export class Runtime {
 		this.machine.cpu.reset();
 		seedLuaGlobals(this);
 		this.finishSystemBoot();
-	}
-
-	public enterFaultState(): void {
-		this.machine.cpu.clearHaltUntilIrq();
-		this.machine.inputController.cancelSampleArm();
-		this.pendingCall = null;
-		this.frameLoop.abandonFrameState();
-		this.luaRuntimeFailed = true;
 	}
 
 	private finishSystemBoot(): void {

@@ -10,7 +10,6 @@ RuntimeSaveState captureRuntimeSaveState(Runtime& runtime) {
 	state.machineState = captureRuntimeSaveMachineState(runtime);
 	state.cpuState = runtime.machine.cpu.captureRuntimeState();
 	state.luaInitialized = runtime.m_luaInitialized;
-	state.luaRuntimeFailed = runtime.m_runtimeFailed;
 	state.pendingEntryCall = runtime.m_pendingCall == Runtime::PendingCall::Entry;
 	return state;
 }
@@ -19,7 +18,6 @@ void applyRuntimeSaveState(Runtime& runtime, const RuntimeSaveState& state) {
 	applyRuntimeSaveMachineState(runtime, state.machineState);
 	runtime.machine.cpu.restoreRuntimeState(state.cpuState);
 	runtime.m_luaInitialized = state.luaInitialized;
-	runtime.m_runtimeFailed = state.luaRuntimeFailed;
 	runtime.m_pendingCall = state.pendingEntryCall ? Runtime::PendingCall::Entry : Runtime::PendingCall::None;
 }
 

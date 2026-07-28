@@ -33,6 +33,9 @@ export function hotResume(
 ): void {
 	const interpreter = luaTooling.luaInterpreter;
 	try {
+		if (fault.hostFrameFailed) {
+			throw new Error('Hot Resume cannot continue a failed host frame. Reboot the machine.');
+		}
 		const rebuildMedia = rebuildSystem
 			|| rebuildCartridgeSlots[0]
 			|| rebuildCartridgeSlots[1];
@@ -100,7 +103,6 @@ export function hotResume(
 		interpreter.clearLastFaultEnvironment();
 		clearFaultSnapshot(fault);
 		resetHandledLuaErrors(fault);
-		runtime.luaRuntimeFailed = false;
 		clearOverlayFrame();
 
 		const initClosure = runtime.machine.cpu.getGlobalByKey(runtime.internString('init')) as Closure;

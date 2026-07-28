@@ -297,7 +297,6 @@ FrameSchedulerStateSnapshot decodeFrameSchedulerState(const BinValue& value, con
 BinValue encodeFrameState(const FrameState& state) {
 	BinObject object;
 	object["updateExecuted"] = state.updateExecuted;
-	object["luaFaulted"] = state.luaFaulted;
 	object["cycleBudgetRemaining"] = state.cycleBudgetRemaining;
 	object["cycleBudgetGranted"] = state.cycleBudgetGranted;
 	object["cycleCarryGranted"] = state.cycleCarryGranted;
@@ -309,7 +308,6 @@ FrameState decodeFrameState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
 	FrameState state;
 	state.updateExecuted = requireBool(requireField(object, "updateExecuted", label), "machineState.frameLoop.frameState.updateExecuted");
-	state.luaFaulted = requireBool(requireField(object, "luaFaulted", label), "machineState.frameLoop.frameState.luaFaulted");
 	state.cycleBudgetRemaining = requireI64(requireField(object, "cycleBudgetRemaining", label), "machineState.frameLoop.frameState.cycleBudgetRemaining");
 	state.cycleBudgetGranted = requireI64(requireField(object, "cycleBudgetGranted", label), "machineState.frameLoop.frameState.cycleBudgetGranted");
 	state.cycleCarryGranted = requireI64(requireField(object, "cycleCarryGranted", label), "machineState.frameLoop.frameState.cycleCarryGranted");
@@ -1739,7 +1737,6 @@ BinValue encodeRuntimeSaveStateValue(const RuntimeSaveState& state) {
 	object["machineState"] = encodeRuntimeSaveMachineState(state.machineState);
 	object["cpuState"] = encodeCpuRuntimeState(state.cpuState);
 	object["luaInitialized"] = state.luaInitialized;
-	object["luaRuntimeFailed"] = state.luaRuntimeFailed;
 	object["pendingEntryCall"] = state.pendingEntryCall;
 	return BinValue(std::move(object));
 }
@@ -1750,7 +1747,6 @@ RuntimeSaveState decodeRuntimeSaveStateValue(const BinValue& value, const char* 
 	state.machineState = decodeRuntimeSaveMachineState(requireField(object, "machineState", label), "runtimeSaveState.machineState");
 	state.cpuState = decodeCpuRuntimeState(requireField(object, "cpuState", label), "runtimeSaveState.cpuState");
 	state.luaInitialized = requireBool(requireField(object, "luaInitialized", label), "runtimeSaveState.luaInitialized");
-	state.luaRuntimeFailed = requireBool(requireField(object, "luaRuntimeFailed", label), "runtimeSaveState.luaRuntimeFailed");
 	state.pendingEntryCall = requireBool(requireField(object, "pendingEntryCall", label), "runtimeSaveState.pendingEntryCall");
 	return state;
 }

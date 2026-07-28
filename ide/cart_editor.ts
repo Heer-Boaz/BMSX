@@ -104,7 +104,6 @@ import type { ChromeRenderContext } from './workbench/render/chrome_context';
 
 type RenderRuntimeFaultOverlayOptions = {
 	snapshot: FaultSnapshot;
-	luaRuntimeFailed: boolean;
 	needsFlush: boolean;
 	force?: boolean;
 };
@@ -284,10 +283,9 @@ export class RuntimeCartEditor implements CartEditor {
 		if (editorViewState.dimCrtInEditor) {
 			this.disableCrtPostprocessingForEditor();
 		}
-		if (runtime.hasRuntimeFailed) {
+		if (this.fault.faultSnapshot) {
 			const rendered = this.renderRuntimeFaultOverlay({
 				snapshot: this.fault.faultSnapshot,
-				luaRuntimeFailed: runtime.hasRuntimeFailed,
 				needsFlush: this.fault.faultOverlayNeedsFlush,
 				force: false,
 			});
@@ -401,7 +399,6 @@ export class RuntimeCartEditor implements CartEditor {
 	}
 
 	public draw(): void {
-		const runtime = this.runtime;
 		editorViewState.codeVerticalScrollbarVisible = false;
 		editorViewState.codeHorizontalScrollbarVisible = false;
 		api.fill_rect(0, 0, editorViewState.viewportWidth, editorViewState.viewportHeight, 0, constants.COLOR_FRAME);
@@ -428,7 +425,7 @@ export class RuntimeCartEditor implements CartEditor {
 			renderEditorContextMenu(codeAreaViewport);
 		}
 		drawProblemsPanel();
-		renderStatusBar(this.resourcePanel, runtime);
+		renderStatusBar(this.resourcePanel, this.fault);
 		renderTopBarDropdown(this.commands, this.chromeRenderContext);
 		if (hasBlockingWorkbenchModal()) {
 			drawBlockingWorkbenchModal();
@@ -545,7 +542,7 @@ export class RuntimeCartEditor implements CartEditor {
 		if (!editorRuntimeState.initialized) {
 			return false;
 		}
-		if (!options.force && (!options.luaRuntimeFailed || !options.needsFlush)) {
+		if (!options.force && !options.needsFlush) {
 			return false;
 		}
 		if (!snapshot) {

@@ -119,6 +119,7 @@ export function runWorkbenchHostFrame(
 			return;
 		}
 
+		const runtimeReady = runReady && !ide.fault.faultSnapshot;
 		let action: MachineHostFrameAction;
 		if (
 			hostMenuInput !== HostMenuInput.Active
@@ -132,13 +133,13 @@ export function runWorkbenchHostFrame(
 			const machineWillAdvance = (
 				hostMenuInput === HostMenuInput.Inactive
 				&& !manager.paused
-				&& runReady
+				&& runtimeReady
 			);
 			action = prepareMachineHostPresentation(
 				screen,
 				hostOverlayMenu,
 				runtime,
-				runReady,
+				runtimeReady,
 				hostMenuInput,
 			);
 			if (action === MachineHostFrameAction.Execute) {

@@ -55,17 +55,11 @@ public:
 	auto operator=(const Runtime&) -> Runtime& = delete;
 
 	void boot();
-	void enterFaultState();
 
 	/**
 	 * Check if the runtime is initialized.
 	 */
 	auto isInitialized() const -> bool { return m_luaInitialized; }
-
-	/**
-	 * Check if the runtime has failed.
-	 */
-	auto hasRuntimeFailed() const -> bool { return m_runtimeFailed; }
 
 	void rebootSystem();
 
@@ -102,7 +96,7 @@ public:
 			? frameLoop.frameState.cycleBudgetGranted
 			: (frameScheduler.lastTickSequence == 0 ? timing.cycleBudgetPerFrame : frameScheduler.lastTickCpuBudgetGranted);
 	}
-	auto isDrawPending() const -> bool { return m_runtimeFailed || m_pendingCall == PendingCall::Entry; }
+	auto isDrawPending() const -> bool { return m_pendingCall == PendingCall::Entry; }
 	TimingState timing;
 	FrameSchedulerState frameScheduler;
 	CpuExecutionState cpuExecution;
@@ -128,7 +122,6 @@ public:
 private:
 	// State flags
 	bool m_luaInitialized = false;
-	bool m_runtimeFailed = false;
 	PendingCall m_pendingCall = PendingCall::None;
 };
 

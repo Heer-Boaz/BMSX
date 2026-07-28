@@ -965,6 +965,10 @@ rompacker, TOC and host do not maintain a second module-name or attribute list.
   function records, and branch skips past the active function text do not
   become host exceptions. The CPU latches a hard-halt state, stops accepting
   IRQs, and stays stopped until reset starts it again.
+- Emulator invariant failures remain host failures. A frontend stops its host
+  run and may inspect the unchanged machine for diagnostics; it does not clear
+  CPU/input/frame state, inject a guest fault, or serialize a host-failure latch
+  into the runtime save state. Studio retains its error snapshot in IDE state.
 - Typed memory opcodes consume the register/RK lane directly as machine data;
   producers own the numeric address/value representation before the CPU reaches
   RAM, ROM, VRAM, or MMIO byte/halfword/float datapaths.

@@ -58,7 +58,6 @@ export class FrameSchedulerState {
 	private canRunScheduledUpdate(): boolean {
 		const runtime = this.runtime;
 		if (!runtime.luaInitialized
-			|| runtime.luaRuntimeFailed
 			|| runtime.machine.gxGpu.backendReadbackBlocksMachine()) {
 			return false;
 		}
