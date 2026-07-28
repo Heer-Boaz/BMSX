@@ -270,8 +270,8 @@
 		"machine/ts/render/shared/layers.ts",
 		"machine/ts/render/texture_manager.ts",
 		"machine/ts/rompack/format.ts",
-		"machine/ts/rompack/host_system_atlas.generated.ts",
-		"machine/ts/rompack/host_system_atlas.ts",
+		"machine/ts/render/host_overlay/atlas.generated.ts",
+		"machine/ts/render/host_overlay/atlas.ts",
 		"machine/ts/rompack/loader.ts",
 		"machine/ts/render/shared/submissions.ts",
 		"machine/ts/render/shared/solid_pixels.ts",
@@ -776,9 +776,9 @@
 	],
 	"strict_runtime_shape_parity": [
 		{
-			"ts": "machine/ts/rompack/host_system_atlas.ts",
+			"ts": "machine/ts/render/host_overlay/atlas.ts",
 			"cpp": [
-				"machine/cpp/rompack/host_system_atlas.h"
+				"machine/cpp/render/host_overlay/atlas.h"
 			],
 			"symbols": [
 				"HostSystemAtlasImage",
@@ -974,7 +974,7 @@
 				"machine/cpp/common/image_decode.h",
 				"machine/cpp/vendor/stb_image.h",
 				"machine/cpp/vendor/stb_impl.c",
-				"machine/cpp/rompack/host_system_atlas.generated.h",
+				"machine/cpp/render/host_overlay/atlas.generated.h",
 				"tests/lua/vdp_ingress.test.ts",
 				"tests/cpp/vdp_ingress_test.cpp",
 				"tests/lua/image_decode.test.ts",

@@ -6,7 +6,7 @@ import {
 	HOST_OVERLAY_TEXTURE_SOLID,
 	HostOverlayQuadStream,
 } from '../../machine/ts/render/host_overlay/quad_stream';
-import { HOST_SYSTEM_ATLAS } from '../../machine/ts/rompack/host_system_atlas';
+import { HOST_SYSTEM_ATLAS } from '../../machine/ts/render/host_overlay/atlas';
 import { Font } from '../../machine/ts/render/shared/bmsx_font';
 import { LAYER_2D_IDE } from '../../machine/ts/render/shared/layers';
 import {

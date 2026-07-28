@@ -1,4 +1,4 @@
-import { HOST_SYSTEM_ATLAS } from './host_system_atlas.generated';
+import { HOST_SYSTEM_ATLAS } from './atlas.generated';
 
 export type HostSystemAtlasImage = Readonly<{
 	id: string;

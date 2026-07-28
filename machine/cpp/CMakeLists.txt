@@ -229,8 +229,8 @@ add_library(bmsx_core STATIC
 	core/host_frame.cpp
 	core/host_overlay_menu.cpp
 	common/registry.cpp
-	rompack/host_system_atlas.cpp
-	rompack/host_system_atlas.generated.cpp
+	render/host_overlay/atlas.cpp
+	render/host_overlay/atlas.generated.cpp
 	render/shared/bitmap_font.cpp
 	common/taskgate.cpp
 	common/byte_hex_string.cpp

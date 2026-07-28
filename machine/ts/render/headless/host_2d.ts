@@ -1,7 +1,7 @@
 import {
 	HOST_SYSTEM_ATLAS,
 	hostSystemAtlasImage,
-} from '../../rompack/host_system_atlas';
+} from '../host_overlay/atlas';
 import { forEachBatchBlitGlyph } from '../shared/glyph_runs';
 import type {
 	GlyphRenderSubmission,

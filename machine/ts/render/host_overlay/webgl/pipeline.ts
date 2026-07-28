@@ -17,7 +17,7 @@ import {
 } from '../quad_stream';
 import { hasPendingHostMenuFrame, hasPendingOverlayFrame } from '../overlay_queue';
 import { createHostMenuState, createHostOverlayState, writeHostMenuState, writeHostOverlayState } from '../pipeline';
-import { HOST_SYSTEM_ATLAS } from '../../../rompack/host_system_atlas';
+import { HOST_SYSTEM_ATLAS } from '../atlas';
 import vertexShaderCode from './shaders/host_overlay.vert.glsl';
 import fragmentShaderCode from './shaders/host_overlay.frag.glsl';
 

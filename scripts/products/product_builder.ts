@@ -1,6 +1,6 @@
 import pc from 'picocolors';
 
-import { ensureHostSystemAtlasArtifacts } from '../rompacker/host_system_atlas';
+import { ensureHostSystemAtlasArtifacts } from '../render/generate_host_system_atlas';
 import { getParamOrEnv, parseArgsVector } from '../tooling/cli_arguments';
 import { createCliUi } from '../tooling/cli_ui';
 import {
@@ -87,7 +87,7 @@ async function main(): Promise<void> {
 
 	const atlasUpdated = await ensureHostSystemAtlasArtifacts();
 	ui.ok(
-		`Host system atlas → ${pc.white('machine/{ts,cpp}/rompack/host_system_atlas.generated')}`
+		`Host system atlas → ${pc.white('machine/{ts,cpp}/render/host_overlay/atlas.generated')}`
 		+ `${atlasUpdated ? '' : pc.dim(' (up-to-date)')}`,
 	);
 

@@ -53,7 +53,7 @@
 		"build:product:node-cli-player": "npx tsx scripts/products/product_builder.ts --target node-cli-player",
 		"build:product:libretro-wsl": "npx tsx scripts/products/product_builder.ts --target libretro-wsl",
 		"build:product:libretro-win": "npx tsx scripts/products/product_builder.ts --target libretro-win",
-		"build:toolchain:host-system-atlas": "npx tsx scripts/rompacker/host_system_atlas.ts",
+		"build:toolchain:host-system-atlas": "npx tsx scripts/render/generate_host_system_atlas.ts",
 		"libretro-wsl:forcebuildall": "sh -c 'rom=\"$1\"; if [ -z \"$rom\" ]; then echo \"Usage: npm run libretro-wsl:forcebuildall -- <gameromname>\"; exit 1; fi; npm run build:product:libretro-wsl -- --debug --force && npm run build:libretro-host-wsl:debug && npm run build:toolchain:bios -- --debug --force && npm run build:toolchain:cart -- \"$rom\" --debug --force' --",
 		"build:platform:libretro-snesmini": "make SNESMINI_BUILD_TYPE=Release libretro-snesmini-debug",
 		"build:platform:libretro-snesmini:debug": "make libretro-snesmini-debug",

@@ -1,4 +1,4 @@
-#include "rompack/host_system_atlas.h"
+#include "render/host_overlay/atlas.h"
 
 #include <stdexcept>
 #include <string>

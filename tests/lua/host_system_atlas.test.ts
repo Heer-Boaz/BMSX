@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import {
 	HOST_SYSTEM_ATLAS,
 	hostSystemAtlasImage,
-} from '../../machine/ts/rompack/host_system_atlas';
+} from '../../machine/ts/render/host_overlay/atlas';
 
 test('host system atlas exposes generated native RGBA bytes', () => {
 	const pixels = HOST_SYSTEM_ATLAS.pixels;

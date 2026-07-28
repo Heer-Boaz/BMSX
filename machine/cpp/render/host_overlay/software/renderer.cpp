@@ -2,7 +2,7 @@
 
 #include "render/shared/glyph_runs.h"
 #include "render/shared/software_pixels.h"
-#include "rompack/host_system_atlas.h"
+#include "render/host_overlay/atlas.h"
 
 namespace bmsx {
 namespace {

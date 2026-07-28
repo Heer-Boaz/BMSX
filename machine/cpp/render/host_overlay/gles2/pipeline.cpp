@@ -4,7 +4,7 @@
 #include "render/backend/gles2/texture_units.h"
 #include "render/host_overlay/gles2/host_overlay_shaders.h"
 #include "render/shared/glyph_runs.h"
-#include "rompack/host_system_atlas.h"
+#include "render/host_overlay/atlas.h"
 #include <cmath>
 #include <string_view>
 

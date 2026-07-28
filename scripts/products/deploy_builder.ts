@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import pc from 'picocolors';
 
-import { ensureHostSystemAtlasArtifacts } from '../rompacker/host_system_atlas';
+import { ensureHostSystemAtlasArtifacts } from '../render/generate_host_system_atlas';
 import { getRomManifest } from '../rompacker/rombuilder';
 import {
 	getOptionalParamOrEnv,
@@ -109,7 +109,7 @@ async function main(): Promise<void> {
 
 	const atlasUpdated = await ensureHostSystemAtlasArtifacts();
 	ui.ok(
-		`Host system atlas → ${pc.white('machine/{ts,cpp}/rompack/host_system_atlas.generated')}`
+		`Host system atlas → ${pc.white('machine/{ts,cpp}/render/host_overlay/atlas.generated')}`
 		+ `${atlasUpdated ? '' : pc.dim(' (up-to-date)')}`,
 	);
 	await buildBrowserPlayer(options);

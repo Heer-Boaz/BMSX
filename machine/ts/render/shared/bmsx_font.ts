@@ -1,5 +1,5 @@
 import { BFont, GlyphMap } from './bitmap_font';
-import { hostSystemAtlasImage } from '../../rompack/host_system_atlas';
+import { hostSystemAtlasImage } from '../host_overlay/atlas';
 
 export const DEFAULT_FONT_VARIANT = 'msx' as const;
 

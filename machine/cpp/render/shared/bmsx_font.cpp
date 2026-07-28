@@ -4,7 +4,7 @@
 
 #include "render/shared/bmsx_font.h"
 
-#include "rompack/host_system_atlas.h"
+#include "render/host_overlay/atlas.h"
 
 #include <utility>
 
