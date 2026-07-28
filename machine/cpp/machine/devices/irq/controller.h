@@ -21,7 +21,6 @@ public:
 	void raiseUser(uint32_t mask);
 	void acknowledge(uint32_t mask);
 	void enterSupervisorContext();
-	void enterSupervisorFaultContext();
 	void leaveSupervisorContext();
 
 private:

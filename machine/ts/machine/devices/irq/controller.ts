@@ -61,15 +61,6 @@ export class IrqController {
 		this.postLoad();
 	}
 
-	public enterSupervisorFaultContext(): void {
-		this.userPendingFlags = 0;
-		this.userMask = 0;
-		this.supervisorContextActive = true;
-		this.pendingFlags = 0;
-		this.mask = 0;
-		this.postLoad();
-	}
-
 	public leaveSupervisorContext(): void {
 		this.pendingFlags = this.userPendingFlags;
 		this.mask = this.userMask;

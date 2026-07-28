@@ -67,7 +67,7 @@ end
 
 rodata command_registry: monitor_command[] = {
 	{ name = 'CLS', usage = 'CLS', description = 'CLEAR TERMINAL OUTPUT', kind = command_clear },
-	{ name = 'CONT', usage = 'CONT', description = 'CLEAR FAULT AND RESUME CART', kind = command_continue },
+	{ name = 'CONT', usage = 'CONT', description = 'RESUME CART AT EPC', kind = command_continue },
 	{ name = 'FAULT', usage = 'FAULT', description = 'SHOW SAVED FAULT STATE', kind = command_fault },
 	{ name = 'HELP', usage = 'HELP [COMMAND]', description = 'LIST COMMANDS OR SHOW HELP', kind = command_help },
 	{ name = 'MEM', usage = 'MEM <HEX ADDRESS> [WORDS]', description = 'READ MEMORY WORDS', kind = command_memory },
@@ -215,6 +215,20 @@ local completion_start<const> = function(line, length, cursor)
 	return start_index
 end
 
+local inline_completion_at<const> = function(line, length, cursor, capacity)
+	local start_index<const> = completion_start(line, length, cursor)
+	if start_index < 0 or start_index == cursor then
+		return command_not_found, 0, 0
+	end
+	local prefix_length<const> = cursor - start_index
+	for command = 0, #command_registry - 1 do
+		if completion_match(command_registry[command].name, line, start_index, prefix_length, capacity) then
+			return command, start_index, prefix_length
+		end
+	end
+	return command_not_found, 0, 0
+end
+
 local hex_digit<const> = function(code)
 	if code >= ascii_digit_0 and code <= ascii_digit_9 then
 		return code - ascii_digit_0
@@ -348,15 +362,6 @@ function monitor_commands.start_fault()
 	end
 end
 
-function monitor_commands.clear_fault()
-	*monitor_context_cause = 0
-	*monitor_context_bad_address = 0
-	*monitor_context_lua_fault_reason = 0
-	*monitor_context_exception = exception_unknown
-	*monitor_context_has_bad_address = 0
-	*monitor_context_has_lua_fault_reason = 0
-end
-
 function monitor_commands.complete(line, length, cursor, capacity)
 	local source<const>: *word = line
 	local matches<const>: *word = monitor_completion_commands
@@ -410,6 +415,32 @@ function monitor_commands.complete(line, length, cursor, capacity)
 		changed = true
 	end
 	return next_length, next_length, match_count, changed
+end
+
+function monitor_commands.inline_completion(line, length, cursor, capacity)
+	local command<const>, _<const>, prefix_length<const> = inline_completion_at(line, length, cursor, capacity)
+	if command == command_not_found then
+		return '', 0
+	end
+	return command_registry[command].name, prefix_length
+end
+
+function monitor_commands.accept_inline_completion(line, length, cursor, capacity)
+	local command<const>, start_index<const> = inline_completion_at(line, length, cursor, capacity)
+	if command == command_not_found then
+		return length, false
+	end
+	local target<const>: *word = line
+	local name<const> = command_registry[command].name
+	for index = 1, #name do
+		target[start_index + index - 1] = byte(name, index)
+	end
+	local next_length = start_index + #name
+	if next_length < capacity then
+		target[next_length] = ascii_space
+		next_length = next_length + 1
+	end
+	return next_length, true
 end
 
 function monitor_commands.fill_candidates(row, match_count, selected)

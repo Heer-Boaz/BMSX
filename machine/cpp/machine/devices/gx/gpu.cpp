@@ -466,19 +466,6 @@ void GxGpu::enterSupervisorContext() {
 	m_pcrtcPresentationPending = true;
 }
 
-void GxGpu::enterSupervisorFaultContext() {
-	m_supervisorQuiesceRequested = false;
-	m_supervisorIngressQuiesceRequested = false;
-	m_supervisorIngressStopped = false;
-	resetTransientContext();
-	m_pcrtc.reset(m_scheduler.currentNowCycles());
-	m_pcrtcTimingPublicationPending = true;
-	m_pcrtcPresentationPending = true;
-	rescheduleDeviceService(true);
-	clearRegisterContext(m_userContext);
-	clearIngressContext(m_userIngressContext);
-}
-
 void GxGpu::leaveSupervisorContext() {
 	m_supervisorQuiesceRequested = false;
 	m_supervisorIngressQuiesceRequested = false;

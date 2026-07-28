@@ -35,6 +35,7 @@ export const SYSTEM_SUPERVISOR_PHASE_GPU_QUIESCE = 5;
 
 export const SYSTEM_SUPERVISOR_TARGET_USER = 0;
 export const SYSTEM_SUPERVISOR_TARGET_SUPERVISOR = 1;
+export const SYSTEM_SUPERVISOR_TARGET_FAULT = 2;
 
 export type SystemControllerState = {
 	resetRequested: boolean;
@@ -222,7 +223,7 @@ export class SystemController {
 		}
 		if (!context.cpu.isUserMode()) {
 			if ((control & SYS_CONTROL_SUPERVISOR_ENTER) !== 0) {
-				context.enterSupervisor();
+				context.activateSupervisorContext();
 			}
 			if ((control & SYS_CONTROL_SUPERVISOR_FAULT) !== 0) {
 				context.enterSupervisorFault();
@@ -238,7 +239,7 @@ export class SystemController {
 		if (this.supervisorPhase === SYSTEM_SUPERVISOR_PHASE_USER) {
 			this.supervisorPhase = SYSTEM_SUPERVISOR_PHASE_ENTRY_PRODUCER_QUIESCE;
 			this.supervisorTransitionTarget = SYSTEM_SUPERVISOR_TARGET_SUPERVISOR;
-			this.supervisorResumable = true;
+			this.supervisorResumable = false;
 			this.supervisorExitRequested = false;
 			this.gpu.beginSupervisorControlQuiesce();
 			this.dma.beginSupervisorControlQuiesce();
@@ -283,6 +284,11 @@ export class SystemController {
 				this.writeStatusIo();
 				return;
 			}
+			if (this.supervisorTransitionTarget === SYSTEM_SUPERVISOR_TARGET_FAULT) {
+				this.supervisorPhase = SYSTEM_SUPERVISOR_PHASE_ENTRY_VECTOR;
+				this.activateSupervisorContext();
+				return;
+			}
 			this.dma.leaveSupervisorContext();
 			this.gpu.leaveSupervisorContext();
 			this.geometry.leaveSupervisorContext();
@@ -296,7 +302,7 @@ export class SystemController {
 		}
 	}
 
-	private enterSupervisor(): void {
+	private activateSupervisorContext(): void {
 		if (this.supervisorPhase !== SYSTEM_SUPERVISOR_PHASE_ENTRY_VECTOR) {
 			return;
 		}
@@ -313,22 +319,24 @@ export class SystemController {
 	}
 
 	private enterSupervisorFault(): void {
-		if (this.supervisorTransitionTarget === SYSTEM_SUPERVISOR_TARGET_USER
-			&& (this.supervisorPhase === SYSTEM_SUPERVISOR_PHASE_BUS_QUIESCE
-				|| this.supervisorPhase === SYSTEM_SUPERVISOR_PHASE_GPU_QUIESCE)) {
+		if (this.supervisorPhase === SYSTEM_SUPERVISOR_PHASE_ACTIVE) {
+			this.supervisorExitRequested = false;
+			this.writeStatusIo();
 			return;
 		}
 		this.cpu.cancelNonMaskableInterrupt();
-		this.dma.enterSupervisorFaultContext();
-		this.imgdec.enterSupervisorFaultContext();
-		this.gpu.enterSupervisorFaultContext();
-		this.geometry.enterSupervisorFaultContext();
-		this.irq.enterSupervisorFaultContext();
-		this.supervisorPhase = SYSTEM_SUPERVISOR_PHASE_ACTIVE;
-		this.supervisorTransitionTarget = SYSTEM_SUPERVISOR_TARGET_SUPERVISOR;
+		if (this.supervisorPhase === SYSTEM_SUPERVISOR_PHASE_USER) {
+			this.supervisorPhase = SYSTEM_SUPERVISOR_PHASE_ENTRY_PRODUCER_QUIESCE;
+			this.gpu.beginSupervisorControlQuiesce();
+			this.dma.beginSupervisorControlQuiesce();
+			this.geometry.beginSupervisorQuiesce();
+			this.imgdec.beginSupervisorQuiesce();
+		}
+		this.supervisorTransitionTarget = SYSTEM_SUPERVISOR_TARGET_FAULT;
 		this.supervisorResumable = false;
 		this.supervisorExitRequested = false;
 		this.writeStatusIo();
+		this.scheduler.scheduleDeviceService(DEVICE_SERVICE_SYSTEM, this.scheduler.currentNowCycles());
 	}
 
 	private beginSupervisorLeave(): void {
@@ -346,9 +354,9 @@ export class SystemController {
 	}
 
 	public cpuHeld(): boolean {
-		return this.supervisorTransitionTarget === SYSTEM_SUPERVISOR_TARGET_USER
-			&& (this.supervisorPhase === SYSTEM_SUPERVISOR_PHASE_BUS_QUIESCE
-				|| this.supervisorPhase === SYSTEM_SUPERVISOR_PHASE_GPU_QUIESCE);
+		return this.supervisorTransitionTarget !== SYSTEM_SUPERVISOR_TARGET_SUPERVISOR
+			&& (this.supervisorPhase === SYSTEM_SUPERVISOR_PHASE_ENTRY_PRODUCER_QUIESCE
+				|| this.supervisorPhase >= SYSTEM_SUPERVISOR_PHASE_BUS_QUIESCE);
 	}
 
 	public takeResetRequest(): boolean {

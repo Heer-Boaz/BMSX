@@ -127,19 +127,6 @@ void GeometryController::leaveSupervisorContext() {
 	m_supervisorQuiesceRequested = false;
 }
 
-void GeometryController::enterSupervisorFaultContext() {
-	m_scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
-	m_phase = GeometryControllerPhase::Idle;
-	m_activeJob.reset();
-	m_workCarry = 0;
-	m_availableWorkUnits = 0u;
-	m_supervisorQuiesceRequested = true;
-	m_memory.writeIoValue(IO_GEO_CMD, valueNumber(0.0));
-	m_memory.writeValue(IO_GEO_STATUS, valueNumber(0.0));
-	m_memory.writeValue(IO_GEO_PROCESSED, valueNumber(0.0));
-	m_memory.writeValue(IO_GEO_FAULT, valueNumber(0.0));
-}
-
 void GeometryController::notifySupervisorBoundary() {
 	if (m_supervisorQuiesceRequested) {
 		m_scheduler.scheduleDeviceService(DEVICE_SERVICE_SYSTEM, m_scheduler.currentNowCycles());

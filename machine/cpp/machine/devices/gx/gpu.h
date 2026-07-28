@@ -262,7 +262,6 @@ public:
 	void beginSupervisorQuiesce();
 	bool supervisorQuiescent();
 	void enterSupervisorContext();
-	void enterSupervisorFaultContext();
 	void leaveSupervisorContext();
 
 private:

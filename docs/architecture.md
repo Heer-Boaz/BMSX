@@ -1535,7 +1535,7 @@ System control is a small privileged registerfile rather than a host callback:
 
 | Register | Address | Meaning |
 | --- | ---: | --- |
-| `SYS_CONTROL` | `0x08010348` | Write-only command bits: machine reset `0x1`, enter fenced supervisor context `0x2`, leave resumable supervisor context `0x4`, destructive fault takeover `0x8`. It reads back as zero. Supervisor commands are accepted only in supervisor mode. |
+| `SYS_CONTROL` | `0x08010348` | Write-only command bits: machine reset `0x1`, enter an already fenced supervisor context `0x2`, leave resumable supervisor context `0x4`, begin synchronous-fault supervisor entry `0x8`. It reads back as zero. Supervisor commands are accepted only in supervisor mode. |
 | `SYS_STATUS` | `0x0801034c` | Read-only raw bits: supervisor transition/context active `0x1`, exit requested `0x2`, context resumable `0x4`. |
 
 A supervisor-request edge in user mode starts a dependency-ordered hardware
@@ -1555,14 +1555,19 @@ IMGDEC and geometry stay quiesced throughout the monitor context.
 
 The GPU, DMA, IMGDEC and geometry owners publish their own completion edges; the
 system service never polls a renderer, busy-waits, or repeatedly schedules
-itself at the current cycle. At the final GX fence the controller aborts any
-still-waiting CPU mapped-store handshake, raises NMI and enters `ENTRY_VECTOR`.
+itself at the current cycle. At the final GX fence for an external request the
+controller aborts any still-waiting CPU mapped-store handshake, raises NMI and
+enters `ENTRY_VECTOR`.
 A blocked store has not issued a bus cycle and its PC already names the complete
 instruction, so `EPC` retains it for retry after resume without a port-specific
 release list. The firmware saves the post-exception CP0 words. `CAUSE.NMI`
 selects `SYS_CONTROL.ENTER`; a synchronous cause selects `SYS_CONTROL.FAULT`.
 Firmware therefore classifies the exception explicitly instead of inferring
-transition intent from mutable device phase.
+transition intent from mutable device phase. For a synchronous exception,
+`SYS_CONTROL.FAULT` starts the same producer, bus and GX fence from the exception
+handler. The system controller holds CPU execution after that MMIO command and
+directly activates the retained supervisor bank when the final GX edge arrives;
+it does not raise a second exception.
 
 An armed DMA channel whose selected DREQ is low has not acquired the shared bus:
 its endpoint reservation still blocks conflicting user CPU access, but it does
@@ -1582,11 +1587,12 @@ raw register words republish CPU-port readiness and DREQ, so no transition
 exposes lines derived from the previous owner. IMGDEC keeps the exact paused
 user stream in its physical latches and FIFOs, while geometry remains quiescent
 with its completed registerfile resident. The transition performs no heap work.
-A synchronous cart or monitor fault cannot wait for unfinished work:
-`SYS_CONTROL.FAULT` cancels a pending entry NMI, destructively discards transient
-GPU, DMA, IMGDEC and geometry work, preserves VRAM, clears every retained user
-context bank and marks the monitor non-resumable. A nested monitor fault can
-therefore never resume through stale state from the earlier monitor entry.
+A synchronous cart fault cancels a pending entry NMI, if any, and uses the same
+fixed banks rather than resetting devices or discarding accepted work. The
+resumable status bit remains low while the fence is in flight and becomes high
+only after those banks own a complete retained user context. A fault raised by
+monitor code keeps that existing bank active; the fault command acknowledges a
+pending supervisor-line exit request without rebanking the devices.
 
 The APU is autonomous and continues playing while the monitor is active. Its
 events accumulate in the hidden user IRQ pending bank; supervisor VBlank, DMA
@@ -1717,10 +1723,10 @@ active and published banks unchanged on exit. `SMODE1/2`, `SYNCH1/2`, `SYNCV`,
 per-context clocks; supervisor writes to those words therefore persist after
 exit. Entry and exit replace the composition banks atomically and arm one
 presentation-pending latch. Supervisor circuit 1 belongs to monitor firmware
-and `PMODE` merges its terminal source alpha over the frozen underlay. A
-destructive fault has no resumable base and programs terminal presentation and
-background through the active supervisor composition context. No path copies
-the cart framebuffer or allocates terminal-only memory.
+and `PMODE` merges its terminal source alpha over the frozen underlay. Both an
+external request and a synchronous fault program terminal presentation over the
+same retained cart composition. No path copies the cart framebuffer or
+allocates terminal-only memory.
 
 The BIOS keeps a fixed 128-line cell scrollback, dirty ranges, line editor,
 history and GP0 command list in ordinary `.bss`. A packed ROM table maps each
@@ -1738,19 +1744,24 @@ allocated.
 
 The firmware line editor supports insertion, deletion, cursor/home/end and
 word motion/deletion, a fixed history ring and command-name completion with a
-retained selectable candidate row. Edit, completion and pager are one explicit
-monitor mode rather than overlapping flags. Completion scans the command
-registry once, stores the matching registry indices in fixed `.bss` whose
-capacity derives from that registry, and reuses that set for selection and
-acceptance. Long producers feed one fixed row at a time into an automatic
-pager; page/line advance and scrollback never retain a second copy of command
-output. Command metadata is one typed `.rodata` array of records, so names,
-usage and descriptions have no parallel blob, offset or length tables.
+retained selectable candidate row. While the caret follows a non-empty command
+prefix at the end of the input, the first matching ROM command supplies a dim
+inline suffix; Right accepts that suffix without consulting host tooling.
+The block caret is rendered through ordinary GX rectangles and inverts the
+underlying retained glyph rather than replacing it with an underscore. Edit,
+completion and pager are one explicit monitor mode rather than overlapping
+flags. Completion scans the command registry once, stores the matching registry
+indices in fixed `.bss` whose capacity derives from that registry, and reuses
+that set for selection and acceptance. Long producers feed one fixed row at a
+time into an automatic pager; page/line advance and scrollback never retain a
+second copy of command output. Command metadata is one typed `.rodata` array of
+records, so names, usage and descriptions have no parallel blob, offset or
+length tables.
 
 Monitor exit is the reverse hardware boundary. A new supervisor-request edge
 sets `SYS_STATUS.EXIT_REQUESTED`; firmware observes it on VBlank and writes
-`SYS_CONTROL.LEAVE`. `CONT` additionally clears the monitor-owned saved fault
-record before issuing the same leave command. `LEAVING` holds CPU execution
+`SYS_CONTROL.LEAVE`. `CONT` issues the same leave command with the saved `EPC`
+unchanged. `LEAVING` holds CPU execution
 while DMA closes admission and drains its admitted block, after which GX closes
 and drains supervisor GP0 ingress. IMGDEC and geometry have remained quiesced
 for the complete monitor context and are not supervisor-side producers. Hardware
@@ -1760,15 +1771,20 @@ state. The saved
 post-exception `STATUS` keeps maskable entry disabled until compiler-emitted
 `RFE` atomically restores user privilege/interrupt state and resumes at `EPC`.
 There is no host state, framebuffer copy, global IRQ acknowledge, DMA abort or
-retry loop on either path. A non-resumable synchronous fault rejects `CONT` and
-can leave only through reset.
+retry loop on either path. If the cart has not changed the condition that caused
+the synchronous fault, retrying the same instruction enters the monitor again.
+A monitor-side fault returns through `RFE` without leaving the already active
+device bank, so retrying its `EPC` likewise reproduces the same fault. Each
+monitor invocation samples `SYS_STATUS.RESUMABLE` before its entry command:
+the invocation that creates the retained bank owns the eventual `SYS_CONTROL.LEAVE`,
+while a nested monitor fault only restores its CP0 context.
 
 The machine-visible monitor command set starts with hardware operations such as
 `HELP`, `FAULT`, `REGS`, `MEM`, `CLS`, `CONT`, and `REBOOT`. It does not expose the workspace,
 host filesystem, JavaScript stack, real-time compiler options, host process
 shutdown, IDE symbol browser, or other current workbench services. Its layout
-and colors are firmware policy and intentionally do not emulate the removed
-host terminal's appearance.
+and colors are firmware policy; firmware-owned interaction quality does not
+depend on the removed host terminal.
 
 #### Cartridge expansion
 

@@ -37,7 +37,6 @@ public:
 	void beginSupervisorQuiesce();
 	bool supervisorQuiescent() const { return m_phase != GeometryControllerPhase::Busy; }
 	void leaveSupervisorContext();
-	void enterSupervisorFaultContext();
 
 private:
 	static void onCommandWriteThunk(void* context, uint32_t addr, Value value, MappedBusSignals busSignals);

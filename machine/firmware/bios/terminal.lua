@@ -18,7 +18,6 @@ local terminal_height<const> = terminal_rows * glyph_height
 local terminal_vram_x<const> = layout.vram_x
 local terminal_vram_y<const> = layout.vram_y
 local ascii_newline<const> = 10
-local cursor_cell<const> = 0x0000015f
 local terminal_background_word<const> = 0x00000000
 local all_rows_dirty<const> = 0xffffffff
 
@@ -28,10 +27,11 @@ terminal.page_rows = terminal_rows - 1
 terminal.palette_text = 1
 terminal.palette_error = 2
 terminal.palette_accent = 3
+terminal.palette_ghost = 4
 
 bss terminal_cells: word[scrollback_rows * terminal_columns]
 bss terminal_status_cells: word[terminal_columns]
-bss terminal_palette: word[4]
+bss terminal_palette: word[5]
 bss terminal_dirty_first_columns: word[terminal_rows]
 bss terminal_dirty_last_columns: word[terminal_rows]
 bss terminal_dirty_rows: word
@@ -45,7 +45,8 @@ bss terminal_scroll_rows: word
 bss terminal_status_visible: word
 bss terminal_input_line: word
 bss terminal_input_column: word
-bss terminal_input_drawn_length: word
+bss terminal_input_length: word
+bss terminal_input_rendered_length: word
 bss terminal_command_words: word[terminal_columns * terminal_rows * 6 + 8]
 
 local visible_first_line<const> = function()
@@ -193,7 +194,8 @@ local reset_screen<const> = function()
 	*terminal_view_offset = 0
 	*terminal_scroll_rows = 0
 	*terminal_status_visible = 0
-	*terminal_input_drawn_length = 0
+	*terminal_input_length = 0
+	*terminal_input_rendered_length = 0
 end
 
 function terminal.open()
@@ -203,6 +205,7 @@ function terminal.open()
 	palette[1] = 0x00808080
 	palette[2] = 0x00303080
 	palette[3] = 0x00208080
+	palette[4] = 0x00404040
 	mark_screen_dirty()
 end
 
@@ -245,26 +248,31 @@ end
 function terminal.begin_input()
 	*terminal_input_line = *terminal_cursor_line
 	*terminal_input_column = *terminal_cursor_column
-	*terminal_input_drawn_length = 0
+	*terminal_input_length = 0
+	*terminal_input_rendered_length = 0
 end
 
-function terminal.render_input(line, length, cursor, palette)
+function terminal.render_input(line, length, cursor, palette, completion, completion_start, completion_palette)
 	terminal.follow_output()
 	mark_cursor_dirty()
 	local source<const>: *word = line
-	local drawn_length<const> = *terminal_input_drawn_length
-	local redraw_length = length
-	if drawn_length > redraw_length then
-		redraw_length = drawn_length
+	local completion_length<const> = #completion - completion_start
+	local rendered_length<const> = length + completion_length
+	local redraw_length = rendered_length
+	if *terminal_input_rendered_length > redraw_length then
+		redraw_length = *terminal_input_rendered_length
 	end
 	for index = 0, redraw_length - 1 do
 		local cell = 0
 		if index < length then
 			cell = source[index] | (palette << 8)
+		elseif index < rendered_length then
+			cell = byte(completion, completion_start + index - length + 1) | (completion_palette << 8)
 		end
 		set_cell(*terminal_input_line, *terminal_input_column + index, cell)
 	end
-	*terminal_input_drawn_length = length
+	*terminal_input_length = length
+	*terminal_input_rendered_length = rendered_length
 	*terminal_cursor_line = *terminal_input_line
 	*terminal_cursor_column = *terminal_input_column + cursor
 	mark_cursor_dirty()
@@ -272,8 +280,12 @@ end
 
 function terminal.end_input()
 	mark_cursor_dirty()
+	for index = *terminal_input_length, *terminal_input_rendered_length - 1 do
+		set_cell(*terminal_input_line, *terminal_input_column + index, 0)
+	end
+	*terminal_input_rendered_length = *terminal_input_length
 	*terminal_cursor_line = *terminal_input_line
-	*terminal_cursor_column = *terminal_input_column + *terminal_input_drawn_length
+	*terminal_cursor_column = *terminal_input_column + *terminal_input_length
 	mark_cursor_dirty()
 end
 
@@ -402,10 +414,7 @@ function terminal.flush()
 			end
 			local background_first_column = -1
 			for column = first_column, last_column - 1 do
-				local cell = row_cells[source + column]
-				if row == cursor_row and column == *terminal_cursor_column then
-					cell = cursor_cell
-				end
+				local cell<const> = row_cells[source + column]
 				if cell ~= 0 then
 					if background_first_column < 0 then
 						background_first_column = column
@@ -417,6 +426,16 @@ function terminal.flush()
 			end
 			if background_first_column >= 0 then
 				command_word_count = gx_gpu.encode_rectangle(command_words, command_word_count, background_first_column * glyph_width, target_y, (last_column - background_first_column) * glyph_width, glyph_height, terminal_background_word)
+			end
+			if row == cursor_row and *terminal_cursor_column >= first_column and *terminal_cursor_column < last_column then
+				command_word_count = gx_gpu.encode_rectangle(
+					command_words,
+					command_word_count,
+					*terminal_cursor_column * glyph_width,
+					target_y,
+					glyph_width,
+					glyph_height,
+					palette[terminal.palette_text])
 			end
 		end
 	end
@@ -433,13 +452,14 @@ function terminal.flush()
 				source = 0
 			end
 			for column = first_column, last_column - 1 do
-				local cell = row_cells[source + column]
-				if row == cursor_row and column == *terminal_cursor_column then
-					cell = cursor_cell
-				end
+				local cell<const> = row_cells[source + column]
 				local code<const> = cell & 0xff
 				if code ~= 0 and code ~= 0x20 then
 					local glyph<const> = terminal_glyphs[code]
+					local color = palette[(cell >> 8) & 0x07]
+					if row == cursor_row and column == *terminal_cursor_column then
+						color = terminal_background_word
+					end
 					command_word_count = gx_gpu.encode_textured_rectangle(
 						command_words,
 						command_word_count,
@@ -449,7 +469,7 @@ function terminal.flush()
 						target_y,
 						glyph_width,
 						glyph_height,
-						palette[(cell >> 8) & 0x03])
+						color)
 				end
 			end
 		end

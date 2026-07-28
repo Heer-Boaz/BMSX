@@ -62,7 +62,6 @@ public:
 	void onService(i64 nowCycles);
 	void beginSupervisorQuiesce();
 	[[nodiscard]] auto supervisorQuiescent() const -> bool { return m_supervisorQuiesceRequested && m_scheduledDecodeWords == 0u; }
-	void enterSupervisorFaultContext();
 	void leaveSupervisorContext();
 
 private:

@@ -51,15 +51,6 @@ void IrqController::enterSupervisorContext() {
 	postLoad();
 }
 
-void IrqController::enterSupervisorFaultContext() {
-	m_userPendingFlags = 0u;
-	m_userMask = 0u;
-	m_supervisorContextActive = true;
-	m_pendingFlags = 0u;
-	m_mask = 0u;
-	postLoad();
-}
-
 void IrqController::leaveSupervisorContext() {
 	m_pendingFlags = m_userPendingFlags;
 	m_mask = m_userMask;

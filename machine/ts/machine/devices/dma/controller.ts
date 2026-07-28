@@ -336,13 +336,6 @@ export class DmaController {
 		this.supervisorAdmissionQuiesceRequested = false;
 	}
 
-	public enterSupervisorFaultContext(): void {
-		this.clearLiveTransfer();
-		this.clearUserContext();
-		this.supervisorQuiesceRequested = false;
-		this.supervisorAdmissionQuiesceRequested = false;
-	}
-
 	public leaveSupervisorContext(): void {
 		this.clearLiveTransfer();
 		for (let channel = 0; channel < IO_DMA_CHANNEL_COUNT; channel += 1) {

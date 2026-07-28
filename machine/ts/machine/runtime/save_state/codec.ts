@@ -44,7 +44,7 @@ import {
 import { INPUT_CONTROLLER_KEY_WORD_COUNT, INPUT_CONTROLLER_PAD_AXIS_COUNT, INPUT_CONTROLLER_PAD_COUNT } from '../../devices/input/contracts';
 import {
 	SYSTEM_SUPERVISOR_PHASE_GPU_QUIESCE,
-	SYSTEM_SUPERVISOR_TARGET_SUPERVISOR,
+	SYSTEM_SUPERVISOR_TARGET_FAULT,
 	type SystemControllerState,
 } from '../../devices/system/controller';
 import {
@@ -1279,7 +1279,7 @@ function decodeSystemControllerState(value: unknown, label: string): SystemContr
 	return {
 		resetRequested: requireBooleanValue(requireObjectKey(object, 'resetRequested', label, `${label}.resetRequested`), `${label}.resetRequested`),
 		supervisorPhase: requireBoundedU32(requireObjectKey(object, 'supervisorPhase', label, `${label}.supervisorPhase`), `${label}.supervisorPhase`, 0, SYSTEM_SUPERVISOR_PHASE_GPU_QUIESCE),
-		supervisorTransitionTarget: requireBoundedU32(requireObjectKey(object, 'supervisorTransitionTarget', label, `${label}.supervisorTransitionTarget`), `${label}.supervisorTransitionTarget`, 0, SYSTEM_SUPERVISOR_TARGET_SUPERVISOR),
+		supervisorTransitionTarget: requireBoundedU32(requireObjectKey(object, 'supervisorTransitionTarget', label, `${label}.supervisorTransitionTarget`), `${label}.supervisorTransitionTarget`, 0, SYSTEM_SUPERVISOR_TARGET_FAULT),
 		supervisorResumable: requireBooleanValue(requireObjectKey(object, 'supervisorResumable', label, `${label}.supervisorResumable`), `${label}.supervisorResumable`),
 		supervisorExitRequested: requireBooleanValue(requireObjectKey(object, 'supervisorExitRequested', label, `${label}.supervisorExitRequested`), `${label}.supervisorExitRequested`),
 		printBuffer: requireBinaryFixedLength(requireObjectKey(object, 'printBuffer', label, `${label}.printBuffer`), `${label}.printBuffer`, SYS_PRINT_BUFFER_BYTES),

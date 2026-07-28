@@ -172,11 +172,6 @@ void ImgDecController::beginSupervisorQuiesce() {
 	notifySupervisorBoundary();
 }
 
-void ImgDecController::enterSupervisorFaultContext() {
-	reset();
-	m_supervisorQuiesceRequested = true;
-}
-
 void ImgDecController::leaveSupervisorContext() {
 	m_supervisorQuiesceRequested = false;
 	if (scheduleDecode(m_scheduler.currentNowCycles())) {

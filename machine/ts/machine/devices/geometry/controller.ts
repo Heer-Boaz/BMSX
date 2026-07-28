@@ -268,19 +268,6 @@ export class GeometryController {
 		this.supervisorQuiesceRequested = false;
 	}
 
-	public enterSupervisorFaultContext(): void {
-		this.scheduler.cancelDeviceService(DEVICE_SERVICE_GEO);
-		this.phase = GEOMETRY_CONTROLLER_PHASE_IDLE;
-		this.activeJob = null;
-		this.workCarry = 0;
-		this.availableWorkUnits = 0;
-		this.supervisorQuiesceRequested = true;
-		this.memory.writeIoValue(IO_GEO_CMD, 0);
-		this.memory.writeValue(IO_GEO_STATUS, 0);
-		this.memory.writeValue(IO_GEO_PROCESSED, 0);
-		this.memory.writeValue(IO_GEO_FAULT, 0);
-	}
-
 	private notifySupervisorBoundary(): void {
 		if (this.supervisorQuiesceRequested) {
 			this.scheduler.scheduleDeviceService(DEVICE_SERVICE_SYSTEM, this.scheduler.currentNowCycles());

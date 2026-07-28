@@ -7,6 +7,7 @@ local monitor_editor<const> = {}
 local input_capacity<const> = layout.columns - 4
 local history_capacity<const> = layout.history_capacity
 local palette_text<const> = terminal.palette_text
+local palette_ghost<const> = terminal.palette_ghost
 local ascii_space<const> = 32
 
 bss monitor_editor_line: word[input_capacity]
@@ -23,7 +24,19 @@ bss monitor_editor_draft_cursor: word
 bss monitor_editor_candidate_row: word[layout.columns]
 
 local render<const> = function()
-	terminal.render_input(monitor_editor_line, *monitor_editor_length, *monitor_editor_cursor, palette_text)
+	local completion<const>, prefix_length<const> = monitor_commands.inline_completion(
+		monitor_editor_line,
+		*monitor_editor_length,
+		*monitor_editor_cursor,
+		input_capacity)
+	terminal.render_input(
+		monitor_editor_line,
+		*monitor_editor_length,
+		*monitor_editor_cursor,
+		palette_text,
+		completion,
+		prefix_length,
+		palette_ghost)
 end
 
 local reset_navigation<const> = function()
@@ -180,10 +193,22 @@ function monitor_editor.left()
 end
 
 function monitor_editor.right()
-	if *monitor_editor_cursor ~= *monitor_editor_length then
-		*monitor_editor_cursor = *monitor_editor_cursor + 1
-		render()
+	if *monitor_editor_cursor == *monitor_editor_length then
+		local length<const>, accepted<const> = monitor_commands.accept_inline_completion(
+			monitor_editor_line,
+			*monitor_editor_length,
+			*monitor_editor_cursor,
+			input_capacity)
+		if accepted then
+			*monitor_editor_length = length
+			*monitor_editor_cursor = length
+			reset_navigation()
+			render()
+		end
+		return
 	end
+	*monitor_editor_cursor = *monitor_editor_cursor + 1
+	render()
 end
 
 function monitor_editor.home()

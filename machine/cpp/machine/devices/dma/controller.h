@@ -56,7 +56,6 @@ public:
 	void beginSupervisorQuiesce();
 	bool supervisorQuiescent() const { return m_supervisorAdmissionQuiesceRequested && m_activeChannel == IO_DMA_CHANNEL_COUNT && !m_serviceActive; }
 	void enterSupervisorContext();
-	void enterSupervisorFaultContext();
 	void leaveSupervisorContext();
 
 private:

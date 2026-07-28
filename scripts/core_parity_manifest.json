@@ -1877,7 +1877,6 @@
 				"storeLiveIngressContext",
 				"loadLiveIngressContext",
 				"enterSupervisorContext",
-				"enterSupervisorFaultContext",
 				"leaveSupervisorContext"
 			],
 			"reason": "gx_gpu_supervisor_context_switch_must_remain_gc_free"
@@ -1888,7 +1887,6 @@
 				"storeLiveIngressContext",
 				"loadLiveIngressContext",
 				"enterSupervisorContext",
-				"enterSupervisorFaultContext",
 				"leaveSupervisorContext"
 			],
 			"reason": "gx_gpu_supervisor_context_switch_must_remain_heap_free"

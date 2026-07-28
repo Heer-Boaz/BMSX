@@ -946,19 +946,6 @@ export class GxGpu {
 		this.pcrtcPresentationPending = true;
 	}
 
-	public enterSupervisorFaultContext(): void {
-		this.supervisorQuiesceRequested = false;
-		this.supervisorIngressQuiesceRequested = false;
-		this.supervisorIngressStopped = false;
-		this.resetTransientContext();
-		this.pcrtc.reset(this.scheduler.currentNowCycles());
-		this.pcrtcTimingPublicationPending = true;
-		this.pcrtcPresentationPending = true;
-		this.rescheduleDeviceService(true);
-		this.clearRegisterContext(this.userContext);
-		this.clearIngressContext(this.userIngressContext);
-	}
-
 	public leaveSupervisorContext(): void {
 		this.supervisorQuiesceRequested = false;
 		this.supervisorIngressQuiesceRequested = false;

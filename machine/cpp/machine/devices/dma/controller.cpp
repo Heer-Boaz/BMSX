@@ -240,13 +240,6 @@ void DmaController::enterSupervisorContext() {
 	m_supervisorAdmissionQuiesceRequested = false;
 }
 
-void DmaController::enterSupervisorFaultContext() {
-	clearLiveTransfer();
-	clearUserContext();
-	m_supervisorQuiesceRequested = false;
-	m_supervisorAdmissionQuiesceRequested = false;
-}
-
 void DmaController::leaveSupervisorContext() {
 	clearLiveTransfer();
 	for (u32 channel = 0u; channel < IO_DMA_CHANNEL_COUNT; channel += 1u) {

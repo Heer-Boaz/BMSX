@@ -266,11 +266,6 @@ export class ImgDecController {
 		return this.supervisorQuiesceRequested && this.scheduledDecodeWords === 0;
 	}
 
-	public enterSupervisorFaultContext(): void {
-		this.reset();
-		this.supervisorQuiesceRequested = true;
-	}
-
 	public leaveSupervisorContext(): void {
 		this.supervisorQuiesceRequested = false;
 		if (this.scheduleDecode(this.scheduler.currentNowCycles())) {

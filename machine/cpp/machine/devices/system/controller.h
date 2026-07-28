@@ -24,6 +24,7 @@ constexpr u8 SYSTEM_SUPERVISOR_PHASE_GPU_QUIESCE = 5u;
 
 constexpr u8 SYSTEM_SUPERVISOR_TARGET_USER = 0u;
 constexpr u8 SYSTEM_SUPERVISOR_TARGET_SUPERVISOR = 1u;
+constexpr u8 SYSTEM_SUPERVISOR_TARGET_FAULT = 2u;
 
 struct SystemControllerState {
 	bool resetRequested = false;
@@ -54,9 +55,9 @@ public:
 	void requestSupervisorLineEdge();
 	void onService();
 	bool cpuHeld() const {
-		return m_supervisorTransitionTarget == SYSTEM_SUPERVISOR_TARGET_USER
-			&& (m_supervisorPhase == SYSTEM_SUPERVISOR_PHASE_BUS_QUIESCE
-				|| m_supervisorPhase == SYSTEM_SUPERVISOR_PHASE_GPU_QUIESCE);
+		return m_supervisorTransitionTarget != SYSTEM_SUPERVISOR_TARGET_SUPERVISOR
+			&& (m_supervisorPhase == SYSTEM_SUPERVISOR_PHASE_ENTRY_PRODUCER_QUIESCE
+				|| m_supervisorPhase >= SYSTEM_SUPERVISOR_PHASE_BUS_QUIESCE);
 	}
 	bool takeResetRequest();
 	SystemControllerState captureState() const;
@@ -79,7 +80,7 @@ private:
 	void clearHostOutput();
 	void appendHostOutputByte(u8 value);
 	void appendRingByte(u8 value);
-	void enterSupervisor();
+	void activateSupervisorContext();
 	void enterSupervisorFault();
 	void beginSupervisorLeave();
 	u32 statusWord() const;

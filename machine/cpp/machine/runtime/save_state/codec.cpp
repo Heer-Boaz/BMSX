@@ -1314,7 +1314,7 @@ SystemControllerState decodeSystemControllerState(const BinValue& value, const c
 	SystemControllerState state;
 	state.resetRequested = requireBool(requireField(object, "resetRequested", label), "machineState.machine.systemControl.resetRequested");
 	state.supervisorPhase = static_cast<u8>(requireBoundedU32(requireField(object, "supervisorPhase", label), "machineState.machine.systemControl.supervisorPhase", SYSTEM_SUPERVISOR_PHASE_USER, SYSTEM_SUPERVISOR_PHASE_GPU_QUIESCE));
-	state.supervisorTransitionTarget = static_cast<u8>(requireBoundedU32(requireField(object, "supervisorTransitionTarget", label), "machineState.machine.systemControl.supervisorTransitionTarget", SYSTEM_SUPERVISOR_TARGET_USER, SYSTEM_SUPERVISOR_TARGET_SUPERVISOR));
+	state.supervisorTransitionTarget = static_cast<u8>(requireBoundedU32(requireField(object, "supervisorTransitionTarget", label), "machineState.machine.systemControl.supervisorTransitionTarget", SYSTEM_SUPERVISOR_TARGET_USER, SYSTEM_SUPERVISOR_TARGET_FAULT));
 	state.supervisorResumable = requireBool(requireField(object, "supervisorResumable", label), "machineState.machine.systemControl.supervisorResumable");
 	state.supervisorExitRequested = requireBool(requireField(object, "supervisorExitRequested", label), "machineState.machine.systemControl.supervisorExitRequested");
 	const BinBinary& printBuffer = requireBinaryWithLength(requireField(object, "printBuffer", label), "machineState.machine.systemControl.printBuffer", SYS_PRINT_BUFFER_BYTES);

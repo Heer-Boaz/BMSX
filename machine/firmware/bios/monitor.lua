@@ -41,6 +41,9 @@ local ascii_upper_a<const> = 65
 local monitor_mode_edit<const> = 0
 local monitor_mode_pager<const> = 1
 local monitor_mode_completion<const> = 2
+local key_result_none<const> = 0
+local key_result_repeat<const> = 1
+local key_result_continue<const> = 2
 
 local hid_first_key<const> = 4
 local hid_last_key<const> = 115
@@ -77,13 +80,6 @@ bss monitor_repeat_frame: word
 bss monitor_mode: word
 bss monitor_completion_count: word
 bss monitor_completion_selection: word
-bss monitor_saved_status: word
-bss monitor_saved_cause: word
-bss monitor_saved_epc: word
-bss monitor_saved_bad_address: word
-bss monitor_saved_lua_fault_reason: word
-bss monitor_saved_irq_mask: word
-bss monitor_continue_requested: word
 
 local initialize_input<const> = function()
 	*monitor_frame = 0
@@ -160,22 +156,17 @@ local handle_command_action<const> = function(action)
 	elseif action == monitor_commands.action_output then
 		pump_output(terminal.page_rows)
 	elseif action == monitor_commands.action_continue then
-		if (*system_status & system_supervisor_resumable) == 0 then
-			terminal.write('FAULT IS NOT RESUMABLE\n', terminal.palette_error)
-			write_prompt()
-			return
-		end
-		monitor_commands.clear_fault()
-		*monitor_continue_requested = 1
+		return true
 	else
 		write_prompt()
 	end
+	return false
 end
 
 local submit_input<const> = function()
 	local line<const>, length<const> = monitor_editor.submit()
 	terminal.write_code(ascii_newline, palette_text)
-	handle_command_action(monitor_commands.start(line, length))
+	return handle_command_action(monitor_commands.start(line, length))
 end
 
 local move_completion<const> = function(delta)
@@ -229,35 +220,34 @@ end
 
 local process_hid_key<const> = function(usage, shift, control)
 	if *monitor_mode == monitor_mode_pager then
-		return handle_pager_key(usage)
+		return handle_pager_key(usage) and key_result_repeat or key_result_none
 	end
 	if *monitor_mode == monitor_mode_completion then
 		if usage == hid_tab or usage == hid_right or usage == hid_down then
 			move_completion(1)
-			return usage ~= hid_tab
+			return usage ~= hid_tab and key_result_repeat or key_result_none
 		end
 		if usage == hid_left or usage == hid_up then
 			move_completion(-1)
-			return true
+			return key_result_repeat
 		end
 		if usage == hid_enter or usage == hid_numpad_enter then
 			local selection<const> = *monitor_completion_selection
 			*monitor_mode = monitor_mode_edit
 			terminal.clear_status()
 			monitor_editor.accept_candidate(selection)
-			return false
+			return key_result_none
 		end
 		if usage == hid_escape then
 			*monitor_mode = monitor_mode_edit
 			terminal.clear_status()
-			return false
+			return key_result_none
 		end
 		*monitor_mode = monitor_mode_edit
 		terminal.clear_status()
 	end
 	if usage == hid_enter or usage == hid_numpad_enter then
-		submit_input()
-		return false
+		return submit_input() and key_result_continue or key_result_none
 	end
 	if usage == hid_backspace then
 		if control then
@@ -265,7 +255,7 @@ local process_hid_key<const> = function(usage, shift, control)
 		else
 			monitor_editor.backspace()
 		end
-		return true
+		return key_result_repeat
 	end
 	if usage == hid_tab then
 		local match_count<const> = monitor_editor.complete()
@@ -275,19 +265,19 @@ local process_hid_key<const> = function(usage, shift, control)
 			*monitor_completion_selection = 0
 			monitor_editor.show_candidates(0, match_count)
 		end
-		return false
+		return key_result_none
 	end
 	if usage == hid_escape then
 		monitor_editor.clear()
-		return false
+		return key_result_none
 	end
 	if usage == hid_home then
 		monitor_editor.home()
-		return false
+		return key_result_none
 	end
 	if usage == hid_end then
 		monitor_editor.move_end()
-		return false
+		return key_result_none
 	end
 	if usage == hid_delete then
 		if control then
@@ -295,7 +285,7 @@ local process_hid_key<const> = function(usage, shift, control)
 		else
 			monitor_editor.delete()
 		end
-		return true
+		return key_result_repeat
 	end
 	if usage == hid_left then
 		if control then
@@ -303,7 +293,7 @@ local process_hid_key<const> = function(usage, shift, control)
 		else
 			monitor_editor.left()
 		end
-		return true
+		return key_result_repeat
 	end
 	if usage == hid_right then
 		if control then
@@ -311,30 +301,30 @@ local process_hid_key<const> = function(usage, shift, control)
 		else
 			monitor_editor.right()
 		end
-		return true
+		return key_result_repeat
 	end
 	if usage == hid_up then
 		monitor_editor.previous()
-		return true
+		return key_result_repeat
 	end
 	if usage == hid_down then
 		monitor_editor.next()
-		return true
+		return key_result_repeat
 	end
 	if usage == hid_page_up then
 		terminal.scroll_view(terminal.page_rows)
-		return true
+		return key_result_repeat
 	end
 	if usage == hid_page_down then
 		terminal.scroll_view(-terminal.page_rows)
-		return true
+		return key_result_repeat
 	end
 	local code<const> = map_hid_key(usage, shift)
 	if code >= ascii_space then
 		monitor_editor.insert(code)
-		return true
+		return key_result_repeat
 	end
-	return false
+	return key_result_none
 end
 
 local hid_usage_high<const> = function(word, usage)
@@ -344,6 +334,7 @@ end
 local scan_keyboard<const> = function()
 	local current<const>: *word = monitor_current_keys
 	local previous<const>: *word = monitor_previous_keys
+	local continue_requested = false
 	for index = 0, 7 do
 		current[index] = input_keys[index]
 	end
@@ -352,8 +343,11 @@ local scan_keyboard<const> = function()
 	local pressed_usage = 0
 	for usage = hid_first_key, hid_last_key do
 		if hid_usage_high(current[usage >> 5], usage) and not hid_usage_high(previous[usage >> 5], usage) then
-			if process_hid_key(usage, shift, control) then
+			local result<const> = process_hid_key(usage, shift, control)
+			if result == key_result_repeat then
 				pressed_usage = usage
+			elseif result == key_result_continue then
+				continue_requested = true
 			end
 		end
 	end
@@ -365,7 +359,9 @@ local scan_keyboard<const> = function()
 		if not hid_usage_high(current[repeat_usage >> 5], repeat_usage) then
 			*monitor_repeat_usage = 0
 		elseif *monitor_frame >= *monitor_repeat_frame then
-			process_hid_key(repeat_usage, shift, control)
+			if process_hid_key(repeat_usage, shift, control) == key_result_continue then
+				continue_requested = true
+			end
 			*monitor_repeat_frame = *monitor_repeat_frame + repeat_interval_frames
 		end
 	end
@@ -380,36 +376,39 @@ local scan_keyboard<const> = function()
 			terminal.hide_cursor()
 		end
 	end
+	return continue_requested
 end
 
-local leave_monitor<const> = function()
-	cop0.epc = *monitor_saved_epc
-	cop0.status = *monitor_saved_status
-	*system_control = system_supervisor_leave
+local leave_monitor<const> = function(saved_status, saved_epc, owns_supervisor_context)
+	cop0.epc = saved_epc
+	cop0.status = saved_status
+	if owns_supervisor_context then
+		*system_control = system_supervisor_leave
+	end
 end
 
 function monitor.enter()
 	-- Nested VBlank IRQ entry overwrites CP0 latches, so preserve the interrupted
 	-- context before the monitor enables maskable supervisor interrupts.
-	*monitor_saved_status = cop0.status
-	*monitor_saved_cause = cop0.cause
-	*monitor_saved_epc = cop0.epc
-	*monitor_saved_bad_address = cop0.bad_address
-	*monitor_saved_lua_fault_reason = cop0.lua_fault_reason
-	*monitor_saved_irq_mask = *irq_mask
-	*monitor_continue_requested = 0
+	local saved_status<const> = cop0.status
+	local saved_cause<const> = cop0.cause
+	local saved_epc<const> = cop0.epc
+	local saved_bad_address<const> = cop0.bad_address
+	local saved_lua_fault_reason<const> = cop0.lua_fault_reason
+	local saved_irq_mask<const> = *irq_mask
+	local owns_supervisor_context<const> = (*system_status & system_supervisor_resumable) == 0
 
-	-- Firmware owns exception classification: NMI completes the quiesced,
-	-- resumable transition; every synchronous fault destructively invalidates
-	-- retained user device banks while preserving VRAM.
-	if (*monitor_saved_cause & cause_nmi) ~= 0 then
+	-- Firmware owns exception classification. NMI completes an already quiesced
+	-- supervisor request; a synchronous fault starts the same retained-context
+	-- fence and hardware holds this handler until that bank is ready.
+	if (saved_cause & cause_nmi) ~= 0 then
 		*system_control = system_supervisor_enter
 	else
 		*system_control = system_supervisor_fault
 	end
 	vblank.clear()
 	*irq_mask = irq_dma_done | irq_vblank | irq_gpu
-	cop0.status = *monitor_saved_status | 1
+	cop0.status = saved_status | 1
 	-- Seed monitor edge state from one monitor-owned ICU sample. Keys held while
 	-- the exception was raised must be released before they become editor input.
 	*input_control = input_arm
@@ -418,12 +417,12 @@ function monitor.enter()
 	initialize_input()
 	monitor_editor.open()
 	monitor_commands.open(
-		*monitor_saved_status,
-		*monitor_saved_cause,
-		*monitor_saved_epc,
-		*monitor_saved_bad_address,
-		*monitor_saved_lua_fault_reason,
-		*monitor_saved_irq_mask)
+		saved_status,
+		saved_cause,
+		saved_epc,
+		saved_bad_address,
+		saved_lua_fault_reason,
+		saved_irq_mask)
 	gx_gpu.prepare_supervisor_256x192(layout.vram_origin) -- HUH?! Why hardcoded to 256x192? Should be layout.columns x layout.rows, but that is 80x25. Maybe this is a temporary hack for the monitor to work with the GPU in a specific mode.
 	local system_texture<const> = romdir.resource('gx_system_texture')
 	dma_transfer.copy_to_gp0(system_texture.addr, system_texture.len >> 2)
@@ -442,13 +441,13 @@ function monitor.enter()
 		*input_control = input_arm
 		vblank.wait()
 		if (*system_status & system_supervisor_exit_requested) ~= 0 then
-			leave_monitor()
+			leave_monitor(saved_status, saved_epc, owns_supervisor_context)
 			return
 		end
-		scan_keyboard()
+		local continue_requested<const> = scan_keyboard()
 		terminal.flush()
-		if *monitor_continue_requested ~= 0 then
-			leave_monitor()
+		if continue_requested then
+			leave_monitor(saved_status, saved_epc, owns_supervisor_context)
 			return
 		end
 	end

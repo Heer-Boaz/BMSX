@@ -1127,8 +1127,8 @@ merge model rather than a terminal-shaped approximation.
   circuit-1 game output as its frozen underlay, circuit 1 reads the terminal
   foreground, and `PMODE` performs the merge. Leaving restores the complete raw
   twelve-word composition context, including circuit 2. Timing, `CSR`, `IMR`
-  and beam stay physically global; destructive faults have no resumable base
-  and program the active background/circuits explicitly.
+  and beam stay physically global; synchronous faults enter through the same
+  retained-context fence and preserve the resumable base.
 - [x] Extend TS/C++ software oracles with both circuit rectangles, source
   offsets, magnification, supported PSMs, constant/source alpha selection,
   background, overlap/clipping, interlace and context/save-state vectors.
