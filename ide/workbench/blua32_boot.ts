@@ -43,7 +43,7 @@ async function prepareRebootToBootRom(
 ): Promise<boolean> {
 	clearRuntimeFault(fault, runtime);
 	deactivateEditor(editor, overlayRenderer);
-	clearLuaBootState(editor, runtime);
+	editor.clearRuntimeErrorOverlay();
 	await applyAllWorkspaceSourceOverrides(sources, workspaceDirtyRecords);
 	enterSystemSources(sources);
 	return blua32MediaOverridesRequireRebuild(sources);
@@ -98,7 +98,7 @@ async function bootPreparedBlua32Media(
 	const gateToken = luaGate.begin({ blocking: true, tag: 'boot' });
 	try {
 		clearRuntimeFault(fault, runtime);
-		clearLuaBootState(editor, runtime);
+		editor.clearRuntimeErrorOverlay();
 		bootActiveBlua32Media(
 			sources,
 			fault,
@@ -112,9 +112,4 @@ async function bootPreparedBlua32Media(
 	} finally {
 		luaGate.end(gateToken);
 	}
-}
-
-function clearLuaBootState(editor: CartEditor, runtime: Runtime): void {
-	runtime.luaInitialized = false;
-	editor.clearRuntimeErrorOverlay();
 }

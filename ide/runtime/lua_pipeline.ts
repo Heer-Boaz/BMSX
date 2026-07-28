@@ -43,22 +43,12 @@ export type RebuiltBlua32Media = {
 	cartridgeSlots: [RebuiltBlua32Image | null, RebuiltBlua32Image | null];
 };
 
-function installFreshLuaInterpreter(
-	fault: RuntimeFaultState,
+function createFreshLuaInterpreter(
 	bridge: RuntimeLuaTooling,
-	runtime: Runtime,
 ): LuaInterpreter {
-	resetHandledLuaErrors(fault);
 	const interpreter = new LuaInterpreter(bridge.luaJsBridge);
-	bridge.luaInterpreter = interpreter;
-	interpreter.clearLastFaultEnvironment();
 	registerLuaInterpreterBuiltins(interpreter);
 	interpreter.setReservedIdentifiers(getReservedLuaIdentifiers());
-	runtime.pendingCall = null;
-	runtime.luaRuntimeFailed = false;
-	runtime.luaInitialized = false;
-	runtime.machine.inputController.cancelSampleArm();
-	runtime.machine.cpu.clearHaltUntilIrq();
 	return interpreter;
 }
 
@@ -344,7 +334,7 @@ export function bootActiveBlua32Media(
 	runtime: Runtime,
 	rebuildBlua32Media: boolean,
 ): void {
-	const interpreter = installFreshLuaInterpreter(fault, luaTooling, runtime);
+	const interpreter = createFreshLuaInterpreter(luaTooling);
 	if (rebuildBlua32Media) {
 		installBlua32Media(sources, runtime, buildBlua32Media(
 			sources,
@@ -353,6 +343,8 @@ export function bootActiveBlua32Media(
 			sources.cartridgeBlua32MediaDirty,
 		));
 	}
+	resetHandledLuaErrors(fault);
+	luaTooling.luaInterpreter = interpreter;
 	runtime.resetForSystemBoot();
 	runtime.boot();
 }

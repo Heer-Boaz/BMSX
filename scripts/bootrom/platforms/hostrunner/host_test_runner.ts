@@ -11,7 +11,6 @@ import {
 	type StringValue,
 	type Value,
 } from '../../../../machine/ts/machine/cpu/value';
-import { callClosureSuspended } from '../../../../ide/runtime/closure_executor';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import type { HostClock, InputHub, TimerHandle } from 'bmsx/platform';
 import { HeadlessCaptureCoordinator } from '../headless_capture';
@@ -151,7 +150,7 @@ export class HostTestRunner {
 		const loader = cpu.getGlobalByKey(
 			runtime.internString(HOST_TEST_LOADER_GLOBAL),
 		) as Closure;
-		callClosureSuspended(runtime, loader, EMPTY_CALL_ARGS);
+		runtime.callClosure(loader, EMPTY_CALL_ARGS);
 		const testTable = cpu.getGlobalByKey(runtime.internString(HOST_TEST_GLOBAL)) as Table;
 		this.ready = testTable.getStringKey(runtime.internString('ready')) as Closure;
 		this.setup = testTable.getStringKey(runtime.internString('setup')) as Closure;
@@ -169,7 +168,7 @@ export class HostTestRunner {
 	}
 
 	private callGuest(fn: Closure, args: ReadonlyArray<Value>): Value {
-		const results = callClosureSuspended(this.options.runtime, fn, args);
+		const results = this.options.runtime.callClosure(fn, args);
 		return results.length === 0 ? null : results[0];
 	}
 

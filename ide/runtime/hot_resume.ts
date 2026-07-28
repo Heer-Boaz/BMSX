@@ -6,7 +6,6 @@ import { clearOverlayFrame } from '../../machine/ts/render/host_overlay/overlay_
 import {
 	buildBlua32ExecutionRevision,
 } from '../../machine/ts/rompack/tooling/blua32_revision';
-import { callClosureSuspended } from './closure_executor';
 import { clearFaultSnapshot, resetHandledLuaErrors } from './fault_state';
 import {
 	buildBlua32Media,
@@ -105,7 +104,7 @@ export function hotResume(
 		clearOverlayFrame();
 
 		const initClosure = runtime.machine.cpu.getGlobalByKey(runtime.internString('init')) as Closure;
-		callClosureSuspended(runtime, initClosure, EMPTY_CALL_ARGS);
+		runtime.callClosure(initClosure, EMPTY_CALL_ARGS);
 	} catch (error) {
 		throw convertToError(error);
 	}

@@ -122,29 +122,15 @@ export function surfaceHostFrameError(state: RuntimeIdeState, runtime: Runtime, 
 	handleLuaError(state.fault, state.sources, runtime, error);
 }
 
-export function tickIDE(state: RuntimeIdeState, runtime: Runtime): void {
+export function tickIDE(state: RuntimeIdeState, deltaSeconds: number): void {
 	if (!editorBlocksRuntimePipeline(state.editor) || !state.editor.isActive) {
 		return;
 	}
-	if (!beginOverlayUpdateFrame(runtime, state)) {
+	if (state.overlayRenderer.drawFramePending) {
 		return;
 	}
-	const deltaSeconds = runtime.frameLoop.frameDeltaMs / 1000;
 	state.editor.update(deltaSeconds);
-	finishOverlayUpdateFrame(runtime, state);
-}
-
-function beginOverlayUpdateFrame(runtime: Runtime, state: RuntimeIdeState): boolean {
-	if (runtime.frameLoop.frameActive || state.overlayRenderer.drawFramePending) {
-		return false;
-	}
-	runtime.frameLoop.beginFrameState(0, 0);
-	return true;
-}
-
-function finishOverlayUpdateFrame(runtime: Runtime, state: RuntimeIdeState): void {
 	state.overlayRenderer.drawFramePending = true;
-	runtime.frameLoop.abandonFrameState();
 }
 
 export function tickIDEDraw(state: RuntimeIdeState, runtime: Runtime): void {

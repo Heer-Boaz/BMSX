@@ -45,13 +45,11 @@ function runWorkbenchOverlay(
 	ide: RuntimeIdeState,
 	screen: RenderPresentationState,
 	runtime: Runtime,
+	hostDeltaMs: number,
 ): void {
 	screen.clearPresentation();
-	if (runtime.frameLoop.frameActive) {
-		runtime.frameLoop.abandonFrameState();
-	}
 	runtime.frameScheduler.clearQueuedTime();
-	workbenchMode.tickIDE(ide, runtime);
+	workbenchMode.tickIDE(ide, hostDeltaMs / 1000);
 	screen.requestHeldPresentation();
 }
 
@@ -88,7 +86,7 @@ function presentWorkbenchError(
 	if (!ide.overlayRenderer.active) {
 		return;
 	}
-	runWorkbenchOverlay(ide, screen, runtime);
+	runWorkbenchOverlay(ide, screen, runtime, hostDeltaMs);
 	presentWorkbenchFrame(
 		ide,
 		MachineHostFrameAction.PresentPending,
@@ -127,7 +125,7 @@ export function runWorkbenchHostFrame(
 			&& ide.overlayRenderer.active
 		) {
 			hostOverlayMenu.queueFrameOverlayCommands();
-			runWorkbenchOverlay(ide, screen, runtime);
+			runWorkbenchOverlay(ide, screen, runtime, hostDeltaMs);
 			manager.platform.microtasks.flush();
 			action = MachineHostFrameAction.PresentPending;
 		} else {
