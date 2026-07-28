@@ -1,5 +1,4 @@
 #include "machine/runtime/runtime.h"
-#include "machine/memory/lua_heap_usage.h"
 #include "machine/memory/map.h"
 #include "spec/bmsx/memory_map.h"
 #include "machine/runtime/input.h"
@@ -72,22 +71,15 @@ Runtime::Runtime(
 	})
 	, machine(m_memory, input)
 {
-	resetLuaHeapUsageHooks();
-	resetTrackedLuaHeapBytes();
 	machine.memory.clearIoSlots();
 	machine.resetDevices();
 	refreshDeviceTimings(*this, machine.scheduler.currentNowCycles());
 	machine.runDeviceService(DEVICE_SERVICE_GPU);
 	applyPublishedGxGpuPcrtcTiming(machine.gxGpu.readDeviceOutput().pcrtcTiming);
 
-	configureLuaHeapUsage(this, &Runtime::getBaseRamUsedBytesThunk, &Runtime::collectTrackedHeapBytesThunk);
-
 }
 
-Runtime::~Runtime() {
-	resetLuaHeapUsageHooks();
-	resetTrackedLuaHeapBytes();
-}
+Runtime::~Runtime() = default;
 
 auto Runtime::callClosure(Closure& fn, BuiltinArgsView args) -> std::span<const Value> {
 	CPU& cpu = machine.cpu;
@@ -229,18 +221,8 @@ uint32_t Runtime::baseRamUsedBytes() const {
 	return BASE_RAM_USED_SIZE;
 }
 
-size_t Runtime::getBaseRamUsedBytesThunk([[maybe_unused]] void* context) {
-	return BASE_RAM_USED_SIZE;
-}
-
-size_t Runtime::collectTrackedHeapBytesThunk(void* context) {
-	auto& runtime = *static_cast<Runtime*>(context);
-	runtime.machine.cpu.collectHeap();
-	return trackedLuaHeapBytes();
-}
-
 uint32_t Runtime::ramUsedBytes() const {
-	return baseRamUsedBytes() + static_cast<uint32_t>(trackedLuaHeapBytes());
+	return baseRamUsedBytes() + static_cast<uint32_t>(machine.cpu.luaHeap().usedBytes());
 }
 
 uint32_t Runtime::ramTotalBytes() const {
@@ -262,7 +244,6 @@ void Runtime::boot() {
 }
 
 void Runtime::finishSystemBoot() {
-	enforceLuaHeapBudget();
 	m_pendingCall = PendingCall::Entry;
 	m_luaInitialized = true;
 }

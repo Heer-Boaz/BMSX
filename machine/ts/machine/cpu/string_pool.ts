@@ -1,5 +1,5 @@
 import { utf8ByteLength, utf8CodepointCount } from '../../common/utf8';
-import { addTrackedLuaHeapBytes, enforceLuaHeapBudget } from '../memory/lua_heap_usage';
+import type { LuaHeap } from './lua_heap';
 
 export type StringId = number;
 
@@ -22,20 +22,26 @@ export class StringPool {
 	private trackedBytes = 0;
 	private reachable = new Uint8Array(0);
 
-	public constructor(private readonly trackLuaHeap: boolean = false) {}
+	public constructor(private readonly luaHeap: LuaHeap) {}
 
-	public intern(value: string, tracked: boolean = this.trackLuaHeap): StringId {
+	public intern(value: string, tracked: boolean = true): StringId {
 		const interned = this.byText.get(value) | 0;
 		if (interned !== 0) {
 			const existing = interned - 1;
 			if (tracked && this.trackedByteLengths[existing] === 0) {
-				this.trackStringEntry(existing);
+				const byteLength = utf8ByteLength(this.values[existing]);
+				this.luaHeap.reserve(byteLength);
+				this.trackStringEntry(existing, byteLength);
 			}
 			return existing;
 		}
+		const byteLength = tracked ? utf8ByteLength(value) : 0;
+		if (tracked) {
+			this.luaHeap.reserve(byteLength);
+		}
 		const id = this.insert(this.nextId, value);
 		if (tracked) {
-			this.trackStringEntry(id);
+			this.trackStringEntry(id, byteLength);
 		}
 		return id;
 	}
@@ -53,9 +59,6 @@ export class StringPool {
 	}
 
 	public beginReachabilityEpoch(): void {
-		if (!this.trackLuaHeap) {
-			return;
-		}
 		if (this.reachable.length < this.values.length) {
 			this.reachable = new Uint8Array(this.values.length);
 			return;
@@ -64,17 +67,10 @@ export class StringPool {
 	}
 
 	public markReachable(id: StringId): void {
-		if (!this.trackLuaHeap) {
-			return;
-		}
 		this.reachable[id] = 1;
 	}
 
 	public reclaimUnreachableTracked(): void {
-		if (!this.trackLuaHeap) {
-			this.trackedBytes = 0;
-			return;
-		}
 		let reclaimed = 0;
 		for (let id = 0; id < this.trackedByteLengths.length; id += 1) {
 			const byteLength = this.trackedByteLengths[id];
@@ -88,7 +84,7 @@ export class StringPool {
 			return;
 		}
 		this.trackedBytes -= reclaimed;
-		addTrackedLuaHeapBytes(-reclaimed);
+		this.luaHeap.release(reclaimed);
 	}
 
 	public captureState(): StringPoolState {
@@ -117,10 +113,7 @@ export class StringPool {
 				this.trackedBytes += byteLength;
 			}
 		}
-		if (this.trackLuaHeap) {
-			addTrackedLuaHeapBytes(this.trackedBytes - previousBytes);
-			enforceLuaHeapBudget();
-		}
+		this.luaHeap.adjustForRestore(previousBytes, this.trackedBytes);
 	}
 
 	private insert(id: StringId, value: string): StringId {
@@ -134,11 +127,8 @@ export class StringPool {
 		return id;
 	}
 
-	private trackStringEntry(id: StringId): void {
-		const byteLength = utf8ByteLength(this.values[id]);
+	private trackStringEntry(id: StringId, byteLength: number): void {
 		this.trackedByteLengths[id] = byteLength;
 		this.trackedBytes += byteLength;
-		addTrackedLuaHeapBytes(byteLength);
-		enforceLuaHeapBudget();
 	}
 }

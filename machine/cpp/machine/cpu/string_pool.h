@@ -11,6 +11,7 @@
 namespace bmsx {
 
 using StringId = uint32_t;
+class LuaHeap;
 
 struct StringPoolStateEntry {
 	StringId id = 0;
@@ -24,13 +25,13 @@ struct StringPoolState {
 
 class StringPool {
 public:
-	explicit StringPool(bool trackLuaHeap = false);
+	explicit StringPool(LuaHeap& luaHeap);
 
 	StringId intern(std::string_view value);
 	StringId intern(std::string_view value, bool tracked);
 	const std::string& toString(StringId id) const;
 	int codepointCount(StringId id) const;
-	size_t trackedLuaHeapBytes() const { return m_trackLuaHeap ? m_trackedBytes : 0; }
+	size_t trackedLuaHeapBytes() const { return m_trackedBytes; }
 	StringPoolState captureState() const;
 	void restoreState(const StringPoolState& state);
 
@@ -71,9 +72,9 @@ private:
 	const InternedString& entry(StringId id) const;
 	InternedString& insert(StringId id, std::string_view value);
 	void insertEntry(std::unique_ptr<InternedString> entry);
-	void trackStringEntry(InternedString& entry);
+	void trackStringEntry(InternedString& entry, size_t byteLength);
+	LuaHeap& m_luaHeap;
 	StringId m_nextId = 0;
-	bool m_trackLuaHeap = false;
 	size_t m_trackedBytes = 0;
 	std::unordered_map<std::string_view, StringId, StringKeyHash, StringKeyEq> m_stringMap;
 	std::vector<std::unique_ptr<InternedString>> m_entries;

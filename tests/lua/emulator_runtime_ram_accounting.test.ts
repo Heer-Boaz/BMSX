@@ -63,7 +63,7 @@ test('builtin primitives are static VM slots outside Lua heap accounting', () =>
 	const before = cpu.collectTrackedHeapBytes();
 
 	assert.equal(createBuiltinFunction(BuiltinFunctionId.Next), next);
-	assert.equal(cpu.collectTrackedHeapBytes([next]), before);
+	assert.equal(cpu.collectTrackedHeapBytes(next), before);
 });
 
 test('builtin primitive save-state uses VM id instead of stable global path', () => {

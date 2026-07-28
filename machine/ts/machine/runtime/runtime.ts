@@ -3,7 +3,6 @@ import type { Closure } from '../cpu/closure';
 import { EMPTY_CALL_ARGS, StringValue, type Value } from '../cpu/value';
 import { seedLuaGlobals } from '../firmware/globals';
 import type { RuntimeOptions } from './options';
-import { addTrackedLuaHeapBytes, configureLuaHeapUsage, enforceLuaHeapBudget, getTrackedLuaHeapBytes, resetTrackedLuaHeapBytes } from '../memory/lua_heap_usage';
 import { FrameLoopState } from './frame/loop';
 import { FrameSchedulerState } from '../scheduler/frame';
 import { DEVICE_SERVICE_GPU } from '../scheduler/device';
@@ -107,8 +106,6 @@ export class Runtime {
 		this.machine.cpu.clearExecutionEnvironment();
 		this.machine.memory.clearIoSlots();
 		this.resetHardwareState();
-		resetTrackedLuaHeapBytes();
-		addTrackedLuaHeapBytes(this.machine.cpu.globals.getTrackedHeapBytes());
 	}
 
 	public boot(): void {
@@ -133,7 +130,6 @@ export class Runtime {
 	}
 
 	private finishSystemBoot(): void {
-		enforceLuaHeapBudget();
 		this.pendingCall = 'entry';
 		this.luaInitialized = true;
 	}
@@ -265,24 +261,14 @@ export class Runtime {
 		refreshDeviceTimings(this, this.machine.scheduler.currentNowCycles());
 		this.machine.runDeviceService(DEVICE_SERVICE_GPU);
 		this.applyPublishedGxGpuPcrtcTiming(this.machine.gxGpu.readDeviceOutput().pcrtcTiming);
-		configureLuaHeapUsage(this, Runtime.getBaseRamUsedBytesThunk, Runtime.collectTrackedHeapBytesThunk);
 	}
 
 	public baseRamUsedBytes(): number {
 		return BASE_RAM_USED_SIZE;
 	}
 
-	private static getBaseRamUsedBytesThunk(context: Runtime): number {
-		void context;
-		return BASE_RAM_USED_SIZE;
-	}
-
-	private static collectTrackedHeapBytesThunk(context: Runtime): number {
-		return context.machine.cpu.collectTrackedHeapBytes();
-	}
-
 	public ramUsedBytes(): number {
-		return this.baseRamUsedBytes() + getTrackedLuaHeapBytes();
+		return this.baseRamUsedBytes() + this.machine.cpu.luaHeap.usedBytes();
 	}
 
 	public ramTotalBytes(): number {

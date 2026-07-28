@@ -128,8 +128,6 @@ private:
 	// State flags
 	bool m_luaInitialized = false;
 	bool m_runtimeFailed = false;
-	static size_t getBaseRamUsedBytesThunk(void* context);
-	static size_t collectTrackedHeapBytesThunk(void* context);
 	PendingCall m_pendingCall = PendingCall::None;
 };
 

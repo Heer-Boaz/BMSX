@@ -7,7 +7,7 @@
 
 #include "machine/common/numeric.h"
 #include "machine/cpu/errors.h"
-#include "machine/memory/lua_heap_usage.h"
+#include "machine/cpu/lua_heap.h"
 
 namespace bmsx {
 
@@ -17,16 +17,27 @@ constexpr size_t kTableArraySlotHeapBytes = 8;
 constexpr size_t kTableHashSlotHeapBytes = 20;
 constexpr int32_t kTableHashNextEnd = -1;
 } // namespace
-Table::Table(int arraySize, int hashSize) {
-	if (arraySize > 0) {
-		m_array.resize(static_cast<size_t>(arraySize), valueNil());
+Table::Table(LuaHeap& luaHeap, size_t arrayCapacity, size_t hashCapacity)
+	: m_luaHeap(luaHeap) {
+	if (arrayCapacity > 0) {
+		m_array.resize(arrayCapacity, valueNil());
 	}
-	if (hashSize > 0) {
-		size_t size = nextPowerOfTwo(static_cast<size_t>(hashSize));
-		allocateHash(size);
-		m_hashFree = static_cast<int>(size) - 1;
+	if (hashCapacity > 0) {
+		allocateHash(hashCapacity);
+		m_hashFree = static_cast<int>(hashCapacity) - 1;
 	}
-	addTrackedLuaHeapBytes(static_cast<ptrdiff_t>(trackedHeapBytes()));
+}
+
+size_t Table::hashCapacity(int hashSize) {
+	return hashSize > 0
+		? nextPowerOfTwo(static_cast<size_t>(hashSize))
+		: 0;
+}
+
+size_t Table::trackedHeapBytesForCapacities(size_t arrayCapacity, size_t hashCapacity) {
+	return kTableHeapBytes
+		+ (arrayCapacity * kTableArraySlotHeapBytes)
+		+ (hashCapacity * kTableHashSlotHeapBytes);
 }
 
 bool Table::getArrayIndex(const Value& key, int& outIndex) const {
@@ -142,7 +153,7 @@ int Table::getFreeIndex() {
 	return -1;
 }
 
-void Table::rehash(const Value& key) {
+void Table::rehash(const Value& key, const Value& value) {
 	size_t totalKeys = 0;
 	std::array<size_t, sizeof(size_t) * 8u> counts{};
 	size_t countBins = 0;
@@ -195,11 +206,20 @@ void Table::rehash(const Value& key) {
 
 	size_t hashKeys = totalKeys - arrayKeys;
 	size_t hashSize = hashKeys > 0 ? nextPowerOfTwo(hashKeys) : 0;
-	resize(arraySize, hashSize);
+	resize(arraySize, hashSize, key, value);
 }
 
-void Table::resize(size_t newArraySize, size_t newHashSize) {
+void Table::resize(
+	size_t newArraySize,
+	size_t newHashSize,
+	const Value& key,
+	const Value& value
+) {
 	const size_t previousBytes = trackedHeapBytes();
+	const size_t resizedBytes = trackedHeapBytesForCapacities(newArraySize, newHashSize);
+	if (resizedBytes > previousBytes) {
+		m_luaHeap.reserve(resizedBytes - previousBytes, valueTable(this), key, value);
+	}
 	std::vector<Value> oldArray = std::move(m_array);
 	std::unique_ptr<void, HashStorageDeleter> oldHashStorage = std::move(m_hashStorage);
 	Value* oldHashKeys = m_hashKeys;
@@ -223,7 +243,9 @@ void Table::resize(size_t newArraySize, size_t newHashSize) {
 		}
 	}
 	oldHashStorage.reset();
-	addTrackedLuaHeapBytes(static_cast<ptrdiff_t>(trackedHeapBytes()) - static_cast<ptrdiff_t>(previousBytes));
+	if (resizedBytes < previousBytes) {
+		m_luaHeap.release(previousBytes - resizedBytes);
+	}
 }
 
 void Table::allocateHash(size_t size) {
@@ -275,12 +297,12 @@ void Table::rawSet(const Value& key, const Value& value) {
 
 void Table::insertHash(const Value& key, const Value& value) {
 	if (m_hashDeadCount > 0) {
-		rehash(key);
+		rehash(key, value);
 		rawSet(key, value);
 		return;
 	}
 	if (m_hashSize == 0) {
-		rehash(key);
+		rehash(key, value);
 		rawSet(key, value);
 		return;
 	}
@@ -296,7 +318,7 @@ void Table::insertHash(const Value& key, const Value& value) {
 	}
 	int freeIndex = getFreeIndex();
 	if (freeIndex < 0) {
-		rehash(key);
+		rehash(key, value);
 		rawSet(key, value);
 		return;
 	}
@@ -328,7 +350,7 @@ void Table::removeFromHash(const Value& key) {
 		return;
 	}
 	if (m_hashDeadCount > 0) {
-		rehash(valueNil());
+		rehash(valueNil(), valueNil());
 		int arrayIndex = 0;
 		if (getArrayIndex(key, arrayIndex)
 			&& static_cast<size_t>(arrayIndex) < m_array.size()) {
@@ -464,7 +486,7 @@ void Table::set(const Value& key, const Value& value) {
 		return;
 	}
 	if (m_hashSize == 0 || m_hashFree < 0) {
-		rehash(key);
+		rehash(key, value);
 	}
 	rawSet(key, value);
 	bumpVersion();
@@ -520,7 +542,7 @@ void Table::setInteger(int indexValue, const Value& value) {
 		return;
 	}
 	if (m_hashSize == 0 || m_hashFree < 0) {
-		rehash(key);
+		rehash(key, value);
 	}
 	rawSet(key, value);
 	bumpVersion();
@@ -551,7 +573,7 @@ void Table::setStringKey(StringId key, const Value& value) {
 		return;
 	}
 	if (m_hashSize == 0 || m_hashFree < 0) {
-		rehash(keyValue);
+		rehash(keyValue, value);
 	}
 	rawSet(keyValue, value);
 	bumpVersion();
@@ -568,7 +590,7 @@ void Table::clear() {
 	allocateHash(0);
 	m_hashFree = -1;
 	bumpVersion();
-	addTrackedLuaHeapBytes(static_cast<ptrdiff_t>(trackedHeapBytes()) - static_cast<ptrdiff_t>(previousBytes));
+	m_luaHeap.release(previousBytes - trackedHeapBytes());
 }
 
 std::optional<std::pair<Value, Value>> Table::nextEntry(const Value& after) const {
@@ -673,14 +695,22 @@ uint32_t Table::restoreRuntimeState(const TableRuntimeState& state) {
 	m_hashFree = state.hashFree;
 	metatable = state.metatable;
 	bumpVersion();
-	addTrackedLuaHeapBytes(static_cast<ptrdiff_t>(trackedHeapBytes()) - static_cast<ptrdiff_t>(previousBytes));
+	m_luaHeap.adjustForRestore(previousBytes, trackedHeapBytes());
 	return maxDeadKeyHashId;
 }
 
 size_t Table::trackedHeapBytes() const {
-	return kTableHeapBytes
-		+ (m_array.size() * kTableArraySlotHeapBytes)
-		+ (m_hashSize * kTableHashSlotHeapBytes);
+	return trackedHeapBytesForCapacities(m_array.size(), m_hashSize);
+}
+
+void Table::prepareRestoreStorage(size_t arrayCapacity, size_t hashCapacity) {
+	const size_t previousBytes = trackedHeapBytes();
+	m_array.assign(arrayCapacity, valueNil());
+	m_arrayLength = 0;
+	allocateHash(hashCapacity);
+	m_hashFree = hashCapacity > 0 ? static_cast<int>(hashCapacity) - 1 : -1;
+	bumpVersion();
+	m_luaHeap.adjustForRestore(previousBytes, trackedHeapBytes());
 }
 
 

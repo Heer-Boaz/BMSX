@@ -12,6 +12,8 @@
 #include "machine/cpu/value.h"
 
 namespace bmsx {
+class LuaHeap;
+
 struct TableHashNodeState {
 	Value key = valueNil();
 	Value value = valueNil();
@@ -28,7 +30,9 @@ struct TableRuntimeState {
 
 class Table : public GCObject {
 public:
-	Table(int arraySize = 0, int hashSize = 0);
+	Table(LuaHeap& luaHeap, size_t arrayCapacity = 0, size_t hashCapacity = 0);
+	static size_t hashCapacity(int hashSize);
+	static size_t trackedHeapBytesForCapacities(size_t arrayCapacity, size_t hashCapacity);
 
 	Value get(const Value& key) const;
 	void set(const Value& key, const Value& value);
@@ -89,6 +93,7 @@ public:
 	TableRuntimeState captureRuntimeState() const;
 	uint32_t restoreRuntimeState(const TableRuntimeState& state);
 	size_t trackedHeapBytes() const;
+	void prepareRestoreStorage(size_t arrayCapacity, size_t hashCapacity);
 
 	Table* metatable = nullptr;
 	uint32_t version() const { return m_version; }
@@ -113,14 +118,15 @@ private:
 	int findNextLiveHashIndex(size_t start) const;
 	int findNodeIndexForNext(const Value& key) const;
 	int getFreeIndex();
-	void rehash(const Value& key);
-	void resize(size_t newArraySize, size_t newHashSize);
+	void rehash(const Value& key, const Value& value);
+	void resize(size_t newArraySize, size_t newHashSize, const Value& key, const Value& value);
 	void allocateHash(size_t size);
 	void rawSet(const Value& key, const Value& value);
 	void insertHash(const Value& key, const Value& value);
 	void removeFromHash(const Value& key);
 	void markHashNodeDead(size_t index);
 
+	LuaHeap& m_luaHeap;
 	std::vector<Value> m_array;
 	size_t m_arrayLength = 0;
 	std::unique_ptr<void, HashStorageDeleter> m_hashStorage;

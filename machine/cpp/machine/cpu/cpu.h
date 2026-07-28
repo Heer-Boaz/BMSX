@@ -3,10 +3,8 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <functional>
 #include <memory>
 #include <new>
-#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -18,6 +16,7 @@
 #include "machine/cpu/closure.h"
 #include "machine/execution_address_space.h"
 #include "machine/cpu/errors.h"
+#include "machine/cpu/lua_heap.h"
 #include "spec/blua32/instruction_format.h"
 #include "machine/cpu/execution_image.h"
 #include "spec/blua32/cop0.h"
@@ -174,9 +173,12 @@ public:
 	// reclaims their tracked-byte accounting by marking reachable ids during the
 	// mark phase and dropping the rest after the sweep. The pool outlives the heap
 	// (declared before it in CPU), so a reference is always valid.
-	GcHeap(StringPool& stringPool, StringId modeKey)
-		: m_modeKey(modeKey)
+	GcHeap(CPU& cpu, LuaHeap& luaHeap, StringPool& stringPool, StringId modeKey)
+		: m_cpu(cpu)
+		, m_luaHeap(luaHeap)
+		, m_modeKey(modeKey)
 		, m_stringPool(stringPool) {}
+	~GcHeap();
 
 	template <typename T, typename... Args>
 	T* allocate(ObjType type, Args&&... args) {
@@ -186,39 +188,24 @@ public:
 		obj->hashId = allocateHashId();
 		obj->next = m_objects;
 		m_objects = obj;
-		m_bytesAllocated += sizeof(T);
-		if (m_bytesAllocated > m_nextGC) {
-			m_collectRequested = true;
-		}
 		return obj;
 	}
 	Closure* allocateClosure(size_t upvalueCount);
 
-	void requestCollection() { m_collectRequested = true; }
 	uint32_t allocateHashId() { return m_nextObjectHashId++; }
 	void observeHashId(uint32_t hashId) {
 		if (m_nextObjectHashId <= hashId) {
 			m_nextObjectHashId = hashId + 1u;
 		}
 	}
-	bool needsCollection() const { return m_collectRequested; }
-	void collect();
-	void suspendCollection() { m_collectionSuspendDepth += 1; }
-	void resumeCollection() {
-		if (m_collectionSuspendDepth <= 0) {
-			throw std::runtime_error("[GcHeap] Collection resume underflow.");
-		}
-		m_collectionSuspendDepth -= 1;
-		if (m_collectionSuspendDepth == 0 && m_collectRequested) {
-			collect();
-		}
-	}
-
+	void collect(
+		Value root0 = valueNil(),
+		Value root1 = valueNil(),
+		Value root2 = valueNil()
+	);
 	bool markValue(Value v);
 	bool markClosure(Closure* closure);
 	bool markObject(GCObject* obj);
-
-	void setRootMarker(std::function<void(GcHeap&)> marker) { m_rootMarker = std::move(marker); }
 
 private:
 	uint8_t tableWeakMode(const Table& table) const;
@@ -227,19 +214,17 @@ private:
 	void convergeEphemerons();
 	void clearWeakTables();
 	void sweep();
+	void destroyObject(GCObject* object);
 
+	CPU& m_cpu;
+	LuaHeap& m_luaHeap;
 	GCObject* m_objects = nullptr;
 	std::vector<GCObject*> m_grayStack;
 	std::vector<Table*> m_weakTables;
 	std::vector<uint8_t> m_weakTableModes;
 	std::vector<Table*> m_ephemeronTables;
-	size_t m_bytesAllocated = 0;
-	size_t m_nextGC = 1024 * 1024;
 	uint32_t m_nextObjectHashId = 1;
-	bool m_collectRequested = false;
-	int m_collectionSuspendDepth = 0;
 	StringId m_modeKey;
-	std::function<void(GcHeap&)> m_rootMarker;
 	StringPool& m_stringPool;
 };
 
@@ -259,6 +244,8 @@ public:
 	ExecutionDomainId activeCartridgeSlot() const { return m_activeExecutionImage->executionDomainId; }
 	StringPool& stringPool() { return m_stringPool; }
 	const StringPool& stringPool() const { return m_stringPool; }
+	LuaHeap& luaHeap() { return m_luaHeap; }
+	const LuaHeap& luaHeap() const { return m_luaHeap; }
 	Memory& memory() { return m_memory; }
 	const Memory& memory() const { return m_memory; }
 	void setStringIndexTable(Table* table) { m_stringIndexTable = table; }
@@ -340,6 +327,8 @@ public:
 
 private:
 	friend class BuiltinResultsScratchScope;
+	friend class GcHeap;
+	friend class LuaHeap;
 	template <bool RootBoundary>
 	RunResult runLoop(int targetDepth, int instructionBudget);
 	void runBuiltinFunction(BuiltinFunction& fn, CallFrame& frame, int callBase, int returnCount, int argCount);
@@ -363,7 +352,7 @@ private:
 	void finishProtectedContinuation(size_t continuationIndex, int resultCount);
 	bool handleProtectedCallError(Value errorValue);
 	void unwindToDepth(int targetDepth);
-	void runHousekeeping();
+	void collectHeap(Value root0, Value root1, Value root2);
 	StringId internExecutionString(
 		ExecutionDomainId executionDomainId,
 		u32 address,
@@ -395,7 +384,7 @@ private:
 		int returnBase, int returnCount, bool returnToCompletionLatch);
 	CallFrame* pushLatchedFrame(Closure* closure, const Value* args, size_t argCount,
 		int returnBase, int returnCount, bool returnToCompletionLatch);
-	Closure* createTrackedClosure(u32 functionAddress, size_t upvalueCount);
+	Closure* allocateTrackedClosure(u32 functionAddress, size_t upvalueCount);
 	Closure* createClosure(CallFrame& frame);
 	void closeUpvalues(CallFrame& frame);
 	Upvalue* findOpenUpvalue(const CallFrame& frame, int index) const;
@@ -477,9 +466,12 @@ private:
 	Span<const u8> m_executionReadView;
 	Span<const u8> m_executionTableView;
 	Blua32FunctionRecordLatch m_functionRecordLatch;
+	LuaHeap m_luaHeap;
 	StringPool m_stringPool;
 	Value m_indexKey;
 	GcHeap m_heap;
+	std::array<Value, LUA_FAULT_REASON_OUT_OF_MEMORY + 1u> m_luaFaultErrorValues;
+	Value m_errorInErrorHandlingValue;
 	std::unordered_map<u32, Closure> m_staticClosuresByAddress;
 	std::array<BuiltinFunction, BUILTIN_FUNCTION_COUNT> m_builtinFunctions;
 
@@ -489,6 +481,7 @@ private:
 	int m_localRootScopeDepth = 0;
 
 	std::vector<std::unique_ptr<CallFrame>> m_framePool;
+	std::vector<Upvalue*> m_closureUpvalueScratch;
 	static constexpr int MAX_POOLED_FRAMES = 32;
 	std::vector<Value> m_stack;
 	int m_stackTop = 0;

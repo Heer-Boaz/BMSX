@@ -1,0 +1,49 @@
+#include "machine/cpu/lua_heap.h"
+
+#include <algorithm>
+
+#include "machine/cpu/cpu.h"
+#include "machine/cpu/errors.h"
+#include "machine/memory/map.h"
+#include "spec/bmsx/memory_map.h"
+
+namespace bmsx {
+
+void LuaHeap::reserve(
+	size_t byteCount,
+	Value root0,
+	Value root1,
+	Value root2
+) {
+	size_t nextBytes = m_trackedBytes + byteCount;
+	const size_t capacity = static_cast<size_t>(RAM_SIZE - BASE_RAM_USED_SIZE);
+	if (nextBytes > m_nextCollectionBytes || nextBytes > capacity) {
+		m_cpu.collectHeap(root0, root1, root2);
+		nextBytes = m_trackedBytes + byteCount;
+		if (nextBytes > capacity) {
+			throw LuaOutOfMemorySignal{};
+		}
+		if (nextBytes > m_nextCollectionBytes) {
+			m_nextCollectionBytes = std::max(MIN_COLLECTION_BYTES, nextBytes * 2);
+		}
+	}
+	m_trackedBytes = nextBytes;
+}
+
+void LuaHeap::adjustForRestore(size_t previousBytes, size_t restoredBytes) {
+	if (restoredBytes > previousBytes) {
+		m_trackedBytes += restoredBytes - previousBytes;
+	} else {
+		m_trackedBytes -= previousBytes - restoredBytes;
+	}
+}
+
+void LuaHeap::finishCollection(size_t liveBytes) {
+	m_trackedBytes = liveBytes;
+	m_nextCollectionBytes = std::max(MIN_COLLECTION_BYTES, liveBytes * 2);
+	if (liveBytes > static_cast<size_t>(RAM_SIZE - BASE_RAM_USED_SIZE)) {
+		throw LuaOutOfMemorySignal{};
+	}
+}
+
+} // namespace bmsx

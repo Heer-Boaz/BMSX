@@ -2948,6 +2948,23 @@ fallbacks locally.
 
 Lua heap counts as RAM. Public accounting should talk about RAM, not a separate
 heap budget outside the machine.
+Heap accounting and collection thresholds are CPU-owned state per machine;
+there are no process-global counters or Runtime-installed collection hooks.
+Tables, dynamic closures, upvalues, and tracked strings reserve their exact
+guest-RAM cost before committing growth. A reservation that crosses the
+collection threshold or available RAM runs a full VM collection first, then
+fails before the requested mutation if the live graph still does not fit.
+Save-state rehydration is the explicit exception: restore-only accounting
+rebuilds the trusted object graph without invoking collection while its roots
+are incomplete, then the CPU collects and recomputes the live total once every
+root has been installed.
+
+The CPU retains fixed, untracked guest string values for allocation and VM
+execution errors. An allocation failure therefore follows ordinary Lua
+protected-call semantics without allocating its error value; `pcall`/`xpcall`
+can receive `Out of memory.`. Only an unhandled allocation failure becomes
+`LUA_FAULT_REASON_OUT_OF_MEMORY` in CP0, after which the BIOS monitor presents
+the fault through guest firmware like every other synchronous Lua trap.
 
 The compact 4x6 `tiny_3b_font_*` glyph set is the BIOS-owned
 `font.get('default')` descriptor for boot and firmware text. The ROM producer

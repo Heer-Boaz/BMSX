@@ -7,7 +7,6 @@ import {
 } from '../../machine/ts/machine/cpu/cpu';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { Closure } from '../../machine/ts/machine/cpu/closure';
-import { Table } from '../../machine/ts/machine/cpu/table';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import {
 	StringValue,
@@ -55,7 +54,9 @@ test('runtime values expose one numeric representation tag', () => {
 });
 
 test('Table stores sparse unsigned integer keys in the hash part', () => {
-	const table = new Table(0, 0);
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
+	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+	const table = cpu.createTable(0, 0);
 	const highKey = 0xffffffff;
 	const tokenKey = 0x84222325;
 
@@ -80,6 +81,8 @@ test('Table hashes runtime object keys from value-owned identity', () => {
 });
 
 test('Table hashes all NaN keys through the canonical qNaN bucket', () => {
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
+	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
 	const buffer = new ArrayBuffer(8);
 	const words = new Uint32Array(buffer);
 	const floats = new Float64Array(buffer);
@@ -89,7 +92,7 @@ test('Table hashes all NaN keys through the canonical qNaN bucket', () => {
 	words[0] = 2;
 	words[1] = 0x7ff80000;
 	const secondNaN = floats[0];
-	const table = new Table(0, 0);
+	const table = cpu.createTable(0, 0);
 
 	table.set(firstNaN, 11);
 	table.set(secondNaN, 22);

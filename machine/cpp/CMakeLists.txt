@@ -289,6 +289,7 @@ add_library(bmsx_core STATIC
 	# Machine runtime (Lua bytecode interpreter)
 	machine/cpu/cpu.cpp
 	machine/cpu/errors.cpp
+	machine/cpu/lua_heap.cpp
 	machine/cpu/table.cpp
 	machine/cpu/value.cpp
 	machine/execution_address_space.cpp
@@ -314,7 +315,6 @@ add_library(bmsx_core STATIC
 	machine/devices/irq/controller.cpp
 	machine/devices/irq/save_state.cpp
 	machine/firmware/globals.cpp
-	machine/memory/lua_heap_usage.cpp
 	machine/machine.cpp
 	machine/model_registry.cpp
 	machine/save_state.cpp

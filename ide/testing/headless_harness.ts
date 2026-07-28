@@ -1,4 +1,3 @@
-import { collectTrackedLuaHeapBytes, getTrackedLuaHeapBytes } from '../../machine/ts/machine/memory/lua_heap_usage';
 import { hotResume } from '../runtime/hot_resume';
 import { performHotResume } from '../commands/actions';
 import { rebootPreparedRuntime } from '../workbench/blua32_boot';
@@ -58,7 +57,7 @@ export function createHeadlessIdeHarness(ide: RuntimeIdeState, runtime: Runtime)
 		getRuntime: () => runtime,
 		getSourceState: () => ide.sources,
 		isCartActive: () => runtime.machine.cpu.isCartridgeExecutionActive() && runtime.isInitialized,
-		getTrackedLuaHeapBytes,
+		getTrackedLuaHeapBytes: () => runtime.machine.cpu.luaHeap.usedBytes(),
 		hotResumeCore: () => {
 			const slot = runtime.machine.cpu.activeCartridgeSlot();
 			hotResume(
@@ -114,8 +113,8 @@ export function createHeadlessIdeHarness(ide: RuntimeIdeState, runtime: Runtime)
 			const slot = cpu.activeCartridgeSlot();
 			const sourceState = ide.sources;
 			const executable = blua32ToolingImageForDomain(sourceState.currentBlua32Media, slot)!;
-			collectTrackedLuaHeapBytes();
-			const tracked = getTrackedLuaHeapBytes();
+			cpu.collectTrackedHeapBytes();
+			const tracked = cpu.luaHeap.usedBytes();
 			const stringBytes = cpu.stringPool.trackedLuaHeapBytes();
 			let globals = 0;
 			cpu.globals.forEachEntry(() => { globals += 1; });

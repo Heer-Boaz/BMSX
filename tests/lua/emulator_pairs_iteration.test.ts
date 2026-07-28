@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { Table } from '../../machine/ts/machine/cpu/table';
+import { cartridgeSlots } from '../helpers/cartridge';
+import { CPU } from '../../machine/ts/machine/cpu/cpu';
+import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
+import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
+import { Memory } from '../../machine/ts/machine/memory/memory';
 import type { Value } from '../../machine/ts/machine/cpu/value';
 
 function keyLabel(value: Value): string {
@@ -14,12 +18,14 @@ function keyLabel(value: Value): string {
 }
 
 test('pairs cursor iteration survives deleting the current key', () => {
-	const target = new Table(1, 4);
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() });
+	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+	const target = cpu.createTable(1, 4);
 	target.set(1, 11);
 	target.set(true, 22);
 	target.set(false, 33);
 
-	const state = new Table(4, 0);
+	const state = cpu.createTable(4, 0);
 	state.set(1, target);
 	state.set(2, 0);
 	state.set(3, 0);

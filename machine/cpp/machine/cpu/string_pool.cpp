@@ -1,12 +1,12 @@
 #include "machine/cpu/string_pool.h"
 
 #include "common/utf8.h"
-#include "machine/memory/lua_heap_usage.h"
+#include "machine/cpu/lua_heap.h"
 
 namespace bmsx {
 
-StringPool::StringPool(bool trackLuaHeap)
-	: m_trackLuaHeap(trackLuaHeap) {
+StringPool::StringPool(LuaHeap& luaHeap)
+	: m_luaHeap(luaHeap) {
 }
 
 size_t StringPool::StringKeyHash::operator()(std::string_view key) const noexcept {
@@ -23,7 +23,7 @@ bool StringPool::StringKeyEq::operator()(const std::string& lhs, std::string_vie
 bool StringPool::StringKeyEq::operator()(std::string_view lhs, const std::string& rhs) const noexcept { return lhs == rhs; }
 
 StringId StringPool::intern(std::string_view value) {
-	return intern(value, m_trackLuaHeap);
+	return intern(value, true);
 }
 
 StringId StringPool::intern(std::string_view value, bool tracked) {
@@ -32,13 +32,19 @@ StringId StringPool::intern(std::string_view value, bool tracked) {
 		const StringId id = it->second;
 		InternedString& stringEntry = *m_entries[static_cast<size_t>(id)];
 		if (tracked && stringEntry.trackedByteLength == 0) {
-			trackStringEntry(stringEntry);
+			const size_t byteLength = utf8ByteLength(stringEntry.value);
+			m_luaHeap.reserve(byteLength);
+			trackStringEntry(stringEntry, byteLength);
 		}
 		return id;
 	}
+	const size_t byteLength = tracked ? utf8ByteLength(value) : 0;
+	if (tracked) {
+		m_luaHeap.reserve(byteLength);
+	}
 	InternedString& stringEntry = insert(m_nextId, value);
 	if (tracked) {
-		trackStringEntry(stringEntry);
+		trackStringEntry(stringEntry, byteLength);
 	}
 	return stringEntry.id;
 }
@@ -74,32 +80,20 @@ void StringPool::restoreState(const StringPoolState& state) {
 			m_trackedBytes += stringEntry.trackedByteLength;
 		}
 	}
-	if (m_trackLuaHeap) {
-		addTrackedLuaHeapBytes(static_cast<ptrdiff_t>(m_trackedBytes) - static_cast<ptrdiff_t>(previousTrackedBytes));
-		enforceLuaHeapBudget();
-	}
+	m_luaHeap.adjustForRestore(previousTrackedBytes, m_trackedBytes);
 }
 
 void StringPool::beginReachabilityEpoch() {
-	if (!m_trackLuaHeap) {
-		return;
-	}
 	m_reachable.assign(m_entries.size(), false);
 }
 
 void StringPool::markReachable(StringId id) {
-	if (!m_trackLuaHeap) {
-		return;
-	}
 	if (static_cast<size_t>(id) < m_reachable.size()) {
 		m_reachable[static_cast<size_t>(id)] = true;
 	}
 }
 
 void StringPool::reclaimUnreachableTracked() {
-	if (!m_trackLuaHeap) {
-		return;
-	}
 	size_t reclaimed = 0;
 	for (size_t id = 0; id < m_entries.size(); ++id) {
 		InternedString* stringEntry = m_entries[id].get();
@@ -117,7 +111,7 @@ void StringPool::reclaimUnreachableTracked() {
 		return;
 	}
 	m_trackedBytes -= reclaimed;
-	addTrackedLuaHeapBytes(-static_cast<ptrdiff_t>(reclaimed));
+	m_luaHeap.release(reclaimed);
 }
 
 const StringPool::InternedString& StringPool::entry(StringId id) const {
@@ -147,12 +141,9 @@ void StringPool::insertEntry(std::unique_ptr<InternedString> entry) {
 	}
 }
 
-void StringPool::trackStringEntry(InternedString& entry) {
-	const size_t byteLength = utf8ByteLength(entry.value);
+void StringPool::trackStringEntry(InternedString& entry, size_t byteLength) {
 	entry.trackedByteLength = byteLength;
 	m_trackedBytes += byteLength;
-	addTrackedLuaHeapBytes(static_cast<ptrdiff_t>(byteLength));
-	enforceLuaHeapBudget();
 }
 
 } // namespace bmsx

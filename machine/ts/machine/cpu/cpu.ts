@@ -2,11 +2,6 @@ import { StringPool, type StringId } from './string_pool';
 import { NO_BLOCKED_MAPPED_WRITE, type Memory, type RomByteView } from '../memory/memory';
 import { readLE32 } from '../../common/endian';
 import type { IrqController } from '../devices/irq/controller';
-import {
-	addTrackedLuaHeapBytes,
-	collectTrackedLuaHeapBytes as refreshTrackedLuaHeapBytes,
-	enforceLuaHeapBudget
-} from '../memory/lua_heap_usage';
 import { BASE_CYCLES, OPCODE_USES_BX, OPCODE_USES_DISP, OpCode } from '../../spec/blua32/opcode';
 import {
 	COP0_BAD_ADDRESS,
@@ -31,9 +26,11 @@ import {
 	LUA_FAULT_REASON_ASSIGN_NON_TABLE,
 	LUA_FAULT_REASON_CALL_NON_FUNCTION,
 	LUA_FAULT_REASON_EXPLICIT_ERROR,
+	LUA_FAULT_REASON_INDEX_NIL,
 	LUA_FAULT_REASON_INDEX_NON_TABLE,
 	LUA_FAULT_REASON_ITERATE_NON_TABLE,
 	LUA_FAULT_REASON_METATABLE_LOOP,
+	LUA_FAULT_REASON_OUT_OF_MEMORY,
 	LUA_FAULT_REASON_UNKNOWN,
 	LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION,
 } from '../../spec/blua32/cop0';
@@ -102,7 +99,7 @@ import {
 	type BuiltinArgs,
 	type Value,
 } from './value';
-import { LuaExecutionError, LuaThrownValueError } from './errors';
+import { LUA_OUT_OF_MEMORY_SIGNAL, LuaExecutionError, LuaThrownValueError } from './errors';
 import { Table } from './table';
 import { Closure, EMPTY_CLOSURE_UPVALUES, type Upvalue } from './closure';
 import { ArrayBuiltinArgsView, RegisterFile, RegisterBuiltinArgsView } from './register_file';
@@ -117,6 +114,7 @@ import {
 	type TableLoadInlineCache,
 } from './execution_image';
 import { ProtectedCallContinuation, ProtectedCallKind, type CallFrame } from './call_state';
+import { LuaHeap } from './lua_heap';
 
 // start repeated-sequence-acceptable -- Lua VM/table/register hot paths deliberately keep short copy/update sequences inline.
 // start normalized-body-acceptable -- Specialized Lua VM accessors stay split so the fast paths avoid dispatch helpers.
@@ -253,6 +251,7 @@ export class CPU {
 	public readonly globals: Table;
 	public readonly memory: Memory;
 
+	public readonly luaHeap: LuaHeap;
 	public readonly stringPool: StringPool;
 	private indexKey!: StringValue;
 	private modeKey!: StringValue;
@@ -288,8 +287,9 @@ export class CPU {
 	private readonly heapWeakTables: Table[] = [];
 	private readonly heapWeakTableModes: number[] = [];
 	private readonly heapEphemeronTables: Table[] = [];
-	private heapSeen!: WeakSet<object>;
-	private heapSeenImages!: WeakSet<object>;
+	private readonly heapSeen = new WeakMap<object, number>();
+	private readonly heapSeenImages = new WeakMap<object, number>();
+	private heapEpoch = 0;
 	private heapTableWeakMode = 0;
 	private heapEphemeronChanged = false;
 	private readonly pushHeapValue = (value: Value): void => {
@@ -317,10 +317,10 @@ export class CPU {
 	private readonly heapValueIsAlive = (value: Value): boolean => {
 		switch (valueTag(value)) {
 			case ValueTag.Table:
-				return this.heapSeen.has(value as Table);
+				return this.heapSeen.get(value as Table) === this.heapEpoch;
 			case ValueTag.Closure: {
 				const closure = value as Closure;
-				return closure.heapBytes === 0 || this.heapSeen.has(closure);
+				return closure.heapBytes === 0 || this.heapSeen.get(closure) === this.heapEpoch;
 			}
 			default:
 				return true;
@@ -340,14 +340,14 @@ export class CPU {
 		}
 		switch (valueTag(value)) {
 			case ValueTag.Table:
-				if (!this.heapSeen.has(value as Table)) {
+				if (this.heapSeen.get(value as Table) !== this.heapEpoch) {
 					this.heapValueStack.push(value);
 					this.heapEphemeronChanged = true;
 				}
 				return;
 			case ValueTag.Closure: {
 				const closure = value as Closure;
-				if (closure.heapBytes !== 0 && !this.heapSeen.has(closure)) {
+				if (closure.heapBytes !== 0 && this.heapSeen.get(closure) !== this.heapEpoch) {
 					this.heapValueStack.push(value);
 					this.heapEphemeronChanged = true;
 				}
@@ -401,6 +401,8 @@ export class CPU {
 	private stackRegisters = new RegisterFile(8);
 	private stackTop = 0;
 	private nextObjectHashId = 1;
+	private readonly luaFaultErrorValues: StringValue[] = [];
+	private readonly errorInErrorHandlingValue: StringValue;
 
 	constructor(
 		memory: Memory,
@@ -408,11 +410,22 @@ export class CPU {
 		private readonly executionAddressSpace: ExecutionAddressSpace,
 	) {
 		this.memory = memory;
-		this.stringPool = new StringPool(true);
+		this.luaHeap = new LuaHeap(this);
+		this.stringPool = new StringPool(this.luaHeap);
 		this.globals = this.createTable(0, 0);
 		this.stringIndexTable = this.createTable(0, 0);
 		this.indexKey = StringValue.get(this.stringPool.intern('__index'));
 		this.modeKey = StringValue.get(this.stringPool.intern('__mode'));
+		this.luaFaultErrorValues[LUA_FAULT_REASON_UNKNOWN] = StringValue.get(this.stringPool.intern('Attempted to get length of an unsupported value.', false));
+		this.luaFaultErrorValues[LUA_FAULT_REASON_CALL_NON_FUNCTION] = StringValue.get(this.stringPool.intern('Attempted to call a non-function value.', false));
+		this.luaFaultErrorValues[LUA_FAULT_REASON_INDEX_NON_TABLE] = StringValue.get(this.stringPool.intern('Attempted to index field on a non-table value.', false));
+		this.luaFaultErrorValues[LUA_FAULT_REASON_ASSIGN_NON_TABLE] = StringValue.get(this.stringPool.intern('Attempted to assign to a non-table value.', false));
+		this.luaFaultErrorValues[LUA_FAULT_REASON_INDEX_NIL] = StringValue.get(this.stringPool.intern('Table index is nil.', false));
+		this.luaFaultErrorValues[LUA_FAULT_REASON_METATABLE_LOOP] = StringValue.get(this.stringPool.intern('Metatable __index loop detected.', false));
+		this.luaFaultErrorValues[LUA_FAULT_REASON_ITERATE_NON_TABLE] = StringValue.get(this.stringPool.intern('Attempted to iterate a non-table value.', false));
+		this.luaFaultErrorValues[LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION] = StringValue.get(this.stringPool.intern('xpcall error handler must be a function.', false));
+		this.luaFaultErrorValues[LUA_FAULT_REASON_OUT_OF_MEMORY] = StringValue.get(this.stringPool.intern('Out of memory.', false));
+		this.errorInErrorHandlingValue = StringValue.get(this.stringPool.intern('error in error handling', false));
 	}
 
 	public allocateObjectHashId(): number {
@@ -428,7 +441,9 @@ export class CPU {
 	}
 
 	public createTable(arraySize: number, hashSize: number): Table {
-		const table = new Table(arraySize, hashSize);
+		const hashCapacity = Table.hashCapacity(hashSize);
+		this.luaHeap.reserve(Table.trackedHeapBytesForCapacities(arraySize, hashCapacity));
+		const table = new Table(this.luaHeap, arraySize, hashCapacity);
 		table.hashId = this.allocateObjectHashId();
 		return table;
 	}
@@ -745,7 +760,7 @@ export class CPU {
 			0,
 			false,
 		);
-		enforceLuaHeapBudget();
+		this.collectTrackedHeapBytes();
 	}
 
 	public clearExecutionEnvironment(): void {
@@ -1360,10 +1375,8 @@ export class CPU {
 		this.enterSynchronousException(interruptedFrame, causeWord);
 	}
 
-	private enterLuaFaultException(error: LuaExecutionError | LuaThrownValueError): void {
-		this.luaFaultReasonWord = error instanceof LuaExecutionError
-			? error.reason
-			: LUA_FAULT_REASON_EXPLICIT_ERROR;
+	private enterLuaFaultException(reason: number): void {
+		this.luaFaultReasonWord = reason;
 		this.enterSynchronousException(this.frames[this.frames.length - 1], CPU_CAUSE_CODE_TRAP);
 	}
 
@@ -1449,12 +1462,21 @@ export class CPU {
 					);
 				}
 			} catch (error) {
-				if (!this.handleProtectedCallError(error)) {
-					if (error instanceof LuaExecutionError || error instanceof LuaThrownValueError) {
-						this.enterLuaFaultException(error);
-					} else {
-						throw error;
+				if (error === LUA_OUT_OF_MEMORY_SIGNAL) {
+					if (!this.handleProtectedCallError(this.luaFaultErrorValues[LUA_FAULT_REASON_OUT_OF_MEMORY])) {
+						this.enterLuaFaultException(LUA_FAULT_REASON_OUT_OF_MEMORY);
 					}
+				} else if (error instanceof LuaThrownValueError) {
+					if (!this.handleProtectedCallError(error.value)) {
+						this.enterLuaFaultException(LUA_FAULT_REASON_EXPLICIT_ERROR);
+					}
+				} else if (error instanceof LuaExecutionError) {
+					const errorValue = this.luaFaultErrorValues[error.reason];
+					if (!this.handleProtectedCallError(errorValue)) {
+						this.enterLuaFaultException(error.reason);
+					}
+				} else {
+					throw error;
 				}
 			}
 		}
@@ -1741,7 +1763,6 @@ export class CPU {
 					return;
 				case OpCode.NEWT:
 					this.setRegisterTableFast(frame, registers, a, this.createTable(b, c));
-					enforceLuaHeapBudget();
 					return;
 				case OpCode.ADD:
 				case OpCode.SUB:
@@ -1991,7 +2012,6 @@ export class CPU {
 						return;
 					}
 					this.setRegisterClosureFast(frame, registers, a, this.createClosure(frame));
-					enforceLuaHeapBudget();
 					return;
 				}
 				case OpCode.GETUP: {
@@ -2385,6 +2405,7 @@ export class CPU {
 		}
 		const upvalueBytes = this.executionReadView.bytes;
 		const upvalueByteOffset = this.executionReadView.byteOffset;
+		let newUpvalueCount = 0;
 		for (let index = 0; index < functionRecord.upvalueCount; index += 1) {
 			const word = readLE32(
 				upvalueBytes,
@@ -2392,26 +2413,37 @@ export class CPU {
 			);
 			const upvalueIndex = word & BLUA32_UPVALUE_INDEX_MASK;
 			if ((word & BLUA32_UPVALUE_IN_STACK_MASK) !== 0) {
-				let upvalue = this.findOpenUpvalue(frame, upvalueIndex);
-				if (!upvalue) {
-					upvalue = {
-						hashId: this.allocateObjectHashId(),
-						open: true,
-						index: upvalueIndex,
-						frame,
-						value: null,
-						nextOpen: null,
-					};
-					this.linkOpenUpvalue(frame, upvalue);
-					addTrackedLuaHeapBytes(UPVALUE_HEAP_BYTES);
+				const upvalue = this.findOpenUpvalue(frame, upvalueIndex);
+				if (upvalue) {
+					upvalues[index] = upvalue;
+				} else {
+					newUpvalueCount += 1;
 				}
-				upvalues[index] = upvalue;
 				continue;
 			}
 			upvalues[index] = frame.closure.upvalues[upvalueIndex];
 		}
 		const heapBytes = CLOSURE_HEAP_BYTES + (upvalues.length * CLOSURE_UPVALUE_SLOT_HEAP_BYTES);
-		addTrackedLuaHeapBytes(heapBytes);
+		this.luaHeap.reserve(heapBytes + (newUpvalueCount * UPVALUE_HEAP_BYTES));
+		for (let index = 0; index < functionRecord.upvalueCount; index += 1) {
+			if (upvalues[index]) {
+				continue;
+			}
+			const word = readLE32(
+				upvalueBytes,
+				upvalueByteOffset + index * BLUA32_UPVALUE_RECORD_SIZE,
+			);
+			const upvalue: Upvalue = {
+				hashId: this.allocateObjectHashId(),
+				open: true,
+				index: word & BLUA32_UPVALUE_INDEX_MASK,
+				frame,
+				value: null,
+				nextOpen: null,
+			};
+			this.linkOpenUpvalue(frame, upvalue);
+			upvalues[index] = upvalue;
+		}
 		const closure = new Closure(functionRecord.address, upvalues, heapBytes);
 		closure.hashId = this.allocateObjectHashId();
 		return closure;
@@ -2831,16 +2863,7 @@ export class CPU {
 		}
 	}
 
-	private handleProtectedCallError(error: unknown): boolean {
-		let errorValue: Value;
-		if (error instanceof LuaThrownValueError) {
-			errorValue = error.value;
-		} else if (error instanceof LuaExecutionError) {
-			errorValue = StringValue.get(this.stringPool.intern(error.message));
-		} else {
-			return false;
-		}
-
+	private handleProtectedCallError(errorValue: Value): boolean {
 		for (;;) {
 			if (this.protectedCallDepth === 0) {
 				return false;
@@ -2857,7 +2880,7 @@ export class CPU {
 			this.unwindToDepth(callerIndex + 1);
 			if (continuation.kind !== ProtectedCallKind.XPCallBody) {
 				const result = continuation.kind === ProtectedCallKind.XPCallHandler
-					? StringValue.get(this.stringPool.intern('error in error handling'))
+					? this.errorInErrorHandlingValue
 					: errorValue;
 				this.finishProtectedCallWithError(continuationIndex, result);
 				return true;
@@ -2876,7 +2899,7 @@ export class CPU {
 					continue;
 				}
 				if (handlerError instanceof LuaExecutionError) {
-					errorValue = StringValue.get(this.stringPool.intern(handlerError.message));
+					errorValue = this.luaFaultErrorValues[handlerError.reason];
 					continue;
 				}
 				throw handlerError;
@@ -3200,7 +3223,8 @@ export class CPU {
 			}
 			switch (objectState.kind) {
 				case 'table': {
-					const table = new Table(0, 0);
+					this.luaHeap.restoreAllocate(Table.trackedHeapBytesForCapacities(0, 0));
+					const table = new Table(this.luaHeap, 0, 0);
 					table.hashId = objectState.hashId;
 					restoredObjects[index] = table;
 					break;
@@ -3213,7 +3237,7 @@ export class CPU {
 						restoredObjects[index] = closure;
 					} else {
 						const heapBytes = CLOSURE_HEAP_BYTES + (upvalues.length * CLOSURE_UPVALUE_SLOT_HEAP_BYTES);
-						addTrackedLuaHeapBytes(heapBytes);
+						this.luaHeap.restoreAllocate(heapBytes);
 						const closure = new Closure(objectState.functionAddress, upvalues, heapBytes);
 						closure.hashId = objectState.hashId;
 						restoredObjects[index] = closure;
@@ -3221,7 +3245,7 @@ export class CPU {
 					break;
 				}
 				case 'upvalue':
-					addTrackedLuaHeapBytes(UPVALUE_HEAP_BYTES);
+					this.luaHeap.restoreAllocate(UPVALUE_HEAP_BYTES);
 					restoredObjects[index] = {
 						hashId: objectState.hashId,
 						open: false,
@@ -3294,6 +3318,7 @@ export class CPU {
 		this.completionValues.length = 0;
 		this.clearCallStack();
 		this.globals.clear();
+		this.globals.prepareRestoreStorage(0, Table.hashCapacity(state.globals.length));
 		this.activeExecutionImage = executionImage;
 		this.systemGlobalValues.fill(null);
 		this.globalValues.fill(null);
@@ -3383,7 +3408,7 @@ export class CPU {
 		this.nmiReturnLuaFaultReasonWord = state.nmiReturnLuaFaultReasonWord;
 		this.nonMaskableInterruptPending = state.nonMaskableInterruptPending;
 		this.yieldRequested = state.yieldRequested;
-		refreshTrackedLuaHeapBytes();
+		this.collectTrackedHeapBytes();
 	}
 
 	private tableWeakMode(table: Table): number {
@@ -3411,10 +3436,10 @@ export class CPU {
 	}
 
 	private pushHeapImage(image: Blua32ExecutionImage): void {
-		if (this.heapSeenImages.has(image)) {
+		if (this.heapSeenImages.get(image) === this.heapEpoch) {
 			return;
 		}
-		this.heapSeenImages.add(image);
+		this.heapSeenImages.set(image, this.heapEpoch);
 		for (let index = 0; index < image.tableLoadCaches.length; index += 1) {
 			const cache = image.tableLoadCaches[index];
 			cache.table = null;
@@ -3426,9 +3451,12 @@ export class CPU {
 		}
 	}
 
-	public collectTrackedHeapBytes(extraRoots: ReadonlyArray<Value> = []): number {
-		this.heapSeen = new WeakSet<object>();
-		this.heapSeenImages = new WeakSet<object>();
+	public collectTrackedHeapBytes(
+		root0: Value = null,
+		root1: Value = null,
+		root2: Value = null,
+	): number {
+		this.heapEpoch += 1;
 		const seen = this.heapSeen;
 		let total = 0;
 		const valueStack = this.heapValueStack;
@@ -3476,17 +3504,17 @@ export class CPU {
 				upvalue = upvalue.nextOpen;
 			}
 		}
-		for (let index = 0; index < extraRoots.length; index += 1) {
-			this.pushHeapValue(extraRoots[index]);
-		}
+		this.pushHeapValue(root0);
+		this.pushHeapValue(root1);
+		this.pushHeapValue(root2);
 		for (;;) {
 			while (valueStack.length > 0 || upvalueStack.length > 0) {
 				if (upvalueStack.length > 0) {
 					const upvalue = upvalueStack.pop()!;
-					if (seen.has(upvalue)) {
+					if (seen.get(upvalue) === this.heapEpoch) {
 						continue;
 					}
-					seen.add(upvalue);
+					seen.set(upvalue, this.heapEpoch);
 					total += UPVALUE_HEAP_BYTES;
 					if (upvalue.open) {
 						this.pushHeapValue(upvalue.frame.registers.get(upvalue.index));
@@ -3500,10 +3528,10 @@ export class CPU {
 				switch (valueTag(value)) {
 					case ValueTag.Table: {
 						const table = value as Table;
-						if (seen.has(table)) {
+						if (seen.get(table) === this.heapEpoch) {
 							continue;
 						}
-						seen.add(table);
+						seen.set(table, this.heapEpoch);
 						total += table.getTrackedHeapBytes();
 						this.pushHeapValue(table.metatable);
 						this.heapTableWeakMode = this.tableWeakMode(table);
@@ -3521,10 +3549,10 @@ export class CPU {
 					}
 					case ValueTag.Closure: {
 						const closure = value as Closure;
-						if (seen.has(closure)) {
+						if (seen.get(closure) === this.heapEpoch) {
 							continue;
 						}
-						seen.add(closure);
+						seen.set(closure, this.heapEpoch);
 						total += closure.heapBytes;
 						for (let index = 0; index < closure.upvalues.length; index += 1) {
 							upvalueStack.push(closure.upvalues[index]);
@@ -3558,6 +3586,7 @@ export class CPU {
 		weakTables.length = 0;
 		weakTableModes.length = 0;
 		ephemeronTables.length = 0;
+		this.luaHeap.finishCollection(total);
 		return total;
 	}
 

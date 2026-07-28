@@ -10,6 +10,8 @@
 
 namespace bmsx {
 
+struct LuaOutOfMemorySignal final {};
+
 struct LuaThrownValueError final : std::exception {
 	Value value = valueNil();
 	std::string message;

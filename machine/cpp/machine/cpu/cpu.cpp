@@ -3,9 +3,7 @@
 #include "machine/common/numeric.h"
 #include "lua/numeric.h"
 #include "machine/devices/irq/controller.h"
-#include "machine/memory/lua_heap_usage.h"
 #include "spec/blua32/image_format.h"
-#include "spec/bmsx/memory_map.h"
 #include "machine/memory/memory.h"
 #include "common/utf8.h"
 #include <algorithm>
@@ -27,7 +25,7 @@ namespace bmsx {
 namespace {
 constexpr size_t kClosureHeapBytes = 16;
 constexpr size_t kClosureUpvalueSlotHeapBytes = 8;
-constexpr ptrdiff_t kUpvalueHeapBytes = 24;
+constexpr size_t kUpvalueHeapBytes = 24;
 constexpr uint8_t kTableWeakKeys = 1;
 constexpr uint8_t kTableWeakValues = 2;
 static inline size_t trackedClosureBytes(const Closure& closure) {
@@ -82,11 +80,15 @@ Closure* GcHeap::allocateClosure(size_t upvalueCount) {
 		closure->upvalues[index] = nullptr;
 	}
 	m_objects = closure;
-	m_bytesAllocated += byteCount;
-	if (m_bytesAllocated > m_nextGC) {
-		m_collectRequested = true;
-	}
 	return closure;
+}
+
+GcHeap::~GcHeap() {
+	while (m_objects) {
+		GCObject* object = m_objects;
+		m_objects = object->next;
+		destroyObject(object);
+	}
 }
 
 bool GcHeap::markObject(GCObject* obj) {
@@ -220,55 +222,52 @@ void GcHeap::clearWeakTables() {
 	}
 }
 
-void GcHeap::sweep() {
-	GCObject** current = &m_objects;
-	while (*current) {
-		GCObject* obj = *current;
-		if (obj->marked) {
-			obj->marked = false;
-			current = &obj->next;
-			continue;
-		}
-		GCObject* next = obj->next;
-		switch (obj->type) {
-			case ObjType::Table:
-				m_bytesAllocated -= sizeof(Table);
-				addTrackedLuaHeapBytes(-static_cast<ptrdiff_t>(static_cast<Table*>(obj)->trackedHeapBytes()));
-				delete static_cast<Table*>(obj);
-				break;
-			case ObjType::Closure:
-				m_bytesAllocated -= closureAllocationBytes(static_cast<Closure*>(obj)->upvalueCount);
-				addTrackedLuaHeapBytes(-static_cast<ptrdiff_t>(trackedClosureBytes(*static_cast<Closure*>(obj))));
-				static_cast<Closure*>(obj)->~Closure();
-				::operator delete(obj);
-				break;
-			case ObjType::Upvalue:
-				m_bytesAllocated -= sizeof(Upvalue);
-				addTrackedLuaHeapBytes(-kUpvalueHeapBytes);
-				delete static_cast<Upvalue*>(obj);
-				break;
-		}
-		*current = next;
+void GcHeap::destroyObject(GCObject* object) {
+	switch (object->type) {
+		case ObjType::Table:
+			m_luaHeap.release(static_cast<Table*>(object)->trackedHeapBytes());
+			delete static_cast<Table*>(object);
+			break;
+		case ObjType::Closure:
+			m_luaHeap.release(trackedClosureBytes(*static_cast<Closure*>(object)));
+			static_cast<Closure*>(object)->~Closure();
+			::operator delete(object);
+			break;
+		case ObjType::Upvalue:
+			m_luaHeap.release(kUpvalueHeapBytes);
+			delete static_cast<Upvalue*>(object);
+			break;
 	}
 }
 
-void GcHeap::collect() {
-	if (m_collectionSuspendDepth > 0) {
-		m_collectRequested = true;
-		return;
+void GcHeap::sweep() {
+	GCObject** current = &m_objects;
+	while (*current) {
+		GCObject* object = *current;
+		if (object->marked) {
+			object->marked = false;
+			current = &object->next;
+			continue;
+		}
+		*current = object->next;
+		destroyObject(object);
 	}
-	if (!m_collectRequested) {
-		return;
-	}
-	m_collectRequested = false;
+}
+
+void GcHeap::collect(
+	Value root0,
+	Value root1,
+	Value root2
+) {
 	m_weakTables.clear();
 	m_weakTableModes.clear();
 	m_ephemeronTables.clear();
 	m_stringPool.beginReachabilityEpoch();
 	m_stringPool.markReachable(m_modeKey);
-	if (m_rootMarker) {
-		m_rootMarker(*this);
-	}
+	m_cpu.markRoots(*this);
+	markValue(root0);
+	markValue(root1);
+	markValue(root2);
 	trace();
 	convergeEphemerons();
 	clearWeakTables();
@@ -277,7 +276,6 @@ void GcHeap::collect() {
 	m_weakTables.clear();
 	m_weakTableModes.clear();
 	m_ephemeronTables.clear();
-	m_nextGC = m_bytesAllocated * 2;
 }
 
 BuiltinResultsScratchScope::BuiltinResultsScratchScope(CPU& cpu, BuiltinResults& out) noexcept
@@ -326,9 +324,21 @@ CPU::CPU(
 	, m_memory(memory)
 	, m_irqController(irqController)
 	, m_executionAddressSpace(executionAddressSpace)
-	, m_stringPool(true)
+	, m_luaHeap(*this)
+	, m_stringPool(m_luaHeap)
 	, m_indexKey(valueString(m_stringPool.intern("__index")))
-	, m_heap(m_stringPool, m_stringPool.intern("__mode")) {
+	, m_heap(*this, m_luaHeap, m_stringPool, m_stringPool.intern("__mode"))
+	, m_errorInErrorHandlingValue(valueString(m_stringPool.intern("error in error handling", false))) {
+	m_luaFaultErrorValues.fill(valueNil());
+	m_luaFaultErrorValues[LUA_FAULT_REASON_UNKNOWN] = valueString(m_stringPool.intern("Attempted to get length of an unsupported value.", false));
+	m_luaFaultErrorValues[LUA_FAULT_REASON_CALL_NON_FUNCTION] = valueString(m_stringPool.intern("Attempted to call a non-function value.", false));
+	m_luaFaultErrorValues[LUA_FAULT_REASON_INDEX_NON_TABLE] = valueString(m_stringPool.intern("Attempted to index field on a non-table value.", false));
+	m_luaFaultErrorValues[LUA_FAULT_REASON_ASSIGN_NON_TABLE] = valueString(m_stringPool.intern("Attempted to assign to a non-table value.", false));
+	m_luaFaultErrorValues[LUA_FAULT_REASON_INDEX_NIL] = valueString(m_stringPool.intern("Table index is nil.", false));
+	m_luaFaultErrorValues[LUA_FAULT_REASON_METATABLE_LOOP] = valueString(m_stringPool.intern("Metatable __index loop detected.", false));
+	m_luaFaultErrorValues[LUA_FAULT_REASON_ITERATE_NON_TABLE] = valueString(m_stringPool.intern("Attempted to iterate a non-table value.", false));
+	m_luaFaultErrorValues[LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION] = valueString(m_stringPool.intern("xpcall error handler must be a function.", false));
+	m_luaFaultErrorValues[LUA_FAULT_REASON_OUT_OF_MEMORY] = valueString(m_stringPool.intern("Out of memory.", false));
 	m_executionImages.reserve(3);
 	for (size_t index = 0; index < m_builtinFunctions.size(); ++index) {
 		BuiltinFunction& builtin = m_builtinFunctions[index];
@@ -338,8 +348,7 @@ CPU::CPU(
 		builtin.cyclePerArg = cost.perArg;
 		builtin.cyclePerRet = cost.perRet;
 	}
-	m_heap.setRootMarker([this](GcHeap& heap) { markRoots(heap); });
-	globals = m_heap.allocate<Table>(ObjType::Table, 0, 0);
+	globals = createTable();
 	m_stringIndexTable = createTable();
 }
 
@@ -348,19 +357,25 @@ Value CPU::createBuiltinFunction(BuiltinFunctionId id) {
 }
 
 Table* CPU::createTable(int arraySize, int hashSize) {
-	Table* table = m_heap.allocate<Table>(ObjType::Table, arraySize, hashSize);
+	const size_t hashCapacity = Table::hashCapacity(hashSize);
+	m_luaHeap.reserve(Table::trackedHeapBytesForCapacities(static_cast<size_t>(arraySize), hashCapacity));
+	Table* table = m_heap.allocate<Table>(
+		ObjType::Table,
+		m_luaHeap,
+		static_cast<size_t>(arraySize),
+		hashCapacity
+	);
 	trackLocalRoot(valueTable(table));
 	return table;
 }
 
-Closure* CPU::createTrackedClosure(
+Closure* CPU::allocateTrackedClosure(
 	u32 functionAddress,
 	size_t upvalueCount
 ) {
 	auto* closure = m_heap.allocateClosure(upvalueCount);
 	closure->functionAddress = functionAddress;
 	closure->trackedHeapBytes = kClosureHeapBytes + (upvalueCount * kClosureUpvalueSlotHeapBytes);
-	addTrackedLuaHeapBytes(static_cast<ptrdiff_t>(trackedClosureBytes(*closure)));
 	return closure;
 }
 
@@ -397,7 +412,7 @@ void CPU::reset() {
 	m_activeExecutionImage = m_systemImage;
 	Closure* systemResetClosure = &m_staticClosuresByAddress.at(systemResetFunctionAddress);
 	pushFrame(systemResetClosure, nullptr, 0u, 0, 0, false);
-	runHousekeeping();
+	collectHeap();
 }
 
 StringId CPU::internExecutionString(
@@ -1139,8 +1154,6 @@ CpuRuntimeState CPU::captureRuntimeState() const {
 }
 
 void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
-	m_heap.suspendCollection();
-
 	struct RestoredObject {
 		Table* table = nullptr;
 		Closure* closure = nullptr;
@@ -1155,20 +1168,26 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 		const CpuObjectState& objectState = state.objects[index];
 		switch (objectState.kind) {
 			case CpuObjectState::Kind::Table:
-				restoredObjects[index].table = createTable(0, 0);
+				m_luaHeap.restoreAllocate(Table::trackedHeapBytesForCapacities(0, 0));
+				restoredObjects[index].table = m_heap.allocate<Table>(ObjType::Table, m_luaHeap, 0, 0);
 				restoredObjects[index].table->hashId = objectState.hashId;
 				m_heap.observeHashId(objectState.hashId);
 				break;
 			case CpuObjectState::Kind::Closure: {
 				const size_t upvalueCount = objectState.upvalues.size();
-				restoredObjects[index].closure = objectState.closureCanonical
-					? &m_staticClosuresByAddress.find(objectState.functionAddress)->second
-					: createTrackedClosure(objectState.functionAddress, upvalueCount);
+				if (objectState.closureCanonical) {
+					restoredObjects[index].closure = &m_staticClosuresByAddress.find(objectState.functionAddress)->second;
+				} else {
+					const size_t heapBytes = kClosureHeapBytes + (upvalueCount * kClosureUpvalueSlotHeapBytes);
+					m_luaHeap.restoreAllocate(heapBytes);
+					restoredObjects[index].closure = allocateTrackedClosure(objectState.functionAddress, upvalueCount);
+				}
 				restoredObjects[index].closure->hashId = objectState.hashId;
 				m_heap.observeHashId(objectState.hashId);
 				break;
 			}
 			case CpuObjectState::Kind::Upvalue: {
+				m_luaHeap.restoreAllocate(kUpvalueHeapBytes);
 				auto* upvalue = m_heap.allocate<Upvalue>(ObjType::Upvalue);
 				upvalue->open = false;
 				upvalue->index = objectState.upvalueIndex;
@@ -1176,7 +1195,6 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 				upvalue->value = valueNil();
 				upvalue->hashId = objectState.hashId;
 				m_heap.observeHashId(objectState.hashId);
-				addTrackedLuaHeapBytes(kUpvalueHeapBytes);
 				restoredObjects[index].upvalue = upvalue;
 				break;
 			}
@@ -1262,6 +1280,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	completionValues.clear();
 	clearCallStack();
 	globals->clear();
+	globals->prepareRestoreStorage(0, Table::hashCapacity(static_cast<int>(state.globals.size())));
 	m_activeExecutionImage = executionImage;
 	for (Value& value : m_systemGlobalValues) {
 		value = valueNil();
@@ -1369,7 +1388,6 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	m_nonMaskableInterruptPending = state.nonMaskableInterruptPending;
 	m_yieldRequested = state.yieldRequested;
 	collectHeap();
-	m_heap.resumeCollection();
 }
 
 void CPU::requestYield() {
@@ -1620,7 +1638,7 @@ bool CPU::handleProtectedCallError(Value errorValue) {
 		unwindToDepth(callerIndex + 1);
 		if (continuation.kind != ProtectedCallKind::XPCallBody) {
 			const Value result = continuation.kind == ProtectedCallKind::XPCallHandler
-				? valueString(m_stringPool.intern("error in error handling"))
+				? m_errorInErrorHandlingValue
 				: errorValue;
 			finishProtectedCallWithError(continuationIndex, result);
 			return true;
@@ -1637,7 +1655,7 @@ bool CPU::handleProtectedCallError(Value errorValue) {
 		} catch (const LuaThrownValueError& handlerError) {
 			errorValue = handlerError.value;
 		} catch (const LuaExecutionError& handlerError) {
-			errorValue = valueString(m_stringPool.intern(handlerError.what()));
+			errorValue = m_luaFaultErrorValues[handlerError.reason];
 		}
 	}
 }
@@ -2008,12 +2026,16 @@ dispatch_continue:
 	#undef IMAGE
 	#undef FRAME
 #endif
+		} catch (const LuaOutOfMemorySignal&) {
+			if (!handleProtectedCallError(m_luaFaultErrorValues[LUA_FAULT_REASON_OUT_OF_MEMORY])) {
+				enterLuaFaultException(LUA_FAULT_REASON_OUT_OF_MEMORY);
+			}
 		} catch (const LuaThrownValueError& error) {
 			if (!handleProtectedCallError(error.value)) {
 				enterLuaFaultException(LUA_FAULT_REASON_EXPLICIT_ERROR);
 			}
 		} catch (const LuaExecutionError& error) {
-			if (!handleProtectedCallError(valueString(m_stringPool.intern(error.what())))) {
+			if (!handleProtectedCallError(m_luaFaultErrorValues[error.reason])) {
 				enterLuaFaultException(error.reason);
 			}
 		}
@@ -2055,15 +2077,12 @@ void CPU::unwindToDepth(int targetDepth) {
 }
 
 void CPU::collectHeap() {
-	m_heap.requestCollection();
-	m_heap.collect();
+	collectHeap(valueNil(), valueNil(), valueNil());
 }
 
-void CPU::runHousekeeping() {
-	enforceLuaHeapBudget();
-	if (m_heap.needsCollection()) {
-		m_heap.collect();
-	}
+void CPU::collectHeap(Value root0, Value root1, Value root2) {
+	m_heap.collect(root0, root1, root2);
+	m_luaHeap.finishCollection(m_luaHeap.usedBytes());
 }
 
 ExecutionDomainId CPU::readFrameExecutionDomain(int frameIndex) const {
@@ -2185,10 +2204,6 @@ Closure* CPU::createClosure(CallFrame& frame) {
 		&& functionRecord.upvalueCount == 0u) {
 		return &m_staticClosuresByAddress.at(functionRecord.address);
 	}
-	auto* closure = createTrackedClosure(
-		functionRecord.address,
-		functionRecord.upvalueCount
-	);
 	if (functionRecord.upvalueCount != 0u) {
 		m_executionAddressSpace.bindReadOnlyView(
 			functionRecord.image->executionDomainId,
@@ -2197,6 +2212,9 @@ Closure* CPU::createClosure(CallFrame& frame) {
 			m_executionReadView
 		);
 	}
+	m_closureUpvalueScratch.resize(functionRecord.upvalueCount);
+	std::fill(m_closureUpvalueScratch.begin(), m_closureUpvalueScratch.end(), nullptr);
+	size_t newUpvalueCount = 0;
 	for (u32 index = 0; index < functionRecord.upvalueCount; ++index) {
 		const u32 upvalueWord = readLE32(
 			m_executionReadView.data() + index * BLUA32_UPVALUE_RECORD_SIZE
@@ -2204,19 +2222,37 @@ Closure* CPU::createClosure(CallFrame& frame) {
 		const u32 upvalueIndex = upvalueWord & BLUA32_UPVALUE_INDEX_MASK;
 		if ((upvalueWord & BLUA32_UPVALUE_IN_STACK_MASK) != 0u) {
 			Upvalue* upvalue = findOpenUpvalue(frame, static_cast<int>(upvalueIndex));
-			if (!upvalue) {
-				upvalue = m_heap.allocate<Upvalue>(ObjType::Upvalue);
-				addTrackedLuaHeapBytes(kUpvalueHeapBytes);
-				upvalue->open = true;
-				upvalue->index = static_cast<int>(upvalueIndex);
-				upvalue->frame = &frame;
-				linkOpenUpvalue(frame, upvalue);
+			if (upvalue) {
+				m_closureUpvalueScratch[index] = upvalue;
+			} else {
+				newUpvalueCount += 1;
 			}
-			closure->upvalues[index] = upvalue;
 		} else {
-			closure->upvalues[index] = frame.closure->upvalues[upvalueIndex];
+			m_closureUpvalueScratch[index] = frame.closure->upvalues[upvalueIndex];
 		}
 	}
+	const size_t closureHeapBytes = kClosureHeapBytes
+		+ (static_cast<size_t>(functionRecord.upvalueCount) * kClosureUpvalueSlotHeapBytes);
+	m_luaHeap.reserve(closureHeapBytes + (newUpvalueCount * kUpvalueHeapBytes));
+	auto* closure = allocateTrackedClosure(
+		functionRecord.address,
+		functionRecord.upvalueCount
+	);
+	for (u32 index = 0; index < functionRecord.upvalueCount; ++index) {
+		Upvalue* upvalue = m_closureUpvalueScratch[index];
+		if (!upvalue) {
+			const u32 upvalueWord = readLE32(
+				m_executionReadView.data() + index * BLUA32_UPVALUE_RECORD_SIZE
+			);
+			upvalue = m_heap.allocate<Upvalue>(ObjType::Upvalue);
+			upvalue->open = true;
+			upvalue->index = static_cast<int>(upvalueWord & BLUA32_UPVALUE_INDEX_MASK);
+			upvalue->frame = &frame;
+			linkOpenUpvalue(frame, upvalue);
+		}
+		closure->upvalues[index] = upvalue;
+	}
+	m_closureUpvalueScratch.clear();
 	return closure;
 }
 

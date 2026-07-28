@@ -130,9 +130,8 @@ DISPATCH_LABEL(SETT) {
 }
 
 DISPATCH_LABEL(NEWT) {
-	auto* table = m_heap.allocate<Table>(ObjType::Table, b, c);
+	auto* table = createTable(b, c);
 	SET_REGISTER_FAST(a, valueTable(table));
-	runHousekeeping();
 	DISPATCH_CONTINUE();
 }
 
@@ -420,7 +419,6 @@ DISPATCH_LABEL(CLOSURE) {
 	}
 	Closure* closure = createClosure(FRAME);
 	SET_REGISTER_FAST(a, valueClosure(closure));
-	runHousekeeping();
 	DISPATCH_CONTINUE();
 }
 
@@ -461,7 +459,10 @@ DISPATCH_LABEL(CALL) {
 		runBuiltinFunction(*asBuiltinFunction(callee), FRAME, a, retCount, argCount);
 		DISPATCH_CONTINUE();
 	}
-	throw LuaExecutionError("Attempted to call a non-function value.");
+	throw LuaExecutionError(
+		"Attempted to call a non-function value.",
+		LUA_FAULT_REASON_CALL_NON_FUNCTION
+	);
 }
 
 DISPATCH_LABEL(RET) {

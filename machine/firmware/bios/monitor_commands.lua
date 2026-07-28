@@ -57,6 +57,7 @@ local lua_fault_reason_metatable_loop<const> = 5
 local lua_fault_reason_iterate_non_table<const> = 6
 local lua_fault_reason_xpcall_handler_not_function<const> = 7
 local lua_fault_reason_explicit_error<const> = 8
+local lua_fault_reason_out_of_memory<const> = 9
 
 struct monitor_command
 	name: string
@@ -104,6 +105,7 @@ rodata lua_fault_reason_registry: lua_fault_reason_entry[] = {
 	{ code = lua_fault_reason_iterate_non_table, description = 'ATTEMPT TO ITERATE A NON-TABLE VALUE' },
 	{ code = lua_fault_reason_xpcall_handler_not_function, description = 'XPCALL ERROR HANDLER MUST BE A FUNCTION' },
 	{ code = lua_fault_reason_explicit_error, description = 'UNHANDLED error() CALL' },
+	{ code = lua_fault_reason_out_of_memory, description = 'OUT OF MEMORY' },
 }
 
 local lua_fault_reason_description<const> = function(reason) -- WHY DO WE NEED TO LOOP THROUGH THE TABLE?

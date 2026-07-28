@@ -1,7 +1,6 @@
 import { ceilLog2, nextPowerOfTwo } from '../common/numeric';
 import { LUA_FAULT_REASON_INDEX_NIL } from '../../spec/blua32/cop0';
 import { LuaExecutionError } from './errors';
-import { addTrackedLuaHeapBytes } from '../memory/lua_heap_usage';
 import {
 	VALUE_TAG,
 	ValueTag,
@@ -12,6 +11,7 @@ import {
 	type Value,
 } from './value';
 import type { Closure } from './closure';
+import type { LuaHeap } from './lua_heap';
 
 // start repeated-sequence-acceptable -- Lua table mutation hot paths keep direct array/hash updates instead of routing through dispatch helpers.
 
@@ -53,18 +53,30 @@ export class Table {
 	private static readonly uint32View = new Uint32Array(Table.numberBuffer);
 	private static readonly rehashIntegerCounts: number[] = [];
 
-	constructor(arraySize: number, hashSize: number) {
+	constructor(
+		private readonly luaHeap: LuaHeap,
+		arraySize: number,
+		hashCapacity: number,
+	) {
 		this.array = new Array<Value>(arraySize);
 		this.array.fill(null);
-		const size = hashSize > 0 ? nextPowerOfTwo(hashSize) : 0;
-		this.hashKeys = new Array<Value>(size);
+		this.hashKeys = new Array<Value>(hashCapacity);
 		this.hashKeys.fill(null);
-		this.hashValues = new Array<Value>(size);
+		this.hashValues = new Array<Value>(hashCapacity);
 		this.hashValues.fill(null);
-		this.hashNext = new Int32Array(size);
+		this.hashNext = new Int32Array(hashCapacity);
 		this.hashNext.fill(TABLE_HASH_NEXT_END);
-		this.hashFree = size > 0 ? size - 1 : -1;
-		addTrackedLuaHeapBytes(this.getTrackedHeapBytes());
+		this.hashFree = hashCapacity > 0 ? hashCapacity - 1 : -1;
+	}
+
+	public static hashCapacity(hashSize: number): number {
+		return hashSize > 0 ? nextPowerOfTwo(hashSize) : 0;
+	}
+
+	public static trackedHeapBytesForCapacities(arrayCapacity: number, hashCapacity: number): number {
+		return TABLE_HEAP_BYTES
+			+ (arrayCapacity * TABLE_ARRAY_SLOT_HEAP_BYTES)
+			+ (hashCapacity * TABLE_HASH_SLOT_HEAP_BYTES);
 	}
 
 	public get metatable(): Table | null {
@@ -131,7 +143,7 @@ export class Table {
 				return;
 			}
 			if (this.hashKeys.length === 0 || this.hashFree < 0) {
-				this.rehash(key);
+				this.rehash(key, value);
 			}
 			this.rawSet(key, value);
 			this.bumpVersion();
@@ -152,7 +164,7 @@ export class Table {
 			return;
 		}
 		if (this.hashKeys.length === 0 || this.hashFree < 0) {
-			this.rehash(key);
+			this.rehash(key, value);
 		}
 		this.rawSet(key, value);
 		this.bumpVersion();
@@ -206,7 +218,7 @@ export class Table {
 			return;
 		}
 		if (this.hashKeys.length === 0 || this.hashFree < 0) {
-			this.rehash(indexValue);
+			this.rehash(indexValue, value);
 		}
 		this.rawSet(indexValue, value);
 		this.bumpVersion();
@@ -236,7 +248,7 @@ export class Table {
 			return;
 		}
 		if (this.hashKeys.length === 0 || this.hashFree < 0) {
-			this.rehash(key);
+			this.rehash(key, value);
 		}
 		this.rawSet(key, value);
 		this.bumpVersion();
@@ -252,7 +264,7 @@ export class Table {
 		this.hashFree = -1;
 		this.hashDeadCount = 0;
 		this.bumpVersion();
-		addTrackedLuaHeapBytes(this.getTrackedHeapBytes() - previousBytes);
+		this.luaHeap.release(previousBytes - this.getTrackedHeapBytes());
 	}
 
 	public forEachEntry(visitor: (key: Value, value: Value) => void): void {
@@ -356,14 +368,29 @@ export class Table {
 		this.hashFree = state.hashFree;
 		this.tableMetatable = state.metatable;
 		this.bumpVersion();
-		addTrackedLuaHeapBytes(this.getTrackedHeapBytes() - previousBytes);
+		this.luaHeap.adjustForRestore(previousBytes, this.getTrackedHeapBytes());
 		return maxDeadKeyHashId;
 	}
 
 	public getTrackedHeapBytes(): number {
-		return TABLE_HEAP_BYTES
-			+ (this.array.length * TABLE_ARRAY_SLOT_HEAP_BYTES)
-			+ (this.hashKeys.length * TABLE_HASH_SLOT_HEAP_BYTES);
+		return Table.trackedHeapBytesForCapacities(this.array.length, this.hashKeys.length);
+	}
+
+	public prepareRestoreStorage(arrayCapacity: number, hashCapacity: number): void {
+		const previousBytes = this.getTrackedHeapBytes();
+		this.array = new Array<Value>(arrayCapacity);
+		this.array.fill(null);
+		this.arrayLength = 0;
+		this.hashKeys = new Array<Value>(hashCapacity);
+		this.hashKeys.fill(null);
+		this.hashValues = new Array<Value>(hashCapacity);
+		this.hashValues.fill(null);
+		this.hashNext = new Int32Array(hashCapacity);
+		this.hashNext.fill(TABLE_HASH_NEXT_END);
+		this.hashFree = hashCapacity > 0 ? hashCapacity - 1 : -1;
+		this.hashDeadCount = 0;
+		this.bumpVersion();
+		this.luaHeap.adjustForRestore(previousBytes, this.getTrackedHeapBytes());
 	}
 
 	public nextEntry(after: Value): [Value, Value] | null {
@@ -534,7 +561,7 @@ export class Table {
 		return -1;
 	}
 
-	private rehash(key: Value): void {
+	private rehash(key: Value, value: Value): void {
 		let totalKeys = 0;
 		const counts = Table.rehashIntegerCounts;
 		let countBins = 0;
@@ -578,7 +605,7 @@ export class Table {
 
 		const hashKeys = totalKeys - arrayKeys;
 		const hashSize = hashKeys > 0 ? nextPowerOfTwo(hashKeys) : 0;
-		this.resize(arraySize, hashSize);
+		this.resize(arraySize, hashSize, key, value);
 	}
 
 	private static countRehashIntegerKey(counts: number[], countBins: number, index: number): number {
@@ -591,8 +618,12 @@ export class Table {
 		return countBins;
 	}
 
-	private resize(newArraySize: number, newHashSize: number): void {
+	private resize(newArraySize: number, newHashSize: number, key: Value, value: Value): void {
 		const previousBytes = this.getTrackedHeapBytes();
+		const resizedBytes = Table.trackedHeapBytesForCapacities(newArraySize, newHashSize);
+		if (resizedBytes > previousBytes) {
+			this.luaHeap.reserve(resizedBytes - previousBytes, this, key, value);
+		}
 		const oldArray = this.array;
 		const oldHashKeys = this.hashKeys;
 		const oldHashValues = this.hashValues;
@@ -620,7 +651,9 @@ export class Table {
 				this.rawSet(key, oldHashValues[i]);
 			}
 		}
-		addTrackedLuaHeapBytes(this.getTrackedHeapBytes() - previousBytes);
+		if (resizedBytes < previousBytes) {
+			this.luaHeap.release(previousBytes - resizedBytes);
+		}
 	}
 
 	private rawSet(key: Value, value: Value): void {
@@ -644,12 +677,12 @@ export class Table {
 
 	private insertHash(key: Value, value: Value): void {
 		if (this.hashDeadCount > 0) {
-			this.rehash(key);
+			this.rehash(key, value);
 			this.rawSet(key, value);
 			return;
 		}
 		if (this.hashKeys.length === 0) {
-			this.rehash(key);
+			this.rehash(key, value);
 			this.rawSet(key, value);
 			return;
 		}
@@ -664,7 +697,7 @@ export class Table {
 		}
 		const freeIndex = this.getFreeIndex();
 		if (freeIndex < 0) {
-			this.rehash(key);
+			this.rehash(key, value);
 			this.rawSet(key, value);
 			return;
 		}
@@ -695,7 +728,7 @@ export class Table {
 			return;
 		}
 		if (this.hashDeadCount > 0) {
-			this.rehash(null);
+			this.rehash(null, null);
 			const arrayIndex = this.getArrayIndex(key);
 			if (arrayIndex !== null && arrayIndex < this.array.length) {
 				this.array[arrayIndex] = null;
