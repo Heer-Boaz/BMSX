@@ -35,14 +35,14 @@ type DuplicateSummary = {
 	sortedKinds: Array<[DuplicateKind, number]>;
 };
 
-export function printHelp(): void {
+export function printHelp(defaultRoots: readonly string[]): void {
 	console.log('Usage: npx tsx scripts/analysis/code_quality.ts [--csv] [--summary-only] [--fail-on-issues] [--root <path> ...]');
 	console.log('');
 	console.log('Options:');
 	console.log('  --csv                  Output CSV report');
 	console.log('  --fail-on-issues       Exit with code 1 when issues are found');
 	console.log('  --summary-only         Print only high-level summaries (no per-issue detail)');
-	console.log('  --root <path>          Extra root directory (default: src, scripts, tests, tools)');
+	console.log(`  --root <path>          Extra root directory (default: ${defaultRoots.join(', ')})`);
 	console.log('  --help                 Show this help message');
 	console.log('');
 	console.log('When a C++ folder is detected, extra flags are passed directly to:');
@@ -57,7 +57,7 @@ export function parseArgs(argv: string[], defaultRoots: readonly string[]): CliO
 	for (let index = 0; index < argv.length; index += 1) {
 		const arg = argv[index];
 		if (arg === '--help') {
-			printHelp();
+			printHelp(defaultRoots);
 			process.exit(0);
 		}
 		if (arg === '--csv') {
