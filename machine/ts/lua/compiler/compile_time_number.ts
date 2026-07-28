@@ -1,5 +1,5 @@
 import { LuaBinaryOperator } from '../syntax/ast';
-import { luaFloorDivide, luaModulo } from '../numeric';
+import { luaFloorDivide, luaModulo } from '../../spec/blua32/numeric';
 
 export function evaluateCompileTimeNumberBinaryOperator(operator: LuaBinaryOperator, left: number, right: number): number | undefined {
 	switch (operator) {

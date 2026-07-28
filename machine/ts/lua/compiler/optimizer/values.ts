@@ -4,7 +4,7 @@ import { MAX_SIGNED_BX, MIN_SIGNED_BX } from '../../../spec/blua32/instruction_f
 import { utf8CodepointCount } from '../../../common/utf8';
 import type { ProgramConstant } from '../program';
 import type { Instruction, OptimizationContext } from './index';
-import { luaFloorDivide, luaModulo } from '../../numeric';
+import { luaFloorDivide, luaModulo } from '../../../spec/blua32/numeric';
 
 export const enum ConstValueKind {
 	Nil,

@@ -80,7 +80,7 @@ import {
 import { MEMORY_ACCESS_KIND_ALIGNMENT_MASKS, MemoryAccessKind } from '../../spec/blua32/memory_access_kind';
 import { ScratchBuffer } from '../../common/scratchbuffer';
 import { ScratchArrayStack } from '../../common/scratchstack';
-import { luaFloorDivide, luaModulo } from '../../lua/numeric';
+import { luaFloorDivide, luaModulo } from '../../spec/blua32/numeric';
 import { ceilDiv4 } from '../common/numeric';
 import { CART_ROM_BASE, RAM_BASE } from '../../spec/bmsx/memory_map';
 import { BuiltinFunctionId } from '../../spec/blua32/builtin';

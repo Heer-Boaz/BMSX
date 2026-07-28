@@ -59,7 +59,7 @@ import { isLuaHandlerFunction } from './handler_cache';
 import type { LuaInteropAdapter } from './interop';
 import { getCachedLuaParse } from '../../../../machine/ts/lua/analysis/cache';
 import { ScratchBuffer } from '../../../../machine/ts/common/scratchbuffer';
-import { luaModulo } from '../../../../machine/ts/lua/numeric';
+import { luaModulo } from '../../../../machine/ts/spec/blua32/numeric';
 
 type ExecutionFrame = any;
 type LabelScope = any;

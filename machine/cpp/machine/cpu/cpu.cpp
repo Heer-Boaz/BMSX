@@ -1,7 +1,7 @@
 #include "machine/cpu/cpu.h"
 #include "common/endian.h"
 #include "machine/common/numeric.h"
-#include "lua/numeric.h"
+#include "spec/blua32/numeric.h"
 #include "machine/devices/irq/controller.h"
 #include "spec/blua32/image_format.h"
 #include "machine/memory/memory.h"
