@@ -1,7 +1,7 @@
 // IMPORTANT: IMPORTS TO `bmsx/blabla` ARE NOT ALLOWED!!!!!! THIS WILL CAUSE PROBLEMS WITH .GLSL FILES BEING INCLUDED AND THE ROMPACKER CANNOT HANDLE THIS!!!!!
-import type { MachineInitializationOptions } from '../../machine/ts/core/machine_manager';
 import { parseCartHeader } from '../../machine/ts/rompack/format';
 import { decodeRomToc } from '../../machine/ts/rompack/toc';
+import type { MachineHostInitializationOptions } from '../../runtime/machine_runtime';
 import { BrowserPlatform } from './platform';
 import { createAudioContext, resumeAudio, type BootAudioState } from './boot_audio';
 
@@ -10,14 +10,14 @@ const audioState: BootAudioState = {
 };
 
 let bootAnimationComplete = false;
-let startingGamepadIndex: number;
+let startingGamepadIndex = -1;
 let enableOnscreenGamepad = false;
 
 export async function prepareBrowserStartup(
 	debug: boolean,
 	systemRomPath: string,
 	defaultRom: string,
-): Promise<MachineInitializationOptions> {
+): Promise<MachineHostInitializationOptions> {
 	const romUrl = getRomFromUrlParameter() || defaultRom;
 	if (!romUrl) {
 		throw new Error('Missing required URL parameter: ?rom=<path-to-rom>');

@@ -3,11 +3,13 @@
  */
 
 #include "platform.h"
+#include "core/host_overlay_menu.h"
 #include "core/machine_manager.h"
 #include "common/endian.h"
 #include "common/primitives.h"
 #include "input/gamepad_buttons.h"
 #include "input/hid_keys.h"
+#include "input/manager.h"
 #include "input/pointer_controls.h"
 #include "render/backend/pass/library.h"
 #include "render/shared/bmsx_font.h"
@@ -212,6 +214,10 @@ LibretroPlatform::LibretroPlatform(
 	m_frame_loop = std::make_unique<LibretroFrameLoop>();
 	m_lifecycle = std::make_unique<DefaultLifecycle>();
 	m_input_hub = std::make_unique<LibretroInputHub>(this, supervisorRequestLine);
+	Input::instance().initialize(*m_input_hub, *m_lifecycle);
+	m_input_focus_subscription = m_lifecycle->onFocusChange([](bool) {
+		hostOverlayMenu().resetInputState();
+	});
 	m_audio_service = std::make_unique<LibretroAudioService>(this);
 	m_video_output = std::make_unique<LibretroVideoOutput>(
 		m_framebuffer,
@@ -264,6 +270,8 @@ LibretroPlatform::~LibretroPlatform() {
 	// Shutdown the machine manager before destroying platform components
 	m_machine_manager->shutdown();
 	m_machine_manager.reset();
+	m_input_focus_subscription.unsubscribe();
+	Input::instance().shutdown();
 	m_video_resize_subscription.unsubscribe();
 	m_video_presenter.reset();
 	m_default_font.reset();

@@ -1,7 +1,6 @@
-import { machineManager } from '../core/machine_manager';
 import { getPressedState, makeButtonState, resetObject } from './manager';
 import type { ButtonState, InputHandler, KeyOrButtonId2ButtonState } from './models';
-import type { VibrationParams } from '../platform';
+import type { HostClock, VibrationParams } from '../platform';
 import {
 	type InputControllerPadSnapshot,
 	INP_POINTER_BUTTON_AUX,
@@ -49,7 +48,10 @@ export class PointerInput implements InputHandler {
 	private inputControllerY = 0;
 	private inputControllerWheel = 0;
 
-	constructor(public readonly deviceId: string = 'pointer:0') {
+	constructor(
+		private readonly clock: HostClock,
+		public readonly deviceId: string = 'pointer:0',
+	) {
 		this.reset();
 	}
 
@@ -60,7 +62,7 @@ export class PointerInput implements InputHandler {
 	public applyVibrationEffect(_params: VibrationParams): void { }
 
 	public pollInput(): void {
-		const now = machineManager.platform.clock.now();
+		const now = this.clock.now();
 		for (const key of Object.keys(this.buttonStates)) {
 			const state = this.buttonStates[key];
 			if (!state) continue;
@@ -145,7 +147,7 @@ export class PointerInput implements InputHandler {
 		const target = { ...state, value2d: state.value2d ? ([state.value2d[0], state.value2d[1]] as [number, number]) : null };
 		if (target.pressed) {
 			if (!target.pressId) target.pressId = this.nextPressId++;
-			if (!target.pressedAtMs) target.pressedAtMs = target.timestamp ?? machineManager.platform.clock.now();
+			if (!target.pressedAtMs) target.pressedAtMs = target.timestamp ?? this.clock.now();
 		} else {
 			target.consumed = false;
 		}

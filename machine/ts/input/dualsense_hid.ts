@@ -7,7 +7,7 @@
  * 0x09cc = DualShock 4
  */
 import { machineManager } from '../core/machine_manager';
-import type { PlatformHIDDevice, PlatformHIDInputReportEvent } from '../platform';
+import type { Platform, PlatformHIDDevice, PlatformHIDInputReportEvent } from '../platform';
 import { formatNumberAsHex } from '../common/byte_hex_string';
 
 
@@ -47,18 +47,17 @@ export class DualSenseHID {
 	/** Shared lock to avoid overlapping permission prompts */
 	private static pendingRequest: Promise<PlatformHIDDevice[]> = null;
 
+	public constructor(private readonly platform: Platform) {
+	}
 
-	private static async requestHidPermission(ids?: { vendorId: number; productId: number }): Promise<PlatformHIDDevice[]> {
-		const hid = machineManager.platform.hid;
+	private async requestHidPermission(ids?: { vendorId: number; productId: number }): Promise<PlatformHIDDevice[]> {
+		const hid = this.platform.hid;
 		if (!hid?.isSupported()) {
 			throw new Error('[DualSenseHID] HID API not available on this platform.');
 		}
 		if (!DualSenseHID.pendingRequest) {
 			// Pause the game while the browser permission dialog is visible
-			if (!machineManager) {
-				throw new Error('[DualSenseHID] Global game state not initialised when requesting HID permissions.');
-			}
-			const wasPaused = !!machineManager.paused;
+			const wasPaused = machineManager.paused;
 			if (!wasPaused) {
 				machineManager.paused = true;
 			}
@@ -134,7 +133,7 @@ export class DualSenseHID {
 
 	/** Requests the Sony HID device and initializes it. */
 	public async initForDevice(gamepadIndex: number, description: string): Promise<void> {
-		const hid = machineManager.platform.hid;
+		const hid = this.platform.hid;
 		if (!hid?.isSupported()) {
 			console.warn("HID API not supported on this platform.");
 			return; // HID not supported (e.g. Safari)
@@ -174,14 +173,14 @@ export class DualSenseHID {
 
 		if (candidates.length === 1) {
 			this.device = candidates[0];
+		} else {
+			// For multiple or zero candidates, prompt the user with appropriate filters
+			if (candidates.length > 1) {
+				console.info(`Multiple HID devices match ${ids ? `VID/PID (${formatNumberAsHex(ids.vendorId)}:${formatNumberAsHex(ids.productId)})` : 'accepted Sony devices'}. Prompting user to select.`);
 			} else {
-				// For multiple or zero candidates, prompt the user with appropriate filters
-				if (candidates.length > 1) {
-					console.info(`Multiple HID devices match ${ids ? `VID/PID (${formatNumberAsHex(ids.vendorId)}:${formatNumberAsHex(ids.productId)})` : 'accepted Sony devices'}. Prompting user to select.`);
-				} else {
-					console.info(`No matching HID device found in known devices. Prompting user to select.`);
-				}
-				const requested = await DualSenseHID.requestHidPermission(ids);
+				console.info(`No matching HID device found in known devices. Prompting user to select.`);
+			}
+			const requested = await this.requestHidPermission(ids);
 			if (requested.length) {
 				// Prefer a matching unused device, or the first one
 				this.device = requested.find(d => !used.has(d) && (ids ? this.matchIds(d, ids) : true)) ?? requested[0];
@@ -390,9 +389,9 @@ export class DualSenseHID {
 
 	private scheduleRumbleStop(duration: number): void {
 		this.clearRumbleTimer();
-		const start = machineManager.platform.clock.now();
-		const handle = machineManager.platform.frames.start(() => {
-			if (machineManager.platform.clock.now() - start >= duration) {
+		const start = this.platform.clock.now();
+		const handle = this.platform.frames.start(() => {
+			if (this.platform.clock.now() - start >= duration) {
 				handle.stop();
 				this.rumbleTimer = null;
 				this.stop();

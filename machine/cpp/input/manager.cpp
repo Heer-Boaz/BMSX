@@ -1,7 +1,7 @@
 #include "input/manager.h"
 
-#include "core/machine_manager.h"
 #include "input/pointer_controls.h"
+#include "platform/platform.h"
 
 namespace bmsx {
 
@@ -10,14 +10,17 @@ Input& Input::instance() {
 	return input;
 }
 
-void Input::initialize() {
-	Platform* platform = MachineManager::instance().platform();
-	m_platformInputSub = platform->inputHub()->subscribe([this](const InputEvt& event) {
+void Input::initialize(InputHub& inputHub, Lifecycle& lifecycle) {
+	m_platformInputSub = inputHub.subscribe([this](const InputEvt& event) {
 		handleInputEvent(event);
+	});
+	m_focusSub = lifecycle.onFocusChange([this](bool) {
+		resetInputState();
 	});
 }
 
 void Input::shutdown() {
+	m_focusSub.unsubscribe();
 	m_platformInputSub.unsubscribe();
 	resetInputState();
 }

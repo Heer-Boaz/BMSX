@@ -21,8 +21,6 @@ export interface MachineInitializationOptions {
 	systemRom: Uint8Array;
 	cartridgeSlots: [Uint8Array | null, Uint8Array | null];
 	debug?: boolean;
-	startingGamepadIndex?: number;
-	enableOnscreenGamepad?: boolean;
 	platform: Platform;
 }
 
@@ -127,8 +125,6 @@ export class MachineManager {
 			systemRom,
 			cartridgeSlots,
 			debug = false,
-			startingGamepadIndex = null,
-			enableOnscreenGamepad = false,
 			platform,
 		} = options;
 		const systemImage = parseRomImage(systemRom, 'system');
@@ -170,12 +166,6 @@ export class MachineManager {
 		this.running = false;
 		this._paused = false;
 		this._debug = debug;
-
-		Input.initialize(startingGamepadIndex); // Init input module
-		Input.instance.bind();
-		if (enableOnscreenGamepad || this.input.isOnscreenGamepadEnabled) {
-			this.input.enableOnscreenGamepad();
-		}
 
 		const timing = resolveRuntimeTiming(PSX_MACHINE_SPEC.cpuFreqHz);
 		const runtime = new Runtime({

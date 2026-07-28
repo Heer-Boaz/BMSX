@@ -1,10 +1,9 @@
 import { getPressedState, makeButtonState, resetObject } from './manager';
 import type { ButtonState, InputHandler, KeyOrButtonId2ButtonState } from './models';
 import { inputControllerGamepadButtonBit } from './gamepad_buttons';
-import type { InputDevice } from '../platform';
+import type { InputDevice, Platform } from '../platform';
 import type { VibrationParams } from '../platform';
 import { DualSenseHID } from './dualsense_hid';
-import { machineManager } from '../core/machine_manager';
 import {
 	INPUT_CONTROLLER_PAD_AXIS_COUNT,
 	type InputControllerPadSnapshot,
@@ -15,13 +14,19 @@ export class GamepadInput implements InputHandler {
 	private readonly buttonStates: KeyOrButtonId2ButtonState = {};
 	private inputControllerButtons = 0;
 	private readonly inputControllerAxes = new Float32Array(INPUT_CONTROLLER_PAD_AXIS_COUNT);
-	private readonly hidPad = new DualSenseHID();
+	private readonly hidPad: DualSenseHID;
 	private nextPressId = 1;
 	private lastPollTime = 0;
 
 	private device: InputDevice;
 
-	constructor(public readonly deviceId: string, public readonly description: string, device: InputDevice) {
+	constructor(
+		private readonly platform: Platform,
+		public readonly deviceId: string,
+		public readonly description: string,
+		device: InputDevice,
+	) {
+		this.hidPad = new DualSenseHID(platform);
 		this.device = device;
 		this.reset();
 	}
@@ -40,7 +45,7 @@ export class GamepadInput implements InputHandler {
 	}
 
 	public pollInput(): void {
-		const now = machineManager.platform.clock.now();
+		const now = this.platform.clock.now();
 		const prevPollTime = this.lastPollTime;
 		this.lastPollTime = now;
 

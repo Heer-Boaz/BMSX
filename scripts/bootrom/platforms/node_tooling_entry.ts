@@ -8,7 +8,6 @@ import {
 import { createHeadlessIdeHarness } from '../../../ide/testing/headless_harness';
 import {
 	machineManager,
-	type MachineInitializationOptions,
 } from '../../../machine/ts/core/machine_manager';
 import {
 	HEADLESS_DEFAULT_FRAME_INTERVAL_MS,
@@ -18,6 +17,7 @@ import {
 	prepareMachineHost,
 	startMachineHostFrames,
 	type MachineHost,
+	type MachineHostInitializationOptions,
 } from '../../../runtime/machine_runtime';
 import { CpuProfilerSession, formatCpuProfilerReport } from '../cpu_profiler';
 import {
@@ -89,10 +89,12 @@ async function main(): Promise<void> {
 		frameIntervalMs: options.frameIntervalMs,
 		unpaced: true,
 	});
-	const bootOptions: MachineInitializationOptions = {
+	const bootOptions: MachineHostInitializationOptions = {
 		cartridgeSlots: [slot0Rom, slot1Rom],
 		systemRom,
 		debug: options.debug,
+		startingGamepadIndex: -1,
+		enableOnscreenGamepad: false,
 		platform,
 	};
 	const inputLogger = (message: string): void => {

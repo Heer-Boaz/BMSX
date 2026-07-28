@@ -1,7 +1,6 @@
-import { machineManager } from '../core/machine_manager';
 import { getPressedState, Input, makeButtonState, resetObject } from './manager';
 import type { ButtonState, InputHandler, KeyboardButtonId, KeyOrButtonId2ButtonState } from './models';
-import type { VibrationParams } from '../platform';
+import type { HostClock, VibrationParams } from '../platform';
 import { INPUT_CONTROLLER_KEY_WORD_COUNT, type InputControllerPadSnapshot, type InputControllerSnapshot } from '../machine/devices/input/contracts';
 import { hidKeyUsageForCode } from './hid_keys';
 
@@ -41,7 +40,10 @@ export class KeyboardInput implements InputHandler {
 
 	private nextPressId = 1;
 
-	constructor(public readonly deviceId: string = 'keyboard:0') {
+	constructor(
+		private readonly clock: HostClock,
+		public readonly deviceId: string = 'keyboard:0',
+	) {
 		this.keyStates = {};
 		this.gamepadButtonStates = {};
 		this.reset();
@@ -141,7 +143,7 @@ export class KeyboardInput implements InputHandler {
 	 * @returns void
 	 */
 	pollInput(): void {
-		const now = machineManager.platform.clock.now();
+		const now = this.clock.now();
 		// Update existing keys in place, create states on demand
 		Object.keys(this.keyStates).forEach(buttonId => {
 			const prev = this.gamepadButtonStates[buttonId] ?? makeButtonState();
@@ -229,7 +231,7 @@ export class KeyboardInput implements InputHandler {
 	 * @param key_code - The button ID or string representing the key.
 	 */
 	keydown(key_code: KeyboardButtonId | string): void {
-		const now = machineManager.platform.clock.now();
+		const now = this.clock.now();
 		const state = this.keyStates[key_code] ?? (this.keyStates[key_code] = makeButtonState());
 		if (!state.pressed) {
 			state.pressed = true;
@@ -250,7 +252,7 @@ export class KeyboardInput implements InputHandler {
 		const state = this.keyStates[key_code];
 		if (!state || (!state.pressed && !this.pendingPresses.has(key_code))) return;
 		state.pressed = false;
-		state.timestamp = machineManager.platform.clock.now();
+		state.timestamp = this.clock.now();
 		state.releasedAtMs = state.timestamp;
 		this.pendingReleases.add(key_code);
 		this.setKeyUsageWord(key_code, false);

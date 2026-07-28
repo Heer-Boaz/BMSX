@@ -9,11 +9,14 @@
 
 namespace bmsx {
 
+class InputHub;
+class Lifecycle;
+
 class Input final : public RuntimeInputSource {
 public:
 	static Input& instance();
 
-	void initialize();
+	void initialize(InputHub& inputHub, Lifecycle& lifecycle);
 	void shutdown();
 	void resetInputState();
 	void pollInput();
@@ -42,6 +45,7 @@ private:
 	f32 m_pointerWheel = 0.0F;
 	bool m_pointerWheelPending = false;
 	SubscriptionHandle m_platformInputSub;
+	SubscriptionHandle m_focusSub;
 	bool m_supervisorRequestLineHigh = false;
 	f64 m_frameDurationMs = 1000.0 / 60.0;
 };

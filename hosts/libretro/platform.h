@@ -257,6 +257,7 @@ private:
 	std::unique_ptr<VideoPresenter> m_video_presenter;
 	std::unique_ptr<BFont> m_default_font;
 	SubscriptionHandle m_video_resize_subscription;
+	SubscriptionHandle m_input_focus_subscription;
 
 	// Save RAM
 	std::vector<uint8_t> m_save_ram;

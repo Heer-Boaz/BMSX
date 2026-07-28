@@ -63,6 +63,8 @@ async function main(): Promise<void> {
 		systemRom,
 		cartridgeSlots: [slot0Rom, slot1Rom],
 		debug,
+		startingGamepadIndex: -1,
+		enableOnscreenGamepad: false,
 		platform,
 	});
 	startMachineHostFrames(host);

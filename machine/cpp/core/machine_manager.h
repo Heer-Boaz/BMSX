@@ -180,7 +180,6 @@ private:
 
 	static MachineManager* s_instance;
 
-	SubscriptionHandle m_focus_sub;
 };
 
 } // namespace bmsx

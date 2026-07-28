@@ -51,11 +51,6 @@ bool MachineManager::initialize(Platform* platform) {
 
 	m_platform = platform;
 
-	Input::instance().initialize();
-	m_focus_sub = platform->lifecycle()->onFocusChange([](bool) {
-		Input::instance().resetInputState();
-		hostOverlayMenu().resetInputState();
-	});
 	m_sound_master = std::make_unique<SoundMaster>();
 	registry().registerObject(m_sound_master.get());
 
@@ -70,10 +65,6 @@ void MachineManager::shutdown() {
 
 	stop();
 	unloadRom();
-	m_focus_sub.unsubscribe();
-	Input::instance().shutdown();
-	hostOverlayMenu().resetInputState();
-
 	// Clear registry (keeps persistent objects)
 	registry().deregister(m_sound_master.get(), true);
 	m_sound_master.reset();

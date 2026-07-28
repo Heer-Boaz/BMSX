@@ -1,7 +1,4 @@
-import {
-	machineManager,
-	type MachineInitializationOptions,
-} from '../../machine/ts/core/machine_manager';
+import { machineManager } from '../../machine/ts/core/machine_manager';
 import { runGate } from '../../machine/ts/common/taskgate';
 import { HostOverlayMenu } from '../../runtime/host_overlay_menu';
 import { RenderPresentationState } from '../../runtime/presentation_state';
@@ -11,11 +8,14 @@ import { loadRomToolingMedia } from '../../machine/ts/rompack/tooling/media';
 import { startPreparedRuntime } from './blua32_boot';
 import { runWorkbenchHostFrame } from './host_frame';
 import * as workbenchMode from './mode';
-import { initializeMachineHost } from '../../runtime/machine_runtime';
+import {
+	initializeMachineHost,
+	type MachineHostInitializationOptions,
+} from '../../runtime/machine_runtime';
 import type { Platform } from '../../machine/ts/platform/platform';
 
 export async function prepareWorkbenchRuntime(
-	options: MachineInitializationOptions,
+	options: MachineHostInitializationOptions,
 ): Promise<RuntimeIdeState> {
 	const media = await loadRomToolingMedia(
 		options.systemRom,

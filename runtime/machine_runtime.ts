@@ -6,6 +6,7 @@ import { renderGate, runGate } from '../machine/ts/common/taskgate';
 import type { Runtime } from '../machine/ts/machine/runtime/runtime';
 import { captureRuntimeSaveStateBytes } from '../machine/ts/machine/runtime/save_state/codec';
 import { gxGpuDisplayModeScreenWidth, gxGpuVerticalVisibleLines } from '../machine/ts/machine/devices/gx/gpu_display';
+import { Input } from '../machine/ts/input/manager';
 import type { Platform } from '../machine/ts/platform/platform';
 import { RenderPassLibrary } from '../machine/ts/render/backend/pass/library';
 import { Font } from '../machine/ts/render/shared/bmsx_font';
@@ -13,6 +14,11 @@ import { VideoPresenter } from '../machine/ts/render/video_presenter';
 import { HostOverlayMenu } from './host_overlay_menu';
 import { runMachineHostFrame } from './host_frame';
 import { RenderPresentationState } from './presentation_state';
+
+export interface MachineHostInitializationOptions extends MachineInitializationOptions {
+	startingGamepadIndex: number;
+	enableOnscreenGamepad: boolean;
+}
 
 export class MachineHost {
 	public constructor(
@@ -36,8 +42,12 @@ export class MachineHost {
 }
 
 export async function initializeMachineHost(
-	options: MachineInitializationOptions,
+	options: MachineHostInitializationOptions,
 ): Promise<MachineHost> {
+	const input = Input.initialize(options.platform, options.startingGamepadIndex);
+	if (options.enableOnscreenGamepad) {
+		input.enableOnscreenGamepad();
+	}
 	const runtime = machineManager.initialize(options);
 	const output = options.platform.videoOutput;
 	const gpuOutput = runtime.machine.gxGpu.readDeviceOutput();
@@ -67,7 +77,7 @@ export async function initializeMachineHost(
 }
 
 export async function prepareMachineHost(
-	options: MachineInitializationOptions,
+	options: MachineHostInitializationOptions,
 ): Promise<MachineHost> {
 	const host = await initializeMachineHost(options);
 	const runtime = host.runtime;

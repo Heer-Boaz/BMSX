@@ -1,7 +1,7 @@
 import { getPressedState, Input, makeButtonState, resetObject } from './manager';
 import type { BGamepadButton, ButtonState, InputHandler, KeyOrButtonId2ButtonState } from './models';
 import { inputControllerGamepadButtonBit } from './gamepad_buttons';
-import type { VibrationParams } from '../platform';
+import type { HostClock, VibrationParams } from '../platform';
 import type { InputControllerPadSnapshot, InputControllerSnapshot } from '../machine/devices/input/contracts';
 
 import type {
@@ -12,7 +12,6 @@ import type {
 	OnscreenGamepadPlatformSession,
 	OnscreenPointerEvent,
 } from '../platform';
-import { machineManager } from '../core/machine_manager';
 
 export type {
 	OnscreenGamepadControlKind,
@@ -41,7 +40,10 @@ export class OnscreenGamepad implements InputHandler {
 	private inputControllerButtons = 0;
 	private nextPressId = 1;
 
-	constructor(platform: OnscreenGamepadPlatform) {
+	constructor(
+		platform: OnscreenGamepadPlatform,
+		private readonly clock: HostClock,
+	) {
 		this.platform = platform;
 	}
 
@@ -54,20 +56,6 @@ export class OnscreenGamepad implements InputHandler {
 			return;
 		}
 		this.platform.vibrate(params.duration * params.intensity);
-	}
-
-	public static hideButtons(gamepad_button_ids: string[]): void {
-		const platform = machineManager.platform.onscreenGamepad; // TODO: UGLY!!
-		const elementIds: string[] = [];
-		for (let i = 0; i < gamepad_button_ids.length; i++) {
-			const button = gamepad_button_ids[i];
-			const elementId = OnscreenGamepad.ACTION_BUTTON_TO_ELEMENTID_MAP[button];
-			if (!elementId) {
-				throw new Error(`Error while attempting to hide on-screen button '${button}' - no element mapping was found.`);
-			}
-			elementIds.push(elementId);
-		}
-		platform.hideElements(elementIds);
 	}
 
 	public getButtonState(btn: string): ButtonState {
@@ -84,7 +72,7 @@ export class OnscreenGamepad implements InputHandler {
 
 	public pollInput(): void {
 		const defaultState = makeButtonState();
-		const now = machineManager.platform.clock.now();
+		const now = this.clock.now();
 		const newStates: KeyOrButtonId2ButtonState = {};
 		let inputControllerButtons = 0;
 		for (let i = 0; i < Input.BUTTON_IDS.length; i++) {
@@ -171,19 +159,6 @@ export class OnscreenGamepad implements InputHandler {
 		'rs_knop': { buttons: ['rs' satisfies BGamepadButton] },
 		'select_knop': { buttons: ['select' satisfies BGamepadButton] },
 		'start_knop': { buttons: ['start' satisfies BGamepadButton] },
-	};
-
-	private static readonly ACTION_BUTTON_TO_ELEMENTID_MAP: Record<string, string> = {
-		'a': 'a_knop',
-		'b': 'b_knop',
-		'x': 'x_knop',
-		'y': 'y_knop',
-		'ls': 'ls_knop',
-		'rs': 'rs_knop',
-		'lt': 'lt_knop',
-		'rt': 'rt_knop',
-		'select': 'select_knop',
-		'start': 'start_knop',
 	};
 
 	private static readonly DPAD_NEIGHBORS: Record<string, string[]> = {

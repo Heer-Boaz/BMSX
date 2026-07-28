@@ -1,6 +1,4 @@
-﻿import { machineManager } from '../core/machine_manager';
-import type { Identifier, RegisterablePersistent } from '../rompack/format';
-import { GamepadInput } from './gamepad';
+﻿import { GamepadInput } from './gamepad';
 import type { ActionState, ButtonId, ButtonState, InputEvent, InputHandler, InputMap, InputSource, KeyboardInputMapping, KeyOrButtonId2ButtonState } from './models';
 import { KeyboardInput } from './keyboard';
 import { OnscreenGamepad } from './onscreen_gamepad';
@@ -9,7 +7,7 @@ import { GlobalShortcutRegistry } from './shortcuts';
 import { PendingAssignmentProcessor } from './host/assignment_processor';
 import { PlayerInput } from './player';
 import { PointerInput } from './pointer';
-import type { DeviceKind, InputDevice, InputEvt, SubscriptionHandle } from '../platform';
+import type { DeviceKind, InputDevice, InputEvt, Platform, SubscriptionHandle } from '../platform';
 import {
 	INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_IDS,
 	INPUT_CONTROLLER_KEY_WORD_COUNT,
@@ -531,11 +529,7 @@ export class InputStateManager {
  * Represents the Input class, which manages player inputs and gamepad assignments.
  * Implements the singleton pattern to ensure only one instance exists.
  */
-export class Input implements RegisterablePersistent, RuntimeInputSource {
-	get registrypersistent(): true {
-		return true;
-	}
-
+export class Input implements RuntimeInputSource {
 	/**
 	 * Represents the singleton instance of the Input class.
 	 */
@@ -561,18 +555,11 @@ export class Input implements RegisterablePersistent, RuntimeInputSource {
 	public static readonly DEFAULT_ONSCREENGAMEPAD_PLAYER_INDEX = 1;
 
 	/**
-	 * Gets the singleton instance of the Input class.
-	 * If the instance does not exist, it creates a new one.
-	 * @returns The singleton instance of the Input class.
+	 * Creates the process input owner for the active host.
 	 */
-	public static initialize(startingGamepadIndex?: number): Input {
-		if (Input._instance) {
-			if (typeof startingGamepadIndex === 'number') {
-				Input._instance.startupGamepadIndex = startingGamepadIndex;
-			}
-			return Input._instance;
-		}
-		Input._instance = new Input(startingGamepadIndex);
+	public static initialize(platform: Platform, startingGamepadIndex: number): Input {
+		Input._instance = new Input(platform, startingGamepadIndex);
+		Input._instance.bind();
 		return Input._instance;
 	}
 
@@ -590,7 +577,7 @@ export class Input implements RegisterablePersistent, RuntimeInputSource {
 	private readonly deviceBindings = new Map<string, DeviceBinding>();
 	private readonly inputControllerKeyboardHandlers: InputHandler[] = [];
 	private readonly inputControllerPointerHandlers: InputHandler[] = [];
-	public startupGamepadIndex: number = null;
+	public startupGamepadIndex = -1;
 
 	/**
 	 * Represents an array of pending gamepad assignments.
@@ -705,22 +692,14 @@ export class Input implements RegisterablePersistent, RuntimeInputSource {
 	 * @param key The key pressed that triggered the event.
 	 */
 
-	/**
-	 * Gets the unique identifier of the input, which is a static id.
-	 * @returns 'input'.
-	 */
-	public get id(): Identifier { return 'input'; }
-
-	/**
-	 * Initializes the input system.
-	 * @param debug Whether to enable debug mode. Default is true.
-	 */
-	constructor(startingGamepadIndex?: number) {
-		this.startupGamepadIndex = typeof startingGamepadIndex === 'number' ? startingGamepadIndex : null;
+	private constructor(
+		private readonly platform: Platform,
+		startingGamepadIndex: number,
+	) {
+		this.startupGamepadIndex = startingGamepadIndex;
 		for (let index = 0; index < Input.PLAYERS_MAX; index += 1) {
 			this.playerInputs[index] = new PlayerInput(index + 1, this.frameDurationMs);
 		}
-		// this.bind(); // Bind is called explicitly by machine startup.
 	}
 
 	/**
@@ -733,7 +712,10 @@ export class Input implements RegisterablePersistent, RuntimeInputSource {
 
 	public enableOnscreenGamepad(): void {
 		if (!this.onscreenGamepad) {
-			this.onscreenGamepad = new OnscreenGamepad(machineManager.platform.onscreenGamepad);
+			this.onscreenGamepad = new OnscreenGamepad(
+				this.platform.onscreenGamepad,
+				this.platform.clock,
+			);
 		}
 		this.onscreenGamepad.init();
 		this.getPlayerInput(Input.DEFAULT_ONSCREENGAMEPAD_PLAYER_INDEX).inputHandlers['gamepad'] = this.onscreenGamepad;
@@ -769,30 +751,29 @@ export class Input implements RegisterablePersistent, RuntimeInputSource {
 			this.onscreenGamepad.dispose();
 			this.onscreenGamepad = null;
 		}
-			this.unbind();
-			// Remove the input instance
-			Input._instance = undefined;
-			this.inputControllerKeyboardHandlers.length = 0;
-			this.inputControllerPointerHandlers.length = 0;
+		this.unbind();
+		Input._instance = undefined;
+		this.inputControllerKeyboardHandlers.length = 0;
+		this.inputControllerPointerHandlers.length = 0;
 		this.debugHotkeysPaused = false;
 		this.supervisorRequestLine = false;
 		this.additionalCaptureKeys.clear();
 	}
 
-	public bind(): void {
+	private bind(): void {
 		const defaultPlayerIndex = Input.DEFAULT_KEYBOARD_PLAYER_INDEX;
 		const player = this.getPlayerInput(defaultPlayerIndex);
-		const keyboard = new KeyboardInput('keyboard:0');
-		const pointer = new PointerInput('pointer:0');
+		const keyboard = new KeyboardInput(this.platform.clock, 'keyboard:0');
+		const pointer = new PointerInput(this.platform.clock, 'pointer:0');
 		player.inputHandlers['keyboard'] = keyboard;
 		player.inputHandlers['pointer'] = pointer;
 		this.deviceBindings.set('keyboard:0', { handler: keyboard, source: 'keyboard', assignedPlayer: defaultPlayerIndex, device: null });
 		this.deviceBindings.set('pointer:0', { handler: pointer, source: 'pointer', assignedPlayer: defaultPlayerIndex, device: null });
 		this.inputControllerKeyboardHandlers.push(keyboard);
 		this.inputControllerPointerHandlers.push(pointer);
-		machineManager.platform.input.setKeyboardCapture(this.shouldCaptureKey.bind(this));
+		this.platform.input.setKeyboardCapture(this.shouldCaptureKey.bind(this));
 		this.attachToPlatformInput();
-		this.focusChangeUnsubscribe = machineManager.platform.lifecycle.onFocusChange(this.handleFocusChange);
+		this.focusChangeUnsubscribe = this.platform.lifecycle.onFocusChange(this.handleFocusChange);
 	}
 
 	public setGameplayCaptureEnabled(enabled: boolean): void {
@@ -845,7 +826,7 @@ export class Input implements RegisterablePersistent, RuntimeInputSource {
 			this.platformInputUnsubscribe = null;
 			previous.unsubscribe();
 		}
-		const hub = machineManager.platform.input;
+		const hub = this.platform.input;
 		const devices = hub.devices();
 		for (let i = 0; i < devices.length; i++) {
 			this.registerPlatformDevice(devices[i]);
@@ -970,13 +951,13 @@ export class Input implements RegisterablePersistent, RuntimeInputSource {
 	private onDeviceConnected(device: InputDevice): void {
 		const defaultPlayerIndex = Input.DEFAULT_KEYBOARD_PLAYER_INDEX;
 		if (device.kind === 'gamepad') {
-			const handler = new GamepadInput(device.id, device.description, device);
+			const handler = new GamepadInput(this.platform, device.id, device.description, device);
 			handler.setDevice(device);
 			const binding: DeviceBinding = { handler, source: 'gamepad', assignedPlayer: null, device };
 			this.deviceBindings.set(device.id, binding);
-			const autoAssign = this.startupGamepadIndex !== null && device.id === `gamepad:${this.startupGamepadIndex}`;
+			const autoAssign = this.startupGamepadIndex >= 0 && device.id === `gamepad:${this.startupGamepadIndex}`;
 			if (autoAssign) {
-				this.startupGamepadIndex = null;
+				this.startupGamepadIndex = -1;
 				this.assignGamepadToPlayer(handler, defaultPlayerIndex);
 				void handler.init();
 			} else {
@@ -987,11 +968,11 @@ export class Input implements RegisterablePersistent, RuntimeInputSource {
 		if (!this.deviceBindings.has(device.id)) {
 			const source = this.inferSourceFromKind(device.kind);
 				if (source === 'keyboard') {
-					const handler = new KeyboardInput(device.id);
+					const handler = new KeyboardInput(this.platform.clock, device.id);
 					this.deviceBindings.set(device.id, { handler, source: 'keyboard', assignedPlayer: defaultPlayerIndex, device });
 					this.inputControllerKeyboardHandlers.push(handler);
 				} else if (source === 'pointer') {
-					const handler = new PointerInput(device.id);
+					const handler = new PointerInput(this.platform.clock, device.id);
 					this.deviceBindings.set(device.id, { handler, source: 'pointer', assignedPlayer: defaultPlayerIndex, device });
 					this.inputControllerPointerHandlers.push(handler);
 				}
@@ -1040,7 +1021,7 @@ export class Input implements RegisterablePersistent, RuntimeInputSource {
 		return undefined;
 	}
 
-	public unbind(): void {
+	private unbind(): void {
 		this.detachFromPlatformInput();
 		if (this.focusChangeUnsubscribe) {
 			const unsubscribe = this.focusChangeUnsubscribe;
@@ -1054,7 +1035,7 @@ export class Input implements RegisterablePersistent, RuntimeInputSource {
 	 */
 	public pollInput(): void {
 		this.pollPlatformDevices();
-		const now = machineManager.platform.clock.now();
+		const now = this.platform.clock.now();
 		this.playerInputs.forEach(player => {
 			if (!player) return;
 			player.pollInput(now);
@@ -1125,7 +1106,7 @@ export class Input implements RegisterablePersistent, RuntimeInputSource {
 
 	private pollPlatformDevices(): void {
 		const iterator = this.deviceBindings.values();
-		const clock = machineManager.platform.clock;
+		const clock = this.platform.clock;
 		let current = iterator.next();
 		while (!current.done) {
 			const binding = current.value;
