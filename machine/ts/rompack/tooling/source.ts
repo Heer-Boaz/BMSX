@@ -5,7 +5,7 @@ import type { AssetId, AssetType } from '../toc';
 export type RomSourceLayer = {
 	id: RomImageDomain;
 	index: CartridgeIndex;
-	payload: Uint8Array;
+	bytes: Uint8Array;
 };
 
 export interface RawRomSource {
@@ -21,7 +21,7 @@ export class RomSourceStack implements RawRomSource {
 	private readonly layers: RomSourceLayer[];
 	private readonly idMaps: Map<string, number>[];
 	private readonly pathMaps: Map<string, number>[];
-	private readonly payloads: Partial<Record<RomImageDomain, Uint8Array>>;
+	private readonly bytesByDomain: Partial<Record<RomImageDomain, Uint8Array>>;
 
 	public constructor(layers: RomSourceLayer[]) {
 		this.layers = layers;
@@ -41,11 +41,11 @@ export class RomSourceStack implements RawRomSource {
 			this.idMaps[layerIndex] = idMap;
 			this.pathMaps[layerIndex] = pathMap;
 		}
-		const payloads: Partial<Record<RomImageDomain, Uint8Array>> = {};
+		const bytesByDomain: Partial<Record<RomImageDomain, Uint8Array>> = {};
 		for (const layer of layers) {
-			payloads[layer.id] = layer.payload;
+			bytesByDomain[layer.id] = layer.bytes;
 		}
-		this.payloads = payloads;
+		this.bytesByDomain = bytesByDomain;
 	}
 
 	// disable-next-line single_line_method_pattern -- RawRomSource keeps separate id/path public pins; shared layered lookup ownership stays in findEntry.
@@ -83,18 +83,18 @@ export class RomSourceStack implements RawRomSource {
 	}
 
 	public getBytes(entry: RomAsset): Uint8Array {
-		const payload = this.payloads[entry.payload_id];
-		return payload.slice(entry.start, entry.end);
+		const bytes = this.bytesByDomain[entry.payload_id];
+		return bytes.slice(entry.start, entry.end);
 	}
 
 	public getBytesView(entry: RomAsset): Uint8Array {
-		const payload = this.payloads[entry.payload_id];
-		return payload.subarray(entry.start, entry.end);
+		const bytes = this.bytesByDomain[entry.payload_id];
+		return bytes.subarray(entry.start, entry.end);
 	}
 
 	public getCompiledBytesView(entry: RomAsset): Uint8Array {
-		const payload = this.payloads[entry.payload_id];
-		return payload.subarray(entry.compiled_start, entry.compiled_end);
+		const bytes = this.bytesByDomain[entry.payload_id];
+		return bytes.subarray(entry.compiled_start, entry.compiled_end);
 	}
 
 	private findEntry(key: string, maps: Map<string, number>[]): RomAsset | null {

@@ -10,6 +10,7 @@
 
 #include "common/primitives.h"
 #include <memory>
+#include <span>
 #include <string>
 #include <vector>
 #include <variant>
@@ -127,7 +128,7 @@ public:
 
 	// Decode entire buffer
 	BinValue decode();
-	BinValue decodePayload(const std::vector<std::string>& propNames);
+	BinValue decodePayload(std::span<const std::string> propNames);
 	size_t position() const { return m_pos; }
 
 private:
@@ -148,7 +149,7 @@ private:
 
 	// Property name table (interned strings)
 	std::vector<std::string> m_ownedPropNames;
-	const std::vector<std::string>* m_propNames = &m_ownedPropNames;
+	std::span<const std::string> m_propNames;
 };
 
 /* ============================================================================
@@ -161,7 +162,7 @@ struct BinEncodeOptions {
 };
 
 std::vector<std::string> buildBinaryPropTable(const std::vector<BinValue>& values, bool sortProps = true);
-std::vector<u8> encodeBinaryWithPropTable(const BinValue& value, const std::vector<std::string>& propNames, size_t capacityHint = 0);
+std::vector<u8> encodeBinaryWithPropTable(const BinValue& value, std::span<const std::string> propNames, size_t capacityHint = 0);
 std::vector<u8> encodeBinary(const BinValue& value, const BinEncodeOptions& options = {});
 
 /* ============================================================================
@@ -171,8 +172,8 @@ std::vector<u8> encodeBinary(const BinValue& value, const BinEncodeOptions& opti
 // Decode a binary buffer
 BinValue decodeBinary(const u8* data, size_t size);
 BinValue decodeBinary(const std::vector<u8>& data);
-BinValue decodeBinaryWithPropTable(const u8* data, size_t size, const std::vector<std::string>& propNames);
-BinValue decodeBinaryWithPropTable(const std::vector<u8>& data, const std::vector<std::string>& propNames);
+BinValue decodeBinaryWithPropTable(const u8* data, size_t size, std::span<const std::string> propNames);
+BinValue decodeBinaryWithPropTable(const std::vector<u8>& data, std::span<const std::string> propNames);
 
 } // namespace bmsx
 

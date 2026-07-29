@@ -6,7 +6,6 @@ import type {
 	SourcePosition,
 	SourceRange,
 } from './blua32_symbols';
-import { arrays_equal } from '../../common/arrays_equal';
 import { INSTRUCTION_BYTES, readInstructionWord } from '../../spec/blua32/instruction_format';
 import { OpCode } from '../../spec/blua32/opcode';
 import { compareSourcePosition, sourcePositionInRange, sourceRangeKey } from '../../lua/semantic/source_range';
@@ -110,9 +109,17 @@ function translateSourceRange(
 
 function resumePointShapeMatches(previous: Blua32ResumePoint, fresh: Blua32ResumePoint): boolean {
 	return previous.op === fresh.op
-		&& arrays_equal(previous.liveRegisters, fresh.liveRegisters)
-		&& arrays_equal(previous.uses, fresh.uses)
-		&& arrays_equal(previous.defs, fresh.defs);
+		&& numberArraysEqual(previous.liveRegisters, fresh.liveRegisters)
+		&& numberArraysEqual(previous.uses, fresh.uses)
+		&& numberArraysEqual(previous.defs, fresh.defs);
+}
+
+function numberArraysEqual(a: ArrayLike<number>, b: ArrayLike<number>): boolean {
+	if (a.length !== b.length) return false;
+	for (let index = 0; index < a.length; index += 1) {
+		if (a[index] !== b[index]) return false;
+	}
+	return true;
 }
 
 function activeLocalLayoutMatches(

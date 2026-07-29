@@ -313,7 +313,7 @@ export function installBlua32Media(
 		currentMedia.cartridgeSlots[1],
 	];
 	if (systemLayer !== null) {
-		runtime.machine.memory.installSystemRom(systemLayer.payload);
+		runtime.machine.memory.installSystemRom(systemLayer.bytes);
 		sources.systemInstalledBlua32Sources = rebuilt.system!.sources;
 		sources.systemBlua32MediaDirty = false;
 		systemImage = {
@@ -326,7 +326,7 @@ export function installBlua32Media(
 		if (layer === null) {
 			continue;
 		}
-		runtime.machine.memory.cartridgeController.installRom(slot, layer.payload);
+		runtime.machine.cartridgeController.installRom(slot, layer.bytes);
 		sources.cartridgeSlots[slot]!.installedBlua32Sources = rebuilt.cartridgeSlots[slot]!.sources;
 		sources.cartridgeBlua32MediaDirty[slot] = false;
 		cartridgeImages[slot] = {

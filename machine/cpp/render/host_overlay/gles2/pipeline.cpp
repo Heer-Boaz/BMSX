@@ -4,6 +4,7 @@
 #include "render/backend/gles2/texture_units.h"
 #include "render/host_overlay/gles2/host_overlay_shaders.h"
 #include "render/shared/glyph_runs.h"
+#include "render/shared/submissions.h"
 #include "render/host_overlay/atlas.h"
 #include <cmath>
 #include <string_view>
@@ -257,13 +258,13 @@ void beginHostOverlayGLES2(OpenGLES2Backend& backend, const Host2DPipelineState&
 void renderHost2DEntryGLES2(OpenGLES2Backend& backend, Host2DKind kind, Host2DRef ref) {
 	switch (kind) {
 		case Host2DKind::Img: {
-			const auto& command = *static_cast<const HostImageRenderSubmission*>(ref);
+			const auto& command = *ref.img;
 			drawHostAtlasImageGLES2(backend, command.imgid, command.pos.x, command.pos.y, command.scale.x, command.scale.y, command.flip, command.colorize);
 			return;
 		}
-		case Host2DKind::Rect: drawRectGLES2(backend, *static_cast<const RectRenderSubmission*>(ref)); return;
-		case Host2DKind::Poly: drawPolyGLES2(backend, *static_cast<const PolyRenderSubmission*>(ref)); return;
-		case Host2DKind::Glyphs: drawGlyphsGLES2(backend, *static_cast<const GlyphRenderSubmission*>(ref)); return;
+		case Host2DKind::Rect: drawRectGLES2(backend, *ref.rect); return;
+		case Host2DKind::Poly: drawPolyGLES2(backend, *ref.poly); return;
+		case Host2DKind::Glyphs: drawGlyphsGLES2(backend, *ref.glyphs); return;
 	}
 }
 

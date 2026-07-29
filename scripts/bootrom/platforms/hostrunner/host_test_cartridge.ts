@@ -89,5 +89,5 @@ export async function buildHostTestCartridge(
 		systemImage,
 		systemSymbols,
 	});
-	return buildBlua32Tail({ id: 'cart', index: cartIndex, payload: cartridge }, linked).payload;
+	return buildBlua32Tail({ id: 'cart', index: cartIndex, bytes: cartridge }, linked).bytes;
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/primitives.h"
+#include "spec/blua32/opcode.h"
 
 #include <optional>
 #include <span>
@@ -34,7 +35,7 @@ struct Blua32LocalSlotDebug {
 struct Blua32ResumePoint {
 	i32 wordOffset = 0;
 	SourceRange range;
-	i32 op = 0;
+	OpCode op = OpCode::WIDE;
 	std::vector<i32> liveRegisters;
 	std::vector<i32> uses;
 	std::vector<i32> defs;

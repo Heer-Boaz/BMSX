@@ -1,5 +1,4 @@
 import type { VideoSurface } from '../../../../machine/ts/platform/platform';
-import { lower_bound } from '../../../../machine/ts/common/lower_bound';
 import { EditorFont } from './font';
 import type { FontVariant } from '../../../../machine/ts/render/shared/bmsx_font';
 import type { HostClock } from '../../../../machine/ts/platform/platform';
@@ -209,7 +208,16 @@ export function resolvePointerColumn(row: number, viewportX: number, bounds: Cod
 		return effectiveStartColumn;
 	}
 	const target = (entry.advancePrefix[startDisplay] ?? 0) + offset;
-	const lower = lower_bound(entry.advancePrefix, target, startDisplay + 1, entry.advancePrefix.length);
+	let lower = startDisplay + 1;
+	let upper = entry.advancePrefix.length;
+	while (lower < upper) {
+		const midpointIndex = (lower + upper) >>> 1;
+		if (entry.advancePrefix[midpointIndex] < target) {
+			lower = midpointIndex + 1;
+		} else {
+			upper = midpointIndex;
+		}
+	}
 	let displayIndex = lower - 1;
 	if (displayIndex < startDisplay) {
 		displayIndex = startDisplay;

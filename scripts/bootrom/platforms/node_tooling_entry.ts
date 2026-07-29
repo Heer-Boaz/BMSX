@@ -23,7 +23,6 @@ import {
 	type Blua32ToolingImage,
 } from '../../../machine/ts/rompack/tooling/blua32_media';
 import { loadRomToolingMedia } from '../../../machine/ts/rompack/tooling/media';
-import { RomSourceStack } from '../../../machine/ts/rompack/tooling/source';
 import {
 	CART_ROM_BASE,
 	SYSTEM_ROM_BASE,
@@ -111,32 +110,20 @@ async function main(): Promise<void> {
 		const media = await loadRomToolingMedia(systemRom, [slot0Rom, slot1Rom]);
 		const host = await prepareMachineHost(bootOptions);
 		const systemLayer = media.system;
-		const systemSource = new RomSourceStack([{
-			id: systemLayer.id,
-			index: systemLayer.index,
-			payload: systemLayer.payload,
-		}]);
 		const cartridgeImages: [Blua32ToolingImage | null, Blua32ToolingImage | null] = [null, null];
 		for (let slot = 0; slot < media.cartridgeSlots.length; slot += 1) {
 			const cartridgeLayer = media.cartridgeSlots[slot];
 			if (!cartridgeLayer) {
 				continue;
 			}
-			const cartridgeSource = new RomSourceStack([{
-				id: cartridgeLayer.id,
-				index: cartridgeLayer.index,
-				payload: cartridgeLayer.payload,
-			}]);
 			cartridgeImages[slot] = loadBlua32ToolingImage(
 				cartridgeLayer,
-				cartridgeSource,
 				CART_ROM_BASE,
 			);
 		}
 		const session = new CpuProfilerSession({
 			system: loadBlua32ToolingImage(
 				systemLayer,
-				systemSource,
 				SYSTEM_ROM_BASE,
 			),
 			cartridgeSlots: cartridgeImages,

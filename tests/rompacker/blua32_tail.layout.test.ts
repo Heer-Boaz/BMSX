@@ -146,10 +146,10 @@ test('BLua32-tail rebuild preserves immutable asset metadata addresses and bytes
 			ramByteCount: LINK_RAM_BYTES,
 		});
 		const rebuilt = buildBlua32Tail(
-			{ id: 'system', index, payload: initialPayload },
+			{ id: 'system', index, bytes: initialPayload },
 			changed,
 		);
-		const rebuiltHeader = parseCartHeader(rebuilt.payload);
+		const rebuiltHeader = parseCartHeader(rebuilt.bytes);
 		const rebuiltImageEntry = rebuilt.index.entries.find(entry => entry.resid === BLUA32_IMAGE_ID)!;
 		const rebuiltSymbolsEntry = rebuilt.index.entries.find(entry => entry.resid === BLUA32_SYMBOLS_IMAGE_ID)!;
 
@@ -160,13 +160,13 @@ test('BLua32-tail rebuild preserves immutable asset metadata addresses and bytes
 		assert.equal(rebuiltHeader.metadataLength, initialHeader.metadataLength);
 		assert.equal(rebuiltHeader.manifestOffset, initialHeader.manifestOffset);
 		assert.equal(rebuiltHeader.manifestLength, initialHeader.manifestLength);
-		assert.deepEqual(rebuilt.payload.subarray(CART_ROM_HEADER_SIZE, imageStart), immutableBody);
-		assert.deepEqual(rebuilt.payload.subarray(metadataStart, metadataEnd), metadataBytes);
+		assert.deepEqual(rebuilt.bytes.subarray(CART_ROM_HEADER_SIZE, imageStart), immutableBody);
+		assert.deepEqual(rebuilt.bytes.subarray(metadataStart, metadataEnd), metadataBytes);
 		assert.ok(rebuiltImageEntry.end! > initialImageEnd);
 		assert.ok(rebuiltSymbolsEntry.end! > initialSymbolsEnd);
 		assert.ok(rebuiltHeader.tocOffset > initialHeader.tocOffset);
 
-		const rebuiltIndex = await parseCartridgeIndex(rebuilt.payload);
+		const rebuiltIndex = await parseCartridgeIndex(rebuilt.bytes);
 		const rebuiltSprite = rebuiltIndex.entries.find(entry => entry.resid === 'sprite')!;
 		assert.deepEqual(rebuiltSprite.imgmeta, spriteEntry.imgmeta);
 	} finally {

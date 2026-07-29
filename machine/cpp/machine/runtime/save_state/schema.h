@@ -1,10 +1,10 @@
 #pragma once
 
+#include <span>
 #include <string>
-#include <vector>
 
 namespace bmsx {
 
-extern const std::vector<std::string> RUNTIME_SAVE_STATE_PROP_NAMES;
+extern const std::span<const std::string> RUNTIME_SAVE_STATE_PROP_NAMES;
 
 } // namespace bmsx

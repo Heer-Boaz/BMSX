@@ -1,9 +1,13 @@
 #include "machine/runtime/save_state/schema.h"
 
+#include <array>
+
 namespace bmsx {
 
 // Property indices are the current save-state property contract; BMSX does not keep legacy decoders.
-const std::vector<std::string> RUNTIME_SAVE_STATE_PROP_NAMES = {
+namespace {
+
+const auto RUNTIME_SAVE_STATE_PROP_NAME_STORAGE = std::to_array<std::string>({
 	"activeCpuUsedCycles",
 	"accumulatedHostTimeMs",
 	"carriedCycleBudget",
@@ -396,6 +400,11 @@ const std::vector<std::string> RUNTIME_SAVE_STATE_PROP_NAMES = {
 	"mailboxIrqPending",
 	"luaFaultReasonWord",
 	"nmiReturnLuaFaultReasonWord",
-};
+});
+
+} // namespace
+
+const std::span<const std::string> RUNTIME_SAVE_STATE_PROP_NAMES =
+	RUNTIME_SAVE_STATE_PROP_NAME_STORAGE;
 
 } // namespace bmsx

@@ -2,6 +2,7 @@
 
 #include "render/shared/glyph_runs.h"
 #include "render/shared/software_pixels.h"
+#include "render/shared/submissions.h"
 #include "render/host_overlay/atlas.h"
 
 namespace bmsx {
@@ -203,10 +204,10 @@ void beginHostOverlaySoftware(SoftwareBackend& backend, const Host2DPipelineStat
 
 void renderHost2DEntrySoftware(SoftwareBackend& backend, Host2DKind kind, Host2DRef ref) {
 	switch (kind) {
-		case Host2DKind::Img: drawImageSoftware(backend, *static_cast<const HostImageRenderSubmission*>(ref)); return;
-		case Host2DKind::Rect: drawRectSoftware(backend, *static_cast<const RectRenderSubmission*>(ref)); return;
-		case Host2DKind::Poly: drawPolySoftware(backend, *static_cast<const PolyRenderSubmission*>(ref)); return;
-		case Host2DKind::Glyphs: drawGlyphsSoftware(backend, *static_cast<const GlyphRenderSubmission*>(ref)); return;
+		case Host2DKind::Img: drawImageSoftware(backend, *ref.img); return;
+		case Host2DKind::Rect: drawRectSoftware(backend, *ref.rect); return;
+		case Host2DKind::Poly: drawPolySoftware(backend, *ref.poly); return;
+		case Host2DKind::Glyphs: drawGlyphsSoftware(backend, *ref.glyphs); return;
 	}
 }
 

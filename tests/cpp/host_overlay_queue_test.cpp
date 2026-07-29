@@ -1,4 +1,5 @@
 #include "render/host_overlay/overlay_queue.h"
+#include "render/shared/submissions.h"
 
 #include <stdexcept>
 
@@ -14,9 +15,12 @@ void require(bool condition, const char* message) {
 
 int main() {
 	bmsx::Host2DKind commandKinds[] = {bmsx::Host2DKind::Rect, bmsx::Host2DKind::Glyphs};
-	const int rect = 1;
-	const int glyphs = 2;
-	bmsx::Host2DRef commandRefs[] = {&rect, &glyphs};
+	const bmsx::RectRenderSubmission rect;
+	const bmsx::GlyphRenderSubmission glyphs;
+	bmsx::Host2DRef commandRefs[] = {
+		{.rect = &rect},
+		{.glyphs = &glyphs},
+	};
 	const bmsx::HostMenuFrame frame{commandKinds, commandRefs, 2u};
 	bmsx::publishHostMenuFrame(frame);
 	require(bmsx::hasPendingHostMenuFrame(), "host menu frame should be pending after publication");

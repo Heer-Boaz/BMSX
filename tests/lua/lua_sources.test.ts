@@ -202,7 +202,7 @@ test('debug package source boot resolves the persisted GX texture layout module'
 	header.setUint32(24, CART_ROM_HEADER_SIZE, true);
 	header.setUint32(28, cartBytes.byteLength + layoutBytes.byteLength, true);
 	const index = await parseCartridgeIndex(payload);
-	const source = new RomSourceStack([{ id: 'cart', index, payload }]);
+	const source = new RomSourceStack([{ id: 'cart', index, bytes: payload }]);
 	const registry = buildLuaSources(source, source, index, 'cart');
 	const entryRecord = registry.module2lua.cart;
 	const modules = registry.records

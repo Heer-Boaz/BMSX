@@ -107,7 +107,7 @@ function romToolingLayer(
 		id,
 		header: parseCartHeader(payload),
 		index: cartridgeIndex(projectRootPath),
-		payload,
+		bytes: payload,
 		package: toolingPackage(projectRootPath),
 	};
 }

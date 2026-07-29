@@ -4,6 +4,11 @@
 
 namespace bmsx {
 
+struct GlyphRenderSubmission;
+struct HostImageRenderSubmission;
+struct PolyRenderSubmission;
+struct RectRenderSubmission;
+
 enum class Host2DKind : u8 {
 	Img,
 	Poly,
@@ -11,6 +16,12 @@ enum class Host2DKind : u8 {
 	Glyphs,
 };
 
-using Host2DRef = const void*;
+union Host2DRef {
+	const HostImageRenderSubmission* img;
+	const PolyRenderSubmission* poly;
+	const RectRenderSubmission* rect;
+	const GlyphRenderSubmission* glyphs;
+};
+static_assert(sizeof(Host2DRef) == sizeof(const void*));
 
 } // namespace bmsx

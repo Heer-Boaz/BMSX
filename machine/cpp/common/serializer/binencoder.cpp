@@ -437,10 +437,10 @@ BinValue BinDecoder::readValue() {
 			BinObject obj;
 			for (u32 i = 0; i < propCount; ++i) {
 				u32 propId = readVarUint();
-				if (propId >= m_propNames->size()) {
+				if (propId >= m_propNames.size()) {
 					throw BMSX_RUNTIME_ERROR("BinDecoder: invalid property ID");
 				}
-				const std::string& key = (*m_propNames)[propId];
+				const std::string& key = m_propNames[propId];
 				obj[key] = readValue();
 			}
 			return BinValue(std::move(obj));
@@ -481,14 +481,14 @@ BinValue BinDecoder::decode() {
 	for (u32 i = 0; i < propCount; ++i) {
 		m_ownedPropNames.push_back(readString());
 	}
-	m_propNames = &m_ownedPropNames;
+	m_propNames = m_ownedPropNames;
 
 	// Read root value
 	return readValue();
 }
 
-BinValue BinDecoder::decodePayload(const std::vector<std::string>& propNames) {
-	m_propNames = &propNames;
+BinValue BinDecoder::decodePayload(std::span<const std::string> propNames) {
+	m_propNames = propNames;
 	return readValue();
 }
 
@@ -505,7 +505,7 @@ BinValue decodeBinary(const std::vector<u8>& data) {
 	return decodeBinary(data.data(), data.size());
 }
 
-BinValue decodeBinaryWithPropTable(const u8* data, size_t size, const std::vector<std::string>& propNames) {
+BinValue decodeBinaryWithPropTable(const u8* data, size_t size, std::span<const std::string> propNames) {
 	BinDecoder decoder(data, size);
 	BinValue value = decoder.decodePayload(propNames);
 	if (decoder.position() != size) {
@@ -514,7 +514,7 @@ BinValue decodeBinaryWithPropTable(const u8* data, size_t size, const std::vecto
 	return value;
 }
 
-BinValue decodeBinaryWithPropTable(const std::vector<u8>& data, const std::vector<std::string>& propNames) {
+BinValue decodeBinaryWithPropTable(const std::vector<u8>& data, std::span<const std::string> propNames) {
 	return decodeBinaryWithPropTable(data.data(), data.size(), propNames);
 }
 
@@ -531,7 +531,7 @@ std::vector<std::string> buildBinaryPropTable(const std::vector<BinValue>& value
 	return propNames;
 }
 
-std::vector<u8> encodeBinaryWithPropTable(const BinValue& value, const std::vector<std::string>& propNames, size_t capacityHint) {
+std::vector<u8> encodeBinaryWithPropTable(const BinValue& value, std::span<const std::string> propNames, size_t capacityHint) {
 	std::unordered_map<std::string, uint32_t> propNameToId;
 	propNameToId.reserve(propNames.size());
 	for (size_t index = 0; index < propNames.size(); ++index) {

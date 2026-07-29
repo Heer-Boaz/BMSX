@@ -79,7 +79,7 @@ export function createRuntimeSourceState(
 	systemLayer: RomToolingLayer,
 	cartridgeLayers: readonly [RomToolingLayer | null, RomToolingLayer | null],
 ): RuntimeSourceState {
-	const systemSource = new RomSourceStack([{ id: systemLayer.id, index: systemLayer.index, payload: systemLayer.payload }]);
+	const systemSource = new RomSourceStack([{ id: systemLayer.id, index: systemLayer.index, bytes: systemLayer.bytes }]);
 	const systemLuaSources = buildLuaSources(systemSource, systemSource, systemLayer.index, 'system');
 	const luaSourceRegistries: LuaSourceRegistry[] = [];
 	const moduleCompileLuaSources: LuaSourceRegistry[] = [];
@@ -92,11 +92,11 @@ export function createRuntimeSourceState(
 			continue;
 		}
 		const activeSourceLayers: RomSourceLayer[] = [
-			{ id: cartLayer.id, index: cartLayer.index, payload: cartLayer.payload },
-			{ id: systemLayer.id, index: systemLayer.index, payload: systemLayer.payload },
+			{ id: cartLayer.id, index: cartLayer.index, bytes: cartLayer.bytes },
+			{ id: systemLayer.id, index: systemLayer.index, bytes: systemLayer.bytes },
 		];
 		const activeRomSource = new RomSourceStack(activeSourceLayers);
-		const cartRomSource = new RomSourceStack([{ id: cartLayer.id, index: cartLayer.index, payload: cartLayer.payload }]);
+		const cartRomSource = new RomSourceStack([{ id: cartLayer.id, index: cartLayer.index, bytes: cartLayer.bytes }]);
 		const cartLuaSources = buildLuaSources(cartRomSource, activeRomSource, cartLayer.index, 'cart');
 		cartridgeSlots[slot] = {
 			domain: slot,
@@ -110,7 +110,6 @@ export function createRuntimeSourceState(
 		};
 		cartridgeToolingImages[slot] = loadBlua32ToolingImage(
 			cartLayer,
-			cartRomSource,
 			CART_ROM_BASE,
 		);
 	}
@@ -136,7 +135,7 @@ export function createRuntimeSourceState(
 		cartridgeBlua32MediaDirty: [false, false],
 		systemInstalledBlua32Sources: indexInstalledBlua32Sources(systemLuaSources),
 		currentBlua32Media: {
-			system: loadBlua32ToolingImage(systemLayer, systemSource, SYSTEM_ROM_BASE),
+			system: loadBlua32ToolingImage(systemLayer, SYSTEM_ROM_BASE),
 			cartridgeSlots: cartridgeToolingImages,
 		},
 	};
@@ -205,12 +204,12 @@ export function installRuntimeRomLayers(
 ): void {
 	if (systemLayer !== null) {
 		state.systemRom.index = systemLayer.index;
-		state.systemRom.payload = systemLayer.payload;
-		state.systemRom.header = parseCartHeader(systemLayer.payload);
+		state.systemRom.bytes = systemLayer.bytes;
+		state.systemRom.header = parseCartHeader(systemLayer.bytes);
 		state.systemRomSource = new RomSourceStack([{
 			id: systemLayer.id,
 			index: systemLayer.index,
-			payload: systemLayer.payload,
+			bytes: systemLayer.bytes,
 		}]);
 	}
 	for (let slot = 0; slot < cartridgeLayers.length; slot += 1) {
@@ -220,12 +219,12 @@ export function installRuntimeRomLayers(
 		}
 		const cartridge = state.cartridgeSlots[slot]!;
 		cartridge.rom.index = layer.index;
-		cartridge.rom.payload = layer.payload;
-		cartridge.rom.header = parseCartHeader(layer.payload);
+		cartridge.rom.bytes = layer.bytes;
+		cartridge.rom.header = parseCartHeader(layer.bytes);
 		cartridge.romSource = new RomSourceStack([{
 			id: layer.id,
 			index: layer.index,
-			payload: layer.payload,
+			bytes: layer.bytes,
 		}]);
 	}
 	state.activeRomSource = state.activeCartridgeSlot === SYSTEM_RESOURCE_DOMAIN

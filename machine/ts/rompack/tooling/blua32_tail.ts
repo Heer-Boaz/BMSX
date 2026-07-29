@@ -16,7 +16,7 @@ import { writeCartRomHeader } from './header_encode';
 import { encodeRomToc } from './toc_encode';
 
 export function buildBlua32Tail(layer: RomSourceLayer, linked: LinkedBlua32Image): RomSourceLayer {
-	const header = parseCartHeader(layer.payload);
+	const header = parseCartHeader(layer.bytes);
 	const imageOffset = header.blua32ImageOffset;
 	const imageEnd = imageOffset + linked.bytes.byteLength;
 	const symbolsOffset = alignRomAssetOffset(imageEnd);
@@ -57,7 +57,7 @@ export function buildBlua32Tail(layer: RomSourceLayer, linked: LinkedBlua32Image
 	}
 
 	const payload = new Uint8Array(payloadByteCount);
-	payload.set(layer.payload.subarray(0, imageOffset));
+	payload.set(layer.bytes.subarray(0, imageOffset));
 	payload.set(linked.bytes, imageOffset);
 	payload.set(symbols, symbolsOffset);
 	payload.set(toc, tocOffset);
@@ -80,6 +80,6 @@ export function buildBlua32Tail(layer: RomSourceLayer, linked: LinkedBlua32Image
 			...layer.index,
 			entries,
 		},
-		payload,
+		bytes: payload,
 	};
 }

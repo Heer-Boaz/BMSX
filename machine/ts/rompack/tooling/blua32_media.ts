@@ -8,8 +8,8 @@ import {
 	type Blua32SymbolsImage,
 } from './blua32_symbols';
 import type { ExecutionDomainId } from '../../spec/blua32/execution_domain';
-import type { RomToolingLayer } from './loader';
-import type { RawRomSource } from './source';
+import type { RomImage } from '../image';
+import { decodeRomToc } from '../toc';
 
 export type Blua32ToolingImage = {
 	readonly layout: Blua32ImageLayout;
@@ -25,20 +25,28 @@ export type Blua32ToolingMedia = {
 };
 
 export function loadBlua32ToolingImage(
-	rom: RomToolingLayer,
-	romSource: RawRomSource,
+	rom: RomImage,
 	romBaseAddress: number,
 ): Blua32ToolingImage | null {
-	const layout = decodeBlua32RomImage(rom.payload, romBaseAddress);
+	const layout = decodeBlua32RomImage(rom.bytes, romBaseAddress);
 	if (!layout) {
 		return null;
 	}
-	const symbolsEntry = romSource.getEntry(BLUA32_SYMBOLS_IMAGE_ID);
+	const toc = decodeRomToc(rom.bytes.subarray(
+		rom.header.tocOffset,
+		rom.header.tocOffset + rom.header.tocLength,
+	));
+	let symbols: Blua32SymbolsImage | null = null;
+	for (let index = 0; index < toc.entries.length; index += 1) {
+		const entry = toc.entries[index];
+		if (entry.resid === BLUA32_SYMBOLS_IMAGE_ID) {
+			symbols = decodeBlua32SymbolsImage(rom.bytes.subarray(entry.start!, entry.end!));
+			break;
+		}
+	}
 	return {
 		layout,
-		symbols: symbolsEntry
-			? decodeBlua32SymbolsImage(romSource.getBytesView(symbolsEntry))
-			: null,
+		symbols,
 	};
 }
 

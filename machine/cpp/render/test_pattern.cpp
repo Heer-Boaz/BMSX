@@ -55,7 +55,7 @@ void queueRect(const RectBounds& rect, RectRenderKind kind, u32 color) {
 	submission.layer = Layer2D::World;
 	submission.area = rect;
 	submission.color = color;
-	queueCommand(Host2DKind::Rect, &submission);
+	queueCommand(Host2DKind::Rect, Host2DRef{.rect = &submission});
 }
 
 } // namespace
@@ -120,7 +120,7 @@ void renderTestPattern(VideoPresenter& presenter, f64 totalTime) {
 		line.color = (static_cast<u32>((0.3f + 0.2f * std::sin(t + static_cast<f32>(index))) * 255.0f) << 24u) | 0x00ffffffu;
 		line.thickness = 1.0f;
 		line.layer = Layer2D::World;
-		queueCommand(Host2DKind::Poly, &line);
+		queueCommand(Host2DKind::Poly, Host2DRef{.poly = &line});
 	}
 
 	const f32 textY = 20.0f;

@@ -113,6 +113,8 @@ export function trunc_vec3(p: vec3): vec3 {
  * @param factor The factor to multiply by.
  * @returns The multiplied vec2 or vec3.
  */
+export function multiply_vec(toMult: vec3, factor: number): vec3;
+export function multiply_vec(toMult: vec2, factor: number): vec2;
 export function multiply_vec(toMult: vec2 | vec3, factor: number): vec2 | vec3 {
 	if ('z' in toMult) {
 		return { x: toMult.x * factor, y: toMult.y * factor, z: toMult.z * factor };

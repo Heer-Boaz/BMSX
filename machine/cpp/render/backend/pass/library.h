@@ -9,6 +9,7 @@
 
 #include "../backend.h"
 #include "../../graph/graph.h"
+#include "../../host_overlay/commands.h"
 #include "../../shared/submissions.h"
 #include "render/post/device_quantize/lut.h"
 #include <array>
@@ -26,8 +27,6 @@ namespace bmsx {
 class VideoPresenter;
 class RenderGraphRuntime;
 struct GxGpuDeviceOutput;
-enum class Host2DKind : u8;
-using Host2DRef = const void*;
 
 /* ============================================================================
  * Render pass state types

@@ -98,7 +98,7 @@ auto decodeResumePoint(const BinValue& value) -> Blua32ResumePoint {
 	return Blua32ResumePoint{
 		value.require("wordOffset").toI32(),
 		decodeSourceRange(value.require("range")),
-		value.require("op").toI32(),
+		static_cast<OpCode>(value.require("op").toI32()),
 		decodeI32Array(value.require("liveRegisters")),
 		decodeI32Array(value.require("uses")),
 		decodeI32Array(value.require("defs")),
@@ -109,7 +109,7 @@ auto encodeResumePoint(const Blua32ResumePoint& point) -> BinValue {
 	BinObject value;
 	value["wordOffset"] = BinValue(point.wordOffset);
 	value["range"] = encodeSourceRange(point.range);
-	value["op"] = BinValue(point.op);
+	value["op"] = BinValue(static_cast<i32>(point.op));
 	value["liveRegisters"] = encodeI32Array(point.liveRegisters);
 	value["uses"] = encodeI32Array(point.uses);
 	value["defs"] = encodeI32Array(point.defs);

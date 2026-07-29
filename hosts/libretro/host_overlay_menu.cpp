@@ -371,23 +371,23 @@ void HostOverlayMenu::queueRenderCommands(VideoPresenter& presenter) {
 	const i32 top = (static_cast<i32>(presenter.viewportSize.y) - totalHeight) / 2;
 	const i32 boxTop = top + titleHeight + titleGap;
 	m_panelRect.area = RectBounds{static_cast<f32>(left), static_cast<f32>(boxTop), static_cast<f32>(left + boxWidth), static_cast<f32>(boxTop + boxHeight), 920.0f};
-	queueCommand(rectKind, &m_panelRect);
+	queueCommand(rectKind, Host2DRef{.rect = &m_panelRect});
 	m_titleGlyphs.font = font;
 	m_titleGlyphs.x = static_cast<f32>(left + padding);
 	m_titleGlyphs.y = static_cast<f32>(top);
-	queueCommand(itemsKind, &m_titleGlyphs);
+	queueCommand(itemsKind, Host2DRef{.glyphs = &m_titleGlyphs});
 	for (i32 index = 0; index < kMenuOptionCount; index += 1) {
 		const i32 y = boxTop + padding + index * lineHeight;
 		if (index == m_selected) {
 			m_highlightRect.area = RectBounds{static_cast<f32>(left), static_cast<f32>(y - 2), static_cast<f32>(left + boxWidth), static_cast<f32>(y + lineHeight - 2), 921.0f};
-			queueCommand(rectKind, &m_highlightRect);
+			queueCommand(rectKind, Host2DRef{.rect = &m_highlightRect});
 		}
 		GlyphRenderSubmission& items = m_optionGlyphs[static_cast<size_t>(index)];
 		items.font = font;
 		items.x = static_cast<f32>(left + padding);
 		items.y = static_cast<f32>(y);
 		items.color = index == m_selected ? kTextColor : kDimColor;
-		queueCommand(itemsKind, &items);
+		queueCommand(itemsKind, Host2DRef{.glyphs = &items});
 	}
 	publishRenderCommands();
 }
@@ -416,7 +416,7 @@ bool HostOverlayMenu::queueFrameOverlayCommands(Runtime& runtime, VideoPresenter
 		}
 		m_fpsGlyphs.x = presenter.viewportSize.x - 8.0f - static_cast<f32>(m_fpsTextWidth);
 		m_fpsGlyphs.y = 8.0f;
-		queueCommand(itemsKind, &m_fpsGlyphs);
+		queueCommand(itemsKind, Host2DRef{.glyphs = &m_fpsGlyphs});
 		queued = true;
 	}
 	if (presenter.showResourceUsageGizmo) {
@@ -431,7 +431,7 @@ bool HostOverlayMenu::queueFrameOverlayCommands(Runtime& runtime, VideoPresenter
 			static_cast<double>(runtime.machine.memory.ramByteCount()),
 			static_cast<double>(GX_GPU_VRAM_BYTE_COUNT),
 		};
-		queueCommand(rectKind, &m_usagePanelRect);
+		queueCommand(rectKind, Host2DRef{.rect = &m_usagePanelRect});
 		for (i32 index = 0; index < UsageBarCount; index += 1) {
 			const size_t offset = static_cast<size_t>(index);
 			const double ratio = used[offset] / total[offset];
@@ -451,12 +451,12 @@ bool HostOverlayMenu::queueFrameOverlayCommands(Runtime& runtime, VideoPresenter
 				percent.items[0] = buffer;
 				percent.item_end = static_cast<i32>(percent.items[0].size());
 			}
-			queueCommand(rectKind, &m_usageBarBackgrounds[offset]);
+			queueCommand(rectKind, Host2DRef{.rect = &m_usageBarBackgrounds[offset]});
 			if (fillWidth > 0) {
-				queueCommand(rectKind, &fill);
+				queueCommand(rectKind, Host2DRef{.rect = &fill});
 			}
-			queueCommand(itemsKind, &label);
-			queueCommand(itemsKind, &percent);
+			queueCommand(itemsKind, Host2DRef{.glyphs = &label});
+			queueCommand(itemsKind, Host2DRef{.glyphs = &percent});
 		}
 		queued = true;
 	}
