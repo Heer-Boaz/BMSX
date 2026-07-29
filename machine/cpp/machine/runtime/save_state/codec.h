@@ -3,6 +3,7 @@
 #include "common/primitives.h"
 #include "machine/runtime/save_state.h"
 #include <cstddef>
+#include <span>
 #include <vector>
 
 namespace bmsx {
@@ -16,19 +17,12 @@ constexpr size_t runtimeSaveStateWireCapacity(size_t ramByteCount, size_t cartri
 
 std::vector<u8> encodeRuntimeSaveState(const RuntimeSaveState& state);
 RuntimeSaveState decodeRuntimeSaveState(
-	const u8* data,
-	size_t size,
-	size_t ramByteCount,
-	size_t cartridgeRamByteCount
-);
-RuntimeSaveState decodeRuntimeSaveState(
-	const std::vector<u8>& data,
+	std::span<const u8> data,
 	size_t ramByteCount,
 	size_t cartridgeRamByteCount
 );
 
 std::vector<u8> captureRuntimeSaveStateBytes(Runtime& runtime);
-void applyRuntimeSaveStateBytes(Runtime& runtime, const u8* data, size_t size);
-void applyRuntimeSaveStateBytes(Runtime& runtime, const std::vector<u8>& data);
+void applyRuntimeSaveStateBytes(Runtime& runtime, std::span<const u8> data);
 
 } // namespace bmsx

@@ -804,7 +804,13 @@ bool LibretroPlatform::loadState(const void* data, size_t size) {
 			runtime.machine.cartridgeController.ramByteCount())) {
 			return false;
 		}
-		applyRuntimeSaveStateBytes(runtime, envelope + kSaveStateHeaderBytes, payloadBytes);
+		applyRuntimeSaveStateBytes(
+			runtime,
+			std::span<const u8>(
+				envelope + kSaveStateHeaderBytes,
+				payloadBytes
+			)
+		);
 		m_audio_output.resetPlayback();
 		return true;
 	}

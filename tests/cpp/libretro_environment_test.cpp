@@ -110,8 +110,7 @@ std::vector<bmsx::u8> makeExpandedPcrtcState(size_t cartridgeRamByteCount) {
 	require(retro_serialize(envelope.data(), envelope.size()), "the core should serialize a state for libretro AV notification validation");
 	const bmsx::u32 payloadBytes = bmsx::readLE32(envelope.data() + 4u);
 	bmsx::RuntimeSaveState state = bmsx::decodeRuntimeSaveState(
-		envelope.data() + 8u,
-		payloadBytes,
+		std::span<const bmsx::u8>(envelope.data() + 8u, payloadBytes),
 		bmsx::PSX_MACHINE_SPEC.ramBytes,
 		cartridgeRamByteCount);
 	auto& pcrtc = state.machineState.machine.gxGpu.pcrtc;
@@ -222,8 +221,10 @@ int main() {
 	const bmsx::u32 cartridgeStateBytes = bmsx::readLE32(cartridgeState.data() + 4u);
 	const bmsx::RuntimeSaveState cartridgeRuntimeState =
 		bmsx::decodeRuntimeSaveState(
-			cartridgeState.data() + 8u,
-			cartridgeStateBytes,
+			std::span<const bmsx::u8>(
+				cartridgeState.data() + 8u,
+				cartridgeStateBytes
+			),
 			bmsx::PSX_MACHINE_SPEC.ramBytes,
 			cartridgeRamByteCount);
 	const auto& cartridgeControllerState = cartridgeRuntimeState.machineState.machine.cartridge;

@@ -180,8 +180,7 @@ void testLibretroSaveStateRoundTrip() {
 	require(platform.saveState(saved.data(), saved.size()), "libretro saveState should serialize initialized runtime state");
 	const size_t savedPayloadBytes = bmsx::readLE32(saved.data() + 4u);
 	bmsx::RuntimeSaveState savedState = bmsx::decodeRuntimeSaveState(
-		saved.data() + 8u,
-		savedPayloadBytes,
+		std::span<const bmsx::u8>(saved.data() + 8u, savedPayloadBytes),
 		runtime.machine.memory.ramByteCount(),
 		runtime.machine.cartridgeController.ramByteCount());
 	savedState.cpuState.memoryWriteBlocked = true;
