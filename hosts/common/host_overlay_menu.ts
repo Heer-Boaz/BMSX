@@ -1,14 +1,14 @@
-import { RectRenderKind, TextAlign, TextBaseline, type GlyphRenderSubmission, type RectRenderSubmission } from '../machine/ts/render/shared/submissions';
-import { LAYER_2D_IDE } from '../machine/ts/render/shared/layers';
-import { Host2DKind, type Host2DRef } from '../machine/ts/render/host_overlay/commands';
-import type { Input } from '../machine/ts/input/manager';
-import type { PlayerInput } from '../machine/ts/input/player';
-import type { Runtime } from '../machine/ts/machine/runtime/runtime';
-import type { DeviceQuantizeMode } from '../machine/ts/render/post/device_quantize/mode';
-import type { VideoPresenter } from '../machine/ts/render/video_presenter';
-import { clearHostMenuFrame, publishHostMenuFrame, type HostMenuFrame } from '../machine/ts/render/host_overlay/overlay_queue';
-import { BASE_RAM_USED_SIZE } from '../machine/ts/spec/bmsx/memory_map';
-import { GX_GPU_VRAM_BYTE_COUNT } from '../machine/ts/spec/gx/vram';
+import { RectRenderKind, TextAlign, TextBaseline, type GlyphRenderSubmission, type RectRenderSubmission } from '../../machine/ts/render/shared/submissions';
+import { LAYER_2D_IDE } from '../../machine/ts/render/shared/layers';
+import { Host2DKind, type Host2DRef } from '../../machine/ts/render/host_overlay/commands';
+import type { Input } from '../../machine/ts/input/manager';
+import type { PlayerInput } from '../../machine/ts/input/player';
+import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
+import type { DeviceQuantizeMode } from '../../machine/ts/render/post/device_quantize/mode';
+import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
+import { clearHostMenuFrame, publishHostMenuFrame, type HostMenuFrame } from '../../machine/ts/render/host_overlay/overlay_queue';
+import { BASE_RAM_USED_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
+import { GX_GPU_VRAM_BYTE_COUNT } from '../../machine/ts/spec/gx/vram';
 
 type HostMenuValue = {
 	readonly label: string;

@@ -2,7 +2,7 @@ import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
 
 import type { Platform } from 'bmsx/platform';
-import { prepareMachineHost, startMachineHostFrames } from '../../../runtime/machine_runtime';
+import { prepareMachineHost, startMachineHostFrames } from '../../../hosts/common/machine_runtime';
 import {
 	HEADLESS_DEFAULT_FRAME_INTERVAL_MS,
 	HeadlessPlatformServices,

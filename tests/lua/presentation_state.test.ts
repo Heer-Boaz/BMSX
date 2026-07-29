@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { RenderPresentationState } from '../../runtime/presentation_state';
+import { RenderPresentationState } from '../../hosts/common/presentation_state';
 import {
 	createTestRuntime,
 	createTestRuntimeRomPayload,

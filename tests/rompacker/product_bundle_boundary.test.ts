@@ -7,7 +7,7 @@ test('player bundle boundary accepts machine and host sources', () => {
 	assert.doesNotThrow(() => {
 		assertPlayerBundleBoundary('test player', {
 			'hosts/browser/player.ts': {},
-			'runtime/machine_runtime.ts': {},
+			'hosts/common/machine_runtime.ts': {},
 			'machine/ts/machine/runtime/runtime.ts': {},
 		});
 	});

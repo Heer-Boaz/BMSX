@@ -1,6 +1,6 @@
 import { runGate } from '../../machine/ts/common/taskgate';
-import { HostOverlayMenu } from '../../runtime/host_overlay_menu';
-import { RenderPresentationState } from '../../runtime/presentation_state';
+import { HostOverlayMenu } from '../../hosts/common/host_overlay_menu';
+import { RenderPresentationState } from '../../hosts/common/presentation_state';
 import { createRuntimeSourceState } from '../runtime/sources';
 import type { RuntimeIdeState } from '../runtime/state';
 import { loadRomToolingMedia } from '../../machine/ts/rompack/tooling/media';
@@ -11,7 +11,7 @@ import {
 	initializeMachineHost,
 	type MachineHost,
 	type MachineHostInitializationOptions,
-} from '../../runtime/machine_runtime';
+} from '../../hosts/common/machine_runtime';
 
 export async function prepareWorkbenchRuntime(
 	options: MachineHostInitializationOptions,

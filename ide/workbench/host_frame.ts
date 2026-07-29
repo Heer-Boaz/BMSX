@@ -1,5 +1,5 @@
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import { HostMenuInput, type HostOverlayMenu } from '../../runtime/host_overlay_menu';
+import { HostMenuInput, type HostOverlayMenu } from '../../hosts/common/host_overlay_menu';
 import {
 	beginMachineHostFrame,
 	executeMachineHostUpdate,
@@ -7,9 +7,9 @@ import {
 	type MachineHostPresentation,
 	prepareMachineHostPresentation,
 	presentMachineHostPresentation,
-} from '../../runtime/host_frame';
-import type { RenderPresentationState } from '../../runtime/presentation_state';
-import type { MachineHost } from '../../runtime/machine_runtime';
+} from '../../hosts/common/host_frame';
+import type { RenderPresentationState } from '../../hosts/common/presentation_state';
+import type { MachineHost } from '../../hosts/common/machine_runtime';
 import { syncRuntimeSourceActivity } from '../runtime/sources';
 import type { RuntimeIdeState } from '../runtime/state';
 import { rebootPreparedRuntime } from './blua32_boot';

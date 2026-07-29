@@ -1,4 +1,4 @@
-import { prepareMachineHost, startMachineHostFrames } from '../../runtime/machine_runtime';
+import { prepareMachineHost, startMachineHostFrames } from '../common/machine_runtime';
 import {
 	completeBrowserBoot,
 	prepareBrowserStartup,

@@ -1,7 +1,7 @@
 import { runGate } from '../../../machine/ts/common/taskgate';
 import { InstructionStepResult } from '../../../machine/ts/machine/runtime/frame/state';
 import type { Runtime } from '../../../machine/ts/machine/runtime/runtime';
-import type { MachineHost } from '../../../runtime/machine_runtime';
+import type { MachineHost } from '../../../hosts/common/machine_runtime';
 import {
 	beginMachineHostFrame,
 	beginMachineHostUpdate,
@@ -10,9 +10,9 @@ import {
 	MachineHostFrameAction,
 	prepareMachineHostPresentation,
 	presentMachineHostPresentation,
-} from '../../../runtime/host_frame';
-import { HostOverlayMenu } from '../../../runtime/host_overlay_menu';
-import { RenderPresentationState } from '../../../runtime/presentation_state';
+} from '../../../hosts/common/host_frame';
+import { HostOverlayMenu } from '../../../hosts/common/host_overlay_menu';
+import { RenderPresentationState } from '../../../hosts/common/presentation_state';
 import type { CpuProfilerSession } from '../cpu_profiler';
 
 function runCpuProfileHostFrame(

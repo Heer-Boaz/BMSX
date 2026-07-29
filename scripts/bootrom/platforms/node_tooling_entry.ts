@@ -16,7 +16,7 @@ import {
 	startMachineHostFrames,
 	type MachineHost,
 	type MachineHostInitializationOptions,
-} from '../../../runtime/machine_runtime';
+} from '../../../hosts/common/machine_runtime';
 import { CpuProfilerSession, formatCpuProfilerReport } from '../cpu_profiler';
 import {
 	loadBlua32ToolingImage,

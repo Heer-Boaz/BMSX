@@ -1,5 +1,5 @@
 import { LogLevel } from '../../machine/ts/platform/platform';
-import type { MachineHost } from '../../runtime/machine_runtime';
+import type { MachineHost } from '../common/machine_runtime';
 
 export function bindBrowserFullscreenShortcut(host: MachineHost): void {
 	host.input.getGlobalShortcutRegistry().registerKeyboardShortcut(1, 'F11', () => {

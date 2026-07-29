@@ -1,7 +1,7 @@
 // IMPORTANT: IMPORTS TO `bmsx/blabla` ARE NOT ALLOWED!!!!!! THIS WILL CAUSE PROBLEMS WITH .GLSL FILES BEING INCLUDED AND THE ROMPACKER CANNOT HANDLE THIS!!!!!
 import { parseCartHeader } from '../../machine/ts/rompack/format';
 import { decodeRomToc } from '../../machine/ts/rompack/toc';
-import type { MachineHostInitializationOptions } from '../../runtime/machine_runtime';
+import type { MachineHostInitializationOptions } from '../common/machine_runtime';
 import { BrowserPlatform } from './platform';
 import { createAudioContext, resumeAudio, type BootAudioState } from './boot_audio';
 

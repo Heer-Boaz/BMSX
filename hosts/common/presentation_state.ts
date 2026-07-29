@@ -1,10 +1,10 @@
 import {
 	gxGpuDisplayModeScreenWidth,
 	gxGpuVerticalVisibleLines,
-} from '../machine/ts/machine/devices/gx/gpu_display';
-import type { Runtime } from '../machine/ts/machine/runtime/runtime';
-import type { TickCompletion } from '../machine/ts/machine/scheduler/frame';
-import type { VideoPresenter } from '../machine/ts/render/video_presenter';
+} from '../../machine/ts/machine/devices/gx/gpu_display';
+import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
+import type { TickCompletion } from '../../machine/ts/machine/scheduler/frame';
+import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 
 export type RenderPresentationMode = 'partial' | 'completed';
 

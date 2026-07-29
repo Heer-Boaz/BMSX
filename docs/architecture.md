@@ -405,9 +405,10 @@ Current artifact roles:
   Studio-tooling executable. Timelines, screenshots, host tests, IDE tests, and
   source-aware profiling live here rather than in the ordinary headless player.
 
-The player lifecycle and frame loop are owned by `runtime/`. The browser and
-Node player entrypoints import that lifecycle directly. Studio owns its separate
-composition in `ide/workbench/`; only Studio and IDE-test entrypoints import it.
+The shared player lifecycle and frame loop are owned by `hosts/common/`. The
+browser and Node player entrypoints import that lifecycle directly. Studio owns
+its separate composition in `ide/workbench/`; only Studio and IDE-test
+entrypoints import it.
 This is a static dependency boundary, not an optional IDE parameter, callback
 provider, or runtime feature switch. Browser `MachineHost` and libretro
 `LibretroPlatform` own their monotonic presentation clocks; machine

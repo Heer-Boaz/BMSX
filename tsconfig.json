@@ -3,7 +3,7 @@
 	"references": [
 		{ "path": "./machine/ts" },
 		{ "path": "./ide" },
-		{ "path": "./runtime" }
+		{ "path": "./hosts/common" }
 	],
 	"exclude": [
 		"./tests/**.*",
