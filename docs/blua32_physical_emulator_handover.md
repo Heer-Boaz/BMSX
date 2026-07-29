@@ -184,7 +184,6 @@ C++:
 
 - `machine/cpp/rompack/tooling/blua32_image.h/.cpp`
 - `machine/cpp/machine/cpu/blua32_symbols.h/.cpp`
-- `machine/cpp/lua/module_path.h/.cpp`
 - `machine/cpp/machine/runtime/lua_scratch.h/.cpp`
 
 Tests/tooling:

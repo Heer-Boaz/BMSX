@@ -27,7 +27,6 @@ struct RomAssetInfo {
 	std::optional<std::string> sourcePath;
 	std::optional<std::string> normalizedSourcePath;
 	std::optional<i64> updateTimestamp;
-	std::optional<std::string> payloadId;
 };
 
 struct RomSourceEntry {
