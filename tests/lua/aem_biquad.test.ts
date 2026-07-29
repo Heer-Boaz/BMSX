@@ -12,7 +12,7 @@ const MODULE_FILES = [
 	['bios/util/sincos_turn32', 'machine/firmware/bios/util/sincos_turn32.lua'],
 	['bios/math', 'machine/firmware/bios/math.lua'],
 	['system/dma', 'machine/firmware/system/dma.lua'],
-	['system/apu', 'machine/firmware/system/apu.lua'],
+	['cartlib/apu', 'cartlib/apu.lua'],
 	['cartlib/aem_biquad', 'cartlib/aem_biquad.lua'],
 ] as const;
 

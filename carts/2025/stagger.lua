@@ -1,10 +1,10 @@
 local stagger<const> = {}
 require('globals')
-local linear<const> = require('bios/easing').linear
-local ease_out_quad<const> = require('bios/easing').ease_out_quad
-local ease_out_back<const> = require('bios/easing').ease_out_back
-local smoothstep<const> = require('bios/easing').smoothstep
-local color<const> = require('bios/common/color')
+local linear<const> = require('cartlib/easing').linear
+local ease_out_quad<const> = require('cartlib/easing').ease_out_quad
+local ease_out_back<const> = require('cartlib/easing').ease_out_back
+local smoothstep<const> = require('cartlib/easing').smoothstep
+local color<const> = require('cartlib/color')
 local round_number<const> = require('bios/util/round_to_nearest')
 local stagger_timeline_prefix<const> = 'p3.stagger.'
 local immediate_text_opts<const> = { typed = false, snap = true }

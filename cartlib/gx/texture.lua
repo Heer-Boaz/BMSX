@@ -1,6 +1,6 @@
 local gx_gpu<const> = require('system/gx_gpu')
-local imgdec<const> = require('system/imgdec')
-local romdir<const> = require('system/romdir')
+local imgdec<const> = require('cartlib/gx/imgdec')
+local romdir<const> = require('cartlib/romdir')
 
 local gx_texture<const> = {}
 local texture_by_id<const> = {}

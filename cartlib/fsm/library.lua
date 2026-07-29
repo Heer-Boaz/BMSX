@@ -1,5 +1,5 @@
 -- fsmlibrary.lua
--- registry of fsm definitions for system rom
+-- Registry of FSM definitions for carts.
 --
 -- DESIGN PRINCIPLES — FSM registration and instantiation
 --

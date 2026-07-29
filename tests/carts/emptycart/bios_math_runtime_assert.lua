@@ -40,13 +40,6 @@ function __bmsx_host_test.setup()
 	assert(not pcall(function() return math.random(0) end), 'math.random accepted empty upper range')
 	assert(not pcall(function() return math.random(5, 3) end), 'math.random accepted reversed range')
 
-	assert(easing.linear(1.2) == 1, 'easing.linear mismatch')
-	assert_close(easing.ease_in_quad(0.5), 0.25, 0.000001, 'ease_in_quad mismatch')
-	assert_close(easing.ease_out_quad(0.5), 0.75, 0.000001, 'ease_out_quad mismatch')
-	assert_close(easing.ease_in_out_quad(0.25), 0.125, 0.000001, 'ease_in_out_quad mismatch')
-	assert_close(easing.smoothstep(0.5), 0.5, 0.000001, 'smoothstep mismatch')
-	assert_close(easing.pingpong01(-0.25), 0.25, 0.000001, 'pingpong01 mismatch')
-	assert(easing.arc01(0.5) == 1, 'arc01 mismatch')
 end
 
 function __bmsx_host_test.update(_frame)

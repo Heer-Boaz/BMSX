@@ -1,4 +1,4 @@
-local bin<const> = require('system/bin')
+local bin<const> = require('cartlib/bin')
 local string<const> = require('bios/string_base')
 local table<const> = require('bios/table')
 
@@ -376,16 +376,10 @@ local list_entries<const> = function(roms, kind)
 end
 
 local system_rom<const> = parse_rom(read_header(0x00000000, 'system', true))
-local active_roms<const> = { system_rom }
-local active_plus_system_roms<const> = { system_rom }
+local cart_rom<const> = parse_rom(read_header(cart_rom_base, 'cart', true))
+local active_roms<const> = { cart_rom }
+local active_plus_system_roms<const> = { cart_rom, system_rom }
 local system_roms<const> = { system_rom }
-
-function romdir.mount_selected_cartridge()
-	local cart_rom<const> = parse_rom(read_header(cart_rom_base, 'cart', true))
-	active_roms[1] = cart_rom
-	active_plus_system_roms[1] = cart_rom
-	active_plus_system_roms[2] = system_rom
-end
 
 function romdir.resource(id)
 	local entry<const> = find_in_roms(active_plus_system_roms, id)

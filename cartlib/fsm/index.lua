@@ -1,5 +1,5 @@
 -- fsm.lua
--- finite state machine runtime for system rom
+-- Finite state machine runtime for carts.
 --
 -- DESIGN PRINCIPLES — FSM authoring rules
 --
@@ -134,7 +134,7 @@
 --     restrict to events from a specific source object.
 
 local fsm_trace<const> = require('cartlib/fsm/trace')
-local clear_map<const> = require('bios/util/clear_map')
+local clear_map<const> = require('cartlib/util/clear_map')
 local timeline_module<const> = require('cartlib/timeline/index')
 local cart_input<const> = require('cartlib/input/player')
 

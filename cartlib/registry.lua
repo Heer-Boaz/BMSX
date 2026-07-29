@@ -1,5 +1,5 @@
 -- registry.lua
--- lightweight registry for system ROM entities
+-- Lightweight registry for cart entities.
 --
 -- DESIGN PRINCIPLES
 --

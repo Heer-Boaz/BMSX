@@ -10,7 +10,7 @@
 -- the object already has an FSM.
 
 require('constants')
-local font_module<const> = require('system/font')
+local font_module<const> = require('cartlib/font')
 
 local lithograph_screen<const> = {}
 lithograph_screen.__index = lithograph_screen

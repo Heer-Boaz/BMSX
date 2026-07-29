@@ -122,15 +122,15 @@ test('explicit const-module functions call sibling exports through link symbols'
 	assert.deepEqual(Array.from(cpu.completionValues), [6]);
 });
 
-test('bios easing calls through its live runtime table', () => {
-	const moduleSource = readFileSync('machine/firmware/bios/easing.lua', 'utf8');
+test('cartlib easing calls through its live runtime table', () => {
+	const moduleSource = readFileSync('cartlib/easing.lua', 'utf8');
 	const compiled = compileWithModule(
-		'return require("bios/easing").arc01(0.25)',
-		'bios/easing',
+		'return require("cartlib/easing").arc01(0.25)',
+		'cartlib/easing',
 		moduleSource,
-		[{ path: 'bios/util/clamp', source: readFileSync('machine/firmware/bios/util/clamp.lua', 'utf8') }],
+		[{ path: 'cartlib/util/clamp', source: readFileSync('cartlib/util/clamp.lua', 'utf8') }],
 	);
-	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'bios__easing__arc01'), false);
+	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'cartlib__easing__arc01'), false);
 	assert.match(compiled.disasm, /\bGETFIELD\b/, 'runtime module calls load the current table field');
 	assert.match(compiled.disasm, /\bNEWT\b/, 'public easing table remains available for Lua API consumers');
 	const cpu = runCompiledTestSystem(compiled.compiled, 100000);

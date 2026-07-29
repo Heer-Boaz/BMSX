@@ -1,4 +1,4 @@
-local clock<const> = require('system/clock')
+local clock<const> = require('cartlib/clock')
 local frame_delta_ms<const> = clock.frame_milliseconds()
 -- world.lua
 -- central world: owns all objects, spaces, and the ECS system manager

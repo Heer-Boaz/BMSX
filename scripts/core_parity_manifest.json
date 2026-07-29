@@ -967,7 +967,7 @@
 		},
 		{
 			"present": [
-				"machine/firmware/system/imgdec.lua",
+				"cartlib/gx/imgdec.lua",
 				"machine/ts/machine/devices/imgdec/controller.ts",
 				"machine/ts/spec/imgdec/stream.ts",
 				"machine/ts/spec/gx/gp0.ts",

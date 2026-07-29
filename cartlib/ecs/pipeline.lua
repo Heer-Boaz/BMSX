@@ -1,5 +1,5 @@
 -- ecs_pipeline.lua
--- ecs pipeline registry and builder for the system ROM runtime
+-- ECS pipeline registry and builder for the cart runtime.
 
 local registry<const> = require('cartlib/registry')
 

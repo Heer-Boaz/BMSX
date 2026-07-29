@@ -7,8 +7,8 @@ local stagger<const> = require('stagger')
 local round_number<const> = require('bios/util/round_to_nearest')
 local cart_input<const> = require('cartlib/input/player')
 local components<const> = require('cartlib/components')
-local smoothstep<const> = require('bios/easing').smoothstep
-local pingpong01<const> = require('bios/easing').pingpong01
+local smoothstep<const> = require('cartlib/easing').smoothstep
+local pingpong01<const> = require('cartlib/easing').pingpong01
 local sin<const> = require('bios/math').sin
 local pi<const> = require('bios/math').pi
 local immediate_text_opts<const> = { typed = false, snap = true }

@@ -1,6 +1,6 @@
 require('constants')
 local text<const> = require('cartlib/text/index')
-local bin<const> = require('system/bin')
+local bin<const> = require('cartlib/bin')
 local assets<const> = require('bmsx/assets')
 
 local castle_map<const> = {}

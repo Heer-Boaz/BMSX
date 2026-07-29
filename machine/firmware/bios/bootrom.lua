@@ -7,11 +7,10 @@ string = require('bios/string')
 os = require('bios/os')
 
 math = require('bios/math')
-easing = require('bios/easing')
 
 local dma_transfer<const> = require('bios/dma_transfer')
 local gx_gpu<const> = require('system/gx_gpu')
-local romdir<const> = require('system/romdir')
+local assets<const> = require('bmsx/system_assets')
 local monitor<const> = require('bios/monitor')
 local system<const> = require('bios/system')
 local terminal<const> = require('bios/terminal')
@@ -111,7 +110,6 @@ local update_boot_screen<const> = function()
 	local cart_present<const>, startup<const> = scan_cartridges()
 	if startup ~= nil then
 		*irq_mask = 0
-		romdir.mount_selected_cartridge()
 		print('Cart boot requested.')
 		cop0.exec = startup
 	end
@@ -124,8 +122,7 @@ function init()
 	gx_gpu.display_origin(terminal_layout.vram_origin)
 	gx_gpu.draw_target(terminal_layout.vram_origin)
 	gx_gpu.clear_color(boot_background)
-	local system_texture<const> = romdir.resource('gx_system_texture')
-	dma_transfer.copy_to_gp0(system_texture.addr, system_texture.len >> 2)
+	dma_transfer.copy_to_gp0(assets.bin_gx_system_texture_addr, assets.bin_gx_system_texture_len >> 2)
 end
 
 function new_game()

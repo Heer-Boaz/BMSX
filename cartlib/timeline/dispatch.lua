@@ -1,4 +1,4 @@
-local scratchrecordbatch<const> = require('bios/util/scratchrecordbatch')
+local scratchrecordbatch<const> = require('cartlib/util/scratchrecordbatch')
 
 local timeline_dispatch<const> = {}
 

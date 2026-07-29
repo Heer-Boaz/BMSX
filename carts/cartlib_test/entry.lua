@@ -1,5 +1,5 @@
 local gx_gpu<const> = require('system/gx_gpu')
-local gx_gte<const> = require('system/gx_gte')
+local gx_gte<const> = require('cartlib/gx/gte')
 local gx_gte_plus<const>: *word[10] = gx_gte.plus
 gx_gpu.reset_320x240()
 require('cartlib/prelude')

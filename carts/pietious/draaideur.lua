@@ -1,4 +1,4 @@
-local rect_overlaps<const> = require('bios/util/rect_overlaps')
+local rect_overlaps<const> = require('cartlib/util/rect_overlaps')
 require('constants')
 local sprite_id_by_kind<const> = {
 	[1] = {

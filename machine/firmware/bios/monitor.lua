@@ -5,7 +5,7 @@ local monitor_commands<const> = require('bios/monitor_commands')
 local vblank<const> = require('bios/vblank')
 local dma_transfer<const> = require('bios/dma_transfer')
 local gx_gpu<const> = require('system/gx_gpu')
-local romdir<const> = require('system/romdir')
+local assets<const> = require('bmsx/system_assets')
 
 local byte<const> = __bmsx_string_byte
 local monitor<const> = {}
@@ -425,8 +425,7 @@ function monitor.enter(error_value)
 		saved_irq_mask,
 		error_value)
 	gx_gpu.prepare_supervisor_256x192(layout.vram_origin) -- HUH?! Why hardcoded to 256x192? Should be layout.columns x layout.rows, but that is 80x25. Maybe this is a temporary hack for the monitor to work with the GPU in a specific mode.
-	local system_texture<const> = romdir.resource('gx_system_texture')
-	dma_transfer.copy_to_gp0(system_texture.addr, system_texture.len >> 2)
+	dma_transfer.copy_to_gp0(assets.bin_gx_system_texture_addr, assets.bin_gx_system_texture_len >> 2)
 	terminal.open()
 	terminal.write('BMSX BIOS MONITOR\n', palette_prompt)
 	while *system_print_count ~= 0 do

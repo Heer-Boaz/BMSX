@@ -1,8 +1,8 @@
 -- timeline.lua
--- timeline runtime for system rom
+-- Timeline runtime for carts.
 --
-local clamp<const> = require('bios/util/clamp')
-local clock<const> = require('system/clock')
+local clamp<const> = require('cartlib/util/clamp')
+local clock<const> = require('cartlib/clock')
 local timeline_apply<const> = require('cartlib/timeline/apply')
 --
 -- DESIGN PRINCIPLES — timeline authoring

@@ -1,5 +1,5 @@
-local bool01<const> = require('bios/util/bool01')
-local clamp<const> = require('bios/util/clamp')
+local bool01<const> = require('cartlib/util/bool01')
+local clamp<const> = require('cartlib/util/clamp')
 require('constants')
 local player_abilities<const> = require('player/abilities')
 

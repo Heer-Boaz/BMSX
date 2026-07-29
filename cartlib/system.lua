@@ -16,14 +16,14 @@ local eventemitter_module<const> = require('cartlib/eventemitter')
 local eventemitter<const> = eventemitter_module.eventemitter
 eventemitter_module.eventemitter = eventemitter
 eventemitter_module.instance = eventemitter.instance
-local deep_clone<const> = require('bios/util/deep_clone')
-local velocity<const> = require('bios/util/velocity')
-local clear_map<const> = require('bios/util/clear_map')
-local swap_remove<const> = require('bios/util/swap_remove')
+local deep_clone<const> = require('cartlib/util/deep_clone')
+local velocity<const> = require('cartlib/util/velocity')
+local clear_map<const> = require('cartlib/util/clear_map')
+local swap_remove<const> = require('cartlib/util/swap_remove')
 local timeline<const> = require('cartlib/timeline/index')
 local aem<const> = require('cartlib/aem')
 local progression<const> = require('cartlib/progression')
-local font_module<const> = require('system/font')
+local font_module<const> = require('cartlib/font')
 local gx_gpu<const> = require('system/gx_gpu')
 local gx_image<const> = require('cartlib/gx/image')
 local cart_input<const> = require('cartlib/input/player')
@@ -520,7 +520,7 @@ system.on_irq(irq_apu, function()
 end)
 aem.reload()
 
--- Register BIOS-owned subsystems as persistent guest registry entries.
+-- Register cart-library subsystems as persistent guest registry entries.
 local registry_instance<const> = registry.instance
 local register_singleton<const> = function(obj, id, tn)
 	obj.id = id

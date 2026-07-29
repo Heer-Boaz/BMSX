@@ -242,7 +242,7 @@ test('GX layout validation rejects unknown texture modes at the manifest boundar
 	);
 });
 
-test('a packed cart texture resolves through the ROM loader, inspector, firmware directory, and cartlib', async () => {
+test('a packed cart texture resolves through the ROM loader, inspector, and cart library', async () => {
 	const firstCanvas = createCanvas(16, 16);
 	const firstContext = firstCanvas.getContext('2d');
 	firstContext.fillStyle = '#ff0000';
@@ -319,10 +319,9 @@ test('a packed cart texture resolves through the ROM loader, inspector, firmware
 require('bios/base')
 require('bios/table')
 require('bios/string_base')
-local romdir<const> = require('system/romdir')
+local romdir<const> = require('cartlib/romdir')
 local texture<const> = require('cartlib/gx/texture')
-local imgdec<const> = require('system/imgdec')
-romdir.mount_selected_cartridge()
+local imgdec<const> = require('cartlib/gx/imgdec')
 local first_texture<const> = texture.from_image(romdir.image('first'))
 local second_texture<const> = texture.from_image(romdir.image('second'))
 texture.upload(first_texture, 0x00200040, 0)
@@ -334,10 +333,10 @@ return first_texture == second_texture and 1 or 0, imgdec.last_upload()
 			['bios/string_base', readFileSync('machine/firmware/bios/string_base.lua', 'utf8')],
 			['bios/common/endian', readFileSync('machine/firmware/bios/common/endian.lua', 'utf8')],
 			['bios/common/float_bits', readFileSync('machine/firmware/bios/common/float_bits.lua', 'utf8')],
-			['system/bin', readFileSync('machine/firmware/system/bin.lua', 'utf8')],
-			['system/romdir', readFileSync('machine/firmware/system/romdir.lua', 'utf8')],
+			['cartlib/bin', readFileSync('cartlib/bin.lua', 'utf8')],
+			['cartlib/romdir', readFileSync('cartlib/romdir.lua', 'utf8')],
 			['system/gx_gpu', 'return { texture_mode_palette4 = 0 }'],
-			['system/imgdec', `
+			['cartlib/gx/imgdec', `
 local imgdec<const> = {}
 local source_addr, source_word_count, texture_word_count, clut_word_count, destination, size, clut_destination = 0, 0, 0, 0, 0, 0, 0
 function imgdec.upload(source, source_words, texture_words, clut_words, target, target_size, clut_target)

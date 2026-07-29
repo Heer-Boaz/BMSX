@@ -102,25 +102,25 @@ GX owners:
 - Raw GX/DMA firmware: `machine/firmware/system/gx_gpu.lua`,
   `machine/firmware/system/dma.lua`
 - Streaming IMGDEC owners: `machine/ts/machine/devices/imgdec`,
-  `machine/cpp/machine/devices/imgdec`, `machine/firmware/system/imgdec.lua`,
+  `machine/cpp/machine/devices/imgdec`, `cartlib/gx/imgdec.lua`,
   `machine/ts/rompack/tooling/imgdec_codec.ts`
 - Native GX texture wire-codec owner:
   `machine/ts/rompack/tooling/gx_texture_codec.ts`; GP0 upload serialization is
   owned by `machine/ts/rompack/tooling/gp0_encode.ts`, while the mirrored raw
   GP0/CLUT constants remain in `machine/ts/machine/devices/gx/gp0.ts` and
   `machine/cpp/machine/devices/gx/gp0.h`
-- Guest texture-resource owners: `machine/firmware/system/romdir.lua`,
+- Guest texture-resource owners: `cartlib/romdir.lua`,
   `cartlib/gx/texture.lua`, and `cartlib/gx/image.lua`
 - ROM image-placement and explicit texture-TOC producers:
   `scripts/rompacker/atlasbuilder.ts`,
   `scripts/rompacker/gx_texture_layout.ts`,
   `scripts/rompacker/rombuilder.ts`
 - Fixed system-texture serializer: `scripts/rompacker/system_texture.ts`
-- BIOS fixed system-texture consumers: `machine/firmware/bios/bootrom.lua`,
-  `machine/firmware/system/font.lua`
-- BIOS monitor/terminal owners: `machine/firmware/bios/monitor.lua`,
-  `machine/firmware/bios/monitor_commands.lua`,
-  `machine/firmware/bios/terminal.lua`
+- BIOS fixed system-asset consumers: `machine/firmware/bios/bootrom.lua`,
+  `machine/firmware/bios/monitor.lua`, `machine/firmware/bios/terminal.lua`
+- Cart font-resource consumer: `cartlib/font.lua`
+- BIOS monitor-command owner:
+  `machine/firmware/bios/monitor_commands.lua`
 
 Residual VDP ownership and the old host-PNG/RGBA IMGDEC path have been removed
 from both runtimes. The current raw streaming IMGDEC expands BMSX `IMD1`
@@ -753,7 +753,7 @@ to fix and never permission to route around the raw base contract.
   mirrored bytecode vector proves that a nine-word CPU burst blocks atomically
   at `COMMAND`, survives save/restore, resumes once and retries the whole store.
   `cartlib_test` executes that raw command interlock and the public
-  `system/gx_gte.vmad3()` utility in the actual Lua/CPU runtime. The TS
+  `cartlib/gx/gte.vmad3()` utility in the actual Lua/CPU runtime. The TS
   GTE/save-codec suites, C++ GTE/libretro save-state suites, runtime-cart parity,
   core-parity audit and independent blocker review are the acceptance gate.
   The second independent rereview returned no blockers on 2026-07-19.

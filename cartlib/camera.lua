@@ -9,7 +9,7 @@ local cos<const> = require('bios/math').cos
 local atan<const> = require('bios/math').atan
 local asin<const> = require('bios/math').asin
 local acos<const> = require('bios/math').acos
-local clamp<const> = require('bios/util/clamp')
+local clamp<const> = require('cartlib/util/clamp')
 
 -- ── q_mul ─────────────────────────────────────────────────────────────────────
 -- Quaternion multiply: a * b.  Matches Q.mul() in math3d.ts.

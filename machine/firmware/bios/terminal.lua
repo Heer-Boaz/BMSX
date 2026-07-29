@@ -1,4 +1,4 @@
-local romdir<const> = require('system/romdir')
+local assets<const> = require('bmsx/system_assets')
 local gx_gpu<const> = require('system/gx_gpu')
 local gx_command_list<const> = require('bios/gx_command_list')
 local layout<const> = require('bios/terminal_layout')
@@ -6,7 +6,7 @@ local layout<const> = require('bios/terminal_layout')
 local byte<const> = __bmsx_string_byte
 local terminal<const> = {}
 
-local terminal_glyphs<const>: *word = romdir.resource('bios_terminal_glyphs').addr
+local terminal_glyphs<const>: *word = assets.bin_bios_terminal_glyphs_addr
 
 local glyph_width<const> = 4
 local glyph_height<const> = 6

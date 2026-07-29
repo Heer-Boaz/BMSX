@@ -1,7 +1,7 @@
-local rol8<const> = require('bios/util/rol8')
-local clamp<const> = require('bios/util/clamp')
+local rol8<const> = require('cartlib/util/rol8')
+local clamp<const> = require('cartlib/util/clamp')
 require('constants')
-local bin<const> = require('system/bin')
+local bin<const> = require('cartlib/bin')
 local assets<const> = require('bmsx/assets')
 
 local stage<const> = {}

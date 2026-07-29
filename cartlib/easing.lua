@@ -1,4 +1,4 @@
-local clamp<const> = require('bios/util/clamp')
+local clamp<const> = require('cartlib/util/clamp')
 
 local linear<const> = function(value)
 	return clamp(value, 0, 1)

@@ -74,7 +74,7 @@
 --    and (for shrine exit) emits a reply event ('shrine_exit_done') when the
 --    exit animation timeline completes.
 
-local clamp<const> = require('bios/util/clamp')
+local clamp<const> = require('cartlib/util/clamp')
 local abs<const> = require('bios/math').abs
 require('constants')
 local castle_map<const> = require('castle/map')

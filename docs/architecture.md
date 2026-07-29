@@ -157,10 +157,12 @@ architecture debt, not as precedent. Cart manifests are packaging/header input,
 not the live hardware-control surface. If guest code can observe a value or
 function, it must come from one of the real owners: ROM/header fields consumed at
 boot, link symbols, BIOS Lua, CPU-visible RAM/MMIO, or a documented device
-register. Lua library behavior belongs in BIOS Lua unless it is a true language
-primitive of the remaining dynamic Lua object-world. Do not preserve manifest or
-host-native library shortcuts by adding wrappers; migrate each observable value
-to its owner and delete the shortcut.
+register. Lua language-runtime behavior and machine firmware services belong in
+BIOS Lua unless they are true CPU primitives. Cart-facing asset, animation,
+font, collection, and gameplay libraries belong in `cartlib` and are linked
+into the cartridge image. Do not preserve manifest or host-native library
+shortcuts by adding wrappers; migrate each observable value to its owner and
+delete the shortcut.
 
 ## Fixed-point and angle ABI
 
@@ -178,20 +180,51 @@ store lookup tables in `.rodata` and read them through ordinary typed pointer
 loads. Function names such as `sincos_turn32` are ordinary exported BLua symbols,
 not compiler, CPU, interpreter, or device intrinsics.
 
-Guest library tables are firmware-owned. The boot ROM installs `bios/base.lua`
-as the core Lua global library, `bios/table.lua` as `table`, `bios/string.lua`
-as `string`, `bios/math.lua` as `math`, and `bios/easing.lua` as the animation
-easing library. Those modules execute as BLua using ordinary calls, ROM lookup
-tables, and integer/number instructions. Machine TS/C++ firmware exposes only
-temporary `__bmsx_*` boot primitives for the BIOS to capture; runtime boot clears
-those primitive globals after system static-module initialization and before any
-cart static module or reset vector runs. `require(...)` is not one of those
-primitives and is not a guest runtime global: literal module imports are resolved
-by the compiler into static module initialization and module export slot loads.
-Machine TS/C++ firmware must not expose `math.*`, `easing.*`, `string.*`,
-`table.*`, `require`, or core Lua globals as native host callbacks; host
-`Math.*`/`std::*` remains valid only for emulator/device implementation and
-build tooling.
+The guest Lua language deliberately includes its table and string value types
+and the normal base, table, string, math and OS libraries. The boot ROM installs
+`bios/base.lua` as the core Lua global library, `bios/table.lua` as `table`,
+`bios/string.lua` as `string`, `bios/math.lua` as `math`, and `bios/os.lua` as
+`os`. Those modules execute as BLua using ordinary calls, ROM lookup tables, and
+integer/number instructions; carts are not expected to avoid normal Lua
+features. More generally, broadly useful language/runtime basics may be
+firmware-provided guest services.
+
+The prohibition is narrower: machine TS/C++ must not implement or inject those
+public guest functions as native host callbacks. It exposes only temporary
+`__bmsx_*` boot primitives for the BIOS to capture; runtime boot clears those
+primitive globals after system static-module initialization and before any cart
+static module or reset vector runs. `require(...)` is not one of those
+primitives and is not a guest runtime global: literal module imports are
+resolved by the compiler into static module initialization and module export
+slot loads. Host `Math.*`/`std::*` remains valid only for emulator/device
+implementation and build tooling.
+
+Guest-cycle accounting describes the BLua32 datapath, not the amount of work
+performed by a generic Lua interpreter or by the emulator host. Tables are the
+language's normal object representation: `GETFIELD`, `GETI`, `GETT` and their
+store counterparts are deliberately cheap machine instructions, with the
+literal-field and integer-index paths consuming image-owned lookup caches.
+`CONCAT` and `CONCATN` likewise execute as CPU instructions. Implementing those
+instructions directly in mirrored TS/C++ is emulation of the datapath, not a
+guest-visible host callback. Their cycle costs must not be inflated merely
+because a host implementation performs lookup, hashing, allocation or string
+work; changing a cost requires an explicit change to the hypothetical hardware
+contract.
+
+Literal `require(...)` is authoring syntax resolved by the compiler and consumes
+no guest cycles of its own. Emitted static module initialization executes
+normally, once, and deliberate dynamic module-root or field reads pay only for
+the ordinary load instructions that remain after compilation. A library being
+firmware-owned also does not require every useful primitive to be expressed as
+a slow BLua loop: a proven fundamental operation may be an architected CPU
+instruction or microcode operation with mirrored representation and timing.
+
+Animation easing is not a Lua standard-library facility or general firmware
+service; it lives in `cartlib` with font layout, ROM-directory/metadata
+decoding, APU asset decoding, clock helpers, and cart-only device helpers. Those
+modules consume cartridge code and heap rather than system-firmware code and
+heap. BIOS fixed assets use generated link-time system-ROM address constants;
+BIOS does not build a runtime TOC object graph for them.
 
 Runtime source compilation (`load`/`loadstring`) is a compiler/loader boundary,
 not a shipped-cart technique or a BIOS-provided public Lua API. ROM, BIOS and
@@ -212,8 +245,10 @@ CPU-visible `sys_time_ms` word and civil-time conversion is deterministic BMSX
 UTC-equivalent logic, not host wall-clock, host timezone, JavaScript `Date`, or
 libc local-time behavior. VM primitives required by the dynamic Lua object-world
 remain CPU intrinsics, but their cart-visible API surface is installed by BIOS
-Lua and is not precedent for cart-visible host facilities such as the removed
-`math.*`, `easing.*`, and `os.*` callbacks.
+Lua and is not precedent for implementing guest libraries through removed
+host-native callbacks. The firmware implementations of `math.*` and the other
+Lua basics remain part of the machine; animation `easing` remains a cart
+library.
 
 ## Hard boundary
 

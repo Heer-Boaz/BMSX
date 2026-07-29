@@ -1,4 +1,4 @@
-local font<const> = require('system/font')
+local font<const> = require('cartlib/font')
 
 local glyphs<const> = {
 	[' '] = 'msx_6b_font_space',

@@ -1,11 +1,11 @@
 -- aem.lua
--- BIOS Audio Event Map dispatcher. AEM rules decide what to play; APU writes live in apu.lua.
+-- Cart Audio Event Map dispatcher. AEM rules decide what to play; APU writes live in apu.lua.
 
-local apu<const> = require('system/apu')
+local apu<const> = require('cartlib/apu')
 local aem_biquad<const> = require('cartlib/aem_biquad')
 local eventemitter<const> = require('cartlib/eventemitter').eventemitter
 local compile_matcher<const> = require('cartlib/event_matcher').compile
-local romdir<const> = require('system/romdir')
+local romdir<const> = require('cartlib/romdir')
 
 local global_actor_key<const> = false
 local slot_sfx<const> = 0

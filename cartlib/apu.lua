@@ -1,5 +1,5 @@
 -- apu.lua
--- BIOS-side APU command helpers. Cart-visible audio control is MMIO.
+-- Cart-library APU command helpers. Audio control reaches the device through MMIO.
 local endian<const> = require("bios/common/endian")
 local read_u16le<const> = endian.read_u16le
 local read_u32le<const> = endian.read_u32le

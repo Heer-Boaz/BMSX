@@ -24,7 +24,7 @@ combat_director_fsm_id = 'p3.combat.director.fsm'
 -- Transition/overgang timing is authored as a ROM data asset and read back via
 -- the build/link `bmsx/assets` symbols: the addresses inline to constants at this
 -- use site and `bin.decode` reads the packed bytes (no PICO-style runtime lookup).
-local bin<const> = require('system/bin')
+local bin<const> = require('cartlib/bin')
 local assets<const> = require('bmsx/assets')
 local transition_config<const> = bin.decode(assets.data_transition_config_addr, assets.data_transition_config_len, 'transition_config')
 

@@ -1,15 +1,15 @@
 -- components.lua
--- base component primitives for system rom
+-- Base component primitives for the cart runtime.
 
 local eventemitter_module<const> = require('cartlib/eventemitter')
-local wrap_text_lines<const> = require('bios/util/wrap_text_lines').wrap_text_lines
+local wrap_text_lines<const> = require('cartlib/util/wrap_text_lines').wrap_text_lines
 local timeline_module<const> = require('cartlib/timeline/index')
 local timeline_dispatch<const> = require('cartlib/timeline/dispatch')
 local collision_profiles<const> = require('cartlib/collision_profiles')
-local font_module<const> = require('system/font')
+local font_module<const> = require('cartlib/font')
 local gx_image<const> = require('cartlib/gx/image')
 local gx_gpu<const> = require('system/gx_gpu')
-local romdir<const> = require('system/romdir')
+local romdir<const> = require('cartlib/romdir')
 local world_instance<const> = require('cartlib/world/index').instance
 local eventemitter<const> = eventemitter_module.eventemitter
 local timeline<const> = timeline_module.timeline

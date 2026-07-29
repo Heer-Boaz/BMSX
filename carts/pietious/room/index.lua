@@ -1,4 +1,4 @@
-local rect_overlaps<const> = require('bios/util/rect_overlaps')
+local rect_overlaps<const> = require('cartlib/util/rect_overlaps')
 require('constants')
 local castle_map<const> = require('castle/map')
 local timeline<const> = require('cartlib/timeline/index')

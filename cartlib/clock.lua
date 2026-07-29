@@ -1,10 +1,7 @@
 -- clock.lua
--- BIOS clock module backed by the machine clock builtin.
+-- Cart-library clock helpers backed by the firmware clock and frame-timing word.
 
-local clock<const> = {
-	now = clock_now,
-	perf_now = clock_now,
-}
+local clock<const> = {}
 
 local frame_milliseconds_q16<const>: *word = 0x08010228
 

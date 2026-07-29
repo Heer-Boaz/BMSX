@@ -26,12 +26,12 @@ import {
 	runCompiledTestSystem,
 } from '../helpers/blua32';
 
-const BOOL01_PATH = 'bios/util/bool01';
-const DIV_TOWARD_ZERO_PATH = 'bios/util/div_toward_zero';
-const ROL8_PATH = 'bios/util/rol8';
+const BOOL01_PATH = 'cartlib/util/bool01';
+const DIV_TOWARD_ZERO_PATH = 'cartlib/util/div_toward_zero';
+const ROL8_PATH = 'cartlib/util/rol8';
 const ROUND_TO_NEAREST_PATH = 'bios/util/round_to_nearest';
-const CLAMP_PATH = 'bios/util/clamp';
-const RECT_OVERLAPS_PATH = 'bios/util/rect_overlaps';
+const CLAMP_PATH = 'cartlib/util/clamp';
+const RECT_OVERLAPS_PATH = 'cartlib/util/rect_overlaps';
 const SINCOS_TURN32_PATH = 'bios/util/sincos_turn32';
 const STATIC_FORBIDDEN_OPCODE_PATTERN = /\b(?:GETSYS|SETSYS|GETGL|SETGL|NEWT|GETT|SETT|GETI|SETI|GETFIELD|SETFIELD|SELF|LEN|CLOSURE|VARARG|CONCAT|CONCATN)\b/;
 const CART_BOOT_SOURCE = `cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]`;
@@ -82,31 +82,31 @@ function disassembleConstExport(compiled: CompiledProgram, slotName: string): st
 }
 
 test('rect_overlaps compiles as a const function module and calls through export-proto', () => {
-	const moduleSource = readFileSync('machine/firmware/bios/util/rect_overlaps.lua', 'utf8');
+	const moduleSource = readFileSync('cartlib/util/rect_overlaps.lua', 'utf8');
 	const entrySource = `
 local rect_overlaps<const> = require("${RECT_OVERLAPS_PATH}")
 return rect_overlaps(0, 0, 10, 10, 5, 5, 1, 1), rect_overlaps(0, 0, 2, 2, 3, 3, 1, 1)
 `;
 	const compiled = compileWithModule(entrySource, RECT_OVERLAPS_PATH, moduleSource);
 	assert.equal(compiled.moduleProtoMap.has(RECT_OVERLAPS_PATH), false);
-	assert.equal(compiled.metadata.exportProtoIdBySlot.bios__util__rect_overlaps?.includes('/static:'), true);
-	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'bios__util__rect_overlaps'), true);
-	const disasm = disassembleConstExport(compiled, 'bios__util__rect_overlaps');
+	assert.equal(compiled.metadata.exportProtoIdBySlot.cartlib__util__rect_overlaps?.includes('/static:'), true);
+	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'cartlib__util__rect_overlaps'), true);
+	const disasm = disassembleConstExport(compiled, 'cartlib__util__rect_overlaps');
 	assert.doesNotMatch(disasm, STATIC_FORBIDDEN_OPCODE_PATTERN);
 	assert.deepEqual(runColdCompiled(compiled), [true, false]);
 });
 
 test('clamp compiles as a const function module and calls through export-proto', () => {
-	const moduleSource = readFileSync('machine/firmware/bios/util/clamp.lua', 'utf8');
+	const moduleSource = readFileSync('cartlib/util/clamp.lua', 'utf8');
 	const entrySource = `
 local clamp<const> = require("${CLAMP_PATH}")
 return clamp(-2, 0, 10), clamp(7, 0, 10), clamp(12, 0, 10)
 `;
 	const compiled = compileWithModule(entrySource, CLAMP_PATH, moduleSource);
 	assert.equal(compiled.moduleProtoMap.has(CLAMP_PATH), false);
-	assert.equal(compiled.metadata.exportProtoIdBySlot.bios__util__clamp?.includes('/static:'), true);
-	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'bios__util__clamp'), true);
-	const disasm = disassembleConstExport(compiled, 'bios__util__clamp');
+	assert.equal(compiled.metadata.exportProtoIdBySlot.cartlib__util__clamp?.includes('/static:'), true);
+	assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === 'cartlib__util__clamp'), true);
+	const disasm = disassembleConstExport(compiled, 'cartlib__util__clamp');
 	assert.doesNotMatch(disasm, STATIC_FORBIDDEN_OPCODE_PATTERN);
 	assert.deepEqual(runColdCompiled(compiled), [0, 7, 10]);
 });
@@ -116,7 +116,7 @@ test('remaining scalar helpers compile as const function modules and call throug
 		{
 			path: BOOL01_PATH,
 			name: 'bool01',
-			sourcePath: 'machine/firmware/bios/util/bool01.lua',
+			sourcePath: 'cartlib/util/bool01.lua',
 			entry: `
 local bool01<const> = require("${BOOL01_PATH}")
 return bool01(true), bool01(false)
@@ -126,7 +126,7 @@ return bool01(true), bool01(false)
 		{
 			path: DIV_TOWARD_ZERO_PATH,
 			name: 'div_toward_zero',
-			sourcePath: 'machine/firmware/bios/util/div_toward_zero.lua',
+			sourcePath: 'cartlib/util/div_toward_zero.lua',
 			entry: `
 local div_toward_zero<const> = require("${DIV_TOWARD_ZERO_PATH}")
 return div_toward_zero(7, 3), div_toward_zero(-7, 3)
@@ -136,7 +136,7 @@ return div_toward_zero(7, 3), div_toward_zero(-7, 3)
 		{
 			path: ROL8_PATH,
 			name: 'rol8',
-			sourcePath: 'machine/firmware/bios/util/rol8.lua',
+			sourcePath: 'cartlib/util/rol8.lua',
 			entry: `
 local rol8<const> = require("${ROL8_PATH}")
 return rol8(5), rol8(128)
@@ -158,7 +158,7 @@ return round_to_nearest(1.4), round_to_nearest(1.6), round_to_nearest(-1.4), rou
 		const testCase = cases[index];
 		const moduleSource = readFileSync(testCase.sourcePath, 'utf8');
 		const compiled = compileWithModule(testCase.entry, testCase.path, moduleSource);
-		const slotName = `bios__util__${testCase.name}`;
+		const slotName = testCase.path.replaceAll('/', '__');
 		assert.equal(compiled.moduleProtoMap.has(testCase.path), false);
 		assert.equal(compiled.metadata.exportProtoIdBySlot[slotName]?.includes('/static:'), true);
 		assert.equal(compiled.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.symbol === slotName), true);
@@ -234,7 +234,7 @@ return sincos_turn32(0)
 });
 
 test('const function modules do not materialize Lua function values', () => {
-	const moduleSource = readFileSync('machine/firmware/bios/util/clamp.lua', 'utf8');
+	const moduleSource = readFileSync('cartlib/util/clamp.lua', 'utf8');
 	assert.throws(
 		() => compileWithModule(`
 local required = require("${CLAMP_PATH}")
@@ -253,7 +253,7 @@ return aliased(1.25, 0, 1)
 });
 
 test('static function exports do not enter const table materialization', () => {
-	const clampSource = readFileSync('machine/firmware/bios/util/clamp.lua', 'utf8');
+	const clampSource = readFileSync('cartlib/util/clamp.lua', 'utf8');
 	assert.throws(
 		() => compileWithModule(`
 local clamp<const> = require("${CLAMP_PATH}")
@@ -265,47 +265,47 @@ return easing.clamp(1.2, 0, 1)
 });
 
 test('cart const-function calls link to system export protos', () => {
-	const moduleSource = readFileSync('machine/firmware/bios/util/rect_overlaps.lua', 'utf8');
-	const module = { path: RECT_OVERLAPS_PATH, chunk: parseSource(moduleSource, `${RECT_OVERLAPS_PATH}.lua`), source: moduleSource };
+	const moduleSource = readFileSync('machine/firmware/bios/util/round_to_nearest.lua', 'utf8');
+	const module = { path: ROUND_TO_NEAREST_PATH, chunk: parseSource(moduleSource, `${ROUND_TO_NEAREST_PATH}.lua`), source: moduleSource };
 	const systemCompiled = compileLuaChunkToProgram(
 		parseSource(CART_BOOT_SOURCE, 'system.lua'),
 		[module],
 		{ entrySource: CART_BOOT_SOURCE, programDomain: 'system' },
 	);
 	const cartSource = `
-local rect_overlaps<const> = require("${RECT_OVERLAPS_PATH}")
-return rect_overlaps(2, 2, 4, 4, 5, 5, 2, 2)
+local round_to_nearest<const> = require("${ROUND_TO_NEAREST_PATH}")
+return round_to_nearest(1.6)
 `;
 	const cartCompiled = compileLuaChunkToProgram(
 		parseSource(cartSource, 'cart.lua'),
 		[],
 		{ entrySource: cartSource, externalModules: [module] },
 	);
-	assert.deepEqual(runColdPair(systemCompiled, cartCompiled), [true]);
+	assert.deepEqual(runColdPair(systemCompiled, cartCompiled), [2]);
 });
 
 test('installed const-function modules stay call targets without Lua value materialization', () => {
-	const moduleSource = readFileSync('machine/firmware/bios/util/clamp.lua', 'utf8');
-	const module = { path: CLAMP_PATH, chunk: parseSource(moduleSource, `${CLAMP_PATH}.lua`), source: moduleSource };
+	const moduleSource = readFileSync('machine/firmware/bios/util/round_to_nearest.lua', 'utf8');
+	const module = { path: ROUND_TO_NEAREST_PATH, chunk: parseSource(moduleSource, `${ROUND_TO_NEAREST_PATH}.lua`), source: moduleSource };
 	const systemCompiled = compileLuaChunkToProgram(
 		parseSource(CART_BOOT_SOURCE, 'system.lua'),
 		[module],
 		{ entrySource: CART_BOOT_SOURCE, programDomain: 'system' },
 	);
 	const source = `
-local clamp<const> = require("${CLAMP_PATH}")
-return clamp(12, 0, 10)
+local round_to_nearest<const> = require("${ROUND_TO_NEAREST_PATH}")
+return round_to_nearest(1.6)
 `;
 	const cartCompiled = compileLuaChunkToProgram(
 		parseSource(source, 'cart.lua'),
 		[],
 		{ entrySource: source, externalModules: [module], programDomain: 'cart' },
 	);
-	assert.deepEqual(runColdPair(systemCompiled, cartCompiled), [10]);
+	assert.deepEqual(runColdPair(systemCompiled, cartCompiled), [2]);
 	const dynamicSource = `
-local clamp<const> = require("${CLAMP_PATH}")
-local dynamic = clamp
-return dynamic(12, 0, 10)
+local round_to_nearest<const> = require("${ROUND_TO_NEAREST_PATH}")
+local dynamic = round_to_nearest
+return dynamic(1.6)
 `;
 	assert.throws(
 		() => compileLuaChunkToProgram(

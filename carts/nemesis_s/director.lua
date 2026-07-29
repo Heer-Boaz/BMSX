@@ -1,4 +1,4 @@
-local bool01<const> = require('bios/util/bool01')
+local bool01<const> = require('cartlib/util/bool01')
 require('constants')
 
 local director<const> = {}

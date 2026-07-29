@@ -1,4 +1,4 @@
-local apu<const> = require('system/apu')
+local apu<const> = require('cartlib/apu')
 require('cartlib/prelude')
 
 rodata transfer_source: word[4] = {

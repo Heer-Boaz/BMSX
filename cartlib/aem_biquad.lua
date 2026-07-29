@@ -3,7 +3,7 @@
 
 local numeric<const> = require('bios/common/numeric')
 local bios_math<const> = require('bios/math')
-local apu<const> = require('system/apu')
+local apu<const> = require('cartlib/apu')
 
 local design_coefficients<const> = function(filter_type, frequency, q, gain)
 	local omega<const> = 2 * bios_math.pi * frequency / apu.output_sample_rate_hz

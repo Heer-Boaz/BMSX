@@ -2,7 +2,7 @@
 -- shrine overlay renderer — displays text on the shrine screen.
 
 require('constants')
-local font_module<const> = require('system/font')
+local font_module<const> = require('cartlib/font')
 
 local shrine<const> = {}
 shrine.__index = shrine

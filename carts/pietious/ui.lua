@@ -1,4 +1,4 @@
-local clamp<const> = require('bios/util/clamp')
+local clamp<const> = require('cartlib/util/clamp')
 require('constants')
 
 local ui<const> = {}

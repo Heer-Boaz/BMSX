@@ -15,7 +15,7 @@
 -- transition mode, so presentation performs no director-state polling.
 
 require('constants')
-local font_module<const> = require('system/font')
+local font_module<const> = require('cartlib/font')
 
 local transition<const> = {}
 transition.__index = transition

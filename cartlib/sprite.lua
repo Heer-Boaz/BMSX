@@ -33,7 +33,7 @@
 
 local worldobject<const> = require('cartlib/world/object')
 local components<const> = require('cartlib/components')
-local romdir<const> = require('system/romdir')
+local romdir<const> = require('cartlib/romdir')
 
 local spriteobject<const> = {}
 spriteobject.__index = spriteobject

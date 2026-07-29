@@ -1,15 +1,15 @@
 local builders<const> = {}
 require('globals')
 local round_number<const> = require('bios/util/round_to_nearest')
-local smoothstep<const> = require('bios/easing').smoothstep
-local pingpong01<const> = require('bios/easing').pingpong01
-local ease_in_out_quad<const> = require('bios/easing').ease_in_out_quad
-local arc01<const> = require('bios/easing').arc01
-local ease_out_quad<const> = require('bios/easing').ease_out_quad
-local ease_in_quad<const> = require('bios/easing').ease_in_quad
-local ease_out_back<const> = require('bios/easing').ease_out_back
+local smoothstep<const> = require('cartlib/easing').smoothstep
+local pingpong01<const> = require('cartlib/easing').pingpong01
+local ease_in_out_quad<const> = require('cartlib/easing').ease_in_out_quad
+local arc01<const> = require('cartlib/easing').arc01
+local ease_out_quad<const> = require('cartlib/easing').ease_out_quad
+local ease_in_quad<const> = require('cartlib/easing').ease_in_quad
+local ease_out_back<const> = require('cartlib/easing').ease_out_back
 local sqrt<const> = require('bios/math').sqrt
-local color<const> = require('bios/common/color')
+local color<const> = require('cartlib/color')
 
 local shake_hash<const> = function(seed)
 	seed = seed ~ (seed << 13)

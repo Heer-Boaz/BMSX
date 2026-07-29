@@ -1,13 +1,13 @@
 -- textobject.lua
--- text object with typewriter effect for system rom
+-- Text object with typewriter effect for carts.
 
 local worldobject<const> = require('cartlib/world/object')
 local components<const> = require('cartlib/components')
 local fsmlibrary<const> = require('cartlib/fsm/library')
-local wrap_text_lines<const> = require('bios/util/wrap_text_lines').wrap_text_lines
+local wrap_text_lines<const> = require('cartlib/util/wrap_text_lines').wrap_text_lines
 local gx_gpu<const> = require('system/gx_gpu')
-local font_module<const> = require('system/font')
-local smoothstep<const> = require('bios/easing').smoothstep
+local font_module<const> = require('cartlib/font')
+local smoothstep<const> = require('cartlib/easing').smoothstep
 
 local textobject<const> = {}
 textobject.__index = textobject
@@ -302,7 +302,7 @@ function textobject.new(opts)
 	end
 	self.dimensions = dimensions
 	self.char_width_uses_font = opts.char_width == nil
-	self.char_width = opts.char_width or font.glyphs['a'].width
+	self.char_width = opts.char_width or font.items[0x61].width
 	self.blank_lines = opts.blank_lines or 0
 	local line_height<const> = line_advance(font, self.blank_lines)
 	self.text_component = textobjectcomponent.new({
@@ -466,7 +466,7 @@ function textobject:set_font(font)
 	self.text_component.font = font
 	self.text_component.line_height = line_advance(font, self.blank_lines)
 	if self.char_width_uses_font then
-		self.char_width = font.glyphs['a'].width
+		self.char_width = font.items[0x61].width
 	end
 	self.maximum_characters_per_line = (self.dimensions.right - self.dimensions.left) // self.char_width
 	self:rebuild_text_layout()

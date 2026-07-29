@@ -1,5 +1,5 @@
 -- ecs_systems.lua
--- built-in ecs systems for the system ROM runtime
+-- Built-in ECS systems for the cart runtime.
 
 --
 -- DESIGN PRINCIPLES — collision handling via overlap2dsystem
@@ -58,9 +58,9 @@
 --    setting layer/mask directly.
 
 local ecs<const> = require('cartlib/ecs/index')
-local clear_map<const> = require('bios/util/clear_map')
+local clear_map<const> = require('cartlib/util/clear_map')
 local collision2d<const> = require('cartlib/collision2d')
-local scratchrecordbatch<const> = require('bios/util/scratchrecordbatch')
+local scratchrecordbatch<const> = require('cartlib/util/scratchrecordbatch')
 local world_instance<const> = require('cartlib/world/index').instance
 
 local tickgroup<const> = ecs.tickgroup

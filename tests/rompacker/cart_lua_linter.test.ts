@@ -38,10 +38,10 @@ test('cart lua linter rejects require inside function bodies in cart and bios pr
 	await withCartLintFixture(
 		'cart_lua_linter_function_body_require',
 		[
-			"local clamp<const> = require('bios/util/clamp')",
+			"local clamp<const> = require('cartlib/util/clamp')",
 			'local max_value<const> = 1',
 			'local run<const> = function(value)',
-			"	local bad<const> = require('bios/util/clamp')",
+			"	local bad<const> = require('cartlib/util/clamp')",
 			'	return bad(value, 0, max_value)',
 			'end',
 			'return run(2)',

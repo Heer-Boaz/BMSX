@@ -1,5 +1,5 @@
 -- ecs_builtin.lua
--- built-in ecs pipeline registration for the system ROM runtime
+-- Built-in ECS pipeline registration for the cart runtime.
 
 local ecs<const> = require('cartlib/ecs/index')
 local ecs_pipeline<const> = require('cartlib/ecs/pipeline')

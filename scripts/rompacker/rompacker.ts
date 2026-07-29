@@ -16,6 +16,7 @@ import {
 	GX_TEXTURE_LAYOUT_MODULE_PATH,
 	GX_TEXTURE_LAYOUT_SOURCE_PATH,
 	ROM_ASSET_SYMBOL_MODULE_PATH,
+	SYSTEM_ASSET_SYMBOL_MODULE_PATH,
 } from '../../machine/ts/rompack/tooling/generated_modules';
 import { resolveCartridgeHeaderWords } from '../../machine/ts/rompack/tooling/manifest';
 import { LuaError } from '../../machine/ts/lua/errors';
@@ -376,9 +377,15 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 	validateAudioEventReferences(BIOSResources);
 	const BIOSRomAssets = await runBIOSStep(TASK.ROM_ASSETS, () => generateRomAssets(BIOSResources, message => progress?.setDetail(message)));
 	const BIOSLayout = layoutRomPrefix(BIOSRomAssets, debug, null);
+	const BIOSAssetSymbolModuleSource = buildRomAssetSymbolModuleSourceFromSymbols(
+		collectRomAssetSymbols(BIOSLayout.entries, 'system'),
+	);
 	const BIOSBlua32 = buildRomBlua32Tail(BIOSRomAssets, SYSTEM_BOOT_ENTRY_PATH, {
 		externalLuaAssets: [],
-		generatedLuaModules: [],
+		generatedLuaModules: [{
+			path: SYSTEM_ASSET_SYMBOL_MODULE_PATH,
+			source: BIOSAssetSymbolModuleSource,
+		}],
 		includeSymbols: debug,
 		optLevel,
 		imageOffset: BIOSLayout.blua32Offset,

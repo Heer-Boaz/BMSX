@@ -1,5 +1,5 @@
 -- ecs.lua
--- ecs core types and system manager for the system ROM runtime
+-- ECS core types and system manager for the cart runtime.
 --
 -- DESIGN PRINCIPLES — ECS systems vs per-object logic
 --

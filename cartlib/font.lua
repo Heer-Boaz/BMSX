@@ -1,5 +1,6 @@
 local string<const> = require('bios/string')
-local romdir<const> = require('system/romdir')
+local romdir<const> = require('cartlib/romdir')
+local byte<const> = string.byte
 
 local font<const> = {}
 
@@ -16,10 +17,10 @@ end
 
 local build_descriptor<const> = function(definition)
 	local advance_padding<const> = definition.advance_padding or 0
-	local glyphs<const> = {}
+	local items<const> = {}
 	for glyph, imgid in pairs(definition.glyphs) do
 		local image_meta<const> = romdir.image(imgid).imgmeta
-		glyphs[glyph] = {
+		items[byte(glyph)] = {
 			imgid = imgid,
 			width = image_meta.width,
 			height = image_meta.height,
@@ -28,9 +29,9 @@ local build_descriptor<const> = function(definition)
 			gx_source_y = image_meta.gx_source_y,
 		}
 	end
-	local space<const> = glyphs[' ']
-	if space and not glyphs['\t'] then
-		glyphs['\t'] = {
+	local space<const> = items[0x20]
+	if space and not items[0x09] then
+		items[0x09] = {
 			imgid = space.imgid,
 			width = space.width,
 			height = space.height,
@@ -39,10 +40,9 @@ local build_descriptor<const> = function(definition)
 			gx_source_y = space.gx_source_y,
 		}
 	end
-	local line_glyph<const> = glyphs['A'] or glyphs['a'] or glyphs['?']
+	local line_glyph<const> = items[0x41] or items[0x61] or items[0x3f]
 	return {
-		items = glyphs,
-		glyphs = glyphs,
+		items = items,
 		line_height = definition.line_height or line_glyph.height,
 		advance_padding = advance_padding,
 	}
@@ -62,21 +62,14 @@ function font.get(id)
 end
 
 
-local glyph_item<const> = function(items, glyph)
-	local item<const> = items[glyph]
-	if item then
-		return item
-	end
-	return items['?']
-end
-
 function font.write_glyph_line(id_or_descriptor, line, target)
 	local descriptor<const> = type(id_or_descriptor) == 'table' and id_or_descriptor or font.get(id_or_descriptor)
 	local items<const> = descriptor.items
+	local fallback<const> = items[0x3f]
 	local length<const> = #line
 	local width = 0
 	for index = 1, length do
-		local glyph<const> = glyph_item(items, string.sub(line, index, index))
+		local glyph<const> = items[byte(line, index)] or fallback
 		target[index] = glyph
 		width = width + glyph.advance
 	end
@@ -89,17 +82,19 @@ end
 function font.for_each_glyph(id_or_descriptor, line, fn)
 	local descriptor<const> = type(id_or_descriptor) == 'table' and id_or_descriptor or font.get(id_or_descriptor)
 	local items<const> = descriptor.items
+	local fallback<const> = items[0x3f]
 	for index = 1, #line do
-		fn(glyph_item(items, string.sub(line, index, index)))
+		fn(items[byte(line, index)] or fallback)
 	end
 end
 
 function font.measure_line_width(id_or_descriptor, line)
 	local descriptor<const> = type(id_or_descriptor) == 'table' and id_or_descriptor or font.get(id_or_descriptor)
 	local items<const> = descriptor.items
+	local fallback<const> = items[0x3f]
 	local width = 0
 	for index = 1, #line do
-		width = width + glyph_item(items, string.sub(line, index, index)).advance
+		width = width + (items[byte(line, index)] or fallback).advance
 	end
 	return width
 end
