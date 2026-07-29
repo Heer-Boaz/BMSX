@@ -2,7 +2,9 @@
 #include "spec/blua32/image_format.h"
 #include "spec/blua32/instruction_format.h"
 #include "spec/bmsx/memory_map.h"
-#include "rompack/loader.h"
+#include "rompack/format.h"
+#include "rompack/image.h"
+#include "rompack/tooling/blua32_image.h"
 #include "support/blua32_test_rom.h"
 
 #include <algorithm>

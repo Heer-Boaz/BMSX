@@ -226,6 +226,21 @@
 			"reason": "rompacker_authoring_schema_not_runtime_core"
 		},
 		{
+			"pattern": "machine/ts/rompack/loader.ts",
+			"category": "rompacker_tooling",
+			"reason": "studio_rom_asset_decode_and_authoring_package_not_runtime_core"
+		},
+		{
+			"pattern": "machine/ts/rompack/source.ts",
+			"category": "rompacker_tooling",
+			"reason": "studio_layered_rom_source_not_runtime_core"
+		},
+		{
+			"pattern": "machine/ts/rompack/metadata.ts",
+			"category": "rompacker_tooling",
+			"reason": "studio_rom_asset_metadata_decode_not_runtime_core"
+		},
+		{
 			"pattern": "machine/ts/.bmsx/**",
 			"category": "host",
 			"reason": "workspace_data_not_source"
@@ -275,7 +290,6 @@
 		"machine/ts/rompack/format.ts",
 		"machine/ts/render/host_overlay/atlas.generated.ts",
 		"machine/ts/render/host_overlay/atlas.ts",
-		"machine/ts/rompack/loader.ts",
 		"machine/ts/render/shared/submissions.ts",
 		"machine/ts/render/shared/solid_pixels.ts",
 		"machine/ts/common/fixed_point.ts",
@@ -315,8 +329,6 @@
 		"machine/ts/render/runtime_state.ts",
 		"machine/ts/rompack/tokens.ts",
 		"machine/ts/rompack/toc.ts",
-		"machine/ts/rompack/source.ts",
-		"machine/ts/rompack/metadata.ts",
 		"machine/ts/render/shared/solid_pixels.ts"
 	],
 	"strict_runtime_symbol_parity": [
@@ -1383,102 +1395,12 @@
 				{
 					"symbol": "RomTocPayload",
 					"field": "entries",
-					"reason": "TS TOC payload exposes RomAsset format records; C++ stores the same decoded entries as RomSourceEntry records at the native source-stack boundary."
+					"reason": "TS TOC payload exposes RomAsset records; C++ stores the same decoded fields as RomSourceEntry records owned by the native TOC decoder."
 				},
 				{
 					"symbol": "RomTocPayload",
 					"field": "projectRootPath",
 					"reason": "TS uses null for an absent project root; C++ stores the same absence with std::optional."
-				}
-			]
-		},
-		{
-			"ts": "machine/ts/rompack/source.ts",
-			"cpp": [
-				"machine/cpp/rompack/source.h"
-			],
-			"exclude": [
-				{
-					"side": "ts",
-					"symbol": "RawRomSource",
-					"reason": "TS exposes RawRomSource as a structural TypeScript input contract; C++ keeps the concrete RomSourceStack public API instead of adding a virtual facade."
-				},
-				{
-					"side": "ts",
-					"symbol": "RawRomSource.getBytes",
-					"reason": "TS exposes RawRomSource as a structural TypeScript input contract; C++ keeps the concrete RomSourceStack public API instead of adding a virtual facade."
-				},
-				{
-					"side": "ts",
-					"symbol": "RawRomSource.getBytesView",
-					"reason": "TS exposes RawRomSource as a structural TypeScript input contract; C++ keeps the concrete RomSourceStack public API instead of adding a virtual facade."
-				},
-				{
-					"side": "ts",
-					"symbol": "RawRomSource.getCompiledBytesView",
-					"reason": "TS IDE and Hot Resume tooling borrow the compiled descriptor range through the layered source contract; native runtime loading receives that descriptor span directly at MachineManager and must not add an unused source-stack facade."
-				},
-				{
-					"side": "ts",
-					"symbol": "RawRomSource.getEntry",
-					"reason": "TS exposes RawRomSource as a structural TypeScript input contract; C++ keeps the concrete RomSourceStack public API instead of adding a virtual facade."
-				},
-				{
-					"side": "ts",
-					"symbol": "RawRomSource.getEntryByPath",
-					"reason": "TS exposes RawRomSource as a structural TypeScript input contract; C++ keeps the concrete RomSourceStack public API instead of adding a virtual facade."
-				},
-				{
-					"side": "ts",
-					"symbol": "RawRomSource.list",
-					"reason": "TS exposes RawRomSource as a structural TypeScript input contract; C++ keeps the concrete RomSourceStack public API instead of adding a virtual facade."
-				},
-				{
-					"side": "cpp",
-					"symbol": "CartridgeIndex",
-					"reason": "C++ source.h owns these source-stack record carriers because they embed C++ RomAssetInfo; TS owns the same wire-format types in rompack/format.ts."
-				},
-				{
-					"side": "cpp",
-					"symbol": "CartridgeLayerId",
-					"reason": "C++ source.h owns these source-stack record carriers because they embed C++ RomAssetInfo; TS owns the same wire-format types in rompack/format.ts."
-				},
-				{
-					"side": "cpp",
-					"symbol": "RomSourceEntry",
-					"reason": "C++ source.h owns these source-stack record carriers because they embed C++ RomAssetInfo; TS owns the same wire-format types in rompack/format.ts."
-				},
-				{
-					"side": "ts",
-					"symbol": "RomSourceStack.getCompiledBytesView",
-					"reason": "TS IDE and Hot Resume tooling borrow the compiled descriptor range through the layered source stack; native final-image loading already receives that descriptor span at MachineManager and has no matching source-stack consumer."
-				}
-			],
-			"shape_exclude": [
-				{
-					"symbol": "RomSourceLayer",
-					"field": "payload",
-					"reason": "TS source layers carry payload bytes as Uint8Array; C++ stores the same layer payload bytes through the native vector owner pointer."
-				},
-				{
-					"symbol": "RomSourceStack.getBytes",
-					"reason": "TS source stack methods expose RomAsset records; C++ exposes the same decoded payload access through RomSourceEntry/RomAssetInfo native records."
-				},
-				{
-					"symbol": "RomSourceStack.getBytesView",
-					"reason": "TS source stack methods expose RomAsset records; C++ exposes the same decoded payload view through RomSourceEntry/RomAssetInfo native records."
-				},
-				{
-					"symbol": "RomSourceStack.getEntry",
-					"reason": "TS source stack returns RomAsset or null at the rompack format boundary; C++ returns optional RomSourceEntry at the native source-stack boundary."
-				},
-				{
-					"symbol": "RomSourceStack.getEntryByPath",
-					"reason": "TS source stack returns RomAsset or null at the rompack format boundary; C++ returns optional RomSourceEntry at the native source-stack boundary."
-				},
-				{
-					"symbol": "RomSourceStack.list",
-					"reason": "TS source stack lists RomAsset records and accepts optional asset_type; C++ lists RomSourceEntry records and accepts optional string_view at the native boundary."
 				}
 			]
 		},
@@ -1623,18 +1545,6 @@
 			"cpp": [
 				"machine/cpp/rompack/tooling/opcode_metadata.h",
 				"machine/cpp/rompack/tooling/opcode_metadata.cpp"
-			]
-		},
-		{
-			"ts": "machine/ts/rompack/metadata.ts",
-			"cpp": [
-				"machine/cpp/rompack/metadata.h"
-			],
-			"shape_exclude": [
-				{
-					"symbol": "parseRomMetadataSection",
-					"reason": "TS passes a Uint8Array byte view as one value; C++ receives the same ROM metadata byte span as pointer plus size at the native ABI boundary."
-				}
 			]
 		},
 		{

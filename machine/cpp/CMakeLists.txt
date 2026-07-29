@@ -390,13 +390,8 @@ endif()
 
 if(BMSX_BUILD_LIBRETRO OR BMSX_BUILD_TESTS)
 	add_library(bmsx_rom_tooling STATIC
-		common/mem_snapshot.cpp
-		rompack/loader.cpp
 		rompack/tokens.cpp
 		rompack/toc.cpp
-		rompack/metadata.cpp
-		rompack/source.cpp
-		lua/module_path.cpp
 	)
 
 	set_target_properties(bmsx_rom_tooling PROPERTIES
@@ -434,6 +429,7 @@ set(BMSX_LIBRETRO_PLATFORM_SOURCES
 	${BMSX_LIBRETRO_DIR}/audio_output.cpp
 	${BMSX_LIBRETRO_DIR}/host_frame.cpp
 	${BMSX_LIBRETRO_DIR}/host_overlay_menu.cpp
+	${BMSX_LIBRETRO_DIR}/mem_snapshot.cpp
 	${BMSX_LIBRETRO_DIR}/platform.cpp
 	${BMSX_LIBRETRO_DIR}/presentation_state.cpp
 	${BMSX_LIBRETRO_DIR}/runtime_error.cpp

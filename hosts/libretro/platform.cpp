@@ -13,7 +13,7 @@
 #include "render/backend/pass/library.h"
 #include "render/shared/bmsx_font.h"
 #include "render/video_presenter.h"
-#include "common/mem_snapshot.h"
+#include "mem_snapshot.h"
 #include "machine/model_registry.h"
 #include "machine/runtime/runtime.h"
 #include "machine/runtime/save_state/codec.h"

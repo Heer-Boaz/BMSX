@@ -8,10 +8,6 @@
 #include "common/primitives.h"
 #include "spec/bmsx/rom_package.h"
 #include <cstddef>
-#include <optional>
-#include <span>
-#include <string>
-#include <vector>
 
 namespace bmsx {
 
@@ -46,29 +42,6 @@ struct CartRomHeader {
 
 void writeCartRomHeader(u8* data, const CartRomHeader& header);
 CartRomHeader parseCartHeader(const u8* data, size_t size);
-
-/* ============================================================================
- * Machine manifest (effective hardware spec)
- * ============================================================================ */
-
-struct MachineManifest {
-	std::string namespaceName;
-	MachineVdpClass vdpClass = MachineVdpClass::Psx;
-};
-
-/* ============================================================================
- * Cart manifest (cartridge metadata)
- * ============================================================================ */
-
-struct CartManifest {
-	std::optional<std::string> title;
-	std::optional<std::string> shortName;
-	std::optional<std::string> romName;
-	MachineManifest machine;
-	std::string entryPath;
-	u32 cartridgeBoardWord = 0;
-	u32 cartridgeRamByteCount = 0;
-};
 
 } // namespace bmsx
 

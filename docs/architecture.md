@@ -351,10 +351,10 @@ Current artifact roles:
   render backends, file mapping, and their platform dependencies. Libretro
   composes this target with `bmsx_core`; none of these objects or link
   dependencies enter the core archive.
-- `bmsx_rom_tooling` in native diagnostics/tests builds: decoded ROM
-  TOC/manifest/asset packages and module-path tooling. It depends only on the
-  lower wire-format targets; neither it nor its consumers acquire the machine
-  core through this dependency.
+- `bmsx_rom_tooling` in native diagnostics/tests builds: ROM TOC records and
+  asset-id tokens used by source diagnostics. It depends only on the lower
+  wire-format targets; neither it nor its consumers acquire the machine core
+  through this dependency.
 - `bmsx_blua32_tooling` in native diagnostics-enabled builds: BLua32 source,
   symbol-sidecar, and disassembly tooling. It depends on `bmsx_rom_tooling`, not
   on the machine core.
@@ -609,14 +609,15 @@ Owners:
 
 - Raw ROM package layout: `machine/{ts,cpp}/spec/bmsx/rom_package.*`.
 - Raw ROM TOC layout: `machine/{ts,cpp}/spec/bmsx/rom_toc.*`.
-- ROM package parsing and semantic records: `machine/ts/rompack/format.ts` and
+- Physical ROM header parsing: `machine/ts/rompack/format.ts` and
   `machine/cpp/rompack/format.h/.cpp`.
 - Physical ROM image/header admission: `machine/ts/rompack/image.ts` and
   `machine/cpp/rompack/image.h/.cpp`.
 - ROM TOC decoding and semantic records: `machine/ts/rompack/toc.ts` and
   `machine/cpp/rompack/toc.h/.cpp`.
-- Layered ROM lookup: `machine/ts/rompack/source.ts` and
-  `machine/cpp/rompack/source.h/.cpp`.
+- Studio-only layered ROM lookup: `machine/ts/rompack/source.ts`. Native fault
+  tooling decodes the required TOC and BLua32 records directly and does not
+  construct a parallel authoring package.
 - BLua32 executable-image wire records:
   `machine/ts/spec/blua32/image_format.ts` and
   `machine/cpp/spec/blua32/image_format.h`.
