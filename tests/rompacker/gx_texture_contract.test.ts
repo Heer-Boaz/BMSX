@@ -335,7 +335,6 @@ return first_texture == second_texture and 1 or 0, imgdec.last_upload()
 			['bios/common/endian', readFileSync('machine/firmware/bios/common/endian.lua', 'utf8')],
 			['bios/common/float_bits', readFileSync('machine/firmware/bios/common/float_bits.lua', 'utf8')],
 			['system/bin', readFileSync('machine/firmware/system/bin.lua', 'utf8')],
-			['system/cartridge', readFileSync('machine/firmware/system/cartridge.lua', 'utf8')],
 			['system/romdir', readFileSync('machine/firmware/system/romdir.lua', 'utf8')],
 			['system/gx_gpu', 'return { texture_mode_palette4 = 0 }'],
 			['system/imgdec', `

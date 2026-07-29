@@ -3,7 +3,6 @@
 local endian<const> = require("bios/common/endian")
 local read_u16le<const> = endian.read_u16le
 local read_u32le<const> = endian.read_u32le
-local cartridge<const> = require("system/cartridge")
 local dma<const> = require("system/dma")
 
 struct apu_command_registers
@@ -70,12 +69,6 @@ function apu.ms_to_samples(ms)
 	return ms * output_sample_rate_hz / 1000
 end
 
-local rom_base_for_payload<const> = function(payload_id)
-	if payload_id == 'system' then
-		return 0x00000000
-	end
-	return cartridge.rom_base
-end
 local read_badp_source<const> = function(addr, source_bytes)
 	local channels<const> = read_u16le(addr + 6)
 	local sample_rate_hz<const> = read_u32le(addr + 8)
@@ -96,8 +89,8 @@ function apu.source(record)
 	if source ~= nil then
 		return source
 	end
-	local source_addr<const> = rom_base_for_payload(record.payload_id) + record.start
-	local source_bytes<const> = record['end'] - record.start
+	local source_addr<const> = record.addr
+	local source_bytes<const> = record.len
 	local format<const> = read_badp_source(source_addr, source_bytes)
 	local loop_start_sample = 0
 	local loop_end_sample = 0

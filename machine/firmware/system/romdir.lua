@@ -1,5 +1,4 @@
 local bin<const> = require('system/bin')
-local cartridge<const> = require('system/cartridge')
 local string<const> = require('bios/string_base')
 local table<const> = require('bios/table')
 
@@ -14,6 +13,7 @@ local toc_invalid_u32<const> = 0xffffffff
 local op_delete<const> = 1
 local hash_prime<const> = 0x1b3
 local u32_mod<const> = 0x100000000
+local cart_rom_base<const> = 0x10000000
 
 local kind_image<const> = 1
 local kind_audio<const> = 2
@@ -24,14 +24,6 @@ local kind_aem<const> = 8
 local kind_lua<const> = 9
 local kind_code<const> = 10
 local kind_texture<const> = 11
-
-local rom_system<const> = 1
-local rom_cart<const> = 2
-
-local rom_name_by_id<const> = {
-	[rom_system] = 'system',
-	[rom_cart] = 'cart',
-}
 
 local kind_name_by_id<const> = {
 	[kind_image] = 'image',
@@ -147,7 +139,7 @@ local parse_metadata_header<const> = function(header)
 	header.metadata_payload_off = header.metadata_off + payload_off
 end
 
-local parse_rom<const> = function(header, rom_id)
+local parse_rom<const> = function(header)
 	if header.toc_len < toc_header_size then
 		error(header.label .. ' ROM TOC is too small.')
 	end
@@ -178,7 +170,6 @@ local parse_rom<const> = function(header, rom_id)
 	assert_range(string_table_offset, string_table_length, header.toc_len, header.label .. ' TOC strings')
 
 	local rom<const> = {
-		id = rom_id,
 		label = header.label,
 		header = header,
 		tokens = {},
@@ -204,7 +195,6 @@ local parse_rom<const> = function(header, rom_id)
 			kind = mem[entry_base + 8],
 			op = mem[entry_base + 12],
 			rom = rom,
-			rom_id = rom_id,
 			type = kind_name_by_id[mem[entry_base + 8]],
 			source_path = source_path,
 			normalized_source_path = normalized_source_path,
@@ -328,7 +318,6 @@ local record_for_entry<const> = function(entry)
 	local out<const> = {
 		resid = entry.id,
 		type = entry.type,
-		payload_id = rom_name_by_id[entry.rom_id],
 		addr = entry.addr,
 		len = entry.len,
 	}
@@ -386,13 +375,13 @@ local list_entries<const> = function(roms, kind)
 	return out
 end
 
-local system_rom<const> = parse_rom(read_header(0x00000000, 'system', true), rom_system)
+local system_rom<const> = parse_rom(read_header(0x00000000, 'system', true))
 local active_roms<const> = { system_rom }
 local active_plus_system_roms<const> = { system_rom }
 local system_roms<const> = { system_rom }
 
 function romdir.mount_selected_cartridge()
-	local cart_rom<const> = parse_rom(read_header(cartridge.rom_base, 'cart', true), rom_cart)
+	local cart_rom<const> = parse_rom(read_header(cart_rom_base, 'cart', true))
 	active_roms[1] = cart_rom
 	active_plus_system_roms[1] = cart_rom
 	active_plus_system_roms[2] = system_rom

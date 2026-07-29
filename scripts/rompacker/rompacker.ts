@@ -45,7 +45,6 @@ const logDivider = ui.divider;
 const KNOWN_FLAGS = new Set<string>([
 	'-romname',
 	'-title',
-	'-bootloaderpath',
 	'-respath',
 	'--output-dir',
 	'--debug',
@@ -59,7 +58,6 @@ const KNOWN_FLAGS = new Set<string>([
 const FLAGS_WITH_VALUES = new Set<string>([
 	'-romname',
 	'-title',
-	'-bootloaderpath',
 	'-respath',
 	'--output-dir',
 ]);
@@ -186,7 +184,6 @@ function parseOptions(args: string[]): ParsedOptions {
 		writeOut(`Options:\n`, 'warning');
 		writeOut(`  -romname <name>          Cart folder under carts (required for rompack mode)\n`, 'warning');
 		writeOut(`  -title <title>           Title override\n`, 'warning');
-		writeOut(`  -bootloaderpath <path>   BIOS-only bootloader path override\n`, 'warning');
 		writeOut(`  -respath <path>          Resource path override\n`, 'warning');
 		writeOut(`  --output-dir <path>      ROM output directory (default: ./dist)\n`, 'warning');
 		writeOut(`  --debug                  Build debug artifacts\n`, 'warning');
@@ -215,8 +212,6 @@ function parseOptions(args: string[]): ParsedOptions {
 
 	const rom_name = getParamOrEnv(args, '-romname', 'ROM_NAME', '', KNOWN_FLAGS);
 	const title = getParamOrEnv(args, '-title', 'TITLE', rom_name, KNOWN_FLAGS);
-	const defaultBootloaderPath = './machine/firmware/default_cart';
-	let bootloader_path = getParamOrEnv(args, '-bootloaderpath', 'BOOTLOADER_PATH', defaultBootloaderPath, KNOWN_FLAGS);
 	const respathOverride = getOptionalParam(args, '-respath', 'RES_PATH');
 	const outputDirectory = normalizePathKey(getParamOrEnv(args, '--output-dir', 'ROM_OUTPUT_DIR', './dist', KNOWN_FLAGS));
 	let respath = mode === 'bios' ? './machine/firmware/res' : '';
@@ -225,17 +220,12 @@ function parseOptions(args: string[]): ParsedOptions {
 	let libraryLuaRoots: string[] = [];
 	if (mode === 'bios') {
 		respath = getParamOrEnv(args, '-respath', 'RES_PATH', './machine/firmware/res', KNOWN_FLAGS);
-		bootloader_path = normalizePathKey(bootloader_path);
 		respath = normalizePathKey(respath);
 	} else {
 		if (!rom_name && !respathOverride) {
 			throw new Error('Rompack mode requires -romname <cart-folder> or -respath <cart-respath>.');
 		}
-		if (seenFlags.has('-bootloaderpath')) {
-			throw new Error('Rompack mode no longer supports -bootloaderpath. Carts always boot through machine/firmware/default_cart.');
-		}
 		const resolvedCart = resolveCartResPath(rom_name, respathOverride);
-		bootloader_path = normalizePathKey(defaultBootloaderPath);
 		respath = resolvedCart.respath;
 		extraLuaRoots = [resolvedCart.cartRoot];
 		libraryLuaRoots = [normalizePathKey(cartlibLuaPath)];
@@ -244,7 +234,6 @@ function parseOptions(args: string[]): ParsedOptions {
 	return {
 		rom_name,
 		title,
-		bootloader_path,
 		respath,
 		outputDirectory,
 		force,
@@ -321,7 +310,7 @@ function formatLuaBuildError(err: LuaError, virtualRoots: ReadonlyArray<string>)
 }
 
 async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter): Promise<void> {
-	const { respath, bootloader_path, outputDirectory, force, debug, optLevel } = options;
+	const { respath, outputDirectory, force, debug, optLevel } = options;
 
 	const BIOSResPath = respath || commonResPath;
 	if (!BIOSResPath) {
@@ -349,7 +338,7 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 			await progress.taskCompleted();
 		}
 	} else {
-		const checkBuild = async () => !existsSync(BIOSSymbolsPath) || await isRebuildRequired(BIOSRomName, bootloader_path, BIOSResPath, {
+		const checkBuild = async () => !existsSync(BIOSSymbolsPath) || await isRebuildRequired(BIOSRomName, BIOSResPath, {
 			extraLuaPaths: [biosLuaPath, systemLuaPath],
 			debug,
 			romFilePath: BIOSRomPath,
@@ -421,7 +410,7 @@ async function main() {
 		const args = process.argv.slice(2);
 		const options = parseOptions(args);
 
-		let { title, rom_name, bootloader_path, respath, outputDirectory, force, debug, optLevel, mode, extraLuaRoots, libraryLuaRoots } = options;
+		let { title, rom_name, respath, outputDirectory, force, debug, optLevel, mode, extraLuaRoots, libraryLuaRoots } = options;
 
 		if (mode === 'bios') {
 			progress = ui.createProgress(biosBuildTasks);
@@ -433,13 +422,7 @@ async function main() {
 		progress = ui.createProgress(taskList);
 		const isBIOSMode = false; // We keep this flag around for some options that still apply to the cart build (e.g. resource roots) and to avoid accidentally skipping code that should run in both modes. We know we are not in BIOS mode if we are in this branch, but we keep the flag for clarity.
 		const romPackDebug = debug;
-		const normalizedBootloader = normalizePathKey(bootloader_path);
-		const cartRootFromRes = respath ? normalizePathKey(join(respath, '..')) : null;
-		const projectRootFromRes = cartRootFromRes ? cartRootFromRes.replace(/^\.\//, '') : '';
-		const projectRootFromBoot = normalizedBootloader.replace(/^\.\//, '');
-		const projectRootPath = projectRootFromRes.length > 0
-			? projectRootFromRes
-			: (projectRootFromBoot.length > 0 ? projectRootFromBoot : null);
+		const projectRootPath = normalizePathKey(join(respath, '..')).replace(/^\.\//, '');
 		const virtualRoot = projectRootPath;
 		luaErrorVirtualRoots = [virtualRoot];
 
@@ -472,7 +455,6 @@ async function main() {
 		logBullet('ROM', pc.bold(pc.white(rom_name)));
 		logBullet('Title', pc.white(title));
 		logBullet('Mode', pc.magenta(mode));
-		logBullet('Bootloader', pc.white(normalizePathKey(bootloader_path)));
 		logBullet('Resources', resourceRoots.length === 1
 			? pc.white(resourceRoots[0])
 			: `${pc.white(resourceRoots[0])} ${pc.dim('+ common ' + resourceRoots[1])}`);
@@ -505,7 +487,7 @@ async function main() {
 		logInfo(`Starting for ${pc.bold(pc.blue(`${rom_name}`))}`);
 
 		if (!force) {
-			rebuildRequired = await progress.runWithDetail('Check timestamps', () => isRebuildRequired(rom_name, bootloader_path, respath, {
+			rebuildRequired = await progress.runWithDetail('Check timestamps', () => isRebuildRequired(rom_name, respath, {
 				extraLuaPaths: [...extraLuaPathSet, ...libraryLuaPathSet],
 				debug,
 				romFilePath: romOutputPath,
@@ -515,7 +497,7 @@ async function main() {
 				for (let i = 1; i < resourceRoots.length; i++) {
 					const candidate = resourceRoots[i];
 					if (!candidate || candidate === respath) continue;
-					const needs = await progress.runWithDetail('Check timestamps (shared)', () => isRebuildRequired(rom_name, bootloader_path, candidate, {
+					const needs = await progress.runWithDetail('Check timestamps (shared)', () => isRebuildRequired(rom_name, candidate, {
 						extraLuaPaths: [...extraLuaPathSet, ...libraryLuaPathSet],
 						debug,
 						romFilePath: romOutputPath,

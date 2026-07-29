@@ -55,7 +55,6 @@ import {
 import { BoundingBoxExtractor } from './boundingbox_extractor';
 import { collectGLTFExternalBufferFileSet, loadGLTFModel } from './gltfloader';
 import type { TextureAtlasResource, ImageResource, Resource, resourcetype } from './rompacker.rompack';
-import { collectSourceFiles } from '../tooling/file_scan';
 import { collectCartSourceFiles } from './cart_source_files';
 import { CART_ROM_BASE, CART_ROM_SIZE, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import {
@@ -153,7 +152,6 @@ export function normalizeWorkspacePath(input: string): string {
 
 const CART_ROOT_SEGMENT = 'carts/';
 const FIRMWARE_RES_SEGMENT = 'machine/firmware/res';
-const DEFAULT_CART_BOOTLOADER_SEGMENT = 'machine/firmware/default_cart';
 
 function isCartPath(path?: string): boolean {
 	if (!path || path.length === 0) return false;
@@ -165,12 +163,6 @@ function isFirmwareResPath(path?: string): boolean {
 	if (!path || path.length === 0) return false;
 	const normalized = normalizeWorkspacePath(path);
 	return normalized === FIRMWARE_RES_SEGMENT || normalized.startsWith(`${FIRMWARE_RES_SEGMENT}/`);
-}
-
-function isDefaultCartBootloader(path?: string): boolean {
-	if (!path || path.length === 0) return false;
-	const normalized = normalizeWorkspacePath(path);
-	return normalized === DEFAULT_CART_BOOTLOADER_SEGMENT || normalized.startsWith(`${DEFAULT_CART_BOOTLOADER_SEGMENT}/`);
 }
 
 function toWorkspaceRelativePath(filepath: string): string {
@@ -1633,13 +1625,12 @@ async function directoryHasRebuildInputNewerThan(dir: string, mtimeMs: number, c
 }
 
 /**
- * Determines whether a rebuild of the ROM is required based on the modification times of the bootloader and resource files.
+ * Determines whether a rebuild of the ROM is required based on its source and resource files.
  * @param {string} romname - The name of the ROM.
- * @param {string} bootloaderPath - The path to the bootloader files.
  * @param {string} resPath - The path to the resource files.
  * @returns {Promise<boolean>} A Promise that resolves with a boolean indicating whether a rebuild is required.
  */
-export async function isRebuildRequired(romname: string, bootloaderPath: string, resPath: string, options: ResourceScanOptions = {}): Promise<boolean> {
+export async function isRebuildRequired(romname: string, resPath: string, options: ResourceScanOptions = {}): Promise<boolean> {
 	let romFilePath = options.romFilePath;
 	if (romFilePath === undefined) {
 		romFilePath = `./dist/${romname}${options.debug ? '.debug' : ''}.rom`;
@@ -1649,7 +1640,7 @@ export async function isRebuildRequired(romname: string, bootloaderPath: string,
 		biosRomFilePath = `./dist/bmsx-bios${options.debug ? '.debug' : ''}.rom`;
 	}
 	const extraLuaRoots = options.extraLuaPaths;
-	const cartProject = isCartPath(resPath) || isCartPath(bootloaderPath) || isDefaultCartBootloader(bootloaderPath);
+	const cartProject = isCartPath(resPath) || !!options.biosRomFilePath;
 
 	async function checkPaths() {
 		try {
@@ -1677,14 +1668,13 @@ export async function isRebuildRequired(romname: string, bootloaderPath: string,
 		}
 	}
 
-	const normalizedBoot = resolve(bootloaderPath);
 	const normalizedRes = resolve(resPath);
 	let extraNeedsRebuild = false;
 	if (extraLuaRoots) {
 		for (const root of extraLuaRoots) {
 			if (!root || root.length === 0) continue;
 			const normalized = resolve(root);
-			if (normalized === normalizedRes || (!cartProject && normalized === normalizedBoot)) continue;
+			if (normalized === normalizedRes) continue;
 			if (await directoryHasRebuildInputNewerThan(root, romMtimeMs, true, cartProject, true)) {
 				extraNeedsRebuild = true;
 				break;
@@ -1692,10 +1682,8 @@ export async function isRebuildRequired(romname: string, bootloaderPath: string,
 		}
 	}
 
-	const bootloaderNeedsRebuild = cartProject ? false : await anyFileNewerThan(collectSourceFiles([bootloaderPath], CODE_FILE_EXTENSION_SET), romMtimeMs);
 	const resNeedsRebuild = await anyFileNewerThan(await getFiles(resPath), romMtimeMs);
 	return extraNeedsRebuild ||
-		bootloaderNeedsRebuild ||
 		resNeedsRebuild;
 }
 

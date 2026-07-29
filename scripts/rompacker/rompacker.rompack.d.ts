@@ -12,7 +12,6 @@ export type RomPackerMode = 'rompack' | 'bios';
 export interface RomPackerOptions {
 	rom_name: string;
 	title: string;
-	bootloader_path: string;
 	respath: string;
 	outputDirectory: string;
 	force: boolean;

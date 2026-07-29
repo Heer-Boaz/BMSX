@@ -10,7 +10,6 @@ math = require('bios/math')
 easing = require('bios/easing')
 
 local dma_transfer<const> = require('bios/dma_transfer')
-local cartridge<const> = require('system/cartridge')
 local gx_gpu<const> = require('system/gx_gpu')
 local romdir<const> = require('system/romdir')
 local monitor<const> = require('bios/monitor')
@@ -26,8 +25,9 @@ local cart_rom_magic<const> = 0x58534d42
 local cart_rom_base_header_size<const> = 32
 local cart_blua32_image_offset<const> = 32
 local cart_blua32_startup_offset<const> = 40
-local cart_select<const>: *word = cartridge.select_addr
-local cart_status<const>: *word = cartridge.status_addr
+local cart_select<const>: *word = 0x0801041c
+local cart_status<const>: *word = 0x08010420
+local cart_rom_base<const> = 0x10000000
 local irq_vblank<const> = 0x0004
 local irq_dma_done<const> = 0x0001
 local irq_gpu<const> = 0x0040
@@ -56,10 +56,10 @@ local scan_cartridges<const> = function()
 		if (status & (1 << slot)) ~= 0 then
 			cart_present = true
 			*cart_select = slot
-			if mem[cartridge.rom_base] == cart_rom_magic
-				and mem[cartridge.rom_base + 4] >= cart_rom_base_header_size
-				and mem[cartridge.rom_base + cart_blua32_image_offset] ~= 0 then
-				return cart_present, mem[cartridge.rom_base + cart_blua32_startup_offset]
+			if mem[cart_rom_base] == cart_rom_magic
+				and mem[cart_rom_base + 4] >= cart_rom_base_header_size
+				and mem[cart_rom_base + cart_blua32_image_offset] ~= 0 then
+				return cart_present, mem[cart_rom_base + cart_blua32_startup_offset]
 			end
 		end
 	end

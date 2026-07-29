@@ -60,7 +60,7 @@ test('debug rebuild triggers when debug ROM is missing', async () => {
 	await withRebuildFixture('__rompacker_test_debug_missing__', async fixture => {
 		await writeBaseCartOutput(fixture, fixture.biosDebugPath);
 
-		const needsRebuild = await isRebuildRequired(fixture.romname, fixture.cartRoot, fixture.resPath, {
+		const needsRebuild = await isRebuildRequired(fixture.romname, fixture.resPath, {
 			debug: true,
 			biosRomFilePath: fixture.biosDebugPath,
 		});
@@ -77,7 +77,7 @@ test('non-debug rebuild skips when output is newer than inputs', async () => {
 		await utimes(fixture.biosPath, new Date(now - 3_000), new Date(now - 3_000));
 		await utimes(fixture.distReleasePath, new Date(now - 2_000), new Date(now - 2_000));
 
-		const needsRebuild = await isRebuildRequired(fixture.romname, fixture.cartRoot, fixture.resPath, {
+		const needsRebuild = await isRebuildRequired(fixture.romname, fixture.resPath, {
 			debug: false,
 			biosRomFilePath: fixture.biosPath,
 		});
@@ -94,7 +94,7 @@ test('cart rebuild triggers when BIOS ROM is newer than game ROM', async () => {
 		await utimes(fixture.distReleasePath, new Date(now - 3_000), new Date(now - 3_000));
 		await utimes(fixture.biosPath, new Date(now - 2_000), new Date(now - 2_000));
 
-		const needsRebuild = await isRebuildRequired(fixture.romname, fixture.cartRoot, fixture.resPath, {
+		const needsRebuild = await isRebuildRequired(fixture.romname, fixture.resPath, {
 			debug: false,
 			biosRomFilePath: fixture.biosPath,
 		});
@@ -114,7 +114,7 @@ test('cart rebuild triggers when cart-root file is newer than game ROM', async (
 		await utimes(fixture.distReleasePath, new Date(now - 3_000), new Date(now - 3_000));
 		await utimes(cartRootAssetPath, new Date(now - 2_000), new Date(now - 2_000));
 
-		const needsRebuild = await isRebuildRequired(fixture.romname, fixture.cartRoot, fixture.resPath, {
+		const needsRebuild = await isRebuildRequired(fixture.romname, fixture.resPath, {
 			debug: false,
 			extraLuaPaths: [fixture.cartRoot],
 			biosRomFilePath: fixture.biosPath,
@@ -136,7 +136,7 @@ test('cart rebuild ignores newer files under _ignore', async () => {
 		await utimes(fixture.distReleasePath, new Date(now - 3_000), new Date(now - 3_000));
 		await utimes(ignoredAssetPath, new Date(now - 2_000), new Date(now - 2_000));
 
-		const needsRebuild = await isRebuildRequired(fixture.romname, fixture.cartRoot, fixture.resPath, {
+		const needsRebuild = await isRebuildRequired(fixture.romname, fixture.resPath, {
 			debug: false,
 			extraLuaPaths: [fixture.cartRoot],
 			biosRomFilePath: fixture.biosPath,
