@@ -5,6 +5,7 @@
 #include "machine/memory/bus_signals.h"
 
 #include <array>
+#include <span>
 
 namespace bmsx {
 
@@ -17,6 +18,7 @@ public:
 	explicit CartridgeController(const CartridgeSlotMediaPair& media);
 
 	void connect(Memory& memory, IrqController& irq, DmaController& dma);
+	void installRom(u32 slotIndex, std::span<const u8> rom);
 	u32 selectedSlot() const { return m_selectionWord & 1u; }
 	size_t ramByteCount() const { return m_slots[0].ram.size() + m_slots[1].ram.size(); }
 	void reset();

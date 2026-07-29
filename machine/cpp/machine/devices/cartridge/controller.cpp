@@ -31,6 +31,10 @@ CartridgeController::CartridgeController(const CartridgeSlotMediaPair& media) {
 	m_selectionWord = 0u;
 }
 
+void CartridgeController::installRom(u32 slotIndex, std::span<const u8> rom) {
+	m_slots[slotIndex].media.rom = rom;
+}
+
 void CartridgeController::connect(Memory& memory, IrqController& irq, DmaController& dma) {
 	m_irq = &irq;
 	m_dma = &dma;

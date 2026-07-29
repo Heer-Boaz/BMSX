@@ -808,8 +808,9 @@ operands index the guest constant registerfile owned by the frame's resident
 image. Static closures are retained CPU objects keyed by physical
 function-record address. Table-load inline caches are allocated only for actual
 table-load instructions. Guest constant registers, global-slot maps, decoded
-instruction pages, and inline caches are regenerated when their ROM owner
-publishes a new media revision and are never serialized. No decoded host image
+instruction pages, and inline caches are regenerated only when suspended
+tooling explicitly replaces an affected resident execution image after the ROM
+owner installs new bytes. They are never serialized. No decoded host image
 graph determines CPU execution.
 
 A closure value owns only its raw physical function-record address and captured
@@ -923,6 +924,11 @@ gains no authoring-time branch, source revision, linker baseline, lookup,
 parser, or allocation. No old executable image or development-tail buffer
 remains an execution owner. Save-state retains only the current raw machine
 state and restores it against the media inserted at restore time.
+
+The TypeScript and C++ memory and cartridge owners expose the same suspended
+raw-media replacement operations. Replacing media only changes the backing byte
+view; the owners retain no source identity, generation counter, decoded image,
+or tooling callback.
 
 Hot Resume does not perform a cold boot, run the startup vector, section
 initialization, static module initialization, or `new_game`. It reruns `init`

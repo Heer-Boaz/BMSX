@@ -122,7 +122,6 @@ export const NO_BLOCKED_MAPPED_WRITE = 0xffffffff;
 
 export class Memory {
 	private systemRom: Uint8Array;
-	private systemRomMediaRevision = 1;
 	public readonly cartridgeController: CartridgeController;
 	private readonly ram: Uint8Array;
 	private readonly ioSlots: Uint32Array;
@@ -167,11 +166,6 @@ export class Memory {
 
 	public installSystemRom(rom: Uint8Array): void {
 		this.systemRom = rom;
-		this.systemRomMediaRevision += 1;
-	}
-
-	public systemRomRevision(): number {
-		return this.systemRomMediaRevision;
 	}
 
 	public mapIoRead<TContext>(addr: number, context: TContext, handler: IoReadHandler<TContext>): void {

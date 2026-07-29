@@ -39,6 +39,7 @@ public:
 
 	CartridgeController& cartridgeController() { return m_cartridgeController; }
 	const CartridgeController& cartridgeController() const { return m_cartridgeController; }
+	void installSystemRom(std::span<const u8> rom);
 	void mapIoRead(uint32_t addr, void* context, IoReadHandler handler);
 	template <auto Method, typename TObject>
 	void mapIoRead(uint32_t addr, TObject& object) {

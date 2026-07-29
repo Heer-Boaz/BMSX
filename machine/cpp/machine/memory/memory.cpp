@@ -98,6 +98,9 @@ Memory::Memory(const MemoryInit& init)
 	clearBusFault();
 }
 
+void Memory::installSystemRom(std::span<const u8> rom) {
+	m_systemRom = rom;
+}
 
 void Memory::mapIoRead(uint32_t addr, void* context, IoReadHandler handler) {
 	m_ioReadHandlers[static_cast<size_t>((addr - IO_BASE) / IO_WORD_SIZE)] = { context, handler };

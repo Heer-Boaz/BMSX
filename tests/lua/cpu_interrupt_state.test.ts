@@ -891,10 +891,9 @@ halt_until_irq
 });
 
 test('Hot Resume rejects an unmapped continuation before any physical state write', () => {
-	const { memory, cpu } = makeHaltCpu();
+	const { cpu } = makeHaltCpu();
 	const target = identityHotResumeRevision(HALT_TEST_IMAGES.cartImage);
 	target.revision.pcAddresses.fill(-1);
-	const mediaRevision = memory.systemRomRevision();
 	const functionAddress = cpu.readFrameFunctionAddress(0);
 	const framePc = cpu.readFramePc(0);
 	const lastPc = cpu.lastPc;
@@ -907,7 +906,6 @@ test('Hot Resume rejects an unmapped continuation before any physical state writ
 		]),
 		/Hot resume could not relocate/,
 	);
-	assert.equal(memory.systemRomRevision(), mediaRevision);
 	assert.equal(cpu.readFrameFunctionAddress(0), functionAddress);
 	assert.equal(cpu.readFramePc(0), framePc);
 	assert.equal(cpu.lastPc, lastPc);

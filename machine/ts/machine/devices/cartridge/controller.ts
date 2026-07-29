@@ -67,7 +67,6 @@ const CARTRIDGE_DREQ_MASK =
 
 export class CartridgeController {
 	private readonly slots: [CartridgeSlot, CartridgeSlot];
-	private readonly romMediaRevisions = new Uint32Array([1, 1]);
 	private selectionWord = 0;
 	private irq!: IrqController;
 	private dma!: DmaController;
@@ -109,11 +108,6 @@ export class CartridgeController {
 
 	public installRom(slotIndex: number, rom: Uint8Array): void {
 		this.slots[slotIndex]!.media.rom = rom;
-		this.romMediaRevisions[slotIndex] += 1;
-	}
-
-	public romRevision(slotIndex: number): number {
-		return this.romMediaRevisions[slotIndex];
 	}
 
 	public ramByteCount(): number {
