@@ -7,7 +7,7 @@ import type {
 	TextureMeta,
 } from './assets';
 import type { GLTFMaterial, GLTFModel } from './gltf';
-import { parseCartManifest, type CartManifest } from './manifest';
+import { decodeCartManifest } from './manifest';
 import type { Polygon, RectBounds } from '../../../machine/ts/common/rect';
 import type { vec4arr } from '../../../machine/ts/common/vector';
 import { decodeBinary, decodeBinaryWithPropTable, toF32, typedArrayFromBytes } from '../../../machine/ts/common/serializer/binencoder';
@@ -28,14 +28,6 @@ function decodedProjectRootPath(path: string | null): string {
 	return path === null ? '' : path;
 }
 
-
-function decodeCartridgeManifest(rom: Uint8Array, header: CartRomHeader): CartManifest {
-	if (header.manifestLength === 0) {
-		throw new Error('ROM header is missing manifest payload.');
-	}
-	const manifestSlice = rom.subarray(header.manifestOffset, header.manifestOffset + header.manifestLength);
-	return parseCartManifest(decodeBinary(manifestSlice), 'ROM manifest payload');
-}
 
 async function loadRomAssetListFromHeader(
 	rom: Uint8Array,
@@ -162,7 +154,7 @@ async function parseCartridgeIndexFromHeader(payload: Uint8Array, header: CartRo
 	return {
 		entries,
 		projectRootPath,
-		cart_manifest: decodeCartridgeManifest(payload, header),
+		cart_manifest: decodeCartManifest(payload, header),
 	};
 }
 

@@ -428,10 +428,13 @@ player, browser Studio, Node player, Node tooling, machine-library, and
 libretro builds are independently invokable product targets; there is no
 platform meta-target that silently links player and authoring products
 together. Browser deployment builds only the player and a selected prebuilt
-cart. `scripts/rompacker/` owns BIOS/cart source compilation, linking, assets,
-and ROM emission and imports no host, IDE, runtime-composition, or product-build
-module. Shared CLI and source-scan mechanics live under `scripts/tooling/`
-rather than either solution owner.
+cart. Its title comes from that cart's serialized manifest, not from its source
+tree. Host-atlas generation is an explicit prerequisite of every product and
+browser-deployment target; product modules do not import or execute the atlas
+producer. `scripts/rompacker/` owns BIOS/cart source compilation, linking,
+assets, and ROM emission and imports no host, IDE, runtime-composition, or
+product-build module. Shared CLI and source-scan mechanics live under
+`scripts/tooling/` rather than either solution owner.
 
 The compiler and ROM producer depend downward on `machine/{ts,cpp}/spec` and
 shared low-level code only. They never import/include `machine/**` or `core/**`

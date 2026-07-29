@@ -8,7 +8,6 @@ horen niet in deze lijst.
 
 | ID | Opdracht | Klaar wanneer |
 | --- | --- | --- |
-| `BUILD-GEN-01` | Behoud automatische generatie van de host-system-atlas, maar maak die een expliciete buildgraph-prerequisite in plaats van productcode die rompacker-internals uitvoert. | Product- en deploymodules importeren geen ROM-authoringcode; een normale productbuild regenereert stale atlasartefacten nog steeds automatisch en deterministisch, zonder handmatige stap of featureverlies. |
 | `MODEL-VRAM-01` | Maak geïnstalleerde VRAM-capaciteit werkelijk model- en device-owned, zonder de vaste GX-adresgeometrie met de fysieke backing te verwarren. Specificeer eerst per model de ontbrekende adresdecode/alias/open-bus-semantiek en selecteer het model vóór backendconstructie. | GX, save-state en alle software/WebGL2/WebGPU/GLES2-datapaden gebruiken dezelfde geïnstalleerde backing en fysieke decode. Backends alloceren exact eenmaal voor het geselecteerde model; er is geen 2-MiB-schaduwbuffer, hostfallback of alleen-cosmetische capaciteitswaarde. |
 
 ## Doorlopende performance-audit

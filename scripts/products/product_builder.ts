@@ -1,6 +1,5 @@
 import pc from 'picocolors';
 
-import { ensureHostSystemAtlasArtifacts } from '../render/generate_host_system_atlas';
 import { getParamOrEnv, parseArgsVector } from '../tooling/cli_arguments';
 import { createCliUi } from '../tooling/cli_ui';
 import {
@@ -84,12 +83,6 @@ async function main(): Promise<void> {
 	ui.divider('Product');
 	ui.bullet('Target', pc.cyan(target));
 	ui.bullet('Debug', debug ? pc.green('enabled') : pc.dim('disabled'));
-
-	const atlasUpdated = await ensureHostSystemAtlasArtifacts();
-	ui.ok(
-		`Host system atlas → ${pc.white('machine/{ts,cpp}/render/host_overlay/atlas.generated')}`
-		+ `${atlasUpdated ? '' : pc.dim(' (up-to-date)')}`,
-	);
 
 	switch (target) {
 		case 'machine-runtime': {

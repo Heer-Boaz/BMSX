@@ -28,8 +28,8 @@ type HostAtlasBuild = {
 	images: HostAtlasImage[];
 };
 
-export const HOST_SYSTEM_ATLAS_TS_PATH = join(process.cwd(), 'machine', 'ts', 'render', 'host_overlay', 'atlas.generated.ts');
-export const HOST_SYSTEM_ATLAS_CPP_SOURCE_PATH = join(process.cwd(), 'machine', 'cpp', 'render', 'host_overlay', 'atlas.generated.cpp');
+const HOST_SYSTEM_ATLAS_TS_PATH = join(process.cwd(), 'machine', 'ts', 'render', 'host_overlay', 'atlas.generated.ts');
+const HOST_SYSTEM_ATLAS_CPP_SOURCE_PATH = join(process.cwd(), 'machine', 'cpp', 'render', 'host_overlay', 'atlas.generated.cpp');
 const HOST_RESOURCE_PATH = './hosts/res';
 
 const GENERATED_FILE_HEADER = [
@@ -160,11 +160,7 @@ async function writeHostSystemAtlasArtifacts(build: HostAtlasBuild): Promise<boo
 	return writes.some(Boolean);
 }
 
-export async function generateHostSystemAtlasArtifactsFromResources(resources: readonly Resource[]): Promise<boolean> {
-	return writeHostSystemAtlasArtifacts(buildHostAtlasFromResources(resources));
-}
-
-export async function ensureHostSystemAtlasArtifacts(): Promise<boolean> {
+async function generateHostSystemAtlasArtifacts(): Promise<boolean> {
 	const biosProjectRoot = join(commonResPath, '..');
 	const biosVirtualRoot = biosProjectRoot.replace(/^\.\//, '');
 	const resourceRoots = [commonResPath, HOST_RESOURCE_PATH];
@@ -175,12 +171,19 @@ export async function ensureHostSystemAtlasArtifacts(): Promise<boolean> {
 	});
 	const resources = await getResourcesList(resMeta);
 	await createTextureAtlases(resources);
-	return generateHostSystemAtlasArtifactsFromResources(resources);
+	return writeHostSystemAtlasArtifacts(buildHostAtlasFromResources(resources));
 }
 
 if (require.main === module) {
-	ensureHostSystemAtlasArtifacts().catch(error => {
-		console.error(error);
-		process.exitCode = 1;
-	});
+	generateHostSystemAtlasArtifacts()
+		.then(updated => {
+			console.log(
+				`Host system atlas -> machine/{ts,cpp}/render/host_overlay/atlas.generated`
+				+ `${updated ? '' : ' (up-to-date)'}`,
+			);
+		})
+		.catch(error => {
+			console.error(error);
+			process.exitCode = 1;
+		});
 }

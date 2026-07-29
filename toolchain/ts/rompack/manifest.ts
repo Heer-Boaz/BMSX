@@ -3,7 +3,11 @@ import {
 	CARTRIDGE_BOARD_RAM,
 } from '../../../machine/ts/spec/bmsx/cartridge';
 import { CART_RAM_SIZE } from '../../../machine/ts/spec/bmsx/memory_map';
-import { requireObject } from '../../../machine/ts/common/serializer/binencoder';
+import {
+	decodeBinary,
+	requireObject,
+} from '../../../machine/ts/common/serializer/binencoder';
+import type { CartRomHeader } from '../../../machine/ts/rompack/format';
 
 export type CartManifest = {
 	title?: string;
@@ -17,6 +21,16 @@ export type RomManifest = CartManifest;
 
 export function parseCartManifest(value: unknown, label: string): CartManifest {
 	return requireObject(value, label) as CartManifest;
+}
+
+export function decodeCartManifest(rom: Uint8Array, header: CartRomHeader): CartManifest {
+	if (header.manifestLength === 0) {
+		throw new Error('ROM header is missing manifest payload.');
+	}
+	return parseCartManifest(
+		decodeBinary(rom.subarray(header.manifestOffset, header.manifestOffset + header.manifestLength)),
+		'ROM manifest payload',
+	);
 }
 
 export function resolveCartridgeHeaderWords(manifest: CartManifest | null): {

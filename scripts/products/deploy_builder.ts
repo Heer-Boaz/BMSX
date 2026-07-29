@@ -1,14 +1,12 @@
-import { statSync } from 'node:fs';
-import { access } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import pc from 'picocolors';
 
-import { ensureHostSystemAtlasArtifacts } from '../render/generate_host_system_atlas';
-import { getRomManifest } from '../rompacker/rombuilder';
+import { parseCartHeader } from '../../machine/ts/rompack/format';
+import { decodeCartManifest } from '../../toolchain/ts/rompack/manifest';
 import {
 	getOptionalParamOrEnv,
-	normalizePathKey,
 	parseArgsVector,
 } from '../tooling/cli_arguments';
 import { createCliUi } from '../tooling/cli_ui';
@@ -21,7 +19,6 @@ import { javascriptProductFilename } from './targets';
 const KNOWN_FLAGS = new Set([
 	'-romname',
 	'-title',
-	'-respath',
 	'--debug',
 	'--force',
 	'-h',
@@ -30,7 +27,6 @@ const KNOWN_FLAGS = new Set([
 const FLAGS_WITH_VALUES = new Set([
 	'-romname',
 	'-title',
-	'-respath',
 ]);
 const ui = createCliUi({ bannerTitle: 'BMSX DEPLOY BUILDER', labelWidth: 14 });
 
@@ -39,7 +35,6 @@ function parseOptions(args: string[]): {
 	force: boolean;
 	romName: string;
 	title: string | undefined;
-	resourcePath: string;
 } {
 	const seenFlags = parseArgsVector(args, FLAGS_WITH_VALUES);
 	const unknownFlags = [...seenFlags].filter(flag => !KNOWN_FLAGS.has(flag));
@@ -51,7 +46,6 @@ function parseOptions(args: string[]): {
 		ui.writeOut('Usage: <command> -romname <cart-folder> [options]\n', 'warning');
 		ui.writeOut('Options:\n', 'warning');
 		ui.writeOut('  -title <title>            Deploy title override\n', 'warning');
-		ui.writeOut('  -respath <path>           Resource path override\n', 'warning');
 		ui.writeOut('  --debug                   Build debug artifacts\n', 'warning');
 		ui.writeOut('  --force                   Force rebuild\n', 'warning');
 		process.exit(0);
@@ -67,51 +61,30 @@ function parseOptions(args: string[]): {
 	const romName = normalizedRomName.startsWith('carts/')
 		? normalizedRomName.slice('carts/'.length)
 		: normalizedRomName;
-	const resourcePath = normalizePathKey(
-		getOptionalParamOrEnv(args, '-respath', 'RES_PATH', KNOWN_FLAGS)
-		|| `./carts/${romName}/res`,
-	);
-	if (!statSync(resourcePath).isDirectory()) {
-		throw new Error(`Resource path is not a directory: ${resourcePath}`);
-	}
 
 	return {
 		debug: seenFlags.has('--debug'),
 		force: seenFlags.has('--force'),
 		romName,
 		title: getOptionalParamOrEnv(args, '-title', 'TITLE', KNOWN_FLAGS),
-		resourcePath,
 	};
 }
 
 async function main(): Promise<void> {
 	ui.printBanner();
 	const options = parseOptions(process.argv.slice(2));
-	const manifest = await getRomManifest(options.resourcePath);
-	if (!manifest) {
-		throw new Error(`ROM manifest not found at "${options.resourcePath}".`);
-	}
 	const romName = options.romName;
-	const title = manifest.title || options.title || 'BMSX';
-	const shortName = options.romName;
-	await access(
-		join(
-			process.cwd(),
-			'dist',
-			`${romName}${options.debug ? '.debug' : ''}.rom`,
-		),
+	const rom = await readFile(
+		join(process.cwd(), 'dist', `${romName}${options.debug ? '.debug' : ''}.rom`),
 	);
+	const manifest = decodeCartManifest(rom, parseCartHeader(rom));
+	const title = options.title || manifest.title || 'BMSX';
 
 	ui.divider('Browser deployment');
 	ui.bullet('ROM', pc.bold(pc.white(romName)));
 	ui.bullet('Title', pc.white(title));
 	ui.bullet('Debug', options.debug ? pc.green('enabled') : pc.dim('disabled'));
 
-	const atlasUpdated = await ensureHostSystemAtlasArtifacts();
-	ui.ok(
-		`Host system atlas → ${pc.white('machine/{ts,cpp}/render/host_overlay/atlas.generated')}`
-		+ `${atlasUpdated ? '' : pc.dim(' (up-to-date)')}`,
-	);
 	await buildBrowserPlayer(options);
 	ui.ok(
 		`Browser player → ${pc.white(`dist/${javascriptProductFilename('browser-player', options.debug)}`)}`,
@@ -120,7 +93,7 @@ async function main(): Promise<void> {
 		debug: options.debug,
 		romName,
 		title,
-		shortName,
+		shortName: romName,
 	});
 	ui.ok(`Browser loader → ${pc.white('dist/index.html')}`);
 	ui.ok(`Browser manifest → ${pc.white('dist/manifest.webmanifest')}`);
