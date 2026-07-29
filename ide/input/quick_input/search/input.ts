@@ -1,9 +1,9 @@
-import { activeSearchMatchCount, applySearchSelection, jumpToNextMatch, jumpToPreviousMatch, searchPageSize, stepSearchSelection } from '../../../editor/contrib/find/search';
+import { activeSearchMatchCount, applySearchSelection, jumpToNextMatch, jumpToPreviousMatch, searchPageSize, stepSearchSelection } from '../../../workbench/contrib/code_editor/find/search';
 import { applyInlineFieldEditing } from '../../../editor/ui/inline/text_field';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from '../../keyboard/key_input';
 import { redo, undo } from '../../../editor/editing/undo_controller';
 import { openGlobalSearchMatch } from '../../../workbench/contrib/find/global_search_navigation';
-import { editorSearchState } from '../../../editor/contrib/find/widget_state';
+import { editorSearchState } from '../../../workbench/contrib/code_editor/find/widget_state';
 import type { CartEditor } from '../../../cart_editor';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { PlayerInput } from '../../../../machine/ts/input/player';

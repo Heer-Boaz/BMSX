@@ -2,16 +2,17 @@ import type { OverlayApi as Api } from '../../runtime/overlay_api';
 import type { EditorFont } from '../ui/view/font';
 import { drawEditorText } from './text_renderer';
 import { computeRuntimeErrorOverlayMaxWidth, ensureVisualLines, measureText, writeWrappedOverlayLine } from '../common/text/layout';
-import type { RuntimeErrorDetails, RuntimeErrorOverlay } from '../../common/models';
-import type { StackTraceFrame } from '../../language/lua/interpreter/value';
+import type { RuntimeErrorDetails } from '../../runtime/fault_state';
+import type { StackTraceFrame } from '../../runtime/stack_trace';
+import type { RuntimeErrorOverlay } from '../contrib/runtime_error/model';
 import type { RectBounds } from '../../../machine/ts/common/rect';
 import { point_in_rect } from '../../../machine/ts/common/rect';
 import { api } from '../../runtime/overlay_api';
 import { centerCursorVertically, revealCursor, updateDesiredColumn } from '../ui/view/caret/caret';
 import * as constants from '../../common/constants';
-import { cloneRuntimeErrorDetails, rebuildRuntimeErrorOverlayView } from '../contrib/runtime_error/overlay';
+import { rebuildRuntimeErrorOverlayView } from '../contrib/runtime_error/overlay';
 import { resetBlink } from './caret';
-import { formatRuntimeErrorLocation } from '../../common/runtime_error_format';
+import { formatRuntimeErrorLocation } from '../../runtime/error_format';
 import { splitText } from '../../../machine/ts/common/text_lines';
 import { resolveThemeTokenColor } from '../../theme/tokens';
 import { editorPointerState } from '../../input/pointer/state';
@@ -323,8 +324,7 @@ export type RuntimeErrorOverlayDrawOptions = {
 
 export type RuntimeErrorOverlayClickResult = { kind: 'expand'; } |
 { kind: 'collapse'; } |
-{ kind: 'navigate'; frame: StackTraceFrame; } |
-{ kind: 'noop'; };
+{ kind: 'navigate'; frame: StackTraceFrame; };
 
 export type AppliedRuntimeErrorOverlay = {
 	overlay: RuntimeErrorOverlay;
@@ -510,17 +510,15 @@ export function applyRuntimeErrorOverlay(
 	const locationLabel = formatRuntimeErrorLocation(path, line, column);
 	const overlayMessage = locationLabel ? `${locationLabel}: ${normalizedMessage}` : normalizedMessage;
 	const messageLines = splitText(overlayMessage);
-	const overlayDetails = cloneRuntimeErrorDetails(details );
 	const overlay: RuntimeErrorOverlay = {
 		row: targetRow,
 		column: targetColumn,
 		message: overlayMessage,
 		lines: [],
-		timer: Number.POSITIVE_INFINITY,
 		messageLines,
 		lineDescriptors: [],
 		layout: null,
-		details: overlayDetails,
+		details,
 		expanded: false,
 		hovered: false,
 		hoverLine: -1,

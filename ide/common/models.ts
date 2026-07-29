@@ -5,11 +5,8 @@ import type {
 	LuaSymbolEntry,
 } from '../../machine/ts/lua/semantic_contracts';
 import type { ResourceDomain, RuntimeResource } from './resource';
-import type { StackTraceFrame } from '../language/lua/interpreter/value';
 import type { EditorCommandId } from './commands';
 import type { RectBounds } from '../../machine/ts/common/rect';
-import type { TextBuffer } from '../editor/text/text_buffer';
-import type { EditorUndoRecord } from '../editor/text/undo';
 export type { RuntimeResource } from './resource';
 
 export type Position = { row: number; column: number };
@@ -214,8 +211,6 @@ export type VisualLineSegment = {
 	endColumn: number;
 };
 
-export type CodeTabMode = 'lua' | 'aem';
-
 export type EditorTabId = `resource:${string}` | `code:${string}`;
 export type EditorTabKind = 'resource_view' | 'code_editor';
 export type EditorRuntimeSyncState = 'synced' | 'runtime_update_pending' | 'diverged';
@@ -284,33 +279,6 @@ export type ResourceBrowserItem = {
 	callHierarchyNodeKind?: 'root' | 'caller' | 'call';
 	callHierarchyExpandable?: boolean;
 	callHierarchyExpanded?: boolean;
-};
-
-export type CodeTabContext = {
-	id: string;
-	title: string;
-	resource: RuntimeResource;
-	mode: CodeTabMode;
-	buffer: TextBuffer;
-	cursorRow: number;
-	cursorColumn: number;
-	scrollRow: number;
-	scrollColumn: number;
-	selectionAnchor: Position;
-	lastSavedSource: string;
-	saveGeneration: number;
-	appliedGeneration: number;
-	undoStack: EditorUndoRecord[];
-	redoStack: EditorUndoRecord[];
-	lastHistoryKey: string;
-	lastHistoryTimestamp: number;
-	savePointDepth: number;
-	dirty: boolean;
-	runtimeErrorOverlay: RuntimeErrorOverlay;
-	executionStopRow: number;
-	runtimeSyncState: EditorRuntimeSyncState;
-	runtimeSyncMessage: string;
-	textVersion: number;
 };
 
 export type SearchState = {
@@ -444,56 +412,6 @@ export type InlineInputOptions = {
 	allowSpace: boolean;
 	characterFilter?: (value: string) => boolean;
 	maxLength?: number;
-};
-
-export type RuntimeErrorOverlayLineRole = 'message' | 'header' | 'divider' | 'frame';
-
-export type RuntimeErrorOverlayLineDescriptor = {
-	text: string;
-	role: RuntimeErrorOverlayLineRole;
-	frame?: StackTraceFrame;
-};
-
-export type RuntimeErrorOverlayLayout = {
-	bounds: RectBounds;
-	lineRects: ReadonlyArray<RectBounds>;
-	copyButtonRect: RectBounds;
-	contentRightInset: number;
-	// Visual line content produced by layout (word-wrapped)
-	displayLines?: ReadonlyArray<string>;
-	// Map from visual line index to descriptor index in 'lineDescriptors'
-	displayLineMap?: ReadonlyArray<number>;
-};
-
-export type RuntimeErrorDetails = {
-	message: string;
-	luaStack: ReadonlyArray<StackTraceFrame>;
-	jsStack: ReadonlyArray<StackTraceFrame>;
-};
-
-export type FaultSnapshot = {
-	message: string;
-	path: string;
-	line: number;
-	column: number;
-	details: RuntimeErrorDetails;
-};
-
-export type RuntimeErrorOverlay = {
-	row: number;
-	column: number;
-	message: string;
-	lines: string[];
-	timer: number;
-	messageLines: string[];
-	lineDescriptors: RuntimeErrorOverlayLineDescriptor[];
-	layout: RuntimeErrorOverlayLayout;
-	details: RuntimeErrorDetails;
-	expanded: boolean;
-	hovered: boolean;
-	hoverLine: number;
-	copyButtonHovered: boolean;
-	hidden: boolean;
 };
 
 export type DiagnosticsCacheEntry = {

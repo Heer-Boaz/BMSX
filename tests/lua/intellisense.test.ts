@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { CodeTabContext } from '../../ide/common/models';
+import type { CodeTabContext } from '../../ide/workbench/ui/code_tab/model';
 import { splitText } from '../../machine/ts/common/text_lines';
 import { PieceTreeBuffer } from '../../ide/editor/text/piece_tree_buffer';
 import { LuaLexer } from '../../machine/ts/lua/syntax/lexer';

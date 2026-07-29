@@ -1,13 +1,13 @@
 import type { MicrotaskQueue } from '../../../../../machine/ts/platform/platform';
 import * as constants from '../../../../common/constants';
-import { renameController } from '../../../../editor/contrib/rename/controller';
+import { renameController } from '../../code_editor/rename/controller';
 import { showEditorMessage } from '../../../../common/feedback_state';
 import { clearReferenceHighlights } from '../../../../editor/contrib/intellisense/engine';
-import { closeSearch } from '../../../../editor/contrib/find/search';
+import { closeSearch } from '../../code_editor/find/search';
 import { resetBlink } from '../../../../editor/render/caret';
 import { setFieldText } from '../../../../editor/ui/inline/text_field';
-import { closeSymbolSearch } from '../../../../editor/contrib/symbols/shared';
-import { closeLineJump } from '../../../../editor/contrib/find/line_jump';
+import { closeSymbolSearch } from '../../code_editor/symbols/shared';
+import { closeLineJump } from '../../code_editor/find/line_jump';
 import { refreshResourceCatalog, updateResourceSearchMatches } from './catalog';
 import { resourceSearchState } from '../widget_state';
 import type { RuntimeSourceState } from '../../../../runtime/sources';

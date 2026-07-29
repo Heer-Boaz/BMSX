@@ -1,13 +1,13 @@
 import type { ResourcePanelController } from '../../../workbench/contrib/resources/panel/controller';
 import { point_in_rect } from '../../../../machine/ts/common/rect';
 import * as constants from '../../../common/constants';
-import { closeSearch, processInlineFieldPointer } from '../../../editor/contrib/find/search';
-import { getResourceSearchBarBounds, resourceSearchEntryHeight, resourceSearchVisibleResultCount } from '../../../editor/ui/view/view';
+import { closeSearch, processInlineFieldPointer } from '../../../workbench/contrib/code_editor/find/search';
+import { getResourceSearchBarBounds, resourceSearchEntryHeight, resourceSearchVisibleResultCount } from '../../../workbench/common/layout';
 import type { PointerSnapshot } from '../../../common/models';
 import { applyResourceSearchSelection } from '../../../workbench/contrib/resources/search/index';
 import { ensureResourceSearchSelectionVisible } from '../../../workbench/contrib/resources/search/catalog';
-import { closeLineJump } from '../../../editor/contrib/find/line_jump';
-import { closeSymbolSearch } from '../../../editor/contrib/symbols/shared';
+import { closeLineJump } from '../../../workbench/contrib/code_editor/find/line_jump';
+import { closeSymbolSearch } from '../../../workbench/contrib/code_editor/symbols/shared';
 import { activateQuickInputField, finishQuickInputPointer, quickInputTextLeft } from '../pointer/common';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { resourceSearchState } from '../../../workbench/contrib/resources/widget_state';

@@ -6,8 +6,8 @@ import { updateTabHoverState } from '../../workbench/input/pointer/tab_bar/point
 import type { PointerSnapshot } from '../../common/models';
 import { editorPointerState } from './state';
 import { editorViewState } from '../../editor/ui/view/state';
-import { editorSearchState, lineJumpState } from '../../editor/contrib/find/widget_state';
-import { symbolSearchState } from '../../editor/contrib/symbols/search/state';
+import { editorSearchState, lineJumpState } from '../../workbench/contrib/code_editor/find/widget_state';
+import { symbolSearchState } from '../../workbench/contrib/code_editor/symbols/search/state';
 import { createResourceState, resourceSearchState } from '../../workbench/contrib/resources/widget_state';
 import type { ResourcePanelController } from '../../workbench/contrib/resources/panel/controller';
 import type { VideoSurface } from '../../../machine/ts/platform/platform';

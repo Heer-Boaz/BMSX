@@ -1,4 +1,4 @@
-import type { CursorScreenInfo } from '../../../common/models';
+import type { CursorScreenInfo, SearchMatch } from '../../../common/models';
 import type { Font } from '../../../../machine/ts/render/shared/bmsx_font';
 import { drawEditorText } from '../text_renderer';
 import { api } from '../../../runtime/overlay_api';
@@ -30,6 +30,11 @@ export function drawCodeAreaRows(
 	useUppercase: boolean,
 	renderFont: Font,
 	breakpointLaneWidth: number,
+	referenceMatches: readonly SearchMatch[],
+	referenceActiveIndex: number,
+	searchMatches: readonly SearchMatch[],
+	searchActiveIndex: number,
+	searchHighlightsVisible: boolean,
 ): CursorScreenInfo {
 	let cursorInfo: CursorScreenInfo = null;
 	for (let i = 0; i < viewport.rows; i += 1) {
@@ -80,8 +85,29 @@ export function drawCodeAreaRows(
 		const clampedEndColumn = Math.min(columnStart + columnCount, columnToDisplay.length - 1);
 		const sliceStartDisplay = columnToDisplay[clampedStartColumn];
 		const sliceEndDisplay = columnToDisplay[clampedEndColumn];
-		drawReferenceHighlightsForRow(api, lineIndex, entry, viewport.textLeft, rowY, sliceStartDisplay, sliceEndDisplay);
-		drawSearchHighlightsForRow(api, lineIndex, entry, viewport.textLeft, rowY, sliceStartDisplay, sliceEndDisplay);
+		drawReferenceHighlightsForRow(
+			api,
+			lineIndex,
+			entry,
+			viewport.textLeft,
+			rowY,
+			sliceStartDisplay,
+			sliceEndDisplay,
+			referenceMatches,
+			referenceActiveIndex,
+		);
+		drawSearchHighlightsForRow(
+			api,
+			lineIndex,
+			entry,
+			viewport.textLeft,
+			rowY,
+			sliceStartDisplay,
+			sliceEndDisplay,
+			searchMatches,
+			searchActiveIndex,
+			searchHighlightsVisible,
+		);
 		const selectionSlice = computeSelectionSlice(lineIndex, highlight, sliceStartDisplay, sliceEndDisplay);
 		if (selectionSlice) {
 			const selectionStartX = viewport.textLeft + advancePrefix[selectionSlice.startDisplay] - advancePrefix[sliceStartDisplay];

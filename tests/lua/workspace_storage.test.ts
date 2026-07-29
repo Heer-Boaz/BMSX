@@ -1,7 +1,7 @@
 import './test_setup';
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
-import type { CodeTabContext } from '../../ide/common/models';
+import type { CodeTabContext } from '../../ide/workbench/ui/code_tab/model';
 import {
 	type ResourceDomain,
 	type RuntimeResource,
@@ -301,10 +301,10 @@ async function resetEnvironment(storage: MockStorage): Promise<void> {
 	clearWorkspaceSourceCaches();
 	codeTabSessionState.contexts.clear();
 	codeTabSessionState.activeContextId = null;
-	codeTabSessionState.activeContextReadOnly = false;
 	tabSessionState.tabs = [];
 	tabSessionState.activeTabId = null;
 	editorDocumentState.buffer = new PieceTreeBuffer('');
+	editorDocumentState.readOnly = false;
 	globalThis.fetch = ORIGINAL_FETCH;
 }
 

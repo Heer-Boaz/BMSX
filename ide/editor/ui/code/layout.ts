@@ -5,11 +5,11 @@ import { clamp } from '../../../../machine/ts/common/clamp';
 import { ScratchBuffer } from '../../../../machine/ts/common/scratchbuffer';
 import { highlightTextLine as highlightTextLineExternal } from '../../../language/lua/syntax_highlight';
 import { highlightAemTextLine } from '../../../language/aem/syntax_highlight';
-import type { LuaSemanticModel } from '../../../../machine/ts/lua/semantic/model';
+import type { FileSemanticData, LuaSemanticModel } from '../../../../machine/ts/lua/semantic/model';
 import type { SemanticSymbolKind } from '../../../../machine/ts/lua/semantic/symbols';
 import type { SemanticAnnotations, TokenAnnotation } from '../../../../machine/ts/lua/semantic/tokens';
-import type { LuaDefinitionInfo } from '../../../../machine/ts/lua/syntax/ast/index';
-import type { CachedHighlight, CodeTabMode, HighlightLine, VisualLineSegment } from '../../../common/models';
+import type { CachedHighlight, HighlightLine, VisualLineSegment } from '../../../common/models';
+import type { EditorDocumentMode } from '../../editing/document_state';
 import { EditorFont } from '../view/font';
 import { getLinesSnapshot, getTextSnapshot } from '../../text/source_text';
 import {
@@ -126,6 +126,7 @@ export class CodeLayout {
 	private readonly maxHighlightCache: number;
 	private visualLines: VisualLineSegment[] = [];
 	private visualLinesDirty = true;
+	private semanticFileData: FileSemanticData = null;
 	private semanticModel: LuaSemanticModel = null;
 	private semanticVersion = -1;
 	private semanticDomain: ResourceDomain = null;
@@ -136,7 +137,6 @@ export class CodeLayout {
 	private readonly getBuiltinIdentifiers: () => BuiltinIdentifierSnapshot;
 	private readonly computeWrapWidth: () => number;
 	private pendingSemantic: PendingSemanticUpdate = null;
-	// private inFlightSemantic: PendingSemanticUpdate = null;
 	private semanticDueAtMs: number = null;
 	private semanticUpdateScheduled = false;
 	private annotationRowSig: Uint32Array = null;
@@ -163,7 +163,7 @@ export class CodeLayout {
 	private lastSemanticErrorChunk: string = null;
 	private builtinEpoch = 0;
 	private builtinIdentifiers: Iterable<string> = null;
-	private codeTabMode: CodeTabMode = 'lua';
+	private documentMode: EditorDocumentMode = 'lua';
 
 	constructor(
 		private readonly font: EditorFont,
@@ -178,8 +178,8 @@ export class CodeLayout {
 		this.averageCharAdvance = this.font.advance('M');
 	}
 
-	public setCodeTabMode(mode: CodeTabMode): void {
-		this.codeTabMode = mode;
+	public setDocumentMode(mode: EditorDocumentMode): void {
+		this.documentMode = mode;
 	}
 
 	private refreshBuiltinIdentifiers(): void {
@@ -223,7 +223,7 @@ export class CodeLayout {
 				}
 				this.semanticDueAtMs = null;
 			}
-			this.dispatchSemanticUpdate(pending, 'background');
+			this.dispatchSemanticUpdate(pending);
 		});
 	}
 
@@ -247,6 +247,7 @@ export class CodeLayout {
 	public invalidateAllHighlights(): void {
 		this.highlightCache.clear();
 		this.semanticBuffer = null;
+		this.semanticFileData = null;
 		this.semanticModel = null;
 		this.semanticVersion = -1;
 		this.semanticDomain = null;
@@ -255,7 +256,6 @@ export class CodeLayout {
 		this.lastSemanticErrorVersion = -1;
 		this.lastSemanticErrorChunk = null;
 		this.pendingSemantic = null;
-		// this.inFlightSemantic = null;
 		this.semanticDueAtMs = null;
 		this.semanticUpdateScheduled = false;
 		if (this.semanticTimer) {
@@ -273,14 +273,18 @@ export class CodeLayout {
 	}
 
 	public requestSemanticUpdate(buffer: TextBuffer, documentVersion: number, identity: ResourceIdentity): void {
-		if (this.codeTabMode !== 'lua') {
-			this.pendingSemantic = null;
-			this.semanticDueAtMs = null;
-			this.semanticModel = null;
-			this.annotationRowSig = null;
-			return;
+		switch (this.documentMode) {
+			case 'lua':
+				this.ensureSemanticModel(buffer, documentVersion, identity);
+				return;
+			case 'aem':
+				this.pendingSemantic = null;
+				this.semanticDueAtMs = null;
+				this.semanticFileData = null;
+				this.semanticModel = null;
+				this.annotationRowSig = null;
+				return;
 		}
-		this.ensureSemanticModel(buffer, documentVersion, identity, 'background');
 	}
 
 	public getCachedHighlight(buffer: TextBuffer, row: number): CachedHighlight {
@@ -310,9 +314,15 @@ export class CodeLayout {
 			lineSignature = buffer.getLineSignature(row);
 		}
 		const lineAnnotations = annotations ? annotations[row] : undefined;
-		const highlight = this.codeTabMode === 'lua'
-			? highlightTextLineExternal(source, lineAnnotations, builtinIdentifiers)
-			: highlightAemTextLine(source);
+		let highlight: HighlightLine;
+		switch (this.documentMode) {
+			case 'lua':
+				highlight = highlightTextLineExternal(source, lineAnnotations, builtinIdentifiers);
+				break;
+			case 'aem':
+				highlight = highlightAemTextLine(source);
+				break;
+		}
 		const cachedEntry = cached;
 		if (cachedEntry) {
 			const displayToColumn = cachedEntry.displayToColumn;
@@ -545,13 +555,13 @@ export class CodeLayout {
 		return this.lastSemanticError;
 	}
 
-	public getSemanticDefinitions(
+	public getSemanticFileData(
 		buffer: TextBuffer,
 		documentVersion: number,
 		identity: ResourceIdentity,
-	): readonly LuaDefinitionInfo[] {
-		this.ensureSemanticModel(buffer, documentVersion, identity, 'background');
-		if (!this.semanticModel) {
+	): FileSemanticData {
+		this.ensureSemanticModel(buffer, documentVersion, identity);
+		if (!this.semanticFileData) {
 			return null;
 		}
 		if (this.semanticVersion !== documentVersion
@@ -559,7 +569,7 @@ export class CodeLayout {
 			|| this.semanticPath !== identity.path) {
 			return null;
 		}
-		return this.semanticModel.definitions;
+		return this.semanticFileData;
 	}
 
 	private clampScrollRow(scrollRow: number): number {
@@ -815,7 +825,7 @@ export class CodeLayout {
 	}
 
 	public getSemanticModel(buffer: TextBuffer, documentVersion: number, identity: ResourceIdentity): LuaSemanticModel {
-		this.ensureSemanticModel(buffer, documentVersion, identity, 'background');
+		this.ensureSemanticModel(buffer, documentVersion, identity);
 		return this.semanticModel;
 	}
 
@@ -823,7 +833,6 @@ export class CodeLayout {
 		buffer: TextBuffer,
 		version: number,
 		identity: ResourceIdentity,
-		_mode: 'background',
 	): void {
 		if (this.semanticBuffer === buffer
 			&& this.semanticVersion === version
@@ -846,16 +855,6 @@ export class CodeLayout {
 			return;
 		}
 		const pending = this.updatePendingSemantic(buffer, version, identity);
-		// if (mode === 'force') {
-		// 	this.semanticDueAtMs = null;
-		// 	if (this.semanticTimer) {
-		// 		this.semanticTimer.cancel();
-		// 		this.semanticTimer = null;
-		// 	}
-		// 	this.semanticUpdateScheduled = false;
-		// 	this.dispatchSemanticUpdate(pending, 'force');
-		// 	return;
-		// }
 		if (this.semanticDebounceMs === 0) {
 			this.semanticDueAtMs = null;
 			if (this.semanticTimer) {
@@ -863,7 +862,7 @@ export class CodeLayout {
 				this.semanticTimer = null;
 			}
 			this.semanticUpdateScheduled = false;
-			this.dispatchSemanticUpdate(pending, 'background');
+			this.dispatchSemanticUpdate(pending);
 			return;
 		}
 		const now = this.clock.now();
@@ -877,7 +876,7 @@ export class CodeLayout {
 				this.semanticTimer = null;
 			}
 			this.semanticUpdateScheduled = false;
-			this.dispatchSemanticUpdate(pending, 'background');
+			this.dispatchSemanticUpdate(pending);
 			return;
 		}
 		this.scheduleSemanticUpdate();
@@ -919,14 +918,9 @@ export class CodeLayout {
 		return pending.source;
 	}
 
-	private dispatchSemanticUpdate(pending: PendingSemanticUpdate, strategy: 'background' | 'force'): void {
+	private dispatchSemanticUpdate(pending: PendingSemanticUpdate): void {
 		this.semanticDueAtMs = null;
 		this.materializeSemanticSource(pending);
-		if (strategy === 'force') {
-			this.pendingSemantic = null;
-			this.applySemanticUpdateSync(pending);
-			return;
-		}
 		this.pendingSemantic = pending;
 		if (this.semanticDispatchHandle) {
 			this.semanticDispatchHandle.cancel();
@@ -942,7 +936,7 @@ export class CodeLayout {
 	}
 
 	private applySemanticUpdateSync(pending: PendingSemanticUpdate): void {
-		let model: LuaSemanticModel = null;
+		let fileData: FileSemanticData = null;
 		let errorMessage: string = null;
 		try {
 			const source = this.materializeSemanticSource(pending);
@@ -952,33 +946,33 @@ export class CodeLayout {
 				lines: pending.lines,
 				version: pending.version,
 			}], getOrCreateSemanticWorkspace(pending.domain));
-			model = snapshot.getFileData(pending.path).model;
+			fileData = snapshot.getFileData(pending.path);
 		} catch (error) {
-			model = null;
+			fileData = null;
 			errorMessage = error instanceof Error ? error.message : String(error);
 		}
-		const annotations = model ? model.annotations : null;
 		this.finalizeSemanticUpdate(
 			pending.buffer,
-			model,
+			fileData,
 			pending.version,
 			pending.domain,
 			pending.path,
-			annotations,
 			errorMessage,
 		);
 	}
 
 	private finalizeSemanticUpdate(
 		buffer: TextBuffer,
-		model: LuaSemanticModel,
+		fileData: FileSemanticData,
 		version: number,
 		domain: ResourceDomain,
 		path: string,
-		annotations: SemanticAnnotations,
 		errorMessage?: string,
 	): void {
+		const model = fileData ? fileData.model : null;
+		const annotations = fileData ? fileData.annotations : null;
 		this.semanticBuffer = buffer;
+		this.semanticFileData = fileData;
 		this.semanticModel = model;
 		this.semanticVersion = version;
 		this.semanticDomain = domain;

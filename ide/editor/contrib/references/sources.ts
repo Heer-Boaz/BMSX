@@ -3,7 +3,8 @@ import type { LuaDefinitionLocation } from '../../../../machine/ts/lua/semantic_
 import {
 	SYSTEM_RESOURCE_DOMAIN,
 } from '../../../common/resource';
-import type { CodeTabContext, SearchMatch, SymbolCatalogEntry, SymbolSearchResult } from '../../../common/models';
+import type { SearchMatch, SymbolCatalogEntry, SymbolSearchResult } from '../../../common/models';
+import type { EditorDocumentContext } from '../../editing/document_state';
 import { parseLuaIdentifierChain } from '../../../language/lua/identifier_chain';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
 import { createEditorSemanticFrontend } from '../intellisense/frontend';
@@ -28,8 +29,8 @@ export function buildReferenceCatalogForExpression(bridge: RuntimeLuaTooling, op
 	source: string;
 	lines: readonly string[];
 	path: string;
-	activeContext: CodeTabContext;
-	codeTabContexts: Iterable<CodeTabContext>;
+	activeContext: EditorDocumentContext;
+	codeTabContexts: Iterable<EditorDocumentContext>;
 }): SymbolCatalogEntry[] {
 	const { metadata, frontend } = prepareProjectSemanticFrontend(
 		bridge,
@@ -106,8 +107,8 @@ export function buildReferenceCatalogForExpression(bridge: RuntimeLuaTooling, op
 
 export function resolveDefinitionLocationForExpression(bridge: RuntimeLuaTooling, options: {
 	expression: string;
-	activeContext: CodeTabContext;
-	codeTabContexts: Iterable<CodeTabContext>;
+	activeContext: EditorDocumentContext;
+	codeTabContexts: Iterable<EditorDocumentContext>;
 	workspace: LuaSemanticWorkspace;
 	currentPath: string;
 	currentSource: string;
@@ -189,8 +190,8 @@ export function filterReferenceCatalog(options: {
 function prepareProjectSemanticFrontend(
 	bridge: RuntimeLuaTooling,
 	workspace: LuaSemanticWorkspace,
-	activeContext: CodeTabContext,
-	codeTabContexts: Iterable<CodeTabContext>,
+	activeContext: EditorDocumentContext,
+	codeTabContexts: Iterable<EditorDocumentContext>,
 	currentPath: string,
 	currentSource: string,
 	currentLines: readonly string[],

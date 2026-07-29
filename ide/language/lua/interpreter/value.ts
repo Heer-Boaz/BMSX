@@ -349,15 +349,3 @@ export function extractErrorMessage(error: unknown): string {
 	}
 	return String(error);
 }
-
-export type StackFrameLanguage = 'lua' | 'js';
-
-export type StackTraceFrame = {
-	origin: StackFrameLanguage;
-	functionName: string;
-	source: string;
-	line: number;
-	column: number;
-	raw: string;
-	pathPath?: string;
-};

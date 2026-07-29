@@ -1,7 +1,7 @@
 import type { PointerSnapshot } from '../../../../common/models';
 import type { RectBounds } from '../../../../../machine/ts/common/rect';
 import { clamp } from '../../../../../machine/ts/common/clamp';
-import { gotoDiagnostic } from '../../../../editor/contrib/diagnostics/navigation';
+import { gotoDiagnostic } from '../../code_editor/diagnostics/navigation';
 import type { ProblemsPanelController } from './controller';
 import { editorViewState } from '../../../../editor/ui/view/state';
 import type { ResourcePanelController } from '../../resources/panel/controller';

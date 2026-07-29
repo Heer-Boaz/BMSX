@@ -3,12 +3,11 @@ import { drawHoverTooltip } from '../../ui/hover_tooltip';
 import { renderRuntimeErrorOverlay, type RuntimeErrorOverlayRenderResult } from '../error_overlay';
 import * as constants from '../../../common/constants';
 import { api } from '../../../runtime/overlay_api';
-import { drawCompletionPopup, drawParameterHintOverlay, type CompletionRenderBounds } from '../completion';
+import { drawCompletionPopup, drawParameterHintOverlay, type CompletionPresentation, type CompletionRenderBounds } from '../completion';
 import { drawCursor } from '../caret';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
 import { editorCaretState } from '../../ui/view/caret/state';
 import { editorViewState } from '../../ui/view/state';
-import type { EditorCompletionController } from '../../contrib/suggest/completion_controller';
 import type { CodeAreaViewport } from '../../ui/code/area_viewport';
 
 const verticalTrackScratch: RectBounds = {
@@ -56,7 +55,7 @@ function drawRuntimeErrorOverlayIndicator(
 export function finalizeCodeAreaRender(
 	viewport: CodeAreaViewport & CompletionRenderBounds,
 	cursorInfo: CursorScreenInfo,
-	completion: EditorCompletionController,
+	completion: CompletionPresentation,
 	cursorActive: boolean,
 ): void {
 	const verticalTrackLeft = viewport.codeRight - constants.SCROLLBAR_WIDTH;

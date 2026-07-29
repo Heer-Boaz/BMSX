@@ -4,7 +4,6 @@ import * as constants from '../../common/constants';
 import { editorRuntimeState } from '../common/runtime_state';
 import { invalidateLuaCommentContextFromRow } from '../../common/text';
 import { capturePreMutationSource } from '../common/text/runtime';
-import { getActiveCodeTabContext, updateActiveContextDirtyFlag } from '../../workbench/ui/code_tab/contexts';
 import { notifyReadOnlyEdit } from '../ui/view/view';
 import { updateDesiredColumn } from '../ui/view/caret/caret';
 import { resetBlink } from '../render/caret';
@@ -13,11 +12,10 @@ import { requestSemanticRefresh } from '../contrib/intellisense/engine';
 import type { EditorSnapshot, Position } from '../../common/models';
 import { editorCaretState } from '../ui/view/caret/state';
 import { editorDocumentState } from './document_state';
-import { isActiveCodeTabReadOnly } from '../../workbench/ui/code_tab/contexts';
 import { editorViewState } from '../ui/view/state';
 
 export function prepareUndo(key: string, allowMerge: boolean): void {
-	if (isActiveCodeTabReadOnly()) {
+	if (editorDocumentState.readOnly) {
 		return;
 	}
 	capturePreMutationSource();
@@ -124,7 +122,7 @@ export function applyUndoableReplace(offset: number, deleteLength: number, inser
 }
 
 export function undo(): void {
-	if (isActiveCodeTabReadOnly()) {
+	if (editorDocumentState.readOnly) {
 		notifyReadOnlyEdit();
 		return;
 	}
@@ -179,22 +177,16 @@ export function undo(): void {
 	updateDesiredColumn();
 	resetBlink();
 	ensureCursorVisible();
-	const context = getActiveCodeTabContext();
-	requestSemanticRefresh(context);
+	requestSemanticRefresh();
 
 	editorDocumentState.dirty = editorDocumentState.undoStack.length !== editorDocumentState.savePointDepth;
-	updateActiveContextDirtyFlag();
 	editorDocumentState.saveGeneration = editorDocumentState.saveGeneration + 1;
-	if (context) {
-		context.saveGeneration = editorDocumentState.saveGeneration;
-		context.textVersion = editorDocumentState.textVersion;
-	}
 	editorDocumentState.emitTextMutated(null);
 	breakUndoSequence();
 }
 
 export function redo(): void {
-	if (isActiveCodeTabReadOnly()) {
+	if (editorDocumentState.readOnly) {
 		notifyReadOnlyEdit();
 		return;
 	}
@@ -249,16 +241,10 @@ export function redo(): void {
 	updateDesiredColumn();
 	resetBlink();
 	ensureCursorVisible();
-	const context = getActiveCodeTabContext();
-	requestSemanticRefresh(context);
+	requestSemanticRefresh();
 
 	editorDocumentState.dirty = editorDocumentState.undoStack.length !== editorDocumentState.savePointDepth;
-	updateActiveContextDirtyFlag();
 	editorDocumentState.saveGeneration = editorDocumentState.saveGeneration + 1;
-	if (context) {
-		context.saveGeneration = editorDocumentState.saveGeneration;
-		context.textVersion = editorDocumentState.textVersion;
-	}
 	editorDocumentState.emitTextMutated(null);
 	breakUndoSequence();
 }
@@ -318,5 +304,5 @@ export function restoreSnapshot(snapshot: EditorSnapshot, options?: RestoreSnaps
 	if (!options?.preserveScroll) {
 		ensureCursorVisible();
 	}
-	requestSemanticRefresh(getActiveCodeTabContext());
+	requestSemanticRefresh();
 }

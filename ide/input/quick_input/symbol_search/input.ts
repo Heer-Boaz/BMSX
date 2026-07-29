@@ -1,12 +1,12 @@
 import * as constants from '../../../common/constants';
 import { showEditorMessage } from '../../../common/feedback_state';
 import { applyInlineFieldEditing } from '../../../editor/ui/inline/text_field';
-import { applySymbolSearchSelection } from '../../../editor/contrib/symbols/search/index';
-import { moveSymbolSearchSelection, updateSymbolSearchMatches } from '../../../editor/contrib/symbols/search/catalog';
-import { closeSymbolSearch, ensureSymbolSearchSelectionVisible } from '../../../editor/contrib/symbols/shared';
+import { applySymbolSearchSelection } from '../../../workbench/contrib/code_editor/symbols/search/index';
+import { moveSymbolSearchSelection, updateSymbolSearchMatches } from '../../../workbench/contrib/code_editor/symbols/search/catalog';
+import { closeSymbolSearch, ensureSymbolSearchSelectionVisible } from '../../../workbench/contrib/code_editor/symbols/shared';
 import { consumeIdeKey, isKeyJustPressed, isShiftDown, shouldRepeatKeyFromPlayer } from '../../keyboard/key_input';
-import { symbolSearchPageSize } from '../../../editor/ui/view/view';
-import { symbolSearchState } from '../../../editor/contrib/symbols/search/state';
+import { symbolSearchPageSize } from '../../../workbench/common/layout';
+import { symbolSearchState } from '../../../workbench/contrib/code_editor/symbols/search/state';
 import type { CartEditor } from '../../../cart_editor';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';

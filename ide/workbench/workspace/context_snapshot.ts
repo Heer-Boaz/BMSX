@@ -1,6 +1,7 @@
 // disable cross_layer_import_pattern -- workspace context snapshots own the editor/workbench state handoff for autosave and restore.
 import { clamp_safe } from '../../../machine/ts/common/clamp';
-import type { CodeTabContext, EditorSnapshot, Position } from '../../common/models';
+import type { EditorSnapshot, Position } from '../../common/models';
+import type { CodeTabContext } from '../ui/code_tab/model';
 import { editorDocumentState } from '../../editor/editing/document_state';
 import { restoreSnapshot } from '../../editor/editing/undo_controller';
 import { editorViewState } from '../../editor/ui/view/state';

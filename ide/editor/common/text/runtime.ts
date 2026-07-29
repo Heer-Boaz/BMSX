@@ -1,13 +1,10 @@
-import { startSearchJob } from '../../contrib/find/search';
-import { getActiveCodeTabContext, updateActiveContextDirtyFlag } from '../../../workbench/ui/code_tab/contexts';
 import { clearForwardNavigationHistory } from '../../../navigation/navigation_history';
-import { markDiagnosticsDirty } from '../../contrib/diagnostics/analysis';
+import { markDiagnosticsDirty } from '../../contrib/diagnostics/state';
 import { requestSemanticRefresh, clearReferenceHighlights } from '../../contrib/intellisense/engine';
 import { getTextSnapshot } from '../../text/source_text';
 import { editorDocumentState } from '../../editing/document_state';
 import { editorViewState } from '../../ui/view/state';
 import { editorRuntimeState } from '../runtime_state';
-import { editorSearchState } from '../../contrib/find/widget_state';
 
 export function capturePreMutationSource(): void {
 	if (!editorRuntimeState.caseInsensitive) {
@@ -36,20 +33,16 @@ export function markTextMutated(): void {
 	);
 	editorDocumentState.saveGeneration += 1;
 	editorDocumentState.dirty = editorDocumentState.undoStack.length !== editorDocumentState.savePointDepth;
-	const context = getActiveCodeTabContext();
-	context.saveGeneration = editorDocumentState.saveGeneration;
 	editorViewState.maxLineLengthDirty = true;
-	markDiagnosticsDirty(context.id);
+	markDiagnosticsDirty(editorDocumentState.contextId);
 	bumpTextVersion();
 	clearReferenceHighlights();
-	updateActiveContextDirtyFlag();
 	editorViewState.layout.ensureVisualLinesDirty();
-	requestSemanticRefresh(context);
+	requestSemanticRefresh();
 	clearForwardNavigationHistory();
 	const editContext = editorRuntimeState.pendingEditContext;
 	editorRuntimeState.pendingEditContext = null;
 	editorDocumentState.emitTextMutated(editContext);
-	if (editorSearchState.query.length > 0) startSearchJob();
 }
 
 export function invalidateLineRange(startRow: number, endRow: number): void {

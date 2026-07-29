@@ -3,16 +3,14 @@ import type { LuaCallFrame } from '../language/lua/interpreter/interpreter';
 import {
 	convertToError,
 	extractErrorMessage,
-	type StackTraceFrame,
 } from '../language/lua/interpreter/value';
-import type { FaultSnapshot, RuntimeErrorDetails } from '../common/models';
 import {
 	buildErrorStackString,
 	buildLuaFrameRawLabel,
 	convertLuaCallFrames,
 	sanitizeLuaErrorMessage,
-} from '../common/runtime_error_format';
-import { buildLuaStackFrames } from './stack_trace';
+} from './error_format';
+import { buildLuaStackFrames, type StackTraceFrame } from './stack_trace';
 import { blua32FunctionIndexAtAddress } from '../../machine/ts/rompack/tooling/blua32_image';
 import type { ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
 import type { Value } from '../../machine/ts/machine/cpu/value';
@@ -23,6 +21,18 @@ import type { RuntimeSourceState } from './sources';
 
 type RuntimeErrorLocation = { path: string; line: number; column: number };
 export type RecordedRuntimeLuaError = { error: Error; stackText: string };
+
+export type RuntimeErrorDetails = {
+	luaStack: ReadonlyArray<StackTraceFrame>;
+};
+
+export type FaultSnapshot = {
+	message: string;
+	path: string;
+	line: number;
+	column: number;
+	details: RuntimeErrorDetails;
+};
 
 export type RuntimeCpuFaultFrame = {
 	readonly executionDomainId: ExecutionDomainId;
@@ -46,7 +56,7 @@ export type RuntimeFaultState = {
 };
 
 const EMPTY_LUA_CALL_FRAMES: ReadonlyArray<LuaCallFrame> = [];
-const EMPTY_STACK_TRACE_FRAMES: StackTraceFrame[] = [];
+const EMPTY_STACK_TRACE_FRAMES: ReadonlyArray<StackTraceFrame> = [];
 
 export function createRuntimeFaultState(): RuntimeFaultState {
 	return {
@@ -66,7 +76,7 @@ export function resetHandledLuaErrors(fault: RuntimeFaultState): void {
 	fault.handledLuaErrors = new WeakSet<object>();
 }
 
-function resolveEditorSourceWorkspacePath(sources: RuntimeSourceState, source: string): string {
+function resolveStackFrameWorkspacePath(sources: RuntimeSourceState, source: string): string {
 	for (let slot = 0; slot < sources.cartridgeSlots.length; slot += 1) {
 		const cartridge = sources.cartridgeSlots[slot];
 		if (cartridge && cartridge.luaSources.path2lua[source]) {
@@ -116,7 +126,6 @@ function resolveRuntimeErrorLocation(
 function createLuaErrorStackFrame(error: LuaError, functionName: string): StackTraceFrame {
 	const source = luaErrorSourcePath(error);
 	return {
-		origin: 'lua',
 		functionName,
 		source,
 		line: error.line,
@@ -226,12 +235,12 @@ export function recordLuaError(
 	fault.lastLuaCallStack = buildLuaStackFrames(sources, fault.lastCpuFaultSnapshot);
 	const message = sanitizeLuaErrorMessage(extractErrorMessage(error));
 	const location = resolveRuntimeErrorLocation(fault, sources, error);
-	const runtimeDetails = buildRuntimeErrorDetailsForEditor(fault, sources, error, message);
+	const runtimeDetails = buildRuntimeErrorDetails(fault, sources, error);
+	const stackFrames = runtimeDetails ? runtimeDetails.luaStack : EMPTY_STACK_TRACE_FRAMES;
 	const stackText = buildErrorStackString(
 		error instanceof Error && error.name ? error.name : 'Error',
 		message,
-		runtimeDetails,
-		false,
+		stackFrames,
 	);
 	setRuntimeFault(fault, {
 		message,
@@ -248,11 +257,10 @@ export function recordLuaError(
 	return { error, stackText };
 }
 
-function buildRuntimeErrorDetailsForEditor(
+function buildRuntimeErrorDetails(
 	fault: RuntimeFaultState,
 	sources: RuntimeSourceState,
 	error: unknown,
-	message: string,
 	callStack?: ReadonlyArray<LuaCallFrame>,
 ): RuntimeErrorDetails {
 	if (error instanceof LuaSyntaxError) {
@@ -278,15 +286,13 @@ function buildRuntimeErrorDetailsForEditor(
 			if (!source || source.length === 0) {
 				continue;
 			}
-			frame.pathPath = resolveEditorSourceWorkspacePath(sources, source);
+			frame.workspacePath = resolveStackFrameWorkspacePath(sources, source);
 		}
 	}
 	if (luaFrames.length === 0) {
 		return null;
 	}
 	return {
-		message,
 		luaStack: luaFrames,
-		jsStack: EMPTY_STACK_TRACE_FRAMES,
 	};
 }

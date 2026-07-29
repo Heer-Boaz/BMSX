@@ -1,5 +1,5 @@
 import type { IdeCommandController } from '../../commands/controller';
-import { jumpToNextMatch, jumpToPreviousMatch } from '../../editor/contrib/find/search';
+import { jumpToNextMatch, jumpToPreviousMatch } from '../../workbench/contrib/code_editor/find/search';
 import { closeActiveTab } from '../../workbench/ui/tabs';
 import { isCodeTabActive, isEditableCodeTab, isReadOnlyCodeTab } from '../../workbench/ui/code_tab/contexts';
 import { notifyReadOnlyEdit } from '../../editor/ui/view/view';
@@ -9,7 +9,7 @@ import { applyDocumentFormatting, copySelectionToClipboard, cutLineToClipboard, 
 import * as TextEditing from '../../editor/editing/text_editing_and_selection';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from './key_input';
 import { isInlineWidgetFocused } from '../../quick_input/inline_widget';
-import { editorSearchState } from '../../editor/contrib/find/widget_state';
+import { editorSearchState } from '../../workbench/contrib/code_editor/find/widget_state';
 import type { RuntimeSourceState } from '../../runtime/sources';
 import type { ResourcePanelController } from '../../workbench/contrib/resources/panel/controller';
 import type { PlayerInput } from '../../../machine/ts/input/player';

@@ -1,12 +1,12 @@
 import { focusRuntimeErrorOverlay } from '../runtime_error/navigation';
 import { openResourceSearch } from '../workbench/contrib/resources/search/index';
-import { openLineJump } from '../editor/contrib/find/line_jump';
+import { openLineJump } from '../workbench/contrib/code_editor/find/line_jump';
 import { openCreateResourcePrompt } from '../workbench/contrib/resources/create/index';
-import { openReferenceSearchPopup } from '../editor/contrib/references/search/index';
-import { openRenamePrompt } from '../editor/contrib/rename/prompt';
-import { openGlobalSymbolSearch, openSymbolSearch } from '../editor/contrib/symbols/search/index';
+import { openReferenceSearchPopup } from '../workbench/contrib/code_editor/references/search/index';
+import { openRenamePrompt } from '../workbench/contrib/code_editor/rename/prompt';
+import { openGlobalSymbolSearch, openSymbolSearch } from '../workbench/contrib/code_editor/symbols/search/index';
 import type { EditorCommandId, EditorSearchCommandId } from '../common/commands';
-import type { RenameController } from '../editor/contrib/rename/controller';
+import type { RenameController } from '../workbench/contrib/code_editor/rename/controller';
 import type { CartEditor } from '../cart_editor';
 import type { RuntimeSourceState } from '../runtime/sources';
 import type { RuntimeLuaTooling } from '../runtime/lua_tooling';

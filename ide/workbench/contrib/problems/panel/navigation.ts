@@ -1,5 +1,5 @@
 import { clamp } from '../../../../../machine/ts/common/clamp';
-import { gotoDiagnostic } from '../../../../editor/contrib/diagnostics/navigation';
+import { gotoDiagnostic } from '../../code_editor/diagnostics/navigation';
 import type { ProblemsPanelController } from './controller';
 import type { ResourcePanelController } from '../../resources/panel/controller';
 

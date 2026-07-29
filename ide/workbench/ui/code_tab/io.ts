@@ -1,6 +1,7 @@
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import { showEditorMessage, showEditorWarningBanner } from '../../../common/feedback_state';
-import type { CodeTabContext, CodeTabMode } from '../../../common/models';
+import type { EditorDocumentMode } from '../../../editor/editing/document_state';
+import type { CodeTabContext } from './model';
 import type { RuntimeResource } from '../../../common/resource';
 import * as constants from '../../../common/constants';
 import { showLuaErrorOverlay } from '../../../runtime_error/navigation';
@@ -35,7 +36,7 @@ import { requestWorkspaceAutosave } from '../../workspace/storage';
 import { WorkspaceAutosaveChange } from '../../workspace/models';
 import type { HostClock, StorageService } from '../../../../machine/ts/platform/platform';
 
-function applyCodeTabResource(context: CodeTabContext, resource: RuntimeResource, mode: CodeTabMode): void {
+function applyCodeTabResource(context: CodeTabContext, resource: RuntimeResource, mode: EditorDocumentMode): void {
 	context.resource = resource;
 	context.mode = mode;
 	context.title = computeResourceTabTitle(resource);
@@ -95,15 +96,16 @@ export async function openCodeTabForResource(
 	resource: RuntimeResource,
 ): Promise<void> {
 	const resourcePanel = editor.resourcePanel;
-	if (resource.source.type === 'lua') {
-		openLuaCodeTab(resourcePanel, sources, resource);
-		return;
+	switch (resource.source.type) {
+		case 'lua':
+			openLuaCodeTab(resourcePanel, sources, resource);
+			return;
+		case 'aem':
+			await openAemCodeTab(storage, editor, sources, resource);
+			return;
+		default:
+			throw new Error(`Unsupported code tab resource type '${resource.source.type}' for '${resource.path}'.`);
 	}
-	if (resource.source.type === 'aem') {
-		await openAemCodeTab(storage, editor, sources, resource);
-		return;
-	}
-	throw new Error(`Unsupported code tab resource type '${resource.source.type}' for '${resource.path}'.`);
 }
 
 export async function save(
@@ -118,50 +120,63 @@ export async function save(
 	const targetPath = context.resource.path;
 	const previousAppliedGeneration = context.appliedGeneration;
 	try {
-		if (context.mode === 'lua') {
-			await saveLuaResourceSource(
-				storage,
-				clock,
-				sources,
-				context.resource,
-				source,
-			);
-		} else {
-			const projectRootPath = runtimeSourceProjectRootPath(
-				sources,
-				context.resource.domain,
-			);
-			await persistWorkspaceSourceFile(
-				storage,
-				clock,
-				targetPath,
-				source,
-				projectRootPath,
-			);
-			workspaceCanonicalSourceCache.set(resolveWorkspacePath(targetPath, projectRootPath), source);
+		switch (context.mode) {
+			case 'lua':
+				await saveLuaResourceSource(
+					storage,
+					clock,
+					sources,
+					context.resource,
+					source,
+				);
+				break;
+			case 'aem': {
+				const projectRootPath = runtimeSourceProjectRootPath(
+					sources,
+					context.resource.domain,
+				);
+				await persistWorkspaceSourceFile(
+					storage,
+					clock,
+					targetPath,
+					source,
+					projectRootPath,
+				);
+				workspaceCanonicalSourceCache.set(resolveWorkspacePath(targetPath, projectRootPath), source);
+				break;
+			}
 		}
 		commitActiveCodeTabSave(context, source);
-			requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
-		if (context.mode === 'lua') {
-			setContextRuntimeSyncState(context, 'runtime_update_pending', null);
-			showEditorMessage(`${context.title} saved (runtime update pending)`, constants.COLOR_STATUS_SUCCESS, 2.5);
-			return;
-		}
-		try {
-			applyAemSourceToRuntime(sources, runtime, context.resource, source);
-			setActiveCodeTabAppliedGeneration(context, context.saveGeneration);
-			setContextRuntimeSyncState(context, 'synced', null);
-			showEditorMessage(`${context.title} saved`, constants.COLOR_STATUS_SUCCESS, 2.5);
-		} catch (applyError) {
-			const applyMessage = extractErrorMessage(applyError);
-			setActiveCodeTabAppliedGeneration(context, previousAppliedGeneration);
-			setContextRuntimeSyncState(context, 'diverged', applyMessage);
-			showEditorMessage(`${context.title} saved, but runtime apply failed`, constants.COLOR_STATUS_WARNING, 4.0);
-			showEditorWarningBanner(`Saved, but runtime apply failed: ${applyMessage}`, 5.0);
+		requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
+		switch (context.mode) {
+			case 'lua':
+				setContextRuntimeSyncState(context, 'runtime_update_pending', null);
+				showEditorMessage(`${context.title} saved (runtime update pending)`, constants.COLOR_STATUS_SUCCESS, 2.5);
+				return;
+			case 'aem':
+				try {
+					applyAemSourceToRuntime(sources, runtime, context.resource, source);
+					setActiveCodeTabAppliedGeneration(context, context.saveGeneration);
+					setContextRuntimeSyncState(context, 'synced', null);
+					showEditorMessage(`${context.title} saved`, constants.COLOR_STATUS_SUCCESS, 2.5);
+				} catch (applyError) {
+					const applyMessage = extractErrorMessage(applyError);
+					setActiveCodeTabAppliedGeneration(context, previousAppliedGeneration);
+					setContextRuntimeSyncState(context, 'diverged', applyMessage);
+					showEditorMessage(`${context.title} saved, but runtime apply failed`, constants.COLOR_STATUS_WARNING, 4.0);
+					showEditorWarningBanner(`Saved, but runtime apply failed: ${applyMessage}`, 5.0);
+				}
+				return;
 		}
 	} catch (error) {
-		if (context.mode === 'lua' && showLuaErrorOverlay(editor, error)) {
-			return;
+		switch (context.mode) {
+			case 'lua':
+				if (showLuaErrorOverlay(editor, error)) {
+					return;
+				}
+				break;
+			case 'aem':
+				break;
 		}
 		showEditorMessage(extractErrorMessage(error), constants.COLOR_STATUS_ERROR, 4.0);
 	}

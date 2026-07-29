@@ -2,6 +2,12 @@ import { writeWrappedOverlayLine } from '../../editor/common/text/layout';
 import { editorViewState } from '../../editor/ui/view/state';
 import { editorFeedbackState } from '../../common/feedback_state';
 import { problemsPanel } from '../contrib/problems/panel/controller';
+import * as constants from '../../common/constants';
+import { computeSearchPageStats } from '../contrib/code_editor/find/search';
+import { editorSearchState, lineJumpState } from '../contrib/code_editor/find/widget_state';
+import { symbolSearchState } from '../contrib/code_editor/symbols/search/state';
+import { renameController } from '../contrib/code_editor/rename/controller';
+import { createResourceState, resourceSearchState } from '../contrib/resources/widget_state';
 
 const statusMessageLines: string[] = [];
 let statusMessageCachedVisible = false;
@@ -89,3 +95,259 @@ export function getVisibleProblemsPanelHeight(): number {
 export function bottomMargin(): number {
 	return statusAreaHeight() + getVisibleProblemsPanelHeight();
 }
+
+export function searchVisibleResultCount(): number {
+	return computeSearchPageStats().visible;
+}
+
+export function searchResultEntryHeight(): number {
+	return editorViewState.lineHeight * 2;
+}
+
+export function isResourceSearchCompactMode(): boolean {
+	return editorViewState.viewportWidth <= constants.SYMBOL_SEARCH_COMPACT_WIDTH;
+}
+
+export function resourceSearchEntryHeight(): number {
+	return isResourceSearchCompactMode() ? editorViewState.lineHeight * 2 : editorViewState.lineHeight;
+}
+
+export function resourceSearchPageSize(): number {
+	return isResourceSearchCompactMode() ? constants.QUICK_OPEN_COMPACT_MAX_RESULTS : constants.QUICK_OPEN_MAX_RESULTS;
+}
+
+export function resourceSearchWindowCapacity(): number {
+	return resourceSearchState.visible ? resourceSearchPageSize() : 0;
+}
+
+export function resourceSearchVisibleResultCount(): number {
+	if (!resourceSearchState.visible) {
+		return 0;
+	}
+	const remainingCandidate = resourceSearchState.matches.length - resourceSearchState.displayOffset;
+	const remaining = remainingCandidate > 0 ? remainingCandidate : 0;
+	const capacity = resourceSearchWindowCapacity();
+	if (capacity <= 0) {
+		return remaining;
+	}
+	return remaining < capacity ? remaining : capacity;
+}
+
+export function isSymbolSearchCompactMode(): boolean {
+	return editorViewState.viewportWidth <= constants.SYMBOL_SEARCH_COMPACT_WIDTH;
+}
+
+export function symbolSearchEntryHeight(): number {
+	switch (symbolSearchState.mode) {
+		case 'references':
+			return editorViewState.lineHeight * 2;
+		case 'symbols':
+			return symbolSearchState.global && isSymbolSearchCompactMode()
+				? editorViewState.lineHeight * 2
+				: editorViewState.lineHeight;
+	}
+}
+
+export function symbolSearchPageSize(): number {
+	switch (symbolSearchState.mode) {
+		case 'references':
+			return constants.REFERENCE_SEARCH_MAX_RESULTS;
+		case 'symbols':
+			if (!symbolSearchState.global) {
+				return constants.SYMBOL_SEARCH_MAX_RESULTS;
+			}
+			return isSymbolSearchCompactMode()
+				? constants.SYMBOL_SEARCH_COMPACT_MAX_RESULTS
+				: constants.SYMBOL_SEARCH_MAX_RESULTS;
+	}
+}
+
+export function symbolSearchVisibleResultCount(): number {
+	if (!symbolSearchState.visible) {
+		return 0;
+	}
+	const remainingCandidate = symbolSearchState.matches.length - symbolSearchState.displayOffset;
+	const remaining = remainingCandidate > 0 ? remainingCandidate : 0;
+	const pageSize = symbolSearchPageSize();
+	return remaining < pageSize ? remaining : pageSize;
+}
+
+export function getCreateResourceBarHeight(): number {
+	if (!createResourceState.visible) {
+		return 0;
+	}
+	return editorViewState.lineHeight + constants.CREATE_RESOURCE_BAR_MARGIN_Y * 2;
+}
+
+export function getSearchBarHeight(): number {
+	if (!editorSearchState.visible) {
+		return 0;
+	}
+	const baseHeight = editorViewState.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
+	const visible = searchVisibleResultCount();
+	if (visible <= 0) {
+		return baseHeight;
+	}
+	return baseHeight + constants.SEARCH_RESULT_SPACING + visible * searchResultEntryHeight();
+}
+
+export function getResourceSearchBarHeight(): number {
+	if (!resourceSearchState.visible) {
+		return 0;
+	}
+	const baseHeight = editorViewState.lineHeight + constants.QUICK_OPEN_BAR_MARGIN_Y * 2;
+	const visible = resourceSearchVisibleResultCount();
+	if (visible <= 0) {
+		return baseHeight;
+	}
+	return baseHeight + constants.QUICK_OPEN_RESULT_SPACING + visible * resourceSearchEntryHeight();
+}
+
+export function getSymbolSearchBarHeight(): number {
+	if (!symbolSearchState.visible) {
+		return 0;
+	}
+	const baseHeight = editorViewState.lineHeight + constants.SYMBOL_SEARCH_BAR_MARGIN_Y * 2;
+	const visible = symbolSearchVisibleResultCount();
+	if (visible <= 0) {
+		return baseHeight;
+	}
+	return baseHeight + constants.SYMBOL_SEARCH_RESULT_SPACING + visible * symbolSearchEntryHeight();
+}
+
+export function getRenameBarHeight(): number {
+	if (!renameController.isVisible()) {
+		return 0;
+	}
+	return editorViewState.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
+}
+
+export function getLineJumpBarHeight(): number {
+	if (!lineJumpState.visible) {
+		return 0;
+	}
+	return editorViewState.lineHeight + constants.LINE_JUMP_BAR_MARGIN_Y * 2;
+}
+
+export type BarBounds = { top: number; bottom: number; left: number; right: number };
+
+type InlineBarLayout = {
+	codeViewportTop: number;
+	barHeight: number[];
+	barBounds: BarBounds[];
+};
+
+function createBarBounds(): BarBounds {
+	return { top: 0, bottom: 0, left: 0, right: 0 };
+}
+
+const barHeightGetters = [
+	getCreateResourceBarHeight,
+	getSearchBarHeight,
+	getResourceSearchBarHeight,
+	getSymbolSearchBarHeight,
+	getRenameBarHeight,
+	getLineJumpBarHeight,
+] as const;
+
+const inlineBarLayout: InlineBarLayout = {
+	codeViewportTop: 0,
+	barHeight: [0, 0, 0, 0, 0, 0],
+	barBounds: [
+		createBarBounds(),
+		createBarBounds(),
+		createBarBounds(),
+		createBarBounds(),
+		createBarBounds(),
+		createBarBounds(),
+	],
+};
+
+let inlineBarLayoutStamp = 0;
+let inlineBarLayoutValid = false;
+
+function addLayoutStamp(stamp: number, value: number): number {
+	return ((stamp * 33) ^ value) | 0;
+}
+
+function computeInlineBarLayoutStamp(): number {
+	let stamp = 5381;
+	stamp = addLayoutStamp(stamp, editorViewState.viewportWidth);
+	stamp = addLayoutStamp(stamp, editorViewState.viewportHeight);
+	stamp = addLayoutStamp(stamp, editorViewState.headerHeight);
+	stamp = addLayoutStamp(stamp, editorViewState.tabBarHeight);
+	stamp = addLayoutStamp(stamp, editorViewState.tabBarRowCount);
+	stamp = addLayoutStamp(stamp, editorViewState.lineHeight);
+	stamp = addLayoutStamp(stamp, createResourceState.visible ? 1 : 0);
+	stamp = addLayoutStamp(stamp, editorSearchState.visible ? 1 : 0);
+	stamp = addLayoutStamp(stamp, editorSearchState.scope === 'global' ? 2 : 1);
+	stamp = addLayoutStamp(stamp, editorSearchState.matches.length);
+	stamp = addLayoutStamp(stamp, editorSearchState.globalMatches.length);
+	stamp = addLayoutStamp(stamp, editorSearchState.displayOffset);
+	stamp = addLayoutStamp(stamp, resourceSearchState.visible ? 1 : 0);
+	stamp = addLayoutStamp(stamp, resourceSearchState.matches.length);
+	stamp = addLayoutStamp(stamp, resourceSearchState.displayOffset);
+	stamp = addLayoutStamp(stamp, symbolSearchState.visible ? 1 : 0);
+	stamp = addLayoutStamp(stamp, symbolSearchState.matches.length);
+	stamp = addLayoutStamp(stamp, symbolSearchState.displayOffset);
+	stamp = addLayoutStamp(stamp, symbolSearchState.global ? 1 : 0);
+	switch (symbolSearchState.mode) {
+		case 'symbols':
+			stamp = addLayoutStamp(stamp, 1);
+			break;
+		case 'references':
+			stamp = addLayoutStamp(stamp, 2);
+			break;
+	}
+	stamp = addLayoutStamp(stamp, renameController.isVisible() ? 1 : 0);
+	stamp = addLayoutStamp(stamp, lineJumpState.visible ? 1 : 0);
+	return stamp;
+}
+
+function writeInlineBarLayout(): void {
+	const stamp = computeInlineBarLayoutStamp();
+	if (inlineBarLayoutValid && stamp === inlineBarLayoutStamp) {
+		return;
+	}
+	inlineBarLayoutValid = true;
+	inlineBarLayoutStamp = stamp;
+	let top = topMargin();
+	for (let index = 0; index < barHeightGetters.length; index += 1) {
+		const height = barHeightGetters[index]();
+		const bounds = inlineBarLayout.barBounds[index];
+		inlineBarLayout.barHeight[index] = height;
+		if (height <= 0) {
+			bounds.left = 0;
+			bounds.top = top;
+			bounds.right = 0;
+			bounds.bottom = top;
+			continue;
+		}
+		bounds.left = 0;
+		bounds.top = top;
+		bounds.right = editorViewState.viewportWidth;
+		bounds.bottom = top + height;
+		top = bounds.bottom;
+	}
+	inlineBarLayout.codeViewportTop = top;
+}
+
+export function refreshWorkbenchLayout(): void {
+	writeInlineBarLayout();
+	editorViewState.codeAreaTop = inlineBarLayout.codeViewportTop;
+	editorViewState.codeAreaBottom = editorViewState.viewportHeight - bottomMargin();
+}
+
+function getInlineBarBounds(barIndex: number): BarBounds | null {
+	if (inlineBarLayout.barHeight[barIndex] <= 0) {
+		return null;
+	}
+	return inlineBarLayout.barBounds[barIndex];
+}
+
+export function getCreateResourceBarBounds(): BarBounds | null { return getInlineBarBounds(0); }
+export function getSearchBarBounds(): BarBounds | null { return getInlineBarBounds(1); }
+export function getResourceSearchBarBounds(): BarBounds | null { return getInlineBarBounds(2); }
+export function getSymbolSearchBarBounds(): BarBounds | null { return getInlineBarBounds(3); }
+export function getRenameBarBounds(): BarBounds | null { return getInlineBarBounds(4); }
+export function getLineJumpBarBounds(): BarBounds | null { return getInlineBarBounds(5); }

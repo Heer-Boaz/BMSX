@@ -4,9 +4,7 @@ import type { Font } from '../../../../machine/ts/render/shared/bmsx_font';
 import * as constants from '../../../common/constants';
 import { api } from '../../../runtime/overlay_api';
 import { editorViewState } from '../../ui/view/state';
-import { editorSearchState } from '../../contrib/find/widget_state';
-import { referenceState } from '../../contrib/references/state';
-import { renameController } from '../../contrib/rename/controller';
+import type { SearchMatch } from '../../../common/models';
 
 export function drawHighlightSlice(
 	renderFont: Font,
@@ -36,16 +34,20 @@ export function drawHighlightSlice(
 	}
 }
 
-export function drawReferenceHighlightsForRow(api: Api, rowIndex: number, entry: CachedHighlight, originX: number, originY: number, sliceStartDisplay: number, sliceEndDisplay: number): void {
-	const matches = renameController.isActive()
-		? renameController.getHighlightMatches()
-		: referenceState.getMatches();
+export function drawReferenceHighlightsForRow(
+	api: Api,
+	rowIndex: number,
+	entry: CachedHighlight,
+	originX: number,
+	originY: number,
+	sliceStartDisplay: number,
+	sliceEndDisplay: number,
+	matches: readonly SearchMatch[],
+	activeIndex: number,
+): void {
 	if (matches.length === 0) {
 		return;
 	}
-	const activeIndex = renameController.isActive()
-		? renameController.getActiveIndex()
-		: referenceState.getActiveIndex();
 	const highlight = entry.hi;
 	const advancePrefix = entry.advancePrefix;
 	for (let i = 0; i < matches.length; i += 1) {
@@ -67,14 +69,25 @@ export function drawReferenceHighlightsForRow(api: Api, rowIndex: number, entry:
 	}
 }
 
-export function drawSearchHighlightsForRow(api: Api, rowIndex: number, entry: CachedHighlight, originX: number, originY: number, sliceStartDisplay: number, sliceEndDisplay: number): void {
-	if (editorSearchState.scope !== 'local' || editorSearchState.matches.length === 0 || editorSearchState.query.length === 0) {
+export function drawSearchHighlightsForRow(
+	api: Api,
+	rowIndex: number,
+	entry: CachedHighlight,
+	originX: number,
+	originY: number,
+	sliceStartDisplay: number,
+	sliceEndDisplay: number,
+	matches: readonly SearchMatch[],
+	activeIndex: number,
+	visible: boolean,
+): void {
+	if (!visible || matches.length === 0) {
 		return;
 	}
 	const highlight = entry.hi;
 	const advancePrefix = entry.advancePrefix;
-	for (let i = 0; i < editorSearchState.matches.length; i += 1) {
-		const match = editorSearchState.matches[i];
+	for (let i = 0; i < matches.length; i += 1) {
+		const match = matches[i];
 		if (match.row !== rowIndex) {
 			continue;
 		}
@@ -87,7 +100,7 @@ export function drawSearchHighlightsForRow(api: Api, rowIndex: number, entry: Ca
 		}
 		const startX = originX + advancePrefix[visibleStart] - advancePrefix[sliceStartDisplay];
 		const endX = originX + advancePrefix[visibleEnd] - advancePrefix[sliceStartDisplay];
-		const overlay = i === editorSearchState.currentIndex ? constants.SEARCH_MATCH_ACTIVE_OVERLAY : constants.SEARCH_MATCH_OVERLAY;
+		const overlay = i === activeIndex ? constants.SEARCH_MATCH_ACTIVE_OVERLAY : constants.SEARCH_MATCH_OVERLAY;
 		api.fill_rect(startX, originY, endX, originY + editorViewState.lineHeight, 0, overlay);
 	}
 }

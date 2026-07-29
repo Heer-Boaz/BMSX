@@ -53,7 +53,8 @@ import {
 import { semanticSymbolKindToLuaSymbolKind } from '../../../../machine/ts/lua/semantic/common';
 import { isLuaCommentContext } from '../../../common/text';
 import { writeWrappedOverlayLine } from '../../common/text/layout';
-import type { ApiCompletionMetadata, CodeTabContext, EditorContextToken, EditorDiagnosticSeverity, LuaCompletionItem, PointerSnapshot } from '../../../common/models';
+import type { ApiCompletionMetadata, EditorContextToken, EditorDiagnosticSeverity, LuaCompletionItem, PointerSnapshot } from '../../../common/models';
+import type { EditorDocumentContext } from '../../editing/document_state';
 import type { ResourceDomain } from '../../../common/resource';
 import { Pool } from '../../../../machine/ts/common/pool';
 import { KEYWORDS, LuaTokenType, type LuaToken } from '../../../../machine/ts/lua/syntax/token';
@@ -553,7 +554,7 @@ export function updateHoverTooltip(
 	fault: RuntimeFaultState,
 	runtime: Runtime,
 	snapshot: PointerSnapshot,
-	context: CodeTabContext,
+	context: EditorDocumentContext,
 	bounds?: CodeAreaBounds,
 ): void {
 	const pointer = resolvePointerTextPosition(snapshot.viewportX, snapshot.viewportY, bounds);
@@ -659,19 +660,22 @@ export function buildMemberCompletionItems(bridge: RuntimeLuaTooling, fault: Run
 	return items;
 }
 
-export function requestSemanticRefresh(context: CodeTabContext): void {
-	if (context.mode !== 'lua') {
-		return;
+export function requestSemanticRefresh(): void {
+	switch (editorDocumentState.mode) {
+		case 'lua':
+			editorViewState.layout.requestSemanticUpdate(
+				editorDocumentState.buffer,
+				editorDocumentState.textVersion,
+				editorDocumentState.resource,
+			);
+			return;
+		case 'aem':
+			return;
 	}
-	editorViewState.layout.requestSemanticUpdate(
-		editorDocumentState.buffer,
-		editorDocumentState.textVersion,
-		context.resource,
-	);
 }
 export function resolveSemanticDefinitionLocation(
 	bridge: RuntimeLuaTooling,
-	context: CodeTabContext,
+	context: EditorDocumentContext,
 	usageRow: number,
 	usageColumn: number,
 ): LuaDefinitionLocation {
@@ -1046,11 +1050,14 @@ export function refreshGotoHoverHighlight(
 	runtime: Runtime,
 	row: number,
 	column: number,
-	context: CodeTabContext,
+	context: EditorDocumentContext,
 ): void {
-	if (context.mode !== 'lua') {
-		clearGotoHoverHighlight();
-		return;
+	switch (context.mode) {
+		case 'lua':
+			break;
+		case 'aem':
+			clearGotoHoverHighlight();
+			return;
 	}
 	const path = context.resource.path;
 	const semanticDefinition = resolveSemanticDefinitionLocation(bridge, context, row + 1, column + 1);
@@ -1108,12 +1115,15 @@ export function resolveDefinitionAt(
 	bridge: RuntimeLuaTooling,
 	fault: RuntimeFaultState,
 	runtime: Runtime,
-	context: CodeTabContext,
+	context: EditorDocumentContext,
 	row: number,
 	column: number,
 ): LuaDefinitionLocation {
-	if (context.mode !== 'lua') {
-		return null;
+	switch (context.mode) {
+		case 'lua':
+			break;
+		case 'aem':
+			return null;
 	}
 	let definition = resolveSemanticDefinitionLocation(bridge, context, row + 1, column + 1);
 	if (definition) {
@@ -1143,7 +1153,7 @@ export function resolveDefinitionAt(
 	return definition;
 }
 
-export function inspectLuaExpression(bridge: RuntimeLuaTooling, fault: RuntimeFaultState, runtime: Runtime, expression: string, path: string, row: number, column: number, activeContext: CodeTabContext): LuaHoverResult {
+export function inspectLuaExpression(bridge: RuntimeLuaTooling, fault: RuntimeFaultState, runtime: Runtime, expression: string, path: string, row: number, column: number, activeContext: EditorDocumentContext): LuaHoverResult {
 	const trimmed = expression.trim();
 	if (trimmed.length === 0) {
 		return null;
@@ -1375,7 +1385,7 @@ export function listGlobalLuaSymbols(bridge: RuntimeLuaTooling, domain: Resource
 	return entries;
 }
 
-export function findStaticDefinitionLocation(bridge: RuntimeLuaTooling, chain: ReadonlyArray<string>, usageRow: number, usageColumn: number, preferredChunk: string, activeContext: CodeTabContext): LuaDefinitionLocation {
+export function findStaticDefinitionLocation(bridge: RuntimeLuaTooling, chain: ReadonlyArray<string>, usageRow: number, usageColumn: number, preferredChunk: string, activeContext: EditorDocumentContext): LuaDefinitionLocation {
 	if (chain.length === 0) {
 		return null;
 	}

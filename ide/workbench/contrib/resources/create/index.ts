@@ -4,10 +4,10 @@ import * as constants from '../../../../common/constants';
 import { setFieldText } from '../../../../editor/ui/inline/text_field';
 import { getActiveCodeTabContext } from '../../../ui/code_tab/contexts';
 import { resetBlink } from '../../../../editor/render/caret';
-import { focusEditorFromSearch } from '../../../../editor/contrib/find/search';
-import { focusEditorFromLineJump } from '../../../../editor/contrib/find/line_jump';
+import { focusEditorFromSearch } from '../../code_editor/find/search';
+import { focusEditorFromLineJump } from '../../code_editor/find/line_jump';
 import { editorCaretState } from '../../../../editor/ui/view/caret/state';
-import { renameController } from '../../../../editor/contrib/rename/controller';
+import { renameController } from '../../code_editor/rename/controller';
 import { createResourceState } from '../widget_state';
 
 export function openCreateResourcePrompt(

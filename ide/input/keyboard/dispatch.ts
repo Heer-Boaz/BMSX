@@ -1,4 +1,4 @@
-import { editorInput } from '../../editor/input/keyboard/text_input';
+import { editorInput } from '../../workbench/contrib/code_editor/input/keyboard/text_input';
 import type { RuntimeSourceState } from '../../runtime/sources';
 import type { RuntimeLuaTooling } from '../../runtime/lua_tooling';
 import type { CartEditor } from '../../cart_editor';

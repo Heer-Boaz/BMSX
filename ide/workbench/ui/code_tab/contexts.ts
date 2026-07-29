@@ -1,12 +1,10 @@
 import type { RuntimeSourceState } from '../../../runtime/sources';
-// disable cross_layer_import_pattern -- code-tab contexts own editable buffer instances stored in workbench tab state.
 import { editorDocumentState } from '../../../editor/editing/document_state';
 import type {
-	CodeTabContext,
-	CodeTabMode,
 	EditorRuntimeSyncState,
 	EditorTabDescriptor,
 } from '../../../common/models';
+import type { EditorDocumentMode } from '../../../editor/editing/document_state';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
 import { PieceTreeBuffer } from '../../../editor/text/piece_tree_buffer';
 import { computeResourceTabTitle } from '../tab/titles';
@@ -18,12 +16,13 @@ import {
 	type ResourceIdentity,
 	type RuntimeResource,
 } from '../../../common/resource';
+import type { CodeTabContext } from './model';
 
 function resolveLuaSource(sources: RuntimeSourceState, resource: RuntimeResource): string {
 	return luaPipeline.resourceSourceForChunk(sources, resource);
 }
 
-function createCodeTabContext(resource: RuntimeResource, initialSource: string, mode: CodeTabMode): CodeTabContext {
+function createCodeTabContext(resource: RuntimeResource, initialSource: string, mode: EditorDocumentMode): CodeTabContext {
 	const title = computeResourceTabTitle(resource);
 	const buffer = new PieceTreeBuffer(initialSource);
 	return {
@@ -117,7 +116,7 @@ export function getActiveCodeTabContextId(): string {
 }
 
 export function isActiveCodeTabReadOnly(): boolean {
-	return codeTabSessionState.activeContextReadOnly;
+	return editorDocumentState.readOnly;
 }
 
 export function getCodeTabContextById(contextId: string): CodeTabContext {
@@ -147,6 +146,8 @@ export function setTabDirty(tabId: string, dirty: boolean): void {
 
 export function updateActiveContextDirtyFlag(): void {
 	const context = getActiveCodeTabContext();
+	context.saveGeneration = editorDocumentState.saveGeneration;
+	context.textVersion = editorDocumentState.textVersion;
 	context.dirty = editorDocumentState.dirty;
 	setTabDirty(context.id, context.dirty);
 }
@@ -161,11 +162,11 @@ export function isActiveLuaCodeTab(): boolean {
 }
 
 export function isReadOnlyCodeTab(): boolean {
-	return isCodeTabActive() && codeTabSessionState.activeContextReadOnly;
+	return isCodeTabActive() && editorDocumentState.readOnly;
 }
 
 export function isEditableCodeTab(): boolean {
-	return isCodeTabActive() && !codeTabSessionState.activeContextReadOnly;
+	return isCodeTabActive() && !editorDocumentState.readOnly;
 }
 
 export function findCodeTabContext(identity: ResourceIdentity): CodeTabContext {

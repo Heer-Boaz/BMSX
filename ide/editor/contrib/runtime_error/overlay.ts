@@ -1,52 +1,16 @@
+import type { RuntimeErrorDetails } from '../../../runtime/fault_state';
+import { formatRuntimeStackFrame } from '../../../runtime/error_format';
 import type {
-	RuntimeErrorDetails,
 	RuntimeErrorOverlay,
-	RuntimeErrorOverlayLineDescriptor
-} from '../../../common/models';
-import type { StackTraceFrame } from '../../../language/lua/interpreter/value';
-import { collectRuntimeStackFrames, formatRuntimeStackFrame } from '../../../common/runtime_error_format';
-import { setActiveRuntimeErrorOverlay } from './navigation';
-import { runtimeErrorState } from './state';
-
-export function cloneRuntimeErrorDetails(details: RuntimeErrorDetails): RuntimeErrorDetails {
-	if (!details) {
-		return null;
-	}
-	const luaFrames: StackTraceFrame[] = [];
-	for (let i = 0; i < details.luaStack.length; i += 1) {
-		const frame = details.luaStack[i];
-		luaFrames.push({
-			origin: frame.origin,
-			functionName: frame.functionName,
-			source: frame.source,
-			line: frame.line,
-			column: frame.column,
-			raw: frame.raw,
-			pathPath: frame.pathPath,
-		});
-	}
-	const jsFrames: StackTraceFrame[] = [];
-	for (let j = 0; j < details.jsStack.length; j += 1) {
-		const frame = details.jsStack[j];
-		jsFrames.push({
-			origin: frame.origin,
-			functionName: frame.functionName,
-			source: frame.source,
-			line: frame.line,
-			column: frame.column,
-			raw: frame.raw,
-			pathPath: frame.pathPath,
-		});
-	}
-	return {
-		message: details.message,
-		luaStack: luaFrames,
-		jsStack: jsFrames,
-	};
-}
+	RuntimeErrorOverlayLineDescriptor,
+} from './model';
 
 export function rebuildRuntimeErrorOverlayView(overlay: RuntimeErrorOverlay): void {
-	const descriptors = buildRuntimeErrorOverlayDescriptors(overlay.messageLines, overlay.details, overlay.expanded);
+	const descriptors = buildRuntimeErrorOverlayDescriptors(
+		overlay.messageLines,
+		overlay.details,
+		overlay.expanded,
+	);
 	overlay.lineDescriptors = descriptors;
 	const lines: string[] = [];
 	for (let index = 0; index < descriptors.length; index += 1) {
@@ -62,40 +26,26 @@ export function rebuildRuntimeErrorOverlayView(overlay: RuntimeErrorOverlay): vo
 function buildRuntimeErrorOverlayDescriptors(
 	messageLines: string[],
 	details: RuntimeErrorDetails,
-	expanded: boolean
+	expanded: boolean,
 ): RuntimeErrorOverlayLineDescriptor[] {
 	const descriptors: RuntimeErrorOverlayLineDescriptor[] = [];
 	for (let index = 0; index < messageLines.length; index += 1) {
 		descriptors.push({ text: messageLines[index], role: 'message' });
 	}
-	if (!expanded) {
-		return descriptors;
-	}
-	if (!details) {
-		return descriptors;
-	}
-	const combinedStack = collectRuntimeStackFrames(details, true);
-	if (combinedStack.length === 0) {
+	if (!expanded || !details || details.luaStack.length === 0) {
 		return descriptors;
 	}
 	if (descriptors.length > 0) {
 		descriptors.push({ text: '', role: 'divider' });
 	}
-	let headerText = 'Call Stack:';
-	const hasLuaFrames = details.luaStack.length > 0;
-	const hasJsFrames = details.jsStack.length > 0;
-	if (hasLuaFrames && hasJsFrames) {
-		headerText = 'Call Stack (Lua + JS):';
-	} else if (hasLuaFrames) {
-		headerText = 'Lua Call Stack:';
-	} else if (hasJsFrames) {
-		headerText = 'JS Call Stack:';
-	}
-	descriptors.push({ text: headerText, role: 'header' });
-	for (let frameIndex = 0; frameIndex < combinedStack.length; frameIndex += 1) {
-		const frame = combinedStack[frameIndex];
-		const text = formatRuntimeStackFrame(frame);
-		descriptors.push({ text, role: 'frame', frame });
+	descriptors.push({ text: 'Lua Call Stack:', role: 'header' });
+	for (let frameIndex = 0; frameIndex < details.luaStack.length; frameIndex += 1) {
+		const frame = details.luaStack[frameIndex];
+		descriptors.push({
+			text: formatRuntimeStackFrame(frame),
+			role: 'frame',
+			frame,
+		});
 	}
 	return descriptors;
 }
@@ -112,18 +62,4 @@ export function buildRuntimeErrorOverlayCopyText(overlay: RuntimeErrorOverlay): 
 		return overlay.lines.join('\n');
 	}
 	return 'Runtime error';
-}
-
-export function updateRuntimeErrorOverlay(deltaSeconds: number): void {
-	const overlay = runtimeErrorState.activeOverlay;
-	if (!overlay) {
-		return;
-	}
-	if (!Number.isFinite(overlay.timer)) {
-		return;
-	}
-	overlay.timer -= deltaSeconds;
-	if (overlay.timer <= 0) {
-		setActiveRuntimeErrorOverlay(null);
-	}
 }

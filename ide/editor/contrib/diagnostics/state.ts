@@ -1,4 +1,5 @@
 import type { EditorDiagnostic, DiagnosticsCacheEntry } from '../../../common/models';
+import { editorRuntimeState } from '../../common/runtime_state';
 
 export const EMPTY_DIAGNOSTICS: EditorDiagnostic[] = [];
 
@@ -25,3 +26,14 @@ export const editorDiagnosticsState: EditorDiagnosticsState = {
 	diagnosticsComputationScheduled: false,
 	diagnosticsTaskPending: false,
 };
+
+export function markDiagnosticsDirty(contextId: string): void {
+	editorDiagnosticsState.diagnosticsDirty = true;
+	editorDiagnosticsState.dirtyDiagnosticContexts.add(contextId);
+	editorDiagnosticsState.diagnosticsDueAtMs = editorRuntimeState.currentTimeMs + diagnosticsDebounceMs;
+}
+
+export function getDiagnosticsForRow(row: number): readonly EditorDiagnostic[] {
+	const bucket = editorDiagnosticsState.diagnosticsByRow.get(row);
+	return bucket ?? EMPTY_DIAGNOSTICS;
+}

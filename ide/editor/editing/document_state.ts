@@ -1,4 +1,5 @@
-import type { CodeTabContext, EditContext, Position } from '../../common/models';
+import type { EditContext, Position } from '../../common/models';
+import type { RuntimeResource } from '../../common/resource';
 import type { TextBuffer } from '../text/text_buffer';
 import { PieceTreeBuffer } from '../text/piece_tree_buffer';
 import type { EditorUndoRecord } from '../text/undo';
@@ -6,7 +7,33 @@ import type { EditorUndoRecord } from '../text/undo';
 type CursorMovedListener = () => void;
 type TextMutatedListener = (edit: EditContext) => void;
 
+export type EditorDocumentMode = 'lua' | 'aem';
+
+export type EditorDocumentContext = {
+	id: string;
+	resource: RuntimeResource;
+	mode: EditorDocumentMode;
+	buffer: TextBuffer;
+	cursorRow: number;
+	cursorColumn: number;
+	selectionAnchor: Position;
+	lastSavedSource: string;
+	saveGeneration: number;
+	appliedGeneration: number;
+	undoStack: EditorUndoRecord[];
+	redoStack: EditorUndoRecord[];
+	lastHistoryKey: string;
+	lastHistoryTimestamp: number;
+	savePointDepth: number;
+	dirty: boolean;
+	textVersion: number;
+};
+
 export class EditorDocumentState {
+	public contextId: string;
+	public resource: RuntimeResource;
+	public mode: EditorDocumentMode;
+	public readOnly: boolean;
 	public buffer: TextBuffer = new PieceTreeBuffer('');
 	public cursorRow = 0;
 	public cursorColumn = 0;
@@ -55,7 +82,11 @@ export class EditorDocumentState {
 
 export const editorDocumentState = new EditorDocumentState();
 
-export function restoreDocumentStateFromContext(context: CodeTabContext): void {
+export function restoreDocumentStateFromContext(context: EditorDocumentContext): void {
+	editorDocumentState.contextId = context.id;
+	editorDocumentState.resource = context.resource;
+	editorDocumentState.mode = context.mode;
+	editorDocumentState.readOnly = !!context.resource.source.generated;
 	editorDocumentState.buffer = context.buffer;
 	editorDocumentState.cursorRow = context.cursorRow;
 	editorDocumentState.cursorColumn = context.cursorColumn;
@@ -73,7 +104,7 @@ export function restoreDocumentStateFromContext(context: CodeTabContext): void {
 	editorDocumentState.dirty = editorDocumentState.undoStack.length !== editorDocumentState.savePointDepth;
 }
 
-export function storeDocumentStateInContext(context: CodeTabContext): void {
+export function storeDocumentStateInContext(context: EditorDocumentContext): void {
 	context.buffer = editorDocumentState.buffer;
 	context.cursorRow = editorDocumentState.cursorRow;
 	context.cursorColumn = editorDocumentState.cursorColumn;

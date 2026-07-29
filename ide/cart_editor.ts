@@ -15,8 +15,7 @@ import { blua32ToolingImageForDomain } from '../machine/ts/rompack/tooling/blua3
 import type { Viewport } from './common/viewport';
 import { api } from './runtime/overlay_api';
 import * as constants from './common/constants';
-import type { CodeTabMode, FaultSnapshot, RuntimeErrorDetails } from './common/models';
-import type { RuntimeFaultState } from './runtime/fault_state';
+import type { FaultSnapshot, RuntimeErrorDetails, RuntimeFaultState } from './runtime/fault_state';
 import type { RuntimeLuaTooling } from './runtime/lua_tooling';
 import type { RuntimeDebuggerState } from './runtime/debugger_state';
 import type { OverlayRenderer } from './runtime/overlay_renderer';
@@ -48,28 +47,28 @@ import {
 	syncRuntimeErrorOverlayFromContext,
 } from './runtime_error/navigation';
 import { clearGotoHoverHighlight, clearNativeMemberCompletionCache } from './editor/contrib/intellisense/engine';
+import { referenceState } from './editor/contrib/references/state';
 import { resetSemanticWorkspaces } from './editor/contrib/intellisense/semantic/workspace/state';
-import { updateRuntimeErrorOverlay } from './editor/contrib/runtime_error/overlay';
 import { editorDocumentState } from './editor/editing/document_state';
 import { clearSingleCursorSelection } from './editor/editing/cursor/state';
 import { editorDiagnosticsState } from './editor/contrib/diagnostics/state';
-import { processDiagnosticsQueue } from './editor/contrib/diagnostics/controller';
-import { applyLineJumpFieldText } from './editor/contrib/find/line_jump';
-import { EditorSearchController, applySearchFieldText, cancelGlobalSearchJob, cancelSearchJob, startSearchJob } from './editor/contrib/find/search';
-import { editorSearchState, lineJumpState } from './editor/contrib/find/widget_state';
-import { renameController } from './editor/contrib/rename/controller';
-import { CrossFileRenameManager } from './editor/contrib/rename/operations';
-import { EditorCompletionController } from './editor/contrib/suggest/completion_controller';
-import { symbolSearchState } from './editor/contrib/symbols/search/state';
-import { applySymbolSearchFieldText } from './editor/contrib/symbols/shared';
+import { processDiagnosticsQueue } from './workbench/contrib/code_editor/diagnostics/controller';
+import { applyLineJumpFieldText } from './workbench/contrib/code_editor/find/line_jump';
+import { EditorSearchController, applySearchFieldText, cancelGlobalSearchJob, cancelSearchJob, startSearchJob } from './workbench/contrib/code_editor/find/search';
+import { editorSearchState, lineJumpState } from './workbench/contrib/code_editor/find/widget_state';
+import { renameController } from './workbench/contrib/code_editor/rename/controller';
+import { CrossFileRenameManager } from './workbench/contrib/code_editor/rename/operations';
+import { EditorCompletionController } from './workbench/contrib/code_editor/suggest/completion_controller';
+import { symbolSearchState } from './workbench/contrib/code_editor/symbols/search/state';
+import { applySymbolSearchFieldText } from './workbench/contrib/code_editor/symbols/shared';
 import { renderInlineWidgets } from './quick_input/inline_widget';
 import { handleEditorInput } from './input/keyboard/dispatch';
-import { captureKeys } from './editor/input/keyboard/capture_keys';
-import { editorInput } from './editor/input/keyboard/text_input';
+import { captureKeys } from './workbench/contrib/code_editor/input/keyboard/capture_keys';
+import { editorInput } from './workbench/contrib/code_editor/input/keyboard/text_input';
 import { handleTextEditorPointerInput } from './input/pointer/dispatch';
 import { clearEditorPointerSelectionState, editorPointerState } from './input/pointer/state';
 import { handleEditorWheelInput } from './input/pointer/wheel';
-import { getActiveCodeTabContext, getActiveCodeTabContextId, createEntryTabContext } from './workbench/ui/code_tab/contexts';
+import { getActiveCodeTabContext, getActiveCodeTabContextId, createEntryTabContext, updateActiveContextDirtyFlag } from './workbench/ui/code_tab/contexts';
 import { storeActiveCodeTabContext } from './workbench/ui/code_tab/activation';
 import {
 	cancelWorkspaceAutosave,
@@ -78,6 +77,7 @@ import {
 	shutdownWorkspaceStorage,
 } from './workbench/workspace/storage';
 import { WorkspaceAutosaveChange } from './workbench/workspace/models';
+import { refreshWorkbenchLayout } from './workbench/common/layout';
 import { BreakpointController, getBreakpointsForChunk } from './workbench/contrib/debugger/controller';
 import { closeBlockingWorkbenchModal, drawBlockingWorkbenchModal, handleBlockingWorkbenchModalInput, hasBlockingWorkbenchModal } from './workbench/contrib/modal/blocking_modal';
 import { drawProblemsPanel, problemsPanel } from './workbench/contrib/problems/panel/controller';
@@ -246,7 +246,11 @@ export class RuntimeCartEditor implements CartEditor {
 			}
 		});
 		this.unsubscribeWorkspaceTextMutated = editorDocumentState.onTextMutated(() => {
+			updateActiveContextDirtyFlag();
 			requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
+			if (editorSearchState.query.length > 0) {
+				startSearchJob();
+			}
 		});
 	}
 
@@ -410,7 +414,6 @@ export class RuntimeCartEditor implements CartEditor {
 		runBackgroundTasks(this.clock);
 		updateBlink(deltaSeconds);
 		updateEditorMessage(deltaSeconds);
-		updateRuntimeErrorOverlay(deltaSeconds);
 		this.completion.processPending(deltaSeconds);
 		const semanticError = editorViewState.layout.getLastSemanticError();
 		if (semanticError && semanticError !== editorRuntimeState.lastReportedSemanticError) {
@@ -430,6 +433,7 @@ export class RuntimeCartEditor implements CartEditor {
 
 	public updateViewport(viewport: Viewport): void {
 		applyViewportSize(viewport);
+		refreshWorkbenchLayout();
 		this.syncResourcePanelViewport();
 		refreshViewportLayout();
 	}
@@ -442,6 +446,7 @@ export class RuntimeCartEditor implements CartEditor {
 		renderTopBar(this.commands, this.chromeRenderContext);
 
 		editorViewState.tabBarRowCount = renderTabBar(this.chromeRenderContext);
+		refreshWorkbenchLayout();
 		drawResourcePanel(this.resourcePanel);
 		if (isResourceViewActive()) {
 			drawResourceViewer();
@@ -450,13 +455,20 @@ export class RuntimeCartEditor implements CartEditor {
 			const resourcePanel = this.resourcePanel;
 			const problemsPanelHasFocus = problemsPanel.isVisible && problemsPanel.isFocused;
 			const cursorActive = !(editorSearchState.active || lineJumpState.active || resourcePanel.isFocused() || createResourceState.active || problemsPanelHasFocus);
+			const renameActive = renameController.isActive();
 			const codeAreaViewport = renderCodeArea(
 				this.completion,
+				this.completion.getInlineCompletionPreview(),
 				cursorActive,
 				getBreakpointsForChunk(
 					this.debuggerState,
 					getActiveCodeTabContext().resource.path,
 				),
+				renameActive ? renameController.getHighlightMatches() : referenceState.getMatches(),
+				renameActive ? renameController.getActiveIndex() : referenceState.getActiveIndex(),
+				editorSearchState.matches,
+				editorSearchState.currentIndex,
+				editorSearchState.scope === 'local' && editorSearchState.query.length > 0,
 			);
 			renderEditorContextMenu(codeAreaViewport);
 		}
@@ -524,12 +536,12 @@ export class RuntimeCartEditor implements CartEditor {
 			return;
 		}
 		const previousVariant = editorViewState.fontVariant;
-		const activeContext = getActiveCodeTabContext();
-		let activeCodeTabMode: CodeTabMode | null = null;
-		if (activeContext) {
-			activeCodeTabMode = activeContext.mode;
-		}
-		setFontVariant(this.clock, variant, activeCodeTabMode, getActiveCodeTabContextId());
+		setFontVariant(
+			this.clock,
+			variant,
+			getActiveCodeTabContext().mode,
+			getActiveCodeTabContextId(),
+		);
 		this.resourcePanel.setFontMetrics(editorViewState.lineHeight, editorViewState.charAdvance);
 		if (editorViewState.fontVariant !== previousVariant) {
 			requestWorkspaceAutosave(WorkspaceAutosaveChange.Font);

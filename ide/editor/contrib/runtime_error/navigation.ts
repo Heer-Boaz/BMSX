@@ -1,4 +1,4 @@
-import { RuntimeErrorOverlay } from '../../../common/models';
+import type { RuntimeErrorOverlay } from './model';
 import { editorDocumentState } from '../../editing/document_state';
 import { editorViewState } from '../../ui/view/state';
 import { runtimeErrorState } from './state';
@@ -8,9 +8,6 @@ export function clearRuntimeErrorOverlay(): void {
 }
 
 export function setActiveRuntimeErrorOverlay(overlay: RuntimeErrorOverlay): void {
-	if (overlay && overlay.hidden === undefined) {
-		overlay.hidden = false;
-	}
 	runtimeErrorState.activeOverlay = overlay;
 }
 

@@ -1,6 +1,6 @@
 import { point_in_rect } from '../../../../machine/ts/common/rect';
-import { processInlineFieldPointer } from '../../../editor/contrib/find/search';
-import { getCreateResourceBarBounds } from '../../../editor/ui/view/view';
+import { processInlineFieldPointer } from '../../../workbench/contrib/code_editor/find/search';
+import { getCreateResourceBarBounds } from '../../../workbench/common/layout';
 import type { PointerSnapshot } from '../../../common/models';
 import { activateQuickInputField, finishQuickInputPointer, quickInputTextLeft } from '../pointer/common';
 import { createResourceState } from '../../../workbench/contrib/resources/widget_state';

@@ -2,7 +2,8 @@ import { isCodeTabActive } from '../../../workbench/ui/code_tab/contexts';
 import { clearHoverTooltip, clearGotoHoverHighlight, refreshGotoHoverHighlight, updateHoverTooltip } from '../../../editor/contrib/intellisense/engine';
 import { resolvePointerTextPosition } from '../../../editor/ui/view/view';
 import type { CodeAreaBounds } from '../../../editor/ui/view/view';
-import type { CodeTabContext, PointerSnapshot } from '../../../common/models';
+import type { PointerSnapshot } from '../../../common/models';
+import type { EditorDocumentContext } from '../../../editor/editing/document_state';
 import { isAltDown } from '../../keyboard/key_input';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
@@ -18,7 +19,7 @@ export function updateCodeAreaPointerFeedback(
 	insideCodeArea: boolean,
 	gotoModifierActive: boolean,
 	pointerSelecting: boolean,
-	activeContext: CodeTabContext,
+	activeContext: EditorDocumentContext,
 	bounds: CodeAreaBounds
 ): void {
 	if (isCodeTabActive() && !snapshot.primaryPressed && !pointerSelecting && insideCodeArea && gotoModifierActive) {

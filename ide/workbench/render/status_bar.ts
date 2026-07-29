@@ -1,6 +1,6 @@
 import type { ResourcePanelController } from '../contrib/resources/panel/controller';
 import * as constants from '../../common/constants';
-import { getActiveSymbolSearchMatch } from '../../editor/contrib/symbols/shared';
+import { getActiveSymbolSearchMatch } from '../contrib/code_editor/symbols/shared';
 import { statusAreaHeight, getStatusMessageLines } from '../common/layout';
 import { isResourceViewActive } from '../ui/tabs';
 import { getActiveCodeTabContext, isCodeTabActive } from '../ui/code_tab/contexts';
@@ -13,7 +13,7 @@ import { workspaceRecordState } from '../../workspace/records';
 import { editorDocumentState } from '../../editor/editing/document_state';
 import { editorViewState } from '../../editor/ui/view/state';
 import { problemsPanel } from '../contrib/problems/panel/controller';
-import { symbolSearchState } from '../../editor/contrib/symbols/search/state';
+import { symbolSearchState } from '../contrib/code_editor/symbols/search/state';
 import type { RuntimeFaultState } from '../../runtime/fault_state';
 
 export function renderStatusBar(resourcePanel: ResourcePanelController, fault: RuntimeFaultState): void {

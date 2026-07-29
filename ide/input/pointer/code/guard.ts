@@ -1,4 +1,4 @@
-import { processRuntimeErrorOverlayPointer } from '../../../editor/input/overlays/runtime_error/input';
+import { processRuntimeErrorOverlayPointer } from '../../../workbench/contrib/code_editor/input/overlays/runtime_error/input';
 import type { PointerSnapshot } from '../../../common/models';
 import { editorPointerState } from '../state';
 import type { CartEditor } from '../../../cart_editor';

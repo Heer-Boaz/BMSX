@@ -10,7 +10,7 @@ import type {
 import type { CartEditor } from '../cart_editor';
 import type { EditorCommandId } from '../common/commands';
 import type { ActionPromptAction } from '../common/models';
-import { renameController } from '../editor/contrib/rename/controller';
+import { renameController } from '../workbench/contrib/code_editor/rename/controller';
 import { editorDocumentState } from '../editor/editing/document_state';
 import { executeEditorSearchCommand, isEditorSearchCommand } from './search';
 import { executeEditorSymbolNavigationCommand, isEditorSymbolNavigationCommand } from './symbol_navigation';

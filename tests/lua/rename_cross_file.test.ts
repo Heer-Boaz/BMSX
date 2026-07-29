@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { CodeTabContext, SearchMatch } from '../../ide/common/models';
+import type { SearchMatch } from '../../ide/common/models';
+import type { CodeTabContext } from '../../ide/workbench/ui/code_tab/model';
 import { PieceTreeBuffer } from '../../ide/editor/text/piece_tree_buffer';
 import { createLuaSemanticFrontendFromSnapshot, LuaSemanticWorkspace } from '../../ide/editor/contrib/intellisense/semantic/workspace/index';
 import { getOrCreateSemanticWorkspace, resetSemanticWorkspace } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
-import { CrossFileRenameManager, convertRangeToSearchMatch } from '../../ide/editor/contrib/rename/operations';
+import { CrossFileRenameManager, convertRangeToSearchMatch } from '../../ide/workbench/contrib/code_editor/rename/operations';
 import { buildCodeTabId, clearCodeTabContexts, registerCodeTabContext } from '../../ide/workbench/ui/code_tab/contexts';
 import { codeTabSessionState } from '../../ide/workbench/ui/code_tab/session_state';
 import { tabSessionState } from '../../ide/workbench/ui/tab/session_state';

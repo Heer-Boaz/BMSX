@@ -6,21 +6,28 @@ import { drawCodeAreaRows } from './rows';
 import { editorDocumentState } from '../../editing/document_state';
 import { editorViewState } from '../../ui/view/state';
 import { editorRuntimeState } from '../../common/runtime_state';
-import type { EditorCompletionController } from '../../contrib/suggest/completion_controller';
 import { resolveCodeAreaViewport, type CodeAreaViewport } from '../../ui/code/area_viewport';
 import { resolveCursorVisualIndex } from '../../ui/view/caret/visual_index';
+import type { CompletionPresentation } from '../completion';
+import type { InlineCompletionPreview } from './cursor';
+import type { SearchMatch } from '../../../common/models';
 
 export function renderCodeArea(
-	completion: EditorCompletionController,
+	completion: CompletionPresentation,
+	inlineCompletionPreview: InlineCompletionPreview,
 	cursorActive: boolean,
 	breakpointsForChunk: ReadonlySet<number>,
+	referenceMatches: readonly SearchMatch[],
+	referenceActiveIndex: number,
+	searchMatches: readonly SearchMatch[],
+	searchActiveIndex: number,
+	searchHighlightsVisible: boolean,
 ): CodeAreaViewport {
 	const viewport = resolveCodeAreaViewport();
 
 	drawCodeAreaBackground(viewport);
 
 	const activeGotoHighlight = intellisenseUiState.gotoHoverHighlight;
-	const inlineCompletionPreview = completion.getInlineCompletionPreview();
 	const shouldRenderInlinePreview = inlineCompletionPreview !== null
 		&& inlineCompletionPreview.row === editorDocumentState.cursorRow
 		&& inlineCompletionPreview.column === editorDocumentState.cursorColumn;
@@ -34,6 +41,11 @@ export function renderCodeArea(
 		editorRuntimeState.uppercaseDisplay,
 		editorViewState.font.renderFont(),
 		getBreakpointLaneWidth(),
+		referenceMatches,
+		referenceActiveIndex,
+		searchMatches,
+		searchActiveIndex,
+		searchHighlightsVisible,
 	);
 
 	finalizeCodeAreaRender(viewport, cursorInfo, completion, cursorActive);

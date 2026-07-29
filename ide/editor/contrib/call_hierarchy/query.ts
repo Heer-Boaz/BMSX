@@ -1,4 +1,3 @@
-import { getActiveCodeTabContext } from '../../../workbench/ui/code_tab/contexts';
 import { buildEditorSemanticSnapshot, createEditorSemanticFrontend } from '../intellisense/frontend';
 import { extractHoverExpression } from '../intellisense/engine';
 import { buildIncomingCallHierarchyView, type CallHierarchyView } from './view';
@@ -12,9 +11,9 @@ export type CallHierarchyQueryResult =
 	| { kind: 'no_calls'; expression: string; };
 
 export function resolveCallHierarchyViewAt(bridge: RuntimeLuaTooling, row: number, column: number): CallHierarchyQueryResult {
-	const context = getActiveCodeTabContext();
-	const path = context.resource.path;
-	const snapshot = buildEditorSemanticSnapshot(bridge, context.resource, editorDocumentState.buffer, editorDocumentState.textVersion);
+	const resource = editorDocumentState.resource;
+	const path = resource.path;
+	const snapshot = buildEditorSemanticSnapshot(bridge, resource, editorDocumentState.buffer, editorDocumentState.textVersion);
 	const frontend = createEditorSemanticFrontend(bridge, snapshot);
 	const resolution = frontend.findReferencesByPosition(path, row + 1, column + 1);
 	const expression = extractHoverExpression(row, column, path)?.expression;
@@ -25,7 +24,7 @@ export function resolveCallHierarchyViewAt(bridge: RuntimeLuaTooling, row: numbe
 	let rootReadOnly = false;
 	for (let index = 0; index < resources.length; index += 1) {
 		const resource = resources[index];
-		if (resource.domain === context.resource.domain && resource.path === path) {
+		if (resource.domain === editorDocumentState.resource.domain && resource.path === path) {
 			rootReadOnly = !!resource.source.generated;
 			break;
 		}
@@ -33,8 +32,8 @@ export function resolveCallHierarchyViewAt(bridge: RuntimeLuaTooling, row: numbe
 	const allowedPaths = new Set<string>();
 	for (let index = 0; index < resources.length; index += 1) {
 		const resource = resources[index];
-		if ((resource.domain === context.resource.domain
-			|| (context.resource.domain !== SYSTEM_RESOURCE_DOMAIN
+		if ((resource.domain === editorDocumentState.resource.domain
+			|| (editorDocumentState.resource.domain !== SYSTEM_RESOURCE_DOMAIN
 				&& resource.domain === SYSTEM_RESOURCE_DOMAIN))
 			&& !!resource.source.generated === rootReadOnly) {
 			allowedPaths.add(resource.path);

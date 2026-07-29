@@ -2,8 +2,6 @@ import type { RectBounds } from '../../../../../machine/ts/common/rect';
 import { clamp } from '../../../../../machine/ts/common/clamp';
 import { copy_rect_bounds, create_rect_bounds, write_rect_bounds } from '../../../../../machine/ts/common/rect';
 import * as constants from '../../../../common/constants';
-import { codeViewportTop } from '../../../../editor/ui/view/view';
-import { bottomMargin } from '../../../common/layout';
 import { editorViewState } from '../../../../editor/ui/view/state';
 
 export function defaultResourcePanelRatio(screenRelativeWidth: number): number {
@@ -77,8 +75,8 @@ export function writeResourcePanelBounds(out: RectBounds, widthRatio: number): b
 	if (width <= 0) {
 		return false;
 	}
-	const top = codeViewportTop();
-	const bottom = editorViewState.viewportHeight - bottomMargin();
+	const top = editorViewState.codeAreaTop;
+	const bottom = editorViewState.codeAreaBottom;
 	if (bottom <= top) {
 		return false;
 	}

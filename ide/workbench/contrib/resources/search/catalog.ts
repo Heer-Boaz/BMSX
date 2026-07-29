@@ -1,6 +1,6 @@
 import { clampQuickInputDisplayOffset, advanceQuickInputSelection } from '../../../../editor/navigation/quick_input_navigation';
 import { resetBlink } from '../../../../editor/render/caret';
-import { resourceSearchWindowCapacity } from '../../../../editor/ui/view/view';
+import { resourceSearchWindowCapacity } from '../../../common/layout';
 import { resourceSearchState } from '../widget_state';
 import type { RuntimeSourceState } from '../../../../runtime/sources';
 

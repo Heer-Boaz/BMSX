@@ -13,9 +13,8 @@
 
 import { showEditorMessage } from '../../common/feedback_state';
 import type { EditContext, Position } from '../../common/models';
-import { getActiveCodeTabContext } from '../../workbench/ui/code_tab/contexts';
 import { revealCursor, updateDesiredColumn } from '../ui/view/caret/caret';
-import { markDiagnosticsDirty } from '../contrib/diagnostics/analysis';
+import { markDiagnosticsDirty } from '../contrib/diagnostics/state';
 import { currentLine } from '../common/text/layout';
 import { invalidateLineRange, markTextMutated } from '../common/text/runtime';
 import { capturePreMutationSource } from '../common/text/runtime';
@@ -28,7 +27,6 @@ import type { MutableTextPosition, TextBuffer } from '../text/text_buffer';
 import { prepareUndo, applyUndoableReplace, recordEditContext } from './undo_controller';
 import { formatAemDocument } from '../../language/aem/editor';
 import { editorDocumentState } from './document_state';
-import { isActiveCodeTabReadOnly } from '../../workbench/ui/code_tab/contexts';
 import { editorViewState } from '../ui/view/state';
 import {
 	clearSingleCursorSelection,
@@ -50,7 +48,7 @@ function bufferCharAtOffset(buffer: TextBuffer, offset: number): string {
 }
 
 function editorAllowsMutation(): boolean {
-	return !isActiveCodeTabReadOnly();
+	return !editorDocumentState.readOnly;
 }
 
 // ============================================================================
@@ -995,11 +993,20 @@ export function applyDocumentFormatting(): void {
 	const buffer = editorDocumentState.buffer;
 	const originalSource = getTextSnapshot(buffer);
 	const originalLines = getLinesSnapshot(buffer);
-	const context = getActiveCodeTabContext();
 	try {
-		const formatted = context.mode === 'lua'
-			? formatLuaDocument(originalSource, originalLines)
-			: formatAemDocument(originalSource, context.resource.path, originalLines);
+		let formatted: string;
+		switch (editorDocumentState.mode) {
+			case 'lua':
+				formatted = formatLuaDocument(originalSource, originalLines);
+				break;
+			case 'aem':
+				formatted = formatAemDocument(
+					originalSource,
+					editorDocumentState.resource.path,
+					originalLines,
+				);
+				break;
+		}
 		if (formatted === originalSource) {
 			showEditorMessage('Document already formatted', constants.COLOR_STATUS_TEXT, 1.5);
 			return;
@@ -1016,7 +1023,7 @@ export function applyDocumentFormatting(): void {
 		updateDesiredColumn();
 		resetBlink();
 		revealCursor();
-		markDiagnosticsDirty(getActiveCodeTabContext().id);
+		markDiagnosticsDirty(editorDocumentState.contextId);
 		markTextMutated();
 		showEditorMessage('Document formatted', constants.COLOR_STATUS_SUCCESS, 1.6);
 	} catch (error) {

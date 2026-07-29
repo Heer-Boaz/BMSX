@@ -2,7 +2,7 @@ import type { EditorDiagnostic, PointerSnapshot } from '../../../../common/model
 import type { RectBounds } from '../../../../../machine/ts/common/rect';
 import { ScratchBuffer } from '../../../../../machine/ts/common/scratchbuffer';
 import * as constants from '../../../../common/constants';
-import { markAllDiagnosticsDirty } from '../../../../editor/contrib/diagnostics/analysis';
+import { markAllDiagnosticsDirty } from '../../code_editor/diagnostics/analysis';
 import { resetBlink } from '../../../../editor/render/caret';
 import {
 	clampProblemsPanelScrollIndex,

@@ -2,8 +2,7 @@ import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import type { RuntimeFaultState } from '../../../runtime/fault_state';
 import type { CartEditor } from '../../../cart_editor';
-// disable cross_layer_import_pattern -- code-tab activation owns the editor/workbench state handoff during tab switches, saves, and result navigation.
-import type { CodeTabContext } from '../../../common/models';
+import type { CodeTabContext } from './model';
 import { editorDocumentState, restoreDocumentStateFromContext, storeDocumentStateInContext } from '../../../editor/editing/document_state';
 import { editorDiagnosticsState } from '../../../editor/contrib/diagnostics/state';
 import { editorViewState } from '../../../editor/ui/view/state';
@@ -13,8 +12,8 @@ import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import { extractErrorMessage } from '../../../language/lua/interpreter/value';
 import { ensureCursorVisible, updateDesiredColumn } from '../../../editor/ui/view/caret/caret';
 import { editorCaretState } from '../../../editor/ui/view/caret/state';
-import { refreshActiveDiagnostics } from '../../../editor/contrib/diagnostics/controller';
-import { markDiagnosticsDirty } from '../../../editor/contrib/diagnostics/analysis';
+import { refreshActiveDiagnostics } from '../../contrib/code_editor/diagnostics/controller';
+import { markDiagnosticsDirty } from '../../../editor/contrib/diagnostics/state';
 import { applyDefinitionSelection, clearGotoHoverHighlight, clearHoverTooltip, clearReferenceHighlights, requestSemanticRefresh, resolveDefinitionAt } from '../../../editor/contrib/intellisense/engine';
 import { resetBlink } from '../../../editor/render/caret';
 import { getTextSnapshot } from '../../../editor/text/source_text';
@@ -57,24 +56,26 @@ export type LuaCodeTabSourceSnapshot = {
 
 function setCodeTabDiagnosticsState(): void {
 	const context = getActiveCodeTabContext();
-	if (context.mode === 'lua') {
-		const cached = editorDiagnosticsState.diagnosticsCache.get(context.id);
-		const cachedVersion = cached?.version ?? -1;
-		const cachedChunk = cached?.path;
-		const path = context.resource.path;
-		if (!cached || cachedVersion !== editorDocumentState.textVersion || cachedChunk !== path) {
-			markDiagnosticsDirty(context.id);
+	switch (context.mode) {
+		case 'lua': {
+			const cached = editorDiagnosticsState.diagnosticsCache.get(context.id);
+			const path = context.resource.path;
+			if (!cached || cached.version !== editorDocumentState.textVersion || cached.path !== path) {
+				markDiagnosticsDirty(context.id);
+			}
+			return;
 		}
-		return;
+		case 'aem':
+			editorDiagnosticsState.dirtyDiagnosticContexts.delete(context.id);
+			editorDiagnosticsState.diagnosticsCache.set(context.id, {
+				contextId: context.id,
+				path: context.resource.path,
+				diagnostics: [],
+				version: editorDocumentState.textVersion,
+				source: getTextSnapshot(editorDocumentState.buffer),
+			});
+			return;
 	}
-	editorDiagnosticsState.dirtyDiagnosticContexts.delete(context.id);
-	editorDiagnosticsState.diagnosticsCache.set(context.id, {
-		contextId: context.id,
-		path: context.resource.path,
-		diagnostics: [],
-		version: editorDocumentState.textVersion,
-		source: getTextSnapshot(editorDocumentState.buffer),
-	});
 }
 
 export function storeActiveCodeTabContext(): void {
@@ -99,8 +100,11 @@ export function captureActiveCodeTabSource(): string {
 export function capturePendingLuaCodeTabSources(sources: RuntimeSourceState): LuaCodeTabSourceSnapshot[] {
 	const snapshots: LuaCodeTabSourceSnapshot[] = [];
 	for (const context of codeTabSessionState.contexts.values()) {
-		if (context.mode !== 'lua') {
-			continue;
+		switch (context.mode) {
+			case 'lua':
+				break;
+			case 'aem':
+				continue;
 		}
 		const source = getTextSnapshot(context.buffer);
 		const match = resolveRuntimeLuaSource(sources, context.resource)!;
@@ -153,9 +157,13 @@ export function markLuaCodeTabsAppliedToRuntime(snapshots: ReadonlyArray<LuaCode
 			null,
 		);
 	}
-	const activeContext = codeTabSessionState.contexts.get(codeTabSessionState.activeContextId);
-	if (activeContext?.mode === 'lua') {
-		editorDocumentState.appliedGeneration = activeContext.appliedGeneration;
+	const activeContext = getActiveCodeTabContext();
+	switch (activeContext.mode) {
+		case 'lua':
+			editorDocumentState.appliedGeneration = activeContext.appliedGeneration;
+			return;
+		case 'aem':
+			return;
 	}
 }
 
@@ -172,19 +180,18 @@ export function applyActiveCodeTabSelection(selection: CodeTabSelection): void {
 export function activateCodeEditorTab(tabId: string, selection?: CodeTabSelection): void {
 	codeTabSessionState.activeContextId = tabId;
 	const context = getActiveCodeTabContext();
-	codeTabSessionState.activeContextReadOnly = !!context.resource.source.generated;
 	restoreDocumentStateFromContext(context);
 	editorViewState.scrollRow = context.scrollRow;
 	editorViewState.scrollColumn = context.scrollColumn;
 	editorViewState.maxLineLengthDirty = true;
-	editorViewState.layout.setCodeTabMode(context.mode);
+	editorViewState.layout.setDocumentMode(context.mode);
 	editorViewState.layout.markVisualLinesDirty();
 	editorViewState.layout.invalidateAllHighlights();
 	setCodeTabDiagnosticsState();
 	context.dirty = editorDocumentState.dirty;
 	setTabDirty(context.id, context.dirty);
 	syncRuntimeErrorOverlayFromContext(context);
-	requestSemanticRefresh(context);
+	requestSemanticRefresh();
 	updateDesiredColumn();
 	resetBlink();
 	editorPointerState.pointerSelecting = false;

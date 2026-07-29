@@ -1,9 +1,9 @@
 import { point_in_rect } from '../../../../machine/ts/common/rect';
-import { closeSearch, processInlineFieldPointer } from '../../../editor/contrib/find/search';
-import { getLineJumpBarBounds } from '../../../editor/ui/view/view';
+import { closeSearch, processInlineFieldPointer } from '../../../workbench/contrib/code_editor/find/search';
+import { getLineJumpBarBounds } from '../../../workbench/common/layout';
 import type { PointerSnapshot } from '../../../common/models';
 import { activateQuickInputField, finishQuickInputPointer, quickInputTextLeft } from '../pointer/common';
-import { lineJumpState } from '../../../editor/contrib/find/widget_state';
+import { lineJumpState } from '../../../workbench/contrib/code_editor/find/widget_state';
 import type { ResourcePanelController } from '../../../workbench/contrib/resources/panel/controller';
 
 export function handleLineJumpPointer(resourcePanel: ResourcePanelController, snapshot: PointerSnapshot, justPressed: boolean): boolean {

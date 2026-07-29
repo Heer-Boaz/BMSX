@@ -1,6 +1,6 @@
-import { closeLineJump } from '../editor/contrib/find/line_jump';
-import { closeSearch } from '../editor/contrib/find/search';
-import { closeSymbolSearch } from '../editor/contrib/symbols/shared';
+import { closeLineJump } from '../workbench/contrib/code_editor/find/line_jump';
+import { closeSearch } from '../workbench/contrib/code_editor/find/search';
+import { closeSymbolSearch } from '../workbench/contrib/code_editor/symbols/shared';
 import { resetBlink } from '../editor/render/caret';
 import type { ResourcePanelController } from '../workbench/contrib/resources/panel/controller';
 import { closeResourceSearch } from '../workbench/contrib/resources/search/index';

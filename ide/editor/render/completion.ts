@@ -22,6 +22,13 @@ export type CompletionPopupBounds = {
 	bottom: number;
 };
 
+export type CompletionPresentation = {
+	readonly session: CompletionSession | null;
+	readonly hint: ParameterHintState | null;
+	popupBounds: CompletionPopupBounds | null;
+	readonly popupBoundsScratch: CompletionPopupBounds;
+};
+
 type CompletionTextMeasure = (text: string) => number;
 type CompletionTextDraw = (text: string, x: number, y: number, color: number) => void;
 

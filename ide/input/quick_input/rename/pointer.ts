@@ -1,7 +1,7 @@
 import { point_in_rect } from '../../../../machine/ts/common/rect';
-import { processInlineFieldPointer } from '../../../editor/contrib/find/search';
-import { getRenameBarBounds } from '../../../editor/ui/view/view';
-import { renameController } from '../../../editor/contrib/rename/controller';
+import { processInlineFieldPointer } from '../../../workbench/contrib/code_editor/find/search';
+import { getRenameBarBounds } from '../../../workbench/common/layout';
+import { renameController } from '../../../workbench/contrib/code_editor/rename/controller';
 import type { PointerSnapshot } from '../../../common/models';
 import { activateQuickInputField, finishQuickInputPointer, quickInputTextLeft } from '../pointer/common';
 import type { ResourcePanelController } from '../../../workbench/contrib/resources/panel/controller';

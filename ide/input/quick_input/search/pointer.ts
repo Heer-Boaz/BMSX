@@ -1,13 +1,13 @@
 import type { ResourcePanelController } from '../../../workbench/contrib/resources/panel/controller';
 import { point_in_rect } from '../../../../machine/ts/common/rect';
 import * as constants from '../../../common/constants';
-import { applySearchSelection, ensureSearchSelectionVisible, processInlineFieldPointer } from '../../../editor/contrib/find/search';
-import { closeLineJump } from '../../../editor/contrib/find/line_jump';
-import { getSearchBarBounds, searchResultEntryHeight, searchVisibleResultCount } from '../../../editor/ui/view/view';
+import { applySearchSelection, ensureSearchSelectionVisible, processInlineFieldPointer } from '../../../workbench/contrib/code_editor/find/search';
+import { closeLineJump } from '../../../workbench/contrib/code_editor/find/line_jump';
+import { getSearchBarBounds, searchResultEntryHeight, searchVisibleResultCount } from '../../../workbench/common/layout';
 import type { PointerSnapshot } from '../../../common/models';
 import { activateQuickInputField, finishQuickInputPointer, quickInputTextLeft } from '../pointer/common';
 import { editorViewState } from '../../../editor/ui/view/state';
-import { editorSearchState } from '../../../editor/contrib/find/widget_state';
+import { editorSearchState } from '../../../workbench/contrib/code_editor/find/widget_state';
 import { openGlobalSearchMatch } from '../../../workbench/contrib/find/global_search_navigation';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 

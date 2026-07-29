@@ -1,4 +1,3 @@
-import type { StackTraceFrame } from '../language/lua/interpreter/value';
 import { buildLuaFrameRawLabel } from '../../machine/ts/lua/stack_frame_label';
 import {
 	blua32SourceRangeAtPc,
@@ -7,6 +6,15 @@ import {
 import { blua32ToolingImageForDomain } from '../../machine/ts/rompack/tooling/blua32_media';
 import type { RuntimeCpuFaultFrame } from './fault_state';
 import type { RuntimeSourceState } from './sources';
+
+export type StackTraceFrame = {
+	functionName: string;
+	source: string;
+	line: number;
+	column: number;
+	raw: string;
+	workspacePath?: string;
+};
 
 function resolveLuaFunctionName(
 	symbols: Blua32SymbolsImage | null,
@@ -62,7 +70,6 @@ export function buildLuaStackFrames(
 			entry.functionAddress,
 		);
 		frames.push({
-			origin: 'lua',
 			functionName,
 			source,
 			line,

@@ -1,4 +1,3 @@
-import { isEditableCodeTab } from '../../workbench/ui/code_tab/contexts';
 import { notifyReadOnlyEdit } from '../ui/view/view';
 import { prepareUndo, applyUndoableReplace } from './undo_controller';
 import { markTextMutated } from '../common/text/runtime';
@@ -9,7 +8,7 @@ import { editorDocumentState } from './document_state';
 import { editorViewState } from '../ui/view/state';
 
 export function toggleLineComments(): void {
-	if (!isEditableCodeTab()) {
+	if (editorDocumentState.readOnly) {
 		notifyReadOnlyEdit();
 		return;
 	}
@@ -38,7 +37,7 @@ export function toggleLineComments(): void {
 }
 
 export function addLineComments(range?: { startRow: number; endRow: number }): void {
-	if (!isEditableCodeTab()) {
+	if (editorDocumentState.readOnly) {
 		notifyReadOnlyEdit();
 		return;
 	}
@@ -78,7 +77,7 @@ export function addLineComments(range?: { startRow: number; endRow: number }): v
 }
 
 export function removeLineComments(range?: { startRow: number; endRow: number }): void {
-	if (!isEditableCodeTab()) {
+	if (editorDocumentState.readOnly) {
 		notifyReadOnlyEdit();
 		return;
 	}

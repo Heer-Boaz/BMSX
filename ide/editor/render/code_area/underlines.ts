@@ -2,7 +2,7 @@ import type { CachedHighlight } from '../../../common/models';
 import { clamp } from '../../../../machine/ts/common/clamp';
 import * as constants from '../../../common/constants';
 import { api } from '../../../runtime/overlay_api';
-import { getDiagnosticsForRow } from '../../contrib/diagnostics/controller';
+import { getDiagnosticsForRow } from '../../contrib/diagnostics/state';
 import { editorViewState } from '../../ui/view/state';
 
 type GotoHighlight = {

@@ -1,15 +1,14 @@
-import { editorSearchState, lineJumpState } from '../editor/contrib/find/widget_state';
-import { renameController } from '../editor/contrib/rename/controller';
-import { symbolSearchState } from '../editor/contrib/symbols/search/state';
-import { renderCreateResourceBar, renderLineJumpBar, renderRenameBar, renderResourceSearchBar, renderSearchBar, renderSymbolSearchBar } from '../editor/render/inline_bar/bars';
-import { refreshInlineBarLayout } from '../editor/ui/view/view';
+import { editorSearchState, lineJumpState } from '../workbench/contrib/code_editor/find/widget_state';
+import { renameController } from '../workbench/contrib/code_editor/rename/controller';
+import { symbolSearchState } from '../workbench/contrib/code_editor/symbols/search/state';
+import { renderCreateResourceBar, renderLineJumpBar, renderRenameBar, renderResourceSearchBar, renderSearchBar, renderSymbolSearchBar } from '../workbench/contrib/code_editor/render/inline_bar/bars';
 import { handleCreateResourceInput } from '../input/quick_input/create_resource/input';
 import { handleLineJumpInput } from '../input/quick_input/line_jump/input';
 import { handleResourceSearchInput } from '../input/quick_input/resource_search/input';
 import { handleSearchInput } from '../input/quick_input/search/input';
 import { handleSymbolSearchInput } from '../input/quick_input/symbol_search/input';
 import { createResourceState, resourceSearchState } from '../workbench/contrib/resources/widget_state';
-import type { CrossFileRenameManager } from '../editor/contrib/rename/operations';
+import type { CrossFileRenameManager } from '../workbench/contrib/code_editor/rename/operations';
 import type { CartEditor } from '../cart_editor';
 import type { RuntimeSourceState } from '../runtime/sources';
 import type { RuntimeLuaTooling } from '../runtime/lua_tooling';
@@ -76,7 +75,6 @@ export function handleInlineWidgetInput(
 }
 
 export function renderInlineWidgets(): void {
-	refreshInlineBarLayout();
 	renderCreateResourceBar();
 	renderSearchBar();
 	renderResourceSearchBar();

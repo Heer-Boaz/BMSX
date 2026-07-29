@@ -1,15 +1,15 @@
-import { closeSearch } from '../../editor/contrib/find/search';
+import { closeSearch } from '../../workbench/contrib/code_editor/find/search';
 import { editorFeedbackState } from '../../common/feedback_state';
 import { closeBlockingWorkbenchModal, hasBlockingWorkbenchModal } from '../../workbench/contrib/modal/blocking_modal';
 import { closeCreateResourcePrompt } from '../../workbench/contrib/resources/create/index';
 import { closeResourceSearch } from '../../workbench/contrib/resources/search/index';
-import { closeLineJump } from '../../editor/contrib/find/line_jump';
-import { closeSymbolSearch } from '../../editor/contrib/symbols/shared';
+import { closeLineJump } from '../../workbench/contrib/code_editor/find/line_jump';
+import { closeSymbolSearch } from '../../workbench/contrib/code_editor/symbols/shared';
 import { closeEditorContextMenu } from '../../workbench/contrib/context_menu/widget';
 import { editorContextMenuState } from '../../workbench/contrib/context_menu/state';
 import { runtimeErrorState } from '../../editor/contrib/runtime_error/state';
-import { editorSearchState, lineJumpState } from '../../editor/contrib/find/widget_state';
-import { symbolSearchState } from '../../editor/contrib/symbols/search/state';
+import { editorSearchState, lineJumpState } from '../../workbench/contrib/code_editor/find/widget_state';
+import { symbolSearchState } from '../../workbench/contrib/code_editor/symbols/search/state';
 import { createResourceState, resourceSearchState } from '../../workbench/contrib/resources/widget_state';
 
 export function handleEscapeKey(): boolean {

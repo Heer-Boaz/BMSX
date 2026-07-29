@@ -3,7 +3,8 @@ import { beginNavigationCapture, completeNavigation } from '../navigation/naviga
 import { activateCodeTab, isTabActive, setActiveTab } from '../workbench/ui/tabs';
 import { getActiveCodeTabContext, getCodeTabContexts } from '../workbench/ui/code_tab/contexts';
 import { showEditorMessage } from '../common/feedback_state';
-import type { CodeTabContext, RuntimeErrorOverlay } from '../common/models';
+import type { RuntimeErrorOverlay } from '../editor/contrib/runtime_error/model';
+import type { CodeTabContext } from '../workbench/ui/code_tab/model';
 import { resetBlink } from '../editor/render/caret';
 import { rebuildRuntimeErrorOverlayView } from '../editor/contrib/runtime_error/overlay';
 import * as constants from '../common/constants';
@@ -20,7 +21,7 @@ import {
 	setExecutionStopHighlight as setEditorExecutionStopHighlight,
 } from '../editor/contrib/runtime_error/navigation';
 import { LuaError } from '../../machine/ts/lua/errors';
-import type { StackTraceFrame } from '../language/lua/interpreter/value';
+import type { StackTraceFrame } from '../runtime/stack_trace';
 import { extractErrorMessage } from '../language/lua/interpreter/value';
 import { clamp } from '../../machine/ts/common/clamp';
 import type { CartEditor } from '../cart_editor';
@@ -167,9 +168,6 @@ export function navigateToRuntimeErrorFrameTarget(
 	runtime: Runtime,
 	frame: StackTraceFrame,
 ): void {
-	if (frame.origin !== 'lua') {
-		return;
-	}
 	try {
 		editor.navigation.focusChunkSourceForContext(
 			runtime.machine.cpu.activeCartridgeSlot(),

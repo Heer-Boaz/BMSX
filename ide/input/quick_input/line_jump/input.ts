@@ -1,7 +1,7 @@
 import { applyInlineFieldEditing } from '../../../editor/ui/inline/text_field';
-import { applyLineJump, closeLineJump, openLineJump } from '../../../editor/contrib/find/line_jump';
+import { applyLineJump, closeLineJump, openLineJump } from '../../../workbench/contrib/code_editor/find/line_jump';
 import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from '../../keyboard/key_input';
-import { lineJumpState } from '../../../editor/contrib/find/widget_state';
+import { lineJumpState } from '../../../workbench/contrib/code_editor/find/widget_state';
 import type { PlayerInput } from '../../../../machine/ts/input/player';
 import type { ClipboardService } from '../../../../machine/ts/platform/platform';
 
