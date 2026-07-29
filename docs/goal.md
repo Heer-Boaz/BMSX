@@ -70,11 +70,10 @@ The goal is not complete until all of these are true in the current checkout:
 Use the smallest relevant set while iterating, then the broader set before a
 slice lands:
 
-- `npx tsc --noEmit --pretty false`
-- `npm run compile:machine -- --pretty false`
-- `cmake --build build-cpp-tests -j2`
 - `ctest --test-dir build-cpp-tests --output-on-failure`
-- focused `npx tsx --test --import ./tests/lua/test_setup.ts ...`
+- `focused `npx tsx --test --import ./tests/lua/test_setup.ts ...`
 - `npm run analyze:code-quality -- --root <touched TS/C++ roots>`
 - `npm run audit:core-parity`
-- `git diff --check`
+- `npm run headless:forcebuildallrun -- 2025`
+- `npm run libretro-wsl:forcebuildall -- 2025`
+- `npm run libretro-host:wsl:headless -- 2025`
