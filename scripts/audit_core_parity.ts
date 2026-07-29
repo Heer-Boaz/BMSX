@@ -15,6 +15,15 @@ import {
 	LuaSyntaxKind,
 } from '../machine/ts/lua/syntax/ast';
 import { parseLuaChunk } from '../machine/ts/lua/analysis/parse';
+import {
+	auditPublicSymbolParity,
+	type PublicSymbolParityEntry,
+} from './analysis/core_parity/public_symbols';
+import {
+	normalizeConstantExpression,
+	readDelimitedBody,
+	splitTopLevel,
+} from './analysis/source_syntax';
 
 type Category = 'core' | 'host' | 'ide' | 'language' | 'compiler_tooling' | 'rompacker_tooling' | 'cpu_interpreter_exception' | 'barrel';
 type ManifestPattern = { pattern: string; category: Category; reason: string };
@@ -86,6 +95,7 @@ type Manifest = {
 	strict_file_pair_parity?: StrictFilePairParityEntry[];
 	strict_generated_ts_parity_exclusions?: StrictGeneratedTsParityExclusion[];
 	strict_save_state_schema_parity?: StrictSaveStateSchemaParityEntry[];
+	public_symbol_parity: PublicSymbolParityEntry[];
 	cpp_missing_ts_exclusions?: CppMissingTsExclusion[];
 };
 
@@ -271,6 +281,10 @@ function manifestCoreScopeConflicts(manifest: Manifest): string[] {
 	const conflicts: string[] = [];
 	if (manifest.core_roots) {
 		for (const file of manifest.core_roots) {
+			if (!fs.existsSync(path.join(repoRoot, file))) {
+				conflicts.push(`core_roots contains missing file ${file}`);
+				continue;
+			}
 			const explicit = matchPattern(file, manifest.patterns);
 			if (explicit && explicit.category !== 'core') {
 				conflicts.push(`core_roots contains non-core file ${file} (${explicit.category}: ${explicit.reason})`);
@@ -279,6 +293,10 @@ function manifestCoreScopeConflicts(manifest: Manifest): string[] {
 	}
 	if (manifest.must_have_cpp) {
 		for (const file of manifest.must_have_cpp) {
+			if (!fs.existsSync(path.join(repoRoot, file))) {
+				conflicts.push(`must_have_cpp contains missing file ${file}`);
+				continue;
+			}
 			const explicit = matchPattern(file, manifest.patterns);
 			if (explicit && explicit.category !== 'core') {
 				conflicts.push(`must_have_cpp contains non-core file ${file} (${explicit.category}: ${explicit.reason})`);
@@ -342,6 +360,7 @@ function cppFileHasLogic(file: string): boolean {
 
 function cppLineHasLogic(line: string): boolean {
 	return /\b(class|struct|enum|template|constexpr|inline|return|for|while|switch|if)\b/.test(line)
+		|| /\bstd::to_array\b/.test(line)
 		|| /^(?:[\w:<>,*&]+\s+)+[\w:~]+\([^;]*\)\s*(?:const\s*)?(?:noexcept\s*)?(?:->\s*[\w:<>,*&\s]+)?\{?$/.test(line);
 }
 
@@ -363,46 +382,9 @@ function cppFileHasStringTableDefinition(lines: string[]): boolean {
 	}
 	return false;
 }
-
-
-
-function readParameterList(text: string, openIndex: number): string {
-	let depth = 0;
-	for (let index = openIndex; index < text.length; index += 1) {
-		const char = text[index];
-		if (char === '(' || char === '<' || char === '[') {
-			depth += 1;
-		} else if (char === ')' || char === '>' || char === ']') {
-			depth -= 1;
-			if (depth === 0) return text.slice(openIndex + 1, index);
-		}
-	}
-	return '';
-}
-
-function splitParameterList(parameters: string): string[] {
-	const parts: string[] = [];
-	let depth = 0;
-	let start = 0;
-	for (let index = 0; index < parameters.length; index += 1) {
-		const char = parameters[index];
-		if (char === '<' || char === '(' || char === '[') {
-			depth += 1;
-		} else if (char === '>' || char === ')' || char === ']') {
-			depth -= 1;
-		} else if (char === ',' && depth === 0) {
-			parts.push(parameters.slice(start, index));
-			start = index + 1;
-		}
-	}
-	const tail = parameters.slice(start);
-	if (tail.trim().length !== 0) parts.push(tail);
-	return parts;
-}
-
 function tsParameterNames(parameters: string): string[] {
 	const names: string[] = [];
-	for (const parameter of splitParameterList(parameters)) {
+	for (const parameter of splitTopLevel(parameters)) {
 		let name = parameter.trim();
 		if (name.length === 0) continue;
 		const colon = name.indexOf(':');
@@ -417,7 +399,7 @@ function tsParameterNames(parameters: string): string[] {
 
 function cppParameterNames(parameters: string): string[] {
 	const names: string[] = [];
-	for (const parameter of splitParameterList(parameters)) {
+	for (const parameter of splitTopLevel(parameters)) {
 		const defaultIndex = parameter.indexOf('=');
 		const withoutDefault = defaultIndex >= 0 ? parameter.slice(0, defaultIndex) : parameter;
 		const cleaned = withoutDefault.trim().replace(/[&*]/g, ' ');
@@ -451,24 +433,6 @@ function hasStrictFunction(map: Map<string, string[]>, name: string): boolean {
 	return false;
 }
 
-function normalizeStrictConstantExpression(expression: string): string {
-	let normalized = expression;
-	let previous = '';
-	while (previous !== normalized) {
-		previous = normalized;
-		normalized = normalized.replace(/\bstatic_cast<[^>]+>\(([^()]+)\)/g, '$1');
-	}
-	return normalized
-		.replace(/\b(0x[0-9a-fA-F]+|\d+)[uU]\b/g, '$1')
-		.replace(/\b(\d+(?:\.\d+)?|\.\d+)[fF]\b/g, '$1')
-		.replace(/\b(?:0x[0-9a-fA-F](?:[_']?[0-9a-fA-F])*|\d(?:[_']?\d)*(?:\.\d(?:[_']?\d)*)?)\b/g, (value) => value.replace(/[_']/g, ''))
-		.replace(/\bstd::size\(([A-Z0-9_]+)\)/g, '$1.length')
-		.replace(/\bsizeof\(([A-Z0-9_]+)\)\/sizeof\(\1\[0\]\)/g, '$1.length')
-		.replace(/\b(\d+)\.0\b/g, '$1')
-		.replace(/\s+/g, '')
-		.replace(/\bsizeof\(([A-Z0-9_]+)\)\/sizeof\(\1\[0\]\)/g, '$1.length');
-}
-
 function collectTsStrictSymbols(file: string): StrictRuntimeSymbols {
 	const text = fs.readFileSync(path.join(repoRoot, file), 'utf8');
 	const constants = new Map<string, string>();
@@ -482,18 +446,18 @@ function collectTsStrictSymbols(file: string): StrictRuntimeSymbols {
 		const expression = match[2].trim();
 		constants.set(name, file);
 		if (!expression.startsWith('[') && !expression.startsWith('{') && !expression.startsWith('new ')) {
-			constantValues.set(name, normalizeStrictConstantExpression(expression));
+			constantValues.set(name, normalizeConstantExpression(expression));
 		}
 	}
 	for (const match of text.matchAll(/^export\s+(?:let|var)\s+([A-Z0-9_]+)\b/gm)) {
 		variables.set(match[1], file);
 	}
 	for (const match of text.matchAll(/^export\s+(?:let|var)\s+([A-Z0-9_]+)(?:\s*:[^\n=]+)?\s*=\s*([\s\S]*?);/gm)) {
-		variableValues.set(match[1], normalizeStrictConstantExpression(match[2].trim()));
+		variableValues.set(match[1], normalizeConstantExpression(match[2].trim()));
 	}
 	for (const match of text.matchAll(/^export const\s+([A-Za-z_]\w*)\s*=\s*\(/gm)) {
 		const openIndex = match.index! + match[0].length - 1;
-		const parameters = readParameterList(text, openIndex);
+		const parameters = readDelimitedBody(text, openIndex);
 		const closeIndex = openIndex + parameters.length + 1;
 		if (/^\s*(?::[^=]+)?=>/.test(text.slice(closeIndex + 1, closeIndex + 160))) {
 			putStrictFunction(functions, match[1], tsParameterNames(parameters));
@@ -501,14 +465,14 @@ function collectTsStrictSymbols(file: string): StrictRuntimeSymbols {
 	}
 	for (const match of text.matchAll(/^(?:export\s+)?function\s+([A-Za-z_]\w*)\s*\(/gm)) {
 		const openIndex = match.index! + match[0].length - 1;
-		const parameters = readParameterList(text, openIndex);
+		const parameters = readDelimitedBody(text, openIndex);
 		const closeIndex = openIndex + parameters.length + 1;
 		const after = text.slice(closeIndex + 1, closeIndex + 160);
 		const hasBody = /^\s*(?::[^={;]+)?\{/.test(after);
 		if (match[1].endsWith('Thunk')) continue;
 		if (hasBody) {
 			const openBraceIndex = closeIndex + 1 + after.indexOf('{');
-			functionBodies.set(match[1], readBalancedBody(text, openBraceIndex));
+			functionBodies.set(match[1], readDelimitedBody(text, openBraceIndex));
 		}
 		if (!hasBody || !hasStrictFunction(functions, match[1])) {
 			putStrictFunction(functions, match[1], tsParameterNames(parameters));
@@ -517,17 +481,17 @@ function collectTsStrictSymbols(file: string): StrictRuntimeSymbols {
 	for (const match of text.matchAll(/^(?:export\s+)?class\s+([A-Za-z_]\w*)[^{]*\{/gm)) {
 		const className = match[1];
 		const openBraceIndex = match.index! + match[0].length - 1;
-		const body = readBalancedBody(text, openBraceIndex);
+		const body = readDelimitedBody(text, openBraceIndex);
 		for (const constructorMatch of body.matchAll(/^\s*(?:public\s+|private\s+|protected\s+)?constructor\s*\(/gm)) {
 			const openIndex = constructorMatch.index! + constructorMatch[0].length - 1;
-			putStrictFunction(functions, className, tsParameterNames(readParameterList(body, openIndex)));
+			putStrictFunction(functions, className, tsParameterNames(readDelimitedBody(body, openIndex)));
 		}
 	}
 	for (const match of text.matchAll(/^\s*(?:public\s+|private\s+|protected\s+)?(?:static\s+)?([A-Za-z_]\w*)\s*\(/gm)) {
 		const name = match[1];
 		if (name === 'constructor' || name === 'if' || name === 'for' || name === 'while' || name === 'switch' || name === 'function' || name.endsWith('Thunk')) continue;
 		const openIndex = match.index! + match[0].length - 1;
-		const parameters = readParameterList(text, openIndex);
+		const parameters = readDelimitedBody(text, openIndex);
 		const closeIndex = openIndex + parameters.length + 1;
 		if (!/^\s*(?::[^={;]+)?\{/.test(text.slice(closeIndex + 1, closeIndex + 160))) continue;
 		putStrictFunction(functions, name, tsParameterNames(parameters));
@@ -563,7 +527,7 @@ function collectCppStrictSymbols(files: readonly string[]): StrictRuntimeSymbols
 		}
 		for (const match of text.matchAll(/^(?!(?:extern|const|constexpr)\b)(?:inline[ \t]+)?[A-Za-z_][\w:<>,*& \t]*[ \t]+([A-Z0-9_]+)\s*=\s*([^;\n]+);/gm)) {
 			if (variables.has(match[1])) {
-				variableValues.set(match[1], normalizeStrictConstantExpression(match[2].trim()));
+				variableValues.set(match[1], normalizeConstantExpression(match[2].trim()));
 			}
 		}
 		for (const match of text.matchAll(/^(?:inline[ \t]+)?const[ \t]+[A-Za-z_][\w:<>,*& \t]*[ \t]+([A-Z0-9_]+)\s*\[[^\]\n]*\]\s*=\s*\{/gm)) {
@@ -573,7 +537,7 @@ function collectCppStrictSymbols(files: readonly string[]): StrictRuntimeSymbols
 			const name = match[1];
 			constants.set(name, file);
 			if (match[2]) {
-				constantValues.set(name, normalizeStrictConstantExpression(match[2]));
+				constantValues.set(name, normalizeConstantExpression(match[2]));
 			}
 		}
 		for (const match of text.matchAll(/^[ \t]*(?:[A-Za-z_~][\w:<>,*&]*[ \t]+)+([A-Za-z_]\w*(?:::[A-Za-z_]\w*)?)\s*\(/gm)) {
@@ -582,19 +546,19 @@ function collectCppStrictSymbols(files: readonly string[]): StrictRuntimeSymbols
 			if (rawName.includes('::') && rawName.slice(0, rawName.lastIndexOf('::')).endsWith(name)) continue;
 			if (name === 'if' || name === 'for' || name === 'while' || name === 'switch' || name.endsWith('Thunk')) continue;
 			const openIndex = match.index! + match[0].length - 1;
-			const closeIndex = openIndex + readParameterList(text, openIndex).length + 1;
+			const closeIndex = openIndex + readDelimitedBody(text, openIndex).length + 1;
 			const after = text.slice(closeIndex + 1, closeIndex + 80);
 			if (!/^\s*(?:const\s*)?(?:->[^{]+)?\{/.test(after)) continue;
-			putStrictFunction(functions, name, cppParameterNames(readParameterList(text, openIndex)));
+			putStrictFunction(functions, name, cppParameterNames(readDelimitedBody(text, openIndex)));
 			const openBraceIndex = closeIndex + 1 + after.indexOf('{');
-			functionBodies.set(name, readBalancedBody(text, openBraceIndex));
+			functionBodies.set(name, readDelimitedBody(text, openBraceIndex));
 		}
 		for (const className of classNames) {
 			const escapedClassName = escapedRegExpLiteral(className);
 			const constructorPattern = new RegExp(`^\\s*(?:explicit\\s+)?(?:[A-Za-z_]\\w*::)?${escapedClassName}\\s*\\(`, 'gm');
 			for (const match of text.matchAll(constructorPattern)) {
 				const openIndex = match.index! + match[0].length - 1;
-				putStrictFunction(functions, className, cppParameterNames(readParameterList(text, openIndex)));
+				putStrictFunction(functions, className, cppParameterNames(readDelimitedBody(text, openIndex)));
 			}
 		}
 	}
@@ -634,7 +598,7 @@ function collectCppRuntimePublicMethods(files: readonly string[]): Set<string> {
 	if (classIndex < 0) return new Set();
 	const openBrace = text.indexOf('{', classIndex);
 	if (openBrace < 0) return new Set();
-	const body = readBalancedBody(text, openBrace);
+	const body = readDelimitedBody(text, openBrace);
 	const names = new Set<string>();
 	let inPublicSection = false;
 	for (const rawLine of body.split('\n')) {
@@ -993,22 +957,6 @@ function auditStrictRuntimeNoChurn(manifest: Manifest): string[] {
 	return errors;
 }
 
-function readBalancedBody(text: string, openIndex: number): string {
-	const openChar = text[openIndex];
-	const closeChar = openChar === '[' ? ']' : openChar === '{' ? '}' : ')';
-	let depth = 0;
-	for (let index = openIndex; index < text.length; index += 1) {
-		const char = text[index];
-		if (char === openChar) {
-			depth += 1;
-		} else if (char === closeChar) {
-			depth -= 1;
-			if (depth === 0) return text.slice(openIndex + 1, index);
-		}
-	}
-	return '';
-}
-
 function escapedRegExpLiteral(value: string): string {
 	return value.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&');
 }
@@ -1017,7 +965,7 @@ function functionBodyRegion(text: string, name: string): { body: string; lineOff
 	const pattern = new RegExp(`\\b${escapedRegExpLiteral(name)}\\s*\\(`, 'g');
 	for (let match = pattern.exec(text); match !== null; match = pattern.exec(text)) {
 		const openParenIndex = match.index + match[0].lastIndexOf('(');
-		const parameters = readParameterList(text, openParenIndex);
+		const parameters = readDelimitedBody(text, openParenIndex);
 		const closeParenIndex = openParenIndex + parameters.length + 1;
 		const tail = text.slice(closeParenIndex + 1, closeParenIndex + 241);
 		const braceOffset = tail.indexOf('{');
@@ -1026,7 +974,7 @@ function functionBodyRegion(text: string, name: string): { body: string; lineOff
 		if (semicolonOffset >= 0 && semicolonOffset < braceOffset) continue;
 		const openBraceIndex = closeParenIndex + 1 + braceOffset;
 		return {
-			body: readBalancedBody(text, openBraceIndex),
+			body: readDelimitedBody(text, openBraceIndex),
 			lineOffset: text.slice(0, openBraceIndex + 1).split('\n').length - 1,
 		};
 	}
@@ -1197,7 +1145,7 @@ function tsRpuTableTokens(file: string, table: string): string | null {
 	if (equalsIndex < 0) return null;
 	const openIndex = text.indexOf('[', equalsIndex);
 	if (openIndex < 0) return null;
-	return canonicalRpuTableTokens(readBalancedBody(text, openIndex));
+	return canonicalRpuTableTokens(readDelimitedBody(text, openIndex));
 }
 
 function cppRpuTableTokens(file: string, table: string): string | null {
@@ -1206,7 +1154,7 @@ function cppRpuTableTokens(file: string, table: string): string | null {
 	if (tableIndex < 0) return null;
 	const openIndex = text.indexOf('{', tableIndex);
 	if (openIndex < 0) return null;
-	return canonicalRpuTableTokens(readBalancedBody(text, openIndex));
+	return canonicalRpuTableTokens(readDelimitedBody(text, openIndex));
 }
 
 function auditStrictRpuTableParity(manifest: Manifest): string[] {
@@ -1237,7 +1185,7 @@ function tsEnumItems(file: string, symbol: string): string[] | null {
 	if (enumIndex < 0) return null;
 	const openIndex = text.indexOf('{', enumIndex);
 	if (openIndex < 0) return null;
-	return readBalancedBody(text, openIndex)
+	return readDelimitedBody(text, openIndex)
 		.split(',')
 		.map((item) => stripLineComment(item).trim())
 		.filter((item) => item.length > 0)
@@ -1255,7 +1203,7 @@ function numericTableItems(file: string, symbol: string, openChar: '[' | '{'): s
 	if (symbolIndex < 0) return null;
 	const openIndex = text.indexOf(openChar, symbolIndex);
 	if (openIndex < 0) return null;
-	const body = readBalancedBody(text, openIndex).replace(/\/\/.*$/gm, '');
+	const body = readDelimitedBody(text, openIndex).replace(/\/\/.*$/gm, '');
 	return [...body.matchAll(/\b(?:0x[0-9a-fA-F]+|\d+)[uU]?\b/g)]
 		.map((match) => BigInt(match[0].replace(/[uU]$/, '')).toString());
 }
@@ -1281,7 +1229,7 @@ function explicitEnumItems(file: string, symbol: string): string[] | null {
 	const openIndex = text.indexOf('{', enumIndex);
 	if (openIndex < 0) return null;
 	const items: string[] = [];
-	for (const rawItem of readBalancedBody(text, openIndex).split(',')) {
+	for (const rawItem of readDelimitedBody(text, openIndex).split(',')) {
 		const item = stripLineComment(rawItem).trim();
 		if (item.length === 0) continue;
 		const match = /^([A-Za-z_]\w*)\s*=\s*(0x[0-9a-fA-F]+|\d+)[uU]?$/.exec(item);
@@ -1384,7 +1332,7 @@ function auditStrictBlua32IsaParity(manifest: Manifest): string[] {
 		}
 		for (const table of entry.string_tables) {
 			const tsItems = tsStringArrayLiteralItems(entry.ts_metadata, table);
-			const cppItems = cppStringVectorLiteralItems(entry.cpp_metadata, table);
+			const cppItems = cppStringArrayLiteralItems(entry.cpp_metadata, table);
 			if (tsItems === null) {
 				errors.push(`${entry.ts_metadata}: string table ${table} missing (${entry.reason})`);
 			} else if (cppItems === null) {
@@ -1463,17 +1411,33 @@ function tsStringArrayLiteralItems(file: string, symbol: string): string[] | nul
 	if (symbolIndex < 0) return null;
 	const openIndex = text.indexOf('[', symbolIndex);
 	if (openIndex < 0) return null;
-	const body = readBalancedBody(text, openIndex);
+	const body = readDelimitedBody(text, openIndex);
 	return [...body.matchAll(/'([^']+)'/g)].map((match) => match[1]);
 }
 
-function cppStringVectorLiteralItems(file: string, symbol: string): string[] | null {
+function cppStringArrayLiteralItems(file: string, symbol: string): string[] | null {
 	const text = fs.readFileSync(path.join(repoRoot, file), 'utf8');
 	const symbolIndex = text.indexOf(symbol);
 	if (symbolIndex < 0) return null;
-	const openIndex = text.indexOf('{', symbolIndex);
+	const semicolonIndex = text.indexOf(';', symbolIndex);
+	const directOpenIndex = text.indexOf('{', symbolIndex);
+	let openIndex = directOpenIndex >= 0 && directOpenIndex < semicolonIndex
+		? directOpenIndex
+		: -1;
+	if (openIndex < 0) {
+		const assignmentIndex = text.indexOf('=', symbolIndex);
+		if (assignmentIndex < 0 || assignmentIndex > semicolonIndex) return null;
+		const storageName = /^\s*([A-Za-z_]\w*)/.exec(
+			text.slice(assignmentIndex + 1, semicolonIndex),
+		)?.[1];
+		if (!storageName) return null;
+		const storagePattern = new RegExp(`\\b${escapedRegExpLiteral(storageName)}\\b\\s*=`, 'g');
+		const storageMatch = storagePattern.exec(text);
+		if (!storageMatch) return null;
+		openIndex = text.indexOf('{', storageMatch.index + storageMatch[0].length);
+	}
 	if (openIndex < 0) return null;
-	const body = readBalancedBody(text, openIndex);
+	const body = readDelimitedBody(text, openIndex);
 	return [...body.matchAll(/"([^"]+)"/g)].map((match) => match[1]);
 }
 
@@ -1485,7 +1449,7 @@ function auditStrictSaveStateSchemaParity(manifest: Manifest): string[] {
 			errors.push(`${entry.ts}: save-state schema ${entry.symbol} missing`);
 			continue;
 		}
-		const cppItems = cppStringVectorLiteralItems(entry.cpp, entry.symbol);
+		const cppItems = cppStringArrayLiteralItems(entry.cpp, entry.symbol);
 		if (!cppItems) {
 			errors.push(`${entry.cpp}: save-state schema ${entry.symbol} missing`);
 			continue;
@@ -1540,6 +1504,10 @@ function main(): void {
 	const strictFileLayoutErrors = auditStrictFileLayout(manifest);
 	const strictFilePairParityErrors = auditStrictFilePairParity(manifest);
 	const strictSaveStateSchemaParityErrors = auditStrictSaveStateSchemaParity(manifest);
+	const publicSymbolParityErrors = auditPublicSymbolParity(
+		repoRoot,
+		manifest.public_symbol_parity,
+	);
 	for (const entry of classified) {
 		if (entry.category !== 'core') continue;
 		const equivalents = equivalentPaths(entry.file);
@@ -1649,6 +1617,11 @@ function main(): void {
 		hasErrors = true;
 		console.error(`\nStrict save-state schema parity errors (${strictSaveStateSchemaParityErrors.length}):`);
 		for (const item of strictSaveStateSchemaParityErrors) console.error(`  ${item}`);
+	}
+	if (publicSymbolParityErrors.length > 0) {
+		hasErrors = true;
+		console.error(`\nPublic symbol parity errors (${publicSymbolParityErrors.length}):`);
+		for (const item of publicSymbolParityErrors) console.error(`  ${item}`);
 	}
 	if (hasErrors) {
 		process.exitCode = 1;

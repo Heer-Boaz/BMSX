@@ -196,6 +196,11 @@
 			"reason": "browser_host_overlay_retained_quad_stream"
 		},
 		{
+			"pattern": "machine/ts/render/host_overlay/commands.ts",
+			"category": "host",
+			"reason": "host_overlay_retained_command_stream"
+		},
+		{
 			"pattern": "machine/ts/render/host_overlay/headless/**",
 			"category": "host",
 			"reason": "headless_host_overlay_not_core"
@@ -245,7 +250,6 @@
 		"machine/ts/render/video_presenter.ts",
 		"machine/ts/render/post/device_quantize/lut.ts",
 		"machine/ts/render/post/device_quantize/mode.ts",
-		"machine/ts/render/runtime_state.ts",
 		"machine/ts/render/shared/bmsx_font.ts",
 		"machine/ts/render/shared/glyph_runs.ts",
 		"machine/ts/render/shared/layers.ts",
@@ -259,9 +263,7 @@
 		"machine/ts/machine/common/word.ts"
 	],
 	"must_have_cpp": [
-		"machine/ts/common/arrays_equal.ts",
 		"machine/ts/common/vector.ts",
-		"machine/ts/common/lower_bound.ts",
 		"machine/ts/common/scratchstack.ts",
 		"machine/ts/common/hash.ts",
 		"machine/ts/machine/model_registry.ts",
@@ -289,7 +291,6 @@
 		"machine/ts/spec/imgdec/registers.ts",
 		"machine/ts/spec/imgdec/stream.ts",
 		"machine/ts/machine/runtime/timing/state.ts",
-		"machine/ts/render/runtime_state.ts",
 		"machine/ts/rompack/tokens.ts",
 		"machine/ts/rompack/toc.ts",
 		"machine/ts/render/shared/solid_pixels.ts"
@@ -1318,355 +1319,169 @@
 	"public_symbol_parity": [
 		{
 			"ts": "machine/ts/rompack/toc.ts",
-			"cpp": [
+			"cpp_headers": [
 				"machine/cpp/rompack/toc.h"
-			],
-			"shape_exclude": [
-				{
-					"symbol": "decodeRomToc",
-					"reason": "TS passes a Uint8Array byte view as one value; C++ receives the same ROM TOC byte span as pointer plus size at the native ABI boundary."
-				},
-				{
-					"symbol": "RomTocPayload",
-					"field": "entries",
-					"reason": "TS TOC payload exposes RomAsset records; C++ stores the same decoded fields as RomSourceEntry records owned by the native TOC decoder."
-				},
-				{
-					"symbol": "RomTocPayload",
-					"field": "projectRootPath",
-					"reason": "TS uses null for an absent project root; C++ stores the same absence with std::optional."
-				}
 			]
 		},
 		{
 			"ts": "machine/ts/machine/runtime/save_state/schema.ts",
-			"cpp": [
+			"cpp_headers": [
 				"machine/cpp/machine/runtime/save_state/schema.h"
 			]
 		},
 		{
 			"ts": "machine/ts/machine/runtime/save_state/codec.ts",
-			"cpp": [
+			"cpp_headers": [
 				"machine/cpp/machine/runtime/save_state/codec.h"
 			]
 		},
 		{
 			"ts": "machine/ts/machine/machine.ts",
-			"cpp": [
+			"cpp_headers": [
 				"machine/cpp/machine/machine.h"
 			]
 		},
 		{
 			"ts": "machine/ts/machine/cpu/string_pool.ts",
-			"cpp": [
+			"cpp_headers": [
 				"machine/cpp/machine/cpu/string_pool.h"
-			],
-			"shape_exclude": [
-				{
-					"symbol": "StringId",
-					"reason": "TS stores string pool ids as number values; C++ stores the same ids as uint32_t words at the native ABI boundary."
-				}
 			]
-		},
-		{
-			"ts": "machine/ts/machine/cpu/string_pool.ts",
-			"cpp": [
-				"machine/cpp/machine/cpu/string_pool.h"
-			],
-			"symbols": [
-				"StringPoolStateEntry",
-				"StringPoolState"
-			],
-			"reason": "cpu_string_pool_save_state_shape_contract"
 		},
 		{
 			"ts": "machine/ts/rompack/tooling/blua32_image.ts",
-			"cpp": [
-				"machine/cpp/rompack/tooling/blua32_image.h",
-				"machine/cpp/rompack/tooling/blua32_image.cpp"
-			],
-			"reason": "physical_blua32_executable_image_contract"
-		},
-		{
-			"ts": "machine/ts/rompack/tooling/blua32_symbols.ts",
-			"cpp": [
-				"machine/cpp/rompack/tooling/blua32_symbols.h",
-				"machine/cpp/rompack/tooling/blua32_symbols.cpp"
-			],
-			"reason": "blua32_tooling_symbols_contract"
-		},
-		{
-			"ts": "machine/ts/rompack/tooling/blua32_media.ts",
-			"cpp": [
-				"machine/cpp/rompack/tooling/blua32_media.h"
-			],
-			"symbols": [
-				"Blua32ToolingImage",
-				"Blua32ToolingMedia"
-			],
-			"reason": "blua32_tooling_media_shape_contract"
-		},
-		{
-			"ts": "machine/ts/common/arrays_equal.ts",
-			"cpp": [
-				"machine/cpp/common/arrays_equal.h"
-			],
-			"shape_exclude": [
-				{
-					"symbol": "arrays_equal",
-					"reason": "C++ exposes an additional pointer-plus-length overload for native buffers; TS ArrayLike covers the JS runtime array-like boundary."
-				}
+			"cpp_headers": [
+				"machine/cpp/rompack/tooling/blua32_image.h"
 			]
 		},
 		{
-			"ts": "machine/ts/common/lower_bound.ts",
-			"cpp": [
-				"machine/cpp/common/lower_bound.h"
-			],
-			"shape_exclude": [
-				{
-					"symbol": "lower_bound",
-					"reason": "TS represents the two-argument and four-argument lower_bound forms with default parameters; C++ exposes the same contract as overloads."
-				}
+			"ts": "machine/ts/rompack/tooling/blua32_symbols.ts",
+			"cpp_headers": [
+				"machine/cpp/rompack/tooling/blua32_symbols.h"
+			]
+		},
+		{
+			"ts": "machine/ts/rompack/tooling/blua32_media.ts",
+			"cpp_headers": [
+				"machine/cpp/rompack/tooling/blua32_media.h"
 			]
 		},
 		{
 			"ts": "machine/ts/common/hash.ts",
-			"cpp": [
+			"cpp_headers": [
 				"machine/cpp/common/hash.h"
 			]
 		},
 		{
 			"ts": "machine/ts/spec/bmsx/memory_map.ts",
-			"cpp": [
+			"cpp_headers": [
 				"machine/cpp/spec/bmsx/memory_map.h"
 			]
 		},
 		{
 			"ts": "machine/ts/spec/blua32/cop0.ts",
-			"cpp": [
+			"cpp_headers": [
 				"machine/cpp/spec/blua32/cop0.h"
 			]
 		},
 		{
 			"ts": "machine/ts/spec/blua32/instruction_format.ts",
-			"cpp": [
-				"machine/cpp/spec/blua32/instruction_format.h",
-				"machine/cpp/spec/blua32/instruction_format.cpp"
+			"cpp_headers": [
+				"machine/cpp/spec/blua32/instruction_format.h"
 			]
 		},
 		{
 			"ts": "machine/ts/spec/blua32/memory_access_kind.ts",
-			"cpp": [
+			"cpp_headers": [
 				"machine/cpp/spec/blua32/memory_access_kind.h"
 			]
 		},
 		{
 			"ts": "machine/ts/spec/blua32/opcode.ts",
-			"cpp": [
+			"cpp_headers": [
 				"machine/cpp/spec/blua32/opcode.h"
-			],
-			"exclude": [
-				{
-					"side": "ts",
-					"symbol": "OPCODE",
-					"reason": "TS emits OPCODE as a runtime value table for const-enum consumers; C++ exposes the same opcode values through enum class OpCode."
-				}
 			]
 		},
 		{
 			"ts": "machine/ts/rompack/tooling/opcode_metadata.ts",
-			"cpp": [
-				"machine/cpp/rompack/tooling/opcode_metadata.h",
-				"machine/cpp/rompack/tooling/opcode_metadata.cpp"
+			"cpp_headers": [
+				"machine/cpp/rompack/tooling/opcode_metadata.h"
 			]
 		},
 		{
 			"ts": "machine/ts/rompack/tokens.ts",
-			"cpp": [
+			"cpp_headers": [
 				"machine/cpp/rompack/tokens.h"
-			],
-			"exclude": [
-				{
-					"side": "ts",
-					"symbol": "tokenKeyFromAsset",
-					"reason": "TS tokenKeyFromAsset also accepts pack-time records before the TOC producer writes tokens; C++ only consumes decoded TOC tokens."
-				},
-				{
-					"side": "cpp",
-					"symbol": "AssetId",
-					"reason": "C++ tokens.h names native ROM package map-key aliases; TS consumes the raw asset_id string representation from rompack/toc.ts."
-				},
-				{
-					"side": "cpp",
-					"symbol": "AssetTokenParts",
-					"reason": "C++ keeps packed 64-bit token helpers for unordered_map keys; TS public token surface uses lo/hi parts."
-				},
-				{
-					"side": "cpp",
-					"symbol": "AudioId",
-					"reason": "C++ tokens.h names native ROM package map-key aliases; TS consumes the raw asset_id string representation from rompack/toc.ts."
-				},
-				{
-					"side": "cpp",
-					"symbol": "BitmapId",
-					"reason": "C++ tokens.h names native ROM package map-key aliases; TS consumes the raw asset_id string representation from rompack/toc.ts."
-				},
-				{
-					"side": "cpp",
-					"symbol": "DataId",
-					"reason": "C++ tokens.h names native ROM package map-key aliases; TS consumes the raw asset_id string representation from rompack/toc.ts."
-				},
-				{
-					"side": "cpp",
-					"symbol": "ModelId",
-					"reason": "C++ tokens.h names native ROM package map-key aliases; TS consumes the raw asset_id string representation from rompack/toc.ts."
-				},
-				{
-					"side": "cpp",
-					"symbol": "hashAssetToken",
-					"reason": "C++ keeps packed 64-bit token helpers for unordered_map keys; TS public token surface uses lo/hi parts."
-				},
-				{
-					"side": "cpp",
-					"symbol": "makeAssetToken",
-					"reason": "C++ keeps packed 64-bit token helpers for unordered_map keys; TS public token surface uses lo/hi parts."
-				},
-				{
-					"side": "cpp",
-					"symbol": "splitAssetToken",
-					"reason": "C++ keeps packed 64-bit token helpers for unordered_map keys; TS public token surface uses lo/hi parts."
-				}
-			],
-			"shape_exclude": [
-				{
-					"symbol": "AssetToken",
-					"reason": "TS stores public asset tokens as lo/hi words because JavaScript cannot represent the full 64-bit token exactly; C++ owns the same token as native uint64_t and exposes split/make helpers at the ABI edge."
-				},
-				{
-					"symbol": "hashAssetId",
-					"reason": "TS returns the public lo/hi AssetToken record; C++ returns the same token lanes as AssetTokenParts for native hashing."
-				}
 			]
 		},
 		{
 			"ts": "machine/ts/common/scratchstack.ts",
-			"cpp": [
+			"cpp_headers": [
 				"machine/cpp/common/scratchstack.h"
 			]
 		},
 		{
 			"ts": "machine/ts/machine/runtime/timing/state.ts",
-			"cpp": [
+			"cpp_headers": [
 				"machine/cpp/machine/runtime/timing/state.h"
 			]
 		},
 		{
-			"ts": "machine/ts/render/runtime_state.ts",
-			"cpp": [
-				"machine/cpp/render/runtime_state.h"
-			],
-			"shape_exclude": [
-				{
-					"symbol": "RuntimeRenderCameraState",
-					"field": "view",
-					"reason": "TS render camera view matrix is a number array; C++ stores the same matrix lanes in a fixed native array."
-				},
-				{
-					"symbol": "RuntimeRenderCameraState",
-					"field": "proj",
-					"reason": "TS render camera projection matrix is a number array; C++ stores the same matrix lanes in a fixed native array."
-				},
-				{
-					"symbol": "RuntimeRenderCameraState",
-					"field": "eye",
-					"reason": "TS render camera eye vector is a fixed tuple; C++ stores the same three lanes in a fixed native array."
-				},
-				{
-					"symbol": "RuntimeRenderState",
-					"field": "camera",
-					"reason": "TS uses null for absent camera state; C++ uses std::optional for the same absence contract."
-				}
-			]
-		},
-		{
 			"ts": "machine/ts/render/shared/submissions.ts",
-			"cpp": [
+			"cpp_headers": [
 				"machine/cpp/render/shared/submissions.h"
-			],
-			"shape_exclude": [
-				{
-					"symbol": "GlyphRenderSubmission",
-					"field": "glyphs",
-					"reason": "TS glyph submissions allow a single string without allocating a string array; C++ stores the same glyph run payload as a native vector of strings."
-				},
-				{
-					"symbol": "GlyphRenderSubmission",
-					"field": "font",
-					"reason": "TS uses null for absent font at the JS object boundary; C++ stores the same optional font owner as a native pointer."
-				},
-				{
-					"symbol": "PolyRenderSubmission",
-					"field": "points",
-					"reason": "TS polygon points use the rompack Polygon tuple stream alias; C++ stores the same numeric point stream in std::vector<f32>."
-				}
 			]
 		},
 		{
 			"ts": "machine/ts/render/shared/solid_pixels.ts",
-			"cpp": [
+			"cpp_headers": [
 				"machine/cpp/render/shared/solid_pixels.h"
 			]
 		},
 		{
 			"ts": "machine/ts/common/vector.ts",
-			"cpp": [
+			"cpp_headers": [
 				"machine/cpp/common/vector.h"
-			],
-			"shape_exclude": [
-				{
-					"symbol": "vec2arr",
-					"reason": "TS uses fixed tuple arrays for vec2arr; C++ uses std::array with the same two f32 lanes."
-				},
-				{
-					"symbol": "vec3arr",
-					"reason": "TS uses fixed tuple arrays for vec3arr; C++ uses std::array with the same three f32 lanes."
-				}
 			]
 		},
 		{
 			"ts": "machine/ts/render/shared/glyph_runs.ts",
-			"cpp": [
+			"cpp_headers": [
 				"machine/cpp/render/shared/glyph_runs.h"
-			],
-			"shape_exclude": [
-				{
-					"symbol": "forEachGlyphRunGlyph",
-					"reason": "TS receives a typed glyph callback function; C++ keeps the same callback contract as a template parameter to avoid std::function allocation in the hot glyph path."
-				}
+			]
+		},
+		{
+			"ts": "machine/ts/render/shared/layers.ts",
+			"cpp_headers": [
+				"machine/cpp/render/shared/layers.h"
+			]
+		},
+		{
+			"ts": "machine/ts/render/host_overlay/commands.ts",
+			"cpp_headers": [
+				"machine/cpp/render/host_overlay/commands.h"
 			]
 		},
 		{
 			"ts": "machine/ts/machine/runtime/machine_state.ts",
-			"cpp": [
+			"cpp_headers": [
 				"machine/cpp/machine/runtime/machine_state.h"
 			]
 		},
 		{
 			"ts": "machine/ts/machine/runtime/save_machine_state.ts",
-			"cpp": [
+			"cpp_headers": [
 				"machine/cpp/machine/runtime/save_machine_state.h"
 			]
 		},
 		{
 			"ts": "machine/ts/machine/runtime/save_state.ts",
-			"cpp": [
+			"cpp_headers": [
 				"machine/cpp/machine/runtime/save_state.h"
 			]
 		},
 		{
 			"ts": "machine/ts/render/backend/texture_params.ts",
-			"cpp": [
+			"cpp_headers": [
 				"machine/cpp/render/backend/texture_params.h"
 			]
 		}
