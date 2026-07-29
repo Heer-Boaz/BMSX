@@ -36,6 +36,7 @@ import {
 	linkSystemBlua32Image,
 	type LinkedBlua32Image,
 } from '../../toolchain/ts/rompack/blua32_linker';
+import { buildBlua32Tail } from '../../toolchain/ts/rompack/blua32_tail';
 import { cartridgeSlots } from './cartridge';
 
 const TEST_EXECUTABLE_OFFSET = 0x100;
@@ -106,7 +107,7 @@ type RawTestBlua32Object = {
 	metadata: ProgramMetadata;
 };
 
-function writeTestRom(linked: LinkedBlua32Image): Uint8Array {
+function writeTestRom(id: 'system' | 'cart', linked: LinkedBlua32Image): Uint8Array {
 	const rom = new Uint8Array(TEST_EXECUTABLE_OFFSET + linked.bytes.byteLength);
 	rom.set(linked.bytes, TEST_EXECUTABLE_OFFSET);
 	writeCartRomHeader(rom, {
@@ -129,7 +130,15 @@ function writeTestRom(linked: LinkedBlua32Image): Uint8Array {
 		cartridgeBoardWord: 0,
 		cartridgeRamByteCount: 0,
 	});
-	return rom;
+	return buildBlua32Tail({
+		id,
+		index: {
+			entries: [],
+			projectRootPath: '',
+			cart_manifest: null,
+		},
+		bytes: rom,
+	}, linked).bytes;
 }
 
 function testVectors(compiled: CompiledProgram, linked: LinkedBlua32Image): TestBlua32Vectors {
@@ -149,7 +158,7 @@ function testImage(linked: LinkedBlua32Image, vectors: TestBlua32Vectors): TestB
 		symbols: linked.symbols,
 		vectors,
 		staticModulePaths: [],
-		romBytes: writeTestRom(linked),
+		romBytes: writeTestRom('system', linked),
 	};
 }
 
@@ -277,8 +286,8 @@ export function linkRawTestBlua32Pair(
 		cartSymbols: cart.symbols,
 		cartVectors: rawTestVectors(cartSource, cart),
 		cartStaticModulePaths: [],
-		systemRomBytes: writeTestRom(system),
-		cartRomBytes: writeTestRom(cart),
+		systemRomBytes: writeTestRom('system', system),
+		cartRomBytes: writeTestRom('cart', cart),
 	};
 }
 
@@ -296,7 +305,7 @@ export function linkTestSystemBlua32(
 		symbols: linked.symbols,
 		vectors: testVectors(compiled, linked),
 		staticModulePaths: compiled.staticModulePaths,
-		romBytes: writeTestRom(linked),
+		romBytes: writeTestRom('system', linked),
 	};
 }
 
@@ -363,8 +372,8 @@ export function linkTestBlua32Pair(
 		cartSymbols: cart.symbols,
 		cartVectors: testVectors(cartCompiled, cart),
 		cartStaticModulePaths: cartCompiled.staticModulePaths,
-		systemRomBytes: writeTestRom(system),
-		cartRomBytes: writeTestRom(cart),
+		systemRomBytes: writeTestRom('system', system),
+		cartRomBytes: writeTestRom('cart', cart),
 	};
 }
 
