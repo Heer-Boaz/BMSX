@@ -1,4 +1,5 @@
-require('bios/string_base')
+local set_string_index<const> = __bmsx_set_string_index
+local string<const> = require('bios/string_base')
 
 local pattern<const> = require('bios/string_pattern')
 string.find = pattern.find
@@ -15,5 +16,7 @@ local pack<const> = require('bios/string_pack')
 string.pack = pack.pack
 string.packsize = pack.packsize
 string.unpack = pack.unpack
+
+set_string_index(string)
 
 return string

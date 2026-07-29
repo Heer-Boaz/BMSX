@@ -493,6 +493,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 				globals: [
 					{ name: 'answer', value: { tag: 'number', value: 42 } },
 				],
+				stringIndexTable: { tag: 'nil' },
 				frames: [],
 			protectedCalls: [{
 				kind: ProtectedCallKind.XPCallHandler,

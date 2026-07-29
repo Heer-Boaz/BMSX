@@ -1,4 +1,5 @@
-require('bios/string_base')
+local string<const> = require('bios/string_base')
+local table<const> = require('bios/table')
 local byte<const> = string.byte
 local sub<const> = string.sub
 local concat<const> = table.concat

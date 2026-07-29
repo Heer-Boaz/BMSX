@@ -1,3 +1,4 @@
+local string<const> = require('bios/string')
 local romdir<const> = require('system/romdir')
 
 local font<const> = {}

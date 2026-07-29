@@ -2296,9 +2296,7 @@
 				"ramTotalBytes",
 				"vramUsedBytes",
 				"vramTotalBytes",
-				"applyPublishedGxGpuPcrtcTiming",
-				"internString",
-				"setGlobal"
+				"applyPublishedGxGpuPcrtcTiming"
 			],
 			"reason": "runtime_lifecycle_and_external_closure_method_contract",
 			"compare_public": true

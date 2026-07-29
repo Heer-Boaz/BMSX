@@ -20,9 +20,10 @@ enum class BuiltinFunctionId : uint8_t {
 	Error = 9,
 	PCall = 10,
 	XPCall = 11,
+	SetStringIndex = 12,
 };
 
-constexpr size_t BUILTIN_FUNCTION_COUNT = 12u;
+constexpr size_t BUILTIN_FUNCTION_COUNT = 13u;
 
 struct LuaBootPrimitive {
 	std::string_view name;
@@ -42,6 +43,7 @@ inline constexpr std::array<LuaBootPrimitive, BUILTIN_FUNCTION_COUNT> LUA_BOOT_P
 	{ "__bmsx_error", BuiltinFunctionId::Error },
 	{ "__bmsx_pcall", BuiltinFunctionId::PCall },
 	{ "__bmsx_xpcall", BuiltinFunctionId::XPCall },
+	{ "__bmsx_set_string_index", BuiltinFunctionId::SetStringIndex },
 }};
 
 } // namespace bmsx

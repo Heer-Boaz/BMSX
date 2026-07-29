@@ -1,3 +1,6 @@
+require('bios/base')
+local table<const> = {}
+
 table.pack = function(...)
 	local packed<const> = { n = select('#', ...) }
 	for index = 1, packed.n do

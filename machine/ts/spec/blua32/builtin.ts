@@ -11,9 +11,10 @@ export const enum BuiltinFunctionId {
 	Error = 9,
 	PCall = 10,
 	XPCall = 11,
+	SetStringIndex = 12,
 }
 
-export const BUILTIN_FUNCTION_COUNT = 12;
+export const BUILTIN_FUNCTION_COUNT = 13;
 
 export interface LuaBootPrimitive {
 	readonly name: string;
@@ -33,4 +34,5 @@ export const LUA_BOOT_PRIMITIVES: ReadonlyArray<LuaBootPrimitive> = [
 	{ name: '__bmsx_error', id: BuiltinFunctionId.Error },
 	{ name: '__bmsx_pcall', id: BuiltinFunctionId.PCall },
 	{ name: '__bmsx_xpcall', id: BuiltinFunctionId.XPCall },
+	{ name: '__bmsx_set_string_index', id: BuiltinFunctionId.SetStringIndex },
 ];

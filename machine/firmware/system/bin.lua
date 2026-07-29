@@ -1,6 +1,8 @@
 local bin<const> = {}
 local read_u32le<const> = require('bios/common/endian').read_u32le
 local float_bits<const> = require('bios/common/float_bits')
+local string<const> = require('bios/string_base')
+local table<const> = require('bios/table')
 local u32_to_f32<const> = float_bits.u32_to_f32
 local u32s_to_f64<const> = float_bits.u32s_to_f64
 

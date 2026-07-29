@@ -71,6 +71,7 @@ inline constexpr std::array<BuiltinFunctionCost, BUILTIN_FUNCTION_COUNT> BUILTIN
 	{ 2, 0, 0 },
 	{ 4, 0, 0 },
 	{ 4, 0, 0 },
+	{ 1, 0, 0 },
 }};
 
 constexpr uint64_t VALUE_QNAN_MASK = 0x7ff8000000000000ULL;

@@ -12,7 +12,7 @@ import { extractErrorMessage, isLuaFunctionValue, isLuaTable, LuaFunctionValue, 
 import { API_METHOD_METADATA, type ApiMethodMetadata } from '../../../../machine/ts/language/lua/api_metadata';
 import { blua32FunctionIndexAtAddress } from '../../../../machine/ts/rompack/tooling/blua32_image';
 import { Table } from '../../../../machine/ts/machine/cpu/table';
-import { asStringId, valueTag, ValueTag, type BuiltinFunction, type StringValue, type Value } from '../../../../machine/ts/machine/cpu/value';
+import { asStringId, StringValue, valueTag, ValueTag, type BuiltinFunction, type Value } from '../../../../machine/ts/machine/cpu/value';
 import {
 	blua32SourceRangeAtPc,
 	type Blua32LocalSlotDebug,
@@ -1943,7 +1943,7 @@ function resolveRuntimeLocalChainValue(
 
 function resolveRuntimeGlobalChainValue(bridge: RuntimeLuaTooling, runtime: Runtime, parts: ReadonlyArray<string>): ({ kind: 'value'; value: LuaValue } | { kind: 'not_defined' }) | null {
 	const cpu = runtime.machine.cpu;
-	const rootRaw = cpu.getGlobalByKey(runtime.internString(parts[0]));
+	const rootRaw = cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern(parts[0])));
 	if (rootRaw === null) {
 		return null;
 	}

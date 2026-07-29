@@ -1,6 +1,6 @@
 import { convertToError } from '../language/lua/interpreter/value';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
-import { EMPTY_CALL_ARGS } from '../../machine/ts/machine/cpu/value';
+import { EMPTY_CALL_ARGS, StringValue } from '../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { clearOverlayFrame } from '../../machine/ts/render/host_overlay/overlay_queue';
 import {
@@ -105,7 +105,10 @@ export function hotResume(
 		resetHandledLuaErrors(fault);
 		clearOverlayFrame();
 
-		const initClosure = runtime.machine.cpu.getGlobalByKey(runtime.internString('init')) as Closure;
+		const cpu = runtime.machine.cpu;
+		const initClosure = cpu.getGlobalByKey(
+			StringValue.get(cpu.stringPool.intern('init')),
+		) as Closure;
 		runtime.callClosure(initClosure, EMPTY_CALL_ARGS);
 	} catch (error) {
 		throw convertToError(error);

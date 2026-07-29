@@ -1637,6 +1637,7 @@ BinValue encodeCpuRuntimeState(const CpuRuntimeState& state) {
 	object["globals"] = encodeVector(state.globals, [](const CpuRootValueState& value) {
 		return encodeCpuRootValueState(value);
 	});
+	object["stringIndexTable"] = encodeCpuValueState(state.stringIndexTable);
 	object["frames"] = encodeVector(state.frames, [](const CpuFrameState& value) {
 		return encodeCpuFrameState(value);
 	});
@@ -1688,6 +1689,10 @@ CpuRuntimeState decodeCpuRuntimeState(const BinValue& value, const char* label) 
 		[](const BinValue& entryValue, size_t) {
 			return decodeCpuRootValueState(entryValue, "cpuState.globals[]");
 		});
+	state.stringIndexTable = decodeCpuValueState(
+		requireField(object, "stringIndexTable", label),
+		"cpuState.stringIndexTable"
+	);
 	state.frames = decodeVector<CpuFrameState>(requireField(object, "frames", label), "cpuState.frames",
 		[](const BinValue& entryValue, size_t) {
 			return decodeCpuFrameState(entryValue, "cpuState.frames[]");

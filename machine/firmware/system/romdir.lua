@@ -1,5 +1,7 @@
 local bin<const> = require('system/bin')
 local cartridge<const> = require('system/cartridge')
+local string<const> = require('bios/string_base')
+local table<const> = require('bios/table')
 
 local romdir<const> = {}
 

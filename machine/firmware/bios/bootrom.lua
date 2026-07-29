@@ -2,9 +2,9 @@
 -- BMSX system boot firmware
 
 require('bios/base')
-require('bios/os')
-require('bios/table')
-require('bios/string')
+table = require('bios/table')
+string = require('bios/string')
+os = require('bios/os')
 
 math = require('bios/math')
 easing = require('bios/easing')

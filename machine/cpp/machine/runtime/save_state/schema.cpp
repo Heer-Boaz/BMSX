@@ -39,6 +39,7 @@ const std::vector<std::string> RUNTIME_SAVE_STATE_PROP_NAMES = {
 	"frames",
 	"globals",
 	"systemGlobals",
+	"stringIndexTable",
 	"haltedUntilIrq",
 	"interruptEventPending",
 	"memoryWriteBlocked",

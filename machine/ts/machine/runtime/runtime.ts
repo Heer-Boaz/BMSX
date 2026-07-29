@@ -1,7 +1,7 @@
 import { RunResult } from '../cpu/cpu';
 import type { Closure } from '../cpu/closure';
-import { EMPTY_CALL_ARGS, StringValue, type Value } from '../cpu/value';
-import { seedLuaGlobals } from '../firmware/globals';
+import { EMPTY_CALL_ARGS, type Value } from '../cpu/value';
+import { installLuaBootPrimitives } from '../firmware/globals';
 import type { RuntimeOptions } from './options';
 import { FrameLoopState } from './frame/loop';
 import { FrameSchedulerState } from '../scheduler/frame';
@@ -99,14 +99,14 @@ export class Runtime {
 
 	public boot(): void {
 		this.machine.cpu.reset();
-		seedLuaGlobals(this);
+		installLuaBootPrimitives(this);
 		this.finishSystemBoot();
 	}
 
 	public rebootSystem(): void {
 		this.resetForSystemBoot();
 		this.machine.cpu.reset();
-		seedLuaGlobals(this);
+		installLuaBootPrimitives(this);
 		this.finishSystemBoot();
 	}
 
@@ -294,15 +294,5 @@ export class Runtime {
 		timing.frameDurationMs = pcrtcTiming.frameDurationMs;
 		this.input.setRuntimeInputFrameDurationMs(pcrtcTiming.frameDurationMs);
 	}
-
-	// disable-next-line single_line_method_pattern -- runtime string interning is the public CPU string-pool boundary.
-	public internString(name: string): StringValue {
-		return StringValue.get(this.machine.cpu.stringPool.intern(name));
-	}
-
-	public setGlobal(name: string, value: Value): void {
-		this.machine.cpu.setGlobalByKey(this.internString(name), value);
-	}
-
 
 }

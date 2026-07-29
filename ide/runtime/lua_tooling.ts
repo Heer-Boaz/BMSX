@@ -3,7 +3,7 @@ import { convertToError, LuaValue, LuaTable, isLuaTable, createLuaTable, LuaNati
 import type { LuaInterpreter } from '../language/lua/interpreter/interpreter';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import type { Table } from '../../machine/ts/machine/cpu/table';
-import { asStringId, valueIsHeap, valueIsNumber, valueIsString, valueTag, ValueTag, type StringValue, type Value } from '../../machine/ts/machine/cpu/value';
+import { asStringId, StringValue, valueIsHeap, valueIsNumber, valueIsString, valueTag, ValueTag, type Value } from '../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { LuaInteropAdapter, LuaMarshalContext } from '../language/lua/interpreter/interop';
 import type { RuntimeSourceState } from './sources';
@@ -597,7 +597,8 @@ export function hostValueToRuntime(bridge: RuntimeLuaTooling, value: unknown): V
 		return value;
 	}
 	if (typeof value === 'string') {
-		return bridge.runtime.internString(value);
+		const cpu = bridge.runtime.machine.cpu;
+		return StringValue.get(cpu.stringPool.intern(value));
 	}
 	if (valueIsHeap(value)) {
 		return value;
@@ -611,6 +612,7 @@ export function hostValueToRuntime(bridge: RuntimeLuaTooling, value: unknown): V
 	}
 	if (isPlainObject(value)) {
 		const record = value as Record<string, unknown>;
+		const cpu = bridge.runtime.machine.cpu;
 		let entryCount = 0;
 		for (const prop in record) {
 			if (!Object.prototype.hasOwnProperty.call(record, prop)) {
@@ -622,7 +624,7 @@ export function hostValueToRuntime(bridge: RuntimeLuaTooling, value: unknown): V
 			}
 			entryCount += 1;
 		}
-		const table = bridge.runtime.machine.cpu.createTable(0, reserveTableHashSize(entryCount));
+		const table = cpu.createTable(0, reserveTableHashSize(entryCount));
 		for (const prop in record) {
 			if (!Object.prototype.hasOwnProperty.call(record, prop)) {
 				continue;
@@ -631,7 +633,7 @@ export function hostValueToRuntime(bridge: RuntimeLuaTooling, value: unknown): V
 			if (entry == null) {
 				continue;
 			}
-			table.set(bridge.runtime.internString(prop), hostValueToRuntime(bridge, entry));
+			table.set(StringValue.get(cpu.stringPool.intern(prop)), hostValueToRuntime(bridge, entry));
 		}
 		return table;
 	}

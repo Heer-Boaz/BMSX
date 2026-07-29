@@ -3,6 +3,7 @@ import * as path from 'node:path';
 
 import { extractErrorMessage } from '../../../../ide/language/lua/interpreter/value';
 import type { HeadlessIdeHarness } from '../../../../ide/testing/headless_harness';
+import { StringValue } from '../../../../machine/ts/machine/cpu/value';
 import type { HostClock } from 'bmsx/platform';
 
 export interface IdeTestRunnerOptions {
@@ -15,7 +16,7 @@ export interface IdeTestRunnerOptions {
 
 /**
  * Drives a host-side IDE test scenario against the live runtime. The scenario is a
- * plain JS script (no imports) executed with a single `t` context object. IDE actions
+ * plain JS script (no imports) executed with the test context and machine value owner. IDE actions
  * run between frames: `t.frames(n)` suspends the scenario for n frames while the
  * headless frame loop keeps ticking, so async work (BLua32 rebuild, storage I/O) settles.
  */
@@ -78,12 +79,13 @@ export async function runIdeTest(options: IdeTestRunnerOptions): Promise<void> {
 
 	log('starting');
 	// eslint-disable-next-line no-new-func -- dev-only headless IDE test scenario.
-	const factory = new Function('t', 'assert', `"use strict"; return (async () => {\n${source}\n})();`) as (
+	const factory = new Function('t', 'assert', 'StringValue', `"use strict"; return (async () => {\n${source}\n})();`) as (
 		ctx: typeof t,
 		assertFn: typeof assert,
+		stringValue: typeof StringValue,
 	) => Promise<void>;
 	try {
-		await factory(t, assert);
+		await factory(t, assert, StringValue);
 	} catch (error) {
 		log(`FAILED: ${extractErrorMessage(error)}`);
 		throw error;

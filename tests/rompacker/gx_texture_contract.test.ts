@@ -467,11 +467,6 @@ return imgdec
 				createBuiltinFunction(primitive.id),
 			);
 		}
-		const stringTable = cpu.createTable(0, 0);
-		const tableTable = cpu.createTable(0, 0);
-		cpu.stringIndexTable = stringTable;
-		cpu.setGlobalByKey(StringValue.get(cpu.stringPool.intern('string')), stringTable);
-		cpu.setGlobalByKey(StringValue.get(cpu.stringPool.intern('table')), tableTable);
 		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 		assert.deepEqual(Array.from(cpu.completionValues, value => (value as number) >>> 0), [
 			1,

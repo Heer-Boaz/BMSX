@@ -1561,6 +1561,7 @@ function encodeCpuRuntimeState(state: CpuRuntimeState): CpuRuntimeState {
 		executionCartridgeSlot: state.executionCartridgeSlot,
 		systemGlobals: encodeVector(state.systemGlobals, encodeCpuRootValueState),
 		globals: encodeVector(state.globals, encodeCpuRootValueState),
+		stringIndexTable: encodeCpuValueState(state.stringIndexTable),
 		frames: encodeVector(state.frames, encodeCpuFrameState),
 		protectedCalls: encodeVector(state.protectedCalls, encodeCpuProtectedCallState),
 		completionValues: encodeVector(state.completionValues, encodeCpuValueState),
@@ -1609,6 +1610,10 @@ function decodeCpuRuntimeState(value: unknown, label: string): CpuRuntimeState {
 			requireObjectKey(object, 'globals', label, 'cpuState.globals'),
 			'cpuState.globals',
 			(entry) => decodeCpuRootValueState(entry, 'cpuState.globals[]'),
+		),
+		stringIndexTable: decodeCpuValueState(
+			requireObjectKey(object, 'stringIndexTable', label, 'cpuState.stringIndexTable'),
+			'cpuState.stringIndexTable',
 		),
 		frames: decodeVector(
 			requireObjectKey(object, 'frames', label, 'cpuState.frames'),

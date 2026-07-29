@@ -243,7 +243,7 @@ uint32_t Runtime::vramTotalBytes() const {
 
 void Runtime::boot() {
 	machine.cpu.reset();
-	setupBuiltins();
+	installLuaBootPrimitives();
 	finishSystemBoot();
 }
 
@@ -254,7 +254,7 @@ void Runtime::finishSystemBoot() {
 void Runtime::rebootSystem() {
 	resetForSystemBoot();
 	machine.cpu.reset();
-	setupBuiltins();
+	installLuaBootPrimitives();
 	finishSystemBoot();
 }
 
@@ -265,11 +265,6 @@ void Runtime::resetForSystemBoot() {
 	machine.cpu.clearExecutionEnvironment();
 	machine.memory.clearIoSlots();
 	resetHardwareState();
-}
-
-// disable-next-line single_line_method_pattern -- runtime global writes keep CPU string-key encoding inside Runtime.
-void Runtime::setGlobal(std::string_view name, const Value& value) {
-	machine.cpu.setGlobalByKey(valueString(machine.cpu.stringPool().intern(name)), value);
 }
 
 void Runtime::resetHardwareState() {

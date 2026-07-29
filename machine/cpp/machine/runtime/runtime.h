@@ -23,8 +23,6 @@
 #include <cstddef>
 #include <memory>
 #include <span>
-#include <string>
-#include <string_view>
 #include <utility>
 
 namespace bmsx {
@@ -72,13 +70,6 @@ public:
 	auto callClosure(Closure& fn, BuiltinArgsView args = {}) -> std::span<const Value>;
 	bool completionCallPending() const;
 
-	/**
-	 * Set a global variable.
-	 */
-	void setGlobal(std::string_view name, const Value& value);
-
-	auto internString(std::string_view name) -> Value { return valueString(machine.cpu.stringPool().intern(name)); }
-
 	void resetHardwareState();
 	void resetForSystemBoot();
 	auto cpuUsageCyclesUsed() const -> i64 {
@@ -103,7 +94,7 @@ private:
 		None,
 		Entry,
 	};
-	void setupBuiltins();
+	void installLuaBootPrimitives();
 	void finishSystemBoot();
 
 	RuntimeInputSource& m_input;

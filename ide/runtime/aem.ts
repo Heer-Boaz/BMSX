@@ -1,5 +1,6 @@
 import { Closure } from '../../machine/ts/machine/cpu/closure';
 import { Table } from '../../machine/ts/machine/cpu/table';
+import { StringValue } from '../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import {
 	aemDocumentFormat,
@@ -25,10 +26,11 @@ function buildRuntimeAemValidationLookup(sources: RuntimeSourceState) {
 }
 
 function reloadAem(runtime: Runtime): void {
-	const resourceId = runtime.internString('aem');
-	const rget = runtime.machine.cpu.getGlobalByKey(runtime.internString('rget')) as Closure;
+	const cpu = runtime.machine.cpu;
+	const resourceId = StringValue.get(cpu.stringPool.intern('aem'));
+	const rget = cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern('rget'))) as Closure;
 	const resource = runtime.callClosure(rget, [resourceId])[0] as Table;
-	const reload = resource.getStringKey(runtime.internString('reload')) as Closure;
+	const reload = resource.getStringKey(StringValue.get(cpu.stringPool.intern('reload'))) as Closure;
 	runtime.callClosure(reload, [resource]);
 }
 

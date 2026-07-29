@@ -136,6 +136,7 @@ struct CpuRuntimeState {
 	ExecutionDomainId executionCartridgeSlot = SYSTEM_EXECUTION_DOMAIN_ID;
 	std::vector<CpuRootValueState> systemGlobals;
 	std::vector<CpuRootValueState> globals;
+	CpuValueState stringIndexTable;
 	std::vector<CpuFrameState> frames;
 	std::vector<CpuProtectedCallState> protectedCalls;
 	std::vector<CpuValueState> completionValues;
@@ -248,7 +249,6 @@ public:
 	const LuaHeap& luaHeap() const { return m_luaHeap; }
 	Memory& memory() { return m_memory; }
 	const Memory& memory() const { return m_memory; }
-	void setStringIndexTable(Table* table) { m_stringIndexTable = table; }
 	void setGlobalByKey(const Value& key, const Value& value);
 	void setSystemGlobalByKey(const Value& key, const Value& value);
 	Value getGlobalByKey(const Value& key) const;
@@ -492,7 +492,7 @@ private:
 	std::vector<StringId> m_globalNames;
 	std::vector<Value> m_globalValues;
 	std::unordered_map<StringId, size_t> m_globalSlotByKey;
-	Table* m_stringIndexTable;
+	Table* m_stringIndexTable = nullptr;
 };
 
 } // namespace bmsx

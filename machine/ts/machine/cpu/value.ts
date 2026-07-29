@@ -104,6 +104,7 @@ const BUILTIN_FUNCTIONS: readonly BuiltinFunction[] = [
 	{ [VALUE_TAG]: BUILTIN_FUNCTION_VALUE_TAG, id: BuiltinFunctionId.Error, cost: BUILTIN_COST_TIER2 },
 	{ [VALUE_TAG]: BUILTIN_FUNCTION_VALUE_TAG, id: BuiltinFunctionId.PCall, cost: BUILTIN_COST_TIER4 },
 	{ [VALUE_TAG]: BUILTIN_FUNCTION_VALUE_TAG, id: BuiltinFunctionId.XPCall, cost: BUILTIN_COST_TIER4 },
+	{ [VALUE_TAG]: BUILTIN_FUNCTION_VALUE_TAG, id: BuiltinFunctionId.SetStringIndex, cost: BUILTIN_COST_TIER1 },
 ];
 
 export function createBuiltinFunction(id: BuiltinFunctionId): BuiltinFunction {

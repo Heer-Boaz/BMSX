@@ -194,6 +194,7 @@ export type CpuRuntimeState = {
 	executionCartridgeSlot: ExecutionDomainId;
 	systemGlobals: CpuRootValueState[];
 	globals: CpuRootValueState[];
+	stringIndexTable: CpuValueState;
 	frames: CpuFrameState[];
 	protectedCalls: CpuProtectedCallState[];
 	completionValues: CpuValueState[];
@@ -390,7 +391,7 @@ export class CPU {
 		byteLength: 0,
 	};
 	private readonly staticClosuresByAddress = new Map<number, Closure>();
-	public stringIndexTable: Table;
+	private stringIndexTable: Table | null = null;
 	private systemGlobalNames: StringId[] = [];
 	private systemGlobalValues: Value[] = [];
 	private systemGlobalSlotByKey: Map<StringId, number> = new Map();
@@ -413,7 +414,6 @@ export class CPU {
 		this.luaHeap = new LuaHeap(this);
 		this.stringPool = new StringPool(this.luaHeap);
 		this.globals = this.createTable(0, 0);
-		this.stringIndexTable = this.createTable(0, 0);
 		this.indexKey = StringValue.get(this.stringPool.intern('__index'));
 		this.modeKey = StringValue.get(this.stringPool.intern('__mode'));
 		this.luaFaultErrorValues[LUA_FAULT_REASON_UNKNOWN] = StringValue.get(this.stringPool.intern('Attempted to get length of an unsupported value.', false));
@@ -555,7 +555,7 @@ export class CPU {
 				return this.resolveTableIndexChain(table, key, TableIndexKeyKind.Value);
 			}
 			case ValueTag.String: {
-				const table = this.stringIndexTable;
+				const table = this.stringIndexTable!;
 				if (table.metatable === null) {
 					return table.get(key);
 				}
@@ -585,7 +585,7 @@ export class CPU {
 				return this.resolveTableIndexChain(table, index, indexKind);
 			}
 			case ValueTag.String: {
-				const table = this.stringIndexTable;
+				const table = this.stringIndexTable!;
 				if (table.metatable === null) {
 					const version = table.getVersion();
 					if (cache.table === table && cache.version === version) {
@@ -622,7 +622,7 @@ export class CPU {
 				return this.resolveTableIndexChain(table, key, TableIndexKeyKind.Field);
 			}
 			case ValueTag.String: {
-				const table = this.stringIndexTable;
+				const table = this.stringIndexTable!;
 				if (table.metatable === null) {
 					const version = table.getVersion();
 					if (cache.table === table && cache.version === version) {
@@ -731,6 +731,7 @@ export class CPU {
 		const systemResetFunctionAddress = systemBoot.startupFunctionAddress;
 		this.completionValues.length = 0;
 		this.clearCallStack();
+		this.stringIndexTable = null;
 		this.haltedUntilIrq = false;
 		this.interruptEventPending = false;
 		this.memoryWriteBlocked = false;
@@ -2680,6 +2681,9 @@ export class CPU {
 			case BuiltinFunctionId.StringChar:
 				this.runBuiltinStringChar(args, out);
 				break;
+			case BuiltinFunctionId.SetStringIndex:
+				this.stringIndexTable = args.get(0) as Table;
+				break;
 			case BuiltinFunctionId.Error:
 				this.runBuiltinError(args);
 				break;
@@ -3197,11 +3201,13 @@ export class CPU {
 				upvalue = upvalue.nextOpen;
 			}
 		}
+		const stringIndexTable = captureValueState(this.stringIndexTable);
 
 		return {
 			executionCartridgeSlot: this.activeExecutionImage.executionDomainId,
 			systemGlobals,
 			globals,
+			stringIndexTable,
 			frames,
 			protectedCalls,
 			completionValues,
@@ -3407,6 +3413,7 @@ export class CPU {
 			const entry = state.globals[index];
 			this.setGlobalByKey(StringValue.get(this.stringPool.intern(entry.name)), restoreValue(entry.value));
 		}
+		this.stringIndexTable = restoreValue(state.stringIndexTable) as Table | null;
 		for (let index = 0; index < state.completionValues.length; index += 1) {
 			this.completionValues[index] = restoreValue(state.completionValues[index]);
 		}

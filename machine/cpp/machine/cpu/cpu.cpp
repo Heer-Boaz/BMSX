@@ -349,7 +349,6 @@ CPU::CPU(
 		builtin.cyclePerRet = cost.perRet;
 	}
 	globals = createTable();
-	m_stringIndexTable = createTable();
 }
 
 Value CPU::createBuiltinFunction(BuiltinFunctionId id) {
@@ -386,6 +385,7 @@ void CPU::reset() {
 	const u32 systemExceptionFunctionAddress = systemBoot.exceptionFunctionAddress;
 	completionValues.clear();
 	clearCallStack();
+	m_stringIndexTable = nullptr;
 	m_haltedUntilIrq = false;
 	m_interruptEventPending = false;
 	m_memoryWriteBlocked = false;
@@ -1131,6 +1131,9 @@ CpuRuntimeState CPU::captureRuntimeState() const {
 			state.openUpvalues.push_back(ensureObjectId(upvalue));
 		}
 	}
+	state.stringIndexTable = captureValueState(
+		m_stringIndexTable ? valueTable(m_stringIndexTable) : valueNil()
+	);
 	state.objects = std::move(objects);
 	state.lastExecutionDomainId = m_lastExecutionDomainId;
 	state.lastPc = lastPc;
@@ -1365,6 +1368,8 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	for (const CpuRootValueState& entry : state.globals) {
 		setGlobalByKey(valueString(m_stringPool.intern(entry.name)), restoreValue(entry.value));
 	}
+	const Value stringIndexTable = restoreValue(state.stringIndexTable);
+	m_stringIndexTable = isNil(stringIndexTable) ? nullptr : asTable(stringIndexTable);
 	completionValues.reserve(state.completionValues.size());
 	for (const CpuValueState& valueState : state.completionValues) {
 		completionValues.push_back(restoreValue(valueState));
@@ -1439,6 +1444,9 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 			break;
 		case BuiltinFunctionId::StringChar:
 			runBuiltinStringChar(args, out);
+			break;
+		case BuiltinFunctionId::SetStringIndex:
+			m_stringIndexTable = asTable(args[0]);
 			break;
 		case BuiltinFunctionId::Error:
 			runBuiltinError(args);

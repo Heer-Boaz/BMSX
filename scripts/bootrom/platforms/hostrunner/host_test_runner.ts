@@ -5,10 +5,10 @@ import type { Closure } from '../../../../machine/ts/machine/cpu/closure';
 import { Table } from '../../../../machine/ts/machine/cpu/table';
 import {
 	EMPTY_CALL_ARGS,
+	StringValue,
 	asStringId,
 	valueIsString,
 	valueIsTable,
-	type StringValue,
 	type Value,
 } from '../../../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
@@ -121,9 +121,9 @@ export class HostTestRunner {
 			case 'cart':
 				this.cartSettleFrames += 1;
 				if (this.cartSettleFrames >= CART_SETTLE_FRAMES) {
-					const runtime = this.options.runtime;
-					this.loader = runtime.machine.cpu.getGlobalByKey(
-						runtime.internString(HOST_TEST_LOADER_GLOBAL),
+					const cpu = this.options.runtime.machine.cpu;
+					this.loader = cpu.getGlobalByKey(
+						StringValue.get(cpu.stringPool.intern(HOST_TEST_LOADER_GLOBAL)),
 					) as Closure;
 					this.phase = 'install';
 				}
@@ -182,22 +182,25 @@ export class HostTestRunner {
 	}
 
 	private bindTest(): void {
-		const runtime = this.options.runtime;
-		const cpu = runtime.machine.cpu;
-		const testTable = cpu.getGlobalByKey(runtime.internString(HOST_TEST_GLOBAL)) as Table;
-		this.ready = testTable.getStringKey(runtime.internString('ready')) as Closure;
-		this.setup = testTable.getStringKey(runtime.internString('setup')) as Closure;
-		this.update = testTable.getStringKey(runtime.internString('update')) as Closure;
-		this.newGame = cpu.getGlobalByKey(runtime.internString('new_game')) as Closure;
-		this.frameKey = runtime.internString('frame');
-		this.pressKey = runtime.internString('press');
-		this.downKey = runtime.internString('down');
-		this.upKey = runtime.internString('up');
-		this.holdFramesKey = runtime.internString('hold_frames');
-		this.captureKey = runtime.internString('capture');
-		this.logKey = runtime.internString('log');
-		this.newGameKey = runtime.internString('new_game');
-		this.doneKey = runtime.internString('done');
+		const cpu = this.options.runtime.machine.cpu;
+		const testTable = cpu.getGlobalByKey(
+			StringValue.get(cpu.stringPool.intern(HOST_TEST_GLOBAL)),
+		) as Table;
+		this.ready = testTable.getStringKey(StringValue.get(cpu.stringPool.intern('ready'))) as Closure;
+		this.setup = testTable.getStringKey(StringValue.get(cpu.stringPool.intern('setup'))) as Closure;
+		this.update = testTable.getStringKey(StringValue.get(cpu.stringPool.intern('update'))) as Closure;
+		this.newGame = cpu.getGlobalByKey(
+			StringValue.get(cpu.stringPool.intern('new_game')),
+		) as Closure;
+		this.frameKey = StringValue.get(cpu.stringPool.intern('frame'));
+		this.pressKey = StringValue.get(cpu.stringPool.intern('press'));
+		this.downKey = StringValue.get(cpu.stringPool.intern('down'));
+		this.upKey = StringValue.get(cpu.stringPool.intern('up'));
+		this.holdFramesKey = StringValue.get(cpu.stringPool.intern('hold_frames'));
+		this.captureKey = StringValue.get(cpu.stringPool.intern('capture'));
+		this.logKey = StringValue.get(cpu.stringPool.intern('log'));
+		this.newGameKey = StringValue.get(cpu.stringPool.intern('new_game'));
+		this.doneKey = StringValue.get(cpu.stringPool.intern('done'));
 		this.options.logger(`test:${this.label} loaded`);
 	}
 

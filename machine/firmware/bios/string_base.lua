@@ -1,6 +1,8 @@
 local byte<const> = __bmsx_string_byte
 local char<const> = __bmsx_string_char
+local table<const> = require('bios/table')
 local concat<const> = table.concat
+local string<const> = {}
 
 local ascii_upper_a<const> = 65
 local ascii_upper_z<const> = 90

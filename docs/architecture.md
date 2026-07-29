@@ -1,6 +1,6 @@
 # BMSX Architecture Contract
 
-Last checked: 2026-07-28.
+Last checked: 2026-07-29.
 
 This document is the current machine/host boundary contract. It is not a work
 log, a prompt, or a migration diary. If implementation changes land, this file

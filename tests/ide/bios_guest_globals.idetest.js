@@ -3,6 +3,7 @@
 await t.waitForCart();
 
 const runtime = t.runtime();
+const cpu = runtime.machine.cpu;
 const names = [
 	'devtools',
 	'cart_project_root_path',
@@ -21,6 +22,6 @@ const names = [
 	'img_ctrl_start',
 ];
 for (const name of names) {
-	const value = runtime.machine.cpu.getGlobalByKey(runtime.internString(name));
+	const value = cpu.getGlobalByKey(StringValue.get(cpu.stringPool.intern(name)));
 	t.assert(value === null, `${name} must not be a guest CPU global`);
 }
