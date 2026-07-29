@@ -289,9 +289,6 @@ int main(int argc, char** argv) {
 
 	BmsxLibretroApi* core = &session.api;
 	core->retro_set_environment(core_session_environment);
-	if (profile_gx_upload && !session.gx_upload_profile_interface_set) {
-		host_fatal("--timing-report requires GX upload profile interface v1 for the GLES2 backend");
-	}
 	core->retro_set_video_refresh(video_presenter_refresh);
 	core->retro_set_audio_sample(audio_output_sample);
 	core->retro_set_audio_sample_batch(audio_output_sample_batch);
@@ -304,6 +301,9 @@ int main(int argc, char** argv) {
 	input_devices_open(input_driver, !hidden_window, video_surface);
 
 	core->retro_init();
+	if (profile_gx_upload && !session.gx_upload_profile_interface_set) {
+		host_fatal("--timing-report requires GX upload profile interface v1 for the GLES2 backend");
+	}
 	fprintf(stderr, "[libretro-host] core=%s v%s api=%u\n",
 			session.system_info.library_name,
 			session.system_info.library_version,

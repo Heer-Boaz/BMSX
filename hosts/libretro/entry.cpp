@@ -97,7 +97,6 @@ static std::string sanitizeSystemDir(std::string_view path) {
 
 // The platform instance
 static bmsx::LibretroPlatform* g_platform = nullptr;
-static bool g_profile_gx_uploads = false;
 static retro_system_av_info g_cached_av_info{};
 static bool g_cached_av_info_valid = false;
 static retro_system_av_info g_frontend_av_info{};
@@ -633,6 +632,22 @@ static bool isHardwareBackendActive() {
 	__builtin_unreachable();
 }
 
+static bool offerGxUploadProfileInterface(retro_environment_t environment) {
+#if BMSX_ENABLE_GLES2
+	if (isHardwareBackendActive()) {
+		BmsxGxUploadProfileInterfaceV1 gxUploadProfileInterface{
+			read_gx_upload_profile_frame,
+		};
+		return environment(
+			BMSX_ENVIRONMENT_SET_GX_UPLOAD_PROFILE_INTERFACE_V1,
+			&gxUploadProfileInterface);
+	}
+#else
+	(void)environment;
+#endif
+	return false;
+}
+
 static void set_crt_option_values(bool enabled) {
 	const char* const value_off = kToggleOff;
 	const char* const value_on = kToggleOn;
@@ -954,16 +969,7 @@ void retro_set_environment(retro_environment_t cb) {
 	// RetroArch may reinstall this callback inside one core session. AV publication
 	// validity follows retro_init/retro_deinit, not the callback function address.
 	environ_cb = cb;
-#if BMSX_ENABLE_GLES2
-	BmsxGxUploadProfileInterfaceV1 gxUploadProfileInterface{
-		read_gx_upload_profile_frame,
-	};
-	g_profile_gx_uploads = cb(
-		BMSX_ENVIRONMENT_SET_GX_UPLOAD_PROFILE_INTERFACE_V1,
-		&gxUploadProfileInterface);
-#else
-	g_profile_gx_uploads = false;
-#endif
+	offerGxUploadProfileInterface(cb);
 	BmsxSupervisorRequestInterfaceV1 supervisorRequestInterface{
 		supervisor_request_line_low,
 	};
@@ -1075,6 +1081,8 @@ void retro_init(void) {
 	g_backend_preference = preference;
 	g_active_backend = desired_backend;
 	request_hw_context_for_backend(desired_backend);
+	const bool profile_gx_uploads =
+		offerGxUploadProfileInterface(environ_cb);
 	set_core_options(BMSX_ENABLE_GLES2);
 
 	const char* system_dir = nullptr;
@@ -1112,7 +1120,7 @@ void retro_init(void) {
 		g_active_backend,
 		g_cached_av_info,
 		g_supervisor_request_line_cb,
-		g_profile_gx_uploads);
+		profile_gx_uploads);
 	g_platform->setEnvironmentCallback(environ_cb);
 	g_platform->setLogCallback(logging.log);
 	g_platform->setSystemDirectory(g_system_dir);

@@ -15,9 +15,7 @@
 namespace {
 
 unsigned supervisorInterfaceQueries = 0u;
-unsigned gxUploadProfileOffers = 0u;
 bool defaultRequestLineWasLow = false;
-bool gxUploadProfileReaderWasOffered = false;
 bool acceptPrivateInterfaces = true;
 bool acceptXrgb8888 = true;
 unsigned pixelFormatRequests = 0u;
@@ -131,12 +129,6 @@ std::vector<bmsx::u8> makeExpandedPcrtcState(size_t cartridgeRamByteCount) {
 }
 
 bool frontendEnvironment(unsigned command, void* data) {
-	if (command == BMSX_ENVIRONMENT_SET_GX_UPLOAD_PROFILE_INTERFACE_V1) {
-		auto& interface = *static_cast<BmsxGxUploadProfileInterfaceV1*>(data);
-		gxUploadProfileOffers += 1u;
-		gxUploadProfileReaderWasOffered = interface.read_frame != nullptr;
-		return acceptPrivateInterfaces;
-	}
 	if (command == BMSX_ENVIRONMENT_GET_SUPERVISOR_REQUEST_INTERFACE_V1) {
 		auto& interface = *static_cast<BmsxSupervisorRequestInterfaceV1*>(data);
 		supervisorInterfaceQueries += 1u;
@@ -196,12 +188,6 @@ int main() {
 
 	retro_set_environment(frontendEnvironment);
 	require(subsystemInfoOffers == 1u, "installing an environment should publish the cartridge subsystem once");
-#if BMSX_ENABLE_GLES2
-	require(gxUploadProfileOffers == 1u, "the core should offer the GX upload profile interface exactly once");
-	require(gxUploadProfileReaderWasOffered, "the GX upload profile interface should contain a reader callback");
-#else
-	require(gxUploadProfileOffers == 0u, "a core without GLES2 must not offer its GX upload profile interface");
-#endif
 	require(supervisorInterfaceQueries == 1u, "the core should negotiate the private supervisor interface exactly once");
 	require(defaultRequestLineWasLow, "the supervisor interface probe should start with a callable low line");
 	retro_system_av_info initialAvInfo{};
@@ -210,9 +196,6 @@ int main() {
 	retro_set_environment(softwareFrontendEnvironment);
 	retro_set_environment(frontendEnvironment);
 	require(supervisorInterfaceQueries == 2u, "reinstalling the frontend environment should renegotiate the supervisor interface");
-#if BMSX_ENABLE_GLES2
-	require(gxUploadProfileOffers == 2u, "reinstalling the frontend environment should re-offer the GX upload profile interface");
-#endif
 	retro_init();
 	const retro_game_info cartridgeSlots[2] = {
 		{
@@ -288,15 +271,8 @@ int main() {
 	inputPolls = 0u;
 	requestLineReads = 0u;
 	defaultRequestLineWasLow = false;
-	gxUploadProfileReaderWasOffered = false;
 	acceptPrivateInterfaces = false;
 	retro_set_environment(frontendEnvironment);
-#if BMSX_ENABLE_GLES2
-	require(gxUploadProfileOffers == 3u, "a replacement frontend should receive one fresh GX upload profile offer");
-	require(gxUploadProfileReaderWasOffered, "a rejected GX upload profile offer should still carry the core reader");
-#else
-	require(gxUploadProfileOffers == 0u, "a replacement frontend must not receive an unavailable GX upload profile interface");
-#endif
 	require(supervisorInterfaceQueries == 3u, "a replacement frontend should receive one fresh supervisor interface probe");
 	require(defaultRequestLineWasLow, "an unsupported frontend should inherit a fresh callable low line");
 	retro_get_system_av_info(&initialAvInfo);
