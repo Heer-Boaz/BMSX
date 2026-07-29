@@ -11,7 +11,6 @@ import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_addres
 import type { Value } from '../../machine/ts/machine/cpu/value';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
-import { Blua32ConstantTag } from '../../machine/ts/spec/blua32/image_format';
 import { CART_ROM_BASE, DYNAMIC_RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject, type CompiledProgram } from '../../machine/ts/lua/compiler';
 import { readLE32 } from '../../machine/ts/common/endian';
@@ -439,10 +438,10 @@ test('linked system and cart const-module .bss symbols resolve against their own
 		{ name: 'module:cart_state/bss:counter', offset: 0, byteCount: 4, alignment: 4 },
 	]);
 	assert.equal(finalized.systemImage.constants.some(
-		constant => constant.tag === Blua32ConstantTag.Number && constant.value === DYNAMIC_RAM_BASE,
+		constant => constant === DYNAMIC_RAM_BASE,
 	), true);
 	assert.equal(finalized.cartImage.constants.some(
-		constant => constant.tag === Blua32ConstantTag.Number && constant.value === DYNAMIC_RAM_BASE + 4,
+		constant => constant === DYNAMIC_RAM_BASE + 4,
 	), true);
 });
 
@@ -572,16 +571,16 @@ test('linked system and cart const-module .data symbols resolve VMA and LMA rang
 		{ name: 'module:cart_data/data:value', offset: 0, byteCount: 4, alignment: 4 },
 	]);
 	assert.equal(finalized.systemImage.constants.some(
-		constant => constant.tag === Blua32ConstantTag.Number && constant.value === DYNAMIC_RAM_BASE,
+		constant => constant === DYNAMIC_RAM_BASE,
 	), true);
 	assert.equal(finalized.cartImage.constants.some(
-		constant => constant.tag === Blua32ConstantTag.Number && constant.value === DYNAMIC_RAM_BASE + 4,
+		constant => constant === DYNAMIC_RAM_BASE + 4,
 	), true);
 	assert.equal(finalized.systemImage.constants.some(
-		constant => constant.tag === Blua32ConstantTag.Number && constant.value === systemDataLma,
+		constant => constant === systemDataLma,
 	), true);
 	assert.equal(finalized.cartImage.constants.some(
-		constant => constant.tag === Blua32ConstantTag.Number && constant.value === cartDataLma,
+		constant => constant === cartDataLma,
 	), true);
 });
 
@@ -700,12 +699,10 @@ return labels[0].text
 	const finalized = linkTestBlua32Pair(system, cart);
 	const systemConstIndex = readLE32(finalized.systemImage.rodataBytes, 0);
 	const systemConstant = finalized.systemImage.constants[systemConstIndex];
-	assert.equal(systemConstant.tag, Blua32ConstantTag.String);
-	assert.equal(systemConstant.value, 'SYSTEM');
+	assert.equal(systemConstant, 'SYSTEM');
 	const cartConstIndex = readLE32(finalized.cartImage.rodataBytes, 0);
 	const cartConstant = finalized.cartImage.constants[cartConstIndex];
-	assert.equal(cartConstant.tag, Blua32ConstantTag.String);
-	assert.equal(cartConstant.value, 'CART');
+	assert.equal(cartConstant, 'CART');
 });
 
 test('const modules export .rodata storage symbols without runtime module state', () => {
@@ -761,10 +758,10 @@ test('linked system and cart const-module .rodata symbols resolve against their 
 		{ name: 'module:cart_data/rodata:values', offset: 0, byteCount: 4, alignment: 4 },
 	]);
 	assert.equal(finalized.systemImage.constants.some(
-		constant => constant.tag === Blua32ConstantTag.Number && constant.value === systemRodataAddr,
+		constant => constant === systemRodataAddr,
 	), true);
 	assert.equal(finalized.cartImage.constants.some(
-		constant => constant.tag === Blua32ConstantTag.Number && constant.value === cartRodataAddr,
+		constant => constant === cartRodataAddr,
 	), true);
 });
 

@@ -72,10 +72,10 @@ export type Blua32BootHeader = {
 	staticLayoutTokenHi: number;
 };
 
-export function decodeBlua32BootHeader(payload: Uint8Array, byteOffset = 0): Blua32BootHeader {
+export function decodeBlua32BootHeader(payload: Uint8Array): Blua32BootHeader {
 	const view = new DataView(
 		payload.buffer,
-		payload.byteOffset + byteOffset,
+		payload.byteOffset,
 		BMSX_ROM_BOOT_HEADER_SIZE,
 	);
 	return {
@@ -140,12 +140,7 @@ export type Blua32FunctionRecord = {
 	upvalues: Blua32UpvalueRecord[];
 };
 
-export type Blua32EncodedConstant =
-	| { tag: Blua32ConstantTag.Nil }
-	| { tag: Blua32ConstantTag.False }
-	| { tag: Blua32ConstantTag.True }
-	| { tag: Blua32ConstantTag.Number; value: number }
-	| { tag: Blua32ConstantTag.String; value: string };
+export type Blua32EncodedConstant = null | boolean | number | string;
 
 export type Blua32ImageLayout = {
 	address: number;
@@ -285,25 +280,22 @@ export function decodeBlua32Image(bytes: Uint8Array, imageAddress: number): Blua
 		const tag = view.getUint32(offset + BLUA32_CONSTANT_TAG_OFFSET, true);
 		switch (tag) {
 			case Blua32ConstantTag.Nil:
-				constants[index] = { tag };
+				constants[index] = null;
 				break;
 			case Blua32ConstantTag.False:
-				constants[index] = { tag };
+				constants[index] = false;
 				break;
 			case Blua32ConstantTag.True:
-				constants[index] = { tag };
+				constants[index] = true;
 				break;
 			case Blua32ConstantTag.Number:
-				constants[index] = { tag, value: view.getFloat64(offset + BLUA32_CONSTANT_PAYLOAD_OFFSET, true) };
+				constants[index] = view.getFloat64(offset + BLUA32_CONSTANT_PAYLOAD_OFFSET, true);
 				break;
 			case Blua32ConstantTag.String:
-				constants[index] = {
-					tag,
-					value: decodeString(
-						view.getUint32(offset + BLUA32_CONSTANT_PAYLOAD_OFFSET, true),
-						view.getUint32(offset + BLUA32_CONSTANT_STRING_BYTE_COUNT_OFFSET, true),
-					),
-				};
+				constants[index] = decodeString(
+					view.getUint32(offset + BLUA32_CONSTANT_PAYLOAD_OFFSET, true),
+					view.getUint32(offset + BLUA32_CONSTANT_STRING_BYTE_COUNT_OFFSET, true),
+				);
 				break;
 			default:
 				throw new Error('BLua32 constant tag is invalid.');

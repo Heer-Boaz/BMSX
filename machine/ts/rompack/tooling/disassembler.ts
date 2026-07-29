@@ -9,7 +9,6 @@ import {
 } from './blua32_image';
 import {
 	BLUA32_FUNCTION_RECORD_SIZE,
-	Blua32ConstantTag,
 } from '../../spec/blua32/image_format';
 import {
 	blua32SourceRangeAtPc,
@@ -87,18 +86,15 @@ const formatCount = (value: number): string => (value === 0 ? '*' : value.toStri
 const formatCallArgCount = (value: number): string => (value === 0 ? '*' : decodeCallArgCount(value, 0).toString());
 
 const formatBlua32Value = (constant: Blua32EncodedConstant): string => {
-	switch (constant.tag) {
-		case Blua32ConstantTag.Nil:
+	switch (constant) {
+		case null:
 			return 'nil';
-		case Blua32ConstantTag.False:
+		case false:
 			return 'false';
-		case Blua32ConstantTag.True:
+		case true:
 			return 'true';
-		case Blua32ConstantTag.Number:
-			return formatNumber(constant.value);
-		case Blua32ConstantTag.String:
-			return JSON.stringify(constant.value);
 	}
+	return typeof constant === 'string' ? JSON.stringify(constant) : formatNumber(constant);
 };
 
 const formatSourceConst = (
