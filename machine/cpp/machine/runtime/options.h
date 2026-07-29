@@ -2,7 +2,7 @@
 
 #include "common/primitives.h"
 #include "machine/devices/cartridge/contracts.h"
-#include "machine/model_registry.h"
+#include "spec/bmsx/model.h"
 #include <cstddef>
 #include <span>
 

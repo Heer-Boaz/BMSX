@@ -29,7 +29,7 @@ import {
 	SubscriptionHandle,
 	createSubscriptionHandle,
 } from 'bmsx/platform';
-import { GX_GPU_DISPLAY_ASPECT_HEIGHT, GX_GPU_DISPLAY_ASPECT_WIDTH } from 'bmsx/machine/model_registry';
+import { GX_GPU_DISPLAY_ASPECT_HEIGHT, GX_GPU_DISPLAY_ASPECT_WIDTH } from 'bmsx/spec/bmsx/model';
 import { createBrowserBackend } from 'bmsx/render/backend/browser_factory';
 import { WorkerStreamingAudioService } from './worker_audio';
 import { type GamepadControlHandle, type VideoSurface, type VideoOutput, type OnscreenGamepadHandles, type SurfaceBounds, type ViewportDimensions } from 'bmsx/platform';

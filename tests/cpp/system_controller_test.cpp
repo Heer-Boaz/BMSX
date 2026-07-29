@@ -9,7 +9,7 @@
 #include "machine/machine.h"
 #include "machine/memory/memory.h"
 #include "spec/blua32/memory_access_kind.h"
-#include "machine/model_registry.h"
+#include "spec/bmsx/model.h"
 #include "machine/runtime/input.h"
 #include "machine/runtime/machine_state.h"
 #include "machine/runtime/runtime.h"

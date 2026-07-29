@@ -1,8 +1,8 @@
 #include "audio_output.h"
 
 #include "machine/devices/audio/controller.h"
-#include "machine/model_registry.h"
-#include "machine/runtime/timing/constants.h"
+#include "spec/bmsx/model.h"
+#include "spec/bmsx/timing.h"
 
 namespace bmsx {
 

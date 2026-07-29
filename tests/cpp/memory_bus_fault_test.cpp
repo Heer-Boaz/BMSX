@@ -1,6 +1,6 @@
 #include "spec/bmsx/io.h"
 #include "machine/memory/memory.h"
-#include "machine/model_registry.h"
+#include "spec/bmsx/model.h"
 #include "support/cartridge_fixture.h"
 
 #include <array>

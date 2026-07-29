@@ -3,7 +3,7 @@ import { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { captureRuntimeSaveStateBytes } from '../../machine/ts/machine/runtime/save_state/codec';
 import type { CartridgeSlotMediaPair } from '../../machine/ts/machine/devices/cartridge/contracts';
 import { gxGpuDisplayModeScreenWidth, gxGpuVerticalVisibleLines } from '../../machine/ts/machine/devices/gx/gpu_display';
-import { PSX_MACHINE_SPEC } from '../../machine/ts/machine/model_registry';
+import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { parseRomImage } from '../../machine/ts/rompack/image';
 import { Input } from '../../machine/ts/input/manager';
 import type { GamepadInput } from '../../machine/ts/input/gamepad';

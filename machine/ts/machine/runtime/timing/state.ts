@@ -1,6 +1,6 @@
-import { HZ_SCALE } from './constants';
+import { HZ_SCALE } from '../../../spec/bmsx/timing';
 import { calcCyclesPerFrameScaled } from './index';
-import type { MachineModelSpec } from '../../model_registry';
+import type { MachineModelSpec } from '../../../spec/bmsx/model';
 import {
 	GX_GPU_PCRTC_RESET_ACTIVE_DISPLAY_HALF_LINES,
 	GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED,

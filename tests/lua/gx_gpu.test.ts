@@ -250,7 +250,7 @@ import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_addres
 import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
-import { PSX_MACHINE_SPEC, PSX_GPU_DISPLAY_MODE_PAL_WORD } from '../../machine/ts/machine/model_registry';
+import { PSX_MACHINE_SPEC, PSX_GPU_DISPLAY_MODE_PAL_WORD } from '../../machine/ts/spec/bmsx/model';
 import { executeGxGpuSoftwareVramCommands, renderGxGpuSoftwareFrame } from '../../machine/ts/render/backend/software/gx_gpu';
 import { executeGxGpuSoftwareCommands } from '../../machine/ts/render/backend/software/gx_gpu_commands';
 import { scanoutGxGpuSoftwareVram } from '../../machine/ts/render/backend/software/gx_gpu_scanout';

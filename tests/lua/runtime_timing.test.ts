@@ -44,7 +44,7 @@ import {
 	GxGpuPcrtc,
 	gxGpuPcrtcRegisterAddress,
 } from '../../machine/ts/machine/devices/gx/gpu_pcrtc';
-import { PSX_MACHINE_SPEC } from '../../machine/ts/machine/model_registry';
+import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { runDueRuntimeTimers } from '../../machine/ts/machine/runtime/cpu_executor';
 import type { RuntimeInputSource } from '../../machine/ts/machine/runtime/input';
 import { applyRuntimeMachineState, captureRuntimeMachineState } from '../../machine/ts/machine/runtime/machine_state';

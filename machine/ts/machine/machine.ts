@@ -13,7 +13,7 @@ import { ImgDecController } from './devices/imgdec/controller';
 import { IrqController } from './devices/irq/controller';
 import { SystemController } from './devices/system/controller';
 import { Memory } from './memory/memory';
-import type { MachineModelSpec } from './model_registry';
+import type { MachineModelSpec } from '../spec/bmsx/model';
 import {
 	DEVICE_SERVICE_APU,
 	DEVICE_SERVICE_APU_TRANSFER,

@@ -17,7 +17,7 @@ import {
 	SYS_PRINT_BUFFER_BYTES,
 } from '../../machine/ts/spec/bmsx/io';
 import { Machine } from '../../machine/ts/machine/machine';
-import { PSX_MACHINE_SPEC } from '../../machine/ts/machine/model_registry';
+import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import {
 	GX_GPU_PCRTC_SMODE1_LOW,
 	GX_GPU_PCRTC_SMODE1_SINT,

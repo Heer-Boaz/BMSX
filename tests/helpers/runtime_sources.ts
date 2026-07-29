@@ -11,7 +11,7 @@ import {
 	type RuntimeSourceState,
 } from '../../ide/runtime/sources';
 import type { LuaSourceRegistry } from '../../ide/runtime/source_registry';
-import { PSX_MACHINE_SPEC } from '../../machine/ts/machine/model_registry';
+import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import type { RuntimeInputSource } from '../../machine/ts/machine/runtime/input';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { CART_ROM_HEADER_SIZE } from '../../machine/ts/spec/bmsx/rom_package';

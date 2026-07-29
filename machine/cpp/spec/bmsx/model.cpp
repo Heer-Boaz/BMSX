@@ -1,4 +1,4 @@
-#include "machine/model_registry.h"
+#include "spec/bmsx/model.h"
 
 namespace bmsx {
 

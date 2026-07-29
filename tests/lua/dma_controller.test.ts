@@ -69,7 +69,7 @@ import {
 	DYNAMIC_RAM_BASE,
 	SYSTEM_ROM_BASE,
 } from '../../machine/ts/spec/bmsx/memory_map';
-import { PSX_MACHINE_SPEC } from '../../machine/ts/machine/model_registry';
+import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 import { cartridgeSlots } from '../helpers/cartridge';
 import { linkTestSystemBlua32 } from '../helpers/blua32';

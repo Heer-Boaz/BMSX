@@ -1,4 +1,4 @@
-import { HZ_SCALE } from './constants';
+import { HZ_SCALE } from '../../../spec/bmsx/timing';
 
 export function calcCyclesPerFrameScaled(cpuHz: number, refreshHzScaled: number): number {
 	const cpuRemainder = cpuHz % refreshHzScaled;

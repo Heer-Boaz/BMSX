@@ -13,7 +13,7 @@
 #include "render/shared/bmsx_font.h"
 #include "render/video_presenter.h"
 #include "mem_snapshot.h"
-#include "machine/model_registry.h"
+#include "spec/bmsx/model.h"
 #include "machine/runtime/runtime.h"
 #include "machine/runtime/save_state/codec.h"
 #if BMSX_ENABLE_GLES2

@@ -29,7 +29,7 @@ import {
 	SubscriptionHandle,
 	createSubscriptionHandle,
 } from 'bmsx/platform';
-import { HZ_SCALE } from 'bmsx/machine/runtime/timing/constants';
+import { HZ_SCALE } from 'bmsx/spec/bmsx/timing';
 import { GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED } from 'bmsx/machine/devices/gx/gpu_pcrtc';
 import { HeadlessVideoOutput } from 'bmsx/render/headless/video_output';
 import { SilentAudioService } from '../common/silent_audio';

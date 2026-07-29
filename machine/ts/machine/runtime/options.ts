@@ -1,5 +1,5 @@
 import type { CartridgeSlotMediaPair } from '../devices/cartridge/contracts';
-import type { MachineModelSpec } from '../model_registry';
+import type { MachineModelSpec } from '../../spec/bmsx/model';
 
 export type RuntimeOptions = {
 	systemRomBytes: Uint8Array;

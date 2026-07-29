@@ -3,7 +3,7 @@
 import pc from 'picocolors';
 
 import { SYSTEM_ROM_NAME } from '../../machine/ts/rompack/tooling/system';
-import { PSX_MACHINE_SPEC } from '../../machine/ts/machine/model_registry';
+import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { findExistingDirectory, getParamOrEnv, normalizePathKey, parseArgsVector } from '../tooling/cli_arguments';
 import { createCliUi } from '../tooling/cli_ui';
 import { validateAudioEventReferences } from './audioeventvalidator';

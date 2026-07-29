@@ -3,7 +3,7 @@
 #include "input/manager.h"
 #include "spec/bmsx/cartridge.h"
 #include "machine/devices/gx/gpu_pcrtc.h"
-#include "machine/model_registry.h"
+#include "spec/bmsx/model.h"
 #include "machine/runtime/save_state/codec.h"
 #include "support/boot_rom_fixture.h"
 

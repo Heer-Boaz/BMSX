@@ -12,7 +12,7 @@
 #include "machine/machine.h"
 #include "spec/bmsx/memory_map.h"
 #include "machine/memory/memory.h"
-#include "machine/model_registry.h"
+#include "spec/bmsx/model.h"
 #include "machine/runtime/machine_state.h"
 #include "machine/runtime/runtime.h"
 #include "machine/save_state.h"

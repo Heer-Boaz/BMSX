@@ -266,7 +266,7 @@
 		"machine/ts/common/vector.ts",
 		"machine/ts/common/scratchstack.ts",
 		"machine/ts/common/hash.ts",
-		"machine/ts/machine/model_registry.ts",
+		"machine/ts/spec/bmsx/model.ts",
 		"machine/ts/machine/devices/audio/biquad_filter.ts",
 		"machine/ts/machine/devices/audio/output.ts",
 		"machine/ts/machine/devices/gx/gpu_display.ts",
@@ -418,12 +418,12 @@
 			"reason": "bmsx_rom_boot_header_wire_contract"
 		},
 		{
-			"ts": "machine/ts/machine/model_registry.ts",
+			"ts": "machine/ts/spec/bmsx/model.ts",
 			"cpp": [
-				"machine/cpp/machine/model_registry.h",
-				"machine/cpp/machine/model_registry.cpp"
+				"machine/cpp/spec/bmsx/model.h",
+				"machine/cpp/spec/bmsx/model.cpp"
 			],
-			"reason": "machine_model_registry_hardware_spec_contract"
+			"reason": "machine_model_hardware_spec_contract"
 		},
 		{
 			"ts": "machine/ts/machine/runtime/timing/config.ts",
@@ -449,11 +449,11 @@
 			"reason": "machine_io_register_map_contract"
 		},
 		{
-			"ts": "machine/ts/machine/runtime/timing/constants.ts",
+			"ts": "machine/ts/spec/bmsx/timing.ts",
 			"cpp": [
-				"machine/cpp/machine/runtime/timing/constants.h"
+				"machine/cpp/spec/bmsx/timing.h"
 			],
-			"reason": "runtime_timing_constants_contract"
+			"reason": "machine_timing_scale_contract"
 		},
 		{
 			"ts": "machine/ts/common/hash.ts",
@@ -848,9 +848,9 @@
 			"reason": "runtime_frame_state_shape_contract"
 		},
 		{
-			"ts": "machine/ts/machine/model_registry.ts",
+			"ts": "machine/ts/spec/bmsx/model.ts",
 			"cpp": [
-				"machine/cpp/machine/model_registry.h"
+				"machine/cpp/spec/bmsx/model.h"
 			],
 			"symbols": [
 				"MachineModelSpec",
@@ -1375,6 +1375,18 @@
 			"ts": "machine/ts/spec/bmsx/memory_map.ts",
 			"cpp_headers": [
 				"machine/cpp/spec/bmsx/memory_map.h"
+			]
+		},
+		{
+			"ts": "machine/ts/spec/bmsx/timing.ts",
+			"cpp_headers": [
+				"machine/cpp/spec/bmsx/timing.h"
+			]
+		},
+		{
+			"ts": "machine/ts/spec/bmsx/model.ts",
+			"cpp_headers": [
+				"machine/cpp/spec/bmsx/model.h"
 			]
 		},
 		{

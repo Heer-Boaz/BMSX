@@ -26,7 +26,7 @@ import { GX_GPU_PCRTC_COMPOSITION_WORD_COUNT, GX_GPU_PCRTC_CONFIG_WORD_COUNT } f
 import { GX_GPU_VRAM_BYTE_COUNT } from '../../machine/ts/spec/gx/vram';
 import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT, GX_GTE_PLUS_REGISTER_COUNT } from '../../machine/ts/machine/devices/gx/gte';
 import { INPUT_CONTROLLER_KEY_WORD_COUNT, INPUT_CONTROLLER_PAD_AXIS_COUNT, INPUT_CONTROLLER_PAD_COUNT } from '../../machine/ts/machine/devices/input/contracts';
-import { PSX_GPU_DISPLAY_MODE_PAL_WORD, PSX_MACHINE_SPEC } from '../../machine/ts/machine/model_registry';
+import { PSX_GPU_DISPLAY_MODE_PAL_WORD, PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 
 import type { RuntimeSaveState } from '../../machine/ts/machine/runtime/save_state';
 import {

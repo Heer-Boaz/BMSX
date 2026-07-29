@@ -1,7 +1,7 @@
 import { AudioOutputResampler } from '../../machine/ts/audio/output_resampler';
 import type { AudioController } from '../../machine/ts/machine/devices/audio/controller';
 import type { ApuOutputRing } from '../../machine/ts/machine/devices/audio/output_ring';
-import { HZ_SCALE } from '../../machine/ts/machine/runtime/timing/constants';
+import { HZ_SCALE } from '../../machine/ts/spec/bmsx/timing';
 import type { AudioOutputPuller, AudioService } from '../../machine/ts/platform/platform';
 
 const MUTE_REASON_PAUSE = 0x01;

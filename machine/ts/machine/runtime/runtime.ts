@@ -11,7 +11,7 @@ import { VblankState } from './vblank';
 import { advanceRuntimeTime, CpuExecutionState, MAX_CPU_SLICE_CYCLES, runDueRuntimeTimers } from './cpu_executor';
 import { LuaScratchState } from './lua_scratch';
 import { refreshDeviceTimings } from './timing/config';
-import { HZ_SCALE } from './timing/constants';
+import { HZ_SCALE } from '../../spec/bmsx/timing';
 import type { GxGpuPcrtcTiming } from '../devices/gx/gpu_pcrtc';
 import { Machine } from '../machine';
 import { Memory } from '../memory/memory';

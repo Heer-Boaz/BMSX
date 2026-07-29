@@ -1,4 +1,4 @@
-import { PSX_MACHINE_SPEC } from '../../machine/ts/machine/model_registry';
+import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { cartridgeSlots } from '../helpers/cartridge';

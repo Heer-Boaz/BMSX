@@ -1,7 +1,6 @@
-import { HZ_SCALE } from './runtime/timing/constants';
+import { HZ_SCALE } from './timing';
 
-// Console-model registry: the machine owns fixed PSX-class raster hardware,
-// PS2-class PCRTC presentation aspect, and device throughput/timing parameters.
+// Installed machine-model hardware facts shared by product targets and emulators.
 
 export type PsxGpuVideoStandard = 'pal' | 'ntsc';
 

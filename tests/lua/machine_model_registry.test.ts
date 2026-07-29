@@ -14,8 +14,8 @@ import {
 	PSX_DMA_CART_ROM_BURST_SETUP_CYCLES,
 	PSX_IMGDEC_CYCLES_PER_OUTPUT_WORD,
 	PSX_MACHINE_SPEC,
-} from '../../machine/ts/machine/model_registry';
-import { HZ_SCALE } from '../../machine/ts/machine/runtime/timing/constants';
+} from '../../machine/ts/spec/bmsx/model';
+import { HZ_SCALE } from '../../machine/ts/spec/bmsx/timing';
 
 test('machine registry exposes the psx fixed hardware model', () => {
 	assert.deepEqual(PSX_MACHINE_SPEC, {

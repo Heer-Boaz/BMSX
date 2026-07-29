@@ -8,7 +8,7 @@
 #include "spec/blua32/memory_access_kind.h"
 #include "spec/bmsx/memory_map.h"
 #include "machine/memory/memory.h"
-#include "machine/model_registry.h"
+#include "spec/bmsx/model.h"
 #include "machine/scheduler/device.h"
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"

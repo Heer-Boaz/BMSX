@@ -18,7 +18,7 @@
 
 #include "bmsx_libretro.h"
 #include "platform.h"
-#include "machine/model_registry.h"
+#include "spec/bmsx/model.h"
 #include "machine/devices/gx/gpu_display.h"
 #include "machine/runtime/runtime.h"
 #if BMSX_ENABLE_GLES2

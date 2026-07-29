@@ -5,7 +5,7 @@
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/bus_signals.h"
 #include "machine/memory/memory.h"
-#include "machine/model_registry.h"
+#include "spec/bmsx/model.h"
 #include "machine/scheduler/device.h"
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"

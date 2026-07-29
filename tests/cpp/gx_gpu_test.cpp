@@ -6,7 +6,7 @@
 #include "spec/bmsx/io.h"
 #include "machine/cpu/cpu.h"
 #include "machine/memory/memory.h"
-#include "machine/model_registry.h"
+#include "spec/bmsx/model.h"
 #include "machine/scheduler/device.h"
 #include "render/backend/backend.h"
 #include "render/backend/pass/library.h"

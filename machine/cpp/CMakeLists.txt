@@ -269,7 +269,7 @@ add_library(bmsx_core STATIC
 	machine/devices/irq/save_state.cpp
 	machine/firmware/globals.cpp
 	machine/machine.cpp
-	machine/model_registry.cpp
+	spec/bmsx/model.cpp
 	machine/save_state.cpp
 	machine/scheduler/device.cpp
 	machine/runtime/runtime.cpp

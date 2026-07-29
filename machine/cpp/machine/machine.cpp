@@ -1,6 +1,6 @@
 #include "machine/machine.h"
 
-#include "machine/model_registry.h"
+#include "spec/bmsx/model.h"
 #include <stdexcept>
 
 namespace bmsx {

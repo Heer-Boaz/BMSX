@@ -15,7 +15,7 @@
 #include "machine/memory/bus_signals.h"
 #include "spec/bmsx/memory_map.h"
 #include "machine/memory/memory.h"
-#include "machine/model_registry.h"
+#include "spec/bmsx/model.h"
 #include "machine/scheduler/device.h"
 #include "support/cartridge_fixture.h"
 

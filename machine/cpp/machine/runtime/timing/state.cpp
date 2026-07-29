@@ -1,8 +1,8 @@
 #include "machine/runtime/timing/state.h"
 
 #include "machine/devices/gx/gpu_pcrtc.h"
-#include "machine/model_registry.h"
-#include "machine/runtime/timing/constants.h"
+#include "spec/bmsx/model.h"
+#include "spec/bmsx/timing.h"
 #include "machine/runtime/timing/index.h"
 
 namespace bmsx {
