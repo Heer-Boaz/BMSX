@@ -132,8 +132,6 @@ void renderTestPattern(VideoPresenter& presenter, f64 totalTime) {
 	}
 
 	HostOverlayFrame frame;
-	frame.width = w;
-	frame.height = h;
 	frame.logicalWidth = w;
 	frame.logicalHeight = h;
 	frame.renderWidth = w;

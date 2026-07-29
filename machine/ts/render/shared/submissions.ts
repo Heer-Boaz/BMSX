@@ -61,14 +61,6 @@ export type HostImageRenderSubmission = ImageRenderSubmissionBase & {
 	imgid: string;
 };
 
-export type Host2DKind = 'img' | 'poly' | 'rect' | 'items';
-export type Host2DRef = HostImageRenderSubmission | PolyRenderSubmission | RectRenderSubmission | GlyphRenderSubmission;
-export type Host2DSubmission =
-	| ({ type: 'img' } & HostImageRenderSubmission)
-	| ({ type: 'poly' } & PolyRenderSubmission)
-	| ({ type: 'rect' } & RectRenderSubmission)
-	| ({ type: 'items' } & GlyphRenderSubmission);
-
 export type PolyRenderSubmission = {
 	points: Polygon;
 	z: number;

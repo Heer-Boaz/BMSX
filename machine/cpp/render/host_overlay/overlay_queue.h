@@ -6,8 +6,6 @@
 namespace bmsx {
 
 struct HostOverlayFrame {
-	i32 width = 0;
-	i32 height = 0;
 	i32 logicalWidth = 0;
 	i32 logicalHeight = 0;
 	i32 renderWidth = 0;

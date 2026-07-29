@@ -165,28 +165,54 @@ void drawGlyphImageGLES2(OpenGLES2Backend& backend, const FontGlyph& item, f32 i
 	);
 }
 
+struct GlyphGLES2Context {
+	OpenGLES2Backend& backend;
+	i32 lineHeight;
+	u32 color;
+};
+
+void drawGlyphBackgroundGLES2(
+	GlyphGLES2Context& context,
+	const FontGlyph& item,
+	f32 imageX,
+	f32 imageY
+) {
+	drawQuadGLES2(
+		context.backend,
+		g_gles2.whiteTexture,
+		static_cast<i32>(imageX),
+		static_cast<i32>(imageY),
+		item.advance,
+		context.lineHeight,
+		0.0f,
+		0.0f,
+		1.0f,
+		1.0f,
+		context.color
+	);
+}
+
+void drawGlyphGLES2(
+	GlyphGLES2Context& context,
+	const FontGlyph& item,
+	f32 imageX,
+	f32 imageY
+) {
+	drawGlyphImageGLES2(context.backend, item, imageX, imageY, context.color);
+}
+
 void drawGlyphsGLES2(OpenGLES2Backend& backend, const GlyphRenderSubmission& command) {
+	GlyphGLES2Context context{
+		.backend = backend,
+		.lineHeight = 0,
+		.color = command.background_color,
+	};
 	if (command.has_background_color) {
-		const i32 lineHeight = command.font->lineHeight();
-		forEachBatchBlitGlyph(command, [&](const FontGlyph& item, f32 imageX, f32 imageY, f32, u32) {
-			drawQuadGLES2(
-				backend,
-				g_gles2.whiteTexture,
-				static_cast<i32>(imageX),
-				static_cast<i32>(imageY),
-				item.advance,
-				lineHeight,
-				0.0f,
-				0.0f,
-				1.0f,
-				1.0f,
-				command.background_color
-			);
-		});
+		context.lineHeight = command.font->lineHeight();
+		forEachBatchBlitGlyph(command, context, drawGlyphBackgroundGLES2);
 	}
-	forEachBatchBlitGlyph(command, [&](const FontGlyph& item, f32 imageX, f32 imageY, f32, u32 color) {
-		drawGlyphImageGLES2(backend, item, imageX, imageY, color);
-	});
+	context.color = command.color;
+	forEachBatchBlitGlyph(command, context, drawGlyphGLES2);
 }
 
 } // namespace

@@ -10,7 +10,7 @@ import {
 	type TextureSource,
 } from '../backend/backend';
 import type { TextureParams } from '../backend/texture_params';
-import { createSolidRgba8Pixels, writeColorRgba8Pixels } from '../shared/solid_pixels';
+import { createSolidRgba8Pixels } from '../shared/solid_pixels';
 import type { RenderPassLibrary } from '../backend/pass/library';
 import { registerHeadlessPasses, registerHeadlessPresentPass } from './passes';
 import type { HeadlessVideoOutput } from './video_output';
@@ -82,6 +82,19 @@ function arrayBufferViewBytesPerElement(data: ArrayBufferView): number {
 
 function textureByteLength(width: number, height: number): number {
 	return width * height * 4;
+}
+
+function writeLinearColorRgba8Pixels(pixels: Uint8Array, color: vec4arr): void {
+	const r = color[0] * 255;
+	const g = color[1] * 255;
+	const b = color[2] * 255;
+	const a = color[3] * 255;
+	for (let i = 0; i < pixels.length; i += 4) {
+		pixels[i + 0] = r;
+		pixels[i + 1] = g;
+		pixels[i + 2] = b;
+		pixels[i + 3] = a;
+	}
 }
 
 export class HeadlessGPUBackend implements GPUBackend {
@@ -269,7 +282,7 @@ export class HeadlessGPUBackend implements GPUBackend {
 		const id = this.getTextureId(handle);
 		const pixels = new Uint8Array(textureByteLength(desc.width, desc.height));
 		if (desc.initialClearColor !== undefined) {
-			writeColorRgba8Pixels(pixels, pixels.length, desc.initialClearColor);
+			writeLinearColorRgba8Pixels(pixels, desc.initialClearColor);
 		}
 		this.textures.set(id, { id, kind: 'color', width: desc.width, height: desc.height, pixels, cubemapFaces: null });
 		return handle;
@@ -305,7 +318,7 @@ export class HeadlessGPUBackend implements GPUBackend {
 		if (colorSpec !== undefined && colorSpec.clear !== undefined && colorSpec.tex !== undefined && colorSpec.tex !== null) {
 			const record = this.getTextureRecord(colorSpec.tex);
 			const pixels = this.texturePixels(record);
-			writeColorRgba8Pixels(pixels, pixels.length, colorSpec.clear);
+			writeLinearColorRgba8Pixels(pixels, colorSpec.clear);
 		}
 		this.passEncoderScratch.fbo = null;
 		this.passEncoderScratch.desc = desc;

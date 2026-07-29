@@ -1,6 +1,6 @@
 import { RectRenderKind, TextAlign, TextBaseline, type GlyphRenderSubmission, type RectRenderSubmission } from '../machine/ts/render/shared/submissions';
 import { LAYER_2D_IDE } from '../machine/ts/render/shared/layers';
-import type { Host2DKind, Host2DRef } from '../machine/ts/render/shared/submissions';
+import { Host2DKind, type Host2DRef } from '../machine/ts/render/host_overlay/commands';
 import type { Input } from '../machine/ts/input/manager';
 import type { PlayerInput } from '../machine/ts/input/player';
 import type { Runtime } from '../machine/ts/machine/runtime/runtime';
@@ -404,11 +404,11 @@ export class HostOverlayMenu {
 		this.panelRect.area.top = boxTop;
 		this.panelRect.area.right = left + boxWidth;
 		this.panelRect.area.bottom = boxTop + boxHeight;
-		this.queueCommand('rect', this.panelRect);
+		this.queueCommand(Host2DKind.Rect, this.panelRect);
 		this.titleGlyphs.font = font;
 		this.titleGlyphs.x = left + padding;
 		this.titleGlyphs.y = top;
-		this.queueCommand('items', this.titleGlyphs);
+		this.queueCommand(Host2DKind.Glyphs, this.titleGlyphs);
 		for (let index = 0; index < this.options.length; index += 1) {
 			const y = boxTop + padding + index * lineHeight;
 			if (index === this.selected) {
@@ -416,14 +416,14 @@ export class HostOverlayMenu {
 				this.highlightRect.area.top = y - 2;
 				this.highlightRect.area.right = left + boxWidth;
 				this.highlightRect.area.bottom = y + lineHeight - 2;
-				this.queueCommand('rect', this.highlightRect);
+				this.queueCommand(Host2DKind.Rect, this.highlightRect);
 			}
 			const line = this.optionGlyphs[index];
 			line.font = font;
 			line.x = left + padding;
 			line.y = y;
 			line.color = index === this.selected ? COLOR_TEXT : COLOR_DIM;
-			this.queueCommand('items', line);
+			this.queueCommand(Host2DKind.Glyphs, line);
 		}
 		this.publishRenderCommands();
 	}
@@ -451,12 +451,12 @@ export class HostOverlayMenu {
 			}
 			this.fpsGlyphs.x = presenter.viewportSize.x - 8 - this.fpsTextWidth;
 			this.fpsGlyphs.y = 8;
-			this.queueCommand('items', this.fpsGlyphs);
+			this.queueCommand(Host2DKind.Glyphs, this.fpsGlyphs);
 			queued = true;
 		}
 		if (presenter.show_resource_usage_gizmo) {
 			const runtime = this.runtime;
-			this.queueCommand('rect', this.usagePanelRect);
+			this.queueCommand(Host2DKind.Rect, this.usagePanelRect);
 			this.queueUsageBar(0, runtime.cpuUsageCyclesUsed(), runtime.cpuUsageCyclesGranted(), font);
 			this.queueUsageBar(
 				1,
@@ -490,12 +490,12 @@ export class HostOverlayMenu {
 			pct.item_start = 0;
 			pct.item_end = percentText.length;
 		}
-		this.queueCommand('rect', this.usageBarBackgrounds[index]);
+		this.queueCommand(Host2DKind.Rect, this.usageBarBackgrounds[index]);
 		if (fillWidth > 0) {
-			this.queueCommand('rect', fill);
+			this.queueCommand(Host2DKind.Rect, fill);
 		}
-		this.queueCommand('items', this.usageLabels[index]);
-		this.queueCommand('items', pct);
+		this.queueCommand(Host2DKind.Glyphs, this.usageLabels[index]);
+		this.queueCommand(Host2DKind.Glyphs, pct);
 	}
 
 	private toggle(): void {

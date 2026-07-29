@@ -143,22 +143,55 @@ void drawGlyphImageSoftware(SoftwareBackend& backend, const HostSystemAtlas& atl
 	);
 }
 
+struct GlyphSoftwareContext {
+	SoftwareBackend& backend;
+	i32 lineHeight;
+	u32 color;
+};
+
+void drawGlyphBackgroundSoftware(
+	GlyphSoftwareContext& context,
+	const FontGlyph& item,
+	f32 imageX,
+	f32 imageY
+) {
+	context.backend.fillRect(
+		static_cast<i32>(imageX),
+		static_cast<i32>(imageY),
+		item.advance,
+		context.lineHeight,
+		context.color
+	);
+}
+
+void drawGlyphSoftware(
+	GlyphSoftwareContext& context,
+	const FontGlyph& item,
+	f32 imageX,
+	f32 imageY
+) {
+	drawGlyphImageSoftware(
+		context.backend,
+		HOST_SYSTEM_ATLAS,
+		item,
+		imageX,
+		imageY,
+		context.color
+	);
+}
+
 void drawGlyphsSoftware(SoftwareBackend& backend, const GlyphRenderSubmission& command) {
+	GlyphSoftwareContext context{
+		.backend = backend,
+		.lineHeight = 0,
+		.color = command.background_color,
+	};
 	if (command.has_background_color) {
-		const i32 lineHeight = command.font->lineHeight();
-		forEachBatchBlitGlyph(command, [&](const FontGlyph& item, f32 imageX, f32 imageY, f32, u32) {
-			backend.fillRect(
-				static_cast<i32>(imageX),
-				static_cast<i32>(imageY),
-				item.advance,
-				lineHeight,
-				command.background_color
-			);
-		});
+		context.lineHeight = command.font->lineHeight();
+		forEachBatchBlitGlyph(command, context, drawGlyphBackgroundSoftware);
 	}
-	forEachBatchBlitGlyph(command, [&](const FontGlyph& item, f32 imageX, f32 imageY, f32, u32 color) {
-		drawGlyphImageSoftware(backend, HOST_SYSTEM_ATLAS, item, imageX, imageY, color);
-	});
+	context.color = command.color;
+	forEachBatchBlitGlyph(command, context, drawGlyphSoftware);
 }
 
 } // namespace

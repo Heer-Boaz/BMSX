@@ -1,9 +1,8 @@
 import type { RenderPassLibrary } from '../backend/pass/library';
-import type { GxGpuPipelineState, RenderPassStateRegistry } from '../backend/backend';
-import type { Host2DSubmission } from '../shared/submissions';
+import type { GxGpuPipelineState, HostOverlayPipelineState, RenderPassStateRegistry } from '../backend/backend';
 import type { HeadlessPresentedFrameBuffer, HeadlessVideoOutput } from './video_output';
 import type { HostMenuPipelineState } from '../backend/backend';
-import { renderHeadlessHost2DEntry, renderHeadlessHost2DSubmission } from './host_2d';
+import { renderHeadlessHost2DEntry } from './host_2d';
 import { renderGxGpuSoftwareFrame } from '../backend/software/gx_gpu';
 import { applyHeadlessDeviceQuantize } from '../post/device_quantize/headless/pipeline';
 import { DeviceQuantizeMode } from '../post/device_quantize/mode';
@@ -89,9 +88,9 @@ export function drawHeadlessHostMenuLayer(frame: HostMenuPipelineState): void {
 	}
 }
 
-export function drawHeadlessHostOverlayFrame(commands: readonly Host2DSubmission[]): void {
-	for (let index = 0; index < commands.length; index += 1) {
-		renderHeadlessHost2DSubmission(headlessCompositePixels, headlessFrameWidth, headlessFrameHeight, commands[index]);
+export function drawHeadlessHostOverlayFrame(frame: HostOverlayPipelineState): void {
+	for (let index = 0; index < frame.commandCount; index += 1) {
+		renderHeadlessHost2DEntry(headlessCompositePixels, headlessFrameWidth, headlessFrameHeight, frame.commandKinds[index], frame.commandRefs[index]);
 	}
 }
 

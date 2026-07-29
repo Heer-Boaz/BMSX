@@ -189,8 +189,8 @@ export function registerHostOverlayPassesWebGPU(registry: RenderPassLibrary): vo
 		exec: (backend, _fbo, state: RenderPassStateRegistry['host_overlay']) => {
 			const stream = runtime.stream;
 			stream.reset();
-			for (let index = 0; index < state.commands.length; index += 1) {
-				stream.appendSubmission(state.commands[index]);
+			for (let index = 0; index < state.commandCount; index += 1) {
+				stream.appendEntry(state.commandKinds[index], state.commandRefs[index]);
 			}
 			renderStream(backend as WebGPUBackend, runtime, state as HostOverlayPipelineState);
 		},

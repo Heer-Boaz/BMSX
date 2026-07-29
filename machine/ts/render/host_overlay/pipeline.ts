@@ -1,8 +1,8 @@
 import type { HostMenuPipelineState, HostOverlayPipelineState, RenderGraphPassContext } from '../backend/backend';
 import { consumeHostMenuFrame, consumeOverlayFrame } from './overlay_queue';
 
-const EMPTY_HOST_MENU_KINDS = [];
-const EMPTY_HOST_MENU_REFS = [];
+const EMPTY_HOST_2D_KINDS = [];
+const EMPTY_HOST_2D_REFS = [];
 
 export function createHostOverlayState(): HostOverlayPipelineState {
 	return {
@@ -12,20 +12,23 @@ export function createHostOverlayState(): HostOverlayPipelineState {
 		overlayHeight: 0,
 		time: 0,
 		delta: 0,
-		commands: [],
+		commandKinds: EMPTY_HOST_2D_KINDS,
+		commandRefs: EMPTY_HOST_2D_REFS,
+		commandCount: 0,
 	};
 }
 
 export function writeHostOverlayState(ctx: RenderGraphPassContext, state: HostOverlayPipelineState): void {
-	const presenter = ctx.presenter;
 	const frame = consumeOverlayFrame();
-	state.width = presenter.offscreenCanvasSize.x;
-	state.height = presenter.offscreenCanvasSize.y;
-	state.overlayWidth = frame.width;
-	state.overlayHeight = frame.height;
+	state.width = frame.renderWidth;
+	state.height = frame.renderHeight;
+	state.overlayWidth = frame.logicalWidth;
+	state.overlayHeight = frame.logicalHeight;
 	state.time = ctx.time;
 	state.delta = ctx.delta;
-	state.commands = frame.commands;
+	state.commandKinds = frame.commandKinds;
+	state.commandRefs = frame.commandRefs;
+	state.commandCount = frame.commandCount;
 }
 
 export function createHostMenuState(): HostMenuPipelineState {
@@ -36,8 +39,8 @@ export function createHostMenuState(): HostMenuPipelineState {
 		overlayHeight: 0,
 		time: 0,
 		delta: 0,
-		commandKinds: EMPTY_HOST_MENU_KINDS,
-		commandRefs: EMPTY_HOST_MENU_REFS,
+		commandKinds: EMPTY_HOST_2D_KINDS,
+		commandRefs: EMPTY_HOST_2D_REFS,
 		commandCount: 0,
 	};
 }

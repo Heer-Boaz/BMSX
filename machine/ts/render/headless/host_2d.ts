@@ -3,11 +3,12 @@ import {
 	hostSystemAtlasImage,
 } from '../host_overlay/atlas';
 import { forEachBatchBlitGlyph } from '../shared/glyph_runs';
+import {
+	Host2DKind,
+	type Host2DRef,
+} from '../host_overlay/commands';
 import type {
 	GlyphRenderSubmission,
-	Host2DKind,
-	Host2DRef,
-	Host2DSubmission,
 	HostImageRenderSubmission,
 	PolyRenderSubmission,
 	RectRenderSubmission,
@@ -37,35 +38,18 @@ const headlessGlyphContext: HeadlessGlyphContext = {
 	lineHeight: 0,
 };
 
-export function renderHeadlessHost2DSubmission(target: Uint8Array, width: number, height: number, command: Host2DSubmission): void {
-	switch (command.type) {
-		case 'rect':
-			drawRect(target, width, height, command);
-			return;
-		case 'items':
-			drawBatchBlit(target, width, height, command);
-			return;
-		case 'img':
-			drawImage(target, width, height, command);
-			return;
-		case 'poly':
-			drawPoly(target, width, height, command);
-			return;
-	}
-}
-
 export function renderHeadlessHost2DEntry(target: Uint8Array, width: number, height: number, kind: Host2DKind, item: Host2DRef): void {
 	switch (kind) {
-		case 'rect':
+		case Host2DKind.Rect:
 			drawRect(target, width, height, item as RectRenderSubmission);
 			return;
-		case 'items':
+		case Host2DKind.Glyphs:
 			drawBatchBlit(target, width, height, item as GlyphRenderSubmission);
 			return;
-		case 'img':
+		case Host2DKind.Img:
 			drawImage(target, width, height, item as HostImageRenderSubmission);
 			return;
-		case 'poly':
+		case Host2DKind.Poly:
 			drawPoly(target, width, height, item as PolyRenderSubmission);
 			return;
 	}

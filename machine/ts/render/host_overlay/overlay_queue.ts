@@ -1,13 +1,13 @@
-import type { Host2DKind, Host2DRef, Host2DSubmission } from '../shared/submissions';
+import type { Host2DKind, Host2DRef } from './commands';
 
 export type HostOverlayFrame = {
-	width: number;
-	height: number;
 	logicalWidth: number;
 	logicalHeight: number;
 	renderWidth: number;
 	renderHeight: number;
-	commands: Host2DSubmission[];
+	commandKinds: readonly Host2DKind[];
+	commandRefs: readonly Host2DRef[];
+	commandCount: number;
 };
 
 export type HostMenuFrame = {

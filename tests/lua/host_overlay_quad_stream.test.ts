@@ -10,12 +10,13 @@ import { HOST_SYSTEM_ATLAS } from '../../machine/ts/render/host_overlay/atlas';
 import { Font } from '../../machine/ts/render/shared/bmsx_font';
 import { LAYER_2D_IDE } from '../../machine/ts/render/shared/layers';
 import {
+	Host2DKind,
+	type Host2DRef,
+} from '../../machine/ts/render/host_overlay/commands';
+import {
 	RectRenderKind,
 	TextAlign,
 	TextBaseline,
-	type Host2DKind,
-	type Host2DRef,
-	type Host2DSubmission,
 } from '../../machine/ts/render/shared/submissions';
 import {
 	clearHostMenuFrame,
@@ -26,16 +27,15 @@ import {
 
 test('host overlay quad stream retains ordered solid and atlas instances', () => {
 	const stream = new HostOverlayQuadStream();
-	const commands: Host2DSubmission[] = [
+	const commandKinds: Host2DKind[] = [Host2DKind.Rect, Host2DKind.Img];
+	const commands: Host2DRef[] = [
 		{
-			type: 'rect',
 			kind: RectRenderKind.Fill,
 			area: { left: 12, top: 8, right: 4, bottom: 2, z: 0 },
 			color: 0x80402010,
 			layer: LAYER_2D_IDE,
 		},
 		{
-			type: 'img',
 			imgid: 'copy',
 			pos: { x: 20, y: 30, z: 0 },
 			scale: { x: 2, y: 3 },
@@ -47,7 +47,7 @@ test('host overlay quad stream retains ordered solid and atlas instances', () =>
 		},
 	];
 	for (let index = 0; index < commands.length; index += 1) {
-		stream.appendSubmission(commands[index]);
+		stream.appendEntry(commandKinds[index], commands[index]);
 	}
 
 	assert.equal(stream.count, 2);
@@ -61,7 +61,7 @@ test('host overlay quad stream retains ordered solid and atlas instances', () =>
 	const retainedFloats = stream.floatData;
 	const retainedKinds = stream.textureKinds;
 	stream.reset();
-	stream.appendSubmission(commands[0]);
+	stream.appendEntry(commandKinds[0], commands[0]);
 	assert.equal(stream.floatData, retainedFloats);
 	assert.equal(stream.textureKinds, retainedKinds);
 	assert.equal(stream.count, 1);
@@ -70,8 +70,7 @@ test('host overlay quad stream retains ordered solid and atlas instances', () =>
 test('host overlay quad stream emits glyph backgrounds before atlas glyphs with atlas UVs', () => {
 	const stream = new HostOverlayQuadStream();
 	const font = new Font();
-	stream.appendSubmission({
-		type: 'items',
+	stream.appendEntry(Host2DKind.Glyphs, {
 		x: 10,
 		y: 20,
 		z: 0,
@@ -120,7 +119,7 @@ test('host menu queue retains producer arrays across the publication boundary', 
 		color: 0xffffffff,
 		layer: LAYER_2D_IDE,
 	};
-	const commandKinds: Host2DKind[] = ['rect'];
+	const commandKinds: Host2DKind[] = [Host2DKind.Rect];
 	const commandRefs: Host2DRef[] = [command];
 	const frame = { commandKinds, commandRefs, commandCount: 1 };
 	publishHostMenuFrame(frame);

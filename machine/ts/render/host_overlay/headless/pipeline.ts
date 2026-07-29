@@ -12,7 +12,7 @@ export function registerHostOverlayPass_Headless(registry: RenderPassLibrary): v
 		graph: { writes: ['frame_color'], writeState: writeHostOverlayState },
 		shouldExecute: () => hasPendingOverlayFrame(),
 		exec: (_backend, _fbo, state) => {
-			drawHeadlessHostOverlayFrame(state.commands);
+			drawHeadlessHostOverlayFrame(state);
 		},
 	});
 }

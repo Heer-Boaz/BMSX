@@ -6,8 +6,12 @@
 
 namespace bmsx {
 
-template<typename Fn>
-void forEachBatchBlitGlyph(const GlyphRenderSubmission& submission, Fn&& fn) {
+template<typename Context, typename Fn>
+void forEachBatchBlitGlyph(
+	const GlyphRenderSubmission& submission,
+	Context& context,
+	Fn&& fn
+) {
 	BFont& font = *submission.font;
 	const i32 start = submission.item_start;
 	const i32 end = submission.item_end;
@@ -37,7 +41,7 @@ void forEachBatchBlitGlyph(const GlyphRenderSubmission& submission, Fn&& fn) {
 				continue;
 			}
 			const FontGlyph& item = font.getGlyph(codepoint);
-			fn(item, x, y, submission.z, submission.color);
+			fn(context, item, x, y);
 			x += static_cast<f32>(item.advance);
 			itemIndex += 1;
 		}

@@ -1,7 +1,7 @@
 import type { vec2, vec4arr } from '../../common/vector';
 import type { GxGpu } from '../../machine/devices/gx/gpu';
 import type { GxGpuDeviceOutput } from '../../machine/devices/gx/device_output';
-import type { Host2DKind, Host2DRef, Host2DSubmission } from '../shared/submissions';
+import type { Host2DKind, Host2DRef } from '../host_overlay/commands';
 import type { VideoPresenter } from '../video_presenter';
 import type { DeviceQuantizeLuts } from '../post/device_quantize/lut';
 import type { TextureParams } from './texture_params';
@@ -291,7 +291,9 @@ export type Host2DPipelineState = {
 };
 
 export type HostOverlayPipelineState = Host2DPipelineState & {
-	commands: Host2DSubmission[];
+	commandKinds: readonly Host2DKind[];
+	commandRefs: readonly Host2DRef[];
+	commandCount: number;
 };
 
 export type HostMenuPipelineState = Host2DPipelineState & {

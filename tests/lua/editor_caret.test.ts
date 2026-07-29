@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { consumeOverlayFrame } from '../../machine/ts/render/host_overlay/overlay_queue';
-import type { Host2DSubmission } from '../../machine/ts/render/shared/submissions';
+import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
+import { consumeOverlayFrame, type HostOverlayFrame } from '../../machine/ts/render/host_overlay/overlay_queue';
+import type { GlyphRenderSubmission } from '../../machine/ts/render/shared/submissions';
 import * as constants from '../../ide/common/constants';
 import { drawCursor } from '../../ide/editor/render/caret';
 import { EditorFont } from '../../ide/editor/ui/view/font';
@@ -10,7 +11,7 @@ import { api } from '../../ide/runtime/overlay_api';
 import { OverlayRenderer } from '../../ide/runtime/overlay_renderer';
 import { invertThemeToken, resolveThemeTokenColor } from '../../ide/theme/tokens';
 
-function renderActiveCursor(baseColor: number): readonly Host2DSubmission[] {
+function renderActiveCursor(baseColor: number): HostOverlayFrame {
 	const renderer = new OverlayRenderer();
 	renderer.beginFrame({
 		offscreenCanvasSize: { x: 64, y: 32 },
@@ -28,7 +29,7 @@ function renderActiveCursor(baseColor: number): readonly Host2DSubmission[] {
 		baseColor,
 	}, 0, true);
 	renderer.endFrame();
-	return consumeOverlayFrame().commands;
+	return consumeOverlayFrame();
 }
 
 test('active code caret redraws the underlying glyph with its inverse color', (t) => {
@@ -43,19 +44,21 @@ test('active code caret redraws the underlying glyph with its inverse color', (t
 	editorViewState.font = new EditorFont('msx');
 	const darkBaseColor = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_FUNCTION_NAME;
 	const lightBaseColor = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_COMMENT;
-	const darkCommands = renderActiveCursor(darkBaseColor);
-	const lightCommands = renderActiveCursor(lightBaseColor);
+	const darkFrame = renderActiveCursor(darkBaseColor);
+	const lightFrame = renderActiveCursor(lightBaseColor);
+	const darkGlyphs = darkFrame.commandRefs[1] as GlyphRenderSubmission;
+	const lightGlyphs = lightFrame.commandRefs[1] as GlyphRenderSubmission;
 
-	assert.equal(darkCommands.length, 2);
-	assert.equal(darkCommands[0].type, 'rect');
-	assert.equal(darkCommands[1].type, 'items');
-	assert.equal(darkCommands[1].items, 'A');
-	assert.equal(darkCommands[1].color, resolveThemeTokenColor(invertThemeToken(darkBaseColor)));
+	assert.equal(darkFrame.commandCount, 2);
+	assert.equal(darkFrame.commandKinds[0], Host2DKind.Rect);
+	assert.equal(darkFrame.commandKinds[1], Host2DKind.Glyphs);
+	assert.equal(darkGlyphs.items, 'A');
+	assert.equal(darkGlyphs.color, resolveThemeTokenColor(invertThemeToken(darkBaseColor)));
 
-	assert.equal(lightCommands.length, 2);
-	assert.equal(lightCommands[0].type, 'rect');
-	assert.equal(lightCommands[1].type, 'items');
-	assert.equal(lightCommands[1].items, 'A');
-	assert.equal(lightCommands[1].color, resolveThemeTokenColor(invertThemeToken(lightBaseColor)));
-	assert.notEqual(darkCommands[1].color, lightCommands[1].color);
+	assert.equal(lightFrame.commandCount, 2);
+	assert.equal(lightFrame.commandKinds[0], Host2DKind.Rect);
+	assert.equal(lightFrame.commandKinds[1], Host2DKind.Glyphs);
+	assert.equal(lightGlyphs.items, 'A');
+	assert.equal(lightGlyphs.color, resolveThemeTokenColor(invertThemeToken(lightBaseColor)));
+	assert.notEqual(darkGlyphs.color, lightGlyphs.color);
 });

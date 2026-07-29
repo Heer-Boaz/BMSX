@@ -5,11 +5,12 @@ import {
 import { forEachBatchBlitGlyph } from '../shared/glyph_runs';
 import type { FontGlyph } from '../shared/bitmap_font';
 import {
+	Host2DKind,
+	type Host2DRef,
+} from './commands';
+import {
 	RectRenderKind,
 	type GlyphRenderSubmission,
-	type Host2DKind,
-	type Host2DRef,
-	type Host2DSubmission,
 	type HostImageRenderSubmission,
 	type PolyRenderSubmission,
 	type RectRenderSubmission,
@@ -38,35 +39,18 @@ export class HostOverlayQuadStream {
 		this.count = 0;
 	}
 
-	public appendSubmission(command: Host2DSubmission): void {
-		switch (command.type) {
-			case 'rect':
-				this.appendRect(command);
-				return;
-			case 'img':
-				this.appendImage(command);
-				return;
-			case 'items':
-				this.appendGlyphRun(command);
-				return;
-			case 'poly':
-				this.appendPoly(command);
-				return;
-		}
-	}
-
 	public appendEntry(kind: Host2DKind, command: Host2DRef): void {
 		switch (kind) {
-			case 'rect':
+			case Host2DKind.Rect:
 				this.appendRect(command as RectRenderSubmission);
 				return;
-			case 'img':
+			case Host2DKind.Img:
 				this.appendImage(command as HostImageRenderSubmission);
 				return;
-			case 'items':
+			case Host2DKind.Glyphs:
 				this.appendGlyphRun(command as GlyphRenderSubmission);
 				return;
-			case 'poly':
+			case Host2DKind.Poly:
 				this.appendPoly(command as PolyRenderSubmission);
 				return;
 		}

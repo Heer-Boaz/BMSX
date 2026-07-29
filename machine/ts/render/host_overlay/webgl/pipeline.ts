@@ -151,8 +151,8 @@ function renderStream(backend: WebGLBackend, state: HostOverlayRuntime, passStat
 function renderOverlay(backend: WebGLBackend, state: HostOverlayRuntime, passState: HostOverlayPipelineState): void {
 	const stream = state.stream;
 	stream.reset();
-	for (let index = 0; index < passState.commands.length; index += 1) {
-		stream.appendSubmission(passState.commands[index]);
+	for (let index = 0; index < passState.commandCount; index += 1) {
+		stream.appendEntry(passState.commandKinds[index], passState.commandRefs[index]);
 	}
 	renderStream(backend, state, passState);
 }

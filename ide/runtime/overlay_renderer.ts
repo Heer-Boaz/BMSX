@@ -1,29 +1,34 @@
 import type { BFont } from '../../machine/ts/render/shared/bitmap_font';
-import { RectRenderKind, TextAlign, TextBaseline, type Host2DSubmission, type color } from '../../machine/ts/render/shared/submissions';
+import { Host2DKind, type Host2DRef } from '../../machine/ts/render/host_overlay/commands';
+import {
+	RectRenderKind,
+	TextAlign,
+	TextBaseline,
+	type GlyphRenderSubmission,
+	type HostImageRenderSubmission,
+	type RectRenderSubmission,
+	type color,
+} from '../../machine/ts/render/shared/submissions';
 import { LAYER_2D_IDE, type Layer2D } from '../../machine/ts/render/shared/layers';
 import { clearOverlayFrame, publishOverlayFrame, type HostOverlayFrame } from '../../machine/ts/render/host_overlay/overlay_queue';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import type { Viewport } from '../common/viewport';
 
-export type RenderCommand = Host2DSubmission;
-type RectSubmission = Extract<Host2DSubmission, { type: 'rect' }>;
-type ImgSubmission = Extract<Host2DSubmission, { type: 'img' }>;
-type GlyphSubmission = Extract<Host2DSubmission, { type: 'items' }>;
-
 type OverlayCommandBuffer = {
-	commands: RenderCommand[];
+	commandKinds: Host2DKind[];
+	commandRefs: Host2DRef[];
+	commandCount: number;
 	frame: HostOverlayFrame;
-	rectPool: RectSubmission[];
-	imagePool: ImgSubmission[];
-	itemPool: GlyphSubmission[];
+	rectPool: RectRenderSubmission[];
+	imagePool: HostImageRenderSubmission[];
+	itemPool: GlyphRenderSubmission[];
 	rectCount: number;
 	imageCount: number;
 	itemCount: number;
 };
 
-function createRectSubmission(): RectSubmission {
+function createRectSubmission(): RectRenderSubmission {
 	return {
-		type: 'rect',
 		kind: RectRenderKind.Fill,
 		area: { left: 0, top: 0, right: 0, bottom: 0, z: 0 },
 		color: 0xffffffff,
@@ -31,9 +36,8 @@ function createRectSubmission(): RectSubmission {
 	};
 }
 
-function createImageSubmission(): ImgSubmission {
+function createImageSubmission(): HostImageRenderSubmission {
 	return {
-		type: 'img',
 		imgid: '',
 		pos: { x: 0, y: 0, z: 0 },
 		scale: { x: 1, y: 1 },
@@ -45,9 +49,8 @@ function createImageSubmission(): ImgSubmission {
 	};
 }
 
-function createGlyphSubmission(): GlyphSubmission {
+function createGlyphSubmission(): GlyphRenderSubmission {
 	return {
-		type: 'items',
 		items: '',
 		x: 0,
 		y: 0,
@@ -67,17 +70,20 @@ function createGlyphSubmission(): GlyphSubmission {
 }
 
 function createOverlayCommandBuffer(): OverlayCommandBuffer {
-	const commands: RenderCommand[] = [];
+	const commandKinds: Host2DKind[] = [];
+	const commandRefs: Host2DRef[] = [];
 	return {
-		commands,
+		commandKinds,
+		commandRefs,
+		commandCount: 0,
 		frame: {
-			width: 0,
-			height: 0,
 			logicalWidth: 0,
 			logicalHeight: 0,
 			renderWidth: 0,
 			renderHeight: 0,
-			commands,
+			commandKinds,
+			commandRefs,
+			commandCount: 0,
 		},
 		rectPool: [],
 		imagePool: [],
@@ -124,7 +130,7 @@ export class OverlayRenderer {
 
 	public beginFrame(presenter: VideoPresenter): void {
 		const buffer = this.activeBuffer;
-		buffer.commands.length = 0;
+		buffer.commandCount = 0;
 		buffer.rectCount = 0;
 		buffer.imageCount = 0;
 		buffer.itemCount = 0;
@@ -149,7 +155,7 @@ export class OverlayRenderer {
 		area.z = z;
 		submission.color = color;
 		submission.layer = layer;
-		this.activeBuffer.commands.push(submission);
+		this.queueCommand(Host2DKind.Rect, submission);
 	}
 
 	public strokeRect(left: number, top: number, right: number, bottom: number, z: number, color: color, layer: Layer2D): void {
@@ -163,7 +169,7 @@ export class OverlayRenderer {
 		area.z = z;
 		submission.color = color;
 		submission.layer = layer;
-		this.activeBuffer.commands.push(submission);
+		this.queueCommand(Host2DKind.Rect, submission);
 	}
 
 	public spriteColorized(imgid: string, x: number, y: number, z: number, colorize: color, layer: Layer2D): void {
@@ -183,7 +189,7 @@ export class OverlayRenderer {
 		submission.ambient_affected = false;
 		submission.ambient_factor = 1;
 		submission.layer = layer;
-		this.activeBuffer.commands.push(submission);
+		this.queueCommand(Host2DKind.Img, submission);
 	}
 
 	public itemRun(items: string | string[], itemStart: number, itemEnd: number, x: number, y: number, z: number, font: BFont, color: color, layer: Layer2D): void {
@@ -203,10 +209,18 @@ export class OverlayRenderer {
 		submission.align = TextAlign.Start;
 		submission.baseline = TextBaseline.Alphabetic;
 		submission.layer = layer;
-		this.activeBuffer.commands.push(submission);
+		this.queueCommand(Host2DKind.Glyphs, submission);
 	}
 
-	private nextRectSubmission(): RectSubmission {
+	private queueCommand(kind: Host2DKind, ref: Host2DRef): void {
+		const buffer = this.activeBuffer;
+		const index = buffer.commandCount;
+		buffer.commandKinds[index] = kind;
+		buffer.commandRefs[index] = ref;
+		buffer.commandCount = index + 1;
+	}
+
+	private nextRectSubmission(): RectRenderSubmission {
 		const buffer = this.activeBuffer;
 		const index = buffer.rectCount;
 		buffer.rectCount = index + 1;
@@ -218,7 +232,7 @@ export class OverlayRenderer {
 		return submission;
 	}
 
-	private nextImageSubmission(): ImgSubmission {
+	private nextImageSubmission(): HostImageRenderSubmission {
 		const buffer = this.activeBuffer;
 		const index = buffer.imageCount;
 		buffer.imageCount = index + 1;
@@ -230,7 +244,7 @@ export class OverlayRenderer {
 		return submission;
 	}
 
-	private nextGlyphSubmission(): GlyphSubmission {
+	private nextGlyphSubmission(): GlyphRenderSubmission {
 		const buffer = this.activeBuffer;
 		const index = buffer.itemCount;
 		buffer.itemCount = index + 1;
@@ -244,26 +258,25 @@ export class OverlayRenderer {
 
 	public endFrame(): void {
 		const publishedBuffer = this.activeBuffer;
-		if (publishedBuffer.commands.length === 0) {
+		if (publishedBuffer.commandCount === 0) {
 			clearOverlayFrame();
 			return;
 		}
 		this.activeBuffer = this.standbyBuffer;
 		this.standbyBuffer = publishedBuffer;
 		const frame = publishedBuffer.frame;
-		frame.width = this.frameRenderWidth;
-		frame.height = this.frameRenderHeight;
 		frame.logicalWidth = this.frameLogicalWidth;
 		frame.logicalHeight = this.frameLogicalHeight;
 		frame.renderWidth = this.frameRenderWidth;
 		frame.renderHeight = this.frameRenderHeight;
+		frame.commandCount = publishedBuffer.commandCount;
 		publishOverlayFrame(frame);
 	}
 
 	public abandonFrame(): void {
 		this.drawFramePending = false;
 		const buffer = this.activeBuffer;
-		buffer.commands.length = 0;
+		buffer.commandCount = 0;
 		buffer.rectCount = 0;
 		buffer.imageCount = 0;
 		buffer.itemCount = 0;
