@@ -5,5 +5,9 @@ export function luaFloorDivide(left: number, right: number): number {
 }
 
 export function luaModulo(left: number, right: number): number {
-	return left - luaFloorDivide(left, right) * right;
+	let remainder = left % right;
+	if (remainder > 0 ? right < 0 : remainder < 0 && right > 0) {
+		remainder += right;
+	}
+	return remainder;
 }

@@ -11,7 +11,11 @@ inline double luaFloorDivide(double left, double right) {
 }
 
 inline double luaModulo(double left, double right) {
-	return left - luaFloorDivide(left, right) * right;
+	double remainder = std::fmod(left, right);
+	if (remainder > 0.0 ? right < 0.0 : remainder < 0.0 && right > 0.0) {
+		remainder += right;
+	}
+	return remainder;
 }
 
 } // namespace bmsx
