@@ -61,7 +61,7 @@ import {
 	type ModuleCompileInfo,
 	type ProgramModule,
 } from './compiler/passes/module_contract';
-import { extractAssignmentPath, extractTableKeyFromExpression } from './compiler/passes/expression_paths';
+import { extractAssignmentPath } from './compiler/passes/expression_paths';
 import { appendModuleExportPathKey } from './compiler/passes/module_names';
 import { collectStaticStorageDeclarations, type StaticStorageDeclaration } from './compiler/passes/static_storage';
 import { collectStaticFunctionExports } from './compiler/passes/static_functions';
@@ -85,6 +85,7 @@ import { ValueKindFlowAnalyzer, type SymbolFlowState } from './compiler/compile_
 import { evaluateCompileTimeNumberBinaryOperator } from './compiler/compile_time_number';
 import { SYSTEM_ROM_BOOT_PRIMITIVE_NAMES, SYSTEM_ROM_BOOT_SYMBOL_NAMES, SYSTEM_ROM_BOOT_SYMBOL_NAME_SET, SYSTEM_ROM_VECTOR_HANDLER_NAME_SET } from './compiler/system_boot_symbols';
 import { LuaSyntaxError } from './errors';
+import { stringLiteralValue } from './syntax/literals';
 import { Decl } from './semantic/model';
 import {
 	IMPLICIT_SELF_SYMBOL_HANDLE,
@@ -2236,8 +2237,8 @@ class FunctionBuilder {
 		}
 		const key = isMemberExpression
 			? (expression as LuaMemberExpression).identifier
-			: extractTableKeyFromExpression((expression as LuaIndexExpression).index);
-		if (!key) {
+			: stringLiteralValue((expression as LuaIndexExpression).index);
+		if (key == null) {
 			return;
 		}
 		const exportPathKey = appendModuleExportPathKey(baseBinding.exportPathKey, key);

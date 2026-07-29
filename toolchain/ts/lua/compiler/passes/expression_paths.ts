@@ -6,22 +6,11 @@ import {
 	type LuaIdentifierExpression,
 	type LuaIndexExpression,
 	type LuaMemberExpression,
-	type LuaStringLiteralExpression,
 	type LuaTableConstructorExpression,
 	type LuaTableExpressionField,
 	type LuaTableIdentifierField,
 } from '../../syntax/ast';
-
-export const extractTableKeyFromExpression = (expression: LuaExpression): string | null => {
-	switch (expression.kind) {
-		case LuaSyntaxKind.StringLiteralExpression:
-			return (expression as LuaStringLiteralExpression).value;
-		case LuaSyntaxKind.IdentifierExpression:
-			return (expression as LuaIdentifierExpression).name;
-		default:
-			return null;
-	}
-};
+import { stringLiteralValue } from '../../syntax/literals';
 
 type NamedTableField = LuaTableIdentifierField | LuaTableExpressionField;
 
@@ -36,8 +25,8 @@ export const visitNamedTableFields = (
 		}
 		const key = field.kind === LuaTableFieldKind.IdentifierKey
 			? field.name
-			: extractTableKeyFromExpression(field.key);
-		if (!key) {
+			: stringLiteralValue(field.key);
+		if (key == null) {
 			continue;
 		}
 		visit(key, field.value, field);
@@ -63,8 +52,8 @@ export const extractAssignmentPath = (expression: LuaAssignableExpression): stri
 			if (!basePath) {
 				return null;
 			}
-			const key = extractTableKeyFromExpression(indexExpr.index);
-			if (!key) {
+			const key = stringLiteralValue(indexExpr.index);
+			if (key == null) {
 				return null;
 			}
 			basePath.push(key);

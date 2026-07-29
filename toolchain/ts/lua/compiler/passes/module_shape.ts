@@ -11,7 +11,8 @@ import {
 	type LuaMemberExpression,
 	type LuaTableConstructorExpression,
 } from '../../syntax/ast';
-import { extractAssignmentPath, extractTableKeyFromExpression, visitNamedTableFields } from './expression_paths';
+import { stringLiteralValue } from '../../syntax/literals';
+import { extractAssignmentPath, visitNamedTableFields } from './expression_paths';
 
 export type ModuleExportShape = Map<string, ModuleExportShape>;
 
@@ -37,8 +38,8 @@ const resolveStaticModuleShapePath = (
 		if (!baseShape) {
 			return undefined;
 		}
-		const key = extractTableKeyFromExpression(indexExpr.index);
-		if (!key) {
+		const key = stringLiteralValue(indexExpr.index);
+		if (key == null) {
 			return undefined;
 		}
 		return baseShape.get(key);

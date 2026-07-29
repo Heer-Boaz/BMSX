@@ -1,6 +1,7 @@
 import { LuaSyntaxError } from '../errors';
 import type { LuaToken } from './token';
 import { LuaTokenType } from './token';
+import { stringLiteralValue } from './literals';
 import {
 	LuaSyntaxKind,
 	LuaBinaryOperator,
@@ -1277,16 +1278,6 @@ export class LuaParser {
 			const name = path[path.length - 1];
 			definitions.push({ name, namePath: Array.from(path), definition: definitionRange, scope: scopeRange, kind });
 		};
-		const extractTableKeyFromExpression = (expression: LuaExpression): string => {
-			switch (expression.kind) {
-				case LuaSyntaxKind.StringLiteralExpression:
-					return (expression as LuaStringLiteralExpression).value;
-				case LuaSyntaxKind.IdentifierExpression:
-					return (expression as LuaIdentifierExpression).name;
-				default:
-					return null;
-			}
-		};
 		const extractPathFromExpression = (expression: LuaExpression): string[] => {
 			switch (expression.kind) {
 				case LuaSyntaxKind.IdentifierExpression:
@@ -1307,8 +1298,8 @@ export class LuaParser {
 					if (!basePath) {
 						return null;
 					}
-					const key = extractTableKeyFromExpression(indexExpression.index);
-					if (!key) {
+					const key = stringLiteralValue(indexExpression.index);
+					if (key == null) {
 						return null;
 					}
 					const extended = basePath.slice();
@@ -1365,8 +1356,8 @@ export class LuaParser {
 					continue;
 				}
 				const expressionField = field as LuaTableExpressionField;
-				const key = extractTableKeyFromExpression(expressionField.key);
-				if (key !== null) {
+				const key = stringLiteralValue(expressionField.key);
+				if (key != null) {
 					const fieldPath = [...basePath, key];
 					pushDefinition(fieldPath, expressionField.key.range, scope, 'table_field');
 					if (expressionField.value.kind === LuaSyntaxKind.TableConstructorExpression) {
