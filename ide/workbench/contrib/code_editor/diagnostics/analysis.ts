@@ -6,7 +6,7 @@ import {
 	listLuaBuiltinFunctions,
 	listLuaSymbols,
 } from '../../../../editor/contrib/intellisense/engine';
-import { getCachedLuaParse } from '../../../../../machine/ts/lua/analysis/cache';
+import { getCachedLuaParse } from '../../../../../toolchain/ts/lua/analysis/cache';
 import { editorRuntimeState } from '../../../../editor/common/runtime_state';
 import { diagnosticsDebounceMs, editorDiagnosticsState } from '../../../../editor/contrib/diagnostics/state';
 import { cacheRuntimeSemanticParseState } from '../../../../editor/contrib/intellisense/semantic/workspace/runtime';

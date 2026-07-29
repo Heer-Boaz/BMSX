@@ -1,4 +1,4 @@
-import { blua32ToolingImageForDomain } from '../../machine/ts/rompack/tooling/blua32_media';
+import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import type { Input } from '../../machine/ts/input/manager';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';

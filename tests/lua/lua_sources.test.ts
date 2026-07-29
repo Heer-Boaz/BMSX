@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { encodeBinary } from '../../machine/ts/common/serializer/binencoder';
-import { RomSourceStack, type RawRomSource } from '../../machine/ts/rompack/tooling/source';
+import { RomSourceStack, type RawRomSource } from '../../toolchain/ts/rompack/source';
 import {
 	CART_ROM_HEADER_MAGIC_OFFSET,
 	CART_ROM_HEADER_SIZE,
@@ -14,27 +14,27 @@ import {
 	GX_TEXTURE_LAYOUT_MODULE_PATH,
 	GX_TEXTURE_LAYOUT_SOURCE_PATH,
 	ROM_ASSET_SYMBOL_MODULE_PATH,
-} from '../../machine/ts/rompack/tooling/generated_modules';
+} from '../../toolchain/ts/rompack/generated_modules';
 import type {
 	CartridgeIndex,
 	RomAsset,
-} from '../../machine/ts/rompack/tooling/assets';
+} from '../../toolchain/ts/rompack/assets';
 import type { RomImageDomain } from '../../machine/ts/rompack/image';
 import { buildLuaSources } from '../../ide/runtime/source_registry';
-import { compileLuaChunkToProgram } from '../../machine/ts/lua/compiler';
+import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
-import { BLUA32_IMAGE_ID } from '../../machine/ts/rompack/tooling/blua32_image';
+import { BLUA32_IMAGE_ID } from '../../toolchain/ts/rompack/blua32_image';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
-import { toLuaModulePath } from '../../machine/ts/lua/module_path';
-import { parseCartridgeIndex } from '../../machine/ts/rompack/tooling/loader';
+import { toLuaModulePath } from '../../toolchain/ts/lua/module_path';
+import { parseCartridgeIndex } from '../../toolchain/ts/rompack/loader';
 import {
 	ROM_TOC_HEADER_SIZE,
 	ROM_TOC_INVALID_U32,
 } from '../../machine/ts/spec/bmsx/rom_toc';
 import { decodeRomToc } from '../../machine/ts/rompack/toc';
-import { encodeRomToc } from '../../machine/ts/rompack/tooling/toc_encode';
+import { encodeRomToc } from '../../toolchain/ts/rompack/toc_encode';
 import { buildGxTextureLayoutModuleSource, type GxTextureLayout } from '../../scripts/rompacker/gx_texture_layout';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { parseLuaChunk } from './cpu_test_harness';

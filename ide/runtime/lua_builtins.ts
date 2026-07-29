@@ -1,5 +1,5 @@
-import { DEFAULT_LUA_BUILTIN_FUNCTIONS } from '../../machine/ts/lua/builtin_descriptors';
-import type { LuaBuiltinDescriptor } from '../../machine/ts/lua/semantic_contracts';
+import { DEFAULT_LUA_BUILTIN_FUNCTIONS } from '../../toolchain/ts/lua/builtin_descriptors';
+import type { LuaBuiltinDescriptor } from '../../toolchain/ts/lua/semantic_contracts';
 
 export const luaBuiltinMetadata = new Map<string, LuaBuiltinDescriptor>();
 

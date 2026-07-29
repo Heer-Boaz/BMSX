@@ -1,5 +1,5 @@
 import { clamp } from '../../../../machine/ts/common/clamp';
-import { LuaLexer } from '../../../../machine/ts/lua/syntax/lexer';
+import { LuaLexer } from '../../../../toolchain/ts/lua/syntax/lexer';
 import type { LuaCompletionItem, LuaCompletionKind } from '../../../common/models';
 
 const COMPLETION_KIND_PRIORITY: Record<LuaCompletionKind, number> = {

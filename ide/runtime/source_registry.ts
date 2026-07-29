@@ -1,27 +1,27 @@
-import type { RawRomSource } from '../../machine/ts/rompack/tooling/source';
+import type { RawRomSource } from '../../toolchain/ts/rompack/source';
 import {
 	ROM_ASSET_SYMBOL_MODULE_PATH,
 	ROM_ASSET_SYMBOL_SOURCE_PATH,
 	ROM_GENERATED_MODULE_PATHS,
 	SYSTEM_ASSET_SYMBOL_MODULE_PATH,
 	SYSTEM_ASSET_SYMBOL_SOURCE_PATH,
-} from '../../machine/ts/rompack/tooling/generated_modules';
+} from '../../toolchain/ts/rompack/generated_modules';
 import type {
 	CartridgeIndex,
 	RomAsset,
 	RomLuaAsset,
-} from '../../machine/ts/rompack/tooling/assets';
+} from '../../toolchain/ts/rompack/assets';
 import type { RomImageDomain } from '../../machine/ts/rompack/image';
 import { utf8FatalDecoder } from '../../machine/ts/common/serializer/binencoder';
 import { splitText } from '../../machine/ts/common/text_lines';
 import {
 	buildRomAssetSymbolModuleSourceFromSymbols,
 	collectRomAssetSymbols,
-} from '../../machine/ts/rompack/tooling/asset_symbols';
-import { toLuaModulePath } from '../../machine/ts/lua/module_path';
-import { resolveLuaEntryModuleIndex } from '../../machine/ts/lua/entry_module';
-import { parseLuaChunk } from '../../machine/ts/lua/analysis/parse';
-import type { LuaChunk } from '../../machine/ts/lua/syntax/ast';
+} from '../../toolchain/ts/rompack/asset_symbols';
+import { toLuaModulePath } from '../../toolchain/ts/lua/module_path';
+import { resolveLuaEntryModuleIndex } from '../../toolchain/ts/lua/entry_module';
+import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
+import type { LuaChunk } from '../../toolchain/ts/lua/syntax/ast';
 
 export type LuaSourceRecord = RomLuaAsset & { base_src: string; base_update_timestamp: number; module_path: string; generated: boolean };
 type PackedLuaSourceAsset = RomLuaAsset & { source_path: string; payload_id: RomImageDomain };

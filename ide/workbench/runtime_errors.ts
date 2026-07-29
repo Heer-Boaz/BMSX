@@ -1,13 +1,13 @@
 import {
 	describeBlua32InstructionAtPc,
 	type InstructionOperandDebugInfo,
-} from '../../machine/ts/rompack/tooling/disassembler';
-import type { SourceRange } from '../../machine/ts/rompack/tooling/blua32_symbols';
+} from '../../toolchain/ts/rompack/disassembler';
+import type { SourceRange } from '../../toolchain/ts/lua/source_range';
 import { valueToString, type Value } from '../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { LogLevel, type LogOutput } from '../../machine/ts/platform/platform';
 import { recordLuaError, type RuntimeFaultState } from '../runtime/fault_state';
-import { blua32ToolingImageForDomain } from '../../machine/ts/rompack/tooling/blua32_media';
+import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
 import type { RuntimeSourceState } from '../runtime/sources';
 
 const EMPTY_REGISTER_VALUES: readonly Value[] = [];

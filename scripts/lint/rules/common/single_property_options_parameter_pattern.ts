@@ -4,7 +4,7 @@ import type { Token } from '../../language/cpp/syntax/tokens';
 import { pushTokenLintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
 import { pushLintIssue, type LintIssue } from '../ts/support/ast';
-import { type LuaFunctionExpression as CartFunctionExpression } from '../../../../machine/ts/lua/syntax/ast';
+import { type LuaFunctionExpression as CartFunctionExpression } from '../../../../toolchain/ts/lua/syntax/ast';
 import { type CartLintIssue } from '../../lua_rule';
 import { collectOptionsParameterUseInStatements } from '../lua_cart/impl/support/functions';
 import { OptionsParameterUse } from '../lua_cart/impl/support/types';

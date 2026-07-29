@@ -1,4 +1,4 @@
-import { LuaBinaryOperator as BinaryOperator, LuaSyntaxKind as SyntaxKind, type LuaExpression as Expression } from '../../../../machine/ts/lua/syntax/ast';
+import { LuaBinaryOperator as BinaryOperator, LuaSyntaxKind as SyntaxKind, type LuaExpression as Expression } from '../../../../toolchain/ts/lua/syntax/ast';
 import { isBooleanToken } from '../../language/cpp/syntax/syntax';
 import type { Token } from '../../language/cpp/syntax/tokens';
 import { lintAdjacentEqualityComparison } from '../cpp/support/comparison';

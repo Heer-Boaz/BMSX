@@ -1,4 +1,4 @@
-import { aemDocumentFormat, parseStructuredTextDocument } from '../../../machine/ts/rompack/tooling/aem';
+import { aemDocumentFormat, parseStructuredTextDocument } from '../../../toolchain/ts/rompack/aem';
 import { formatAemYamlDocument } from './yaml_formatter';
 
 export function formatAemDocument(source: string, path: string, lines: readonly string[]): string {

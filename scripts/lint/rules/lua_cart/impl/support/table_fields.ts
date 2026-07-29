@@ -1,4 +1,4 @@
-import { type LuaExpression as Expression, type LuaFunctionExpression as CartFunctionExpression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, type LuaTableField as TableField, LuaTableFieldKind as TableFieldKind } from '../../../../../../machine/ts/lua/syntax/ast';
+import { type LuaExpression as Expression, type LuaFunctionExpression as CartFunctionExpression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, type LuaTableField as TableField, LuaTableFieldKind as TableFieldKind } from '../../../../../../toolchain/ts/lua/syntax/ast';
 import { type CartLintIssue } from '../../../../lua_rule';
 import { lintExpression } from '../../../../../rompacker/cart_lua_linter_runtime';
 import { lintCollectionLabelPatterns } from '../../fsm_id_label_pattern';

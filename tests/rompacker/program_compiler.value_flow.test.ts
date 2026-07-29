@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { splitText } from '../../machine/ts/common/text_lines';
-import { LuaLexer } from '../../machine/ts/lua/syntax/lexer';
-import { LuaParser } from '../../machine/ts/lua/syntax/parser';
+import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
+import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
 import { valueIsString } from '../../machine/ts/machine/cpu/value';
 import {
 	INP_CTRL_ARM,
@@ -11,7 +11,7 @@ import {
 	IO_INP_OUTPUT_DURATION_MS,
 	IO_INP_OUTPUT_PORT,
 } from '../../machine/ts/spec/bmsx/io';
-import { compileLuaChunkToProgram } from '../../machine/ts/lua/compiler';
+import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { runCompiledLua } from '../lua/cpu_test_harness';
 
 function parseChunk(source: string, path: string = 'value_flow.lua') {

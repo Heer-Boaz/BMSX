@@ -1,4 +1,4 @@
-import { SYSTEM_ROM_NAME } from '../../machine/ts/rompack/tooling/system';
+import { SYSTEM_ROM_NAME } from '../../toolchain/ts/rompack/system';
 import {
 	commonResPath,
 	createTextureAtlases,

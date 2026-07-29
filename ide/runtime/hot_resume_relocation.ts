@@ -1,14 +1,14 @@
 import {
 	blua32FunctionIndexAtAddress,
 	type Blua32ImageLayout,
-} from '../../machine/ts/rompack/tooling/blua32_image';
+} from '../../toolchain/ts/rompack/blua32_image';
 import type { CPU } from '../../machine/ts/machine/cpu/cpu';
 import {
 	relocatedCallSitePc,
 	relocatedContinuationPc,
 	relocatedInstructionPc,
 	type Blua32ExecutionImageRevision,
-} from '../../machine/ts/rompack/tooling/blua32_revision';
+} from '../../toolchain/ts/rompack/blua32_revision';
 
 export type HotResumeRevision = {
 	readonly previousImage: Blua32ImageLayout;

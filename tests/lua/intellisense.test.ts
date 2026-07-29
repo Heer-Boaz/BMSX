@@ -4,10 +4,10 @@ import { test } from 'node:test';
 import type { CodeTabContext } from '../../ide/workbench/ui/code_tab/model';
 import { splitText } from '../../machine/ts/common/text_lines';
 import { PieceTreeBuffer } from '../../ide/editor/text/piece_tree_buffer';
-import { LuaLexer } from '../../machine/ts/lua/syntax/lexer';
-import { LuaParser } from '../../machine/ts/lua/syntax/parser';
+import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
+import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { compileLuaChunkToProgram } from '../../machine/ts/lua/compiler';
+import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import {
 	registerLuaSourceRecord,
 	type LuaSourceRecord,
@@ -29,9 +29,9 @@ import {
 	createTestSystemImageRuntimeSourceState,
 } from '../helpers/runtime_sources';
 
-const semanticFrontendModulePromise = import('../../machine/ts/lua/semantic/frontend');
-const semanticDiagnosticsModulePromise = import('../../machine/ts/lua/semantic/diagnostics');
-const semanticModelModulePromise = import('../../machine/ts/lua/semantic/model');
+const semanticFrontendModulePromise = import('../../toolchain/ts/lua/semantic/frontend');
+const semanticDiagnosticsModulePromise = import('../../toolchain/ts/lua/semantic/diagnostics');
+const semanticModelModulePromise = import('../../toolchain/ts/lua/semantic/model');
 const referenceSourcesModulePromise = import('../../ide/editor/contrib/references/sources');
 const workspaceModulePromise = import('../../ide/editor/contrib/intellisense/semantic/workspace/index');
 const workspaceStateModulePromise = import('../../ide/editor/contrib/intellisense/semantic/workspace/state');

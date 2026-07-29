@@ -4,9 +4,9 @@ import { test } from 'node:test';
 import {
 	GX_TEXTURE_LAYOUT_MODULE_PATH,
 	GX_TEXTURE_LAYOUT_SOURCE_PATH,
-} from '../../machine/ts/rompack/tooling/generated_modules';
-import type { RomAsset } from '../../machine/ts/rompack/tooling/assets';
-import { layoutRomPrefix } from '../../machine/ts/rompack/tooling/rom_prefix_layout';
+} from '../../toolchain/ts/rompack/generated_modules';
+import type { RomAsset } from '../../toolchain/ts/rompack/assets';
+import { layoutRomPrefix } from '../../toolchain/ts/rompack/rom_prefix_layout';
 import { buildRomBlua32Tail, compileLuaChunkBuffer } from '../../scripts/rompacker/rombuilder';
 
 test('BLua32 image rejects a cart Lua module that collides with the persisted GX layout', () => {

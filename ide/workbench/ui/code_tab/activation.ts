@@ -7,7 +7,7 @@ import { editorDocumentState, restoreDocumentStateFromContext, storeDocumentStat
 import { editorDiagnosticsState } from '../../../editor/contrib/diagnostics/state';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { syncRuntimeErrorOverlayFromContext } from '../../../runtime_error/navigation';
-import type { LuaDefinitionLocation } from '../../../../machine/ts/lua/semantic_contracts';
+import type { LuaDefinitionLocation } from '../../../../toolchain/ts/lua/semantic_contracts';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import { extractErrorMessage } from '../../../language/lua/interpreter/value';
 import { ensureCursorVisible, updateDesiredColumn } from '../../../editor/ui/view/caret/caret';

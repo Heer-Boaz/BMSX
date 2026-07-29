@@ -7,7 +7,7 @@ import {
 import type { Token } from '../../language/cpp/syntax/tokens';
 import { pushTokenLintIssue, type LintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
-import { type LuaExpression as Expression } from '../../../../machine/ts/lua/syntax/ast';
+import { type LuaExpression as Expression } from '../../../../toolchain/ts/lua/syntax/ast';
 import { type CartLintIssue } from '../../lua_rule';
 import { matchesStringOrChainComparisonPattern } from '../lua_cart/impl/support/conditions';
 import { pushIssue } from '../lua_cart/impl/support/lint_context';

@@ -1,6 +1,7 @@
 {
 	"roots": [
 		"machine/ts",
+		"toolchain/ts",
 		"machine/cpp",
 		"ide",
 		"hosts/common",
@@ -29,9 +30,9 @@
 		{ "name": "ts-gx-webgl-render", "paths": ["machine/ts/render/backend/webgl/gx_gpu.ts"] },
 		{ "name": "ts-software-render", "paths": ["machine/ts/render/backend/software/**"] },
 		{ "name": "ts-machine", "paths": ["machine/ts/machine/**"] },
-		{ "name": "ts-rompack-tooling", "paths": ["machine/ts/rompack/tooling/**"] },
+		{ "name": "ts-blua-toolchain", "paths": ["toolchain/ts/lua/**"] },
+		{ "name": "ts-rompack-toolchain", "paths": ["toolchain/ts/rompack/**"] },
 		{ "name": "ts-rompack", "paths": ["machine/ts/rompack/**"] },
-		{ "name": "ts-lua-compiler", "paths": ["machine/ts/lua/compiler.ts", "machine/ts/lua/compiler/**"] },
 		{ "name": "ts-runtime-api", "paths": ["machine/ts/*.ts"] },
 		{ "name": "ts-core", "paths": ["machine/ts/core/**"] },
 		{ "name": "ts-studio-composition", "paths": ["ide/browser/**", "ide/workbench/machine_runtime.ts", "ide/workbench/host_frame.ts"] },
@@ -50,8 +51,6 @@
 		{ "name": "ts-platform", "paths": ["machine/ts/platform/**"] },
 		{ "name": "ts-input", "paths": ["machine/ts/input/**"] },
 		{ "name": "ts-audio", "paths": ["machine/ts/audio/**"] },
-		{ "name": "ts-language", "paths": ["machine/ts/language/**"] },
-		{ "name": "ts-lua", "paths": ["machine/ts/lua/**"] },
 		{ "name": "ts-common", "paths": ["machine/ts/common/**"] },
 
 		{ "name": "cpp-machine-spec", "paths": ["machine/cpp/spec/**"] },
@@ -71,12 +70,12 @@
 	"rules": [
 		{
 			"from": "ts-machine-spec",
-			"deny": ["ts-gx-machine", "ts-machine", "ts-rompack-tooling", "ts-rompack", "ts-lua-compiler", "ts-runtime-api", "ts-core", "ts-studio-composition", "ts-ide", "ts-host-common", "ts-browser-host", "ts-node-launch", "ts-node-player-entry", "ts-node-tooling", "ts-node-host", "ts-product-build", "ts-rompacker-tool", "ts-tooling-common", "ts-render", "ts-platform", "ts-input", "ts-audio", "ts-host-audio", "ts-language", "ts-lua"],
+			"deny": ["ts-gx-machine", "ts-machine", "ts-blua-toolchain", "ts-rompack-toolchain", "ts-rompack", "ts-runtime-api", "ts-core", "ts-studio-composition", "ts-ide", "ts-host-common", "ts-browser-host", "ts-node-launch", "ts-node-player-entry", "ts-node-tooling", "ts-node-host", "ts-product-build", "ts-rompacker-tool", "ts-tooling-common", "ts-render", "ts-platform", "ts-input", "ts-audio", "ts-host-audio"],
 			"reason": "TS machine specification files are dependency leaves shared by producers and consumers; they must not import emulator, compiler, tooling, host, IDE, or product implementation."
 		},
 		{
 			"from": "ts-gx-machine",
-			"deny": ["ts-core", "ts-ide", "ts-host-common", "ts-render", "ts-gx-webgl-render", "ts-software-render", "ts-platform", "ts-input", "ts-audio", "ts-host-audio", "ts-language"],
+			"deny": ["ts-core", "ts-ide", "ts-host-common", "ts-blua-toolchain", "ts-rompack-toolchain", "ts-render", "ts-gx-webgl-render", "ts-software-render", "ts-platform", "ts-input", "ts-audio", "ts-host-audio"],
 			"reason": "TS GX machine code must emit the GPU command contract, not depend on render backends."
 		},
 		{
@@ -86,27 +85,27 @@
 		},
 		{
 			"from": "ts-machine",
-			"deny": ["ts-core", "ts-ide", "ts-host-common", "ts-render", "ts-gx-webgl-render", "ts-software-render", "ts-platform", "ts-input", "ts-audio", "ts-host-audio", "ts-language"],
+			"deny": ["ts-core", "ts-ide", "ts-host-common", "ts-blua-toolchain", "ts-rompack-toolchain", "ts-render", "ts-gx-webgl-render", "ts-software-render", "ts-platform", "ts-input", "ts-audio", "ts-host-audio"],
 			"reason": "TS machine code must stay below host, IDE, render, input, audio, and language layers."
 		},
 		{
-			"from": "ts-lua-compiler",
-			"deny": ["ts-machine", "ts-core"],
-			"reason": "The BLua32 compiler produces machine words from specification contracts; it must not depend on emulator or core implementation."
+			"from": "ts-blua-toolchain",
+			"deny": ["ts-rompack-toolchain", "ts-machine", "ts-core", "ts-ide", "ts-studio-composition", "ts-host-common", "ts-browser-host", "ts-node-launch", "ts-node-player-entry", "ts-node-tooling", "ts-node-host", "ts-product-build", "ts-render", "ts-platform", "ts-input", "ts-audio", "ts-host-audio"],
+			"reason": "The BLua frontend and compiler produce object code from machine specification contracts; they must not depend on ROM authoring, emulator, product, host, IDE, or backend implementation."
 		},
 		{
-			"from": "ts-rompack-tooling",
-			"deny": ["ts-machine", "ts-core"],
-			"reason": "ROM tooling produces and inspects media through shared specification contracts; it must not depend on emulator or core implementation."
+			"from": "ts-rompack-toolchain",
+			"deny": ["ts-machine", "ts-core", "ts-ide", "ts-studio-composition", "ts-host-common", "ts-browser-host", "ts-node-launch", "ts-node-player-entry", "ts-node-tooling", "ts-node-host", "ts-product-build", "ts-render", "ts-platform", "ts-input", "ts-audio", "ts-host-audio"],
+			"reason": "ROM authoring consumes BLua object code and machine wire contracts; it must not depend on emulator, product, host, IDE, or backend implementation."
 		},
 		{
 			"from": "ts-rompack",
-			"deny": ["ts-machine", "ts-core", "ts-ide", "ts-host-common", "ts-render", "ts-gx-webgl-render", "ts-software-render", "ts-platform", "ts-input", "ts-audio", "ts-host-audio", "ts-language"],
+			"deny": ["ts-machine", "ts-core", "ts-ide", "ts-host-common", "ts-blua-toolchain", "ts-rompack-toolchain", "ts-render", "ts-gx-webgl-render", "ts-software-render", "ts-platform", "ts-input", "ts-audio", "ts-host-audio"],
 			"reason": "TS ROM wire-format code must not depend on emulator, core, host, IDE, render, input, audio, or language implementation."
 		},
 		{
 			"from": "ts-core",
-			"deny": ["ts-rompack-tooling", "ts-lua-compiler", "ts-ide", "ts-host-common", "ts-node-tooling"],
+			"deny": ["ts-blua-toolchain", "ts-rompack-toolchain", "ts-ide", "ts-host-common", "ts-node-tooling"],
 			"reason": "TS core owns machine construction from raw ROM media; authoring metadata, compiler, IDE, application, and validation tooling compose above it."
 		},
 		{
@@ -126,27 +125,27 @@
 		},
 		{
 			"from": "ts-host-common",
-			"deny": ["ts-ide", "ts-studio-composition", "ts-lua-compiler", "ts-rompack-tooling", "ts-node-tooling"],
+			"deny": ["ts-ide", "ts-studio-composition", "ts-blua-toolchain", "ts-rompack-toolchain", "ts-node-tooling"],
 			"reason": "The player composition must not depend on Studio, IDE, compiler, or tooling implementation."
 		},
 		{
 			"from": "ts-browser-host",
-			"deny": ["ts-ide", "ts-studio-composition", "ts-lua-compiler", "ts-rompack-tooling", "ts-node-tooling"],
+			"deny": ["ts-ide", "ts-studio-composition", "ts-blua-toolchain", "ts-rompack-toolchain", "ts-node-tooling"],
 			"reason": "The browser player host must remain usable without Studio, IDE, compiler, or tooling implementation."
 		},
 		{
 			"from": "ts-node-launch",
-			"deny": ["ts-ide", "ts-studio-composition", "ts-lua-compiler", "ts-rompack-tooling", "ts-node-tooling"],
+			"deny": ["ts-ide", "ts-studio-composition", "ts-blua-toolchain", "ts-rompack-toolchain", "ts-node-tooling"],
 			"reason": "Shared Node launch parsing and artifact selection must stay independent from Studio and validation tooling."
 		},
 		{
 			"from": "ts-node-player-entry",
-			"deny": ["ts-ide", "ts-studio-composition", "ts-lua-compiler", "ts-rompack-tooling", "ts-node-tooling"],
+			"deny": ["ts-ide", "ts-studio-composition", "ts-blua-toolchain", "ts-rompack-toolchain", "ts-node-tooling"],
 			"reason": "The Node player entrypoint must remain usable without Studio, IDE, compiler, or test-tooling implementation."
 		},
 		{
 			"from": "ts-node-host",
-			"deny": ["ts-ide", "ts-studio-composition", "ts-lua-compiler", "ts-rompack-tooling", "ts-node-tooling"],
+			"deny": ["ts-ide", "ts-studio-composition", "ts-blua-toolchain", "ts-rompack-toolchain", "ts-node-tooling"],
 			"reason": "Node platform services must not depend on Studio, IDE, compiler, or test-tooling implementation."
 		},
 		{

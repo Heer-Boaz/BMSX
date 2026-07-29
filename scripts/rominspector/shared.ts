@@ -3,21 +3,21 @@ import {
 	BLUA32_IMAGE_ID,
 	decodeBlua32Image,
 	type Blua32ImageLayout,
-} from '../../machine/ts/rompack/tooling/blua32_image';
+} from '../../toolchain/ts/rompack/blua32_image';
 import {
 	BLUA32_SYMBOLS_IMAGE_ID,
 	decodeBlua32SymbolsImage,
 	type Blua32SymbolsImage,
-} from '../../machine/ts/rompack/tooling/blua32_symbols';
+} from '../../toolchain/ts/rompack/blua32_symbols';
 import {
 	describeBlua32InstructionAtPc,
 	formatSourceSnippet,
-} from '../../machine/ts/rompack/tooling/disassembler';
+} from '../../toolchain/ts/rompack/disassembler';
 import {
 	INSTRUCTION_BYTES,
 	readInstructionWord,
 } from '../../machine/ts/spec/blua32/instruction_format';
-import { toLuaModulePath } from '../../machine/ts/lua/module_path';
+import { toLuaModulePath } from '../../toolchain/ts/lua/module_path';
 import {
 	CART_ROM_BASE,
 	SYSTEM_ROM_BASE,
@@ -26,7 +26,7 @@ import {
 	parseCartHeader,
 	type CartRomHeader,
 } from '../../machine/ts/rompack/format';
-import type { RomAsset } from '../../machine/ts/rompack/tooling/assets';
+import type { RomAsset } from '../../toolchain/ts/rompack/assets';
 
 export const ROM_MANIFEST_ASSET_ID = '__rom_manifest__';
 export const ROM_MANIFEST_SOURCE_PATH = 'manifest.rommanifest';

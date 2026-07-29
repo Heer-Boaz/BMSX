@@ -1,5 +1,5 @@
-import { LuaBinaryOperator as BinaryOperator, type LuaExpression as Expression } from '../../../../machine/ts/lua/syntax/ast';
-import { isLuaEmptyStringLiteral as isEmptyStringLiteral, luaBinaryExpressionHasOperand } from '../../../../machine/ts/lua/syntax/literals';
+import { LuaBinaryOperator as BinaryOperator, type LuaExpression as Expression } from '../../../../toolchain/ts/lua/syntax/ast';
+import { isLuaEmptyStringLiteral as isEmptyStringLiteral, luaBinaryExpressionHasOperand } from '../../../../toolchain/ts/lua/syntax/literals';
 import {
 	cppRangeIsNull,
 	cppRangeHas,

@@ -1,7 +1,7 @@
 import type { SearchMatch } from '../../../../common/models';
 import type { CodeTabContext } from '../../../ui/code_tab/model';
 import type { ReferenceMatchInfo } from '../../../../editor/contrib/references/state';
-import type { LuaSourceRange } from '../../../../../machine/ts/lua/syntax/ast/index';
+import type { LuaSourceRange } from '../../../../../toolchain/ts/lua/syntax/ast/index';
 import { clamp } from '../../../../../machine/ts/common/clamp';
 import { createLuaCodeTabContext, findCodeTabContext, getActiveCodeTabContext } from '../../../ui/code_tab/contexts';
 import { resolveRuntimeResourceForContext } from '../../../../runtime/sources';

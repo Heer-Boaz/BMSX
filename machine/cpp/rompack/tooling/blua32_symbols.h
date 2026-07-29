@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/primitives.h"
+#include "rompack/tooling/source_range.h"
 #include "spec/blua32/opcode.h"
 
 #include <optional>
@@ -13,17 +14,6 @@ namespace bmsx {
 
 constexpr const char* BLUA32_SYMBOLS_IMAGE_ID = "__blua32_symbols__";
 constexpr u32 BLUA32_SYMBOLS_VERSION = 1u;
-
-struct SourcePosition {
-	i32 line = 0;
-	i32 column = 0;
-};
-
-struct SourceRange {
-	std::string path;
-	SourcePosition start;
-	SourcePosition end;
-};
 
 struct Blua32LocalSlotDebug {
 	std::string name;

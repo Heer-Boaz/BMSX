@@ -3,7 +3,7 @@ import type {
 	LuaHoverValueState,
 	LuaDefinitionLocation,
 	LuaSymbolEntry,
-} from '../../machine/ts/lua/semantic_contracts';
+} from '../../toolchain/ts/lua/semantic_contracts';
 import type { ResourceDomain, RuntimeResource } from './resource';
 import type { EditorCommandId } from './commands';
 import type { RectBounds } from '../../machine/ts/common/rect';

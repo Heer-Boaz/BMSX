@@ -1,4 +1,4 @@
-import { LuaLexer } from '../../../machine/ts/lua/syntax/lexer';
+import { LuaLexer } from '../../../toolchain/ts/lua/syntax/lexer';
 
 export function parseLuaIdentifierChain(expression: string): string[] {
 	if (!expression) {

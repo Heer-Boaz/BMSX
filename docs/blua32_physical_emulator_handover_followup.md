@@ -30,7 +30,7 @@ source-revisions afweten:
 - `CPU.relocateFrame(frameIndex, functionAddress, pc, callSitePc, epcWord, nmiReturnEpcWord)`
 
 Alle revision-/relocatiesemantiek zit nu in tooling
-(`machine/ts/rompack/tooling/blua32_revision.ts`) en in de IDE
+(`toolchain/ts/rompack/blua32_revision.ts`) en in de IDE
 (`ide/runtime/hot_resume.ts`), niet meer in de CPU-kern. Terzijde is hierbij
 een echte latente bug gevonden en gefixt: `callSitePc` werd niet
 gerelokeerd (nu via `relocatedCallSitePc`).
@@ -72,7 +72,7 @@ Concreet, in beide talen 1:1:
   exceptionentry-machinery (`enterException`/`enterSynchronousException`),
   gezet in de catch-paden van `runUntilDepth`/`step`.
 - `cop0.lua_fault_reason` is nu geldige, read-only Lua-syntax
-  (`machine/ts/lua/compiler.ts`'s `resolveCop0Register`).
+  (`toolchain/ts/lua/compiler.ts`'s `resolveCop0Register`).
 - `machine/firmware/bios/monitor_commands.lua`/`monitor.lua`: bestaande
   BIOS-monitor (exception_registry, FAULT-command) is **uitgebreid**, niet
   vervangen — nieuwe `TRAP`-registry-entry met `LUAFAULT <reason>`-regel.
@@ -242,7 +242,7 @@ prima" — **niet verplaatsen**):
   `error`) — zag er op naam uit als stdlib-gemak, maar is bevestigd
   backed door een echte `BuiltinFunctionId`-enum mét een
   cyclus-kostentabel (`BUILTIN_COST_TIER1/2/4`,
-  `machine/ts/lua/compiler.ts:124` e.v.), gedispatcht vanuit hetzelfde
+  `toolchain/ts/lua/compiler.ts:124` e.v.), gedispatcht vanuit hetzelfde
   opcode-pad als alle andere instructies — dat is precies hoe een echte
   ISA "vreemde" instructies behandelt (vgl. x86 BCD-/string-instructies).
   Geen host-magie, niet verplaatsen.

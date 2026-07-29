@@ -1,5 +1,5 @@
-import { type LuaCallExpression as CallExpression, type LuaExpression as Expression, LuaSyntaxKind as SyntaxKind } from '../../../../../../machine/ts/lua/syntax/ast';
-import { getCallReceiverExpression } from '../../../../../../machine/ts/lua/syntax/calls';
+import { type LuaCallExpression as CallExpression, type LuaExpression as Expression, LuaSyntaxKind as SyntaxKind } from '../../../../../../toolchain/ts/lua/syntax/ast';
+import { getCallReceiverExpression } from '../../../../../../toolchain/ts/lua/syntax/calls';
 import { isIdentifierExpression } from './bindings';
 import { isDispatchStateEventCallExpression } from './calls';
 import { isSelfExpressionRoot } from './self_properties';

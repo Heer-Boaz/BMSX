@@ -1,14 +1,14 @@
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import assert from 'node:assert/strict';
 
-import { encodeCompiledProgramObject, type CompiledProgram } from '../../machine/ts/lua/compiler';
+import { encodeCompiledProgramObject, type CompiledProgram } from '../../toolchain/ts/lua/compiler';
 import type {
 	ProgramConstReloc,
 	ProgramObjectImage,
-} from '../../machine/ts/lua/compiler/program_object';
+} from '../../toolchain/ts/lua/compiler/program_object';
 import type {
 	Blua32ImageLayout,
-} from '../../machine/ts/rompack/tooling/blua32_image';
+} from '../../toolchain/ts/rompack/blua32_image';
 import {
 	BLUA32_FUNCTION_RECORD_SIZE,
 	BLUA32_IMAGE_HEADER_SIZE,
@@ -16,26 +16,26 @@ import {
 import {
 	type Blua32SymbolsImage,
 	type SourceRange,
-} from '../../machine/ts/rompack/tooling/blua32_symbols';
+} from '../../toolchain/ts/rompack/blua32_symbols';
 import {
 	CPU,
 	RunResult,
 } from '../../machine/ts/machine/cpu/cpu';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
-import { describeBlua32InstructionAtPc } from '../../machine/ts/rompack/tooling/disassembler';
+import { describeBlua32InstructionAtPc } from '../../toolchain/ts/rompack/disassembler';
 import { INSTRUCTION_BYTES, readInstructionWord } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
-import type { ProgramMetadata, Proto, UpvalueDesc } from '../../machine/ts/lua/compiler/program';
+import type { ProgramMetadata, Proto, UpvalueDesc } from '../../toolchain/ts/lua/compiler/program';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { CART_ROM_HEADER_SIZE } from '../../machine/ts/spec/bmsx/rom_package';
-import { writeCartRomHeader } from '../../machine/ts/rompack/tooling/header_encode';
+import { writeCartRomHeader } from '../../toolchain/ts/rompack/header_encode';
 import {
 	linkCartBlua32Image,
 	linkSystemBlua32Image,
 	type LinkedBlua32Image,
-} from '../../machine/ts/rompack/tooling/blua32_linker';
+} from '../../toolchain/ts/rompack/blua32_linker';
 import { cartridgeSlots } from './cartridge';
 
 const TEST_EXECUTABLE_OFFSET = 0x100;

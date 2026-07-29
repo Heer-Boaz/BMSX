@@ -3,7 +3,7 @@ import * as constants from '../../../common/constants';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from '../../../input/keyboard/key_input';
 import type { InlineInputOptions, Position, TextField } from '../../../common/models';
 import { clamp } from '../../../../machine/ts/common/clamp';
-import { LuaLexer } from '../../../../machine/ts/lua/syntax/lexer';
+import { LuaLexer } from '../../../../toolchain/ts/lua/syntax/lexer';
 import { splitText } from '../../../../machine/ts/common/text_lines';
 import { advanceToggleBlink } from '../view/caret/blink';
 import { editorCaretState } from '../view/caret/state';

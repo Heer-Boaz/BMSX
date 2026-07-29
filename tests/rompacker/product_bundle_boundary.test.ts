@@ -16,9 +16,9 @@ test('player bundle boundary accepts machine and host sources', () => {
 test('player bundle boundary rejects IDE, compiler, and tooling sources', () => {
 	for (const source of [
 		'ide/workbench/machine_runtime.ts',
-		'machine/ts/lua/compiler.ts',
-		'machine/ts/lua/compiler/optimizer/index.ts',
-		'machine/ts/rompack/tooling/blua32_linker.ts',
+		'toolchain/ts/lua/compiler.ts',
+		'toolchain/ts/lua/compiler/optimizer/index.ts',
+		'toolchain/ts/rompack/blua32_linker.ts',
 		'scripts/analysis/code_quality.ts',
 		'scripts/products/product_build.ts',
 		'scripts/rompacker/rompacker.ts',

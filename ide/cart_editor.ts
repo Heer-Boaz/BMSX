@@ -11,7 +11,7 @@ import type {
 } from '../machine/ts/platform/platform';
 import type { VideoPresenter } from '../machine/ts/render/video_presenter';
 import { runtimeSourcesSupportIde, type RuntimeSourceState } from './runtime/sources';
-import { blua32ToolingImageForDomain } from '../machine/ts/rompack/tooling/blua32_media';
+import { blua32ToolingImageForDomain } from '../toolchain/ts/rompack/blua32_media';
 import type { Viewport } from './common/viewport';
 import { api } from './runtime/overlay_api';
 import * as constants from './common/constants';

@@ -1,15 +1,15 @@
 import { BASE_CYCLES, OPCODE_COUNT, OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { OPCODE_CATEGORY, OPCODE_NAMES } from '../../machine/ts/rompack/tooling/opcode_metadata';
+import { OPCODE_CATEGORY, OPCODE_NAMES } from '../../toolchain/ts/lua/opcode_metadata';
 import {
 	INSTRUCTION_BYTES,
 	readInstructionWord,
 } from '../../machine/ts/spec/blua32/instruction_format';
 import type { ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
-import type { SourceRange } from '../../machine/ts/rompack/tooling/blua32_symbols';
+import type { SourceRange } from '../../toolchain/ts/lua/source_range';
 import {
 	blua32ToolingImageForDomain,
 	type Blua32ToolingMedia,
-} from '../../machine/ts/rompack/tooling/blua32_media';
+} from '../../toolchain/ts/rompack/blua32_media';
 
 export type CpuProfilerSnapshot = {
 	totalInstructions: number;

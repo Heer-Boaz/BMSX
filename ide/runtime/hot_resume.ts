@@ -5,7 +5,7 @@ import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { clearOverlayFrame } from '../../machine/ts/render/host_overlay/overlay_queue';
 import {
 	buildBlua32ExecutionRevision,
-} from '../../machine/ts/rompack/tooling/blua32_revision';
+} from '../../toolchain/ts/rompack/blua32_revision';
 import { clearFaultSnapshot, resetHandledLuaErrors } from './fault_state';
 import {
 	buildBlua32Media,

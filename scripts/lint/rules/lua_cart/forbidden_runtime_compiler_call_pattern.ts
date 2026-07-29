@@ -7,7 +7,7 @@ import {
 	type LuaIdentifierExpression,
 	type LuaLocalAssignmentStatement,
 	type LuaStatement as Statement,
-} from '../../../../machine/ts/lua/syntax/ast';
+} from '../../../../toolchain/ts/lua/syntax/ast';
 import type { CartLintIssue, CartLintIssuePusher, CartLintNode } from '../../lua_rule';
 import { defineLintRule } from '../../rule';
 

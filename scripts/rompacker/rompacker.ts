@@ -2,7 +2,7 @@
 
 import pc from 'picocolors';
 
-import { SYSTEM_ROM_NAME } from '../../machine/ts/rompack/tooling/system';
+import { SYSTEM_ROM_NAME } from '../../toolchain/ts/rompack/system';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { findExistingDirectory, getParamOrEnv, normalizePathKey, parseArgsVector } from '../tooling/cli_arguments';
 import { createCliUi } from '../tooling/cli_ui';
@@ -12,22 +12,22 @@ import { biosLuaPath, BLUA32_SYMBOLS_SIDECAR_SUFFIX, buildBluaSourceContextAsset
 import { buildGxTextureLayoutModuleSource } from './gx_texture_layout';
 import type { TaskProgressReporter as ProgressReporter } from '../tooling/task_progress';
 import type { RomPackerOptions } from './rompacker.rompack';
-import { buildRomAssetSymbolModuleSourceFromSymbols, collectRomAssetSymbols } from '../../machine/ts/rompack/tooling/asset_symbols';
+import { buildRomAssetSymbolModuleSourceFromSymbols, collectRomAssetSymbols } from '../../toolchain/ts/rompack/asset_symbols';
 import {
 	GX_TEXTURE_LAYOUT_MODULE_PATH,
 	GX_TEXTURE_LAYOUT_SOURCE_PATH,
 	ROM_ASSET_SYMBOL_MODULE_PATH,
 	SYSTEM_ASSET_SYMBOL_MODULE_PATH,
-} from '../../machine/ts/rompack/tooling/generated_modules';
-import { resolveCartridgeHeaderWords } from '../../machine/ts/rompack/tooling/manifest';
-import { LuaError } from '../../machine/ts/lua/errors';
-import { loadRomAssetList } from '../../machine/ts/rompack/tooling/loader';
-import { layoutRomPrefix } from '../../machine/ts/rompack/tooling/rom_prefix_layout';
+} from '../../toolchain/ts/rompack/generated_modules';
+import { resolveCartridgeHeaderWords } from '../../toolchain/ts/rompack/manifest';
+import { LuaError } from '../../toolchain/ts/lua/errors';
+import { loadRomAssetList } from '../../toolchain/ts/rompack/loader';
+import { layoutRomPrefix } from '../../toolchain/ts/rompack/rom_prefix_layout';
 import {
 	BLUA32_IMAGE_ID,
 	decodeBlua32Image,
-} from '../../machine/ts/rompack/tooling/blua32_image';
-import { decodeBlua32SymbolsImage } from '../../machine/ts/rompack/tooling/blua32_symbols';
+} from '../../toolchain/ts/rompack/blua32_image';
+import { decodeBlua32SymbolsImage } from '../../toolchain/ts/rompack/blua32_symbols';
 import { SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 
 import { join } from 'node:path';

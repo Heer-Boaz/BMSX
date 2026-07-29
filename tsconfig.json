@@ -2,6 +2,8 @@
 	"files": [],
 	"references": [
 		{ "path": "./machine/ts" },
+		{ "path": "./toolchain/ts/lua" },
+		{ "path": "./toolchain/ts/rompack" },
 		{ "path": "./ide" },
 		{ "path": "./hosts/common" }
 	],

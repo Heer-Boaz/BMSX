@@ -4,16 +4,16 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 
 import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { buildRomAssetSymbolModuleSource, collectRomAssetSymbols } from '../../machine/ts/rompack/tooling/asset_symbols';
-import { layoutRomAssetPayloads } from '../../machine/ts/rompack/tooling/asset_layout';
+import { buildRomAssetSymbolModuleSource, collectRomAssetSymbols } from '../../toolchain/ts/rompack/asset_symbols';
+import { layoutRomAssetPayloads } from '../../toolchain/ts/rompack/asset_layout';
 import {
 	CART_ROM_HEADER_SIZE,
 	CART_ROM_MAGIC,
 	CART_ROM_WORD_ALIGNMENT,
 } from '../../machine/ts/spec/bmsx/rom_package';
-import { type RomAsset } from '../../machine/ts/rompack/tooling/assets';
-import { loadRomAssetList } from '../../machine/ts/rompack/tooling/loader';
-import { layoutRomPrefix } from '../../machine/ts/rompack/tooling/rom_prefix_layout';
+import { type RomAsset } from '../../toolchain/ts/rompack/assets';
+import { loadRomAssetList } from '../../toolchain/ts/rompack/loader';
+import { layoutRomPrefix } from '../../toolchain/ts/rompack/rom_prefix_layout';
 import { buildRomBlua32Tail, compileLuaChunkBuffer, finalizeRompack, getResMetaList } from '../../scripts/rompacker/rombuilder';
 
 const ROOT = join(process.cwd(), 'tmp', 'rompacker-bin-scan-test');

@@ -1,6 +1,6 @@
-import { LuaRuntimeError } from '../../../../machine/ts/lua/errors';
+import { LuaRuntimeError } from '../../../../toolchain/ts/lua/errors';
 import type { LuaValue } from './value';
-import type { LuaSourceRange } from '../../../../machine/ts/lua/syntax/ast';
+import type { LuaSourceRange } from '../../../../toolchain/ts/lua/syntax/ast';
 
 type BindingRecord = {
 	value: LuaValue;

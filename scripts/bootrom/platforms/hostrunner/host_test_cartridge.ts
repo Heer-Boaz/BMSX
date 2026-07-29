@@ -1,23 +1,23 @@
-import { buildRomAssetSymbolModuleSource } from '../../../../machine/ts/rompack/tooling/asset_symbols';
-import type { RomAsset } from '../../../../machine/ts/rompack/tooling/assets';
-import { ROM_ASSET_SYMBOL_MODULE_PATH } from '../../../../machine/ts/rompack/tooling/generated_modules';
-import { loadRomAssetList, parseCartridgeIndex } from '../../../../machine/ts/rompack/tooling/loader';
+import { buildRomAssetSymbolModuleSource } from '../../../../toolchain/ts/rompack/asset_symbols';
+import type { RomAsset } from '../../../../toolchain/ts/rompack/assets';
+import { ROM_ASSET_SYMBOL_MODULE_PATH } from '../../../../toolchain/ts/rompack/generated_modules';
+import { loadRomAssetList, parseCartridgeIndex } from '../../../../toolchain/ts/rompack/loader';
 import { decodeBinary, encodeBinary } from '../../../../machine/ts/common/serializer/binencoder';
 import { splitText } from '../../../../machine/ts/common/text_lines';
-import { parseLuaChunk } from '../../../../machine/ts/lua/analysis/parse';
-import { resolveLuaEntryModuleIndex } from '../../../../machine/ts/lua/entry_module';
-import type { LuaChunk } from '../../../../machine/ts/lua/syntax/ast';
+import { parseLuaChunk } from '../../../../toolchain/ts/lua/analysis/parse';
+import { resolveLuaEntryModuleIndex } from '../../../../toolchain/ts/lua/entry_module';
+import type { LuaChunk } from '../../../../toolchain/ts/lua/syntax/ast';
 import {
 	BLUA32_IMAGE_ID,
 	decodeBlua32Image,
-} from '../../../../machine/ts/rompack/tooling/blua32_image';
+} from '../../../../toolchain/ts/rompack/blua32_image';
 import {
 	BLUA32_SYMBOLS_IMAGE_ID,
 	decodeBlua32SymbolsImage,
-} from '../../../../machine/ts/rompack/tooling/blua32_symbols';
+} from '../../../../toolchain/ts/rompack/blua32_symbols';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../../machine/ts/spec/bmsx/model';
-import { buildBlua32Tail } from '../../../../machine/ts/rompack/tooling/blua32_tail';
+import { buildBlua32Tail } from '../../../../toolchain/ts/rompack/blua32_tail';
 import { buildBlua32Image } from '../../../rompacker/blua32_image_builder';
 
 export const HOST_TEST_MODULE_PATH = 'bmsx/headless_test';

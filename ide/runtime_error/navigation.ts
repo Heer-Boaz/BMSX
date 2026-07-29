@@ -20,7 +20,7 @@ import {
 	setActiveRuntimeErrorOverlay,
 	setExecutionStopHighlight as setEditorExecutionStopHighlight,
 } from '../editor/contrib/runtime_error/navigation';
-import { LuaError } from '../../machine/ts/lua/errors';
+import { LuaError } from '../../toolchain/ts/lua/errors';
 import type { StackTraceFrame } from '../runtime/stack_trace';
 import { extractErrorMessage } from '../language/lua/interpreter/value';
 import { clamp } from '../../machine/ts/common/clamp';

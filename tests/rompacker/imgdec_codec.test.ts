@@ -6,7 +6,7 @@ import {
 	IMGDEC_TOKEN_KIND_SHIFT,
 	IMGDEC_TOKEN_KIND_ZERO,
 } from '../../machine/ts/spec/imgdec/stream';
-import { decodeImgDecStream, encodeImgDecStream } from '../../machine/ts/rompack/tooling/imgdec_codec';
+import { decodeImgDecStream, encodeImgDecStream } from '../../toolchain/ts/rompack/imgdec_codec';
 
 test('IMGDEC word stream round-trips literal, repeat, zero, and overlapping back-reference runs', () => {
 	const textureWordCount = 5000;

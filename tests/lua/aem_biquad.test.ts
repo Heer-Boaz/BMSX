@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
-import { compileLuaChunkToProgram } from '../../machine/ts/lua/compiler';
+import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { runCompiledTestSystem } from '../helpers/blua32';
 import { parseLuaChunk } from './cpu_test_harness';
 

@@ -1,18 +1,18 @@
 import { splitText } from '../../machine/ts/common/text_lines';
 import { decodeBinary } from '../../machine/ts/common/serializer/binencoder';
-import { parseLuaChunk } from '../../machine/ts/lua/analysis/parse';
-import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../machine/ts/lua/compiler';
-import { resolveLuaEntryModuleIndex } from '../../machine/ts/lua/entry_module';
-import type { LuaChunk } from '../../machine/ts/lua/syntax/ast';
-import { toLuaModulePath } from '../../machine/ts/lua/module_path';
-import type { Blua32ImageLayout } from '../../machine/ts/rompack/tooling/blua32_image';
-import type { Blua32SymbolsImage } from '../../machine/ts/rompack/tooling/blua32_symbols';
-import type { RomAsset } from '../../machine/ts/rompack/tooling/assets';
+import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
+import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
+import { resolveLuaEntryModuleIndex } from '../../toolchain/ts/lua/entry_module';
+import type { LuaChunk } from '../../toolchain/ts/lua/syntax/ast';
+import { toLuaModulePath } from '../../toolchain/ts/lua/module_path';
+import type { Blua32ImageLayout } from '../../toolchain/ts/rompack/blua32_image';
+import type { Blua32SymbolsImage } from '../../toolchain/ts/rompack/blua32_symbols';
+import type { RomAsset } from '../../toolchain/ts/rompack/assets';
 import {
 	linkCartBlua32Image,
 	linkSystemBlua32Image,
 	type LinkedBlua32Image,
-} from '../../machine/ts/rompack/tooling/blua32_linker';
+} from '../../toolchain/ts/rompack/blua32_linker';
 
 export type GeneratedLuaModule = {
 	path: string;

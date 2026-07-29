@@ -1,4 +1,4 @@
-import type { RomAsset } from '../../machine/ts/rompack/tooling/assets';
+import type { RomAsset } from '../../toolchain/ts/rompack/assets';
 
 export const SYSTEM_RESOURCE_DOMAIN = -1;
 export const CARTRIDGE_RESOURCE_DOMAINS = [0, 1] as const;

@@ -19,7 +19,7 @@ import {
 	type RuntimeSourceState,
 } from '../runtime/sources';
 import type { RuntimeIdeState } from '../runtime/state';
-import { blua32ToolingImageForDomain } from '../../machine/ts/rompack/tooling/blua32_media';
+import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
 
 /**
  * Host-side test surface for the IDE/runtime. The headless composition root creates

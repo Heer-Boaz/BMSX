@@ -1,17 +1,17 @@
-import type { LuaChunk } from '../../machine/ts/lua/syntax/ast/index';
+import type { LuaChunk } from '../../toolchain/ts/lua/syntax/ast/index';
 import { LuaInterpreter } from '../language/lua/interpreter/interpreter';
-import { compileLuaChunkToProgram, encodeCompiledProgramObject, type ProgramCompileDomain } from '../../machine/ts/lua/compiler';
-import type { ProgramMetadata } from '../../machine/ts/lua/compiler/program';
-import type { ProgramObjectImage } from '../../machine/ts/lua/compiler/program_object';
-import { resolveLuaEntryModuleIndex } from '../../machine/ts/lua/entry_module';
-import { toLuaModulePath } from '../../machine/ts/lua/module_path';
+import { compileLuaChunkToProgram, encodeCompiledProgramObject, type ProgramCompileDomain } from '../../toolchain/ts/lua/compiler';
+import type { ProgramMetadata } from '../../toolchain/ts/lua/compiler/program';
+import type { ProgramObjectImage } from '../../toolchain/ts/lua/compiler/program_object';
+import { resolveLuaEntryModuleIndex } from '../../toolchain/ts/lua/entry_module';
+import { toLuaModulePath } from '../../toolchain/ts/lua/module_path';
 import { readWorkspaceLuaSourceText } from '../workspace/files';
 import type { RuntimeSymbolEntry, RuntimeSymbolKind } from './symbols';
 import type { LuaSourceRegistry } from './source_registry';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { resetHandledLuaErrors } from './fault_state';
-import type { Blua32ImageLayout } from '../../machine/ts/rompack/tooling/blua32_image';
-import type { Blua32SymbolsImage } from '../../machine/ts/rompack/tooling/blua32_symbols';
+import type { Blua32ImageLayout } from '../../toolchain/ts/rompack/blua32_image';
+import type { Blua32SymbolsImage } from '../../toolchain/ts/rompack/blua32_symbols';
 import { asStringId, valueIsString, valueTag, ValueTag, type Value } from '../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import {
@@ -23,13 +23,13 @@ import {
 	linkCartBlua32Image,
 	linkSystemBlua32Image,
 	type LinkedBlua32Image,
-} from '../../machine/ts/rompack/tooling/blua32_linker';
-import { buildBlua32Tail } from '../../machine/ts/rompack/tooling/blua32_tail';
-import type { RomSourceLayer } from '../../machine/ts/rompack/tooling/source';
+} from '../../toolchain/ts/rompack/blua32_linker';
+import { buildBlua32Tail } from '../../toolchain/ts/rompack/blua32_tail';
+import type { RomSourceLayer } from '../../toolchain/ts/rompack/source';
 import type { ResourceIdentity } from '../common/resource';
 import type { RuntimeFaultState } from './fault_state';
 import type { RuntimeLuaTooling } from './lua_tooling';
-import type { Blua32ToolingImage } from '../../machine/ts/rompack/tooling/blua32_media';
+import type { Blua32ToolingImage } from '../../toolchain/ts/rompack/blua32_media';
 
 export type RebuiltBlua32Image = {
 	linked: LinkedBlua32Image;

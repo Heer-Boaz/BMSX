@@ -18,8 +18,8 @@ import {
 	type LuaSourceRecord,
 	type LuaSourceRegistry,
 } from '../../ide/runtime/source_registry';
-import type { RomAsset } from '../../machine/ts/rompack/tooling/assets';
-import type { RawRomSource } from '../../machine/ts/rompack/tooling/source';
+import type { RomAsset } from '../../toolchain/ts/rompack/assets';
+import type { RawRomSource } from '../../toolchain/ts/rompack/source';
 import { createTestRuntimeSourceState } from '../helpers/runtime_sources';
 import { buildResourcePanelItems } from '../../ide/workbench/contrib/resources/panel/items';
 import { refreshResourceCatalog } from '../../ide/workbench/contrib/resources/search/catalog';

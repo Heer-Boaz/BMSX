@@ -4,15 +4,15 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { splitText } from '../../machine/ts/common/text_lines';
-import { LuaLexer } from '../../machine/ts/lua/syntax/lexer';
-import { LuaParser } from '../../machine/ts/lua/syntax/parser';
+import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
+import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import type { Value } from '../../machine/ts/machine/cpu/value';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { CART_ROM_BASE, DYNAMIC_RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { compileLuaChunkToProgram, encodeCompiledProgramObject, type CompiledProgram } from '../../machine/ts/lua/compiler';
+import { compileLuaChunkToProgram, encodeCompiledProgramObject, type CompiledProgram } from '../../toolchain/ts/lua/compiler';
 import { readLE32 } from '../../machine/ts/common/endian';
 import {
 	disassembleTestBlua32Functions,

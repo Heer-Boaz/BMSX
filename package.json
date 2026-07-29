@@ -41,6 +41,7 @@
 		"test:cartlib-visual-order-headless": "npm run build:product:node-headless-tooling -- --debug --force && npm run build:toolchain:bios -- --debug --force && npm run build:toolchain:cart -- cartlib_test --debug --force && rm -rf tests/carts/cartlib_test/screenshots && npm run headless:test -- cartlib_test tests/carts/cartlib_test/visual_order_capture.lua && node tests/carts/cartlib_test/analyze_visual_order.mjs tests/carts/cartlib_test/screenshots",
 		"test:pietious-scanout-headless": "npm run build:product:node-headless-tooling -- --debug --force && npm run build:toolchain:bios -- --debug --force && npm run build:toolchain:cart -- pietious --debug --force && rm -rf tests/carts/pietious/screenshots && npm run headless:tooling -- --input-timeline tests/carts/pietious/pietious_scanout_demo.json pietious && node tests/carts/pietious/analyze_scanout.mjs tests/carts/pietious/screenshots",
 		"compile:machine": "npx tsc --build ./machine/ts",
+		"compile:toolchain": "npx tsc --build ./toolchain/ts/lua ./toolchain/ts/rompack",
 		"validate:toolchain:bios": "npx tsx scripts/rompacker/rompacker.ts --mode bios --force -respath ./machine/firmware/res",
 		"build:toolchain:bios": "npx tsx scripts/rompacker/rompacker.ts --mode bios --skiptypecheck -respath ./machine/firmware/res",
 		"validate:toolchain:cart": "npx tsx scripts/rompacker/rompacker.ts --mode rompack --force -romname",

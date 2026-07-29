@@ -1,10 +1,10 @@
-import type { SemanticSymbolKind } from '../../../machine/ts/lua/semantic/symbols';
-import type { SemanticAnnotations } from '../../../machine/ts/lua/semantic/tokens';
+import type { SemanticSymbolKind } from '../../../toolchain/ts/lua/semantic/symbols';
+import type { SemanticAnnotations } from '../../../toolchain/ts/lua/semantic/tokens';
 import type { HighlightLine } from '../../common/models';
 import * as constants from '../../common/constants';
-import { DEFAULT_LUA_BUILTIN_NAMES } from '../../../machine/ts/lua/builtin_descriptors';
-import { LuaLexer } from '../../../machine/ts/lua/syntax/lexer';
-import { KEYWORDS } from '../../../machine/ts/lua/syntax/token';
+import { DEFAULT_LUA_BUILTIN_NAMES } from '../../../toolchain/ts/lua/builtin_descriptors';
+import { LuaLexer } from '../../../toolchain/ts/lua/syntax/lexer';
+import { KEYWORDS } from '../../../toolchain/ts/lua/syntax/token';
 import { clamp } from '../../../machine/ts/common/clamp';
 
 // Lightweight Lua syntax highlighter used by the IDE.

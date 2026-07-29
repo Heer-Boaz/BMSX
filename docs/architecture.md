@@ -622,9 +622,10 @@ that locate and enter such an image live in
 consumers use those numeric contracts directly.
 
 Human-readable opcode names and profiler categories are tooling metadata under
-`machine/{ts,cpp}/rompack/tooling/opcode_metadata.*`; loading the emulator does
-not construct those string tables. BLua source spellings for typed-memory
-intrinsics belong to the Lua frontend, not to the numeric machine contract.
+`toolchain/ts/lua/opcode_metadata.ts` and
+`machine/cpp/rompack/tooling/opcode_metadata.*`; loading the emulator does not
+construct those string tables. BLua source spellings for typed-memory intrinsics
+belong to the Lua frontend, not to the numeric machine contract.
 `audit:core-parity` compares the TS opcode order, the C++ X-macro order, all
 three decode/timing tables, and both tooling string tables entry for entry.
 
@@ -662,10 +663,10 @@ Owners:
 - Physical ROM TOC decoding and wire records: `machine/ts/rompack/toc.ts` and
   `machine/cpp/rompack/toc.h/.cpp`.
 - Studio-only ROM asset metadata, package loading, and layered lookup:
-  `machine/ts/rompack/tooling/assets.ts`,
-  `machine/ts/rompack/tooling/loader.ts`,
-  `machine/ts/rompack/tooling/metadata.ts`, and
-  `machine/ts/rompack/tooling/source.ts`. Native fault tooling decodes the
+  `toolchain/ts/rompack/assets.ts`,
+  `toolchain/ts/rompack/loader.ts`,
+  `toolchain/ts/rompack/metadata.ts`, and
+  `toolchain/ts/rompack/source.ts`. Native fault tooling decodes the
   required TOC and BLua32 records directly and does not construct a parallel
   authoring package.
 - BLua32 executable-image wire records:
@@ -675,22 +676,22 @@ Owners:
   `machine/ts/spec/bmsx/rom_header.ts` and
   `machine/cpp/spec/bmsx/rom_header.h`.
 - Tooling-only decoded image graph:
-  `machine/ts/rompack/tooling/blua32_image.ts` and
+  `toolchain/ts/rompack/blua32_image.ts` and
   `machine/cpp/rompack/tooling/blua32_image.h/.cpp`.
 - Tooling-only system/cartridge package composition:
-  `machine/ts/rompack/tooling/media.ts`.
+  `toolchain/ts/rompack/media.ts`.
 - Build-time Lua source compilation:
-  `machine/ts/lua/compiler.ts` and `machine/ts/lua/compiler/*`.
+  `toolchain/ts/lua/compiler.ts` and `toolchain/ts/lua/compiler/*`.
 - Studio-only layered Lua source registry:
   `ide/runtime/source_registry.ts`.
 - BLua32 object linking and ROM-tail writing:
-  `machine/ts/rompack/tooling/blua32_linker.ts` and
-  `machine/ts/rompack/tooling/blua32_tail.ts`.
+  `toolchain/ts/rompack/blua32_linker.ts` and
+  `toolchain/ts/rompack/blua32_tail.ts`.
 - Pack-time payload spans, final TOC records, and immutable executable-prefix
-  layout: `machine/ts/rompack/tooling/asset_layout.ts` and
-  `machine/ts/rompack/tooling/rom_prefix_layout.ts`.
+  layout: `toolchain/ts/rompack/asset_layout.ts` and
+  `toolchain/ts/rompack/rom_prefix_layout.ts`.
 - ROM-header serialization shared by the packer and tail rebuilder:
-  `machine/ts/rompack/tooling/header_encode.ts`.
+  `toolchain/ts/rompack/header_encode.ts`.
 
 The ROM package and BLua32 image use the current wire records only. There is no
 old-format reader and no decode path for obsolete records.
@@ -3100,10 +3101,15 @@ source of truth. Runtime and tooling diagnostics use the platform logging and
 IDE error owners; they are not BIOS monitor commands and must not be swallowed
 by deferred host code.
 
-BLua32 source tooling is mirrored under `machine/{ts,cpp}/rompack/tooling`.
-Browser IDE state retains decoded tooling images there. Native tooling starts
-with `bmsx_rom_tooling`; diagnostics-enabled libretro builds additionally link
-`bmsx_blua32_tooling`. After an exception reaches the libretro host boundary,
+TypeScript BLua32 source tooling is owned by `@bmsx/blua-toolchain` under
+`toolchain/ts/lua`; ROM authoring is the downstream `@bmsx/rompack-tooling`
+package under `toolchain/ts/rompack`. Neither is compiled by the emulator
+package, and the BLua package has no dependency back to ROM authoring.
+`@bmsx/machine` compiles only its public runtime entrypoint, machine, shared
+low-level primitives, and hardware specification sources. Native ROM and fault
+tooling remains in the separate
+`bmsx_rom_tooling` and `bmsx_blua32_tooling` CMake targets. After an exception
+reaches the libretro host boundary,
 fault presentation decodes the tooling image directly from the inserted
 physical ROMs, joins optional symbols with allocation-free scalar CPU state
 reads, emits the diagnostic, and releases that tooling state.
@@ -3111,7 +3117,7 @@ reads, emits the diagnostic, and releases that tooling state.
 disassembler objects, or formatted diagnostic records.
 
 Lua source lexing, parsing, semantic analysis, and compilation are TypeScript
-authoring-tool responsibilities under `machine/ts/lua`. Native machine code
+authoring-tool responsibilities under `toolchain/ts/lua`. Native machine code
 executes the already-linked physical BLua32 image and therefore has no parallel
 C++ source lexer, parser, AST, or runtime source-compilation path.
 

@@ -14,21 +14,21 @@ import type {
 	ImgMeta,
 	RomAsset,
 	TextureMeta,
-} from '../../machine/ts/rompack/tooling/assets';
-import type { GLTFMesh } from '../../machine/ts/rompack/tooling/gltf';
-import { parseCartManifest, type RomManifest } from '../../machine/ts/rompack/tooling/manifest';
-import { alignRomAssetOffset, layoutRomAssetPayloads, type RomAssetPayloadLayout, type RomAssetPayloadRange } from '../../machine/ts/rompack/tooling/asset_layout';
-import { writeCartRomHeader } from '../../machine/ts/rompack/tooling/header_encode';
+} from '../../toolchain/ts/rompack/assets';
+import type { GLTFMesh } from '../../toolchain/ts/rompack/gltf';
+import { parseCartManifest, type RomManifest } from '../../toolchain/ts/rompack/manifest';
+import { alignRomAssetOffset, layoutRomAssetPayloads, type RomAssetPayloadLayout, type RomAssetPayloadRange } from '../../toolchain/ts/rompack/asset_layout';
+import { writeCartRomHeader } from '../../toolchain/ts/rompack/header_encode';
 import {
 	encodeDirect16GxTexture,
 	encodePalette4GxTexture,
 	type Direct16GxTexture,
 	type NativeGxTexture,
-} from '../../machine/ts/rompack/tooling/gx_texture_codec';
-import { encodeDirect16GxUpload } from '../../machine/ts/rompack/tooling/gp0_encode';
-import { encodeImgDecStream } from '../../machine/ts/rompack/tooling/imgdec_codec';
-import type { RomPrefixLayout } from '../../machine/ts/rompack/tooling/rom_prefix_layout';
-import { encodeRomToc } from '../../machine/ts/rompack/tooling/toc_encode';
+} from '../../toolchain/ts/rompack/gx_texture_codec';
+import { encodeDirect16GxUpload } from '../../toolchain/ts/rompack/gp0_encode';
+import { encodeImgDecStream } from '../../toolchain/ts/rompack/imgdec_codec';
+import type { RomPrefixLayout } from '../../toolchain/ts/rompack/rom_prefix_layout';
+import { encodeRomToc } from '../../toolchain/ts/rompack/toc_encode';
 import { encodeAudioAssetToAdpcm } from './adpcm';
 import { buildBlua32Image, type GeneratedLuaModule } from './blua32_image_builder';
 import { createTextureAtlas, resolveTextureGroupId } from './atlasbuilder';
@@ -61,12 +61,12 @@ import {
 	BLUA32_IMAGE_ID,
 	type Blua32BootHeader,
 	type Blua32ImageLayout,
-} from '../../machine/ts/rompack/tooling/blua32_image';
+} from '../../toolchain/ts/rompack/blua32_image';
 import {
 	BLUA32_SYMBOLS_IMAGE_ID,
 	encodeBlua32SymbolsImage,
 	type Blua32SymbolsImage,
-} from '../../machine/ts/rompack/tooling/blua32_symbols';
+} from '../../toolchain/ts/rompack/blua32_symbols';
 // @ts-ignore
 const { join, parse, relative, resolve, sep } = require('path');
 
@@ -79,17 +79,17 @@ const { once } = require('events');
 // @ts-ignore
 const { finished } = require('stream/promises');
 // @ts-ignore
-const { LuaLexer } = require('../../machine/ts/lua/syntax/lexer');
+const { LuaLexer } = require('../../toolchain/ts/lua/syntax/lexer');
 // @ts-ignore
-const { LuaParser } = require('../../machine/ts/lua/syntax/parser');
+const { LuaParser } = require('../../toolchain/ts/lua/syntax/parser');
 // @ts-ignore
 const { splitText } = require('../../machine/ts/common/text_lines');
 // @ts-ignore
-const { isLuaCompileError } = require('../../machine/ts/lua/compiler');
+const { isLuaCompileError } = require('../../toolchain/ts/lua/compiler');
 // @ts-ignore
 const {
 	toLuaModulePath,
-} = require('../../machine/ts/lua/module_path');
+} = require('../../toolchain/ts/lua/module_path');
 // @ts-ignore
 const { loadImage } = require('canvas');
 // @ts-ignore

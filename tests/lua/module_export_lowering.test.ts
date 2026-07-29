@@ -3,11 +3,11 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 import { splitText } from '../../machine/ts/common/text_lines';
-import { LuaLexer } from '../../machine/ts/lua/syntax/lexer';
-import { LuaParser } from '../../machine/ts/lua/syntax/parser';
-import type { OptimizationLevel } from '../../machine/ts/lua/compiler/optimizer';
-import type { ProgramConstReloc } from '../../machine/ts/lua/compiler/program_object';
-import { compileLuaChunkToProgram, type CompiledProgram } from '../../machine/ts/lua/compiler';
+import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
+import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
+import type { OptimizationLevel } from '../../toolchain/ts/lua/compiler/optimizer';
+import type { ProgramConstReloc } from '../../toolchain/ts/lua/compiler/program_object';
+import { compileLuaChunkToProgram, type CompiledProgram } from '../../toolchain/ts/lua/compiler';
 import {
 	disassembleTestBlua32Functions,
 	linkTestSystemBlua32,

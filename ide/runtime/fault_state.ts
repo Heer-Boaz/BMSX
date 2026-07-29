@@ -1,4 +1,4 @@
-import { LuaError, LuaSyntaxError } from '../../machine/ts/lua/errors';
+import { LuaError, LuaSyntaxError } from '../../toolchain/ts/lua/errors';
 import type { LuaCallFrame } from '../language/lua/interpreter/interpreter';
 import {
 	convertToError,
@@ -11,12 +11,12 @@ import {
 	sanitizeLuaErrorMessage,
 } from './error_format';
 import { buildLuaStackFrames, type StackTraceFrame } from './stack_trace';
-import { blua32FunctionIndexAtAddress } from '../../machine/ts/rompack/tooling/blua32_image';
+import { blua32FunctionIndexAtAddress } from '../../toolchain/ts/rompack/blua32_image';
 import type { ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
 import type { Value } from '../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { resolveWorkspacePath } from '../workspace/path';
-import { blua32ToolingImageForDomain } from '../../machine/ts/rompack/tooling/blua32_media';
+import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
 import type { RuntimeSourceState } from './sources';
 
 type RuntimeErrorLocation = { path: string; line: number; column: number };

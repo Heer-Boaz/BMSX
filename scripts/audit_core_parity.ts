@@ -13,8 +13,8 @@ import {
 	type LuaNode,
 	type LuaStatement,
 	LuaSyntaxKind,
-} from '../machine/ts/lua/syntax/ast';
-import { parseLuaChunk } from '../machine/ts/lua/analysis/parse';
+} from '../toolchain/ts/lua/syntax/ast';
+import { parseLuaChunk } from '../toolchain/ts/lua/analysis/parse';
 import {
 	auditPublicSymbolParity,
 	type PublicSymbolParityEntry,

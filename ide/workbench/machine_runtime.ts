@@ -3,7 +3,7 @@ import { HostOverlayMenu } from '../../hosts/common/host_overlay_menu';
 import { RenderPresentationState } from '../../hosts/common/presentation_state';
 import { createRuntimeSourceState } from '../runtime/sources';
 import type { RuntimeIdeState } from '../runtime/state';
-import { loadRomToolingMedia } from '../../machine/ts/rompack/tooling/media';
+import { loadRomToolingMedia } from '../../toolchain/ts/rompack/media';
 import { startPreparedRuntime } from './blua32_boot';
 import { runWorkbenchHostFrame } from './host_frame';
 import * as workbenchMode from './mode';

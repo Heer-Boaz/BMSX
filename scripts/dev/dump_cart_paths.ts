@@ -1,5 +1,5 @@
 import { parseRomImage } from '../../machine/ts/rompack/image';
-import { parseCartridgeIndex } from '../../machine/ts/rompack/tooling/loader';
+import { parseCartridgeIndex } from '../../toolchain/ts/rompack/loader';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 

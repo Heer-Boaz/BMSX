@@ -1,34 +1,34 @@
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import type { RuntimeCpuFaultFrame, RuntimeFaultState } from '../../../runtime/fault_state';
-import type { LuaDefinitionInfo, LuaDefinitionKind, LuaSourceRange } from '../../../../machine/ts/lua/syntax/ast/index';
+import type { LuaDefinitionInfo, LuaDefinitionKind, LuaSourceRange } from '../../../../toolchain/ts/lua/syntax/ast/index';
 import { LuaEnvironment } from '../../../language/lua/interpreter/environment';
-import { LuaLexer } from '../../../../machine/ts/lua/syntax/lexer';
+import { LuaLexer } from '../../../../toolchain/ts/lua/syntax/lexer';
 import { clamp } from '../../../../machine/ts/common/clamp';
-import type { ParsedLuaChunk } from '../../../../machine/ts/lua/analysis/parse';
-import type { LuaSyntaxError } from '../../../../machine/ts/lua/errors';
-import { getCachedLuaParse } from '../../../../machine/ts/lua/analysis/cache';
+import type { ParsedLuaChunk } from '../../../../toolchain/ts/lua/analysis/parse';
+import type { LuaSyntaxError } from '../../../../toolchain/ts/lua/errors';
+import { getCachedLuaParse } from '../../../../toolchain/ts/lua/analysis/cache';
 import { LuaInterpreter } from '../../../language/lua/interpreter/interpreter';
 import { extractErrorMessage, isLuaFunctionValue, isLuaTable, LuaFunctionValue, LuaNativeValue, LuaTable, LuaValue, resolveNativeTypeName } from '../../../language/lua/interpreter/value';
-import { API_METHOD_METADATA, type ApiMethodMetadata } from '../../../../machine/ts/language/lua/api_metadata';
-import { blua32FunctionIndexAtAddress } from '../../../../machine/ts/rompack/tooling/blua32_image';
+import { API_METHOD_METADATA, type ApiMethodMetadata } from '../../../../toolchain/ts/lua/api_metadata';
+import { blua32FunctionIndexAtAddress } from '../../../../toolchain/ts/rompack/blua32_image';
 import { Table } from '../../../../machine/ts/machine/cpu/table';
 import { asStringId, StringValue, valueTag, ValueTag, type BuiltinFunction, type Value } from '../../../../machine/ts/machine/cpu/value';
 import {
 	blua32SourceRangeAtPc,
 	type Blua32LocalSlotDebug,
-	type SourceRange,
-} from '../../../../machine/ts/rompack/tooling/blua32_symbols';
-import { DEFAULT_LUA_BUILTIN_FUNCTIONS, DEFAULT_LUA_BUILTIN_NAMES } from '../../../../machine/ts/lua/builtin_descriptors';
+} from '../../../../toolchain/ts/rompack/blua32_symbols';
+import type { SourceRange } from '../../../../toolchain/ts/lua/source_range';
+import { DEFAULT_LUA_BUILTIN_FUNCTIONS, DEFAULT_LUA_BUILTIN_NAMES } from '../../../../toolchain/ts/lua/builtin_descriptors';
 import { luaBuiltinMetadata } from '../../../runtime/lua_builtins';
 import { buildMarshalContext, runtimeValueToHost } from '../../../runtime/lua_tooling';
-import { buildLuaSemanticFrontend } from '../../../../machine/ts/lua/semantic/frontend';
+import { buildLuaSemanticFrontend } from '../../../../toolchain/ts/lua/semantic/frontend';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
-import { blua32ToolingImageForDomain, type Blua32ToolingImage } from '../../../../machine/ts/rompack/tooling/blua32_media';
+import { blua32ToolingImageForDomain, type Blua32ToolingImage } from '../../../../toolchain/ts/rompack/blua32_media';
 import {
 	resolveRuntimeLuaSourceForContext,
 } from '../../../runtime/sources';
-import type { LuaBuiltinDescriptor, LuaDefinitionLocation, LuaDefinitionRange, LuaHoverResult, LuaHoverScope, LuaMemberCompletion, LuaSymbolEntry } from '../../../../machine/ts/lua/semantic_contracts';
+import type { LuaBuiltinDescriptor, LuaDefinitionLocation, LuaDefinitionRange, LuaHoverResult, LuaHoverScope, LuaMemberCompletion, LuaSymbolEntry } from '../../../../toolchain/ts/lua/semantic_contracts';
 import { ensureCursorVisible, updateDesiredColumn } from '../../ui/view/caret/caret';
 import { editorCaretState } from '../../ui/view/caret/state';
 import { intellisenseUiState } from './ui_state';
@@ -41,7 +41,7 @@ import { editorRuntimeState } from '../../common/runtime_state';
 import { showEditorMessage } from '../../../common/feedback_state';
 import { clearEditorPointerSelectionState } from '../../../input/pointer/state';
 import { parseLuaIdentifierChain } from '../../../language/lua/identifier_chain';
-import { buildLuaSemanticModel, collectModuleAliasEntriesFromChunk, LuaSemanticModel, type FileSemanticData, type ModuleAliasEntry } from '../../../../machine/ts/lua/semantic/model';
+import { buildLuaSemanticModel, collectModuleAliasEntriesFromChunk, LuaSemanticModel, type FileSemanticData, type ModuleAliasEntry } from '../../../../toolchain/ts/lua/semantic/model';
 import { getOrCreateSemanticWorkspace } from './semantic/workspace/state';
 import {
 	cacheRuntimeSemanticWorkspaceAnalysis,
@@ -50,14 +50,14 @@ import {
 	runtimeSemanticCacheForDomain,
 	syncRuntimeSemanticWorkspacePath,
 } from './semantic/workspace/runtime';
-import { semanticSymbolKindToLuaSymbolKind } from '../../../../machine/ts/lua/semantic/common';
+import { semanticSymbolKindToLuaSymbolKind } from '../../../../toolchain/ts/lua/semantic/common';
 import { isLuaCommentContext } from '../../../common/text';
 import { writeWrappedOverlayLine } from '../../common/text/layout';
 import type { ApiCompletionMetadata, EditorContextToken, EditorDiagnosticSeverity, LuaCompletionItem, PointerSnapshot } from '../../../common/models';
 import type { EditorDocumentContext } from '../../editing/document_state';
 import type { ResourceDomain } from '../../../common/resource';
 import { Pool } from '../../../../machine/ts/common/pool';
-import { KEYWORDS, LuaTokenType, type LuaToken } from '../../../../machine/ts/lua/syntax/token';
+import { KEYWORDS, LuaTokenType, type LuaToken } from '../../../../toolchain/ts/lua/syntax/token';
 import { splitText } from '../../../../machine/ts/common/text_lines';
 import { getLinesSnapshot, getTextSnapshot } from '../../text/source_text';
 import type { TextBuffer } from '../../text/text_buffer';

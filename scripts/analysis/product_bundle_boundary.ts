@@ -2,9 +2,7 @@ import { relative, resolve } from 'node:path';
 
 const PLAYER_FORBIDDEN_SOURCE_PATHS = [
 	'ide/',
-	'machine/ts/lua/compiler.ts',
-	'machine/ts/lua/compiler/',
-	'machine/ts/rompack/tooling/',
+	'toolchain/ts/',
 	'scripts/analysis/',
 	'scripts/products/',
 	'scripts/rompacker/',

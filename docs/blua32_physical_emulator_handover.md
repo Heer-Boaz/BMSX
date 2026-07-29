@@ -65,7 +65,7 @@ Lees ook de actieve repo-instructies, maar houd minimaal het volgende aan:
 De mapnaam `machine/` is historisch onbetrouwbaar als ownershipsignaal.
 Tooling is ooit onder `machine/` geplaatst. Daarom zijn bijvoorbeeld:
 
-- `machine/ts/rompack/tooling/*`;
+- `toolchain/ts/rompack/*`;
 - compiler- en linkerlogica;
 - Hot-Resume-buildlogica;
 
@@ -169,15 +169,15 @@ ownergrens nog niet zuiver.
 
 TypeScript:
 
-- `machine/ts/rompack/tooling/blua32_image.ts`
-- `machine/ts/rompack/tooling/blua32_symbols.ts`
-- `machine/ts/lua/compiler/program.ts`
-- `machine/ts/lua/module_path.ts`
+- `toolchain/ts/rompack/blua32_image.ts`
+- `toolchain/ts/rompack/blua32_symbols.ts`
+- `toolchain/ts/lua/compiler/program.ts`
+- `toolchain/ts/lua/module_path.ts`
 - `machine/ts/machine/runtime/lua_scratch.ts`
-- `machine/ts/rompack/tooling/blua32_linker.ts`
-- `machine/ts/rompack/tooling/blua32_revision.ts`
-- `machine/ts/rompack/tooling/blua32_tail.ts`
-- `machine/ts/rompack/tooling/rom_prefix_layout.ts`
+- `toolchain/ts/rompack/blua32_linker.ts`
+- `toolchain/ts/rompack/blua32_revision.ts`
+- `toolchain/ts/rompack/blua32_tail.ts`
+- `toolchain/ts/rompack/rom_prefix_layout.ts`
 - `ide/workbench/blua32_boot.ts`
 
 C++:
@@ -204,10 +204,10 @@ Onder andere:
 
 - `machine/ts/machine/program/loader.ts`
 - `machine/ts/machine/program/scratch.ts`
-- `machine/ts/rompack/tooling/program_linker.ts`
-- `machine/ts/rompack/tooling/program_revision.ts`
-- `machine/ts/rompack/tooling/program_tail.ts`
-- `machine/ts/rompack/tooling/rom_layout.ts`
+- `toolchain/ts/rompack/program_linker.ts`
+- `toolchain/ts/rompack/program_revision.ts`
+- `toolchain/ts/rompack/program_tail.ts`
+- `toolchain/ts/rompack/rom_layout.ts`
 - `machine/cpp/machine/program/*`
 - `machine/ts/ide/runtime/program_boot.ts`
 - oude program-image testhelpers en tests.
@@ -245,13 +245,14 @@ een gecombineerd host-`protoIndex`.
 Eigenaren:
 
 - binary decode:
-  `machine/{ts,cpp}/rompack/tooling/blua32_image.*`;
+  `toolchain/ts/rompack/blua32_image.ts` and
+  `machine/cpp/rompack/tooling/blua32_image.*`;
 - linking:
-  `machine/ts/rompack/tooling/blua32_linker.ts`;
+  `toolchain/ts/rompack/blua32_linker.ts`;
 - ROM-tail:
-  `machine/ts/rompack/tooling/blua32_tail.ts`;
+  `toolchain/ts/rompack/blua32_tail.ts`;
 - outer header:
-  `machine/ts/rompack/tooling/header_encode.ts`.
+  `toolchain/ts/rompack/header_encode.ts`.
 
 ### 5.2 Systeem- en cartridgecode zijn gescheiden fysieke domeinen
 
@@ -492,9 +493,9 @@ type FunctionRecordLayout = {
 
 ### 6.10 Dubbele source-range types
 
-`machine/ts/lua/semantic/source_range.ts` definieerde opnieuw
-`SourcePosition`/`SourceRange`. Dat is verwijderd; het bestand importeert en
-re-exporteert nu de centrale types uit `blua32_symbols.ts`.
+`toolchain/ts/lua/source_range.ts` bezit `SourcePosition`/`SourceRange`.
+Semantische helpers en BLua32-symbolencoding consumeren dat contract direct;
+geen van beide definieert of re-exporteert een tweede type.
 
 Dit was de laatste lean-code cleanup vóór de huidige CPU-tussenwijziging.
 
@@ -550,7 +551,7 @@ Waarom:
 - echte hardware kent geen source revision;
 - een fysieke CPU kent geen linkerbaseline;
 - PC-relocatie op basis van sourcemaps is IDE/debuggerbeleid;
-- `machine/ts/rompack/tooling/blua32_revision.ts` importeert nu zelfs een
+- `toolchain/ts/rompack/blua32_revision.ts` importeert nu zelfs een
   revisiontype uit de CPU, dus de dependencyrichting is omgekeerd;
 - de CPU werd opnieuw een host-engine die source-edits begrijpt.
 
@@ -658,7 +659,7 @@ de scheiding nog niet af is.
 ### 7.7 `previous`/baseline hoort uitsluitend bij tooling
 
 `Blua32LinkBaseline` en `previous?: Blua32LinkBaseline` staan momenteel in
-`machine/ts/rompack/tooling/blua32_linker.ts`. Dat is inhoudelijk tooling en is
+`toolchain/ts/rompack/blua32_linker.ts`. Dat is inhoudelijk tooling en is
 daarom niet automatisch fout.
 
 De harde grens:
@@ -1269,9 +1270,10 @@ kan hostmetadata verbergen die release niet bezit. Controleer daarom steeds:
 
 ### 15.10 Directorynamen zijn geen architectuur
 
-`machine/ts/rompack/tooling` is tooling ondanks het pad. Verplaats later, maar
-laat het huidige slechte pad geen excuus zijn om toolinggedrag in CPU/Runtime
-te accepteren.
+TypeScript ROM-authoringcode staat onder `toolchain/ts/rompack`; de
+emulatiemachine importeert die package niet. De directorygrens is geen
+vervanging voor de dependencygrens: toolinggedrag blijft verboden in
+CPU/Runtime.
 
 ## 16. Documentatie die opnieuw moet worden gecorrigeerd
 

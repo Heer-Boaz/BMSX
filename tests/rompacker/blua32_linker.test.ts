@@ -1,20 +1,20 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../machine/ts/lua/compiler';
+import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import type {
 	ProgramConstReloc,
 	ProgramObjectImage,
-} from '../../machine/ts/lua/compiler/program_object';
-import type { Instruction } from '../../machine/ts/lua/compiler/optimizer';
-import { replaceWithJump, replaceWithMov } from '../../machine/ts/lua/compiler/optimizer/values';
+} from '../../toolchain/ts/lua/compiler/program_object';
+import type { Instruction } from '../../toolchain/ts/lua/compiler/optimizer';
+import { replaceWithJump, replaceWithMov } from '../../toolchain/ts/lua/compiler/optimizer/values';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
-import type { SourceRange } from '../../machine/ts/rompack/tooling/blua32_symbols';
+import type { SourceRange } from '../../toolchain/ts/lua/source_range';
 import type {
 	ProgramMetadata,
 	ProgramRuntimeSymbols,
 	Proto,
-} from '../../machine/ts/lua/compiler/program';
+} from '../../toolchain/ts/lua/compiler/program';
 import {
 	BLUA32_FUNCTION_RECORD_SIZE,
 } from '../../machine/ts/spec/blua32/image_format';
@@ -32,11 +32,11 @@ import {
 import {
 	linkCartBlua32Image,
 	linkSystemBlua32Image,
-} from '../../machine/ts/rompack/tooling/blua32_linker';
+} from '../../toolchain/ts/rompack/blua32_linker';
 import {
 	buildBlua32ExecutionRevision,
 	relocatedInstructionPc,
-} from '../../machine/ts/rompack/tooling/blua32_revision';
+} from '../../toolchain/ts/rompack/blua32_revision';
 import { parseLuaChunk } from '../lua/cpu_test_harness';
 
 type EncodedWord = {

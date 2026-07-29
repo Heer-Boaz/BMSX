@@ -4,7 +4,7 @@ import {
 	LuaUnaryOperator,
 	LuaTableFieldKind,
 	LuaAssignmentOperator,
-} from '../../../../machine/ts/lua/syntax/ast';
+} from '../../../../toolchain/ts/lua/syntax/ast';
 import type {
 	LuaAssignableExpression,
 	LuaAssignmentStatement,
@@ -29,9 +29,9 @@ import type {
 	LuaUnaryExpression,
 	LuaSourceRange,
 	LuaDefinitionInfo,
-} from '../../../../machine/ts/lua/syntax/ast';
+} from '../../../../toolchain/ts/lua/syntax/ast';
 import { LuaEnvironment } from './environment';
-import { LuaRuntimeError, LuaSyntaxError } from '../../../../machine/ts/lua/errors';
+import { LuaRuntimeError, LuaSyntaxError } from '../../../../toolchain/ts/lua/errors';
 import {
 	LuaFunctionValue,
 	LuaValue,
@@ -52,7 +52,7 @@ import {
 } from './value';
 import { isLuaHandlerFunction } from './handler_cache';
 import type { LuaInteropAdapter } from './interop';
-import { getCachedLuaParse } from '../../../../machine/ts/lua/analysis/cache';
+import { getCachedLuaParse } from '../../../../toolchain/ts/lua/analysis/cache';
 import { ScratchBuffer } from '../../../../machine/ts/common/scratchbuffer';
 import { luaModulo } from '../../../../machine/ts/spec/blua32/numeric';
 

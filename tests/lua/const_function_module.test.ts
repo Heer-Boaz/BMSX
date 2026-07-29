@@ -6,20 +6,20 @@ import { test } from 'node:test';
 
 import { readLE32 } from '../../machine/ts/common/endian';
 import { splitText } from '../../machine/ts/common/text_lines';
-import { LuaLexer } from '../../machine/ts/lua/syntax/lexer';
-import { LuaParser } from '../../machine/ts/lua/syntax/parser';
+import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
+import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
 import {
 	CPU,
 	RunResult,
 } from '../../machine/ts/machine/cpu/cpu';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
-import type { ProgramMetadata } from '../../machine/ts/lua/compiler/program';
+import type { ProgramMetadata } from '../../toolchain/ts/lua/compiler/program';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { compileLuaChunkToProgram, encodeCompiledProgramObject, type CompiledProgram } from '../../machine/ts/lua/compiler';
-import type { OptimizationLevel } from '../../machine/ts/lua/compiler/optimizer';
+import { compileLuaChunkToProgram, encodeCompiledProgramObject, type CompiledProgram } from '../../toolchain/ts/lua/compiler';
+import type { OptimizationLevel } from '../../toolchain/ts/lua/compiler/optimizer';
 import {
 	disassembleTestBlua32Functions,
 	linkTestBlua32Pair,

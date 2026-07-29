@@ -14,28 +14,28 @@ import { StringValue, createBuiltinFunction } from '../../machine/ts/machine/cpu
 import {
 	BLUA32_IMAGE_ID,
 	decodeBlua32Image,
-} from '../../machine/ts/rompack/tooling/blua32_image';
+} from '../../toolchain/ts/rompack/blua32_image';
 import {
 	BLUA32_SYMBOLS_IMAGE_ID,
 	decodeBlua32SymbolsImage,
-} from '../../machine/ts/rompack/tooling/blua32_symbols';
+} from '../../toolchain/ts/rompack/blua32_symbols';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { LUA_BOOT_PRIMITIVES } from '../../machine/ts/spec/blua32/builtin';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { layoutRomAssetPayloads } from '../../machine/ts/rompack/tooling/asset_layout';
-import type { RomAsset } from '../../machine/ts/rompack/tooling/assets';
-import { loadRomAssetList } from '../../machine/ts/rompack/tooling/loader';
+import { layoutRomAssetPayloads } from '../../toolchain/ts/rompack/asset_layout';
+import type { RomAsset } from '../../toolchain/ts/rompack/assets';
+import { loadRomAssetList } from '../../toolchain/ts/rompack/loader';
 import {
 	decodeGxTextureImage,
 	encodeDirect16GxTexture,
 	encodePalette4GxTexture,
-} from '../../machine/ts/rompack/tooling/gx_texture_codec';
-import { layoutRomPrefix } from '../../machine/ts/rompack/tooling/rom_prefix_layout';
+} from '../../toolchain/ts/rompack/gx_texture_codec';
+import { layoutRomPrefix } from '../../toolchain/ts/rompack/rom_prefix_layout';
 import { buildAssetModalView } from '../../scripts/rominspector/asset_modal_view';
 import { resolveTextureGroupId } from '../../scripts/rompacker/atlasbuilder';
 import { validateGxTextureLayout, type GxTextureLayout } from '../../scripts/rompacker/gx_texture_layout';
-import { decodeImgDecStream, encodeImgDecStream } from '../../machine/ts/rompack/tooling/imgdec_codec';
+import { decodeImgDecStream, encodeImgDecStream } from '../../toolchain/ts/rompack/imgdec_codec';
 import {
 	buildRomBlua32Tail,
 	compileLuaChunkBuffer,

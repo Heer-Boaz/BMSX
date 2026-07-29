@@ -1,8 +1,8 @@
-import type { RomAsset } from '../../machine/ts/rompack/tooling/assets';
-import { BLUA32_IMAGE_ID } from '../../machine/ts/rompack/tooling/blua32_image';
-import { BLUA32_SYMBOLS_IMAGE_ID } from '../../machine/ts/rompack/tooling/blua32_symbols';
+import type { RomAsset } from '../../toolchain/ts/rompack/assets';
+import { BLUA32_IMAGE_ID } from '../../toolchain/ts/rompack/blua32_image';
+import { BLUA32_SYMBOLS_IMAGE_ID } from '../../toolchain/ts/rompack/blua32_symbols';
 import { parseCartHeader } from '../../machine/ts/rompack/format';
-import { parseRomMetadataSection } from '../../machine/ts/rompack/tooling/metadata';
+import { parseRomMetadataSection } from '../../toolchain/ts/rompack/metadata';
 import { clamp } from '../../machine/ts/common/clamp';
 import { bufferSegmentGlyph, buildBufferBarModel, type BufferBarCell, type BufferBarModel, type BufferHitRegion, type BufferLegendEntry, type BufferRegion } from './asciiart';
 import {

@@ -1,7 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 
 import { parseCartHeader } from '../../../machine/ts/rompack/format';
-import { writeCartRomHeader } from '../../../machine/ts/rompack/tooling/header_encode';
+import { writeCartRomHeader } from '../../../toolchain/ts/rompack/header_encode';
 
 async function main(): Promise<void> {
 	const [inputPath, outputPath] = process.argv.slice(2);

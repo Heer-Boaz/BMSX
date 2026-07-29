@@ -7,7 +7,7 @@ import {
 	assertValidAemDocument,
 	buildAemValidationLookup,
 	parseStructuredTextDocument,
-} from '../../machine/ts/rompack/tooling/aem';
+} from '../../toolchain/ts/rompack/aem';
 import type { RuntimeResource } from '../common/resource';
 import type { RuntimeSourceState } from './sources';
 

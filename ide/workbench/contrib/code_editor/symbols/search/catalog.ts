@@ -1,7 +1,7 @@
 import { advanceQuickInputSelection } from '../../../../../editor/navigation/quick_input_navigation';
 import { updateReferenceSearchMatches } from '../../references/search/catalog';
 import { resetBlink } from '../../../../../editor/render/caret';
-import { symbolPriority } from '../../../../../../machine/ts/lua/semantic/model';
+import { symbolPriority } from '../../../../../../toolchain/ts/lua/semantic/model';
 import { refreshSymbolCatalog } from '../catalog';
 import type { SymbolSearchResult } from '../../../../../common/models';
 import { ensureSymbolSearchSelectionVisible } from '../shared';

@@ -23,14 +23,14 @@ import {
 	GX_GPU_PCRTC_SMODE1_SINT,
 	gxGpuPcrtcRegisterAddress,
 } from '../../machine/ts/machine/devices/gx/gpu_pcrtc';
-import { decodeBlua32BootHeader } from '../../machine/ts/rompack/tooling/blua32_image';
+import { decodeBlua32BootHeader } from '../../toolchain/ts/rompack/blua32_image';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { OpCode, encodeFixedCallArgCount } from '../../machine/ts/spec/blua32/opcode';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { Table } from '../../machine/ts/machine/cpu/table';
 import { StringValue } from '../../machine/ts/machine/cpu/value';
-import { blua32SourceRangeAtPc } from '../../machine/ts/rompack/tooling/blua32_symbols';
+import { blua32SourceRangeAtPc } from '../../toolchain/ts/rompack/blua32_symbols';
 import { COP0_EXEC } from '../../machine/ts/spec/blua32/cop0';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { LUA_BOOT_PRIMITIVES } from '../../machine/ts/spec/blua32/builtin';
@@ -39,7 +39,7 @@ import { CART_ROM_BASE, DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memo
 import type { RuntimeInputSource } from '../../machine/ts/machine/runtime/input';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveStateBytes, captureRuntimeSaveStateBytes } from '../../machine/ts/machine/runtime/save_state/codec';
-import { compileLuaChunkToProgram } from '../../machine/ts/lua/compiler';
+import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { parseLuaChunk } from './cpu_test_harness';
 import {
 	blua32TestFunctionAddress,

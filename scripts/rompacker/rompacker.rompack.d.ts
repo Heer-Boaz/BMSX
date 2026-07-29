@@ -3,8 +3,8 @@
  */
 import { Buffer } from 'buffer';
 import type { Canvas, Image as NodeCanvasImage } from 'canvas';
-import type { NativeGxTexture } from '../../machine/ts/rompack/tooling/gx_texture_codec';
-import type { GxTexturePageTile } from '../../machine/ts/rompack/tooling/assets';
+import type { NativeGxTexture } from '../../toolchain/ts/rompack/gx_texture_codec';
+import type { GxTexturePageTile } from '../../toolchain/ts/rompack/assets';
 import type { AssetType } from '../../machine/ts/rompack/toc';
 
 export type RomPackerMode = 'rompack' | 'bios';

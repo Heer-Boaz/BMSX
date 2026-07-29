@@ -1,0 +1,53 @@
+import {
+	CART_ROM_HEADER_CARTRIDGE_BOARD_OFFSET,
+	CART_ROM_HEADER_CARTRIDGE_RAM_BYTES_OFFSET,
+	CART_ROM_HEADER_DATA_LENGTH_OFFSET,
+	CART_ROM_HEADER_DATA_OFFSET,
+	CART_ROM_HEADER_MANIFEST_LENGTH_OFFSET,
+	CART_ROM_HEADER_MANIFEST_OFFSET,
+	CART_ROM_HEADER_MAGIC_OFFSET,
+	CART_ROM_HEADER_METADATA_LENGTH_OFFSET,
+	CART_ROM_HEADER_METADATA_OFFSET,
+	CART_ROM_HEADER_RESERVED_0_OFFSET,
+	CART_ROM_HEADER_RESERVED_1_OFFSET,
+	CART_ROM_HEADER_SIZE,
+	CART_ROM_HEADER_SIZE_OFFSET,
+	CART_ROM_HEADER_TOC_LENGTH_OFFSET,
+	CART_ROM_HEADER_TOC_OFFSET,
+	CART_ROM_MAGIC,
+} from '../../../machine/ts/spec/bmsx/rom_package';
+import { type CartRomHeader } from '../../../machine/ts/rompack/format';
+import {
+	BMSX_ROM_HEADER_BLUA32_EXCEPTION_FUNCTION_ADDRESS_OFFSET,
+	BMSX_ROM_HEADER_BLUA32_IMAGE_BYTE_COUNT_OFFSET,
+	BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET,
+	BMSX_ROM_HEADER_BLUA32_IRQ_FUNCTION_ADDRESS_OFFSET,
+	BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET,
+	BMSX_ROM_HEADER_BLUA32_STATIC_LAYOUT_TOKEN_HI_OFFSET,
+	BMSX_ROM_HEADER_BLUA32_STATIC_LAYOUT_TOKEN_LO_OFFSET,
+} from '../../../machine/ts/spec/bmsx/rom_header';
+
+export function writeCartRomHeader(target: Uint8Array, header: CartRomHeader): void {
+	const view = new DataView(target.buffer, target.byteOffset, CART_ROM_HEADER_SIZE);
+	view.setUint32(CART_ROM_HEADER_MAGIC_OFFSET, CART_ROM_MAGIC, true);
+	view.setUint32(CART_ROM_HEADER_SIZE_OFFSET, header.headerSize, true);
+	view.setUint32(CART_ROM_HEADER_MANIFEST_OFFSET, header.manifestOffset, true);
+	view.setUint32(CART_ROM_HEADER_MANIFEST_LENGTH_OFFSET, header.manifestLength, true);
+	view.setUint32(CART_ROM_HEADER_TOC_OFFSET, header.tocOffset, true);
+	view.setUint32(CART_ROM_HEADER_TOC_LENGTH_OFFSET, header.tocLength, true);
+	view.setUint32(CART_ROM_HEADER_DATA_OFFSET, header.dataOffset, true);
+	view.setUint32(CART_ROM_HEADER_DATA_LENGTH_OFFSET, header.dataLength, true);
+	view.setUint32(BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET, header.blua32ImageOffset, true);
+	view.setUint32(BMSX_ROM_HEADER_BLUA32_IMAGE_BYTE_COUNT_OFFSET, header.blua32ImageByteCount, true);
+	view.setUint32(BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET, header.blua32StartupFunctionAddress, true);
+	view.setUint32(BMSX_ROM_HEADER_BLUA32_IRQ_FUNCTION_ADDRESS_OFFSET, header.blua32IrqFunctionAddress, true);
+	view.setUint32(BMSX_ROM_HEADER_BLUA32_EXCEPTION_FUNCTION_ADDRESS_OFFSET, header.blua32ExceptionFunctionAddress, true);
+	view.setUint32(BMSX_ROM_HEADER_BLUA32_STATIC_LAYOUT_TOKEN_LO_OFFSET, header.blua32StaticLayoutTokenLo, true);
+	view.setUint32(BMSX_ROM_HEADER_BLUA32_STATIC_LAYOUT_TOKEN_HI_OFFSET, header.blua32StaticLayoutTokenHi, true);
+	view.setUint32(CART_ROM_HEADER_RESERVED_0_OFFSET, 0, true);
+	view.setUint32(CART_ROM_HEADER_METADATA_OFFSET, header.metadataOffset, true);
+	view.setUint32(CART_ROM_HEADER_METADATA_LENGTH_OFFSET, header.metadataLength, true);
+	view.setUint32(CART_ROM_HEADER_RESERVED_1_OFFSET, 0, true);
+	view.setUint32(CART_ROM_HEADER_CARTRIDGE_BOARD_OFFSET, header.cartridgeBoardWord, true);
+	view.setUint32(CART_ROM_HEADER_CARTRIDGE_RAM_BYTES_OFFSET, header.cartridgeRamByteCount, true);
+}

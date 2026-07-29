@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { splitText } from '../../machine/ts/common/text_lines';
-import { LuaLexer } from '../../machine/ts/lua/syntax/lexer';
-import { LuaParser } from '../../machine/ts/lua/syntax/parser';
-import { LuaSyntaxKind, LuaBinaryOperator, LuaAssignmentOperator, LuaUnaryOperator } from '../../machine/ts/lua/syntax/ast';
+import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
+import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
+import { LuaSyntaxKind, LuaBinaryOperator, LuaAssignmentOperator, LuaUnaryOperator } from '../../toolchain/ts/lua/syntax/ast';
 import type {
 	LuaChunk,
 	LuaCallStatement,
@@ -23,7 +23,7 @@ import type {
 	LuaStringLiteralExpression,
 	LuaTableConstructorExpression,
 	LuaIndexExpression,
-} from '../../machine/ts/lua/syntax/ast';
+} from '../../toolchain/ts/lua/syntax/ast';
 
 function parseChunk(source: string): LuaChunk {
 	const lexer = new LuaLexer(source, 'path');

@@ -1,4 +1,4 @@
-import { LuaError, LuaRuntimeError, LuaSyntaxError } from '../../../../machine/ts/lua/errors';
+import { LuaError, LuaRuntimeError, LuaSyntaxError } from '../../../../toolchain/ts/lua/errors';
 export type LuaValue = null | boolean | number | string | LuaTable | LuaFunctionValue | LuaNativeValue;
 
 export interface LuaFunctionValue {

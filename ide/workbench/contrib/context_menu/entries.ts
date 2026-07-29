@@ -1,4 +1,4 @@
-import { DEFAULT_LUA_BUILTIN_NAMES } from '../../../../machine/ts/lua/builtin_descriptors';
+import { DEFAULT_LUA_BUILTIN_NAMES } from '../../../../toolchain/ts/lua/builtin_descriptors';
 import { luaBuiltinMetadata } from '../../../runtime/lua_builtins';
 import { resolveLuaIdentifierChainRoot } from '../../../language/lua/identifier_chain';
 import type { EditorContextMenuEntry, EditorContextToken } from '../../../common/models';

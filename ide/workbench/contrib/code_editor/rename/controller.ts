@@ -4,7 +4,7 @@ import type { InlineInputOptions, TextField, SearchMatch } from '../../../../com
 import { applyInlineFieldEditing, createInlineTextField, setFieldText } from '../../../../editor/ui/inline/text_field';
 import * as constants from '../../../../common/constants';
 import { clamp } from '../../../../../machine/ts/common/clamp';
-import { LuaLexer } from '../../../../../machine/ts/lua/syntax/lexer';
+import { LuaLexer } from '../../../../../toolchain/ts/lua/syntax/lexer';
 import { focusEditorFromRename } from './prompt';
 import { showEditorMessage } from '../../../../common/feedback_state';
 import { setSingleCursorSelectionAnchor } from '../../../../editor/editing/cursor/state';

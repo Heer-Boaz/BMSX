@@ -11,8 +11,8 @@ import {
 	type LuaScopedSymbol,
 } from '../../../../editor/contrib/intellisense/engine';
 import { getKeywordCompletions } from '../../../../editor/contrib/suggest/keyword_completions';
-import { isReservedMemoryMapName } from '../../../../../machine/ts/lua/semantic/common';
-import type { LuaDefinitionInfo, LuaSourceRange } from '../../../../../machine/ts/lua/syntax/ast/index';
+import { isReservedMemoryMapName } from '../../../../../toolchain/ts/lua/semantic/common';
+import type { LuaDefinitionInfo, LuaSourceRange } from '../../../../../toolchain/ts/lua/syntax/ast/index';
 import {
 	CompletionContext,
 	CompletionSession,
@@ -22,13 +22,13 @@ import {
 	LuaCompletionKind,
 	ParameterHintState,
 } from '../../../../common/models';
-import type { LuaBuiltinDescriptor, LuaDefinitionRange, LuaSymbolEntry } from '../../../../../machine/ts/lua/semantic_contracts';
+import type { LuaBuiltinDescriptor, LuaDefinitionRange, LuaSymbolEntry } from '../../../../../toolchain/ts/lua/semantic_contracts';
 import { resourceIdentityKey } from '../../../../common/resource';
 import * as constants from '../../../../common/constants';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from '../../../../input/keyboard/key_input';
 import { isLuaCommentContext } from '../../../../common/text';
 import { point_in_rect } from '../../../../../machine/ts/common/rect';
-import { LuaLexer } from '../../../../../machine/ts/lua/syntax/lexer';
+import { LuaLexer } from '../../../../../toolchain/ts/lua/syntax/lexer';
 import { buildCanonicalCompletionItems, filterCompletionItems, resolveCompletionWordRange } from '../../../../editor/contrib/suggest/completion_model';
 import { assignRowColumn } from '../../../../common/state';
 import * as TextEditing from '../../../../editor/editing/text_editing_and_selection';
@@ -36,7 +36,7 @@ import { isActiveLuaCodeTab, isReadOnlyCodeTab } from '../../../ui/code_tab/cont
 import { prepareUndo } from '../../../../editor/editing/undo_controller';
 import { updateDesiredColumn, revealCursor } from '../../../../editor/ui/view/caret/caret';
 import { resetBlink } from '../../../../editor/render/caret';
-import type { FileSemanticData, ModuleAliasEntry } from '../../../../../machine/ts/lua/semantic/model';
+import type { FileSemanticData, ModuleAliasEntry } from '../../../../../toolchain/ts/lua/semantic/model';
 import { clearSingleCursorSelection, setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../../../editor/editing/cursor/state';
 import type { Runtime } from '../../../../../machine/ts/machine/runtime/runtime';
 import type { PlayerInput } from '../../../../../machine/ts/input/player';

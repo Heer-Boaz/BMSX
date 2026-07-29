@@ -77,7 +77,7 @@ import { MAPPED_BUS_DMA_BLOCK_END, MAPPED_BUS_MASTER_DMA } from '../../machine/t
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { captureMachineState, restoreMachineState, type MachineState } from '../../machine/ts/machine/save_state';
-import { encodeImgDecStream } from '../../machine/ts/rompack/tooling/imgdec_codec';
+import { encodeImgDecStream } from '../../toolchain/ts/rompack/imgdec_codec';
 
 const IMGDEC_INPUT_DMA_CONTROL = 0x00003d41;
 const IMGDEC_OUTPUT_DMA_CONTROL = 0x00003c58;

@@ -1,9 +1,9 @@
 // Fantasy CPU cycle cost analysis for physical BLua32 images.
 
-import type { Blua32ImageLayout } from '../../machine/ts/rompack/tooling/blua32_image';
-import type { Blua32SymbolsImage } from '../../machine/ts/rompack/tooling/blua32_symbols';
+import type { Blua32ImageLayout } from '../../toolchain/ts/rompack/blua32_image';
+import type { Blua32SymbolsImage } from '../../toolchain/ts/rompack/blua32_symbols';
 import { BASE_CYCLES, OPCODE_COUNT, OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { OPCODE_CATEGORY, OPCODE_NAMES } from '../../machine/ts/rompack/tooling/opcode_metadata';
+import { OPCODE_CATEGORY, OPCODE_NAMES } from '../../toolchain/ts/lua/opcode_metadata';
 import { INSTRUCTION_BYTES, readInstructionWord } from '../../machine/ts/spec/blua32/instruction_format';
 
 // ── Analysis data structures ───────────────────────────────────────────

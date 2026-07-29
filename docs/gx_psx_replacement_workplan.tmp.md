@@ -103,10 +103,10 @@ GX owners:
   `machine/firmware/system/dma.lua`
 - Streaming IMGDEC owners: `machine/ts/machine/devices/imgdec`,
   `machine/cpp/machine/devices/imgdec`, `cartlib/gx/imgdec.lua`,
-  `machine/ts/rompack/tooling/imgdec_codec.ts`
+  `toolchain/ts/rompack/imgdec_codec.ts`
 - Native GX texture wire-codec owner:
-  `machine/ts/rompack/tooling/gx_texture_codec.ts`; GP0 upload serialization is
-  owned by `machine/ts/rompack/tooling/gp0_encode.ts`, while the mirrored raw
+  `toolchain/ts/rompack/gx_texture_codec.ts`; GP0 upload serialization is
+  owned by `toolchain/ts/rompack/gp0_encode.ts`, while the mirrored raw
   GP0/CLUT constants remain in `machine/ts/machine/devices/gx/gp0.ts` and
   `machine/cpp/machine/devices/gx/gp0.h`
 - Guest texture-resource owners: `cartlib/romdir.lua`,

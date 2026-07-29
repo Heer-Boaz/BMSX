@@ -1,5 +1,5 @@
 import type { LuaCallFrame } from '../language/lua/interpreter/interpreter';
-import { buildLuaFrameRawLabel } from '../../machine/ts/lua/stack_frame_label';
+import { buildLuaFrameRawLabel } from '../../toolchain/ts/lua/stack_frame_label';
 import type { StackTraceFrame } from './stack_trace';
 
 function ensureWorkspaceRelativePath(source: string): string {

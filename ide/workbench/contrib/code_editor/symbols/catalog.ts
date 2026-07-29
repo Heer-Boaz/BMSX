@@ -1,10 +1,10 @@
-import type { LuaSymbolEntry } from '../../../../../machine/ts/lua/semantic_contracts';
+import type { LuaSymbolEntry } from '../../../../../toolchain/ts/lua/semantic_contracts';
 import * as constants from '../../../../common/constants';
 import { computeSourceLabel } from '../../../../common/paths';
 import { editorDocumentState } from '../../../../editor/editing/document_state';
 import { showEditorMessage } from '../../../../common/feedback_state';
 import { listGlobalLuaSymbols, listLuaSymbols } from '../../../../editor/contrib/intellisense/engine';
-import { symbolKindLabel } from '../../../../../machine/ts/lua/semantic/model';
+import { symbolKindLabel } from '../../../../../toolchain/ts/lua/semantic/model';
 import { extractErrorMessage } from '../../../../language/lua/interpreter/value';
 import { symbolSearchState } from './search/state';
 import type { RuntimeLuaTooling } from '../../../../runtime/lua_tooling';

@@ -22,10 +22,10 @@ import {
 import type {
 	CartridgeIndex,
 	RomToolingPackage,
-} from '../../machine/ts/rompack/tooling/assets';
+} from '../../toolchain/ts/rompack/assets';
 import type { RomImageDomain } from '../../machine/ts/rompack/image';
-import type { RomToolingLayer } from '../../machine/ts/rompack/tooling/loader';
-import { writeCartRomHeader } from '../../machine/ts/rompack/tooling/header_encode';
+import type { RomToolingLayer } from '../../toolchain/ts/rompack/loader';
+import { writeCartRomHeader } from '../../toolchain/ts/rompack/header_encode';
 import { cartridgeSlots } from './cartridge';
 
 class TestRuntimeInputSource implements RuntimeInputSource {

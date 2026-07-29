@@ -1,7 +1,7 @@
 import { parseCartHeader } from '../../machine/ts/rompack/format';
-import type { RomToolingPackage } from '../../machine/ts/rompack/tooling/assets';
-import type { RomToolingLayer } from '../../machine/ts/rompack/tooling/loader';
-import { RomSourceStack, type RawRomSource, type RomSourceLayer } from '../../machine/ts/rompack/tooling/source';
+import type { RomToolingPackage } from '../../toolchain/ts/rompack/assets';
+import type { RomToolingLayer } from '../../toolchain/ts/rompack/loader';
+import { RomSourceStack, type RawRomSource, type RomSourceLayer } from '../../toolchain/ts/rompack/source';
 import {
 	buildLuaSources,
 	resolveLuaSourceRecord,
@@ -23,7 +23,7 @@ import {
 	loadBlua32ToolingImage,
 	type Blua32ToolingImage,
 	type Blua32ToolingMedia,
-} from '../../machine/ts/rompack/tooling/blua32_media';
+} from '../../toolchain/ts/rompack/blua32_media';
 
 const SYSTEM_PROJECT_ROOT_PATH = 'machine/firmware';
 

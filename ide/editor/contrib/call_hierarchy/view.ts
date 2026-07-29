@@ -1,7 +1,7 @@
-import type { LuaIncomingCallHierarchyNode } from '../../../../machine/ts/lua/semantic/frontend';
-import type { LuaDefinitionLocation } from '../../../../machine/ts/lua/semantic_contracts';
+import type { LuaIncomingCallHierarchyNode } from '../../../../toolchain/ts/lua/semantic/frontend';
+import type { LuaDefinitionLocation } from '../../../../toolchain/ts/lua/semantic_contracts';
 import { createEditorSemanticFrontend } from '../intellisense/frontend';
-import type { LuaSemanticWorkspaceSnapshot, SymbolID } from '../../../../machine/ts/lua/semantic/model';
+import type { LuaSemanticWorkspaceSnapshot, SymbolID } from '../../../../toolchain/ts/lua/semantic/model';
 import { computeSourceLabel } from '../../../common/paths';
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 

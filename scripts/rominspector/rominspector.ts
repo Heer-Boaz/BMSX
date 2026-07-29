@@ -5,10 +5,10 @@
 import * as fs from 'fs/promises';
 import { parseArgs } from 'node:util';
 import { parseCartHeader, type CartRomHeader } from '../../machine/ts/rompack/format';
-import type { RomAsset } from '../../machine/ts/rompack/tooling/assets';
-import type { RomManifest } from '../../machine/ts/rompack/tooling/manifest';
-import { collectRomAssetSymbols } from '../../machine/ts/rompack/tooling/asset_symbols';
-import { loadRomAssetList, parseCartridgeIndex } from '../../machine/ts/rompack/tooling/loader';
+import type { RomAsset } from '../../toolchain/ts/rompack/assets';
+import type { RomManifest } from '../../toolchain/ts/rompack/manifest';
+import { collectRomAssetSymbols } from '../../toolchain/ts/rompack/asset_symbols';
+import { loadRomAssetList, parseCartridgeIndex } from '../../toolchain/ts/rompack/loader';
 import {
 	buildManifestAsset,
 	disassembleBlua32Image,

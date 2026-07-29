@@ -1,6 +1,6 @@
-import type { ParsedLuaChunk } from '../../../../../../machine/ts/lua/analysis/parse';
-import { getCachedLuaParse } from '../../../../../../machine/ts/lua/analysis/cache';
-import { LuaSemanticWorkspace, type FileSemanticData, type LuaSemanticWorkspaceSnapshot } from '../../../../../../machine/ts/lua/semantic/model';
+import type { ParsedLuaChunk } from '../../../../../../toolchain/ts/lua/analysis/parse';
+import { getCachedLuaParse } from '../../../../../../toolchain/ts/lua/analysis/cache';
+import { LuaSemanticWorkspace, type FileSemanticData, type LuaSemanticWorkspaceSnapshot } from '../../../../../../toolchain/ts/lua/semantic/model';
 import type { ResourceDomain } from '../../../../../common/resource';
 
 export type SemanticWorkspacePathInput = {

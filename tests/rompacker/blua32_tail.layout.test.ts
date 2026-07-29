@@ -4,17 +4,17 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 
 import { SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { BLUA32_IMAGE_ID } from '../../machine/ts/rompack/tooling/blua32_image';
+import { BLUA32_IMAGE_ID } from '../../toolchain/ts/rompack/blua32_image';
 import { CART_ROM_HEADER_SIZE } from '../../machine/ts/spec/bmsx/rom_package';
 import {
 	parseCartHeader,
 } from '../../machine/ts/rompack/format';
-import type { RomAsset } from '../../machine/ts/rompack/tooling/assets';
-import type { RomManifest } from '../../machine/ts/rompack/tooling/manifest';
-import { parseCartridgeIndex } from '../../machine/ts/rompack/tooling/loader';
-import { BLUA32_SYMBOLS_IMAGE_ID } from '../../machine/ts/rompack/tooling/blua32_symbols';
-import { buildBlua32Tail } from '../../machine/ts/rompack/tooling/blua32_tail';
-import { layoutRomPrefix } from '../../machine/ts/rompack/tooling/rom_prefix_layout';
+import type { RomAsset } from '../../toolchain/ts/rompack/assets';
+import type { RomManifest } from '../../toolchain/ts/rompack/manifest';
+import { parseCartridgeIndex } from '../../toolchain/ts/rompack/loader';
+import { BLUA32_SYMBOLS_IMAGE_ID } from '../../toolchain/ts/rompack/blua32_symbols';
+import { buildBlua32Tail } from '../../toolchain/ts/rompack/blua32_tail';
+import { layoutRomPrefix } from '../../toolchain/ts/rompack/rom_prefix_layout';
 import {
 	BLUA32_SYMBOLS_SIDECAR_SUFFIX,
 	buildRomBlua32Tail,

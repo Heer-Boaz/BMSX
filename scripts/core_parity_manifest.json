@@ -11,36 +11,6 @@
 			"reason": "ide_only"
 		},
 		{
-			"pattern": "machine/ts/language/**",
-			"category": "language",
-			"reason": "language_tooling"
-		},
-		{
-			"pattern": "machine/ts/lua/**",
-			"category": "cpu_interpreter_exception",
-			"reason": "cpu_interpreter_exception; semantics tested, file parity not required"
-		},
-		{
-			"pattern": "machine/ts/lua/compiler.ts",
-			"category": "compiler_tooling",
-			"reason": "lua_source_compiler_outside_machine_core"
-		},
-		{
-			"pattern": "machine/ts/lua/compiler/**",
-			"category": "compiler_tooling",
-			"reason": "lua_source_compiler_support_outside_machine_core"
-		},
-		{
-			"pattern": "machine/ts/lua/builtin_descriptors.ts",
-			"category": "language",
-			"reason": "ts_lua_language_builtin_metadata_no_cpp_runtime"
-		},
-		{
-			"pattern": "machine/ts/lua/compiler/system_boot_symbols.ts",
-			"category": "compiler_tooling",
-			"reason": "ts_compiler_boot_symbol_metadata_no_cpp_runtime"
-		},
-		{
 			"pattern": "machine/ts/index.ts",
 			"category": "barrel",
 			"reason": "machine_runtime_public_barrel"
@@ -219,11 +189,6 @@
 			"pattern": "machine/ts/machine/cpu/register_file.ts",
 			"category": "cpu_interpreter_exception",
 			"reason": "ts_soa_register_storage_cpp_uses_qnan_boxed_value_words_directly"
-		},
-		{
-			"pattern": "machine/ts/rompack/tooling/**",
-			"category": "rompacker_tooling",
-			"reason": "rompacker_authoring_schema_not_runtime_core"
 		},
 		{
 			"pattern": "machine/ts/.bmsx/**",
@@ -556,7 +521,7 @@
 			"reason": "blua32_memory_access_operand_contract"
 		},
 		{
-			"ts": "machine/ts/rompack/tooling/opcode_metadata.ts",
+			"ts": "toolchain/ts/lua/opcode_metadata.ts",
 			"cpp": [
 				"machine/cpp/rompack/tooling/opcode_metadata.h",
 				"machine/cpp/rompack/tooling/opcode_metadata.cpp"
@@ -726,7 +691,7 @@
 			"reason": "devices_audio_playback_contract"
 		},
 		{
-			"ts": "machine/ts/rompack/tooling/source_text.ts",
+			"ts": "toolchain/ts/rompack/source_text.ts",
 			"cpp": [
 				"machine/cpp/rompack/tooling/source_text.h",
 				"machine/cpp/rompack/tooling/source_text.cpp"
@@ -886,7 +851,7 @@
 			"ts_memory_access": "machine/ts/spec/blua32/memory_access_kind.ts",
 			"cpp_memory_access": "machine/cpp/spec/blua32/memory_access_kind.h",
 			"ts_opcode": "machine/ts/spec/blua32/opcode.ts",
-			"ts_metadata": "machine/ts/rompack/tooling/opcode_metadata.ts",
+			"ts_metadata": "toolchain/ts/lua/opcode_metadata.ts",
 			"cpp_opcode_list": "machine/cpp/spec/blua32/opcode_list.inl",
 			"cpp_opcode_tables": "machine/cpp/spec/blua32/opcode.cpp",
 			"cpp_metadata": "machine/cpp/rompack/tooling/opcode_metadata.cpp",
@@ -941,8 +906,8 @@
 				"machine/ts/machine/devices/imgdec/controller.ts",
 				"machine/ts/spec/imgdec/stream.ts",
 				"machine/ts/spec/gx/gp0.ts",
-				"machine/ts/rompack/tooling/gx_texture_codec.ts",
-				"machine/ts/rompack/tooling/imgdec_codec.ts",
+				"toolchain/ts/rompack/gx_texture_codec.ts",
+				"toolchain/ts/rompack/imgdec_codec.ts",
 				"machine/cpp/machine/devices/imgdec/controller.h",
 				"machine/cpp/machine/devices/imgdec/controller.cpp",
 				"machine/cpp/spec/imgdec/stream.h",
@@ -1088,19 +1053,19 @@
 		},
 		{
 			"present": [
-				"machine/ts/lua/syntax/lexer.ts",
-				"machine/ts/lua/syntax/parser.ts",
-				"machine/ts/lua/compiler.ts",
-				"machine/ts/lua/compiler/program_object.ts",
-				"machine/ts/lua/compiler/passes",
-				"machine/ts/lua/compiler/optimizer",
+				"toolchain/ts/lua/syntax/lexer.ts",
+				"toolchain/ts/lua/syntax/parser.ts",
+				"toolchain/ts/lua/compiler.ts",
+				"toolchain/ts/lua/compiler/program_object.ts",
+				"toolchain/ts/lua/compiler/passes",
+				"toolchain/ts/lua/compiler/optimizer",
 				"ide/runtime/source_registry.ts",
 				"ide/runtime/lua_tooling.ts",
 				"ide/runtime/sources.ts",
-				"machine/ts/rompack/tooling/blua32_linker.ts",
-				"machine/ts/rompack/tooling/blua32_revision.ts",
-				"machine/ts/rompack/tooling/blua32_tail.ts",
-				"machine/ts/rompack/tooling/rom_prefix_layout.ts"
+				"toolchain/ts/rompack/blua32_linker.ts",
+				"toolchain/ts/rompack/blua32_revision.ts",
+				"toolchain/ts/rompack/blua32_tail.ts",
+				"toolchain/ts/rompack/rom_prefix_layout.ts"
 			],
 			"absent": [
 				"machine/cpp/lua/syntax",
@@ -1119,10 +1084,10 @@
 		},
 		{
 			"present": [
-				"machine/ts/rompack/tooling/blua32_media.ts",
-				"machine/ts/rompack/tooling/blua32_symbols.ts",
-				"machine/ts/rompack/tooling/disassembler.ts",
-				"machine/ts/rompack/tooling/source_text.ts",
+				"toolchain/ts/rompack/blua32_media.ts",
+				"toolchain/ts/rompack/blua32_symbols.ts",
+				"toolchain/ts/rompack/disassembler.ts",
+				"toolchain/ts/rompack/source_text.ts",
 				"machine/cpp/rompack/tooling/blua32_media.h",
 				"machine/cpp/rompack/tooling/blua32_media.cpp",
 				"machine/cpp/rompack/tooling/blua32_symbols.h",
@@ -1277,7 +1242,7 @@
 			"reason": "gx_gpu_software_scanout_filename_parity"
 		},
 		{
-			"ts": "machine/ts/rompack/tooling/blua32_media.ts",
+			"ts": "toolchain/ts/rompack/blua32_media.ts",
 			"cpp": [
 				"machine/cpp/rompack/tooling/blua32_media.h",
 				"machine/cpp/rompack/tooling/blua32_media.cpp"
@@ -1285,7 +1250,7 @@
 			"reason": "blua32_tooling_media_filename_parity"
 		},
 		{
-			"ts": "machine/ts/rompack/tooling/blua32_symbols.ts",
+			"ts": "toolchain/ts/rompack/blua32_symbols.ts",
 			"cpp": [
 				"machine/cpp/rompack/tooling/blua32_symbols.h",
 				"machine/cpp/rompack/tooling/blua32_symbols.cpp"
@@ -1293,7 +1258,7 @@
 			"reason": "blua32_tooling_symbols_filename_parity"
 		},
 		{
-			"ts": "machine/ts/rompack/tooling/disassembler.ts",
+			"ts": "toolchain/ts/rompack/disassembler.ts",
 			"cpp": [
 				"machine/cpp/rompack/tooling/disassembler.h",
 				"machine/cpp/rompack/tooling/disassembler.cpp"
@@ -1301,7 +1266,7 @@
 			"reason": "blua32_tooling_disassembler_filename_parity"
 		},
 		{
-			"ts": "machine/ts/rompack/tooling/source_text.ts",
+			"ts": "toolchain/ts/rompack/source_text.ts",
 			"cpp": [
 				"machine/cpp/rompack/tooling/source_text.h",
 				"machine/cpp/rompack/tooling/source_text.cpp"
@@ -1348,19 +1313,25 @@
 			]
 		},
 		{
-			"ts": "machine/ts/rompack/tooling/blua32_image.ts",
+			"ts": "toolchain/ts/rompack/blua32_image.ts",
 			"cpp_headers": [
 				"machine/cpp/rompack/tooling/blua32_image.h"
 			]
 		},
 		{
-			"ts": "machine/ts/rompack/tooling/blua32_symbols.ts",
+			"ts": "toolchain/ts/rompack/blua32_symbols.ts",
 			"cpp_headers": [
 				"machine/cpp/rompack/tooling/blua32_symbols.h"
 			]
 		},
 		{
-			"ts": "machine/ts/rompack/tooling/blua32_media.ts",
+			"ts": "toolchain/ts/lua/source_range.ts",
+			"cpp_headers": [
+				"machine/cpp/rompack/tooling/source_range.h"
+			]
+		},
+		{
+			"ts": "toolchain/ts/rompack/blua32_media.ts",
 			"cpp_headers": [
 				"machine/cpp/rompack/tooling/blua32_media.h"
 			]
@@ -1414,7 +1385,7 @@
 			]
 		},
 		{
-			"ts": "machine/ts/rompack/tooling/opcode_metadata.ts",
+			"ts": "toolchain/ts/lua/opcode_metadata.ts",
 			"cpp_headers": [
 				"machine/cpp/rompack/tooling/opcode_metadata.h"
 			]

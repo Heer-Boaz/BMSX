@@ -54,10 +54,10 @@ import { captureMachineSaveState, captureMachineState, restoreMachineSaveState, 
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { CART_ROM_BASE, IO_WORD_SIZE, DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import type { Blua32ImageLayout } from '../../machine/ts/rompack/tooling/blua32_image';
+import type { Blua32ImageLayout } from '../../toolchain/ts/rompack/blua32_image';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
-import { compileLuaChunkToProgram } from '../../machine/ts/lua/compiler';
-import type { OptimizationLevel } from '../../machine/ts/lua/compiler/optimizer';
+import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
+import type { OptimizationLevel } from '../../toolchain/ts/lua/compiler/optimizer';
 import {
 	applyHotResumeRelocation,
 	buildHotResumeRelocation,

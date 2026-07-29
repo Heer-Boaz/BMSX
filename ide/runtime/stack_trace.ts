@@ -1,9 +1,9 @@
-import { buildLuaFrameRawLabel } from '../../machine/ts/lua/stack_frame_label';
+import { buildLuaFrameRawLabel } from '../../toolchain/ts/lua/stack_frame_label';
 import {
 	blua32SourceRangeAtPc,
 	type Blua32SymbolsImage,
-} from '../../machine/ts/rompack/tooling/blua32_symbols';
-import { blua32ToolingImageForDomain } from '../../machine/ts/rompack/tooling/blua32_media';
+} from '../../toolchain/ts/rompack/blua32_symbols';
+import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
 import type { RuntimeCpuFaultFrame } from './fault_state';
 import type { RuntimeSourceState } from './sources';
 

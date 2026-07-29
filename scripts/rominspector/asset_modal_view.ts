@@ -1,22 +1,22 @@
-import type { RomAsset } from '../../machine/ts/rompack/tooling/assets';
-import type { GLTFModel } from '../../machine/ts/rompack/tooling/gltf';
-import type { RomManifest } from '../../machine/ts/rompack/tooling/manifest';
+import type { RomAsset } from '../../toolchain/ts/rompack/assets';
+import type { GLTFModel } from '../../toolchain/ts/rompack/gltf';
+import type { RomManifest } from '../../toolchain/ts/rompack/manifest';
 import { decodeBinary } from '../../machine/ts/common/serializer/binencoder';
-import { loadModelFromBuffer as loadGLTFModelFromBuffer } from '../../machine/ts/rompack/tooling/loader';
-import { BLUA32_IMAGE_ID } from '../../machine/ts/rompack/tooling/blua32_image';
+import { loadModelFromBuffer as loadGLTFModelFromBuffer } from '../../toolchain/ts/rompack/loader';
+import { BLUA32_IMAGE_ID } from '../../toolchain/ts/rompack/blua32_image';
 import {
 	BLUA32_SYMBOLS_IMAGE_ID,
 	decodeBlua32SymbolsImage,
-} from '../../machine/ts/rompack/tooling/blua32_symbols';
+} from '../../toolchain/ts/rompack/blua32_symbols';
 import { asciiWaveBraille, generateBrailleAsciiArt, generatePixelPerfectAsciiArt, renderBufferBar } from './asciiart';
 import { decodeAudioPreviewToPcm } from './audio_preview';
 import {
 	decodeGxTextureImage,
 	type GxDecodedImage,
-} from '../../machine/ts/rompack/tooling/gx_texture_codec';
-import { GX_GPU_CPU_TO_VRAM_HEADER_BYTES } from '../../machine/ts/rompack/tooling/gp0_encode';
+} from '../../toolchain/ts/rompack/gx_texture_codec';
+import { GX_GPU_CPU_TO_VRAM_HEADER_BYTES } from '../../toolchain/ts/rompack/gp0_encode';
 import { GX_GPU_TEXTURE_MODE_DIRECT16 } from '../../machine/ts/spec/gx/gp0';
-import { decodeImgDecStream } from '../../machine/ts/rompack/tooling/imgdec_codec';
+import { decodeImgDecStream } from '../../toolchain/ts/rompack/imgdec_codec';
 import { GX_SYSTEM_TEXTURE_ASSET_ID } from '../rompacker/system_texture';
 import {
 	disassembleBlua32Image,

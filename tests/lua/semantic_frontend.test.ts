@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { buildLuaSemanticFrontend } from '../../machine/ts/lua/semantic/frontend';
+import { buildLuaSemanticFrontend } from '../../toolchain/ts/lua/semantic/frontend';
 import { createLuaSemanticFrontendFromSnapshot } from '../../ide/editor/contrib/intellisense/semantic/workspace/index';
-import { LuaSemanticWorkspace } from '../../machine/ts/lua/semantic/model';
+import { LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
 
 test('LuaSemanticFrontend rejects host-published machine word globals', () => {
 	const source = 'return sys_boot_cart, sys_vdp_stream_base, cart_manifest';

@@ -7,12 +7,12 @@ import {
 } from '../../machine/ts/spec/bmsx/cartridge';
 import { CART_RAM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { parseCartHeader } from '../../machine/ts/rompack/format';
-import { writeCartRomHeader } from '../../machine/ts/rompack/tooling/header_encode';
+import { writeCartRomHeader } from '../../toolchain/ts/rompack/header_encode';
 import { CART_ROM_HEADER_SIZE } from '../../machine/ts/spec/bmsx/rom_package';
 import {
 	resolveCartridgeHeaderWords,
 	type CartManifest,
-} from '../../machine/ts/rompack/tooling/manifest';
+} from '../../toolchain/ts/rompack/manifest';
 import type { CartRomHeader } from '../../machine/ts/rompack/format';
 
 const EMPTY_CART_HEADER: CartRomHeader = {

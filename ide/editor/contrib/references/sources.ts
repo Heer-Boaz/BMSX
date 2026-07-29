@@ -1,5 +1,5 @@
 import { clamp } from '../../../../machine/ts/common/clamp';
-import type { LuaDefinitionLocation } from '../../../../machine/ts/lua/semantic_contracts';
+import type { LuaDefinitionLocation } from '../../../../toolchain/ts/lua/semantic_contracts';
 import {
 	SYSTEM_RESOURCE_DOMAIN,
 } from '../../../common/resource';
@@ -13,7 +13,7 @@ import { syncSemanticWorkspacePaths, type SemanticWorkspacePathInput } from '../
 import type { ReferenceMatchInfo } from './state';
 import { splitText } from '../../../../machine/ts/common/text_lines';
 import { getLinesSnapshot, getTextSnapshot } from '../../text/source_text';
-import type { Decl, LuaSemanticWorkspaceSnapshot } from '../../../../machine/ts/lua/semantic/model';
+import type { Decl, LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
 import { computeSourceLabel } from '../../../common/paths';
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 

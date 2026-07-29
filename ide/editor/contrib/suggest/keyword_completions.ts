@@ -1,4 +1,4 @@
-import { KEYWORDS } from '../../../../machine/ts/lua/syntax/token';
+import { KEYWORDS } from '../../../../toolchain/ts/lua/syntax/token';
 import type { LuaCompletionItem } from '../../../common/models';
 
 export function getKeywordCompletions(): LuaCompletionItem[] {
