@@ -131,7 +131,7 @@ export class InputTimeline {
 			for (let index = 0; index < this.pendingCaptures.length; index += 1) {
 				const pending = this.pendingCaptures[index];
 				this.capture.scheduleFrame({
-					frame: this.cartridgeFrameOrigin + pending.frame + 1,
+					frame: this.cartridgeFrameOrigin + pending.frame,
 					outputFrame: pending.frame,
 					description: pending.description,
 					source: pending.source,
@@ -139,7 +139,7 @@ export class InputTimeline {
 			}
 			this.pendingCaptures.length = 0;
 		}
-		const cartridgeFrame = presentedFrame.frameIndex - this.cartridgeFrameOrigin;
+		const cartridgeFrame = presentedFrame.frameIndex - this.cartridgeFrameOrigin + 1;
 		let writeIndex = 0;
 		for (let readIndex = 0; readIndex < this.pendingInputs.length; readIndex += 1) {
 			const pending = this.pendingInputs[readIndex];
