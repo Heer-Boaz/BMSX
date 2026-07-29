@@ -4,11 +4,16 @@ Dit bestand is alleen de werkvoorraad. Afgeronde hardwarecontracten horen in
 [`architecture.md`](architecture.md); testuitslagen en implementatiegeschiedenis
 horen niet in deze lijst.
 
-## Eerstvolgende architectuurgate
+## Bewezen architectuurblockers
 
 | ID | Opdracht | Klaar wanneer |
 | --- | --- | --- |
-| `ARCH-REVIEW-01` | Beantwoord op de live dependency graph drie vragen: (1) waar bestaat nog host-magie in de emulatiemachine, (2) waar wijken TS en C++ semantisch, qua API of datastructuur af, en (3) zijn `machine`, hosts, IDE/Studio, compiler, rompacker en diagnostics in de juiste solutionrichting gescheiden? Dit is eerst een blockers-only audit; codewijzigingen volgen alleen uit bewezen blockers. | Het rapport noemt per blocker de concrete eigenaar, beide runtimepaden en hot-pathimpact. Geen generieke aanbevelingen, cosmetische moves, wrappers of speculatieve slices. |
+| `EMU-FW-01` | Verwijder de laatste guest-zichtbare host-seeding uit de machine. BIOS-Lua maakt en publiceert de `string`-, `table`- en `os`-tabellen; TS/C++ bieden alleen de verborgen vaste bootprimitives die de firmware nodig heeft. | De machine construeert of injecteert geen publieke librarytabellen meer, de generieke `Runtime.setGlobal`-route is weg en de behouden string-indextabel is in beide runtimes echte geserialiseerde CPU-state. String-indexering blijft een directe retained-table-read zonder extra hot-pathwerk. |
+| `PARITY-BOOT-01` | Maak boot-, media-, `Memory`- en runtime-eigenaarschap in TS en C++ werkelijk gelijk. Contentlifecycle blijft bij de producthost; de machine consumeert het fysieke ROM-medium rechtstreeks. | `MachineManager`, `RuntimeOptions` en de constructieflow hebben één betekenis in beide runtimes, of een overbodige managerlaag is verwijderd. Er zijn geen lifecyclefacades, dubbele ROM-eigenaren of taalafhankelijke publieke machine-API's. |
+| `PARITY-FRAME-01` | Haal host-wandklok en presentatietijd uit de machine-owned `FrameLoopState`. | De mirrored framestate bevat alleen emulatietijd en machine-uitvoering; browser en libretro bewaren hun eigen presentatietijd boven de core zonder cart-zichtbaar verschil. |
+| `PARITY-AUDIT-01` | Laat de parity-audit het gedeclareerde contract werkelijk afdwingen nadat de eigenaars zijn gelijkgetrokken. | `public_symbol_parity` wordt uitgevoerd, verdwenen roots kunnen niet groen blijven en publieke paden, namen, representaties en eigenaarschap van de twee cores worden gecontroleerd. De audit bevat geen skiplist of cosmetische uitzondering om bestaande verschillen te verbergen. |
+| `SOLUTION-TS-01` | Splits de TypeScript-solution volgens de al bestaande dependencyrichting: machine-core, gedeelde host-support, language/compiler en ROM-authoringtooling zijn afzonderlijke build/package-eigenaren. | `@bmsx/machine` compileert alleen de emulatiemachine; hosts delen één host-supporttarget; compiler en rompacker zijn geen runtimeonderdeel. Er komt geen facade of duplicatie per browser/Node-host bij. |
+| `BUILD-GEN-01` | Behoud automatische generatie van de host-system-atlas, maar maak die een expliciete buildgraph-prerequisite in plaats van productcode die rompacker-internals uitvoert. | Product- en deploymodules importeren geen ROM-authoringcode; een normale productbuild regenereert stale atlasartefacten nog steeds automatisch en deterministisch, zonder handmatige stap of featureverlies. |
 
 ## Doorlopende performance-audit
 
